@@ -333,15 +333,14 @@
     style.id = 'proceduralSwimGaitStyles';
     style.textContent = `
 #proceduralSwimPanel{position:fixed;z-index:10030;right:max(10px,env(safe-area-inset-right));bottom:max(10px,env(safe-area-inset-bottom));width:min(360px,calc(100vw - 20px));max-height:min(620px,calc(100dvh - 90px));overflow:auto;padding:12px;border:1px solid rgba(255,255,255,.18);border-radius:14px;background:rgba(7,16,26,.97);box-shadow:0 18px 60px rgba(0,0,0,.55);color:#e5eef9;font:12px/1.35 system-ui,sans-serif}
-#proceduralSwimPanel[hidden]{display:none!important}#proceduralSwimPanel h3{margin:0 0 4px;font-size:15px}#proceduralSwimPanel .swimMuted{opacity:.72;margin-bottom:9px}#proceduralSwimPanel .swimField{display:grid;grid-template-columns:1fr 96px;align-items:center;gap:10px;margin:7px 0}#proceduralSwimPanel input[type=range]{width:100%}#proceduralSwimPanel output{text-align:right;font:11px monospace}#proceduralSwimPanel .swimActions{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}#proceduralSwimPanel .swimDebug{white-space:pre-wrap;overflow-wrap:anywhere;margin:9px 0 0;padding:8px;border-radius:9px;background:rgba(0,0,0,.28);font:10px/1.35 monospace;max-height:126px;overflow:auto}@media(max-width:700px){#proceduralSwimPanel{right:4px;bottom:4px;width:calc(100vw - 8px);max-height:44dvh;padding:9px;border-radius:11px}#proceduralSwimPanel .swimField{margin:5px 0}}
+#proceduralSwimPanel[hidden]{display:none!important}#proceduralSwimButton.active{outline:2px solid rgba(107,169,255,.65);outline-offset:-2px}#proceduralSwimPanel h3{margin:0 0 4px;font-size:15px}#proceduralSwimPanel .swimMuted{opacity:.72;margin-bottom:9px}#proceduralSwimPanel .swimField{display:grid;grid-template-columns:1fr 96px;align-items:center;gap:10px;margin:7px 0}#proceduralSwimPanel input[type=range]{width:100%}#proceduralSwimPanel output{text-align:right;font:11px monospace}#proceduralSwimPanel .swimActions{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}#proceduralSwimPanel .swimDebug{white-space:pre-wrap;overflow-wrap:anywhere;margin:9px 0 0;padding:8px;border-radius:9px;background:rgba(0,0,0,.28);font:10px/1.35 monospace;max-height:126px;overflow:auto}@media(max-width:700px){#proceduralSwimPanel{right:4px;bottom:4px;width:calc(100vw - 8px);max-height:44dvh;padding:9px;border-radius:11px}#proceduralSwimPanel .swimField{margin:5px 0}}
 `;
     document.head.appendChild(style);
   }
 
   function editorPanelMarkup() {
-    return `<h3>Swim procedural gait</h3><div class="swimMuted">Whole body faces movement; shared procedural legs use a non-grounded alternating kick. Runtime never changes body Y.</div>
-      <label class="swimField"><span>Movement speed</span><span><input id="swimEditorSpeed" type="range" min="0" max="100" step="1" value="100"><output id="swimEditorSpeedOut">100%</output></span></label>
-      <label class="swimField"><span>Movement direction</span><span><input id="swimEditorDirection" type="range" min="-180" max="180" step="1" value="0"><output id="swimEditorDirectionOut">0°</output></span></label>
+    return `<h3>Swim procedural movement</h3><div class="swimMuted">Use the editor's normal WASD / stick / touch movement. Swim faces the actual preview travel direction and replaces ground stepping with the shared alternating kick. Runtime never changes body Y.</div>
+      <div id="swimEditorMotion" class="swimMuted">Movement: idle</div>
       <label class="swimField"><span>Kick cadence</span><span><input id="swimEditorCadence" type="range" min="0.5" max="4" step="0.05" value="${tuning.cadenceHz}"><output id="swimEditorCadenceOut">${tuning.cadenceHz.toFixed(2)} Hz</output></span></label>
       <label class="swimField"><span>Kick reach</span><span><input id="swimEditorReach" type="range" min="0" max="0.7" step="0.01" value="${tuning.kickReachRatio}"><output id="swimEditorReachOut">${Math.round(tuning.kickReachRatio * 100)}%</output></span></label>
       <label class="swimField"><span>Kick lift</span><span><input id="swimEditorLift" type="range" min="0" max="0.3" step="0.01" value="${tuning.kickLiftRatio}"><output id="swimEditorLiftOut">${Math.round(tuning.kickLiftRatio * 100)}%</output></span></label>
@@ -351,24 +350,22 @@
   }
 
   function bindEditorControls(panel) {
-    const bindings = [ // Used to keep slider values, shared tuning, and compact output labels synchronized.
-      ['swimEditorSpeed', 'swimEditorSpeedOut', value => { editorState.speedStrength = clamp01(value / 100); return `${Math.round(value)}%`; }],
-      ['swimEditorDirection', 'swimEditorDirectionOut', value => { editorState.directionDeg = value; return `${Math.round(value)}°`; }],
+    const bindings = [ // Keeps shared runtime/editor tuning and compact labels synchronized.
       ['swimEditorCadence', 'swimEditorCadenceOut', value => { tuning.cadenceHz = value; return `${value.toFixed(2)} Hz`; }],
       ['swimEditorReach', 'swimEditorReachOut', value => { tuning.kickReachRatio = value; return `${Math.round(value * 100)}%`; }],
       ['swimEditorLift', 'swimEditorLiftOut', value => { tuning.kickLiftRatio = value; return `${Math.round(value * 100)}%`; }],
       ['swimEditorBend', 'swimEditorBendOut', value => { tuning.kneeBendDeg = value; return `${Math.round(value)}°`; }],
     ];
     for (const [inputId, outputId, apply] of bindings) {
-      const input = panel.querySelector(`#${inputId}`); // Used as this tuning field's live slider.
-      const output = panel.querySelector(`#${outputId}`); // Used as this tuning field's compact numeric readout.
+      const input = panel.querySelector(`#${inputId}`);
+      const output = panel.querySelector(`#${outputId}`);
       input?.addEventListener('input', () => { if (output) output.textContent = apply(finite(input.value)); });
     }
     panel.querySelector('#swimEditorReset')?.addEventListener('click', () => {
       Object.assign(tuning, DEFAULT_TUNING);
-      const resetValues = { swimEditorCadence: tuning.cadenceHz, swimEditorReach: tuning.kickReachRatio, swimEditorLift: tuning.kickLiftRatio, swimEditorBend: tuning.kneeBendDeg }; // Used to push canonical defaults back into visible sliders.
+      const resetValues = { swimEditorCadence: tuning.cadenceHz, swimEditorReach: tuning.kickReachRatio, swimEditorLift: tuning.kickLiftRatio, swimEditorBend: tuning.kneeBendDeg };
       for (const [id, value] of Object.entries(resetValues)) {
-        const input = panel.querySelector(`#${id}`); // Used to trigger the same live binding path as a manual slider change.
+        const input = panel.querySelector(`#${id}`);
         if (input) { input.value = value; input.dispatchEvent(new Event('input', { bubbles: true })); }
       }
       updateEditorStatus('Swim gait reset to runtime defaults.', true);
@@ -378,73 +375,83 @@
 
   function installEditor() {
     if (typeof document === 'undefined' || editorState.installed) return false;
-    const modeTabs = document.getElementById('maaModeTabs'); // Used to insert Swim beside the editor's existing Multi/Single/Rig modes.
-    if (!modeTabs) return false;
+    const actionRow = document.querySelector('#animationHud .animationHudActions'); // Native procedural-movement HUD extension point; Dance uses this same row.
+    if (!actionRow) return false;
     installEditorStyles();
-    const swimTab = document.createElement('button'); // Used as the new procedural Swim authoring mode selector.
-    swimTab.id = 'maaSwimTab';
-    swimTab.type = 'button';
-    swimTab.className = 'secondary';
-    swimTab.setAttribute('role', 'tab');
-    swimTab.setAttribute('aria-selected', 'false');
-    swimTab.textContent = 'Swim';
-    modeTabs.appendChild(swimTab);
-    const panel = document.createElement('section'); // Used as the mobile-safe live authoring surface for swim direction/kick tuning.
+
+    const swimButton = document.createElement('button'); // Toggles the Swim movement layer inside the actual Procedural movement HUD.
+    swimButton.id = 'proceduralSwimButton';
+    swimButton.type = 'button';
+    swimButton.className = 'secondary';
+    swimButton.textContent = 'Swim';
+    actionRow.appendChild(swimButton);
+
+    const panel = document.createElement('section'); // Mobile-safe authoring surface for shared runtime/editor kick tuning.
     panel.id = 'proceduralSwimPanel';
     panel.hidden = true;
     panel.innerHTML = editorPanelMarkup();
     document.body.appendChild(panel);
     bindEditorControls(panel);
 
-    let controller = null; // Persists authored phase/blend while the same editor generated-feet shim remains active.
+    let controller = null; // Persists authored kick phase while the same generated-feet shim remains active.
     let controllerRoot = null; // Detects avatar/rig rebuilds and recreates the shared controller safely.
-    let activeModel = null; // Detects a newly-selected preview avatar without retaining ownership of its transform between renders.
-    let lastRenderTime = performance.now(); // Converts the editor renderer's calls into frame-independent swim dt.
+    let activeModel = null; // Detects a newly-selected preview avatar.
+    let lastRenderTime = performance.now(); // Converts renderer calls into frame-independent swim dt.
+    let lastEditorX = null; // Previous native locomotion-root X used to measure actual editor travel.
+    let lastEditorZ = null; // Previous native locomotion-root Z used to measure actual editor travel.
+    let lastEditorYaw = null; // Holds swim facing while the preview is momentarily stationary, matching runtime behavior.
+    let editorReferenceSpeed = 2.38; // Normalizes kick effort to the current procedural editor movement-speed setting.
+    let editorFeetAnalysis = null; // Cached native idle foot anchors used to center the swim kick instead of a captured walking stride.
     let rendererHookInstalled = false; // Prevents wrapping the editor renderer more than once.
+    const rendererWaitStartedAt = performance.now(); // Bounds the installation-only retry so a broken editor does not poll forever.
 
-    function leaveSwimMode() {
+    function leaveSwimMode(reason = 'editor-mode-inactive') {
       editorState.enabled = false;
       panel.hidden = true;
-      swimTab.setAttribute('aria-selected', 'false');
+      swimButton.classList.remove('active');
       activeModel = null;
       controller = null;
       controllerRoot = null;
+      lastEditorX = null;
+      lastEditorZ = null;
+      lastEditorYaw = null;
       editorState.rigReady = false;
-      editorState.lastReason = 'editor-mode-inactive';
-    }
-
-    function keepSwimTabSelected() {
-      if (!editorState.enabled) return;
-      for (const id of ['maaMultiTab', 'maaSingleTab', 'maaRigTab']) {
-        const tab = document.getElementById(id); // Keeps native Rig backing mode from visually appearing selected beside Swim after editor UI refreshes.
-        if (tab?.getAttribute('aria-selected') !== 'false') tab?.setAttribute('aria-selected', 'false');
-      }
-      if (swimTab.getAttribute('aria-selected') !== 'true') swimTab.setAttribute('aria-selected', 'true');
+      editorState.speedStrength = 0;
+      editorState.lastReason = reason;
     }
 
     function findEditorNativeFeet(canonicalRoot) {
       const experimentalRoot = canonicalRoot?.parent?.children?.find?.(node =>
         /_ExperimentalFeet$/i.test(String(node?.name || '')) || node?.userData?.experimentalFeet
-      ) || null; // Same canonical editor feet root the Dance adapter bridges into the shared leg solver.
+      ) || null;
       return Array.from(experimentalRoot?.children || []).filter(node =>
         /_(?:Left|Right)Foot$/i.test(String(node?.name || '')) || node?.userData?.footSide
       );
     }
 
+    function snapshotNode(node) {
+      if (!node?.position || !node?.quaternion || !node?.scale) return null;
+      return { node, position: node.position.clone(), quaternion: node.quaternion.clone(), scale: node.scale.clone() };
+    }
+
     function captureEditorRenderState(model) {
-      const scene = window.HobunjiGameplayBackdrop?.getScene?.() || null; // Supplies the native leg-line/foot objects that Swim temporarily overrides for this render only.
+      const scene = window.HobunjiGameplayBackdrop?.getScene?.() || null;
       const canonicalRoot = scene?.getObjectByName?.('LegBonesDebug') || null;
+      const locomotionRoot = canonicalRoot?.parent || model?.parent?.parent?.parent || null; // Native floor root owns actual preview X/Z travel and heading.
+      const poseRoot = model?.parent || null; // Native directional walk/drunk pose root; neutralized only for the Swim draw.
+      const avatarLiftRoot = poseRoot?.parent || null; // Native half-height + walk-bob root; bob is removed only for the Swim draw.
       const lines = Array.from(canonicalRoot?.children || []).filter(node => node?.isLine).map(line => {
         const position = line.geometry?.attributes?.position;
         return position ? { line, values: Array.from(position.array) } : null;
-      }).filter(Boolean); // Saves exact native hip/knee/foot debug-line points so leaving Swim cannot strand its last solved chain.
-      const feet = findEditorNativeFeet(canonicalRoot).map(foot => ({
-        foot,
-        position: foot.position.clone(),
-      })); // Swim moves only foot position on the editor's real generated-foot objects.
+      }).filter(Boolean);
+      const feet = findEditorNativeFeet(canonicalRoot).map(foot => ({ foot, position: foot.position.clone() }));
       return {
         model,
-        modelYaw: finite(model?.rotation?.y),
+        canonicalRoot,
+        locomotionRoot,
+        poseRoot,
+        avatarLiftRoot,
+        nodeTransforms: [locomotionRoot, avatarLiftRoot, poseRoot].map(snapshotNode).filter(Boolean),
         lines,
         feet,
       };
@@ -452,7 +459,11 @@
 
     function restoreEditorRenderState(snapshot) {
       if (!snapshot) return;
-      if (snapshot.model?.rotation) snapshot.model.rotation.y = snapshot.modelYaw;
+      for (const saved of snapshot.nodeTransforms) {
+        saved.node.position.copy(saved.position);
+        saved.node.quaternion.copy(saved.quaternion);
+        saved.node.scale.copy(saved.scale);
+      }
       for (const saved of snapshot.feet) {
         saved.foot?.position?.copy?.(saved.position);
         saved.foot?.updateMatrixWorld?.(true);
@@ -464,61 +475,140 @@
         position.needsUpdate = true;
         saved.line.geometry.computeBoundingSphere?.();
       }
-      snapshot.model?.updateMatrixWorld?.(true);
+      snapshot.locomotionRoot?.updateMatrixWorld?.(true);
     }
 
-    function renderEditorSwimFrame(now, model) {
-      const dt = Math.min(0.05, Math.max(0, (finite(now, lastRenderTime) - lastRenderTime) / 1000)); // Prevents background-tab resume from advancing the kick by a huge step.
+    function refreshEditorMovementReference() {
+      const movement = window.HobunjiGameplayBackdrop?.getProceduralMovement?.() || null; // Read only on mode/rig changes, not every frame; this export clones the full authoring record.
+      editorReferenceSpeed = Math.max(0.1, finite(movement?.settings?.speed, 2.38));
+      editorFeetAnalysis = movement?.experimentalFeet?.available ? movement.experimentalFeet : null;
+    }
+
+    function captureControllerIdleNeutral(snapshot) {
+      if (!controller || !editorFeetAnalysis) return controller?.captureNeutral?.() || false;
+      const restore = [];
+      for (const saved of snapshot.feet) {
+        const side = /left/i.test(String(saved.foot?.name || '')) || saved.foot?.userData?.footSide === 'left' ? 'left'
+          : /right/i.test(String(saved.foot?.name || '')) || saved.foot?.userData?.footSide === 'right' ? 'right' : null;
+        const idle = side === 'left' ? editorFeetAnalysis.leftIdle : side === 'right' ? editorFeetAnalysis.rightIdle : null;
+        if (!idle || !saved.foot?.position?.set) continue;
+        restore.push({ foot: saved.foot, position: saved.foot.position.clone() });
+        saved.foot.position.set(finite(idle.x), finite(idle.y), finite(idle.z));
+        saved.foot.updateMatrixWorld?.(true);
+      }
+      const ready = controller.captureNeutral();
+      for (const saved of restore) {
+        saved.foot.position.copy(saved.position);
+        saved.foot.updateMatrixWorld?.(true);
+      }
+      return ready;
+    }
+
+    function neutralizeGroundWalkForSwim(snapshot) {
+      const poseRoot = snapshot.poseRoot;
+      if (poseRoot) {
+        poseRoot.position.set(0, 0, 0);
+        poseRoot.quaternion.identity();
+        poseRoot.scale.set(1, 1, 1);
+      }
+      const liftRoot = snapshot.avatarLiftRoot;
+      const halfHeight = finite(snapshot.model?.userData?.gameGrounding?.avatarHeightHalfLift, NaN);
+      if (liftRoot && Number.isFinite(halfHeight)) liftRoot.position.y = halfHeight; // Removes native step bob without changing authored species grounding.
+    }
+
+    function renderEditorSwimFrame(now, model, snapshot) {
+      const dt = Math.min(0.05, Math.max(0, (finite(now, lastRenderTime) - lastRenderTime) / 1000));
       lastRenderTime = finite(now, performance.now());
-      keepSwimTabSelected();
-      const root = editorShimRoot(model); // Dance-created adapter over the editor's native generated feet and canonical leg lines.
+      const locomotionRoot = snapshot?.locomotionRoot;
+      const root = editorShimRoot(model); // Dance-created adapter over this editor's native generated feet and canonical leg lines.
+
       if (model !== activeModel) {
         activeModel = model;
         controller = null;
         controllerRoot = null;
+        lastEditorX = finite(locomotionRoot?.position?.x, null);
+        lastEditorZ = finite(locomotionRoot?.position?.z, null);
+        lastEditorYaw = finite(locomotionRoot?.rotation?.y, 0);
+        refreshEditorMovementReference();
       }
+
+      const currentX = finite(locomotionRoot?.position?.x, lastEditorX);
+      const currentZ = finite(locomotionRoot?.position?.z, lastEditorZ);
+      const hadPrevious = Number.isFinite(lastEditorX) && Number.isFinite(lastEditorZ);
+      const dx = hadPrevious ? currentX - lastEditorX : 0;
+      const dz = hadPrevious ? currentZ - lastEditorZ : 0;
+      lastEditorX = currentX;
+      lastEditorZ = currentZ;
+      const distance = Math.hypot(dx, dz);
+      const measuredSpeed = dt > 1e-6 ? distance / dt : 0;
+      const teleportLike = measuredSpeed > editorReferenceSpeed * 4; // Arena wrap/reset is not a swim direction and must not flip the body for one frame.
+      const moving = !teleportLike && distance > 1e-5 && measuredSpeed > 0.02;
+      if (moving) {
+        const desiredYaw = facingYawFromMovement(dx, dz);
+        if (desiredYaw != null) lastEditorYaw = desiredYaw;
+        editorState.directionDeg = Math.atan2(dz, dx) * 180 / Math.PI;
+      }
+      editorState.speedStrength = moving
+        ? Math.max(clamp01(tuning.minMovingStrength), Math.sqrt(clamp01(measuredSpeed / editorReferenceSpeed)))
+        : 0;
+
+      neutralizeGroundWalkForSwim(snapshot);
+      if (locomotionRoot?.rotation && Number.isFinite(lastEditorYaw)) locomotionRoot.rotation.y = lastEditorYaw;
+
       if (root && root !== controllerRoot) {
         controllerRoot = root;
         controller = createLegController(root, { THREE: editorThree(root) });
-        controller?.captureNeutral?.();
+        refreshEditorMovementReference();
+        captureControllerIdleNeutral(snapshot);
       }
-      const directionRad = editorState.directionDeg * Math.PI / 180; // Turns the authoring direction slider into a normalized movement vector.
-      const moveDx = Math.cos(directionRad);
-      const moveDy = Math.sin(directionRad);
-      const desiredYaw = facingYawFromMovement(moveDx, moveDy); // Exact same yaw conversion game.js consumes at runtime.
-      if (model?.rotation && desiredYaw != null) model.rotation.y = desiredYaw;
       if (controller) controller.update(dt, editorState.speedStrength, tuning, false);
+
       editorState.phase = controller?.state?.phase || 0;
       editorState.blend = controller?.state?.blend || 0;
       editorState.rigReady = !!controller;
       editorState.modelName = model?.name || null;
       editorState.rigName = root?.name || null;
-      editorState.lastReason = controller ? 'previewing-shared-swim-gait' : 'waiting-for-generated-leg-rig';
-      const debug = panel.querySelector('#swimEditorDebug'); // Always-visible mobile diagnostic instead of requiring DevTools.
+      editorState.lastReason = controller
+        ? (moving ? 'previewing-shared-swim-gait' : 'swim-idle-waiting-for-movement')
+        : 'waiting-for-generated-leg-rig';
+
+      const motion = panel.querySelector('#swimEditorMotion');
+      if (motion) motion.textContent = moving
+        ? `Movement: ${measuredSpeed.toFixed(2)} u/s · ${editorState.directionDeg.toFixed(0)}° · kick ${Math.round(editorState.speedStrength * 100)}%`
+        : (teleportLike ? 'Movement: preview wrap/reset ignored' : 'Movement: idle — use WASD / stick / touch');
+
+      const debug = panel.querySelector('#swimEditorDebug');
       if (debug) debug.textContent = JSON.stringify({
         reason: editorState.lastReason,
         renderOwnership: 'temporary-pre-render',
         model: editorState.modelName,
         rig: editorState.rigName,
+        movementSpeed: Number(measuredSpeed.toFixed(3)),
+        kickStrength: Number(editorState.speedStrength.toFixed(3)),
+        movementDirectionDeg: Number(editorState.directionDeg.toFixed(1)),
+        bodyYawDeg: Number.isFinite(lastEditorYaw) ? Number((lastEditorYaw * 180 / Math.PI).toFixed(1)) : null,
         phase: Number(editorState.phase.toFixed(3)),
         blend: Number(editorState.blend.toFixed(3)),
-        directionDeg: editorState.directionDeg,
-        bodyYawDeg: desiredYaw == null ? null : Number((desiredYaw * 180 / Math.PI).toFixed(1)),
         tuning: { ...tuning },
       }, null, 2);
     }
 
     function installEditorRendererHook() {
       if (rendererHookInstalled) return true;
-      const renderer = window.HobunjiGameplayBackdrop?.getRenderer?.(); // Must run after the editor's native movement/feet update and immediately before its real draw.
+      const renderer = window.HobunjiGameplayBackdrop?.getRenderer?.();
       if (!renderer?.render) return false;
-      const previousRender = renderer.render.bind(renderer); // Preserves Dance or any other editor wrapper already attached to this instance.
+      const previousRender = renderer.render.bind(renderer); // Keeps Dance/Impact/native renderer wrappers in the existing chain.
       renderer.render = function proceduralSwimEditorRender(scene, camera) {
         if (!editorState.enabled) return previousRender(scene, camera);
-        if (window.ProceduralDanceMode?.getDebug?.().enabled) window.ProceduralDanceMode.setEnabled(false); // Both modes write the same leg proxies; Swim owns them while its top-level mode is selected.
+        if (window.ProceduralDanceMode?.getDebug?.().enabled) window.ProceduralDanceMode.setEnabled(false);
         const model = window.HobunjiGameplayBackdrop?.getAvatarModel?.() || null;
-        const snapshot = captureEditorRenderState(model); // Native gait/body state is restored after this exact draw so Swim never leaks into Rig/Walk/Dance.
-        renderEditorSwimFrame(performance.now(), model);
+        const npcPreview = window.HobunjiGameplayBackdrop?.getPreviewMode?.() !== 'creature';
+        if (!model || !npcPreview) {
+          editorState.lastReason = model ? 'swim-requires-npc-preview' : 'waiting-for-preview-avatar';
+          return previousRender(scene, camera);
+        }
+        const snapshot = captureEditorRenderState(model); // Captures native movement pose after the editor updated it, then restores it after this exact draw.
+        renderEditorSwimFrame(performance.now(), model, snapshot);
         try {
           return previousRender(scene, camera);
         } finally {
@@ -526,35 +616,45 @@
         }
       };
       rendererHookInstalled = true;
-      editorLog('[Swim gait] Renderer hook attached; Swim now applies after native gait and restores native transforms after each draw.');
+      editorLog('[Swim gait] Renderer hook attached; Swim now layers over the native procedural movement frame and restores it after each draw.');
       return true;
     }
 
     function waitForEditorRenderer() {
       if (installEditorRendererHook()) return;
-      setTimeout(waitForEditorRenderer, 120); // Installation-only retry; animation itself is renderer-owned rather than a competing RAF loop.
+      if (performance.now() - rendererWaitStartedAt > 120000) {
+        editorState.lastReason = 'editor-renderer-hook-timeout';
+        updateEditorStatus('Swim could not attach to the procedural preview renderer.', false);
+        editorLog('[Swim gait] Timed out waiting for the procedural editor renderer.', 'error');
+        return;
+      }
+      setTimeout(waitForEditorRenderer, 120);
     }
 
-    for (const id of ['maaMultiTab', 'maaSingleTab', 'maaRigTab']) {
-      document.getElementById(id)?.addEventListener('click', () => {
-        if (editorState.enabled) leaveSwimMode();
-      });
-    }
-
-    swimTab.addEventListener('click', () => {
-      document.getElementById('maaRigTab')?.click(); // Reuses the editor's existing character/rig preview rather than creating a second avatar loader.
+    swimButton.addEventListener('click', () => {
+      if (editorState.enabled) {
+        leaveSwimMode('disabled-from-procedural-hud');
+        updateEditorStatus('Swim preview off.', true);
+        return;
+      }
       editorState.enabled = true;
       panel.hidden = false;
+      swimButton.classList.add('active');
       lastRenderTime = performance.now();
-      window.ProceduralDanceMode?.setEnabled?.(false); // Prevents Dance and Swim from writing the same generated leg proxies simultaneously.
-      keepSwimTabSelected();
-      updateEditorStatus('Swim gait preview active.', true);
+      activeModel = null;
+      window.ProceduralDanceMode?.setEnabled?.(false);
+      refreshEditorMovementReference();
+      updateEditorStatus('Swim preview active — move with the normal procedural controls.', true);
+    });
+
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && editorState.enabled) leaveSwimMode('disabled-by-escape');
     });
 
     waitForEditorRenderer();
     editorState.installed = true;
     editorState.lastReason = 'installed-editor-mode';
-    editorLog('[Swim gait] Shared procedural Swim mode installed.');
+    editorLog('[Swim gait] Shared procedural Swim movement installed in the native animation HUD.');
     return true;
   }
 
