@@ -11,6 +11,7 @@ const baseStarts = []; // Captures calls that reach the original ranged action s
 const intervalCallbacks = []; // Defers bootstrap intervals until both modules have been evaluated.
 const baseEffectSelections = []; // Captures mastery selections that pass the archetype-specific validation wrapper.
 const addedAfflictions = []; // Captures final affliction ids/amounts after Blowgun scaling aliases are resolved.
+const rangedVisuals = []; // Captures thrown charge/release presentation options so authored Weapon Throw (Spin) poses can be checked.
 
 const toolDefs = {
   kylie_copper: { label: 'Copper Kylie', sprite: 'assets/toolsprites/kylie.png', slots: ['weapon'], animStyle: 'sweep', shapeKey: 'kylie' },
@@ -37,6 +38,15 @@ const windowObject = {
       durationS: 0.62, windupFrac: 0.44, strikeFrac: 0.62, holdFrac: 0.68, releaseFrac: 0.62,
       poses: { neutral: { x: 0 }, windup: { x: 0.12 }, strike: { x: 0.18 } },
     },
+    weaponThrowSpin: {
+      name: 'Weapon Throw (Spin)', style: 'chop', sequence: 'attack',
+      durationS: 1.04, windupFrac: 0.49, strikeFrac: 0.57, holdFrac: 0.82,
+      poses: {
+        neutral: { x: 0.03, y: 0.37, z: -0.01, pitch: -155, yaw: -79, bodyYaw: 2, roll: -82, shoulderAim: { pitch: true, yaw: false, roll: true } },
+        windup: { x: 0.41, y: 0.37, z: 0.42, pitch: -180, yaw: 139, bodyYaw: -152, roll: -92, shoulderAim: { pitch: false, yaw: false, roll: false } },
+        strike: { x: -0.57, y: 0.33, z: 0.17, pitch: -25, yaw: -65, bodyYaw: 63, roll: -88, shoulderAim: { pitch: true, yaw: false, roll: false } },
+      },
+    },
     drink: { poses: { strike: { x: 0.4, y: 0.4, z: 0.22, pitch: -180, yaw: 21, roll: 4, bodyYaw: 0 } } },
   },
   Combat: {
@@ -45,7 +55,7 @@ const windowObject = {
       getActiveTool: () => activeTool,
       getGearInventory: () => gear,
       saveGearInventory: () => {},
-      triggerRangedWeaponVisual: () => {},
+      triggerRangedWeaponVisual: (durationS, options) => { rangedVisuals.push({ durationS, options }); },
       refreshActionBar: () => {},
     },
   },
@@ -115,6 +125,19 @@ for (const key of ['dagger_copper', 'hatchet_copper', 'kylie_copper']) {
   assert.strictEqual(windowObject.RangedWeapons.config[key]?.projectileSprite, toolDefs[key].sprite, `${key} projectile should use its actual weapon sprite.`);
 }
 assert.strictEqual(windowObject.RangedWeapons.config.fishingspear_copper?.projectileVisualStyle, 'standard', 'Fishing spear should stay non-spinning.');
+for (const key of ['kylie_copper', 'dagger_copper', 'fishingspear_copper', 'hatchet_copper']) {
+  const cfg = windowObject.RangedWeapons.config[key];
+  assert.ok(Math.abs(cfg.chargeWindupS - 0.5096) < 1e-9, `${key} must use Weapon Throw (Spin)'s 1.04s × 0.49 authored windup.`);
+  assert.ok(Math.abs(cfg.fireDurationS - 0.5304) < 1e-9, `${key} release must use the remainder of Weapon Throw (Spin)'s authored duration.`);
+}
+assert.strictEqual(windowObject.RangedWeapons.config.hatchet_copper.chargePose.neutral.roll, -82, 'Hatchet uses Weapon Throw (Spin) exactly as authored.');
+assert.strictEqual(windowObject.RangedWeapons.config.kylie_copper.firePose.strike.roll, -88, 'Kylie uses Weapon Throw (Spin) exactly as authored.');
+for (const key of ['dagger_copper', 'fishingspear_copper']) {
+  const cfg = windowObject.RangedWeapons.config[key];
+  assert.strictEqual(cfg.chargePose.neutral.roll, 98, `${key} must turn the local weapon plane end-for-end at Neutral.`);
+  assert.strictEqual(cfg.chargePose.windup.roll, 88, `${key} must keep the end-for-end local flip through Windup.`);
+  assert.strictEqual(cfg.firePose.strike.roll, 92, `${key} must keep the end-for-end local flip through Strike.`);
+}
 assert.ok(!toolDefs.daggerSword_copper.slots.includes('ranged'), 'Dagger-swords must remain melee-only even if a stale definition claims rangedType=thrown.');
 assert.strictEqual(windowObject.RangedWeapons.config.daggerSword_copper, undefined, 'Dagger-swords must never receive ranged projectile configuration.');
 assert.strictEqual(windowObject.RangedWeapons.config.kylie_copper.rangedType, 'thrown');
@@ -164,6 +187,7 @@ equippedRanged = 'kylie_copper';
 
 assert.strictEqual(windowObject.RangedWeapons.startPlayerAction('kylie_copper'), true, 'Kylie press should begin a thrown hold.');
 assert.match(windowObject.RangedWeapons.playerActionLabel('kylie_copper'), /^Release /);
+assert.strictEqual(rangedVisuals.at(-1).options.pose.windup.roll, -92, 'Thrown hold visual must use Weapon Throw (Spin) Windup rather than the old flask throw.');
 now += 450;
 assert.strictEqual(windowObject.HobunjiRangedWeaponArchetypes.releaseThrownCharge('test'), true, 'Kylie release should enter the existing ranged fire state machine.');
 assert.deepStrictEqual(baseStarts, [{ itemKey: 'kylie_copper', loaded: true }]);
