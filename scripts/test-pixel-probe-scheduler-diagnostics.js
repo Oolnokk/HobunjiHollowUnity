@@ -96,7 +96,7 @@ assert.equal(run(undefined), null, 'returns null when RuntimeFrameScheduler is n
     ],
   });
   assert.equal(lines.length, 3, 'profiled scheduler adds one phase-total line and one top-subscriber line');
-  assert(lines[1].includes('outside-gameLoop=2.60ms'), 'outside-gameLoop total includes input + pre-game + post-game but not pre-render');
+  assert(lines[1].includes('outside-gameLoop=2.61ms'), 'outside-gameLoop total includes every enabled input + pre-game + post-game subscriber, including tiny ones hidden from the top list, but not pre-render');
   assert(lines[1].includes('pre-render*=1.50'), 'pre-render timing is surfaced separately and marked as already inside gameLoop');
   assert(lines[2].startsWith('Frame scheduler top: stable[post-game]=2.00ms'), 'heaviest subscriber is listed first with its scheduler phase');
   assert(lines[2].includes('render-a[pre-render]=1.50ms'), 'pre-render subscribers remain visible in the heaviest-subscriber list');
