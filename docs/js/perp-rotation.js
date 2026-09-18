@@ -134,6 +134,13 @@
     return null;
   }
 
+  function cameraPerpsForObject(object, fallbackPerps = null) {
+    const cameraPosition = liveCameraPosition(); // Uses the same short-lived camera sample as body/NPC deadzone resolution.
+    const worldPosition = object ? worldPositionForSubject({ root: object }) : null; // Reuses the world-transform-aware subject position path for any rendered animal root.
+    if (!cameraPosition || !worldPosition) return fallbackPerps;
+    return cameraRelativePerpsAtWorldPosition(worldPosition, cameraPosition) || fallbackPerps; // Generic avatar fallback for animals that do not own a registered perpState.
+  }
+
   function perspectivePerpsForState(state, fallbackPerps) {
     const entry = subjectForPerpState(state);
     const cameraPosition = entry ? liveCameraPosition() : null;
@@ -385,6 +392,7 @@
     perpClamp,
     clampedRotation,
     cameraRelativePerpsAtWorldPosition,
+    cameraPerpsForObject,
     perspectivePerpsForState,
     creatureDeadzoneTarget,
     creatureSnapSwayTarget,
