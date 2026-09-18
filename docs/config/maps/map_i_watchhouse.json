@@ -10,13 +10,16 @@
       "itemKey": "deskFurniture",
       "col": 9,
       "row": 10,
-      "rotY": 180,
+      "rotY": 0,
       "postX": 0,
       "postY": 0,
       "postZ": 0,
       "postSX": 1,
       "postSY": 1,
-      "postSZ": 1
+      "postSZ": 1,
+      "gridRot": 180,
+      "gridW": 2,
+      "gridD": 1
     },
     {
       "id": "f_watch_chair",
@@ -48,14 +51,17 @@
       "id": "f_watch_bench",
       "itemKey": "benchFurniture",
       "col": 13,
-      "row": 10,
-      "rotY": 90,
+      "row": 9,
+      "rotY": 0,
       "postX": 0,
       "postY": 0,
       "postZ": 0,
-      "postSX": 1,
+      "postSX": 0.666667,
       "postSY": 1,
-      "postSZ": 1
+      "postSZ": 0.5,
+      "gridRot": 90,
+      "gridW": 2,
+      "gridD": 3
     },
     {
       "id": "f_watch_cell_a_roll",
