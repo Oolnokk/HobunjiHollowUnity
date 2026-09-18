@@ -15,9 +15,9 @@ const pixelProbe = fs.readFileSync('docs/js/pixel-probe.js', 'utf8'); // Verifie
 const bodyComposer = fs.readFileSync('docs/js/player-body-transform-composer.js', 'utf8'); // Verifies the final render boundary cannot re-clamp an exact shared-point head aim.
 const targetingConfig = fs.readFileSync('docs/config/scratchbones-config.js', 'utf8'); // Verifies the common endpoint remains horizon-distant rather than visually close to the player.
 
-const focusIndex = loader.indexOf('js/combat/ranged-camera-focus.js?v=20260909perspectivepoint1');
-const alignmentIndex = loader.indexOf('js/combat/combat-camera-alignment-bridge.js?v=20260909perspectivepoint1');
-const dualRoleIndex = loader.indexOf('js/combat/ranged-dual-role-anim-style.js?v=20260905a');
+const focusIndex = loader.indexOf('js/combat/ranged-camera-focus.js?v='); // Cache-bust strings may change independently of this ordering contract.
+const alignmentIndex = loader.indexOf('js/combat/combat-camera-alignment-bridge.js?v=');
+const dualRoleIndex = loader.indexOf('js/combat/ranged-dual-role-anim-style.js?v=');
 assert(focusIndex >= 0 && alignmentIndex > focusIndex && dualRoleIndex > alignmentIndex,
   'camera authority bridge loads after ranged focus and before later ranged adapters');
 assert.match(loader, /HobunjiCombatCameraAlignment\?\.version\) >= 4/,
