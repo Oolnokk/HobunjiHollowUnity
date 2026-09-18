@@ -20,6 +20,8 @@
   let boundsScans = 0; // Cumulative Box3.setFromObject calls used only when a sleeper needs generic ground-preserving rescaling.
   let frameBoundsScans = 0; // Reset at each pre-render checkpoint so one-frame grounding cost is visible without profiling enabled.
   let lastPreparedBoundsScans = 0; // Number of hierarchy bounds scans performed by the most recent sleep preparation frame.
+  let groundingCacheHits = 0; // Number of rescale operations that reused a previously measured ground-preserving Y coefficient.
+  let groundingCacheMisses = 0; // Number of rescale operations that had to measure exact bounds before caching the coefficient.
   let externalRenderDepth = 0; // Nesting guard for explicit secondary live-scene renders such as Farm layout and Pixel Probe.
   let externalRenderPrepared = false; // True only when the outermost explicit secondary render scope applied temporary sleep transforms itself.
   let externalRenderScopes = 0; // Mobile-visible count of deliberate out-of-band render scopes; ordinary gameplay never increments this.
@@ -36,6 +38,7 @@
   const liveFrameStates = new WeakMap(); // Live entity -> original plane maps and sleep-only body-facing state so waking restores ordinary behavior.
   const frameCache = new Map(); // kind|frame|genotype -> permanently closed-eye texture pair for sleeping presentation.
   const temporaryTransforms = []; // Render-only scale/position changes restored by the post-game scheduler phase after all gameplay render passes.
+  const groundingScaleCoefficients = new WeakMap(); // group -> parent-local Y correction per unit of group.scale.y; measured once from exact Box3 bounds, then reused.
 
   let boxBefore = null; // Lazily allocated Box3 used to preserve visible ground contact while rescaling.
   let boxAfter = null; // Paired Box3 for the post-scale bottom measurement.
@@ -407,19 +410,33 @@
 
     const originalScaleY = Number(group.scale.y) || 1;
     const originalPositionY = Number(group.position.y) || 0;
-    const bottomBefore = worldBottom(group, boxBefore);
-    group.scale.y = originalScaleY * numericRatio;
-    const bottomAfter = worldBottom(group, boxAfter);
-    if (Number.isFinite(bottomBefore) && Number.isFinite(bottomAfter)) {
-      let parentScaleY = 1;
-      try {
-        if (group.parent?.getWorldScale && parentScale) {
-          group.parent.getWorldScale(parentScale);
-          parentScaleY = Number(parentScale.y) || 1;
-        }
-      } catch (_) {}
-      group.position.y += (bottomBefore - bottomAfter) / parentScaleY;
+    const targetScaleY = originalScaleY * numericRatio;
+    const scaleDeltaY = targetScaleY - originalScaleY;
+    const cachedGroundingCoefficient = groundingScaleCoefficients.get(group);
+    group.scale.y = targetScaleY;
+    if (Number.isFinite(cachedGroundingCoefficient)) {
+      groundingCacheHits++;
+      group.position.y += cachedGroundingCoefficient * scaleDeltaY;
       group.updateMatrixWorld?.(true);
+    } else {
+      groundingCacheMisses++;
+      group.scale.y = originalScaleY; // Measure the same exact before/after bounds as the legacy path once for this stable avatar hierarchy.
+      const bottomBefore = worldBottom(group, boxBefore);
+      group.scale.y = targetScaleY;
+      const bottomAfter = worldBottom(group, boxAfter);
+      if (Number.isFinite(bottomBefore) && Number.isFinite(bottomAfter)) {
+        let parentScaleY = 1;
+        try {
+          if (group.parent?.getWorldScale && parentScale) {
+            group.parent.getWorldScale(parentScale);
+            parentScaleY = Number(parentScale.y) || 1;
+          }
+        } catch (_) {}
+        const correctionY = (bottomBefore - bottomAfter) / parentScaleY;
+        group.position.y += correctionY;
+        if (Math.abs(scaleDeltaY) > 1e-8) groundingScaleCoefficients.set(group, correctionY / scaleDeltaY); // Future sleep/blend frames reproduce the measured grounding exactly without another Box3 traversal.
+        group.updateMatrixWorld?.(true);
+      }
     }
     temporaryTransforms.push({ group, scaleY: originalScaleY, positionY: originalPositionY });
     lastContext = contextLabel || group.name || 'sleeping animal';
@@ -601,6 +618,8 @@
       lastRestoredFrameId,
       boundsScans,
       lastPreparedBoundsScans,
+      groundingCacheHits,
+      groundingCacheMisses,
       externalRenderScopes,
       externalRenderDepth,
       lastExternalContext,
