@@ -2,7 +2,7 @@
 const STORAGE_KEY='hobunji_animal_head_rigs_v1'; // Shared with the game's animal head-rig runtime for same-origin testing.
 const UNSET=256; // Influence: body fallback. Material channels: inherit the current Influence weight.
 const GRID_MAX=128; // Default longest paint-grid dimension; enough detail for heads while keeping exported JSON compact.
-const RUNTIME_RIGGER_SPECIES=Object.freeze({puktuk:Object.freeze({label:'Puktuk',baselineIds:Object.freeze(['gar-wolf']),hostile:true,diet:'predator'}),'voorg-ass':Object.freeze({label:'Voorg-Ass',baselineIds:Object.freeze(['uumkaoii-wild','uumkaoii']),hostile:false,diet:'prey'})}); // Runtime-only species absent from the older static bestiary.
+const RUNTIME_RIGGER_SPECIES=Object.freeze({puktuk:Object.freeze({label:'Puktuk',baselineIds:Object.freeze(['gar-wolf']),hostile:false,diet:'predator',modelWidth:2.1,spriteAspect:0.43636}),'voorg-ass':Object.freeze({label:'Voorg-Ass',baselineIds:Object.freeze(['uumkaoii-wild','uumkaoii']),hostile:false,diet:'prey'})}); // Runtime-only species absent from the older static bestiary.
 const $=id=>document.getElementById(id); // Short DOM helper used throughout the author.
 const paintCanvas=$('paintCanvas'),paintCtx=paintCanvas.getContext('2d'); // Interactive undeformed authoring canvas.
 const previewCanvas=$('previewCanvas'),previewCtx=previewCanvas.getContext('2d'); // Read-only live deformation preview canvas.
