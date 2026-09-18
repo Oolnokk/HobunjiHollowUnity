@@ -166,8 +166,11 @@ const observationScanSource = rigSource.slice(rigSource.indexOf('const scanShoul
 assert.doesNotMatch(observationScanSource, /applyAtPinnedPerch/,
   'the 250ms instrumentation scan never performs active visual flips');
 assert.match(rigSource,
-  /pivotMode: 'pending-final-shoulder-pin'[\s\S]{0,500}direct-local-grip-pivot/,
-  'mobile diagnostics distinguish the logical flip event from the final-pin visual application');
+  /mode: 'direct-local-grip-pivot'/,
+  'final-pin diagnostics report the direct local grip-pivot solver');
+assert.match(rigSource,
+  /pivotMode: 'pending-final-shoulder-pin'/,
+  'logical flip diagnostics remain pending until the final shoulder pin consumes the new parity');
 assert.match(source,
   /_applyShoulderPetCuriosity\(c, dt\);[\s\S]{0,180}if \(perch && grip\)/,
   'the curiosity pose is applied inside the shoulder-pet branch before attachment pinning');
