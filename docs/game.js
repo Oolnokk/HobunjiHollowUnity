@@ -21632,7 +21632,7 @@
           playerFacing += angleDiff(mountRideEntity.pngRot, playerFacing) * 0.25;
           playerMesh.rotation.y = playerFacing;
           if (playerLegs?.group) playerLegs.group.rotation.y = 0;
-        } else if (!player.prone && !window.FarmAnimals.isHarvesting() && !window.ImpactRagdollPlayback?.isActive?.() && isPlayerSwimming()) {
+        } else if (!player.prone && !window.FarmAnimals.isHarvesting() && !window.ImpactRagdollPlayback?.isActive?.() && window.HobunjiProceduralSwimGait?.facingYawFromMovement && isPlayerSwimming()) {
           // Swimming owns one coherent facing for the whole rig: use this
           // frame's actual resolved displacement (including tile-edge tangent
           // sidesteps), bypass the billboard dead-zone, and keep the procedural
