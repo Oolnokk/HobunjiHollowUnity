@@ -1198,7 +1198,7 @@ $('statSlotSelect').innerHTML = ATTACK_SLOTS.map((s, i) => `<option value="${i}"
 // (name, anim, dirSign, pose, dmgTag, heavy, label, condKey, bonusText) is
 // either cosmetic/structural or owned by a different part of this tool
 // (the pose editor above already covers anim/pose).
-const STAT_FIELD_ALLOW = /^(damage|damageMul|halfConeDeg|HALF_CONE_DEG.*|rangeMul|rangeTiles|RANGE_MUL.*|knockbackMul|knockbackPxS|KNOCKBACK_MUL.*|COUNTER_.*|staminaCost|CHARGE_DRAIN_PER_S|COST_.*|MIN_.*|MAX_.*|DRAIN_PER_S|windupS|strikeS|returnS|WINDUP_S|STRIKE_S|holdS|HOLD_S|reloadDurationS|reloadWindupFrac|reloadStrikeFrac|reloadHoldFrac|fireDurationS|fireWindupFrac|fireAtFrac|fireHoldFrac|projectileCount|projectileRadiusPx|speedPxS|spreadDeg|lungeMul|LUNGE_.*|power|POWER|trailHalfWidthTiles|trailFarTiles|trailMaxAgeSeconds|FIRST_STRIKE_DELAY_S|NEXT_STRIKE_.*|SIDE_OFFSET_DEG|MOVE_SPEED_MUL_.*)$/;
+const STAT_FIELD_ALLOW = /^(damage|damageMul|halfConeDeg|HALF_CONE_DEG.*|rangeMul|rangeTiles|RANGE_MUL.*|knockbackMul|knockbackPxS|KNOCKBACK_MUL.*|COUNTER_.*|staminaCost|CHARGE_DRAIN_PER_S|COST_.*|MIN_.*|MAX_.*|DRAIN_PER_S|windupS|strikeS|returnS|WINDUP_S|WINDUP_SLOWDOWN|STRIKE_S|holdS|HOLD_S|GLOW_FULL_S|reloadDurationS|reloadWindupFrac|reloadStrikeFrac|reloadHoldFrac|fireDurationS|fireWindupFrac|fireAtFrac|fireHoldFrac|projectileCount|projectileRadiusPx|speedPxS|spreadDeg|lungeMul|LUNGE_.*|power|POWER|trailHalfWidthTiles|trailFarTiles|trailMaxAgeSeconds|FIRST_STRIKE_DELAY_S|NEXT_STRIKE_.*|SIDE_OFFSET_DEG|MOVE_SPEED_MUL_.*)$/;
 
 function numericLeafFields(entry) {
   const out = [];
