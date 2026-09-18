@@ -74,7 +74,9 @@
     const nextIndex = currentIndex < 0
       ? (step < 0 ? abilities.length - 1 : 0)
       : (currentIndex + step + abilities.length) % abilities.length;
-    return setSlotChoice(slotId, abilities[nextIndex].id, source, focusId);
+    const nextId = abilities[nextIndex].id; // Used to avoid redundant persistence/rerenders when a slot has only one already-equipped eligible attack.
+    if (nextId === currentId) return true;
+    return setSlotChoice(slotId, nextId, source, focusId);
   }
 
   function loadoutDebugState() {
@@ -265,7 +267,8 @@
   function render(preferredFocusId = null) {
     const pane = document.getElementById('combatLoadoutPane');
     if (!pane) return;
-    const restoreFocusId = preferredFocusId || focusedLoadoutControlId(pane); // Used to keep repeated controller swaps on the same slot instead of snapping focus back to the menu header.
+    const requestedFocusId = typeof preferredFocusId === 'string' ? preferredFocusId : null; // Used to ignore CustomEvent objects when render is registered directly as an event listener.
+    const restoreFocusId = requestedFocusId || focusedLoadoutControlId(pane); // Used to keep repeated controller swaps on the same slot instead of snapping focus back to the menu header.
     pane.innerHTML = '';
 
     const title = document.createElement('div');
@@ -351,7 +354,7 @@
         picker.style.minWidth = '0';
 
         const abilities = abilitiesForSlot(slot.id); // Used by the dropdown and controller buttons so both surfaces expose the identical eligible attack set.
-        const canCycle = abilities.length > 0 && (abilities.length > 1 || abilities[0].id !== abilityId); // Used to keep a single learned technique controller-equipable when the slot is empty, then disable no-op cycling once equipped.
+        const canCycle = abilities.length > 0; // Used to keep controller arrow controls focusable even when a slot has only one learned technique.
 
         const prevBtn = document.createElement('button'); // Used by controller Confirm to choose the previous eligible attack without relying on native select popups.
         prevBtn.type = 'button';
