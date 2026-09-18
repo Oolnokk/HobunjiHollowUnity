@@ -44,31 +44,32 @@
       .pa-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.1)}
       .pa-head h2{margin:0;font-size:16px}
       .pa-close{border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.06);color:#eaf5f3;border-radius:10px;width:30px;height:30px;cursor:pointer;font-size:15px;line-height:1}
-      .pa-body{display:grid;grid-template-columns:minmax(220px,280px) 1fr;gap:14px;padding:14px 16px}
-      @media(max-width:680px){.pa-body{grid-template-columns:1fr}}
+      .pa-body{display:grid;grid-template-columns:minmax(200px,260px) 1fr;gap:12px;padding:12px 14px;align-items:start}
+      @media(max-width:680px){.pa-body{grid-template-columns:1fr}.pa-col:last-child{position:static;max-height:none}}
       .pa-col{min-width:0}
-      .pa-card{background:rgba(255,255,255,.04);border:1px solid #294039;border-radius:13px;padding:11px;margin-bottom:12px}
-      .pa-card h3{margin:0 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:.3px;color:#cfe9e4}
-      .pa-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
-      .pa-field{margin-bottom:9px}
-      .pa-field label{display:flex;justify-content:space-between;font-size:11px;font-weight:700;color:#9cb3ae;margin-bottom:4px}
-      .pa-field input[type=range]{width:100%}
-      .pa-check{display:flex;align-items:center;gap:7px;color:#9cb3ae;font-size:12px;font-weight:700;margin-bottom:6px}
+      .pa-col:last-child{position:sticky;top:12px;align-self:start;max-height:calc(100vh - 24px);overflow:auto}
+      .pa-card{background:rgba(255,255,255,.04);border:1px solid #294039;border-radius:12px;padding:8px 9px;margin-bottom:8px}
+      .pa-card h3{margin:0 0 5px;font-size:11px;text-transform:uppercase;letter-spacing:.3px;color:#cfe9e4}
+      .pa-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}
+      .pa-field{margin-bottom:5px}
+      .pa-field label{display:flex;justify-content:space-between;font-size:10px;font-weight:700;color:#9cb3ae;margin-bottom:2px}
+      .pa-field input[type=range]{width:100%;display:block;height:16px}
+      .pa-check{display:flex;align-items:center;gap:6px;color:#9cb3ae;font-size:11px;font-weight:700;margin-bottom:4px}
       .pa-check input{accent-color:#7fc7bc}
-      .pa-btn{border:1px solid rgba(127,199,188,.38);background:rgba(127,199,188,.13);color:#eaf5f3;border-radius:11px;padding:8px 12px;font-weight:800;cursor:pointer}
+      .pa-btn{border:1px solid rgba(127,199,188,.38);background:rgba(127,199,188,.13);color:#eaf5f3;border-radius:10px;padding:6px 10px;font-weight:800;cursor:pointer;font-size:12px}
       .pa-btn.secondary{border-color:rgba(255,255,255,.16);background:rgba(255,255,255,.055)}
       .pa-btn.good{border-color:rgba(129,214,154,.42);background:rgba(129,214,154,.14)}
       .pa-sketchWrap{display:grid;place-items:center;border-radius:12px;border:1px solid rgba(255,255,255,.12);background-image:linear-gradient(45deg,rgba(255,255,255,.06) 25%,transparent 25%),linear-gradient(-45deg,rgba(255,255,255,.06) 25%,transparent 25%),linear-gradient(45deg,transparent 75%,rgba(255,255,255,.06) 75%),linear-gradient(-45deg,transparent 75%,rgba(255,255,255,.06) 75%);background-size:16px 16px;background-position:0 0,0 8px,8px -8px,-8px 0}
       .pa-sketchWrap canvas{position:static;inset:auto;display:block;width:100%;max-width:${SKETCH_SIZE}px;height:auto;aspect-ratio:1/1;touch-action:none;cursor:crosshair;image-rendering:pixelated}
-      .pa-previewWrap{display:grid;place-items:center;min-height:260px;border-radius:13px;border:1px solid #294039;background:#0a0e11;background-image:linear-gradient(45deg,rgba(255,255,255,.045) 25%,transparent 25%),linear-gradient(-45deg,rgba(255,255,255,.045) 25%,transparent 25%),linear-gradient(45deg,transparent 75%,rgba(255,255,255,.045) 75%),linear-gradient(-45deg,transparent 75%,rgba(255,255,255,.045) 75%);background-size:20px 20px;background-position:0 0,0 10px,10px -10px,-10px 0}
-      .pa-previewWrap canvas,.pa-previewWrap img{position:static;inset:auto;width:auto;height:auto;max-width:100%;max-height:340px;image-rendering:pixelated}
-      .pa-hint{font-size:11px;line-height:1.4;color:#9cb3ae;margin:0 0 9px}
-      .pa-libraryList{display:flex;flex-direction:column;gap:6px;max-height:160px;overflow:auto;margin-bottom:2px}
-      .pa-libraryRow{display:flex;align-items:center;gap:6px}
-      .pa-libraryRow .pa-libLabel{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:#eaf5f3}
-      .pa-libraryRow .pa-btn{padding:5px 9px;font-size:11px}
-      .pa-libraryName{flex:1;min-width:0;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.16);border-radius:8px;color:#eaf5f3;padding:6px 8px;font-size:12px}
-      .pa-foot{display:flex;justify-content:flex-end;gap:8px;padding:12px 16px;border-top:1px solid rgba(255,255,255,.1)}
+      .pa-previewWrap{display:grid;place-items:center;min-height:200px;border-radius:13px;border:1px solid #294039;background:#0a0e11;background-image:linear-gradient(45deg,rgba(255,255,255,.045) 25%,transparent 25%),linear-gradient(-45deg,rgba(255,255,255,.045) 25%,transparent 25%),linear-gradient(45deg,transparent 75%,rgba(255,255,255,.045) 75%),linear-gradient(-45deg,transparent 75%,rgba(255,255,255,.045) 75%);background-size:20px 20px;background-position:0 0,0 10px,10px -10px,-10px 0}
+      .pa-previewWrap canvas,.pa-previewWrap img{position:static;inset:auto;width:auto;height:auto;max-width:100%;max-height:min(340px,50vh);image-rendering:pixelated}
+      .pa-hint{font-size:10px;line-height:1.35;color:#9cb3ae;margin:0 0 6px}
+      .pa-libraryList{display:flex;flex-direction:column;gap:5px;max-height:130px;overflow:auto;margin-bottom:2px}
+      .pa-libraryRow{display:flex;align-items:center;gap:5px}
+      .pa-libraryRow .pa-libLabel{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:#eaf5f3}
+      .pa-libraryRow .pa-btn{padding:4px 8px;font-size:10px}
+      .pa-libraryName{flex:1;min-width:0;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.16);border-radius:8px;color:#eaf5f3;padding:5px 7px;font-size:11px}
+      .pa-foot{display:flex;justify-content:flex-end;gap:8px;padding:10px 14px;border-top:1px solid rgba(255,255,255,.1)}
       .pa-toolToggle.active{outline:2px solid #7fc7bc;background:rgba(127,199,188,.18)!important}
     `;
     document.head.appendChild(style);
