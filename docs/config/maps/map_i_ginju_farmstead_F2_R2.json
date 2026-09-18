@@ -29,8 +29,7 @@
       "postZ": 0,
       "postSX": 1,
       "postSY": 1,
-      "postSZ": 1,
-      "npcWardrobeFor": "aliri_ginju"
+      "postSZ": 1
     },
     { "id": "f_ginjuroom_bed_gantami", "itemKey": "basicBedFurniture", "col": 11, "row": 6, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1, "gridRot": 180, "gridW": 1, "gridD": 2 },
     {
@@ -44,8 +43,7 @@
       "postZ": 0,
       "postSX": 1,
       "postSY": 1,
-      "postSZ": 1,
-      "npcWardrobeFor": "gantami_ginju"
+      "postSZ": 1
     },
     {
       "id": "f_ginjuroom_wardrobe",
@@ -58,9 +56,25 @@
       "postZ": 0,
       "postSX": 1,
       "postSY": 1,
-      "postSZ": 1
+      "postSZ": 1,
+      "npcWardrobeFor": "gantami_ginju"
     },
     { "id": "f_ginjuroom_rug", "itemKey": "rugFurniture", "col": 6, "row": 6, "rotY": 0, "postX": 0.068, "postY": 0, "postZ": 0.492, "postSX": 0.934, "postSY": 1, "postSZ": 1.073333, "nonColliding": true, "gridRot": 0, "gridW": 7, "gridD": 3 }
+  ,
+    {
+      "id": "f_ginjuroom_wardrobe_aliri",
+      "itemKey": "wardrobeFurniture",
+      "col": 6,
+      "row": 9,
+      "rotY": 0,
+      "postX": 0,
+      "postY": 0,
+      "postZ": 0,
+      "postSX": 1,
+      "postSY": 1,
+      "postSZ": 1,
+      "npcWardrobeFor": "aliri_ginju"
+    }
   ],
   "floor": [
     [
