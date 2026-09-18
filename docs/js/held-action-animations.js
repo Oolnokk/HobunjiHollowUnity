@@ -39,6 +39,39 @@
     },
   }; // Used by held flask aim/confirm; intentionally simple for later authoring tweaks.
 
+  // Authored from the supplied Throw_Spinny attack-editor export. This is the
+  // temporary shared throw animation for every thrown weapon until dedicated
+  // spear/etc. variants are authored.
+  const weaponThrowSpin = {
+    version: 1,
+    kind: 'hobunji_attack_animation',
+    name: 'Weapon Throw (Spin)',
+    style: 'chop',
+    sequence: 'attack',
+    durationS: 1.04,
+    windupFrac: 0.49,
+    strikeFrac: 0.57,
+    holdFrac: 0.82,
+    gripMode: 'palm-parallel',
+    poses: {
+      neutral: {
+        x: 0.03, y: 0.37, z: -0.01, pitch: -155, yaw: -79, bodyYaw: 2, roll: -82,
+        shoulderAim: { pitch: true, yaw: false, roll: true },
+        secondaryGrip: { enabled: false, percent: 50 },
+      },
+      windup: {
+        x: 0.41, y: 0.37, z: 0.42, pitch: -180, yaw: 139, bodyYaw: -152, roll: -92,
+        shoulderAim: { pitch: false, yaw: false, roll: false },
+        secondaryGrip: { enabled: false, percent: 50 },
+      },
+      strike: {
+        x: -0.57, y: 0.33, z: 0.17, pitch: -25, yaw: -65, bodyYaw: 63, roll: -88,
+        shoulderAim: { pitch: true, yaw: false, roll: false },
+        secondaryGrip: { enabled: false, percent: 50 },
+      },
+    },
+  };
+
   // Counter Shield is authored here rather than privately in combat-counter-shield.js
   // so the runtime and Attack Animation Editor operate on the same guard pose.
   // Roll 180 turns the flat weapon PNG around in its own plane, making the weapon
@@ -59,7 +92,7 @@
     },
   };
 
-  window.HeldActionAnimations = Object.freeze({ drink, throwFlask, counterShield });
+  window.HeldActionAnimations = Object.freeze({ drink, throwFlask, weaponThrowSpin, counterShield });
 
   // Shared direct-hand bootstrap. There are no arm bones, IK, reach clamps, or
   // rotating arm sprites. Shoulder coordinates are either manually authored in
