@@ -6,9 +6,9 @@
   "rows": 20,
   "furniture": [
     { "id": "f_tbtwins_bed_namui", "itemKey": "basicBedFurniture", "col": 7, "row": 6, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1 },
-    { "id": "f_tbtwins_nightstand_namui", "itemKey": "nightstandFurniture", "col": 6, "row": 6, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1 },
+    { "id": "f_tbtwins_nightstand_namui", "itemKey": "nightstandFurniture", "col": 6, "row": 6, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1, "npcWardrobeFor": "namui_u_hakaru" },
     { "id": "f_tbtwins_bed_takua", "itemKey": "basicBedFurniture", "col": 11, "row": 6, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1, "gridRot": 180, "gridW": 1, "gridD": 2 },
-    { "id": "f_tbtwins_nightstand_takua", "itemKey": "nightstandFurniture", "col": 12, "row": 6, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1 },
+    { "id": "f_tbtwins_nightstand_takua", "itemKey": "nightstandFurniture", "col": 12, "row": 6, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1, "npcWardrobeFor": "takua_ao_hakaru" },
     { "id": "f_tbtwins_wardrobe", "itemKey": "wardrobeFurniture", "col": 9, "row": 9, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1 },
     { "id": "f_tbtwins_rug", "itemKey": "rugFurniture", "col": 6, "row": 6, "rotY": 0, "postX": 0.068, "postY": 0, "postZ": 0.492, "postSX": 0.934, "postSY": 1, "postSZ": 1.073333, "nonColliding": true, "gridRot": 0, "gridW": 7, "gridD": 3 }
   ],
