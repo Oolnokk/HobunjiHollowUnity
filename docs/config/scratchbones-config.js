@@ -329,6 +329,7 @@ window.SCRATCHBONES_CONFIG = {
         "healthRegenPerSec": 1.2,
         "afflictionRecoveryPerSec": 3.6,
         "bleedTickPerSec": 5,
+        "burnTickPerSec": 18,
         "poisonTickPerSec": 1.8,
         "exhaustionRegenPerSec": 24,
         "pukeChancePerSec": 0.16,
@@ -343,6 +344,14 @@ window.SCRATCHBONES_CONFIG = {
       // resource). See game.js's applyHitStagger. Impact clips are retimed to
       // this gameplay duration rather than making differently authored
       // directions stun for different lengths.
+      "knockbackCollision": {
+        "fallback": { "footing": 12 },
+        "stone": { "health": 8, "footing": 20, "shatteredStamina": 10, "bruisedHealth": 8 },
+        "wood": { "footing": 14, "bleedingHealth": 8, "woundedStamina": 8 },
+        "bladed": { "health": 20, "bleedingHealth": 22, "woundedStamina": 14 },
+        "fire": { "burningHealth": 18 },
+        "burningDodgeRecovery": 12
+      },
       "stagger": {
         "baseDurationSeconds": 0.1,
         "maxDurationSeconds": 1,
