@@ -432,20 +432,18 @@
       }
       return;
     }
-    if (offensive) {
-      const ids = afflictionIdsForBonuses(afflictionBonuses); // Uses exactly the affliction set the pending heavy hit will apply.
-      ensureFireColors(visual, ids);
-      visual.fireGroup.visible = true;
-      updateFireGroup(visual.fireGroup, timeS);
-    } else if (visual.fireGroup) {
-      visual.fireGroup.visible = false;
-    }
-    visual.weaponGlowGroup.visible = defensive;
+    // Offensive Charged Breaker no longer uses the legacy fire-particle tell.
+    // combat-counter-shield.js reuses its authored weapon-silhouette layers for
+    // this same visual record after this update hook runs.
+    if (visual.fireGroup) visual.fireGroup.visible = false;
+    visual.weaponGlowGroup.visible = defensive || offensive;
     visual.fieldGroup.visible = defensive;
     if (defensive) {
       currentDefensiveIconTexture();
       updateWeaponGlow(visual, timeS);
       updateFieldTransform(visual, timeS);
+    } else if (offensive) {
+      updateWeaponGlow(visual, timeS); // Fallback glow if the authored silhouette adapter is unavailable in an isolated tool/test.
     }
     visual.offensive = offensive;
     visual.defensive = defensive;
@@ -535,5 +533,5 @@
     updateHeavyAttackPresentation(dt);
   };
 
-  window.__farmLog?.('[heavy-telegraph] offensive-heavy fire and Counter Shield field visuals installed.', 'combat');
+  window.__farmLog?.('[heavy-telegraph] Charged Breaker weapon glow and Counter Shield field visuals installed.', 'combat');
 })();
