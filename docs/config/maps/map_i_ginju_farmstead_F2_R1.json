@@ -47,15 +47,19 @@
     {
       "id": "f_ginjuroom_rug",
       "itemKey": "rugFurniture",
-      "col": 9,
-      "row": 7,
+      "col": 6,
+      "row": 6,
       "rotY": 0,
-      "postX": -0.432,
+      "postX": 0.068,
       "postY": 0,
       "postZ": -0.008,
-      "postSX": 3.269,
+      "postSX": 0.934,
       "postSY": 1,
-      "postSZ": 1.61
+      "postSZ": 0.805,
+      "nonColliding": true,
+      "gridRot": 0,
+      "gridW": 7,
+      "gridD": 4
     }
   ],
   "floor": [
@@ -195,22 +199,6 @@
     [
       11,
       9
-    ],
-    [
-      10,
-      9
-    ],
-    [
-      7,
-      6
-    ],
-    [
-      6,
-      6
-    ],
-    [
-      7,
-      7
     ],
     [
       12,
