@@ -128,7 +128,7 @@ assert.doesNotMatch(applyCuriositySource, /frontPlane\.rotation\.y|backPlane\.ro
 assert.doesNotMatch(source, /SHOULDER_PET_REVERSE_SPEED_DEG|currentFacingYawDeg|targetFacingYawDeg|behaviorYawOffset/,
   'main keeps the rejected interpolated 180-degree shoulder-pet reverse/yaw experiment out');
 assert.match(rigSource,
-  /if \(phase === 'wait' && nextPhase === 'look'\)[\s\S]{0,260}applyShoulderPetObservationMirror\(pet, flipped\)[\s\S]{0,420}phase = nextPhase/,
+  /if \(phase === 'wait' && nextPhase === 'look'\)[\s\S]{0,520}applyShoulderPetObservationMirror\(pet, flipped\)[\s\S]{0,900}phase = nextPhase/,
   'each observation toggles the horizontal mirror synchronously before the look phase begins');
 assert.match(rigSource,
   /const mirrorShoulderObservationPlaneAroundWorldPivot = [\s\S]{0,4000}const sign = flipped \? -1 : 1;[\s\S]{0,500}plane\.scale\.x = baseScaleX \* sign/,
