@@ -6,7 +6,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 5;
+  const VERSION = 6;
   const PATCH_RETRY_MS = 50; // Used while game.js finishes constructing generated metal weapon definitions.
   const PATCH_RETRY_LIMIT = 160; // Used to stop the bootstrap poll after roughly eight seconds instead of polling forever.
   const THROWN_HOLD_VISUAL_S = 3600; // Used to park the ranged visual at its authored windup without adding another game.js hold state.
@@ -23,6 +23,7 @@
   ]); // Used by Kylie ranged mastery so its options mirror the game's blunt affliction family rather than sharp-style buildup.
   const DUAL_ROLE_SHAPES = Object.freeze({ kylie: THROWN_TYPE, dagger: THROWN_TYPE, fishingspear: THROWN_TYPE, hatchet: THROWN_TYPE, bshuakauitl: BLOWGUN_TYPE });
   const SPINNING_THROWN_SHAPES = new Set(['hatchet', 'dagger', 'kylie']); // Dagger is the current knife-class shape; these reuse Fishing's outbound fishing-mace spin.
+  const REVERSED_THROW_GRIP_SHAPES = new Set(['dagger', 'fishingspear']); // Same end-for-end local tool flip convention as reversing the pick-shovel's working end.
   const NON_RANGED_SHAPES = new Set(['daggerSword']); // Used by rangedTypeFor() to hard-block dagger-swords even if stale or external code tags one with rangedType.
   const patchedItems = new Set(); // Used by diagnostics and idempotent definition patching.
   const scaledAfflictionAliases = new Map(); // Used to carry per-shot buildup scaling through the existing projectile affliction map without changing raw damage.
@@ -39,7 +40,13 @@
   let baseBasicAmmoEffects = null; // Holds the ranged system's original effect objects so its closure-private payload builder can keep using them.
   let baseBasicAmmoDescriptors = []; // Immutable-ish plain copies used to build filtered UI/mastery choice lists without triggering affliction alias getters.
 
-  function clonePose(pose = {}) { return { ...pose, shoulderAim: pose.shoulderAim ? { ...pose.shoulderAim } : undefined }; }
+  function clonePose(pose = {}) {
+    return {
+      ...pose,
+      shoulderAim: pose.shoulderAim ? { ...pose.shoulderAim } : undefined,
+      secondaryGrip: pose.secondaryGrip ? { ...pose.secondaryGrip } : undefined,
+    };
+  }
   function clonePoseSet(source = {}) {
     return {
       neutral: clonePose(source.neutral),
@@ -51,18 +58,30 @@
   function withScale(pose, scale) { return { ...clonePose(pose), scale }; }
 
   function sharedThrowAnimation() {
-    return window.HeldActionAnimations?.throwFlask || {
-      durationS: 0.62,
-      windupFrac: 0.44,
-      strikeFrac: 0.62,
-      holdFrac: 0.68,
-      releaseFrac: 0.62,
+    return window.HeldActionAnimations?.weaponThrowSpin || {
+      name: 'Weapon Throw (Spin)',
+      style: 'chop',
+      sequence: 'attack',
+      durationS: 1.04,
+      windupFrac: 0.49,
+      strikeFrac: 0.57,
+      holdFrac: 0.82,
       poses: {
-        neutral: { x: 0, y: 0, z: -0.05, pitch: 10.31, yaw: 0, roll: 0, bodyYaw: 0 },
-        windup: { x: 0.12, y: 0.46, z: -0.16, pitch: -126, yaw: -8, roll: 10, bodyYaw: -12 },
-        strike: { x: 0.18, y: 0.3, z: 0.5, pitch: 34, yaw: 4, roll: -6, bodyYaw: 8 },
+        neutral: { x: 0.03, y: 0.37, z: -0.01, pitch: -155, yaw: -79, bodyYaw: 2, roll: -82, shoulderAim: { pitch: true, yaw: false, roll: true } },
+        windup: { x: 0.41, y: 0.37, z: 0.42, pitch: -180, yaw: 139, bodyYaw: -152, roll: -92, shoulderAim: { pitch: false, yaw: false, roll: false } },
+        strike: { x: -0.57, y: 0.33, z: 0.17, pitch: -25, yaw: -65, bodyYaw: 63, roll: -88, shoulderAim: { pitch: true, yaw: false, roll: false } },
       },
     };
+  }
+
+  function throwPoseForShape(animation, shapeKey) {
+    const poses = clonePoseSet(animation?.poses);
+    if (!REVERSED_THROW_GRIP_SHAPES.has(shapeKey)) return poses;
+    for (const phase of ['neutral', 'windup', 'strike']) {
+      const pose = poses[phase];
+      pose.roll = (Number(pose.roll) || 0) + 180; // End-for-end local plane turn; animation path/trajectory is unchanged.
+    }
+    return poses;
   }
 
   function sharedDrinkStrikePose() {
@@ -119,15 +138,16 @@
   function thrownConfig(itemKey, toolDef) {
     const base = crossbowDefaults();
     const animation = sharedThrowAnimation();
+    const throwPoses = throwPoseForShape(animation, shapeKeyFor(itemKey, toolDef));
     const scale = Number(toolDef?.rangedScale) || 1.05;
-    const releaseDurationS = Math.max(0.12, (animation.durationS || 0.62) * (1 - (animation.windupFrac ?? 0.44)));
+    const releaseDurationS = Math.max(0.12, (animation.durationS || 1.04) * (1 - (animation.windupFrac ?? 0.49)));
     const releaseAtFrac = Math.max(0.01, Math.min(0.98,
-      ((animation.releaseFrac ?? animation.strikeFrac ?? 0.62) - (animation.windupFrac ?? 0.44)) /
-      Math.max(0.01, 1 - (animation.windupFrac ?? 0.44))
+      ((animation.releaseFrac ?? animation.strikeFrac ?? 0.57) - (animation.windupFrac ?? 0.49)) /
+      Math.max(0.01, 1 - (animation.windupFrac ?? 0.49))
     ));
     const holdFrac = Math.max(releaseAtFrac, Math.min(0.99,
-      ((animation.holdFrac ?? 0.68) - (animation.windupFrac ?? 0.44)) /
-      Math.max(0.01, 1 - (animation.windupFrac ?? 0.44))
+      ((animation.holdFrac ?? 0.82) - (animation.windupFrac ?? 0.49)) /
+      Math.max(0.01, 1 - (animation.windupFrac ?? 0.49))
     ));
     const shapeKey = shapeKeyFor(itemKey, toolDef);
     const config = {
@@ -152,21 +172,21 @@
       reloadHoldFrac: 0.01,
       // Idle uses the true neutral. Release starts from the already-held windup.
       loadPose: {
-        neutral: withScale(animation.poses?.neutral, scale),
-        windup: withScale(animation.poses?.neutral, scale),
-        strike: withScale(animation.poses?.neutral, scale),
+        neutral: withScale(throwPoses.neutral, scale),
+        windup: withScale(throwPoses.neutral, scale),
+        strike: withScale(throwPoses.neutral, scale),
       },
       firePose: {
-        neutral: withScale(animation.poses?.windup, scale),
-        windup: withScale(animation.poses?.windup, scale),
-        strike: withScale(animation.poses?.strike, scale),
+        neutral: withScale(throwPoses.windup, scale),
+        windup: withScale(throwPoses.windup, scale),
+        strike: withScale(throwPoses.strike, scale),
       },
       chargePose: {
-        neutral: withScale(animation.poses?.neutral, scale),
-        windup: withScale(animation.poses?.windup, scale),
-        strike: withScale(animation.poses?.windup, scale),
+        neutral: withScale(throwPoses.neutral, scale),
+        windup: withScale(throwPoses.windup, scale),
+        strike: withScale(throwPoses.windup, scale),
       },
-      chargeWindupS: Math.max(0.05, (animation.durationS || 0.62) * (animation.windupFrac ?? 0.44)),
+      chargeWindupS: Math.max(0.05, (animation.durationS || 1.04) * (animation.windupFrac ?? 0.49)),
     };
     if (shapeKey === 'kylie' || Array.isArray(toolDef?.rangedBasicAmmoEffectIds)) {
       config.basicAmmoEffectIds = authoredEffectIds(toolDef, KYLIE_BLUNT_EFFECT_IDS);
