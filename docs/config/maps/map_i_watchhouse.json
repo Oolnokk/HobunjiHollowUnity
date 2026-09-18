@@ -5,19 +5,7 @@
   "cols": 20,
   "rows": 20,
   "furniture": [
-    {
-      "id": "f_watch_desk",
-      "itemKey": "deskFurniture",
-      "col": 9,
-      "row": 10,
-      "rotY": 180,
-      "postX": 0,
-      "postY": 0,
-      "postZ": 0,
-      "postSX": 1,
-      "postSY": 1,
-      "postSZ": 1
-    },
+    { "id": "f_watch_desk", "itemKey": "deskFurniture", "col": 9, "row": 10, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1, "gridRot": 180, "gridW": 2, "gridD": 1 },
     {
       "id": "f_watch_chair",
       "itemKey": "chairSimpleFurniture",
@@ -44,19 +32,7 @@
       "postSY": 1,
       "postSZ": 1
     },
-    {
-      "id": "f_watch_bench",
-      "itemKey": "benchFurniture",
-      "col": 13,
-      "row": 10,
-      "rotY": 90,
-      "postX": 0,
-      "postY": 0,
-      "postZ": 0,
-      "postSX": 1,
-      "postSY": 1,
-      "postSZ": 1
-    },
+    { "id": "f_watch_bench", "itemKey": "benchFurniture", "col": 14, "row": 10, "rotY": 0, "postX": -0.5, "postY": 0, "postZ": -0.5, "postSX": 1, "postSY": 1, "postSZ": 1, "gridRot": 90, "gridW": 1, "gridD": 2 },
     {
       "id": "f_watch_cell_a_roll",
       "itemKey": "bedrollFurniture",
