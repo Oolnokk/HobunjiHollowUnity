@@ -449,16 +449,18 @@
     const naturalScale = distanceScaleAtAngle + verticalRecovery;
     const noGravityLossScale = 1 + verticalRecovery;
     const resistance = THREE.MathUtils.clamp(Number(pitchDistanceResistance) || 0, 0, 1);
-    // Interpolate the EXISTING pitch loss toward its no-loss equivalent. This
-    // changes the underlying travel math rather than compensating afterward.
+    const appliedResistance = pitch > 0 ? resistance : 0; // Used only for upward aim, where gravity/vertical travel is supposed to eat horizontal lunge distance.
+    // Interpolate the EXISTING upward-pitch loss toward its no-loss equivalent.
+    // Downward aim keeps the ordinary pitch-distance behavior unchanged.
     const distanceScale = THREE.MathUtils.clamp(
-      naturalScale + (noGravityLossScale - naturalScale) * resistance,
+      naturalScale + (noGravityLossScale - naturalScale) * appliedResistance,
       0, 3.5,
     );
     return {
       pitch,
       distanceScale,
       pitchDistanceResistance: resistance,
+      appliedPitchDistanceResistance: appliedResistance,
       lungeHeightUnits: heightUnits,
       distancePx: Math.max(0, Number(baseDistancePx) || 0) * distanceScale,
       leapT,
