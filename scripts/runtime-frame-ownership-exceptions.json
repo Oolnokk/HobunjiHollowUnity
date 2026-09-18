@@ -153,15 +153,6 @@
     "line": 673
   },
   {
-    "file": "docs/js/combat/combat-core.js",
-    "owner": "Combat",
-    "classification": "timer-event",
-    "function": "track (inside startExteriorTracker)",
-    "reason": "Forever RAF loop (kicked off at line 1135, wired from the DevSpawner hook) whose only job is caching the player's last exterior-area tile position for a rare fallback lookup (inferredExteriorForArea); this cached value does not need per-frame freshness.",
-    "migrationStage": "candidate",
-    "line": 1133
-  },
-  {
     "file": "docs/js/combat/combat-input.js",
     "owner": "CombatInput",
     "classification": "one-shot",

@@ -8,14 +8,12 @@
 
   const nativeRAF = window.requestAnimationFrame.bind(window);
   const FARM_AI_INTERVAL_S = 0.2;       // 5 Hz decisions; visual interpolation remains per-frame.
-  const EXTERIOR_TRACK_INTERVAL_MS = 250; // 4 Hz blackout recovery anchor tracking.
   const NPC_ALCOHOL_INTERVAL_MS = 50;  // Existing bridge clamps dt to 0.05, so 20 Hz preserves recovery rate.
   const NPC_STATE_RECHECK_MS = 1000;
 
   const stats = {
     farmVisualFrames: 0,
     farmAiTicks: 0,
-    exteriorTicks: 0,
     alcoholFrames: 0,
     alcoholIdleStops: 0,
     profilerUnwraps: 0,
@@ -153,66 +151,6 @@
   }
 
   chainFutureGlobal('CreatureDeath', patchCreatureDeath);
-
-  // ── Combat blackout recovery anchor: keep private closure, throttle its rAF ──
-  let exteriorCallback = null;
-  let exteriorTimer = 0;
-
-  function isExteriorTrackerCallback(callback) {
-    return functionSourceIncludes(callback, 'lastExteriorAnchor', 'getCurrentArea');
-  }
-
-  function scheduleExterior(delay = EXTERIOR_TRACK_INTERVAL_MS) {
-    if (!exteriorCallback || exteriorTimer) return;
-    exteriorTimer = window.setTimeout(() => {
-      exteriorTimer = 0;
-      runExteriorTracker();
-    }, Math.max(0, delay));
-  }
-
-  function runExteriorTracker() {
-    const callback = exteriorCallback;
-    if (!callback) return;
-    const previousRAF = window.requestAnimationFrame;
-    window.requestAnimationFrame = function interceptExteriorReschedule(next) {
-      if (next === callback || isExteriorTrackerCallback(next)) {
-        exteriorCallback = next;
-        return 0;
-      }
-      return previousRAF.call(window, next);
-    };
-    try {
-      callback(performance.now());
-      stats.exteriorTicks++;
-    } finally {
-      window.requestAnimationFrame = previousRAF;
-      scheduleExterior();
-    }
-  }
-
-  function patchDevSpawner(api) {
-    if (!api?.init || api.__hobunjiExteriorCadenceWrapped) return;
-    const originalInit = api.init;
-    api.init = function optimizedDevSpawnerInit(...args) {
-      const previousRAF = window.requestAnimationFrame;
-      window.requestAnimationFrame = function interceptExteriorStart(callback) {
-        if (isExteriorTrackerCallback(callback)) {
-          exteriorCallback = callback;
-          scheduleExterior(0);
-          return 0;
-        }
-        return previousRAF.call(window, callback);
-      };
-      try {
-        return originalInit.apply(this, args);
-      } finally {
-        window.requestAnimationFrame = previousRAF;
-      }
-    };
-    api.__hobunjiExteriorCadenceWrapped = true;
-  }
-
-  chainFutureGlobal('DevSpawner', patchDevSpawner);
 
   // ── Alcohol bridge: run full-frame only while player drunken inertia needs it ──
   let alcoholCallback = null;
@@ -406,16 +344,13 @@
 
   window.HobunjiPerformanceLoopOptimizations = Object.freeze({
     FARM_AI_HZ: 1 / FARM_AI_INTERVAL_S,
-    EXTERIOR_TRACK_HZ: 1000 / EXTERIOR_TRACK_INTERVAL_MS,
     NPC_ALCOHOL_HZ: 1000 / NPC_ALCOHOL_INTERVAL_MS,
     wakeAlcohol,
     getDebug: () => ({
       ...stats,
       farmAiHz: 1 / FARM_AI_INTERVAL_S,
-      exteriorTrackHz: 1000 / EXTERIOR_TRACK_INTERVAL_MS,
       npcAlcoholHz: 1000 / NPC_ALCOHOL_INTERVAL_MS,
       alcoholCaptured: !!alcoholCallback,
-      exteriorCaptured: !!exteriorCallback,
       profilerWrapperInstalled: !!window.THREE?.WebGLRenderer?.prototype?.__hobunjiPerfWrapped,
     }),
   });

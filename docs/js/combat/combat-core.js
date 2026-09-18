@@ -1130,9 +1130,8 @@
           row: Math.floor((Number(devDeps.player?.y) || 0) / (Number(devDeps.TILE) || 1))
         };
       }
-      requestAnimationFrame(track);
     };
-    requestAnimationFrame(track);
+    setInterval(track, 250); // Caches a rare fallback lookup (inferredExteriorForArea); does not need per-frame freshness.
   }
 
   function installDevSpawnerHook(api) {
