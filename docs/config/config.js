@@ -46,6 +46,7 @@
         bruisedHealth: '#4c42a9',
         shatteredStamina: '#8c4ad9',
         poisonedHealth: '#37651c',
+        burningHealth: '#ff5a1f',
         drunkenFooting: '#000000',
         drunkenHealth: '#ff4f9a'
       }),
