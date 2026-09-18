@@ -9,8 +9,8 @@
   "assignments": {
     "aliri_ginju": {
       "area": "map_i_ginju_farmstead_F2_R2",
-      "furnitureId": "f_ginjuroom_nightstand_aliri",
-      "itemKey": "nightstandFurniture",
+      "furnitureId": "f_ginjuroom_wardrobe_aliri",
+      "itemKey": "wardrobeFurniture",
       "reason": "authored:npcWardrobeFor"
     },
     "binding_hatayap": {
@@ -57,8 +57,8 @@
     },
     "gantami_ginju": {
       "area": "map_i_ginju_farmstead_F2_R2",
-      "furnitureId": "f_ginjuroom_nightstand_gantami",
-      "itemKey": "nightstandFurniture",
+      "furnitureId": "f_ginjuroom_wardrobe",
+      "itemKey": "wardrobeFurniture",
       "reason": "authored:npcWardrobeFor"
     },
     "garanki_gabu": {
@@ -69,14 +69,14 @@
     },
     "gikali_ginju": {
       "area": "map_i_ginju_farmstead_F2_R1",
-      "furnitureId": "f_ginjuroom_nightstand",
-      "itemKey": "nightstandFurniture",
+      "furnitureId": "f_ginjuroom_wardrobe_gikali",
+      "itemKey": "wardrobeFurniture",
       "reason": "authored:npcWardrobeFor"
     },
     "gorobi_ginju": {
       "area": "map_i_ginju_farmstead_F2_R1",
-      "furnitureId": "f_ginjuroom_chest_gorobi",
-      "itemKey": "chestFurniture",
+      "furnitureId": "f_ginjuroom_wardrobe",
+      "itemKey": "wardrobeFurniture",
       "reason": "authored:npcWardrobeFor"
     },
     "hreesh": {
@@ -117,8 +117,8 @@
     },
     "namui_u_hakaru": {
       "area": "map_i_temple_basement_twins",
-      "furnitureId": "f_tbtwins_nightstand_namui",
-      "itemKey": "nightstandFurniture",
+      "furnitureId": "f_tbtwins_wardrobe_namui",
+      "itemKey": "wardrobeFurniture",
       "reason": "authored:npcWardrobeFor"
     },
     "nashka_khibu": {
@@ -153,8 +153,8 @@
     },
     "takua_ao_hakaru": {
       "area": "map_i_temple_basement_twins",
-      "furnitureId": "f_tbtwins_nightstand_takua",
-      "itemKey": "nightstandFurniture",
+      "furnitureId": "f_tbtwins_wardrobe",
+      "itemKey": "wardrobeFurniture",
       "reason": "authored:npcWardrobeFor"
     },
     "teacup_unumanuk": {
