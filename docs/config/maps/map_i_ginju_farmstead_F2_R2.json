@@ -81,14 +81,14 @@
       "rotY": 0,
       "postX": 0.068,
       "postY": 0,
-      "postZ": -0.008,
+      "postZ": 0.492,
       "postSX": 0.934,
       "postSY": 1,
-      "postSZ": 0.805,
+      "postSZ": 1.073333,
       "nonColliding": true,
       "gridRot": 0,
       "gridW": 7,
-      "gridD": 4
+      "gridD": 3
     }
   ],
   "floor": [
