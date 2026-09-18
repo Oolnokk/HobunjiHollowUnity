@@ -18762,17 +18762,21 @@
       // silhouette; forcing colorWrite off avoids touching the finished color
       // image, while forcing depthWrite on makes every visible pet/player/NPC
       // capable of blocking the shell and material-seam passes that follow.
-      function _renderPngPlaneOutlineOccluderDepth(activeScene) {
-        const materialStates = _pngOutlineMaterialStates;
-        let meshCount = 0; // Reported through the existing mobile-visible farm log when it changes.
-        // Walks each registered mesh up to its root instead of traversing the
-        // whole scene graph. Areas keep their own persistent scene per the
-        // building/zone maps in grid-tile-accessors.js, so a mesh whose root
-        // is some *other* THREE.Scene just belongs to a currently-inactive
-        // area — it's kept in the registry (compacted back in below) and
-        // skipped for this frame, not pruned. Only a root that isn't a Scene
-        // at all (the avatar's group was actually removed from every scene)
-        // means the entry is truly dead and gets dropped for good.
+      // Walks each registered mesh up to its root instead of traversing the
+      // whole scene graph. Areas keep their own persistent scene per the
+      // building/zone maps in grid-tile-accessors.js, so a mesh whose root
+      // is some *other* THREE.Scene just belongs to a currently-inactive
+      // area — it's kept in the registry, not pruned. Only a root that isn't
+      // a Scene at all (the avatar's group was actually removed from every
+      // scene) means the entry is truly dead and gets dropped for good.
+      //
+      // Called every frame regardless of s_outlines: _markPngPlane() pushes
+      // into _pngPlaneOccluderMeshes unconditionally as avatars/tools/held
+      // items are created, but _renderPngPlaneOutlineOccluderDepth (which
+      // used to be the only place this array got compacted) only runs while
+      // outlines are on. With outlines off, despawned entries would never
+      // get dropped and the array would grow for the entire session.
+      function _prunePngPlaneOccluderMeshes() {
         let writeIdx = 0;
         for (let i = 0; i < _pngPlaneOccluderMeshes.length; i++) {
           const object = _pngPlaneOccluderMeshes[i];
@@ -18780,6 +18784,18 @@
           while (root.parent) root = root.parent;
           if (!root.isScene) continue; // Despawned — drop from the registry.
           _pngPlaneOccluderMeshes[writeIdx++] = object;
+        }
+        _pngPlaneOccluderMeshes.length = writeIdx;
+      }
+
+      function _renderPngPlaneOutlineOccluderDepth(activeScene) {
+        _prunePngPlaneOccluderMeshes();
+        const materialStates = _pngOutlineMaterialStates;
+        let meshCount = 0; // Reported through the existing mobile-visible farm log when it changes.
+        for (let i = 0; i < _pngPlaneOccluderMeshes.length; i++) {
+          const object = _pngPlaneOccluderMeshes[i];
+          let root = object;
+          while (root.parent) root = root.parent;
           if (root !== activeScene) continue; // Alive, but in a different area's scene right now.
           if (!object.isMesh || !object.visible || !(object.layers.mask & (1 << PNG_PLANE_OUTLINE_OCCLUDER_LAYER))) continue;
           meshCount++;
@@ -18809,7 +18825,6 @@
             }
           }
         }
-        _pngPlaneOccluderMeshes.length = writeIdx;
         if (meshCount === 0) return;
 
         const previousLayerMask = camera.layers.mask; // Restored even if the depth replay throws.
@@ -23026,6 +23041,7 @@
           renderer.render(_postScene, _postCamera);
           window.PerfProfiler?.end(rpCompositePerf);
         } else {
+          _prunePngPlaneOccluderMeshes(); // Outlines off skips the pass that otherwise compacts this registry every frame.
           renderer.setRenderTarget(null);
           renderer.render(activeScene, camera);
           // Coloured target outline pass (layer-2 objects — green allowed, red blocked)
