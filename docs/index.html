@@ -103,7 +103,7 @@
        refresh, extracted out of game.js. Must load before game.js, which
        calls window.PlayerVitals.init(...) alongside the other
        window.*.init(...) calls. -->
-  <script src="js/player-vitals.js?v=20260916death1"></script>
+  <script src="js/player-vitals.js?v=20260918collision2"></script>
   <!-- Processing-station recipe resolution, berry/dew/alcohol key & color
        derivation, and item-wheel eligibility, extracted out of game.js.
        Must load before game.js, which calls window.ItemProcessing.init(...)
@@ -213,7 +213,8 @@
   <link rel="stylesheet" href="onboarding.css?v=20260728b">
   <script src="onboarding.js?v=20260910review1"></script>
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
-  <script src="js/combat/resource-system.js?v=20260918blackstamina1"></script>
+  <script src="js/combat/resource-system.js?v=20260918collision2"></script>
+  <script src="js/combat/knockback-collision-impact.js?v=20260918collision2"></script>
   <script src="js/combat/resource-rings.js?v=20260809a"></script>
   <script src="js/combat/combat-core.js?v=20260917charge3"></script>
   <!-- Stagger/Footing: authored 4-directional ragdoll blend clips + runtime
@@ -249,7 +250,7 @@
        doesn't matter as long as both exist by the time bandits actually
        spawn. -->
   <script src="js/combat/combat-bandit.js?v=20260917charge2"></script>
-  <script src="js/combat/combat-enemy-dodge.js?v=20260915a"></script>
+  <script src="js/combat/combat-enemy-dodge.js?v=20260918collision2"></script>
   <!-- Bandit camps (zone adapter, tent props, camp lifecycle, companion
        perception, corpse loot) — window.BanditCamps. Calls
        window.BanditCombat.makeEntity/loadGangConfig/loadCampLocaleDefs, so
