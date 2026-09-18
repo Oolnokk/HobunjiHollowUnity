@@ -20,6 +20,17 @@
   // retains the object itself, so nothing here needs to survive past one call.
   const _projectileHitStart = new THREE.Vector3();
   const _projectileHitEnd = new THREE.Vector3();
+  const _projectileCameraWorld = new THREE.Vector3();
+  const _projectileCameraDir = new THREE.Vector3();
+  const _projectileLocalCameraDir = new THREE.Vector3();
+  const _projectileFlightDir = new THREE.Vector3();
+  const _projectileFaceNormal = new THREE.Vector3();
+  const _projectileFrameRight = new THREE.Vector3();
+  const _projectileWorldUp = new THREE.Vector3(0, 1, 0);
+  const _projectileBasisMatrix = new THREE.Matrix4();
+  const _projectileCameraQuaternion = new THREE.Quaternion();
+  const _projectileSpinQuaternion = new THREE.Quaternion();
+  const _projectileInverseQuaternion = new THREE.Quaternion();
   const PROJECTILE_TRAIL_MAX_POINTS = 14; // Caps each comet ribbon's geometry and per-frame update cost.
   const PROJECTILE_TRAIL_MAX_LANES = 4; // Mirrors the melee trail's readable multi-affliction lane limit.
   const SPECIAL_AMMO_MAX = 8; // Shared character resource cap displayed by the ranged loadout and ammo arch.
@@ -345,6 +356,15 @@
 
   function playRangedActionSfx(itemKey, kind, owner = null) {
     const audio = window.AudioSystem;
+    const def = defFor(itemKey);
+    if (kind === 'fire' && def?.rangedType === 'thrown') {
+      const swingIndex = Math.floor(Math.random() * 3);
+      const swingCfg = audio?.combatSfxConfig?.()[`weaponSwing${swingIndex + 1}`];
+      lastAudioEvent = `${owner?.id || 'player'}:${itemKey}:throw-swing:2x`;
+      if (owner && swingCfg) audio?.playCreatureSfxAt?.(owner, swingCfg, 2);
+      else audio?.playWeaponSlashSfx?.(2, swingIndex);
+      return;
+    }
     const cfgEntry = audio?.combatSfxConfig?.()[kind === 'load' ? 'rangedLoad' : 'rangedFire'];
     if (!cfgEntry) return;
     const delays = itemKey === 'scatterbow'
@@ -407,6 +427,8 @@
         sequence: kind === 'fire' ? (def.fireSequence || 'fire') : (def.reloadSequence || 'attack'),
         pose,
         gripMode: def.gripMode || null,
+        toolEndFlip: def.toolEndFlip === true,
+        alignToReticle: kind === 'fire',
         windupFrac: kind === 'load' ? (def.reloadWindupFrac ?? 0.55) : (def.fireWindupFrac ?? 0.02),
         strikeFrac: kind === 'fire' ? def.fireAtFrac : (def.reloadStrikeFrac ?? 0.56),
         holdFrac: kind === 'fire' ? (def.fireHoldFrac ?? Math.min(0.99, def.fireAtFrac + 0.12)) : (def.reloadHoldFrac ?? 0.57),
@@ -447,9 +469,12 @@
       const pitch = aim?.pitch ?? deps.getPlayerAimPitch?.() ?? 0;
       const ammoPayload = playerAmmoPayload(action.itemKey);
       const heldTexture = action.def.rangedType === 'thrown' ? deps.getHeldRangedTexture?.(action.itemKey) || null : null;
+      const heldTransform = deps.getHeldRangedWorldTransform?.(action.itemKey) || null;
       const volley = spawnVolley(action.itemKey, deps.player.x, deps.player.y, angle, 'player', deps.player, ammoPayload, pitch, {
         damageScale: action.damageScale,
         textureSource: heldTexture,
+        sourceTransform: heldTransform,
+        preserveSourceOrientation: action.def.rangedType === 'thrown',
       });
       if (action.def.rangedType === 'thrown' && volley.some(Boolean)) {
         // The projectile now owns the visible weapon copy. Hide the in-hand
@@ -477,17 +502,18 @@
     collider.userData.rangedCollider = true;
     root.add(collider);
 
+    // visual owns the immutable launch frame plus any fixed-axis thrown spin.
+    // facePivot is the only camera-responsive child: it may twist around the
+    // sprite's long local Y axis, but it cannot steer the projectile or change
+    // the world-space axis the throw was spinning around when released.
     const visual = new THREE.Group();
-    visual.name = 'projectilePngDeadzoneVisual';
-    // 'YXZ' composes yaw (rotation.y, the existing camera-relative perp
-    // facing) outermost and pitch (rotation.x, the shot's launch angle)
-    // innermost, so the sprite tips up/down along its own flight axis
-    // instead of tilting around the world's fixed X axis. See
-    // updateProjectileVisual, which drives both channels every frame.
-    visual.rotation.order = 'YXZ';
+    visual.name = 'projectileLaunchFrame';
+    const facePivot = new THREE.Group();
+    facePivot.name = 'projectileCameraDeadzoneVisual';
+    visual.add(facePivot);
 
     const spinningWeapon = def.projectileVisualStyle === 'spinningWeapon';
-    const weaponSprite = spinningWeapon || def.projectileVisualStyle === 'weapon'; // Non-spinning spears still preserve the real held weapon silhouette/material.
+    const weaponSprite = spinningWeapon || def.projectileVisualStyle === 'weapon';
     let plane = null;
     let pendingAspect = 1;
     const updateAspect = loadedTexture => {
@@ -499,8 +525,6 @@
     };
     let texture = null;
     if (textureSource?.clone) {
-      // Clone the exact held texture map. Its image may already be ToolMetalRecolor's
-      // final canvas, so metal hue + verdigris leakage/removal patterns carry pixel-for-pixel.
       texture = textureSource.clone();
       texture.needsUpdate = true;
       updateAspect(texture);
@@ -518,23 +542,54 @@
       new THREE.MeshBasicMaterial({ map: texture, transparent: true, alphaTest: 0.08, side: THREE.DoubleSide })
     );
     if (weaponSprite) plane.scale.y = pendingAspect;
-    plane.rotation.x = -Math.PI / 2;
+    // Do not pre-rotate this plane. Its raw local +Y is the sprite's long
+    // axis, which lets the launch quaternion copy a held plane exactly and
+    // lets facePivot twist around that long axis without disturbing aim.
     plane.renderOrder = deps.heldObjectRenderOrder || 1.5;
-
-    let spinPivot = null;
-    if (spinningWeapon) {
-      spinPivot = new THREE.Group(); // Rotates around the flat weapon sprite's normal without disturbing camera-relative yaw/pitch on visual.
-      spinPivot.name = 'spinningThrownWeaponVisual';
-      spinPivot.add(plane);
-      visual.add(spinPivot);
-    } else {
-      visual.add(plane);
-    }
+    facePivot.add(plane);
     root.add(visual);
     root.userData.collider = collider;
     root.userData.visual = visual;
-    root.userData.spinPivot = spinPivot;
+    root.userData.facePivot = facePivot;
+    root.userData.spinningWeapon = spinningWeapon;
     return root;
+  }
+
+  function activeCameraWorldPosition(out = _projectileCameraWorld) {
+    const camera = deps.getActiveCamera?.();
+    if (!camera) return null;
+    camera.updateWorldMatrix?.(true, false);
+    return camera.getWorldPosition?.(out) || null;
+  }
+
+  function cameraPitchAxisWorld(direction, out = _projectileFrameRight) {
+    const camera = deps.getActiveCamera?.();
+    if (camera?.getWorldQuaternion) {
+      camera.updateWorldMatrix?.(true, false);
+      camera.getWorldQuaternion(_projectileCameraQuaternion);
+      return out.set(1, 0, 0).applyQuaternion(_projectileCameraQuaternion).normalize();
+    }
+    // Fallback is the launch-frame horizontal right axis.
+    out.crossVectors(_projectileWorldUp, direction);
+    if (out.lengthSq() < AIM_EPSILON) out.set(1, 0, 0);
+    return out.normalize();
+  }
+
+  function flightVisualQuaternion(direction, origin, out = new THREE.Quaternion()) {
+    const forward = _projectileFlightDir.copy(direction).normalize(); // local +Y = sprite length / flight direction
+    const cameraPos = activeCameraWorldPosition();
+    if (cameraPos) _projectileFaceNormal.copy(cameraPos).sub(origin);
+    else _projectileFaceNormal.copy(_projectileWorldUp);
+    // Camera-facing normal must stay perpendicular to the projectile's long axis.
+    _projectileFaceNormal.addScaledVector(forward, -_projectileFaceNormal.dot(forward));
+    if (_projectileFaceNormal.lengthSq() < AIM_EPSILON) {
+      _projectileFaceNormal.copy(_projectileWorldUp).addScaledVector(forward, -_projectileWorldUp.dot(forward));
+    }
+    if (_projectileFaceNormal.lengthSq() < AIM_EPSILON) _projectileFaceNormal.set(0, 0, 1);
+    _projectileFaceNormal.normalize(); // local +Z = sprite face normal
+    _projectileFrameRight.crossVectors(forward, _projectileFaceNormal).normalize(); // x × y = z when x = y × z
+    _projectileBasisMatrix.makeBasis(_projectileFrameRight, forward, _projectileFaceNormal);
+    return out.setFromRotationMatrix(_projectileBasisMatrix);
   }
 
   function fishingMaceSpinRateRad() {
@@ -635,34 +690,57 @@
     if (!def) return null;
     const scene = deps.getActiveScene();
     const mesh = createProjectileMesh(def, def.projectileRadiusPx, shotOptions?.textureSource || null);
+    const sourceTransform = shotOptions?.sourceTransform || null;
+    const sourcePosition = sourceTransform?.position;
+    const hasSourcePosition = Number.isFinite(sourcePosition?.x) && Number.isFinite(sourcePosition?.y) && Number.isFinite(sourcePosition?.z);
+    const spawnX = hasSourcePosition ? sourcePosition.x * deps.TILE : x;
+    const spawnY = hasSourcePosition ? sourcePosition.z * deps.TILE : y;
+    const surfaceY = ownerElevationY(owner, spawnX, spawnY);
+    const worldY = hasSourcePosition ? sourcePosition.y : surfaceY + 0.55;
+    mesh.position.set(spawnX / deps.TILE, worldY, spawnY / deps.TILE);
+    scene.add(mesh);
+
+    const horizSpeedPxS = def.speedPxS * Math.cos(pitch);
+    const direction = new THREE.Vector3(
+      Math.cos(angle) * Math.cos(pitch),
+      Math.sin(pitch),
+      Math.sin(angle) * Math.cos(pitch)
+    ).normalize();
+    const baseVisualQuaternion = (shotOptions?.preserveSourceOrientation && sourceTransform?.quaternion?.isQuaternion)
+      ? sourceTransform.quaternion.clone()
+      : flightVisualQuaternion(direction, mesh.position, new THREE.Quaternion());
+    const fixedPitchAxisWorld = cameraPitchAxisWorld(direction, new THREE.Vector3()).clone();
+    mesh.userData.visual.quaternion.copy(baseVisualQuaternion);
+    if (shotOptions?.preserveSourceOrientation && sourceTransform?.scale?.isVector3) {
+      mesh.userData.visual.scale.copy(sourceTransform.scale);
+    }
+
     const afflictionBonuses = projectileAfflictionBonuses(def, team, ammoPayload);
     const trailColors = projectileTrailColors(afflictionBonuses, ammoPayload?.trailColors);
-    const surfaceY = ownerElevationY(owner, x, y);
-    const worldY = surfaceY + 0.55;
-    mesh.position.set(x / deps.TILE, worldY, y / deps.TILE);
-    scene.add(mesh);
-    const horizSpeedPxS = def.speedPxS * Math.cos(pitch);
     const p = {
-      itemKey, def, team, owner, mesh, visual: mesh.userData.visual, spinPivot: mesh.userData.spinPivot,
-      x, y, prevX: x, prevY: y, worldY, prevWorldY: worldY,
+      itemKey, def, team, owner, mesh,
+      visual: mesh.userData.visual, facePivot: mesh.userData.facePivot,
+      x: spawnX, y: spawnY, prevX: spawnX, prevY: spawnY, worldY, prevWorldY: worldY,
       vx: Math.cos(angle) * horizSpeedPxS, vy: Math.sin(angle) * horizSpeedPxS,
       vyWorld: Math.sin(pitch) * (def.speedPxS / deps.TILE),
       angle, pitch, distancePx: 0,
       effectiveRangePx: def.rangeTiles * deps.TILE,
       maxDistancePx: def.rangeTiles * deps.TILE * RANGE_FALLOFF_DISTANCE_MULTIPLIER,
-      areaId: deps.getCurrentArea(), pngRot: -angle + Math.PI / 2, perpState: {}, dead: false,
-      spinRad: 0, spinRateRad: mesh.userData.spinPivot ? fishingMaceSpinRateRad() : 0,
+      areaId: deps.getCurrentArea(), dead: false,
+      baseVisualQuaternion,
+      fixedPitchAxisWorld,
+      faceTwistRad: 0,
+      spinRad: 0,
+      spinRateRad: mesh.userData.spinningWeapon ? fishingMaceSpinRateRad() : 0,
       afflictionBonuses, trailAfflictionIds: trailColors.map(entry => entry.id),
       ammoId: ammoPayload?.ammoId || 'enemy',
       specialAmmoId: ammoPayload?.specialAmmoId || null,
       knockbackMul: Number(ammoPayload?.knockbackMul) || 1,
       footingDamageMultiplier: Number(ammoPayload?.footingDamageMultiplier) || 0,
       damageScale: Number.isFinite(Number(shotOptions?.damageScale)) ? Math.max(0, Math.min(1, Number(shotOptions.damageScale))) : 1,
-      trailPoints: [{ x: x / deps.TILE, y: surfaceY + 0.54, z: y / deps.TILE }],
+      trailPoints: [{ x: spawnX / deps.TILE, y: worldY, z: spawnY / deps.TILE }],
       trailMeshes: createProjectileTrails(scene, trailColors, def.projectileRadiusPx),
     };
-    p.visual.rotation.y = p.pngRot;
-    p.visual.rotation.x = p.pitch;
     projectiles.push(p);
     return p;
   }
@@ -1059,39 +1137,38 @@
     return true;
   }
 
-  // Only ever touches p.visual/p.pngRot for the readable camera-relative
-  // facing (plus the launch-pitch tilt added below) — purely cosmetic:
-  // the root sphere's vx/vy and trajectory angle are never changed here,
-  // so this deadzone sway/snap can't steer where the projectile actually
-  // flies or lands.
-  function updateProjectileVisual(p, dt, sharedPerps = null) {
-    const rawTargetRotY = -p.angle + Math.PI / 2;
-    const perps = sharedPerps || deps.cameraRelativeCreaturePerps();
-    const deadRad = PROJECTILE_PERP_DEAD_RAD;
-    const mode = window.PerpRotation?.CREATURE_PLANE_ROT_MODE;
-    if (mode === 'snap') {
-      const result = window.PerpRotation.creatureSnapSwayTarget(p.perpState, rawTargetRotY, perps, deadRad, dt, true);
-      if (result.snap) p.pngRot = result.target;
-      else p.pngRot += deps.angleDiff(result.target, p.pngRot) * Math.min(1, dt * 10);
-    } else if (mode === 'sway') {
-      const target = window.PerpRotation.creatureDeadzoneTarget(p.perpState, rawTargetRotY, perps, deadRad, dt, true);
-      p.pngRot += deps.angleDiff(target, p.pngRot) * Math.min(1, dt * 10);
-    } else if (window.PerpRotation?.perpClamp) {
-      const result = window.PerpRotation.perpClamp(p.perpState, rawTargetRotY, perps, deadRad);
-      if (result.snapTo !== null) p.pngRot = result.effectiveTarget;
-      else p.pngRot += deps.angleDiff(result.effectiveTarget, p.pngRot) * Math.min(1, dt * 10);
-    }
-    p.visual.rotation.y = p.pngRot;
-    // Tips the flat sprite up/down to match its launch pitch (there was no
-    // vertical aiming when this projectile visual was first built, so it
-    // only ever carried the horizontal snap/sway rotation above). Constant
-    // per shot — crossbow/scatterbow bolts fly a straight, gravity-free
-    // line, so pitch never changes over a projectile's flight.
-    p.visual.rotation.x = p.pitch;
-    if (p.spinPivot && p.spinRateRad) {
+  // Projectile trajectory/orientation is frozen in its launch frame. Camera
+  // movement after release may only twist the INTERNAL flat sprite around its
+  // own long axis within an animal-style ±15° deadzone; it can never change
+  // the fixed spin axis or flight direction.
+  function updateProjectileVisual(p, dt) {
+    if (p.spinRateRad) {
       p.spinRad = (p.spinRad + p.spinRateRad * dt) % (Math.PI * 2);
-      p.spinPivot.rotation.x = p.spinRad; // Combat Editor tool Pitch is local X; spin end-over-end on that authored axis.
+      _projectileSpinQuaternion.setFromAxisAngle(p.fixedPitchAxisWorld, p.spinRad);
+      p.visual.quaternion.copy(_projectileSpinQuaternion).multiply(p.baseVisualQuaternion);
+    } else {
+      p.visual.quaternion.copy(p.baseVisualQuaternion);
     }
+
+    const cameraPos = activeCameraWorldPosition();
+    if (!cameraPos || !p.facePivot) return;
+    _projectileCameraDir.copy(cameraPos).sub(p.mesh.position);
+    if (_projectileCameraDir.lengthSq() < AIM_EPSILON) return;
+    _projectileInverseQuaternion.copy(p.visual.quaternion).invert();
+    _projectileLocalCameraDir.copy(_projectileCameraDir).applyQuaternion(_projectileInverseQuaternion);
+    // local +Y is sprite length. Project camera direction into XZ so this
+    // adjustment is only a face/readability twist around that long axis.
+    _projectileLocalCameraDir.y = 0;
+    if (_projectileLocalCameraDir.lengthSq() < AIM_EPSILON) return;
+    _projectileLocalCameraDir.normalize();
+    const targetTwist = Math.atan2(_projectileLocalCameraDir.x, _projectileLocalCameraDir.z);
+    const diff = deps.angleDiff(targetTwist, p.faceTwistRad);
+    let desiredTwist = p.faceTwistRad;
+    if (Math.abs(diff) > PROJECTILE_PERP_DEAD_RAD) {
+      desiredTwist += diff - Math.sign(diff) * PROJECTILE_PERP_DEAD_RAD;
+    }
+    p.faceTwistRad += deps.angleDiff(desiredTwist, p.faceTwistRad) * Math.min(1, dt * 10);
+    p.facePivot.rotation.y = p.faceTwistRad;
   }
 
   function disposeProjectile(p) {
@@ -1110,7 +1187,6 @@
   }
 
   function updateProjectiles(dt) {
-    const sharedPerps = projectiles.some(p => !p.dead) ? deps.cameraRelativeCreaturePerps() : null;
     for (const p of projectiles) {
       if (p.dead) continue;
       if (p.areaId !== deps.getCurrentArea()) { disposeProjectile(p); continue; }
@@ -1125,7 +1201,7 @@
       p.mesh.position.x = p.x / deps.TILE;
       p.mesh.position.z = p.y / deps.TILE;
       p.mesh.position.y = p.worldY;
-      updateProjectileVisual(p, dt, sharedPerps);
+      updateProjectileVisual(p, dt);
       updateProjectileTrails(p);
     }
     for (let i = projectiles.length - 1; i >= 0; i--) if (projectiles[i].dead) projectiles.splice(i, 1);
