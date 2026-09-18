@@ -76,6 +76,37 @@
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
   const nowMs = () => (window.performance?.now?.() ?? Date.now());
 
+  function toCssHexColor(value) {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      const normalized = value & 0xffffff; // Used to turn ResourceRings' numeric Three.js colors into six-digit CSS colors.
+      return `#${normalized.toString(16).padStart(6, '0')}`;
+    }
+    const text = String(value || '').trim(); // Used to accept the config's canonical #rrggbb strings without changing their hue.
+    if (/^#[0-9a-f]{6}$/i.test(text)) return text.toLowerCase();
+    if (/^[0-9a-f]{6}$/i.test(text)) return `#${text.toLowerCase()}`;
+    return '';
+  }
+
+  function visibleRingColor(value) {
+    const numeric = typeof value === 'number'
+      ? value
+      : Number.parseInt(String(value || '').trim().replace(/^#/, ''), 16); // Used as the Three.js-compatible source color passed through the same neon transform as ring fills.
+    if (!Number.isFinite(numeric)) return '';
+    const neonize = window.ResourceRings?.neonizeColor; // Used to match the color players actually see after makeGlowArcMesh transforms the source palette.
+    return toCssHexColor(typeof neonize === 'function' ? neonize(numeric) : numeric);
+  }
+
+  function configuredResourceColor(resource) {
+    const key = String(resource || '').toLowerCase(); // Used to fall back to the exact visible base ring color when an affliction lacks a dedicated palette entry.
+    return visibleRingColor(window.HOBUNJI_CONFIG?.resourceRings?.colors?.[key]);
+  }
+
+  function exactAfflictionColor(id, definition) {
+    const runtimeColor = window.ResourceRings?.AFFLICTION_COLORS?.[id]; // Used first so runtime-added/overridden afflictions match the source palette the ring actually consumes.
+    const configuredColor = window.HOBUNJI_CONFIG?.resourceRings?.afflictionColors?.[id]; // Used during early loading if ResourceRings is not available yet.
+    return visibleRingColor(runtimeColor ?? configuredColor) || configuredResourceColor(definition?.resource);
+  }
+
   function revealTankanScript() {
     state.tankanFontSettled = true;
     state.els?.root.classList.add('tankan-font-settled');
@@ -157,9 +188,9 @@
 #hlsDebug.visible{display:block}
 .hlsProperNoun{color:#e8c86b}
 .hlsSystemTerm{color:#8fd0ff}
-.hlsResourceHealth{color:#ff7777}
-.hlsResourceStamina{color:#ffd76b}
-.hlsResourceFooting{color:#9fd6a4}
+.hlsResourceHealth{color:var(--hls-resource-health,#55d76f)}
+.hlsResourceStamina{color:var(--hls-resource-stamina,#67b7ff)}
+.hlsResourceFooting{color:var(--hls-resource-footing,#d9a441)}
 .hlsAfflictedResource{font-weight:700;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:.14em}
 .hlsAttackQuick{color:#f6a65c;font-weight:700}
 .hlsAttackHeld{color:#bd9cff;font-weight:700}
@@ -170,6 +201,10 @@
 
     const root = document.createElement('div');
     root.id = 'hobunjiLoadScreen';
+    const resourceColors = window.HOBUNJI_CONFIG?.resourceRings?.colors || {}; // Used to keep ordinary resource-name highlighting synchronized with the actual ground-ring palette.
+    root.style.setProperty('--hls-resource-health', visibleRingColor(resourceColors.health) || '#55d76f');
+    root.style.setProperty('--hls-resource-stamina', visibleRingColor(resourceColors.stamina) || '#67b7ff');
+    root.style.setProperty('--hls-resource-footing', visibleRingColor(resourceColors.footing) || '#d9a441');
     root.innerHTML = `
 <img id="hlsImage" alt="" />
 <div id="hlsScriptViewport"><div id="hlsScriptFloat"><div id="hlsScriptWords"></div></div></div>
@@ -223,6 +258,7 @@
       `visibleFor=${Math.round(state.visible ? nowMs() - state.visibleSince : 0)}ms min=${MIN_VISIBLE_MS}ms`,
       `tipRotation=${TIP_ROTATE_MS}ms active=${!!state.tipTimer}`,
       `transitionHook=${state.transitionHookInstalled} dependencyInitHooks=${state.dependencyInitHooks}`,
+      `afflictionPalette=${Object.keys(window.ResourceSystem?.AFFLICTIONS || {}).filter(id => window.ResourceRings?.AFFLICTION_COLORS?.[id] != null || window.HOBUNJI_CONFIG?.resourceRings?.afflictionColors?.[id] != null).length}/${Object.keys(window.ResourceSystem?.AFFLICTIONS || {}).length}`,
       `feature=${state.activeTipTitle || '(none)'}`,
       `tip=${state.activeTip || '(none)'}`,
     ].join('\n');
@@ -325,7 +361,7 @@
     if (!state.semanticRulesCache) {
       const rules = semanticRules();
       state.semanticRulesCache = {
-        byTerm: new Map(rules.map(([term, className]) => [term.toLowerCase(), className])),
+        byTerm: new Map(rules.map(([term, className, color]) => [term.toLowerCase(), { className, color }])),
         pattern: new RegExp(rules.map(([term]) => escapeRegExp(term)).join('|'), 'gi'),
       };
     }
@@ -379,7 +415,7 @@
     }
 
     const registry = window.ResourceSystem?.AFFLICTIONS || {};
-    for (const definition of Object.values(registry)) {
+    for (const [id, definition] of Object.entries(registry)) { // The registry id is used to resolve the exact color of the afflicted ring segment.
       const name = String(definition?.name || '').trim();
       if (!name) continue;
       const resource = String(definition?.resource || '').toLowerCase();
@@ -387,7 +423,8 @@
         : resource === 'stamina' ? 'hlsResourceStamina'
           : resource === 'footing' ? 'hlsResourceFooting'
             : 'hlsSystemTerm';
-      rules.push([name, `${resourceClass} hlsAfflictedResource`]);
+      const color = exactAfflictionColor(id, definition); // Used by both loading-tip headers and body copy so the affliction name matches its ring segment exactly.
+      rules.push([name, `${resourceClass} hlsAfflictedResource`, color]);
     }
     return rules.sort((a, b) => b[0].length - a[0].length);
   }
@@ -404,7 +441,9 @@
     for (const match of source.matchAll(pattern)) {
       if (match.index > cursor) container.appendChild(document.createTextNode(source.slice(cursor, match.index)));
       const span = document.createElement('span');
-      span.className = byTerm.get(match[0].toLowerCase()) || 'hlsSystemTerm';
+      const semantic = byTerm.get(match[0].toLowerCase()); // Used to apply both the vocabulary class and an optional exact affliction color.
+      span.className = semantic?.className || 'hlsSystemTerm';
+      if (semantic?.color) span.style.color = semantic.color;
       span.textContent = match[0];
       container.appendChild(span);
       cursor = match.index + match[0].length;
@@ -413,7 +452,7 @@
   }
 
   function renderActiveTip(els, text) {
-    els.loreHeader.textContent = state.activeTipTitle || 'Compendium';
+    renderRichTip(els.loreHeader, state.activeTipTitle || 'Compendium');
     renderRichTip(els.lore, text);
   }
 
