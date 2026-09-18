@@ -134,6 +134,20 @@ const equipmentDeps = {
   showToast() {},
 };
 windowStub.EquipmentPanel.init(equipmentDeps);
+windowStub.FurniturePlacer.init({
+  getCurrentArea: () => 'interior',
+  getDecorativeFurnitureDefs: () => ({ loom: { itemKey: 'loomFurniture', fw: 1, fd: 2 } }),
+  getPlacedFurniture: () => [],
+});
+const loomSize = api.__test.loomFootprint(0); // Verifies player-placed loom targeting uses the same 1x2 footprint as furniture placement.
+assert.equal(loomSize.fw, 1, 'unrotated loom targeting keeps its one-tile width');
+assert.equal(loomSize.fd, 2, 'unrotated loom targeting covers both occupied depth tiles');
+const turnedLoomSize = api.__test.loomFootprint(90); // Verifies a quarter-turn follows the placement system's swapped footprint.
+assert.equal(turnedLoomSize.fw, 2, '90-degree loom targeting covers both horizontal tiles');
+assert.equal(turnedLoomSize.fd, 1, '90-degree loom targeting keeps its one-tile depth');
+const farEndAim = { col: 10.5, row: 11.5 }; // Models aiming at the second tile of an unrotated loom, which the old first-tile-center test missed.
+assert.equal(api.__test.distanceToLoomFootprint(farEndAim, { col: 10, row: 10, ...loomSize }), 0, 'the far half of a 1x2 placed loom is directly targetable');
+assert.equal(api.__test.distanceToLoomFootprint({ col: 11.5, row: 10.5 }, { col: 10, row: 10, ...turnedLoomSize }), 0, 'rotated loom occupied tiles remain directly targetable');
 const lightTunic = {
   uid: 'woven-1',
   cosmeticId: 'tankan_tunic#loom:woven-1',
