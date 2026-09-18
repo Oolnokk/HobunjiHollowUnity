@@ -6,7 +6,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 2;
+  const VERSION = 3;
   const PATCH_RETRY_MS = 50; // Used while game.js finishes constructing generated metal weapon definitions.
   const PATCH_RETRY_LIMIT = 160; // Used to stop the bootstrap poll after roughly eight seconds instead of polling forever.
   const THROWN_HOLD_VISUAL_S = 3600; // Used to park the ranged visual at its authored windup without adding another game.js hold state.
@@ -363,6 +363,14 @@
     return !!shapeKey;
   }
 
+  function registerNpcThrownDefinition(itemKey, def) {
+    const ranged = window.RangedWeapons; // Existing ranged state/config registry used by NPC ranged combat without exposing this melee item in the player's ranged slot.
+    if (!itemKey || !def || !ranged?.config) return false;
+    ranged.config[itemKey] = thrownConfig(itemKey, def);
+    ranged.setLoaded?.(itemKey, false);
+    return true;
+  }
+
   function patchGeneratedDefinitions() {
     const defs = toolDefinitions();
     if (!defs || !window.RangedWeapons?.config) return false;
@@ -529,6 +537,7 @@
   window.HobunjiRangedWeaponArchetypes = {
     version: VERSION,
     patchGeneratedDefinitions,
+    registerNpcThrownDefinition,
     beginThrownCharge,
     releaseThrownCharge,
     cancelThrownCharge,
