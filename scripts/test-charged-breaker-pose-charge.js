@@ -15,6 +15,7 @@ const stanceSource = fs.readFileSync('docs/js/weapon-tool-stances.js', 'utf8'); 
 const shoulderSource = fs.readFileSync('docs/js/hand-shoulder-pose-runtime.js', 'utf8'); // Shoulder metadata must scale with the same partial release percentage.
 const gripSource = fs.readFileSync('docs/js/hand-tool-grips.js', 'utf8'); // Secondary-grip metadata must scale with the same partial release percentage.
 const banditSource = fs.readFileSync('docs/js/combat/combat-bandit.js', 'utf8'); // Bandit mirror keeps legacy heavy identity separate from sampled pose amplitude.
+const cameraBridgeSource = fs.readFileSync('docs/js/combat/combat-camera-alignment-bridge.js', 'utf8'); // Shared perspective-point lunge wrapper must preserve the 3D flight profile.
 const config = JSON.parse(fs.readFileSync('docs/config/combat/attack-values.json', 'utf8')); // Authored production tuning.
 
 assert.match(coreSource, /function windupPoseProgress[\s\S]{0,500}Math\.log1p\(s \* t\) \/ Math\.log1p\(s\)/,
@@ -31,6 +32,16 @@ assert.match(breakerSource, /releaseWeaponSwingHold\(\{ poseProgress: poseCharge
   'Charged Breaker sends that same pose percentage back to the weapon renderer on release');
 assert.match(coreSource, /pitchDistanceResistance[\s\S]{0,1400}appliedResistance = pitch > 0 \? resistance : 0[\s\S]{0,600}noGravityLossScale - naturalScale/,
   'vertical-lunge resistance weakens only the upward pitch-distance loss inside the shared lunge profile');
+assert.match(coreSource, /straightHorizontalScale = Math\.cos\(absPitch\)[\s\S]{0,500}verticalTravelUnits: baseDistanceWorld \* Math\.sin\(pitch\) \* direct/,
+  'direct-flight lunges split authored distance into horizontal and signed vertical legs of one 3D aim vector');
+assert.match(coreSource, /hopUnits: ballisticHopUnits \* \(1 - direct\)/,
+  'direct-flight strength removes the curved hop instead of stacking it on top of straight aerial travel');
+assert.match(gameSource, /lungeFlightWorldY = player\.lungeFlightStartWorldY[\s\S]{0,220}player\.lungeVerticalTravelUnits \* eased/,
+  'player runtime advances world-Y on the same lunge progress parameter as XZ');
+assert.match(gameSource, /directY = player\.lunging \? window\.FormatUtils\.clamp\(player\.lungeDirectFlightStrength/,
+  'rendered player/hitbox Y approaches exact flight authority as direct-flight strength rises');
+assert.match(cameraBridgeSource, /hitTest\?\.directFlightStrength \|\| 0/,
+  'camera-authored lunges preserve Charged Breaker direct-flight strength');
 assert.match(breakerSource, /beginStagedAction\(\{[\s\S]{0,500}windupS: strikeS,[\s\S]{0,160}strikeS: 0/,
   'released Charged Breaker waits through its visible strike/lunge arc before resolving impact');
 assert.match(counterSource, /window\.Combat\.weaponChargeGlow = \{/,
@@ -80,6 +91,10 @@ assert(config.chargedBreaker.KNOCKBACK_MUL_MAX > config.chargedBreaker.KNOCKBACK
   'knockback grows with pose charge');
 assert(config.chargedBreaker.LUNGE_GRAVITY_RESIST_MAX > config.chargedBreaker.LUNGE_GRAVITY_RESIST_MIN,
   'upward-lunge gravity resistance grows with pose charge');
+assert(config.chargedBreaker.LUNGE_DIRECT_FLIGHT_MAX >= 0.95,
+  'maximum pose charge is authored as an almost fully straight 3D lunge');
+assert(config.chargedBreaker.LUNGE_DIRECT_FLIGHT_MAX > config.chargedBreaker.LUNGE_DIRECT_FLIGHT_MIN,
+  'straight-line aerial authority grows with pose charge');
 
 let nowMs = 1000; // Used to prove elapsed hold time is not the authoritative power value.
 let livePoseCharge = 0.73; // Used as the visible Neutral→Windup pose percentage returned by game.js.
@@ -171,11 +186,15 @@ assert(Math.abs(lungeCall.distancePx / 64 - expectedLungeTiles) < 1e-12,
 const expectedResistance = 0.9 * 0.73;
 assert(Math.abs(lungeCall.hitTest.pitchDistanceResistance - expectedResistance) < 1e-12,
   'upward-lunge gravity resistance scales from pose charge');
+const expectedDirectFlight = 0.98 * 0.73;
+assert(Math.abs(lungeCall.hitTest.directFlightStrength - expectedDirectFlight) < 1e-12,
+  'straight-line 3D flight authority scales from the same visible pose charge');
 assert(stagedCall, 'pose-authoritative release still commits the strike');
 
 // Same visible pose, radically different elapsed time: gameplay power must be identical.
 const firstDistance = lungeCall.distancePx;
 const firstResistance = lungeCall.hitTest.pitchDistanceResistance;
+const firstDirectFlight = lungeCall.hitTest.directFlightStrength;
 releaseArgs = null;
 lungeCall = null;
 player.stamina = 100;
@@ -189,5 +208,7 @@ assert.equal(lungeCall.distancePx, firstDistance,
   'same visible pose produces the same lunge distance regardless of elapsed hold time');
 assert.equal(lungeCall.hitTest.pitchDistanceResistance, firstResistance,
   'same visible pose produces the same gravity resistance regardless of elapsed hold time');
+assert.equal(lungeCall.hitTest.directFlightStrength, firstDirectFlight,
+  'same visible pose produces the same 3D flight strength regardless of elapsed hold time');
 
 console.log('Charged Breaker pose-authoritative charge + shared glow regression passed');
