@@ -183,8 +183,12 @@
       };
 
       window.Combat.beginStagedAction({
-        windupS: 0,
-        strikeS,
+        // The held Neutral→Windup portion has already happened before release.
+        // Treat the visible release→Strike arc as the remaining pre-impact phase
+        // so the charge-scaled lunge can actually carry the player into range
+        // before damage resolves at the partial Strike endpoint.
+        windupS: strikeS,
+        strikeS: 0,
         recoverS: 0,
         onStrike: () => {
           const vegetationCleared = deps.clearVegetationInAttackCone?.(
