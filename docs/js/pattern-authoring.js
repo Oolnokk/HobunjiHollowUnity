@@ -193,23 +193,39 @@
   }
 
   // Finds the ink's own tight opaque bounds on a SKETCH_CANVAS_SIZE-square
-  // ImageData — same threshold (alpha>16) and shape as buildPatternMask's
-  // own findOpaqueBounds, so the frame tool's reference cell size always
-  // matches what the real renderer will actually use.
-  function opaqueBoundsOf(imageData) {
+  // ImageData, measured on each opaque pixel's position AFTER rotating it
+  // by rad around the image's own center (rad=0 is a plain, unrotated
+  // bounds search) — matching buildPatternMask/buildAuthoredClearedMask's
+  // own srcCtx.rotate step (see clothing-weaving-system.js), which rotates
+  // the WHOLE sketch by motifRotationDeg before ever measuring the ink's
+  // bounds. Skipping this rotation (as the frame tool used to) made its
+  // on-screen frame sized and centered for the UNROTATED ink while the
+  // real renderer cropped the ROTATED one — a mismatch that grows with the
+  // rotation angle and was the source of both the "auto-detect clips the
+  // edges" and "an empty-looking frame still catches ink" reports. Returns
+  // bounds in the SAME coordinate frame as the input (origin at its
+  // top-left, pivot at its own center) rather than a separate rotated
+  // canvas, so frameCenterScreen()'s existing frameX/frameY math (and the
+  // real renderer's winCenterX/winCenterY) stay directly comparable. Works
+  // in float space rather than snapping to a rasterized pixel grid the way
+  // the real renderer's own findOpaqueBounds does, so bounds can differ
+  // from the real crop by roughly a pixel — a rotated raster's own
+  // nearest-neighbor sampling doesn't land anywhere more precise either.
+  function rotatedOpaqueBounds(imageData, rad) {
     const { data, width, height } = imageData;
-    let x0 = width, y0 = height, x1 = -1, y1 = -1, count = 0;
+    const cx = width / 2, cy = height / 2, c = Math.cos(rad), s = Math.sin(rad);
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, count = 0;
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         if (data[(y * width + x) * 4 + 3] <= 16) continue;
         count++;
-        if (x < x0) x0 = x;
-        if (x > x1) x1 = x;
-        if (y < y0) y0 = y;
-        if (y > y1) y1 = y;
+        const dx = x - cx, dy = y - cy;
+        const rx = dx * c - dy * s + cx, ry = dx * s + dy * c + cy; // Same forward rotation ctx.rotate(rad) applies when drawing.
+        if (rx < x0) x0 = rx; if (rx > x1) x1 = rx;
+        if (ry < y0) y0 = ry; if (ry > y1) y1 = ry;
       }
     }
-    return count ? { x0, y0, x1, y1, w: x1 - x0 + 1, h: y1 - y0 + 1 } : null;
+    return count ? { x0, y0, x1, y1, w: x1 - x0, h: y1 - y0 } : null;
   }
 
   function openEditor(options = {}) {
@@ -423,17 +439,33 @@
     const FRAME_HANDLE_RADIUS = 7;
     let frameDrag = null; // { mode: 'translate'|'transform', startX, startY, startFrameX, startFrameY, baseCorner }
 
+    // Ink bounds are measured AFTER rotating by motifRotationDeg (see
+    // rotatedOpaqueBounds above) so this tool's own size/position reference
+    // always matches what buildPatternMask/buildAuthoredClearedMask will
+    // actually crop, whatever angle the motif is drawn at.
     function currentBasis() {
       let bbox = null;
-      try { bbox = opaqueBoundsOf(sketchCtx.getImageData(0, 0, SKETCH_CANVAS_SIZE, SKETCH_CANVAS_SIZE)); } catch { /* ignore */ }
+      try {
+        const rad = ((Number(cfg.motifRotationDeg) || 0) * Math.PI) / 180;
+        bbox = rotatedOpaqueBounds(sketchCtx.getImageData(0, 0, SKETCH_CANVAS_SIZE, SKETCH_CANVAS_SIZE), rad);
+      } catch { /* ignore */ }
       const w = bbox?.w || SKETCH_SIZE * 0.4, h = bbox?.h || SKETCH_SIZE * 0.4;
       const shape = frameShapeFor(cfg.frameShape);
       const { u, v } = shape.basis(w, h);
-      return { shape, u, v };
+      return { shape, u, v, bbox, w, h };
     }
 
-    function frameCenterScreen() {
-      return { x: SKETCH_CANVAS_SIZE / 2 + (Number(cfg.frameX) || 0), y: SKETCH_CANVAS_SIZE / 2 + (Number(cfg.frameY) || 0) };
+    // The frame's own (0,0) origin is the ink's own rotated-bounds center —
+    // NOT the raw sketch canvas center — exactly matching
+    // buildPatternMask's winCenterX/winCenterY (bbox.x0+bbox.w/2+frameX).
+    // Anchoring on the canvas center instead (as this used to) drifts from
+    // the real crop for any motif not drawn dead-center, which is how a
+    // frame that visually looked clear of the ink could still catch a
+    // sliver of it in the real render.
+    function frameCenterScreen(bbox) {
+      const originX = bbox ? bbox.x0 + bbox.w / 2 : SKETCH_CANVAS_SIZE / 2;
+      const originY = bbox ? bbox.y0 + bbox.h / 2 : SKETCH_CANVAS_SIZE / 2;
+      return { x: originX + (Number(cfg.frameX) || 0), y: originY + (Number(cfg.frameY) || 0) };
     }
     function rotatePoint(x, y, rad) {
       const c = Math.cos(rad), s = Math.sin(rad);
@@ -446,13 +478,10 @@
       frameCtx.drawImage(sketchCanvas, 0, 0);
       frameCtx.globalAlpha = 1;
 
-      const { shape, u, v } = currentBasis();
-      let bbox = null;
-      try { bbox = opaqueBoundsOf(sketchCtx.getImageData(0, 0, SKETCH_CANVAS_SIZE, SKETCH_CANVAS_SIZE)); } catch { /* ignore */ }
-      const w = bbox?.w || SKETCH_SIZE * 0.4, h = bbox?.h || SKETCH_SIZE * 0.4;
+      const { shape, u, v, bbox, w, h } = currentBasis();
       const scale = Math.max(0.05, Number(cfg.frameScale) || 1);
       const rad = ((Number(cfg.frameRotationDeg) || 0) * Math.PI) / 180;
-      const center = frameCenterScreen();
+      const center = frameCenterScreen(bbox);
       const toScreen = (localX, localY) => {
         const spun = rotatePoint(localX * scale, localY * scale, rad);
         return { x: center.x + spun.x, y: center.y + spun.y };
@@ -471,36 +500,37 @@
         });
         frameCtx.closePath();
       }
-      // Outlining both paired halves (unfilled) traces the SAME rectangle
-      // perimeter regardless of shape — a triangle and a trapezoid both
-      // combine into a plain rectangle silhouette, so a stroke-only
-      // drawing always looks like "a square with a diagonal," whatever
-      // shape is actually selected. Filling each half its own color is
-      // what actually makes the real clip shape visible.
-      // Deliberately NOT teal/orange — those are the handle dots' own
-      // colors (below), and a fill using the same hues is easy to confuse
-      // with them in a small preview.
+      // Filling ONLY the primary polygon (never its paired 180°-partner)
+      // is what actually makes a triangle/trapezoid frame look like the
+      // shape it's named after — the crop window is that one shape, full
+      // stop. Filling both halves used to be how this drew (to prove the
+      // pairing tiles seamlessly), but for a paired shape that always
+      // covers the whole bounding rectangle either way, so it read as "a
+      // square with a diagonal," not a triangle — exactly backwards from
+      // what this tool is for now that the frame IS the crop, not just a
+      // tiling-pitch guide. The partner still gets a thin, unfilled
+      // outline so its existence isn't hidden, just not confused with the
+      // frame itself.
       const polygon = shape.polygon ? shape.polygon(w, h) : null;
       frameCtx.save();
       frameCtx.lineWidth = 1.5;
       frameCtx.setLineDash([4, 3]);
       if (polygon) {
+        if (shape.paired) {
+          // The 180°-partner — this same polygon rotated about the cell's
+          // own center (w/2,h/2), mirroring exactly how buildPatternMask/
+          // buildAuthoredClearedMask stamp it — outlined only, dimmer than
+          // the frame itself, so it reads as "also tiles here" rather than
+          // "also part of the crop."
+          tracePolygon(polygon.map(p => ({ x: w - p.x, y: h - p.y })));
+          frameCtx.strokeStyle = 'rgba(255,255,255,.28)';
+          frameCtx.stroke();
+        }
         tracePolygon(polygon);
         frameCtx.fillStyle = 'rgba(90,140,235,.45)';
         frameCtx.strokeStyle = '#5a8ceb';
         frameCtx.fill();
         frameCtx.stroke();
-        if (shape.paired) {
-          // The 180°-partner — this same polygon rotated about the cell's
-          // own center (w/2,h/2) — mirrors exactly how buildPatternMask/
-          // buildAuthoredClearedMask stamp it, so this always matches the
-          // real render's two halves.
-          tracePolygon(polygon.map(p => ({ x: w - p.x, y: h - p.y })));
-          frameCtx.fillStyle = 'rgba(230,110,190,.45)';
-          frameCtx.strokeStyle = '#e66ebe';
-          frameCtx.fill();
-          frameCtx.stroke();
-        }
       } else {
         tracePolygon([{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }, { x: 0, y: h }]);
         frameCtx.strokeStyle = '#7fc7bc';
@@ -528,8 +558,8 @@
     frameCanvas.addEventListener('pointerdown', evt => {
       evt.preventDefault();
       const pt = frameCanvasPoint(evt);
-      const center = frameCenterScreen();
-      const { u, v } = currentBasis();
+      const { u, v, bbox } = currentBasis();
+      const center = frameCenterScreen(bbox);
       const scale = Math.max(0.05, Number(cfg.frameScale) || 1);
       const rad = ((Number(cfg.frameRotationDeg) || 0) * Math.PI) / 180;
       const baseCorner = { x: (u.x + v.x) / 2, y: (u.y + v.y) / 2 }; // Unrotated, unscaled — the reference the corner handle's drag is measured against.
