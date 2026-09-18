@@ -120,6 +120,7 @@ const fishingSource = fs.readFileSync(path.resolve(__dirname, '../docs/js/fishin
 const heldActionSource = fs.readFileSync(path.resolve(__dirname, '../docs/js/held-action-animations.js'), 'utf8'); // Pins the user-authored shared throw animation source.
 const gripRuntimeSource = fs.readFileSync(path.resolve(__dirname, '../docs/js/procedural-hand-grip-runtime.js'), 'utf8'); // Pins ranged visual support for authored gripMode metadata.
 const gameSource = fs.readFileSync(path.resolve(__dirname, '../docs/game.js'), 'utf8'); // Pins the minimal Charged-Breaker-style partial-release seam used by thrown weapons.
+const scratchbonesConfigSource = fs.readFileSync(path.resolve(__dirname, '../docs/config/scratchbones-config.js'), 'utf8'); // Pins the exact fixed thrown-release recording.
 const attackEditorSource = fs.readFileSync(path.resolve(__dirname, '../docs/tools/attack-animation-editor/index.html'), 'utf8'); // Pins the pick-mining end-flip authoring control/export contract.
 assert.match(gameSource, /function getWeaponSwingWindupPoseProgress\(\)/, 'game runtime must expose visible linear held-windup progress.');
 assert.match(gameSource, /function partialCombatPoseAtCharge\(pose, poseProgress\)/, 'game runtime must support releasing from the currently visible partial pose.');
@@ -144,7 +145,11 @@ assert.match(rangedWeaponsSource, /Fishing\?\.projectileVisuals\?\.maceSpinRateD
 assert.match(rangedWeaponsSource, /textureSource\?\.clone[\s\S]*texture = textureSource\.clone\(\)/, 'Thrown projectiles must clone the exact held texture so metal and verdigris pattern match pixel-for-pixel.');
 assert.match(rangedWeaponsSource, /plane\.scale\.y = pendingAspect/, 'Thrown weapon PNGs must preserve their source aspect ratio.');
 assert.match(rangedWeaponsSource, /sourceTransform:\s*heldTransform/, 'Player ranged projectiles must launch from the held plane transform sampled at Strike.');
-assert.match(rangedWeaponsSource, /playWeaponSlashSfx\?\.\(2, swingIndex\)/, 'Thrown player attacks must use the melee swing cue at 2x pitch instead of ranged-fire SFX.');
+assert.match(rangedWeaponsSource, /const swingIndex = 2/, 'Thrown release must select melee swing variant 3 exactly, not a random swing.');
+assert.match(rangedWeaponsSource, /combatSfxConfig\?\.\(\)\.weaponSwing3/, 'Thrown release must resolve the weaponSwing3 cue specifically.');
+assert.match(rangedWeaponsSource, /playWeaponSlashSfx\?\.\(2, swingIndex\)/, 'Thrown player attacks must play swing 3 at 2x pitch instead of ranged-fire SFX.');
+assert.match(scratchbonesConfigSource, /"weaponSwing3"\s*:\s*\{\s*"url"\s*:\s*"assets\/audio\/sfx\/combat\/sfx_swing_3\.mp3"/, 'weaponSwing3 must remain docs/assets/audio/sfx/combat/sfx_swing_3.mp3.');
+assert.match(rangedWeaponsSource, /const PROJECTILE_PERP_DEAD_DEG = 15/, 'Thrown weapons and arrows must share the requested 15-degree camera-facing deadzone.');
 assert.match(rangedWeaponsSource, /setHeldRangedVisible\?\.\(action\.itemKey, false\)/, 'Held weapon must hide on the projectile-spawn frame.');
 assert.match(rangedWeaponsSource, /restoreHeldThrownWeapon\(action\)/, 'Held weapon must return only when the release action completes back at Neutral.');
 assert.match(rangedWeaponsSource, /p\.def\.damage \* falloff \* \(Number\.isFinite\(p\.damageScale\)/, 'Thrown projectile raw damage must multiply by released visible windup percentage.');
