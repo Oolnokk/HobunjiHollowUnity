@@ -64,8 +64,10 @@ assert.match(gameSource, /function isSwimmingAt[\s\S]{0,450}type === TileType\.R
   'expanded extinguishing does not broaden the separate swimming movement/attack rule');
 assert.match(gameSource, /function tickCreatureResources[\s\S]{0,500}isWaterSurfaceAt[\s\S]{0,1800}transitionCreatureToDeath/,
   'creatures extinguish on water and lethal resource ticks hand off to shared death authority');
-assert.match(gameSource, /if \(!tickCreatureResources\(c, entityDt, visuallyLodSleeping\)\) continue;[\s\S]{0,20000}if \(!tickCreatureResources\(c, dt\)\) continue;/,
-  'hostile and companion AI both stop immediately after a lethal resource-tick transition');
+assert.match(gameSource, /if \(!tickCreatureResources\(c, entityDt, visuallyLodSleeping\)\) continue;/,
+  'hostile AI stops immediately after a lethal resource-tick transition');
+assert.match(gameSource, /if \(!tickCreatureResources\(c, dt\)\) continue;/,
+  'companion AI stops immediately after a lethal resource-tick transition');
 assert.match(enemyDodgeSource, /spendStamina[\s\S]{0,180}coolBurningOnDodge/,
   'enemy roll dodges use the same Burning recovery helper');
 
