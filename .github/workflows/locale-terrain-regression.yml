@@ -19,6 +19,7 @@ on:
       - 'docs/tools/locale-editor/**'
       - 'docs/tools/procedural-animation-editor/**'
       - 'docs/js/attachment-rig-latest-authored-snapshot-core.js'
+      - 'docs/js/character-rig-maoao-authored-20260905.js'
       - 'docs/config/character-rig-scale-defaults.js'
       - 'scripts/test-procedural-editor-portrait-placement.js'
       - 'scripts/test-locale-terrain-placement.js'
