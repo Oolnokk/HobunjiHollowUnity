@@ -7,6 +7,8 @@ on:
       - 'docs/js/combat/ranged-camera-focus.js'
       - 'docs/js/combat/combat-camera-alignment-bridge.js'
       - 'docs/js/combat/ranged-weapon-archetypes.js'
+      - 'docs/js/fishing-minigame.js'
+      - 'docs/js/fishing-minigame.js'
       - 'docs/js/combat/ranged-dual-role-anim-style.js'
       - 'docs/js/combat/ranged-weapons.js'
       - 'docs/js/combat/combat-config-loader.js'
