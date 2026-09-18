@@ -175,12 +175,6 @@
       "itemKey": "stoolFurniture",
       "reason": "temporary-catch-all:authored home/work interior unavailable"
     },
-    "omgurku_chief": {
-      "area": "map_i_general_store",
-      "furnitureId": "fmqflwr1gmo3q",
-      "itemKey": "hearthFurniture",
-      "reason": "temporary-catch-all:authored home/work interior unavailable"
-    },
     "bowstring_hatayap": {
       "area": "map_i_general_store",
       "furnitureId": "fmqflxtmkc8qo",
@@ -233,6 +227,12 @@
       "area": "map_i_general_store",
       "furnitureId": "fmqflyjsxciu5",
       "itemKey": "bookshelfFurniture",
+      "reason": "temporary-catch-all:authored home/work interior unavailable"
+    },
+    "baruhi_chief": {
+      "area": "map_i_general_store",
+      "furnitureId": "fmqflwr1gmo3q",
+      "itemKey": "hearthFurniture",
       "reason": "temporary-catch-all:authored home/work interior unavailable"
     }
   }
