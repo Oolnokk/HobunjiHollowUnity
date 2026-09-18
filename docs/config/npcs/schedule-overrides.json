@@ -184,5 +184,25 @@
       "toStationId": "station_swamp_pahu_bed",
       "clearContentIncomplete": true
     }
+  ],
+  "scheduleReplacements": [
+    {
+      "npcId": "banubu",
+      "note": "Banubu, the Sleeping Grehlr, remains asleep indefinitely in his generated cavern. His awake station is retained only as unused authoring data; no active schedule rule targets it.",
+      "scheduleHooks": {
+        "defaultMapId": "map_i_den_banubu",
+        "defaultStationId": "station_banubu_cave_sleep",
+        "rules": [
+          {
+            "id": "banubu_sleep_forever",
+            "from": "00:00",
+            "to": "23:59",
+            "mapId": "map_i_den_banubu",
+            "stationId": "station_banubu_cave_sleep",
+            "activity": "sleeping in his cave"
+          }
+        ]
+      }
+    }
   ]
 }
