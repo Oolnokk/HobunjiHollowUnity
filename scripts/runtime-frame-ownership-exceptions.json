@@ -146,15 +146,6 @@
   {
     "file": "docs/js/calendar-system.js",
     "owner": "CalendarSystem",
-    "classification": "timer-event",
-    "function": "advanceOnePassageHour",
-    "reason": "`await new Promise(resolve => requestAnimationFrame(resolve))` inside a time-bounded while-loop just polls each frame for game.js's private day-rollover to finish - it waits for something to become available rather than doing genuine per-frame work.",
-    "migrationStage": "candidate",
-    "line": 591
-  },
-  {
-    "file": "docs/js/calendar-system.js",
-    "owner": "CalendarSystem",
     "classification": "bounded-animation",
     "function": "animateIrisRadius",
     "reason": "Classic eased-tween RAF loop (self-continuing at line 670) that runs only until progress t reaches 1, then resolves and stops - a bounded, self-terminating UI animation for the sleep/wait iris transition.",
