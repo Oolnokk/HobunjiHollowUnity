@@ -636,7 +636,7 @@
     "function": "nextTick (inside flicker diagnostic loop)",
     "reason": "A single requestAnimationFrame races a 200ms setTimeout purely to await the next paint inside a bounded 45-sample flicker diagnostic; it never reschedules itself and the outer sampling loop is a plain for-loop, not a RAF recursion.",
     "migrationStage": "not-planned",
-    "line": 1151
+    "line": 1152
   },
   {
     "file": "docs/js/procedural-hand-frame-driver.js",
