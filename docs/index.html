@@ -56,7 +56,7 @@
        window.HudUpdate.refreshItemScroll, so must load after it and before
        game.js, which calls window.ActionArcUI.init(...) (binds its own
        toolBtn/itemBtn/btnUtilityMenu listeners) during its own setup. -->
-  <script src="js/action-arc-ui.js?v=20260902mod1"></script>
+  <script src="js/action-arc-ui.js?v=20260918utilityplacement1"></script>
   <!-- Farm editor + farm layout save/load persistence, extracted out of
        game.js. Must load before game.js, which calls
        window.FarmEditor.init(...) very early (right after
@@ -494,13 +494,13 @@
        window.BanditCamps at that same call-time point. -->
   <script src="js/dev-spawner.js?v=20260909livepreview1"></script>
   <!-- Furniture Placer panel (window.FurniturePlacer) — the discoverable,
-       inventory-scoped alternative to scrolling the hotbar to a decor item:
-       picking a row here just calls selectItemForPlacement(itemKey), the
-       same "hold item, aim, interact" pipeline the action bar already
-       drives, so all placement validation/consumption logic lives in one
-       place. Must load before game.js, which calls
-       window.FurniturePlacer.init(...) during its own setup. -->
-  <script src="js/furniture-placer.js?v=20260909livepreview1"></script>
+       inventory-scoped furniture selector. Choosing Place arms the shared
+       reticle-targeted gameplay placement mode and closes this panel so
+       controller/mouse camera aim remains available. All validation and
+       inventory consumption stays in the existing game placement functions.
+       Must load before game.js, which calls window.FurniturePlacer.init(...)
+       during its own setup. -->
+  <script src="js/furniture-placer.js?v=20260918utilityplacement1"></script>
   <!-- Player-craftable persistent campfire (window.WildernessCampfire) —
        only one at a time; survives map changes/saves and also works on Town
        Mine floors, where player death destroys an underground camp.
@@ -753,10 +753,10 @@
   <button id="furniturePlacerBtn" aria-label="Toggle furniture placer" title="Place Furniture" onclick="window.FurniturePlacer?.toggle()" style="display:none;">🪑</button>
 
   <!-- Furniture Placer Panel -->
-  <div id="furniturePlacerPanel" style="display:none;" aria-label="Furniture placer">
+  <div id="furniturePlacerPanel" style="display:none;" aria-label="Furniture placer" data-ctrl-panel>
     <div class="fed-header">
       <span>🪑 Place Furniture</span>
-      <button class="fed-close" onclick="window.FurniturePlacer?.toggle()" title="Close">✕</button>
+      <button class="fed-close" data-ctrl-cancel onclick="window.FurniturePlacer?.toggle()" title="Close">✕</button>
     </div>
     <div class="fed-scroll">
       <div id="furniturePlacerHint" style="font-size:11px;color:var(--muted);padding:6px 10px;line-height:1.4;"></div>
@@ -2447,7 +2447,7 @@
   <!-- Generic poll-until-ready/timeout helper; game.js's
        waitForBuildingSceneReady calls into it directly. -->
   <script src="js/scene-ready-poller.js?v=20260917a"></script>
-  <script src="game.js?v=20260918throwframe1-loomcore2"></script>
+  <script src="game.js?v=20260918throwframe1-loomcore2-utilityplacement1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
   <script src="js/controller-ui-nav.js?v=20260915perf1"></script>
   <script>
