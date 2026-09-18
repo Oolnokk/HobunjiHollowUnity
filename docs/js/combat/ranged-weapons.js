@@ -12,6 +12,7 @@
   const SCATTERBOW_FIRE_CHORUS_MS = [0, 28, 56, 84, 112, 140]; // Used by playRangedActionSfx() to stagger one shot sound per scatterbow projectile.
   const PROJECTILE_PERP_DEAD_DEG = 15; // Used only by projectile PNG facing so arrows turn within tighter windows than animals.
   const PROJECTILE_PERP_DEAD_RAD = THREE.MathUtils.degToRad(PROJECTILE_PERP_DEAD_DEG); // Passed to the shared animal deadzone helpers.
+  const FISHING_MACE_SPIN_RATE_DEG_FALLBACK = 9720; // Used only before Fishing is available; matches Fishing.projectileVisuals.maceSpinRateDeg exactly.
   // Reused across calls instead of allocated fresh each time — projectileHit
   // runs every frame for every live projectile until it hits something or
   // outranges, and every downstream consumer (segmentHitboxInterval,
@@ -431,20 +432,51 @@
     // instead of tilting around the world's fixed X axis. See
     // updateProjectileVisual, which drives both channels every frame.
     visual.rotation.order = 'YXZ';
-    const texture = new THREE.TextureLoader().load(def.projectileSprite);
+
+    const spinningWeapon = def.projectileVisualStyle === 'spinningWeapon'; // Uses the full weapon PNG/aspect instead of the generic bolt silhouette.
+    let plane = null; // Assigned after TextureLoader starts; the onLoad callback fixes the weapon sprite's source aspect ratio.
+    let pendingAspect = 1; // Covers a theoretically synchronous loader callback without losing the source aspect ratio.
+    const texture = new THREE.TextureLoader().load(def.projectileSprite, loadedTexture => {
+      if (!spinningWeapon) return;
+      const imageW = Math.max(1, Number(loadedTexture.image?.width) || Number(loadedTexture.image?.naturalWidth) || 1);
+      const imageH = Math.max(1, Number(loadedTexture.image?.height) || Number(loadedTexture.image?.naturalHeight) || 1);
+      pendingAspect = imageH / imageW;
+      if (plane) plane.scale.y = pendingAspect;
+    });
     texture.magFilter = texture.minFilter = THREE.NearestFilter;
     const longArrow = def.projectileSprite.includes('arrow_long');
-    const plane = new THREE.Mesh(
-      new THREE.PlaneGeometry(longArrow ? 0.09 : 0.065, longArrow ? 0.72 : 0.38),
+    const weaponWidth = Math.max(0.08, Number(def.projectileVisualWidthWorld) || 0.5); // Mirrors the 0.5-world-unit held weapon sprite width.
+    plane = new THREE.Mesh(
+      new THREE.PlaneGeometry(
+        spinningWeapon ? weaponWidth : (longArrow ? 0.09 : 0.065),
+        spinningWeapon ? weaponWidth : (longArrow ? 0.72 : 0.38)
+      ),
       new THREE.MeshBasicMaterial({ map: texture, transparent: true, alphaTest: 0.08, side: THREE.DoubleSide })
     );
+    if (spinningWeapon) plane.scale.y = pendingAspect;
     plane.rotation.x = -Math.PI / 2;
     plane.renderOrder = deps.heldObjectRenderOrder || 1.5;
-    visual.add(plane);
+
+    let spinPivot = null;
+    if (spinningWeapon) {
+      spinPivot = new THREE.Group(); // Rotates around the flat weapon sprite's normal without disturbing camera-relative yaw/pitch on visual.
+      spinPivot.name = 'spinningThrownWeaponVisual';
+      spinPivot.add(plane);
+      visual.add(spinPivot);
+    } else {
+      visual.add(plane);
+    }
     root.add(visual);
     root.userData.collider = collider;
     root.userData.visual = visual;
+    root.userData.spinPivot = spinPivot;
     return root;
+  }
+
+  function fishingMaceSpinRateRad() {
+    const sharedRate = Number(window.Fishing?.projectileVisuals?.maceSpinRateDeg); // Same authored rate used by the fishing mace while outbound.
+    const rateDeg = Number.isFinite(sharedRate) ? sharedRate : FISHING_MACE_SPIN_RATE_DEG_FALLBACK;
+    return THREE.MathUtils.degToRad(rateDeg);
   }
 
   function projectileAfflictionBonuses(def, team, ammoPayload) {
@@ -547,7 +579,7 @@
     scene.add(mesh);
     const horizSpeedPxS = def.speedPxS * Math.cos(pitch);
     const p = {
-      itemKey, def, team, owner, mesh, visual: mesh.userData.visual,
+      itemKey, def, team, owner, mesh, visual: mesh.userData.visual, spinPivot: mesh.userData.spinPivot,
       x, y, prevX: x, prevY: y, worldY, prevWorldY: worldY,
       vx: Math.cos(angle) * horizSpeedPxS, vy: Math.sin(angle) * horizSpeedPxS,
       vyWorld: Math.sin(pitch) * (def.speedPxS / deps.TILE),
@@ -555,6 +587,7 @@
       effectiveRangePx: def.rangeTiles * deps.TILE,
       maxDistancePx: def.rangeTiles * deps.TILE * RANGE_FALLOFF_DISTANCE_MULTIPLIER,
       areaId: deps.getCurrentArea(), pngRot: -angle + Math.PI / 2, perpState: {}, dead: false,
+      spinRad: 0, spinRateRad: mesh.userData.spinPivot ? fishingMaceSpinRateRad() : 0,
       afflictionBonuses, trailAfflictionIds: trailColors.map(entry => entry.id),
       ammoId: ammoPayload?.ammoId || 'enemy',
       specialAmmoId: ammoPayload?.specialAmmoId || null,
@@ -987,6 +1020,10 @@
     // per shot — crossbow/scatterbow bolts fly a straight, gravity-free
     // line, so pitch never changes over a projectile's flight.
     p.visual.rotation.x = p.pitch;
+    if (p.spinPivot && p.spinRateRad) {
+      p.spinRad = (p.spinRad + p.spinRateRad * dt) % (Math.PI * 2);
+      p.spinPivot.rotation.y = p.spinRad;
+    }
   }
 
   function disposeProjectile(p) {
