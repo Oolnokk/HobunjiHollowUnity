@@ -1734,7 +1734,8 @@
       "postZ": 0,
       "postSX": 1,
       "postSY": 1,
-      "postSZ": 1
+      "postSZ": 1,
+      "nonColliding": true
     },
     {
       "id": "f_unmh_chest1",
