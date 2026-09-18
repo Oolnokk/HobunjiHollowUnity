@@ -252,7 +252,8 @@
                 <p class="pa-hint pa-previewStatus">Draw a motif to preview.</p>
                 <div class="pa-previewWrap"><canvas class="pa-preview" width="1" height="1"></canvas></div>
               </div>
-              <div class="pa-toolsRow">
+            </div>
+            <div class="pa-toolsRow">
                 <div class="pa-card">
                   <h3>Motif</h3>
                   <p class="pa-hint">${escapeHtml(options.motifHint || 'Draw a solid black motif. This is the shape that gets placed and repeated.')}</p>
@@ -285,7 +286,6 @@
                   </div>
                   <p class="pa-hint">Auto-detect rotates the motif to whatever angle makes its own tight bounding box smallest, then resets the frame to a centered, ungapped square at that angle — a quick starting point to drag from, not a final answer.</p>
                 </div>
-              </div>
             </div>
           </div>
         </div>
