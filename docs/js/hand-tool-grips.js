@@ -322,7 +322,11 @@
       if (t <= sf) result = lerpAnimationGrip(neutral, strike, t / Math.max(1e-6, sf));
       else if (t <= hf) result = { ...strike };
       else result = lerpAnimationGrip(strike, neutral, (t - hf) / Math.max(1e-6, 1 - hf));
-    } else if (t <= wf) result = lerpAnimationGrip(neutral, windup, t / Math.max(1e-6, wf));
+    } else if (t <= wf) {
+      const rawWindupT = t / Math.max(1e-6, wf);
+      const poseT = global.Combat?.windupPoseProgress?.(rawWindupT, timing.windupSlowdown) ?? rawWindupT;
+      result = lerpAnimationGrip(neutral, windup, poseT);
+    }
     else if (t <= sf) result = lerpAnimationGrip(windup, strike, (t - wf) / Math.max(1e-6, sf - wf));
     else if (t <= hf) result = { ...strike };
     else result = lerpAnimationGrip(strike, neutral, (t - hf) / Math.max(1e-6, 1 - hf));
@@ -358,6 +362,7 @@
       windupFrac: opts.windupFrac ?? 0.16,
       strikeFrac: opts.strikeFrac ?? 0.55,
       holdFrac: opts.holdFrac ?? 0.68,
+      windupSlowdown: opts.windupSlowdown ?? 0,
     }, opts.pose || {}, opts.sequence || 'attack');
   }
 
