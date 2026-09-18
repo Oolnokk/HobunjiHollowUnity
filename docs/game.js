@@ -869,7 +869,17 @@
             if (impactHealth > 0) window.ResourceSystem?.applyDamage?.(target, impactHealth, { tag: 'blunt', source: 'fell from branch' });
             window.ResourceSystem?.spendFooting?.(target, 47.5, 'fell from branch');
             if (target === player) { _nestHoldT = 0; target._nestTakeActive = false; }
-            if (target.lunging) { target.lunging = false; target.lungeHopCurrent = 0; }
+            if (target.lunging) {
+          target.lunging = false;
+          target.lungeHopCurrent = 0;
+          if (target === player && Number.isFinite(target.lungeFlightWorldY)) {
+            // Preserve the interrupted aerial height and let the normal
+            // post-lunge gravity path bring the player back to the surface.
+            target.lungeFlightWorldY = playerMesh.position.y;
+            target.lungeFallSpeedUnits = 0;
+            target.lungeLandingPending = true;
+          }
+        }
           }
           return;
         }
@@ -880,7 +890,17 @@
         // Getting hit always interrupts an in-progress combat lunge — without
         // this, resuming the lunge after knockback would interpolate from its
         // stale pre-knockback lungeStartX/Y and jump the player backward.
-        if (target.lunging) { target.lunging = false; target.lungeHopCurrent = 0; }
+        if (target.lunging) {
+          target.lunging = false;
+          target.lungeHopCurrent = 0;
+          if (target === player && Number.isFinite(target.lungeFlightWorldY)) {
+            // Preserve the interrupted aerial height and let the normal
+            // post-lunge gravity path bring the player back to the surface.
+            target.lungeFlightWorldY = playerMesh.position.y;
+            target.lungeFallSpeedUnits = 0;
+            target.lungeLandingPending = true;
+          }
+        }
       }
 
       function startProneThrow(entity, isPlayer, facingAngle, direction) {
@@ -15958,7 +15978,19 @@
           // the target is guaranteed to still be within the collider right
           // where the lunge halts instead of the player sliding past it.
           if (isHostileInLungeCone(player.lungeHitTest)) {
-            if ((player.lungeHopUnits || 0) > 0.01) {
+            if ((player.lungeDirectFlightStrength || 0) > 0.01) {
+              // Direct flight has entered its attack volume. Freeze the whole
+              // 3D line at this point until impact; do not keep climbing/
+              // descending after horizontal travel has already stopped.
+              player.lungeHitTest = null;
+              player.lungeStartX = player.x;
+              player.lungeStartY = player.y;
+              player.lungeDistancePx = 0;
+              player.lungeFlightStartWorldY = Number(player.lungeFlightWorldY) || playerMesh.position.y;
+              player.lungeVerticalTravelUnits = 0;
+              player.lungeHopUnits = 0;
+              player.lungeHopCurrent = 0;
+            } else if ((player.lungeHopUnits || 0) > 0.01) {
               // Keep finishing the vertical arc after reaching an elevated
               // target, but freeze horizontal travel so the leap cannot
               // carry through and past that target.
