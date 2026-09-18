@@ -288,15 +288,6 @@
     "line": 197
   },
   {
-    "file": "docs/js/input-settings-panel.js",
-    "owner": "InputSettingsPanel",
-    "classification": "timer-event",
-    "function": "poll",
-    "reason": "Repeated per-frame gamepad polling inside the rebind 'Listen for input' flow exists only to detect the next controller press; the work doesn't need per-frame precision and is effectively an availability-wait, even though it self-terminates once input is captured or the capture is cancelled.",
-    "migrationStage": "candidate",
-    "line": 219
-  },
-  {
     "file": "docs/js/inventory-character-effects.js",
     "owner": "InventoryCharacterEffects",
     "classification": "one-shot",
