@@ -166,6 +166,12 @@ assert.equal(applied.appearance.bodyColors.__hobunjiWovenClothing[0].baseCosmeti
 assert.equal(api.__test.weavingPatternForRole(lightTunic.weaving, null).motifDataUrl, 'data:image/png;base64,AA==', 'modern per-layer weaving resolves the default layer');
 const legacyPattern = { motifDataUrl: 'data:image/png;base64,LEGACY==' }; // Used to keep pre-layer-save compatibility covered while the main fixture exercises the modern format.
 assert.equal(api.__test.weavingPatternForRole({ pattern: legacyPattern }, 'anything'), legacyPattern, 'legacy single-pattern saves still resolve across every layer');
+windowStub.PatternLibrary.getById = id => id === 'live-pattern' ? { motifDataUrl: 'data:image/png;base64,MIGRATED==' } : null;
+const referenceOnlyWeaving = { weaving: { layers: { base: { patternLibraryId: 'live-pattern', patternLabel: 'Saved' } } } }; // Used to model a garment crafted by the short-lived reference-only implementation.
+assert.equal(api.__test.materializeWeavingLibrarySnapshots(referenceOnlyWeaving), true, 'reference-only garment is upgraded while its library source still exists');
+assert.equal(referenceOnlyWeaving.weaving.layers.base.pattern.motifDataUrl, 'data:image/png;base64,MIGRATED==', 'migration embeds the resolved source motif on the garment');
+assert.equal(api.__test.materializeWeavingLibrarySnapshots(referenceOnlyWeaving), false, 'already snapshotted garment is not rewritten repeatedly');
+windowStub.PatternLibrary.getById = () => null;
 const deadLibraryOnlyWeaving = { layers: { base: { patternLibraryId: 'deleted-pattern', patternLabel: 'Deleted' } } }; // Used to ensure an unresolved source reference is not presented as visible weaving.
 assert.equal(api.__test.weavingPatternForRole(deadLibraryOnlyWeaving, 'base'), null, 'deleted library-only references resolve to no pattern');
 assert.equal(api.__test.weavingHasAnyPattern(deadLibraryOnlyWeaving), false, 'deleted library-only references do not keep the woven state alive');
