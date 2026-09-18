@@ -100,35 +100,32 @@
     {
       "id": "fmqfjqywfr2u7",
       "itemKey": "rugFurniture",
-      "col": 7,
-      "row": 4,
+      "col": 8,
+      "row": 5,
       "rotY": 0,
-      "postX": 0.077,
+      "postX": -0.423,
       "postY": 0,
-      "postZ": 0.07,
-      "postSX": 0.926,
+      "postZ": -0.43,
+      "postSX": 1.003167,
       "postSY": 1,
-      "postSZ": -0.877333,
+      "postSZ": -1.0528,
       "nonColliding": true,
       "gridRot": 90,
-      "gridW": 6,
-      "gridD": 13
+      "gridW": 5,
+      "gridD": 12
     },
     {
       "id": "fmqfju3pqe8an",
       "itemKey": "candleTableFurniture",
-      "col": 10,
+      "col": 11,
       "row": 4,
       "rotY": 0,
-      "postX": 0.313,
+      "postX": -0.187,
       "postY": 0.189,
       "postZ": 0,
-      "postSX": 0.5,
+      "postSX": 1,
       "postSY": 1,
-      "postSZ": 1,
-      "gridRot": 0,
-      "gridW": 2,
-      "gridD": 1
+      "postSZ": 1
     },
     {
       "id": "fmqfjv69rtvht",
@@ -136,15 +133,12 @@
       "col": 8,
       "row": 4,
       "rotY": 0,
-      "postX": -0.313,
+      "postX": 0.187,
       "postY": 0.189,
       "postZ": 0,
-      "postSX": 0.5,
+      "postSX": 1,
       "postSY": 1,
-      "postSZ": 1,
-      "gridRot": 0,
-      "gridW": 2,
-      "gridD": 1
+      "postSZ": 1
     },
     {
       "id": "fmtr6f8zy0ins",
@@ -787,138 +781,123 @@
         {
           "id": "sc_bench_w2",
           "itemKey": "benchFurniture",
-          "col": 5,
-          "row": 3,
+          "col": 6,
+          "row": 5,
           "rotY": 45,
           "postX": 0,
           "postY": 0,
           "postZ": 0,
-          "postSX": 1,
+          "postSX": 2,
           "postSY": 1,
-          "postSZ": 0.15,
+          "postSZ": 0.75,
           "lookAt": {
             "col": 9,
             "row": 9
-          },
-          "gridRot": 0,
-          "gridW": 4,
-          "gridD": 5
+          }
         },
         {
           "id": "sc_bench_w3",
           "itemKey": "benchFurniture",
-          "col": 5,
-          "row": 6,
+          "col": 6,
+          "row": 7,
           "rotY": 0,
-          "postX": 0,
+          "postX": -0.5,
           "postY": 0,
-          "postZ": 0,
-          "postSX": 0.8,
+          "postZ": -0.5,
+          "postSX": 1,
           "postSY": 1,
-          "postSZ": 0.375,
+          "postSZ": 0.75,
           "lookAt": {
             "col": 9,
             "row": 9
           },
           "gridRot": 90,
-          "gridW": 2,
-          "gridD": 5
+          "gridW": 1,
+          "gridD": 4
         },
         {
           "id": "sc_bench_w4",
           "itemKey": "benchFurniture",
-          "col": 5,
-          "row": 9,
+          "col": 6,
+          "row": 11,
           "rotY": 135,
           "postX": 0.005,
           "postY": 0.001,
           "postZ": 0,
-          "postSX": 1,
+          "postSX": 2,
           "postSY": 1,
-          "postSZ": 0.15,
+          "postSZ": 0.75,
           "lookAt": {
             "col": 9,
             "row": 9
-          },
-          "gridRot": 0,
-          "gridW": 4,
-          "gridD": 5
+          }
         },
         {
           "id": "sc_bench_e1",
           "itemKey": "benchFurniture",
-          "col": 11,
-          "row": 3,
+          "col": 12,
+          "row": 5,
           "rotY": 315,
           "postX": 0,
           "postY": 0,
           "postZ": 0,
-          "postSX": 1,
+          "postSX": 2,
           "postSY": 1,
-          "postSZ": 0.15,
+          "postSZ": 0.75,
           "lookAt": {
             "col": 9,
             "row": 9
-          },
-          "gridRot": 0,
-          "gridW": 4,
-          "gridD": 5
+          }
         },
         {
           "id": "sc_bench_e2",
           "itemKey": "benchFurniture",
-          "col": 13,
-          "row": 6,
+          "col": 14,
+          "row": 7,
           "rotY": 0,
-          "postX": 0,
+          "postX": -0.5,
           "postY": 0,
-          "postZ": 0,
-          "postSX": 0.8,
+          "postZ": -0.5,
+          "postSX": 1,
           "postSY": 1,
-          "postSZ": 0.375,
+          "postSZ": 0.75,
           "lookAt": {
             "col": 9,
             "row": 9
           },
           "gridRot": 270,
-          "gridW": 2,
-          "gridD": 5
+          "gridW": 1,
+          "gridD": 4
         },
         {
           "id": "sc_bench_e3",
           "itemKey": "benchFurniture",
-          "col": 11,
-          "row": 9,
+          "col": 12,
+          "row": 11,
           "rotY": 225,
           "postX": 0,
           "postY": 0,
           "postZ": 0,
-          "postSX": 1,
+          "postSX": 2,
           "postSY": 1,
-          "postSZ": 0.15,
+          "postSZ": 0.75,
           "lookAt": {
             "col": 9,
             "row": 9
-          },
-          "gridRot": 0,
-          "gridW": 4,
-          "gridD": 5
+          }
         },
         {
           "id": "sc_candle_1",
           "itemKey": "candleTableFurniture",
-          "col": 10,
+          "col": 11,
           "row": 2,
           "rotY": 0,
-          "postX": 0.219,
+          "postX": -0.281,
           "postY": 0.082,
           "postZ": 0,
-          "postSX": 0.5,
+          "postSX": 1,
           "postSY": 1,
-          "postSZ": 1,
-          "gridRot": 0,
-          "gridW": 2,
-          "gridD": 1
+          "postSZ": 1
         },
         {
           "id": "sc_candle_2",
@@ -926,31 +905,25 @@
           "col": 8,
           "row": 2,
           "rotY": 0,
-          "postX": -0.247,
+          "postX": 0.253,
           "postY": 0.125,
           "postZ": 0,
-          "postSX": 0.5,
+          "postSX": 1,
           "postSY": 1,
-          "postSZ": 1,
-          "gridRot": 0,
-          "gridW": 2,
-          "gridD": 1
+          "postSZ": 1
         },
         {
           "id": "sc_bonfire",
           "itemKey": "bonfireFurniture",
           "col": 9,
-          "row": 7,
+          "row": 8,
           "rotY": 0,
           "postX": 0,
           "postY": 0,
-          "postZ": -0.01,
+          "postZ": -0.51,
           "postSX": 0.877,
           "postSY": 0.769,
-          "postSZ": 0.455,
-          "gridRot": 0,
-          "gridW": 1,
-          "gridD": 2
+          "postSZ": 0.91
         },
         {
           "id": "fmtspjum0bi6z",
@@ -965,18 +938,15 @@
         {
           "id": "fmtsv6eoligq5",
           "itemKey": "stoolFurniture",
-          "col": 9,
-          "row": 6,
+          "col": 10,
+          "row": 7,
           "rotY": 0,
-          "postX": 0.056,
+          "postX": -0.444,
           "postY": -0.002,
-          "postZ": 0.277,
-          "postSX": 0.5,
+          "postZ": -0.223,
+          "postSX": 1,
           "postSY": 1,
-          "postSZ": 0.5,
-          "gridRot": 0,
-          "gridW": 2,
-          "gridD": 2
+          "postSZ": 1
         }
       ]
     }
