@@ -26,7 +26,7 @@
     if (area !== 'farm' && area !== 'interior') return [];
     const decorative = Object.values(deps.getDecorativeFurnitureDefs())
       .filter(def => !def.fixture && !def.customPlace)
-      .filter(def => def.area === 'any' || def.area === area)
+      .filter(def => area === 'farm' || def.area === 'any' || def.area === area)
       .filter(def => (deps.inventory[def.itemKey] || 0) > 0);
     // Processing stations use the outdoor farm grid and world-object map;
     // list the same owned catalog here without pretending they are decor.
@@ -42,31 +42,59 @@
   // slot by default (see .fp-shifted below). Hidden while the game is
   // paused (the main menu overlay is open) since the button sits in the
   // same fixed top-right corner the menu panel covers.
+  function canOpen() {
+    if (!deps) return false;
+    const area = deps.getCurrentArea();
+    return !deps.isPaused() && (area === 'farm' || area === 'interior') && deps.hasFarmPermission('placeFurniture');
+  }
+
   function refreshVisibility() {
     const btn = document.getElementById('furniturePlacerBtn');
     if (!btn || !deps) return;
     const area = deps.getCurrentArea();
-    const show = !deps.isPaused() && (area === 'farm' || area === 'interior') && deps.hasFarmPermission('placeFurniture');
+    const show = canOpen();
     btn.style.display = show ? '' : 'none';
     // Takes the farm editor pencil's own slot by default (empty for
     // virtually every player, since dev mode is off) — only shifts one
     // slot over while dev mode is on and that slot is actually occupied.
     const devSlotOccupied = deps.isDevMode() && (area === 'farm' || document.getElementById('mapEditBtn')?.style.display !== 'none'); // Keeps normal furniture UI clear of either contextual dev editor button.
     btn.classList.toggle('fp-shifted', devSlotOccupied);
-    if (!show && _open) toggle();
-  }
-
-  function toggle() {
-    const panel = document.getElementById('furniturePlacerPanel');
-    const btn = document.getElementById('furniturePlacerBtn');
-    _open = panel?.style.display !== 'flex';
-    if (panel) panel.style.display = _open ? 'flex' : 'none';
-    if (btn) btn.classList.toggle('fed-open', _open);
-    if (!_open) {
+    if (!show && _open) close();
+    else if (!show && (deps.getArmedFurniturePlacementKey() || deps.getArmedFurnitureMoveId())) {
       deps.armFurniturePlacement(null);
       deps.armFurnitureMove(null);
     }
-    if (_open) render();
+  }
+
+  function open() {
+    if (!canOpen()) {
+      deps?.showToast?.('Furniture placement is only available on your farm or inside your house.', false);
+      return false;
+    }
+    const panel = document.getElementById('furniturePlacerPanel');
+    const btn = document.getElementById('furniturePlacerBtn');
+    _open = true;
+    if (panel) panel.style.display = 'flex';
+    if (btn) btn.classList.add('fed-open');
+    render();
+    return true;
+  }
+
+  function close({ keepArmed = false } = {}) {
+    const panel = document.getElementById('furniturePlacerPanel');
+    const btn = document.getElementById('furniturePlacerBtn');
+    _open = false;
+    if (panel) panel.style.display = 'none';
+    if (btn) btn.classList.remove('fed-open');
+    if (!keepArmed) {
+      deps.armFurniturePlacement(null);
+      deps.armFurnitureMove(null);
+    }
+    return true;
+  }
+
+  function toggle() {
+    return _open ? close() : open();
   }
 
   function render() {
@@ -95,8 +123,13 @@
       btn.className = 'settings-small-btn';
       btn.textContent = isArmed ? 'Cancel' : 'Place';
       btn.addEventListener('click', () => {
-        deps.armFurniturePlacement(isArmed ? null : def.itemKey);
-        render();
+        if (isArmed) {
+          deps.armFurniturePlacement(null);
+          render();
+          return;
+        }
+        deps.armFurniturePlacement(def.itemKey);
+        close({ keepArmed: true }); // Placement happens back in gameplay so controller and mouse aim stay available.
       });
       row.appendChild(btn);
       list.appendChild(row);
@@ -119,7 +152,15 @@
       const moveBtn = document.createElement('button');
       moveBtn.className = 'settings-small-btn';
       moveBtn.textContent = isMoveArmed ? 'Cancel' : 'Move';
-      moveBtn.addEventListener('click', () => deps.armFurnitureMove(isMoveArmed ? null : obj.id));
+      moveBtn.addEventListener('click', () => {
+        if (isMoveArmed) {
+          deps.armFurnitureMove(null);
+          render();
+          return;
+        }
+        deps.armFurnitureMove(obj.id);
+        close({ keepArmed: true }); // Moving uses the same reticle-targeted gameplay mode as fresh placement.
+      });
       const rotateBtn = document.createElement('button');
       rotateBtn.className = 'settings-small-btn';
       rotateBtn.textContent = 'Rotate 45°';
@@ -141,5 +182,5 @@
     });
   }
 
-  window.FurniturePlacer = { init, toggle, refreshVisibility, render };
+  window.FurniturePlacer = { init, open, close, toggle, canOpen, refreshVisibility, render, isOpen: () => _open };
 })();
