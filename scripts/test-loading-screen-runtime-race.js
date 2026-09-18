@@ -138,6 +138,7 @@ async function settle(promise) {
   assert.equal(scriptWordsEl.style.getPropertyValue('--script-column-spacing'), '-0.42em', 'authored negative Tankan column spacing must survive config loading');
   assert.match(source, /\.hlsVerticalWord \+ \.hlsVerticalWord\{margin-left:var\(--script-column-spacing\)\}/, 'runtime stylesheet must apply signed spacing as adjacent-column margin');
   assert.match(source, /window\.ResourceRings\?\.AFFLICTION_COLORS\?\.\[id\]/, 'loading tips must resolve affliction colors from the resource-ring palette');
+  assert.match(source, /window\.ResourceRings\?\.neonizeColor/, 'loading tips must apply the same visible-color transform as resource-ring fills');
   assert.match(source, /if \(semantic\?\.color\) span\.style\.color = semantic\.color;/, 'rich tip spans must apply resolved exact affliction colors');
   assert.match(source, /renderRichTip\(els\.loreHeader, state\.activeTipTitle \|\| 'Compendium'\)/, 'loading-tip headers must use the same rich affliction renderer as body copy');
   assert.match(source, /--hls-resource-health,#55d76f/, 'base Health fallback must match the configured resource-ring palette');
