@@ -108,6 +108,10 @@ const unresolved = [];
 function claimInArea(npcId, area, reason) {
   const map = maps.get(area);
   if (!map) return null;
+  // Once an interior contains real personal-storage authoring, its remaining
+  // bed/nightstand/table furniture is private room decor, not a pool for
+  // unrelated catch-all wardrobe placeholders.
+  if ((map.furniture || []).some(piece => piece?.npcWardrobeFor)) return null;
   const piece = sortedFurniture(map).find(candidate => !usedFurniture.has(`${area}|${candidate.id}`) && !candidate.npcWardrobeFor);
   if (!piece) return null;
   usedFurniture.add(`${area}|${piece.id}`);
