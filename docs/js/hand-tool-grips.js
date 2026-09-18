@@ -315,21 +315,24 @@
     const neutral = normalizeAnimationGrip(poseSet.neutral?.secondaryGrip);
     const windup = normalizeAnimationGrip(poseSet.windup?.secondaryGrip);
     const strike = normalizeAnimationGrip(poseSet.strike?.secondaryGrip);
+    const poseScale = clamp01(timing.poseScale ?? 1); // Used after a partial held release to keep the off-hand endpoint at the same amplitude as the weapon.
+    const scaledWindup = lerpAnimationGrip(neutral, scaledWindup, poseScale); // Used as the effective partial Windup grip state.
+    const scaledStrike = lerpAnimationGrip(neutral, scaledStrike, poseScale); // Used as the effective partial Strike grip state.
     let result;
     if (sequence === 'load') {
-      result = t <= wf ? lerpAnimationGrip(neutral, windup, t / Math.max(1e-6, wf)) : lerpAnimationGrip(windup, neutral, (t - wf) / Math.max(1e-6, 1 - wf));
+      result = t <= wf ? lerpAnimationGrip(neutral, scaledWindup, t / Math.max(1e-6, wf)) : lerpAnimationGrip(scaledWindup, neutral, (t - wf) / Math.max(1e-6, 1 - wf));
     } else if (sequence === 'fire') {
-      if (t <= sf) result = lerpAnimationGrip(neutral, strike, t / Math.max(1e-6, sf));
-      else if (t <= hf) result = { ...strike };
-      else result = lerpAnimationGrip(strike, neutral, (t - hf) / Math.max(1e-6, 1 - hf));
+      if (t <= sf) result = lerpAnimationGrip(neutral, scaledStrike, t / Math.max(1e-6, sf));
+      else if (t <= hf) result = { ...scaledStrike };
+      else result = lerpAnimationGrip(scaledStrike, neutral, (t - hf) / Math.max(1e-6, 1 - hf));
     } else if (t <= wf) {
       const rawWindupT = t / Math.max(1e-6, wf);
       const poseT = global.Combat?.windupPoseProgress?.(rawWindupT, timing.windupSlowdown) ?? rawWindupT;
-      result = lerpAnimationGrip(neutral, windup, poseT);
+      result = lerpAnimationGrip(neutral, scaledWindup, poseT);
     }
-    else if (t <= sf) result = lerpAnimationGrip(windup, strike, (t - wf) / Math.max(1e-6, sf - wf));
-    else if (t <= hf) result = { ...strike };
-    else result = lerpAnimationGrip(strike, neutral, (t - hf) / Math.max(1e-6, 1 - hf));
+    else if (t <= sf) result = lerpAnimationGrip(scaledWindup, scaledStrike, (t - wf) / Math.max(1e-6, sf - wf));
+    else if (t <= hf) result = { ...scaledStrike };
+    else result = lerpAnimationGrip(scaledStrike, neutral, (t - hf) / Math.max(1e-6, 1 - hf));
     return { ...result, source: 'animation-pose' };
   }
 
@@ -363,6 +366,7 @@
       strikeFrac: opts.strikeFrac ?? 0.55,
       holdFrac: opts.holdFrac ?? 0.68,
       windupSlowdown: opts.windupSlowdown ?? 0,
+      poseScale: snapshot.combatPoseScale ?? 1,
     }, opts.pose || {}, opts.sequence || 'attack');
   }
 
