@@ -22,6 +22,7 @@ assert(!/global\.requestAnimationFrame\(/.test(source), 'this single-context mod
 function buildFixture({ withRuntime = true } = {}) {
   const registered = new Map();
   let idleSnapshot = { active: false, yawDeg: 0, reason: 'idle' };
+  let swimming = false;
   const channels = new Map();
   const player = { id: 'player-mesh' };
   const windowObject = {
@@ -36,6 +37,9 @@ function buildFixture({ withRuntime = true } = {}) {
     WeaponToolStances: withRuntime ? {
       idleBodyYawSnapshot(state) { return Object.assign(state, idleSnapshot); },
     } : undefined,
+    Combat: withRuntime ? {
+      deps: { isPlayerSwimming: () => swimming },
+    } : undefined,
   };
   const sandbox = { window: windowObject };
   vm.runInNewContext(source, sandbox, { filename: 'weapon-idle-body-yaw-runtime.js' });
@@ -44,6 +48,7 @@ function buildFixture({ withRuntime = true } = {}) {
     registered,
     channels,
     setSnapshot: value => { idleSnapshot = value; },
+    setSwimming: value => { swimming = !!value; },
   };
 }
 
@@ -84,6 +89,21 @@ function buildFixture({ withRuntime = true } = {}) {
   setSnapshot({ active: false, yawDeg: 0, reason: 'idle-inactive' });
   registered.get('weapon-idle-body-yaw-sync').fn();
   assert(!channels.has('weapon-idle-stance-body-yaw'), 'inactive snapshot clears the composer channel');
+}
+
+
+// --- Swimming owns whole-body yaw --------------------------------------------
+{
+  const { registered, channels, windowObject, setSnapshot, setSwimming } = buildFixture();
+  setSnapshot({ active: true, yawDeg: 12.5, reason: 'idle-active' });
+  registered.get('weapon-idle-body-yaw-sync').fn();
+  assert(channels.has('weapon-idle-stance-body-yaw'));
+  setSwimming(true);
+  registered.get('weapon-idle-body-yaw-sync').fn();
+  assert(!channels.has('weapon-idle-stance-body-yaw'), 'swimming clears the weapon-idle body-yaw channel');
+  const debug = windowObject.WeaponIdleBodyYawRuntime.getDebug();
+  assert.equal(debug.active, false);
+  assert.equal(debug.reason, 'swimming', 'debug reports that swim facing owns body yaw');
 }
 
 // --- getDebug reflects last applied state -----------------------------------
