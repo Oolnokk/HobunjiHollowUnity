@@ -68,6 +68,14 @@ fullEntity.afflictions.woundedStamina = 0;
 fullEntity.exhaustion.active = true;
 assert.equal(ResourceRings.isResourceHomeostatic(fullEntity, 'stamina'), false);
 
+const recoveringEntity = { ...fullEntity, stamina: 73, exhaustion: { active: true, blackStamina: 40 }, afflictions: { ...fullEntity.afflictions } }; // Exercises the Exhausted/black-Stamina invariant through both recovery and cap enforcement.
+ResourceSystem.tick(recoveringEntity, 0.25, { staminaRegenPerSec: 999 });
+assert.ok(recoveringEntity.exhaustion.blackStamina > 40 && recoveringEntity.exhaustion.blackStamina < 100, 'black Stamina advances without clearing Exhausted');
+assert.equal(recoveringEntity.stamina, 0, 'regular Stamina stays at zero while black Stamina is recovering');
+recoveringEntity.stamina = 55;
+ResourceSystem.enforceCaps(recoveringEntity);
+assert.equal(recoveringEntity.stamina, 0, 'cap enforcement removes regular Stamina restored by another system while Exhausted');
+
 for (const id of Object.keys(ResourceSystem.AFFLICTIONS)) {
   assert.ok(id in ResourceRings.AFFLICTION_COLORS, `${id} has a resource-ring color`);
 }
