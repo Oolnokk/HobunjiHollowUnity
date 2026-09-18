@@ -26,6 +26,8 @@ const vm = require('node:vm');
 const source = fs.readFileSync('docs/js/pixel-probe.js', 'utf8');
 assert(source.includes('const schedulerLines = _pixelProbeSchedulerLines();'), 'the probe report must merge in the frame-scheduler diagnostics');
 assert(source.includes('if (schedulerLines) lines.push(...schedulerLines);'), 'the frame-scheduler diagnostics must be spread into the report the same way as the other _pixelProbeXxxLines helpers');
+assert(source.includes('Frame scheduler profiled avg:'), 'Pixel Probe must expose scheduler phase totals when scheduler profiling is enabled');
+assert(source.includes('Frame scheduler top:'), 'Pixel Probe must expose the heaviest profiled scheduler subscribers');
 
 const match = source.match(/function _pixelProbeSchedulerLines\(\) \{[\s\S]*?\n  \}\n/);
 assert(match, 'could not locate _pixelProbeSchedulerLines in the shipped source');
@@ -77,6 +79,28 @@ assert.equal(run(undefined), null, 'returns null when RuntimeFrameScheduler is n
     entries: [],
   });
   assert(lines[0].includes('driverErrors=2 lastDriverError=ReferenceError: y is not defined'), 'a failing frame driver (gameLoop) must be visible in the summary line');
+}
+
+// --- Profiler-enabled scheduler shows phase totals and heaviest subscribers -
+{
+  const lines = run({
+    registered: 5, enabled: 5, scheduled: true, hasFrameDriver: true,
+    frameDriverErrorCount: 0, frameDriverLastError: null,
+    profilingEnabled: true,
+    entries: [
+      { id: 'input-a', owner: 'InputA', phase: 'input', enabled: true, errorCount: 0, averageDurationMs: 0.2, lastDurationMs: 0.3 },
+      { id: 'pre-a', owner: 'PreA', phase: 'pre-game', enabled: true, errorCount: 0, averageDurationMs: 0.4, lastDurationMs: 0.5 },
+      { id: 'render-a', owner: 'RenderA', phase: 'pre-render', enabled: true, errorCount: 0, averageDurationMs: 1.5, lastDurationMs: 1.2 },
+      { id: 'stable', owner: 'Stable', phase: 'post-game', enabled: true, errorCount: 0, averageDurationMs: 2.0, lastDurationMs: 2.2 },
+      { id: 'tiny', owner: 'Tiny', phase: 'post-game', enabled: true, errorCount: 0, averageDurationMs: 0.01, lastDurationMs: 0.02 },
+    ],
+  });
+  assert.equal(lines.length, 3, 'profiled scheduler adds one phase-total line and one top-subscriber line');
+  assert(lines[1].includes('outside-gameLoop=2.61ms'), 'outside-gameLoop total includes every enabled input + pre-game + post-game subscriber, including tiny ones hidden from the top list, but not pre-render');
+  assert(lines[1].includes('pre-render*=1.50'), 'pre-render timing is surfaced separately and marked as already inside gameLoop');
+  assert(lines[2].startsWith('Frame scheduler top: stable[post-game]=2.00ms'), 'heaviest subscriber is listed first with its scheduler phase');
+  assert(lines[2].includes('render-a[pre-render]=1.50ms'), 'pre-render subscribers remain visible in the heaviest-subscriber list');
+  assert(!lines[2].includes('tiny['), 'subscribers below the 0.1ms mobile display floor are omitted');
 }
 
 console.log('pixel probe frame-scheduler diagnostics passed');

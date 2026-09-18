@@ -613,10 +613,25 @@
   function _pixelProbeSchedulerLines() {
     const debug = window.RuntimeFrameScheduler?.getDebug?.();
     if (!debug) return null;
+    const entries = debug.entries || [];
     const lines = [`Frame scheduler: registered=${debug.registered} enabled=${debug.enabled} scheduled=${debug.scheduled ? 1 : 0} frameDriver=${debug.hasFrameDriver ? 'attached' : 'MISSING'}${debug.frameDriverErrorCount ? ` driverErrors=${debug.frameDriverErrorCount} lastDriverError=${String(debug.frameDriverLastError || '').split('\n')[0]}` : ''}`];
-    const erroring = debug.entries.filter(entry => entry.errorCount > 0);
+    const erroring = entries.filter(entry => entry.errorCount > 0);
     if (erroring.length) {
       lines.push(`>>> Frame scheduler subscriber errors: ${erroring.map(entry => `${entry.id}(${entry.owner}) x${entry.errorCount}: ${String(entry.lastError || '').split('\n')[0]}`).join(' | ')}`);
+    }
+    if (debug.profilingEnabled) {
+      const phases = { input: 0, 'pre-game': 0, 'pre-render': 0, 'post-game': 0 };
+      const profiled = [];
+      for (const entry of entries) {
+        const avg = Number(entry.averageDurationMs);
+        if (!entry.enabled || !Number.isFinite(avg)) continue;
+        if (Object.prototype.hasOwnProperty.call(phases, entry.phase)) phases[entry.phase] += avg;
+        profiled.push({ id: entry.id, phase: entry.phase, avg, last: Number(entry.lastDurationMs) || 0 });
+      }
+      const outside = phases.input + phases['pre-game'] + phases['post-game'];
+      lines.push(`Frame scheduler profiled avg: outside-gameLoop=${outside.toFixed(2)}ms | input=${phases.input.toFixed(2)} pre-game=${phases['pre-game'].toFixed(2)} pre-render*=${phases['pre-render'].toFixed(2)} post-game=${phases['post-game'].toFixed(2)}ms (*inside gameLoop)`);
+      const top = profiled.sort((a, b) => b.avg - a.avg).filter(entry => entry.avg >= 0.1).slice(0, 8);
+      if (top.length) lines.push(`Frame scheduler top: ${top.map(entry => `${entry.id}[${entry.phase}]=${entry.avg.toFixed(2)}ms(avg)/${entry.last.toFixed(2)}ms(last)`).join(' | ')}`);
     }
     return lines;
   }
