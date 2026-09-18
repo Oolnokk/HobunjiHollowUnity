@@ -3157,7 +3157,7 @@
         if (!def) return { ok: false, message: 'Unknown furniture type.' };
         const isInInterior = currentArea === 'interior';
         const isOnFarm = currentArea === 'farm';
-        if (def.area === 'interior' && !isInInterior) return { ok: false, message: `${def.name} must be placed inside the house.` };
+        if (def.area === 'interior' && !isInInterior && !isOnFarm) return { ok: false, message: `${def.name} can only be placed inside the house or on your farm.` };
         if (def.area === 'farm' && !isOnFarm) return { ok: false, message: `${def.name} must be placed on the farm.` };
         if (!canPlaceDecorativeFurnitureAt(col, row, null, furnitureKey)) return { ok: false, message: 'Cannot place furniture here.' };
         const itemKey = def.itemKey;
@@ -3343,7 +3343,6 @@
       let furniturePlacementArmedKey = null;
       let furnitureMoveArmedId = null;
       let furniturePlacementGhost = null;
-      let furniturePlacementPointerId = null;
       function armFurniturePlacement(itemKey) {
         furniturePlacementArmedKey = itemKey || null;
         if (furniturePlacementArmedKey) furnitureMoveArmedId = null;
@@ -17496,6 +17495,11 @@
           else if (activeAction === 'fish_cancel') window.Fishing?.close();
           return;
         }
+        if (furniturePlacementModeArmed()) {
+          const furniturePlacementReticle = getReticleTile(); // Used to commit placement to the same live aim tile shared by controller, mouse, keyboard, and the HUD.
+          commitFurniturePlacementAt(furniturePlacementReticle.col, furniturePlacementReticle.row);
+          return;
+        }
         if (heldMode === 'none' && activeAction === 'none') return;
         if (activeAction === 'consume_held_item') {
           // Compatibility fallback only — ordinary press/hold/release input
@@ -22662,6 +22666,12 @@
           applyControllerCameraLook(dt);
           updateMeleeAttackAlignment(dt);
           updateMovement(dt);
+          if (furniturePlacementModeArmed()) {
+            const furniturePlacementReticle = getReticleTile(); // Used only while placement is armed to keep the ghost on the live gameplay reticle tile.
+            showFurniturePlacementGhost(furniturePlacementReticle.col, furniturePlacementReticle.row);
+          } else if (furniturePlacementGhost) {
+            clearFurniturePlacementGhost();
+          }
           window.PerfProfiler?.end(inputPerf);
           const wildernessChunkPerf = window.PerfProfiler?.begin('wilderness chunks'); // Measures chunk streaming/build spikes in the existing mobile profiler.
           window.WildernessChunks?.update(dt);
@@ -24585,6 +24595,7 @@
       }
       const visibleWeaponContextPresses = new Set(); // Used to pair a context override's press/release without sending an unmatched release into Combat.input.
       const heldItemActionPresses = new Set(); // Pairs a holdToCommit action's press with its release even if the arch's displayed button changes mid-hold.
+      const furniturePlacementActionPresses = new Set(); // Owns controller/keyboard placement confirms through release so a last-item placement cannot leak a release into weapon input.
       const rangedAmmoAction2Press = { down: false, held: false, timer: null, lastScrollAt: 0 }; // Shared keyboard/controller hold state for the ordinary ammo-selection arch.
       const potionAction3Press = { down: false, held: false, timer: null, lastScrollAt: 0 }; // Tool Action 3 selector mirrors the normal held tool/item mode shift.
       const toolSelectPress = { down: false, held: false, timer: null, lastScrollAt: 0 }; // Cross-input Tool Select tap/hold distinction.
@@ -24668,6 +24679,16 @@
           rangedAmmoAction2Press.held = true; // Ammo Select likewise has no competing tap action while ranged is drawn.
           window._desktopSelectionArc?.beginHeldSelection?.('ammo');
           window._desktopSelectionArc?.openAmmo();
+          return;
+        }
+        if (phase === 'release' && furniturePlacementActionPresses.delete(actionId)) {
+          if (actionId === 'action1') actionHeldDown = false;
+          return;
+        }
+        if (phase === 'press' && (actionId === 'action1' || actionId === 'interact') && furniturePlacementModeArmed()) {
+          furniturePlacementActionPresses.add(actionId);
+          if (actionId === 'action1') actionHeldDown = true;
+          useActiveAction();
           return;
         }
         if (phase === 'release') {
@@ -25433,11 +25454,18 @@
       // button at all — actually takes effect.
       const desktopWeaponPointerSlots = new Map(); // Pairs each physical mouse button with the combat slot released below.
       const desktopHeldItemMousePresses = new Set(); // Pairs action1's direct-viewport-click press with its release for holdToCommit actions.
+      const desktopFurniturePlacementMousePresses = new Set(); // Owns mouse placement clicks through release without pointer capture, preserving ordinary mouse-look updates.
       if (isDesktop) {
         threeContainer.addEventListener('contextmenu', (e) => e.preventDefault());
         threeContainer.addEventListener('pointerdown', (e) => {
           if (menuOpen || farmEditMode || e.shiftKey || window.__mapEditorGizmoActive) return;
           const mouseAction = getActionForButton('desktop', 'Mouse' + e.button);
+          if (mouseAction === 'action1' && furniturePlacementModeArmed()) {
+            desktopFurniturePlacementMousePresses.add(e.button);
+            actionHeldDown = true;
+            useActiveAction();
+            return;
+          }
           if (heldMode === 'tool' && activeTool === 'weapon' && window.Combat?.input) {
             const weaponSlot = weaponActionSlot(mouseAction);
             const visibleOverride = weaponSlot ? visibleActionOverrideForWeaponSlot(mouseAction) : null;
@@ -25485,6 +25513,10 @@
           return;
         }
         const mouseAction = getActionForButton('desktop', 'Mouse' + e.button);
+        if (desktopFurniturePlacementMousePresses.delete(e.button)) {
+          actionHeldDown = false;
+          return;
+        }
         if (heldMode === 'tool' && activeTool === 'weapon' && window.Combat?.input) {
           const weaponSlot = weaponActionSlot(mouseAction);
           if (weaponSlot) {
@@ -25525,6 +25557,7 @@
           actionHeldDown = false;
           window.HeldItemActionInput?.abort();
         }
+        desktopFurniturePlacementMousePresses.clear();
       }, true);
 
       // Mouse-look: raycast cursor onto ground plane to get world position
@@ -25622,41 +25655,23 @@
           else run();
         });
       }
-      // ── Furniture placer pointer handler ───────────────────────────
-      // Click-to-place, same interaction model as the farm editor's own
-      // brush below (tap a tile, it applies immediately) rather than the
-      // hotbar's "equip item, aim reticle, interact" flow — checked first
-      // so an armed furniture placement always wins over the (dev-mode-
-      // only, so rarely simultaneously active) farm editor brush.
-      function furniturePlacementPointerArmed() {
+      // ── Furniture placement gameplay mode ─────────────────────────
+      // The selector only arms an item/move. A normal gameplay confirm then
+      // places on getReticleTile(), so controller, keyboard, and mouse all
+      // share the same target and mouse-look is never replaced by a captured
+      // screen-position placement pointer.
+      function furniturePlacementModeArmed() {
         return !!(furniturePlacementArmedKey || furnitureMoveArmedId)
           && (currentArea === 'farm' || currentArea === 'interior');
       }
-      threeContainer.addEventListener('pointerdown', (e) => {
-        if (!furniturePlacementPointerArmed()) return;
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        furniturePlacementPointerId = e.pointerId;
-        try { threeContainer.setPointerCapture?.(e.pointerId); } catch (_err) { /* preview still follows without capture */ }
-        const tile = _screenToActiveTile(e.clientX, e.clientY);
-        if (tile) showFurniturePlacementGhost(tile.col, tile.row);
-      }, { capture: true });
-      threeContainer.addEventListener('pointermove', (e) => {
-        if (!furniturePlacementPointerArmed()) return;
-        if (e.pointerType !== 'mouse' && e.pointerId !== furniturePlacementPointerId) return;
-        e.preventDefault();
-        const tile = _screenToActiveTile(e.clientX, e.clientY);
-        if (tile) showFurniturePlacementGhost(tile.col, tile.row);
-      }, { capture: true });
-      function commitFurniturePlacementPointer(e) {
-        if (e.pointerId !== furniturePlacementPointerId) return;
-        furniturePlacementPointerId = null;
-        if (!furniturePlacementPointerArmed() || !furniturePlacementGhost) return;
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        const { col, row } = furniturePlacementGhost;
+      function commitFurniturePlacementAt(col, row) {
+        if (!furniturePlacementModeArmed()) return false;
+        showFurniturePlacementGhost(col, row);
+        if (!furniturePlacementGhost) return false;
+
+        let result;
         if (furnitureMoveArmedId) {
-          const result = processingFurnitureById(furnitureMoveArmedId)
+          result = processingFurnitureById(furnitureMoveArmedId)
             ? moveProcessingFurniture(furnitureMoveArmedId, col, row)
             : moveDecorativeFurniture(furnitureMoveArmedId, col, row);
           showToast(result.message, result.ok);
@@ -25665,7 +25680,7 @@
           const itemKey = furniturePlacementArmedKey;
           const decorKey = getDecorativeFurnitureKeyByItemKey(itemKey);
           const processingKey = currentArea === 'farm' ? getFurnitureKeyByItemKey(itemKey) : null;
-          const result = decorKey
+          result = decorKey
             ? placeDecorativeFurniture(col, row, decorKey)
             : processingKey
               ? placeProcessingFurniture(col, row, processingKey)
@@ -25681,13 +25696,9 @@
         }
         clearFurniturePlacementGhost();
         window.FurniturePlacer?.render();
+        refreshActionBar();
+        return result?.ok !== false;
       }
-      window.addEventListener('pointerup', commitFurniturePlacementPointer, { capture: true });
-      window.addEventListener('pointercancel', (e) => {
-        if (e.pointerId !== furniturePlacementPointerId) return;
-        furniturePlacementPointerId = null;
-        clearFurniturePlacementGhost();
-      }, { capture: true });
 
       // Farm editor pointer handlers + window._farmEditor now live in
       // js/farm-editor.js — see its own _bindListeners(), run from its
@@ -25726,6 +25737,20 @@
         unassignVat: window.DewVats.unassignFromVat,
         tickLivestock: window.FarmAnimals.tickResources,
         getInventory: () => ({ ...inventory }),
+        furniturePlacementSnapshot: () => {
+          const furniturePlacementReticle = getReticleTile(); // Used by mobile/headless reports to verify the exact tile shared by preview and commit.
+          return {
+            armed: furniturePlacementModeArmed(),
+            itemKey: furniturePlacementArmedKey,
+            moveId: furnitureMoveArmedId,
+            reticle: { col: furniturePlacementReticle.col, row: furniturePlacementReticle.row },
+            ghost: furniturePlacementGhost ? { col: furniturePlacementGhost.col, row: furniturePlacementGhost.row, valid: !!furniturePlacementGhost.valid } : null,
+          };
+        },
+        commitFurniturePlacementAtReticle: () => {
+          const furniturePlacementReticle = getReticleTile(); // Used by tests/debug UI to exercise the same reticle commit without synthesizing a pointer.
+          return commitFurniturePlacementAt(furniturePlacementReticle.col, furniturePlacementReticle.row);
+        },
         loadBuildingScene: (mapId) => loadBuildingScene(mapId),
         buildingInteractableAt: (mapId, col, row) => _buildingInteractables.get(mapId + ',' + col + ',' + row),
         buildingInteractableCount: () => _buildingInteractables.size,
