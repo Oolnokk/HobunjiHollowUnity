@@ -12,8 +12,8 @@
     { "id": "fmqf8na7z6qev", "itemKey": "chairSimpleFurniture", "col": 2, "row": 9, "rotY": 0, "postX": 0, "postY": 0, "postZ": -0.5, "postSX": 1, "postSY": 1, "postSZ": 1, "gridRot": 90, "gridW": 1, "gridD": 1 },
     { "id": "fmqf8od68rfzk", "itemKey": "basicBedFurniture", "col": 7, "row": 2, "rotY": 0, "postX": -0.025, "postY": -0.019, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1 },
     { "id": "fmqf8omst6pir", "itemKey": "basicBedFurniture", "col": 8, "row": 2, "rotY": 0, "postX": 0.025, "postY": 0.004, "postZ": -0.009, "postSX": 1, "postSY": 1, "postSZ": 1 },
-    { "id": "fmqf8vr1xttz3", "itemKey": "nightstandFurniture", "col": 9, "row": 2, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1, "gridRot": 180, "gridW": 1, "gridD": 1 },
-    { "id": "fmqf8wtww2gzg", "itemKey": "nightstandFurniture", "col": 6, "row": 2, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1, "gridRot": 180, "gridW": 1, "gridD": 1 }
+    { "id": "fmqf8vr1xttz3", "itemKey": "nightstandFurniture", "col": 9, "row": 2, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1, "gridRot": 180, "gridW": 1, "gridD": 1, "npcWardrobeFor": "kinami_kunji" },
+    { "id": "fmqf8wtww2gzg", "itemKey": "nightstandFurniture", "col": 6, "row": 2, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1, "gridRot": 180, "gridW": 1, "gridD": 1, "npcWardrobeFor": "kaboku_kunji" }
   ],
   "id": "map_i_kunjis_potions_F2",
   "name": "Kunji's Potions - Upper Floor",
