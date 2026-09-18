@@ -86,6 +86,12 @@
        read getActiveGrid/getActiveScene/etc. from their own init() calls
        throughout game.js. -->
   <script src="js/grid-tile-accessors.js?v=20260915perf1"></script>
+  <!-- Small self-registering lookup for furniture/lantern-mask point lights
+       (game.js's makeFurniturePointLight and a few inline PointLight sites
+       in bandit-camps.js/porakaneki-camps-runtime.js/deadzone-billboard.js).
+       Loaded early since it has no deps of its own and any of those
+       creation sites may run as soon as the game world starts building. -->
+  <script src="js/furniture-light-registry.js?v=20260918perf1"></script>
   <!-- Wilderness zone ground-visual refresh after a runtime tile edit and
        the daily felled-tree/mined-rock regrowth ticks that call back into
        it, extracted out of game.js. Must load before game.js, which calls
@@ -135,7 +141,7 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20260821a"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20260916perf1"></script>
+  <script src="js/held-action-animations.js?v=20260917charge2"></script>
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
   <script src="js/character-action-locks.js?v=20260910controller1"></script>
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
@@ -209,32 +215,32 @@
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
   <script src="js/combat/resource-system.js?v=20260821alchemy1"></script>
   <script src="js/combat/resource-rings.js?v=20260809a"></script>
-  <script src="js/combat/combat-core.js?v=20260915enemydodge1"></script>
+  <script src="js/combat/combat-core.js?v=20260917charge3"></script>
   <!-- Stagger/Footing: authored 4-directional ragdoll blend clips + runtime
        playback onto the player's procedural rig and quarter-turned body-only
        animal planes. Must load after the procedural leg module and after
        resource-system.js/combat-core.js. -->
   <script src="js/combat/impact-blend-library.js?v=20260828b"></script>
   <script src="js/combat/impact-ragdoll-playback.js?v=20260828b"></script>
-  <script src="js/combat/combat-enemy-telegraph.js?v=20260910review1"></script>
+  <script src="js/combat/combat-enemy-telegraph.js?v=20260917charge4"></script>
   <script src="js/combat/combat-animal-attacks.js?v=20260825melee2"></script>
-  <script src="js/combat/combat-loadout.js?v=20260916perf1"></script>
+  <script src="js/combat/combat-loadout.js?v=20260917charge2"></script>
   <script src="js/combat/combat-progression.js?v=20260712d"></script>
   <script src="js/combat/combat-input.js?v=20260914transienttarget1"></script>
   <script src="js/combat/combat-combo.js?v=20260915enemydodge1"></script>
   <script src="js/combat/combat-quickattacks.js?v=20260915enemydodge1"></script>
   <script src="js/combat/quick-attack-bonus-indicator.js?v=20260914followfix1"></script>
-  <script src="js/combat/combat-counter-shield.js?v=20260915enemydodge1"></script>
-  <script src="js/combat/combat-blink-dodge.js?v=20260712d"></script>
-  <script src="js/combat/combat-charged-breaker.js?v=20260915enemydodge1"></script>
-  <script src="js/combat/combat-flurry.js?v=20260915enemydodge1"></script>
-  <script src="js/combat/combat-loadout-ui.js?v=20260817a"></script>
+  <script src="js/combat/combat-counter-shield.js?v=20260917charge4"></script>
+  <script src="js/combat/combat-blink-dodge.js?v=20260918ninjery3"></script>
+  <script src="js/combat/combat-charged-breaker.js?v=20260917charge4"></script>
+  <script src="js/combat/combat-flurry.js?v=20260917charge4"></script>
+  <script src="js/combat/combat-loadout-ui.js?v=20260917controller1"></script>
   <!-- Dedicated ranged slot, loading/firing poses, and hidden-sphere
        projectiles. Loads before bandits so their dual loadouts can call it. -->
   <script src="js/nearby-volume-collision.js?v=20260827treecover2"></script>
   <script src="js/combat/ranged-weapons.js?v=20260909perspectivepoint1"></script>
   <script src="js/combat/ranged-hud-reticle.js?v=20260916perf1"></script>
-  <script src="js/combat/melee-hud-reticle.js?v=20260916perf1"></script>
+  <script src="js/combat/melee-hud-reticle.js?v=20260917charge1"></script>
   <!-- Bandit gang combat AI + weapon visuals (window.BanditCombat) — must
        load before game.js, which calls window.BanditCombat.init(...)
        during its own setup. Reads window.Combat's comboData/quickAttackData/
@@ -242,7 +248,7 @@
        (at fight time, not load time), so exact ordering against those two
        doesn't matter as long as both exist by the time bandits actually
        spawn. -->
-  <script src="js/combat/combat-bandit.js?v=20260914transienttarget1"></script>
+  <script src="js/combat/combat-bandit.js?v=20260917charge2"></script>
   <script src="js/combat/combat-enemy-dodge.js?v=20260915a"></script>
   <!-- Bandit camps (zone adapter, tent props, camp lifecycle, companion
        perception, corpse loot) — window.BanditCamps. Calls
@@ -257,7 +263,7 @@
   <script src="js/bounty-board.js?v=20260831spearheadexisting1"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20260917trust1"></script>
+  <script src="js/combat/combat-config-loader.js?v=20260917charge3-loomcore2"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -1467,20 +1473,6 @@
             </div>
             <span class="settings-toggle"><input type="checkbox" id="settingOutlines" checked><span class="toggle-slider"></span></span>
           </label>
-          <label class="settings-row">
-            <div class="settings-label">
-              <div class="settings-name">Depth Outlines</div>
-              <div class="settings-desc">Extra outline pass along depth seams between objects (heavier on performance)</div>
-            </div>
-            <span class="settings-toggle"><input type="checkbox" id="settingDepthOutlines"><span class="toggle-slider"></span></span>
-          </label>
-          <label class="settings-row">
-            <div class="settings-label">
-              <div class="settings-name">Depth Outline Sensitivity</div>
-              <div class="settings-desc">How small a depth gap is needed to draw a seam</div>
-            </div>
-            <input type="range" id="settingDepthOutlineSensitivity" min="0" max="1" step="0.05" value="0.5" style="align-self:center">
-          </label>
           <div class="settings-section-title" style="margin-top:10px">Billboard Sprites</div>
           <label class="settings-row">
             <div class="settings-label">
@@ -2333,7 +2325,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20260916tentdeath1"></script>
+  <script src="js/pixel-probe.js?v=20260917charge4"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -2455,7 +2447,7 @@
   <!-- Generic poll-until-ready/timeout helper; game.js's
        waitForBuildingSceneReady calls into it directly. -->
   <script src="js/scene-ready-poller.js?v=20260917a"></script>
-  <script src="game.js?v=20260916survivaltent1"></script>
+  <script src="game.js?v=20260918chargeblink1-loomcore2"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
   <script src="js/controller-ui-nav.js?v=20260915perf1"></script>
   <script>
