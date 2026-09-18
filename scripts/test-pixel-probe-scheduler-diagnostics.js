@@ -37,7 +37,7 @@ assert(!source.includes('WebGLRenderer.prototype.render ='), 'Pixel Probe integr
 const match = source.match(/function _pixelProbeSchedulerLines\(\) \{[\s\S]*?\n  \}\n/);
 assert(match, 'could not locate _pixelProbeSchedulerLines in the shipped source');
 
-const sleepMatch = source.match(/function _pixelProbeAnimalSleepLines\\(\\) \\{[\\s\\S]*?\\n  \\}\\n/);
+const sleepMatch = source.match(/function _pixelProbeAnimalSleepLines\(\) \{[\s\S]*?\n  \}\n/);
 assert(sleepMatch, 'could not locate _pixelProbeAnimalSleepLines in the shipped source');
 
 function run(getDebugResult) {
