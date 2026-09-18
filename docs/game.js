@@ -761,12 +761,15 @@
         // windup/strike (combo/quick attacks/charged breaker; flurries and
         // Counter Shield's riposte don't use this). lungeStartX/Y anchor the
         // eased interpolation so partial collision blocking doesn't drift the
-        // curve; lungeHopUnits/lungeHopCurrent drive an optional cosmetic
-        // vertical arc (world-Y units, not pixels) for the charged breaker's leap.
+        // curve. Ordinary lunges can still use lungeHopUnits/lungeHopCurrent
+        // for an arc, while high-power attacks can also own an absolute world-Y
+        // flight line so their rendered body and melee hitbox actually move in 3D.
         lunging: false, lungeT: 0, lungeDur: 0, lungeStartX: 0, lungeStartY: 0,
         lungeDirX: 0, lungeDirY: 0, lungeDistancePx: 0, lungeHopUnits: 0, lungeHopCurrent: 0,
         lungeHeightUnits: 1.0, // Potion/food effects can adjust the player's vertical leap budget before the next attack.
         lungeAimPitch: 0, lungeHitTest: null, // Pitch is shared by the leap, 3D cone, and trail.
+        lungeDirectFlightStrength: 0, lungeVerticalTravelUnits: 0, // Straight 3D travel amplitude; Charged Breaker scales this from pose charge.
+        lungeFlightStartWorldY: 0, lungeFlightWorldY: null, lungeFallSpeedUnits: 0, lungeLandingPending: false,
         // Cliff climbing — see startClimb()/updateMovement. A scripted crossing
         // (no stamina cost, no terrain collision) rendered as a chain of
         // staggered hops rather than a continuous slide; climbSurfaceY/
@@ -8734,12 +8737,19 @@
           hopUnits,
           player.lungeHeightUnits,
           hitTest?.pitchDistanceResistance || 0,
-        ) || { distancePx, hopUnits, pitch: aimPitch };
+          hitTest?.directFlightStrength || 0,
+        ) || { distancePx, hopUnits, pitch: aimPitch, verticalTravelUnits: 0, directFlightStrength: 0 };
         player.lungeDirX = Math.cos(aimYaw);
         player.lungeDirY = Math.sin(aimYaw);
         player.lungeDistancePx = lungeProfile.distancePx;
         player.lungeHopUnits = lungeProfile.hopUnits;
         player.lungeAimPitch = lungeProfile.pitch;
+        player.lungeDirectFlightStrength = lungeProfile.directFlightStrength || 0;
+        player.lungeVerticalTravelUnits = lungeProfile.verticalTravelUnits || 0;
+        player.lungeFlightStartWorldY = playerMesh.position.y;
+        player.lungeFlightWorldY = player.lungeDirectFlightStrength > 0 ? player.lungeFlightStartWorldY : null;
+        player.lungeFallSpeedUnits = 0;
+        player.lungeLandingPending = false;
         player.lungeHitTest = hitTest;
       }
 
@@ -15972,7 +15982,7 @@
           const perspectiveLungeDirection = activeCameraMode === SHOULDER_SURF_MODE
             ? currentPlayerPerspectiveDirection({
                 x: player.x / TILE,
-                y: playerMesh.position.y + (player.lungeHopCurrent || 0),
+                y: Number.isFinite(player.lungeFlightWorldY) ? player.lungeFlightWorldY : playerMesh.position.y,
                 z: player.y / TILE,
               })
             : null; // Used below to keep horizontal travel and vertical pitch converged on the shared point.
@@ -16018,10 +16028,21 @@
           const lungeSwept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerOccupy);
           player.x = lungeSwept.x; player.y = lungeSwept.y;
           player.lungeHopCurrent = player.lungeHopUnits * Math.sin(eased * Math.PI);
+          if (Number.isFinite(player.lungeFlightWorldY)) {
+            player.lungeFlightWorldY = player.lungeFlightStartWorldY
+              + player.lungeVerticalTravelUnits * eased
+              + player.lungeHopCurrent; // Same eased parameter as XZ keeps the direct component on one straight 3D line.
+          }
           if (player.lungeT <= 0) {
             player.lunging = false;
             player.lungeHopCurrent = 0;
-            window.AudioSystem?.playHeavyLandingSfx(currentArea, window.AudioSystem?.footstepTileAt(currentArea, player.x, player.y, window.GridTileAccessors.getActiveGrid()));
+            const airborne = Number.isFinite(player.lungeFlightWorldY)
+              && Math.abs(player.lungeVerticalTravelUnits) > 0.01;
+            player.lungeLandingPending = airborne;
+            if (!airborne) {
+              player.lungeFlightWorldY = null;
+              window.AudioSystem?.playHeavyLandingSfx(currentArea, window.AudioSystem?.footstepTileAt(currentArea, player.x, player.y, window.GridTileAccessors.getActiveGrid()));
+            }
           }
           tickPlayerFootsteps(_fsPrevX, _fsPrevY);
           tickLungeTrail(_fsPrevX, _fsPrevY);
@@ -21612,19 +21633,40 @@
             : -0.32; // fallback if the player's own posterior anchor isn't resolvable yet
         }
 
-        // Smooth vertical position (bob over water, plus a combat lunge's
-        // cosmetic leap arc — see beginCombatLunge/player.lungeHopCurrent —
-        // or a climbing hop's bounce, see player.climbHopBounce)
-        const targetY = standY + (tile.water > 0.05 ? tile.water * WATER_UNIT * 0.6 : 0) + (player.lungeHopCurrent || 0) + (player.climbHopBounce || 0) + mountSeatLift + chairSeatSink;
-        // Exponential catch-up scaled by dt so the player mesh converges on its
-        // logical (wx, wz, targetY) target at the same real-time rate whether
-        // the frame budget is 8ms or 40ms — a plain per-frame `* 0.25` would
-        // visibly snap faster the instant the framerate jumps.
+        const groundedTargetY = standY + (tile.water > 0.05 ? tile.water * WATER_UNIT * 0.6 : 0) + (player.climbHopBounce || 0) + mountSeatLift + chairSeatSink;
+        if (Number.isFinite(player.lungeFlightWorldY) && !player.lunging) {
+          // Once the strike's straight flight ends, gravity owns only the
+          // remaining world-Y separation. The attack path itself stays a line;
+          // the fall happens afterward instead of bending that line into an arc.
+          const gravityUnitsS2 = 22;
+          player.lungeFallSpeedUnits += gravityUnitsS2 * dt;
+          player.lungeFlightWorldY = Math.max(
+            groundedTargetY,
+            player.lungeFlightWorldY - player.lungeFallSpeedUnits * dt,
+          );
+          if (player.lungeFlightWorldY <= groundedTargetY + 0.005) {
+            player.lungeFlightWorldY = null;
+            player.lungeFallSpeedUnits = 0;
+            if (player.lungeLandingPending) {
+              player.lungeLandingPending = false;
+              window.AudioSystem?.playHeavyLandingSfx(currentArea, window.AudioSystem?.footstepTileAt(currentArea, player.x, player.y, window.GridTileAccessors.getActiveGrid()));
+            }
+          }
+        }
+        const targetY = Number.isFinite(player.lungeFlightWorldY)
+          ? Math.max(groundedTargetY, player.lungeFlightWorldY)
+          : groundedTargetY;
+        // Exponential catch-up scaled by dt so ordinary terrain-follow remains
+        // smooth. Direct-flight attacks blend toward exact world-Y authority;
+        // at maximum Charged Breaker this is ~98% direct, so the body/hitbox
+        // actually follows the same nearly straight 3D line as the lunge.
         const _playerMeshSmoothXZ = 1 - Math.exp(-17.3 * dt);
         const _playerMeshSmoothY  = 1 - Math.exp(-11.9 * dt);
         playerMesh.position.x += (wx - playerMesh.position.x) * _playerMeshSmoothXZ;
         playerMesh.position.z += (wz - playerMesh.position.z) * _playerMeshSmoothXZ;
-        playerMesh.position.y += (targetY - playerMesh.position.y) * _playerMeshSmoothY;
+        const smoothedY = playerMesh.position.y + (targetY - playerMesh.position.y) * _playerMeshSmoothY;
+        const directY = player.lunging ? window.FormatUtils.clamp(player.lungeDirectFlightStrength || 0, 0, 1) : (Number.isFinite(player.lungeFlightWorldY) ? 1 : 0);
+        playerMesh.position.y = smoothedY + (targetY - smoothedY) * directY;
         // updateMountRide has already written the carrier's final smoothed
         // mesh transform this frame. In steady riding, use that exact render
         // position so rider and mount cannot trail each other through two
