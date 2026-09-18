@@ -73,7 +73,8 @@
   }
 
   function generateCavernFloor(seedText, generationOptions = {}) {
-    const cacheKey = generationOptions.fast ? `${seedText}:fast` : seedText;
+    const singleRoom = generationOptions.singleRoom === true || seedText === 'map_i_den_banubu'; // Used so every code path that prewarms Banubu's map gets the same one-room carve.
+    const cacheKey = `${seedText}${generationOptions.fast ? ':fast' : ''}${singleRoom ? ':single-room' : ''}`; // Used to prevent a normal den carve from poisoning the one-room cache.
     const useCache = generationOptions.cache !== false; // Regenerating roguelike floors opt out so one cache entry is not retained for every visit.
     if (useCache && _cavernFloorCache.has(cacheKey)) return _cavernFloorCache.get(cacheKey);
     const makeRng = (typeof WildernessMapGenerator !== 'undefined' && WildernessMapGenerator.makeRng) ? WildernessMapGenerator.makeRng : (s => { let a = 1; for (let i = 0; i < s.length; i++) a = (a * 33 + s.charCodeAt(i)) >>> 0; return () => (a = (a * 1664525 + 1013904223) >>> 0) / 4294967296; });
@@ -82,23 +83,25 @@
     // branchCount is the main knob controlling how many tiles the maze
     // ends up claiming — scaled from the target so bigger dens actually
     // grow bigger networks instead of just denser/thicker corridors.
-    const branchCount = Math.max(6, Math.round(targetTiles / 7));
+    const branchCount = singleRoom ? 0 : Math.max(6, Math.round(targetTiles / 7)); // Used to eliminate side tunnels in Banubu's private cavern while preserving ordinary den branching.
     // entranceLength (the root's point count, see carveMazeCavern) has to
     // scale right alongside branchCount — a short root with a lot of
     // branches all crowd the same small patch near the entrance and merge
     // into one open pit with no walls between corridors, instead of a real
     // branching network. Root points are spaced one branchLength apart, so
     // this gives every branch genuine room to land somewhere distinct.
-    const entranceLength = Math.max(6, Math.round(branchCount * 0.6));
+    const entranceLength = singleRoom ? 4 : Math.max(6, Math.round(branchCount * 0.6)); // Used by the sculptor's entrance/root sizing for the compact home cavern.
 
     // Half the tool's own default tile size (1) — same physical cave, but
     // snapped to a twice-as-fine tile grid, so dens read as genuinely
     // bigger maps (roughly 4x the tile count for the same footprint)
     // without changing how large or branchy the actual carve is.
     const tileSize = 0.5;
-    const sculptOptions = generationOptions.fast
-      ? { branchCount, entranceLength, tileSize, gridN: 32, splineSamples: 5, hitsPerStep: 1, probeDigBursts: 2, probeMaxPasses: 45, enforceWalkableClearance: 1 }
-      : { branchCount, entranceLength, tileSize };
+    const sculptOptions = singleRoom
+      ? { branchCount: 0, entranceLength, tileSize, pathPointCount: 4, pathWiggle: 0.08, turnChaos: 0, loopChance: 0, probeRadius: 1.05, brushRadius: 0.42, gridN: generationOptions.fast ? 32 : 48, splineSamples: 5, hitsPerStep: 2, probeDigBursts: 3, probeMaxPasses: 70, enforceWalkableClearance: 1 }
+      : generationOptions.fast
+        ? { branchCount, entranceLength, tileSize, gridN: 32, splineSamples: 5, hitsPerStep: 1, probeDigBursts: 2, probeMaxPasses: 45, enforceWalkableClearance: 1 }
+        : { branchCount, entranceLength, tileSize };
     const result = window.CavernSculptor.carveMazeCavern(sculptOptions, rng);
 
     // Shift every tile coordinate (and the mesh's X/Z) from the sculptor's
@@ -217,6 +220,30 @@
     return kinds[Math.floor(rng() * kinds.length)];
   }
 
+  function banubuStations(floor, exitTiles) {
+    const exitKeys = new Set((exitTiles || []).map(([col, row]) => `${col},${row}`)); // Used to keep both NPC stations off the doorway tiles.
+    const usable = floor.filter(([col, row]) => !exitKeys.has(`${col},${row}`)); // Used as the candidate room interior for Banubu's two spots.
+    if (!usable.length) return [];
+    const centroid = usable.reduce((sum, [col, row]) => ({ col: sum.col + col, row: sum.row + row }), { col: 0, row: 0 }); // Used to place the awake spot near the visual middle of the chamber.
+    centroid.col /= usable.length;
+    centroid.row /= usable.length;
+    const awake = usable.reduce((best, tile) => {
+      const bestDistance = Math.hypot(best[0] - centroid.col, best[1] - centroid.row); // Used to compare center proximity for the current best tile.
+      const tileDistance = Math.hypot(tile[0] - centroid.col, tile[1] - centroid.row); // Used to compare center proximity for this candidate tile.
+      return tileDistance < bestDistance ? tile : best;
+    }, usable[0]);
+    const sleepCandidates = usable.filter(tile => tile[0] !== awake[0] || tile[1] !== awake[1]); // Used to guarantee the sleeping spot is physically distinct from Banubu's daytime spot.
+    const sleep = (sleepCandidates.length ? sleepCandidates : usable).reduce((best, tile) => {
+      const bestDistance = Math.hypot(best[0] - awake[0], best[1] - awake[1]); // Used to keep the sleeping spot toward the quieter edge of the one-room cavern.
+      const tileDistance = Math.hypot(tile[0] - awake[0], tile[1] - awake[1]); // Used to compare separation from the awake spot.
+      return tileDistance > bestDistance ? tile : best;
+    }, (sleepCandidates.length ? sleepCandidates : usable)[0]);
+    return [
+      { id: 'station_banubu_cave_awake', label: "Banubu's Cave", col: awake[0], row: awake[1], rotY: 0, pose: 'stand', toolKey: '', toolIntervalSec: 0, toolAnimStyle: '' },
+      { id: 'station_banubu_cave_sleep', label: "Banubu's Sleeping Spot", col: sleep[0], row: sleep[1], rotY: 0, pose: 'lie', toolKey: '', toolIntervalSec: 0, toolAnimStyle: '' },
+    ];
+  }
+
   function synthesizeCavernMapData(mapId) {
     // Same sculptOptions town-mine.js's synthesizeFloorMapData requests
     // (fast: true — smaller gridN/splineSamples/probe budget, see
@@ -226,7 +253,26 @@
     // this still caches per mapId (the default): a den is one fixed lair
     // tied to a specific world location, not a roguelike floor re-rolled
     // fresh on every visit.
-    const { floor, cols, rows, exitCol, exitRow, exitTiles, nestCol, nestRow, disconnectedFloorTilesRemoved, mesh } = generateCavernFloor(mapId, { fast: true });
+    const isBanubuHome = mapId === 'map_i_den_banubu'; // Used to suppress den combat/decor and attach Banubu's home stations on his dedicated cavern.
+    const { floor, cols, rows, exitCol, exitRow, exitTiles, nestCol, nestRow, disconnectedFloorTilesRemoved, mesh } = generateCavernFloor(mapId, { fast: true, singleRoom: isBanubuHome });
+
+    if (isBanubuHome) {
+      return {
+        schema: 'hobunji_building_interior.v1',
+        id: mapId, name: "Banubu's Cavern",
+        cols, rows,
+        exits: [{ id: 'banubu_cave_exit', label: 'Back outside', tiles: exitTiles, targetMap: '', spawnCol: 0, spawnRow: 0 }],
+        colliders: [], floor, furniture: [],
+        npcStations: banubuStations(floor, exitTiles),
+        wallStyle: 'cavern',
+        exitCol, exitRow,
+        disconnectedFloorTilesRemoved,
+        mesh,
+        oreRocks: [], creatureSpawns: [],
+        denMotherKind: null,
+        isBanubuHome: true,
+      };
+    }
 
     const makeRng = (typeof WildernessMapGenerator !== 'undefined' && WildernessMapGenerator.makeRng) ? WildernessMapGenerator.makeRng : (() => Math.random);
     const decorRng = makeRng(mapId + '_decor');
@@ -270,6 +316,7 @@
     init,
     generateCavernFloor,
     entranceConnectedFloor,
+    banubuStations,
     pickDenMotherKind,
     synthesizeCavernMapData,
   };
