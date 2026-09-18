@@ -576,7 +576,10 @@
   }
 
   function flightVisualQuaternion(direction, origin, out = new THREE.Quaternion()) {
-    const forward = _projectileFlightDir.copy(direction).normalize(); // local +Y = sprite length / flight direction
+    // Existing arrow art is authored tip-at-bottom: the legacy -90° plane +
+    // yaw math made local +Y point opposite travel. Preserve that asset basis
+    // while replacing only the broken whole-projectile camera billboard.
+    const forward = _projectileFlightDir.copy(direction).multiplyScalar(-1).normalize(); // local +Y = sprite top/back; local -Y = travel/tip
     const cameraPos = activeCameraWorldPosition();
     if (cameraPos) _projectileFaceNormal.copy(cameraPos).sub(origin);
     else _projectileFaceNormal.copy(_projectileWorldUp);
