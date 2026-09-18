@@ -20158,6 +20158,8 @@
       // through anim's bespoke per-style formula — see the pose-driven
       // branch at the top of updateToolMesh's style if/else chain.
       let combatSwingPose = null;
+      let combatSwingAlignToReticle = false; // Ranged fire/throws rotate their authored pose frame onto the live reticle yaw+pitch.
+      let combatSwingToolEndFlip = false; // Same local-X end-for-end sprite-basis reversal as makeToolPlaneMesh(...,{flip:true}) for pick mining.
       const _toolMeshPoseMergeCache = { pose: undefined, styleNeutral: undefined, neutral: null, returnNeutral: null }; // Memoizes updateToolMesh's per-frame neutral/returnNeutral merge for the current swing (see the pose-driven branch below).
       // Affliction ids (see resource-system.js's AFFLICTIONS) this swing's
       // ability can actually inflict — set via opts.afflictionIds on
@@ -20320,6 +20322,8 @@
         combatSwingPose = opts.pose || null;
         combatSwingHoldS = holdS;
         combatSwingHeld = false;
+        combatSwingAlignToReticle = false;
+        combatSwingToolEndFlip = false;
         combatSwingWindupSlowdown = Math.max(0, Number(opts.windupSlowdown) || 0);
         combatSwingWindupPoseProgress = 0;
         combatSwingSequence = 'attack';
@@ -20340,6 +20344,8 @@
         combatSwingPose = opts.pose || null;
         combatSwingSign = 1;
         combatSwingPower = 1;
+        combatSwingAlignToReticle = opts.alignToReticle === true;
+        combatSwingToolEndFlip = opts.toolEndFlip === true;
         combatSwingWindupFrac = opts.windupFrac ?? 0.55;
         combatSwingStrikeFrac = opts.strikeFrac ?? 0.18;
         combatSwingHoldS = 0;
@@ -20435,6 +20441,8 @@
         combatSwingHeld = false;
         combatSwingWindupSlowdown = 0;
         combatSwingWindupPoseProgress = 0;
+        combatSwingAlignToReticle = false;
+        combatSwingToolEndFlip = false;
         toolSwingT = 0;
       }
 
@@ -20606,6 +20614,7 @@
         // bottom of the handle, meant to be thrust rather than swung like
         // the blade) faces forward instead when built for the pick slot.
         plane.rotation.x = opts.flip ? Math.PI / 2 : -Math.PI / 2;
+        plane.userData.toolEndFlipBase = opts.flip === true; // +90° is the exact pick-mining end-for-end basis.
         plane.renderOrder = HELD_OBJECT_RENDER_ORDER;
         g.add(plane);
         // Keep a handle on the sprite plane so updateToolMesh can layer the sweep style's
@@ -21069,6 +21078,7 @@
       const _qAnim    = new THREE.Quaternion();  // animation rotation
       const _qToolYaw = new THREE.Quaternion();  // tool's own local yaw twist (thrust)
       const _qRoll    = new THREE.Quaternion();  // tool's own local roll twist (pose-driven only)
+      const _qRangedAimPitch = new THREE.Quaternion(); // whole authored ranged-pose frame pitch onto the live reticle ray
       const _swAxis   = new THREE.Vector3();     // chop/tilt axis (player right in world)
 
       // Resolve anim style for the active tool from equipped item or fallback
@@ -21298,20 +21308,32 @@
           const rollRad    = THREE.MathUtils.degToRad(chan('roll', true));
           const bodyYawRad = THREE.MathUtils.degToRad(chan('bodyYaw', true));
 
-          const vθ  = θ + bodyYawRad;
+          // Ranged throws/fire author motion relative to the reticle frame,
+          // not the player's stale ground-facing frame. BodyYaw remains an
+          // authored yaw delta while the tool path itself inherits reticle pitch.
+          const reticleAligned = combatSwingAlignToReticle && activeTool === 'ranged';
+          const aimBaseYaw = reticleAligned ? (-currentPlayerAimAngle() + Math.PI / 2) : θ;
+          const aimPitchRad = reticleAligned ? currentPlayerAimPitch() : 0;
+          const vθ  = aimBaseYaw + bodyYawRad;
           const vRX =  Math.cos(vθ), vRZ = -Math.sin(vθ);
           const vFX =  Math.sin(vθ), vFZ =  Math.cos(vθ);
+          const aimCos = Math.cos(aimPitchRad), aimSin = Math.sin(aimPitchRad);
+          const pFX = vFX * aimCos, pFY = aimSin, pFZ = vFZ * aimCos;
+          const pUX = -vFX * aimSin, pUY = aimCos, pUZ = -vFZ * aimSin;
 
           playerMesh.rotation.y = vθ;
           _qFac.setFromAxisAngle(_tUp, vθ);
+          _qRangedAimPitch.setFromAxisAngle(_xAxis, -aimPitchRad);
           _qToolYaw.setFromAxisAngle(_tUp, yawRad);
           _qAnim.setFromAxisAngle(_xAxis, pitchRad);
           _qRoll.setFromAxisAngle(_zAxis, rollRad);
-          toolHolder.quaternion.copy(_qFac).multiply(_qToolYaw).multiply(_qAnim).multiply(_qRoll);
+          toolHolder.quaternion.copy(_qFac);
+          if (reticleAligned) toolHolder.quaternion.multiply(_qRangedAimPitch);
+          toolHolder.quaternion.multiply(_qToolYaw).multiply(_qAnim).multiply(_qRoll);
           toolHolder.position.set(
-            playerMesh.position.x + vRX * (handBaseX + x) + vFX * z,
-            playerMesh.position.y + playerToolBaseY + y,
-            playerMesh.position.z + vRZ * (handBaseX + x) + vFZ * z
+            playerMesh.position.x + vRX * (handBaseX + x) + pUX * y + pFX * z,
+            playerMesh.position.y + playerToolBaseY + pUY * y + pFY * z,
+            playerMesh.position.z + vRZ * (handBaseX + x) + pUZ * y + pFZ * z
           );
 
         } else if (anim === 'ranged') {
@@ -21582,6 +21604,9 @@
         const spinItemKey = equipmentSlots[activeTool] || equipmentSlots.weapon;
         const spinPlane    = toolMeshMap[activeTool]?.userData?.toolPlane;
         if (spinPlane) {
+          const baseEndFlip = spinPlane.userData?.toolEndFlipBase === true;
+          const actionEndFlip = !!combatSwingAnim && combatSwingToolEndFlip;
+          spinPlane.rotation.x = (baseEndFlip !== actionEndFlip) ? Math.PI / 2 : -Math.PI / 2;
           // The sweep style's blade-parallel z-twist belongs to whichever anim is actually
           // playing this frame, not whichever style the equipped item defaults to at rest —
           // combat abilities can force any style onto any weapon (a thrust-style quick
@@ -21629,7 +21654,7 @@
           firePendingAction();
         }
         if (fishThrowActive && toolSwingT <= 0) fishThrowActive = false;
-        if (combatSwingAnim && toolSwingT <= 0) { combatSwingAnim = null; combatSwingPose = null; combatSwingHoldS = 0; combatSwingHeld = false; combatSwingWindupSlowdown = 0; combatSwingWindupPoseProgress = 0; combatSwingSequence = 'attack'; combatSwingSequenceHoldFrac = null; combatSwingAfflictionIds = []; combatSwingAfflictionMuls = {}; combatSwingCone = null; }
+        if (combatSwingAnim && toolSwingT <= 0) { combatSwingAnim = null; combatSwingPose = null; combatSwingHoldS = 0; combatSwingHeld = false; combatSwingWindupSlowdown = 0; combatSwingWindupPoseProgress = 0; combatSwingAlignToReticle = false; combatSwingToolEndFlip = false; combatSwingSequence = 'attack'; combatSwingSequenceHoldFrac = null; combatSwingAfflictionIds = []; combatSwingAfflictionMuls = {}; combatSwingCone = null; }
       }
 
       // Initialize mesh map after toolHolder exists
@@ -26068,6 +26093,19 @@
           const plane = mesh?.userData?.toolPlane || mesh?.children?.[0]?.userData?.toolPlane || null;
           return plane?.material?.map || toolTextures[itemKey] || null;
         },
+        getHeldRangedWorldTransform: itemKey => {
+          if (equipmentSlots.ranged !== itemKey) return null;
+          const mesh = toolMeshMap.ranged;
+          const plane = mesh?.userData?.toolPlane || mesh?.children?.[0]?.userData?.toolPlane || null;
+          if (!plane) return null;
+          plane.updateWorldMatrix(true, false);
+          return {
+            position: plane.getWorldPosition(new THREE.Vector3()),
+            quaternion: plane.getWorldQuaternion(new THREE.Quaternion()),
+            scale: plane.getWorldScale(new THREE.Vector3()),
+          };
+        },
+        getActiveCamera: () => camera,
         setHeldRangedVisible: (itemKey, visible) => {
           if (equipmentSlots.ranged !== itemKey || !toolMeshMap.ranged) return false;
           toolMeshMap.ranged.visible = !!visible;
