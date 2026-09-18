@@ -995,6 +995,28 @@
     return { col: (player.x + Math.cos(angle) * tile * orbit) / tile, row: (player.y + Math.sin(angle) * tile * orbit) / tile };
   }
 
+  function loomFootprint(rotYDeg = 0) {
+    const def = furnitureDeps?.getDecorativeFurnitureDefs?.()?.loom || null; // Used to keep loom targeting on the same footprint data as placement/collision.
+    const baseW = Math.max(1, finite(def?.fw, 1)); // Used as the unrotated loom width; 1 is the current authored fallback.
+    const baseD = Math.max(1, finite(def?.fd, 2)); // Used as the unrotated loom depth; 2 preserves the current loom footprint before FurniturePlacer init.
+    const angle = finite(rotYDeg) * Math.PI / 180; // Used to mirror game.js decorativeFurnitureSize rotation math.
+    const cos = Math.abs(Math.cos(angle)), sin = Math.abs(Math.sin(angle)); // Used to project the footprint onto the tile grid after rotation.
+    return {
+      fw: Math.max(1, Math.ceil(baseW * cos + baseD * sin - 1e-6)),
+      fd: Math.max(1, Math.ceil(baseW * sin + baseD * cos - 1e-6)),
+    };
+  }
+
+  function distanceToLoomFootprint(point, loom) {
+    const minCol = finite(loom?.col); // Used as the left edge of the same occupied tile rectangle placement uses.
+    const minRow = finite(loom?.row); // Used as the top edge of the same occupied tile rectangle placement uses.
+    const maxCol = minCol + Math.max(1, finite(loom?.fw, 1)); // Used to measure aim distance from the entire loom width, not its first tile center.
+    const maxRow = minRow + Math.max(1, finite(loom?.fd, 1)); // Used to measure aim distance from the entire loom depth, not its first tile center.
+    const dx = point.col < minCol ? minCol - point.col : point.col > maxCol ? point.col - maxCol : 0; // Horizontal distance to the footprint; zero while aimed anywhere over it.
+    const dy = point.row < minRow ? minRow - point.row : point.row > maxRow ? point.row - maxRow : 0; // Vertical distance to the footprint; zero while aimed anywhere over it.
+    return Math.hypot(dx, dy);
+  }
+
   async function authoredLooms(area) {
     const areaKey = String(area || ''); // Used as the static-interior loom cache key.
     if (!/^map_i_/.test(areaKey)) return [];
@@ -1007,7 +1029,11 @@
           return (map?.furniture || []).filter(piece => {
             const key = String(piece?.itemKey || '').toLowerCase(); // Used to accept both map-authored `loom` and furniture-runtime `loomFurniture`.
             return key === 'loom' || key === 'loomfurniture';
-          }).map(piece => ({ id: piece.id || null, key: 'loom', col: finite(piece.col), row: finite(piece.row), source: 'authored' }));
+          }).map(piece => {
+            const rotYDeg = finite(piece?.rotYDeg ?? piece?.rotY, 0); // Used to match the authored fixture's rendered footprint orientation.
+            const footprint = loomFootprint(rotYDeg); // Used by targeting so every tile occupied by this authored loom is interactive.
+            return { id: piece.id || null, key: 'loom', col: finite(piece.col), row: finite(piece.row), rotYDeg, ...footprint, source: 'authored' };
+          });
         } catch (error) {
           lastError = String(error?.message || error);
           return [];
@@ -1020,7 +1046,11 @@
   function placedLooms() {
     const placed = furnitureDeps?.getPlacedFurniture?.() || [];
     return placed.filter(obj => String(obj?.key || '').toLowerCase() === 'loom' || String(obj?.itemKey || '').toLowerCase() === 'loomfurniture')
-      .map(obj => ({ id: obj.id || null, key: 'loom', col: finite(obj.col), row: finite(obj.row), source: 'placed' }));
+      .map(obj => {
+        const rotYDeg = finite(obj?.rotYDeg ?? obj?.rotY, 0); // Used to keep moved/rotated player-placed looms targetable over their current footprint.
+        const footprint = loomFootprint(rotYDeg); // Used by targeting to cover every occupied tile of the placed loom.
+        return { id: obj.id || null, key: 'loom', col: finite(obj.col), row: finite(obj.row), rotYDeg, ...footprint, source: 'placed' };
+      });
   }
 
   async function targetedLoom() {
@@ -1028,7 +1058,7 @@
     if (!point) return null;
     const area = currentArea();
     const candidates = [...placedLooms(), ...(await authoredLooms(area))];
-    const match = candidates.map(loom => ({ loom, distance: Math.hypot(point.col - (loom.col + 0.5), point.row - (loom.row + 0.5)) }))
+    const match = candidates.map(loom => ({ loom, distance: distanceToLoomFootprint(point, loom) }))
       .filter(entry => entry.distance <= 0.95).sort((a, b) => a.distance - b.distance)[0];
     loomTarget = match ? { ...match.loom, distance: match.distance, area } : null;
     return loomTarget;
@@ -1129,7 +1159,7 @@
     learnOwnedBlueprints,
     renderPatternedSprite,
     debugSnapshot,
-    __test: Object.freeze({ baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask }),
+    __test: Object.freeze({ baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask, loomFootprint, distanceToLoomFootprint }),
   });
   window.__clothingWeavingDebug = debugSnapshot;
 
