@@ -4,6 +4,11 @@ on:
   push:
     paths:
       - 'docs/js/clothing-weaving-system.js'
+      - 'docs/js/pattern-authoring.js'
+      - 'docs/js/pattern-library.js'
+      - 'docs/js/motif-store.js'
+      - 'docs/js/tool-metal-recolor.js'
+      - 'docs/js/equipment-panel.js'
       - 'docs/js/clothing-weight-dodge-policy.js'
       - 'docs/js/clothing-weaving-npc-compat.js'
       - 'docs/js/inventory-character-effects.js'
@@ -30,6 +35,11 @@ on:
   pull_request:
     paths:
       - 'docs/js/clothing-weaving-system.js'
+      - 'docs/js/pattern-authoring.js'
+      - 'docs/js/pattern-library.js'
+      - 'docs/js/motif-store.js'
+      - 'docs/js/tool-metal-recolor.js'
+      - 'docs/js/equipment-panel.js'
       - 'docs/js/clothing-weight-dodge-policy.js'
       - 'docs/js/clothing-weaving-npc-compat.js'
       - 'docs/js/inventory-character-effects.js'
@@ -66,6 +76,11 @@ jobs:
       - name: Syntax checks
         run: |
           node --check docs/js/clothing-weaving-system.js
+          node --check docs/js/pattern-authoring.js
+          node --check docs/js/pattern-library.js
+          node --check docs/js/motif-store.js
+          node --check docs/js/tool-metal-recolor.js
+          node --check docs/js/equipment-panel.js
           node --check docs/js/clothing-weight-dodge-policy.js
           node --check docs/js/clothing-weaving-npc-compat.js
           node --check docs/js/inventory-character-effects.js
