@@ -149,11 +149,11 @@ const directWildlifeDeps = {
   },
 };
 directWildlifeWindow.WildlifeSpawn.init(directWildlifeDeps);
-assert.equal(directCreatureDb.puktuk?.hostile, true, 'direct WildlifeSpawn.init creates the predator Puktuk before DOMContentLoaded');
+assert.equal(directCreatureDb.puktuk?.hostile, false, 'direct WildlifeSpawn.init creates the neutral predator Puktuk before DOMContentLoaded');
 assert.equal(directCreatureDb.puktuk?.defaultSizeClass, 'medium');
 assert.deepEqual(JSON.parse(JSON.stringify(directWildlifeDeps.EXTERIOR_ZONES.map_western_slope.herbivoreSpecies)), ['uumkaoii-wild']);
 assert.deepEqual(JSON.parse(JSON.stringify(directWildlifeDeps.EXTERIOR_ZONES.map_western_slope.packSpecies)), ['gar-wolf', 'puktuk']);
 assert.deepEqual(JSON.parse(JSON.stringify(directWildlifeDeps.EXTERIOR_ZONES.map_western_slope.denSpecies)), ['future-western-den-species', 'puktuk']);
 assert.deepEqual(JSON.parse(JSON.stringify(directWildlifeDeps.DEN_MOTHER_DEFS.puktuk)), { creatureKey: 'puktuk', nestItemKey: null });
 
-console.log(`PASS Puktuk predator/den integration (foxtail ${foxtailCount}/5000)`);
+console.log(`PASS Puktuk neutral-predator/den integration (foxtail ${foxtailCount}/5000)`);
