@@ -127,7 +127,7 @@
   }
 
   window.HobunjiShoulderSplineProfiles = {
-    version: 2, species: SPECIES, allows: kind => SPECIES_SET.has(canonicalKind(kind)), canonicalKind, kindFromOptions,
+    version: 3, species: SPECIES, allows: kind => SPECIES_SET.has(canonicalKind(kind)), canonicalKind, kindFromOptions,
     defaultShoulderRest, bodyOnlyRig, supportRigFor: resolveForKind, resolveForOptions, install,
   };
   install();
