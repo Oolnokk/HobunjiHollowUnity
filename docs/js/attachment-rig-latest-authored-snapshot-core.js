@@ -162,6 +162,14 @@
   });
 
   apply();
+  // Lightweight repository previews can opt into a single authoritative apply.
+  // They do not expose Animation Author's import control, so the old retry loop
+  // could never satisfy importReady and needlessly re-applied the same snapshot
+  // every 50 ms for 30 seconds.
+  if (window.HOBUNJI_ATTACHMENT_RIG_LATEST_SINGLE_APPLY === true) {
+    installExportGuard();
+    return;
+  }
   let attempts = 0;
   const timer = setInterval(() => {
     apply();
