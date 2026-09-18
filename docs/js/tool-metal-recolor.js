@@ -219,16 +219,11 @@
     return mask;
   }
 
-  // ── Triangle-tessellation repeat geometry ──────────────────────────────
-  // Ported from the Hobunji Weaving Pattern Editor prototype
-  // (fitGuaranteedTriangle/buildTranslationTessellation): fits the
-  // minimum-area triangle that encloses the motif's opaque envelope (plus a
-  // small padding), then pairs it with its own 180°-rotation around the
-  // midpoint of its longest edge. That triangle + partner always forms a
-  // parallelogram — any triangle tiles the plane this way — so translating
-  // it by integer combinations of the two edge vectors from the shared
-  // edge's endpoints to the apex (basisU/basisV) tiles seamlessly with no
-  // gaps and no need for a separate "spacing" between copies.
+  // ── Frame-based repeat geometry ─────────────────────────────────────────
+  // Mirrors docs/js/clothing-weaving-system.js's own FRAME_SHAPES/
+  // legacyFrameFields/findOpaqueBounds — see that file's comments for the
+  // full rationale. Duplicated locally per this codebase's convention of
+  // not cross-importing between independent IIFE modules.
   function findOpaqueBounds(mask, w, h) {
     let x0 = w, y0 = h, x1 = -1, y1 = -1, count = 0;
     for (let y = 0; y < h; y++) {
@@ -245,121 +240,49 @@
     return { x0, y0, x1, y1, w: x1 - x0 + 1, h: y1 - y0 + 1, area: count };
   }
 
-  function convexHull(points) {
-    if (points.length <= 1) return points.map(p => ({ ...p }));
-    const pts = [...points].sort((a, b) => a.x - b.x || a.y - b.y);
-    const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
-    const lower = [];
-    for (const p of pts) {
-      while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
-      lower.push(p);
-    }
-    const upper = [];
-    for (let i = pts.length - 1; i >= 0; i--) {
-      const p = pts[i];
-      while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
-      upper.push(p);
-    }
-    lower.pop(); upper.pop();
-    return lower.concat(upper);
+  // Mirrors clothing-weaving-system.js's own FRAME_SHAPES — see that file's
+  // comments for the full rationale (polygon clipping, why pairing two
+  // clipped copies tiles seamlessly for any shape, why diamond needs no
+  // pairing).
+  const FRAME_SHAPES = Object.freeze({
+    square: { label: 'Square', paired: false, basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: 0, y: h } }), polygon: null },
+    brick: { label: 'Brick', paired: false, basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: w / 2, y: h } }), polygon: null },
+    diamond: {
+      label: 'Diamond', paired: false,
+      basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: 0, y: h } }),
+      polygon: (w, h) => [{ x: w / 2, y: 0 }, { x: w, y: h / 2 }, { x: w / 2, y: h }, { x: 0, y: h / 2 }],
+    },
+    triangle: {
+      label: 'Triangle', paired: true,
+      basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: 0, y: h } }),
+      polygon: (w, h) => [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }],
+    },
+    trapezoid: {
+      label: 'Trapezoid', paired: true,
+      basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: 0, y: h } }),
+      polygon: (w, h) => { const cutFrac = 0.25, cut = h * cutFrac; return [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h - cut }, { x: 0, y: cut }]; },
+    },
+  });
+  function frameShapeFor(id) {
+    return FRAME_SHAPES[id] || FRAME_SHAPES.square;
   }
 
-  // Hull of the opaque raster's own envelope (each row's filled span as
-  // pixel-edge corners, not pixel centers) so the fitted triangle encloses
-  // whole opaque pixels, not just their centers.
-  function opaqueEnvelopeHull(mask, w, h, bbox) {
-    const pts = [];
-    for (let y = bbox.y0; y <= bbox.y1; y++) {
-      let left = Infinity, right = -Infinity;
-      for (let x = bbox.x0; x <= bbox.x1; x++) {
-        if (!mask[y * w + x]) continue;
-        if (x < left) left = x;
-        if (x > right) right = x;
-      }
-      if (!Number.isFinite(left)) continue;
-      const ly = y - bbox.y0, lx = left - bbox.x0, rx = right - bbox.x0 + 1;
-      pts.push({ x: lx, y: ly }, { x: rx, y: ly }, { x: lx, y: ly + 1 }, { x: rx, y: ly + 1 });
-    }
-    return convexHull(pts);
-  }
-
-  function vecDist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
-  function lineIntersection(n1, c1, n2, c2) {
-    const det = n1.x * n2.y - n1.y * n2.x;
-    if (Math.abs(det) < 1e-8) return null;
-    return { x: (c1 * n2.y - n1.y * c2) / det, y: (n1.x * c2 - c1 * n2.x) / det };
-  }
-  function polygonArea(points) {
-    let a = 0;
-    for (let i = 0; i < points.length; i++) {
-      const p = points[i], q = points[(i + 1) % points.length];
-      a += p.x * q.y - q.x * p.y;
-    }
-    return Math.abs(a) * 0.5;
-  }
-  function rotate180(p, m) { return { x: 2 * m.x - p.x, y: 2 * m.y - p.y }; }
-
-  function fitGuaranteedTriangle(mask, w, h, padding) {
-    const bbox = findOpaqueBounds(mask, w, h);
-    if (!bbox) return null;
-    const hull = opaqueEnvelopeHull(mask, w, h, bbox);
-    if (hull.length < 3) {
-      const bw = Math.max(1, bbox.w), bh = Math.max(1, bbox.h);
-      hull.push({ x: bw, y: 0 }, { x: 0, y: bh });
-    }
-    const pad = Math.max(0, Number(padding) || 0);
-    const samples = 48, twopi = Math.PI * 2, normals = [];
-    for (let i = 0; i < samples; i++) {
-      const a = twopi * i / samples;
-      const n = { x: Math.cos(a), y: Math.sin(a) };
-      let support = -Infinity;
-      for (const p of hull) { const v = n.x * p.x + n.y * p.y; if (v > support) support = v; }
-      normals.push({ a, n, c: support + pad });
-    }
-    // Dense (48-angle) search for the minimum-area triangle whose three
-    // support lines all enclose the hull — cheap enough to run per render
-    // (O(samples^3) candidate triples, ~18k, each an O(1) check).
-    let best = null;
-    for (let i = 0; i < samples - 2; i++) {
-      for (let j = i + 1; j < samples - 1; j++) {
-        for (let k = j + 1; k < samples; k++) {
-          const gaps = [normals[j].a - normals[i].a, normals[k].a - normals[j].a, normals[i].a + twopi - normals[k].a];
-          if (Math.max(gaps[0], gaps[1], gaps[2]) >= Math.PI - 1e-6) continue;
-          const a = lineIntersection(normals[i].n, normals[i].c, normals[j].n, normals[j].c);
-          const b = lineIntersection(normals[j].n, normals[j].c, normals[k].n, normals[k].c);
-          const c = lineIntersection(normals[k].n, normals[k].c, normals[i].n, normals[i].c);
-          if (!a || !b || !c) continue;
-          const verts = [a, b, c];
-          const inside = verts.every(v => [normals[i], normals[j], normals[k]].every(s => s.n.x * v.x + s.n.y * v.y <= s.c + 1e-5));
-          if (!inside) continue;
-          const area = polygonArea(verts);
-          if (!Number.isFinite(area) || area <= 1e-6) continue;
-          if (!best || area < best.area) best = { verts, area };
-        }
-      }
-    }
-    if (!best) {
-      const bw = bbox.w + pad * 2, bh = bbox.h + pad * 2;
-      best = { verts: [{ x: 0, y: 0 }, { x: bw * 2, y: 0 }, { x: 0, y: bh * 2 }], area: bw * bh * 2 };
-    }
-    const verts = best.verts;
-    // The longest edge becomes the shared edge with the 180° partner —
-    // generally gives the most readable repeat.
-    const edges = [[0, 1, 2], [1, 2, 0], [2, 0, 1]]
-      .map(([ai, bi, ci]) => ({ ai, bi, ci, d: vecDist(verts[ai], verts[bi]) }))
-      .sort((x, y) => y.d - x.d)[0];
-    let A = verts[edges.ai], B = verts[edges.bi], C = verts[edges.ci];
-    const minX = Math.min(A.x, B.x, C.x, 0), minY = Math.min(A.y, B.y, C.y, 0);
-    const shift = { x: -minX + 1, y: -minY + 1 };
-    A = { x: A.x + shift.x, y: A.y + shift.y };
-    B = { x: B.x + shift.x, y: B.y + shift.y };
-    C = { x: C.x + shift.x, y: C.y + shift.y };
-    const midpoint = { x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 };
-    const partnerC = rotate180(C, midpoint);
-    const basisU = { x: A.x - C.x, y: A.y - C.y };
-    const basisV = { x: B.x - C.x, y: B.y - C.y };
-    const motifPlacement = { x: shift.x, y: shift.y, w: bbox.w, h: bbox.h };
-    return { bbox, A, B, C, partnerC, midpoint, basisU, basisV, motifPlacement };
+  // Patterns saved before the frame tool existed have no frameShape — just
+  // the old repeatMode/patternScale/patternRotationDeg/translateX/Y fields.
+  // Remapped onto the equivalent new frame fields (repeatMode 'grid' ->
+  // 'square', anything else -> 'triangle', same overall scale/rotation/
+  // position) rather than keeping the old tight-fit-hull algorithm alive
+  // just for these — see clothing-weaving-system.js's legacyFrameFields.
+  function legacyFrameFields(patternDef) {
+    if (patternDef?.frameShape) return patternDef;
+    return {
+      ...patternDef,
+      frameShape: patternDef?.repeatMode === 'grid' ? 'square' : 'triangle',
+      frameScale: patternDef?.patternScale,
+      frameRotationDeg: patternDef?.patternRotationDeg,
+      frameX: patternDef?.translateX,
+      frameY: patternDef?.translateY,
+    };
   }
 
   // Renders a caller-authored removal pattern (see pattern-authoring.js) into
@@ -368,23 +291,25 @@
   // knows nothing about metal/verdigris, just stamps a black motif image
   // (tiled via the triangle-tessellation lattice above, when enabled)
   // across a transparent raster per the placement fields the editor wrote.
-  function buildAuthoredClearedMask(width, height, patternDef, motifImg) {
+  function buildAuthoredClearedMask(width, height, rawPatternDef, motifImg) {
+    const patternDef = legacyFrameFields(rawPatternDef);
     const canvas = document.createElement('canvas');
     canvas.width = width;
     canvas.height = height;
     const ctx = canvas.getContext('2d');
     ctx.imageSmoothingEnabled = false;
 
-    // motifScale sizes the motif itself; patternScale (applied via
-    // ctx.scale further down) zooms the whole tiled field afterward — same
-    // distinction as motifRotationDeg vs patternRotationDeg. `patternDef.scale`
-    // is a fallback for patterns saved before motifScale/patternScale
-    // existed as separate fields.
+    // motifScale sizes the motif ink itself; frameScale resizes the tiling
+    // window (cell spacing + clip boundary) around it, independently — same
+    // distinction as motifRotationDeg vs frameRotationDeg. The two are
+    // applied separately further down specifically so frameScale never
+    // also rescales the drawn ink. `patternDef.scale` is a fallback for
+    // patterns saved before motifScale existed as its own field.
     const motifScale = Math.max(0.05, Number(patternDef.motifScale ?? patternDef.scale) || 1);
-    const fieldScale = Math.max(0.05, Number(patternDef.patternScale) || 1);
+    const frameScale = Math.max(0.05, Number(patternDef.frameScale) || 1);
     const motifRad = ((Number(patternDef.motifRotationDeg) || 0) * Math.PI) / 180;
-    const fieldRad = ((Number(patternDef.patternRotationDeg) || 0) * Math.PI) / 180;
-    const repeatMode = patternDef.repeatMode === 'grid' ? 'grid' : 'triangle';
+    const frameRad = ((Number(patternDef.frameRotationDeg) || 0) * Math.PI) / 180;
+    const shape = frameShapeFor(patternDef.frameShape);
     const naturalW = motifImg.naturalWidth || motifImg.width || 1;
     const naturalH = motifImg.naturalHeight || motifImg.height || 1;
 
@@ -407,19 +332,18 @@
       return { canvas: c, ctx: cctx, size };
     }
 
-    // The repeat geometry (triangle lattice or grid pitch) is always
-    // derived from a fixed 1x reference render, clipped tightly to the
-    // motif's own opaque ink — never the full working canvas, and never
-    // motifScale. The *actual* stamped artwork is prepared separately at
-    // the real motifScale and centered on that same geometry, so scale
-    // above 1x deliberately overflows into neighboring copies instead of
-    // growing the repeat geometry to match; below 1x it leaves gaps.
+    // The repeat geometry (frame lattice) is always derived from a fixed 1x
+    // reference render, clipped tightly to the motif's own opaque ink —
+    // never the full working canvas, and never motifScale. The *actual*
+    // stamped artwork is prepared separately at the real motifScale and
+    // centered on that same geometry, so scale above 1x deliberately
+    // overflows into neighboring copies instead of growing the repeat
+    // geometry to match; below 1x it leaves gaps.
     const prepDraw = prepareMotif(motifScale);
 
     ctx.save();
-    ctx.translate(width / 2 + (Number(patternDef.translateX) || 0), height / 2 + (Number(patternDef.translateY) || 0));
-    ctx.rotate(fieldRad);
-    ctx.scale(fieldScale, fieldScale);
+    ctx.translate(width / 2 + (Number(patternDef.frameX) || 0), height / 2 + (Number(patternDef.frameY) || 0));
+    ctx.rotate(frameRad);
 
     if (patternDef.tiling) {
       const prepRef = prepareMotif(1);
@@ -429,82 +353,101 @@
       const bbox = findOpaqueBounds(refMask, prepRef.size, prepRef.size);
 
       if (bbox) {
-        if (repeatMode === 'grid') {
-          // Grid pitch is the motif's own tight ink bounds at 1x scale,
-          // plus a configurable gap — not the full (possibly much larger,
-          // transparent-padded) prepared-canvas size.
-          const centerX = bbox.x0 + bbox.w / 2, centerY = bbox.y0 + bbox.h / 2;
-          const drawX = centerX - prepDraw.size / 2, drawY = centerY - prepDraw.size / 2;
-          const gap = Math.max(0, Number(patternDef.gridSpacing) ?? 6);
-          const stepX = bbox.w + gap, stepY = bbox.h + gap;
-          const reach = Math.hypot(width, height) / fieldScale;
-          const cols = Math.ceil(reach / stepX) + 2;
-          const rows = Math.ceil(reach / stepY) + 2;
-          for (let ry = -rows; ry <= rows; ry++) {
-            for (let rx = -cols; rx <= cols; rx++) {
-              ctx.save();
-              ctx.translate(rx * stepX, ry * stepY);
-              ctx.drawImage(prepDraw.canvas, drawX, drawY);
-              ctx.restore();
-            }
+        const { u: basisU, v: basisV } = shape.basis(bbox.w, bbox.h);
+        const centerX = bbox.x0 + bbox.w / 2, centerY = bbox.y0 + bbox.h / 2;
+        const drawX = centerX - prepDraw.size / 2, drawY = centerY - prepDraw.size / 2;
+        // The pairing rotation's center — NOT (basisU+basisV)/2 alone, since
+        // that assumes the cell/polygon starts at local origin (0,0); it
+        // actually starts at (bbox.x0,bbox.y0), so the true cell-rectangle
+        // center is that offset plus half the basis, i.e. exactly
+        // (centerX,centerY) above.
+        const midpoint = { x: centerX, y: centerY };
+        const polygon = shape.polygon ? shape.polygon(bbox.w, bbox.h) : null;
+        // motifScale > 1 deliberately lets the ink overflow past its own
+        // cell (see the comment on `prepareMotif` above) — for square/brick
+        // that's automatic, since they never clip at all, but a shape with
+        // a real polygon needs its clip boundary to grow right along with
+        // the ink or it'd hard-cut exactly the overflow motifScale is
+        // supposed to allow.
+        const overflowScale = Math.max(1, motifScale);
+        // frameScale resizes the tiling window itself (cell spacing + clip
+        // boundary) — it must NOT also resize the ink drawImage below, or
+        // "frame scale" just becomes a second, entangled copy of
+        // motifScale instead of an independent crop/spacing control. So
+        // it's applied by hand to the tile offsets and clip vertices below,
+        // never via ctx.scale (which would carry through to drawImage too).
+        const cellScale = frameScale * overflowScale;
+        function clipToPolygon() {
+          if (!polygon) return;
+          ctx.beginPath();
+          polygon.forEach((p, i) => {
+            const px = centerX + (bbox.x0 + p.x - centerX) * cellScale;
+            const py = centerY + (bbox.y0 + p.y - centerY) * cellScale;
+            if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+          });
+          ctx.closePath();
+          ctx.clip();
+        }
+
+        function stampCell(ox, oy) {
+          ctx.save();
+          ctx.translate(ox, oy);
+          clipToPolygon();
+          ctx.drawImage(prepDraw.canvas, drawX, drawY);
+          ctx.restore();
+          if (!shape.paired) return;
+          ctx.save();
+          ctx.translate(ox + midpoint.x, oy + midpoint.y);
+          ctx.rotate(Math.PI);
+          ctx.translate(-midpoint.x, -midpoint.y);
+          clipToPolygon();
+          ctx.drawImage(prepDraw.canvas, drawX, drawY);
+          ctx.restore();
+        }
+
+        // How far the lattice needs to extend (in basisU/basisV step
+        // counts) to cover the whole canvas — inverting the (generally
+        // skewed, non-axis-aligned) basis matrix rather than assuming a
+        // square grid, since the frame's own rotation can point either
+        // basis vector in any direction.
+        const reach = (Math.hypot(width, height) / 2 + prepDraw.size) / frameScale;
+        const det = basisU.x * basisV.y - basisU.y * basisV.x;
+        let maxI = 8, maxJ = 8;
+        if (Math.abs(det) > 1e-6) {
+          const invA = basisV.y / det, invB = -basisV.x / det;
+          const invC = -basisU.y / det, invD = basisU.x / det;
+          maxI = 0; maxJ = 0;
+          for (const [cx, cy] of [[reach, reach], [reach, -reach], [-reach, reach], [-reach, -reach]]) {
+            maxI = Math.max(maxI, Math.abs(invA * cx + invB * cy));
+            maxJ = Math.max(maxJ, Math.abs(invC * cx + invD * cy));
           }
-        } else {
-          const padding = Math.max(0, Number(patternDef.trianglePadding ?? patternDef.spacing) ?? 0.5);
-          const fit = fitGuaranteedTriangle(refMask, prepRef.size, prepRef.size, padding);
-          if (fit) {
-            // fit.motifPlacement/fit.bbox are in the fit's own
-            // (shifted-positive) coordinate system derived from the 1x
-            // reference — this is that bbox's own center in that system,
-            // which is where the actual (possibly differently-scaled)
-            // drawn motif gets centered.
-            const outputCenterX = fit.motifPlacement.x + fit.bbox.w / 2;
-            const outputCenterY = fit.motifPlacement.y + fit.bbox.h / 2;
-            const drawX = outputCenterX - prepDraw.size / 2;
-            const drawY = outputCenterY - prepDraw.size / 2;
-
-            function stampCell(ox, oy) {
-              ctx.save();
-              ctx.translate(ox, oy);
-              ctx.drawImage(prepDraw.canvas, drawX, drawY);
-              ctx.restore();
-              ctx.save();
-              ctx.translate(ox, oy);
-              ctx.translate(fit.midpoint.x, fit.midpoint.y);
-              ctx.rotate(Math.PI);
-              ctx.translate(-fit.midpoint.x, -fit.midpoint.y);
-              ctx.drawImage(prepDraw.canvas, drawX, drawY);
-              ctx.restore();
-            }
-
-            // How far the lattice needs to extend (in basisU/basisV step
-            // counts) to cover the whole canvas — inverting the
-            // (generally skewed, non-axis-aligned) basis matrix rather
-            // than assuming a square grid, since the fitted triangle's
-            // edges can point in any direction.
-            const reach = Math.hypot(width, height) / fieldScale / 2 + prepDraw.size;
-            const det = fit.basisU.x * fit.basisV.y - fit.basisU.y * fit.basisV.x;
-            let maxI = 8, maxJ = 8;
-            if (Math.abs(det) > 1e-6) {
-              const invA = fit.basisV.y / det, invB = -fit.basisV.x / det;
-              const invC = -fit.basisU.y / det, invD = fit.basisU.x / det;
-              maxI = 0; maxJ = 0;
-              for (const [cx, cy] of [[reach, reach], [reach, -reach], [-reach, reach], [-reach, -reach]]) {
-                maxI = Math.max(maxI, Math.abs(invA * cx + invB * cy));
-                maxJ = Math.max(maxJ, Math.abs(invC * cx + invD * cy));
-              }
-              maxI = Math.min(300, Math.ceil(maxI) + 2);
-              maxJ = Math.min(300, Math.ceil(maxJ) + 2);
-            }
-            for (let j = -maxJ; j <= maxJ; j++) {
-              for (let i = -maxI; i <= maxI; i++) {
-                stampCell(i * fit.basisU.x + j * fit.basisV.x, i * fit.basisU.y + j * fit.basisV.y);
-              }
-            }
+          maxI = Math.min(300, Math.ceil(maxI) + 2);
+          maxJ = Math.min(300, Math.ceil(maxJ) + 2);
+        }
+        // basisU/V are in the ink's own reference (frameScale=1) units —
+        // frameScale is multiplied in here, by hand, so it changes cell
+        // spacing without touching drawImage.
+        // maxI/maxJ above is a generous rectangular superset (needed so a
+        // low frameScale, which packs many more real cells into the same
+        // canvas, doesn't undercount and leave gaps) — most candidates in
+        // that rectangle land nowhere near the actual canvas, so cull them
+        // with one cheap hypot() before paying for save/clip/drawImage
+        // (doubled for a paired shape). Rotation doesn't change a point's
+        // distance from the origin, so this stays valid inside the
+        // ctx.rotate(frameRad) above without needing to un-rotate anything.
+        const frameOriginReach = Math.hypot(width, height) / 2 + Math.hypot(Number(patternDef.frameX) || 0, Number(patternDef.frameY) || 0) + prepDraw.size;
+        for (let j = -maxJ; j <= maxJ; j++) {
+          for (let i = -maxI; i <= maxI; i++) {
+            const ox = frameScale * (i * basisU.x + j * basisV.x), oy = frameScale * (i * basisU.y + j * basisV.y);
+            if (Math.hypot(ox, oy) <= frameOriginReach) stampCell(ox, oy);
           }
         }
       }
     } else {
+      ctx.save();
+      ctx.scale(frameScale, frameScale);
       ctx.drawImage(prepDraw.canvas, -prepDraw.size / 2, -prepDraw.size / 2);
+      ctx.restore();
     }
     ctx.restore();
 
@@ -568,6 +511,66 @@
       }
     }
     return outline;
+  }
+
+  // Erodes mask inward by radiusPx: any set pixel within radiusPx of an
+  // unset pixel (or the canvas edge) gets cleared. Same shape as
+  // buildOxidationOutlineMask's own boundary+radius-search, just clearing
+  // near the boundary instead of growing outward from it — see
+  // pattern-authoring.js's "Motif thinning" slider (motifThinPx).
+  function erodeMask(mask, width, height, radiusPx) {
+    const px = Math.max(0, Math.round(radiusPx) || 0);
+    if (!px) return mask;
+    const boundary = new Uint8Array(mask.length);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const p = y * width + x;
+        if (!mask[p]) continue;
+        let isEdge = false;
+        for (let oy = -1; oy <= 1 && !isEdge; oy++) {
+          for (let ox = -1; ox <= 1; ox++) {
+            if (!ox && !oy) continue;
+            const nx = x + ox, ny = y + oy;
+            if (nx < 0 || ny < 0 || nx >= width || ny >= height) { isEdge = true; break; }
+            if (!mask[ny * width + nx]) { isEdge = true; break; }
+          }
+        }
+        if (isEdge) boundary[p] = 1;
+      }
+    }
+    const eroded = new Uint8Array(mask.length);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const p = y * width + x;
+        if (!mask[p]) continue;
+        let nearBoundary = false;
+        for (let oy = -px; oy <= px && !nearBoundary; oy++) {
+          for (let ox = -px; ox <= px; ox++) {
+            // Strictly-less-than px, not <=: a boundary pixel is layer 0 (distance
+            // 0 from itself) and should already count as removed at px=1, so
+            // erosion removes exactly the px nearest layers (0..px-1), giving a
+            // real px-pixel inset instead of px+1 (was previously inclusive of
+            // distance===px, eroding one layer deeper than the setting implied).
+            if (Math.hypot(ox, oy) >= px - 0.01) continue;
+            const nx = x + ox, ny = y + oy;
+            if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+            if (boundary[ny * width + nx]) { nearBoundary = true; break; }
+          }
+        }
+        if (!nearBoundary) eroded[p] = 1;
+      }
+    }
+    return eroded;
+  }
+
+  // An authored pattern's outline never grows past whatever outlineWidth the
+  // caller configured (a scaled-up motif reads fine with the same line
+  // weight it always had) but does thin down for a scaled-down one, clamped
+  // so it never disappears below 1px.
+  function scaledOutlineWidthForPattern(defaultWidth, rawPatternDef) {
+    const patternDef = legacyFrameFields(rawPatternDef);
+    const scale = Math.min(Number(patternDef?.motifScale) || 1, 1) * Math.min(Number(patternDef?.frameScale) || 1, 1);
+    return Math.max(1, Math.min(defaultWidth, Math.round(defaultWidth * scale)));
   }
 
   function recolorAndOxidize(imageData, opts) {
@@ -639,7 +642,10 @@
       // not where it grows, so everything else on the metal mask stays
       // oxidized (this only ever runs on an already mastery-5/fully-grown
       // tool — see toolVerdigrisPatternEligible in game.js).
-      const clearedMask = buildAuthoredClearedMask(width, height, authoredPattern, motifImg);
+      // Thins the placed motif shape inward before invert/oxidation logic
+      // sees it, so the same eroded shape drives both the cleared region and
+      // (further down) the outline drawn around it.
+      const clearedMask = erodeMask(buildAuthoredClearedMask(width, height, authoredPattern, motifImg), width, height, authoredPattern.motifThinPx);
       // invert swaps which side of the motif keeps verdigris: normally the
       // motif itself is the cleared shape and everything else stays
       // oxidized; inverted, the motif shape stays oxidized and everything
@@ -654,12 +660,15 @@
     } else {
       oxidationMask = buildOxidationMask(metalMask, width, height, clamp01(opts.oxidationAmount), opts);
     }
+    const outlineWidth = authoredPattern
+      ? scaledOutlineWidthForPattern(Math.max(0, opts.outlineWidth | 0), authoredPattern)
+      : Math.max(0, opts.outlineWidth | 0);
     const outlineMask = buildOxidationOutlineMask(
       oxidationMask,
       metalMask,
       width,
       height,
-      Math.max(0, opts.outlineWidth | 0),
+      outlineWidth,
     );
 
     let oxidizedPixels = 0;
@@ -793,9 +802,14 @@
     debugLog(opts, 'canvas cache miss', { spritePath, oxidationAmount });
     if (debugEnabled(opts)) console.trace('[ToolMetalRecolor] request caller');
 
+    // A per-tool "Custom" pattern's motif may live in MotifStore instead of
+    // being embedded directly (see pattern-authoring.js's offloadMotif) —
+    // resolve either shape the same way before loading it as an image.
     const motifLoad = authoredPattern?.motifDataUrl
       ? loadImage(authoredPattern.motifDataUrl, opts)
-      : Promise.resolve(null);
+      : authoredPattern?.customMotifId
+        ? Promise.resolve(window.MotifStore?.loadMotif?.(authoredPattern.customMotifId)).then(url => url ? loadImage(url, opts) : null)
+        : Promise.resolve(null);
 
     return Promise.all([loadImage(spritePath, opts), motifLoad]).then(([img, motifImg]) => {
       const canvas = document.createElement('canvas');
@@ -851,6 +865,7 @@
     rgbToHsv,
     hsvToRgb,
     SOURCE_HEX,
+    __test: Object.freeze({ erodeMask, scaledOutlineWidthForPattern, buildAuthoredClearedMask }),
   };
 
   debugLog({}, 'module loaded', {

@@ -1947,10 +1947,16 @@
         if (!def?.metalKey || !def.slots?.includes('weapon')) return false;
         return toolMasteryLevel(itemKey) >= MASTERY_XP_THRESHOLDS.length;
       }
-      function setToolVerdigrisPattern(itemKey, patternData) {
+      // patternLibraryId, when the pattern authoring session ended with an
+      // unmodified library entry still loaded (see pattern-authoring.js's
+      // loadedLibraryId), stores just that reference instead of a full
+      // duplicate copy of the pattern — the same library entry reused across
+      // many tools/garments then costs one copy in the save, not one per
+      // use. Resolved back to real pattern data by metalToolRecolorOptions.
+      function setToolVerdigrisPattern(itemKey, patternData, patternLibraryId) {
         if (!gearInventory || !patternData) return;
         if (!gearInventory.toolPlating) gearInventory.toolPlating = {};
-        gearInventory.toolPlating[itemKey] = { mode: 'pattern', metalKey: null, pattern: patternData };
+        gearInventory.toolPlating[itemKey] = { mode: 'pattern', metalKey: null, pattern: patternLibraryId ? null : patternData, patternLibraryId: patternLibraryId || null };
         saveGearInventory();
       }
 
@@ -2029,13 +2035,19 @@
         if (plating?.mode === 'resistant') {
           return { targetHex: baseMetal.hex, verdigrisHex: null, oxidationAmount: 0 };
         }
-        if (plating?.mode === 'pattern' && plating.pattern) {
-          // Always mastery-5/fully-grown by the time a pattern can be
-          // authored (see toolVerdigrisPatternEligible) — oxidationAmount
-          // is irrelevant once authoredPattern is set (ToolMetalRecolor
-          // uses the pattern instead of the procedural growth), but keep it
-          // at 1 for any other consumer inspecting this same options object.
-          return { targetHex: baseMetal.hex, verdigrisHex: baseMetal.verdigrisHex, oxidationAmount: 1, authoredPattern: plating.pattern };
+        if (plating?.mode === 'pattern' && (plating.pattern || plating.patternLibraryId)) {
+          const authoredPattern = plating.pattern || window.PatternLibrary?.getById?.(plating.patternLibraryId);
+          if (authoredPattern) {
+            // Always mastery-5/fully-grown by the time a pattern can be
+            // authored (see toolVerdigrisPatternEligible) — oxidationAmount
+            // is irrelevant once authoredPattern is set (ToolMetalRecolor
+            // uses the pattern instead of the procedural growth), but keep it
+            // at 1 for any other consumer inspecting this same options object.
+            return { targetHex: baseMetal.hex, verdigrisHex: baseMetal.verdigrisHex, oxidationAmount: 1, authoredPattern };
+          }
+          // The referenced library entry was removed (see PatternLibrary.removeSaved)
+          // — falls through to the plain oxidation-growth branch below rather than
+          // erroring, same as never having authored a pattern at all.
         }
         return { targetHex: baseMetal.hex, verdigrisHex: baseMetal.verdigrisHex, oxidationAmount: toolVerdigrisFraction(itemKey) };
       }
@@ -2061,7 +2073,10 @@
         if (plating?.mode === 'pattern') {
           // The authored pattern (motif + placement) is the whole identity
           // here — there's no single scalar like oxidationAmount to key on.
-          return `toolmetal:${itemKey}:pattern:${JSON.stringify(plating.pattern)}`;
+          // A library reference is already a stable, unique-per-pattern id;
+          // only a fully embedded (patternLibraryId-less) pattern needs its
+          // whole JSON as the key.
+          return `toolmetal:${itemKey}:pattern:${plating.patternLibraryId || JSON.stringify(plating.pattern)}`;
         }
         return `toolmetal:${itemKey}:${plating ? plating.mode + ':' + plating.metalKey : 'live'}:${quantizeOxidation(opts.oxidationAmount).toFixed(2)}`;
       }
@@ -26675,6 +26690,7 @@
 
       window.EquipmentPanel?.init({
         inventory,
+        getPlayerData: () => _playerData,
         clampInventoryStack,
         equipmentSlots,
         saveEquipmentSlots,

@@ -178,16 +178,30 @@
   // pattern-authoring.js. Costs the same as any other plating service; a
   // player can reopen this at any time to redraw an already-authored
   // pattern (paying again, same as re-plating).
-  function openVerdigrisPatternEditor(itemKey) {
+  // A per-tool "Custom" pattern's motif may live in MotifStore instead of
+  // being embedded directly (see pattern-authoring.js's offloadMotif) —
+  // resolve it back to a full motifDataUrl before handing the pattern to
+  // the editor to redraw, since pattern-authoring.js itself stays agnostic
+  // of any storage scheme beyond motifDataUrl. A no-op for a pattern that
+  // already has one (or is null).
+  async function resolvedForEditing(pattern) {
+    if (!pattern || pattern.motifDataUrl || !pattern.customMotifId) return pattern;
+    const motifDataUrl = await window.MotifStore?.loadMotif?.(pattern.customMotifId);
+    return motifDataUrl ? { ...pattern, motifDataUrl } : pattern;
+  }
+
+  async function openVerdigrisPatternEditor(itemKey) {
     const def = deps.TOOL_ITEM_DEFS[itemKey];
     const baseMetal = deps.METAL_DEFS[def.metalKey];
     const existing = deps.toolPlating(itemKey);
     const barKey = deps.metalBarItemKey(def.metalKey);
+    const initialPattern = await resolvedForEditing(existing?.mode === 'pattern' ? (existing.pattern || (existing.patternLibraryId ? window.PatternLibrary?.getById?.(existing.patternLibraryId) : null)) : null);
 
     window.PatternAuthoring?.openEditor({
       title: `Author verdigris removal — ${def.label}`,
       motifHint: 'Draw the motif to strip back to bare metal — everything else stays fully oxidized.',
-      initialPattern: existing?.mode === 'pattern' ? existing.pattern : null,
+      initialPattern,
+      initialPatternLibraryId: existing?.mode === 'pattern' ? (existing.patternLibraryId || null) : null,
       library: window.PatternLibrary ? {
         list: () => window.PatternLibrary.listAvailable(),
         get: (id) => window.PatternLibrary.getById(id),
@@ -200,13 +214,13 @@
         oxidationAmount: 1,
         authoredPattern: patternData,
       }),
-      onSave: (patternData) => {
+      onSave: (patternData, sourceLibraryId) => {
         if ((deps.inventory[barKey] || 0) < PLATE_BAR_COST) { deps.showToast(`Not enough ${baseMetal.label} bars.`, false); return false; }
         if ((deps.inventory.gold || 0) < PLATE_LABOR_GOLD) { deps.showToast('Not enough gold.', false); return false; }
         deps.inventory[barKey] -= PLATE_BAR_COST;
         deps.clampInventoryStack(barKey);
         deps.inventory.gold -= PLATE_LABOR_GOLD;
-        deps.setToolVerdigrisPattern(itemKey, patternData);
+        deps.setToolVerdigrisPattern(itemKey, patternData, sourceLibraryId);
         deps.refreshMetalToolWorldTexture(itemKey);
         deps.showToast('Verdigris carefully stripped into a pattern.', true);
         renderMetalCraftShopPage();
@@ -358,5 +372,6 @@
     init,
     render: renderMetalCraftShopPage,
     refreshAllMetalToolWorldTextures,
+    __test: Object.freeze({ resolvedForEditing }),
   };
 })();
