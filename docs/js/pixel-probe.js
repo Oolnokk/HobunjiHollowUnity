@@ -636,6 +636,32 @@
     return lines;
   }
 
+  // Animal sleep used to hide expensive hierarchy scans inside every
+  // WebGLRenderer.render() call. Keep its replacement cadence/cost visible in
+  // the same copyable mobile report as the scheduler that now owns it.
+  function _pixelProbeRenderScene(renderer, scene, camera) {
+    let sleepRenderScope = false;
+    try {
+      sleepRenderScope = window.AnimalSleepPresentation?.beginExternalRenderScope?.('pixel-probe') === true; // Probe rerenders the live world outside gameLoop; opt in explicitly instead of relying on a global renderer hook.
+      return renderer.render(scene, camera);
+    } finally {
+      if (sleepRenderScope) window.AnimalSleepPresentation?.endExternalRenderScope?.();
+    }
+  }
+
+  function _pixelProbeAnimalSleepLines() {
+    const debug = window.AnimalSleepPresentation?.getDebug?.();
+    if (!debug) return null;
+    const prepared = Number(debug.preparedFrames) || 0;
+    const restored = Number(debug.restoredFrames) || 0;
+    const activeTemporaryTransforms = Number(debug.activeTemporaryTransforms) || 0;
+    const lines = [`Animal sleep presentation: scheduler=${debug.schedulerRegistered ? 'attached' : 'MISSING'} cadence=${debug.schedulerCadence || '-'} frames=${prepared}/${restored} lastFrame=${debug.lastPreparedFrameId || 0}/${debug.lastRestoredFrameId || 0} boundsLast=${Number(debug.lastPreparedBoundsScans) || 0} boundsTotal=${Number(debug.boundsScans) || 0} activeTemp=${activeTemporaryTransforms} static=${Number(debug.staticSleepers) || 0} cachedFrames=${Number(debug.cachedSleepFrames) || 0}`];
+    if (!debug.schedulerRegistered || prepared !== restored || activeTemporaryTransforms !== 0) {
+      lines.push(`>>> Animal sleep scheduler mismatch: scheduler=${debug.schedulerRegistered ? 'attached' : 'MISSING'} prepared=${prepared} restored=${restored} activeTemp=${activeTemporaryTransforms} lastContext=${debug.lastContext || 'none'}`);
+    }
+    return lines;
+  }
+
   // A scheduled NPC behaving visibly wrong — wandering somewhere they
   // shouldn't, or standing still without ever picking up their instrument
   // — is a state-machine question, not a rendering one, but it's exactly
@@ -823,28 +849,28 @@
         for (const child of playerMesh.children) if (child.name === 'player_avatar') { playerAvatarGroup = child; break; }
         const activeCreatures = [...deps.companionObjects].filter(c => c.health > 0 && c.areaId === currentArea && c.avatarRef?.group);
 
-        hideAll(); renderer.render(activeScene, camera);
+        hideAll(); _pixelProbeRenderScene(renderer, activeScene, camera);
         const bg = sample2(fbX, fbY);
 
         const candidates = [{ label: 'background/world only', color: bg }];
         if (playerAvatarGroup) {
           hideAll(); playerAvatarGroup.visible = true;
-          renderer.render(activeScene, camera);
+          _pixelProbeRenderScene(renderer, activeScene, camera);
           candidates.push({ label: 'player alone', color: sample2(fbX, fbY) });
         }
         for (const c of activeCreatures) {
           hideAll(); c.avatarRef.group.visible = true;
-          renderer.render(activeScene, camera);
+          _pixelProbeRenderScene(renderer, activeScene, camera);
           candidates.push({ label: `${c.creatureKey} (${c.stableRole || 'creature'}) alone`, color: sample2(fbX, fbY) });
         }
 
         hideAll();
         if (playerAvatarGroup) playerAvatarGroup.visible = true;
         for (const c of activeCreatures) c.avatarRef.group.visible = true;
-        renderer.render(activeScene, camera);
+        _pixelProbeRenderScene(renderer, activeScene, camera);
         const normal = sample2(fbX, fbY);
 
-        restoreAll(); renderer.render(activeScene, camera);
+        restoreAll(); _pixelProbeRenderScene(renderer, activeScene, camera);
 
         const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
         let bestMatch = null, bestDist = Infinity;
@@ -881,6 +907,8 @@
     }
     const schedulerLines = _pixelProbeSchedulerLines();
     if (schedulerLines) lines.push(...schedulerLines);
+    const animalSleepLines = _pixelProbeAnimalSleepLines();
+    if (animalSleepLines) lines.push(...animalSleepLines);
     const controllerUiDebug = window.ControllerUI?.debugState?.(); // Confirms that ordinary gameplay reads the cached closed-panel state instead of forcing layout.
     if (controllerUiDebug) lines.push(`Controller UI cache: panels=${controllerUiDebug.knownPanels} active=${controllerUiDebug.stackDepth} top=${controllerUiDebug.panelId || 'none'}`);
     const gridDebug = window.GridTileAccessors?.debugSnapshot?.(); // Makes building-footprint cache effectiveness visible during movement without a console.
