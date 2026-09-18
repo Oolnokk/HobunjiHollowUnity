@@ -4,18 +4,18 @@
     {
       "id": "fmqf8czt9e1p2",
       "itemKey": "tableLongFurniture",
-      "col": 2,
-      "row": 7,
+      "col": 3,
+      "row": 8,
       "rotY": 0,
       "postX": -0.036,
       "postY": 0,
       "postZ": 0.44,
-      "postSX": 0.823429,
+      "postSX": 1.1528,
       "postSY": 1,
-      "postSZ": 0.680333,
+      "postSZ": 2.041,
       "gridRot": 0,
-      "gridW": 7,
-      "gridD": 3
+      "gridW": 5,
+      "gridD": 1
     },
     {
       "id": "fmqf8i2cuxtlk",
@@ -30,8 +30,7 @@
       "gridW": 1,
       "gridD": 1,
       "postSX": 1,
-      "postSZ": 1,
-      "postSY": 1
+      "postSZ": 1
     },
     {
       "id": "fmqf8ibwilyl1",
@@ -46,8 +45,7 @@
       "gridW": 1,
       "gridD": 1,
       "postSX": 1,
-      "postSZ": 1,
-      "postSY": 1
+      "postSZ": 1
     },
     {
       "id": "fmqf8iywwlnl3",
@@ -62,8 +60,7 @@
       "gridW": 1,
       "gridD": 1,
       "postSX": 1,
-      "postSZ": 1,
-      "postSY": 1
+      "postSZ": 1
     },
     {
       "id": "fmqf8j2m43oz6",
@@ -108,65 +105,59 @@
       "id": "fmqf8l692av3v",
       "itemKey": "chairSimpleFurniture",
       "col": 8,
-      "row": 8,
+      "row": 9,
       "rotY": 0,
       "postX": 0,
       "postY": 0,
-      "postZ": 0,
-      "postSX": 0.5,
+      "postZ": -0.5,
+      "postSX": 1,
       "postSY": 1,
       "postSZ": 1,
       "gridRot": 270,
       "gridW": 1,
-      "gridD": 2
+      "gridD": 1
     },
     {
       "id": "fmqf8na7z6qev",
       "itemKey": "chairSimpleFurniture",
       "col": 2,
-      "row": 8,
+      "row": 9,
       "rotY": 0,
       "postX": 0,
       "postY": 0,
-      "postZ": 0,
-      "postSX": 0.5,
+      "postZ": -0.5,
+      "postSX": 1,
       "postSY": 1,
       "postSZ": 1,
       "gridRot": 90,
       "gridW": 1,
-      "gridD": 2
+      "gridD": 1
     },
     {
       "id": "fmqf8od68rfzk",
       "itemKey": "basicBedFurniture",
-      "col": 6,
+      "col": 7,
       "row": 2,
       "rotY": 0,
-      "postX": 0.475,
+      "postX": -0.025,
       "postY": -0.019,
       "postZ": 0,
-      "postSX": 0.5,
+      "postSX": 1,
       "postSY": 1,
-      "postSZ": 1,
-      "gridRot": 0,
-      "gridW": 2,
-      "gridD": 2
+      "postSZ": 1
     },
     {
       "id": "fmqf8omst6pir",
       "itemKey": "basicBedFurniture",
       "col": 8,
-      "row": 1,
+      "row": 2,
       "rotY": 0,
-      "postX": -0.475,
+      "postX": 0.025,
       "postY": 0.004,
-      "postZ": 0.491,
-      "postSX": 0.5,
+      "postZ": -0.009,
+      "postSX": 1,
       "postSY": 1,
-      "postSZ": 0.666667,
-      "gridRot": 0,
-      "gridW": 2,
-      "gridD": 3
+      "postSZ": 1
     },
     {
       "id": "fmqf8vr1xttz3",
@@ -510,7 +501,12 @@
       "spawnRow": 2
     }
   ],
-  "colliders": [],
+  "colliders": [
+    [
+      7,
+      9
+    ]
+  ],
   "vendorZones": [
     {
       "id": "vendor_mqf7w5zg",
