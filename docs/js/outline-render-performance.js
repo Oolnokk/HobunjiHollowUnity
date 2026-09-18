@@ -8,9 +8,12 @@
   // between. This is intentionally stricter than the old one-second time window.
   //
   // Runtime outline policy: shell outlines are the only general-purpose outline
-  // style. The older screen-space depth-edge and material-ID seam passes are
-  // forcibly suppressed here so town wall bricks and other solid geometry cannot
-  // acquire a second/internal border even if stale UI/runtime state enables them.
+  // style. The older screen-space material-ID seam pass is forcibly suppressed
+  // here so town wall bricks and other solid geometry cannot acquire a second/
+  // internal border even if stale UI/runtime state enables it. (The screen-space
+  // depth-edge pass this used to also suppress was removed outright from
+  // game.js -- see its composite shader/render loop -- rather than left dead
+  // and merely blocked here.)
   const THREE = window.THREE;
   const rendererProto = THREE?.WebGLRenderer?.prototype;
   if (!rendererProto || typeof rendererProto.render !== 'function') return;
@@ -70,7 +73,6 @@
       uniforms?.tColor
       && uniforms?.tEdgeId
       && uniforms?.uTexel
-      && uniforms?.uDepthOutlinesOn
       && uniforms?.uSeamOutlinesOn
     );
   }
@@ -468,40 +470,11 @@
       for (const material of materials) {
         if (!isOutlineCompositeMaterial(material)) continue;
         const uniforms = material.uniforms;
-        if (Number(uniforms.uDepthOutlinesOn.value) !== 0 || Number(uniforms.uSeamOutlinesOn.value) !== 0) changed = true;
-        uniforms.uDepthOutlinesOn.value = 0;
+        if (Number(uniforms.uSeamOutlinesOn.value) !== 0) changed = true;
         uniforms.uSeamOutlinesOn.value = 0;
       }
     }
     return changed;
-  }
-
-  // game.js owns the private s_depthOutlines variable, so use its existing
-  // Settings change handler once the page is fully parsed to hard-reset it,
-  // then remove the obsolete controls from normal play. The renderer guard above
-  // remains authoritative even if another script later flips the private flag.
-  function disableDepthOutlineControls() {
-    const toggle = document.getElementById('settingDepthOutlines'); // Used here to drive game.js's existing change listener to false.
-    if (toggle) {
-      toggle.checked = false;
-      toggle.disabled = true;
-      toggle.dispatchEvent(new Event('change', { bubbles: true }));
-      const row = toggle.closest?.('.settings-row'); // Used here to hide the now-disabled depth-outline setting row.
-      if (row) row.hidden = true;
-    }
-
-    const sensitivity = document.getElementById('settingDepthOutlineSensitivity'); // Used here to hide the depth-only sensitivity control with its toggle.
-    if (sensitivity) {
-      sensitivity.disabled = true;
-      const row = sensitivity.closest?.('.settings-row'); // Used here to hide the now-inapplicable sensitivity row.
-      if (row) row.hidden = true;
-    }
-  }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', disableDepthOutlineControls, { once: true });
-  } else {
-    disableDepthOutlineControls();
   }
 
   function record(pass, renderer, cpuMs) {

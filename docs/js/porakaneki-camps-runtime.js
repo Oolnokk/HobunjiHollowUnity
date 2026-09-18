@@ -412,6 +412,7 @@
         light = new THREE.PointLight(0xff7722, 1.1, 3.2);
         light.position.set(col, y + 0.45, row);
         light.userData.furnitureLightMask = true;
+        window.FurnitureLightRegistry?.register(light);
         zone.scene.add(light);
       }
       camp.propMeshes.set(prop.id, { mesh, light });

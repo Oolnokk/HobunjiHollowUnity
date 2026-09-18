@@ -307,6 +307,7 @@
           const light = new THREE.PointLight(0xff7722, 1.4, 3.5);
           light.position.set(center.x / deps.TILE, y + 0.45, center.y / deps.TILE);
           light.userData.furnitureLightMask = true;
+          window.FurnitureLightRegistry?.register(light);
           zi.scene.add(light);
           const sfxDef = window.Music?.resolveFurnitureSfx?.({ sfxKey: 'fireplace' });
           const sfxSource = window.Music?.registerFurnitureSfxSource?.(zoneId, center.x / deps.TILE, center.y / deps.TILE, sfxDef);
