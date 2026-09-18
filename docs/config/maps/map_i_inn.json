@@ -31,8 +31,7 @@
       "gridW": 1,
       "gridD": 1,
       "postSX": 1,
-      "postSZ": 1,
-      "postSY": 1
+      "postSZ": 1
     },
     {
       "id": "fmqj09mimuxmp",
@@ -47,8 +46,7 @@
       "gridW": 1,
       "gridD": 1,
       "postSX": 1,
-      "postSZ": 1,
-      "postSY": 1
+      "postSZ": 1
     },
     {
       "id": "fmqj09n8jvodq",
@@ -73,8 +71,7 @@
       "gridW": 1,
       "gridD": 1,
       "postSX": 1,
-      "postSZ": 1,
-      "postSY": 1
+      "postSZ": 1
     },
     {
       "id": "fmqj09r8s0x0a",
@@ -89,8 +86,7 @@
       "gridW": 1,
       "gridD": 1,
       "postSX": 1,
-      "postSZ": 1,
-      "postSY": 1
+      "postSZ": 1
     },
     {
       "id": "fmqj09s9gcu2r",
@@ -153,18 +149,18 @@
     {
       "id": "fmqnw75m0zv1z",
       "itemKey": "tableLongFurniture",
-      "col": 0,
-      "row": 4,
+      "col": 1,
+      "row": 5,
       "rotY": 0,
       "postX": 0,
       "postY": 0,
       "postZ": 0,
-      "postSX": 0.9,
+      "postSX": 1.125,
       "postSY": 1,
-      "postSZ": 0.416667,
+      "postSZ": 1.25,
       "gridRot": 0,
-      "gridW": 10,
-      "gridD": 3
+      "gridW": 8,
+      "gridD": 1
     },
     {
       "id": "fmqnwfevo0fyh",
