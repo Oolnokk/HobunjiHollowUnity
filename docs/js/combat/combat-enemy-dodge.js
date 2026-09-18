@@ -126,6 +126,7 @@
     const efficacy = Math.max(0, Number(armorStats(entity)?.dodgeEfficacy) || 1); // Outfit weight shortens travel and invulnerability together.
     const durationS = tuning.durationS * efficacy; // Remaining movement time consumed by updateActiveDodge.
     window.ResourceSystem?.spendStamina?.(entity, tuning.staminaCost, 'enemy dodge');
+    window.KnockbackCollisionImpact?.coolBurningOnDodge?.(entity);
     entity.dodging = true;
     entity.dodgeT = durationS;
     entity.dodgeDirX = direction.x;
