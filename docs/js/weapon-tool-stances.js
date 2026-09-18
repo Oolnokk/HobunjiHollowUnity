@@ -346,6 +346,7 @@
       elapsedS: 0,
       lastNow: performance.now(),
       held: !!held,
+      windupSlowdown: Math.max(0, Number(opts?.windupSlowdown) || 0),
       progress: 0,
       completedAt: 0,
       clearQueued: false,
@@ -379,7 +380,12 @@
   function neutralWeightForVisual(state) {
     if (!state) return 1;
     const p = state.progress;
-    if (p <= state.wf) return state.wf > 1e-6 ? 1 - p / state.wf : 0;
+    if (p <= state.wf) {
+      if (state.wf <= 1e-6) return 0;
+      const rawWindupT = p / state.wf;
+      const poseT = window.Combat?.windupPoseProgress?.(rawWindupT, state.windupSlowdown) ?? rawWindupT;
+      return 1 - poseT;
+    }
     if (p <= state.hf) return 0;
     return Math.max(0, Math.min(1, (p - state.hf) / Math.max(1e-6, 1 - state.hf)));
   }
@@ -411,6 +417,15 @@
       combatDeps.releaseWeaponSwingHold = function weaponToolStanceAwareRelease(...args) {
         if (combatVisualState) {
           advanceCombatVisual(performance.now());
+          const requestedPoseProgress = Number(args?.[0]?.poseProgress);
+          if (Number.isFinite(requestedPoseProgress)) {
+            // game.js slices the numeric pose to this exact partial endpoint
+            // and jumps its raw timeline to Windup. Mirror that timeline here
+            // so the stance's neutral-twist compensation cannot lag behind.
+            combatVisualState.elapsedS = combatVisualState.wf * combatVisualState.totalS;
+            combatVisualState.progress = combatVisualState.wf;
+            combatVisualState.windupSlowdown = 0;
+          }
           combatVisualState.held = false;
           combatVisualState.lastNow = performance.now();
         }
