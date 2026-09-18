@@ -153,13 +153,6 @@
   function mergeDialogueTreesIntoDatabase(database) { // Used by runtime DB composition and Dialogue Editor loading so the full quest is authorable.
     const npc = database?.npcs?.find(entry => entry?.id === NPC_ID); // Used to scope the overlay to Banubu's existing NPC record.
     if (!npc) return database;
-    npc.bio = "The Sleeping Grehlr, a Great Fey that formed in proximity to people and was shaped by their thoughts into a perpetually sleepy creature. Banubu's sleepiness is intrinsic to what he is, not a biological need; he has no ordinary waking routine, hunger cycle, or sensible mortal schedule."; // Used by NPC/lore surfaces so old hunger-based placeholder text cannot contradict the implemented fey characterization.
-    npc.loreBackground = "Fey generation is a natural phenomenon: most form as mindless wisps, but those that generate near people can be shaped by nearby thoughts and ideas. Banubu became the Sleeping Grehlr and remains asleep indefinitely in his northern-cliff cavern. He teaches the Three-Fish Pie template and then asks for five pies whose exact buff combinations are drawn only from combinations the current fish catalog can actually produce."; // Used as the canonical design-note replacement for the obsolete Fifteen Fish Pie placeholder.
-    npc.questHooks = [
-      "First conversation teaches the locked Three-Fish Pie template.",
-      "Five sequential fish-pie quests request randomized, actually craftable buff combinations.",
-      "Quest 1 rewards the character-scoped War-Paint Kit; later key-item rewards remain separately authorable.",
-    ]; // Used by NPC authoring/reference tools to describe the implemented quest chain instead of the obsolete fifteen-fish concept.
     if (!Array.isArray(npc.dialogueTrees)) npc.dialogueTrees = [];
     const existingIds = new Set(npc.dialogueTrees.map(tree => tree?.id).filter(Boolean)); // Used to preserve exported/user-edited trees instead of replacing them with defaults.
     for (const tree of DEFAULT_DIALOGUE_TREES) { // Used to fill only quest trees missing from the loaded database.
