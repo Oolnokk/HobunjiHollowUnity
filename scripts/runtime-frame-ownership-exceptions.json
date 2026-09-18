@@ -583,14 +583,5 @@
     "reason": "RAF loop only runs while the dev UI-element-editor panel is shown — started in updateListeners() when shown becomes true (line 879) and explicitly cancelAnimationFrame'd when it becomes false — to keep the selection highlight box's position synced to the selected element; a dev-tool-gated bounded loop, not a permanent gameplay subscription.",
     "migrationStage": "not-planned",
     "line": 557
-  },
-  {
-    "file": "docs/js/weapon-trust-visits.js",
-    "owner": "WeaponTrustVisits",
-    "classification": "timer-event",
-    "function": "update",
-    "reason": "Reschedules itself every frame (also started once at line 770) but only does substantive work on an area change or once a 1000ms throttle (now - lastSyncAt > 1000) elapses; the per-frame cadence itself is unneeded and would be better served by an area-change event plus a periodic timer.",
-    "migrationStage": "candidate",
-    "line": 578
   }
 ]

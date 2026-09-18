@@ -1,0 +1,30 @@
+name: RAF ownership Stage 12m regression (weapon trust visits update)
+
+on:
+  pull_request:
+    paths:
+      - 'docs/js/weapon-trust-visits.js'
+      - 'scripts/test-weapon-trust-visits-update-timer.js'
+      - '.github/workflows/raf-ownership-stage12m-regression.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'docs/js/weapon-trust-visits.js'
+      - 'scripts/test-weapon-trust-visits-update-timer.js'
+      - '.github/workflows/raf-ownership-stage12m-regression.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax check
+        run: node --check docs/js/weapon-trust-visits.js
+      - name: Weapon trust visits update timer conversion
+        run: node scripts/test-weapon-trust-visits-update-timer.js
