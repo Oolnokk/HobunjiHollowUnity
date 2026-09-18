@@ -88,6 +88,7 @@
 
   const silhouetteByHolder = new Map();
   const offensiveGlowByOwner = new Map(); // Used by held offensive techniques to reuse Counter Shield's weapon-silhouette language without particle emitters.
+  const OFFENSIVE_CHARGE_COLOR = 0xffc85a; // Used by bandit Charged Breaker so its shared silhouette glow matches the player's authored charge color.
 
   function clamp01(value) { return Math.max(0, Math.min(1, Number(value) || 0)); }
 
@@ -300,10 +301,27 @@
     if (activeVisuals) {
       for (const visual of activeVisuals) {
         if (visual.fieldGroup) visual.fieldGroup.visible = false; // Weapon-glow-only presentation: the hemisphere field itself stays suppressed here every frame.
-        if (!visual.defensive || visual.weaponGlowGroup?.visible === false || !visual.holder) continue;
+        if (!visual?.holder || (!visual.defensive && !visual.offensive)) continue;
         liveHolders.add(visual.holder);
-        syncWeaponSilhouette(visual.holder, timeS, { intensity: 1, expansion: 1, color: FIELD_COLOR, label: 'Counter Shield' });
-        visual.weaponGlowGroup.visible = false;
+        if (visual.defensive) {
+          syncWeaponSilhouette(visual.holder, timeS, { intensity: 1, expansion: 1, color: FIELD_COLOR, label: 'Counter Shield' });
+        } else {
+          const targetCharge = clamp01(visual.actor?._banditSwingPoseScale ?? 1); // Used as the sampled Charged Breaker endpoint for this bandit.
+          const action = visual.actor?._banditAction;
+          const windupProgress = action?.windupS > 0
+            ? clamp01((Number(action.t) || 0) / action.windupS)
+            : 1; // Used to track the bandit's currently visible linear travel toward its sampled partial Windup pose.
+          const liveCharge = visual.actor?.telegraphState === 'windup'
+            ? targetCharge * windupProgress
+            : targetCharge; // Used as the visible pose amplitude during windup/strike.
+          syncWeaponSilhouette(visual.holder, timeS, {
+            intensity: Math.max(0.025, liveCharge),
+            expansion: liveCharge,
+            color: OFFENSIVE_CHARGE_COLOR,
+            label: 'Charged Breaker',
+          });
+        }
+        if (visual.weaponGlowGroup) visual.weaponGlowGroup.visible = false;
       }
     } else {
       // Fallback for any page that loads this module without combat-enemy-
