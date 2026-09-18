@@ -585,15 +585,6 @@
     "line": 557
   },
   {
-    "file": "docs/js/weapon-discovery-rewards.js",
-    "owner": "WeaponDiscoveryRewards",
-    "classification": "timer-event",
-    "function": "scan",
-    "reason": "Reschedules itself every frame (also started once at line 218) only to re-run an idempotent, flag-guarded 'safety scan' (the code's own comment) that re-decorates any treasure-chest objects missed by the direct init/ensureZone/syncZoneInteractivity hook points; cheap and non-urgent, so it does not need per-frame cadence.",
-    "migrationStage": "candidate",
-    "line": 192
-  },
-  {
     "file": "docs/js/weapon-trust-visits.js",
     "owner": "WeaponTrustVisits",
     "classification": "timer-event",
