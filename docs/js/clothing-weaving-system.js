@@ -85,7 +85,7 @@
 
   function weavingHasAnyPattern(weaving) {
     if (!weaving) return false;
-    if (weaving.layers) return Object.values(weaving.layers).some(entry => !!(entry?.pattern || entry?.patternLibraryId));
+    if (weaving.layers) return Object.keys(weaving.layers).some(role => !!weavingPatternForRole(weaving, role));
     return !!weaving.pattern;
   }
 
@@ -98,7 +98,7 @@
   function summarizeWeavingLabel(weaving) {
     if (!weavingHasAnyPattern(weaving)) return null;
     if (!weaving.layers) return 'Custom';
-    const entries = Object.entries(weaving.layers).filter(([, entry]) => entry?.pattern || entry?.patternLibraryId);
+    const entries = Object.entries(weaving.layers).filter(([role]) => !!weavingPatternForRole(weaving, role));
     if (entries.length === 1) return entries[0][1].patternLabel || 'Custom';
     return entries.map(([role, entry]) => `${layerLabel(role)}: ${entry.patternLabel || 'Custom'}`).join(', ');
   }
@@ -598,13 +598,18 @@
         // pattern reused across many garments then costs one copy in the
         // save, not one per garment. Resolved back to real pattern data by
         // weavingPatternForRole.
-        if (entry.patternId) layers[key] = { patternLibraryId: entry.patternId, patternLabel: entry.patternLabel || 'Custom' };
-        else if (entry.pattern) layers[key] = { pattern: clone(entry.pattern), patternLabel: entry.patternLabel || 'Custom' };
+        const pattern = entry.pattern || (entry.patternId ? window.PatternLibrary?.getById?.(entry.patternId) : null); // Baked into the crafted garment so deleting the source library entry cannot erase an existing item.
+        if (!pattern) continue;
+        layers[key] = {
+          pattern: clone(pattern),
+          ...(entry.patternId ? { patternLibraryId: entry.patternId } : {}),
+          patternLabel: entry.patternLabel || 'Custom',
+        };
       }
       return Object.keys(layers).length ? { layers } : null;
     }
-    const hasAnyLayerPattern = () => !!weavingFromState();
-    const summarizePatterns = () => summarizeWeavingLabel(weavingFromState()) || 'None';
+    const summarizePatterns = weaving => summarizeWeavingLabel(weaving) || 'None';
+    let previewRevision = 0; // Used to discard stale asynchronous preview renders after garment/dye/view changes.
 
     const overlay = document.createElement('div');
     overlay.className = 'loomcraft-overlay';
@@ -666,6 +671,7 @@
           : 'Draw the motif to weave onto this garment. It will use the garment\'s third dye slot.',
         initialPattern,
         initialPatternLibraryId: existing?.patternId || null,
+        offloadCustomMotif: false,
         library: window.PatternLibrary ? {
           list: () => window.PatternLibrary.listAvailable(),
           get: id => window.PatternLibrary.getById(id),
@@ -674,11 +680,11 @@
         } : null,
         renderPreview: previewFor('front'),
         renderPreviewBehind: supportsBehindView ? previewFor('behind') : undefined,
-        onSave: (patternData, sourceLibraryId) => {
+        onSave: async (patternData, sourceLibraryId) => {
           const patternLabel = sourceLibraryId ? (window.PatternLibrary?.listAvailable?.().find(entry => entry.id === sourceLibraryId)?.label || 'Custom') : 'Custom';
           state.layerPatterns[roleKey] = { pattern: clone(patternData), patternId: sourceLibraryId || '', patternLabel };
-          refreshPatternLayerControls();
-          refreshPreview();
+          await refreshPatternLayerControls();
+          if (loomOverlay === overlay && state.blueprintId === bp.baseCosmeticId) refreshPreview();
           return true;
         },
       });
@@ -729,20 +735,23 @@
     }
 
     async function refreshPreview() {
+      const revision = ++previewRevision; // Used by every awaited stage below to reject an older render that finishes late.
       const bp = selectedBlueprint();
+      const blueprintId = bp.baseCosmeticId; // Used to ensure an async result still belongs to the selected garment.
       const material = selectedMaterial();
+      const weaving = weavingFromState(); // Snapshot used consistently for controls, stats, and pixels in this one refresh.
       const cost = WOOL_COST_BY_SLOT[bp.slot] || 1;
       const owned = Number(equipmentDeps?.inventory?.[material.itemKey]) || 0;
       const weight = standardWeightFor(bp) * material.weightMul;
       overlay.querySelector('[data-trim-field]').style.display = hasSecondary() ? '' : 'none';
-      overlay.querySelector('[data-pattern-dye-field]').style.display = hasAnyLayerPattern() ? '' : 'none';
+      overlay.querySelector('[data-pattern-dye-field]').style.display = weaving ? '' : 'none';
       overlay.querySelector('[data-material-note]').textContent = `${material.label}: ${owned} owned · ${cost} required.`;
-      overlay.querySelector('[data-stats]').textContent = `Weight: ${weight.toFixed(1)} units\nDefense: +${Math.round(weight * TUNING.defensePerUnit * 100)}%\nFooting resistance: +${Math.round(weight * TUNING.footingResistancePerUnit * 100)}%\nDodge efficacy: −${Math.round(weight * TUNING.dodgePenaltyPerUnit * 100)}%\nCombat movement: −${Math.round(weight * TUNING.combatMovePenaltyPerUnit * 100)}%\nPattern: ${summarizePatterns()}`;
+      overlay.querySelector('[data-stats]').textContent = `Weight: ${weight.toFixed(1)} units\nDefense: +${Math.round(weight * TUNING.defensePerUnit * 100)}%\nFooting resistance: +${Math.round(weight * TUNING.footingResistancePerUnit * 100)}%\nDodge efficacy: −${Math.round(weight * TUNING.dodgePenaltyPerUnit * 100)}%\nCombat movement: −${Math.round(weight * TUNING.combatMovePenaltyPerUnit * 100)}%\nPattern: ${summarizePatterns(weaving)}`;
       const craft = overlay.querySelector('[data-act="craft"]');
       craft.disabled = owned < cost;
       const behindToggleBtn = overlay.querySelector('[data-act="toggleBehindView"]');
-      const showBehindToggle = await hasBehindView(bp.baseCosmeticId);
-      if (!loomOverlay) return; // May have closed while the check above awaited.
+      const showBehindToggle = await hasBehindView(blueprintId);
+      if (!loomOverlay || revision !== previewRevision || state.blueprintId !== blueprintId) return;
       if (!showBehindToggle) state.previewView = 'front'; // No behind art for this garment — never leave the toggle stuck on.
       behindToggleBtn.style.display = showBehindToggle ? '' : 'none';
       behindToggleBtn.textContent = state.previewView === 'behind' ? 'Front view' : 'Behind view';
@@ -750,27 +759,35 @@
       const preview = overlay.querySelector('[data-preview]');
       preview.innerHTML = '<span class="loomcraft-note">Rendering…</span>';
       try {
-        const { canvas } = await renderClothingLayers(bp.baseCosmeticId, {
+        const { canvas } = await renderClothingLayers(blueprintId, {
           primaryHex: dyeById(state.dyeA)?.hex,
           secondaryHex: hasSecondary() ? dyeById(state.dyeB)?.hex : null,
           patternHex: dyeById(state.dyeC)?.hex,
-          weaving: weavingFromState(),
+          weaving,
           view: state.previewView,
         });
-        if (!loomOverlay || !preview.isConnected) return;
+        if (!loomOverlay || revision !== previewRevision || state.blueprintId !== blueprintId || !preview.isConnected) return;
         if (!canvas) { preview.innerHTML = '<span class="loomcraft-note">No sprite preview is mapped for this article.</span>'; return; }
         const img = document.createElement('img');
         img.src = canvas.toDataURL('image/png');
-        img.alt = `${bp.label || bp.baseCosmeticId} loom preview${state.previewView === 'behind' ? ' (behind view)' : ''}`;
+        img.alt = `${bp.label || blueprintId} loom preview${state.previewView === 'behind' ? ' (behind view)' : ''}`;
         preview.innerHTML = '';
         preview.appendChild(img);
       } catch (error) {
+        if (!loomOverlay || revision !== previewRevision || state.blueprintId !== blueprintId || !preview.isConnected) return;
         lastError = String(error?.message || error);
         preview.innerHTML = '<span class="loomcraft-note">Preview unavailable; crafting still uses the selected settings.</span>';
       }
     }
 
-    blueprintSelect.onchange = () => { state.blueprintId = blueprintSelect.value; state.previewView = 'front'; refreshPatternLayerControls(); refreshPreview(); };
+    blueprintSelect.onchange = async () => {
+      const blueprintId = blueprintSelect.value; // Used after layer resolution to ignore a superseded selection.
+      state.blueprintId = blueprintId;
+      state.previewView = 'front';
+      await refreshPatternLayerControls();
+      if (!loomOverlay || state.blueprintId !== blueprintId) return;
+      refreshPreview();
+    };
     overlay.querySelector('[data-act="toggleBehindView"]').onclick = () => {
       state.previewView = state.previewView === 'behind' ? 'front' : 'behind';
       refreshPreview();
@@ -786,8 +803,9 @@
     overlay.querySelector('[data-act="craft"]').onclick = () => craftFromLoom(state, selectedBlueprint(), selectedMaterial(), dyeById, hasSecondary(), weavingFromState());
     overlay.querySelector('.loomcraft-close').onclick = closeLoom;
     overlay.addEventListener('pointerdown', event => { if (event.target === overlay) closeLoom(); });
-    refreshPatternLayerControls();
-    refreshPreview();
+    refreshPatternLayerControls().then(() => {
+      if (loomOverlay === overlay) refreshPreview();
+    });
     return true;
   }
 
@@ -1196,15 +1214,16 @@
   // the complementary region, not the same one twice. Two shapes sharing an
   // edge like that always tile a parallelogram seamlessly, whatever their
   // shape — the same reason any triangle or any trapezoid tiles the plane.
-  // diamond doesn't need pairing at all: a rhombus with corners at the mid-
-  // points of a rectangle's own sides already tiles that rectangle's own
-  // grid with no gaps on its own.
+  // diamond doesn't need pairing at all: its edge-sharing neighbors are
+  // reached diagonally by half a bounding-box width and height. Translating
+  // by a whole width/height would make diamonds meet only at points and
+  // leave uncovered corner gaps.
   const FRAME_SHAPES = Object.freeze({
     square: { label: 'Square', paired: false, basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: 0, y: h } }), polygon: null },
     brick: { label: 'Brick', paired: false, basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: w / 2, y: h } }), polygon: null },
     diamond: {
       label: 'Diamond', paired: false,
-      basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: 0, y: h } }),
+      basis: (w, h) => ({ u: { x: w / 2, y: h / 2 }, v: { x: w / 2, y: -h / 2 } }),
       polygon: (w, h) => [{ x: w / 2, y: 0 }, { x: w, y: h / 2 }, { x: w / 2, y: h }, { x: 0, y: h / 2 }],
     },
     triangle: {
@@ -1687,7 +1706,7 @@
     hasBehindView,
     iconSpriteForCosmetic,
     debugSnapshot,
-    __test: Object.freeze({ baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask, applyPatternToTintedImage, labelPatternCells, behindViewUrlsFor, behindViewResultFor, buildPortraitPatternMap, collectPatternImageUrls, cosmeticConfig, summarizeWeavingLabel, weavingPatternForRole, weavingHasAnyPattern, erodeMask, scaledOutlineWidth }),
+    __test: Object.freeze({ baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask, applyPatternToTintedImage, labelPatternCells, behindViewUrlsFor, behindViewResultFor, buildPortraitPatternMap, collectPatternImageUrls, cosmeticConfig, summarizeWeavingLabel, weavingPatternForRole, weavingHasAnyPattern, frameShapeFor, erodeMask, scaledOutlineWidth }),
   });
   window.__clothingWeavingDebug = debugSnapshot;
 
