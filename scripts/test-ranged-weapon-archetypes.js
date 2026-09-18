@@ -222,8 +222,13 @@ assert.strictEqual(rangedVisuals.at(-1).options.gripMode, 'palm-parallel', 'Thro
 now += 450;
 visibleCharge = 0.45;
 assert.strictEqual(windowObject.HobunjiRangedWeaponArchetypes.releaseThrownCharge('test'), true, 'Kylie release should enter the existing ranged fire state machine.');
-assert.deepStrictEqual(releasedHolds, [{ poseProgress: 0.45 }], 'release must hand the exact visible Neutral→Windup interpolation into the shared partial-pose release seam.');
-assert.deepStrictEqual(baseStarts, [{ itemKey: 'kylie_copper', loaded: true, options: { damageScale: 0.45, suppressVisual: true } }], 'projectile action must use visible windup percent as damage scale without starting a second animation.');
+assert.strictEqual(releasedHolds.length, 1, 'release must invoke the shared partial-pose seam exactly once.');
+assert.strictEqual(releasedHolds[0].poseProgress, 0.45, 'release must hand the exact visible Neutral→Windup interpolation into the shared partial-pose release seam.');
+assert.strictEqual(baseStarts.length, 1, 'throw release must start exactly one projectile action.');
+assert.strictEqual(baseStarts[0].itemKey, 'kylie_copper');
+assert.strictEqual(baseStarts[0].loaded, true);
+assert.strictEqual(baseStarts[0].options.damageScale, 0.45, 'projectile action must use visible windup percent as raw damage scale.');
+assert.strictEqual(baseStarts[0].options.suppressVisual, true, 'projectile action must not restart the release animation.');
 
 assert.strictEqual(windowObject.RangedWeapons.startPlayerAction('bshuakauitl_copper'), true, 'Blowgun should retain ordinary load/fire start behavior.');
 assert.strictEqual(baseStarts.at(-1).itemKey, 'bshuakauitl_copper');
