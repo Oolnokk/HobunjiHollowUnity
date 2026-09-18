@@ -38,18 +38,31 @@
     // outline (if any) is drawn around it — see buildPatternMask/
     // recolorAndOxidize's erodeMask call. 0 = no thinning.
     motifThinPx: 0,
-    // The repeat lattice: frameShape picks a cell shape from FRAME_SHAPES,
-    // and frameX/frameY/frameRotationDeg/frameScale place/rotate/size that
-    // cell directly (see the frame tool below) — replaces the old auto-fit
-    // triangle/grid geometry (repeatMode/trianglePadding/gridSpacing/
-    // patternScale/patternRotationDeg/translateX/translateY), which used to
-    // compute the tightest-fitting shape around the ink automatically
-    // instead of letting the player place it themselves.
+    // The frame is a crop window laid over the drawn ink, in the same
+    // coordinate space the motif is sketched in: frameX/frameY/
+    // frameRotationDeg/frameScale move, rotate, and resize that window —
+    // smaller than the ink crops into it, larger leaves space around it,
+    // off-center or rotated samples a different region/angle of the
+    // drawing. Whatever falls inside becomes the single repeating unit;
+    // frameShape (see FRAME_SHAPES below) then tessellates copies of
+    // exactly that crop. This replaces the old auto-fit triangle/grid
+    // geometry (repeatMode/trianglePadding/gridSpacing/patternScale/
+    // patternRotationDeg/translateX/translateY), which used to compute the
+    // tightest-fitting shape around the ink automatically instead of
+    // letting the player place it themselves.
     frameShape: 'square',
     frameX: 0,
     frameY: 0,
     frameRotationDeg: 0,
     frameScale: 1,
+    // meshScale/meshRotationDeg are a SEPARATE control from the frame
+    // above: once the cell is cropped, these zoom/rotate the whole
+    // repeating mesh of tiled cells as one unit on the actual garment —
+    // named "Pattern scale/rotation" in the UI, but not stored as
+    // patternScale/patternRotationDeg to avoid colliding with those
+    // legacy pre-frame-tool field names (see legacyFrameFields below).
+    meshScale: 1,
+    meshRotationDeg: 0,
   });
 
   // Mirrors clothing-weaving-system.js's/tool-metal-recolor.js's own
@@ -277,24 +290,27 @@
                 </div>
                 <div class="pa-card">
                   <h3>Frame</h3>
-                  <p class="pa-hint">Pick a crop shape below — it's the canvas that gets cropped to, then repeated. Drag the middle to move the whole repeating pattern, drag the corner to rotate/scale it as one unit — or use the Pattern sliders below for exact values.</p>
+                  <p class="pa-hint">Drag the middle to move this crop window over your drawing, drag the corner to rotate/resize it — or use the Frame sliders below for exact values. Smaller than the ink crops into it; larger leaves space around it. Whatever falls inside becomes the repeating unit; pick a shape below for how it tessellates.</p>
                   <div class="pa-canvasWrap"><canvas class="pa-frameCanvas" width="${SKETCH_CANVAS_SIZE}" height="${SKETCH_CANVAS_SIZE}"></canvas></div>
                   <p class="pa-frameReadout" data-frame-readout></p>
                   <div class="pa-row" style="margin-top:9px">
                     ${Object.entries(FRAME_SHAPES).map(([id, shape]) => `<button type="button" class="pa-btn secondary pa-shapeToggle${cfg.frameShape === id ? ' active' : ''}" data-shape="${id}">${escapeHtml(shape.label)}</button>`).join('')}
                   </div>
-                  <div class="pa-field"><label><span>Pattern X</span><span class="pa-val" data-for="frameX"></span></label><input type="range" class="pa-in" data-field="frameX" min="${-SKETCH_CANVAS_SIZE}" max="${SKETCH_CANVAS_SIZE}" step="1" value="${cfg.frameX}"></div>
-                  <div class="pa-field"><label><span>Pattern Y</span><span class="pa-val" data-for="frameY"></span></label><input type="range" class="pa-in" data-field="frameY" min="${-SKETCH_CANVAS_SIZE}" max="${SKETCH_CANVAS_SIZE}" step="1" value="${cfg.frameY}"></div>
-                  <div class="pa-field"><label><span>Pattern rotation</span><span class="pa-val" data-for="frameRotationDeg"></span></label><input type="range" class="pa-in" data-field="frameRotationDeg" min="-180" max="180" step="1" value="${cfg.frameRotationDeg}"></div>
-                  <div class="pa-field"><label><span>Pattern scale</span><span class="pa-val" data-for="frameScale"></span></label><input type="range" class="pa-in" data-field="frameScale" min="0.1" max="6" step="0.01" value="${cfg.frameScale}"></div>
+                  <div class="pa-field"><label><span>Frame X</span><span class="pa-val" data-for="frameX"></span></label><input type="range" class="pa-in" data-field="frameX" min="${-SKETCH_CANVAS_SIZE}" max="${SKETCH_CANVAS_SIZE}" step="1" value="${cfg.frameX}"></div>
+                  <div class="pa-field"><label><span>Frame Y</span><span class="pa-val" data-for="frameY"></span></label><input type="range" class="pa-in" data-field="frameY" min="${-SKETCH_CANVAS_SIZE}" max="${SKETCH_CANVAS_SIZE}" step="1" value="${cfg.frameY}"></div>
+                  <div class="pa-field"><label><span>Frame rotation</span><span class="pa-val" data-for="frameRotationDeg"></span></label><input type="range" class="pa-in" data-field="frameRotationDeg" min="-180" max="180" step="1" value="${cfg.frameRotationDeg}"></div>
+                  <div class="pa-field"><label><span>Frame scale</span><span class="pa-val" data-for="frameScale"></span></label><input type="range" class="pa-in" data-field="frameScale" min="0.1" max="6" step="0.01" value="${cfg.frameScale}"></div>
                   <div class="pa-field"><label><span>Motif scale</span><span class="pa-val" data-for="motifScale"></span></label><input type="range" class="pa-in" data-field="motifScale" min="0.1" max="3" step="0.01" value="${cfg.motifScale}"></div>
                   <div class="pa-field"><label><span>Motif rotation</span><span class="pa-val" data-for="motifRotationDeg"></span></label><input type="range" class="pa-in" data-field="motifRotationDeg" min="-180" max="180" step="1" value="${cfg.motifRotationDeg}"></div>
-                  <p class="pa-hint">Motif scale resizes the ink within its cropped frame — below 1× leaves space around it, above 1× lets it overflow past the frame's edge into the neighboring copies instead of growing the frame to fit.</p>
+                  <p class="pa-hint">Motif scale zooms the ink within the frame's own fixed crop — below 1× leaves space around it, above 1× lets it overflow past the frame's edge instead of growing the frame to fit.</p>
                   <div class="pa-row">
                     <button type="button" class="pa-btn secondary" data-act="autoDetect">Auto-detect fit</button>
                     <button type="button" class="pa-btn secondary" data-act="resetPlacement">Reset placement</button>
                   </div>
-                  <p class="pa-hint">Auto-detect rotates the motif to whatever angle makes its own tight bounding box smallest, then resets the pattern to a centered, ungapped square at that angle — a quick starting point to drag from, not a final answer.</p>
+                  <p class="pa-hint">Auto-detect rotates the motif to whatever angle makes its own tight bounding box smallest, then resets the frame to a centered, ungapped crop at that angle — a quick starting point to drag from, not a final answer.</p>
+                  <div class="pa-field"><label><span>Pattern scale</span><span class="pa-val" data-for="meshScale"></span></label><input type="range" class="pa-in" data-field="meshScale" min="0.1" max="6" step="0.01" value="${cfg.meshScale}"></div>
+                  <div class="pa-field"><label><span>Pattern rotation</span><span class="pa-val" data-for="meshRotationDeg"></span></label><input type="range" class="pa-in" data-field="meshRotationDeg" min="-180" max="180" step="1" value="${cfg.meshRotationDeg}"></div>
+                  <p class="pa-hint">Pattern scale/rotation zoom and turn the WHOLE tiled result as it sits on the item, after cropping — separate from the frame above, which only decides what one repeating unit contains.</p>
                 </div>
             </div>
           </div>
@@ -325,7 +341,7 @@
     function updateValLabels() {
       overlay.querySelectorAll('.pa-val').forEach(el => {
         const field = el.dataset.for;
-        if (field === 'motifScale' || field === 'frameScale') el.textContent = `${Number(cfg[field]).toFixed(2)}×`;
+        if (field === 'motifScale' || field === 'frameScale' || field === 'meshScale') el.textContent = `${Number(cfg[field]).toFixed(2)}×`;
         else if (field === 'motifThinPx' || field === 'frameX' || field === 'frameY') el.textContent = `${Math.round(Number(cfg[field]) || 0)}px`;
         else el.textContent = `${cfg[field]}°`;
       });
@@ -353,6 +369,8 @@
         frameY: Number(cfg.frameY) || 0,
         frameRotationDeg: Number(cfg.frameRotationDeg) || 0,
         frameScale: Number(cfg.frameScale) || 1,
+        meshScale: Number(cfg.meshScale) || 1,
+        meshRotationDeg: Number(cfg.meshRotationDeg) || 0,
       };
     }
 
