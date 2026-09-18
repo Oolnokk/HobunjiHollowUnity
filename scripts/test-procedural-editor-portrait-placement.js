@@ -8,10 +8,12 @@ const root = path.resolve(__dirname, '..');
 const editorPath = path.join(root, 'docs/tools/procedural-animation-editor/index.html');
 const snapshotPath = path.join(root, 'docs/js/attachment-rig-latest-authored-snapshot-core.js');
 const defaultsPath = path.join(root, 'docs/config/character-rig-scale-defaults.js');
+const maoaoAuthoredPath = path.join(root, 'docs/js/character-rig-maoao-authored-20260905.js');
 
 const editor = fs.readFileSync(editorPath, 'utf8');
 const snapshot = fs.readFileSync(snapshotPath, 'utf8');
 const defaults = fs.readFileSync(defaultsPath, 'utf8');
+const maoaoAuthored = fs.readFileSync(maoaoAuthoredPath, 'utf8');
 
 const requiredRuntimeOrder = [
   "'config/scratchbones-config.js'",
@@ -34,6 +36,7 @@ for (const token of requiredRuntimeOrder) {
 
 assert.match(editor, /HOBUNJI_ATTACHMENT_RIG_LATEST_SINGLE_APPLY\s*=\s*true/, 'lightweight preview must suppress the Animation Author retry loop');
 assert.match(snapshot, /HOBUNJI_ATTACHMENT_RIG_LATEST_SINGLE_APPLY\s*===\s*true/, 'latest-authored snapshot core must support one-shot preview loading');
+assert.match(maoaoAuthored, /HOBUNJI_ATTACHMENT_RIG_LATEST_SINGLE_APPLY\s*===\s*true/, 'Mao-ao authored overlay must also avoid its retry loop in the lightweight preview');
 assert.match(editor, /window\.applyHobunjiAttachmentRigProfileCorrections\?\.\(\)/, 'latest authored anatomy must be projected back into PNG avatar config before preview build');
 
 assert.match(editor, /function resolvedFullCharacterScaleForPreview\(/, 'preview must resolve Full Character Scale body factors');
