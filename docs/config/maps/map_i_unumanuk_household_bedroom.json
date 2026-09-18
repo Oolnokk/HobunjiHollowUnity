@@ -185,32 +185,7 @@
       "spawnRow": 10
     }
   ],
-  "colliders": [
-    [
-      7,
-      8
-    ],
-    [
-      8,
-      8
-    ],
-    [
-      9,
-      8
-    ],
-    [
-      10,
-      8
-    ],
-    [
-      11,
-      8
-    ],
-    [
-      9,
-      9
-    ]
-  ],
+  "colliders": [],
   "vendorZones": [],
   "routes": [],
   "npcStations": [
