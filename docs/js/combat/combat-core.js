@@ -434,7 +434,7 @@
   // pitchDistanceResistance is an attack-specific 0..1 stat: 0 preserves the
   // ordinary gravity/aim-angle loss, while 1 removes only that loss without
   // erasing the attacker's authored vertical leap-height recovery.
-  function meleeLungeProfile(baseDistancePx, aimPitch = 0, baseHopUnits = 0, lungeHeightUnits = 1, pitchDistanceResistance = 0) {
+  function meleeLungeProfile(baseDistancePx, aimPitch = 0, baseHopUnits = 0, lungeHeightUnits = 1, pitchDistanceResistance = 0, directFlightStrength = 0) {
     const pitch = THREE.MathUtils.clamp(Number(aimPitch) || 0, -MAX_MELEE_AIM_PITCH_RAD, MAX_MELEE_AIM_PITCH_RAD);
     const absPitch = Math.abs(pitch);
     const distanceScaleAtAngle = THREE.MathUtils.clamp(1 - absPitch / (Math.PI / 2), 0, 1);
@@ -452,19 +452,25 @@
     const appliedResistance = pitch > 0 ? resistance : 0; // Used only for upward aim, where gravity/vertical travel is supposed to eat horizontal lunge distance.
     // Interpolate the EXISTING upward-pitch loss toward its no-loss equivalent.
     // Downward aim keeps the ordinary pitch-distance behavior unchanged.
-    const distanceScale = THREE.MathUtils.clamp(
+    const ballisticScale = THREE.MathUtils.clamp(
       naturalScale + (noGravityLossScale - naturalScale) * appliedResistance,
       0, 3.5,
     );
+    const direct = THREE.MathUtils.clamp(Number(directFlightStrength) || 0, 0, 1);
+    const straightHorizontalScale = Math.cos(absPitch); // A true 3D line uses the authored distance as vector length, not ground-plane length.
+    const distanceScale = THREE.MathUtils.lerp(ballisticScale, straightHorizontalScale, direct);
+    const ballisticHopUnits = Math.max(0, Number(baseHopUnits) || 0) + leapT * heightUnits;
     return {
       pitch,
       distanceScale,
       pitchDistanceResistance: resistance,
       appliedPitchDistanceResistance: appliedResistance,
+      directFlightStrength: direct,
       lungeHeightUnits: heightUnits,
       distancePx: Math.max(0, Number(baseDistancePx) || 0) * distanceScale,
+      verticalTravelUnits: baseDistanceWorld * Math.sin(pitch) * direct, // Signed world-Y leg of the same straight 3D vector.
       leapT,
-      hopUnits: Math.max(0, Number(baseHopUnits) || 0) + leapT * heightUnits,
+      hopUnits: ballisticHopUnits * (1 - direct), // Direct flight progressively removes the curved hop; 1 is a pure line.
     };
   }
 
