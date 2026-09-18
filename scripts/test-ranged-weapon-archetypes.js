@@ -18,7 +18,7 @@ const toolDefs = {
   dagger_copper: { label: 'Copper Dagger', sprite: 'assets/toolsprites/dagger.png', slots: ['weapon'], animStyle: 'thrust', shapeKey: 'dagger' },
   fishingspear_copper: { label: 'Copper Fishing Spear', sprite: 'assets/toolsprites/harpoon_fishingspear.png', slots: ['weapon'], animStyle: 'sweep', shapeKey: 'fishingspear' },
   hatchet_copper: { label: 'Copper Hatchet', sprite: 'assets/toolsprites/axe_hatchet.png', slots: ['weapon'], animStyle: 'sweep', shapeKey: 'hatchet' },
-  daggerSword_copper: { label: 'Copper Dagger-Sword', sprite: 'assets/toolsprites/dagger-sword.png', slots: ['weapon'], animStyle: 'thrust', shapeKey: 'daggerSword' },
+  daggerSword_copper: { label: 'Copper Dagger-Sword', sprite: 'assets/toolsprites/dagger-sword.png', slots: ['weapon'], animStyle: 'thrust', shapeKey: 'daggerSword', rangedType: 'thrown' },
 };
 
 const afflictionIds = [
@@ -102,8 +102,8 @@ for (const key of ['dagger_copper', 'fishingspear_copper', 'hatchet_copper']) {
   assert.ok(toolDefs[key].slots.includes('ranged'), `${key} should be equippable in the ranged slot.`);
   assert.strictEqual(windowObject.RangedWeapons.config[key]?.rangedType, 'thrown', `${key} should use the shared thrown archetype.`);
 }
-assert.ok(!toolDefs.daggerSword_copper.slots.includes('ranged'), 'Dagger-swords must remain melee-only.');
-assert.strictEqual(windowObject.RangedWeapons.config.daggerSword_copper, undefined, 'Dagger-swords must not receive ranged projectile configuration.');
+assert.ok(!toolDefs.daggerSword_copper.slots.includes('ranged'), 'Dagger-swords must remain melee-only even if a stale definition claims rangedType=thrown.');
+assert.strictEqual(windowObject.RangedWeapons.config.daggerSword_copper, undefined, 'Dagger-swords must never receive ranged projectile configuration.');
 assert.strictEqual(windowObject.RangedWeapons.config.kylie_copper.rangedType, 'thrown');
 assert.strictEqual(windowObject.RangedWeapons.config.bshuakauitl_copper.rangedType, 'blowgun');
 assert.strictEqual(windowObject.RangedWeapons.config.bshuakauitl_copper.damage, 2, 'Blowgun should use deliberately tiny raw damage.');
