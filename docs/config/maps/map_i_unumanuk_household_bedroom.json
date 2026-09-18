@@ -83,6 +83,81 @@
       "postSY": 1,
       "postSZ": 1
     }
+  ,
+    {
+      "id": "f_unmhbed_chest_teacup",
+      "itemKey": "chestFurniture",
+      "col": 7,
+      "row": 7,
+      "rotY": 0,
+      "postX": 0,
+      "postY": 0,
+      "postZ": 0,
+      "postSX": 1,
+      "postSY": 1,
+      "postSZ": 1,
+      "npcWardrobeFor": "teacup_unumanuk"
+    }
+  ,
+    {
+      "id": "f_unmhbed_chest_spearhead",
+      "itemKey": "chestFurniture",
+      "col": 8,
+      "row": 7,
+      "rotY": 0,
+      "postX": 0,
+      "postY": 0,
+      "postZ": 0,
+      "postSX": 1,
+      "postSY": 1,
+      "postSZ": 1,
+      "npcWardrobeFor": "spearhead_unumanuk"
+    }
+  ,
+    {
+      "id": "f_unmhbed_chest_oddclaw",
+      "itemKey": "chestFurniture",
+      "col": 9,
+      "row": 7,
+      "rotY": 0,
+      "postX": 0,
+      "postY": 0,
+      "postZ": 0,
+      "postSX": 1,
+      "postSY": 1,
+      "postSZ": 1,
+      "npcWardrobeFor": "oddclaw_unumanuk"
+    }
+  ,
+    {
+      "id": "f_unmhbed_chest_binding",
+      "itemKey": "chestFurniture",
+      "col": 10,
+      "row": 7,
+      "rotY": 0,
+      "postX": 0,
+      "postY": 0,
+      "postZ": 0,
+      "postSX": 1,
+      "postSY": 1,
+      "postSZ": 1,
+      "npcWardrobeFor": "binding_hatayap"
+    }
+  ,
+    {
+      "id": "f_unmhbed_chest_tooth",
+      "itemKey": "chestFurniture",
+      "col": 11,
+      "row": 7,
+      "rotY": 0,
+      "postX": 0,
+      "postY": 0,
+      "postZ": 0,
+      "postSX": 1,
+      "postSY": 1,
+      "postSZ": 1,
+      "npcWardrobeFor": "tooth_hatayap"
+    }
   ],
   "floor": [
     [
