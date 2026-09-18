@@ -1090,7 +1090,7 @@
     p.visual.rotation.x = p.pitch;
     if (p.spinPivot && p.spinRateRad) {
       p.spinRad = (p.spinRad + p.spinRateRad * dt) % (Math.PI * 2);
-      p.spinPivot.rotation.y = p.spinRad;
+      p.spinPivot.rotation.x = p.spinRad; // Combat Editor tool Pitch is local X; spin end-over-end on that authored axis.
     }
   }
 
