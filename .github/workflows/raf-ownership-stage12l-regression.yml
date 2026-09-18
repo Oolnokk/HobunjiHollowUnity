@@ -1,0 +1,30 @@
+name: RAF ownership Stage 12l regression (weapon discovery rewards scan)
+
+on:
+  pull_request:
+    paths:
+      - 'docs/js/weapon-discovery-rewards.js'
+      - 'scripts/test-weapon-discovery-rewards-scan-timer.js'
+      - '.github/workflows/raf-ownership-stage12l-regression.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'docs/js/weapon-discovery-rewards.js'
+      - 'scripts/test-weapon-discovery-rewards-scan-timer.js'
+      - '.github/workflows/raf-ownership-stage12l-regression.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax check
+        run: node --check docs/js/weapon-discovery-rewards.js
+      - name: Weapon discovery rewards scan timer conversion
+        run: node scripts/test-weapon-discovery-rewards-scan-timer.js

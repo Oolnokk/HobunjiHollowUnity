@@ -1,0 +1,30 @@
+name: RAF ownership Stage 12j regression (procedural hand grip runtime)
+
+on:
+  pull_request:
+    paths:
+      - 'docs/js/procedural-hand-grip-runtime.js'
+      - 'scripts/test-procedural-hand-grip-runtime-timer.js'
+      - '.github/workflows/raf-ownership-stage12j-regression.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'docs/js/procedural-hand-grip-runtime.js'
+      - 'scripts/test-procedural-hand-grip-runtime-timer.js'
+      - '.github/workflows/raf-ownership-stage12j-regression.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax check
+        run: node --check docs/js/procedural-hand-grip-runtime.js
+      - name: Procedural hand grip runtime timer conversion
+        run: node scripts/test-procedural-hand-grip-runtime-timer.js

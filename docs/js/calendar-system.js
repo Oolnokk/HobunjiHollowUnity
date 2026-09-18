@@ -588,7 +588,7 @@
     setTime01Raw(deps.calendar.time01 + 1 / activeClockHours());
     const timeoutAt = performance.now() + 1800; // Used to fail visibly instead of holding complete black forever if the private rollover loop stops.
     while ((deps.calendar.day < target.day || deps.calendar.time01 >= 1) && performance.now() < timeoutAt) {
-      await new Promise(resolve => requestAnimationFrame(resolve));
+      await new Promise(resolve => setTimeout(resolve, 30)); // Condition-wait for game.js's private day-rollover to finish, not genuine per-frame work.
     }
     if (deps.calendar.day < target.day) {
       throw new Error(`day rollover stalled at raw day ${deps.calendar.day}; expected ${target.day}`);

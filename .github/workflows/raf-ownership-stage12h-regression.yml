@@ -1,0 +1,30 @@
+name: RAF ownership Stage 12h regression (input settings controller capture)
+
+on:
+  pull_request:
+    paths:
+      - 'docs/js/input-settings-panel.js'
+      - 'scripts/test-input-settings-panel-controller-capture-timer.js'
+      - '.github/workflows/raf-ownership-stage12h-regression.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'docs/js/input-settings-panel.js'
+      - 'scripts/test-input-settings-panel-controller-capture-timer.js'
+      - '.github/workflows/raf-ownership-stage12h-regression.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax check
+        run: node --check docs/js/input-settings-panel.js
+      - name: Input settings panel controller capture timer conversion
+        run: node scripts/test-input-settings-panel-controller-capture-timer.js

@@ -26,7 +26,6 @@
     const stances = global.WeaponToolStances;
     if (!composer?.setChannel || !composer?.clearChannel || !stances?.idleBodyYawSnapshot) {
       lastReason = 'waiting-for-runtime';
-      global.requestAnimationFrame(sync);
       return;
     }
 
@@ -48,7 +47,6 @@
     lastComposer = composer;
     lastPlayerMesh = playerMesh;
     lastReason = resolved.reason;
-    global.requestAnimationFrame(sync);
   }
 
   global.WeaponIdleBodyYawRuntime = {
@@ -62,5 +60,9 @@
     },
   };
 
-  global.requestAnimationFrame(sync);
+  global.RuntimeFrameScheduler.register('weapon-idle-body-yaw-sync', sync, {
+    phase: 'pre-render',
+    owner: 'WeaponIdleBodyYawRuntime',
+    description: 'Applies the authored idle-stance body yaw into the player body transform composer.',
+  });
 })(window);

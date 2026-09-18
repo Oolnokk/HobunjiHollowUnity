@@ -485,7 +485,7 @@
     calendar.time01 = startTime + 1 / activeClockHours();
     const timeoutAt = performance.now() + 1800; // Same visible-failure bound used by CalendarSystem's private passage runner.
     while ((finiteNumber(calendar.day, startDay) < target.day || finiteNumber(calendar.time01, 0) >= 1) && performance.now() < timeoutAt) {
-      await new Promise(resolve => requestAnimationFrame(resolve));
+      await new Promise(resolve => setTimeout(resolve, 30)); // Condition-wait for game.js's private day-rollover to finish, not genuine per-frame work.
     }
     if (finiteNumber(calendar.day, startDay) < target.day) throw new Error(`day rollover stalled at raw day ${calendar.day}; expected ${target.day}`);
     calendar.time01 = target.time01;

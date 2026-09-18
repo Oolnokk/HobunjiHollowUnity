@@ -95,7 +95,14 @@
   }
 
   function frame() {
-    if (!install()) global.requestAnimationFrame(frame);
+    // Retries install() until Combat.deps.__weaponToolStanceVisualHooks
+    // becomes true, which is only guaranteed after weapon-tool-stances.js's
+    // own render-driven updateMatrixWorld retry settles - not synchronously
+    // after WeaponToolStances.init() returns (confirmed via headless-game-test:
+    // a one-shot init() hook alone leaves this permanently uninstalled). A
+    // short poll interval close to a frame boundary keeps the same tight
+    // retry cadence without needing per-frame RAF precision.
+    if (!install()) global.setTimeout(frame, 20);
   }
   frame();
 

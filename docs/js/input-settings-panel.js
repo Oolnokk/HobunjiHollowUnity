@@ -173,9 +173,9 @@
   let activeControllerCapture = null; // Used to ensure only one Settings row can listen to the gamepad at a time.
 
   function stopControllerCapture() {
-    const capture = activeControllerCapture; // Used to cancel the current animation-frame listener without leaving menu navigation suppressed.
+    const capture = activeControllerCapture; // Used to cancel the current poll listener without leaving menu navigation suppressed.
     activeControllerCapture = null;
-    if (capture?.frame) cancelAnimationFrame(capture.frame);
+    if (capture?.frame) clearInterval(capture.frame);
     capture?.button?.classList.remove('is-listening');
     if (capture?.button?.isConnected && capture.idleText) capture.button.textContent = capture.idleText;
   }
@@ -205,7 +205,7 @@
     const poll = () => {
       if (activeControllerCapture !== capture) return;
       if (!button.isConnected || button.getClientRects().length === 0) { stopControllerCapture(); return; }
-      const { pads, activeInputs } = snapshot(); // Used to find the first newly pressed supported binding code this frame.
+      const { pads, activeInputs } = snapshot(); // Used to find the first newly pressed supported binding code this poll.
       for (const key of [...blockedInputs]) if (!activeInputs.has(key)) blockedInputs.delete(key);
       for (const pad of pads) {
         for (const code of window.ControllerInput.getPressedBindingCodes(pad)) {
@@ -216,9 +216,8 @@
           return;
         }
       }
-      capture.frame = requestAnimationFrame(poll);
     };
-    capture.frame = requestAnimationFrame(poll);
+    capture.frame = setInterval(poll, 50); // An availability-wait for the next controller press; no per-frame precision needed.
   }
 
   function deviceActions(device) {

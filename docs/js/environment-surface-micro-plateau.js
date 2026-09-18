@@ -508,7 +508,6 @@
   }
 
   function tick(timestamp) {
-    requestAnimationFrame(tick);
     if (timestamp - lastFrameAt < 16) return;
     lastFrameAt = timestamp;
     const scene = currentScene();
@@ -569,5 +568,23 @@
 
   window.EnvironmentSurfaceMicroPlateau = Object.freeze({ installed: true, debugSnapshot, forceRebuild });
   ensureTexture();
-  requestAnimationFrame(tick);
+
+  // The shipped game always provides RuntimeFrameScheduler; the standalone
+  // Wilderness Generation Lab and snow-runtime-test.html tool pages load
+  // this module directly without it, so they keep the original self-scheduled
+  // RAF loop.
+  if (window.RuntimeFrameScheduler?.register) {
+    window.RuntimeFrameScheduler.register('environment-surface-micro-plateau-tick', frameContext => {
+      tick(Number(frameContext?.timestamp) || now());
+    }, {
+      owner: 'EnvironmentSurfaceMicroPlateau',
+      description: 'Rebuilds/maintains the snow/slush micro-plateau surface mesh for the active outdoor zone.',
+    });
+  } else {
+    const fallbackTick = timestamp => {
+      requestAnimationFrame(fallbackTick);
+      tick(timestamp);
+    };
+    requestAnimationFrame(fallbackTick);
+  }
 })();

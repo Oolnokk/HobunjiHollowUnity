@@ -860,7 +860,6 @@
       ensureDebugPanel();
       updateDebugPanel();
     }
-    window.requestAnimationFrame(featureLoop);
   }
 
   window.FishingFeatureDebug = { // Used by dev tools/tests as a console-independent inspection/force seam.
@@ -880,5 +879,10 @@
 
   hookWildTreasureInit();
   hookFishingAssignment();
-  window.requestAnimationFrame(featureLoop);
+  window.RuntimeFrameScheduler.register('fishing-events-feature-loop', frameContext => {
+    featureLoop(Number(frameContext?.timestamp) || performance.now());
+  }, {
+    owner: 'FishingFeatureDebug',
+    description: 'Drives Frenzy-event timers and Gullet fish AI/animation.',
+  });
 })();

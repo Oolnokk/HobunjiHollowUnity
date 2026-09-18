@@ -288,19 +288,20 @@
     requestAnimationFrame(refresh);
   }
 
+  const INPUT_DEVICE_POLL_MS = 250; // The last-used input device (mouse vs gamepad) rarely changes; no per-frame precision needed.
+
   function watchInputDevice() {
     const device = currentInputDevice();
     if (device !== lastRenderedInputDevice) {
       lastRenderedInputDevice = device;
       queueRefresh();
     }
-    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(watchInputDevice);
   }
 
   function startInputDeviceWatcher() {
-    if (inputDeviceWatcherStarted || typeof requestAnimationFrame !== 'function') return;
+    if (inputDeviceWatcherStarted || typeof setInterval !== 'function') return;
     inputDeviceWatcherStarted = true;
-    requestAnimationFrame(watchInputDevice);
+    setInterval(watchInputDevice, INPUT_DEVICE_POLL_MS);
   }
 
   function debugSnapshot() {

@@ -575,7 +575,6 @@
       ensureDialogueTreesOnWalkers();
       syncSmithingShapeUnlocks();
     }
-    frameHandle = global.requestAnimationFrame(update);
   }
 
   function patchDialogueContent(api) {
@@ -767,6 +766,6 @@
     patchApiWhenAssigned('MetalCraftShop', patchMetalCraftShop);
     patchApiWhenAssigned('BanditCombat', patchBanditCombat);
 
-    frameHandle = global.requestAnimationFrame(update);
+    frameHandle = global.setInterval(update, 100); // Only does substantive work on an area change or once the 1000ms sync throttle elapses; no per-frame cadence needed.
   }
 })(window);

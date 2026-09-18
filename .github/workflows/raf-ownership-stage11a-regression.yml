@@ -1,0 +1,32 @@
+name: RAF ownership Stage 11a regression (weapon idle body yaw runtime)
+
+on:
+  pull_request:
+    paths:
+      - 'docs/js/weapon-idle-body-yaw-runtime.js'
+      - 'docs/js/runtime-frame-scheduler.js'
+      - 'scripts/test-weapon-idle-body-yaw-runtime-scheduler.js'
+      - '.github/workflows/raf-ownership-stage11a-regression.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'docs/js/weapon-idle-body-yaw-runtime.js'
+      - 'docs/js/runtime-frame-scheduler.js'
+      - 'scripts/test-weapon-idle-body-yaw-runtime-scheduler.js'
+      - '.github/workflows/raf-ownership-stage11a-regression.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax check
+        run: node --check docs/js/weapon-idle-body-yaw-runtime.js
+      - name: Weapon idle body yaw runtime scheduler migration
+        run: node scripts/test-weapon-idle-body-yaw-runtime-scheduler.js

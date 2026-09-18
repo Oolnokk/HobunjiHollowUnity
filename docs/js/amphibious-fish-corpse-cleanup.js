@@ -199,12 +199,13 @@
     });
   }
 
+  const PRESENTATION_POLL_MS = 250; // Only needs to catch an infrequent newly-spawned-Gurumahi state change, not per-frame precision.
+
   function presentationLoop() {
     updateFishingPrewarm();
     for (const creature of spawnDeps?.hostileObjects || []) {
       if (creature?._amphibiousFishItemKey) applyFallbackPresentation(creature);
     }
-    requestAnimationFrame(presentationLoop);
   }
 
   function wrapMakeCreatureEntity(injectedDeps) {
@@ -259,7 +260,7 @@
       wrapMakeCreatureEntity(injectedDeps);
       if (!presentationLoopStarted) {
         presentationLoopStarted = true;
-        requestAnimationFrame(presentationLoop);
+        setInterval(presentationLoop, PRESENTATION_POLL_MS);
       }
       window.__farmLog?.(`[amphibious-fishing] Gurumahi single-avatar prewarm active; land width=${GURUMAHI_LAND_MODEL_WIDTH}`, 'fish');
       return result;

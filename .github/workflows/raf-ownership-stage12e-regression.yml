@@ -1,0 +1,30 @@
+name: RAF ownership Stage 12e regression (day progress review passage-hour timer)
+
+on:
+  pull_request:
+    paths:
+      - 'docs/js/day-progress-review.js'
+      - 'scripts/test-day-progress-review-passage-hour-timer.js'
+      - '.github/workflows/raf-ownership-stage12e-regression.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'docs/js/day-progress-review.js'
+      - 'scripts/test-day-progress-review-passage-hour-timer.js'
+      - '.github/workflows/raf-ownership-stage12e-regression.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax check
+        run: node --check docs/js/day-progress-review.js
+      - name: Day progress review passage-hour timer conversion
+        run: node scripts/test-day-progress-review-passage-hour-timer.js

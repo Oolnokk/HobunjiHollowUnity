@@ -363,8 +363,12 @@
     } else if (overlay) overlay.style.display = 'none';
   }
 
-  function frameLoop(ts) {
-    perfState.raf = 0;
+  const FRAME_LOOP_SCHEDULER_ID = 'performance-debug-frame-loop';
+  let frameLoopRegistered = false;
+  let frameLoopActive = false;
+
+  function frameLoop(frameContext) {
+    const ts = Number(frameContext?.timestamp) || performance.now();
     if (!fpsEnabled && !profilerEnabled) return;
     if (!perfState.lastFrameTs) perfState.lastFrameTs = ts;
     const delta = Math.max(0, ts - perfState.lastFrameTs);
@@ -398,15 +402,26 @@
       if (profilerEnabled) perfState.domNodeCount = document.querySelectorAll('*').length;
       updatePerformanceUI(ts);
     }
-    perfState.raf = requestAnimationFrame(frameLoop);
   }
 
   function startFrameLoopIfNeeded() {
-    if ((!fpsEnabled && !profilerEnabled) || perfState.raf) return;
-    perfState.lastFrameTs = 0;
-    perfState.sampleStart = 0;
-    perfState.sampleFrames = 0;
-    perfState.raf = requestAnimationFrame(frameLoop);
+    const active = fpsEnabled || profilerEnabled;
+    if (active && !frameLoopActive) {
+      perfState.lastFrameTs = 0;
+      perfState.sampleStart = 0;
+      perfState.sampleFrames = 0;
+    }
+    frameLoopActive = active;
+    if (!frameLoopRegistered) {
+      if (!active) return;
+      frameLoopRegistered = true;
+      root.RuntimeFrameScheduler.register(FRAME_LOOP_SCHEDULER_ID, frameLoop, {
+        owner: 'PerformanceDebug',
+        description: 'Updates the opt-in FPS counter / profiler overlay.',
+      });
+      return;
+    }
+    root.RuntimeFrameScheduler.setEnabled(FRAME_LOOP_SCHEDULER_ID, active);
   }
 
   function setFpsEnabled(enabled) {
@@ -1202,13 +1217,13 @@
   // Runs unconditionally from boot (not gated behind the FPS counter or
   // Performance Profiler opt-ins above) so a near-freeze gets captured
   // automatically instead of only when a developer happened to have
-  // diagnostics already turned on. Deliberately its own tiny rAF loop
-  // rather than reusing frameLoop, which only runs while fpsEnabled or
-  // profilerEnabled is true.
+  // diagnostics already turned on. Deliberately its own tiny scheduler
+  // registration rather than reusing frameLoop, which only runs while
+  // fpsEnabled or profilerEnabled is true.
   const LAG_SNAPSHOT_FPS_THRESHOLD = 3;
   const LAG_SNAPSHOT_COOLDOWN_MS = 20000; // Keeps a sustained lag spell from spamming a snapshot every sample window.
   const LAG_SNAPSHOT_SAMPLE_MS = 500;
-  const lagWatch = { raf: 0, sampleStart: 0, sampleFrames: 0, lastSnapshotAt: -Infinity };
+  const lagWatch = { registered: false, sampleStart: 0, sampleFrames: 0, lastSnapshotAt: -Infinity };
   root.__hobunjiLagSnapshots = root.__hobunjiLagSnapshots || []; // Ring buffer of recent auto-captures, newest last.
   const LAG_SNAPSHOT_HISTORY_LIMIT = 10;
 
@@ -1234,8 +1249,8 @@
     updateLagSnapshotStatusUI();
   }
 
-  function lagWatchLoop(ts) {
-    lagWatch.raf = requestAnimationFrame(lagWatchLoop);
+  function lagWatchLoop(frameContext) {
+    const ts = Number(frameContext?.timestamp) || performance.now();
     if (!lagWatch.sampleStart) lagWatch.sampleStart = ts;
     lagWatch.sampleFrames += 1;
     const elapsed = ts - lagWatch.sampleStart;
@@ -1250,8 +1265,12 @@
   }
 
   function startLagWatch() {
-    if (lagWatch.raf) return;
-    lagWatch.raf = requestAnimationFrame(lagWatchLoop);
+    if (lagWatch.registered) return;
+    lagWatch.registered = true;
+    root.RuntimeFrameScheduler.register('performance-debug-lag-watch', lagWatchLoop, {
+      owner: 'PerformanceDebug',
+      description: 'Samples a rolling FPS figure and auto-captures a cache-audit snapshot on sustained lag.',
+    });
   }
 
   function install() {

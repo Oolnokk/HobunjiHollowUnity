@@ -79,12 +79,14 @@
   function frame() {
     if (!weaponFix()?.state?.toolPlane) lastPlane = null;
     polishCurrentPlane();
-    requestAnimationFrame(frame);
   }
 
   window[PATCH_ID] = Object.freeze({
     kenkariToolScale: KENKARI_TOOL_SCALE,
     polishCurrentPlane,
   });
-  requestAnimationFrame(frame);
+  window.RuntimeFrameScheduler.register('onboarding-character-creation-weapon-polish', frame, {
+    owner: 'OnboardingCharacterCreationWeaponPolish',
+    description: 'Re-applies held-tool Kenkari scale and idle-sprite-basis corrections whenever the character creator preview\'s tool plane changes.',
+  });
 })();

@@ -129,7 +129,7 @@
     const randomizerReady = installRandomizerGuard();
     const fightersReady = verifyFemaleFighter();
     if (randomizerReady && fightersReady) return;
-    requestAnimationFrame(ensureRuntimeGuard); // Portrait utilities may finish loading after this compatibility layer.
+    setTimeout(ensureRuntimeGuard, 100); // Portrait utilities may finish loading after this compatibility layer; a wait-for-availability poll, not per-frame work.
   }
 
   installSpeciesTableCapture();

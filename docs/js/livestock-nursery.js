@@ -58,7 +58,8 @@
   let panelObserver = null; // Reapplies Nursery decoration after FarmPanel's private partial renders.
   let panelDecorating = false;
   let panelDecorateQueued = false;
-  let swarmRaf = 0; // Nursery-only rAF; never runs outside its interior.
+  const SWARM_SCHEDULER_ID = 'livestock-nursery-swarm';
+  let swarmRegistered = false; // Nursery-only scheduler subscription; never runs outside its interior.
   let swarmEntered = false;
   let swarmLastFrameAt = 0;
   let swarmGeneration = 0; // Invalidates async genotype-frame work after exit/reroll.
@@ -641,24 +642,26 @@
   }
 
   function stopSwarmLoop() {
-    if (swarmRaf) cancelAnimationFrame(swarmRaf);
-    swarmRaf = 0;
+    if (swarmRegistered) {
+      window.RuntimeFrameScheduler.unregister(SWARM_SCHEDULER_ID);
+      swarmRegistered = false;
+    }
     swarmEntered = false;
     swarmLastFrameAt = 0;
     clearSwarm();
   }
 
   function startSwarmLoop() {
-    if (swarmRaf) return;
+    if (swarmRegistered) return;
+    swarmRegistered = true;
     let activationFrames = 0;
-    const frame = now => {
-      swarmRaf = 0;
+    window.RuntimeFrameScheduler.register(SWARM_SCHEDULER_ID, frameContext => {
+      const now = Number(frameContext?.timestamp) || performance.now();
       const inside = currentArea() === NURSERY_MAP_ID;
       if (!inside) {
         if (swarmEntered) { stopSwarmLoop(); return; }
         activationFrames++;
         if (activationFrames > 120) { stopSwarmLoop(); return; }
-        swarmRaf = requestAnimationFrame(frame);
         return;
       }
       swarmEntered = true;
@@ -667,15 +670,16 @@
         : 1 / 60;
       swarmLastFrameAt = now;
       updateSwarm(dt);
-      swarmRaf = requestAnimationFrame(frame);
-    };
-    swarmRaf = requestAnimationFrame(frame);
+    }, {
+      owner: 'LivestockNursery',
+      description: 'Drives the baby-livestock swarm simulation while the player is inside the nursery interior, self-stopping shortly after they leave.',
+    });
   }
 
   function rerollSwarm() {
     clearSwarm();
     if (currentArea() === NURSERY_MAP_ID) {
-      if (!swarmRaf) startSwarmLoop();
+      if (!swarmRegistered) startSwarmLoop();
       else buildSwarm();
     }
   }

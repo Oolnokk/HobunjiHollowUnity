@@ -439,13 +439,17 @@
   function alertFrame(now) {
     serviceXpTick(now);
     updateShoulderAlerts(now);
-    requestAnimationFrame(alertFrame);
   }
 
   function ensureAlertFrame() {
-    if (alertFrameStarted || typeof requestAnimationFrame !== 'function') return;
+    if (alertFrameStarted || !window.RuntimeFrameScheduler?.register) return;
     alertFrameStarted = true;
-    requestAnimationFrame(alertFrame);
+    window.RuntimeFrameScheduler.register('stable-animal-progression-alert', frameContext => {
+      alertFrame(Number(frameContext?.timestamp) || performance.now());
+    }, {
+      owner: 'StableAnimalProgression',
+      description: 'Services stable-XP ticks and animates pulsing shoulder-pet threat-alert auras.',
+    });
   }
 
   function recognitionMemoryKey(entry) {

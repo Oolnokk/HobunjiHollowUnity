@@ -1,0 +1,30 @@
+name: RAF ownership Stage 12g regression (hand shoulder pose capture loop)
+
+on:
+  pull_request:
+    paths:
+      - 'docs/js/hand-shoulder-pose-runtime.js'
+      - 'scripts/test-hand-shoulder-pose-runtime-capture-timer.js'
+      - '.github/workflows/raf-ownership-stage12g-regression.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'docs/js/hand-shoulder-pose-runtime.js'
+      - 'scripts/test-hand-shoulder-pose-runtime-capture-timer.js'
+      - '.github/workflows/raf-ownership-stage12g-regression.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax check
+        run: node --check docs/js/hand-shoulder-pose-runtime.js
+      - name: Hand shoulder pose runtime capture-loop timer conversion
+        run: node scripts/test-hand-shoulder-pose-runtime-capture-timer.js

@@ -189,7 +189,6 @@
 
   function scan() {
     decorateTreasureObjects();
-    scanFrame = global.requestAnimationFrame(scan);
   }
 
   global.WeaponDiscoveryRewards = Object.freeze({
@@ -215,6 +214,6 @@
   if (!IS_DIALOGUE_EDITOR) {
     patchApiWhenAssigned('Fishing', patchFishing);
     patchApiWhenAssigned('WildTreasure', patchWildTreasure);
-    scanFrame = global.requestAnimationFrame(scan);
+    scanFrame = global.setInterval(scan, 500); // Idempotent, flag-guarded safety scan; cheap and non-urgent, no per-frame cadence needed.
   }
 })(window);
