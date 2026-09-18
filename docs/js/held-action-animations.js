@@ -39,9 +39,9 @@
     },
   }; // Used by held flask aim/confirm; intentionally simple for later authoring tweaks.
 
-  // Authored from the supplied Throw_Spinny attack-editor export. This is the
-  // temporary shared throw animation for every thrown weapon until dedicated
-  // spear/etc. variants are authored.
+  // Shared temporary throw animation for every thrown weapon until dedicated
+  // per-shape throws are authored. Runtime charge holds at its Windup endpoint,
+  // then release scales this pose path to the visible charge percentage.
   const weaponThrowSpin = {
     version: 1,
     kind: 'hobunji_attack_animation',
@@ -238,9 +238,9 @@
     new URL('config/hand-shoulder-points.js?v=20260818b', docsBase).href,
     new URL('config/hand-shoulder-pose-profiles.js?v=20260818a', docsBase).href,
     new URL('js/procedural-hand-foot-material-roles.js?v=20260821e', docsBase).href,
-    new URL('js/hand-tool-grips.js?v=20260916perf1', docsBase).href,
+    new URL('js/hand-tool-grips.js?v=20260917charge2', docsBase).href,
     new URL('js/hand-grip-modes.js?v=20260818c', docsBase).href,
-    new URL('js/hand-shoulder-pose-runtime.js?v=20260818c', docsBase).href,
+    new URL('js/hand-shoulder-pose-runtime.js?v=20260917charge2', docsBase).href,
     new URL('js/portrait-arm-cloud-mask.js?v=20260817a', docsBase).href,
     new URL('js/portrait-hand-shoulder-scan.js?v=20260818c', docsBase).href,
     new URL('js/portrait-hand-shoulder-scan-species.js?v=20260818a', docsBase).href,
@@ -266,7 +266,7 @@
     handScripts.push(new URL('js/attack-editor-hand-shoulder-animation-state.js?v=20260818a', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-state-coherence.js?v=20260819b', docsBase).href);
   } else if (!isAnimationAuthor) {
-    handScripts.push(new URL('js/procedural-hand-grip-runtime.js?v=20260918weaponthrowspin1', docsBase).href);
+    handScripts.push(new URL('js/procedural-hand-grip-runtime.js?v=20260918throwcharge3', docsBase).href);
     handScripts.push(new URL('js/weapon-idle-body-yaw-runtime.js?v=20260915perf1', docsBase).href);
     handScripts.push(new URL('js/crossbow-strike-audio-trim.js?v=20260818a', docsBase).href);
     handScripts.push(new URL('js/weapon-png-scale.js?v=20260902c', docsBase).href);
