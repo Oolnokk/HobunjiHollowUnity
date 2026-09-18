@@ -93,6 +93,22 @@
 
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
+  // Moves a freshly authored motif's pixel data out to MotifStore (see
+  // docs/js/motif-store.js) so the caller's onSave gets a small
+  // customMotifId reference instead of a full embedded copy — used only
+  // for a per-item "Custom" pattern; a pattern saved unmodified from the
+  // library is already persisted as just a patternLibraryId reference by
+  // the caller, so it never reaches this. Falls back to returning `data`
+  // unchanged (today's fully-embedded shape) if the store is unavailable
+  // or the write fails — a motif is never lost over this optimization.
+  async function offloadMotif(data) {
+    if (!data?.motifDataUrl || typeof window.MotifStore?.saveMotif !== 'function') return data;
+    const customMotifId = await window.MotifStore.saveMotif(data.motifDataUrl).catch(() => null);
+    if (!customMotifId) return data;
+    const { motifDataUrl, ...rest } = data;
+    return { ...rest, customMotifId };
+  }
+
   function openEditor(options = {}) {
     injectStyles();
     const cfg = { ...PATTERN_DEFAULTS, ...(options.initialPattern || {}) };
@@ -460,7 +476,8 @@
       const data = currentPatternData();
       if (!data.motifDataUrl) { previewStatus.textContent = 'Draw a motif before saving.'; return; }
       if (typeof options.onSave !== 'function') { close(); return; }
-      const result = await options.onSave(data, loadedLibraryId);
+      const outgoing = loadedLibraryId ? data : await offloadMotif(data);
+      const result = await options.onSave(outgoing, loadedLibraryId);
       if (result !== false) close();
     });
 

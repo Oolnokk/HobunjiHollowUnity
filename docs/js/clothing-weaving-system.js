@@ -647,15 +647,16 @@
     const hasSecondary = () => ['hood', 'overwear'].includes(selectedBlueprint()?.slot);
     const dyeById = id => window.DyeSystem?.getById?.(id) || dyes.find(dye => dye.id === id) || dyes[0];
 
-    function openLayerPatternAuthor(role, roleKey) {
+    async function openLayerPatternAuthor(role, roleKey) {
       const bp = selectedBlueprint();
       const existing = state.layerPatterns[roleKey];
+      const initialPattern = await resolvedForEditing(existing?.pattern || (existing?.patternId ? window.PatternLibrary?.getById?.(existing.patternId) : null) || null);
       window.PatternAuthoring?.openEditor?.({
         title: `Weave pattern — ${bp.label || bp.baseCosmeticId}${state.layers.length > 1 ? ' — ' + layerLabel(role) : ''}`,
         motifHint: state.layers.length > 1
           ? `Draw the motif to weave onto this layer (${layerLabel(role)}). It will use the garment's third dye slot.`
           : 'Draw the motif to weave onto this garment. It will use the garment\'s third dye slot.',
-        initialPattern: existing?.pattern || (existing?.patternId ? window.PatternLibrary?.getById?.(existing.patternId) : null) || null,
+        initialPattern,
         initialPatternLibraryId: existing?.patternId || null,
         library: window.PatternLibrary ? {
           list: () => window.PatternLibrary.listAvailable(),
@@ -666,7 +667,7 @@
         renderPreview: patternData => {
           const base = weavingFromState() || { layers: {} };
           const weaving = { layers: { ...base.layers, [roleKey]: { pattern: patternData } } };
-          return renderClothingLayers(bp.baseCosmeticId, { primaryHex: dyeById(state.dyeA)?.hex, patternHex: dyeById(state.dyeC)?.hex, weaving }).then(r => r.canvas);
+          return renderClothingLayers(bp.baseCosmeticId, { primaryHex: dyeById(state.dyeA)?.hex, secondaryHex: hasSecondary() ? dyeById(state.dyeB)?.hex : null, patternHex: dyeById(state.dyeC)?.hex, weaving }).then(r => r.canvas);
         },
         onSave: (patternData, sourceLibraryId) => {
           const patternLabel = sourceLibraryId ? (window.PatternLibrary?.listAvailable?.().find(entry => entry.id === sourceLibraryId)?.label || 'Custom') : 'Custom';
@@ -739,6 +740,7 @@
       try {
         const { canvas } = await renderClothingLayers(bp.baseCosmeticId, {
           primaryHex: dyeById(state.dyeA)?.hex,
+          secondaryHex: hasSecondary() ? dyeById(state.dyeB)?.hex : null,
           patternHex: dyeById(state.dyeC)?.hex,
           weaving: weavingFromState(),
         });
@@ -946,9 +948,10 @@
       for (const layer of Object.values(layers)) {
         const role = layer?.layerRole || null; // Used with the cosmetic's palette map to identify BODY/NONE overlays, and (below) to key this layer's own pattern separately from its siblings.
         const mappedRole = role && paletteLayerMap ? paletteLayerMap[role] : null;
+        const paletteKey = mappedRole || layer?.paletteColorKey || null; // 'A'/'B' — which dye slot this layer recolors with (see renderClothingLayers).
         const skip = mappedRole === 'BODY' || mappedRole === 'NONE' || layer?.paletteColorKey === 'BODY' || layer?.paletteColorKey === 'NONE'; // Same bypass routes collectPatternImageUrls already skips.
         const url = layer?.image?.url;
-        if (!skip && typeof url === 'string' && /\.(png|webp|jpe?g)(?:$|[?#])/i.test(url)) into.push({ url: normalizeAssetPath(url), role });
+        if (!skip && typeof url === 'string' && /\.(png|webp|jpe?g)(?:$|[?#])/i.test(url)) into.push({ url: normalizeAssetPath(url), role, paletteKey });
       }
     }
     return into;
@@ -1051,21 +1054,39 @@
 
   // Patterned/tinted per-layer renderer used by the loom preview, the
   // pattern-authoring live preview, and the redye panel's woven preview.
-  // Each layer gets its own primary-dye recolor and — via weavingPatternForRole
-  // — its own weave pattern, before the (now individually patterned) layers
-  // are merged into one flat canvas. This is what actually lets a garment's
-  // base and trim carry two different motifs instead of one pattern stamped
-  // uniformly across the whole merged silhouette.
-  async function renderClothingLayers(baseCosmeticIdValue, { primaryHex = null, patternHex = '#ffffff', weaving = null } = {}) {
+  // Each layer gets its own primary/trim-dye recolor (by paletteKey — see
+  // collectLayerImageUrls) and — via weavingPatternForRole — its own weave
+  // pattern, before the (now individually patterned) layers are merged into
+  // one flat canvas. This is what actually lets a garment's base and trim
+  // carry two different colors/motifs instead of one dye and one pattern
+  // stamped uniformly across the whole merged silhouette.
+  async function renderClothingLayers(baseCosmeticIdValue, { primaryHex = null, secondaryHex = null, patternHex = '#ffffff', weaving = null } = {}) {
     const layers = await resolveIconLayers(baseCosmeticIdValue);
     if (!layers.length) return { canvas: null, layers };
     const primaryValue = parseInt(String(primaryHex || '').replace('#', ''), 16);
+    const secondaryValue = parseInt(String(secondaryHex || primaryHex || '').replace('#', ''), 16); // Falls back to primary when the caller has no separate trim color.
     const rendered = [];
-    for (const { url, role } of layers) {
+    for (const { url, role, paletteKey } of layers) {
       let img = await loadImageUrl(url);
       if (!img) continue;
-      if (Number.isFinite(primaryValue) && window.SpriteRecolor?.getRecoloredCanvas) {
-        try { img = await window.SpriteRecolor.getRecoloredCanvas(url, primaryValue, 'direct') || img; } catch (_) {}
+      const tintValue = paletteKey === 'B' ? secondaryValue : primaryValue;
+      // Recolor the image already loaded above rather than asking
+      // SpriteRecolor.getRecoloredCanvas to reload it by this same url —
+      // that reload uses a plain `new Image().src = url` with no asset-path
+      // resolution, so it 404s on exactly the normalizeAssetPath'd paths
+      // this module hands it (silently, since the caller here only ever
+      // saw the caught/swallowed rejection as "no recolor," i.e. every
+      // layer rendering in its original authored placeholder color).
+      if (Number.isFinite(tintValue) && window.SpriteRecolor?.recolorImageData) {
+        try {
+          const tintCanvas = Object.assign(document.createElement('canvas'), { width: img.naturalWidth || img.width || 1, height: img.naturalHeight || img.height || 1 });
+          const tintCtx = tintCanvas.getContext('2d');
+          tintCtx.drawImage(img, 0, 0);
+          const imageData = tintCtx.getImageData(0, 0, tintCanvas.width, tintCanvas.height);
+          window.SpriteRecolor.recolorImageData(imageData.data, tintValue, 'direct');
+          tintCtx.putImageData(imageData, 0, 0);
+          img = tintCanvas;
+        } catch (_) {}
       }
       const pattern = weavingPatternForRole(weaving, role);
       if (pattern) img = await applyPatternToTintedImage(img, pattern, patternHex, `layer:${url}`);
@@ -1333,12 +1354,29 @@
     return Math.max(1, Math.min(defaultWidth, Math.round(defaultWidth * scale)));
   }
 
+  // A per-item "Custom" pattern's motif may live in MotifStore instead of
+  // being embedded directly (see pattern-authoring.js's offloadMotif) —
+  // resolve it back to a full motifDataUrl before handing the pattern to
+  // the editor to redraw, since pattern-authoring.js itself stays agnostic
+  // of any storage scheme beyond motifDataUrl. A no-op for a pattern that
+  // already has one (or is null).
+  async function resolvedForEditing(pattern) {
+    if (!pattern || pattern.motifDataUrl || !pattern.customMotifId) return pattern;
+    const motifDataUrl = await window.MotifStore?.loadMotif?.(pattern.customMotifId);
+    return motifDataUrl ? { ...pattern, motifDataUrl } : pattern;
+  }
+
   async function applyPatternToTintedImage(imageOrCanvas, pattern, colorHex, cachePrefix = '') {
-    if (!imageOrCanvas || !pattern?.motifDataUrl) return imageOrCanvas;
+    if (!imageOrCanvas || !(pattern?.motifDataUrl || pattern?.customMotifId)) return imageOrCanvas;
     const width = imageOrCanvas.naturalWidth || imageOrCanvas.width || 1, height = imageOrCanvas.naturalHeight || imageOrCanvas.height || 1;
     const key = patternCanvasKey(imageOrCanvas, pattern, colorHex, cachePrefix);
     if (patternedCanvasCache.has(key)) return patternedCanvasCache.get(key);
-    const motif = await loadImageUrl(pattern.motifDataUrl);
+    // A per-item "Custom" pattern's motif may live in MotifStore instead of
+    // being embedded directly (see pattern-authoring.js's offloadMotif) —
+    // resolve either shape the same way from here on.
+    const motifUrl = pattern.motifDataUrl || await window.MotifStore?.loadMotif?.(pattern.customMotifId);
+    if (!motifUrl) return imageOrCanvas;
+    const motif = await loadImageUrl(motifUrl);
     if (!motif) return imageOrCanvas;
     // Rendered CELL_OFFSET_PAD larger on every side than the sprite itself so
     // a per-cell sample shift (below) always has real tiled pattern data to
@@ -1417,6 +1455,7 @@
     if (!id) return null;
     const { canvas } = await renderClothingLayers(id, {
       primaryHex: item?.colorA?.hex,
+      secondaryHex: item?.colorB?.hex,
       patternHex: resolvePatternHex(item?.colorC),
       weaving: item?.weaving,
     });

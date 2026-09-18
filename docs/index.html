@@ -441,6 +441,12 @@
        doesn't matter; must load before game.js, which calls
        window.CarpenterShop.init(...) during its own setup. -->
   <script src="js/carpenter-shop.js?v=20260807a"></script>
+  <!-- Off-save storage for a per-item "Custom" pattern's motif PNG
+       (window.MotifStore) — see the file's own header comment. No deps
+       injection and everything on it fails soft, so load order doesn't
+       matter beyond being available before pattern-authoring.js's save
+       flow and the weaving/verdigris render paths call it. -->
+  <script src="js/motif-store.js?v=20260918a"></script>
   <!-- Generic motif-sketch + placement/tiling editor modal
        (window.PatternAuthoring) — knows nothing about verdigris or
        clothing, just hands a caller-supplied preview hook a placement
