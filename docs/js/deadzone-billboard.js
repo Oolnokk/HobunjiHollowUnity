@@ -191,6 +191,7 @@
     light.position.set(Number(offset.x)||0,Number(offset.y)||0,Number(offset.z)||0);
     light.castShadow=false;light.userData.rootTotemLight=true;
     light.userData.furnitureLightMask=lightConfig.weatherOverlayMask===true;
+    window.FurnitureLightRegistry?.register(light);
     parent.add(light);return light;
   }
 

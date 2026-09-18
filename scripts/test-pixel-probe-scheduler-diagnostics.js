@@ -28,14 +28,29 @@ assert(source.includes('const schedulerLines = _pixelProbeSchedulerLines();'), '
 assert(source.includes('if (schedulerLines) lines.push(...schedulerLines);'), 'the frame-scheduler diagnostics must be spread into the report the same way as the other _pixelProbeXxxLines helpers');
 assert(source.includes('Frame scheduler profiled avg:'), 'Pixel Probe must expose scheduler phase totals when scheduler profiling is enabled');
 assert(source.includes('Frame scheduler top:'), 'Pixel Probe must expose the heaviest profiled scheduler subscribers');
+assert(source.includes('const animalSleepLines = _pixelProbeAnimalSleepLines();'), 'the copyable probe report must request animal-sleep scheduler diagnostics');
+assert(source.includes('if (animalSleepLines) lines.push(...animalSleepLines);'), 'animal-sleep diagnostics must be merged into the same mobile report');
+assert(source.includes("beginExternalRenderScope?.('pixel-probe')"), 'Pixel Probe rerenders must explicitly request live sleep presentation');
+assert(source.includes('endExternalRenderScope?.()'), 'Pixel Probe rerenders must restore explicit sleep presentation afterward');
+assert(!source.includes('WebGLRenderer.prototype.render ='), 'Pixel Probe integration must not recreate a global renderer monkey-patch');
 
 const match = source.match(/function _pixelProbeSchedulerLines\(\) \{[\s\S]*?\n  \}\n/);
 assert(match, 'could not locate _pixelProbeSchedulerLines in the shipped source');
+
+const sleepMatch = source.match(/function _pixelProbeAnimalSleepLines\(\) \{[\s\S]*?\n  \}\n/);
+assert(sleepMatch, 'could not locate _pixelProbeAnimalSleepLines in the shipped source');
 
 function run(getDebugResult) {
   const context = { window: { RuntimeFrameScheduler: getDebugResult === undefined ? undefined : { getDebug: () => getDebugResult } } };
   vm.createContext(context);
   vm.runInContext(`${match[0]}\nresult = _pixelProbeSchedulerLines();`, context);
+  return context.result;
+}
+
+function runSleep(getDebugResult) {
+  const context = { window: { AnimalSleepPresentation: getDebugResult === undefined ? undefined : { getDebug: () => getDebugResult } } };
+  vm.createContext(context);
+  vm.runInContext(`${sleepMatch[0]}\nresult = _pixelProbeAnimalSleepLines();`, context);
   return context.result;
 }
 
@@ -101,6 +116,50 @@ assert.equal(run(undefined), null, 'returns null when RuntimeFrameScheduler is n
   assert(lines[2].startsWith('Frame scheduler top: stable[post-game]=2.00ms'), 'heaviest subscriber is listed first with its scheduler phase');
   assert(lines[2].includes('render-a[pre-render]=1.50ms'), 'pre-render subscribers remain visible in the heaviest-subscriber list');
   assert(!lines[2].includes('tiny['), 'subscribers below the 0.1ms mobile display floor are omitted');
+}
+
+// --- Animal sleep presentation cadence/cost is actually mobile-readable ---
+assert.equal(runSleep(undefined), null, 'animal-sleep diagnostics omit themselves when that feature is unavailable');
+
+{
+  const lines = runSleep({
+    schedulerRegistered: true,
+    schedulerCadence: 'pre-render-once/post-game-restore',
+    preparedFrames: 40,
+    restoredFrames: 40,
+    lastPreparedFrameId: 40,
+    lastRestoredFrameId: 40,
+    lastPreparedBoundsScans: 0,
+    boundsScans: 6,
+    activeTemporaryTransforms: 0,
+    staticSleepers: 1,
+    cachedSleepFrames: 3,
+    lastContext: 'farm:test',
+  });
+  assert.equal(lines.length, 1, 'healthy animal-sleep cadence reports one compact line');
+  assert(lines[0].includes('frames=40/40'), 'animal-sleep probe line exposes prepare/restore cadence');
+  assert(lines[0].includes('boundsLast=0 boundsTotal=6'), 'animal-sleep probe line shows warm-cache frames have zero hierarchy-bounds scans');
+  assert(lines[0].includes('activeTemp=0'), 'animal-sleep probe line exposes whether a temporary render transform leaked past post-game');
+}
+
+{
+  const lines = runSleep({
+    schedulerRegistered: false,
+    schedulerCadence: 'pre-render-once/post-game-restore',
+    preparedFrames: 9,
+    restoredFrames: 8,
+    lastPreparedFrameId: 9,
+    lastRestoredFrameId: 8,
+    lastPreparedBoundsScans: 2,
+    boundsScans: 18,
+    activeTemporaryTransforms: 1,
+    staticSleepers: 0,
+    cachedSleepFrames: 1,
+    lastContext: 'wild:drenkirra',
+  });
+  assert.equal(lines.length, 2, 'broken animal-sleep ownership adds a visible mismatch line');
+  assert(lines[1].includes('scheduler=MISSING'), 'animal-sleep mismatch identifies missing scheduler ownership');
+  assert(lines[1].includes('prepared=9 restored=8 activeTemp=1'), 'animal-sleep mismatch exposes an unbalanced render transform lifetime');
 }
 
 console.log('pixel probe frame-scheduler diagnostics passed');

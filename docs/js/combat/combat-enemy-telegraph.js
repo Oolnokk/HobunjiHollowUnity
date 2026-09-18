@@ -67,6 +67,7 @@
   const missingHolderWarnings = new WeakSet(); // Prevents repeated mobile debug-log spam while an avatar/weapon is mounting.
   let cachedDefensiveIcon = '🛡️'; // Last arch-derived defensive-heavy glyph used to texture Counter Shield projections.
   let cachedDefensiveIconTexture = null; // Shared canvas texture regenerated only when the arch glyph changes.
+  let lastExternalWeaponGlowActive = null; // Edge-triggered bridge: avoids calling the weapon-glow renderer every idle frame.
 
   function makeSoftParticleTexture() {
     const canvas = document.createElement('canvas'); // Supplies one blurred alpha map shared by every additive particle/glow sprite.
@@ -432,14 +433,14 @@
       }
       return;
     }
-    if (offensive) {
-      const ids = afflictionIdsForBonuses(afflictionBonuses); // Uses exactly the affliction set the pending heavy hit will apply.
-      ensureFireColors(visual, ids);
-      visual.fireGroup.visible = true;
-      updateFireGroup(visual.fireGroup, timeS);
-    } else if (visual.fireGroup) {
-      visual.fireGroup.visible = false;
-    }
+    // Offensive Charged Breaker no longer uses the legacy fire-particle tell.
+    // combat-counter-shield.js reuses its authored weapon-silhouette layers for
+    // this same visual record after this update hook runs.
+    if (visual.fireGroup) visual.fireGroup.visible = false;
+    // Offensive Charged Breaker is rendered exclusively by the exact
+    // weapon-mesh child layers in combat-counter-shield.js. Keep this older
+    // sprite fallback completely dormant so it cannot add a second,
+    // misaligned per-frame effect.
     visual.weaponGlowGroup.visible = defensive;
     visual.fieldGroup.visible = defensive;
     if (defensive) {
@@ -488,15 +489,23 @@
     const liveActors = new Set([deps.player]); // Used to dispose visuals for enemies that despawn, die, or leave the current area.
     const currentArea = deps.getCurrentArea?.(); // Filters the scan to the scene actually being rendered.
 
-    syncActor(deps.player, { defensive: isPlayerCounterShieldHeld(deps.player) }, timeS);
+    const playerDefensive = isPlayerCounterShieldHeld(deps.player);
+    let anyWeaponGlowActive = playerDefensive; // Drives the exact weapon-layer renderer only while a relevant heavy effect is actually live.
+    syncActor(deps.player, { defensive: playerDefensive }, timeS);
 
     for (const c of deps.hostileObjects) {
       if (!c?.isBandit || c.health <= 0 || c.areaId !== currentArea) continue;
       liveActors.add(c);
       const offensive = isBanditOffensiveHeavy(c); // True across both the Charged Breaker windup and strike stages.
       const defensive = isBanditCounterShieldHeld(c, nowMs); // True for the exact Counter Shield guard window.
+      if (offensive || defensive) anyWeaponGlowActive = true;
       const afflictionBonuses = offensive ? window.ResourceSystem?.afflictionBonusesForTag?.(c.def?.attackTag) : null; // Same bonuses the bandit's heavy hit passes into damagePlayer.
       syncActor(c, { offensive, defensive, afflictionBonuses }, timeS);
+    }
+
+    if (anyWeaponGlowActive !== lastExternalWeaponGlowActive) {
+      lastExternalWeaponGlowActive = anyWeaponGlowActive;
+      window.Combat.weaponChargeGlow?.setExternalActive?.(anyWeaponGlowActive);
     }
 
     for (const [actor, visual] of actorVisuals) {
@@ -535,5 +544,5 @@
     updateHeavyAttackPresentation(dt);
   };
 
-  window.__farmLog?.('[heavy-telegraph] offensive-heavy fire and Counter Shield field visuals installed.', 'combat');
+  window.__farmLog?.('[heavy-telegraph] Charged Breaker weapon glow and Counter Shield field visuals installed.', 'combat');
 })();

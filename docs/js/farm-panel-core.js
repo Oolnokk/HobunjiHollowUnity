@@ -455,9 +455,15 @@
     deps.scene.fog = null;
     deps.scene.add(fillLight);
     renderer.clear();
-    renderer.render(deps.scene, camera);
-    deps.scene.remove(fillLight);
-    deps.scene.fog = savedFog;
+    let sleepRenderScope = false; // Acquired inside the protected block so a preparation failure cannot strand the temporary Farm-layout light/fog overrides.
+    try {
+      sleepRenderScope = window.AnimalSleepPresentation?.beginExternalRenderScope?.('farm-house-layout') === true; // This modal owns a separate renderer/RAF but draws the live farm scene, so it explicitly requests the same sleep presentation as gameplay.
+      renderer.render(deps.scene, camera);
+    } finally {
+      if (sleepRenderScope) window.AnimalSleepPresentation?.endExternalRenderScope?.();
+      deps.scene.remove(fillLight);
+      deps.scene.fog = savedFog;
+    }
     renderer.render(overlayScene, camera);
   }
   let _houseLayoutRafId = null;

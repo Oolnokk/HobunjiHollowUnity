@@ -10,7 +10,22 @@
 
   let farmDeps = null; // Captured from FarmAnimals.init for live outdoor livestock.
   let combatDeps = null; // Captured from Combat.init for live wilderness animals.
-  let renderDepth = 0; // Prevents nested renderer calls from applying temporary sleep transforms twice.
+  const PRE_RENDER_SCHEDULER_ID = 'animal-sleep-presentation-pre-render'; // Used to prepare all sleep-only render state once after simulation and before the frame's first gameplay render pass.
+  const RESTORE_SCHEDULER_ID = 'animal-sleep-presentation-restore'; // Used to restore authored/simulation transforms once after every gameplay render pass has completed.
+  let schedulerRegistered = false; // Set by installSchedulerOwnership() and exposed in mobile diagnostics to catch a missing shared-frame hookup.
+  let preparedFrames = 0; // Incremented by the pre-render scheduler callback so Pixel Probe/debug copies can verify once-per-frame cadence.
+  let restoredFrames = 0; // Incremented by the post-game scheduler callback so stuck temporary transforms are visible in diagnostics.
+  let lastPreparedFrameId = 0; // Records the scheduler frame most recently prepared for rendering.
+  let lastRestoredFrameId = 0; // Records the scheduler frame most recently restored after rendering.
+  let boundsScans = 0; // Cumulative Box3.setFromObject calls used only when a sleeper needs generic ground-preserving rescaling.
+  let frameBoundsScans = 0; // Reset at each pre-render checkpoint so one-frame grounding cost is visible without profiling enabled.
+  let lastPreparedBoundsScans = 0; // Number of hierarchy bounds scans performed by the most recent sleep preparation frame.
+  let groundingCacheHits = 0; // Number of rescale operations that reused a previously measured ground-preserving Y coefficient.
+  let groundingCacheMisses = 0; // Number of rescale operations that had to measure exact bounds before caching the coefficient.
+  let externalRenderDepth = 0; // Nesting guard for explicit secondary live-scene renders such as Farm layout and Pixel Probe.
+  let externalRenderPrepared = false; // True only when the outermost explicit secondary render scope applied temporary sleep transforms itself.
+  let externalRenderScopes = 0; // Mobile-visible count of deliberate out-of-band render scopes; ordinary gameplay never increments this.
+  let lastExternalContext = null; // Label of the most recent explicit secondary render consumer for mobile diagnostics.
   let run2Redirects = 0; // Mobile-visible count of static sleeper composites redirected to run2.
   let closedEyeComposites = 0; // Mobile-visible count of unique permanent-closed-eye sleep composites requested.
   let headDownApplications = 0; // Mobile-visible count of visible sleepers whose head pose was forced downward.
@@ -22,7 +37,8 @@
   const pendingStaticComposes = new Map(); // kind -> [{group, createdAt}], pairing a new static sleeper with its first genotype compose.
   const liveFrameStates = new WeakMap(); // Live entity -> original plane maps and sleep-only body-facing state so waking restores ordinary behavior.
   const frameCache = new Map(); // kind|frame|genotype -> permanently closed-eye texture pair for sleeping presentation.
-  const temporaryTransforms = []; // Render-only scale/position changes restored immediately after WebGL draw.
+  const temporaryTransforms = []; // Render-only scale/position changes restored by the post-game scheduler phase after all gameplay render passes.
+  const groundingScaleCoefficients = new WeakMap(); // group -> parent-local Y correction per unit of group.scale.y; measured once from exact Box3 bounds, then reused.
 
   let boxBefore = null; // Lazily allocated Box3 used to preserve visible ground contact while rescaling.
   let boxAfter = null; // Paired Box3 for the post-scale bottom measurement.
@@ -257,10 +273,13 @@
 
   function captureOriginalMaps(entity, group) {
     let state = liveFrameStates.get(entity);
-    if (state) return state;
+    if (state?.group === group) return state;
+    const planeMaterials = animalPlaneMaterials(group); // Captured only on sleep entry/group replacement, not for every awake animal in the scene.
     state = {
+      group,
       sleeping: false,
-      originals: animalPlaneMaterials(group).map(entry => ({ material: entry.material, map: entry.material.map })),
+      planeMaterials,
+      originals: planeMaterials.map(entry => ({ material: entry.material, map: entry.material.map })),
       entry: null,
       sleepBodyYaw: null,
     };
@@ -268,10 +287,11 @@
     return state;
   }
 
-  function applyPair(group, pair) {
+  function applyPair(group, pair, cachedMaterials = null) {
     if (!pair || !group) return false;
     let applied = 0;
-    for (const entry of animalPlaneMaterials(group)) {
+    const materials = cachedMaterials || animalPlaneMaterials(group); // Static sleepers may not have a live entity state; live sleepers reuse their cached plane list.
+    for (const entry of materials) {
       const map = entry.side === 'back' ? pair.back : pair.front;
       if (!map || entry.material.map === map) continue;
       entry.material.map = map;
@@ -283,11 +303,23 @@
 
   function setLiveFrame(entity, group, kind, genotype, def, sleeping) {
     if (!entity || !group || !kind) return;
-    const state = captureOriginalMaps(entity, group);
+    let state = liveFrameStates.get(entity);
     if (!sleeping) {
-      if (!state.sleeping) return;
-      for (const original of state.originals) {
+      if (!state?.sleeping) return; // Awake animals that have never slept incur no avatar traversal or texture snapshot at all.
+      if (state.group !== group) {
+        liveFrameStates.delete(entity); // A replaced awake avatar already owns its correct maps; stale detached-group state is irrelevant.
+        return;
+      }
+      for (let index = 0; index < state.originals.length; index++) {
+        const original = state.originals[index];
         if (!original.material) continue;
+        const plane = state.planeMaterials[index];
+        const sleepMap = state.entry?.pair && plane ? (plane.side === 'back' ? state.entry.pair.back : state.entry.pair.front) : null;
+        // Normal farm/wilderness animation runs before this checkpoint. If it
+        // already replaced the sleep texture with a fresh awake/blink frame,
+        // leave that authoritative map alone instead of resurrecting the
+        // snapshot captured when sleep began.
+        if (!sleepMap || original.material.map !== sleepMap) continue; // Restore only a sleep texture this presenter actually owns; never clobber a fresh awake map or an unresolved sleep composite.
         original.material.map = original.map;
         original.material.needsUpdate = true;
       }
@@ -296,12 +328,13 @@
       state.sleepBodyYaw = null;
       return;
     }
+    state = captureOriginalMaps(entity, group);
     if (!state.sleeping) state.sleepBodyYaw = null; // A fresh sleep period captures a fresh last-travel heading below.
     state.sleeping = true;
     const entry = sleepTextureEntry(kind, genotype, def);
     if (!entry) return;
     state.entry = entry;
-    if (entry.pair) applyPair(group, entry.pair); // Reapplied every render so normal blink code cannot visibly reopen sleeping eyes.
+    if (entry.pair) applyPair(group, entry.pair, state.planeMaterials); // Reasserted once each pre-render frame after normal blink/animation updates.
   }
 
   function forceHeadDown(avatarRef, entity = null) {
@@ -349,7 +382,8 @@
     const kind = record?.kind || group.userData?.animalSleepKind;
     if (kind) {
       const entry = sleepTextureEntry(kind, group.userData?.animalSleepGenotype, window.CREATURE_DB?.[kind]);
-      if (entry?.pair) applyPair(group, entry.pair);
+      record.planeMaterials ||= animalPlaneMaterials(group); // Static sleeper hierarchy is stable; cache its two plane materials after first use.
+      if (entry?.pair) applyPair(group, entry.pair, record.planeMaterials);
       group.userData.animalSleepBlinkOverlay = entry?.blinkOverlay || blinkOverlayFor(kind);
     }
     forceHeadDown(record?.avatarRef || group.userData?.animalSleepAvatarRef || null);
@@ -360,6 +394,8 @@
     try {
       group.updateMatrixWorld?.(true);
       box.setFromObject(group);
+      boundsScans++;
+      frameBoundsScans++;
       return Number(box.min?.y);
     } catch (_) { return NaN; }
   }
@@ -374,19 +410,33 @@
 
     const originalScaleY = Number(group.scale.y) || 1;
     const originalPositionY = Number(group.position.y) || 0;
-    const bottomBefore = worldBottom(group, boxBefore);
-    group.scale.y = originalScaleY * numericRatio;
-    const bottomAfter = worldBottom(group, boxAfter);
-    if (Number.isFinite(bottomBefore) && Number.isFinite(bottomAfter)) {
-      let parentScaleY = 1;
-      try {
-        if (group.parent?.getWorldScale && parentScale) {
-          group.parent.getWorldScale(parentScale);
-          parentScaleY = Number(parentScale.y) || 1;
-        }
-      } catch (_) {}
-      group.position.y += (bottomBefore - bottomAfter) / parentScaleY;
+    const targetScaleY = originalScaleY * numericRatio;
+    const scaleDeltaY = targetScaleY - originalScaleY;
+    const cachedGroundingCoefficient = groundingScaleCoefficients.get(group);
+    group.scale.y = targetScaleY;
+    if (Number.isFinite(cachedGroundingCoefficient)) {
+      groundingCacheHits++;
+      group.position.y += cachedGroundingCoefficient * scaleDeltaY;
       group.updateMatrixWorld?.(true);
+    } else {
+      groundingCacheMisses++;
+      group.scale.y = originalScaleY; // Measure the same exact before/after bounds as the legacy path once for this stable avatar hierarchy.
+      const bottomBefore = worldBottom(group, boxBefore);
+      group.scale.y = targetScaleY;
+      const bottomAfter = worldBottom(group, boxAfter);
+      if (Number.isFinite(bottomBefore) && Number.isFinite(bottomAfter)) {
+        let parentScaleY = 1;
+        try {
+          if (group.parent?.getWorldScale && parentScale) {
+            group.parent.getWorldScale(parentScale);
+            parentScaleY = Number(parentScale.y) || 1;
+          }
+        } catch (_) {}
+        const correctionY = (bottomBefore - bottomAfter) / parentScaleY;
+        group.position.y += correctionY;
+        if (Math.abs(scaleDeltaY) > 1e-8) groundingScaleCoefficients.set(group, correctionY / scaleDeltaY); // Future sleep/blend frames reproduce the measured grounding exactly without another Box3 traversal.
+        group.updateMatrixWorld?.(true);
+      }
     }
     temporaryTransforms.push({ group, scaleY: originalScaleY, positionY: originalPositionY });
     lastContext = contextLabel || group.name || 'sleeping animal';
@@ -405,7 +455,7 @@
   }
 
   function applyStaticSleepers() {
-    for (const [group, record] of [...staticSleepers]) {
+    for (const [group, record] of staticSleepers) {
       if (!group?.parent) { staticSleepers.delete(group); continue; }
       ensureStaticPresentation(group, record);
       const sourceScale = Number(group.userData?.animalSleepSourceScaleY) || LEGACY_SLEEP_SCALE_Y;
@@ -460,28 +510,77 @@
     }
   }
 
-  function beforeRender() {
-    temporaryTransforms.length = 0;
-    applyStaticSleepers();
-    applyFarmSleepers();
-    applyWildernessSleepers();
+  function prepareRenderFrame(frameContext = {}) {
+    // post-game always restores after the frame driver, even when gameLoop throws.
+    // This recovery guard only handles a broken/externally-invoked frame sequence.
+    if (temporaryTransforms.length) restoreTemporaryTransforms();
+    const frameId = Number(frameContext.frameId) || 0;
+    preparedFrames++;
+    lastPreparedFrameId = frameId; // Set before feature work so post-game can recover partially-applied transforms if a later preparation step throws.
+    frameBoundsScans = 0;
+    try {
+      applyStaticSleepers();
+      applyFarmSleepers();
+      applyWildernessSleepers();
+    } finally {
+      lastPreparedBoundsScans = frameBoundsScans;
+    }
   }
 
-  function patchRendererPrototype() {
-    const prototype = (window.THREE || globalThis.THREE)?.WebGLRenderer?.prototype;
-    if (!prototype || prototype.__animalSleepPresentationRenderPatched || typeof prototype.render !== 'function') return false;
-    const original = prototype.render;
-    prototype.render = function animalSleepPresentationRender(...args) {
-      const outermost = renderDepth++ === 0;
-      if (outermost) beforeRender();
-      try {
-        return original.apply(this, args);
-      } finally {
-        renderDepth--;
-        if (outermost) restoreTemporaryTransforms();
-      }
-    };
-    prototype.__animalSleepPresentationRenderPatched = true;
+  function restoreRenderFrame(frameContext = {}) {
+    const frameId = Number(frameContext.frameId) || 0;
+    if (!frameId || frameId !== lastPreparedFrameId || lastRestoredFrameId === frameId) return; // Title/onboarding frames can reach post-game without ever reaching the pre-render checkpoint.
+    restoreTemporaryTransforms();
+    restoredFrames++;
+    lastRestoredFrameId = frameId;
+  }
+
+  function beginExternalRenderScope(contextLabel = 'external-render') {
+    externalRenderDepth++;
+    if (externalRenderDepth > 1) return true;
+    externalRenderPrepared = false;
+    // If a caller somehow runs synchronously inside an already-prepared gameplay
+    // render sequence, reuse that state and let the scheduler remain its owner.
+    if (temporaryTransforms.length) return true;
+    try {
+      applyStaticSleepers();
+      applyFarmSleepers();
+      applyWildernessSleepers();
+      externalRenderPrepared = true;
+      externalRenderScopes++;
+      lastExternalContext = String(contextLabel || 'external-render');
+      return true;
+    } catch (error) {
+      restoreTemporaryTransforms(); // Never strand a partially-applied scale/position if an on-demand diagnostic render preparation fails.
+      externalRenderDepth = 0;
+      externalRenderPrepared = false;
+      throw error;
+    }
+  }
+
+  function endExternalRenderScope() {
+    if (externalRenderDepth <= 0) return false;
+    externalRenderDepth--;
+    if (externalRenderDepth > 0) return true;
+    if (externalRenderPrepared) restoreTemporaryTransforms();
+    externalRenderPrepared = false;
+    return true;
+  }
+
+  function installSchedulerOwnership() {
+    const scheduler = window.RuntimeFrameScheduler;
+    if (!scheduler?.register) return false;
+    scheduler.register(PRE_RENDER_SCHEDULER_ID, prepareRenderFrame, {
+      phase: 'pre-render',
+      owner: 'AnimalSleepPresentation',
+      description: 'Prepare sleeping-animal textures, poses, and temporary grounding transforms once before gameplay rendering.',
+    });
+    scheduler.register(RESTORE_SCHEDULER_ID, restoreRenderFrame, {
+      phase: 'post-game',
+      owner: 'AnimalSleepPresentation',
+      description: 'Restore temporary sleeping-animal transforms once after all gameplay render passes complete.',
+    });
+    schedulerRegistered = true;
     return true;
   }
 
@@ -490,13 +589,13 @@
     patchGenotypeComposer();
     patchFarmAnimals();
     patchCombat();
-    patchRendererPrototype();
+    installSchedulerOwnership();
     return true;
   }
 
   function debugSnapshot() {
     return {
-      mostRecentChange: 'Sleeping outdoor livestock now keep their last travel heading instead of body-facing the player; closed eyes and head-down sleep pose remain enforced.',
+      mostRecentChange: 'Animal sleep presentation now prepares once at the shared pre-render scheduler checkpoint and restores once post-game instead of rescanning animals around every WebGL render pass.',
       sleepScaleY: SLEEP_SCALE_Y,
       preferredFrame: 'run2-if-present-else-idle',
       sleepingEyes: 'blink-overlay-closed-only',
@@ -511,6 +610,20 @@
       bodyFacingLocks,
       liveSleepFrames,
       lastContext,
+      schedulerRegistered,
+      schedulerCadence: 'pre-render-once/post-game-restore',
+      preparedFrames,
+      restoredFrames,
+      lastPreparedFrameId,
+      lastRestoredFrameId,
+      boundsScans,
+      lastPreparedBoundsScans,
+      groundingCacheHits,
+      groundingCacheMisses,
+      externalRenderScopes,
+      externalRenderDepth,
+      lastExternalContext,
+      activeTemporaryTransforms: temporaryTransforms.length,
       farmDepsReady: !!farmDeps,
       combatDepsReady: !!combatDeps,
     };
@@ -522,6 +635,8 @@
     blinkOverlayFor,
     forceHeadDown,
     registerStaticSleeper,
+    beginExternalRenderScope,
+    endExternalRenderScope,
     install,
     getDebug: debugSnapshot,
   });
@@ -531,5 +646,6 @@
   chainFutureGlobal('CreatureGeneticsRender', patchGenotypeComposer);
   chainFutureGlobal('FarmAnimals', patchFarmAnimals);
   chainFutureGlobal('Combat', patchCombat);
+  chainFutureGlobal('RuntimeFrameScheduler', installSchedulerOwnership);
   install();
 })();

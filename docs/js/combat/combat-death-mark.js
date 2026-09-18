@@ -188,7 +188,7 @@
   }
 
   let updatedThisFrame = false; // A visual frame drives renderer.render() several times when outlines are on
-  // (color pass, shell/target/material-ID/depth outline passes, final composite -- all
+  // (color pass, shell/target/material-ID passes, final composite -- all
   // synchronous back to back). Only the first, real-camera color pass should recompute
   // billboard transforms: a later pass's camera can be an unrelated fixed post-process
   // camera (see game.js's _postScene/_postCamera composite), and recomputing per pass

@@ -16,6 +16,7 @@ const bindingsSource = fs.readFileSync('docs/js/input-bindings.js', 'utf8'); // 
 const selectorSource = fs.readFileSync('docs/js/controller-selection-ui.js', 'utf8'); // Used to guard automatic both-stick controller ownership for wheels/arches.
 const resetUiSource = fs.readFileSync('docs/js/input-default-reset-ui.js', 'utf8'); // Used to guarantee separate keyboard/controller reset buttons stay attached to their own Settings sections.
 const actionLocksSource = fs.readFileSync('docs/js/character-action-locks.js', 'utf8'); // Used to verify controller helpers are parser-loaded before gameplay polling can consume the same inputs.
+const loadoutUiSource = fs.readFileSync('docs/js/combat/combat-loadout-ui.js', 'utf8'); // Used to guard controller-confirmable attack swapping and focus continuity in the dynamic loadout pane.
 const context = { window: {} }; // Receives the browser helper namespace for deterministic stick-response tests.
 vm.runInNewContext(helperSource, context);
 const { normalizeStick, pickActiveGamepad, isBindingPressed, getPressedBindingCodes } = context.window.ControllerInput;
@@ -134,6 +135,12 @@ assert.match(gameSource, /window\.HOBUNJI_CONTROLLER_STATUS = status/, 'controll
 assert.doesNotMatch(gameSource, /meleeAutoTargetToggle|meleeTargetPrev|meleeTargetNext/, 'removed persistent melee targeting has no gameplay input path');
 assert.match(probeSource, /Controller: #\$\{controllerDebug\.index\}[\s\S]{0,260}owner=\$\{controllerDebug\.owner\}/, 'Pixel Probe includes controller identity and current input owner');
 assert.match(uiSource, /function adjustFocusedControl\(delta\)/, 'menu sliders, number inputs, and selects are controller-adjustable');
+assert.match(loadoutUiSource, /combatLoadoutPrev_[\s\S]{0,1800}cycleSlotChoice\(slot\.id, -1, 'controller-prev'/, 'combat loadout exposes a controller-confirmable previous-attack control');
+assert.match(loadoutUiSource, /combatLoadoutNext_[\s\S]{0,1800}cycleSlotChoice\(slot\.id, 1, 'controller-next'/, 'combat loadout exposes a controller-confirmable next-attack control');
+assert.match(loadoutUiSource, /const restoreFocusId = requestedFocusId \|\| focusedLoadoutControlId\(pane\)/, 'loadout rerenders remember the controller focus target before rebuilding the pane');
+assert.match(loadoutUiSource, /restoreLoadoutControlFocus\(pane, restoreFocusId\)/, 'loadout rerenders reconnect controller focus to the replacement control instead of snapping back to the menu header');
+assert.match(loadoutUiSource, /const canCycle = abilities\.length > 0/, 'an empty slot with exactly one learned technique remains controller-equipable');
+assert.match(loadoutUiSource, /Copy Loadout Controller Debug/, 'loadout controller diagnostics are copyable in dev mode without browser devtools');
 assert.match(uiSource, /scrollStick[\s\S]{0,900}scrollTop \+=/, 'right stick scrolls long menu panes');
 // Menu ownership is still announced while the gameplay loop is paused, but it
 // is now declared through ControllerInput's registry, which emits the same

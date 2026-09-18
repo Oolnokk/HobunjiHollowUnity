@@ -45,8 +45,8 @@
     }
   }
   if (!window.HobunjiShoulderSplitLayerParity || Number(window.HobunjiShoulderSplitLayerParity.version) < 3) {
-    if (!parserLoad('js/animal-shoulder-spline-layering.js?v=20260917parity2', 'animal-shoulder-spline-layering')) {
-      lateLoad('js/animal-shoulder-spline-layering.js?v=20260917parity2', 'animal-shoulder-spline-layering');
+    if (!parserLoad('js/animal-shoulder-spline-layering.js?v=20260918parity3', 'animal-shoulder-spline-layering')) {
+      lateLoad('js/animal-shoulder-spline-layering.js?v=20260918parity3', 'animal-shoulder-spline-layering');
     }
   }
 
@@ -313,29 +313,47 @@
 
   composer.registerExternalRootProvider('equippedTool', () => gameDeps?.toolHolder || null);
 
+  // WebGLRenderer.prototype.render() can fire more than once per real browser
+  // frame (pixel-probe.js's diagnostic isolation renders, farm-panel-core.js's
+  // secondary layout render), and this provider runs inside that patched
+  // render(). Recomputing effectiveShoulderRest/splitFrameKey and re-running
+  // ensureShoulderPetPresentationFrame's side effects on every extra render
+  // call multiplies their cost by however many renders happen this frame.
+  // RuntimeFrameScheduler.frameId() only advances once per actual rAF tick,
+  // so it's used here to memoize the result across same-frame render() calls.
+  let cachedShoulderPetsFrameId = -1;
+  let cachedShoulderPetsRoots = [];
+
   composer.registerExternalRootProvider('shoulderPets', () => {
+    const frameId = window.RuntimeFrameScheduler?.frameId?.();
+    if (frameId != null && frameId === cachedShoulderPetsFrameId) return cachedShoulderPetsRoots;
+
     const combatDeps = window.Combat?.deps;
     const player = combatDeps?.player;
-    if (!player) return [];
     const roots = [];
-    for (const companion of combatDeps.companionObjects || []) {
-      if (!companion?.avatarRef) continue;
-      const isShoulderPet = companion.health > 0
-        && companion.stableRole === 'shoulderPet'
-        && (companion.master || player) === player;
-      const splineAllowed = splineAllowedFor(companion, combatDeps);
-      companion.avatarRef.setShoulderRestEnabled?.(isShoulderPet && splineAllowed);
-      if (!isShoulderPet) {
-        if (companion.__hobunjiWasShoulderPet) restoreAfterShoulderPet(companion, combatDeps);
-        companion.__hobunjiWasShoulderPet = false;
-        continue;
-      }
-      companion.__hobunjiWasShoulderPet = true;
-      if (companion.avatarRef.group) {
-        ensureShoulderPetPresentationFrame(companion, combatDeps);
-        roots.push(companion.avatarRef.group);
+    if (player) {
+      for (const companion of combatDeps.companionObjects || []) {
+        if (!companion?.avatarRef) continue;
+        const isShoulderPet = companion.health > 0
+          && companion.stableRole === 'shoulderPet'
+          && (companion.master || player) === player;
+        const splineAllowed = splineAllowedFor(companion, combatDeps);
+        companion.avatarRef.setShoulderRestEnabled?.(isShoulderPet && splineAllowed);
+        if (!isShoulderPet) {
+          if (companion.__hobunjiWasShoulderPet) restoreAfterShoulderPet(companion, combatDeps);
+          companion.__hobunjiWasShoulderPet = false;
+          continue;
+        }
+        companion.__hobunjiWasShoulderPet = true;
+        if (companion.avatarRef.group) {
+          ensureShoulderPetPresentationFrame(companion, combatDeps);
+          roots.push(companion.avatarRef.group);
+        }
       }
     }
+
+    if (frameId != null) cachedShoulderPetsFrameId = frameId;
+    cachedShoulderPetsRoots = roots;
     return roots;
   });
 

@@ -4,7 +4,7 @@
 
   const load = window.LocalDBOverrides
     ? window.LocalDBOverrides.loadDatabase('attackValues')
-    : fetch('config/combat/attack-values.json').then(response => response.ok ? response.json() : null);
+    : fetch('config/combat/attack-values.json?v=20260917charge3').then(response => response.ok ? response.json() : null);
 
   window.__attackValuesConfigPromise = load.then(config => {
     if (!config) return null;
@@ -81,7 +81,7 @@
     ['js/text-entry-keybind-guard.js?v=20260901a', () => !!window.HobunjiTextInputGuard],
     ['js/controller-modern-flow-bridge.js?v=20260915a', () => Number(window.ControllerModernFlowBridge?.version) >= 1],
     ['js/player-body-transform-composer.js?v=20260910review1', () => !!window.PlayerBodyTransformComposer],
-    ['js/player-body-attachment-bridge.js?v=20260810a', () => !!window.PlayerBodyAttachmentBridge],
+    ['js/player-body-attachment-bridge.js?v=20260918shoulderparity3', () => !!window.PlayerBodyAttachmentBridge],
     ['js/front-hat-head-facing.js?v=20260914nofacing1', () => !!window.HobunjiFrontHatHeadFacing],
     ['js/hat-xray-head-facing.js?v=20260914nofacing1', () => !!window.HobunjiHatXrayHeadFacing],
     ['js/town-player-body-elevation-bridge.js?v=20260810a', () => !!window.HobunjiTownBodyElevationBridge],
@@ -95,7 +95,7 @@
     ['js/mastery-policy.js?v=20260826death1', () => !!window.HobunjiMasteryPolicy],
     ['js/inventory-action-metadata-bridge.js?v=20260813b', () => !!window.HobunjiInventoryActionMetadataBridge],
     ['js/inventory-held-override.js?v=20260913hold1', () => !!window.InventoryHeldOverride],
-    ['js/clothing-weaving-system.js?v=20260915perf1', () => Number(window.ClothingWeavingSystem?.version) >= 1],
+    ['js/clothing-weaving-system.js?v=20260918loomcore2', () => Number(window.ClothingWeavingSystem?.version) >= 1],
     ['js/clothing-weight-dodge-policy.js?v=20260913a', () => Number(window.ClothingWeightDodgePolicy?.version) >= 1],
     ['js/inventory-character-effects.js?v=20260915a', () => Number(window.InventoryCharacterEffects?.version) >= 1],
     ['js/inventory-gear-compact-effects.js?v=20260915b', () => Number(window.InventoryGearCompactEffects?.version) >= 2],
@@ -127,7 +127,7 @@
     ['js/combat/porakaneki-dagger-ranged.js?v=20260912a', () => Number(window.HobunjiPorakanekiDaggerRanged?.version) >= 1],
     ['js/combat/ranged-camera-ray-authority.js?v=20260909perspectivepoint1', () => Number(window.HobunjiRangedCameraRayAuthority?.version) >= 2],
     ['js/combat/ranged-camera-focus.js?v=20260909perspectivepoint1', () => Number(window.HobunjiRangedCameraFocus?.version) >= 7],
-    ['js/combat/combat-camera-alignment-bridge.js?v=20260909perspectivepoint1', () => Number(window.HobunjiCombatCameraAlignment?.version) >= 4],
+    ['js/combat/combat-camera-alignment-bridge.js?v=20260917charge3', () => Number(window.HobunjiCombatCameraAlignment?.version) >= 4],
     ['js/combat/ranged-dual-role-anim-style.js?v=20260905a', () => Number(window.HobunjiDualRoleRangedAnimStyle?.version) >= 1],
     ['js/drunk-prone-composition-bridge.js?v=20260812b', () => !!window.HobunjiDrunkProneCompositionBridge],
     ['js/prone-motion-exclusivity.js?v=20260812a', () => !!window.HobunjiProneMotionExclusivity],

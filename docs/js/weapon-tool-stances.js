@@ -346,6 +346,8 @@
       elapsedS: 0,
       lastNow: performance.now(),
       held: !!held,
+      windupSlowdown: Math.max(0, Number(opts?.windupSlowdown) || 0),
+      poseScale: 1, // Used after a partial held release so stance/shoulder compensation follows the same Neutral→Windup fraction as the weapon pose.
       progress: 0,
       completedAt: 0,
       clearQueued: false,
@@ -379,9 +381,16 @@
   function neutralWeightForVisual(state) {
     if (!state) return 1;
     const p = state.progress;
-    if (p <= state.wf) return state.wf > 1e-6 ? 1 - p / state.wf : 0;
-    if (p <= state.hf) return 0;
-    return Math.max(0, Math.min(1, (p - state.hf) / Math.max(1e-6, 1 - state.hf)));
+    const poseScale = Math.max(0, Math.min(1, Number(state.poseScale ?? 1) || 0)); // Used to keep partial-release shoulder/stance influence proportional to the released pose.
+    if (p <= state.wf) {
+      if (state.wf <= 1e-6) return 1 - poseScale;
+      const rawWindupT = p / state.wf;
+      const poseT = window.Combat?.windupPoseProgress?.(rawWindupT, state.windupSlowdown) ?? rawWindupT;
+      return 1 - poseT * poseScale;
+    }
+    if (p <= state.hf) return 1 - poseScale;
+    const returnT = Math.max(0, Math.min(1, (p - state.hf) / Math.max(1e-6, 1 - state.hf))); // Used to blend the partial active pose back to full Neutral during recovery.
+    return (1 - poseScale) + poseScale * returnT;
   }
 
   function installCombatVisualHooks() {
@@ -411,6 +420,18 @@
       combatDeps.releaseWeaponSwingHold = function weaponToolStanceAwareRelease(...args) {
         if (combatVisualState) {
           advanceCombatVisual(performance.now());
+          const requestedPoseProgress = Number(args?.[0]?.poseProgress);
+          if (Number.isFinite(requestedPoseProgress)) {
+            // game.js slices the numeric pose to this exact partial endpoint
+            // and jumps its raw timeline to Windup. Mirror both the timeline
+            // and amplitude so stance/shoulder/grip consumers cannot jump to
+            // a 100% Windup while the weapon itself releases from a partial one.
+            const requestedPoseScale = Math.max(0, Math.min(1, requestedPoseProgress)); // Used by neutralWeightForVisual and exported runtime state after release.
+            combatVisualState.elapsedS = combatVisualState.wf * combatVisualState.totalS;
+            combatVisualState.progress = combatVisualState.wf;
+            combatVisualState.windupSlowdown = 0;
+            combatVisualState.poseScale = requestedPoseScale;
+          }
           combatVisualState.held = false;
           combatVisualState.lastNow = performance.now();
         }
@@ -550,6 +571,8 @@
     runtimeState.combatNeutralInjected = !!visual;
     runtimeState.combatAnim = visual?.anim || null;
     runtimeState.combatProgress = visual?.progress ?? null;
+    runtimeState.combatPoseScale = visual?.poseScale ?? 1; // Used by hand/shoulder consumers to mirror partial held releases.
+    runtimeState.combatNeutralWeight = visual ? neutralWeightForVisual(visual) : null; // Used by shoulder fallback profiles without allocating a debug snapshot.
     runtimeState.sweepPlaneNeutralCompensationDeg = visual?.anim === 'sweep'
       ? Math.round(90 * neutralWeightForVisual(visual))
       : (activeSlot === 'weapon' && def?.animStyle === 'sweep' ? 90 : 0);
@@ -574,6 +597,7 @@
       combatNeutralInjected: !!visual,
       combatAnim: visual?.anim || null,
       combatProgress: visual?.progress ?? null,
+      combatPoseScale: visual?.poseScale ?? 1,
       combatNeutralWeight: visual ? neutralWeightForVisual(visual) : null,
       sweepPlaneNeutralCompensationDeg: visual?.anim === 'sweep'
         ? Math.round(90 * neutralWeightForVisual(visual))
