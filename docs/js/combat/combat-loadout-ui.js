@@ -25,6 +25,88 @@
   // now, since the whole pane re-renders on any equip change). Not
   // persisted; purely local UI state.
   let expandedFor = null;
+  let lastLoadoutControlChange = null; // Used by the in-menu mobile/controller diagnostic copy button to report the most recent slot mutation.
+
+  function abilitiesForSlot(slotId) {
+    const categories = window.Combat.loadout.SLOT_CATEGORIES[slotId]; // Used to keep controller cycling on exactly the same category-filtered list as the existing dropdown.
+    return Array.isArray(categories) ? window.Combat.abilities.listForCategories(categories) : [];
+  }
+
+  function focusedLoadoutControlId(pane) {
+    const controllerTarget = window.ControllerUI?.focusedElement?.(); // Used to preserve the controller navigator's exact dynamic loadout control across a rerender.
+    if (controllerTarget?.id && pane.contains(controllerTarget)) return controllerTarget.id;
+    const active = document.activeElement; // Used as the keyboard/pointer fallback when controller navigation is not currently authoritative.
+    return active?.id && pane.contains(active) ? active.id : null;
+  }
+
+  function restoreLoadoutControlFocus(pane, controlId) {
+    if (!controlId) return false;
+    const next = document.getElementById(controlId); // Used to reconnect ControllerUI to the replacement node created by render().
+    if (!next || !pane.contains(next) || next.disabled) return false;
+    try { next.focus({ preventScroll: true }); } catch (_) { next.focus(); }
+    return true;
+  }
+
+  function setSlotChoice(slotId, abilityId, source = 'select', focusId = null) {
+    const before = window.Combat.loadout.getSlot(slotId); // Used by diagnostics to distinguish real controller swaps from no-op presses.
+    const changed = window.Combat.loadout.setSlot(slotId, abilityId); // Reuses the canonical validation/persistence path rather than mutating loadout state in the UI.
+    lastLoadoutControlChange = {
+      slotId,
+      source,
+      before,
+      after: changed ? window.Combat.loadout.getSlot(slotId) : before,
+      changed: !!changed,
+      weaponKey: window.Combat.deps?.currentWeaponKey?.() || 'none',
+      at: Date.now(),
+    };
+    if (!changed) return false;
+    expandedFor = null;
+    render(focusId || ('combatLoadout_' + slotId));
+    return true;
+  }
+
+  function cycleSlotChoice(slotId, delta, source, focusId) {
+    const abilities = abilitiesForSlot(slotId); // Used to cycle only learned/eligible attacks for this slot.
+    if (!abilities.length) return false;
+    const currentId = window.Combat.loadout.getSlot(slotId); // Used to anchor the cycle on the actually equipped attack rather than the browser's visual select state.
+    const currentIndex = abilities.findIndex(ability => ability.id === currentId); // Used so empty slots can still choose the first/last available technique deterministically.
+    const step = delta < 0 ? -1 : 1; // Used to normalize all controller cycle requests to one slot at a time.
+    const nextIndex = currentIndex < 0
+      ? (step < 0 ? abilities.length - 1 : 0)
+      : (currentIndex + step + abilities.length) % abilities.length;
+    return setSlotChoice(slotId, abilities[nextIndex].id, source, focusId);
+  }
+
+  function loadoutDebugState() {
+    return {
+      weaponKey: window.Combat.deps?.currentWeaponKey?.() || 'none',
+      loadout: window.Combat.loadout.get?.() || null,
+      focusedControlId: window.ControllerUI?.focusedElement?.()?.id || document.activeElement?.id || null,
+      controller: window.ControllerUI?.debugState?.() || null,
+      lastLoadoutControlChange,
+    };
+  }
+
+  async function copyLoadoutDebug() {
+    const text = JSON.stringify(loadoutDebugState(), null, 2); // Used as the mobile-copyable controller/loadout report without requiring devtools.
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+      const field = document.createElement('textarea'); // Used as the legacy clipboard fallback on browsers without navigator.clipboard.
+      field.value = text;
+      field.style.position = 'fixed';
+      field.style.left = '-9999px';
+      document.body.appendChild(field);
+      field.select();
+      const copied = document.execCommand?.('copy') !== false; // Used to report whether the fallback copy request was accepted.
+      field.remove();
+      return copied;
+    } catch (_) {
+      return false;
+    }
+  }
 
   function renderRangedLoadout(pane) {
     const ranged = window.RangedWeapons;
@@ -76,6 +158,7 @@
 
       const select = document.createElement('select');
       select.className = 'settings-select ranged-loadout-select';
+      select.id = 'combatRangedLoadout_' + rank;
       select.disabled = view.mastery < rank;
       if (isBasic) {
         const empty = document.createElement('option');
@@ -87,7 +170,7 @@
           if (view.loadout.basicEffects[rank] === effect.id) option.selected = true;
           select.appendChild(option);
         }
-        select.addEventListener('change', () => { if (select.value) ranged.setBasicEffect(itemKey, rank, select.value); render(); });
+        select.addEventListener('change', () => { if (select.value) ranged.setBasicEffect(itemKey, rank, select.value); render(select.id); });
       } else {
         for (const ammo of Object.values(ranged.SPECIAL_AMMO_TYPES).filter(entry => view.unlockedSpecialAmmo.includes(entry.id))) {
           const option = document.createElement('option');
@@ -95,7 +178,7 @@
           if (view.loadout.specialSlots[rank] === ammo.id) option.selected = true;
           select.appendChild(option);
         }
-        select.addEventListener('change', () => { ranged.setSpecialSlot(itemKey, rank, select.value); render(); });
+        select.addEventListener('change', () => { ranged.setSpecialSlot(itemKey, rank, select.value); render(select.id); });
       }
       card.appendChild(select);
       pane.appendChild(card);
@@ -179,9 +262,10 @@
     }
   }
 
-  function render() {
+  function render(preferredFocusId = null) {
     const pane = document.getElementById('combatLoadoutPane');
     if (!pane) return;
+    const restoreFocusId = preferredFocusId || focusedLoadoutControlId(pane); // Used to keep repeated controller swaps on the same slot instead of snapping focus back to the menu header.
     pane.innerHTML = '';
 
     const title = document.createElement('div');
@@ -208,16 +292,29 @@
     // gear-tool item panel's own "[Dev] +1 Mastery" button: hidden unless
     // the global dev-mode toggle (Settings pane) is on.
     if (window.Combat.deps?.isDevMode?.()) {
+      const devRow = document.createElement('div'); // Used to keep loadout test actions together without introducing another stylesheet dependency.
+      devRow.className = 'ranged-loadout-dev-row';
       const devBtn = document.createElement('button');
       devBtn.type = 'button';
       devBtn.className = 'ii-btn';
-      devBtn.style.marginBottom = '10px';
+      devBtn.id = 'combatLoadoutDevMote';
       devBtn.textContent = '[Dev] +1 Mote of Prowess';
       devBtn.addEventListener('click', () => {
         window.Combat.deps?.awardMotesOfProwess?.(1);
-        render();
+        render(devBtn.id);
       });
-      pane.appendChild(devBtn);
+      const debugBtn = document.createElement('button'); // Used for controller testing on mobile where the browser console is unavailable.
+      debugBtn.type = 'button';
+      debugBtn.id = 'combatLoadoutControllerDebug';
+      debugBtn.className = 'ii-btn';
+      debugBtn.textContent = '[Dev] Copy Loadout Controller Debug';
+      debugBtn.addEventListener('click', async () => {
+        const copied = await copyLoadoutDebug(); // Used to provide immediate visible feedback for the clipboard operation.
+        debugBtn.textContent = copied ? '[Dev] Copied Loadout Controller Debug' : '[Dev] Copy Failed';
+        setTimeout(() => { if (debugBtn.isConnected) debugBtn.textContent = '[Dev] Copy Loadout Controller Debug'; }, 1200);
+      });
+      devRow.append(devBtn, debugBtn);
+      pane.appendChild(devRow);
     }
 
     for (const slot of SLOTS) {
@@ -247,12 +344,31 @@
         readout.textContent = window.Combat.abilities.get(abilityId)?.label || abilityId;
         head.appendChild(readout);
       } else {
+        const picker = document.createElement('div'); // Used to expose explicit controller-confirmable previous/next controls beside the existing mouse/touch dropdown.
+        picker.style.display = 'flex';
+        picker.style.alignItems = 'center';
+        picker.style.gap = '4px';
+        picker.style.minWidth = '0';
+
+        const abilities = abilitiesForSlot(slot.id); // Used by the dropdown and controller buttons so both surfaces expose the identical eligible attack set.
+        const canCycle = abilities.length > 1; // Used to disable meaningless arrow controls when only one technique is available.
+
+        const prevBtn = document.createElement('button'); // Used by controller Confirm to choose the previous eligible attack without relying on native select popups.
+        prevBtn.type = 'button';
+        prevBtn.id = 'combatLoadoutPrev_' + slot.id;
+        prevBtn.className = 'ii-btn';
+        prevBtn.textContent = '◀';
+        prevBtn.title = 'Previous ' + slot.name;
+        prevBtn.setAttribute('aria-label', 'Previous ' + slot.name + ' attack');
+        prevBtn.disabled = !canCycle;
+        prevBtn.addEventListener('click', () => cycleSlotChoice(slot.id, -1, 'controller-prev', prevBtn.id));
+
         const select = document.createElement('select');
         select.className = 'settings-select';
         select.id = 'combatLoadout_' + slot.id;
-
-        const categories = window.Combat.loadout.SLOT_CATEGORIES[slot.id];
-        for (const ability of window.Combat.abilities.listForCategories(categories)) {
+        select.style.minWidth = '0';
+        select.style.flex = '1 1 auto';
+        for (const ability of abilities) {
           const opt = document.createElement('option');
           opt.value = ability.id;
           opt.textContent = ability.label;
@@ -260,11 +376,21 @@
           select.appendChild(opt);
         }
         select.addEventListener('change', () => {
-          window.Combat.loadout.setSlot(slot.id, select.value);
-          expandedFor = null;
-          render();
+          if (select.value) setSlotChoice(slot.id, select.value, 'select', select.id);
         });
-        head.appendChild(select);
+
+        const nextBtn = document.createElement('button'); // Used by controller Confirm to choose the next eligible attack while retaining focus after the rerender.
+        nextBtn.type = 'button';
+        nextBtn.id = 'combatLoadoutNext_' + slot.id;
+        nextBtn.className = 'ii-btn';
+        nextBtn.textContent = '▶';
+        nextBtn.title = 'Next ' + slot.name;
+        nextBtn.setAttribute('aria-label', 'Next ' + slot.name + ' attack');
+        nextBtn.disabled = !canCycle;
+        nextBtn.addEventListener('click', () => cycleSlotChoice(slot.id, 1, 'controller-next', nextBtn.id));
+
+        picker.append(prevBtn, select, nextBtn);
+        head.appendChild(picker);
       }
 
       card.appendChild(head);
@@ -273,6 +399,11 @@
         note.className = 'loadout-slot-combo-note';
         note.textContent = 'Auto-selected by your equipped weapon’s swing style.';
         card.appendChild(note);
+      } else {
+        const note = document.createElement('div'); // Used to make the controller path discoverable instead of depending on hidden native-select behavior.
+        note.className = 'loadout-slot-combo-note';
+        note.textContent = 'Controller: focus ◀ / ▶ and press Confirm to swap attacks. Left/right on the dropdown also changes it.';
+        card.appendChild(note);
       }
 
       if (abilityId) renderLevelPicker(card, toolKey, abilityId);
@@ -280,7 +411,10 @@
       pane.appendChild(card);
     }
     renderRangedLoadout(pane);
+    restoreLoadoutControlFocus(pane, restoreFocusId);
   }
+
+  window.CombatLoadoutUI = { render, debugState: loadoutDebugState, copyDebug: copyLoadoutDebug };
 
   document.addEventListener('DOMContentLoaded', () => {
     render();
