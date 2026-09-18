@@ -137,7 +137,8 @@ assert.match(probeSource, /Controller: #\$\{controllerDebug\.index\}[\s\S]{0,260
 assert.match(uiSource, /function adjustFocusedControl\(delta\)/, 'menu sliders, number inputs, and selects are controller-adjustable');
 assert.match(loadoutUiSource, /combatLoadoutPrev_[\s\S]{0,1800}cycleSlotChoice\(slot\.id, -1, 'controller-prev'/, 'combat loadout exposes a controller-confirmable previous-attack control');
 assert.match(loadoutUiSource, /combatLoadoutNext_[\s\S]{0,1800}cycleSlotChoice\(slot\.id, 1, 'controller-next'/, 'combat loadout exposes a controller-confirmable next-attack control');
-assert.match(loadoutUiSource, /focusedLoadoutControlId[\s\S]{0,5000}restoreLoadoutControlFocus\(pane, restoreFocusId\)/, 'loadout rerenders restore the controller focus target instead of snapping back to the menu header');
+assert.match(loadoutUiSource, /const restoreFocusId = requestedFocusId \|\| focusedLoadoutControlId\(pane\)/, 'loadout rerenders remember the controller focus target before rebuilding the pane');
+assert.match(loadoutUiSource, /restoreLoadoutControlFocus\(pane, restoreFocusId\)/, 'loadout rerenders reconnect controller focus to the replacement control instead of snapping back to the menu header');
 assert.match(loadoutUiSource, /const canCycle = abilities\.length > 0/, 'an empty slot with exactly one learned technique remains controller-equipable');
 assert.match(loadoutUiSource, /Copy Loadout Controller Debug/, 'loadout controller diagnostics are copyable in dev mode without browser devtools');
 assert.match(uiSource, /scrollStick[\s\S]{0,900}scrollTop \+=/, 'right stick scrolls long menu panes');
