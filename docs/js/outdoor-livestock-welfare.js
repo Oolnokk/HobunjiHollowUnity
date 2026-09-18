@@ -9,6 +9,7 @@
   const OUTDOOR_AWAKE_MIN_SCALE_Y = 0.8; // Used by live outdoor adults after the fifth neglected night.
   const OUTDOOR_MAX_LIGHTEN = 0.25; // Used by the sprite shader at maximum outdoor neglect.
   const OUTDOOR_MAX_DESATURATION = 0.5; // Used by the sprite shader at maximum outdoor neglect.
+  const OUTDOOR_BLACK_PRESERVE_MAX = 0.04; // Used by the sprite shader to keep near-black pixels (about RGB 10/255 and darker per channel) out of the pallor pass.
   const OUTDOOR_SLEEP_SCALE_Y = 0.5; // Used at night; mirrors FarmTroughs' existing simple livestock sleep pose.
   const VISUAL_LERP_RATE = 4; // Used by live avatars to ease between midnight visual steps instead of snapping.
   const BLOCKED_BARN_ID = ''; // Used only while the resource tick runs: falsy to core, non-null to Nursery's sentinel wrapper.
@@ -88,11 +89,11 @@
           : welfareUniforms + shader.fragmentShader;
       }
       if (shader.fragmentShader.includes(mapChunk)) {
-        shader.fragmentShader = shader.fragmentShader.replace(mapChunk, `${mapChunk}\n          float outdoorLivestockGray = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));\n          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(outdoorLivestockGray), outdoorLivestockDesaturation);\n          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0), outdoorLivestockLighten);`);
+        shader.fragmentShader = shader.fragmentShader.replace(mapChunk, `${mapChunk}\n          if (any(greaterThan(diffuseColor.rgb, vec3(${OUTDOOR_BLACK_PRESERVE_MAX})))) { // Near-black sprite pixels bypass pallor so outlines/details stay dark.\n            float outdoorLivestockGray = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114)); // Used only for pixels above the near-black threshold during welfare desaturation.\n            diffuseColor.rgb = mix(diffuseColor.rgb, vec3(outdoorLivestockGray), outdoorLivestockDesaturation);\n            diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0), outdoorLivestockLighten);\n          }`);
       }
       state.shader = shader;
     };
-    material.customProgramCacheKey = () => `${originalProgramCacheKey ? originalProgramCacheKey() : ''}|outdoor-livestock-welfare-v2`;
+    material.customProgramCacheKey = () => `${originalProgramCacheKey ? originalProgramCacheKey() : ''}|outdoor-livestock-welfare-v4`;
     material.needsUpdate = true;
     return state;
   }
@@ -355,6 +356,7 @@
         awakeMinScaleY: OUTDOOR_AWAKE_MIN_SCALE_Y,
         maxLighten: OUTDOOR_MAX_LIGHTEN,
         maxDesaturation: OUTDOOR_MAX_DESATURATION,
+        blackPreserveMax: OUTDOOR_BLACK_PRESERVE_MAX,
         sleepScaleY: OUTDOOR_SLEEP_SCALE_Y,
       },
       lastNightlyChanges: [...lastNightlyChanges],
@@ -389,6 +391,7 @@
       OUTDOOR_AWAKE_MIN_SCALE_Y,
       OUTDOOR_MAX_LIGHTEN,
       OUTDOOR_MAX_DESATURATION,
+      OUTDOOR_BLACK_PRESERVE_MAX,
       OUTDOOR_SLEEP_SCALE_Y,
     },
   };
