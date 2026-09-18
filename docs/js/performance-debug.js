@@ -246,6 +246,41 @@
   // profilerText) since they're the two top-level bars everything else
   // should be read against.
   const SUBSYSTEM_DISPLAY_FLOOR_MS = 0.5;
+  const SCHEDULER_SUBSCRIBER_DISPLAY_FLOOR_MS = 0.1; // Opt-in profiler floor for scheduler callbacks; lower than subsystem floor because several small per-frame subscribers can add up.
+  const SCHEDULER_PHASES = ['input', 'pre-game', 'pre-render', 'post-game'];
+
+  function schedulerProfileSnapshot() {
+    const debug = root.RuntimeFrameScheduler?.getDebug?.();
+    if (!debug) return null;
+    const phases = Object.fromEntries(SCHEDULER_PHASES.map(phase => [phase, 0]));
+    const subscribers = [];
+    let measuredSubscribers = 0;
+    for (const entry of debug.entries || []) {
+      const avg = Number(entry.averageDurationMs);
+      if (!entry.enabled || !Number.isFinite(avg)) continue;
+      measuredSubscribers++;
+      if (Object.prototype.hasOwnProperty.call(phases, entry.phase)) phases[entry.phase] += avg;
+      subscribers.push({
+        id: entry.id,
+        owner: entry.owner,
+        phase: entry.phase,
+        averageDurationMs: avg,
+        lastDurationMs: Number(entry.lastDurationMs) || 0,
+        callCount: Number(entry.callCount) || 0,
+      });
+    }
+    subscribers.sort((a, b) => b.averageDurationMs - a.averageDurationMs);
+    return {
+      profilingEnabled: !!debug.profilingEnabled,
+      measuredSubscribers,
+      phases,
+      // pre-render dispatch happens synchronously inside gameLoop's checkpoint,
+      // so subtracting it again from frameMs would double-count it.
+      outsideGameLoopMs: phases.input + phases['pre-game'] + phases['post-game'],
+      preRenderInsideGameLoopMs: phases['pre-render'],
+      subscribers,
+    };
+  }
 
   function profilerText() {
     const avgRender = perfState.renderSamples ? perfState.renderCpuMs / perfState.renderSamples : 0;
@@ -271,17 +306,29 @@
       .sort((a, b) => b[1].samples - a[1].samples);
     const wildlifeLod = root.WildernessSimulationLOD?.snapshot?.(); // Adds active/sleeping creature counts to the same mobile-visible overlay.
     const outlinePerfLine = outlineRenderPerfLine();
+    const schedulerProfile = schedulerProfileSnapshot();
+    const schedulerOutsideMs = schedulerProfile?.outsideGameLoopMs || 0;
+    const unattributedFrameMs = gameLoopTotal ? perfState.frameMs - gameLoopTotal.avg - schedulerOutsideMs : null;
+    const schedulerTop = (schedulerProfile?.subscribers || [])
+      .filter(entry => entry.averageDurationMs >= SCHEDULER_SUBSCRIBER_DISPLAY_FLOOR_MS)
+      .slice(0, 8);
     const topLine = topGeom
       ? `${topGeom[0]} ${formatCount(topGeom[1])} tris (${totalGeom ? Math.round(topGeom[1] / totalGeom * 100) : 0}%)`
       : 'not scanned yet';
     return [
       `FPS ${perfState.fps.toFixed(1)}   frame ${perfState.frameMs.toFixed(2)} ms`,
-      // The gap between these two (when positive) is time spent between one
-      // gameLoop() call finishing and the next one starting -- i.e. some
-      // OTHER requestAnimationFrame loop, a MutationObserver callback, or GC,
-      // not anything wrapped above. A near-zero or negative gap means the
-      // cost really is inside gameLoop's own call graph.
-      gameLoopTotal ? `gameLoop total ${gameLoopTotal.avg.toFixed(2)} ms   (outside gameLoop: ${(perfState.frameMs - gameLoopTotal.avg).toFixed(2)} ms)` : 'gameLoop total: not sampled yet',
+      // RuntimeFrameScheduler now owns substantial work before/after gameLoop.
+      // Only input/pre-game/post-game are truly outside gameLoop; pre-render
+      // runs inside gameLoop's checkpoint and is already included in its total.
+      gameLoopTotal
+        ? `gameLoop total ${gameLoopTotal.avg.toFixed(2)} ms   scheduler-outside ${schedulerOutsideMs.toFixed(2)} ms   unattributed ${unattributedFrameMs.toFixed(2)} ms`
+        : 'gameLoop total: not sampled yet',
+      schedulerProfile
+        ? `Scheduler phases avg: input ${schedulerProfile.phases.input.toFixed(2)}  pre-game ${schedulerProfile.phases['pre-game'].toFixed(2)}  pre-render* ${schedulerProfile.phases['pre-render'].toFixed(2)}  post-game ${schedulerProfile.phases['post-game'].toFixed(2)} ms\n  *pre-render is already inside gameLoop`
+        : 'Scheduler profiling: unavailable',
+      schedulerTop.length
+        ? `Scheduler top (avg ≥${SCHEDULER_SUBSCRIBER_DISPLAY_FLOOR_MS}ms):\n${schedulerTop.map(entry => `  ${entry.id} [${entry.phase}] ${entry.averageDurationMs.toFixed(2)} ms  last ${entry.lastDurationMs.toFixed(2)} ms  ×${entry.callCount}`).join('\n')}`
+        : (schedulerProfile?.profilingEnabled ? 'Scheduler top: none above display floor yet' : 'Scheduler timings: profiler disabled'),
       ...(outlinePerfLine ? [outlinePerfLine] : []),
       `Render CPU ${avgRender.toFixed(2)} ms`,
       `Draw calls ${formatCount(perfState.calls)}   tris ${formatCount(perfState.triangles)}`,
@@ -439,6 +486,7 @@
     writeStorage(PROFILER_PREF_KEY, profilerEnabled ? '1' : '0');
     const input = document.getElementById('settingPerfProfiler');
     if (input) input.checked = profilerEnabled;
+    root.RuntimeFrameScheduler?.setProfilingEnabled?.(profilerEnabled); // Scheduler timings are opt-in with the existing profiler so ordinary gameplay keeps the zero-timer-overhead path.
     if (profilerEnabled) {
       installRendererProfiler();
       ensureLongTaskObserver();
@@ -1208,6 +1256,7 @@
         textures: perfState.textures,
         geometryCategories: { ...perfState.geometryCategories },
         scanMs: perfState.scanMs,
+        scheduler: schedulerProfileSnapshot(),
         subsystems: Object.fromEntries([...perfState.subsystem.entries()].map(([key,value]) => [key,{...value}]))
       };
     }
