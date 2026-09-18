@@ -365,7 +365,28 @@
     });
   }
 
-  function startPlayerAction(itemKey) {
+  function triggerPlayerVisual(durationS, options = {}) {
+    const grip = window.ProceduralHandGripRuntime;
+    if (options?.held) grip?.beginHeld?.(options.gripMode);
+    else if (options?.gripMode) grip?.beginTemporary?.(options.gripMode, durationS);
+    return deps.triggerRangedWeaponVisual?.(durationS, options);
+  }
+
+  function playerWindupPoseProgress() {
+    const value = Number(deps.getRangedWeaponWindupPoseProgress?.());
+    return Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0;
+  }
+
+  function releasePlayerHold(options = {}) {
+    return deps.releaseRangedWeaponHold?.(options);
+  }
+
+  function cancelPlayerHold() {
+    deps.cancelRangedWeaponHold?.();
+    window.ProceduralHandGripRuntime?.clear?.();
+  }
+
+  function startPlayerAction(itemKey, options = {}) {
     const def = defFor(itemKey);
     if (!def || playerAction) return false;
     const loaded = isLoaded(itemKey);
@@ -373,22 +394,40 @@
     if (kind === 'fire') window.ResourceSystem?.spendStamina?.(deps.player, def.staminaCost, `${def.label} fire`);
     const durationS = kind === 'fire' ? def.fireDurationS : def.reloadDurationS;
     const pose = poseForAction(def, kind);
-    playerAction = { itemKey, def, kind, t: 0, durationS, fired: false };
-    deps.triggerRangedWeaponVisual?.(durationS, {
-      sequence: kind === 'fire' ? (def.fireSequence || 'fire') : (def.reloadSequence || 'attack'),
-      pose,
-      gripMode: def.gripMode || null,
-      windupFrac: kind === 'load' ? (def.reloadWindupFrac ?? 0.55) : (def.fireWindupFrac ?? 0.02),
-      strikeFrac: kind === 'fire' ? def.fireAtFrac : (def.reloadStrikeFrac ?? 0.56),
-      holdFrac: kind === 'fire' ? (def.fireHoldFrac ?? Math.min(0.99, def.fireAtFrac + 0.12)) : (def.reloadHoldFrac ?? 0.57),
-    });
+    const rawDamageScale = Number(options?.damageScale);
+    const damageScale = Number.isFinite(rawDamageScale) ? Math.max(0, Math.min(1, rawDamageScale)) : 1;
+    playerAction = {
+      itemKey, def, kind, t: 0, durationS, fired: false,
+      damageScale,
+      suppressVisual: options?.suppressVisual === true,
+      heldHidden: false,
+    };
+    if (!playerAction.suppressVisual) {
+      triggerPlayerVisual(durationS, {
+        sequence: kind === 'fire' ? (def.fireSequence || 'fire') : (def.reloadSequence || 'attack'),
+        pose,
+        gripMode: def.gripMode || null,
+        windupFrac: kind === 'load' ? (def.reloadWindupFrac ?? 0.55) : (def.fireWindupFrac ?? 0.02),
+        strikeFrac: kind === 'fire' ? def.fireAtFrac : (def.reloadStrikeFrac ?? 0.56),
+        holdFrac: kind === 'fire' ? (def.fireHoldFrac ?? Math.min(0.99, def.fireAtFrac + 0.12)) : (def.reloadHoldFrac ?? 0.57),
+      });
+    }
     if (kind === 'load') playRangedActionSfx(itemKey, 'load');
     lastEvent = `player:${itemKey}:${kind}-start`;
     deps.refreshActionBar?.();
     return true;
   }
 
+  function restoreHeldThrownWeapon(action = playerAction) {
+    if (!action?.heldHidden) return false;
+    action.heldHidden = false;
+    deps.setHeldRangedVisible?.(action.itemKey, true);
+    window.ProceduralHandGripRuntime?.clear?.();
+    return true;
+  }
+
   function cancelPlayerAction() {
+    restoreHeldThrownWeapon(playerAction);
     playerAction = null;
     deps?.refreshActionBar?.();
   }
@@ -405,16 +444,26 @@
       const angle = aim?.angle ?? deps.getPlayerAimAngle();
       const pitch = aim?.pitch ?? deps.getPlayerAimPitch?.() ?? 0;
       const ammoPayload = playerAmmoPayload(action.itemKey);
-      spawnVolley(action.itemKey, deps.player.x, deps.player.y, angle, 'player', deps.player, ammoPayload, pitch);
+      const heldTexture = action.def.rangedType === 'thrown' ? deps.getHeldRangedTexture?.(action.itemKey) || null : null;
+      const volley = spawnVolley(action.itemKey, deps.player.x, deps.player.y, angle, 'player', deps.player, ammoPayload, pitch, {
+        damageScale: action.damageScale,
+        textureSource: heldTexture,
+      });
+      if (action.def.rangedType === 'thrown' && volley.some(Boolean)) {
+        // The projectile now owns the visible weapon copy. Hide the in-hand
+        // mesh on this exact spawn frame; restore only when Strike returns to Neutral.
+        action.heldHidden = deps.setHeldRangedVisible?.(action.itemKey, false) === true;
+      }
       consumeSpecialAmmo(ammoPayload);
     }
     if (action.t < action.durationS) return;
     if (action.kind === 'load') setLoaded(action.itemKey, true);
+    restoreHeldThrownWeapon(action);
     playerAction = null;
     deps.refreshActionBar?.();
   }
 
-  function createProjectileMesh(def, radiusPx) {
+  function createProjectileMesh(def, radiusPx, textureSource = null) {
     const root = new THREE.Group();
     root.name = 'rangedProjectile';
     const collider = new THREE.Mesh(
@@ -434,27 +483,38 @@
     // updateProjectileVisual, which drives both channels every frame.
     visual.rotation.order = 'YXZ';
 
-    const spinningWeapon = def.projectileVisualStyle === 'spinningWeapon'; // Uses the full weapon PNG/aspect instead of the generic bolt silhouette.
-    let plane = null; // Assigned after TextureLoader starts; the onLoad callback fixes the weapon sprite's source aspect ratio.
-    let pendingAspect = 1; // Covers a theoretically synchronous loader callback without losing the source aspect ratio.
-    const texture = new THREE.TextureLoader().load(def.projectileSprite, loadedTexture => {
-      if (!spinningWeapon) return;
-      const imageW = Math.max(1, Number(loadedTexture.image?.width) || Number(loadedTexture.image?.naturalWidth) || 1);
-      const imageH = Math.max(1, Number(loadedTexture.image?.height) || Number(loadedTexture.image?.naturalHeight) || 1);
+    const spinningWeapon = def.projectileVisualStyle === 'spinningWeapon';
+    const weaponSprite = spinningWeapon || def.projectileVisualStyle === 'weapon'; // Non-spinning spears still preserve the real held weapon silhouette/material.
+    let plane = null;
+    let pendingAspect = 1;
+    const updateAspect = loadedTexture => {
+      if (!weaponSprite) return;
+      const imageW = Math.max(1, Number(loadedTexture?.image?.width) || Number(loadedTexture?.image?.naturalWidth) || 1);
+      const imageH = Math.max(1, Number(loadedTexture?.image?.height) || Number(loadedTexture?.image?.naturalHeight) || 1);
       pendingAspect = imageH / imageW;
       if (plane) plane.scale.y = pendingAspect;
-    });
+    };
+    let texture = null;
+    if (textureSource?.clone) {
+      // Clone the exact held texture map. Its image may already be ToolMetalRecolor's
+      // final canvas, so metal hue + verdigris leakage/removal patterns carry pixel-for-pixel.
+      texture = textureSource.clone();
+      texture.needsUpdate = true;
+      updateAspect(texture);
+    } else {
+      texture = new THREE.TextureLoader().load(def.projectileSprite, updateAspect);
+    }
     texture.magFilter = texture.minFilter = THREE.NearestFilter;
     const longArrow = def.projectileSprite.includes('arrow_long');
-    const weaponWidth = Math.max(0.08, Number(def.projectileVisualWidthWorld) || 0.5); // Mirrors the 0.5-world-unit held weapon sprite width.
+    const weaponWidth = Math.max(0.08, Number(def.projectileVisualWidthWorld) || 0.5);
     plane = new THREE.Mesh(
       new THREE.PlaneGeometry(
-        spinningWeapon ? weaponWidth : (longArrow ? 0.09 : 0.065),
-        spinningWeapon ? weaponWidth : (longArrow ? 0.72 : 0.38)
+        weaponSprite ? weaponWidth : (longArrow ? 0.09 : 0.065),
+        weaponSprite ? weaponWidth : (longArrow ? 0.72 : 0.38)
       ),
       new THREE.MeshBasicMaterial({ map: texture, transparent: true, alphaTest: 0.08, side: THREE.DoubleSide })
     );
-    if (spinningWeapon) plane.scale.y = pendingAspect;
+    if (weaponSprite) plane.scale.y = pendingAspect;
     plane.rotation.x = -Math.PI / 2;
     plane.renderOrder = deps.heldObjectRenderOrder || 1.5;
 
@@ -567,11 +627,11 @@
     }
   }
 
-  function spawnProjectile(itemKey, x, y, angle, team, owner, ammoPayload = null, pitch = 0) {
+  function spawnProjectile(itemKey, x, y, angle, team, owner, ammoPayload = null, pitch = 0, shotOptions = null) {
     const def = defFor(itemKey);
     if (!def) return null;
     const scene = deps.getActiveScene();
-    const mesh = createProjectileMesh(def, def.projectileRadiusPx);
+    const mesh = createProjectileMesh(def, def.projectileRadiusPx, shotOptions?.textureSource || null);
     const afflictionBonuses = projectileAfflictionBonuses(def, team, ammoPayload);
     const trailColors = projectileTrailColors(afflictionBonuses, ammoPayload?.trailColors);
     const surfaceY = ownerElevationY(owner, x, y);
@@ -594,6 +654,7 @@
       specialAmmoId: ammoPayload?.specialAmmoId || null,
       knockbackMul: Number(ammoPayload?.knockbackMul) || 1,
       footingDamageMultiplier: Number(ammoPayload?.footingDamageMultiplier) || 0,
+      damageScale: Number.isFinite(Number(shotOptions?.damageScale)) ? Math.max(0, Math.min(1, Number(shotOptions.damageScale))) : 1,
       trailPoints: [{ x: x / deps.TILE, y: surfaceY + 0.54, z: y / deps.TILE }],
       trailMeshes: createProjectileTrails(scene, trailColors, def.projectileRadiusPx),
     };
@@ -603,7 +664,7 @@
     return p;
   }
 
-  function spawnVolley(itemKey, x, y, angle, team, owner, ammoPayload = null, pitch = 0) {
+  function spawnVolley(itemKey, x, y, angle, team, owner, ammoPayload = null, pitch = 0, shotOptions = null) {
     const def = defFor(itemKey);
     if (!def) return [];
     const count = Math.max(1, Math.round(def.projectileCount));
@@ -611,7 +672,7 @@
     const made = [];
     for (let i = 0; i < count; i++) {
       const u = count === 1 ? 0.5 : i / (count - 1);
-      made.push(spawnProjectile(itemKey, x, y, angle + (u - 0.5) * spread, team, owner, ammoPayload, pitch));
+      made.push(spawnProjectile(itemKey, x, y, angle + (u - 0.5) * spread, team, owner, ammoPayload, pitch, shotOptions));
     }
     lastEvent = `${team}:${itemKey}:volley-${count}`;
     return made;
@@ -951,7 +1012,10 @@
     const projectileRadius = p.def.projectileRadiusPx / deps.TILE;
     const coverHit = window.NearbyVolumeCollision?.segmentHit?.(start, end, projectileRadius) || null;
     const falloff = projectileFalloffMultiplier(p);
-    const damage = Math.max(1, p.def.damage * falloff);
+    const scaledDamage = p.def.damage * falloff * (Number.isFinite(p.damageScale) ? p.damageScale : 1);
+    const damage = p.team === 'player' && p.def.rangedType === 'thrown'
+      ? Math.max(0, scaledDamage)
+      : Math.max(1, scaledDamage);
     const knockbackPxS = p.def.knockbackPxS * p.knockbackMul * falloff;
     if (p.team === 'player') {
       const nearest = nearestHostileHit(start, end, projectileRadius, p.areaId);
@@ -1317,6 +1381,7 @@
 
   window.RangedWeapons = {
     init, applyConfig, startPlayerAction, cancelPlayerAction, playerActionLabel,
+    triggerPlayerVisual, playerWindupPoseProgress, releasePlayerHold, cancelPlayerHold,
     isLoaded, setLoaded, update, updateBanditAI, updateBanditVisual,
     cancelBanditAction, disposeOwner, playerLockRangePx, playerIdlePose: itemKey => idlePose(itemKey),
     isPlayerAttacking: () => playerAction?.kind === 'fire', // Lets shared body-facing logic distinguish firing from the visually similar reload action.
