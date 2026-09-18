@@ -30,11 +30,17 @@ assert.match(counterSource, /window\.Combat\.weaponChargeGlow = \{/,
   'Counter Shield owns the shared weapon-silhouette glow service');
 assert.match(flurrySource, /weaponChargeGlow\?\.set\?\.\('acceleratingFlurry'/,
   'Accelerating Flurry uses the shared Counter-Shield-style weapon glow');
+assert.doesNotMatch(breakerSource, /heldSeconds\s*\/\s*MAX_CHARGE_S/,
+  'gameplay charge must never be reconstructed from elapsed hold time');
+assert.match(breakerSource, /if \(poseCharge < MIN_READY_POSE\)/,
+  'minimum strike readiness must be checked against visible pose charge');
 assert.doesNotMatch(breakerSource, /player-heavy-attack-fire-telegraph|PointsMaterial|PLAYER_HEAVY_FIRE/,
   'Charged Breaker no longer owns the old particle-fire telegraph');
 assert.doesNotMatch(flurrySource, /playerHeavyTelegraph|player-heavy-attack-fire-telegraph/,
   'Accelerating Flurry no longer reuses the old particle-fire telegraph');
 
+assert.equal(config.chargedBreaker.MIN_READY_POSE, 0.48,
+  'minimum release readiness is authored in visible pose space, not elapsed seconds');
 assert.equal(config.chargedBreaker.MAX_CHARGE_S, 4.0,
   'full Windup / 100% pose charge takes substantially longer than the old short charge');
 assert.equal(config.chargedBreaker.WINDUP_SLOWDOWN, 25,
