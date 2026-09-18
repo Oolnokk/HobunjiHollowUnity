@@ -63,17 +63,17 @@
     {
       "id": "fmqg911qpldqz",
       "itemKey": "tableSmallFurniture",
-      "col": 0,
+      "col": 1,
       "row": 7,
       "rotY": 0,
       "postX": 0,
       "postY": 0,
       "postZ": 0,
-      "postSX": 0.833667,
+      "postSX": 1.071857,
       "postSY": 1,
       "postSZ": 1,
       "gridRot": 0,
-      "gridW": 9,
+      "gridW": 7,
       "gridD": 1
     },
     {
