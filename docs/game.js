@@ -360,7 +360,7 @@
         updateDialogueZoomIndicator();
         walker.pause = Infinity;
         _npcDialogueNameEl.textContent = rec?.name || 'Stranger';
-        if (_npcDialogueHeartsEl) _npcDialogueHeartsEl.textContent = window.DialogueContent?.renderRelationshipHearts(rec);
+        if (_npcDialogueHeartsEl) _npcDialogueHeartsEl.innerHTML = window.DialogueContent?.renderRelationshipHearts(rec) || '';
         _arcContainerEl?.classList.add('arc-hidden');
 
         if (walker.profile && window.NpcAvatarPreview) {
