@@ -141,8 +141,10 @@
 
   function tilesFromInterior(mapData) {
     const tiles = {};
+    const gridCollision = window.InteriorFurnitureGrid?.mergedColliders?.(mapData, mapData?.furniture); // Used so the main Map Editor shows the same occupied-tile blockers gameplay derives from furniture footprints.
+    const effectiveColliders = Array.isArray(gridCollision?.colliders) ? gridCollision.colliders : (Array.isArray(mapData?.colliders) ? mapData.colliders : []);
     const colliderKeys = new Set();
-    for (const cell of (Array.isArray(mapData?.colliders) ? mapData.colliders : [])) {
+    for (const cell of effectiveColliders) {
       if (!Array.isArray(cell) || cell.length < 2) continue;
       const col = finiteNumber(cell[0], NaN);
       const row = finiteNumber(cell[1], NaN);
