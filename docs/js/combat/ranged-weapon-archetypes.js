@@ -6,7 +6,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 4;
+  const VERSION = 5;
   const PATCH_RETRY_MS = 50; // Used while game.js finishes constructing generated metal weapon definitions.
   const PATCH_RETRY_LIMIT = 160; // Used to stop the bootstrap poll after roughly eight seconds instead of polling forever.
   const THROWN_HOLD_VISUAL_S = 3600; // Used to park the ranged visual at its authored windup without adding another game.js hold state.
@@ -22,6 +22,7 @@
     'bruisedHealth', 'windedStamina', 'congealedHealth', 'shatteredStamina', 'knockback',
   ]); // Used by Kylie ranged mastery so its options mirror the game's blunt affliction family rather than sharp-style buildup.
   const DUAL_ROLE_SHAPES = Object.freeze({ kylie: THROWN_TYPE, dagger: THROWN_TYPE, fishingspear: THROWN_TYPE, hatchet: THROWN_TYPE, bshuakauitl: BLOWGUN_TYPE });
+  const SPINNING_THROWN_SHAPES = new Set(['hatchet', 'dagger', 'kylie']); // Dagger is the current knife-class shape; these reuse Fishing's outbound fishing-mace spin.
   const NON_RANGED_SHAPES = new Set(['daggerSword']); // Used by rangedTypeFor() to hard-block dagger-swords even if stale or external code tags one with rangedType.
   const patchedItems = new Set(); // Used by diagnostics and idempotent definition patching.
   const scaledAfflictionAliases = new Map(); // Used to carry per-shot buildup scaling through the existing projectile affliction map without changing raw damage.
@@ -135,6 +136,10 @@
       rangedType: THROWN_TYPE,
       inputMode: 'hold-release',
       projectileSprite: toolDef?.sprite || 'assets/toolsprites/kylie.png',
+      projectileVisualStyle: SPINNING_THROWN_SHAPES.has(shapeKey) ? 'spinningWeapon' : 'standard',
+      projectileWeaponShapeKey: shapeKey,
+      projectileVisualWidthWorld: SPINNING_THROWN_SHAPES.has(shapeKey) ? 0.5 : null,
+      projectileSpinSource: SPINNING_THROWN_SHAPES.has(shapeKey) ? 'fishingMace' : null,
       fireDurationS: releaseDurationS,
       fireSequence: 'attack',
       fireWindupFrac: 0,
