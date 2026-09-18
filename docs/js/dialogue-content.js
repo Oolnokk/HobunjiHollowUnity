@@ -43,6 +43,8 @@
   let _npcDialogueTypeIndex = 0;
   let _npcDialogueTypeUnits = []; // Syllable reveal queue consumed by _setNpcDialogueText().
   const _npcDlgState = new Map(); // npcId → {visitedSeqSlots:{seqId:[slotIdx,...]}, localNickname}
+  const _dialogueTreeProviders = new Map(); // npcId → provider(rec), used by stateful systems that select an authored tree at interaction time.
+  const _dialogueActionHandlers = new Map(); // action type → handler(action, context), used to extend choice actions without adding NPC-specific branches here.
   const _npcBaseDispositions = {}; // npcId → baseDisposition from NPC database config
   let _favorRescaleApplied = true; // see loadNpcRelationships/_applyLegacyFavorRescale
 
@@ -347,7 +349,28 @@
     return window.ConditionRegistry.pickBestEntry(entries, world, heard);
   }
 
+  function registerTreeProvider(npcId, provider) {
+    if (!npcId || typeof provider !== 'function') return false;
+    _dialogueTreeProviders.set(String(npcId), provider);
+    return true;
+  }
+
+  function registerActionHandler(type, handler) {
+    if (!type || typeof handler !== 'function') return false;
+    _dialogueActionHandlers.set(String(type), handler);
+    return true;
+  }
+
   function _pickDialogueTree(rec) {
+    const provider = _dialogueTreeProviders.get(String(rec?.id || '')); // Used to let a stateful feature choose one ordinary authored tree for this interaction.
+    if (provider) {
+      try {
+        const provided = provider(rec); // Used as the already-routed tree; the provider owns its quest/state eligibility.
+        if (provided) return provided;
+      } catch (error) {
+        console.warn('[npc-dialogue] tree provider failed', rec?.id, error);
+      }
+    }
     // A tree can tag itself visibility: 'owner' or 'farmhand' to restrict
     // it to the world's protagonist or to non-owner members respectively;
     // omitted/'any' (the default) is visible to everyone.
@@ -463,6 +486,22 @@
           } else if (act.type === 'turnInTask') {
             const res = deps.turnInTask(act.taskId);
             if (!res.ok) deps.showToast(res.message, false);
+          } else {
+            const handler = _dialogueActionHandlers.get(String(act.type || '')); // Used to route feature-owned actions without hard-coding their semantics into dialogue core.
+            if (!handler) return;
+            try {
+              const result = handler(act, { npc: _dlgNpcRec, tree: _dlgTree, node, choice: c }); // Used to give the registered feature enough authored context to validate its action.
+              if (result?.message) deps.showToast(result.message, result.ok !== false);
+              if (result?.skipNav) skipNav = true;
+              if (result?.node) {
+                renderDlgNode(result.node);
+                skipNav = true;
+              }
+            } catch (error) {
+              console.warn('[npc-dialogue] custom action failed', act.type, error);
+              deps.showToast('That dialogue action could not be completed.', false);
+              skipNav = true;
+            }
           }
         });
         if (!skipNav) _navigateDlgTo(c.next);
@@ -817,5 +856,7 @@
     playSpeechTick: _playNpcDialogueLetterSfx,
     npcDlgState: _npcDlgState,
     npcBaseDispositions: _npcBaseDispositions,
+    registerTreeProvider,
+    registerActionHandler,
   };
 })();

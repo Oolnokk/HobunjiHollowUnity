@@ -3379,6 +3379,7 @@
         name: locale.name,
         category: locale.category,
         alwaysVisible: !!placement.alwaysVisibleOnMap,
+        interior: locale.interior ? clonePlain(locale.interior) : null, // Used after Tothal shifting/scaling to export a walkable locale entrance transition without hard-coded world coordinates.
         anchorX, anchorY,
         w: bbox.w, h: bbox.h,
         connectors: (locale.connectors || []).map(c => ({ col: c.col, row: c.row, side: c.side, label: c.label })),
@@ -6073,15 +6074,30 @@
       });
     }
     for (const object of map.objects) {
-      if (object.type !== 'caveOpening' && object.type !== 'secretCaveOpening') continue;
+      if (object.type === 'caveOpening' || object.type === 'secretCaveOpening') {
+        transitions.push({
+          id: `sp_${object.id}`,
+          label: object.type === 'secretCaveOpening' ? 'Secret cave' : 'Cave',
+          col: object.x,
+          row: object.y,
+          targetMapId: '',
+          targetSpotId: '',
+          generatedObjectId: object.id
+        });
+        continue;
+      }
+      const interior = object.localeMeta?.interior; // Used to turn an authored locale connector into a normal runtime transition after random placement/Tothal shift.
+      if (!interior?.targetMapId) continue;
+      const trigger = object.pathAnchor || { x: object.x, y: object.y }; // Used to place the trigger on the guaranteed walkable path side of a blocking cave/building footprint.
       transitions.push({
-        id: `sp_${object.id}`,
-        label: object.type === 'secretCaveOpening' ? 'Secret cave' : 'Cave',
-        col: object.x,
-        row: object.y,
-        targetMapId: '',
-        targetSpotId: '',
-        generatedObjectId: object.id
+        id: `sp_locale_${object.localeMeta.localeId || object.id}`,
+        label: interior.label || object.localeMeta.name || 'Enter',
+        col: trigger.x,
+        row: trigger.y,
+        targetMapId: interior.targetMapId,
+        targetSpotId: interior.targetSpotId || '',
+        generatedObjectId: object.id,
+        generatedLocaleId: object.localeMeta.localeId || null
       });
     }
     return transitions;

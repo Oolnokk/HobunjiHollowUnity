@@ -17750,7 +17750,7 @@
                         "quest_giver",
                         "ghost_army"
                   ],
-                  "bio": "The Sleepy Grehlr — glowing green eyes, perpetual mist, living in a ruin-filled cave overlooking the river. Too tired to help because he's too hungry to hunt, and too hungry because he's too tired to hunt.",
+                  "bio": "The Sleeping Grehlr — a Great Fey that formed in proximity to people and was shaped by their thoughts into a perpetually sleepy creature. Banubu's sleepiness is intrinsic to what he is, not a biological need; he has no ordinary waking routine or hunger cycle.",
                   "portrait": {
                         "asset": "",
                         "avatarKey": ""
@@ -17906,10 +17906,11 @@
                         "contentIncomplete": true,
                         "contentIncompleteReason": "defaultPosition is a placeholder {0,0} — this NPC spawns (or falls back) to world origin whenever no schedule rule is active. Needs a real station."
                   },
-                  "loreBackground": "Needs a 'Fifteen Fish Pie' to get the energy to help — quite literally fifteen different fish, each one only catchable in a specific season + weather + time + location combination around the town's outskirts. <suggestion: quest design — the actual list of fifteen fish and their catch conditions, plus the pie recipe itself>",
+                  "loreBackground": "Fey generation is a natural phenomenon. Most fey form as mindless wisps, but those that generate near people can be shaped by nearby thoughts and ideas. Banubu became the Sleeping Grehlr and remains asleep indefinitely in his northern-cliff cavern. He teaches the Three-Fish Pie template and then asks for five pies whose requested buff combinations are drawn only from combinations the current fish catalog can actually produce.",
                   "questHooks": [
-                        "Requires a Fifteen Fish Pie built from fish that are each catchable only in one specific season/weather/time/location combination.",
-                        "<suggestion: quest design — full fish list, catch conditions, and recipe>"
+                        "First conversation teaches the locked Three-Fish Pie template.",
+                        "Five sequential fish-pie quests request randomized, actually craftable buff combinations.",
+                        "Quest 1 rewards the character-scoped War-Paint Kit; later key-item rewards remain separately authorable."
                   ],
                   "phrasePools": [
                         {
