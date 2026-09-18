@@ -16,6 +16,8 @@
     ['NaturalSurfaceRuntimeFixes', 'natural-surface-runtime-fixes.js?v=20260813d'],
     // Uses the Furniture + Avatar Author's shared-edge/adjacent-normal surface recognition before mapping one complete PNG square onto each detected natural terrain surface.
     ['HobunjiSurfaceStretchUV', 'surface-stretch-uv-furniture.js?v=20260907farmcliff1'],
+    // Adds a black-only protected-band sampler to wilderness waterways and the permanent town river; waterfall curtains unfold as surface tiles in the same wilderness mapping domain.
+    ['WaterBodyOutlineOverlay', 'water-body-outline-overlay.js?v=20260918f'],
     // A gradual 24° face chain may walk over a rounded ridge, so split upward terrain from cliff-facing triangles before the final side-only unwrap.
     ['NaturalSurfaceCliffRidgeIsolation', 'natural-surface-cliff-ridge-isolation.js?v=20260902a'],
     // Used after every older natural-surface/runtime wrapper so flat fallback textures self-heal and legacy cliff UV repair cannot remain authoritative.
