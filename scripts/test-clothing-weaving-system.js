@@ -81,7 +81,10 @@ const windowStub = {
     toClothingColor(dye) { return { dyeId: dye.id, label: dye.label, hex: dye.hex }; },
     ownedByHue() { return []; },
   },
-  PatternLibrary: { listAvailable() { return []; } },
+  PatternLibrary: {
+    listAvailable() { return []; },
+    getById() { return null; },
+  },
   PatternAuthoring: {},
   ActionPromptUI: { getLastInputDevice() { return 'desktop'; } },
   __hobunjiFurnitureDebug: { getCurrentArea() { return null; }, playerState: player, targetAimAngleDeg: 0 },
@@ -143,7 +146,14 @@ const lightTunic = {
   colorC: { dyeId: 'starter-red', hex: '#aa0000' },
   weightUnits: 1.8,
   weaveMaterial: 'light',
-  weaving: { pattern: { motifDataUrl: 'data:image/png;base64,AA==' } },
+  weaving: {
+    layers: {
+      __default: {
+        pattern: { motifDataUrl: 'data:image/png;base64,AA==' },
+        patternLabel: 'Custom',
+      },
+    },
+  },
 };
 gear.clothingItems.push(lightTunic);
 gear.clothing.torso = lightTunic;
@@ -153,6 +163,28 @@ assert(applied.equippedCosmetics.includes('tankan_tunic'), 'crafted cosmetic tra
 assert(!applied.equippedCosmetics.includes(lightTunic.cosmeticId), 'unique crafted id never leaks into portrait cosmetic lookup');
 assert.equal(applied.appearance.bodyColors.TORSO_C.dyeId, 'starter-red', 'woven color uses the third torso dye slot');
 assert.equal(applied.appearance.bodyColors.__hobunjiWovenClothing[0].baseCosmeticId, 'tankan_tunic', 'pattern descriptor follows avatar render data only');
+assert.equal(api.__test.weavingPatternForRole(lightTunic.weaving, null).motifDataUrl, 'data:image/png;base64,AA==', 'modern per-layer weaving resolves the default layer');
+const legacyPattern = { motifDataUrl: 'data:image/png;base64,LEGACY==' }; // Used to keep pre-layer-save compatibility covered while the main fixture exercises the modern format.
+assert.equal(api.__test.weavingPatternForRole({ pattern: legacyPattern }, 'anything'), legacyPattern, 'legacy single-pattern saves still resolve across every layer');
+windowStub.PatternLibrary.getById = id => id === 'live-pattern' ? { motifDataUrl: 'data:image/png;base64,MIGRATED==' } : null;
+const referenceOnlyWeaving = { weaving: { layers: { base: { patternLibraryId: 'live-pattern', patternLabel: 'Saved' } } } }; // Used to model a garment crafted by the short-lived reference-only implementation.
+assert.equal(api.__test.materializeWeavingLibrarySnapshots(referenceOnlyWeaving), true, 'reference-only garment is upgraded while its library source still exists');
+assert.equal(referenceOnlyWeaving.weaving.layers.base.pattern.motifDataUrl, 'data:image/png;base64,MIGRATED==', 'migration embeds the resolved source motif on the garment');
+assert.equal(api.__test.materializeWeavingLibrarySnapshots(referenceOnlyWeaving), false, 'already snapshotted garment is not rewritten repeatedly');
+windowStub.PatternLibrary.getById = () => null;
+const deadLibraryOnlyWeaving = { layers: { base: { patternLibraryId: 'deleted-pattern', patternLabel: 'Deleted' } } }; // Used to ensure an unresolved source reference is not presented as visible weaving.
+assert.equal(api.__test.weavingPatternForRole(deadLibraryOnlyWeaving, 'base'), null, 'deleted library-only references resolve to no pattern');
+assert.equal(api.__test.weavingHasAnyPattern(deadLibraryOnlyWeaving), false, 'deleted library-only references do not keep the woven state alive');
+assert.equal(api.__test.summarizeWeavingLabel(deadLibraryOnlyWeaving), null, 'deleted library-only references do not produce a misleading pattern label');
+const bakedLibrarySnapshot = { layers: { base: { pattern: { motifDataUrl: 'data:image/png;base64,BAKED==' }, patternLibraryId: 'deleted-pattern', patternLabel: 'Diamond' } } }; // Used to model a crafted item after its source library entry has been removed.
+assert.equal(api.__test.weavingPatternForRole(bakedLibrarySnapshot, 'base').motifDataUrl, 'data:image/png;base64,BAKED==', 'embedded garment snapshot survives deletion of its source library entry');
+assert.equal(api.__test.weavingHasAnyPattern(bakedLibrarySnapshot), true, 'embedded garment snapshot remains visibly woven');
+assert.equal(api.__test.summarizeWeavingLabel(bakedLibrarySnapshot), 'Diamond', 'embedded garment snapshot keeps its authored label');
+const diamondBasis = api.__test.frameShapeFor('diamond').basis(100, 80); // Used to lock the edge-sharing diamond lattice that prevents uncovered corner gaps.
+assert.equal(diamondBasis.u.x, 50);
+assert.equal(diamondBasis.u.y, 40);
+assert.equal(diamondBasis.v.x, 50);
+assert.equal(diamondBasis.v.y, -40);
 assert(gear.knownClothingBlueprints.some(bp => bp.baseCosmeticId === 'tankan_tunic'), 'obtaining cloth permanently learns its loom blueprint');
 
 windowStub.ResourceSystem.applyDamage(player, 100, {});
@@ -196,6 +228,15 @@ assert.match(source, /TORSO_C/);
 assert.match(source, /CLOTH_C/);
 assert.match(source, /puktukWool/);
 assert.match(source, /lightWool/);
+assert.match(source, /offloadCustomMotif:\s*false/, 'loom keeps custom motif pixels inside the crafted garment save');
+assert.match(source, /const revision = \+\+previewRevision/, 'loom preview rejects stale async renders');
+const patternAuthoringSource = fs.readFileSync('docs/js/pattern-authoring.js', 'utf8'); // Used to verify the generic editor honors weaving's no-offload persistence request.
+assert.match(patternAuthoringSource, /options\.offloadCustomMotif === false/, 'pattern editor lets weaving opt out of origin-local motif offload');
+const diamondLatticeSource = 'basis: (w, h) => ({ u: { x: w / 2, y: h / 2 }, v: { x: w / 2, y: -h / 2 } })'; // Used to ensure the three duplicated render/editor geometry tables cannot silently drift apart.
+assert(patternAuthoringSource.includes(diamondLatticeSource), 'pattern authoring uses the corrected diamond lattice');
+const metalRecolorSource = fs.readFileSync('docs/js/tool-metal-recolor.js', 'utf8'); // Used to verify mastered-tool pattern previews/rendering stay geometrically identical to weaving.
+assert(metalRecolorSource.includes(diamondLatticeSource), 'metal recolor uses the corrected diamond lattice');
+assert(source.includes(diamondLatticeSource), 'weaving uses the corrected diamond lattice');
 assert.doesNotMatch(source, /clothingLoomInjected|syncLoomActionButton|targetedLoom/, 'weaving module no longer owns a parallel DOM/polling interaction path');
 const gameSource = fs.readFileSync('docs/game.js', 'utf8');
 assert.match(gameSource, /if \(o\.key === 'loom'\) return makeLoomInteractable\(\)/, 'player-placed house loom is a normal interior furniture interactable');

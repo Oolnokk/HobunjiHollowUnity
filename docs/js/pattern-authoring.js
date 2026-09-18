@@ -65,7 +65,7 @@
     brick: { label: 'Brick', paired: false, basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: w / 2, y: h } }), polygon: null },
     diamond: {
       label: 'Diamond', paired: false,
-      basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: 0, y: h } }),
+      basis: (w, h) => ({ u: { x: w / 2, y: h / 2 }, v: { x: w / 2, y: -h / 2 } }),
       polygon: (w, h) => [{ x: w / 2, y: 0 }, { x: w, y: h / 2 }, { x: w / 2, y: h }, { x: 0, y: h / 2 }],
     },
     triangle: {
@@ -159,13 +159,14 @@
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
   // Moves a freshly authored motif's pixel data out to MotifStore (see
-  // docs/js/motif-store.js) so the caller's onSave gets a small
-  // customMotifId reference instead of a full embedded copy — used only
-  // for a per-item "Custom" pattern; a pattern saved unmodified from the
-  // library is already persisted as just a patternLibraryId reference by
-  // the caller, so it never reaches this. Falls back to returning `data`
-  // unchanged (today's fully-embedded shape) if the store is unavailable
-  // or the write fails — a motif is never lost over this optimization.
+  // docs/js/motif-store.js) so callers that opt into compact local storage
+  // receive a small customMotifId reference instead of a full embedded copy.
+  // A caller can pass offloadCustomMotif:false when the resulting object must
+  // be self-contained/portable (the loom does this for crafted garments).
+  // A pattern saved unmodified from the library also skips this path because
+  // its caller can retain the library provenance directly. Falls back to
+  // returning `data` unchanged if the store is unavailable or the write
+  // fails — a motif is never lost over this optimization.
   async function offloadMotif(data) {
     if (!data?.motifDataUrl || typeof window.MotifStore?.saveMotif !== 'function') return data;
     const customMotifId = await window.MotifStore.saveMotif(data.motifDataUrl).catch(() => null);
@@ -857,7 +858,7 @@
       const data = currentPatternData();
       if (!data.motifDataUrl) { previewStatus.textContent = 'Draw a motif before saving.'; return; }
       if (typeof options.onSave !== 'function') { close(); return; }
-      const outgoing = loadedLibraryId ? data : await offloadMotif(data);
+      const outgoing = loadedLibraryId || options.offloadCustomMotif === false ? data : await offloadMotif(data);
       const result = await options.onSave(outgoing, loadedLibraryId);
       if (result !== false) close();
     });
