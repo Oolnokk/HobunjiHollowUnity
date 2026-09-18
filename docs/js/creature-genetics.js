@@ -679,10 +679,10 @@
           ...predatorBaseline,
           ...existing,
           label: 'Puktuk',
-          hostile: true,
+          hostile: false,
           defaultSizeClass: 'medium',
-          modelWidth: Number(existing.modelWidth) || Number(garWolf?.modelWidth) || Number(predatorBaseline.modelWidth) || 1.9,
-          spriteAspect: Number(existing.spriteAspect) || Number(garWolf?.spriteAspect) || Number(predatorBaseline.spriteAspect) || (600 / 1375),
+          modelWidth: 2.1,
+          spriteAspect: 0.43636,
           lootPool: 'creature_puktuk',
           sprites: {
             idle: 'assets/creaturesprites/puktuk_idle.png',
