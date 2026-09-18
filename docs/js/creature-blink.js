@@ -14,9 +14,11 @@
 // wins over the legacy Grehlr pivot shim in creature-head-cache.js without moving
 // the large rigger output into unrelated renderer/genetics code. Same-origin and
 // parser-time loading keeps the override synchronous before game.js can build an
-// animal avatar.
+// animal avatar. The preview lookup adapter then makes older explicit
+// headRigForKind(kind) callers honor the same browser-local painter override.
 if (typeof document !== 'undefined' && document.readyState === 'loading') {
-  document.write('<script src="js/animal-head-rig-authored.js?v=20260916rig1"><\/script>');
+  document.write('<script src="js/animal-head-rig-authored.js?v=20260918uploads2"><\/script>');
+  document.write('<script src="js/animal-head-rig-preview-lookup.js?v=20260917preview1"><\/script>');
 }
 
 (() => {

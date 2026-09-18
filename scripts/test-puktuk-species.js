@@ -20,6 +20,8 @@ assert.match(rendererSource, /spec\.fullBaseRecolor === true/, 'Shared composito
 assert.match(geneticsSource, /puktuk:\s*'gar-wolf'/, 'Puktuk reuses Gar-wolf size calibration without a render alias');
 assert.match(geneticsSource, /PUKTUK_WESTERN_ZONE_ID = 'map_western_slope'/, 'Puktuk targets the Western Incline/Slope zone');
 assert.match(geneticsSource, /puktuk_idle\.png[\s\S]*puktuk_run1\.png[\s\S]*puktuk_run2\.png/, 'Puktuk base animation sprites are registered');
+assert.match(geneticsSource, /label: 'Puktuk',[\s\S]*?hostile: false,[\s\S]*?modelWidth: 2\.1,[\s\S]*?spriteAspect: 0\.43636/, 'Puktuk runtime registration is explicitly non-hostile with authored dimensions');
+assert.match(wildlifeSource, /label: 'Puktuk',[\s\S]*?hostile: false,[\s\S]*?modelWidth: 2\.1,[\s\S]*?spriteAspect: 0\.43636/, 'Wildlife fallback preserves the same non-hostile Puktuk metadata');
 assert.match(geneticsSource, /itemKey: 'puktukWool'[\s\S]*verb: 'Shear'/, 'Puktuk livestock production uses the existing wool item');
 assert.deepEqual(loot.pools?.creature_puktuk?.entries?.map(entry => entry.itemKey), ['puktukMeat'], 'Puktuk has its own meat drop pool');
 assert.match(cookingSource, /"puktukWool"\s*:\s*\{[\s\S]*?"name"\s*:\s*"Puktuk Wool"[\s\S]*?"Heavy"/, 'Puktuk Wool remains tagged Heavy in authored cooking data');
@@ -120,8 +122,10 @@ assert.equal(windowStub.WildlifeSpawn.init(wildlifeDeps), 'ok');
 assert.equal(receivedWildlifeDeps, wildlifeDeps);
 assert.equal(creatureDb.puktuk.label, 'Puktuk');
 assert.equal(creatureDb.puktuk.defaultSizeClass, 'medium');
-assert.equal(creatureDb.puktuk.hostile, true);
+assert.equal(creatureDb.puktuk.hostile, false);
 assert.equal(creatureDb.puktuk.lootPool, 'creature_puktuk');
+assert.equal(creatureDb.puktuk.modelWidth, 2.1, 'authored Puktuk model width is used instead of Gar-wolf fallback');
+assert.equal(creatureDb.puktuk.spriteAspect, 0.43636, 'authored Puktuk sprite aspect is used instead of Gar-wolf fallback');
 assert.deepEqual(JSON.parse(JSON.stringify(wildlifeDeps.EXTERIOR_ZONES.map_western_slope.herbivoreSpecies)), ['uumkaoii-wild'], 'Puktuk registration does not erase unrelated Western Slope herbivore ecology');
 assert.deepEqual(JSON.parse(JSON.stringify(wildlifeDeps.EXTERIOR_ZONES.map_western_slope.packSpecies)), ['gar-wolf', 'puktuk'], 'Puktuk is added to general predator ecology without erasing existing pack species');
 assert.deepEqual(JSON.parse(JSON.stringify(wildlifeDeps.EXTERIOR_ZONES.map_western_slope.denSpecies)), ['future-western-den-species', 'puktuk'], 'Puktuk is appended to the explicit den pool without erasing future authored den species');
@@ -147,11 +151,11 @@ const directWildlifeDeps = {
   },
 };
 directWildlifeWindow.WildlifeSpawn.init(directWildlifeDeps);
-assert.equal(directCreatureDb.puktuk?.hostile, true, 'direct WildlifeSpawn.init creates the predator Puktuk before DOMContentLoaded');
+assert.equal(directCreatureDb.puktuk?.hostile, false, 'direct WildlifeSpawn.init creates the neutral predator Puktuk before DOMContentLoaded');
 assert.equal(directCreatureDb.puktuk?.defaultSizeClass, 'medium');
 assert.deepEqual(JSON.parse(JSON.stringify(directWildlifeDeps.EXTERIOR_ZONES.map_western_slope.herbivoreSpecies)), ['uumkaoii-wild']);
 assert.deepEqual(JSON.parse(JSON.stringify(directWildlifeDeps.EXTERIOR_ZONES.map_western_slope.packSpecies)), ['gar-wolf', 'puktuk']);
 assert.deepEqual(JSON.parse(JSON.stringify(directWildlifeDeps.EXTERIOR_ZONES.map_western_slope.denSpecies)), ['future-western-den-species', 'puktuk']);
 assert.deepEqual(JSON.parse(JSON.stringify(directWildlifeDeps.DEN_MOTHER_DEFS.puktuk)), { creatureKey: 'puktuk', nestItemKey: null });
 
-console.log(`PASS Puktuk predator/den integration (foxtail ${foxtailCount}/5000)`);
+console.log(`PASS Puktuk neutral-predator/den integration (foxtail ${foxtailCount}/5000)`);
