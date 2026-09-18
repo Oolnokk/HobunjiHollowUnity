@@ -60,6 +60,16 @@
       deps.triggerWeaponSwingVisual = wrappedSwing;
     }
 
+    const ranged = deps.triggerRangedWeaponVisual;
+    if (typeof ranged === 'function' && !ranged.__hobunjiGripModeWrapped) {
+      const wrappedRanged = function handGripModeRanged(durationS, opts = {}) {
+        if (Object.prototype.hasOwnProperty.call(opts || {}, 'gripMode')) beginTemporaryMode(opts.gripMode, durationS);
+        return ranged.call(this, durationS, opts);
+      };
+      wrappedRanged.__hobunjiGripModeWrapped = true;
+      deps.triggerRangedWeaponVisual = wrappedRanged;
+    }
+
     const hold = deps.triggerWeaponHoldVisual;
     if (typeof hold === 'function' && !hold.__hobunjiGripModeWrapped) {
       const wrappedHold = function handGripModeHold(durationS, opts = {}) {
