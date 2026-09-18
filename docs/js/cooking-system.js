@@ -15,6 +15,7 @@
   let qualityBuckets = {}; // Used to persist actual 1–5-star quantities without changing the game's stack inventory shape.
   let cookedDefinitions = {}; // Used to restore procedurally named food item definitions on reload.
   let activeFoodEffects = []; // Used as an independent timed effect source beside alchemy.
+  let unlockedRecipeIds = new Set(); // Used to persist opt-in recipe templates such as Banubu's Three-Fish Pie.
   let cookTimer = null; // Used to prevent duplicate cooks during the hearth animation.
   let maxIngredientsLimit = null; // Used by the Foraging Survivalist perk to cap recipes when cooking away from an indoor hearth.
 
@@ -186,7 +187,52 @@
   }
 
   function recipeAllowed(recipe) {
+    if (recipe?.lockedByDefault && !unlockedRecipeIds.has(recipe.id)) return false;
     return !maxIngredientsLimit || recipe.slots.length <= maxIngredientsLimit;
+  }
+
+  function unlockRecipe(recipeId) {
+    const recipe = data().recipes.find(entry => entry?.id === recipeId); // Used to reject typos while authoring unlock actions.
+    if (!recipe) return { ok: false, message: 'Unknown cooking recipe.' };
+    const wasKnown = unlockedRecipeIds.has(recipeId); // Used to make repeated dialogue actions idempotent.
+    unlockedRecipeIds.add(recipeId);
+    if (selectedRecipeId && !recipeAllowed(data().recipes.find(entry => entry.id === selectedRecipeId) || {})) selectedRecipeId = null;
+    if (isOpen()) render();
+    deps.saveMemberWorldData?.();
+    return { ok: true, unlocked: !wasKnown, recipeId };
+  }
+
+  function isRecipeUnlocked(recipeId) {
+    const recipe = data().recipes.find(entry => entry?.id === recipeId); // Used to distinguish ordinary always-known recipes from locked templates.
+    return !!recipe && (!recipe.lockedByDefault || unlockedRecipeIds.has(recipeId));
+  }
+
+  function listIngredientDefinitions(category = null) {
+    return Object.entries(deps?.ITEM_DEFS || {}).filter(([, definition]) => {
+      const categories = definition?.cookingCategories || []; // Used to filter the full registered ingredient catalog by an optional cooking category.
+      return categories.length && (!category || categories.includes(category));
+    }).map(([key, definition]) => ({ key, definition }));
+  }
+
+  function listCookedInventory() {
+    return Object.entries(cookedDefinitions).filter(([key]) => (deps?.inventory?.[key] || 0) > 0)
+      .map(([key, definition]) => ({ key, count: deps.inventory[key], definition }));
+  }
+
+  function consumeCookedInventoryItem(key, amount = 1) {
+    const requested = Math.max(1, Math.floor(Number(amount) || 1)); // Used to validate the quest/feature caller's requested serving count.
+    if (!cookedDefinitions[key] || (deps?.inventory?.[key] || 0) < requested) return { ok: false, message: 'That cooked food is no longer in your bag.' };
+    const consumed = consumeQualityByPolicy(key, requested, 'lowest'); // Used to preserve higher-quality servings while consuming quest turn-ins.
+    if (!consumed) return { ok: false, message: 'That cooked food stack could not be consumed.' };
+    deps.refreshItemScroll?.();
+    deps.buildInventoryGrid?.();
+    deps.refreshActionBar?.();
+    deps.saveMemberWorldData?.();
+    return { ok: true, key, amount: requested, consumed };
+  }
+
+  function effectLabel(effectKey) {
+    return data().effectLabels?.[effectKey] || String(effectKey || ''); // Used by quests and diagnostics to present canonical cooking-effect names.
   }
 
   function selectedRecipe() {
@@ -368,11 +414,13 @@
       qualityBuckets: JSON.parse(JSON.stringify(qualityBuckets)),
       cookedDefinitions: JSON.parse(JSON.stringify(cookedDefinitions)),
       activeFoodEffects: activeFoodEffects.map(effect => ({ key: effect.key, stacks: effect.stacks, durationS: effect.durationS, remainingS: effect.expiresAt - now })).filter(effect => effect.remainingS > 0),
+      unlockedRecipeIds: [...unlockedRecipeIds],
     };
   }
 
   function restore(saved = {}) {
     qualityBuckets = saved.qualityBuckets && typeof saved.qualityBuckets === 'object' ? JSON.parse(JSON.stringify(saved.qualityBuckets)) : {};
+    unlockedRecipeIds = new Set(Array.isArray(saved.unlockedRecipeIds) ? saved.unlockedRecipeIds : []); // Used to restore opt-in recipe visibility before the next hearth render.
     cookedDefinitions = {};
     Object.entries(saved.cookedDefinitions || {}).forEach(([key, definition]) => registerCookedDefinition(key, definition));
     const now = performance.now() / 1000; // Used to rebuild absolute effect expiry times for this page session.
@@ -457,7 +505,8 @@
     const tracked = Object.values(qualityBuckets).reduce((sum, bucket) => sum + Object.values(bucket).reduce((inner, count) => inner + (Number(count) || 0), 0), 0); // Used for mobile-visible state verification.
     const processingDiagnostics = window.HobunjiFoodProcessing?.diagnosticsText?.() || 'Processing module: unavailable'; // Used to expose vat/source wiring on mobile without developer tools.
     const lastProcessing = window.SkillSystem?.processingDiagnosticsText?.(); // Used to make the most recent processing-quality roll auditable on mobile — see SkillSystem.rollProcessingQuality.
-    output.textContent = `Station: ${isOpen() ? 'hearth open' : 'closed'}\nRecipes: ${data().recipes.length}\nRegistered ingredients: ${Object.keys(deps.ITEM_DEFS).filter(key => deps.ITEM_DEFS[key].cookingCategories).length}\nTracked quality units: ${tracked}\nCooked definitions: ${Object.keys(cookedDefinitions).length}\nActive food effects: ${activeFoodEffects.map(effect => `${effect.key}+${effect.stacks}`).join(', ') || 'none'}\n\n${processingDiagnostics}${lastProcessing ? `\n\n${lastProcessing}` : ''}`;
+    const banubuDiagnostics = window.BanubuQuestline?.diagnosticsText?.(); // Used to expose fish-pie target feasibility/progress on mobile without browser developer tools.
+    output.textContent = `Station: ${isOpen() ? 'hearth open' : 'closed'}\nRecipes: ${data().recipes.length}\nUnlocked special recipes: ${[...unlockedRecipeIds].join(', ') || 'none'}\nRegistered ingredients: ${Object.keys(deps.ITEM_DEFS).filter(key => deps.ITEM_DEFS[key].cookingCategories).length}\nTracked quality units: ${tracked}\nCooked definitions: ${Object.keys(cookedDefinitions).length}\nActive food effects: ${activeFoodEffects.map(effect => `${effect.key}+${effect.stacks}`).join(', ') || 'none'}\n\n${processingDiagnostics}${lastProcessing ? `\n\n${lastProcessing}` : ''}${banubuDiagnostics ? `\n\n${banubuDiagnostics}` : ''}`;
   }
 
   function render() {
@@ -506,5 +555,6 @@
     init, restore, serialize, update, openAtHearth, close, isOpen, eat, recordItemQuality, consumeBestQuality,
     getFoodEffectStacks, getSpeedMultiplier, getStaminaRegenMultiplier, registerIngredientItems, availableQualityEntries,
     consumeQuality, consumeLowestQuality, consumeQualityByPolicy, peekLowestQuality, valueMultiplierForStars,
+    unlockRecipe, isRecipeUnlocked, listIngredientDefinitions, listCookedInventory, consumeCookedInventoryItem, effectLabel,
   };
 })();
