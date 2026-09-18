@@ -337,14 +337,13 @@
         mesh.geometry.computeBoundingBox?.();
         mesh.geometry.computeBoundingSphere?.();
         mesh.userData.hobunjiTownVisualHeightApplied = true;
-        // The screen-space depth-outline pass hides objects tagged isBillboard.
-        // Reuse that existing exclusion for deformed merged floor buckets only:
-        // these are continuous terrain surfaces, so the new hill-foot depth
-        // gradient should not be interpreted as a solid-object silhouette.
+        // Tagged isBillboard for deformed merged floor buckets only: these
+        // are continuous terrain surfaces, so the new hill-foot depth
+        // gradient should not be interpreted as a solid-object silhouette
+        // by anything scanning for billboard-style cutout sprites.
         // Material-ID terrain outlines still render because their layer-3 tag
         // and onBeforeRender ID callback are left untouched.
         mesh.userData.isBillboard = true;
-        mesh.userData.hobunjiExcludeDepthOutline = true;
         changedMeshes++;
         changedVertices += touched;
       }
