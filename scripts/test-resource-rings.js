@@ -76,6 +76,14 @@ recoveringEntity.stamina = 55;
 ResourceSystem.enforceCaps(recoveringEntity);
 assert.equal(recoveringEntity.stamina, 0, 'cap enforcement removes regular Stamina restored by another system while Exhausted');
 
+const clearingEntity = { ...fullEntity, stamina: 88, exhaustion: { active: true, blackStamina: 99 }, afflictions: { ...fullEntity.afflictions } }; // Verifies the handoff from black Stamina recovery back to ordinary Stamina recovery.
+ResourceSystem.tick(clearingEntity, 1);
+assert.equal(clearingEntity.exhaustion.active, false, 'reaching full black Stamina clears Exhausted');
+assert.equal(clearingEntity.exhaustion.blackStamina, 100);
+assert.equal(clearingEntity.stamina, 0, 'regular Stamina is empty when black Stamina finishes recovering');
+ResourceSystem.tick(clearingEntity, 0.25);
+assert.ok(clearingEntity.stamina > 0 && clearingEntity.stamina < clearingEntity.maxStamina, 'ordinary Stamina starts regenerating from zero on the following tick');
+
 for (const id of Object.keys(ResourceSystem.AFFLICTIONS)) {
   assert.ok(id in ResourceRings.AFFLICTION_COLORS, `${id} has a resource-ring color`);
 }
