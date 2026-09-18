@@ -427,9 +427,19 @@
         // basisU/V are in the ink's own reference (frameScale=1) units —
         // frameScale is multiplied in here, by hand, so it changes cell
         // spacing without touching drawImage.
+        // maxI/maxJ above is a generous rectangular superset (needed so a
+        // low frameScale, which packs many more real cells into the same
+        // canvas, doesn't undercount and leave gaps) — most candidates in
+        // that rectangle land nowhere near the actual canvas, so cull them
+        // with one cheap hypot() before paying for save/clip/drawImage
+        // (doubled for a paired shape). Rotation doesn't change a point's
+        // distance from the origin, so this stays valid inside the
+        // ctx.rotate(frameRad) above without needing to un-rotate anything.
+        const frameOriginReach = Math.hypot(width, height) / 2 + Math.hypot(Number(patternDef.frameX) || 0, Number(patternDef.frameY) || 0) + prepDraw.size;
         for (let j = -maxJ; j <= maxJ; j++) {
           for (let i = -maxI; i <= maxI; i++) {
-            stampCell(frameScale * (i * basisU.x + j * basisV.x), frameScale * (i * basisU.y + j * basisV.y));
+            const ox = frameScale * (i * basisU.x + j * basisV.x), oy = frameScale * (i * basisU.y + j * basisV.y);
+            if (Math.hypot(ox, oy) <= frameOriginReach) stampCell(ox, oy);
           }
         }
       }
