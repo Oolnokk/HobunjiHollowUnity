@@ -523,6 +523,14 @@ if (/\/tools\/procedural-animation-editor\/(?:index\.html)?$/.test(location.path
   const impactTabsScript = document.createElement('script');
   impactTabsScript.src = '../../js/procedural-impact-tabs.js?v=20260828d';
   impactTabsScript.defer = true;
+  impactTabsScript.addEventListener('load', () => {
+    if (document.getElementById('proceduralSwimGaitEditorScript')) return;
+    const swimScript = document.createElement('script'); // Loads the shared runtime/editor swim gait only after the editor's leg/dance adapter seam exists.
+    swimScript.id = 'proceduralSwimGaitEditorScript';
+    swimScript.async = false;
+    swimScript.src = '../../js/procedural-swim-gait.js?v=20260917b';
+    document.head.appendChild(swimScript);
+  });
   document.head.appendChild(impactTabsScript);
 }
 
