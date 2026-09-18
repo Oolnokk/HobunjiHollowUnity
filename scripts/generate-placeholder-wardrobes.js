@@ -81,7 +81,27 @@ function existingCandidates(rec) {
   return [...best.values()].sort((a, b) => a.score - b.score || a.area.localeCompare(b.area));
 }
 
-const usedFurniture = new Set(); // Enforces one placeholder NPC per specific furniture instance globally.
+const authoredAssignments = new Map(); // Proper bedroom/storage authoring outranks every generated fallback.
+for (const [area, map] of maps.entries()) {
+  for (const piece of map.furniture || []) {
+    const npcId = String(piece?.npcWardrobeFor || '').trim();
+    if (!npcId || !piece?.id) continue;
+    if (authoredAssignments.has(npcId)) {
+      const prior = authoredAssignments.get(npcId);
+      console.error(`Duplicate authored npcWardrobeFor for ${npcId}: ${prior.area}/${prior.furnitureId} and ${area}/${piece.id}`);
+      process.exitCode = 1;
+      continue;
+    }
+    authoredAssignments.set(npcId, {
+      area,
+      furnitureId: piece.id,
+      itemKey: piece.itemKey || null,
+      reason: 'authored:npcWardrobeFor',
+    });
+  }
+}
+
+const usedFurniture = new Set(); // Enforces one NPC per specific furniture instance globally, including authored storage.
 const assignments = {};
 const unresolved = [];
 
@@ -100,8 +120,14 @@ function claimInArea(npcId, area, reason) {
   return assignments[npcId];
 }
 
-// Pass 1: keep placeholders near the NPC's actual authored life whenever a real interior exists.
+// Pass 1: explicit bedroom/storage authoring wins; only un-authored NPCs need generated fallbacks.
 for (const rec of [...npcs].sort((a, b) => String(a.id).localeCompare(String(b.id)))) {
+  const authored = authoredAssignments.get(rec.id);
+  if (authored) {
+    assignments[rec.id] = authored;
+    usedFurniture.add(`${authored.area}|${authored.furnitureId}`);
+    continue;
+  }
   const candidates = existingCandidates(rec);
   let assigned = null;
   for (const candidate of candidates) {
@@ -144,7 +170,7 @@ if (missing.length) {
 
 const registry = {
   schema: 'hobunji_npc_placeholder_wardrobes.v1',
-  note: 'Temporary generated wardrobe targets. Explicit npcWardrobeFor metadata in an interior always overrides these. Regenerate/remove entries as proper wardrobes are authored.',
+  note: 'Effective NPC wardrobe targets. Authored npcWardrobeFor bedroom/storage bindings are copied directly; only NPCs without authored storage receive generated fallbacks.',
   generatedFrom: {
     npcDatabase: 'config/npcs/hobunji-starter-npc-database.json',
     scheduleOverrides: 'config/npcs/schedule-overrides.json',
