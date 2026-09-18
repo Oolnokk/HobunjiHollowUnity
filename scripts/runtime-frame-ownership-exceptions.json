@@ -99,15 +99,6 @@
     "line": 288
   },
   {
-    "file": "docs/js/arch-button-labels.js",
-    "owner": "ArchButtonLabels",
-    "classification": "timer-event",
-    "function": "watchInputDevice",
-    "reason": "Forever RAF loop (started at line 303) that only checks whether the last-used input device (mouse vs gamepad) changed; that rare change does not need per-frame execution and would be equally well served by input events or a timer.",
-    "migrationStage": "candidate",
-    "line": 297
-  },
-  {
     "file": "docs/js/attack-editor-hand-inverse-configurator.js",
     "owner": "AttackEditorHandInverseConfigurator",
     "classification": "one-shot",
