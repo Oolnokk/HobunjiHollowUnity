@@ -24,17 +24,25 @@
   let BLOCK_WINDUP_S = 0.12, BLOCK_STRIKE_S = 0.12;
   let COUNTER_WINDUP_S = 0.035, COUNTER_STRIKE_S = 0.16, COUNTER_HOLD_S = 1;
 
-  // Counter Shield is intentionally weapon-only: four additive alpha-shaped
-  // layers sit behind the real weapon PNG. The legacy field/icon objects are
-  // left owned by the shared renderer for state compatibility, but forced
-  // invisible every frame so no bubble/emblem leaks into gameplay.
+  // Counter Shield keeps four under-weapon layers. Offensive holds reuse
+  // those plus six initially-transparent over-layers (two per Charged
+  // Breaker milestone); the over-layers can also rise continuously for Flurry.
   const FIELD_COLOR = 0x75d9ff;
   const GLOW_LAYERS = [
-    { scale: 1.025, opacity: 0.72, pulse: 0.05 },
-    { scale: 1.065, opacity: 0.44, pulse: 0.08 },
-    { scale: 1.125, opacity: 0.25, pulse: 0.11 },
-    { scale: 1.205, opacity: 0.12, pulse: 0.15 },
+    { kind: 'under', scale: 1.025, opacity: 0.72, pulse: 0.05 },
+    { kind: 'under', scale: 1.065, opacity: 0.44, pulse: 0.08 },
+    { kind: 'under', scale: 1.125, opacity: 0.25, pulse: 0.11 },
+    { kind: 'under', scale: 1.205, opacity: 0.12, pulse: 0.15 },
+    { kind: 'over', tier: 1, scale: 1.008, opacity: 0.28 },
+    { kind: 'over', tier: 1, scale: 1.018, opacity: 0.20 },
+    { kind: 'over', tier: 2, scale: 1.028, opacity: 0.17 },
+    { kind: 'over', tier: 2, scale: 1.040, opacity: 0.14 },
+    { kind: 'over', tier: 3, scale: 1.052, opacity: 0.12 },
+    { kind: 'over', tier: 3, scale: 1.066, opacity: 0.10 },
   ];
+  const TRAIL_LIFETIME_S = 0.16; // Short weapon-shaped afterimages live only during an active offensive swing.
+  const TRAIL_MIN_ANGULAR_SPEED = 3.4; // rad/s; rejects Charged Breaker's slow windup but catches actual swings.
+  const TRAIL_MIN_LINEAR_SPEED = 1.1; // world units/s; catches fast translational weapon movement as a fallback.
 
   function now() { return performance.now() / 1000; }
 
@@ -88,6 +96,10 @@
 
   const silhouetteByHolder = new Map();
   const offensiveGlowByOwner = new Map(); // Used by held offensive techniques to reuse Counter Shield's weapon-silhouette language without particle emitters.
+  const trailGhosts = []; // Active weapon-shape afterimages; never updated while no offensive glow request is active.
+  const trailSampleBySource = new WeakMap(); // Last sampled world transform per real weapon mesh while an offensive attack is active.
+  let externalWeaponGlowActive = false; // Set by enemy heavy presentation only while a bandit heavy/Counter Shield is actually active.
+  let cleanupVisualsNextTick = false; // Runs one final disposal pass immediately after an effect ends, then returns to the idle O(1) gate.
   const OFFENSIVE_CHARGE_COLOR = 0xffc85a; // Used by bandit Charged Breaker so its shared silhouette glow matches the player's authored charge color.
 
   function clamp01(value) { return Math.max(0, Math.min(1, Number(value) || 0)); }
@@ -102,11 +114,19 @@
       expansion: clamp01(options.expansion ?? strength),
       color: Number.isFinite(Number(options.color)) ? Number(options.color) : 0xffc85a,
       label: options.label || owner,
+      flowStrength: clamp01(options.flowStrength ?? 0),
+      flowSpeed: Math.max(0, Number(options.flowSpeed) || 0),
+      overlayMode: options.overlayMode || 'none',
+      overlayProgress: clamp01(options.overlayProgress ?? 0),
+      overlayLevel: Math.max(0, Math.floor(Number(options.overlayLevel) || 0)),
+      flare: clamp01(options.flare ?? 0),
+      motionTrail: !!options.motionTrail,
     });
   }
 
   function clearOffensiveWeaponGlow(owner) {
     if (owner) offensiveGlowByOwner.delete(owner);
+    cleanupVisualsNextTick = true;
   }
 
   function strongestOffensiveGlow() {
@@ -153,6 +173,9 @@
           map: { value: texture },
           glowColor: { value: new THREE.Color(FIELD_COLOR) },
           glowOpacity: { value: opacity },
+          flowTime: { value: 0 },
+          flowStrength: { value: 0 },
+          flowSpeed: { value: 0 },
         },
         vertexShader: `
           varying vec2 vUv;
@@ -165,11 +188,20 @@
           uniform sampler2D map;
           uniform vec3 glowColor;
           uniform float glowOpacity;
+          uniform float flowTime;
+          uniform float flowStrength;
+          uniform float flowSpeed;
           varying vec2 vUv;
           void main() {
             float a = texture2D(map, vUv).a;
             if (a < 0.01) discard;
-            gl_FragColor = vec4(glowColor, a * glowOpacity);
+            // Weapon art is authored base→tip on local V. The negative time
+            // phase makes bright tongues travel from V=0 toward V=1 instead
+            // of breathing outward around the silhouette.
+            float tongue = pow(0.5 + 0.5 * sin(vUv.y * 15.0 - flowTime * flowSpeed), 3.0);
+            float tipLift = mix(0.78, 1.16, vUv.y);
+            float flow = mix(1.0, (0.62 + tongue * 0.72) * tipLift, flowStrength);
+            gl_FragColor = vec4(glowColor * flow, a * glowOpacity * flow);
           }
         `,
         transparent: true,
@@ -210,11 +242,23 @@
         mesh.userData.counterShieldSilhouetteGlow = true;
         mesh.userData.baseOpacity = spec.opacity;
         mesh.userData.baseScaleFactor = spec.scale;
-        mesh.userData.pulseAmount = spec.pulse;
+        mesh.userData.pulseAmount = spec.pulse || 0;
         mesh.userData.layerIndex = layerIndex;
+        mesh.userData.layerKind = spec.kind;
+        mesh.userData.layerTier = spec.tier || 0;
+        mesh.userData.overlayIndex = spec.kind === 'over' ? Math.max(0, layerIndex - 4) : -1;
         mesh.userData.phase = sourceIndex * 0.47 + layerIndex * 0.91;
-        mesh.renderOrder = Number(source.renderOrder || 0) - 8 - layerIndex;
-        source.parent?.add(mesh);
+        // Parent directly to the REAL rendered weapon mesh. Identity local
+        // transform means the glow inherits the weapon's final render
+        // position/rotation automatically, even if the weapon moves later in
+        // the frame after Combat.update.
+        mesh.position.set(0, 0, 0);
+        mesh.quaternion.identity();
+        mesh.scale.setScalar(1);
+        mesh.renderOrder = spec.kind === 'over'
+          ? Number(source.renderOrder || 0) + 4 + layerIndex
+          : Number(source.renderOrder || 0) - 8 - layerIndex;
+        source.add(mesh);
         layers.push({ source, mesh });
       });
     });
