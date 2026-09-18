@@ -67,6 +67,7 @@
   const missingHolderWarnings = new WeakSet(); // Prevents repeated mobile debug-log spam while an avatar/weapon is mounting.
   let cachedDefensiveIcon = '🛡️'; // Last arch-derived defensive-heavy glyph used to texture Counter Shield projections.
   let cachedDefensiveIconTexture = null; // Shared canvas texture regenerated only when the arch glyph changes.
+  let lastExternalWeaponGlowActive = null; // Edge-triggered bridge: avoids calling the weapon-glow renderer every idle frame.
 
   function makeSoftParticleTexture() {
     const canvas = document.createElement('canvas'); // Supplies one blurred alpha map shared by every additive particle/glow sprite.
@@ -502,7 +503,10 @@
       syncActor(c, { offensive, defensive, afflictionBonuses }, timeS);
     }
 
-    window.Combat.weaponChargeGlow?.setExternalActive?.(anyWeaponGlowActive);
+    if (anyWeaponGlowActive !== lastExternalWeaponGlowActive) {
+      lastExternalWeaponGlowActive = anyWeaponGlowActive;
+      window.Combat.weaponChargeGlow?.setExternalActive?.(anyWeaponGlowActive);
+    }
 
     for (const [actor, visual] of actorVisuals) {
       if (liveActors.has(actor)) continue;
