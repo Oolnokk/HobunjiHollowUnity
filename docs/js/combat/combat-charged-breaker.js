@@ -44,6 +44,14 @@
   function clamp01(value) { return Math.max(0, Math.min(1, Number(value) || 0)); }
   function lerp(a, b, t) { return a + (b - a) * t; }
 
+  function holdSecondsForPoseCharge(poseCharge) {
+    const charge = clamp01(poseCharge);
+    const slowdown = Math.max(0, Number(WINDUP_SLOWDOWN) || 0);
+    if (slowdown <= 1e-6) return charge * MAX_CHARGE_S;
+    const raw = (Math.exp(charge * Math.log1p(slowdown)) - 1) / slowdown;
+    return clamp01(raw) * MAX_CHARGE_S;
+  }
+
   function poseChargeFromRuntime(heldSeconds = 0) {
     const live = window.Combat.deps?.getWeaponSwingWindupPoseProgress?.();
     if (Number.isFinite(Number(live))) return clamp01(live);
@@ -274,6 +282,7 @@
     // Bandit code historically reads WINDUP_S from this table. It now means
     // the real time required to reach the full Windup pose.
     WINDUP_S: MAX_CHARGE_S,
+    holdSecondsForPoseCharge,
   };
 
   window.Combat.chargedBreakerDebug = {
@@ -342,6 +351,7 @@
       LUNGE_HOP_UNITS,
       POWER,
       WINDUP_S: MAX_CHARGE_S,
+      holdSecondsForPoseCharge,
     });
   };
 })();
