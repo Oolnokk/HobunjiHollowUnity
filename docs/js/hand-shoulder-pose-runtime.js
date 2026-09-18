@@ -44,24 +44,27 @@
     const sf = Math.max(wf, clamp01(timing.strikeFrac ?? timing.sf ?? 0.55));
     const hf = Math.max(sf, clamp01(timing.holdFrac ?? timing.hf ?? 0.68));
     const poses = normalizePoseSet(poseSet);
+    const poseScale = clamp01(timing.poseScale ?? 1); // Used after a partial held release to scale authored shoulder endpoints from Neutral by the same fraction as the weapon.
+    const scaledWindup = lerp(poses.neutral, scaledWindup, poseScale); // Used as the effective Windup shoulder state for the current release amplitude.
+    const scaledStrike = lerp(poses.neutral, scaledStrike, poseScale); // Used as the effective Strike shoulder state for the current release amplitude.
 
     if (sequence === 'load') {
-      if (t <= wf) return lerp(poses.neutral, poses.windup, t / Math.max(1e-6, wf));
-      return lerp(poses.windup, poses.neutral, (t - wf) / Math.max(1e-6, 1 - wf));
+      if (t <= wf) return lerp(poses.neutral, scaledWindup, t / Math.max(1e-6, wf));
+      return lerp(scaledWindup, poses.neutral, (t - wf) / Math.max(1e-6, 1 - wf));
     }
     if (sequence === 'fire') {
-      if (t <= sf) return lerp(poses.neutral, poses.strike, t / Math.max(1e-6, sf));
-      if (t <= hf) return { ...poses.strike };
-      return lerp(poses.strike, poses.neutral, (t - hf) / Math.max(1e-6, 1 - hf));
+      if (t <= sf) return lerp(poses.neutral, scaledStrike, t / Math.max(1e-6, sf));
+      if (t <= hf) return { ...scaledStrike };
+      return lerp(scaledStrike, poses.neutral, (t - hf) / Math.max(1e-6, 1 - hf));
     }
     if (t <= wf) {
       const rawWindupT = t / Math.max(1e-6, wf);
       const poseT = global.Combat?.windupPoseProgress?.(rawWindupT, timing.windupSlowdown) ?? rawWindupT;
-      return lerp(poses.neutral, poses.windup, poseT);
+      return lerp(poses.neutral, scaledWindup, poseT);
     }
-    if (t <= sf) return lerp(poses.windup, poses.strike, (t - wf) / Math.max(1e-6, sf - wf));
-    if (t <= hf) return { ...poses.strike };
-    return lerp(poses.strike, poses.neutral, (t - hf) / Math.max(1e-6, 1 - hf));
+    if (t <= sf) return lerp(scaledWindup, scaledStrike, (t - wf) / Math.max(1e-6, sf - wf));
+    if (t <= hf) return { ...scaledStrike };
+    return lerp(scaledStrike, poses.neutral, (t - hf) / Math.max(1e-6, 1 - hf));
   }
 
   function secondaryGripActive(toolKey) {
@@ -158,6 +161,7 @@
         strikeFrac: capturedMelee.opts.strikeFrac ?? 0.55,
         holdFrac: capturedMelee.opts.holdFrac ?? 0.68,
         windupSlowdown: capturedMelee.opts.windupSlowdown ?? 0,
+        poseScale: snapshot.combatPoseScale ?? 1,
       };
       const sequence = capturedMelee.opts.sequence || 'attack';
       return applyLeftIdleRule(side, toolKey, weightsAt(snapshot.combatProgress, timing, rawPose, sequence));
