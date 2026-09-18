@@ -87,15 +87,24 @@
     return '';
   }
 
+  function visibleRingColor(value) {
+    const numeric = typeof value === 'number'
+      ? value
+      : Number.parseInt(String(value || '').trim().replace(/^#/, ''), 16); // Used as the Three.js-compatible source color passed through the same neon transform as ring fills.
+    if (!Number.isFinite(numeric)) return '';
+    const neonize = window.ResourceRings?.neonizeColor; // Used to match the color players actually see after makeGlowArcMesh transforms the source palette.
+    return toCssHexColor(typeof neonize === 'function' ? neonize(numeric) : numeric);
+  }
+
   function configuredResourceColor(resource) {
-    const key = String(resource || '').toLowerCase(); // Used to fall back to the exact base ring color when an affliction lacks a dedicated palette entry.
-    return toCssHexColor(window.HOBUNJI_CONFIG?.resourceRings?.colors?.[key]);
+    const key = String(resource || '').toLowerCase(); // Used to fall back to the exact visible base ring color when an affliction lacks a dedicated palette entry.
+    return visibleRingColor(window.HOBUNJI_CONFIG?.resourceRings?.colors?.[key]);
   }
 
   function exactAfflictionColor(id, definition) {
-    const runtimeColor = window.ResourceRings?.AFFLICTION_COLORS?.[id]; // Used first so runtime-added/overridden afflictions match the color actually painted on the resource ring.
+    const runtimeColor = window.ResourceRings?.AFFLICTION_COLORS?.[id]; // Used first so runtime-added/overridden afflictions match the source palette the ring actually consumes.
     const configuredColor = window.HOBUNJI_CONFIG?.resourceRings?.afflictionColors?.[id]; // Used during early loading if ResourceRings is not available yet.
-    return toCssHexColor(runtimeColor ?? configuredColor) || configuredResourceColor(definition?.resource);
+    return visibleRingColor(runtimeColor ?? configuredColor) || configuredResourceColor(definition?.resource);
   }
 
   function revealTankanScript() {
@@ -193,9 +202,9 @@
     const root = document.createElement('div');
     root.id = 'hobunjiLoadScreen';
     const resourceColors = window.HOBUNJI_CONFIG?.resourceRings?.colors || {}; // Used to keep ordinary resource-name highlighting synchronized with the actual ground-ring palette.
-    root.style.setProperty('--hls-resource-health', toCssHexColor(resourceColors.health) || '#55d76f');
-    root.style.setProperty('--hls-resource-stamina', toCssHexColor(resourceColors.stamina) || '#67b7ff');
-    root.style.setProperty('--hls-resource-footing', toCssHexColor(resourceColors.footing) || '#d9a441');
+    root.style.setProperty('--hls-resource-health', visibleRingColor(resourceColors.health) || '#55d76f');
+    root.style.setProperty('--hls-resource-stamina', visibleRingColor(resourceColors.stamina) || '#67b7ff');
+    root.style.setProperty('--hls-resource-footing', visibleRingColor(resourceColors.footing) || '#d9a441');
     root.innerHTML = `
 <img id="hlsImage" alt="" />
 <div id="hlsScriptViewport"><div id="hlsScriptFloat"><div id="hlsScriptWords"></div></div></div>
