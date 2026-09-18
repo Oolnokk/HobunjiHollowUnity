@@ -158,6 +158,8 @@ assert(!Object.hasOwn(oldCurl, 'weightFalloff'));
 
 assert.match(profilesSource, /\['grehlr', 'voorg-ass', 'uumkaoii', 'gar-wolf', 'dabinggi-hound', 'puktuk'\]/,
   'only the approved six species receive shoulder-spline support');
+assert.match(profilesSource, /version: 3, species: SPECIES/,
+  'profile registry version bump prevents cached pre-Puktuk allowlist from being accepted');
 assert.match(profilesSource, /beforePoints:\s*GREHLR_BEFORE/);
 assert.match(profilesSource, /afterPoints:\s*GREHLR_AFTER/);
 assert.match(profilesSource, /bodyOnlyRig\(\)/, 'Voorg-Ass/Uumkao’ii can carry a body spline before head paint exists');
@@ -167,7 +169,7 @@ for (const id of ['shoulderPaintSource','shoulderEditBefore','shoulderEditAfter'
 }
 assert(shellSource.includes('BEFORE / Bind') && shellSource.includes('AFTER / Pose'));
 assert(shellSource.includes('animal-shoulder-spline.js?v=20260917spline10'));
-assert(shellSource.includes('animal-head-rig-authored.js?v=20260917uploads1'),
+assert(shellSource.includes('animal-head-rig-authored.js?v=20260918uploads2'),
   'rigger loads the same committed uploaded rig overrides as gameplay');
 assert(shellSource.includes('author-part7.js'));
 assert(shellSource.includes('author-part8.js'), 'rigger loads additive broad-pose authoring after precise/separator authoring');
