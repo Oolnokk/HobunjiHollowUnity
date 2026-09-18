@@ -625,8 +625,9 @@
   // WebGLRenderer.render() call. Keep its replacement cadence/cost visible in
   // the same copyable mobile report as the scheduler that now owns it.
   function _pixelProbeRenderScene(renderer, scene, camera) {
-    const sleepRenderScope = window.AnimalSleepPresentation?.beginExternalRenderScope?.('pixel-probe') === true; // Probe rerenders the live world outside gameLoop; opt in explicitly instead of relying on a global renderer hook.
+    let sleepRenderScope = false;
     try {
+      sleepRenderScope = window.AnimalSleepPresentation?.beginExternalRenderScope?.('pixel-probe') === true; // Probe rerenders the live world outside gameLoop; opt in explicitly instead of relying on a global renderer hook.
       return renderer.render(scene, camera);
     } finally {
       if (sleepRenderScope) window.AnimalSleepPresentation?.endExternalRenderScope?.();
