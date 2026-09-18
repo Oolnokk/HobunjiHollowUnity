@@ -10,7 +10,8 @@ const root = path.resolve(__dirname, '..');
 const read = relative => fs.readFileSync(path.join(root, relative), 'utf8');
 const source = read('docs/js/npc-furniture-wardrobe-bridge-v4.js');
 const loader = read('docs/js/combat/combat-config-loader.js');
-const innMap = JSON.parse(read('docs/config/maps/map_i_inn.json'));
+const hreeshRoom = JSON.parse(read('docs/config/maps/map_i_inn_F2_hreesh.json'));
+const templeMap = JSON.parse(read('docs/config/maps/map_i_temple.json'));
 const rawNpcDatabase = JSON.parse(read('docs/config/npcs/hobunji-starter-npc-database.json'));
 const scheduleOverrides = JSON.parse(read('docs/config/npcs/schedule-overrides.json'));
 const registry = JSON.parse(read('docs/config/npcs/placeholder-wardrobes.json'));
@@ -69,24 +70,29 @@ assert(hreesh, 'runtime-effective NPC database contains Hreesh');
 assert.equal(hreesh.homeId, 'inn', 'Hreesh is an inn resident in the real NPC database');
 assert.equal(runtimeNpcDatabase.npcs.some(rec => rec.id === 'hammerhead_tuhupnuk'), false, 'runtime-effective NPC database excludes schedule-override removals');
 
-const placeholders = api.placeholderWardrobeBindings(innMap, 'map_i_inn', runtimeNpcDatabase, registry);
-const hreeshPlaceholder = placeholders.find(binding => binding.npcId === 'hreesh');
-assert(hreeshPlaceholder, 'Hreesh resolves his explicit temporary registry entry in the real inn map');
-assert.equal(hreeshPlaceholder.source, 'placeholder-registry', 'Hreesh fallback is explicitly marked temporary registry data');
-assert.equal(hreeshPlaceholder.id, 'fmss04iltqngq', 'Hreesh uses the selected long-table placeholder');
-assert(innMap.furniture.some(piece => piece.id === hreeshPlaceholder.id), 'Hreesh placeholder points to an existing placed inn furniture instance');
+const hreeshPlaceholders = api.placeholderWardrobeBindings(hreeshRoom, 'map_i_inn_F2_hreesh', runtimeNpcDatabase, registry);
+assert.equal(hreeshPlaceholders.some(binding => binding.npcId === 'hreesh'), false, 'authored bedroom wardrobe suppresses Hreesh registry fallback in the same room');
+const hreeshBindings = api.wardrobeBindings(hreeshRoom, 'map_i_inn_F2_hreesh', runtimeNpcDatabase, registry).filter(binding => binding.npcId === 'hreesh');
+assert.equal(hreeshBindings.length, 1, 'Hreesh resolves exactly one wardrobe target in his bedroom');
+assert.equal(hreeshBindings[0].source, 'authored', 'Hreesh bedroom wardrobe comes from npcWardrobeFor metadata');
+assert.equal(hreeshBindings[0].id, 'f_map_i_inn_F2_hreesh_wardrobe', 'Hreesh targets the wardrobe beside his bed');
 
-const authoredOverrideMap = JSON.parse(JSON.stringify(innMap));
-const overridePiece = authoredOverrideMap.furniture.find(piece => piece.id && piece.id !== hreeshPlaceholder.id) || authoredOverrideMap.furniture[0];
-overridePiece.npcWardrobeFor = 'hreesh';
-const combined = api.wardrobeBindings(authoredOverrideMap, 'map_i_inn', runtimeNpcDatabase, registry);
-const hreeshBindings = combined.filter(binding => binding.npcId === 'hreesh');
-assert.equal(hreeshBindings.length, 1, 'authored npcWardrobeFor replaces rather than duplicates Hreesh placeholder in the authored interior');
-assert.equal(hreeshBindings[0].source, 'authored', 'explicit authored wardrobe always wins over placeholder registry logic');
+const templeFallbacks = api.placeholderWardrobeBindings(templeMap, 'map_i_temple', runtimeNpcDatabase, registry);
+const birdBonePlaceholder = templeFallbacks.find(binding => binding.npcId === 'bird_bone');
+assert(birdBonePlaceholder, 'NPCs without authored home storage still resolve a generated registry fallback');
+assert.equal(birdBonePlaceholder.source, 'placeholder-registry', 'un-authored fallback remains explicitly marked registry data');
+
+const authoredOverrideMap = JSON.parse(JSON.stringify(templeMap));
+const overridePiece = authoredOverrideMap.furniture.find(piece => piece.id && piece.id !== birdBonePlaceholder.id) || authoredOverrideMap.furniture[0];
+overridePiece.npcWardrobeFor = 'bird_bone';
+const combined = api.wardrobeBindings(authoredOverrideMap, 'map_i_temple', runtimeNpcDatabase, registry);
+const birdBoneBindings = combined.filter(binding => binding.npcId === 'bird_bone');
+assert.equal(birdBoneBindings.length, 1, 'authored npcWardrobeFor replaces rather than duplicates a generated fallback');
+assert.equal(birdBoneBindings[0].source, 'authored', 'explicit authored wardrobe always wins over placeholder registry logic');
 
 const registryWithRemovedNpc = JSON.parse(JSON.stringify(registry));
-registryWithRemovedNpc.assignments.hammerhead_tuhupnuk = { area: 'map_i_inn', furnitureId: 'fmqj09loev97n', itemKey: 'stoolFurniture', reason: 'test' };
-const filtered = api.placeholderWardrobeBindings(innMap, 'map_i_inn', runtimeNpcDatabase, registryWithRemovedNpc);
+registryWithRemovedNpc.assignments.hammerhead_tuhupnuk = { area: 'map_i_temple', furnitureId: 'fmqfjv69rtvht', itemKey: 'candleTableFurniture', reason: 'test' };
+const filtered = api.placeholderWardrobeBindings(templeMap, 'map_i_temple', runtimeNpcDatabase, registryWithRemovedNpc);
 assert.equal(filtered.some(binding => binding.npcId === 'hammerhead_tuhupnuk'), false, 'registry cannot resurrect a runtime-removed NPC');
 
 popupStub.syncInteractionPrompts({
@@ -98,4 +104,4 @@ popupStub.syncInteractionPrompts({
 assert.equal(seenPopupButtons.some(entry => entry.action === 'npc_open_wardrobe'), false, 'old NPC wardrobe prompt is removed before WorldPopupText receives it');
 assert.equal(seenPopupButtons.some(entry => entry.action === 'npc_offer_gift'), true, 'non-wardrobe NPC prompts are preserved');
 
-console.log(`NPC wardrobe v4 regression passed. Hreesh placeholder: ${hreeshPlaceholder.id} (${hreeshPlaceholder.itemKey}).`);
+console.log('NPC wardrobe v4 regression passed. Authored bedroom target + generated fallback behavior verified.');
