@@ -3091,6 +3091,7 @@
         });
         if (!o) return null;
         if (o.key === 'hearth') return makeCookingInteractable();
+        if (o.key === 'loom') return makeLoomInteractable(); // Player-placed house looms use the same core reticle/action path as beds and hearths.
         if (o.key === 'basicBed' || o.key === 'doubleBed' || o.key === 'bedroll') {
           return {
             interactIcon: '😴',
@@ -3805,6 +3806,25 @@
           onAction(action) {
             if (action !== 'obj_cook' && action !== 'obj_interact') return { ok: false, message: 'Unknown action.' };
             return window.CookingSystem.openAtHearth();
+          },
+        };
+      }
+
+      function makeLoomInteractable() {
+        return {
+          interactIcon: '🧶',
+          interactLabel: 'Use Loom',
+          getButtons() {
+            return [{ icon: '🧶', label: 'Use Loom', action: 'obj_loom', style: 'primary', allowed: true }];
+          },
+          onAction(action) {
+            if (action !== 'obj_loom' && action !== 'obj_interact') return { ok: false, message: 'Unknown action.' };
+            const openLoom = window.ClothingWeavingSystem?.openLoom; // Used by both house and map-authored loom interaction records.
+            if (typeof openLoom !== 'function') return { ok: false, message: 'The loom is unavailable right now.' };
+            const opened = openLoom(); // Synchronous: the panel creates immediately; its sprite preview continues asynchronously inside the module.
+            return opened === false
+              ? { ok: false, message: 'The loom could not be opened.' }
+              : { ok: true, message: 'Opened the loom.' };
           },
         };
       }
@@ -9074,6 +9094,7 @@
       // whose placement should also register a _buildingInteractables entry.
       const BUILDING_FIXTURE_INTERACTABLES = {
         hearthFurniture: () => makeCookingInteractable(),
+        loomFurniture: () => makeLoomInteractable(), // Map-authored looms share the same core interaction object as player-placed house looms.
         alchemyTableFurniture: () => ({
           getButtons() {
             return [{ icon: '⚗️', label: 'Brew Potion', action: 'obj_alchemy', style: 'primary', allowed: true }];
