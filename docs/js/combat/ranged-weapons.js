@@ -358,9 +358,12 @@
     const audio = window.AudioSystem;
     const def = defFor(itemKey);
     if (kind === 'fire' && def?.rangedType === 'thrown') {
-      const swingIndex = Math.floor(Math.random() * 3);
-      const swingCfg = audio?.combatSfxConfig?.()[`weaponSwing${swingIndex + 1}`];
-      lastAudioEvent = `${owner?.id || 'player'}:${itemKey}:throw-swing:2x`;
+      // Thrown release has its own fixed authored cue: sfx_swing_3.mp3 at
+      // exactly 2x pitch. Do not inherit crossbow fire or melee's random
+      // swing-variant choice.
+      const swingIndex = 2; // playWeaponSlashSfx uses zero-based comboStep; 2 => weaponSwing3.
+      const swingCfg = audio?.combatSfxConfig?.().weaponSwing3;
+      lastAudioEvent = `${owner?.id || 'player'}:${itemKey}:throw-swing3:2x`;
       if (owner && swingCfg) audio?.playCreatureSfxAt?.(owner, swingCfg, 2);
       else audio?.playWeaponSlashSfx?.(2, swingIndex);
       return;
