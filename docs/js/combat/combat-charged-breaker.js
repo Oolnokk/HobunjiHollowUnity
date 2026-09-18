@@ -26,6 +26,7 @@
   // charge, looking upward retains most of the horizontal lunge that gravity/
   // aim pitch would ordinarily remove.
   let LUNGE_GRAVITY_RESIST_MIN = 0.00, LUNGE_GRAVITY_RESIST_MAX = 0.90;
+  let LUNGE_DIRECT_FLIGHT_MIN = 0.00, LUNGE_DIRECT_FLIGHT_MAX = 0.98; // At full pose charge, almost all travel follows one straight 3D aim vector.
 
   let STRIKE_S = 0.30;
   let POWER = 1.70;
@@ -159,6 +160,11 @@
         LUNGE_GRAVITY_RESIST_MAX,
         poseCharge,
       );
+      const directFlightStrength = lerp(
+        LUNGE_DIRECT_FLIGHT_MIN,
+        LUNGE_DIRECT_FLIGHT_MAX,
+        poseCharge,
+      );
       const timeScale = 1 / (window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1);
       const strikeS = STRIKE_S * timeScale;
 
@@ -167,6 +173,7 @@
         rangePx,
         halfConeRad,
         pitchDistanceResistance,
+        directFlightStrength,
       });
 
       debugState.lastRelease = {
@@ -179,6 +186,7 @@
         knockbackPxS,
         lungePx,
         pitchDistanceResistance,
+        directFlightStrength,
         forced: !!forced,
       };
 
@@ -283,6 +291,8 @@
     LUNGE_TILE_MUL_MAX,
     LUNGE_GRAVITY_RESIST_MIN,
     LUNGE_GRAVITY_RESIST_MAX,
+    LUNGE_DIRECT_FLIGHT_MIN,
+    LUNGE_DIRECT_FLIGHT_MAX,
     STRIKE_S,
     LUNGE_HOP_UNITS,
     POWER,
@@ -340,6 +350,8 @@
     }
     if (cfg.LUNGE_GRAVITY_RESIST_MIN != null) LUNGE_GRAVITY_RESIST_MIN = cfg.LUNGE_GRAVITY_RESIST_MIN;
     if (cfg.LUNGE_GRAVITY_RESIST_MAX != null) LUNGE_GRAVITY_RESIST_MAX = cfg.LUNGE_GRAVITY_RESIST_MAX;
+    if (cfg.LUNGE_DIRECT_FLIGHT_MIN != null) LUNGE_DIRECT_FLIGHT_MIN = cfg.LUNGE_DIRECT_FLIGHT_MIN;
+    if (cfg.LUNGE_DIRECT_FLIGHT_MAX != null) LUNGE_DIRECT_FLIGHT_MAX = cfg.LUNGE_DIRECT_FLIGHT_MAX;
     if (cfg.STRIKE_S != null) STRIKE_S = cfg.STRIKE_S;
     if (cfg.POWER != null) POWER = cfg.POWER;
     if (cfg.HOLD_S != null) HOLD_S = cfg.HOLD_S;
@@ -361,6 +373,8 @@
       LUNGE_TILE_MUL_MAX,
       LUNGE_GRAVITY_RESIST_MIN,
       LUNGE_GRAVITY_RESIST_MAX,
+      LUNGE_DIRECT_FLIGHT_MIN,
+      LUNGE_DIRECT_FLIGHT_MAX,
       STRIKE_S,
       LUNGE_HOP_UNITS,
       POWER,
