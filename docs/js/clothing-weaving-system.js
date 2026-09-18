@@ -79,6 +79,20 @@
     return !!weaving.pattern;
   }
 
+  // Human-readable summary of a weaving's pattern(s) — "Custom" for a plain
+  // single-layer garment (or a legacy pre-per-layer save), "Base: Custom,
+  // Trim: Spiral Motif" once more than one layer actually carries a pattern.
+  // Used both in the loom's own preview stats and baked into a crafted
+  // item's label/description so it's identifiable after crafting instead of
+  // looking indistinguishable from a plain-dyed copy of the same garment.
+  function summarizeWeavingLabel(weaving) {
+    if (!weavingHasAnyPattern(weaving)) return null;
+    if (!weaving.layers) return 'Custom';
+    const entries = Object.entries(weaving.layers).filter(([, entry]) => entry?.pattern);
+    if (entries.length === 1) return entries[0][1].patternLabel || 'Custom';
+    return entries.map(([role, entry]) => `${layerLabel(role)}: ${entry.patternLabel || 'Custom'}`).join(', ');
+  }
+
   function articleLabel(item) {
     const baseId = baseCosmeticId(item);
     const configured = (window.SCRATCHBONES_CONFIG?.game?.account?.shopCatalog || [])
@@ -571,13 +585,7 @@
       return Object.keys(layers).length ? { layers } : null;
     }
     const hasAnyLayerPattern = () => !!weavingFromState();
-    function summarizePatterns() {
-      const weaving = weavingFromState();
-      if (!weaving) return 'None';
-      const entries = Object.entries(weaving.layers);
-      if (state.layers.length <= 1) return entries[0][1].patternLabel;
-      return entries.map(([role, entry]) => `${layerLabel(role)}: ${entry.patternLabel}`).join(', ');
-    }
+    const summarizePatterns = () => summarizeWeavingLabel(weavingFromState()) || 'None';
 
     const overlay = document.createElement('div');
     overlay.className = 'loomcraft-overlay';
@@ -766,13 +774,17 @@
     equipmentDeps?.clampInventoryStack?.(material.itemKey);
     const uid = 'gcloth_loom_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7); // Unique instance id keeps weight/pattern/dyes bound to this literal garment.
     const baseLabel = bp.label || bp.baseLabel || bp.baseCosmeticId;
+    const patternSummary = summarizeWeavingLabel(weaving); // null for plain cloth.
+    const weightUnits = Math.round(standardWeightFor(bp) * material.weightMul * 100) / 100;
     const entry = {
       uid,
       cosmeticId: uniqueCraftCosmeticId(bp.baseCosmeticId, uid),
       baseCosmeticId: bp.baseCosmeticId,
       slot: bp.slot,
-      label: `${dyeA.label}${dyeB ? ' & ' + dyeB.label : ''} ${baseLabel}`,
+      label: `${dyeA.label}${dyeB ? ' & ' + dyeB.label : ''} ${baseLabel}${patternSummary ? ' (Woven)' : ''}`,
       baseLabel,
+      description: `Hand-loomed ${material.label.toLowerCase()} ${baseLabel.toLowerCase()}, dyed with ${dyeA.label}${dyeB ? ' and ' + dyeB.label : ''}.`
+        + (patternSummary ? ` Woven pattern: ${patternSummary}.` : ''), // Otherwise a crafted copy is indistinguishable from a plain-dyed one once picked up.
       colorA: window.DyeSystem.toClothingColor(dyeA),
       colorB: dyeB ? window.DyeSystem.toClothingColor(dyeB) : null,
       colorC: dyeC ? window.DyeSystem.toClothingColor(dyeC) : null,
@@ -780,18 +792,22 @@
       sprite: bp.sprite || window.EquipmentPanel?.clothingSpriteForCosmetic?.(bp.baseCosmeticId) || null,
       sellPrice: 0,
       weaveMaterial: material.id,
-      weightUnits: Math.round(standardWeightFor(bp) * material.weightMul * 100) / 100,
+      weightUnits,
       weaving: hasPattern ? clone(weaving) : null, // { layers: { <role>: { pattern, patternLibraryId, patternLabel } } } — one pattern per layer; see weavingPatternForRole.
       craftedAt: Date.now(),
-    }; // Stored in ordinary gear clothingItems so equip/save/gifting remain one system, not a parallel crafted inventory.
-    if (!Array.isArray(gear.clothingItems)) gear.clothingItems = [];
-    gear.clothingItems.push(entry);
-    equipmentDeps?.saveGearInventory?.();
+    };
+    // Lands in the pack, not straight into permanent gear — the same place
+    // shop-bought clothing starts (see general-store.js's buyGeneralStoreItem)
+    // so a crafted garment can be held/gifted to an NPC or sold, not just worn.
+    // makeClothingGearEntry (equipment-panel.js) carries baseCosmeticId/colorC/
+    // weaving/weaveMaterial/weightUnits/description through once the player
+    // transfers it to gear to actually wear it.
+    equipmentDeps?.getPackClothing?.()?.push?.(entry);
     equipmentDeps?.saveMemberWorldData?.();
     equipmentDeps?.buildInventoryGrid?.();
-    window.EquipmentPanel?.buildEquipmentSlots?.();
+    window.EquipmentPanel?.buildPackClothingSection?.();
     patternedCanvasCache.clear();
-    equipmentDeps?.showToast?.(`Wove ${material.label} ${baseLabel} (${entry.weightUnits.toFixed(1)} weight).`, true);
+    equipmentDeps?.showToast?.(`Wove ${material.label} ${baseLabel} (${weightUnits.toFixed(1)} weight) — added to your pack.`, true);
     openLoom();
     return true;
   }
@@ -850,13 +866,44 @@
     return cosmeticConfigPromises.get(id);
   }
 
+  // The 3D avatar's rear-facing texture (docs/js/portrait-utils.js's
+  // renderProfile with portraitView:'behind') doesn't reuse a layer's front
+  // image at all for some cosmetics — e.g. a hood's face-opening trim is
+  // hidden entirely, and its main shape is swapped for a dedicated
+  // "-back" sprite that isn't referenced anywhere in the cosmetic's own
+  // config/cosmetics/*.json (see window._pngPlaneBehindViewConfig's
+  // layerReplacements). Without this, a pattern only ever showed up on the
+  // front view: the behind-view sprite's URL was never in the map
+  // collectPatternImageUrls built, so _imageForTint's lookup silently found
+  // nothing and skipped it. window._getBehindLayerUrl is the same
+  // (window-scoped, non-strict top-level script) function the real renderer
+  // itself calls to pick that substitute — reused here rather than
+  // duplicating its rule table, which would drift out of sync with it.
+  function behindViewUrlsFor(url, baseCosmeticId) {
+    const getBehindUrl = window._getBehindLayerUrl;
+    if (typeof getBehindUrl !== 'function') return [];
+    const group = { id: baseCosmeticId, originalId: null, hairSlot: null };
+    const found = new Set();
+    for (const gender of ['male', 'female']) {
+      try {
+        const behindUrl = getBehindUrl({ url }, group, gender);
+        if (behindUrl && behindUrl !== url) found.add(normalizeAssetPath(behindUrl));
+      } catch (_) { /* Best-effort — a mismatched layer/group shape just means no substitute found. */ }
+    }
+    return [...found];
+  }
+
   async function buildPortraitPatternMap(descriptors) {
     const map = new Map();
     for (const descriptor of descriptors || []) {
       if (!descriptor?.baseCosmeticId || !weavingHasAnyPattern(descriptor.weaving)) continue;
       try {
         const cfg = await cosmeticConfig(descriptor.baseCosmeticId);
-        for (const [url, role] of collectPatternImageUrls(cfg)) map.set(url, { ...descriptor, role });
+        for (const [url, role] of collectPatternImageUrls(cfg)) {
+          const entry = { ...descriptor, role };
+          map.set(url, entry);
+          for (const behindUrl of behindViewUrlsFor(url, descriptor.baseCosmeticId)) map.set(behindUrl, entry);
+        }
       } catch (error) {
         lastError = String(error?.message || error);
       }
@@ -1384,7 +1431,7 @@
     renderClothingLayers,
     iconSpriteForCosmetic,
     debugSnapshot,
-    __test: Object.freeze({ baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask, applyPatternToTintedImage, labelPatternCells }),
+    __test: Object.freeze({ baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask, applyPatternToTintedImage, labelPatternCells, behindViewUrlsFor, buildPortraitPatternMap, collectPatternImageUrls, cosmeticConfig, summarizeWeavingLabel, weavingPatternForRole, weavingHasAnyPattern }),
   });
   window.__clothingWeavingDebug = debugSnapshot;
 

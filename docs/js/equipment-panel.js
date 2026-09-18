@@ -171,14 +171,24 @@
     const entry = { // Used as the persistent canonical gear record for one clothing article.
       uid: item.uid || 'gcloth_' + Math.random().toString(36).slice(2, 10),
       cosmeticId: item.cosmeticId,
+      baseCosmeticId: item.baseCosmeticId || null,
       slot: item.slot,
       label: item.label,
       baseLabel: clothingArticleLabel(item),
+      description: item.description || null,
       colorA: item.colorA,
       colorB: item.colorB,
+      colorC: item.colorC || null,
       articleDyeIds: Array.isArray(item.articleDyeIds) ? [...item.articleDyeIds] : [],
       sprite: item.sprite || clothingSpriteForCosmetic(item.cosmeticId),
       sellPrice: item.sellPrice || 0,
+      // A loom-crafted article (see ClothingWeavingSystem.craftFromLoom) carries these — preserved here so
+      // transferring it from the pack into permanent gear doesn't silently drop its weight/armor math or its
+      // woven pattern(s).
+      weaveMaterial: item.weaveMaterial || null,
+      weightUnits: Number.isFinite(Number(item.weightUnits)) ? Number(item.weightUnits) : null,
+      weaving: item.weaving || null,
+      craftedAt: item.craftedAt || null,
     };
     ensureArticleDyeIds(entry);
     return entry;
@@ -604,7 +614,7 @@
     set('iiName',  item.label);
     set('iiPrice', item.sellPrice ? item.sellPrice + 'g' : '');
     set('iiTags',  '');
-    set('iiDesc',  'Transfer to gear to wear it (permanent). Can sell while in pack.');
+    set('iiDesc',  [item.description, 'Transfer to gear to wear it (permanent). Can sell while in pack.'].filter(Boolean).join(' '));
     const actEl = document.getElementById('iiActions');
     if (actEl) {
       actEl.innerHTML = '';
@@ -658,7 +668,7 @@
     set('iiTags',  '');
     const gearInventory = deps.getGearInventory();
     const isWorn = gearInventory?.clothing?.[slot]?.uid === item.uid;
-    set('iiDesc',  isWorn ? 'Currently worn. Select another collected piece below to swap.' : 'Collected clothing in gear. Equip it to wear it.');
+    set('iiDesc',  [item.description, isWorn ? 'Currently worn. Select another collected piece below to swap.' : 'Collected clothing in gear. Equip it to wear it.'].filter(Boolean).join(' '));
     const actEl = document.getElementById('iiActions');
     if (actEl) {
       actEl.innerHTML = '';
