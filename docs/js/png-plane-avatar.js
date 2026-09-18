@@ -1350,7 +1350,7 @@
     const state = {
       rig, frontHeadBone: front.headBone, backHeadBone: back.headBone,
       currentDeg: rig.restDeg, targetDeg: rig.restDeg, additiveDeg: 0, appliedDeg: rig.restDeg,
-      currentYawDeg: 0, targetYawDeg: 0,
+      currentYawDeg: 0, targetYawDeg: 0, requestedYawDeg: 0,
     }; // Runtime rotation state shared by base-pose setters, additive animation layers, and the yaw axis.
     group.userData.hobunjiAnimalHeadRig = state;
     avatarRef.headRig = state;
@@ -1394,6 +1394,107 @@
       front.headBone.rotation.y = degrees * RAD;
       back.headBone.rotation.y = degrees * RAD;
     };
+    const headYawPerpState = {}; // Persistent camera-deadzone side/hysteresis state used only by this head rig's yaw solver.
+    const TWO_PI = Math.PI * 2; // Used by wrappedYawDelta so every camera/body comparison follows the shortest world-yaw arc.
+    const wrappedYawDelta = (target, current) => {
+      let delta = target - current;
+      while (delta > Math.PI) delta -= TWO_PI;
+      while (delta < -Math.PI) delta += TWO_PI;
+      return delta;
+    };
+    const updateHeadYawWorldBasis = () => {
+      front.mesh.updateWorldMatrix?.(true, false); // Refreshes the actual rendered face transform before deriving body yaw and mirror parity.
+      const elements = front.mesh.matrixWorld?.elements;
+      const normalX = Number(elements?.[8]); // World X component of the front card's local +Z normal, used to recover visible body yaw.
+      const normalZ = Number(elements?.[10]); // World Z component paired with normalX for the horizontal body-bearing solve.
+      let bodyWorldYaw = NaN;
+      if (Number.isFinite(normalX) && Number.isFinite(normalZ) && Math.hypot(normalX, normalZ) > 1e-8) {
+        bodyWorldYaw = wrappedYawDelta(Math.atan2(normalX, normalZ) - Math.PI / 2, 0); // Removes the front card's authored +90° side-view twist; includes live planeDelta/root transforms.
+      } else if (Number.isFinite(Number(group.rotation?.y))) {
+        bodyWorldYaw = Number(group.rotation.y); // Construction/preview fallback before a usable matrixWorld exists.
+      }
+      const determinant = typeof front.mesh.matrixWorld?.determinant === 'function'
+        ? Number(front.mesh.matrixWorld.determinant())
+        : 1; // Negative determinant means an observation/grip-pivot mirror reverses the visible sign of local head yaw.
+      const visualParity = Number.isFinite(determinant) && determinant < 0 ? -1 : 1;
+      return { bodyWorldYaw, visualParity };
+    };
+    const localYawIsCameraSafe = (localYawDeg, bodyWorldYaw, visualParity, perps, deadRad) => {
+      if (!Number.isFinite(bodyWorldYaw) || !Array.isArray(perps) || !Number.isFinite(deadRad)) return true;
+      const worldYaw = bodyWorldYaw + localYawDeg * RAD * visualParity; // Converts the authored local neck angle into the head's visible world bearing.
+      return perps.every(center => Math.abs(wrappedYawDelta(worldYaw, center)) >= deadRad - 1e-7);
+    };
+    const nearestReachableSafeYaw = (requestedYawDeg, preferredYawDeg, bodyWorldYaw, visualParity, perps, deadRad) => {
+      const requested = clamp(finite(requestedYawDeg, 0), -yawLimitDeg, yawLimitDeg); // Logical look request used as the primary distance score below.
+      const preferred = clamp(finite(preferredYawDeg, requested), -yawLimitDeg, yawLimitDeg); // Deadzone solver's preferred edge, used to break center/tie cases.
+      const candidates = [requested, preferred, state.currentYawDeg, 0, -yawLimitDeg, yawLimitDeg]; // Includes current/rest/anatomical endpoints before adding exact camera boundaries.
+      for (const center of perps || []) {
+        for (const side of [-1, 1]) {
+          const boundaryWorldYaw = center + side * deadRad;
+          const local = wrappedYawDelta(boundaryWorldYaw, bodyWorldYaw) / (RAD * visualParity);
+          if (local >= -yawLimitDeg - 1e-7 && local <= yawLimitDeg + 1e-7) candidates.push(clamp(local, -yawLimitDeg, yawLimitDeg));
+        }
+      }
+      let best = null;
+      for (const candidate of candidates) {
+        const yaw = clamp(finite(candidate, requested), -yawLimitDeg, yawLimitDeg);
+        if (!localYawIsCameraSafe(yaw, bodyWorldYaw, visualParity, perps, deadRad)) continue;
+        const score = Math.abs(yaw - requested) + Math.abs(yaw - preferred) * 1e-4; // Nearest logical look wins; solver edge breaks equal-distance choices.
+        if (!best || score < best.score) best = { yaw, score };
+      }
+      return best ? { yaw: best.yaw, reachable: true } : { yaw: preferred, reachable: false };
+    };
+    const solveCameraSafeHeadYaw = requestedYawDeg => {
+      const requested = clamp(finite(requestedYawDeg, 0), -yawLimitDeg, yawLimitDeg); // Authored anatomy remains the first bound on every caller request.
+      const rotationApi = window.PerpRotation;
+      const { bodyWorldYaw, visualParity } = updateHeadYawWorldBasis();
+      const cameraPerps = rotationApi?.cameraPerpsForObject?.(group, null); // Generic world-transform path covers wildlife, companions, farm animals, nursery animals, and named animal NPCs alike.
+      const deadRad = Number(rotationApi?.CREATURE_PERP_DEAD_RAD);
+      if (!Number.isFinite(bodyWorldYaw)
+          || !Array.isArray(cameraPerps) || !cameraPerps.length
+          || !cameraPerps.every(Number.isFinite)
+          || !Number.isFinite(deadRad)
+          || typeof rotationApi?.perpClamp !== 'function') {
+        headYawPerpState.perpSides = null;
+        headYawPerpState.locked = null;
+        return {
+          requested, target: requested, snapYawDeg: null, constrained: false, reachable: true,
+          bodyWorldYaw, visualParity, cameraPerps: null, deadRad,
+          reason: !Number.isFinite(bodyWorldYaw) ? 'missing-body-world-yaw' : 'missing-camera-deadzone-state',
+        };
+      }
+
+      if (!Array.isArray(headYawPerpState.perpSides) || headYawPerpState.perpSides.length !== cameraPerps.length) {
+        const currentWorldYaw = bodyWorldYaw + finite(state.currentYawDeg, 0) * RAD * visualParity; // Seeds side selection from the head's current visible bearing to avoid a first-update flip.
+        headYawPerpState.perpSides = cameraPerps.map(center => wrappedYawDelta(currentWorldYaw, center) >= 0 ? 1 : -1);
+        headYawPerpState.locked = cameraPerps.map(() => false);
+      }
+
+      const requestedWorldYaw = bodyWorldYaw + requested * RAD * visualParity;
+      const clamped = rotationApi.perpClamp(headYawPerpState, requestedWorldYaw, cameraPerps, deadRad); // Shared body/NPC deadzone hysteresis chooses which camera-safe edge the head target belongs to.
+      const preferredLocalYaw = wrappedYawDelta(Number(clamped?.effectiveTarget), bodyWorldYaw) / (RAD * visualParity);
+      const safe = nearestReachableSafeYaw(requested, preferredLocalYaw, bodyWorldYaw, visualParity, cameraPerps, deadRad); // If the preferred edge exceeds neck anatomy, picks the other reachable safe edge instead of clamping back inside the deadzone.
+      let snapYawDeg = null;
+      if (Number.isFinite(Number(clamped?.snapTo))) {
+        const rawSnapLocal = wrappedYawDelta(Number(clamped.snapTo), bodyWorldYaw) / (RAD * visualParity);
+        if (rawSnapLocal >= -yawLimitDeg - 1e-7 && rawSnapLocal <= yawLimitDeg + 1e-7) {
+          const candidate = clamp(rawSnapLocal, -yawLimitDeg, yawLimitDeg);
+          if (localYawIsCameraSafe(candidate, bodyWorldYaw, visualParity, cameraPerps, deadRad)) snapYawDeg = candidate; // Crossing the forbidden angle is a hard visual side swap; smoothing resumes after the opposite edge.
+        }
+      }
+      return {
+        requested,
+        target: safe.yaw,
+        snapYawDeg,
+        constrained: Math.abs(safe.yaw - requested) > 1e-7,
+        reachable: safe.reachable,
+        bodyWorldYaw,
+        visualParity,
+        cameraPerps,
+        deadRad,
+        reason: safe.reachable ? null : 'no-camera-safe-yaw-within-authored-neck-range',
+      };
+    };
 
     avatarRef.setHeadRotation = degrees => {
       const target = clamp(finite(degrees, rig.restDeg), rig.minDeg, rig.maxDeg); // Immediate clamped head angle used by explicit animation/AI calls.
@@ -1415,13 +1516,45 @@
     };
 
     avatarRef.updateHeadYaw = (degrees, deltaSeconds) => {
-      const target = clamp(finite(degrees, 0), -yawLimitDeg, yawLimitDeg); // Smoothed yaw target, same turn-speed budget as the pitch axis.
+      const solved = solveCameraSafeHeadYaw(degrees); // Camera-safe local target is part of the yaw solve itself, before any authored turn-speed integration.
       const delta = Math.max(0, finite(deltaSeconds, 0));
       const step = rig.turnSpeedDeg * delta;
-      const diff = target - state.currentYawDeg;
-      state.currentYawDeg += clamp(diff, -step, step);
-      state.targetYawDeg = target;
-      applyYawDegrees(state.currentYawDeg);
+      let currentYawDeg = finite(state.currentYawDeg, 0);
+      if (solved.cameraPerps) {
+        currentYawDeg = nearestReachableSafeYaw(
+          currentYawDeg, currentYawDeg, solved.bodyWorldYaw, solved.visualParity, solved.cameraPerps, solved.deadRad,
+        ).yaw; // Camera/body motion cannot leave an already-turned head stranded inside the forbidden angle between look updates.
+      }
+      if (Number.isFinite(solved.snapYawDeg)) {
+        currentYawDeg = solved.snapYawDeg; // Swap directly across the flat-card edge-on interval; never render an interpolated forbidden orientation.
+      } else {
+        const diff = solved.target - currentYawDeg;
+        currentYawDeg += clamp(diff, -step, step); // Existing species-authored turn speed applies everywhere outside the forbidden interval.
+      }
+      if (solved.cameraPerps) {
+        currentYawDeg = nearestReachableSafeYaw(
+          currentYawDeg, currentYawDeg, solved.bodyWorldYaw, solved.visualParity, solved.cameraPerps, solved.deadRad,
+        ).yaw; // Constrains the integrated state itself, rather than correcting a rendered bone afterward.
+      }
+      state.currentYawDeg = clamp(currentYawDeg, -yawLimitDeg, yawLimitDeg);
+      state.requestedYawDeg = solved.requested;
+      state.targetYawDeg = solved.target;
+      state.deadzoneDebug = {
+        active: solved.constrained,
+        reachable: solved.reachable,
+        reason: solved.reason,
+        requestedYawDeg: solved.requested,
+        targetYawDeg: solved.target,
+        renderedYawDeg: state.currentYawDeg,
+        snapYawDeg: solved.snapYawDeg,
+        bodyWorldYaw: solved.bodyWorldYaw,
+        visualParity: solved.visualParity,
+        deadzoneRad: solved.deadRad,
+        cameraPerpsRad: solved.cameraPerps ? solved.cameraPerps.slice() : null,
+        integration: 'target-and-state-before-bone-write',
+      }; // Mobile/debug tooling can inspect logical target, constrained target, mirror parity, and final integrated yaw without a render hook.
+      group.userData.hobunjiAnimalHeadDeadzone = state.deadzoneDebug;
+      applyYawDegrees(state.currentYawDeg); // Bone write happens only after the direct constrained yaw integration is complete.
       return state.currentYawDeg;
     };
 
