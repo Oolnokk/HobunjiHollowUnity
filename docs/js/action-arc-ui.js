@@ -127,9 +127,9 @@
 
   // Utilities wheel — opened by holding 'c' (see desktopHoldKeys/
   // openDesktopHoldArc below), for quick actions that don't belong on the
-  // per-tile action bar: warping back to a placed wilderness campfire or
-  // the farm, quick-selecting a Campfire Kit without scrolling the item
-  // wheel, or orbiting around the stationary player.
+  // per-tile action bar: opening furniture placement, warping back to a
+  // placed wilderness campfire or the farm, quick-selecting a Campfire Kit
+  // without scrolling the item wheel, or orbiting around the stationary player.
   function _openUtilitiesArc() {
     // A placed campfire now persists indefinitely, including outside its
     // own zone (see wilderness-campfire.js's header comment) — serialize()
@@ -138,11 +138,18 @@
     // question back when leaving destroyed it.
     const campfire = window.WildernessCampfire?.serialize?.();
     const kitCount = deps.inventory.campfireKitFurniture || 0;
+    const furniturePlacementAvailable = window.FurniturePlacer?.canOpen?.() === true; // Used to disable the utility entry anywhere normal furniture placement is not permitted.
     _openEntries('utilities', [
       {
         id: 'character-view', icon: '👁️', label: deps.characterViewMode.enabled ? 'Character View: On' : 'Character View: Off',
         active: deps.characterViewMode.enabled,
+        initial: true,
         onSelect: () => deps.setCharacterViewMode(!deps.characterViewMode.enabled),
+      },
+      {
+        id: 'furniture-placement', icon: '🪑', label: furniturePlacementAvailable ? 'Furniture Placement' : 'Furniture Placement Unavailable',
+        disabled: !furniturePlacementAvailable,
+        onSelect: () => window.FurniturePlacer?.open?.(),
       },
       {
         id: 'return-camp', icon: '🏕️', label: campfire ? 'Return to Camp' : 'No Camp Set Up',
@@ -209,7 +216,8 @@
       const extra = [entry.active ? 'arc-active' : '', entry.disabled ? 'blocked' : '', entry.className || ''].filter(Boolean).join(' ');
       const el = _mkSlot(deg, entry.icon, entry.label, extra, radius);
       _arcSlots.push({ angle: deg, el, data: { ...entry, type: 'entry' } });
-      if (entry.active) _arcActive = index;
+      if (entry.initial) _arcActive = index;
+      else if (_arcActive < 0 && entry.active) _arcActive = index;
     });
     if (_arcActive < 0 && entries.length) _setActive(Math.floor((entries.length - 1) / 2));
   }
