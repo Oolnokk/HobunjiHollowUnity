@@ -22,7 +22,8 @@
       "postZ": 0,
       "postSX": 1,
       "postSY": 1,
-      "postSZ": 1
+      "postSZ": 1,
+      "npcWardrobeFor": "foroji_funji"
     },
     {
       "id": "fmqfm6dio5u12",
@@ -37,19 +38,7 @@
       "postSY": 1,
       "postSZ": 1
     },
-    {
-      "id": "fmqfm7tab6r4d",
-      "itemKey": "deskFurniture",
-      "col": 10,
-      "row": 9,
-      "rotY": 0,
-      "postX": 0.5,
-      "postY": 0,
-      "postZ": 0,
-      "postSX": 1,
-      "postSY": 1,
-      "postSZ": 1
-    },
+    { "id": "fmqfm7tab6r4d", "itemKey": "deskFurniture", "col": 10, "row": 9, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 0.666667, "postSY": 1, "postSZ": 1, "gridRot": 0, "gridW": 3, "gridD": 1 },
     {
       "id": "fmqfmc31spzhz",
       "itemKey": "chairSimpleFurniture",
@@ -87,12 +76,7 @@
       "spawnRow": 6
     }
   ],
-  "colliders": [
-    [11, 9], [10, 9],
-    [9, 6], [8, 6], [7, 6], [6, 6],
-    [7, 7],
-    [12, 9]
-  ],
+  "colliders": [],
   "vendorZones": [
     {
       "id": "vendor_mqf7w5zg",

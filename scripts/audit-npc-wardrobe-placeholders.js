@@ -30,16 +30,19 @@ for (const [npcId, assignment] of Object.entries(assignments)) {
   const map = JSON.parse(fs.readFileSync(mapPath, 'utf8'));
   const piece = (map.furniture || []).find(entry => String(entry?.id || '') === String(assignment.furnitureId));
   assert(piece, `${npcId} placeholder furniture ${assignment.furnitureId} must exist in ${assignment.area}`);
+  if (assignment.reason === 'authored:npcWardrobeFor') {
+    assert.equal(String(piece.npcWardrobeFor || ''), npcId, `${npcId} authored registry entry must match the furniture's npcWardrobeFor metadata`);
+  }
   const key = `${assignment.area}|${assignment.furnitureId}`;
-  assert(!occupiedFurniture.has(key), `${npcId} and ${occupiedFurniture.get(key)} cannot share placeholder furniture ${key}`);
+  assert(!occupiedFurniture.has(key), `${npcId} and ${occupiedFurniture.get(key)} cannot share wardrobe furniture ${key}`);
   occupiedFurniture.set(key, npcId);
 }
 
 assert.deepEqual(assignments.hreesh, {
-  area: 'map_i_inn',
-  furnitureId: 'fmss04iltqngq',
-  itemKey: 'tableLongFurniture',
-  reason: 'home:home',
-}, 'Hreesh keeps the selected inn placeholder');
+  area: 'map_i_inn_F2_hreesh',
+  furnitureId: 'f_map_i_inn_F2_hreesh_wardrobe',
+  itemKey: 'wardrobeFurniture',
+  reason: 'authored:npcWardrobeFor',
+}, 'Hreesh uses the wardrobe beside his dedicated bed instead of an inn-table placeholder');
 
 console.log(`Placeholder wardrobe registry audit passed: ${assignedNpcIds.size}/${activeNpcIds.size} runtime-effective NPCs, ${occupiedFurniture.size} unique furniture targets.`);

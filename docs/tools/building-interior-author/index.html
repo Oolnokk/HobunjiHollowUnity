@@ -34,6 +34,10 @@ header{grid-column:1/-1;display:flex;align-items:center;justify-content:space-be
 .modeButtons button{width:98px;background:rgba(7,11,18,.82);backdrop-filter:blur(6px)}
 .libraryList{display:flex;flex-direction:column;gap:6px;margin-top:6px}
 .listItem{display:flex;justify-content:space-between;gap:8px;align-items:center;border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.035);border-radius:10px;padding:7px 8px;font-size:12px}
+.placedFurnitureList{display:flex;flex-direction:column;gap:5px;max-height:280px;overflow:auto}
+.placedFurnItem{display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;text-align:left;padding:7px 9px;border-radius:9px}
+.placedFurnItem.active{outline:2px solid var(--accent);background:#203c5c}
+.placedFurnMeta{font-size:10px;color:var(--muted)}
 .chip{font-size:11px;color:var(--muted)}
 textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px}
 .catGrid{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:6px;max-height:260px;overflow-y:auto}
@@ -201,15 +205,31 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
 
   <aside class="panel" id="biaRightPanel">
     <div class="section">
-      <h2>5. Post-transform (3D visual only)</h2>
+      <h2>5. Furniture placement</h2>
       <div id="noSelMsg" class="hint">Select a furniture tile on the 2D grid or click a piece in 3D.</div>
       <div id="selFields" class="hidden">
         <div style="font-size:12px;margin-bottom:6px">
           <span style="color:var(--accent)" id="selLabel">—</span>
           <span class="chip" id="selPos"> —</span>
         </div>
-        <div class="grid3">
-          <div class="field"><label>Rot Y°</label><input id="pRotY" type="number" step="15" value="0"></div>
+        <div class="grid2">
+          <div class="field"><label>Grid width (tiles)</label><input id="gridFurnW" type="number" step="1" min="1" value="1"></div>
+          <div class="field"><label>Grid depth (tiles)</label><input id="gridFurnD" type="number" step="1" min="1" value="1"></div>
+        </div>
+        <div class="row" style="margin-top:6px;flex-wrap:wrap">
+          <button id="gridRotLeftBtn" type="button">↶ Rotate 90°</button>
+          <button id="gridRotRightBtn" type="button">Rotate 90° ↷</button>
+          <button id="gridRot180Btn" type="button">Rotate 180°</button>
+          <button id="applyFurnGridBtn" type="button">Apply tile size</button>
+        </div>
+        <label style="display:flex;gap:8px;align-items:center;margin-top:8px;font-size:12px">
+          <input id="nonCollidingFurniture" type="checkbox">
+          Non-colliding
+        </label>
+        <div id="gridFurnSummary" class="hint" style="margin-top:5px">Grid footprint —</div>
+        <div class="hint" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--line)">Fine 3D transform. These values are residual offsets/scale on top of the grid placement.</div>
+        <div class="grid3" style="margin-top:6px">
+          <div class="field"><label>Fine Rot Y°</label><input id="pRotY" type="number" step="15" value="0"></div>
           <div class="field"><label>Offset X</label><input id="pX" type="number" step="0.05" value="0"></div>
           <div class="field"><label>Offset Y</label><input id="pY" type="number" step="0.05" value="0"></div>
         </div>
@@ -232,7 +252,13 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
     </div>
 
     <div class="section">
-      <h2>6. Interior library</h2>
+      <h2>6. Placed items</h2>
+      <p class="hint">Select an existing item here, then drag it on the 2D grid. If furniture overlaps, the item selected here gets click/drag priority on its occupied tiles.</p>
+      <div id="placedFurnitureList" class="placedFurnitureList"></div>
+    </div>
+
+    <div class="section">
+      <h2>7. Interior library</h2>
       <div class="row">
         <button id="saveLibBtn">Save to library</button>
         <button id="delLibBtn" class="danger">Delete</button>
@@ -241,13 +267,13 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
     </div>
 
     <div class="section">
-      <h2>7. Server Layouts</h2>
+      <h2>8. Server Layouts</h2>
       <button id="fetchServerBtn">Refresh</button>
       <div class="libraryList" id="serverMapList"><span style="color:#888;font-size:11px">Loading…</span></div>
     </div>
 
     <div class="section">
-      <h2>8. Alternate layouts <span class="qhelp" data-help="bia-layouts">?</span></h2>
+      <h2>9. Alternate layouts <span class="qhelp" data-help="bia-layouts">?</span></h2>
       <p class="hint">A layout swaps this room's furniture for a special occasion (a festival, a ritual) — the game plays the same black-iris wipe used for waiting/sleeping, then drops the player at an entry point above to find the room changed. Pick one below, then use the floor plan / furniture tools as normal: while a layout (not Base) is selected, placing/moving/deleting furniture edits <em>that layout's</em> furniture instead of the base room's.</p>
       <div class="field" style="margin:8px 0 6px">
         <label>Now editing</label>
@@ -322,6 +348,7 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
 <script src="../../js/terrain-preview.js"></script>
 <script src="../../js/interior-scene-builder.js"></script>
 <script src="../../js/procedural-furniture.js"></script>
+<script src="../../js/interior-furniture-grid.js?v=20260917grid1"></script>
 
 <script>
 (function () {
@@ -426,6 +453,25 @@ var CMAP = {};
 CATALOG.forEach(function(f){ CMAP[f.key] = f; });
 function catOf(key){ return CMAP[key] || { fw:1, fd:1, col:0x607090, label:key }; }
 function catColHex(key){ return '#' + catOf(key).col.toString(16).padStart(6,'0'); }
+function furnGridInfo(f){
+  var helper=window.InteriorFurnitureGrid; // Used by every 2D footprint operation so drawing, hit-testing, dragging, scaling, and collision agree.
+  if(helper&&helper.placement) return helper.placement(f);
+  var cat=catOf(f&&f.itemKey), rot=((Math.round((+(f&&f.gridRot)||0)/90)%4)+4)%4*90;
+  var quarter=rot===90||rot===270;
+  return {baseW:cat.fw,baseD:cat.fd,gridRot:rot,gridW:Math.max(1,Math.round(+(f&&f.gridW)||(quarter?cat.fd:cat.fw))),gridD:Math.max(1,Math.round(+(f&&f.gridD)||(quarter?cat.fw:cat.fd)))};
+}
+function furnLegacyVisual(f){
+  var helper=window.InteriorFurnitureGrid; // Used by the 3D preview to apply grid transforms through the same compatibility math as gameplay.
+  return helper&&helper.legacyRecordFor?helper.legacyRecordFor(f):f;
+}
+function furnitureFitsFloor(f,col,row){
+  var info=furnGridInfo(f); // Used to validate the complete current grid footprint before placement, dragging, rotation, or scaling.
+  for(var dc=0;dc<info.gridW;dc++) for(var dd=0;dd<info.gridD;dd++){
+    var tc=col+dc,tr=row+dd;
+    if(tc<0||tr<0||tc>=state.interior.cols||tr>=state.interior.rows||!isFloor(tc,tr)) return false;
+  }
+  return true;
+}
 
 // ─── State ────────────────────────────────────────────────────────────────────
 function newId(){ return 'f' + Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
@@ -592,16 +638,21 @@ function drawGrid(){
   // Furniture — from the currently-edited layout if one is selected (see
   // activeFurniture), otherwise the base room's own furniture.
   activeFurniture().forEach(function(f){
-    var cat=catOf(f.itemKey), sel=f.id===state.selectedId;
+    var cat=catOf(f.itemKey), info=furnGridInfo(f), sel=f.id===state.selectedId;
     gx.fillStyle=sel?'#76b8ff':catColHex(f.itemKey); gx.globalAlpha=sel?0.9:0.7;
-    gx.fillRect(f.col*cw+2,f.row*ch+2,cat.fw*cw-4,cat.fd*ch-4);
+    gx.fillRect(f.col*cw+2,f.row*ch+2,info.gridW*cw-4,info.gridD*ch-4);
     gx.globalAlpha=1;
     gx.strokeStyle=sel?'#fff':'rgba(255,255,255,.4)'; gx.lineWidth=sel?2:1;
-    gx.strokeRect(f.col*cw+2,f.row*ch+2,cat.fw*cw-4,cat.fd*ch-4);
+    gx.strokeRect(f.col*cw+2,f.row*ch+2,info.gridW*cw-4,info.gridD*ch-4);
     var fs=Math.max(7,Math.min(11,cw*0.3));
     gx.font='bold '+fs+'px system-ui'; gx.textAlign='center'; gx.textBaseline='middle';
     gx.fillStyle='#fff'; gx.globalAlpha=sel?1:0.8;
-    gx.fillText((cat.label||f.itemKey).slice(0,7),(f.col+cat.fw/2)*cw,(f.row+cat.fd/2)*ch);
+    var rotMark=info.gridRot?' ↻'+info.gridRot:'';
+    gx.fillText(((cat.label||f.itemKey).slice(0,7)+rotMark),(f.col+info.gridW/2)*cw,(f.row+info.gridD/2)*ch);
+    if(f.nonColliding||f.walkableElevation){
+      gx.font='bold '+Math.max(7,Math.min(10,cw*0.24))+'px system-ui';
+      gx.fillText('NO COLLISION',(f.col+info.gridW/2)*cw,(f.row+info.gridD-0.2)*ch);
+    }
     gx.globalAlpha=1;
   });
 
@@ -613,6 +664,7 @@ function drawGrid(){
   var nColl=(state.interior.colliders||[]).length, nEZ=(state.interior.exits||[]).length, nVZ=(state.interior.vendorZones||[]).length;
   var lay=currentLayoutObj();
   $('viewStats').textContent=(lay?('✎ '+(lay.name||lay.id)+' | '):'')+state.floorSet.size+' tiles | '+activeFurniture().length+' furn | '+cols+'x'+rows+(nColl?' | '+nColl+' coll':'')+(nEZ?' | '+nEZ+' exits':'')+(nVZ?' | '+nVZ+' vendors':'');
+  renderPlacedFurnitureList();
 }
 
 function gridCell(e){
@@ -621,13 +673,27 @@ function gridCell(e){
            r:Math.floor((e.clientY-rect.top)/rect.height*state.interior.rows) };
 }
 function inGrid(c,r){ return c>=0&&r>=0&&c<state.interior.cols&&r<state.interior.rows; }
+function furnitureOccupiesTile(f,c,r){
+  if(!f) return false;
+  var info=furnGridInfo(f);
+  return c>=f.col&&c<f.col+info.gridW&&r>=f.row&&r<f.row+info.gridD;
+}
 function furnAt(c,r){
   var arr=activeFurniture();
-  for(var i=0;i<arr.length;i++){
-    var f=arr[i], cat=catOf(f.itemKey);
-    if(c>=f.col&&c<f.col+cat.fw&&r>=f.row&&r<f.row+cat.fd) return f;
+  for(var i=arr.length-1;i>=0;i--){
+    var f=arr[i];
+    if(furnitureOccupiesTile(f,c,r)) return f;
   }
   return null;
+}
+function furnAtPreferringSelected(c,r){
+  if(state.selectedId){
+    var arr=activeFurniture();
+    for(var i=0;i<arr.length;i++){
+      if(arr[i].id===state.selectedId && furnitureOccupiesTile(arr[i],c,r)) return arr[i];
+    }
+  }
+  return furnAt(c,r);
 }
 
 function gridAction(e){
@@ -642,8 +708,8 @@ function gridAction(e){
     if(state.floorSet.has(key)){
       state.floorSet.delete(key);
       setActiveFurniture(activeFurniture().filter(function(f){
-        var cat=catOf(f.itemKey);
-        for(var dc=0;dc<cat.fw;dc++) for(var dd=0;dd<cat.fd;dd++)
+        var info=furnGridInfo(f);
+        for(var dc=0;dc<info.gridW;dc++) for(var dd=0;dd<info.gridD;dd++)
           if(f.col+dc===c&&f.row+dd===r) return false;
         return true;
       }));
@@ -666,16 +732,17 @@ function gridAction(e){
   else if(tool==='furniture'){
     if(!isFloor(c,r)){ log('Furniture must be on a floor tile.','warn'); return; }
     var cat=catOf(state.activeKey);
-    for(var dc=0;dc<cat.fw;dc++) for(var dd=0;dd<cat.fd;dd++)
-      if(!isFloor(c+dc,r+dd)||c+dc>=interior.cols||r+dd>=interior.rows)
-        { log('Not enough floor space here.','warn'); return; }
+    var fresh={id:newId(),itemKey:state.activeKey,col:c,row:r,gridRot:0,gridW:cat.fw,gridD:cat.fd,rotY:0,postX:0,postY:0,postZ:0,postSX:1,postSY:1,postSZ:1,nonColliding:false};
+    if(!furnitureFitsFloor(fresh,c,r)){ log('Not enough floor space here.','warn'); return; }
     var existing=furnAt(c,r);
     if(existing){ selectFurn(existing.id); return; }
-    activeFurniture().push({id:newId(),itemKey:state.activeKey,col:c,row:r,rotY:0,postX:0,postY:0,postZ:0});
+    activeFurniture().push(fresh);
     drawGrid(); rebuild3D();
   }
   else if(tool==='select'){
-    var f=furnAt(c,r);
+    // A list-selected item wins over any overlapping furniture on the same
+    // tile, making it possible to grab/move obscured pieces deterministically.
+    var f=furnAtPreferringSelected(c,r);
     if(f){
       selectFurn(f.id);
       state.dragFurn=f;
@@ -741,15 +808,9 @@ gc.addEventListener('pointermove',function(e){
   if(!state.dragging) return;
   if(state.tool==='select' && state.dragFurn){
     var cr=gridCell(e), nc=cr.c-state.dragOff.dc, nr=cr.r-state.dragOff.dr;
-    var f=state.dragFurn, cat=catOf(f.itemKey), interior=state.interior;
+    var f=state.dragFurn;
     if(nc===f.col && nr===f.row) return;
-    // validate all footprint tiles are floor and in bounds
-    var ok=true;
-    for(var dc=0;dc<cat.fw&&ok;dc++) for(var dd=0;dd<cat.fd&&ok;dd++){
-      var tc=nc+dc, tr=nr+dd;
-      if(tc<0||tr<0||tc>=interior.cols||tr>=interior.rows||!isFloor(tc,tr)) ok=false;
-    }
-    if(!ok) return;
+    if(!furnitureFitsFloor(f,nc,nr)) return;
     f.col=nc; f.row=nr;
     drawGrid();
   } else if(['paintFloor','eraseFloor','furniture','erase',
@@ -807,14 +868,53 @@ function allFurnitureArrays(){
 }
 
 // ─── Selection UI ─────────────────────────────────────────────────────────────
+var placedFurnitureListSignature='';
+function renderPlacedFurnitureList(){
+  var el=$('placedFurnitureList'); if(!el) return;
+  var arr=activeFurniture();
+  var sig=(state.editingLayoutId||'base')+'|'+(state.selectedId||'')+'|'+arr.map(function(f){
+    var info=furnGridInfo(f);
+    return [f.id,f.itemKey,f.col,f.row,info.gridW,info.gridD,info.gridRot].join(':');
+  }).join(';');
+  if(sig===placedFurnitureListSignature) return;
+  placedFurnitureListSignature=sig;
+  el.innerHTML='';
+  if(!arr.length){
+    var empty=document.createElement('div');
+    empty.className='hint'; empty.textContent='No furniture placed in this layout.';
+    el.appendChild(empty); return;
+  }
+  arr.forEach(function(f,index){
+    var cat=catOf(f.itemKey),info=furnGridInfo(f);
+    var btn=document.createElement('button');
+    btn.type='button';
+    btn.className='placedFurnItem'+(f.id===state.selectedId?' active':'');
+    btn.dataset.furnId=f.id;
+    var title=document.createElement('span');
+    title.textContent=(index+1)+'. '+(cat.label||f.itemKey);
+    var meta=document.createElement('span');
+    meta.className='placedFurnMeta';
+    meta.textContent='col '+f.col+', row '+f.row+' · '+info.gridW+'×'+info.gridD+' · '+info.gridRot+'°';
+    btn.appendChild(title); btn.appendChild(meta);
+    btn.addEventListener('click',function(){
+      setTool('select');
+      selectFurn(f.id);
+    });
+    el.appendChild(btn);
+  });
+}
 function selectFurn(id){
   state.selectedId=id;
   var f=id?activeFurniture().filter(function(x){return x.id===id;})[0]:null;
   if(f){
     $('noSelMsg').classList.add('hidden'); $('selFields').classList.remove('hidden');
-    var cat=catOf(f.itemKey);
+    var cat=catOf(f.itemKey),info=furnGridInfo(f);
     $('selLabel').textContent=(cat.label||f.itemKey)+' ('+f.itemKey+')';
     $('selPos').textContent=' col '+f.col+', row '+f.row;
+    $('gridFurnW').value=info.gridW; $('gridFurnD').value=info.gridD;
+    $('nonCollidingFurniture').checked=!!f.nonColliding||!!f.walkableElevation;
+    $('nonCollidingFurniture').disabled=!!f.walkableElevation;
+    $('gridFurnSummary').textContent=info.gridW+'×'+info.gridD+' tiles · grid rotation '+info.gridRot+'°'+(f.walkableElevation?' · walkable elevation forces non-colliding':(f.nonColliding?' · non-colliding':' · collision on occupied tiles'));
     var defS=f.postScale!=null?f.postScale:1;
     $('pRotY').value=f.rotY||0; $('pX').value=f.postX||0; $('pY').value=f.postY||0; $('pZ').value=f.postZ||0;
     $('pSX').value=f.postSX!=null?f.postSX:defS; $('pSY').value=f.postSY!=null?f.postSY:defS; $('pSZ').value=f.postSZ!=null?f.postSZ:defS;
@@ -827,6 +927,36 @@ function selectFurn(id){
   }
   drawGrid();
 }
+function applySelectedGridSize(){
+  var f=activeFurniture().filter(function(x){return x.id===state.selectedId;})[0]; if(!f) return;
+  var nextW=Math.max(1,Math.round(+$('gridFurnW').value||1)),nextD=Math.max(1,Math.round(+$('gridFurnD').value||1));
+  var probe=Object.assign({},f,{gridW:nextW,gridD:nextD});
+  if(!furnitureFitsFloor(probe,f.col,f.row)){ log('That furniture footprint would leave the floor/grid.','warn'); selectFurn(f.id); return; }
+  pushUndo(); f.gridW=nextW; f.gridD=nextD;
+  f.nonColliding=!!$('nonCollidingFurniture').checked||!!f.walkableElevation;
+  drawGrid(); rebuild3D(); selectFurn(f.id);
+}
+function rotateSelectedGrid(delta){
+  var f=activeFurniture().filter(function(x){return x.id===state.selectedId;})[0]; if(!f) return;
+  var info=furnGridInfo(f),nextRot=((info.gridRot+delta)%360+360)%360;
+  // Odd quarter-turns swap the rectangular footprint. A 180° flip keeps the
+  // same footprint, so it can rotate furniture trapped against a wall/corner
+  // without requiring an invalid intermediate 90° placement.
+  var swapsFootprint=Math.abs(Math.round(delta/90))%2===1;
+  var nextW=swapsFootprint?info.gridD:info.gridW, nextD=swapsFootprint?info.gridW:info.gridD;
+  var probe=Object.assign({},f,{gridRot:nextRot,gridW:nextW,gridD:nextD});
+  if(!furnitureFitsFloor(probe,f.col,f.row)){ log('Rotated footprint would leave the floor/grid.','warn'); return; }
+  pushUndo(); f.gridRot=nextRot; f.gridW=nextW; f.gridD=nextD;
+  drawGrid(); rebuild3D(); selectFurn(f.id);
+}
+$('applyFurnGridBtn').addEventListener('click',applySelectedGridSize);
+$('gridRotLeftBtn').addEventListener('click',function(){rotateSelectedGrid(-90);});
+$('gridRotRightBtn').addEventListener('click',function(){rotateSelectedGrid(90);});
+$('gridRot180Btn').addEventListener('click',function(){rotateSelectedGrid(180);});
+$('nonCollidingFurniture').addEventListener('change',function(){
+  var f=activeFurniture().filter(function(x){return x.id===state.selectedId;})[0]; if(!f) return;
+  pushUndo(); f.nonColliding=!!this.checked||!!f.walkableElevation; drawGrid(); rebuild3D(); selectFurn(f.id);
+});
 $('applyPTBtn').addEventListener('click',function(){
   var f=activeFurniture().filter(function(x){return x.id===state.selectedId;})[0]; if(!f) return;
   pushUndo();
@@ -854,7 +984,7 @@ $('applyGridBtn').addEventListener('click',function(){
   state.interior.floor=(state.interior.floor||[]).filter(function(p){return p[0]<cols&&p[1]<rows;});
   syncFloorSet();
   allFurnitureArrays().forEach(function(arr){
-    var kept=arr.filter(function(f){ var cat=catOf(f.itemKey); return f.col+cat.fw<=cols&&f.row+cat.fd<=rows; });
+    var kept=arr.filter(function(f){ var info=furnGridInfo(f); return f.col+info.gridW<=cols&&f.row+info.gridD<=rows; });
     arr.length=0; Array.prototype.push.apply(arr,kept);
   });
   (state.interior.exits||[]).forEach(function(e){ e.tiles=(e.tiles||[]).filter(function(p){return p[0]<cols&&p[1]<rows;}); });
@@ -1282,12 +1412,12 @@ function rebuild3D(){
   // Furniture — use real GLBs if cached, placeholder boxes otherwise
   furniture.forEach(function(f){
     var cat=catOf(f.itemKey);
-    var grp=furnGroupFor(f);
-    var cx=f.col+cat.fw/2+(f.postX||0), cz=f.row+cat.fd/2+(f.postZ||0);
-    var defS=f.postScale!=null?f.postScale:1;
-    var scX=f.postSX!=null?f.postSX:defS, scY=f.postSY!=null?f.postSY:defS, scZ=f.postSZ!=null?f.postSZ:defS;
-    grp.position.set(cx,(f.postY||0),cz);
-    grp.rotation.y=(f.rotY||0)*Math.PI/180;
+    var grp=furnGroupFor(f), visual=furnLegacyVisual(f);
+    var cx=f.col+cat.fw/2+(visual.postX||0), cz=f.row+cat.fd/2+(visual.postZ||0);
+    var defS=visual.postScale!=null?visual.postScale:1;
+    var scX=visual.postSX!=null?visual.postSX:defS, scY=visual.postSY!=null?visual.postSY:defS, scZ=visual.postSZ!=null?visual.postSZ:defS;
+    grp.position.set(cx,(visual.postY||0),cz);
+    grp.rotation.y=(visual.rotY||0)*Math.PI/180;
     grp.scale.set(scX,scY,scZ);
     furnMeshes[f.id]=grp;
     previewGroup.add(grp);
@@ -1315,12 +1445,12 @@ function initTC(){
       var _af=activeFurniture(); var f=null; for(var i=0;i<_af.length;i++) if(_af[i].id===state.selectedId){f=_af[i];break;}
       var grp=furnMeshes[state.selectedId];
       if(!f||!grp) return;
-      var cat=catOf(f.itemKey);
-      f.postX=+( grp.position.x-(f.col+cat.fw/2) ).toFixed(3);
+      var info=furnGridInfo(f), scale=window.InteriorFurnitureGrid&&window.InteriorFurnitureGrid.gridScale?window.InteriorFurnitureGrid.gridScale(f):{x:1,z:1};
+      f.postX=+( grp.position.x-(f.col+info.gridW/2) ).toFixed(3);
       f.postY=+( grp.position.y ).toFixed(3);
-      f.postZ=+( grp.position.z-(f.row+cat.fd/2) ).toFixed(3);
-      f.rotY =+( grp.rotation.y*180/Math.PI ).toFixed(1);
-      f.postSX=+( grp.scale.x ).toFixed(3); f.postSY=+( grp.scale.y ).toFixed(3); f.postSZ=+( grp.scale.z ).toFixed(3);
+      f.postZ=+( grp.position.z-(f.row+info.gridD/2) ).toFixed(3);
+      f.rotY =+( grp.rotation.y*180/Math.PI-info.gridRot ).toFixed(1);
+      f.postSX=+( grp.scale.x/scale.x ).toFixed(3); f.postSY=+( grp.scale.y ).toFixed(3); f.postSZ=+( grp.scale.z/scale.z ).toFixed(3);
       delete f.postScale;
       $('pX').value=f.postX; $('pY').value=f.postY; $('pZ').value=f.postZ; $('pRotY').value=f.rotY;
       $('pSX').value=f.postSX; $('pSY').value=f.postSY; $('pSZ').value=f.postSZ;
@@ -1475,6 +1605,7 @@ $('wallStyle').addEventListener('change',function(){pushUndo(); state.interior.w
 // ─── afterLoad ────────────────────────────────────────────────────────────────
 function afterLoad(){
   var i=state.interior;
+  placedFurnitureListSignature='';
   // Migrate legacy single exit → exits array
   if(i.exit && (!i.exits||!i.exits.length)){
     if(!i.exits) i.exits=[];
@@ -1486,12 +1617,17 @@ function afterLoad(){
   if(!i.vendorZones) i.vendorZones=[];
   if(!i.entryPoints) i.entryPoints=[];
   if(!i.layouts) i.layouts=[];
-  // Migrate legacy uniform postScale → per-axis (base room + every layout's own furniture)
+  // Migrate legacy uniform postScale → per-axis and normalize grid-placement metadata (base room + every layout).
   allFurnitureArrays().forEach(function(arr){
     arr.forEach(function(f){
       if(f.postScale!=null && f.postSX==null){
         f.postSX=f.postScale; f.postSY=f.postScale; f.postSZ=f.postScale; delete f.postScale;
       }
+      var info=furnGridInfo(f);
+      if(f.gridRot!=null) f.gridRot=info.gridRot;
+      if(f.gridW!=null) f.gridW=info.gridW;
+      if(f.gridD!=null) f.gridD=info.gridD;
+      if(f.walkableElevation) f.nonColliding=true;
     });
   });
   $('mapId').value=i.id||''; $('mapName').value=i.name||'';

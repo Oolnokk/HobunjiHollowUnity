@@ -38,7 +38,10 @@ const expectedRotations = new Map([
   ['fmqj09loev97n', 270], ['fmqj09mimuxmp', 90], ['fmqj09n8jvodq', 0], ['fmqj09nuf46cg', 180],
   ['fmqj09r8s0x0a', 180], ['fmqj09s9gcu2r', 270], ['fmqj09t02hklm', 90], ['fmqj09tmmlrts', 0],
 ]);
-for (const stool of stools) assert.equal(stool.rotY, expectedRotations.get(stool.id), `${stool.id} is turned 180° toward its table`);
+for (const stool of stools) {
+  const effectiveRotY = ((Number(stool.gridRot || 0) + Number(stool.rotY || 0)) % 360 + 360) % 360; // Grid quarter-turns are authoritative; rotY is only the residual fine rotation after migration.
+  assert.equal(effectiveRotY, expectedRotations.get(stool.id), `${stool.id} is turned toward its table after grid rotation`);
+}
 
 const authoredSeatBindings = [
   [generalStore, 'station_p2x4t', 'stoolFurniture', 0],

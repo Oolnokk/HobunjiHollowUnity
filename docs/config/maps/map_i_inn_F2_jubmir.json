@@ -1,25 +1,12 @@
 {
   "schema": "hobunji_building_interior.v1",
-  "id": "map_i_ginju_farmstead_F2_R1",
-  "name": "Gorobi & Gikali's Room",
+  "id": "map_i_inn_F2_jubmir",
+  "name": "Jubmir's Room",
   "cols": 20,
   "rows": 20,
   "furniture": [
     {
-      "id": "f_ginjuroom_bed",
-      "itemKey": "doubleBedFurniture",
-      "col": 7,
-      "row": 6,
-      "rotY": 0,
-      "postX": 0,
-      "postY": 0,
-      "postZ": 0,
-      "postSX": 1,
-      "postSY": 1,
-      "postSZ": 1
-    },
-    {
-      "id": "f_ginjuroom_nightstand",
+      "id": "f_map_i_inn_F2_jubmir_nightstand",
       "itemKey": "nightstandFurniture",
       "col": 6,
       "row": 6,
@@ -32,26 +19,22 @@
       "postSZ": 1
     },
     {
-      "id": "f_ginjuroom_wardrobe",
-      "itemKey": "wardrobeFurniture",
-      "col": 9,
-      "row": 9,
+      "id": "f_map_i_inn_F2_jubmir_bed",
+      "itemKey": "basicBedFurniture",
+      "col": 7,
+      "row": 6,
       "rotY": 0,
       "postX": 0,
       "postY": 0,
       "postZ": 0,
       "postSX": 1,
       "postSY": 1,
-      "postSZ": 1,
-      "npcWardrobeFor": "gorobi_ginju"
+      "postSZ": 1
     },
-    { "id": "f_ginjuroom_rug", "itemKey": "rugFurniture", "col": 6, "row": 6, "rotY": 0, "postX": 0.068, "postY": 0, "postZ": 0.492, "postSX": 0.934, "postSY": 1, "postSZ": 1.073333, "nonColliding": true, "gridRot": 0, "gridW": 7, "gridD": 3 }
-  
-  ,
     {
-      "id": "f_ginjuroom_wardrobe_gikali",
+      "id": "f_map_i_inn_F2_jubmir_wardrobe",
       "itemKey": "wardrobeFurniture",
-      "col": 9,
+      "col": 10,
       "row": 6,
       "rotY": 0,
       "postX": 0,
@@ -60,20 +43,12 @@
       "postSX": 1,
       "postSY": 1,
       "postSZ": 1,
-      "npcWardrobeFor": "gikali_ginju"
+      "npcWardrobeFor": "jubmir"
     }
   ],
   "floor": [
     [
-      10,
-      6
-    ],
-    [
-      9,
-      6
-    ],
-    [
-      8,
+      6,
       6
     ],
     [
@@ -81,7 +56,15 @@
       6
     ],
     [
-      6,
+      8,
+      6
+    ],
+    [
+      9,
+      6
+    ],
+    [
+      10,
       6
     ],
     [
@@ -93,48 +76,36 @@
       6
     ],
     [
-      12,
+      6,
       7
-    ],
-    [
-      12,
-      8
-    ],
-    [
-      12,
-      9
-    ],
-    [
-      11,
-      9
-    ],
-    [
-      10,
-      9
-    ],
-    [
-      9,
-      9
-    ],
-    [
-      8,
-      9
     ],
     [
       7,
-      9
+      7
     ],
     [
-      6,
-      9
+      8,
+      7
+    ],
+    [
+      9,
+      7
+    ],
+    [
+      10,
+      7
+    ],
+    [
+      11,
+      7
+    ],
+    [
+      12,
+      7
     ],
     [
       6,
       8
-    ],
-    [
-      6,
-      7
     ],
     [
       7,
@@ -157,52 +128,64 @@
       8
     ],
     [
-      11,
-      7
+      12,
+      8
     ],
     [
-      10,
-      7
-    ],
-    [
-      9,
-      7
-    ],
-    [
-      8,
-      7
+      6,
+      9
     ],
     [
       7,
-      7
+      9
+    ],
+    [
+      8,
+      9
+    ],
+    [
+      9,
+      9
+    ],
+    [
+      10,
+      9
     ],
     [
       11,
+      9
+    ],
+    [
+      12,
+      9
+    ],
+    [
+      9,
       5
     ]
   ],
   "exits": [
     {
-      "id": "exit_ginjuroom_parents_down",
-      "label": "Stairs Down",
+      "id": "exit_map_i_inn_F2_jubmir_hall",
+      "label": "Door to Hall",
       "tiles": [
         [
-          11,
+          9,
           5
         ]
       ],
-      "targetMap": "map_i_ginju_farmstead",
-      "spawnCol": 15,
-      "spawnRow": 10
+      "targetMap": "map_i_inn_F2",
+      "spawnCol": 10,
+      "spawnRow": 5
     }
   ],
-  "colliders": [[11,9],[12,9]],
+  "colliders": [],
   "vendorZones": [],
   "routes": [],
   "npcStations": [
     {
-      "id": "station_ginju_bed_parents",
-      "label": "Gorobi & Gikali's Bed",
+      "id": "station_inn_jubmir_bed",
+      "label": "Jubmir's Bed",
       "col": 7,
       "row": 6,
       "rotY": 0,

@@ -227,10 +227,10 @@ assert.strictEqual(hunundiRoom.id, 'map_i_temple_basement_hunundi',
   'uploaded Father Hunundi room must replace the existing repo map under its canonical id');
 assert.strictEqual(hunundiRoom.furniture.length, 7,
   'updated Father Hunundi room must retain all seven uploaded furniture records');
-assert(hunundiRoom.furniture.some(piece => piece.id === 'fmtst9ykgmqf0' && piece.itemKey === 'chairSimpleFurniture' && piece.col === 9 && piece.row === 9 && piece.rotY === 180),
-  'updated Father Hunundi room must retain the uploaded first added chair');
-assert(hunundiRoom.furniture.some(piece => piece.id === 'fmtsteb7xjq80' && piece.itemKey === 'chairSimpleFurniture' && piece.col === 8 && piece.row === 9 && piece.rotY === 180),
-  'updated Father Hunundi room must retain the uploaded second added chair');
+assert(hunundiRoom.furniture.some(piece => piece.id === 'fmtst9ykgmqf0' && piece.itemKey === 'chairSimpleFurniture' && piece.col === 9 && piece.row === 9 && Number(piece.rotY || 0) === 0 && piece.gridRot === 180),
+  'updated Father Hunundi room must retain the first added chair in its grid-native 180° representation');
+assert(hunundiRoom.furniture.some(piece => piece.id === 'fmtsteb7xjq80' && piece.itemKey === 'chairSimpleFurniture' && piece.col === 8 && piece.row === 9 && Number(piece.rotY || 0) === 0 && piece.gridRot === 180),
+  'updated Father Hunundi room must retain the second added chair in its grid-native 180° representation');
 assert.deepStrictEqual(hunundiRoom.entryPoints, [], 'uploaded Father Hunundi room entryPoints must be preserved');
 assert.deepStrictEqual(hunundiRoom.layouts, [], 'uploaded Father Hunundi room layouts must be preserved');
 

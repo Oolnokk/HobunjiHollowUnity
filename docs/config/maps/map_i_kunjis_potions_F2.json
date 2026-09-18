@@ -1,19 +1,19 @@
 {
   "schema": "hobunji_building_interior.v1",
   "furniture": [
-    { "id": "fmqf8czt9e1p2", "itemKey": "tableLongFurniture", "col": 3, "row": 9, "rotY": 0, "postX": 0.464, "postY": 0, "postZ": -0.56, "postSX": 1.441, "postSY": 1, "postSZ": 2.041 },
-    { "id": "fmqf8i2cuxtlk", "itemKey": "chairSimpleFurniture", "col": 6, "row": 10, "rotY": 180, "postX": 0, "postY": 0, "postZ": 0 },
-    { "id": "fmqf8ibwilyl1", "itemKey": "chairSimpleFurniture", "col": 5, "row": 10, "rotY": 180, "postX": 0, "postY": 0, "postZ": 0 },
-    { "id": "fmqf8iywwlnl3", "itemKey": "chairSimpleFurniture", "col": 4, "row": 10, "rotY": 180, "postX": 0, "postY": 0, "postZ": 0 },
+    { "id": "fmqf8czt9e1p2", "itemKey": "tableLongFurniture", "col": 3, "row": 8, "rotY": 0, "postX": -0.036, "postY": 0, "postZ": 0.44, "postSX": 1.1528, "postSY": 1, "postSZ": 2.041, "gridRot": 0, "gridW": 5, "gridD": 1 },
+    { "id": "fmqf8i2cuxtlk", "itemKey": "chairSimpleFurniture", "col": 6, "row": 10, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "gridRot": 180, "gridW": 1, "gridD": 1, "postSX": 1, "postSZ": 1 },
+    { "id": "fmqf8ibwilyl1", "itemKey": "chairSimpleFurniture", "col": 5, "row": 10, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "gridRot": 180, "gridW": 1, "gridD": 1, "postSX": 1, "postSZ": 1 },
+    { "id": "fmqf8iywwlnl3", "itemKey": "chairSimpleFurniture", "col": 4, "row": 10, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "gridRot": 180, "gridW": 1, "gridD": 1, "postSX": 1, "postSZ": 1 },
     { "id": "fmqf8j2m43oz6", "itemKey": "chairSimpleFurniture", "col": 4, "row": 7, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1 },
     { "id": "fmqf8j32qz0g7", "itemKey": "chairSimpleFurniture", "col": 5, "row": 7, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1 },
     { "id": "fmqf8j3ixo224", "itemKey": "chairSimpleFurniture", "col": 6, "row": 7, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1 },
-    { "id": "fmqf8l692av3v", "itemKey": "chairSimpleFurniture", "col": 8, "row": 8, "rotY": 270, "postX": 0, "postY": 0, "postZ": 0.5, "postSX": 1, "postSY": 1, "postSZ": 1 },
-    { "id": "fmqf8na7z6qev", "itemKey": "chairSimpleFurniture", "col": 2, "row": 8, "rotY": 90, "postX": 0, "postY": 0, "postZ": 0.5, "postSX": 1, "postSY": 1, "postSZ": 1 },
+    { "id": "fmqf8l692av3v", "itemKey": "chairSimpleFurniture", "col": 8, "row": 9, "rotY": 0, "postX": 0, "postY": 0, "postZ": -0.5, "postSX": 1, "postSY": 1, "postSZ": 1, "gridRot": 270, "gridW": 1, "gridD": 1 },
+    { "id": "fmqf8na7z6qev", "itemKey": "chairSimpleFurniture", "col": 2, "row": 9, "rotY": 0, "postX": 0, "postY": 0, "postZ": -0.5, "postSX": 1, "postSY": 1, "postSZ": 1, "gridRot": 90, "gridW": 1, "gridD": 1 },
     { "id": "fmqf8od68rfzk", "itemKey": "basicBedFurniture", "col": 7, "row": 2, "rotY": 0, "postX": -0.025, "postY": -0.019, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1 },
     { "id": "fmqf8omst6pir", "itemKey": "basicBedFurniture", "col": 8, "row": 2, "rotY": 0, "postX": 0.025, "postY": 0.004, "postZ": -0.009, "postSX": 1, "postSY": 1, "postSZ": 1 },
-    { "id": "fmqf8vr1xttz3", "itemKey": "nightstandFurniture", "col": 9, "row": 2, "rotY": 180, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1 },
-    { "id": "fmqf8wtww2gzg", "itemKey": "nightstandFurniture", "col": 6, "row": 2, "rotY": 180, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1 }
+    { "id": "fmqf8vr1xttz3", "itemKey": "nightstandFurniture", "col": 9, "row": 2, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1, "gridRot": 180, "gridW": 1, "gridD": 1, "npcWardrobeFor": "kinami_kunji" },
+    { "id": "fmqf8wtww2gzg", "itemKey": "nightstandFurniture", "col": 6, "row": 2, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1, "gridRot": 180, "gridW": 1, "gridD": 1, "npcWardrobeFor": "kaboku_kunji" }
   ],
   "id": "map_i_kunjis_potions_F2",
   "name": "Kunji's Potions - Upper Floor",
@@ -25,7 +25,7 @@
   "exits": [
     { "id": "exit_mqf8zzwx", "label": "Stairs Down", "tiles": [[4, 2]], "targetMap": "map_i_kunjis_potions_F1", "spawnCol": 5, "spawnRow": 2 }
   ],
-  "colliders": [[7, 9], [7, 8], [3, 8], [4, 8], [6, 8], [7, 3], [8, 3], [7, 2], [8, 2], [5, 8]],
+  "colliders": [[7,9]],
   "vendorZones": [{ "id": "vendor_mqf7w5zg", "vendorKey": "potion_shop", "tiles": [] }],
   "routes": [
     { "id": "route_xid1h", "label": "Route 1", "nodes": [[4, 2], [2, 2], [2, 6], [8, 6], [8, 4], [6, 4], [6, 2]] },

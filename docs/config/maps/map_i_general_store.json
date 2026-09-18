@@ -15,10 +15,10 @@
     { "id": "fmqflwr1gmo3q", "itemKey": "hearthFurniture", "col": 8, "row": 1, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1 },
     { "id": "fmqflxtmkc8qo", "itemKey": "pestleFurniture", "col": 10, "row": 1, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0 },
     { "id": "fmqflxx5896wc", "itemKey": "handMillFurniture", "col": 11, "row": 1, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0 },
-    { "id": "fmqflyhx9gput", "itemKey": "bookshelfFurniture", "col": 1, "row": 5, "rotY": 180, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1.25, "postSY": 1, "postSZ": 1 },
+    { "id": "fmqflyhx9gput", "itemKey": "bookshelfFurniture", "col": 1, "row": 5, "rotY": 0, "postX": -0.5, "postY": 0, "postZ": 0, "postSX": 0.833333, "postSY": 1, "postSZ": 1, "gridRot": 180, "gridW": 3, "gridD": 1 },
     { "id": "fmqflyjsxciu5", "itemKey": "bookshelfFurniture", "col": 3, "row": 5, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1.25, "postSY": 1, "postSZ": 1 },
     { "id": "fmqfm0z7jep8i", "itemKey": "dresserFurniture", "col": 5, "row": 5, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1.25, "postSY": 0.9, "postSZ": 1 },
-    { "id": "fmqk10h7g0bzj", "itemKey": "tableSmallFurniture", "col": 4, "row": 7, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 7.503, "postSY": 1, "postSZ": 1 }
+    { "id": "fmqk10h7g0bzj", "itemKey": "tableSmallFurniture", "col": 1, "row": 7, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1.071857, "postSY": 1, "postSZ": 1, "gridRot": 0, "gridW": 7, "gridD": 1 }
   ],
   "id": "map_i_general_store",
   "name": "Funji & Sons General Store",
@@ -30,7 +30,7 @@
     { "id": "exit_n5k8p", "label": "Stairs to Foroji's Room", "tiles": [[5,3]], "targetMap": "map_i_general_store_F2_R1", "spawnCol": 11, "spawnRow": 6 },
     { "id": "exit_m3h2q", "label": "Stairs to Furunji's Room", "tiles": [[2,3]], "targetMap": "map_i_general_store_F2_R2", "spawnCol": 7, "spawnRow": 6 }
   ],
-  "colliders": [[1,5],[2,5],[3,5],[4,5],[5,5],[6,5],[1,7],[7,7],[6,7],[5,7],[4,7],[3,7],[2,7],[14,7],[10,1],[9,1],[8,1],[11,1],[14,2],[16,2],[16,5],[16,6],[16,7],[15,7],[15,6],[13,2],[13,7],[9,9]],
+  "colliders": [[9,9]],
   "vendorZones": [{ "id": "vendor_mqf7w5zg", "vendorKey": "general_store", "tiles": [[2,8],[3,8],[4,8],[5,8],[6,8],[1,8],[7,8]] }],
   "routes": [
     { "id": "route_9ae7a", "label": "Route 1", "nodes": [[5,11],[5,10],[10,10],[10,6],[10,5],[1,5]] },

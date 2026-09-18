@@ -1,0 +1,54 @@
+name: Interior furniture grid regression
+
+on:
+  push:
+    paths:
+      - 'docs/index.html'
+      - 'docs/js/interior-furniture-grid.js'
+      - 'docs/js/building-interior-npc-wardrobe-editor.js'
+      - 'docs/js/map-editor-interior-instance-sync.js'
+      - 'docs/js/panel-ui.js'
+      - 'docs/tools/building-interior-author/index.html'
+      - 'docs/tools/map-editor/index.html'
+      - 'docs/config/maps/*.json'
+      - 'scripts/test-interior-furniture-grid.js'
+      - '.github/workflows/interior-furniture-grid-regression.yml'
+  pull_request:
+    paths:
+      - 'docs/index.html'
+      - 'docs/js/interior-furniture-grid.js'
+      - 'docs/js/building-interior-npc-wardrobe-editor.js'
+      - 'docs/js/map-editor-interior-instance-sync.js'
+      - 'docs/js/panel-ui.js'
+      - 'docs/tools/building-interior-author/index.html'
+      - 'docs/tools/map-editor/index.html'
+      - 'docs/config/maps/*.json'
+      - 'scripts/test-interior-furniture-grid.js'
+      - '.github/workflows/interior-furniture-grid-regression.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Syntax check furniture-grid integration
+        run: |
+          node --check docs/js/interior-furniture-grid.js
+          node --check docs/js/building-interior-npc-wardrobe-editor.js
+          node --check docs/js/map-editor-interior-instance-sync.js
+          node --check scripts/test-interior-furniture-grid.js
+      - name: Audit grid footprints, collision, rotation, and editor wiring
+        run: node scripts/test-interior-furniture-grid.js
+      - name: Re-run interacting interior regressions
+        run: |
+          node scripts/test-interior-seat-surface-post-transform.js
+          node scripts/test-interior-seat-surface-three-math.js
+          node scripts/test-walkable-elevation-surfaces.js

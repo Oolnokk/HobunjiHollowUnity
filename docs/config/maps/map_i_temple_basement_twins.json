@@ -7,10 +7,25 @@
   "furniture": [
     { "id": "f_tbtwins_bed_namui", "itemKey": "basicBedFurniture", "col": 7, "row": 6, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1 },
     { "id": "f_tbtwins_nightstand_namui", "itemKey": "nightstandFurniture", "col": 6, "row": 6, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1 },
-    { "id": "f_tbtwins_bed_takua", "itemKey": "basicBedFurniture", "col": 11, "row": 6, "rotY": 180, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1 },
+    { "id": "f_tbtwins_bed_takua", "itemKey": "basicBedFurniture", "col": 11, "row": 6, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1, "gridRot": 180, "gridW": 1, "gridD": 2 },
     { "id": "f_tbtwins_nightstand_takua", "itemKey": "nightstandFurniture", "col": 12, "row": 6, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1 },
-    { "id": "f_tbtwins_wardrobe", "itemKey": "wardrobeFurniture", "col": 9, "row": 9, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1 },
-    { "id": "f_tbtwins_rug", "itemKey": "rugFurniture", "col": 9, "row": 7, "rotY": 0, "postX": -0.432, "postY": 0, "postZ": -0.008, "postSX": 3.269, "postSY": 1, "postSZ": 1.61 }
+    { "id": "f_tbtwins_wardrobe", "itemKey": "wardrobeFurniture", "col": 9, "row": 9, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1, "npcWardrobeFor": "takua_ao_hakaru" },
+    { "id": "f_tbtwins_rug", "itemKey": "rugFurniture", "col": 6, "row": 6, "rotY": 0, "postX": 0.068, "postY": 0, "postZ": 0.492, "postSX": 0.934, "postSY": 1, "postSZ": 1.073333, "nonColliding": true, "gridRot": 0, "gridW": 7, "gridD": 3 }
+  ,
+    {
+      "id": "f_tbtwins_wardrobe_namui",
+      "itemKey": "wardrobeFurniture",
+      "col": 6,
+      "row": 9,
+      "rotY": 0,
+      "postX": 0,
+      "postY": 0,
+      "postZ": 0,
+      "postSX": 1,
+      "postSY": 1,
+      "postSZ": 1,
+      "npcWardrobeFor": "namui_u_hakaru"
+    }
   ],
   "floor": [
     [10, 6], [9, 6], [8, 6], [7, 6], [6, 6],
@@ -31,12 +46,7 @@
       "spawnRow": 6
     }
   ],
-  "colliders": [
-    [11, 9], [10, 9],
-    [7, 6], [6, 6], [11, 6], [12, 6],
-    [7, 7],
-    [12, 9]
-  ],
+  "colliders": [[11,9],[12,9]],
   "vendorZones": [],
   "routes": [],
   "npcStations": [
