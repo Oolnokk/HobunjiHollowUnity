@@ -6,6 +6,11 @@ on:
       - 'docs/config/npcs/social-relations.js'
       - 'docs/config/maps/map_i_temple.json'
       - 'docs/config/maps/map_i_temple_basement_hunundi.json'
+      - 'docs/config/maps/map_i_*.json'
+      - 'docs/config/npcs/schedule-overrides.json'
+      - 'docs/config/npcs/placeholder-wardrobes.json'
+      - 'docs/js/local-db-overrides.js'
+      - 'docs/js/npc-furniture-wardrobe-bridge-v4.js'
       - 'docs/js/character-action-locks.js'
       - 'docs/js/npc-performance-reaction-lock-runtime.js'
       - 'docs/js/map-layout-system.js'
@@ -42,6 +47,7 @@ on:
       - 'scripts/test-npc-social-seating.js'
       - 'scripts/test-npc-swig-offer-cooldown.js'
       - 'scripts/test-npc-wardrobe-placeholders.js'
+      - 'scripts/test-npc-bedroom-storage.js'
       - 'scripts/test-relationship-heart-greetings.js'
       - 'scripts/test-target-outline-alpha-cutout.js'
       - 'scripts/test-wilderness-map-load-recovery.js'
@@ -122,6 +128,8 @@ jobs:
           node --check docs/js/npc-social-seating-bridge.js
           node --check docs/js/npc-furniture-wardrobe-bridge-v2.js
           node --check docs/js/npc-furniture-wardrobe-bridge-v3.js
+          node --check docs/js/npc-furniture-wardrobe-bridge-v4.js
+          node --check docs/js/local-db-overrides.js
           node --check docs/js/building-interior-npc-wardrobe-editor.js
           node --check docs/js/building-interior-runtime-furniture.js
           node --check docs/js/furniture-vessel-runtime.js
@@ -150,6 +158,7 @@ jobs:
           node --check scripts/test-npc-social-seating.js
           node --check scripts/test-npc-swig-offer-cooldown.js
           node --check scripts/test-npc-wardrobe-placeholders.js
+          node --check scripts/test-npc-bedroom-storage.js
           node --check scripts/test-relationship-heart-greetings.js
           node --check scripts/test-target-outline-alpha-cutout.js
           node --check scripts/test-wilderness-map-load-recovery.js
@@ -176,6 +185,8 @@ jobs:
         run: node scripts/test-npc-social-seating.js
       - name: Test placeholder wardrobes and old prompt suppression
         run: node scripts/test-npc-wardrobe-placeholders.js
+      - name: Audit reachable NPC bedrooms and priority-correct storage
+        run: node scripts/test-npc-bedroom-storage.js
       - name: Test relationship heart rendering and greeting gates
         run: node scripts/test-relationship-heart-greetings.js
       - name: Test target outline alpha-cutout parity
