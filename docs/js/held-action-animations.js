@@ -266,7 +266,7 @@
     handScripts.push(new URL('js/attack-editor-hand-shoulder-animation-state.js?v=20260818a', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-state-coherence.js?v=20260819b', docsBase).href);
   } else if (!isAnimationAuthor) {
-    handScripts.push(new URL('js/procedural-hand-grip-runtime.js?v=20260817a', docsBase).href);
+    handScripts.push(new URL('js/procedural-hand-grip-runtime.js?v=20260918weaponthrowspin1', docsBase).href);
     handScripts.push(new URL('js/weapon-idle-body-yaw-runtime.js?v=20260915perf1', docsBase).href);
     handScripts.push(new URL('js/crossbow-strike-audio-trim.js?v=20260818a', docsBase).href);
     handScripts.push(new URL('js/weapon-png-scale.js?v=20260902c', docsBase).href);
