@@ -27,8 +27,10 @@ assert.match(breakerSource, /const poseCharge = poseChargeFromRuntime\(\)/,
   'Charged Breaker release derives gameplay charge from the live pose-progress seam');
 assert.match(breakerSource, /releaseWeaponSwingHold\(\{ poseProgress: poseCharge \}\)/,
   'Charged Breaker sends that same pose percentage back to the weapon renderer on release');
-assert.match(coreSource, /pitchDistanceResistance[\s\S]{0,1200}noGravityLossScale - naturalScale/,
-  'vertical-lunge resistance weakens the existing pitch-distance loss inside the shared lunge profile');
+assert.match(coreSource, /pitchDistanceResistance[\s\S]{0,1400}appliedResistance = pitch > 0 \? resistance : 0[\s\S]{0,600}noGravityLossScale - naturalScale/,
+  'vertical-lunge resistance weakens only the upward pitch-distance loss inside the shared lunge profile');
+assert.match(breakerSource, /beginStagedAction\(\{[\s\S]{0,500}windupS: strikeS,[\s\S]{0,160}strikeS: 0/,
+  'released Charged Breaker waits through its visible strike/lunge arc before resolving impact');
 assert.match(counterSource, /window\.Combat\.weaponChargeGlow = \{/,
   'Counter Shield owns the shared weapon-silhouette glow service');
 assert.match(flurrySource, /weaponChargeGlow\?\.set\?\.\('acceleratingFlurry'/,
