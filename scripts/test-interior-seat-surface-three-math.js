@@ -4,6 +4,7 @@ const assert = require('assert');
 const fs = require('fs');
 const vm = require('vm');
 
+const gridSource = fs.readFileSync('docs/js/interior-furniture-grid.js', 'utf8'); // Used first because the game converts grid-native furniture placement back into the renderer's effective post-transform representation before seat metadata is derived.
 const adapterSource = fs.readFileSync('docs/js/seat-surface-placement-transform.js', 'utf8'); // Used to execute the production adapter instead of duplicating its seat-transform logic.
 const templeMap = JSON.parse(fs.readFileSync('docs/config/maps/map_i_temple.json', 'utf8')); // Used to exercise a real saved post-transformed bench from the interior editor.
 const benchData = JSON.parse(fs.readFileSync('docs/config/furniture-authored/bench.json', 'utf8')); // Used as the real authored two-seat surface transformed by the temple placement.
@@ -165,7 +166,8 @@ const window = {
   MapLayoutSystem: { getEffectiveMapData(mapData) { return mapData; } },
   __farmLog() {},
 }; // Used as the browser-like runtime with enough Three.js math to execute the production non-uniform-scale branch.
-const context = vm.createContext({ window, console, Math, Number, String, Object, Array, Map, Set, Promise }); // Used to isolate the adapter from Node globals while preserving standard numeric behavior.
+const context = vm.createContext({ window, console, Math, Number, String, Object, Array, Map, Set, Promise }); // Used to isolate the adapters from Node globals while preserving standard numeric behavior.
+vm.runInContext(gridSource, context, { filename: 'interior-furniture-grid.js' }); // Match docs/index.html load order: grid placement adapts the effective map before seat-surface placement sees it.
 vm.runInContext(adapterSource, context, { filename: 'seat-surface-placement-transform.js' });
 
 const decorativeFurnitureDefs = {
@@ -194,9 +196,11 @@ assert(Math.abs(transformedChairAnchor.rotationDeg.y) < 1e-9 && Math.abs(transfo
   'pure X seat tilt with axis-aligned scale should remain a pure X tilt');
 
 const templeBenchPiece = (templeMap.furniture || []).find(piece =>
-  piece.itemKey === 'benchFurniture' && Number(piece.postSX) === 2 && Number(piece.postSZ) === 0.75
-); // Used to target the existing transformed two-seat temple bench that reproduces the reported class of bug in real map data.
-assert(templeBenchPiece, 'temple map should contain the known post-transformed two-seat bench regression fixture');
+  piece.itemKey === 'benchFurniture'
+    && Number(piece.gridW) === 4 && Number(piece.gridD) === 1
+    && Number(piece.postSZ) === 0.75
+); // Used to target the migrated grid-native temple bench whose 4-tile width becomes the same effective 2x visual X scale at runtime.
+assert(templeBenchPiece, 'temple map should contain the known grid-native two-seat bench regression fixture');
 const benchEffective = window.MapLayoutSystem.getEffectiveMapData({ id: 'temple_bench_regression', furniture: [templeBenchPiece] }); // Used to run the real saved placement through production aliasing.
 const benchAliasKey = benchEffective.furniture[0].seatSurfaceFurnitureKey; // Used to resolve the real bench placement's runtime seat metadata key while its visual key remains benchFurniture.
 const transformedBenchData = window.AuthoredFurniture.peek(benchAliasKey); // Used to verify every authored bench seat inherits the saved post transform.
