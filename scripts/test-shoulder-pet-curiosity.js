@@ -23,7 +23,7 @@ assert.match(rigSource,
   /if \(phase === 'wait' && nextPhase === 'look'\)[\s\S]{0,260}applyShoulderPetObservationMirror\(pet, flipped\)[\s\S]{0,420}phase = nextPhase/,
   'each observation toggles the horizontal mirror synchronously before the look phase begins');
 assert.match(rigSource,
-  /function mirrorShoulderObservationPlaneAroundGrip[\s\S]{0,2600}const sign = flipped \? -1 : 1;[\s\S]{0,500}plane\.scale\.x = baseScaleX \* sign/,
+  /const mirrorShoulderObservationPlaneAroundGrip = [\s\S]{0,4000}const sign = flipped \? -1 : 1;[\s\S]{0,500}plane\.scale\.x = baseScaleX \* sign/,
   'the observation change is still an instantaneous X-scale mirror rather than a rotation or lerp');
 assert.match(rigSource,
   /const desiredWorld = root\.localToWorld\(desiredGripRoot\.clone\(\)\);[\s\S]{0,900}plane\.position\.add\(desiredParent\.sub\(currentParent\)\)/,
@@ -38,7 +38,7 @@ assert.match(rigSource,
   /avatar\.syncMirroredPlaneScale = function[\s\S]{0,450}applyMirror\(\)/,
   'later canonical plane-scale refreshes reapply the current grip-pivot mirror parity');
 assert.match(rigSource,
-  /pivotMode:[\s\S]{0,220}pivotError:[\s\S]{0,900}gripError=/,
+  /pivotMode:[\s\S]{0,220}pivotError:[\s\S]{0,2800}gripError=/,
   'the mobile-readable shoulder-pet flip diagnostic reports the pivot mode and residual grip error');
 assert.match(rigSource,
   /pet\.stableRole !== 'shoulderPet'[\s\S]{0,220}applyShoulderPetObservationMirror\(pet, false\)/,
