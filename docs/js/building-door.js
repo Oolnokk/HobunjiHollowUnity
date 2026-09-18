@@ -274,9 +274,17 @@ if (typeof document !== 'undefined'
     exportScript.dataset.mapEditorExportFixes = '1';
     document.head.appendChild(exportScript);
   }
+  if (!window.InteriorFurnitureGrid && !document.querySelector('script[data-map-editor-interior-furniture-grid]')) {
+    const furnitureGridScript = document.createElement('script'); // Used by the standalone-interior adapter so furniture-derived blockers match runtime after redundant authored colliders are removed.
+    furnitureGridScript.async = false;
+    furnitureGridScript.src = '../../js/interior-furniture-grid.js?v=20260917grid1';
+    furnitureGridScript.dataset.mapEditorInteriorFurnitureGrid = '1';
+    document.head.appendChild(furnitureGridScript);
+  }
   if (!document.querySelector('script[data-map-editor-interior-instance-sync]')) {
     const interiorSyncScript = document.createElement('script');
-    interiorSyncScript.src = '../../js/map-editor-interior-instance-sync.js';
+    interiorSyncScript.async = false;
+    interiorSyncScript.src = '../../js/map-editor-interior-instance-sync.js?v=20260917grid1';
     interiorSyncScript.dataset.mapEditorInteriorInstanceSync = '1';
     document.head.appendChild(interiorSyncScript);
   }
