@@ -448,6 +448,7 @@
     }
     if (hooks.defaultStationId === redirect.fromStationId || hooks.defaultStationId === redirect.toStationId) {
       hooks.defaultStationId = redirect.toStationId;
+      if (redirect.mapId) hooks.defaultMapId = redirect.mapId; // Keep fallback station/map pairs coherent after moving a resident's home station into a bedroom sub-map.
     }
   }
 
