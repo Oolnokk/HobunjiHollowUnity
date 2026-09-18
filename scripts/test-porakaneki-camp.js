@@ -45,6 +45,7 @@ assert.deepEqual(chiefLocale.placement.allowedZones, ZONES);
 assert.equal(chiefLocale.placement.maxInstances, 1);
 assert.equal(chiefLocale.meta.namedNpc, 'porakaneki_chief');
 assert.equal(chiefLocale.objects.filter(object => object.kind === 'tent').length, 7);
+assert.deepEqual(cfg.equipment.weaponShapes, ['fishingspear', 'hatchet', 'dagger'], 'Porakaneki must use the true dagger shape, never daggerSword');
 assert(localeIndex.locales.some(entry => entry.id === 'locale_porakaneki_camp_small'));
 assert(localeIndex.locales.some(entry => entry.id === 'locale_porakaneki_camp_chief' && entry.singleton === true));
 assert(houseLoader.includes('porakaneki-camps-runtime.js?v=20260915hostileset1'));
@@ -178,7 +179,7 @@ const combatDeps = {
   EXTERIOR_ZONES: Object.fromEntries(ZONES.map(zoneId => [zoneId, { cols: 96, rows: 96, entryCol: 2, entryRow: 2 }])),
   WATERWAY_TYPES: new Set(['river', 'stream']),
   TileType: { PATH: 'path', RAMP: 'ramp', WATERFALL: 'waterfall', SHRUB: 'shrub', ROCK: 'rock' },
-  HELD_SHAPE_DEFS: { fishingspear: { dmgType: 'sharp' }, hatchet: { dmgType: 'sharp' }, daggerSword: { dmgType: 'sharp' } },
+  HELD_SHAPE_DEFS: { fishingspear: { dmgType: 'sharp' }, hatchet: { dmgType: 'sharp' }, dagger: { dmgType: 'sharp' } },
   craftedToolItemKey: (shape, metal) => `${shape}_${metal}`,
   hostileObjects,
   getCurrentArea: () => currentArea,
@@ -223,8 +224,8 @@ function hunterDebug(api, zoneId, campId, index) {
   assert.equal(api.__test.isSleepingHour(12), false);
   assert.equal(api.__test.desiredChiefZone('Stormtide'), 'map_southern_cloud_forest');
   assert.equal(api.__test.desiredChiefZone('Coldmuck'), 'map_northern_cliffs');
-  assert.equal(api.__test.weaponRoll(() => 0.99), 'daggerSword');
-  assert.equal(api.__test.weaponRoll(() => 0.99), 'daggerSword', 'independent random weapon rolls may duplicate');
+  assert.equal(api.__test.weaponRoll(() => 0.99), 'dagger');
+  assert.equal(api.__test.weaponRoll(() => 0.99), 'dagger', 'independent random weapon rolls may duplicate');
 
   assert.equal(api.initializeReputation(), true);
   assert.equal(relation.favor, -3);
