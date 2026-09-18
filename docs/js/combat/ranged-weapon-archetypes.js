@@ -6,10 +6,9 @@
 (() => {
   'use strict';
 
-  const VERSION = 7;
+  const VERSION = 8;
   const PATCH_RETRY_MS = 50; // Used while game.js finishes constructing generated metal weapon definitions.
   const PATCH_RETRY_LIMIT = 160; // Used to stop the bootstrap poll after roughly eight seconds instead of polling forever.
-  const THROWN_HOLD_VISUAL_S = 3600; // Used to park the ranged visual at its authored windup without adding another game.js hold state.
   const THROWN_TYPE = 'thrown';
   const BLOWGUN_TYPE = 'blowgun';
   const BLOWGUN_RAW_DAMAGE = 2; // Used as the deliberately tiny direct dart hit; mastery afflictions are the blowgun's real damage identity.
@@ -156,8 +155,12 @@
       rangedType: THROWN_TYPE,
       inputMode: 'hold-release',
       gripMode: animation.gripMode || 'palm-parallel',
+      throwDurationS: Number(animation.durationS) || 1.04,
+      throwWindupFrac: Number.isFinite(Number(animation.windupFrac)) ? Number(animation.windupFrac) : 0.49,
+      throwStrikeFrac: Number.isFinite(Number(animation.strikeFrac)) ? Number(animation.strikeFrac) : 0.57,
+      throwHoldFrac: Number.isFinite(Number(animation.holdFrac)) ? Number(animation.holdFrac) : 0.82,
       projectileSprite: toolDef?.sprite || 'assets/toolsprites/kylie.png',
-      projectileVisualStyle: SPINNING_THROWN_SHAPES.has(shapeKey) ? 'spinningWeapon' : 'standard',
+      projectileVisualStyle: SPINNING_THROWN_SHAPES.has(shapeKey) ? 'spinningWeapon' : 'weapon',
       projectileWeaponShapeKey: shapeKey,
       projectileVisualWidthWorld: SPINNING_THROWN_SHAPES.has(shapeKey) ? 0.5 : null,
       projectileSpinSource: SPINNING_THROWN_SHAPES.has(shapeKey) ? 'fishingMace' : null,
@@ -421,18 +424,16 @@
     const def = window.RangedWeapons.config[itemKey];
     thrownCharge = { itemKey, source, pointerId, startedAt: performance.now() };
     window.RangedWeapons.setLoaded?.(itemKey, false);
-    const holdVisual = window.Combat?.deps?.triggerRangedWeaponVisual;
-    if (typeof holdVisual === 'function') {
-      const windupFrac = Math.max(0.000001, (def.chargeWindupS || 0.27) / THROWN_HOLD_VISUAL_S);
-      holdVisual(THROWN_HOLD_VISUAL_S, {
-        sequence: 'attack',
-        pose: def.chargePose,
-        gripMode: def.gripMode,
-        windupFrac,
-        strikeFrac: 0.99999,
-        holdFrac: 0.999995,
-      });
-    }
+    const totalS = Math.max(0.05, Number(def.throwDurationS) || ((def.chargeWindupS || 0.5096) + (def.fireDurationS || 0.5304)));
+    window.RangedWeapons.triggerPlayerVisual?.(totalS, {
+      sequence: 'attack',
+      pose: def.chargePose,
+      gripMode: def.gripMode,
+      held: true,
+      windupFrac: def.throwWindupFrac ?? 0.49,
+      strikeFrac: def.throwStrikeFrac ?? 0.57,
+      holdFrac: def.throwHoldFrac ?? 0.82,
+    });
     window.Combat?.deps?.refreshActionBar?.();
     lastRelease = { type: 'charge-start', itemKey, source, at: Date.now() };
     return true;
@@ -444,15 +445,26 @@
     thrownCharge = null;
     const ranged = window.RangedWeapons;
     if (!ranged?.config?.[charge.itemKey] || typeof baseStartPlayerAction !== 'function') return false;
-    // Force the existing load/fire state machine into its fire branch. The fire
-    // event itself returns this item to empty/neutral, so no synthetic load stage
-    // is ever exposed for a thrown weapon.
-    ranged.setLoaded?.(charge.itemKey, true);
-    const fired = baseStartPlayerAction(charge.itemKey);
-    if (!fired) ranged.setLoaded?.(charge.itemKey, false);
     const heldMs = Math.max(0, performance.now() - charge.startedAt);
-    lastRelease = { type: fired ? 'released' : 'release-failed', itemKey: charge.itemKey, source, heldMs: Math.round(heldMs), at: Date.now() };
-    window.__farmLog?.(`[ranged-archetypes] ${charge.itemKey} ${fired ? 'released' : 'release failed'} after ${Math.round(heldMs)}ms (${source}).`, 'combat');
+    const liveCharge = Number(ranged.playerWindupPoseProgress?.());
+    const timeFallback = Math.max(0, Math.min(1, heldMs / Math.max(1, (Number(ranged.config[charge.itemKey]?.chargeWindupS) || 0.5096) * 1000)));
+    const poseCharge = Number.isFinite(liveCharge) ? Math.max(0, Math.min(1, liveCharge)) : timeFallback;
+
+    // Same release contract as current Charged Breaker: freeze the charge at
+    // the exact visible Neutral→Windup percentage, slice Windup/Strike to that
+    // amplitude, then start directly at the Windup→Strike boundary.
+    ranged.releasePlayerHold?.({ poseProgress: poseCharge });
+
+    // Force the existing projectile state machine into fire without starting a
+    // second animation. Raw projectile damage is scaled by the released pose percent.
+    ranged.setLoaded?.(charge.itemKey, true);
+    const fired = baseStartPlayerAction(charge.itemKey, { damageScale: poseCharge, suppressVisual: true });
+    if (!fired) {
+      ranged.setLoaded?.(charge.itemKey, false);
+      ranged.cancelPlayerHold?.();
+    }
+    lastRelease = { type: fired ? 'released' : 'release-failed', itemKey: charge.itemKey, source, heldMs: Math.round(heldMs), poseCharge, at: Date.now() };
+    window.__farmLog?.(`[ranged-archetypes] ${charge.itemKey} ${fired ? 'released' : 'release failed'} at ${Math.round(poseCharge * 100)}% visible windup (${source}).`, 'combat');
     return fired;
   }
 
@@ -462,7 +474,7 @@
     thrownCharge = null;
     window.RangedWeapons?.setLoaded?.(itemKey, false);
     window.RangedWeapons?.cancelPlayerAction?.();
-    window.ProceduralHandGripRuntime?.clear?.();
+    window.RangedWeapons?.cancelPlayerHold?.();
     lastRelease = { type: 'cancelled', itemKey, source: reason, at: Date.now() };
     return true;
   }
