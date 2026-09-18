@@ -213,7 +213,7 @@
     const n = entries.length, step = n > 1 ? (ARC_S - ARC_E) / (n - 1) : 0;
     entries.forEach((entry, index) => {
       const deg = ARC_S - index * step;
-      const extra = [entry.active ? 'arc-active' : '', entry.disabled ? 'blocked' : '', entry.className || ''].filter(Boolean).join(' ');
+      const extra = [(entry.active || entry.initial) ? 'arc-active' : '', entry.disabled ? 'blocked' : '', entry.className || ''].filter(Boolean).join(' ');
       const el = _mkSlot(deg, entry.icon, entry.label, extra, radius);
       _arcSlots.push({ angle: deg, el, data: { ...entry, type: 'entry' } });
       if (entry.initial) _arcActive = index;
