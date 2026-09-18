@@ -21626,6 +21626,15 @@
           playerFacing += angleDiff(mountRideEntity.pngRot, playerFacing) * 0.25;
           playerMesh.rotation.y = playerFacing;
           if (playerLegs?.group) playerLegs.group.rotation.y = 0;
+        } else if (!player.prone && !window.FarmAnimals.isHarvesting() && !window.ImpactRagdollPlayback?.isActive?.() && isPlayerSwimming()) {
+          // Swimming owns one coherent facing for the whole rig: use the
+          // actual post-collision velocity, bypass the billboard dead-zone,
+          // and keep the procedural leg root aligned with the torso instead
+          // of applying its ordinary ground-walk counter-rotation.
+          const swimFacing = window.HobunjiProceduralSwimGait?.facingYawFromMovement?.(player.vx, player.vy);
+          if (Number.isFinite(swimFacing)) playerFacing = swimFacing;
+          playerMesh.rotation.y = playerFacing;
+          if (playerLegs?.group) playerLegs.group.rotation.y = 0;
         } else {
           if (!player.perpState) player.perpState = {};
           const rawTargetRotY = -facingAngle + Math.PI / 2;
