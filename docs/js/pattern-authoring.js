@@ -11,7 +11,18 @@
 (() => {
   'use strict';
 
-  const SKETCH_SIZE = 192; // motif working resolution, px
+  const SKETCH_SIZE = 192; // motif working resolution, px — the marked/drawable area a brush's own input coordinate is confined to.
+  // A brush stroke's rendered ink is a full-width circle/line centered on the
+  // input coordinate, so a stroke aimed right at the SKETCH_SIZE edge still
+  // needs BRUSH_MAX_SIZE/2 px of canvas beyond that edge to render its far
+  // half without the canvas's own boundary silently clipping it. SKETCH_PAD
+  // is that margin; the sketch canvas is SKETCH_SIZE + 2*SKETCH_PAD square,
+  // with the inner SKETCH_SIZE region marked by a dotted line (see
+  // .pa-sketchBoundary) so the bleed margin is visible instead of being an
+  // unmarked dead zone.
+  const BRUSH_MAX_SIZE = 35;
+  const SKETCH_PAD = Math.ceil(BRUSH_MAX_SIZE / 2) + 1;
+  const SKETCH_CANVAS_SIZE = SKETCH_SIZE + SKETCH_PAD * 2;
 
   const PATTERN_DEFAULTS = Object.freeze({
     motifScale: 1, // size of each individual stamped motif copy, relative to its own opaque-ink bounds
@@ -31,6 +42,10 @@
     gridSpacing: 6,
     tiling: true,
     invert: false, // swap which side of the motif stays vs. clears (see tool-metal-recolor.js)
+    // Erodes the placed/tiled ink mask inward by this many px before the
+    // outline (if any) is drawn around it — see buildPatternMask/
+    // recolorAndOxidize's erodeMask call. 0 = no thinning.
+    motifThinPx: 0,
   });
 
   let stylesInjected = false;
@@ -59,8 +74,9 @@
       .pa-btn{border:1px solid rgba(127,199,188,.38);background:rgba(127,199,188,.13);color:#eaf5f3;border-radius:10px;padding:6px 10px;font-weight:800;cursor:pointer;font-size:12px}
       .pa-btn.secondary{border-color:rgba(255,255,255,.16);background:rgba(255,255,255,.055)}
       .pa-btn.good{border-color:rgba(129,214,154,.42);background:rgba(129,214,154,.14)}
-      .pa-sketchWrap{display:grid;place-items:center;border-radius:12px;border:1px solid rgba(255,255,255,.12);background-image:linear-gradient(45deg,rgba(255,255,255,.06) 25%,transparent 25%),linear-gradient(-45deg,rgba(255,255,255,.06) 25%,transparent 25%),linear-gradient(45deg,transparent 75%,rgba(255,255,255,.06) 75%),linear-gradient(-45deg,transparent 75%,rgba(255,255,255,.06) 75%);background-size:16px 16px;background-position:0 0,0 8px,8px -8px,-8px 0}
-      .pa-sketchWrap canvas{position:static;inset:auto;display:block;width:100%;max-width:${SKETCH_SIZE}px;height:auto;aspect-ratio:1/1;touch-action:none;cursor:crosshair;image-rendering:pixelated}
+      .pa-sketchWrap{position:relative;width:100%;max-width:${SKETCH_CANVAS_SIZE}px;aspect-ratio:1/1;margin:0 auto;border-radius:12px;border:1px solid rgba(255,255,255,.12);background-image:linear-gradient(45deg,rgba(255,255,255,.06) 25%,transparent 25%),linear-gradient(-45deg,rgba(255,255,255,.06) 25%,transparent 25%),linear-gradient(45deg,transparent 75%,rgba(255,255,255,.06) 75%),linear-gradient(-45deg,transparent 75%,rgba(255,255,255,.06) 75%);background-size:16px 16px;background-position:0 0,0 8px,8px -8px,-8px 0}
+      .pa-sketchWrap canvas{position:absolute;inset:0;display:block;width:100%;height:100%;touch-action:none;cursor:crosshair;image-rendering:pixelated}
+      .pa-sketchBoundary{position:absolute;inset:calc(${SKETCH_PAD} / ${SKETCH_CANVAS_SIZE} * 100%);border:1px dashed rgba(255,255,255,.45);border-radius:2px;pointer-events:none}
       .pa-previewWrap{display:grid;place-items:center;min-height:200px;border-radius:13px;border:1px solid #294039;background:#0a0e11;background-image:linear-gradient(45deg,rgba(255,255,255,.045) 25%,transparent 25%),linear-gradient(-45deg,rgba(255,255,255,.045) 25%,transparent 25%),linear-gradient(45deg,transparent 75%,rgba(255,255,255,.045) 75%),linear-gradient(-45deg,transparent 75%,rgba(255,255,255,.045) 75%);background-size:20px 20px;background-position:0 0,0 10px,10px -10px,-10px 0}
       .pa-previewWrap canvas,.pa-previewWrap img{position:static;inset:auto;width:auto;height:auto;max-width:100%;max-height:min(340px,50vh);image-rendering:pixelated}
       .pa-hint{font-size:10px;line-height:1.35;color:#9cb3ae;margin:0 0 6px}
@@ -86,6 +102,13 @@
     let drawing = false;
     let lastPt = null;
     let previewToken = 0;
+    // Tracks whether the pattern currently loaded is an UNMODIFIED library
+    // entry (options.initialPatternLibraryId at open, or a "Load" click) —
+    // cleared by any edit (a stroke, a placement change, reset, clear).
+    // Passed as onSave's 2nd argument so a caller can store just the
+    // reference instead of a full duplicate copy of the pattern; see
+    // clothing-weaving-system.js/metal-craft-shop.js.
+    let loadedLibraryId = options.initialPatternLibraryId || null;
 
     const overlay = document.createElement('div');
     overlay.className = 'pa-overlay';
@@ -97,7 +120,8 @@
             <div class="pa-card">
               <h3>Motif</h3>
               <p class="pa-hint">${escapeHtml(options.motifHint || 'Draw a solid black motif. This is the shape that gets placed and repeated.')}</p>
-              <div class="pa-sketchWrap"><canvas class="pa-sketch" width="${SKETCH_SIZE}" height="${SKETCH_SIZE}"></canvas></div>
+              <div class="pa-sketchWrap"><canvas class="pa-sketch" width="${SKETCH_CANVAS_SIZE}" height="${SKETCH_CANVAS_SIZE}"></canvas><div class="pa-sketchBoundary"></div></div>
+              <p class="pa-hint" style="margin-top:5px">The dashed line marks where the brush's own input is confined — a stroke aimed right at that line still paints its full width, bleeding into the margin outside it instead of being clipped in half. The eraser isn't confined to it, so any stray bleed is still reachable.</p>
               <div class="pa-row" style="margin-top:9px">
                 <button type="button" class="pa-btn secondary pa-toolToggle active" data-tool="brush">Brush</button>
                 <button type="button" class="pa-btn secondary pa-toolToggle" data-tool="eraser">Eraser</button>
@@ -118,6 +142,8 @@
               <div class="pa-field" data-show-for="triangle"><label><span>Triangle padding</span><span class="pa-val" data-for="trianglePadding"></span></label><input type="range" class="pa-in" data-field="trianglePadding" min="0" max="8" step="0.25" value="${cfg.trianglePadding}"></div>
               <div class="pa-field" data-show-for="grid"><label><span>Grid spacing</span><span class="pa-val" data-for="gridSpacing"></span></label><input type="range" class="pa-in" data-field="gridSpacing" min="0" max="40" step="1" value="${cfg.gridSpacing}"></div>
               <div class="pa-check"><input type="checkbox" class="pa-in" data-field="invert" ${cfg.invert ? 'checked' : ''}><label>Invert pattern</label></div>
+              <div class="pa-field"><label><span>Motif thinning</span><span class="pa-val" data-for="motifThinPx"></span></label><input type="range" class="pa-in" data-field="motifThinPx" min="0" max="12" step="1" value="${cfg.motifThinPx}"></div>
+              <p class="pa-hint">Erodes the placed ink inward from every edge before any outline is drawn around it — like magic-wand-selecting the transparent area with this many px of expansion, then deleting the selection.</p>
               <p class="pa-hint" data-show-for="triangle">Triangle mode fits a tight triangle around your motif's own ink and tiles it edge-to-edge, alternating 180°, so neighboring copies always meet with no gaps. Motif scale above 1× deliberately overflows into neighboring copies instead of growing the fit.</p>
               <p class="pa-hint" data-show-for="grid">Grid mode repeats the motif in a simple rectangular grid, spaced from its own tight ink bounds at 1× motif scale. Motif scale above 1× deliberately overlaps into neighboring cells instead of growing the grid.</p>
               <button type="button" class="pa-btn secondary" data-act="resetPlacement">Reset placement</button>
@@ -161,7 +187,7 @@
       overlay.querySelectorAll('.pa-val').forEach(el => {
         const field = el.dataset.for;
         if (field === 'motifScale' || field === 'patternScale') el.textContent = `${Number(cfg[field]).toFixed(2)}×`;
-        else if (field === 'trianglePadding' || field === 'gridSpacing') el.textContent = `${Number(cfg[field]).toFixed(2)}px`;
+        else if (field === 'trianglePadding' || field === 'gridSpacing' || field === 'motifThinPx') el.textContent = `${Number(cfg[field]).toFixed(field === 'motifThinPx' ? 0 : 2)}px`;
         else if (field === 'translateX' || field === 'translateY') el.textContent = `${cfg[field]}px`;
         else el.textContent = `${cfg[field]}°`;
       });
@@ -178,7 +204,7 @@
 
     function hasMotifInk() {
       try {
-        const data = sketchCtx.getImageData(0, 0, SKETCH_SIZE, SKETCH_SIZE).data;
+        const data = sketchCtx.getImageData(0, 0, SKETCH_CANVAS_SIZE, SKETCH_CANVAS_SIZE).data;
         for (let i = 3; i < data.length; i += 4) if (data[i] > 16) return true;
       } catch { /* ignore */ }
       return false;
@@ -198,6 +224,7 @@
         gridSpacing: Number(cfg.gridSpacing),
         tiling: !!cfg.tiling,
         invert: !!cfg.invert,
+        motifThinPx: Number(cfg.motifThinPx) || 0,
       };
     }
 
@@ -232,10 +259,20 @@
     }
 
     // ── Motif sketch input ──────────────────────────────────────────────
+    // The brush's own input coordinate is confined to the marked inner
+    // SKETCH_SIZE square (see .pa-sketchBoundary) — the rendered stroke
+    // still bleeds up to SKETCH_PAD px beyond that into the margin, since
+    // the canvas itself is SKETCH_CANVAS_SIZE and nothing clips it there.
+    // The eraser isn't confined, so any ink that bled into the margin is
+    // still reachable to clean up.
     function sketchPoint(evt) {
       const rect = sketchCanvas.getBoundingClientRect();
-      const x = ((evt.clientX - rect.left) / rect.width) * SKETCH_SIZE;
-      const y = ((evt.clientY - rect.top) / rect.height) * SKETCH_SIZE;
+      let x = ((evt.clientX - rect.left) / rect.width) * SKETCH_CANVAS_SIZE;
+      let y = ((evt.clientY - rect.top) / rect.height) * SKETCH_CANVAS_SIZE;
+      if (brushMode !== 'eraser') {
+        x = clamp(x, SKETCH_PAD, SKETCH_PAD + SKETCH_SIZE);
+        y = clamp(y, SKETCH_PAD, SKETCH_PAD + SKETCH_SIZE);
+      }
       return { x, y };
     }
     function strokeTo(pt) {
@@ -270,6 +307,7 @@
       if (!drawing) return;
       drawing = false;
       lastPt = null;
+      loadedLibraryId = null;
       schedulePreview();
     }
     sketchCanvas.addEventListener('pointerup', endStroke);
@@ -280,10 +318,19 @@
     // NOT used by "Reset placement", which deliberately leaves whatever is
     // currently drawn on the sketchpad untouched.
     function drawMotifImageIntoSketch(dataUrl) {
-      sketchCtx.clearRect(0, 0, SKETCH_SIZE, SKETCH_SIZE);
+      sketchCtx.clearRect(0, 0, SKETCH_CANVAS_SIZE, SKETCH_CANVAS_SIZE);
       if (!dataUrl) { schedulePreview(); return; }
       const img = new Image();
-      img.onload = () => { sketchCtx.clearRect(0, 0, SKETCH_SIZE, SKETCH_SIZE); sketchCtx.drawImage(img, 0, 0, SKETCH_SIZE, SKETCH_SIZE); schedulePreview(); };
+      img.onload = () => {
+        sketchCtx.clearRect(0, 0, SKETCH_CANVAS_SIZE, SKETCH_CANVAS_SIZE);
+        // Drawn at native size, centered on the canvas — a legacy SKETCH_SIZE
+        // (192x192) motif from before this margin existed lands centered
+        // inside the dashed boundary exactly where it always was, rather than
+        // being stretched to fill the new, larger canvas.
+        const w = img.naturalWidth || img.width || SKETCH_SIZE, h = img.naturalHeight || img.height || SKETCH_SIZE;
+        sketchCtx.drawImage(img, (SKETCH_CANVAS_SIZE - w) / 2, (SKETCH_CANVAS_SIZE - h) / 2, w, h);
+        schedulePreview();
+      };
       img.src = dataUrl;
     }
     function syncInputsFromCfg() {
@@ -319,7 +366,8 @@
       overlay.querySelector('.pa-brushSizeVal').textContent = `${brushSize}px`;
     });
     overlay.querySelector('[data-act="clearSketch"]').addEventListener('click', () => {
-      sketchCtx.clearRect(0, 0, SKETCH_SIZE, SKETCH_SIZE);
+      sketchCtx.clearRect(0, 0, SKETCH_CANVAS_SIZE, SKETCH_CANVAS_SIZE);
+      loadedLibraryId = null;
       schedulePreview();
     });
 
@@ -329,6 +377,7 @@
         if (input.type === 'checkbox') cfg[field] = input.checked;
         else if (input.tagName === 'SELECT') cfg[field] = input.value;
         else cfg[field] = Number(input.value);
+        loadedLibraryId = null;
         updateValLabels();
         updateFieldVisibility();
         schedulePreview();
@@ -337,6 +386,7 @@
 
     overlay.querySelector('[data-act="resetPlacement"]').addEventListener('click', () => {
       Object.assign(cfg, PATTERN_DEFAULTS);
+      loadedLibraryId = null;
       syncInputsFromCfg();
       updateValLabels();
       updateFieldVisibility();
@@ -367,7 +417,7 @@
       container.querySelectorAll('[data-lib-load]').forEach(btn => {
         btn.addEventListener('click', () => {
           const data = options.library.get?.(btn.dataset.libLoad);
-          if (data) applyPatternData(data);
+          if (data) { applyPatternData(data); loadedLibraryId = btn.dataset.libLoad; }
         });
       });
       container.querySelectorAll('[data-lib-remove]').forEach(btn => {
@@ -410,7 +460,7 @@
       const data = currentPatternData();
       if (!data.motifDataUrl) { previewStatus.textContent = 'Draw a motif before saving.'; return; }
       if (typeof options.onSave !== 'function') { close(); return; }
-      const result = await options.onSave(data);
+      const result = await options.onSave(data, loadedLibraryId);
       if (result !== false) close();
     });
 

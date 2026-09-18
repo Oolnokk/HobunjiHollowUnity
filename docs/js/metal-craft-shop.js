@@ -187,7 +187,8 @@
     window.PatternAuthoring?.openEditor({
       title: `Author verdigris removal — ${def.label}`,
       motifHint: 'Draw the motif to strip back to bare metal — everything else stays fully oxidized.',
-      initialPattern: existing?.mode === 'pattern' ? existing.pattern : null,
+      initialPattern: existing?.mode === 'pattern' ? (existing.pattern || (existing.patternLibraryId ? window.PatternLibrary?.getById?.(existing.patternLibraryId) : null)) : null,
+      initialPatternLibraryId: existing?.mode === 'pattern' ? (existing.patternLibraryId || null) : null,
       library: window.PatternLibrary ? {
         list: () => window.PatternLibrary.listAvailable(),
         get: (id) => window.PatternLibrary.getById(id),
@@ -200,13 +201,13 @@
         oxidationAmount: 1,
         authoredPattern: patternData,
       }),
-      onSave: (patternData) => {
+      onSave: (patternData, sourceLibraryId) => {
         if ((deps.inventory[barKey] || 0) < PLATE_BAR_COST) { deps.showToast(`Not enough ${baseMetal.label} bars.`, false); return false; }
         if ((deps.inventory.gold || 0) < PLATE_LABOR_GOLD) { deps.showToast('Not enough gold.', false); return false; }
         deps.inventory[barKey] -= PLATE_BAR_COST;
         deps.clampInventoryStack(barKey);
         deps.inventory.gold -= PLATE_LABOR_GOLD;
-        deps.setToolVerdigrisPattern(itemKey, patternData);
+        deps.setToolVerdigrisPattern(itemKey, patternData, sourceLibraryId);
         deps.refreshMetalToolWorldTexture(itemKey);
         deps.showToast('Verdigris carefully stripped into a pattern.', true);
         renderMetalCraftShopPage();

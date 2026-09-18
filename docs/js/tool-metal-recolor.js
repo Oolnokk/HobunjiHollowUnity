@@ -570,6 +570,60 @@
     return outline;
   }
 
+  // Erodes mask inward by radiusPx: any set pixel within radiusPx of an
+  // unset pixel (or the canvas edge) gets cleared. Same shape as
+  // buildOxidationOutlineMask's own boundary+radius-search, just clearing
+  // near the boundary instead of growing outward from it — see
+  // pattern-authoring.js's "Motif thinning" slider (motifThinPx).
+  function erodeMask(mask, width, height, radiusPx) {
+    const px = Math.max(0, Math.round(radiusPx) || 0);
+    if (!px) return mask;
+    const boundary = new Uint8Array(mask.length);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const p = y * width + x;
+        if (!mask[p]) continue;
+        let isEdge = false;
+        for (let oy = -1; oy <= 1 && !isEdge; oy++) {
+          for (let ox = -1; ox <= 1; ox++) {
+            if (!ox && !oy) continue;
+            const nx = x + ox, ny = y + oy;
+            if (nx < 0 || ny < 0 || nx >= width || ny >= height) { isEdge = true; break; }
+            if (!mask[ny * width + nx]) { isEdge = true; break; }
+          }
+        }
+        if (isEdge) boundary[p] = 1;
+      }
+    }
+    const eroded = new Uint8Array(mask.length);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const p = y * width + x;
+        if (!mask[p]) continue;
+        let nearBoundary = false;
+        for (let oy = -px; oy <= px && !nearBoundary; oy++) {
+          for (let ox = -px; ox <= px; ox++) {
+            if (Math.hypot(ox, oy) > px + 0.01) continue;
+            const nx = x + ox, ny = y + oy;
+            if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+            if (boundary[ny * width + nx]) { nearBoundary = true; break; }
+          }
+        }
+        if (!nearBoundary) eroded[p] = 1;
+      }
+    }
+    return eroded;
+  }
+
+  // An authored pattern's outline never grows past whatever outlineWidth the
+  // caller configured (a scaled-up motif reads fine with the same line
+  // weight it always had) but does thin down for a scaled-down one, clamped
+  // so it never disappears below 1px.
+  function scaledOutlineWidthForPattern(defaultWidth, patternDef) {
+    const scale = Math.min(Number(patternDef?.motifScale) || 1, 1) * Math.min(Number(patternDef?.patternScale) || 1, 1);
+    return Math.max(1, Math.min(defaultWidth, Math.round(defaultWidth * scale)));
+  }
+
   function recolorAndOxidize(imageData, opts) {
     const { data, width, height } = imageData;
     const src = new Uint8ClampedArray(data);
@@ -639,7 +693,10 @@
       // not where it grows, so everything else on the metal mask stays
       // oxidized (this only ever runs on an already mastery-5/fully-grown
       // tool — see toolVerdigrisPatternEligible in game.js).
-      const clearedMask = buildAuthoredClearedMask(width, height, authoredPattern, motifImg);
+      // Thins the placed motif shape inward before invert/oxidation logic
+      // sees it, so the same eroded shape drives both the cleared region and
+      // (further down) the outline drawn around it.
+      const clearedMask = erodeMask(buildAuthoredClearedMask(width, height, authoredPattern, motifImg), width, height, authoredPattern.motifThinPx);
       // invert swaps which side of the motif keeps verdigris: normally the
       // motif itself is the cleared shape and everything else stays
       // oxidized; inverted, the motif shape stays oxidized and everything
@@ -654,12 +711,15 @@
     } else {
       oxidationMask = buildOxidationMask(metalMask, width, height, clamp01(opts.oxidationAmount), opts);
     }
+    const outlineWidth = authoredPattern
+      ? scaledOutlineWidthForPattern(Math.max(0, opts.outlineWidth | 0), authoredPattern)
+      : Math.max(0, opts.outlineWidth | 0);
     const outlineMask = buildOxidationOutlineMask(
       oxidationMask,
       metalMask,
       width,
       height,
-      Math.max(0, opts.outlineWidth | 0),
+      outlineWidth,
     );
 
     let oxidizedPixels = 0;
@@ -851,6 +911,7 @@
     rgbToHsv,
     hsvToRgb,
     SOURCE_HEX,
+    __test: Object.freeze({ erodeMask, scaledOutlineWidthForPattern }),
   };
 
   debugLog({}, 'module loaded', {

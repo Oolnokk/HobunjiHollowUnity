@@ -61,21 +61,31 @@
   }
 
   // A garment's weaving data can carry one pattern per layer role (new
-  // format: { layers: { <role>: { pattern, patternLibraryId, patternLabel } } })
+  // format: { layers: { <role>: { pattern|patternLibraryId, patternLabel } } })
   // or — from before per-layer authoring existed — a single pattern applied
-  // to every layer of the garment (legacy format: { pattern, ... }). Both are
-  // read through these two helpers so every consumer (portrait rendering,
-  // loom/redye previews, debug snapshots) agrees on what "this item has a
-  // pattern" and "what pattern applies to this specific layer" mean.
+  // to every layer of the garment (legacy format: { pattern, ... }). A layer
+  // entry holds either an embedded pattern (custom, never saved to the
+  // library) or just a patternLibraryId reference — resolved here rather
+  // than duplicating the full motif/placement data onto every garment that
+  // reuses the same saved pattern. Both are read through these two helpers
+  // so every consumer (portrait rendering, loom/redye previews, debug
+  // snapshots) agrees on what "this item has a pattern" and "what pattern
+  // applies to this specific layer" mean.
   function weavingPatternForRole(weaving, role) {
     if (!weaving) return null;
-    if (weaving.layers) return weaving.layers[role || DEFAULT_LAYER_ROLE]?.pattern || null;
+    if (weaving.layers) {
+      const entry = weaving.layers[role || DEFAULT_LAYER_ROLE];
+      if (!entry) return null;
+      if (entry.pattern) return entry.pattern;
+      if (entry.patternLibraryId) return window.PatternLibrary?.getById?.(entry.patternLibraryId) || null;
+      return null;
+    }
     return weaving.pattern || null; // Legacy save: one pattern, applied to every layer.
   }
 
   function weavingHasAnyPattern(weaving) {
     if (!weaving) return false;
-    if (weaving.layers) return Object.values(weaving.layers).some(entry => !!entry?.pattern);
+    if (weaving.layers) return Object.values(weaving.layers).some(entry => !!(entry?.pattern || entry?.patternLibraryId));
     return !!weaving.pattern;
   }
 
@@ -88,7 +98,7 @@
   function summarizeWeavingLabel(weaving) {
     if (!weavingHasAnyPattern(weaving)) return null;
     if (!weaving.layers) return 'Custom';
-    const entries = Object.entries(weaving.layers).filter(([, entry]) => entry?.pattern);
+    const entries = Object.entries(weaving.layers).filter(([, entry]) => entry?.pattern || entry?.patternLibraryId);
     if (entries.length === 1) return entries[0][1].patternLabel || 'Custom';
     return entries.map(([role, entry]) => `${layerLabel(role)}: ${entry.patternLabel || 'Custom'}`).join(', ');
   }
@@ -580,7 +590,14 @@
       for (const { role } of state.layers) {
         const key = role || DEFAULT_LAYER_ROLE;
         const entry = state.layerPatterns[key];
-        if (entry?.pattern) layers[key] = { pattern: clone(entry.pattern), patternLibraryId: entry.patternId || null, patternLabel: entry.patternLabel || 'Custom' };
+        if (!entry) continue;
+        // A library-backed pattern is stored as just the reference, not a
+        // full duplicate copy of the motif/placement data — the same saved
+        // pattern reused across many garments then costs one copy in the
+        // save, not one per garment. Resolved back to real pattern data by
+        // weavingPatternForRole.
+        if (entry.patternId) layers[key] = { patternLibraryId: entry.patternId, patternLabel: entry.patternLabel || 'Custom' };
+        else if (entry.pattern) layers[key] = { pattern: clone(entry.pattern), patternLabel: entry.patternLabel || 'Custom' };
       }
       return Object.keys(layers).length ? { layers } : null;
     }
@@ -638,7 +655,8 @@
         motifHint: state.layers.length > 1
           ? `Draw the motif to weave onto this layer (${layerLabel(role)}). It will use the garment's third dye slot.`
           : 'Draw the motif to weave onto this garment. It will use the garment\'s third dye slot.',
-        initialPattern: existing?.pattern || null,
+        initialPattern: existing?.pattern || (existing?.patternId ? window.PatternLibrary?.getById?.(existing.patternId) : null) || null,
+        initialPatternLibraryId: existing?.patternId || null,
         library: window.PatternLibrary ? {
           list: () => window.PatternLibrary.listAvailable(),
           get: id => window.PatternLibrary.getById(id),
@@ -650,8 +668,9 @@
           const weaving = { layers: { ...base.layers, [roleKey]: { pattern: patternData } } };
           return renderClothingLayers(bp.baseCosmeticId, { primaryHex: dyeById(state.dyeA)?.hex, patternHex: dyeById(state.dyeC)?.hex, weaving }).then(r => r.canvas);
         },
-        onSave: patternData => {
-          state.layerPatterns[roleKey] = { pattern: clone(patternData), patternId: '', patternLabel: 'Custom' };
+        onSave: (patternData, sourceLibraryId) => {
+          const patternLabel = sourceLibraryId ? (window.PatternLibrary?.listAvailable?.().find(entry => entry.id === sourceLibraryId)?.label || 'Custom') : 'Custom';
+          state.layerPatterns[roleKey] = { pattern: clone(patternData), patternId: sourceLibraryId || '', patternLabel };
           refreshPatternLayerControls();
           refreshPreview();
           return true;
@@ -1260,6 +1279,60 @@
     return { labels, cellCount };
   }
 
+  // Erodes mask inward by radiusPx: any set pixel within radiusPx of an
+  // unset pixel (or the canvas edge) gets cleared. Mirrors
+  // buildPatternOutlineMask's own boundary+radius-search shape, just
+  // clearing near the boundary instead of growing outward from it — see
+  // pattern-authoring.js's "Motif thinning" slider (PATTERN_DEFAULTS.motifThinPx).
+  function erodeMask(mask, width, height, radiusPx) {
+    const px = Math.max(0, Math.round(radiusPx) || 0);
+    if (!px) return mask;
+    const boundary = new Uint8Array(mask.length);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const p = y * width + x;
+        if (!mask[p]) continue;
+        let isEdge = false;
+        for (let oy = -1; oy <= 1 && !isEdge; oy++) {
+          for (let ox = -1; ox <= 1; ox++) {
+            if (!ox && !oy) continue;
+            const nx = x + ox, ny = y + oy;
+            if (nx < 0 || ny < 0 || nx >= width || ny >= height) { isEdge = true; break; }
+            if (!mask[ny * width + nx]) { isEdge = true; break; }
+          }
+        }
+        if (isEdge) boundary[p] = 1;
+      }
+    }
+    const eroded = new Uint8Array(mask.length);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const p = y * width + x;
+        if (!mask[p]) continue;
+        let nearBoundary = false;
+        for (let oy = -px; oy <= px && !nearBoundary; oy++) {
+          for (let ox = -px; ox <= px; ox++) {
+            if (Math.hypot(ox, oy) > px + 0.01) continue;
+            const nx = x + ox, ny = y + oy;
+            if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+            if (boundary[ny * width + nx]) { nearBoundary = true; break; }
+          }
+        }
+        if (!nearBoundary) eroded[p] = 1;
+      }
+    }
+    return eroded;
+  }
+
+  // A woven motif's outline never grows past its own default thickness (a
+  // scaled-up motif reads fine with the same line weight it always had) but
+  // does thin down for a scaled-down one, clamped so it never disappears
+  // below 1px.
+  function scaledOutlineWidth(defaultWidth, pattern) {
+    const scale = Math.min(Number(pattern?.motifScale) || 1, 1) * Math.min(Number(pattern?.patternScale) || 1, 1);
+    return Math.max(1, Math.min(defaultWidth, Math.round(defaultWidth * scale)));
+  }
+
   async function applyPatternToTintedImage(imageOrCanvas, pattern, colorHex, cachePrefix = '') {
     if (!imageOrCanvas || !pattern?.motifDataUrl) return imageOrCanvas;
     const width = imageOrCanvas.naturalWidth || imageOrCanvas.width || 1, height = imageOrCanvas.naturalHeight || imageOrCanvas.height || 1;
@@ -1313,9 +1386,13 @@
       const mi = (my * maskWidth + mx) * 4;
       if (paddedMaskData[mi + 3] > 16) patternMask[p] = 1;
     }
+    // Thins the placed ink inward before anything else reads patternMask, so
+    // both the fill below and the outline that follows see the eroded shape
+    // — see pattern-authoring.js's "Motif thinning" slider.
+    const thinnedMask = erodeMask(patternMask, width, height, pattern.motifThinPx);
 
     for (let p = 0, i = 0; i < base.data.length; i += 4, p++) {
-      if (!garmentMask[p] || !patternMask[p]) continue;
+      if (!garmentMask[p] || !thinnedMask[p]) continue;
       const lum = luminanceOf(base.data[i], base.data[i + 1], base.data[i + 2]);
       const normalized = Math.pow(Math.max(0, lum) / neutralLuminance, shadeCfg.gamma);
       const shade = Math.max(shadeCfg.shadowFloor, Math.min(shadeCfg.highlightBoost, normalized));
@@ -1324,7 +1401,7 @@
       base.data[i + 2] = Math.max(0, Math.min(255, Math.round(b * shade)));
     }
 
-    const outlineMask = buildPatternOutlineMask(patternMask, garmentMask, width, height, PATTERN_OUTLINE_WIDTH);
+    const outlineMask = buildPatternOutlineMask(thinnedMask, garmentMask, width, height, scaledOutlineWidth(PATTERN_OUTLINE_WIDTH, pattern));
     for (let p = 0, i = 0; i < base.data.length; i += 4, p++) {
       if (!outlineMask[p]) continue;
       base.data[i] = 0; base.data[i + 1] = 0; base.data[i + 2] = 0;
@@ -1431,7 +1508,7 @@
     renderClothingLayers,
     iconSpriteForCosmetic,
     debugSnapshot,
-    __test: Object.freeze({ baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask, applyPatternToTintedImage, labelPatternCells, behindViewUrlsFor, buildPortraitPatternMap, collectPatternImageUrls, cosmeticConfig, summarizeWeavingLabel, weavingPatternForRole, weavingHasAnyPattern }),
+    __test: Object.freeze({ baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask, applyPatternToTintedImage, labelPatternCells, behindViewUrlsFor, buildPortraitPatternMap, collectPatternImageUrls, cosmeticConfig, summarizeWeavingLabel, weavingPatternForRole, weavingHasAnyPattern, erodeMask, scaledOutlineWidth }),
   });
   window.__clothingWeavingDebug = debugSnapshot;
 
