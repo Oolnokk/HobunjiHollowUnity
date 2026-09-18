@@ -23,7 +23,7 @@ vm.runInContext(splineSource, context, { filename: 'animal-shoulder-spline.js' }
 
 const api = context.window.HobunjiGrehlrHeadRigCorrection;
 assert(api, 'Grehlr correction module should expose a debug-visible API');
-assert.equal(api.version, 6);
+assert.equal(api.version, 7);
 assert.equal(context.window.CreatureGeneticsRender.ANIMAL_HEAD_RIGS.grehlr, sharedRig,
   'correction mutates the shared rig object in place');
 assert.equal(sharedRig.legacy, undefined, 'obsolete shared-rig keys are cleared before applying the authored correction');
@@ -35,28 +35,19 @@ assert(rest?.enabled, 'Grehlr carries the authored shoulder presentation');
 assert.equal(rest.useSpline, true);
 assert.equal(rest.useRun1, false);
 assert.equal(rest.splitFrame, true);
-assert.equal(rest.splitRightUsesIdle, true);
-assert.equal(rest.frameShiftX, 0.52);
+assert.equal(rest.splitRightUsesIdle, false);
+assert.equal(rest.frameShiftX, 0.54);
 assert.equal(rest.followFrameShiftX, true);
 
-// The committed Grehlr payload is still allowed to be v6-shaped; the new v7
-// runtime must convert it losslessly into explicit BEFORE/AFTER authoring lines.
+// The uploaded Grehlr shoulder record is a legacy guide+splinePoints export;
+// the v10 runtime must still migrate it into explicit BEFORE/AFTER lines.
 const normalizedRest = context.window.AnimalShoulderSpline.normalizeRest({ shoulderRest: rest });
 assert.equal(normalizedRest.beforePoints.length, 7);
 assert.equal(normalizedRest.afterPoints.length, 7);
 assert.equal(normalizedRest.migratedFromLegacy, true);
-assert.deepEqual(JSON.parse(JSON.stringify(normalizedRest.beforePoints[0])), {
-  x: 0.5423902927484727,
-  y: 0.5694472546137244,
-});
-assert.deepEqual(JSON.parse(JSON.stringify(normalizedRest.afterPoints[0])), {
-  x: 0.5423902927484727,
-  y: 0.5694472546137244,
-});
-assert.deepEqual(JSON.parse(JSON.stringify(normalizedRest.afterPoints[6])), {
-  x: 0.6304422111109205,
-  y: 1.0185111823033606,
-});
+assert.deepEqual(JSON.parse(JSON.stringify(normalizedRest.beforePoints[0])), JSON.parse(JSON.stringify(rest.restGuide.a)));
+assert.deepEqual(JSON.parse(JSON.stringify(normalizedRest.beforePoints[6])), JSON.parse(JSON.stringify(rest.restGuide.b)));
+assert.deepEqual(JSON.parse(JSON.stringify(normalizedRest.afterPoints)), JSON.parse(JSON.stringify(rest.splinePoints)));
 
 function decodedCellCount(map) {
   assert.equal(map?.width, 128);
