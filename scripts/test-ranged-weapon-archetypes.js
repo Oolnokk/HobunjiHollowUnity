@@ -126,6 +126,8 @@ assert.match(gameSource, /function partialCombatPoseAtCharge\(pose, poseProgress
 assert.match(gameSource, /getHeldRangedTexture:[\s\S]*material\?\.map/, 'ranged projectile appearance must source the exact held tool texture.');
 assert.match(gameSource, /setHeldRangedVisible:[\s\S]*toolMeshMap\.ranged\.visible/, 'game runtime must expose exact in-hand ranged visibility handoff.');
 assert.match(gameSource, /getHeldRangedWorldTransform:[\s\S]*getWorldPosition[\s\S]*getWorldQuaternion/, 'projectiles must sample the actual rendered held-plane world transform at Strike.');
+assert.ok(gameSource.indexOf('updateToolMesh(dt);') < gameSource.indexOf('window.RangedWeapons?.update(dt);'),
+  'held tool animation must advance to the Strike frame before ranged projectile spawning samples its world transform.');
 assert.match(gameSource, /combatSwingAlignToReticle[\s\S]*currentPlayerAimAngle\(\)[\s\S]*currentPlayerAimPitch\(\)/, 'ranged throw/fire animation frames must align to the live reticle yaw and pitch.');
 assert.match(gameSource, /toolEndFlipBase[\s\S]*Math\.PI \/ 2 : -Math\.PI \/ 2/, 'runtime Tool End Flip must use the same +90/-90 local-X basis as pick mining.');
 assert.match(attackEditorSource, /id="toolEndFlipBtn"/, 'Attack Animation Editor must expose Tool End Flip directly.');
