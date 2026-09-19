@@ -25120,12 +25120,13 @@
           }
         }
         if (potionAction3Press.held) {
+          input.x = 0; input.y = 0; // Potion Select borrows the left stick, so held browsing must not also move the player.
           controllerCameraX = 0; controllerCameraY = 0; rightStickOwner = 'potion selection';
-          if (look.rawMagnitude >= INPUT_DEFAULTS.axisPressThreshold) {
+          if (move.rawMagnitude >= INPUT_DEFAULTS.axisPressThreshold) {
             const now = performance.now();
             if (now - potionAction3Press.lastScrollAt >= 220) {
               potionAction3Press.lastScrollAt = now;
-              window._desktopSelectionArc?.scrollEntries((Math.abs(rx) >= Math.abs(ry) ? rx : ry) >= 0 ? 1 : -1);
+              window._desktopSelectionArc?.scrollEntries((Math.abs(ax) >= Math.abs(ay) ? ax : ay) >= 0 ? 1 : -1);
             }
           }
         }
