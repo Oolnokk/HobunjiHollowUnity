@@ -274,4 +274,15 @@ const speciesOverrides = require('../docs/config/npcs/species-overrides.json');
 assert.strictEqual(speciesOverrides.npcs.banubu.species, 'grehlr');
 assert.strictEqual(speciesOverrides.npcs.banubu.avatarExport.appearance.avatarType, 'animal');
 
+// The real current Alchemy definitions—not only the synthetic filter fixture above—must keep Quest 2 feasible.
+const liveContext = { console, JSON, Math, Date }; // Used as a dependency-light VM for pure alchemy/Tea Grinder enumeration.
+liveContext.window = liveContext;
+vm.createContext(liveContext);
+vm.runInContext(read('docs/js/alchemy-system.js'), liveContext, { filename: 'alchemy-system-live.js' });
+vm.runInContext(read('docs/js/tea-grinder.js'), liveContext, { filename: 'tea-grinder-live.js' });
+const liveBlendWitnesses = liveContext.TeaGrinder.allBlendEffects();
+assert(liveBlendWitnesses.length >= 2, 'real Alchemy recipes must expose at least two distinct Tea Blend cooking buffs for Quest 2');
+assert(liveBlendWitnesses.every(entry => entry.reagentKeys.length === 3), 'every real Tea Blend buff must retain a concrete three-reagent witness');
+assert(new Set(liveBlendWitnesses.map(entry => entry.effect)).size === liveBlendWitnesses.length, 'Tea Grinder witness list must deduplicate cooking effects');
+
 console.log('Banubu Pie → Tea → blocked progression, Tea Grinder filtering, culinary strength, dialogue cleanup, and save-scope checks passed');
