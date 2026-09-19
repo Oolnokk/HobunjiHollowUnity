@@ -2341,6 +2341,10 @@
           itemKey: 'handMillFurniture', icon: '⚙️', name: 'Hand Mill', method: 'grinding', color: 0x8f8a78,
           desc: 'Placeable processor for grinding: needlegrain/heftroot into flour and mustard seed into powder.'
         },
+        teaGrinder: {
+          itemKey: 'teaGrinderFurniture', icon: '🍵', name: 'Tea Grinder', method: 'teaGrinding', specialMode: 'teaGrinder', questOnly: true, color: 0x617a4b,
+          desc: 'Banubu’s placeable three-herb Tea Blend grinder. Uses Alchemy trait-source logic but permits only beneficial cooking-buff reactions.'
+        },
         dryingRack: {
           itemKey: 'dryingRackFurniture', icon: '☀️', name: 'Drying Rack', method: 'drying', color: 0xcaa45e,
           desc: 'Placeable processor for drying wet/fresh ingredients. Dry-default grain/root crops are intentionally not dryable.'
@@ -2367,7 +2371,7 @@
       // widens this set; 'grindingFeed' is added by hand because the feed
       // grinder (a barn fixture, see feedGrinderFurniture) predates/isn't
       // part of that table.
-      const PROCESSING_METHODS = [...new Set(Object.values(PROCESSING_FURNITURE_DEFS).map(def => def.method))].concat('grindingFeed');
+      const PROCESSING_METHODS = [...new Set(Object.values(PROCESSING_FURNITURE_DEFS).filter(def => !def.specialMode).map(def => def.method))].concat('grindingFeed'); // Special UI-driven processors such as Tea Grinder do not make held items wheel-eligible through ItemProcessing.
 
       // furnitureKey -> audio.objectSfx key for that machine's distinctive
       // "product's ready" cue (see makeProcessingFurniture's onAction) —
@@ -2375,12 +2379,12 @@
       // of it, so a machine finishing still reads as a machine, not just
       // another ding.
       const PROCESSING_SFX_KEY = {
-        pestle: 'processPestle', squeezer: 'processSqueezer', handMill: 'processHandmill',
+        pestle: 'processPestle', squeezer: 'processSqueezer', handMill: 'processHandmill', teaGrinder: 'processHandmill',
         dryingRack: 'processDryingrack', smoker: 'processSmoker',
         agingBarrel: 'processAgingbarrel', agingVase: 'processAgingvase',
       };
 
-      const PROCESSING_FURNITURE_CATALOG = Object.values(PROCESSING_FURNITURE_DEFS).map(def => ({
+      const PROCESSING_FURNITURE_CATALOG = Object.values(PROCESSING_FURNITURE_DEFS).filter(def => !def.questOnly).map(def => ({ // Quest-only stations such as Banubu's Tea Grinder are granted by story and never appear in ordinary purchase catalogs.
         key: def.itemKey,
         icon: def.icon,
         name: def.name,
@@ -2821,6 +2825,9 @@
           startTimedJob({ outputs, inputStars, inputLabel, source } = {}) { return startTimedJob(outputs, inputStars, inputLabel, source); }, // Used by assigned livestock without coupling dew-vats.js to timeline internals.
           getJob() { return job; }, // read by saveFarmLayout
           getButtons() {
+            if (def.specialMode === 'teaGrinder') {
+              return [{ icon: def.icon, label: 'Blend Tea Leaves', action: 'obj_process_' + furnitureKey, style: 'primary', allowed: true }]; // Tea Grinder owns a three-input modal rather than the generic one-held-item processor contract.
+            }
             if (job?.kind === 'timed') {
               const seconds = Math.max(1, Math.ceil(timedJobRemainingS()));
               return [{ icon: '🫗', label: `Squeezing… ${seconds}s`, action: 'obj_process_' + furnitureKey, style: 'secondary', allowed: false }];
@@ -2855,6 +2862,7 @@
           },
           onAction(action) {
             if (action !== 'obj_process_' + furnitureKey) return { ok: false, message: 'Unknown processor action.' };
+            if (def.specialMode === 'teaGrinder') return window.TeaGrinder?.open?.() || { ok: false, message: 'Tea Grinder failed to initialize.' }; // Uses the processor's normal world interaction while delegating three-herb recipe UI/state.
             if (job?.kind === 'timed') return { ok: false, message: `${def.name} is still squeezing — ${Math.max(1, Math.ceil(timedJobRemainingS()))}s left.` };
             if (isAging && job) {
               if (calendar.day < job.readyDay) return { ok: false, message: 'Still aging — not ready yet.' };
@@ -2902,6 +2910,7 @@
           // re-validates everything itself (held item, job state, and the
           // ItemProcessing result) from scratch rather than trusting this.
           beginHeldInsertion() {
+            if (def.specialMode === 'teaGrinder') return { ok: false, message: 'Use the Tea Grinder interaction to choose three herbs.' }; // Tea Grinder never consumes a single held item through the generic drink-style insertion animation.
             if (job) return { ok: false, message: `${def.name} is busy right now.` };
             if (heldMode !== 'item') return { ok: false, message: def.name + ' needs a held ingredient.' };
             const active = getActiveInventoryItem();
@@ -26667,6 +26676,25 @@
         getPlayer: () => player,
         getSelectedItemKey: () => getActiveInventoryItem()?.key || null,
         getInCombat: () => isPlayerInCombat(),
+      });
+
+      window.TeaGrinder?.init({
+        ITEM_DEFS,
+        inventory,
+        clampInventoryStack,
+        refreshItemScroll: window.HudUpdate.refreshItemScroll,
+        buildInventoryGrid,
+        refreshActionBar,
+        saveMemberWorldData,
+        showToast,
+        random: rnd,
+        setInteractionBlocked(blocked) {
+          menuOpen = blocked; // Used to share the same movement/action input gate as Cooking while Tea Grinder's self-owned modal is open.
+          if (blocked) {
+            player.vx = 0; player.vy = 0; input.x = 0; input.y = 0;
+            releaseShoulderSurfPointerLock();
+          }
+        },
       });
 
       window.AlchemyFlasks?.init({
