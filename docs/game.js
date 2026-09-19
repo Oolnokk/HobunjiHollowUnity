@@ -21896,8 +21896,9 @@
           const baseEndFlip = spinPlane.userData?.toolEndFlipBase === true;
           const actionEndFlip = !!combatSwingAnim && combatSwingToolEndFlip;
           const rangedStanceEndFlip = activeTool === 'ranged' && window.RangedWeapons?.playerDirectionSwap?.(spinItemKey) === true; // Knife/spear keep their ranged-facing reflection at Neutral too.
+          const rangedActionEndFlipActive = !!combatSwingAnim && toolSwingT > 0; // Prevents the zero-time cleanup/cancel frame from briefly overriding the ranged Neutral facing with a cleared action bit.
           const desiredEndFlip = activeTool === 'ranged'
-            ? (combatSwingAnim ? actionEndFlip : rangedStanceEndFlip)
+            ? (rangedActionEndFlipActive ? actionEndFlip : rangedStanceEndFlip)
             : (baseEndFlip !== actionEndFlip);
           setToolPlaneDirectionSwap(spinPlane, desiredEndFlip);
           // The sweep style's blade-parallel z-twist belongs to whichever anim is actually
