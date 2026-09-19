@@ -241,10 +241,10 @@ canvas{display:block;width:100%;height:100%}
     <div class="sectionTitle"><b>Actions</b><span class="sectionTag">flip / import / export</span></div>
     <div class="row">
       <button id="flipBtn" class="warn">⇋ Flip Across Midline</button>
-      <button id="toolEndFlipBtn" class="secondary">↕ Tool End Flip: Off</button>
+      <button id="toolEndFlipBtn" class="secondary">↕ Weapon Direction Swap: Off</button>
       <button id="resetPosesBtn" class="secondary">Reset poses</button>
     </div>
-    <div class="help">Tool End Flip uses the exact pick-shovel mining basis: the sprite plane changes from local X −90° to +90°. It reverses which end points forward without mirroring the art or changing Pitch/Yaw/Roll.</div>
+    <div class="help">Weapon Direction Swap reflects the PNG along its local Y direction (across the PNG's local X axis), reversing which end points forward without rotating the plane or changing Pitch/Yaw/Roll. The exported field remains <code>toolEndFlip</code> for existing animation data.</div>
     <div class="row" style="margin-top:8px">
       <button id="exportBtn">⭳ Export JSON</button>
       <button id="loadBtn" class="secondary">⭱ Load JSON</button>
@@ -689,6 +689,17 @@ const TOOL_SPRITE_DEFS = {
 const toolTexLoader = new THREE.TextureLoader();
 let toolPlaneMesh = null;
 let currentToolKey = null;
+function setToolPlaneDirectionSwap(plane, swapped) {
+  const uv = plane?.geometry?.attributes?.uv; // Used by the editor preview to mirror weapon direction on the same PNG-local axis as game.js.
+  if (!uv) return false;
+  const nextSwapped = swapped === true; // Used to avoid rewriting UVs continuously while playback advances.
+  const currentSwapped = plane.userData?.toolDirectionSwapCurrent === true; // Used to make the preview reflection reversible without accumulating transforms.
+  if (currentSwapped === nextSwapped) return true;
+  for (let i = 0; i < uv.count; i++) uv.setY(i, 1 - uv.getY(i));
+  uv.needsUpdate = true;
+  plane.userData.toolDirectionSwapCurrent = nextSwapped;
+  return true;
+}
 function disposeToolPlaneMesh(g) {
   g.traverse(child => {
     if (child.geometry) child.geometry.dispose();
@@ -707,8 +718,10 @@ function buildToolPlaneMesh(toolKey) {
       const geo = new THREE.PlaneGeometry(planeW, planeH);
       const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.08, side: THREE.DoubleSide });
       const plane = new THREE.Mesh(geo, mat);
-      plane.rotation.x = def.flip ? Math.PI / 2 : -Math.PI / 2;
-      plane.userData.toolEndFlipBase = def.flip === true;
+      plane.rotation.x = -Math.PI / 2;
+      plane.userData.toolEndFlipBase = def.flip === true; // Legacy data key; the preview now interprets it as PNG-local-Y direction reflection.
+      plane.userData.toolDirectionSwapCurrent = false; // Used by setToolPlaneDirectionSwap() to track this preview plane's current UV orientation.
+      setToolPlaneDirectionSwap(plane, def.flip === true);
       const g = new THREE.Group();
       g.add(plane);
       g.userData.toolPlane = plane; // Lets applyPoseToRig derive the sprite basis from the previewed animation style, exactly like game.js.
@@ -899,14 +912,14 @@ function flipPose(p) {
 function syncToolEndFlipUi() {
   const btn = $('toolEndFlipBtn');
   if (!btn) return;
-  btn.textContent = `↕ Tool End Flip: ${anim.toolEndFlip ? 'On' : 'Off'}`;
+  btn.textContent = `↕ Weapon Direction Swap: ${anim.toolEndFlip ? 'On' : 'Off'}`;
   btn.classList.toggle('active', !!anim.toolEndFlip);
 }
 $('toolEndFlipBtn').onclick = () => {
   anim.toolEndFlip = !anim.toolEndFlip;
   syncToolEndFlipUi();
   refreshJsonView();
-  logDebug(`Tool End Flip ${anim.toolEndFlip ? 'enabled' : 'disabled'} (same local-X basis reversal as pick mining)`);
+  logDebug(`Weapon Direction Swap ${anim.toolEndFlip ? 'enabled' : 'disabled'} (PNG local-Y reflection; toolEndFlip kept for data compatibility)`);
 };
 syncToolEndFlipUi();
 
@@ -1140,7 +1153,7 @@ function applyPoseToRig(pose) {
   if (toolPlane) {
     const baseEndFlip = toolPlane.userData?.toolEndFlipBase === true;
     const effectiveEndFlip = baseEndFlip !== (anim.toolEndFlip === true);
-    toolPlane.rotation.x = effectiveEndFlip ? Math.PI / 2 : -Math.PI / 2;
+    setToolPlaneDirectionSwap(toolPlane, effectiveEndFlip);
     // Runtime derives the -90° sweep basis from the active animation, then
     // weapon-tool-stances fades that basis out at Neutral for every weapon-
     // slot-capable shape. Reproduce both layers so Heavy/Light Neutral and
