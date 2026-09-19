@@ -21599,11 +21599,23 @@
             ? window.WorldPopupText?.avatarCentroidWorld?.(playerMesh)
             : null; // Existing portrait metadata supplies the species/gender-aware live rig center.
           if (rigCentroid) {
-            const centroidToHandY = (playerMesh.position.y + playerToolBaseY - rigCentroid.y) + y; // Full vertical hand offset from centroid, rotated with head pitch.
+            // Build the exact zero-pitch world pose first, then express that
+            // centroid→weapon vector in the aimed right/up/forward basis. This
+            // preserves the old pose exactly at pitch=0 even if a species rig's
+            // portrait root is horizontally offset from playerMesh, while pitch
+            // rotates the COMPLETE vector around the centroid.
+            const unpitchedHandX = playerMesh.position.x + vRX * (handBaseX + x) + vFX * z;
+            const unpitchedHandY = playerMesh.position.y + playerToolBaseY + y;
+            const unpitchedHandZ = playerMesh.position.z + vRZ * (handBaseX + x) + vFZ * z;
+            const centroidDeltaX = unpitchedHandX - rigCentroid.x;
+            const centroidToHandY = unpitchedHandY - rigCentroid.y;
+            const centroidDeltaZ = unpitchedHandZ - rigCentroid.z;
+            const centroidToHandSide = centroidDeltaX * vRX + centroidDeltaZ * vRZ;
+            const centroidToHandForward = centroidDeltaX * vFX + centroidDeltaZ * vFZ;
             toolHolder.position.set(
-              rigCentroid.x + vRX * (handBaseX + x) + pUX * centroidToHandY + pFX * z,
-              rigCentroid.y + pUY * centroidToHandY + pFY * z,
-              rigCentroid.z + vRZ * (handBaseX + x) + pUZ * centroidToHandY + pFZ * z
+              rigCentroid.x + vRX * centroidToHandSide + pUX * centroidToHandY + pFX * centroidToHandForward,
+              rigCentroid.y + pUY * centroidToHandY + pFY * centroidToHandForward,
+              rigCentroid.z + vRZ * centroidToHandSide + pUZ * centroidToHandY + pFZ * centroidToHandForward
             );
           } else {
             toolHolder.position.set(
