@@ -18,13 +18,17 @@ on:
       - 'docs/js/cavern-generator.js'
       - 'docs/js/banubu-quest-content.js'
       - 'docs/js/banubu-questline.js'
+      - 'docs/js/tea-grinder.js'
       - 'docs/js/key-item-system.js'
       - 'docs/js/cooking-system.js'
       - 'docs/js/dialogue-content.js'
       - 'docs/js/local-db-overrides.js'
+      - 'docs/js/procedural-furniture.js'
+      - 'docs/game.js'
       - 'docs/onboarding-core.js'
       - 'docs/index.html'
       - 'docs/config/npcs/schedule-overrides.json'
+      - 'docs/config/npcs/hobunji-starter-npc-database.json'
       - 'docs/tools/dialogue-editor/**'
       - 'docs/tools/wilderness-generation-lab/**'
       - 'docs/tools/locale-editor/**'
@@ -63,11 +67,14 @@ jobs:
         run: |
           node --check docs/js/banubu-quest-content.js
           node --check docs/js/banubu-questline.js
+          node --check docs/js/tea-grinder.js
           node --check docs/js/key-item-system.js
           node --check docs/js/cooking-system.js
           node --check docs/js/dialogue-content.js
           node --check docs/js/cavern-generator.js
           node --check docs/js/local-db-overrides.js
+          node --check docs/js/procedural-furniture.js
+          node --check docs/game.js
           node --check docs/tools/dialogue-editor/dialogue-editor-state.js
           node --check docs/tools/dialogue-editor/dialogue-editor-inspector.js
       - name: Test terrain-aware locale placement
