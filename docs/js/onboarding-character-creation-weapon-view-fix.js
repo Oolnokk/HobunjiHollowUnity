@@ -118,8 +118,16 @@
     }
     if (button.previousElementSibling !== shell) shell.insertAdjacentElement('afterend', button);
     const face = baseLife()?.viewMode === 'face';
-    button.textContent = face ? 'Change View: Full Body' : 'Change View: Face';
-    button.setAttribute('aria-pressed', face ? 'true' : 'false');
+    // This whole function reruns unconditionally every animation frame via the
+    // frame()/syncModelAndWeapon() loop below, for as long as character
+    // creation is open. Rewriting textContent to the SAME string every frame
+    // still mutates the text node, which fires arch-button-labels.js's
+    // document-wide MutationObserver (it watches characterData) and made it
+    // re-scan and relabel every action button once per frame for no reason.
+    const label = face ? 'Change View: Full Body' : 'Change View: Face';
+    if (button.textContent !== label) button.textContent = label;
+    const pressed = face ? 'true' : 'false';
+    if (button.getAttribute('aria-pressed') !== pressed) button.setAttribute('aria-pressed', pressed);
     return button;
   }
 
@@ -167,10 +175,18 @@
     ensureFixedViewButton();
 
     const face = life.viewMode === 'face';
-    shell.classList.toggle('ob-face-view', face);
+    // Called unconditionally every frame (see applyAdaptiveView's callers
+    // below); classList.toggle still fires a 'class' mutation even when the
+    // resulting state is unchanged, which is exactly what arch-button-labels.js's
+    // document-wide MutationObserver watches for, so skip the write once the
+    // shell already reflects the current mode.
+    if (shell.classList.contains('ob-face-view') !== face) shell.classList.toggle('ob-face-view', face);
     if (!face) {
-      canvas.style.setProperty('transform', 'none', 'important');
-      canvas.style.setProperty('transform-origin', '50% 30%', 'important');
+      // Static values in the non-face branch never change frame to frame, unlike
+      // the face-view anchor below, which really does need to track the model
+      // as it keeps rotating in the live preview.
+      if (canvas.style.transform !== 'none') canvas.style.setProperty('transform', 'none', 'important');
+      if (canvas.style.transformOrigin !== '50% 30%') canvas.style.setProperty('transform-origin', '50% 30%', 'important');
       return;
     }
     const origin = faceOriginPercent(shell, life.model);
@@ -241,7 +257,15 @@
   function suppressLegacyWeapon() {
     const life = baseLife();
     const group = life?.model?.parent || null;
-    if (group) {
+    // This whole function reruns unconditionally every animation frame (see
+    // frame()/syncModelAndWeapon() below), for as long as character creation
+    // stays open. Spreading group.children into a fresh array up front used to
+    // happen on every single one of those frames regardless of whether the
+    // legacy weapon was actually still there to remove -- real, measurable
+    // per-frame allocation churn for what is normally a one-time cleanup.
+    // group.remove() only needs the defensive copy while it is actually
+    // mutating the live children array during iteration.
+    if (group?.children.some(child => child?.name === 'OnboardingStarterWeaponBase')) {
       for (const child of [...group.children]) {
         if (child?.name === 'OnboardingStarterWeaponBase') group.remove(child);
       }

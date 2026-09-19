@@ -429,7 +429,13 @@
       button.removeAttribute('data-combat-icon-signature');
       button.removeAttribute('data-combat-slot');
       const contextLabel = button.querySelector('.abt-label')?.textContent?.trim(); // Restores the world action's accessible name after combat previously owned this physical button.
-      if (contextLabel) button.setAttribute('aria-label', contextLabel);
+      // This runs on every refresh() for every button combat doesn't currently own --
+      // i.e. constantly outside combat. Writing the SAME aria-label on every pass used
+      // to still count as a DOM mutation, which re-triggered this file's own
+      // document-wide MutationObserver (it watches aria-label) and arch-button-labels.js's
+      // right along with it, queuing another refresh for next frame -- a permanent
+      // 60fps feedback loop that never settled for the rest of the session.
+      if (contextLabel && button.getAttribute('aria-label') !== contextLabel) button.setAttribute('aria-label', contextLabel);
       [...button.children].forEach(child => {
         if (child.classList?.contains('combat-hold-exponent')) child.remove();
       });
@@ -450,7 +456,16 @@
 
     button.classList.add('combat-dual-input');
     button.classList.toggle('combat-hold-flipped', holding);
-    button.dataset.combatSlot = String(slotIndex);
+    // dataset writes go through setAttribute under the hood, which (confirmed
+    // empirically -- unlike classList.add/toggle, which correctly no-op when
+    // the resulting state is unchanged) queues a MutationObserver record even
+    // when the value being written is identical to what's already there. This
+    // ran on every renderCombatButton() call -- i.e. every frame a slot is
+    // combat-owned -- and 'data-combat-slot' is exactly what arch-button-labels.js
+    // watches, so it kept re-triggering that file's full button relabel pass
+    // for the entire duration of combat instead of only when the slot changed.
+    const combatSlot = String(slotIndex);
+    if (button.dataset.combatSlot !== combatSlot) button.dataset.combatSlot = combatSlot;
     const accessibleLabel = `${tap.label}; hold: ${hold.label}`;
     if (button.getAttribute('aria-label') !== accessibleLabel) button.setAttribute('aria-label', accessibleLabel);
     if (button.dataset.combatIconSignature === signature && host.querySelector('.combat-coin')) return;
