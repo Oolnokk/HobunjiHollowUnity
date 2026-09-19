@@ -6,7 +6,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 9;
+  const VERSION = 12;
   const PATCH_RETRY_MS = 50; // Used while game.js finishes constructing generated metal weapon definitions.
   const PATCH_RETRY_LIMIT = 160; // Used to stop the bootstrap poll after roughly eight seconds instead of polling forever.
   const THROWN_TYPE = 'thrown';
@@ -22,7 +22,7 @@
   ]); // Used by Kylie ranged mastery so its options mirror the game's blunt affliction family rather than sharp-style buildup.
   const DUAL_ROLE_SHAPES = Object.freeze({ kylie: THROWN_TYPE, dagger: THROWN_TYPE, fishingspear: THROWN_TYPE, hatchet: THROWN_TYPE, bshuakauitl: BLOWGUN_TYPE });
   const SPINNING_THROWN_SHAPES = new Set(['hatchet', 'dagger', 'kylie']); // Dagger is the current knife-class shape; these reuse Fishing's outbound fishing-mace spin.
-  const END_FLIPPED_THROW_SHAPES = new Set(['dagger', 'fishingspear']); // Uses the exact pick-mining sprite-plane X-basis flip, not a pose-roll approximation.
+  const END_FLIPPED_THROW_SHAPES = new Set(['dagger', 'fishingspear']); // Uses the shared PNG-local-Y weapon direction reflection, not a pose-roll approximation.
   const NON_RANGED_SHAPES = new Set(['daggerSword']); // Used by rangedTypeFor() to hard-block dagger-swords even if stale or external code tags one with rangedType.
   const patchedItems = new Set(); // Used by diagnostics and idempotent definition patching.
   const scaledAfflictionAliases = new Map(); // Used to carry per-shot buildup scaling through the existing projectile affliction map without changing raw damage.
@@ -145,7 +145,7 @@
       rangedType: THROWN_TYPE,
       inputMode: 'hold-release',
       gripMode: animation.gripMode || 'palm-parallel',
-      toolEndFlip: animation.toolEndFlip === true || END_FLIPPED_THROW_SHAPES.has(shapeKey),
+      toolEndFlip: animation.toolEndFlip === true || END_FLIPPED_THROW_SHAPES.has(shapeKey), // Stance-wide PNG direction: Neutral, held throw phases, and projectile all use the same value.
       throwDurationS: Number(animation.durationS) || 1.04,
       throwWindupFrac: Number.isFinite(Number(animation.windupFrac)) ? Number(animation.windupFrac) : 0.49,
       throwStrikeFrac: Number.isFinite(Number(animation.strikeFrac)) ? Number(animation.strikeFrac) : 0.57,
@@ -179,7 +179,11 @@
       chargePose: {
         neutral: withScale(throwPoses.neutral, scale),
         windup: withScale(throwPoses.windup, scale),
-        strike: withScale(throwPoses.windup, scale),
+        // The held timeline is clamped at Windup, so this endpoint stays hidden
+        // until release. It must still be the real authored Strike: the shared
+        // release seam resumes at the Windup boundary and interpolates toward
+        // this pose before the projectile samples the held plane at impact.
+        strike: withScale(throwPoses.strike, scale),
       },
       chargeWindupS: Math.max(0.05, (animation.durationS || 1.04) * (animation.windupFrac ?? 0.49)),
     };
@@ -422,6 +426,7 @@
       gripMode: def.gripMode,
       toolEndFlip: def.toolEndFlip === true,
       alignToReticle: true,
+      orbitRigCentroid: true,
       held: true,
       windupFrac: def.throwWindupFrac ?? 0.49,
       strikeFrac: def.throwStrikeFrac ?? 0.57,
@@ -491,14 +496,6 @@
     return true;
   }
 
-  function desktopBindingFor(actionId) {
-    return window.InputBindings?.getCurrentBindings?.()?.desktop?.[actionId] || null;
-  }
-  function controllerBindingFor(actionId) {
-    return window.InputBindings?.getCurrentBindings?.()?.controller?.[actionId] || null;
-  }
-  function mouseCode(button) { return `Mouse${Number(button) || 0}`; }
-
   function installInputBridge() {
     if (inputBridgeInstalled || typeof window === 'undefined') return;
     inputBridgeInstalled = true;
@@ -513,12 +510,8 @@
     }, true);
 
     window.addEventListener('pointerup', event => {
-      if (!thrownCharge) return;
-      if (thrownCharge.pointerId != null && event.pointerId === thrownCharge.pointerId) {
-        releaseThrownCharge('action-button-pointerup');
-        return;
-      }
-      if (desktopBindingFor('action1') === mouseCode(event.button)) releaseThrownCharge('desktop-mouseup');
+      if (!thrownCharge || thrownCharge.pointerId == null) return;
+      if (event.pointerId === thrownCharge.pointerId) releaseThrownCharge('action-button-pointerup');
     }, true);
     window.addEventListener('pointercancel', event => {
       if (thrownCharge?.pointerId === event.pointerId) cancelThrownCharge('pointer-cancel');
@@ -531,20 +524,6 @@
       if (document.hidden && thrownCharge) cancelThrownCharge('visibility-hidden');
     });
 
-    window.addEventListener('keyup', event => {
-      if (thrownCharge && desktopBindingFor('action1') === event.code) releaseThrownCharge('desktop-keyup');
-    }, true);
-
-    // Watches for the held throw button coming back up. This used to be its
-    // own requestAnimationFrame loop calling navigator.getGamepads() and
-    // decoding binding codes with a private partial copy of ControllerInput's
-    // decoder (buttons and triggers only, no right-stick codes).
-    const pollControllerRelease = (frame) => {
-      if (!thrownCharge || thrownCharge.source !== 'ranged-action') return;
-      const binding = controllerBindingFor('action1');
-      if (binding && !frame.isDown(binding)) releaseThrownCharge('controller-release');
-    };
-    window.ControllerInput?.subscribe?.('ranged-thrown-charge', pollControllerRelease, 50);
   }
 
   function bootstrap() {

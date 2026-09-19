@@ -28,8 +28,6 @@
   const _projectileFrameRight = new THREE.Vector3();
   const _projectileWorldUp = new THREE.Vector3(0, 1, 0);
   const _projectileBasisMatrix = new THREE.Matrix4();
-  const _projectileCameraQuaternion = new THREE.Quaternion();
-  const _projectileSpinQuaternion = new THREE.Quaternion();
   const _projectileInverseQuaternion = new THREE.Quaternion();
   const PROJECTILE_TRAIL_MAX_POINTS = 14; // Caps each comet ribbon's geometry and per-frame update cost.
   const PROJECTILE_TRAIL_MAX_LANES = 4; // Mirrors the melee trail's readable multi-affliction lane limit.
@@ -319,6 +317,10 @@
     return (isLoaded(itemKey, owner) ? def.firePose : def.loadPose)?.neutral || null;
   }
 
+  function directionSwapFor(itemKey) {
+    return defFor(itemKey)?.toolEndFlip === true; // Legacy field now defines the ranged weapon's stance-wide PNG length direction, including Neutral and its projectile copy.
+  }
+
   const POSE_CHANNELS = ['x', 'y', 'z', 'pitch', 'yaw', 'roll', 'bodyYaw'];
   function lerpPose(a, b, amount) {
     const k = Math.max(0, Math.min(1, amount));
@@ -494,7 +496,7 @@
     deps.refreshActionBar?.();
   }
 
-  function createProjectileMesh(def, radiusPx, textureSource = null) {
+  function createProjectileMesh(def, radiusPx, textureSource = null, sourceTransform = null) {
     const root = new THREE.Group();
     root.name = 'rangedProjectile';
     const collider = new THREE.Mesh(
@@ -505,10 +507,10 @@
     collider.userData.rangedCollider = true;
     root.add(collider);
 
-    // visual owns the immutable launch frame plus any fixed-axis thrown spin.
-    // facePivot is the only camera-responsive child: it may twist around the
-    // sprite's long local Y axis, but it cannot steer the projectile or change
-    // the world-space axis the throw was spinning around when released.
+    // visual owns the immutable launch frame sampled at release.
+    // facePivot owns visual-only PNG motion: spinning weapons rotate it around
+    // local Z, while non-spinning projectiles may use its local-Y camera
+    // readability twist. Neither path can steer the projectile trajectory.
     const visual = new THREE.Group();
     visual.name = 'projectileLaunchFrame';
     const facePivot = new THREE.Group();
@@ -517,6 +519,9 @@
 
     const spinningWeapon = def.projectileVisualStyle === 'spinningWeapon';
     const weaponSprite = spinningWeapon || def.projectileVisualStyle === 'weapon';
+    const sourcePlaneWidth = Number(sourceTransform?.planeWidth); // Used to clone the held weapon plane's authored geometry instead of guessing projectile size from separate tuning.
+    const sourcePlaneHeight = Number(sourceTransform?.planeHeight); // Used with sourcePlaneWidth so strike-pose scale/orientation reproduces the visible held weapon one-for-one.
+    const hasExactSourcePlane = weaponSprite && sourcePlaneWidth > 0 && sourcePlaneHeight > 0; // Used to bypass aspect-derived projectile resizing when a real held plane was sampled.
     let plane = null;
     let pendingAspect = 1;
     const updateAspect = loadedTexture => {
@@ -524,7 +529,7 @@
       const imageW = Math.max(1, Number(loadedTexture?.image?.width) || Number(loadedTexture?.image?.naturalWidth) || 1);
       const imageH = Math.max(1, Number(loadedTexture?.image?.height) || Number(loadedTexture?.image?.naturalHeight) || 1);
       pendingAspect = imageH / imageW;
-      if (plane) plane.scale.y = pendingAspect;
+      if (plane && !hasExactSourcePlane) plane.scale.y = pendingAspect;
     };
     let texture = null;
     if (textureSource?.clone) {
@@ -537,17 +542,26 @@
     texture.magFilter = texture.minFilter = THREE.NearestFilter;
     const longArrow = def.projectileSprite.includes('arrow_long');
     const weaponWidth = Math.max(0.08, Number(def.projectileVisualWidthWorld) || 0.5);
+    const projectilePlaneWidth = hasExactSourcePlane ? sourcePlaneWidth : (weaponSprite ? weaponWidth : (longArrow ? 0.09 : 0.065)); // Used by this projectile's one visual plane.
+    const projectilePlaneHeight = hasExactSourcePlane ? sourcePlaneHeight : (weaponSprite ? weaponWidth : (longArrow ? 0.72 : 0.38)); // Used with projectilePlaneWidth to preserve the sampled held silhouette exactly.
     plane = new THREE.Mesh(
-      new THREE.PlaneGeometry(
-        weaponSprite ? weaponWidth : (longArrow ? 0.09 : 0.065),
-        weaponSprite ? weaponWidth : (longArrow ? 0.72 : 0.38)
-      ),
+      new THREE.PlaneGeometry(projectilePlaneWidth, projectilePlaneHeight),
       new THREE.MeshBasicMaterial({ map: texture, transparent: true, alphaTest: 0.08, side: THREE.DoubleSide })
     );
-    if (weaponSprite) plane.scale.y = pendingAspect;
-    // Do not pre-rotate this plane. Its raw local +Y is the sprite's long
-    // axis, which lets the launch quaternion copy a held plane exactly and
-    // lets facePivot twist around that long axis without disturbing aim.
+    if (weaponSprite && !hasExactSourcePlane) plane.scale.y = pendingAspect;
+    const projectileDirectionSwap = def.rangedType === 'thrown'
+      ? def.toolEndFlip === true
+      : sourceTransform?.directionSwap === true; // Thrown direction is stance-wide; using config prevents a release-frame sampling race from reversing spear/knife projectiles.
+    if (weaponSprite && projectileDirectionSwap) {
+      const uv = plane.geometry?.attributes?.uv; // Used to preserve the ranged stance's PNG-local-Y direction reflection in the projectile copy.
+      if (uv) {
+        for (let i = 0; i < uv.count; i++) uv.setY(i, 1 - uv.getY(i));
+        uv.needsUpdate = true;
+      }
+    }
+    // Do not pre-rotate this plane. Its raw local +Y/+Z axes are the sampled
+    // PNG plane axes: the launch quaternion supplies the exact Strike transform
+    // and spinning weapons rotate only this child around local Z afterward.
     plane.renderOrder = deps.heldObjectRenderOrder || 1.5;
     facePivot.add(plane);
     root.add(visual);
@@ -563,19 +577,6 @@
     if (!camera) return null;
     camera.updateWorldMatrix?.(true, false);
     return camera.getWorldPosition?.(out) || null;
-  }
-
-  function cameraPitchAxisWorld(direction, out = _projectileFrameRight) {
-    const camera = deps.getActiveCamera?.();
-    if (camera?.getWorldQuaternion) {
-      camera.updateWorldMatrix?.(true, false);
-      camera.getWorldQuaternion(_projectileCameraQuaternion);
-      return out.set(1, 0, 0).applyQuaternion(_projectileCameraQuaternion).normalize();
-    }
-    // Fallback is the launch-frame horizontal right axis.
-    out.crossVectors(_projectileWorldUp, direction);
-    if (out.lengthSq() < AIM_EPSILON) out.set(1, 0, 0);
-    return out.normalize();
   }
 
   function flightVisualQuaternion(direction, origin, out = new THREE.Quaternion()) {
@@ -695,8 +696,8 @@
     const def = defFor(itemKey);
     if (!def) return null;
     const scene = deps.getActiveScene();
-    const mesh = createProjectileMesh(def, def.projectileRadiusPx, shotOptions?.textureSource || null);
     const sourceTransform = shotOptions?.sourceTransform || null;
+    const mesh = createProjectileMesh(def, def.projectileRadiusPx, shotOptions?.textureSource || null, sourceTransform);
     const sourcePosition = sourceTransform?.position;
     const hasSourcePosition = Number.isFinite(sourcePosition?.x) && Number.isFinite(sourcePosition?.y) && Number.isFinite(sourcePosition?.z);
     const spawnX = hasSourcePosition ? sourcePosition.x * deps.TILE : x;
@@ -715,7 +716,7 @@
     const baseVisualQuaternion = (shotOptions?.preserveSourceOrientation && sourceTransform?.quaternion?.isQuaternion)
       ? sourceTransform.quaternion.clone()
       : flightVisualQuaternion(direction, mesh.position, new THREE.Quaternion());
-    const fixedPitchAxisWorld = cameraPitchAxisWorld(direction, new THREE.Vector3()).clone();
+    const launchTransformMode = shotOptions?.preserveSourceOrientation && hasSourcePosition ? 'held-strike-plane' : 'flight-frame'; // Exposed in __rangedDebug so mobile tests can verify which launch transform path a projectile actually used.
     mesh.userData.visual.quaternion.copy(baseVisualQuaternion);
     if (shotOptions?.preserveSourceOrientation && sourceTransform?.scale?.isVector3) {
       mesh.userData.visual.scale.copy(sourceTransform.scale);
@@ -734,7 +735,7 @@
       maxDistancePx: def.rangeTiles * deps.TILE * RANGE_FALLOFF_DISTANCE_MULTIPLIER,
       areaId: deps.getCurrentArea(), dead: false,
       baseVisualQuaternion,
-      fixedPitchAxisWorld,
+      launchTransformMode,
       faceTwistRad: 0,
       spinRad: 0,
       spinRateRad: mesh.userData.spinningWeapon ? fishingMaceSpinRateRad() : 0,
@@ -1143,18 +1144,19 @@
     return true;
   }
 
-  // Projectile trajectory/orientation is frozen in its launch frame. Camera
-  // movement after release may only twist the INTERNAL flat sprite around its
-  // own long axis within an animal-style ±15° deadzone; it can never change
-  // the fixed spin axis or flight direction.
+  // Projectile trajectory/orientation is frozen in its launch frame. Spinning
+  // thrown weapons preserve that exact Strike-frame transform on the visual
+  // group and rotate only the PNG child around its own local Z axis. Non-spinning
+  // arrows/projectiles retain the small camera-readability twist below.
   function updateProjectileVisual(p, dt) {
+    p.visual.quaternion.copy(p.baseVisualQuaternion);
     if (p.spinRateRad) {
       p.spinRad = (p.spinRad + p.spinRateRad * dt) % (Math.PI * 2);
-      _projectileSpinQuaternion.setFromAxisAngle(p.fixedPitchAxisWorld, p.spinRad);
-      p.visual.quaternion.copy(_projectileSpinQuaternion).multiply(p.baseVisualQuaternion);
-    } else {
-      p.visual.quaternion.copy(p.baseVisualQuaternion);
+      p.facePivot.rotation.y = 0;
+      p.facePivot.rotation.z = p.spinRad;
+      return;
     }
+    p.facePivot.rotation.z = 0;
 
     const cameraPos = activeCameraWorldPosition();
     if (!cameraPos || !p.facePivot) return;
@@ -1469,6 +1471,7 @@
     triggerPlayerVisual, playerWindupPoseProgress, releasePlayerHold, cancelPlayerHold,
     isLoaded, setLoaded, update, updateBanditAI, updateBanditVisual,
     cancelBanditAction, disposeOwner, playerLockRangePx, playerIdlePose: itemKey => idlePose(itemKey),
+    playerDirectionSwap: itemKey => directionSwapFor(itemKey),
     isPlayerAttacking: () => playerAction?.kind === 'fire', // Lets shared body-facing logic distinguish firing from the visually similar reload action.
     wouldHitHostile, playerAimSolution, actorHitbox,
     focusCandidates, focusedHostile, meleeReachCheck, canMeleeReach,
@@ -1482,7 +1485,7 @@
     get config() { return CONFIG; },
   };
   window.__rangedDebug = {
-    get projectiles() { return projectiles.map(p => ({ itemKey: p.itemKey, team: p.team, ammoId: p.ammoId, x: p.x, y: p.y, vx: p.vx, vy: p.vy, distancePx: p.distancePx, trailAfflictionIds: [...p.trailAfflictionIds] })); },
+    get projectiles() { return projectiles.map(p => ({ itemKey: p.itemKey, team: p.team, ammoId: p.ammoId, x: p.x, y: p.y, vx: p.vx, vy: p.vy, distancePx: p.distancePx, launchTransformMode: p.launchTransformMode, directionSwap: p.def?.rangedType === 'thrown' ? p.def?.toolEndFlip === true : null, spinAxis: p.spinRateRad ? 'png-local-z' : null, trailAfflictionIds: [...p.trailAfflictionIds] })); },
     get playerAction() { return playerAction ? { ...playerAction, def: undefined } : null; },
     get lastEvent() { return lastEvent; },
     get lastAudioEvent() { return lastAudioEvent; },

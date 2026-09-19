@@ -159,8 +159,13 @@ for (const [name, source, priority] of consumers) {
   assert.ok(source.includes(priority), `${name} must declare its shared-loop priority`);
 }
 assert.ok(
-  subscribesAs(archetypes, 'ranged-thrown-charge'),
-  'the thrown-charge release watcher must share the controller frame too',
+  !subscribesAs(archetypes, 'ranged-thrown-charge'),
+  'thrown charges must not own a controller-frame release watcher because mouse/keyboard charges share the same state',
+);
+assert.match(
+  game,
+  /if \(phase === 'release'\)[\s\S]*activeTool === 'ranged'[\s\S]*activeThrownChargeItemKey\?\.\(\)[\s\S]*releaseThrownCharge\?\.\('input-action-release'\)/,
+  'controller/keyboard release must flow through game.js shared Action 1 release dispatch instead',
 );
 assert.ok(
   !/requestAnimationFrame\(poll/.test(archetypes),

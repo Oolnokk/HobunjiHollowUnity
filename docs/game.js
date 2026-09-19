@@ -20393,7 +20393,8 @@
       // branch at the top of updateToolMesh's style if/else chain.
       let combatSwingPose = null;
       let combatSwingAlignToReticle = false; // Ranged fire/throws rotate their authored pose frame onto the live reticle yaw+pitch.
-      let combatSwingToolEndFlip = false; // Same local-X end-for-end sprite-basis reversal as makeToolPlaneMesh(...,{flip:true}) for pick mining.
+      let combatSwingOrbitRigCentroid = false; // Thrown holds rotate their complete hand+pose offset around the live avatar centroid so head yaw/pitch carries the whole arc.
+      let combatSwingToolEndFlip = false; // Same PNG-local-Y weapon direction reflection as makeToolPlaneMesh(...,{flip:true}) for pick mining.
       const _toolMeshPoseMergeCache = { pose: undefined, styleNeutral: undefined, neutral: null, returnNeutral: null }; // Memoizes updateToolMesh's per-frame neutral/returnNeutral merge for the current swing (see the pose-driven branch below).
       // Affliction ids (see resource-system.js's AFFLICTIONS) this swing's
       // ability can actually inflict — set via opts.afflictionIds on
@@ -20557,6 +20558,7 @@
         combatSwingHoldS = holdS;
         combatSwingHeld = false;
         combatSwingAlignToReticle = false;
+        combatSwingOrbitRigCentroid = false;
         combatSwingToolEndFlip = false;
         combatSwingWindupSlowdown = Math.max(0, Number(opts.windupSlowdown) || 0);
         combatSwingWindupPoseProgress = 0;
@@ -20579,6 +20581,7 @@
         combatSwingSign = 1;
         combatSwingPower = 1;
         combatSwingAlignToReticle = opts.alignToReticle === true;
+        combatSwingOrbitRigCentroid = opts.orbitRigCentroid === true;
         combatSwingToolEndFlip = opts.toolEndFlip === true;
         combatSwingWindupFrac = opts.windupFrac ?? 0.55;
         combatSwingStrikeFrac = opts.strikeFrac ?? 0.18;
@@ -20676,6 +20679,7 @@
         combatSwingWindupSlowdown = 0;
         combatSwingWindupPoseProgress = 0;
         combatSwingAlignToReticle = false;
+        combatSwingOrbitRigCentroid = false;
         combatSwingToolEndFlip = false;
         toolSwingT = 0;
       }
@@ -20825,6 +20829,17 @@
       // Used by both tool planes and held bag-item planes to keep them above
       // resource-ring layers (<1.1) while remaining below avatar planes (2+).
       const HELD_OBJECT_RENDER_ORDER = 1.5;
+      function setToolPlaneDirectionSwap(plane, swapped) {
+        const uv = plane?.geometry?.attributes?.uv; // Used to reverse the weapon PNG along its local length without changing the authored 3D pose.
+        if (!uv) return false;
+        const nextSwapped = swapped === true; // Used to avoid touching the plane's UV buffer on ordinary frames when direction has not changed.
+        const currentSwapped = plane.userData?.toolDirectionSwapCurrent === true; // Used to make the UV reflection exactly reversible for pick/ranged action swaps.
+        if (currentSwapped === nextSwapped) return true;
+        for (let i = 0; i < uv.count; i++) uv.setY(i, 1 - uv.getY(i));
+        uv.needsUpdate = true;
+        plane.userData.toolDirectionSwapCurrent = nextSwapped;
+        return true;
+      }
       function makeToolPlaneMesh(itemKey, opts = {}) {
         if (!itemKey || !toolTextures[itemKey]) return null;
         const def  = TOOL_ITEM_DEFS[itemKey];
@@ -20841,14 +20856,15 @@
           side: THREE.DoubleSide,
         });
         const plane = new THREE.Mesh(geo, mat);
-        // Lying flat in XZ, -90° puts the sprite's top (the business end for
-        // every normal tool) forward and its bottom (the grip end) back.
-        // opts.flip reverses that front/back split — end for end, not a
-        // left-right mirror — so the pick-shovel's spike (authored at the
-        // bottom of the handle, meant to be thrust rather than swung like
-        // the blade) faces forward instead when built for the pick slot.
-        plane.rotation.x = opts.flip ? Math.PI / 2 : -Math.PI / 2;
-        plane.userData.toolEndFlipBase = opts.flip === true; // +90° is the exact pick-mining end-for-end basis.
+        // Lying flat in XZ, -90° puts the sprite's local +Y (its authored
+        // top-to-bottom direction) along the held weapon's forward/back axis.
+        // Direction swapping must reflect that PNG-local Y coordinate rather
+        // than rotate the plane around X: a rotation changes the 3D pose basis
+        // and was the reason thrown weapons appeared mirrored on the wrong axis.
+        plane.rotation.x = -Math.PI / 2;
+        plane.userData.toolEndFlipBase = opts.flip === true; // Legacy animation field: now interpreted as a PNG-local-Y direction reflection.
+        plane.userData.toolDirectionSwapCurrent = false; // Used by setToolPlaneDirectionSwap() to track whether this unique plane's V coordinates are currently reflected.
+        setToolPlaneDirectionSwap(plane, opts.flip === true);
         plane.renderOrder = HELD_OBJECT_RENDER_ORDER;
         g.add(plane);
         // Keep a handle on the sprite plane so updateToolMesh can layer the sweep style's
@@ -21155,6 +21171,7 @@
         combatSwingHeld = false;
         combatSwingAnim = null;
         combatSwingPose = null;
+        combatSwingOrbitRigCentroid = false;
         pendingAction = null;
       }
 
@@ -21543,11 +21560,24 @@
           const bodyYawRad = THREE.MathUtils.degToRad(chan('bodyYaw', true));
 
           // Ranged throws/fire author motion relative to the reticle frame,
-          // not the player's stale ground-facing frame. BodyYaw remains an
-          // authored yaw delta while the tool path itself inherits reticle pitch.
+          // not the player's stale ground-facing frame. Thrown holds go one
+          // step further: the whole hand+pose offset orbits the avatar centroid
+          // using the same world yaw/pitch ray as the head, so looking up/down
+          // carries the release arc around the rig instead of merely tilting it
+          // around a body-fixed hand anchor.
           const reticleAligned = combatSwingAlignToReticle && activeTool === 'ranged';
-          const aimBaseYaw = reticleAligned ? (-currentPlayerAimAngle() + Math.PI / 2) : θ;
-          const aimPitchRad = reticleAligned ? currentPlayerAimPitch() : 0;
+          const headAimDirection = reticleAligned && combatSwingOrbitRigCentroid && activeCameraMode === SHOULDER_SURF_MODE
+            ? currentPlayerPerspectiveDirection()
+            : null; // Shoulder-surf shares the head's finite-point ray; normal desktop keeps its established mouse/player aim angle+pitch.
+          const headAimAngle = headAimDirection
+            ? Math.atan2(headAimDirection.z, headAimDirection.x)
+            : currentPlayerAimAngle();
+          const aimBaseYaw = reticleAligned ? (-headAimAngle + Math.PI / 2) : θ;
+          const aimPitchRad = reticleAligned
+            ? (headAimDirection
+              ? window.FormatUtils.clamp(Math.asin(window.FormatUtils.clamp(headAimDirection.y, -1, 1)), -MAX_RANGED_AIM_PITCH_RAD, MAX_RANGED_AIM_PITCH_RAD)
+              : currentPlayerAimPitch())
+            : 0;
           const vθ  = aimBaseYaw + bodyYawRad;
           const vRX =  Math.cos(vθ), vRZ = -Math.sin(vθ);
           const vFX =  Math.sin(vθ), vFZ =  Math.cos(vθ);
@@ -21564,11 +21594,36 @@
           toolHolder.quaternion.copy(_qFac);
           if (reticleAligned) toolHolder.quaternion.multiply(_qRangedAimPitch);
           toolHolder.quaternion.multiply(_qToolYaw).multiply(_qAnim).multiply(_qRoll);
-          toolHolder.position.set(
-            playerMesh.position.x + vRX * (handBaseX + x) + pUX * y + pFX * z,
-            playerMesh.position.y + playerToolBaseY + pUY * y + pFY * z,
-            playerMesh.position.z + vRZ * (handBaseX + x) + pUZ * y + pFZ * z
-          );
+
+          const rigCentroid = reticleAligned && combatSwingOrbitRigCentroid
+            ? window.WorldPopupText?.avatarCentroidWorld?.(playerMesh)
+            : null; // Existing portrait metadata supplies the species/gender-aware live rig center.
+          if (rigCentroid) {
+            // Build the exact zero-pitch world pose first, then express that
+            // centroid→weapon vector in the aimed right/up/forward basis. This
+            // preserves the old pose exactly at pitch=0 even if a species rig's
+            // portrait root is horizontally offset from playerMesh, while pitch
+            // rotates the COMPLETE vector around the centroid.
+            const unpitchedHandX = playerMesh.position.x + vRX * (handBaseX + x) + vFX * z;
+            const unpitchedHandY = playerMesh.position.y + playerToolBaseY + y;
+            const unpitchedHandZ = playerMesh.position.z + vRZ * (handBaseX + x) + vFZ * z;
+            const centroidDeltaX = unpitchedHandX - rigCentroid.x;
+            const centroidToHandY = unpitchedHandY - rigCentroid.y;
+            const centroidDeltaZ = unpitchedHandZ - rigCentroid.z;
+            const centroidToHandSide = centroidDeltaX * vRX + centroidDeltaZ * vRZ;
+            const centroidToHandForward = centroidDeltaX * vFX + centroidDeltaZ * vFZ;
+            toolHolder.position.set(
+              rigCentroid.x + vRX * centroidToHandSide + pUX * centroidToHandY + pFX * centroidToHandForward,
+              rigCentroid.y + pUY * centroidToHandY + pFY * centroidToHandForward,
+              rigCentroid.z + vRZ * centroidToHandSide + pUZ * centroidToHandY + pFZ * centroidToHandForward
+            );
+          } else {
+            toolHolder.position.set(
+              playerMesh.position.x + vRX * (handBaseX + x) + pUX * y + pFX * z,
+              playerMesh.position.y + playerToolBaseY + pUY * y + pFY * z,
+              playerMesh.position.z + vRZ * (handBaseX + x) + pUZ * y + pFZ * z
+            );
+          }
 
         } else if (anim === 'ranged') {
           const rangedIdlePose = window.RangedWeapons?.playerIdlePose?.(equipmentSlots.ranged); // Used to switch between the loaded fire-neutral and empty load-neutral stance.
@@ -21840,7 +21895,12 @@
         if (spinPlane) {
           const baseEndFlip = spinPlane.userData?.toolEndFlipBase === true;
           const actionEndFlip = !!combatSwingAnim && combatSwingToolEndFlip;
-          spinPlane.rotation.x = (baseEndFlip !== actionEndFlip) ? Math.PI / 2 : -Math.PI / 2;
+          const rangedStanceEndFlip = activeTool === 'ranged' && window.RangedWeapons?.playerDirectionSwap?.(spinItemKey) === true; // Knife/spear keep their ranged-facing reflection at Neutral too.
+          const rangedActionEndFlipActive = !!combatSwingAnim && toolSwingT > 0; // Prevents the zero-time cleanup/cancel frame from briefly overriding the ranged Neutral facing with a cleared action bit.
+          const desiredEndFlip = activeTool === 'ranged'
+            ? (rangedActionEndFlipActive ? actionEndFlip : rangedStanceEndFlip)
+            : (baseEndFlip !== actionEndFlip);
+          setToolPlaneDirectionSwap(spinPlane, desiredEndFlip);
           // The sweep style's blade-parallel z-twist belongs to whichever anim is actually
           // playing this frame, not whichever style the equipped item defaults to at rest —
           // combat abilities can force any style onto any weapon (a thrust-style quick
@@ -21888,7 +21948,7 @@
           firePendingAction();
         }
         if (fishThrowActive && toolSwingT <= 0) fishThrowActive = false;
-        if (combatSwingAnim && toolSwingT <= 0) { combatSwingAnim = null; combatSwingPose = null; combatSwingHoldS = 0; combatSwingHeld = false; combatSwingWindupSlowdown = 0; combatSwingWindupPoseProgress = 0; combatSwingAlignToReticle = false; combatSwingToolEndFlip = false; combatSwingSequence = 'attack'; combatSwingSequenceHoldFrac = null; combatSwingAfflictionIds = []; combatSwingAfflictionMuls = {}; combatSwingCone = null; }
+        if (combatSwingAnim && toolSwingT <= 0) { combatSwingAnim = null; combatSwingPose = null; combatSwingHoldS = 0; combatSwingHeld = false; combatSwingWindupSlowdown = 0; combatSwingWindupPoseProgress = 0; combatSwingAlignToReticle = false; combatSwingOrbitRigCentroid = false; combatSwingToolEndFlip = false; combatSwingSequence = 'attack'; combatSwingSequenceHoldFrac = null; combatSwingAfflictionIds = []; combatSwingAfflictionMuls = {}; combatSwingCone = null; }
       }
 
       // Initialize mesh map after toolHolder exists
@@ -24927,6 +24987,13 @@
           const releaseSlot = weaponActionSlot(actionId);
           if (releaseSlot) { window.Combat.input.pressEnd(releaseSlot); return; }
           if (heldItemActionPresses.delete(actionId)) { window.HeldItemActionInput?.release(); return; }
+          if (actionId === 'action1' && heldMode === 'tool' && activeTool === 'ranged') {
+            const thrownBridge = window.HobunjiRangedWeaponArchetypes; // Used here so keyboard/controller/mouse Action 1 releases the same held thrown charge instead of relying on controller polling.
+            if (thrownBridge?.activeThrownChargeItemKey?.()) {
+              thrownBridge.releaseThrownCharge?.('input-action-release');
+              return;
+            }
+          }
           return;
         }
         if (window.Fishing?.state?.active) {
@@ -25758,7 +25825,14 @@
         if (mouseAction === 'action2' && heldMode === 'tool' && activeTool === 'ranged') { runInputAction('action2', 'release'); return; }
         if (mouseAction === 'action1') {
           actionHeldDown = false;
-          if (desktopHeldItemMousePresses.delete(e.button)) window.HeldItemActionInput?.release();
+          if (desktopHeldItemMousePresses.delete(e.button)) {
+            window.HeldItemActionInput?.release();
+            return;
+          }
+          if (heldMode === 'tool' && activeTool === 'ranged' && window.HobunjiRangedWeaponArchetypes?.activeThrownChargeItemKey?.()) {
+            runInputAction('action1', 'release');
+            return;
+          }
           return;
         }
         if (mouseAction) runInputAction(mouseAction, 'release');
@@ -26354,10 +26428,15 @@
           const plane = mesh?.userData?.toolPlane || mesh?.children?.[0]?.userData?.toolPlane || null;
           if (!plane) return null;
           plane.updateWorldMatrix(true, false);
+          const planeGeometry = plane.geometry?.parameters || {}; // Used by thrown projectiles to recreate the held PNG plane at the exact authored dimensions.
           return {
             position: plane.getWorldPosition(new THREE.Vector3()),
             quaternion: plane.getWorldQuaternion(new THREE.Quaternion()),
             scale: plane.getWorldScale(new THREE.Vector3()),
+            matrixWorld: plane.matrixWorld.clone(),
+            planeWidth: Number(planeGeometry.width) || TOOL_MODEL_WIDTH,
+            planeHeight: Number(planeGeometry.height) || TOOL_MODEL_WIDTH,
+            directionSwap: plane.userData?.toolDirectionSwapCurrent === true,
           };
         },
         getActiveCamera: () => camera,
