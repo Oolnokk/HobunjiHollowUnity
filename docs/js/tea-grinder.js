@@ -166,6 +166,7 @@
     const level = Math.max(0, Math.min(20, Number(global.SkillSystem?.level?.('alchemy')) || 0)); // Used to give Tea Grinder targeting the same skill curve as the Alchemy Table.
     const chosen = alchemy()?.chooseOutcome?.(outcomes, targetedRecipeId, deps.random, level) || outcomes[0];
     if (!chosen?.cookingEffect) return { ok: false, message: 'No Tea Blend reaction survived the grind.' };
+    const discovered = alchemy()?.discoverRecipe?.(chosen.recipeId, 'ground Tea Blend') || false; // Tea grinding reveals the same underlying trait reaction knowledge as brewing, while still producing food instead of a potion.
     const consumed = [...selectedReagents];
     consumed.forEach(key => {
       deps.inventory[key] = Math.max(0, (deps.inventory[key] || 0) - 1);
@@ -189,7 +190,7 @@
       ok: true,
       itemKey,
       effect: chosen.cookingEffect,
-      message: `🍃 Ground ${deps.ITEM_DEFS[itemKey]?.label || 'Tea Blend'} — ${global.CookingSystem?.formatEffectStrength?.(chosen.cookingEffect, BLEND_STACKS) || '+' + BLEND_STACKS}.`,
+      message: `🍃 Ground ${deps.ITEM_DEFS[itemKey]?.label || 'Tea Blend'} — ${global.CookingSystem?.formatEffectStrength?.(chosen.cookingEffect, BLEND_STACKS) || '+' + BLEND_STACKS}${discovered ? ' · new reaction discovered!' : ''}.`,
     };
   }
 
@@ -252,6 +253,8 @@
         ? '<p>Complete the trio to see its possible beneficial blends.</p>'
         : outcomes.length
           ? outcomes.map(outcome => {
+              const known = alchemy()?.isRecipeKnown?.(outcome.recipeId) === true; // Same discovery gate as Alchemy Table targeting.
+              if (!known) return '<div class="tea-grinder-target"><span>❓ Unknown beneficial blend</span><small>Grind randomly to discover this reaction.</small></div>';
               const label = global.CookingSystem?.effectLabel?.(outcome.cookingEffect) || outcome.cookingEffect;
               const chance = Math.round((alchemy()?.targetingProbability?.(Math.max(0, Math.min(20, Number(global.SkillSystem?.level?.('alchemy')) || 0)), outcomes, outcome.recipeId) || 0) * 100);
               return `<button type="button" class="tea-grinder-target${targetedRecipeId === outcome.recipeId ? ' selected' : ''}" data-tea-target="${outcome.recipeId}"><span>🍃 ${label} Tea Blend</span><small>${outcome.recipe.label} · target ${chance}%</small></button>`;
