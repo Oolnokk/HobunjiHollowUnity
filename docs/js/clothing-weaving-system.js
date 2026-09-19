@@ -31,6 +31,29 @@
   const PATTERN_SCALE_MAX = 3.2; // Normalized upper clamp used by woven pattern rendering; equivalent to the old physical 0.80.
 
   let equipmentDeps = null; // Captured from EquipmentPanel.init; used for gear, inventory, saves, and player refresh.
+  const AVATAR_REFRESH_RETRY_MS = 200; // Polling interval while waiting for equipmentDeps to become available.
+  const AVATAR_REFRESH_RETRY_LIMIT = 25; // ~5s cap: generous for any plausible boot-order race, bounded so a context that never gets equipmentDeps (e.g. a tool page) can't retry forever.
+  let avatarRefreshRetryCount = 0; // Reset once a refresh actually fires; only ever climbs while genuinely waiting.
+  // The player's world avatar is a one-shot static bake (see refreshPlayerAvatar's
+  // forceEyesOpen comment) — it is never re-rendered on its own, so a pattern
+  // that finishes building async has exactly one way back onto the model:
+  // this call. If equipmentDeps isn't installed yet (character creation /
+  // very first avatar bake can race EquipmentPanel.init), a bare
+  // `equipmentDeps?.refreshPlayerAvatar?.()` silently no-ops and the
+  // fallback plain-cloth bake from _imageForTint's cache miss sticks for the
+  // rest of the session, until some unrelated gear change happens to force
+  // another rebuild — read by players as "the pattern is just wrong,"
+  // intermittently, depending on load timing. Retry instead of giving up.
+  function requestPlayerAvatarRefresh() {
+    if (equipmentDeps?.refreshPlayerAvatar) {
+      avatarRefreshRetryCount = 0;
+      equipmentDeps.refreshPlayerAvatar();
+      return;
+    }
+    if (avatarRefreshRetryCount >= AVATAR_REFRESH_RETRY_LIMIT) return;
+    avatarRefreshRetryCount++;
+    window.setTimeout(requestPlayerAvatarRefresh, AVATAR_REFRESH_RETRY_MS);
+  }
   let activeClothingUid = null; // Updated before EquipmentPanel's private detail click handler runs; used to extend redye for woven gear.
   let loomOverlay = null; // Current floating loom UI root; null while closed.
   let lastError = null; // Most recent recoverable integration/rendering error for mobile diagnostics.
@@ -1716,7 +1739,7 @@
       if (!pendingPatternCanvasKeys.has(fullKey)) {
         pendingPatternCanvasKeys.add(fullKey);
         applyPatternToTintedImage(tinted, pattern, colorHex, prefix).then(() => {
-          equipmentDeps?.refreshPlayerAvatar?.();
+          requestPlayerAvatarRefresh();
         }).catch(error => { lastError = String(error?.message || error); }).finally(() => pendingPatternCanvasKeys.delete(fullKey));
       }
       return tinted;
@@ -1780,7 +1803,7 @@
     hasBehindView,
     iconSpriteForCosmetic,
     debugSnapshot,
-    __test: Object.freeze({ baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask, applyPatternToTintedImage, labelPatternCells, behindViewUrlsFor, behindViewResultFor, buildPortraitPatternMap, collectPatternImageUrls, cosmeticConfig, summarizeWeavingLabel, weavingPatternForRole, weavingSwapsPatternColorsForRole, weavingHasAnyPattern, resolvedPatternMeshScale, erodeMask, scaledOutlineWidth }),
+    __test: Object.freeze({ baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask, applyPatternToTintedImage, labelPatternCells, behindViewUrlsFor, behindViewResultFor, buildPortraitPatternMap, collectPatternImageUrls, cosmeticConfig, summarizeWeavingLabel, weavingPatternForRole, weavingSwapsPatternColorsForRole, weavingHasAnyPattern, resolvedPatternMeshScale, erodeMask, scaledOutlineWidth, requestPlayerAvatarRefresh }),
   });
   window.__clothingWeavingDebug = debugSnapshot;
 
