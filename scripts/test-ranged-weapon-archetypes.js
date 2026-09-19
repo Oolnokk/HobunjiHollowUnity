@@ -116,6 +116,7 @@ for (const relative of [
 for (const callback of [...intervalCallbacks]) callback();
 
 const rangedWeaponsSource = fs.readFileSync(path.resolve(__dirname, '../docs/js/combat/ranged-weapons.js'), 'utf8'); // Pins the actual projectile-plane/spin implementation used by runtime.
+const rangedArchetypeSource = fs.readFileSync(path.resolve(__dirname, '../docs/js/combat/ranged-weapon-archetypes.js'), 'utf8'); // Pins cross-input thrown hold/release ownership so mouse cannot be released by controller state.
 const fishingSource = fs.readFileSync(path.resolve(__dirname, '../docs/js/fishing-minigame.js'), 'utf8'); // Pins the shared fishing-mace outbound spin source.
 const heldActionSource = fs.readFileSync(path.resolve(__dirname, '../docs/js/held-action-animations.js'), 'utf8'); // Pins the user-authored shared throw animation source.
 const gripRuntimeSource = fs.readFileSync(path.resolve(__dirname, '../docs/js/procedural-hand-grip-runtime.js'), 'utf8'); // Pins ranged visual support for authored gripMode metadata.
@@ -130,6 +131,10 @@ assert.match(gameSource, /getHeldRangedWorldTransform:[\s\S]*getWorldPosition[\s
 assert.ok(gameSource.indexOf('updateToolMesh(dt);') < gameSource.indexOf('window.RangedWeapons?.update(dt);'),
   'held tool animation must advance to the Strike frame before ranged projectile spawning samples its world transform.');
 assert.match(gameSource, /combatSwingAlignToReticle[\s\S]*currentPlayerAimAngle\(\)[\s\S]*currentPlayerAimPitch\(\)/, 'ranged throw/fire animation frames must align to the live reticle yaw and pitch.');
+assert.match(gameSource, /activeThrownChargeItemKey\?\.\(\)[\s\S]*releaseThrownCharge\?\.\('input-action-release'\)/, 'keyboard/controller Action 1 release must finish the active thrown charge through the shared input path.');
+assert.match(gameSource, /desktopHeldItemMousePresses\.delete\(e\.button\)[\s\S]*activeTool === 'ranged'[\s\S]*runInputAction\('action1', 'release'\)/, 'desktop mouse release must route a ranged thrown hold through the same shared release path.');
+assert.doesNotMatch(rangedArchetypeSource, /pollControllerRelease|controllerBindingFor\('action1'\)/, 'controller state must never poll-release a charge that may have been started by mouse or keyboard.');
+assert.match(rangedArchetypeSource, /pointerId == null\) return[\s\S]*event\.pointerId === thrownCharge\.pointerId/, 'the archetype-level pointer release bridge is reserved for the pointer-owned on-screen Shoot button.');
 assert.match(gameSource, /function setToolPlaneDirectionSwap[\s\S]*uv\.setY\(i, 1 - uv\.getY\(i\)\)/, 'runtime weapon direction swap must reflect PNG local Y through the plane UVs.');
 assert.match(gameSource, /plane\.rotation\.x = -Math\.PI \/ 2;[\s\S]*setToolPlaneDirectionSwap\(plane, opts\.flip === true\)/, 'base pick direction swap must keep the 3D plane basis fixed and mirror only the PNG direction.');
 assert.doesNotMatch(gameSource, /spinPlane\.rotation\.x = \(baseEndFlip !== actionEndFlip\)/, 'animation direction swap must not rotate the held plane around the old wrong X axis.');
@@ -186,6 +191,8 @@ for (const key of ['kylie_copper', 'dagger_copper', 'fishingspear_copper', 'hatc
 }
 assert.strictEqual(windowObject.RangedWeapons.config.hatchet_copper.chargePose.neutral.roll, -82, 'Hatchet uses Weapon Throw (Spin) exactly as authored.');
 assert.strictEqual(windowObject.RangedWeapons.config.kylie_copper.firePose.strike.roll, -88, 'Kylie uses Weapon Throw (Spin) exactly as authored.');
+assert.strictEqual(windowObject.RangedWeapons.config.kylie_copper.chargePose.strike.roll, -88, 'held throw timeline must retain the real authored Strike endpoint behind the Windup hold.');
+assert.notStrictEqual(windowObject.RangedWeapons.config.kylie_copper.chargePose.strike.roll, windowObject.RangedWeapons.config.kylie_copper.chargePose.windup.roll, 'Windup and Strike must not collapse to the same pose or the release lerp becomes visually empty.');
 for (const key of ['dagger_copper', 'fishingspear_copper']) {
   const cfg = windowObject.RangedWeapons.config[key];
   assert.strictEqual(cfg.toolEndFlip, true, `${key} must use the exact pick-mining end-for-end sprite basis.`);
@@ -247,6 +254,7 @@ assert.match(windowObject.RangedWeapons.playerActionLabel('kylie_copper'), /^Rel
 assert.strictEqual(rangedVisuals.at(-1).durationS, 1.04, 'Thrown hold must use the real authored animation duration, not a synthetic hours-long timer.');
 assert.strictEqual(rangedVisuals.at(-1).options.held, true, 'Thrown press must hold the real ranged animation at Windup.');
 assert.strictEqual(rangedVisuals.at(-1).options.pose.windup.roll, -92, 'Thrown hold visual must use Weapon Throw (Spin) Windup rather than the old flask throw.');
+assert.strictEqual(rangedVisuals.at(-1).options.pose.strike.roll, -88, 'Thrown hold visual must carry the real Strike endpoint even though playback is clamped at Windup until release.');
 assert.strictEqual(rangedVisuals.at(-1).options.gripMode, 'palm-parallel', 'Thrown hold visual must carry the authored palm-parallel grip mode.');
 assert.strictEqual(rangedVisuals.at(-1).options.alignToReticle, true, 'Entire thrown animation must use the live reticle frame.');
 assert.strictEqual(rangedVisuals.at(-1).options.toolEndFlip, false, 'Kylie hold uses the normal tool-end basis.');
