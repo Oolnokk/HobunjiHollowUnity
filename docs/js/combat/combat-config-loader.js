@@ -125,7 +125,7 @@
     ['js/npc-held-equipment-v4.js?v=20260914d', () => Number(window.NpcHeldEquipment?.version) >= 4],
     ['js/combat/ranged-weapon-archetypes.js?v=20260918throwframe1', () => Number(window.HobunjiRangedWeaponArchetypes?.version) >= 9],
     ['js/combat/ranged-camera-ray-authority.js?v=20260909perspectivepoint1', () => Number(window.HobunjiRangedCameraRayAuthority?.version) >= 2],
-    ['js/combat/ranged-camera-focus.js?v=20260918reticlezoom1', () => Number(window.HobunjiRangedCameraFocus?.version) >= 8],
+    ['js/combat/ranged-camera-focus.js?v=20260918throwfocus2', () => Number(window.HobunjiRangedCameraFocus?.version) >= 9],
     ['js/combat/combat-camera-alignment-bridge.js?v=20260917charge3', () => Number(window.HobunjiCombatCameraAlignment?.version) >= 4],
     ['js/combat/ranged-dual-role-anim-style.js?v=20260918throwables1', () => Number(window.HobunjiDualRoleRangedAnimStyle?.version) >= 2],
     ['js/drunk-prone-composition-bridge.js?v=20260812b', () => !!window.HobunjiDrunkProneCompositionBridge],
