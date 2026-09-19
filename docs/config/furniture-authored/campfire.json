@@ -2,6 +2,7 @@
   "schema": "hobunji_furniture_authored_runtime.v1",
   "key": "campfire",
   "sourceSchema": "hobunji_furniture_surface_author.v58",
+  "fireHazard": true,
   "footprint": { "w": 1, "d": 1 },
   "parts": [
     {

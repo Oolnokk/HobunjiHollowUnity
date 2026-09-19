@@ -885,6 +885,12 @@
     lines.push(`Livestock caller stack tracing: ${window.PerfProfiler?.traceLivestockCallers === true ? 'ON (expensive)' : 'off'}`);
     const playerVitalsDebug = window.PlayerVitals?.getDebug?.(); // Confirms lethal resource ticks reached the shared death handler on mobile.
     if (playerVitalsDebug) lines.push(`Player vitals: hp=${playerVitalsDebug.health}/${playerVitalsDebug.maxHealth} deathHandled=${playerVitalsDebug.deathHandled ? 1 : 0}`);
+    const knockbackImpactDebug = window.KnockbackCollisionImpact?.debugSnapshot?.(); // Latest forced-movement collision so mobile testing can verify collider type, scaling, and lethal suppression without a console.
+    if (knockbackImpactDebug) {
+      const effectText = Object.entries(knockbackImpactDebug.effects || {}).map(([key, value]) => `${key}=${value}`).join(', '); // Full scaled profile before caps/lethality.
+      const appliedText = Object.entries(knockbackImpactDebug.appliedEffects || {}).map(([key, value]) => `${key}=${value}`).join(', '); // Effects that actually landed before any lethal cutoff.
+      lines.push(`Knockback collision: ${knockbackImpactDebug.label} kind=${knockbackImpactDebug.kind} deficit=${Number(knockbackImpactDebug.deficitTiles || 0).toFixed(2)}t strength=${Number(knockbackImpactDebug.strengthPercent || 0).toFixed(0)}% travel=${Number(knockbackImpactDebug.traveledTiles || 0).toFixed(2)}/${Number(knockbackImpactDebug.intendedTiles || 0).toFixed(2)}t lethal=${knockbackImpactDebug.lethal ? 1 : 0} hazards=blade:${knockbackImpactDebug.bladedHazard ? 1 : 0},fire:${knockbackImpactDebug.fireHazard ? 1 : 0} profile=[${effectText || 'none'}] applied=[${appliedText || 'none'}]`);
+    }
     const tentDebug = window.BanditCamps?.tentInteractionDebug; // Identifies missing ray/focus/nearby state without requiring a console.
     if (tentDebug?.focus) lines.push(`Bandit tent focus: ${tentDebug.focus.result} nearby=${tentDebug.focus.nearby} ray=${tentDebug.focus.hasRay ? 1 : 0} api=${tentDebug.focus.hasFocusApi ? 1 : 0}`);
     // GPU/context capabilities — a mobile WebGL context commonly only
