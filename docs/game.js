@@ -20825,6 +20825,17 @@
       // Used by both tool planes and held bag-item planes to keep them above
       // resource-ring layers (<1.1) while remaining below avatar planes (2+).
       const HELD_OBJECT_RENDER_ORDER = 1.5;
+      function setToolPlaneDirectionSwap(plane, swapped) {
+        const uv = plane?.geometry?.attributes?.uv; // Used to reverse the weapon PNG along its local length without changing the authored 3D pose.
+        if (!uv) return false;
+        const nextSwapped = swapped === true; // Used to avoid touching the plane's UV buffer on ordinary frames when direction has not changed.
+        const currentSwapped = plane.userData?.toolDirectionSwapCurrent === true; // Used to make the UV reflection exactly reversible for pick/ranged action swaps.
+        if (currentSwapped === nextSwapped) return true;
+        for (let i = 0; i < uv.count; i++) uv.setY(i, 1 - uv.getY(i));
+        uv.needsUpdate = true;
+        plane.userData.toolDirectionSwapCurrent = nextSwapped;
+        return true;
+      }
       function makeToolPlaneMesh(itemKey, opts = {}) {
         if (!itemKey || !toolTextures[itemKey]) return null;
         const def  = TOOL_ITEM_DEFS[itemKey];
@@ -20841,14 +20852,15 @@
           side: THREE.DoubleSide,
         });
         const plane = new THREE.Mesh(geo, mat);
-        // Lying flat in XZ, -90° puts the sprite's top (the business end for
-        // every normal tool) forward and its bottom (the grip end) back.
-        // opts.flip reverses that front/back split — end for end, not a
-        // left-right mirror — so the pick-shovel's spike (authored at the
-        // bottom of the handle, meant to be thrust rather than swung like
-        // the blade) faces forward instead when built for the pick slot.
-        plane.rotation.x = opts.flip ? Math.PI / 2 : -Math.PI / 2;
-        plane.userData.toolEndFlipBase = opts.flip === true; // +90° is the exact pick-mining end-for-end basis.
+        // Lying flat in XZ, -90° puts the sprite's local +Y (its authored
+        // top-to-bottom direction) along the held weapon's forward/back axis.
+        // Direction swapping must reflect that PNG-local Y coordinate rather
+        // than rotate the plane around X: a rotation changes the 3D pose basis
+        // and was the reason thrown weapons appeared mirrored on the wrong axis.
+        plane.rotation.x = -Math.PI / 2;
+        plane.userData.toolEndFlipBase = opts.flip === true; // Legacy animation field: now interpreted as a PNG-local-Y direction reflection.
+        plane.userData.toolDirectionSwapCurrent = false; // Used by setToolPlaneDirectionSwap() to track whether this unique plane's V coordinates are currently reflected.
+        setToolPlaneDirectionSwap(plane, opts.flip === true);
         plane.renderOrder = HELD_OBJECT_RENDER_ORDER;
         g.add(plane);
         // Keep a handle on the sprite plane so updateToolMesh can layer the sweep style's
@@ -21840,7 +21852,7 @@
         if (spinPlane) {
           const baseEndFlip = spinPlane.userData?.toolEndFlipBase === true;
           const actionEndFlip = !!combatSwingAnim && combatSwingToolEndFlip;
-          spinPlane.rotation.x = (baseEndFlip !== actionEndFlip) ? Math.PI / 2 : -Math.PI / 2;
+          setToolPlaneDirectionSwap(spinPlane, baseEndFlip !== actionEndFlip);
           // The sweep style's blade-parallel z-twist belongs to whichever anim is actually
           // playing this frame, not whichever style the equipped item defaults to at rest —
           // combat abilities can force any style onto any weapon (a thrust-style quick
@@ -26354,10 +26366,15 @@
           const plane = mesh?.userData?.toolPlane || mesh?.children?.[0]?.userData?.toolPlane || null;
           if (!plane) return null;
           plane.updateWorldMatrix(true, false);
+          const planeGeometry = plane.geometry?.parameters || {}; // Used by thrown projectiles to recreate the held PNG plane at the exact authored dimensions.
           return {
             position: plane.getWorldPosition(new THREE.Vector3()),
             quaternion: plane.getWorldQuaternion(new THREE.Quaternion()),
             scale: plane.getWorldScale(new THREE.Vector3()),
+            matrixWorld: plane.matrixWorld.clone(),
+            planeWidth: Number(planeGeometry.width) || TOOL_MODEL_WIDTH,
+            planeHeight: Number(planeGeometry.height) || TOOL_MODEL_WIDTH,
+            directionSwap: plane.userData?.toolDirectionSwapCurrent === true,
           };
         },
         getActiveCamera: () => camera,
