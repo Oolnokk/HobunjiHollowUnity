@@ -515,6 +515,18 @@ function campfireRecipe() {
     cyl(.32, .5, 0, .06, .3, .06, .7, { rz: 90, segments: 8 }),
   ];
 
+  // Banubu's Tea Grinder: a low green-stained rotary stone with three
+  // ingredient cups around the grinding plate, visually distinct from the
+  // ordinary Hand Mill while staying inside the existing processor renderer.
+  CATALOG.teaGrinder = [
+    box(0, .18, 0, .7, .36, .7, .72),
+    disc(0, .43, 0, .62, .16, .62, 1.15, { segments: 20 }),
+    cyl(.34, .48, 0, .055, .32, .055, .65, { rz: 90, segments: 8 }),
+    cyl(-.25, .48, -.28, .2, .12, .2, 1.25, { segments: 12, topScaleX: 1.15, topScaleZ: 1.15, bottomScaleX: .75, bottomScaleZ: .75 }),
+    cyl(.25, .48, -.28, .2, .12, .2, 1.05, { segments: 12, topScaleX: 1.15, topScaleZ: 1.15, bottomScaleX: .75, bottomScaleZ: .75 }),
+    cyl(0, .48, .32, .2, .12, .2, .9, { segments: 12, topScaleX: 1.15, topScaleZ: 1.15, bottomScaleX: .75, bottomScaleZ: .75 }),
+  ];
+
   CATALOG.dryingRack = [
     leg(-.85, -.38, 1.1, .1, .8), leg(.85, -.38, 1.1, .1, .8),
     leg(-.85, .38, 1.1, .1, .8), leg(.85, .38, 1.1, .1, .8),
