@@ -20393,7 +20393,7 @@
       // branch at the top of updateToolMesh's style if/else chain.
       let combatSwingPose = null;
       let combatSwingAlignToReticle = false; // Ranged fire/throws rotate their authored pose frame onto the live reticle yaw+pitch.
-      let combatSwingToolEndFlip = false; // Same local-X end-for-end sprite-basis reversal as makeToolPlaneMesh(...,{flip:true}) for pick mining.
+      let combatSwingToolEndFlip = false; // Same PNG-local-Y weapon direction reflection as makeToolPlaneMesh(...,{flip:true}) for pick mining.
       const _toolMeshPoseMergeCache = { pose: undefined, styleNeutral: undefined, neutral: null, returnNeutral: null }; // Memoizes updateToolMesh's per-frame neutral/returnNeutral merge for the current swing (see the pose-driven branch below).
       // Affliction ids (see resource-system.js's AFFLICTIONS) this swing's
       // ability can actually inflict — set via opts.afflictionIds on
@@ -24939,6 +24939,13 @@
           const releaseSlot = weaponActionSlot(actionId);
           if (releaseSlot) { window.Combat.input.pressEnd(releaseSlot); return; }
           if (heldItemActionPresses.delete(actionId)) { window.HeldItemActionInput?.release(); return; }
+          if (actionId === 'action1' && heldMode === 'tool' && activeTool === 'ranged') {
+            const thrownBridge = window.HobunjiRangedWeaponArchetypes; // Used here so keyboard/controller/mouse Action 1 releases the same held thrown charge instead of relying on controller polling.
+            if (thrownBridge?.activeThrownChargeItemKey?.()) {
+              thrownBridge.releaseThrownCharge?.('input-action-release');
+              return;
+            }
+          }
           return;
         }
         if (window.Fishing?.state?.active) {
@@ -25770,7 +25777,14 @@
         if (mouseAction === 'action2' && heldMode === 'tool' && activeTool === 'ranged') { runInputAction('action2', 'release'); return; }
         if (mouseAction === 'action1') {
           actionHeldDown = false;
-          if (desktopHeldItemMousePresses.delete(e.button)) window.HeldItemActionInput?.release();
+          if (desktopHeldItemMousePresses.delete(e.button)) {
+            window.HeldItemActionInput?.release();
+            return;
+          }
+          if (heldMode === 'tool' && activeTool === 'ranged' && window.HobunjiRangedWeaponArchetypes?.activeThrownChargeItemKey?.()) {
+            runInputAction('action1', 'release');
+            return;
+          }
           return;
         }
         if (mouseAction) runInputAction(mouseAction, 'release');
