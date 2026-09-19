@@ -460,7 +460,8 @@
     if (deps.isMenuOpen()) {
       // Keep wallet display live while menu is open
       const wd = document.getElementById('invWalletAmount');
-      if (wd) wd.textContent = (deps.inventory.gold || 0);
+      const gold = deps.inventory.gold || 0;
+      if (wd && gold !== _hud.wallet) { _hud.wallet = gold; wd.textContent = gold; }
     }
   }
 

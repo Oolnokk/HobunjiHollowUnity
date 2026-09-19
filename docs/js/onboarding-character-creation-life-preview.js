@@ -103,8 +103,10 @@
       shell.appendChild(button);
     }
     const faceMode = life.viewMode === 'face';
-    button.textContent = faceMode ? 'Change View: Full Body' : 'Change View: Face';
-    button.setAttribute('aria-pressed', faceMode ? 'true' : 'false');
+    const label = faceMode ? 'Change View: Full Body' : 'Change View: Face';
+    if (button.textContent !== label) button.textContent = label;
+    const pressed = faceMode ? 'true' : 'false';
+    if (button.getAttribute('aria-pressed') !== pressed) button.setAttribute('aria-pressed', pressed);
   }
 
   function dyeIdForButton(button) {

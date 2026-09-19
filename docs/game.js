@@ -5590,8 +5590,8 @@
 
       const CREATURE_RESOURCE_TICK_INTERVAL_S = 0.1; // Used to update non-player resources at 10 Hz while preserving accumulated elapsed time.
       const FAR_CREATURE_RESOURCE_TICK_INTERVAL_S = 0.5; // Used by visually sleeping wildlife that cannot currently affect the player.
-      const WILDLIFE_VISUAL_LOD_HIDE_TILES = 28; // Used to remove calm, distant wildlife from scene rendering and visual-rig updates.
-      const WILDLIFE_VISUAL_LOD_SHOW_TILES = 24; // Used as the nearer wake boundary so wildlife does not flicker at one distance.
+      // Wildlife visual LOD (hide/show distance thresholds + eligibility) now
+      // lives in js/wildlife-visual-lod.js — see updateWildlifeVisualLod below.
       const FAR_WILDLIFE_AI_TICK_INTERVAL_S = 0.2; // Used to advance calm hidden wildlife at 5 Hz with accumulated time instead of every render frame.
       const PREDATOR_SIGHT_INTERVAL_S = 0.25; // Used to stagger predator prey-acquisition decisions instead of repeating them every frame.
       const ENEMY_SEARCH_DURATION_S = 3.4; // Time a hostile scans after the player leaves its shared ±45° sight cone.
@@ -5671,25 +5671,12 @@
         return true;
       }
 
-      function wildlifeVisualLodCanHide(c) {
-        if (c.isBandit || c.isCompanion || c.prone || c._branchDefense || (c.knockbackT || 0) > 0 || (c.retreatT || 0) > 0) return false;
-        if (c.state === 'chase' || c.state === 'searching' || c.state === 'patrol-chase' || c.state === 'return' || c.state === 'fleeing-low-health') return false;
-        if (window.Combat?.telegraph?.isBusy(c) || window.Combat?.animalAttacks?.isBusy(c)) return false;
-        return true;
-      }
-
+      // Wildlife visual LOD now lives in js/wildlife-visual-lod.js — pure
+      // function of the creature object and a distance, no closure deps, so
+      // it extracted cleanly. wildlifeVisualLodCanHide's old callers (none
+      // outside this file) should use window.WildlifeVisualLod.canHide.
       function updateWildlifeVisualLod(c, distanceTiles) {
-        const eligible = wildlifeVisualLodCanHide(c); // Keeps combatants, companions, and active movement states fully simulated and rendered.
-        const shouldHide = eligible && (c._wildlifeVisualLodHidden // Applies the separate wake threshold as LOD hysteresis.
-          ? distanceTiles > WILDLIFE_VISUAL_LOD_SHOW_TILES
-          : distanceTiles >= WILDLIFE_VISUAL_LOD_HIDE_TILES);
-        if (shouldHide === !!c._wildlifeVisualLodHidden) return shouldHide;
-        c._wildlifeVisualLodHidden = shouldHide;
-        if (c.avatarRef?.group) c.avatarRef.group.visible = !shouldHide && !c._denHidden;
-        if (c.groundShadow) c.groundShadow.visible = !shouldHide;
-        if (c._ringHud) c._ringHud.visible = !shouldHide;
-        if (!shouldHide) c._wildlifeVisualLodJustWoke = true;
-        return shouldHide;
+        return window.WildlifeVisualLod.update(c, distanceTiles);
       }
 
       function updateHostiles(dt) {

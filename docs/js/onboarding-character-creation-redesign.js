@@ -194,7 +194,7 @@
     if (tletinganButton.classList.contains('ob-active')) familyOpen = true;
 
     const maoButton = group.querySelector('[data-ob-species="mao-ao"]');
-    if (maoButton) maoButton.textContent = "Mao'ao";
+    if (maoButton && maoButton.textContent !== "Mao'ao") maoButton.textContent = "Mao'ao";
 
     let familyButton = group.querySelector('[data-ob-family="slagothim"]');
     if (!familyButton) {
@@ -749,6 +749,20 @@
 
     if (document.body) start();
     else document.addEventListener('DOMContentLoaded', start, { once: true });
+
+    // Neither observer is expensive (both are childList-only, direct children
+    // only -- see the comments above), but nothing was stopping them from
+    // running for the rest of the game session once character creation hands
+    // off. Same teardown signal already used by the sibling weapon/life-preview
+    // modules.
+    document.addEventListener('hobunjiPlayerReady', () => {
+      bodyObserver?.disconnect();
+      bodyObserver = null;
+      overlayObserver?.disconnect();
+      overlayObserver = null;
+      observedOverlay = null;
+      disposePreviewScene();
+    }, { once: true });
   }
 
   function install() {

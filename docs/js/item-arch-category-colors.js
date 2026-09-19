@@ -62,6 +62,7 @@
   let observer = null; // Used to recolor/relabel when the transient selection arc is built or removed.
   let refreshQueued = false; // Used to coalesce DOM/input bursts into one pre-paint category pass.
   let lastSnapshot = []; // Used by the mobile-friendly debug API to report what the player can currently see.
+  let lastLabelSignature = null; // Skips rebuilding the curved category label's SVG when its content/geometry hasn't actually changed.
   let lastGroupedOrder = []; // Used by diagnostics to verify the real canonical selectable order.
   let lastGroupedAt = 0; // Used by diagnostics to distinguish boot grouping from later item-registration regrouping.
   let hookedSharedArc = false; // Prevents wrapping window._desktopSelectionArc.openItem more than once.
@@ -263,13 +264,27 @@
   }
 
   function renderCurvedCategoryLabel() {
-    removeCurvedCategoryLabel();
-    if (!itemArcIsOpen()) return;
+    // This whole function reruns every time colorItemSlots() does, which is
+    // driven by this file's own document.body-wide MutationObserver -- and
+    // removing+recreating the SVG is itself a childList mutation on body, so
+    // doing that unconditionally every pass fed the observer right back into
+    // itself, forever, once per animation frame, for as long as the item arc
+    // stayed open. lastLabelSignature (checked below, once geometry is known)
+    // skips the remove+recreate when nothing about the label actually changed.
+    if (!itemArcIsOpen()) {
+      removeCurvedCategoryLabel();
+      lastLabelSignature = null;
+      return;
+    }
     const slots = visibleItemSlots();
     const active = slots.find(slot => slot.classList.contains('arc-active'));
     const category = active?.dataset?.itemCategory;
     const categoryStyle = CATEGORY_STYLES[category];
-    if (!active || !categoryStyle) return;
+    if (!active || !categoryStyle) {
+      removeCurvedCategoryLabel();
+      lastLabelSignature = null;
+      return;
+    }
 
     const center = outerRingCenter();
     let points = slots.map(slot => outwardLabelPoint(sharedTargetCenter(slot), center)).filter(Boolean);
@@ -280,13 +295,21 @@
       const point = sharedTargetCenter(active);
       const radius = point ? Math.hypot(point.x - center.x, point.y - center.y) : 0;
       const angle = Number.parseFloat(active.dataset.sharedSelectionAngle || '');
-      if (!(radius > 1) || !Number.isFinite(angle)) return;
+      if (!(radius > 1) || !Number.isFinite(angle)) {
+        removeCurvedCategoryLabel();
+        lastLabelSignature = null;
+        return;
+      }
       points = [angle + 12, angle - 12].map(deg => {
         const rad = deg * Math.PI / 180;
         return outwardLabelPoint({ x: center.x + Math.cos(rad) * radius, y: center.y - Math.sin(rad) * radius }, center);
       });
     }
-    if (points.length < 2) return;
+    if (points.length < 2) {
+      removeCurvedCategoryLabel();
+      lastLabelSignature = null;
+      return;
+    }
 
     const start = points[0];
     const end = points[points.length - 1];
@@ -307,6 +330,12 @@
       control = { x: mx + nx * Math.min(30, span * 0.16), y: my + ny * Math.min(30, span * 0.16) };
     }
 
+    const pathD = `M ${start.x} ${start.y} Q ${control.x} ${control.y} ${end.x} ${end.y}`;
+    const signature = `${category}|${categoryStyle.label}|${pathD}`;
+    if (signature === lastLabelSignature) return; // Already showing exactly this label at this geometry -- nothing to rebuild.
+    lastLabelSignature = signature;
+    removeCurvedCategoryLabel();
+
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.id = LABEL_ID;
     svg.setAttribute('viewBox', `0 0 ${innerWidth} ${innerHeight}`);
@@ -316,7 +345,7 @@
     const pathId = `${LABEL_ID}Path`;
     const path = document.createElementNS(svg.namespaceURI, 'path');
     path.id = pathId;
-    path.setAttribute('d', `M ${start.x} ${start.y} Q ${control.x} ${control.y} ${end.x} ${end.y}`);
+    path.setAttribute('d', pathD);
     path.setAttribute('fill', 'none');
 
     const textNode = document.createElementNS(svg.namespaceURI, 'text');
@@ -351,11 +380,15 @@
       const icon = slot.querySelector('.arc-icon');
       if (!icon) return;
 
-      slot.dataset.itemCategory = category;
-      slot.dataset.itemKey = item.key;
-      slot.dataset.itemCategoryLabel = style.label;
-      icon.style.setProperty('--item-cat-color', style.color);
-      icon.style.setProperty('--item-cat-rgb', style.rgb);
+      // dataset writes go through setAttribute under the hood, which queues a
+      // mutation record even for an unchanged value -- guarding these avoids
+      // needlessly feeding any other attribute-watching MutationObserver on
+      // the page every time this (already frequently-called) pass runs.
+      if (slot.dataset.itemCategory !== category) slot.dataset.itemCategory = category;
+      if (slot.dataset.itemKey !== item.key) slot.dataset.itemKey = item.key;
+      if (slot.dataset.itemCategoryLabel !== style.label) slot.dataset.itemCategoryLabel = style.label;
+      if (icon.style.getPropertyValue('--item-cat-color') !== style.color) icon.style.setProperty('--item-cat-color', style.color);
+      if (icon.style.getPropertyValue('--item-cat-rgb') !== style.rgb) icon.style.setProperty('--item-cat-rgb', style.rgb);
       snapshot.push({ key: item.key, label, category, categoryLabel: style.label, color: style.color, active: slot.classList.contains('arc-active') });
     });
     lastSnapshot = snapshot;

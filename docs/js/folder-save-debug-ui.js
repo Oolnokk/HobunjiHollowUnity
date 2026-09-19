@@ -76,10 +76,15 @@
     requestAnimationFrame(install);
   }
 
+  // Both the button and summary this installs live inside #localSaveFolderRow
+  // (static Settings markup, present from load), so watching document.body's
+  // entire subtree used to mean any unrelated DOM change anywhere queued a
+  // reinstall check for no reason. Falls back to document.body only if that
+  // row somehow doesn't exist yet when this script runs.
   const observer = new MutationObserver(scheduleInstall); // Settings may be reparented/rebuilt; reinstall diagnostics when its DOM changes.
   const begin = () => {
     if (!document.body) return;
-    observer.observe(document.body, { childList: true, subtree: true });
+    observer.observe(document.getElementById('localSaveFolderRow') || document.body, { childList: true, subtree: true });
     scheduleInstall();
   };
   if (document.body) begin();

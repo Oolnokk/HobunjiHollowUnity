@@ -684,7 +684,8 @@
     }
     // Save-selection cards exist before gameplay. Keep cloud access visible there,
     // but do not leave a floating gameplay button once the game itself is running.
-    button.style.display = document.querySelector('.sl-card') ? 'block' : 'none';
+    const wantDisplay = document.querySelector('.sl-card') ? 'block' : 'none';
+    if (button.style.display !== wantDisplay) button.style.display = wantDisplay;
   }
 
   function ensureSettingsRow() {
