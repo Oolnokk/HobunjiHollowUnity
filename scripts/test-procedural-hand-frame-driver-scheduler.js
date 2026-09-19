@@ -39,17 +39,20 @@ class Mesh { constructor(geometry, material) { this.geometry = geometry; this.ma
 function buildFixture({ withScheduler }) {
   const registered = new Map();
   const rafCalls = [];
+  const frameIdBox = { value: 1 };
   const parent = {
     position: new Vector3(),
+    children: [],
     getWorldPosition(target) { return target.copy(this.position); },
-    add(child) { child.parent = this; },
-    remove(child) { if (child.parent === this) child.parent = null; },
+    add(child) { child.parent = this; this.children.push(child); },
+    remove(child) { if (child.parent === this) { child.parent = null; this.children = this.children.filter(c => c !== child); } },
   };
+  let useIdlePoseCalls = 0;
   const rig = {
     parent,
     group: { getObjectByName() { return null; } },
     setSideIdle() {},
-    useIdlePose() {},
+    useIdlePose() { useIdlePoseCalls++; },
     getDebug() { return {}; },
     dispose() {},
   };
@@ -71,11 +74,12 @@ function buildFixture({ withScheduler }) {
   if (withScheduler) {
     windowObject.RuntimeFrameScheduler = {
       register(id, fn, options) { registered.set(id, { fn, options }); },
+      frameId() { return frameIdBox.value; },
     };
   }
   const sandbox = { window: windowObject, location: { pathname: withScheduler ? '/index.html' : '/tools/attack-animation-editor/index.html' }, performance: { now: () => 0 }, document: { getElementById() { return null; } } };
   vm.runInNewContext(source, sandbox, { filename: 'procedural-hand-frame-driver.js' });
-  return { windowObject, avatarApi, registered, rafCalls, parent };
+  return { windowObject, avatarApi, registered, rafCalls, parent, frameIdBox, getUseIdlePoseCalls: () => useIdlePoseCalls };
 }
 
 // --- Shipped game context: RuntimeFrameScheduler present -------------------
@@ -116,6 +120,38 @@ function buildFixture({ withScheduler }) {
   assert.equal(windowObject.ProceduralHandFrameDriver.getDebug().length, 1, 'the fallback loop still attaches the pending rig');
   assert.equal(windowObject.ProceduralHandFrameDriver.getDebug()[0].fallback.mode, 'idle', 'the fallback loop still computes gait state in the same tick');
   assert.equal(rafCalls.length, 1, 'the fallback loop reschedules itself exactly like the original frame()');
+}
+
+// --- Render-time sentinel is memoized per real frame ----------------------
+// THREE.WebGLRenderer.prototype.render() is shared across every renderer
+// instance in the shipped game (see combat-config-loader.js's
+// makeRendererPrototypeHookable) and fires more than once per real browser
+// frame — pixel-probe.js's diagnostic isolation renders and farm-panel-
+// core.js's house-layout preview renderer both render the same live scene
+// through it. player-body-attachment-bridge.js hit this exact hazard for
+// shoulder pets (frameId-memoized there); the hand sync sentinel's
+// onBeforeRender must be memoized the same way, or an extra same-frame
+// render() call re-running syncRigToTool/applyFallbackBoth can stomp the
+// authoritative pose poseAndSyncUpdate already computed for this frame.
+{
+  const { windowObject, avatarApi, registered, parent, frameIdBox, getUseIdlePoseCalls } = buildFixture({ withScheduler: true });
+  avatarApi.buildSinglePlaneAvatarModel(windowObject.THREE, {}, { speciesId: 'mao-ao', gender: 'male', profile: {} });
+  registered.get('procedural-hand-attachment').fn();
+  registered.get('procedural-hand-pose-sync').fn();
+  const sentinel = parent.children.find(child => typeof child.onBeforeRender === 'function');
+  assert(sentinel, 'poseAndSyncUpdate must create the render-time sync sentinel');
+  const callsAfterPoseSync = getUseIdlePoseCalls();
+
+  frameIdBox.value = 7;
+  sentinel.onBeforeRender();
+  assert.equal(getUseIdlePoseCalls(), callsAfterPoseSync + 1, 'the first render() call of a new real frame must run the sync');
+  sentinel.onBeforeRender();
+  sentinel.onBeforeRender();
+  assert.equal(getUseIdlePoseCalls(), callsAfterPoseSync + 1, 'extra render() calls within the SAME real frame must not re-run the sync');
+
+  frameIdBox.value = 8;
+  sentinel.onBeforeRender();
+  assert.equal(getUseIdlePoseCalls(), callsAfterPoseSync + 2, 'the next real frame (a new frameId) must run the sync again');
 }
 
 console.log('procedural hand frame driver attachment/pose-sync split passed');

@@ -481,6 +481,23 @@
     sentinel.frustumCulled = false;
     sentinel.renderOrder = -100000;
     sentinel.onBeforeRender = () => {
+      // THREE.WebGLRenderer.prototype.render() is shared across every
+      // renderer instance in the game (see combat-config-loader.js's
+      // makeRendererPrototypeHookable), and fires more than once per real
+      // browser frame — pixel-probe.js's diagnostic isolation renders and
+      // farm-panel-core.js's house-layout preview renderer both render this
+      // same live scene through it. player-body-attachment-bridge.js hit
+      // the identical hazard for shoulder pets (see its frameId-memoized
+      // fix) and it applies here too: poseAndSyncUpdate (pre-render phase)
+      // already ran this exact sync once, authoritatively, before Three.js
+      // traversal even starts, so only the first render() call this real
+      // frame needs to repeat it — a later same-frame call would otherwise
+      // redo the work, or read whatever transient toolHolder/stance state
+      // that OTHER renderer's own pass left behind and stomp the correct
+      // pose with it (visible as a one-frame hand pop).
+      const frameId = global.RuntimeFrameScheduler?.frameId?.();
+      if (frameId != null && record._lastHandSyncFrameId === frameId) return;
+      record._lastHandSyncFrameId = frameId;
       const holder = currentToolHolder(record);
       if (holder) syncRigToTool(record, holder);
       else applyFallbackBoth(record);
