@@ -26,6 +26,9 @@
   const CLOTHING_MARKER_KEY = '__hobunjiWovenClothing'; // Temporary bodyColors metadata passed only through avatar render data.
   const CRAFT_ID_MARKER = '#loom:'; // Makes each crafted article unique to legacy duplicate-collapsing logic.
   const CLOTHING_SLOTS = Object.freeze(['hat', 'hood', 'torso', 'overwear']);
+  const PATTERN_SCALE_REFERENCE = 0.25; // Converts normalized whole-pattern scale to the pre-normalization renderer scale; 1.00 now means the old 0.25.
+  const PATTERN_SCALE_MIN = 0.4; // Normalized lower clamp used by woven pattern rendering; equivalent to the old physical 0.10.
+  const PATTERN_SCALE_MAX = 3.2; // Normalized upper clamp used by woven pattern rendering; equivalent to the old physical 0.80.
 
   let equipmentDeps = null; // Captured from EquipmentPanel.init; used for gear, inventory, saves, and player refresh.
   let activeClothingUid = null; // Updated before EquipmentPanel's private detail click handler runs; used to extend redye for woven gear.
@@ -45,6 +48,11 @@
   const clone = value => value == null ? value : JSON.parse(JSON.stringify(value));
   const finite = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 
+  function resolvedPatternMeshScale(patternDef) {
+    const normalizedScale = clamp(finite(patternDef?.meshScale, 1), PATTERN_SCALE_MIN, PATTERN_SCALE_MAX); // Used by woven rendering so saved 1.00 stays 1.00 in data but renders at the former 0.25.
+    return normalizedScale * PATTERN_SCALE_REFERENCE;
+  }
+
   function baseCosmeticId(item) {
     if (!item) return null;
     if (item.baseCosmeticId) return String(item.baseCosmeticId);
@@ -58,6 +66,14 @@
   function layerLabel(role) {
     const key = role && role !== DEFAULT_LAYER_ROLE ? role : 'Pattern';
     return key.charAt(0).toUpperCase() + key.slice(1);
+  }
+
+  function weavingEntryForRole(weaving, role) {
+    return weaving?.layers?.[role || DEFAULT_LAYER_ROLE] || null; // Used by per-layer pattern lookup and the independent base/trim color-swap flag.
+  }
+
+  function weavingSwapsPatternColorsForRole(weaving, role) {
+    return !!weavingEntryForRole(weaving, role)?.swapPatternColors; // Used only at garment application time; never mutates the reusable pattern definition.
   }
 
   // A garment's weaving data can carry one pattern per layer role (new
@@ -74,7 +90,7 @@
   function weavingPatternForRole(weaving, role) {
     if (!weaving) return null;
     if (weaving.layers) {
-      const entry = weaving.layers[role || DEFAULT_LAYER_ROLE];
+      const entry = weavingEntryForRole(weaving, role); // Shared entry also carries the garment-only swapPatternColors flag.
       if (!entry) return null;
       if (entry.pattern) return entry.pattern;
       if (entry.patternLibraryId) return window.PatternLibrary?.getById?.(entry.patternLibraryId) || null;
@@ -278,6 +294,8 @@
               slot: item.slot,
               baseCosmeticId: baseId,
               weaving: clone(item.weaving),
+              colorA: clone(item.colorA), // Used by runtime color swapping to recover this layer's ordinary cloth dye exactly.
+              colorB: clone(item.colorB), // Used by runtime color swapping for trim/B-palette layers.
               colorC: clone(item.colorC),
             });
           }
@@ -541,7 +559,7 @@
       .loomcraft-behindToggle{min-height:24px;padding:3px 9px;font-size:10px;text-transform:none;letter-spacing:0;font-weight:700;border-radius:8px;border:1px solid #3a564d;background:#17232a;color:#eef8f5;cursor:pointer}.loomcraft-behindToggle.active{outline:2px solid #7fc7bc;background:#1a3432}
       .loomcraft-field{display:grid;gap:5px;margin-bottom:9px}.loomcraft-field label{font-size:11px;font-weight:800;color:#a9c0b9}.loomcraft-field select,.loomcraft-field button{min-height:38px;border-radius:9px;border:1px solid #3a564d;background:#17232a;color:#eef8f5;padding:7px 9px}
       .loomcraft-row{display:flex;gap:7px;flex-wrap:wrap}.loomcraft-row>*{flex:1 1 130px}.loomcraft-material{cursor:pointer}.loomcraft-material.active{outline:2px solid #7fc7bc;background:#1a3432}.loomcraft-note{font-size:11px;line-height:1.4;color:#9eb6ae}.loomcraft-preview{display:grid;place-items:center;min-height:190px;background:#0a0f12;border:1px solid #294139;border-radius:12px}.loomcraft-preview img{max-width:190px;max-height:190px;image-rendering:pixelated}.loomcraft-stats{font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;color:#cde2dc;white-space:pre-line}.loomcraft-craft{width:100%;min-height:44px;border:1px solid #70bcae;background:#173b36;color:#f2fffc;border-radius:11px;font-weight:900}.loomcraft-craft:disabled{opacity:.45}.loomcraft-pattern-actions{display:flex;gap:7px}.loomcraft-pattern-actions button{flex:1}.loomcraft-empty{padding:20px;text-align:center;color:#adc2bc}
-      .loomcraft-pattern-layer{margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid rgba(255,255,255,.06)}.loomcraft-pattern-layer:last-child{margin-bottom:0;padding-bottom:0;border-bottom:none}.loomcraft-pattern-layer>label{display:block;font-size:11px;font-weight:800;color:#a9c0b9;margin-bottom:5px}.loomcraft-pattern-layer select{width:100%;margin-bottom:7px}
+      .loomcraft-pattern-layer{margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid rgba(255,255,255,.06)}.loomcraft-pattern-layer:last-child{margin-bottom:0;padding-bottom:0;border-bottom:none}.loomcraft-pattern-layer>label{display:block;font-size:11px;font-weight:800;color:#a9c0b9;margin-bottom:5px}.loomcraft-pattern-layer select{width:100%;margin-bottom:7px}.loomcraft-pattern-swap{display:flex;align-items:center;gap:7px;margin:7px 0;font-size:11px;font-weight:700;color:#b8cec7}.loomcraft-pattern-swap input{accent-color:#7fc7bc}
     `;
     document.head.appendChild(style);
   }
@@ -577,7 +595,7 @@
       dyeB: dyes[Math.min(1, dyes.length - 1)].id, // Used as trim dye on articles whose existing redye workflow has a second channel.
       dyeC: dyes[Math.min(2, dyes.length - 1)].id, // Used only by the baked weaving pattern(s) and later exposed as the third redye channel.
       layers: [], // Resolved [{url, role}] for the currently selected blueprint; refreshed whenever the blueprint changes.
-      layerPatterns: {}, // role -> {pattern, patternId, patternLabel}. Sticky across blueprint switches — a role only applies if the new blueprint has a layer with that same role, same as the old single-pattern field was sticky across garments.
+      layerPatterns: {}, // role -> {pattern, patternId, patternLabel, swapPatternColors}. Sticky across blueprint switches; the swap flag belongs to this garment layer, not the reusable pattern.
       previewView: 'front', // 'front' | 'behind' — reset to 'front' on every blueprint switch (see blueprintSelect.onchange) so a garment without behind art never gets stuck showing it.
     };
 
@@ -598,8 +616,9 @@
         // pattern reused across many garments then costs one copy in the
         // save, not one per garment. Resolved back to real pattern data by
         // weavingPatternForRole.
-        if (entry.patternId) layers[key] = { patternLibraryId: entry.patternId, patternLabel: entry.patternLabel || 'Custom' };
-        else if (entry.pattern) layers[key] = { pattern: clone(entry.pattern), patternLabel: entry.patternLabel || 'Custom' };
+        const swapPatternColors = !!entry.swapPatternColors; // Stored beside this garment layer so base/trim can swap independently without changing the source pattern.
+        if (entry.patternId) layers[key] = { patternLibraryId: entry.patternId, patternLabel: entry.patternLabel || 'Custom', ...(swapPatternColors ? { swapPatternColors: true } : {}) };
+        else if (entry.pattern) layers[key] = { pattern: clone(entry.pattern), patternLabel: entry.patternLabel || 'Custom', ...(swapPatternColors ? { swapPatternColors: true } : {}) };
       }
       return Object.keys(layers).length ? { layers } : null;
     }
@@ -652,11 +671,12 @@
     async function openLayerPatternAuthor(role, roleKey) {
       const bp = selectedBlueprint();
       const existing = state.layerPatterns[roleKey];
+      const swapPatternColors = !!existing?.swapPatternColors; // Preserved while editing the motif because the swap belongs to the garment layer outside PatternAuthoring.
       const initialPattern = await resolvedForEditing(existing?.pattern || (existing?.patternId ? window.PatternLibrary?.getById?.(existing.patternId) : null) || null);
       const supportsBehindView = await hasBehindView(bp.baseCosmeticId);
       const previewFor = view => patternData => {
         const base = weavingFromState() || { layers: {} };
-        const weaving = { layers: { ...base.layers, [roleKey]: { pattern: patternData } } };
+        const weaving = { layers: { ...base.layers, [roleKey]: { pattern: patternData, ...(swapPatternColors ? { swapPatternColors: true } : {}) } } };
         return renderClothingLayers(bp.baseCosmeticId, { primaryHex: dyeById(state.dyeA)?.hex, secondaryHex: hasSecondary() ? dyeById(state.dyeB)?.hex : null, patternHex: dyeById(state.dyeC)?.hex, weaving, view }).then(r => r.canvas);
       };
       window.PatternAuthoring?.openEditor?.({
@@ -676,7 +696,7 @@
         renderPreviewBehind: supportsBehindView ? previewFor('behind') : undefined,
         onSave: (patternData, sourceLibraryId) => {
           const patternLabel = sourceLibraryId ? (window.PatternLibrary?.listAvailable?.().find(entry => entry.id === sourceLibraryId)?.label || 'Custom') : 'Custom';
-          state.layerPatterns[roleKey] = { pattern: clone(patternData), patternId: sourceLibraryId || '', patternLabel };
+          state.layerPatterns[roleKey] = { pattern: clone(patternData), patternId: sourceLibraryId || '', patternLabel, swapPatternColors };
           refreshPatternLayerControls();
           refreshPreview();
           return true;
@@ -700,13 +720,37 @@
         row.appendChild(label);
         const select = document.createElement('select');
         populatePatternSelect(select, state.layerPatterns[key]?.patternId);
+        row.appendChild(select);
+        const swapWrap = document.createElement('label'); // Holds the per-layer cloth/pattern color-swap control outside PatternAuthoring.
+        swapWrap.className = 'loomcraft-pattern-swap';
+        const swapCheck = document.createElement('input'); // Writes only state.layerPatterns[key].swapPatternColors; base and trim therefore remain independent.
+        swapCheck.type = 'checkbox';
+        swapCheck.checked = !!state.layerPatterns[key]?.swapPatternColors;
+        swapCheck.disabled = !state.layerPatterns[key];
+        const swapText = document.createElement('span'); // Labels which resolved garment layer this independent swap applies to.
+        swapText.textContent = `Swap ${role ? layerLabel(role).toLowerCase() : 'cloth'} ↔ pattern colors`;
+        swapWrap.appendChild(swapCheck);
+        swapWrap.appendChild(swapText);
+        row.appendChild(swapWrap);
         select.onchange = () => {
           const patternId = select.value;
-          if (!patternId) { delete state.layerPatterns[key]; }
-          else state.layerPatterns[key] = { pattern: clone(window.PatternLibrary?.getById?.(patternId)), patternId, patternLabel: select.selectedOptions[0]?.textContent || 'None' };
+          const keepSwap = !!swapCheck.checked; // Carries this garment-layer choice across library-pattern changes without touching the pattern data.
+          if (!patternId) {
+            delete state.layerPatterns[key];
+            swapCheck.checked = false;
+            swapCheck.disabled = true;
+          } else {
+            state.layerPatterns[key] = { pattern: clone(window.PatternLibrary?.getById?.(patternId)), patternId, patternLabel: select.selectedOptions[0]?.textContent || 'None', swapPatternColors: keepSwap };
+            swapCheck.disabled = false;
+          }
           refreshPreview();
         };
-        row.appendChild(select);
+        swapCheck.onchange = () => {
+          const entry = state.layerPatterns[key]; // Existing selected/custom pattern entry receives only the garment-specific swap flag.
+          if (!entry) { swapCheck.checked = false; return; }
+          entry.swapPatternColors = !!swapCheck.checked;
+          refreshPreview();
+        };
         const actions = document.createElement('div');
         actions.className = 'loomcraft-pattern-actions';
         const authorBtn = document.createElement('button');
@@ -720,6 +764,8 @@
         clearBtn.onclick = () => {
           delete state.layerPatterns[key];
           select.value = '';
+          swapCheck.checked = false;
+          swapCheck.disabled = true;
           refreshPreview();
         };
         actions.appendChild(clearBtn);
@@ -954,8 +1000,10 @@
       if (!descriptor?.baseCosmeticId || !weavingHasAnyPattern(descriptor.weaving)) continue;
       try {
         const cfg = await cosmeticConfig(descriptor.baseCosmeticId);
+        const paletteLayerMap = cfg?.palette?.layers && typeof cfg.palette.layers === 'object' ? cfg.palette.layers : null; // Used by runtime color swapping to choose the exact base-vs-trim dye for each sprite layer.
         for (const [url, role] of collectPatternImageUrls(cfg)) {
-          const entry = { ...descriptor, role };
+          const paletteKey = role && paletteLayerMap ? paletteLayerMap[role] : null; // Stored only in the transient portrait descriptor; it is not garment save data.
+          const entry = { ...descriptor, role, paletteKey };
           map.set(url, entry);
           for (const behindUrl of behindViewUrlsFor(url, descriptor.baseCosmeticId)) map.set(behindUrl, entry);
         }
@@ -1097,8 +1145,8 @@
   async function renderClothingLayers(baseCosmeticIdValue, { primaryHex = null, secondaryHex = null, patternHex = '#ffffff', weaving = null, view = 'front' } = {}) {
     const layers = await resolveIconLayers(baseCosmeticIdValue);
     if (!layers.length) return { canvas: null, layers };
-    const primaryValue = parseInt(String(primaryHex || '').replace('#', ''), 16);
-    const secondaryValue = parseInt(String(secondaryHex || primaryHex || '').replace('#', ''), 16); // Falls back to primary when the caller has no separate trim color.
+    const primaryColorHex = primaryHex || '#ffffff'; // Used as the ordinary base-layer color or, when swapped, as that layer's pattern color.
+    const secondaryColorHex = secondaryHex || primaryColorHex; // Used as the ordinary trim-layer color or, when swapped, as that layer's pattern color.
     const gender = view === 'behind' ? playerSpeciesGender().gender : null;
     const rendered = [];
     for (const { url: frontUrl, role, paletteKey } of layers) {
@@ -1114,7 +1162,12 @@
       }
       let img = await loadImageUrl(url);
       if (!img) continue;
-      const tintValue = paletteKey === 'B' ? secondaryValue : primaryValue;
+      const pattern = weavingPatternForRole(weaving, role); // Determines whether this exact base/trim layer gets woven at all.
+      const swapPatternColors = !!pattern && weavingSwapsPatternColorsForRole(weaving, role); // Swaps only this garment layer's cloth and pattern dyes.
+      const clothColorHex = paletteKey === 'B' ? secondaryColorHex : primaryColorHex; // Original sprite dye retained as the pattern dye when swapping.
+      const layerBaseHex = swapPatternColors ? patternHex : clothColorHex; // Whole sprite is dyed with the pattern color first when swapping.
+      const layerPatternHex = swapPatternColors ? clothColorHex : patternHex; // Motif receives the original cloth dye when swapping.
+      const tintValue = parseInt(String(layerBaseHex || '').replace('#', ''), 16);
       // Recolor the image already loaded above rather than asking
       // SpriteRecolor.getRecoloredCanvas to reload it by this same url —
       // that reload uses a plain `new Image().src = url` with no asset-path
@@ -1133,12 +1186,11 @@
           img = tintCanvas;
         } catch (_) {}
       }
-      const pattern = weavingPatternForRole(weaving, role);
       // tintValue folds into the cache prefix for the same reason the runtime
       // hook's tintKey does (see installPortraitHooks) — this layer's `img`
       // pixels, which the pattern's shade-fill reads its light/dark variation
       // from, depend on which dye tinted it, not just its own url.
-      if (pattern) img = await applyPatternToTintedImage(img, pattern, patternHex, `layer:${url}:${tintValue}`);
+      if (pattern) img = await applyPatternToTintedImage(img, pattern, layerPatternHex, `layer:${url}:${tintValue}:swap${swapPatternColors ? 1 : 0}`);
       rendered.push(img);
     }
     if (!rendered.length) return { canvas: null, layers };
@@ -1173,6 +1225,16 @@
 
   function resolvePatternHex(colorC) {
     return colorC?.hex || window.DyeSystem?.getById?.(colorC?.dyeId)?.hex || '#ffffff';
+  }
+
+  function portraitTintForHex(tint, hex) {
+    const rgb = hexRgb(hex); // Used by runtime swapped layers so the whole sprite can take the pattern dye before its motif receives the cloth dye.
+    return { mode: 'shadeFill', rgb, options: tint?.options || window.getPortraitTintingConfig?.() };
+  }
+
+  function portraitClothHex(descriptor) {
+    const clothColor = descriptor?.paletteKey === 'B' ? (descriptor?.colorB || descriptor?.colorA) : descriptor?.colorA; // Used by runtime swapping to recover the exact original base/trim dye.
+    return resolvePatternHex(clothColor);
   }
 
   function findOpaqueBounds(mask, w, h) {
@@ -1263,7 +1325,7 @@
     ctx.imageSmoothingEnabled = false;
     const motifScale = Math.max(.05, Number(patternDef?.motifScale ?? patternDef?.scale) || 1);
     const frameScale = Math.max(.05, Number(patternDef?.frameScale) || 1);
-    const meshScale = Math.max(.05, Number(patternDef?.meshScale) || 1);
+    const meshScale = resolvedPatternMeshScale(patternDef);
     const motifRad = (Number(patternDef?.motifRotationDeg) || 0) * Math.PI / 180;
     const frameRad = (Number(patternDef?.frameRotationDeg) || 0) * Math.PI / 180;
     const meshRad = (Number(patternDef?.meshRotationDeg) || 0) * Math.PI / 180;
@@ -1512,7 +1574,7 @@
   // below 1px.
   function scaledOutlineWidth(defaultWidth, rawPattern) {
     const pattern = legacyFrameFields(rawPattern);
-    const scale = Math.min(Number(pattern?.motifScale) || 1, 1) * Math.min(Number(pattern?.frameScale) || 1, 1) * Math.min(Number(pattern?.meshScale) || 1, 1);
+    const scale = Math.min(Number(pattern?.motifScale) || 1, 1) * Math.min(Number(pattern?.frameScale) || 1, 1) * Math.min(resolvedPatternMeshScale(pattern), 1);
     return Math.max(1, Math.min(defaultWidth, Math.round(defaultWidth * scale)));
   }
 
@@ -1631,24 +1693,23 @@
     if (typeof originalTint !== 'function' || typeof originalRender !== 'function') return false;
 
     window._imageForTint = function clothingPatternImageForTint(img, sourceKey, tint) {
-      const tinted = originalTint(img, sourceKey, tint);
       const descriptor = activePortraitPatternMap?.get(normalizeAssetPath(sourceKey));
       const pattern = descriptor && weavingPatternForRole(descriptor.weaving, descriptor.role); // Per-layer: a trim layer's own pattern, not necessarily the same one as the base layer.
-      if (!pattern) return tinted;
+      if (!pattern) return originalTint(img, sourceKey, tint);
+      const swapPatternColors = weavingSwapsPatternColorsForRole(descriptor.weaving, descriptor.role); // Runtime counterpart of the loom's independent base/trim swap checkbox.
+      const patternColorHex = resolvePatternHex(descriptor.colorC); // Third dye slot is the ordinary woven-ink color and becomes the sprite color when swapped.
+      const clothColorHex = portraitClothHex(descriptor); // Exact saved A/B dye becomes the motif color when this layer is swapped.
+      const appliedTint = swapPatternColors ? portraitTintForHex(tint, patternColorHex) : tint; // Recolors the whole sprite before motif compositing, matching loom preview semantics.
+      const tinted = originalTint(img, sourceKey, appliedTint);
       // _imageForTint is synchronous. Return cached patterned output when available;
       // otherwise schedule a player-avatar refresh after generating it and use this
       // one unpatterned frame as a safe fallback.
-      // tintKey folds in the primary dye/tint identity that produced `tinted`'s
-      // own pixels — without it, two characters (or the same character before
-      // and after a redye) sharing this sourceKey+pattern+patternColor combo
-      // would collide on the same cache key, and whichever dye rendered first
-      // would "freeze" the pattern's shading for everyone else afterward: the
-      // fill formula below reads its light/dark variation straight out of
-      // `tinted`'s own pixels, so a stale `tinted` from a different dye means a
-      // stale (and possibly much flatter or more saturated) shade baseline.
-      const tintKey = tint?.mode === 'shadeFill' ? `shade:${(tint.rgb || []).join(',')}` : tint?.mode === 'hueSatFill' ? `huesat:${tint.hue}:${tint.sat}` : 'none';
-      const prefix = `runtime:${normalizeAssetPath(sourceKey)}:${tintKey}`; // Used to keep the same source layer's async/cached composite stable across frames.
-      const colorHex = resolvePatternHex(descriptor.colorC); // Third dye slot is the sole color source for woven ink.
+      // tintKey folds in the actual base tint that produced `tinted`'s pixels,
+      // including a swapped pattern-color base, so cache entries cannot leak
+      // between normal and swapped layer renders.
+      const tintKey = appliedTint?.mode === 'shadeFill' ? `shade:${(appliedTint.rgb || []).join(',')}` : appliedTint?.mode === 'hueSatFill' ? `huesat:${appliedTint.hue}:${appliedTint.sat}` : 'none';
+      const prefix = `runtime:${normalizeAssetPath(sourceKey)}:${tintKey}:swap${swapPatternColors ? 1 : 0}`; // Separates normal/swapped composites even when their dye values happen to match.
+      const colorHex = swapPatternColors ? clothColorHex : patternColorHex; // Motif color is the opposite member of the cloth↔pattern swap.
       const fullKey = patternCanvasKey(tinted, pattern, colorHex, prefix);
       const cached = patternedCanvasCache.get(fullKey);
       if (cached) return cached;
@@ -1719,7 +1780,7 @@
     hasBehindView,
     iconSpriteForCosmetic,
     debugSnapshot,
-    __test: Object.freeze({ baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask, applyPatternToTintedImage, labelPatternCells, behindViewUrlsFor, behindViewResultFor, buildPortraitPatternMap, collectPatternImageUrls, cosmeticConfig, summarizeWeavingLabel, weavingPatternForRole, weavingHasAnyPattern, erodeMask, scaledOutlineWidth }),
+    __test: Object.freeze({ baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask, applyPatternToTintedImage, labelPatternCells, behindViewUrlsFor, behindViewResultFor, buildPortraitPatternMap, collectPatternImageUrls, cosmeticConfig, summarizeWeavingLabel, weavingPatternForRole, weavingSwapsPatternColorsForRole, weavingHasAnyPattern, resolvedPatternMeshScale, erodeMask, scaledOutlineWidth }),
   });
   window.__clothingWeavingDebug = debugSnapshot;
 
