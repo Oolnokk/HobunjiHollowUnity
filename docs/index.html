@@ -196,6 +196,9 @@
        to localStorage and have the game load that instead of the repo file,
        toggled from the onboarding save-select screen. Loaded before anything
        that calls loadDatabase() (combat-config-loader.js, game.js, onboarding.js). -->
+  <!-- Banubu's quest dialogue defaults load before LocalDBOverrides so the
+       editor/runtime database composition can replace his generic chatter. -->
+  <script src="js/banubu-quest-content.js?v=20260919tea1"></script>
   <script src="js/local-db-overrides.js?v=20260910jubmir1"></script>
   <!-- Item trait vocabulary/computation (window.ItemTraits) — see
        docs/js/item-traits.js. Initialized from game.js once ITEM_DEFS
@@ -274,12 +277,16 @@
   <script src="js/cooking-data.js?v=20260811a"></script>
   <script src="js/food-processing.js?v=20260811a"></script>
   <script src="js/cooking-system.js?v=20260811b"></script>
+  <script src="js/key-item-system.js?v=20260918banubu1"></script>
   <!-- Alchemy (reagent/effect defs, potion brewing, shared timed effects) —
        window.AlchemySystem. Self-contained aside from deps injected via
        init(), so load order relative to the other systems above doesn't
        matter; must load before game.js, which calls
        window.AlchemySystem.init(...) during its own setup. -->
   <script src="js/alchemy-system.js?v=20260918blackstamina2"></script>
+  <!-- Banubu's Tea Grinder delegates trait legality/targeting to AlchemySystem
+       but outputs cooking Tea Blends, so it must load after both systems. -->
+  <script src="js/tea-grinder.js?v=20260919tea1"></script>
   <script src="js/alchemy-flasks.js?v=20260830shoulderaim1"></script>
   <!-- Dye catalog/ownership (window.DyeSystem) — character creation, the
        redye panel, General Store clothing stock, and treasure loot all
@@ -2340,6 +2347,7 @@
        openNpcDialogue/closeNpcDialogue (camera/staging/save) stay in
        game.js and call into this module. -->
   <script src="js/dialogue-content.js?v=20260831syllable4"></script>
+  <script src="js/banubu-questline.js?v=20260919tea1"></script>
   <!-- World-space Float+ combat text and centered five-row reward lists. -->
   <script src="js/world-popup-text.js?v=20260831interactioncolors2"></script>
   <!-- Lore loading-screen overlay, shown while a wilderness zone or mine
