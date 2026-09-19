@@ -473,6 +473,8 @@
     const handAttachY = Number(model.userData?.handAttachY);
     const safeHandAttachX = Number.isFinite(handAttachX) ? handAttachX : -dims.width * 0.28;
     const safeHandAttachY = Number.isFinite(handAttachY) ? handAttachY : dims.height * 0.45;
+    const cachedScaledArmLength = Number(model.userData?.scaledArmLength); // Concrete rendered reach cached at avatar construction instead of rebuilt every dance frame.
+    const armLength = Number.isFinite(cachedScaledArmLength) && cachedScaledArmLength > 0 ? cachedScaledArmLength : dims.height * 0.62; // One-time legacy fallback.
     const GroupCtor = model?.constructor; // The math-only THREE bridge (currentThree()) only carries Vector3/Quaternion/Euler/MathUtils, not Group — mirrors docs/js/procedural-dance-mode.js's buildShim(), which grabs its own root constructor straight off the live model instance for the same reason.
     if (!GroupCtor) return null;
     const root = new GroupCtor();
@@ -507,7 +509,7 @@
       return { side, idleHand, shoulderLocal, line, bendDegX: ARM_BEND_DEG_X, handMeshName, handMesh: null };
     }
 
-    const rig = { root, dims, left: buildSide('left'), right: buildSide('right') };
+    const rig = { root, dims, armLength, left: buildSide('left'), right: buildSide('right') }; // armLength is reused by every frame of this generated arm rig.
     editorLog('[Dance arms] Generated virtual shoulder->elbow->hand chain built.', 'info', {
       handAttachSource: Number.isFinite(handAttachX) && Number.isFinite(handAttachY) ? 'model.userData' : 'fallback estimate',
       left: { shoulderLocal: rig.left.shoulderLocal, idleHand: rig.left.idleHand },
@@ -550,7 +552,7 @@
   }
 
   function armTargetsForStyle(THREE, dims, arms, style, localBeat, motion, drunk, dt) {
-    const reach = dims.height * 0.62; // Used as the fully-extended arm length for raised/reaching/punching poses.
+    const reach = arms.armLength; // Cached concrete species+gender reach; no per-frame height×0.62 reconstruction.
     if (style === 'raise-reach') {
       return {
         right: new THREE.Vector3(arms.right.shoulderLocal.x * 0.4, arms.right.shoulderLocal.y + reach, arms.right.shoulderLocal.z), // Raised straight overhead.
@@ -558,7 +560,7 @@
       };
     }
     if (style === 'tpose-jiggle') {
-      const spread = dims.width * 0.62;
+      const spread = reach; // Horizontal full extension uses the same cached arm reach.
       const out = {};
       for (const side of ['left', 'right']) {
         const sign = Math.sign(arms[side].shoulderLocal.x) || (side === 'left' ? 1 : -1); // Extends the hand further out on whichever side the shoulder's own X already sits, regardless of which absolute-X convention this avatar's rig uses.

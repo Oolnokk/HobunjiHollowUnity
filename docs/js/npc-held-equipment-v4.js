@@ -152,11 +152,24 @@
     if (!q) return false;
     sourceParent.updateWorldMatrix?.(true, false);
     holderParent.updateWorldMatrix?.(true, false);
-    if (sourceParent === holderParent) {
-      holder.position.copy(p);
+    const avatar = avatarRootFor(walker); // Supplies the same cached armLength/visual-centroid metadata used by player and bandits.
+    const armLength = Number(avatar?.userData?.armLength);
+    const scale = window.HobunjiSpeciesPoseScale?.scaleForArmLength?.(armLength) ?? 1;
+    if (sourceParent === holderParent && scale === 1) {
+      holder.position.copy(p); // Preserve the exact pre-arm-length Mao'ao path without unnecessary world/local round-trips.
       holder.quaternion.copy(q);
     } else {
-      const worldP = sourceParent.localToWorld(p.clone());
+      const worldP = sourceParent.localToWorld(p.clone()); // Raw finished pose before the uniform centroid orbit.
+      if (avatar && scale !== 1) {
+        avatar.updateWorldMatrix?.(true, false);
+        const centroidLocal = new three.Vector3(
+          Number(avatar.userData?.visualCentroidLocalX) || 0,
+          Number(avatar.userData?.visualCentroidLocalY) || 0,
+          Number(avatar.userData?.visualCentroidLocalZ) || 0,
+        ); // True portrait-plane center inside the avatar root hierarchy.
+        const centroid = avatar.localToWorld(centroidLocal);
+        window.HobunjiSpeciesPoseScale?.scalePointAroundCentroid?.(worldP, centroid.x, centroid.y, centroid.z, armLength);
+      }
       const worldQ = sourceParent.getWorldQuaternion(new three.Quaternion()).multiply(q);
       const parentQ = holderParent.getWorldQuaternion(new three.Quaternion()).invert();
       holder.position.copy(holderParent.worldToLocal(worldP));
