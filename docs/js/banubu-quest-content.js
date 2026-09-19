@@ -172,7 +172,7 @@
       textNode('banubu_q1_ready_15', 'I can already feel that nap coming on.', 'banubu_q1_ready_16'),
       textNode('banubu_q1_ready_16', 'All I need is a good strong bowl of Nine Leaf Tea.', 'banubu_q1_ready_17'),
       textNode('banubu_q1_ready_17', 'Here, take the recipe—and this old Tea Grinder. Each Tea Blend takes three herbs in the grinder, and the tea takes three blends plus White Milk.', 'banubu_q1_ready_18'),
-      textNode('banubu_q1_ready_18', 'To get up and be truly productive, it needs to instill me with both {{banubuRequestedBuffs}}. And I’m a big fella, so it’s gotta be real strong. Both effects need to be {{banubuRequiredStrength}}.', null),
+      textNode('banubu_q1_ready_18', 'To get up and be truly productive, it needs to instill me with both {{banubuNextRequestedBuffs}}. And I’m a big fella, so it’s gotta be real strong. Both effects need to be {{banubuNextRequiredStrength}}.', null),
     ],
     {
       questType: 'threeFishPie',
