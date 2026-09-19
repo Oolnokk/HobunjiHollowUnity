@@ -6,7 +6,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 10;
+  const VERSION = 11;
   const PATCH_RETRY_MS = 50; // Used while game.js finishes constructing generated metal weapon definitions.
   const PATCH_RETRY_LIMIT = 160; // Used to stop the bootstrap poll after roughly eight seconds instead of polling forever.
   const THROWN_TYPE = 'thrown';
@@ -145,7 +145,7 @@
       rangedType: THROWN_TYPE,
       inputMode: 'hold-release',
       gripMode: animation.gripMode || 'palm-parallel',
-      toolEndFlip: animation.toolEndFlip === true || END_FLIPPED_THROW_SHAPES.has(shapeKey),
+      toolEndFlip: animation.toolEndFlip === true || END_FLIPPED_THROW_SHAPES.has(shapeKey), // Stance-wide PNG direction: Neutral, held throw phases, and projectile all use the same value.
       throwDurationS: Number(animation.durationS) || 1.04,
       throwWindupFrac: Number.isFinite(Number(animation.windupFrac)) ? Number(animation.windupFrac) : 0.49,
       throwStrikeFrac: Number.isFinite(Number(animation.strikeFrac)) ? Number(animation.strikeFrac) : 0.57,
@@ -426,6 +426,7 @@
       gripMode: def.gripMode,
       toolEndFlip: def.toolEndFlip === true,
       alignToReticle: true,
+      orbitRigCentroid: true,
       held: true,
       windupFrac: def.throwWindupFrac ?? 0.49,
       strikeFrac: def.throwStrikeFrac ?? 0.57,
