@@ -27,6 +27,8 @@
     // Faceted masonry keeps its authored texture-edge treatment and skips the general shell-outline pass; rounded meshes remain eligible for shells.
     ['FacetedStructureShellReduction', 'faceted-structure-shell-reduction.js?v=20260905a'],
     ['StructurePreload', 'structure-preload.js?v=20260812a'],
+    // Shared distance-hysteresis/tick-rate-accumulator math reused by the two LOD modules below and by game.js's NPC walker distance LOD -- must load before both.
+    ['EntityDistanceLod', 'entity-distance-lod.js?v=20260919b'],
     ['WildernessSimulationLOD', 'wilderness-simulation-lod.js?v=20260812a'],
     // Wildlife's own visibility/render-cost LOD (distance-hidden avatar/shadow/ring HUD), sibling to the bandit-sleep LOD just above.
     ['WildlifeVisualLod', 'wildlife-visual-lod.js?v=20260919a'],
