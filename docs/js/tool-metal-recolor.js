@@ -16,9 +16,6 @@
   const DEFAULT_OXIDATION_SEED = 28480;
   const DEFAULT_BLOTCH_COUNT = 14;
   const DEFAULT_OUTLINE_WIDTH = 2;
-  const PATTERN_SCALE_REFERENCE = 0.25; // Converts normalized whole-pattern scale to the pre-normalization renderer scale; 1.00 now means the old 0.25.
-  const PATTERN_SCALE_MIN = 0.4; // Normalized lower clamp used by authored pattern rendering; equivalent to the old physical 0.10.
-  const PATTERN_SCALE_MAX = 3.2; // Normalized upper clamp used by authored pattern rendering; equivalent to the old physical 0.80.
 
   function hexToRgb(hex) {
     const clean = String(hex).replace('#', '').trim();
@@ -70,11 +67,6 @@
 
   function clamp01(value) {
     return Math.max(0, Math.min(1, Number(value) || 0));
-  }
-
-  function resolvedPatternMeshScale(patternDef) {
-    const normalizedScale = Math.max(PATTERN_SCALE_MIN, Math.min(PATTERN_SCALE_MAX, Number(patternDef?.meshScale) || 1)); // Used by the metal renderer so saved 1.00 stays 1.00 in data but renders at the former 0.25.
-    return normalizedScale * PATTERN_SCALE_REFERENCE;
   }
 
   function resolveOutputSaturation(originalS, sourceS, targetS, mode) {
@@ -319,7 +311,7 @@
     // patterns saved before motifScale existed as its own field.
     const motifScale = Math.max(0.05, Number(patternDef.motifScale ?? patternDef.scale) || 1);
     const frameScale = Math.max(0.05, Number(patternDef.frameScale) || 1);
-    const meshScale = resolvedPatternMeshScale(patternDef);
+    const meshScale = Math.max(0.05, Number(patternDef.meshScale) || 1); // Verdigris intentionally keeps its legacy physical mesh scale; weaving alone applies the normalized 1.00 -> old 0.25 mapping.
     const motifRad = ((Number(patternDef.motifRotationDeg) || 0) * Math.PI) / 180;
     const frameRad = ((Number(patternDef.frameRotationDeg) || 0) * Math.PI) / 180;
     const meshRad = ((Number(patternDef.meshRotationDeg) || 0) * Math.PI) / 180;
@@ -564,7 +556,7 @@
   // so it never disappears below 1px.
   function scaledOutlineWidthForPattern(defaultWidth, rawPatternDef) {
     const patternDef = legacyFrameFields(rawPatternDef);
-    const scale = Math.min(Number(patternDef?.motifScale) || 1, 1) * Math.min(Number(patternDef?.frameScale) || 1, 1) * Math.min(resolvedPatternMeshScale(patternDef), 1);
+    const scale = Math.min(Number(patternDef?.motifScale) || 1, 1) * Math.min(Number(patternDef?.frameScale) || 1, 1) * Math.min(Number(patternDef?.meshScale) || 1, 1);
     return Math.max(1, Math.min(defaultWidth, Math.round(defaultWidth * scale)));
   }
 
