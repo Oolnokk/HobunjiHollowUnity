@@ -503,10 +503,10 @@
     collider.userData.rangedCollider = true;
     root.add(collider);
 
-    // visual owns the immutable launch frame plus any fixed-axis thrown spin.
-    // facePivot is the only camera-responsive child: it may twist around the
-    // sprite's long local Y axis, but it cannot steer the projectile or change
-    // the world-space axis the throw was spinning around when released.
+    // visual owns the immutable launch frame sampled at release.
+    // facePivot owns visual-only PNG motion: spinning weapons rotate it around
+    // local Z, while non-spinning projectiles may use its local-Y camera
+    // readability twist. Neither path can steer the projectile trajectory.
     const visual = new THREE.Group();
     visual.name = 'projectileLaunchFrame';
     const facePivot = new THREE.Group();
