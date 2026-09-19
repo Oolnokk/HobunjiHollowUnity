@@ -389,7 +389,14 @@
     const all = allTechniques(); // Used to calculate visible learned/total progression.
     let status = pane.querySelector('[data-technique-scroll-status]'); // Used to avoid duplicate status blocks across pane rerenders.
     if (!status) { status = document.createElement('div'); status.dataset.techniqueScrollStatus = '1'; status.className = 'loadout-slot-combo-note'; status.style.marginBottom = '8px'; pane.insertBefore(status, pane.querySelector('.loadout-slot') || null); }
-    status.textContent = `${all.filter(def => unlocked.has(def.id)).length}/${all.length} slottable techniques learned · Technique Scrolls grant Motes of Prowess and may reveal new attacks.`;
+    // The observer above falls back to watching the whole document.body when
+    // #combatLoadoutPane doesn't exist yet at DOMContentLoaded time, and even once
+    // scoped to the pane, .textContent = is itself a childList change (old text
+    // node out, new one in) even when the string is unchanged -- so writing this
+    // unconditionally on every decorateLoadout() pass kept re-triggering the
+    // observer, and thus this whole function, forever.
+    const statusText = `${all.filter(def => unlocked.has(def.id)).length}/${all.length} slottable techniques learned · Technique Scrolls grant Motes of Prowess and may reveal new attacks.`;
+    if (status.textContent !== statusText) status.textContent = statusText;
     ['tap2', 'hold1', 'hold2'].forEach(slot => {
       const select = document.getElementById(`combatLoadout_${slot}`); // Used to stop the browser visually auto-selecting an unlocked attack while the actual slot is still empty.
       if (!select || window.Combat.loadout.getSlot(slot)) return;
