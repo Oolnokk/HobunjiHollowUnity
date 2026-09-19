@@ -131,6 +131,8 @@ assert.match(gameSource, /getHeldRangedWorldTransform:[\s\S]*getWorldPosition[\s
 assert.ok(gameSource.indexOf('updateToolMesh(dt);') < gameSource.indexOf('window.RangedWeapons?.update(dt);'),
   'held tool animation must advance to the Strike frame before ranged projectile spawning samples its world transform.');
 assert.match(gameSource, /combatSwingAlignToReticle[\s\S]*currentPlayerAimAngle\(\)[\s\S]*currentPlayerAimPitch\(\)/, 'ranged throw/fire animation frames must align to the live reticle yaw and pitch.');
+assert.match(gameSource, /combatSwingOrbitRigCentroid[\s\S]*currentPlayerPerspectiveDirection\(\)[\s\S]*avatarCentroidWorld\?\.\(playerMesh\)[\s\S]*centroidToHandY/, 'thrown playback must orbit the complete hand/pose offset around the live avatar centroid using the head perspective direction, including vertical pitch.');
+assert.match(gameSource, /rangedStanceEndFlip[\s\S]*playerDirectionSwap\?\.\(spinItemKey\)[\s\S]*setToolPlaneDirectionSwap\(spinPlane, desiredEndFlip\)/, 'ranged Neutral must use the same configured direction swap as held throw phases.');
 assert.match(gameSource, /activeThrownChargeItemKey\?\.\(\)[\s\S]*releaseThrownCharge\?\.\('input-action-release'\)/, 'keyboard/controller Action 1 release must finish the active thrown charge through the shared input path.');
 assert.match(gameSource, /desktopHeldItemMousePresses\.delete\(e\.button\)[\s\S]*activeTool === 'ranged'[\s\S]*runInputAction\('action1', 'release'\)/, 'desktop mouse release must route a ranged thrown hold through the same shared release path.');
 assert.doesNotMatch(rangedArchetypeSource, /pollControllerRelease|controllerBindingFor\('action1'\)/, 'controller state must never poll-release a charge that may have been started by mouse or keyboard.');
@@ -152,7 +154,7 @@ assert.match(fishingSource, /projectileVisuals:\s*FISHING_PROJECTILE_VISUALS/, '
 assert.match(rangedWeaponsSource, /Fishing\?\.projectileVisuals\?\.maceSpinRateDeg/, 'Thrown spin must read Fishing\'s authored mace spin rate instead of inventing a separate rate.');
 assert.match(rangedWeaponsSource, /textureSource\?\.clone[\s\S]*texture = textureSource\.clone\(\)/, 'Thrown projectiles must clone the exact held texture so metal and verdigris pattern match pixel-for-pixel.');
 assert.match(rangedWeaponsSource, /hasExactSourcePlane[\s\S]*new THREE\.PlaneGeometry\(projectilePlaneWidth, projectilePlaneHeight\)/, 'Thrown projectile geometry must use the sampled held plane dimensions instead of an independently guessed size.');
-assert.match(rangedWeaponsSource, /sourceTransform\?\.directionSwap === true[\s\S]*uv\.setY\(i, 1 - uv\.getY\(i\)\)/, 'Thrown projectile copy must preserve the held weapon direction reflection.');
+assert.match(rangedWeaponsSource, /def\.rangedType === 'thrown'[\s\S]*def\.toolEndFlip === true[\s\S]*uv\.setY\(i, 1 - uv\.getY\(i\)\)/, 'Thrown projectile copy must use the stance-wide configured direction reflection so spear/knife cannot reverse during handoff.');
 assert.match(rangedWeaponsSource, /sourceTransform:\s*heldTransform/, 'Player ranged projectiles must launch from the held plane transform sampled at Strike.');
 assert.match(rangedWeaponsSource, /launchTransformMode[^\n]*'held-strike-plane'/, 'Thrown projectile debug state must identify exact held-strike launches.');
 assert.match(rangedWeaponsSource, /const swingIndex = 2/, 'Thrown release must select melee swing variant 3 exactly, not a random swing.');
@@ -189,6 +191,9 @@ for (const key of ['kylie_copper', 'dagger_copper', 'fishingspear_copper', 'hatc
   assert.ok(Math.abs(cfg.fireDurationS - 0.5304) < 1e-9, `${key} release must use the remainder of Weapon Throw (Spin)'s authored duration.`);
   assert.strictEqual(cfg.gripMode, 'palm-parallel', `${key} must use Weapon Throw (Spin)'s authored palm-parallel grip.`);
 }
+assert.strictEqual(windowObject.RangedWeapons.playerDirectionSwap('dagger_copper'), true, 'Knife ranged Neutral must keep its configured direction swap.');
+assert.strictEqual(windowObject.RangedWeapons.playerDirectionSwap('fishingspear_copper'), true, 'Fishing Spear ranged Neutral must keep its configured direction swap.');
+assert.strictEqual(windowObject.RangedWeapons.playerDirectionSwap('hatchet_copper'), false, 'Hatchet ranged Neutral keeps the unswapped authored direction.');
 assert.strictEqual(windowObject.RangedWeapons.config.hatchet_copper.chargePose.neutral.roll, -82, 'Hatchet uses Weapon Throw (Spin) exactly as authored.');
 assert.strictEqual(windowObject.RangedWeapons.config.kylie_copper.firePose.strike.roll, -88, 'Kylie uses Weapon Throw (Spin) exactly as authored.');
 assert.strictEqual(windowObject.RangedWeapons.config.kylie_copper.chargePose.strike.roll, -88, 'held throw timeline must retain the real authored Strike endpoint behind the Windup hold.');
@@ -257,6 +262,7 @@ assert.strictEqual(rangedVisuals.at(-1).options.pose.windup.roll, -92, 'Thrown h
 assert.strictEqual(rangedVisuals.at(-1).options.pose.strike.roll, -88, 'Thrown hold visual must carry the real Strike endpoint even though playback is clamped at Windup until release.');
 assert.strictEqual(rangedVisuals.at(-1).options.gripMode, 'palm-parallel', 'Thrown hold visual must carry the authored palm-parallel grip mode.');
 assert.strictEqual(rangedVisuals.at(-1).options.alignToReticle, true, 'Entire thrown animation must use the live reticle frame.');
+assert.strictEqual(rangedVisuals.at(-1).options.orbitRigCentroid, true, 'Thrown animation must rotate its complete pose frame around the character rig centroid.');
 assert.strictEqual(rangedVisuals.at(-1).options.toolEndFlip, false, 'Kylie hold uses the normal tool-end basis.');
 now += 450;
 visibleCharge = 0.45;
