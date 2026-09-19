@@ -6,7 +6,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 11;
+  const VERSION = 12;
   const PATCH_RETRY_MS = 50; // Used while game.js finishes constructing generated metal weapon definitions.
   const PATCH_RETRY_LIMIT = 160; // Used to stop the bootstrap poll after roughly eight seconds instead of polling forever.
   const THROWN_TYPE = 'thrown';
@@ -525,8 +525,6 @@
     });
 
   }
-
-  function bootstrap() {  }
 
   function bootstrap() {
     installRangedWrapper();
