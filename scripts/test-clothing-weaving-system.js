@@ -198,7 +198,7 @@ assert.equal(windowStub.Combat.getMovementSpeedMul(), 1, 'movement weight has no
 
 const source = fs.readFileSync('docs/js/clothing-weaving-system.js', 'utf8');
 const patternAuthorSource = fs.readFileSync('docs/js/pattern-authoring.js', 'utf8'); // Used below to lock the normalized shared Pattern scale authoring range.
-const metalPatternSource = fs.readFileSync('docs/js/tool-metal-recolor.js', 'utf8'); // Used below to keep verdigris pattern rendering on the same normalized scale semantics.
+const metalPatternSource = fs.readFileSync('docs/js/tool-metal-recolor.js', 'utf8'); // Used below to prevent weaving-only scale normalization from shrinking existing verdigris patterns.
 assert.match(source, /PatternLibrary\.listAvailable/, 'loom reuses shared pattern library');
 assert.match(source, /PatternAuthoring\?\.openEditor/, 'loom reuses shared pattern authoring workflow');
 assert.match(source, /HOOD_C/);
@@ -211,8 +211,9 @@ assert.match(source, /swapPatternColors/, 'garment weaving save data carries the
 assert.match(patternAuthorSource, /const PATTERN_SCALE_MIN = 0\.4;/, 'shared Pattern scale authoring minimum is normalized from the former 0.10');
 assert.match(patternAuthorSource, /const PATTERN_SCALE_MAX = 3\.2;/, 'shared Pattern scale authoring maximum is normalized from the former 0.80');
 assert.match(patternAuthorSource, /meshScale: clamp\(Number\(cfg\.meshScale\) \|\| 1, PATTERN_SCALE_MIN, PATTERN_SCALE_MAX\)/, 'saved Pattern scale remains the normalized value and clamps only at authoring bounds');
-assert.match(metalPatternSource, /const PATTERN_SCALE_REFERENCE = 0\.25;/, 'metal pattern rendering shares the 1.00 -> former 0.25 normalization');
-assert.match(metalPatternSource, /const meshScale = resolvedPatternMeshScale\(patternDef\);/, 'metal pattern renderer resolves normalized whole-pattern scale before drawing');
+assert.doesNotMatch(metalPatternSource, /PATTERN_SCALE_REFERENCE/, 'verdigris does not inherit weaving-only normalized mesh scaling');
+assert.match(metalPatternSource, /const meshScale = Math\.max\(0\.05, Number\(patternDef\.meshScale\) \|\| 1\);/, 'verdigris keeps the pre-weaving raw physical mesh scale so existing tool patterns retain their visual size');
+assert.match(metalPatternSource, /Math\.min\(Number\(patternDef\?\.meshScale\) \|\| 1, 1\)/, 'verdigris outline weight also uses the raw mesh scale instead of the weaving-normalized quarter scale');
 assert.doesNotMatch(source, /clothingLoomInjected|syncLoomActionButton|targetedLoom/, 'weaving module no longer owns a parallel DOM/polling interaction path');
 const gameSource = fs.readFileSync('docs/game.js', 'utf8');
 assert.match(gameSource, /if \(o\.key === 'loom'\) return makeLoomInteractable\(\)/, 'player-placed house loom is a normal interior furniture interactable');
