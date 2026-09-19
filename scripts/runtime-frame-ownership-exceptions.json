@@ -78,7 +78,7 @@
     "function": "queueRefresh",
     "reason": "Same batching-to-next-paint idiom as action-arch-icons-fixes.js: a `refreshQueued` guard prevents this RAF from ever recursing.",
     "migrationStage": "not-planned",
-    "line": 512
+    "line": 544
   },
   {
     "file": "docs/js/alcohol-gameplay-bridge.js",
@@ -258,7 +258,7 @@
     "function": "scheduleUiRefresh",
     "reason": "Debounces a settings/onboarding DOM refresh to the next paint via a single guarded RAF; not a loop.",
     "migrationStage": "not-planned",
-    "line": 540
+    "line": 563
   },
   {
     "file": "docs/js/hand-tool-grips.js",
@@ -330,7 +330,7 @@
     "function": "queueRefresh",
     "reason": "Guarded single RAF recolors item slots after inventory deps/order change; not a loop.",
     "migrationStage": "not-planned",
-    "line": 453
+    "line": 486
   },
   {
     "file": "docs/js/item-arch-original-presentation.js",
@@ -366,7 +366,7 @@
     "function": "refresh (retry path)",
     "reason": "Guarded by retryQueued, this schedules exactly one deferred retry of queueRefresh() when slots are momentarily empty, not a recursive loop.",
     "migrationStage": "not-planned",
-    "line": 329
+    "line": 349
   },
   {
     "file": "docs/js/item-arch-sticky-category-heading.js",
@@ -375,7 +375,7 @@
     "function": "queueRefresh",
     "reason": "Guarded by refreshQueued, this debounces MutationObserver bursts into a single next-frame call to refresh(); refresh() itself never re-arms this RAF.",
     "migrationStage": "not-planned",
-    "line": 340
+    "line": 360
   },
   {
     "file": "docs/js/kurraya-instrument.js",
@@ -483,16 +483,16 @@
     "function": "syncModelAndWeapon",
     "reason": "Single deferred call to installRandomWeapon fired once when the tracked model/weaponRoot changes; guarded so it is not re-armed on every frame.",
     "migrationStage": "not-planned",
-    "line": 449
+    "line": 473
   },
   {
     "file": "docs/js/onboarding-character-creation-weapon-view-fix.js",
     "owner": "OnboardingCharacterCreationWeaponViewFix",
     "classification": "bounded-animation",
     "function": "frame",
-    "reason": "Self-perpetuating RAF loop (started at line 471) that keeps model/weapon state in sync every frame during character creation; checks `if (!active) return` and stops ~500ms after hobunjiPlayerReady fires, so it only runs for the bounded duration of character creation.",
+    "reason": "Self-perpetuating RAF loop (started at line 495) that keeps model/weapon state in sync every frame during character creation; checks `if (!active) return` and stops ~500ms after hobunjiPlayerReady fires, so it only runs for the bounded duration of character creation.",
     "migrationStage": "not-planned",
-    "line": 460
+    "line": 484
   },
   {
     "file": "docs/js/onboarding-viewport-fit.js",

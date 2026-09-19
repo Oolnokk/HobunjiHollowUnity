@@ -28,9 +28,7 @@
   // reduction (see FAR_WILDLIFE_AI_TICK_INTERVAL_S in game.js) on the result.
   function update(c, distanceTiles) {
     const eligible = canHide(c); // Keeps combatants, companions, and active movement states fully simulated and rendered.
-    const shouldHide = eligible && (c._wildlifeVisualLodHidden // Applies the separate wake threshold as LOD hysteresis.
-      ? distanceTiles > SHOW_TILES
-      : distanceTiles >= HIDE_TILES);
+    const shouldHide = eligible && window.EntityDistanceLod.isFar(!!c._wildlifeVisualLodHidden, distanceTiles, SHOW_TILES, HIDE_TILES);
     if (shouldHide === !!c._wildlifeVisualLodHidden) return shouldHide;
     c._wildlifeVisualLodHidden = shouldHide;
     if (c.avatarRef?.group) c.avatarRef.group.visible = !shouldHide && !c._denHidden;

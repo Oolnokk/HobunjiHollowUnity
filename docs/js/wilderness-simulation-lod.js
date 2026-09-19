@@ -126,11 +126,17 @@
       if (areaId !== currentArea) continue;
 
       const distTiles = distanceTilesToPlayer(c);
+      // Same two-threshold hysteresis math as wildlife-visual-lod.js's
+      // hide/show check and game.js's NPC walker distance LOD, now shared via
+      // js/entity-distance-lod.js instead of three independently-maintained
+      // copies. isFar(true, ...) reproduces the old "distTiles <= WAKE"
+      // wake check; isFar(false, ...) reproduces the old "distTiles >= SLEEP"
+      // sleep check.
       if (isSleeping(c)) {
-        if (distTiles <= BANDIT_WAKE_RADIUS_TILES || !canSleepBandit(c)) wakeBandit(c);
+        if (!canSleepBandit(c) || !window.EntityDistanceLod.isFar(true, distTiles, BANDIT_WAKE_RADIUS_TILES, BANDIT_SLEEP_RADIUS_TILES)) wakeBandit(c);
         continue;
       }
-      if (distTiles >= BANDIT_SLEEP_RADIUS_TILES && canSleepBandit(c)) sleepBandit(c);
+      if (canSleepBandit(c) && window.EntityDistanceLod.isFar(false, distTiles, BANDIT_WAKE_RADIUS_TILES, BANDIT_SLEEP_RADIUS_TILES)) sleepBandit(c);
     }
   }
 

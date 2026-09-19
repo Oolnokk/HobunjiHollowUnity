@@ -11136,6 +11136,15 @@
       const NPC_STATION_WANDER_WAIT_MIN_S = 2;
       const NPC_STATION_WANDER_WAIT_MAX_S = 6;
       const NPC_STATION_WANDER_RETRY_S = 0.5;
+      // Distance thresholds (same values already used by wildlife's own
+      // visual LOD — see js/wildlife-visual-lod.js) beyond which a walker's
+      // procedural leg IK and station-wander AI are suppressed even though
+      // it's still fully visible. A big town or wilderness zone can easily
+      // exceed the player's actual view distance, so area membership alone
+      // (the walker's only LOD gate before this) left every NPC on the far
+      // side of a large area paying full gait/wander cost for no reason.
+      const NPC_LOD_NEAR_TILES = 24; // Nearer wake boundary so a walker doesn't flicker in and out of the cheap tier at one exact distance.
+      const NPC_LOD_FAR_TILES = 28;
 
       function npcSeatTransformForTarget(target) {
         if (target?.pose !== 'sit' || !target.furnitureKey) return null;
@@ -11452,13 +11461,17 @@
             // Procedural leg IK is real per-frame cost (stride/lift solving
             // for both legs) that's purely visual — pointless work for an
             // NPC nobody can see because they're not in the player's
-            // current area. Suppressed mode (the same one drink-interaction
-            // locks use) just holds a neutral resting pose instead of
-            // solving a gait, at a fraction of the cost. Every walker still
-            // updates every frame regardless of area (see updateNpcWalkers)
-            // so schedules/arrivals stay correct — only the parts nobody
-            // can see get cheaper.
-            const isVisibleArea = this.area === currentArea;
+            // current area, OR too far away within a large one to make out
+            // gait detail anyway. Suppressed mode (the same one drink-
+            // interaction locks use) just holds a neutral resting pose
+            // instead of solving a gait, at a fraction of the cost. Every
+            // walker still updates every frame regardless of area or
+            // distance (see updateNpcWalkers) so schedules/arrivals stay
+            // correct — only the parts nobody can see get cheaper.
+            const sameArea = this.area === currentArea;
+            const distanceTiles = sameArea ? Math.hypot(root.position.x - player.x / TILE, root.position.z - player.y / TILE) : Infinity;
+            this._npcLodFar = sameArea && window.EntityDistanceLod.isFar(!!this._npcLodFar, distanceTiles, NPC_LOD_NEAR_TILES, NPC_LOD_FAR_TILES);
+            const isVisibleArea = sameArea && !this._npcLodFar;
             if (this.legs) this.legs.update(dt, this._moveSpeedTiles, !isVisibleArea, seatedPose);
             const seatedStationKey = seatedAtTarget ? (target.stationId || target.id || `${target.area}_${target.c}_${target.r}`) : null;
             if (seatedStationKey !== this._seatedStationKey) {
