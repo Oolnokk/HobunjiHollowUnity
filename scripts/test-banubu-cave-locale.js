@@ -22,7 +22,12 @@ assert.strictEqual(caveObject.key, 'cave_small');
 assert.strictEqual(caveObject.label, "Banubu's Cave");
 assert.deepStrictEqual({ col: caveObject.col, row: caveObject.row, w: caveObject.w, h: caveObject.h, rot: caveObject.rot }, { col: 3, row: 1, w: 3, h: 3, rot: 180 }, 'repo default must match the user-authored cave transform');
 
-assert.deepStrictEqual(locale.npcAnchors || [], [], 'Banubu himself belongs in a future interior, not the exterior default');
+assert.deepStrictEqual(locale.npcAnchors || [], [], 'Banubu must live in the cavern interior, not on the wilderness cave-mouth footprint');
+assert.deepStrictEqual(locale.interior, {
+  targetMapId: 'map_i_den_banubu',
+  targetSpotId: '',
+  label: "Enter Banubu's Cave",
+}, 'Banubu locale must explicitly target his generated cavern interior');
 assert.deepStrictEqual(locale.connectors?.map(({ id, col, row, side, label }) => ({ id, col, row, side, label })), [
   { id: 'conn_1', col: 4, row: 2, side: 'north', label: "Banubu's Cave entrance" },
 ], 'Banubu entrance connector must match the user-authored version');
