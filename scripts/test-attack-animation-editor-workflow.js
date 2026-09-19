@@ -21,6 +21,9 @@ assert.doesNotMatch(editor, /id="statSlotSelect"|\$\('statSlotSelect'\)/, 'retir
 for (const id of ['crossbow_load', 'scatterbow_load', 'drink']) {
   assert.match(editor, new RegExp(`id: '${id}'[^\\n]*practical: false`), `${id} must be a non-attack Action`);
 }
+for (const id of ['weapon_throw', 'flask_throw']) {
+  assert.match(editor, new RegExp(`id: '${id}'[^\\n]*heldAnimationKey:`), `${id} must be a first-class Action backed by HeldActionAnimations`);
+}
 assert.match(editor, /const ZERO_PRACTICAL_FIELDS = \[/, 'non-attacks must render explicit zero practical fields');
 assert.match(editor, /value="0" disabled data-zero-practical/, 'zero practical fields must be locked rather than mutating shared combat config');
 assert.match(editor, /Effective attack damage, range, hit cone, knockback, and attack stamina cost are all 0/, 'non-attack zero semantics must be visible');
@@ -33,6 +36,7 @@ assert.match(editor, /const p = anim\.poses\[editPhase\]/, 'gizmo must edit the 
 assert.doesNotMatch(editor, /id="gizmoPhase"|\$\('gizmoPhase'\)/, 'separate gizmo phase selector must not return');
 assert.doesNotMatch(editor, /id="panelNeutral"|id="panelWindup"|id="panelStrike"/, 'three always-open pose panels must not return');
 assert.doesNotMatch(editor, /scrubNeutralBtn|scrubWindupBtn|scrubStrikeBtn/, 'separate scrub-to-pose buttons must not return');
+assert.match(editor, /resetPosesBtn'[\s\S]*applySelectedAction\(\{ play: false \}\)/, 'Reset action must restore the selected Action source, not generic pose defaults');
 
 // Action choice drives concrete runtime timing where attack-values owns it.
 assert.match(editor, /function applyRuntimeTimingForAction\(/, 'runtime timing mapper must exist');

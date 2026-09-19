@@ -106,11 +106,9 @@
   const isAttackEditor = /\/tools\/attack-animation-editor\/(?:index\.html)?$/.test(location.pathname);
   const isAnimationAuthor = /\/tools\/animation-author\/(?:index\.html)?$/.test(location.pathname);
 
-  // The Attack Animation Editor's main logic is an ES module, so its local anim /
-  // TOOL_PRESETS state is deliberately not global. Install Counter Shield through
-  // the editor's public DOM controls after that module has initialized: dispatching
-  // the same input/change events as a user keeps its internal animation state,
-  // gizmos, JSON export, hands, timeline, and viewport all synchronized.
+  // The Attack Animation Editor consumes this shared object directly through
+  // its Action registry. Editor-specific DOM injection would create a second
+  // source of truth, so this library deliberately does nothing there.
   if (isAttackEditor) {
     // The Attack Animation Editor now reads HeldActionAnimations directly through
     // its unified Action registry. Do not inject options, synthesize DOM events,

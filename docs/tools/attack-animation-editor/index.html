@@ -219,7 +219,7 @@ canvas{display:block;width:100%;height:100%}
     <div class="row" style="margin-top:9px">
       <button id="flipBtn" class="warn">⇋ Mirror animation</button>
       <button id="toolEndFlipBtn" class="secondary">↕ Tool End Flip: Off</button>
-      <button id="resetPosesBtn" class="secondary">Reset poses</button>
+      <button id="resetPosesBtn" class="secondary">↺ Reset action</button>
     </div>
   </div>
 
@@ -944,14 +944,8 @@ $('flipBtn').onclick = () => {
   logDebug(`Flipped animation across character midline (tool base now ${toolMirrored ? '-' : '+'}${Math.abs(baseAttachX).toFixed(2)})`);
 };
 $('resetPosesBtn').onclick = () => {
-  anim.poses.neutral = { ...neutralPoseFor(anim.style) };
-  anim.poses.windup = defaultPose(0.05, 0.05, -0.15, -15, 0, -60);
-  anim.poses.strike = defaultPose(-0.05, 0.0, 0.20, 10, 0, 55);
-  syncPosePanelFromState('neutral');
-  syncPosePanelFromState('windup');
-  syncPosePanelFromState('strike');
-  refreshJsonView();
-  logDebug('Reset poses to defaults');
+  applySelectedAction({ play: false }); // Reset means restore THIS action's real runtime source, never generic style defaults.
+  logDebug(`Reset ${currentAction().label} to its runtime-authored animation/timing.`);
 };
 
 // ── Tool stance presets ───────────────────────────────────────────────────
@@ -1206,6 +1200,8 @@ const ACTION_DEFS = [
   { id: 'charged_breaker', group: 'Quick / held attacks', label: 'Charged Breaker', statsPath: ['chargedBreaker'], templateId: 'hatchet_swing', practical: true, usePower: true },
   { id: 'flurry', group: 'Quick / held attacks', label: 'Accelerating Flurry', statsPath: ['flurry'], templateId: 'hatchet_swing', practical: true },
   { id: 'counter_shield', group: 'Quick / held attacks', label: 'Counter Shield', statsPath: ['counterShield'], heldAnimationKey: 'counterShield', practical: true, toolKey: 'hatchet' },
+  { id: 'weapon_throw', group: 'Quick / held attacks', label: 'Thrown Weapon — Spin Throw', heldAnimationKey: 'weaponThrowSpin', practical: true },
+  { id: 'flask_throw', group: 'Quick / held attacks', label: 'Flask — Overhead Throw', heldAnimationKey: 'throwFlask', practical: true, toolKey: 'bottle' },
 
   { id: 'crossbow_fire', group: 'Ranged attacks', label: 'Crossbow — Fire', statsPath: ['rangedWeapons','crossbow'], templateId: 'crossbow_fire', practical: true },
   { id: 'scatterbow_fire', group: 'Ranged attacks', label: 'Scatterbow — Fire', statsPath: ['rangedWeapons','scatterbow'], templateId: 'scatterbow_fire', practical: true },
