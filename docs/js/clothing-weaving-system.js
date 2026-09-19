@@ -1200,8 +1200,11 @@
   // points of a rectangle's own sides already tiles that rectangle's own
   // grid with no gaps on its own.
   const FRAME_SHAPES = Object.freeze({
-    square: { label: 'Square', paired: false, basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: 0, y: h } }), polygon: null },
-    brick: { label: 'Brick', paired: false, basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: w / 2, y: h } }), polygon: null },
+    // Every shape (including these two) clips to its own rectangle — the
+    // frame is a hard crop boundary, not just a tiling-pitch guide — see
+    // buildPatternMask's clipToPolygon below.
+    square: { label: 'Square', paired: false, basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: 0, y: h } }), polygon: (w, h) => [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }, { x: 0, y: h }] },
+    brick: { label: 'Brick', paired: false, basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: w / 2, y: h } }), polygon: (w, h) => [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }, { x: 0, y: h }] },
     diamond: {
       label: 'Diamond', paired: false,
       basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: 0, y: h } }),
@@ -1258,77 +1261,106 @@
     const patternDef = legacyFrameFields(rawPatternDef);
     const canvas = Object.assign(document.createElement('canvas'), { width, height }), ctx = canvas.getContext('2d');
     ctx.imageSmoothingEnabled = false;
-    const motifScale = Math.max(.05, Number(patternDef?.motifScale ?? patternDef?.scale) || 1), frameScale = Math.max(.05, Number(patternDef?.frameScale) || 1);
-    const motifRad = (Number(patternDef?.motifRotationDeg) || 0) * Math.PI / 180, frameRad = (Number(patternDef?.frameRotationDeg) || 0) * Math.PI / 180;
+    const motifScale = Math.max(.05, Number(patternDef?.motifScale ?? patternDef?.scale) || 1);
+    const frameScale = Math.max(.05, Number(patternDef?.frameScale) || 1);
+    const meshScale = Math.max(.05, Number(patternDef?.meshScale) || 1);
+    const motifRad = (Number(patternDef?.motifRotationDeg) || 0) * Math.PI / 180;
+    const frameRad = (Number(patternDef?.frameRotationDeg) || 0) * Math.PI / 180;
+    const meshRad = (Number(patternDef?.meshRotationDeg) || 0) * Math.PI / 180;
     const shape = frameShapeFor(patternDef?.frameShape), naturalW = motifImg.naturalWidth || motifImg.width || 1, naturalH = motifImg.naturalHeight || motifImg.height || 1;
-    function prepare(scale) {
-      const mw = Math.max(1, naturalW * scale), mh = Math.max(1, naturalH * scale), size = Math.max(2, Math.ceil(Math.hypot(mw,mh))+2), c = Object.assign(document.createElement('canvas'),{width:size,height:size}), cctx = c.getContext('2d');
-      cctx.imageSmoothingEnabled=false; cctx.translate(size/2,size/2); cctx.rotate(motifRad); cctx.drawImage(motifImg,-mw/2,-mh/2,mw,mh); return {canvas:c,ctx:cctx,size};
-    }
-    const draw = prepare(motifScale);
-    ctx.save(); ctx.translate(width/2+(Number(patternDef?.frameX)||0),height/2+(Number(patternDef?.frameY)||0)); ctx.rotate(frameRad);
-    if (patternDef?.tiling !== false) {
-      const ref = prepare(1), data = ref.ctx.getImageData(0,0,ref.size,ref.size).data, mask = new Uint8Array(ref.size*ref.size);
-      for (let p=0,i=0;i<data.length;i+=4,p++) if (data[i+3]>16) mask[p]=1;
-      const bbox = findOpaqueBounds(mask,ref.size,ref.size);
-      if (bbox) {
-        const { u: basisU, v: basisV } = shape.basis(bbox.w, bbox.h);
-        const centerX=bbox.x0+bbox.w/2,centerY=bbox.y0+bbox.h/2,dx=centerX-draw.size/2,dy=centerY-draw.size/2;
-        // The pairing rotation's center — NOT (basisU+basisV)/2 alone, since
-        // that assumes the cell/polygon starts at local origin (0,0); it
-        // actually starts at (bbox.x0,bbox.y0), so the true cell-rectangle
-        // center is that offset plus half the basis, i.e. exactly
-        // (centerX,centerY) above.
-        const midpoint = { x: centerX, y: centerY };
-        const polygon = shape.polygon ? shape.polygon(bbox.w, bbox.h) : null;
-        // motifScale > 1 deliberately lets the ink overflow past its own
-        // cell (see the comment on `prepare` above) — for square/brick
-        // that's automatic, since they never clip at all, but a shape with
-        // a real polygon needs its clip boundary to grow right along with
-        // the ink or it'd hard-cut exactly the overflow motifScale is
-        // supposed to allow.
-        const overflowScale = Math.max(1, motifScale);
-        // frameScale resizes the tiling window itself (cell spacing + clip
-        // boundary) — it must NOT also resize the ink drawImage below, or
-        // "frame scale" just becomes a second, entangled copy of
-        // motifScale instead of an independent crop/spacing control. So
-        // it's applied by hand to the tile offsets and clip vertices below,
-        // never via ctx.scale (which would carry through to drawImage too).
-        const cellScale = frameScale * overflowScale;
-        function clipToPolygon() {
-          if (!polygon) return;
-          ctx.beginPath();
-          polygon.forEach((p, i) => {
-            const px = centerX + (bbox.x0 + p.x - centerX) * cellScale;
-            const py = centerY + (bbox.y0 + p.y - centerY) * cellScale;
-            if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
-          });
-          ctx.closePath();
-          ctx.clip();
-        }
-        const stamp = shape.paired
-          ? (ox,oy)=>{ctx.save();ctx.translate(ox,oy);clipToPolygon();ctx.drawImage(draw.canvas,dx,dy);ctx.restore();ctx.save();ctx.translate(ox+midpoint.x,oy+midpoint.y);ctx.rotate(Math.PI);ctx.translate(-midpoint.x,-midpoint.y);clipToPolygon();ctx.drawImage(draw.canvas,dx,dy);ctx.restore();}
-          : (ox,oy)=>{ctx.save();ctx.translate(ox,oy);clipToPolygon();ctx.drawImage(draw.canvas,dx,dy);ctx.restore();};
-        const reach=(Math.hypot(width,height)/2+draw.size)/frameScale,det=basisU.x*basisV.y-basisU.y*basisV.x;let maxI=8,maxJ=8;
-        if(Math.abs(det)>1e-6){const ia=basisV.y/det,ib=-basisV.x/det,ic=-basisU.y/det,id=basisU.x/det;maxI=maxJ=0;for(const [x,y] of [[reach,reach],[reach,-reach],[-reach,reach],[-reach,-reach]]){maxI=Math.max(maxI,Math.abs(ia*x+ib*y));maxJ=Math.max(maxJ,Math.abs(ic*x+id*y));}maxI=Math.min(300,Math.ceil(maxI)+2);maxJ=Math.min(300,Math.ceil(maxJ)+2);}
-        // basisU/V and the offsets derived from them are in the ink's own
-        // reference (frameScale=1) units — frameScale is multiplied in here,
-        // by hand, so it changes cell spacing without touching drawImage.
-        // maxI/maxJ above is a generous rectangular superset (needed so a
-        // low frameScale, which packs many more real cells into the same
-        // canvas, doesn't undercount and leave gaps) — most candidates in
-        // that rectangle land nowhere near the actual canvas, so cull them
-        // with one cheap hypot() before paying for save/clip/drawImage
-        // (doubled for a paired shape). Rotation doesn't change a point's
-        // distance from the origin, so this stays valid inside the
-        // ctx.rotate(frameRad) above without needing to un-rotate anything.
-        const frameOriginReach = Math.hypot(width, height) / 2 + Math.hypot(Number(patternDef?.frameX) || 0, Number(patternDef?.frameY) || 0) + draw.size;
-        for(let j=-maxJ;j<=maxJ;j++)for(let i=-maxI;i<=maxI;i++){
-          const ox=frameScale*(i*basisU.x+j*basisV.x), oy=frameScale*(i*basisU.y+j*basisV.y);
-          if (Math.hypot(ox,oy) <= frameOriginReach) stamp(ox,oy);
-        }
+    // The sole source everything crops from: the authored ink, rotated by
+    // motifRotationDeg, at its natural 1x size — motifScale is applied
+    // later, per cell, as part of the frame's own crop sampling below, so
+    // the frame's own fixed size never has to know about it.
+    const srcSize = Math.max(2, Math.ceil(Math.hypot(naturalW, naturalH)) + 2);
+    const src = Object.assign(document.createElement('canvas'), { width: srcSize, height: srcSize });
+    const srcCtx = src.getContext('2d');
+    srcCtx.imageSmoothingEnabled = false;
+    srcCtx.translate(srcSize / 2, srcSize / 2);
+    srcCtx.rotate(motifRad);
+    srcCtx.drawImage(motifImg, -naturalW / 2, -naturalH / 2, naturalW, naturalH);
+    const srcData = srcCtx.getImageData(0, 0, srcSize, srcSize).data, srcMask = new Uint8Array(srcSize * srcSize);
+    for (let p = 0, i = 0; i < srcData.length; i += 4, p++) if (srcData[i + 3] > 16) srcMask[p] = 1;
+    const bbox = findOpaqueBounds(srcMask, srcSize, srcSize);
+
+    ctx.save();
+    ctx.translate(width / 2, height / 2);
+    ctx.rotate(meshRad);
+    ctx.scale(meshScale, meshScale);
+
+    if (bbox) {
+      // The frame is a crop window laid over the source ink: frameX/frameY
+      // offset it from the ink's own natural center, frameRotationDeg
+      // tilts it, frameScale grows/shrinks it relative to the ink's own
+      // tight bounds (frameScale<1 crops in, >1 adds space around the
+      // ink) — "make it smaller than the drawn motif to crop, make it
+      // larger to create space." Whatever falls inside becomes the single
+      // repeating unit; the chosen shape then tessellates copies of
+      // exactly that crop. meshScale/meshRotationDeg (applied above, via
+      // ctx.scale/ctx.rotate wrapping this whole function body) are a
+      // completely separate control — they zoom/rotate the WHOLE resulting
+      // mesh of tiles after cropping, never what any one cell contains.
+      const cellW = bbox.w * frameScale, cellH = bbox.h * frameScale;
+      const winCenterX = bbox.x0 + bbox.w / 2 + (Number(patternDef?.frameX) || 0);
+      const winCenterY = bbox.y0 + bbox.h / 2 + (Number(patternDef?.frameY) || 0);
+      const polygon = shape.polygon(cellW, cellH);
+      const midpoint = { x: cellW / 2, y: cellH / 2 };
+      // Draws one cell at the CURRENT origin (the caller has already
+      // translated to that cell's own top-left corner): clips to the
+      // frame's own boundary FIRST — a fixed size that never grows to
+      // chase motifScale — then samples the source ink through the
+      // frame's own position/rotation, with motifScale zooming the ink
+      // within that fixed window. A motif scaled past 1x therefore
+      // genuinely overflows past this crop instead of stretching the
+      // frame to avoid ever being cut.
+      function drawCell() {
+        ctx.save();
+        ctx.beginPath();
+        polygon.forEach((p, i) => { if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); });
+        ctx.closePath();
+        ctx.clip();
+        ctx.translate(cellW / 2, cellH / 2);
+        ctx.rotate(frameRad);
+        ctx.scale(motifScale, motifScale);
+        ctx.translate(-winCenterX, -winCenterY);
+        ctx.drawImage(src, 0, 0);
+        ctx.restore();
       }
-    } else { ctx.save(); ctx.scale(frameScale,frameScale); ctx.drawImage(draw.canvas,-draw.size/2,-draw.size/2); ctx.restore(); }
+      if (patternDef?.tiling !== false) {
+        const { u: basisU, v: basisV } = shape.basis(cellW, cellH);
+        const stamp = shape.paired
+          ? (ox,oy)=>{ctx.save();ctx.translate(ox,oy);drawCell();ctx.restore();ctx.save();ctx.translate(ox+midpoint.x,oy+midpoint.y);ctx.rotate(Math.PI);ctx.translate(-midpoint.x,-midpoint.y);drawCell();ctx.restore();}
+          : (ox,oy)=>{ctx.save();ctx.translate(ox,oy);drawCell();ctx.restore();};
+        // How far the lattice needs to extend (in basisU/basisV step
+        // counts) to cover the whole canvas — inverting the (generally
+        // skewed, non-axis-aligned) basis matrix rather than assuming a
+        // square grid, since the frame's own rotation can point either
+        // basis vector in any direction. Measured in the mesh's own
+        // (pre-meshScale) units, since meshScale is applied once via
+        // ctx.scale above instead of being multiplied into every offset by
+        // hand — dividing the device-pixel canvas half-diagonal by
+        // meshScale converts it into those same local units. Lattice
+        // placement no longer depends on frameX/frameY at all — those only
+        // steer what a cell's own crop samples now, never where cells sit.
+        const reach = Math.hypot(width, height) / 2 / meshScale + Math.hypot(cellW, cellH);
+        const det = basisU.x*basisV.y-basisU.y*basisV.x; let maxI=8, maxJ=8;
+        if (Math.abs(det) > 1e-6) {
+          const ia=basisV.y/det, ib=-basisV.x/det, ic=-basisU.y/det, id=basisU.x/det;
+          maxI=0; maxJ=0;
+          for (const [x,y] of [[reach,reach],[reach,-reach],[-reach,reach],[-reach,-reach]]) {
+            maxI=Math.max(maxI,Math.abs(ia*x+ib*y));
+            maxJ=Math.max(maxJ,Math.abs(ic*x+id*y));
+          }
+          maxI=Math.min(300,Math.ceil(maxI)+2); maxJ=Math.min(300,Math.ceil(maxJ)+2);
+        }
+        for (let j=-maxJ;j<=maxJ;j++) for (let i=-maxI;i<=maxI;i++) {
+          const ox = i*basisU.x+j*basisV.x, oy = i*basisU.y+j*basisV.y;
+          if (Math.hypot(ox,oy) <= reach) stamp(ox,oy);
+        }
+      } else {
+        ctx.save(); ctx.translate(-cellW/2, -cellH/2); drawCell(); ctx.restore();
+      }
+    }
     ctx.restore();
     if(patternDef?.invert){const image=ctx.getImageData(0,0,width,height),data=image.data;for(let i=0;i<data.length;i+=4)data[i+3]=255-data[i+3];ctx.putImageData(image,0,0);}
     return canvas;
@@ -1480,7 +1512,7 @@
   // below 1px.
   function scaledOutlineWidth(defaultWidth, rawPattern) {
     const pattern = legacyFrameFields(rawPattern);
-    const scale = Math.min(Number(pattern?.motifScale) || 1, 1) * Math.min(Number(pattern?.frameScale) || 1, 1);
+    const scale = Math.min(Number(pattern?.motifScale) || 1, 1) * Math.min(Number(pattern?.frameScale) || 1, 1) * Math.min(Number(pattern?.meshScale) || 1, 1);
     return Math.max(1, Math.min(defaultWidth, Math.round(defaultWidth * scale)));
   }
 

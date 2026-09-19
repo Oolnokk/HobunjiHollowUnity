@@ -38,18 +38,31 @@
     // outline (if any) is drawn around it — see buildPatternMask/
     // recolorAndOxidize's erodeMask call. 0 = no thinning.
     motifThinPx: 0,
-    // The repeat lattice: frameShape picks a cell shape from FRAME_SHAPES,
-    // and frameX/frameY/frameRotationDeg/frameScale place/rotate/size that
-    // cell directly (see the frame tool below) — replaces the old auto-fit
-    // triangle/grid geometry (repeatMode/trianglePadding/gridSpacing/
-    // patternScale/patternRotationDeg/translateX/translateY), which used to
-    // compute the tightest-fitting shape around the ink automatically
-    // instead of letting the player place it themselves.
+    // The frame is a crop window laid over the drawn ink, in the same
+    // coordinate space the motif is sketched in: frameX/frameY/
+    // frameRotationDeg/frameScale move, rotate, and resize that window —
+    // smaller than the ink crops into it, larger leaves space around it,
+    // off-center or rotated samples a different region/angle of the
+    // drawing. Whatever falls inside becomes the single repeating unit;
+    // frameShape (see FRAME_SHAPES below) then tessellates copies of
+    // exactly that crop. This replaces the old auto-fit triangle/grid
+    // geometry (repeatMode/trianglePadding/gridSpacing/patternScale/
+    // patternRotationDeg/translateX/translateY), which used to compute the
+    // tightest-fitting shape around the ink automatically instead of
+    // letting the player place it themselves.
     frameShape: 'square',
     frameX: 0,
     frameY: 0,
     frameRotationDeg: 0,
     frameScale: 1,
+    // meshScale/meshRotationDeg are a SEPARATE control from the frame
+    // above: once the cell is cropped, these zoom/rotate the whole
+    // repeating mesh of tiled cells as one unit on the actual garment —
+    // named "Pattern scale/rotation" in the UI, but not stored as
+    // patternScale/patternRotationDeg to avoid colliding with those
+    // legacy pre-frame-tool field names (see legacyFrameFields below).
+    meshScale: 1,
+    meshRotationDeg: 0,
   });
 
   // Mirrors clothing-weaving-system.js's/tool-metal-recolor.js's own
@@ -61,8 +74,13 @@
   // itself is always the real caller's own renderPreview, never computed
   // in this file.
   const FRAME_SHAPES = Object.freeze({
-    square: { label: 'Square', paired: false, basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: 0, y: h } }), polygon: null },
-    brick: { label: 'Brick', paired: false, basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: w / 2, y: h } }), polygon: null },
+    // Every shape (including these two) now clips to its own rectangle —
+    // the frame is a hard crop boundary, not just a tiling-pitch guide —
+    // so a motif drawn larger than the frame is actually cut at its edge
+    // instead of tiling unclipped past it (see buildPatternMask's
+    // clipToPolygon in clothing-weaving-system.js/tool-metal-recolor.js).
+    square: { label: 'Square', paired: false, basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: 0, y: h } }), polygon: (w, h) => [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }, { x: 0, y: h }] },
+    brick: { label: 'Brick', paired: false, basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: w / 2, y: h } }), polygon: (w, h) => [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }, { x: 0, y: h }] },
     diamond: {
       label: 'Diamond', paired: false,
       basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: 0, y: h } }),
@@ -175,23 +193,39 @@
   }
 
   // Finds the ink's own tight opaque bounds on a SKETCH_CANVAS_SIZE-square
-  // ImageData — same threshold (alpha>16) and shape as buildPatternMask's
-  // own findOpaqueBounds, so the frame tool's reference cell size always
-  // matches what the real renderer will actually use.
-  function opaqueBoundsOf(imageData) {
+  // ImageData, measured on each opaque pixel's position AFTER rotating it
+  // by rad around the image's own center (rad=0 is a plain, unrotated
+  // bounds search) — matching buildPatternMask/buildAuthoredClearedMask's
+  // own srcCtx.rotate step (see clothing-weaving-system.js), which rotates
+  // the WHOLE sketch by motifRotationDeg before ever measuring the ink's
+  // bounds. Skipping this rotation (as the frame tool used to) made its
+  // on-screen frame sized and centered for the UNROTATED ink while the
+  // real renderer cropped the ROTATED one — a mismatch that grows with the
+  // rotation angle and was the source of both the "auto-detect clips the
+  // edges" and "an empty-looking frame still catches ink" reports. Returns
+  // bounds in the SAME coordinate frame as the input (origin at its
+  // top-left, pivot at its own center) rather than a separate rotated
+  // canvas, so frameCenterScreen()'s existing frameX/frameY math (and the
+  // real renderer's winCenterX/winCenterY) stay directly comparable. Works
+  // in float space rather than snapping to a rasterized pixel grid the way
+  // the real renderer's own findOpaqueBounds does, so bounds can differ
+  // from the real crop by roughly a pixel — a rotated raster's own
+  // nearest-neighbor sampling doesn't land anywhere more precise either.
+  function rotatedOpaqueBounds(imageData, rad) {
     const { data, width, height } = imageData;
-    let x0 = width, y0 = height, x1 = -1, y1 = -1, count = 0;
+    const cx = width / 2, cy = height / 2, c = Math.cos(rad), s = Math.sin(rad);
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, count = 0;
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         if (data[(y * width + x) * 4 + 3] <= 16) continue;
         count++;
-        if (x < x0) x0 = x;
-        if (x > x1) x1 = x;
-        if (y < y0) y0 = y;
-        if (y > y1) y1 = y;
+        const dx = x - cx, dy = y - cy;
+        const rx = dx * c - dy * s + cx, ry = dx * s + dy * c + cy; // Same forward rotation ctx.rotate(rad) applies when drawing.
+        if (rx < x0) x0 = rx; if (rx > x1) x1 = rx;
+        if (ry < y0) y0 = ry; if (ry > y1) y1 = ry;
       }
     }
-    return count ? { x0, y0, x1, y1, w: x1 - x0 + 1, h: y1 - y0 + 1 } : null;
+    return count ? { x0, y0, x1, y1, w: x1 - x0, h: y1 - y0 } : null;
   }
 
   function openEditor(options = {}) {
@@ -272,19 +306,27 @@
                 </div>
                 <div class="pa-card">
                   <h3>Frame</h3>
-                  <p class="pa-hint">Drag the middle to move the repeat cell, drag the corner to rotate and resize it. This is what actually tiles — pick a shape below first.</p>
+                  <p class="pa-hint">Drag the middle to move this crop window over your drawing, drag the corner to rotate/resize it — or use the Frame sliders below for exact values. Smaller than the ink crops into it; larger leaves space around it. Whatever falls inside becomes the repeating unit; pick a shape below for how it tessellates.</p>
                   <div class="pa-canvasWrap"><canvas class="pa-frameCanvas" width="${SKETCH_CANVAS_SIZE}" height="${SKETCH_CANVAS_SIZE}"></canvas></div>
                   <p class="pa-frameReadout" data-frame-readout></p>
                   <div class="pa-row" style="margin-top:9px">
                     ${Object.entries(FRAME_SHAPES).map(([id, shape]) => `<button type="button" class="pa-btn secondary pa-shapeToggle${cfg.frameShape === id ? ' active' : ''}" data-shape="${id}">${escapeHtml(shape.label)}</button>`).join('')}
                   </div>
+                  <div class="pa-field"><label><span>Frame X</span><span class="pa-val" data-for="frameX"></span></label><input type="range" class="pa-in" data-field="frameX" min="${-SKETCH_CANVAS_SIZE}" max="${SKETCH_CANVAS_SIZE}" step="1" value="${cfg.frameX}"></div>
+                  <div class="pa-field"><label><span>Frame Y</span><span class="pa-val" data-for="frameY"></span></label><input type="range" class="pa-in" data-field="frameY" min="${-SKETCH_CANVAS_SIZE}" max="${SKETCH_CANVAS_SIZE}" step="1" value="${cfg.frameY}"></div>
+                  <div class="pa-field"><label><span>Frame rotation</span><span class="pa-val" data-for="frameRotationDeg"></span></label><input type="range" class="pa-in" data-field="frameRotationDeg" min="-180" max="180" step="1" value="${cfg.frameRotationDeg}"></div>
+                  <div class="pa-field"><label><span>Frame scale</span><span class="pa-val" data-for="frameScale"></span></label><input type="range" class="pa-in" data-field="frameScale" min="0.1" max="6" step="0.01" value="${cfg.frameScale}"></div>
                   <div class="pa-field"><label><span>Motif scale</span><span class="pa-val" data-for="motifScale"></span></label><input type="range" class="pa-in" data-field="motifScale" min="0.1" max="3" step="0.01" value="${cfg.motifScale}"></div>
                   <div class="pa-field"><label><span>Motif rotation</span><span class="pa-val" data-for="motifRotationDeg"></span></label><input type="range" class="pa-in" data-field="motifRotationDeg" min="-180" max="180" step="1" value="${cfg.motifRotationDeg}"></div>
+                  <p class="pa-hint">Motif scale zooms the ink within the frame's own fixed crop — below 1× leaves space around it, above 1× lets it overflow past the frame's edge instead of growing the frame to fit.</p>
                   <div class="pa-row">
                     <button type="button" class="pa-btn secondary" data-act="autoDetect">Auto-detect fit</button>
                     <button type="button" class="pa-btn secondary" data-act="resetPlacement">Reset placement</button>
                   </div>
-                  <p class="pa-hint">Auto-detect rotates the motif to whatever angle makes its own tight bounding box smallest, then resets the frame to a centered, ungapped square at that angle — a quick starting point to drag from, not a final answer.</p>
+                  <p class="pa-hint">Auto-detect rotates the motif to whatever angle makes its own tight bounding box smallest, then resets the frame to a centered, ungapped crop at that angle — a quick starting point to drag from, not a final answer.</p>
+                  <div class="pa-field"><label><span>Pattern scale</span><span class="pa-val" data-for="meshScale"></span></label><input type="range" class="pa-in" data-field="meshScale" min="0.1" max="6" step="0.01" value="${cfg.meshScale}"></div>
+                  <div class="pa-field"><label><span>Pattern rotation</span><span class="pa-val" data-for="meshRotationDeg"></span></label><input type="range" class="pa-in" data-field="meshRotationDeg" min="-180" max="180" step="1" value="${cfg.meshRotationDeg}"></div>
+                  <p class="pa-hint">Pattern scale/rotation zoom and turn the WHOLE tiled result as it sits on the item, after cropping — separate from the frame above, which only decides what one repeating unit contains.</p>
                 </div>
             </div>
           </div>
@@ -315,8 +357,8 @@
     function updateValLabels() {
       overlay.querySelectorAll('.pa-val').forEach(el => {
         const field = el.dataset.for;
-        if (field === 'motifScale') el.textContent = `${Number(cfg[field]).toFixed(2)}×`;
-        else if (field === 'motifThinPx') el.textContent = `${Number(cfg[field]).toFixed(0)}px`;
+        if (field === 'motifScale' || field === 'frameScale' || field === 'meshScale') el.textContent = `${Number(cfg[field]).toFixed(2)}×`;
+        else if (field === 'motifThinPx' || field === 'frameX' || field === 'frameY') el.textContent = `${Math.round(Number(cfg[field]) || 0)}px`;
         else el.textContent = `${cfg[field]}°`;
       });
     }
@@ -343,6 +385,8 @@
         frameY: Number(cfg.frameY) || 0,
         frameRotationDeg: Number(cfg.frameRotationDeg) || 0,
         frameScale: Number(cfg.frameScale) || 1,
+        meshScale: Number(cfg.meshScale) || 1,
+        meshRotationDeg: Number(cfg.meshRotationDeg) || 0,
       };
     }
 
@@ -395,17 +439,33 @@
     const FRAME_HANDLE_RADIUS = 7;
     let frameDrag = null; // { mode: 'translate'|'transform', startX, startY, startFrameX, startFrameY, baseCorner }
 
+    // Ink bounds are measured AFTER rotating by motifRotationDeg (see
+    // rotatedOpaqueBounds above) so this tool's own size/position reference
+    // always matches what buildPatternMask/buildAuthoredClearedMask will
+    // actually crop, whatever angle the motif is drawn at.
     function currentBasis() {
       let bbox = null;
-      try { bbox = opaqueBoundsOf(sketchCtx.getImageData(0, 0, SKETCH_CANVAS_SIZE, SKETCH_CANVAS_SIZE)); } catch { /* ignore */ }
+      try {
+        const rad = ((Number(cfg.motifRotationDeg) || 0) * Math.PI) / 180;
+        bbox = rotatedOpaqueBounds(sketchCtx.getImageData(0, 0, SKETCH_CANVAS_SIZE, SKETCH_CANVAS_SIZE), rad);
+      } catch { /* ignore */ }
       const w = bbox?.w || SKETCH_SIZE * 0.4, h = bbox?.h || SKETCH_SIZE * 0.4;
       const shape = frameShapeFor(cfg.frameShape);
       const { u, v } = shape.basis(w, h);
-      return { shape, u, v };
+      return { shape, u, v, bbox, w, h };
     }
 
-    function frameCenterScreen() {
-      return { x: SKETCH_CANVAS_SIZE / 2 + (Number(cfg.frameX) || 0), y: SKETCH_CANVAS_SIZE / 2 + (Number(cfg.frameY) || 0) };
+    // The frame's own (0,0) origin is the ink's own rotated-bounds center —
+    // NOT the raw sketch canvas center — exactly matching
+    // buildPatternMask's winCenterX/winCenterY (bbox.x0+bbox.w/2+frameX).
+    // Anchoring on the canvas center instead (as this used to) drifts from
+    // the real crop for any motif not drawn dead-center, which is how a
+    // frame that visually looked clear of the ink could still catch a
+    // sliver of it in the real render.
+    function frameCenterScreen(bbox) {
+      const originX = bbox ? bbox.x0 + bbox.w / 2 : SKETCH_CANVAS_SIZE / 2;
+      const originY = bbox ? bbox.y0 + bbox.h / 2 : SKETCH_CANVAS_SIZE / 2;
+      return { x: originX + (Number(cfg.frameX) || 0), y: originY + (Number(cfg.frameY) || 0) };
     }
     function rotatePoint(x, y, rad) {
       const c = Math.cos(rad), s = Math.sin(rad);
@@ -418,13 +478,10 @@
       frameCtx.drawImage(sketchCanvas, 0, 0);
       frameCtx.globalAlpha = 1;
 
-      const { shape, u, v } = currentBasis();
-      let bbox = null;
-      try { bbox = opaqueBoundsOf(sketchCtx.getImageData(0, 0, SKETCH_CANVAS_SIZE, SKETCH_CANVAS_SIZE)); } catch { /* ignore */ }
-      const w = bbox?.w || SKETCH_SIZE * 0.4, h = bbox?.h || SKETCH_SIZE * 0.4;
+      const { shape, u, v, bbox, w, h } = currentBasis();
       const scale = Math.max(0.05, Number(cfg.frameScale) || 1);
       const rad = ((Number(cfg.frameRotationDeg) || 0) * Math.PI) / 180;
-      const center = frameCenterScreen();
+      const center = frameCenterScreen(bbox);
       const toScreen = (localX, localY) => {
         const spun = rotatePoint(localX * scale, localY * scale, rad);
         return { x: center.x + spun.x, y: center.y + spun.y };
@@ -443,36 +500,37 @@
         });
         frameCtx.closePath();
       }
-      // Outlining both paired halves (unfilled) traces the SAME rectangle
-      // perimeter regardless of shape — a triangle and a trapezoid both
-      // combine into a plain rectangle silhouette, so a stroke-only
-      // drawing always looks like "a square with a diagonal," whatever
-      // shape is actually selected. Filling each half its own color is
-      // what actually makes the real clip shape visible.
-      // Deliberately NOT teal/orange — those are the handle dots' own
-      // colors (below), and a fill using the same hues is easy to confuse
-      // with them in a small preview.
+      // Filling ONLY the primary polygon (never its paired 180°-partner)
+      // is what actually makes a triangle/trapezoid frame look like the
+      // shape it's named after — the crop window is that one shape, full
+      // stop. Filling both halves used to be how this drew (to prove the
+      // pairing tiles seamlessly), but for a paired shape that always
+      // covers the whole bounding rectangle either way, so it read as "a
+      // square with a diagonal," not a triangle — exactly backwards from
+      // what this tool is for now that the frame IS the crop, not just a
+      // tiling-pitch guide. The partner still gets a thin, unfilled
+      // outline so its existence isn't hidden, just not confused with the
+      // frame itself.
       const polygon = shape.polygon ? shape.polygon(w, h) : null;
       frameCtx.save();
       frameCtx.lineWidth = 1.5;
       frameCtx.setLineDash([4, 3]);
       if (polygon) {
+        if (shape.paired) {
+          // The 180°-partner — this same polygon rotated about the cell's
+          // own center (w/2,h/2), mirroring exactly how buildPatternMask/
+          // buildAuthoredClearedMask stamp it — outlined only, dimmer than
+          // the frame itself, so it reads as "also tiles here" rather than
+          // "also part of the crop."
+          tracePolygon(polygon.map(p => ({ x: w - p.x, y: h - p.y })));
+          frameCtx.strokeStyle = 'rgba(255,255,255,.28)';
+          frameCtx.stroke();
+        }
         tracePolygon(polygon);
         frameCtx.fillStyle = 'rgba(90,140,235,.45)';
         frameCtx.strokeStyle = '#5a8ceb';
         frameCtx.fill();
         frameCtx.stroke();
-        if (shape.paired) {
-          // The 180°-partner — this same polygon rotated about the cell's
-          // own center (w/2,h/2) — mirrors exactly how buildPatternMask/
-          // buildAuthoredClearedMask stamp it, so this always matches the
-          // real render's two halves.
-          tracePolygon(polygon.map(p => ({ x: w - p.x, y: h - p.y })));
-          frameCtx.fillStyle = 'rgba(230,110,190,.45)';
-          frameCtx.strokeStyle = '#e66ebe';
-          frameCtx.fill();
-          frameCtx.stroke();
-        }
       } else {
         tracePolygon([{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }, { x: 0, y: h }]);
         frameCtx.strokeStyle = '#7fc7bc';
@@ -500,8 +558,8 @@
     frameCanvas.addEventListener('pointerdown', evt => {
       evt.preventDefault();
       const pt = frameCanvasPoint(evt);
-      const center = frameCenterScreen();
-      const { u, v } = currentBasis();
+      const { u, v, bbox } = currentBasis();
+      const center = frameCenterScreen(bbox);
       const scale = Math.max(0.05, Number(cfg.frameScale) || 1);
       const rad = ((Number(cfg.frameRotationDeg) || 0) * Math.PI) / 180;
       const baseCorner = { x: (u.x + v.x) / 2, y: (u.y + v.y) / 2 }; // Unrotated, unscaled — the reference the corner handle's drag is measured against.
@@ -531,6 +589,8 @@
         cfg.frameRotationDeg = Math.round(((pointerAngle - baseAngle) * 180) / Math.PI);
         cfg.frameScale = clamp(Math.hypot(vec.x, vec.y) / baseLen, 0.1, 6);
       }
+      syncInputsFromCfg();
+      updateValLabels();
       drawFrameCanvas();
       schedulePreview();
     });
