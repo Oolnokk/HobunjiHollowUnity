@@ -90,6 +90,13 @@ const windowStub = {
   renderProfile: async () => {},
   renderPortraitProfile: async () => {},
 };
+const timeoutQueue = []; // Captures window.setTimeout calls so the avatar-refresh retry test can step them deterministically instead of racing real timers.
+windowStub.setTimeout = (fn, ms) => { timeoutQueue.push({ fn, ms }); return timeoutQueue.length; };
+function flushOneTimeout() {
+  const next = timeoutQueue.shift();
+  if (next) next.fn();
+  return !!next;
+}
 const context = vm.createContext({
   window: windowStub,
   document: documentStub,
@@ -127,6 +134,26 @@ assert(Math.abs(ten.damageTakenMul - 0.75) < 1e-12);
 assert(Math.abs(ten.footingTakenMul - 0.65) < 1e-12);
 assert(Math.abs(ten.dodgeEfficacy - 0.75) < 1e-12);
 assert(Math.abs(ten.combatMoveMul - 0.82) < 1e-12);
+
+// requestPlayerAvatarRefresh must retry until equipmentDeps is actually
+// installed rather than silently no-op — the player's world avatar is a
+// one-shot static bake, so a pattern that finishes building async while
+// EquipmentPanel.init() hasn't run yet (character creation / very first
+// avatar bake) has no other way back onto the model.
+{
+  let refreshCalls = 0;
+  windowStub.EquipmentPanel.init(null); // Simulates the boot-order race: equipmentDeps not installed yet.
+  api.__test.requestPlayerAvatarRefresh();
+  assert.equal(timeoutQueue.length, 1, 'not-ready call queues a retry instead of silently giving up');
+  assert(flushOneTimeout(), 'first retry fires');
+  assert.equal(timeoutQueue.length, 1, 'still not ready: queues another retry');
+  assert(flushOneTimeout(), 'second retry fires');
+  assert.equal(timeoutQueue.length, 1, 'still not ready after two retries: keeps retrying');
+  windowStub.EquipmentPanel.init({ refreshPlayerAvatar() { refreshCalls++; } }); // equipmentDeps becomes available mid-retry.
+  assert(flushOneTimeout(), 'third retry fires');
+  assert.equal(refreshCalls, 1, 'refresh finally runs once equipmentDeps is installed');
+  assert.equal(timeoutQueue.length, 0, 'no further retry is queued once the refresh succeeds');
+}
 
 const equipmentDeps = {
   getGearInventory: () => gear,
