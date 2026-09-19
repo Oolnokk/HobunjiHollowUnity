@@ -409,7 +409,7 @@
   function foodBuffEntries() {
     const now = performance.now() / 1000; // Used to convert absolute timers for the shared buff renderer.
     return activeFoodEffects.map(effect => ({
-      key: effect.key, label: data().effectLabels[effect.key] || effect.key, icon: EFFECT_ICONS[effect.key] || '🍲', kind: 'boon',
+      key: effect.key, label: `${effectStrengthLabel(effect.stacks)} ${effectLabel(effect.key)}`, icon: EFFECT_ICONS[effect.key] || '🍲', kind: 'boon',
       sourceLabel: 'Food', stacks: effect.stacks, durationS: effect.durationS, remainingS: effect.expiresAt - now,
     }));
   }
