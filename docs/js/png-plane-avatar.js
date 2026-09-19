@@ -970,6 +970,9 @@
     const baseModelHeight = options.modelHeight ?? baseModelWidth * aspectHeight;
     const modelWidth = baseModelWidth * scaleMultiplier;
     const modelHeight = baseModelHeight * scaleMultiplier;
+    const configuredArmLength = Number(options.armLength ?? options.profile?.fighter?.armLength); // Canonical species+gender reach used by pose scaling.
+    const armLength = Number.isFinite(configuredArmLength) && configuredArmLength > 0 ? configuredArmLength : null; // Kept canonical so Tletingan male is exactly 0.612/0.558.
+    const scaledArmLength = armLength == null ? null : armLength * (modelHeight / 0.9); // Concrete rendered reach for dance/hand systems; separate from attack-pose ratio.
     const anchorZ = options.anchorZ ?? cfg().anchorZ ?? 0;
     const textures = buildTextureSet(THREE, sourceCanvas, options.backCanvas || options.backImage || null);
     const root = new THREE.Group();
@@ -1021,6 +1024,14 @@
     root.userData.portraitScaleMultiplier = scaleMultiplier;
     root.userData.portraitModelWidth = modelWidth;
     root.userData.portraitModelHeight = modelHeight;
+    root.userData.armLength = armLength; // Canonical reach used by attack/editor pose scaling.
+    root.userData.scaledArmLength = scaledArmLength; // Rendered-space reach used by actual arm-target geometry.
+    root.userData.visualCentroidLocalX = 0; // Visible portrait-plane centroid inside this root.
+    root.userData.visualCentroidLocalY = assemblyY; // Root zero is not generally the visual centroid because the assembly is vertically shifted.
+    root.userData.visualCentroidLocalZ = anchorZ;
+    root.userData.poseCentroidX = 0; // Floor-relative body-frame centroid for tool pose consumers.
+    root.userData.poseCentroidY = modelHeight * 0.5 + assemblyY;
+    root.userData.poseCentroidZ = anchorZ;
     // Hand/tool attach point: find the actual vertical midpoint of the rendered
     // avatar's opaque pixels (not a row inferred from portraitVerticalPlacementRatio,
     // which encodes per-species/gender padding tuned for plane-grounding, not hand

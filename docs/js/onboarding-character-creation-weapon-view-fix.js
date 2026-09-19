@@ -314,6 +314,15 @@
     const idle = weaponPose(choice);
     const pose = idle.pose;
     holder.position.set(Number(pose.x) || 0, Number(pose.y) || 0, Number(pose.z) || 0);
+    const poseScale = window.HobunjiSpeciesPoseScale; // Shared centroid math keeps onboarding weapon previews identical to gameplay/editor.
+    const armLength = Number(model.userData?.armLength); // Canonical species+gender reach cached when this avatar was built.
+    const centroidY = Number(model.userData?.poseCentroidY); // Floor-relative visible-body center; includes PNG assemblyY.
+    const scale = poseScale?.scaleForArmLength?.(armLength) ?? 1;
+    if (scale !== 1 && Number.isFinite(centroidY)) {
+      const finalPoint = new THREE.Vector3(toolBase.position.x + holder.position.x, toolBase.position.y + holder.position.y, toolBase.position.z + holder.position.z); // Existing finished local pose.
+      poseScale.scalePointAroundCentroid(finalPoint, 0, centroidY, 0, armLength);
+      holder.position.set(finalPoint.x - toolBase.position.x, finalPoint.y - toolBase.position.y, finalPoint.z - toolBase.position.z);
+    }
     applyPoseQuaternion(THREE, holder, pose);
     avatarGroup.rotation.y = THREE.MathUtils.degToRad(Number(pose.bodyYaw) || 0);
     const neckJoint = model.userData?.neckRig?.neckJoint;

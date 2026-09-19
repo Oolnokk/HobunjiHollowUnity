@@ -2,6 +2,7 @@
   "speciesId": "mao-ao",
   "label": "Mao-ao",
   "male": {
+    "armLength": 0.558,
     "headSprite": "fightersprites/mao-ao-m/head_mint.png",
     "headUrLayers": [
       {
@@ -472,6 +473,7 @@
     }
   },
   "female": {
+    "armLength": 0.558,
     "headSprite": "fightersprites/mao-ao-f/head.png",
     "headUrLayers": [
       {
