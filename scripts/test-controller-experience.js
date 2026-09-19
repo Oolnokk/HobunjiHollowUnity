@@ -187,7 +187,7 @@ assert.match(selectorSource, /utilityMenu:[\s\S]{0,120}open: 'openUtilities'[\s\
 assert.match(selectorSource, /socialWheel:[\s\S]{0,80}kind: 'social'/, 'Social Actions is routed through the same automatic selector ownership layer');
 assert.match(selectorSource, /const leftX = axis\(pad, 0\)[\s\S]{0,180}const rightX = axis\(pad, 2\)/, 'both left and right sticks provide horizontal arch navigation');
 assert.match(selectorSource, /const left = \{ x: axis\(pad, 0\), y: axis\(pad, 1\)[\s\S]{0,220}const right = \{ x: axis\(pad, 2\), y: axis\(pad, 3\)/, 'both left and right sticks provide full radial social-wheel navigation');
-assert.match(gameSource, /if \(potionAction3Press\.held\) \{[\s\S]{0,240}input\.x = 0; input\.y = 0;[\s\S]{0,420}move\.rawMagnitude[\s\S]{0,520}Math\.abs\(ax\)[\s\S]{0,140}Math\.abs\(ay\)/, 'held Potion Select pauses movement and navigates from the left stick');
+assert.match(gameSource, /if \(potionAction3Press\.held\) \{[\s\S]{0,240}input\.x = 0; input\.y = 0;[\s\S]{0,520}move\.rawMagnitude >= look\.rawMagnitude[\s\S]{0,520}x: ax, y: ay[\s\S]{0,520}x: rx, y: ry[\s\S]{0,700}scrollEntries/, 'held Potion Select pauses movement and accepts left-stick navigation without removing right-stick navigation');
 assert.match(selectorSource, /!isDown\(frame, state\.openerCode\)[\s\S]{0,120}finishSelection\(true, 'opener released'\)/, 'releasing a selector opener commits the current choice');
 assert.match(selectorSource, /arch\?\.releaseSelection\?\.\(\)/, 'arch commits reuse the existing release-selection path');
 assert.match(selectorSource, /SocialActionWheel\?\.close\?\.\(commit\)/, 'social-wheel commits reuse the existing wheel close/commit path');
