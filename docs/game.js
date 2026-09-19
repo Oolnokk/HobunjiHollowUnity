@@ -25120,13 +25120,16 @@
           }
         }
         if (potionAction3Press.held) {
-          input.x = 0; input.y = 0; // Potion Select borrows the left stick, so held browsing must not also move the player.
+          input.x = 0; input.y = 0; // Potion Select borrows the movement stick while held, so browsing cannot also move the player.
           controllerCameraX = 0; controllerCameraY = 0; rightStickOwner = 'potion selection';
-          if (move.rawMagnitude >= INPUT_DEFAULTS.axisPressThreshold) {
+          const potionStick = move.rawMagnitude >= look.rawMagnitude
+            ? { x: ax, y: ay, rawMagnitude: move.rawMagnitude }
+            : { x: rx, y: ry, rawMagnitude: look.rawMagnitude }; // Used so left-stick access is added without removing the selector's existing right-stick path.
+          if (potionStick.rawMagnitude >= INPUT_DEFAULTS.axisPressThreshold) {
             const now = performance.now();
             if (now - potionAction3Press.lastScrollAt >= 220) {
               potionAction3Press.lastScrollAt = now;
-              window._desktopSelectionArc?.scrollEntries((Math.abs(ax) >= Math.abs(ay) ? ax : ay) >= 0 ? 1 : -1);
+              window._desktopSelectionArc?.scrollEntries((Math.abs(potionStick.x) >= Math.abs(potionStick.y) ? potionStick.x : potionStick.y) >= 0 ? 1 : -1);
             }
           }
         }
