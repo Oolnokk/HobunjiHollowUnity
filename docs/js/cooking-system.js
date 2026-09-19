@@ -231,8 +231,26 @@
     return { ok: true, key, amount: requested, consumed };
   }
 
+  const FOOD_EFFECT_STRENGTH_TIERS = Object.freeze([ // Used anywhere cooking needs a culinary description for a numeric buff-stack amount.
+    Object.freeze({ minStacks: 5, label: 'Exceptional' }),
+    Object.freeze({ minStacks: 4, label: 'Potent' }),
+    Object.freeze({ minStacks: 3, label: 'Concentrated' }),
+    Object.freeze({ minStacks: 2, label: 'Hearty' }),
+    Object.freeze({ minStacks: 1, label: 'Mild' }),
+  ]);
+
   function effectLabel(effectKey) {
     return data().effectLabels?.[effectKey] || String(effectKey || ''); // Used by quests and diagnostics to present canonical cooking-effect names.
+  }
+
+  function effectStrengthLabel(stacks) {
+    const amount = Math.max(0, Number(stacks) || 0); // Used to choose the highest cooking-strength tier satisfied by this exact stack count.
+    return FOOD_EFFECT_STRENGTH_TIERS.find(tier => amount >= tier.minStacks)?.label || 'Trace';
+  }
+
+  function formatEffectStrength(effectKey, stacks) {
+    const amount = Math.max(0, Number(stacks) || 0); // Used by cooking UI/descriptions so numeric stacks and their shared culinary tier never drift apart.
+    return `${effectStrengthLabel(amount)} ${effectLabel(effectKey)} (+${amount})`;
   }
 
   function selectedRecipe() {
@@ -261,6 +279,7 @@
     const totals = {}; // Used to preview and persist the chosen ingredients' food buffs.
     if (!recipe) return totals;
     recipe.slots.forEach(slot => {
+      if (slot.contributesEffects === false) return; // Structural ingredients such as Nine Leaf Tea's milk can be required without adding an unrelated food buff.
       const selected = selectedSlots[slot.id];
       const definition = selected ? deps.ITEM_DEFS[selected.key] : null;
       if (definition?.foodEffects && Object.keys(definition.foodEffects).length) {
@@ -344,7 +363,7 @@
         if ((deps.random || Math.random)() < saveChance) saved.push(deps.ITEM_DEFS[selected.key]?.label || selected.key);
         else consumeQuality(selected.key, selected.stars, 1);
       });
-      const effectText = Object.entries(effects).map(([effect, amount]) => `${data().effectLabels[effect] || effect} +${amount}`).join(', ');
+      const effectText = Object.entries(effects).map(([effect, amount]) => formatEffectStrength(effect, amount)).join(', ');
       registerCookedDefinition(key, {
         icon: recipeOutputIcon(recipe), label, cat: 'food', sellPrice: Math.max(4, recipe.slots.length * 4 + stars * 3),
         tags: ['Cooked Food', ...recipe.outputTags, `${stars} Star`],
@@ -491,7 +510,7 @@
       </section>`;
     }).join('');
     const effects = effectTotals(recipe);
-    const effectMarkup = Object.entries(effects).map(([effect, amount]) => `<span>${EFFECT_ICONS[effect] || '✦'} ${esc(data().effectLabels[effect] || effect)} +${amount}</span>`).join('') || '<span>No effects until ingredients are selected.</span>';
+    const effectMarkup = Object.entries(effects).map(([effect, amount]) => `<span>${EFFECT_ICONS[effect] || '✦'} ${esc(formatEffectStrength(effect, amount))}</span>`).join('') || '<span>No effects until ingredients are selected.</span>';
     root.innerHTML = `<div class="cooking-recipe-head"><h3>${esc(recipe.name)}</h3><p>${esc(recipe.description)}</p></div>${slots}<div class="cooking-preview"><strong>Meal effects</strong><div>${effectMarkup}</div></div><div class="cooking-footer"><button type="button" data-auto-fill>Auto-fill best</button><button type="button" class="cooking-primary" data-cook-now ${selectionIsValid(recipe) ? '' : 'disabled'}>🔥 Cook</button></div>`;
     root.querySelectorAll('[data-pick-slot]').forEach(button => button.addEventListener('click', () => { selectedSlots[button.dataset.pickSlot] = { key: button.dataset.pickKey, stars: Number(button.dataset.pickStars) }; renderDetail(); renderDebug(); }));
     root.querySelectorAll('[data-clear-slot]').forEach(button => button.addEventListener('click', () => { delete selectedSlots[button.dataset.clearSlot]; renderDetail(); renderDebug(); }));
@@ -556,5 +575,6 @@
     getFoodEffectStacks, getSpeedMultiplier, getStaminaRegenMultiplier, registerIngredientItems, availableQualityEntries,
     consumeQuality, consumeLowestQuality, consumeQualityByPolicy, peekLowestQuality, valueMultiplierForStars,
     unlockRecipe, isRecipeUnlocked, listIngredientDefinitions, listCookedInventory, consumeCookedInventoryItem, effectLabel,
+    FOOD_EFFECT_STRENGTH_TIERS, effectStrengthLabel, formatEffectStrength,
   };
 })();
