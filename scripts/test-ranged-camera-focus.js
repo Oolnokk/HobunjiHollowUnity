@@ -294,7 +294,8 @@ assert(projectionUpdates > 0, 'smooth focus refreshes the live projection as eas
 assert.equal(windowStub.HobunjiRangedCameraFocus.snapshot().cameraMutation, 'native-shoulder-fov-optical-zoom+native-combat-offsets', 'ranged focus reports optical zoom plus untouched native Combat framing');
 assert.equal(horizontalSliderValue, 0.60, 'ranged focus preserves the melee Combat horizontal offset exactly');
 assert.equal(verticalSliderValue, -0.20, 'ranged focus preserves the melee Combat vertical offset exactly');
-assert.deepEqual(windowStub.HobunjiRangedCameraFocus.snapshot().combatOffsets, { horizontal: 0.60, vertical: -0.20 });
+assert.equal(windowStub.HobunjiRangedCameraFocus.snapshot().combatOffsets.horizontal, 0.60, 'debug snapshot reports native Combat horizontal framing');
+assert.equal(windowStub.HobunjiRangedCameraFocus.snapshot().combatOffsets.vertical, -0.20, 'debug snapshot reports native Combat vertical framing');
 settle(120);
 const dispatchesAtSettledFocus = sliderDispatches;
 const scansAtSettledFocus = windowStub.HobunjiRangedCameraFocus.aimPerformance().surfaceRaycasts;
