@@ -311,7 +311,7 @@
     // patterns saved before motifScale existed as its own field.
     const motifScale = Math.max(0.05, Number(patternDef.motifScale ?? patternDef.scale) || 1);
     const frameScale = Math.max(0.05, Number(patternDef.frameScale) || 1);
-    const meshScale = Math.max(0.05, Number(patternDef.meshScale) || 1);
+    const meshScale = Math.max(0.05, Number(patternDef.meshScale) || 1); // Verdigris intentionally keeps its legacy physical mesh scale; weaving alone applies the normalized 1.00 -> old 0.25 mapping.
     const motifRad = ((Number(patternDef.motifRotationDeg) || 0) * Math.PI) / 180;
     const frameRad = ((Number(patternDef.frameRotationDeg) || 0) * Math.PI) / 180;
     const meshRad = ((Number(patternDef.meshRotationDeg) || 0) * Math.PI) / 180;

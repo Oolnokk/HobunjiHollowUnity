@@ -28,6 +28,8 @@
   const SKETCH_PAD = Math.ceil(BRUSH_MAX_SIZE / 2) + 1;
   const SKETCH_CANVAS_SIZE = SKETCH_SIZE + SKETCH_PAD * 2;
   const UNDO_LIMIT = 20; // Sketch snapshots are ~200KB each (SKETCH_CANVAS_SIZE^2 * 4 bytes) — capped so a long session's history can't grow unbounded.
+  const PATTERN_SCALE_MIN = 0.4; // Used by the Pattern scale slider; renders at the former 0.10 physical mesh scale after normalization.
+  const PATTERN_SCALE_MAX = 3.2; // Used by the Pattern scale slider; renders at the former 0.80 physical mesh scale after normalization.
 
   const PATTERN_DEFAULTS = Object.freeze({
     motifScale: 1, // size of the drawn ink itself, relative to its own opaque-ink bounds
@@ -61,7 +63,7 @@
     // named "Pattern scale/rotation" in the UI, but not stored as
     // patternScale/patternRotationDeg to avoid colliding with those
     // legacy pre-frame-tool field names (see legacyFrameFields below).
-    meshScale: 1,
+    meshScale: 1, // Normalized whole-pattern scale: 1.00 renders at the pre-normalization 0.25 mesh scale.
     meshRotationDeg: 0,
   });
 
@@ -231,6 +233,7 @@
   function openEditor(options = {}) {
     injectStyles();
     const cfg = { ...PATTERN_DEFAULTS, ...legacyFrameFields(options.initialPattern) };
+    cfg.meshScale = clamp(Number(cfg.meshScale) || 1, PATTERN_SCALE_MIN, PATTERN_SCALE_MAX); // Keeps loaded/legacy values in the normalized Pattern scale range without migrating the saved number.
     let closed = false;
     let brushMode = 'brush'; // 'brush' | 'eraser'
     let brushSize = 30;
@@ -324,7 +327,7 @@
                     <button type="button" class="pa-btn secondary" data-act="resetPlacement">Reset placement</button>
                   </div>
                   <p class="pa-hint">Auto-detect rotates the motif to whatever angle makes its own tight bounding box smallest, then resets the frame to a centered, ungapped crop at that angle — a quick starting point to drag from, not a final answer.</p>
-                  <div class="pa-field"><label><span>Pattern scale</span><span class="pa-val" data-for="meshScale"></span></label><input type="range" class="pa-in" data-field="meshScale" min="0.1" max="6" step="0.01" value="${cfg.meshScale}"></div>
+                  <div class="pa-field"><label><span>Pattern scale</span><span class="pa-val" data-for="meshScale"></span></label><input type="range" class="pa-in" data-field="meshScale" min="${PATTERN_SCALE_MIN}" max="${PATTERN_SCALE_MAX}" step="0.01" value="${cfg.meshScale}"></div>
                   <div class="pa-field"><label><span>Pattern rotation</span><span class="pa-val" data-for="meshRotationDeg"></span></label><input type="range" class="pa-in" data-field="meshRotationDeg" min="-180" max="180" step="1" value="${cfg.meshRotationDeg}"></div>
                   <p class="pa-hint">Pattern scale/rotation zoom and turn the WHOLE tiled result as it sits on the item, after cropping — separate from the frame above, which only decides what one repeating unit contains.</p>
                 </div>
@@ -385,7 +388,7 @@
         frameY: Number(cfg.frameY) || 0,
         frameRotationDeg: Number(cfg.frameRotationDeg) || 0,
         frameScale: Number(cfg.frameScale) || 1,
-        meshScale: Number(cfg.meshScale) || 1,
+        meshScale: clamp(Number(cfg.meshScale) || 1, PATTERN_SCALE_MIN, PATTERN_SCALE_MAX),
         meshRotationDeg: Number(cfg.meshRotationDeg) || 0,
       };
     }
@@ -750,6 +753,7 @@
     // still loads sane values for it.
     function applyPatternData(data) {
       Object.assign(cfg, PATTERN_DEFAULTS, legacyFrameFields(data) || {});
+      cfg.meshScale = clamp(Number(cfg.meshScale) || 1, PATTERN_SCALE_MIN, PATTERN_SCALE_MAX); // Library/legacy loads retain their stored normalized value when valid and clamp only outside the authored range.
       syncInputsFromCfg();
       updateValLabels();
       drawMotifImageIntoSketch(cfg.motifDataUrl);
