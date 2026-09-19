@@ -27,6 +27,9 @@
   let targetedRecipeId = null; // Optional alchemy reaction target used to reuse Alchemy's targeting probability.
   let openState = false; // Used to keep the modal/input gate idempotent.
   let lastBlend = null; // Mobile-visible debug record for the most recent successful blend.
+  const outcomeCache = new Map(); // Sorted three-reagent signature -> filtered Tea Blend outcomes; used to avoid repeated Alchemy enumeration during UI renders.
+  const completionCache = new Map(); // Sorted partial-selection signature -> whether any Tea Blend completion exists.
+  let blendEffectWitnessCache = null; // Static reagent/recipe catalogs make the complete effect witness list safe to compute once per page load.
 
   function alchemy() { return global.AlchemySystem || null; } // Used to share the canonical trait enumerator instead of duplicating reaction math.
 
@@ -36,29 +39,39 @@
   }
 
   function enumerateBlendOutcomes(reagentKeys) {
-    const outcomes = alchemy()?.enumerateRecipes?.(reagentKeys) || []; // Used as the exact same Humour/Drive/Magnetism source-assignment search as the Alchemy Table.
-    return outcomes.map(outcome => {
+    const keys = [...(reagentKeys || [])];
+    const signature = keys.length === MAX_REAGENTS ? [...keys].sort().join('|') : null; // Used as an order-independent cache key because the same ingredient set has the same Alchemy reactions.
+    if (signature && outcomeCache.has(signature)) return outcomeCache.get(signature);
+    const outcomes = alchemy()?.enumerateRecipes?.(keys) || []; // Used as the exact same Humour/Drive/Magnetism source-assignment search as the Alchemy Table.
+    const filtered = outcomes.map(outcome => {
       const cookingEffect = cookingEffectForRecipe(outcome.recipe); // Used to filter the alchemy result set down to food buffs only.
       return cookingEffect ? { ...outcome, cookingEffect } : null;
     }).filter(Boolean);
+    if (signature) outcomeCache.set(signature, filtered);
+    return filtered;
   }
 
   function canCompleteSelection(reagentKeys) {
     const keys = [...(reagentKeys || [])]; // Used to keep caller selection immutable during compatibility probing.
     const defs = alchemy()?.REAGENT_DEFS || {};
     if (keys.length > MAX_REAGENTS || new Set(keys).size !== keys.length || keys.some(key => !defs[key])) return false;
-    if (keys.length === MAX_REAGENTS) return enumerateBlendOutcomes(keys).length > 0;
-    const remaining = Object.keys(defs).filter(key => !keys.includes(key)); // Used to prove a partial selection has at least one buff-producing completion.
-    if (keys.length === 2) return remaining.some(key => enumerateBlendOutcomes([...keys, key]).length > 0);
-    if (keys.length === 1) {
-      for (let i = 0; i < remaining.length - 1; i++) {
-        for (let j = i + 1; j < remaining.length; j++) {
-          if (enumerateBlendOutcomes([...keys, remaining[i], remaining[j]]).length) return true;
+    const signature = [...keys].sort().join('|'); // Used to reuse the same completion proof while a Tea Grinder selection is unchanged.
+    if (completionCache.has(signature)) return completionCache.get(signature);
+    let possible = false;
+    if (keys.length === MAX_REAGENTS) possible = enumerateBlendOutcomes(keys).length > 0;
+    else {
+      const remaining = Object.keys(defs).filter(key => !keys.includes(key)); // Used to prove a partial selection has at least one buff-producing completion.
+      if (keys.length === 2) possible = remaining.some(key => enumerateBlendOutcomes([...keys, key]).length > 0);
+      else if (keys.length === 1) {
+        outer: for (let i = 0; i < remaining.length - 1; i++) {
+          for (let j = i + 1; j < remaining.length; j++) {
+            if (enumerateBlendOutcomes([...keys, remaining[i], remaining[j]]).length) { possible = true; break outer; }
+          }
         }
-      }
-      return false;
+      } else possible = true;
     }
-    return true;
+    completionCache.set(signature, possible);
+    return possible;
   }
 
   function canAddReagent(selected, candidate) {
@@ -66,6 +79,7 @@
   }
 
   function allBlendEffects() {
+    if (blendEffectWitnessCache) return blendEffectWitnessCache.map(entry => ({ ...entry, reagentKeys: [...entry.reagentKeys] })); // Return copies so quest diagnostics cannot mutate the cache.
     const defs = alchemy()?.REAGENT_DEFS || {};
     const keys = Object.keys(defs);
     const witnesses = new Map(); // Used by Banubu Quest 2 to prove every requested tea buff has a concrete three-reagent solution.
@@ -85,7 +99,8 @@
         }
       }
     }
-    return [...witnesses.values()];
+    blendEffectWitnessCache = [...witnesses.values()].map(entry => ({ ...entry, reagentKeys: [...entry.reagentKeys] }));
+    return blendEffectWitnessCache.map(entry => ({ ...entry, reagentKeys: [...entry.reagentKeys] }));
   }
 
   function blendItemKey(effect) {
