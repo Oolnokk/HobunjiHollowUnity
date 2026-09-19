@@ -1,32 +1,32 @@
-// Banubu's sequential three-fish-pie questline.
+// Banubu's authored two-stage quest controller.
+// Quest 1 requests a demonstrably craftable Three-Fish Pie; Quest 2 requests
+// a demonstrably craftable Nine Leaf Tea. Stages 3–5 are deliberately blocked.
 (() => {
   'use strict';
 
-  const global = window; // Used as the browser runtime and export target.
-  const CONTENT = () => global.BanubuQuestContent; // Used to resolve editable quest content after all scripts load.
-  const QUEST_ID = 'banubu_fish_pies'; // Used as the world-member questProgress key for the chain.
+  const global = window; // Used as the shared runtime namespace.
+  const QUEST_ID = 'banubu_fish_pies'; // Preserved from the prototype so prior test/dev saves migrate into the authored sequence.
   const INSTALL_INTERVAL_MS = 250; // Used by the bounded dependency installer while game modules initialize.
   const INSTALL_TIMEOUT_MS = 20000; // Used to stop active polling once late global assignment hooks are sufficient.
 
   let installed = false; // Used to make runtime integration idempotent.
-  let installTimer = null; // Used to stop the dependency poll after success/timeout.
+  let installTimer = null; // Used to stop dependency polling after success/timeout.
   let installStartedAt = 0; // Used to bound dependency polling on editor/partial pages.
-  const debugState = { lastAction: null, lastTarget: null, lastTurnIn: null, lastError: null }; // Used by in-game diagnostics and automated tests.
+  const debugState = { lastAction: null, lastTarget: null, lastTurnIn: null, lastError: null }; // Used by mobile diagnostics/tests.
 
-  function playerData() { // Used as the live world-member state mirror for quest progression and cooking persistence.
-    return global.__hobunjiPlayerProfile || null;
+  function CONTENT() { return global.BanubuQuestContent || null; } // Used so the static content module may load before or after this controller.
+  function playerData() { return global.__hobunjiPlayerProfile || null; } // Used as the live world-member quest/cooking mirror.
+
+  function readMeta() {
+    try { return JSON.parse(global.localStorage?.getItem('hobunjiSaveMeta') || 'null'); } catch (_) { return null; } // Used by direct persistence without reaching into private game.js closures.
   }
 
-  function readMeta() { // Used to persist quest/cooking data without depending on private game.js closure functions.
-    try { return JSON.parse(global.localStorage?.getItem('hobunjiSaveMeta') || 'null'); } catch (_) { return null; }
-  }
-
-  function persistMemberState() { // Used after every quest transition/recipe unlock so browser reloads cannot lose progress.
-    const profile = playerData(); // Used to identify the active member and copy live quest state.
-    const meta = readMeta(); // Used as the persistent save record to update.
+  function persistMemberState() {
+    const profile = playerData(); // Used to identify the active world member.
+    const meta = readMeta(); // Used as the persistent save record.
     if (!profile?.characterId || !profile?.worldId || !meta) return false;
-    const world = meta.worlds?.find(entry => entry?.id === profile.worldId); // Used to locate the active world.
-    const member = world?.members?.[profile.characterId]; // Used to locate this character's world-scoped member state.
+    const world = meta.worlds?.find(entry => entry?.id === profile.worldId); // Used to locate the active world save.
+    const member = world?.members?.[profile.characterId]; // Used to locate this character's member-scoped progress.
     if (!member) return false;
     member.questProgress = JSON.parse(JSON.stringify(profile.questProgress || {}));
     if (global.CookingSystem?.serialize) {
@@ -36,132 +36,233 @@
     try { global.localStorage?.setItem('hobunjiSaveMeta', JSON.stringify(meta)); return true; } catch (_) { return false; }
   }
 
-  function ensureQuestState() { // Used by dialogue routing/actions to lazily migrate old saves into the Banubu chain.
+  function ensureQuestState() {
     const profile = playerData(); // Used as the live holder of world-member questProgress.
     if (!profile) return null;
     if (!profile.questProgress || typeof profile.questProgress !== 'object') profile.questProgress = {};
-    const current = profile.questProgress[QUEST_ID]; // Used to preserve an existing stage/target instead of rerolling it.
-    if (current && typeof current === 'object') return current;
-    const created = { status: 'intro', stage: 0, target: null }; // Used as the initial first-conversation state.
-    profile.questProgress[QUEST_ID] = created;
-    persistMemberState();
-    return created;
+    let state = profile.questProgress[QUEST_ID];
+    if (!state || typeof state !== 'object') {
+      state = { status: 'intro', stage: 0, target: null, nextTarget: null };
+      profile.questProgress[QUEST_ID] = state;
+      persistMemberState();
+      return state;
+    }
+    let migrated = false; // Used to persist only when an old five-fish-pie prototype state actually needs correction.
+    if (Number(state.stage) >= 3 || state.status === 'finished') {
+      state.status = 'blocked';
+      state.stage = 3;
+      state.target = null;
+      state.nextTarget = null;
+      migrated = true;
+    } else if (Number(state.stage) === 2 && state.target && state.target.questType !== 'nineLeafTea') {
+      state.target = null; // Old prototype stage-two fish targets are invalid now that stage two is Nine Leaf Tea.
+      migrated = true;
+    } else if (Number(state.stage) === 1 && state.target && !state.target.questType) {
+      state.target.questType = 'threeFishPie'; // Legacy stage-one targets already contain a valid fish proof; tag rather than reroll them.
+      migrated = true;
+    }
+    if (!Object.prototype.hasOwnProperty.call(state, 'nextTarget')) {
+      state.nextTarget = null;
+      migrated = true;
+    }
+    if (migrated) persistMemberState();
+    return state;
   }
 
-  function treesForBanubu(record) { // Used to read editor-exported trees first and built-in fallback trees second.
-    const authored = (record?.dialogueTrees || []).filter(tree => tree?.banubuQuest); // Used as the runtime-authoritative quest tree set.
+  function treesForBanubu(record) {
+    const authored = (record?.dialogueTrees || []).filter(tree => tree?.banubuQuest); // Used as the Dialogue Editor-authoritative tree set.
     return authored.length ? authored : (CONTENT()?.dialogueTrees || []);
   }
 
-  function stageDefinition(record, stage) { // Used to get difficulty/reward metadata from the editable offer tree for one stage.
-    const offer = treesForBanubu(record).find(tree => Number(tree?.banubuQuest?.stage) === Number(stage) && tree?.banubuQuest?.phase === 'offer'); // Used as the canonical stage authoring record.
-    const fallback = CONTENT()?.stageDefaults?.find(entry => Number(entry.stage) === Number(stage)); // Used only if an exported tree omitted newer metadata.
-    const meta = offer?.banubuQuest || {}; // Used to combine editor metadata with fallback defaults.
+  function stageDefinition(record, stage) {
+    const offer = treesForBanubu(record).find(tree => Number(tree?.banubuQuest?.stage) === Number(stage) && tree?.banubuQuest?.phase === 'offer'); // Used as canonical editable stage metadata.
+    const fallback = CONTENT()?.stageDefaults?.find(entry => Number(entry.stage) === Number(stage));
+    const meta = offer?.banubuQuest || {};
+    const reward = meta.reward === null ? null : (meta.reward || fallback?.reward ? { ...(fallback?.reward || {}), ...(meta.reward || {}) } : null);
     return {
       stage: Number(stage),
+      questType: String(meta.questType || fallback?.questType || (Number(stage) === 2 ? 'nineLeafTea' : 'threeFishPie')),
       buffCount: Math.max(1, Math.min(3, Number(meta.buffCount ?? fallback?.buffCount) || 1)),
-      reward: { ...(fallback?.reward || {}), ...(meta.reward || {}) },
+      minStacks: Math.max(1, Math.min(9, Number(meta.minStacks ?? fallback?.minStacks) || 1)),
+      reward,
     };
   }
 
-  function ingredientEffectKeys(definition) { // Used by target generation to mirror cooking-system effect-key semantics independent of star quantity.
-    const explicit = definition?.foodEffects && typeof definition.foodEffects === 'object' ? Object.keys(definition.foodEffects).filter(key => Number(definition.foodEffects[key]) > 0) : []; // Used when an ingredient has authored multi-effect food data.
+  function ingredientEffectKeys(definition) {
+    const explicit = definition?.foodEffects && typeof definition.foodEffects === 'object'
+      ? Object.keys(definition.foodEffects).filter(key => Number(definition.foodEffects[key]) > 0)
+      : []; // Used when an ingredient has authored multi-effect cooking data.
     if (explicit.length) return explicit.sort();
     return definition?.cookingPrimaryEffect ? [String(definition.cookingPrimaryEffect)] : [];
   }
 
-  function effectSetForFishKeys(fishKeys) { // Used both to prove a generated target is craftable and to expose its exact requested buff combination.
+  function effectSetForFishKeys(fishKeys) {
     const ingredients = global.CookingSystem?.listIngredientDefinitions?.('fish') || []; // Used as the current live fish/effect catalog.
-    const byKey = new Map(ingredients.map(entry => [entry.key, entry.definition])); // Used to resolve each concrete three-fish solution.
-    const effects = new Set(); // Used to deduplicate buffs across the three fish just like the cooked meal effect object does.
-    for (const key of fishKeys || []) { // Used to union every effect produced by the concrete solution.
-      const definition = byKey.get(key); // Used to inspect this fish's actual cooking effects.
+    const byKey = new Map(ingredients.map(entry => [entry.key, entry.definition]));
+    const effects = new Set();
+    for (const key of fishKeys || []) {
+      const definition = byKey.get(key);
       for (const effect of ingredientEffectKeys(definition)) effects.add(effect);
     }
     return [...effects].sort();
   }
 
-  function allFeasibleTargets(desiredCount) { // Used to enumerate only buff sets for which a concrete three-fish recipe exists.
-    const fishes = global.CookingSystem?.listIngredientDefinitions?.('fish') || []; // Used as the complete live fish ingredient catalog, not current inventory.
-    const candidates = fishes.filter(entry => ingredientEffectKeys(entry.definition).length); // Used to omit fish lacking any cooking buff.
-    const bySignature = new Map(); // Used to dedupe many fish triples that produce the same exact buff combination.
-    for (let a = 0; a < candidates.length; a++) { // Used as the first recipe slot index.
-      for (let b = a; b < candidates.length; b++) { // Used as the second slot index while allowing repeated species.
-        for (let c = b; c < candidates.length; c++) { // Used as the third slot index while allowing repeated species.
-          const keys = [candidates[a].key, candidates[b].key, candidates[c].key]; // Used as a concrete proof/diagnostic recipe for this target.
-          const effects = effectSetForFishKeys(keys); // Used as the exact buff-key set the cooked pie will contain.
-          if (!effects.length) continue;
-          const signature = effects.join('|'); // Used to keep one concrete solution per exact effect combination.
-          if (!bySignature.has(signature)) bySignature.set(signature, { requiredEffects: effects, solutionFishKeys: keys });
+  function allFeasibleFishTargets(desiredCount) {
+    const fishes = global.CookingSystem?.listIngredientDefinitions?.('fish') || [];
+    const candidates = fishes.filter(entry => ingredientEffectKeys(entry.definition).length);
+    const bySignature = new Map(); // Used to retain one concrete three-fish witness per exact effect set.
+    for (let a = 0; a < candidates.length; a++) {
+      for (let b = a; b < candidates.length; b++) {
+        for (let c = b; c < candidates.length; c++) {
+          const keys = [candidates[a].key, candidates[b].key, candidates[c].key];
+          const effects = effectSetForFishKeys(keys);
+          if (effects.length !== desiredCount) continue; // Quest text promises this exact number; never silently lower the difficulty.
+          const signature = effects.join('|');
+          if (!bySignature.has(signature)) {
+            bySignature.set(signature, {
+              questType: 'threeFishPie',
+              requiredEffects: effects,
+              minStacks: 1,
+              solutionFishKeys: keys,
+            });
+          }
         }
       }
     }
-    const all = [...bySignature.values()]; // Used to filter toward the author-requested buff-count difficulty.
-    const exact = all.filter(target => target.requiredEffects.length === desiredCount); // Used when this fish catalog can satisfy the requested count exactly.
-    if (exact.length) return exact;
-    if (!all.length) return [];
-    const closestDistance = Math.min(...all.map(target => Math.abs(target.requiredEffects.length - desiredCount))); // Used to remain feasible if a future fish catalog lacks an exact cardinality.
-    return all.filter(target => Math.abs(target.requiredEffects.length - desiredCount) === closestDistance);
+    return [...bySignature.values()];
   }
 
-  function rollTarget(record, stage) { // Used once per stage to pick a random but demonstrably craftable buff combination.
-    const definition = stageDefinition(record, stage); // Used to read the editor-authored requested buff count.
-    const feasible = allFeasibleTargets(definition.buffCount); // Used to constrain randomness to real three-fish outcomes.
+  function allFeasibleTeaTargets(desiredCount = 2, minStacks = 3) {
+    const witnesses = global.TeaGrinder?.allBlendEffects?.() || []; // Used as one concrete reagent-trio proof for every buff the Tea Grinder can actually create.
+    if (desiredCount !== 2 || witnesses.length < 2) return [];
+    const targets = [];
+    for (let a = 0; a < witnesses.length - 1; a++) {
+      for (let b = a + 1; b < witnesses.length; b++) {
+        const left = witnesses[a], right = witnesses[b];
+        const effects = [left.effect, right.effect].sort();
+        targets.push({
+          questType: 'nineLeafTea',
+          requiredEffects: effects,
+          minStacks,
+          solutionBlendEffects: [left.effect, right.effect, left.effect], // Two/one split yields +6/+3 with Concentrated (+3) Tea Blends.
+          solutionReagentTrios: [
+            [...left.reagentKeys],
+            [...right.reagentKeys],
+            [...left.reagentKeys],
+          ],
+        });
+      }
+    }
+    return targets;
+  }
+
+  function rollTarget(record, stage) {
+    const definition = stageDefinition(record, stage);
+    const feasible = definition.questType === 'nineLeafTea'
+      ? allFeasibleTeaTargets(definition.buffCount, definition.minStacks)
+      : allFeasibleFishTargets(definition.buffCount);
     if (!feasible.length) return null;
-    const index = Math.floor(Math.random() * feasible.length); // Used to select one feasible effect signature uniformly for this stage.
-    const picked = feasible[index]; // Used as the persisted target and its hidden proof recipe.
-    const target = { requiredEffects: [...picked.requiredEffects], solutionFishKeys: [...picked.solutionFishKeys] }; // Used to prevent later mutation of enumerator data.
-    debugState.lastTarget = { stage, desiredBuffCount: definition.buffCount, ...target };
+    const index = Math.floor((global.GameRandom?.random?.() ?? Math.random()) * feasible.length); // Used to keep gameplay randomness seedable when GameRandom is available.
+    const target = JSON.parse(JSON.stringify(feasible[index]));
+    debugState.lastTarget = { stage: Number(stage), desiredBuffCount: definition.buffCount, ...target };
     return target;
   }
 
-  function ensureTarget(record, state) { // Used by offer/active/ready dialogue so a stage's randomized request stays stable after first roll.
+  function ensureTarget(record, state) {
     if (state?.target?.requiredEffects?.length) return state.target;
-    const target = rollTarget(record, state?.stage); // Used to generate a first-time target from the current real fish catalog.
+    if (!state || Number(state.stage) < 1 || Number(state.stage) > 2) return null;
+    const target = rollTarget(record, state.stage);
     if (!target) return null;
     state.target = target;
     persistMemberState();
     return target;
   }
 
-  function sameEffectSet(left, right) { // Used to require the pie's exact requested combination rather than accepting unrelated extra buffs.
-    const a = [...new Set(left || [])].sort(); // Used as the normalized requested buff set.
-    const b = [...new Set(right || [])].sort(); // Used as the normalized cooked-pie buff set.
+  function ensureIntroTarget(record, state) {
+    if (!state || state.status !== 'intro') return null;
+    if (state.target?.questType === 'threeFishPie' && state.target.requiredEffects?.length) return state.target;
+    const target = rollTarget(record, 1); // Used before the intro tree is rendered so its dynamic buff names are already concrete.
+    if (!target) return null;
+    state.target = target;
+    persistMemberState();
+    return target;
+  }
+
+  function ensureNextTarget(record, state) {
+    if (!state || Number(state.stage) !== 1) return null;
+    if (state.nextTarget?.questType === 'nineLeafTea' && state.nextTarget.requiredEffects?.length) return state.nextTarget;
+    const target = rollTarget(record, 2); // Used while Quest 1's ready tree is rendered so its later Tea dialogue can name Quest 2 buffs before the turn-in action fires.
+    if (!target) return null;
+    state.nextTarget = target;
+    persistMemberState();
+    return target;
+  }
+
+  function sameEffectSet(left, right) {
+    const a = [...new Set(left || [])].sort();
+    const b = [...new Set(right || [])].sort();
     return a.length === b.length && a.every((entry, index) => entry === b[index]);
   }
 
-  function matchingPie(state) { // Used to determine dialogue readiness and turn in exactly one qualifying cooked item.
-    const required = state?.target?.requiredEffects || []; // Used as the active quest's exact buff-key requirement.
-    if (!required.length) return null;
-    const meals = global.CookingSystem?.listCookedInventory?.() || []; // Used to inspect real live cooked-food stacks.
-    return meals.find(entry => entry.definition?.recipeId === CONTENT()?.RECIPE_ID
-      && sameEffectSet(Object.keys(entry.definition?.foodEffects || {}).filter(key => Number(entry.definition.foodEffects[key]) > 0), required)) || null;
+  function mealMatchesTarget(entry, state) {
+    const target = state?.target;
+    if (!target?.requiredEffects?.length) return false;
+    const recipeId = target.questType === 'nineLeafTea' ? CONTENT()?.NINE_LEAF_TEA_RECIPE_ID : CONTENT()?.THREE_FISH_PIE_RECIPE_ID;
+    if (entry.definition?.recipeId !== recipeId) return false;
+    const foodEffects = entry.definition?.foodEffects || {};
+    const present = Object.keys(foodEffects).filter(key => Number(foodEffects[key]) > 0);
+    if (!sameEffectSet(present, target.requiredEffects)) return false; // Unrequested extra buffs do not satisfy Banubu's exact order.
+    const minimum = Math.max(1, Number(target.minStacks) || 1);
+    return target.requiredEffects.every(effect => Number(foodEffects[effect]) >= minimum); // Quest 2 requires both requested buffs to reach Concentrated strength.
   }
 
-  function effectLabel(effectKey) { // Used to turn saved machine effect keys into readable dialogue tokens.
-    return global.CookingSystem?.effectLabel?.(effectKey) || String(effectKey).replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, character => character.toUpperCase());
+  function matchingMeal(state) {
+    const meals = global.CookingSystem?.listCookedInventory?.() || [];
+    return meals.find(entry => mealMatchesTarget(entry, state)) || null;
   }
 
-  function tokenValues(record, state) { // Used by the tree provider to resolve quest-only tokens without adding Banubu special cases to core dialogue text.
-    const definition = state?.stage ? stageDefinition(record, state.stage) : null; // Used to expose the current reward label.
-    const target = state?.stage ? ensureTarget(record, state) : null; // Used to expose the persistent requested buff combination.
-    const labels = (target?.requiredEffects || []).map(effectLabel); // Used to present exact buff names to the player.
+  function matchingPie(state) { return matchingMeal(state); } // Compatibility alias retained for old diagnostics/tests.
+
+  function effectLabel(effectKey) {
+    return global.CookingSystem?.effectLabel?.(effectKey)
+      || String(effectKey).replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, character => character.toUpperCase());
+  }
+
+  function strengthLabel(stacks) {
+    return global.CookingSystem?.effectStrengthLabel?.(stacks) || (Number(stacks) >= 3 ? 'Concentrated' : 'Mild');
+  }
+
+  function joinedEffectLabels(target) {
+    const labels = (target?.requiredEffects || []).map(effectLabel);
+    if (!labels.length) return 'a feasible set of buffs';
+    if (labels.length === 1) return labels[0];
+    if (labels.length === 2) return `${labels[0]} and ${labels[1]}`;
+    return `${labels.slice(0, -1).join(', ')}, and ${labels[labels.length - 1]}`;
+  }
+
+  function tokenValues(record, state) {
+    const currentTarget = state?.status === 'intro' ? ensureIntroTarget(record, state) : (state?.stage ? ensureTarget(record, state) : null);
+    const nextTarget = Number(state?.stage) === 1 ? ensureNextTarget(record, state) : null;
+    const definition = state?.stage ? stageDefinition(record, state.stage) : stageDefinition(record, 1);
     return {
-      '{{banubuRequestedBuffs}}': labels.length ? labels.join(' + ') : 'a feasible set of fish buffs',
-      '{{banubuRewardName}}': definition?.reward?.label || 'a key item',
+      '{{banubuRequestedBuffs}}': joinedEffectLabels(currentTarget),
+      '{{banubuNextRequestedBuffs}}': joinedEffectLabels(nextTarget),
+      '{{banubuRequiredStrength}}': strengthLabel(currentTarget?.minStacks || definition?.minStacks || 1),
+      '{{banubuNextRequiredStrength}}': strengthLabel(nextTarget?.minStacks || 3),
+      '{{banubuRewardName}}': definition?.reward?.label || 'no item reward',
       '{{banubuQuestNumber}}': String(state?.stage || 0),
     };
   }
 
-  function resolveQuestTokens(tree, record, state) { // Used to clone one editor-authored tree and fill dynamic target/reward text for this conversation only.
-    const clone = CONTENT()?.deepClone ? CONTENT().deepClone(tree) : JSON.parse(JSON.stringify(tree)); // Used to avoid modifying the loaded NPC database.
-    const replacements = tokenValues(record, state); // Used as the complete Banubu-only token map.
-    const replace = value => { // Used for dialogue line and choice-label token substitution.
-      let output = String(value ?? ''); // Used as the progressively replaced string.
+  function resolveQuestTokens(tree, record, state) {
+    const clone = CONTENT()?.deepClone ? CONTENT().deepClone(tree) : JSON.parse(JSON.stringify(tree));
+    const replacements = tokenValues(record, state);
+    const replace = value => {
+      let output = String(value ?? '');
       for (const [token, replacement] of Object.entries(replacements)) output = output.split(token).join(replacement);
       return output;
     };
-    for (const node of clone.nodes || []) { // Used to resolve every player-visible string in the selected tree.
+    for (const node of clone.nodes || []) {
       if (typeof node.text === 'string') node.text = replace(node.text);
       for (const choice of node.choices || []) if (typeof choice.label === 'string') choice.label = replace(choice.label);
     }
@@ -169,79 +270,114 @@
     return clone;
   }
 
-  function selectTree(record) { // Used by DialogueContent's provider hook to route Banubu through the sequential quest state machine.
-    const state = ensureQuestState(); // Used as the current world-member quest state.
+  function selectTree(record) {
+    const state = ensureQuestState();
     if (!state) return null;
-    const trees = treesForBanubu(record); // Used as the editable source graph.
-    let phase = state.status || 'intro'; // Used as the authored phase key to select.
-    if (phase === 'active' && matchingPie(state)) phase = 'ready';
-    if (phase === 'finished') state.stage = 6;
-    if (phase !== 'intro' && phase !== 'finished') ensureTarget(record, state);
+    const trees = treesForBanubu(record);
+    let phase = state.status || 'intro';
+    if (phase === 'intro') ensureIntroTarget(record, state);
+    else if (phase === 'active' && matchingMeal(state)) phase = 'ready';
+    else if (phase === 'offer' || phase === 'active') ensureTarget(record, state);
+    if (phase === 'blocked') state.stage = 3;
     const selected = trees.find(tree => tree?.banubuQuest?.phase === phase
-      && (phase === 'intro' || phase === 'finished' || Number(tree?.banubuQuest?.stage) === Number(state.stage))); // Used as the one tree eligible for this conversation.
+      && (phase === 'intro' || Number(tree?.banubuQuest?.stage) === Number(state.stage)));
     return selected ? resolveQuestTokens(selected, record, state) : null;
   }
 
-  function unlockRecipe() { // Used by the intro choice to reveal the otherwise hidden three-fish template and start quest one.
-    const state = ensureQuestState(); // Used to prevent repeated intro actions from rewinding later progress.
+  function unlockRecipe(record = null) {
+    const state = ensureQuestState();
     if (!state) return { ok: false, message: 'No active save.' };
-    global.BanubuQuestContent?.ensureCookingRecipe?.();
-    global.CookingSystem?.unlockRecipe?.(CONTENT()?.RECIPE_ID);
+    CONTENT()?.ensureCookingRecipes?.();
+    global.CookingSystem?.unlockRecipe?.(CONTENT()?.THREE_FISH_PIE_RECIPE_ID);
     if (state.status === 'intro') {
+      const introTarget = state.target?.questType === 'threeFishPie' ? state.target : rollTarget(record, 1);
+      if (!introTarget) return { ok: false, message: 'The current fish catalog cannot produce a Three-Fish Pie with three distinct buffs.' };
       state.status = 'offer';
       state.stage = 1;
-      state.target = null;
+      state.target = introTarget;
+      state.nextTarget = null;
     }
     persistMemberState();
     debugState.lastAction = 'unlockRecipe';
     return { ok: true, message: 'Three-Fish Pie learned.' };
   }
 
-  function acceptQuest(record, stage) { // Used by an offer-tree choice to lock in the already displayed target and begin the stage.
-    const state = ensureQuestState(); // Used to validate sequential progression against the choice's authored stage.
-    if (!state || state.status !== 'offer' || Number(state.stage) !== Number(stage)) return { ok: false, message: 'That fish-pie request is not currently available.' };
-    if (!ensureTarget(record, state)) return { ok: false, message: 'No feasible three-fish buff combination is available from the current fish catalog.' };
+  function acceptQuest(record, stage) {
+    const state = ensureQuestState();
+    if (!state || state.status !== 'offer' || Number(state.stage) !== Number(stage) || Number(stage) > 2) return { ok: false, message: 'That Banubu request is not currently available.' };
+    if (!ensureTarget(record, state)) return { ok: false, message: Number(stage) === 2 ? 'No feasible Nine Leaf Tea buff pair exists in the current Tea Grinder reaction set.' : 'No feasible three-buff Three-Fish Pie exists in the current fish catalog.' };
     state.status = 'active';
     persistMemberState();
     debugState.lastAction = `accept:${stage}`;
     return { ok: true };
   }
 
-  function turnInQuest(record, stage) { // Used by the ready-tree choice to consume one qualifying pie, award its key, and advance exactly one stage.
-    const state = ensureQuestState(); // Used to validate the action against current sequential state.
-    if (!state || state.status !== 'active' || Number(state.stage) !== Number(stage)) return { ok: false, message: 'That fish-pie request is not active.' };
-    const meal = matchingPie(state); // Used to select the real inventory stack that satisfied the exact requested buff set.
-    if (!meal) return { ok: false, message: 'You no longer have the requested three-fish pie.' };
-    const consumed = global.CookingSystem?.consumeCookedInventoryItem?.(meal.key, 1); // Used to remove exactly one quest turn-in serving through cooking's quality-aware inventory path.
-    if (!consumed?.ok) return consumed || { ok: false, message: 'Could not consume the requested pie.' };
-
-    const definition = stageDefinition(record, stage); // Used to resolve the editable key id/label/save scope for this stage.
-    const reward = { ...definition.reward }; // Used as the inline key-item definition registered and granted below.
-    const grant = global.KeyItemSystem?.grant?.(reward, reward); // Used to persist character/world ownership according to the authored scope.
-    if (!grant?.ok) return grant || { ok: false, message: 'Could not grant the quest reward.' };
-
-    const completedTarget = state.target ? JSON.parse(JSON.stringify(state.target)) : null; // Used only for mobile diagnostics after state advances.
-    if (Number(stage) >= 5) {
-      state.status = 'finished';
-      state.stage = 6;
-      state.target = null;
-    } else {
-      state.status = 'offer';
-      state.stage = Number(stage) + 1;
-      state.target = null;
-    }
-    persistMemberState();
-    debugState.lastAction = `turnIn:${stage}`;
-    debugState.lastTurnIn = { stage: Number(stage), mealKey: meal.key, target: completedTarget, reward };
-    return { ok: true, message: `${reward.label || reward.id} obtained.` };
+  function grantStageReward(definition) {
+    if (!definition?.reward?.id) return { ok: true, reward: null };
+    const reward = { ...definition.reward };
+    const grant = global.KeyItemSystem?.grant?.(reward, reward);
+    return grant?.ok ? { ok: true, reward } : (grant || { ok: false, message: 'Could not grant the quest reward.' });
   }
 
-  function actionHandler(action, context = {}) { // Used by DialogueContent's generic custom-action registry for all Banubu quest choices.
-    const operation = String(action?.operation || ''); // Used to route the editor-authored action to one state transition.
-    const stage = Number(action?.stage ?? context?.tree?.banubuQuest?.stage ?? 0); // Used to bind accept/turn-in actions to their sequential stage.
-    const record = context.npc; // Used to read editor-authored stage metadata and trees.
-    let result = null; // Used as the normalized action outcome returned to DialogueContent.
-    if (operation === 'unlockRecipe') result = unlockRecipe();
+  function unlockTeaSetup() {
+    CONTENT()?.ensureCookingRecipes?.();
+    global.CookingSystem?.unlockRecipe?.(CONTENT()?.NINE_LEAF_TEA_RECIPE_ID);
+    const station = global.TeaGrinder?.grantStation?.();
+    return station?.ok ? { ok: true, station } : (station || { ok: false, message: 'Could not give you Banubu’s Tea Grinder.' });
+  }
+
+  function turnInQuest(record, stage) {
+    const state = ensureQuestState();
+    if (!state || state.status !== 'active' || Number(state.stage) !== Number(stage) || Number(stage) > 2) return { ok: false, message: 'That Banubu request is not active.' };
+    const meal = matchingMeal(state);
+    if (!meal) return { ok: false, message: Number(stage) === 2 ? 'You no longer have the requested Nine Leaf Tea.' : 'You no longer have the requested Three-Fish Pie.' };
+
+    const definition = stageDefinition(record, stage);
+    const completedTarget = state.target ? JSON.parse(JSON.stringify(state.target)) : null;
+    const consumed = global.CookingSystem?.consumeCookedInventoryItem?.(meal.key, 1);
+    if (!consumed?.ok) return consumed || { ok: false, message: 'Could not consume the requested food.' };
+
+    const rewardResult = grantStageReward(definition);
+    if (!rewardResult.ok) return rewardResult;
+
+    let teaSetup = null;
+    if (Number(stage) === 1) {
+      teaSetup = unlockTeaSetup();
+      if (!teaSetup.ok) return teaSetup;
+      state.status = 'offer';
+      state.stage = 2;
+      state.target = state.nextTarget?.questType === 'nineLeafTea' ? state.nextTarget : rollTarget(record, 2);
+      state.nextTarget = null;
+      if (!state.target) return { ok: false, message: 'Quest 2 could not find a craftable Tea Blend buff pair.' };
+    } else {
+      state.status = 'blocked'; // Quests 3–5 intentionally stop here until their authored dialogue/design exists.
+      state.stage = 3;
+      state.target = null;
+      state.nextTarget = null;
+    }
+
+    persistMemberState();
+    debugState.lastAction = `turnIn:${stage}`;
+    debugState.lastTurnIn = {
+      stage: Number(stage),
+      mealKey: meal.key,
+      target: completedTarget,
+      reward: rewardResult.reward,
+      teaGrinder: teaSetup?.station?.itemKey || null,
+      nextStatus: state.status,
+    };
+    const messages = [];
+    if (rewardResult.reward) messages.push(`${rewardResult.reward.label || rewardResult.reward.id} obtained.`);
+    if (teaSetup?.station) messages.push('Tea Grinder obtained and Nine Leaf Tea learned.');
+    return { ok: true, message: messages.join(' ') || 'Banubu accepted it.' };
+  }
+
+  function actionHandler(action, context = {}) {
+    const operation = String(action?.operation || '');
+    const stage = Number(action?.stage ?? context?.tree?.banubuQuest?.stage ?? 0);
+    const record = context.npc;
+    let result = null;
+    if (operation === 'unlockRecipe') result = unlockRecipe(record);
     else if (operation === 'accept') result = acceptQuest(record, stage);
     else if (operation === 'turnIn') result = turnInQuest(record, stage);
     else result = { ok: false, message: `Unknown Banubu quest operation: ${operation || '(blank)'}` };
@@ -249,37 +385,41 @@
     return { ...result, skipNav: !result?.ok };
   }
 
-  function diagnosticsText() { // Used by the cooking diagnostics panel so mobile players can inspect the quest without a console.
-    const state = ensureQuestState(); // Used as the current progression snapshot.
-    const matching = state?.status === 'active' ? matchingPie(state) : null; // Used to show whether a valid turn-in is presently detected.
-    const target = state?.target; // Used to render the saved target and hidden feasibility witness.
+  function diagnosticsText() {
+    const state = ensureQuestState();
+    const matching = state?.status === 'active' ? matchingMeal(state) : null;
+    const target = state?.target;
     return [
       'Banubu quest:',
       `  installed=${installed}`,
       `  status=${state?.status || 'unavailable'} stage=${state?.stage ?? '-'}`,
-      `  requested=${(target?.requiredEffects || []).map(effectLabel).join(' + ') || 'none'}`,
+      `  questType=${target?.questType || 'none'}`,
+      `  requested=${joinedEffectLabels(target)}`,
+      `  minimumStrength=${target ? strengthLabel(target.minStacks || 1) + ' (+' + (target.minStacks || 1) + ')' : 'none'}`,
       `  proofFish=${(target?.solutionFishKeys || []).join(', ') || 'none'}`,
-      `  matchingPie=${matching?.key || 'none'}`,
+      `  proofTeaBlends=${(target?.solutionBlendEffects || []).join(', ') || 'none'}`,
+      `  proofTeaTrios=${(target?.solutionReagentTrios || []).map(trio => '[' + trio.join(',') + ']').join(' ') || 'none'}`,
+      `  matchingMeal=${matching?.key || 'none'}`,
+      `  nextTarget=${state?.nextTarget ? joinedEffectLabels(state.nextTarget) : 'none'}`,
       `  lastAction=${debugState.lastAction || 'none'}`,
       `  lastError=${debugState.lastError || 'none'}`,
     ].join('\n');
   }
 
-  function install() { // Used to register the quest only after DialogueContent, CookingSystem, key items, and static content are ready.
+  function install() {
     if (installed) return true;
     if (!global.DialogueContent?.registerTreeProvider || !global.DialogueContent?.registerActionHandler
-      || !global.CookingSystem?.unlockRecipe || !global.KeyItemSystem || !CONTENT()) return false;
-    CONTENT().ensureCookingRecipe?.();
+      || !global.CookingSystem?.unlockRecipe || !global.KeyItemSystem || !global.TeaGrinder?.allBlendEffects || !CONTENT()) return false;
+    CONTENT().ensureCookingRecipes?.();
+    global.TeaGrinder.registerItemDefs?.();
     global.DialogueContent.registerTreeProvider(CONTENT().NPC_ID, selectTree);
     global.DialogueContent.registerActionHandler('banubuQuest', actionHandler);
-    for (const fallback of CONTENT().stageDefaults || []) { // Used to make feature gates/query labels available even before the player earns a reward.
-      global.KeyItemSystem.define(fallback.reward);
-    }
+    for (const fallback of CONTENT().stageDefaults || []) if (fallback?.reward?.id) global.KeyItemSystem.define(fallback.reward);
     installed = true;
     return true;
   }
 
-  function beginInstallPolling() { // Used to survive script/game initialization ordering without adding per-frame checks.
+  function beginInstallPolling() {
     if (install()) return;
     installStartedAt = Date.now();
     installTimer = global.setInterval(() => {
@@ -295,9 +435,12 @@
     selectTree,
     ensureQuestState,
     stageDefinition,
-    allFeasibleTargets,
+    allFeasibleTargets: allFeasibleFishTargets,
+    allFeasibleFishTargets,
+    allFeasibleTeaTargets,
     effectSetForFishKeys,
     matchingPie,
+    matchingMeal,
     unlockRecipe,
     acceptQuest,
     turnInQuest,
