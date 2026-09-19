@@ -10,20 +10,22 @@ function renderNodeEditor(){
 }
 function renderTreeEditor(panel,body,tree){
   state.nodeId=null;state.editorMode='tree';$('nodeEditorTitle').textContent=`Tree settings · ${tree.label||tree.id}`;
-  const questMeta=tree.banubuQuest&&typeof tree.banubuQuest==='object'?tree.banubuQuest:null; // Used to expose Banubu's runtime routing metadata beside ordinary tree settings.
-  const questPhase=questMeta?.phase||''; // Used to conditionally show reward/difficulty fields only on canonical offer trees.
-  const reward=questMeta?.reward&&typeof questMeta.reward==='object'?questMeta.reward:{}; // Used to edit the key-item reward attached to an offer tree.
+  const questMeta=tree.banubuQuest&&typeof tree.banubuQuest==='object'?tree.banubuQuest:null; // Used to expose Banubu's runtime routing/difficulty metadata beside ordinary tree settings.
+  const questPhase=questMeta?.phase||''; // Used to conditionally show request authoring fields on offer trees.
+  const reward=questMeta?.reward&&typeof questMeta.reward==='object'?questMeta.reward:{}; // Used to edit the optional key-item reward attached to an offer tree.
   const banubuSection=questMeta?`
     <div class="editField full editorSection">
-      <label>Banubu fish-pie quest routing</label>
-      <div class="editorNote">Runtime chooses these trees by phase + stage. Offer trees also own the requested buff-count difficulty and key-item reward.</div>
+      <label>Banubu quest routing</label>
+      <div class="editorNote">Banubu does not use ordinary daily/situational chatter. Runtime chooses one of these authored trees by phase + stage. Offer trees own recipe type, requested buff count, minimum stack strength, and an optional key-item reward.</div>
       <div class="fieldGrid">
-        <div><label for="editBanubuPhase">Phase</label><select id="editBanubuPhase">${['intro','offer','active','ready','finished'].map(value=>`<option value="${value}"${questPhase===value?' selected':''}>${value}</option>`).join('')}</select></div>
-        <div><label for="editBanubuStage">Stage</label><input id="editBanubuStage" type="number" min="0" max="6" step="1" value="${Number(questMeta.stage)||0}"></div>
+        <div><label for="editBanubuPhase">Phase</label><select id="editBanubuPhase">${['intro','offer','active','ready','blocked'].map(value=>`<option value="${value}"${questPhase===value?' selected':''}>${value}</option>`).join('')}</select></div>
+        <div><label for="editBanubuStage">Stage</label><input id="editBanubuStage" type="number" min="0" max="5" step="1" value="${Number(questMeta.stage)||0}"></div>
         ${questPhase==='offer'?`
+          <div><label for="editBanubuQuestType">Requested recipe</label><select id="editBanubuQuestType"><option value="threeFishPie"${questMeta.questType!=='nineLeafTea'?' selected':''}>Three-Fish Pie</option><option value="nineLeafTea"${questMeta.questType==='nineLeafTea'?' selected':''}>Nine Leaf Tea</option></select></div>
           <div><label for="editBanubuBuffCount">Requested distinct buffs</label><input id="editBanubuBuffCount" type="number" min="1" max="3" step="1" value="${Math.max(1,Math.min(3,Number(questMeta.buffCount)||1))}"></div>
-          <div><label for="editBanubuRewardScope">Reward save scope</label><select id="editBanubuRewardScope"><option value="character"${reward.scope!=='world'?' selected':''}>character</option><option value="world"${reward.scope==='world'?' selected':''}>world</option></select></div>
-          <div><label for="editBanubuRewardId">Reward key-item ID</label><input id="editBanubuRewardId" value="${esc(reward.id||'')}" placeholder="war_paint_kit"></div>
+          <div><label for="editBanubuMinStacks">Minimum stacks per requested buff</label><input id="editBanubuMinStacks" type="number" min="1" max="9" step="1" value="${Math.max(1,Math.min(9,Number(questMeta.minStacks)||1))}"><div class="editorNote">Cooking strength: 1 Mild · 2 Hearty · 3 Concentrated · 4 Potent · 5+ Exceptional.</div></div>
+          <div><label for="editBanubuRewardScope">Optional reward save scope</label><select id="editBanubuRewardScope"><option value="character"${reward.scope!=='world'?' selected':''}>character</option><option value="world"${reward.scope==='world'?' selected':''}>world</option></select></div>
+          <div><label for="editBanubuRewardId">Optional reward key-item ID</label><input id="editBanubuRewardId" value="${esc(reward.id||'')}" placeholder="blank = no key-item reward"></div>
           <div><label for="editBanubuRewardLabel">Reward display name</label><input id="editBanubuRewardLabel" value="${esc(reward.label||'')}" placeholder="War-Paint Kit"></div>
           <div><label for="editBanubuFeatureId">Future feature ID</label><input id="editBanubuFeatureId" value="${esc(reward.featureId||'')}" placeholder="war_paint"></div>
         `:''}
@@ -48,14 +50,16 @@ function renderTreeEditor(panel,body,tree){
     $('editBanubuPhase')?.addEventListener('change',e=>commitMutation('Changed Banubu quest phase',()=>{
       tree.banubuQuest.phase=e.target.value; // Used by BanubuQuestline.selectTree to route this tree.
       if(e.target.value==='intro')tree.banubuQuest.stage=0;
-      else if(e.target.value==='finished')tree.banubuQuest.stage=6;
+      else if(e.target.value==='blocked'&&Number(tree.banubuQuest.stage)<3)tree.banubuQuest.stage=3;
       else if(!(Number(tree.banubuQuest.stage)>=1&&Number(tree.banubuQuest.stage)<=5))tree.banubuQuest.stage=1;
     },{render:'all'}));
-    $('editBanubuStage')?.addEventListener('change',e=>commitMutation('Changed Banubu quest stage',()=>{tree.banubuQuest.stage=Math.max(0,Math.min(6,parseInt(e.target.value)||0))},{render:'all'}));
+    $('editBanubuStage')?.addEventListener('change',e=>commitMutation('Changed Banubu quest stage',()=>{tree.banubuQuest.stage=Math.max(0,Math.min(5,parseInt(e.target.value)||0))},{render:'all'}));
+    $('editBanubuQuestType')?.addEventListener('change',e=>commitMutation('Changed Banubu requested recipe',()=>{tree.banubuQuest.questType=e.target.value==='nineLeafTea'?'nineLeafTea':'threeFishPie'},{render:'all'}));
     $('editBanubuBuffCount')?.addEventListener('change',e=>commitMutation('Changed Banubu requested buff count',()=>{tree.banubuQuest.buffCount=Math.max(1,Math.min(3,parseInt(e.target.value)||1))},{render:'all'}));
-    const ensureReward=()=>tree.banubuQuest.reward||(tree.banubuQuest.reward={}); // Used by every reward field so an imported partial offer tree remains editable.
+    $('editBanubuMinStacks')?.addEventListener('change',e=>commitMutation('Changed Banubu minimum buff strength',()=>{tree.banubuQuest.minStacks=Math.max(1,Math.min(9,parseInt(e.target.value)||1))},{render:'all'}));
+    const ensureReward=()=>tree.banubuQuest.reward||(tree.banubuQuest.reward={}); // Used only when an optional reward field is actually edited.
     $('editBanubuRewardScope')?.addEventListener('change',e=>commitMutation('Changed Banubu reward save scope',()=>{ensureReward().scope=e.target.value==='world'?'world':'character'},{render:'all'}));
-    $('editBanubuRewardId')?.addEventListener('input',e=>commitMutation('Edited Banubu reward ID',()=>{ensureReward().id=e.target.value.trim()},{render:'none',coalesceKey:`banubu-reward-id:${tree.id}`,log:false}));
+    $('editBanubuRewardId')?.addEventListener('input',e=>commitMutation('Edited Banubu reward ID',()=>{const value=e.target.value.trim();if(value)ensureReward().id=value;else if(tree.banubuQuest.reward)delete tree.banubuQuest.reward.id},{render:'none',coalesceKey:`banubu-reward-id:${tree.id}`,log:false}));
     $('editBanubuRewardId')?.addEventListener('blur',()=>renderAll());
     $('editBanubuRewardLabel')?.addEventListener('input',e=>commitMutation('Edited Banubu reward label',()=>{ensureReward().label=e.target.value},{render:'none',coalesceKey:`banubu-reward-label:${tree.id}`,log:false}));
     $('editBanubuRewardLabel')?.addEventListener('blur',()=>renderAll());
