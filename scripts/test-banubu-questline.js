@@ -3,11 +3,11 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-const repoRoot = path.resolve(__dirname, '..'); // Used to load the exact runtime/editor files under test.
-const read = relativePath => fs.readFileSync(path.join(repoRoot, relativePath), 'utf8'); // Used by syntax/content integration assertions below.
+const repoRoot = path.resolve(__dirname, '..'); // Used to load the exact branch files under test.
+const read = relativePath => fs.readFileSync(path.join(repoRoot, relativePath), 'utf8'); // Used by VM execution and source integration assertions.
 
 function memoryStorage(initial = {}) {
-  const values = new Map(Object.entries(initial)); // Used as the browser-localStorage backing map in the VM runtime.
+  const values = new Map(Object.entries(initial)); // Used as the browser-localStorage backing map for save-scope assertions.
   return {
     getItem(key) { return values.has(key) ? values.get(key) : null; },
     setItem(key, value) { values.set(key, String(value)); },
@@ -15,32 +15,39 @@ function memoryStorage(initial = {}) {
   };
 }
 
-const saveMeta = { // Used to prove character keys and world keys land in different persistent records.
+const saveMeta = {
   characters: [{ id: 'char_test', gearInventory: { keyItems: [] } }],
-  worlds: [{
-    id: 'world_test',
-    keyItems: [],
-    members: {
-      char_test: { questProgress: {}, cookingState: {} },
-    },
-  }],
+  worlds: [{ id: 'world_test', keyItems: [], members: { char_test: { questProgress: {}, cookingState: {} } } }],
 };
-const storage = memoryStorage({ hobunjiSaveMeta: JSON.stringify(saveMeta) }); // Used as BanubuQuestline/KeyItemSystem's real persistence surface.
-let cookedInventory = []; // Used to feed exact quest-valid pies into BanubuQuestline.matchingPie.
-let consumedKeys = []; // Used to verify a turn-in consumes exactly the qualifying cooked stack.
-let unlockedRecipeId = null; // Used to verify the intro action unlocks the authored Three-Fish Pie template.
+const storage = memoryStorage({ hobunjiSaveMeta: JSON.stringify(saveMeta) }); // Used by KeyItemSystem and BanubuQuestline's real persistence paths.
+const inventory = { herbA: 5, herbB: 5, herbC: 5, herbD: 5 }; // Used by TeaGrinder station/item registration and reward assertions.
+let cookedInventory = []; // Used to feed exact qualifying Pie/Tea stacks into the real quest controller.
+const consumedKeys = []; // Used to prove each turn-in consumes one actual cooked stack.
+const unlockedRecipeIds = new Set(); // Used to prove Banubu teaches each recipe at the intended transition.
+const registeredActions = new Map(); // Used to verify DialogueContent receives the Banubu action handler.
+const registeredProviders = new Map(); // Used to verify DialogueContent receives the Banubu tree provider.
 
-const fishDefinitions = [ // Used by feasible-target enumeration; each entry mirrors CookingSystem's live fish ingredient shape.
+const fishDefinitions = [
   { key: 'fish_strength', definition: { label: 'Strength Fish', cookingCategories: ['fish'], cookingPrimaryEffect: 'strength' } },
   { key: 'fish_speed', definition: { label: 'Speed Fish', cookingCategories: ['fish'], cookingPrimaryEffect: 'speed' } },
-  { key: 'fish_fortitude', definition: { label: 'Fortitude Fish', cookingCategories: ['fish'], cookingPrimaryEffect: 'fortitude' } },
-];
+  { key: 'fish_vigor', definition: { label: 'Vigor Fish', cookingCategories: ['fish'], cookingPrimaryEffect: 'vigor' } },
+]; // Used to guarantee a concrete Three-Fish Pie with exactly three distinct buffs.
 
-const context = { // Used as the minimal browser-like VM context for the real Banubu runtime modules.
+const alchemyRecipes = {
+  teaStrength: { id: 'teaStrength', label: 'Strength Potion', application: 'buff', useMode: 'drink', stat: 'outgoingDamage' },
+  teaSpeed: { id: 'teaSpeed', label: 'Speed Potion', application: 'buff', useMode: 'drink', stat: 'movementSpeed' },
+  healing: { id: 'healing', label: 'Healing Potion', application: 'restoreHealth', useMode: 'drink', stat: null },
+  frenzy: { id: 'frenzy', label: 'Frenzy', application: 'narcotic', useMode: 'drink', stat: 'attackSpeed' },
+  love: { id: 'love', label: 'Love Potion', application: 'buff', useMode: 'drink', stat: 'positiveFavor' },
+}; // Used to prove Tea Grinder narrows Alchemy's legal reaction space rather than accepting every potion outcome.
+
+const context = {
   console,
   JSON,
   Math,
   Date,
+  setInterval,
+  clearInterval,
   localStorage: storage,
   __hobunjiPlayerProfile: {
     characterId: 'char_test',
@@ -49,154 +56,222 @@ const context = { // Used as the minimal browser-like VM context for the real Ba
     questProgress: {},
     cookingState: {},
   },
-  HobunjiCookingData: { recipes: [] },
+  HobunjiCookingData: { recipes: [], categoryLabels: {}, effectLabels: { strength: 'Strength', speed: 'Speed', vigor: 'Vigor', fortitude: 'Fortitude', perception: 'Perception' } },
+  GameRandom: { random: () => 0 },
+  SkillSystem: { level: () => 10 },
+  DialogueContent: {
+    registerTreeProvider(id, fn) { registeredProviders.set(id, fn); },
+    registerActionHandler(id, fn) { registeredActions.set(id, fn); },
+  },
 };
 context.window = context;
-context.CookingSystem = { // Used to exercise quest generation, recipe unlock, persistence, and turn-in against deterministic test data.
+
+context.CookingSystem = {
   listIngredientDefinitions(category) { return category === 'fish' ? fishDefinitions : []; },
-  effectLabel(key) { return key[0].toUpperCase() + key.slice(1); },
-  listCookedInventory() { return cookedInventory; },
+  effectLabel(key) { return context.HobunjiCookingData.effectLabels[key] || key; },
+  effectStrengthLabel(stacks) {
+    const amount = Number(stacks) || 0;
+    return amount >= 5 ? 'Exceptional' : amount >= 4 ? 'Potent' : amount >= 3 ? 'Concentrated' : amount >= 2 ? 'Hearty' : amount >= 1 ? 'Mild' : 'Trace';
+  },
+  formatEffectStrength(key, stacks) { return `${this.effectStrengthLabel(stacks)} ${this.effectLabel(key)} (+${stacks})`; },
+  listCookedInventory() { return cookedInventory.filter(entry => entry.count > 0); },
   consumeCookedInventoryItem(key, amount) {
-    const entry = cookedInventory.find(item => item.key === key); // Used to reject a stale quest turn-in like the real cooking inventory adapter.
-    if (!entry || entry.count < amount) return { ok: false, message: 'missing' };
+    const entry = cookedInventory.find(item => item.key === key);
+    if (!entry || entry.count < amount) return { ok: false, message: 'missing cooked item' };
     entry.count -= amount;
     consumedKeys.push(key);
     return { ok: true, key, amount };
   },
-  unlockRecipe(recipeId) { unlockedRecipeId = recipeId; return { ok: true, recipeId }; },
-  serialize() { return { unlockedRecipeIds: unlockedRecipeId ? [unlockedRecipeId] : [] }; },
+  unlockRecipe(recipeId) { unlockedRecipeIds.add(recipeId); return { ok: true, recipeId }; },
+  recordItemQuality() {},
+  serialize() { return { unlockedRecipeIds: [...unlockedRecipeIds] }; },
+};
+
+context.AlchemySystem = {
+  REAGENT_DEFS: Object.fromEntries(['herbA','herbB','herbC','herbD'].map((key, index) => [key, { label: key, icon: '🌿', traits: { humour: ['Flesh','Bones','Breath','Senses'][index], drive: 'Greaten', magnetism: ['Earth','Wind','Fire','Water'][index] } }])),
+  enumerateRecipes(keys) {
+    if (!Array.isArray(keys) || keys.length !== 3 || new Set(keys).size !== 3) return [];
+    return Object.values(alchemyRecipes).map(recipe => ({ recipeId: recipe.id, recipe, assignments: [] }));
+  },
+  chooseOutcome(outcomes, targetId) { return outcomes.find(outcome => outcome.recipeId === targetId) || outcomes[0] || null; },
+  targetingProbability() { return 0.75; },
 };
 
 vm.createContext(context);
-vm.runInContext(read('docs/js/banubu-quest-content.js'), context, { filename: 'banubu-quest-content.js' });
 vm.runInContext(read('docs/js/key-item-system.js'), context, { filename: 'key-item-system.js' });
+vm.runInContext(read('docs/js/tea-grinder.js'), context, { filename: 'tea-grinder.js' });
+context.TeaGrinder.init({
+  ITEM_DEFS: {},
+  inventory,
+  clampInventoryStack(key) { if ((inventory[key] || 0) <= 0) delete inventory[key]; },
+  refreshItemScroll() {},
+  buildInventoryGrid() {},
+  refreshActionBar() {},
+  saveMemberWorldData() {},
+  showToast() {},
+  random: () => 0,
+  setInteractionBlocked() {},
+});
+vm.runInContext(read('docs/js/banubu-quest-content.js'), context, { filename: 'banubu-quest-content.js' });
 vm.runInContext(read('docs/js/banubu-questline.js'), context, { filename: 'banubu-questline.js' });
 
-const content = context.BanubuQuestContent; // Used to inspect the authored recipe and five-stage defaults.
-const questline = context.BanubuQuestline; // Used to execute the real quest-state and feasibility logic.
-assert(content && questline && context.KeyItemSystem, 'Banubu content, questline, and key-item modules must all initialize');
+const content = context.BanubuQuestContent;
+const questline = context.BanubuQuestline;
+assert(content && questline && context.TeaGrinder && context.KeyItemSystem, 'all Banubu runtime modules must initialize');
+assert.strictEqual(questline.install(), true, 'Banubu quest controller must register once dependencies exist');
+assert(registeredProviders.has('banubu') && registeredActions.has('banubuQuest'), 'Banubu dialogue provider/action handler must be registered');
 
-assert.strictEqual(content.recipe.lockedByDefault, true, 'Three-Fish Pie must remain hidden until Banubu teaches it');
-assert.strictEqual(content.recipe.slots.length, 3, 'Three-Fish Pie must require exactly three ingredient slots');
-assert(content.recipe.slots.every(slot => slot.required && slot.accepts.length === 1 && slot.accepts[0] === 'fish'), 'all three pie slots must require fish');
-assert.strictEqual(content.stageDefaults.length, 5, 'Banubu must have exactly five sequential fish-pie quests');
-assert.deepStrictEqual(JSON.parse(JSON.stringify(content.stageDefaults[0].reward)), {
-  id: 'war_paint_kit',
-  label: 'War-Paint Kit',
-  scope: 'character',
-  featureId: 'war_paint',
-}, 'first reward must be the character-scoped War-Paint Kit');
+// Recipes: exactly three fish for Quest 1; exactly three Tea Blends + White Milk for Quest 2.
+assert.strictEqual(content.threeFishPieRecipe.slots.length, 3);
+assert(content.threeFishPieRecipe.slots.every(slot => slot.required && slot.accepts[0] === 'fish'));
+assert.strictEqual(content.nineLeafTeaRecipe.slots.length, 4);
+assert.strictEqual(content.nineLeafTeaRecipe.slots.filter(slot => slot.accepts[0] === 'teaBlend').length, 3);
+const milkSlot = content.nineLeafTeaRecipe.slots.find(slot => slot.accepts[0] === 'whiteMilk');
+assert(milkSlot?.required && milkSlot.contributesEffects === false, 'White Milk must be required but must not add an unrelated cooking buff');
+assert(context.HobunjiCookingData.recipes.some(recipe => recipe.id === content.THREE_FISH_PIE_RECIPE_ID));
+assert(context.HobunjiCookingData.recipes.some(recipe => recipe.id === content.NINE_LEAF_TEA_RECIPE_ID));
 
-for (const requestedCount of [1, 2, 3]) {
-  const targets = questline.allFeasibleTargets(requestedCount); // Used to prove target generation never invents a buff set without a concrete three-fish witness.
-  assert(targets.length > 0, `test fish catalog must provide at least one feasible ${requestedCount}-buff target`);
-  for (const target of targets) {
-    assert.strictEqual(target.solutionFishKeys.length, 3, 'every target must retain an actual three-fish proof recipe');
-    assert.deepStrictEqual(
-      JSON.parse(JSON.stringify(questline.effectSetForFishKeys(target.solutionFishKeys))),
-      JSON.parse(JSON.stringify(target.requiredEffects)),
-      'saved proof fish must actually produce the requested exact effect set',
-    );
-  }
-}
+// Tea Grinder must reuse alchemy legality but remove every non-food-buff outcome.
+const teaOutcomes = context.TeaGrinder.enumerateBlendOutcomes(['herbA','herbB','herbC']);
+assert.deepStrictEqual([...new Set(teaOutcomes.map(outcome => outcome.cookingEffect))].sort(), ['speed','strength']);
+assert(!teaOutcomes.some(outcome => ['healing','frenzy','love'].includes(outcome.recipeId)), 'healing, narcotic, and unmappable favor reactions must never become Tea Blends');
+const blendWitnesses = context.TeaGrinder.allBlendEffects();
+assert.deepStrictEqual(blendWitnesses.map(entry => entry.effect).sort(), ['speed','strength']);
+assert.strictEqual(context.TeaGrinder.BLEND_STACKS, 3);
+context.TeaGrinder.registerItemDefs();
+assert.strictEqual(context.TeaGrinder.blendItemKey('strength'), 'teaBlend_strength');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(context.TeaGrinder.STAT_TO_COOKING_EFFECT)).outgoingDamage, 'strength');
 
-const banubuRecord = { id: 'banubu', dialogueTrees: content.deepClone(content.dialogueTrees) }; // Used as the same authored NPC-tree shape supplied by LocalDBOverrides at runtime.
-let state = questline.ensureQuestState(); // Used to verify the introduction is the first state for a fresh world member.
+// Composed Banubu database must discard generic/daily chatter and expose only the authored quest routing trees.
+const composedDb = { npcs: [{ id: 'banubu', dialogueTrees: [{ id: 'old_daily_chat', label: 'generic' }], phrasePools: [{ id: 'old_morning_pool' }], events: [{ id: 'old_weather_event' }] }] };
+content.mergeDialogueTreesIntoDatabase(composedDb);
+const banubu = composedDb.npcs[0];
+assert(banubu.dialogueTrees.length === content.dialogueTrees.length && banubu.dialogueTrees.every(tree => tree.banubuQuest), 'Banubu must expose only quest-routed dialogue trees');
+assert.deepStrictEqual(banubu.phrasePools, []);
+assert.deepStrictEqual(banubu.events, []);
+assert(!banubu.dialogueTrees.some(tree => Number(tree.banubuQuest?.stage) > 2 && tree.banubuQuest?.phase === 'offer'), 'quests 3–5 must have no offer trees');
+assert(banubu.dialogueTrees.some(tree => tree.banubuQuest?.phase === 'blocked' && tree.banubuQuest?.stage === 3), 'stage 3 must be an explicit authoring block');
+
+// Quest 1 target is generated before intro text resolves, so its three buff names are real and stable.
+let state = questline.ensureQuestState();
 assert.strictEqual(state.status, 'intro');
-assert.strictEqual(questline.selectTree(banubuRecord).banubuQuest.phase, 'intro');
-
-assert.strictEqual(questline.unlockRecipe().ok, true, 'intro action must unlock the pie recipe');
-assert.strictEqual(unlockedRecipeId, content.RECIPE_ID);
-state = questline.ensureQuestState();
+const intro = questline.selectTree(banubu);
+assert.strictEqual(intro.banubuQuest.phase, 'intro');
+assert.strictEqual(state.target.questType, 'threeFishPie');
+assert.strictEqual(state.target.requiredEffects.length, 3);
+assert.strictEqual(state.target.solutionFishKeys.length, 3);
+assert.strictEqual(context.CookingSystem.effectStrengthLabel(3), 'Concentrated');
+assert.strictEqual(questline.unlockRecipe(banubu).ok, true);
+assert(unlockedRecipeIds.has(content.THREE_FISH_PIE_RECIPE_ID));
 assert.strictEqual(state.status, 'offer');
 assert.strictEqual(state.stage, 1);
-
-const stageOneOffer = questline.selectTree(banubuRecord); // Used to force and persist a feasible randomized stage-one request.
-assert.strictEqual(stageOneOffer.banubuQuest.phase, 'offer');
-assert.strictEqual(state.target.requiredEffects.length, 1, 'stage one defaults to one requested distinct buff');
-assert.strictEqual(questline.acceptQuest(banubuRecord, 1).ok, true);
-assert.strictEqual(state.status, 'active');
+assert.strictEqual(questline.acceptQuest(banubu, 1).ok, true);
 
 cookedInventory = [{
-  key: 'food_banubu_stage_1',
+  key: 'food_banubu_q1',
   count: 1,
   definition: {
-    recipeId: content.RECIPE_ID,
+    recipeId: content.THREE_FISH_PIE_RECIPE_ID,
     foodEffects: Object.fromEntries(state.target.requiredEffects.map(effect => [effect, 1])),
   },
-}]; // Used as a real matching Three-Fish Pie stack for stage-one turn-in.
-assert(questline.matchingPie(state), 'an exact-effect Three-Fish Pie must be recognized as a valid turn-in');
-const stageOneTurnIn = questline.turnInQuest(banubuRecord, 1); // Used to verify consumption, reward scope, and sequential advancement together.
-assert.strictEqual(stageOneTurnIn.ok, true);
-assert.strictEqual(consumedKeys.length, 1, 'stage-one turn-in must consume exactly one qualifying pie');
-assert(context.__hobunjiPlayerProfile.gearInventory.keyItems.includes('war_paint_kit'), 'War-Paint Kit must appear in live character gear ownership');
-let persisted = JSON.parse(storage.getItem('hobunjiSaveMeta')); // Used to inspect the actual save-location chosen by KeyItemSystem.
-assert(persisted.characters[0].gearInventory.keyItems.includes('war_paint_kit'), 'War-Paint Kit must persist on the character save');
-assert(!persisted.worlds[0].keyItems.includes('war_paint_kit'), 'War-Paint Kit must not leak into world-scoped ownership');
+}];
+assert(questline.matchingMeal(state), 'exact three-buff Three-Fish Pie must satisfy Quest 1');
+assert.strictEqual(questline.turnInQuest(banubu, 1).ok, true);
+assert.strictEqual(consumedKeys.length, 1);
+assert(context.__hobunjiPlayerProfile.gearInventory.keyItems.includes('war_paint_kit'), 'War-Paint Kit must be character-scoped');
+assert.strictEqual(inventory.teaGrinderFurniture, 1, 'Quest 1 must give one placeable Tea Grinder');
+assert(unlockedRecipeIds.has(content.NINE_LEAF_TEA_RECIPE_ID), 'Quest 1 turn-in must teach Nine Leaf Tea');
+state = questline.ensureQuestState();
 assert.strictEqual(state.status, 'offer');
-assert.strictEqual(state.stage, 2, 'stage one must advance directly to stage two');
+assert.strictEqual(state.stage, 2);
+assert.strictEqual(state.target.questType, 'nineLeafTea');
+assert.strictEqual(state.target.requiredEffects.length, 2);
+assert.strictEqual(state.target.minStacks, 3);
+assert.strictEqual(state.target.solutionBlendEffects.length, 3);
+assert.strictEqual(state.target.solutionReagentTrios.length, 3);
+assert(state.target.solutionReagentTrios.every(trio => trio.length === 3), 'every Tea Blend proof must be an actual three-herb selection');
 
-const stageTwoOffer = questline.selectTree(banubuRecord); // Used to roll the second quest's default two-buff request.
-assert.strictEqual(stageTwoOffer.banubuQuest.phase, 'offer');
-assert.strictEqual(state.target.requiredEffects.length, 2, 'stage two defaults to two requested distinct buffs');
-assert.strictEqual(questline.acceptQuest(banubuRecord, 2).ok, true);
+// Quest 2 rejects under-strength tea even when the effect names are correct.
+assert.strictEqual(questline.acceptQuest(banubu, 2).ok, true);
 cookedInventory = [{
-  key: 'food_banubu_stage_2',
+  key: 'food_banubu_q2_weak',
   count: 1,
   definition: {
-    recipeId: content.RECIPE_ID,
-    foodEffects: Object.fromEntries(state.target.requiredEffects.map(effect => [effect, 1])),
+    recipeId: content.NINE_LEAF_TEA_RECIPE_ID,
+    foodEffects: Object.fromEntries(state.target.requiredEffects.map(effect => [effect, 2])),
   },
-}]; // Used as the exact two-buff pie needed to exercise the first world-scoped placeholder reward.
-assert.strictEqual(questline.turnInQuest(banubuRecord, 2).ok, true);
-persisted = JSON.parse(storage.getItem('hobunjiSaveMeta'));
-assert(persisted.worlds[0].keyItems.includes('banubu_key_2'), 'stage-two placeholder key must persist to the world save');
-assert(!context.__hobunjiPlayerProfile.gearInventory.keyItems.includes('banubu_key_2'), 'world-scoped keys must not travel with the character');
+}];
+assert.strictEqual(questline.matchingMeal(state), null, 'Hearty (+2) is below the Concentrated (+3) Quest 2 requirement');
+cookedInventory = [{
+  key: 'food_banubu_q2',
+  count: 1,
+  definition: {
+    recipeId: content.NINE_LEAF_TEA_RECIPE_ID,
+    foodEffects: Object.fromEntries(state.target.requiredEffects.map(effect => [effect, 3])),
+  },
+}];
+assert(questline.matchingMeal(state), 'Concentrated (+3) on both requested buffs must satisfy Quest 2');
+assert.strictEqual(questline.turnInQuest(banubu, 2).ok, true);
+assert.strictEqual(state.status, 'blocked');
+assert.strictEqual(state.stage, 3);
+assert.strictEqual(questline.selectTree(banubu).banubuQuest.phase, 'blocked');
+assert.strictEqual(questline.acceptQuest(banubu, 3).ok, false, 'Quest 3 must remain mechanically unavailable');
 
-const indexHtml = read('docs/index.html'); // Used to verify runtime module ordering before game.js initializes systems and database state.
-assert(indexHtml.indexOf('banubu-quest-content.js') < indexHtml.indexOf('local-db-overrides.js'), 'Banubu quest content must load before NPC database composition');
-assert(indexHtml.indexOf('cooking-system.js') < indexHtml.indexOf('banubu-questline.js'), 'CookingSystem must exist before Banubu questline installs');
-assert(indexHtml.indexOf('dialogue-content.js') < indexHtml.indexOf('banubu-questline.js'), 'DialogueContent must exist before Banubu questline installs');
-assert(indexHtml.indexOf('key-item-system.js') < indexHtml.indexOf('banubu-questline.js'), 'KeyItemSystem must exist before Banubu questline installs');
+// Save-scope assertion for the first reward.
+const persisted = JSON.parse(storage.getItem('hobunjiSaveMeta'));
+assert(persisted.characters[0].gearInventory.keyItems.includes('war_paint_kit'));
+assert(!persisted.worlds[0].keyItems.includes('war_paint_kit'));
 
-const cavernSource = read('docs/js/cavern-generator.js'); // Used to verify the dedicated home cavern remains single-room, non-combat, and station-backed.
-assert(cavernSource.includes("mapId === 'map_i_den_banubu'"), 'cavern generator must recognize Banubu home map id');
-assert(cavernSource.includes('branchCount: 0'), 'Banubu home must use the zero-branch single-room cavern carve');
-assert(cavernSource.includes("'station_banubu_cave_awake'") && cavernSource.includes("'station_banubu_cave_sleep'"), 'Banubu cavern must expose distinct awake and sleeping stations');
-assert(cavernSource.includes('oreRocks: [], creatureSpawns: []'), 'Banubu home cavern must not inherit den combat/decor spawns');
+// Canonical source database must itself be clean so the Dialogue Editor does not resurrect generated daily chatter.
+const npcDatabase = JSON.parse(read('docs/config/npcs/hobunji-starter-npc-database.json'));
+const sourceBanubu = npcDatabase.npcs.find(npc => npc.id === 'banubu');
+assert(sourceBanubu);
+assert.deepStrictEqual(sourceBanubu.dialogueTrees, []);
+assert.deepStrictEqual(sourceBanubu.phrasePools, []);
+assert.match(sourceBanubu.loreBackground, /Nine Leaf Tea/);
+assert.match(sourceBanubu.loreBackground, /blocked/i);
+assert(!/Fifteen Fish Pie|morning pool|too hungry to hunt/i.test(JSON.stringify(sourceBanubu)));
 
-const schedule = require('../docs/config/npcs/schedule-overrides.json'); // Used to verify the Sleeping Grehlr never receives an active waking schedule.
-const banubuSchedule = (schedule.scheduleReplacements || []).find(entry => entry.npcId === 'banubu'); // Used as the authored permanent-sleep schedule under test.
-assert(banubuSchedule, 'Banubu must have a schedule replacement');
-assert.strictEqual(banubuSchedule.scheduleHooks.defaultMapId, 'map_i_den_banubu');
-assert.strictEqual(banubuSchedule.scheduleHooks.defaultStationId, 'station_banubu_cave_sleep', 'Banubu must default to his sleeping spot');
-assert.strictEqual(banubuSchedule.scheduleHooks.rules.length, 1, 'Banubu must have only one always-sleeping schedule rule');
-assert.strictEqual(banubuSchedule.scheduleHooks.rules[0].from, '00:00');
-assert.strictEqual(banubuSchedule.scheduleHooks.rules[0].to, '24:00', 'exclusive schedule endpoint must cover the final minute of the day');
-assert.strictEqual(banubuSchedule.scheduleHooks.rules[0].stationId, 'station_banubu_cave_sleep');
-assert(!banubuSchedule.scheduleHooks.rules.some(rule => rule.stationId === 'station_banubu_cave_awake'), 'Banubu awake schedule must remain disabled indefinitely');
-assert(cavernSource.includes(`id: 'station_banubu_cave_sleep'`) && cavernSource.includes(`pose: 'lie'`), 'Banubu sleeping station must use the standard lying pose');
+// Runtime integration: processor placement, module order, shared strength vocabulary, and editor controls.
+const gameSource = read('docs/game.js');
+assert.match(gameSource, /teaGrinder:[\s\S]{0,420}specialMode:\s*'teaGrinder'/);
+assert.match(gameSource, /TeaGrinder\?\.init\(/);
+assert.match(gameSource, /def\.specialMode === 'teaGrinder'[\s\S]{0,260}TeaGrinder\?\.open/);
+assert.match(read('docs/js/procedural-furniture.js'), /CATALOG\.teaGrinder/);
 
-const npcDatabase = JSON.parse(read('docs/config/npcs/hobunji-starter-npc-database.json')); // Used to verify Banubu's canonical lore lives in the real NPC source rather than only in a runtime overlay.
-const banubuSource = npcDatabase.npcs.find(npc => npc.id === 'banubu');
-assert(banubuSource, 'starter NPC database must contain Banubu');
-assert.match(banubuSource.bio, /Great Fey/);
-assert.match(banubuSource.bio, /not a biological need/);
-assert.match(banubuSource.loreBackground, /mindless wisps/);
-assert.match(banubuSource.loreBackground, /Three-Fish Pie/);
-assert(!/Fifteen Fish Pie|too hungry/i.test(JSON.stringify(banubuSource)), 'Banubu source metadata must not retain obsolete biological-hunger or fifteen-fish placeholder lore');
+const cookingSource = read('docs/js/cooking-system.js');
+assert.match(cookingSource, /minStacks:\s*3,\s*label:\s*'Concentrated'/);
+assert.match(cookingSource, /slot\.contributesEffects === false/);
+assert.match(cookingSource, /formatEffectStrength\(effect, amount\)/);
+assert.match(cookingSource, /effectStrengthLabel\(effect\.stacks\)/);
 
-const editorState = read('docs/tools/dialogue-editor/dialogue-editor-state.js'); // Used to verify dynamic quest tokens/actions are discoverable in the editor.
-const editorInspector = read('docs/tools/dialogue-editor/dialogue-editor-inspector.js'); // Used to verify all stage/reward authoring fields are present.
-assert(editorState.includes("type:'banubuQuest'"), 'Dialogue Editor must offer Banubu quest actions');
-for (const token of ['{{banubuRequestedBuffs}}', '{{banubuRewardName}}', '{{banubuQuestNumber}}']) {
+const indexHtml = read('docs/index.html');
+assert(indexHtml.indexOf('cooking-system.js') < indexHtml.indexOf('tea-grinder.js'));
+assert(indexHtml.indexOf('alchemy-system.js') < indexHtml.indexOf('tea-grinder.js'));
+assert(indexHtml.indexOf('tea-grinder.js') < indexHtml.indexOf('banubu-questline.js'));
+assert(indexHtml.indexOf('banubu-quest-content.js') < indexHtml.indexOf('local-db-overrides.js'));
+
+const editorState = read('docs/tools/dialogue-editor/dialogue-editor-state.js');
+const editorInspector = read('docs/tools/dialogue-editor/dialogue-editor-inspector.js');
+for (const token of ['{{banubuRequestedBuffs}}','{{banubuNextRequestedBuffs}}','{{banubuRequiredStrength}}','{{banubuNextRequiredStrength}}']) {
   assert(editorState.includes(token), `Dialogue Editor must expose ${token}`);
 }
-for (const control of ['editBanubuPhase','editBanubuStage','editBanubuBuffCount','editBanubuRewardId','editBanubuRewardLabel','editBanubuRewardScope','editBanubuFeatureId']) {
+for (const control of ['editBanubuPhase','editBanubuStage','editBanubuQuestType','editBanubuBuffCount','editBanubuMinStacks','editBanubuRewardId']) {
   assert(editorInspector.includes(control), `Dialogue Editor must expose ${control}`);
 }
+assert(editorInspector.includes("'blocked'"), 'Dialogue Editor must author the blocked phase');
 
-const namedAnimalSource = read('docs/js/animal-chathead-frame.js'); // Used to guard Banubu's existing animal portrait/chathead integration.
-assert(namedAnimalSource.includes("banubu: 'grehlr'"), 'Banubu must still use the Grehlr animal chathead path');
+// Sleeping Grehlr behavior remains permanent and talkability uses the existing animal-NPC bridge.
+const schedule = require('../docs/config/npcs/schedule-overrides.json');
+const banubuSchedule = (schedule.scheduleReplacements || []).find(entry => entry.npcId === 'banubu');
+assert.strictEqual(banubuSchedule.scheduleHooks.defaultStationId, 'station_banubu_cave_sleep');
+assert.strictEqual(banubuSchedule.scheduleHooks.rules.length, 1);
+assert.strictEqual(banubuSchedule.scheduleHooks.rules[0].from, '00:00');
+assert.strictEqual(banubuSchedule.scheduleHooks.rules[0].to, '24:00');
+assert(!banubuSchedule.scheduleHooks.rules.some(rule => rule.stationId === 'station_banubu_cave_awake'));
 
-console.log('Banubu cavern + animal dialogue + feasible fish-pie quest + scoped key-item regression checks passed');
+const speciesOverrides = require('../docs/config/npcs/species-overrides.json');
+assert.strictEqual(speciesOverrides.npcs.banubu.species, 'grehlr');
+assert.strictEqual(speciesOverrides.npcs.banubu.avatarExport.appearance.avatarType, 'animal');
+
+console.log('Banubu Pie → Tea → blocked progression, Tea Grinder filtering, culinary strength, dialogue cleanup, and save-scope checks passed');
