@@ -339,11 +339,17 @@
     if (document.fonts?.ready) {
       document.fonts.ready.then(() => { rasterCache.clear(); queueRefresh(); }).catch(() => {});
     }
+    // actionButtons()/actionButton()/combatButton() above only ever look inside
+    // #actionStack (itself inside #arcContainer, the static action-arc anchor in
+    // index.html), so watching document.body's entire subtree used to mean any
+    // unrelated DOM change anywhere on the page -- unrelated HUD/settings/menu
+    // updates, none of which this file cares about -- queued a full icon-fix pass
+    // for no reason.
     observer = new MutationObserver(() => {
       suppressFreshLegacyGlyphs();
       queueRefresh();
     });
-    observer.observe(document.body, {
+    observer.observe(document.getElementById('arcContainer') || document.body, {
       subtree:true,
       childList:true,
       characterData:true,

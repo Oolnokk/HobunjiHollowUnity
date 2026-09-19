@@ -368,11 +368,17 @@
     const activeCategory = document.querySelector('#mpInventory .inv-cat.active')?.dataset.cat || 'all';
     const visible = activeCategory === 'all';
     grid.querySelectorAll('.pack-clothing-tile').forEach((tile) => { tile.style.display = visible ? '' : 'none'; });
-    grid.querySelectorAll('.inventory-clothing-reserved-empty').forEach((empty) => empty.classList.remove('inventory-clothing-reserved-empty'));
-    if (visible) {
-      const emptySlots = [...grid.querySelectorAll('.inv-item-box.empty')];
-      emptySlots.slice(Math.max(0, emptySlots.length - sourceButtons.length)).forEach((empty) => empty.classList.add('inventory-clothing-reserved-empty'));
-    }
+    // decorate() (this function's ultimate caller) reruns on every childList change
+    // inside the pane. Unlike classList.toggle(), .remove()/.add() re-serialize and
+    // re-set the class attribute even when the token being removed/added is
+    // already absent/present, so unconditionally clearing-then-reapplying this
+    // class on the very same elements every single pass was a real per-frame
+    // attribute-mutation cost for no actual state change.
+    const reservedEmpty = [...grid.querySelectorAll('.inventory-clothing-reserved-empty')];
+    const emptySlots = visible ? [...grid.querySelectorAll('.inv-item-box.empty')] : [];
+    const nextReservedEmpty = emptySlots.slice(Math.max(0, emptySlots.length - sourceButtons.length));
+    for (const empty of reservedEmpty) if (!nextReservedEmpty.includes(empty)) empty.classList.remove('inventory-clothing-reserved-empty');
+    for (const empty of nextReservedEmpty) if (!empty.classList.contains('inventory-clothing-reserved-empty')) empty.classList.add('inventory-clothing-reserved-empty');
   }
 
   function decoratePackSlots() {
