@@ -317,6 +317,10 @@
     return (isLoaded(itemKey, owner) ? def.firePose : def.loadPose)?.neutral || null;
   }
 
+  function directionSwapFor(itemKey) {
+    return defFor(itemKey)?.toolEndFlip === true; // Legacy field now defines the ranged weapon's stance-wide PNG length direction, including Neutral and its projectile copy.
+  }
+
   const POSE_CHANNELS = ['x', 'y', 'z', 'pitch', 'yaw', 'roll', 'bodyYaw'];
   function lerpPose(a, b, amount) {
     const k = Math.max(0, Math.min(1, amount));
@@ -545,8 +549,11 @@
       new THREE.MeshBasicMaterial({ map: texture, transparent: true, alphaTest: 0.08, side: THREE.DoubleSide })
     );
     if (weaponSprite && !hasExactSourcePlane) plane.scale.y = pendingAspect;
-    if (hasExactSourcePlane && sourceTransform?.directionSwap === true) {
-      const uv = plane.geometry?.attributes?.uv; // Used to preserve the held weapon's PNG-local-Y direction reflection in the projectile copy.
+    const projectileDirectionSwap = def.rangedType === 'thrown'
+      ? def.toolEndFlip === true
+      : sourceTransform?.directionSwap === true; // Thrown direction is stance-wide; using config prevents a release-frame sampling race from reversing spear/knife projectiles.
+    if (weaponSprite && projectileDirectionSwap) {
+      const uv = plane.geometry?.attributes?.uv; // Used to preserve the ranged stance's PNG-local-Y direction reflection in the projectile copy.
       if (uv) {
         for (let i = 0; i < uv.count; i++) uv.setY(i, 1 - uv.getY(i));
         uv.needsUpdate = true;
@@ -1464,6 +1471,7 @@
     triggerPlayerVisual, playerWindupPoseProgress, releasePlayerHold, cancelPlayerHold,
     isLoaded, setLoaded, update, updateBanditAI, updateBanditVisual,
     cancelBanditAction, disposeOwner, playerLockRangePx, playerIdlePose: itemKey => idlePose(itemKey),
+    playerDirectionSwap: itemKey => directionSwapFor(itemKey),
     isPlayerAttacking: () => playerAction?.kind === 'fire', // Lets shared body-facing logic distinguish firing from the visually similar reload action.
     wouldHitHostile, playerAimSolution, actorHitbox,
     focusCandidates, focusedHostile, meleeReachCheck, canMeleeReach,
@@ -1477,7 +1485,7 @@
     get config() { return CONFIG; },
   };
   window.__rangedDebug = {
-    get projectiles() { return projectiles.map(p => ({ itemKey: p.itemKey, team: p.team, ammoId: p.ammoId, x: p.x, y: p.y, vx: p.vx, vy: p.vy, distancePx: p.distancePx, launchTransformMode: p.launchTransformMode, spinAxis: p.spinRateRad ? 'png-local-z' : null, trailAfflictionIds: [...p.trailAfflictionIds] })); },
+    get projectiles() { return projectiles.map(p => ({ itemKey: p.itemKey, team: p.team, ammoId: p.ammoId, x: p.x, y: p.y, vx: p.vx, vy: p.vy, distancePx: p.distancePx, launchTransformMode: p.launchTransformMode, directionSwap: p.def?.rangedType === 'thrown' ? p.def?.toolEndFlip === true : null, spinAxis: p.spinRateRad ? 'png-local-z' : null, trailAfflictionIds: [...p.trailAfflictionIds] })); },
     get playerAction() { return playerAction ? { ...playerAction, def: undefined } : null; },
     get lastEvent() { return lastEvent; },
     get lastAudioEvent() { return lastAudioEvent; },
