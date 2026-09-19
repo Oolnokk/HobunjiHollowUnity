@@ -145,7 +145,13 @@
   }
 
   function enforceSlotPresentation(slot, dense) {
-    slot.classList.add('shared-selection-slot');
+    // classList.add() only skips its attribute write in the narrow case of
+    // "this element has never had a class attribute" -- once any class
+    // exists, .add() re-serializes and re-sets the class attribute every
+    // call whether or not the token was already present. This function runs
+    // every animation frame (via startFrameEnforcer) for every visible slot
+    // while any selector is open, so the guard below is real, continuous savings.
+    if (!slot.classList.contains('shared-selection-slot')) slot.classList.add('shared-selection-slot');
     slot.classList.toggle('shared-selection-dense', dense);
     setImportantStyle(slot, 'position', 'fixed');
     setImportantStyle(slot, 'width', BUTTON_SIZE);
@@ -157,10 +163,14 @@
   }
 
   function neutralizeLegacyArrows() {
+    // Runs every animation frame (via startFrameEnforcer) for as long as any
+    // legacy arrow element exists. classList.add()/setAttribute()/dataset all
+    // re-serialize and re-set their attribute on every call even when the
+    // value is already correct, so each write here is guarded.
     document.querySelectorAll(LEGACY_ARROW_SELECTOR).forEach(slot => {
-      slot.classList.add('shared-selection-sentinel'); // Keeps old references alive while making the DOM role explicit.
-      slot.setAttribute('aria-hidden', 'true');
-      slot.dataset.sharedSelectionSentinel = '1';
+      if (!slot.classList.contains('shared-selection-sentinel')) slot.classList.add('shared-selection-sentinel'); // Keeps old references alive while making the DOM role explicit.
+      if (slot.getAttribute('aria-hidden') !== 'true') slot.setAttribute('aria-hidden', 'true');
+      if (slot.dataset.sharedSelectionSentinel !== '1') slot.dataset.sharedSelectionSentinel = '1';
     });
   }
 

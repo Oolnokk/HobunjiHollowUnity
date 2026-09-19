@@ -219,7 +219,11 @@
         }
       }
     });
-    observer.observe(document.documentElement, { childList: true, subtree: true });
+    // #mpCompendium/.compendium-content only ever get inserted inside
+    // #menuPanel (static markup, present from load), so watching
+    // document.documentElement's entire page meant any unrelated DOM
+    // insertion anywhere queued this scan for no reason.
+    observer.observe(document.getElementById('menuPanel') || document.documentElement, { childList: true, subtree: true });
   }
 
   function install() {

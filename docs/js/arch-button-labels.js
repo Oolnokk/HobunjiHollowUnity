@@ -273,8 +273,14 @@
     const bindingAction = bindingActionForButton(button); // Used independently of meaning text so attack buttons can still show their configured physical input.
     const binding = bindingText(bindingAction);
     ensureTextOverlay(button, 'arch-input-binding', binding);
-    if (bindingAction) button.dataset.archBindingAction = bindingAction;
-    else delete button.dataset.archBindingAction;
+    // decorateButton() reruns on every refresh() pass, and a dataset write goes
+    // through setAttribute under the hood, which (confirmed with a live DOM
+    // attribute-modified breakpoint on #btnAction1 while chasing this) queues a
+    // real attribute mutation even when the value is unchanged. Harmless to any
+    // OTHER observer (data-arch-binding-action isn't in anyone's attributeFilter),
+    // but still a real per-frame write for no reason once the value settles.
+    if (bindingAction) { if (button.dataset.archBindingAction !== bindingAction) button.dataset.archBindingAction = bindingAction; }
+    else if (button.dataset.archBindingAction !== undefined) delete button.dataset.archBindingAction;
   }
 
   function refresh() {
@@ -321,8 +327,16 @@
     window.addEventListener('hobunji-input-bindings-changed', queueRefresh);
     window.addEventListener('hobunji-input-bindings-reset', queueRefresh);
     window.addEventListener('hobunjiPlayerReady', queueRefresh);
+    // Every button DECORATED_SELECTOR can match lives under #arcContainer (the
+    // static action-arc anchor in index.html), so watching document.body's entire
+    // subtree used to mean any unrelated DOM change anywhere on the page -- a HUD
+    // element ticking, a settings row updating, anything -- queued a full
+    // decorate() pass over every action button for no reason. #arcContainer is
+    // present in the static markup from load, so it's always available here; the
+    // document.body fallback only guards a markup change removing/renaming it.
+    const watchRoot = document.getElementById('arcContainer') || document.body;
     observer = new MutationObserver(queueRefresh); // Watches contextual item/tool actions because refreshActionBar rebuilds their icon/label contents frequently.
-    observer.observe(document.body, {
+    observer.observe(watchRoot, {
       subtree: true,
       childList: true,
       characterData: true,

@@ -843,8 +843,9 @@
       const select = row.querySelector('.farm-barn-select');
       if (!select) return;
       const first = select.options?.[0];
-      if (first && first.value === '') first.textContent = '🌿 Outdoors (no barn)';
-      select.title = 'Adults without a barn keep roaming outside and lose happiness each night.';
+      if (first && first.value === '' && first.textContent !== '🌿 Outdoors (no barn)') first.textContent = '🌿 Outdoors (no barn)';
+      const barnTitle = 'Adults without a barn keep roaming outside and lose happiness each night.';
+      if (select.title !== barnTitle) select.title = barnTitle;
       [...select.options].forEach(option => { if (option.value === NURSERY_ID) option.remove(); });
     });
     renderBabyCompactList(container);
@@ -889,7 +890,7 @@
       decorateBuildingList();
     } finally {
       panelDecorating = false;
-      if (panelObserver && document.body) panelObserver.observe(document.body, { childList: true, subtree: true });
+      if (panelObserver && document.body) panelObserver.observe(document.getElementById('menuPanel') || document.body, { childList: true, subtree: true });
     }
   }
 
@@ -905,7 +906,11 @@
   function installPanelObserver() {
     if (panelObserver || typeof MutationObserver === 'undefined' || !document.body) return;
     panelObserver = new MutationObserver(() => queuePanelDecoration());
-    panelObserver.observe(document.body, { childList: true, subtree: true });
+    // #farmLivestockList/#farmBuildingsList only ever exist inside #menuPanel
+    // (see decoratePanelNow's comment), so watching document.body's entire
+    // subtree meant any HUD/UI mutation anywhere queued this check for no
+    // reason, even with the menu fully closed.
+    panelObserver.observe(document.getElementById('menuPanel') || document.body, { childList: true, subtree: true });
     queuePanelDecoration();
   }
 

@@ -314,13 +314,21 @@
     const gear = document.getElementById('invTabGear'); // Gear mode button receives save-scope semantics.
     if (pack) setModeSemantics(pack, 'Pack inventory — saved with this world', 'Pack — saved with this world');
     if (gear) setModeSemantics(gear, 'Gear inventory — saved with this character', 'Gear — follows this character between worlds');
-    document.querySelectorAll('#mpInventory .inv-cat').forEach((button) => button.setAttribute('aria-pressed', String(button.classList.contains('active'))));
+    // These action buttons are also watched by arch-button-labels.js's document-wide
+    // aria-label/class/title MutationObserver; writing the same value on every
+    // decorate() pass still queues a mutation record and needlessly re-triggers its
+    // full action-bar relabel pass, so every write here is now conditional.
+    document.querySelectorAll('#mpInventory .inv-cat').forEach((button) => {
+      const pressed = String(button.classList.contains('active'));
+      if (button.getAttribute('aria-pressed') !== pressed) button.setAttribute('aria-pressed', pressed);
+    });
   }
 
   function setModeSemantics(button, ariaLabel, title) {
-    button.setAttribute('aria-pressed', String(button.classList.contains('active')));
-    button.setAttribute('aria-label', ariaLabel);
-    button.title = title;
+    const pressed = String(button.classList.contains('active'));
+    if (button.getAttribute('aria-pressed') !== pressed) button.setAttribute('aria-pressed', pressed);
+    if (button.getAttribute('aria-label') !== ariaLabel) button.setAttribute('aria-label', ariaLabel);
+    if (button.title !== title) button.title = title;
   }
 
   function syncPackClothingTiles() {
@@ -360,11 +368,17 @@
     const activeCategory = document.querySelector('#mpInventory .inv-cat.active')?.dataset.cat || 'all';
     const visible = activeCategory === 'all';
     grid.querySelectorAll('.pack-clothing-tile').forEach((tile) => { tile.style.display = visible ? '' : 'none'; });
-    grid.querySelectorAll('.inventory-clothing-reserved-empty').forEach((empty) => empty.classList.remove('inventory-clothing-reserved-empty'));
-    if (visible) {
-      const emptySlots = [...grid.querySelectorAll('.inv-item-box.empty')];
-      emptySlots.slice(Math.max(0, emptySlots.length - sourceButtons.length)).forEach((empty) => empty.classList.add('inventory-clothing-reserved-empty'));
-    }
+    // decorate() (this function's ultimate caller) reruns on every childList change
+    // inside the pane. Unlike classList.toggle(), .remove()/.add() re-serialize and
+    // re-set the class attribute even when the token being removed/added is
+    // already absent/present, so unconditionally clearing-then-reapplying this
+    // class on the very same elements every single pass was a real per-frame
+    // attribute-mutation cost for no actual state change.
+    const reservedEmpty = [...grid.querySelectorAll('.inventory-clothing-reserved-empty')];
+    const emptySlots = visible ? [...grid.querySelectorAll('.inv-item-box.empty')] : [];
+    const nextReservedEmpty = emptySlots.slice(Math.max(0, emptySlots.length - sourceButtons.length));
+    for (const empty of reservedEmpty) if (!nextReservedEmpty.includes(empty)) empty.classList.remove('inventory-clothing-reserved-empty');
+    for (const empty of nextReservedEmpty) if (!empty.classList.contains('inventory-clothing-reserved-empty')) empty.classList.add('inventory-clothing-reserved-empty');
   }
 
   function decoratePackSlots() {
@@ -640,7 +654,13 @@
 
   function decorateInfoPanel() {
     const empty = document.getElementById('iiEmpty'); // More explicit prompt helps on touch devices where there is no hover affordance.
-    if (empty) empty.textContent = 'Select an item to see its description and actions.';
+    // decorate() reruns every time inventoryObserver sees a childList change inside
+    // the pane, and .textContent = is itself a childList change (old text node out,
+    // new one in) even when the string is identical to what's already there. Writing
+    // this unconditionally on every decorate() pass made it re-trigger its own
+    // observer forever, once per animation frame, for the rest of the session.
+    const emptyText = 'Select an item to see its description and actions.';
+    if (empty && empty.textContent !== emptyText) empty.textContent = emptyText;
     const tags = document.getElementById('iiTags');
     if (tags) tags.setAttribute('aria-hidden', 'true');
     const detail = document.getElementById('iiDetail');
@@ -822,8 +842,13 @@
     const dev = !!deps?.isDevMode?.();
     button.style.display = dev ? '' : 'none';
     const active = document.getElementById('menuPanel')?.classList.contains('inv-debug');
-    button.setAttribute('aria-pressed', String(!!active));
-    button.textContent = active ? 'UI BOUNDS ON' : 'UI BOUNDS';
+    const pressed = String(!!active);
+    if (button.getAttribute('aria-pressed') !== pressed) button.setAttribute('aria-pressed', pressed);
+    // Same self-triggering-observer hazard as decorateInfoPanel above: this button
+    // lives inside the observed pane, so an unconditional textContent write here
+    // kept decorate() re-running every frame indefinitely.
+    const label = active ? 'UI BOUNDS ON' : 'UI BOUNDS';
+    if (button.textContent !== label) button.textContent = label;
   }
 
   function debugSnapshot() {

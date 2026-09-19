@@ -80,7 +80,7 @@
     const savedDisplayAttribute = 'data-kurraya-minimal-display'; // Stores any pre-existing inline display value so temporary suppression can be reversed cleanly.
     if (hidden) {
       if (!element.hasAttribute(savedDisplayAttribute)) element.setAttribute(savedDisplayAttribute, element.style.display || '');
-      element.style.setProperty('display', 'none', 'important');
+      if (element.style.display !== 'none') element.style.setProperty('display', 'none', 'important');
       return;
     }
     if (!element.hasAttribute(savedDisplayAttribute)) return;
@@ -97,8 +97,8 @@
     if (hidden) {
       if (!frame.hasAttribute(savedOpacityAttribute)) frame.setAttribute(savedOpacityAttribute, frame.style.opacity || '');
       if (!frame.hasAttribute(savedPointerAttribute)) frame.setAttribute(savedPointerAttribute, frame.style.pointerEvents || '');
-      frame.style.opacity = '0';
-      frame.style.pointerEvents = 'none';
+      if (frame.style.opacity !== '0') frame.style.opacity = '0';
+      if (frame.style.pointerEvents !== 'none') frame.style.pointerEvents = 'none';
       return;
     }
     if (frame.hasAttribute(savedOpacityAttribute)) {
@@ -139,7 +139,16 @@
     if (!KURRAYA_MINIMAL_PERFORMANCE_UI || _minimalPerformanceUiHookInstalled || typeof document === 'undefined' || !document.documentElement) return;
     _minimalPerformanceUiHookInstalled = true;
     const observer = new MutationObserver(queueMinimalPerformanceUiRefresh); // Watches the overlay class plus dynamically-created song/HUD/control chrome from music-minigame.js.
-    observer.observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
+    // Every element applyMinimalPerformanceUi() reads or hides -- the overlay's
+    // own class, #musicMinigameFrame, #leftMusicControls/#rightMusicControls
+    // and everything music-minigame.js builds inside them, #musicMinigameCloseBtn
+    // -- lives inside #musicMinigameOverlay itself (static markup in index.html),
+    // so watching document.documentElement's entire page meant any unrelated DOM
+    // change anywhere (a HUD tick, a settings update, anything) queued this
+    // refresh too, for no reason. #musicMinigameOverlay is always present from
+    // load, so it's a safe, always-available narrower root.
+    const watchRoot = document.getElementById('musicMinigameOverlay') || document.documentElement;
+    observer.observe(watchRoot, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
     queueMinimalPerformanceUiRefresh();
   }
 

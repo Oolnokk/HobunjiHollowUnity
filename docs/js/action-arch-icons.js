@@ -425,11 +425,29 @@
   function clearStaleCombatOwnership(activeButtons) {
     actionButtons().forEach(button => {
       if (activeButtons.has(button)) return;
-      button.classList.remove('combat-dual-input', 'combat-hold-flipped');
+      // Unlike classList.toggle() (which no-ops cleanly when the requested state
+      // already holds), .remove()/.add() only skip their attribute write in the
+      // narrow case of "no class attribute has EVER been set on this element and
+      // the token set stays empty" -- once any class has ever been set, calling
+      // .remove() on tokens that aren't even present still re-serializes and
+      // re-sets the class attribute every time (confirmed with a live DOM
+      // attribute-modified breakpoint while chasing this). This ran on every
+      // refresh() for every button combat doesn't currently own -- i.e.
+      // constantly outside combat -- and kept re-triggering this file's own
+      // observer and arch-button-labels.js's right along with it, forever.
+      if (button.classList.contains('combat-dual-input') || button.classList.contains('combat-hold-flipped')) {
+        button.classList.remove('combat-dual-input', 'combat-hold-flipped');
+      }
       button.removeAttribute('data-combat-icon-signature');
       button.removeAttribute('data-combat-slot');
       const contextLabel = button.querySelector('.abt-label')?.textContent?.trim(); // Restores the world action's accessible name after combat previously owned this physical button.
-      if (contextLabel) button.setAttribute('aria-label', contextLabel);
+      // This runs on every refresh() for every button combat doesn't currently own --
+      // i.e. constantly outside combat. Writing the SAME aria-label on every pass used
+      // to still count as a DOM mutation, which re-triggered this file's own
+      // document-wide MutationObserver (it watches aria-label) and arch-button-labels.js's
+      // right along with it, queuing another refresh for next frame -- a permanent
+      // 60fps feedback loop that never settled for the rest of the session.
+      if (contextLabel && button.getAttribute('aria-label') !== contextLabel) button.setAttribute('aria-label', contextLabel);
       [...button.children].forEach(child => {
         if (child.classList?.contains('combat-hold-exponent')) child.remove();
       });
@@ -448,9 +466,23 @@
     const holding = Boolean(window.Combat?.input?.getState?.(slotIndex)?.holding);
     const signature = `${button.dataset.action || ''}|${tap.key}|${hold.key}|${holding ? 1 : 0}`;
 
-    button.classList.add('combat-dual-input');
+    // classList.add() only skips its attribute write in the narrow case of "this
+    // element has never had a class attribute set and still wouldn't after this
+    // call" -- once any class exists (as it will here, from the very first
+    // render), .add() re-serializes and re-sets the class attribute on every
+    // call whether or not the token was already present (classList.toggle(),
+    // used just below, is the one that correctly no-ops on an unchanged result).
+    if (!button.classList.contains('combat-dual-input')) button.classList.add('combat-dual-input');
     button.classList.toggle('combat-hold-flipped', holding);
-    button.dataset.combatSlot = String(slotIndex);
+    // dataset writes go through setAttribute under the hood, which also queues a
+    // MutationObserver record even when the value being written is identical to
+    // what's already there. This ran on every renderCombatButton() call -- i.e.
+    // every frame a slot is combat-owned -- and 'data-combat-slot' is exactly
+    // what arch-button-labels.js watches, so it kept re-triggering that file's
+    // full button relabel pass for the entire duration of combat instead of only
+    // when the slot changed.
+    const combatSlot = String(slotIndex);
+    if (button.dataset.combatSlot !== combatSlot) button.dataset.combatSlot = combatSlot;
     const accessibleLabel = `${tap.label}; hold: ${hold.label}`;
     if (button.getAttribute('aria-label') !== accessibleLabel) button.setAttribute('aria-label', accessibleLabel);
     if (button.dataset.combatIconSignature === signature && host.querySelector('.combat-coin')) return;
@@ -542,14 +574,24 @@
     window.addEventListener('hobunji-combat-input-state', queueRefresh);
     window.addEventListener('hobunjiPlayerReady', queueRefresh);
 
+    // Every id in ACTION_BUTTON_IDS/refreshStaticIcons's selector except .arc-slot
+    // lives under #arcContainer (the static action-arc anchor in index.html), so
+    // watching document.body's entire subtree used to mean any unrelated DOM
+    // change anywhere on the page queued a full icon/combat-button refresh for no
+    // reason. .arc-slot is the one exception: action-arc-ui.js's tool/item
+    // selection wheel appends those directly to document.body itself (see
+    // _mkSlot), so a second, much cheaper direct-children-only watch on body
+    // (no subtree) covers just that wheel opening/closing without picking up any
+    // of the deep unrelated churn a full-subtree body watch would.
     observer = new MutationObserver(queueRefresh);
-    observer.observe(document.body, {
+    observer.observe(document.getElementById('arcContainer') || document.body, {
       subtree: true,
       childList: true,
       characterData: true,
       attributes: true,
       attributeFilter: ['data-action', 'aria-label', 'class', 'title'],
     });
+    new MutationObserver(queueRefresh).observe(document.body, { childList: true, subtree: false });
 
     // Loadout changes are intentionally owned by combat-loadout.js and do not
     // currently emit an event. This cheap watcher also resets combo artwork as

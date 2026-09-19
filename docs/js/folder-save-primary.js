@@ -334,9 +334,17 @@
     const browserSection = sections.find(section => section.querySelector('.sl-section-label')?.textContent?.trim() === 'This Browser');
     if (!folderSection) return;
 
-    folderSection.classList.add('folder-save-primary-section');
+    // classList.add() only skips its attribute write in the narrow case of "this
+    // element has never had a class attribute and still wouldn't after this
+    // call" -- once any class exists, .add() re-serializes and re-sets the class
+    // attribute on every call whether or not the token was already present.
+    if (!folderSection.classList.contains('folder-save-primary-section')) folderSection.classList.add('folder-save-primary-section');
     const folderLabel = folderSection.querySelector('.sl-section-label'); // Existing label promoted in place so onboarding logic and listeners remain intact.
-    if (folderLabel) folderLabel.textContent = 'Primary Save Folder';
+    // Every textContent write in this function is the same self-triggering-observer
+    // hazard documented on promoteEmptySaveGate/bindSettings above: writing it
+    // unconditionally on every refreshUi() pass kept re-firing this module's own
+    // document-wide childList observer forever, once per animation frame.
+    if (folderLabel && folderLabel.textContent !== 'Primary Save Folder') folderLabel.textContent = 'Primary Save Folder';
     const row = folderSection.querySelector('.sl-local-save-row'); // Existing button row receives one persistent explanation instead of a second set of controls.
     if (row && !row.querySelector('.folder-save-primary-hint')) {
       const hint = document.createElement('div');
@@ -353,21 +361,22 @@
     };
     for (const [id, label] of Object.entries(labelMap)) {
       const button = folderSection.querySelector(`#${id}`);
-      if (button && !button.disabled) button.textContent = label;
+      if (button && !button.disabled && button.textContent !== label) button.textContent = label;
     }
 
     if (browserSection) {
-      browserSection.classList.add('folder-save-browser-fallback');
+      if (!browserSection.classList.contains('folder-save-browser-fallback')) browserSection.classList.add('folder-save-browser-fallback');
       browserSection.classList.toggle('folder-save-browser-fallback-active', !localSave.isSupported?.());
       const browserLabel = browserSection.querySelector('.sl-section-label'); // Browser-only storage remains visible but is explicitly described as fallback.
-      if (browserLabel) browserLabel.textContent = 'Browser Fallback';
+      if (browserLabel && browserLabel.textContent !== 'Browser Fallback') browserLabel.textContent = 'Browser Fallback';
       const copy = [...browserSection.children].find(child => child !== browserLabel);
       if (copy) {
         const meta = readBrowserMeta();
         const count = Array.isArray(meta?.characters) ? meta.characters.length : 0;
-        copy.textContent = count
+        const copyText = count
           ? `${count} farmer${count === 1 ? '' : 's'} cached on this device. Use this only when the primary folder is unavailable.`
           : 'No fallback save is cached on this device.';
+        if (copy.textContent !== copyText) copy.textContent = copyText;
       }
       const footer = card.querySelector('.sl-footer');
       if (folderSection.nextElementSibling !== browserSection) card.insertBefore(folderSection, browserSection);
@@ -380,9 +389,15 @@
     if (!gate) return;
     const folderButton = gate.querySelector('#hobunjiEmptySaveFolder'); // Existing restore action is enlarged rather than duplicated.
     if (folderButton) {
-      folderButton.classList.add('folder-save-primary-action');
+      if (!folderButton.classList.contains('folder-save-primary-action')) folderButton.classList.add('folder-save-primary-action');
       const status = localSave.getStatus();
-      folderButton.textContent = status.folderName ? `💾 Use “${status.folderName}”` : '💾 Choose Save Folder';
+      // refreshUi() (this function's caller) reruns every time its own
+      // MutationObserver sees ANY childList change anywhere in document.body, and
+      // .textContent = is itself a childList change even when the string written is
+      // identical to what's already there -- so an unconditional write here kept
+      // this whole module re-triggering itself forever, once per animation frame.
+      const label = status.folderName ? `💾 Use “${status.folderName}”` : '💾 Choose Save Folder';
+      if (folderButton.textContent !== label) folderButton.textContent = label;
     }
     const restoreSection = folderButton?.closest('.sl-section'); // Primary-folder explanation is inserted alongside the existing Restore section.
     if (restoreSection && !restoreSection.querySelector('.folder-save-primary-copy')) {
@@ -396,12 +411,14 @@
   function updateSettingsStatus(status) {
     const statusEl = document.getElementById('localSaveFolderStatus'); // Existing visible status line doubles as mobile diagnostics.
     if (!statusEl) return;
-    if (!status.supported) statusEl.textContent = 'Folder saves are not supported in this browser; using browser fallback.';
-    else if (!status.folderName) statusEl.textContent = 'No primary save folder connected.';
-    else if (status.state === 'needs-permission') statusEl.textContent = `Primary folder “${status.folderName}” needs permission.`;
-    else if (status.lastError) statusEl.textContent = `Primary folder “${status.folderName}”: ${status.lastError}`;
-    else if (status.autoSyncArmed) statusEl.textContent = `Primary folder “${status.folderName}” is connected and autosyncing.`;
-    else statusEl.textContent = `Primary folder “${status.folderName}” is connected; load or save to choose direction.`;
+    const text = !status.supported ? 'Folder saves are not supported in this browser; using browser fallback.'
+      : !status.folderName ? 'No primary save folder connected.'
+      : status.state === 'needs-permission' ? `Primary folder “${status.folderName}” needs permission.`
+      : status.lastError ? `Primary folder “${status.folderName}”: ${status.lastError}`
+      : status.autoSyncArmed ? `Primary folder “${status.folderName}” is connected and autosyncing.`
+      : `Primary folder “${status.folderName}” is connected; load or save to choose direction.`;
+    // Same self-triggering-observer hazard noted in promoteEmptySaveGate above.
+    if (statusEl.textContent !== text) statusEl.textContent = text;
   }
 
   function bindSettings() {
@@ -416,15 +433,21 @@
         parent.insertBefore(title, firstTitle);
         parent.insertBefore(row, firstTitle);
       }
-      title.textContent = 'Primary Save Folder';
+      // bindSettings() (via refreshUi()) reruns every time this module's own
+      // document.body-wide childList MutationObserver fires, and a .textContent =
+      // write is itself a childList change even when the string is unchanged --
+      // the four unconditional writes below used to keep this whole module
+      // re-triggering itself forever, once per animation frame.
+      if (title.textContent !== 'Primary Save Folder') title.textContent = 'Primary Save Folder';
       title.style.marginTop = '0';
     }
 
-    row.classList.add('folder-save-settings-primary');
+    if (!row.classList.contains('folder-save-settings-primary')) row.classList.add('folder-save-settings-primary');
     const name = row.querySelector('.settings-name'); // Existing heading rewritten so folder storage is not described as a mere backup.
     const desc = row.querySelector('.settings-desc'); // Existing description explains runtime cache versus portable folder truth.
-    if (name) name.textContent = 'Primary Save Folder';
-    if (desc) desc.textContent = 'Recommended save method. The game uses browser storage as a working cache while running, then syncs characters, worlds, and farm layouts to this portable folder.';
+    const descText = 'Recommended save method. The game uses browser storage as a working cache while running, then syncs characters, worlds, and farm layouts to this portable folder.';
+    if (name && name.textContent !== 'Primary Save Folder') name.textContent = 'Primary Save Folder';
+    if (desc && desc.textContent !== descText) desc.textContent = descText;
 
     const controls = row.querySelector('div[style*="display:flex"]'); // Existing button/status container receives one small fallback note.
     if (controls && !controls.querySelector('.folder-save-settings-fallback-note')) {
@@ -457,11 +480,11 @@
     if (reconnect) reconnect.style.display = status.supported && status.state === 'needs-permission' ? '' : 'none';
     if (save) {
       save.style.display = status.supported && status.state === 'ready' ? '' : 'none';
-      save.textContent = 'Save to Folder';
+      if (save.textContent !== 'Save to Folder') save.textContent = 'Save to Folder'; // Same self-triggering-observer hazard as above.
     }
     if (load) {
       load.style.display = status.supported && status.state === 'ready' ? '' : 'none';
-      load.textContent = 'Load Folder';
+      if (load.textContent !== 'Load Folder') load.textContent = 'Load Folder';
     }
   }
 
@@ -545,10 +568,33 @@
     scheduleUiRefresh();
   });
 
-  const observer = new MutationObserver(scheduleUiRefresh); // Onboarding and Settings replace chunks of DOM, so hierarchy promotion follows those existing rerenders.
+  // Everything refreshUi() actually reads lives inside one of two containers:
+  // #ob-overlay (the empty-save gate and the save/load card, both onboarding-only)
+  // or #menuPanel (Settings). Watching document.body's entire subtree used to mean
+  // ANY DOM change anywhere on the page -- the compass HUD updating, combat icons
+  // refreshing, literally anything -- queued a refresh here too, for no reason.
+  // #menuPanel is always present in the static markup, so it can be observed
+  // immediately; #ob-overlay is created later by onboarding-core.js as a direct
+  // child of document.body, so a much cheaper direct-children-only watch on body
+  // (no subtree) is used just to notice it appearing, rather than watching body's
+  // full depth the way the old single observer did.
+  function attachScopedObserver(root) {
+    if (!root || root.__folderSavePrimaryObserved) return;
+    root.__folderSavePrimaryObserved = true;
+    new MutationObserver(scheduleUiRefresh).observe(root, { childList: true, subtree: true });
+  }
+
+  const bodyChildObserver = new MutationObserver(() => {
+    const overlay = document.getElementById('ob-overlay');
+    if (overlay) attachScopedObserver(overlay);
+  });
+
   const beginObserving = () => {
     if (!document.body) return;
-    observer.observe(document.body, { childList: true, subtree: true });
+    attachScopedObserver(document.getElementById('menuPanel'));
+    const overlay = document.getElementById('ob-overlay');
+    if (overlay) attachScopedObserver(overlay);
+    else bodyChildObserver.observe(document.body, { childList: true, subtree: false });
     scheduleUiRefresh();
   };
   if (document.body) beginObserving();

@@ -6421,7 +6421,12 @@
       for (let eventIndex = 0; eventIndex < state.game.events.length; eventIndex++) {
         const event = state.game.events[eventIndex];
         const until = event.time - time;
-        if (state.game.demoActive && event.state === 'pending' && !event.demoTriggered && time >= event.time - 8) performSuccessfulPreviewEvent(event,eventIndex);
+        // No upper bound here used to mean a frame stall (heavy scene, lots of NPCs/effects at once)
+        // left several already-late notes pending, and the very next tick fired every one of them back
+        // to back as an audible burst instead of the single note each was meant to be. Bounding the
+        // trigger to the same hitWindow used for miss detection below lets a badly-late note fall
+        // through to the ordinary miss path instead of sounding out of time.
+        if (state.game.demoActive && event.state === 'pending' && !event.demoTriggered && time >= event.time - 8 && time - event.time <= state.hitWindow) performSuccessfulPreviewEvent(event,eventIndex);
         const timingRingHorizonMs = Math.max(1,state.game.beatMs || (60000 / clamp(state.bpm,45,220))) * state.timingPromptBeats; // User-selected beat horizon for Timing Rings prompts.
         const cueLeadMs = state.visualPreset === 'timing-rings' && event.inputType !== 'strum' ? timingRingHorizonMs : state.game.travelMs + 250;
         if (event.state === 'pending' && until <= cueLeadMs && !event.element) createNoteElement(event);

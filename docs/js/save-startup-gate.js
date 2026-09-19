@@ -397,12 +397,35 @@
     requestAnimationFrame(refresh);
   }
 
+  // Everything refresh() reads or writes (the creator card, the gate,
+  // #ob-overlay's world/join cards) lives inside #ob-overlay, which
+  // onboarding-core.js creates later as a direct child of document.body and
+  // eventually removes -- it isn't in static markup, so it can't be
+  // `getElementById`'d up front. Watching document.body's entire subtree used
+  // to mean any unrelated DOM change anywhere on the page queued a refresh
+  // here too, for no reason. A much cheaper direct-children-only watch on
+  // body (no subtree) is used just to notice the overlay appearing, then a
+  // second observer scoped to #ob-overlay itself does the real work --
+  // same two-tier pattern already used by folder-save-primary.js.
+  function attachOverlayObserver(overlay) {
+    if (!overlay || overlay.__saveStartupGateObserved) return;
+    overlay.__saveStartupGateObserved = true;
+    new MutationObserver(scheduleRefresh).observe(overlay, { childList: true, subtree: true });
+  }
+
   function init() {
     installSaveSelectPortraitStyle();
     installSaveSelectPortraitFix();
     refresh();
-    observer = new MutationObserver(scheduleRefresh);
-    observer.observe(document.body, { childList: true, subtree: true });
+    const overlay = document.getElementById('ob-overlay');
+    if (overlay) attachOverlayObserver(overlay);
+    else {
+      observer = new MutationObserver(() => {
+        const nowOverlay = document.getElementById('ob-overlay');
+        if (nowOverlay) attachOverlayObserver(nowOverlay);
+      });
+      observer.observe(document.body, { childList: true });
+    }
     window.LocalSaveFolder?.onChange?.(scheduleRefresh);
   }
 

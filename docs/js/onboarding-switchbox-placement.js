@@ -111,10 +111,34 @@
     queueMicrotask(refreshPlacement);
   }
 
+  // Everything refreshPlacement() reads/writes (#ob-overlay's .ob-card cards,
+  // #devSwitchboxSaveSelectSection) lives inside #ob-overlay, which
+  // onboarding-core.js creates later as a direct child of document.body and
+  // isn't in static markup, so it can't be `getElementById`'d up front.
+  // Watching document.body's entire subtree meant any unrelated DOM change
+  // anywhere queued a refresh for no reason. Same two-tier pattern as
+  // folder-save-primary.js/save-startup-gate.js: a cheap direct-children-only
+  // watch on body just to notice the overlay appearing, then a real observer
+  // scoped to #ob-overlay itself (still subtree, since the placement logic
+  // inspects nested descendants like #slPlay/#slBackToCharacter).
+  function attachOverlayObserver(overlay) {
+    if (!overlay || overlay.__switchboxPlacementObserved) return;
+    overlay.__switchboxPlacementObserved = true;
+    new MutationObserver(queueRefresh).observe(overlay, { childList: true, subtree: true });
+    queueRefresh();
+  }
+
   function install() {
     installStyle();
-    observer = new MutationObserver(queueRefresh);
-    observer.observe(document.body, { childList: true, subtree: true });
+    const overlay = document.getElementById('ob-overlay');
+    if (overlay) attachOverlayObserver(overlay);
+    else {
+      observer = new MutationObserver(() => {
+        const nowOverlay = document.getElementById('ob-overlay');
+        if (nowOverlay) attachOverlayObserver(nowOverlay);
+      });
+      observer.observe(document.body, { childList: true });
+    }
     queueRefresh();
   }
 

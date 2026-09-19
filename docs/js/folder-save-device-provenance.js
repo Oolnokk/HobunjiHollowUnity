@@ -155,7 +155,13 @@
       });
       section.appendChild(line);
     }
-    line.textContent = sourceLine();
+    // .textContent = queues a mutation record even when the string is unchanged,
+    // and this file's own MutationObserver watches document.body's whole subtree
+    // for childList changes -- writing this unconditionally on every
+    // refreshResumeSource() pass kept re-triggering itself forever, once per
+    // animation frame, for as long as the Resume screen stayed open.
+    const text = sourceLine();
+    if (line.textContent !== text) line.textContent = text;
   }
 
   function scheduleResumeSourceRefresh() {

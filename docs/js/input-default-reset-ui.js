@@ -215,7 +215,11 @@
     refreshSettingsUi();
     if (observer || !document.body || typeof MutationObserver !== 'function') return;
     observer = new MutationObserver(queueRefresh); // Re-adds missing reset rows and re-applies deterministic section order after late runtime injections.
-    observer.observe(document.body, { childList: true, subtree: true });
+    // Every row this file reads or writes lives inside #mpSettings (static
+    // Settings markup, present from load), so watching document.body's entire
+    // subtree meant any unrelated DOM change anywhere queued a refresh for no
+    // reason.
+    observer.observe(document.getElementById('mpSettings') || document.body, { childList: true, subtree: true });
   }
 
   window.addEventListener('hobunji-input-bindings-reset', queueRefresh);

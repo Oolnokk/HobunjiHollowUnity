@@ -129,9 +129,14 @@
       // Shared arc uses x = cx + cos(a)r, y = cy - sin(a)r; the opposite vector moves inward.
       const dx = -Math.cos(angle) * ITEM_RADIUS_INSET_PX;
       const dy = Math.sin(angle) * ITEM_RADIUS_INSET_PX;
-      slot.classList.add('item-select-radius-inset');
-      slot.style.setProperty('--item-select-inset-x', `${dx.toFixed(3)}px`);
-      slot.style.setProperty('--item-select-inset-y', `${dy.toFixed(3)}px`);
+      // This runs every animation frame (via the file's own startFrameLoop)
+      // for as long as the item wheel is open, so unconditional writes here
+      // are a real, continuous cost even though the values are frequently
+      // unchanged frame to frame for a stationary wheel.
+      if (!slot.classList.contains('item-select-radius-inset')) slot.classList.add('item-select-radius-inset');
+      const insetX = `${dx.toFixed(3)}px`, insetY = `${dy.toFixed(3)}px`;
+      if (slot.style.getPropertyValue('--item-select-inset-x') !== insetX) slot.style.setProperty('--item-select-inset-x', insetX);
+      if (slot.style.getPropertyValue('--item-select-inset-y') !== insetY) slot.style.setProperty('--item-select-inset-y', insetY);
     });
   }
 
@@ -198,8 +203,13 @@
     const label = selectedCategoryLabel(slots);
     if (!label) { removeFixedHeading(); return; }
     const svg = ensureFixedHeading();
-    svg.setAttribute('viewBox', `0 0 ${innerWidth} ${innerHeight}`);
-    svg.querySelector('path')?.setAttribute('d', fixedHeadingPathData(geometry));
+    // Same every-frame cost as applyTinyRadiusInset above: innerWidth/innerHeight
+    // and the path geometry rarely change mid-interaction, so guard both writes.
+    const viewBox = `0 0 ${innerWidth} ${innerHeight}`;
+    if (svg.getAttribute('viewBox') !== viewBox) svg.setAttribute('viewBox', viewBox);
+    const pathEl = svg.querySelector('path');
+    const d = fixedHeadingPathData(geometry);
+    if (pathEl && pathEl.getAttribute('d') !== d) pathEl.setAttribute('d', d);
     const textPath = svg.querySelector('textPath');
     if (textPath && textPath.textContent !== label) textPath.textContent = label;
   }

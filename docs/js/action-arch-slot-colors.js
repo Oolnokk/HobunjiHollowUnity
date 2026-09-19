@@ -36,19 +36,23 @@
     const filter = SLOT_FILTERS[slotId];
     if (!color || !filter) return;
 
-    root.dataset.combatSlotColor = slotId;
-    root.style.setProperty('--combat-slot-color', color);
+    // dataset writes go through setAttribute under the hood, which queues a
+    // mutation record even for an unchanged value -- guarded here so a
+    // steady-state call (nothing actually changed) doesn't needlessly feed
+    // this file's own attribute-watching MutationObserver, or any other.
+    if (root.dataset.combatSlotColor !== slotId) root.dataset.combatSlotColor = slotId;
+    if (root.style.getPropertyValue('--combat-slot-color') !== color) root.style.setProperty('--combat-slot-color', color);
 
     // Combo uses a separate white numeral overlay; tint only its symbol image.
     root.querySelectorAll('img.action-arch-png, img.combat-combo-raster, img.action-arch-numbered-raster, .action-arch-combo-layered > img').forEach(image => {
-      image.style.filter = filter;
-      image.dataset.combatSlotColor = slotId;
+      if (image.style.filter !== filter) image.style.filter = filter;
+      if (image.dataset.combatSlotColor !== slotId) image.dataset.combatSlotColor = slotId;
     });
 
     // Keep the combo count white; tint only true empty-slot X text.
     root.querySelectorAll('.combat-slot-x').forEach(text => {
-      text.style.color = color;
-      text.dataset.combatSlotColor = slotId;
+      if (text.style.color !== color) text.style.color = color;
+      if (text.dataset.combatSlotColor !== slotId) text.dataset.combatSlotColor = slotId;
     });
   }
 
@@ -84,8 +88,13 @@
     // Both the game and the arch decorators rebuild/reorder buttons while the
     // player moves. Mutation observers run before paint, so tint the semantic
     // combat slots rather than assuming they still occupy physical buttons 1/2.
+    // combatButton()/actionStack lookups above only ever look inside
+    // #actionStack (itself inside #arcContainer, the static action-arc anchor
+    // in index.html), so watching document.body's entire subtree meant any
+    // unrelated 'class'/'data-action'/'data-combat-slot' change anywhere on
+    // the page queued a full re-tint pass for no reason.
     observer = new MutationObserver(applySlotColors);
-    observer.observe(document.body, {
+    observer.observe(document.getElementById('actionStack') || document.body, {
       subtree: true,
       childList: true,
       attributes: true,

@@ -19,6 +19,7 @@
   let retryQueued = false; // Allows one follow-up frame when freshly recycled slots have not yet received category/shared-arc metadata.
   let parityStyleInstalled = false; // Prevents duplicate Potion Select parity CSS after the shared selector stylesheet appears.
   let geometryRefreshPending = false; // Prevents repeated shared-arc refresh calls while one exact-radius correction is already queued.
+  let lastStickyHeadingSignature = null; // Skips rebuilding the sticky heading's SVG when its content/geometry hasn't actually changed.
 
   function itemArcIsOpen() {
     const toolBtn = document.getElementById('toolBtn');
@@ -171,8 +172,8 @@
       const icon = slot.querySelector('.arc-icon'); // Base category module stores colour vars on the icon; parity decoration needs the exact same values on the slot pseudo-element.
       const color = icon?.style.getPropertyValue('--item-cat-color')?.trim();
       const rgb = icon?.style.getPropertyValue('--item-cat-rgb')?.trim();
-      if (color) slot.style.setProperty('--item-cat-color', color);
-      if (rgb) slot.style.setProperty('--item-cat-rgb', rgb);
+      if (color && slot.style.getPropertyValue('--item-cat-color') !== color) slot.style.setProperty('--item-cat-color', color);
+      if (rgb && slot.style.getPropertyValue('--item-cat-rgb') !== rgb) slot.style.setProperty('--item-cat-rgb', rgb);
     });
   }
 
@@ -243,7 +244,7 @@
     const points = categoryCurvePoints(slots, geometry.center, geometry.labelOutsetPx);
     const d = curvePathData(points, geometry.center);
     if (!d) return false;
-    path.setAttribute('d', d);
+    if (path.getAttribute('d') !== d) path.setAttribute('d', d);
     return true;
   }
 
@@ -267,13 +268,29 @@
   }
 
   function renderStickyHeading(slots) {
-    removeStickyHeading();
-    if (!lastSelected || !slots.length) return false;
+    if (!lastSelected || !slots.length) {
+      removeStickyHeading();
+      lastStickyHeadingSignature = null;
+      return false;
+    }
 
     const geometry = potionGeometry();
     const points = categoryCurvePoints(slots, geometry.center, geometry.labelOutsetPx);
     const d = curvePathData(points, geometry.center);
-    if (!d) return false;
+    if (!d) {
+      removeStickyHeading();
+      lastStickyHeadingSignature = null;
+      return false;
+    }
+    // Removing+recreating this SVG is itself a childList mutation on
+    // document.documentElement, which is exactly what kurraya-instrument.js's
+    // MutationObserver watches -- doing that unconditionally on every refresh()
+    // pass needlessly retriggered its refresh too. Skip the rebuild entirely
+    // when nothing about the heading actually changed.
+    const signature = `${lastSelected.categoryLabel}|${d}`;
+    if (signature === lastStickyHeadingSignature) return true;
+    lastStickyHeadingSignature = signature;
+    removeStickyHeading();
 
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); // Kept outside body so the base module's body MutationObserver does not see its own fallback heading as wheel churn.
     svg.id = STICKY_LABEL_ID;
@@ -306,6 +323,7 @@
     if (!itemArcIsOpen()) {
       lastSelected = null;
       removeStickyHeading();
+      lastStickyHeadingSignature = null;
       return;
     }
 
@@ -317,6 +335,7 @@
     if (activeReal) {
       rememberRealSelection(activeReal);
       removeStickyHeading();
+      lastStickyHeadingSignature = null; // The base label (BASE_LABEL_ID) is showing instead; invalidate so a later sticky rebuild isn't skipped as "unchanged".
       retargetHeadingToPotionRadius(BASE_LABEL_ID, slots);
       return;
     }
@@ -324,6 +343,7 @@
     const activeEdge = document.querySelector('.arc-slot.arc-arrow.arc-active');
     if (!activeEdge || !lastSelected) {
       removeStickyHeading();
+      lastStickyHeadingSignature = null;
       if (!slots.length && !retryQueued) {
         retryQueued = true;
         requestAnimationFrame(() => { retryQueued = false; queueRefresh(); });
