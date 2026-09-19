@@ -21566,9 +21566,9 @@
           // carries the release arc around the rig instead of merely tilting it
           // around a body-fixed hand anchor.
           const reticleAligned = combatSwingAlignToReticle && activeTool === 'ranged';
-          const headAimDirection = reticleAligned && combatSwingOrbitRigCentroid
+          const headAimDirection = reticleAligned && combatSwingOrbitRigCentroid && activeCameraMode === SHOULDER_SURF_MODE
             ? currentPlayerPerspectiveDirection()
-            : null; // Same finite-point direction updatePlayerHeadAim uses in shoulder-surf.
+            : null; // Shoulder-surf shares the head's finite-point ray; normal desktop keeps its established mouse/player aim angle+pitch.
           const headAimAngle = headAimDirection
             ? Math.atan2(headAimDirection.z, headAimDirection.x)
             : currentPlayerAimAngle();
