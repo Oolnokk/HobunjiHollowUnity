@@ -38,7 +38,7 @@
     const shoulderWorld = new THREE.Vector3();
     const shoulderParent = new THREE.Vector3();
     const targetDirection = new THREE.Vector3();
-    const currentTop = new THREE.Vector3();
+    const currentWristAxis = new THREE.Vector3();
     const deltaQuaternion = new THREE.Quaternion();
     const weightedDeltaQuaternion = new THREE.Quaternion();
     const authoredQuaternion = new THREE.Quaternion();
@@ -260,8 +260,8 @@
       // Calibration is a child basis-conversion layer and must not participate in
       // this solve at all; otherwise changing calibration makes shoulder-follow
       // counter-rotate it and the editor's X/Y/Z controls appear coupled again.
-      currentTop.copy(localWristShoulderAxis).applyQuaternion(authoredQuaternion).normalize();
-      deltaQuaternion.setFromUnitVectors(currentTop, targetDirection).normalize();
+      currentWristAxis.copy(localWristShoulderAxis).applyQuaternion(authoredQuaternion).normalize();
+      deltaQuaternion.setFromUnitVectors(currentWristAxis, targetDirection).normalize();
 
       // A single target vector defines swing but not twist. The old implementation
       // decomposed this delta into YXZ Euler angles, which made the selected axis
