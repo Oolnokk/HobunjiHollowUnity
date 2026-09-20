@@ -14,8 +14,8 @@
   const PREVIOUS_HAND_SIZE_BALANCE_MULTIPLIER = 0.85; // Migrates profiles saved by the immediately preceding balance preset.
   const DEFAULT_MODEL_SCALE = 2 * HAND_SIZE_BALANCE_MULTIPLIER;
   const PARROT_MODEL_SCALE = 3 * HAND_SIZE_BALANCE_MULTIPLIER;
-  const PREVIOUS_SHARED_ALIGNMENT_PRESET = 'all-species-direction-90--90-0-v1'; // Previous repo-wide GLB alignment, used only to migrate calibration without resetting unrelated per-model handedness.
-  const SHARED_ALIGNMENT_PRESET = 'all-species-maoao-local-0-0--180-v2';
+  const PREVIOUS_SHARED_ALIGNMENT_PRESET = 'all-species-maoao-local-0-0--180-v2'; // The v2 calibration was authored against a paper-hand reference that had its wrist/finger axis backwards (wrist top, fingers bottom); migrate it back out without resetting unrelated per-model handedness.
+  const SHARED_ALIGNMENT_PRESET = 'all-species-direction-90--90-0-v3';
   const ROTATION_CALIBRATION_PRESET = 'orthogonal-quaternion-correction-coordinates-v3'; // Visible X/Y/Z sliders use a gimbal-free stereographic quaternion chart anchored to the preserved model calibration base.
   const MODEL_SCALE_PRESET = 'hands-92_5-feet-120-v2';
   const IDENTITY_TRANSFORM = Object.freeze({
@@ -24,9 +24,12 @@
   });
   // Canonical alignment is intentionally reused for every species/model.
   // Kenkari/Rakako'an use the opposite source-X mirror on their parrot hand model below.
+  // Restored from the pre-v2 baseline: v2's {0,0,-180} was calibrated against a paper-hand
+  // reference whose wrist/finger axis had been flipped (wrist top, fingers bottom instead
+  // of the correct wrist bottom, fingers top), so every GLB inherited that same flip.
   const MAO_AO_HAND_TRANSFORM = Object.freeze({
-    position: Object.freeze({ x: -0.04, y: 0.05, z: -0.04 }), // Calibrated Mao'ao/feline GLB origin from the new neutral paper-hand workflow; this delta is now the shared baseline for every hand GLB.
-    rotationDeg: Object.freeze({ pitch: 0, yaw: 0, roll: -180 }), // Exact child-local right-angle orientation from the calibrated Mao'ao setup.
+    position: Object.freeze({ x: -0.07, y: -0.13, z: 0.21 }),
+    rotationDeg: Object.freeze({ pitch: 90, yaw: -90, roll: 0 }),
   });
 
   function identityTransform() {
