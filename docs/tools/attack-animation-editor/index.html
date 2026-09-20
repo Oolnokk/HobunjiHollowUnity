@@ -1349,7 +1349,11 @@ async function loadAttackValues() {
 }
 
 function clonePoseData(pose = {}) {
-  return { ...pose, shoulderAim: pose.shoulderAim ? { ...pose.shoulderAim } : pose.shoulderAim };
+  return {
+    ...pose,
+    shoulderAim: pose.shoulderAim ? { ...pose.shoulderAim } : pose.shoulderAim,
+    elbows: pose.elbows ? Object.fromEntries(Object.entries(pose.elbows).map(([side, point]) => [side, point ? { ...point } : point])) : pose.elbows,
+  };
 }
 function cloneAnimationTemplate(source = {}) {
   return {
@@ -1766,7 +1770,7 @@ function refreshJsonView() {
   $('jsonView').value = JSON.stringify(exportAnimObject(), null, 2);
 }
 function exportAnimObject() {
-  return {
+  const exported = {
     version: 1,
     kind: anim.style === 'drink' ? 'hobunji_held_action_animation' : 'hobunji_attack_animation',
     name: anim.name,
@@ -1779,6 +1783,7 @@ function exportAnimObject() {
     toolEndFlip: anim.toolEndFlip === true,
     poses: { neutral: { ...anim.poses.neutral }, windup: { ...anim.poses.windup }, strike: { ...anim.poses.strike } },
   };
+  return window.HobunjiAttackEditorHandShoulderControls?.decorateAnimationObject?.(exported) || exported;
 }
 $('exportBtn').onclick = () => {
   const obj = exportAnimObject();
