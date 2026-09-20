@@ -11,6 +11,7 @@ const read = relative => fs.readFileSync(path.join(root, relative), 'utf8');
 const config = JSON.parse(read('docs/config/harlyao-night-march.json')); // Authored nightly route/equipment/visual/music/atmosphere contract under test.
 const runtimeSource = read('docs/js/harlyao-night-march-runtime.js'); // Corrected controller that owns hourly chunk-only simulation and observed marching.
 const musicSource = read('docs/js/harlyao-night-march-music.js'); // Scheduler-owned exclusive Ghoul-track soundtrack adapter.
+const musicCoreSource = read('docs/js/music-system.js'); // Shared soundtrack scheduler now owns generic loop/exclusive-track behavior.
 const atmosphereSource = read('docs/js/harlyao-night-march-atmosphere.js'); // Second outdoor darkness pass that preserves existing local light masks.
 const ghostifySource = read('docs/js/ghostify.js'); // Shared spectral material/darkness-lighting helper used by Harlyao.
 const probeSource = read('docs/js/harlyao-night-march-pixel-probe.js'); // Mobile report adapter that exposes route/visibility/provocation/music without console access.
@@ -80,9 +81,12 @@ assert.match(musicSource, /Math\.hypot\(player\.cx - army\.cx, player\.cz - army
 assert.match(musicSource, /transitionFrom \+ \(transitionTo - transitionFrom\) \* t/, 'volume changes use a real fixed-duration interpolation between stages');
 assert.match(musicSource, /exclusiveSoundtrack: true/, 'Harlyao track declares itself the exclusive soundtrack owner for the active zone');
 assert.match(musicSource, /return track \? \[track\] : originalTownMineBgm\(area\)/, 'active zone exposes only the Harlyao track to Music area-BGM resolution');
-assert.match(musicSource, /capturedAudio\.loop = true/, 'the Music-created BGM element loops so ambient cues cannot slip between repeats');
-assert.match(musicSource, /type === 'timeupdate'/, 'looping march BGM omits Music natural-end fade watcher so each loop cannot fade itself permanently silent');
-assert.match(musicSource, /proxy\.isPlayerInCombat = \(\) => activeSnapshot\(\) \? false/, 'exclusive march soundtrack cannot be replaced by combat BGM');
+assert.match(musicCoreSource, /makeGameAudio\(url, \{ loop \}\)/, 'shared Music creates authored looping tracks directly');
+assert.match(musicCoreSource, /if \(!loop && fadeOutMs > 0\)/, 'shared Music skips natural-end fade logic for authored looping tracks');
+assert.doesNotMatch(musicSource, /capturedAudio\.loop = true/, 'Harlyao no longer reimplements loop ownership on the captured element');
+assert.doesNotMatch(musicSource, /type === 'timeupdate'/, 'Harlyao no longer suppresses Music timeupdate listeners as a loop workaround');
+assert.match(musicSource, /proxy\.isPlayerInCombat = \(\) => activeSnapshot\(\) \? false/, 'pre-start Harlyao guard prevents combat BGM from winning before the exclusive track element exists');
+assert.match(musicCoreSource, /exclusiveSoundtrack === true/, 'once started, shared Music honors the Harlyao track existing exclusiveSoundtrack ownership');
 assert.match(musicSource, /entry\?\.file && !entry\?\.url/, 'ambient cues are made ineligible while the exclusive soundtrack owns the zone');
 assert.match(musicSource, /captureSchedulerAudio\(audio\)/, 'proximity gain attaches to the actual scheduler-created BGM element');
 assert.match(musicSource, /musicDeps\.showToast\(message, true\)/, 'entering the active march zone emits the authored informational toast');
