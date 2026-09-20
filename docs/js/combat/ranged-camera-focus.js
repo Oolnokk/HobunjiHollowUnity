@@ -2,18 +2,12 @@
 (() => {
   'use strict';
 
-  const VERSION = 8;
+  const VERSION = 9;
   const SHOULDER_MODE = 'shoulderSurf';
   const TIGHT_FOV_DEG = 34; // Optical zoom around the camera-center reticle ray; unlike changing shoulder distance this introduces no aim-point parallax.
-  const DEFAULT_FOCUS_HORIZONTAL_OFFSET_TILES = 0.18; // Used as the ranged-focus-only horizontal shoulder preset until the player authors another value.
-  const FOCUS_HORIZONTAL_MIN_TILES = -1; // Used by the ranged-focus Settings slider and validation.
-  const FOCUS_HORIZONTAL_MAX_TILES = 1; // Used by the ranged-focus Settings slider and validation.
-  const FOCUS_HORIZONTAL_STEP_TILES = 0.05; // Used by the ranged-focus Settings slider for parity with normal shoulder controls.
-  const FOCUS_HORIZONTAL_STORAGE_KEY = 'hobunjiRangedFocusShoulderOffsetH'; // Used to persist only the ranged-focus shoulder preset.
-  const FOCUS_EASE_PER_SEC = 9; // Used to ease ready zoom and horizontal shoulder framing without a snap.
+  const FOCUS_EASE_PER_SEC = 9; // Used to ease ready optical zoom continuously without quantized Settings-control writes.
   const RESTORE_EPSILON = 0.002; // Used to snap settled focus interpolation and stop steady-state writes.
-  const CAMERA_WRITE_EPSILON = 0.0005; // Used to avoid rewriting native camera config when the desired distance has not materially changed.
-  const SHOULDER_WRITE_EPSILON = 0.001; // Used to avoid dispatching synthetic shoulder-slider input while the desired value is unchanged.
+  const CAMERA_WRITE_EPSILON = 0.0005; // Used to avoid rewriting native camera FOV when the desired value has not materially changed.
   const MELEE_RANGE_CAPTURE_PAD_S = 0.12; // Used to retain a windup-authored melee reach through its visible strike.
   const CROSSBOW_VERTICAL_PITCH_LIMIT_DEG = 70; // Used to clamp portrait-orbit stance pitching to the combat vertical-aim envelope.
   const SURFACE_RAY_MAX_WORLD = 40; // Used as an absolute scene-ray ceiling; attack reach still decides which surface can be selected.
@@ -54,29 +48,25 @@
   let lastAimErrorSignature = ''; // Prevents the same bad scene node from spamming the in-game log.
   let blend = 0; // Drives current ranged-focus interpolation from 0 normal to 1 tight.
   let baseFovDeg = null; // Restores the authored Shoulder Cam field-of-view after ranged focus ends.
-  let baseCombatHorizontal = null; // Restores the player's authored Combat horizontal shoulder offset after focus ends.
-  let focusHorizontalOffsetTiles = loadFocusHorizontalOffset(); // Independent ranged-focus horizontal target.
-  let horizontalModified = false; // Tracks whether temporary Combat shoulder framing still needs restoration.
-  let previousCombatStance = false; // Detects fresh melee/ranged stance entry for Combat slider capture.
-  let combatCapturePending = false; // Waits one frame for game.js to sync its Combat shoulder preset before capture.
-  let ownSliderDispatch = false; // Distinguishes synthetic focus writes from player-authored Settings changes.
-  let sliderListenerInstalled = false; // Binds the existing Combat shoulder slider once.
-  let focusControlInstalled = false; // Creates/binds the separate ranged-focus slider once.
   let activeMeleeRange = null; // Latest real melee attack reach captured at windup/release.
   let lastResolvedAimTarget = null; // Mobile-readable copy of the latest resolved ranged/melee interaction target.
   let lastVerticalStance = null; // Mobile-readable copy of the latest crossbow/scatterbow portrait-orbit transform.
   let lastFocusSignature = ''; // Keeps in-game focus logging transition-only.
   let lastAppliedFov = null; // Used to avoid steady-state writes to Shoulder Cam FOV.
-  let lastAppliedHorizontal = null; // Used to avoid steady-state synthetic shoulder-slider events.
   let lastFocusSnapshotInputs = null; // Cheap per-frame refs (no cloning) for the debug snapshot() below; only cloned on demand when actually queried.
 
   function three() { return window.THREE || null; }
   function nowMs() { return typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now(); }
   function shoulderModeConfig() { return window.SCRATCHBONES_CONFIG?.game?.camera?.modes?.[SHOULDER_MODE] || null; }
-  function horizontalSlider() { return document.getElementById('settingShoulderSurfOffsetH'); }
-  function focusHorizontalSlider() { return document.getElementById('settingRangedFocusShoulderOffsetH'); }
-  function focusHorizontalValueLabel() { return document.getElementById('settingRangedFocusShoulderOffsetHValue'); }
   function combatDeps() { return window.Combat?.deps || null; }
+  function combatOffsetSnapshot() {
+    const horizontal = Number(document.getElementById('settingShoulderSurfOffsetH')?.value); // Read-only debug copy of the same Combat horizontal offset used by melee.
+    const vertical = Number(document.getElementById('settingShoulderSurfOffsetV')?.value); // Read-only debug copy of the same Combat vertical offset used by melee.
+    return {
+      horizontal: Number.isFinite(horizontal) ? horizontal : null,
+      vertical: Number.isFinite(vertical) ? vertical : null,
+    };
+  }
 
   function errorText(error) {
     return String(error?.stack || error?.message || error || 'unknown error');
@@ -101,36 +91,6 @@
       surfaceRayCache = null;
     }
     return true;
-  }
-
-  function clampFocusHorizontal(value) {
-    const number = Number(value);
-    if (!Number.isFinite(number)) return DEFAULT_FOCUS_HORIZONTAL_OFFSET_TILES;
-    return Math.max(FOCUS_HORIZONTAL_MIN_TILES, Math.min(FOCUS_HORIZONTAL_MAX_TILES, number));
-  }
-
-  function loadFocusHorizontalOffset() {
-    try {
-      const saved = window.localStorage?.getItem?.(FOCUS_HORIZONTAL_STORAGE_KEY);
-      if (saved == null || saved === '') return DEFAULT_FOCUS_HORIZONTAL_OFFSET_TILES;
-      return clampFocusHorizontal(saved);
-    } catch (_) {
-      return DEFAULT_FOCUS_HORIZONTAL_OFFSET_TILES;
-    }
-  }
-
-  function saveFocusHorizontalOffset() {
-    try { window.localStorage?.setItem?.(FOCUS_HORIZONTAL_STORAGE_KEY, String(focusHorizontalOffsetTiles)); } catch (_) {}
-  }
-
-  function setFocusHorizontalOffset(value, persist = true) {
-    focusHorizontalOffsetTiles = clampFocusHorizontal(value);
-    if (persist) saveFocusHorizontalOffset();
-    const slider = focusHorizontalSlider();
-    const valueLabel = focusHorizontalValueLabel();
-    if (slider) slider.value = String(focusHorizontalOffsetTiles);
-    if (valueLabel) valueLabel.textContent = focusHorizontalOffsetTiles.toFixed(2);
-    return focusHorizontalOffsetTiles;
   }
 
   function heldState() {
@@ -832,47 +792,6 @@
     return current + (target - current) * amount;
   }
 
-  function dispatchHorizontal(value) {
-    const slider = horizontalSlider();
-    if (!slider || !Number.isFinite(value)) return false;
-    const current = Number(slider.value);
-    if (Number.isFinite(current) && Math.abs(current - value) <= SHOULDER_WRITE_EPSILON) {
-      lastAppliedHorizontal = current;
-      return false;
-    }
-    ownSliderDispatch = true;
-    try {
-      slider.value = String(value);
-      slider.dispatchEvent(new Event('input', { bubbles: true }));
-      lastAppliedHorizontal = value;
-    } finally {
-      ownSliderDispatch = false;
-    }
-    return true;
-  }
-
-  function captureCombatHorizontalAfterGameSync(state) {
-    if (!state.combatStance) {
-      combatCapturePending = false;
-      return;
-    }
-    if (!previousCombatStance) {
-      combatCapturePending = true;
-      if (horizontalModified && !state.active && baseCombatHorizontal != null) {
-        dispatchHorizontal(baseCombatHorizontal);
-        horizontalModified = false;
-      }
-      return;
-    }
-    if (!combatCapturePending || baseCombatHorizontal != null || horizontalModified) return;
-    const sliderValue = Number(horizontalSlider()?.value);
-    if (Number.isFinite(sliderValue)) {
-      baseCombatHorizontal = sliderValue;
-      lastAppliedHorizontal = sliderValue;
-      combatCapturePending = false;
-    }
-  }
-
   function applyFov() {
     const mode = shoulderModeConfig();
     if (!mode) return null;
@@ -885,92 +804,33 @@
     const next = baseFovDeg + (tight - baseFovDeg) * blend;
     const current = Number(mode.fovDeg);
     if (!Number.isFinite(current) || Math.abs(current - next) > CAMERA_WRITE_EPSILON) mode.fovDeg = next;
+
+    const camera = rangedAimDeps?.getActiveCamera?.(); // Used to apply every eased FOV sample immediately, independent of Settings/select quantization or native camera refresh cadence.
+    if (camera && (!Number.isFinite(Number(camera.fov)) || Math.abs(Number(camera.fov) - next) > CAMERA_WRITE_EPSILON)) {
+      camera.fov = next;
+      camera.updateProjectionMatrix?.();
+    }
     lastAppliedFov = next;
     return next;
   }
 
-  function applyHorizontal(state) {
-    if (!state.combatStance || baseCombatHorizontal == null) return null;
-    const next = baseCombatHorizontal + (focusHorizontalOffsetTiles - baseCombatHorizontal) * blend;
-    if (Math.abs(next - baseCombatHorizontal) > RESTORE_EPSILON) {
-      if (dispatchHorizontal(next)) horizontalModified = true;
-    } else if (horizontalModified) {
-      dispatchHorizontal(baseCombatHorizontal);
-      horizontalModified = false;
-    }
-    return next;
-  }
-
-  function logTransition(state, fovDeg, horizontalOffset) {
+  function logTransition(state, fovDeg, combatOffsets) {
     const signature = `${state.active ? 1 : 0}|${state.reason}|${state.itemKey || '-'}|${state.rangedType}`;
     if (signature === lastFocusSignature) return;
     lastFocusSignature = signature;
     const fovText = Number.isFinite(fovDeg) ? fovDeg.toFixed(1) : 'n/a';
-    const horizontalText = Number.isFinite(horizontalOffset) ? horizontalOffset.toFixed(2) : 'n/a';
-    window.__farmLog?.(`[ranged-camera] ${state.active ? 'focus ON' : 'focus off'}: ${state.reason}; ${state.itemKey || 'none'}; fov=${fovText}; focusShoulder=${focusHorizontalOffsetTiles.toFixed(2)}; appliedHorizontal=${horizontalText}; optical zoom stays centered on the existing reticle ray.`, 'combat');
-  }
-
-  function installSliderListener() {
-    if (sliderListenerInstalled) return true;
-    const slider = horizontalSlider();
-    if (!slider) return false;
-    slider.addEventListener('input', () => {
-      if (ownSliderDispatch) return;
-      const state = focusState();
-      if (!state.combatStance) return;
-      const value = Number(slider.value);
-      if (Number.isFinite(value)) {
-        baseCombatHorizontal = value;
-        lastAppliedHorizontal = value;
-        horizontalModified = false;
-      }
-    });
-    sliderListenerInstalled = true;
-    return true;
-  }
-
-  function bindFocusControl(slider) {
-    if (!slider || slider.dataset?.hobunjiRangedFocusBound === '1') return !!slider;
-    if (slider.dataset) slider.dataset.hobunjiRangedFocusBound = '1';
-    slider.value = String(focusHorizontalOffsetTiles);
-    slider.addEventListener('input', () => setFocusHorizontalOffset(slider.value, true));
-    const valueLabel = focusHorizontalValueLabel();
-    if (valueLabel) valueLabel.textContent = focusHorizontalOffsetTiles.toFixed(2);
-    focusControlInstalled = true;
-    return true;
-  }
-
-  function installFocusOffsetControl() {
-    const existing = focusHorizontalSlider();
-    if (existing) return bindFocusControl(existing);
-    const combatSlider = horizontalSlider();
-    const combatRow = combatSlider?.closest?.('.settings-row') || combatSlider?.parentElement?.parentElement || null;
-    if (!combatRow || typeof document.createElement !== 'function') return false;
-    const row = document.createElement('label');
-    row.className = 'settings-row';
-    row.dataset.rangedFocusShoulderSetting = '1';
-    row.innerHTML = `
-      <div class="settings-label">
-        <div class="settings-name">Ranged Focus Shoulder Offset</div>
-        <div class="settings-desc">Horizontal shoulder framing used only while a ranged weapon is loaded or being wound up</div>
-      </div>
-      <div style="display:flex;align-items:center;gap:8px">
-        <input type="range" id="settingRangedFocusShoulderOffsetH" min="${FOCUS_HORIZONTAL_MIN_TILES}" max="${FOCUS_HORIZONTAL_MAX_TILES}" step="${FOCUS_HORIZONTAL_STEP_TILES}" value="${focusHorizontalOffsetTiles}" style="align-self:center">
-        <span id="settingRangedFocusShoulderOffsetHValue" class="settings-slider-value">${focusHorizontalOffsetTiles.toFixed(2)}</span>
-      </div>`;
-    if (typeof combatRow.insertAdjacentElement === 'function') combatRow.insertAdjacentElement('afterend', row);
-    else combatRow.parentElement?.insertBefore?.(row, combatRow.nextSibling || null);
-    return bindFocusControl(focusHorizontalSlider());
+    const horizontalText = Number.isFinite(combatOffsets?.horizontal) ? combatOffsets.horizontal.toFixed(2) : 'n/a';
+    const verticalText = Number.isFinite(combatOffsets?.vertical) ? combatOffsets.vertical.toFixed(2) : 'n/a';
+    window.__farmLog?.(`[ranged-camera] ${state.active ? 'focus ON' : 'focus off'}: ${state.reason}; ${state.itemKey || 'none'}; fov=${fovText}; combatOffsetH=${horizontalText}; combatOffsetV=${verticalText}; native Combat offsets remain untouched.`, 'combat');
   }
 
   function updateCameraFocus(dt) {
     const state = focusState();
-    captureCombatHorizontalAfterGameSync(state);
     blend = easeToward(blend, state.active ? 1 : 0, dt);
     if (state.active && 1 - blend < RESTORE_EPSILON) blend = 1;
     if (!state.active && blend < RESTORE_EPSILON) blend = 0;
     const fovDeg = applyFov();
-    const horizontalOffset = applyHorizontal(state);
+    const combatOffsets = combatOffsetSnapshot(); // Used only for mobile-readable diagnostics; ranged focus never writes either melee Combat offset.
 
     // Deliberately do not resolve/raycast the combat target here. This function
     // runs from RangedWeapons.update for the focus easing only. Aim resolution
@@ -978,9 +838,8 @@
     // its material input signatures changes.
     // Only stash cheap, unshared references here; snapshot() below does the
     // (rarely-called, debug-only) cloning, so this runs every frame for free.
-    lastFocusSnapshotInputs = { state, fovDeg, horizontalOffset };
-    logTransition(state, fovDeg, horizontalOffset);
-    previousCombatStance = state.combatStance;
+    lastFocusSnapshotInputs = { state, fovDeg, combatOffsets };
+    logTransition(state, fovDeg, combatOffsets);
   }
 
   function aimPerformanceSnapshot() {
@@ -1026,15 +885,7 @@
       return result;
     };
     installed = true;
-    installSliderListener();
-    installFocusOffsetControl();
     installInvalidationEvents();
-    if ((!sliderListenerInstalled || !focusControlInstalled) && document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', () => {
-        installSliderListener();
-        installFocusOffsetControl();
-      }, { once: true });
-    }
     return true;
   }
 
@@ -1044,11 +895,12 @@
     if (mode && baseFovDeg != null && Math.abs(Number(mode.fovDeg) - baseFovDeg) > CAMERA_WRITE_EPSILON) {
       mode.fovDeg = baseFovDeg;
     }
-    const state = focusState();
-    if (state.combatStance && baseCombatHorizontal != null) dispatchHorizontal(baseCombatHorizontal);
+    const camera = rangedAimDeps?.getActiveCamera?.(); // Used to restore the native optical framing immediately when focus is explicitly reset.
+    if (camera && baseFovDeg != null && Math.abs(Number(camera.fov) - baseFovDeg) > CAMERA_WRITE_EPSILON) {
+      camera.fov = baseFovDeg;
+      camera.updateProjectionMatrix?.();
+    }
     lastAppliedFov = baseFovDeg;
-    lastAppliedHorizontal = baseCombatHorizontal;
-    horizontalModified = false;
   }
 
   function currentInteractionAimTarget() {
@@ -1063,7 +915,6 @@
     install,
     updateCameraFocus,
     restoreAuthoredCamera,
-    setFocusHorizontalOffset,
     invalidateAimTarget,
     rangedInteractionAimRay,
     interactionAimTarget: currentInteractionAimTarget,
@@ -1076,18 +927,14 @@
       blend,
       fovDeg: lastFocusSnapshotInputs ? lastFocusSnapshotInputs.fovDeg : undefined,
       baseFovDeg,
-      horizontalOffset: lastFocusSnapshotInputs ? lastFocusSnapshotInputs.horizontalOffset : undefined,
-      baseCombatHorizontal,
-      focusHorizontalOffsetTiles,
+      combatOffsets: lastFocusSnapshotInputs ? { ...lastFocusSnapshotInputs.combatOffsets } : combatOffsetSnapshot(),
       tightFovDeg: TIGHT_FOV_DEG,
-      horizontalModified,
-      focusControlInstalled,
       rangedAimInstalled,
       combatInitBridgeInstalled,
       meleeAimInstalled,
       meleeRangeCaptureInstalled,
       verticalStanceInstalled,
-      cameraMutation: 'native-shoulder-fov-optical-zoom',
+      cameraMutation: 'native-shoulder-fov-optical-zoom+native-combat-offsets',
       aimAlignment: rawGetPlayerPerspectiveTarget
         ? 'shared-perspective-point-native-camera'
         : 'shared-3d-interaction-target-native-camera',
@@ -1100,8 +947,6 @@
     }),
     tuning: {
       tightFovDeg: TIGHT_FOV_DEG,
-      get focusHorizontalOffsetTiles() { return focusHorizontalOffsetTiles; },
-      defaultFocusHorizontalOffsetTiles: DEFAULT_FOCUS_HORIZONTAL_OFFSET_TILES,
       easePerSecond: FOCUS_EASE_PER_SEC,
       crossbowVerticalPitchLimitDeg: CROSSBOW_VERTICAL_PITCH_LIMIT_DEG,
       surfaceRayMaxWorld: SURFACE_RAY_MAX_WORLD,
