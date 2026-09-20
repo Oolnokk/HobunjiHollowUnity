@@ -1,28 +1,29 @@
-// Shared per-pose shoulder-compass weights.
+// Shared per-pose shoulder-follow hinge weights.
 //
-// Checkboxes are authored as booleans on Neutral/Windup/Strike, but runtime turns
-// them into 0..1 influence weights and lerps those weights with the same phase curve
-// as the held-item pose. That makes a checked Neutral Pitch box fade smoothly into
-// an unchecked Windup Pitch box instead of snapping at the phase boundary.
+// The wrist always targets the shoulder. Poses choose how much of that correction
+// may come from the hand's two meaningful local hinges: grip axis (local X) and
+// palm-normal axis (local Z). Legacy pitch/roll fields are still accepted on import.
 (function (global) {
   'use strict';
 
-  const IDLE = Object.freeze({ pitch: 1, yaw: 0, roll: 1 });
-  const ACTIVE = Object.freeze({ pitch: 0, yaw: 0, roll: 1 });
+  const IDLE = Object.freeze({ grip: 1, palmNormal: 1 });
+  const ACTIVE = Object.freeze({ grip: 0, palmNormal: 1 });
   let capturedMelee = null;
 
   const clamp01 = value => Math.max(0, Math.min(1, Number(value) || 0));
+  const axisWeight = (raw, key, legacyKey, fallback) => {
+    const value = raw?.[key] ?? raw?.[legacyKey]; // Migrates old Pitch→grip and Roll→palm-normal without keeping a third hinge.
+    return value === true ? 1 : value === false ? 0 : clamp01(value ?? fallback);
+  };
   const normalize = (raw, fallback = ACTIVE) => ({
-    pitch: raw?.pitch === true ? 1 : raw?.pitch === false ? 0 : clamp01(raw?.pitch ?? fallback.pitch),
-    yaw: raw?.yaw === true ? 1 : raw?.yaw === false ? 0 : clamp01(raw?.yaw ?? fallback.yaw),
-    roll: raw?.roll === true ? 1 : raw?.roll === false ? 0 : clamp01(raw?.roll ?? fallback.roll),
+    grip: axisWeight(raw, 'grip', 'pitch', fallback.grip),
+    palmNormal: axisWeight(raw, 'palmNormal', 'roll', fallback.palmNormal),
   });
   const lerp = (a, b, t) => {
     const k = clamp01(t);
     return {
-      pitch: a.pitch + (b.pitch - a.pitch) * k,
-      yaw: a.yaw + (b.yaw - a.yaw) * k,
-      roll: a.roll + (b.roll - a.roll) * k,
+      grip: a.grip + (b.grip - a.grip) * k,
+      palmNormal: a.palmNormal + (b.palmNormal - a.palmNormal) * k,
     };
   };
 
@@ -167,17 +168,16 @@
       return applyLeftIdleRule(side, toolKey, weightsAt(snapshot.combatProgress, timing, rawPose, sequence));
     }
 
-    // Current committed melee profiles all use Neutral=Pitch+Roll and active
-    // Windup/Strike=Roll-only. WeaponToolStances exposes its exact Neutral blend
-    // weight, including hold/release timing, so it is the precise Pitch influence.
+    // Current committed melee profiles use both local hinges at Neutral and the
+    // palm-normal hinge during active Windup/Strike. WeaponToolStances exposes its
+    // exact Neutral blend weight, including hold/release timing.
     const profileKey = `melee:${snapshot?.combatAnim || 'thrust'}`;
     const authored = global.HobunjiHandShoulderPoseProfiles?.forKey?.(profileKey);
     const profile = normalizePoseSet(authored || {});
     const neutralWeight = clamp01(snapshot.combatNeutralWeight);
     const weights = {
-      pitch: profile.strike.pitch + (profile.neutral.pitch - profile.strike.pitch) * neutralWeight,
-      yaw: profile.strike.yaw + (profile.neutral.yaw - profile.strike.yaw) * neutralWeight,
-      roll: profile.strike.roll + (profile.neutral.roll - profile.strike.roll) * neutralWeight,
+      grip: profile.strike.grip + (profile.neutral.grip - profile.strike.grip) * neutralWeight,
+      palmNormal: profile.strike.palmNormal + (profile.neutral.palmNormal - profile.strike.palmNormal) * neutralWeight,
     };
     return applyLeftIdleRule(side, toolKey, weights);
   }
