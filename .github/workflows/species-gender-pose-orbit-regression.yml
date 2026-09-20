@@ -12,6 +12,10 @@ on:
       - 'docs/js/social-action-wheel.js'
       - 'docs/js/procedural-dance-mode-core.js'
       - 'docs/js/combat/combat-bandit.js'
+      - 'docs/js/combat/combat-loadout.js'
+      - 'docs/js/combat/combat-counter-shield.js'
+      - 'docs/js/combat/enemy-weapon-stances.js'
+      - 'docs/js/combat/melee-pose-spacing.js'
       - 'docs/js/combat/ranged-weapons.js'
       - 'docs/js/weapon-tool-stances.js'
       - 'docs/js/npc-held-equipment-v4.js'
@@ -20,6 +24,8 @@ on:
       - 'docs/tools/attack-animation-editor/index.html'
       - 'scripts/runtime-frame-ownership-exceptions.json'
       - 'scripts/test-species-gender-pose-scaling.js'
+      - 'scripts/test-enemy-weapon-stances.js'
+      - 'scripts/test-heavy-weapon-alternating-neutrals.js'
       - '.github/workflows/species-gender-pose-orbit-regression.yml'
   workflow_dispatch:
 
