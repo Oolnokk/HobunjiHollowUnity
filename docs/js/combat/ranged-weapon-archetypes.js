@@ -6,7 +6,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 9;
+  const VERSION = 10;
   const PATCH_RETRY_MS = 50; // Used while game.js finishes constructing generated metal weapon definitions.
   const PATCH_RETRY_LIMIT = 160; // Used to stop the bootstrap poll after roughly eight seconds instead of polling forever.
   const THROWN_TYPE = 'thrown';
@@ -491,14 +491,6 @@
     return true;
   }
 
-  function desktopBindingFor(actionId) {
-    return window.InputBindings?.getCurrentBindings?.()?.desktop?.[actionId] || null;
-  }
-  function controllerBindingFor(actionId) {
-    return window.InputBindings?.getCurrentBindings?.()?.controller?.[actionId] || null;
-  }
-  function mouseCode(button) { return `Mouse${Number(button) || 0}`; }
-
   function installInputBridge() {
     if (inputBridgeInstalled || typeof window === 'undefined') return;
     inputBridgeInstalled = true;
@@ -513,12 +505,8 @@
     }, true);
 
     window.addEventListener('pointerup', event => {
-      if (!thrownCharge) return;
-      if (thrownCharge.pointerId != null && event.pointerId === thrownCharge.pointerId) {
-        releaseThrownCharge('action-button-pointerup');
-        return;
-      }
-      if (desktopBindingFor('action1') === mouseCode(event.button)) releaseThrownCharge('desktop-mouseup');
+      if (!thrownCharge || thrownCharge.pointerId == null) return;
+      if (event.pointerId === thrownCharge.pointerId) releaseThrownCharge('action-button-pointerup');
     }, true);
     window.addEventListener('pointercancel', event => {
       if (thrownCharge?.pointerId === event.pointerId) cancelThrownCharge('pointer-cancel');
@@ -531,20 +519,6 @@
       if (document.hidden && thrownCharge) cancelThrownCharge('visibility-hidden');
     });
 
-    window.addEventListener('keyup', event => {
-      if (thrownCharge && desktopBindingFor('action1') === event.code) releaseThrownCharge('desktop-keyup');
-    }, true);
-
-    // Watches for the held throw button coming back up. This used to be its
-    // own requestAnimationFrame loop calling navigator.getGamepads() and
-    // decoding binding codes with a private partial copy of ControllerInput's
-    // decoder (buttons and triggers only, no right-stick codes).
-    const pollControllerRelease = (frame) => {
-      if (!thrownCharge || thrownCharge.source !== 'ranged-action') return;
-      const binding = controllerBindingFor('action1');
-      if (binding && !frame.isDown(binding)) releaseThrownCharge('controller-release');
-    };
-    window.ControllerInput?.subscribe?.('ranged-thrown-charge', pollControllerRelease, 50);
   }
 
   function bootstrap() {
