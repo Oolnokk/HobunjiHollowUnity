@@ -116,7 +116,7 @@ assert.match(attachments, /rec\.calibration\.add\(visual\)/, 'GLB visual must be
 assert.match(driver, /syncCalibrationWorkspace\(record,[\s\S]*neutralWorldQuaternion: true,[\s\S]*bypassesAnimation: true,[\s\S]*bypassesShoulderAim: true/, 'calibration tab must bypass the normal animation, tool and shoulder stack');
 assert.match(attachments, /placeCalibrationPreviewWorld\(worldPosition, worldQuaternion, modelCalibration = null\)/, 'calibration tab must use a placement method outside wrapped gameplay hand placement');
 assert.doesNotMatch(shoulderAim, /toolCalibrationLocal|hand_calibration/, 'shoulder-follow must remain completely independent of model calibration');
-assert.match(shoulderAim, /localWristShoulderAxis = new THREE\.Vector3\(0, -1, 0\)/, 'editor/runtime hand follow must retain local -Y as the wrist-facing proximal axis');
+assert.match(shoulderAim, /localWristProximalAxis = new THREE\.Vector3\(0, -1, 0\)/, 'editor/runtime hand follow must retain local -Y as the wrist-facing proximal axis');
 assert.match(shoulderAim, /localGripAxis = new THREE\.Vector3\(1, 0, 0\)/, 'shoulder follow must expose the grip-axis local X hinge');
 assert.match(shoulderAim, /localPalmNormalAxis = new THREE\.Vector3\(0, 0, 1\)/, 'shoulder follow must expose the palm-normal local Z hinge');
 assert.match(shoulder, /wrist-facing side now aims toward the elbow/i, 'editor must explain that the hand now targets the elbow rather than the shoulder');
