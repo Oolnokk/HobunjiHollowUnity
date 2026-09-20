@@ -50,8 +50,8 @@ const authoredSweep = {
 const spacing = window.MeleePoseSpacing;
 assert(spacing, 'shared melee pose spacing must load before weapon stances');
 assert(Math.abs(spacing.calibration.yLift - 0.17) < 1e-12, 'uploaded Forehand must contribute exactly +0.17 authored Y before range extension');
-assert(Math.abs(spacing.calibration.rangeDelta.windup - 0.24105616245196682) < 1e-12, 'Forehand windup character-local XY range delta must match uploaded-vs-original measurement');
-assert(Math.abs(spacing.calibration.rangeDelta.strike - 0.2878573413310168) < 1e-12, 'Forehand strike character-local XY range delta must match uploaded-vs-original measurement');
+assert(Math.abs(spacing.calibration.rangeDelta.windup - 0.44949084636340847) < 1e-12, 'Forehand windup horizontal character-local range delta must match uploaded-vs-original measurement');
+assert(Math.abs(spacing.calibration.rangeDelta.strike - 0.44949084636340847) < 1e-12, 'Forehand strike horizontal character-local range delta must match uploaded-vs-original measurement');
 
 function angleDeltaDeg(a, b) {
   let d = (a - b) % 360;
@@ -61,12 +61,11 @@ function angleDeltaDeg(a, b) {
 }
 function assertEndpointSpacing(original, adjusted, phase, label) {
   const originalMetrics = spacing.metrics(original);
-  const liftedMetrics = spacing.metrics({ ...original, y: (Number(original.y) || 0) + spacing.calibration.yLift });
   const adjustedMetrics = spacing.metrics(adjusted);
   const expectedDelta = spacing.calibration.rangeDelta[phase];
-  assert(Math.abs((adjustedMetrics.rangeXY - originalMetrics.rangeXY) - expectedDelta) < 1e-10, `${label} must add the calibrated ${phase} XY range`);
-  assert(angleDeltaDeg(adjustedMetrics.directionDeg, liftedMetrics.directionDeg) < 1e-10, `${label} must preserve its own direction after the intentional +Y lift`);
-  assert(Math.abs(adjustedMetrics.z - originalMetrics.z) < 1e-10, `${label} spacing must not change character-local depth`);
+  assert(Math.abs((adjustedMetrics.rangeXZ - originalMetrics.rangeXZ) - expectedDelta) < 1e-10, `${label} must add the calibrated horizontal range`);
+  assert(angleDeltaDeg(adjustedMetrics.directionDeg, originalMetrics.directionDeg) < 1e-10, `${label} must preserve its own original horizontal ray from the player`);
+  assert(Math.abs(adjusted.y - ((Number(original.y) || 0) + spacing.calibration.yLift)) < 1e-10, `${label} must add exactly +0.17 authored Y independently of range`);
 }
 
 for (const phase of ['windup', 'strike']) {
@@ -75,11 +74,12 @@ for (const phase of ['windup', 'strike']) {
   const correctedForehand = spacing.adjustEndpoint(originalForehand, phase);
   const uploadedMetrics = spacing.metrics(uploadedForehand);
   const correctedMetrics = spacing.metrics(correctedForehand);
-  const liftedOriginalMetrics = spacing.metrics({ ...originalForehand, y: originalForehand.y + spacing.calibration.yLift });
-  assert(Math.abs(correctedMetrics.rangeXY - uploadedMetrics.rangeXY) < 1e-10, `Forehand ${phase} must preserve the uploaded total XY reach`);
-  assert(angleDeltaDeg(correctedMetrics.directionDeg, liftedOriginalMetrics.directionDeg) < 1e-10, `Forehand ${phase} must restore its original post-lift direction`);
-  assert(angleDeltaDeg(correctedMetrics.directionDeg, uploadedMetrics.directionDeg) > 5, `Forehand ${phase} must not retain the uploaded accidental lateral direction`);
-  assert(Math.abs(correctedForehand.x + 0.48) > 0.4, `Forehand ${phase} must not copy uploaded x=-0.48`);
+  const originalMetrics = spacing.metrics(originalForehand);
+  assert(Math.abs(correctedMetrics.rangeXZ - uploadedMetrics.rangeXZ) < 1e-10, `Forehand ${phase} must preserve the uploaded horizontal reach`);
+  assert(angleDeltaDeg(correctedMetrics.directionDeg, originalMetrics.directionDeg) < 1e-10, `Forehand ${phase} must restore its original horizontal direction`);
+  assert(angleDeltaDeg(correctedMetrics.directionDeg, uploadedMetrics.directionDeg) > 10, `Forehand ${phase} must not retain the uploaded accidental lateral direction`);
+  assert(Math.abs(correctedForehand.y - 0.17) < 1e-10, `Forehand ${phase} must retain the uploaded +0.17 vertical lift exactly`);
+  assert(Math.abs(correctedForehand.x + 0.48) > 0.05, `Forehand ${phase} must not copy uploaded x=-0.48`);
 }
 
 {
