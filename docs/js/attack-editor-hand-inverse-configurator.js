@@ -15,6 +15,7 @@
   const profileSelect = $('handProfileSelect');
   const card = profileSelect.closest('.card');
   if (!card) return;
+  const calibrationMount = $('handCalibrationWorkspaceMount') || card; // Dedicated tab owns every GLB↔paper alignment control.
 
   const topHelp = card.querySelector('.sectionTitle')?.nextElementSibling;
   if (topHelp?.classList.contains('help')) {
@@ -24,7 +25,6 @@
   if (tag) tag.textContent = 'hand ← tool socket';
 
   const guideCheckbox = $('handShowGripGuide');
-  const guideField = guideCheckbox?.closest('.field');
   if (guideCheckbox?.parentElement) {
     for (const node of [...guideCheckbox.parentElement.childNodes]) {
       if (node.nodeType === Node.TEXT_NODE && node.textContent.trim()) node.textContent = 'Show hand target axes';
@@ -35,21 +35,21 @@
   wrapper.innerHTML = `
     <div class="poseGroup" id="handFromToolPositionGroup">
       <div class="poseGroupHead"><span class="dot" style="background:#34d399"></span>Hand Model Calibration · position correction</div>
-      <div class="help" style="margin-bottom:6px"><b>These values move the selected HAND MODEL, not the weapon and not the weapon's grip target.</b> They correct the model's authored origin/palm after Grip Mode. Units are normalized hand-height units, so one calibration can be reused anywhere this GLB appears.</div>
+      <div class="help" style="margin-bottom:6px"><b>These values move only the selected GLB against the neutral paper hand.</b> Units are normalized hand-height units so the correction remains reusable anywhere this GLB appears.</div>
       <div class="field" style="padding:7px;border:1px solid rgba(255,255,255,.08);border-radius:8px;margin-bottom:7px">
-        <label class="fieldRow" style="cursor:pointer;margin:0"><input type="checkbox" id="handShowPaperHandGuide" style="width:auto;margin-right:6px">Show locked paper-hand reference</label>
-        <div class="help" style="margin-top:5px"><b>Reference only:</b> a fixed wireframe/x-ray grasping mitten made from one palm plane, three folded finger planes, and two folded thumb planes. It is locked to the raw right-hand grip target <b>before</b> Hand Model Calibration, so these position/rotation sliders visibly move the real GLB against it. Its folds never animate independently. Use it as a stable alignment/descriptive scaffold when directing an LLM.</div>
+        <label class="fieldRow" style="cursor:default;margin:0"><input type="checkbox" id="handShowPaperHandGuide" checked disabled style="width:auto;margin-right:6px">Neutral paper-hand reference · always on in this tab</label>
+        <div class="help" style="margin-top:5px"><b>Only reference in this workflow:</b> a fixed wireframe/x-ray grasping hand at a neutral world orientation. It receives no attack pose, weapon target, Grip Mode, shoulder targeting, character-facing rotation, or animation transform. The GLB shares that exact neutral socket; only its own calibration moves it relative to the paper hand.</div>
       </div>
       <div id="handFromToolPositionFields"></div>
     </div>
     <div class="poseGroup" id="handFromToolRotationGroup">
       <div class="poseGroupHead"><span class="dot" style="background:#fbbf24"></span>Hand Model Calibration · rotation correction</div>
-      <div class="help" style="margin-bottom:6px"><b>X/Y/Z use orthogonal quaternion correction coordinates anchored to this GLB's preserved calibration base.</b> A solo X, Y, or Z value is the exact requested rotation around that model-basis axis. Multiple corrections are solved simultaneously instead of as a sequential Z·Y·X rotation, so setting one correction to ±90° cannot collapse the other two controls onto the same physical axis. Grip Mode is applied first; shoulder-follow is a separate later layer.</div>
+      <div class="help" style="margin-bottom:6px"><b>X/Y/Z rotate only the GLB around its calibration basis while the paper hand stays neutral.</b> No Grip Mode, shoulder-follow, attack rotation, tool rotation, or character-facing rotation participates in this tab.</div>
       <div id="handFromToolRotationFields"></div>
     </div>
     <div class="help" id="handInverseLiveStatus" style="padding:7px;border:1px solid rgba(34,211,238,.22);border-radius:8px;margin-bottom:8px">Direct hand attachment preview ready.</div>
   `;
-  while (wrapper.firstChild) card.insertBefore(wrapper.firstChild, guideField || $('handEffectiveStatus'));
+  while (wrapper.firstChild) calibrationMount.appendChild(wrapper.firstChild);
 
   const positionFields = [
     { key: 'x', label: 'Hand-model X position correction', min: -2, max: 2, step: 0.01 },
@@ -71,11 +71,12 @@
   $('handFromToolPositionFields').innerHTML = positionFields.map(field => fieldMarkup('handFromToolPos', field)).join('');
   $('handFromToolRotationFields').innerHTML = rotationFields.map(field => fieldMarkup('handFromToolRot', field)).join('');
 
-  const paperGuideToggle = $('handShowPaperHandGuide'); // Editor-only visibility switch for the locked right-hand description scaffold.
+  const paperGuideToggle = $('handShowPaperHandGuide'); // Disabled indicator: the neutral reference is mandatory whenever calibration mode is active.
   function syncPaperHandGuide() {
-    hands.setShowPaperHandGuide?.(!!paperGuideToggle?.checked);
+    const active = global.HobunjiAttackEditorHandCalibrationMode?.active === true;
+    if (paperGuideToggle) paperGuideToggle.checked = active;
+    hands.setShowPaperHandGuide?.(active);
   }
-  paperGuideToggle?.addEventListener('change', syncPaperHandGuide);
 
   function currentModel() {
     return profiles.data.models?.[profileSelect.value] || null;
@@ -120,11 +121,16 @@
     const status = $('handInverseLiveStatus');
     if (status) {
       const authored = currentModel()?.handFromTool || null;
-      const gripMode = global.HobunjiHandGripModes?.currentModeKey?.() || '-';
-      const second = live?.secondaryActive ? `${live.toolKey || d?.toolKey || 'tool'} secondary` : 'idle';
-      const paperLock = paperGuideToggle?.checked ? ' · paper=LOCKED RAW GRIP TARGET' : '';
-      status.textContent = `mode=${gripMode} · authored ${shortTransform(authored)} · effective ${shortTransform(d?.handFromTool)} · right=primary grip · left=${second} · ORTHOGONAL QUATERNION XYZ / NO 90° AXIS COLLAPSE${paperLock}`;
-      status.style.color = '';
+      const active = global.HobunjiAttackEditorHandCalibrationMode?.active === true;
+      const child = d?.hand?.toolCalibration?.right || null; // Mobile-visible proof that the authored correction reached the dedicated GLB child.
+      const q = child?.quaternion;
+      const qText = q ? `q=${[q.x,q.y,q.z,q.w].map(value => Number(value).toFixed(3)).join('/')}` : 'q=pending';
+      const pos = child?.position;
+      const posText = pos ? `childPos=${[pos.x,pos.y,pos.z].map(value => Number(value).toFixed(3)).join('/')}` : 'childPos=pending';
+      status.textContent = active
+        ? `CALIBRATION ONLY · neutral paper world frame · authored ${shortTransform(authored)} · ${posText} · ${qText} · animation/grip/shoulder BYPASSED`
+        : 'Open the Calibrate GLB tab to compare this model against the neutral paper hand.';
+      status.style.color = active && child?.enabled ? '#67e8f9' : '';
     }
     return results;
   }
@@ -162,7 +168,10 @@
   profiles.subscribe?.((_data, change) => {
     if (!change?.modelKey || change.modelKey === profileSelect.value || change.kind === 'replace') syncFields();
   });
-
+  global.HobunjiAttackEditorHandCalibrationMode?.subscribe?.(() => {
+    syncPaperHandGuide();
+    syncPreview();
+  });
 
 
   global.HobunjiAttackEditorHandCalibration = Object.freeze({
