@@ -631,12 +631,23 @@ async function rebuildAvatar(speciesId, gender) {
     logDebug(`Avatar rebuilt: ${speciesId}/${gender}: hand-attach scan failed → fallback to half-width/half-height tool base`);
   }
   baseAttachX = avatarModel.userData.handAttachX ?? (-w / 2);
-  const baseAttachY = avatarModel.userData.handAttachY ?? (h / 2);
+  let baseAttachY = avatarModel.userData.handAttachY ?? (h / 2);
   avatarModel.position.y = h / 2;
   characterBodyScaleRoot.add(avatarModel);
   const visibleRigScale = window.HobunjiCharacterRigScale?.scaleFor?.(speciesId, gender) || null; // Used to make the displayed body match the same height tuple that maps weapon Y below.
   window.HobunjiCharacterRigScale?.applyToParent?.(characterBodyScaleRoot, speciesId, gender, visibleRigScale);
   applyPreviewNeckWeights();
+  // toolBase is a scene-level sibling of characterBodyScaleRoot (matching the live
+  // game's ownership split — see the comment on characterBodyScaleRoot above), so
+  // it never inherits that root's rig scale automatically. The live runtime avoids
+  // this by scaling the SAME parent hands attach to (character-rig-scale.js's
+  // ProceduralHandAttachments hook), so its hand-attach point is scaled once. Since
+  // this preview keeps toolBase outside the scaled root, project the scanned
+  // attach point through the same final scale here or the tool/hand assembly
+  // drifts away from the (scaled) body for any species/gender with a rig scale
+  // other than 1 -- it never lines up with the shoulder.
+  baseAttachX *= characterBodyScaleRoot.scale.x;
+  baseAttachY *= characterBodyScaleRoot.scale.y;
   toolBase.position.set(toolMirrored ? -baseAttachX : baseAttachX, baseAttachY, 0);
   logDebug(`Avatar rebuilt: ${speciesId}/${gender} (prism ${w.toFixed(2)}x${h.toFixed(2)}, orbit ×${currentPoseOrbitScale.toFixed(5)}, arm ${currentArmLength.toFixed(3)}, centroidY ${currentPoseCentroidY.toFixed(3)}, base at ${toolBase.position.x.toFixed(2)}/${baseAttachY.toFixed(2)}${toolMirrored ? ', mirrored' : ''})`);
   refreshPreviewDebug();
