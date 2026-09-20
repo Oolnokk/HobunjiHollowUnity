@@ -86,7 +86,8 @@ assert.strictEqual(profiles.data.models.feline.mirrorX, true, 'Mao\'ao keeps the
 assert.strictEqual(profiles.data.models.parrot.mirrorX, false, 'Kenkari/Rakako\'an parrot hands must use the opposite mirror');
 
 for (const [key, model] of Object.entries(profiles.data.models)) {
-  assert.deepStrictEqual({ ...model.handFromTool.position }, { x: -0.07, y: -0.13, z: 0.21 }, `${key} must keep the Mao'ao tool-relative hand position`);
+  assert.deepStrictEqual({ ...model.handFromTool.position }, { x: -0.04, y: 0.05, z: -0.04 }, `${key} must inherit the newly calibrated Mao'ao tool-relative hand position`);
+  assert.deepStrictEqual({ ...model.handFromTool.rotationDeg }, { pitch: 0, yaw: 0, roll: -180 }, `${key} must inherit the newly calibrated Mao'ao child-local right-angle orientation`);
   assert.deepStrictEqual({ ...model.handFromTool.rotationCorrectionDeg }, { x: 0, y: 0, z: 0 }, `${key} must start with zero fixed-basis XYZ correction`);
   const q = model.handFromTool.rotationQuaternion;
   assert(q && [q.x, q.y, q.z, q.w].every(Number.isFinite), `${key} must expose an authoritative normalized rotation quaternion`);
