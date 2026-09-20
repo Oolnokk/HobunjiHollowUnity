@@ -370,8 +370,8 @@
       if (originalUseIdlePose) rig.useIdlePose = function secondarySpanUseIdleCapture(poses) { const result = originalUseIdlePose(poses); captureIdle(); return result; };
       const originalPlaceHandWorld = rig.placeHandWorld?.bind(rig);
       if (originalPlaceHandWorld) {
-        rig.placeHandWorld = function secondarySpanBlendWorld(side, worldPosition, worldQuaternion) {
-          const result = originalPlaceHandWorld(side, worldPosition, worldQuaternion);
+        rig.placeHandWorld = function secondarySpanBlendWorld(side, worldPosition, worldQuaternion, modelCalibration = null) {
+          const result = originalPlaceHandWorld(side, worldPosition, worldQuaternion, modelCalibration); // Preserve per-GLB calibration through the off-hand span wrapper.
           if (side !== 'left' || !leftSocket || !idlePosition || !idleQuaternion) return result;
           const influence = clamp01(currentSecondaryGripAnimationState().influence);
           if (influence >= 0.9999) return result;
