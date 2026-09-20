@@ -2180,7 +2180,7 @@ async function loadPortraitCosmetics(configBase) {
               id: `${speciesId}_${genderKey}`,
               speciesId,
               gender: genderKey,
-              armLength: Number.isFinite(Number(genderData.armLength)) ? Number(genderData.armLength) : null, // Canonical species+gender arm reach used by centroid-relative pose scaling.
+              armLength: Number.isFinite(Number(genderData.armLength)) ? Number(genderData.armLength) : null, // Legacy species-file reach fallback; PNGPlaneAvatar replaces this with attachment-rig-derived anatomy when that shared rig is available.
               label: `${sourceData.label || entry.label} (${genderKey === 'male' ? 'M' : 'F'})`,
               headUrl: genderData.headSprite,
               bodyLayers: genderData.portraitBodyLayers.map(l => ({ ...normalizePortraitLayerXform(l), xformPreset: 'B' })),
@@ -2199,7 +2199,7 @@ async function loadPortraitCosmetics(configBase) {
               ...(fighterPortraitOverrides[fighter.id] || {}),
               gender: genderKey,
               speciesId,
-              ...(Number.isFinite(Number(genderData.armLength)) ? { armLength: Number(genderData.armLength) } : {}), // Preserve inherited species/gender reach on pre-existing fighters.
+              ...(Number.isFinite(Number(genderData.armLength)) ? { armLength: Number(genderData.armLength) } : {}), // Preserve the legacy fallback on pre-existing fighters; runtime avatar anatomy still prefers the attachment-rig-derived reach.
               ...(genderData.headXform ? { headXform: genderData.headXform } : {}),
               ...(Array.isArray(genderData.portraitBodyLayers) ? {
                 bodyLayers: genderData.portraitBodyLayers.map(l => ({ ...normalizePortraitLayerXform(l), xformPreset: 'B' }))
