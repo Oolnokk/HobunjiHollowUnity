@@ -435,6 +435,7 @@ assert.doesNotMatch(gripConfigSource, /function primaryGripForTool\(\) \{ return
 
 assert.match(gripModeSource, /palm-parallel/, 'palm-parallel grip mode must remain');
 assert.match(gripModeSource, /palm-perpendicular/, 'palm-perpendicular grip mode must remain');
+assert.match(gripModeSource, /'palm-perpendicular'[\s\S]*rotationDeg:\s*Object\.freeze\(\{\s*pitch:\s*-90,\s*yaw:\s*0,\s*roll:\s*0\s*\}\)/, 'palm-perpendicular must be flipped 180 degrees around local X from the old +90 orientation');
 assert.match(gripModeSource, /normalizedCalibration\.rotationQuaternion/, 'grip composition must consume the authoritative quaternion-native hand calibration');
 assert.match(gripModeSource, /const rotationQuaternion = normalizeQuat\(multiplyQuat\(modeQ, calibrationQ\)\)/, 'Grip Mode must compose before Hand Model Calibration without Euler re-entry');
 assert.doesNotMatch(gripModeSource, /targetRotation\s*=\s*\{[\s\S]*br\.pitch/, 'grip mode must not add calibration Euler channels at the X=90° singularity');
