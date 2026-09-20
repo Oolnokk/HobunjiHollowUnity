@@ -713,11 +713,12 @@
         paperGuide.rotation.y = THREE.MathUtils.degToRad(RIGHT_SHOULDER_AXIS_TWIST_DEG); // Matches the rendered right-hand visual's fixed source-hand twist.
         paperReferenceSocket.add(paperGuide);
       }
+      const calibrationMode = global.HobunjiAttackEditorHandCalibrationMode?.active === true;
       const targetHeight = modelHeight
         * (Number(profiles.data?.handHeightFraction) || 0.12)
-        * (Number(values.effectiveScale) || 1);
+        * (calibrationMode ? (Number(values.speciesScale) || 1) : (Number(values.effectiveScale) || 1)); // Calibration reference excludes GLB model scale so model scale can actually be judged against it.
       const sourceIsLeft = values.model?.mirrorX !== false;
-      const mirrorSign = sourceIsLeft ? -1 : 1; // Same source-left → right-hand mirror convention as buildGlbHand().
+      const mirrorSign = calibrationMode ? -1 : (sourceIsLeft ? -1 : 1); // Calibration paper is a fixed canonical right hand; GLB handedness/mirroring changes only the model.
       paperGuide.scale.set(targetHeight * mirrorSign, targetHeight, targetHeight);
       paperGuide.visible = showPaperHandGuide && paperGuidePlaced;
       paperGuide.updateMatrix?.();
