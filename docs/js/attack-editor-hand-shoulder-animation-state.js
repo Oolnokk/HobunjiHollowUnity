@@ -13,11 +13,11 @@
   if (!controls || !presetSelect || !loadPresetButton || !loadFile || global.HobunjiAttackEditorShoulderAnimationState) return;
 
   const PHASES = Object.freeze(['neutral', 'windup', 'strike']);
-  const AXES = Object.freeze(['pitch', 'yaw', 'roll']);
+  const AXES = Object.freeze(['grip', 'palmNormal']);
   const DEFAULTS = Object.freeze({
-    neutral: Object.freeze({ pitch: true, yaw: false, roll: true }),
-    windup: Object.freeze({ pitch: false, yaw: false, roll: true }),
-    strike: Object.freeze({ pitch: false, yaw: false, roll: true }),
+    neutral: Object.freeze({ grip: true, palmNormal: true }),
+    windup: Object.freeze({ grip: false, palmNormal: true }),
+    strike: Object.freeze({ grip: false, palmNormal: true }),
   });
   const cache = new Map(); // Stores independent checkbox sets for each editor animation key.
   let activeKey = 'draft:new-attack'; // Identifies the animation whose checkboxes are currently visible.
@@ -36,10 +36,11 @@
   }
 
   function normalizeAxes(raw, fallback) {
+    const grip = raw?.grip ?? raw?.pitch; // Legacy Pitch maps to the hand-local grip-axis hinge.
+    const palmNormal = raw?.palmNormal ?? raw?.roll; // Legacy Roll maps to the hand-local palm-normal hinge.
     return {
-      pitch: raw?.pitch === true ? true : raw?.pitch === false ? false : !!fallback.pitch,
-      yaw: raw?.yaw === true ? true : raw?.yaw === false ? false : !!fallback.yaw,
-      roll: raw?.roll === true ? true : raw?.roll === false ? false : !!fallback.roll,
+      grip: grip === true ? true : grip === false ? false : !!fallback.grip,
+      palmNormal: palmNormal === true ? true : palmNormal === false ? false : !!fallback.palmNormal,
     };
   }
 
