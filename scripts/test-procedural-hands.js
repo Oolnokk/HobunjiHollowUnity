@@ -206,6 +206,45 @@ const liveProfiles = liveCalibrationWindow.HobunjiHandModelProfiles;
 const liveModes = liveCalibrationWindow.HobunjiHandGripModes;
 const profileEvents = [];
 liveProfiles.subscribe((_data, change) => profileEvents.push(change));
+const sharedDefaultModels = liveProfiles.defaultData.models;
+for (const modelKey of ['pachyderm', 'sloth', 'feline', 'parrot']) {
+  const transform = sharedDefaultModels[modelKey].handFromTool;
+  assert.deepStrictEqual(
+    JSON.parse(JSON.stringify(transform.position)),
+    { x: -0.04, y: 0.05, z: -0.04 },
+    `${modelKey} must inherit the new Mao'ao-calibrated shared GLB position baseline`,
+  );
+  assert.deepStrictEqual(
+    JSON.parse(JSON.stringify(transform.rotationDeg)),
+    { pitch: 0, yaw: 0, roll: -180 },
+    `${modelKey} must inherit the new Mao'ao-calibrated child-local right-angle orientation`,
+  );
+  assert.deepStrictEqual(
+    JSON.parse(JSON.stringify(transform.rotationCorrectionDeg)),
+    { x: 0, y: 0, z: 0 },
+    `${modelKey} shared baseline must start with zero correction coordinates`,
+  );
+}
+const v1MigrationProbe = liveProfiles.clone();
+v1MigrationProbe.alignmentPreset = 'all-species-direction-90--90-0-v1';
+v1MigrationProbe.models.pachyderm.mirrorX = false; // A deliberately non-default handedness proves the v1→v2 calibration migration does not reset unrelated per-model setup.
+for (const model of Object.values(v1MigrationProbe.models)) {
+  model.handFromTool = {
+    position: { x: -0.07, y: -0.13, z: 0.21 },
+    rotationDeg: { pitch: 90, yaw: -90, roll: 0 },
+  };
+}
+liveProfiles.replace(v1MigrationProbe);
+for (const modelKey of ['pachyderm', 'sloth', 'feline', 'parrot']) {
+  const transform = liveProfiles.data.models[modelKey].handFromTool;
+  assert.strictEqual(transform.position.x, -0.04, `${modelKey} v1→v2 migration must apply shared Mao'ao X`);
+  assert.strictEqual(transform.position.y, 0.05, `${modelKey} v1→v2 migration must apply shared Mao'ao Y`);
+  assert.strictEqual(transform.position.z, -0.04, `${modelKey} v1→v2 migration must apply shared Mao'ao Z`);
+  assert.strictEqual(transform.rotationDeg.pitch, 0, `${modelKey} v1→v2 migration must snap shared local pitch`);
+  assert.strictEqual(transform.rotationDeg.yaw, 0, `${modelKey} v1→v2 migration must snap shared local yaw`);
+  assert.strictEqual(transform.rotationDeg.roll, -180, `${modelKey} v1→v2 migration must snap shared local roll`);
+}
+assert.strictEqual(liveProfiles.data.models.pachyderm.mirrorX, false, 'v1→v2 calibration migration must preserve an existing per-model mirror choice');
 const beforeLiveCalibration = liveModes.effectiveFrameForModel('feline', 'palm-parallel');
 liveProfiles.updateModelHandTransform('feline', transform => { transform.position.x += 0.5; });
 const afterLivePosition = liveModes.effectiveFrameForModel('feline', 'palm-parallel');
