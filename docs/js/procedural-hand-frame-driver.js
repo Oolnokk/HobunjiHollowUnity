@@ -144,6 +144,36 @@
     return profiles.modelKeyForSpecies?.(record.speciesId) || null;
   }
 
+  function modelCalibrationForRecord(record) {
+    const modelKey = modelKeyForRecord(record); // Single authoritative editor/runtime model identity used for both rendered GLB and calibration.
+    const raw = profiles.normalizeHandTransform?.(profiles.data?.models?.[modelKey]?.handFromTool)
+      || profiles.data?.models?.[modelKey]?.handFromTool
+      || {};
+    const p = raw.position || {};
+    const r = raw.rotationDeg || {};
+    const q = raw.rotationQuaternion || null;
+    const modelHeight = Number(record.avatarRoot?.userData?.portraitModelHeight) || 0.9;
+    const modelScale = Number(profiles.data?.models?.[modelKey]?.scale) || 1;
+    const speciesScale = Number(profiles.speciesScaleFor?.(record.speciesId, record.gender)) || 1;
+    const unit = modelHeight * (Number(profiles.data?.handHeightFraction) || 0.12) * modelScale * speciesScale;
+    return {
+      modelKey,
+      position: {
+        x: (Number(p.x) || 0) * unit,
+        y: (Number(p.y) || 0) * unit,
+        z: (Number(p.z) || 0) * unit,
+      },
+      rotationDeg: {
+        pitch: Number(r.pitch) || 0,
+        yaw: Number(r.yaw) || 0,
+        roll: Number(r.roll) || 0,
+      },
+      rotationQuaternion: q && [q.x, q.y, q.z, q.w].every(value => Number.isFinite(Number(value)))
+        ? { x: Number(q.x), y: Number(q.y), z: Number(q.z), w: Number(q.w) }
+        : null,
+    };
+  }
+
   function gripModeTransformForRecord(record) {
     const mode = global.HobunjiHandGripModes?.currentMode?.() || {}; // Grip Mode belongs to the socket; GLB-specific handFromTool calibration now lives on the visual child owned by ProceduralHandAttachments.
     const p = mode.position || {};
@@ -416,13 +446,14 @@
       const primarySocket = toolSocketWorld(record, toolHolder, primaryGrip); // Raw target ON the weapon, before Grip Mode or per-GLB hand-model calibration.
       record.rig.placePaperHandGuideWorld?.(primarySocket.position, primarySocket.quaternion); // Locked reference stays on the raw target while Grip Mode + child calibration move the real hand.
       const primary = handSocketAfterGripMode(record, primarySocket);
-      record.rig.placeHandWorld?.('right', primary.position, primary.quaternion);
+      const modelCalibration = modelCalibrationForRecord(record); // Exact selected-model transform is passed through; the rig never re-resolves a different model by species.
+      record.rig.placeHandWorld?.('right', primary.position, primary.quaternion, modelCalibration);
       ensureFallbackState(record).owners.right = 'primary-grip';
 
       const secondaryGrip = toolGrips.secondaryGripForTool(toolKey);
       if (secondaryGrip) {
         const secondary = handSocketAfterGripMode(record, toolSocketWorld(record, toolHolder, secondaryGrip));
-        record.rig.placeHandWorld?.('left', secondary.position, secondary.quaternion);
+        record.rig.placeHandWorld?.('left', secondary.position, secondary.quaternion, modelCalibration);
         record.secondaryActive = true;
         ensureFallbackState(record).owners.left = 'secondary-grip';
       } else {
@@ -446,7 +477,8 @@
         primaryGrip: JSON.parse(JSON.stringify(primaryGrip)),
         secondaryActive: record.secondaryActive,
         secondaryGrip: secondaryGrip ? JSON.parse(JSON.stringify(secondaryGrip)) : null,
-        authoredHandTransform: profiles.handTransformForSpecies?.(record.speciesId) || null,
+        authoredHandTransform: profiles.data?.models?.[modelCalibration.modelKey]?.handFromTool || null,
+        modelCalibration,
         gripModeTransform: primary.mode,
         paperHandReferenceFrame: 'raw-primary-grip-before-grip-mode-and-hand-model-calibration',
         visualGripBasis: primary.visualBasis,
