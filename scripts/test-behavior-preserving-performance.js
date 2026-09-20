@@ -153,7 +153,8 @@ function replayHandSync(source, diagnostic) {
     toolSocketWorld: (_record, _holder, grip) => grip,
     handWorldFromSocket: (_record, grip) => ({ position: grip.position, quaternion: { w: 1 }, authored: {}, visualBasis: 'test' }), // Baseline helper retained for PERF_BASE_REF replay.
     handSocketAfterGripMode: (_record, grip) => ({ position: grip.position, quaternion: { w: 1 }, mode: {}, visualBasis: 'test' }), // Current socket-only helper; model calibration is mocked as a downstream child.
-    profiles: { handTransformForSpecies: () => ({}) },
+    modelCalibrationForRecord: () => ({ modelKey: 'feline', position: { x: 0, y: 0, z: 0 }, rotationQuaternion: { x: 0, y: 0, z: 0, w: 1 } }), // Exact selected-model calibration passed to each held-hand placement.
+    profiles: { data: { models: { feline: { handFromTool: {} } } } },
     ensureFallbackState: entry => entry.fallback,
     applyFallbackSide: (_record, side) => calls.push(['fallback', side]),
     applyFallbackBoth: () => calls.push(['fallback', 'both']),
