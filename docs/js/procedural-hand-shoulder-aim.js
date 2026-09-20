@@ -386,6 +386,7 @@
         applied: weights.grip > 0 || weights.palmNormal > 0,
         source: shoulderSource[side],
         shoulder: { x: shoulder.x, y: shoulder.y, z: shoulder.z },
+        wrist: { x: socket.position.x, y: socket.position.y, z: socket.position.z },
         elbow: { x: elbow.x, y: elbow.y, z: elbow.z },
         diagnosticArmLength: elbowSolve?.diagnosticArmLength ?? armGuideLength(side),
         upperArmLength: elbowSolve?.upperArmLength ?? null,
