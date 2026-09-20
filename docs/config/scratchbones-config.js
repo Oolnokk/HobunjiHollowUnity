@@ -345,11 +345,14 @@ window.SCRATCHBONES_CONFIG = {
       // this gameplay duration rather than making differently authored
       // directions stun for different lengths.
       "knockbackCollision": {
-        "fallback": { "footing": 12 },
-        "stone": { "health": 8, "footing": 20, "shatteredStamina": 10, "bruisedHealth": 8 },
-        "wood": { "footing": 14, "bleedingHealth": 8, "woundedStamina": 8 },
-        "bladed": { "health": 20, "bleedingHealth": 22, "woundedStamina": 14 },
-        "fire": { "burningHealth": 18 },
+        // These values are authored before the global Footing-damage bridge doubles spendFooting().
+        // Health/status payloads are reduced in the same pass so collision remains a follow-up payoff,
+        // not a larger attack layered on top of the hit that caused the knockback.
+        "fallback": { "footing": 6 },
+        "stone": { "health": 4, "footing": 10, "shatteredStamina": 5, "bruisedHealth": 4 },
+        "wood": { "footing": 7, "bleedingHealth": 4, "woundedStamina": 4 },
+        "bladed": { "health": 10, "bleedingHealth": 11, "woundedStamina": 7 },
+        "fire": { "burningHealth": 9 },
         "burningDodgeRecovery": 12
       },
       "stagger": {
@@ -359,9 +362,15 @@ window.SCRATCHBONES_CONFIG = {
         "visualMinDurationSeconds": 0.45,
         "footingLossPerDamage": 1.6,
         "damageTypeMultipliers": {
+          // Sharp keeps a modest direct-Health edge; Blunt keeps baseline Health damage
+          // but applies 50% more Footing pressure than Sharp before shared Footing scaling.
+          "sharp": {
+            "healthDamage": 1.10,
+            "footingDamage": 0.80
+          },
           "blunt": {
-            "healthDamage": 0.75,
-            "footingDamage": 1.25
+            "healthDamage": 1.00,
+            "footingDamage": 1.20
           }
         }
       },
