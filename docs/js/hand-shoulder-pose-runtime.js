@@ -1,8 +1,8 @@
 // Shared per-pose hand/elbow data.
 //
-// The hand's proximal local -Y axis targets the pose-authored elbow. Poses still
+// The hand's proximal local +Y axis targets the pose-authored elbow. Poses still
 // choose how much of that correction may come from the hand's two meaningful local
-// hinges: grip axis (local X) and palm-normal axis (local Z). Legacy pitch/roll
+// hinges: grip axis (local +X) and directed palm-normal axis (local -Z). Legacy pitch/roll
 // hinge fields remain import-compatible.
 (function (global) {
   'use strict';
@@ -36,13 +36,16 @@
     normalizeElbowPoint(pose?.elbows?.[side] || pose?.elbow?.[side] || pose?.shoulderAim?.elbows?.[side]);
   const lerpElbowPoint = (a, b, t) => {
     if (!a && !b) return null;
-    if (!a) return { ...b };
-    if (!b) return { ...a };
+    // A missing elbow keyframe means the legacy shoulder target for that phase,
+    // which is exactly a zero shoulder-relative elbow offset. Interpolate through
+    // that zero point so adding an elbow to only one phase never snaps on at t=0.
+    const from = a || { x: 0, y: 0, z: 0 };
+    const to = b || { x: 0, y: 0, z: 0 };
     const k = clamp01(t);
     return {
-      x: a.x + (b.x - a.x) * k,
-      y: a.y + (b.y - a.y) * k,
-      z: a.z + (b.z - a.z) * k,
+      x: from.x + (to.x - from.x) * k,
+      y: from.y + (to.y - from.y) * k,
+      z: from.z + (to.z - from.z) * k,
     };
   };
 
