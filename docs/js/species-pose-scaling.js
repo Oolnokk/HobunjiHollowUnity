@@ -149,6 +149,7 @@
     CONFIG_PATH,
     MAO_AO_ARM_LENGTH,
     ready,
+    reloadFromDatabaseSource: loadConfig,
     scaleForArmLength, // Compatibility/debug only; new pose consumers should use explicit poseOrbitScale.
     scaleForPose,
     resolveScale,
