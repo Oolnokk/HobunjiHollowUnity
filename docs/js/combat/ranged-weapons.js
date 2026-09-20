@@ -1388,10 +1388,11 @@
     const vθ = θ + THREE.MathUtils.degToRad(pose.bodyYaw || 0);
     const rx = Math.cos(vθ), rz = -Math.sin(vθ), fx = Math.sin(vθ), fz = Math.cos(vθ);
     holder.position.set(c.x / deps.TILE + rx * (-0.34 + pose.x) + fx * pose.z, c.avatarRef.group.position.y + pose.y, c.y / deps.TILE + rz * (-0.34 + pose.x) + fz * pose.z);
-    const armLength = Number(c.avatarRef?.armLength ?? c.avatarRef?.group?.userData?.armLength); // Cached canonical reach; no per-frame geometry measurement.
+    const armLength = Number(c.avatarRef?.armLength ?? c.avatarRef?.group?.userData?.armLength); // Anatomical reach retained only as a backwards-compatible fallback.
+    const poseOrbitScale = Number(c.avatarRef?.poseOrbitScale ?? c.avatarRef?.group?.userData?.poseOrbitScale);
     const centroidOffsetY = Number(c.avatarRef?.visualCentroidLocalY ?? c.avatarRef?.group?.userData?.visualCentroidLocalY) || 0; // Actual visible-body center within the converted bandit group.
-    window.HobunjiSpeciesPoseScale?.scalePointAroundCentroid?.(holder.position, c.avatarRef.group.position.x, c.avatarRef.group.position.y + centroidOffsetY, c.avatarRef.group.position.z, armLength);
-    c._rangedPoseCentroidScale = window.HobunjiSpeciesPoseScale?.scaleForArmLength?.(armLength) ?? 1; // Debug only; projectile/reticle orientation remains untouched.
+    window.HobunjiSpeciesPoseScale?.scalePointAroundCentroid?.(holder.position, c.avatarRef.group.position.x, c.avatarRef.group.position.y + centroidOffsetY, c.avatarRef.group.position.z, armLength, poseOrbitScale);
+    c._rangedPoseCentroidScale = window.HobunjiSpeciesPoseScale?.scaleForPose?.(poseOrbitScale, armLength) ?? 1; // Debug only; projectile/reticle orientation remains untouched.
     holder.rotation.set(THREE.MathUtils.degToRad(pose.pitch), vθ + THREE.MathUtils.degToRad(pose.yaw), THREE.MathUtils.degToRad(pose.roll), 'YXZ');
   }
 
