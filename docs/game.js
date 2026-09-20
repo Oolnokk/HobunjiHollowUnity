@@ -25015,6 +25015,13 @@
           const releaseSlot = weaponActionSlot(actionId);
           if (releaseSlot) { window.Combat.input.pressEnd(releaseSlot); return; }
           if (heldItemActionPresses.delete(actionId)) { window.HeldItemActionInput?.release(); return; }
+          if (actionId === 'action1' && heldMode === 'tool' && activeTool === 'ranged') {
+            const thrownBridge = window.HobunjiRangedWeaponArchetypes; // Used so controller/keyboard/mouse Action 1 releases the same active thrown charge through shared input ownership.
+            if (thrownBridge?.activeThrownChargeItemKey?.()) {
+              thrownBridge.releaseThrownCharge?.('input-action-release');
+              return;
+            }
+          }
           return;
         }
         if (window.Fishing?.state?.active) {
@@ -25850,7 +25857,14 @@
         if (mouseAction === 'action2' && heldMode === 'tool' && activeTool === 'ranged') { runInputAction('action2', 'release'); return; }
         if (mouseAction === 'action1') {
           actionHeldDown = false;
-          if (desktopHeldItemMousePresses.delete(e.button)) window.HeldItemActionInput?.release();
+          if (desktopHeldItemMousePresses.delete(e.button)) {
+            window.HeldItemActionInput?.release();
+            return;
+          }
+          if (heldMode === 'tool' && activeTool === 'ranged' && window.HobunjiRangedWeaponArchetypes?.activeThrownChargeItemKey?.()) {
+            runInputAction('action1', 'release');
+            return;
+          }
           return;
         }
         if (mouseAction) runInputAction(mouseAction, 'release');
@@ -26446,10 +26460,13 @@
           const plane = mesh?.userData?.toolPlane || mesh?.children?.[0]?.userData?.toolPlane || null;
           if (!plane) return null;
           plane.updateWorldMatrix(true, false);
+          const planeGeometry = plane.geometry?.parameters || {}; // Used by projectile creation to clone the current held PNG plane dimensions without changing combat pose math.
           return {
             position: plane.getWorldPosition(new THREE.Vector3()),
             quaternion: plane.getWorldQuaternion(new THREE.Quaternion()),
             scale: plane.getWorldScale(new THREE.Vector3()),
+            planeWidth: Number(planeGeometry.width) || TOOL_MODEL_WIDTH,
+            planeHeight: Number(planeGeometry.height) || TOOL_MODEL_WIDTH,
           };
         },
         getActiveCamera: () => camera,
