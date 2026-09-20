@@ -120,6 +120,14 @@
       ({ windup, strike } = legacyProceduralEndpoints(originalAnim, power));
     }
 
+    // Enemy melee weapons use the exact same character-local spacing transform
+    // as the player.  Apply it after the enemy's original attack/power endpoint
+    // is baked, before BanditCombat's own dirSign mirror step.
+    if (window.MeleePoseSpacing?.adjustEndpoint) {
+      windup = window.MeleePoseSpacing.adjustEndpoint(windup, 'windup');
+      strike = window.MeleePoseSpacing.adjustEndpoint(strike, 'strike');
+    }
+
     return {
       originalAnim,
       requestedSign,
