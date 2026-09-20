@@ -6,6 +6,9 @@ on:
       - 'docs/js/inventory-held-override.js'
       - 'docs/js/combat/technique-scrolls.js'
       - 'docs/js/alcohol-gameplay-bridge.js'
+      - 'docs/js/cooking-system.js'
+      - 'docs/js/player-vitals.js'
+      - 'docs/js/combat/resource-system.js'
       - 'docs/js/dye-system.js'
       - 'docs/js/combat/combat-config-loader.js'
       - 'scripts/test-inventory-held-override.js'
@@ -13,12 +16,16 @@ on:
       - 'scripts/test-combat-manuals-jubmir-visits.js'
       - 'scripts/test-alcohol-swigs-and-npc-offers.js'
       - 'scripts/test-dye-item-consumption.js'
+      - 'scripts/test-hunger-stamina-regen.js'
       - '.github/workflows/inventory-hold-regression.yml'
   pull_request:
     paths:
       - 'docs/js/inventory-held-override.js'
       - 'docs/js/combat/technique-scrolls.js'
       - 'docs/js/alcohol-gameplay-bridge.js'
+      - 'docs/js/cooking-system.js'
+      - 'docs/js/player-vitals.js'
+      - 'docs/js/combat/resource-system.js'
       - 'docs/js/dye-system.js'
       - 'docs/js/combat/combat-config-loader.js'
       - 'scripts/test-inventory-held-override.js'
@@ -26,6 +33,7 @@ on:
       - 'scripts/test-combat-manuals-jubmir-visits.js'
       - 'scripts/test-alcohol-swigs-and-npc-offers.js'
       - 'scripts/test-dye-item-consumption.js'
+      - 'scripts/test-hunger-stamina-regen.js'
       - '.github/workflows/inventory-hold-regression.yml'
 
 jobs:
@@ -43,6 +51,9 @@ jobs:
           node --check docs/js/inventory-held-override.js
           node --check docs/js/combat/technique-scrolls.js
           node --check docs/js/alcohol-gameplay-bridge.js
+          node --check docs/js/cooking-system.js
+          node --check docs/js/player-vitals.js
+          node --check docs/js/combat/resource-system.js
           node --check docs/js/dye-system.js
           node --check docs/js/combat/combat-config-loader.js
           node --check scripts/test-inventory-held-override.js
@@ -50,6 +61,7 @@ jobs:
           node --check scripts/test-combat-manuals-jubmir-visits.js
           node --check scripts/test-alcohol-swigs-and-npc-offers.js
           node --check scripts/test-dye-item-consumption.js
+          node --check scripts/test-hunger-stamina-regen.js
       - name: Test general off-arch Inventory Hold behavior
         run: node scripts/test-inventory-held-override.js
       - name: Test direct Inventory item use
@@ -60,3 +72,5 @@ jobs:
         run: node scripts/test-alcohol-swigs-and-npc-offers.js
       - name: Test mystery dye held routing
         run: node scripts/test-dye-item-consumption.js
+      - name: Test Hunger stamina recovery
+        run: node scripts/test-hunger-stamina-regen.js
