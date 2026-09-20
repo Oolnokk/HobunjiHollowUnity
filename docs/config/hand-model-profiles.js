@@ -14,7 +14,8 @@
   const PREVIOUS_HAND_SIZE_BALANCE_MULTIPLIER = 0.85; // Migrates profiles saved by the immediately preceding balance preset.
   const DEFAULT_MODEL_SCALE = 2 * HAND_SIZE_BALANCE_MULTIPLIER;
   const PARROT_MODEL_SCALE = 3 * HAND_SIZE_BALANCE_MULTIPLIER;
-  const SHARED_ALIGNMENT_PRESET = 'all-species-direction-90--90-0-v1';
+  const PREVIOUS_SHARED_ALIGNMENT_PRESET = 'all-species-direction-90--90-0-v1'; // Previous repo-wide GLB alignment, used only to migrate calibration without resetting unrelated per-model handedness.
+  const SHARED_ALIGNMENT_PRESET = 'all-species-maoao-local-0-0--180-v2';
   const ROTATION_CALIBRATION_PRESET = 'orthogonal-quaternion-correction-coordinates-v3'; // Visible X/Y/Z sliders use a gimbal-free stereographic quaternion chart anchored to the preserved model calibration base.
   const MODEL_SCALE_PRESET = 'hands-92_5-feet-120-v2';
   const IDENTITY_TRANSFORM = Object.freeze({
@@ -24,8 +25,8 @@
   // Canonical alignment is intentionally reused for every species/model.
   // Kenkari/Rakako'an use the opposite source-X mirror on their parrot hand model below.
   const MAO_AO_HAND_TRANSFORM = Object.freeze({
-    position: Object.freeze({ x: -0.07, y: -0.13, z: 0.21 }),
-    rotationDeg: Object.freeze({ pitch: 90, yaw: -90, roll: 0 }),
+    position: Object.freeze({ x: -0.04, y: 0.05, z: -0.04 }), // Calibrated Mao'ao/feline GLB origin from the new neutral paper-hand workflow; this delta is now the shared baseline for every hand GLB.
+    rotationDeg: Object.freeze({ pitch: 0, yaw: 0, roll: -180 }), // Exact child-local right-angle orientation from the calibrated Mao'ao setup.
   });
 
   function identityTransform() {
@@ -321,7 +322,8 @@
     const next = clone(raw || DEFAULT_DATA);
     const previousScalePreset = next.modelScalePreset; // Distinguishes the oldest 2x parrot default from the later 3x preset during migration.
     const previousRotationCalibrationPreset = next.rotationCalibrationPreset; // Selects the exact legacy correction reconstruction used to preserve the visible v1/v2 hand orientation.
-    const migrateToSharedAlignment = next.alignmentPreset !== SHARED_ALIGNMENT_PRESET;
+    const previousAlignmentPreset = next.alignmentPreset; // Lets the v1→v2 calibration-only migration preserve per-model mirror choices.
+    const migrateToSharedAlignment = previousAlignmentPreset !== SHARED_ALIGNMENT_PRESET;
     const migrateSizeBalance = next.modelScalePreset !== MODEL_SCALE_PRESET;
     const migrateRotationCalibration = previousRotationCalibrationPreset !== ROTATION_CALIBRATION_PRESET;
     next.rotationCalibrationPreset = ROTATION_CALIBRATION_PRESET; // Orthogonal quaternion coordinates replace both rotation-vector and sequential fixed-axis calibration.
@@ -355,8 +357,10 @@
       // Existing local/exported drafts from before this shared direction migrate once.
       // After the marker is present, editor changes remain freely editable.
       if (migrateToSharedAlignment) {
-        model.handFromTool = maoAoHandTransform();
-        model.mirrorX = modelKey === 'parrot' ? false : true;
+        model.handFromTool = maoAoHandTransform(); // Apply the Mao'ao calibration delta uniformly to pachyderm, sloth, feline and parrot GLBs.
+        if (previousAlignmentPreset !== PREVIOUS_SHARED_ALIGNMENT_PRESET) {
+          model.mirrorX = modelKey === 'parrot' ? false : true; // Only truly old/pre-v1 drafts need the historical handedness normalization.
+        }
       } else {
         // New/missing values inherit the corrected left-source convention. Explicit
         // false remains a valid per-model override for a GLB authored as a right hand.
