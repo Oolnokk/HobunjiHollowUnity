@@ -244,7 +244,7 @@
   <!-- Dedicated ranged slot, loading/firing poses, and hidden-sphere
        projectiles. Loads before bandits so their dual loadouts can call it. -->
   <script src="js/nearby-volume-collision.js?v=20260827treecover2"></script>
-  <script src="js/combat/ranged-weapons.js?v=20260920orbit1-projectileport1"></script>
+  <script src="js/combat/ranged-weapons.js?v=20260920orbit1-projectileport1-rangecameraorbit2"></script>
   <script src="js/combat/ranged-hud-reticle.js?v=20260916perf1"></script>
   <script src="js/combat/melee-hud-reticle.js?v=20260917charge1"></script>
   <!-- Bandit gang combat AI + weapon visuals (window.BanditCombat) — must
@@ -269,7 +269,7 @@
   <script src="js/bounty-board.js?v=20260831spearheadexisting1"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20260918throwframe1-loomcore2-projectileport1"></script>
+  <script src="js/combat/combat-config-loader.js?v=20260918throwframe1-loomcore2-projectileport1-rangecameraorbit2"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -2360,7 +2360,7 @@
        load before game.js, which calls window.Fishing.init(...) during its
        own setup. game.js's own tool-swing code reads window.Fishing.state/
        .readyPose directly. -->
-  <script src="js/fishing-minigame.js?v=20260918throwcharge3"></script>
+  <script src="js/fishing-minigame.js?v=20260918throwcharge3-rangecameraorbit2"></script>
   <!-- Kurraya hold-assembly + reactive-twitch visuals (window.KurrayaInstrument)
        — must load before game.js, which calls window.KurrayaInstrument.init(...)
        during its own setup, mirroring window.Fishing above. -->
