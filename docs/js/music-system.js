@@ -293,11 +293,11 @@
     setMusicVolumeNow(snd, 0);
     let fadingOut = false;
     let ducked = _lyreDucked; // A track that starts while the Lyre minigame is already sounding (e.g. the previous song looped over) should come up silent, not at full volume.
-    let combatPaused = false; // Used by combat handoff helpers to preserve this track's playhead while the combat loop owns music playback.
+    let transportPaused = false; // Used by scheduler interruptions that must preserve this track's playhead instead of retiring it.
     const targetVolume = () => ducked ? 0 : Math.max(0, baseVolume) * (_musicLoudnessGain.get(resolveAudioUrl(url)) ?? 1);
     fadeMusicVolume(snd, targetVolume(), fadeInMs);
     musicLoudnessGain(url).then(() => {
-      if (!fadingOut && !combatPaused && !snd.paused) fadeMusicVolume(snd, targetVolume(), 400);
+      if (!fadingOut && !transportPaused && !snd.paused) fadeMusicVolume(snd, targetVolume(), 400);
     });
     if (!loop && fadeOutMs > 0) {
       snd.addEventListener('timeupdate', () => {
@@ -312,35 +312,35 @@
     snd._stopMusic = (stopFadeMs = fadeOutMs) => new Promise(resolve => {
       if (snd._musicRetired) { resolve(); return; }
       fadingOut = true;
-      combatPaused = false;
-      snd._combatResumePending = false;
+      transportPaused = false;
+      snd._musicResumePending = false;
       fadeMusicVolume(snd, 0, stopFadeMs, () => { retireMusicTrack(snd); resolve(); });
     });
-    snd._finishCombatResume = () => {
-      if (snd._musicRetired || combatPaused || fadingOut || !snd._combatResumePending) return;
-      const resumeFadeMs = Math.max(0, Number(snd._combatResumeFadeMs) || fadeInMs); // Used to restore the preserved track smoothly after playback actually resumes.
-      snd._combatResumePending = false;
+    snd._finishMusicResume = () => {
+      if (snd._musicRetired || transportPaused || fadingOut || !snd._musicResumePending) return;
+      const resumeFadeMs = Math.max(0, Number(snd._musicResumeFadeMs) || fadeInMs); // Restores any scheduler-paused track smoothly after playback actually resumes.
+      snd._musicResumePending = false;
       fadeMusicVolume(snd, targetVolume(), resumeFadeMs);
     };
-    snd._pauseForCombat = (pauseFadeMs = musicFadeConfig().interruptFadeMs) => {
+    snd._pauseMusic = (pauseFadeMs = musicFadeConfig().interruptFadeMs) => {
       if (snd._musicRetired || fadingOut) return false;
-      combatPaused = true;
-      snd._combatResumePending = false;
+      transportPaused = true;
+      snd._musicResumePending = false;
       fadeMusicVolume(snd, 0, pauseFadeMs, () => {
-        if (combatPaused && !snd._musicRetired && !snd.paused) snd.pause();
+        if (transportPaused && !snd._musicRetired && !snd.paused) snd.pause();
       });
       return true;
     };
-    snd._resumeAfterCombat = (resumeFadeMs = fadeInMs) => {
-      if (!combatPaused || snd._musicRetired || fadingOut) return false;
-      combatPaused = false;
-      snd._combatResumeFadeMs = Math.max(0, Number(resumeFadeMs) || 0);
-      snd._combatResumePending = true;
+    snd._resumeMusic = (resumeFadeMs = fadeInMs) => {
+      if (!transportPaused || snd._musicRetired || fadingOut) return false;
+      transportPaused = false;
+      snd._musicResumeFadeMs = Math.max(0, Number(resumeFadeMs) || 0);
+      snd._musicResumePending = true;
       setMusicVolumeNow(snd, 0);
-      requestGameAudioPlay(snd).then(() => snd._finishCombatResume?.()).catch(err => {
-        if (err?.name === 'NotAllowedError') return; // unlockGameAudio retries this preserved resume even though its faded volume is currently zero.
-        snd._combatResumePending = false;
-        audioDebug('combat resume failed ' + snd.src + ': ' + (err?.name || err), 'combat-resume-fail-' + snd.src, 0, 'bgm');
+      requestGameAudioPlay(snd).then(() => snd._finishMusicResume?.()).catch(err => {
+        if (err?.name === 'NotAllowedError') return; // unlockGameAudio retries this preserved music resume even though its faded volume is currently zero.
+        snd._musicResumePending = false;
+        audioDebug('music resume failed ' + snd.src + ': ' + (err?.name || err), 'music-resume-fail-' + snd.src, 0, 'bgm');
       });
       return true;
     };
@@ -352,7 +352,7 @@
     snd._setDuck = (duck, fadeMs = 900) => {
       if (ducked === duck || fadingOut || snd._musicRetired) return;
       ducked = duck;
-      if (combatPaused) return;
+      if (transportPaused) return;
       fadeMusicVolume(snd, targetVolume(), fadeMs);
     };
     // Some decode failures never surface as an 'error' event: the element
@@ -420,9 +420,9 @@
     // later gesture to retry play() — a one-shot retry only ever catches
     // whatever happened to be paused at that first moment.
     for (const snd of _gameAudioElements) {
-      if (!snd || snd._musicRetired || (!snd._combatResumePending && snd.volume <= 0) || !snd.paused) continue;
+      if (!snd || snd._musicRetired || (!snd._musicResumePending && snd.volume <= 0) || !snd.paused) continue;
       requestGameAudioPlay(snd).then(() => {
-        if (snd._combatResumePending) snd._finishCombatResume?.();
+        if (snd._musicResumePending) snd._finishMusicResume?.();
         audioTrace('unlock replay started ' + snd.src, 'unlock-play-' + snd.src, 0);
       }).catch(err => {
         audioDebug('unlock replay blocked/failed ' + snd.src + ': ' + (err?.name || err), 'unlock-fail-' + snd.src, 0);
@@ -510,19 +510,19 @@
     stopMusicSlot('currentBgm', reason);
   }
 
-  function musicEntryExemptsCombatBgm(snd) {
-    return snd?._musicEntry?.combatBgmExempt === true;
+  function musicEntryOwnsSoundtrack(snd) {
+    return snd?._musicEntry?.exclusiveSoundtrack === true;
   }
 
-  function ambientMusicExemptsCombatBgm() {
-    return musicEntryExemptsCombatBgm(_ambientCueState.currentCue) || musicEntryExemptsCombatBgm(_ambientCueState.currentBgm);
+  function ambientMusicOwnsSoundtrack() {
+    return musicEntryOwnsSoundtrack(_ambientCueState.currentCue) || musicEntryOwnsSoundtrack(_ambientCueState.currentBgm);
   }
 
   function pauseMusicSlotForCombat(key, fadeMs) {
     const snd = _ambientCueState[key]; // Current scheduler-owned track preserved here so combat can pause rather than retire it.
-    if (!snd || musicEntryExemptsCombatBgm(snd)) return false;
+    if (!snd || musicEntryOwnsSoundtrack(snd)) return false;
     const pauseFadeMs = Math.max(0, Number(fadeMs) || 0); // Used both for the audible fade and the combat-track start barrier.
-    if (snd._pauseForCombat?.(pauseFadeMs)) {
+    if (snd._pauseMusic?.(pauseFadeMs)) {
       _ambientCueState.blockUntil = Math.max(_ambientCueState.blockUntil, performance.now() + pauseFadeMs);
       audioDebug('fading ' + key + ' to combat pause url=' + snd.src, 'music-combat-pause-' + key + '-' + snd.src, 0, key === 'currentCue' ? 'cue' : 'bgm');
       return true;
@@ -547,10 +547,10 @@
 
   function resumeMusicSlotAfterCombat(key) {
     const snd = _ambientCueState[key]; // Preserved cue/BGM slot is resumed only if it survived live area/condition checks during combat.
-    if (!snd?._resumeAfterCombat) return false;
+    if (!snd?._resumeMusic) return false;
     const fade = musicFadeConfig(); // Selects the existing cue-vs-song transition timing for the preserved slot being restored.
     const resumeFadeMs = key === 'currentCue' ? fade.cueFadeMs : fade.songFadeInMs; // Cues return quickly; full BGM keeps the authored slower song fade.
-    const resumed = snd._resumeAfterCombat(resumeFadeMs);
+    const resumed = snd._resumeMusic(resumeFadeMs);
     if (resumed) audioDebug('resuming ' + key + ' after combat url=' + snd.src, 'music-combat-resume-' + key + '-' + snd.src, 0, key === 'currentCue' ? 'cue' : 'bgm');
     return resumed;
   }
@@ -730,7 +730,7 @@
     }
 
     const playerInCombat = !!deps.isPlayerInCombat(); // Existing game combat state remains the sole source of truth for soundtrack handoff.
-    const combatOverrideSuppressed = playerInCombat && ambientMusicExemptsCombatBgm(); // Authored special tracks can opt out without hard-coding song names here.
+    const combatOverrideSuppressed = playerInCombat && ambientMusicOwnsSoundtrack(); // Existing exclusiveSoundtrack metadata keeps authored special music authoritative without a second exemption system.
     const combatOverrideActive = playerInCombat && !combatOverrideSuppressed; // Drives only the music override; gameplay combat state itself is untouched.
     if (combatOverrideActive !== _ambientCueState.combatOverrideActive) {
       _ambientCueState.combatOverrideActive = combatOverrideActive;
@@ -743,12 +743,12 @@
           restoreAmbientSchedulerAfterCombat();
           resumeAmbientAfterCombat();
         }
-        audioDebug(playerInCombat ? 'combat music suppressed by active exempt soundtrack' : 'combat ended — resuming paused ambient music', 'combat-unduck-' + currentArea + '-' + playerInCombat, 0, 'bgm');
+        audioDebug(playerInCombat ? 'combat music suppressed by active exclusive soundtrack' : 'combat ended — resuming paused ambient music', 'combat-unduck-' + currentArea + '-' + playerInCombat, 0, 'bgm');
       }
     }
 
     if (combatOverrideSuppressed) {
-      audioTrace('combat bgm suppressed by active exempt track area=' + currentArea, 'ambient-combat-exempt-' + currentArea, 5000, 'bgm');
+      audioTrace('combat bgm suppressed by active exclusive soundtrack area=' + currentArea, 'ambient-combat-exclusive-' + currentArea, 5000, 'bgm');
     }
 
     if (combatOverrideActive) {
