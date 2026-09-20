@@ -9,7 +9,6 @@
   const RESTORE_EPSILON = 0.002; // Used to snap settled focus interpolation and stop steady-state writes.
   const CAMERA_WRITE_EPSILON = 0.0005; // Used to avoid rewriting native camera FOV when the desired value has not materially changed.
   const MELEE_RANGE_CAPTURE_PAD_S = 0.12; // Used to retain a windup-authored melee reach through its visible strike.
-  const CROSSBOW_VERTICAL_PITCH_LIMIT_DEG = 70; // Used to clamp portrait-orbit stance pitching to the combat vertical-aim envelope.
   const SURFACE_RAY_MAX_WORLD = 40; // Used as an absolute scene-ray ceiling; attack reach still decides which surface can be selected.
   const SURFACE_BEFORE_PLAYER_PAD_WORLD = 0.12; // Used to reject camera-side geometry before the player's attack origin.
   const RAY_ORIGIN_QUANTUM_WORLD = 0.02; // Used to treat tiny camera-origin jitter below two hundredths of a tile as the same aim input.
@@ -19,17 +18,14 @@
 
   let baseUpdate = null; // Preserves the ranged system's existing update before lightweight focus bookkeeping runs.
   let baseRangedInit = null; // Preserves RangedWeapons.init while replacing only its player aim ray.
-  let basePlayerIdlePose = null; // Preserves the authored ranged idle stance before adding vertical portrait-orbit rotation.
   let installed = false; // Prevents wrapping RangedWeapons.update more than once.
   let rangedAimInstalled = false; // Prevents wrapping RangedWeapons.init more than once.
-  let verticalStanceInstalled = false; // Prevents wrapping playerIdlePose more than once.
   let combatInitBridgeInstalled = false; // Prevents wrapping Combat.init more than once for one-time melee hook installation.
   let meleeAimInstalled = false; // Prevents wrapping player melee aim/collision more than once.
   let meleeRangeCaptureInstalled = false; // Prevents wrapping shared melee range reports more than once.
   let rangedAimDeps = null; // Stores ranged-specific injected deps for projectile origin, interaction ray, scene and avatar metrics.
   let rawRangedGetPlayerAimRay = null; // Stores the original camera aim ray as a last-resort fallback.
   let rawRangedGetPlayerInteractionRay = null; // Stores the original centered 3D interaction ray as the common player-intent ray.
-  let rawRangedGetPlayerAimPitch = null; // Stores original vertical look pitch for fallback before a resolved target exists.
   let rawGetPlayerPerspectiveTarget = null; // Stores the game-owned finite reticle point shared by ranged poses and melee aim.
   let rawMeleeAimDirection = null; // Stores original melee aim direction for fail-safe fallback.
   let rawMeleeAimPitch = null; // Stores original melee pitch for fail-safe fallback.
@@ -50,7 +46,6 @@
   let baseFovDeg = null; // Restores the authored Shoulder Cam field-of-view after ranged focus ends.
   let activeMeleeRange = null; // Latest real melee attack reach captured at windup/release.
   let lastResolvedAimTarget = null; // Mobile-readable copy of the latest resolved ranged/melee interaction target.
-  let lastVerticalStance = null; // Mobile-readable copy of the latest crossbow/scatterbow portrait-orbit transform.
   let lastFocusSignature = ''; // Keeps in-game focus logging transition-only.
   let lastAppliedFov = null; // Used to avoid steady-state writes to Shoulder Cam FOV.
   let lastFocusSnapshotInputs = null; // Cheap per-frame refs (no cloning) for the debug snapshot() below; only cloned on demand when actually queried.
@@ -534,91 +529,6 @@
     }
   }
 
-  function rangedResolvedAimPitch() {
-    try {
-      const target = rangedInteractionAimTarget();
-      if (target?.direction) return Math.asin(Math.max(-1, Math.min(1, target.direction.y)));
-    } catch (error) {
-      noteAimError('ranged-pitch', error);
-    }
-    const fallback = Number(rawRangedGetPlayerAimPitch?.());
-    return Number.isFinite(fallback) ? fallback : 0;
-  }
-
-  function isCrossbowStyle(itemKey) {
-    if (!itemKey) return false;
-    const rangedType = window.RangedWeapons?.config?.[itemKey]?.rangedType;
-    return itemKey === 'crossbow' || itemKey === 'scatterbow' || rangedType === 'crossbow' || rangedType === 'scatterbow';
-  }
-
-  function crossbowPortraitMetrics() {
-    const deps = rangedAimDeps || combatDeps();
-    const player = deps?.player;
-    if (!player) return null;
-    try {
-      const avatar = deps?.getPlayerAvatarGroup?.();
-      const toolBaseY = Number(avatar?.userData?.handAttachY);
-      const playerBaseY = playerWorldBaseY(deps);
-      const portraitCenterY = Number(window.RangedWeapons?.actorHitbox?.(player)?.center?.y);
-      if (![toolBaseY, playerBaseY, portraitCenterY].every(Number.isFinite)) return null;
-      return { toolBaseY, portraitPivotY: portraitCenterY - playerBaseY };
-    } catch (error) {
-      noteAimError('crossbow-pivot', error);
-      return null;
-    }
-  }
-
-  function transformCrossbowPose(basePose, pitchRad = rangedResolvedAimPitch()) {
-    if (!basePose || typeof basePose !== 'object') return basePose;
-    const pitchDeg = Math.max(-CROSSBOW_VERTICAL_PITCH_LIMIT_DEG, Math.min(CROSSBOW_VERTICAL_PITCH_LIMIT_DEG, (Number(pitchRad) || 0) * 180 / Math.PI));
-    const rotation = -pitchDeg * Math.PI / 180;
-    const out = { ...basePose, pitch: (Number(basePose.pitch) || 0) - pitchDeg };
-    const metrics = crossbowPortraitMetrics();
-    if (metrics) {
-      const dy = metrics.toolBaseY + (Number(basePose.y) || 0) - metrics.portraitPivotY;
-      const dz = Number(basePose.z) || 0;
-      const cos = Math.cos(rotation), sin = Math.sin(rotation);
-      const rotatedY = dy * cos - dz * sin;
-      const rotatedZ = dy * sin + dz * cos;
-      out.y = metrics.portraitPivotY + rotatedY - metrics.toolBaseY;
-      out.z = rotatedZ;
-      lastVerticalStance = {
-        pitchDeg,
-        toolBaseY: metrics.toolBaseY,
-        portraitPivotY: metrics.portraitPivotY,
-        source: { y: Number(basePose.y) || 0, z: Number(basePose.z) || 0, pitch: Number(basePose.pitch) || 0 },
-        applied: { y: out.y, z: out.z, pitch: out.pitch },
-      };
-    } else {
-      lastVerticalStance = { pitchDeg, toolBaseY: null, portraitPivotY: null, source: { ...basePose }, applied: { ...out } };
-    }
-    return out;
-  }
-
-  function transformCrossbowPoseSet(poseSet) {
-    if (!poseSet || typeof poseSet !== 'object') return poseSet;
-    return {
-      ...poseSet,
-      neutral: transformCrossbowPose(poseSet.neutral),
-      windup: transformCrossbowPose(poseSet.windup),
-      strike: transformCrossbowPose(poseSet.strike),
-    };
-  }
-
-  function installVerticalRangedStance() {
-    const ranged = window.RangedWeapons;
-    if (verticalStanceInstalled || typeof ranged?.playerIdlePose !== 'function') return verticalStanceInstalled;
-    basePlayerIdlePose = ranged.playerIdlePose.bind(ranged);
-    ranged.playerIdlePose = function interactionAimAwarePlayerIdlePose(itemKey) {
-      const pose = basePlayerIdlePose(itemKey);
-      if (!pose || !heldState().rangedOut || !isCrossbowStyle(itemKey) || ranged.isLoaded?.(itemKey) !== true) return pose;
-      try { return transformCrossbowPose(pose); }
-      catch (error) { noteAimError('crossbow-idle-pose', error); return pose; }
-    };
-    verticalStanceInstalled = true;
-    return true;
-  }
-
   function installInteractionRangedAim() {
     const ranged = window.RangedWeapons;
     if (rangedAimInstalled || typeof ranged?.init !== 'function') return rangedAimInstalled;
@@ -629,22 +539,11 @@
       // muzzle-parallel ray for our private surface resolver; getPlayerInteractionRay
       // itself always stays the real camera-centered ray for ordinary consumers.
       rawRangedGetPlayerInteractionRay = injectedDeps?.getMuzzleParallelInteractionRay || injectedDeps?.getPlayerInteractionRay || null;
-      rawRangedGetPlayerAimPitch = injectedDeps?.getPlayerAimPitch || null;
       rawGetPlayerPerspectiveTarget = injectedDeps?.getPlayerPerspectiveTarget || null;
-      const rawTriggerRangedWeaponVisual = injectedDeps?.triggerRangedWeaponVisual;
       const wrappedDeps = {
         ...injectedDeps,
         getPlayerAimRay: () => rangedInteractionAimRay(),
-      };
-      if (typeof rawTriggerRangedWeaponVisual === 'function') {
-        wrappedDeps.triggerRangedWeaponVisual = function interactionAimAwareRangedVisual(durationS, options = {}) {
-          const itemKey = injectedDeps?.getEquippedRangedKey?.();
-          const loadedFire = itemKey && isCrossbowStyle(itemKey) && window.RangedWeapons?.isLoaded?.(itemKey) === true;
-          if (!loadedFire || !options?.pose) return rawTriggerRangedWeaponVisual(durationS, options);
-          try { return rawTriggerRangedWeaponVisual(durationS, { ...options, pose: transformCrossbowPoseSet(options.pose) }); }
-          catch (error) { noteAimError('crossbow-fire-pose', error); return rawTriggerRangedWeaponVisual(durationS, options); }
-        };
-      }
+      }; // Animation position/orientation stays owned by game.js so species/gender orbit scaling and camera yaw/pitch are applied exactly once.
       rangedAimDeps = wrappedDeps;
       invalidateAimTarget('ranged-init', true);
       return baseRangedInit(wrappedDeps);
@@ -874,7 +773,6 @@
     const ranged = window.RangedWeapons;
     if (!ranged) return false;
     installInteractionRangedAim();
-    installVerticalRangedStance();
     installCombatInitBridge();
     if (typeof ranged.update !== 'function' || installed) return !!ranged;
     baseUpdate = ranged.update.bind(ranged);
@@ -919,7 +817,6 @@
     rangedInteractionAimRay,
     interactionAimTarget: currentInteractionAimTarget,
     attackCameraTarget: currentInteractionAimTarget,
-    transformCrossbowPose,
     captureMeleeRange,
     aimPerformance: aimPerformanceSnapshot,
     snapshot: () => ({
@@ -933,7 +830,6 @@
       combatInitBridgeInstalled,
       meleeAimInstalled,
       meleeRangeCaptureInstalled,
-      verticalStanceInstalled,
       cameraMutation: 'native-shoulder-fov-optical-zoom+native-combat-offsets',
       aimAlignment: rawGetPlayerPerspectiveTarget
         ? 'shared-perspective-point-native-camera'
@@ -941,14 +837,13 @@
       aimUpdateMode: 'change-driven-persistent-cache',
       interactionAimTarget: lastResolvedAimTarget ? { ...lastResolvedAimTarget } : null,
       activeMeleeRange: activeMeleeRange ? { ...activeMeleeRange } : null,
-      verticalStance: lastVerticalStance ? { ...lastVerticalStance } : null,
+      animationPitchOwner: 'game.js species-scale-then-camera-orbit',
       lastAimError: lastAimError ? { ...lastAimError } : null,
       aimPerformance: aimPerformanceSnapshot(),
     }),
     tuning: {
       tightFovDeg: TIGHT_FOV_DEG,
       easePerSecond: FOCUS_EASE_PER_SEC,
-      crossbowVerticalPitchLimitDeg: CROSSBOW_VERTICAL_PITCH_LIMIT_DEG,
       surfaceRayMaxWorld: SURFACE_RAY_MAX_WORLD,
       rayOriginQuantumWorld: RAY_ORIGIN_QUANTUM_WORLD,
       rayDirectionQuantum: RAY_DIRECTION_QUANTUM,
