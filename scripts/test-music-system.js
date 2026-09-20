@@ -36,10 +36,10 @@ assert.match(music, /if \(track\.rainingOnly && !deps\.calendar\.isRaining\) ret
   'rain-only BGM uses the live rain window rather than the daily forecast');
 assert.match(music, /stopMusicSlot\('currentBgm', 'bgm conditions expired', musicFadeConfig\(\)\.songFadeOutMs\)/,
   'BGM whose live conditions expire uses the slow authored song fade');
-assert.match(music, /snd\._pauseForCombat = [\s\S]*?snd\.pause\(\)/,
-  'combat handoff fades and pauses the current scheduler track instead of retiring it');
-assert.match(music, /snd\._resumeAfterCombat = [\s\S]*?requestGameAudioPlay\(snd\)/,
-  'leaving combat resumes the preserved track from its existing playhead');
+assert.match(music, /snd\._pauseMusic = [\s\S]*?snd\.pause\(\)/,
+  'scheduler pause support fades and pauses the current music track instead of retiring it');
+assert.match(music, /snd\._resumeMusic = [\s\S]*?requestGameAudioPlay\(snd\)/,
+  'scheduler resume support restarts the preserved track from its existing playhead');
 assert.match(music, /const resumeFadeMs = key === 'currentCue' \? fade\.cueFadeMs : fade\.songFadeInMs;/,
   'resumed cues use the short cue fade while resumed BGM keeps the song fade');
 assert.match(music, /combatSchedulerPausedAt = performance\.now\(\)[\s\S]*?_ambientCueState\.nextAt > pausedAt[\s\S]*?_ambientCueState\.nextAt \+= pausedMs/,
@@ -47,7 +47,11 @@ assert.match(music, /combatSchedulerPausedAt = performance\.now\(\)[\s\S]*?_ambi
 assert.match(music, /activeKind = _ambientCueState\.currentCombatBgm \? 'combat-bgm'/,
   'mobile audio diagnostics identify the combat soundtrack as the active music owner');
 assert.match(music, /combatOverrideActive = playerInCombat && !combatOverrideSuppressed/,
-  'existing gameplay combat state drives the override while authored exempt tracks can suppress it');
+  'existing gameplay combat state drives the override while existing exclusive soundtrack owners can suppress it');
+assert.match(music, /exclusiveSoundtrack === true/,
+  'combat suppression reuses the existing exclusiveSoundtrack metadata instead of inventing a second exemption flag');
+assert.doesNotMatch(music, /combatBgmExempt/,
+  'music scheduler does not carry a duplicate combat-specific soundtrack exemption concept');
 assert.match(music, /playMusicTrack\(track\.url, baseVol \* trackVolMul,[\s\S]*?\{ loop: track\.loop !== false \}\)/,
   'combat BGM loops by default until combat ends');
 assert.match(music, /Math\.exp\(-4\.6 \* elapsedMs \/ fadeMs\)/,
