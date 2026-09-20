@@ -6,7 +6,9 @@ const assert = require('assert'); // Provides strict assertions for stance selec
 const vm = require('vm'); // Evaluates the browser IIFE against the small window/BanditCombat mocks below.
 
 const modulePath = path.join(__dirname, '..', 'docs', 'js', 'combat', 'enemy-weapon-stances.js'); // Runtime module under test.
+const spacingPath = path.join(__dirname, '..', 'docs', 'js', 'combat', 'melee-pose-spacing.js'); // Shared player/enemy endpoint spacing owner.
 const source = fs.readFileSync(modulePath, 'utf8'); // Exact committed runtime source executed in the mock browser context.
+const spacingSource = fs.readFileSync(spacingPath, 'utf8');
 let nowMs = 1000; // Deterministic performance clock used to test settle-window behavior.
 let refreshCount = 0; // Counts shared WeaponToolStances definition refreshes to prove classification is not duplicated here.
 const renderCalls = []; // Captures the temporary pose state BanditCombat sees while the adapter delegates each visual update.
@@ -57,6 +59,7 @@ global.window = { // Browser globals required by the runtime adapter.
   __farmLog() {},
 };
 
+vm.runInThisContext(spacingSource, { filename: spacingPath });
 vm.runInThisContext(source, { filename: modulePath });
 
 const deps = { // BanditCombat dependencies captured by the adapter's wrapped init().
@@ -148,8 +151,21 @@ function approx(actual, expected, epsilon = 1e-9) {
   assert.strictEqual(prepared.pose.neutral.roll, -heavyPose.roll);
   assert.strictEqual(prepared.pose.neutral.y, heavyPose.y);
   assert.strictEqual(prepared.pose.neutral.pitch, heavyPose.pitch);
-  approx(prepared.pose.windup.x, sweepNeutral.x + (authored.windup.x - sweepNeutral.x) * 1.5);
-  approx(prepared.pose.windup.bodyYaw, sweepNeutral.bodyYaw + (authored.windup.bodyYaw - sweepNeutral.bodyYaw) * 1.5);
+  const bakedWindup = {
+    ...authored.windup,
+    x: sweepNeutral.x + (authored.windup.x - sweepNeutral.x) * 1.5,
+    y: sweepNeutral.y + (authored.windup.y - sweepNeutral.y) * 1.5,
+    z: sweepNeutral.z + (authored.windup.z - sweepNeutral.z) * 1.5,
+    pitch: sweepNeutral.pitch + (authored.windup.pitch - sweepNeutral.pitch) * 1.5,
+    yaw: sweepNeutral.yaw + (authored.windup.yaw - sweepNeutral.yaw) * 1.5,
+    bodyYaw: sweepNeutral.bodyYaw + (authored.windup.bodyYaw - sweepNeutral.bodyYaw) * 1.5,
+    roll: sweepNeutral.roll + (authored.windup.roll - sweepNeutral.roll) * 1.5,
+  };
+  const spacedWindup = window.MeleePoseSpacing.adjustEndpoint(bakedWindup, 'windup');
+  approx(prepared.pose.windup.x, spacedWindup.x);
+  approx(prepared.pose.windup.y, spacedWindup.y);
+  approx(prepared.pose.windup.z, spacedWindup.z);
+  approx(prepared.pose.windup.bodyYaw, bakedWindup.bodyYaw);
   approx(entity._banditToolHolder.children[0].userData.toolPlane.rotation.z, 0);
   assert.strictEqual(entity._banditToolHolder.children[0].userData.toolPlane.scale.x, -1);
 }
@@ -180,8 +196,16 @@ function approx(actual, expected, epsilon = 1e-9) {
   window.BanditCombat.updateToolMesh(entity);
   assert.strictEqual(renderCalls[0].dirSign, 1);
   assert.deepStrictEqual(renderCalls[0].pose.neutral, lightPose);
-  approx(renderCalls[0].pose.windup.z, -0.40 * 1.2);
-  approx(renderCalls[0].pose.strike.x, -0.23 * 1.2);
+  const rawWindup = { x: 0, y: 0, z: -0.40 * 1.2, pitch: 10.31, yaw: 0, bodyYaw: -45 * 1.2, roll: 0 };
+  const rawStrike = { x: -0.23 * 1.2, y: 0, z: 0.32 * 1.2, pitch: 1, yaw: -45 * 1.2, bodyYaw: 46 * 1.2, roll: 0 };
+  const spacedWindup = window.MeleePoseSpacing.adjustEndpoint(rawWindup, 'windup');
+  const spacedStrike = window.MeleePoseSpacing.adjustEndpoint(rawStrike, 'strike');
+  approx(renderCalls[0].pose.windup.x, spacedWindup.x);
+  approx(renderCalls[0].pose.windup.y, spacedWindup.y);
+  approx(renderCalls[0].pose.windup.z, spacedWindup.z);
+  approx(renderCalls[0].pose.strike.x, spacedStrike.x);
+  approx(renderCalls[0].pose.strike.y, spacedStrike.y);
+  approx(renderCalls[0].pose.strike.z, spacedStrike.z);
 }
 
 // The existing post-strike settle and ranged paths stay completely untouched.

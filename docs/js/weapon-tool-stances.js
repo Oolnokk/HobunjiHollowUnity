@@ -307,6 +307,16 @@
       ({ windup, strike } = legacyProceduralEndpoints(anim, power));
     }
 
+    // All offensive melee endpoints pass through one shared Mao'ao-space
+    // calibration after their original power/pose math is baked.  The helper
+    // applies the uploaded +Y lift, measures this endpoint's character-local
+    // direction/range, and extends it by the Forehand-derived phase delta
+    // without replacing its original direction with Forehand's accidental X.
+    if (rawOpts.meleeSpacing !== false && anim !== 'ranged' && window.MeleePoseSpacing?.adjustEndpoint) {
+      windup = window.MeleePoseSpacing.adjustEndpoint(windup, 'windup');
+      strike = window.MeleePoseSpacing.adjustEndpoint(strike, 'strike');
+    }
+
     return {
       ...rawOpts,
       anim,
@@ -508,6 +518,7 @@
         savedQuaternion = this.quaternion.clone();
         try {
           applyRelativeHolderPose(this, sourcePose, targetPose);
+          if (activeSlot === 'weapon') deps?.scaleToolWorldPointAroundPlayerCentroid?.(this.position); // Weapon idle uses the same finished-point centroid orbit as attacks.
           stanceApplied = true;
         } catch (error) {
           window.__farmLog?.(`[weapon-stance] holder pose failed: ${error.message}`, 'warn');

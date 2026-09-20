@@ -17,6 +17,7 @@ const gltfLoaderSource = read('docs/js/GLTFLoader.js');
 const driverSource = read('docs/js/procedural-hand-frame-driver.js');
 const gripConfigSource = read('docs/js/hand-tool-grips.js');
 const editorUiSource = read('docs/js/attack-editor-hand-configurator.js');
+const inverseEditorSource = read('docs/js/attack-editor-hand-inverse-configurator.js');
 const directEditorSource = read('docs/js/attack-editor-hand-direct-attachments.js');
 const gripModeSource = read('docs/js/hand-grip-modes.js');
 const gripEditorSource = read('docs/js/attack-editor-hand-grip-mode.js');
@@ -24,6 +25,8 @@ const shoulderScanSource = read('docs/js/portrait-hand-shoulder-scan.js');
 const shoulderScanSpeciesSource = read('docs/js/portrait-hand-shoulder-scan-species.js');
 const shoulderPoseRuntimeSource = read('docs/js/hand-shoulder-pose-runtime.js');
 const shoulderAimSource = read('docs/js/procedural-hand-shoulder-aim.js');
+const scaleFreeHandSource = read('docs/js/procedural-hand-scale-free-world.js'); // Verifies calibration payload survives the world/local placement wrapper.
+const attackEditorSource = read('docs/tools/attack-animation-editor/index.html'); // Verifies the isolated tab hides animation/tool presentation.
 const shoulderControlsSource = read('docs/js/attack-editor-hand-shoulder-controls.js');
 const animationAuthorSource = read('docs/tools/animation-author/index.html');
 const npcPreviewSource = read('docs/js/npc-avatar-preview-utils.js');
@@ -82,14 +85,185 @@ assert(Math.abs(profiles.modelScaleFor('kenkari') - 2.775) < 1e-12, 'parrot hand
 assert.strictEqual(profiles.data.models.feline.mirrorX, true, 'Mao\'ao keeps the normal source-X mirror');
 assert.strictEqual(profiles.data.models.parrot.mirrorX, false, 'Kenkari/Rakako\'an parrot hands must use the opposite mirror');
 
-const maoTransform = JSON.stringify({
-  position: { x: -0.07, y: -0.13, z: 0.21 },
-  rotationDeg: { pitch: 90, yaw: -90, roll: 0 },
-});
 for (const [key, model] of Object.entries(profiles.data.models)) {
-  assert.strictEqual(JSON.stringify(model.handFromTool), maoTransform, `${key} must use the Mao'ao tool-relative hand setup`);
+  assert.deepStrictEqual({ ...model.handFromTool.position }, { x: -0.04, y: 0.05, z: -0.04 }, `${key} must inherit the newly calibrated Mao'ao tool-relative hand position`);
+  assert.deepStrictEqual({ ...model.handFromTool.rotationDeg }, { pitch: 0, yaw: 0, roll: -180 }, `${key} must inherit the newly calibrated Mao'ao child-local right-angle orientation`);
+  assert.deepStrictEqual({ ...model.handFromTool.rotationCorrectionDeg }, { x: 0, y: 0, z: 0 }, `${key} must start with zero fixed-basis XYZ correction`);
+  const q = model.handFromTool.rotationQuaternion;
+  assert(q && [q.x, q.y, q.z, q.w].every(Number.isFinite), `${key} must expose an authoritative normalized rotation quaternion`);
+  assert(Math.abs(Math.hypot(q.x, q.y, q.z, q.w) - 1) < 1e-12, `${key} hand quaternion must stay normalized`);
   assert.strictEqual(Object.prototype.hasOwnProperty.call(model, 'shoulderAim'), false, `${key} must not retain model-level shoulder aim settings`);
 }
+
+const quatDotAbs = (a, b) => Math.abs(a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w);
+const mulQ = (a, b) => ({
+  x: a.w*b.x + a.x*b.w + a.y*b.z - a.z*b.y,
+  y: a.w*b.y - a.x*b.z + a.y*b.w + a.z*b.x,
+  z: a.w*b.z + a.x*b.y - a.y*b.x + a.z*b.w,
+  w: a.w*b.w - a.x*b.x - a.y*b.y - a.z*b.z,
+});
+const invQ = q => ({ x: -q.x, y: -q.y, z: -q.z, w: q.w });
+const normQ = q => {
+  const n = Math.hypot(q.x,q.y,q.z,q.w) || 1;
+  return { x:q.x/n, y:q.y/n, z:q.z/n, w:q.w/n };
+};
+const axisOfRelative = (from, to) => {
+  let q = normQ(mulQ(to, invQ(from)));
+  if (q.w < 0) q = { x:-q.x,y:-q.y,z:-q.z,w:-q.w };
+  const n = Math.hypot(q.x,q.y,q.z) || 1;
+  return { x:q.x/n, y:q.y/n, z:q.z/n };
+};
+const axisDotAbs = (a,b) => Math.abs(a.x*b.x + a.y*b.y + a.z*b.z);
+const rightVisualTwist = { x: 0, y: 1, z: 0, w: 0 }; // 180° local-Y group rotation used by the rendered right GLB.
+const finalRightQ = handQ => normQ(mulQ(handQ, rightVisualTwist));
+function rotateVectorByQuatForTest(vector, rawQuat) {
+  const q = normQ(rawQuat); // Normalized preserved model base used to derive the expected solo slider axis.
+  const tx = 2 * (q.y * vector.z - q.z * vector.y); // Quaternion-vector cross term used only by the axis regression.
+  const ty = 2 * (q.z * vector.x - q.x * vector.z); // Quaternion-vector cross term used only by the axis regression.
+  const tz = 2 * (q.x * vector.y - q.y * vector.x); // Quaternion-vector cross term used only by the axis regression.
+  return {
+    x: vector.x + q.w * tx + (q.y * tz - q.z * ty),
+    y: vector.y + q.w * ty + (q.z * tx - q.x * tz),
+    z: vector.z + q.w * tz + (q.x * ty - q.y * tx),
+  };
+}
+
+const baseCalibration = profiles.normalizeHandTransform(profiles.data.models.feline.handFromTool);
+function renderedAxisResponse(correctionDeg, axis, deltaDeg = 0.5) {
+  const baseline = profiles.normalizeHandTransform({
+    ...baseCalibration,
+    rotationCorrectionDeg: { ...correctionDeg },
+  }); // Recreates the exact stored calibration frame at the requested combined correction.
+  const perturbedCorrection = { ...correctionDeg }; // Used below to model moving exactly one visible slider while the other two stay fixed.
+  perturbedCorrection[axis] = (Number(perturbedCorrection[axis]) || 0) + deltaDeg;
+  const perturbed = profiles.normalizeHandTransform({
+    ...baseCalibration,
+    rotationCorrectionDeg: perturbedCorrection,
+  }); // Produces the quaternion the real frame driver consumes after that one-slider edit.
+  return axisOfRelative(
+    finalRightQ(baseline.rotationQuaternion),
+    finalRightQ(perturbed.rotationQuaternion),
+  );
+}
+
+for (const singularCase of [
+  { correction: { x: 0, y: 90, z: 0 }, pair: ['x', 'z'], label: 'Y=+90° must not collapse X onto Z' },
+  { correction: { x: 90, y: 0, z: 0 }, pair: ['y', 'z'], label: 'X=+90° must not collapse Y onto Z' },
+  { correction: { x: 0, y: 0, z: 90 }, pair: ['x', 'y'], label: 'Z=+90° must not collapse X onto Y' },
+  { correction: { x: 120, y: -95, z: 70 }, pair: ['x', 'z'], label: 'mixed large corrections must keep X and Z physically distinct' },
+]) {
+  const axisA = renderedAxisResponse(singularCase.correction, singularCase.pair[0]); // Physical rendered-hand response to the first slider in this regression case.
+  const axisB = renderedAxisResponse(singularCase.correction, singularCase.pair[1]); // Physical rendered-hand response to the second slider; must remain separate from axisA.
+  assert(
+    axisDotAbs(axisA, axisB) < 0.1,
+    `${singularCase.label}; |axis dot|=${axisDotAbs(axisA, axisB).toFixed(6)}`,
+  );
+}
+
+for (const axis of ['x', 'y', 'z']) {
+  const response = renderedAxisResponse({ x: 0, y: 0, z: 0 }, axis, 20); // Confirms each solo control still behaves as a real single-axis rotation, not an arbitrary quaternion component.
+  const expected = {
+    x: rotateVectorByQuatForTest({ x: 1, y: 0, z: 0 }, baseCalibration.rotationBaseQuaternion),
+    y: rotateVectorByQuatForTest({ x: 0, y: 1, z: 0 }, baseCalibration.rotationBaseQuaternion),
+    z: rotateVectorByQuatForTest({ x: 0, y: 0, z: 1 }, baseCalibration.rotationBaseQuaternion),
+  }[axis];
+  assert(axisDotAbs(response, expected) > 0.999, `solo ${axis.toUpperCase()} correction must rotate about the preserved model-basis ${axis.toUpperCase()} axis`);
+}
+assert.match(configSource, /orthogonalCorrectionQuaternion/, 'hand calibration must use the gimbal-free orthogonal quaternion coordinate mapping');
+assert.match(configSource, /Math\.tan\(numberOrZero\(correctionDeg\.x\) \* Math\.PI \/ 720\)/, 'X correction must use the quarter-angle stereographic quaternion coordinate');
+assert.match(configSource, /rotationQuaternion = normalizeQuat\(multiplyQuat\(rotationBaseQuaternion, correctionQuaternion\)\)/, 'live correction must compose in the preserved hand-model basis without sequential XYZ multiplication');
+assert.match(configSource, /rotationCorrectionDeg/, 'hand profiles must retain explicit visible XYZ correction values');
+const legacyRotationVectorRefs = configSource.match(/rotationCorrectionVectorDeg/g) || [];
+assert.strictEqual(legacyRotationVectorRefs.length, 2, 'retired rotation-vector storage may remain only as the one-shot migration read/delete pair');
+assert.match(configSource, /legacyRotationVectorQuaternion\(legacyRaw\?\.rotationCorrectionVectorDeg \|\| \{\}\)/, 'migration must still read the retired rotation-vector field once to preserve old saves');
+assert.match(configSource, /delete model\.handFromTool\.rotationCorrectionVectorDeg/, 'migration must delete the retired rotation-vector field after preserving its visible orientation');
+
+const liveCalibrationStorage = new Map();
+const liveCalibrationWindow = {
+  SCRATCHBONES_CONFIG: {
+    game: {
+      appearanceEditor: { species: {} },
+      assets: { pngPlaneAvatar: { proceduralFeet: { footScale: { default: 1 } } } },
+    },
+  },
+  location: { pathname: '/docs/tools/attack-animation-editor/index.html' },
+  document: { getElementById: id => id === 'toolSpriteSelect' ? { value: 'hatchet' } : null },
+  HobunjiHandToolGrips: { gripModeForTool: () => null },
+};
+const liveCalibrationSandbox = {
+  window: liveCalibrationWindow,
+  location: liveCalibrationWindow.location,
+  document: liveCalibrationWindow.document,
+  localStorage: {
+    getItem: key => liveCalibrationStorage.get(key) || null,
+    setItem: (key, value) => liveCalibrationStorage.set(key, String(value)),
+    removeItem: key => liveCalibrationStorage.delete(key),
+  },
+};
+liveCalibrationWindow.localStorage = liveCalibrationSandbox.localStorage;
+vm.runInNewContext(configSource, liveCalibrationSandbox, { filename: 'hand-model-profiles-live-calibration.js' });
+vm.runInNewContext(gripModeSource, liveCalibrationSandbox, { filename: 'hand-grip-modes-live-calibration.js' });
+const liveProfiles = liveCalibrationWindow.HobunjiHandModelProfiles;
+const liveModes = liveCalibrationWindow.HobunjiHandGripModes;
+const profileEvents = [];
+liveProfiles.subscribe((_data, change) => profileEvents.push(change));
+const sharedDefaultModels = liveProfiles.defaultData.models;
+for (const modelKey of ['pachyderm', 'sloth', 'feline', 'parrot']) {
+  const transform = sharedDefaultModels[modelKey].handFromTool;
+  assert.deepStrictEqual(
+    JSON.parse(JSON.stringify(transform.position)),
+    { x: -0.04, y: 0.05, z: -0.04 },
+    `${modelKey} must inherit the new Mao'ao-calibrated shared GLB position baseline`,
+  );
+  assert.deepStrictEqual(
+    JSON.parse(JSON.stringify(transform.rotationDeg)),
+    { pitch: 0, yaw: 0, roll: -180 },
+    `${modelKey} must inherit the new Mao'ao-calibrated child-local right-angle orientation`,
+  );
+  assert.deepStrictEqual(
+    JSON.parse(JSON.stringify(transform.rotationCorrectionDeg)),
+    { x: 0, y: 0, z: 0 },
+    `${modelKey} shared baseline must start with zero correction coordinates`,
+  );
+}
+const v1MigrationProbe = liveProfiles.clone();
+v1MigrationProbe.alignmentPreset = 'all-species-direction-90--90-0-v1';
+v1MigrationProbe.models.pachyderm.mirrorX = false; // A deliberately non-default handedness proves the v1→v2 calibration migration does not reset unrelated per-model setup.
+for (const model of Object.values(v1MigrationProbe.models)) {
+  model.handFromTool = {
+    position: { x: -0.07, y: -0.13, z: 0.21 },
+    rotationDeg: { pitch: 90, yaw: -90, roll: 0 },
+  };
+}
+liveProfiles.replace(v1MigrationProbe);
+for (const modelKey of ['pachyderm', 'sloth', 'feline', 'parrot']) {
+  const transform = liveProfiles.data.models[modelKey].handFromTool;
+  assert.strictEqual(transform.position.x, -0.04, `${modelKey} v1→v2 migration must apply shared Mao'ao X`);
+  assert.strictEqual(transform.position.y, 0.05, `${modelKey} v1→v2 migration must apply shared Mao'ao Y`);
+  assert.strictEqual(transform.position.z, -0.04, `${modelKey} v1→v2 migration must apply shared Mao'ao Z`);
+  assert.strictEqual(transform.rotationDeg.pitch, 0, `${modelKey} v1→v2 migration must snap shared local pitch`);
+  assert.strictEqual(transform.rotationDeg.yaw, 0, `${modelKey} v1→v2 migration must snap shared local yaw`);
+  assert.strictEqual(transform.rotationDeg.roll, -180, `${modelKey} v1→v2 migration must snap shared local roll`);
+}
+assert.strictEqual(liveProfiles.data.models.pachyderm.mirrorX, false, 'v1→v2 calibration migration must preserve an existing per-model mirror choice');
+const beforeLiveCalibration = liveModes.effectiveFrameForModel('feline', 'palm-parallel');
+liveProfiles.updateModelHandTransform('feline', transform => { transform.position.x += 0.5; });
+const afterLivePosition = liveModes.effectiveFrameForModel('feline', 'palm-parallel');
+assert.notStrictEqual(afterLivePosition.position.x, beforeLiveCalibration.position.x, 'store-backed position edit must immediately change the effective preview frame');
+liveProfiles.updateModelHandTransform('feline', transform => { transform.rotationCorrectionDeg.z = 35; });
+const afterLiveRotation = liveModes.effectiveFrameForModel('feline', 'palm-parallel');
+assert(quatDotAbs(afterLivePosition.rotationQuaternion, afterLiveRotation.rotationQuaternion) < 0.999, 'store-backed rotation edit must immediately change the effective preview quaternion');
+assert(profileEvents.some(change => change?.kind === 'hand-transform' && change?.modelKey === 'feline'), 'hand-transform updates must notify live preview subscribers');
+const historyScaleBefore = Number(liveProfiles.data.models.feline.scale);
+const historyPresetBefore = liveProfiles.data.modelScalePreset;
+const historySnapshot = liveProfiles.clone();
+liveProfiles.replace(historySnapshot);
+assert.strictEqual(Number(liveProfiles.data.models.feline.scale), historyScaleBefore, 'profile snapshot restore must not multiply model scale');
+assert.strictEqual(liveProfiles.data.modelScalePreset, historyPresetBefore, 'profile snapshot restore must preserve the current scale migration marker');
+assert.doesNotMatch(gripModeSource, /profiles\.handTransformForSpecies\s*=/, 'Grip Mode must not monkey-patch the profile resolver');
+assert.match(gripModeSource, /multiplyQuat\(modeQ, calibrationQ\)/, 'Grip Mode must compose before Hand Model Calibration');
+assert.match(gripModeSource, /rotateVectorByQuat\(cp, modeQ\)/, 'calibration translation must be transformed by Grip Mode using ordinary rigid composition');
+
 assert.doesNotMatch(configSource, /shoulderAimForSpecies|shoulderAimDefaults|DEFAULT_SHOULDER_AIM/, 'shoulder axis settings must no longer live in species/model profiles');
 assert.match(configSource, /delete model\.shoulderAim/, 'legacy local hand profiles must strip obsolete model-level shoulderAim data');
 
@@ -131,6 +305,35 @@ assert.match(handOutlineSource, /lockedOccluderDepthDraws/, 'mobile diagnostics 
 assert.match(handOutlineSource, /passKind === 'shell'.*hobunjiShellIndex/s, 'only the shell pass may swap to the trimmed body-coloured hand index');
 assert.match(handOutlineSource, /restoreIndex.*setIndex/s, 'the full body/wing geometry index must be restored immediately after each shell draw');
 assert.match(driverSource, /placeHandWorld\?\.\('right'/, 'right hand must follow primary tool grip');
+assert.match(driverSource, /const primarySocket = toolSocketWorld\(record, toolHolder, primaryGrip\)/, 'frame driver must retain the raw weapon grip target before Grip Mode and hand-model calibration');
+assert.match(driverSource, /placePaperHandGuideWorld\?\.\(primarySocket\.position, primarySocket\.quaternion\)[\s\S]*handSocketAfterGripMode\(record, primarySocket\)/, 'locked paper hand must be placed on the raw target before Grip Mode moves the socket');
+assert.match(handSource, /right_hand_paper_reference_socket/, 'paper-hand reference must own a socket separate from the calibrated right-hand socket');
+assert.match(handSource, /const calibration = new THREE\.Group\(\);[\s\S]*calibration\.name = `\$\{side\}_hand_calibration`/, 'each hand socket must own a dedicated child calibration node');
+assert.match(handSource, /rec\.calibration\.add\(visual\)/, 'rendered hand visuals must live below the calibration child, not directly on the shoulder-owned socket');
+assert.match(handSource, /applyToolCalibration\(side, null\)/, 'free-hand fallback must disable held-item calibration without rebuilding the GLB');
+assert.match(handSource, /function placeHandWorld\(side, worldPosition, worldQuaternion, modelCalibration = null\)[\s\S]*applyToolCalibration\(side, modelCalibration\)/, 'held-item placement must apply the exact calibration supplied by the frame driver');
+assert.match(driverSource, /function modelCalibrationForRecord\(record\)[\s\S]*const modelKey = modelKeyForRecord\(record\)/, 'frame driver must use one authoritative selected model identity for calibration');
+assert.match(driverSource, /const modelCalibration = modelCalibrationForRecord\(record\)[\s\S]*placeHandWorld\?\.\('right', primary\.position, primary\.quaternion, modelCalibration\)/, 'right-hand placement must pass the selected model calibration explicitly into the rig');
+assert.doesNotMatch(handSource, /function normalizedToolCalibration\(|syncToolCalibration\(|setToolCalibrationEnabled\(/, 'attachment rig must not maintain a second species-resolved calibration path');
+assert.doesNotMatch(shoulderAimSource, /toolCalibrationLocal|hand_calibration/, 'shoulder-follow must not read or write the model-calibration child at all');
+assert.match(shoulderAimSource, /currentTop\.copy\(localTop\)\.applyQuaternion\(authoredQuaternion\)/, 'shoulder-follow must solve only from the generic hand socket frame');
+assert.match(shoulderAimSource, /calibrationOwnership: 'ignored-child-layer'/, 'shoulder diagnostics must make the ownership boundary visible');
+assert.match(handSource, /lockedTo: 'raw-primary-grip-frame-before-grip-mode-and-hand-model-calibration'/, 'paper-hand diagnostics must identify the raw target before both downstream hand layers');
+assert.match(editorUiSource, /id="handModelCalibrationTab"/, '3D hand editor must expose a dedicated Calibrate GLB tab');
+assert.match(editorUiSource, /No attack animation, tool transform, Grip Mode, shoulder targeting, character-facing rotation, or animation-derived hand transform/, 'calibration tab must explicitly exclude the normal animation transform stack');
+assert.match(driverSource, /function inHandCalibrationMode\(\)[\s\S]*HobunjiAttackEditorHandCalibrationMode\?\.active === true/, 'frame driver must have an explicit isolated calibration mode');
+assert.match(driverSource, /function syncCalibrationWorkspace\(record,[\s\S]*worldQuaternion\.identity\(\)[\s\S]*placeCalibrationPreviewWorld/, 'calibration mode must use a fixed neutral world quaternion instead of an animation/tool frame');
+assert.match(driverSource, /if \(inHandCalibrationMode\(\)\) \{[\s\S]*syncCalibrationWorkspace\(record\)/, 'render-time hand authority must remain on the calibration workspace while that tab is active');
+assert.match(handSource, /function placeCalibrationPreviewWorld\(worldPosition, worldQuaternion, modelCalibration = null\)/, 'attachment rig must expose a dedicated calibration placement path that bypasses placeHandWorld wrappers');
+assert.match(handSource, /sockets\.left\.socket\.visible = false/, 'calibration workspace must hide the unrelated left hand');
+assert.match(handSource, /calibrationMode \? -1 : \(sourceIsLeft \? -1 : 1\)/, 'calibration paper handedness must stay fixed while GLB mirror settings change only the model');
+assert.match(handSource, /calibrationMode \? \(Number\(values\.speciesScale\) \|\| 1\) : \(Number\(values\.effectiveScale\) \|\| 1\)/, 'calibration paper size must exclude model scale so GLB scale can be judged against it');
+assert.match(scaleFreeHandSource, /scaleFreePlaceHandWorld\(side, worldPosition, worldQuaternion, modelCalibration = null\)[\s\S]*applyToolCalibration\?\.\(side, modelCalibration\)/, 'scale-free wrapper must forward and apply the fourth model-calibration argument');
+assert.match(shoulderAimSource, /shoulderAimPlaceHandWorld\(side, worldPosition, worldQuaternion, modelCalibration = null\)[\s\S]*originalPlaceHandWorld\(side, worldPosition, worldQuaternion, modelCalibration\)/, 'shoulder wrapper must forward the fourth model-calibration argument unchanged');
+assert.match(gripConfigSource, /secondarySpanBlendWorld\(side, worldPosition, worldQuaternion, modelCalibration = null\)[\s\S]*originalPlaceHandWorld\(side, worldPosition, worldQuaternion, modelCalibration\)/, 'off-hand span wrapper must forward the fourth model-calibration argument unchanged');
+assert.match(attackEditorSource, /setHandCalibrationPresentation\(active\)[\s\S]*toolBase\.visible = !handCalibrationPresentationActive/, 'calibration tab must hide the animation-derived held-item presentation');
+assert.match(attackEditorSource, /if \(handCalibrationPresentationActive\) return;[\s\S]*const action = currentAction\(\)/, 'calibration tab must suppress hitbox/combat overlays');
+
 assert.match(driverSource, /secondaryGripForTool/, 'driver must support an optional second grip');
 assert.match(driverSource, /applyFallbackSide\(record, 'left'\)/, 'left hand must use locomotion fallback on one-handed tools');
 assert.match(driverSource, /profile: options\.profile \|\| null/, 'avatar profile must be retained for post-build shoulder scanning');
@@ -152,22 +355,109 @@ assert.match(proceduralFeetSource, /function loaderForThree/, 'shoulder-rig feet
 const gripSandbox = { window: { requestAnimationFrame: () => 0 }, localStorage: sandbox.localStorage };
 gripSandbox.window.localStorage = sandbox.localStorage;
 vm.runInNewContext(gripConfigSource, gripSandbox, { filename: 'hand-tool-grips.js' });
+const snapTestQuat = (() => {
+  const d = Math.PI / 180;
+  const qYaw = { x: 0, y: Math.sin(12.34 * d / 2), z: 0, w: Math.cos(12.34 * d / 2) };
+  const qPitch = { x: Math.sin(9.22 * d / 2), y: 0, z: 0, w: Math.cos(9.22 * d / 2) };
+  const qRoll = { x: 0, y: 0, z: Math.sin(-177.34 * d / 2), w: Math.cos(-177.34 * d / 2) };
+  const multiply = (a, b) => ({
+    x: a.w*b.x + a.x*b.w + a.y*b.z - a.z*b.y,
+    y: a.w*b.y - a.x*b.z + a.y*b.w + a.z*b.x,
+    z: a.w*b.z + a.x*b.y - a.y*b.x + a.z*b.w,
+    w: a.w*b.w - a.x*b.x - a.y*b.y - a.z*b.z,
+  });
+  return multiply(multiply(qYaw, qPitch), qRoll);
+})();
+const snappedDumpRotation = sandbox.window.HobunjiHandModelProfiles.snapQuaternionToRightAngles(snapTestQuat);
+assert.deepStrictEqual(
+  JSON.parse(JSON.stringify(snappedDumpRotation.rotationDeg)),
+  { pitch: 0, yaw: 0, roll: -180 },
+  'mao-ao dump local calibration 9.22/12.34/-177.34 must snap exactly to child-local 0/0/-180',
+);
 const grips = gripSandbox.window.HobunjiHandToolGrips;
 assert(grips, 'secondary grip config manager should be installed');
+const expectedPrimaryRotations = {
+  hatchet: { pitch: -90, yaw: 90, roll: 180 },
+  hoe: { pitch: 0, yaw: 0, roll: 0 },
+  bshuakauitl: { pitch: 0, yaw: 0, roll: 0 },
+  pickshovel: { pitch: 0, yaw: 0, roll: 0 },
+  daggersword: { pitch: 0, yaw: 180, roll: 0 },
+  plainssword: { pitch: 0, yaw: 0, roll: 0 },
+  dagger: { pitch: 0, yaw: 0, roll: 0 },
+  kylie: { pitch: 0, yaw: 18, roll: 0 },
+  warcleaver: { pitch: 0, yaw: 0, roll: 0 },
+  fishingspear: { pitch: 0, yaw: 0, roll: 0 },
+};
+for (const [toolKey, expectedRotation] of Object.entries(expectedPrimaryRotations)) {
+  assert.deepStrictEqual(
+    JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool(toolKey).rotationDeg)),
+    expectedRotation,
+    `${toolKey} must use the committed user-authored primary grip rotation`,
+  );
+}
+const oldRotationDraft = grips.clone();
+delete oldRotationDraft.primaryRotationPreset;
+oldRotationDraft.tools.hatchet.primaryGrip.position = { x: 0.123, y: -0.456, z: 0.789 };
+oldRotationDraft.tools.hatchet.primaryGrip.rotationDeg = { pitch: 11, yaw: 22, roll: 33 };
+oldRotationDraft.tools.kylie.primaryGrip.rotationDeg = { pitch: -44, yaw: -55, roll: -66 };
+const oldHatchetScale = oldRotationDraft.tools.hatchet.toolScale;
+const oldHatchetSpan = JSON.parse(JSON.stringify(oldRotationDraft.tools.hatchet.secondaryGripSpan));
+grips.replace(oldRotationDraft);
+assert.deepStrictEqual(
+  JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('hatchet').position)),
+  { x: 0.123, y: -0.456, z: 0.789 },
+  'rotation migration must preserve authored primary grip position',
+);
+assert.deepStrictEqual(
+  JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('hatchet').rotationDeg)),
+  expectedPrimaryRotations.hatchet,
+  'old grip drafts must migrate hatchet to the committed rotation table',
+);
+assert.deepStrictEqual(
+  JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('kylie').rotationDeg)),
+  expectedPrimaryRotations.kylie,
+  'old grip drafts must migrate every listed weapon rotation, not only hatchet',
+);
+assert.strictEqual(grips.toolScaleForTool('hatchet'), oldHatchetScale, 'rotation migration must preserve tool scale');
+assert.deepStrictEqual(
+  JSON.parse(JSON.stringify(grips.data.tools.hatchet.secondaryGripSpan)),
+  oldHatchetSpan,
+  'rotation migration must preserve the off-hand span',
+);
 assert.strictEqual(grips.secondaryGripForTool('hatchet'), null, 'hatchet must start with its second-hand grip disabled');
 assert.strictEqual(grips.secondaryGripForTool('bronzehoe'), null, 'hoe must start with its second-hand grip disabled');
 assert.strictEqual(grips.secondaryGripForTool('pickshovel'), null, 'other tools must remain one-handed unless authored');
+const authoredHatchetGrip = grips.authoredPrimaryGripForTool('hatchet');
+const effectiveHatchetGrip = grips.primaryGripForTool('hatchet');
+const hatchetGripScale = grips.toolScaleForTool('hatchet');
+assert.strictEqual(effectiveHatchetGrip.position.x, authoredHatchetGrip.position.x * hatchetGripScale, 'primary grip target X must scale with the visible weapon instead of moving the weapon back to the hand');
+assert.strictEqual(effectiveHatchetGrip.position.y, authoredHatchetGrip.position.y * hatchetGripScale, 'primary grip target Y must scale with the visible weapon');
+assert.strictEqual(effectiveHatchetGrip.position.z, authoredHatchetGrip.position.z * hatchetGripScale, 'primary grip target Z must scale with the visible weapon');
+assert.match(gripConfigSource, /grip authoring moves the RIGHT HAND to that frame and never inverse-moves the weapon/, 'shared grip contract must keep weapon animation authoritative');
+assert.doesNotMatch(gripConfigSource, /function primaryGripForTool\(\) \{ return identityTransform\(\); \}/, 'primary hand target must no longer be discarded at runtime');
 
 assert.match(gripModeSource, /palm-parallel/, 'palm-parallel grip mode must remain');
 assert.match(gripModeSource, /palm-perpendicular/, 'palm-perpendicular grip mode must remain');
-assert.match(gripModeSource, /multiplyQuat\(rotationQuaternion, inverseQuat\(fineQ\)\)/, 'grip rotations must derive a rigid quaternion delta');
+assert.match(gripModeSource, /normalizedCalibration\.rotationQuaternion/, 'grip composition must consume the authoritative quaternion-native hand calibration');
+assert.match(gripModeSource, /const rotationQuaternion = normalizeQuat\(multiplyQuat\(modeQ, calibrationQ\)\)/, 'Grip Mode must compose before Hand Model Calibration without Euler re-entry');
+assert.doesNotMatch(gripModeSource, /targetRotation\s*=\s*\{[\s\S]*br\.pitch/, 'grip mode must not add calibration Euler channels at the X=90° singularity');
+assert.match(inverseEditorSource, /rotationCorrectionDeg\[field\.key\]/, 'Attack Editor hand-model rotation controls must author fixed-basis XYZ corrections');
+assert.match(inverseEditorSource, /GLB local X rotation correction°/, 'calibration rotation UI must explicitly present GLB-local axes');
+assert.match(inverseEditorSource, /Snap local rotation to 90°/, 'calibration tab must expose a local right-angle snap control');
+assert.match(inverseEditorSource, /rotationBaseQuaternion = \{ \.\.\.snapped\.quaternion \}/, 'right-angle snap must bake the snapped child-local quaternion as the new model base');
+assert.match(inverseEditorSource, /rotationCorrectionDeg = \{ x: 0, y: 0, z: 0 \}/, 'right-angle snap must zero correction coordinates after baking the final local orientation');
+assert.match(inverseEditorSource, /Reads the calibration CHILD's local quaternion only/, 'user-facing orientation display must explicitly exclude parent/world rotation');
+assert.doesNotMatch(inverseEditorSource, /transform\.rotationDeg\[field\.key\]\s*=\s*value/, 'Attack Editor must never directly edit the legacy singular Euler orientation');
 assert.match(gripEditorSource, /handGripModeSelect/, 'Attack Editor must keep the grip-mode dropdown');
 assert.match(gripEditorSource, /JSON\.parse\(jsonView\.value\)/, 'grip export must compose with later JSON extensions instead of bypassing them');
 assert.match(directEditorSource, /handSecondaryGripEnabled/, 'Attack Editor must expose secondary grip enablement');
 assert.match(directEditorSource, /handSecondaryGripPositionFields/, 'Attack Editor must expose secondary grip position');
 assert.match(directEditorSource, /handSecondaryGripRotationFields/, 'Attack Editor must expose secondary grip orientation');
+assert.match(directEditorSource, /blue marker is where the right hand is being told to grip/i, 'Attack Editor must explain the blue weapon marker as a right-hand target');
+assert.match(directEditorSource, /X rotation°/, 'grip orientation must use X/Y/Z rotation labels instead of pitch/yaw/roll terminology');
+assert.match(directEditorSource, /weapon will not move/i, 'grip picking must make its hand-moving semantics explicit');
 
-assert.match(editorUiSource, /Final hand size = <b>model scale × species\/gender scale<\/b>/, 'editor must retain scale authoring');
+assert.match(editorUiSource, /GLB size \/ handedness[\s\S]*Model scale/, 'editor must retain model-scale authoring inside the dedicated GLB calibration tab');
 assert.match(editorUiSource, /hand-model-profiles\.json/, 'editor must retain reusable hand profile export');
 assert.match(heldSource, /hand-shoulder-points\.js/, 'bootstrap must load manual shoulder coordinates');
 assert.match(heldSource, /hand-shoulder-pose-profiles\.js/, 'bootstrap must load individually-authored animation shoulder profiles');
@@ -177,6 +467,7 @@ assert.match(heldSource, /procedural-hand-attachments\.js/, 'bootstrap must load
 assert.match(heldSource, /hand-tool-grips\.js/, 'bootstrap must load tool grip sockets');
 assert.match(heldSource, /procedural-hand-shoulder-aim\.js/, 'bootstrap must load hand-only shoulder compass');
 assert.match(heldSource, /attack-editor-hand-shoulder-controls\.js/, 'Attack Editor must load per-pose shoulder and arm-preview controls');
+assert.match(heldSource, /attack-editor-history\.js/, 'Attack Editor bootstrap must load global Undo/Redo after hand/grip extensions');
 assert.match(heldSource, /weapon-png-scale\.js/, 'game bootstrap must load baseline weapon PNG scaling');
 assert.doesNotMatch(heldSource, /portrait-arm-compass\.js|procedural-hand-compass-aim\.js/, 'scrapped rotating-arm compass must not return to bootstrap');
 assert.doesNotMatch(heldSource, /arm-bones\.js|procedural-arm-animation\.js|portrait-biceps|forearm-follow|arm-length/, 'bootstrap must not load deleted arm systems');
@@ -223,7 +514,7 @@ assert.match(shoulderAimSource, /return Number\.isFinite\(authored\) \? -modelHe
 assert.doesNotMatch(shoulderAimSource, /PlaneGeometry|solveTwoBoneArm|elbow|reach clamp/i, 'hand compass must not animate arm sprites or reintroduce IK');
 
 assert.match(shoulderControlsSource, /const PHASES = \['neutral', 'windup', 'strike'\]/, 'Attack Editor must expose all three pose phases');
-assert.match(shoulderControlsSource, /\['pitch','yaw','roll'\]\.map/, 'Attack Editor must expose all three shoulder axes');
+assert.match(shoulderControlsSource, /\[\['pitch','X'\],\['yaw','Y'\],\['roll','Z'\]\]/, 'Attack Editor must expose all three shoulder rotation axes with X/Y/Z labels');
 assert.match(shoulderControlsSource, /`handShoulderAim_\$\{phase\}_\$\{axis\}`/, 'Attack Editor must give each pose-axis checkbox a stable id');
 assert.match(shoulderControlsSource, /shoulderAim = \{ \.\.\.poseAim\[phase\] \}/, 'per-pose checkbox state must be serialized inside each pose');
 assert.match(shoulderControlsSource, /poseRuntime\.weightsAt/, 'Attack Editor preview must use the same smooth pose interpolation');

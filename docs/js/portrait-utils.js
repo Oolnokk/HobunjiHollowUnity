@@ -2180,6 +2180,7 @@ async function loadPortraitCosmetics(configBase) {
               id: `${speciesId}_${genderKey}`,
               speciesId,
               gender: genderKey,
+              armLength: Number.isFinite(Number(genderData.armLength)) ? Number(genderData.armLength) : null, // Canonical species+gender arm reach used by centroid-relative pose scaling.
               label: `${sourceData.label || entry.label} (${genderKey === 'male' ? 'M' : 'F'})`,
               headUrl: genderData.headSprite,
               bodyLayers: genderData.portraitBodyLayers.map(l => ({ ...normalizePortraitLayerXform(l), xformPreset: 'B' })),
@@ -2198,6 +2199,7 @@ async function loadPortraitCosmetics(configBase) {
               ...(fighterPortraitOverrides[fighter.id] || {}),
               gender: genderKey,
               speciesId,
+              ...(Number.isFinite(Number(genderData.armLength)) ? { armLength: Number(genderData.armLength) } : {}), // Preserve inherited species/gender reach on pre-existing fighters.
               ...(genderData.headXform ? { headXform: genderData.headXform } : {}),
               ...(Array.isArray(genderData.portraitBodyLayers) ? {
                 bodyLayers: genderData.portraitBodyLayers.map(l => ({ ...normalizePortraitLayerXform(l), xformPreset: 'B' }))
@@ -2260,6 +2262,7 @@ async function loadPortraitCosmetics(configBase) {
         ...fighter,
         ...(override.gender    != null ? { gender:    override.gender    } : {}),
         ...(override.speciesId != null ? { speciesId: override.speciesId } : {}),
+        ...(override.armLength != null ? { armLength: override.armLength } : {}),
         ...(override.headXform ? { headXform: override.headXform } : {}),
         ...(override.bodyLayers ? { bodyLayers: override.bodyLayers } : {}),
         ...(override.opacityMaskLayer ? { opacityMaskLayer: override.opacityMaskLayer } : {})

@@ -24,7 +24,7 @@
     "function": "runMove",
     "reason": "Steps a previewed cutscene actor toward its move target every frame and stops rescheduling once advanceActorToward reports arrival or the preview's running flag clears.",
     "migrationStage": "not-planned",
-    "line": 28806
+    "line": 28853
   },
   {
     "file": "docs/game.js",
@@ -33,7 +33,7 @@
     "function": "runFade",
     "reason": "Defers writing the fade element's target opacity to the next paint so the CSS transition actually animates instead of jumping instantly; runs once per fade stage.",
     "migrationStage": "not-planned",
-    "line": 28957
+    "line": 29004
   },
   {
     "file": "docs/game.js",
@@ -42,7 +42,7 @@
     "function": "runZoom",
     "reason": "Eases the preview camera's zoom toward a target percentage over the stage's authored duration and stops once t reaches 1.",
     "migrationStage": "not-planned",
-    "line": 28976
+    "line": 29023
   },
   {
     "file": "docs/game.js",
@@ -51,7 +51,7 @@
     "function": "cutsceneRotationTick",
     "reason": "Eases previewed actors' facing every frame for the scene's lifetime, gated on the same running flag every other preview RAF loop checks, so stopping the preview stops it too.",
     "migrationStage": "not-planned",
-    "line": 29048
+    "line": 29095
   },
   {
     "file": "docs/js/action-arc-ui.js",
@@ -99,22 +99,13 @@
     "line": 288
   },
   {
-    "file": "docs/js/attack-editor-hand-inverse-configurator.js",
-    "owner": "AttackEditorHandInverseConfigurator",
-    "classification": "one-shot",
-    "function": "mutateTransform / per-field input listeners (syncPreview defer)",
-    "reason": "syncPreview() is called immediately then deferred once more via a single non-recursive RAF (also at line 158, bound to phase/key inputs) to re-read the value after layout settles. Both call sites live only inside the standalone Attack Animation Editor tool page (docs/tools/attack-animation-editor/), which never loads game.js or RuntimeFrameScheduler.",
-    "migrationStage": "not-planned",
-    "line": 128
-  },
-  {
     "file": "docs/js/attack-editor-hand-shoulder-controls.js",
     "owner": "HobunjiAttackEditorHandShoulderControls",
     "classification": "isolated-context",
     "function": "statusFrame",
-    "reason": "Permanent self-perpetuating RAF loop (kicked off at line 236) that keeps a live status readout in sync while scrubbing poses, but it belongs entirely to the standalone Attack Animation Editor tool page - its own isolated preview/editor context, distinct from and never co-loaded with the main gameplay page or RuntimeFrameScheduler.",
+    "reason": "Permanent status/readout RAF loop confined to the standalone Attack Animation Editor. It keeps interpolated hand shoulder-follow weights visible while scrubbing/playback changes; it is never loaded by the main gameplay page's RuntimeFrameScheduler surface.",
     "migrationStage": "not-planned",
-    "line": 231
+    "line": 215
   },
   {
     "file": "docs/js/attack-editor-idle-hand-parity.js",
@@ -265,9 +256,9 @@
     "owner": "HobunjiHandToolGrips",
     "classification": "isolated-context",
     "function": "frame (fallback branch inside the trailing if/else)",
-    "reason": "Migrated to RuntimeFrameScheduler: installMaintenance() (idempotent per-frame retries of installCombatCapture/installRigBlendWrapper plus the editor-only UI refresh) registers as 'hand-tool-grips-install', and applyPrimaryGripVisuals() (the real per-frame primary-grip transform correction on the held tool/weapon visual) registers as 'hand-tool-grips-visuals' on the pre-render phase, alongside procedural-hand-frame-driver.js's poseAndSyncUpdate. This module is also loaded by the standalone Attack Animation Editor and Animation Author tool pages (docs/tools/*), which never load RuntimeFrameScheduler and own their own isolated animation context, so the original combined per-frame RAF loop remains as a fallback for that context only.",
+    "reason": "Gameplay uses RuntimeFrameScheduler: installMaintenance() stays scheduler-owned and applyPrimaryGripVisuals() maintains intrinsic held-item scale only. Authored grip targets now move hands and never translate/rotate the weapon. The standalone Attack Animation Editor/Animation Author do not load RuntimeFrameScheduler, so this two-line fallback RAF loop remains isolated to those tool contexts.",
     "migrationStage": "migrated",
-    "line": 769
+    "line": 750
   },
   {
     "file": "docs/js/harlyao-night-march-runtime.js",
@@ -456,16 +447,16 @@
     "function": "captureOnboardingAvatar",
     "reason": "Single deferred call to installStarterWeapon(model) fired once when a new preview avatar model is captured; not recursive and not re-armed.",
     "migrationStage": "not-planned",
-    "line": 190
+    "line": 192
   },
   {
     "file": "docs/js/onboarding-character-creation-life-preview.js",
     "owner": "OnboardingCharacterCreationLifePreview",
     "classification": "bounded-animation",
     "function": "lifeFrame",
-    "reason": "Self-perpetuating RAF loop (started at line 405) that repaints the living portrait (throttled to LIFE_FRAME_MS) and re-places the starter-weapon hand grip every frame; it checks `if (!active) return` and teardown() (triggered ~500ms after hobunjiPlayerReady) sets active=false, so it only runs for the bounded duration of character creation.",
+    "reason": "Self-perpetuating RAF loop (initially started later in the onboarding setup) that repaints the living portrait and re-places the starter-weapon hand every frame; it stops after onboarding hands off because `active` is cleared by teardown.",
     "migrationStage": "not-planned",
-    "line": 353
+    "line": 364
   },
   {
     "file": "docs/js/onboarding-character-creation-redesign.js",
@@ -483,16 +474,16 @@
     "function": "syncModelAndWeapon",
     "reason": "Single deferred call to installRandomWeapon fired once when the tracked model/weaponRoot changes; guarded so it is not re-armed on every frame.",
     "migrationStage": "not-planned",
-    "line": 473
+    "line": 484
   },
   {
     "file": "docs/js/onboarding-character-creation-weapon-view-fix.js",
     "owner": "OnboardingCharacterCreationWeaponViewFix",
     "classification": "bounded-animation",
     "function": "frame",
-    "reason": "Self-perpetuating RAF loop (started at line 495) that keeps model/weapon state in sync every frame during character creation; checks `if (!active) return` and stops ~500ms after hobunjiPlayerReady fires, so it only runs for the bounded duration of character creation.",
+    "reason": "Self-perpetuating RAF loop that keeps model/weapon state in sync every frame during character creation; checks `if (!active) return` and stops ~500ms after hobunjiPlayerReady fires, so it only runs for the bounded duration of character creation.",
     "migrationStage": "not-planned",
-    "line": 484
+    "line": 495
   },
   {
     "file": "docs/js/onboarding-viewport-fit.js",
@@ -519,7 +510,7 @@
     "function": "frame (fallback branch inside the trailing if/else)",
     "reason": "This module also loads inside the standalone Attack Animation Editor and Animation Author tool pages (docs/tools/*), which never load RuntimeFrameScheduler. When the scheduler is absent this fallback keeps the original combined per-frame loop for that isolated editor/preview context. In the shipped game, RuntimeFrameScheduler.register('procedural-hand-attachment', ...) and RuntimeFrameScheduler.register('procedural-hand-pose-sync', { phase: 'pre-render' }, ...) run instead, with no raw RAF call site at all — attachment/discovery has no ordering dependency on simulation or rendering; pose-sync needs this frame's simulation state but must run before Three.js traverses the scene. The final exact tool/hand matrix stays entirely in ensureSyncSentinel's onBeforeRender hook, untouched by either migrated piece.",
     "migrationStage": "not-planned",
-    "line": 593
+    "line": 704
   },
   {
     "file": "docs/js/quick-potion-arc-ui.js",
@@ -583,5 +574,32 @@
     "reason": "RAF loop only runs while the dev UI-element-editor panel is shown — started in updateListeners() when shown becomes true (line 879) and explicitly cancelAnimationFrame'd when it becomes false — to keep the selection highlight box's position synced to the selected element; a dev-tool-gated bounded loop, not a permanent gameplay subscription.",
     "migrationStage": "not-planned",
     "line": 557
+  },
+  {
+    "file": "docs/js/attack-editor-hand-configurator.js",
+    "owner": "HobunjiAttackEditorHandConfigurator",
+    "classification": "one-shot",
+    "function": "refreshHandPreview",
+    "reason": "Coalesced one-shot RAF confined to the standalone Attack Animation Editor. It only re-syncs the already-loaded hand frame/status after profile-store changes; ProceduralHandAttachments exclusively owns any GLB rebuild required by scale/model/mirror changes.",
+    "migrationStage": "not-planned",
+    "line": 190
+  },
+  {
+    "file": "docs/js/attack-editor-hand-direct-attachments.js",
+    "owner": "HobunjiAttackEditorDirectHandAttachments",
+    "classification": "one-shot",
+    "function": "mutateGrip",
+    "reason": "Single deferred hand-frame resync after each user-authored grip value change in the standalone Attack Animation Editor; it does not recurse.",
+    "migrationStage": "not-planned",
+    "line": 122
+  },
+  {
+    "file": "docs/js/attack-editor-history.js",
+    "owner": "HobunjiAttackEditorHistory",
+    "classification": "isolated-context",
+    "function": "installListeners",
+    "reason": "Self-terminating readiness retry confined to the standalone Attack Animation Editor; it RAF-retries only until the core editor module has published its state API and Undo/Redo buttons.",
+    "migrationStage": "not-planned",
+    "line": 214
   }
 ]

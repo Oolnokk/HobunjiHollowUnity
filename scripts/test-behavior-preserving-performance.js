@@ -151,7 +151,10 @@ function replayHandSync(source, diagnostic) {
     currentToolKey: () => 'axe',
     toolGrips: { primaryGripForTool: () => primaryGrip, secondaryGripForTool: () => useSecondary ? secondaryGrip : null },
     toolSocketWorld: (_record, _holder, grip) => grip,
-    handWorldFromSocket: (_record, grip) => ({ position: grip.position, quaternion: { w: 1 }, authored: {}, visualBasis: 'test' }),
+    handWorldFromSocket: (_record, grip) => ({ position: grip.position, quaternion: { w: 1 }, authored: {}, visualBasis: 'test' }), // Baseline helper retained for PERF_BASE_REF replay.
+    handSocketAfterGripMode: (_record, grip) => ({ position: grip.position, quaternion: { w: 1 }, mode: {}, visualBasis: 'test' }), // Current socket-only helper; model calibration is mocked as a downstream child.
+    modelCalibrationForRecord: () => ({ modelKey: 'feline', position: { x: 0, y: 0, z: 0 }, rotationQuaternion: { x: 0, y: 0, z: 0, w: 1 } }), // Exact selected-model calibration passed to each held-hand placement.
+    profiles: { data: { models: { feline: { handFromTool: {} } } } },
     ensureFallbackState: entry => entry.fallback,
     applyFallbackSide: (_record, side) => calls.push(['fallback', side]),
     applyFallbackBoth: () => calls.push(['fallback', 'both']),
@@ -172,9 +175,11 @@ assert.deepEqual(hotHands.calls, debugHands.calls);
 if (process.env.PERF_BASE_REF) {
   const baselineDriver = cp.execFileSync('git', ['show', `${process.env.PERF_BASE_REF}:docs/js/procedural-hand-frame-driver.js`], { encoding: 'utf8' }); // Untouched synchronization reference.
   const baseline = replayHandSync(baselineDriver, true); // Captures original poses, fallbacks and diagnostic copies.
-  assert.deepEqual(debugHands, baseline, 'explicit hand diagnostics and pose calls retain original outputs');
-  assert.deepEqual(hotHands.calls, baseline.calls, 'ordinary hand sync emits the same placements and fallbacks');
-  console.log(`hand sync: diagnostic deep copies ${baseline.copies} -> ${hotHands.copies}; pose calls unchanged`);
+  assert.deepEqual(debugHands.calls, baseline.calls, 'socket placement/fallback cadence remains behaviorally equivalent after calibration ownership moves downstream');
+  assert.deepEqual(hotHands.calls, baseline.calls, 'ordinary hand sync emits the same socket placements and fallbacks');
+  assert.equal(debugHands.secondaryActive, baseline.secondaryActive, 'secondary-hand ownership remains unchanged');
+  assert.equal(debugHands.lastToolKey, baseline.lastToolKey, 'tool ownership remains unchanged');
+  console.log(`hand sync: diagnostic deep copies ${baseline.copies} -> ${hotHands.copies}; socket cadence unchanged while calibration moves to the visual child`);
 }
 assert.match(driver, /if \(!diagnostic\) return null;[\s\S]*primaryGrip: JSON.parse/);
 assert.match(driver, /results.push\(syncRigToTool\(record, holder, true\)\)/);

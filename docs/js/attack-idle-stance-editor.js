@@ -11,13 +11,13 @@
     lightWeapon: 'Light Weapon',
   });
   const FIELD_DEFS = Object.freeze([
-    { key: 'x', label: 'X (side)', min: -1, max: 1, step: 0.01, angle: false },
-    { key: 'y', label: 'Y (height)', min: -1, max: 1, step: 0.01, angle: false },
-    { key: 'z', label: 'Z (forward)', min: -1, max: 1, step: 0.01, angle: false },
-    { key: 'pitch', label: 'Pitch°', min: -180, max: 180, step: 1, angle: true },
-    { key: 'yaw', label: 'Tool Yaw°', min: -180, max: 180, step: 1, angle: true },
-    { key: 'roll', label: 'Tool Roll°', min: -180, max: 180, step: 1, angle: true },
-    { key: 'bodyYaw', label: 'Body Yaw°', min: -180, max: 180, step: 1, angle: true },
+    { key: 'x', label: 'Tool X position (side)', min: -1, max: 1, step: 0.01, angle: false },
+    { key: 'y', label: 'Tool Y position (height)', min: -1, max: 1, step: 0.01, angle: false },
+    { key: 'z', label: 'Tool Z position (forward)', min: -1, max: 1, step: 0.01, angle: false },
+    { key: 'pitch', label: 'Tool X rotation°', min: -180, max: 180, step: 1, angle: true },
+    { key: 'yaw', label: 'Tool Y rotation°', min: -180, max: 180, step: 1, angle: true },
+    { key: 'roll', label: 'Tool Z rotation°', min: -180, max: 180, step: 1, angle: true },
+    { key: 'bodyYaw', label: 'Character Y rotation°', min: -180, max: 180, step: 1, angle: true },
   ]);
 
   const FALLBACK_CONFIG = Object.freeze({
@@ -130,11 +130,17 @@
       }
     }
 
+    function focusNeutralEditorPose() {
+      const neutralTab = document.getElementById('poseTabNeutral'); // Current editor has one pose panel; selecting Neutral materializes pose_* controls.
+      if (neutralTab && !neutralTab.classList.contains('active')) neutralTab.click();
+    }
+
     function neutralControl(fieldKey) {
-      return document.getElementById(`neutral_${fieldKey}`);
+      return document.getElementById(`pose_${fieldKey}`);
     }
 
     function neutralControlsReady() {
+      focusNeutralEditorPose();
       return FIELD_DEFS.every(field => neutralControl(field.key));
     }
 
@@ -146,6 +152,7 @@
     }
 
     function writeNeutralPose(pose) {
+      focusNeutralEditorPose();
       if (!neutralControlsReady()) {
         setStatus('Neutral pose controls are not ready yet.');
         return false;
@@ -316,6 +323,26 @@
       previewSelected: () => writeNeutralPose(currentPose()),
       captureSelected: () => captureNeutralPose(),
       stopEditing: () => stopEditingNeutral('Stopped idle stance editing.'),
+      snapshot() {
+        return { workingConfig: clone(exportPayload()), selectedKey, editingNeutral }; // Undo/Redo must preserve hidden stances, not only the selected sliders.
+      },
+      restore(snapshot) {
+        if (!snapshot?.workingConfig) return false;
+        workingConfig = normalizeConfig(clone(snapshot.workingConfig), fileConfig);
+        selectedKey = STANCE_ORDER.includes(snapshot.selectedKey) ? snapshot.selectedKey : selectedKey;
+        editingNeutral = snapshot.editingNeutral === true;
+        select.value = selectedKey;
+        syncFieldsFromPose();
+        updateEditButton();
+        if (editingNeutral) writeNeutralPose(currentPose());
+        setStatus(`History restored ${STANCE_LABELS[selectedKey]}.`);
+        return true;
+      },
+      refresh() {
+        syncFieldsFromPose();
+        updateEditButton();
+        if (editingNeutral) writeNeutralPose(currentPose());
+      },
     };
   });
 })();

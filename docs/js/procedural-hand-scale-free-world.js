@@ -249,9 +249,10 @@
     const parentWorldQuaternion = new THREE.Quaternion();
     const localQuaternion = new THREE.Quaternion();
 
-    rig.placeHandWorld = function scaleFreePlaceHandWorld(side, worldPosition, worldQuaternion) {
+    rig.placeHandWorld = function scaleFreePlaceHandWorld(side, worldPosition, worldQuaternion, modelCalibration = null) {
       const socket = rig.group?.getObjectByName?.(`${side}_hand_socket`);
       if (!socket || !worldPosition || !worldQuaternion) return false;
+      rig.applyToolCalibration?.(side, modelCalibration); // Preserve the frame driver's fourth calibration argument while this wrapper owns only world→local socket conversion.
       parent.updateWorldMatrix?.(true, false);
       const localPosition = worldPosition.clone();
       parent.worldToLocal(localPosition);

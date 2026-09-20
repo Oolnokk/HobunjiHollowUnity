@@ -1,0 +1,72 @@
+name: Species gender pose orbit regression
+
+on:
+  pull_request:
+    paths:
+      - 'docs/config/species/**'
+      - 'docs/game.js'
+      - 'docs/index.html'
+      - 'docs/js/species-pose-scaling.js'
+      - 'docs/js/png-plane-avatar.js'
+      - 'docs/js/portrait-utils.js'
+      - 'docs/js/social-action-wheel.js'
+      - 'docs/js/procedural-dance-mode-core.js'
+      - 'docs/js/combat/combat-bandit.js'
+      - 'docs/js/combat/combat-loadout.js'
+      - 'docs/js/combat/combat-counter-shield.js'
+      - 'docs/js/combat/enemy-weapon-stances.js'
+      - 'docs/js/combat/melee-pose-spacing.js'
+      - 'docs/js/combat/ranged-weapons.js'
+      - 'docs/js/weapon-tool-stances.js'
+      - 'docs/js/npc-held-equipment-v4.js'
+      - 'docs/js/onboarding-character-creation-life-preview.js'
+      - 'docs/js/onboarding-character-creation-weapon-view-fix.js'
+      - 'docs/tools/attack-animation-editor/index.html'
+      - 'scripts/runtime-frame-ownership-exceptions.json'
+      - 'scripts/test-species-gender-pose-scaling.js'
+      - 'scripts/test-enemy-weapon-stances.js'
+      - 'scripts/test-heavy-weapon-alternating-neutrals.js'
+      - '.github/workflows/species-gender-pose-orbit-regression.yml'
+  workflow_dispatch:
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Centroid pose math and integration
+        run: |
+          node --check scripts/test-species-gender-pose-scaling.js
+          node scripts/test-species-gender-pose-scaling.js
+
+      - name: Ranged weapon archetypes
+        continue-on-error: true
+        run: node scripts/test-ranged-weapon-archetypes.js
+      - name: Ranged weapons
+        continue-on-error: true
+        run: node scripts/test-ranged-weapons.js
+      - name: Ranged camera focus
+        continue-on-error: true
+        run: node scripts/test-ranged-camera-focus.js
+      - name: Ranged camera ray authority
+        continue-on-error: true
+        run: node scripts/test-ranged-camera-ray-authority.js
+      - name: Transient attack alignment
+        continue-on-error: true
+        run: node scripts/test-transient-attack-alignment.js
+      - name: Enemy weapon stances
+        continue-on-error: true
+        run: node scripts/test-enemy-weapon-stances.js
+      - name: Heavy weapon alternating neutrals
+        continue-on-error: true
+        run: node scripts/test-heavy-weapon-alternating-neutrals.js
+      - name: Procedural hands
+        continue-on-error: true
+        run: node scripts/test-procedural-hands.js
+      - name: Onboarding weapon preview
+        continue-on-error: true
+        run: node scripts/test-onboarding-character-creation-weapon-view-fix.js

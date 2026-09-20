@@ -122,6 +122,10 @@
     return /\/tools\/attack-animation-editor\//.test(location.pathname);
   }
 
+  function inHandCalibrationMode() {
+    return inAttackEditor() && global.HobunjiAttackEditorHandCalibrationMode?.active === true; // Dedicated editor tab bypasses every animation/tool/shoulder-derived hand transform.
+  }
+
   function currentToolKey() {
     if (inAttackEditor()) {
       return toolGrips.toolKeyFor(document.getElementById('toolSpriteSelect')?.value || '');
@@ -136,18 +140,28 @@
     return null;
   }
 
-  function handTransformForRecord(record) {
-    const raw = global.HobunjiHandGripModes?.effectiveFrameForSpecies?.(record.speciesId)
-      || profiles.handTransformForSpecies?.(record.speciesId)
-      || profiles.modelForSpecies?.(record.speciesId)?.handFromTool
+  function modelKeyForRecord(record) {
+    if (inAttackEditor()) {
+      const editorModelKey = global.HobunjiAttackEditorHandContext?.currentModelKey?.();
+      if (editorModelKey && profiles.data?.models?.[editorModelKey]) return editorModelKey;
+    }
+    return profiles.modelKeyForSpecies?.(record.speciesId) || null;
+  }
+
+  function modelCalibrationForRecord(record) {
+    const modelKey = modelKeyForRecord(record); // Single authoritative editor/runtime model identity used for both rendered GLB and calibration.
+    const raw = profiles.normalizeHandTransform?.(profiles.data?.models?.[modelKey]?.handFromTool)
+      || profiles.data?.models?.[modelKey]?.handFromTool
       || {};
     const p = raw.position || {};
     const r = raw.rotationDeg || {};
     const q = raw.rotationQuaternion || null;
     const modelHeight = Number(record.avatarRoot?.userData?.portraitModelHeight) || 0.9;
-    const effectiveScale = Number(profiles.effectiveScaleFor?.(record.speciesId, record.gender)) || 1;
-    const unit = modelHeight * (Number(profiles.data?.handHeightFraction) || 0.12) * effectiveScale;
+    const modelScale = Number(profiles.data?.models?.[modelKey]?.scale) || 1;
+    const speciesScale = Number(profiles.speciesScaleFor?.(record.speciesId, record.gender)) || 1;
+    const unit = modelHeight * (Number(profiles.data?.handHeightFraction) || 0.12) * modelScale * speciesScale;
     return {
+      modelKey,
       position: {
         x: (Number(p.x) || 0) * unit,
         y: (Number(p.y) || 0) * unit,
@@ -161,6 +175,29 @@
       rotationQuaternion: q && [q.x, q.y, q.z, q.w].every(value => Number.isFinite(Number(value)))
         ? { x: Number(q.x), y: Number(q.y), z: Number(q.z), w: Number(q.w) }
         : null,
+    };
+  }
+
+  function gripModeTransformForRecord(record) {
+    const mode = global.HobunjiHandGripModes?.currentMode?.() || {}; // Grip Mode belongs to the socket; GLB-specific handFromTool calibration now lives on the visual child owned by ProceduralHandAttachments.
+    const p = mode.position || {};
+    const r = mode.rotationDeg || {};
+    const modelKey = modelKeyForRecord(record);
+    const modelHeight = Number(record.avatarRoot?.userData?.portraitModelHeight) || 0.9;
+    const modelScale = Number(profiles.data?.models?.[modelKey]?.scale) || 1;
+    const speciesScale = Number(profiles.speciesScaleFor?.(record.speciesId, record.gender)) || 1;
+    const unit = modelHeight * (Number(profiles.data?.handHeightFraction) || 0.12) * modelScale * speciesScale;
+    return {
+      position: {
+        x: (Number(p.x) || 0) * unit,
+        y: (Number(p.y) || 0) * unit,
+        z: (Number(p.z) || 0) * unit,
+      },
+      rotationDeg: {
+        pitch: Number(r.pitch) || 0,
+        yaw: Number(r.yaw) || 0,
+        roll: Number(r.roll) || 0,
+      },
     };
   }
 
@@ -295,15 +332,15 @@
     return { position, quaternion, visualBasis };
   }
 
-  function handWorldFromSocket(record, socketFrame) {
+  function handSocketAfterGripMode(record, socketFrame) {
     const Vector3 = socketFrame.position.constructor;
-    const authored = handTransformForRecord(record);
-    const offset = new Vector3(authored.position.x, authored.position.y, authored.position.z)
+    const mode = gripModeTransformForRecord(record); // Only generic palm/shaft relationship is composed into the socket.
+    const offset = new Vector3(mode.position.x, mode.position.y, mode.position.z)
       .applyQuaternion(socketFrame.quaternion);
     return {
       position: socketFrame.position.clone().add(offset),
-      quaternion: socketFrame.quaternion.clone().multiply(quaternionFromAuthored(record, authored)),
-      authored,
+      quaternion: socketFrame.quaternion.clone().multiply(quaternionFromDeg(record, mode.rotationDeg || {})),
+      mode,
       visualBasis: socketFrame.visualBasis || null,
     };
   }
@@ -391,8 +428,41 @@
   function applyFallbackBoth(record) {
     const state = ensureFallbackState(record);
     record.rig?.useIdlePose?.(state.poses);
+    record.rig?.hidePaperHandGuideTarget?.(); // No raw weapon grip target exists while both hands are in fallback.
     state.owners.left = `fallback-${state.mode}`;
     state.owners.right = `fallback-${state.mode}`;
+  }
+
+  function syncCalibrationWorkspace(record, diagnostic = false) {
+    if (!record?.rig?.placeCalibrationPreviewWorld) return null;
+    const state = record._handCalibrationWorkspace ||= {
+      worldPosition: new record.THREE.Vector3(), // Reused fixed preview origin so the calibration tab allocates nothing per frame.
+      worldQuaternion: new record.THREE.Quaternion(), // Always identity: the paper reference is neutrally oriented in world space.
+    };
+    const modelHeight = Number(record.avatarRoot?.userData?.portraitModelHeight) || 0.9;
+    record.rig.parent?.getWorldPosition?.(state.worldPosition);
+    state.worldPosition.y += modelHeight * 0.52; // Stable chest-height workspace independent of tool/attack pose.
+    state.worldQuaternion.identity();
+    const modelCalibration = modelCalibrationForRecord(record);
+    const placed = record.rig.placeCalibrationPreviewWorld(state.worldPosition, state.worldQuaternion, modelCalibration);
+    if (!placed) return null;
+    record.secondaryActive = false;
+    record.lastToolKey = null;
+    record.lastVisualGripBasis = null;
+    ensureFallbackState(record).owners.right = 'glb-calibration';
+    ensureFallbackState(record).owners.left = 'hidden-calibration';
+    if (!diagnostic) return null;
+    return {
+      direct: true,
+      calibrationWorkspace: true,
+      neutralWorldQuaternion: true,
+      bypassesAnimation: true,
+      bypassesGripMode: true,
+      bypassesShoulderAim: true,
+      bypassesToolTarget: true,
+      modelCalibration,
+      paperHandReferenceFrame: 'fixed-neutral-world-frame',
+    };
   }
 
   function syncRigToTool(record, toolHolder, diagnostic = false) {
@@ -409,14 +479,17 @@
     try {
       const toolKey = currentToolKey();
       const primaryGrip = toolGrips.primaryGripForTool(toolKey);
-      const primary = handWorldFromSocket(record, toolSocketWorld(record, toolHolder, primaryGrip));
-      record.rig.placeHandWorld?.('right', primary.position, primary.quaternion);
+      const primarySocket = toolSocketWorld(record, toolHolder, primaryGrip); // Raw target ON the weapon, before Grip Mode or per-GLB hand-model calibration.
+      record.rig.placePaperHandGuideWorld?.(primarySocket.position, primarySocket.quaternion); // Locked reference stays on the raw target while Grip Mode + child calibration move the real hand.
+      const primary = handSocketAfterGripMode(record, primarySocket);
+      const modelCalibration = modelCalibrationForRecord(record); // Exact selected-model transform is passed through; the rig never re-resolves a different model by species.
+      record.rig.placeHandWorld?.('right', primary.position, primary.quaternion, modelCalibration);
       ensureFallbackState(record).owners.right = 'primary-grip';
 
       const secondaryGrip = toolGrips.secondaryGripForTool(toolKey);
       if (secondaryGrip) {
-        const secondary = handWorldFromSocket(record, toolSocketWorld(record, toolHolder, secondaryGrip));
-        record.rig.placeHandWorld?.('left', secondary.position, secondary.quaternion);
+        const secondary = handSocketAfterGripMode(record, toolSocketWorld(record, toolHolder, secondaryGrip));
+        record.rig.placeHandWorld?.('left', secondary.position, secondary.quaternion, modelCalibration);
         record.secondaryActive = true;
         ensureFallbackState(record).owners.left = 'secondary-grip';
       } else {
@@ -433,14 +506,17 @@
         direct: true,
         clamped: false,
         noArmIK: true,
-        quaternionNativeGripComposition: !!primary.authored.rotationQuaternion,
+        modelCalibrationOwnedByVisualChild: true,
         scaleFreeWorldQuaternion: true,
         toolKey: toolKey || null,
         gripMode: global.HobunjiHandGripModes?.currentModeKey?.() || null,
         primaryGrip: JSON.parse(JSON.stringify(primaryGrip)),
         secondaryActive: record.secondaryActive,
         secondaryGrip: secondaryGrip ? JSON.parse(JSON.stringify(secondaryGrip)) : null,
-        authoredHandTransform: primary.authored,
+        authoredHandTransform: profiles.data?.models?.[modelCalibration.modelKey]?.handFromTool || null,
+        modelCalibration,
+        gripModeTransform: primary.mode,
+        paperHandReferenceFrame: 'raw-primary-grip-before-grip-mode-and-hand-model-calibration',
         visualGripBasis: primary.visualBasis,
       };
     } finally {
@@ -498,9 +574,13 @@
       const frameId = global.RuntimeFrameScheduler?.frameId?.();
       if (frameId != null && record._lastHandSyncFrameId === frameId) return;
       record._lastHandSyncFrameId = frameId;
-      const holder = currentToolHolder(record);
-      if (holder) syncRigToTool(record, holder);
-      else applyFallbackBoth(record);
+      if (inHandCalibrationMode()) {
+        syncCalibrationWorkspace(record); // Render-time authority stays on the neutral calibration frame while this tab is active.
+      } else {
+        const holder = currentToolHolder(record);
+        if (holder) syncRigToTool(record, holder);
+        else applyFallbackBoth(record);
+      }
     };
     record.rig.parent.add(sentinel);
     record.syncSentinel = sentinel;
@@ -515,9 +595,13 @@
       }
       ensureSyncSentinel(record);
       updateFallbackMotion(record);
-      const holder = currentToolHolder(record);
-      if (holder) syncRigToTool(record, holder);
-      else applyFallbackBoth(record);
+      if (inHandCalibrationMode()) {
+        syncCalibrationWorkspace(record);
+      } else {
+        const holder = currentToolHolder(record);
+        if (holder) syncRigToTool(record, holder);
+        else applyFallbackBoth(record);
+      }
     }
   }
 
@@ -550,11 +634,15 @@
       const results = [];
       for (const record of managed) {
         updateFallbackMotion(record);
-        const holder = currentToolHolder(record);
-        if (holder) results.push(syncRigToTool(record, holder, true));
-        else {
-          applyFallbackBoth(record);
-          results.push({ direct: true, toolVisible: false, secondaryActive: false });
+        if (inHandCalibrationMode()) {
+          results.push(syncCalibrationWorkspace(record, true));
+        } else {
+          const holder = currentToolHolder(record);
+          if (holder) results.push(syncRigToTool(record, holder, true));
+          else {
+            applyFallbackBoth(record);
+            results.push({ direct: true, toolVisible: false, secondaryActive: false });
+          }
         }
       }
       return results;
@@ -563,7 +651,7 @@
       return [...managed].map(record => ({
         speciesId: record.speciesId,
         gender: record.gender,
-        mode: 'direct-tool-attachments',
+        mode: inHandCalibrationMode() ? 'glb-calibration-neutral-reference' : 'direct-tool-attachments',
         noArmIK: true,
         toolKey: record.lastToolKey,
         secondaryActive: record.secondaryActive,
@@ -576,8 +664,9 @@
           phase: Number(record.fallback.phase.toFixed(3)),
           owners: { ...record.fallback.owners },
         } : null,
-        handFromTool: global.HobunjiHandGripModes?.effectiveFrameForSpecies?.(record.speciesId)
-          || profiles.handTransformForSpecies?.(record.speciesId)
+        modelKey: modelKeyForRecord(record),
+        handFromTool: global.HobunjiHandGripModes?.effectiveFrameForModel?.(modelKeyForRecord(record))
+          || profiles.data?.models?.[modelKeyForRecord(record)]?.handFromTool
           || null,
         primaryGrip: toolGrips.primaryGripForTool(record.lastToolKey),
         secondaryGrip: toolGrips.secondaryGripForTool(record.lastToolKey) || null,
@@ -588,6 +677,11 @@
   };
 
   toolGrips.subscribe?.(() => global.ProceduralHandFrameDriver?.syncNow?.());
+  profiles.subscribe?.((_data, change) => {
+    if (change?.kind === 'hand-transform' || change?.kind === 'model-mapping' || change?.kind === 'species-scale') {
+      global.ProceduralHandFrameDriver?.syncNow?.();
+    }
+  });
 
   if (global.RuntimeFrameScheduler?.register) {
     global.RuntimeFrameScheduler.register('procedural-hand-attachment', attachmentSweep, {

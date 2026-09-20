@@ -152,11 +152,24 @@
     if (!q) return false;
     sourceParent.updateWorldMatrix?.(true, false);
     holderParent.updateWorldMatrix?.(true, false);
-    if (sourceParent === holderParent) {
-      holder.position.copy(p);
+    const avatar = avatarRootFor(walker); // Supplies the same cached armLength/visual-centroid metadata used by player and bandits.
+    const armLength = Number(avatar?.userData?.armLength);
+    const scale = window.HobunjiSpeciesPoseScale?.scaleForArmLength?.(armLength) ?? 1;
+    if (sourceParent === holderParent && scale === 1) {
+      holder.position.copy(p); // Preserve the exact pre-arm-length Mao'ao path without unnecessary world/local round-trips.
       holder.quaternion.copy(q);
     } else {
-      const worldP = sourceParent.localToWorld(p.clone());
+      const worldP = sourceParent.localToWorld(p.clone()); // Raw finished pose before the uniform centroid orbit.
+      if (avatar && scale !== 1) {
+        avatar.updateWorldMatrix?.(true, false);
+        const centroidLocal = new three.Vector3(
+          Number(avatar.userData?.visualCentroidLocalX) || 0,
+          Number(avatar.userData?.visualCentroidLocalY) || 0,
+          Number(avatar.userData?.visualCentroidLocalZ) || 0,
+        ); // True portrait-plane center inside the avatar root hierarchy.
+        const centroid = avatar.localToWorld(centroidLocal);
+        window.HobunjiSpeciesPoseScale?.scalePointAroundCentroid?.(worldP, centroid.x, centroid.y, centroid.z, armLength);
+      }
       const worldQ = sourceParent.getWorldQuaternion(new three.Quaternion()).multiply(q);
       const parentQ = holderParent.getWorldQuaternion(new three.Quaternion()).invert();
       holder.position.copy(holderParent.worldToLocal(worldP));
@@ -201,14 +214,9 @@
     return three ? new three.Quaternion().setFromEuler(new three.Euler(rad(r.pitch), rad(r.yaw), rad(r.roll), 'YXZ')) : null;
   }
 
-  function applyPrimaryCorrection(visual, key) {
+  function applyGripScale(visual, key) {
     if (!visual || visual.userData?.npcGripKey === key) return;
-    const three = T(), grip = primaryGrip(key), scale = gripScale(key), invQ = gripQuaternion(grip)?.invert();
-    if (!three || !invQ) return;
-    const p = grip.position || {};
-    visual.position.copy(new three.Vector3(-(Number(p.x) || 0) * scale, -(Number(p.y) || 0) * scale, -(Number(p.z) || 0) * scale).applyQuaternion(invQ));
-    visual.quaternion.copy(invQ);
-    visual.scale.setScalar(scale);
+    visual.scale.setScalar(gripScale(key)); // Grip target moves the HAND; held-item position/rotation remain authored by the stance animation.
     visual.userData = { ...(visual.userData || {}), npcGripKey: key };
   }
 
@@ -221,7 +229,7 @@
     for (const child of [...holder.children]) visual.add(child);
     holder.add(visual);
     holder.userData = { ...(holder.userData || {}), npcGripVisualV4: visual };
-    applyPrimaryCorrection(visual, key);
+    applyGripScale(visual, key);
     return visual;
   }
 
@@ -280,8 +288,20 @@
     const claims = ensureClaims(rig);
     if (claims) {
       claims.right = owner;
-      claims.left = null; // Player idle fishingspear is explicitly secondary=no; raw authored spans are attack-animation gated, never always-on.
+      claims.left = null; // Idle fishingspear is explicitly secondary=no; attack animation metadata gates any left-hand span.
     }
+
+    const grip = primaryGrip(key); // Authored point/orientation ON the weapon where the right hand must land.
+    const gripP = grip.position || {};
+    const gripQ = gripQuaternion(grip);
+    const scale = gripScale(key);
+    socket.position.add(new (T().Vector3)(
+      (Number(gripP.x) || 0) * scale,
+      (Number(gripP.y) || 0) * scale,
+      (Number(gripP.z) || 0) * scale,
+    ).applyQuaternion(socket.quaternion));
+    if (gripQ) socket.quaternion.multiply(gripQ);
+
     const rightP = socket.position.clone().add(hand.position.clone().applyQuaternion(socket.quaternion));
     const rightQ = socket.quaternion.clone().multiply(hand.quaternion);
     rig.setSideVisible?.('right', true);

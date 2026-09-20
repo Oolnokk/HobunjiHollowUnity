@@ -292,18 +292,9 @@
 
   function applyPrimaryGripVisual(THREE, plane, choice, baseQuaternion) {
     const grips = window.HobunjiHandToolGrips;
-    const primary = grips?.authoredPrimaryGripForTool?.(choice.shape) || {};
     const scale = Number(grips?.toolScaleForTool?.(choice.shape)) || 1;
-    const p = primary.position || {};
-    const gripQ = quaternionFromAuthored(THREE, primary);
-    const correctionQ = gripQ.clone().invert();
-    const correctionPosition = new THREE.Vector3(
-      -(Number(p.x) || 0) * scale,
-      -(Number(p.y) || 0) * scale,
-      -(Number(p.z) || 0) * scale,
-    ).applyQuaternion(correctionQ);
-    plane.position.copy(correctionPosition);
-    plane.quaternion.copy(correctionQ.multiply(baseQuaternion));
+    plane.position.set(0, 0, 0); // Weapon preview remains owned by its authored stance; grip metadata moves the hand instead.
+    plane.quaternion.copy(baseQuaternion);
     plane.scale.setScalar(scale);
     return scale;
   }
@@ -338,6 +329,15 @@
     const idle = weaponPose(choice);
     const pose = idle.pose;
     holder.position.set(Number(pose.x) || 0, Number(pose.y) || 0, Number(pose.z) || 0);
+    const poseScale = window.HobunjiSpeciesPoseScale; // Shared centroid math keeps onboarding weapon previews identical to gameplay/editor.
+    const armLength = Number(model.userData?.armLength);
+    const centroidY = Number(model.userData?.poseCentroidY);
+    const scale = poseScale?.scaleForArmLength?.(armLength) ?? 1;
+    if (scale !== 1 && Number.isFinite(centroidY)) {
+      const finalPoint = new THREE.Vector3(toolBase.position.x + holder.position.x, toolBase.position.y + holder.position.y, toolBase.position.z + holder.position.z);
+      poseScale.scalePointAroundCentroid(finalPoint, 0, centroidY, 0, armLength);
+      holder.position.set(finalPoint.x - toolBase.position.x, finalPoint.y - toolBase.position.y, finalPoint.z - toolBase.position.z);
+    }
     applyPoseQuaternion(THREE, holder, pose);
     avatarGroup.rotation.y = THREE.MathUtils.degToRad(Number(pose.bodyYaw) || 0);
     const neckJoint = model.userData?.neckRig?.neckJoint;
@@ -403,6 +403,17 @@
     holder.updateWorldMatrix?.(true, true);
     const socketPosition = holder.getWorldPosition(new THREE.Vector3());
     const socketQuaternion = hierarchyWorldQuaternion(THREE, holder);
+    const grips = window.HobunjiHandToolGrips;
+    const primary = grips?.authoredPrimaryGripForTool?.(state.choice?.shape || '') || {};
+    const primaryPosition = primary.position || {};
+    const toolScale = Number(grips?.toolScaleForTool?.(state.choice?.shape || '')) || 1;
+    socketPosition.add(new THREE.Vector3(
+      (Number(primaryPosition.x) || 0) * toolScale,
+      (Number(primaryPosition.y) || 0) * toolScale,
+      (Number(primaryPosition.z) || 0) * toolScale,
+    ).applyQuaternion(socketQuaternion)); // Blue/editor grip target semantics: move hand target, not the weapon.
+    socketQuaternion.multiply(quaternionFromAuthored(THREE, primary));
+
     const authored = handTransform();
     const offset = new THREE.Vector3(authored.position.x, authored.position.y, authored.position.z).applyQuaternion(socketQuaternion);
     const handQuaternion = socketQuaternion.clone().multiply(authored.quaternion);

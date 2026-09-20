@@ -1,15 +1,28 @@
 // Held-item-local grip and base-scale authoring shared by gameplay and the Attack Animation Editor.
-// Primary grip is a point on the item: moving it repositions/rotates the ITEM around
-// the unchanged authored right-hand socket. Optional off-hand authoring is a Z span
-// on the item; attack poses choose 0..100% along that span and smoothly blend the
-// left hand on/off it. Base toolScale belongs to the item shape and multiplies any
-// animation-authored Neutral scale, so weapon size no longer lives in one attack.
+// A primary grip is a target frame ON THE ITEM. The animation owns the item's transform;
+// grip authoring moves the RIGHT HAND to that frame and never inverse-moves the weapon.
+// Optional off-hand authoring is a Z span on the item; attack poses choose 0..100%
+// along that span and smoothly blend the left hand on/off it. Base toolScale belongs
+// to the item shape and also scales grip-point positions away from the item origin.
 (function (global) {
   'use strict';
 
   const SCHEMA = 'hobunji_hand_tool_grips.v1';
   const LOCAL_KEY = 'hobunji.handToolGrips.v1';
   const SECONDARY_GRIP_PRESET = 'animation-span-v1'; // Migrates old always-on secondary points into animation-gated Z spans.
+  const PRIMARY_ROTATION_PRESET = 'weapon-primary-rotations-20260919-v1'; // One-shot migration marker for the user-authored weapon grip rotation table.
+  const PRIMARY_ROTATIONS = Object.freeze({
+    hatchet: Object.freeze({ pitch: -90, yaw: 90, roll: 180 }),
+    hoe: Object.freeze({ pitch: 0, yaw: 0, roll: 0 }),
+    bshuakauitl: Object.freeze({ pitch: 0, yaw: 0, roll: 0 }),
+    pickshovel: Object.freeze({ pitch: 0, yaw: 0, roll: 0 }),
+    daggersword: Object.freeze({ pitch: 0, yaw: 180, roll: 0 }),
+    plainssword: Object.freeze({ pitch: 0, yaw: 0, roll: 0 }),
+    dagger: Object.freeze({ pitch: 0, yaw: 0, roll: 0 }),
+    kylie: Object.freeze({ pitch: 0, yaw: 18, roll: 0 }),
+    warcleaver: Object.freeze({ pitch: 0, yaw: 0, roll: 0 }),
+    fishingspear: Object.freeze({ pitch: 0, yaw: 0, roll: 0 }),
+  });
   const CRAFTED_METAL_SUFFIX = /-(?:nativecopper|lowtinbronze|tinbronze|hightinbronze|arsenicalbronze|leadedbronze)$/;
   const visualBases = new WeakMap(); // Original held-item visual position/rotation/scale; authored corrections are reapplied from these every frame.
   const listeners = new Set();
@@ -29,9 +42,10 @@
   const DEFAULT_DATA = {
     schema: SCHEMA,
     secondaryGripPreset: SECONDARY_GRIP_PRESET,
+    primaryRotationPreset: PRIMARY_ROTATION_PRESET,
     tools: {
       hatchet: {
-        primaryGrip: identityTransform(),
+        primaryGrip: { position: { x: 0, y: 0, z: 0 }, rotationDeg: { ...PRIMARY_ROTATIONS.hatchet } },
         gripMode: null,
         secondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
       },
@@ -164,8 +178,10 @@
 
   function normalizeData(raw) {
     const next = clone(raw || DEFAULT_DATA);
+    const previousPrimaryRotationPreset = next.primaryRotationPreset; // Missing/older marker means saved grip rotations need the new authoritative weapon table once.
     next.schema = SCHEMA;
     next.secondaryGripPreset = SECONDARY_GRIP_PRESET;
+    next.primaryRotationPreset = PRIMARY_ROTATION_PRESET;
     const rawTools = next.tools && typeof next.tools === 'object' ? next.tools : {}; // Saved drafts override defaults, while newly added weapon defaults still appear after upgrades.
     next.tools = { ...clone(DEFAULT_DATA.tools), ...rawTools };
     for (const [toolKey, entry] of Object.entries(next.tools)) {
@@ -173,6 +189,9 @@
       const fallbackEntry = DEFAULT_DATA.tools[toolKey] || {}; // Lets pre-scale local drafts inherit the new committed scale for that same shape.
       entry.toolScale = normalizeToolScale(entry.toolScale, fallbackEntry.toolScale ?? 1);
       entry.primaryGrip = normalizeTransform(entry.primaryGrip);
+      if (previousPrimaryRotationPreset !== PRIMARY_ROTATION_PRESET && PRIMARY_ROTATIONS[toolKey]) {
+        entry.primaryGrip.rotationDeg = { ...PRIMARY_ROTATIONS[toolKey] }; // Migration changes rotation only; authored position, scale and off-hand span remain exactly as saved.
+      }
       entry.secondaryGripSpan = inferredSpan(entry);
       entry.secondaryGrip = disabledLegacySecondary();
       entry.gripMode = normalizeGripMode(entry.gripMode);
@@ -186,73 +205,6 @@
     const output = clone(data);
     for (const entry of Object.values(output.tools || {})) delete entry.secondaryGrip;
     return output;
-  }
-
-  function multiplyQuaternion(a, b) {
-    return {
-      x: a.x * b.w + a.w * b.x + a.y * b.z - a.z * b.y,
-      y: a.y * b.w + a.w * b.y + a.z * b.x - a.x * b.z,
-      z: a.z * b.w + a.w * b.z + a.x * b.y - a.y * b.x,
-      w: a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
-    };
-  }
-
-  function quaternionFromDeg(rotation = {}) {
-    const halfPitch = numberOrZero(rotation.pitch) * Math.PI / 360; // X angle used by the YXZ authored grip basis.
-    const halfYaw = numberOrZero(rotation.yaw) * Math.PI / 360; // Y angle used by the YXZ authored grip basis.
-    const halfRoll = numberOrZero(rotation.roll) * Math.PI / 360; // Z angle used by the YXZ authored grip basis.
-    const qYaw = { x: 0, y: Math.sin(halfYaw), z: 0, w: Math.cos(halfYaw) }; // First term of YXZ composition.
-    const qPitch = { x: Math.sin(halfPitch), y: 0, z: 0, w: Math.cos(halfPitch) }; // Second term of YXZ composition.
-    const qRoll = { x: 0, y: 0, z: Math.sin(halfRoll), w: Math.cos(halfRoll) }; // Final term of YXZ composition.
-    return multiplyQuaternion(multiplyQuaternion(qYaw, qPitch), qRoll);
-  }
-
-  function inverseQuaternion(q) {
-    const lengthSq = q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w || 1; // Protects inverse composition from authored float drift.
-    return { x: -q.x / lengthSq, y: -q.y / lengthSq, z: -q.z / lengthSq, w: q.w / lengthSq };
-  }
-
-  function rotateVector(q, value) {
-    const vectorQ = { x: numberOrZero(value?.x), y: numberOrZero(value?.y), z: numberOrZero(value?.z), w: 0 }; // Temporary quaternion for q*v*q^-1.
-    const rotated = multiplyQuaternion(multiplyQuaternion(q, vectorQ), inverseQuaternion(q));
-    return { x: rotated.x, y: rotated.y, z: rotated.z };
-  }
-
-  function quaternionToDegYXZ(q) {
-    const length = Math.hypot(q.x, q.y, q.z, q.w) || 1; // Normalization keeps Euler extraction stable.
-    const x = q.x / length, y = q.y / length, z = q.z / length, w = q.w / length;
-    const m11 = 1 - 2 * (y * y + z * z), m13 = 2 * (x * z + y * w);
-    const m21 = 2 * (x * y + z * w), m22 = 1 - 2 * (x * x + z * z);
-    const m23 = 2 * (y * z - x * w), m31 = 2 * (x * z - y * w), m33 = 1 - 2 * (x * x + y * y);
-    const pitch = Math.asin(-Math.max(-1, Math.min(1, m23)));
-    const yaw = Math.abs(m23) < 0.9999999 ? Math.atan2(m13, m33) : Math.atan2(-m31, m11);
-    const roll = Math.abs(m23) < 0.9999999 ? Math.atan2(m21, m22) : 0;
-    return { pitch: pitch * 180 / Math.PI, yaw: yaw * 180 / Math.PI, roll: roll * 180 / Math.PI };
-  }
-
-  function inverseTransform(raw, positionScale = 1) {
-    const transform = normalizeTransform(raw); // Authored point on the unscaled item that must land on the fixed right-hand socket.
-    const scale = normalizeToolScale(positionScale); // Uniform base item scale; multiplying the grip offset makes scaling happen around the hand pivot instead of the sprite origin.
-    const inverseRotation = inverseQuaternion(quaternionFromDeg(transform.rotationDeg)); // P^-1 rotation moves the item, never the hand.
-    const inversePosition = rotateVector(inverseRotation, {
-      x: -transform.position.x * scale,
-      y: -transform.position.y * scale,
-      z: -transform.position.z * scale,
-    });
-    return { position: inversePosition, quaternion: inverseRotation };
-  }
-
-  function composePrimaryInverseWithPoint(primaryRaw, itemPoint) {
-    const primary = normalizeTransform(primaryRaw); // Item-local primary frame becomes the corrected visual origin.
-    const point = normalizeTransform(itemPoint); // Item-local off-hand point selected from the authored Z span.
-    const inversePrimaryRotation = inverseQuaternion(quaternionFromDeg(primary.rotationDeg)); // Converts the point into the fixed primary-hand frame.
-    const relativePosition = rotateVector(inversePrimaryRotation, {
-      x: point.position.x - primary.position.x,
-      y: point.position.y - primary.position.y,
-      z: point.position.z - primary.position.z,
-    });
-    const relativeRotation = multiplyQuaternion(inversePrimaryRotation, quaternionFromDeg(point.rotationDeg));
-    return { position: relativePosition, rotationDeg: quaternionToDegYXZ(relativeRotation) };
   }
 
   function ensureTool(value) {
@@ -279,7 +231,18 @@
     return normalizeTransform(ensureTool(value)?.primaryGrip);
   }
 
-  function primaryGripForTool() { return identityTransform(); }
+  function primaryGripForTool(value) {
+    const authored = authoredPrimaryGripForTool(value); // Selected item-local frame the right hand must reach.
+    const scale = toolScaleForTool(value); // Grip coordinates are authored against the unscaled sprite and expand with its intrinsic size.
+    return {
+      position: {
+        x: numberOrZero(authored.position.x) * scale,
+        y: numberOrZero(authored.position.y) * scale,
+        z: numberOrZero(authored.position.z) * scale,
+      },
+      rotationDeg: { ...authored.rotationDeg },
+    };
+  }
 
   function secondaryGripSpanForTool(value) {
     const span = ensureTool(value)?.secondaryGripSpan;
@@ -336,7 +299,7 @@
     return { ...result, source: 'animation-pose' };
   }
 
-  function inAttackEditor() { return /\/tools\/attack-animation-editor\//.test(location.pathname); }
+  function inAttackEditor() { return /\/tools\/attack-animation-editor\//.test(global.location?.pathname || (typeof location !== 'undefined' ? location.pathname : '')); }
 
   function editorAnimationGripState() {
     const progress = clamp01(document.getElementById('scrub')?.value ?? 0);
@@ -379,14 +342,15 @@
     if (!(state.influence > 0.0001)) return null;
     const percent01 = clamp01(state.percent / 100);
     const itemZ = span.startZ + (span.endZ - span.startZ) * percent01;
-    const relative = composePrimaryInverseWithPoint(authoredPrimaryGripForTool(value), {
-      position: { x: 0, y: 0, z: itemZ }, rotationDeg: { pitch: 0, yaw: 0, roll: 0 },
-    });
-    const itemScale = toolScaleForTool(value); // Intrinsic visual scale is not part of toolHolder's animation transform, so off-hand travel must scale explicitly with the weapon shape.
-    relative.position.x *= itemScale;
-    relative.position.y *= itemScale;
-    relative.position.z *= itemScale;
-    return { enabled: true, influence: clamp01(state.influence), percent: state.percent, itemZ, ...relative };
+    const itemScale = toolScaleForTool(value); // The left-hand target lives directly in the same item-local frame as the primary target.
+    return {
+      enabled: true,
+      influence: clamp01(state.influence),
+      percent: state.percent,
+      itemZ,
+      position: { x: 0, y: 0, z: itemZ * itemScale },
+      rotationDeg: { pitch: 0, yaw: 0, roll: 0 },
+    };
   }
 
   function installCombatCapture() {
@@ -425,8 +389,8 @@
       if (originalUseIdlePose) rig.useIdlePose = function secondarySpanUseIdleCapture(poses) { const result = originalUseIdlePose(poses); captureIdle(); return result; };
       const originalPlaceHandWorld = rig.placeHandWorld?.bind(rig);
       if (originalPlaceHandWorld) {
-        rig.placeHandWorld = function secondarySpanBlendWorld(side, worldPosition, worldQuaternion) {
-          const result = originalPlaceHandWorld(side, worldPosition, worldQuaternion);
+        rig.placeHandWorld = function secondarySpanBlendWorld(side, worldPosition, worldQuaternion, modelCalibration = null) {
+          const result = originalPlaceHandWorld(side, worldPosition, worldQuaternion, modelCalibration); // Preserve per-GLB calibration through the off-hand span wrapper.
           if (side !== 'left' || !leftSocket || !idlePosition || !idleQuaternion) return result;
           const influence = clamp01(currentSecondaryGripAnimationState().influence);
           if (influence >= 0.9999) return result;
@@ -477,17 +441,10 @@
     node.updateMatrix?.();
   }
 
-  function applyPrimaryCorrection(node, primaryRaw, toolScale = 1) {
-    const base = visualBaseFor(node);
+  function applyHeldItemScale(node, toolScale = 1) {
+    const base = visualBaseFor(node); // Captures only the visual's authored base scale; position/orientation remain animation-owned.
     if (!base) return;
-    const scale = normalizeToolScale(toolScale);
-    const correction = inverseTransform(primaryRaw, scale);
-    const correctedBasePosition = rotateVector(correction.quaternion, base.position);
-    node.position.set(correction.position.x + correctedBasePosition.x, correction.position.y + correctedBasePosition.y, correction.position.z + correctedBasePosition.z);
-    const QuaternionCtor = node.quaternion.constructor;
-    const correctionQ = new QuaternionCtor(correction.quaternion.x, correction.quaternion.y, correction.quaternion.z, correction.quaternion.w);
-    node.quaternion.copy(correctionQ.multiply(base.quaternion));
-    applyScaleFromBase(node, base, scale);
+    applyScaleFromBase(node, base, toolScale);
     node.updateMatrix?.();
   }
 
@@ -501,21 +458,15 @@
     return visible || fallback;
   }
 
-  function editorGripPickActive() { return document.getElementById('handPrimaryGripPick')?.classList.contains('active') === true; }
-
-  function applyEditorPrimaryCorrection() {
+  function applyEditorGripPresentation() {
     const context = global.HobunjiAttackEditorToolContext;
     const visual = context?.toolPlaneMesh || null;
     if (!visual) return;
     const key = toolKeyFor(context.toolKey || document.getElementById('toolSpriteSelect')?.value || '');
-    const scale = toolScaleForTool(key);
-    if (editorGripPickActive()) { restoreVisualBase(visual, scale); return; }
-    applyPrimaryCorrection(visual, data.tools?.[key]?.primaryGrip, scale);
-    const marker = context.toolHolder?.getObjectByName?.('primary_right_hand_grip_marker') || null;
-    if (marker) { marker.position.set(0, 0, 0); marker.quaternion.identity(); marker.updateMatrix?.(); }
+    applyHeldItemScale(visual, toolScaleForTool(key));
   }
 
-  function applyRuntimePrimaryCorrection() {
+  function applyRuntimeGripPresentation() {
     const deps = global.ProceduralHandAttachments?.gameDeps || null;
     const holder = deps?.toolHolder || null;
     if (!holder) return;
@@ -524,10 +475,15 @@
     const visual = (activeSlot && (deps?.toolMeshMap?.get?.(activeSlot) || deps?.toolMeshMap?.[activeSlot])) || visibleToolVisualUnder(holder);
     const itemKey = snapshot?.itemKey || snapshot?.shape || deps?.equipmentSlots?.[activeSlot] || '';
     if (!visual || !itemKey) return;
-    applyPrimaryCorrection(visual, authoredPrimaryGripForTool(itemKey), toolScaleForTool(itemKey));
+    applyHeldItemScale(visual, toolScaleForTool(itemKey));
   }
 
-  function applyPrimaryGripVisuals() { if (inAttackEditor()) applyEditorPrimaryCorrection(); else applyRuntimePrimaryCorrection(); }
+  function applyPrimaryGripVisuals() {
+    // Historical name retained for callers. Primary grip no longer transforms the
+    // item visual; it is consumed by ProceduralHandFrameDriver as a HAND target.
+    if (inAttackEditor()) applyEditorGripPresentation();
+    else applyRuntimeGripPresentation();
+  }
 
   function notify() {
     applyPrimaryGripVisuals();
@@ -646,7 +602,7 @@
     panel.id = 'handSecondaryGripSpanPanel';
     panel.innerHTML = `
       <div class="poseGroupHead"><span class="dot" style="background:#fb7185"></span>Optional off-hand Z span</div>
-      <div class="help" style="margin-bottom:6px">The weapon only defines where an off hand <b>may</b> grip along local Z. Idle never uses this automatically. Attack poses below decide whether to use it and where, as a percentage of the span.</div>
+      <div class="help" style="margin-bottom:6px">This defines where the <b>left hand may move on the weapon's local Z axis</b>. The weapon does not move. Attack poses below decide whether the left hand reaches this span and where along it lands.</div>
       <div class="field"><label class="fieldRow" style="cursor:pointer"><input type="checkbox" id="handSecondarySpanEnabled" style="width:auto;margin-right:6px">Weapon has an off-hand span</label></div>
       <div id="handSecondarySpanFields"></div>
       <div class="hr"></div>
@@ -656,8 +612,8 @@
       <div class="help" id="handSecondarySpanStatus" style="padding:7px;border:1px solid rgba(245,158,11,.24);border-radius:8px;margin:6px 0"></div>`;
     host.insertBefore(panel, status);
     const spanFields = panel.querySelector('#handSecondarySpanFields'), animationFields = panel.querySelector('#handSecondaryAnimationFields'), spanEnabled = panel.querySelector('#handSecondarySpanEnabled');
-    const startPair = editorFieldPair(spanFields, 'handSecondarySpanStartZ', 'Span start Z', 0, -1.5, 1.5, 0.01, value => mutate(() => { ensureTool(editorCurrentToolKey()).secondaryGripSpan.startZ = value; }));
-    const endPair = editorFieldPair(spanFields, 'handSecondarySpanEndZ', 'Span end Z', 0, -1.5, 1.5, 0.01, value => mutate(() => { ensureTool(editorCurrentToolKey()).secondaryGripSpan.endZ = value; }));
+    const startPair = editorFieldPair(spanFields, 'handSecondarySpanStartZ', 'Left-hand span start · tool Z position', 0, -1.5, 1.5, 0.01, value => mutate(() => { ensureTool(editorCurrentToolKey()).secondaryGripSpan.startZ = value; }));
+    const endPair = editorFieldPair(spanFields, 'handSecondarySpanEndZ', 'Left-hand span end · tool Z position', 0, -1.5, 1.5, 0.01, value => mutate(() => { ensureTool(editorCurrentToolKey()).secondaryGripSpan.endZ = value; }));
     const pose = {};
     for (const phase of ['neutral', 'windup', 'strike']) {
       const box = document.createElement('div');
@@ -713,6 +669,21 @@
     };
   }
 
+  function editorSecondaryGripStateSnapshot() {
+    return clone(editorSecondaryPoses); // Undo/Redo needs hidden per-pose left-hand values even when another pose is selected.
+  }
+
+  function restoreEditorSecondaryGripState(snapshot) {
+    for (const phase of ['neutral', 'windup', 'strike']) {
+      const raw = snapshot?.[phase] || {};
+      editorSecondaryPoses[phase].enabled = raw.enabled === true;
+      editorSecondaryPoses[phase].percent = clamp(raw.percent ?? 50, 0, 100);
+    }
+    syncEditorSpanUi();
+    patchEditorJsonView();
+    global.ProceduralHandFrameDriver?.syncNow?.();
+  }
+
   global.HobunjiHandToolGrips = {
     schema: SCHEMA,
     get data() { return data; },
@@ -720,6 +691,7 @@
     clone: cleanClone,
     toolKeyFor, ensureTool, toolScaleForTool, authoredPrimaryGripForTool, primaryGripForTool, secondaryGripSpanForTool, secondaryGripForTool,
     currentSecondaryGripAnimationState, animationGripAt, gripModeForTool, setGripMode, replace, mutate, saveLocal, loadLocal, clearLocal, applyPrimaryGripVisuals, debugForTool,
+    editorSecondaryGripStateSnapshot, restoreEditorSecondaryGripState,
     getDebug() {
       const snapshot = global.WeaponToolStances?.debugSnapshot?.() || null;
       const value = inAttackEditor() ? editorCurrentToolKey() : (snapshot?.itemKey || snapshot?.shape || '');
@@ -765,7 +737,7 @@
     global.RuntimeFrameScheduler.register('hand-tool-grips-visuals', applyPrimaryGripVisuals, {
       phase: 'pre-render',
       owner: 'HobunjiHandToolGrips',
-      description: 'Applies the current primary-grip transform correction to the held tool/weapon visual before this frame renders.',
+      description: 'Maintains intrinsic held-item scale before render; authored grip targets move hands while weapon position/orientation remain animation-owned.',
     });
   } else {
     // The standalone Attack Animation Editor and Animation Author tool pages

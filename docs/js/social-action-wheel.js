@@ -224,6 +224,16 @@
     return { width: Math.max(0.05, width), height: Math.max(0.05, height) };
   }
 
+  function armLengthForModel(model, dimensions) {
+    let cachedReach = null; // Finds PNGPlaneAvatar's rendered-space arm reach once when a dance starts.
+    model?.traverse?.(node => {
+      if (cachedReach != null) return;
+      const candidate = Number(node.userData?.scaledArmLength);
+      if (Number.isFinite(candidate) && candidate > 0) cachedReach = candidate;
+    });
+    return cachedReach ?? dimensions.height * 0.62; // Legacy avatar fallback is evaluated once, not in the per-frame arm solver.
+  }
+
   function deriveLegBend(root, chain, targetWorld) {
     if (!window.LegBones?.solveTwoBoneLeg || !root || !chain?.hip || !chain?.thigh || !targetWorld) return { x: 0, z: 0 };
     root.updateMatrixWorld(true);
@@ -380,7 +390,7 @@
     const hands = dance.hands;
     if (!hands) return;
     const dims = dance.dimensions;
-    const reach = dims.height * 0.62;
+    const reach = dance.armLength; // Cached concrete species+gender reach captured at dance start.
 
     const setSocket = (socket, position, baseQuaternion) => {
       socket.position.copy(position);
@@ -391,7 +401,7 @@
     };
 
     if (dance.armStyle === 'tpose-jiggle') {
-      const spread = dims.width * 0.62;
+      const spread = reach; // T-pose extension uses the same cached anatomical reach.
       for (const side of ['left', 'right']) {
         const socket = hands[side];
         const base = side === 'left' ? hands.leftBasePosition : hands.rightBasePosition;
@@ -440,12 +450,15 @@
     }
 
     const now = performance.now();
+    const dimensions = frontPlaneDimensions(model); // Captured once for body/leg scaling during this dance.
+    const armLength = armLengthForModel(model, dimensions); // Cached species+gender arm reach used by every arm pose during this dance.
     state.dance = {
       style,
       armStyle,
       startedAt: now,
       lastNow: now,
-      dimensions: frontPlaneDimensions(model),
+      dimensions,
+      armLength,
       rig: captureDanceRig(),
       hands: captureHandState(),
       previousBeatIndex: null,
