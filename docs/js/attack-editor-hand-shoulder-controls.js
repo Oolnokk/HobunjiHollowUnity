@@ -11,13 +11,19 @@
   if (!profileSelect || global.HobunjiAttackEditorHandShoulderControls) return;
 
   const PHASES = ['neutral', 'windup', 'strike'];
-  const AXES = ['grip', 'palmNormal']; // The only hand-local hinges permitted to aim the wrist at the shoulder.
+  const AXES = ['grip', 'palmNormal']; // The only hand-local hinges permitted to aim the wrist toward its elbow.
+  const ELBOW_AXES = ['x', 'y', 'z'];
+  const AUTO_ELBOW = Object.freeze({ x: 0, y: 0, z: 0 }); // Zero means automatic bend-plane selection.
   const DEFAULTS = Object.freeze({
-    neutral: Object.freeze({ grip: true, palmNormal: true }),
-    windup: Object.freeze({ grip: false, palmNormal: true }),
-    strike: Object.freeze({ grip: false, palmNormal: true }),
+    neutral: Object.freeze({ grip: true, palmNormal: true, elbowHint: AUTO_ELBOW }),
+    windup: Object.freeze({ grip: false, palmNormal: true, elbowHint: AUTO_ELBOW }),
+    strike: Object.freeze({ grip: false, palmNormal: true, elbowHint: AUTO_ELBOW }),
   });
-  const poseAim = Object.fromEntries(PHASES.map(phase => [phase, { ...DEFAULTS[phase] }]));
+  const poseAim = Object.fromEntries(PHASES.map(phase => [phase, {
+    grip: DEFAULTS[phase].grip,
+    palmNormal: DEFAULTS[phase].palmNormal,
+    elbowHint: { ...AUTO_ELBOW },
+  }]));
   let hideArmSprites = false;
   let showPaperArmGuide = false; // Preview-only elbow/arm-strip visualization; never exported into attack data.
 
@@ -70,18 +76,25 @@
   function checkboxId(phase, axis) {
     return `handShoulderAim_${phase}_${axis}`;
   }
+  function elbowInputId(phase, axis) {
+    return `handElbowHint_${phase}_${axis}`;
+  }
 
   const followGroup = document.createElement('div'); // Hand-only orientation assist; deliberately lives outside the tool-pose controls.
   followGroup.className = 'poseGroup';
   followGroup.id = 'handShoulderFollowGroup';
   followGroup.innerHTML = `
     <div class="poseGroupHead"><span class="dot" style="background:#fb7185"></span>Hand shoulder-follow by animation pose</div>
-    <div class="help" style="margin-bottom:7px"><b>This rotates the HAND, never the weapon.</b> The wrist always aims toward the shoulder. The solver has only two hand-local hinges; there is no local-Y shoulder hinge.</div>
+    <div class="help" style="margin-bottom:7px"><b>This rotates the HAND, never the weapon.</b> The wrist-facing side now aims toward the elbow. The elbow itself is solved between shoulder and wrist with equal upper-arm/forearm lengths. The two checkboxes only choose which hand-local hinges may rotate.</div>
     ${PHASES.map(phase => `
       <div class="field" data-hand-shoulder-phase="${phase}">
         <label>${phase[0].toUpperCase() + phase.slice(1)} hand follow</label>
         <div class="row" style="gap:9px;flex-wrap:wrap">
           ${[['grip','Grip axis (local X)'],['palmNormal','Palm-normal axis (local Z)']].map(([axis,label]) => `<label class="fieldRow" style="cursor:pointer;margin:0"><input id="${checkboxId(phase, axis)}" type="checkbox" style="width:auto">${label}</label>`).join('')}
+        </div>
+        <div class="help" style="margin-top:7px">Elbow location hint: midpoint-relative X/Y/Z in arm-length units. The solver projects this hint onto the physically valid equal-segment elbow circle. All zeros = automatic bend plane.</div>
+        <div class="row" style="gap:7px">
+          ${ELBOW_AXES.map(axis => `<label class="fieldRow" style="margin:0;min-width:88px">${axis.toUpperCase()} <input id="${elbowInputId(phase, axis)}" type="number" step="0.01" value="0" style="width:72px"></label>`).join('')}
         </div>
       </div>`).join('')}
   `;
@@ -112,9 +125,16 @@
     return value === true ? true : value === false ? false : !!fallback;
   }
   function normalizeBooleanAim(raw, fallback) {
+    const elbowHint = poseRuntime?.normalizeElbowHint?.(raw?.elbowHint || raw?.elbow || fallback.elbowHint)
+      || {
+        x: Number(raw?.elbowHint?.x ?? raw?.elbow?.x ?? fallback.elbowHint?.x) || 0,
+        y: Number(raw?.elbowHint?.y ?? raw?.elbow?.y ?? fallback.elbowHint?.y) || 0,
+        z: Number(raw?.elbowHint?.z ?? raw?.elbow?.z ?? fallback.elbowHint?.z) || 0,
+      };
     return {
       grip: booleanAxis(raw, 'grip', 'pitch', fallback.grip),
       palmNormal: booleanAxis(raw, 'palmNormal', 'roll', fallback.palmNormal),
+      elbowHint,
     };
   }
 
@@ -124,11 +144,16 @@
         const input = document.getElementById(checkboxId(phase, axis));
         if (input) input.checked = !!poseAim[phase][axis];
       }
+      for (const axis of ELBOW_AXES) {
+        const input = document.getElementById(elbowInputId(phase, axis));
+        if (input && document.activeElement !== input) input.value = String(Number(poseAim[phase].elbowHint?.[axis]) || 0);
+      }
     }
     hide.checked = hideArmSprites;
     paperArm.checked = showPaperArmGuide;
     const weights = currentWeights();
-    compassStatus.textContent = `Live hand-follow lerp: grip axis ${(weights.grip * 100).toFixed(0)}% · palm-normal axis ${(weights.palmNormal * 100).toFixed(0)}% · arms ${hideArmSprites ? 'hidden' : 'visible'} · paper arm ${showPaperArmGuide ? 'shown' : 'hidden'}.`;
+    const elbow = currentElbowHint();
+    compassStatus.textContent = `Live hand-follow: grip ${(weights.grip * 100).toFixed(0)}% · palm-normal ${(weights.palmNormal * 100).toFixed(0)}% · elbow hint (${elbow.x.toFixed(2)}, ${elbow.y.toFixed(2)}, ${elbow.z.toFixed(2)}) · arms ${hideArmSprites ? 'hidden' : 'visible'} · paper arm ${showPaperArmGuide ? 'shown' : 'hidden'}.`;
   }
 
   function injectPoseAimIntoObject(parsed) {
@@ -136,7 +161,7 @@
     if (!parsed.poses || typeof parsed.poses !== 'object') parsed.poses = {};
     for (const phase of PHASES) {
       if (!parsed.poses[phase] || typeof parsed.poses[phase] !== 'object') parsed.poses[phase] = {};
-      parsed.poses[phase].shoulderAim = { ...poseAim[phase] };
+      parsed.poses[phase].shoulderAim = { ...poseAim[phase], elbowHint: { ...poseAim[phase].elbowHint } };
     }
     return parsed;
   }
@@ -171,10 +196,20 @@
     global.ProceduralHandFrameDriver?.syncNow?.();
     syncCheckboxes();
   }
+  function setElbowAxis(phase, axis, value) {
+    poseAim[phase].elbowHint ||= { ...AUTO_ELBOW };
+    poseAim[phase].elbowHint[axis] = Number.isFinite(Number(value)) ? Number(value) : 0;
+    refreshJsonExtension();
+    global.ProceduralHandFrameDriver?.syncNow?.();
+    global.ProceduralHandShoulderAim?.refreshPaperArmGuides?.();
+  }
 
   for (const phase of PHASES) {
     for (const axis of AXES) {
       document.getElementById(checkboxId(phase, axis))?.addEventListener('change', event => setAxis(phase, axis, event.currentTarget.checked));
+    }
+    for (const axis of ELBOW_AXES) {
+      document.getElementById(elbowInputId(phase, axis))?.addEventListener('input', event => setElbowAxis(phase, axis, event.currentTarget.value));
     }
   }
 
@@ -184,16 +219,26 @@
     return Math.max(0, Math.min(1, Number.isFinite(raw) ? raw / 100 : Number(document.getElementById('scrub')?.value) || 0));
   }
 
-  function currentWeights() {
-    const progress = progressFromTimeline();
-    const timing = {
+  function currentTiming() {
+    return {
       windupFrac: Number(document.getElementById('windupFrac')?.value) || 0.16,
       strikeFrac: Number(document.getElementById('strikeFrac')?.value) || 0.55,
       holdFrac: Number(document.getElementById('holdFrac')?.value) || 0.68,
     };
+  }
+  function currentWeights() {
+    const progress = progressFromTimeline();
+    const timing = currentTiming();
     const sequence = document.getElementById('playbackSequence')?.value || 'attack';
     if (poseRuntime?.weightsAt) return poseRuntime.weightsAt(progress, timing, poseAim, sequence);
     return progress <= timing.windupFrac ? { grip: 1 - progress / Math.max(1e-6, timing.windupFrac), palmNormal: 1 } : { grip: 0, palmNormal: 1 };
+  }
+  function currentElbowHint() {
+    const progress = progressFromTimeline();
+    const timing = currentTiming();
+    const sequence = document.getElementById('playbackSequence')?.value || 'attack';
+    if (poseRuntime?.elbowHintAt) return poseRuntime.elbowHintAt(progress, timing, poseAim, sequence);
+    return { ...AUTO_ELBOW };
   }
 
   function requestPreviewRebuild() {
@@ -219,7 +264,8 @@
   let lastStatusSignature = '';
   function statusFrame() {
     const w = currentWeights();
-    const signature = `${hideArmSprites}|${showPaperArmGuide}|${w.grip.toFixed(2)}|${w.palmNormal.toFixed(2)}`;
+    const e = currentElbowHint();
+    const signature = `${hideArmSprites}|${showPaperArmGuide}|${w.grip.toFixed(2)}|${w.palmNormal.toFixed(2)}|${e.x.toFixed(3)}|${e.y.toFixed(3)}|${e.z.toFixed(3)}`;
     if (signature !== lastStatusSignature) {
       lastStatusSignature = signature;
       syncCheckboxes();
@@ -244,6 +290,7 @@
     },
     get poseAim() { return JSON.parse(JSON.stringify(poseAim)); },
     currentWeights,
+    currentElbowHint,
     snapshot() {
       return { hideArmSprites, showPaperArmGuide, poseAim: JSON.parse(JSON.stringify(poseAim)) }; // Undo/Redo preserves both pose hinges and preview-only helper state.
     },
