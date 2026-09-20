@@ -31,6 +31,7 @@ const shoulderControlsSource = read('docs/js/attack-editor-hand-shoulder-control
 const animationAuthorSource = read('docs/tools/animation-author/index.html');
 const npcPreviewSource = read('docs/js/npc-avatar-preview-utils.js');
 const heldSource = read('docs/js/held-action-animations.js');
+const weaponStanceSource = read('docs/js/weapon-tool-stances.js');
 const bridgeSource = read('docs/js/player-body-attachment-bridge.js');
 const weaponScaleSource = read('docs/js/weapon-png-scale.js');
 const materialRoleSource = read('docs/js/procedural-hand-foot-material-roles.js');
@@ -539,6 +540,14 @@ assert.match(attackEditorSource, /loadFromAnimationObject\?\.\(\{ poses: anim\.p
 assert.doesNotMatch(heldSource, /attack-editor-hand-shoulder-animation-state\.js/, 'retired presetSelect-based shoulder state adapter must not load in the modern Action-based editor');
 assert.match(attackEditorSource, /poseElbow_\$\{side\}_\$\{axis\}/, 'active attack pose panel must expose direct left\/right elbow X\/Y\/Z inputs alongside tool pose values');
 assert.match(attackEditorSource, /Set halfway shoulder↔hand/, 'active attack pose panel must expose an authoring-only shoulder\/hand midpoint button');
+assert.match(attackEditorSource, /Object\.entries\(p\.elbows\)[\s\S]*\[side, mirrorPoint\(point\)\]/, 'mirroring an attack must preserve anatomical hand identity while reflecting each elbow X');
+assert.doesNotMatch(attackEditorSource, /p\.elbows\.right \? \{ left: mirrorPoint|p\.elbows\.left \? \{ right: mirrorPoint/, 'attack mirroring must never swap left/right elbow records');
+assert.match(shoulderPoseRuntimeSource, /activeMirrorSign/, 'elbow playback must consume the active attack mirror sign');
+assert.match(shoulderPoseRuntimeSource, /neutralMirrorSign/, 'elbow playback must consume the start-neutral mirror sign');
+assert.match(shoulderPoseRuntimeSource, /returnNeutralMirrorSign/, 'elbow playback must consume the return-neutral mirror sign');
+assert.match(shoulderPoseRuntimeSource, /snapshot\.combatWindupFrac/, 'hand pose playback must use WeaponToolStances exact normalized windup timing');
+assert.match(weaponStanceSource, /runtimeState\.combatDirSign/, 'WeaponToolStances must expose active mirror sign to hand consumers');
+assert.match(weaponStanceSource, /runtimeState\.combatReturnNeutralMirrorSign/, 'WeaponToolStances must expose alternating-heavy return mirror sign to hand consumers');
 assert.match(shoulderControlsSource, /authorMidpointElbow/, 'editor hand controls must provide a one-shot midpoint authoring helper');
 assert.match(shoulderControlsSource, /wrist\.x\) - Number\(shoulder\.x\)\) \* 0\.5/, 'midpoint helper must persist the literal halfway shoulder-relative coordinate');
 assert.match(shoulderControlsSource, /runtime midpoint calculation/, 'hand controls must document that runtime does not recalculate midpoint elbows');
