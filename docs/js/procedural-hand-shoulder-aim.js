@@ -357,8 +357,8 @@
 
     const originalPlaceHandWorld = rig.placeHandWorld?.bind(rig);
     if (originalPlaceHandWorld) {
-      rig.placeHandWorld = function shoulderAimPlaceHandWorld(side, worldPosition, worldQuaternion) {
-        const result = originalPlaceHandWorld(side, worldPosition, worldQuaternion);
+      rig.placeHandWorld = function shoulderAimPlaceHandWorld(side, worldPosition, worldQuaternion, modelCalibration = null) {
+        const result = originalPlaceHandWorld(side, worldPosition, worldQuaternion, modelCalibration); // Forward the calibration child payload unchanged; shoulder-follow owns only the socket quaternion.
         if (result) {
           freeSide[side] = false;
           captureAuthoredBase(side);
