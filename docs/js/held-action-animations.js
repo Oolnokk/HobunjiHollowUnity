@@ -186,7 +186,7 @@
     new URL('js/procedural-hand-outline-parity.js?v=20260821f', docsBase).href,
     new URL('js/attachment-rig-latest-authored-snapshot.js?v=20260904a', docsBase).href,
     new URL('js/procedural-hand-scale-free-world.js?v=20260904posteriorlive1', docsBase).href,
-    new URL('js/procedural-hand-shoulder-aim.js?v=20260821k', docsBase).href,
+    new URL('js/procedural-hand-shoulder-aim.js?v=20260920wrist1', docsBase).href,
     new URL('js/procedural-hand-frame-driver.js?v=20260919handreview1', docsBase).href,
   ];
   if (isAttackEditor) {
