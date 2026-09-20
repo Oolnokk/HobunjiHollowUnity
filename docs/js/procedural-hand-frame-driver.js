@@ -122,6 +122,10 @@
     return /\/tools\/attack-animation-editor\//.test(location.pathname);
   }
 
+  function inHandCalibrationMode() {
+    return inAttackEditor() && global.HobunjiAttackEditorHandCalibrationMode?.active === true; // Dedicated editor tab bypasses every animation/tool/shoulder-derived hand transform.
+  }
+
   function currentToolKey() {
     if (inAttackEditor()) {
       return toolGrips.toolKeyFor(document.getElementById('toolSpriteSelect')?.value || '');
@@ -429,6 +433,38 @@
     state.owners.right = `fallback-${state.mode}`;
   }
 
+  function syncCalibrationWorkspace(record, diagnostic = false) {
+    if (!record?.rig?.placeCalibrationPreviewWorld) return null;
+    const state = record._handCalibrationWorkspace ||= {
+      worldPosition: new record.THREE.Vector3(), // Reused fixed preview origin so the calibration tab allocates nothing per frame.
+      worldQuaternion: new record.THREE.Quaternion(), // Always identity: the paper reference is neutrally oriented in world space.
+    };
+    const modelHeight = Number(record.avatarRoot?.userData?.portraitModelHeight) || 0.9;
+    record.rig.parent?.getWorldPosition?.(state.worldPosition);
+    state.worldPosition.y += modelHeight * 0.52; // Stable chest-height workspace independent of tool/attack pose.
+    state.worldQuaternion.identity();
+    const modelCalibration = modelCalibrationForRecord(record);
+    const placed = record.rig.placeCalibrationPreviewWorld(state.worldPosition, state.worldQuaternion, modelCalibration);
+    if (!placed) return null;
+    record.secondaryActive = false;
+    record.lastToolKey = null;
+    record.lastVisualGripBasis = null;
+    ensureFallbackState(record).owners.right = 'glb-calibration';
+    ensureFallbackState(record).owners.left = 'hidden-calibration';
+    if (!diagnostic) return null;
+    return {
+      direct: true,
+      calibrationWorkspace: true,
+      neutralWorldQuaternion: true,
+      bypassesAnimation: true,
+      bypassesGripMode: true,
+      bypassesShoulderAim: true,
+      bypassesToolTarget: true,
+      modelCalibration,
+      paperHandReferenceFrame: 'fixed-neutral-world-frame',
+    };
+  }
+
   function syncRigToTool(record, toolHolder, diagnostic = false) {
     if (!record?.rig || !toolHolder?.parent || syncing) return null;
     if (!toolHolder.visible) {
@@ -538,9 +574,13 @@
       const frameId = global.RuntimeFrameScheduler?.frameId?.();
       if (frameId != null && record._lastHandSyncFrameId === frameId) return;
       record._lastHandSyncFrameId = frameId;
-      const holder = currentToolHolder(record);
-      if (holder) syncRigToTool(record, holder);
-      else applyFallbackBoth(record);
+      if (inHandCalibrationMode()) {
+        syncCalibrationWorkspace(record); // Render-time authority stays on the neutral calibration frame while this tab is active.
+      } else {
+        const holder = currentToolHolder(record);
+        if (holder) syncRigToTool(record, holder);
+        else applyFallbackBoth(record);
+      }
     };
     record.rig.parent.add(sentinel);
     record.syncSentinel = sentinel;
@@ -555,9 +595,13 @@
       }
       ensureSyncSentinel(record);
       updateFallbackMotion(record);
-      const holder = currentToolHolder(record);
-      if (holder) syncRigToTool(record, holder);
-      else applyFallbackBoth(record);
+      if (inHandCalibrationMode()) {
+        syncCalibrationWorkspace(record);
+      } else {
+        const holder = currentToolHolder(record);
+        if (holder) syncRigToTool(record, holder);
+        else applyFallbackBoth(record);
+      }
     }
   }
 
@@ -590,11 +634,15 @@
       const results = [];
       for (const record of managed) {
         updateFallbackMotion(record);
-        const holder = currentToolHolder(record);
-        if (holder) results.push(syncRigToTool(record, holder, true));
-        else {
-          applyFallbackBoth(record);
-          results.push({ direct: true, toolVisible: false, secondaryActive: false });
+        if (inHandCalibrationMode()) {
+          results.push(syncCalibrationWorkspace(record, true));
+        } else {
+          const holder = currentToolHolder(record);
+          if (holder) results.push(syncRigToTool(record, holder, true));
+          else {
+            applyFallbackBoth(record);
+            results.push({ direct: true, toolVisible: false, secondaryActive: false });
+          }
         }
       }
       return results;
@@ -603,7 +651,7 @@
       return [...managed].map(record => ({
         speciesId: record.speciesId,
         gender: record.gender,
-        mode: 'direct-tool-attachments',
+        mode: inHandCalibrationMode() ? 'glb-calibration-neutral-reference' : 'direct-tool-attachments',
         noArmIK: true,
         toolKey: record.lastToolKey,
         secondaryActive: record.secondaryActive,
