@@ -177,7 +177,7 @@
     new URL('config/hand-shoulder-pose-profiles.js?v=20260818a', docsBase).href,
     new URL('js/procedural-hand-foot-material-roles.js?v=20260821e', docsBase).href,
     new URL('js/hand-tool-grips.js?v=20260920hatchetexample2', docsBase).href,
-    new URL('js/hand-grip-modes.js?v=20260919handreview1', docsBase).href,
+    new URL('js/hand-grip-modes.js?v=20260920palmflip1', docsBase).href,
     new URL('js/hand-shoulder-pose-runtime.js?v=20260917charge2', docsBase).href,
     new URL('js/portrait-arm-cloud-mask.js?v=20260817a', docsBase).href,
     new URL('js/portrait-hand-shoulder-scan.js?v=20260818c', docsBase).href,
