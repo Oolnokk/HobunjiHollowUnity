@@ -13,7 +13,6 @@
   const PHASES = ['neutral', 'windup', 'strike'];
   const AXES = ['grip', 'palmNormal']; // The only hand-local hinges permitted to aim the wrist toward its elbow.
   const SIDES = ['left', 'right'];
-  const ELBOW_AXES = ['x', 'y', 'z'];
   const DEFAULTS = Object.freeze({
     neutral: Object.freeze({ grip: true, palmNormal: true }),
     windup: Object.freeze({ grip: false, palmNormal: true }),
@@ -78,7 +77,7 @@
   followGroup.id = 'handShoulderFollowGroup';
   followGroup.innerHTML = `
     <div class="poseGroupHead"><span class="dot" style="background:#fb7185"></span>Hand elbow-targeting by animation pose</div>
-    <div class="help" style="margin-bottom:7px"><b>This rotates the HAND, never the weapon.</b> The wrist-facing side aims toward the pose-authored elbow. Elbows are ordinary pose keyframes; there is no arm-length projection, reach clamp, or joint-limit solve. The two checkboxes only choose which hand-local hinges may rotate.</div>
+    <div class="help" style="margin-bottom:7px"><b>This rotates the HAND, never the weapon.</b> The wrist-facing side aims toward the pose-authored elbow. Elbow coordinates are edited in the active Neutral/Windup/Strike pose panel; there is no arm-length projection, reach clamp, joint-limit solve, or runtime midpoint calculation. The two checkboxes only choose which hand-local hinges may rotate.</div>
     ${PHASES.map(phase => `
       <div class="field" data-hand-shoulder-phase="${phase}">
         <label>${phase[0].toUpperCase() + phase.slice(1)} hand follow</label>
@@ -136,7 +135,7 @@
     hide.checked = hideArmSprites;
     paperArm.checked = showPaperArmGuide;
     const weights = currentWeights();
-    const fmt = point => point ? `(${point.x.toFixed(2)}, ${point.y.toFixed(2)}, ${point.z.toFixed(2)})` : 'auto midpoint';
+    const fmt = point => point ? `(${point.x.toFixed(2)}, ${point.y.toFixed(2)}, ${point.z.toFixed(2)})` : 'unauthored';
     compassStatus.textContent = `Live hand-follow: grip ${(weights.grip * 100).toFixed(0)}% · palm-normal ${(weights.palmNormal * 100).toFixed(0)}% · elbows L ${fmt(currentElbow('left'))} / R ${fmt(currentElbow('right'))} · arms ${hideArmSprites ? 'hidden' : 'visible'} · paper arm ${showPaperArmGuide ? 'shown' : 'hidden'}.`;
   }
 
