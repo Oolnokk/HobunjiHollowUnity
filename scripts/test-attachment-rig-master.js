@@ -53,6 +53,24 @@ assert.strictEqual(profiles.characters['mao-ao::female'].anatomy.portraitScale, 
 assert.strictEqual(profiles.characters['mashtzarr::male'].anatomy.portraitScale, 1.18, 'latest authored Mashtzarr male body scale must remain authoritative');
 assert.strictEqual(profiles.characters['engh-sho::male'].anchors.shoulderPerch.position.y, 0.6813045758748404, 'August 28 Engh-sho shoulder perch must remain authoritative');
 
+const rigMath = w.HOBUNJI_ATTACHMENT_RIG_MATH;
+const maoMale = profiles.characters['mao-ao::male'];
+const maoPosteriorY = rigMath.characterPosteriorY(maoMale.posteriorRule, 0.9, 0.45);
+const maoLeftReach = rigMath.characterArmLength(maoMale, 0.9, 0.45, 'left');
+const expectedMaoLeftReach = Math.hypot(maoPosteriorY - maoMale.anchors.leftHandShoulder.position.y, maoMale.anchors.leftHandShoulder.position.z);
+assert(Math.abs(maoLeftReach - expectedMaoLeftReach) < 1e-12, 'character arm reach must be derived from the authored shoulder to resting-wrist rig geometry');
+assert(Math.abs(maoLeftReach - 0.558) > 0.1, 'character arm reach must not collapse back to the copied legacy 0.558 species constant');
+const maoChildLeftReach = rigMath.characterArmLength(
+  maoMale, 0.45, 0.225, 'left', 0.5, maoMale.anatomy.portraitVerticalPlacementRatio,
+);
+assert(Math.abs(maoChildLeftReach - maoLeftReach * 0.5) < 1e-12,
+  'child portrait scaling must shrink shoulder and wrist together instead of making the cached arm reach longer');
+assert.strictEqual(
+  rigMath.characterArmLength(profiles.characters['rakakoan::male'], 0.9 * profiles.characters['kenkari::male'].anatomy.portraitScale, 0.4, 'left'),
+  rigMath.characterArmLength(profiles.characters['kenkari::male'], 0.9 * profiles.characters['kenkari::male'].anatomy.portraitScale, 0.4, 'left'),
+  'Rakakoan must currently share Kenkari arm geometry exactly',
+);
+
 // Latest intentional creature field families and the duplicate defaults table must agree.
 assert.strictEqual(profiles.creatures.drenkirra.anchors.shoulderGrip.position.y, -0.11914729549653388, 'August 28 Drenkirra shoulder grip must remain authoritative');
 assert.strictEqual(profiles.creatureShoulderGripDefaults.drenkirra.y, -0.11914729549653388, 'shoulderGrip defaults must not retain the older stale coordinate');

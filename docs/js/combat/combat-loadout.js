@@ -248,7 +248,7 @@
     const existingScript = document.querySelector('script[data-weapon-tool-stances]'); // Prevents duplicate loads if this script is re-evaluated in dev mode.
     if (existingScript) return;
     const script = document.createElement('script'); // Loads after the shared melee-spacing math so every attack wrapper sees the same calibrated endpoint rule.
-    script.src = 'js/weapon-tool-stances.js?v=20260920spacing1';
+    script.src = 'js/weapon-tool-stances.js?v=20260920handmirror1';
     script.async = false;
     script.dataset.weaponToolStances = 'true';
     script.onload = initializeStancesIfReady;
@@ -262,7 +262,7 @@
       existingSpacing.addEventListener('load', loadWeaponToolStancesRuntime, { once: true });
     } else {
       const spacingScript = document.createElement('script'); // Pure canonical Mao'ao-space pose calibration shared by player, enemies, and editor.
-      spacingScript.src = 'js/combat/melee-pose-spacing.js?v=20260920spacing1';
+      spacingScript.src = 'js/combat/melee-pose-spacing.js?v=20260920spacing2';
       spacingScript.async = false;
       spacingScript.dataset.meleePoseSpacing = 'true';
       spacingScript.onload = loadWeaponToolStancesRuntime;

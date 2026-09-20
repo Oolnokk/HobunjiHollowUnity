@@ -108,12 +108,16 @@
   function findEditorToolHolder(record) {
     const bodyRoot = record?.avatarRoot?.parent;
     if (!bodyRoot) return null;
-    for (const child of bodyRoot.children || []) {
-      if (child === record.avatarRoot || child === record.rig?.group || child === record.syncSentinel) continue;
-      const hasAnchorSphere = (child.children || []).some(candidate => candidate?.isMesh && candidate.geometry?.type === 'SphereGeometry');
-      if (!hasAnchorSphere) continue;
-      const holder = (child.children || []).find(candidate => !candidate?.isMesh && candidate?.isObject3D);
-      if (holder) return holder;
+    const searchRoots = [bodyRoot];
+    if (bodyRoot.parent?.isObject3D) searchRoots.push(bodyRoot.parent); // Attack Editor keeps the CharacterRigScale-owned body one level below the unscaled weapon/body-yaw rig, matching gameplay ownership.
+    for (const searchRoot of searchRoots) {
+      for (const child of searchRoot.children || []) {
+        if (child === record.avatarRoot || child === bodyRoot || child === record.rig?.group || child === record.syncSentinel) continue;
+        const hasAnchorSphere = (child.children || []).some(candidate => candidate?.isMesh && candidate.geometry?.type === 'SphereGeometry');
+        if (!hasAnchorSphere) continue;
+        const holder = (child.children || []).find(candidate => !candidate?.isMesh && candidate?.isObject3D);
+        if (holder) return holder;
+      }
     }
     return null;
   }

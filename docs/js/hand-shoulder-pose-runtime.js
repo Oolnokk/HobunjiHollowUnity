@@ -1,28 +1,57 @@
-// Shared per-pose shoulder-compass weights.
+// Shared per-pose hand/elbow data.
 //
-// Checkboxes are authored as booleans on Neutral/Windup/Strike, but runtime turns
-// them into 0..1 influence weights and lerps those weights with the same phase curve
-// as the held-item pose. That makes a checked Neutral Pitch box fade smoothly into
-// an unchecked Windup Pitch box instead of snapping at the phase boundary.
+// The hand's proximal local +Y axis targets the pose-authored elbow. Poses still
+// choose how much of that correction may come from the hand's two meaningful local
+// hinges: grip axis (local +X) and directed palm-normal axis (local -Z). Legacy pitch/roll
+// hinge fields remain import-compatible.
 (function (global) {
   'use strict';
 
-  const IDLE = Object.freeze({ pitch: 1, yaw: 0, roll: 1 });
-  const ACTIVE = Object.freeze({ pitch: 0, yaw: 0, roll: 1 });
+  const IDLE = Object.freeze({ grip: 1, palmNormal: 1 });
+  const ACTIVE = Object.freeze({ grip: 0, palmNormal: 1 });
   let capturedMelee = null;
 
   const clamp01 = value => Math.max(0, Math.min(1, Number(value) || 0));
+  const axisWeight = (raw, key, legacyKey, fallback) => {
+    const value = raw?.[key] ?? raw?.[legacyKey]; // Migrates old Pitch→grip and Roll→palm-normal without keeping a third hinge.
+    return value === true ? 1 : value === false ? 0 : clamp01(value ?? fallback);
+  };
   const normalize = (raw, fallback = ACTIVE) => ({
-    pitch: raw?.pitch === true ? 1 : raw?.pitch === false ? 0 : clamp01(raw?.pitch ?? fallback.pitch),
-    yaw: raw?.yaw === true ? 1 : raw?.yaw === false ? 0 : clamp01(raw?.yaw ?? fallback.yaw),
-    roll: raw?.roll === true ? 1 : raw?.roll === false ? 0 : clamp01(raw?.roll ?? fallback.roll),
+    grip: axisWeight(raw, 'grip', 'pitch', fallback.grip),
+    palmNormal: axisWeight(raw, 'palmNormal', 'roll', fallback.palmNormal),
   });
   const lerp = (a, b, t) => {
     const k = clamp01(t);
     return {
-      pitch: a.pitch + (b.pitch - a.pitch) * k,
-      yaw: a.yaw + (b.yaw - a.yaw) * k,
-      roll: a.roll + (b.roll - a.roll) * k,
+      grip: a.grip + (b.grip - a.grip) * k,
+      palmNormal: a.palmNormal + (b.palmNormal - a.palmNormal) * k,
+    };
+  };
+  const normalizeElbowPoint = raw => {
+    if (!raw || typeof raw !== 'object') return null;
+    const x = Number(raw.x), y = Number(raw.y), z = Number(raw.z);
+    return [x,y,z].every(Number.isFinite) ? { x, y, z } : null;
+  };
+  const elbowPointFromPose = (pose, side) =>
+    normalizeElbowPoint(pose?.elbows?.[side] || pose?.elbow?.[side] || pose?.shoulderAim?.elbows?.[side]);
+  const mirrorSign = value => Number(value) === -1 ? -1 : 1;
+  const mirrorElbowPoint = (point, sign = 1) => {
+    const normalized = normalizeElbowPoint(point);
+    if (!normalized) return null;
+    return { x: normalized.x * mirrorSign(sign), y: normalized.y, z: normalized.z };
+  };
+  const lerpElbowPoint = (a, b, t) => {
+    if (!a && !b) return null;
+    // A missing elbow keyframe means the legacy shoulder target for that phase,
+    // which is exactly a zero shoulder-relative elbow offset. Interpolate through
+    // that zero point so adding an elbow to only one phase never snaps on at t=0.
+    const from = a || { x: 0, y: 0, z: 0 };
+    const to = b || { x: 0, y: 0, z: 0 };
+    const k = clamp01(t);
+    return {
+      x: from.x + (to.x - from.x) * k,
+      y: from.y + (to.y - from.y) * k,
+      z: from.z + (to.z - from.z) * k,
     };
   };
 
@@ -33,9 +62,21 @@
       strike: normalize(raw.strike?.shoulderAim || raw.strike, ACTIVE),
     };
   }
+  function normalizeElbowPoseSet(raw = {}, side = 'right') {
+    return {
+      neutral: elbowPointFromPose(raw.neutral, side),
+      windup: elbowPointFromPose(raw.windup, side),
+      strike: elbowPointFromPose(raw.strike, side),
+    };
+  }
 
   function hasAuthoredPoseAim(raw = {}) {
-    return ['neutral','windup','strike'].some(phase => raw?.[phase]?.shoulderAim && typeof raw[phase].shoulderAim === 'object');
+    return ['neutral','windup','strike'].some(phase => {
+      const pose = raw?.[phase];
+      return (pose?.shoulderAim && typeof pose.shoulderAim === 'object')
+        || (pose?.elbows && typeof pose.elbows === 'object')
+        || (pose?.elbow && typeof pose.elbow === 'object');
+    });
   }
 
   function weightsAt(progress, timing = {}, poseSet = {}, sequence = 'attack') {
@@ -65,6 +106,43 @@
     if (t <= sf) return lerp(scaledWindup, scaledStrike, (t - wf) / Math.max(1e-6, sf - wf));
     if (t <= hf) return { ...scaledStrike };
     return lerp(scaledStrike, poses.neutral, (t - hf) / Math.max(1e-6, 1 - hf));
+  }
+
+  function elbowAt(progress, timing = {}, poseSet = {}, sequence = 'attack', side = 'right') {
+    const t = clamp01(progress);
+    const wf = clamp01(timing.windupFrac ?? timing.wf ?? 0.16);
+    const sf = Math.max(wf, clamp01(timing.strikeFrac ?? timing.sf ?? 0.55));
+    const hf = Math.max(sf, clamp01(timing.holdFrac ?? timing.hf ?? 0.68));
+    const poses = normalizeElbowPoseSet(poseSet, side);
+    const poseScale = clamp01(timing.poseScale ?? 1);
+    const activeSign = mirrorSign(timing.activeMirrorSign ?? timing.dirSign ?? 1);
+    const neutralSign = mirrorSign(timing.neutralMirrorSign ?? 1);
+    const returnNeutralSign = mirrorSign(timing.returnNeutralMirrorSign ?? neutralSign);
+    // Mirroring never swaps anatomical hands. Backhand/alternating-heavy pose
+    // mirroring changes the shoulder-relative X coordinate for this same side.
+    const neutral = mirrorElbowPoint(poses.neutral, neutralSign);
+    const returnNeutral = mirrorElbowPoint(poses.neutral, returnNeutralSign);
+    const windup = mirrorElbowPoint(poses.windup, activeSign);
+    const strike = mirrorElbowPoint(poses.strike, activeSign);
+    const scaledWindup = lerpElbowPoint(neutral, windup, poseScale);
+    const scaledStrike = lerpElbowPoint(neutral, strike, poseScale);
+    if (sequence === 'load') {
+      if (t <= wf) return lerpElbowPoint(neutral, scaledWindup, t / Math.max(1e-6, wf));
+      return lerpElbowPoint(scaledWindup, returnNeutral, (t - wf) / Math.max(1e-6, 1 - wf));
+    }
+    if (sequence === 'fire') {
+      if (t <= sf) return lerpElbowPoint(neutral, scaledStrike, t / Math.max(1e-6, sf));
+      if (t <= hf) return scaledStrike ? { ...scaledStrike } : null;
+      return lerpElbowPoint(scaledStrike, returnNeutral, (t - hf) / Math.max(1e-6, 1 - hf));
+    }
+    if (t <= wf) {
+      const rawWindupT = t / Math.max(1e-6, wf);
+      const poseT = global.Combat?.windupPoseProgress?.(rawWindupT, timing.windupSlowdown) ?? rawWindupT;
+      return lerpElbowPoint(neutral, scaledWindup, poseT);
+    }
+    if (t <= sf) return lerpElbowPoint(scaledWindup, scaledStrike, (t - wf) / Math.max(1e-6, sf - wf));
+    if (t <= hf) return scaledStrike ? { ...scaledStrike } : null;
+    return lerpElbowPoint(scaledStrike, returnNeutral, (t - hf) / Math.max(1e-6, 1 - hf));
   }
 
   function secondaryGripActive(toolKey) {
@@ -157,9 +235,9 @@
     const rawPose = capturedMelee?.opts?.pose;
     if (hasAuthoredPoseAim(rawPose)) {
       const timing = {
-        windupFrac: capturedMelee.opts.windupFrac ?? 0.16,
-        strikeFrac: capturedMelee.opts.strikeFrac ?? 0.55,
-        holdFrac: capturedMelee.opts.holdFrac ?? 0.68,
+        windupFrac: snapshot.combatWindupFrac ?? capturedMelee.opts.windupFrac ?? 0.16,
+        strikeFrac: snapshot.combatStrikeFrac ?? capturedMelee.opts.strikeFrac ?? 0.55,
+        holdFrac: snapshot.combatHoldFrac ?? capturedMelee.opts.holdFrac ?? 0.68,
         windupSlowdown: capturedMelee.opts.windupSlowdown ?? 0,
         poseScale: snapshot.combatPoseScale ?? 1,
       };
@@ -167,17 +245,16 @@
       return applyLeftIdleRule(side, toolKey, weightsAt(snapshot.combatProgress, timing, rawPose, sequence));
     }
 
-    // Current committed melee profiles all use Neutral=Pitch+Roll and active
-    // Windup/Strike=Roll-only. WeaponToolStances exposes its exact Neutral blend
-    // weight, including hold/release timing, so it is the precise Pitch influence.
+    // Current committed melee profiles use both local hinges at Neutral and the
+    // palm-normal hinge during active Windup/Strike. WeaponToolStances exposes its
+    // exact Neutral blend weight, including hold/release timing.
     const profileKey = `melee:${snapshot?.combatAnim || 'thrust'}`;
     const authored = global.HobunjiHandShoulderPoseProfiles?.forKey?.(profileKey);
     const profile = normalizePoseSet(authored || {});
     const neutralWeight = clamp01(snapshot.combatNeutralWeight);
     const weights = {
-      pitch: profile.strike.pitch + (profile.neutral.pitch - profile.strike.pitch) * neutralWeight,
-      yaw: profile.strike.yaw + (profile.neutral.yaw - profile.strike.yaw) * neutralWeight,
-      roll: profile.strike.roll + (profile.neutral.roll - profile.strike.roll) * neutralWeight,
+      grip: profile.strike.grip + (profile.neutral.grip - profile.strike.grip) * neutralWeight,
+      palmNormal: profile.strike.palmNormal + (profile.neutral.palmNormal - profile.strike.palmNormal) * neutralWeight,
     };
     return applyLeftIdleRule(side, toolKey, weights);
   }
@@ -192,15 +269,73 @@
     return gameWeights(side);
   }
 
+  function currentElbow(side) {
+    const editor = global.HobunjiAttackEditorHandShoulderControls;
+    if (editor?.currentElbow) return normalizeElbowPoint(editor.currentElbow(side));
+
+    const action = global.__rangedDebug?.playerAction || null;
+    if (action?.itemKey && action?.kind && Number(action.durationS) > 0) {
+      const def = global.RangedWeapons?.config?.[action.itemKey] || null;
+      if (def) {
+        const kind = action.kind === 'load' ? 'load' : 'fire';
+        const progress = clamp01(Number(action.t) / Number(action.durationS));
+        const timing = kind === 'load'
+          ? { windupFrac: def.reloadWindupFrac ?? 0.55, strikeFrac: def.reloadStrikeFrac ?? 0.56, holdFrac: def.reloadHoldFrac ?? 0.57 }
+          : { windupFrac: def.fireWindupFrac ?? 0.02, strikeFrac: def.fireAtFrac ?? 0.18, holdFrac: def.fireHoldFrac ?? (def.fireAtFrac ?? 0.18) };
+        const sequence = kind === 'load' ? (def.reloadSequence || 'attack') : (def.fireSequence || 'fire');
+        const configuredPose = kind === 'load' ? def.loadPose : def.firePose;
+        const key = `ranged:${action.itemKey}:${kind}`;
+        const authored = hasAuthoredPoseAim(configuredPose)
+          ? configuredPose
+          : (global.HobunjiHandShoulderPoseProfiles?.forKey?.(key) || {});
+        return elbowAt(progress, timing, authored, sequence, side);
+      }
+    }
+
+    const snapshot = global.WeaponToolStances?.debugSnapshot?.() || null;
+    const active = snapshot?.combatNeutralInjected === true && Number.isFinite(Number(snapshot?.combatProgress));
+    if (!active) return null;
+    const rawPose = capturedMelee?.opts?.pose;
+    if (hasAuthoredPoseAim(rawPose)) {
+      const timing = {
+        windupFrac: snapshot.combatWindupFrac ?? capturedMelee.opts.windupFrac ?? 0.16,
+        strikeFrac: snapshot.combatStrikeFrac ?? capturedMelee.opts.strikeFrac ?? 0.55,
+        holdFrac: snapshot.combatHoldFrac ?? capturedMelee.opts.holdFrac ?? 0.68,
+        windupSlowdown: capturedMelee.opts.windupSlowdown ?? 0,
+        poseScale: snapshot.combatPoseScale ?? 1,
+      };
+      timing.activeMirrorSign = snapshot.combatDirSign ?? capturedMelee.opts.dirSign ?? 1;
+      timing.neutralMirrorSign = snapshot.combatNeutralMirrorSign ?? 1;
+      timing.returnNeutralMirrorSign = snapshot.combatReturnNeutralMirrorSign ?? timing.neutralMirrorSign;
+      return elbowAt(snapshot.combatProgress, timing, rawPose, capturedMelee.opts.sequence || 'attack', side);
+    }
+    const profileKey = `melee:${snapshot?.combatAnim || 'thrust'}`;
+    return elbowAt(snapshot.combatProgress, {
+      windupFrac: snapshot.combatWindupFrac ?? 0.16,
+      strikeFrac: snapshot.combatStrikeFrac ?? 0.55,
+      holdFrac: snapshot.combatHoldFrac ?? 0.68,
+      poseScale: snapshot.combatPoseScale ?? 1,
+      activeMirrorSign: snapshot.combatDirSign ?? capturedMelee?.opts?.dirSign ?? 1,
+      neutralMirrorSign: snapshot.combatNeutralMirrorSign ?? 1,
+      returnNeutralMirrorSign: snapshot.combatReturnNeutralMirrorSign ?? snapshot.combatNeutralMirrorSign ?? 1,
+    }, global.HobunjiHandShoulderPoseProfiles?.forKey?.(profileKey) || {}, 'attack', side);
+  }
+
   global.HobunjiHandShoulderPoseRuntime = Object.freeze({
     idle: IDLE,
     active: ACTIVE,
     normalize,
     normalizePoseSet,
+    normalizeElbowPoint,
+    normalizeElbowPoseSet,
+    mirrorElbowPoint,
     hasAuthoredPoseAim,
     lerp,
+    lerpElbowPoint,
     weightsAt,
+    elbowAt,
     currentWeights,
+    currentElbow,
     installMeleeCapture,
   });
 })(window);

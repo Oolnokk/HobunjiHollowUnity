@@ -119,7 +119,7 @@
   <script src="config/config.js?v=20260918collision2"></script>
   <script src="config/scratchbones-config.js?v=20260919combatbgm2"></script>
   <script src="config/colors/config.js?v=20260728c"></script>
-  <script src="config/attachment-rig-profiles.js?v=20260826rigv9"></script>
+  <script src="config/attachment-rig-profiles.js?v=20260920armreach3"></script>
   <link rel="stylesheet" href="style.css?v=20260914transienttarget1">
   <link rel="stylesheet" href="cooking-ui.css?v=20260811a">
   <link rel="stylesheet" href="ui-element-editor.css?v=20260814a">
@@ -131,18 +131,18 @@
       window.SCRATCHBONES_CONFIG.game.assets.portrait.configBase = './config/';
     }
   </script>
-  <script src="js/portrait-utils.js?v=20260918centroid2"></script>
+  <script src="js/portrait-utils.js?v=20260920armreach1"></script>
   <script src="js/portrait-breathing.js?v=20260831syllable4"></script>
   <script src="js/npc-avatar-preview-utils.js?v=20260830flip2"></script>
-  <script src="js/png-plane-avatar.js?v=20260918centroid2"></script>
-  <script src="js/species-pose-scaling.js?v=20260918centroid2"></script>
+  <script src="js/png-plane-avatar.js?v=20260920armreach2"></script>
+  <script src="js/species-pose-scaling.js?v=20260920height2"></script>
   <!-- Keeps the portrait plane's occlusion-depth redraws (used so its silhouette can
        occlude 3D held items/tools) on the same matrix as its visible draw when
        PlayerBodyTransformComposer is composing a render-time body delta (mirrors
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20260821a"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20260918throwcharge3"></script>
+  <script src="js/held-action-animations.js?v=20260920handreview3"></script>
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
   <script src="js/character-action-locks.js?v=20260910controller1"></script>
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
@@ -193,11 +193,15 @@
        reserving one before generation; used by bandit camps. -->
   <script src="js/temporary-locales.js?v=20260725a"></script>
   <!-- Local database overrides (window.LocalDBOverrides) — lets docs/tools/
-       editors save an edited attack-values.json/loot-pools.json/shop-stock.json
-       to localStorage and have the game load that instead of the repo file,
-       toggled from the onboarding save-select screen. Loaded before anything
-       that calls loadDatabase() (combat-config-loader.js, game.js, onboarding.js). -->
-  <script src="js/local-db-overrides.js?v=20260910jubmir1"></script>
+       editors save edited repo-tracked JSON into localStorage and have the
+       game load that instead of the repo file when Local source is selected. -->
+  <script src="js/local-db-overrides.js?v=20260920orbit1"></script>
+  <script>
+    // species-pose-scaling parser-loads earlier for avatar consumers, then
+    // re-resolves its config now that LocalDBOverrides knows the selected
+    // repo/local source. This preserves the historical LocalDB load position.
+    window.HobunjiSpeciesPoseScale?.reloadFromDatabaseSource?.();
+  </script>
   <!-- Item trait vocabulary/computation (window.ItemTraits) — see
        docs/js/item-traits.js. Initialized from game.js once ITEM_DEFS
        exists; consumed by npc-gifting.js and tools/item-database-editor. -->
@@ -226,7 +230,7 @@
   <script src="js/combat/impact-ragdoll-playback.js?v=20260828b"></script>
   <script src="js/combat/combat-enemy-telegraph.js?v=20260917charge4"></script>
   <script src="js/combat/combat-animal-attacks.js?v=20260825melee2"></script>
-  <script src="js/combat/combat-loadout.js?v=20260917charge2"></script>
+  <script src="js/combat/combat-loadout.js?v=20260920handmirror1"></script>
   <script src="js/combat/combat-progression.js?v=20260712d"></script>
   <script src="js/combat/combat-input.js?v=20260914transienttarget1"></script>
   <script src="js/combat/combat-combo.js?v=20260915enemydodge1"></script>
@@ -240,7 +244,7 @@
   <!-- Dedicated ranged slot, loading/firing poses, and hidden-sphere
        projectiles. Loads before bandits so their dual loadouts can call it. -->
   <script src="js/nearby-volume-collision.js?v=20260827treecover2"></script>
-  <script src="js/combat/ranged-weapons.js?v=20260918throwframe3"></script>
+  <script src="js/combat/ranged-weapons.js?v=20260920orbit1"></script>
   <script src="js/combat/ranged-hud-reticle.js?v=20260916perf1"></script>
   <script src="js/combat/melee-hud-reticle.js?v=20260917charge1"></script>
   <!-- Bandit gang combat AI + weapon visuals (window.BanditCombat) — must
@@ -250,7 +254,7 @@
        (at fight time, not load time), so exact ordering against those two
        doesn't matter as long as both exist by the time bandits actually
        spawn. -->
-  <script src="js/combat/combat-bandit.js?v=20260917charge2"></script>
+  <script src="js/combat/combat-bandit.js?v=20260920orbit1"></script>
   <script src="js/combat/combat-enemy-dodge.js?v=20260918collision2"></script>
   <!-- Bandit camps (zone adapter, tent props, camp lifecycle, companion
        perception, corpse loot) — window.BanditCamps. Calls

@@ -53,6 +53,7 @@
   //     than calling loadDatabase().
   const DATABASES = [
     { id: 'attackValues',  label: 'Attack Values',      repoPath: 'config/combat/attack-values.json' },
+    { id: 'speciesPoseOrbitScales', label: 'Species Pose Orbit Scales', repoPath: 'config/combat/species-pose-orbit-scales.json' },
     { id: 'lootPools',     label: 'Loot Pools',          repoPath: 'config/loot/loot-pools.json' },
     { id: 'shopStock',     label: 'Shop Stock',          repoPath: 'config/shops/shop-stock.json' },
     { id: 'npcDatabase',   label: 'NPC Database',        repoPath: 'config/npcs/hobunji-starter-npc-database.json' },
@@ -299,7 +300,8 @@
       const override = getOverride(id); // Used as the opted-in local source when one exists.
       if (override) return override;
     }
-    const resp = await fetch(def.repoPath); // Used to fetch the repository source when no local override applies.
+    const repoUrl = _docsResourceUrl(def.repoPath); // Resolve from local-db-overrides.js, not the current page, so nested docs/tools editors load the same repo database as docs/index.html.
+    const resp = await fetch(repoUrl); // Used to fetch the repository source when no local override applies.
     if (!resp.ok) throw new Error('Failed to fetch ' + def.repoPath + ' (' + resp.status + ')');
     return resp.json();
   }

@@ -24,7 +24,7 @@
     "function": "runMove",
     "reason": "Steps a previewed cutscene actor toward its move target every frame and stops rescheduling once advanceActorToward reports arrival or the preview's running flag clears.",
     "migrationStage": "not-planned",
-    "line": 28853
+    "line": 28898
   },
   {
     "file": "docs/game.js",
@@ -33,7 +33,7 @@
     "function": "runFade",
     "reason": "Defers writing the fade element's target opacity to the next paint so the CSS transition actually animates instead of jumping instantly; runs once per fade stage.",
     "migrationStage": "not-planned",
-    "line": 29004
+    "line": 29049
   },
   {
     "file": "docs/game.js",
@@ -42,7 +42,7 @@
     "function": "runZoom",
     "reason": "Eases the preview camera's zoom toward a target percentage over the stage's authored duration and stops once t reaches 1.",
     "migrationStage": "not-planned",
-    "line": 29023
+    "line": 29068
   },
   {
     "file": "docs/game.js",
@@ -51,7 +51,7 @@
     "function": "cutsceneRotationTick",
     "reason": "Eases previewed actors' facing every frame for the scene's lifetime, gated on the same running flag every other preview RAF loop checks, so stopping the preview stops it too.",
     "migrationStage": "not-planned",
-    "line": 29095
+    "line": 29140
   },
   {
     "file": "docs/js/action-arc-ui.js",
@@ -105,7 +105,7 @@
     "function": "statusFrame",
     "reason": "Permanent status/readout RAF loop confined to the standalone Attack Animation Editor. It keeps interpolated hand shoulder-follow weights visible while scrubbing/playback changes; it is never loaded by the main gameplay page's RuntimeFrameScheduler surface.",
     "migrationStage": "not-planned",
-    "line": 215
+    "line": 316
   },
   {
     "file": "docs/js/attack-editor-idle-hand-parity.js",

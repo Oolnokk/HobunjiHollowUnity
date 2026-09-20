@@ -250,6 +250,40 @@
       const legacyBase = Number(legacyHandAttachY);
       return (Number.isFinite(legacyBase) ? legacyBase : safeHeight / 2) + safeHeight * (Number.isFinite(legacyOffset) ? legacyOffset : -18) / 100;
     },
+    characterArmLength(profile, modelHeight, legacyHandAttachY, side = null, currentPortraitScale = null, currentPlacementRatio = null) {
+      const height = Number(modelHeight);
+      const safeHeight = Number.isFinite(height) && height > 0 ? height : 0.9;
+      const posteriorY = this.characterPosteriorY(profile?.posteriorRule, safeHeight, legacyHandAttachY);
+      const authoredOffset = Number(profile?.anatomy?.armLengthHeightPercentOffset);
+      const wristY = posteriorY - safeHeight * (Number.isFinite(authoredOffset) ? authoredOffset : 0) / 100; // Matches the runtime free-hand resting-height rule exactly.
+      const authoredPortraitScale = Number(profile?.anatomy?.portraitScale);
+      const livePortraitScale = currentPortraitScale == null ? NaN : Number(currentPortraitScale);
+      const portraitFactor = Number.isFinite(authoredPortraitScale) && authoredPortraitScale > 0 && Number.isFinite(livePortraitScale) && livePortraitScale > 0
+        ? livePortraitScale / authoredPortraitScale
+        : 1;
+      const authoredPlacement = Number(profile?.anatomy?.portraitVerticalPlacementRatio);
+      const livePlacement = currentPlacementRatio == null ? NaN : Number(currentPlacementRatio);
+      const placementDelta = Number.isFinite(authoredPlacement) && Number.isFinite(livePlacement)
+        ? livePlacement - authoredPlacement
+        : 0;
+      const reachFor = key => {
+        const shoulder = profile?.anchors?.[key]?.position;
+        if (![shoulder?.x, shoulder?.y, shoulder?.z].every(value => Number.isFinite(Number(value)))) return null;
+        // Match procedural-hand-scale-free-world's portrait-binding transform:
+        // child/other live portrait scales shrink the adult shoulder anchor, and
+        // placement changes shift its Y by the current model height.
+        const shoulderY = Number(shoulder.y) * portraitFactor + safeHeight * placementDelta;
+        const shoulderZ = Number(shoulder.z) * portraitFactor;
+        // Free-hand X is aligned to its shoulder and idle Z is zero, so this
+        // measures the actual displayed shoulder-to-resting-wrist reach.
+        const reach = Math.hypot(wristY - shoulderY, 0 - shoulderZ);
+        return Number.isFinite(reach) && reach > 1e-6 ? reach : null;
+      };
+      if (side === 'left') return reachFor('leftHandShoulder');
+      if (side === 'right') return reachFor('rightHandShoulder');
+      const values = [reachFor('leftHandShoulder'), reachFor('rightHandShoulder')].filter(Number.isFinite);
+      return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+    },
   });
   window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS = {
     schema: MASTER_SCHEMA, exportedAt: window.HOBUNJI_ATTACHMENT_RIG_EXPORT_META.exportedAt, masterConfigVersion: MASTER_VERSION,

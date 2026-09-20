@@ -138,6 +138,16 @@ canvas{display:block;width:100%;height:100%}
       <div class="field"><label>Preview species</label><select id="avatarSpecies"></select></div>
       <div class="field"><label>Preview gender</label><select id="avatarGender"></select></div>
     </div>
+    <div class="field">
+      <label>Species/gender weapon orbit scale</label>
+      <input id="poseOrbitScale" type="number" min="0.10" max="3.00" step="0.01" value="1">
+    </div>
+    <div class="row">
+      <button id="orbitScalesDownloadBtn" class="secondary">⭳ Download orbit scales</button>
+      <button id="orbitScalesSaveOverrideBtn" class="secondary">💾 Save local override</button>
+      <button id="orbitScalesClearOverrideBtn" class="secondary">🗑 Clear override</button>
+    </div>
+    <div class="help" id="orbitScalesStatus">Weapon orbit scale is independent from anatomical arm length. 1.00 is Mao’ao-authored distance; smaller values pull all weapon poses closer to that species/gender’s centroid.</div>
     <div class="help">The selected Action owns the animation being edited. The sprite selector is only a visual preview choice for actions that can be performed with more than one weapon. Species/gender changes only the preview transform and never rewrite authored pose values.</div>
 
     <details class="advancedDetails">
@@ -281,19 +291,22 @@ canvas{display:block;width:100%;height:100%}
   <div id="debug" style="display:none"></div>
 </div>
 </div>
-<script src="../../js/local-db-overrides.js"></script>
+<script src="../../js/local-db-overrides.js?v=20260920orbit1"></script>
 <script src="../../config/scratchbones-config.js?v=20260821d"></script>
-<script src="../../js/portrait-utils.js?v=20260918centroid2"></script>
+<script src="../../config/attachment-rig-profiles.js?v=20260920armreach3"></script>
+<script src="../../config/character-rig-scale-defaults.js?v=20260914maoao3"></script>
+<script src="../../js/character-rig-scale.js?v=20260920poseheight1"></script>
+<script src="../../js/portrait-utils.js?v=20260920armreach1"></script>
 <script src="../../js/portrait-breathing.js"></script>
 <script src="../../js/npc-avatar-preview-utils.js"></script>
-<script src="../../js/png-plane-avatar.js?v=20260918centroid2"></script>
-<script src="../../js/species-pose-scaling.js?v=20260918centroid2"></script>
+<script src="../../js/png-plane-avatar.js?v=20260920armreach2"></script>
+<script src="../../js/species-pose-scaling.js?v=20260920height2"></script>
 <!-- Shared local-transform dump utility (window.HobunjiTransformDump) — also
      loaded by the game's Pixel Probe, so this editor's preview dump and an
      in-game character dump use the exact same code/format. -->
 <script src="../../js/transform-dump-utils.js?v=20260820a"></script>
-<script src="../../js/held-action-animations.js?v=20260918throwcharge3"></script>
-<script src="../../js/combat/melee-pose-spacing.js?v=20260920spacing1"></script>
+<script src="../../js/held-action-animations.js?v=20260920handreview3"></script>
+<script src="../../js/combat/melee-pose-spacing.js?v=20260920spacing2"></script>
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -344,6 +357,12 @@ scene.add(new THREE.ArrowHelper(new THREE.Vector3(0, 0, 1), new THREE.Vector3(0,
 // carried along with the body automatically, same as game.js's parent/child setup.
 const rig = new THREE.Group();
 scene.add(rig);
+// The live game scales the assembled character body on playerMesh while toolHolder
+// remains a scene-level sibling. Mirror that ownership here: CharacterRigScale
+// owns only this body root; toolBase stays directly under the unscaled body-yaw rig.
+const characterBodyScaleRoot = new THREE.Group();
+characterBodyScaleRoot.name = 'editor_character_body_scale_root';
+rig.add(characterBodyScaleRoot);
 
 // toolBase sits at the avatar's actual scanned right-arm sprite edge (X) and
 // scanned bottom-edge pixel row (Y) — this matches refreshPlayerAvatar()/
@@ -364,8 +383,10 @@ function avatarCfg() { return window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlane
 // Same modelWidth===modelHeight square-prism scheme refreshPlayerAvatar() uses for the
 // live player avatar (worldModelWidth), not the design-tool default of 1.
 const MODEL_W = avatarCfg().worldModelWidth ?? 0.9;
-let currentArmLength = 0.558; // Canonical selected species/gender reach used only to derive the uniform preview orbit ratio.
+let currentArmLength = 0.558; // Anatomical reach remains visible for diagnostics and old-config fallback only.
+let currentPoseOrbitScale = 1; // Explicit species+gender weapon-distance multiplier, independently authored below.
 let currentPoseCentroidY = MODEL_W * 0.5; // Floor-relative visual/body centroid copied from PNGPlaneAvatar metadata after each rebuild.
+let currentAvatarModelHeight = MODEL_W; // Portrait-scaled model height; paired with CharacterRigScale.y for true body-height pose mapping.
 let currentSpeciesId = 'mao-ao'; // Visible debug identity for the currently previewed avatar.
 let currentGender = 'male'; // Visible debug identity for the currently previewed avatar.
 const poseOrbitScratch = new THREE.Vector3(); // Reused by forward/inverse centroid transforms so playback does not allocate every frame.
@@ -539,8 +560,9 @@ function refreshPreviewDebug() {
     'Latest: neck deformation weights the complete rectangular PNG plane, including transparent gaps and detached cosmetics.',
     `Neck preview: ${Math.round(neckPreviewStrength * 100)}% strength · ${(neckPreviewRadiusFrac * 100).toFixed(1)}% radius · ${neckWeightSummary}`,
     `Head vertex overlay: ${$('showHeadSkinVertices').checked ? `${headSkinVertexCount} unique weighted vertices shown` : 'hidden'}`,
-    `Pose scale: ${currentSpeciesId}/${currentGender} armLength=${currentArmLength.toFixed(3)} · ×${(window.HobunjiSpeciesPoseScale?.scaleForArmLength?.(currentArmLength) ?? 1).toFixed(5)}`,
-    `Centroid used (rig local): (0, ${currentPoseCentroidY.toFixed(4)}, 0)`,
+    `Pose orbit X/Z: ${currentSpeciesId}/${currentGender} ×${(window.HobunjiSpeciesPoseScale?.scaleForPose?.(currentPoseOrbitScale, currentArmLength) ?? currentPoseOrbitScale).toFixed(5)} · anatomy armLength=${currentArmLength.toFixed(3)}`,
+    (() => { const h = window.HobunjiSpeciesPoseScale?.heightMetrics?.(currentSpeciesId, currentGender, currentAvatarModelHeight); return `Pose Y height: ×${(h?.heightRatio ?? 1).toFixed(5)} vs Mao'ao male · portraitH=${currentAvatarModelHeight.toFixed(4)} · rigY=×${(h?.rigScaleY ?? 1).toFixed(4)}`; })(),
+    `Centroid used for X/Z orbit (rig local): (0, ${currentPoseCentroidY.toFixed(4)}, 0)`,
     `Authored holder local: (${lastAuthoredPose.x.toFixed(4)}, ${lastAuthoredPose.y.toFixed(4)}, ${lastAuthoredPose.z.toFixed(4)}) · raw rig: (${lastRawRigPose.x.toFixed(4)}, ${lastRawRigPose.y.toFixed(4)}, ${lastRawRigPose.z.toFixed(4)})`,
     `Final scaled rig: (${lastScaledRigPose.x.toFixed(4)}, ${lastScaledRigPose.y.toFixed(4)}, ${lastScaledRigPose.z.toFixed(4)}) · world: (${lastScaledWorldPose.x.toFixed(4)}, ${lastScaledWorldPose.y.toFixed(4)}, ${lastScaledWorldPose.z.toFixed(4)})`,
     'Playback auto-lerps Neutral→Windup→Strike→(hold)→Neutral. Drag the scrub bar to inspect a frame.',
@@ -567,6 +589,7 @@ $('showHeadSkinVertices').addEventListener('change', () => {
 syncNeckPreviewControls();
 
 async function rebuildAvatar(speciesId, gender) {
+  await window.HobunjiSpeciesPoseScale?.ready; // Ensures repo/local species+gender orbit data is loaded before the preview avatar caches it.
   await ensureCosmetics();
   const npcExport = buildDefaultAvatarExport(speciesId, gender);
   const profile = window.NpcAvatarPreview.buildProfileFromNpcExport(npcExport);
@@ -583,7 +606,7 @@ async function rebuildAvatar(speciesId, gender) {
   await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind' });
   if (avatarModel) {
     disposeHeadSkinVertexOverlay();
-    rig.remove(avatarModel);
+    characterBodyScaleRoot.remove(avatarModel);
     window.PNGPlaneAvatar.disposeAvatarModel(avatarModel);
   }
   avatarModel = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(THREE, frontCanvas, {
@@ -592,10 +615,16 @@ async function rebuildAvatar(speciesId, gender) {
   });
   const h = avatarModel.userData.portraitModelHeight || MODEL_W;
   const w = avatarModel.userData.portraitModelWidth || MODEL_W;
+  currentAvatarModelHeight = h;
   currentSpeciesId = speciesId;
   currentGender = gender;
-  const cachedArmLength = Number(avatarModel.userData?.armLength); // Canonical reach keeps the requested Tletingan ratios 0.612/0.558 and 0.603/0.558.
+  const cachedArmLength = Number(avatarModel.userData?.armLength);
   currentArmLength = Number.isFinite(cachedArmLength) && cachedArmLength > 0 ? cachedArmLength : 0.558;
+  const cachedPoseOrbitScale = Number(avatarModel.userData?.poseOrbitScale);
+  currentPoseOrbitScale = Number.isFinite(cachedPoseOrbitScale) && cachedPoseOrbitScale > 0
+    ? cachedPoseOrbitScale
+    : (window.HobunjiSpeciesPoseScale?.resolveScale?.(speciesId, gender, currentArmLength) ?? 1);
+  if ($('poseOrbitScale')) $('poseOrbitScale').value = currentPoseOrbitScale.toFixed(4);
   const cachedCentroidY = Number(avatarModel.userData?.poseCentroidY); // Includes the portrait assembly's internal vertical offset.
   currentPoseCentroidY = Number.isFinite(cachedCentroidY) ? cachedCentroidY : h * (Number(avatarModel.userData?.portraitVerticalPlacementRatio) || 0.5);
   if (avatarModel.userData.handAttachX == null || avatarModel.userData.handAttachY == null) {
@@ -604,11 +633,14 @@ async function rebuildAvatar(speciesId, gender) {
   baseAttachX = avatarModel.userData.handAttachX ?? (-w / 2);
   const baseAttachY = avatarModel.userData.handAttachY ?? (h / 2);
   avatarModel.position.y = h / 2;
-  rig.add(avatarModel);
+  characterBodyScaleRoot.add(avatarModel);
+  const visibleRigScale = window.HobunjiCharacterRigScale?.scaleFor?.(speciesId, gender) || null; // Used to make the displayed body match the same height tuple that maps weapon Y below.
+  window.HobunjiCharacterRigScale?.applyToParent?.(characterBodyScaleRoot, speciesId, gender, visibleRigScale);
   applyPreviewNeckWeights();
   toolBase.position.set(toolMirrored ? -baseAttachX : baseAttachX, baseAttachY, 0);
-  logDebug(`Avatar rebuilt: ${speciesId}/${gender} (prism ${w.toFixed(2)}x${h.toFixed(2)}, arm ${currentArmLength.toFixed(3)}, scale ×${(window.HobunjiSpeciesPoseScale?.scaleForArmLength?.(currentArmLength) ?? 1).toFixed(5)}, centroidY ${currentPoseCentroidY.toFixed(3)}, base at ${toolBase.position.x.toFixed(2)}/${baseAttachY.toFixed(2)}${toolMirrored ? ', mirrored' : ''})`);
+  logDebug(`Avatar rebuilt: ${speciesId}/${gender} (prism ${w.toFixed(2)}x${h.toFixed(2)}, orbit ×${currentPoseOrbitScale.toFixed(5)}, arm ${currentArmLength.toFixed(3)}, centroidY ${currentPoseCentroidY.toFixed(3)}, base at ${toolBase.position.x.toFixed(2)}/${baseAttachY.toFixed(2)}${toolMirrored ? ', mirrored' : ''})`);
   refreshPreviewDebug();
+  refreshOrbitScaleStatus?.();
 }
 
 const SPECIES_LIST = [
@@ -640,7 +672,65 @@ $('avatarSpecies').addEventListener('change', () => {
 $('avatarGender').addEventListener('change', () => {
   rebuildAvatar($('avatarSpecies').value, $('avatarGender').value).catch(e => logDebug('Avatar rebuild failed: ' + e.message));
 });
-rebuildAvatar($('avatarSpecies').value, $('avatarGender').value).catch(e => logDebug('Avatar rebuild failed: ' + e.message));
+
+function refreshOrbitScaleStatus() {
+  const status = window.LocalDBOverrides?.listStatuses?.().find(entry => entry.id === 'speciesPoseOrbitScales');
+  const sourceMode = window.LocalDBOverrides?.getSourceMode?.() || 'repo'; // Used to distinguish a stored override from one the game will actually load.
+  let sourceText = sourceMode === 'local' ? 'Local source selected' : 'Repo source selected';
+  if (status?.hasOverride) {
+    const savedText = `saved ${new Date(status.savedAt).toLocaleString()}`;
+    sourceText += sourceMode === 'local' ? ` · override ACTIVE (${savedText})` : ` · override stored but INACTIVE (${savedText})`;
+  } else {
+    sourceText += sourceMode === 'local' ? ' · no override saved, so repo fallback is active' : ' · repo config active';
+  }
+  $('orbitScalesStatus').textContent = `${currentSpeciesId}/${currentGender} weapon orbit ×${currentPoseOrbitScale.toFixed(4)} · anatomy armLength ${currentArmLength.toFixed(3)} · ${sourceText}.`;
+}
+$('poseOrbitScale').addEventListener('input', () => {
+  const value = Number($('poseOrbitScale').value);
+  if (!Number.isFinite(value) || value <= 0) return;
+  currentPoseOrbitScale = value;
+  window.HobunjiSpeciesPoseScale?.setScale?.($('avatarSpecies').value, $('avatarGender').value, value);
+  if (avatarModel?.userData) avatarModel.userData.poseOrbitScale = value;
+  refreshOrbitScaleStatus();
+  refreshPreviewDebug();
+  if (typeof anim !== 'undefined' && anim?.poses?.[editPhase]) applyPoseToRig(anim.poses[editPhase]);
+});
+$('orbitScalesDownloadBtn').addEventListener('click', () => {
+  const data = window.HobunjiSpeciesPoseScale?.getConfig?.();
+  if (!data) return;
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'species-pose-orbit-scales.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+  logDebug('Downloaded species-pose-orbit-scales.json.');
+});
+$('orbitScalesSaveOverrideBtn').addEventListener('click', () => {
+  const data = window.HobunjiSpeciesPoseScale?.getConfig?.();
+  if (!data || !window.LocalDBOverrides) return;
+  window.LocalDBOverrides.setOverride('speciesPoseOrbitScales', data);
+  refreshOrbitScaleStatus();
+  const active = window.LocalDBOverrides.getSourceMode?.() === 'local'; // Used only for the mobile-readable confirmation below.
+  logDebug(active
+    ? 'Saved species/gender pose orbit scales; Local source is selected so this override is active.'
+    : 'Saved species/gender pose orbit scales, but Repo source is selected so the stored override is currently inactive.');
+});
+$('orbitScalesClearOverrideBtn').addEventListener('click', async () => {
+  window.LocalDBOverrides?.clearOverride?.('speciesPoseOrbitScales');
+  try {
+    await window.HobunjiSpeciesPoseScale?.reloadFromDatabaseSource?.();
+    await rebuildAvatar($('avatarSpecies').value, $('avatarGender').value);
+    refreshOrbitScaleStatus();
+    logDebug('Cleared local species/gender pose orbit scale override and reloaded the selected source.');
+  } catch (error) {
+    refreshOrbitScaleStatus();
+    logDebug('Cleared local orbit override, but reloading the selected source failed: ' + (error?.message || error));
+  }
+});
+rebuildAvatar($('avatarSpecies').value, $('avatarGender').value)
+  .then(refreshOrbitScaleStatus)
+  .catch(e => logDebug('Avatar rebuild failed: ' + e.message));
 
 // toolHolder is what the authored pose (pos+pitch+yaw+roll) actually drives.
 const toolHolder = new THREE.Object3D();
@@ -663,9 +753,12 @@ transformControls.addEventListener('objectChange', () => {
     toolBase.position.y + toolHolder.position.y,
     toolBase.position.z + toolHolder.position.z
   ); // Concrete selected-species point in rig space.
-  window.HobunjiSpeciesPoseScale?.unscalePointAroundCentroid?.(
-    poseOrbitScratch, 0, currentPoseCentroidY, 0, currentArmLength
-  ); // Exact inverse of the selected species' preview orbit.
+  window.HobunjiSpeciesPoseScale?.untransformPosePoint?.(poseOrbitScratch, {
+    cx: 0, cz: 0, floorY: 0, baseY: toolBase.position.y,
+    speciesId: currentSpeciesId, gender: currentGender,
+    modelHeight: currentAvatarModelHeight,
+    armLength: currentArmLength, poseOrbitScale: currentPoseOrbitScale,
+  }); // Exact inverse: horizontal orbit and vertical rigger-height mapping are independent.
   p.x = poseOrbitScratch.x - toolBase.position.x;
   p.y = poseOrbitScratch.y - toolBase.position.y;
   p.z = poseOrbitScratch.z - toolBase.position.z;
@@ -806,6 +899,52 @@ let anim = {
   },
 };
 
+const ATTACK_POSE_PHASES = Object.freeze(['neutral', 'windup', 'strike']);
+const ATTACK_POSE_SIDES = Object.freeze(['left', 'right']);
+function normalizedPoseElbow(point) {
+  const x = Number(point?.x), y = Number(point?.y), z = Number(point?.z);
+  return [x,y,z].every(Number.isFinite) ? { x, y, z } : null;
+}
+window.HobunjiAttackEditorPoseState = Object.freeze({
+  getPose(phase) {
+    return ATTACK_POSE_PHASES.includes(phase) ? anim.poses[phase] || null : null;
+  },
+  getShoulderAim(phase) {
+    const raw = this.getPose(phase)?.shoulderAim;
+    return raw && typeof raw === 'object' ? { ...raw } : null;
+  },
+  setShoulderAim(phase, aim) {
+    const pose = this.getPose(phase);
+    if (!pose) return false;
+    pose.shoulderAim = aim && typeof aim === 'object' ? { ...aim } : {};
+    return true;
+  },
+  getElbow(phase, side) {
+    if (!ATTACK_POSE_SIDES.includes(side)) return null;
+    const point = normalizedPoseElbow(this.getPose(phase)?.elbows?.[side]);
+    return point ? { ...point } : null;
+  },
+  setElbow(phase, side, point) {
+    const pose = this.getPose(phase);
+    if (!pose || !ATTACK_POSE_SIDES.includes(side)) return false;
+    const normalized = normalizedPoseElbow(point);
+    if (normalized) {
+      pose.elbows ||= {};
+      pose.elbows[side] = normalized;
+    } else if (pose.elbows) {
+      delete pose.elbows[side];
+      if (!Object.keys(pose.elbows).length) delete pose.elbows;
+    }
+    return true;
+  },
+  snapshotPoseSet() {
+    return Object.fromEntries(ATTACK_POSE_PHASES.map(phase => [phase, clonePoseData(anim.poses[phase] || {})]));
+  },
+});
+
+const ELBOW_SIDES = ['left', 'right'];
+const ELBOW_AXES = ['x', 'y', 'z'];
+
 const FIELD_DEFS = [
   { key: 'x', label: 'Tool X position (side)', min: -1, max: 1, step: 0.01, angle: false },
   { key: 'y', label: 'Tool Y position (height)', min: -1, max: 1, step: 0.01, angle: false },
@@ -821,9 +960,48 @@ function poseFieldDefs(phase) {
   return FIELD_DEFS.filter(f => !f.neutralOnly || phase === 'neutral');
 }
 
+function elbowControlPoint(phase, side) {
+  const corePoint = window.HobunjiAttackEditorPoseState?.getElbow?.(phase, side);
+  if (corePoint) return corePoint;
+  const raw = anim.poses?.[phase]?.elbows?.[side];
+  const x = Number(raw?.x), y = Number(raw?.y), z = Number(raw?.z);
+  return [x,y,z].every(Number.isFinite) ? { x, y, z } : null;
+}
+
+function elbowInputId(side, axis) {
+  return `poseElbow_${side}_${axis}`;
+}
+
+function readElbowInputs(side) {
+  const values = Object.fromEntries(ELBOW_AXES.map(axis => {
+    const raw = $(elbowInputId(side, axis))?.value?.trim?.() ?? '';
+    return [axis, raw === '' ? null : Number(raw)];
+  }));
+  if (!ELBOW_AXES.some(axis => Number.isFinite(values[axis]))) return null;
+  return Object.fromEntries(ELBOW_AXES.map(axis => [axis, Number.isFinite(values[axis]) ? values[axis] : 0]));
+}
+
+function writeElbowPoseValue(phase, side, point) {
+  const controls = window.HobunjiAttackEditorHandShoulderControls;
+  if (controls?.setElbowForPhase) return controls.setElbowForPhase(phase, side, point);
+  anim.poses[phase].elbows ||= {};
+  if (point) anim.poses[phase].elbows[side] = { ...point };
+  else delete anim.poses[phase].elbows[side];
+  if (!Object.keys(anim.poses[phase].elbows).length) delete anim.poses[phase].elbows;
+  return true;
+}
+
 function renderActivePosePanel() {
   const panel = $('activePosePanel');
   const fields = poseFieldDefs(editPhase);
+  const elbowRows = ELBOW_SIDES.map(side => `
+    <div class="field" data-elbow-pose-side="${side}">
+      <label>${side === 'left' ? 'Left' : 'Right'} elbow position (shoulder-relative)</label>
+      <div class="row" style="gap:7px;align-items:center;flex-wrap:wrap">
+        ${ELBOW_AXES.map(axis => `<label class="fieldRow" style="margin:0;min-width:88px">${axis.toUpperCase()} <input id="${elbowInputId(side, axis)}" type="number" step="0.01" placeholder="unset" style="width:72px"></label>`).join('')}
+        <button type="button" class="secondary" id="poseElbowMidpoint_${side}">Set halfway shoulder↔hand</button>
+      </div>
+    </div>`).join('');
   panel.innerHTML = fields.map(f => `
     <div class="field">
       <label>${f.label}</label>
@@ -831,7 +1009,9 @@ function renderActivePosePanel() {
         <input type="range" id="pose_${f.key}" min="${f.min}" max="${f.max}" step="${f.step}">
         <span class="val" id="pose_${f.key}_val"></span>
       </div>
-    </div>`).join('');
+    </div>`).join('') + `
+      <div class="help" style="margin-top:8px">Elbows are ordinary ${editPhase[0].toUpperCase() + editPhase.slice(1)} pose values. Blank means no elbow keyframe. The halfway buttons sample the current shoulder/hand once and write coordinates; gameplay never recalculates a midpoint.</div>
+      ${elbowRows}`;
   for (const f of fields) {
     const el = $(`pose_${f.key}`);
     el.addEventListener('input', () => {
@@ -843,6 +1023,30 @@ function renderActivePosePanel() {
       refreshJsonView();
     });
   }
+  for (const side of ELBOW_SIDES) {
+    for (const axis of ELBOW_AXES) {
+      $(elbowInputId(side, axis))?.addEventListener('input', () => {
+        writeElbowPoseValue(editPhase, side, readElbowInputs(side));
+        focusPreviewOnPhase(editPhase);
+        applyPoseToRig(anim.poses[editPhase]);
+        window.ProceduralHandFrameDriver?.syncNow?.();
+        refreshJsonView();
+      });
+    }
+    $(`poseElbowMidpoint_${side}`)?.addEventListener('click', () => {
+      focusPreviewOnPhase(editPhase);
+      applyPoseToRig(anim.poses[editPhase]);
+      window.ProceduralHandFrameDriver?.syncNow?.();
+      const point = window.HobunjiAttackEditorHandShoulderControls?.authorMidpointElbow?.(editPhase, side) || null;
+      if (!point) {
+        logDebug(`Could not sample ${side} shoulder/hand midpoint for ${editPhase}; hand rig points are not ready.`);
+        return;
+      }
+      syncPosePanelFromState(editPhase);
+      refreshJsonView();
+      logDebug(`Authored ${editPhase} ${side} elbow halfway between the currently displayed shoulder and hand.`);
+    });
+  }
   syncPosePanelFromState(editPhase);
 }
 
@@ -852,6 +1056,14 @@ function syncPosePanelFromState(phase = editPhase) {
     const v = safeNum(anim.poses[editPhase][f.key], f.key === 'scale' ? 1 : 0);
     $(`pose_${f.key}`).value = v;
     $(`pose_${f.key}_val`).textContent = f.angle ? `${v.toFixed(0)}°` : v.toFixed(2);
+  }
+  for (const side of ELBOW_SIDES) {
+    const point = elbowControlPoint(editPhase, side);
+    for (const axis of ELBOW_AXES) {
+      const input = $(elbowInputId(side, axis));
+      if (!input || document.activeElement === input) continue;
+      input.value = point && Number.isFinite(Number(point[axis])) ? String(Number(point[axis])) : '';
+    }
   }
 }
 renderActivePosePanel();
@@ -919,6 +1131,15 @@ $('durationS').addEventListener('input', () => {
 function flipPose(p) {
   const flipped = defaultPose(-p.x, p.y, p.z, p.pitch, -p.yaw, -p.bodyYaw, -(p.roll || 0));
   if (p.scale != null) flipped.scale = p.scale;
+  if (p.shoulderAim) flipped.shoulderAim = { ...p.shoulderAim };
+  if (p.elbows) {
+    const mirrorPoint = point => point ? { x: -(Number(point.x) || 0), y: Number(point.y) || 0, z: Number(point.z) || 0 } : null;
+    // Mirroring an attack never changes which anatomical hand owns the pose.
+    // It mirrors each hand's shoulder-relative elbow X just like tool pose X.
+    flipped.elbows = Object.fromEntries(Object.entries(p.elbows)
+      .map(([side, point]) => [side, mirrorPoint(point)])
+      .filter(([, point]) => point));
+  }
   return flipped;
 }
 function syncToolEndFlipUi() {
@@ -939,6 +1160,7 @@ $('flipBtn').onclick = () => {
   anim.poses.neutral = flipPose(anim.poses.neutral);
   anim.poses.windup = flipPose(anim.poses.windup);
   anim.poses.strike = flipPose(anim.poses.strike);
+  window.HobunjiAttackEditorHandShoulderControls?.loadFromAnimationObject?.({ poses: anim.poses });
   toolMirrored = !toolMirrored;
   toolBase.position.x = toolMirrored ? -baseAttachX : baseAttachX;
   if (toolPlaneMesh) toolPlaneMesh.scale.x = toolMirrored ? -1 : 1;
@@ -1056,6 +1278,9 @@ function applyPreset(preset) {
   anim.poses.neutral = { ...neutralPoseFor(preset.style), ...(preset.neutral || {}) };
   anim.poses.windup = { ...preset.windup };
   anim.poses.strike = { ...preset.strike };
+  // The selected Action owns hand-follow and elbow pose fields too. Reload the
+  // hand adapter every time so state from the previously selected Action cannot leak.
+  window.HobunjiAttackEditorHandShoulderControls?.loadFromAnimationObject?.({ poses: anim.poses });
   anim.windupFrac = preset.windupFrac;
   anim.strikeFrac = preset.strikeFrac;
   // Presets predate holdFrac, so derive it the same way game.js's HF auto-
@@ -1171,7 +1396,12 @@ function applyPoseToRig(pose) {
   lastAuthoredPose.x = Number(pose.x) || 0; lastAuthoredPose.y = Number(pose.y) || 0; lastAuthoredPose.z = Number(pose.z) || 0;
   poseOrbitScratch.set(toolBase.position.x + lastAuthoredPose.x, toolBase.position.y + lastAuthoredPose.y, toolBase.position.z + lastAuthoredPose.z); // Existing pre-arm-length finished point.
   lastRawRigPose.x = poseOrbitScratch.x; lastRawRigPose.y = poseOrbitScratch.y; lastRawRigPose.z = poseOrbitScratch.z;
-  window.HobunjiSpeciesPoseScale?.scalePointAroundCentroid?.(poseOrbitScratch, 0, currentPoseCentroidY, 0, currentArmLength); // Uniform radial scale around the selected avatar's true visual centroid.
+  window.HobunjiSpeciesPoseScale?.transformPosePoint?.(poseOrbitScratch, {
+    cx: 0, cz: 0, floorY: 0, baseY: toolBase.position.y,
+    speciesId: currentSpeciesId, gender: currentGender,
+    modelHeight: currentAvatarModelHeight,
+    armLength: currentArmLength, poseOrbitScale: currentPoseOrbitScale,
+  }); // X/Z use authored orbit scale; Y uses portrait height + rigger body-height scale from the floor-relative hand anchor.
   lastScaledRigPose.x = poseOrbitScratch.x; lastScaledRigPose.y = poseOrbitScratch.y; lastScaledRigPose.z = poseOrbitScratch.z;
   toolHolder.position.set(poseOrbitScratch.x - toolBase.position.x, poseOrbitScratch.y - toolBase.position.y, poseOrbitScratch.z - toolBase.position.z);
   toolHolder.updateWorldMatrix?.(true, false);
@@ -1251,7 +1481,11 @@ async function loadAttackValues() {
 }
 
 function clonePoseData(pose = {}) {
-  return { ...pose, shoulderAim: pose.shoulderAim ? { ...pose.shoulderAim } : pose.shoulderAim };
+  return {
+    ...pose,
+    shoulderAim: pose.shoulderAim ? { ...pose.shoulderAim } : pose.shoulderAim,
+    elbows: pose.elbows ? Object.fromEntries(Object.entries(pose.elbows).map(([side, point]) => [side, point ? { ...point } : point])) : pose.elbows,
+  };
 }
 function cloneAnimationTemplate(source = {}) {
   return {
@@ -1668,7 +1902,7 @@ function refreshJsonView() {
   $('jsonView').value = JSON.stringify(exportAnimObject(), null, 2);
 }
 function exportAnimObject() {
-  return {
+  const exported = {
     version: 1,
     kind: anim.style === 'drink' ? 'hobunji_held_action_animation' : 'hobunji_attack_animation',
     name: anim.name,
@@ -1681,6 +1915,7 @@ function exportAnimObject() {
     toolEndFlip: anim.toolEndFlip === true,
     poses: { neutral: { ...anim.poses.neutral }, windup: { ...anim.poses.windup }, strike: { ...anim.poses.strike } },
   };
+  return window.HobunjiAttackEditorHandShoulderControls?.decorateAnimationObject?.(exported) || exported;
 }
 $('exportBtn').onclick = () => {
   const obj = exportAnimObject();
@@ -1716,7 +1951,6 @@ $('loadFile').onchange = async () => {
     const data = JSON.parse(await file.text());
     loadAnimObject(data);
     window.HobunjiAttackEditorHandGripMode?.loadFromAnimationObject?.(data);
-    window.HobunjiAttackEditorHandShoulderControls?.loadFromAnimationObject?.(data);
     logDebug(`Loaded ${file.name}`);
   } catch (e) {
     logDebug(`Load failed: ${e.message}`);
@@ -1753,6 +1987,19 @@ function loadAnimObject(data) {
   anim.poses.neutral = { ...defaultPose(safeNum(n.x, styleNeutral.x), safeNum(n.y, styleNeutral.y), safeNum(n.z, styleNeutral.z), safeNum(n.pitch, styleNeutral.pitch), safeNum(n.yaw, styleNeutral.yaw), safeNum(n.bodyYaw, styleNeutral.bodyYaw), safeNum(n.roll, styleNeutral.roll)), scale: Math.max(0.1, safeNum(n.scale, styleNeutral.scale ?? 1)) };
   anim.poses.windup = defaultPose(safeNum(w.x, 0), safeNum(w.y, 0), safeNum(w.z, 0), safeNum(w.pitch, 0), safeNum(w.yaw, 0), safeNum(w.bodyYaw, 0), safeNum(w.roll, 0));
   anim.poses.strike = defaultPose(safeNum(s.x, 0), safeNum(s.y, 0), safeNum(s.z, 0), safeNum(s.pitch, 0), safeNum(s.yaw, 0), safeNum(s.bodyYaw, 0), safeNum(s.roll, 0));
+  for (const [phase, raw] of [['neutral', n], ['windup', w], ['strike', s]]) {
+    if (raw?.shoulderAim && typeof raw.shoulderAim === 'object') anim.poses[phase].shoulderAim = { ...raw.shoulderAim };
+    if (raw?.elbows && typeof raw.elbows === 'object') {
+      const elbows = Object.fromEntries(ATTACK_POSE_SIDES
+        .map(side => [side, normalizedPoseElbow(raw.elbows?.[side])])
+        .filter(([, point]) => point));
+      if (Object.keys(elbows).length) anim.poses[phase].elbows = elbows;
+    }
+  }
+  // Elbows are pose data too, but the hand adapter owns their live preview state.
+  // Restore them on every load path (file import, Undo/Redo, programmatic restore),
+  // not only the file-input handler.
+  window.HobunjiAttackEditorHandShoulderControls?.loadFromAnimationObject?.(data);
   $('animName').value = action.label;
   $('animStyle').value = anim.style;
   $('playbackSequence').value = anim.sequence;
@@ -1798,6 +2045,10 @@ async function restoreCoreHistoryState(snapshot) {
   if (snapshot.avatarGender) $('avatarGender').value = snapshot.avatarGender;
   if (speciesChanged) $('avatarSpecies').dispatchEvent(new Event('change', { bubbles: true }));
   else if (genderChanged) $('avatarGender').dispatchEvent(new Event('change', { bubbles: true }));
+  if (snapshot.poseOrbitScale != null && $('poseOrbitScale')) {
+    $('poseOrbitScale').value = String(snapshot.poseOrbitScale);
+    $('poseOrbitScale').dispatchEvent(new Event('input', { bubbles: true }));
+  }
 
   for (const [id, eventName] of [['neckStrength','input'], ['neckRadius','input']]) {
     if (snapshot[id] == null || !$(id)) continue;
@@ -1838,6 +2089,7 @@ window.HobunjiAttackEditorState = Object.freeze({
       toolMirrored,
       avatarSpecies: $('avatarSpecies').value,
       avatarGender: $('avatarGender').value,
+      poseOrbitScale: Number($('poseOrbitScale').value),
       neckStrength: Number($('neckStrength').value),
       neckRadius: Number($('neckRadius').value),
       showHeadSkinVertices: $('showHeadSkinVertices').checked,

@@ -32,8 +32,8 @@
   ]); // Defines the sticky mobile-friendly jump bar shown at the top of the sidebar.
 
   function idleWeights() {
-    const runtimeIdle = poseRuntime?.idle || { pitch: 1, yaw: 0, roll: 1 }; // Returned during resting-stance previews to match gameplay exactly.
-    return { pitch: Number(runtimeIdle.pitch) || 0, yaw: Number(runtimeIdle.yaw) || 0, roll: Number(runtimeIdle.roll) || 0 };
+    const runtimeIdle = poseRuntime?.idle || { grip: 1, palmNormal: 1 }; // Returned during resting-stance previews to match gameplay exactly.
+    return { grip: Number(runtimeIdle.grip) || 0, palmNormal: Number(runtimeIdle.palmNormal) || 0 };
   }
 
   function syncHands() {

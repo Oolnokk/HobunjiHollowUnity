@@ -22,7 +22,7 @@
       label: 'Palm perpendicular',
       description: 'Palm normal aligns with the tool shaft. Pick-shovel-style grip.',
       position: Object.freeze({ x: 0, y: PALM_CLEARANCE, z: 0 }),
-      rotationDeg: Object.freeze({ pitch: 90, yaw: 0, roll: 0 }),
+      rotationDeg: Object.freeze({ pitch: -90, yaw: 0, roll: 0 }), // Same perpendicular axis, flipped 180° around local X so the palm is not upside down.
     }),
   });
 

@@ -4,9 +4,11 @@ on:
   pull_request:
     paths:
       - 'docs/config/species/**'
+      - 'docs/config/combat/species-pose-orbit-scales.json'
       - 'docs/game.js'
       - 'docs/index.html'
       - 'docs/js/species-pose-scaling.js'
+      - 'docs/js/local-db-overrides.js'
       - 'docs/js/png-plane-avatar.js'
       - 'docs/js/portrait-utils.js'
       - 'docs/js/social-action-wheel.js'
@@ -26,6 +28,8 @@ on:
       - 'scripts/test-species-gender-pose-scaling.js'
       - 'scripts/test-enemy-weapon-stances.js'
       - 'scripts/test-heavy-weapon-alternating-neutrals.js'
+      - 'scripts/test-onboarding-character-creation-life-preview.js'
+      - 'scripts/test-onboarding-character-creation-weapon-view-fix.js'
       - '.github/workflows/species-gender-pose-orbit-regression.yml'
   workflow_dispatch:
 
@@ -67,6 +71,9 @@ jobs:
       - name: Procedural hands
         continue-on-error: true
         run: node scripts/test-procedural-hands.js
+      - name: Onboarding life preview
+        continue-on-error: true
+        run: node scripts/test-onboarding-character-creation-life-preview.js
       - name: Onboarding weapon preview
         continue-on-error: true
         run: node scripts/test-onboarding-character-creation-weapon-view-fix.js

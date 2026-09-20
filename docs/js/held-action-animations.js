@@ -15,10 +15,10 @@
     holdFrac: 0.78,
     poses: {
       // Neutral is an idle endpoint: Pitch + Roll aim to the shoulder.
-      neutral: { x: 0, y: 0, z: -0.05, pitch: 10.31, yaw: 0, roll: 0, bodyYaw: 0, shoulderAim: { pitch: true, yaw: false, roll: true } },
+      neutral: { x: 0, y: 0, z: -0.05, pitch: 10.31, yaw: 0, roll: 0, bodyYaw: 0, shoulderAim: { grip: true, palmNormal: true } },
       // Active endpoints deliberately retain Roll-only shoulder alignment.
-      windup: { x: 0.32, y: 0.21, z: 0.1, pitch: -114, yaw: 18, roll: -8, bodyYaw: 0, shoulderAim: { pitch: false, yaw: false, roll: true } },
-      strike: { x: 0.4, y: 0.4, z: 0.22, pitch: -180, yaw: 21, roll: 4, bodyYaw: 0, shoulderAim: { pitch: false, yaw: false, roll: true } },
+      windup: { x: 0.32, y: 0.21, z: 0.1, pitch: -114, yaw: 18, roll: -8, bodyYaw: 0, shoulderAim: { grip: false, palmNormal: true } },
+      strike: { x: 0.4, y: 0.4, z: 0.22, pitch: -180, yaw: 21, roll: 4, bodyYaw: 0, shoulderAim: { grip: false, palmNormal: true } },
     },
   };
 
@@ -56,17 +56,17 @@
     poses: {
       neutral: {
         x: 0.03, y: 0.37, z: -0.01, pitch: -155, yaw: -79, bodyYaw: 2, roll: -82,
-        shoulderAim: { pitch: true, yaw: false, roll: true },
+        shoulderAim: { grip: true, palmNormal: true },
         secondaryGrip: { enabled: false, percent: 50 },
       },
       windup: {
         x: 0.41, y: 0.37, z: 0.42, pitch: -180, yaw: 139, bodyYaw: -152, roll: -92,
-        shoulderAim: { pitch: false, yaw: false, roll: false },
+        shoulderAim: { grip: false, palmNormal: false },
         secondaryGrip: { enabled: false, percent: 50 },
       },
       strike: {
         x: -0.57, y: 0.33, z: 0.17, pitch: -25, yaw: -65, bodyYaw: 63, roll: -88,
-        shoulderAim: { pitch: true, yaw: false, roll: false },
+        shoulderAim: { grip: true, palmNormal: false },
         secondaryGrip: { enabled: false, percent: 50 },
       },
     },
@@ -174,19 +174,19 @@
   const handScripts = [
     new URL('config/hand-model-profiles.js?v=20260919handreview1', docsBase).href,
     new URL('config/hand-shoulder-points.js?v=20260818b', docsBase).href,
-    new URL('config/hand-shoulder-pose-profiles.js?v=20260818a', docsBase).href,
+    new URL('config/hand-shoulder-pose-profiles.js?v=20260920localhinge1', docsBase).href,
     new URL('js/procedural-hand-foot-material-roles.js?v=20260821e', docsBase).href,
-    new URL('js/hand-tool-grips.js?v=20260919handtarget1', docsBase).href,
-    new URL('js/hand-grip-modes.js?v=20260919handreview1', docsBase).href,
-    new URL('js/hand-shoulder-pose-runtime.js?v=20260917charge2', docsBase).href,
+    new URL('js/hand-tool-grips.js?v=20260920hatchetexample2', docsBase).href,
+    new URL('js/hand-grip-modes.js?v=20260920palmflip1', docsBase).href,
+    new URL('js/hand-shoulder-pose-runtime.js?v=20260920elbow5', docsBase).href,
     new URL('js/portrait-arm-cloud-mask.js?v=20260817a', docsBase).href,
     new URL('js/portrait-hand-shoulder-scan.js?v=20260818c', docsBase).href,
     new URL('js/portrait-hand-shoulder-scan-species.js?v=20260818a', docsBase).href,
-    new URL('js/procedural-hand-attachments.js?v=20260919handreview1', docsBase).href,
+    new URL('js/procedural-hand-attachments.js?v=20260920wristaxis1', docsBase).href,
     new URL('js/procedural-hand-outline-parity.js?v=20260821f', docsBase).href,
     new URL('js/attachment-rig-latest-authored-snapshot.js?v=20260904a', docsBase).href,
     new URL('js/procedural-hand-scale-free-world.js?v=20260904posteriorlive1', docsBase).href,
-    new URL('js/procedural-hand-shoulder-aim.js?v=20260821k', docsBase).href,
+    new URL('js/procedural-hand-shoulder-aim.js?v=20260920palmnormal2', docsBase).href,
     new URL('js/procedural-hand-frame-driver.js?v=20260919handreview1', docsBase).href,
   ];
   if (isAttackEditor) {
@@ -199,9 +199,8 @@
     handScripts.push(new URL('js/attack-editor-hand-mirror-toggle.js?v=20260817a', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-grip-mode.js?v=20260919labels1', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-direct-attachments.js?v=20260919quatcal1', docsBase).href);
-    handScripts.push(new URL('js/attack-editor-hand-shoulder-controls.js?v=20260919labels1', docsBase).href);
-    handScripts.push(new URL('js/attack-editor-idle-hand-parity.js?v=20260919action1', docsBase).href);
-    handScripts.push(new URL('js/attack-editor-hand-shoulder-animation-state.js?v=20260818a', docsBase).href);
+    handScripts.push(new URL('js/attack-editor-hand-shoulder-controls.js?v=20260920posecore1', docsBase).href);
+    handScripts.push(new URL('js/attack-editor-idle-hand-parity.js?v=20260920localhinge1', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-state-coherence.js?v=20260919handreview1', docsBase).href);
     handScripts.push(new URL('js/attack-editor-history.js?v=20260919history1', docsBase).href); // Loaded last so Undo/Redo can snapshot every hand/grip extension plus the core module once it initializes.
   } else if (!isAnimationAuthor) {

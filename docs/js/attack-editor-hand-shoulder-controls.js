@@ -1,9 +1,8 @@
-// Attack Editor shoulder-compass authoring.
+// Attack Editor hand/elbow targeting authoring.
 //
-// X/Y/Z hand-rotation follow is stored PER POSE in the normal animation JSON
-// (legacy data keys remain pitch/yaw/roll for compatibility). Checkbox states become
-// 0..1 weights at runtime and lerp with the same Neutral/Windup/Strike phase
-// curve as the tool pose. Arm hiding remains a preview-only convenience.
+// Each pose controls two meaningful HAND-LOCAL hinges: grip axis (local X) and
+// palm-normal axis (local -Z). Legacy pitch/roll animation data migrates into those
+// hinges on load. Arm hiding and the paper-arm overlay remain preview-only.
 (function (global) {
   'use strict';
 
@@ -12,13 +11,17 @@
   if (!profileSelect || global.HobunjiAttackEditorHandShoulderControls) return;
 
   const PHASES = ['neutral', 'windup', 'strike'];
+  const AXES = ['grip', 'palmNormal']; // The only hand-local hinges permitted to aim the wrist toward its elbow.
+  const SIDES = ['left', 'right'];
   const DEFAULTS = Object.freeze({
-    neutral: Object.freeze({ pitch: true, yaw: false, roll: true }),
-    windup: Object.freeze({ pitch: false, yaw: false, roll: true }),
-    strike: Object.freeze({ pitch: false, yaw: false, roll: true }),
+    neutral: Object.freeze({ grip: true, palmNormal: true }),
+    windup: Object.freeze({ grip: false, palmNormal: true }),
+    strike: Object.freeze({ grip: false, palmNormal: true }),
   });
-  const poseAim = Object.fromEntries(PHASES.map(phase => [phase, { ...DEFAULTS[phase] }]));
+  const poseAim = Object.fromEntries(PHASES.map(phase => [phase, { ...DEFAULTS[phase] }])); // Parser-time fallback until the core editor pose state exists.
+  const poseElbows = Object.fromEntries(PHASES.map(phase => [phase, { left: null, right: null }])); // Same fallback; core anim.poses becomes authoritative once the module initializes.
   let hideArmSprites = false;
+  let showPaperArmGuide = false; // Preview-only elbow/arm-strip visualization; never exported into attack data.
 
   function resolvedFighter(profile) {
     const fighter = profile?.fighter || null;
@@ -69,18 +72,17 @@
   function checkboxId(phase, axis) {
     return `handShoulderAim_${phase}_${axis}`;
   }
-
   const followGroup = document.createElement('div'); // Hand-only orientation assist; deliberately lives outside the tool-pose controls.
   followGroup.className = 'poseGroup';
   followGroup.id = 'handShoulderFollowGroup';
   followGroup.innerHTML = `
-    <div class="poseGroupHead"><span class="dot" style="background:#fb7185"></span>Hand shoulder-follow by animation pose</div>
-    <div class="help" style="margin-bottom:7px"><b>This rotates the HAND, never the weapon.</b> Each checkbox lets that hand orientation axis follow toward the shoulder during the named pose. X/Y/Z below are hand rotations; stored legacy keys are pitch/yaw/roll.</div>
+    <div class="poseGroupHead"><span class="dot" style="background:#fb7185"></span>Hand elbow-targeting by animation pose</div>
+    <div class="help" style="margin-bottom:7px"><b>This rotates the HAND, never the weapon.</b> The wrist-facing side aims toward the pose-authored elbow. Elbow coordinates are edited in the active Neutral/Windup/Strike pose panel; there is no arm-length projection, reach clamp, joint-limit solve, or runtime midpoint calculation. The two checkboxes only choose which hand-local hinges may rotate.</div>
     ${PHASES.map(phase => `
       <div class="field" data-hand-shoulder-phase="${phase}">
         <label>${phase[0].toUpperCase() + phase.slice(1)} hand follow</label>
         <div class="row" style="gap:9px;flex-wrap:wrap">
-          ${[['pitch','X'],['yaw','Y'],['roll','Z']].map(([axis,label]) => `<label class="fieldRow" style="cursor:pointer;margin:0"><input id="${checkboxId(phase, axis)}" type="checkbox" style="width:auto">${label} rotation → shoulder</label>`).join('')}
+          ${[['grip','Grip axis (local X)'],['palmNormal','Palm-normal axis (local -Z)']].map(([axis,label]) => `<label class="fieldRow" style="cursor:pointer;margin:0"><input id="${checkboxId(phase, axis)}" type="checkbox" style="width:auto">${label}</label>`).join('')}
         </div>
       </div>`).join('')}
   `;
@@ -89,39 +91,60 @@
   const previewGroup = document.createElement('div');
   previewGroup.className = 'poseGroup';
   previewGroup.innerHTML = `
-    <div class="poseGroupHead"><span class="dot" style="background:#fb7185"></span>Shoulder-follow preview</div>
-    <div class="help" style="margin-bottom:7px">Neutral defaults to <b>X + Z rotation follow</b>. Windup and Strike default to <b>Z only</b>. The three pose settings blend continuously with the animation.</div>
+    <div class="poseGroupHead"><span class="dot" style="background:#fb7185"></span>Arm-targeting preview</div>
+    <div class="help" style="margin-bottom:7px">Neutral defaults to both hinges. Windup and Strike default to the palm-normal hinge only. The three pose settings blend continuously with the animation.</div>
     <div class="field"><label class="fieldRow" style="cursor:pointer"><input id="handHideArmSpritesPreview" type="checkbox" style="width:auto;margin-right:6px">Hide arm sprites in preview</label></div>
-    <div class="help" id="handShoulderAimStatus">Arm hiding is preview-only and is not exported.</div>
+    <div class="field"><label class="fieldRow" style="cursor:pointer"><input id="handShowPaperArmGuide" type="checkbox" style="width:auto;margin-right:6px">Show paper arm guide (upper arm + elbow + forearm)</label></div>
+    <div class="help" id="handShoulderAimStatus">Preview helpers are not exported. The paper arm is diagnostic only and does not drive the hand.</div>
   `;
   const status = document.getElementById('handEffectiveStatus');
   if (status?.parentElement === handCard) handCard.insertBefore(previewGroup, status);
   else handCard?.appendChild(previewGroup);
 
   const hide = document.getElementById('handHideArmSpritesPreview');
+  const paperArm = document.getElementById('handShowPaperArmGuide'); // Toggles the non-authoritative two-strip elbow guide in the live preview.
   const compassStatus = document.getElementById('handShoulderAimStatus');
   const jsonView = document.getElementById('jsonView');
   const loadFile = document.getElementById('loadFile');
-  if (!hide || !compassStatus || !jsonView) return;
+  if (!hide || !paperArm || !compassStatus || !jsonView) return;
 
+  function booleanAxis(raw, key, legacyKey, fallback) {
+    const value = raw?.[key] ?? raw?.[legacyKey]; // Backward-compatible load only; new exports use semantic hinge names.
+    return value === true ? true : value === false ? false : !!fallback;
+  }
   function normalizeBooleanAim(raw, fallback) {
     return {
-      pitch: raw?.pitch === true ? true : raw?.pitch === false ? false : !!fallback.pitch,
-      yaw: raw?.yaw === true ? true : raw?.yaw === false ? false : !!fallback.yaw,
-      roll: raw?.roll === true ? true : raw?.roll === false ? false : !!fallback.roll,
+      grip: booleanAxis(raw, 'grip', 'pitch', fallback.grip),
+      palmNormal: booleanAxis(raw, 'palmNormal', 'roll', fallback.palmNormal),
     };
+  }
+  function normalizeElbows(rawPose = {}) {
+    return Object.fromEntries(SIDES.map(side => [
+      side,
+      poseRuntime?.normalizeElbowPoint?.(rawPose?.elbows?.[side] || rawPose?.elbow?.[side]) || null,
+    ]));
+  }
+
+  function corePoseState() {
+    return global.HobunjiAttackEditorPoseState || null;
+  }
+  function aimForPhase(phase) {
+    const core = corePoseState()?.getShoulderAim?.(phase);
+    return core ? normalizeBooleanAim(core, DEFAULTS[phase]) : { ...poseAim[phase] };
   }
 
   function syncCheckboxes() {
     for (const phase of PHASES) {
-      for (const axis of ['pitch','yaw','roll']) {
+      for (const axis of AXES) {
         const input = document.getElementById(checkboxId(phase, axis));
-        if (input) input.checked = !!poseAim[phase][axis];
+        if (input) input.checked = !!aimForPhase(phase)[axis];
       }
     }
     hide.checked = hideArmSprites;
+    paperArm.checked = showPaperArmGuide;
     const weights = currentWeights();
-    compassStatus.textContent = `Live hand-follow lerp: X rotation ${(weights.pitch * 100).toFixed(0)}% · Y rotation ${(weights.yaw * 100).toFixed(0)}% · Z rotation ${(weights.roll * 100).toFixed(0)}% · arms ${hideArmSprites ? 'hidden' : 'visible'}.`;
+    const fmt = point => point ? `(${point.x.toFixed(2)}, ${point.y.toFixed(2)}, ${point.z.toFixed(2)})` : 'unauthored';
+    compassStatus.textContent = `Live hand-follow: grip ${(weights.grip * 100).toFixed(0)}% · palm-normal ${(weights.palmNormal * 100).toFixed(0)}% · elbows L ${fmt(currentElbow('left'))} / R ${fmt(currentElbow('right'))} · arms ${hideArmSprites ? 'hidden' : 'visible'} · paper arm ${showPaperArmGuide ? 'shown' : 'hidden'}.`;
   }
 
   function injectPoseAimIntoObject(parsed) {
@@ -129,7 +152,13 @@
     if (!parsed.poses || typeof parsed.poses !== 'object') parsed.poses = {};
     for (const phase of PHASES) {
       if (!parsed.poses[phase] || typeof parsed.poses[phase] !== 'object') parsed.poses[phase] = {};
-      parsed.poses[phase].shoulderAim = { ...poseAim[phase] };
+      parsed.poses[phase].shoulderAim = { ...aimForPhase(phase) };
+      const elbows = Object.fromEntries(SIDES
+        .map(side => [side, elbowForPhase(phase, side)])
+        .filter(([, point]) => point)
+        .map(([side, point]) => [side, { ...point }]));
+      if (Object.keys(elbows).length) parsed.poses[phase].elbows = elbows;
+      else delete parsed.poses[phase].elbows;
     }
     return parsed;
   }
@@ -159,14 +188,69 @@
   }
 
   function setAxis(phase, axis, value) {
-    poseAim[phase][axis] = !!value;
+    const next = { ...aimForPhase(phase), [axis]: !!value };
+    poseAim[phase] = { ...next };
+    corePoseState()?.setShoulderAim?.(phase, next);
     refreshJsonExtension();
     global.ProceduralHandFrameDriver?.syncNow?.();
     syncCheckboxes();
   }
+  function normalizePoint(point) {
+    const x = Number(point?.x), y = Number(point?.y), z = Number(point?.z);
+    return [x,y,z].every(Number.isFinite) ? { x, y, z } : null;
+  }
+
+  function elbowForPhase(phase, side) {
+    const core = corePoseState()?.getElbow?.(phase, side);
+    if (core) return { ...core };
+    const point = poseElbows?.[phase]?.[side];
+    return point ? { ...point } : null;
+  }
+
+  function setElbowForPhase(phase, side, point) {
+    if (!PHASES.includes(phase) || !SIDES.includes(side)) return false;
+    const normalized = normalizePoint(point);
+    poseElbows[phase][side] = normalized;
+    corePoseState()?.setElbow?.(phase, side, normalized);
+    refreshJsonExtension();
+    global.ProceduralHandFrameDriver?.syncNow?.();
+    global.ProceduralHandShoulderAim?.refreshPaperArmGuides?.();
+    global.syncPosePanelFromState?.(phase);
+    return true;
+  }
+
+  function authorMidpointElbow(phase, side) {
+    if (!PHASES.includes(phase) || !SIDES.includes(side)) return null;
+    global.ProceduralHandFrameDriver?.syncNow?.();
+    const species = String(document.getElementById('avatarSpecies')?.value || '').toLowerCase();
+    const gender = String(document.getElementById('avatarGender')?.value || '').toLowerCase();
+    const snapshots = global.ProceduralHandAttachments?.getActiveDebug?.() || [];
+    const hasPoints = snapshot => snapshot?.shoulderCompass?.sides?.[side]?.shoulder
+      && snapshot?.shoulderCompass?.sides?.[side]?.wrist;
+    const matching = snapshots.find(snapshot =>
+      hasPoints(snapshot)
+      && (!species || String(snapshot?.speciesId || '').toLowerCase() === species)
+      && (!gender || String(snapshot?.gender || '').toLowerCase() === gender)
+    ) || snapshots.find(hasPoints);
+    const sideDebug = matching?.shoulderCompass?.sides?.[side];
+    const shoulder = sideDebug?.shoulder;
+    const wrist = sideDebug?.wrist;
+    if (!shoulder || !wrist) return null;
+    // Editor-only convenience: persist the point halfway between the displayed
+    // shoulder and wrist as a shoulder-relative elbow pose. Runtime never
+    // recalculates, clamps, or otherwise owns this midpoint.
+    const point = {
+      x: (Number(wrist.x) - Number(shoulder.x)) * 0.5,
+      y: (Number(wrist.y) - Number(shoulder.y)) * 0.5,
+      z: (Number(wrist.z) - Number(shoulder.z)) * 0.5,
+    };
+    if (!normalizePoint(point)) return null;
+    setElbowForPhase(phase, side, point);
+    return { ...point };
+  }
 
   for (const phase of PHASES) {
-    for (const axis of ['pitch','yaw','roll']) {
+    for (const axis of AXES) {
       document.getElementById(checkboxId(phase, axis))?.addEventListener('change', event => setAxis(phase, axis, event.currentTarget.checked));
     }
   }
@@ -177,16 +261,35 @@
     return Math.max(0, Math.min(1, Number.isFinite(raw) ? raw / 100 : Number(document.getElementById('scrub')?.value) || 0));
   }
 
-  function currentWeights() {
-    const progress = progressFromTimeline();
-    const timing = {
+  function currentTiming() {
+    return {
       windupFrac: Number(document.getElementById('windupFrac')?.value) || 0.16,
       strikeFrac: Number(document.getElementById('strikeFrac')?.value) || 0.55,
       holdFrac: Number(document.getElementById('holdFrac')?.value) || 0.68,
     };
+  }
+  function currentWeights() {
+    const progress = progressFromTimeline();
+    const timing = currentTiming();
     const sequence = document.getElementById('playbackSequence')?.value || 'attack';
     if (poseRuntime?.weightsAt) return poseRuntime.weightsAt(progress, timing, poseAim, sequence);
-    return progress <= timing.windupFrac ? { pitch: 1 - progress / Math.max(1e-6, timing.windupFrac), yaw: 0, roll: 1 } : { pitch: 0, yaw: 0, roll: 1 };
+    return progress <= timing.windupFrac ? { grip: 1 - progress / Math.max(1e-6, timing.windupFrac), palmNormal: 1 } : { grip: 0, palmNormal: 1 };
+  }
+  function poseSetForRuntime() {
+    return Object.fromEntries(PHASES.map(phase => [phase, {
+      shoulderAim: { ...aimForPhase(phase) },
+      elbows: Object.fromEntries(SIDES
+        .map(side => [side, elbowForPhase(phase, side)])
+        .filter(([, point]) => point)
+        .map(([side, point]) => [side, { ...point }])),
+    }]));
+  }
+  function currentElbow(side) {
+    const progress = progressFromTimeline();
+    const timing = currentTiming();
+    const sequence = document.getElementById('playbackSequence')?.value || 'attack';
+    if (poseRuntime?.elbowAt) return poseRuntime.elbowAt(progress, timing, poseSetForRuntime(), sequence, side);
+    return null;
   }
 
   function requestPreviewRebuild() {
@@ -200,14 +303,22 @@
     syncCheckboxes();
     requestPreviewRebuild();
   });
-
+  paperArm.addEventListener('change', () => {
+    showPaperArmGuide = paperArm.checked;
+    global.ProceduralHandShoulderAim?.setPaperArmGuideVisible?.(showPaperArmGuide);
+    syncCheckboxes();
+    global.ProceduralHandFrameDriver?.syncNow?.();
+  });
 
 
   // Keep the live status useful while playback/scrubbing changes interpolation.
   let lastStatusSignature = '';
   function statusFrame() {
     const w = currentWeights();
-    const signature = `${hideArmSprites}|${w.pitch.toFixed(2)}|${w.yaw.toFixed(2)}|${w.roll.toFixed(2)}`;
+    const l = currentElbow('left');
+    const r = currentElbow('right');
+    const sigPoint = p => p ? `${p.x.toFixed(3)},${p.y.toFixed(3)},${p.z.toFixed(3)}` : 'auto';
+    const signature = `${hideArmSprites}|${showPaperArmGuide}|${w.grip.toFixed(2)}|${w.palmNormal.toFixed(2)}|${sigPoint(l)}|${sigPoint(r)}`;
     if (signature !== lastStatusSignature) {
       lastStatusSignature = signature;
       syncCheckboxes();
@@ -224,23 +335,43 @@
     loadFromAnimationObject(parsed) {
       for (const phase of PHASES) {
         poseAim[phase] = normalizeBooleanAim(parsed?.poses?.[phase]?.shoulderAim, DEFAULTS[phase]);
+        poseElbows[phase] = normalizeElbows(parsed?.poses?.[phase] || {});
+        corePoseState()?.setShoulderAim?.(phase, poseAim[phase]);
+        for (const side of SIDES) corePoseState()?.setElbow?.(phase, side, poseElbows[phase][side]);
       }
       syncCheckboxes();
       refreshJsonExtension();
+      global.renderActivePosePanel?.();
       global.ProceduralHandFrameDriver?.syncNow?.();
       return true;
     },
-    get poseAim() { return JSON.parse(JSON.stringify(poseAim)); },
+    get poseAim() { return Object.fromEntries(PHASES.map(phase => [phase, { ...aimForPhase(phase) }])); },
+    get poseElbows() { return Object.fromEntries(PHASES.map(phase => [phase, Object.fromEntries(SIDES.map(side => [side, elbowForPhase(phase, side)]))])); },
+    elbowForPhase,
+    setElbowForPhase,
+    authorMidpointElbow,
     currentWeights,
+    currentElbow,
+    decorateAnimationObject(parsed) {
+      return injectPoseAimIntoObject(parsed);
+    },
     snapshot() {
-      return { hideArmSprites, poseAim: JSON.parse(JSON.stringify(poseAim)) }; // Undo/Redo preserves all three hidden pose states.
+      return { hideArmSprites, showPaperArmGuide, poseAim: this.poseAim, poseElbows: this.poseElbows }; // Core anim.poses owns pose data; this duplicate remains only for backward-compatible history snapshots.
     },
     restore(snapshot) {
       if (!snapshot) return false;
       hideArmSprites = snapshot.hideArmSprites === true;
-      for (const phase of PHASES) poseAim[phase] = normalizeBooleanAim(snapshot.poseAim?.[phase], DEFAULTS[phase]);
+      showPaperArmGuide = snapshot.showPaperArmGuide === true;
+      for (const phase of PHASES) {
+        poseAim[phase] = normalizeBooleanAim(snapshot.poseAim?.[phase], DEFAULTS[phase]);
+        poseElbows[phase] = normalizeElbows({ elbows: snapshot.poseElbows?.[phase] || {} });
+        corePoseState()?.setShoulderAim?.(phase, poseAim[phase]);
+        for (const side of SIDES) corePoseState()?.setElbow?.(phase, side, poseElbows[phase][side]);
+      }
+      global.ProceduralHandShoulderAim?.setPaperArmGuideVisible?.(showPaperArmGuide);
       syncCheckboxes();
       refreshJsonExtension();
+      global.renderActivePosePanel?.();
       requestPreviewRebuild();
       global.ProceduralHandFrameDriver?.syncNow?.();
       return true;
@@ -252,4 +383,5 @@
     },
     syncControls: syncCheckboxes,
   };
+  global.renderActivePosePanel?.();
 })(window);

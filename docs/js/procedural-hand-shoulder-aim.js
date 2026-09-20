@@ -1,10 +1,13 @@
-// Hand-only shoulder compass. Painted arm sprites remain untouched.
+// Hand-only proximal arm targeting. Painted arm sprites remain untouched.
 //
 // Shoulder targets come from attachment-rig profiles when present. Legacy manually
-// authored 200x200 points and portrait-hand-shoulder-scan.js remain fallbacks. The hand's local +Y
-// is treated as the wrist/top direction. Pitch/yaw/roll use independent 0..1 weights
-// supplied by hand-shoulder-pose-runtime.js, so checkbox changes between animation
-// poses blend smoothly instead of snapping.
+// authored 200x200 points and portrait-hand-shoulder-scan.js remain fallbacks.
+// The hand socket/origin IS the wrist. The authored hand GLBs point fingers local -Y,
+// so the wrist/proximal side is local +Y. That axis targets the pose-authored elbow.
+// The correction
+// may rotate only around two HAND-LOCAL hinges:
+// local X (grip axis) and local -Z (directed palm-normal axis). There is deliberately no local-Y
+// shoulder hinge. Per-pose weights come from hand-shoulder-pose-runtime.js.
 (function (global) {
   'use strict';
 
@@ -15,9 +18,25 @@
   if (!hands?.attach || hands.attach.__hobunjiShoulderAimWrapped) return;
 
   const originalAttach = hands.attach.bind(hands);
+  const activeGuideControllers = new Set(); // Lets the Attack Editor toggle paper-arm guides on already-created hand rigs.
+  let paperArmGuideVisible = false; // Editor-only x-ray guide state; gameplay leaves this false.
 
   function clamp01(value) { return Math.max(0, Math.min(1, Number(value) || 0)); }
   function clampUnit(value) { return Math.max(-1, Math.min(1, Number(value) || 0)); }
+
+  // Pure hand-local decomposition used by runtime and regression tests.
+  // Starting from proximal +Y: rotate around +X to match Z, then around the
+  // directed palm normal -Z to match X/Y. Because the axis is -Z, the second
+  // angle is atan2(+X, Y); using atan2(-X, Y) would mirror the correction.
+  function solveLocalHingeAngles(direction = {}) {
+    const x = Number(direction.x) || 0;
+    const y = Number(direction.y) || 0;
+    const z = Number(direction.z) || 0;
+    return {
+      grip: Math.atan2(z, Math.hypot(x, y)),
+      palmNormal: Math.atan2(x, y),
+    };
+  }
 
   function installShoulderAim(THREE, rig, options = {}) {
     const avatarRoot = options.avatarRoot || rig?.avatarRoot || null;
@@ -32,18 +51,26 @@
 
     const shoulderAvatar = {};
     const shoulderSource = { left: 'pending', right: 'pending' };
-    const localTop = new THREE.Vector3(0, 1, 0);
+    const localWristProximalAxis = new THREE.Vector3(0, 1, 0); // Real GLB convention: fingers are local -Y, so +Y points from wrist back up the forearm.
+    const localGripAxis = new THREE.Vector3(1, 0, 0); // Across the grasp; first allowed proximal-target hinge.
+    const localPalmNormalAxis = new THREE.Vector3(0, 0, -1); // Authored source palms face away from camera, so the directed palm normal is local -Z.
     const shoulderWorld = new THREE.Vector3();
     const shoulderParent = new THREE.Vector3();
     const targetDirection = new THREE.Vector3();
-    const currentTop = new THREE.Vector3();
-    const deltaQuaternion = new THREE.Quaternion();
-    const weightedDeltaQuaternion = new THREE.Quaternion();
+    const localTargetDirection = new THREE.Vector3();
+    const aimedWristAxis = new THREE.Vector3();
+    const inverseAuthoredQuaternion = new THREE.Quaternion();
+    const gripCorrectionQuaternion = new THREE.Quaternion();
+    const palmNormalCorrectionQuaternion = new THREE.Quaternion();
+    const localCorrectionQuaternion = new THREE.Quaternion();
     const authoredQuaternion = new THREE.Quaternion();
     const outputQuaternion = new THREE.Quaternion();
-    const rotationVector = new THREE.Vector3();
-    const weightedRotationVector = new THREE.Vector3();
-    const rotationAxis = new THREE.Vector3();
+    const guideSpan = new THREE.Vector3(); // Reused by the optional paper-arm preview.
+    const guideBend = new THREE.Vector3(); // Reused elbow bend direction for the optional paper-arm preview.
+    const guideMidpoint = new THREE.Vector3(); // Reused midpoint between shoulder and wrist for the paper-arm preview.
+    const guideElbow = new THREE.Vector3(); // Reused computed elbow position for the paper-arm preview.
+    const guideDirection = new THREE.Vector3(); // Reused segment direction when orienting paper strips.
+    const guideLocalY = new THREE.Vector3(0, 1, 0); // Plane-strip length axis used by the paper-arm preview.
     const debugEuler = new THREE.Euler(0, 0, 0, 'YXZ');
     const debugBySide = { left: null, right: null };
     const authoredBaseBySide = {
@@ -52,6 +79,7 @@
     }; // Stores the un-aimed frame so async scans/control changes can never re-aim an already corrected hand.
     const authoredBaseValid = { left: false, right: false }; // Tracks whether each side has received a raw tool/idle frame yet.
     const freeSide = { left: true, right: true }; // Prevents shoulder-coordinate edits from translating a hand currently owned by a tool animation.
+    const paperArmBySide = { left: null, right: null }; // Lazily-created non-authoritative two-strip arm guides for editor inspection.
     let scanState = scanner?.scanProfile || scanner?.scanSpecies ? 'pending' : 'unavailable';
     let scanError = null;
     let disposed = false;
@@ -61,8 +89,8 @@
     }
 
     function weightsFor(side) {
-      const weights = poseRuntime?.currentWeights?.(side) || { pitch: 1, yaw: 0, roll: 1 };
-      return { pitch: clamp01(weights.pitch), yaw: clamp01(weights.yaw), roll: clamp01(weights.roll) };
+      const weights = poseRuntime?.currentWeights?.(side) || { grip: 1, palmNormal: 1 };
+      return { grip: clamp01(weights.grip), palmNormal: clamp01(weights.palmNormal) };
     }
 
     function portraitPixelToAvatar(x, y, sourceWidth = 200, sourceHeight = 200) {
@@ -193,34 +221,124 @@
       return true;
     }
 
-    // Convert a shortest parent-space quaternion correction into its rotation-vector
-    // (quaternion logarithm) form. Unlike Euler decomposition, this has no gimbal
-    // singularity and its X/Y/Z components are stable parent-space correction axes.
-    function quaternionToRotationVector(q, target) {
-      let x = Number(q.x) || 0;
-      let y = Number(q.y) || 0;
-      let z = Number(q.z) || 0;
-      let w = Number.isFinite(Number(q.w)) ? Number(q.w) : 1;
-      const length = Math.hypot(x, y, z, w) || 1;
-      x /= length; y /= length; z /= length; w /= length;
-      // q and -q are the same orientation. Keep the representation on the shortest
-      // hemisphere so interpolation cannot jump by almost a full turn.
-      if (w < 0) { x = -x; y = -y; z = -z; w = -w; }
-      const angle = 2 * Math.acos(clampUnit(w));
-      const sinHalf = Math.sqrt(Math.max(0, 1 - w * w));
-      if (sinHalf < 1e-7 || angle < 1e-7) {
-        target.set(x * 2, y * 2, z * 2);
-      } else {
-        target.set(x / sinHalf, y / sinHalf, z / sinHalf).multiplyScalar(angle);
-      }
-      return target;
+    function armGuideLength(side) {
+      const sideReach = Number(avatarRoot.userData?.armLengthBySide?.[side]); // Preferred rigger-derived shoulder-to-resting-wrist reach for this arm.
+      if (Number.isFinite(sideReach) && sideReach > 0) return sideReach;
+      const rendered = Number(avatarRoot.userData?.scaledArmLength); // Already concrete avatar-local reach; do not model-height-scale it again.
+      if (Number.isFinite(rendered) && rendered > 0) return rendered;
+      const authored = Number(avatarRoot.userData?.armLength);
+      return Number.isFinite(authored) && authored > 0 ? authored : modelHeight * 0.42;
     }
 
-    function quaternionFromRotationVector(vector, target) {
-      const angle = vector.length();
-      if (angle < 1e-8) return target.identity();
-      rotationAxis.copy(vector).multiplyScalar(1 / angle);
-      return target.setFromAxisAngle(rotationAxis, angle).normalize();
+    function resolveElbowInParent(side, shoulder, target = guideElbow) {
+      const socket = socketFor(side);
+      if (!socket || !shoulder) return null;
+      const authoredOffset = poseRuntime?.currentElbow?.(side) || null; // Direct pose data: shoulder-relative elbow offset in the same local space as shoulder/wrist.
+      if (authoredOffset) {
+        target.set(
+          shoulder.x + Number(authoredOffset.x || 0),
+          shoulder.y + Number(authoredOffset.y || 0),
+          shoulder.z + Number(authoredOffset.z || 0),
+        );
+      } else {
+        // Legacy animations predate elbow keyframes. Preserve their old hand-to-
+        // shoulder targeting; midpoint creation belongs exclusively to the editor.
+        target.copy(shoulder);
+      }
+      const upperArmLength = target.distanceTo(shoulder);
+      const forearmLength = target.distanceTo(socket.position);
+      const shoulderWristDistance = shoulder.distanceTo(socket.position);
+      const diagnosticArmLength = armGuideLength(side);
+      return {
+        elbow: target,
+        source: authoredOffset ? 'pose-authored' : 'legacy-shoulder-target',
+        authoredOffset: authoredOffset ? { x: authoredOffset.x, y: authoredOffset.y, z: authoredOffset.z } : null,
+        diagnosticArmLength,
+        upperArmLength,
+        forearmLength,
+        shoulderWristDistance,
+        authoredPolylineLength: upperArmLength + forearmLength,
+      };
+    }
+
+    function makePaperArmGuide(side) {
+      if (paperArmBySide[side]) return paperArmBySide[side];
+      const root = new THREE.Group(); // Parent-local x-ray scaffold; it never drives hand or shoulder transforms.
+      root.name = `${side}_paper_arm_guide`;
+      root.userData = { visualOnly: true, elbowPoseAuthoritative: true, jointLimitsApplied: false };
+      const material = new THREE.MeshBasicMaterial({
+        color: 0xffffff, wireframe: true, transparent: true, opacity: 0.82,
+        depthTest: false, depthWrite: false, side: THREE.DoubleSide,
+      });
+      material.name = 'paper_arm_xray_wire';
+      const width = Math.max(0.012, modelHeight * 0.035); // Visible strip width used by both upper/lower guide segments.
+      const makeStrip = name => {
+        const strip = new THREE.Mesh(new THREE.PlaneGeometry(width, 1), material);
+        strip.name = name;
+        strip.renderOrder = 9999;
+        strip.frustumCulled = false;
+        root.add(strip);
+        return strip;
+      };
+      const upper = makeStrip(`${side}_paper_upper_arm`);
+      const lower = makeStrip(`${side}_paper_forearm`);
+      const elbow = new THREE.Mesh(
+        new THREE.SphereGeometry(Math.max(0.012, modelHeight * 0.026), 10, 8),
+        material,
+      );
+      elbow.name = `${side}_paper_elbow`;
+      elbow.renderOrder = 10000;
+      elbow.frustumCulled = false;
+      root.add(elbow);
+      root.visible = false;
+      parent.add(root);
+      paperArmBySide[side] = { root, upper, lower, elbow, material };
+      return paperArmBySide[side];
+    }
+
+    function placePaperStrip(strip, from, to) {
+      guideDirection.copy(to).sub(from);
+      const length = guideDirection.length();
+      if (!(length > 1e-8)) { strip.visible = false; return; }
+      strip.visible = true;
+      strip.position.copy(from).add(to).multiplyScalar(0.5);
+      strip.quaternion.setFromUnitVectors(guideLocalY, guideDirection.multiplyScalar(1 / length));
+      strip.scale.set(1, length, 1);
+      strip.updateMatrix?.();
+    }
+
+    function updatePaperArmGuide(side, shoulder, solved = null) {
+      const existing = paperArmBySide[side];
+      if (!paperArmGuideVisible) {
+        if (existing) existing.root.visible = false;
+        return;
+      }
+      const socket = socketFor(side);
+      if (!socket || !shoulder) {
+        if (existing) existing.root.visible = false;
+        return;
+      }
+      const elbowSolve = solved || resolveElbowInParent(side, shoulder, guideElbow);
+      if (!elbowSolve) {
+        if (existing) existing.root.visible = false;
+        return;
+      }
+      const guide = makePaperArmGuide(side);
+      const elbow = elbowSolve.elbow;
+      placePaperStrip(guide.upper, shoulder, elbow);
+      placePaperStrip(guide.lower, elbow, socket.position);
+      guide.elbow.position.copy(elbow);
+      guide.root.userData.armLength = elbowSolve.diagnosticArmLength;
+      guide.root.userData.armLengthSource = avatarRoot.userData?.armLengthSource || 'fallback';
+      guide.root.userData.upperArmLength = elbowSolve.upperArmLength;
+      guide.root.userData.forearmLength = elbowSolve.forearmLength;
+      guide.root.userData.authoredPolylineLength = elbowSolve.authoredPolylineLength;
+      guide.root.userData.shoulderWristDistance = elbowSolve.shoulderWristDistance;
+      guide.root.userData.elbowSource = elbowSolve.source;
+      guide.root.userData.authoredElbowOffset = elbowSolve.authoredOffset ? { ...elbowSolve.authoredOffset } : null;
+      guide.root.userData.resolvedElbow = { x: elbow.x, y: elbow.y, z: elbow.z };
+      guide.root.visible = true;
+      guide.root.updateMatrixWorld?.(true);
     }
 
     function aimSide(side) {
@@ -236,75 +354,67 @@
         debugBySide[side] = { weights, applied: false, reason: 'authored-base-missing' };
         return false;
       }
-      if (weights.pitch <= 0 && weights.yaw <= 0 && weights.roll <= 0) {
-        socket.quaternion.copy(authoredQuaternion);
-        socket.updateMatrix?.();
-        socket.updateMatrixWorld?.(true);
-        debugBySide[side] = { weights, applied: false, reason: 'all-axis-weights-zero' };
-        return false;
-      }
-
-      targetDirection.copy(shoulder).sub(socket.position);
+      const elbowSolve = resolveElbowInParent(side, shoulder, guideElbow);
+      const elbow = elbowSolve?.elbow || shoulder;
+      targetDirection.copy(elbow).sub(socket.position); // Forearm direction: the wrist-facing hand axis points back toward the elbow.
       if (targetDirection.lengthSq() < 1e-10) {
         socket.quaternion.copy(authoredQuaternion);
         socket.updateMatrix?.();
         socket.updateMatrixWorld?.(true);
-        debugBySide[side] = { weights, applied: false, reason: 'hand-at-shoulder' };
+        updatePaperArmGuide(side, shoulder, elbowSolve);
+        debugBySide[side] = { weights, applied: false, reason: 'hand-at-elbow' };
         return false;
       }
       targetDirection.normalize();
 
-      // Shoulder-follow owns the GENERIC hand socket only. Per-GLB Hand Model
-      // Calibration is a child basis-conversion layer and must not participate in
-      // this solve at all; otherwise changing calibration makes shoulder-follow
-      // counter-rotate it and the editor's X/Y/Z controls appear coupled again.
-      currentTop.copy(localTop).applyQuaternion(authoredQuaternion).normalize();
-      deltaQuaternion.setFromUnitVectors(currentTop, targetDirection).normalize();
+      // Elbow targeting owns the GENERIC hand socket only. Per-GLB calibration
+      // remains a child layer. Convert the elbow direction into this authored
+      // socket's LOCAL hand basis, then solve only the X and Z hinges.
+      inverseAuthoredQuaternion.copy(authoredQuaternion).invert();
+      localTargetDirection.copy(targetDirection).applyQuaternion(inverseAuthoredQuaternion).normalize();
+      const solvedHinges = solveLocalHingeAngles(localTargetDirection);
+      const gripAngle = solvedHinges.grip; // Local +X hinge moves the +Y proximal axis out of the palm plane.
+      const palmNormalAngle = solvedHinges.palmNormal; // Local -Z hinge turns the +Y proximal axis within the palm plane.
+      const appliedGripAngle = gripAngle * weights.grip;
+      const appliedPalmNormalAngle = palmNormalAngle * weights.palmNormal;
 
-      // A single target vector defines swing but not twist. The old implementation
-      // decomposed this delta into YXZ Euler angles, which made the selected axis
-      // components change at/near 90-degree base rotations. Weight the quaternion's
-      // rotation-vector components instead: X=Pitch, Y=Yaw, Z=Roll in parent space.
-      // With all weights at 1 this reconstructs the exact shortest correction; with
-      // partial/per-pose weights it remains continuous and free of Euler singularities.
-      quaternionToRotationVector(deltaQuaternion, rotationVector);
-      weightedRotationVector.set(
-        rotationVector.x * weights.pitch,
-        rotationVector.y * weights.yaw,
-        rotationVector.z * weights.roll,
-      );
-      quaternionFromRotationVector(weightedRotationVector, weightedDeltaQuaternion);
-      outputQuaternion.copy(weightedDeltaQuaternion).multiply(authoredQuaternion).normalize();
+      gripCorrectionQuaternion.setFromAxisAngle(localGripAxis, appliedGripAngle);
+      palmNormalCorrectionQuaternion.setFromAxisAngle(localPalmNormalAxis, appliedPalmNormalAngle);
+      localCorrectionQuaternion.copy(palmNormalCorrectionQuaternion).multiply(gripCorrectionQuaternion).normalize();
+      outputQuaternion.copy(authoredQuaternion).multiply(localCorrectionQuaternion).normalize(); // Right multiply keeps both hinge axes hand-local.
       socket.quaternion.copy(outputQuaternion);
       socket.updateMatrix?.();
       socket.updateMatrixWorld?.(true);
+      updatePaperArmGuide(side, shoulder, elbowSolve);
 
-      const aimedTop = localTop.clone().applyQuaternion(outputQuaternion).normalize();
-      const residualRad = Math.acos(clampUnit(aimedTop.dot(targetDirection)));
+      aimedWristAxis.copy(localWristProximalAxis).applyQuaternion(outputQuaternion).normalize();
+      const residualRad = Math.acos(clampUnit(aimedWristAxis.dot(targetDirection)));
       const toDeg = THREE.MathUtils.radToDeg;
       debugBySide[side] = {
         weights: { ...weights },
-        applied: true,
+        applied: weights.grip > 0 || weights.palmNormal > 0,
         source: shoulderSource[side],
         shoulder: { x: shoulder.x, y: shoulder.y, z: shoulder.z },
+        wrist: { x: socket.position.x, y: socket.position.y, z: socket.position.z },
+        elbow: { x: elbow.x, y: elbow.y, z: elbow.z },
+        diagnosticArmLength: elbowSolve?.diagnosticArmLength ?? armGuideLength(side),
+        upperArmLength: elbowSolve?.upperArmLength ?? null,
+        forearmLength: elbowSolve?.forearmLength ?? null,
+        authoredPolylineLength: elbowSolve?.authoredPolylineLength ?? null,
+        shoulderWristDistance: elbowSolve?.shoulderWristDistance ?? null,
+        elbowSource: elbowSolve?.source || 'unknown',
+        authoredElbowOffset: elbowSolve?.authoredOffset || null,
         calibrationOwnership: 'ignored-child-layer',
         authoredQuaternion: quaternionDebug(authoredQuaternion),
         authoredDeg: eulerDebug(authoredQuaternion),
-        correctionRotationVectorDeg: {
-          pitch: toDeg(rotationVector.x),
-          yaw: toDeg(rotationVector.y),
-          roll: toDeg(rotationVector.z),
-        },
-        appliedRotationVectorDeg: {
-          pitch: toDeg(weightedRotationVector.x),
-          yaw: toDeg(weightedRotationVector.y),
-          roll: toDeg(weightedRotationVector.z),
-        },
+        targetDirectionLocal: { x: localTargetDirection.x, y: localTargetDirection.y, z: localTargetDirection.z },
+        solvedLocalAnglesDeg: { grip: toDeg(gripAngle), palmNormal: toDeg(palmNormalAngle) },
+        appliedLocalAnglesDeg: { grip: toDeg(appliedGripAngle), palmNormal: toDeg(appliedPalmNormalAngle) },
         residualDeg: toDeg(residualRad),
         outputQuaternion: quaternionDebug(outputQuaternion),
         outputDeg: eulerDebug(outputQuaternion),
       };
-      return true;
+      return weights.grip > 0 || weights.palmNormal > 0;
     }
 
     function aimAll() {
@@ -358,7 +468,7 @@
     const originalPlaceHandWorld = rig.placeHandWorld?.bind(rig);
     if (originalPlaceHandWorld) {
       rig.placeHandWorld = function shoulderAimPlaceHandWorld(side, worldPosition, worldQuaternion, modelCalibration = null) {
-        const result = originalPlaceHandWorld(side, worldPosition, worldQuaternion, modelCalibration); // Forward the calibration child payload unchanged; shoulder-follow owns only the socket quaternion.
+        const result = originalPlaceHandWorld(side, worldPosition, worldQuaternion, modelCalibration); // Forward the calibration child payload unchanged; proximal targeting owns only the socket quaternion.
         if (result) {
           freeSide[side] = false;
           captureAuthoredBase(side);
@@ -395,10 +505,27 @@
       };
     }
 
+    const guideController = {
+      refresh() { for (const side of ['left', 'right']) updatePaperArmGuide(side, shoulderInParent(side)); },
+      dispose() {
+        for (const guide of Object.values(paperArmBySide)) {
+          if (!guide) continue;
+          guide.root.parent?.remove?.(guide.root);
+          guide.upper.geometry?.dispose?.();
+          guide.lower.geometry?.dispose?.();
+          guide.elbow.geometry?.dispose?.();
+          guide.material?.dispose?.();
+        }
+      },
+    }; // Registered below so the editor can toggle guides without rebuilding avatars.
+    activeGuideControllers.add(guideController);
+
     const originalDispose = rig.dispose?.bind(rig);
     rig.dispose = function shoulderAimDispose() {
       disposed = true;
       unsubscribePoints?.();
+      activeGuideControllers.delete(guideController);
+      guideController.dispose();
       return originalDispose?.();
     };
 
@@ -407,9 +534,21 @@
       return {
         ...(originalDebug?.() || {}),
         shoulderCompass: {
-          mode: 'idempotent-rotation-vector-components',
-          localTopAxis: '+Y',
-          componentSpace: 'parent',
+          mode: 'hand-local-two-hinge',
+          targetFeature: 'elbow',
+          wristProximalAxis: '+Y',
+          componentSpace: 'hand-local',
+          allowedHinges: { grip: '+X', palmNormal: '-Z' },
+          paperArmGuide: {
+            visible: paperArmGuideVisible,
+            authoritative: false,
+            elbowPoseAuthoritative: true,
+            jointLimitsApplied: false,
+            sides: Object.fromEntries(['left', 'right'].map(side => [
+              side,
+              paperArmBySide[side]?.root?.userData ? { ...paperArmBySide[side].root.userData } : null,
+            ])),
+          },
           scanState,
           scanError,
           shoulderSource: { ...shoulderSource },
@@ -431,10 +570,22 @@
   hands.attach = wrappedAttach;
 
   global.ProceduralHandShoulderAim = Object.freeze({
-    mode: 'idempotent-rotation-vector-components',
-    componentSpace: 'parent',
-    localTopAxis: '+Y',
-    idleWeights: Object.freeze({ pitch: 1, yaw: 0, roll: 1 }),
-    activeWeights: Object.freeze({ pitch: 0, yaw: 0, roll: 1 }),
+    mode: 'hand-local-two-hinge',
+    componentSpace: 'hand-local',
+    targetFeature: 'elbow',
+    wristProximalAxis: '+Y',
+    allowedHinges: Object.freeze({ grip: '+X', palmNormal: '-Z' }),
+    solveLocalHingeAngles,
+    idleWeights: Object.freeze({ grip: 1, palmNormal: 1 }),
+    activeWeights: Object.freeze({ grip: 0, palmNormal: 1 }),
+    setPaperArmGuideVisible(value) {
+      paperArmGuideVisible = value === true;
+      for (const controller of activeGuideControllers) controller.refresh();
+      return paperArmGuideVisible;
+    },
+    get paperArmGuideVisible() { return paperArmGuideVisible; },
+    refreshPaperArmGuides() {
+      for (const controller of activeGuideControllers) controller.refresh();
+    },
   });
 })(window);

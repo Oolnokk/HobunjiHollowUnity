@@ -28,6 +28,99 @@ function buildFixture() {
   return { windowObject, intervals };
 }
 
+// --- Semantic local hinges preserve legacy pose data without a third hinge ---
+{
+  const { windowObject } = buildFixture();
+  const runtime = windowObject.HobunjiHandShoulderPoseRuntime;
+  assert.deepEqual(JSON.parse(JSON.stringify(runtime.idle)), { grip: 1, palmNormal: 1 }, 'idle shoulder-follow exposes the two hand-local hinges');
+  assert.deepEqual(JSON.parse(JSON.stringify(runtime.active)), { grip: 0, palmNormal: 1 }, 'active shoulder-follow keeps only the palm-normal hinge by default');
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(runtime.normalize({ pitch: false, yaw: true, roll: true }, runtime.idle))),
+    { grip: 0, palmNormal: 1 },
+    'legacy Pitch/Roll migrate to grip/palm-normal and legacy Yaw does not create a third hinge',
+  );
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(runtime.normalize({ grip: true, palmNormal: false }, runtime.active))),
+    { grip: 1, palmNormal: 0 },
+    'semantic hinge data loads directly without legacy translation',
+  );
+}
+
+// --- Direct per-side elbows interpolate with the same pose timeline ----------
+{
+  const { windowObject } = buildFixture();
+  const runtime = windowObject.HobunjiHandShoulderPoseRuntime;
+  const pose = {
+    neutral: { elbows: { right: { x: 0, y: 0, z: 0 } } },
+    windup: { elbows: { right: { x: 0.2, y: 0.1, z: -0.3 } } },
+    strike: { elbows: { right: { x: -0.4, y: 0.2, z: 0.5 } } },
+  };
+  const atWindup = runtime.elbowAt(0.16, { windupFrac: 0.16, strikeFrac: 0.55, holdFrac: 0.68 }, pose, 'attack', 'right');
+  assert(Math.abs(atWindup.x - 0.2) < 1e-9 && Math.abs(atWindup.y - 0.1) < 1e-9 && Math.abs(atWindup.z + 0.3) < 1e-9,
+    'direct right-elbow pose reaches the authored windup point on the shared phase boundary');
+  assert.strictEqual(runtime.elbowAt(0.16, { windupFrac: 0.16 }, pose, 'attack', 'left'), null,
+    'one hand may omit an elbow without inventing coordinates for the other hand');
+}
+
+// --- Attack mirror signs preserve hand identity and mirror only elbow X -------
+{
+  const { windowObject } = buildFixture();
+  const runtime = windowObject.HobunjiHandShoulderPoseRuntime;
+  const pose = {
+    neutral: { elbows: {
+      left: { x: -0.1, y: 0.3, z: 0.05 },
+      right: { x: 0.25, y: 0.4, z: -0.08 },
+    } },
+    windup: { elbows: {
+      left: { x: -0.2, y: 0.35, z: 0.1 },
+      right: { x: 0.45, y: 0.2, z: -0.15 },
+    } },
+    strike: { elbows: {
+      left: { x: -0.3, y: 0.15, z: 0.2 },
+      right: { x: 0.55, y: 0.1, z: -0.25 },
+    } },
+  };
+  const timing = {
+    windupFrac: 0.2,
+    strikeFrac: 0.6,
+    holdFrac: 0.7,
+    activeMirrorSign: -1,
+    neutralMirrorSign: -1,
+    returnNeutralMirrorSign: 1,
+  };
+  const startRight = runtime.elbowAt(0, timing, pose, 'attack', 'right');
+  assert.deepEqual(JSON.parse(JSON.stringify(startRight)), { x: -0.25, y: 0.4, z: -0.08 },
+    'Backhand start Neutral must mirror the RIGHT elbow X without swapping it to the left hand');
+  const windupRight = runtime.elbowAt(0.2, timing, pose, 'attack', 'right');
+  assert.deepEqual(JSON.parse(JSON.stringify(windupRight)), { x: -0.45, y: 0.2, z: -0.15 },
+    'Backhand active Windup must mirror the same RIGHT elbow');
+  const windupLeft = runtime.elbowAt(0.2, timing, pose, 'attack', 'left');
+  assert.deepEqual(JSON.parse(JSON.stringify(windupLeft)), { x: 0.2, y: 0.35, z: 0.1 },
+    'Backhand must independently mirror the LEFT elbow rather than swapping hand identities');
+  const endRight = runtime.elbowAt(1, timing, pose, 'attack', 'right');
+  assert(Math.abs(endRight.x - 0.25) < 1e-12 && Math.abs(endRight.y - 0.4) < 1e-12 && Math.abs(endRight.z + 0.08) < 1e-12,
+    'alternating Heavy return Neutral must use its distinct unmirrored return sign');
+}
+
+// --- Missing elbow phases blend through the legacy shoulder target ----------
+{
+  const { windowObject } = buildFixture();
+  const runtime = windowObject.HobunjiHandShoulderPoseRuntime;
+  const pose = {
+    neutral: {},
+    windup: { elbows: { right: { x: 0.4, y: 0.2, z: -0.1 } } },
+    strike: {},
+  };
+  const atStart = runtime.elbowAt(0, { windupFrac: 0.2, strikeFrac: 0.6, holdFrac: 0.7 }, pose, 'attack', 'right');
+  assert.deepEqual(JSON.parse(JSON.stringify(atStart)), { x: 0, y: 0, z: 0 },
+    'missing Neutral elbow must mean shoulder-relative zero instead of snapping immediately to Windup');
+  const halfway = runtime.elbowAt(0.1, { windupFrac: 0.2, strikeFrac: 0.6, holdFrac: 0.7 }, pose, 'attack', 'right');
+  assert.deepEqual(JSON.parse(JSON.stringify(halfway)), { x: 0.2, y: 0.1, z: -0.05 },
+    'partially-authored elbows must interpolate continuously from the legacy shoulder target');
+  const allMissing = runtime.elbowAt(0.1, { windupFrac: 0.2 }, { neutral: {}, windup: {}, strike: {} }, 'attack', 'right');
+  assert.strictEqual(allMissing, null, 'an animation with no elbow keyframes at all must retain legacy shoulder targeting');
+}
+
 // --- Loading the module starts exactly one 250ms setInterval poll ----------
 {
   const { intervals } = buildFixture();

@@ -16,7 +16,7 @@
   const selfUrl = document.currentScript?.src ? new URL(document.currentScript.src, location.href) : null;
   const docsBase = selfUrl ? new URL('../', selfUrl) : new URL('./', location.href);
   const IDLE_MEDIAL_YAW_DEG = 90;
-  const RIGHT_SHOULDER_AXIS_TWIST_DEG = 180; // Applied to the right visual around local +Y, the wrist-to-shoulder axis used below.
+  const RIGHT_SHOULDER_AXIS_TWIST_DEG = 180; // Applied around the local Y axis line. Source hand GLBs point fingers along local -Y, so local +Y is the wrist/proximal direction used by elbow targeting.
   const OUTLINE_OCCLUDER_DEPTH_LAYER = 4; // Used by the game's pre-shell depth replay so the depthWrite-disabled parrot body primitive can still produce a clean shell.
   const PARROT_BODY_SHELL_Y_PADDING = 0.02; // Keeps the body-coloured shell just beyond the highest keratin digit, before the continuous mesh becomes the portrait-covered wing.
   let showGripGuides = false;
@@ -480,57 +480,57 @@
     gripOrb.frustumCulled = false;
     root.add(gripOrb); // Local 0,0,0 is the exact neutral paper-hand socket/origin the GLB is calibrated against.
 
-    // Wrist/origin is at the lower-middle edge of the palm. The whole reference
-    // is normalized to about one hand-height and later receives the exact same
-    // target height, mirror sign and right-hand visual twist as the real model.
+    // Match the real hand-model convention exactly: wrist/origin is at the
+    // upper-middle edge of the palm and fingers extend local -Y. The previous
+    // paper guide extended +Y and falsely suggested the opposite proximal axis.
     const palm = plane('paperPalm', 0.54, 0.46);
-    palm.position.set(0, 0.23, 0);
+    palm.position.set(0, -0.23, 0);
     root.add(palm);
 
     const finger1Pivot = new THREE.Group();
     finger1Pivot.name = 'paperFinger1Pivot';
-    finger1Pivot.position.set(0, 0.46, 0.01);
+    finger1Pivot.position.set(0, -0.46, 0.01);
     finger1Pivot.rotation.x = THREE.MathUtils.degToRad(-18);
     const finger1 = plane('paperFinger1', 0.36, 0.18);
-    finger1.position.y = 0.09;
+    finger1.position.y = -0.09;
     finger1Pivot.add(finger1);
     root.add(finger1Pivot);
 
     const finger2Pivot = new THREE.Group();
     finger2Pivot.name = 'paperFinger2Pivot';
-    finger2Pivot.position.set(0, 0.18, 0);
+    finger2Pivot.position.set(0, -0.18, 0);
     finger2Pivot.rotation.x = THREE.MathUtils.degToRad(-28);
     const finger2 = plane('paperFinger2', 0.33, 0.16);
-    finger2.position.y = 0.08;
+    finger2.position.y = -0.08;
     finger2Pivot.add(finger2);
     finger1Pivot.add(finger2Pivot);
 
     const finger3Pivot = new THREE.Group();
     finger3Pivot.name = 'paperFinger3Pivot';
-    finger3Pivot.position.set(0, 0.16, 0);
+    finger3Pivot.position.set(0, -0.16, 0);
     finger3Pivot.rotation.x = THREE.MathUtils.degToRad(-34);
     const finger3 = plane('paperFinger3', 0.29, 0.13);
-    finger3.position.y = 0.065;
+    finger3.position.y = -0.065;
     finger3Pivot.add(finger3);
     finger2Pivot.add(finger3Pivot);
 
     const thumb1Pivot = new THREE.Group();
     thumb1Pivot.name = 'paperThumb1Pivot';
-    thumb1Pivot.position.set(0.28, 0.18, 0.015); // Canonical source-left thumb; right-hand mirroring is applied to the whole reference below.
+    thumb1Pivot.position.set(0.28, -0.18, 0.015); // Canonical source-left thumb; right-hand mirroring is applied to the whole reference below.
     thumb1Pivot.rotation.x = THREE.MathUtils.degToRad(-20);
     thumb1Pivot.rotation.z = THREE.MathUtils.degToRad(-52);
     const thumb1 = plane('paperThumb1', 0.16, 0.17);
-    thumb1.position.y = 0.085;
+    thumb1.position.y = -0.085;
     thumb1Pivot.add(thumb1);
     root.add(thumb1Pivot);
 
     const thumb2Pivot = new THREE.Group();
     thumb2Pivot.name = 'paperThumb2Pivot';
-    thumb2Pivot.position.set(0, 0.17, 0);
+    thumb2Pivot.position.set(0, -0.17, 0);
     thumb2Pivot.rotation.x = THREE.MathUtils.degToRad(-34);
     thumb2Pivot.rotation.z = THREE.MathUtils.degToRad(-12);
     const thumb2 = plane('paperThumb2', 0.14, 0.13);
-    thumb2.position.y = 0.065;
+    thumb2.position.y = -0.065;
     thumb2Pivot.add(thumb2);
     thumb1Pivot.add(thumb2Pivot);
 

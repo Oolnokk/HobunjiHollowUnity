@@ -1,29 +1,24 @@
 // Shared melee windup/strike spacing calibration.
 //
-// The calibration comes from the user-authored Forehand Swing comparison:
-// old editor Forehand endpoint -> uploaded endpoint.  Authored attack positions
-// are Mao'ao-relative; species/gender reach scaling still happens later around
-// each avatar centroid, so this module must stay in canonical Mao'ao space.
+// The user-authored Forehand comparison contains two independent changes:
+//   1) vertical authored Y: 0.00 -> +0.17;
+//   2) horizontal reach: its character-local ground-plane point moved farther
+//      from the player.  Runtime Three.js uses X/Z for that horizontal plane
+//      (the game's logical world X/Y).
 //
-// Two requirements are combined deliberately:
-//   1) lift every offensive melee endpoint by the uploaded +0.17 local Y;
-//   2) add the Forehand's measured character-local XY range increase while
-//      keeping each attack on its own original ray from the character.
-//
-// Those constraints cannot all be satisfied by only adding +0.17 to the final
-// Y coordinate: extending range along a ray also changes Y.  We therefore first
-// apply the +0.17 lift (the intentional direction change), then extend along
-// that lifted ray until the requested phase-specific total range is reached.
-// X/Z are adjusted together so character-local depth is preserved.
+// Every offensive melee endpoint therefore keeps its own ORIGINAL horizontal
+// ray from the character, adds the Forehand-derived horizontal range delta,
+// and then receives the exact +0.17 vertical Y lift.  BodyYaw may rotate the
+// whole ray later, but rotation cannot change its radius, so calibration is
+// performed in the pre-bodyYaw character-local frame.
 (function (global) {
   'use strict';
 
   const MAO_AO_TOOL_BASE = Object.freeze({
     x: -0.2426,
-    y: 0.4085,
-  }); // Mao'ao/male scanned tool base from the editor/runtime transform dump used to author this calibration.
+  }); // Canonical Mao'ao/male scanned right-hand attach X used by the Forehand authoring session.
 
-  const Y_LIFT = 0.17; // Uploaded Forehand windup/strike y (0.17) minus the original 0.00.
+  const Y_LIFT = 0.17; // Uploaded Forehand windup/strike authored Y minus the original authored Y.
 
   const FOREHAND_BEFORE = Object.freeze({
     windup: Object.freeze({ x: 0, y: 0, z: 0.16, bodyYaw: -126.05 }),
@@ -39,28 +34,33 @@
     return Number.isFinite(n) ? n : 0;
   }
 
-  // Convert an authored endpoint into the character-local horizontal/vertical
-  // point the weapon holder reaches.  bodyYaw rotates the authored right/forward
-  // plane; local Y is independent of that turn for ordinary melee attacks.
+  function preYawHorizontalPoint(raw = {}) {
+    return {
+      x: MAO_AO_TOOL_BASE.x + numberOrZero(raw.x),
+      z: numberOrZero(raw.z),
+    };
+  }
+
   function characterLocalPoint(raw = {}) {
+    const p = preYawHorizontalPoint(raw);
     const bodyYaw = numberOrZero(raw.bodyYaw) * Math.PI / 180;
     const c = Math.cos(bodyYaw);
     const s = Math.sin(bodyYaw);
-    const handX = MAO_AO_TOOL_BASE.x + numberOrZero(raw.x);
-    const z = numberOrZero(raw.z);
     return {
-      x: c * handX + s * z,
-      y: MAO_AO_TOOL_BASE.y + numberOrZero(raw.y),
-      z: -s * handX + c * z,
+      x: c * p.x + s * p.z,
+      y: numberOrZero(raw.y),
+      z: -s * p.x + c * p.z,
     };
   }
 
   function metrics(raw = {}) {
+    const pre = preYawHorizontalPoint(raw);
     const point = characterLocalPoint(raw);
     return {
       ...point,
-      rangeXY: Math.hypot(point.x, point.y),
-      directionDeg: Math.atan2(point.y, point.x) * 180 / Math.PI,
+      rangeXZ: Math.hypot(pre.x, pre.z),
+      directionDeg: Math.atan2(pre.z, pre.x) * 180 / Math.PI,
+      authoredY: numberOrZero(raw.y),
     };
   }
 
@@ -73,35 +73,35 @@
     strike: Object.freeze(metrics(FOREHAND_AFTER.strike)),
   });
   const RANGE_DELTA = Object.freeze({
-    windup: afterMetrics.windup.rangeXY - beforeMetrics.windup.rangeXY,
-    strike: afterMetrics.strike.rangeXY - beforeMetrics.strike.rangeXY,
+    windup: afterMetrics.windup.rangeXZ - beforeMetrics.windup.rangeXZ,
+    strike: afterMetrics.strike.rangeXZ - beforeMetrics.strike.rangeXZ,
   });
 
   function adjustEndpoint(raw = {}, phase = 'windup') {
     const delta = phase === 'strike' ? RANGE_DELTA.strike : RANGE_DELTA.windup;
-    const original = metrics(raw);
-    const liftedY = original.y + Y_LIFT;
-    const liftedRange = Math.hypot(original.x, liftedY);
-    const targetRange = Math.max(0, original.rangeXY + delta);
+    const original = preYawHorizontalPoint(raw);
+    const originalRange = Math.hypot(original.x, original.z);
+    const targetRange = Math.max(0, originalRange + delta);
 
-    // Degenerate endpoint: if the lifted vector is exactly zero, choose +Y.
-    const factor = liftedRange > 1e-12 ? targetRange / liftedRange : 0;
-    const targetX = liftedRange > 1e-12 ? original.x * factor : 0;
-    const targetY = liftedRange > 1e-12 ? liftedY * factor : targetRange;
-    const projectedXDelta = targetX - original.x;
+    let targetX;
+    let targetZ;
+    if (originalRange > 1e-12) {
+      const factor = targetRange / originalRange;
+      targetX = original.x * factor;
+      targetZ = original.z * factor;
+    } else {
+      // A truly centered weapon has no horizontal ray to preserve; use the
+      // canonical hand side rather than inventing a Forehand-specific direction.
+      targetX = MAO_AO_TOOL_BASE.x < 0 ? -targetRange : targetRange;
+      targetZ = 0;
+    }
 
-    // Changing authored x by c*d and z by s*d moves the projected character-
-    // local X by exactly d while leaving projected local Z unchanged.
-    const bodyYaw = numberOrZero(raw.bodyYaw) * Math.PI / 180;
-    const c = Math.cos(bodyYaw);
-    const s = Math.sin(bodyYaw);
-    const adjusted = {
+    return {
       ...raw,
-      x: numberOrZero(raw.x) + c * projectedXDelta,
-      y: targetY - MAO_AO_TOOL_BASE.y,
-      z: numberOrZero(raw.z) + s * projectedXDelta,
+      x: targetX - MAO_AO_TOOL_BASE.x,
+      y: numberOrZero(raw.y) + Y_LIFT,
+      z: targetZ,
     };
-    return adjusted;
   }
 
   function adjustPoseSet(pose = {}) {
@@ -125,6 +125,7 @@
 
   global.MeleePoseSpacing = Object.freeze({
     calibration,
+    preYawHorizontalPoint,
     characterLocalPoint,
     metrics,
     adjustEndpoint,

@@ -31,6 +31,7 @@ const shoulderControlsSource = read('docs/js/attack-editor-hand-shoulder-control
 const animationAuthorSource = read('docs/tools/animation-author/index.html');
 const npcPreviewSource = read('docs/js/npc-avatar-preview-utils.js');
 const heldSource = read('docs/js/held-action-animations.js');
+const weaponStanceSource = read('docs/js/weapon-tool-stances.js');
 const bridgeSource = read('docs/js/player-body-attachment-bridge.js');
 const weaponScaleSource = read('docs/js/weapon-png-scale.js');
 const materialRoleSource = read('docs/js/procedural-hand-foot-material-roles.js');
@@ -316,7 +317,7 @@ assert.match(driverSource, /function modelCalibrationForRecord\(record\)[\s\S]*c
 assert.match(driverSource, /const modelCalibration = modelCalibrationForRecord\(record\)[\s\S]*placeHandWorld\?\.\('right', primary\.position, primary\.quaternion, modelCalibration\)/, 'right-hand placement must pass the selected model calibration explicitly into the rig');
 assert.doesNotMatch(handSource, /function normalizedToolCalibration\(|syncToolCalibration\(|setToolCalibrationEnabled\(/, 'attachment rig must not maintain a second species-resolved calibration path');
 assert.doesNotMatch(shoulderAimSource, /toolCalibrationLocal|hand_calibration/, 'shoulder-follow must not read or write the model-calibration child at all');
-assert.match(shoulderAimSource, /currentTop\.copy\(localTop\)\.applyQuaternion\(authoredQuaternion\)/, 'shoulder-follow must solve only from the generic hand socket frame');
+assert.match(shoulderAimSource, /localTargetDirection\.copy\(targetDirection\)\.applyQuaternion\(inverseAuthoredQuaternion\)/, 'shoulder-follow must transform the target into the authored generic hand-socket basis before solving local hinges');
 assert.match(shoulderAimSource, /calibrationOwnership: 'ignored-child-layer'/, 'shoulder diagnostics must make the ownership boundary visible');
 assert.match(handSource, /lockedTo: 'raw-primary-grip-frame-before-grip-mode-and-hand-model-calibration'/, 'paper-hand diagnostics must identify the raw target before both downstream hand layers');
 assert.match(editorUiSource, /id="handModelCalibrationTab"/, '3D hand editor must expose a dedicated Calibrate GLB tab');
@@ -376,53 +377,50 @@ assert.deepStrictEqual(
 );
 const grips = gripSandbox.window.HobunjiHandToolGrips;
 assert(grips, 'secondary grip config manager should be installed');
-const expectedPrimaryRotations = {
-  hatchet: { pitch: -90, yaw: 90, roll: 180 },
-  hoe: { pitch: 0, yaw: 0, roll: 0 },
-  bshuakauitl: { pitch: 0, yaw: 0, roll: 0 },
-  pickshovel: { pitch: 0, yaw: 0, roll: 0 },
-  daggersword: { pitch: 0, yaw: 180, roll: 0 },
-  plainssword: { pitch: 0, yaw: 0, roll: 0 },
-  dagger: { pitch: 0, yaw: 0, roll: 0 },
-  kylie: { pitch: 0, yaw: 18, roll: 0 },
-  warcleaver: { pitch: 0, yaw: 0, roll: 0 },
-  fishingspear: { pitch: 0, yaw: 0, roll: 0 },
-};
-for (const [toolKey, expectedRotation] of Object.entries(expectedPrimaryRotations)) {
+const sharedHatchetRotation = { pitch: -90, yaw: 90, roll: 180 };
+for (const toolKey of ['hatchet','hoe','bshuakauitl','pickshovel','daggersword','plainssword','dagger','kylie','warcleaver','fishingspear']) {
+  const grip = grips.authoredPrimaryGripForTool(toolKey);
+  assert.strictEqual(grip.position.y, 0.05, `${toolKey} must inherit hatchet's authored primary-grip Y`);
   assert.deepStrictEqual(
-    JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool(toolKey).rotationDeg)),
-    expectedRotation,
-    `${toolKey} must use the committed user-authored primary grip rotation`,
+    JSON.parse(JSON.stringify(grip.rotationDeg)),
+    sharedHatchetRotation,
+    `${toolKey} must inherit hatchet's primary-grip rotation`,
   );
 }
 const oldRotationDraft = grips.clone();
 delete oldRotationDraft.primaryRotationPreset;
 oldRotationDraft.tools.hatchet.primaryGrip.position = { x: 0.123, y: -0.456, z: 0.789 };
 oldRotationDraft.tools.hatchet.primaryGrip.rotationDeg = { pitch: 11, yaw: 22, roll: 33 };
+oldRotationDraft.tools.kylie.primaryGrip.position = { x: -0.222, y: -0.333, z: 0.444 };
 oldRotationDraft.tools.kylie.primaryGrip.rotationDeg = { pitch: -44, yaw: -55, roll: -66 };
 const oldHatchetScale = oldRotationDraft.tools.hatchet.toolScale;
 const oldHatchetSpan = JSON.parse(JSON.stringify(oldRotationDraft.tools.hatchet.secondaryGripSpan));
 grips.replace(oldRotationDraft);
 assert.deepStrictEqual(
   JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('hatchet').position)),
-  { x: 0.123, y: -0.456, z: 0.789 },
-  'rotation migration must preserve authored primary grip position',
+  { x: 0.123, y: 0.05, z: 0.789 },
+  'hatchet-example migration must replace Y while preserving authored X/Z',
 );
 assert.deepStrictEqual(
   JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('hatchet').rotationDeg)),
-  expectedPrimaryRotations.hatchet,
-  'old grip drafts must migrate hatchet to the committed rotation table',
+  sharedHatchetRotation,
+  'old grip drafts must migrate hatchet to the canonical hatchet rotation',
+);
+assert.deepStrictEqual(
+  JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('kylie').position)),
+  { x: -0.222, y: 0.05, z: 0.444 },
+  'hatchet-example migration must preserve each other weapon\'s X/Z while replacing Y',
 );
 assert.deepStrictEqual(
   JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('kylie').rotationDeg)),
-  expectedPrimaryRotations.kylie,
-  'old grip drafts must migrate every listed weapon rotation, not only hatchet',
+  sharedHatchetRotation,
+  'old grip drafts must migrate every weapon to the hatchet rotation',
 );
-assert.strictEqual(grips.toolScaleForTool('hatchet'), oldHatchetScale, 'rotation migration must preserve tool scale');
+assert.strictEqual(grips.toolScaleForTool('hatchet'), oldHatchetScale, 'hatchet-example migration must preserve tool scale');
 assert.deepStrictEqual(
   JSON.parse(JSON.stringify(grips.data.tools.hatchet.secondaryGripSpan)),
   oldHatchetSpan,
-  'rotation migration must preserve the off-hand span',
+  'hatchet-example migration must preserve the off-hand span',
 );
 assert.strictEqual(grips.secondaryGripForTool('hatchet'), null, 'hatchet must start with its second-hand grip disabled');
 assert.strictEqual(grips.secondaryGripForTool('bronzehoe'), null, 'hoe must start with its second-hand grip disabled');
@@ -438,6 +436,7 @@ assert.doesNotMatch(gripConfigSource, /function primaryGripForTool\(\) \{ return
 
 assert.match(gripModeSource, /palm-parallel/, 'palm-parallel grip mode must remain');
 assert.match(gripModeSource, /palm-perpendicular/, 'palm-perpendicular grip mode must remain');
+assert.match(gripModeSource, /'palm-perpendicular'[\s\S]*rotationDeg:\s*Object\.freeze\(\{\s*pitch:\s*-90,\s*yaw:\s*0,\s*roll:\s*0\s*\}\)/, 'palm-perpendicular must be flipped 180 degrees around local X from the old +90 orientation');
 assert.match(gripModeSource, /normalizedCalibration\.rotationQuaternion/, 'grip composition must consume the authoritative quaternion-native hand calibration');
 assert.match(gripModeSource, /const rotationQuaternion = normalizeQuat\(multiplyQuat\(modeQ, calibrationQ\)\)/, 'Grip Mode must compose before Hand Model Calibration without Euler re-entry');
 assert.doesNotMatch(gripModeSource, /targetRotation\s*=\s*\{[\s\S]*br\.pitch/, 'grip mode must not add calibration Euler channels at the X=90° singularity');
@@ -483,7 +482,7 @@ assert.doesNotMatch(shoulderScanSource, /renderPortraitProfile\s*=|renderProfile
 assert.doesNotMatch(shoulderScanSource, /PlaneGeometry|pivot\.rotation|arm_compass_sprite/, 'shoulder scan must never create or rotate arm visuals');
 assert.match(shoulderScanSpeciesSource, /scanSpecies/, 'fallback must resolve arm art directly from species/gender when needed');
 
-// Per-pose influence is continuous, and an ungripped left hand deliberately keeps idle Pitch+Roll.
+// Per-pose influence is continuous, and an ungripped left hand deliberately keeps both idle local hinges.
 assert.match(shoulderPoseRuntimeSource, /function weightsAt/, 'pose runtime must interpolate authored shoulder boxes');
 assert.match(shoulderPoseRuntimeSource, /secondaryGripActive/, 'pose runtime must distinguish a gripping vs idle left hand');
 assert.match(shoulderPoseRuntimeSource, /side === 'left'.*!secondaryGripActive/s, 'ungripped left hand must use idle shoulder behavior during active animation');
@@ -497,30 +496,100 @@ assert.match(shoulderPoseRuntimeSource, /hasAuthoredPoseAim\(configuredPose\)/, 
 for (const key of ['melee:thrust','melee:chop','melee:sweep','ranged:crossbow:load','ranged:crossbow:fire','ranged:scatterbow:load','ranged:scatterbow:fire','held:drink']) {
   assert(shoulderPoseProfilesSource.includes(`'${key}'`), `${key} must have its own authored shoulder pose profile`);
 }
-assert.match(shoulderPoseProfilesSource, /pitch: true, yaw: false, roll: true/, 'idle endpoints must align Pitch + Roll');
-assert.match(shoulderPoseProfilesSource, /pitch: false, yaw: false, roll: true/, 'active endpoints must align Roll only');
+assert.match(shoulderPoseProfilesSource, /grip: true, palmNormal: true/, 'idle endpoints must permit both hand-local shoulder hinges');
+assert.match(shoulderPoseProfilesSource, /grip: false, palmNormal: true/, 'active endpoints must keep only the palm-normal hinge');
 
-assert.match(shoulderAimSource, /new THREE\.Vector3\(0, 1, 0\)/, 'GLB local +Y/top must be treated as the wrist direction');
+assert.match(shoulderAimSource, /localWristProximalAxis = new THREE\.Vector3\(0, 1, 0\)/, 'the hand proximal axis must be local +Y because the real GLBs point fingers along local -Y');
+assert.match(shoulderAimSource, /localGripAxis = new THREE\.Vector3\(1, 0, 0\)/, 'the across-grip local X axis must be the first allowed shoulder hinge');
+assert.match(shoulderAimSource, /localPalmNormalAxis = new THREE\.Vector3\(0, 0, -1\)/, 'the directed palm-normal hinge must follow the authored away-from-camera local -Z normal');
+assert.match(shoulderAimSource, /palmNormal:\s*Math\.atan2\(x, y\)/, 'the -Z palm-normal hinge must use the matching positive-X angle equation rather than the old +Z sign');
+assert.match(shoulderAimSource, /targetDirection\.copy\(elbow\)\.sub\(socket\.position\)/, 'hand targeting must solve from the wrist socket\/origin back toward the resolved elbow');
+assert.match(shoulderAimSource, /localTargetDirection\.copy\(targetDirection\)\.applyQuaternion\(inverseAuthoredQuaternion\)/, 'target direction must be solved in the authored hand-local basis');
+assert.match(shoulderAimSource, /outputQuaternion\.copy\(authoredQuaternion\)\.multiply\(localCorrectionQuaternion\)/, 'local hinge correction must right-multiply the authored hand frame');
+assert.match(shoulderAimSource, /targetFeature: 'elbow'/, 'hand diagnostics must expose the elbow as the proximal aim target');
+assert.match(shoulderAimSource, /componentSpace: 'hand-local'/, 'shoulder diagnostics must expose the hand-local hinge space');
+assert.doesNotMatch(shoulderAimSource, /weights\.yaw|localYawAxis|rotationVector/, 'the retired third shoulder hinge and parent-space rotation-vector gating must stay removed');
 assert.match(shoulderAimSource, /HobunjiHandShoulderPoints/, 'manual shoulder points must override fallback scan');
 assert.match(shoulderAimSource, /manual-portrait-200px/, 'debug must distinguish manually authored shoulder points');
-assert.match(shoulderAimSource, /rotationVector\.x \* weights\.pitch/, 'Pitch shoulder influence must blend smoothly');
-assert.match(shoulderAimSource, /rotationVector\.y \* weights\.yaw/, 'Yaw shoulder influence must blend smoothly');
-assert.match(shoulderAimSource, /rotationVector\.z \* weights\.roll/, 'Roll shoulder influence must blend smoothly');
 assert.match(shoulderAimSource, /scanState = 'error'/, 'scan failures must be isolated from avatar rebuild and exposed in debug state');
 assert.match(shoulderAimSource, /freeSide = \{ left: true, right: true \}/, 'shoulder edits must track which hands are available for idle-position feedback');
 assert.match(shoulderAimSource, /freeSide\[side\].*alignFreeHandToFallbackAnchor\(side\)/s, 'manual shoulder edits must move free idle hands to shoulder X and posterior Y in the live preview');
 assert.match(shoulderAimSource, /armLengthHeightPercentOffset/, 'free-hand fallback must read the exported species/gender arm-length offset');
 assert.match(shoulderAimSource, /return Number\.isFinite\(authored\) \? -modelHeight \* authored \/ 100 : 0/, 'positive arm length must push a free hand below the posterior by a portrait-height percentage');
-assert.doesNotMatch(shoulderAimSource, /PlaneGeometry|solveTwoBoneArm|elbow|reach clamp/i, 'hand compass must not animate arm sprites or reintroduce IK');
+assert.match(shoulderAimSource, /elbowPoseAuthoritative: true/, 'paper-arm preview must draw the same authoritative elbow pose that drives hand orientation');
+assert.match(shoulderAimSource, /visualOnly: true/, 'paper-arm geometry itself must remain visualization-only');
+assert.match(shoulderAimSource, /setPaperArmGuideVisible/, 'editor must be able to toggle paper-arm guides on already-created rigs');
+assert.match(shoulderAimSource, /currentElbow\?\.\(side\)/, 'runtime hand targeting must consume the interpolated direct per-side elbow pose');
+assert.match(shoulderAimSource, /shoulder\.x \+ Number\(authoredOffset\.x/, 'authored elbow coordinates must be direct shoulder-relative pose offsets');
+assert.match(shoulderAimSource, /legacy-shoulder-target/, 'older animations without elbows must retain the old shoulder target instead of calculating a runtime midpoint');
+assert.doesNotMatch(shoulderAimSource, /copy\(shoulder\)\.add\(socket\.position\)\.multiplyScalar\(0\.5\)/, 'runtime must never synthesize the authoring midpoint');
+assert.match(shoulderAimSource, /upperArmLength/, 'arm length must remain diagnostic rather than constraining the elbow');
+assert.match(shoulderAimSource, /forearmLength/, 'paper-arm diagnostics must expose the actual authored forearm length');
+assert.match(shoulderAimSource, /armLengthBySide/, 'paper arm diagnostics must retain the rigger-derived species arm length for comparison only');
+assert.doesNotMatch(shoulderAimSource, /Math\.sqrt\(Math\.max\(0, segmentLength|bendRadius|overreach/, 'elbow pose must not be projected onto an IK solution or reach limit');
+assert.doesNotMatch(shoulderAimSource, /authored \* \(modelHeight \/ 0\.9\)/, 'concrete arm reach must not be scaled by model height a second time');
 
 assert.match(shoulderControlsSource, /const PHASES = \['neutral', 'windup', 'strike'\]/, 'Attack Editor must expose all three pose phases');
-assert.match(shoulderControlsSource, /\[\['pitch','X'\],\['yaw','Y'\],\['roll','Z'\]\]/, 'Attack Editor must expose all three shoulder rotation axes with X/Y/Z labels');
+assert.match(shoulderControlsSource, /\[\['grip','Grip axis \(local X\)'\],\['palmNormal','Palm-normal axis \(local -Z\)'\]\]/, 'Attack Editor must expose the corrected directed palm-normal hinge');
 assert.match(shoulderControlsSource, /`handShoulderAim_\$\{phase\}_\$\{axis\}`/, 'Attack Editor must give each pose-axis checkbox a stable id');
-assert.match(shoulderControlsSource, /shoulderAim = \{ \.\.\.poseAim\[phase\] \}/, 'per-pose checkbox state must be serialized inside each pose');
+assert.match(shoulderControlsSource, /parsed\.poses\[phase\]\.shoulderAim = \{ \.\.\.aimForPhase\(phase\) \}/, 'per-pose hinge choices must serialize from the core pose-backed state');
+assert.match(shoulderControlsSource, /parsed\.poses\[phase\]\.elbows = elbows/, 'per-pose left\/right elbows must serialize as direct pose data');
+assert.match(attackEditorSource, /HobunjiAttackEditorPoseState = Object\.freeze/, 'core Attack Editor pose objects must own hand-follow and elbow authoring state');
+assert.match(attackEditorSource, /setElbow\(phase, side, point\)/, 'core pose state must expose direct elbow mutation for the active pose editor');
+assert.match(attackEditorSource, /loadFromAnimationObject\?\.\(\{ poses: anim\.poses \}\)/, 'switching Actions must reload hand state from the newly selected animation instead of leaking the previous Action');
+assert.doesNotMatch(heldSource, /attack-editor-hand-shoulder-animation-state\.js/, 'retired presetSelect-based shoulder state adapter must not load in the modern Action-based editor');
+assert.match(attackEditorSource, /poseElbow_\$\{side\}_\$\{axis\}/, 'active attack pose panel must expose direct left\/right elbow X\/Y\/Z inputs alongside tool pose values');
+assert.match(attackEditorSource, /Set halfway shoulder↔hand/, 'active attack pose panel must expose an authoring-only shoulder\/hand midpoint button');
+assert.match(attackEditorSource, /Object\.entries\(p\.elbows\)[\s\S]*\[side, mirrorPoint\(point\)\]/, 'mirroring an attack must preserve anatomical hand identity while reflecting each elbow X');
+assert.doesNotMatch(attackEditorSource, /p\.elbows\.right \? \{ left: mirrorPoint|p\.elbows\.left \? \{ right: mirrorPoint/, 'attack mirroring must never swap left/right elbow records');
+assert.match(shoulderPoseRuntimeSource, /activeMirrorSign/, 'elbow playback must consume the active attack mirror sign');
+assert.match(shoulderPoseRuntimeSource, /neutralMirrorSign/, 'elbow playback must consume the start-neutral mirror sign');
+assert.match(shoulderPoseRuntimeSource, /returnNeutralMirrorSign/, 'elbow playback must consume the return-neutral mirror sign');
+assert.match(shoulderPoseRuntimeSource, /snapshot\.combatWindupFrac/, 'hand pose playback must use WeaponToolStances exact normalized windup timing');
+assert.match(weaponStanceSource, /runtimeState\.combatDirSign/, 'WeaponToolStances must expose active mirror sign to hand consumers');
+assert.match(weaponStanceSource, /runtimeState\.combatReturnNeutralMirrorSign/, 'WeaponToolStances must expose alternating-heavy return mirror sign to hand consumers');
+assert.match(shoulderControlsSource, /authorMidpointElbow/, 'editor hand controls must provide a one-shot midpoint authoring helper');
+assert.match(shoulderControlsSource, /wrist\.x\) - Number\(shoulder\.x\)\) \* 0\.5/, 'midpoint helper must persist the literal halfway shoulder-relative coordinate');
+assert.match(shoulderControlsSource, /runtime midpoint calculation/, 'hand controls must document that runtime does not recalculate midpoint elbows');
 assert.match(shoulderControlsSource, /poseRuntime\.weightsAt/, 'Attack Editor preview must use the same smooth pose interpolation');
 assert.match(shoulderControlsSource, /handHideArmSpritesPreview/, 'Attack Editor must retain preview-only arm hiding');
+assert.match(shoulderControlsSource, /handShowPaperArmGuide/, 'Attack Editor must expose the optional paper upper-arm\/elbow\/forearm guide');
+assert.match(shoulderControlsSource, /raw\?\.\[legacyKey\]/, 'Attack Editor must migrate legacy Pitch\/Roll shoulder data into the two semantic hinges');
 assert.match(shoulderControlsSource, /previewApi\.renderProfileToCanvas/, 'arm hiding should be scoped to the Attack Editor preview adapter');
 assert.doesNotMatch(shoulderControlsSource, /global\.renderPortraitProfile\s*=|global\.renderProfile\s*=/, 'preview arm hiding must not monkeypatch global portrait renderers');
+
+// Numerical regression: the semantic hinge signs must actually aim proximal +Y
+// at the requested local direction. Literal-axis regexes alone previously let a
+// -Z axis ship with the +Z angle equation.
+{
+  const handStub = { attach() { return null; } };
+  const sandbox = { window: { ProceduralHandAttachments: handStub }, console, Math, Number, Object };
+  vm.createContext(sandbox);
+  vm.runInContext(shoulderAimSource, sandbox, { filename: 'procedural-hand-shoulder-aim.js' });
+  const solve = sandbox.window.ProceduralHandShoulderAim?.solveLocalHingeAngles;
+  assert.equal(typeof solve, 'function', 'shoulder solver must expose its pure local hinge decomposition for regression');
+  const targets = [
+    { x: 0.5, y: 0.8, z: 0.2 },
+    { x: -0.45, y: 0.72, z: -0.31 },
+    { x: 0.3, y: -0.4, z: 0.5 },
+  ];
+  for (const target of targets) {
+    const length = Math.hypot(target.x, target.y, target.z);
+    const n = { x: target.x / length, y: target.y / length, z: target.z / length };
+    const angles = solve(n);
+    // +X grip first: +Y -> (0, cos(g), sin(g)).
+    const afterGrip = { x: 0, y: Math.cos(angles.grip), z: Math.sin(angles.grip) };
+    // Then rotate around directed -Z by p: (x,y) -> (sin(p)*y, cos(p)*y).
+    const aimed = {
+      x: Math.sin(angles.palmNormal) * afterGrip.y,
+      y: Math.cos(angles.palmNormal) * afterGrip.y,
+      z: afterGrip.z,
+    };
+    for (const axis of ['x','y','z']) {
+      assert(Math.abs(aimed[axis] - n[axis]) < 1e-9, `two-hinge solve missed target ${axis}: ${aimed[axis]} vs ${n[axis]}`);
+    }
+  }
+}
 
 // Hand shoulder targets are ordinary attachment-rig coordinates and therefore use
 // the same actor anchors, axes helpers, TransformControls, numeric fields, and reset flow.
