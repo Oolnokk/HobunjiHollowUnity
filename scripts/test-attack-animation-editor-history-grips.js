@@ -103,7 +103,7 @@ assert.match(attachments, /function buildPaperHandReference\(THREE\)/, 'procedur
 for (const part of ['paperHandGripOrb','paperPalm','paperFinger1','paperFinger2','paperFinger3','paperThumb1','paperThumb2']) {
   assert(attachments.includes(part), `paper hand is missing ${part}`);
 }
-assert.match(attachments, /paperHandGripOrb[\s\S]*color:\s*0x60a5fa/, 'paper-hand calibration rig must include its own blue origin orb');
+assert.match(attachments, /const gripOrb[\s\S]*color:\s*0x60a5fa[\s\S]*gripOrb\.name = 'paperHandGripOrb'/, 'paper-hand calibration rig must include its own blue origin orb');
 assert.match(attachments, /paperHandCalibrationOrigin = true/, 'blue orb must mark the exact paper-hand calibration origin');
 assert.match(calibration, /blue orb built into the paper rig at its exact local origin/i, 'calibration UI must explain that the blue orb belongs to the neutral paper rig');
 assert.match(attachments, /wireframe:\s*true/, 'paper hand must render as wireframe planes');
