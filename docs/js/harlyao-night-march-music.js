@@ -16,7 +16,7 @@
   let config = null; // Parsed Harlyao march config used by the soundtrack provider and toast copy.
   let musicDeps = null; // Music-only dependency object captured from Music.init for area/toast/combat integration.
   let originalTownMineBgm = null; // Preserves TownMine's ordinary mine-floor BGM resolver outside the active army zone.
-  let originalMusicInit = null; // Preserves Music.init while supplying a music-only combat-state proxy.
+  let originalMusicInit = null; // Preserves Music.init while capturing deps and retaining the Harlyao pre-start combat guard.
   let originalMusicUpdate = null; // Preserves Music.updateAmbientCues while this module captures its scheduler-owned Harlyao element.
   let capturedAudio = null; // Actual Music.currentBgm HTMLAudio element when the scheduler starts the Harlyao track.
   let schedulerRawVolume = 0; // Unscaled volume requested by Music before Harlyao proximity gain is applied.
@@ -158,11 +158,6 @@
     const descriptor = nativeVolumeDescriptor(audio);
     if (!descriptor) return audio;
     schedulerRawVolume = clamp(Number(descriptor.get.call(audio)) || 0, 0, 1);
-    const nativeAddEventListener = audio.addEventListener.bind(audio); // Used to omit only playMusicTrack's natural-end fade watcher from this intentionally looping soundtrack.
-    audio.addEventListener = function harlyaoSchedulerEventListener(type, listener, options) {
-      if (type === 'timeupdate') return; // A looping BGM must not fade itself to zero just before every loop boundary.
-      return nativeAddEventListener(type, listener, options);
-    };
     const nativeSet = value => descriptor.set.call(audio, clamp(Number(value) || 0, 0, 1)); // Bypasses the scheduler-facing setter when only proximity gain changes.
     Object.defineProperty(audio, 'volume', {
       configurable: true,
@@ -260,15 +255,12 @@
     const chunk = armyChunk(snapshot);
     if (changed) beginTransition(cachedTargetGain, `stage:${snapshot.scheduled.zoneId}:${chunk?.cx},${chunk?.cz}:${stageIndex}`);
     currentGain = Math.max(0, interpolatedGain()); // Smooth audio gain still updates per frame; only the expensive distance/stage calculation is throttled.
-    if (capturedAudio) {
-      capturedAudio.loop = true; // makeGameAudio initializes loop=false; set it after Music has created the scheduler-owned element.
-      applyCapturedVolume();
-    }
+    if (capturedAudio) applyCapturedVolume(); // Music now honors the track's authored loop flag; Harlyao only layers proximity gain onto that scheduler-owned element.
   }
 
   function musicOnlyDeps(injected) {
     const proxy = Object.create(injected || null); // Keeps every existing Music dependency intact while changing combat ownership only for this soundtrack.
-    proxy.isPlayerInCombat = () => activeSnapshot() ? false : !!injected?.isPlayerInCombat?.(); // Exclusive march BGM must not be replaced by combat BGM.
+    proxy.isPlayerInCombat = () => activeSnapshot() ? false : !!injected?.isPlayerInCombat?.(); // Kept only for the frame(s) before Music has created the exclusive soundtrack element; once active, Music honors exclusiveSoundtrack itself.
     return proxy;
   }
 
