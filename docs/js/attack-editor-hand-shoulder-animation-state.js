@@ -28,10 +28,6 @@
   function checkboxId(phase, axis) {
     return `handShoulderAim_${phase}_${axis}`;
   }
-  function elbowInputId(phase, side, axis) {
-    return `handElbow_${phase}_${side}_${axis}`;
-  }
-
   function cloneState(state) {
     return Object.fromEntries(PHASES.map(phase => [phase, {
       grip: !!state?.[phase]?.grip,
@@ -89,13 +85,7 @@
       }
       state[phase].elbows ||= { left: null, right: null };
       for (const side of SIDES) {
-        const raw = Object.fromEntries(ELBOW_AXES.map(axis => {
-          const value = document.getElementById(elbowInputId(phase, side, axis))?.value?.trim?.() ?? '';
-          return [axis, value === '' ? null : Number(value)];
-        }));
-        state[phase].elbows[side] = ELBOW_AXES.some(axis => Number.isFinite(raw[axis]))
-          ? Object.fromEntries(ELBOW_AXES.map(axis => [axis, Number.isFinite(raw[axis]) ? raw[axis] : 0]))
-          : null;
+        state[phase].elbows[side] = controls.elbowForPhase?.(phase, side) || null;
       }
     }
     return state;
@@ -115,15 +105,7 @@
           input.dispatchEvent(new Event('change', { bubbles: true }));
         }
         for (const side of SIDES) {
-          for (const axis of ELBOW_AXES) {
-            const input = document.getElementById(elbowInputId(phase, side, axis));
-            if (!input) continue;
-            const value = next[phase].elbows?.[side]?.[axis];
-            const textValue = Number.isFinite(Number(value)) ? String(Number(value)) : '';
-            if (input.value === textValue) continue;
-            input.value = textValue;
-            input.dispatchEvent(new Event('input', { bubbles: true }));
-          }
+          controls.setElbowForPhase?.(phase, side, next[phase].elbows?.[side] || null);
         }
       }
       controls.syncControls?.();
@@ -228,13 +210,6 @@
       document.getElementById(checkboxId(phase, axis))?.addEventListener('change', () => {
         if (!applyingState) saveActiveState();
       });
-    }
-    for (const side of SIDES) {
-      for (const axis of ELBOW_AXES) {
-        document.getElementById(elbowInputId(phase, side, axis))?.addEventListener('input', () => {
-          if (!applyingState) saveActiveState();
-        });
-      }
     }
   }
 
