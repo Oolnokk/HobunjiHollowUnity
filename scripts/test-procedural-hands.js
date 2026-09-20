@@ -25,6 +25,8 @@ const shoulderScanSource = read('docs/js/portrait-hand-shoulder-scan.js');
 const shoulderScanSpeciesSource = read('docs/js/portrait-hand-shoulder-scan-species.js');
 const shoulderPoseRuntimeSource = read('docs/js/hand-shoulder-pose-runtime.js');
 const shoulderAimSource = read('docs/js/procedural-hand-shoulder-aim.js');
+const scaleFreeHandSource = read('docs/js/procedural-hand-scale-free-world.js'); // Verifies calibration payload survives the world/local placement wrapper.
+const attackEditorSource = read('docs/tools/attack-animation-editor/index.html'); // Verifies the isolated tab hides animation/tool presentation.
 const shoulderControlsSource = read('docs/js/attack-editor-hand-shoulder-controls.js');
 const animationAuthorSource = read('docs/tools/animation-author/index.html');
 const npcPreviewSource = read('docs/js/npc-avatar-preview-utils.js');
@@ -277,6 +279,20 @@ assert.doesNotMatch(shoulderAimSource, /toolCalibrationLocal|hand_calibration/, 
 assert.match(shoulderAimSource, /currentTop\.copy\(localTop\)\.applyQuaternion\(authoredQuaternion\)/, 'shoulder-follow must solve only from the generic hand socket frame');
 assert.match(shoulderAimSource, /calibrationOwnership: 'ignored-child-layer'/, 'shoulder diagnostics must make the ownership boundary visible');
 assert.match(handSource, /lockedTo: 'raw-primary-grip-frame-before-grip-mode-and-hand-model-calibration'/, 'paper-hand diagnostics must identify the raw target before both downstream hand layers');
+assert.match(editorUiSource, /id="handModelCalibrationTab"/, '3D hand editor must expose a dedicated Calibrate GLB tab');
+assert.match(editorUiSource, /No attack animation, tool transform, Grip Mode, shoulder targeting, character-facing rotation, or animation-derived hand transform/, 'calibration tab must explicitly exclude the normal animation transform stack');
+assert.match(driverSource, /function inHandCalibrationMode\(\)[\s\S]*HobunjiAttackEditorHandCalibrationMode\?\.active === true/, 'frame driver must have an explicit isolated calibration mode');
+assert.match(driverSource, /function syncCalibrationWorkspace\(record,[\s\S]*worldQuaternion\.identity\(\)[\s\S]*placeCalibrationPreviewWorld/, 'calibration mode must use a fixed neutral world quaternion instead of an animation/tool frame');
+assert.match(driverSource, /if \(inHandCalibrationMode\(\)\) \{[\s\S]*syncCalibrationWorkspace\(record\)/, 'render-time hand authority must remain on the calibration workspace while that tab is active');
+assert.match(handSource, /function placeCalibrationPreviewWorld\(worldPosition, worldQuaternion, modelCalibration = null\)/, 'attachment rig must expose a dedicated calibration placement path that bypasses placeHandWorld wrappers');
+assert.match(handSource, /sockets\.left\.socket\.visible = false/, 'calibration workspace must hide the unrelated left hand');
+assert.match(handSource, /calibrationMode \? -1 : \(sourceIsLeft \? -1 : 1\)/, 'calibration paper handedness must stay fixed while GLB mirror settings change only the model');
+assert.match(handSource, /calibrationMode \? \(Number\(values\.speciesScale\) \|\| 1\) : \(Number\(values\.effectiveScale\) \|\| 1\)/, 'calibration paper size must exclude model scale so GLB scale can be judged against it');
+assert.match(scaleFreeHandSource, /scaleFreePlaceHandWorld\(side, worldPosition, worldQuaternion, modelCalibration = null\)[\s\S]*applyToolCalibration\?\.\(side, modelCalibration\)/, 'scale-free wrapper must forward and apply the fourth model-calibration argument');
+assert.match(shoulderAimSource, /shoulderAimPlaceHandWorld\(side, worldPosition, worldQuaternion, modelCalibration = null\)[\s\S]*originalPlaceHandWorld\(side, worldPosition, worldQuaternion, modelCalibration\)/, 'shoulder wrapper must forward the fourth model-calibration argument unchanged');
+assert.match(gripConfigSource, /secondarySpanBlendWorld\(side, worldPosition, worldQuaternion, modelCalibration = null\)[\s\S]*originalPlaceHandWorld\(side, worldPosition, worldQuaternion, modelCalibration\)/, 'off-hand span wrapper must forward the fourth model-calibration argument unchanged');
+assert.match(attackEditorSource, /setHandCalibrationPresentation\(active\)[\s\S]*toolBase\.visible = !handCalibrationPresentationActive/, 'calibration tab must hide the animation-derived held-item presentation');
+assert.match(attackEditorSource, /if \(handCalibrationPresentationActive\) return;[\s\S]*const action = currentAction\(\)/, 'calibration tab must suppress hitbox/combat overlays');
 
 assert.match(driverSource, /secondaryGripForTool/, 'driver must support an optional second grip');
 assert.match(driverSource, /applyFallbackSide\(record, 'left'\)/, 'left hand must use locomotion fallback on one-handed tools');
