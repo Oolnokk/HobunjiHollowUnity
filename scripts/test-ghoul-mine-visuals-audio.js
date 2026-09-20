@@ -10,6 +10,8 @@ const npcPreview = fs.readFileSync('docs/js/npc-avatar-preview-utils.js', 'utf8'
 const bandit = fs.readFileSync('docs/js/combat/combat-bandit.js', 'utf8');
 
 assert.match(mine, /GHOUL_BGM_TRACK = \{[^}]*volumeMultiplier: 2/, 'Ghoul BGM requests 2x base volume');
+assert.match(mine, /GHOUL_BGM_TRACK = \{[^}]*exclusiveSoundtrack: true/, 'Just Beyond the Torchlight reuses the existing exclusive soundtrack ownership during combat');
+assert.match(music, /exclusiveSoundtrack === true/, 'music scheduler honors the existing exclusive soundtrack metadata generically');
 assert.match(music, /baseVol \* trackVolMul/, 'music player consumes per-track volumeMultiplier');
 
 for (const gender of ['male', 'female']) {
