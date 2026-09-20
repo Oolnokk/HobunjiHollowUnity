@@ -1,9 +1,8 @@
-// Attack Editor shoulder-compass authoring.
+// Attack Editor shoulder-follow authoring.
 //
-// X/Y/Z hand-rotation follow is stored PER POSE in the normal animation JSON
-// (legacy data keys remain pitch/yaw/roll for compatibility). Checkbox states become
-// 0..1 weights at runtime and lerp with the same Neutral/Windup/Strike phase
-// curve as the tool pose. Arm hiding remains a preview-only convenience.
+// Each pose controls two meaningful HAND-LOCAL hinges: grip axis (local X) and
+// palm-normal axis (local Z). Legacy pitch/roll animation data migrates into those
+// hinges on load. Arm hiding and the paper-arm overlay remain preview-only.
 (function (global) {
   'use strict';
 
@@ -12,13 +11,15 @@
   if (!profileSelect || global.HobunjiAttackEditorHandShoulderControls) return;
 
   const PHASES = ['neutral', 'windup', 'strike'];
+  const AXES = ['grip', 'palmNormal']; // The only hand-local hinges permitted to aim the wrist at the shoulder.
   const DEFAULTS = Object.freeze({
-    neutral: Object.freeze({ pitch: true, yaw: false, roll: true }),
-    windup: Object.freeze({ pitch: false, yaw: false, roll: true }),
-    strike: Object.freeze({ pitch: false, yaw: false, roll: true }),
+    neutral: Object.freeze({ grip: true, palmNormal: true }),
+    windup: Object.freeze({ grip: false, palmNormal: true }),
+    strike: Object.freeze({ grip: false, palmNormal: true }),
   });
   const poseAim = Object.fromEntries(PHASES.map(phase => [phase, { ...DEFAULTS[phase] }]));
   let hideArmSprites = false;
+  let showPaperArmGuide = false; // Preview-only elbow/arm-strip visualization; never exported into attack data.
 
   function resolvedFighter(profile) {
     const fighter = profile?.fighter || null;
@@ -75,12 +76,12 @@
   followGroup.id = 'handShoulderFollowGroup';
   followGroup.innerHTML = `
     <div class="poseGroupHead"><span class="dot" style="background:#fb7185"></span>Hand shoulder-follow by animation pose</div>
-    <div class="help" style="margin-bottom:7px"><b>This rotates the HAND, never the weapon.</b> The <b>wrist is always the part aimed at the shoulder</b>. X/Y/Z only choose which rotation components are allowed to turn that same wrist axis toward the shoulder; they never make the palm, fingers, or another hand axis become the target. Stored legacy keys are pitch/yaw/roll.</div>
+    <div class="help" style="margin-bottom:7px"><b>This rotates the HAND, never the weapon.</b> The wrist always aims toward the shoulder. The solver has only two hand-local hinges; there is no local-Y shoulder hinge.</div>
     ${PHASES.map(phase => `
       <div class="field" data-hand-shoulder-phase="${phase}">
         <label>${phase[0].toUpperCase() + phase.slice(1)} hand follow</label>
         <div class="row" style="gap:9px;flex-wrap:wrap">
-          ${[['pitch','X'],['yaw','Y'],['roll','Z']].map(([axis,label]) => `<label class="fieldRow" style="cursor:pointer;margin:0"><input id="${checkboxId(phase, axis)}" type="checkbox" style="width:auto">${label} rotation → shoulder</label>`).join('')}
+          ${[['grip','Grip axis (local X)'],['palmNormal','Palm-normal axis (local Z)']].map(([axis,label]) => `<label class="fieldRow" style="cursor:pointer;margin:0"><input id="${checkboxId(phase, axis)}" type="checkbox" style="width:auto">${label}</label>`).join('')}
         </div>
       </div>`).join('')}
   `;
@@ -90,38 +91,44 @@
   previewGroup.className = 'poseGroup';
   previewGroup.innerHTML = `
     <div class="poseGroupHead"><span class="dot" style="background:#fb7185"></span>Shoulder-follow preview</div>
-    <div class="help" style="margin-bottom:7px">Neutral defaults to <b>X + Z rotation follow</b>. Windup and Strike default to <b>Z only</b>. In every case the same local <b>-Y wrist side</b> aims toward the shoulder; these controls only gate rotation components. The three pose settings blend continuously with the animation.</div>
+    <div class="help" style="margin-bottom:7px">Neutral defaults to both hinges. Windup and Strike default to the palm-normal hinge only. The three pose settings blend continuously with the animation.</div>
     <div class="field"><label class="fieldRow" style="cursor:pointer"><input id="handHideArmSpritesPreview" type="checkbox" style="width:auto;margin-right:6px">Hide arm sprites in preview</label></div>
-    <div class="help" id="handShoulderAimStatus">Arm hiding is preview-only and is not exported.</div>
+    <div class="field"><label class="fieldRow" style="cursor:pointer"><input id="handShowPaperArmGuide" type="checkbox" style="width:auto;margin-right:6px">Show paper arm guide (upper arm + elbow + forearm)</label></div>
+    <div class="help" id="handShoulderAimStatus">Preview helpers are not exported. The paper arm is diagnostic only and does not drive the hand.</div>
   `;
   const status = document.getElementById('handEffectiveStatus');
   if (status?.parentElement === handCard) handCard.insertBefore(previewGroup, status);
   else handCard?.appendChild(previewGroup);
 
   const hide = document.getElementById('handHideArmSpritesPreview');
+  const paperArm = document.getElementById('handShowPaperArmGuide'); // Toggles the non-authoritative two-strip elbow guide in the live preview.
   const compassStatus = document.getElementById('handShoulderAimStatus');
   const jsonView = document.getElementById('jsonView');
   const loadFile = document.getElementById('loadFile');
-  if (!hide || !compassStatus || !jsonView) return;
+  if (!hide || !paperArm || !compassStatus || !jsonView) return;
 
+  function booleanAxis(raw, key, legacyKey, fallback) {
+    const value = raw?.[key] ?? raw?.[legacyKey]; // Backward-compatible load only; new exports use semantic hinge names.
+    return value === true ? true : value === false ? false : !!fallback;
+  }
   function normalizeBooleanAim(raw, fallback) {
     return {
-      pitch: raw?.pitch === true ? true : raw?.pitch === false ? false : !!fallback.pitch,
-      yaw: raw?.yaw === true ? true : raw?.yaw === false ? false : !!fallback.yaw,
-      roll: raw?.roll === true ? true : raw?.roll === false ? false : !!fallback.roll,
+      grip: booleanAxis(raw, 'grip', 'pitch', fallback.grip),
+      palmNormal: booleanAxis(raw, 'palmNormal', 'roll', fallback.palmNormal),
     };
   }
 
   function syncCheckboxes() {
     for (const phase of PHASES) {
-      for (const axis of ['pitch','yaw','roll']) {
+      for (const axis of AXES) {
         const input = document.getElementById(checkboxId(phase, axis));
         if (input) input.checked = !!poseAim[phase][axis];
       }
     }
     hide.checked = hideArmSprites;
+    paperArm.checked = showPaperArmGuide;
     const weights = currentWeights();
-    compassStatus.textContent = `Live hand-follow lerp: X rotation ${(weights.pitch * 100).toFixed(0)}% · Y rotation ${(weights.yaw * 100).toFixed(0)}% · Z rotation ${(weights.roll * 100).toFixed(0)}% · arms ${hideArmSprites ? 'hidden' : 'visible'}.`;
+    compassStatus.textContent = `Live hand-follow lerp: grip axis ${(weights.grip * 100).toFixed(0)}% · palm-normal axis ${(weights.palmNormal * 100).toFixed(0)}% · arms ${hideArmSprites ? 'hidden' : 'visible'} · paper arm ${showPaperArmGuide ? 'shown' : 'hidden'}.`;
   }
 
   function injectPoseAimIntoObject(parsed) {
@@ -166,7 +173,7 @@
   }
 
   for (const phase of PHASES) {
-    for (const axis of ['pitch','yaw','roll']) {
+    for (const axis of AXES) {
       document.getElementById(checkboxId(phase, axis))?.addEventListener('change', event => setAxis(phase, axis, event.currentTarget.checked));
     }
   }
@@ -186,7 +193,7 @@
     };
     const sequence = document.getElementById('playbackSequence')?.value || 'attack';
     if (poseRuntime?.weightsAt) return poseRuntime.weightsAt(progress, timing, poseAim, sequence);
-    return progress <= timing.windupFrac ? { pitch: 1 - progress / Math.max(1e-6, timing.windupFrac), yaw: 0, roll: 1 } : { pitch: 0, yaw: 0, roll: 1 };
+    return progress <= timing.windupFrac ? { grip: 1 - progress / Math.max(1e-6, timing.windupFrac), palmNormal: 1 } : { grip: 0, palmNormal: 1 };
   }
 
   function requestPreviewRebuild() {
@@ -200,14 +207,19 @@
     syncCheckboxes();
     requestPreviewRebuild();
   });
-
+  paperArm.addEventListener('change', () => {
+    showPaperArmGuide = paperArm.checked;
+    global.ProceduralHandShoulderAim?.setPaperArmGuideVisible?.(showPaperArmGuide);
+    syncCheckboxes();
+    global.ProceduralHandFrameDriver?.syncNow?.();
+  });
 
 
   // Keep the live status useful while playback/scrubbing changes interpolation.
   let lastStatusSignature = '';
   function statusFrame() {
     const w = currentWeights();
-    const signature = `${hideArmSprites}|${w.pitch.toFixed(2)}|${w.yaw.toFixed(2)}|${w.roll.toFixed(2)}`;
+    const signature = `${hideArmSprites}|${showPaperArmGuide}|${w.grip.toFixed(2)}|${w.palmNormal.toFixed(2)}`;
     if (signature !== lastStatusSignature) {
       lastStatusSignature = signature;
       syncCheckboxes();
@@ -233,12 +245,14 @@
     get poseAim() { return JSON.parse(JSON.stringify(poseAim)); },
     currentWeights,
     snapshot() {
-      return { hideArmSprites, poseAim: JSON.parse(JSON.stringify(poseAim)) }; // Undo/Redo preserves all three hidden pose states.
+      return { hideArmSprites, showPaperArmGuide, poseAim: JSON.parse(JSON.stringify(poseAim)) }; // Undo/Redo preserves both pose hinges and preview-only helper state.
     },
     restore(snapshot) {
       if (!snapshot) return false;
       hideArmSprites = snapshot.hideArmSprites === true;
+      showPaperArmGuide = snapshot.showPaperArmGuide === true;
       for (const phase of PHASES) poseAim[phase] = normalizeBooleanAim(snapshot.poseAim?.[phase], DEFAULTS[phase]);
+      global.ProceduralHandShoulderAim?.setPaperArmGuideVisible?.(showPaperArmGuide);
       syncCheckboxes();
       refreshJsonExtension();
       requestPreviewRebuild();
