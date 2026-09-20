@@ -33,8 +33,8 @@ assert.match(ranged, /arrow_long\.png/, 'crossbow must use the long arrow visual
 assert.match(ranged, /arrow_short\.png/, 'scatterbow must use the short arrow visual');
 assert.match(ranged, /SphereGeometry/, 'projectile collision body must be a sphere');
 assert.match(ranged, /visible:\s*false/, 'projectile collider must remain hidden');
-assert.match(ranged, /creatureSnapSwayTarget/, 'projectile PNG must reuse animal snap/deadzone rotation');
-assert.match(ranged, /root sphere's vx\/vy and trajectory angle are never changed/, 'visual deadzone must not steer the projectile');
+assert.match(ranged, /Math\.abs\(diff\) > PROJECTILE_PERP_DEAD_RAD/, 'projectile PNG must retain the shared animal-style 15-degree camera-facing deadzone');
+assert.match(ranged, /facePivot\.rotation\.y = p\.faceTwistRad/, 'visual deadzone must stay isolated to the projectile sprite child instead of steering the projectile');
 assert.ok(fs.existsSync(path.join(root, 'docs/assets/audio/sfx/combat/sfx_loading_mechanism.m4a')), 'loading mechanism recording must be present');
 assert.ok(fs.existsSync(path.join(root, 'docs/assets/audio/sfx/combat/sfx_shootarrow.m4a')), 'arrow firing recording must be present');
 assert.ok(fs.existsSync(path.join(root, 'docs/assets/audio/sfx/combat/sfx_arrow_hit.mp3')), 'arrow impact recording must be present');
