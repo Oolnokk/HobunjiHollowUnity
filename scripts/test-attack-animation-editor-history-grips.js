@@ -116,16 +116,19 @@ assert.match(attachments, /rec\.calibration\.add\(visual\)/, 'GLB visual must be
 assert.match(driver, /syncCalibrationWorkspace\(record,[\s\S]*neutralWorldQuaternion: true,[\s\S]*bypassesAnimation: true,[\s\S]*bypassesShoulderAim: true/, 'calibration tab must bypass the normal animation, tool and shoulder stack');
 assert.match(attachments, /placeCalibrationPreviewWorld\(worldPosition, worldQuaternion, modelCalibration = null\)/, 'calibration tab must use a placement method outside wrapped gameplay hand placement');
 assert.doesNotMatch(shoulderAim, /toolCalibrationLocal|hand_calibration/, 'shoulder-follow must remain completely independent of model calibration');
-assert.match(shoulderAim, /localWristShoulderAxis = new THREE\.Vector3\(0, -1, 0\)/, 'editor/runtime shoulder follow must point the wrist side of the calibrated hand toward the shoulder');
+assert.match(shoulderAim, /localWristShoulderAxis = new THREE\.Vector3\(0, -1, 0\)/, 'editor/runtime hand follow must retain local -Y as the wrist-facing proximal axis');
 assert.match(shoulderAim, /localGripAxis = new THREE\.Vector3\(1, 0, 0\)/, 'shoulder follow must expose the grip-axis local X hinge');
 assert.match(shoulderAim, /localPalmNormalAxis = new THREE\.Vector3\(0, 0, 1\)/, 'shoulder follow must expose the palm-normal local Z hinge');
-assert.match(shoulder, /wrist always aims toward the shoulder/i, 'editor must explain that the wrist remains the shoulder target');
+assert.match(shoulder, /wrist-facing side now aims toward the elbow/i, 'editor must explain that the hand now targets the elbow rather than the shoulder');
 assert.match(attachments, /lockedReference = true/, 'paper hand must identify itself as a locked reference, not an animatable rig');
 assert.match(attachments, /lockedTo: 'raw-primary-grip-frame-before-grip-mode-and-hand-model-calibration'/, 'paper hand must remain locked to the raw weapon target before downstream hand layers');
 assert.match(driver, /placePaperHandGuideWorld\?\.\(primarySocket\.position, primarySocket\.quaternion\)[\s\S]*handSocketAfterGripMode\(record, primarySocket\)/, 'paper reference must be placed before Grip Mode moves the socket');
 assert.match(shoulder, /This rotates the HAND, never the weapon/, 'shoulder-follow layer must declare its transform owner');
 assert.match(shoulder, /\[\['grip','Grip axis \(local X\)'\],\['palmNormal','Palm-normal axis \(local Z\)'\]\]/, 'shoulder-follow controls must expose exactly the two hand-local hinge choices');
 assert.match(shoulder, /handShowPaperArmGuide/, 'shoulder-follow controls must expose the non-authoritative paper arm guide');
+assert.match(shoulder, /handElbowHint_/, 'shoulder-follow controls must expose elbow location inputs for every pose');
+assert.match(shoulderAim, /currentElbowHint/, 'runtime hand targeting must read the active pose elbow hint');
+assert.match(shoulderAim, /targetFeature: 'elbow'/, 'runtime diagnostics must identify the elbow as the hand target');
 assert.match(shoulderAim, /authoritative: false/, 'paper arm diagnostics must never become a hidden hand-driving IK layer');
 
 // Old post-refactor stale paths must not remain.
