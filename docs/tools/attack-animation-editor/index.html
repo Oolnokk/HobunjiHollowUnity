@@ -295,11 +295,12 @@ canvas{display:block;width:100%;height:100%}
 <script src="../../config/scratchbones-config.js?v=20260821d"></script>
 <script src="../../config/attachment-rig-profiles.js?v=20260826rigv9"></script>
 <script src="../../config/character-rig-scale-defaults.js?v=20260914maoao3"></script>
+<script src="../../js/character-rig-scale.js?v=20260920poseheight1"></script>
 <script src="../../js/portrait-utils.js?v=20260918centroid2"></script>
 <script src="../../js/portrait-breathing.js"></script>
 <script src="../../js/npc-avatar-preview-utils.js"></script>
 <script src="../../js/png-plane-avatar.js?v=20260920orbit1"></script>
-<script src="../../js/species-pose-scaling.js?v=20260920height1"></script>
+<script src="../../js/species-pose-scaling.js?v=20260920height2"></script>
 <!-- Shared local-transform dump utility (window.HobunjiTransformDump) — also
      loaded by the game's Pixel Probe, so this editor's preview dump and an
      in-game character dump use the exact same code/format. -->
@@ -633,6 +634,8 @@ async function rebuildAvatar(speciesId, gender) {
   const baseAttachY = avatarModel.userData.handAttachY ?? (h / 2);
   avatarModel.position.y = h / 2;
   characterBodyScaleRoot.add(avatarModel);
+  const visibleRigScale = window.HobunjiCharacterRigScale?.scaleFor?.(speciesId, gender) || null; // Used to make the displayed body match the same height tuple that maps weapon Y below.
+  window.HobunjiCharacterRigScale?.applyToParent?.(characterBodyScaleRoot, speciesId, gender, visibleRigScale);
   applyPreviewNeckWeights();
   toolBase.position.set(toolMirrored ? -baseAttachX : baseAttachX, baseAttachY, 0);
   logDebug(`Avatar rebuilt: ${speciesId}/${gender} (prism ${w.toFixed(2)}x${h.toFixed(2)}, orbit ×${currentPoseOrbitScale.toFixed(5)}, arm ${currentArmLength.toFixed(3)}, centroidY ${currentPoseCentroidY.toFixed(3)}, base at ${toolBase.position.x.toFixed(2)}/${baseAttachY.toFixed(2)}${toolMirrored ? ', mirrored' : ''})`);
@@ -672,7 +675,15 @@ $('avatarGender').addEventListener('change', () => {
 
 function refreshOrbitScaleStatus() {
   const status = window.LocalDBOverrides?.listStatuses?.().find(entry => entry.id === 'speciesPoseOrbitScales');
-  $('orbitScalesStatus').textContent = `${currentSpeciesId}/${currentGender} weapon orbit ×${currentPoseOrbitScale.toFixed(4)} · anatomy armLength ${currentArmLength.toFixed(3)} · ${status?.hasOverride ? `local override saved ${new Date(status.savedAt).toLocaleString()}` : 'repo config active unless you save a local override'}.`;
+  const sourceMode = window.LocalDBOverrides?.getSourceMode?.() || 'repo'; // Used to distinguish a stored override from one the game will actually load.
+  let sourceText = sourceMode === 'local' ? 'Local source selected' : 'Repo source selected';
+  if (status?.hasOverride) {
+    const savedText = `saved ${new Date(status.savedAt).toLocaleString()}`;
+    sourceText += sourceMode === 'local' ? ` · override ACTIVE (${savedText})` : ` · override stored but INACTIVE (${savedText})`;
+  } else {
+    sourceText += sourceMode === 'local' ? ' · no override saved, so repo fallback is active' : ' · repo config active';
+  }
+  $('orbitScalesStatus').textContent = `${currentSpeciesId}/${currentGender} weapon orbit ×${currentPoseOrbitScale.toFixed(4)} · anatomy armLength ${currentArmLength.toFixed(3)} · ${sourceText}.`;
 }
 $('poseOrbitScale').addEventListener('input', () => {
   const value = Number($('poseOrbitScale').value);
@@ -700,12 +711,22 @@ $('orbitScalesSaveOverrideBtn').addEventListener('click', () => {
   if (!data || !window.LocalDBOverrides) return;
   window.LocalDBOverrides.setOverride('speciesPoseOrbitScales', data);
   refreshOrbitScaleStatus();
-  logDebug('Saved species/gender pose orbit scales as a local game database override.');
+  const active = window.LocalDBOverrides.getSourceMode?.() === 'local'; // Used only for the mobile-readable confirmation below.
+  logDebug(active
+    ? 'Saved species/gender pose orbit scales; Local source is selected so this override is active.'
+    : 'Saved species/gender pose orbit scales, but Repo source is selected so the stored override is currently inactive.');
 });
-$('orbitScalesClearOverrideBtn').addEventListener('click', () => {
+$('orbitScalesClearOverrideBtn').addEventListener('click', async () => {
   window.LocalDBOverrides?.clearOverride?.('speciesPoseOrbitScales');
-  refreshOrbitScaleStatus();
-  logDebug('Cleared local species/gender pose orbit scale override.');
+  try {
+    await window.HobunjiSpeciesPoseScale?.reloadFromDatabaseSource?.();
+    await rebuildAvatar($('avatarSpecies').value, $('avatarGender').value);
+    refreshOrbitScaleStatus();
+    logDebug('Cleared local species/gender pose orbit scale override and reloaded the selected source.');
+  } catch (error) {
+    refreshOrbitScaleStatus();
+    logDebug('Cleared local orbit override, but reloading the selected source failed: ' + (error?.message || error));
+  }
 });
 rebuildAvatar($('avatarSpecies').value, $('avatarGender').value)
   .then(refreshOrbitScaleStatus)
