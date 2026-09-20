@@ -8,6 +8,7 @@
 
   const IDLE = Object.freeze({ grip: 1, palmNormal: 1 });
   const ACTIVE = Object.freeze({ grip: 0, palmNormal: 1 });
+  const AUTO_ELBOW_HINT = Object.freeze({ x: 0, y: 0, z: 0 }); // Zero means use the hand-local automatic bend plane; nonzero values are arm-midpoint-relative hints in arm-length units.
   let capturedMelee = null;
 
   const clamp01 = value => Math.max(0, Math.min(1, Number(value) || 0));
@@ -26,12 +27,32 @@
       palmNormal: a.palmNormal + (b.palmNormal - a.palmNormal) * k,
     };
   };
+  const normalizeElbowHint = raw => {
+    const source = raw?.elbowHint || raw?.elbow || raw || AUTO_ELBOW_HINT; // Accepts the editor's current semantic key plus an early elbow alias.
+    const number = value => Number.isFinite(Number(value)) ? Number(value) : 0;
+    return { x: number(source.x), y: number(source.y), z: number(source.z) };
+  };
+  const lerpElbowHint = (a, b, t) => {
+    const k = clamp01(t);
+    return {
+      x: a.x + (b.x - a.x) * k,
+      y: a.y + (b.y - a.y) * k,
+      z: a.z + (b.z - a.z) * k,
+    };
+  };
 
   function normalizePoseSet(raw = {}) {
     return {
       neutral: normalize(raw.neutral?.shoulderAim || raw.neutral, IDLE),
       windup: normalize(raw.windup?.shoulderAim || raw.windup, ACTIVE),
       strike: normalize(raw.strike?.shoulderAim || raw.strike, ACTIVE),
+    };
+  }
+  function normalizeElbowPoseSet(raw = {}) {
+    return {
+      neutral: normalizeElbowHint(raw.neutral?.shoulderAim || raw.neutral),
+      windup: normalizeElbowHint(raw.windup?.shoulderAim || raw.windup),
+      strike: normalizeElbowHint(raw.strike?.shoulderAim || raw.strike),
     };
   }
 
@@ -66,6 +87,34 @@
     if (t <= sf) return lerp(scaledWindup, scaledStrike, (t - wf) / Math.max(1e-6, sf - wf));
     if (t <= hf) return { ...scaledStrike };
     return lerp(scaledStrike, poses.neutral, (t - hf) / Math.max(1e-6, 1 - hf));
+  }
+
+  function elbowHintAt(progress, timing = {}, poseSet = {}, sequence = 'attack') {
+    const t = clamp01(progress);
+    const wf = clamp01(timing.windupFrac ?? timing.wf ?? 0.16);
+    const sf = Math.max(wf, clamp01(timing.strikeFrac ?? timing.sf ?? 0.55));
+    const hf = Math.max(sf, clamp01(timing.holdFrac ?? timing.hf ?? 0.68));
+    const poses = normalizeElbowPoseSet(poseSet);
+    const poseScale = clamp01(timing.poseScale ?? 1);
+    const scaledWindup = lerpElbowHint(poses.neutral, poses.windup, poseScale);
+    const scaledStrike = lerpElbowHint(poses.neutral, poses.strike, poseScale);
+    if (sequence === 'load') {
+      if (t <= wf) return lerpElbowHint(poses.neutral, scaledWindup, t / Math.max(1e-6, wf));
+      return lerpElbowHint(scaledWindup, poses.neutral, (t - wf) / Math.max(1e-6, 1 - wf));
+    }
+    if (sequence === 'fire') {
+      if (t <= sf) return lerpElbowHint(poses.neutral, scaledStrike, t / Math.max(1e-6, sf));
+      if (t <= hf) return { ...scaledStrike };
+      return lerpElbowHint(scaledStrike, poses.neutral, (t - hf) / Math.max(1e-6, 1 - hf));
+    }
+    if (t <= wf) {
+      const rawWindupT = t / Math.max(1e-6, wf);
+      const poseT = global.Combat?.windupPoseProgress?.(rawWindupT, timing.windupSlowdown) ?? rawWindupT;
+      return lerpElbowHint(poses.neutral, scaledWindup, poseT);
+    }
+    if (t <= sf) return lerpElbowHint(scaledWindup, scaledStrike, (t - wf) / Math.max(1e-6, sf - wf));
+    if (t <= hf) return { ...scaledStrike };
+    return lerpElbowHint(scaledStrike, poses.neutral, (t - hf) / Math.max(1e-6, 1 - hf));
   }
 
   function secondaryGripActive(toolKey) {
@@ -192,15 +241,61 @@
     return gameWeights(side);
   }
 
+  function currentElbowHint(side) {
+    const editor = global.HobunjiAttackEditorHandShoulderControls;
+    if (editor?.currentElbowHint) return normalizeElbowHint(editor.currentElbowHint());
+
+    const action = global.__rangedDebug?.playerAction || null;
+    if (action?.itemKey && action?.kind && Number(action.durationS) > 0) {
+      const def = global.RangedWeapons?.config?.[action.itemKey] || null;
+      if (def) {
+        const kind = action.kind === 'load' ? 'load' : 'fire';
+        const progress = clamp01(Number(action.t) / Number(action.durationS));
+        const timing = kind === 'load'
+          ? { windupFrac: def.reloadWindupFrac ?? 0.55, strikeFrac: def.reloadStrikeFrac ?? 0.56, holdFrac: def.reloadHoldFrac ?? 0.57 }
+          : { windupFrac: def.fireWindupFrac ?? 0.02, strikeFrac: def.fireAtFrac ?? 0.18, holdFrac: def.fireHoldFrac ?? (def.fireAtFrac ?? 0.18) };
+        const sequence = kind === 'load' ? (def.reloadSequence || 'attack') : (def.fireSequence || 'fire');
+        const configuredPose = kind === 'load' ? def.loadPose : def.firePose;
+        const key = `ranged:${action.itemKey}:${kind}`;
+        const authored = hasAuthoredPoseAim(configuredPose)
+          ? configuredPose
+          : (global.HobunjiHandShoulderPoseProfiles?.forKey?.(key) || {});
+        return elbowHintAt(progress, timing, authored, sequence);
+      }
+    }
+
+    const snapshot = global.WeaponToolStances?.debugSnapshot?.() || null;
+    const active = snapshot?.combatNeutralInjected === true && Number.isFinite(Number(snapshot?.combatProgress));
+    if (!active) return { ...AUTO_ELBOW_HINT };
+    const rawPose = capturedMelee?.opts?.pose;
+    if (hasAuthoredPoseAim(rawPose)) {
+      const timing = {
+        windupFrac: capturedMelee.opts.windupFrac ?? 0.16,
+        strikeFrac: capturedMelee.opts.strikeFrac ?? 0.55,
+        holdFrac: capturedMelee.opts.holdFrac ?? 0.68,
+        windupSlowdown: capturedMelee.opts.windupSlowdown ?? 0,
+        poseScale: snapshot.combatPoseScale ?? 1,
+      };
+      return elbowHintAt(snapshot.combatProgress, timing, rawPose, capturedMelee.opts.sequence || 'attack');
+    }
+    const profileKey = `melee:${snapshot?.combatAnim || 'thrust'}`;
+    return elbowHintAt(snapshot.combatProgress, { poseScale: snapshot.combatPoseScale ?? 1 }, global.HobunjiHandShoulderPoseProfiles?.forKey?.(profileKey) || {}, 'attack');
+  }
+
   global.HobunjiHandShoulderPoseRuntime = Object.freeze({
     idle: IDLE,
     active: ACTIVE,
     normalize,
     normalizePoseSet,
+    normalizeElbowHint,
+    normalizeElbowPoseSet,
     hasAuthoredPoseAim,
     lerp,
+    lerpElbowHint,
     weightsAt,
+    elbowHintAt,
     currentWeights,
+    currentElbowHint,
     installMeleeCapture,
   });
 })(window);
