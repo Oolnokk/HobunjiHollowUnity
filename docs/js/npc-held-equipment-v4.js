@@ -152,24 +152,43 @@
     if (!q) return false;
     sourceParent.updateWorldMatrix?.(true, false);
     holderParent.updateWorldMatrix?.(true, false);
-    const avatar = avatarRootFor(walker); // Supplies cached species/gender orbit + visual-centroid metadata used by player and bandits.
+    const avatar = avatarRootFor(walker); // Supplies cached identity, portrait height and weapon-orbit metadata.
     const armLength = Number(avatar?.userData?.armLength);
     const poseOrbitScale = Number(avatar?.userData?.poseOrbitScale);
-    const scale = window.HobunjiSpeciesPoseScale?.scaleForPose?.(poseOrbitScale, armLength) ?? 1;
-    if (sourceParent === holderParent && scale === 1) {
-      holder.position.copy(p); // Preserve the exact scale-1 authored path without unnecessary world/local round-trips.
+    const speciesId = avatar?.userData?.speciesId || walker?.rec?.appearance?.speciesId || walker?.rec?.species || null; // Used by shared authored-Y height mapping.
+    const gender = avatar?.userData?.gender || walker?.rec?.appearance?.gender || walker?.rec?.gender || 'male';
+    const modelHeight = Number(avatar?.userData?.portraitModelHeight) || Number(walker?.avatarHeight) || .9;
+    const scaler = window.HobunjiSpeciesPoseScale;
+    const scale = scaler?.scaleForPose?.(poseOrbitScale, armLength) ?? 1;
+    // sourceParent already contains any CharacterRigScale parent scale. Passing
+    // rigScaleY=1 below avoids applying that body scale twice; the world-space
+    // authored delta already carries the target rigScaleY once through the hierarchy.
+    const height = scaler?.heightMetrics?.(speciesId, gender, modelHeight, 1) || null;
+    const needsPoseMap = Math.abs(scale - 1) > 1e-9 || Math.abs((height?.heightRatio ?? 1) - 1) > 1e-9;
+    if (sourceParent === holderParent && !needsPoseMap) {
+      holder.position.copy(p); // Preserve the exact identity path without unnecessary world/local round-trips.
       holder.quaternion.copy(q);
     } else {
-      const worldP = sourceParent.localToWorld(p.clone()); // Raw finished pose before the uniform centroid orbit.
-      if (avatar && scale !== 1) {
+      const worldP = sourceParent.localToWorld(p.clone()); // Finished point after the character hierarchy has contributed its real body scale once.
+      if (avatar && needsPoseMap) {
         avatar.updateWorldMatrix?.(true, false);
         const centroidLocal = new three.Vector3(
           Number(avatar.userData?.visualCentroidLocalX) || 0,
           Number(avatar.userData?.visualCentroidLocalY) || 0,
           Number(avatar.userData?.visualCentroidLocalZ) || 0,
-        ); // True portrait-plane center inside the avatar root hierarchy.
-        const centroid = avatar.localToWorld(centroidLocal);
-        window.HobunjiSpeciesPoseScale?.scalePointAroundCentroid?.(worldP, centroid.x, centroid.y, centroid.z, armLength, poseOrbitScale);
+        );
+        const centroid = avatar.localToWorld(centroidLocal); // Horizontal X/Z orbit center in world space.
+        const baseWorld = sourceParent.localToWorld(new three.Vector3(anchor.x, anchor.y, 0)); // Actual already-scaled raw hand base.
+        const floorWorld = sourceParent.localToWorld(new three.Vector3(0, 0, 0)); // Actual already-scaled character floor.
+        if (scaler?.transformPosePoint) {
+          scaler.transformPosePoint(worldP, {
+            cx: centroid.x, cz: centroid.z, floorY: floorWorld.y, baseY: baseWorld.y,
+            speciesId, gender, modelHeight, rigScaleY: 1,
+            armLength, poseOrbitScale,
+          });
+        } else {
+          scaler?.scalePointAroundCentroid?.(worldP, centroid.x, centroid.y, centroid.z, armLength, poseOrbitScale);
+        }
       }
       const worldQ = sourceParent.getWorldQuaternion(new three.Quaternion()).multiply(q);
       const parentQ = holderParent.getWorldQuaternion(new three.Quaternion()).invert();
