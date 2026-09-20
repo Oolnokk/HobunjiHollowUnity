@@ -14,12 +14,12 @@
   const DEFAULT_CONFIG = Object.freeze({
     schema: 'hobunji_species_pose_orbit_scales.v1',
     species: Object.freeze({
-      'mao-ao': Object.freeze({ male: 1, female: 1 }),
-      'engh-sho': Object.freeze({ male: 1, female: 1 }),
-      kenkari: Object.freeze({ male: 1, female: 1 }),
-      rakakoan: Object.freeze({ male: 1, female: 1 }),
-      mashtzarr: Object.freeze({ male: 1, female: 1 }),
-      tletingan: Object.freeze({ male: 0.612 / 0.558, female: 0.603 / 0.558 }),
+      'mao-ao': Object.freeze({ male: 1, female: 0.9 }),
+      'engh-sho': Object.freeze({ male: 0.7, female: 0.65 }),
+      kenkari: Object.freeze({ male: 0.5, female: 0.4 }),
+      rakakoan: Object.freeze({ male: 0.5, female: 0.4 }),
+      mashtzarr: Object.freeze({ male: 0.8, female: 0.65 }),
+      tletingan: Object.freeze({ male: 0.5, female: 0.47 }),
     }),
   });
   const ALIASES = Object.freeze({ ghoul: 'mao-ao' });
