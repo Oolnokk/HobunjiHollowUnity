@@ -262,7 +262,7 @@
       existingSpacing.addEventListener('load', loadWeaponToolStancesRuntime, { once: true });
     } else {
       const spacingScript = document.createElement('script'); // Pure canonical Mao'ao-space pose calibration shared by player, enemies, and editor.
-      spacingScript.src = 'js/combat/melee-pose-spacing.js?v=20260920spacing1';
+      spacingScript.src = 'js/combat/melee-pose-spacing.js?v=20260920spacing2';
       spacingScript.async = false;
       spacingScript.dataset.meleePoseSpacing = 'true';
       spacingScript.onload = loadWeaponToolStancesRuntime;
