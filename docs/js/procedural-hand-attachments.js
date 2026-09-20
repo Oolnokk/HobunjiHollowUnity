@@ -622,8 +622,7 @@
 
     function setSideIdle(side, fallbackPose = null) {
       const rec = sockets[side];
-      rec.toolCalibrationEnabled = false; // handFromTool calibration belongs only to a held-item attachment, never the free-hand idle pose.
-      syncToolCalibration(side);
+      applyToolCalibration(side, null); // handFromTool calibration belongs only to a held-item attachment, never the free-hand idle pose.
       const position = fallbackPose?.position || {}; // Optional local locomotion offset applied only while this side has no attachment owner.
       const rotation = fallbackPose?.rotationDeg || {}; // Optional idle/walk rotation composed after the authored medial hand frame.
       fallbackOffset.set(
@@ -673,62 +672,37 @@
       return { modelKey, model, modelScale, speciesScale, effectiveScale: modelScale * speciesScale };
     }
 
-    function normalizedToolCalibration(values = profileValues()) {
-      const raw = profiles.normalizeHandTransform?.(values.model?.handFromTool) || values.model?.handFromTool || {}; // Reads the one authoritative per-GLB calibration record.
-      const position = raw.position || {}; // Normalized hand-height translation, converted to real preview units below.
-      const q = raw.rotationQuaternion || null; // Gimbal-free model-local orientation authored by the calibration controls.
-      const unit = modelHeight
-        * (Number(profiles.data?.handHeightFraction) || 0.12)
-        * (Number(values.modelScale) || 1)
-        * (Number(values.speciesScale) || 1); // Same hand-height unit the old frame-driver composition used.
-      return {
-        position: new THREE.Vector3(
-          (Number(position.x) || 0) * unit,
-          (Number(position.y) || 0) * unit,
-          (Number(position.z) || 0) * unit,
-        ),
-        quaternion: q && [q.x, q.y, q.z, q.w].every(value => Number.isFinite(Number(value)))
-          ? new THREE.Quaternion(Number(q.x), Number(q.y), Number(q.z), Number(q.w)).normalize()
-          : new THREE.Quaternion().setFromEuler(new THREE.Euler(
-              THREE.MathUtils.degToRad(Number(raw.rotationDeg?.pitch) || 0),
-              THREE.MathUtils.degToRad(Number(raw.rotationDeg?.yaw) || 0),
-              THREE.MathUtils.degToRad(Number(raw.rotationDeg?.roll) || 0),
-              'YXZ',
-            )),
-      };
-    }
-
-    function syncToolCalibration(side, values = profileValues()) {
+    function applyToolCalibration(side, authored = null) {
       const rec = sockets[side];
       if (!rec?.calibration) return false;
-      if (!rec.toolCalibrationEnabled) {
+      if (!authored) {
+        rec.toolCalibrationEnabled = false;
         rec.calibration.position.set(0, 0, 0);
         rec.calibration.quaternion.identity();
       } else {
-        const transform = normalizedToolCalibration(values);
-        rec.calibration.position.copy(transform.position);
-        rec.calibration.quaternion.copy(transform.quaternion);
+        const p = authored.position || {};
+        const q = authored.rotationQuaternion || null;
+        rec.toolCalibrationEnabled = true;
+        rec.calibration.position.set(
+          Number(p.x) || 0,
+          Number(p.y) || 0,
+          Number(p.z) || 0,
+        );
+        if (q && [q.x, q.y, q.z, q.w].every(value => Number.isFinite(Number(value)))) {
+          rec.calibration.quaternion.set(Number(q.x), Number(q.y), Number(q.z), Number(q.w)).normalize();
+        } else {
+          const r = authored.rotationDeg || {};
+          rec.calibration.quaternion.setFromEuler(new THREE.Euler(
+            THREE.MathUtils.degToRad(Number(r.pitch) || 0),
+            THREE.MathUtils.degToRad(Number(r.yaw) || 0),
+            THREE.MathUtils.degToRad(Number(r.roll) || 0),
+            'YXZ',
+          ));
+        }
       }
       rec.calibration.updateMatrix?.();
       rec.calibration.updateMatrixWorld?.(true);
       return true;
-    }
-
-    function setToolCalibrationEnabled(side, enabled) {
-      const rec = sockets[side];
-      if (!rec) return false;
-      rec.toolCalibrationEnabled = !!enabled;
-      return syncToolCalibration(side);
-    }
-
-    function toolCalibrationLocal(side) {
-      const rec = sockets[side];
-      if (!rec?.calibration) return null;
-      return {
-        enabled: !!rec.toolCalibrationEnabled,
-        position: rec.calibration.position.clone(),
-        quaternion: rec.calibration.quaternion.clone(),
-      };
     }
 
     function syncPaperHandGuide(values = profileValues()) {
@@ -777,8 +751,6 @@
       state.glb = values.model?.glb || null;
       state.loadError = null;
       installFallback(values);
-      syncToolCalibration('left', values);
-      syncToolCalibration('right', values); // Profile/model-scale changes update the child calibration transform without touching socket ownership.
       syncPaperHandGuide(values); // Profile/model-scale changes keep the locked scaffold aligned without animating its folded segments.
       if (!values.model?.glb) return;
 
@@ -828,10 +800,10 @@
       return true;
     }
 
-    function placeHandWorld(side, worldPosition, worldQuaternion) {
+    function placeHandWorld(side, worldPosition, worldQuaternion, modelCalibration = null) {
       const rec = sockets[side];
       if (!rec || !worldPosition || !worldQuaternion) return false;
-      setToolCalibrationEnabled(side, true); // Held-item placement owns only the socket; per-GLB calibration stays on its dedicated child node.
+      applyToolCalibration(side, modelCalibration); // Uses the frame driver's exact selected-model calibration; this rig never resolves a second model identity.
       parent.updateWorldMatrix?.(true, false);
       const localPosition = worldPosition.clone();
       parent.worldToLocal(localPosition);
@@ -855,10 +827,7 @@
 
     const unsubscribe = profiles.subscribe?.((_data, change) => {
       if (change?.kind === 'hand-transform') {
-        const values = profileValues();
-        syncToolCalibration('left', values);
-        syncToolCalibration('right', values); // Live slider edits update only the calibration child; the held-item/shoulder socket is untouched.
-        syncPaperHandGuide(values);
+        syncPaperHandGuide(profileValues()); // Calibration itself is applied authoritatively by the next frame-driver sync.
         return;
       }
       refreshModelProfile();
@@ -874,8 +843,7 @@
       setSideIdle,
       setSideVisible,
       useIdlePose,
-      setToolCalibrationEnabled,
-      toolCalibrationLocal,
+      applyToolCalibration,
       refreshModelProfile,
       setPaperHandGuideVisible, // Public only so the standalone editor can lazily toggle its locked x-ray reference.
       placePaperHandGuideWorld, // Frame driver supplies the UNCALIBRATED primary-grip frame so calibration sliders move the GLB against this fixed scaffold.
