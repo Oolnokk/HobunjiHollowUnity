@@ -257,12 +257,12 @@
       const authoredOffset = Number(profile?.anatomy?.armLengthHeightPercentOffset);
       const wristY = posteriorY - safeHeight * (Number.isFinite(authoredOffset) ? authoredOffset : 0) / 100; // Matches the runtime free-hand resting-height rule exactly.
       const authoredPortraitScale = Number(profile?.anatomy?.portraitScale);
-      const livePortraitScale = Number(currentPortraitScale);
+      const livePortraitScale = currentPortraitScale == null ? NaN : Number(currentPortraitScale);
       const portraitFactor = Number.isFinite(authoredPortraitScale) && authoredPortraitScale > 0 && Number.isFinite(livePortraitScale) && livePortraitScale > 0
         ? livePortraitScale / authoredPortraitScale
         : 1;
       const authoredPlacement = Number(profile?.anatomy?.portraitVerticalPlacementRatio);
-      const livePlacement = Number(currentPlacementRatio);
+      const livePlacement = currentPlacementRatio == null ? NaN : Number(currentPlacementRatio);
       const placementDelta = Number.isFinite(authoredPlacement) && Number.isFinite(livePlacement)
         ? livePlacement - authoredPlacement
         : 0;
