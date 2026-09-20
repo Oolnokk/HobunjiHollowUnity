@@ -3505,7 +3505,7 @@ window.SCRATCHBONES_CONFIG = {
         // Played instead of the area's normal bgm/ambient cues whenever
         // isPlayerInCombat() is true (see updateAmbientCues in music-system.js).
         // Combat tracks loop by default until the existing combat state clears.
-        // Area BGM/cues tagged combatBgmExempt stay in control instead, which
+        // Area BGM/cues tagged exclusiveSoundtrack stay in control instead, which
         // keeps authored special soundtracks such as Just Beyond the Torchlight
         // uninterrupted and leaves room for more opt-outs later.
         "combatBgm": [
