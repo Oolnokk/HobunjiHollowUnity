@@ -639,6 +639,7 @@
       fallbackQuaternion.setFromEuler(fallbackEuler);
       rec.socket.position.copy(idlePositions[side]).add(fallbackOffset);
       rec.socket.quaternion.copy(idleQuaternion).multiply(fallbackQuaternion);
+      rec.socket.scale.set(1, 1, 1); // Calibration workspace may counter parent scale; ordinary idle/runtime ownership always returns sockets to unit local scale.
       rec.socket.visible = true;
       rec.socket.updateMatrix?.();
       rec.socket.updateMatrixWorld?.(true);
@@ -811,9 +812,59 @@
       const localQuaternion = tempParentQuaternion.clone().invert().multiply(worldQuaternion);
       rec.socket.position.copy(localPosition);
       rec.socket.quaternion.copy(localQuaternion);
+      rec.socket.scale.set(1, 1, 1); // Ordinary held-item placement must clear calibration-workspace scale cancellation.
       rec.socket.visible = true;
       rec.socket.updateMatrix?.();
       rec.socket.updateMatrixWorld?.(true);
+      return true;
+    }
+
+    const calibrationParentWorldQuaternion = new THREE.Quaternion(); // Scale-free parent orientation used only by the isolated editor calibration workspace.
+    const calibrationParentWorldScale = new THREE.Vector3(); // Cancels avatar/species/world scaling so the GLB and paper reference share one neutral visual frame.
+    function hierarchyWorldQuaternionScaleFree(node, target) {
+      const chain = []; // Avoids matrix decomposition under non-uniform ancestor scale.
+      for (let cursor = node; cursor?.isObject3D; cursor = cursor.parent) chain.push(cursor);
+      target.identity();
+      for (let i = chain.length - 1; i >= 0; i -= 1) target.multiply(chain[i].quaternion);
+      return target.normalize();
+    }
+
+    function placeCalibrationPreviewWorld(worldPosition, worldQuaternion, modelCalibration = null) {
+      const rec = sockets.right;
+      if (!rec || !worldPosition || !worldQuaternion) return false;
+      showPaperHandGuide = true; // Calibration mode has exactly one invariant reference and never allows it to disappear.
+      syncPaperHandGuide(profileValues());
+      if (!paperGuide) return false;
+
+      parent.updateWorldMatrix?.(true, false);
+      const localPosition = worldPosition.clone();
+      parent.worldToLocal(localPosition);
+      hierarchyWorldQuaternionScaleFree(parent, calibrationParentWorldQuaternion);
+      const localQuaternion = calibrationParentWorldQuaternion.clone().invert().multiply(worldQuaternion).normalize();
+
+      parent.getWorldScale(calibrationParentWorldScale);
+      const invX = Math.abs(calibrationParentWorldScale.x) > 1e-8 ? 1 / Math.abs(calibrationParentWorldScale.x) : 1;
+      const invY = Math.abs(calibrationParentWorldScale.y) > 1e-8 ? 1 / Math.abs(calibrationParentWorldScale.y) : 1;
+      const invZ = Math.abs(calibrationParentWorldScale.z) > 1e-8 ? 1 / Math.abs(calibrationParentWorldScale.z) : 1;
+
+      rec.socket.position.copy(localPosition);
+      rec.socket.quaternion.copy(localQuaternion);
+      rec.socket.scale.set(invX, invY, invZ); // Keeps the calibration view independent of avatar/species parent scale.
+      rec.socket.visible = true;
+      applyToolCalibration('right', modelCalibration);
+
+      sockets.left.socket.visible = false; // Calibration is a single selected-GLB workflow, not a two-hand animation preview.
+      paperReferenceSocket.position.copy(localPosition);
+      paperReferenceSocket.quaternion.copy(localQuaternion);
+      paperReferenceSocket.scale.set(invX, invY, invZ);
+      paperReferenceSocket.visible = true;
+      paperGuidePlaced = true;
+      paperGuide.visible = true;
+
+      rec.socket.updateMatrix?.();
+      rec.socket.updateMatrixWorld?.(true);
+      paperReferenceSocket.updateMatrix?.();
+      paperReferenceSocket.updateMatrixWorld?.(true);
       return true;
     }
 
@@ -840,6 +891,7 @@
       speciesId,
       gender,
       placeHandWorld,
+      placeCalibrationPreviewWorld,
       setSideIdle,
       setSideVisible,
       useIdlePose,
