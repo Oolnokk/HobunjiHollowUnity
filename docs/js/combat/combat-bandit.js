@@ -373,8 +373,9 @@
     group.userData.portraitModelHeight = modelHeight;
     group.userData.portraitVerticalPlacementRatio = portrait.userData?.portraitVerticalPlacementRatio ?? 0.5;
     group.userData.portraitScaleMultiplier = portrait.userData?.portraitScaleMultiplier ?? 1;
-    group.userData.armLength = portrait.userData?.armLength ?? null; // Canonical species+gender reach shared with player/NPC attack-pose scaling.
+    group.userData.armLength = portrait.userData?.armLength ?? null; // Anatomical reach retained independently from weapon pose scaling.
     group.userData.scaledArmLength = portrait.userData?.scaledArmLength ?? null; // Rendered-space reach retained for non-combat anatomy consumers.
+    group.userData.poseOrbitScale = portrait.userData?.poseOrbitScale ?? 1; // Explicit species+gender weapon-orbit multiplier.
     group.userData.visualCentroidLocalY = portrait.userData?.visualCentroidLocalY ?? 0; // Converted bandit group remains center-anchored, so this is its visual-center offset.
     group.userData.poseCentroidY = portrait.userData?.poseCentroidY ?? (modelHeight * 0.5);
     const legsPivot = new THREE.Group();
@@ -411,6 +412,7 @@
       handAttachX: portrait.userData?.handAttachX,
       handAttachY: portrait.userData?.handAttachY,
       armLength: portrait.userData?.armLength,
+      poseOrbitScale: portrait.userData?.poseOrbitScale ?? 1,
       visualCentroidLocalY: portrait.userData?.visualCentroidLocalY ?? 0,
       poseCentroidY: portrait.userData?.poseCentroidY ?? (modelHeight * 0.5),
       dispose() {
@@ -1887,10 +1889,11 @@
     const group = avatarRef?.group; // Center-anchored bandit avatar used to derive the world visual centroid.
     if (!holder || !group) return holder;
     const armLength = Number(avatarRef?.armLength ?? group.userData?.armLength);
+    const poseOrbitScale = Number(avatarRef?.poseOrbitScale ?? group.userData?.poseOrbitScale);
     const centroidOffsetY = Number(avatarRef?.visualCentroidLocalY ?? group.userData?.visualCentroidLocalY) || 0; // Internal portrait assembly shift from the true group center.
     const scaler = window.HobunjiSpeciesPoseScale; // Shared transform keeps player, bandit, and NPC interpretation identical.
-    scaler?.scalePointAroundCentroid?.(holder.position, group.position.x, group.position.y + centroidOffsetY, group.position.z, armLength);
-    c._banditLastCentroidScale = scaler?.scaleForArmLength?.(armLength) ?? 1; // Mobile/debug-readable factor, written only while a weapon pose updates.
+    scaler?.scalePointAroundCentroid?.(holder.position, group.position.x, group.position.y + centroidOffsetY, group.position.z, armLength, poseOrbitScale);
+    c._banditLastCentroidScale = scaler?.scaleForPose?.(poseOrbitScale, armLength) ?? 1; // Mobile/debug-readable authored orbit factor.
     return holder;
   }
 
