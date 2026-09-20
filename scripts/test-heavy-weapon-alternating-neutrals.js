@@ -69,6 +69,19 @@ function assertEndpointSpacing(original, adjusted, phase, label) {
   assert(Math.abs(adjustedMetrics.z - originalMetrics.z) < 1e-10, `${label} spacing must not change character-local depth`);
 }
 
+for (const phase of ['windup', 'strike']) {
+  const originalForehand = spacing.calibration.forehandBefore[phase];
+  const uploadedForehand = spacing.calibration.forehandAfter[phase];
+  const correctedForehand = spacing.adjustEndpoint(originalForehand, phase);
+  const uploadedMetrics = spacing.metrics(uploadedForehand);
+  const correctedMetrics = spacing.metrics(correctedForehand);
+  const liftedOriginalMetrics = spacing.metrics({ ...originalForehand, y: originalForehand.y + spacing.calibration.yLift });
+  assert(Math.abs(correctedMetrics.rangeXY - uploadedMetrics.rangeXY) < 1e-10, `Forehand ${phase} must preserve the uploaded total XY reach`);
+  assert(angleDeltaDeg(correctedMetrics.directionDeg, liftedOriginalMetrics.directionDeg) < 1e-10, `Forehand ${phase} must restore its original post-lift direction`);
+  assert(angleDeltaDeg(correctedMetrics.directionDeg, uploadedMetrics.directionDeg) > 5, `Forehand ${phase} must not retain the uploaded accidental lateral direction`);
+  assert(Math.abs(correctedForehand.x + 0.48) > 0.4, `Forehand ${phase} must not copy uploaded x=-0.48`);
+}
+
 {
   const regular = window.WeaponToolStances.prepareCombatOptions({ anim: 'sweep', dirSign: 1, pose: authoredSweep });
   assert.deepStrictEqual(visible(regular.pose.neutral, regular.dirSign), heavyPose);
