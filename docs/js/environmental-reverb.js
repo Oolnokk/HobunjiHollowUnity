@@ -319,6 +319,17 @@
     debugSnapshot,
   };
 
-  install();
-  if (typeof window.setInterval === 'function') window.setInterval(install, 250);
+  // mediaPlayWrapped/audioInitWrapped/musicInitWrapped are each idempotent,
+  // one-time installs against late-loaded singletons (window.AudioSystem,
+  // window.Music); keep calling install() until all three have landed, via
+  // the shared SceneReadyPoller (see its own header comment) rather than a
+  // bare forever-interval.
+  if (window.SceneReadyPoller) {
+    window.SceneReadyPoller.pollUntilReady(() => {
+      install();
+      return mediaPlayWrapped && audioInitWrapped && musicInitWrapped;
+    }, Infinity, 250);
+  } else {
+    install();
+  }
 })();

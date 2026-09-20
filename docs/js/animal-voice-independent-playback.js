@@ -674,6 +674,11 @@
 
   installGestureUnlock();
   requestSimpleEditor();
-  installAudioSystemAdapter();
-  if (typeof window.setInterval === 'function') window.setInterval(installAudioSystemAdapter, 250);
+  // window.AudioSystem is assigned exactly once at its own module's load
+  // (see audio-system.js) and installAudioSystemAdapter is idempotent once
+  // wrapped, so this only ever needs to keep trying until that one
+  // assignment has happened -- via the shared SceneReadyPoller (see its own
+  // header comment) rather than a bare forever-interval.
+  if (window.SceneReadyPoller) window.SceneReadyPoller.pollUntilReady(installAudioSystemAdapter, Infinity, 250);
+  else installAudioSystemAdapter();
 })();

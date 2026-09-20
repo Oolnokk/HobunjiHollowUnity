@@ -435,7 +435,5 @@
     return true;
   }
 
-  if (!install() && typeof window.setInterval === 'function') {
-    const timer = setInterval(() => { if (install()) clearInterval(timer); }, 50);
-  }
+  if (!install() && window.SceneReadyPoller) window.SceneReadyPoller.pollUntilReady(install, Infinity, 50);
 })();

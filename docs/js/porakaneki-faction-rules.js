@@ -425,8 +425,11 @@
       && dialogueMigrationInstalled;
   }
 
-  const installer = setInterval(() => { if (installAvailableHooks()) clearInterval(installer); }, 50); // Retries parser-time/game-init dependencies until every combat and relationship hook is attached.
-  installAvailableHooks();
+  // Retries parser-time/game-init dependencies until every combat and
+  // relationship hook is attached, via the shared SceneReadyPoller (see its
+  // own header comment) rather than another one-off setInterval; also
+  // performs the immediate first attempt itself.
+  window.SceneReadyPoller.pollUntilReady(installAvailableHooks, Infinity, 50);
   loadTuning();
 
   window.PorakanekiFactionRules = Object.freeze({

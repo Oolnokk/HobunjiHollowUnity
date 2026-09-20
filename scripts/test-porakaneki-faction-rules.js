@@ -83,8 +83,10 @@ const sandbox = {
   clearInterval() {},
   setTimeout,
   clearTimeout,
+  performance,
 };
 vm.createContext(sandbox);
+vm.runInContext(fs.readFileSync(path.join(__dirname, '../docs/js/scene-ready-poller.js'), 'utf8'), sandbox, { filename: 'scene-ready-poller.js' });
 vm.runInContext(src, sandbox, { filename: 'porakaneki-faction-rules.js' });
 const rules = window.PorakanekiFactionRules;
 function assert(cond, msg) { if (!cond) throw new Error(msg); }
