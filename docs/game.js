@@ -21388,6 +21388,9 @@
         rigScaleY: 1,
         baseY: 0,
         floorY: 0,
+        cameraOrbitPitchDeg: 0, // Used by the mobile debug snapshot to show the ranged orbit's live vertical camera rotation.
+        cameraOrbitYawDeg: 0, // Used with cameraOrbitPitchDeg to verify the ranged orbit frame follows the live aim frame.
+        cameraOrbitApplied: false, // Used to distinguish ordinary species scaling from the ranged camera-oriented orbit path.
       }; // Mobile-visible last transform without DevTools.
       function playerToolPoseCentroidScale() {
         return _speciesPoseScaling?.scaleForPose?.(playerPoseOrbitScale, playerArmLength) ?? playerPoseOrbitScale;
@@ -21429,6 +21432,38 @@
         _toolPoseCentroidDebug.floorY = floorY;
         return point;
       }
+
+      function orbitScaledRangedToolPointWithCamera(point, aimYawRad, aimPitchRad) {
+        if (!point) return point;
+        scaleToolWorldPointAroundPlayerCentroid(point);
+        const pitch = Number(aimPitchRad) || 0; // Used to rotate the already species/gender-scaled orbit vertically with the live ranged camera/aim pitch.
+        const yaw = Number(aimYawRad) || 0; // Used to define the matching camera-relative right/forward axes for the pitched orbit.
+        _toolPoseCentroidDebug.cameraOrbitPitchDeg = THREE.MathUtils.radToDeg(pitch);
+        _toolPoseCentroidDebug.cameraOrbitYawDeg = THREE.MathUtils.radToDeg(yaw);
+        _toolPoseCentroidDebug.cameraOrbitApplied = true;
+        if (Math.abs(pitch) < 1e-8) return point;
+
+        const identity = playerPoseIdentity(); // Used to resolve the same applied body-height scale as the species/gender position mapping above.
+        const height = _speciesPoseScaling?.heightMetrics?.(identity.speciesId, identity.gender, playerAvatarModelHeight) || null; // Used to put the cached portrait centroid at its rendered world Y.
+        const pivotX = playerMesh.position.x; // Used as the ranged orbit's world-space horizontal center.
+        const pivotY = playerMesh.position.y + playerPoseCentroidY * (height?.rigScaleY ?? 1); // Used as the true rendered vertical centroid around which camera pitch orbits the weapon.
+        const pivotZ = playerMesh.position.z; // Used with pivotX/pivotY as the ranged orbit center.
+        const rightX = Math.cos(yaw), rightZ = -Math.sin(yaw); // Camera/aim right axis used to preserve lateral placement while pitching.
+        const forwardX = Math.sin(yaw), forwardZ = Math.cos(yaw); // Camera/aim forward axis used to rotate forward distance into vertical distance.
+        const dx = point.x - pivotX, dy = point.y - pivotY, dz = point.z - pivotZ; // Species-scaled centroid-relative weapon vector that is rotated as one rigid orbit.
+        const side = dx * rightX + dz * rightZ; // Lateral component remains unchanged by camera pitch.
+        const forward = dx * forwardX + dz * forwardZ; // Forward component exchanges with vertical distance under camera pitch.
+        const cosPitch = Math.cos(pitch), sinPitch = Math.sin(pitch); // Shared pitch terms for the rigid centroid orbit.
+        const pitchedForward = forward * cosPitch - dy * sinPitch; // Horizontal forward distance after camera-pitch rotation.
+        const pitchedY = dy * cosPitch + forward * sinPitch; // Vertical centroid offset after camera-pitch rotation.
+        point.set(
+          pivotX + rightX * side + forwardX * pitchedForward,
+          pivotY + pitchedY,
+          pivotZ + rightZ * side + forwardZ * pitchedForward
+        );
+        _toolPoseCentroidDebug.finalWorld.x = point.x; _toolPoseCentroidDebug.finalWorld.y = point.y; _toolPoseCentroidDebug.finalWorld.z = point.z;
+        return point;
+      }
       window.HobunjiAttackArmReachDebug = Object.freeze({
         snapshot: () => ({
           speciesId: playerPoseIdentity().speciesId,
@@ -21444,12 +21479,18 @@
           finalScaledWorld: { ..._toolPoseCentroidDebug.finalWorld },
           authoredUnscaledLocal: { x: _toolPoseCentroidDebug.rawWorld.x - playerMesh.position.x, y: _toolPoseCentroidDebug.rawWorld.y - playerMesh.position.y, z: _toolPoseCentroidDebug.rawWorld.z - playerMesh.position.z },
           finalScaledLocal: { x: _toolPoseCentroidDebug.finalWorld.x - playerMesh.position.x, y: _toolPoseCentroidDebug.finalWorld.y - playerMesh.position.y, z: _toolPoseCentroidDebug.finalWorld.z - playerMesh.position.z },
-          mappingMode: 'horizontal-orbit-plus-rigger-height',
-          rule: "X/Z = character center + authored offset * poseOrbitScale; Y = rigger-scaled PNG hand anchor + authored hand-relative Y * renderedCharacterHeightRatio",
+          rangedCameraOrbit: { applied: _toolPoseCentroidDebug.cameraOrbitApplied, yawDeg: _toolPoseCentroidDebug.cameraOrbitYawDeg, pitchDeg: _toolPoseCentroidDebug.cameraOrbitPitchDeg },
+          mappingMode: _toolPoseCentroidDebug.cameraOrbitApplied ? 'species-scale-then-camera-yaw-pitch-orbit' : 'horizontal-orbit-plus-rigger-height',
+          rule: _toolPoseCentroidDebug.cameraOrbitApplied
+            ? "Scale the authored weapon point for species/gender first, then rotate the finished centroid-relative orbit with ranged camera yaw/pitch."
+            : "X/Z = character center + authored offset * poseOrbitScale; Y = rigger-scaled PNG hand anchor + authored hand-relative Y * renderedCharacterHeightRatio",
         }),
       });
 
       function updateToolMesh(dt) {
+        _toolPoseCentroidDebug.cameraOrbitApplied = false;
+        _toolPoseCentroidDebug.cameraOrbitPitchDeg = 0;
+        _toolPoseCentroidDebug.cameraOrbitYawDeg = 0;
         if (window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID, 'tools')) {
           toolHolder.visible = false;
           heldItemHolder.visible = false;
@@ -21634,10 +21675,6 @@
           const vθ  = aimBaseYaw + bodyYawRad;
           const vRX =  Math.cos(vθ), vRZ = -Math.sin(vθ);
           const vFX =  Math.sin(vθ), vFZ =  Math.cos(vθ);
-          const aimCos = Math.cos(aimPitchRad), aimSin = Math.sin(aimPitchRad);
-          const pFX = vFX * aimCos, pFY = aimSin, pFZ = vFZ * aimCos;
-          const pUX = -vFX * aimSin, pUY = aimCos, pUZ = -vFZ * aimSin;
-
           playerMesh.rotation.y = vθ;
           _qFac.setFromAxisAngle(_tUp, vθ);
           _qRangedAimPitch.setFromAxisAngle(_xAxis, -aimPitchRad);
@@ -21647,12 +21684,16 @@
           toolHolder.quaternion.copy(_qFac);
           if (reticleAligned) toolHolder.quaternion.multiply(_qRangedAimPitch);
           toolHolder.quaternion.multiply(_qToolYaw).multiply(_qAnim).multiply(_qRoll);
+          // Build the authored pose in its zero-pitch yaw frame first. Species/gender
+          // scaling must happen before camera pitch so the complete scaled orbit,
+          // including its vertical body proportion, rotates rigidly up/down.
           toolHolder.position.set(
-            playerMesh.position.x + vRX * (handBaseX + x) + pUX * y + pFX * z,
-            playerMesh.position.y + playerToolBaseY + pUY * y + pFY * z,
-            playerMesh.position.z + vRZ * (handBaseX + x) + pUZ * y + pFZ * z
+            playerMesh.position.x + vRX * (handBaseX + x) + vFX * z,
+            playerMesh.position.y + playerToolBaseY + y,
+            playerMesh.position.z + vRZ * (handBaseX + x) + vFZ * z
           );
-          scaleToolWorldPointAroundPlayerCentroid(toolHolder.position);
+          if (reticleAligned) orbitScaledRangedToolPointWithCamera(toolHolder.position, vθ, aimPitchRad);
+          else scaleToolWorldPointAroundPlayerCentroid(toolHolder.position);
 
         } else if (anim === 'ranged') {
           const rangedIdlePose = window.RangedWeapons?.playerIdlePose?.(equipmentSlots.ranged); // Used to switch between the loaded fire-neutral and empty load-neutral stance.
@@ -21670,23 +21711,29 @@
           // range where the body hasn't turned at all yet. Reloading/empty
           // keeps the ordinary body-relative stance, since there's nothing
           // to aim yet.
-          const toolVθ = window.RangedWeapons?.isLoaded?.(equipmentSlots.ranged) !== false
+          const rangedTracksAim = window.RangedWeapons?.isLoaded?.(equipmentSlots.ranged) !== false; // Used to keep reload/empty stances body-relative while a ready ranged weapon follows the camera in yaw and pitch.
+          const toolVθ = rangedTracksAim
             ? (-currentPlayerAimAngle() + Math.PI / 2) + bodyYawOffsetRad
             : vθ;
+          const toolAimPitchRad = rangedTracksAim ? currentPlayerAimPitch() : 0; // Used by both the held weapon orientation and the species/gender-scaled camera orbit.
           _debugRangedToolYawRad = toolVθ;
           const vRX = Math.cos(toolVθ), vRZ = -Math.sin(toolVθ);
           const vFX = Math.sin(toolVθ), vFZ = Math.cos(toolVθ);
           _qFac.setFromAxisAngle(_tUp, toolVθ);
+          _qRangedAimPitch.setFromAxisAngle(_xAxis, -toolAimPitchRad);
           _qToolYaw.setFromAxisAngle(_tUp, THREE.MathUtils.degToRad(neutral.yaw));
           _qAnim.setFromAxisAngle(_xAxis, THREE.MathUtils.degToRad(neutral.pitch));
           _qRoll.setFromAxisAngle(_zAxis, THREE.MathUtils.degToRad(neutral.roll));
-          toolHolder.quaternion.copy(_qFac).multiply(_qToolYaw).multiply(_qAnim).multiply(_qRoll);
+          toolHolder.quaternion.copy(_qFac);
+          if (rangedTracksAim) toolHolder.quaternion.multiply(_qRangedAimPitch);
+          toolHolder.quaternion.multiply(_qToolYaw).multiply(_qAnim).multiply(_qRoll);
           toolHolder.position.set(
             playerMesh.position.x + vRX * (playerToolBaseX + neutral.x) + vFX * neutral.z,
             playerMesh.position.y + playerToolBaseY + neutral.y,
             playerMesh.position.z + vRZ * (playerToolBaseX + neutral.x) + vFZ * neutral.z
           );
-          scaleToolWorldPointAroundPlayerCentroid(toolHolder.position);
+          if (rangedTracksAim) orbitScaledRangedToolPointWithCamera(toolHolder.position, toolVθ, toolAimPitchRad);
+          else scaleToolWorldPointAroundPlayerCentroid(toolHolder.position);
 
         } else if (anim === 'thrust') {
           // THRUST — non-overextending jab authored as a full pose (lateral
