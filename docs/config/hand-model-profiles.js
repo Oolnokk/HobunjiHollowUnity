@@ -14,8 +14,8 @@
   const PREVIOUS_HAND_SIZE_BALANCE_MULTIPLIER = 0.85; // Migrates profiles saved by the immediately preceding balance preset.
   const DEFAULT_MODEL_SCALE = 2 * HAND_SIZE_BALANCE_MULTIPLIER;
   const PARROT_MODEL_SCALE = 3 * HAND_SIZE_BALANCE_MULTIPLIER;
-  const PREVIOUS_SHARED_ALIGNMENT_PRESET = 'all-species-maoao-local-0-0--180-v2'; // The v2 calibration was authored against a paper-hand reference that had its wrist/finger axis backwards (wrist top, fingers bottom); migrate it back out without resetting unrelated per-model handedness.
-  const SHARED_ALIGNMENT_PRESET = 'all-species-direction-90--90-0-v3';
+  const PREVIOUS_SHARED_ALIGNMENT_PRESET = 'all-species-direction-90--90-0-v3'; // The v3 calibration was the pre-flip 90/-90/0 baseline; migrate it out without resetting unrelated per-model handedness.
+  const SHARED_ALIGNMENT_PRESET = 'all-species-maoao-local-0-180-0-v4';
   const ROTATION_CALIBRATION_PRESET = 'orthogonal-quaternion-correction-coordinates-v3'; // Visible X/Y/Z sliders use a gimbal-free stereographic quaternion chart anchored to the preserved model calibration base.
   const MODEL_SCALE_PRESET = 'hands-92_5-feet-120-v2';
   const IDENTITY_TRANSFORM = Object.freeze({
@@ -24,12 +24,13 @@
   });
   // Canonical alignment is intentionally reused for every species/model.
   // Kenkari/Rakako'an use the opposite source-X mirror on their parrot hand model below.
-  // Restored from the pre-v2 baseline: v2's {0,0,-180} was calibrated against a paper-hand
-  // reference whose wrist/finger axis had been flipped (wrist top, fingers bottom instead
-  // of the correct wrist bottom, fingers top), so every GLB inherited that same flip.
+  // Re-calibrated directly against the (now correctly wrist-bottom/fingers-top) paper
+  // hand in the GLB Calibration tab, using Mao'ao/feline as the reference model, then
+  // propagated to every other GLB as the same shared delta (position {+0.06,+0.06,-0.11},
+  // rotation 90/-90/0 -> 0/180/0) since they all started from the identical v3 baseline.
   const MAO_AO_HAND_TRANSFORM = Object.freeze({
-    position: Object.freeze({ x: -0.07, y: -0.13, z: 0.21 }),
-    rotationDeg: Object.freeze({ pitch: 90, yaw: -90, roll: 0 }),
+    position: Object.freeze({ x: -0.01, y: -0.07, z: 0.1 }),
+    rotationDeg: Object.freeze({ pitch: 0, yaw: 180, roll: 0 }),
   });
 
   function identityTransform() {

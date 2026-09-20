@@ -87,8 +87,8 @@ assert.strictEqual(profiles.data.models.feline.mirrorX, true, 'Mao\'ao keeps the
 assert.strictEqual(profiles.data.models.parrot.mirrorX, false, 'Kenkari/Rakako\'an parrot hands must use the opposite mirror');
 
 for (const [key, model] of Object.entries(profiles.data.models)) {
-  assert.deepStrictEqual({ ...model.handFromTool.position }, { x: -0.07, y: -0.13, z: 0.21 }, `${key} must inherit the restored (pre-flipped-paper-hand) Mao'ao tool-relative hand position`);
-  assert.deepStrictEqual({ ...model.handFromTool.rotationDeg }, { pitch: 90, yaw: -90, roll: 0 }, `${key} must inherit the restored (pre-flipped-paper-hand) Mao'ao child-local orientation`);
+  assert.deepStrictEqual({ ...model.handFromTool.position }, { x: -0.01, y: -0.07, z: 0.1 }, `${key} must inherit the Mao'ao-recalibrated tool-relative hand position`);
+  assert.deepStrictEqual({ ...model.handFromTool.rotationDeg }, { pitch: 0, yaw: 180, roll: 0 }, `${key} must inherit the Mao'ao-recalibrated child-local orientation`);
   assert.deepStrictEqual({ ...model.handFromTool.rotationCorrectionDeg }, { x: 0, y: 0, z: 0 }, `${key} must start with zero fixed-basis XYZ correction`);
   const q = model.handFromTool.rotationQuaternion;
   assert(q && [q.x, q.y, q.z, q.w].every(Number.isFinite), `${key} must expose an authoritative normalized rotation quaternion`);
@@ -213,13 +213,13 @@ for (const modelKey of ['pachyderm', 'sloth', 'feline', 'parrot']) {
   const transform = sharedDefaultModels[modelKey].handFromTool;
   assert.deepStrictEqual(
     JSON.parse(JSON.stringify(transform.position)),
-    { x: -0.07, y: -0.13, z: 0.21 },
-    `${modelKey} must inherit the restored (pre-flipped-paper-hand) shared GLB position baseline`,
+    { x: -0.01, y: -0.07, z: 0.1 },
+    `${modelKey} must inherit the Mao'ao-recalibrated shared GLB position baseline`,
   );
   assert.deepStrictEqual(
     JSON.parse(JSON.stringify(transform.rotationDeg)),
-    { pitch: 90, yaw: -90, roll: 0 },
-    `${modelKey} must inherit the restored (pre-flipped-paper-hand) child-local orientation`,
+    { pitch: 0, yaw: 180, roll: 0 },
+    `${modelKey} must inherit the Mao'ao-recalibrated child-local orientation`,
   );
   assert.deepStrictEqual(
     JSON.parse(JSON.stringify(transform.rotationCorrectionDeg)),
@@ -227,26 +227,26 @@ for (const modelKey of ['pachyderm', 'sloth', 'feline', 'parrot']) {
     `${modelKey} shared baseline must start with zero correction coordinates`,
   );
 }
-const v2MigrationProbe = liveProfiles.clone();
-v2MigrationProbe.alignmentPreset = 'all-species-maoao-local-0-0--180-v2';
-v2MigrationProbe.models.pachyderm.mirrorX = false; // A deliberately non-default handedness proves the v2→v3 calibration migration does not reset unrelated per-model setup.
-for (const model of Object.values(v2MigrationProbe.models)) {
+const v3MigrationProbe = liveProfiles.clone();
+v3MigrationProbe.alignmentPreset = 'all-species-direction-90--90-0-v3';
+v3MigrationProbe.models.pachyderm.mirrorX = false; // A deliberately non-default handedness proves the v3→v4 calibration migration does not reset unrelated per-model setup.
+for (const model of Object.values(v3MigrationProbe.models)) {
   model.handFromTool = {
-    position: { x: -0.04, y: 0.05, z: -0.04 },
-    rotationDeg: { pitch: 0, yaw: 0, roll: -180 },
+    position: { x: -0.07, y: -0.13, z: 0.21 },
+    rotationDeg: { pitch: 90, yaw: -90, roll: 0 },
   };
 }
-liveProfiles.replace(v2MigrationProbe);
+liveProfiles.replace(v3MigrationProbe);
 for (const modelKey of ['pachyderm', 'sloth', 'feline', 'parrot']) {
   const transform = liveProfiles.data.models[modelKey].handFromTool;
-  assert.strictEqual(transform.position.x, -0.07, `${modelKey} v2→v3 migration must restore the pre-flipped-paper-hand Mao'ao X`);
-  assert.strictEqual(transform.position.y, -0.13, `${modelKey} v2→v3 migration must restore the pre-flipped-paper-hand Mao'ao Y`);
-  assert.strictEqual(transform.position.z, 0.21, `${modelKey} v2→v3 migration must restore the pre-flipped-paper-hand Mao'ao Z`);
-  assert.strictEqual(transform.rotationDeg.pitch, 90, `${modelKey} v2→v3 migration must snap the restored local pitch`);
-  assert.strictEqual(transform.rotationDeg.yaw, -90, `${modelKey} v2→v3 migration must snap the restored local yaw`);
-  assert.strictEqual(transform.rotationDeg.roll, 0, `${modelKey} v2→v3 migration must snap the restored local roll`);
+  assert.strictEqual(transform.position.x, -0.01, `${modelKey} v3→v4 migration must apply the Mao'ao-recalibrated X`);
+  assert.strictEqual(transform.position.y, -0.07, `${modelKey} v3→v4 migration must apply the Mao'ao-recalibrated Y`);
+  assert.strictEqual(transform.position.z, 0.1, `${modelKey} v3→v4 migration must apply the Mao'ao-recalibrated Z`);
+  assert.strictEqual(transform.rotationDeg.pitch, 0, `${modelKey} v3→v4 migration must snap the recalibrated local pitch`);
+  assert.strictEqual(transform.rotationDeg.yaw, 180, `${modelKey} v3→v4 migration must snap the recalibrated local yaw`);
+  assert.strictEqual(transform.rotationDeg.roll, 0, `${modelKey} v3→v4 migration must snap the recalibrated local roll`);
 }
-assert.strictEqual(liveProfiles.data.models.pachyderm.mirrorX, false, 'v2→v3 calibration migration must preserve an existing per-model mirror choice');
+assert.strictEqual(liveProfiles.data.models.pachyderm.mirrorX, false, 'v3→v4 calibration migration must preserve an existing per-model mirror choice');
 const beforeLiveCalibration = liveModes.effectiveFrameForModel('feline', 'palm-parallel');
 liveProfiles.updateModelHandTransform('feline', transform => { transform.position.x += 0.5; });
 const afterLivePosition = liveModes.effectiveFrameForModel('feline', 'palm-parallel');
