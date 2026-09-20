@@ -283,6 +283,23 @@
     return { pitch: toDeg(pitch), yaw: toDeg(yaw), roll: toDeg(roll) };
   }
 
+  function snapQuaternionToRightAngles(rawQuat) {
+    const visible = eulerYXZFromQuat(rawQuat); // Converts the actual final calibration orientation, not the editor's quaternion-coordinate slider values.
+    const snap = value => {
+      const snapped = Math.round(numberOrZero(value) / 90) * 90;
+      return Object.is(snapped, -0) ? 0 : Math.max(-180, Math.min(180, snapped));
+    };
+    const rotationDeg = {
+      pitch: snap(visible.pitch),
+      yaw: snap(visible.yaw),
+      roll: snap(visible.roll),
+    };
+    return {
+      rotationDeg,
+      quaternion: quatFromYXZ(rotationDeg), // Rebuilds an exact right-angle quaternion so display rounding cannot drift the stored orientation.
+    };
+  }
+
   function invertTransform(raw) {
     const transform = normalizeTransform(raw);
     const q = transform.rotationQuaternion; // Older toolGrip migration may already contain quaternion-native corrections.
@@ -505,5 +522,6 @@
     normalizeHandTransform: normalizeTransform,
     updateModelHandTransform,
     orthogonalCorrectionQuaternion,
+    snapQuaternionToRightAngles,
   };
 })(window);
