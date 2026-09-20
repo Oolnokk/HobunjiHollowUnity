@@ -378,7 +378,7 @@ assert.deepStrictEqual(
 const grips = gripSandbox.window.HobunjiHandToolGrips;
 assert(grips, 'secondary grip config manager should be installed');
 const sharedHatchetRotation = { pitch: 90, yaw: -90, roll: 0 };
-for (const toolKey of ['hatchet','hoe','bshuakauitl','pickshovel','daggersword','plainssword','dagger','kylie','warcleaver','fishingspear']) {
+for (const toolKey of ['hatchet','hoe','bshuakauitl','pickshovel','daggersword','plainssword','dagger','kylie','warcleaver','fishingspear','fishingmace']) {
   const grip = grips.authoredPrimaryGripForTool(toolKey);
   assert.strictEqual(grip.position.x, -0.04, `${toolKey} must inherit hatchet's authored primary-grip X`);
   assert.strictEqual(grip.position.y, -0.04, `${toolKey} must inherit hatchet's authored primary-grip Y`);

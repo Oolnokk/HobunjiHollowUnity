@@ -94,6 +94,21 @@
         gripMode: null,
         secondaryGripSpan: { enabled: true, startZ: -0.5, endZ: -0.16 },
       },
+      // Was missing entirely: toolKeyFor() already normalized 'fishingmace' correctly,
+      // but with no DEFAULT_DATA entry, ensureTool() fell back to a blank {} and
+      // normalizeTransform(undefined) collapsed to identity rotation -- the raw GLB
+      // origin, none of the shared hatchet grip. weapon-png-scale.js already claimed
+      // it "carries an intrinsic held-item scale in hand-tool-grips.js"; that just
+      // wasn't true until now. Not a two-handed grip: fishing mace spins in-game
+      // and isn't in ranged-weapon-archetypes.js's DUAL_ROLE_SHAPES the way
+      // fishingspear is, so its off-hand span stays disabled like the other
+      // one-handed tools.
+      fishingmace: {
+        toolScale: 1.15,
+        primaryGrip: { position: { x: HATCHET_PRIMARY_GRIP_EXAMPLE.x, y: HATCHET_PRIMARY_GRIP_EXAMPLE.y, z: 0 }, rotationDeg: { ...HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg } },
+        gripMode: null,
+        secondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
+      },
     },
   };
 
