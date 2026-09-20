@@ -152,11 +152,12 @@
     if (!q) return false;
     sourceParent.updateWorldMatrix?.(true, false);
     holderParent.updateWorldMatrix?.(true, false);
-    const avatar = avatarRootFor(walker); // Supplies the same cached armLength/visual-centroid metadata used by player and bandits.
+    const avatar = avatarRootFor(walker); // Supplies cached species/gender orbit + visual-centroid metadata used by player and bandits.
     const armLength = Number(avatar?.userData?.armLength);
-    const scale = window.HobunjiSpeciesPoseScale?.scaleForArmLength?.(armLength) ?? 1;
+    const poseOrbitScale = Number(avatar?.userData?.poseOrbitScale);
+    const scale = window.HobunjiSpeciesPoseScale?.scaleForPose?.(poseOrbitScale, armLength) ?? 1;
     if (sourceParent === holderParent && scale === 1) {
-      holder.position.copy(p); // Preserve the exact pre-arm-length Mao'ao path without unnecessary world/local round-trips.
+      holder.position.copy(p); // Preserve the exact scale-1 authored path without unnecessary world/local round-trips.
       holder.quaternion.copy(q);
     } else {
       const worldP = sourceParent.localToWorld(p.clone()); // Raw finished pose before the uniform centroid orbit.
@@ -168,7 +169,7 @@
           Number(avatar.userData?.visualCentroidLocalZ) || 0,
         ); // True portrait-plane center inside the avatar root hierarchy.
         const centroid = avatar.localToWorld(centroidLocal);
-        window.HobunjiSpeciesPoseScale?.scalePointAroundCentroid?.(worldP, centroid.x, centroid.y, centroid.z, armLength);
+        window.HobunjiSpeciesPoseScale?.scalePointAroundCentroid?.(worldP, centroid.x, centroid.y, centroid.z, armLength, poseOrbitScale);
       }
       const worldQ = sourceParent.getWorldQuaternion(new three.Quaternion()).multiply(q);
       const parentQ = holderParent.getWorldQuaternion(new three.Quaternion()).invert();
