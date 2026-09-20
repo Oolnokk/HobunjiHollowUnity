@@ -40,7 +40,8 @@ assert.doesNotMatch(editor, /scrubNeutralBtn|scrubWindupBtn|scrubStrikeBtn/, 'se
 assert.match(editor, /js\/combat\/melee-pose-spacing\.js/, 'Attack Editor must load the exact shared melee spacing math used by gameplay');
 assert.match(editor, /actionUsesMeleeSpacing\(action\)[\s\S]*MeleePoseSpacing\?\.adjustEndpoint[\s\S]*if \(action\.mirror\)/, 'editor must apply shared spacing before Backhand mirroring so each attack keeps its own ray');
 assert.match(meleeSpacing, /const Y_LIFT = 0\.17/, 'shared melee spacing must retain the uploaded +0.17 Y calibration');
-assert.match(meleeSpacing, /targetRange = Math\.max\(0, original\.rangeXY \+ delta\)/, 'shared spacing must add the measured Forehand range delta instead of copying Forehand X');
+assert.match(meleeSpacing, /targetRange = Math\.max\(0, originalRange \+ delta\)/, 'shared spacing must add the measured Forehand horizontal range delta instead of copying Forehand X');
+assert.match(meleeSpacing, /y: numberOrZero\(raw\.y\) \+ Y_LIFT/, 'shared spacing must preserve the +0.17 authored Y as an independent vertical lift');
 assert.match(editor, /resetPosesBtn'[\s\S]*applySelectedAction\(\{ play: false \}\)/, 'Reset action must restore the selected Action source, not generic pose defaults');
 
 // Action choice drives concrete runtime timing where attack-values owns it.
