@@ -24,6 +24,20 @@
   function clamp01(value) { return Math.max(0, Math.min(1, Number(value) || 0)); }
   function clampUnit(value) { return Math.max(-1, Math.min(1, Number(value) || 0)); }
 
+  // Pure hand-local decomposition used by runtime and regression tests.
+  // Starting from proximal +Y: rotate around +X to match Z, then around the
+  // directed palm normal -Z to match X/Y. Because the axis is -Z, the second
+  // angle is atan2(+X, Y); using atan2(-X, Y) would mirror the correction.
+  function solveLocalHingeAngles(direction = {}) {
+    const x = Number(direction.x) || 0;
+    const y = Number(direction.y) || 0;
+    const z = Number(direction.z) || 0;
+    return {
+      grip: Math.atan2(z, Math.hypot(x, y)),
+      palmNormal: Math.atan2(x, y),
+    };
+  }
+
   function installShoulderAim(THREE, rig, options = {}) {
     const avatarRoot = options.avatarRoot || rig?.avatarRoot || null;
     const parent = rig?.parent || avatarRoot?.parent || null;
@@ -358,14 +372,9 @@
       // socket's LOCAL hand basis, then solve only the X and Z hinges.
       inverseAuthoredQuaternion.copy(authoredQuaternion).invert();
       localTargetDirection.copy(targetDirection).applyQuaternion(inverseAuthoredQuaternion).normalize();
-      const gripAngle = Math.atan2(
-        localTargetDirection.z,
-        Math.hypot(localTargetDirection.x, localTargetDirection.y),
-      ); // Local-X hinge moves the +Y proximal axis out of the palm plane.
-      const palmNormalAngle = Math.atan2(
-        -localTargetDirection.x,
-        localTargetDirection.y,
-      ); // Local-Z hinge turns the +Y proximal axis within the palm plane.
+      const solvedHinges = solveLocalHingeAngles(localTargetDirection);
+      const gripAngle = solvedHinges.grip; // Local +X hinge moves the +Y proximal axis out of the palm plane.
+      const palmNormalAngle = solvedHinges.palmNormal; // Local -Z hinge turns the +Y proximal axis within the palm plane.
       const appliedGripAngle = gripAngle * weights.grip;
       const appliedPalmNormalAngle = palmNormalAngle * weights.palmNormal;
 
@@ -566,6 +575,7 @@
     targetFeature: 'elbow',
     wristProximalAxis: '+Y',
     allowedHinges: Object.freeze({ grip: '+X', palmNormal: '-Z' }),
+    solveLocalHingeAngles,
     idleWeights: Object.freeze({ grip: 1, palmNormal: 1 }),
     activeWeights: Object.freeze({ grip: 0, palmNormal: 1 }),
     setPaperArmGuideVisible(value) {
