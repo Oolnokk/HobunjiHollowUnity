@@ -43,9 +43,13 @@
       <div id="handFromToolPositionFields"></div>
     </div>
     <div class="poseGroup" id="handFromToolRotationGroup">
-      <div class="poseGroupHead"><span class="dot" style="background:#fbbf24"></span>Hand Model Calibration · rotation correction</div>
-      <div class="help" style="margin-bottom:6px"><b>X/Y/Z rotate only the GLB around its calibration basis while the paper hand stays neutral.</b> No Grip Mode, shoulder-follow, attack rotation, tool rotation, or character-facing rotation participates in this tab.</div>
+      <div class="poseGroupHead"><span class="dot" style="background:#fbbf24"></span>Hand Model Calibration · local rotation</div>
+      <div class="help" style="margin-bottom:6px"><b>All rotation controls are local to <code>right_hand_calibration</code>.</b> They never display or author parent/world rotation. The quaternion-native internals prevent the old 90° axis collapse while the controls remain GLB-local from the user's point of view.</div>
       <div id="handFromToolRotationFields"></div>
+      <div class="row" style="margin-top:7px">
+        <button id="handSnapLocalRotation90" class="secondary" type="button">⌗ Snap local rotation to 90°</button>
+      </div>
+      <div class="help" id="handLocalRotationStatus" style="margin-top:6px">Local GLB rotation pending.</div>
     </div>
     <div class="help" id="handInverseLiveStatus" style="padding:7px;border:1px solid rgba(34,211,238,.22);border-radius:8px;margin-bottom:8px">Direct hand attachment preview ready.</div>
   `;
@@ -57,9 +61,9 @@
     { key: 'z', label: 'Hand-model Z position correction', min: -2, max: 2, step: 0.01 },
   ];
   const rotationFields = [
-    { key: 'x', label: 'Hand-model X rotation correction°', min: -180, max: 180, step: 1 },
-    { key: 'y', label: 'Hand-model Y rotation correction°', min: -180, max: 180, step: 1 },
-    { key: 'z', label: 'Hand-model Z rotation correction°', min: -180, max: 180, step: 1 },
+    { key: 'x', label: 'GLB local X rotation correction°', min: -180, max: 180, step: 1 },
+    { key: 'y', label: 'GLB local Y rotation correction°', min: -180, max: 180, step: 1 },
+    { key: 'z', label: 'GLB local Z rotation correction°', min: -180, max: 180, step: 1 },
   ];
 
   function fieldMarkup(prefix, field) {
@@ -104,6 +108,32 @@
     for (const field of rotationFields) {
       setPaired($(`handFromToolRot_${field.key}`), $(`handFromToolRot_${field.key}_n`), model.handFromTool.rotationCorrectionDeg[field.key]);
     }
+    syncLocalRotationStatus();
+  }
+
+  function localEulerFromQuaternion(raw) {
+    const q = raw || {};
+    const THREE = global.HobunjiAttackEditorToolContext?.THREE;
+    if (!THREE || ![q.x, q.y, q.z, q.w].every(value => Number.isFinite(Number(value)))) return null;
+    const euler = new THREE.Euler().setFromQuaternion(
+      new THREE.Quaternion(Number(q.x), Number(q.y), Number(q.z), Number(q.w)).normalize(),
+      'YXZ',
+    ); // Reads the calibration CHILD's local quaternion only; parent/world transforms never enter this display.
+    return {
+      pitch: THREE.MathUtils.radToDeg(euler.x),
+      yaw: THREE.MathUtils.radToDeg(euler.y),
+      roll: THREE.MathUtils.radToDeg(euler.z),
+    };
+  }
+
+  function syncLocalRotationStatus() {
+    const transform = profiles.normalizeHandTransform?.(currentModel()?.handFromTool) || currentModel()?.handFromTool || {};
+    const local = localEulerFromQuaternion(transform.rotationQuaternion);
+    const status = $('handLocalRotationStatus');
+    if (!status) return;
+    status.textContent = local
+      ? `Final child-local orientation · X/P ${local.pitch.toFixed(2)}° · Y ${local.yaw.toFixed(2)}° · Z/R ${local.roll.toFixed(2)}°`
+      : 'Final child-local orientation pending.';
   }
 
   function shortTransform(transform) {
@@ -132,6 +162,7 @@
         : 'Open the Calibrate GLB tab to compare this model against the neutral paper hand.';
       status.style.color = active && child?.enabled ? '#67e8f9' : '';
     }
+    syncLocalRotationStatus();
     return results;
   }
 
@@ -163,6 +194,22 @@
       mutateTransform(transform => { transform.rotationCorrectionDeg[field.key] = value; });
     });
   }
+
+  $('handSnapLocalRotation90')?.addEventListener('click', () => {
+    const key = profileSelect.value;
+    const model = profiles.data.models?.[key];
+    if (!model) return;
+    const normalized = profiles.normalizeHandTransform?.(model.handFromTool) || model.handFromTool;
+    const snapped = profiles.snapQuaternionToRightAngles?.(normalized?.rotationQuaternion); // Snaps the FINAL child-local GLB orientation, never world/parent rotation or raw slider coordinates.
+    if (!snapped?.quaternion) return;
+    profiles.updateModelHandTransform?.(key, transform => {
+      transform.rotationDeg = { ...snapped.rotationDeg }; // Legacy-readable local YXZ representation of the exact snapped child orientation.
+      transform.rotationBaseQuaternion = { ...snapped.quaternion }; // Bakes the exact local right-angle quaternion as the new calibration base.
+      transform.rotationCorrectionDeg = { x: 0, y: 0, z: 0 }; // Corrections reset because their result is now absorbed into the local base.
+    });
+    syncFields();
+    syncPreview();
+  });
 
   profileSelect.addEventListener('change', () => { syncFields(); syncPreview(); });
   profiles.subscribe?.((_data, change) => {
