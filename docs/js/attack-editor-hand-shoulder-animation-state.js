@@ -14,12 +14,12 @@
 
   const PHASES = Object.freeze(['neutral', 'windup', 'strike']);
   const AXES = Object.freeze(['grip', 'palmNormal']);
+  const SIDES = Object.freeze(['left', 'right']);
   const ELBOW_AXES = Object.freeze(['x', 'y', 'z']);
-  const AUTO_ELBOW = Object.freeze({ x: 0, y: 0, z: 0 });
   const DEFAULTS = Object.freeze({
-    neutral: Object.freeze({ grip: true, palmNormal: true, elbowHint: AUTO_ELBOW }),
-    windup: Object.freeze({ grip: false, palmNormal: true, elbowHint: AUTO_ELBOW }),
-    strike: Object.freeze({ grip: false, palmNormal: true, elbowHint: AUTO_ELBOW }),
+    neutral: Object.freeze({ grip: true, palmNormal: true }),
+    windup: Object.freeze({ grip: false, palmNormal: true }),
+    strike: Object.freeze({ grip: false, palmNormal: true }),
   });
   const cache = new Map(); // Stores independent checkbox sets for each editor animation key.
   let activeKey = 'draft:new-attack'; // Identifies the animation whose checkboxes are currently visible.
@@ -28,14 +28,18 @@
   function checkboxId(phase, axis) {
     return `handShoulderAim_${phase}_${axis}`;
   }
-  function elbowInputId(phase, axis) {
-    return `handElbowHint_${phase}_${axis}`;
+  function elbowInputId(phase, side, axis) {
+    return `handElbow_${phase}_${side}_${axis}`;
   }
 
   function cloneState(state) {
     return Object.fromEntries(PHASES.map(phase => [phase, {
-      ...state[phase],
-      elbowHint: { ...(state[phase]?.elbowHint || AUTO_ELBOW) },
+      grip: !!state?.[phase]?.grip,
+      palmNormal: !!state?.[phase]?.palmNormal,
+      elbows: Object.fromEntries(SIDES.map(side => [
+        side,
+        state?.[phase]?.elbows?.[side] ? { ...state[phase].elbows[side] } : null,
+      ])),
     }]));
   }
 
@@ -43,28 +47,37 @@
     return cloneState(DEFAULTS);
   }
 
-  function normalizeAxes(raw, fallback) {
-    const grip = raw?.grip ?? raw?.pitch; // Legacy Pitch maps to the hand-local grip-axis hinge.
-    const palmNormal = raw?.palmNormal ?? raw?.roll; // Legacy Roll maps to the hand-local palm-normal hinge.
-    const elbowSource = raw?.elbowHint || raw?.elbow || fallback.elbowHint || AUTO_ELBOW;
-    const number = value => Number.isFinite(Number(value)) ? Number(value) : 0;
+  function normalizePhase(rawPose = {}, fallback) {
+    const rawAim = rawPose?.shoulderAim || rawPose || {};
+    const grip = rawAim?.grip ?? rawAim?.pitch; // Legacy Pitch maps to the hand-local grip-axis hinge.
+    const palmNormal = rawAim?.palmNormal ?? rawAim?.roll; // Legacy Roll maps to the hand-local palm-normal hinge.
+    const rawElbows = rawPose?.elbows || rawPose?.elbow || {};
+    const normalizePoint = point => {
+      const x = Number(point?.x), y = Number(point?.y), z = Number(point?.z);
+      return [x,y,z].every(Number.isFinite) ? { x, y, z } : null;
+    };
     return {
       grip: grip === true ? true : grip === false ? false : !!fallback.grip,
       palmNormal: palmNormal === true ? true : palmNormal === false ? false : !!fallback.palmNormal,
-      elbowHint: { x: number(elbowSource.x), y: number(elbowSource.y), z: number(elbowSource.z) },
+      elbows: Object.fromEntries(SIDES.map(side => [side, normalizePoint(rawElbows?.[side])])),
     };
   }
 
   function normalizePoseSet(raw = {}) {
     return {
-      neutral: normalizeAxes(raw?.neutral?.shoulderAim || raw?.neutral, DEFAULTS.neutral),
-      windup: normalizeAxes(raw?.windup?.shoulderAim || raw?.windup, DEFAULTS.windup),
-      strike: normalizeAxes(raw?.strike?.shoulderAim || raw?.strike, DEFAULTS.strike),
+      neutral: normalizePhase(raw?.neutral || {}, DEFAULTS.neutral),
+      windup: normalizePhase(raw?.windup || {}, DEFAULTS.windup),
+      strike: normalizePhase(raw?.strike || {}, DEFAULTS.strike),
     };
   }
 
   function hasAuthoredPoseAim(raw = {}) {
-    return PHASES.some(phase => raw?.[phase]?.shoulderAim && typeof raw[phase].shoulderAim === 'object');
+    return PHASES.some(phase => {
+      const pose = raw?.[phase];
+      return (pose?.shoulderAim && typeof pose.shoulderAim === 'object')
+        || (pose?.elbows && typeof pose.elbows === 'object')
+        || (pose?.elbow && typeof pose.elbow === 'object');
+    });
   }
 
   function readCheckboxState() {
@@ -74,9 +87,15 @@
         const input = document.getElementById(checkboxId(phase, axis));
         if (input) state[phase][axis] = !!input.checked;
       }
-      for (const axis of ELBOW_AXES) {
-        const input = document.getElementById(elbowInputId(phase, axis));
-        if (input) state[phase].elbowHint[axis] = Number(input.value) || 0;
+      state[phase].elbows ||= { left: null, right: null };
+      for (const side of SIDES) {
+        const raw = Object.fromEntries(ELBOW_AXES.map(axis => {
+          const value = document.getElementById(elbowInputId(phase, side, axis))?.value?.trim?.() ?? '';
+          return [axis, value === '' ? null : Number(value)];
+        }));
+        state[phase].elbows[side] = ELBOW_AXES.some(axis => Number.isFinite(raw[axis]))
+          ? Object.fromEntries(ELBOW_AXES.map(axis => [axis, Number.isFinite(raw[axis]) ? raw[axis] : 0]))
+          : null;
       }
     }
     return state;
@@ -95,13 +114,16 @@
           // object and exported animation JSON remain the source of truth.
           input.dispatchEvent(new Event('change', { bubbles: true }));
         }
-        for (const axis of ELBOW_AXES) {
-          const input = document.getElementById(elbowInputId(phase, axis));
-          if (!input) continue;
-          const value = Number(next[phase].elbowHint?.[axis]) || 0;
-          if (Number(input.value) === value) continue;
-          input.value = String(value);
-          input.dispatchEvent(new Event('input', { bubbles: true }));
+        for (const side of SIDES) {
+          for (const axis of ELBOW_AXES) {
+            const input = document.getElementById(elbowInputId(phase, side, axis));
+            if (!input) continue;
+            const value = next[phase].elbows?.[side]?.[axis];
+            const textValue = Number.isFinite(Number(value)) ? String(Number(value)) : '';
+            if (input.value === textValue) continue;
+            input.value = textValue;
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+          }
         }
       }
       controls.syncControls?.();
@@ -159,7 +181,7 @@
   function switchTo(key, fallbackState) {
     saveActiveState();
     activeKey = String(key || 'draft:new-attack');
-    const state = cache.has(activeKey) ? cache.get(activeKey) : normalizePoseSet(fallbackState || DEFAULTS);
+    const state = cache.has(activeKey) ? cache.get(activeKey) : normalizePoseSet(fallbackState || {});
     cache.set(activeKey, cloneState(state));
     writeCheckboxState(state);
     updateStatus();
@@ -207,10 +229,12 @@
         if (!applyingState) saveActiveState();
       });
     }
-    for (const axis of ELBOW_AXES) {
-      document.getElementById(elbowInputId(phase, axis))?.addEventListener('input', () => {
-        if (!applyingState) saveActiveState();
-      });
+    for (const side of SIDES) {
+      for (const axis of ELBOW_AXES) {
+        document.getElementById(elbowInputId(phase, side, axis))?.addEventListener('input', () => {
+          if (!applyingState) saveActiveState();
+        });
+      }
     }
   }
 
