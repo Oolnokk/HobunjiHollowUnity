@@ -953,8 +953,9 @@
       // Splits an incoming hit into Health and Footing amounts before either
       // resource is changed. Damage-type identity travels from each attack's
       // dmgOpts.tag through damageCreature/damagePlayer to this choke point.
-      // Untuned tags retain the original amount; blunt trades 25% Health
-      // damage for 25% more Footing pressure via scratchbones-config.js.
+      // Untuned tags retain the original amount. Sharp is tuned toward direct
+      // Health damage while Blunt is tuned toward Footing pressure; the exact
+      // multipliers live in scratchbones-config.js so this routing stays generic.
       function hitResourceDamage(amount, dmgOpts) {
         const multipliers = window.SCRATCHBONES_CONFIG?.game?.combat?.stagger?.damageTypeMultipliers?.[dmgOpts?.tag] || {};
         const healthMultiplier = Number(multipliers.healthDamage ?? 1);
