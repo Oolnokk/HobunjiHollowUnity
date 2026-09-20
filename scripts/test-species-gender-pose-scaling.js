@@ -113,11 +113,12 @@ assert.match(game, /let playerPoseOrbitScale = 1/, 'player must cache explicit p
 assert.match(game, /scaleForPose\?\.\(playerPoseOrbitScale, playerArmLength\)/, 'player final pose scale must prefer explicit orbit over anatomy');
 assert.match(game, /transformPosePoint\(point, \{[\s\S]*baseY,[\s\S]*modelHeight: playerAvatarModelHeight[\s\S]*poseOrbitScale: playerPoseOrbitScale/, 'player finished point must split horizontal orbit from rigger-derived vertical height mapping');
 assert.match(bandit, /poseOrbitScale/, 'bandit melee must propagate explicit orbit scale');
+assert.match(bandit, /transformPosePoint[\s\S]*rigScaleY: 1/, 'bandit melee must use the full X\/Z plus authored-Y mapping without inventing an unapplied body scale');
 assert.match(bandit, /scaleForPose/, 'bandit melee debug/result scale must not derive primarily from arm length');
-assert.match(ranged, /poseOrbitScale/, 'bandit ranged must use explicit orbit scale');
-assert.match(npc, /poseOrbitScale/, 'NPC held equipment must use explicit orbit scale');
-assert.match(lifePreview, /poseOrbitScale/, 'onboarding life preview must use explicit orbit scale');
-assert.match(weaponPreview, /poseOrbitScale/, 'onboarding weapon view must use explicit orbit scale');
+assert.match(ranged, /transformPosePoint[\s\S]*rigScaleY: 1/, 'bandit ranged must use the same full pose transform contract as bandit melee');
+assert.match(npc, /transformPosePoint[\s\S]*baseWorld[\s\S]*rigScaleY: 1/, 'NPC held equipment must map authored Y after its real parent hierarchy contributes body scale exactly once');
+assert.match(lifePreview, /transformPosePoint[\s\S]*rigScaleY: 1/, 'onboarding life preview must use the same full pose transform contract');
+assert.match(weaponPreview, /transformPosePoint[\s\S]*rigScaleY: 1/, 'onboarding weapon view must use the same full pose transform contract');
 assert.match(localDb, /speciesPoseOrbitScales/, 'local database override system must expose orbit-scale authoring for in-game testing');
 
 assert.match(editor, /id="poseOrbitScale"/, 'Attack Editor must expose a species+gender orbit scale field');
@@ -128,8 +129,15 @@ assert.match(editor, /currentPoseOrbitScale/, 'editor preview and diagnostics mu
 assert.match(editor, /untransformPosePoint[\s\S]*currentAvatarModelHeight[\s\S]*currentPoseOrbitScale/, 'editor gizmo inverse must undo both horizontal orbit and rigger-height Y mapping');
 assert.match(editor, /transformPosePoint[\s\S]*currentAvatarModelHeight[\s\S]*currentPoseOrbitScale/, 'editor preview must apply horizontal orbit and rigger-height Y mapping');
 assert.match(editor, /characterBodyScaleRoot/, 'Attack Editor must keep CharacterRigScale on the body root instead of double-scaling the weapon hierarchy');
+assert.match(editor, /character-rig-scale\.js/, 'Attack Editor must load the actual whole-body scale runtime used by the visible preview');
+assert.match(editor, /HobunjiCharacterRigScale\?\.applyToParent\?\.\(characterBodyScaleRoot/, 'Attack Editor must visibly apply the same body scale its weapon-Y math assumes');
 assert.match(editor, /character-rig-scale-defaults\.js/, 'Attack Editor must consume the same character-rigger height defaults as Multi-Avatar Animation Author');
+assert.match(editor, /reloadFromDatabaseSource/, 'clearing a local orbit override must reload the selected source into live editor memory');
+assert.match(editor, /getSourceMode/, 'orbit override status must distinguish a stored override from an active Local-source override');
 
+assert.match(helperSource, /let loadGeneration = 0/, 'pose-orbit config loader must version concurrent source requests');
+assert.match(helperSource, /loaded && generation === loadGeneration/, 'only the newest repo\/LocalDB request may replace live orbit config');
+assert.match(helperSource, /get ready\(\) \{ return readyPromise; \}/, '.ready must always expose the newest selected-source load rather than the parser-time fetch');
 assert.doesNotMatch(helperSource, /Math\.hypot|lengthSq|setLength/, 'shared pose scaler must remain direct per-axis mapping, not a reach clamp');
 assert.match(helperSource, /Y must never be derived from poseOrbitScale again/, 'shared helper must document the XZ-orbit/Y-height ownership split');
 assert.match(helperSource, /head scale\/Y offset, age hunch, hand[\s\S]*foot scale/i, 'vertical weapon scaling must explicitly exclude head-only and attachment-only scale controls');
