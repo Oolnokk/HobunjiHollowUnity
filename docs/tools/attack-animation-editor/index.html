@@ -296,8 +296,8 @@ canvas{display:block;width:100%;height:100%}
 <script src="../../js/portrait-utils.js?v=20260918centroid2"></script>
 <script src="../../js/portrait-breathing.js"></script>
 <script src="../../js/npc-avatar-preview-utils.js"></script>
-<script src="../../js/png-plane-avatar.js?v=20260918centroid2"></script>
-<script src="../../js/species-pose-scaling.js?v=20260918centroid2"></script>
+<script src="../../js/png-plane-avatar.js?v=20260920orbit1"></script>
+<script src="../../js/species-pose-scaling.js?v=20260920orbit1"></script>
 <!-- Shared local-transform dump utility (window.HobunjiTransformDump) — also
      loaded by the game's Pixel Probe, so this editor's preview dump and an
      in-game character dump use the exact same code/format. -->
@@ -626,6 +626,7 @@ async function rebuildAvatar(speciesId, gender) {
   toolBase.position.set(toolMirrored ? -baseAttachX : baseAttachX, baseAttachY, 0);
   logDebug(`Avatar rebuilt: ${speciesId}/${gender} (prism ${w.toFixed(2)}x${h.toFixed(2)}, orbit ×${currentPoseOrbitScale.toFixed(5)}, arm ${currentArmLength.toFixed(3)}, centroidY ${currentPoseCentroidY.toFixed(3)}, base at ${toolBase.position.x.toFixed(2)}/${baseAttachY.toFixed(2)}${toolMirrored ? ', mirrored' : ''})`);
   refreshPreviewDebug();
+  refreshOrbitScaleStatus?.();
 }
 
 const SPECIES_LIST = [
@@ -657,7 +658,47 @@ $('avatarSpecies').addEventListener('change', () => {
 $('avatarGender').addEventListener('change', () => {
   rebuildAvatar($('avatarSpecies').value, $('avatarGender').value).catch(e => logDebug('Avatar rebuild failed: ' + e.message));
 });
-rebuildAvatar($('avatarSpecies').value, $('avatarGender').value).catch(e => logDebug('Avatar rebuild failed: ' + e.message));
+
+function refreshOrbitScaleStatus() {
+  const status = window.LocalDBOverrides?.listStatuses?.().find(entry => entry.id === 'speciesPoseOrbitScales');
+  $('orbitScalesStatus').textContent = `${currentSpeciesId}/${currentGender} weapon orbit ×${currentPoseOrbitScale.toFixed(4)} · anatomy armLength ${currentArmLength.toFixed(3)} · ${status?.hasOverride ? `local override saved ${new Date(status.savedAt).toLocaleString()}` : 'repo config active unless you save a local override'}.`;
+}
+$('poseOrbitScale').addEventListener('input', () => {
+  const value = Number($('poseOrbitScale').value);
+  if (!Number.isFinite(value) || value <= 0) return;
+  currentPoseOrbitScale = value;
+  window.HobunjiSpeciesPoseScale?.setScale?.($('avatarSpecies').value, $('avatarGender').value, value);
+  if (avatarModel?.userData) avatarModel.userData.poseOrbitScale = value;
+  refreshOrbitScaleStatus();
+  refreshPreviewDebug();
+  if (typeof anim !== 'undefined' && anim?.poses?.[editPhase]) applyPoseToRig(anim.poses[editPhase]);
+});
+$('orbitScalesDownloadBtn').addEventListener('click', () => {
+  const data = window.HobunjiSpeciesPoseScale?.getConfig?.();
+  if (!data) return;
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'species-pose-orbit-scales.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+  logDebug('Downloaded species-pose-orbit-scales.json.');
+});
+$('orbitScalesSaveOverrideBtn').addEventListener('click', () => {
+  const data = window.HobunjiSpeciesPoseScale?.getConfig?.();
+  if (!data || !window.LocalDBOverrides) return;
+  window.LocalDBOverrides.setOverride('speciesPoseOrbitScales', data);
+  refreshOrbitScaleStatus();
+  logDebug('Saved species/gender pose orbit scales as a local game database override.');
+});
+$('orbitScalesClearOverrideBtn').addEventListener('click', () => {
+  window.LocalDBOverrides?.clearOverride?.('speciesPoseOrbitScales');
+  refreshOrbitScaleStatus();
+  logDebug('Cleared local species/gender pose orbit scale override.');
+});
+rebuildAvatar($('avatarSpecies').value, $('avatarGender').value)
+  .then(refreshOrbitScaleStatus)
+  .catch(e => logDebug('Avatar rebuild failed: ' + e.message));
 
 // toolHolder is what the authored pose (pos+pitch+yaw+roll) actually drives.
 const toolHolder = new THREE.Object3D();
@@ -1815,6 +1856,10 @@ async function restoreCoreHistoryState(snapshot) {
   if (snapshot.avatarGender) $('avatarGender').value = snapshot.avatarGender;
   if (speciesChanged) $('avatarSpecies').dispatchEvent(new Event('change', { bubbles: true }));
   else if (genderChanged) $('avatarGender').dispatchEvent(new Event('change', { bubbles: true }));
+  if (snapshot.poseOrbitScale != null && $('poseOrbitScale')) {
+    $('poseOrbitScale').value = String(snapshot.poseOrbitScale);
+    $('poseOrbitScale').dispatchEvent(new Event('input', { bubbles: true }));
+  }
 
   for (const [id, eventName] of [['neckStrength','input'], ['neckRadius','input']]) {
     if (snapshot[id] == null || !$(id)) continue;
@@ -1855,6 +1900,7 @@ window.HobunjiAttackEditorState = Object.freeze({
       toolMirrored,
       avatarSpecies: $('avatarSpecies').value,
       avatarGender: $('avatarGender').value,
+      poseOrbitScale: Number($('poseOrbitScale').value),
       neckStrength: Number($('neckStrength').value),
       neckRadius: Number($('neckRadius').value),
       showHeadSkinVertices: $('showHeadSkinVertices').checked,
