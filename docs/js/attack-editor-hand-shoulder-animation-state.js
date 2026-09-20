@@ -15,7 +15,6 @@
   const PHASES = Object.freeze(['neutral', 'windup', 'strike']);
   const AXES = Object.freeze(['grip', 'palmNormal']);
   const SIDES = Object.freeze(['left', 'right']);
-  const ELBOW_AXES = Object.freeze(['x', 'y', 'z']);
   const DEFAULTS = Object.freeze({
     neutral: Object.freeze({ grip: true, palmNormal: true }),
     windup: Object.freeze({ grip: false, palmNormal: true }),
