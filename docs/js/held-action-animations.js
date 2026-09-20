@@ -178,7 +178,7 @@
     new URL('js/procedural-hand-foot-material-roles.js?v=20260821e', docsBase).href,
     new URL('js/hand-tool-grips.js?v=20260920hatchetexample2', docsBase).href,
     new URL('js/hand-grip-modes.js?v=20260920palmflip1', docsBase).href,
-    new URL('js/hand-shoulder-pose-runtime.js?v=20260920elbow3', docsBase).href,
+    new URL('js/hand-shoulder-pose-runtime.js?v=20260920elbow4', docsBase).href,
     new URL('js/portrait-arm-cloud-mask.js?v=20260817a', docsBase).href,
     new URL('js/portrait-hand-shoulder-scan.js?v=20260818c', docsBase).href,
     new URL('js/portrait-hand-shoulder-scan-species.js?v=20260818a', docsBase).href,
@@ -186,7 +186,7 @@
     new URL('js/procedural-hand-outline-parity.js?v=20260821f', docsBase).href,
     new URL('js/attachment-rig-latest-authored-snapshot.js?v=20260904a', docsBase).href,
     new URL('js/procedural-hand-scale-free-world.js?v=20260904posteriorlive1', docsBase).href,
-    new URL('js/procedural-hand-shoulder-aim.js?v=20260920palmnormal1', docsBase).href,
+    new URL('js/procedural-hand-shoulder-aim.js?v=20260920palmnormal2', docsBase).href,
     new URL('js/procedural-hand-frame-driver.js?v=20260919handreview1', docsBase).href,
   ];
   if (isAttackEditor) {
@@ -199,7 +199,7 @@
     handScripts.push(new URL('js/attack-editor-hand-mirror-toggle.js?v=20260817a', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-grip-mode.js?v=20260919labels1', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-direct-attachments.js?v=20260919quatcal1', docsBase).href);
-    handScripts.push(new URL('js/attack-editor-hand-shoulder-controls.js?v=20260920palmnormal1', docsBase).href);
+    handScripts.push(new URL('js/attack-editor-hand-shoulder-controls.js?v=20260920posecore1', docsBase).href);
     handScripts.push(new URL('js/attack-editor-idle-hand-parity.js?v=20260920localhinge1', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-state-coherence.js?v=20260919handreview1', docsBase).href);
     handScripts.push(new URL('js/attack-editor-history.js?v=20260919history1', docsBase).href); // Loaded last so Undo/Redo can snapshot every hand/grip extension plus the core module once it initializes.
