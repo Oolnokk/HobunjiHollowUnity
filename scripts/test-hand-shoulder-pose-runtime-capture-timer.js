@@ -28,6 +28,24 @@ function buildFixture() {
   return { windowObject, intervals };
 }
 
+// --- Semantic local hinges preserve legacy pose data without a third hinge ---
+{
+  const { windowObject } = buildFixture();
+  const runtime = windowObject.HobunjiHandShoulderPoseRuntime;
+  assert.deepEqual(JSON.parse(JSON.stringify(runtime.idle)), { grip: 1, palmNormal: 1 }, 'idle shoulder-follow exposes the two hand-local hinges');
+  assert.deepEqual(JSON.parse(JSON.stringify(runtime.active)), { grip: 0, palmNormal: 1 }, 'active shoulder-follow keeps only the palm-normal hinge by default');
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(runtime.normalize({ pitch: false, yaw: true, roll: true }, runtime.idle))),
+    { grip: 0, palmNormal: 1 },
+    'legacy Pitch/Roll migrate to grip/palm-normal and legacy Yaw does not create a third hinge',
+  );
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(runtime.normalize({ grip: true, palmNormal: false }, runtime.active))),
+    { grip: 1, palmNormal: 0 },
+    'semantic hinge data loads directly without legacy translation',
+  );
+}
+
 // --- Loading the module starts exactly one 250ms setInterval poll ----------
 {
   const { intervals } = buildFixture();
