@@ -1143,12 +1143,12 @@ function applyPoseToRig(pose) {
   // Body rotation (rig) is applied first/separately from the tool's own local pose —
   // toolBase/toolHolder are children of rig, so this automatically carries the tool
   // along with the body, same as game.js's playerMesh.rotation.y for sweep swings.
-  rig.rotation.y = THREE.MathUtils.degToRad(pose.bodyYaw || 0);
+  rig.rotation.y = handCalibrationPresentationActive ? 0 : THREE.MathUtils.degToRad(pose.bodyYaw || 0); // Calibration tab must literally neutralize the editor root instead of hiding an animation yaw behind an equal socket counter-rotation.
   // Head yaw is runtime behavior, not attack-animation data. The editor
   // mirrors the game by automatically countering the authored bodyYaw so
   // the preview head keeps facing the fixed forward/aim direction.
   const neckJoint = avatarModel?.userData?.neckRig?.neckJoint;
-  if (neckJoint) neckJoint.rotation.y = -rig.rotation.y * neckPreviewStrength;
+  if (neckJoint) neckJoint.rotation.y = handCalibrationPresentationActive ? 0 : -rig.rotation.y * neckPreviewStrength;
   toolHolder.scale.setScalar(safeNum(anim.poses.neutral.scale, 1));
   const toolPlane = toolPlaneMesh?.userData?.toolPlane;
   if (toolPlane) {
@@ -1621,6 +1621,12 @@ window.HobunjiAttackEditorToolContext = Object.freeze({
   },
   setHandCalibrationPresentation(active) {
     handCalibrationPresentationActive = !!active;
+    if (handCalibrationPresentationActive) {
+      rig.rotation.set(0, 0, 0); // Immediate neutralization on tab entry; the animation loop is also guarded in applyPoseToRig().
+      rig.quaternion.identity();
+      rig.updateMatrix?.();
+      rig.updateMatrixWorld?.(true);
+    }
     if (avatarModel) avatarModel.visible = !handCalibrationPresentationActive;
     toolBase.visible = !handCalibrationPresentationActive; // Hides weapon, target marker and every animation-derived held-item transform.
     if (handCalibrationPresentationActive && gizmoMode !== 'off') setGizmoMode('off');
