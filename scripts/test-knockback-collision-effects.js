@@ -7,6 +7,7 @@ const vm = require('node:vm'); // Executes the two small combat modules in an is
 
 const impactSource = fs.readFileSync('docs/js/combat/knockback-collision-impact.js', 'utf8'); // Pure collision-strength/profile resolver under test.
 const resourceSource = fs.readFileSync('docs/js/combat/resource-system.js', 'utf8'); // Real affliction implementation, including Burning Health.
+const footingBridgeSource = fs.readFileSync('docs/js/footing-damage-recovery-bridge.js', 'utf8'); // Runtime Footing multiplier used by both direct hits and collision impacts.
 const gameSource = fs.readFileSync('docs/game.js', 'utf8'); // Runtime forced-movement/collision authority.
 const editorSource = fs.readFileSync('docs/tools/furniture-avatar-author/index.html', 'utf8'); // Furniture hazard authoring persistence.
 const playerVitalsSource = fs.readFileSync('docs/js/player-vitals.js', 'utf8'); // Player water-extinguish hook.
@@ -108,11 +109,11 @@ const windowStub = {
           pukeChancePerSec: 0,
         },
         knockbackCollision: {
-          fallback: { footing: 12 },
-          stone: { health: 8, footing: 20, shatteredStamina: 10, bruisedHealth: 8 },
-          wood: { footing: 14, bleedingHealth: 8, woundedStamina: 8 },
-          bladed: { health: 20, bleedingHealth: 22, woundedStamina: 14 },
-          fire: { burningHealth: 18 },
+          fallback: { footing: 6 },
+          stone: { health: 4, footing: 10, shatteredStamina: 5, bruisedHealth: 4 },
+          wood: { footing: 7, bleedingHealth: 4, woundedStamina: 4 },
+          bladed: { health: 10, bleedingHealth: 11, woundedStamina: 7 },
+          fire: { burningHealth: 9 },
           burningDodgeRecovery: 12,
         },
       },
@@ -133,10 +134,13 @@ const context = {
   window: windowStub,
 };
 vm.runInNewContext(resourceSource, context, { filename: 'resource-system.js' });
+vm.runInNewContext(footingBridgeSource, context, { filename: 'footing-damage-recovery-bridge.js' });
 vm.runInNewContext(impactSource, context, { filename: 'knockback-collision-impact.js' });
 const ResourceSystem = windowStub.ResourceSystem; // Real production API used by the numeric fixtures.
 const Impact = windowStub.KnockbackCollisionImpact; // Real production collision resolver used by the numeric fixtures.
-assert(ResourceSystem && Impact, 'combat modules register their browser APIs');
+const FootingBridge = windowStub.HobunjiFootingDamageRecovery; // Confirms collision tests include the same global Footing multiplier as gameplay.
+assert(ResourceSystem && Impact && FootingBridge, 'combat modules register their browser APIs');
+assert.equal(FootingBridge.damageMultiplier, 2, 'collision numeric fixtures must include the live x2 Footing bridge');
 
 function entity(overrides = {}) {
   const e = {
@@ -166,8 +170,8 @@ const KNOCKBACK_DUR_S = 0.18; // Production fixed knockback duration.
   const result = Impact.resolve(e, { kind: 'fallback', label: 'unspecified collision' }, TILE);
   approx(result.deficitTiles, 0.2, '1.2→1.0 shove has a 0.2-tile deficit');
   approx(result.strengthPercent, 20, '0.2-tile deficit is 20% collision strength');
-  approx(result.effects.footing, 2.4, 'fallback Footing damage scales to 20%');
-  approx(e.footing, 97.6, 'scaled fallback Footing damage is actually spent through ResourceSystem');
+  approx(result.effects.footing, 1.2, 'halved fallback profile scales to 20% before the shared Footing bridge');
+  approx(e.footing, 97.6, 'shared x2 Footing bridge restores 2.4 actual Footing loss at 20% strength');
 }
 
 // User example 2: 7.6 tiles intended, immediately blocked => 7.6 deficit = 760% profile strength.
@@ -180,40 +184,40 @@ const KNOCKBACK_DUR_S = 0.18; // Production fixed knockback duration.
   });
   approx(result.deficitTiles, 7.6, 'immediately blocked 7.6-tile shove keeps the full deficit');
   approx(result.strengthPercent, 760, '7.6-tile deficit is 760% collision strength');
-  approx(result.effects.health, 60.8, 'stone Health damage scales to 760%');
-  approx(result.effects.footing, 152, 'stone Footing damage scales to 760%');
-  approx(result.effects.shatteredStamina, 76, 'Shattered Stamina scales to 760%');
-  approx(result.effects.bruisedHealth, 60.8, 'Bruised Health scales to 760%');
-  approx(healthDamage, 60.8, 'scaled stone Health damage is handed to the existing damage/death path');
+  approx(result.effects.health, 30.4, 'halved stone Health damage scales to 760%');
+  approx(result.effects.footing, 76, 'halved stone Footing profile scales to 760% before the shared Footing bridge');
+  approx(result.effects.shatteredStamina, 38, 'halved Shattered Stamina scales to 760%');
+  approx(result.effects.bruisedHealth, 30.4, 'halved Bruised Health scales to 760%');
+  approx(healthDamage, 30.4, 'scaled stone Health damage is handed to the existing damage/death path');
   assert.equal(e.footing, 0, 'oversized collision Footing damage clamps through ResourceSystem');
-  approx(ResourceSystem.getAffliction(e, 'shatteredStamina'), 76, 'stone collision applies scaled Shattered Stamina');
-  approx(ResourceSystem.getAffliction(e, 'bruisedHealth'), 60.8, 'stone collision applies scaled Bruised Health');
+  approx(ResourceSystem.getAffliction(e, 'shatteredStamina'), 38, 'stone collision applies scaled Shattered Stamina');
+  approx(ResourceSystem.getAffliction(e, 'bruisedHealth'), 30.4, 'stone collision applies scaled Bruised Health');
 }
 
 // Material and authored-hazard profiles remain distinct.
 {
   const wood = Impact.effectsFor({ kind: 'wood' }, 1.5);
-  assert.deepEqual(JSON.parse(JSON.stringify(wood)), { footing: 21, bleedingHealth: 12, woundedStamina: 12 },
-    'wood/furniture profile scales Footing + Bleeding + Wounded only');
+  assert.deepEqual(JSON.parse(JSON.stringify(wood)), { footing: 10.5, bleedingHealth: 6, woundedStamina: 6 },
+    'wood/furniture profile scales the halved Footing + Bleeding + Wounded payload');
 
   const blade = Impact.effectsFor({ kind: 'wood', bladedHazard: true }, 2);
-  assert.deepEqual(JSON.parse(JSON.stringify(blade)), { health: 40, bleedingHealth: 44, woundedStamina: 28 },
-    'Bladed Hazard replaces ordinary furniture effects with the heavy blade profile');
+  assert.deepEqual(JSON.parse(JSON.stringify(blade)), { health: 20, bleedingHealth: 22, woundedStamina: 14 },
+    'Bladed Hazard replaces ordinary furniture effects with the halved blade profile');
 
   const fire = Impact.effectsFor({ kind: 'wood', fireHazard: true }, 1.5);
-  assert.deepEqual(JSON.parse(JSON.stringify(fire)), { burningHealth: 27 },
-    'Fire Hazard replaces ordinary furniture effects with Burning Health');
+  assert.deepEqual(JSON.parse(JSON.stringify(fire)), { burningHealth: 13.5 },
+    'Fire Hazard replaces ordinary furniture effects with the halved Burning Health profile');
 
   const both = Impact.effectsFor({ kind: 'wood', bladedHazard: true, fireHazard: true }, 1);
-  assert.deepEqual(JSON.parse(JSON.stringify(both)), { health: 20, bleedingHealth: 22, woundedStamina: 14, burningHealth: 18 },
-    'an intentionally dual-tagged hazard applies both special profiles without also adding generic furniture Footing');
+  assert.deepEqual(JSON.parse(JSON.stringify(both)), { health: 10, bleedingHealth: 11, woundedStamina: 7, burningHealth: 9 },
+    'an intentionally dual-tagged hazard applies both halved special profiles without also adding generic furniture Footing');
 }
 
 // Lethal Health impact stops the remaining collision profile. This models the
 // player path where dealHealthDamage synchronously respawns before resolve()
 // returns: the fresh body must not then receive Footing loss or afflictions.
 {
-  const e = entity({ health: 5, maxHealth: 100, footing: 100, maxFooting: 100 });
+  const e = entity({ health: 3, maxHealth: 100, footing: 100, maxFooting: 100 });
   Impact.begin(e, TILE / KNOCKBACK_DUR_S, KNOCKBACK_DUR_S);
   const result = Impact.resolve(e, { kind: 'stone', label: 'lethal wall' }, TILE, {
     dealHealthDamage(target, amount) {
@@ -223,7 +227,7 @@ const KNOCKBACK_DUR_S = 0.18; // Production fixed knockback duration.
     },
   });
   assert.equal(result.lethal, true, 'resolver records a lethal collision');
-  assert.equal(result.appliedEffects.health, 5, 'debug output reports only Health actually lost before respawn');
+  assert.equal(result.appliedEffects.health, 3, 'debug output reports only Health actually lost before respawn');
   assert.equal(e.footing, 100, 'lethal collision does not damage the respawned player\'s Footing');
   assert.equal(ResourceSystem.getAffliction(e, 'shatteredStamina'), 0, 'lethal collision does not apply Shattered Stamina after respawn');
   assert.equal(ResourceSystem.getAffliction(e, 'bruisedHealth'), 0, 'lethal collision does not apply Bruised Health after respawn');
