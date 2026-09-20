@@ -60,6 +60,11 @@ const maoLeftReach = rigMath.characterArmLength(maoMale, 0.9, 0.45, 'left');
 const expectedMaoLeftReach = Math.hypot(maoPosteriorY - maoMale.anchors.leftHandShoulder.position.y, maoMale.anchors.leftHandShoulder.position.z);
 assert(Math.abs(maoLeftReach - expectedMaoLeftReach) < 1e-12, 'character arm reach must be derived from the authored shoulder to resting-wrist rig geometry');
 assert(Math.abs(maoLeftReach - 0.558) > 0.1, 'character arm reach must not collapse back to the copied legacy 0.558 species constant');
+const maoChildLeftReach = rigMath.characterArmLength(
+  maoMale, 0.45, 0.225, 'left', 0.5, maoMale.anatomy.portraitVerticalPlacementRatio,
+);
+assert(Math.abs(maoChildLeftReach - maoLeftReach * 0.5) < 1e-12,
+  'child portrait scaling must shrink shoulder and wrist together instead of making the cached arm reach longer');
 assert.strictEqual(
   rigMath.characterArmLength(profiles.characters['rakakoan::male'], 0.9 * profiles.characters['kenkari::male'].anatomy.portraitScale, 0.4, 'left'),
   rigMath.characterArmLength(profiles.characters['kenkari::male'], 0.9 * profiles.characters['kenkari::male'].anatomy.portraitScale, 0.4, 'left'),
