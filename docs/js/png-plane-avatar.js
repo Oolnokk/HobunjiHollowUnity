@@ -1066,9 +1066,9 @@
     root.userData.handAttachY = modelHeight * (0.5 + placementRatio - handAttachRowY / pxH);
     const rigProfile = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[`${speciesId}::${gender}`] || null;
     const rigMath = window.HOBUNJI_ATTACHMENT_RIG_MATH;
-    const rigArmLength = rigMath?.characterArmLength?.(rigProfile, modelHeight, root.userData.handAttachY);
-    const leftArmLength = rigMath?.characterArmLength?.(rigProfile, modelHeight, root.userData.handAttachY, 'left');
-    const rightArmLength = rigMath?.characterArmLength?.(rigProfile, modelHeight, root.userData.handAttachY, 'right');
+    const rigArmLength = rigMath?.characterArmLength?.(rigProfile, modelHeight, root.userData.handAttachY, null, scaleMultiplier, placementRatio);
+    const leftArmLength = rigMath?.characterArmLength?.(rigProfile, modelHeight, root.userData.handAttachY, 'left', scaleMultiplier, placementRatio);
+    const rightArmLength = rigMath?.characterArmLength?.(rigProfile, modelHeight, root.userData.handAttachY, 'right', scaleMultiplier, placementRatio);
     const resolvedArmLength = Number.isFinite(rigArmLength) && rigArmLength > 0 ? rigArmLength : legacyArmLength;
     root.userData.armLength = resolvedArmLength; // Character-rig-derived rendered reach; old species JSON is fallback only.
     root.userData.scaledArmLength = resolvedArmLength; // Already in this avatar's local rendered coordinate space.
