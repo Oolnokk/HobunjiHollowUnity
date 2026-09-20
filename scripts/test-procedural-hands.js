@@ -376,53 +376,50 @@ assert.deepStrictEqual(
 );
 const grips = gripSandbox.window.HobunjiHandToolGrips;
 assert(grips, 'secondary grip config manager should be installed');
-const expectedPrimaryRotations = {
-  hatchet: { pitch: -90, yaw: 90, roll: 180 },
-  hoe: { pitch: 0, yaw: 0, roll: 0 },
-  bshuakauitl: { pitch: 0, yaw: 0, roll: 0 },
-  pickshovel: { pitch: 0, yaw: 0, roll: 0 },
-  daggersword: { pitch: 0, yaw: 180, roll: 0 },
-  plainssword: { pitch: 0, yaw: 0, roll: 0 },
-  dagger: { pitch: 0, yaw: 0, roll: 0 },
-  kylie: { pitch: 0, yaw: 18, roll: 0 },
-  warcleaver: { pitch: 0, yaw: 0, roll: 0 },
-  fishingspear: { pitch: 0, yaw: 0, roll: 0 },
-};
-for (const [toolKey, expectedRotation] of Object.entries(expectedPrimaryRotations)) {
+const sharedHatchetRotation = { pitch: -90, yaw: 90, roll: 180 };
+for (const toolKey of ['hatchet','hoe','bshuakauitl','pickshovel','daggersword','plainssword','dagger','kylie','warcleaver','fishingspear']) {
+  const grip = grips.authoredPrimaryGripForTool(toolKey);
+  assert.strictEqual(grip.position.y, 0.05, `${toolKey} must inherit hatchet's authored primary-grip Y`);
   assert.deepStrictEqual(
-    JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool(toolKey).rotationDeg)),
-    expectedRotation,
-    `${toolKey} must use the committed user-authored primary grip rotation`,
+    JSON.parse(JSON.stringify(grip.rotationDeg)),
+    sharedHatchetRotation,
+    `${toolKey} must inherit hatchet's primary-grip rotation`,
   );
 }
 const oldRotationDraft = grips.clone();
 delete oldRotationDraft.primaryRotationPreset;
 oldRotationDraft.tools.hatchet.primaryGrip.position = { x: 0.123, y: -0.456, z: 0.789 };
 oldRotationDraft.tools.hatchet.primaryGrip.rotationDeg = { pitch: 11, yaw: 22, roll: 33 };
+oldRotationDraft.tools.kylie.primaryGrip.position = { x: -0.222, y: -0.333, z: 0.444 };
 oldRotationDraft.tools.kylie.primaryGrip.rotationDeg = { pitch: -44, yaw: -55, roll: -66 };
 const oldHatchetScale = oldRotationDraft.tools.hatchet.toolScale;
 const oldHatchetSpan = JSON.parse(JSON.stringify(oldRotationDraft.tools.hatchet.secondaryGripSpan));
 grips.replace(oldRotationDraft);
 assert.deepStrictEqual(
   JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('hatchet').position)),
-  { x: 0.123, y: -0.456, z: 0.789 },
-  'rotation migration must preserve authored primary grip position',
+  { x: 0.123, y: 0.05, z: 0.789 },
+  'hatchet-example migration must replace Y while preserving authored X/Z',
 );
 assert.deepStrictEqual(
   JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('hatchet').rotationDeg)),
-  expectedPrimaryRotations.hatchet,
-  'old grip drafts must migrate hatchet to the committed rotation table',
+  sharedHatchetRotation,
+  'old grip drafts must migrate hatchet to the canonical hatchet rotation',
+);
+assert.deepStrictEqual(
+  JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('kylie').position)),
+  { x: -0.222, y: 0.05, z: 0.444 },
+  'hatchet-example migration must preserve each other weapon\'s X/Z while replacing Y',
 );
 assert.deepStrictEqual(
   JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('kylie').rotationDeg)),
-  expectedPrimaryRotations.kylie,
-  'old grip drafts must migrate every listed weapon rotation, not only hatchet',
+  sharedHatchetRotation,
+  'old grip drafts must migrate every weapon to the hatchet rotation',
 );
-assert.strictEqual(grips.toolScaleForTool('hatchet'), oldHatchetScale, 'rotation migration must preserve tool scale');
+assert.strictEqual(grips.toolScaleForTool('hatchet'), oldHatchetScale, 'hatchet-example migration must preserve tool scale');
 assert.deepStrictEqual(
   JSON.parse(JSON.stringify(grips.data.tools.hatchet.secondaryGripSpan)),
   oldHatchetSpan,
-  'rotation migration must preserve the off-hand span',
+  'hatchet-example migration must preserve the off-hand span',
 );
 assert.strictEqual(grips.secondaryGripForTool('hatchet'), null, 'hatchet must start with its second-hand grip disabled');
 assert.strictEqual(grips.secondaryGripForTool('bronzehoe'), null, 'hoe must start with its second-hand grip disabled');
