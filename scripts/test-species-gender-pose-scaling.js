@@ -37,15 +37,52 @@ assert.deepStrictEqual(mao, raw, 'explicit scale-1 point must use the exact fast
 for (const orbitScale of [0.65, 1.25]) {
   const point = { ...raw };
   api.scalePointAroundCentroid(point, centroid.x, centroid.y, centroid.z, 999, orbitScale);
-  for (const axis of ['x', 'y', 'z']) {
+  for (const axis of ['x', 'z']) {
     const expected = centroid[axis] + (raw[axis] - centroid[axis]) * orbitScale;
-    assert(Math.abs(point[axis] - expected) < 1e-12, `${axis} displacement must scale uniformly by explicit orbit scale`);
+    assert(Math.abs(point[axis] - expected) < 1e-12, `${axis} displacement must scale by explicit horizontal orbit scale`);
   }
+  assert.strictEqual(point.y, raw.y, 'poseOrbitScale must never change Y');
   api.unscalePointAroundCentroid(point, centroid.x, centroid.y, centroid.z, 0.001, orbitScale);
   for (const axis of ['x', 'y', 'z']) {
-    assert(Math.abs(point[axis] - raw[axis]) < 1e-12, `editor inverse round-trip failed on ${axis}`);
+    assert(Math.abs(point[axis] - raw[axis]) < 1e-12, `horizontal orbit inverse round-trip failed on ${axis}`);
   }
 }
+
+// Synthetic rigger-height fixture: portrait model height and whole-character
+// rigScaleY jointly define vertical proportions; head/hand/foot settings do not.
+sandbox.window.SCRATCHBONES_CONFIG = {
+  game: { assets: { pngPlaneAvatar: { worldModelWidth: 0.9, portraitScaleBySpecies: { 'mao-ao': { male: 1 } } } } },
+};
+sandbox.window.HobunjiCharacterRigScaleDefaults = {
+  scaleFor(species, gender) {
+    return String(species) === 'mao-ao' && String(gender) === 'male'
+      ? { x: 1, y: 0.99, head: 3, offsetY: 0.4 }
+      : { x: 1, y: 1, head: 1, offsetY: 0 };
+  },
+};
+const height = api.heightMetrics('engh-sho', 'male', 0.72, 0.8);
+assert(Math.abs(height.referenceHeight - 0.891) < 1e-12, 'Mao-ao male reference height must compose portrait model height with rigger Y');
+assert(Math.abs(height.effectiveHeight - 0.576) < 1e-12, 'target rendered height must compose portrait model height with rigger Y');
+assert(Math.abs(height.heightRatio - (0.576 / 0.891)) < 1e-12, 'vertical pose scale must be proportional to rendered character height');
+
+const splitRaw = { x: 0.5, y: 0.6, z: -0.25 };
+const splitPoint = { ...splitRaw };
+api.transformPosePoint(splitPoint, {
+  cx: 0, cz: 0, floorY: 0, baseY: 0.4,
+  speciesId: 'engh-sho', gender: 'male',
+  modelHeight: 0.72, rigScaleY: 0.8,
+  armLength: 999, poseOrbitScale: 0.5,
+});
+assert(Math.abs(splitPoint.x - 0.25) < 1e-12, 'X must use authored horizontal orbit scale');
+assert(Math.abs(splitPoint.z + 0.125) < 1e-12, 'Z must use authored horizontal orbit scale');
+assert(Math.abs(splitPoint.y - (0.32 + 0.2 * (0.576 / 0.891))) < 1e-12, 'Y must use rigger-scaled hand anchor plus rendered-height-scaled authored Y displacement');
+api.untransformPosePoint(splitPoint, {
+  cx: 0, cz: 0, floorY: 0, baseY: 0.4,
+  speciesId: 'engh-sho', gender: 'male',
+  modelHeight: 0.72, rigScaleY: 0.8,
+  armLength: 999, poseOrbitScale: 0.5,
+});
+for (const axis of ['x', 'y', 'z']) assert(Math.abs(splitPoint[axis] - splitRaw[axis]) < 1e-12, `full split transform inverse failed on ${axis}`);
 
 const orbitConfig = JSON.parse(fs.readFileSync('docs/config/combat/species-pose-orbit-scales.json', 'utf8'));
 assert.strictEqual(orbitConfig.schema, 'hobunji_species_pose_orbit_scales.v1');
@@ -74,7 +111,7 @@ assert.match(png, /root\.userData\.poseOrbitScale = poseOrbitScale/, 'avatar mus
 assert.match(png, /HobunjiSpeciesPoseScale\?\.resolveScale/, 'avatar construction must resolve species+gender orbit from authored config');
 assert.match(game, /let playerPoseOrbitScale = 1/, 'player must cache explicit pose orbit scale');
 assert.match(game, /scaleForPose\?\.\(playerPoseOrbitScale, playerArmLength\)/, 'player final pose scale must prefer explicit orbit over anatomy');
-assert.match(game, /scalePointAroundCentroid\(point, cx, cy, cz, playerArmLength, playerPoseOrbitScale\)/, 'player finished point must receive explicit orbit scale');
+assert.match(game, /transformPosePoint\(point, \{[\s\S]*baseY,[\s\S]*modelHeight: playerAvatarModelHeight[\s\S]*poseOrbitScale: playerPoseOrbitScale/, 'player finished point must split horizontal orbit from rigger-derived vertical height mapping');
 assert.match(bandit, /poseOrbitScale/, 'bandit melee must propagate explicit orbit scale');
 assert.match(bandit, /scaleForPose/, 'bandit melee debug/result scale must not derive primarily from arm length');
 assert.match(ranged, /poseOrbitScale/, 'bandit ranged must use explicit orbit scale');
@@ -88,10 +125,14 @@ assert.match(editor, /orbitScalesDownloadBtn/, 'Attack Editor must export the au
 assert.match(editor, /setOverride\('speciesPoseOrbitScales'/, 'Attack Editor must save orbit scales as a testable local game override');
 assert.match(editor, /setScale\?\.\(\$\('avatarSpecies'\)\.value, \$\('avatarGender'\)\.value, value\)/, 'editor scale control must edit the selected species+gender only');
 assert.match(editor, /currentPoseOrbitScale/, 'editor preview and diagnostics must use the authored orbit value');
-assert.match(editor, /unscalePointAroundCentroid[\s\S]*currentPoseOrbitScale/, 'editor gizmo inverse must use the same explicit orbit scale');
-assert.match(editor, /scalePointAroundCentroid[\s\S]*currentPoseOrbitScale/, 'editor preview forward transform must use the same explicit orbit scale');
+assert.match(editor, /untransformPosePoint[\s\S]*currentAvatarModelHeight[\s\S]*currentPoseOrbitScale/, 'editor gizmo inverse must undo both horizontal orbit and rigger-height Y mapping');
+assert.match(editor, /transformPosePoint[\s\S]*currentAvatarModelHeight[\s\S]*currentPoseOrbitScale/, 'editor preview must apply horizontal orbit and rigger-height Y mapping');
+assert.match(editor, /characterBodyScaleRoot/, 'Attack Editor must keep CharacterRigScale on the body root instead of double-scaling the weapon hierarchy');
+assert.match(editor, /character-rig-scale-defaults\.js/, 'Attack Editor must consume the same character-rigger height defaults as Multi-Avatar Animation Author');
 
-assert.doesNotMatch(helperSource, /Math\.hypot|lengthSq|setLength/, 'shared pose scaler must remain uniform centroid orbit math, not a reach clamp');
+assert.doesNotMatch(helperSource, /Math\.hypot|lengthSq|setLength/, 'shared pose scaler must remain direct per-axis mapping, not a reach clamp');
+assert.match(helperSource, /Y must never be derived from poseOrbitScale again/, 'shared helper must document the XZ-orbit/Y-height ownership split');
+assert.match(helperSource, /head scale\/Y offset, age hunch, hand[\s\S]*foot scale/i, 'vertical weapon scaling must explicitly exclude head-only and attachment-only scale controls');
 assert.doesNotMatch(heldActions, /HobunjiSpeciesPoseScale/, 'timing/rotation action data must remain independent of translation scaling');
 assert.doesNotMatch(idleConfig, /armLength|poseOrbitScale|poseCentroid|SpeciesPoseScale/i, 'authored idle pose data must not contain species scaling');
 
