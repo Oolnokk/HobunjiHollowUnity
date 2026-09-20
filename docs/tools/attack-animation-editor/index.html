@@ -899,6 +899,49 @@ let anim = {
   },
 };
 
+const ATTACK_POSE_PHASES = Object.freeze(['neutral', 'windup', 'strike']);
+const ATTACK_POSE_SIDES = Object.freeze(['left', 'right']);
+function normalizedPoseElbow(point) {
+  const x = Number(point?.x), y = Number(point?.y), z = Number(point?.z);
+  return [x,y,z].every(Number.isFinite) ? { x, y, z } : null;
+}
+window.HobunjiAttackEditorPoseState = Object.freeze({
+  getPose(phase) {
+    return ATTACK_POSE_PHASES.includes(phase) ? anim.poses[phase] || null : null;
+  },
+  getShoulderAim(phase) {
+    const raw = this.getPose(phase)?.shoulderAim;
+    return raw && typeof raw === 'object' ? { ...raw } : null;
+  },
+  setShoulderAim(phase, aim) {
+    const pose = this.getPose(phase);
+    if (!pose) return false;
+    pose.shoulderAim = aim && typeof aim === 'object' ? { ...aim } : {};
+    return true;
+  },
+  getElbow(phase, side) {
+    if (!ATTACK_POSE_SIDES.includes(side)) return null;
+    const point = normalizedPoseElbow(this.getPose(phase)?.elbows?.[side]);
+    return point ? { ...point } : null;
+  },
+  setElbow(phase, side, point) {
+    const pose = this.getPose(phase);
+    if (!pose || !ATTACK_POSE_SIDES.includes(side)) return false;
+    const normalized = normalizedPoseElbow(point);
+    if (normalized) {
+      pose.elbows ||= {};
+      pose.elbows[side] = normalized;
+    } else if (pose.elbows) {
+      delete pose.elbows[side];
+      if (!Object.keys(pose.elbows).length) delete pose.elbows;
+    }
+    return true;
+  },
+  snapshotPoseSet() {
+    return Object.fromEntries(ATTACK_POSE_PHASES.map(phase => [phase, clonePoseData(anim.poses[phase] || {})]));
+  },
+});
+
 const ELBOW_SIDES = ['left', 'right'];
 const ELBOW_AXES = ['x', 'y', 'z'];
 
@@ -918,8 +961,8 @@ function poseFieldDefs(phase) {
 }
 
 function elbowControlPoint(phase, side) {
-  const fromControls = window.HobunjiAttackEditorHandShoulderControls?.elbowForPhase?.(phase, side);
-  if (fromControls) return fromControls;
+  const corePoint = window.HobunjiAttackEditorPoseState?.getElbow?.(phase, side);
+  if (corePoint) return corePoint;
   const raw = anim.poses?.[phase]?.elbows?.[side];
   const x = Number(raw?.x), y = Number(raw?.y), z = Number(raw?.z);
   return [x,y,z].every(Number.isFinite) ? { x, y, z } : null;
@@ -1113,18 +1156,10 @@ $('toolEndFlipBtn').onclick = () => {
 syncToolEndFlipUi();
 
 $('flipBtn').onclick = () => {
-  const shoulderControls = window.HobunjiAttackEditorHandShoulderControls;
-  const elbowSnapshot = shoulderControls?.poseElbows || null;
   anim.poses.neutral = flipPose(anim.poses.neutral);
   anim.poses.windup = flipPose(anim.poses.windup);
   anim.poses.strike = flipPose(anim.poses.strike);
-  if (elbowSnapshot && shoulderControls?.setElbowForPhase) {
-    const mirrorPoint = point => point ? { x: -(Number(point.x) || 0), y: Number(point.y) || 0, z: Number(point.z) || 0 } : null;
-    for (const phase of ['neutral', 'windup', 'strike']) {
-      shoulderControls.setElbowForPhase(phase, 'left', mirrorPoint(elbowSnapshot?.[phase]?.right));
-      shoulderControls.setElbowForPhase(phase, 'right', mirrorPoint(elbowSnapshot?.[phase]?.left));
-    }
-  }
+  window.HobunjiAttackEditorHandShoulderControls?.loadFromAnimationObject?.({ poses: anim.poses });
   toolMirrored = !toolMirrored;
   toolBase.position.x = toolMirrored ? -baseAttachX : baseAttachX;
   if (toolPlaneMesh) toolPlaneMesh.scale.x = toolMirrored ? -1 : 1;
@@ -1242,6 +1277,9 @@ function applyPreset(preset) {
   anim.poses.neutral = { ...neutralPoseFor(preset.style), ...(preset.neutral || {}) };
   anim.poses.windup = { ...preset.windup };
   anim.poses.strike = { ...preset.strike };
+  // The selected Action owns hand-follow and elbow pose fields too. Reload the
+  // hand adapter every time so state from the previously selected Action cannot leak.
+  window.HobunjiAttackEditorHandShoulderControls?.loadFromAnimationObject?.({ poses: anim.poses });
   anim.windupFrac = preset.windupFrac;
   anim.strikeFrac = preset.strikeFrac;
   // Presets predate holdFrac, so derive it the same way game.js's HF auto-
@@ -1948,6 +1986,15 @@ function loadAnimObject(data) {
   anim.poses.neutral = { ...defaultPose(safeNum(n.x, styleNeutral.x), safeNum(n.y, styleNeutral.y), safeNum(n.z, styleNeutral.z), safeNum(n.pitch, styleNeutral.pitch), safeNum(n.yaw, styleNeutral.yaw), safeNum(n.bodyYaw, styleNeutral.bodyYaw), safeNum(n.roll, styleNeutral.roll)), scale: Math.max(0.1, safeNum(n.scale, styleNeutral.scale ?? 1)) };
   anim.poses.windup = defaultPose(safeNum(w.x, 0), safeNum(w.y, 0), safeNum(w.z, 0), safeNum(w.pitch, 0), safeNum(w.yaw, 0), safeNum(w.bodyYaw, 0), safeNum(w.roll, 0));
   anim.poses.strike = defaultPose(safeNum(s.x, 0), safeNum(s.y, 0), safeNum(s.z, 0), safeNum(s.pitch, 0), safeNum(s.yaw, 0), safeNum(s.bodyYaw, 0), safeNum(s.roll, 0));
+  for (const [phase, raw] of [['neutral', n], ['windup', w], ['strike', s]]) {
+    if (raw?.shoulderAim && typeof raw.shoulderAim === 'object') anim.poses[phase].shoulderAim = { ...raw.shoulderAim };
+    if (raw?.elbows && typeof raw.elbows === 'object') {
+      const elbows = Object.fromEntries(ATTACK_POSE_SIDES
+        .map(side => [side, normalizedPoseElbow(raw.elbows?.[side])])
+        .filter(([, point]) => point));
+      if (Object.keys(elbows).length) anim.poses[phase].elbows = elbows;
+    }
+  }
   // Elbows are pose data too, but the hand adapter owns their live preview state.
   // Restore them on every load path (file import, Undo/Redo, programmatic restore),
   // not only the file-input handler.
