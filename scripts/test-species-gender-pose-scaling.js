@@ -11,9 +11,17 @@ assert(api, 'shared species pose scaler must load');
 assert.strictEqual(api.MAO_AO_ARM_LENGTH, 0.558);
 assert.strictEqual(api.scaleForPose(0.73, 9), 0.73, 'explicit weapon orbit scale must win over anatomical arm length');
 assert.strictEqual(api.resolveScale('mao-ao', 'male', 9), 1, "Mao'ao male authored orbit must be exactly 1");
-assert.strictEqual(api.resolveScale('kenkari', 'female', 9), 1, 'Kenkari female authored orbit must be independent from arm length');
-assert(Math.abs(api.resolveScale('tletingan', 'male', 0.1) - (0.612 / 0.558)) < 1e-12, 'default Tletingan male orbit must preserve the prior visible ratio until re-authored');
-assert(Math.abs(api.resolveScale('tletingan', 'female', 0.1) - (0.603 / 0.558)) < 1e-12, 'default Tletingan female orbit must preserve the prior visible ratio until re-authored');
+assert.strictEqual(api.resolveScale('mao-ao', 'female', 9), 0.9, "Mao'ao female authored orbit must be exactly 0.9");
+assert.strictEqual(api.resolveScale('engh-sho', 'male', 9), 0.7, 'Engh-sho male authored orbit must be exactly 0.7');
+assert.strictEqual(api.resolveScale('engh-sho', 'female', 9), 0.65, 'Engh-sho female authored orbit must be exactly 0.65');
+assert.strictEqual(api.resolveScale('kenkari', 'male', 9), 0.5, 'Kenkari male authored orbit must be exactly 0.5');
+assert.strictEqual(api.resolveScale('kenkari', 'female', 9), 0.4, 'Kenkari female authored orbit must be exactly 0.4');
+assert.strictEqual(api.resolveScale('rakakoan', 'male', 9), 0.5, "Rakako'an male authored orbit must be exactly 0.5");
+assert.strictEqual(api.resolveScale('rakakoan', 'female', 9), 0.4, "Rakako'an female authored orbit must be exactly 0.4");
+assert.strictEqual(api.resolveScale('mashtzarr', 'male', 9), 0.8, 'Mashtzarr male authored orbit must be exactly 0.8');
+assert.strictEqual(api.resolveScale('mashtzarr', 'female', 9), 0.65, 'Mashtzarr female authored orbit must be exactly 0.65');
+assert.strictEqual(api.resolveScale('tletingan', 'male', 0.1), 0.5, 'Tletingan male authored orbit must be exactly 0.5');
+assert.strictEqual(api.resolveScale('tletingan', 'female', 0.1), 0.47, 'Tletingan female authored orbit must be exactly 0.47');
 assert(Math.abs(api.scaleForPose(null, 0.612) - (0.612 / 0.558)) < 1e-12, 'missing explicit orbit may use arm length only as a legacy fallback');
 
 api.setScale('kenkari', 'female', 0.72);
@@ -41,14 +49,14 @@ for (const orbitScale of [0.65, 1.25]) {
 
 const orbitConfig = JSON.parse(fs.readFileSync('docs/config/combat/species-pose-orbit-scales.json', 'utf8'));
 assert.strictEqual(orbitConfig.schema, 'hobunji_species_pose_orbit_scales.v1');
-assert.strictEqual(orbitConfig.species['mao-ao'].male, 1);
-assert.strictEqual(orbitConfig.species['mao-ao'].female, 1);
-assert(Math.abs(orbitConfig.species.tletingan.male - (0.612 / 0.558)) < 1e-12);
-assert(Math.abs(orbitConfig.species.tletingan.female - (0.603 / 0.558)) < 1e-12);
-for (const speciesId of ['engh-sho', 'kenkari', 'rakakoan', 'mashtzarr']) {
-  assert.strictEqual(orbitConfig.species[speciesId].male, 1);
-  assert.strictEqual(orbitConfig.species[speciesId].female, 1);
-}
+assert.deepStrictEqual(orbitConfig.species, {
+  'mao-ao': { male: 1, female: 0.9 },
+  'engh-sho': { male: 0.7, female: 0.65 },
+  kenkari: { male: 0.5, female: 0.4 },
+  rakakoan: { male: 0.5, female: 0.4 },
+  mashtzarr: { male: 0.8, female: 0.65 },
+  tletingan: { male: 0.5, female: 0.47 },
+}, 'repo defaults must exactly match the complete authored species+gender orbit table');
 
 const game = fs.readFileSync('docs/game.js', 'utf8');
 const editor = fs.readFileSync('docs/tools/attack-animation-editor/index.html', 'utf8');
