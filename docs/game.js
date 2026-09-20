@@ -21378,38 +21378,73 @@
         ranged: { x: 0.23, y: 0.08, z: 0.14, pitch: 16,    yaw: 65,  roll: 11,  bodyYaw: -52, scale: 1.77 },
       };
 
-      const _speciesPoseScaling = window.HobunjiSpeciesPoseScale; // Shared pure centroid-orbit math reused by player/editor/NPC weapon consumers.
-      const _toolPoseCentroidDebug = { rawWorld: { x: 0, y: 0, z: 0 }, finalWorld: { x: 0, y: 0, z: 0 }, lastScale: 1, centroidY: 0 }; // Mobile-visible last transform without DevTools.
+      const _speciesPoseScaling = window.HobunjiSpeciesPoseScale; // X/Z weapon orbit + rigger-derived Y body-height mapping shared with the Attack Editor.
+      const _toolPoseCentroidDebug = {
+        rawWorld: { x: 0, y: 0, z: 0 },
+        finalWorld: { x: 0, y: 0, z: 0 },
+        lastScale: 1,
+        heightScale: 1,
+        rigScaleY: 1,
+        baseY: 0,
+        floorY: 0,
+      }; // Mobile-visible last transform without DevTools.
       function playerToolPoseCentroidScale() {
         return _speciesPoseScaling?.scaleForPose?.(playerPoseOrbitScale, playerArmLength) ?? playerPoseOrbitScale;
+      }
+      function playerPoseIdentity() {
+        return {
+          speciesId: _playerData?.appearance?.speciesId || _playerData?.appearance?.species || 'mao-ao',
+          gender: _playerData?.appearance?.gender || 'male',
+        };
       }
       function scaleToolWorldPointAroundPlayerCentroid(point) {
         if (!point) return point;
         const cx = playerMesh.position.x;
-        const cy = playerMesh.position.y + playerPoseCentroidY;
         const cz = playerMesh.position.z;
+        const floorY = playerMesh.position.y;
+        const baseY = floorY + playerToolBaseY; // Raw PNG hand anchor: already includes portrait scale, vertical placement and opaque-art grounding.
+        const identity = playerPoseIdentity();
         _toolPoseCentroidDebug.rawWorld.x = point.x; _toolPoseCentroidDebug.rawWorld.y = point.y; _toolPoseCentroidDebug.rawWorld.z = point.z;
-        const scale = playerToolPoseCentroidScale();
-        if (_speciesPoseScaling?.scalePointAroundCentroid) _speciesPoseScaling.scalePointAroundCentroid(point, cx, cy, cz, playerArmLength, playerPoseOrbitScale);
-        else if (scale !== 1) point.set(cx + (point.x - cx) * scale, cy + (point.y - cy) * scale, cz + (point.z - cz) * scale);
+        const orbitScale = playerToolPoseCentroidScale();
+        const height = _speciesPoseScaling?.heightMetrics?.(identity.speciesId, identity.gender, playerAvatarModelHeight) || null;
+        if (_speciesPoseScaling?.transformPosePoint) {
+          _speciesPoseScaling.transformPosePoint(point, {
+            cx, cz, floorY, baseY,
+            speciesId: identity.speciesId,
+            gender: identity.gender,
+            modelHeight: playerAvatarModelHeight,
+            armLength: playerArmLength,
+            poseOrbitScale: playerPoseOrbitScale,
+          });
+        } else if (orbitScale !== 1) {
+          // Compatibility fallback intentionally leaves Y alone; orbit settings never own vertical placement.
+          point.set(cx + (point.x - cx) * orbitScale, point.y, cz + (point.z - cz) * orbitScale);
+        }
         _toolPoseCentroidDebug.finalWorld.x = point.x; _toolPoseCentroidDebug.finalWorld.y = point.y; _toolPoseCentroidDebug.finalWorld.z = point.z;
-        _toolPoseCentroidDebug.lastScale = scale; _toolPoseCentroidDebug.centroidY = cy;
+        _toolPoseCentroidDebug.lastScale = orbitScale;
+        _toolPoseCentroidDebug.heightScale = height?.heightRatio ?? 1;
+        _toolPoseCentroidDebug.rigScaleY = height?.rigScaleY ?? 1;
+        _toolPoseCentroidDebug.baseY = baseY;
+        _toolPoseCentroidDebug.floorY = floorY;
         return point;
       }
       window.HobunjiAttackArmReachDebug = Object.freeze({
         snapshot: () => ({
-          speciesId: _playerData?.appearance?.speciesId || null,
-          gender: _playerData?.appearance?.gender || null,
+          speciesId: playerPoseIdentity().speciesId,
+          gender: playerPoseIdentity().gender,
           armLength: playerArmLength,
           poseOrbitScale: playerPoseOrbitScale,
-          scaleRelativeToMaoAo: playerToolPoseCentroidScale(),
-          centroid: { x: playerMesh.position.x, y: _toolPoseCentroidDebug.centroidY, z: playerMesh.position.z },
+          horizontalOrbitScale: playerToolPoseCentroidScale(),
+          verticalHeightScaleRelativeToMaoAoMale: _toolPoseCentroidDebug.heightScale,
+          characterRigScaleY: _toolPoseCentroidDebug.rigScaleY,
+          rawHandBaseY: _toolPoseCentroidDebug.baseY,
+          characterFloorY: _toolPoseCentroidDebug.floorY,
           authoredUnscaledWorld: { ..._toolPoseCentroidDebug.rawWorld },
           finalScaledWorld: { ..._toolPoseCentroidDebug.finalWorld },
           authoredUnscaledLocal: { x: _toolPoseCentroidDebug.rawWorld.x - playerMesh.position.x, y: _toolPoseCentroidDebug.rawWorld.y - playerMesh.position.y, z: _toolPoseCentroidDebug.rawWorld.z - playerMesh.position.z },
           finalScaledLocal: { x: _toolPoseCentroidDebug.finalWorld.x - playerMesh.position.x, y: _toolPoseCentroidDebug.finalWorld.y - playerMesh.position.y, z: _toolPoseCentroidDebug.finalWorld.z - playerMesh.position.z },
-          mappingMode: 'centroid-relative-uniform-scale',
-          rule: "final = targetCentroid + (authoredFinal - targetCentroid) * speciesGenderPoseOrbitScale",
+          mappingMode: 'horizontal-orbit-plus-rigger-height',
+          rule: "X/Z = character center + authored offset * poseOrbitScale; Y = rigger-scaled PNG hand anchor + authored hand-relative Y * renderedCharacterHeightRatio",
         }),
       });
 
