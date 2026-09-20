@@ -3,8 +3,8 @@
 // combat-combo.js's `heavy` steps) now marks whatever it hits instead of
 // scaling its own damage off a streak. Marks stack up to maxStacks on a
 // target and show as a billboarded PNG plane hovering over its chest (see
-// updateTransforms below). Any OTHER heavy attack (currently just Charged
-// Breaker — see combat-charged-breaker.js) that lands on a marked target
+// updateTransforms below). Any OTHER heavy attack (currently Charged Breaker and Accelerating Flurry —
+// see combat-charged-breaker.js/combat-flurry.js) that lands on a marked target
 // consumes every stack for a big one-time damage/affliction multiplier,
 // then keeps that same multiplier applied to every heavy hit the target
 // takes (from any source) for empowerWindowSeconds afterward. The combo's
@@ -30,7 +30,7 @@
 
   let MAX_STACKS = 3;
   let EMPOWER_WINDOW_S = 7;
-  let MULTIPLIER_BY_STACKS_CONSUMED = [2, 3, 5]; // index 0 = 1 stack consumed, etc.
+  let MULTIPLIER_BY_STACKS_CONSUMED = [1.6, 2.2, 2.8]; // index 0 = 1 stack consumed, etc.
   let BILLBOARD_CFG = {
     chestHeightRatio: 0.62,
     iconWidthTiles: 0.32,
