@@ -38,7 +38,7 @@
       <div class="help" style="margin-bottom:6px"><b>These values move only the selected GLB against the neutral paper hand.</b> Units are normalized hand-height units so the correction remains reusable anywhere this GLB appears.</div>
       <div class="field" style="padding:7px;border:1px solid rgba(255,255,255,.08);border-radius:8px;margin-bottom:7px">
         <label class="fieldRow" style="cursor:default;margin:0"><input type="checkbox" id="handShowPaperHandGuide" checked disabled style="width:auto;margin-right:6px">Neutral paper-hand reference · always on in this tab</label>
-        <div class="help" style="margin-top:5px"><b>Only reference in this workflow:</b> a fixed wireframe/x-ray grasping hand at a neutral world orientation. It receives no attack pose, weapon target, Grip Mode, shoulder targeting, character-facing rotation, or animation transform. The GLB shares that exact neutral socket; only its own calibration moves it relative to the paper hand. Its folds never animate independently, so it remains a stable descriptive reference when directing an LLM.</div>
+        <div class="help" style="margin-top:5px"><b>Only reference in this workflow:</b> a fixed wireframe/x-ray grasping hand at a neutral world orientation, with the <b>blue orb built into the paper rig at its exact local origin</b>. It receives no attack pose, weapon target, Grip Mode, shoulder targeting, character-facing rotation, or animation transform. The GLB shares that exact neutral socket; only its own calibration moves it relative to the paper hand. Its folds never animate independently, so it remains a stable descriptive reference when directing an LLM.</div>
       </div>
       <div id="handFromToolPositionFields"></div>
     </div>
