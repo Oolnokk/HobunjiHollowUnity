@@ -227,9 +227,9 @@
           shoulder.z + Number(authoredOffset.z || 0),
         );
       } else {
-        // Legacy animations predate elbows. Midpoint fallback preserves their old
-        // shoulder-line hand direction without pretending to be an authored bend.
-        target.copy(shoulder).add(socket.position).multiplyScalar(0.5);
+        // Legacy animations predate elbow keyframes. Preserve their old hand-to-
+        // shoulder targeting; midpoint creation belongs exclusively to the editor.
+        target.copy(shoulder);
       }
       const upperArmLength = target.distanceTo(shoulder);
       const forearmLength = target.distanceTo(socket.position);
@@ -237,7 +237,7 @@
       const diagnosticArmLength = armGuideLength(side);
       return {
         elbow: target,
-        source: authoredOffset ? 'pose-authored' : 'legacy-midpoint',
+        source: authoredOffset ? 'pose-authored' : 'legacy-shoulder-target',
         authoredOffset: authoredOffset ? { x: authoredOffset.x, y: authoredOffset.y, z: authoredOffset.z } : null,
         diagnosticArmLength,
         upperArmLength,
