@@ -970,9 +970,15 @@
     const baseModelHeight = options.modelHeight ?? baseModelWidth * aspectHeight;
     const modelWidth = baseModelWidth * scaleMultiplier;
     const modelHeight = baseModelHeight * scaleMultiplier;
-    const configuredArmLength = Number(options.armLength ?? options.profile?.fighter?.armLength); // Canonical species+gender reach used by pose scaling.
-    const armLength = Number.isFinite(configuredArmLength) && configuredArmLength > 0 ? configuredArmLength : null; // Kept canonical so Tletingan male is exactly 0.612/0.558.
-    const scaledArmLength = armLength == null ? null : armLength * (modelHeight / 0.9); // Concrete rendered reach for dance/hand systems; separate from attack-pose ratio.
+    const configuredArmLength = Number(options.armLength ?? options.profile?.fighter?.armLength); // Anatomical reach remains available to hand/dance systems and as a legacy orbit fallback only.
+    const armLength = Number.isFinite(configuredArmLength) && configuredArmLength > 0 ? configuredArmLength : null;
+    const scaledArmLength = armLength == null ? null : armLength * (modelHeight / 0.9); // Concrete rendered reach for anatomy consumers.
+    const speciesId = options.speciesId ?? options.profile?.fighter?.speciesId ?? null;
+    const gender = options.gender ?? options.profile?.fighter?.gender ?? null;
+    const configuredPoseOrbitScale = Number(options.poseOrbitScale ?? options.profile?.fighter?.poseOrbitScale);
+    const poseOrbitScale = Number.isFinite(configuredPoseOrbitScale) && configuredPoseOrbitScale > 0
+      ? configuredPoseOrbitScale
+      : (window.HobunjiSpeciesPoseScale?.resolveScale?.(speciesId, gender, armLength) ?? (armLength ? armLength / 0.558 : 1)); // Explicit species+gender weapon orbit is independent from anatomical arm length.
     const anchorZ = options.anchorZ ?? cfg().anchorZ ?? 0;
     const textures = buildTextureSet(THREE, sourceCanvas, options.backCanvas || options.backImage || null);
     const root = new THREE.Group();
@@ -1024,8 +1030,11 @@
     root.userData.portraitScaleMultiplier = scaleMultiplier;
     root.userData.portraitModelWidth = modelWidth;
     root.userData.portraitModelHeight = modelHeight;
-    root.userData.armLength = armLength; // Canonical reach used by attack/editor pose scaling.
+    root.userData.speciesId = speciesId;
+    root.userData.gender = gender;
+    root.userData.armLength = armLength; // Anatomical reach; no longer the primary weapon-orbit control.
     root.userData.scaledArmLength = scaledArmLength; // Rendered-space reach used by actual arm-target geometry.
+    root.userData.poseOrbitScale = poseOrbitScale; // Explicit species+gender weapon pose radius multiplier authored independently from anatomy.
     root.userData.visualCentroidLocalX = 0; // Visible portrait-plane centroid inside this root.
     root.userData.visualCentroidLocalY = assemblyY; // Root zero is not generally the visual centroid because the assembly is vertically shifted.
     root.userData.visualCentroidLocalZ = anchorZ;
