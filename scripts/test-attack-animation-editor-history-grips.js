@@ -41,6 +41,8 @@ for (const subsystem of [
   'HobunjiAttackEditorHandGripMode',
 ]) assert(history.includes(subsystem), `history snapshot/restore missing ${subsystem}`);
 assert.match(history, /beginExternal/, 'async imports must be groupable into one Undo step');
+assert.doesNotMatch(history, /profileSelect\.dispatchEvent\(new Event\('change'/, 'Undo/Redo must not synthesize a model-selector change after restoring the authoritative profile snapshot');
+assert.doesNotMatch(history, /requestAnimationFrame\(\(\) => global\.ProceduralHandFrameDriver\?\.syncNow/, 'Undo/Redo must not run a delayed second hand sync that can race the restored rig');
 assert.match(editor, /HobunjiAttackEditorHandGripMode\?\.loadFromAnimationObject/, 'core animation import must include Grip Mode in the same history transaction');
 assert.match(editor, /HobunjiAttackEditorHandShoulderControls\?\.loadFromAnimationObject/, 'core animation import must include hand shoulder-follow state in the same history transaction');
 assert.doesNotMatch(gripMode, /loadFile\?\.addEventListener\('change'/, 'Grip Mode must not race the core animation import with a second file listener');
@@ -75,7 +77,9 @@ assert.match(configurator, /kind: 'model-mapping'/, 'changing the one hand-model
 assert.match(calibration, /profiles\.updateModelHandTransform\?\.\(key, mutator\)/, 'calibration sliders must mutate through the profile store and notify subscribers');
 assert.doesNotMatch(calibration, /requestAnimationFrame\(syncPreview\)|requestAnimationFrame\(\(\) => requestAnimationFrame\(syncPreview\)\)|setInterval\(syncPreview/, 'calibration preview must not depend on retry/poll wake-ups');
 assert.match(driver, /change\?\.kind === 'hand-transform'/, 'frame driver must react directly to store-backed calibration notifications');
-assert.match(attachments, /change\?\.kind === 'hand-transform'[\s\S]*syncToolCalibration\('left'[\s\S]*syncToolCalibration\('right'[\s\S]*return;/, 'child-only calibration updates must not rebuild hand GLBs');
+assert.match(attachments, /change\?\.kind === 'hand-transform'[\s\S]*syncPaperHandGuide\(profileValues\(\)\)[\s\S]*return;/, 'hand-transform notifications must not rebuild hand GLBs or run a second calibration resolver');
+assert.match(driver, /modelCalibrationForRecord\(record\)[\s\S]*placeHandWorld\?\.\('right',[\s\S]*modelCalibration\)/, 'frame driver must pass the exact selected-model calibration to the rig every sync');
+assert.match(attachments, /function applyToolCalibration\(side, authored = null\)/, 'attachment rig must expose a direct child-calibration application path');
 assert.match(direct, /requestAnimationFrame\(\(\) => global\.ProceduralHandFrameDriver\?\.syncNow\?\.\(\)\)/, 'weapon grip target edits may still defer one matrix-settle sync');
 assert.doesNotMatch(gripMode, /profiles\.handTransformForSpecies\s*=/, 'Grip Mode must not monkey-patch the profile resolver');
 
