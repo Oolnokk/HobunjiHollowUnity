@@ -709,6 +709,7 @@
     if (player && staminaRestore > 0) {
       window.ResourceSystem?.restoreStamina?.(player, staminaRestore);
     }
+    window.CookingSystem?.recordFoodEaten?.(); // Held ordinary food resets the same persistent Hunger timer as direct Inventory and cooked meals.
 
     itemDeps.showToast?.(`${def.icon || '🍽️'} Ate ${def.label || key}.`, true);
     itemDeps.refreshItemScroll?.();
