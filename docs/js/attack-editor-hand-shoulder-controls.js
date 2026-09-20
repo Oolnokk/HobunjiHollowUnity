@@ -75,7 +75,7 @@
   followGroup.id = 'handShoulderFollowGroup';
   followGroup.innerHTML = `
     <div class="poseGroupHead"><span class="dot" style="background:#fb7185"></span>Hand shoulder-follow by animation pose</div>
-    <div class="help" style="margin-bottom:7px"><b>This rotates the HAND, never the weapon.</b> Each checkbox lets that hand orientation axis follow toward the shoulder during the named pose. X/Y/Z below are hand rotations; stored legacy keys are pitch/yaw/roll.</div>
+    <div class="help" style="margin-bottom:7px"><b>This rotates the HAND, never the weapon.</b> The <b>wrist is always the part aimed at the shoulder</b>. X/Y/Z only choose which rotation components are allowed to turn that same wrist axis toward the shoulder; they never make the palm, fingers, or another hand axis become the target. Stored legacy keys are pitch/yaw/roll.</div>
     ${PHASES.map(phase => `
       <div class="field" data-hand-shoulder-phase="${phase}">
         <label>${phase[0].toUpperCase() + phase.slice(1)} hand follow</label>
@@ -90,7 +90,7 @@
   previewGroup.className = 'poseGroup';
   previewGroup.innerHTML = `
     <div class="poseGroupHead"><span class="dot" style="background:#fb7185"></span>Shoulder-follow preview</div>
-    <div class="help" style="margin-bottom:7px">Neutral defaults to <b>X + Z rotation follow</b>. Windup and Strike default to <b>Z only</b>. The three pose settings blend continuously with the animation.</div>
+    <div class="help" style="margin-bottom:7px">Neutral defaults to <b>X + Z rotation follow</b>. Windup and Strike default to <b>Z only</b>. In every case the same local <b>-Y wrist side</b> aims toward the shoulder; these controls only gate rotation components. The three pose settings blend continuously with the animation.</div>
     <div class="field"><label class="fieldRow" style="cursor:pointer"><input id="handHideArmSpritesPreview" type="checkbox" style="width:auto;margin-right:6px">Hide arm sprites in preview</label></div>
     <div class="help" id="handShoulderAimStatus">Arm hiding is preview-only and is not exported.</div>
   `;
