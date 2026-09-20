@@ -212,6 +212,12 @@ liveProfiles.updateModelHandTransform('feline', transform => { transform.rotatio
 const afterLiveRotation = liveModes.effectiveFrameForModel('feline', 'palm-parallel');
 assert(quatDotAbs(afterLivePosition.rotationQuaternion, afterLiveRotation.rotationQuaternion) < 0.999, 'store-backed rotation edit must immediately change the effective preview quaternion');
 assert(profileEvents.some(change => change?.kind === 'hand-transform' && change?.modelKey === 'feline'), 'hand-transform updates must notify live preview subscribers');
+const historyScaleBefore = Number(liveProfiles.data.models.feline.scale);
+const historyPresetBefore = liveProfiles.data.modelScalePreset;
+const historySnapshot = liveProfiles.clone();
+liveProfiles.replace(historySnapshot);
+assert.strictEqual(Number(liveProfiles.data.models.feline.scale), historyScaleBefore, 'profile snapshot restore must not multiply model scale');
+assert.strictEqual(liveProfiles.data.modelScalePreset, historyPresetBefore, 'profile snapshot restore must preserve the current scale migration marker');
 assert.doesNotMatch(gripModeSource, /profiles\.handTransformForSpecies\s*=/, 'Grip Mode must not monkey-patch the profile resolver');
 assert.match(gripModeSource, /multiplyQuat\(modeQ, calibrationQ\)/, 'Grip Mode must compose before Hand Model Calibration');
 assert.match(gripModeSource, /rotateVectorByQuat\(cp, modeQ\)/, 'calibration translation must be transformed by Grip Mode using ordinary rigid composition');
@@ -262,8 +268,11 @@ assert.match(driverSource, /placePaperHandGuideWorld\?\.\(primarySocket\.positio
 assert.match(handSource, /right_hand_paper_reference_socket/, 'paper-hand reference must own a socket separate from the calibrated right-hand socket');
 assert.match(handSource, /const calibration = new THREE\.Group\(\);[\s\S]*calibration\.name = `\$\{side\}_hand_calibration`/, 'each hand socket must own a dedicated child calibration node');
 assert.match(handSource, /rec\.calibration\.add\(visual\)/, 'rendered hand visuals must live below the calibration child, not directly on the shoulder-owned socket');
-assert.match(handSource, /rec\.toolCalibrationEnabled = false;[\s\S]*syncToolCalibration\(side\)/, 'free-hand fallback must disable held-item calibration without rebuilding the GLB');
-assert.match(handSource, /setToolCalibrationEnabled\(side, true\)/, 'held-item placement must enable the calibration child independently of socket orientation');
+assert.match(handSource, /applyToolCalibration\(side, null\)/, 'free-hand fallback must disable held-item calibration without rebuilding the GLB');
+assert.match(handSource, /function placeHandWorld\(side, worldPosition, worldQuaternion, modelCalibration = null\)[\s\S]*applyToolCalibration\(side, modelCalibration\)/, 'held-item placement must apply the exact calibration supplied by the frame driver');
+assert.match(driverSource, /function modelCalibrationForRecord\(record\)[\s\S]*const modelKey = modelKeyForRecord\(record\)/, 'frame driver must use one authoritative selected model identity for calibration');
+assert.match(driverSource, /const modelCalibration = modelCalibrationForRecord\(record\)[\s\S]*placeHandWorld\?\.\('right', primary\.position, primary\.quaternion, modelCalibration\)/, 'right-hand placement must pass the selected model calibration explicitly into the rig');
+assert.doesNotMatch(handSource, /function normalizedToolCalibration\(|syncToolCalibration\(|setToolCalibrationEnabled\(/, 'attachment rig must not maintain a second species-resolved calibration path');
 assert.doesNotMatch(shoulderAimSource, /toolCalibrationLocal|hand_calibration/, 'shoulder-follow must not read or write the model-calibration child at all');
 assert.match(shoulderAimSource, /currentTop\.copy\(localTop\)\.applyQuaternion\(authoredQuaternion\)/, 'shoulder-follow must solve only from the generic hand socket frame');
 assert.match(shoulderAimSource, /calibrationOwnership: 'ignored-child-layer'/, 'shoulder diagnostics must make the ownership boundary visible');
