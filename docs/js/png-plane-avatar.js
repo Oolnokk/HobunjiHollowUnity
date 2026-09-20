@@ -970,15 +970,14 @@
     const baseModelHeight = options.modelHeight ?? baseModelWidth * aspectHeight;
     const modelWidth = baseModelWidth * scaleMultiplier;
     const modelHeight = baseModelHeight * scaleMultiplier;
-    const configuredArmLength = Number(options.armLength ?? options.profile?.fighter?.armLength); // Anatomical reach remains available to hand/dance systems and as a legacy orbit fallback only.
-    const armLength = Number.isFinite(configuredArmLength) && configuredArmLength > 0 ? configuredArmLength : null;
-    const scaledArmLength = armLength == null ? null : armLength * (modelHeight / 0.9); // Concrete rendered reach for anatomy consumers.
+    const legacyConfiguredArmLength = Number(options.armLength ?? options.profile?.fighter?.armLength); // Retained only as a fallback for old profiles that predate attachment-rig anatomy.
+    const legacyArmLength = Number.isFinite(legacyConfiguredArmLength) && legacyConfiguredArmLength > 0 ? legacyConfiguredArmLength : null;
     const speciesId = options.speciesId ?? options.profile?.fighter?.speciesId ?? null;
     const gender = options.gender ?? options.profile?.fighter?.gender ?? null;
     const configuredPoseOrbitScale = Number(options.poseOrbitScale ?? options.profile?.fighter?.poseOrbitScale);
     const poseOrbitScale = Number.isFinite(configuredPoseOrbitScale) && configuredPoseOrbitScale > 0
       ? configuredPoseOrbitScale
-      : (window.HobunjiSpeciesPoseScale?.resolveScale?.(speciesId, gender, armLength) ?? (armLength ? armLength / 0.558 : 1)); // Explicit species+gender weapon orbit is independent from anatomical arm length.
+      : (window.HobunjiSpeciesPoseScale?.resolveScale?.(speciesId, gender, legacyArmLength) ?? (legacyArmLength ? legacyArmLength / 0.558 : 1)); // Explicit species+gender weapon orbit is independent from anatomy; old armLength is only a fallback.
     const anchorZ = options.anchorZ ?? cfg().anchorZ ?? 0;
     const textures = buildTextureSet(THREE, sourceCanvas, options.backCanvas || options.backImage || null);
     const root = new THREE.Group();
@@ -1032,8 +1031,8 @@
     root.userData.portraitModelHeight = modelHeight;
     root.userData.speciesId = speciesId;
     root.userData.gender = gender;
-    root.userData.armLength = armLength; // Anatomical reach; no longer the primary weapon-orbit control.
-    root.userData.scaledArmLength = scaledArmLength; // Rendered-space reach used by actual arm-target geometry.
+    root.userData.armLength = legacyArmLength; // Replaced below after handAttachY exists and rigger-derived anatomy can resolve.
+    root.userData.scaledArmLength = legacyArmLength; // Same temporary fallback; concrete gameplay-space reach must not be height-scaled a second time.
     root.userData.poseOrbitScale = poseOrbitScale; // Explicit species+gender weapon pose radius multiplier authored independently from anatomy.
     root.userData.visualCentroidLocalX = 0; // Visible portrait-plane centroid inside this root.
     root.userData.visualCentroidLocalY = assemblyY; // Root zero is not generally the visual centroid because the assembly is vertically shifted.
@@ -1065,6 +1064,19 @@
     // those three terms gives modelHeight*(0.5 + placementRatio - r/pxH).
     const handAttachRowY = vBounds ? vBounds.bottom : Math.round(placementRatio * pxH);
     root.userData.handAttachY = modelHeight * (0.5 + placementRatio - handAttachRowY / pxH);
+    const rigProfile = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[`${speciesId}::${gender}`] || null;
+    const rigMath = window.HOBUNJI_ATTACHMENT_RIG_MATH;
+    const rigArmLength = rigMath?.characterArmLength?.(rigProfile, modelHeight, root.userData.handAttachY);
+    const leftArmLength = rigMath?.characterArmLength?.(rigProfile, modelHeight, root.userData.handAttachY, 'left');
+    const rightArmLength = rigMath?.characterArmLength?.(rigProfile, modelHeight, root.userData.handAttachY, 'right');
+    const resolvedArmLength = Number.isFinite(rigArmLength) && rigArmLength > 0 ? rigArmLength : legacyArmLength;
+    root.userData.armLength = resolvedArmLength; // Character-rig-derived rendered reach; old species JSON is fallback only.
+    root.userData.scaledArmLength = resolvedArmLength; // Already in this avatar's local rendered coordinate space.
+    root.userData.armLengthBySide = {
+      left: Number.isFinite(leftArmLength) && leftArmLength > 0 ? leftArmLength : resolvedArmLength,
+      right: Number.isFinite(rightArmLength) && rightArmLength > 0 ? rightArmLength : resolvedArmLength,
+    };
+    root.userData.armLengthSource = Number.isFinite(rigArmLength) && rigArmLength > 0 ? 'attachment-rig-shoulder-to-resting-wrist' : 'legacy-species-config';
     root.add(assembly);
     root.userData.sourceCanvas = sourceCanvas;
     root.userData.backCanvas = options.backCanvas || options.backImage || null;
