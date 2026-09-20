@@ -18,8 +18,8 @@
     windup: Object.freeze({ grip: false, palmNormal: true }),
     strike: Object.freeze({ grip: false, palmNormal: true }),
   });
-  const poseAim = Object.fromEntries(PHASES.map(phase => [phase, { ...DEFAULTS[phase] }]));
-  const poseElbows = Object.fromEntries(PHASES.map(phase => [phase, { left: null, right: null }]));
+  const poseAim = Object.fromEntries(PHASES.map(phase => [phase, { ...DEFAULTS[phase] }])); // Parser-time fallback until the core editor pose state exists.
+  const poseElbows = Object.fromEntries(PHASES.map(phase => [phase, { left: null, right: null }])); // Same fallback; core anim.poses becomes authoritative once the module initializes.
   let hideArmSprites = false;
   let showPaperArmGuide = false; // Preview-only elbow/arm-strip visualization; never exported into attack data.
 
@@ -125,11 +125,19 @@
     ]));
   }
 
+  function corePoseState() {
+    return global.HobunjiAttackEditorPoseState || null;
+  }
+  function aimForPhase(phase) {
+    const core = corePoseState()?.getShoulderAim?.(phase);
+    return core ? normalizeBooleanAim(core, DEFAULTS[phase]) : { ...poseAim[phase] };
+  }
+
   function syncCheckboxes() {
     for (const phase of PHASES) {
       for (const axis of AXES) {
         const input = document.getElementById(checkboxId(phase, axis));
-        if (input) input.checked = !!poseAim[phase][axis];
+        if (input) input.checked = !!aimForPhase(phase)[axis];
       }
     }
     hide.checked = hideArmSprites;
@@ -144,9 +152,9 @@
     if (!parsed.poses || typeof parsed.poses !== 'object') parsed.poses = {};
     for (const phase of PHASES) {
       if (!parsed.poses[phase] || typeof parsed.poses[phase] !== 'object') parsed.poses[phase] = {};
-      parsed.poses[phase].shoulderAim = { ...poseAim[phase] };
+      parsed.poses[phase].shoulderAim = { ...aimForPhase(phase) };
       const elbows = Object.fromEntries(SIDES
-        .map(side => [side, poseElbows[phase]?.[side]])
+        .map(side => [side, elbowForPhase(phase, side)])
         .filter(([, point]) => point)
         .map(([side, point]) => [side, { ...point }]));
       if (Object.keys(elbows).length) parsed.poses[phase].elbows = elbows;
@@ -180,7 +188,9 @@
   }
 
   function setAxis(phase, axis, value) {
-    poseAim[phase][axis] = !!value;
+    const next = { ...aimForPhase(phase), [axis]: !!value };
+    poseAim[phase] = { ...next };
+    corePoseState()?.setShoulderAim?.(phase, next);
     refreshJsonExtension();
     global.ProceduralHandFrameDriver?.syncNow?.();
     syncCheckboxes();
@@ -191,13 +201,17 @@
   }
 
   function elbowForPhase(phase, side) {
+    const core = corePoseState()?.getElbow?.(phase, side);
+    if (core) return { ...core };
     const point = poseElbows?.[phase]?.[side];
     return point ? { ...point } : null;
   }
 
   function setElbowForPhase(phase, side, point) {
     if (!PHASES.includes(phase) || !SIDES.includes(side)) return false;
-    poseElbows[phase][side] = normalizePoint(point);
+    const normalized = normalizePoint(point);
+    poseElbows[phase][side] = normalized;
+    corePoseState()?.setElbow?.(phase, side, normalized);
     refreshJsonExtension();
     global.ProceduralHandFrameDriver?.syncNow?.();
     global.ProceduralHandShoulderAim?.refreshPaperArmGuides?.();
@@ -263,9 +277,9 @@
   }
   function poseSetForRuntime() {
     return Object.fromEntries(PHASES.map(phase => [phase, {
-      shoulderAim: { ...poseAim[phase] },
+      shoulderAim: { ...aimForPhase(phase) },
       elbows: Object.fromEntries(SIDES
-        .map(side => [side, poseElbows[phase]?.[side]])
+        .map(side => [side, elbowForPhase(phase, side)])
         .filter(([, point]) => point)
         .map(([side, point]) => [side, { ...point }])),
     }]));
@@ -322,6 +336,8 @@
       for (const phase of PHASES) {
         poseAim[phase] = normalizeBooleanAim(parsed?.poses?.[phase]?.shoulderAim, DEFAULTS[phase]);
         poseElbows[phase] = normalizeElbows(parsed?.poses?.[phase] || {});
+        corePoseState()?.setShoulderAim?.(phase, poseAim[phase]);
+        for (const side of SIDES) corePoseState()?.setElbow?.(phase, side, poseElbows[phase][side]);
       }
       syncCheckboxes();
       refreshJsonExtension();
@@ -329,8 +345,8 @@
       global.ProceduralHandFrameDriver?.syncNow?.();
       return true;
     },
-    get poseAim() { return JSON.parse(JSON.stringify(poseAim)); },
-    get poseElbows() { return JSON.parse(JSON.stringify(poseElbows)); },
+    get poseAim() { return Object.fromEntries(PHASES.map(phase => [phase, { ...aimForPhase(phase) }])); },
+    get poseElbows() { return Object.fromEntries(PHASES.map(phase => [phase, Object.fromEntries(SIDES.map(side => [side, elbowForPhase(phase, side)]))])); },
     elbowForPhase,
     setElbowForPhase,
     authorMidpointElbow,
@@ -340,7 +356,7 @@
       return injectPoseAimIntoObject(parsed);
     },
     snapshot() {
-      return { hideArmSprites, showPaperArmGuide, poseAim: JSON.parse(JSON.stringify(poseAim)), poseElbows: JSON.parse(JSON.stringify(poseElbows)) }; // Undo/Redo preserves pose hinges, elbow keyframes, and preview-only helper state.
+      return { hideArmSprites, showPaperArmGuide, poseAim: this.poseAim, poseElbows: this.poseElbows }; // Core anim.poses owns pose data; this duplicate remains only for backward-compatible history snapshots.
     },
     restore(snapshot) {
       if (!snapshot) return false;
@@ -349,6 +365,8 @@
       for (const phase of PHASES) {
         poseAim[phase] = normalizeBooleanAim(snapshot.poseAim?.[phase], DEFAULTS[phase]);
         poseElbows[phase] = normalizeElbows({ elbows: snapshot.poseElbows?.[phase] || {} });
+        corePoseState()?.setShoulderAim?.(phase, poseAim[phase]);
+        for (const side of SIDES) corePoseState()?.setElbow?.(phase, side, poseElbows[phase][side]);
       }
       global.ProceduralHandShoulderAim?.setPaperArmGuideVisible?.(showPaperArmGuide);
       syncCheckboxes();
