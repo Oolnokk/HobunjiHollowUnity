@@ -2,8 +2,9 @@
 //
 // Shoulder targets come from attachment-rig profiles when present. Legacy manually
 // authored 200x200 points and portrait-hand-shoulder-scan.js remain fallbacks.
-// The hand socket/origin IS the wrist. Palm/fingers extend local +Y, so the shoulder
-// lies toward local -Y. The correction may rotate only around two HAND-LOCAL hinges:
+// The hand socket/origin IS the wrist. Palm/fingers extend local +Y, so the wrist-facing
+// side is local -Y. That axis targets the solved elbow (not the shoulder). The correction
+// may rotate only around two HAND-LOCAL hinges:
 // local X (grip axis) and local Z (palm-normal axis). There is deliberately no local-Y
 // shoulder hinge. Per-pose weights come from hand-shoulder-pose-runtime.js.
 (function (global) {
@@ -205,11 +206,61 @@
       return true;
     }
 
-    function armGuideLength() {
-      const rendered = Number(avatarRoot.userData?.scaledArmLength); // Preferred rendered-space arm reach for the paper guide.
+    function armGuideLength(side) {
+      const sideReach = Number(avatarRoot.userData?.armLengthBySide?.[side]); // Preferred rigger-derived shoulder-to-resting-wrist reach for this arm.
+      if (Number.isFinite(sideReach) && sideReach > 0) return sideReach;
+      const rendered = Number(avatarRoot.userData?.scaledArmLength); // Already concrete avatar-local reach; do not model-height-scale it again.
       if (Number.isFinite(rendered) && rendered > 0) return rendered;
-      const authored = Number(avatarRoot.userData?.armLength); // Fallback retained for older avatars without scaledArmLength.
-      return Number.isFinite(authored) && authored > 0 ? authored * (modelHeight / 0.9) : modelHeight * 0.62;
+      const authored = Number(avatarRoot.userData?.armLength);
+      return Number.isFinite(authored) && authored > 0 ? authored : modelHeight * 0.42;
+    }
+
+    function resolveElbowInParent(side, shoulder, baseQuaternion, target = guideElbow) {
+      const socket = socketFor(side);
+      if (!socket || !shoulder) return null;
+      const totalArmLength = armGuideLength(side);
+      const segmentLength = totalArmLength * 0.5; // Elbow is always halfway down the authored total arm length.
+      guideSpan.copy(socket.position).sub(shoulder);
+      const shoulderWristDistance = guideSpan.length();
+      guideMidpoint.copy(shoulder).add(socket.position).multiplyScalar(0.5);
+      if (!(shoulderWristDistance > 1e-8) || !(segmentLength > 1e-8)) {
+        target.copy(guideMidpoint);
+        return { elbow: target, totalArmLength, segmentLength, shoulderWristDistance, overreach: false, bendRadius: 0, hint: { x: 0, y: 0, z: 0 } };
+      }
+
+      const overreach = shoulderWristDistance > totalArmLength + 1e-6;
+      const halfChord = shoulderWristDistance * 0.5;
+      const bendRadius = overreach ? 0 : Math.sqrt(Math.max(0, segmentLength * segmentLength - halfChord * halfChord));
+      guideSpan.multiplyScalar(1 / shoulderWristDistance);
+
+      const hint = poseRuntime?.currentElbowHint?.(side) || { x: 0, y: 0, z: 0 }; // Pose-authored midpoint-relative hint in full-arm-length units.
+      guideBend.set(Number(hint.x) || 0, Number(hint.y) || 0, Number(hint.z) || 0);
+      guideBend.addScaledVector(guideSpan, -guideBend.dot(guideSpan)); // Project the authored hint onto the valid elbow circle plane.
+      if (guideBend.lengthSq() < 1e-8) {
+        guideBend.copy(localPalmNormalAxis).applyQuaternion(baseQuaternion);
+        guideBend.addScaledVector(guideSpan, -guideBend.dot(guideSpan));
+      }
+      if (guideBend.lengthSq() < 1e-8) {
+        guideBend.copy(localGripAxis).applyQuaternion(baseQuaternion);
+        guideBend.addScaledVector(guideSpan, -guideBend.dot(guideSpan));
+      }
+      if (guideBend.lengthSq() < 1e-8) guideBend.set(0, 0, 1);
+      guideBend.normalize();
+
+      if (overreach) {
+        target.copy(shoulder).addScaledVector(guideSpan, segmentLength); // Straight maximum-reach elbow; the paper forearm intentionally stops short of an unreachable wrist.
+      } else {
+        target.copy(guideMidpoint).addScaledVector(guideBend, bendRadius);
+      }
+      return {
+        elbow: target,
+        totalArmLength,
+        segmentLength,
+        shoulderWristDistance,
+        overreach,
+        bendRadius,
+        hint: { x: Number(hint.x) || 0, y: Number(hint.y) || 0, z: Number(hint.z) || 0 },
+      };
     }
 
     function makePaperArmGuide(side) {
@@ -258,7 +309,7 @@
       strip.updateMatrix?.();
     }
 
-    function updatePaperArmGuide(side, shoulder, baseQuaternion) {
+    function updatePaperArmGuide(side, shoulder, baseQuaternion, solved = null) {
       const existing = paperArmBySide[side];
       if (!paperArmGuideVisible) {
         if (existing) existing.root.visible = false;
@@ -269,35 +320,32 @@
         if (existing) existing.root.visible = false;
         return;
       }
-      const guide = makePaperArmGuide(side);
-      const totalAuthoredLength = armGuideLength(); // Full shoulder-to-wrist reach; elbow splits it into equal halves.
-      guideSpan.copy(socket.position).sub(shoulder);
-      const distance = guideSpan.length();
-      if (!(distance > 1e-8)) { guide.root.visible = false; return; }
-      const guideLength = Math.max(totalAuthoredLength, distance); // Overreach stays connected visually while diagnostics report the stretch.
-      const half = guideLength * 0.5;
-      const halfChord = distance * 0.5;
-      const bendMagnitude = Math.sqrt(Math.max(0, half * half - halfChord * halfChord));
-      guideSpan.multiplyScalar(1 / distance);
-      guideMidpoint.copy(shoulder).add(socket.position).multiplyScalar(0.5);
-      guideBend.copy(localPalmNormalAxis).applyQuaternion(baseQuaternion);
-      guideBend.addScaledVector(guideSpan, -guideBend.dot(guideSpan));
-      if (guideBend.lengthSq() < 1e-8) {
-        guideBend.copy(localGripAxis).applyQuaternion(baseQuaternion);
-        guideBend.addScaledVector(guideSpan, -guideBend.dot(guideSpan));
+      const elbowSolve = solved || resolveElbowInParent(side, shoulder, baseQuaternion, guideElbow);
+      if (!elbowSolve) {
+        if (existing) existing.root.visible = false;
+        return;
       }
-      if (guideBend.lengthSq() < 1e-8) guideBend.set(0, 0, 1);
-      guideBend.normalize();
-      guideElbow.copy(guideMidpoint).addScaledVector(guideBend, bendMagnitude);
-      placePaperStrip(guide.upper, shoulder, guideElbow);
-      placePaperStrip(guide.lower, guideElbow, socket.position);
-      guide.elbow.position.copy(guideElbow);
-      const elbowAngleRad = half > 1e-8 ? Math.acos(clampUnit(1 - (distance * distance) / (2 * half * half))) : 0; // Diagnostic bend angle reserved for evaluating future joint limits.
-      guide.root.userData.armLength = totalAuthoredLength;
-      guide.root.userData.displayLength = guideLength;
-      guide.root.userData.segmentLength = half; // Both paper strips are always equal length by construction.
-      guide.root.userData.elbowAngleDeg = THREE.MathUtils.radToDeg(elbowAngleRad); // Exposed through rig debug so mobile testing can judge plausible limits without DevTools.
-      guide.root.userData.overreach = distance > totalAuthoredLength + 1e-6;
+      const guide = makePaperArmGuide(side);
+      const elbow = elbowSolve.elbow;
+      placePaperStrip(guide.upper, shoulder, elbow);
+      if (elbowSolve.overreach) {
+        guideDirection.copy(socket.position).sub(elbow).normalize();
+        guideMidpoint.copy(elbow).addScaledVector(guideDirection, elbowSolve.segmentLength); // Reachable wrist endpoint; leaves a visible gap to an impossible authored hand position.
+        placePaperStrip(guide.lower, elbow, guideMidpoint);
+      } else {
+        placePaperStrip(guide.lower, elbow, socket.position);
+      }
+      guide.elbow.position.copy(elbow);
+      const segment = elbowSolve.segmentLength;
+      const distance = elbowSolve.shoulderWristDistance;
+      const elbowAngleRad = segment > 1e-8 ? Math.acos(clampUnit(1 - (distance * distance) / (2 * segment * segment))) : 0;
+      guide.root.userData.armLength = elbowSolve.totalArmLength;
+      guide.root.userData.armLengthSource = avatarRoot.userData?.armLengthSource || 'fallback';
+      guide.root.userData.segmentLength = segment;
+      guide.root.userData.elbowAngleDeg = THREE.MathUtils.radToDeg(elbowAngleRad);
+      guide.root.userData.elbowHint = { ...elbowSolve.hint };
+      guide.root.userData.resolvedElbow = { x: elbow.x, y: elbow.y, z: elbow.z };
+      guide.root.userData.overreach = elbowSolve.overreach;
       guide.root.userData.shoulderWristDistance = distance;
       guide.root.visible = true;
       guide.root.updateMatrixWorld?.(true);
@@ -316,19 +364,21 @@
         debugBySide[side] = { weights, applied: false, reason: 'authored-base-missing' };
         return false;
       }
-      targetDirection.copy(shoulder).sub(socket.position);
+      const elbowSolve = resolveElbowInParent(side, shoulder, authoredQuaternion, guideElbow);
+      const elbow = elbowSolve?.elbow || shoulder;
+      targetDirection.copy(elbow).sub(socket.position); // Forearm direction: the wrist-facing hand axis points back toward the elbow.
       if (targetDirection.lengthSq() < 1e-10) {
         socket.quaternion.copy(authoredQuaternion);
         socket.updateMatrix?.();
         socket.updateMatrixWorld?.(true);
-        updatePaperArmGuide(side, shoulder, authoredQuaternion);
-        debugBySide[side] = { weights, applied: false, reason: 'hand-at-shoulder' };
+        updatePaperArmGuide(side, shoulder, authoredQuaternion, elbowSolve);
+        debugBySide[side] = { weights, applied: false, reason: 'hand-at-elbow' };
         return false;
       }
       targetDirection.normalize();
 
       // Shoulder-follow owns the GENERIC hand socket only. Per-GLB calibration
-      // remains a child layer. Convert the shoulder direction into this authored
+      // remains a child layer. Convert the elbow direction into this authored
       // socket's LOCAL hand basis, then solve only the X and Z hinges.
       inverseAuthoredQuaternion.copy(authoredQuaternion).invert();
       localTargetDirection.copy(targetDirection).applyQuaternion(inverseAuthoredQuaternion).normalize();
@@ -350,7 +400,7 @@
       socket.quaternion.copy(outputQuaternion);
       socket.updateMatrix?.();
       socket.updateMatrixWorld?.(true);
-      updatePaperArmGuide(side, shoulder, authoredQuaternion);
+      updatePaperArmGuide(side, shoulder, authoredQuaternion, elbowSolve);
 
       aimedWristAxis.copy(localWristShoulderAxis).applyQuaternion(outputQuaternion).normalize();
       const residualRad = Math.acos(clampUnit(aimedWristAxis.dot(targetDirection)));
@@ -360,6 +410,12 @@
         applied: weights.grip > 0 || weights.palmNormal > 0,
         source: shoulderSource[side],
         shoulder: { x: shoulder.x, y: shoulder.y, z: shoulder.z },
+        elbow: { x: elbow.x, y: elbow.y, z: elbow.z },
+        armLength: elbowSolve?.totalArmLength ?? armGuideLength(side),
+        segmentLength: elbowSolve?.segmentLength ?? armGuideLength(side) * 0.5,
+        shoulderWristDistance: elbowSolve?.shoulderWristDistance ?? null,
+        overreach: elbowSolve?.overreach === true,
+        elbowHint: elbowSolve?.hint || { x: 0, y: 0, z: 0 },
         calibrationOwnership: 'ignored-child-layer',
         authoredQuaternion: quaternionDebug(authoredQuaternion),
         authoredDeg: eulerDebug(authoredQuaternion),
@@ -491,7 +547,7 @@
         ...(originalDebug?.() || {}),
         shoulderCompass: {
           mode: 'hand-local-two-hinge',
-          targetFeature: 'wrist',
+          targetFeature: 'elbow',
           wristShoulderAxis: '-Y',
           componentSpace: 'hand-local',
           allowedHinges: { grip: '+X', palmNormal: '+Z' },
@@ -528,7 +584,7 @@
   global.ProceduralHandShoulderAim = Object.freeze({
     mode: 'hand-local-two-hinge',
     componentSpace: 'hand-local',
-    targetFeature: 'wrist',
+    targetFeature: 'elbow',
     wristShoulderAxis: '-Y',
     allowedHinges: Object.freeze({ grip: '+X', palmNormal: '+Z' }),
     idleWeights: Object.freeze({ grip: 1, palmNormal: 1 }),
@@ -539,5 +595,8 @@
       return paperArmGuideVisible;
     },
     get paperArmGuideVisible() { return paperArmGuideVisible; },
+    refreshPaperArmGuides() {
+      for (const controller of activeGuideControllers) controller.refresh();
+    },
   });
 })(window);
