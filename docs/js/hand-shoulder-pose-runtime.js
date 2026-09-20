@@ -1,14 +1,14 @@
-// Shared per-pose shoulder-follow hinge weights.
+// Shared per-pose hand/elbow data.
 //
-// The wrist always targets the shoulder. Poses choose how much of that correction
-// may come from the hand's two meaningful local hinges: grip axis (local X) and
-// palm-normal axis (local Z). Legacy pitch/roll fields are still accepted on import.
+// The hand's proximal local -Y axis targets the pose-authored elbow. Poses still
+// choose how much of that correction may come from the hand's two meaningful local
+// hinges: grip axis (local X) and palm-normal axis (local Z). Legacy pitch/roll
+// hinge fields remain import-compatible.
 (function (global) {
   'use strict';
 
   const IDLE = Object.freeze({ grip: 1, palmNormal: 1 });
   const ACTIVE = Object.freeze({ grip: 0, palmNormal: 1 });
-  const AUTO_ELBOW_HINT = Object.freeze({ x: 0, y: 0, z: 0 }); // Zero means use the hand-local automatic bend plane; nonzero values are arm-midpoint-relative hints in arm-length units.
   let capturedMelee = null;
 
   const clamp01 = value => Math.max(0, Math.min(1, Number(value) || 0));
@@ -27,12 +27,17 @@
       palmNormal: a.palmNormal + (b.palmNormal - a.palmNormal) * k,
     };
   };
-  const normalizeElbowHint = raw => {
-    const source = raw?.elbowHint || raw?.elbow || raw || AUTO_ELBOW_HINT; // Accepts the editor's current semantic key plus an early elbow alias.
-    const number = value => Number.isFinite(Number(value)) ? Number(value) : 0;
-    return { x: number(source.x), y: number(source.y), z: number(source.z) };
+  const normalizeElbowPoint = raw => {
+    if (!raw || typeof raw !== 'object') return null;
+    const x = Number(raw.x), y = Number(raw.y), z = Number(raw.z);
+    return [x,y,z].every(Number.isFinite) ? { x, y, z } : null;
   };
-  const lerpElbowHint = (a, b, t) => {
+  const elbowPointFromPose = (pose, side) =>
+    normalizeElbowPoint(pose?.elbows?.[side] || pose?.elbow?.[side] || pose?.shoulderAim?.elbows?.[side]);
+  const lerpElbowPoint = (a, b, t) => {
+    if (!a && !b) return null;
+    if (!a) return { ...b };
+    if (!b) return { ...a };
     const k = clamp01(t);
     return {
       x: a.x + (b.x - a.x) * k,
@@ -48,16 +53,21 @@
       strike: normalize(raw.strike?.shoulderAim || raw.strike, ACTIVE),
     };
   }
-  function normalizeElbowPoseSet(raw = {}) {
+  function normalizeElbowPoseSet(raw = {}, side = 'right') {
     return {
-      neutral: normalizeElbowHint(raw.neutral?.shoulderAim || raw.neutral),
-      windup: normalizeElbowHint(raw.windup?.shoulderAim || raw.windup),
-      strike: normalizeElbowHint(raw.strike?.shoulderAim || raw.strike),
+      neutral: elbowPointFromPose(raw.neutral, side),
+      windup: elbowPointFromPose(raw.windup, side),
+      strike: elbowPointFromPose(raw.strike, side),
     };
   }
 
   function hasAuthoredPoseAim(raw = {}) {
-    return ['neutral','windup','strike'].some(phase => raw?.[phase]?.shoulderAim && typeof raw[phase].shoulderAim === 'object');
+    return ['neutral','windup','strike'].some(phase => {
+      const pose = raw?.[phase];
+      return (pose?.shoulderAim && typeof pose.shoulderAim === 'object')
+        || (pose?.elbows && typeof pose.elbows === 'object')
+        || (pose?.elbow && typeof pose.elbow === 'object');
+    });
   }
 
   function weightsAt(progress, timing = {}, poseSet = {}, sequence = 'attack') {
@@ -89,32 +99,32 @@
     return lerp(scaledStrike, poses.neutral, (t - hf) / Math.max(1e-6, 1 - hf));
   }
 
-  function elbowHintAt(progress, timing = {}, poseSet = {}, sequence = 'attack') {
+  function elbowAt(progress, timing = {}, poseSet = {}, sequence = 'attack', side = 'right') {
     const t = clamp01(progress);
     const wf = clamp01(timing.windupFrac ?? timing.wf ?? 0.16);
     const sf = Math.max(wf, clamp01(timing.strikeFrac ?? timing.sf ?? 0.55));
     const hf = Math.max(sf, clamp01(timing.holdFrac ?? timing.hf ?? 0.68));
-    const poses = normalizeElbowPoseSet(poseSet);
+    const poses = normalizeElbowPoseSet(poseSet, side);
     const poseScale = clamp01(timing.poseScale ?? 1);
-    const scaledWindup = lerpElbowHint(poses.neutral, poses.windup, poseScale);
-    const scaledStrike = lerpElbowHint(poses.neutral, poses.strike, poseScale);
+    const scaledWindup = lerpElbowPoint(poses.neutral, poses.windup, poseScale);
+    const scaledStrike = lerpElbowPoint(poses.neutral, poses.strike, poseScale);
     if (sequence === 'load') {
-      if (t <= wf) return lerpElbowHint(poses.neutral, scaledWindup, t / Math.max(1e-6, wf));
-      return lerpElbowHint(scaledWindup, poses.neutral, (t - wf) / Math.max(1e-6, 1 - wf));
+      if (t <= wf) return lerpElbowPoint(poses.neutral, scaledWindup, t / Math.max(1e-6, wf));
+      return lerpElbowPoint(scaledWindup, poses.neutral, (t - wf) / Math.max(1e-6, 1 - wf));
     }
     if (sequence === 'fire') {
-      if (t <= sf) return lerpElbowHint(poses.neutral, scaledStrike, t / Math.max(1e-6, sf));
-      if (t <= hf) return { ...scaledStrike };
-      return lerpElbowHint(scaledStrike, poses.neutral, (t - hf) / Math.max(1e-6, 1 - hf));
+      if (t <= sf) return lerpElbowPoint(poses.neutral, scaledStrike, t / Math.max(1e-6, sf));
+      if (t <= hf) return scaledStrike ? { ...scaledStrike } : null;
+      return lerpElbowPoint(scaledStrike, poses.neutral, (t - hf) / Math.max(1e-6, 1 - hf));
     }
     if (t <= wf) {
       const rawWindupT = t / Math.max(1e-6, wf);
       const poseT = global.Combat?.windupPoseProgress?.(rawWindupT, timing.windupSlowdown) ?? rawWindupT;
-      return lerpElbowHint(poses.neutral, scaledWindup, poseT);
+      return lerpElbowPoint(poses.neutral, scaledWindup, poseT);
     }
-    if (t <= sf) return lerpElbowHint(scaledWindup, scaledStrike, (t - wf) / Math.max(1e-6, sf - wf));
-    if (t <= hf) return { ...scaledStrike };
-    return lerpElbowHint(scaledStrike, poses.neutral, (t - hf) / Math.max(1e-6, 1 - hf));
+    if (t <= sf) return lerpElbowPoint(scaledWindup, scaledStrike, (t - wf) / Math.max(1e-6, sf - wf));
+    if (t <= hf) return scaledStrike ? { ...scaledStrike } : null;
+    return lerpElbowPoint(scaledStrike, poses.neutral, (t - hf) / Math.max(1e-6, 1 - hf));
   }
 
   function secondaryGripActive(toolKey) {
@@ -241,9 +251,9 @@
     return gameWeights(side);
   }
 
-  function currentElbowHint(side) {
+  function currentElbow(side) {
     const editor = global.HobunjiAttackEditorHandShoulderControls;
-    if (editor?.currentElbowHint) return normalizeElbowHint(editor.currentElbowHint());
+    if (editor?.currentElbow) return normalizeElbowPoint(editor.currentElbow(side));
 
     const action = global.__rangedDebug?.playerAction || null;
     if (action?.itemKey && action?.kind && Number(action.durationS) > 0) {
@@ -260,13 +270,13 @@
         const authored = hasAuthoredPoseAim(configuredPose)
           ? configuredPose
           : (global.HobunjiHandShoulderPoseProfiles?.forKey?.(key) || {});
-        return elbowHintAt(progress, timing, authored, sequence);
+        return elbowAt(progress, timing, authored, sequence, side);
       }
     }
 
     const snapshot = global.WeaponToolStances?.debugSnapshot?.() || null;
     const active = snapshot?.combatNeutralInjected === true && Number.isFinite(Number(snapshot?.combatProgress));
-    if (!active) return { ...AUTO_ELBOW_HINT };
+    if (!active) return null;
     const rawPose = capturedMelee?.opts?.pose;
     if (hasAuthoredPoseAim(rawPose)) {
       const timing = {
@@ -276,10 +286,10 @@
         windupSlowdown: capturedMelee.opts.windupSlowdown ?? 0,
         poseScale: snapshot.combatPoseScale ?? 1,
       };
-      return elbowHintAt(snapshot.combatProgress, timing, rawPose, capturedMelee.opts.sequence || 'attack');
+      return elbowAt(snapshot.combatProgress, timing, rawPose, capturedMelee.opts.sequence || 'attack', side);
     }
     const profileKey = `melee:${snapshot?.combatAnim || 'thrust'}`;
-    return elbowHintAt(snapshot.combatProgress, { poseScale: snapshot.combatPoseScale ?? 1 }, global.HobunjiHandShoulderPoseProfiles?.forKey?.(profileKey) || {}, 'attack');
+    return elbowAt(snapshot.combatProgress, { poseScale: snapshot.combatPoseScale ?? 1 }, global.HobunjiHandShoulderPoseProfiles?.forKey?.(profileKey) || {}, 'attack', side);
   }
 
   global.HobunjiHandShoulderPoseRuntime = Object.freeze({
@@ -287,15 +297,15 @@
     active: ACTIVE,
     normalize,
     normalizePoseSet,
-    normalizeElbowHint,
+    normalizeElbowPoint,
     normalizeElbowPoseSet,
     hasAuthoredPoseAim,
     lerp,
-    lerpElbowHint,
+    lerpElbowPoint,
     weightsAt,
-    elbowHintAt,
+    elbowAt,
     currentWeights,
-    currentElbowHint,
+    currentElbow,
     installMeleeCapture,
   });
 })(window);
