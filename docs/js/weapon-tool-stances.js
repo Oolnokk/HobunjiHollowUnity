@@ -588,6 +588,9 @@
     runtimeState.combatNeutralInjected = !!visual;
     runtimeState.combatAnim = visual?.anim || null;
     runtimeState.combatProgress = visual?.progress ?? null;
+    runtimeState.combatWindupFrac = visual?.wf ?? null;
+    runtimeState.combatStrikeFrac = visual?.sf ?? null;
+    runtimeState.combatHoldFrac = visual?.hf ?? null;
     runtimeState.combatPoseScale = visual?.poseScale ?? 1; // Used by hand/shoulder consumers to mirror partial held releases.
     runtimeState.combatDirSign = visual?.dirSign ?? 1;
     runtimeState.combatNeutralMirrorSign = visual?.neutralMirrorSign ?? 1;
@@ -617,6 +620,9 @@
       combatNeutralInjected: !!visual,
       combatAnim: visual?.anim || null,
       combatProgress: visual?.progress ?? null,
+      combatWindupFrac: visual?.wf ?? null,
+      combatStrikeFrac: visual?.sf ?? null,
+      combatHoldFrac: visual?.hf ?? null,
       combatPoseScale: visual?.poseScale ?? 1,
       combatDirSign: visual?.dirSign ?? 1,
       combatNeutralMirrorSign: visual?.neutralMirrorSign ?? 1,
