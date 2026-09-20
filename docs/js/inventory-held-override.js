@@ -221,6 +221,7 @@
     const staminaRestore = Number(def.staminaRestore ?? def.restoreStamina ?? def.stamina) || 0;
     if (player && healthRestore > 0) player.health = Math.min(Number(player.maxHealth) || 100, (Number(player.health) || 0) + healthRestore);
     if (player && staminaRestore > 0) window.ResourceSystem?.restoreStamina?.(player, staminaRestore);
+    window.CookingSystem?.recordFoodEaten?.(); // Ordinary direct-use food shares CookingSystem's one persistent Hunger reset path.
     return { ok: true, message: `${def.icon || '🍽️'} Ate ${def.label || key}.` };
   }
 
