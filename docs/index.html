@@ -117,7 +117,7 @@
   <script src="debug.js?v=20260916perf1"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20260918collision2"></script>
-  <script src="config/scratchbones-config.js?v=20260919combatbgm1"></script>
+  <script src="config/scratchbones-config.js?v=20260919combatbgm2"></script>
   <script src="config/colors/config.js?v=20260728c"></script>
   <script src="config/attachment-rig-profiles.js?v=20260826rigv9"></script>
   <link rel="stylesheet" href="style.css?v=20260914transienttarget1">
@@ -335,7 +335,7 @@
        time, not at load time, so script order relative to them doesn't
        matter; must load before game.js, which calls
        window.HousePieces.init(...) during its own setup. -->
-  <script src="js/house-pieces.js?v=20260907f"></script>
+  <script src="js/house-pieces.js?v=20260919combatbgm2"></script>
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -636,7 +636,7 @@
        whose generateCavernFloor calls window.CavernSculptor.carveMazeCavern(...). -->
   <script src="js/cavern-sculptor.js?v=20260902cavesafe1"></script>
   <script src="js/cavern-generator.js?v=20260902cavesafe1"></script>
-  <script src="js/town-mine.js?v=20260919combatbgm1"></script>
+  <script src="js/town-mine.js?v=20260919combatbgm2"></script>
   <!-- A wilderness zone's in-bounds elevated plateau/mesa terrain
        (window.ZonePlateauMesa) — pure scene-graph generation, no other
        window.* system reads; must load before game.js, which calls
@@ -2323,7 +2323,7 @@
        time, and must load before game.js, which calls
        window.Music.init(...) during its own setup. Depends on
        window.AudioSystem (gameAudioConfig/playObjectSfx), so loads after it. -->
-  <script src="js/music-system.js?v=20260919combatbgm1"></script>
+  <script src="js/music-system.js?v=20260919combatbgm2"></script>
   <!-- Shared local-transform dump utility (window.HobunjiTransformDump) —
        also loaded by the Attack Animation Editor, so a probed character's
        node-by-node local transforms use the exact same code/format as the
