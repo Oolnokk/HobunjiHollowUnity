@@ -500,7 +500,7 @@ assert.match(shoulderPoseProfilesSource, /grip: false, palmNormal: true/, 'activ
 
 assert.match(shoulderAimSource, /localWristProximalAxis = new THREE\.Vector3\(0, 1, 0\)/, 'the hand proximal axis must be local +Y because the real GLBs point fingers along local -Y');
 assert.match(shoulderAimSource, /localGripAxis = new THREE\.Vector3\(1, 0, 0\)/, 'the across-grip local X axis must be the first allowed shoulder hinge');
-assert.match(shoulderAimSource, /localPalmNormalAxis = new THREE\.Vector3\(0, 0, 1\)/, 'the palm-normal local Z axis must be the second allowed shoulder hinge');
+assert.match(shoulderAimSource, /localPalmNormalAxis = new THREE\.Vector3\(0, 0, -1\)/, 'the directed palm-normal hinge must follow the authored away-from-camera local -Z normal');
 assert.match(shoulderAimSource, /targetDirection\.copy\(elbow\)\.sub\(socket\.position\)/, 'hand targeting must solve from the wrist socket\/origin back toward the resolved elbow');
 assert.match(shoulderAimSource, /localTargetDirection\.copy\(targetDirection\)\.applyQuaternion\(inverseAuthoredQuaternion\)/, 'target direction must be solved in the authored hand-local basis');
 assert.match(shoulderAimSource, /outputQuaternion\.copy\(authoredQuaternion\)\.multiply\(localCorrectionQuaternion\)/, 'local hinge correction must right-multiply the authored hand frame');
@@ -528,7 +528,7 @@ assert.doesNotMatch(shoulderAimSource, /Math\.sqrt\(Math\.max\(0, segmentLength|
 assert.doesNotMatch(shoulderAimSource, /authored \* \(modelHeight \/ 0\.9\)/, 'concrete arm reach must not be scaled by model height a second time');
 
 assert.match(shoulderControlsSource, /const PHASES = \['neutral', 'windup', 'strike'\]/, 'Attack Editor must expose all three pose phases');
-assert.match(shoulderControlsSource, /\[\['grip','Grip axis \(local X\)'\],\['palmNormal','Palm-normal axis \(local Z\)'\]\]/, 'Attack Editor must expose exactly the two semantic hand-local shoulder hinges');
+assert.match(shoulderControlsSource, /\[\['grip','Grip axis \(local X\)'\],\['palmNormal','Palm-normal axis \(local -Z\)'\]\]/, 'Attack Editor must expose the corrected directed palm-normal hinge');
 assert.match(shoulderControlsSource, /`handShoulderAim_\$\{phase\}_\$\{axis\}`/, 'Attack Editor must give each pose-axis checkbox a stable id');
 assert.match(shoulderControlsSource, /parsed\.poses\[phase\]\.shoulderAim = \{ \.\.\.poseAim\[phase\] \}/, 'per-pose hinge choices must remain serialized with the pose');
 assert.match(shoulderControlsSource, /parsed\.poses\[phase\]\.elbows = elbows/, 'per-pose left\/right elbows must serialize as direct pose data');
