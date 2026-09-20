@@ -899,6 +899,9 @@ let anim = {
   },
 };
 
+const ELBOW_SIDES = ['left', 'right'];
+const ELBOW_AXES = ['x', 'y', 'z'];
+
 const FIELD_DEFS = [
   { key: 'x', label: 'Tool X position (side)', min: -1, max: 1, step: 0.01, angle: false },
   { key: 'y', label: 'Tool Y position (height)', min: -1, max: 1, step: 0.01, angle: false },
@@ -914,9 +917,48 @@ function poseFieldDefs(phase) {
   return FIELD_DEFS.filter(f => !f.neutralOnly || phase === 'neutral');
 }
 
+function elbowControlPoint(phase, side) {
+  const fromControls = window.HobunjiAttackEditorHandShoulderControls?.elbowForPhase?.(phase, side);
+  if (fromControls) return fromControls;
+  const raw = anim.poses?.[phase]?.elbows?.[side];
+  const x = Number(raw?.x), y = Number(raw?.y), z = Number(raw?.z);
+  return [x,y,z].every(Number.isFinite) ? { x, y, z } : null;
+}
+
+function elbowInputId(side, axis) {
+  return `poseElbow_${side}_${axis}`;
+}
+
+function readElbowInputs(side) {
+  const values = Object.fromEntries(ELBOW_AXES.map(axis => {
+    const raw = $(elbowInputId(side, axis))?.value?.trim?.() ?? '';
+    return [axis, raw === '' ? null : Number(raw)];
+  }));
+  if (!ELBOW_AXES.some(axis => Number.isFinite(values[axis]))) return null;
+  return Object.fromEntries(ELBOW_AXES.map(axis => [axis, Number.isFinite(values[axis]) ? values[axis] : 0]));
+}
+
+function writeElbowPoseValue(phase, side, point) {
+  const controls = window.HobunjiAttackEditorHandShoulderControls;
+  if (controls?.setElbowForPhase) return controls.setElbowForPhase(phase, side, point);
+  anim.poses[phase].elbows ||= {};
+  if (point) anim.poses[phase].elbows[side] = { ...point };
+  else delete anim.poses[phase].elbows[side];
+  if (!Object.keys(anim.poses[phase].elbows).length) delete anim.poses[phase].elbows;
+  return true;
+}
+
 function renderActivePosePanel() {
   const panel = $('activePosePanel');
   const fields = poseFieldDefs(editPhase);
+  const elbowRows = ELBOW_SIDES.map(side => `
+    <div class="field" data-elbow-pose-side="${side}">
+      <label>${side === 'left' ? 'Left' : 'Right'} elbow position (shoulder-relative)</label>
+      <div class="row" style="gap:7px;align-items:center;flex-wrap:wrap">
+        ${ELBOW_AXES.map(axis => `<label class="fieldRow" style="margin:0;min-width:88px">${axis.toUpperCase()} <input id="${elbowInputId(side, axis)}" type="number" step="0.01" placeholder="auto" style="width:72px"></label>`).join('')}
+        <button type="button" class="secondary" id="poseElbowMidpoint_${side}">Set halfway shoulder↔hand</button>
+      </div>
+    </div>`).join('');
   panel.innerHTML = fields.map(f => `
     <div class="field">
       <label>${f.label}</label>
@@ -924,7 +966,9 @@ function renderActivePosePanel() {
         <input type="range" id="pose_${f.key}" min="${f.min}" max="${f.max}" step="${f.step}">
         <span class="val" id="pose_${f.key}_val"></span>
       </div>
-    </div>`).join('');
+    </div>`).join('') + `
+      <div class="help" style="margin-top:8px">Elbows are ordinary ${editPhase[0].toUpperCase() + editPhase.slice(1)} pose values. The halfway buttons only write coordinates now; gameplay never recalculates a midpoint.</div>
+      ${elbowRows}`;
   for (const f of fields) {
     const el = $(`pose_${f.key}`);
     el.addEventListener('input', () => {
@@ -936,6 +980,30 @@ function renderActivePosePanel() {
       refreshJsonView();
     });
   }
+  for (const side of ELBOW_SIDES) {
+    for (const axis of ELBOW_AXES) {
+      $(elbowInputId(side, axis))?.addEventListener('input', () => {
+        writeElbowPoseValue(editPhase, side, readElbowInputs(side));
+        focusPreviewOnPhase(editPhase);
+        applyPoseToRig(anim.poses[editPhase]);
+        window.ProceduralHandFrameDriver?.syncNow?.();
+        refreshJsonView();
+      });
+    }
+    $(`poseElbowMidpoint_${side}`)?.addEventListener('click', () => {
+      focusPreviewOnPhase(editPhase);
+      applyPoseToRig(anim.poses[editPhase]);
+      window.ProceduralHandFrameDriver?.syncNow?.();
+      const point = window.HobunjiAttackEditorHandShoulderControls?.authorMidpointElbow?.(editPhase, side) || null;
+      if (!point) {
+        logDebug(`Could not sample ${side} shoulder/hand midpoint for ${editPhase}; hand rig points are not ready.`);
+        return;
+      }
+      syncPosePanelFromState(editPhase);
+      refreshJsonView();
+      logDebug(`Authored ${editPhase} ${side} elbow halfway between the currently displayed shoulder and hand.`);
+    });
+  }
   syncPosePanelFromState(editPhase);
 }
 
@@ -945,6 +1013,14 @@ function syncPosePanelFromState(phase = editPhase) {
     const v = safeNum(anim.poses[editPhase][f.key], f.key === 'scale' ? 1 : 0);
     $(`pose_${f.key}`).value = v;
     $(`pose_${f.key}_val`).textContent = f.angle ? `${v.toFixed(0)}°` : v.toFixed(2);
+  }
+  for (const side of ELBOW_SIDES) {
+    const point = elbowControlPoint(editPhase, side);
+    for (const axis of ELBOW_AXES) {
+      const input = $(elbowInputId(side, axis));
+      if (!input || document.activeElement === input) continue;
+      input.value = point && Number.isFinite(Number(point[axis])) ? String(Number(point[axis])) : '';
+    }
   }
 }
 renderActivePosePanel();
@@ -1012,6 +1088,14 @@ $('durationS').addEventListener('input', () => {
 function flipPose(p) {
   const flipped = defaultPose(-p.x, p.y, p.z, p.pitch, -p.yaw, -p.bodyYaw, -(p.roll || 0));
   if (p.scale != null) flipped.scale = p.scale;
+  if (p.shoulderAim) flipped.shoulderAim = { ...p.shoulderAim };
+  if (p.elbows) {
+    const mirrorPoint = point => point ? { x: -(Number(point.x) || 0), y: Number(point.y) || 0, z: Number(point.z) || 0 } : null;
+    flipped.elbows = {
+      ...(p.elbows.right ? { left: mirrorPoint(p.elbows.right) } : {}),
+      ...(p.elbows.left ? { right: mirrorPoint(p.elbows.left) } : {}),
+    };
+  }
   return flipped;
 }
 function syncToolEndFlipUi() {
