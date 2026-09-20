@@ -292,8 +292,11 @@
       placePaperStrip(guide.upper, shoulder, guideElbow);
       placePaperStrip(guide.lower, guideElbow, socket.position);
       guide.elbow.position.copy(guideElbow);
+      const elbowAngleRad = half > 1e-8 ? Math.acos(clampUnit(1 - (distance * distance) / (2 * half * half))) : 0; // Diagnostic bend angle reserved for evaluating future joint limits.
       guide.root.userData.armLength = totalAuthoredLength;
       guide.root.userData.displayLength = guideLength;
+      guide.root.userData.segmentLength = half; // Both paper strips are always equal length by construction.
+      guide.root.userData.elbowAngleDeg = THREE.MathUtils.radToDeg(elbowAngleRad); // Exposed through rig debug so mobile testing can judge plausible limits without DevTools.
       guide.root.userData.overreach = distance > totalAuthoredLength + 1e-6;
       guide.root.userData.shoulderWristDistance = distance;
       guide.root.visible = true;
@@ -492,7 +495,16 @@
           wristShoulderAxis: '-Y',
           componentSpace: 'hand-local',
           allowedHinges: { grip: '+X', palmNormal: '+Z' },
-          paperArmGuide: { visible: paperArmGuideVisible, authoritative: false, bendAtHalfArmLength: true, jointLimitsApplied: false },
+          paperArmGuide: {
+            visible: paperArmGuideVisible,
+            authoritative: false,
+            bendAtHalfArmLength: true,
+            jointLimitsApplied: false,
+            sides: Object.fromEntries(['left', 'right'].map(side => [
+              side,
+              paperArmBySide[side]?.root?.userData ? { ...paperArmBySide[side].root.userData } : null,
+            ])),
+          },
           scanState,
           scanError,
           shoulderSource: { ...shoulderSource },
