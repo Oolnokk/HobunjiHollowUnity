@@ -39,7 +39,7 @@
     const shoulderSource = { left: 'pending', right: 'pending' };
     const localWristProximalAxis = new THREE.Vector3(0, 1, 0); // Real GLB convention: fingers are local -Y, so +Y points from wrist back up the forearm.
     const localGripAxis = new THREE.Vector3(1, 0, 0); // Across the grasp; first allowed proximal-target hinge.
-    const localPalmNormalAxis = new THREE.Vector3(0, 0, 1); // Perpendicular to the palm plane; second allowed proximal-target hinge.
+    const localPalmNormalAxis = new THREE.Vector3(0, 0, -1); // Authored source palms face away from camera, so the directed palm normal is local -Z.
     const shoulderWorld = new THREE.Vector3();
     const shoulderParent = new THREE.Vector3();
     const targetDirection = new THREE.Vector3();
@@ -529,7 +529,7 @@
           targetFeature: 'elbow',
           wristProximalAxis: '+Y',
           componentSpace: 'hand-local',
-          allowedHinges: { grip: '+X', palmNormal: '+Z' },
+          allowedHinges: { grip: '+X', palmNormal: '-Z' },
           paperArmGuide: {
             visible: paperArmGuideVisible,
             authoritative: false,
@@ -565,7 +565,7 @@
     componentSpace: 'hand-local',
     targetFeature: 'elbow',
     wristProximalAxis: '+Y',
-    allowedHinges: Object.freeze({ grip: '+X', palmNormal: '+Z' }),
+    allowedHinges: Object.freeze({ grip: '+X', palmNormal: '-Z' }),
     idleWeights: Object.freeze({ grip: 1, palmNormal: 1 }),
     activeWeights: Object.freeze({ grip: 0, palmNormal: 1 }),
     setPaperArmGuideVisible(value) {
