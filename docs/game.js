@@ -21388,9 +21388,10 @@
         rigScaleY: 1,
         baseY: 0,
         floorY: 0,
-        cameraOrbitPitchDeg: 0, // Used by the mobile debug snapshot to show the ranged orbit's live vertical camera rotation.
-        cameraOrbitYawDeg: 0, // Used with cameraOrbitPitchDeg to verify the ranged orbit frame follows the live aim frame.
-        cameraOrbitApplied: false, // Used to distinguish ordinary species scaling from the ranged camera-oriented orbit path.
+        reticleOrbitPitchDeg: 0, // Used by the mobile debug snapshot to show the exact vertical angle from the body pivot to the shared reticle point.
+        reticleOrbitYawDeg: 0, // Used with reticleOrbitPitchDeg to verify the ranged orbit frame is derived from the shared reticle point.
+        reticleOrbitApplied: false, // Used to distinguish ordinary species scaling from the reticle-driven ranged orbit path.
+        reticleTargetWorld: null, // Used to prove the orbit is following the same finite 3D reticle target as combat aiming.
       }; // Mobile-visible last transform without DevTools.
       function playerToolPoseCentroidScale() {
         return _speciesPoseScaling?.scaleForPose?.(playerPoseOrbitScale, playerArmLength) ?? playerPoseOrbitScale;
@@ -21433,29 +21434,59 @@
         return point;
       }
 
-      function orbitScaledRangedToolPointWithCamera(point, aimYawRad, aimPitchRad) {
+      function playerRangedReticleOrbitFrame() {
+        const identity = playerPoseIdentity(); // Used to resolve the rendered body centroid that the species/gender-scaled orbit rotates around.
+        const height = _speciesPoseScaling?.heightMetrics?.(identity.speciesId, identity.gender, playerAvatarModelHeight) || null; // Used to place the orbit pivot at the rendered portrait centroid.
+        const pivotX = playerMesh.position.x; // World X of the ranged orbit pivot.
+        const pivotY = playerMesh.position.y + playerPoseCentroidY * (height?.rigScaleY ?? 1); // World Y of the rendered body centroid used by both reticle direction and orbit rotation.
+        const pivotZ = playerMesh.position.z; // World Z of the ranged orbit pivot.
+        const target = currentPlayerPerspectiveTarget()?.point || null; // The one finite 3D point directly under the reticle shared by ranged/melee/head consumers.
+        const dx = Number(target?.x) - pivotX;
+        const dy = Number(target?.y) - pivotY;
+        const dz = Number(target?.z) - pivotZ;
+        const horizontal = Math.hypot(dx, dz);
+        const length = Math.hypot(dx, dy, dz);
+        if ([dx, dy, dz, horizontal, length].every(Number.isFinite) && length > 1e-8 && horizontal > 1e-8) {
+          return {
+            yawRad: Math.atan2(dx, dz), // Three.js +Z-forward yaw directly toward the shared reticle point.
+            pitchRad: Math.atan2(dy, horizontal), // Positive means the reticle is physically above the body pivot; no camera-pitch sign convention is involved.
+            pivotX, pivotY, pivotZ,
+            target: { x: Number(target.x), y: Number(target.y), z: Number(target.z) },
+            source: 'shared-reticle-point',
+          };
+        }
+        // Fail safe for transitional frames before the perspective target exists.
+        return {
+          yawRad: -currentPlayerAimAngle() + Math.PI / 2,
+          pitchRad: currentPlayerAimPitch(),
+          pivotX, pivotY, pivotZ,
+          target: null,
+          source: 'legacy-aim-fallback',
+        };
+      }
+
+      function orbitScaledRangedToolPointTowardReticle(point, reticleFrame = playerRangedReticleOrbitFrame()) {
         if (!point) return point;
         scaleToolWorldPointAroundPlayerCentroid(point);
-        const pitch = Number(aimPitchRad) || 0; // Used to rotate the already species/gender-scaled orbit vertically with the live ranged camera/aim pitch.
-        const yaw = Number(aimYawRad) || 0; // Used to define the matching camera-relative right/forward axes for the pitched orbit.
-        _toolPoseCentroidDebug.cameraOrbitPitchDeg = THREE.MathUtils.radToDeg(pitch);
-        _toolPoseCentroidDebug.cameraOrbitYawDeg = THREE.MathUtils.radToDeg(yaw);
-        _toolPoseCentroidDebug.cameraOrbitApplied = true;
+        const pitch = Number(reticleFrame?.pitchRad) || 0; // Exact elevation from body centroid to the shared reticle point.
+        const yaw = Number(reticleFrame?.yawRad) || 0; // Exact azimuth from body centroid to the shared reticle point.
+        _toolPoseCentroidDebug.reticleOrbitPitchDeg = THREE.MathUtils.radToDeg(pitch);
+        _toolPoseCentroidDebug.reticleOrbitYawDeg = THREE.MathUtils.radToDeg(yaw);
+        _toolPoseCentroidDebug.reticleOrbitApplied = true;
+        _toolPoseCentroidDebug.reticleTargetWorld = reticleFrame?.target ? { ...reticleFrame.target } : null;
         if (Math.abs(pitch) < 1e-8) return point;
 
-        const identity = playerPoseIdentity(); // Used to resolve the same applied body-height scale as the species/gender position mapping above.
-        const height = _speciesPoseScaling?.heightMetrics?.(identity.speciesId, identity.gender, playerAvatarModelHeight) || null; // Used to put the cached portrait centroid at its rendered world Y.
-        const pivotX = playerMesh.position.x; // Used as the ranged orbit's world-space horizontal center.
-        const pivotY = playerMesh.position.y + playerPoseCentroidY * (height?.rigScaleY ?? 1); // Used as the true rendered vertical centroid around which camera pitch orbits the weapon.
-        const pivotZ = playerMesh.position.z; // Used with pivotX/pivotY as the ranged orbit center.
-        const rightX = Math.cos(yaw), rightZ = -Math.sin(yaw); // Camera/aim right axis used to preserve lateral placement while pitching.
-        const forwardX = Math.sin(yaw), forwardZ = Math.cos(yaw); // Camera/aim forward axis used to rotate forward distance into vertical distance.
-        const dx = point.x - pivotX, dy = point.y - pivotY, dz = point.z - pivotZ; // Species-scaled centroid-relative weapon vector that is rotated as one rigid orbit.
-        const side = dx * rightX + dz * rightZ; // Lateral component remains unchanged by camera pitch.
-        const forward = dx * forwardX + dz * forwardZ; // Forward component exchanges with vertical distance under camera pitch.
-        const cosPitch = Math.cos(pitch), sinPitch = Math.sin(pitch); // Shared pitch terms for the rigid centroid orbit.
-        const pitchedForward = forward * cosPitch - dy * sinPitch; // Horizontal forward distance after camera-pitch rotation.
-        const pitchedY = dy * cosPitch + forward * sinPitch; // Vertical centroid offset after camera-pitch rotation.
+        const pivotX = Number(reticleFrame?.pivotX) || playerMesh.position.x;
+        const pivotY = Number(reticleFrame?.pivotY) || playerMesh.position.y;
+        const pivotZ = Number(reticleFrame?.pivotZ) || playerMesh.position.z;
+        const rightX = Math.cos(yaw), rightZ = -Math.sin(yaw); // Reticle-right axis: the pitch rotation axis for the entire scaled orbit.
+        const forwardX = Math.sin(yaw), forwardZ = Math.cos(yaw); // Reticle-forward axis points horizontally toward the reticle.
+        const dx = point.x - pivotX, dy = point.y - pivotY, dz = point.z - pivotZ; // Already species/gender-scaled centroid-relative weapon vector.
+        const side = dx * rightX + dz * rightZ; // Preserve lateral authored placement while aiming vertically.
+        const forward = dx * forwardX + dz * forwardZ; // Forward distance that must rise/fall with the reticle.
+        const cosPitch = Math.cos(pitch), sinPitch = Math.sin(pitch);
+        const pitchedForward = forward * cosPitch - dy * sinPitch;
+        const pitchedY = dy * cosPitch + forward * sinPitch; // Reticle above pivot => positive pitch => forward weapon orbit rises, never inverts.
         point.set(
           pivotX + rightX * side + forwardX * pitchedForward,
           pivotY + pitchedY,
@@ -21479,18 +21510,19 @@
           finalScaledWorld: { ..._toolPoseCentroidDebug.finalWorld },
           authoredUnscaledLocal: { x: _toolPoseCentroidDebug.rawWorld.x - playerMesh.position.x, y: _toolPoseCentroidDebug.rawWorld.y - playerMesh.position.y, z: _toolPoseCentroidDebug.rawWorld.z - playerMesh.position.z },
           finalScaledLocal: { x: _toolPoseCentroidDebug.finalWorld.x - playerMesh.position.x, y: _toolPoseCentroidDebug.finalWorld.y - playerMesh.position.y, z: _toolPoseCentroidDebug.finalWorld.z - playerMesh.position.z },
-          rangedCameraOrbit: { applied: _toolPoseCentroidDebug.cameraOrbitApplied, yawDeg: _toolPoseCentroidDebug.cameraOrbitYawDeg, pitchDeg: _toolPoseCentroidDebug.cameraOrbitPitchDeg },
-          mappingMode: _toolPoseCentroidDebug.cameraOrbitApplied ? 'species-scale-then-camera-yaw-pitch-orbit' : 'horizontal-orbit-plus-rigger-height',
-          rule: _toolPoseCentroidDebug.cameraOrbitApplied
-            ? "Scale the authored weapon point for species/gender first, then rotate the finished centroid-relative orbit with ranged camera yaw/pitch."
+          rangedReticleOrbit: { applied: _toolPoseCentroidDebug.reticleOrbitApplied, yawDeg: _toolPoseCentroidDebug.reticleOrbitYawDeg, pitchDeg: _toolPoseCentroidDebug.reticleOrbitPitchDeg, targetWorld: _toolPoseCentroidDebug.reticleTargetWorld ? { ..._toolPoseCentroidDebug.reticleTargetWorld } : null },
+          mappingMode: _toolPoseCentroidDebug.reticleOrbitApplied ? 'species-scale-then-shared-reticle-orbit' : 'horizontal-orbit-plus-rigger-height',
+          rule: _toolPoseCentroidDebug.reticleOrbitApplied
+            ? "Scale the authored weapon point for species/gender first, then rotate the finished centroid-relative orbit directly toward the shared 3D reticle point."
             : "X/Z = character center + authored offset * poseOrbitScale; Y = rigger-scaled PNG hand anchor + authored hand-relative Y * renderedCharacterHeightRatio",
         }),
       });
 
       function updateToolMesh(dt) {
-        _toolPoseCentroidDebug.cameraOrbitApplied = false;
-        _toolPoseCentroidDebug.cameraOrbitPitchDeg = 0;
-        _toolPoseCentroidDebug.cameraOrbitYawDeg = 0;
+        _toolPoseCentroidDebug.reticleOrbitApplied = false;
+        _toolPoseCentroidDebug.reticleOrbitPitchDeg = 0;
+        _toolPoseCentroidDebug.reticleOrbitYawDeg = 0;
+        _toolPoseCentroidDebug.reticleTargetWorld = null;
         if (window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID, 'tools')) {
           toolHolder.visible = false;
           heldItemHolder.visible = false;
@@ -21670,8 +21702,9 @@
           // not the player's stale ground-facing frame. BodyYaw remains an
           // authored yaw delta while the tool path itself inherits reticle pitch.
           const reticleAligned = combatSwingAlignToReticle && activeTool === 'ranged';
-          const aimBaseYaw = reticleAligned ? (-currentPlayerAimAngle() + Math.PI / 2) : θ;
-          const aimPitchRad = reticleAligned ? currentPlayerAimPitch() : 0;
+          const reticleFrame = reticleAligned ? playerRangedReticleOrbitFrame() : null; // One shared world-space reticle frame drives both visible orientation and the scaled position orbit.
+          const aimBaseYaw = reticleFrame?.yawRad ?? θ;
+          const aimPitchRad = reticleFrame?.pitchRad ?? 0;
           const vθ  = aimBaseYaw + bodyYawRad;
           const vRX =  Math.cos(vθ), vRZ = -Math.sin(vθ);
           const vFX =  Math.sin(vθ), vFZ =  Math.cos(vθ);
@@ -21692,7 +21725,7 @@
             playerMesh.position.y + playerToolBaseY + y,
             playerMesh.position.z + vRZ * (handBaseX + x) + vFZ * z
           );
-          if (reticleAligned) orbitScaledRangedToolPointWithCamera(toolHolder.position, vθ, aimPitchRad);
+          if (reticleAligned) orbitScaledRangedToolPointTowardReticle(toolHolder.position, reticleFrame);
           else scaleToolWorldPointAroundPlayerCentroid(toolHolder.position);
 
         } else if (anim === 'ranged') {
@@ -21711,11 +21744,12 @@
           // range where the body hasn't turned at all yet. Reloading/empty
           // keeps the ordinary body-relative stance, since there's nothing
           // to aim yet.
-          const rangedTracksAim = window.RangedWeapons?.isLoaded?.(equipmentSlots.ranged) !== false; // Used to keep reload/empty stances body-relative while a ready ranged weapon follows the camera in yaw and pitch.
+          const rangedTracksAim = window.RangedWeapons?.isLoaded?.(equipmentSlots.ranged) !== false; // Used to keep reload/empty stances body-relative while a ready ranged weapon follows the reticle in yaw and pitch.
+          const reticleFrame = rangedTracksAim ? playerRangedReticleOrbitFrame() : null; // Exact body-centroid→reticle direction; avoids camera pitch sign conventions entirely.
           const toolVθ = rangedTracksAim
-            ? (-currentPlayerAimAngle() + Math.PI / 2) + bodyYawOffsetRad
+            ? (reticleFrame?.yawRad ?? (-currentPlayerAimAngle() + Math.PI / 2)) + bodyYawOffsetRad
             : vθ;
-          const toolAimPitchRad = rangedTracksAim ? currentPlayerAimPitch() : 0; // Used by both the held weapon orientation and the species/gender-scaled camera orbit.
+          const toolAimPitchRad = rangedTracksAim ? (reticleFrame?.pitchRad ?? currentPlayerAimPitch()) : 0; // Positive only when the shared world-space reticle point is actually above the body pivot.
           _debugRangedToolYawRad = toolVθ;
           const vRX = Math.cos(toolVθ), vRZ = -Math.sin(toolVθ);
           const vFX = Math.sin(toolVθ), vFZ = Math.cos(toolVθ);
@@ -21732,7 +21766,7 @@
             playerMesh.position.y + playerToolBaseY + neutral.y,
             playerMesh.position.z + vRZ * (playerToolBaseX + neutral.x) + vFZ * neutral.z
           );
-          if (rangedTracksAim) orbitScaledRangedToolPointWithCamera(toolHolder.position, toolVθ, toolAimPitchRad);
+          if (rangedTracksAim) orbitScaledRangedToolPointTowardReticle(toolHolder.position, reticleFrame);
           else scaleToolWorldPointAroundPlayerCentroid(toolHolder.position);
 
         } else if (anim === 'thrust') {
