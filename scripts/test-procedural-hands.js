@@ -315,6 +315,25 @@ assert.match(proceduralFeetSource, /function loaderForThree/, 'shoulder-rig feet
 const gripSandbox = { window: { requestAnimationFrame: () => 0 }, localStorage: sandbox.localStorage };
 gripSandbox.window.localStorage = sandbox.localStorage;
 vm.runInNewContext(gripConfigSource, gripSandbox, { filename: 'hand-tool-grips.js' });
+const snapTestQuat = (() => {
+  const d = Math.PI / 180;
+  const qYaw = { x: 0, y: Math.sin(12.34 * d / 2), z: 0, w: Math.cos(12.34 * d / 2) };
+  const qPitch = { x: Math.sin(9.22 * d / 2), y: 0, z: 0, w: Math.cos(9.22 * d / 2) };
+  const qRoll = { x: 0, y: 0, z: Math.sin(-177.34 * d / 2), w: Math.cos(-177.34 * d / 2) };
+  const multiply = (a, b) => ({
+    x: a.w*b.x + a.x*b.w + a.y*b.z - a.z*b.y,
+    y: a.w*b.y - a.x*b.z + a.y*b.w + a.z*b.x,
+    z: a.w*b.z + a.x*b.y - a.y*b.x + a.z*b.w,
+    w: a.w*b.w - a.x*b.x - a.y*b.y - a.z*b.z,
+  });
+  return multiply(multiply(qYaw, qPitch), qRoll);
+})();
+const snappedDumpRotation = sandbox.window.HobunjiHandModelProfiles.snapQuaternionToRightAngles(snapTestQuat);
+assert.deepStrictEqual(
+  JSON.parse(JSON.stringify(snappedDumpRotation.rotationDeg)),
+  { pitch: 0, yaw: 0, roll: -180 },
+  'mao-ao dump local calibration 9.22/12.34/-177.34 must snap exactly to child-local 0/0/-180',
+);
 const grips = gripSandbox.window.HobunjiHandToolGrips;
 assert(grips, 'secondary grip config manager should be installed');
 assert.strictEqual(grips.secondaryGripForTool('hatchet'), null, 'hatchet must start with its second-hand grip disabled');
@@ -335,6 +354,11 @@ assert.match(gripModeSource, /normalizedCalibration\.rotationQuaternion/, 'grip 
 assert.match(gripModeSource, /const rotationQuaternion = normalizeQuat\(multiplyQuat\(modeQ, calibrationQ\)\)/, 'Grip Mode must compose before Hand Model Calibration without Euler re-entry');
 assert.doesNotMatch(gripModeSource, /targetRotation\s*=\s*\{[\s\S]*br\.pitch/, 'grip mode must not add calibration Euler channels at the X=90° singularity');
 assert.match(inverseEditorSource, /rotationCorrectionDeg\[field\.key\]/, 'Attack Editor hand-model rotation controls must author fixed-basis XYZ corrections');
+assert.match(inverseEditorSource, /GLB local X rotation correction°/, 'calibration rotation UI must explicitly present GLB-local axes');
+assert.match(inverseEditorSource, /Snap local rotation to 90°/, 'calibration tab must expose a local right-angle snap control');
+assert.match(inverseEditorSource, /rotationBaseQuaternion = \{ \.\.\.snapped\.quaternion \}/, 'right-angle snap must bake the snapped child-local quaternion as the new model base');
+assert.match(inverseEditorSource, /rotationCorrectionDeg = \{ x: 0, y: 0, z: 0 \}/, 'right-angle snap must zero correction coordinates after baking the final local orientation');
+assert.match(inverseEditorSource, /Reads the calibration CHILD's local quaternion only/, 'user-facing orientation display must explicitly exclude parent/world rotation');
 assert.doesNotMatch(inverseEditorSource, /transform\.rotationDeg\[field\.key\]\s*=\s*value/, 'Attack Editor must never directly edit the legacy singular Euler orientation');
 assert.match(gripEditorSource, /handGripModeSelect/, 'Attack Editor must keep the grip-mode dropdown');
 assert.match(gripEditorSource, /JSON\.parse\(jsonView\.value\)/, 'grip export must compose with later JSON extensions instead of bypassing them');
