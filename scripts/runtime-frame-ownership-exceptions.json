@@ -105,7 +105,7 @@
     "function": "statusFrame",
     "reason": "Permanent status/readout RAF loop confined to the standalone Attack Animation Editor. It keeps interpolated hand shoulder-follow weights visible while scrubbing/playback changes; it is never loaded by the main gameplay page's RuntimeFrameScheduler surface.",
     "migrationStage": "not-planned",
-    "line": 302
+    "line": 316
   },
   {
     "file": "docs/js/attack-editor-idle-hand-parity.js",
