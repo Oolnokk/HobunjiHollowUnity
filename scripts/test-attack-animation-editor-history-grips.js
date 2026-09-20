@@ -100,9 +100,12 @@ assert.match(calibration, /folds never animate independently/i, 'paper-hand UI m
 assert.match(calibration, /directing an LLM/i, 'paper-hand UI must document its descriptive-reference purpose');
 assert.match(calibration, /HobunjiAttackEditorHandCalibrationMode\?\.active === true[\s\S]*setShowPaperHandGuide\?\.\(active\)/, 'paper-hand visibility must be driven exclusively by calibration-tab state');
 assert.match(attachments, /function buildPaperHandReference\(THREE\)/, 'procedural hand preview must build the paper reference lazily');
-for (const part of ['paperPalm','paperFinger1','paperFinger2','paperFinger3','paperThumb1','paperThumb2']) {
+for (const part of ['paperHandGripOrb','paperPalm','paperFinger1','paperFinger2','paperFinger3','paperThumb1','paperThumb2']) {
   assert(attachments.includes(part), `paper hand is missing ${part}`);
 }
+assert.match(attachments, /paperHandGripOrb[\s\S]*color:\s*0x60a5fa/, 'paper-hand calibration rig must include its own blue origin orb');
+assert.match(attachments, /paperHandCalibrationOrigin = true/, 'blue orb must mark the exact paper-hand calibration origin');
+assert.match(calibration, /blue orb built into the paper rig at its exact local origin/i, 'calibration UI must explain that the blue orb belongs to the neutral paper rig');
 assert.match(attachments, /wireframe:\s*true/, 'paper hand must render as wireframe planes');
 assert.match(attachments, /depthTest:\s*false/, 'paper hand must x-ray through the hand model');
 assert.match(attachments, /depthWrite:\s*false/, 'paper hand must not disturb scene depth');
