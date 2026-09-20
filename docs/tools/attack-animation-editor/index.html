@@ -293,6 +293,7 @@ canvas{display:block;width:100%;height:100%}
      in-game character dump use the exact same code/format. -->
 <script src="../../js/transform-dump-utils.js?v=20260820a"></script>
 <script src="../../js/held-action-animations.js?v=20260918throwcharge3"></script>
+<script src="../../js/combat/melee-pose-spacing.js?v=20260920spacing1"></script>
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -1280,19 +1281,33 @@ function setMirroredPreview(mirrored) {
   toolBase.position.x = toolMirrored ? -baseAttachX : baseAttachX;
   if (toolPlaneMesh) toolPlaneMesh.scale.x = toolMirrored ? -1 : 1;
 }
+function actionUsesMeleeSpacing(action) {
+  return action?.group === 'Melee attacks'
+    || String(action?.id || '').startsWith('quick_')
+    || action?.id === 'charged_breaker'
+    || action?.id === 'flurry';
+}
 function prepareTemplateForAction(action, entry) {
   const source = templateForAction(action);
   if (!source) return null;
   source.name = action.label;
-  if (action.mirror) {
-    source.neutral = flipPose(source.neutral);
-    source.windup = flipPose(source.windup);
-    source.strike = flipPose(source.strike);
-  }
   const power = action.usePower ? Number(entry?.power ?? entry?.POWER ?? 1) : 1;
   if (Number.isFinite(power) && power !== 1 && source.style === 'sweep') {
     source.windup.bodyYaw = safeNum(source.windup.bodyYaw, 0) * power;
     source.strike.bodyYaw = safeNum(source.strike.bodyYaw, 0) * power;
+  }
+  // Match the game: first finish this attack's own endpoint math, then apply
+  // the shared Mao'ao-space lift/range calibration, then mirror Backhand.
+  // This preserves every attack's original ray instead of copying the uploaded
+  // Forehand X direction into unrelated poses.
+  if (actionUsesMeleeSpacing(action) && window.MeleePoseSpacing?.adjustEndpoint) {
+    source.windup = window.MeleePoseSpacing.adjustEndpoint(source.windup, 'windup');
+    source.strike = window.MeleePoseSpacing.adjustEndpoint(source.strike, 'strike');
+  }
+  if (action.mirror) {
+    source.neutral = flipPose(source.neutral);
+    source.windup = flipPose(source.windup);
+    source.strike = flipPose(source.strike);
   }
   // Each action starts from the same concrete preview tool as its runtime template.
   // The user may change Preview held sprite afterward without changing action identity.
