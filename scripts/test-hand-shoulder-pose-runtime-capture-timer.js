@@ -46,20 +46,20 @@ function buildFixture() {
   );
 }
 
-// --- Elbow hints interpolate with the same pose timeline as hand hinges -----
+// --- Direct per-side elbows interpolate with the same pose timeline ----------
 {
   const { windowObject } = buildFixture();
   const runtime = windowObject.HobunjiHandShoulderPoseRuntime;
   const pose = {
-    neutral: { shoulderAim: { elbowHint: { x: 0, y: 0, z: 0 } } },
-    windup: { shoulderAim: { elbowHint: { x: 0.2, y: 0.1, z: -0.3 } } },
-    strike: { shoulderAim: { elbowHint: { x: -0.4, y: 0.2, z: 0.5 } } },
+    neutral: { elbows: { right: { x: 0, y: 0, z: 0 } } },
+    windup: { elbows: { right: { x: 0.2, y: 0.1, z: -0.3 } } },
+    strike: { elbows: { right: { x: -0.4, y: 0.2, z: 0.5 } } },
   };
-  const atWindup = runtime.elbowHintAt(0.16, { windupFrac: 0.16, strikeFrac: 0.55, holdFrac: 0.68 }, pose, 'attack');
+  const atWindup = runtime.elbowAt(0.16, { windupFrac: 0.16, strikeFrac: 0.55, holdFrac: 0.68 }, pose, 'attack', 'right');
   assert(Math.abs(atWindup.x - 0.2) < 1e-9 && Math.abs(atWindup.y - 0.1) < 1e-9 && Math.abs(atWindup.z + 0.3) < 1e-9,
-    'pose elbow hint reaches the authored windup point on the shared phase boundary');
-  const migrated = runtime.normalizeElbowHint({ elbow: { x: 1, y: 2, z: 3 } });
-  assert.deepEqual(JSON.parse(JSON.stringify(migrated)), { x: 1, y: 2, z: 3 }, 'early elbow alias remains import-compatible');
+    'direct right-elbow pose reaches the authored windup point on the shared phase boundary');
+  assert.strictEqual(runtime.elbowAt(0.16, { windupFrac: 0.16 }, pose, 'attack', 'left'), null,
+    'one hand may omit an elbow without inventing coordinates for the other hand');
 }
 
 // --- Loading the module starts exactly one 250ms setInterval poll ----------
