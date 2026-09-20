@@ -5,6 +5,7 @@ on:
     paths:
       - 'docs/tools/attack-animation-editor/index.html'
       - 'docs/js/held-action-animations.js'
+      - 'docs/js/combat/melee-pose-spacing.js'
       - 'docs/js/attack-editor-*.js'
       - 'docs/js/attack-idle-stance-editor.js'
       - 'docs/config/hand-model-profiles.js'
@@ -34,6 +35,7 @@ jobs:
         run: node scripts/test-attack-animation-editor-history-grips.js
       - name: Syntax-check editor extensions
         run: |
+          node --check docs/js/combat/melee-pose-spacing.js
           node --check docs/js/attack-editor-history.js
           node --check docs/js/attack-editor-hand-configurator.js
           node --check docs/js/attack-editor-hand-inverse-configurator.js
