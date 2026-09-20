@@ -199,7 +199,7 @@
     handScripts.push(new URL('js/attack-editor-hand-mirror-toggle.js?v=20260817a', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-grip-mode.js?v=20260919labels1', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-direct-attachments.js?v=20260919quatcal1', docsBase).href);
-    handScripts.push(new URL('js/attack-editor-hand-shoulder-controls.js?v=20260919labels1', docsBase).href);
+    handScripts.push(new URL('js/attack-editor-hand-shoulder-controls.js?v=20260920wrist1', docsBase).href);
     handScripts.push(new URL('js/attack-editor-idle-hand-parity.js?v=20260919action1', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-shoulder-animation-state.js?v=20260818a', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-state-coherence.js?v=20260919handreview1', docsBase).href);
