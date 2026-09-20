@@ -117,12 +117,16 @@ assert.match(driver, /syncCalibrationWorkspace\(record,[\s\S]*neutralWorldQuater
 assert.match(attachments, /placeCalibrationPreviewWorld\(worldPosition, worldQuaternion, modelCalibration = null\)/, 'calibration tab must use a placement method outside wrapped gameplay hand placement');
 assert.doesNotMatch(shoulderAim, /toolCalibrationLocal|hand_calibration/, 'shoulder-follow must remain completely independent of model calibration');
 assert.match(shoulderAim, /localWristShoulderAxis = new THREE\.Vector3\(0, -1, 0\)/, 'editor/runtime shoulder follow must point the wrist side of the calibrated hand toward the shoulder');
-assert.match(shoulder, /wrist is always the part aimed at the shoulder/i, 'editor must explain that X\/Y\/Z are rotation gates, not different hand target axes');
+assert.match(shoulderAim, /localGripAxis = new THREE\.Vector3\(1, 0, 0\)/, 'shoulder follow must expose the grip-axis local X hinge');
+assert.match(shoulderAim, /localPalmNormalAxis = new THREE\.Vector3\(0, 0, 1\)/, 'shoulder follow must expose the palm-normal local Z hinge');
+assert.match(shoulder, /wrist always aims toward the shoulder/i, 'editor must explain that the wrist remains the shoulder target');
 assert.match(attachments, /lockedReference = true/, 'paper hand must identify itself as a locked reference, not an animatable rig');
 assert.match(attachments, /lockedTo: 'raw-primary-grip-frame-before-grip-mode-and-hand-model-calibration'/, 'paper hand must remain locked to the raw weapon target before downstream hand layers');
 assert.match(driver, /placePaperHandGuideWorld\?\.\(primarySocket\.position, primarySocket\.quaternion\)[\s\S]*handSocketAfterGripMode\(record, primarySocket\)/, 'paper reference must be placed before Grip Mode moves the socket');
 assert.match(shoulder, /This rotates the HAND, never the weapon/, 'shoulder-follow layer must declare its transform owner');
-assert.match(shoulder, /\[\['pitch','X'\],\['yaw','Y'\],\['roll','Z'\]\]/, 'shoulder-follow controls must map legacy pitch/yaw/roll storage to X/Y/Z rotation labels');
+assert.match(shoulder, /\[\['grip','Grip axis \(local X\)'\],\['palmNormal','Palm-normal axis \(local Z\)'\]\]/, 'shoulder-follow controls must expose exactly the two hand-local hinge choices');
+assert.match(shoulder, /handShowPaperArmGuide/, 'shoulder-follow controls must expose the non-authoritative paper arm guide');
+assert.match(shoulderAim, /authoritative: false/, 'paper arm diagnostics must never become a hidden hand-driving IK layer');
 
 // Old post-refactor stale paths must not remain.
 assert.match(idle, /poseTabNeutral/, 'Idle Stance editor must use the unified single-pose panel');
