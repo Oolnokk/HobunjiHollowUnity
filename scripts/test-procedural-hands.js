@@ -498,7 +498,10 @@ for (const key of ['melee:thrust','melee:chop','melee:sweep','ranged:crossbow:lo
 assert.match(shoulderPoseProfilesSource, /pitch: true, yaw: false, roll: true/, 'idle endpoints must align Pitch + Roll');
 assert.match(shoulderPoseProfilesSource, /pitch: false, yaw: false, roll: true/, 'active endpoints must align Roll only');
 
-assert.match(shoulderAimSource, /new THREE\.Vector3\(0, 1, 0\)/, 'GLB local +Y/top must be treated as the wrist direction');
+assert.match(shoulderAimSource, /localWristShoulderAxis = new THREE\.Vector3\(0, -1, 0\)/, 'shoulder targeting must point the local -Y wrist side toward the shoulder because palm\/fingers extend +Y from the wrist origin');
+assert.match(shoulderAimSource, /targetDirection\.copy\(shoulder\)\.sub\(socket\.position\)/, 'shoulder targeting must always solve from the wrist socket\/origin to the shoulder point');
+assert.match(shoulderAimSource, /targetFeature: 'wrist'/, 'shoulder diagnostics must expose that every axis targets the wrist');
+assert.match(shoulderAimSource, /rotationVector\.x \* weights\.pitch[\s\S]*rotationVector\.y \* weights\.yaw[\s\S]*rotationVector\.z \* weights\.roll/, 'X\/Y\/Z settings must gate rotation components of one wrist-to-shoulder solve rather than selecting different hand target axes');
 assert.match(shoulderAimSource, /HobunjiHandShoulderPoints/, 'manual shoulder points must override fallback scan');
 assert.match(shoulderAimSource, /manual-portrait-200px/, 'debug must distinguish manually authored shoulder points');
 assert.match(shoulderAimSource, /rotationVector\.x \* weights\.pitch/, 'Pitch shoulder influence must blend smoothly');
