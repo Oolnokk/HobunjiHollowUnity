@@ -32,15 +32,6 @@
       <div class="help" style="margin-bottom:8px">Normal animation preview: weapon target, Grip Mode, attack pose, shoulder-follow, and species/gender anatomy are all visible here.</div>
 
       <div class="poseGroup">
-        <div class="poseGroupHead"><span class="dot" style="background:#22d3ee"></span>Model-tied scale</div>
-        <div class="field"><label>Model scale</label><div class="fieldRow">
-          <input id="handModelScale" type="range" min="0.05" max="5" step="0.01">
-          <input id="handModelScaleNumber" type="number" min="0.05" max="20" step="0.01" style="width:78px;flex:0 0 78px">
-        </div></div>
-        <div class="help">Correct this GLB once. Every species that uses the model inherits it before its own species multiplier is applied.</div>
-      </div>
-
-      <div class="poseGroup">
         <div class="poseGroupHead"><span class="dot" style="background:#a78bfa"></span>Current species/gender scale</div>
         <div class="field"><label id="handSpeciesScaleLabel">Species scale</label><div class="fieldRow">
           <input id="handSpeciesScale" type="range" min="0.1" max="3" step="0.01">
@@ -56,7 +47,15 @@
     </div>
 
     <div id="handModelCalibrationPane" style="display:none">
-      <div class="help" style="padding:8px;border:1px solid rgba(34,211,238,.25);border-radius:9px;margin-bottom:8px"><b>Calibration-only preview.</b> The selected GLB is overlaid on one neutrally oriented paper hand at a fixed world frame. No attack animation, tool transform, Grip Mode, shoulder targeting, character-facing rotation, or animation-derived hand transform is allowed to affect either reference. Only this GLB's own calibration moves the real hand.</div>
+      <div class="help" style="padding:8px;border:1px solid rgba(34,211,238,.25);border-radius:9px;margin-bottom:8px"><b>Calibration-only preview.</b> The selected GLB is overlaid on one neutrally oriented paper hand at a fixed world frame. No attack animation, tool transform, Grip Mode, shoulder targeting, character-facing rotation, or animation-derived hand transform is allowed to affect either reference. Only this GLB's own model scale/mirroring and calibration values may change the match.</div>
+      <div class="poseGroup">
+        <div class="poseGroupHead"><span class="dot" style="background:#22d3ee"></span>GLB size / handedness</div>
+        <div class="field"><label>Model scale</label><div class="fieldRow">
+          <input id="handModelScale" type="range" min="0.05" max="5" step="0.01">
+          <input id="handModelScaleNumber" type="number" min="0.05" max="20" step="0.01" style="width:78px;flex:0 0 78px">
+        </div></div>
+        <div class="help">This is model calibration, not anatomy. Species/gender scale is intentionally excluded from this workspace.</div>
+      </div>
       <div id="handCalibrationWorkspaceMount"></div>
     </div>
 
