@@ -46,6 +46,8 @@ assert.match(music, /combatSchedulerPausedAt = performance\.now\(\)[\s\S]*?_ambi
   'combat freezes the pending normal cue/BGM scheduler delay instead of letting it elapse underneath Skirmish');
 assert.match(music, /activeKind = _ambientCueState\.currentCombatBgm \? 'combat-bgm'/,
   'mobile audio diagnostics identify the combat soundtrack as the active music owner');
+assert.match(music, /' combatOverride=' \+ _ambientCueState\.combatOverrideActive[\s\S]*?' ambientPaused=' \+ !!ambientSnd\?\.paused/,
+  'mobile audio diagnostics expose combat override and preserved ambient pause state');
 assert.match(music, /combatOverrideActive = playerInCombat && !combatOverrideSuppressed/,
   'existing gameplay combat state drives the override while existing exclusive soundtrack owners can suppress it');
 assert.match(music, /exclusiveSoundtrack === true/,
