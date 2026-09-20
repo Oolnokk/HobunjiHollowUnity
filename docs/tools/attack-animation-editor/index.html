@@ -293,11 +293,13 @@ canvas{display:block;width:100%;height:100%}
 </div>
 <script src="../../js/local-db-overrides.js?v=20260920orbit1"></script>
 <script src="../../config/scratchbones-config.js?v=20260821d"></script>
+<script src="../../config/attachment-rig-profiles.js?v=20260826rigv9"></script>
+<script src="../../config/character-rig-scale-defaults.js?v=20260914maoao3"></script>
 <script src="../../js/portrait-utils.js?v=20260918centroid2"></script>
 <script src="../../js/portrait-breathing.js"></script>
 <script src="../../js/npc-avatar-preview-utils.js"></script>
 <script src="../../js/png-plane-avatar.js?v=20260920orbit1"></script>
-<script src="../../js/species-pose-scaling.js?v=20260920orbit1"></script>
+<script src="../../js/species-pose-scaling.js?v=20260920height1"></script>
 <!-- Shared local-transform dump utility (window.HobunjiTransformDump) — also
      loaded by the game's Pixel Probe, so this editor's preview dump and an
      in-game character dump use the exact same code/format. -->
@@ -354,6 +356,12 @@ scene.add(new THREE.ArrowHelper(new THREE.Vector3(0, 0, 1), new THREE.Vector3(0,
 // carried along with the body automatically, same as game.js's parent/child setup.
 const rig = new THREE.Group();
 scene.add(rig);
+// The live game scales the assembled character body on playerMesh while toolHolder
+// remains a scene-level sibling. Mirror that ownership here: CharacterRigScale
+// owns only this body root; toolBase stays directly under the unscaled body-yaw rig.
+const characterBodyScaleRoot = new THREE.Group();
+characterBodyScaleRoot.name = 'editor_character_body_scale_root';
+rig.add(characterBodyScaleRoot);
 
 // toolBase sits at the avatar's actual scanned right-arm sprite edge (X) and
 // scanned bottom-edge pixel row (Y) — this matches refreshPlayerAvatar()/
@@ -377,6 +385,7 @@ const MODEL_W = avatarCfg().worldModelWidth ?? 0.9;
 let currentArmLength = 0.558; // Anatomical reach remains visible for diagnostics and old-config fallback only.
 let currentPoseOrbitScale = 1; // Explicit species+gender weapon-distance multiplier, independently authored below.
 let currentPoseCentroidY = MODEL_W * 0.5; // Floor-relative visual/body centroid copied from PNGPlaneAvatar metadata after each rebuild.
+let currentAvatarModelHeight = MODEL_W; // Portrait-scaled model height; paired with CharacterRigScale.y for true body-height pose mapping.
 let currentSpeciesId = 'mao-ao'; // Visible debug identity for the currently previewed avatar.
 let currentGender = 'male'; // Visible debug identity for the currently previewed avatar.
 const poseOrbitScratch = new THREE.Vector3(); // Reused by forward/inverse centroid transforms so playback does not allocate every frame.
@@ -550,8 +559,9 @@ function refreshPreviewDebug() {
     'Latest: neck deformation weights the complete rectangular PNG plane, including transparent gaps and detached cosmetics.',
     `Neck preview: ${Math.round(neckPreviewStrength * 100)}% strength · ${(neckPreviewRadiusFrac * 100).toFixed(1)}% radius · ${neckWeightSummary}`,
     `Head vertex overlay: ${$('showHeadSkinVertices').checked ? `${headSkinVertexCount} unique weighted vertices shown` : 'hidden'}`,
-    `Pose orbit: ${currentSpeciesId}/${currentGender} ×${(window.HobunjiSpeciesPoseScale?.scaleForPose?.(currentPoseOrbitScale, currentArmLength) ?? currentPoseOrbitScale).toFixed(5)} · anatomy armLength=${currentArmLength.toFixed(3)}`,
-    `Centroid used (rig local): (0, ${currentPoseCentroidY.toFixed(4)}, 0)`,
+    `Pose orbit X/Z: ${currentSpeciesId}/${currentGender} ×${(window.HobunjiSpeciesPoseScale?.scaleForPose?.(currentPoseOrbitScale, currentArmLength) ?? currentPoseOrbitScale).toFixed(5)} · anatomy armLength=${currentArmLength.toFixed(3)}`,
+    (() => { const h = window.HobunjiSpeciesPoseScale?.heightMetrics?.(currentSpeciesId, currentGender, currentAvatarModelHeight); return `Pose Y height: ×${(h?.heightRatio ?? 1).toFixed(5)} vs Mao'ao male · portraitH=${currentAvatarModelHeight.toFixed(4)} · rigY=×${(h?.rigScaleY ?? 1).toFixed(4)}`; })(),
+    `Centroid used for X/Z orbit (rig local): (0, ${currentPoseCentroidY.toFixed(4)}, 0)`,
     `Authored holder local: (${lastAuthoredPose.x.toFixed(4)}, ${lastAuthoredPose.y.toFixed(4)}, ${lastAuthoredPose.z.toFixed(4)}) · raw rig: (${lastRawRigPose.x.toFixed(4)}, ${lastRawRigPose.y.toFixed(4)}, ${lastRawRigPose.z.toFixed(4)})`,
     `Final scaled rig: (${lastScaledRigPose.x.toFixed(4)}, ${lastScaledRigPose.y.toFixed(4)}, ${lastScaledRigPose.z.toFixed(4)}) · world: (${lastScaledWorldPose.x.toFixed(4)}, ${lastScaledWorldPose.y.toFixed(4)}, ${lastScaledWorldPose.z.toFixed(4)})`,
     'Playback auto-lerps Neutral→Windup→Strike→(hold)→Neutral. Drag the scrub bar to inspect a frame.',
@@ -595,7 +605,7 @@ async function rebuildAvatar(speciesId, gender) {
   await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind' });
   if (avatarModel) {
     disposeHeadSkinVertexOverlay();
-    rig.remove(avatarModel);
+    characterBodyScaleRoot.remove(avatarModel);
     window.PNGPlaneAvatar.disposeAvatarModel(avatarModel);
   }
   avatarModel = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(THREE, frontCanvas, {
@@ -604,6 +614,7 @@ async function rebuildAvatar(speciesId, gender) {
   });
   const h = avatarModel.userData.portraitModelHeight || MODEL_W;
   const w = avatarModel.userData.portraitModelWidth || MODEL_W;
+  currentAvatarModelHeight = h;
   currentSpeciesId = speciesId;
   currentGender = gender;
   const cachedArmLength = Number(avatarModel.userData?.armLength);
@@ -621,7 +632,7 @@ async function rebuildAvatar(speciesId, gender) {
   baseAttachX = avatarModel.userData.handAttachX ?? (-w / 2);
   const baseAttachY = avatarModel.userData.handAttachY ?? (h / 2);
   avatarModel.position.y = h / 2;
-  rig.add(avatarModel);
+  characterBodyScaleRoot.add(avatarModel);
   applyPreviewNeckWeights();
   toolBase.position.set(toolMirrored ? -baseAttachX : baseAttachX, baseAttachY, 0);
   logDebug(`Avatar rebuilt: ${speciesId}/${gender} (prism ${w.toFixed(2)}x${h.toFixed(2)}, orbit ×${currentPoseOrbitScale.toFixed(5)}, arm ${currentArmLength.toFixed(3)}, centroidY ${currentPoseCentroidY.toFixed(3)}, base at ${toolBase.position.x.toFixed(2)}/${baseAttachY.toFixed(2)}${toolMirrored ? ', mirrored' : ''})`);
@@ -721,9 +732,12 @@ transformControls.addEventListener('objectChange', () => {
     toolBase.position.y + toolHolder.position.y,
     toolBase.position.z + toolHolder.position.z
   ); // Concrete selected-species point in rig space.
-  window.HobunjiSpeciesPoseScale?.unscalePointAroundCentroid?.(
-    poseOrbitScratch, 0, currentPoseCentroidY, 0, currentArmLength, currentPoseOrbitScale
-  ); // Exact inverse of the selected species/gender authored preview orbit.
+  window.HobunjiSpeciesPoseScale?.untransformPosePoint?.(poseOrbitScratch, {
+    cx: 0, cz: 0, floorY: 0, baseY: toolBase.position.y,
+    speciesId: currentSpeciesId, gender: currentGender,
+    modelHeight: currentAvatarModelHeight,
+    armLength: currentArmLength, poseOrbitScale: currentPoseOrbitScale,
+  }); // Exact inverse: horizontal orbit and vertical rigger-height mapping are independent.
   p.x = poseOrbitScratch.x - toolBase.position.x;
   p.y = poseOrbitScratch.y - toolBase.position.y;
   p.z = poseOrbitScratch.z - toolBase.position.z;
@@ -1229,7 +1243,12 @@ function applyPoseToRig(pose) {
   lastAuthoredPose.x = Number(pose.x) || 0; lastAuthoredPose.y = Number(pose.y) || 0; lastAuthoredPose.z = Number(pose.z) || 0;
   poseOrbitScratch.set(toolBase.position.x + lastAuthoredPose.x, toolBase.position.y + lastAuthoredPose.y, toolBase.position.z + lastAuthoredPose.z); // Existing pre-arm-length finished point.
   lastRawRigPose.x = poseOrbitScratch.x; lastRawRigPose.y = poseOrbitScratch.y; lastRawRigPose.z = poseOrbitScratch.z;
-  window.HobunjiSpeciesPoseScale?.scalePointAroundCentroid?.(poseOrbitScratch, 0, currentPoseCentroidY, 0, currentArmLength, currentPoseOrbitScale); // Explicit species+gender orbit around the selected avatar's true visual centroid.
+  window.HobunjiSpeciesPoseScale?.transformPosePoint?.(poseOrbitScratch, {
+    cx: 0, cz: 0, floorY: 0, baseY: toolBase.position.y,
+    speciesId: currentSpeciesId, gender: currentGender,
+    modelHeight: currentAvatarModelHeight,
+    armLength: currentArmLength, poseOrbitScale: currentPoseOrbitScale,
+  }); // X/Z use authored orbit scale; Y uses portrait height + rigger body-height scale from the floor-relative hand anchor.
   lastScaledRigPose.x = poseOrbitScratch.x; lastScaledRigPose.y = poseOrbitScratch.y; lastScaledRigPose.z = poseOrbitScratch.z;
   toolHolder.position.set(poseOrbitScratch.x - toolBase.position.x, poseOrbitScratch.y - toolBase.position.y, poseOrbitScratch.z - toolBase.position.z);
   toolHolder.updateWorldMatrix?.(true, false);
