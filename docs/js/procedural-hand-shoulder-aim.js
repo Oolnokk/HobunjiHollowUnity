@@ -1,10 +1,12 @@
 // Hand-only shoulder compass. Painted arm sprites remain untouched.
 //
 // Shoulder targets come from attachment-rig profiles when present. Legacy manually
-// authored 200x200 points and portrait-hand-shoulder-scan.js remain fallbacks. The hand's local +Y
-// is treated as the wrist/top direction. Pitch/yaw/roll use independent 0..1 weights
-// supplied by hand-shoulder-pose-runtime.js, so checkbox changes between animation
-// poses blend smoothly instead of snapping.
+// authored 200x200 points and portrait-hand-shoulder-scan.js remain fallbacks.
+// The hand socket/origin IS the wrist. The palm/fingers extend along local +Y,
+// therefore the wrist-facing shoulder axis is always local -Y. Pitch/yaw/roll
+// are only allowed ROTATION components of that one wrist-to-shoulder solve;
+// they never choose a different part/axis of the hand to point at the shoulder.
+// Weights come from hand-shoulder-pose-runtime.js and blend with the pose timeline.
 (function (global) {
   'use strict';
 
@@ -32,7 +34,7 @@
 
     const shoulderAvatar = {};
     const shoulderSource = { left: 'pending', right: 'pending' };
-    const localTop = new THREE.Vector3(0, 1, 0);
+    const localWristShoulderAxis = new THREE.Vector3(0, -1, 0); // Paper/GLB convention: origin is wrist, palm/fingers extend +Y, so shoulder lies off the wrist side (-Y).
     const shoulderWorld = new THREE.Vector3();
     const shoulderParent = new THREE.Vector3();
     const targetDirection = new THREE.Vector3();
@@ -258,7 +260,7 @@
       // Calibration is a child basis-conversion layer and must not participate in
       // this solve at all; otherwise changing calibration makes shoulder-follow
       // counter-rotate it and the editor's X/Y/Z controls appear coupled again.
-      currentTop.copy(localTop).applyQuaternion(authoredQuaternion).normalize();
+      currentTop.copy(localWristShoulderAxis).applyQuaternion(authoredQuaternion).normalize();
       deltaQuaternion.setFromUnitVectors(currentTop, targetDirection).normalize();
 
       // A single target vector defines swing but not twist. The old implementation
@@ -279,8 +281,8 @@
       socket.updateMatrix?.();
       socket.updateMatrixWorld?.(true);
 
-      const aimedTop = localTop.clone().applyQuaternion(outputQuaternion).normalize();
-      const residualRad = Math.acos(clampUnit(aimedTop.dot(targetDirection)));
+      const aimedWristAxis = localWristShoulderAxis.clone().applyQuaternion(outputQuaternion).normalize();
+      const residualRad = Math.acos(clampUnit(aimedWristAxis.dot(targetDirection)));
       const toDeg = THREE.MathUtils.radToDeg;
       debugBySide[side] = {
         weights: { ...weights },
@@ -408,7 +410,8 @@
         ...(originalDebug?.() || {}),
         shoulderCompass: {
           mode: 'idempotent-rotation-vector-components',
-          localTopAxis: '+Y',
+          targetFeature: 'wrist',
+          wristShoulderAxis: '-Y',
           componentSpace: 'parent',
           scanState,
           scanError,
@@ -433,7 +436,8 @@
   global.ProceduralHandShoulderAim = Object.freeze({
     mode: 'idempotent-rotation-vector-components',
     componentSpace: 'parent',
-    localTopAxis: '+Y',
+    targetFeature: 'wrist',
+    wristShoulderAxis: '-Y',
     idleWeights: Object.freeze({ pitch: 1, yaw: 0, roll: 1 }),
     activeWeights: Object.freeze({ pitch: 0, yaw: 0, roll: 1 }),
   });
