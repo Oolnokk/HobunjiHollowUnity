@@ -143,8 +143,7 @@
       // their public synchronization paths after restoring the underlying data.
       const profileSelect = document.getElementById('handProfileSelect');
       if (profileSelect && state.controls?.handProfileSelect?.value != null) {
-        profileSelect.value = state.controls.handProfileSelect.value;
-        profileSelect.dispatchEvent(new Event('change', { bubbles: true }));
+        profileSelect.value = state.controls.handProfileSelect.value; // Context restore only; the profile snapshot already contains the authoritative species→model mapping.
       }
       const guide = document.getElementById('handShowGripGuide');
       if (guide && state.controls?.handShowGripGuide) {
@@ -152,14 +151,13 @@
         guide.dispatchEvent(new Event('change', { bubbles: true }));
       }
 
-      global.HobunjiAttackEditorHandConfigurator?.syncAll?.(profileSelect?.value);
+      global.HobunjiAttackEditorHandConfigurator?.syncAll?.();
       global.HobunjiAttackEditorHandCalibration?.refresh?.();
       global.HobunjiAttackEditorDirectHandAttachments?.syncFields?.();
       global.HobunjiAttackEditorHandShoulderControls?.syncControls?.();
       global.HobunjiAttackEditorHandStateCoherence?.updateStatus?.();
       global.HobunjiAttackEditorState?.refresh?.();
-      global.ProceduralHandFrameDriver?.syncNow?.();
-      requestAnimationFrame(() => global.ProceduralHandFrameDriver?.syncNow?.());
+      global.ProceduralHandFrameDriver?.syncNow?.(); // One authoritative sync is enough; no synthetic selector mutation or delayed second pass.
       return true;
     } finally {
       restoring = false;
