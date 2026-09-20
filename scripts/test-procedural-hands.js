@@ -498,7 +498,7 @@ for (const key of ['melee:thrust','melee:chop','melee:sweep','ranged:crossbow:lo
 assert.match(shoulderPoseProfilesSource, /grip: true, palmNormal: true/, 'idle endpoints must permit both hand-local shoulder hinges');
 assert.match(shoulderPoseProfilesSource, /grip: false, palmNormal: true/, 'active endpoints must keep only the palm-normal hinge');
 
-assert.match(shoulderAimSource, /localWristProximalAxis = new THREE\.Vector3\(0, -1, 0\)/, 'the hand proximal axis remains local -Y because palm\/fingers extend +Y from the wrist origin');
+assert.match(shoulderAimSource, /localWristProximalAxis = new THREE\.Vector3\(0, 1, 0\)/, 'the hand proximal axis must be local +Y because the real GLBs point fingers along local -Y');
 assert.match(shoulderAimSource, /localGripAxis = new THREE\.Vector3\(1, 0, 0\)/, 'the across-grip local X axis must be the first allowed shoulder hinge');
 assert.match(shoulderAimSource, /localPalmNormalAxis = new THREE\.Vector3\(0, 0, 1\)/, 'the palm-normal local Z axis must be the second allowed shoulder hinge');
 assert.match(shoulderAimSource, /targetDirection\.copy\(elbow\)\.sub\(socket\.position\)/, 'hand targeting must solve from the wrist socket\/origin back toward the resolved elbow');
@@ -514,23 +514,25 @@ assert.match(shoulderAimSource, /freeSide = \{ left: true, right: true \}/, 'sho
 assert.match(shoulderAimSource, /freeSide\[side\].*alignFreeHandToFallbackAnchor\(side\)/s, 'manual shoulder edits must move free idle hands to shoulder X and posterior Y in the live preview');
 assert.match(shoulderAimSource, /armLengthHeightPercentOffset/, 'free-hand fallback must read the exported species/gender arm-length offset');
 assert.match(shoulderAimSource, /return Number\.isFinite\(authored\) \? -modelHeight \* authored \/ 100 : 0/, 'positive arm length must push a free hand below the posterior by a portrait-height percentage');
-assert.match(shoulderAimSource, /bendAtHalfArmLength: true/, 'paper-arm preview must place its bend halfway through total arm length');
-assert.match(shoulderAimSource, /authoritative: false/, 'paper-arm preview must remain diagnostic and must not drive the hand');
+assert.match(shoulderAimSource, /elbowPoseAuthoritative: true/, 'paper-arm preview must draw the same authoritative elbow pose that drives hand orientation');
+assert.match(shoulderAimSource, /visualOnly: true/, 'paper-arm geometry itself must remain visualization-only');
 assert.match(shoulderAimSource, /setPaperArmGuideVisible/, 'editor must be able to toggle paper-arm guides on already-created rigs');
-assert.match(shoulderAimSource, /elbowAngleDeg/, 'paper-arm debug must expose the elbow bend angle for evaluating future joint limits');
-assert.match(shoulderAimSource, /segmentLength = totalArmLength \* 0\.5/, 'elbow solve must split the rigger-derived total arm length exactly in half');
-assert.match(shoulderAimSource, /Math\.sqrt\(Math\.max\(0, segmentLength \* segmentLength - halfChord \* halfChord\)\)/, 'elbow must be projected onto the equal-segment solution circle when the wrist is reachable');
-assert.match(shoulderAimSource, /currentElbowHint/, 'runtime hand targeting must consume the interpolated per-pose elbow location hint');
-assert.match(shoulderAimSource, /armLengthBySide/, 'paper arm and elbow solve must prefer the side-specific rigger-derived reach');
+assert.match(shoulderAimSource, /currentElbow\?\.\(side\)/, 'runtime hand targeting must consume the interpolated direct per-side elbow pose');
+assert.match(shoulderAimSource, /shoulder\.x \+ Number\(authoredOffset\.x/, 'authored elbow coordinates must be direct shoulder-relative pose offsets');
+assert.match(shoulderAimSource, /legacy-midpoint/, 'older animations without elbows must retain a deterministic midpoint fallback');
+assert.match(shoulderAimSource, /upperArmLength/, 'arm length must remain diagnostic rather than constraining the elbow');
+assert.match(shoulderAimSource, /forearmLength/, 'paper-arm diagnostics must expose the actual authored forearm length');
+assert.match(shoulderAimSource, /armLengthBySide/, 'paper arm diagnostics must retain the rigger-derived species arm length for comparison only');
+assert.doesNotMatch(shoulderAimSource, /Math\.sqrt\(Math\.max\(0, segmentLength|bendRadius|overreach/, 'elbow pose must not be projected onto an IK solution or reach limit');
 assert.doesNotMatch(shoulderAimSource, /authored \* \(modelHeight \/ 0\.9\)/, 'concrete arm reach must not be scaled by model height a second time');
-assert.doesNotMatch(shoulderAimSource, /solveTwoBoneArm|reach clamp/i, 'paper-arm preview must not silently become authoritative IK or a reach clamp');
 
 assert.match(shoulderControlsSource, /const PHASES = \['neutral', 'windup', 'strike'\]/, 'Attack Editor must expose all three pose phases');
 assert.match(shoulderControlsSource, /\[\['grip','Grip axis \(local X\)'\],\['palmNormal','Palm-normal axis \(local Z\)'\]\]/, 'Attack Editor must expose exactly the two semantic hand-local shoulder hinges');
 assert.match(shoulderControlsSource, /`handShoulderAim_\$\{phase\}_\$\{axis\}`/, 'Attack Editor must give each pose-axis checkbox a stable id');
-assert.match(shoulderControlsSource, /shoulderAim = \{ \.\.\.poseAim\[phase\], elbowHint: \{ \.\.\.poseAim\[phase\]\.elbowHint \} \}/, 'per-pose shoulder data must serialize its elbow location hint with the hinge choices');
-assert.match(shoulderControlsSource, /handElbowHint_/, 'Attack Editor must expose per-pose elbow X\/Y\/Z inputs');
-assert.match(shoulderControlsSource, /physically valid equal-segment elbow circle/, 'Attack Editor must explain that elbow hints are projected onto the fixed-length arm solution');
+assert.match(shoulderControlsSource, /parsed\.poses\[phase\]\.shoulderAim = \{ \.\.\.poseAim\[phase\] \}/, 'per-pose hinge choices must remain serialized with the pose');
+assert.match(shoulderControlsSource, /parsed\.poses\[phase\]\.elbows = elbows/, 'per-pose left\/right elbows must serialize as direct pose data');
+assert.match(shoulderControlsSource, /handElbow_/, 'Attack Editor must expose direct per-pose left\/right elbow X\/Y\/Z inputs');
+assert.match(shoulderControlsSource, /ordinary pose keyframes/, 'Attack Editor must explain that elbows are ordinary pose keyframes with no IK projection');
 assert.match(shoulderControlsSource, /poseRuntime\.weightsAt/, 'Attack Editor preview must use the same smooth pose interpolation');
 assert.match(shoulderControlsSource, /handHideArmSpritesPreview/, 'Attack Editor must retain preview-only arm hiding');
 assert.match(shoulderControlsSource, /handShowPaperArmGuide/, 'Attack Editor must expose the optional paper upper-arm\/elbow\/forearm guide');
