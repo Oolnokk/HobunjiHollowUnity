@@ -93,29 +93,127 @@
     return () => listeners.delete(listener);
   }
 
+  // Horizontal weapon distance and vertical body proportion are deliberately
+  // different ownership domains:
+  //   X/Z: the explicitly authored species+gender poseOrbitScale.
+  //   Y:   the character rigger's actual body-height stack.
+  //
+  // PNGPlaneAvatar has already baked portraitScale + portraitVerticalPlacement
+  // into modelHeight / handAttachY. HobunjiCharacterRigScale then scales the
+  // assembled character around floor Y=0. Head scale/Y offset, age hunch, hand
+  // scale, and foot scale are separate presentation layers and do not belong here.
+  function resolveRigScaleY(speciesId, gender, explicit = null) {
+    const direct = validScale(explicit);
+    if (direct != null) return direct;
+    const key = normalizeSpeciesId(speciesId);
+    const g = normalizeGender(gender);
+    const live = validScale(window.HobunjiCharacterRigScale?.scaleFor?.(key, g)?.y);
+    if (live != null) return live;
+    const profile = validScale(window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[`${key}::${g}`]?.anatomy?.rigScaleY);
+    if (profile != null) return profile;
+    return validScale(window.HobunjiCharacterRigScaleDefaults?.scaleFor?.(key, g)?.y) ?? 1;
+  }
+
+  function portraitModelHeightFor(speciesId, gender, fallback = null) {
+    const explicit = validScale(fallback);
+    if (explicit != null) return explicit;
+    const png = window.PNGPlaneAvatar;
+    const cfg = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar || {};
+    const baseHeight = validScale(cfg.worldModelWidth) ?? validScale(cfg.modelWidth) ?? 0.9;
+    const portraitScale = validScale(png?.avatarScaleMultiplierFor?.({ speciesId, gender }))
+      ?? (() => {
+        const key = normalizeSpeciesId(speciesId);
+        const g = normalizeGender(gender);
+        const raw = cfg.portraitScaleBySpecies?.[key];
+        return validScale(raw && typeof raw === 'object' ? (raw[g] ?? raw.default) : raw) ?? 1;
+      })();
+    return baseHeight * portraitScale;
+  }
+
+  function heightMetrics(speciesId, gender, modelHeight = null, rigScaleY = null) {
+    const targetModelHeight = portraitModelHeightFor(speciesId, gender, modelHeight);
+    const targetRigScaleY = resolveRigScaleY(speciesId, gender, rigScaleY);
+    const referenceModelHeight = portraitModelHeightFor('mao-ao', 'male');
+    const referenceRigScaleY = resolveRigScaleY('mao-ao', 'male');
+    const effectiveHeight = targetModelHeight * targetRigScaleY;
+    const referenceHeight = referenceModelHeight * referenceRigScaleY;
+    return {
+      modelHeight: targetModelHeight,
+      rigScaleY: targetRigScaleY,
+      effectiveHeight,
+      referenceModelHeight,
+      referenceRigScaleY,
+      referenceHeight,
+      heightRatio: referenceHeight > 0 ? effectiveHeight / referenceHeight : 1,
+    };
+  }
+
+  // Compatibility surface retained for older callers: orbit scaling is now
+  // HORIZONTAL ONLY. Y must never be derived from poseOrbitScale again.
   function scalePointAroundCentroid(point, cx, cy, cz, armLength, poseOrbitScale) {
     if (!point) return point;
     const scale = scaleForPose(poseOrbitScale, armLength);
-    if (scale === 1) return point;
     const x = Number(point.x), y = Number(point.y), z = Number(point.z);
-    if (![x, y, z, cx, cy, cz].every(Number.isFinite)) return point;
-    const nextX = cx + (x - cx) * scale;
-    const nextY = cy + (y - cy) * scale;
-    const nextZ = cz + (z - cz) * scale;
-    if (typeof point.set === 'function') point.set(nextX, nextY, nextZ);
-    else { point.x = nextX; point.y = nextY; point.z = nextZ; }
+    if (![x, y, z, cx, cz].every(Number.isFinite)) return point;
+    const nextX = scale === 1 ? x : cx + (x - cx) * scale;
+    const nextZ = scale === 1 ? z : cz + (z - cz) * scale;
+    if (typeof point.set === 'function') point.set(nextX, y, nextZ);
+    else { point.x = nextX; point.y = y; point.z = nextZ; }
     return point;
   }
 
   function unscalePointAroundCentroid(point, cx, cy, cz, armLength, poseOrbitScale) {
     if (!point) return point;
     const scale = scaleForPose(poseOrbitScale, armLength);
-    if (scale === 1) return point;
     const x = Number(point.x), y = Number(point.y), z = Number(point.z);
-    if (![x, y, z, cx, cy, cz].every(Number.isFinite)) return point;
-    const nextX = cx + (x - cx) / scale;
-    const nextY = cy + (y - cy) / scale;
-    const nextZ = cz + (z - cz) / scale;
+    if (![x, y, z, cx, cz].every(Number.isFinite) || !(scale > 0)) return point;
+    const nextX = scale === 1 ? x : cx + (x - cx) / scale;
+    const nextZ = scale === 1 ? z : cz + (z - cz) / scale;
+    if (typeof point.set === 'function') point.set(nextX, y, nextZ);
+    else { point.x = nextX; point.y = y; point.z = nextZ; }
+    return point;
+  }
+
+  // Applies the complete weapon-position mapping. baseY is the UNSCALED
+  // floor-relative hand/tool anchor produced by PNGPlaneAvatar. That anchor
+  // already includes portrait scale, vertical placement, and real opaque-art
+  // grounding. The rigger's whole-body Y scale is applied around floorY, then
+  // authored pose displacement from that hand anchor is scaled by the ratio of
+  // actual full character height to the canonical Mao'ao-male authoring height.
+  function transformPosePoint(point, options = {}) {
+    if (!point) return point;
+    const x = Number(point.x), y = Number(point.y), z = Number(point.z);
+    const cx = Number(options.cx) || 0;
+    const cz = Number(options.cz) || 0;
+    const floorY = Number(options.floorY) || 0;
+    const baseY = Number(options.baseY);
+    if (![x, y, z, cx, cz, floorY, baseY].every(Number.isFinite)) return point;
+    const orbitScale = scaleForPose(options.poseOrbitScale, options.armLength);
+    const metrics = heightMetrics(options.speciesId, options.gender, options.modelHeight, options.rigScaleY);
+    const scaledBaseY = floorY + (baseY - floorY) * metrics.rigScaleY;
+    const nextX = orbitScale === 1 ? x : cx + (x - cx) * orbitScale;
+    const nextY = scaledBaseY + (y - baseY) * metrics.heightRatio;
+    const nextZ = orbitScale === 1 ? z : cz + (z - cz) * orbitScale;
+    if (typeof point.set === 'function') point.set(nextX, nextY, nextZ);
+    else { point.x = nextX; point.y = nextY; point.z = nextZ; }
+    return point;
+  }
+
+  function untransformPosePoint(point, options = {}) {
+    if (!point) return point;
+    const x = Number(point.x), y = Number(point.y), z = Number(point.z);
+    const cx = Number(options.cx) || 0;
+    const cz = Number(options.cz) || 0;
+    const floorY = Number(options.floorY) || 0;
+    const baseY = Number(options.baseY);
+    if (![x, y, z, cx, cz, floorY, baseY].every(Number.isFinite)) return point;
+    const orbitScale = scaleForPose(options.poseOrbitScale, options.armLength);
+    const metrics = heightMetrics(options.speciesId, options.gender, options.modelHeight, options.rigScaleY);
+    if (!(orbitScale > 0) || !(metrics.heightRatio > 0)) return point;
+    const scaledBaseY = floorY + (baseY - floorY) * metrics.rigScaleY;
+    const nextX = orbitScale === 1 ? x : cx + (x - cx) / orbitScale;
+    const nextY = baseY + (y - scaledBaseY) / metrics.heightRatio;
+    const nextZ = orbitScale === 1 ? z : cz + (z - cz) / orbitScale;
     if (typeof point.set === 'function') point.set(nextX, nextY, nextZ);
     else { point.x = nextX; point.y = nextY; point.z = nextZ; }
     return point;
@@ -153,11 +251,16 @@
     scaleForArmLength, // Compatibility/debug only; new pose consumers should use explicit poseOrbitScale.
     scaleForPose,
     resolveScale,
+    resolveRigScaleY,
+    portraitModelHeightFor,
+    heightMetrics,
     setScale,
     replaceConfig,
     getConfig,
     subscribe,
     scalePointAroundCentroid,
     unscalePointAroundCentroid,
+    transformPosePoint,
+    untransformPosePoint,
   });
 })();
