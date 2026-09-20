@@ -236,13 +236,51 @@
     const shoulder = sideDebug?.shoulder;
     const wrist = sideDebug?.wrist;
     if (!shoulder || !wrist) return null;
-    // Editor-only convenience: persist the point halfway between the displayed
-    // shoulder and wrist as a shoulder-relative elbow pose. Runtime never
-    // recalculates, clamps, or otherwise owns this midpoint.
+    // Editor-only convenience: persist a point bent off the straight shoulder<->wrist
+    // line as a shoulder-relative elbow pose. The wrist targets whatever point is
+    // authored here, and a point exactly ON that line aims the same direction the
+    // unauthored fallback already does (both target the shoulder, which sits on that
+    // same ray from the wrist) -- so the plain midpoint would be a silent no-op button.
+    // Nudge it off-line, toward the ground (a relaxed elbow droops with gravity), by a
+    // fraction of the shoulder/wrist span so the button always produces a visibly bent,
+    // further-adjustable starting point. Runtime never recalculates, clamps, or
+    // otherwise owns this point.
+    const span = {
+      x: Number(wrist.x) - Number(shoulder.x),
+      y: Number(wrist.y) - Number(shoulder.y),
+      z: Number(wrist.z) - Number(shoulder.z),
+    };
+    const spanLength = Math.hypot(span.x, span.y, span.z);
+    let bend = { x: 0, y: -1, z: 0 };
+    if (spanLength > 1e-6) {
+      const spanUnit = { x: span.x / spanLength, y: span.y / spanLength, z: span.z / spanLength };
+      const down = { x: 0, y: -1, z: 0 };
+      const downDot = down.x * spanUnit.x + down.y * spanUnit.y + down.z * spanUnit.z;
+      let perp = {
+        x: down.x - downDot * spanUnit.x,
+        y: down.y - downDot * spanUnit.y,
+        z: down.z - downDot * spanUnit.z,
+      };
+      let perpLength = Math.hypot(perp.x, perp.y, perp.z);
+      if (perpLength < 1e-6) {
+        // The arm is already nearly vertical, so "down" can't bend it off that
+        // line; fall back to world-forward instead.
+        const forward = { x: 0, y: 0, z: 1 };
+        const forwardDot = forward.x * spanUnit.x + forward.y * spanUnit.y + forward.z * spanUnit.z;
+        perp = {
+          x: forward.x - forwardDot * spanUnit.x,
+          y: forward.y - forwardDot * spanUnit.y,
+          z: forward.z - forwardDot * spanUnit.z,
+        };
+        perpLength = Math.hypot(perp.x, perp.y, perp.z) || 1;
+      }
+      bend = { x: perp.x / perpLength, y: perp.y / perpLength, z: perp.z / perpLength };
+    }
+    const bendAmount = spanLength * 0.2;
     const point = {
-      x: (Number(wrist.x) - Number(shoulder.x)) * 0.5,
-      y: (Number(wrist.y) - Number(shoulder.y)) * 0.5,
-      z: (Number(wrist.z) - Number(shoulder.z)) * 0.5,
+      x: span.x * 0.5 + bend.x * bendAmount,
+      y: span.y * 0.5 + bend.y * bendAmount,
+      z: span.z * 0.5 + bend.z * bendAmount,
     };
     if (!normalizePoint(point)) return null;
     setElbowForPhase(phase, side, point);

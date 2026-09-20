@@ -87,8 +87,8 @@ assert.strictEqual(profiles.data.models.feline.mirrorX, true, 'Mao\'ao keeps the
 assert.strictEqual(profiles.data.models.parrot.mirrorX, false, 'Kenkari/Rakako\'an parrot hands must use the opposite mirror');
 
 for (const [key, model] of Object.entries(profiles.data.models)) {
-  assert.deepStrictEqual({ ...model.handFromTool.position }, { x: -0.04, y: 0.05, z: -0.04 }, `${key} must inherit the newly calibrated Mao'ao tool-relative hand position`);
-  assert.deepStrictEqual({ ...model.handFromTool.rotationDeg }, { pitch: 0, yaw: 0, roll: -180 }, `${key} must inherit the newly calibrated Mao'ao child-local right-angle orientation`);
+  assert.deepStrictEqual({ ...model.handFromTool.position }, { x: -0.01, y: -0.07, z: 0.1 }, `${key} must inherit the Mao'ao-recalibrated tool-relative hand position`);
+  assert.deepStrictEqual({ ...model.handFromTool.rotationDeg }, { pitch: 0, yaw: 180, roll: 0 }, `${key} must inherit the Mao'ao-recalibrated child-local orientation`);
   assert.deepStrictEqual({ ...model.handFromTool.rotationCorrectionDeg }, { x: 0, y: 0, z: 0 }, `${key} must start with zero fixed-basis XYZ correction`);
   const q = model.handFromTool.rotationQuaternion;
   assert(q && [q.x, q.y, q.z, q.w].every(Number.isFinite), `${key} must expose an authoritative normalized rotation quaternion`);
@@ -213,13 +213,13 @@ for (const modelKey of ['pachyderm', 'sloth', 'feline', 'parrot']) {
   const transform = sharedDefaultModels[modelKey].handFromTool;
   assert.deepStrictEqual(
     JSON.parse(JSON.stringify(transform.position)),
-    { x: -0.04, y: 0.05, z: -0.04 },
-    `${modelKey} must inherit the new Mao'ao-calibrated shared GLB position baseline`,
+    { x: -0.01, y: -0.07, z: 0.1 },
+    `${modelKey} must inherit the Mao'ao-recalibrated shared GLB position baseline`,
   );
   assert.deepStrictEqual(
     JSON.parse(JSON.stringify(transform.rotationDeg)),
-    { pitch: 0, yaw: 0, roll: -180 },
-    `${modelKey} must inherit the new Mao'ao-calibrated child-local right-angle orientation`,
+    { pitch: 0, yaw: 180, roll: 0 },
+    `${modelKey} must inherit the Mao'ao-recalibrated child-local orientation`,
   );
   assert.deepStrictEqual(
     JSON.parse(JSON.stringify(transform.rotationCorrectionDeg)),
@@ -227,26 +227,26 @@ for (const modelKey of ['pachyderm', 'sloth', 'feline', 'parrot']) {
     `${modelKey} shared baseline must start with zero correction coordinates`,
   );
 }
-const v1MigrationProbe = liveProfiles.clone();
-v1MigrationProbe.alignmentPreset = 'all-species-direction-90--90-0-v1';
-v1MigrationProbe.models.pachyderm.mirrorX = false; // A deliberately non-default handedness proves the v1→v2 calibration migration does not reset unrelated per-model setup.
-for (const model of Object.values(v1MigrationProbe.models)) {
+const v3MigrationProbe = liveProfiles.clone();
+v3MigrationProbe.alignmentPreset = 'all-species-direction-90--90-0-v3';
+v3MigrationProbe.models.pachyderm.mirrorX = false; // A deliberately non-default handedness proves the v3→v4 calibration migration does not reset unrelated per-model setup.
+for (const model of Object.values(v3MigrationProbe.models)) {
   model.handFromTool = {
     position: { x: -0.07, y: -0.13, z: 0.21 },
     rotationDeg: { pitch: 90, yaw: -90, roll: 0 },
   };
 }
-liveProfiles.replace(v1MigrationProbe);
+liveProfiles.replace(v3MigrationProbe);
 for (const modelKey of ['pachyderm', 'sloth', 'feline', 'parrot']) {
   const transform = liveProfiles.data.models[modelKey].handFromTool;
-  assert.strictEqual(transform.position.x, -0.04, `${modelKey} v1→v2 migration must apply shared Mao'ao X`);
-  assert.strictEqual(transform.position.y, 0.05, `${modelKey} v1→v2 migration must apply shared Mao'ao Y`);
-  assert.strictEqual(transform.position.z, -0.04, `${modelKey} v1→v2 migration must apply shared Mao'ao Z`);
-  assert.strictEqual(transform.rotationDeg.pitch, 0, `${modelKey} v1→v2 migration must snap shared local pitch`);
-  assert.strictEqual(transform.rotationDeg.yaw, 0, `${modelKey} v1→v2 migration must snap shared local yaw`);
-  assert.strictEqual(transform.rotationDeg.roll, -180, `${modelKey} v1→v2 migration must snap shared local roll`);
+  assert.strictEqual(transform.position.x, -0.01, `${modelKey} v3→v4 migration must apply the Mao'ao-recalibrated X`);
+  assert.strictEqual(transform.position.y, -0.07, `${modelKey} v3→v4 migration must apply the Mao'ao-recalibrated Y`);
+  assert.strictEqual(transform.position.z, 0.1, `${modelKey} v3→v4 migration must apply the Mao'ao-recalibrated Z`);
+  assert.strictEqual(transform.rotationDeg.pitch, 0, `${modelKey} v3→v4 migration must snap the recalibrated local pitch`);
+  assert.strictEqual(transform.rotationDeg.yaw, 180, `${modelKey} v3→v4 migration must snap the recalibrated local yaw`);
+  assert.strictEqual(transform.rotationDeg.roll, 0, `${modelKey} v3→v4 migration must snap the recalibrated local roll`);
 }
-assert.strictEqual(liveProfiles.data.models.pachyderm.mirrorX, false, 'v1→v2 calibration migration must preserve an existing per-model mirror choice');
+assert.strictEqual(liveProfiles.data.models.pachyderm.mirrorX, false, 'v3→v4 calibration migration must preserve an existing per-model mirror choice');
 const beforeLiveCalibration = liveModes.effectiveFrameForModel('feline', 'palm-parallel');
 liveProfiles.updateModelHandTransform('feline', transform => { transform.position.x += 0.5; });
 const afterLivePosition = liveModes.effectiveFrameForModel('feline', 'palm-parallel');
@@ -377,10 +377,11 @@ assert.deepStrictEqual(
 );
 const grips = gripSandbox.window.HobunjiHandToolGrips;
 assert(grips, 'secondary grip config manager should be installed');
-const sharedHatchetRotation = { pitch: -90, yaw: 90, roll: 180 };
-for (const toolKey of ['hatchet','hoe','bshuakauitl','pickshovel','daggersword','plainssword','dagger','kylie','warcleaver','fishingspear']) {
+const sharedHatchetRotation = { pitch: 90, yaw: -90, roll: 0 };
+for (const toolKey of ['hatchet','hoe','bshuakauitl','pickshovel','daggersword','plainssword','dagger','kylie','warcleaver','fishingspear','fishingmace']) {
   const grip = grips.authoredPrimaryGripForTool(toolKey);
-  assert.strictEqual(grip.position.y, 0.05, `${toolKey} must inherit hatchet's authored primary-grip Y`);
+  assert.strictEqual(grip.position.x, -0.04, `${toolKey} must inherit hatchet's authored primary-grip X`);
+  assert.strictEqual(grip.position.y, -0.04, `${toolKey} must inherit hatchet's authored primary-grip Y`);
   assert.deepStrictEqual(
     JSON.parse(JSON.stringify(grip.rotationDeg)),
     sharedHatchetRotation,
@@ -398,8 +399,8 @@ const oldHatchetSpan = JSON.parse(JSON.stringify(oldRotationDraft.tools.hatchet.
 grips.replace(oldRotationDraft);
 assert.deepStrictEqual(
   JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('hatchet').position)),
-  { x: 0.123, y: 0.05, z: 0.789 },
-  'hatchet-example migration must replace Y while preserving authored X/Z',
+  { x: -0.04, y: -0.04, z: 0.789 },
+  'hatchet-example migration must replace X/Y while preserving authored Z',
 );
 assert.deepStrictEqual(
   JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('hatchet').rotationDeg)),
@@ -408,8 +409,8 @@ assert.deepStrictEqual(
 );
 assert.deepStrictEqual(
   JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('kylie').position)),
-  { x: -0.222, y: 0.05, z: 0.444 },
-  'hatchet-example migration must preserve each other weapon\'s X/Z while replacing Y',
+  { x: -0.04, y: -0.04, z: 0.444 },
+  'hatchet-example migration must preserve each other weapon\'s Z while replacing X/Y',
 );
 assert.deepStrictEqual(
   JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('kylie').rotationDeg)),
@@ -436,7 +437,7 @@ assert.doesNotMatch(gripConfigSource, /function primaryGripForTool\(\) \{ return
 
 assert.match(gripModeSource, /palm-parallel/, 'palm-parallel grip mode must remain');
 assert.match(gripModeSource, /palm-perpendicular/, 'palm-perpendicular grip mode must remain');
-assert.match(gripModeSource, /'palm-perpendicular'[\s\S]*rotationDeg:\s*Object\.freeze\(\{\s*pitch:\s*-90,\s*yaw:\s*0,\s*roll:\s*0\s*\}\)/, 'palm-perpendicular must be flipped 180 degrees around local X from the old +90 orientation');
+assert.match(gripModeSource, /'palm-perpendicular'[\s\S]*rotationDeg:\s*Object\.freeze\(\{\s*pitch:\s*0,\s*yaw:\s*0,\s*roll:\s*-90\s*\}\)/, 'palm-perpendicular must rotate around the weapon\'s own Z (shaft) axis, not local X');
 assert.match(gripModeSource, /normalizedCalibration\.rotationQuaternion/, 'grip composition must consume the authoritative quaternion-native hand calibration');
 assert.match(gripModeSource, /const rotationQuaternion = normalizeQuat\(multiplyQuat\(modeQ, calibrationQ\)\)/, 'Grip Mode must compose before Hand Model Calibration without Euler re-entry');
 assert.doesNotMatch(gripModeSource, /targetRotation\s*=\s*\{[\s\S]*br\.pitch/, 'grip mode must not add calibration Euler channels at the X=90° singularity');
@@ -549,8 +550,12 @@ assert.match(shoulderPoseRuntimeSource, /snapshot\.combatWindupFrac/, 'hand pose
 assert.match(weaponStanceSource, /runtimeState\.combatDirSign/, 'WeaponToolStances must expose active mirror sign to hand consumers');
 assert.match(weaponStanceSource, /runtimeState\.combatReturnNeutralMirrorSign/, 'WeaponToolStances must expose alternating-heavy return mirror sign to hand consumers');
 assert.match(shoulderControlsSource, /authorMidpointElbow/, 'editor hand controls must provide a one-shot midpoint authoring helper');
-assert.match(shoulderControlsSource, /wrist\.x\) - Number\(shoulder\.x\)\) \* 0\.5/, 'midpoint helper must persist the literal halfway shoulder-relative coordinate');
-assert.match(shoulderControlsSource, /runtime midpoint calculation/, 'hand controls must document that runtime does not recalculate midpoint elbows');
+// A point exactly on the straight shoulder<->wrist line aims the wrist the same
+// direction the unauthored fallback already does (both target the shoulder, which
+// sits on that same ray), so the helper must bend off that line or the button is a
+// silent no-op. See docs/js/attack-editor-hand-shoulder-controls.js's authorMidpointElbow.
+assert.match(shoulderControlsSource, /bendAmount/, 'midpoint helper must bend the elbow off the straight shoulder/wrist line so the button is not a silent no-op');
+assert.match(shoulderControlsSource, /Runtime never recalculates, clamps, or\s*\n\s*\/\/ otherwise owns this point/, 'hand controls must document that runtime does not recalculate midpoint elbows');
 assert.match(shoulderControlsSource, /poseRuntime\.weightsAt/, 'Attack Editor preview must use the same smooth pose interpolation');
 assert.match(shoulderControlsSource, /handHideArmSpritesPreview/, 'Attack Editor must retain preview-only arm hiding');
 assert.match(shoulderControlsSource, /handShowPaperArmGuide/, 'Attack Editor must expose the optional paper upper-arm\/elbow\/forearm guide');

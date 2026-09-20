@@ -49,7 +49,7 @@ assert(editor.includes('The tool is never moved by the hand system'), 'editor mu
 
 assert(gripModes.includes("'palm-parallel'"), 'palm-parallel grip mode must remain');
 assert(gripModes.includes("'palm-perpendicular'"), 'palm-perpendicular grip mode must remain');
-assert.match(gripModes, /'palm-perpendicular'[\s\S]*rotationDeg:\s*Object\.freeze\(\{\s*pitch:\s*-90,\s*yaw:\s*0,\s*roll:\s*0\s*\}\)/, 'palm-perpendicular must be flipped 180 degrees around local X from the old +90 orientation');
+assert.match(gripModes, /'palm-perpendicular'[\s\S]*rotationDeg:\s*Object\.freeze\(\{\s*pitch:\s*0,\s*yaw:\s*0,\s*roll:\s*-90\s*\}\)/, 'palm-perpendicular must rotate around the weapon\'s own Z (shaft) axis, not local X');
 assert(gripModes.includes('multiplyQuat(rotationQuaternion, inverseQuat(fineQ))'), 'grip mode must derive a rigid quaternion delta from the fine transform');
 
 assert(materialRoles.includes("pachyderm: 'mashtzarr'"), 'pachyderm hand materials must inherit foot slot roles');

@@ -18,8 +18,8 @@
   }); // Unified Action ids that preview a true shared weapon idle stance.
   const POSE_KEYS = Object.freeze(['x', 'y', 'z', 'pitch', 'yaw', 'roll', 'bodyYaw']); // Copied into all three still-preset phases below.
   const FALLBACK_STANCES = Object.freeze({
-    heavyWeapon: Object.freeze({ x: 0.03, y: 0.37, z: -0.01, pitch: -155, yaw: -79, bodyYaw: -15, roll: -82 }),
-    lightWeapon: Object.freeze({ x: 0.04, y: 0, z: 0, pitch: 20, yaw: -70, bodyYaw: -40, roll: -65 }),
+    heavyWeapon: Object.freeze({ x: -0.03, y: 0.27, z: 0.02, pitch: -23, yaw: 104, bodyYaw: -15, roll: 89 }),
+    lightWeapon: Object.freeze({ x: -0.09, y: -0.08, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 }),
   }); // Used only if the shared Idle Stance editor has not finished loading yet.
   const QUICK_NAV_ITEMS = Object.freeze([
     ['Weapon', 'weapon'],
