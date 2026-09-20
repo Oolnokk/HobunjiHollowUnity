@@ -34,6 +34,12 @@
   };
   const elbowPointFromPose = (pose, side) =>
     normalizeElbowPoint(pose?.elbows?.[side] || pose?.elbow?.[side] || pose?.shoulderAim?.elbows?.[side]);
+  const mirrorSign = value => Number(value) === -1 ? -1 : 1;
+  const mirrorElbowPoint = (point, sign = 1) => {
+    const normalized = normalizeElbowPoint(point);
+    if (!normalized) return null;
+    return { x: normalized.x * mirrorSign(sign), y: normalized.y, z: normalized.z };
+  };
   const lerpElbowPoint = (a, b, t) => {
     if (!a && !b) return null;
     // A missing elbow keyframe means the legacy shoulder target for that phase,
@@ -109,25 +115,34 @@
     const hf = Math.max(sf, clamp01(timing.holdFrac ?? timing.hf ?? 0.68));
     const poses = normalizeElbowPoseSet(poseSet, side);
     const poseScale = clamp01(timing.poseScale ?? 1);
-    const scaledWindup = lerpElbowPoint(poses.neutral, poses.windup, poseScale);
-    const scaledStrike = lerpElbowPoint(poses.neutral, poses.strike, poseScale);
+    const activeSign = mirrorSign(timing.activeMirrorSign ?? timing.dirSign ?? 1);
+    const neutralSign = mirrorSign(timing.neutralMirrorSign ?? 1);
+    const returnNeutralSign = mirrorSign(timing.returnNeutralMirrorSign ?? neutralSign);
+    // Mirroring never swaps anatomical hands. Backhand/alternating-heavy pose
+    // mirroring changes the shoulder-relative X coordinate for this same side.
+    const neutral = mirrorElbowPoint(poses.neutral, neutralSign);
+    const returnNeutral = mirrorElbowPoint(poses.neutral, returnNeutralSign);
+    const windup = mirrorElbowPoint(poses.windup, activeSign);
+    const strike = mirrorElbowPoint(poses.strike, activeSign);
+    const scaledWindup = lerpElbowPoint(neutral, windup, poseScale);
+    const scaledStrike = lerpElbowPoint(neutral, strike, poseScale);
     if (sequence === 'load') {
-      if (t <= wf) return lerpElbowPoint(poses.neutral, scaledWindup, t / Math.max(1e-6, wf));
-      return lerpElbowPoint(scaledWindup, poses.neutral, (t - wf) / Math.max(1e-6, 1 - wf));
+      if (t <= wf) return lerpElbowPoint(neutral, scaledWindup, t / Math.max(1e-6, wf));
+      return lerpElbowPoint(scaledWindup, returnNeutral, (t - wf) / Math.max(1e-6, 1 - wf));
     }
     if (sequence === 'fire') {
-      if (t <= sf) return lerpElbowPoint(poses.neutral, scaledStrike, t / Math.max(1e-6, sf));
+      if (t <= sf) return lerpElbowPoint(neutral, scaledStrike, t / Math.max(1e-6, sf));
       if (t <= hf) return scaledStrike ? { ...scaledStrike } : null;
-      return lerpElbowPoint(scaledStrike, poses.neutral, (t - hf) / Math.max(1e-6, 1 - hf));
+      return lerpElbowPoint(scaledStrike, returnNeutral, (t - hf) / Math.max(1e-6, 1 - hf));
     }
     if (t <= wf) {
       const rawWindupT = t / Math.max(1e-6, wf);
       const poseT = global.Combat?.windupPoseProgress?.(rawWindupT, timing.windupSlowdown) ?? rawWindupT;
-      return lerpElbowPoint(poses.neutral, scaledWindup, poseT);
+      return lerpElbowPoint(neutral, scaledWindup, poseT);
     }
     if (t <= sf) return lerpElbowPoint(scaledWindup, scaledStrike, (t - wf) / Math.max(1e-6, sf - wf));
     if (t <= hf) return scaledStrike ? { ...scaledStrike } : null;
-    return lerpElbowPoint(scaledStrike, poses.neutral, (t - hf) / Math.max(1e-6, 1 - hf));
+    return lerpElbowPoint(scaledStrike, returnNeutral, (t - hf) / Math.max(1e-6, 1 - hf));
   }
 
   function secondaryGripActive(toolKey) {
@@ -220,9 +235,9 @@
     const rawPose = capturedMelee?.opts?.pose;
     if (hasAuthoredPoseAim(rawPose)) {
       const timing = {
-        windupFrac: capturedMelee.opts.windupFrac ?? 0.16,
-        strikeFrac: capturedMelee.opts.strikeFrac ?? 0.55,
-        holdFrac: capturedMelee.opts.holdFrac ?? 0.68,
+        windupFrac: snapshot.combatWindupFrac ?? capturedMelee.opts.windupFrac ?? 0.16,
+        strikeFrac: snapshot.combatStrikeFrac ?? capturedMelee.opts.strikeFrac ?? 0.55,
+        holdFrac: snapshot.combatHoldFrac ?? capturedMelee.opts.holdFrac ?? 0.68,
         windupSlowdown: capturedMelee.opts.windupSlowdown ?? 0,
         poseScale: snapshot.combatPoseScale ?? 1,
       };
@@ -283,16 +298,27 @@
     const rawPose = capturedMelee?.opts?.pose;
     if (hasAuthoredPoseAim(rawPose)) {
       const timing = {
-        windupFrac: capturedMelee.opts.windupFrac ?? 0.16,
-        strikeFrac: capturedMelee.opts.strikeFrac ?? 0.55,
-        holdFrac: capturedMelee.opts.holdFrac ?? 0.68,
+        windupFrac: snapshot.combatWindupFrac ?? capturedMelee.opts.windupFrac ?? 0.16,
+        strikeFrac: snapshot.combatStrikeFrac ?? capturedMelee.opts.strikeFrac ?? 0.55,
+        holdFrac: snapshot.combatHoldFrac ?? capturedMelee.opts.holdFrac ?? 0.68,
         windupSlowdown: capturedMelee.opts.windupSlowdown ?? 0,
         poseScale: snapshot.combatPoseScale ?? 1,
       };
+      timing.activeMirrorSign = snapshot.combatDirSign ?? capturedMelee.opts.dirSign ?? 1;
+      timing.neutralMirrorSign = snapshot.combatNeutralMirrorSign ?? 1;
+      timing.returnNeutralMirrorSign = snapshot.combatReturnNeutralMirrorSign ?? timing.neutralMirrorSign;
       return elbowAt(snapshot.combatProgress, timing, rawPose, capturedMelee.opts.sequence || 'attack', side);
     }
     const profileKey = `melee:${snapshot?.combatAnim || 'thrust'}`;
-    return elbowAt(snapshot.combatProgress, { poseScale: snapshot.combatPoseScale ?? 1 }, global.HobunjiHandShoulderPoseProfiles?.forKey?.(profileKey) || {}, 'attack', side);
+    return elbowAt(snapshot.combatProgress, {
+      windupFrac: snapshot.combatWindupFrac ?? 0.16,
+      strikeFrac: snapshot.combatStrikeFrac ?? 0.55,
+      holdFrac: snapshot.combatHoldFrac ?? 0.68,
+      poseScale: snapshot.combatPoseScale ?? 1,
+      activeMirrorSign: snapshot.combatDirSign ?? capturedMelee?.opts?.dirSign ?? 1,
+      neutralMirrorSign: snapshot.combatNeutralMirrorSign ?? 1,
+      returnNeutralMirrorSign: snapshot.combatReturnNeutralMirrorSign ?? snapshot.combatNeutralMirrorSign ?? 1,
+    }, global.HobunjiHandShoulderPoseProfiles?.forKey?.(profileKey) || {}, 'attack', side);
   }
 
   global.HobunjiHandShoulderPoseRuntime = Object.freeze({
@@ -302,6 +328,7 @@
     normalizePoseSet,
     normalizeElbowPoint,
     normalizeElbowPoseSet,
+    mirrorElbowPoint,
     hasAuthoredPoseAim,
     lerp,
     lerpElbowPoint,
