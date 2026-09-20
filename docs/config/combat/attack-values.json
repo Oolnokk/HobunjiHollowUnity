@@ -37,7 +37,7 @@
   "deathMark": {
     "maxStacks": 3,
     "empowerWindowSeconds": 7,
-    "multiplierByStacksConsumed": [2, 3, 5],
+    "multiplierByStacksConsumed": [1.6, 2.2, 2.8],
     "billboard": {
       "chestHeightRatio": 0.62,
       "iconWidthTiles": 0.32,
@@ -70,9 +70,9 @@
   },
 
   "chargedBreaker": {
-    "MIN_READY_POSE": 0.48, "MAX_CHARGE_S": 4.0, "WINDUP_SLOWDOWN": 25, "CHARGE_DRAIN_PER_S": 18,
-    "COST_MIN": 16, "COST_MAX": 28,
-    "DAMAGE_MUL_MIN": 1.05, "DAMAGE_MUL_MAX": 1.3,
+    "MIN_READY_POSE": 0.48, "MAX_CHARGE_S": 4.0, "WINDUP_SLOWDOWN": 25, "CHARGE_DRAIN_PER_S": 4,
+    "COST_MIN": 12, "COST_MAX": 18,
+    "DAMAGE_MUL_MIN": 1.2, "DAMAGE_MUL_MAX": 2.4,
     "KNOCKBACK_MUL_MIN": 1.2, "KNOCKBACK_MUL_MAX": 3.0,
     "RANGE_MUL_MIN": 1.0, "RANGE_MUL_MAX": 1.15,
     "HALF_CONE_DEG_MIN": 34, "HALF_CONE_DEG_MAX": 70,
