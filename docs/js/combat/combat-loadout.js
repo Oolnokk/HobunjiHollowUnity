@@ -240,18 +240,39 @@
     });
   }
 
-  if (!window.WeaponToolStances && typeof document !== 'undefined') {
+  function loadWeaponToolStancesRuntime() {
+    if (window.WeaponToolStances || typeof document === 'undefined') {
+      initializeStancesIfReady();
+      return;
+    }
     const existingScript = document.querySelector('script[data-weapon-tool-stances]'); // Prevents duplicate loads if this script is re-evaluated in dev mode.
-    if (!existingScript) {
-      const script = document.createElement('script'); // Dynamically loads the isolated stance runtime without adding another game.js dependency.
-      script.src = 'js/weapon-tool-stances.js?v=20260917charge2';
-      script.async = false;
-      script.dataset.weaponToolStances = 'true';
-      script.onload = initializeStancesIfReady;
-      script.onerror = () => window.__farmLog?.('[weapon-stance] failed to load js/weapon-tool-stances.js', 'warn');
-      (document.head || document.documentElement).appendChild(script);
+    if (existingScript) return;
+    const script = document.createElement('script'); // Loads after the shared melee-spacing math so every attack wrapper sees the same calibrated endpoint rule.
+    script.src = 'js/weapon-tool-stances.js?v=20260920spacing1';
+    script.async = false;
+    script.dataset.weaponToolStances = 'true';
+    script.onload = initializeStancesIfReady;
+    script.onerror = () => window.__farmLog?.('[weapon-stance] failed to load js/weapon-tool-stances.js', 'warn');
+    (document.head || document.documentElement).appendChild(script);
+  }
+
+  if (!window.MeleePoseSpacing && typeof document !== 'undefined') {
+    const existingSpacing = document.querySelector('script[data-melee-pose-spacing]');
+    if (existingSpacing) {
+      existingSpacing.addEventListener('load', loadWeaponToolStancesRuntime, { once: true });
+    } else {
+      const spacingScript = document.createElement('script'); // Pure canonical Mao'ao-space pose calibration shared by player, enemies, and editor.
+      spacingScript.src = 'js/combat/melee-pose-spacing.js?v=20260920spacing1';
+      spacingScript.async = false;
+      spacingScript.dataset.meleePoseSpacing = 'true';
+      spacingScript.onload = loadWeaponToolStancesRuntime;
+      spacingScript.onerror = () => {
+        window.__farmLog?.('[melee-pose-spacing] failed to load; weapon stance runtime continues without spacing calibration', 'warn');
+        loadWeaponToolStancesRuntime();
+      };
+      (document.head || document.documentElement).appendChild(spacingScript);
     }
   } else {
-    initializeStancesIfReady();
+    loadWeaponToolStancesRuntime();
   }
 })();
