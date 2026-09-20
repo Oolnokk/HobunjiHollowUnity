@@ -955,7 +955,7 @@ function renderActivePosePanel() {
     <div class="field" data-elbow-pose-side="${side}">
       <label>${side === 'left' ? 'Left' : 'Right'} elbow position (shoulder-relative)</label>
       <div class="row" style="gap:7px;align-items:center;flex-wrap:wrap">
-        ${ELBOW_AXES.map(axis => `<label class="fieldRow" style="margin:0;min-width:88px">${axis.toUpperCase()} <input id="${elbowInputId(side, axis)}" type="number" step="0.01" placeholder="auto" style="width:72px"></label>`).join('')}
+        ${ELBOW_AXES.map(axis => `<label class="fieldRow" style="margin:0;min-width:88px">${axis.toUpperCase()} <input id="${elbowInputId(side, axis)}" type="number" step="0.01" placeholder="unset" style="width:72px"></label>`).join('')}
         <button type="button" class="secondary" id="poseElbowMidpoint_${side}">Set halfway shoulder↔hand</button>
       </div>
     </div>`).join('');
@@ -967,7 +967,7 @@ function renderActivePosePanel() {
         <span class="val" id="pose_${f.key}_val"></span>
       </div>
     </div>`).join('') + `
-      <div class="help" style="margin-top:8px">Elbows are ordinary ${editPhase[0].toUpperCase() + editPhase.slice(1)} pose values. The halfway buttons only write coordinates now; gameplay never recalculates a midpoint.</div>
+      <div class="help" style="margin-top:8px">Elbows are ordinary ${editPhase[0].toUpperCase() + editPhase.slice(1)} pose values. Blank means no elbow keyframe. The halfway buttons sample the current shoulder/hand once and write coordinates; gameplay never recalculates a midpoint.</div>
       ${elbowRows}`;
   for (const f of fields) {
     const el = $(`pose_${f.key}`);
