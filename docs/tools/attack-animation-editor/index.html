@@ -374,6 +374,7 @@ let lastRawRigPose = { x: 0, y: 0, z: 0 }; // Debug copy of the pre-scale finish
 let lastScaledRigPose = { x: 0, y: 0, z: 0 }; // Debug copy of the final centroid-scaled rig-local point.
 let lastScaledWorldPose = { x: 0, y: 0, z: 0 }; // Debug copy of the same final pose in world space.
 let avatarModel = null;
+let handCalibrationPresentationActive = false; // Dedicated hand-calibration tab hides every animation/tool visual while the neutral GLB↔paper workflow is active.
 let neckPreviewStrength = 1; // Used by applyPoseToRig() to scale the preview-only automatic head counter-turn.
 let neckPreviewRadiusFrac = 0.30; // Used by applyPreviewNeckWeights() as the broad default shoulder-to-head blend relative to avatar height.
 let neckWeightSummary = 'neck rig pending'; // Used by refreshPreviewDebug() for mobile-visible weight diagnostics.
@@ -1478,6 +1479,7 @@ function effectiveHalfConeDeg(entry) {
 }
 function updateHitboxWedge() {
   if (hitboxMesh) { scene.remove(hitboxMesh); hitboxMesh.geometry.dispose(); hitboxMesh.material.dispose(); hitboxMesh = null; }
+  if (handCalibrationPresentationActive) return; // Calibration tab is a single neutral hand-alignment workflow with no combat/animation overlays.
   const action = currentAction();
   if (action.practical === false || !$('showHitbox').checked) return;
   const entry = actionStatsEntry(action);
@@ -1616,6 +1618,13 @@ window.HobunjiAttackEditorToolContext = Object.freeze({
   get toolKey() { return currentToolKey; },
   focusNeutral() {
     selectEditPhase('neutral');
+  },
+  setHandCalibrationPresentation(active) {
+    handCalibrationPresentationActive = !!active;
+    if (avatarModel) avatarModel.visible = !handCalibrationPresentationActive;
+    toolBase.visible = !handCalibrationPresentationActive; // Hides weapon, target marker and every animation-derived held-item transform.
+    if (handCalibrationPresentationActive && gizmoMode !== 'off') setGizmoMode('off');
+    updateHitboxWedge();
   },
 });
 window.dispatchEvent(new CustomEvent('hobunji-attack-editor-tool-context-ready'));
