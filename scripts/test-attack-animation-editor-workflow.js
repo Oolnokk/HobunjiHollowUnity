@@ -3,6 +3,7 @@ const fs = require('fs');
 
 const editor = fs.readFileSync('docs/tools/attack-animation-editor/index.html', 'utf8');
 const heldActions = fs.readFileSync('docs/js/held-action-animations.js', 'utf8');
+const meleeSpacing = fs.readFileSync('docs/js/combat/melee-pose-spacing.js', 'utf8');
 
 // Parse-check the browser module after stripping static ESM imports.
 const moduleMatch = editor.match(/<script type="module">([\s\S]*?)<\/script>/);
@@ -36,6 +37,10 @@ assert.match(editor, /const p = anim\.poses\[editPhase\]/, 'gizmo must edit the 
 assert.doesNotMatch(editor, /id="gizmoPhase"|\$\('gizmoPhase'\)/, 'separate gizmo phase selector must not return');
 assert.doesNotMatch(editor, /id="panelNeutral"|id="panelWindup"|id="panelStrike"/, 'three always-open pose panels must not return');
 assert.doesNotMatch(editor, /scrubNeutralBtn|scrubWindupBtn|scrubStrikeBtn/, 'separate scrub-to-pose buttons must not return');
+assert.match(editor, /js\/combat\/melee-pose-spacing\.js/, 'Attack Editor must load the exact shared melee spacing math used by gameplay');
+assert.match(editor, /actionUsesMeleeSpacing\(action\)[\s\S]*MeleePoseSpacing\?\.adjustEndpoint[\s\S]*if \(action\.mirror\)/, 'editor must apply shared spacing before Backhand mirroring so each attack keeps its own ray');
+assert.match(meleeSpacing, /const Y_LIFT = 0\.17/, 'shared melee spacing must retain the uploaded +0.17 Y calibration');
+assert.match(meleeSpacing, /targetRange = Math\.max\(0, original\.rangeXY \+ delta\)/, 'shared spacing must add the measured Forehand range delta instead of copying Forehand X');
 assert.match(editor, /resetPosesBtn'[\s\S]*applySelectedAction\(\{ play: false \}\)/, 'Reset action must restore the selected Action source, not generic pose defaults');
 
 // Action choice drives concrete runtime timing where attack-values owns it.
