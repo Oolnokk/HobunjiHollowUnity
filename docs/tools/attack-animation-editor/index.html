@@ -1134,10 +1134,11 @@ function flipPose(p) {
   if (p.shoulderAim) flipped.shoulderAim = { ...p.shoulderAim };
   if (p.elbows) {
     const mirrorPoint = point => point ? { x: -(Number(point.x) || 0), y: Number(point.y) || 0, z: Number(point.z) || 0 } : null;
-    flipped.elbows = {
-      ...(p.elbows.right ? { left: mirrorPoint(p.elbows.right) } : {}),
-      ...(p.elbows.left ? { right: mirrorPoint(p.elbows.left) } : {}),
-    };
+    // Mirroring an attack never changes which anatomical hand owns the pose.
+    // It mirrors each hand's shoulder-relative elbow X just like tool pose X.
+    flipped.elbows = Object.fromEntries(Object.entries(p.elbows)
+      .map(([side, point]) => [side, mirrorPoint(point)])
+      .filter(([, point]) => point));
   }
   return flipped;
 }
