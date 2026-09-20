@@ -10,6 +10,19 @@
   const SCHEMA = 'hobunji_hand_tool_grips.v1';
   const LOCAL_KEY = 'hobunji.handToolGrips.v1';
   const SECONDARY_GRIP_PRESET = 'animation-span-v1'; // Migrates old always-on secondary points into animation-gated Z spans.
+  const PRIMARY_ROTATION_PRESET = 'weapon-primary-rotations-20260919-v1'; // One-shot migration marker for the user-authored weapon grip rotation table.
+  const PRIMARY_ROTATIONS = Object.freeze({
+    hatchet: Object.freeze({ pitch: -90, yaw: 90, roll: 180 }),
+    hoe: Object.freeze({ pitch: 0, yaw: 0, roll: 0 }),
+    bshuakauitl: Object.freeze({ pitch: 0, yaw: 0, roll: 0 }),
+    pickshovel: Object.freeze({ pitch: 0, yaw: 0, roll: 0 }),
+    daggersword: Object.freeze({ pitch: 0, yaw: 180, roll: 0 }),
+    plainssword: Object.freeze({ pitch: 0, yaw: 0, roll: 0 }),
+    dagger: Object.freeze({ pitch: 0, yaw: 0, roll: 0 }),
+    kylie: Object.freeze({ pitch: 0, yaw: 18, roll: 0 }),
+    warcleaver: Object.freeze({ pitch: 0, yaw: 0, roll: 0 }),
+    fishingspear: Object.freeze({ pitch: 0, yaw: 0, roll: 0 }),
+  });
   const CRAFTED_METAL_SUFFIX = /-(?:nativecopper|lowtinbronze|tinbronze|hightinbronze|arsenicalbronze|leadedbronze)$/;
   const visualBases = new WeakMap(); // Original held-item visual position/rotation/scale; authored corrections are reapplied from these every frame.
   const listeners = new Set();
@@ -29,9 +42,10 @@
   const DEFAULT_DATA = {
     schema: SCHEMA,
     secondaryGripPreset: SECONDARY_GRIP_PRESET,
+    primaryRotationPreset: PRIMARY_ROTATION_PRESET,
     tools: {
       hatchet: {
-        primaryGrip: identityTransform(),
+        primaryGrip: { position: { x: 0, y: 0, z: 0 }, rotationDeg: { ...PRIMARY_ROTATIONS.hatchet } },
         gripMode: null,
         secondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
       },
@@ -164,8 +178,10 @@
 
   function normalizeData(raw) {
     const next = clone(raw || DEFAULT_DATA);
+    const previousPrimaryRotationPreset = next.primaryRotationPreset; // Missing/older marker means saved grip rotations need the new authoritative weapon table once.
     next.schema = SCHEMA;
     next.secondaryGripPreset = SECONDARY_GRIP_PRESET;
+    next.primaryRotationPreset = PRIMARY_ROTATION_PRESET;
     const rawTools = next.tools && typeof next.tools === 'object' ? next.tools : {}; // Saved drafts override defaults, while newly added weapon defaults still appear after upgrades.
     next.tools = { ...clone(DEFAULT_DATA.tools), ...rawTools };
     for (const [toolKey, entry] of Object.entries(next.tools)) {
@@ -173,6 +189,9 @@
       const fallbackEntry = DEFAULT_DATA.tools[toolKey] || {}; // Lets pre-scale local drafts inherit the new committed scale for that same shape.
       entry.toolScale = normalizeToolScale(entry.toolScale, fallbackEntry.toolScale ?? 1);
       entry.primaryGrip = normalizeTransform(entry.primaryGrip);
+      if (previousPrimaryRotationPreset !== PRIMARY_ROTATION_PRESET && PRIMARY_ROTATIONS[toolKey]) {
+        entry.primaryGrip.rotationDeg = { ...PRIMARY_ROTATIONS[toolKey] }; // Migration changes rotation only; authored position, scale and off-hand span remain exactly as saved.
+      }
       entry.secondaryGripSpan = inferredSpan(entry);
       entry.secondaryGrip = disabledLegacySecondary();
       entry.gripMode = normalizeGripMode(entry.gripMode);
