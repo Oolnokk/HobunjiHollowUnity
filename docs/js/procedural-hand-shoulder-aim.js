@@ -375,7 +375,17 @@
       const solvedHinges = solveLocalHingeAngles(localTargetDirection);
       const gripAngle = solvedHinges.grip; // Local +X hinge moves the +Y proximal axis out of the palm plane.
       const palmNormalAngle = solvedHinges.palmNormal; // Local -Z hinge turns the +Y proximal axis within the palm plane.
-      const appliedGripAngle = gripAngle * weights.grip;
+      // Composing both hinges together aims the proximal axis exactly at the target
+      // (2 degrees of freedom) but leaves the remaining twist around that axis
+      // wherever the composition happens to put it -- unnoticeable for the small
+      // corrections a real authored elbow needs, but for the legacy shoulder
+      // fallback (elbow == shoulder, no authored offset) the required angles can be
+      // large, and that unconstrained twist can flip the hand. A single hinge alone
+      // has no such ambiguity, so only let grip engage once a real elbow is authored;
+      // the legacy fallback keeps the well-defined palm-normal-only correction it
+      // already used for swings.
+      const gripWeight = elbowSolve?.source === 'pose-authored' ? weights.grip : 0;
+      const appliedGripAngle = gripAngle * gripWeight;
       const appliedPalmNormalAngle = palmNormalAngle * weights.palmNormal;
 
       gripCorrectionQuaternion.setFromAxisAngle(localGripAxis, appliedGripAngle);
