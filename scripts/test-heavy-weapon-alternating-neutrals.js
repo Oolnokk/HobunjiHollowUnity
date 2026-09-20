@@ -98,12 +98,9 @@ for (const phase of ['windup', 'strike']) {
   assert.deepStrictEqual(visible(backhand.pose.returnNeutral, backhand.dirSign), heavyPose);
   assert.strictEqual(backhand.pose.neutralMirrorSign, -1);
   assert.strictEqual(backhand.pose.returnNeutralMirrorSign, 1);
-  const visibleWindup = visible(backhand.pose.windup, backhand.dirSign);
-  const visibleStrike = visible(backhand.pose.strike, backhand.dirSign);
-  const mirroredWindup = mirrored(authoredSweep.windup);
-  const mirroredStrike = mirrored(authoredSweep.strike);
-  assertEndpointSpacing(mirroredWindup, visibleWindup, 'windup', 'backhand sweep windup');
-  assertEndpointSpacing(mirroredStrike, visibleStrike, 'strike', 'backhand sweep strike');
+  const regular = window.WeaponToolStances.prepareCombatOptions({ anim: 'sweep', dirSign: 1, pose: authoredSweep });
+  assert.deepStrictEqual(visible(backhand.pose.windup, backhand.dirSign), mirrored(regular.pose.windup), 'Backhand windup must be the true full-frame mirror of spaced Forehand');
+  assert.deepStrictEqual(visible(backhand.pose.strike, backhand.dirSign), mirrored(regular.pose.strike), 'Backhand strike must be the true full-frame mirror of spaced Forehand');
 }
 
 {
