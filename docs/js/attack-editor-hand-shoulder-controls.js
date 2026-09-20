@@ -1,7 +1,7 @@
 // Attack Editor hand/elbow targeting authoring.
 //
 // Each pose controls two meaningful HAND-LOCAL hinges: grip axis (local X) and
-// palm-normal axis (local Z). Legacy pitch/roll animation data migrates into those
+// palm-normal axis (local -Z). Legacy pitch/roll animation data migrates into those
 // hinges on load. Arm hiding and the paper-arm overlay remain preview-only.
 (function (global) {
   'use strict';
@@ -82,7 +82,7 @@
       <div class="field" data-hand-shoulder-phase="${phase}">
         <label>${phase[0].toUpperCase() + phase.slice(1)} hand follow</label>
         <div class="row" style="gap:9px;flex-wrap:wrap">
-          ${[['grip','Grip axis (local X)'],['palmNormal','Palm-normal axis (local Z)']].map(([axis,label]) => `<label class="fieldRow" style="cursor:pointer;margin:0"><input id="${checkboxId(phase, axis)}" type="checkbox" style="width:auto">${label}</label>`).join('')}
+          ${[['grip','Grip axis (local X)'],['palmNormal','Palm-normal axis (local -Z)']].map(([axis,label]) => `<label class="fieldRow" style="cursor:pointer;margin:0"><input id="${checkboxId(phase, axis)}" type="checkbox" style="width:auto">${label}</label>`).join('')}
         </div>
       </div>`).join('')}
   `;
