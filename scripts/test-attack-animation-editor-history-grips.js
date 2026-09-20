@@ -126,7 +126,9 @@ assert.match(driver, /placePaperHandGuideWorld\?\.\(primarySocket\.position, pri
 assert.match(shoulder, /This rotates the HAND, never the weapon/, 'shoulder-follow layer must declare its transform owner');
 assert.match(shoulder, /\[\['grip','Grip axis \(local X\)'\],\['palmNormal','Palm-normal axis \(local Z\)'\]\]/, 'shoulder-follow controls must expose exactly the two hand-local hinge choices');
 assert.match(shoulder, /handShowPaperArmGuide/, 'shoulder-follow controls must expose the non-authoritative paper arm guide');
-assert.match(shoulder, /handElbow_/, 'hand targeting controls must expose per-side elbow location inputs for every pose');
+assert.match(editor, /poseElbow_\$\{side\}_\$\{axis\}/, 'active pose panel must own the per-side elbow coordinate fields');
+assert.match(editor, /poseElbowMidpoint_\$\{side\}/, 'active pose panel must own the one-shot midpoint authoring button');
+assert.doesNotMatch(shoulder, /handElbow_/, 'the separate hand-follow section must not duplicate elbow coordinate authoring');
 assert.match(shoulderAim, /currentElbow/, 'runtime hand targeting must read the active direct elbow pose');
 assert.match(shoulderAim, /targetFeature: 'elbow'/, 'runtime diagnostics must identify the elbow as the hand target');
 assert.match(shoulderAim, /authoritative: false/, 'paper arm diagnostics must never become a hidden hand-driving IK layer');
