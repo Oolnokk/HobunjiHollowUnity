@@ -377,10 +377,11 @@ assert.deepStrictEqual(
 );
 const grips = gripSandbox.window.HobunjiHandToolGrips;
 assert(grips, 'secondary grip config manager should be installed');
-const sharedHatchetRotation = { pitch: -90, yaw: 90, roll: 180 };
+const sharedHatchetRotation = { pitch: 90, yaw: -90, roll: 0 };
 for (const toolKey of ['hatchet','hoe','bshuakauitl','pickshovel','daggersword','plainssword','dagger','kylie','warcleaver','fishingspear']) {
   const grip = grips.authoredPrimaryGripForTool(toolKey);
-  assert.strictEqual(grip.position.y, 0.05, `${toolKey} must inherit hatchet's authored primary-grip Y`);
+  assert.strictEqual(grip.position.x, -0.04, `${toolKey} must inherit hatchet's authored primary-grip X`);
+  assert.strictEqual(grip.position.y, -0.04, `${toolKey} must inherit hatchet's authored primary-grip Y`);
   assert.deepStrictEqual(
     JSON.parse(JSON.stringify(grip.rotationDeg)),
     sharedHatchetRotation,
@@ -398,8 +399,8 @@ const oldHatchetSpan = JSON.parse(JSON.stringify(oldRotationDraft.tools.hatchet.
 grips.replace(oldRotationDraft);
 assert.deepStrictEqual(
   JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('hatchet').position)),
-  { x: 0.123, y: 0.05, z: 0.789 },
-  'hatchet-example migration must replace Y while preserving authored X/Z',
+  { x: -0.04, y: -0.04, z: 0.789 },
+  'hatchet-example migration must replace X/Y while preserving authored Z',
 );
 assert.deepStrictEqual(
   JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('hatchet').rotationDeg)),
@@ -408,8 +409,8 @@ assert.deepStrictEqual(
 );
 assert.deepStrictEqual(
   JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('kylie').position)),
-  { x: -0.222, y: 0.05, z: 0.444 },
-  'hatchet-example migration must preserve each other weapon\'s X/Z while replacing Y',
+  { x: -0.04, y: -0.04, z: 0.444 },
+  'hatchet-example migration must preserve each other weapon\'s Z while replacing X/Y',
 );
 assert.deepStrictEqual(
   JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('kylie').rotationDeg)),
@@ -436,7 +437,7 @@ assert.doesNotMatch(gripConfigSource, /function primaryGripForTool\(\) \{ return
 
 assert.match(gripModeSource, /palm-parallel/, 'palm-parallel grip mode must remain');
 assert.match(gripModeSource, /palm-perpendicular/, 'palm-perpendicular grip mode must remain');
-assert.match(gripModeSource, /'palm-perpendicular'[\s\S]*rotationDeg:\s*Object\.freeze\(\{\s*pitch:\s*-90,\s*yaw:\s*0,\s*roll:\s*0\s*\}\)/, 'palm-perpendicular must be flipped 180 degrees around local X from the old +90 orientation');
+assert.match(gripModeSource, /'palm-perpendicular'[\s\S]*rotationDeg:\s*Object\.freeze\(\{\s*pitch:\s*0,\s*yaw:\s*0,\s*roll:\s*-90\s*\}\)/, 'palm-perpendicular must rotate around the weapon\'s own Z (shaft) axis, not local X');
 assert.match(gripModeSource, /normalizedCalibration\.rotationQuaternion/, 'grip composition must consume the authoritative quaternion-native hand calibration');
 assert.match(gripModeSource, /const rotationQuaternion = normalizeQuat\(multiplyQuat\(modeQ, calibrationQ\)\)/, 'Grip Mode must compose before Hand Model Calibration without Euler re-entry');
 assert.doesNotMatch(gripModeSource, /targetRotation\s*=\s*\{[\s\S]*br\.pitch/, 'grip mode must not add calibration Euler channels at the X=90° singularity');
