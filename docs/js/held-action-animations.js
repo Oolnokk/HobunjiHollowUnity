@@ -201,7 +201,6 @@
     handScripts.push(new URL('js/attack-editor-hand-direct-attachments.js?v=20260919quatcal1', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-shoulder-controls.js?v=20260920palmnormal1', docsBase).href);
     handScripts.push(new URL('js/attack-editor-idle-hand-parity.js?v=20260920localhinge1', docsBase).href);
-    handScripts.push(new URL('js/attack-editor-hand-shoulder-animation-state.js?v=20260920poseelbow1', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-state-coherence.js?v=20260919handreview1', docsBase).href);
     handScripts.push(new URL('js/attack-editor-history.js?v=20260919history1', docsBase).href); // Loaded last so Undo/Redo can snapshot every hand/grip extension plus the core module once it initializes.
   } else if (!isAnimationAuthor) {
