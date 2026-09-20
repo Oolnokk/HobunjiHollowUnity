@@ -637,6 +637,7 @@
       deps.triggerWeaponHoldVisual(BLOCK_WINDUP_S + BLOCK_STRIKE_S, {
         anim: 'sweep',
         pose: BLOCK_POSE,
+        meleeSpacing: false, // Defensive raised-block stance is not an attack; the automatic thrust counter still receives normal melee spacing.
         windupFrac: BLOCK_WINDUP_S / (BLOCK_WINDUP_S + BLOCK_STRIKE_S),
         strikeFrac: 1,
       });
