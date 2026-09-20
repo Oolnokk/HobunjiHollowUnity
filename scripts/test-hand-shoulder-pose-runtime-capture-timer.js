@@ -62,6 +62,25 @@ function buildFixture() {
     'one hand may omit an elbow without inventing coordinates for the other hand');
 }
 
+// --- Missing elbow phases blend through the legacy shoulder target ----------
+{
+  const { windowObject } = buildFixture();
+  const runtime = windowObject.HobunjiHandShoulderPoseRuntime;
+  const pose = {
+    neutral: {},
+    windup: { elbows: { right: { x: 0.4, y: 0.2, z: -0.1 } } },
+    strike: {},
+  };
+  const atStart = runtime.elbowAt(0, { windupFrac: 0.2, strikeFrac: 0.6, holdFrac: 0.7 }, pose, 'attack', 'right');
+  assert.deepEqual(JSON.parse(JSON.stringify(atStart)), { x: 0, y: 0, z: 0 },
+    'missing Neutral elbow must mean shoulder-relative zero instead of snapping immediately to Windup');
+  const halfway = runtime.elbowAt(0.1, { windupFrac: 0.2, strikeFrac: 0.6, holdFrac: 0.7 }, pose, 'attack', 'right');
+  assert.deepEqual(JSON.parse(JSON.stringify(halfway)), { x: 0.2, y: 0.1, z: -0.05 },
+    'partially-authored elbows must interpolate continuously from the legacy shoulder target');
+  const allMissing = runtime.elbowAt(0.1, { windupFrac: 0.2 }, { neutral: {}, windup: {}, strike: {} }, 'attack', 'right');
+  assert.strictEqual(allMissing, null, 'an animation with no elbow keyframes at all must retain legacy shoulder targeting');
+}
+
 // --- Loading the module starts exactly one 250ms setInterval poll ----------
 {
   const { intervals } = buildFixture();
