@@ -498,7 +498,7 @@ for (const key of ['melee:thrust','melee:chop','melee:sweep','ranged:crossbow:lo
 assert.match(shoulderPoseProfilesSource, /grip: true, palmNormal: true/, 'idle endpoints must permit both hand-local shoulder hinges');
 assert.match(shoulderPoseProfilesSource, /grip: false, palmNormal: true/, 'active endpoints must keep only the palm-normal hinge');
 
-assert.match(shoulderAimSource, /localWristShoulderAxis = new THREE\.Vector3\(0, -1, 0\)/, 'the hand proximal axis remains local -Y because palm\/fingers extend +Y from the wrist origin');
+assert.match(shoulderAimSource, /localWristProximalAxis = new THREE\.Vector3\(0, -1, 0\)/, 'the hand proximal axis remains local -Y because palm\/fingers extend +Y from the wrist origin');
 assert.match(shoulderAimSource, /localGripAxis = new THREE\.Vector3\(1, 0, 0\)/, 'the across-grip local X axis must be the first allowed shoulder hinge');
 assert.match(shoulderAimSource, /localPalmNormalAxis = new THREE\.Vector3\(0, 0, 1\)/, 'the palm-normal local Z axis must be the second allowed shoulder hinge');
 assert.match(shoulderAimSource, /targetDirection\.copy\(elbow\)\.sub\(socket\.position\)/, 'hand targeting must solve from the wrist socket\/origin back toward the resolved elbow');
