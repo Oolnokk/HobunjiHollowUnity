@@ -549,8 +549,12 @@ assert.match(shoulderPoseRuntimeSource, /snapshot\.combatWindupFrac/, 'hand pose
 assert.match(weaponStanceSource, /runtimeState\.combatDirSign/, 'WeaponToolStances must expose active mirror sign to hand consumers');
 assert.match(weaponStanceSource, /runtimeState\.combatReturnNeutralMirrorSign/, 'WeaponToolStances must expose alternating-heavy return mirror sign to hand consumers');
 assert.match(shoulderControlsSource, /authorMidpointElbow/, 'editor hand controls must provide a one-shot midpoint authoring helper');
-assert.match(shoulderControlsSource, /wrist\.x\) - Number\(shoulder\.x\)\) \* 0\.5/, 'midpoint helper must persist the literal halfway shoulder-relative coordinate');
-assert.match(shoulderControlsSource, /runtime midpoint calculation/, 'hand controls must document that runtime does not recalculate midpoint elbows');
+// A point exactly on the straight shoulder<->wrist line aims the wrist the same
+// direction the unauthored fallback already does (both target the shoulder, which
+// sits on that same ray), so the helper must bend off that line or the button is a
+// silent no-op. See docs/js/attack-editor-hand-shoulder-controls.js's authorMidpointElbow.
+assert.match(shoulderControlsSource, /bendAmount/, 'midpoint helper must bend the elbow off the straight shoulder/wrist line so the button is not a silent no-op');
+assert.match(shoulderControlsSource, /Runtime never recalculates, clamps, or\s*\n\s*\/\/ otherwise owns this point/, 'hand controls must document that runtime does not recalculate midpoint elbows');
 assert.match(shoulderControlsSource, /poseRuntime\.weightsAt/, 'Attack Editor preview must use the same smooth pose interpolation');
 assert.match(shoulderControlsSource, /handHideArmSpritesPreview/, 'Attack Editor must retain preview-only arm hiding');
 assert.match(shoulderControlsSource, /handShowPaperArmGuide/, 'Attack Editor must expose the optional paper upper-arm\/elbow\/forearm guide');
