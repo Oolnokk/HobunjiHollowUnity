@@ -1105,6 +1105,8 @@
       'music scheduler mode=' + _ambientCueState.mode +
       ' owner=' + activeKind +
       ' url=' + (activeSnd?._trackUrl || 'none') +
+      ' combatOverride=' + _ambientCueState.combatOverrideActive +
+      ' ambientPaused=' + !!ambientSnd?.paused +
       ' blockForMs=' + Math.max(0, Math.round(_ambientCueState.blockUntil - performance.now())) +
       ' conditions=' + [world.maps, world.weather, world.timesOfDay, world.seasons, world.weekdays].join('/') +
       ' rainActive=' + deps.calendar.isRaining +
