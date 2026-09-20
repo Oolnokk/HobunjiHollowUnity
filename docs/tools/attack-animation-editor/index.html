@@ -1113,9 +1113,18 @@ $('toolEndFlipBtn').onclick = () => {
 syncToolEndFlipUi();
 
 $('flipBtn').onclick = () => {
+  const shoulderControls = window.HobunjiAttackEditorHandShoulderControls;
+  const elbowSnapshot = shoulderControls?.poseElbows || null;
   anim.poses.neutral = flipPose(anim.poses.neutral);
   anim.poses.windup = flipPose(anim.poses.windup);
   anim.poses.strike = flipPose(anim.poses.strike);
+  if (elbowSnapshot && shoulderControls?.setElbowForPhase) {
+    const mirrorPoint = point => point ? { x: -(Number(point.x) || 0), y: Number(point.y) || 0, z: Number(point.z) || 0 } : null;
+    for (const phase of ['neutral', 'windup', 'strike']) {
+      shoulderControls.setElbowForPhase(phase, 'left', mirrorPoint(elbowSnapshot?.[phase]?.right));
+      shoulderControls.setElbowForPhase(phase, 'right', mirrorPoint(elbowSnapshot?.[phase]?.left));
+    }
+  }
   toolMirrored = !toolMirrored;
   toolBase.position.x = toolMirrored ? -baseAttachX : baseAttachX;
   if (toolPlaneMesh) toolPlaneMesh.scale.x = toolMirrored ? -1 : 1;
