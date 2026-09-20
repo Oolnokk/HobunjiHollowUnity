@@ -1,0 +1,29 @@
+{
+  "schema": "hobunji_species_pose_orbit_scales.v1",
+  "species": {
+    "mao-ao": {
+      "male": 1,
+      "female": 1
+    },
+    "engh-sho": {
+      "male": 1,
+      "female": 1
+    },
+    "kenkari": {
+      "male": 1,
+      "female": 1
+    },
+    "rakakoan": {
+      "male": 1,
+      "female": 1
+    },
+    "mashtzarr": {
+      "male": 1,
+      "female": 1
+    },
+    "tletingan": {
+      "male": 1.096774193548387,
+      "female": 1.0806451612903225
+    }
+  }
+}
