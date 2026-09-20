@@ -26,8 +26,8 @@
     stances: Object.freeze({
       tool: Object.freeze({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: 0 }),
       hoeTool: Object.freeze({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: -90 }),
-      heavyWeapon: Object.freeze({ x: 0.03, y: 0.37, z: -0.01, pitch: -155, yaw: -79, bodyYaw: -15, roll: -82 }),
-      lightWeapon: Object.freeze({ x: 0.04, y: 0, z: 0, pitch: 20, yaw: -70, bodyYaw: -40, roll: -65 }),
+      heavyWeapon: Object.freeze({ x: -0.03, y: 0.27, z: 0.02, pitch: -23, yaw: 104, bodyYaw: -15, roll: 89 }),
+      lightWeapon: Object.freeze({ x: -0.09, y: -0.08, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 }),
     }),
   });
 

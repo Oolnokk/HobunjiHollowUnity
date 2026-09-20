@@ -25,7 +25,7 @@ assert.match(life, /ob-face-view/, 'view toggle must switch an explicit preview 
 
 assert.match(life, /STARTER_WEAPON_KEY = 'hatchet_nativeCopper'/, 'preview weapon must be one of onboarding-core\'s actual starter Native Copper tools');
 assert.match(life, /WeaponToolStances\?\.poses\?\.heavyWeapon/, 'starter Hatchet must use the shared Heavy Weapon idle stance');
-assert.match(life, /x: 0\.03, y: 0\.37, z: -0\.01[\s\S]{0,100}pitch: -155, yaw: -79, bodyYaw: -15, roll: -82/, 'Heavy Weapon fallback must match weapon-tool-stances.js exactly');
+assert.match(life, /x: -0\.03, y: 0\.27, z: 0\.02[\s\S]{0,100}pitch: -23, yaw: 104, bodyYaw: -15, roll: 89/, 'Heavy Weapon fallback must match weapon-tool-stances.js exactly');
 assert.match(life, /handAttachX/, 'weapon base must use the avatar\'s scanned runtime hand-attach X');
 assert.match(life, /handAttachY/, 'weapon base must use the avatar\'s scanned runtime hand-attach Y');
 assert.match(life, /toolScaleForTool\?\.\(STARTER_WEAPON_SHAPE\)/, 'weapon sprite must use the shared authored hand-tool scale');

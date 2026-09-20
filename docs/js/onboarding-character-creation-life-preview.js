@@ -237,8 +237,8 @@
 
   function idleWeaponPose() {
     return window.WeaponToolStances?.poses?.heavyWeapon || {
-      x: 0.03, y: 0.37, z: -0.01,
-      pitch: -155, yaw: -79, bodyYaw: -15, roll: -82,
+      x: -0.03, y: 0.27, z: 0.02,
+      pitch: -23, yaw: 104, bodyYaw: -15, roll: 89,
     }; // Exact built-in Heavy Weapon fallback from weapon-tool-stances.js.
   }
 
