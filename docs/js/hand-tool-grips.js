@@ -299,7 +299,7 @@
     return { ...result, source: 'animation-pose' };
   }
 
-  function inAttackEditor() { return /\/tools\/attack-animation-editor\//.test(global.location?.pathname || ''); }
+  function inAttackEditor() { return /\/tools\/attack-animation-editor\//.test(global.location?.pathname || (typeof location !== 'undefined' ? location.pathname : '')); }
 
   function editorAnimationGripState() {
     const progress = clamp01(document.getElementById('scrub')?.value ?? 0);
