@@ -1,12 +1,15 @@
 (() => {
   'use strict';
 
+  // Collision Footing still passes through ResourceSystem.spendFooting(), whose shared
+  // bridge doubles requested loss. Keep these fallback coefficients aligned with the
+  // config's pre-bridge values so a missing config never restores the old overtuned hit.
   const DEFAULTS = Object.freeze({
-    fallback: Object.freeze({ footing: 12 }),
-    stone: Object.freeze({ health: 8, footing: 20, shatteredStamina: 10, bruisedHealth: 8 }),
-    wood: Object.freeze({ footing: 14, bleedingHealth: 8, woundedStamina: 8 }),
-    bladed: Object.freeze({ health: 20, bleedingHealth: 22, woundedStamina: 14 }),
-    fire: Object.freeze({ burningHealth: 18 }),
+    fallback: Object.freeze({ footing: 6 }),
+    stone: Object.freeze({ health: 4, footing: 10, shatteredStamina: 5, bruisedHealth: 4 }),
+    wood: Object.freeze({ footing: 7, bleedingHealth: 4, woundedStamina: 4 }),
+    bladed: Object.freeze({ health: 10, bleedingHealth: 11, woundedStamina: 7 }),
+    fire: Object.freeze({ burningHealth: 9 }),
     burningDodgeRecovery: 12,
   });
 
