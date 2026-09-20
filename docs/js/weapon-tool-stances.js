@@ -347,8 +347,14 @@
     const hf = holdS > 0
       ? Math.min(0.99, sf + holdS / totalS)
       : Math.min(0.99, sf + (1 - sf) * 0.3);
+    const activeMirrorSign = opts?.dirSign === -1 ? -1 : 1;
+    const neutralMirrorSign = Number(opts?.pose?.neutralMirrorSign) === -1 ? -1 : 1;
+    const returnNeutralMirrorSign = Number(opts?.pose?.returnNeutralMirrorSign) === -1 ? -1 : 1;
     combatVisualState = {
       anim: opts?.anim || activeState().def?.animStyle || 'thrust',
+      dirSign: activeMirrorSign,
+      neutralMirrorSign,
+      returnNeutralMirrorSign,
       totalS,
       wf,
       sf,
@@ -583,6 +589,9 @@
     runtimeState.combatAnim = visual?.anim || null;
     runtimeState.combatProgress = visual?.progress ?? null;
     runtimeState.combatPoseScale = visual?.poseScale ?? 1; // Used by hand/shoulder consumers to mirror partial held releases.
+    runtimeState.combatDirSign = visual?.dirSign ?? 1;
+    runtimeState.combatNeutralMirrorSign = visual?.neutralMirrorSign ?? 1;
+    runtimeState.combatReturnNeutralMirrorSign = visual?.returnNeutralMirrorSign ?? 1;
     runtimeState.combatNeutralWeight = visual ? neutralWeightForVisual(visual) : null; // Used by shoulder fallback profiles without allocating a debug snapshot.
     runtimeState.sweepPlaneNeutralCompensationDeg = visual?.anim === 'sweep'
       ? Math.round(90 * neutralWeightForVisual(visual))
@@ -609,6 +618,9 @@
       combatAnim: visual?.anim || null,
       combatProgress: visual?.progress ?? null,
       combatPoseScale: visual?.poseScale ?? 1,
+      combatDirSign: visual?.dirSign ?? 1,
+      combatNeutralMirrorSign: visual?.neutralMirrorSign ?? 1,
+      combatReturnNeutralMirrorSign: visual?.returnNeutralMirrorSign ?? 1,
       combatNeutralWeight: visual ? neutralWeightForVisual(visual) : null,
       sweepPlaneNeutralCompensationDeg: visual?.anim === 'sweep'
         ? Math.round(90 * neutralWeightForVisual(visual))
