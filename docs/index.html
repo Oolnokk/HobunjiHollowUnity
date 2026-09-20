@@ -134,10 +134,6 @@
   <script src="js/portrait-utils.js?v=20260918centroid2"></script>
   <script src="js/portrait-breathing.js?v=20260831syllable4"></script>
   <script src="js/npc-avatar-preview-utils.js?v=20260830flip2"></script>
-  <!-- Local database overrides must exist before species-pose-scaling loads so
-       its authored per-species/gender orbit table can come from the selected
-       repo/local database source just like attack-values. -->
-  <script src="js/local-db-overrides.js?v=20260920orbit1"></script>
   <script src="js/png-plane-avatar.js?v=20260920orbit1"></script>
   <script src="js/species-pose-scaling.js?v=20260920orbit1"></script>
   <!-- Keeps the portrait plane's occlusion-depth redraws (used so its silhouette can
@@ -196,8 +192,16 @@
        scans an already-generated wilderness zone for a site instead of
        reserving one before generation; used by bandit camps. -->
   <script src="js/temporary-locales.js?v=20260725a"></script>
-  <!-- Local database overrides are parser-loaded above with the portrait/pose
-       stack because species-pose-scaling now consumes them too. -->
+  <!-- Local database overrides (window.LocalDBOverrides) — lets docs/tools/
+       editors save edited repo-tracked JSON into localStorage and have the
+       game load that instead of the repo file when Local source is selected. -->
+  <script src="js/local-db-overrides.js?v=20260920orbit1"></script>
+  <script>
+    // species-pose-scaling parser-loads earlier for avatar consumers, then
+    // re-resolves its config now that LocalDBOverrides knows the selected
+    // repo/local source. This preserves the historical LocalDB load position.
+    window.HobunjiSpeciesPoseScale?.reloadFromDatabaseSource?.();
+  </script>
   <!-- Item trait vocabulary/computation (window.ItemTraits) — see
        docs/js/item-traits.js. Initialized from game.js once ITEM_DEFS
        exists; consumed by npc-gifting.js and tools/item-database-editor. -->
