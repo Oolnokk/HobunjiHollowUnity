@@ -1,7 +1,8 @@
 // Attack Editor shoulder-compass authoring.
 //
-// Pitch/Yaw/Roll are stored PER POSE in the normal animation JSON. Checkbox states
-// become 0..1 weights at runtime and lerp with the same Neutral/Windup/Strike phase
+// X/Y/Z hand-rotation follow is stored PER POSE in the normal animation JSON
+// (legacy data keys remain pitch/yaw/roll for compatibility). Checkbox states become
+// 0..1 weights at runtime and lerp with the same Neutral/Windup/Strike phase
 // curve as the tool pose. Arm hiding remains a preview-only convenience.
 (function (global) {
   'use strict';
@@ -63,34 +64,33 @@
     previewApi.renderProfileToCanvas = wrappedPreviewRender;
   }
 
+  const handCard = profileSelect.closest('.card');
+
   function checkboxId(phase, axis) {
     return `handShoulderAim_${phase}_${axis}`;
   }
 
-  function addPoseControls(phase) {
-    const panel = document.getElementById(`panel${phase[0].toUpperCase()}${phase.slice(1)}`);
-    const group = panel?.closest('.poseGroup');
-    if (!group || group.querySelector(`[data-hand-shoulder-phase="${phase}"]`)) return;
-    const box = document.createElement('div');
-    box.dataset.handShoulderPhase = phase;
-    box.style.cssText = 'margin-top:8px;padding:7px;border:1px solid rgba(251,113,133,.22);border-radius:8px;background:rgba(251,113,133,.045)';
-    box.innerHTML = `
-      <div class="help" style="margin-bottom:5px"><b>Shoulder compass — ${phase}</b></div>
-      <div class="row" style="gap:12px">
-        ${['pitch','yaw','roll'].map(axis => `<label class="fieldRow" style="cursor:pointer;margin:0"><input id="${checkboxId(phase, axis)}" type="checkbox" style="width:auto">${axis[0].toUpperCase()}${axis.slice(1)} → shoulder</label>`).join('')}
-      </div>
-    `;
-    const scrubButton = group.querySelector('button');
-    group.insertBefore(box, scrubButton || null);
-  }
-  PHASES.forEach(addPoseControls);
+  const followGroup = document.createElement('div'); // Hand-only orientation assist; deliberately lives outside the tool-pose controls.
+  followGroup.className = 'poseGroup';
+  followGroup.id = 'handShoulderFollowGroup';
+  followGroup.innerHTML = `
+    <div class="poseGroupHead"><span class="dot" style="background:#fb7185"></span>Hand shoulder-follow by animation pose</div>
+    <div class="help" style="margin-bottom:7px"><b>This rotates the HAND, never the weapon.</b> Each checkbox lets that hand orientation axis follow toward the shoulder during the named pose. X/Y/Z below are hand rotations; stored legacy keys are pitch/yaw/roll.</div>
+    ${PHASES.map(phase => `
+      <div class="field" data-hand-shoulder-phase="${phase}">
+        <label>${phase[0].toUpperCase() + phase.slice(1)} hand follow</label>
+        <div class="row" style="gap:9px;flex-wrap:wrap">
+          ${[['pitch','X'],['yaw','Y'],['roll','Z']].map(([axis,label]) => `<label class="fieldRow" style="cursor:pointer;margin:0"><input id="${checkboxId(phase, axis)}" type="checkbox" style="width:auto">${label} rotation → shoulder</label>`).join('')}
+        </div>
+      </div>`).join('')}
+  `;
+  handCard?.appendChild(followGroup);
 
-  const handCard = profileSelect.closest('.card');
   const previewGroup = document.createElement('div');
   previewGroup.className = 'poseGroup';
   previewGroup.innerHTML = `
-    <div class="poseGroupHead"><span class="dot" style="background:#fb7185"></span>Shoulder compass preview</div>
-    <div class="help" style="margin-bottom:7px">Neutral defaults to <b>Pitch + Roll</b>. Windup and Strike default to <b>Roll only</b>. Different boxes blend continuously with the animation lerp.</div>
+    <div class="poseGroupHead"><span class="dot" style="background:#fb7185"></span>Shoulder-follow preview</div>
+    <div class="help" style="margin-bottom:7px">Neutral defaults to <b>X + Z rotation follow</b>. Windup and Strike default to <b>Z only</b>. The three pose settings blend continuously with the animation.</div>
     <div class="field"><label class="fieldRow" style="cursor:pointer"><input id="handHideArmSpritesPreview" type="checkbox" style="width:auto;margin-right:6px">Hide arm sprites in preview</label></div>
     <div class="help" id="handShoulderAimStatus">Arm hiding is preview-only and is not exported.</div>
   `;
@@ -121,7 +121,7 @@
     }
     hide.checked = hideArmSprites;
     const weights = currentWeights();
-    compassStatus.textContent = `Live lerp: Pitch ${(weights.pitch * 100).toFixed(0)}% · Yaw ${(weights.yaw * 100).toFixed(0)}% · Roll ${(weights.roll * 100).toFixed(0)}% · arms ${hideArmSprites ? 'hidden' : 'visible'}.`;
+    compassStatus.textContent = `Live hand-follow lerp: X rotation ${(weights.pitch * 100).toFixed(0)}% · Y rotation ${(weights.yaw * 100).toFixed(0)}% · Z rotation ${(weights.roll * 100).toFixed(0)}% · arms ${hideArmSprites ? 'hidden' : 'visible'}.`;
   }
 
   function injectPoseAimIntoObject(parsed) {
@@ -201,23 +201,7 @@
     requestPreviewRebuild();
   });
 
-  // Restore per-pose boxes from exported JSON. Missing older data deliberately
-  // migrates to Neutral Pitch+Roll and active Roll-only.
-  loadFile?.addEventListener('change', async () => {
-    const file = loadFile.files?.[0];
-    if (!file) return;
-    try {
-      const parsed = JSON.parse(await file.text());
-      for (const phase of PHASES) {
-        poseAim[phase] = normalizeBooleanAim(parsed?.poses?.[phase]?.shoulderAim, DEFAULTS[phase]);
-      }
-      setTimeout(() => {
-        syncCheckboxes();
-        refreshJsonExtension();
-        global.ProceduralHandFrameDriver?.syncNow?.();
-      }, 0);
-    } catch (_) {}
-  });
+
 
   // Keep the live status useful while playback/scrubbing changes interpolation.
   let lastStatusSignature = '';
@@ -237,8 +221,30 @@
 
   global.HobunjiAttackEditorHandShoulderControls = {
     get hideArmSprites() { return hideArmSprites; },
+    loadFromAnimationObject(parsed) {
+      for (const phase of PHASES) {
+        poseAim[phase] = normalizeBooleanAim(parsed?.poses?.[phase]?.shoulderAim, DEFAULTS[phase]);
+      }
+      syncCheckboxes();
+      refreshJsonExtension();
+      global.ProceduralHandFrameDriver?.syncNow?.();
+      return true;
+    },
     get poseAim() { return JSON.parse(JSON.stringify(poseAim)); },
     currentWeights,
+    snapshot() {
+      return { hideArmSprites, poseAim: JSON.parse(JSON.stringify(poseAim)) }; // Undo/Redo preserves all three hidden pose states.
+    },
+    restore(snapshot) {
+      if (!snapshot) return false;
+      hideArmSprites = snapshot.hideArmSprites === true;
+      for (const phase of PHASES) poseAim[phase] = normalizeBooleanAim(snapshot.poseAim?.[phase], DEFAULTS[phase]);
+      syncCheckboxes();
+      refreshJsonExtension();
+      requestPreviewRebuild();
+      global.ProceduralHandFrameDriver?.syncNow?.();
+      return true;
+    },
     setHideArmSprites(value) {
       hideArmSprites = !!value;
       syncCheckboxes();

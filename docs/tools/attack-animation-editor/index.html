@@ -49,13 +49,22 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
 #viewport{flex:1;position:relative;min-width:240px}
 canvas{display:block;width:100%;height:100%}
 
-.poseGroup{border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:8px;margin-bottom:10px;background:rgba(255,255,255,.025)}
-.poseGroup button{width:100%;margin-top:4px}
-.poseGroupHead{font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px;display:flex;align-items:center;gap:6px}
-.poseGroupHead .dot{width:9px;height:9px;border-radius:50%;display:inline-block}
-.dotNeutral{background:#34d399}
-.dotWindup{background:var(--warn)}
-.dotStrike{background:var(--bad)}
+.compactGrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.poseTabs{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:10px 0 8px}
+.poseTab{width:100%;border-color:rgba(255,255,255,.14);background:rgba(255,255,255,.05)}
+.poseTab.active{outline:2px solid var(--acc);background:rgba(106,167,255,.18)}
+.poseEditBox{border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:9px;background:rgba(255,255,255,.025)}
+.editToolbar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+.editToolbar .pill{margin-left:auto}
+.advancedDetails{border:1px solid rgba(255,255,255,.09);border-radius:10px;padding:7px 9px;margin-top:8px;background:rgba(0,0,0,.10)}
+.advancedDetails>summary{cursor:pointer;color:var(--muted);font-size:12px;font-weight:700;user-select:none}
+.advancedDetails[open]>summary{margin-bottom:8px;color:var(--text)}
+.collapsibleCard>summary{cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;font-weight:800;font-size:13px;text-transform:uppercase;letter-spacing:.3px}
+.collapsibleCard>summary::-webkit-details-marker{display:none}
+.collapsibleCard>summary::after{content:'▸';color:var(--muted)}
+.collapsibleCard[open]>summary::after{content:'▾'}
+.collapsibleCard[open]>summary{margin-bottom:9px}
+.dotNeutral{background:#34d399}.dotWindup{background:var(--warn)}.dotStrike{background:var(--bad)}
 .timeline{position:relative;height:26px;border-radius:8px;overflow:hidden;display:flex;
   border:1px solid rgba(255,255,255,.16);margin-bottom:4px}
 .timelineSeg{height:100%;display:flex;align-items:center;justify-content:center;
@@ -80,8 +89,17 @@ canvas{display:block;width:100%;height:100%}
   font:11px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#bfdbfe}
 .logLine{padding:2px 4px;border-radius:4px}
 .logToggle{position:absolute;right:10px;top:10px;z-index:9}
+.debugToggle{position:absolute;left:10px;top:10px;z-index:9}
 @media(max-width:760px){
-  #sidebar{width:320px;max-width:68vw;min-width:280px}
+  #app{flex-direction:column}
+  #viewport{order:1;min-height:42vh;flex:0 0 42vh}
+  #sidebar{order:2;width:100%;max-width:none;min-width:0;height:58vh;border-right:0;border-top:1px solid var(--line)}
+  .card{margin:8px}
+  .compactGrid{grid-template-columns:1fr 1fr}
+  #debug{max-width:calc(100vw - 20px);max-height:34vh;overflow:auto}
+}
+@media(max-width:440px){
+  .compactGrid{grid-template-columns:1fr}
 }
 </style>
 <script src="../../js/panel-ui.js"></script>
@@ -92,89 +110,61 @@ canvas{display:block;width:100%;height:100%}
 <div id="app">
 <aside id="sidebar">
   <div class="card section" style="--sec:#6aa7ff;--secBg:rgba(106,167,255,.10)">
-    <div class="sectionTitle"><b>Tool / held action animation</b><span class="sectionTag">meta</span></div>
-    <div class="field"><label>Name</label><input id="animName" value="New Attack"></div>
-    <div class="field"><label>Animation style (reference only)</label>
-      <select id="animStyle">
-        <option value="thrust">thrust</option>
-        <option value="chop">chop</option>
-        <option value="sweep" selected>sweep</option>
-        <option value="toss">toss</option>
-        <option value="drink">drink</option>
-        <option value="ranged">ranged</option>
-      </select>
+    <div class="sectionTitle"><b>1 · Setup</b><span class="sectionTag">what you are authoring</span></div>
+    <div class="row" id="editorHistoryToolbar" style="margin-bottom:8px">
+      <button id="editorUndoBtn" class="secondary" disabled>↶ Undo</button>
+      <button id="editorRedoBtn" class="secondary" disabled>↷ Redo</button>
+      <span class="pill" id="editorHistoryStatus">history: ready</span>
     </div>
-    <div class="field"><label>Tool / held sprite (visual reference)</label><select id="toolSpriteSelect"></select></div>
-    <div class="help">Style is saved with the export but does not constrain the rig. Tool and bottle previews use their actual in-game PNG orientation and scale.</div>
-  </div>
+    <div class="help" style="margin:-2px 0 8px">Undo/Redo covers editable values throughout Attack, Grip, Hand Model, Stances, Stats, and preview settings. Ctrl/Cmd+Z · Ctrl/Cmd+Shift+Z.</div>
+    <div class="field"><label>Action</label><select id="actionSelect"></select></div>
+    <div class="help" id="actionSourceHelp" style="margin-bottom:8px">Choose the real gameplay action first. Its animation, timing family, and practical settings load together.</div>
+    <div class="compactGrid">
+      <div class="field"><label>Animation name</label><input id="animName" value="New Attack" readonly></div>
+      <div class="field"><label>Runtime style</label>
+        <select id="animStyle" disabled>
+          <option value="thrust">thrust</option>
+          <option value="chop">chop</option>
+          <option value="sweep" selected>sweep</option>
+          <option value="toss">toss</option>
+          <option value="throw">throw</option>
+          <option value="drink">drink</option>
+          <option value="ranged">ranged</option>
+        </select>
+      </div>
+    </div>
+    <div class="field"><label>Preview held sprite / weapon</label><select id="toolSpriteSelect"></select></div>
+    <div class="compactGrid">
+      <div class="field"><label>Preview species</label><select id="avatarSpecies"></select></div>
+      <div class="field"><label>Preview gender</label><select id="avatarGender"></select></div>
+    </div>
+    <div class="help">The selected Action owns the animation being edited. The sprite selector is only a visual preview choice for actions that can be performed with more than one weapon. Species/gender changes only the preview transform and never rewrite authored pose values.</div>
 
-  <div class="card section" style="--sec:#a78bfa;--secBg:rgba(167,139,250,.10)">
-    <div class="sectionTitle"><b>Avatar</b><span class="sectionTag">species / height</span></div>
-    <div class="field"><label>Species</label><select id="avatarSpecies"></select></div>
-    <div class="field"><label>Gender</label><select id="avatarGender"></select></div>
-    <div class="field">
-      <label>Neck turn strength <span id="neckStrengthVal">100%</span></label>
-      <input id="neckStrength" type="range" min="0" max="2" step="0.05" value="1">
-    </div>
-    <div class="field">
-      <label>Neck weight radius <span id="neckRadiusVal">30.0% height</span></label>
-      <input id="neckRadius" type="range" min="0.01" max="0.30" step="0.005" value="0.30">
-    </div>
-    <div class="field" style="margin-top:4px">
+    <details class="advancedDetails">
+      <summary>Avatar preview diagnostics</summary>
+      <div class="field">
+        <label>Neck turn strength <span id="neckStrengthVal">100%</span></label>
+        <input id="neckStrength" type="range" min="0" max="2" step="0.05" value="1">
+      </div>
+      <div class="field">
+        <label>Neck weight radius <span id="neckRadiusVal">30.0% height</span></label>
+        <input id="neckRadius" type="range" min="0.01" max="0.30" step="0.005" value="0.30">
+      </div>
       <label class="fieldRow" style="cursor:pointer"><input type="checkbox" id="showHeadSkinVertices" style="width:auto;margin-right:6px">Show head-skinned vertices</label>
-    </div>
-    <div class="help">Swaps the preview body for a PNG plane avatar at that species' actual in-game height. The mesh is fitted to opaque avatar cells and its neck hinge is located from the base head sprite's alpha centroid. Neck strength scales the automatic body-yaw counter-turn; radius controls how softly the head weights blend into the torso. The vertex overlay marks every point with more than 1% head weight: cyan is a light blend and yellow is fully head-skinned. These are preview-only diagnostics and are not exported with the attack.</div>
+      <div class="help">These controls affect only the preview rig and are never exported with the animation.</div>
+    </details>
   </div>
 
   <div class="card section" style="--sec:#34d399;--secBg:rgba(52,211,153,.10)">
-    <div class="sectionTitle"><b>Combat stats</b><span class="sectionTag">damage / range / hitbox</span></div>
-    <div class="field"><label>Attack</label><select id="statSlotSelect"></select></div>
-    <div id="statFields"></div>
-    <div class="field" style="margin-top:4px">
-      <label class="fieldRow" style="cursor:pointer"><input type="checkbox" id="showHitbox" checked style="width:auto;margin-right:6px">Show hitbox wedge in viewport</label>
-    </div>
-    <div class="help">Loaded live from docs/config/combat/attack-values.json (falls back to a bundled default if the fetch fails, e.g. opened as a local file). The wedge shown in the viewport is the exact same 2D angle+range cone docs/game.js's inCone() tests hits against — height-agnostic, drawn flat at the rig's feet along its facing (+Z). Range is shown in tiles; entries that only have a rangeMul (no direct rangeTiles) approximate it against the base weapon's 'cut' range (2 tiles) purely for this preview.</div>
-    <div class="row" style="margin-top:8px">
-      <button id="statsDownloadBtn" class="secondary">⭳ Download attack-values.json</button>
-      <button id="statsCopyBtn" class="secondary">Copy JSON</button>
-    </div>
-    <div class="row" style="margin-top:6px">
-      <button id="statsSaveOverrideBtn" class="secondary">💾 Save as Local Override</button>
-      <button id="statsClearOverrideBtn" class="secondary">🗑 Clear Local Override</button>
-    </div>
-    <div class="help" id="statsOverrideStatus"></div>
-  </div>
+    <div class="sectionTitle"><b>2 · Animate</b><span class="sectionTag">one current pose</span></div>
 
-  <div class="card section" style="--sec:#fbbf24;--secBg:rgba(251,191,36,.10)">
-    <div class="sectionTitle"><b>Timing</b><span class="sectionTag">attack / load / fire sequence</span></div>
-    <div class="field"><label>Playback sequence</label>
-      <select id="playbackSequence">
-        <option value="attack">Attack: Neutral → Windup → Strike → Neutral</option>
-        <option value="load">Load: Neutral → Windup → Neutral</option>
-        <option value="fire">Fire: Neutral → Strike → Neutral</option>
-      </select>
+    <div class="row">
+      <button id="playPauseBtn">⏸ Pause</button>
+      <button id="resetPreviewBtn" class="secondary">↺ Restart preview</button>
+      <span class="pill" id="phasePill">phase: —</span>
     </div>
-    <div class="field">
-      <label>Windup ends at <span id="windupFracVal">16%</span> of swing</label>
-      <input id="windupFrac" type="range" min="0.02" max="0.9" step="0.01" value="0.16">
-    </div>
-    <div class="field">
-      <label>Strike ends at <span id="strikeFracVal">55%</span> of swing</label>
-      <input id="strikeFrac" type="range" min="0.03" max="0.98" step="0.01" value="0.55">
-    </div>
-    <div class="field">
-      <label>Hold ends at <span id="holdFracVal">68%</span> of swing</label>
-      <input id="holdFrac" type="range" min="0.03" max="0.99" step="0.01" value="0.68">
-    </div>
-    <div class="field"><label>Preview duration (seconds)</label>
-      <input id="durationS" type="number" min="0.05" max="3" step="0.05" value="0.5">
-    </div>
-    <div class="help">Attack uses all three poses. Load intentionally skips Strike. Fire intentionally skips Windup, reaches Strike abruptly at strike%, optionally holds, then returns to Neutral.</div>
-  </div>
 
-  <div class="card section" style="--sec:#34d399;--secBg:rgba(52,211,153,.10)">
-    <div class="sectionTitle"><b>Pose editor</b><span class="sectionTag">neutral, windup &amp; strike, all always shown</span></div>
-    <div class="timeline" id="timeline">
+    <div class="timeline" id="timeline" style="margin-top:9px">
       <div class="timelineSeg" id="segWindup">windup</div>
       <div class="timelineSeg" id="segStrike">strike</div>
       <div class="timelineSeg" id="segHold">hold</div>
@@ -182,87 +172,103 @@ canvas{display:block;width:100%;height:100%}
       <div class="timelineMarker" id="timelineMarker"></div>
     </div>
     <div class="timelineLabels"><span>Neutral</span><span>Windup</span><span>Strike</span><span>Neutral</span></div>
-    <div class="poseGroup">
-      <div class="poseGroupHead"><span class="dot dotNeutral"></span>Neutral pose (idle / rest)</div>
-      <div id="panelNeutral" data-phase="neutral"></div>
-      <button id="scrubNeutralBtn" class="secondary">⏵ Scrub to Neutral</button>
-    </div>
-    <div class="poseGroup">
-      <div class="poseGroupHead"><span class="dot dotWindup"></span>Windup pose</div>
-      <div id="panelWindup" data-phase="windup"></div>
-      <button id="scrubWindupBtn" class="secondary">⏵ Scrub to Windup</button>
-    </div>
-    <div class="poseGroup">
-      <div class="poseGroupHead"><span class="dot dotStrike"></span>Strike pose</div>
-      <div id="panelStrike" data-phase="strike"></div>
-      <button id="scrubStrikeBtn" class="secondary">⏵ Scrub to Strike</button>
-    </div>
-    <div class="help">x: side reach (+ = character's right) • y: height • z: forward reach (+ = away from body) • pitch: tip up/down • yaw: tool's own spin • roll: tool's own twist around its forward axis (e.g. rotating an axe/hoe head for a proper chop) • body yaw: turns the whole character (sweep-style swings turn the body, not the tool) • tool scale: uniformly sizes the held sprite for the entire animation and is authored on Neutral only</div>
-  </div>
-
-  <div class="card section" style="--sec:#f472b6;--secBg:rgba(244,114,182,.10)">
-    <div class="sectionTitle"><b>3D Gizmo</b><span class="sectionTag">drag the tool in the viewport</span></div>
-    <div class="field"><label>Editing</label>
-      <select id="gizmoPhase">
-        <option value="neutral">Neutral pose</option>
-        <option value="windup">Windup pose</option>
-        <option value="strike">Strike pose</option>
-      </select>
-    </div>
-    <div class="row">
-      <button id="gizmoOffBtn" class="secondary active">Off</button>
-      <button id="gizmoMoveBtn" class="secondary">⊹ Move</button>
-      <button id="gizmoRotateBtn" class="secondary">↻ Rotate</button>
-    </div>
-    <div class="help">Move/Rotate attach a draggable gizmo to the tool and freeze the preview on the pose you picked above — dragging it writes straight back into that pose's x/y/z/pitch/yaw/roll sliders. Body yaw isn't part of the gizmo since it rotates the whole character, not just the tool.</div>
-  </div>
-
-  <div class="card section" style="--sec:#22d3ee;--secBg:rgba(34,211,238,.10)">
-    <div class="sectionTitle"><b>Tool stance presets</b><span class="sectionTag">idle &amp; swing</span></div>
-    <div class="field"><label>Preset</label><select id="presetSelect"></select></div>
-    <div class="row"><button id="loadPresetBtn">Load Preset</button></div>
-    <div class="help">"Idle" presets freeze the preview on that tool's resting hold (no swing) and load that tool's sprite. "Swing" presets load that tool's in-game windup/strike shape as an exact port of game.js's updateToolMesh math (angles converted to degrees, positions relative to the same prism-derived base).</div>
-  </div>
-
-  <div class="card section" style="--sec:#fb7185;--secBg:rgba(251,113,133,.10)">
-    <div class="sectionTitle"><b>Playback</b><span class="sectionTag">auto-lerp preview</span></div>
-    <div class="row">
-      <button id="playPauseBtn">⏸ Pause</button>
-      <button id="resetPreviewBtn" class="secondary">Restart</button>
-      <span class="pill" id="phasePill">phase: —</span>
-    </div>
-    <div class="field" style="margin-top:8px">
-      <label>Scrub (drag to pause &amp; inspect a frame)</label>
+    <div class="field">
+      <label>Preview / scrub</label>
       <input id="scrub" type="range" min="0" max="1" step="0.001" value="0">
     </div>
+
+    <div class="compactGrid">
+      <div class="field"><label>Sequence</label>
+        <select id="playbackSequence">
+          <option value="attack">Attack: Neutral → Windup → Strike → Neutral</option>
+          <option value="load">Load: Neutral → Windup → Neutral</option>
+          <option value="fire">Fire: Neutral → Strike → Neutral</option>
+        </select>
+      </div>
+      <div class="field"><label>Duration (seconds)</label><input id="durationS" type="number" min="0.05" max="3" step="0.05" value="0.5"></div>
+    </div>
+
+    <details class="advancedDetails">
+      <summary>Timing keyframes</summary>
+      <div class="field">
+        <label>Windup ends at <span id="windupFracVal">16%</span></label>
+        <input id="windupFrac" type="range" min="0.02" max="0.9" step="0.01" value="0.16">
+      </div>
+      <div class="field">
+        <label>Strike ends at <span id="strikeFracVal">55%</span></label>
+        <input id="strikeFrac" type="range" min="0.03" max="1" step="0.01" value="0.55">
+      </div>
+      <div class="field">
+        <label>Hold ends at <span id="holdFracVal">68%</span></label>
+        <input id="holdFrac" type="range" min="0.03" max="1" step="0.01" value="0.68">
+      </div>
+      <div class="help">Attack uses all three poses. Load skips Strike. Fire skips Windup. These controls only determine when the authored key poses are reached.</div>
+    </details>
+
+    <div class="poseTabs" role="tablist" aria-label="Pose being edited">
+      <button id="poseTabNeutral" class="poseTab" data-edit-phase="neutral"><span class="dot dotNeutral"></span> Neutral</button>
+      <button id="poseTabWindup" class="poseTab active" data-edit-phase="windup"><span class="dot dotWindup"></span> Windup</button>
+      <button id="poseTabStrike" class="poseTab" data-edit-phase="strike"><span class="dot dotStrike"></span> Strike</button>
+    </div>
+
+    <div class="poseEditBox">
+      <div class="editToolbar">
+        <button id="gizmoOffBtn" class="secondary active">Sliders</button>
+        <button id="gizmoMoveBtn" class="secondary">⊹ Move gizmo</button>
+        <button id="gizmoRotateBtn" class="secondary">↻ Rotate gizmo</button>
+        <span class="pill" id="editPhasePill">editing: Windup</span>
+      </div>
+      <div id="activePosePanel"></div>
+      <div class="help"><b>These fields move the tool.</b> Tool X/Y/Z position translates the held item; Tool X/Y/Z rotation rotates that item. Character Y rotation turns the whole character. Selecting a pose freezes the viewport on that exact key pose, and the sliders + 3D gizmo edit the same pose.</div>
+    </div>
+
+    <div class="row" style="margin-top:9px">
+      <button id="flipBtn" class="warn">⇋ Mirror animation</button>
+      <button id="toolEndFlipBtn" class="secondary">↕ Tool End Flip: Off</button>
+      <button id="resetPosesBtn" class="secondary">↺ Reset action</button>
+    </div>
   </div>
 
-  <div class="card section" style="--sec:#94a3b8;--secBg:rgba(148,163,184,.10)">
-    <div class="sectionTitle"><b>Actions</b><span class="sectionTag">flip / import / export</span></div>
-    <div class="row">
-      <button id="flipBtn" class="warn">⇋ Flip Across Midline</button>
-      <button id="toolEndFlipBtn" class="secondary">↕ Tool End Flip: Off</button>
-      <button id="resetPosesBtn" class="secondary">Reset poses</button>
-    </div>
-    <div class="help">Tool End Flip uses the exact pick-shovel mining basis: the sprite plane changes from local X −90° to +90°. It reverses which end points forward without mirroring the art or changing Pitch/Yaw/Roll.</div>
+  <details class="card section collapsibleCard" id="practicalCard" style="--sec:#fbbf24;--secBg:rgba(251,191,36,.08)">
+    <summary>Practical effect · damage / range / hitbox</summary>
+    <div class="help" id="practicalActionHelp" style="margin-bottom:8px"></div>
+    <div id="statFields"></div>
+    <label class="fieldRow" style="cursor:pointer"><input type="checkbox" id="showHitbox" checked style="width:auto;margin-right:6px">Show hitbox wedge in viewport</label>
+    <div class="help" style="margin-top:6px">This edits <code>attack-values.json</code>, not the animation JSON. It is kept here for playtesting but separated from the core pose-authoring path.</div>
     <div class="row" style="margin-top:8px">
-      <button id="exportBtn">⭳ Export JSON</button>
-      <button id="loadBtn" class="secondary">⭱ Load JSON</button>
+      <button id="statsDownloadBtn" class="secondary">⭳ Download attack-values.json</button>
+      <button id="statsCopyBtn" class="secondary">Copy JSON</button>
+    </div>
+    <div class="row" style="margin-top:6px">
+      <button id="statsSaveOverrideBtn" class="secondary">💾 Save local override</button>
+      <button id="statsClearOverrideBtn" class="secondary">🗑 Clear override</button>
+    </div>
+    <div class="help" id="statsOverrideStatus"></div>
+  </details>
+
+  <div class="card section" style="--sec:#94a3b8;--secBg:rgba(148,163,184,.10)">
+    <div class="sectionTitle"><b>3 · Save / inspect</b><span class="sectionTag">one exit point</span></div>
+    <div class="row">
+      <button id="exportBtn">⭳ Export animation</button>
+      <button id="loadBtn" class="secondary">⭱ Load animation</button>
+      <button id="copyJsonBtn" class="secondary">Copy JSON</button>
       <input id="loadFile" type="file" accept=".json,application/json" hidden>
     </div>
-    <div class="hr"></div>
-    <label>Current animation JSON</label>
-    <textarea id="jsonView" readonly></textarea>
-    <div class="row" style="margin-top:6px"><button id="copyJsonBtn" class="secondary">Copy JSON</button></div>
-    <div class="hr"></div>
-    <label>Preview transforms</label>
-    <div class="help" style="margin-bottom:6px">Literal local position/rotation of every node in the live preview rig — avatar body, head/neck bone, tool holder, hand sockets — for diffing against the same dump taken in-game with the Pixel Probe.</div>
-    <div class="row"><button id="dumpTransformsBtn" class="secondary">📐 Dump preview transforms</button></div>
-    <textarea id="transformDumpView" readonly style="margin-top:6px"></textarea>
-    <div class="row" style="margin-top:6px"><button id="copyTransformDumpBtn" class="secondary">Copy transforms</button></div>
+    <details class="advancedDetails">
+      <summary>Animation JSON</summary>
+      <textarea id="jsonView" readonly></textarea>
+    </details>
+    <details class="advancedDetails">
+      <summary>Preview transform dump</summary>
+      <div class="help" style="margin-bottom:6px">Local transforms for the live preview rig, for direct comparison with the in-game Pixel Probe.</div>
+      <button id="dumpTransformsBtn" class="secondary">📐 Refresh transform dump</button>
+      <textarea id="transformDumpView" readonly style="margin-top:6px"></textarea>
+      <button id="copyTransformDumpBtn" class="secondary" style="margin-top:6px">Copy transforms</button>
+    </details>
   </div>
 </aside>
 <div id="viewport">
+  <button id="debugToggle" class="debugToggle secondary" style="font-size:12px;padding:6px 9px">🧭 Debug</button>
   <button id="logToggle" class="logToggle secondary" style="font-size:12px;padding:6px 9px">📋 Log</button>
   <div id="logPanel">
     <div class="logHead"><b>Debug Log</b><div class="row">
@@ -272,15 +278,16 @@ canvas{display:block;width:100%;height:100%}
     </div></div>
     <div id="logBody"></div>
   </div>
-  <div id="debug"></div>
+  <div id="debug" style="display:none"></div>
 </div>
 </div>
 <script src="../../js/local-db-overrides.js"></script>
 <script src="../../config/scratchbones-config.js?v=20260821d"></script>
-<script src="../../js/portrait-utils.js?v=20260817d"></script>
+<script src="../../js/portrait-utils.js?v=20260918centroid2"></script>
 <script src="../../js/portrait-breathing.js"></script>
 <script src="../../js/npc-avatar-preview-utils.js"></script>
-<script src="../../js/png-plane-avatar.js?v=20260821f"></script>
+<script src="../../js/png-plane-avatar.js?v=20260918centroid2"></script>
+<script src="../../js/species-pose-scaling.js?v=20260918centroid2"></script>
 <!-- Shared local-transform dump utility (window.HobunjiTransformDump) — also
      loaded by the game's Pixel Probe, so this editor's preview dump and an
      in-game character dump use the exact same code/format. -->
@@ -299,6 +306,12 @@ function escapeHtml(s){ return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<'
 window.addEventListener('error', e=>logDebug(`ERROR: ${e.message} @ ${e.filename}:${e.lineno}`));
 window.addEventListener('unhandledrejection', e=>logDebug(`UNHANDLED: ${e.reason?.message||e.reason}`));
 
+$('debugToggle').onclick=()=>{
+  const panel = $('debug');
+  const show = panel.style.display === 'none';
+  panel.style.display = show ? 'block' : 'none';
+  $('debugToggle').classList.toggle('active', show);
+};
 $('logToggle').onclick=()=>{ $('logPanel').classList.add('visible'); $('logToggle').style.display='none'; };
 $('closeLogBtn').onclick=()=>{ $('logPanel').classList.remove('visible'); $('logToggle').style.display='block'; };
 $('clearLogBtn').onclick=()=>{ logLines.length=0; $('logBody').innerHTML=''; logDebug('Log cleared'); };
@@ -350,6 +363,16 @@ function avatarCfg() { return window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlane
 // Same modelWidth===modelHeight square-prism scheme refreshPlayerAvatar() uses for the
 // live player avatar (worldModelWidth), not the design-tool default of 1.
 const MODEL_W = avatarCfg().worldModelWidth ?? 0.9;
+let currentArmLength = 0.558; // Canonical selected species/gender reach used only to derive the uniform preview orbit ratio.
+let currentPoseCentroidY = MODEL_W * 0.5; // Floor-relative visual/body centroid copied from PNGPlaneAvatar metadata after each rebuild.
+let currentSpeciesId = 'mao-ao'; // Visible debug identity for the currently previewed avatar.
+let currentGender = 'male'; // Visible debug identity for the currently previewed avatar.
+const poseOrbitScratch = new THREE.Vector3(); // Reused by forward/inverse centroid transforms so playback does not allocate every frame.
+const poseWorldDebugScratch = new THREE.Vector3(); // Reused when recording final world position for visible diagnostics.
+let lastAuthoredPose = { x: 0, y: 0, z: 0 }; // Debug copy of the Mao'ao-authored holder-local translation currently previewed.
+let lastRawRigPose = { x: 0, y: 0, z: 0 }; // Debug copy of the pre-scale finished rig-local point.
+let lastScaledRigPose = { x: 0, y: 0, z: 0 }; // Debug copy of the final centroid-scaled rig-local point.
+let lastScaledWorldPose = { x: 0, y: 0, z: 0 }; // Debug copy of the same final pose in world space.
 let avatarModel = null;
 let neckPreviewStrength = 1; // Used by applyPoseToRig() to scale the preview-only automatic head counter-turn.
 let neckPreviewRadiusFrac = 0.30; // Used by applyPreviewNeckWeights() as the broad default shoulder-to-head blend relative to avatar height.
@@ -514,6 +537,10 @@ function refreshPreviewDebug() {
     'Latest: neck deformation weights the complete rectangular PNG plane, including transparent gaps and detached cosmetics.',
     `Neck preview: ${Math.round(neckPreviewStrength * 100)}% strength · ${(neckPreviewRadiusFrac * 100).toFixed(1)}% radius · ${neckWeightSummary}`,
     `Head vertex overlay: ${$('showHeadSkinVertices').checked ? `${headSkinVertexCount} unique weighted vertices shown` : 'hidden'}`,
+    `Pose scale: ${currentSpeciesId}/${currentGender} armLength=${currentArmLength.toFixed(3)} · ×${(window.HobunjiSpeciesPoseScale?.scaleForArmLength?.(currentArmLength) ?? 1).toFixed(5)}`,
+    `Centroid used (rig local): (0, ${currentPoseCentroidY.toFixed(4)}, 0)`,
+    `Authored holder local: (${lastAuthoredPose.x.toFixed(4)}, ${lastAuthoredPose.y.toFixed(4)}, ${lastAuthoredPose.z.toFixed(4)}) · raw rig: (${lastRawRigPose.x.toFixed(4)}, ${lastRawRigPose.y.toFixed(4)}, ${lastRawRigPose.z.toFixed(4)})`,
+    `Final scaled rig: (${lastScaledRigPose.x.toFixed(4)}, ${lastScaledRigPose.y.toFixed(4)}, ${lastScaledRigPose.z.toFixed(4)}) · world: (${lastScaledWorldPose.x.toFixed(4)}, ${lastScaledWorldPose.y.toFixed(4)}, ${lastScaledWorldPose.z.toFixed(4)})`,
     'Playback auto-lerps Neutral→Windup→Strike→(hold)→Neutral. Drag the scrub bar to inspect a frame.',
   ].join('\n'));
 }
@@ -563,6 +590,12 @@ async function rebuildAvatar(speciesId, gender) {
   });
   const h = avatarModel.userData.portraitModelHeight || MODEL_W;
   const w = avatarModel.userData.portraitModelWidth || MODEL_W;
+  currentSpeciesId = speciesId;
+  currentGender = gender;
+  const cachedArmLength = Number(avatarModel.userData?.armLength); // Canonical reach keeps the requested Tletingan ratios 0.612/0.558 and 0.603/0.558.
+  currentArmLength = Number.isFinite(cachedArmLength) && cachedArmLength > 0 ? cachedArmLength : 0.558;
+  const cachedCentroidY = Number(avatarModel.userData?.poseCentroidY); // Includes the portrait assembly's internal vertical offset.
+  currentPoseCentroidY = Number.isFinite(cachedCentroidY) ? cachedCentroidY : h * (Number(avatarModel.userData?.portraitVerticalPlacementRatio) || 0.5);
   if (avatarModel.userData.handAttachX == null || avatarModel.userData.handAttachY == null) {
     logDebug(`Avatar rebuilt: ${speciesId}/${gender}: hand-attach scan failed → fallback to half-width/half-height tool base`);
   }
@@ -572,7 +605,8 @@ async function rebuildAvatar(speciesId, gender) {
   rig.add(avatarModel);
   applyPreviewNeckWeights();
   toolBase.position.set(toolMirrored ? -baseAttachX : baseAttachX, baseAttachY, 0);
-  logDebug(`Avatar rebuilt: ${speciesId}/${gender} (prism ${w.toFixed(2)}x${h.toFixed(2)}, base at ${toolBase.position.x.toFixed(2)}/${baseAttachY.toFixed(2)}${toolMirrored ? ', mirrored' : ''})`);
+  logDebug(`Avatar rebuilt: ${speciesId}/${gender} (prism ${w.toFixed(2)}x${h.toFixed(2)}, arm ${currentArmLength.toFixed(3)}, scale ×${(window.HobunjiSpeciesPoseScale?.scaleForArmLength?.(currentArmLength) ?? 1).toFixed(5)}, centroidY ${currentPoseCentroidY.toFixed(3)}, base at ${toolBase.position.x.toFixed(2)}/${baseAttachY.toFixed(2)}${toolMirrored ? ', mirrored' : ''})`);
+  refreshPreviewDebug();
 }
 
 const SPECIES_LIST = [
@@ -611,34 +645,33 @@ const toolHolder = new THREE.Object3D();
 toolBase.add(toolHolder);
 
 // ── 3D translate/rotate gizmo ──────────────────────────────────────────────
-// Lets the windup/strike pose be dragged directly in the viewport instead of
-// only via sliders. Attached to toolHolder (never toolBase/rig) since the
-// gizmo only ever edits the tool's own local pose channels (x/y/z/pitch/yaw/
-// roll) — body yaw stays slider-only, since it rotates the whole character.
-// applyPoseToRig() still runs every frame in animate() and re-derives
-// toolHolder's transform from anim.poses[gizmoPhase] each time, so as long as
-// the preview stays frozen exactly on that phase (scrubToPhase below), the
-// gizmo's own live drag and the per-frame pose apply agree rather than fight.
+// TransformControls edits the same single editPhase as the visible sliders.
+// Choosing Neutral/Windup/Strike freezes the preview on that exact keyframe;
+// there is no separate gizmo phase or hidden second pose-selection workflow.
 const transformControls = new TransformControls(camera, renderer.domElement);
 scene.add(transformControls);
 let gizmoMode = 'off'; // 'off' | 'translate' | 'rotate'
-let gizmoPhase = 'windup';
+let editPhase = 'windup'; // Single source of truth for pose tabs, sliders, and TransformControls.
 
 transformControls.addEventListener('dragging-changed', e => { controls.enabled = !e.value; });
 transformControls.addEventListener('objectChange', () => {
-  const p = anim.poses[gizmoPhase];
-  p.x = toolHolder.position.x;
-  p.y = toolHolder.position.y;
-  p.z = toolHolder.position.z;
-  // toolHolder.quaternion is already local (relative to toolBase), so this
-  // decomposes straight back to pitch/yaw/roll with no parent-rotation math —
-  // 'YXZ' is the Euler order equivalent to applyPoseToRig's qYaw*qPitch*qRoll
-  // composition, so the angles round-trip exactly.
-  const e = new THREE.Euler().setFromQuaternion(toolHolder.quaternion, 'YXZ');
+  const p = anim.poses[editPhase];
+  poseOrbitScratch.set(
+    toolBase.position.x + toolHolder.position.x,
+    toolBase.position.y + toolHolder.position.y,
+    toolBase.position.z + toolHolder.position.z
+  ); // Concrete selected-species point in rig space.
+  window.HobunjiSpeciesPoseScale?.unscalePointAroundCentroid?.(
+    poseOrbitScratch, 0, currentPoseCentroidY, 0, currentArmLength
+  ); // Exact inverse of the selected species' preview orbit.
+  p.x = poseOrbitScratch.x - toolBase.position.x;
+  p.y = poseOrbitScratch.y - toolBase.position.y;
+  p.z = poseOrbitScratch.z - toolBase.position.z;
+  const e = new THREE.Euler().setFromQuaternion(toolHolder.quaternion, 'YXZ'); // Inverse of qYaw*qPitch*qRoll.
   p.pitch = THREE.MathUtils.radToDeg(e.x);
   p.yaw = THREE.MathUtils.radToDeg(e.y);
   p.roll = THREE.MathUtils.radToDeg(e.z);
-  syncPosePanelFromState(gizmoPhase);
+  syncPosePanelFromState(editPhase);
   refreshJsonView();
 });
 
@@ -647,9 +680,9 @@ function setGizmoMode(mode) {
   if (mode === 'off') {
     transformControls.detach();
   } else {
+    focusPreviewOnPhase(editPhase); // The visible frame and edited pose can no longer diverge.
     transformControls.attach(toolHolder);
     transformControls.setMode(mode);
-    scrubToPhase(gizmoPhase);
   }
   $('gizmoOffBtn').classList.toggle('active', mode === 'off');
   $('gizmoMoveBtn').classList.toggle('active', mode === 'translate');
@@ -658,10 +691,6 @@ function setGizmoMode(mode) {
 $('gizmoOffBtn').onclick = () => setGizmoMode('off');
 $('gizmoMoveBtn').onclick = () => setGizmoMode('translate');
 $('gizmoRotateBtn').onclick = () => setGizmoMode('rotate');
-$('gizmoPhase').addEventListener('change', () => {
-  gizmoPhase = $('gizmoPhase').value;
-  if (gizmoMode !== 'off') scrubToPhase(gizmoPhase);
-});
 
 // ── Weapon mesh: a real PNG sprite plane, same convention as game.js's
 // makeToolPlaneMesh (TOOL_MODEL_WIDTH, flat-in-XZ rotation, sweep tools get an
@@ -734,14 +763,11 @@ $('toolSpriteSelect').addEventListener('change', () => {
 setToolSprite($('toolSpriteSelect').value).catch(e => logDebug('Tool sprite swap failed: ' + e.message));
 
 // ── Animation data model ─────────────────────────────────────────────────
-// pose = { x, y, z, pitch, yaw, bodyYaw, roll } — x/y/z/pitch/yaw/roll are the
-// weapon's own local offset/rotation relative to toolBase (which already sits
-// at the prism's base offset — see rebuildAvatar above); bodyYaw is separate and
-// rotates the whole character (rig.rotation.y), matching game.js's sweep-style
-// mechanic where the body turns and the tool stays rigid in hand. Roll spins
-// the tool about its own forward (local Z) axis — e.g. rotating an axe/hoe head
-// in the hand for a proper chop, instead of needing a pre-rotated sprite as a
-// workaround. Neutral (rest), windup, and strike are all authored poses —
+// pose = { x, y, z, pitch, yaw, bodyYaw, roll }. These channels belong to the TOOL:
+// x/y/z move the tool holder, while the legacy pitch/yaw/roll storage keys mean
+// X/Y/Z rotation respectively. bodyYaw is the CHARACTER'S Y rotation. UI labels
+// deliberately use axis names rather than pitch/yaw/roll so the authored frame is
+// obvious without mentally translating aviation terminology. Neutral (rest), windup, and strike are all authored poses —
 // anim.poses.neutral is the idle stance the swing eases out of and back into.
 // Neutral may also author a uniform `scale`; it sizes the held tool for the
 // whole animation rather than becoming another interpolated motion channel.
@@ -779,13 +805,13 @@ let anim = {
 };
 
 const FIELD_DEFS = [
-  { key: 'x', label: 'X (side)', min: -1, max: 1, step: 0.01, angle: false },
-  { key: 'y', label: 'Y (height)', min: -1, max: 1, step: 0.01, angle: false },
-  { key: 'z', label: 'Z (forward)', min: -1, max: 1, step: 0.01, angle: false },
-  { key: 'pitch', label: 'Pitch°', min: -180, max: 180, step: 1, angle: true },
-  { key: 'yaw', label: 'Tool Yaw°', min: -180, max: 180, step: 1, angle: true },
-  { key: 'roll', label: 'Tool Roll°', min: -180, max: 180, step: 1, angle: true },
-  { key: 'bodyYaw', label: 'Body Yaw° (character turn)', min: -180, max: 180, step: 1, angle: true },
+  { key: 'x', label: 'Tool X position (side)', min: -1, max: 1, step: 0.01, angle: false },
+  { key: 'y', label: 'Tool Y position (height)', min: -1, max: 1, step: 0.01, angle: false },
+  { key: 'z', label: 'Tool Z position (forward)', min: -1, max: 1, step: 0.01, angle: false },
+  { key: 'pitch', label: 'Tool X rotation°', min: -180, max: 180, step: 1, angle: true },
+  { key: 'yaw', label: 'Tool Y rotation°', min: -180, max: 180, step: 1, angle: true },
+  { key: 'roll', label: 'Tool Z rotation°', min: -180, max: 180, step: 1, angle: true },
+  { key: 'bodyYaw', label: 'Character Y rotation°', min: -180, max: 180, step: 1, angle: true },
   { key: 'scale', label: 'Tool scale (uniform)', min: 0.1, max: 3, step: 0.01, angle: false, neutralOnly: true },
 ];
 
@@ -793,45 +819,43 @@ function poseFieldDefs(phase) {
   return FIELD_DEFS.filter(f => !f.neutralOnly || phase === 'neutral');
 }
 
-function buildPosePanel(phase) {
-  const panel = $('panel' + phase[0].toUpperCase() + phase.slice(1));
-  const fields = poseFieldDefs(phase);
+function renderActivePosePanel() {
+  const panel = $('activePosePanel');
+  const fields = poseFieldDefs(editPhase);
   panel.innerHTML = fields.map(f => `
     <div class="field">
       <label>${f.label}</label>
       <div class="fieldRow">
-        <input type="range" id="${phase}_${f.key}" min="${f.min}" max="${f.max}" step="${f.step}">
-        <span class="val" id="${phase}_${f.key}_val"></span>
+        <input type="range" id="pose_${f.key}" min="${f.min}" max="${f.max}" step="${f.step}">
+        <span class="val" id="pose_${f.key}_val"></span>
       </div>
     </div>`).join('');
   for (const f of fields) {
-    const el = $(`${phase}_${f.key}`);
+    const el = $(`pose_${f.key}`);
     el.addEventListener('input', () => {
       const v = Number(el.value);
-      anim.poses[phase][f.key] = v;
-      $(`${phase}_${f.key}_val`).textContent = f.angle ? `${v.toFixed(0)}°` : v.toFixed(2);
-      scrubToPhase(phase);
+      anim.poses[editPhase][f.key] = v;
+      $(`pose_${f.key}_val`).textContent = f.angle ? `${v.toFixed(0)}°` : v.toFixed(2);
+      focusPreviewOnPhase(editPhase);
+      applyPoseToRig(anim.poses[editPhase]);
       refreshJsonView();
     });
   }
+  syncPosePanelFromState(editPhase);
 }
-buildPosePanel('neutral');
-buildPosePanel('windup');
-buildPosePanel('strike');
 
-function syncPosePanelFromState(phase) {
-  for (const f of poseFieldDefs(phase)) {
-    const v = safeNum(anim.poses[phase][f.key], f.key === 'scale' ? 1 : 0);
-    $(`${phase}_${f.key}`).value = v;
-    $(`${phase}_${f.key}_val`).textContent = f.angle ? `${v.toFixed(0)}°` : v.toFixed(2);
+function syncPosePanelFromState(phase = editPhase) {
+  if (phase !== editPhase || !$('activePosePanel')) return;
+  for (const f of poseFieldDefs(editPhase)) {
+    const v = safeNum(anim.poses[editPhase][f.key], f.key === 'scale' ? 1 : 0);
+    $(`pose_${f.key}`).value = v;
+    $(`pose_${f.key}_val`).textContent = f.angle ? `${v.toFixed(0)}°` : v.toFixed(2);
   }
 }
-syncPosePanelFromState('neutral');
-syncPosePanelFromState('windup');
-syncPosePanelFromState('strike');
+renderActivePosePanel();
 
-$('animName').addEventListener('input', () => { anim.name = $('animName').value; refreshJsonView(); });
-$('animStyle').addEventListener('change', () => { anim.style = $('animStyle').value; refreshJsonView(); });
+// Name/style are derived from the selected gameplay Action. They remain visible
+// for clarity/export inspection but no longer form an independent editing path.
 $('playbackSequence').addEventListener('change', () => {
   anim.sequence = $('playbackSequence').value;
   updateTimelineSegments();
@@ -839,10 +863,9 @@ $('playbackSequence').addEventListener('change', () => {
 });
 
 function clampFracs() {
-  if (anim.windupFrac >= anim.strikeFrac) anim.strikeFrac = Math.min(0.98, anim.windupFrac + 0.01);
-  // holdFrac may equal strikeFrac (a zero-width hold, e.g. backward-compat
-  // fallback for older exports) but never fall below it.
-  if (anim.holdFrac < anim.strikeFrac) anim.holdFrac = Math.min(0.99, anim.strikeFrac);
+  anim.windupFrac = Math.max(0, Math.min(0.99, anim.windupFrac));
+  anim.strikeFrac = Math.max(anim.windupFrac + 0.01, Math.min(1, anim.strikeFrac));
+  anim.holdFrac = Math.max(anim.strikeFrac, Math.min(1, anim.holdFrac));
 }
 $('windupFrac').addEventListener('input', () => {
   anim.windupFrac = Number($('windupFrac').value);
@@ -858,7 +881,7 @@ $('windupFrac').addEventListener('input', () => {
 $('strikeFrac').addEventListener('input', () => {
   anim.strikeFrac = Number($('strikeFrac').value);
   if (anim.strikeFrac <= anim.windupFrac) anim.windupFrac = Math.max(0.02, anim.strikeFrac - 0.01);
-  if (anim.holdFrac <= anim.strikeFrac) anim.holdFrac = Math.min(0.99, anim.strikeFrac + 0.01);
+  if (anim.holdFrac < anim.strikeFrac) anim.holdFrac = anim.strikeFrac;
   $('windupFrac').value = anim.windupFrac;
   $('holdFrac').value = anim.holdFrac;
   $('windupFracVal').textContent = `${Math.round(anim.windupFrac * 100)}%`;
@@ -869,7 +892,7 @@ $('strikeFrac').addEventListener('input', () => {
 });
 $('holdFrac').addEventListener('input', () => {
   anim.holdFrac = Number($('holdFrac').value);
-  if (anim.holdFrac <= anim.strikeFrac) anim.strikeFrac = Math.max(anim.windupFrac + 0.01, anim.holdFrac - 0.01);
+  if (anim.holdFrac < anim.strikeFrac) anim.strikeFrac = Math.max(anim.windupFrac + 0.01, anim.holdFrac);
   $('strikeFrac').value = anim.strikeFrac;
   $('strikeFracVal').textContent = `${Math.round(anim.strikeFrac * 100)}%`;
   $('holdFracVal').textContent = `${Math.round(anim.holdFrac * 100)}%`;
@@ -924,14 +947,8 @@ $('flipBtn').onclick = () => {
   logDebug(`Flipped animation across character midline (tool base now ${toolMirrored ? '-' : '+'}${Math.abs(baseAttachX).toFixed(2)})`);
 };
 $('resetPosesBtn').onclick = () => {
-  anim.poses.neutral = { ...neutralPoseFor(anim.style) };
-  anim.poses.windup = defaultPose(0.05, 0.05, -0.15, -15, 0, -60);
-  anim.poses.strike = defaultPose(-0.05, 0.0, 0.20, 10, 0, 55);
-  syncPosePanelFromState('neutral');
-  syncPosePanelFromState('windup');
-  syncPosePanelFromState('strike');
-  refreshJsonView();
-  logDebug('Reset poses to defaults');
+  applySelectedAction({ play: false }); // Reset means restore THIS action's real runtime source, never generic style defaults.
+  logDebug(`Reset ${currentAction().label} to its runtime-authored animation/timing.`);
 };
 
 // ── Tool stance presets ───────────────────────────────────────────────────
@@ -1010,7 +1027,8 @@ const TOOL_PRESETS = [
   { id: 'scatterbow_fire', label: 'Scatterbow — Fire', name: 'Scatterbow Fire', style: 'ranged', sequence: 'attack', toolKey: 'scatterbowLoaded', still: false,
     neutral: { ...defaultPose(0.23, 0.08, 0.14, 16, 65, -52, 11), scale: 1.77 }, windup: defaultPose(0.34, 0.14, 0.11, -9, 86, -76, 12), strike: defaultPose(0.33, 0.11, 0.12, -9, 84, -109, 9), windupFrac: 0.05, strikeFrac: 0.08, holdFrac: 0.17, durationS: 1.04 },
 ];
-$('presetSelect').innerHTML = TOOL_PRESETS.map(p => `<option value="${p.id}">${p.label}</option>`).join('');
+// TOOL_PRESETS are internal animation templates now. The user selects a real
+// gameplay Action; the action registry below chooses the appropriate template.
 // Keep the two weapon-slot stance cards sourced from the same committed JSON
 // the live WeaponToolStances runtime reads. The literals above are only the
 // local-file/fetch-failure fallback, matching that runtime module's pattern.
@@ -1083,11 +1101,6 @@ function applyPreset(preset) {
   refreshJsonView();
   logDebug(`Loaded preset: ${preset.label}`);
 }
-$('loadPresetBtn').onclick = () => {
-  const preset = TOOL_PRESETS.find(p => p.id === $('presetSelect').value);
-  if (preset) applyPreset(preset);
-};
-
 // ── Playback / auto-lerp preview ─────────────────────────────────────────
 function lerpPose(a, b, k) {
   return defaultPose(
@@ -1153,7 +1166,15 @@ function applyPoseToRig(pose) {
     }
     toolPlane.rotation.z = anim.style === 'sweep' ? -Math.PI / 2 + Math.PI / 2 * neutralWeight : 0;
   }
-  toolHolder.position.set(pose.x, pose.y, pose.z);
+  lastAuthoredPose.x = Number(pose.x) || 0; lastAuthoredPose.y = Number(pose.y) || 0; lastAuthoredPose.z = Number(pose.z) || 0;
+  poseOrbitScratch.set(toolBase.position.x + lastAuthoredPose.x, toolBase.position.y + lastAuthoredPose.y, toolBase.position.z + lastAuthoredPose.z); // Existing pre-arm-length finished point.
+  lastRawRigPose.x = poseOrbitScratch.x; lastRawRigPose.y = poseOrbitScratch.y; lastRawRigPose.z = poseOrbitScratch.z;
+  window.HobunjiSpeciesPoseScale?.scalePointAroundCentroid?.(poseOrbitScratch, 0, currentPoseCentroidY, 0, currentArmLength); // Uniform radial scale around the selected avatar's true visual centroid.
+  lastScaledRigPose.x = poseOrbitScratch.x; lastScaledRigPose.y = poseOrbitScratch.y; lastScaledRigPose.z = poseOrbitScratch.z;
+  toolHolder.position.set(poseOrbitScratch.x - toolBase.position.x, poseOrbitScratch.y - toolBase.position.y, poseOrbitScratch.z - toolBase.position.z);
+  toolHolder.updateWorldMatrix?.(true, false);
+  toolHolder.getWorldPosition(poseWorldDebugScratch);
+  lastScaledWorldPose.x = poseWorldDebugScratch.x; lastScaledWorldPose.y = poseWorldDebugScratch.y; lastScaledWorldPose.z = poseWorldDebugScratch.z;
   // Composed in the same order as game.js's pose-driven combat branch
   // (qYaw * qPitch * qRoll — equivalent to a THREE.Euler 'YXZ' triple), so the
   // editor and the live game always render an authored pose identically.
@@ -1163,39 +1184,51 @@ function applyPoseToRig(pose) {
   toolHolder.quaternion.copy(qYaw).multiply(qPitch).multiply(qRoll);
 }
 
-// ── Combat stats (docs/config/combat/attack-values.json) + hitbox preview ──
-// Every named attack slot this tool can load/edit stats for, and exactly
-// where each one lives in attack-values.json — see docs/js/combat/*.js for
-// what actually reads these at runtime (combat-combo.js/combat-
-// quickattacks.js/combat-charged-breaker.js/combat-flurry.js/combat-
-// counter-shield.js, plus game.js's weaponAbility()).
-const ATTACK_SLOTS = [
-  { path: ['weaponAbilities', 'cut'], label: 'Weapon: Cut' },
-  { path: ['weaponAbilities', 'slash'], label: 'Weapon: Slash' },
-  { path: ['combo', 'swingCombo', 0], label: 'Combo: Forehand Swing' },
-  { path: ['combo', 'swingCombo', 1], label: 'Combo: Backhand Swing' },
-  { path: ['combo', 'swingCombo', 2], label: 'Combo: Cleave' },
-  { path: ['combo', 'pokeCombo', 0], label: 'Combo: Short Thrust' },
-  { path: ['combo', 'pokeCombo', 1], label: 'Combo: Step Thrust' },
-  { path: ['combo', 'pokeCombo', 2], label: 'Combo: Long Lunge' },
-  { path: ['quickAttacks', 'techniques', 'opportunistJab'], label: 'Quick Attack: Opportunist Jab' },
-  { path: ['quickAttacks', 'techniques', 'exhaustCutter'], label: 'Quick Attack: Exhaust Cutter' },
-  { path: ['quickAttacks', 'techniques', 'backstabFlick'], label: 'Quick Attack: Backstab Flick' },
-  { path: ['quickAttacks', 'techniques', 'mercySpike'], label: 'Quick Attack: Mercy Spike' },
-  { path: ['chargedBreaker'], label: 'Charged Breaker' },
-  { path: ['flurry'], label: 'Accelerating Flurry' },
-  { path: ['counterShield'], label: 'Counter Shield' },
-  { path: ['rangedWeapons', 'crossbow'], label: 'Ranged: Crossbow' },
-  { path: ['rangedWeapons', 'scatterbow'], label: 'Ranged: Scatterbow' },
+// ── Unified gameplay Action registry + practical effects ─────────────────
+// Runtime keeps animation pose data and attack-value data in different files,
+// but the editor no longer exposes that implementation split to the user.
+// Selecting one Action loads the matching animation and practical record together.
+const ACTION_DEFS = [
+  { id: 'swing_forehand', group: 'Melee attacks', label: 'Forehand Swing', statsPath: ['combo','swingCombo',0], templateId: 'hatchet_swing', practical: true },
+  { id: 'swing_backhand', group: 'Melee attacks', label: 'Backhand Swing', statsPath: ['combo','swingCombo',1], templateId: 'hatchet_swing', practical: true, mirror: true },
+  { id: 'swing_cleave', group: 'Melee attacks', label: 'Cleave', statsPath: ['combo','swingCombo',2], templateId: 'hatchet_swing', practical: true, usePower: true },
+  { id: 'poke_short', group: 'Melee attacks', label: 'Short Thrust', statsPath: ['combo','pokeCombo',0], templateId: 'pickshovel_swing', practical: true },
+  { id: 'poke_step', group: 'Melee attacks', label: 'Step Thrust', statsPath: ['combo','pokeCombo',1], templateId: 'pickshovel_swing', practical: true },
+  { id: 'poke_long', group: 'Melee attacks', label: 'Long Lunge', statsPath: ['combo','pokeCombo',2], templateId: 'pickshovel_swing', practical: true, usePower: true },
+
+  { id: 'quick_opportunist', group: 'Quick / held attacks', label: 'Opportunist Jab', statsPath: ['quickAttacks','techniques','opportunistJab'], templateId: 'pickshovel_swing', practical: true },
+  { id: 'quick_exhaust', group: 'Quick / held attacks', label: 'Exhaust Cutter', statsPath: ['quickAttacks','techniques','exhaustCutter'], templateId: 'pickshovel_swing', practical: true },
+  { id: 'quick_backstab', group: 'Quick / held attacks', label: 'Backstab Flick', statsPath: ['quickAttacks','techniques','backstabFlick'], templateId: 'pickshovel_swing', practical: true },
+  { id: 'quick_mercy', group: 'Quick / held attacks', label: 'Mercy Spike', statsPath: ['quickAttacks','techniques','mercySpike'], templateId: 'pickshovel_swing', practical: true },
+  { id: 'charged_breaker', group: 'Quick / held attacks', label: 'Charged Breaker', statsPath: ['chargedBreaker'], templateId: 'hatchet_swing', practical: true, usePower: true },
+  { id: 'flurry', group: 'Quick / held attacks', label: 'Accelerating Flurry', statsPath: ['flurry'], templateId: 'hatchet_swing', practical: true },
+  { id: 'counter_shield', group: 'Quick / held attacks', label: 'Counter Shield', statsPath: ['counterShield'], heldAnimationKey: 'counterShield', practical: true, toolKey: 'hatchet' },
+  { id: 'weapon_throw', group: 'Quick / held attacks', label: 'Thrown Weapon — Spin Throw', heldAnimationKey: 'weaponThrowSpin', practical: true },
+  { id: 'flask_throw', group: 'Quick / held attacks', label: 'Flask — Overhead Throw', heldAnimationKey: 'throwFlask', practical: true, toolKey: 'bottle' },
+
+  { id: 'crossbow_fire', group: 'Ranged attacks', label: 'Crossbow — Fire', statsPath: ['rangedWeapons','crossbow'], templateId: 'crossbow_fire', practical: true },
+  { id: 'scatterbow_fire', group: 'Ranged attacks', label: 'Scatterbow — Fire', statsPath: ['rangedWeapons','scatterbow'], templateId: 'scatterbow_fire', practical: true },
+
+  { id: 'crossbow_load', group: 'Non-attack held actions', label: 'Crossbow — Load', statsPath: ['rangedWeapons','crossbow'], templateId: 'crossbow_load', practical: false },
+  { id: 'scatterbow_load', group: 'Non-attack held actions', label: 'Scatterbow — Load', statsPath: ['rangedWeapons','scatterbow'], templateId: 'scatterbow_load', practical: false },
+  { id: 'drink', group: 'Non-attack held actions', label: 'Drink', heldAnimationKey: 'drink', practical: false, toolKey: 'bottle' },
+  { id: 'heavy_idle', group: 'Non-attack held actions', label: 'Heavy Weapon — Idle', templateId: 'heavy_weapon_idle', practical: false },
+  { id: 'light_idle', group: 'Non-attack held actions', label: 'Light Weapon — Idle', templateId: 'light_weapon_idle', practical: false },
 ];
 
 let attackValuesConfig = null;
-let statSlotIdx = 0;
+let currentActionId = ACTION_DEFS[0].id;
 
 function getAtPath(obj, path) {
   let cur = obj;
-  for (const k of path) { if (cur == null) return null; cur = cur[k]; }
+  for (const k of path || []) { if (cur == null) return null; cur = cur[k]; }
   return cur;
+}
+function currentAction() {
+  return ACTION_DEFS.find(action => action.id === currentActionId) || ACTION_DEFS[0];
+}
+function actionStatsEntry(action = currentAction()) {
+  return action.statsPath ? getAtPath(attackValuesConfig, action.statsPath) : null;
 }
 
 async function loadAttackValues() {
@@ -1207,26 +1240,174 @@ async function loadAttackValues() {
   } catch (e) {
     logDebug(`attack-values.json fetch failed (${e.message}) — using a minimal bundled default.`);
     attackValuesConfig = {
-      weaponAbilities: { cut: { damage: 6, halfConeDeg: 18, rangeTiles: 2.0, staminaCost: 12, knockbackPxS: 720 }, slash: { damage: 10, halfConeDeg: 62, rangeTiles: 2.4, staminaCost: 20, knockbackPxS: 1040 } },
-      combo: { swingCombo: [], pokeCombo: [] },
-      quickAttacks: { techniques: {} },
+      combo: { swingCombo: [{},{},{}], pokeCombo: [{},{},{}] },
+      quickAttacks: { techniques: { opportunistJab:{}, exhaustCutter:{}, backstabFlick:{}, mercySpike:{} } },
       chargedBreaker: {}, flurry: {}, counterShield: {},
+      rangedWeapons: { crossbow: {}, scatterbow: {} },
     };
   }
 }
 
-$('statSlotSelect').innerHTML = ATTACK_SLOTS.map((s, i) => `<option value="${i}">${s.label}</option>`).join('');
+function clonePoseData(pose = {}) {
+  return { ...pose, shoulderAim: pose.shoulderAim ? { ...pose.shoulderAim } : pose.shoulderAim };
+}
+function cloneAnimationTemplate(source = {}) {
+  return {
+    ...source,
+    poses: undefined,
+    neutral: clonePoseData(source.neutral ?? source.poses?.neutral ?? neutralPoseFor(source.style)),
+    windup: clonePoseData(source.windup ?? source.poses?.windup ?? defaultPose(0,0,0,0,0,0)),
+    strike: clonePoseData(source.strike ?? source.poses?.strike ?? defaultPose(0,0,0,0,0,0)),
+  };
+}
+function templateForAction(action) {
+  if (action.heldAnimationKey) {
+    const held = window.HeldActionAnimations?.[action.heldAnimationKey];
+    if (!held) return null;
+    return cloneAnimationTemplate({
+      ...held,
+      sequence: held.sequence || 'attack',
+      toolKey: action.toolKey,
+      still: false,
+    });
+  }
+  const preset = TOOL_PRESETS.find(entry => entry.id === action.templateId);
+  return preset ? cloneAnimationTemplate(preset) : null;
+}
+function setMirroredPreview(mirrored) {
+  toolMirrored = !!mirrored;
+  toolBase.position.x = toolMirrored ? -baseAttachX : baseAttachX;
+  if (toolPlaneMesh) toolPlaneMesh.scale.x = toolMirrored ? -1 : 1;
+}
+function prepareTemplateForAction(action, entry) {
+  const source = templateForAction(action);
+  if (!source) return null;
+  source.name = action.label;
+  if (action.mirror) {
+    source.neutral = flipPose(source.neutral);
+    source.windup = flipPose(source.windup);
+    source.strike = flipPose(source.strike);
+  }
+  const power = action.usePower ? Number(entry?.power ?? entry?.POWER ?? 1) : 1;
+  if (Number.isFinite(power) && power !== 1 && source.style === 'sweep') {
+    source.windup.bodyYaw = safeNum(source.windup.bodyYaw, 0) * power;
+    source.strike.bodyYaw = safeNum(source.strike.bodyYaw, 0) * power;
+  }
+  // Each action starts from the same concrete preview tool as its runtime template.
+  // The user may change Preview held sprite afterward without changing action identity.
+  return source;
+}
 
-// Numeric fields worth exposing as editable — everything else on an entry
-// (name, anim, dirSign, pose, dmgTag, heavy, label, condKey, bonusText) is
-// either cosmetic/structural or owned by a different part of this tool
-// (the pose editor above already covers anim/pose).
-const STAT_FIELD_ALLOW = /^(damage|damageMul|halfConeDeg|HALF_CONE_DEG.*|rangeMul|rangeTiles|RANGE_MUL.*|knockbackMul|knockbackPxS|KNOCKBACK_MUL.*|COUNTER_.*|staminaCost|CHARGE_DRAIN_PER_S|COST_.*|MIN_.*|MAX_.*|DRAIN_PER_S|windupS|strikeS|returnS|WINDUP_S|WINDUP_SLOWDOWN|STRIKE_S|holdS|HOLD_S|GLOW_FULL_S|reloadDurationS|reloadWindupFrac|reloadStrikeFrac|reloadHoldFrac|fireDurationS|fireWindupFrac|fireAtFrac|fireHoldFrac|projectileCount|projectileRadiusPx|speedPxS|spreadDeg|lungeMul|LUNGE_.*|power|POWER|trailHalfWidthTiles|trailFarTiles|trailMaxAgeSeconds|FIRST_STRIKE_DELAY_S|NEXT_STRIKE_.*|SIDE_OFFSET_DEG|MOVE_SPEED_MUL_.*)$/;
+function syncTimingControlsFromAnim() {
+  $('durationS').value = Number(anim.durationS.toFixed(4));
+  $('windupFrac').value = anim.windupFrac;
+  $('strikeFrac').value = anim.strikeFrac;
+  $('holdFrac').value = anim.holdFrac;
+  $('windupFracVal').textContent = `${Math.round(anim.windupFrac * 100)}%`;
+  $('strikeFracVal').textContent = `${Math.round(anim.strikeFrac * 100)}%`;
+  $('holdFracVal').textContent = `${Math.round(anim.holdFrac * 100)}%`;
+  updateTimelineSegments();
+}
 
+function runtimeSwingTiming(windupS, strikeS, returnS = 0, holdS = 0) {
+  windupS = Math.max(0, Number(windupS) || 0);
+  strikeS = Math.max(0, Number(strikeS) || 0);
+  returnS = Math.max(0, Number(returnS) || 0);
+  holdS = Math.max(0, Number(holdS) || 0);
+  const authoredVisualS = Math.max(0.05, windupS + strikeS + returnS);
+  const hasOwnReturn = returnS > 0;
+  const automaticReturnS = hasOwnReturn ? 0 : Math.max(0.12, authoredVisualS * 0.35);
+  const totalS = authoredVisualS + automaticReturnS + holdS;
+  return {
+    durationS: totalS,
+    windupFrac: windupS / totalS,
+    strikeFrac: (windupS + strikeS) / totalS,
+    holdFrac: Math.min(1, (windupS + strikeS + holdS) / totalS),
+  };
+}
+
+function applyRuntimeTimingForAction(action, entry) {
+  let timing = null;
+  if (action.statsPath?.[0] === 'combo') {
+    timing = runtimeSwingTiming(entry?.windupS, entry?.strikeS, entry?.returnS, entry?.holdS);
+  } else if (action.id.startsWith('quick_')) {
+    const quick = attackValuesConfig?.quickAttacks || {};
+    timing = runtimeSwingTiming(quick.WINDUP_S, quick.STRIKE_S, 0, quick.HOLD_S);
+  } else if (action.id === 'charged_breaker') {
+    const data = attackValuesConfig?.chargedBreaker || {};
+    timing = runtimeSwingTiming(data.MAX_CHARGE_S, data.STRIKE_S, 0, data.HOLD_S);
+  } else if (action.id === 'flurry') {
+    const data = attackValuesConfig?.flurry || {};
+    timing = runtimeSwingTiming(data.WINDUP_S, data.STRIKE_S, 0, data.HOLD_S);
+  } else if (action.id === 'crossbow_load' || action.id === 'scatterbow_load') {
+    timing = {
+      durationS: Number(entry?.reloadDurationS) || anim.durationS,
+      windupFrac: Number(entry?.reloadWindupFrac) || anim.windupFrac,
+      strikeFrac: Number(entry?.reloadStrikeFrac) || anim.strikeFrac,
+      holdFrac: Number(entry?.reloadHoldFrac) || anim.holdFrac,
+    };
+  } else if (action.id === 'crossbow_fire' || action.id === 'scatterbow_fire') {
+    timing = {
+      durationS: Number(entry?.fireDurationS) || anim.durationS,
+      windupFrac: Number(entry?.fireWindupFrac) || anim.windupFrac,
+      strikeFrac: Number(entry?.fireAtFrac) || anim.strikeFrac,
+      holdFrac: Number(entry?.fireHoldFrac) || anim.holdFrac,
+    };
+  }
+  if (!timing) return;
+  anim.durationS = Math.max(0.05, timing.durationS);
+  anim.windupFrac = Math.max(0, Math.min(0.99, timing.windupFrac));
+  anim.strikeFrac = Math.max(anim.windupFrac + 0.001, Math.min(1, timing.strikeFrac));
+  anim.holdFrac = Math.max(anim.strikeFrac, Math.min(1, timing.holdFrac));
+  syncTimingControlsFromAnim();
+}
+
+function applySelectedAction({ play = true } = {}) {
+  const action = currentAction();
+  const entry = actionStatsEntry(action);
+  const source = prepareTemplateForAction(action, entry);
+  if (source) {
+    setMirroredPreview(action.mirror === true);
+    applyPreset({ ...source, still: play ? !!source.still : true });
+    applyRuntimeTimingForAction(action, entry); // Action choice now drives its real runtime timing where combat config owns it.
+  }
+  $('animName').value = action.label;
+  anim.name = action.label;
+  $('animStyle').value = anim.style;
+  $('actionSourceHelp').textContent = action.practical === false
+    ? 'Non-attack action: animation remains fully editable; practical attack effect is fixed at zero.'
+    : 'Gameplay attack: animation and practical effect below are both scoped to this selected action.';
+  renderStatFields();
+  updateHitboxWedge();
+  selectEditPhase(editPhase);
+  refreshJsonView();
+  logDebug(`Action selected: ${action.label}`);
+}
+
+function populateActionSelect() {
+  const select = $('actionSelect');
+  const groups = new Map();
+  for (const action of ACTION_DEFS) {
+    if (!groups.has(action.group)) groups.set(action.group, []);
+    groups.get(action.group).push(action);
+  }
+  select.innerHTML = [...groups.entries()].map(([label, actions]) =>
+    `<optgroup label="${label}">${actions.map(action => `<option value="${action.id}">${action.label}</option>`).join('')}</optgroup>`
+  ).join('');
+  select.value = currentActionId;
+  select.addEventListener('change', () => {
+    currentActionId = select.value;
+    applySelectedAction();
+  });
+}
+
+// Practical values intentionally exclude animation timing. Timing belongs to
+// the unified Animate section above instead of appearing twice under different names.
+const PRACTICAL_FIELD_ALLOW = /^(damage|damageMul|halfConeDeg|HALF_CONE_DEG.*|rangeMul|rangeTiles|RANGE_MUL.*|knockbackMul|knockbackPxS|KNOCKBACK_MUL.*|COUNTER_DAMAGE_MUL|COUNTER_RANGE_MUL|COUNTER_HALF_CONE_DEG|COUNTER_KNOCKBACK_MUL|staminaCost|COST_.*|DAMAGE_MUL.*|projectileCount|projectileRadiusPx|speedPxS|spreadDeg|lungeMul|LUNGE_.*|power|POWER)$/;
 function numericLeafFields(entry) {
   const out = [];
   for (const [k, v] of Object.entries(entry || {})) {
-    if (typeof v === 'number' && STAT_FIELD_ALLOW.test(k)) out.push({ path: [k], label: k });
+    if (typeof v === 'number' && PRACTICAL_FIELD_ALLOW.test(k)) out.push({ path: [k], label: k });
     else if (v && typeof v === 'object' && (k === 'base' || k === 'bonus')) {
       for (const [k2, v2] of Object.entries(v)) {
         if (typeof v2 === 'number') out.push({ path: [k, k2], label: k + '.' + k2 });
@@ -1236,18 +1417,44 @@ function numericLeafFields(entry) {
   return out;
 }
 
+const ZERO_PRACTICAL_FIELDS = [
+  ['damage', 'Damage'], ['rangeTiles', 'Range (tiles)'], ['halfConeDeg', 'Half cone (°)'],
+  ['knockbackPxS', 'Knockback'], ['staminaCost', 'Attack stamina cost'],
+];
+function renderZeroPracticalFields(action) {
+  $('statFields').innerHTML = ZERO_PRACTICAL_FIELDS.map(([key,label]) => `
+    <div class="field"><label>${label}</label>
+      <div class="fieldRow"><input type="number" value="0" disabled data-zero-practical="${key}"></div>
+    </div>`).join('');
+  $('practicalActionHelp').textContent =
+    `${action.label} is not an attack. Effective attack damage, range, hit cone, knockback, and attack stamina cost are all 0; these fields are intentionally locked.`;
+  $('showHitbox').checked = false;
+  $('showHitbox').disabled = true;
+}
+
 function renderStatFields() {
-  const slot = ATTACK_SLOTS[statSlotIdx];
-  const entry = getAtPath(attackValuesConfig, slot.path);
+  const action = currentAction();
+  if (action.practical === false) {
+    renderZeroPracticalFields(action);
+    return;
+  }
+  $('showHitbox').disabled = false;
+  if (!$('showHitbox').checked) $('showHitbox').checked = true;
+  const entry = actionStatsEntry(action);
   const container = $('statFields');
-  if (!entry) { container.innerHTML = '<div class="help">No data for this attack in the loaded config.</div>'; updateHitboxWedge(); return; }
+  if (!entry) {
+    container.innerHTML = '<div class="help">This attack has no practical attack-values record in this editor yet.</div>';
+    $('practicalActionHelp').textContent = 'Animation is editable, but practical values are owned elsewhere.';
+    return;
+  }
+  $('practicalActionHelp').textContent = `Editing practical effect for ${action.label}. Animation timing/poses stay in the Animate section above.`;
   const fields = numericLeafFields(entry);
   container.innerHTML = fields.map(f => `
     <div class="field"><label>${f.label}</label>
       <div class="fieldRow">
         <input type="number" step="any" class="statInput" data-path="${f.path.join('.')}" value="${getAtPath(entry, f.path)}">
       </div>
-    </div>`).join('') || '<div class="help">No numeric fields found for this attack.</div>';
+    </div>`).join('') || '<div class="help">No practical numeric fields are exposed for this action.</div>';
   container.querySelectorAll('.statInput').forEach(inp => inp.addEventListener('input', () => {
     const path = inp.dataset.path.split('.');
     let cur = entry;
@@ -1255,40 +1462,28 @@ function renderStatFields() {
     cur[path[path.length - 1]] = Number(inp.value) || 0;
     updateHitboxWedge();
   }));
-  updateHitboxWedge();
 }
 
-$('statSlotSelect').addEventListener('change', () => { statSlotIdx = Number($('statSlotSelect').value); renderStatFields(); });
-
-// The hitbox wedge is the exact 2D angle+range cone docs/game.js's inCone()
-// tests hits against (origin, facing, rangePx, halfConeRad) — drawn flat on
-// the ground since the real hit-test is height-agnostic, fixed pointing
-// scene +Z (the same forward direction the ArrowHelper above shows) rather
-// than parented to `rig`, since rig.rotation.y is the swing's own cosmetic
-// body-turn — the hitbox represents the player's fixed aim direction the
-// swing fires along, not the animation.
 let hitboxMesh = null;
-const CUT_BASE_RANGE_TILES = 2.0; // weaponAbilities.cut's rangeTiles — the reference a rangeMul-only entry is scaled against, for this preview only
+const CUT_BASE_RANGE_TILES = 2.0;
 function effectiveRangeTiles(entry) {
-  if (entry.rangeTiles != null) return entry.rangeTiles;
-  if (entry.rangeMul != null) return entry.rangeMul * CUT_BASE_RANGE_TILES;
-  if (entry.RANGE_MUL_MAX != null) return entry.RANGE_MUL_MAX * CUT_BASE_RANGE_TILES;
-  if (entry.COUNTER_RANGE_MUL != null) return entry.COUNTER_RANGE_MUL * CUT_BASE_RANGE_TILES;
+  if (entry?.rangeTiles != null) return entry.rangeTiles;
+  if (entry?.rangeMul != null) return entry.rangeMul * CUT_BASE_RANGE_TILES;
+  if (entry?.RANGE_MUL_MAX != null) return entry.RANGE_MUL_MAX * CUT_BASE_RANGE_TILES;
+  if (entry?.COUNTER_RANGE_MUL != null) return entry.COUNTER_RANGE_MUL * CUT_BASE_RANGE_TILES;
   return CUT_BASE_RANGE_TILES;
 }
 function effectiveHalfConeDeg(entry) {
-  return entry.halfConeDeg ?? entry.HALF_CONE_DEG ?? entry.HALF_CONE_DEG_BASE ?? entry.COUNTER_HALF_CONE_DEG ?? 20;
+  return entry?.halfConeDeg ?? entry?.HALF_CONE_DEG ?? entry?.HALF_CONE_DEG_BASE ?? entry?.COUNTER_HALF_CONE_DEG ?? 20;
 }
 function updateHitboxWedge() {
   if (hitboxMesh) { scene.remove(hitboxMesh); hitboxMesh.geometry.dispose(); hitboxMesh.material.dispose(); hitboxMesh = null; }
-  if (!$('showHitbox').checked) return;
-  const slot = ATTACK_SLOTS[statSlotIdx];
-  const entry = getAtPath(attackValuesConfig, slot.path);
+  const action = currentAction();
+  if (action.practical === false || !$('showHitbox').checked) return;
+  const entry = actionStatsEntry(action);
   if (!entry) return;
   const rangeTiles = effectiveRangeTiles(entry);
   const halfConeRad = THREE.MathUtils.degToRad(effectiveHalfConeDeg(entry));
-  // MODEL_W (an avatar's own worldModelWidth) is this preview's "1 tile" —
-  // matches how the rig/avatar itself is already scaled.
   const radius = rangeTiles * MODEL_W;
   const segments = 20;
   const shape = new THREE.Shape();
@@ -1299,7 +1494,7 @@ function updateHitboxWedge() {
   }
   shape.lineTo(0, 0);
   const geo = new THREE.ShapeGeometry(shape);
-  geo.rotateX(Math.PI / 2); // shape's local (x,y) -> world (x,0,z), y maps straight to +Z (forward)
+  geo.rotateX(Math.PI / 2);
   const mat = new THREE.MeshBasicMaterial({ color: 0xfb7185, transparent: true, opacity: 0.28, side: THREE.DoubleSide, depthWrite: false });
   hitboxMesh = new THREE.Mesh(geo, mat);
   hitboxMesh.position.y = 0.015;
@@ -1312,17 +1507,12 @@ $('statsDownloadBtn').addEventListener('click', () => {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob); a.download = 'attack-values.json'; a.click();
   URL.revokeObjectURL(a.href);
-  logDebug('Downloaded attack-values.json — drop it into docs/config/combat/ to apply.');
+  logDebug('Downloaded attack-values.json.');
 });
 $('statsCopyBtn').addEventListener('click', () => {
   navigator.clipboard.writeText(JSON.stringify(attackValuesConfig, null, 2));
   logDebug('Copied attack-values.json to clipboard.');
 });
-
-// Local Database Override (window.LocalDBOverrides, see docs/js/local-db-
-// overrides.js) — lets this in-memory (possibly edited) config be playtested
-// in the real game via the onboarding "Database Source" toggle, without
-// committing attack-values.json to the repo first.
 function refreshOverrideStatus() {
   const el = $('statsOverrideStatus');
   if (!el) return;
@@ -1330,7 +1520,7 @@ function refreshOverrideStatus() {
   if (!ldb) { el.textContent = 'Local override system unavailable.'; return; }
   const status = ldb.listStatuses().find(s => s.id === 'attackValues');
   el.textContent = status?.hasOverride
-    ? `Local override saved ${new Date(status.savedAt).toLocaleString()} — set Database Source to "Local overrides" on the onboarding screen to test it in-game.`
+    ? `Local override saved ${new Date(status.savedAt).toLocaleString()} — choose Local overrides on onboarding to test it.`
     : 'No local override saved yet.';
 }
 $('statsSaveOverrideBtn').addEventListener('click', () => {
@@ -1346,7 +1536,10 @@ $('statsClearOverrideBtn').addEventListener('click', () => {
 });
 refreshOverrideStatus();
 
-loadAttackValues().then(renderStatFields);
+populateActionSelect();
+loadAttackValues().then(() => {
+  applySelectedAction();
+});
 
 // ── Timeline visualization (windup/strike/hold/return phase structure) ───
 function updateTimelineSegments() {
@@ -1375,23 +1568,42 @@ function updateTimelineMarker(t) {
 }
 updateTimelineSegments();
 
-// At t === windupFrac, poseAt() returns the windup pose exactly (k=1 on the
-// Neutral→Windup lerp); at t === strikeFrac it returns the strike pose exactly
-// (k=1 on the Windup→Strike lerp) — so jumping the scrub here always lands
-// precisely on the pose being edited, live, with no interpolation in the way.
-function scrubToPhase(phase) {
+// Selecting a pose is the single edit operation: select controls, pause, and
+// show that exact keyframe. There is no separate "gizmo phase" or scrub button.
+let previewT = 0;
+let playing = true;
+
+function phasePreviewT(phase) {
+  return phase === 'neutral' ? 0 : phase === 'windup' ? anim.windupFrac : anim.strikeFrac;
+}
+function focusPreviewOnPhase(phase) {
   playing = false;
-  previewT = phase === 'neutral' ? 0 : phase === 'windup' ? anim.windupFrac : anim.strikeFrac;
+  previewT = phasePreviewT(phase);
   $('scrub').value = previewT;
   $('playPauseBtn').textContent = '▶ Play';
   updateTimelineMarker(previewT);
 }
-$('scrubNeutralBtn').onclick = () => scrubToPhase('neutral');
-$('scrubWindupBtn').onclick = () => scrubToPhase('windup');
-$('scrubStrikeBtn').onclick = () => scrubToPhase('strike');
-
-let previewT = 0;
-let playing = true;
+function selectEditPhase(phase, { focus = true } = {}) {
+  if (!['neutral', 'windup', 'strike'].includes(phase)) return;
+  editPhase = phase;
+  document.querySelectorAll('[data-edit-phase]').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.editPhase === phase);
+  });
+  $('editPhasePill').textContent = `editing: ${phase[0].toUpperCase() + phase.slice(1)}`;
+  renderActivePosePanel();
+  if (focus) {
+    focusPreviewOnPhase(phase);
+    applyPoseToRig(anim.poses[phase]);
+  }
+  if (gizmoMode !== 'off') {
+    transformControls.attach(toolHolder);
+    transformControls.setMode(gizmoMode);
+  }
+}
+document.querySelectorAll('[data-edit-phase]').forEach(btn => {
+  btn.addEventListener('click', () => selectEditPhase(btn.dataset.editPhase));
+});
+selectEditPhase(editPhase);
 
 // Stable bridge for editor extensions. Grip authoring no longer needs to know
 // about this module's private scene layout or duplicate its weapon/tool rules.
@@ -1403,19 +1615,20 @@ window.HobunjiAttackEditorToolContext = Object.freeze({
   get toolPlaneMesh() { return toolPlaneMesh; },
   get toolKey() { return currentToolKey; },
   focusNeutral() {
-    scrubToPhase('neutral');
-    applyPoseToRig(anim.poses.neutral);
+    selectEditPhase('neutral');
   },
 });
 window.dispatchEvent(new CustomEvent('hobunji-attack-editor-tool-context-ready'));
 $('playPauseBtn').onclick = () => {
   playing = !playing;
+  if (playing && gizmoMode !== 'off') setGizmoMode('off'); // A moving preview is never simultaneously an edit gizmo target.
   $('playPauseBtn').textContent = playing ? '⏸ Pause' : '▶ Play';
 };
 $('resetPreviewBtn').onclick = () => { previewT = 0; };
 $('scrub').addEventListener('input', () => {
   previewT = Number($('scrub').value);
   playing = false;
+  if (gizmoMode !== 'off') setGizmoMode('off'); // Scrubbing an in-between frame is inspection, not key-pose editing.
   $('playPauseBtn').textContent = '▶ Play';
   updateTimelineMarker(previewT);
 });
@@ -1468,20 +1681,31 @@ $('loadBtn').onclick = () => $('loadFile').click();
 $('loadFile').onchange = async () => {
   const file = $('loadFile').files?.[0];
   if (!file) return;
+  const historyToken = window.HobunjiAttackEditorHistory?.beginExternal?.('Import animation JSON'); // Groups async file replacement into one Undo step.
   try {
     const data = JSON.parse(await file.text());
     loadAnimObject(data);
+    window.HobunjiAttackEditorHandGripMode?.loadFromAnimationObject?.(data);
+    window.HobunjiAttackEditorHandShoulderControls?.loadFromAnimationObject?.(data);
     logDebug(`Loaded ${file.name}`);
   } catch (e) {
     logDebug(`Load failed: ${e.message}`);
+  } finally {
+    window.HobunjiAttackEditorHistory?.commitExternal?.(historyToken);
+    $('loadFile').value = '';
   }
 };
 function safeNum(v, fallback) { const n = Number(v); return Number.isFinite(n) ? n : fallback; }
 function loadAnimObject(data) {
-  anim.name = data.name || anim.name;
-  anim.style = data.style || anim.style;
-  const inferredSequence = /\bload\b/i.test(data.name || '') ? 'load' : /\bfire\b/i.test(data.name || '') ? 'fire' : 'attack';
-  anim.sequence = ['attack', 'load', 'fire'].includes(data.sequence) ? data.sequence : inferredSequence;
+  const action = currentAction(); // Import replaces pose/timing for this Action; it never changes which gameplay action is selected.
+  const actionSource = prepareTemplateForAction(action, actionStatsEntry(action));
+  if (data.style && actionSource?.style && data.style !== actionSource.style) {
+    logDebug(`Imported style "${data.style}" ignored; ${action.label} uses "${actionSource.style}".`);
+  }
+  anim.name = action.label;
+  anim.style = actionSource?.style || data.style || anim.style;
+  const inferredSequence = /\bload\b/i.test(action.label) ? 'load' : /\bfire\b/i.test(action.label) ? 'fire' : 'attack';
+  anim.sequence = actionSource?.sequence || (['attack', 'load', 'fire'].includes(data.sequence) ? data.sequence : inferredSequence);
   anim.windupFrac = safeNum(data.windupFrac, anim.windupFrac);
   anim.strikeFrac = safeNum(data.strikeFrac, anim.strikeFrac);
   // Older exports predate the hold phase — fall back to holdFrac === strikeFrac
@@ -1499,7 +1723,7 @@ function loadAnimObject(data) {
   anim.poses.neutral = { ...defaultPose(safeNum(n.x, styleNeutral.x), safeNum(n.y, styleNeutral.y), safeNum(n.z, styleNeutral.z), safeNum(n.pitch, styleNeutral.pitch), safeNum(n.yaw, styleNeutral.yaw), safeNum(n.bodyYaw, styleNeutral.bodyYaw), safeNum(n.roll, styleNeutral.roll)), scale: Math.max(0.1, safeNum(n.scale, styleNeutral.scale ?? 1)) };
   anim.poses.windup = defaultPose(safeNum(w.x, 0), safeNum(w.y, 0), safeNum(w.z, 0), safeNum(w.pitch, 0), safeNum(w.yaw, 0), safeNum(w.bodyYaw, 0), safeNum(w.roll, 0));
   anim.poses.strike = defaultPose(safeNum(s.x, 0), safeNum(s.y, 0), safeNum(s.z, 0), safeNum(s.pitch, 0), safeNum(s.yaw, 0), safeNum(s.bodyYaw, 0), safeNum(s.roll, 0));
-  $('animName').value = anim.name;
+  $('animName').value = action.label;
   $('animStyle').value = anim.style;
   $('playbackSequence').value = anim.sequence;
   $('windupFrac').value = anim.windupFrac;
@@ -1509,14 +1733,99 @@ function loadAnimObject(data) {
   $('strikeFracVal').textContent = `${Math.round(anim.strikeFrac * 100)}%`;
   $('holdFracVal').textContent = `${Math.round(anim.holdFrac * 100)}%`;
   $('durationS').value = anim.durationS;
-  syncPosePanelFromState('neutral');
-  syncPosePanelFromState('windup');
-  syncPosePanelFromState('strike');
+  renderActivePosePanel();
+  selectEditPhase(editPhase);
   updateTimelineSegments();
   refreshJsonView();
 }
 
 // ── Render loop ───────────────────────────────────────────────────────────
+
+function cloneEditorStateValue(value) {
+  return value == null ? value : JSON.parse(JSON.stringify(value));
+}
+
+async function restoreCoreHistoryState(snapshot) {
+  if (!snapshot || typeof snapshot !== 'object') return false;
+  if (snapshot.attackValuesConfig) attackValuesConfig = cloneEditorStateValue(snapshot.attackValuesConfig);
+
+  if (snapshot.actionId && ACTION_DEFS.some(action => action.id === snapshot.actionId)) {
+    currentActionId = snapshot.actionId;
+    $('actionSelect').value = currentActionId;
+    applySelectedAction({ play: false });
+  }
+  if (snapshot.animation) loadAnimObject(cloneEditorStateValue(snapshot.animation));
+
+  if (snapshot.toolSprite && TOOL_SPRITE_DEFS[snapshot.toolSprite]) {
+    $('toolSpriteSelect').value = snapshot.toolSprite;
+    await setToolSprite(snapshot.toolSprite);
+  }
+  if (snapshot.toolMirrored != null) setMirroredPreview(snapshot.toolMirrored === true);
+
+  const speciesChanged = snapshot.avatarSpecies && $('avatarSpecies').value !== snapshot.avatarSpecies;
+  const genderChanged = snapshot.avatarGender && $('avatarGender').value !== snapshot.avatarGender;
+  if (snapshot.avatarSpecies) $('avatarSpecies').value = snapshot.avatarSpecies;
+  if (snapshot.avatarGender) $('avatarGender').value = snapshot.avatarGender;
+  if (speciesChanged) $('avatarSpecies').dispatchEvent(new Event('change', { bubbles: true }));
+  else if (genderChanged) $('avatarGender').dispatchEvent(new Event('change', { bubbles: true }));
+
+  for (const [id, eventName] of [['neckStrength','input'], ['neckRadius','input']]) {
+    if (snapshot[id] == null || !$(id)) continue;
+    $(id).value = String(snapshot[id]);
+    $(id).dispatchEvent(new Event(eventName, { bubbles: true }));
+  }
+  for (const id of ['showHeadSkinVertices', 'showHitbox']) {
+    if (snapshot[id] == null || !$(id)) continue;
+    $(id).checked = !!snapshot[id];
+    $(id).dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  if (snapshot.editPhase) selectEditPhase(snapshot.editPhase, { focus: false });
+  previewT = Math.max(0, Math.min(1, Number(snapshot.previewT) || 0));
+  $('scrub').value = previewT;
+  playing = snapshot.playing === true;
+  $('playPauseBtn').textContent = playing ? '⏸ Pause' : '▶ Play';
+  setGizmoMode('off');
+  updateTimelineMarker(previewT);
+  renderStatFields();
+  updateHitboxWedge();
+  refreshJsonView();
+  return true;
+}
+
+// Public editor-state seam used by global Undo/Redo. It snapshots DATA rather
+// than only visible DOM, so hidden practical values survive action changes.
+window.HobunjiAttackEditorState = Object.freeze({
+  snapshot() {
+    let animation = exportAnimObject();
+    try { animation = JSON.parse($('jsonView').value || JSON.stringify(animation)); } catch (_) {}
+    return {
+      actionId: currentActionId,
+      animation: cloneEditorStateValue(animation),
+      attackValuesConfig: cloneEditorStateValue(attackValuesConfig),
+      editPhase,
+      toolSprite: $('toolSpriteSelect').value,
+      toolMirrored,
+      avatarSpecies: $('avatarSpecies').value,
+      avatarGender: $('avatarGender').value,
+      neckStrength: Number($('neckStrength').value),
+      neckRadius: Number($('neckRadius').value),
+      showHeadSkinVertices: $('showHeadSkinVertices').checked,
+      showHitbox: $('showHitbox').checked,
+      previewT,
+      playing,
+    };
+  },
+  restore: restoreCoreHistoryState,
+  refresh() {
+    renderActivePosePanel();
+    renderStatFields();
+    updateHitboxWedge();
+    refreshJsonView();
+    applyPoseToRig(anim.poses[editPhase]);
+  },
+});
+
 function resize() {
   const r = $('viewport').getBoundingClientRect();
   renderer.setSize(r.width, r.height, false);

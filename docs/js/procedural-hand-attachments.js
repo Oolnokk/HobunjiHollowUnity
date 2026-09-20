@@ -20,6 +20,7 @@
   const OUTLINE_OCCLUDER_DEPTH_LAYER = 4; // Used by the game's pre-shell depth replay so the depthWrite-disabled parrot body primitive can still produce a clean shell.
   const PARROT_BODY_SHELL_Y_PADDING = 0.02; // Keeps the body-coloured shell just beyond the highest keratin digit, before the continuous mesh becomes the portrait-covered wing.
   let showGripGuides = false;
+  let showPaperHandGuide = false; // Editor-only by use: no geometry is created until the Attack Animation Editor explicitly enables the locked reference.
   let gameDeps = null;
 
   function normalizeKey(value) {
@@ -436,6 +437,91 @@
     return group;
   }
 
+  function buildPaperHandReference(THREE) {
+    const root = new THREE.Group(); // Stable hand-local scaffold for visually describing poses without depending on a particular GLB's topology.
+    root.name = 'right_hand_paper_reference';
+    root.userData.lockedReference = true;
+    root.userData.referenceShape = 'folded-paper-grasp';
+    root.userData.editable = false;
+
+    function plane(name, width, height) {
+      const geometry = new THREE.PlaneGeometry(width, height);
+      const material = new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        wireframe: true,
+        transparent: true,
+        opacity: 0.92,
+        depthTest: false,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      });
+      material.name = 'paper_hand_xray_wire';
+      material.toneMapped = false;
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.name = name;
+      mesh.renderOrder = 10000;
+      mesh.frustumCulled = false;
+      return mesh;
+    }
+
+    // Wrist/origin is at the lower-middle edge of the palm. The whole reference
+    // is normalized to about one hand-height and later receives the exact same
+    // target height, mirror sign and right-hand visual twist as the real model.
+    const palm = plane('paperPalm', 0.54, 0.46);
+    palm.position.set(0, 0.23, 0);
+    root.add(palm);
+
+    const finger1Pivot = new THREE.Group();
+    finger1Pivot.name = 'paperFinger1Pivot';
+    finger1Pivot.position.set(0, 0.46, 0.01);
+    finger1Pivot.rotation.x = THREE.MathUtils.degToRad(-18);
+    const finger1 = plane('paperFinger1', 0.36, 0.18);
+    finger1.position.y = 0.09;
+    finger1Pivot.add(finger1);
+    root.add(finger1Pivot);
+
+    const finger2Pivot = new THREE.Group();
+    finger2Pivot.name = 'paperFinger2Pivot';
+    finger2Pivot.position.set(0, 0.18, 0);
+    finger2Pivot.rotation.x = THREE.MathUtils.degToRad(-28);
+    const finger2 = plane('paperFinger2', 0.33, 0.16);
+    finger2.position.y = 0.08;
+    finger2Pivot.add(finger2);
+    finger1Pivot.add(finger2Pivot);
+
+    const finger3Pivot = new THREE.Group();
+    finger3Pivot.name = 'paperFinger3Pivot';
+    finger3Pivot.position.set(0, 0.16, 0);
+    finger3Pivot.rotation.x = THREE.MathUtils.degToRad(-34);
+    const finger3 = plane('paperFinger3', 0.29, 0.13);
+    finger3.position.y = 0.065;
+    finger3Pivot.add(finger3);
+    finger2Pivot.add(finger3Pivot);
+
+    const thumb1Pivot = new THREE.Group();
+    thumb1Pivot.name = 'paperThumb1Pivot';
+    thumb1Pivot.position.set(0.28, 0.18, 0.015); // Canonical source-left thumb; right-hand mirroring is applied to the whole reference below.
+    thumb1Pivot.rotation.x = THREE.MathUtils.degToRad(-20);
+    thumb1Pivot.rotation.z = THREE.MathUtils.degToRad(-52);
+    const thumb1 = plane('paperThumb1', 0.16, 0.17);
+    thumb1.position.y = 0.085;
+    thumb1Pivot.add(thumb1);
+    root.add(thumb1Pivot);
+
+    const thumb2Pivot = new THREE.Group();
+    thumb2Pivot.name = 'paperThumb2Pivot';
+    thumb2Pivot.position.set(0, 0.17, 0);
+    thumb2Pivot.rotation.x = THREE.MathUtils.degToRad(-34);
+    thumb2Pivot.rotation.z = THREE.MathUtils.degToRad(-12);
+    const thumb2 = plane('paperThumb2', 0.14, 0.13);
+    thumb2.position.y = 0.065;
+    thumb2Pivot.add(thumb2);
+    thumb1Pivot.add(thumb2Pivot);
+
+    root.visible = false;
+    return root;
+  }
+
   function buildFallbackHand(THREE, size, color, side, sourceIsLeft, speciesId, bodyColors) {
     const geometry = new THREE.SphereGeometry(size * 0.42, 14, 10);
     geometry.scale(0.72, 1, 0.55);
@@ -498,9 +584,19 @@
         }
       });
       socket.add(guide);
+
+      const calibration = new THREE.Group(); // Owns ONLY the per-GLB handFromTool transform so shoulder-follow can never overwrite model calibration.
+      calibration.name = `${side}_hand_calibration`;
+      socket.add(calibration);
       root.add(socket);
-      sockets[side] = { socket, guide, visual: null };
+      sockets[side] = { socket, calibration, guide, visual: null, toolCalibrationEnabled: false };
     }
+
+    const paperReferenceSocket = new THREE.Group(); // Raw primary-grip target frame. Unlike the GLB hand socket, hand-model calibration must never move this.
+    paperReferenceSocket.name = 'right_hand_paper_reference_socket';
+    root.add(paperReferenceSocket);
+    let paperGuide = null; // Created lazily only when the standalone editor enables the reference.
+    let paperGuidePlaced = false; // Prevents a newly-enabled guide flashing at the avatar origin before the frame driver supplies the raw target.
 
     const state = {
       disposed: false,
@@ -526,6 +622,8 @@
 
     function setSideIdle(side, fallbackPose = null) {
       const rec = sockets[side];
+      rec.toolCalibrationEnabled = false; // handFromTool calibration belongs only to a held-item attachment, never the free-hand idle pose.
+      syncToolCalibration(side);
       const position = fallbackPose?.position || {}; // Optional local locomotion offset applied only while this side has no attachment owner.
       const rotation = fallbackPose?.rotationDeg || {}; // Optional idle/walk rotation composed after the authored medial hand frame.
       fallbackOffset.set(
@@ -555,13 +653,13 @@
     function installVisual(side, visual) {
       const rec = sockets[side];
       if (rec.visual) {
-        rec.socket.remove(rec.visual);
+        rec.calibration.remove(rec.visual);
         disposeObjectResources(rec.visual);
       }
       rec.visual = visual;
       if (visual) {
         visual.name = `${side}_hand_visual`; // Fallback and GLB visuals share the same stable name for outline rescans.
-        rec.socket.add(visual);
+        rec.calibration.add(visual); // The visual is downstream of model calibration; socket orientation remains owned by grip/shoulder systems.
         markOutline(visual); // Reassert layer 1 after every visual replacement, including the left hand.
       }
       rec.guide.visible = showGripGuides;
@@ -573,6 +671,91 @@
       const modelScale = Number(model?.scale) > 0 ? Number(model.scale) : 1;
       const speciesScale = Number(profiles.speciesScaleFor?.(speciesId, gender)) || 1;
       return { modelKey, model, modelScale, speciesScale, effectiveScale: modelScale * speciesScale };
+    }
+
+    function normalizedToolCalibration(values = profileValues()) {
+      const raw = profiles.normalizeHandTransform?.(values.model?.handFromTool) || values.model?.handFromTool || {}; // Reads the one authoritative per-GLB calibration record.
+      const position = raw.position || {}; // Normalized hand-height translation, converted to real preview units below.
+      const q = raw.rotationQuaternion || null; // Gimbal-free model-local orientation authored by the calibration controls.
+      const unit = modelHeight
+        * (Number(profiles.data?.handHeightFraction) || 0.12)
+        * (Number(values.modelScale) || 1)
+        * (Number(values.speciesScale) || 1); // Same hand-height unit the old frame-driver composition used.
+      return {
+        position: new THREE.Vector3(
+          (Number(position.x) || 0) * unit,
+          (Number(position.y) || 0) * unit,
+          (Number(position.z) || 0) * unit,
+        ),
+        quaternion: q && [q.x, q.y, q.z, q.w].every(value => Number.isFinite(Number(value)))
+          ? new THREE.Quaternion(Number(q.x), Number(q.y), Number(q.z), Number(q.w)).normalize()
+          : new THREE.Quaternion().setFromEuler(new THREE.Euler(
+              THREE.MathUtils.degToRad(Number(raw.rotationDeg?.pitch) || 0),
+              THREE.MathUtils.degToRad(Number(raw.rotationDeg?.yaw) || 0),
+              THREE.MathUtils.degToRad(Number(raw.rotationDeg?.roll) || 0),
+              'YXZ',
+            )),
+      };
+    }
+
+    function syncToolCalibration(side, values = profileValues()) {
+      const rec = sockets[side];
+      if (!rec?.calibration) return false;
+      if (!rec.toolCalibrationEnabled) {
+        rec.calibration.position.set(0, 0, 0);
+        rec.calibration.quaternion.identity();
+      } else {
+        const transform = normalizedToolCalibration(values);
+        rec.calibration.position.copy(transform.position);
+        rec.calibration.quaternion.copy(transform.quaternion);
+      }
+      rec.calibration.updateMatrix?.();
+      rec.calibration.updateMatrixWorld?.(true);
+      return true;
+    }
+
+    function setToolCalibrationEnabled(side, enabled) {
+      const rec = sockets[side];
+      if (!rec) return false;
+      rec.toolCalibrationEnabled = !!enabled;
+      return syncToolCalibration(side);
+    }
+
+    function toolCalibrationLocal(side) {
+      const rec = sockets[side];
+      if (!rec?.calibration) return null;
+      return {
+        enabled: !!rec.toolCalibrationEnabled,
+        position: rec.calibration.position.clone(),
+        quaternion: rec.calibration.quaternion.clone(),
+      };
+    }
+
+    function syncPaperHandGuide(values = profileValues()) {
+      if (!showPaperHandGuide && !paperGuide) return; // Zero gameplay geometry/cost while the editor-only toggle has never been used.
+      if (!paperGuide) {
+        paperGuide = buildPaperHandReference(THREE);
+        paperGuide.rotation.y = THREE.MathUtils.degToRad(RIGHT_SHOULDER_AXIS_TWIST_DEG); // Matches the rendered right-hand visual's fixed source-hand twist.
+        paperReferenceSocket.add(paperGuide);
+      }
+      const targetHeight = modelHeight
+        * (Number(profiles.data?.handHeightFraction) || 0.12)
+        * (Number(values.effectiveScale) || 1);
+      const sourceIsLeft = values.model?.mirrorX !== false;
+      const mirrorSign = sourceIsLeft ? -1 : 1; // Same source-left → right-hand mirror convention as buildGlbHand().
+      paperGuide.scale.set(targetHeight * mirrorSign, targetHeight, targetHeight);
+      paperGuide.visible = showPaperHandGuide && paperGuidePlaced;
+      paperGuide.updateMatrix?.();
+    }
+
+    function setPaperHandGuideVisible(value) {
+      showPaperHandGuide = !!value;
+      syncPaperHandGuide(profileValues());
+    }
+
+    function hidePaperHandGuideTarget() {
+      paperGuidePlaced = false;
+      if (paperGuide) paperGuide.visible = false;
     }
 
     function installFallback(values) {
@@ -594,6 +777,9 @@
       state.glb = values.model?.glb || null;
       state.loadError = null;
       installFallback(values);
+      syncToolCalibration('left', values);
+      syncToolCalibration('right', values); // Profile/model-scale changes update the child calibration transform without touching socket ownership.
+      syncPaperHandGuide(values); // Profile/model-scale changes keep the locked scaffold aligned without animating its folded segments.
       if (!values.model?.glb) return;
 
       const baseTargetHeight = modelHeight * (Number(profiles.data?.handHeightFraction) || 0.12);
@@ -620,9 +806,32 @@
     }
 
     const tempParentQuaternion = new THREE.Quaternion();
+    function placePaperHandGuideWorld(worldPosition, worldQuaternion) {
+      if (!showPaperHandGuide || !worldPosition || !worldQuaternion) {
+        hidePaperHandGuideTarget();
+        return false;
+      }
+      syncPaperHandGuide(profileValues());
+      if (!paperGuide) return false;
+      parent.updateWorldMatrix?.(true, false);
+      const localPosition = worldPosition.clone();
+      parent.worldToLocal(localPosition);
+      parent.getWorldQuaternion(tempParentQuaternion);
+      const localQuaternion = tempParentQuaternion.clone().invert().multiply(worldQuaternion);
+      paperReferenceSocket.position.copy(localPosition);
+      paperReferenceSocket.quaternion.copy(localQuaternion);
+      paperReferenceSocket.visible = true;
+      paperReferenceSocket.updateMatrix?.();
+      paperReferenceSocket.updateMatrixWorld?.(true);
+      paperGuidePlaced = true;
+      paperGuide.visible = true;
+      return true;
+    }
+
     function placeHandWorld(side, worldPosition, worldQuaternion) {
       const rec = sockets[side];
       if (!rec || !worldPosition || !worldQuaternion) return false;
+      setToolCalibrationEnabled(side, true); // Held-item placement owns only the socket; per-GLB calibration stays on its dedicated child node.
       parent.updateWorldMatrix?.(true, false);
       const localPosition = worldPosition.clone();
       parent.worldToLocal(localPosition);
@@ -644,7 +853,16 @@
     installFallback(profileValues());
     refreshModelProfile();
 
-    const unsubscribe = profiles.subscribe?.(() => refreshModelProfile());
+    const unsubscribe = profiles.subscribe?.((_data, change) => {
+      if (change?.kind === 'hand-transform') {
+        const values = profileValues();
+        syncToolCalibration('left', values);
+        syncToolCalibration('right', values); // Live slider edits update only the calibration child; the held-item/shoulder socket is untouched.
+        syncPaperHandGuide(values);
+        return;
+      }
+      refreshModelProfile();
+    });
 
     const api = {
       group: root,
@@ -656,7 +874,12 @@
       setSideIdle,
       setSideVisible,
       useIdlePose,
+      setToolCalibrationEnabled,
+      toolCalibrationLocal,
       refreshModelProfile,
+      setPaperHandGuideVisible, // Public only so the standalone editor can lazily toggle its locked x-ray reference.
+      placePaperHandGuideWorld, // Frame driver supplies the UNCALIBRATED primary-grip frame so calibration sliders move the GLB against this fixed scaffold.
+      hidePaperHandGuideTarget,
       dispose() {
         if (state.disposed) return;
         state.disposed = true;
@@ -681,10 +904,28 @@
           glb: state.glb,
           loadError: state.loadError,
           fallbackPoseInput: 'per-side-local-offset',
+          toolCalibrationOwner: 'dedicated-child-node',
+          toolCalibration: Object.fromEntries(['left', 'right'].map(side => {
+            const rec = sockets[side];
+            return [side, {
+              enabled: !!rec.toolCalibrationEnabled,
+              node: rec.calibration?.name || null,
+              position: rec.calibration ? { x: rec.calibration.position.x, y: rec.calibration.position.y, z: rec.calibration.position.z } : null,
+              quaternion: rec.calibration ? { x: rec.calibration.quaternion.x, y: rec.calibration.quaternion.y, z: rec.calibration.quaternion.z, w: rec.calibration.quaternion.w } : null,
+            }];
+          })),
           rightShoulderAxisTwistDeg: RIGHT_SHOULDER_AXIS_TWIST_DEG,
           parrotBodyLayerPortraitOcclusion: 'depthWrite-disabled+pre-shell-depth-replay',
           parrotBodyShellTrim: activeVisual?.userData?.parrotBodyShellTrim || null,
           bodySurfaceTexture: 'wavy_surface.png',
+          paperHandGuide: {
+            visible: !!paperGuide?.visible,
+            created: !!paperGuide,
+            placed: paperGuidePlaced,
+            locked: true,
+            lockedTo: 'raw-primary-grip-frame-before-grip-mode-and-hand-model-calibration',
+            shape: 'palm + 3 folded finger planes + 2 folded thumb planes',
+          },
         };
       },
     };
@@ -705,6 +946,11 @@
         }
       }
     },
+    setShowPaperHandGuide(value) {
+      showPaperHandGuide = !!value;
+      for (const rig of activeRigs) rig.setPaperHandGuideVisible?.(showPaperHandGuide);
+    },
+    get showPaperHandGuide() { return showPaperHandGuide; },
     getActiveDebug() { return [...activeRigs].map(rig => rig.getDebug()); },
     refreshAllProfiles() { for (const rig of activeRigs) rig.refreshModelProfile?.(); },
     idleMedialYawDeg: IDLE_MEDIAL_YAW_DEG,

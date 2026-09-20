@@ -508,6 +508,7 @@
         savedQuaternion = this.quaternion.clone();
         try {
           applyRelativeHolderPose(this, sourcePose, targetPose);
+          if (activeSlot === 'weapon') deps?.scaleToolWorldPointAroundPlayerCentroid?.(this.position); // Weapon idle uses the same finished-point centroid orbit as attacks.
           stanceApplied = true;
         } catch (error) {
           window.__farmLog?.(`[weapon-stance] holder pose failed: ${error.message}`, 'warn');

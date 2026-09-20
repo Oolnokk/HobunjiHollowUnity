@@ -15,6 +15,7 @@
   const DEFAULT_MODEL_SCALE = 2 * HAND_SIZE_BALANCE_MULTIPLIER;
   const PARROT_MODEL_SCALE = 3 * HAND_SIZE_BALANCE_MULTIPLIER;
   const SHARED_ALIGNMENT_PRESET = 'all-species-direction-90--90-0-v1';
+  const ROTATION_CALIBRATION_PRESET = 'orthogonal-quaternion-correction-coordinates-v3'; // Visible X/Y/Z sliders use a gimbal-free stereographic quaternion chart anchored to the preserved model calibration base.
   const MODEL_SCALE_PRESET = 'hands-92_5-feet-120-v2';
   const IDENTITY_TRANSFORM = Object.freeze({
     position: Object.freeze({ x: 0, y: 0, z: 0 }),
@@ -48,6 +49,7 @@
   const DEFAULT_DATA = {
     schema: 'hobunji_hand_model_profiles.v1',
     alignmentPreset: SHARED_ALIGNMENT_PRESET,
+    rotationCalibrationPreset: ROTATION_CALIBRATION_PRESET,
     modelScalePreset: MODEL_SCALE_PRESET,
     handHeightFraction: 0.12,
     sourceBasis: {
@@ -116,18 +118,97 @@
     return Number.isFinite(n) ? n : 0;
   }
 
+  function validQuaternion(raw) {
+    return !!raw && [raw.x, raw.y, raw.z, raw.w].every(value => Number.isFinite(Number(value)));
+  }
+
+  function legacyRotationVectorQuaternion(rotationVectorDeg = {}) {
+    const vx = numberOrZero(rotationVectorDeg.x);
+    const vy = numberOrZero(rotationVectorDeg.y);
+    const vz = numberOrZero(rotationVectorDeg.z);
+    const magnitudeDeg = Math.hypot(vx, vy, vz);
+    if (magnitudeDeg < 1e-9) return { x: 0, y: 0, z: 0, w: 1 };
+    const halfAngle = magnitudeDeg * Math.PI / 360;
+    const scale = Math.sin(halfAngle) / magnitudeDeg;
+    return normalizeQuat({
+      x: vx * scale,
+      y: vy * scale,
+      z: vz * scale,
+      w: Math.cos(halfAngle),
+    });
+  }
+
+  function axisAngleQuaternion(axis = {}, angleDeg = 0) {
+    const length = Math.hypot(numberOrZero(axis.x), numberOrZero(axis.y), numberOrZero(axis.z)); // Normalizes legacy-v2 axes during one-shot migration.
+    const angle = numberOrZero(angleDeg) * Math.PI / 180; // Converts the legacy authored angle for migration-only quaternion reconstruction.
+    if (length < 1e-9 || Math.abs(angle) < 1e-12) return { x: 0, y: 0, z: 0, w: 1 };
+    const half = angle / 2; // Used below to build the migration-only axis-angle quaternion.
+    const scale = Math.sin(half) / length; // Applies the normalized legacy axis to the quaternion vector part.
+    return normalizeQuat({
+      x: numberOrZero(axis.x) * scale,
+      y: numberOrZero(axis.y) * scale,
+      z: numberOrZero(axis.z) * scale,
+      w: Math.cos(half),
+    });
+  }
+
+  function legacyFixedBasisCorrectionQuaternion(rotationBaseQuaternion, correctionDeg = {}) {
+    const base = normalizeQuat(rotationBaseQuaternion); // Reconstructs the exact v2 Z·Y·X result so saved previews do not jump during v3 migration.
+    const axisX = rotateVectorByQuat({ x: 1, y: 0, z: 0 }, base); // Legacy v2 parent-space X axis used only by migration.
+    const axisY = rotateVectorByQuat({ x: 0, y: 1, z: 0 }, base); // Legacy v2 parent-space Y axis used only by migration.
+    const axisZ = rotateVectorByQuat({ x: 0, y: 0, z: 1 }, base); // Legacy v2 parent-space Z axis used only by migration.
+    const qx = axisAngleQuaternion(axisX, correctionDeg.x); // Legacy v2 X contribution used only to preserve current orientation.
+    const qy = axisAngleQuaternion(axisY, correctionDeg.y); // Legacy v2 Y contribution used only to preserve current orientation.
+    const qz = axisAngleQuaternion(axisZ, correctionDeg.z); // Legacy v2 Z contribution used only to preserve current orientation.
+    return normalizeQuat(multiplyQuat(multiplyQuat(qz, qy), qx));
+  }
+
+  function orthogonalCorrectionQuaternion(correctionDeg = {}) {
+    // Modified Rodrigues / stereographic quaternion coordinates are conformal:
+    // the three parameter directions stay orthogonal throughout the editor's
+    // finite ±180° range, unlike any sequential X/Y/Z Euler-style product.
+    // With only one non-zero control, that control is still the exact requested
+    // rotation angle around its model-basis X, Y, or Z axis.
+    const px = Math.tan(numberOrZero(correctionDeg.x) * Math.PI / 720); // X chart coordinate; quarter-angle mapping makes a solo X value an exact X rotation.
+    const py = Math.tan(numberOrZero(correctionDeg.y) * Math.PI / 720); // Y chart coordinate; used simultaneously with X/Z instead of after them.
+    const pz = Math.tan(numberOrZero(correctionDeg.z) * Math.PI / 720); // Z chart coordinate; never becomes X when Y reaches ±90°.
+    const p2 = px * px + py * py + pz * pz; // Shared stereographic radius used to map the three controls onto one unit quaternion.
+    const denominator = 1 + p2; // Positive over the whole finite editor range, so this chart has no 90° singularity.
+    return normalizeQuat({
+      x: 2 * px / denominator,
+      y: 2 * py / denominator,
+      z: 2 * pz / denominator,
+      w: (1 - p2) / denominator,
+    });
+  }
+
   function normalizeTransform(raw) {
+    const legacyRotationDeg = {
+      pitch: numberOrZero(raw?.rotationDeg?.pitch),
+      yaw: numberOrZero(raw?.rotationDeg?.yaw),
+      roll: numberOrZero(raw?.rotationDeg?.roll),
+    }; // Backward-readable representation of the fixed base only; sliders never edit these Euler values.
+    const rotationBaseQuaternion = validQuaternion(raw?.rotationBaseQuaternion)
+      ? normalizeQuat(raw.rotationBaseQuaternion)
+      : quatFromYXZ(legacyRotationDeg);
+    const rotationCorrectionDeg = {
+      x: numberOrZero(raw?.rotationCorrectionDeg?.x),
+      y: numberOrZero(raw?.rotationCorrectionDeg?.y),
+      z: numberOrZero(raw?.rotationCorrectionDeg?.z),
+    };
+    const correctionQuaternion = orthogonalCorrectionQuaternion(rotationCorrectionDeg); // Solves all three correction controls simultaneously in a gimbal-free quaternion chart.
+    const rotationQuaternion = normalizeQuat(multiplyQuat(rotationBaseQuaternion, correctionQuaternion)); // Post-multiplication keeps the correction chart anchored to the preserved hand-model basis.
+
     return {
       position: {
         x: numberOrZero(raw?.position?.x),
         y: numberOrZero(raw?.position?.y),
         z: numberOrZero(raw?.position?.z),
       },
-      rotationDeg: {
-        pitch: numberOrZero(raw?.rotationDeg?.pitch),
-        yaw: numberOrZero(raw?.rotationDeg?.yaw),
-        roll: numberOrZero(raw?.rotationDeg?.roll),
-      },
+      rotationDeg: legacyRotationDeg,
+      rotationBaseQuaternion,
+      rotationCorrectionDeg,
+      rotationQuaternion,
     };
   }
 
@@ -204,24 +285,29 @@
 
   function invertTransform(raw) {
     const transform = normalizeTransform(raw);
-    const q = quatFromYXZ(transform.rotationDeg); // Represents the legacy hand→tool rotation being inverted below.
+    const q = transform.rotationQuaternion; // Older toolGrip migration may already contain quaternion-native corrections.
     const inverseQ = { x: -q.x, y: -q.y, z: -q.z, w: q.w }; // Unit-quaternion conjugate gives the exact reverse rotation.
     const inversePosition = rotateVectorByQuat({
       x: -transform.position.x,
       y: -transform.position.y,
       z: -transform.position.z,
-    }, inverseQ); // A rigid inverse must rotate -translation by R^-1; plain sign negation is only correct when R is identity.
-    return {
+    }, inverseQ);
+    return normalizeTransform({
       position: inversePosition,
-      rotationDeg: eulerYXZFromQuat(inverseQ),
-    };
+      rotationDeg: eulerYXZFromQuat(inverseQ), // Legacy-readable base values only; runtime consumes rotationQuaternion.
+      rotationBaseQuaternion: inverseQ,
+      rotationCorrectionDeg: { x: 0, y: 0, z: 0 },
+    });
   }
 
   function normalizeData(raw) {
     const next = clone(raw || DEFAULT_DATA);
     const previousScalePreset = next.modelScalePreset; // Distinguishes the oldest 2x parrot default from the later 3x preset during migration.
+    const previousRotationCalibrationPreset = next.rotationCalibrationPreset; // Selects the exact legacy correction reconstruction used to preserve the visible v1/v2 hand orientation.
     const migrateToSharedAlignment = next.alignmentPreset !== SHARED_ALIGNMENT_PRESET;
-    const migrateSizeBalance = next.modelScalePreset !== MODEL_SCALE_PRESET; // Applies the new global reduction once to saved/custom profiles.
+    const migrateSizeBalance = next.modelScalePreset !== MODEL_SCALE_PRESET;
+    const migrateRotationCalibration = previousRotationCalibrationPreset !== ROTATION_CALIBRATION_PRESET;
+    next.rotationCalibrationPreset = ROTATION_CALIBRATION_PRESET; // Orthogonal quaternion coordinates replace both rotation-vector and sequential fixed-axis calibration.
     next.alignmentPreset = SHARED_ALIGNMENT_PRESET;
     next.modelScalePreset = MODEL_SCALE_PRESET;
     next.sourceBasis = {
@@ -267,6 +353,30 @@
       if (!model.handFromTool) {
         model.handFromTool = invertTransform(model.toolGrip);
       } else {
+        if (migrateRotationCalibration) {
+          const legacyRaw = model.handFromTool; // Reads the pre-v3 transform once so migration can preserve the exact currently-visible orientation.
+          const legacyBase = validQuaternion(legacyRaw?.rotationBaseQuaternion)
+            ? normalizeQuat(legacyRaw.rotationBaseQuaternion)
+            : quatFromYXZ(legacyRaw?.rotationDeg || {}); // Falls back to the oldest Euler-authored base when no quaternion base was saved.
+          const preservedFinal = validQuaternion(legacyRaw?.rotationQuaternion)
+            ? normalizeQuat(legacyRaw.rotationQuaternion)
+            : previousRotationCalibrationPreset === 'fixed-model-basis-axis-corrections-v2'
+              ? normalizeQuat(multiplyQuat(
+                  legacyFixedBasisCorrectionQuaternion(legacyBase, legacyRaw?.rotationCorrectionDeg || {}),
+                  legacyBase,
+                ))
+              : normalizeQuat(multiplyQuat(
+                  legacyBase,
+                  legacyRotationVectorQuaternion(legacyRaw?.rotationCorrectionVectorDeg || {}),
+                )); // Exact v1/v2 fallback paths are migration-only; all live v3 editing uses orthogonalCorrectionQuaternion().
+          model.handFromTool = {
+            ...legacyRaw,
+            rotationDeg: eulerYXZFromQuat(preservedFinal),
+            rotationBaseQuaternion: preservedFinal,
+            rotationCorrectionDeg: { x: 0, y: 0, z: 0 },
+          };
+          delete model.handFromTool.rotationCorrectionVectorDeg;
+        }
         model.handFromTool = normalizeTransform(model.handFromTool);
       }
       // Legacy socket readers may still inspect toolGrip. Keep it identity so the
@@ -336,20 +446,32 @@
   function effectiveScaleFor(speciesId, gender) {
     return modelScaleFor(speciesId) * speciesScaleFor(speciesId, gender);
   }
-  function notify() { for (const fn of listeners) { try { fn(data); } catch (_) {} } }
-  function replace(next) {
+  function notify(change = { kind: 'data' }) {
+    for (const fn of listeners) { try { fn(data, change); } catch (_) {} }
+  }
+  function replace(next, change = { kind: 'replace' }) {
     if (!next || next.schema !== DEFAULT_DATA.schema) throw new Error(`Expected ${DEFAULT_DATA.schema}`);
     data = normalizeData(next);
     global.HOBUNJI_HAND_MODEL_PROFILES = data;
-    notify();
+    notify(change);
     return data;
   }
-  function mutate(mutator) {
+  function mutate(mutator, change = { kind: 'data' }) {
     mutator(data);
     data = normalizeData(data);
     global.HOBUNJI_HAND_MODEL_PROFILES = data;
-    notify();
+    notify(change);
     return data;
+  }
+  function updateModelHandTransform(modelKey, mutator) {
+    const model = data.models?.[modelKey];
+    if (!model) return null;
+    const nextTransform = normalizeTransform(model.handFromTool);
+    mutator(nextTransform);
+    model.handFromTool = normalizeTransform(nextTransform);
+    global.HOBUNJI_HAND_MODEL_PROFILES = data;
+    notify({ kind: 'hand-transform', modelKey });
+    return model.handFromTool;
   }
   function saveLocal() { localStorage.setItem(LOCAL_KEY, JSON.stringify(data)); }
   function loadLocal() {
@@ -380,5 +502,8 @@
     footScaleFor,
     modelScaleFor,
     effectiveScaleFor,
+    normalizeHandTransform: normalizeTransform,
+    updateModelHandTransform,
+    orthogonalCorrectionQuaternion,
   };
 })(window);

@@ -14,9 +14,10 @@
   const field = document.createElement('div');
   field.className = 'field';
   field.innerHTML = `
-    <label>Grip mode</label>
+    <label>Grip mode · generic palm relationship</label>
     <select id="handGripModeSelect"></select>
     <div class="help" id="handGripModeHelp" style="margin-top:5px"></div>
+    <div class="help"><b>This does not choose a point on the weapon.</b> The blue weapon target chooses WHERE the hand lands; Grip Mode chooses the generic palm/shaft relationship; Hand Model Calibration corrects the selected GLB afterward.</div>
   `;
 
   const firstPoseGroup = card.querySelector('#handFromToolPositionGroup') || card.querySelector('.poseGroup');
@@ -128,20 +129,24 @@
     setTimeout(() => URL.revokeObjectURL(anchor.href), 1000);
   }, true);
 
-  loadFile?.addEventListener('change', async () => {
-    const file = loadFile.files?.[0];
-    if (!file) return;
-    try {
-      const parsed = JSON.parse(await file.text());
-      if (gripModes.modes[parsed?.gripMode]) {
-        setTimeout(() => applyMode(parsed.gripMode, true), 0);
-      }
-    } catch (_) {}
-  });
+
 
   global.HobunjiAttackEditorHandGripMode = Object.freeze({
     syncForTool,
     applyMode,
+    loadFromAnimationObject(parsed) {
+      if (!gripModes.modes[parsed?.gripMode]) return false;
+      applyMode(parsed.gripMode, true);
+      return true;
+    },
+    snapshot() { return { selectedMode: select.value || gripModes.currentModeKey(), manualChoice }; },
+    restore(snapshot) {
+      const key = snapshot?.selectedMode;
+      if (!gripModes.modes[key]) return false;
+      applyMode(key, false); // Stored per-tool mode is restored separately with HobunjiHandToolGrips.
+      manualChoice = snapshot.manualChoice === true;
+      return true;
+    },
     get selectedMode() { return select.value || gripModes.currentModeKey(); },
   });
 

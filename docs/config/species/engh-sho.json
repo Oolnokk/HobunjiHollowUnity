@@ -2,6 +2,7 @@
   "speciesId": "engh-sho",
   "label": "Engh-sho",
   "male": {
+    "armLength": 0.558,
     "headSprite": "fightersprites/engh-sho-m/head.png",
     "headUrLayers": [
       {
@@ -498,6 +499,7 @@
     }
   },
   "female": {
+    "armLength": 0.558,
     "headSprite": "fightersprites/engh-sho-f/head.png",
     "headUrLayers": [
       {

@@ -373,6 +373,10 @@
     group.userData.portraitModelHeight = modelHeight;
     group.userData.portraitVerticalPlacementRatio = portrait.userData?.portraitVerticalPlacementRatio ?? 0.5;
     group.userData.portraitScaleMultiplier = portrait.userData?.portraitScaleMultiplier ?? 1;
+    group.userData.armLength = portrait.userData?.armLength ?? null; // Canonical species+gender reach shared with player/NPC attack-pose scaling.
+    group.userData.scaledArmLength = portrait.userData?.scaledArmLength ?? null; // Rendered-space reach retained for non-combat anatomy consumers.
+    group.userData.visualCentroidLocalY = portrait.userData?.visualCentroidLocalY ?? 0; // Converted bandit group remains center-anchored, so this is its visual-center offset.
+    group.userData.poseCentroidY = portrait.userData?.poseCentroidY ?? (modelHeight * 0.5);
     const legsPivot = new THREE.Group();
     legsPivot.name = 'bandit_legs_pivot';
     legsPivot.position.y = -(modelHeight / 2);
@@ -406,6 +410,9 @@
       // -width/2,height/2 fallback.
       handAttachX: portrait.userData?.handAttachX,
       handAttachY: portrait.userData?.handAttachY,
+      armLength: portrait.userData?.armLength,
+      visualCentroidLocalY: portrait.userData?.visualCentroidLocalY ?? 0,
+      poseCentroidY: portrait.userData?.poseCentroidY ?? (modelHeight * 0.5),
       dispose() {
         legs?.dispose();
         frontNeckSkin?.weightedGeometry?.dispose();
@@ -1833,6 +1840,7 @@
         feetY + base.y + y,
         c.y / deps.TILE + vRZ * (base.x + x) + vFZ * z,
       );
+      scaleBanditToolPositionAroundCentroid(c, holder); // Finished raw pose is uniformly orbited around this avatar's visual centroid.
     } else {
       // THRUST -- mirrors updateToolMesh's own thrust branch exactly
       // (same windup-back/jab-forward/lateral/pitch/yaw formulas), used
@@ -1870,7 +1878,20 @@
         feetY + base.y,
         c.y / deps.TILE + vRZ * (base.x + lateral) + vFZ * jabOff,
       );
+      scaleBanditToolPositionAroundCentroid(c, holder); // Legacy thrust uses the same finished-point transform without changing rotation/timing.
     }
+  }
+
+  function scaleBanditToolPositionAroundCentroid(c, holder) {
+    const avatarRef = c?.avatarRef; // Holds cached species/gender reach and centroid metadata from PNGPlaneAvatar.
+    const group = avatarRef?.group; // Center-anchored bandit avatar used to derive the world visual centroid.
+    if (!holder || !group) return holder;
+    const armLength = Number(avatarRef?.armLength ?? group.userData?.armLength);
+    const centroidOffsetY = Number(avatarRef?.visualCentroidLocalY ?? group.userData?.visualCentroidLocalY) || 0; // Internal portrait assembly shift from the true group center.
+    const scaler = window.HobunjiSpeciesPoseScale; // Shared transform keeps player, bandit, and NPC interpretation identical.
+    scaler?.scalePointAroundCentroid?.(holder.position, group.position.x, group.position.y + centroidOffsetY, group.position.z, armLength);
+    c._banditLastCentroidScale = scaler?.scaleForArmLength?.(armLength) ?? 1; // Mobile/debug-readable factor, written only while a weapon pose updates.
+    return holder;
   }
 
   // Mirrors refreshPlayerAvatar's own playerToolBaseX/Y exactly: prefers

@@ -19,26 +19,26 @@
   if (tag) tag.textContent = 'authored held-item sockets + species scale';
   const topHelp = card.querySelector('.sectionTitle')?.nextElementSibling;
   if (topHelp?.classList.contains('help')) {
-    topHelp.innerHTML = 'Hands are <b>direct attachments</b>: an authored primary held-item-local frame places the right hand; an optional secondary frame places the left. There are no arm bones, elbows, reach limits, or IK.';
+    topHelp.innerHTML = '<b>Weapon grip target → grip mode → hand-model calibration.</b> The weapon animation stays authoritative. Grip controls choose where a hand lands on that weapon; the Hand Model Calibration section only corrects how a particular GLB palm/origin sits on an otherwise-correct target.';
   }
 
   const inverseHelp = $('handFromToolRotationGroup')?.querySelector('.help');
-  if (inverseHelp) inverseHelp.textContent = 'Pitch / yaw / roll are the complete hand orientation relative to the selected grip mode and authored grip frame. No hidden arm/wrist correction is added.';
+  if (inverseHelp) inverseHelp.innerHTML = '<b>Orthogonal quaternion X/Y/Z correction.</b> The three controls are solved simultaneously in the HAND MODEL basis after the weapon target + Grip Mode. They are not sequential Euler rotations, so a ±90° value on one control cannot make the other two rotate on the same axis.';
 
   const section = document.createElement('div'); // Inserted into the existing hand card for grip authoring.
   section.className = 'poseGroup';
   section.id = 'handPrimaryGripGroup';
   section.innerHTML = `
-    <div class="poseGroupHead"><span class="dot" style="background:#a78bfa"></span>Primary right-hand grip</div>
-    <div class="help" style="margin-bottom:6px">This held-item-local frame is the right hand's socket. Use <b>Pick on sprite</b>, then fine-tune position and rotation below. Identity (all zeroes) preserves the legacy tool-origin attachment.</div>
+    <div class="poseGroupHead"><span class="dot" style="background:#60a5fa"></span>Right-hand target on weapon</div>
+    <div class="help" style="margin-bottom:6px"><b>The blue marker is where the right hand is being told to grip.</b> The hand's own guide/origin should land on that marker after Grip Mode + Hand Model Calibration are applied. Picking a point moves the HAND TARGET; it does not move the weapon.</div>
     <div class="row" style="margin-bottom:7px">
-      <button id="handPrimaryGripPick" class="secondary" style="font-size:11px">◎ Pick on sprite</button>
-      <button id="handPrimaryGripZero" class="warn" style="font-size:11px">Zero primary</button>
+      <button id="handPrimaryGripPick" class="secondary" style="font-size:11px">◎ Pick right-hand target on weapon</button>
+      <button id="handPrimaryGripZero" class="warn" style="font-size:11px">Target = weapon origin</button>
     </div>
     <div id="handPrimaryGripPositionFields"></div>
     <div id="handPrimaryGripRotationFields"></div>
     <div class="hr"></div>
-    <div class="poseGroupHead"><span class="dot" style="background:#fb7185"></span>Optional left-hand grip</div>
+    <div class="poseGroupHead"><span class="dot" style="background:#fb7185"></span>Legacy left-hand target (replaced by span below)</div>
     <div class="help" style="margin-bottom:6px">When enabled, this independent held-item-local frame places the left hand. Otherwise that hand keeps its avatar idle motion.</div>
     <div class="field"><label class="fieldRow" style="cursor:pointer"><input type="checkbox" id="handSecondaryGripEnabled" style="width:auto;margin-right:6px">Attach left hand to secondary grip</label></div>
     <div id="handSecondaryGripPositionFields"></div>
@@ -53,15 +53,15 @@
   const effectiveStatus = $('handEffectiveStatus');
   card.insertBefore(section, effectiveStatus || null);
 
-  const positionFields = [ // Used to build and synchronize both grip position panels.
-    { key: 'x', label: 'X', min: -1.5, max: 1.5, step: 0.01 },
-    { key: 'y', label: 'Y', min: -1.5, max: 1.5, step: 0.01 },
-    { key: 'z', label: 'Z', min: -1.5, max: 1.5, step: 0.01 },
+  const positionFields = [ // Item-local coordinates of the hand target, not tool animation motion.
+    { key: 'x', label: 'X position (side)', min: -1.5, max: 1.5, step: 0.01 },
+    { key: 'y', label: 'Y position (height)', min: -1.5, max: 1.5, step: 0.01 },
+    { key: 'z', label: 'Z position (forward)', min: -1.5, max: 1.5, step: 0.01 },
   ];
-  const rotationFields = [ // Used to build and synchronize both grip rotation panels.
-    { key: 'pitch', label: 'Pitch°', min: -180, max: 180, step: 1 },
-    { key: 'yaw', label: 'Yaw°', min: -180, max: 180, step: 1 },
-    { key: 'roll', label: 'Roll°', min: -180, max: 180, step: 1 },
+  const rotationFields = [ // Legacy pitch/yaw/roll storage keys are displayed as their concrete axes.
+    { key: 'pitch', label: 'X rotation°', min: -180, max: 180, step: 1 },
+    { key: 'yaw', label: 'Y rotation°', min: -180, max: 180, step: 1 },
+    { key: 'roll', label: 'Z rotation°', min: -180, max: 180, step: 1 },
   ];
 
   function fieldMarkup(prefix, name, field) {
@@ -97,7 +97,7 @@
     const primary = currentPrimary();
     const p = primary?.position || {};
     const r = primary?.rotationDeg || {};
-    const visualScale = pickActive ? currentToolScale() : 1; // Pick mode shows the uncorrected scaled sprite, so its stored unscaled grip point is displayed at the matching scaled position.
+    const visualScale = currentToolScale(); // Marker lives beside toolHolder, so explicitly scale the unscaled authored target to the visible weapon size.
     primaryMarker.position.set((Number(p.x) || 0) * visualScale, (Number(p.y) || 0) * visualScale, (Number(p.z) || 0) * visualScale);
     const qYaw = new editorContext.THREE.Quaternion().setFromAxisAngle(new editorContext.THREE.Vector3(0, 1, 0), editorContext.THREE.MathUtils.degToRad(Number(r.yaw) || 0));
     const qPitch = new editorContext.THREE.Quaternion().setFromAxisAngle(new editorContext.THREE.Vector3(1, 0, 0), editorContext.THREE.MathUtils.degToRad(Number(r.pitch) || 0));
@@ -108,7 +108,7 @@
   function stopPicking(message) {
     pickActive = false;
     $('handPrimaryGripPick').classList.remove('active');
-    $('handPrimaryGripPick').textContent = '◎ Pick on sprite';
+    $('handPrimaryGripPick').textContent = '◎ Pick right-hand target on weapon';
     if (message) $('handGripStatus').textContent = message;
     updatePrimaryMarker();
   }
@@ -118,6 +118,8 @@
     if (!key) return;
     toolGrips.ensureTool(key);
     toolGrips.mutate(data => mutator(data.tools[key][gripKey]));
+    global.ProceduralHandFrameDriver?.syncNow?.();
+    requestAnimationFrame(() => global.ProceduralHandFrameDriver?.syncNow?.()); // Ensures the same edit is visible after this frame's tool/pose matrices settle.
   }
 
   function handleGripPick(event) {
@@ -145,7 +147,7 @@
       primary.position.y = Number(local.y.toFixed(4));
       primary.position.z = Number(local.z.toFixed(4));
     });
-    stopPicking(`${currentToolKey()}: primary/right-hand point picked at base scale ×${baseScale.toFixed(2)}; stored in unscaled item coordinates.`);
+    stopPicking(`${currentToolKey()}: blue right-hand target picked. The weapon stayed in its authored pose; the hand now follows this target (stored before base scale ×${baseScale.toFixed(2)}).`);
   }
 
   function installEditorContext(context) {
@@ -155,7 +157,7 @@
     marker.name = 'primary_right_hand_grip_marker';
     const sphere = new context.THREE.Mesh(
       new context.THREE.SphereGeometry(0.025, 12, 8),
-      new context.THREE.MeshBasicMaterial({ color: 0xa78bfa, depthTest: false, transparent: true, opacity: 0.95 }),
+      new context.THREE.MeshBasicMaterial({ color: 0x60a5fa, depthTest: false, transparent: true, opacity: 0.98 }),
     );
     sphere.renderOrder = 10000;
     marker.add(sphere);
@@ -199,8 +201,8 @@
     for (const field of rotationFields) setPair($(`handSecondaryRot_${field.key}`), $(`handSecondaryRot_${field.key}_n`), secondary.rotationDeg?.[field.key]);
     if (!pickActive) {
       $('handGripStatus').textContent = secondary.enabled
-        ? `${key || 'held item'}: TWO-HAND · right and left use independent authored frames.`
-        : `${key || 'held item'}: ONE-HAND · right uses its authored primary frame; left stays idle.`;
+        ? `${key || 'held item'}: TWO-HAND · blue target drives RIGHT HAND; animation-gated span drives LEFT HAND. Weapon remains animation-owned.`
+        : `${key || 'held item'}: ONE-HAND · blue target drives RIGHT HAND; left stays idle. Weapon remains animation-owned.`;
     }
     updatePrimaryMarker();
     refreshDirectStatus();
@@ -250,7 +252,7 @@
     pickActive = true;
     $('handPrimaryGripPick').classList.add('active');
     $('handPrimaryGripPick').textContent = 'Cancel pick';
-    $('handGripStatus').textContent = `Click the weapon handle in the viewport to place the primary/right-hand grip. Base scale ×${currentToolScale().toFixed(2)} is ignored in the stored coordinates.`;
+    $('handGripStatus').textContent = `Click the weapon where the RIGHT HAND should land. The blue marker will move there; the weapon will not move. Coordinates are stored before base scale ×${currentToolScale().toFixed(2)}.`;
     updatePrimaryMarker();
   });
   $('handPrimaryGripZero').addEventListener('click', () => {

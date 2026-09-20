@@ -6,7 +6,7 @@
   'use strict';
 
   const profiles = global.HobunjiHandModelProfiles;
-  if (!profiles || profiles.__hobunjiGripModesWrapped) return;
+  if (!profiles || global.HobunjiHandGripModes?.version === 'rigid-pipeline-v2') return;
 
   const PALM_CLEARANCE = 0.18; // Hand-height units: keeps a zero-origin handle on the palm surface instead of through its center.
   const modes = Object.freeze({
@@ -29,7 +29,6 @@
   let editorMode = null;
   let runtimeOverride = null;
   const listeners = new Set();
-  const originalHandTransformForSpecies = profiles.handTransformForSpecies.bind(profiles);
 
   function normalizeKey(value) {
     return String(value || '').trim().toLowerCase().replace(/[’']/g, '').replace(/_/g, '-').replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
@@ -151,44 +150,41 @@
     return { pitch: toDeg(pitch), yaw: toDeg(yaw), roll: toDeg(roll) };
   }
 
-  function combine(base, mode) {
-    const bp = base?.position || {};
-    const br = base?.rotationDeg || {};
+  function combine(calibration, mode) {
+    const normalizedCalibration = profiles.normalizeHandTransform?.(calibration) || calibration || {};
+    const cp = normalizedCalibration.position || {};
     const mp = mode?.position || {};
-    const mr = mode?.rotationDeg || {};
-    const fineQ = quatFromYXZ(br);
+    const modeQ = normalizeQuat(quatFromYXZ(mode?.rotationDeg || {}));
+    const calibrationQ = normalizeQuat(
+      normalizedCalibration.rotationQuaternion
+      || quatFromYXZ(normalizedCalibration.rotationDeg || {})
+    );
 
-    // Grip-mode axes are authoring axes, not pre-calibration/world axes. Applying
-    // +90° pitch before the shared -90° yaw calibration turned Palm Perpendicular
-    // into an apparent roll. Build the target authored Euler first so the preset
-    // changes exactly the named axis, then derive the rigid spatial delta from it.
-    const targetRotation = {
-      pitch: (Number(br.pitch) || 0) + (Number(mr.pitch) || 0),
-      yaw: (Number(br.yaw) || 0) + (Number(mr.yaw) || 0),
-      roll: (Number(br.roll) || 0) + (Number(mr.roll) || 0),
-    };
-    const rotationQuaternion = normalizeQuat(quatFromYXZ(targetRotation));
-    const modeDeltaQ = normalizeQuat(multiplyQuat(rotationQuaternion, inverseQuat(fineQ)));
-
-    // Keep translation a true rigid transform under the same effective mode delta.
-    const rotatedFinePosition = rotateVectorByQuat(bp, modeDeltaQ);
+    // Literal documented pipeline:
+    // weapon grip target -> Grip Mode -> Hand Model Calibration.
+    // That is ordinary rigid-transform composition: M * C.
+    const rotatedCalibrationPosition = rotateVectorByQuat(cp, modeQ);
+    const rotationQuaternion = normalizeQuat(multiplyQuat(modeQ, calibrationQ));
     return {
       position: {
-        x: (Number(mp.x) || 0) + rotatedFinePosition.x,
-        y: (Number(mp.y) || 0) + rotatedFinePosition.y,
-        z: (Number(mp.z) || 0) + rotatedFinePosition.z,
+        x: (Number(mp.x) || 0) + rotatedCalibrationPosition.x,
+        y: (Number(mp.y) || 0) + rotatedCalibrationPosition.y,
+        z: (Number(mp.z) || 0) + rotatedCalibrationPosition.z,
       },
-      rotationDeg: targetRotation,
+      rotationDeg: eulerYXZFromQuat(rotationQuaternion), // Diagnostic/backward-readable only.
       rotationQuaternion,
+      rotationCorrectionDeg: { ...(normalizedCalibration.rotationCorrectionDeg || { x: 0, y: 0, z: 0 }) },
     };
+  }
+
+  function effectiveFrameForModel(modelKey, modeKey = currentModeKey()) {
+    const model = profiles.data?.models?.[modelKey] || null;
+    const mode = modes[modeKey] || modes['palm-parallel'];
+    return combine(model?.handFromTool, mode);
   }
 
   function effectiveFrameForSpecies(speciesId) {
-    return combine(originalHandTransformForSpecies(speciesId), currentMode());
-  }
-
-  function handTransformForSpecies(speciesId) {
-    return effectiveFrameForSpecies(speciesId);
+    return effectiveFrameForModel(profiles.modelKeyForSpecies?.(speciesId), currentModeKey());
   }
 
   function notify() {
@@ -210,15 +206,15 @@
     return currentModeKey();
   }
 
-  profiles.handTransformForSpecies = handTransformForSpecies;
-  Object.defineProperty(profiles, '__hobunjiGripModesWrapped', { value: true, configurable: true });
-
   global.HobunjiHandGripModes = {
+    version: 'rigid-pipeline-v2',
     modes,
     defaultForTool,
     currentModeKey,
     currentMode,
     effectiveFrameForSpecies,
+    effectiveFrameForModel,
+    composeCalibrationAfterMode: combine,
     quaternionForRotation: quatFromYXZ,
     setEditorMode,
     setRuntimeMode,

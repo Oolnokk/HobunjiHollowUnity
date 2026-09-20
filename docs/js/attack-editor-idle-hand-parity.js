@@ -12,10 +12,10 @@
   let layoutQueued = false; // Coalesces dynamic-editor mutations into one sidebar-layout pass per frame.
   let workflowListenersInstalled = false; // Prevents duplicate quick-navigation/stance-tab event delegation.
 
-  const STANCE_BY_PRESET = Object.freeze({
-    heavy_weapon_idle: 'heavyWeapon',
-    light_weapon_idle: 'lightWeapon',
-  }); // Maps legacy still-preset IDs to the shared idle-stance config keys.
+  const STANCE_BY_ACTION = Object.freeze({
+    heavy_idle: 'heavyWeapon',
+    light_idle: 'lightWeapon',
+  }); // Unified Action ids that preview a true shared weapon idle stance.
   const POSE_KEYS = Object.freeze(['x', 'y', 'z', 'pitch', 'yaw', 'roll', 'bodyYaw']); // Copied into all three still-preset phases below.
   const FALLBACK_STANCES = Object.freeze({
     heavyWeapon: Object.freeze({ x: 0.03, y: 0.37, z: -0.01, pitch: -155, yaw: -79, bodyYaw: -15, roll: -82 }),
@@ -41,7 +41,7 @@
   }
 
   function forceNeutralScrub() {
-    const button = document.getElementById('scrubNeutralBtn'); // Uses the editor's own scrub function so previewT and marker stay in sync.
+    const button = document.getElementById('poseTabNeutral'); // Unified pose tab freezes the viewport on Neutral and materializes the single pose panel.
     suppressTimelineClear = true;
     try { button?.click(); }
     finally { queueMicrotask(() => { suppressTimelineClear = false; }); }
@@ -58,20 +58,22 @@
     return editorConfig?.stances?.[stanceKey] || FALLBACK_STANCES[stanceKey] || null;
   }
 
-  function writeStillPoseFromSharedConfig(presetId) {
-    const stanceKey = STANCE_BY_PRESET[presetId]; // Selects Heavy/Light config for the legacy still preset that was just loaded.
-    const pose = stanceKey ? currentSharedStance(stanceKey) : null; // Applied below to Neutral/Windup/Strike so a still pose cannot interpolate away.
+  function writeStillPoseFromSharedConfig(actionId) {
+    const stanceKey = STANCE_BY_ACTION[actionId]; // Selects Heavy/Light shared config for the unified idle Action.
+    const pose = stanceKey ? currentSharedStance(stanceKey) : null;
     if (!pose) return false;
 
     for (const phase of ['neutral', 'windup', 'strike']) {
+      document.querySelector(`[data-edit-phase="${phase}"]`)?.click(); // The editor now has one pose panel, so select each phase before writing it.
       for (const key of POSE_KEYS) {
-        const input = document.getElementById(`${phase}_${key}`); // Existing core pose input; dispatching input updates the module-scoped animation data too.
-        const value = Number(pose[key]); // Validated before replacing the field so malformed local data cannot poison the preview.
+        const input = document.getElementById(`pose_${key}`);
+        const value = Number(pose[key]);
         if (!input || !Number.isFinite(value)) continue;
         input.value = String(value);
         input.dispatchEvent(new Event('input', { bubbles: true }));
       }
     }
+    forceNeutralScrub();
     return true;
   }
 
@@ -90,28 +92,26 @@
 
   function installListeners() {
     if (listenersInstalled) return true;
-    const loadPreset = document.getElementById('loadPresetBtn'); // Legacy preset loader patched below after its own click handler runs.
-    const presetSelect = document.getElementById('presetSelect'); // Tells us whether Heavy/Light still is the requested legacy preset.
-    const idleEdit = document.getElementById('idleEditNeutralBtn'); // Separate Idle Stances editor toggle; active means it must look like gameplay idle.
-    const idlePreview = document.getElementById('idlePreviewBtn'); // One-shot Idle Stances preview also needs gameplay idle hand weights.
-    const scrub = document.getElementById('scrub'); // Any manual timeline motion returns ownership to attack-pose shoulder weights.
-    const play = document.getElementById('playPauseBtn'); // Playing the attack exits the special resting-stance preview.
-    if (!loadPreset || !presetSelect || !scrub || !play) return false;
+    const actionSelect = document.getElementById('actionSelect'); // Unified source of which gameplay animation is being edited.
+    const idleEdit = document.getElementById('idleEditNeutralBtn');
+    const idlePreview = document.getElementById('idlePreviewBtn');
+    const scrub = document.getElementById('scrub');
+    const play = document.getElementById('playPauseBtn');
+    if (!actionSelect || !scrub || !play) return false;
 
-    loadPreset.addEventListener('click', () => {
-      const presetId = presetSelect.value; // Captured before the deferred parity pass below.
-      const stanceKey = STANCE_BY_PRESET[presetId]; // Non-weapon-idle presets should use ordinary attack shoulder behavior.
+    actionSelect.addEventListener('change', () => {
+      const actionId = actionSelect.value;
+      const stanceKey = STANCE_BY_ACTION[actionId];
       if (!stanceKey) {
         setIdlePreview(false);
         return;
       }
       setTimeout(() => {
-        writeStillPoseFromSharedConfig(presetId);
+        writeStillPoseFromSharedConfig(actionId);
         setIdlePreview(true);
       }, 0);
     });
 
-    presetSelect.addEventListener('change', () => setIdlePreview(false));
     idleEdit?.addEventListener('click', () => {
       setTimeout(() => setIdlePreview(idleEdit.classList.contains('active')), 0);
     });
@@ -119,12 +119,12 @@
 
     const clearForTimeline = () => {
       if (!suppressTimelineClear) setIdlePreview(false);
-    }; // Shared by timeline controls that mean the user has resumed attack previewing.
+    };
     scrub.addEventListener('input', clearForTimeline);
     play.addEventListener('click', clearForTimeline);
-    document.getElementById('scrubWindupBtn')?.addEventListener('click', clearForTimeline);
-    document.getElementById('scrubStrikeBtn')?.addEventListener('click', clearForTimeline);
-    document.getElementById('scrubNeutralBtn')?.addEventListener('click', clearForTimeline);
+    document.querySelectorAll('[data-edit-phase]').forEach(button => {
+      if (button.dataset.editPhase !== 'neutral') button.addEventListener('click', clearForTimeline);
+    });
 
     listenersInstalled = true;
     return true;
@@ -513,8 +513,8 @@
 
   global.HobunjiAttackEditorIdleHandParity = {
     get active() { return idlePreviewActive; },
-    forcePreview(presetId) {
-      if (STANCE_BY_PRESET[presetId]) writeStillPoseFromSharedConfig(presetId);
+    forcePreview(actionId) {
+      if (STANCE_BY_ACTION[actionId]) writeStillPoseFromSharedConfig(actionId);
       setIdlePreview(true);
     },
     clear() { setIdlePreview(false); },

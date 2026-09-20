@@ -1,0 +1,57 @@
+name: Attack animation editor workflow regression
+
+on:
+  pull_request:
+    paths:
+      - 'docs/tools/attack-animation-editor/index.html'
+      - 'docs/js/held-action-animations.js'
+      - 'docs/js/attack-editor-*.js'
+      - 'docs/js/attack-idle-stance-editor.js'
+      - 'docs/config/hand-model-profiles.js'
+      - 'docs/js/hand-tool-grips.js'
+      - 'docs/js/hand-grip-modes.js'
+      - 'docs/js/procedural-hand-attachments.js'
+      - 'docs/js/procedural-hand-frame-driver.js'
+      - 'docs/js/npc-held-equipment-v4.js'
+      - 'docs/js/onboarding-character-creation-weapon-view-fix.js'
+      - 'docs/js/panel-ui.js'
+      - 'scripts/test-attack-animation-editor-workflow.js'
+      - 'scripts/test-attack-animation-editor-history-grips.js'
+      - '.github/workflows/attack-animation-editor-workflow-regression.yml'
+  workflow_dispatch:
+
+jobs:
+  editor-workflow:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Unified editor workflow
+        run: node scripts/test-attack-animation-editor-workflow.js
+      - name: History and hand grip workflow
+        run: node scripts/test-attack-animation-editor-history-grips.js
+      - name: Syntax-check editor extensions
+        run: |
+          node --check docs/js/attack-editor-history.js
+          node --check docs/js/attack-editor-hand-configurator.js
+          node --check docs/js/attack-editor-hand-inverse-configurator.js
+          node --check docs/js/attack-editor-hand-direct-attachments.js
+          node --check docs/js/attack-editor-hand-shoulder-controls.js
+          node --check docs/js/attack-editor-hand-state-coherence.js
+          node --check docs/config/hand-model-profiles.js
+          node --check docs/js/hand-tool-grips.js
+          node --check docs/js/hand-grip-modes.js
+          node --check docs/js/procedural-hand-attachments.js
+          node --check docs/js/procedural-hand-frame-driver.js
+          node --check docs/js/npc-held-equipment-v4.js
+          node --check docs/js/onboarding-character-creation-weapon-view-fix.js
+      - name: Shared held action regression
+        run: node scripts/test-interior-held-items-drink-animation.js
+      - name: Procedural hand integration
+        run: node scripts/test-procedural-hands.js
+      - name: Ranged archetype integration
+        run: node scripts/test-ranged-weapon-archetypes.js
+      - name: Onboarding held-weapon integration
+        run: node scripts/test-onboarding-character-creation-weapon-view-fix.js

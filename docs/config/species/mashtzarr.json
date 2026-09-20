@@ -2,6 +2,7 @@
   "speciesId": "mashtzarr",
   "label": "Mashtzarr",
   "male": {
+    "armLength": 0.558,
     "headSprite": "fightersprites/mashtzarr-m/head.png",
     "headUrLayers": [
       {
@@ -178,6 +179,7 @@
     }
   },
   "female": {
+    "armLength": 0.558,
     "headSprite": "fightersprites/mashtzarr-f/head.png",
     "headUrLayers": [
       {

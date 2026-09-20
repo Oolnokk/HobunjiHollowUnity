@@ -254,9 +254,10 @@
       }
       targetDirection.normalize();
 
-      // Always solve from the raw authored frame. This makes the compass idempotent:
-      // a fallback scan resolving, a checkbox changing, or a profile notification can
-      // call aimAll repeatedly without applying the previous shoulder correction again.
+      // Shoulder-follow owns the GENERIC hand socket only. Per-GLB Hand Model
+      // Calibration is a child basis-conversion layer and must not participate in
+      // this solve at all; otherwise changing calibration makes shoulder-follow
+      // counter-rotate it and the editor's X/Y/Z controls appear coupled again.
       currentTop.copy(localTop).applyQuaternion(authoredQuaternion).normalize();
       deltaQuaternion.setFromUnitVectors(currentTop, targetDirection).normalize();
 
@@ -286,6 +287,7 @@
         applied: true,
         source: shoulderSource[side],
         shoulder: { x: shoulder.x, y: shoulder.y, z: shoulder.z },
+        calibrationOwnership: 'ignored-child-layer',
         authoredQuaternion: quaternionDebug(authoredQuaternion),
         authoredDeg: eulerDebug(authoredQuaternion),
         correctionRotationVectorDeg: {

@@ -1,7 +1,8 @@
-// Direct hand-from-tool authoring overlay for the Attack Animation Editor.
-// Model/scale/import controls remain in attack-editor-hand-configurator.js; this
-// layer authors the complete hand transform from a tool grip socket. No arm IK,
-// reach clamp, elbow, forearm, or hidden wrist correction participates.
+// Per-GLB hand-model calibration overlay for the Attack Animation Editor.
+// Weapon grip targets answer "where on this weapon should the hand land?"; Grip Mode
+// answers "which generic palm relationship?"; THIS file answers only "how must this
+// particular hand model's authored origin/palm be corrected to fit that target?".
+// No arm IK, reach clamp, elbow, forearm, or hidden wrist correction participates.
 (function (global) {
   'use strict';
 
@@ -17,7 +18,7 @@
 
   const topHelp = card.querySelector('.sectionTitle')?.nextElementSibling;
   if (topHelp?.classList.contains('help')) {
-    topHelp.innerHTML = 'Final hand size = <b>model scale × species/gender scale</b>. Grip mode + the values below are the complete transform from the tool grip socket to the hand. The tool is never moved by the hand system.';
+    topHelp.innerHTML = 'Final hand size = <b>model scale × species/gender scale</b>. Weapon grip targets move the hand to the weapon. <b>Hand Model Calibration</b> below is a reusable per-GLB correction applied afterward so different hand models put the same anatomical palm point on that target.';
   }
   const tag = card.querySelector('.sectionTag');
   if (tag) tag.textContent = 'hand ← tool socket';
@@ -33,13 +34,17 @@
   const wrapper = document.createElement('div');
   wrapper.innerHTML = `
     <div class="poseGroup" id="handFromToolPositionGroup">
-      <div class="poseGroupHead"><span class="dot" style="background:#34d399"></span>Hand position relative to tool grip</div>
-      <div class="help" style="margin-bottom:6px">Tool-local X/Y/Z offset from the primary or secondary grip frame. Values are normalized hand-height units and scale with the final hand size.</div>
+      <div class="poseGroupHead"><span class="dot" style="background:#34d399"></span>Hand Model Calibration · position correction</div>
+      <div class="help" style="margin-bottom:6px"><b>These values move the selected HAND MODEL, not the weapon and not the weapon's grip target.</b> They correct the model's authored origin/palm after Grip Mode. Units are normalized hand-height units, so one calibration can be reused anywhere this GLB appears.</div>
+      <div class="field" style="padding:7px;border:1px solid rgba(255,255,255,.08);border-radius:8px;margin-bottom:7px">
+        <label class="fieldRow" style="cursor:pointer;margin:0"><input type="checkbox" id="handShowPaperHandGuide" style="width:auto;margin-right:6px">Show locked paper-hand reference</label>
+        <div class="help" style="margin-top:5px"><b>Reference only:</b> a fixed wireframe/x-ray grasping mitten made from one palm plane, three folded finger planes, and two folded thumb planes. It is locked to the raw right-hand grip target <b>before</b> Hand Model Calibration, so these position/rotation sliders visibly move the real GLB against it. Its folds never animate independently. Use it as a stable alignment/descriptive scaffold when directing an LLM.</div>
+      </div>
       <div id="handFromToolPositionFields"></div>
     </div>
     <div class="poseGroup" id="handFromToolRotationGroup">
-      <div class="poseGroupHead"><span class="dot" style="background:#fbbf24"></span>Hand direction relative to tool grip</div>
-      <div class="help" style="margin-bottom:6px">Pitch / yaw / roll are composed with the selected grip mode and then applied directly to the hand.</div>
+      <div class="poseGroupHead"><span class="dot" style="background:#fbbf24"></span>Hand Model Calibration · rotation correction</div>
+      <div class="help" style="margin-bottom:6px"><b>X/Y/Z use orthogonal quaternion correction coordinates anchored to this GLB's preserved calibration base.</b> A solo X, Y, or Z value is the exact requested rotation around that model-basis axis. Multiple corrections are solved simultaneously instead of as a sequential Z·Y·X rotation, so setting one correction to ±90° cannot collapse the other two controls onto the same physical axis. Grip Mode is applied first; shoulder-follow is a separate later layer.</div>
       <div id="handFromToolRotationFields"></div>
     </div>
     <div class="help" id="handInverseLiveStatus" style="padding:7px;border:1px solid rgba(34,211,238,.22);border-radius:8px;margin-bottom:8px">Direct hand attachment preview ready.</div>
@@ -47,14 +52,14 @@
   while (wrapper.firstChild) card.insertBefore(wrapper.firstChild, guideField || $('handEffectiveStatus'));
 
   const positionFields = [
-    { key: 'x', label: 'X side', min: -2, max: 2, step: 0.01 },
-    { key: 'y', label: 'Y height', min: -2, max: 2, step: 0.01 },
-    { key: 'z', label: 'Z forward', min: -2, max: 2, step: 0.01 },
+    { key: 'x', label: 'Hand-model X position correction', min: -2, max: 2, step: 0.01 },
+    { key: 'y', label: 'Hand-model Y position correction', min: -2, max: 2, step: 0.01 },
+    { key: 'z', label: 'Hand-model Z position correction', min: -2, max: 2, step: 0.01 },
   ];
   const rotationFields = [
-    { key: 'pitch', label: 'Pitch°', min: -180, max: 180, step: 1 },
-    { key: 'yaw', label: 'Yaw°', min: -180, max: 180, step: 1 },
-    { key: 'roll', label: 'Roll°', min: -180, max: 180, step: 1 },
+    { key: 'x', label: 'Hand-model X rotation correction°', min: -180, max: 180, step: 1 },
+    { key: 'y', label: 'Hand-model Y rotation correction°', min: -180, max: 180, step: 1 },
+    { key: 'z', label: 'Hand-model Z rotation correction°', min: -180, max: 180, step: 1 },
   ];
 
   function fieldMarkup(prefix, field) {
@@ -66,14 +71,21 @@
   $('handFromToolPositionFields').innerHTML = positionFields.map(field => fieldMarkup('handFromToolPos', field)).join('');
   $('handFromToolRotationFields').innerHTML = rotationFields.map(field => fieldMarkup('handFromToolRot', field)).join('');
 
+  const paperGuideToggle = $('handShowPaperHandGuide'); // Editor-only visibility switch for the locked right-hand description scaffold.
+  function syncPaperHandGuide() {
+    hands.setShowPaperHandGuide?.(!!paperGuideToggle?.checked);
+  }
+  paperGuideToggle?.addEventListener('change', syncPaperHandGuide);
+
   function currentModel() {
     return profiles.data.models?.[profileSelect.value] || null;
   }
 
   function ensureTransform(model) {
     if (!model.handFromTool) model.handFromTool = {};
+    model.handFromTool = profiles.normalizeHandTransform?.(model.handFromTool) || model.handFromTool;
     if (!model.handFromTool.position) model.handFromTool.position = { x: 0, y: 0, z: 0 };
-    if (!model.handFromTool.rotationDeg) model.handFromTool.rotationDeg = { pitch: 0, yaw: 0, roll: 0 };
+    if (!model.handFromTool.rotationCorrectionDeg) model.handFromTool.rotationCorrectionDeg = { x: 0, y: 0, z: 0 };
   }
 
   function setPaired(range, number, value) {
@@ -89,17 +101,18 @@
       setPaired($(`handFromToolPos_${field.key}`), $(`handFromToolPos_${field.key}_n`), model.handFromTool.position[field.key]);
     }
     for (const field of rotationFields) {
-      setPaired($(`handFromToolRot_${field.key}`), $(`handFromToolRot_${field.key}_n`), model.handFromTool.rotationDeg[field.key]);
+      setPaired($(`handFromToolRot_${field.key}`), $(`handFromToolRot_${field.key}_n`), model.handFromTool.rotationCorrectionDeg[field.key]);
     }
   }
 
   function shortTransform(transform) {
     const p = transform?.position || {};
-    const r = transform?.rotationDeg || {};
-    return `P ${['x','y','z'].map(k => (Number(p[k]) || 0).toFixed(2)).join('/')} · R ${['pitch','yaw','roll'].map(k => Math.round(Number(r[k]) || 0)).join('/')}`;
+    const correction = transform?.rotationCorrectionDeg || {};
+    return `XYZ pos ${['x','y','z'].map(k => (Number(p[k]) || 0).toFixed(2)).join('/')} · orthogonal quaternion XYZ ${['x','y','z'].map(k => Math.round(Number(correction[k]) || 0)).join('/')}°`;
   }
 
   function syncPreview() {
+    syncPaperHandGuide(); // History restores and profile refreshes reapply the toggle even when no checkbox change event fires.
     const results = global.ProceduralHandFrameDriver?.syncNow?.() || [];
     const live = results.find(Boolean) || null;
     const debug = global.ProceduralHandFrameDriver?.getDebug?.() || [];
@@ -109,7 +122,8 @@
       const authored = currentModel()?.handFromTool || null;
       const gripMode = global.HobunjiHandGripModes?.currentModeKey?.() || '-';
       const second = live?.secondaryActive ? `${live.toolKey || d?.toolKey || 'tool'} secondary` : 'idle';
-      status.textContent = `mode=${gripMode} · authored ${shortTransform(authored)} · effective ${shortTransform(d?.handFromTool)} · right=primary grip · left=${second} · DIRECT / NO ARM IK`;
+      const paperLock = paperGuideToggle?.checked ? ' · paper=LOCKED RAW GRIP TARGET' : '';
+      status.textContent = `mode=${gripMode} · authored ${shortTransform(authored)} · effective ${shortTransform(d?.handFromTool)} · right=primary grip · left=${second} · ORTHOGONAL QUATERNION XYZ / NO 90° AXIS COLLAPSE${paperLock}`;
       status.style.color = '';
     }
     return results;
@@ -117,15 +131,9 @@
 
   function mutateTransform(mutator) {
     const key = profileSelect.value;
-    const model = profiles.data.models?.[key];
-    if (!model) return;
-    ensureTransform(model);
-    // This is a socket transform, not an asset reload. Mutate in place so slider
-    // movement does not rebuild both GLBs; the frame driver reads it immediately.
-    mutator(model.handFromTool);
-    global.HOBUNJI_HAND_MODEL_PROFILES = profiles.data;
+    if (!profiles.data.models?.[key]) return;
+    profiles.updateModelHandTransform?.(key, mutator); // Store-owned mutation notifies the live frame driver immediately; no GLB reload and no Undo/Redo "wake-up".
     syncPreview();
-    requestAnimationFrame(syncPreview);
   }
 
   function bindPair(range, number, onValue) {
@@ -146,20 +154,25 @@
   }
   for (const field of rotationFields) {
     bindPair($(`handFromToolRot_${field.key}`), $(`handFromToolRot_${field.key}_n`), value => {
-      mutateTransform(transform => { transform.rotationDeg[field.key] = value; });
+      mutateTransform(transform => { transform.rotationCorrectionDeg[field.key] = value; });
     });
   }
 
   profileSelect.addEventListener('change', () => { syncFields(); syncPreview(); });
-  profiles.subscribe?.(() => syncFields());
+  profiles.subscribe?.((_data, change) => {
+    if (!change?.modelKey || change.modelKey === profileSelect.value || change.kind === 'replace') syncFields();
+  });
 
-  for (const phase of ['neutral', 'windup', 'strike']) {
-    for (const key of ['x', 'y', 'z', 'pitch', 'yaw', 'roll', 'bodyYaw']) {
-      $(`${phase}_${key}`)?.addEventListener('input', () => requestAnimationFrame(syncPreview));
-    }
-  }
 
-  setInterval(syncPreview, 500);
+
+  global.HobunjiAttackEditorHandCalibration = Object.freeze({
+    syncFields,
+    syncPreview,
+    syncPaperHandGuide,
+    refresh() { syncFields(); syncPaperHandGuide(); syncPreview(); },
+  });
+
   syncFields();
+  syncPaperHandGuide();
   syncPreview();
 })(window);

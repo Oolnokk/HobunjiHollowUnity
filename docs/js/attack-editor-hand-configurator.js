@@ -20,8 +20,9 @@
     <div class="sectionTitle"><b>3D Hand Model</b><span class="sectionTag">model socket + species scale</span></div>
     <div class="help" style="margin-bottom:8px">Final hand size = <b>model scale × species/gender scale</b>. Model scale and grip belong to the GLB; species scale is a separate anatomy multiplier.</div>
 
-    <div class="field"><label>Model profile to edit</label><select id="handProfileSelect"></select></div>
-    <div class="field"><label>Current species uses model</label><select id="handSpeciesModelSelect"></select></div>
+    <div class="field"><label>Current species hand model</label><select id="handProfileSelect"></select>
+      <div class="help">This is both the rendered model and the model being edited. Changing it remaps the current preview species immediately, so calibration can never target a hidden different profile.</div>
+    </div>
 
     <div class="poseGroup">
       <div class="poseGroupHead"><span class="dot" style="background:#22d3ee"></span>Model-tied scale</div>
@@ -42,7 +43,9 @@
       <div class="help" id="handSpeciesScaleSource"></div>
     </div>
 
-    <div class="field"><label class="fieldRow" style="cursor:pointer"><input type="checkbox" id="handShowGripGuide" checked style="width:auto;margin-right:6px">Show tool-grip axes</label></div>
+    <div class="field"><label class="fieldRow" style="cursor:pointer"><input type="checkbox" id="handShowGripGuide" checked style="width:auto;margin-right:6px">Show hand-model origin / grip-target guides</label>
+      <div class="help">The weapon section's blue marker is the target ON THE WEAPON. Hand-model guides show the model's own origin/palm frame so you can see whether calibration makes those frames coincide correctly.</div>
+    </div>
 
     <div class="help" id="handEffectiveStatus" style="padding:7px;border:1px solid rgba(255,255,255,.1);border-radius:8px;margin-bottom:8px"></div>
     <div class="row">
@@ -60,8 +63,7 @@
   avatarCard?.insertAdjacentElement('afterend', card);
 
   const $ = id => document.getElementById(id);
-  const profileSelect = $('handProfileSelect'); // Chooses which reusable GLB model's scale/socket fields are being edited.
-  const speciesModelSelect = $('handSpeciesModelSelect'); // Chooses which model the currently previewed species references.
+  const profileSelect = $('handProfileSelect'); // Single source of truth: rendered model + edited model for the current species.
   const modelScaleRange = $('handModelScale'); // Edits the model-tied multiplier with touch-friendly dragging.
   const modelScaleNumber = $('handModelScaleNumber'); // Allows precise model-scale entry beside the slider.
   const speciesScaleRange = $('handSpeciesScale'); // Edits the current species/gender anatomy multiplier.
@@ -79,14 +81,11 @@
     saveStatus.style.color = isError ? '#fb7185' : '';
   }
 
-  function fillModelSelects(preferredProfile) {
+  function fillModelSelects() {
     const keys = modelKeys();
-    const options = keys.map(key => `<option value="${key}">${key}</option>`).join('');
-    profileSelect.innerHTML = options;
-    speciesModelSelect.innerHTML = options;
-    const speciesKey = profiles.modelKeyForSpecies(currentSpecies());
-    profileSelect.value = keys.includes(preferredProfile) ? preferredProfile : (keys.includes(speciesKey) ? speciesKey : keys[0] || '');
-    speciesModelSelect.value = keys.includes(speciesKey) ? speciesKey : keys[0] || '';
+    profileSelect.innerHTML = keys.map(key => `<option value="${key}">${key}</option>`).join('');
+    const mapped = profiles.modelKeyForSpecies(currentSpecies());
+    profileSelect.value = keys.includes(mapped) ? mapped : keys[0] || '';
   }
 
   function authoredSpeciesScaleEntry(species, gender) {
@@ -116,7 +115,7 @@
       ? `Inherited from procedural feet: ${inherited.toFixed(3)}. Changing the slider creates a hand-specific override.`
       : `Hand-specific override: ${authored.toFixed(3)} (foot fallback would be ${inherited.toFixed(3)}).`;
     const mapped = profiles.modelKeyForSpecies(species);
-    if (mapped && [...speciesModelSelect.options].some(option => option.value === mapped)) speciesModelSelect.value = mapped;
+    if (mapped && [...profileSelect.options].some(option => option.value === mapped) && profileSelect.value !== mapped) profileSelect.value = mapped;
   }
 
   function refreshEffectiveStatus() {
@@ -134,11 +133,22 @@
     $('handEffectiveStatus').style.color = debug?.loadError ? '#fb7185' : '';
   }
 
-  function syncAll(preferredProfile) {
-    fillModelSelects(preferredProfile || currentModelKey());
+  function syncAll() {
+    fillModelSelects();
     syncModelFields();
     syncSpeciesFields();
     refreshEffectiveStatus();
+  }
+
+  let previewRefreshQueued = false; // Coalesces profile mutations so live hand GLBs refresh at most once per animation frame.
+  function refreshHandPreview() {
+    if (previewRefreshQueued) return;
+    previewRefreshQueued = true;
+    requestAnimationFrame(() => {
+      previewRefreshQueued = false;
+      global.ProceduralHandFrameDriver?.syncNow?.(); // Attachment rigs alone own GLB rebuilds in response to profile-store notifications.
+      refreshEffectiveStatus();
+    });
   }
 
   function mutateModel(mutator) {
@@ -147,9 +157,10 @@
       const model = data.models?.[key];
       if (!model) return;
       mutator(model);
-    });
+    }, { kind: 'visual-profile', modelKey: key });
     syncModelFields();
     refreshEffectiveStatus();
+    refreshHandPreview();
   }
 
   function bindRangeAndNumber(range, number, onValue) {
@@ -164,17 +175,16 @@
     number.addEventListener('input', () => apply(number));
   }
 
-  profileSelect.addEventListener('change', () => { syncModelFields(); refreshEffectiveStatus(); });
-  speciesModelSelect.addEventListener('change', () => {
+  profileSelect.addEventListener('change', () => {
     const species = currentSpecies();
-    const modelKey = speciesModelSelect.value;
+    const modelKey = profileSelect.value;
     profiles.mutate(data => {
       if (!data.speciesModels) data.speciesModels = {};
       data.speciesModels[species] = modelKey;
-    });
-    profileSelect.value = modelKey;
+    }, { kind: 'model-mapping', speciesId: species, modelKey });
     syncModelFields();
     refreshEffectiveStatus();
+    refreshHandPreview();
   });
 
   bindRangeAndNumber(modelScaleRange, modelScaleNumber, value => mutateModel(model => { model.scale = Math.max(0.01, value); }));
@@ -185,9 +195,10 @@
       if (!data.speciesScaleOverrides) data.speciesScaleOverrides = {};
       if (!data.speciesScaleOverrides[species]) data.speciesScaleOverrides[species] = {};
       data.speciesScaleOverrides[species][gender] = Math.max(0.01, value);
-    });
+    }, { kind: 'species-scale', speciesId: species, gender });
     syncSpeciesFields();
     refreshEffectiveStatus();
+    refreshHandPreview();
   });
 
   $('handClearSpeciesScale').addEventListener('click', () => {
@@ -197,9 +208,10 @@
       if (!data.speciesScaleOverrides?.[species]) return;
       delete data.speciesScaleOverrides[species][gender];
       if (!Object.keys(data.speciesScaleOverrides[species]).length) delete data.speciesScaleOverrides[species];
-    });
+    }, { kind: 'species-scale', speciesId: species, gender });
     syncSpeciesFields();
     refreshEffectiveStatus();
+    refreshHandPreview();
   });
 
   $('handShowGripGuide').addEventListener('change', () => hands.setShowGripGuides($('handShowGripGuide').checked));
@@ -240,14 +252,17 @@
   $('handImportFile').addEventListener('change', async () => {
     const file = $('handImportFile').files?.[0];
     if (!file) return;
+    const historyToken = global.HobunjiAttackEditorHistory?.beginExternal?.('Import hand-model profiles'); // Captures hidden model values, not just visible sliders.
     try {
       const parsed = JSON.parse(await file.text());
-      profiles.replace(parsed);
+      profiles.replace(parsed, { kind: 'replace' });
       syncAll();
+      refreshHandPreview();
       setStatus(`Imported ${file.name}.`);
     } catch (error) {
       setStatus(`Import failed: ${error.message}`, true);
     } finally {
+      global.HobunjiAttackEditorHistory?.commitExternal?.(historyToken);
       $('handImportFile').value = '';
     }
   });
@@ -260,8 +275,24 @@
 
   document.getElementById('avatarSpecies')?.addEventListener('change', () => setTimeout(() => syncAll(), 0));
   document.getElementById('avatarGender')?.addEventListener('change', () => setTimeout(() => { syncSpeciesFields(); refreshEffectiveStatus(); }, 0));
-  profiles.subscribe(() => refreshEffectiveStatus());
+  profiles.subscribe((_data, change) => {
+    refreshEffectiveStatus();
+    if (change?.kind === 'hand-transform') global.ProceduralHandFrameDriver?.syncNow?.();
+  });
   setInterval(refreshEffectiveStatus, 500); // Keeps mobile-visible load diagnostics current as async GLBs and avatar rebuilds settle.
+
+  global.HobunjiAttackEditorHandContext = Object.freeze({
+    currentSpecies,
+    currentGender,
+    currentModelKey,
+  });
+  global.HobunjiAttackEditorHandConfigurator = Object.freeze({
+    syncAll,
+    syncModelFields,
+    syncSpeciesFields,
+    refreshEffectiveStatus,
+    refreshHandPreview,
+  });
 
   syncAll();
 })(window);

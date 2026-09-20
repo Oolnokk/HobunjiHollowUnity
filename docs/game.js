@@ -9064,6 +9064,8 @@
       // vary by species and are recomputed in refreshPlayerAvatar() once the per-species
       // sprite/scale is known.
       let playerToolBaseX = -0.45, playerToolBaseY = 0.45;
+      let playerArmLength = 0.558; // Canonical species+gender reach cached at avatar rebuild; weapon poses compare it to Mao'ao's 0.558 baseline.
+      let playerPoseCentroidY = 0.45; // Floor-relative visual/body centroid cached from the actual portrait hierarchy for per-frame pose scaling.
       // The player's own rendered bust-portrait model height (avatarHeight in
       // refreshPlayerAvatar) — recomputed there alongside playerToolBaseX/Y.
       // Used to place a shoulder pet / mounted seat height correctly (see
@@ -15716,6 +15718,11 @@
         }
         playerToolBaseX = avatarGroup.userData?.handAttachX ?? (-avatarWidth / 2);
         playerToolBaseY = avatarGroup.userData?.handAttachY ?? (avatarHeight / 2);
+        const cachedArmLength = Number(avatarGroup.userData?.armLength); // Canonical config reach is intentionally not multiplied by portrait scale for attack-pose ratios.
+        playerArmLength = Number.isFinite(cachedArmLength) && cachedArmLength > 0 ? cachedArmLength : 0.558;
+        const cachedPoseCentroidY = Number(avatarGroup.userData?.poseCentroidY); // PNGPlaneAvatar already accounts for the internal assemblyY portrait shift.
+        playerPoseCentroidY = Number.isFinite(cachedPoseCentroidY) ? cachedPoseCentroidY : avatarHeight * (Number(avatarGroup.userData?.portraitVerticalPlacementRatio) || 0.5);
+        window.__farmLog?.(`[combat] pose orbit cached: ${_playerData?.appearance?.speciesId || 'unknown'}/${_playerData?.appearance?.gender || 'unknown'} arm=${playerArmLength.toFixed(3)} scale=${(playerArmLength / 0.558).toFixed(5)} centroidY=${playerPoseCentroidY.toFixed(3)}`, 'info', 'combat');
         // Re-clear (not just at this function's top): the 'posterior' anchor
         // is derived from playerAvatarModelHeight/playerToolBaseY, just set
         // above — anything that called playerAttachmentAnchor('posterior')
@@ -21366,6 +21373,40 @@
         ranged: { x: 0.23, y: 0.08, z: 0.14, pitch: 16,    yaw: 65,  roll: 11,  bodyYaw: -52, scale: 1.77 },
       };
 
+      const _speciesPoseScaling = window.HobunjiSpeciesPoseScale; // Shared pure centroid-orbit math reused by player/editor/NPC weapon consumers.
+      const _toolPoseCentroidDebug = { rawWorld: { x: 0, y: 0, z: 0 }, finalWorld: { x: 0, y: 0, z: 0 }, lastScale: 1, centroidY: 0 }; // Mobile-visible last transform without DevTools.
+      function playerToolPoseCentroidScale() {
+        return _speciesPoseScaling?.scaleForArmLength?.(playerArmLength) ?? (playerArmLength / 0.558);
+      }
+      function scaleToolWorldPointAroundPlayerCentroid(point) {
+        if (!point) return point;
+        const cx = playerMesh.position.x;
+        const cy = playerMesh.position.y + playerPoseCentroidY;
+        const cz = playerMesh.position.z;
+        _toolPoseCentroidDebug.rawWorld.x = point.x; _toolPoseCentroidDebug.rawWorld.y = point.y; _toolPoseCentroidDebug.rawWorld.z = point.z;
+        const scale = playerToolPoseCentroidScale();
+        if (_speciesPoseScaling?.scalePointAroundCentroid) _speciesPoseScaling.scalePointAroundCentroid(point, cx, cy, cz, playerArmLength);
+        else if (scale !== 1) point.set(cx + (point.x - cx) * scale, cy + (point.y - cy) * scale, cz + (point.z - cz) * scale);
+        _toolPoseCentroidDebug.finalWorld.x = point.x; _toolPoseCentroidDebug.finalWorld.y = point.y; _toolPoseCentroidDebug.finalWorld.z = point.z;
+        _toolPoseCentroidDebug.lastScale = scale; _toolPoseCentroidDebug.centroidY = cy;
+        return point;
+      }
+      window.HobunjiAttackArmReachDebug = Object.freeze({
+        snapshot: () => ({
+          speciesId: _playerData?.appearance?.speciesId || null,
+          gender: _playerData?.appearance?.gender || null,
+          armLength: playerArmLength,
+          scaleRelativeToMaoAo: playerToolPoseCentroidScale(),
+          centroid: { x: playerMesh.position.x, y: _toolPoseCentroidDebug.centroidY, z: playerMesh.position.z },
+          authoredUnscaledWorld: { ..._toolPoseCentroidDebug.rawWorld },
+          finalScaledWorld: { ..._toolPoseCentroidDebug.finalWorld },
+          authoredUnscaledLocal: { x: _toolPoseCentroidDebug.rawWorld.x - playerMesh.position.x, y: _toolPoseCentroidDebug.rawWorld.y - playerMesh.position.y, z: _toolPoseCentroidDebug.rawWorld.z - playerMesh.position.z },
+          finalScaledLocal: { x: _toolPoseCentroidDebug.finalWorld.x - playerMesh.position.x, y: _toolPoseCentroidDebug.finalWorld.y - playerMesh.position.y, z: _toolPoseCentroidDebug.finalWorld.z - playerMesh.position.z },
+          mappingMode: 'centroid-relative-uniform-scale',
+          rule: "final = targetCentroid + (authoredFinal - targetCentroid) * targetArmLength / 0.558",
+        }),
+      });
+
       function updateToolMesh(dt) {
         if (window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID, 'tools')) {
           toolHolder.visible = false;
@@ -21569,6 +21610,7 @@
             playerMesh.position.y + playerToolBaseY + pUY * y + pFY * z,
             playerMesh.position.z + vRZ * (handBaseX + x) + pUZ * y + pFZ * z
           );
+          scaleToolWorldPointAroundPlayerCentroid(toolHolder.position);
 
         } else if (anim === 'ranged') {
           const rangedIdlePose = window.RangedWeapons?.playerIdlePose?.(equipmentSlots.ranged); // Used to switch between the loaded fire-neutral and empty load-neutral stance.
@@ -21602,6 +21644,7 @@
             playerMesh.position.y + playerToolBaseY + neutral.y,
             playerMesh.position.z + vRZ * (playerToolBaseX + neutral.x) + vFZ * neutral.z
           );
+          scaleToolWorldPointAroundPlayerCentroid(toolHolder.position);
 
         } else if (anim === 'thrust') {
           // THRUST — non-overextending jab authored as a full pose (lateral
@@ -21640,6 +21683,7 @@
             playerMesh.position.y + playerToolBaseY,
             playerMesh.position.z + vRZ * (playerToolBaseX + lateral) + vFZ * jabOff
           );
+          if (combatSwingAnim) scaleToolWorldPointAroundPlayerCentroid(toolHolder.position);
 
         } else if (anim === 'chop') {
           // CHOP — full pose-driven swing (raise → slam → return), authored
@@ -21697,6 +21741,7 @@
             );
           } else {
             toolHolder.position.set(handX, handY, handZ);
+            if (combatSwingAnim) scaleToolWorldPointAroundPlayerCentroid(toolHolder.position);
           }
 
         } else if (anim === 'toss') {
@@ -21831,6 +21876,7 @@
             playerMesh.position.y + playerToolBaseY,
             playerMesh.position.z + vRZ * handX + vFZ * 0.16
           );
+          if (combatSwingAnim) scaleToolWorldPointAroundPlayerCentroid(toolHolder.position);
         }
 
         // Layer the sprite's own "spinning" twirl on top of whichever swing style is active —
@@ -26923,6 +26969,7 @@
         rebuildToolMeshes,
         toolMeshMap,
         toolHolder,
+        scaleToolWorldPointAroundPlayerCentroid, // WeaponToolStances applies the identical finished-point transform to weapon idle stances.
         getActiveTool: () => activeTool,
         refreshActionBar,
         setActiveTool,
