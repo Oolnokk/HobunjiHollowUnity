@@ -142,4 +142,11 @@ for (const phase of ['windup', 'strike']) {
   );
 }
 
+assert.match(source, /runtimeState\.combatWindupFrac = visual\?\.wf \?\? null/, 'hand consumers must receive WeaponToolStances exact normalized windup fraction');
+assert.match(source, /runtimeState\.combatStrikeFrac = visual\?\.sf \?\? null/, 'hand consumers must receive WeaponToolStances exact normalized strike fraction');
+assert.match(source, /runtimeState\.combatHoldFrac = visual\?\.hf \?\? null/, 'hand consumers must receive WeaponToolStances exact normalized hold fraction');
+assert.match(source, /runtimeState\.combatDirSign = visual\?\.dirSign \?\? 1/, 'hand consumers must receive the live active mirror sign');
+assert.match(source, /runtimeState\.combatNeutralMirrorSign = visual\?\.neutralMirrorSign \?\? 1/, 'hand consumers must receive the heavy start-neutral mirror sign');
+assert.match(source, /runtimeState\.combatReturnNeutralMirrorSign = visual\?\.returnNeutralMirrorSign \?\? 1/, 'hand consumers must receive the heavy return-neutral mirror sign');
+
 console.log('test-heavy-weapon-alternating-neutrals: ok');
