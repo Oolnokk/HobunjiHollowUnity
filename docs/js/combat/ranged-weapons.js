@@ -12,6 +12,7 @@
   const SCATTERBOW_FIRE_CHORUS_MS = [0, 28, 56, 84, 112, 140]; // Used by playRangedActionSfx() to stagger one shot sound per scatterbow projectile.
   const PROJECTILE_PERP_DEAD_DEG = 15; // Used only by projectile PNG facing so arrows turn within tighter windows than animals.
   const PROJECTILE_PERP_DEAD_RAD = THREE.MathUtils.degToRad(PROJECTILE_PERP_DEAD_DEG); // Passed to the shared animal deadzone helpers.
+  const PROJECTILE_SPEED_MULTIPLIER = 1.15; // Used by every ranged projectile simulation step for a modest 15% faster flight without changing authored weapon balance/range values.
   const FISHING_MACE_SPIN_RATE_DEG_FALLBACK = 9720; // Used only before Fishing is available; matches Fishing.projectileVisuals.maceSpinRateDeg exactly.
   // Reused across calls instead of allocated fresh each time — projectileHit
   // runs every frame for every live projectile until it hits something or
@@ -545,11 +546,9 @@
       new THREE.MeshBasicMaterial({ map: texture, transparent: true, alphaTest: 0.08, side: THREE.DoubleSide })
     );
     if (weaponSprite && !hasExactSourcePlane) plane.scale.y = pendingAspect;
-    const projectileDirectionSwap = def.rangedType === 'thrown'
-      ? def.toolEndFlip === true
-      : sourceTransform?.directionSwap === true; // Thrown facing comes from its weapon definition so release-frame pose changes cannot reverse spear/knife projectiles.
+    const projectileDirectionSwap = !sourceTransform && def.rangedType === 'thrown' && def.toolEndFlip === true; // Used only as a fallback when no held plane was sampled; a sampled held quaternion already contains the spear/knife's exact visible end-for-end orientation.
     if (weaponSprite && projectileDirectionSwap) {
-      const uv = plane.geometry?.attributes?.uv; // Used only by the projectile copy to reverse the PNG along its local length without touching current held-animation math.
+      const uv = plane.geometry?.attributes?.uv; // Used only by unsampled fallback projectile copies; sampled player throws must not double-flip the held weapon.
       if (uv) {
         for (let i = 0; i < uv.count; i++) uv.setY(i, 1 - uv.getY(i));
         uv.needsUpdate = true;
@@ -703,7 +702,8 @@
     mesh.position.set(spawnX / deps.TILE, worldY, spawnY / deps.TILE);
     scene.add(mesh);
 
-    const horizSpeedPxS = def.speedPxS * Math.cos(pitch);
+    const projectileSpeedPxS = def.speedPxS * PROJECTILE_SPEED_MULTIPLIER; // Used for both horizontal and vertical velocity so angled shots keep the same trajectory at the faster overall speed.
+    const horizSpeedPxS = projectileSpeedPxS * Math.cos(pitch); // Used by the X/Z velocity components below.
     const direction = new THREE.Vector3(
       Math.cos(angle) * Math.cos(pitch),
       Math.sin(pitch),
@@ -725,7 +725,8 @@
       visual: mesh.userData.visual, facePivot: mesh.userData.facePivot,
       x: spawnX, y: spawnY, prevX: spawnX, prevY: spawnY, worldY, prevWorldY: worldY,
       vx: Math.cos(angle) * horizSpeedPxS, vy: Math.sin(angle) * horizSpeedPxS,
-      vyWorld: Math.sin(pitch) * (def.speedPxS / deps.TILE),
+      vyWorld: Math.sin(pitch) * (projectileSpeedPxS / deps.TILE),
+      projectileSpeedPxS, // Used by the mobile debug snapshot to confirm the applied global speed bump.
       angle, pitch, distancePx: 0,
       effectiveRangePx: def.rangeTiles * deps.TILE,
       maxDistancePx: def.rangeTiles * deps.TILE * RANGE_FALLOFF_DISTANCE_MULTIPLIER,
@@ -1509,7 +1510,7 @@
     get config() { return CONFIG; },
   };
   window.__rangedDebug = {
-    get projectiles() { return projectiles.map(p => ({ itemKey: p.itemKey, team: p.team, ammoId: p.ammoId, x: p.x, y: p.y, vx: p.vx, vy: p.vy, distancePx: p.distancePx, launchTransformMode: p.launchTransformMode, directionSwap: p.def?.rangedType === 'thrown' ? p.def?.toolEndFlip === true : null, spinAxis: p.spinRateRad ? 'png-local-z' : null, trailAfflictionIds: [...p.trailAfflictionIds] })); },
+    get projectiles() { return projectiles.map(p => ({ itemKey: p.itemKey, team: p.team, ammoId: p.ammoId, x: p.x, y: p.y, vx: p.vx, vy: p.vy, distancePx: p.distancePx, projectileSpeedPxS: p.projectileSpeedPxS, launchTransformMode: p.launchTransformMode, facingSource: p.launchTransformMode === 'held-strike-plane' ? 'sampled-held-plane' : (p.def?.toolEndFlip === true ? 'config-flip-fallback' : 'flight-frame'), spinAxis: p.spinRateRad ? 'png-local-z' : null, trailAfflictionIds: [...p.trailAfflictionIds] })); },
     get playerAction() { return playerAction ? { ...playerAction, def: undefined } : null; },
     get lastEvent() { return lastEvent; },
     get lastAudioEvent() { return lastAudioEvent; },
@@ -1544,7 +1545,7 @@
     idlePose: itemKey => ({ ...idlePose(itemKey) }),
     snapshot: () => ({
       latestChange: 'Enemy bodies now block allied shots and take friendly-fire damage; loaded ranged AI strafes for LOS before firing. Actor hitboxes/projectile perps are shared within the frame and HUD LOS is throttled to 20 Hz.',
-      lastEvent, lastAudioEvent, projectileDeadzoneDeg: PROJECTILE_PERP_DEAD_DEG,
+      lastEvent, lastAudioEvent, projectileDeadzoneDeg: PROJECTILE_PERP_DEAD_DEG, projectileSpeedMultiplier: PROJECTILE_SPEED_MULTIPLIER,
       equippedRanged: deps?.getEquippedRangedKey?.() || null,
       activeAmmo: activeAmmoId(), specialAmmo: specialAmmoCount(), specialAmmoMax: SPECIAL_AMMO_MAX,
       playerDebuffs: { ...(deps?.player?._rangedAmmoDebuffs || {}) },
