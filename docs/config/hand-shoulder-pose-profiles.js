@@ -1,12 +1,12 @@
-// Explicit shoulder-compass choices for the currently committed held-item actions.
-// These are animation choices, not species/model choices. Neutral is the idle endpoint
-// (Pitch + Roll); active motion endpoints use Roll only. The hand runtime interpolates
-// the boolean endpoints as 0..1 weights with the same pose timeline.
+// Explicit shoulder-follow hinge choices for the currently committed held-item actions.
+// These are animation choices, not species/model choices. Neutral permits both local
+// hand hinges; active motion endpoints keep only the palm-normal hinge. The runtime
+// interpolates the boolean endpoints as 0..1 weights with the same pose timeline.
 (function (global) {
   'use strict';
 
-  const idle = () => ({ pitch: true, yaw: false, roll: true });
-  const active = () => ({ pitch: false, yaw: false, roll: true });
+  const idle = () => ({ grip: true, palmNormal: true });
+  const active = () => ({ grip: false, palmNormal: true });
   const standard = () => ({
     neutral: { shoulderAim: idle() },
     windup: { shoulderAim: active() },
