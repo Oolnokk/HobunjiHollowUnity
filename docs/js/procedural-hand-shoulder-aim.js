@@ -2,8 +2,9 @@
 //
 // Shoulder targets come from attachment-rig profiles when present. Legacy manually
 // authored 200x200 points and portrait-hand-shoulder-scan.js remain fallbacks.
-// The hand socket/origin IS the wrist. Palm/fingers extend local +Y, so the wrist-facing
-// side is local -Y. That axis targets the solved elbow (not the shoulder). The correction
+// The hand socket/origin IS the wrist. The authored hand GLBs point fingers local -Y,
+// so the wrist/proximal side is local +Y. That axis targets the pose-authored elbow.
+// The correction
 // may rotate only around two HAND-LOCAL hinges:
 // local X (grip axis) and local Z (palm-normal axis). There is deliberately no local-Y
 // shoulder hinge. Per-pose weights come from hand-shoulder-pose-runtime.js.
@@ -36,7 +37,7 @@
 
     const shoulderAvatar = {};
     const shoulderSource = { left: 'pending', right: 'pending' };
-    const localWristProximalAxis = new THREE.Vector3(0, -1, 0); // Wrist-to-shoulder direction before either local hinge rotates.
+    const localWristProximalAxis = new THREE.Vector3(0, 1, 0); // Real GLB convention: fingers are local -Y, so +Y points from wrist back up the forearm.
     const localGripAxis = new THREE.Vector3(1, 0, 0); // Across the grasp; first allowed proximal-target hinge.
     const localPalmNormalAxis = new THREE.Vector3(0, 0, 1); // Perpendicular to the palm plane; second allowed proximal-target hinge.
     const shoulderWorld = new THREE.Vector3();
@@ -215,51 +216,34 @@
       return Number.isFinite(authored) && authored > 0 ? authored : modelHeight * 0.42;
     }
 
-    function resolveElbowInParent(side, shoulder, baseQuaternion, target = guideElbow) {
+    function resolveElbowInParent(side, shoulder, target = guideElbow) {
       const socket = socketFor(side);
       if (!socket || !shoulder) return null;
-      const totalArmLength = armGuideLength(side);
-      const segmentLength = totalArmLength * 0.5; // Elbow is always halfway down the authored total arm length.
-      guideSpan.copy(socket.position).sub(shoulder);
-      const shoulderWristDistance = guideSpan.length();
-      guideMidpoint.copy(shoulder).add(socket.position).multiplyScalar(0.5);
-      if (!(shoulderWristDistance > 1e-8) || !(segmentLength > 1e-8)) {
-        target.copy(guideMidpoint);
-        return { elbow: target, totalArmLength, segmentLength, shoulderWristDistance, overreach: false, bendRadius: 0, hint: { x: 0, y: 0, z: 0 } };
-      }
-
-      const overreach = shoulderWristDistance > totalArmLength + 1e-6;
-      const halfChord = shoulderWristDistance * 0.5;
-      const bendRadius = overreach ? 0 : Math.sqrt(Math.max(0, segmentLength * segmentLength - halfChord * halfChord));
-      guideSpan.multiplyScalar(1 / shoulderWristDistance);
-
-      const hint = poseRuntime?.currentElbowHint?.(side) || { x: 0, y: 0, z: 0 }; // Pose-authored midpoint-relative hint in full-arm-length units.
-      guideBend.set(Number(hint.x) || 0, Number(hint.y) || 0, Number(hint.z) || 0);
-      guideBend.addScaledVector(guideSpan, -guideBend.dot(guideSpan)); // Project the authored hint onto the valid elbow circle plane.
-      if (guideBend.lengthSq() < 1e-8) {
-        guideBend.copy(localPalmNormalAxis).applyQuaternion(baseQuaternion);
-        guideBend.addScaledVector(guideSpan, -guideBend.dot(guideSpan));
-      }
-      if (guideBend.lengthSq() < 1e-8) {
-        guideBend.copy(localGripAxis).applyQuaternion(baseQuaternion);
-        guideBend.addScaledVector(guideSpan, -guideBend.dot(guideSpan));
-      }
-      if (guideBend.lengthSq() < 1e-8) guideBend.set(0, 0, 1);
-      guideBend.normalize();
-
-      if (overreach) {
-        target.copy(shoulder).addScaledVector(guideSpan, segmentLength); // Straight maximum-reach elbow; the paper forearm intentionally stops short of an unreachable wrist.
+      const authoredOffset = poseRuntime?.currentElbow?.(side) || null; // Direct pose data: shoulder-relative elbow offset in the same local space as shoulder/wrist.
+      if (authoredOffset) {
+        target.set(
+          shoulder.x + Number(authoredOffset.x || 0),
+          shoulder.y + Number(authoredOffset.y || 0),
+          shoulder.z + Number(authoredOffset.z || 0),
+        );
       } else {
-        target.copy(guideMidpoint).addScaledVector(guideBend, bendRadius);
+        // Legacy animations predate elbows. Midpoint fallback preserves their old
+        // shoulder-line hand direction without pretending to be an authored bend.
+        target.copy(shoulder).add(socket.position).multiplyScalar(0.5);
       }
+      const upperArmLength = target.distanceTo(shoulder);
+      const forearmLength = target.distanceTo(socket.position);
+      const shoulderWristDistance = shoulder.distanceTo(socket.position);
+      const diagnosticArmLength = armGuideLength(side);
       return {
         elbow: target,
-        totalArmLength,
-        segmentLength,
+        source: authoredOffset ? 'pose-authored' : 'legacy-midpoint',
+        authoredOffset: authoredOffset ? { x: authoredOffset.x, y: authoredOffset.y, z: authoredOffset.z } : null,
+        diagnosticArmLength,
+        upperArmLength,
+        forearmLength,
         shoulderWristDistance,
-        overreach,
-        bendRadius,
-        hint: { x: Number(hint.x) || 0, y: Number(hint.y) || 0, z: Number(hint.z) || 0 },
+        authoredPolylineLength: upperArmLength + forearmLength,
       };
     }
 
@@ -267,7 +251,7 @@
       if (paperArmBySide[side]) return paperArmBySide[side];
       const root = new THREE.Group(); // Parent-local x-ray scaffold; it never drives hand or shoulder transforms.
       root.name = `${side}_paper_arm_guide`;
-      root.userData = { authoritative: false, bendAtHalfArmLength: true, jointLimitsApplied: false };
+      root.userData = { visualOnly: true, elbowPoseAuthoritative: true, jointLimitsApplied: false };
       const material = new THREE.MeshBasicMaterial({
         color: 0xffffff, wireframe: true, transparent: true, opacity: 0.82,
         depthTest: false, depthWrite: false, side: THREE.DoubleSide,
@@ -309,7 +293,7 @@
       strip.updateMatrix?.();
     }
 
-    function updatePaperArmGuide(side, shoulder, baseQuaternion, solved = null) {
+    function updatePaperArmGuide(side, shoulder, solved = null) {
       const existing = paperArmBySide[side];
       if (!paperArmGuideVisible) {
         if (existing) existing.root.visible = false;
@@ -320,7 +304,7 @@
         if (existing) existing.root.visible = false;
         return;
       }
-      const elbowSolve = solved || resolveElbowInParent(side, shoulder, baseQuaternion, guideElbow);
+      const elbowSolve = solved || resolveElbowInParent(side, shoulder, guideElbow);
       if (!elbowSolve) {
         if (existing) existing.root.visible = false;
         return;
@@ -328,25 +312,17 @@
       const guide = makePaperArmGuide(side);
       const elbow = elbowSolve.elbow;
       placePaperStrip(guide.upper, shoulder, elbow);
-      if (elbowSolve.overreach) {
-        guideDirection.copy(socket.position).sub(elbow).normalize();
-        guideMidpoint.copy(elbow).addScaledVector(guideDirection, elbowSolve.segmentLength); // Reachable wrist endpoint; leaves a visible gap to an impossible authored hand position.
-        placePaperStrip(guide.lower, elbow, guideMidpoint);
-      } else {
-        placePaperStrip(guide.lower, elbow, socket.position);
-      }
+      placePaperStrip(guide.lower, elbow, socket.position);
       guide.elbow.position.copy(elbow);
-      const segment = elbowSolve.segmentLength;
-      const distance = elbowSolve.shoulderWristDistance;
-      const elbowAngleRad = segment > 1e-8 ? Math.acos(clampUnit(1 - (distance * distance) / (2 * segment * segment))) : 0;
-      guide.root.userData.armLength = elbowSolve.totalArmLength;
+      guide.root.userData.armLength = elbowSolve.diagnosticArmLength;
       guide.root.userData.armLengthSource = avatarRoot.userData?.armLengthSource || 'fallback';
-      guide.root.userData.segmentLength = segment;
-      guide.root.userData.elbowAngleDeg = THREE.MathUtils.radToDeg(elbowAngleRad);
-      guide.root.userData.elbowHint = { ...elbowSolve.hint };
+      guide.root.userData.upperArmLength = elbowSolve.upperArmLength;
+      guide.root.userData.forearmLength = elbowSolve.forearmLength;
+      guide.root.userData.authoredPolylineLength = elbowSolve.authoredPolylineLength;
+      guide.root.userData.shoulderWristDistance = elbowSolve.shoulderWristDistance;
+      guide.root.userData.elbowSource = elbowSolve.source;
+      guide.root.userData.authoredElbowOffset = elbowSolve.authoredOffset ? { ...elbowSolve.authoredOffset } : null;
       guide.root.userData.resolvedElbow = { x: elbow.x, y: elbow.y, z: elbow.z };
-      guide.root.userData.overreach = elbowSolve.overreach;
-      guide.root.userData.shoulderWristDistance = distance;
       guide.root.visible = true;
       guide.root.updateMatrixWorld?.(true);
     }
@@ -364,32 +340,32 @@
         debugBySide[side] = { weights, applied: false, reason: 'authored-base-missing' };
         return false;
       }
-      const elbowSolve = resolveElbowInParent(side, shoulder, authoredQuaternion, guideElbow);
+      const elbowSolve = resolveElbowInParent(side, shoulder, guideElbow);
       const elbow = elbowSolve?.elbow || shoulder;
       targetDirection.copy(elbow).sub(socket.position); // Forearm direction: the wrist-facing hand axis points back toward the elbow.
       if (targetDirection.lengthSq() < 1e-10) {
         socket.quaternion.copy(authoredQuaternion);
         socket.updateMatrix?.();
         socket.updateMatrixWorld?.(true);
-        updatePaperArmGuide(side, shoulder, authoredQuaternion, elbowSolve);
+        updatePaperArmGuide(side, shoulder, elbowSolve);
         debugBySide[side] = { weights, applied: false, reason: 'hand-at-elbow' };
         return false;
       }
       targetDirection.normalize();
 
-      // Shoulder-follow owns the GENERIC hand socket only. Per-GLB calibration
+      // Elbow targeting owns the GENERIC hand socket only. Per-GLB calibration
       // remains a child layer. Convert the elbow direction into this authored
       // socket's LOCAL hand basis, then solve only the X and Z hinges.
       inverseAuthoredQuaternion.copy(authoredQuaternion).invert();
       localTargetDirection.copy(targetDirection).applyQuaternion(inverseAuthoredQuaternion).normalize();
       const gripAngle = Math.atan2(
-        -localTargetDirection.z,
+        localTargetDirection.z,
         Math.hypot(localTargetDirection.x, localTargetDirection.y),
-      ); // Local-X hinge moves the wrist axis out of the palm plane.
+      ); // Local-X hinge moves the +Y proximal axis out of the palm plane.
       const palmNormalAngle = Math.atan2(
-        localTargetDirection.x,
-        -localTargetDirection.y,
-      ); // Local-Z hinge turns the wrist axis within the palm plane.
+        -localTargetDirection.x,
+        localTargetDirection.y,
+      ); // Local-Z hinge turns the +Y proximal axis within the palm plane.
       const appliedGripAngle = gripAngle * weights.grip;
       const appliedPalmNormalAngle = palmNormalAngle * weights.palmNormal;
 
@@ -400,7 +376,7 @@
       socket.quaternion.copy(outputQuaternion);
       socket.updateMatrix?.();
       socket.updateMatrixWorld?.(true);
-      updatePaperArmGuide(side, shoulder, authoredQuaternion, elbowSolve);
+      updatePaperArmGuide(side, shoulder, elbowSolve);
 
       aimedWristAxis.copy(localWristProximalAxis).applyQuaternion(outputQuaternion).normalize();
       const residualRad = Math.acos(clampUnit(aimedWristAxis.dot(targetDirection)));
@@ -411,11 +387,13 @@
         source: shoulderSource[side],
         shoulder: { x: shoulder.x, y: shoulder.y, z: shoulder.z },
         elbow: { x: elbow.x, y: elbow.y, z: elbow.z },
-        armLength: elbowSolve?.totalArmLength ?? armGuideLength(side),
-        segmentLength: elbowSolve?.segmentLength ?? armGuideLength(side) * 0.5,
+        diagnosticArmLength: elbowSolve?.diagnosticArmLength ?? armGuideLength(side),
+        upperArmLength: elbowSolve?.upperArmLength ?? null,
+        forearmLength: elbowSolve?.forearmLength ?? null,
+        authoredPolylineLength: elbowSolve?.authoredPolylineLength ?? null,
         shoulderWristDistance: elbowSolve?.shoulderWristDistance ?? null,
-        overreach: elbowSolve?.overreach === true,
-        elbowHint: elbowSolve?.hint || { x: 0, y: 0, z: 0 },
+        elbowSource: elbowSolve?.source || 'unknown',
+        authoredElbowOffset: elbowSolve?.authoredOffset || null,
         calibrationOwnership: 'ignored-child-layer',
         authoredQuaternion: quaternionDebug(authoredQuaternion),
         authoredDeg: eulerDebug(authoredQuaternion),
@@ -518,7 +496,7 @@
     }
 
     const guideController = {
-      refresh() { for (const side of ['left', 'right']) updatePaperArmGuide(side, shoulderInParent(side), authoredBaseBySide[side]); },
+      refresh() { for (const side of ['left', 'right']) updatePaperArmGuide(side, shoulderInParent(side)); },
       dispose() {
         for (const guide of Object.values(paperArmBySide)) {
           if (!guide) continue;
@@ -548,13 +526,13 @@
         shoulderCompass: {
           mode: 'hand-local-two-hinge',
           targetFeature: 'elbow',
-          wristProximalAxis: '-Y',
+          wristProximalAxis: '+Y',
           componentSpace: 'hand-local',
           allowedHinges: { grip: '+X', palmNormal: '+Z' },
           paperArmGuide: {
             visible: paperArmGuideVisible,
             authoritative: false,
-            bendAtHalfArmLength: true,
+            elbowPoseAuthoritative: true,
             jointLimitsApplied: false,
             sides: Object.fromEntries(['left', 'right'].map(side => [
               side,
@@ -585,7 +563,7 @@
     mode: 'hand-local-two-hinge',
     componentSpace: 'hand-local',
     targetFeature: 'elbow',
-    wristProximalAxis: '-Y',
+    wristProximalAxis: '+Y',
     allowedHinges: Object.freeze({ grip: '+X', palmNormal: '+Z' }),
     idleWeights: Object.freeze({ grip: 1, palmNormal: 1 }),
     activeWeights: Object.freeze({ grip: 0, palmNormal: 1 }),
