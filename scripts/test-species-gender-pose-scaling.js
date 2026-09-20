@@ -112,6 +112,10 @@ assert.match(png, /HobunjiSpeciesPoseScale\?\.resolveScale/, 'avatar constructio
 assert.match(game, /let playerPoseOrbitScale = 1/, 'player must cache explicit pose orbit scale');
 assert.match(game, /scaleForPose\?\.\(playerPoseOrbitScale, playerArmLength\)/, 'player final pose scale must prefer explicit orbit over anatomy');
 assert.match(game, /transformPosePoint\(point, \{[\s\S]*baseY,[\s\S]*modelHeight: playerAvatarModelHeight[\s\S]*poseOrbitScale: playerPoseOrbitScale/, 'player finished point must split horizontal orbit from rigger-derived vertical height mapping');
+assert.match(game, /function orbitScaledRangedToolPointWithCamera\(point, aimYawRad, aimPitchRad\)[\s\S]*scaleToolWorldPointAroundPlayerCentroid\(point\)[\s\S]*playerPoseCentroidY \* \(height\?\.rigScaleY \?\? 1\)[\s\S]*pitchedForward[\s\S]*pitchedY/, 'ready ranged poses must species\/gender-scale first and then rotate the complete centroid orbit through camera pitch');
+assert.match(game, /const toolAimPitchRad = rangedTracksAim \? currentPlayerAimPitch\(\) : 0[\s\S]*orbitScaledRangedToolPointWithCamera\(toolHolder\.position, toolVθ, toolAimPitchRad\)/, 'idle ranged stance must follow live camera yaw and pitch after species\/gender scaling');
+assert.match(game, /const reticleAligned = combatSwingAlignToReticle && activeTool === 'ranged'[\s\S]*toolHolder\.position\.set\([\s\S]*vFX \* z[\s\S]*orbitScaledRangedToolPointWithCamera\(toolHolder\.position, vθ, aimPitchRad\)/, 'ranged fire\/throw animation poses must build in zero-pitch authoring space, scale, then orbit with live aim pitch');
+assert.match(game, /rangedCameraOrbit:[\s\S]*species-scale-then-camera-yaw-pitch-orbit/, 'mobile pose debug must expose whether camera-oriented ranged orbit was applied');
 assert.match(bandit, /poseOrbitScale/, 'bandit melee must propagate explicit orbit scale');
 assert.match(bandit, /transformPosePoint[\s\S]*rigScaleY: 1/, 'bandit melee must use the full X\/Z plus authored-Y mapping without inventing an unapplied body scale');
 assert.match(bandit, /scaleForPose/, 'bandit melee debug/result scale must not derive primarily from arm length');
