@@ -49,7 +49,7 @@
     // Draws one all-distance serpentine spectral locator at the army chunk; once soldiers are visible it follows their actual formation centroid.
     ['HarlyaoNightMarchBeacon', 'harlyao-night-march-beacon.js?v=20260911a'],
     // Makes the Ghoul mine-floor track the Music scheduler's exclusive looping BGM owner; chunk-distance checks are cached/throttled while gain interpolation remains smooth.
-    ['HarlyaoNightMarchMusic', 'harlyao-night-march-music.js?v=20260909c'],
+    ['HarlyaoNightMarchMusic', 'harlyao-night-march-music.js?v=20260919combatbgm2'],
     // Maps the cached music distance stage to Terror stacks, composes movement slowing into on-foot/mounted speed hooks, and exposes darkness/lantern multipliers.
     ['HarlyaoTerror', 'harlyao-terror.js?v=20260909a'],
     // Decorates Calendar day cells with the nightly route and reveals zone/direction details when a marked date is clicked.
