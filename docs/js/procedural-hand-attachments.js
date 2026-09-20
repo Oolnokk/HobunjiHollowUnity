@@ -16,7 +16,7 @@
   const selfUrl = document.currentScript?.src ? new URL(document.currentScript.src, location.href) : null;
   const docsBase = selfUrl ? new URL('../', selfUrl) : new URL('./', location.href);
   const IDLE_MEDIAL_YAW_DEG = 90;
-  const RIGHT_SHOULDER_AXIS_TWIST_DEG = 180; // Applied to the right visual around local +Y, the wrist-to-shoulder axis used below.
+  const RIGHT_SHOULDER_AXIS_TWIST_DEG = 180; // Applied around the local Y axis line. Shoulder-follow points the wrist side (-Y) toward the shoulder; +Y extends into the palm/fingers.
   const OUTLINE_OCCLUDER_DEPTH_LAYER = 4; // Used by the game's pre-shell depth replay so the depthWrite-disabled parrot body primitive can still produce a clean shell.
   const PARROT_BODY_SHELL_Y_PADDING = 0.02; // Keeps the body-coloured shell just beyond the highest keratin digit, before the continuous mesh becomes the portrait-covered wing.
   let showGripGuides = false;
