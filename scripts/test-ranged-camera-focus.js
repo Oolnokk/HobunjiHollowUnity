@@ -8,7 +8,7 @@ const vm = require('node:vm');
 const source = fs.readFileSync('docs/js/combat/ranged-camera-focus.js', 'utf8');
 const loader = fs.readFileSync('docs/js/combat/combat-config-loader.js', 'utf8');
 
-assert.match(loader, /ranged-camera-focus\.js\?v=20260920projectileport1[\s\S]*HobunjiRangedCameraFocus\?\.version\) >= 9/, 'loader requires smooth native-offset ranged focus v9');
+assert.match(loader, /ranged-camera-focus\.js\?v=20260920rangecameraorbit2[\s\S]*HobunjiRangedCameraFocus\?\.version\) >= 10/, 'loader requires camera-focus v10 with animation pitch ownership returned to game.js');
 assert.doesNotMatch(loader, /attack-camera-player-root/, 'obsolete player-root camera hook stays removed');
 assert.match(source, /change-driven-persistent-cache/, 'combat aim advertises persistent change-driven caching');
 assert.match(source, /intersectObject\(root, true, localHits\)/, 'scene roots remain isolated so one bad root cannot abort the frame');
@@ -304,19 +304,19 @@ assert.equal(sliderDispatches, dispatchesAtSettledFocus, 'settled focus emits ze
 assert.equal(sliderDispatches, 0, 'ranged focus never writes either shoulder offset slider');
 assert.equal(windowStub.HobunjiRangedCameraFocus.aimPerformance().surfaceRaycasts, scansAtSettledFocus, 'settled focus emits zero continuing scene raycasts');
 
-// Loaded crossbow/scatterbow portrait orbit still consumes the shared cached target.
+// Camera focus now owns aim convergence/FOV only; game.js owns all ranged pose orbit rotation.
 const scansBeforePose = windowStub.HobunjiRangedCameraFocus.aimPerformance().surfaceRaycasts;
-const pitchedPose = windowStub.RangedWeapons.playerIdlePose('crossbow');
-assert.notEqual(pitchedPose.pitch, 16, 'crossbow stance still responds to shared 3D vertical aim');
-assert.equal(windowStub.HobunjiRangedCameraFocus.aimPerformance().surfaceRaycasts, scansBeforePose, 'crossbow pose reuses current shared target when aim inputs are unchanged');
-injectedRangedDeps.triggerRangedWeaponVisual(1, {
-  pose: {
-    neutral: { y: 0.08, z: 0.14, pitch: 16 },
-    windup: { y: 0.14, z: 0.11, pitch: -9 },
-    strike: { y: 0.11, z: 0.12, pitch: -9 },
-  },
-});
-assert(lastRangedVisual?.options?.pose, 'loaded crossbow firing pose still receives the aim-aware transform');
+const authoredPose = windowStub.RangedWeapons.playerIdlePose('crossbow');
+assert.equal(authoredPose.pitch, 16, 'camera focus must leave the authored crossbow pose untouched for game.js to orient exactly once');
+assert.equal(windowStub.HobunjiRangedCameraFocus.aimPerformance().surfaceRaycasts, scansBeforePose, 'reading the authored ranged pose performs no extra target scan');
+const authoredFirePose = {
+  neutral: { y: 0.08, z: 0.14, pitch: 16 },
+  windup: { y: 0.14, z: 0.11, pitch: -9 },
+  strike: { y: 0.11, z: 0.12, pitch: -9 },
+};
+injectedRangedDeps.triggerRangedWeaponVisual(1, { pose: authoredFirePose });
+assert.equal(lastRangedVisual?.options?.pose, authoredFirePose, 'camera focus forwards ranged fire poses without mutating animation positions or rotations');
+assert.equal(windowStub.HobunjiRangedCameraFocus.snapshot().animationPitchOwner, 'game.js species-scale-then-camera-orbit');
 
 // Melee range changes invalidate only target convergence; unchanged camera ray keeps the surface scan cached.
 activeTool = 'weapon';
@@ -400,6 +400,6 @@ assert.equal(windowStub.HobunjiRangedCameraFocus.snapshot().active, false, 'load
 
 assert(logs.some(line => line.includes('focus ON')), 'focus transitions remain visible in in-game log');
 assert.equal(windowStub.HobunjiRangedCameraFocus.tuning.tightFovDeg, 34);
-assert.equal(windowStub.HobunjiRangedCameraFocus.tuning.crossbowVerticalPitchLimitDeg, 70);
+assert.equal('transformCrossbowPose' in windowStub.HobunjiRangedCameraFocus, false, 'camera-focus module no longer rewrites ranged animation poses');
 assert.equal('setFocusHorizontalOffset' in windowStub.HobunjiRangedCameraFocus, false, 'obsolete ranged-only shoulder offset API is gone');
 console.log('Change-driven shared interaction-target combat checks passed.');
