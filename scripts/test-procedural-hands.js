@@ -532,8 +532,8 @@ assert.match(shoulderControlsSource, /\[\['grip','Grip axis \(local X\)'\],\['pa
 assert.match(shoulderControlsSource, /`handShoulderAim_\$\{phase\}_\$\{axis\}`/, 'Attack Editor must give each pose-axis checkbox a stable id');
 assert.match(shoulderControlsSource, /parsed\.poses\[phase\]\.shoulderAim = \{ \.\.\.poseAim\[phase\] \}/, 'per-pose hinge choices must remain serialized with the pose');
 assert.match(shoulderControlsSource, /parsed\.poses\[phase\]\.elbows = elbows/, 'per-pose left\/right elbows must serialize as direct pose data');
-assert.match(editorSource, /poseElbow_\$\{side\}_\$\{axis\}/, 'active attack pose panel must expose direct left\/right elbow X\/Y\/Z inputs alongside tool pose values');
-assert.match(editorSource, /Set halfway shoulder↔hand/, 'active attack pose panel must expose an authoring-only shoulder\/hand midpoint button');
+assert.match(attackEditorSource, /poseElbow_\$\{side\}_\$\{axis\}/, 'active attack pose panel must expose direct left\/right elbow X\/Y\/Z inputs alongside tool pose values');
+assert.match(attackEditorSource, /Set halfway shoulder↔hand/, 'active attack pose panel must expose an authoring-only shoulder\/hand midpoint button');
 assert.match(shoulderControlsSource, /authorMidpointElbow/, 'editor hand controls must provide a one-shot midpoint authoring helper');
 assert.match(shoulderControlsSource, /wrist\.x\) - Number\(shoulder\.x\)\) \* 0\.5/, 'midpoint helper must persist the literal halfway shoulder-relative coordinate');
 assert.match(shoulderControlsSource, /runtime midpoint calculation/, 'hand controls must document that runtime does not recalculate midpoint elbows');
