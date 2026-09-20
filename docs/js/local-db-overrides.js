@@ -53,6 +53,7 @@
   //     than calling loadDatabase().
   const DATABASES = [
     { id: 'attackValues',  label: 'Attack Values',      repoPath: 'config/combat/attack-values.json' },
+    { id: 'speciesPoseOrbitScales', label: 'Species Pose Orbit Scales', repoPath: 'config/combat/species-pose-orbit-scales.json' },
     { id: 'lootPools',     label: 'Loot Pools',          repoPath: 'config/loot/loot-pools.json' },
     { id: 'shopStock',     label: 'Shop Stock',          repoPath: 'config/shops/shop-stock.json' },
     { id: 'npcDatabase',   label: 'NPC Database',        repoPath: 'config/npcs/hobunji-starter-npc-database.json' },
