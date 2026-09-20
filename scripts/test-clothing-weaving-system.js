@@ -107,6 +107,7 @@ const context = vm.createContext({
   fetch: async () => ({ ok: false, json: async () => ({}) }),
   console,
 });
+vm.runInContext(fs.readFileSync('docs/js/scene-ready-poller.js', 'utf8'), context, { filename: 'scene-ready-poller.js' });
 vm.runInContext(fs.readFileSync('docs/js/clothing-weaving-system.js', 'utf8'), context, { filename: 'clothing-weaving-system.js' });
 
 const api = windowStub.ClothingWeavingSystem;
