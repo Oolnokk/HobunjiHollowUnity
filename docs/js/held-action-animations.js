@@ -15,10 +15,10 @@
     holdFrac: 0.78,
     poses: {
       // Neutral is an idle endpoint: Pitch + Roll aim to the shoulder.
-      neutral: { x: 0, y: 0, z: -0.05, pitch: 10.31, yaw: 0, roll: 0, bodyYaw: 0, shoulderAim: { pitch: true, yaw: false, roll: true } },
+      neutral: { x: 0, y: 0, z: -0.05, pitch: 10.31, yaw: 0, roll: 0, bodyYaw: 0, shoulderAim: { grip: true, palmNormal: true } },
       // Active endpoints deliberately retain Roll-only shoulder alignment.
-      windup: { x: 0.32, y: 0.21, z: 0.1, pitch: -114, yaw: 18, roll: -8, bodyYaw: 0, shoulderAim: { pitch: false, yaw: false, roll: true } },
-      strike: { x: 0.4, y: 0.4, z: 0.22, pitch: -180, yaw: 21, roll: 4, bodyYaw: 0, shoulderAim: { pitch: false, yaw: false, roll: true } },
+      windup: { x: 0.32, y: 0.21, z: 0.1, pitch: -114, yaw: 18, roll: -8, bodyYaw: 0, shoulderAim: { grip: false, palmNormal: true } },
+      strike: { x: 0.4, y: 0.4, z: 0.22, pitch: -180, yaw: 21, roll: 4, bodyYaw: 0, shoulderAim: { grip: false, palmNormal: true } },
     },
   };
 
@@ -56,17 +56,17 @@
     poses: {
       neutral: {
         x: 0.03, y: 0.37, z: -0.01, pitch: -155, yaw: -79, bodyYaw: 2, roll: -82,
-        shoulderAim: { pitch: true, yaw: false, roll: true },
+        shoulderAim: { grip: true, palmNormal: true },
         secondaryGrip: { enabled: false, percent: 50 },
       },
       windup: {
         x: 0.41, y: 0.37, z: 0.42, pitch: -180, yaw: 139, bodyYaw: -152, roll: -92,
-        shoulderAim: { pitch: false, yaw: false, roll: false },
+        shoulderAim: { grip: false, palmNormal: false },
         secondaryGrip: { enabled: false, percent: 50 },
       },
       strike: {
         x: -0.57, y: 0.33, z: 0.17, pitch: -25, yaw: -65, bodyYaw: 63, roll: -88,
-        shoulderAim: { pitch: true, yaw: false, roll: false },
+        shoulderAim: { grip: true, palmNormal: false },
         secondaryGrip: { enabled: false, percent: 50 },
       },
     },
