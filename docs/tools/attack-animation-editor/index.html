@@ -1912,7 +1912,6 @@ $('loadFile').onchange = async () => {
     const data = JSON.parse(await file.text());
     loadAnimObject(data);
     window.HobunjiAttackEditorHandGripMode?.loadFromAnimationObject?.(data);
-    window.HobunjiAttackEditorHandShoulderControls?.loadFromAnimationObject?.(data);
     logDebug(`Loaded ${file.name}`);
   } catch (e) {
     logDebug(`Load failed: ${e.message}`);
@@ -1949,6 +1948,10 @@ function loadAnimObject(data) {
   anim.poses.neutral = { ...defaultPose(safeNum(n.x, styleNeutral.x), safeNum(n.y, styleNeutral.y), safeNum(n.z, styleNeutral.z), safeNum(n.pitch, styleNeutral.pitch), safeNum(n.yaw, styleNeutral.yaw), safeNum(n.bodyYaw, styleNeutral.bodyYaw), safeNum(n.roll, styleNeutral.roll)), scale: Math.max(0.1, safeNum(n.scale, styleNeutral.scale ?? 1)) };
   anim.poses.windup = defaultPose(safeNum(w.x, 0), safeNum(w.y, 0), safeNum(w.z, 0), safeNum(w.pitch, 0), safeNum(w.yaw, 0), safeNum(w.bodyYaw, 0), safeNum(w.roll, 0));
   anim.poses.strike = defaultPose(safeNum(s.x, 0), safeNum(s.y, 0), safeNum(s.z, 0), safeNum(s.pitch, 0), safeNum(s.yaw, 0), safeNum(s.bodyYaw, 0), safeNum(s.roll, 0));
+  // Elbows are pose data too, but the hand adapter owns their live preview state.
+  // Restore them on every load path (file import, Undo/Redo, programmatic restore),
+  // not only the file-input handler.
+  window.HobunjiAttackEditorHandShoulderControls?.loadFromAnimationObject?.(data);
   $('animName').value = action.label;
   $('animStyle').value = anim.style;
   $('playbackSequence').value = anim.sequence;
