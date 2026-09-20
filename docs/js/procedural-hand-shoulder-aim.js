@@ -6,7 +6,7 @@
 // so the wrist/proximal side is local +Y. That axis targets the pose-authored elbow.
 // The correction
 // may rotate only around two HAND-LOCAL hinges:
-// local X (grip axis) and local Z (palm-normal axis). There is deliberately no local-Y
+// local X (grip axis) and local -Z (directed palm-normal axis). There is deliberately no local-Y
 // shoulder hinge. Per-pose weights come from hand-shoulder-pose-runtime.js.
 (function (global) {
   'use strict';
