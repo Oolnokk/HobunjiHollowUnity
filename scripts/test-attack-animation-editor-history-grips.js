@@ -116,6 +116,8 @@ assert.match(attachments, /rec\.calibration\.add\(visual\)/, 'GLB visual must be
 assert.match(driver, /syncCalibrationWorkspace\(record,[\s\S]*neutralWorldQuaternion: true,[\s\S]*bypassesAnimation: true,[\s\S]*bypassesShoulderAim: true/, 'calibration tab must bypass the normal animation, tool and shoulder stack');
 assert.match(attachments, /placeCalibrationPreviewWorld\(worldPosition, worldQuaternion, modelCalibration = null\)/, 'calibration tab must use a placement method outside wrapped gameplay hand placement');
 assert.doesNotMatch(shoulderAim, /toolCalibrationLocal|hand_calibration/, 'shoulder-follow must remain completely independent of model calibration');
+assert.match(shoulderAim, /localWristShoulderAxis = new THREE\.Vector3\(0, -1, 0\)/, 'editor/runtime shoulder follow must point the wrist side of the calibrated hand toward the shoulder');
+assert.match(shoulder, /wrist is always the part aimed at the shoulder/i, 'editor must explain that X\/Y\/Z are rotation gates, not different hand target axes');
 assert.match(attachments, /lockedReference = true/, 'paper hand must identify itself as a locked reference, not an animatable rig');
 assert.match(attachments, /lockedTo: 'raw-primary-grip-frame-before-grip-mode-and-hand-model-calibration'/, 'paper hand must remain locked to the raw weapon target before downstream hand layers');
 assert.match(driver, /placePaperHandGuideWorld\?\.\(primarySocket\.position, primarySocket\.quaternion\)[\s\S]*handSocketAfterGripMode\(record, primarySocket\)/, 'paper reference must be placed before Grip Mode moves the socket');
