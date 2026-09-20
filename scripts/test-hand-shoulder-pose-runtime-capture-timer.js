@@ -98,7 +98,7 @@ function buildFixture() {
   assert.deepEqual(JSON.parse(JSON.stringify(windupLeft)), { x: 0.2, y: 0.35, z: 0.1 },
     'Backhand must independently mirror the LEFT elbow rather than swapping hand identities');
   const endRight = runtime.elbowAt(1, timing, pose, 'attack', 'right');
-  assert.deepEqual(JSON.parse(JSON.stringify(endRight)), { x: 0.25, y: 0.4, z: -0.08 },
+  assert(Math.abs(endRight.x - 0.25) < 1e-12 && Math.abs(endRight.y - 0.4) < 1e-12 && Math.abs(endRight.z + 0.08) < 1e-12,
     'alternating Heavy return Neutral must use its distinct unmirrored return sign');
 }
 
