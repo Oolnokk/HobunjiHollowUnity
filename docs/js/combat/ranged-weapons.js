@@ -1389,13 +1389,13 @@
     const rx = Math.cos(vθ), rz = -Math.sin(vθ), fx = Math.sin(vθ), fz = Math.cos(vθ);
     const group = c.avatarRef.group; // Converted bandit portrait root used to reconstruct the raw floor-relative hand base.
     const modelHeight = Number(c.avatarRef?.modelHeight ?? group.userData?.portraitModelHeight) || 0.9;
-    const modelWidth = Number(c.avatarRef?.modelWidth ?? group.userData?.portraitModelWidth) || modelHeight;
-    const handAttachX = Number(c.avatarRef?.handAttachX ?? group.userData?.handAttachX);
     const handAttachY = Number(c.avatarRef?.handAttachY ?? group.userData?.handAttachY);
-    const baseX = Number.isFinite(handAttachX) ? handAttachX : -modelWidth / 2; // Same scanned/fallback horizontal hand anchor used by bandit melee.
     const floorY = group.position.y - modelHeight / 2; // Converted bandit group is centered vertically.
     const baseY = floorY + (Number.isFinite(handAttachY) ? handAttachY : modelHeight / 2); // Raw hand anchor used by shared Y mapping.
-    holder.position.set(c.x / deps.TILE + rx * (baseX + pose.x) + fx * pose.z, baseY + pose.y, c.y / deps.TILE + rz * (baseX + pose.x) + fz * pose.z);
+    // Preserve the existing ranged horizontal base exactly; this review fix is
+    // only adding the missing shared vertical-height contract, not re-authoring
+    // the ranged stance's X/Z calibration.
+    holder.position.set(c.x / deps.TILE + rx * (-0.34 + pose.x) + fx * pose.z, baseY + pose.y, c.y / deps.TILE + rz * (-0.34 + pose.x) + fz * pose.z);
     const armLength = Number(c.avatarRef?.armLength ?? group.userData?.armLength); // Anatomical reach retained only as a backwards-compatible fallback.
     const poseOrbitScale = Number(c.avatarRef?.poseOrbitScale ?? group.userData?.poseOrbitScale);
     const speciesId = c.avatarRef?.speciesId || group.userData?.speciesId || null; // Used by the shared portrait-height ratio.
