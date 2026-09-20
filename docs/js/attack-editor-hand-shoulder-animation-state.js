@@ -14,10 +14,12 @@
 
   const PHASES = Object.freeze(['neutral', 'windup', 'strike']);
   const AXES = Object.freeze(['grip', 'palmNormal']);
+  const ELBOW_AXES = Object.freeze(['x', 'y', 'z']);
+  const AUTO_ELBOW = Object.freeze({ x: 0, y: 0, z: 0 });
   const DEFAULTS = Object.freeze({
-    neutral: Object.freeze({ grip: true, palmNormal: true }),
-    windup: Object.freeze({ grip: false, palmNormal: true }),
-    strike: Object.freeze({ grip: false, palmNormal: true }),
+    neutral: Object.freeze({ grip: true, palmNormal: true, elbowHint: AUTO_ELBOW }),
+    windup: Object.freeze({ grip: false, palmNormal: true, elbowHint: AUTO_ELBOW }),
+    strike: Object.freeze({ grip: false, palmNormal: true, elbowHint: AUTO_ELBOW }),
   });
   const cache = new Map(); // Stores independent checkbox sets for each editor animation key.
   let activeKey = 'draft:new-attack'; // Identifies the animation whose checkboxes are currently visible.
@@ -26,9 +28,15 @@
   function checkboxId(phase, axis) {
     return `handShoulderAim_${phase}_${axis}`;
   }
+  function elbowInputId(phase, axis) {
+    return `handElbowHint_${phase}_${axis}`;
+  }
 
   function cloneState(state) {
-    return Object.fromEntries(PHASES.map(phase => [phase, { ...state[phase] }]));
+    return Object.fromEntries(PHASES.map(phase => [phase, {
+      ...state[phase],
+      elbowHint: { ...(state[phase]?.elbowHint || AUTO_ELBOW) },
+    }]));
   }
 
   function defaultState() {
@@ -38,9 +46,12 @@
   function normalizeAxes(raw, fallback) {
     const grip = raw?.grip ?? raw?.pitch; // Legacy Pitch maps to the hand-local grip-axis hinge.
     const palmNormal = raw?.palmNormal ?? raw?.roll; // Legacy Roll maps to the hand-local palm-normal hinge.
+    const elbowSource = raw?.elbowHint || raw?.elbow || fallback.elbowHint || AUTO_ELBOW;
+    const number = value => Number.isFinite(Number(value)) ? Number(value) : 0;
     return {
       grip: grip === true ? true : grip === false ? false : !!fallback.grip,
       palmNormal: palmNormal === true ? true : palmNormal === false ? false : !!fallback.palmNormal,
+      elbowHint: { x: number(elbowSource.x), y: number(elbowSource.y), z: number(elbowSource.z) },
     };
   }
 
@@ -63,6 +74,10 @@
         const input = document.getElementById(checkboxId(phase, axis));
         if (input) state[phase][axis] = !!input.checked;
       }
+      for (const axis of ELBOW_AXES) {
+        const input = document.getElementById(elbowInputId(phase, axis));
+        if (input) state[phase].elbowHint[axis] = Number(input.value) || 0;
+      }
     }
     return state;
   }
@@ -79,6 +94,14 @@
           // Reuse the original shoulder-control listener so its private poseAim
           // object and exported animation JSON remain the source of truth.
           input.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        for (const axis of ELBOW_AXES) {
+          const input = document.getElementById(elbowInputId(phase, axis));
+          if (!input) continue;
+          const value = Number(next[phase].elbowHint?.[axis]) || 0;
+          if (Number(input.value) === value) continue;
+          input.value = String(value);
+          input.dispatchEvent(new Event('input', { bubbles: true }));
         }
       }
       controls.syncControls?.();
@@ -177,10 +200,15 @@
     }
   }, true);
 
-  // Checkbox edits belong only to the currently active animation key.
+  // Hinge and elbow edits belong only to the currently active animation key.
   for (const phase of PHASES) {
     for (const axis of AXES) {
       document.getElementById(checkboxId(phase, axis))?.addEventListener('change', () => {
+        if (!applyingState) saveActiveState();
+      });
+    }
+    for (const axis of ELBOW_AXES) {
+      document.getElementById(elbowInputId(phase, axis))?.addEventListener('input', () => {
         if (!applyingState) saveActiveState();
       });
     }
