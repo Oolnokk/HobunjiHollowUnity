@@ -119,6 +119,7 @@ assert.doesNotMatch(shoulderAim, /toolCalibrationLocal|hand_calibration/, 'shoul
 assert.match(shoulderAim, /localWristProximalAxis = new THREE\.Vector3\(0, 1, 0\)/, 'editor/runtime hand follow must retain local +Y as the wrist-facing proximal axis because fingers run -Y');
 assert.match(shoulderAim, /localGripAxis = new THREE\.Vector3\(1, 0, 0\)/, 'shoulder follow must expose the grip-axis local X hinge');
 assert.match(shoulderAim, /localPalmNormalAxis = new THREE\.Vector3\(0, 0, -1\)/, 'shoulder follow must expose the corrected local -Z palm-normal hinge');
+assert.match(shoulderAim, /palmNormal:\s*Math\.atan2\(x, y\)/, 'the -Z hinge must pair with the matching angle sign');
 assert.match(shoulder, /wrist-facing side aims toward the pose-authored elbow/i, 'editor must explain that the hand targets the authored elbow rather than the shoulder');
 assert.match(attachments, /lockedReference = true/, 'paper hand must identify itself as a locked reference, not an animatable rig');
 assert.match(attachments, /lockedTo: 'raw-primary-grip-frame-before-grip-mode-and-hand-model-calibration'/, 'paper hand must remain locked to the raw weapon target before downstream hand layers');
@@ -128,6 +129,9 @@ assert.match(shoulder, /\[\['grip','Grip axis \(local X\)'\],\['palmNormal','Pal
 assert.match(shoulder, /handShowPaperArmGuide/, 'shoulder-follow controls must expose the non-authoritative paper arm guide');
 assert.match(editor, /poseElbow_\$\{side\}_\$\{axis\}/, 'active pose panel must own the per-side elbow coordinate fields');
 assert.match(editor, /poseElbowMidpoint_\$\{side\}/, 'active pose panel must own the one-shot midpoint authoring button');
+assert.match(editor, /HobunjiAttackEditorPoseState = Object\.freeze/, 'core animation pose objects must own elbow and hand-follow state');
+assert.match(editor, /loadFromAnimationObject\?\.\(\{ poses: anim\.poses \}\)/, 'Action switching must reset hand state from the selected Action');
+assert.doesNotMatch(held, /attack-editor-hand-shoulder-animation-state\.js/, 'retired preset-based shoulder-state adapter must stay unloaded');
 assert.doesNotMatch(shoulder, /handElbow_/, 'the separate hand-follow section must not duplicate elbow coordinate authoring');
 assert.match(shoulderAim, /currentElbow/, 'runtime hand targeting must read the active direct elbow pose');
 assert.match(shoulderAim, /targetFeature: 'elbow'/, 'runtime diagnostics must identify the elbow as the hand target');
