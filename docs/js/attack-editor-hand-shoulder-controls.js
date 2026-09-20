@@ -73,10 +73,6 @@
   function checkboxId(phase, axis) {
     return `handShoulderAim_${phase}_${axis}`;
   }
-  function elbowInputId(phase, side, axis) {
-    return `handElbow_${phase}_${side}_${axis}`;
-  }
-
   const followGroup = document.createElement('div'); // Hand-only orientation assist; deliberately lives outside the tool-pose controls.
   followGroup.className = 'poseGroup';
   followGroup.id = 'handShoulderFollowGroup';
@@ -89,12 +85,6 @@
         <div class="row" style="gap:9px;flex-wrap:wrap">
           ${[['grip','Grip axis (local X)'],['palmNormal','Palm-normal axis (local Z)']].map(([axis,label]) => `<label class="fieldRow" style="cursor:pointer;margin:0"><input id="${checkboxId(phase, axis)}" type="checkbox" style="width:auto">${label}</label>`).join('')}
         </div>
-        <div class="help" style="margin-top:7px">Elbows are direct offsets from each species/gender shoulder in the hand rig's local pose space. Blank = legacy midpoint fallback. These values interpolate with Neutral/Windup/Strike exactly like any other pose channel.</div>
-        ${SIDES.map(side => `
-          <div class="row" style="gap:7px;align-items:center;flex-wrap:wrap;margin-top:5px">
-            <span class="val" style="min-width:42px">${side === 'left' ? 'Left' : 'Right'}</span>
-            ${ELBOW_AXES.map(axis => `<label class="fieldRow" style="margin:0;min-width:88px">${axis.toUpperCase()} <input id="${elbowInputId(phase, side, axis)}" type="number" step="0.01" placeholder="auto" style="width:72px"></label>`).join('')}
-          </div>`).join('')}
       </div>`).join('')}
   `;
   handCard?.appendChild(followGroup);
@@ -141,14 +131,6 @@
       for (const axis of AXES) {
         const input = document.getElementById(checkboxId(phase, axis));
         if (input) input.checked = !!poseAim[phase][axis];
-      }
-      for (const side of SIDES) {
-        for (const axis of ELBOW_AXES) {
-          const input = document.getElementById(elbowInputId(phase, side, axis));
-          if (!input || document.activeElement === input) continue;
-          const value = poseElbows[phase]?.[side]?.[axis];
-          input.value = Number.isFinite(Number(value)) ? String(Number(value)) : '';
-        }
       }
     }
     hide.checked = hideArmSprites;
@@ -204,28 +186,59 @@
     global.ProceduralHandFrameDriver?.syncNow?.();
     syncCheckboxes();
   }
-  function setElbowAxis(phase, side, axis) {
-    const values = Object.fromEntries(ELBOW_AXES.map(key => {
-      const raw = document.getElementById(elbowInputId(phase, side, key))?.value?.trim?.() ?? '';
-      return [key, raw === '' ? null : Number(raw)];
-    }));
-    const anyAuthored = ELBOW_AXES.some(key => Number.isFinite(values[key]));
-    poseElbows[phase][side] = anyAuthored
-      ? Object.fromEntries(ELBOW_AXES.map(key => [key, Number.isFinite(values[key]) ? values[key] : 0]))
-      : null;
+  function normalizePoint(point) {
+    const x = Number(point?.x), y = Number(point?.y), z = Number(point?.z);
+    return [x,y,z].every(Number.isFinite) ? { x, y, z } : null;
+  }
+
+  function elbowForPhase(phase, side) {
+    const point = poseElbows?.[phase]?.[side];
+    return point ? { ...point } : null;
+  }
+
+  function setElbowForPhase(phase, side, point) {
+    if (!PHASES.includes(phase) || !SIDES.includes(side)) return false;
+    poseElbows[phase][side] = normalizePoint(point);
     refreshJsonExtension();
     global.ProceduralHandFrameDriver?.syncNow?.();
     global.ProceduralHandShoulderAim?.refreshPaperArmGuides?.();
+    global.syncPosePanelFromState?.(phase);
+    return true;
+  }
+
+  function authorMidpointElbow(phase, side) {
+    if (!PHASES.includes(phase) || !SIDES.includes(side)) return null;
+    global.ProceduralHandFrameDriver?.syncNow?.();
+    const species = String(document.getElementById('avatarSpecies')?.value || '').toLowerCase();
+    const gender = String(document.getElementById('avatarGender')?.value || '').toLowerCase();
+    const snapshots = global.ProceduralHandAttachments?.getActiveDebug?.() || [];
+    const hasPoints = snapshot => snapshot?.shoulderCompass?.sides?.[side]?.shoulder
+      && snapshot?.shoulderCompass?.sides?.[side]?.wrist;
+    const matching = snapshots.find(snapshot =>
+      hasPoints(snapshot)
+      && (!species || String(snapshot?.speciesId || '').toLowerCase() === species)
+      && (!gender || String(snapshot?.gender || '').toLowerCase() === gender)
+    ) || snapshots.find(hasPoints);
+    const sideDebug = matching?.shoulderCompass?.sides?.[side];
+    const shoulder = sideDebug?.shoulder;
+    const wrist = sideDebug?.wrist;
+    if (!shoulder || !wrist) return null;
+    // Editor-only convenience: persist the point halfway between the displayed
+    // shoulder and wrist as a shoulder-relative elbow pose. Runtime never
+    // recalculates, clamps, or otherwise owns this midpoint.
+    const point = {
+      x: (Number(wrist.x) - Number(shoulder.x)) * 0.5,
+      y: (Number(wrist.y) - Number(shoulder.y)) * 0.5,
+      z: (Number(wrist.z) - Number(shoulder.z)) * 0.5,
+    };
+    if (!normalizePoint(point)) return null;
+    setElbowForPhase(phase, side, point);
+    return { ...point };
   }
 
   for (const phase of PHASES) {
     for (const axis of AXES) {
       document.getElementById(checkboxId(phase, axis))?.addEventListener('change', event => setAxis(phase, axis, event.currentTarget.checked));
-    }
-    for (const side of SIDES) {
-      for (const axis of ELBOW_AXES) {
-        document.getElementById(elbowInputId(phase, side, axis))?.addEventListener('input', () => setElbowAxis(phase, side, axis));
-      }
     }
   }
 
@@ -313,11 +326,15 @@
       }
       syncCheckboxes();
       refreshJsonExtension();
+      global.renderActivePosePanel?.();
       global.ProceduralHandFrameDriver?.syncNow?.();
       return true;
     },
     get poseAim() { return JSON.parse(JSON.stringify(poseAim)); },
     get poseElbows() { return JSON.parse(JSON.stringify(poseElbows)); },
+    elbowForPhase,
+    setElbowForPhase,
+    authorMidpointElbow,
     currentWeights,
     currentElbow,
     decorateAnimationObject(parsed) {
@@ -337,6 +354,7 @@
       global.ProceduralHandShoulderAim?.setPaperArmGuideVisible?.(showPaperArmGuide);
       syncCheckboxes();
       refreshJsonExtension();
+      global.renderActivePosePanel?.();
       requestPreviewRebuild();
       global.ProceduralHandFrameDriver?.syncNow?.();
       return true;
@@ -348,4 +366,5 @@
     },
     syncControls: syncCheckboxes,
   };
+  global.renderActivePosePanel?.();
 })(window);
