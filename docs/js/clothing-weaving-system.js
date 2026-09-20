@@ -32,8 +32,7 @@
 
   let equipmentDeps = null; // Captured from EquipmentPanel.init; used for gear, inventory, saves, and player refresh.
   const AVATAR_REFRESH_RETRY_MS = 200; // Polling interval while waiting for equipmentDeps to become available.
-  const AVATAR_REFRESH_RETRY_LIMIT = 25; // ~5s cap: generous for any plausible boot-order race, bounded so a context that never gets equipmentDeps (e.g. a tool page) can't retry forever.
-  let avatarRefreshRetryCount = 0; // Reset once a refresh actually fires; only ever climbs while genuinely waiting.
+  const AVATAR_REFRESH_RETRY_TIMEOUT_MS = 5000; // ~5s cap: generous for any plausible boot-order race, bounded so a context that never gets equipmentDeps (e.g. a tool page) can't retry forever.
   // The player's world avatar is a one-shot static bake (see refreshPlayerAvatar's
   // forceEyesOpen comment) — it is never re-rendered on its own, so a pattern
   // that finishes building async has exactly one way back onto the model:
@@ -43,16 +42,15 @@
   // fallback plain-cloth bake from _imageForTint's cache miss sticks for the
   // rest of the session, until some unrelated gear change happens to force
   // another rebuild — read by players as "the pattern is just wrong,"
-  // intermittently, depending on load timing. Retry instead of giving up.
+  // intermittently, depending on load timing. Retry instead of giving up,
+  // via the shared SceneReadyPoller (see its own header comment) rather
+  // than another one-off setTimeout/retry-counter pair.
   function requestPlayerAvatarRefresh() {
-    if (equipmentDeps?.refreshPlayerAvatar) {
-      avatarRefreshRetryCount = 0;
+    window.SceneReadyPoller.pollUntilReady(() => {
+      if (!equipmentDeps?.refreshPlayerAvatar) return false;
       equipmentDeps.refreshPlayerAvatar();
-      return;
-    }
-    if (avatarRefreshRetryCount >= AVATAR_REFRESH_RETRY_LIMIT) return;
-    avatarRefreshRetryCount++;
-    window.setTimeout(requestPlayerAvatarRefresh, AVATAR_REFRESH_RETRY_MS);
+      return true;
+    }, AVATAR_REFRESH_RETRY_TIMEOUT_MS, AVATAR_REFRESH_RETRY_MS);
   }
   let activeClothingUid = null; // Updated before EquipmentPanel's private detail click handler runs; used to extend redye for woven gear.
   let loomOverlay = null; // Current floating loom UI root; null while closed.

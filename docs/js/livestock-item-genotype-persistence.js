@@ -15,7 +15,7 @@
   const PROFILE_KEY = 'hobunjiPlayerProfile';
   const MEMBER_FIELD = 'livestockItemGenotypes';
   const INSTALL_RETRY_MS = 50;
-  const INSTALL_RETRY_LIMIT = 200;
+  const INSTALL_RETRY_TIMEOUT_MS = 10000; // ~200 tries at the old 50ms cadence.
 
   const debug = {
     installed: false,
@@ -281,11 +281,10 @@
   installCompendiumCorrection();
 
   if (!install()) {
-    let attempts = 0;
-    const timer = setInterval(() => {
-      attempts++;
-      if (install() || attempts >= INSTALL_RETRY_LIMIT) clearInterval(timer);
-    }, INSTALL_RETRY_MS);
+    // Same script-order race every other late-loaded module hits (FarmAnimals
+    // may not be installed yet) -- retried via the shared SceneReadyPoller
+    // (see its own header comment) rather than another one-off setInterval.
+    window.SceneReadyPoller.pollUntilReady(install, INSTALL_RETRY_TIMEOUT_MS, INSTALL_RETRY_MS);
     document.addEventListener('DOMContentLoaded', install, { once: true });
   }
 })();

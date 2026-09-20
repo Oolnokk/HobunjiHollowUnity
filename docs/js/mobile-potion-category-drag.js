@@ -421,8 +421,7 @@
     return true;
   }
 
-  if (!install()) {
-    const retryTimer = setInterval(() => { if (install()) clearInterval(retryTimer); }, 50); // Handles script-order races without requiring game.js changes.
-    setTimeout(() => clearInterval(retryTimer), 10000);
-  }
+  // Handles script-order races via the shared SceneReadyPoller (see its own
+  // header comment) rather than another one-off setInterval.
+  if (!install() && window.SceneReadyPoller) window.SceneReadyPoller.pollUntilReady(install, 10000, 50);
 })();

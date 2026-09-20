@@ -11,6 +11,7 @@
 <body>
 <header><h1>Ambient Dialogue Editor</h1><span id="status" class="pill">Loading…</span><span class="spacer"></span><button id="importBtn">Import</button><button id="exportBtn" class="good">Export JSON</button><input id="file" type="file" accept=".json" hidden></header>
 <div class="shell"><aside><div class="tabs"><button data-mode="npc" class="active">NPCs</button><button data-mode="animal">Animals</button><button data-mode="crowd">Crowd</button></div><input id="search" type="search" placeholder="Search…"><div id="list" class="list"></div></aside><main id="editor"><div class="card muted">Loading configuration and databases…</div></main></div>
+<script src="../../js/scene-ready-poller.js?v=20260917a"></script>
 <script src="../../js/animal-voice-independent-playback.js?v=20260828simple2"></script>
 <script>
 const CONFIG_URL='../../config/dialogue/ambient-dialogue.json';

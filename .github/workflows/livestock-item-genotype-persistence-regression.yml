@@ -1,0 +1,34 @@
+name: Livestock item genotype persistence regression
+
+on:
+  push:
+    paths:
+      - 'docs/js/livestock-item-genotype-persistence.js'
+      - 'docs/js/scene-ready-poller.js'
+      - 'scripts/test-livestock-item-genotype-persistence.js'
+      - '.github/workflows/livestock-item-genotype-persistence-regression.yml'
+  pull_request:
+    paths:
+      - 'docs/js/livestock-item-genotype-persistence.js'
+      - 'docs/js/scene-ready-poller.js'
+      - 'scripts/test-livestock-item-genotype-persistence.js'
+      - '.github/workflows/livestock-item-genotype-persistence-regression.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  livestock-item-genotype-persistence:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Syntax check
+        run: |
+          node --check docs/js/livestock-item-genotype-persistence.js
+          node --check docs/js/scene-ready-poller.js
+      - name: Run livestock item genotype persistence regression
+        run: node scripts/test-livestock-item-genotype-persistence.js
