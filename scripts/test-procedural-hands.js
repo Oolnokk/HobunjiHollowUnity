@@ -501,6 +501,7 @@ assert.match(shoulderPoseProfilesSource, /grip: false, palmNormal: true/, 'activ
 assert.match(shoulderAimSource, /localWristProximalAxis = new THREE\.Vector3\(0, 1, 0\)/, 'the hand proximal axis must be local +Y because the real GLBs point fingers along local -Y');
 assert.match(shoulderAimSource, /localGripAxis = new THREE\.Vector3\(1, 0, 0\)/, 'the across-grip local X axis must be the first allowed shoulder hinge');
 assert.match(shoulderAimSource, /localPalmNormalAxis = new THREE\.Vector3\(0, 0, -1\)/, 'the directed palm-normal hinge must follow the authored away-from-camera local -Z normal');
+assert.match(shoulderAimSource, /palmNormal:\s*Math\.atan2\(x, y\)/, 'the -Z palm-normal hinge must use the matching positive-X angle equation rather than the old +Z sign');
 assert.match(shoulderAimSource, /targetDirection\.copy\(elbow\)\.sub\(socket\.position\)/, 'hand targeting must solve from the wrist socket\/origin back toward the resolved elbow');
 assert.match(shoulderAimSource, /localTargetDirection\.copy\(targetDirection\)\.applyQuaternion\(inverseAuthoredQuaternion\)/, 'target direction must be solved in the authored hand-local basis');
 assert.match(shoulderAimSource, /outputQuaternion\.copy\(authoredQuaternion\)\.multiply\(localCorrectionQuaternion\)/, 'local hinge correction must right-multiply the authored hand frame');
@@ -530,8 +531,12 @@ assert.doesNotMatch(shoulderAimSource, /authored \* \(modelHeight \/ 0\.9\)/, 'c
 assert.match(shoulderControlsSource, /const PHASES = \['neutral', 'windup', 'strike'\]/, 'Attack Editor must expose all three pose phases');
 assert.match(shoulderControlsSource, /\[\['grip','Grip axis \(local X\)'\],\['palmNormal','Palm-normal axis \(local -Z\)'\]\]/, 'Attack Editor must expose the corrected directed palm-normal hinge');
 assert.match(shoulderControlsSource, /`handShoulderAim_\$\{phase\}_\$\{axis\}`/, 'Attack Editor must give each pose-axis checkbox a stable id');
-assert.match(shoulderControlsSource, /parsed\.poses\[phase\]\.shoulderAim = \{ \.\.\.poseAim\[phase\] \}/, 'per-pose hinge choices must remain serialized with the pose');
+assert.match(shoulderControlsSource, /parsed\.poses\[phase\]\.shoulderAim = \{ \.\.\.aimForPhase\(phase\) \}/, 'per-pose hinge choices must serialize from the core pose-backed state');
 assert.match(shoulderControlsSource, /parsed\.poses\[phase\]\.elbows = elbows/, 'per-pose left\/right elbows must serialize as direct pose data');
+assert.match(attackEditorSource, /HobunjiAttackEditorPoseState = Object\.freeze/, 'core Attack Editor pose objects must own hand-follow and elbow authoring state');
+assert.match(attackEditorSource, /setElbow\(phase, side, point\)/, 'core pose state must expose direct elbow mutation for the active pose editor');
+assert.match(attackEditorSource, /loadFromAnimationObject\?\.\(\{ poses: anim\.poses \}\)/, 'switching Actions must reload hand state from the newly selected animation instead of leaking the previous Action');
+assert.doesNotMatch(heldSource, /attack-editor-hand-shoulder-animation-state\.js/, 'retired presetSelect-based shoulder state adapter must not load in the modern Action-based editor');
 assert.match(attackEditorSource, /poseElbow_\$\{side\}_\$\{axis\}/, 'active attack pose panel must expose direct left\/right elbow X\/Y\/Z inputs alongside tool pose values');
 assert.match(attackEditorSource, /Set halfway shoulder↔hand/, 'active attack pose panel must expose an authoring-only shoulder\/hand midpoint button');
 assert.match(shoulderControlsSource, /authorMidpointElbow/, 'editor hand controls must provide a one-shot midpoint authoring helper');
@@ -543,6 +548,39 @@ assert.match(shoulderControlsSource, /handShowPaperArmGuide/, 'Attack Editor mus
 assert.match(shoulderControlsSource, /raw\?\.\[legacyKey\]/, 'Attack Editor must migrate legacy Pitch\/Roll shoulder data into the two semantic hinges');
 assert.match(shoulderControlsSource, /previewApi\.renderProfileToCanvas/, 'arm hiding should be scoped to the Attack Editor preview adapter');
 assert.doesNotMatch(shoulderControlsSource, /global\.renderPortraitProfile\s*=|global\.renderProfile\s*=/, 'preview arm hiding must not monkeypatch global portrait renderers');
+
+// Numerical regression: the semantic hinge signs must actually aim proximal +Y
+// at the requested local direction. Literal-axis regexes alone previously let a
+// -Z axis ship with the +Z angle equation.
+{
+  const handStub = { attach() { return null; } };
+  const sandbox = { window: { ProceduralHandAttachments: handStub }, console, Math, Number, Object };
+  vm.createContext(sandbox);
+  vm.runInContext(shoulderAimSource, sandbox, { filename: 'procedural-hand-shoulder-aim.js' });
+  const solve = sandbox.window.ProceduralHandShoulderAim?.solveLocalHingeAngles;
+  assert.equal(typeof solve, 'function', 'shoulder solver must expose its pure local hinge decomposition for regression');
+  const targets = [
+    { x: 0.5, y: 0.8, z: 0.2 },
+    { x: -0.45, y: 0.72, z: -0.31 },
+    { x: 0.3, y: -0.4, z: 0.5 },
+  ];
+  for (const target of targets) {
+    const length = Math.hypot(target.x, target.y, target.z);
+    const n = { x: target.x / length, y: target.y / length, z: target.z / length };
+    const angles = solve(n);
+    // +X grip first: +Y -> (0, cos(g), sin(g)).
+    const afterGrip = { x: 0, y: Math.cos(angles.grip), z: Math.sin(angles.grip) };
+    // Then rotate around directed -Z by p: (x,y) -> (sin(p)*y, cos(p)*y).
+    const aimed = {
+      x: Math.sin(angles.palmNormal) * afterGrip.y,
+      y: Math.cos(angles.palmNormal) * afterGrip.y,
+      z: afterGrip.z,
+    };
+    for (const axis of ['x','y','z']) {
+      assert(Math.abs(aimed[axis] - n[axis]) < 1e-9, `two-hinge solve missed target ${axis}: ${aimed[axis]} vs ${n[axis]}`);
+    }
+  }
+}
 
 // Hand shoulder targets are ordinary attachment-rig coordinates and therefore use
 // the same actor anchors, axes helpers, TransformControls, numeric fields, and reset flow.
