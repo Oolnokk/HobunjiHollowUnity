@@ -1,0 +1,20 @@
+{
+  "schema": "hobunji_pattern.v1",
+  "id": "gruumlarr_links",
+  "name": "gruumlarr_links",
+  "motifPng": "assets/patterns/motif_gruumlarr_links.png",
+  "settings": {
+    "motifScale": 1.08,
+    "motifRotationDeg": 17,
+    "tiling": true,
+    "invert": false,
+    "motifThinPx": 0,
+    "frameShape": "square",
+    "frameX": 0,
+    "frameY": 0,
+    "frameRotationDeg": 0,
+    "frameScale": 1.03,
+    "meshScale": 1.87,
+    "meshRotationDeg": 0
+  }
+}

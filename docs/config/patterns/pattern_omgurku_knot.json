@@ -1,0 +1,20 @@
+{
+  "schema": "hobunji_pattern.v1",
+  "id": "omgurku_knot",
+  "name": "Omgurku Knot",
+  "motifPng": "assets/patterns/motif_omgurku_knot.png",
+  "settings": {
+    "motifScale": 1,
+    "motifRotationDeg": 175,
+    "tiling": true,
+    "invert": false,
+    "motifThinPx": -1,
+    "frameShape": "brick",
+    "frameX": 9.603211677679738,
+    "frameY": 15.365347936765843,
+    "frameRotationDeg": 8,
+    "frameScale": 1.0168514411842493,
+    "meshScale": 1,
+    "meshRotationDeg": 0
+  }
+}

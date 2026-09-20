@@ -1,0 +1,20 @@
+{
+  "schema": "hobunji_pattern.v1",
+  "id": "fey_thorns",
+  "name": "Fey Thorns",
+  "motifPng": "assets/patterns/motif_fey_thorns.png",
+  "settings": {
+    "motifScale": 1.04,
+    "motifRotationDeg": 2,
+    "tiling": true,
+    "invert": false,
+    "motifThinPx": -1,
+    "frameShape": "brick",
+    "frameX": 0,
+    "frameY": 0,
+    "frameRotationDeg": 0,
+    "frameScale": 1,
+    "meshScale": 1,
+    "meshRotationDeg": 0
+  }
+}
