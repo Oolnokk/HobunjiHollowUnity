@@ -345,7 +345,7 @@ assert.match(directEditorSource, /blue marker is where the right hand is being t
 assert.match(directEditorSource, /X rotation°/, 'grip orientation must use X/Y/Z rotation labels instead of pitch/yaw/roll terminology');
 assert.match(directEditorSource, /weapon will not move/i, 'grip picking must make its hand-moving semantics explicit');
 
-assert.match(editorUiSource, /Final hand size = <b>model scale × species\/gender scale<\/b>/, 'editor must retain scale authoring');
+assert.match(editorUiSource, /GLB size \/ handedness[\s\S]*Model scale/, 'editor must retain model-scale authoring inside the dedicated GLB calibration tab');
 assert.match(editorUiSource, /hand-model-profiles\.json/, 'editor must retain reusable hand profile export');
 assert.match(heldSource, /hand-shoulder-points\.js/, 'bootstrap must load manual shoulder coordinates');
 assert.match(heldSource, /hand-shoulder-pose-profiles\.js/, 'bootstrap must load individually-authored animation shoulder profiles');
