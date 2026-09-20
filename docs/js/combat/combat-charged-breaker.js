@@ -12,12 +12,12 @@
   let MIN_READY_POSE = 0.48; // Used as the minimum visible Neutral→Windup interpolation required to release a real strike.
   let MAX_CHARGE_S = 4.0; // Used only to pace the visual Neutral→Windup journey; full pose and 100% charge are the same event.
   let WINDUP_SLOWDOWN = 25; // Used by Combat.windupPoseProgress; higher means a longer, slower final approach to Windup.
-  let CHARGE_DRAIN_PER_S = 18;
-  let COST_MIN = 16, COST_MAX = 28;
+  let CHARGE_DRAIN_PER_S = 4;
+  let COST_MIN = 12, COST_MAX = 18;
 
   // Damage still rises with the pose charge, but this technique is now
   // deliberately centered on movement/control geometry rather than reach.
-  let DAMAGE_MUL_MIN = 1.05, DAMAGE_MUL_MAX = 1.30;
+  let DAMAGE_MUL_MIN = 1.20, DAMAGE_MUL_MAX = 2.40;
   let RANGE_MUL_MIN = 1.00, RANGE_MUL_MAX = 1.15;
   let KNOCKBACK_MUL_MIN = 1.20, KNOCKBACK_MUL_MAX = 3.00;
   let HALF_CONE_DEG_MIN = 34, HALF_CONE_DEG_MAX = 70;
