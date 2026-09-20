@@ -1,4 +1,4 @@
-// Hand-only shoulder targeting. Painted arm sprites remain untouched.
+// Hand-only proximal arm targeting. Painted arm sprites remain untouched.
 //
 // Shoulder targets come from attachment-rig profiles when present. Legacy manually
 // authored 200x200 points and portrait-hand-shoulder-scan.js remain fallbacks.
@@ -36,9 +36,9 @@
 
     const shoulderAvatar = {};
     const shoulderSource = { left: 'pending', right: 'pending' };
-    const localWristShoulderAxis = new THREE.Vector3(0, -1, 0); // Wrist-to-shoulder direction before either local hinge rotates.
-    const localGripAxis = new THREE.Vector3(1, 0, 0); // Across the grasp; first allowed shoulder-follow hinge.
-    const localPalmNormalAxis = new THREE.Vector3(0, 0, 1); // Perpendicular to the palm plane; second allowed shoulder-follow hinge.
+    const localWristProximalAxis = new THREE.Vector3(0, -1, 0); // Wrist-to-shoulder direction before either local hinge rotates.
+    const localGripAxis = new THREE.Vector3(1, 0, 0); // Across the grasp; first allowed proximal-target hinge.
+    const localPalmNormalAxis = new THREE.Vector3(0, 0, 1); // Perpendicular to the palm plane; second allowed proximal-target hinge.
     const shoulderWorld = new THREE.Vector3();
     const shoulderParent = new THREE.Vector3();
     const targetDirection = new THREE.Vector3();
@@ -402,7 +402,7 @@
       socket.updateMatrixWorld?.(true);
       updatePaperArmGuide(side, shoulder, authoredQuaternion, elbowSolve);
 
-      aimedWristAxis.copy(localWristShoulderAxis).applyQuaternion(outputQuaternion).normalize();
+      aimedWristAxis.copy(localWristProximalAxis).applyQuaternion(outputQuaternion).normalize();
       const residualRad = Math.acos(clampUnit(aimedWristAxis.dot(targetDirection)));
       const toDeg = THREE.MathUtils.radToDeg;
       debugBySide[side] = {
@@ -480,7 +480,7 @@
     const originalPlaceHandWorld = rig.placeHandWorld?.bind(rig);
     if (originalPlaceHandWorld) {
       rig.placeHandWorld = function shoulderAimPlaceHandWorld(side, worldPosition, worldQuaternion, modelCalibration = null) {
-        const result = originalPlaceHandWorld(side, worldPosition, worldQuaternion, modelCalibration); // Forward the calibration child payload unchanged; shoulder-follow owns only the socket quaternion.
+        const result = originalPlaceHandWorld(side, worldPosition, worldQuaternion, modelCalibration); // Forward the calibration child payload unchanged; proximal targeting owns only the socket quaternion.
         if (result) {
           freeSide[side] = false;
           captureAuthoredBase(side);
@@ -548,7 +548,7 @@
         shoulderCompass: {
           mode: 'hand-local-two-hinge',
           targetFeature: 'elbow',
-          wristShoulderAxis: '-Y',
+          wristProximalAxis: '-Y',
           componentSpace: 'hand-local',
           allowedHinges: { grip: '+X', palmNormal: '+Z' },
           paperArmGuide: {
@@ -585,7 +585,7 @@
     mode: 'hand-local-two-hinge',
     componentSpace: 'hand-local',
     targetFeature: 'elbow',
-    wristShoulderAxis: '-Y',
+    wristProximalAxis: '-Y',
     allowedHinges: Object.freeze({ grip: '+X', palmNormal: '+Z' }),
     idleWeights: Object.freeze({ grip: 1, palmNormal: 1 }),
     activeWeights: Object.freeze({ grip: 0, palmNormal: 1 }),
