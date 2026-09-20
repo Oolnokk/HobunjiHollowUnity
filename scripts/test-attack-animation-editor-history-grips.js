@@ -66,7 +66,8 @@ assert.match(direct, /weapon will not move/i, 'pick mode must say that it moves 
 assert.match(direct, /0x60a5fa/, 'primary target marker must be visibly blue');
 assert.match(direct, /X rotation°/, 'grip UI must use axis rotation names');
 assert.match(calibration, /Hand Model Calibration · position correction/, 'handFromTool must be framed as per-model calibration');
-assert.match(calibration, /particular hand model's authored origin\/palm/i, 'calibration purpose must distinguish it from grip targeting');
+assert.match(configurator, /Calibrate GLB/, 'hand model calibration must have its own dedicated editor tab');
+assert.match(configurator, /No attack animation, tool transform, Grip Mode, shoulder targeting, character-facing rotation, or animation-derived hand transform/, 'calibration tab must declare its isolated transform contract');
 assert.match(gripMode, /Grip mode · generic palm relationship/, 'grip mode must explain its middle layer');
 
 // Live hand editing has one store-backed path. Calibration must never rely on
@@ -90,13 +91,13 @@ for (const source of [editor, direct, calibration, idle]) {
 assert.match(editor, /Tool X rotation°/, 'tool pose must label X rotation');
 assert.match(editor, /Character Y rotation°/, 'character rotation must be distinguished from tool rotation');
 assert.match(calibration, /Hand-model X rotation correction°/, 'hand-model calibration must label X correction');
-assert.match(calibration, /orthogonal quaternion correction coordinates anchored to this GLB's preserved calibration base/i, 'hand-model calibration must explain its gimbal-free orthogonal quaternion model');
+assert.match(calibration, /X\/Y\/Z rotate only the GLB around its calibration basis while the paper hand stays neutral/i, 'hand-model rotation UI must explain the isolated neutral-reference workflow');
 assert.match(calibration, /rotationCorrectionDeg\[field\.key\]/, 'hand-model rotation controls must write explicit orthogonal quaternion XYZ correction coordinates');
 assert.doesNotMatch(calibration, /rotationCorrectionVectorDeg|transform\.rotationDeg\[field\.key\]\s*=\s*value/, 'retired vector/Euler calibration paths must not remain');
-assert.match(calibration, /id="handShowPaperHandGuide"/, 'hand-model pre-translation setup must expose the locked paper-hand reference toggle');
+assert.match(calibration, /id="handShowPaperHandGuide" checked disabled/, 'calibration tab must keep the neutral paper-hand reference permanently enabled');
 assert.match(calibration, /folds never animate independently/i, 'paper-hand UI must explain that the reference shape is locked');
 assert.match(calibration, /directing an LLM/i, 'paper-hand UI must document its descriptive-reference purpose');
-assert.match(calibration, /setShowPaperHandGuide/, 'paper-hand toggle must drive the shared preview-hand API');
+assert.match(calibration, /HobunjiAttackEditorHandCalibrationMode\?\.active === true[\s\S]*setShowPaperHandGuide\?\.\(active\)/, 'paper-hand visibility must be driven exclusively by calibration-tab state');
 assert.match(attachments, /function buildPaperHandReference\(THREE\)/, 'procedural hand preview must build the paper reference lazily');
 for (const part of ['paperPalm','paperFinger1','paperFinger2','paperFinger3','paperThumb1','paperThumb2']) {
   assert(attachments.includes(part), `paper hand is missing ${part}`);
@@ -108,6 +109,8 @@ assert.match(attachments, /if \(!showPaperHandGuide && !paperGuide\) return/, 'p
 assert.match(attachments, /right_hand_paper_reference_socket/, 'paper hand must use a socket separate from the calibrated GLB hand socket');
 assert.match(attachments, /\$\{side\}_hand_calibration/, 'hand model calibration must have a named child transform separate from the hand socket');
 assert.match(attachments, /rec\.calibration\.add\(visual\)/, 'GLB visual must be parented beneath the calibration child');
+assert.match(driver, /syncCalibrationWorkspace\(record,[\s\S]*neutralWorldQuaternion: true,[\s\S]*bypassesAnimation: true,[\s\S]*bypassesShoulderAim: true/, 'calibration tab must bypass the normal animation, tool and shoulder stack');
+assert.match(attachments, /placeCalibrationPreviewWorld\(worldPosition, worldQuaternion, modelCalibration = null\)/, 'calibration tab must use a placement method outside wrapped gameplay hand placement');
 assert.doesNotMatch(shoulderAim, /toolCalibrationLocal|hand_calibration/, 'shoulder-follow must remain completely independent of model calibration');
 assert.match(attachments, /lockedReference = true/, 'paper hand must identify itself as a locked reference, not an animatable rig');
 assert.match(attachments, /lockedTo: 'raw-primary-grip-frame-before-grip-mode-and-hand-model-calibration'/, 'paper hand must remain locked to the raw weapon target before downstream hand layers');
