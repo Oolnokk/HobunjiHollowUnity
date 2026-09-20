@@ -224,7 +224,11 @@
     const scriptUrl = document.currentScript?.src || '';
     try { return new URL('../' + CONFIG_PATH, scriptUrl).href; } catch { return CONFIG_PATH; }
   }
+  let loadGeneration = 0; // Used to prevent an older repo fetch from overwriting a newer LocalDB-selected source.
+  let readyPromise = Promise.resolve(getConfig()); // Always points at the newest selected-source load for callers that await .ready.
+
   async function loadConfig() {
+    const generation = ++loadGeneration; // Identifies this request so only the newest source selection may publish its result.
     try {
       const loaded = window.LocalDBOverrides?.loadDatabase
         ? await window.LocalDBOverrides.loadDatabase(CONFIG_ID)
@@ -234,20 +238,26 @@
               return resp.json();
             })
           : null);
-      if (loaded) replaceConfig(loaded);
+      if (loaded && generation === loadGeneration) replaceConfig(loaded);
     } catch (error) {
-      console.warn?.('[species-pose-scale] Could not load authored orbit scales; using legacy-compatible defaults.', error);
+      if (generation === loadGeneration) {
+        console.warn?.('[species-pose-scale] Could not load authored orbit scales; using legacy-compatible defaults.', error);
+      }
     }
     return getConfig();
   }
-  const ready = loadConfig();
+  function reloadFromDatabaseSource() {
+    readyPromise = loadConfig();
+    return readyPromise;
+  }
+  readyPromise = loadConfig();
 
   window.HobunjiSpeciesPoseScale = Object.freeze({
     CONFIG_ID,
     CONFIG_PATH,
     MAO_AO_ARM_LENGTH,
-    ready,
-    reloadFromDatabaseSource: loadConfig,
+    get ready() { return readyPromise; },
+    reloadFromDatabaseSource,
     scaleForArmLength, // Compatibility/debug only; new pose consumers should use explicit poseOrbitScale.
     scaleForPose,
     resolveScale,
