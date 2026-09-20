@@ -1,4 +1,4 @@
-// Attack Editor shoulder-follow authoring.
+// Attack Editor hand/elbow targeting authoring.
 //
 // Each pose controls two meaningful HAND-LOCAL hinges: grip axis (local X) and
 // palm-normal axis (local Z). Legacy pitch/roll animation data migrates into those
@@ -84,7 +84,7 @@
   followGroup.className = 'poseGroup';
   followGroup.id = 'handShoulderFollowGroup';
   followGroup.innerHTML = `
-    <div class="poseGroupHead"><span class="dot" style="background:#fb7185"></span>Hand shoulder-follow by animation pose</div>
+    <div class="poseGroupHead"><span class="dot" style="background:#fb7185"></span>Hand elbow-targeting by animation pose</div>
     <div class="help" style="margin-bottom:7px"><b>This rotates the HAND, never the weapon.</b> The wrist-facing side now aims toward the elbow. The elbow itself is solved between shoulder and wrist with equal upper-arm/forearm lengths. The two checkboxes only choose which hand-local hinges may rotate.</div>
     ${PHASES.map(phase => `
       <div class="field" data-hand-shoulder-phase="${phase}">
@@ -103,7 +103,7 @@
   const previewGroup = document.createElement('div');
   previewGroup.className = 'poseGroup';
   previewGroup.innerHTML = `
-    <div class="poseGroupHead"><span class="dot" style="background:#fb7185"></span>Shoulder-follow preview</div>
+    <div class="poseGroupHead"><span class="dot" style="background:#fb7185"></span>Arm-targeting preview</div>
     <div class="help" style="margin-bottom:7px">Neutral defaults to both hinges. Windup and Strike default to the palm-normal hinge only. The three pose settings blend continuously with the animation.</div>
     <div class="field"><label class="fieldRow" style="cursor:pointer"><input id="handHideArmSpritesPreview" type="checkbox" style="width:auto;margin-right:6px">Hide arm sprites in preview</label></div>
     <div class="field"><label class="fieldRow" style="cursor:pointer"><input id="handShowPaperArmGuide" type="checkbox" style="width:auto;margin-right:6px">Show paper arm guide (upper arm + elbow + forearm)</label></div>
