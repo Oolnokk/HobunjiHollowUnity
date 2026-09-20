@@ -90,8 +90,9 @@ for (const source of [editor, direct, calibration, idle]) {
 }
 assert.match(editor, /Tool X rotation°/, 'tool pose must label X rotation');
 assert.match(editor, /Character Y rotation°/, 'character rotation must be distinguished from tool rotation');
-assert.match(calibration, /Hand-model X rotation correction°/, 'hand-model calibration must label X correction');
-assert.match(calibration, /X\/Y\/Z rotate only the GLB around its calibration basis while the paper hand stays neutral/i, 'hand-model rotation UI must explain the isolated neutral-reference workflow');
+assert.match(calibration, /GLB local X rotation correction°/, 'hand-model calibration must label user-facing rotation as GLB-local');
+assert.match(calibration, /All rotation controls are local to <code>right_hand_calibration<\/code>/i, 'hand-model rotation UI must explicitly define the user-facing local coordinate space');
+assert.match(calibration, /Snap local rotation to 90°/, 'calibration UI must expose exact local right-angle snapping');
 assert.match(calibration, /rotationCorrectionDeg\[field\.key\]/, 'hand-model rotation controls must write explicit orthogonal quaternion XYZ correction coordinates');
 assert.doesNotMatch(calibration, /rotationCorrectionVectorDeg|transform\.rotationDeg\[field\.key\]\s*=\s*value/, 'retired vector/Euler calibration paths must not remain');
 assert.match(calibration, /id="handShowPaperHandGuide" checked disabled/, 'calibration tab must keep the neutral paper-hand reference permanently enabled');
