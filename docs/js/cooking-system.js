@@ -2,6 +2,10 @@
   'use strict';
 
   const FOOD_DURATION_S = 300; // Used as the shared five-minute duration for cooked-food effects.
+  const GAME_DAY_MINUTES = 16 * 60; // Used to express Hunger timing in the calendar's playable in-world minutes.
+  const GAME_DAY_REAL_SECONDS = 288; // Used only to render Hunger's next-stack countdown against the live game clock.
+  const HUNGER_STACK_INTERVAL_MINUTES = 8 * 60; // Used to add one Hunger stack for each eight in-world hours without food.
+  const HUNGER_MAX_STACKS = 3; // Used to cap the Stamina-recovery Hunger penalty at the authored three stacks.
   const ITEM_ALIASES = { uumkaoiiEggs: 'uumkaoiiEgg', drenkirraEggs: 'drenkirraEgg' }; // Used to reuse existing singular inventory items from the prototype's plural ids.
   const NON_INGREDIENT_CATEGORIES = new Set(['wool', 'mineral', 'material']); // Used to omit prototype reference materials that are not edible/cookable ingredients.
   const CATEGORY_ICONS = {
@@ -15,12 +19,39 @@
   let qualityBuckets = {}; // Used to persist actual 1–5-star quantities without changing the game's stack inventory shape.
   let cookedDefinitions = {}; // Used to restore procedurally named food item definitions on reload.
   let activeFoodEffects = []; // Used as an independent timed effect source beside alchemy.
+  let lastFoodMinute = null; // Used to derive persistent Hunger stacks from calendar time without a per-frame accumulation timer.
   let cookTimer = null; // Used to prevent duplicate cooks during the hearth animation.
   let maxIngredientsLimit = null; // Used by the Foraging Survivalist perk to cap recipes when cooking away from an indoor hearth.
 
   const data = () => window.HobunjiCookingData || { items: {}, recipes: [] }; // Used to keep this module inert if content fails to load.
   const canonicalKey = key => ITEM_ALIASES[key] || key; // Used whenever prototype ids cross into the game's inventory.
   const esc = value => String(value ?? '').replace(/[&<>'"]/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[character]); // Used for all generated cooking markup.
+
+  function absoluteGameMinute() {
+    const calendar = deps?.calendar; // Used as the authoritative in-world clock for Hunger progression and persistence.
+    if (!calendar) return null;
+    const day = Math.max(1, Number(calendar.day) || 1); // Used to convert the current calendar day into a monotonic minute offset.
+    const time01 = Math.max(0, Math.min(1, Number(calendar.time01) || 0)); // Used to convert the playable-day fraction into in-world minutes.
+    return (day - 1) * GAME_DAY_MINUTES + time01 * GAME_DAY_MINUTES;
+  }
+
+  function getHungerStacks() {
+    const nowMinute = absoluteGameMinute(); // Used to derive Hunger lazily so sleep/time skips cannot bypass it.
+    if (!Number.isFinite(nowMinute) || !Number.isFinite(lastFoodMinute)) return 0;
+    const minutesSinceFood = Math.max(0, nowMinute - lastFoodMinute); // Used to tolerate dev time rewinds without creating negative Hunger.
+    return Math.max(0, Math.min(HUNGER_MAX_STACKS, Math.floor(minutesSinceFood / HUNGER_STACK_INTERVAL_MINUTES)));
+  }
+
+  function getHungerStaminaRegenMultiplier() {
+    return 2 - getHungerStacks() / HUNGER_MAX_STACKS; // 0/1/2/3 stacks => 2x, 1.667x, 1.333x, 1x the pre-Hunger base recovery.
+  }
+
+  function recordFoodEaten() {
+    const nowMinute = absoluteGameMinute(); // Used to make any real food serving reset Hunger at the exact in-world consumption time.
+    if (Number.isFinite(nowMinute)) lastFoodMinute = nowMinute;
+    window.EffectBuffBar?.refresh(true);
+    return { stacks: getHungerStacks(), staminaRegenMultiplier: getHungerStaminaRegenMultiplier(), lastFoodMinute };
+  }
 
   function recipeCategorySet() {
     const categories = new Set(); // Used to register only ingredients reachable by the 17 cooking recipes.
@@ -332,6 +363,7 @@
       if (existing) { existing.stacks += Math.max(1, Number(stacks) || 1); existing.expiresAt = now + FOOD_DURATION_S; }
       else activeFoodEffects.push({ key: effect, stacks: Math.max(1, Number(stacks) || 1), durationS: FOOD_DURATION_S, expiresAt: now + FOOD_DURATION_S });
     });
+    recordFoodEaten();
     window.EffectBuffBar?.refresh(true);
     window.SkillSystem?.render?.();
     deps.refreshItemScroll();
@@ -343,10 +375,23 @@
 
   function foodBuffEntries() {
     const now = performance.now() / 1000; // Used to convert absolute timers for the shared buff renderer.
-    return activeFoodEffects.map(effect => ({
+    const entries = activeFoodEffects.map(effect => ({
       key: effect.key, label: data().effectLabels[effect.key] || effect.key, icon: EFFECT_ICONS[effect.key] || '🍲', kind: 'boon',
       sourceLabel: 'Food', stacks: effect.stacks, durationS: effect.durationS, remainingS: effect.expiresAt - now,
-    }));
+    })); // Used as the combined food/Hunger provider output consumed by EffectBuffBar.
+    const hungerStacks = getHungerStacks(); // Used to expose the current persistent Hunger penalty beside timed food boons.
+    if (hungerStacks > 0) {
+      const nowMinute = absoluteGameMinute(); // Used to show progress toward the next Hunger stack in the existing timed-effect track.
+      const elapsedMinutes = Number.isFinite(nowMinute) && Number.isFinite(lastFoodMinute) ? Math.max(0, nowMinute - lastFoodMinute) : 0; // Used to calculate the current eight-hour Hunger interval.
+      const intervalSeconds = HUNGER_STACK_INTERVAL_MINUTES * GAME_DAY_REAL_SECONDS / GAME_DAY_MINUTES; // Used as the visual duration of one Hunger-stack interval.
+      const nextThreshold = Math.min(HUNGER_MAX_STACKS, hungerStacks + 1) * HUNGER_STACK_INTERVAL_MINUTES; // Used to locate the next stack boundary before the cap.
+      const remainingMinutes = hungerStacks >= HUNGER_MAX_STACKS ? HUNGER_STACK_INTERVAL_MINUTES : Math.max(0, nextThreshold - elapsedMinutes); // Used to keep max Hunger visibly persistent while lower stacks count down.
+      entries.push({
+        key: 'hunger', label: 'Hunger', icon: '🍽️', kind: 'bane', sourceLabel: 'No recent food', stacks: hungerStacks,
+        durationS: intervalSeconds, remainingS: hungerStacks >= HUNGER_MAX_STACKS ? intervalSeconds : Math.max(0.001, remainingMinutes * GAME_DAY_REAL_SECONDS / GAME_DAY_MINUTES),
+      });
+    }
+    return entries;
   }
 
   function getFoodEffectStacks(effectKey) {
@@ -359,7 +404,8 @@
   }
 
   function getStaminaRegenMultiplier() {
-    return 1 + Math.min(1, getFoodEffectStacks('vigor') * 0.04); // Used to convert Vigor stacks into up to double stamina recovery.
+    const vigorMultiplier = 1 + Math.min(1, getFoodEffectStacks('vigor') * 0.04); // Used to preserve Vigor's existing up-to-double recovery bonus.
+    return getHungerStaminaRegenMultiplier() * vigorMultiplier; // Well-fed doubles base recovery; three Hunger stacks return it exactly to the pre-Hunger baseline.
   }
 
   function serialize() {
@@ -367,6 +413,7 @@
     return {
       qualityBuckets: JSON.parse(JSON.stringify(qualityBuckets)),
       cookedDefinitions: JSON.parse(JSON.stringify(cookedDefinitions)),
+      hungerLastFoodMinute: Number.isFinite(lastFoodMinute) ? lastFoodMinute : absoluteGameMinute(),
       activeFoodEffects: activeFoodEffects.map(effect => ({ key: effect.key, stacks: effect.stacks, durationS: effect.durationS, remainingS: effect.expiresAt - now })).filter(effect => effect.remainingS > 0),
     };
   }
@@ -375,6 +422,8 @@
     qualityBuckets = saved.qualityBuckets && typeof saved.qualityBuckets === 'object' ? JSON.parse(JSON.stringify(saved.qualityBuckets)) : {};
     cookedDefinitions = {};
     Object.entries(saved.cookedDefinitions || {}).forEach(([key, definition]) => registerCookedDefinition(key, definition));
+    const currentMinute = absoluteGameMinute(); // Used to migrate pre-Hunger saves as freshly fed instead of retroactively starving them.
+    lastFoodMinute = Number.isFinite(Number(saved.hungerLastFoodMinute)) ? Number(saved.hungerLastFoodMinute) : currentMinute;
     const now = performance.now() / 1000; // Used to rebuild absolute effect expiry times for this page session.
     activeFoodEffects = (saved.activeFoodEffects || []).filter(effect => effect.remainingS > 0).map(effect => ({ key: effect.key, stacks: Math.max(1, Number(effect.stacks) || 1), durationS: Number(effect.durationS) || FOOD_DURATION_S, expiresAt: now + effect.remainingS }));
     Object.keys(deps.inventory).forEach(reconcileQuality);
@@ -457,7 +506,7 @@
     const tracked = Object.values(qualityBuckets).reduce((sum, bucket) => sum + Object.values(bucket).reduce((inner, count) => inner + (Number(count) || 0), 0), 0); // Used for mobile-visible state verification.
     const processingDiagnostics = window.HobunjiFoodProcessing?.diagnosticsText?.() || 'Processing module: unavailable'; // Used to expose vat/source wiring on mobile without developer tools.
     const lastProcessing = window.SkillSystem?.processingDiagnosticsText?.(); // Used to make the most recent processing-quality roll auditable on mobile — see SkillSystem.rollProcessingQuality.
-    output.textContent = `Station: ${isOpen() ? 'hearth open' : 'closed'}\nRecipes: ${data().recipes.length}\nRegistered ingredients: ${Object.keys(deps.ITEM_DEFS).filter(key => deps.ITEM_DEFS[key].cookingCategories).length}\nTracked quality units: ${tracked}\nCooked definitions: ${Object.keys(cookedDefinitions).length}\nActive food effects: ${activeFoodEffects.map(effect => `${effect.key}+${effect.stacks}`).join(', ') || 'none'}\n\n${processingDiagnostics}${lastProcessing ? `\n\n${lastProcessing}` : ''}`;
+    output.textContent = `Station: ${isOpen() ? 'hearth open' : 'closed'}\nRecipes: ${data().recipes.length}\nRegistered ingredients: ${Object.keys(deps.ITEM_DEFS).filter(key => deps.ITEM_DEFS[key].cookingCategories).length}\nTracked quality units: ${tracked}\nCooked definitions: ${Object.keys(cookedDefinitions).length}\nHunger: ${getHungerStacks()}/${HUNGER_MAX_STACKS} · Stamina regen ×${getHungerStaminaRegenMultiplier().toFixed(3)} · last food minute ${Number.isFinite(lastFoodMinute) ? lastFoodMinute.toFixed(1) : 'unavailable'}\nActive food effects: ${activeFoodEffects.map(effect => `${effect.key}+${effect.stacks}`).join(', ') || 'none'}\n\n${processingDiagnostics}${lastProcessing ? `\n\n${lastProcessing}` : ''}`;
   }
 
   function render() {
@@ -497,14 +546,15 @@
 
   function init(injectedDeps = {}) {
     deps = injectedDeps;
+    if (!Number.isFinite(lastFoodMinute)) lastFoodMinute = absoluteGameMinute(); // Used to start brand-new/pre-restore sessions fed until persisted Hunger state is restored.
     registerIngredientItems();
     ensureUi();
     window.EffectBuffBar?.registerProvider('food', foodBuffEntries);
   }
 
   window.CookingSystem = {
-    init, restore, serialize, update, openAtHearth, close, isOpen, eat, recordItemQuality, consumeBestQuality,
-    getFoodEffectStacks, getSpeedMultiplier, getStaminaRegenMultiplier, registerIngredientItems, availableQualityEntries,
+    init, restore, serialize, update, openAtHearth, close, isOpen, eat, recordItemQuality, consumeBestQuality, recordFoodEaten,
+    getFoodEffectStacks, getSpeedMultiplier, getStaminaRegenMultiplier, getHungerStacks, getHungerStaminaRegenMultiplier, registerIngredientItems, availableQualityEntries,
     consumeQuality, consumeLowestQuality, consumeQualityByPolicy, peekLowestQuality, valueMultiplierForStars,
   };
 })();
