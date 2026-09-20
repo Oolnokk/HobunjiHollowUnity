@@ -320,6 +320,9 @@
     get poseElbows() { return JSON.parse(JSON.stringify(poseElbows)); },
     currentWeights,
     currentElbow,
+    decorateAnimationObject(parsed) {
+      return injectPoseAimIntoObject(parsed);
+    },
     snapshot() {
       return { hideArmSprites, showPaperArmGuide, poseAim: JSON.parse(JSON.stringify(poseAim)), poseElbows: JSON.parse(JSON.stringify(poseElbows)) }; // Undo/Redo preserves pose hinges, elbow keyframes, and preview-only helper state.
     },
