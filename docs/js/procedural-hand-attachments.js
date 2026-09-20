@@ -464,6 +464,22 @@
       return mesh;
     }
 
+    const gripOrb = new THREE.Mesh( // Blue origin marker belongs to the paper rig itself so calibration never depends on the hidden weapon marker.
+      new THREE.SphereGeometry(0.16, 14, 10),
+      new THREE.MeshBasicMaterial({
+        color: 0x60a5fa,
+        transparent: true,
+        opacity: 0.98,
+        depthTest: false,
+        depthWrite: false,
+      }),
+    );
+    gripOrb.name = 'paperHandGripOrb';
+    gripOrb.userData.paperHandCalibrationOrigin = true;
+    gripOrb.renderOrder = 10001;
+    gripOrb.frustumCulled = false;
+    root.add(gripOrb); // Local 0,0,0 is the exact neutral paper-hand socket/origin the GLB is calibrated against.
+
     // Wrist/origin is at the lower-middle edge of the palm. The whole reference
     // is normalized to about one hand-height and later receives the exact same
     // target height, mirror sign and right-hand visual twist as the real model.
@@ -945,7 +961,7 @@
             placed: paperGuidePlaced,
             locked: true,
             lockedTo: 'raw-primary-grip-frame-before-grip-mode-and-hand-model-calibration',
-            shape: 'palm + 3 folded finger planes + 2 folded thumb planes',
+            shape: 'blue origin orb + palm + 3 folded finger planes + 2 folded thumb planes',
           },
         };
       },
