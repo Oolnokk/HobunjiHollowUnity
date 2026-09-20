@@ -510,7 +510,7 @@
     "function": "frame (fallback branch inside the trailing if/else)",
     "reason": "This module also loads inside the standalone Attack Animation Editor and Animation Author tool pages (docs/tools/*), which never load RuntimeFrameScheduler. When the scheduler is absent this fallback keeps the original combined per-frame loop for that isolated editor/preview context. In the shipped game, RuntimeFrameScheduler.register('procedural-hand-attachment', ...) and RuntimeFrameScheduler.register('procedural-hand-pose-sync', { phase: 'pre-render' }, ...) run instead, with no raw RAF call site at all — attachment/discovery has no ordering dependency on simulation or rendering; pose-sync needs this frame's simulation state but must run before Three.js traverses the scene. The final exact tool/hand matrix stays entirely in ensureSyncSentinel's onBeforeRender hook, untouched by either migrated piece.",
     "migrationStage": "not-planned",
-    "line": 630
+    "line": 656
   },
   {
     "file": "docs/js/quick-potion-arc-ui.js",
@@ -596,19 +596,10 @@
   {
     "file": "docs/js/attack-editor-history.js",
     "owner": "HobunjiAttackEditorHistory",
-    "classification": "one-shot",
-    "function": "restore",
-    "reason": "Single deferred hand-frame resync after an Undo/Redo state restore, isolated to the standalone Attack Animation Editor.",
-    "migrationStage": "not-planned",
-    "line": 162
-  },
-  {
-    "file": "docs/js/attack-editor-history.js",
-    "owner": "HobunjiAttackEditorHistory",
     "classification": "isolated-context",
     "function": "installListeners",
     "reason": "Self-terminating readiness retry confined to the standalone Attack Animation Editor; it RAF-retries only until the core editor module has published its state API and Undo/Redo buttons.",
     "migrationStage": "not-planned",
-    "line": 216
+    "line": 214
   }
 ]
