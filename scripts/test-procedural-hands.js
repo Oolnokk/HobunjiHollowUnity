@@ -517,6 +517,8 @@ assert.match(shoulderAimSource, /return Number\.isFinite\(authored\) \? -modelHe
 assert.match(shoulderAimSource, /bendAtHalfArmLength: true/, 'paper-arm preview must place its bend halfway through total arm length');
 assert.match(shoulderAimSource, /authoritative: false/, 'paper-arm preview must remain diagnostic and must not drive the hand');
 assert.match(shoulderAimSource, /setPaperArmGuideVisible/, 'editor must be able to toggle paper-arm guides on already-created rigs');
+assert.match(shoulderAimSource, /elbowAngleDeg/, 'paper-arm debug must expose the elbow bend angle for evaluating future joint limits');
+assert.match(shoulderAimSource, /segmentLength = half|segmentLength = half;/, 'paper-arm debug must expose the equal half-arm segment length');
 assert.match(shoulderAimSource, /Math\.sqrt\(Math\.max\(0, half \* half - halfChord \* halfChord\)\)/, 'paper-arm elbow must preserve equal upper and lower strip lengths when the target is reachable');
 assert.doesNotMatch(shoulderAimSource, /solveTwoBoneArm|reach clamp/i, 'paper-arm preview must not silently become authoritative IK or a reach clamp');
 
