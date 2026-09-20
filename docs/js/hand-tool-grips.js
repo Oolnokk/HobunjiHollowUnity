@@ -10,18 +10,10 @@
   const SCHEMA = 'hobunji_hand_tool_grips.v1';
   const LOCAL_KEY = 'hobunji.handToolGrips.v1';
   const SECONDARY_GRIP_PRESET = 'animation-span-v1'; // Migrates old always-on secondary points into animation-gated Z spans.
-  const PRIMARY_ROTATION_PRESET = 'weapon-primary-rotations-20260919-v1'; // One-shot migration marker for the user-authored weapon grip rotation table.
-  const PRIMARY_ROTATIONS = Object.freeze({
-    hatchet: Object.freeze({ pitch: -90, yaw: 90, roll: 180 }),
-    hoe: Object.freeze({ pitch: 0, yaw: 0, roll: 0 }),
-    bshuakauitl: Object.freeze({ pitch: 0, yaw: 0, roll: 0 }),
-    pickshovel: Object.freeze({ pitch: 0, yaw: 0, roll: 0 }),
-    daggersword: Object.freeze({ pitch: 0, yaw: 180, roll: 0 }),
-    plainssword: Object.freeze({ pitch: 0, yaw: 0, roll: 0 }),
-    dagger: Object.freeze({ pitch: 0, yaw: 0, roll: 0 }),
-    kylie: Object.freeze({ pitch: 0, yaw: 18, roll: 0 }),
-    warcleaver: Object.freeze({ pitch: 0, yaw: 0, roll: 0 }),
-    fishingspear: Object.freeze({ pitch: 0, yaw: 0, roll: 0 }),
+  const PRIMARY_ROTATION_PRESET = 'hatchet-primary-y-rotation-20260920-v2'; // Hatchet is the canonical right-hand grip example: propagate only its Y + rotation, never its item-specific X/Z.
+  const HATCHET_PRIMARY_GRIP_EXAMPLE = Object.freeze({
+    y: 0.05,
+    rotationDeg: Object.freeze({ pitch: -90, yaw: 90, roll: 180 }),
   });
   const CRAFTED_METAL_SUFFIX = /-(?:nativecopper|lowtinbronze|tinbronze|hightinbronze|arsenicalbronze|leadedbronze)$/;
   const visualBases = new WeakMap(); // Original held-item visual position/rotation/scale; authored corrections are reapplied from these every frame.
@@ -45,59 +37,59 @@
     primaryRotationPreset: PRIMARY_ROTATION_PRESET,
     tools: {
       hatchet: {
-        primaryGrip: { position: { x: 0, y: 0, z: 0 }, rotationDeg: { ...PRIMARY_ROTATIONS.hatchet } },
+        primaryGrip: { position: { x: -0.0418, y: HATCHET_PRIMARY_GRIP_EXAMPLE.y, z: 0.01 }, rotationDeg: { ...HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg } },
         gripMode: null,
         secondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
       },
       hoe: {
-        primaryGrip: identityTransform(),
+        primaryGrip: { position: { x: 0, y: HATCHET_PRIMARY_GRIP_EXAMPLE.y, z: 0 }, rotationDeg: { ...HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg } },
         gripMode: null,
         secondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
       },
       bshuakauitl: {
         toolScale: 1.30,
-        primaryGrip: { position: { x: -0.028, y: 0, z: 0.14 }, rotationDeg: { pitch: 0, yaw: 0, roll: 0 } },
+        primaryGrip: { position: { x: -0.028, y: HATCHET_PRIMARY_GRIP_EXAMPLE.y, z: 0.14 }, rotationDeg: { ...HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg } },
         gripMode: null,
         secondaryGripSpan: { enabled: true, startZ: -0.23, endZ: -0.16 },
       },
       pickshovel: {
-        primaryGrip: identityTransform(),
+        primaryGrip: { position: { x: 0, y: HATCHET_PRIMARY_GRIP_EXAMPLE.y, z: 0 }, rotationDeg: { ...HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg } },
         gripMode: null,
         secondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
       },
       daggersword: {
         toolScale: 1.30,
-        primaryGrip: { position: { x: -0.0311, y: 0, z: 0.1687 }, rotationDeg: { pitch: 0, yaw: 180, roll: 0 } },
+        primaryGrip: { position: { x: -0.0311, y: HATCHET_PRIMARY_GRIP_EXAMPLE.y, z: 0.1687 }, rotationDeg: { ...HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg } },
         gripMode: null,
         secondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
       },
       plainssword: {
         toolScale: 1.30,
-        primaryGrip: { position: { x: -0.0489, y: 0, z: -0.2672 }, rotationDeg: { pitch: 0, yaw: 0, roll: 0 } },
+        primaryGrip: { position: { x: -0.0489, y: HATCHET_PRIMARY_GRIP_EXAMPLE.y, z: -0.2672 }, rotationDeg: { ...HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg } },
         gripMode: null,
         secondaryGripSpan: { enabled: true, startZ: -0.54, endZ: -0.39 },
       },
       dagger: {
         toolScale: 1.00,
-        primaryGrip: { position: { x: 0, y: 0, z: -0.09 }, rotationDeg: { pitch: 0, yaw: 0, roll: 0 } },
+        primaryGrip: { position: { x: 0, y: HATCHET_PRIMARY_GRIP_EXAMPLE.y, z: -0.09 }, rotationDeg: { ...HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg } },
         gripMode: null,
         secondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
       },
       kylie: {
         toolScale: 1.05,
-        primaryGrip: { position: { x: -0.0506, y: 0, z: 0.0038 }, rotationDeg: { pitch: 0, yaw: 18, roll: 0 } },
+        primaryGrip: { position: { x: -0.0506, y: HATCHET_PRIMARY_GRIP_EXAMPLE.y, z: 0.0038 }, rotationDeg: { ...HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg } },
         gripMode: null,
         secondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
       },
       warcleaver: {
         toolScale: 1.05,
-        primaryGrip: { position: { x: 0, y: 0, z: 0.01 }, rotationDeg: { pitch: 0, yaw: 0, roll: 0 } },
+        primaryGrip: { position: { x: 0, y: HATCHET_PRIMARY_GRIP_EXAMPLE.y, z: 0.01 }, rotationDeg: { ...HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg } },
         gripMode: null,
         secondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
       },
       fishingspear: {
         toolScale: 1.15,
-        primaryGrip: identityTransform(),
+        primaryGrip: { position: { x: 0, y: HATCHET_PRIMARY_GRIP_EXAMPLE.y, z: 0 }, rotationDeg: { ...HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg } },
         gripMode: null,
         secondaryGripSpan: { enabled: true, startZ: -0.5, endZ: -0.16 },
       },
@@ -189,8 +181,9 @@
       const fallbackEntry = DEFAULT_DATA.tools[toolKey] || {}; // Lets pre-scale local drafts inherit the new committed scale for that same shape.
       entry.toolScale = normalizeToolScale(entry.toolScale, fallbackEntry.toolScale ?? 1);
       entry.primaryGrip = normalizeTransform(entry.primaryGrip);
-      if (previousPrimaryRotationPreset !== PRIMARY_ROTATION_PRESET && PRIMARY_ROTATIONS[toolKey]) {
-        entry.primaryGrip.rotationDeg = { ...PRIMARY_ROTATIONS[toolKey] }; // Migration changes rotation only; authored position, scale and off-hand span remain exactly as saved.
+      if (previousPrimaryRotationPreset !== PRIMARY_ROTATION_PRESET) {
+        entry.primaryGrip.position.y = HATCHET_PRIMARY_GRIP_EXAMPLE.y; // Hatchet's authored Y belongs to the shared hand-on-item frame.
+        entry.primaryGrip.rotationDeg = { ...HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg }; // Hatchet rotation is the shared example for every weapon.
       }
       entry.secondaryGripSpan = inferredSpan(entry);
       entry.secondaryGrip = disabledLegacySecondary();
