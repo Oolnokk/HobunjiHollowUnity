@@ -26,7 +26,7 @@
   ],
   "ladderMetalKeys": ["nativeCopper","lowTinBronze","tinBronze","highTinBronze","arsenicalBronze","leadedBronze","leadedBronze","silver","silver"],
   "ladderUpgrades": [
-    { "tier": 1, "targetFloor": 11, "gold": 2500, "stone": 55, "wood": 60, "metalBars": 20 },
+    { "tier": 1, "targetFloor": 11, "gold": 500, "stone": 55, "wood": 60, "metalBars": 20 },
     { "tier": 2, "targetFloor": 21, "gold": 5000, "stone": 60, "wood": 75, "metalBars": 28 },
     { "tier": 3, "targetFloor": 31, "gold": 8500, "stone": 65, "wood": 90, "metalBars": 36 },
     { "tier": 4, "targetFloor": 41, "gold": 13000, "stone": 70, "wood": 105, "metalBars": 44 },
