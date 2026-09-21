@@ -11291,8 +11291,15 @@
         const namedAnimalDef = namedAnimalKind ? CREATURE_DB[namedAnimalKind] || null : null; // Reuses the exact wildlife size/speed/sprite definition instead of parallel NPC constants.
         const namedAnimalGenotype = namedAnimalDef ? window.NamedAnimalNpc?.effectiveGenotype?.(profile, { npcRecord: rec }) || null : null; // Carries authored size class/patterns into the same genetics scaling path as wild/stabled creatures.
         const namedAnimalFrames = namedAnimalDef ? await window.NamedAnimalNpc?.worldFrameUrls?.(profile, { npcRecord: rec }) || null : null; // Native-resolution idle/run frames avoid the 200px NPC portrait canvas in world.
-        const namedAnimalSizeScale = namedAnimalDef ? window.CreatureGenetics.creatureSizeScale(namedAnimalKind, namedAnimalGenotype) : null; // Same species+size-class scaling used by makeCreatureEntity.
-        const namedAnimalGroundOffset = namedAnimalDef ? window.CreatureGenetics.creatureGroundOffset(namedAnimalKind, namedAnimalGenotype) : null; // Same authored floor-to-origin override used by makeCreatureEntity.
+        const namedAnimalBaseSizeScale = namedAnimalDef ? window.CreatureGenetics.creatureSizeScale(namedAnimalKind, namedAnimalGenotype) : null; // Canonical wildlife species+size-class scale is always resolved first.
+        const namedAnimalScaleMultiplier = namedAnimalDef ? window.NamedAnimalNpc?.creatureScaleMultiplierFor?.(profile, { npcRecord: rec }) || 1 : 1; // Fey/custom appearance multiplier is authored beside the animal's other non-genetic overrides.
+        const namedAnimalSizeScale = namedAnimalDef ? {
+          ...namedAnimalBaseSizeScale,
+          x: namedAnimalBaseSizeScale.x * namedAnimalScaleMultiplier,
+          y: namedAnimalBaseSizeScale.y * namedAnimalScaleMultiplier,
+        } : null; // Final world scale = ordinary creature genetics scale × optional authored named-animal multiplier.
+        const namedAnimalBaseGroundOffset = namedAnimalDef ? window.CreatureGenetics.creatureGroundOffset(namedAnimalKind, namedAnimalGenotype) : null;
+        const namedAnimalGroundOffset = Number.isFinite(namedAnimalBaseGroundOffset) ? namedAnimalBaseGroundOffset * namedAnimalScaleMultiplier : null; // Keeps the enlarged animal's feet on the same floor instead of scaling around an unshifted origin.
 
         const avatarCfg = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar || {};
         const MODEL_W = avatarCfg.worldModelWidth ?? 0.9;
@@ -11379,7 +11386,7 @@
         const walker = {
           root, rec, profile, avatarGroup, avatarHeight, alcoholPoseGroup, groundShadow,
           avatarFrontCanvas: frontCanvas, avatarBackCanvas: backCanvas, area: spawnArea,
-          animalKind: namedAnimalKind, animalDef: namedAnimalDef, animalGenotype: namedAnimalGenotype, animalSizeScale: namedAnimalSizeScale,
+          animalKind: namedAnimalKind, animalDef: namedAnimalDef, animalGenotype: namedAnimalGenotype, animalSizeScale: namedAnimalSizeScale, animalScaleMultiplier: namedAnimalScaleMultiplier,
           animalAvatarRef: namedAnimalAvatarRef, animalFrames: namedAnimalFrames, animalRunFrame: 0, animalRunFrameDistPx: 0, animalFrameKey: 'idle', animalPngRot: Math.PI / 2,
           // The head-turn bone built by buildSinglePlaneAvatarModel's neckRig
           // option (null if no neck pivot could be detected for this NPC's
