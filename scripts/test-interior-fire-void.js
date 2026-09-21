@@ -7,6 +7,7 @@ const vm = require('vm');
 
 const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'docs/js/interior-fire-void-runtime.js'), 'utf8');
+const fireFloorSource = fs.readFileSync(path.join(root, 'docs/js/interior-fire-floor-runtime.js'), 'utf8'); // Current owner of injected campfire/bonfire furniture definitions.
 assert.doesNotThrow(() => new vm.Script(source, { filename: 'interior-fire-void-runtime.js' }));
 
 class Vector3 {
@@ -83,22 +84,20 @@ furniture.buildFurnitureGroup('bonfireFurniture', 0x654321);
 assert.deepStrictEqual(calls.slice(-2).map(call => call[0]), ['campfire', 'bonfire'],
   'item keys must be canonicalized before the visual builder can fall through to a placeholder cube');
 
-// The decorative-definition lookup used to be served by an Object.prototype
-// getter/setter installed here (a global-pollution perf issue: every object on
-// the live game page inherited a 'campfireFurniture'/'bonfireFurniture'
-// accessor). It's been replaced by real entries in game.js's own
-// DECORATIVE_FURNITURE_DEFS, so allFurnDefs[f.itemKey] resolves them through
-// ordinary property lookup with no prototype-wide side effects. Confirm those
-// entries exist with the same shape the old bridge used to synthesize.
-const gameSource = fs.readFileSync(path.join(root, 'docs/game.js'), 'utf8');
+// Fire furniture definitions are owned by InteriorFireFloorRuntime and injected
+// into the game's existing DECORATIVE_FURNITURE_DEFS / ITEM_DEFS references.
+// The void companion only canonicalizes visual keys; it must not restore the
+// old Object.prototype-wide definition bridge.
 assert(!/Object\.defineProperty\(Object\.prototype,\s*itemKey/.test(source),
   'interior-fire-void-runtime.js must not patch Object.prototype for fire furniture definitions');
-assert(/campfireFurniture:\s*\{\s*itemKey:\s*'campfireFurniture'.*fw:\s*1,\s*fd:\s*1/.test(gameSource),
-  'game.js DECORATIVE_FURNITURE_DEFS must define a 1x1 campfireFurniture entry');
-assert(/bonfireFurniture:\s*\{\s*itemKey:\s*'bonfireFurniture'.*fw:\s*2,\s*fd:\s*2/.test(gameSource),
-  'game.js DECORATIVE_FURNITURE_DEFS must define a 2x2 bonfireFurniture entry');
-assert(/bonfireFurniture:\s*\{[^}]*fixture:\s*true/.test(gameSource),
-  'authored fire furniture must be excluded from the player-buildable catalog like other game-placed fixtures');
+assert(/campfireFurniture:\s*Object\.freeze\(\{[\s\S]{0,180}?fw:\s*1,\s*fd:\s*1/.test(fireFloorSource),
+  'InteriorFireFloorRuntime must own a 1x1 campfireFurniture definition');
+assert(/bonfireFurniture:\s*Object\.freeze\(\{[\s\S]{0,180}?fw:\s*2,\s*fd:\s*2/.test(fireFloorSource),
+  'InteriorFireFloorRuntime must own a 2x2 bonfireFurniture definition');
+assert(/function registerFireFurnitureDefinitions\(injectedDeps\)[\s\S]{0,500}?injectedDeps\?\.DECORATIVE_FURNITURE_DEFS/.test(fireFloorSource),
+  'fire furniture definitions must be injected into the canonical decorative-furniture store');
+assert(/const itemDefs = injectedDeps\?\.ITEM_DEFS/.test(fireFloorSource),
+  'fire furniture inventory definitions must be injected through the canonical item store');
 
 const children = [];
 const scene = {
