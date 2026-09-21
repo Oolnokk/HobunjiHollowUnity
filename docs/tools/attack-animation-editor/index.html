@@ -843,10 +843,11 @@ function buildToolPlaneMesh(toolKey) {
       const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.08, side: THREE.DoubleSide });
       const plane = new THREE.Mesh(geo, mat);
       plane.rotation.x = -Math.PI / 2;
-      plane.rotation.z = def.flip ? Math.PI : 0; // Tool End Flip is authored around Tool Z (legacy roll), not Tool X.
-      plane.userData.toolEndFlipBase = def.flip === true;
+      plane.rotation.z = 0; // PNG-local Z is reserved for sweep/throw spin after the fixed sprite-plane basis.
       const g = new THREE.Group();
       g.add(plane);
+      g.rotation.z = def.flip ? Math.PI : 0; // g is identity-oriented under toolHolder: this is the actual Tool Z / legacy Roll axis shown by the pose editor.
+      g.userData.toolEndFlipBase = def.flip === true;
       g.userData.toolPlane = plane; // Lets applyPoseToRig derive the sprite basis from the previewed animation style, exactly like game.js.
       // Mirror the sprite itself (not just its position/rotation) when the
       // pose has been flipped across the midline, so asymmetric tools (e.g.
@@ -1390,10 +1391,10 @@ function applyPoseToRig(pose) {
   toolHolder.scale.setScalar(safeNum(anim.poses.neutral.scale, 1));
   const toolPlane = toolPlaneMesh?.userData?.toolPlane;
   if (toolPlane) {
-    const baseEndFlip = toolPlane.userData?.toolEndFlipBase === true;
+    const baseEndFlip = toolPlaneMesh?.userData?.toolEndFlipBase === true;
     const effectiveEndFlip = baseEndFlip !== (anim.toolEndFlip === true);
-    toolPlane.rotation.x = -Math.PI / 2; // End flipping is Tool-Z rotation, matching the pose editor's Tool Z channel.
-    const endFlipZ = effectiveEndFlip ? Math.PI : 0;
+    toolPlaneMesh.rotation.z = effectiveEndFlip ? Math.PI : 0; // Exact Tool Z / legacy Roll axis: this group is identity-oriented directly beneath toolHolder.
+    toolPlane.rotation.x = -Math.PI / 2; // Fixed PNG-plane basis only.
     // Runtime derives the -90° sweep basis from the active animation, then
     // weapon-tool-stances fades that basis out at Neutral for every weapon-
     // slot-capable shape. Reproduce both layers so Heavy/Light Neutral and
@@ -1410,7 +1411,7 @@ function applyPoseToRig(pose) {
     const authoredSpinZ = authoredSpinRevolutions > 0
       ? authoredSpinBasisZ - previewT * Math.PI * 2 * authoredSpinRevolutions
       : 0;
-    toolPlane.rotation.z = endFlipZ + sweepBasisZ + authoredSpinZ; // Same Tool-Z composition as game.js: end flip + sweep basis + authored throw-spin basis/timeline.
+    toolPlane.rotation.z = sweepBasisZ + authoredSpinZ; // PNG-local spin stays separate from Tool End Flip, which lives on toolPlaneMesh's true Tool-Z axis.
   }
   lastAuthoredPose.x = Number(pose.x) || 0; lastAuthoredPose.y = Number(pose.y) || 0; lastAuthoredPose.z = Number(pose.z) || 0;
   poseOrbitScratch.set(toolBase.position.x + lastAuthoredPose.x, toolBase.position.y + lastAuthoredPose.y, toolBase.position.z + lastAuthoredPose.z); // Existing pre-arm-length finished point.
