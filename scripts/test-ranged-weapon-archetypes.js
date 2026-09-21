@@ -176,7 +176,7 @@ assert.match(rangedWeaponsSource, /hasExactSourcePlane[\s\S]*new THREE\.PlaneGeo
 assert.match(rangedWeaponsSource, /const fallbackEndFlip = !sourceTransform && def\.rangedType === 'thrown' && def\.toolEndFlip === true/, 'Only unsampled fallback thrown projectiles may synthesize the configured visible end flip.');
 assert.match(rangedWeaponsSource, /sourceTransform\?\.quaternion\?\.isQuaternion[\s\S]*sourceTransform\.quaternion\.clone\(\)/, 'Sampled player throws must preserve the exact held plane quaternion, including fishing-spear end orientation.');
 assert.match(rangedWeaponsSource, /_projectileLocalPlaneZ = new THREE\.Vector3\(0, 0, 1\)[\s\S]*_projectileFallbackEndFlipQuaternion[\s\S]*setFromAxisAngle\(_projectileLocalPlaneZ, Math\.PI\)[\s\S]*baseVisualQuaternion\.multiply\(_projectileFallbackEndFlipQuaternion\)/, 'Unsampled dagger/spear throws must reproduce the held visible tip↔handle reversal around the projectile PNG-plane normal.');
-assert.doesNotMatch(rangedWeaponsSource, /uv\.setY\(i, 1 - uv\.getY\(i\)\)|plane\.rotation\.z = Math\.PI/, 'Thrown end flipping must not use a UV mirror or PNG-local-Z rotation.');
+assert.doesNotMatch(rangedWeaponsSource, /uv\.setY\(i, 1 - uv\.getY\(i\)\)/, 'Thrown end flipping must not use a UV mirror; it is a true in-plane rotation consistent with the held weapon.');
 assert.match(rangedWeaponsSource, /sourceTransform:\s*heldTransform/, 'Player ranged projectiles must launch from the held plane transform sampled at the current release frame.');
 assert.match(rangedWeaponsSource, /launchTransformMode[^\n]*'held-strike-plane'/, 'Projectile debug state must identify exact held-plane launch transforms.');
 assert.match(rangedWeaponsSource, /facingSource:[^\n]*'sampled-held-plane'/, 'Projectile debug state must report when visible facing came directly from the sampled held weapon.');
@@ -265,7 +265,7 @@ assert.match(rangedWeaponsSource, /if \(p\.lockLaunchAlignment\)[\s\S]*p\.facePi
 
 for (const key of ['dagger_copper', 'fishingspear_copper']) {
   const cfg = windowObject.RangedWeapons.config[key];
-  assert.strictEqual(cfg.toolEndFlip, true, `${key} must use the shared 180-degree Tool-Z end-for-end sprite basis.`);
+  assert.strictEqual(cfg.toolEndFlip, true, `${key} must use the shared 180-degree in-plane tip↔handle reversal.`);
   assert.strictEqual(cfg.chargePose.neutral.roll, -82, `${key} must not fake end flipping by modifying Neutral Roll.`);
   assert.strictEqual(cfg.chargePose.windup.roll, -92, `${key} must not fake end flipping by modifying Windup Roll.`);
   assert.strictEqual(cfg.firePose.strike.roll, -88, `${key} must not fake end flipping by modifying Strike Roll.`);
