@@ -121,6 +121,7 @@
     crossbow: {
       label: 'Crossbow', projectileSprite: 'assets/toolsprites/arrow_long.png',
       projectileCount: 1, spreadDeg: 0, damage: 16, speedPxS: 720,
+      projectileSpeedMultiplier: 1.15, projectileDropStartTiles: Infinity, projectileGravityWorldS2: 0,
       rangeTiles: 9, projectileRadiusPx: 7, knockbackPxS: 130,
       reloadDurationS: 1.04, reloadSequence: 'attack', reloadWindupFrac: 0.55, reloadStrikeFrac: 0.56, reloadHoldFrac: 0.692,
       fireDurationS: 1.04, fireSequence: 'attack', fireWindupFrac: 0.05, fireAtFrac: 0.08, fireHoldFrac: 0.17,
@@ -131,6 +132,7 @@
     scatterbow: {
       label: 'Scatterbow', projectileSprite: 'assets/toolsprites/arrow_short.png',
       projectileCount: 6, spreadDeg: 28, damage: 5, speedPxS: 650,
+      projectileSpeedMultiplier: 1.15, projectileDropStartTiles: Infinity, projectileGravityWorldS2: 0,
       rangeTiles: 6.5, projectileRadiusPx: 4, knockbackPxS: 55,
       reloadDurationS: 1.04, reloadSequence: 'attack', reloadWindupFrac: 0.55, reloadStrikeFrac: 0.56, reloadHoldFrac: 0.692,
       fireDurationS: 1.04, fireSequence: 'attack', fireWindupFrac: 0.05, fireAtFrac: 0.08, fireHoldFrac: 0.17,
@@ -1270,14 +1272,12 @@
     return { kind: 'actor', t: nearest.interval.enter, actor: deps.player };
   }
 
-  // Projectile trajectory/orientation is frozen in its launch frame. Camera
-  // movement after release may only twist the INTERNAL flat sprite around its
-  // own long axis within an animal-style ±15° deadzone; it can never change
-  // the fixed spin axis or flight direction.
-  // Projectile trajectory/orientation is frozen in its launch frame. Spinning
-  // thrown weapons preserve that exact release transform on the visual group
-  // and rotate only the PNG child around its own local Z axis. Non-spinning
-  // arrows/projectiles retain the small camera-readability twist below.
+  // Projectile orientation begins from the exact immutable launch frame.
+  // Authored projectile gravity may rotate that whole launch frame only by the
+  // physical trajectory delta as the shot arcs downward; camera movement never
+  // steers it. Spinning thrown weapons still rotate only the PNG child around
+  // local Z, while non-spinning projectiles retain the small camera-readability
+  // twist around their long axis.
   function updateProjectileVisual(p, dt) {
     p.visual.quaternion.copy(p.baseVisualQuaternion);
     if (p.projectileGravityWorldS2 > 0 && p.launchDirection?.isVector3) {
@@ -1718,7 +1718,7 @@
     firePlayer: (itemKey) => startPlayerAction(itemKey),
     idlePose: itemKey => ({ ...idlePose(itemKey) }),
     snapshot: () => ({
-      latestChange: 'Enemy bodies now block allied shots and take friendly-fire damage; loaded ranged AI strafes for LOS before firing. Actor hitboxes/projectile perps are shared within the frame and HUD LOS is throttled to 20 Hz.',
+      latestChange: 'Ranged flight is now per-weapon configurable. Thrown weapons default to faster six-tile-straight ballistic arcs and can embed in terrain/cover for ten seconds with a three-copy fading cap.',
       lastEvent, lastAudioEvent, projectileDeadzoneDeg: PROJECTILE_PERP_DEAD_DEG, defaultProjectileSpeedMultiplier: DEFAULT_PROJECTILE_SPEED_MULTIPLIER,
       equippedRanged: deps?.getEquippedRangedKey?.() || null,
       activeAmmo: activeAmmoId(), specialAmmo: specialAmmoCount(), specialAmmoMax: SPECIAL_AMMO_MAX,
