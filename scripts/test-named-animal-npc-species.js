@@ -15,6 +15,7 @@ const chathead = fs.readFileSync('docs/js/animal-chathead-frame.js', 'utf8');
 const spriteRecolor = fs.readFileSync('docs/js/sprite-recolor.js', 'utf8');
 const creatureRenderer = fs.readFileSync('docs/js/creature-genetics-render.js', 'utf8');
 const overrides = JSON.parse(fs.readFileSync('docs/config/npcs/species-overrides.json', 'utf8'));
+const game = fs.readFileSync('docs/game.js', 'utf8');
 
 assert.equal(overrides.npcs.banubu.species, 'grehlr', 'Banubu must be authored as Grehlr');
 assert.equal(overrides.npcs.banubu.kind, 'animal', 'Banubu must use the animal NPC route');
@@ -46,6 +47,14 @@ assert.match(namedAnimal, /animalHatId/, 'runtime bridge must carry native edito
 assert.match(namedAnimal, /AnimalNpcHeadwear\.composeWithHat/, 'runtime render must reuse the restored animal headwear compositor');
 assert.match(namedAnimal, /canvas\.toDataURL\('image\/png'\)/, 'world animal planes must use the composed authored appearance rather than a plain base sprite when possible');
 assert.match(namedAnimal, /buildAnimalPlaneAvatarModel/, 'world models must retain the existing side-view animal plane builder');
+assert.match(namedAnimal, /__hobunjiAnimalNpcSourceUrl/, 'world animal planes must prefer the native creature/genotype source instead of the 200x200 NPC portrait canvas');
+assert.match(namedAnimal, /async function worldFrameUrls/, 'named animals must expose native-resolution idle/run frames for in-world locomotion');
+assert.match(game, /const namedAnimalDef = namedAnimalKind \? CREATURE_DB\[namedAnimalKind\]/, 'NPC walker construction must resolve animal physics from the normal creature database');
+assert.match(game, /CreatureGenetics\.creatureSizeScale\(namedAnimalKind, namedAnimalGenotype\)/, 'named animal world scale must use the same genetics size-class path as normal creatures');
+assert.match(game, /const legs = namedAnimalDef \? null : window\.ProceduralLegAnimation/, 'animal NPCs must never receive humanoid procedural feet');
+assert.match(game, /speciesSpeedTiles = this\.animalDef \? .*this\.animalDef\.moveSpeed.*devGlobalSpeedMul \/ TILE/, 'animal NPC schedule movement must derive from native creature movement speed');
+assert.match(game, /animalRunFrameDistPx \+= moveDistTiles \* TILE/, 'animal NPC movement must cycle native run frames from actual distance traveled');
+assert.match(game, /resolveCreatureGroundAnchorRatio\(namedAnimalDef\.sprites\?\.idle/, 'animal NPC artwork must use the same opaque-bottom grounding correction as ordinary creatures');
 assert.match(namedAnimal, /watchGlobalAssignment\('NpcAvatarPreview'\)/, 'profile bridge must install before late avatar API assignment');
 assert.match(namedAnimal, /watchGlobalAssignment\('PNGPlaneAvatar'\)/, 'world-plane bridge must install before late PNG-plane API assignment');
 assert.doesNotMatch(namedAnimal, /namedAnimalAppearancePanel/, 'the generalized bridge must not inject the discarded simplified appearance panel');
