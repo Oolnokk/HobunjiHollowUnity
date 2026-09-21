@@ -20586,7 +20586,7 @@
       // branch at the top of updateToolMesh's style if/else chain.
       let combatSwingPose = null;
       let combatSwingAlignToReticle = false; // Ranged fire/throws rotate their authored pose frame onto the live reticle yaw+pitch.
-      let combatSwingToolEndFlip = false; // Same local-X end-for-end sprite-basis reversal as makeToolPlaneMesh(...,{flip:true}) for pick mining.
+      let combatSwingToolEndFlip = false; // Requests the same visible tip↔handle in-plane reversal previewed by the Attack Animation Editor.
       const _toolMeshPoseMergeCache = { pose: undefined, styleNeutral: undefined, neutral: null, returnNeutral: null }; // Memoizes updateToolMesh's per-frame neutral/returnNeutral merge for the current swing (see the pose-driven branch below).
       // Affliction ids (see resource-system.js's AFFLICTIONS) this swing's
       // ability can actually inflict — set via opts.afflictionIds on
@@ -22203,7 +22203,7 @@
           // regardless of what's equipped (and naturally drops to 0 during fishThrowActive,
           // since that always forces anim to 'chop').
           const baseRotZ = anim === 'sweep' ? -Math.PI / 2 : 0;
-          const rangedThrowDef = combatSwingAnim === 'ranged'
+          const rangedThrowDef = activeTool === 'ranged' && combatSwingAnim === 'ranged'
             ? window.RangedWeapons?.config?.[equipmentSlots.ranged || spinItemKey]
             : null;
           const rangedThrowSpins = rangedThrowDef?.rangedType === 'thrown' && rangedThrowDef?.heldSpin === true; // Held throw spin is independent from projectile tumbling: fishing spear spins during the throw but freezes its sampled 90°-offset alignment in flight.
