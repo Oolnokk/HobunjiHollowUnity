@@ -37,6 +37,10 @@
     const number = Number(value);
     return Number.isFinite(number) ? Math.max(0, Math.min(1, number)) : 1;
   }
+  function normalizeCreatureScaleMultiplier(value) {
+    const number = Number(value); // Authored in the Fey/custom appearance card; 1 means ordinary species+size-class scale.
+    return Number.isFinite(number) ? Math.max(0.1, Math.min(4, number)) : 1;
+  }
   function normalizeHex(value) {
     const match = String(value || '').trim().match(/^#?([0-9a-f]{6})$/i);
     return match ? `#${match[1].toUpperCase()}` : null;
@@ -84,6 +88,16 @@
   }
   function appearanceFor(profile, options = {}) {
     return options?.npcRecord?.appearance || profile?.appearance || profile?.npcRecord?.appearance || {};
+  }
+  function creatureScaleMultiplierFor(profile, options = {}) {
+    return normalizeCreatureScaleMultiplier(
+      options?.creatureScaleMultiplier
+      ?? options?.npcRecord?.creatureScaleMultiplier
+      ?? options?.npcRecord?.appearance?.creatureScaleMultiplier
+      ?? profile?.creatureScaleMultiplier
+      ?? profile?.appearance?.creatureScaleMultiplier
+      ?? profile?.npcRecord?.appearance?.creatureScaleMultiplier
+    ); // Generic named-animal world-scale override layered after normal genetics size class.
   }
   function effectiveGenotype(profile, options = {}) {
     const source = creatureGenotypeFor(profile, options);
@@ -553,6 +567,7 @@
     creatureKindForProfile,
     makeCreatureProfile,
     effectiveGenotype,
+    creatureScaleMultiplierFor,
     renderCreatureProfile,
     worldFrameUrls,
     installAll,
