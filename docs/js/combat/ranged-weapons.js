@@ -752,7 +752,8 @@
     const peers = projectiles
       .filter(other => other !== p && !other.dead && other.embedded && !other.fading && other.itemKey === p.itemKey && sameProjectilePersistenceOwner(other, p))
       .sort((a, b) => (a.launchSerial || 0) - (b.launchSerial || 0));
-    const allowedExisting = Math.max(0, cap - (reserveForIncomingShot ? 1 : 0));
+    const consumesSlot = reserveForIncomingShot || p.embedded; // The newly fired/inserting projectile itself counts toward the cap even though it is excluded from the peer list.
+    const allowedExisting = Math.max(0, cap - (consumesSlot ? 1 : 0));
     while (peers.length > allowedExisting) startProjectileFade(peers.shift(), 'capacity');
   }
 
