@@ -64,12 +64,12 @@
       },
       windup: {
         x: 0.41, y: 0.37, z: 0.42, pitch: -180, yaw: 139, bodyYaw: -152, roll: -92,
-        shoulderAim: { grip: false, palmNormal: false },
+        shoulderAim: { grip: false, palmNormal: true },
         secondaryGrip: { enabled: false, percent: 50 },
       },
       strike: {
         x: -0.57, y: 0.33, z: 0.17, pitch: -25, yaw: -65, bodyYaw: 63, roll: -88,
-        shoulderAim: { grip: true, palmNormal: false },
+        shoulderAim: { grip: false, palmNormal: true },
         secondaryGrip: { enabled: false, percent: 50 },
       },
     },
