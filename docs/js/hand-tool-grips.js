@@ -11,6 +11,7 @@
   const LOCAL_KEY = 'hobunji.handToolGrips.v1';
   const SECONDARY_GRIP_PRESET = 'animation-span-v1'; // Migrates old always-on secondary points into animation-gated Z spans.
   const PRIMARY_ROTATION_PRESET = 'hatchet-primary-xy-rotation-20260921-v3'; // Hatchet is the canonical right-hand grip example: propagate its X, Y, and rotation to every other tool, never its item-specific Z.
+  const RANGED_GRIP_PRESET = 'melee-ranged-split-20260920-v1'; // One-time migration marker: creates independent ranged grips and applies the authored dagger ranged starting point/scale to older local drafts.
   const HATCHET_PRIMARY_GRIP_EXAMPLE = Object.freeze({
     x: -0.04,
     y: -0.04,
@@ -36,6 +37,7 @@
     schema: SCHEMA,
     secondaryGripPreset: SECONDARY_GRIP_PRESET,
     primaryRotationPreset: PRIMARY_ROTATION_PRESET,
+    rangedGripPreset: RANGED_GRIP_PRESET,
     tools: {
       hatchet: {
         primaryGrip: { position: { x: HATCHET_PRIMARY_GRIP_EXAMPLE.x, y: HATCHET_PRIMARY_GRIP_EXAMPLE.y, z: -0.0106 }, rotationDeg: { ...HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg } },
@@ -213,9 +215,11 @@
   function normalizeData(raw) {
     const next = clone(raw || DEFAULT_DATA);
     const previousPrimaryRotationPreset = next.primaryRotationPreset; // Missing/older marker means saved grip rotations need the new authoritative weapon table once.
+    const previousRangedGripPreset = next.rangedGripPreset; // Missing marker identifies drafts created before melee/ranged grip separation.
     next.schema = SCHEMA;
     next.secondaryGripPreset = SECONDARY_GRIP_PRESET;
     next.primaryRotationPreset = PRIMARY_ROTATION_PRESET;
+    next.rangedGripPreset = RANGED_GRIP_PRESET;
     const rawTools = next.tools && typeof next.tools === 'object' ? next.tools : {}; // Saved drafts override defaults, while newly added weapon defaults still appear after upgrades.
     next.tools = { ...clone(DEFAULT_DATA.tools), ...rawTools };
     for (const [toolKey, entry] of Object.entries(next.tools)) {
@@ -241,6 +245,15 @@
         primaryGrip: entry.rangedPrimaryGrip,
       });
       entry.rangedGripMode = normalizeGripMode(entry.rangedGripMode ?? entry.gripMode);
+      if (previousRangedGripPreset !== RANGED_GRIP_PRESET && toolKey === 'dagger') {
+        // The first melee/ranged split intentionally changes this one weapon's
+        // committed starting grip. Later editor saves carry the marker and are
+        // never overwritten by this migration.
+        entry.toolScale = 0.55;
+        entry.rangedPrimaryGrip = normalizeTransform(DEFAULT_DATA.tools.dagger.rangedPrimaryGrip);
+        entry.rangedSecondaryGripSpan = inferredSpan({ secondaryGripSpan: DEFAULT_DATA.tools.dagger.rangedSecondaryGripSpan, primaryGrip: entry.rangedPrimaryGrip });
+        entry.rangedGripMode = normalizeGripMode(DEFAULT_DATA.tools.dagger.rangedGripMode ?? entry.gripMode);
+      }
     }
     return next;
   }
