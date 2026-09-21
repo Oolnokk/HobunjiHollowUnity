@@ -361,9 +361,15 @@ const sleepPresentation = read('docs/js/animal-sleep-presentation.js');
 assert.match(sleepPresentation, /function registerExternalSleeper\(/, 'named animal NPCs must be able to opt into the shared animal sleep presenter');
 assert.match(sleepPresentation, /eyesClosed = typeof config\.eyesClosed === 'function'/, 'external sleepers must be able to open only their eyes while preserving the sleep body pose');
 assert.match(sleepPresentation, /frameCacheKey\(kind, frame, genotype, eyesClosed = true\)/, 'sleep frame cache must distinguish open-eye and closed-eye versions of the same species sleep frame');
+assert.match(sleepPresentation, /if \(sleeping && run2\) return \{ frame: 'run2'/, 'sleep presentation must prefer each species run2 frame when available');
+assert.match(sleepPresentation, /renderer\.composeFrame\(kind, descriptor\.frame, genotype \|\| null, eyesClosed\)/, 'sleep presentation must use the species blink-shut composite while asleep');
+const creatureRendererSource = read('docs/js/creature-genetics-render.js');
+assert.match(creatureRendererSource, /grehlr:[\s\S]{0,320}run2: 'assets\/creaturesprites\/grehlr_run2\.png'/, 'Grehlr must retain its species-specific run2 sleep body source');
+assert.match(creatureRendererSource, /grehlr:[\s\S]{0,420}blink: 'assets\/creaturesprites\/grehlr_blink\.png'/, 'Grehlr must retain its species-specific blink\/closed-eye overlay');
 assert.match(gameSource, /_animalSleepRequested = !!this\.animalDef && \/sleep\/i\.test/, 'named animal NPC sleeping must come from the authored schedule activity');
 assert.match(gameSource, /AnimalSleepPresentation\.registerExternalSleeper\(this/, 'named animal walkers must register with the shared sleep animation system');
 assert.match(gameSource, /eyesClosed: \(\) => !\(dialogueOpen && _dialogueWalker === this && this\.rec\?\._animalDialogueEyesOpen === true\)/, 'sleeping named animals may open their eyes only while their own eligible dialogue is open');
+assert.match(read('docs/js/livestock-nursery-install-bridge.js'), /animal-sleep-presentation\.js\?v=20260921banubusleep2/, 'runtime loader must deliver the current named-animal sleep presenter');
 
 const speciesOverrides = require('../docs/config/npcs/species-overrides.json');
 assert.strictEqual(speciesOverrides.npcs.banubu.species, 'grehlr');
