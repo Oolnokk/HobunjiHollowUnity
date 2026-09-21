@@ -84,6 +84,7 @@
     name: 'Fishing Spear Throw (Offset Spin)',
     spinBasisDeg: 90,
     projectileSpin: false,
+    projectileLockAlignment: true,
     poses: {
       neutral: { ...weaponThrowSpin.poses.neutral, shoulderAim: { ...weaponThrowSpin.poses.neutral.shoulderAim }, secondaryGrip: { ...weaponThrowSpin.poses.neutral.secondaryGrip } },
       windup: { ...weaponThrowSpin.poses.windup, shoulderAim: { ...weaponThrowSpin.poses.windup.shoulderAim }, secondaryGrip: { ...weaponThrowSpin.poses.windup.secondaryGrip } },
