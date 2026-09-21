@@ -517,9 +517,12 @@
   }
 
   function _filterLocalWaterCellsForFlood(cells, baseline) {
-    if (!baseline?.visible || !Number.isFinite(baseline.surfaceY)) return cells;
-    return cells.filter(cell => Number.isFinite(cell?.surfaceY)
-      && cell.surfaceY > baseline.surfaceY + FLOOD_SURFACE_HIDE_EPSILON); // Used to keep only water genuinely higher than the one authoritative flood sheet.
+    // Once the global flood sheet is active it is the one authoritative
+    // dynamic-water surface for the whole map. Do not preserve slightly
+    // higher puddle/trench cells: doing so creates almost-coplanar local
+    // quads over the flood plane and violates the single-plane flood model.
+    if (baseline?.visible && Number.isFinite(baseline.surfaceY)) return [];
+    return cells;
   }
 
   function _buildFloodPlane(sceneObj, baseline, cols, rows, statKey) {
@@ -582,7 +585,7 @@
       const snapshot = _collectDynamicWaterCells(deps.getGrid(), deps.ROWS, deps.COLS, false);
       _flowingTrenchTiles = snapshot.flowingTrenches;
       _farmFloodBaseline = snapshot.baseline;
-      const localCells = _filterLocalWaterCellsForFlood(snapshot.cells, snapshot.baseline); // Used to keep trenches/puddles hidden while a higher map-wide flood sheet covers them.
+      const localCells = _filterLocalWaterCellsForFlood(snapshot.cells, snapshot.baseline); // Global flood owns all dynamic water rendering; local puddle/trench quads return only after the flood sheet disappears.
       farmWaterMesh = _disposeMergedWaterMesh(scene, farmWaterMesh, 'farm dynamic');
       farmWaterMesh = buildMergedWaterMesh(scene, localCells, {
         name: 'farm_merged_dynamic_water', statKey: 'farm dynamic',
