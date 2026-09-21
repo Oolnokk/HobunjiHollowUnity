@@ -8,7 +8,6 @@ const vm = require('vm');
 
 const source = fs.readFileSync(path.join(__dirname, '..', 'docs/js/bandage-system.js'), 'utf8');
 let now = 0; // Drives both the scheduler timestamp and performance.now() for deterministic curve checks.
-let frameCallback = null; // Captures the BandageSystem post-game subscriber for direct simulation.
 let lastLock = null; // Captures the active action lock so completion/cancellation release can be asserted.
 const listeners = new Map(); // Minimal window event bus for resource-change cancellation.
 const player = { health:1, maxHealth:100, lastAttackReceivedAt:-1 }; // Player fixture used by all curve/cancel checks.
@@ -71,11 +70,7 @@ const window = {
     },
   },
   RuntimeFrameScheduler:{
-    register(id, callback, options) {
-      assert.strictEqual(id, 'bandage-healing');
-      assert.strictEqual(options.phase, 'post-game');
-      frameCallback = callback;
-    },
+    register() { assert.fail('Healing must be owned by gameLoop, not a browser-frame subscriber'); },
     frameId:() => Math.floor(now / 16),
   },
   addEventListener(type, listener) {
@@ -95,7 +90,7 @@ vm.runInContext(source, context, { filename:'bandage-system.js' });
 
 const bandage = window.BandageSystem;
 assert(bandage?.installed, 'bandage system installs');
-assert(frameCallback, 'bandage system registers with the shared scheduler');
+assert.equal(typeof bandage.update, 'function', 'gameLoop owns the healing update');
 assert(Math.abs(bandage.sampleCurve(4000, 0.01) - 0.20) < 1e-9,
   '1% health must reach exactly 20% at four seconds');
 assert(Math.abs(bandage.sampleCurve(8000, 0.01) - 1) < 1e-9,
@@ -112,12 +107,12 @@ assert.strictEqual(runNextTimer(), 880, 'subsequent 1.0 s loop passes overlap by
 assert.deepStrictEqual(sfxCalls, ['bandageStart', 'bandageLoop', 'bandageLoop'], 'loop cue retriggers as an overlapping one-shot rather than a hard HTML loop');
 
 now = 4000;
-frameCallback({ timestamp:now });
+bandage.update(4, false);
 assert.strictEqual(player.health, 20, 'live heal reaches 20 health at four seconds from 1/100');
 assert.strictEqual(bandage.active, true, 'bandaging remains active at midpoint');
 
 now = 8000;
-frameCallback({ timestamp:now });
+bandage.update(4, false);
 assert.strictEqual(player.health, 100, 'live heal reaches full health at eight seconds');
 assert.strictEqual(bandage.active, false, 'bandaging completes at full health');
 assert.strictEqual(lastLock.released, true, 'completion releases action ownership');
@@ -139,4 +134,26 @@ assert(sfxVoices.slice(-1).every(voice => voice.paused), 'hit cancellation stops
 player.health = 100;
 assert.strictEqual(bandage.start({ source:'full' }), false, 'full health does not start a pointless bandage action');
 
-console.log('Bandage system curve/cancellation tests passed.');
+
+player.health = 1;
+assert.equal(bandage.start(), true);
+bandage.update(4, false);
+assert.equal(player.health, 20);
+now += 60000;
+bandage.update(60, true);
+assert.equal(player.health, 20, 'paused gameplay never advances healing');
+assert.equal(bandage.debugSnapshot().elapsedMs, 4000, 'diagnostics report gameplay time only');
+assert.equal(bandage.debugSnapshot().paused, true);
+assert.equal(timers.size, 0, 'pause stops audio scheduling');
+assert(sfxVoices.every(voice => voice.paused), 'pause silences all active bandage voices');
+bandage.update(0, false);
+assert.equal(player.health, 20, 'resume does not catch up elapsed wall-clock time');
+assert.equal(sfxCalls.at(-1), 'bandageLoop', 'resume restarts the loop without replaying the start cue');
+for (const invalidDelta of [NaN, Infinity, -1]) bandage.update(invalidDelta, false); // Malformed game deltas must not alter the heal curve.
+assert.equal(bandage.debugSnapshot().elapsedMs, 4000);
+bandage.update(4, false);
+assert.equal(player.health, 100, 'four more active seconds completes the original eight-second heal');
+assert.equal(lastLock.released, true);
+assert.equal(timers.size, 0);
+
+console.log('Bandage system curve, pause/resume, audio, and cancellation tests passed.');

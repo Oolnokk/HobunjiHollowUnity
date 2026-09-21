@@ -19,7 +19,8 @@
   const state = {
     active: false,
     player: null,
-    startedAt: 0,
+    elapsedMs: 0, // Advances only by gameLoop's simulation delta; used by healing, hand motion, and diagnostics.
+    paused: false, // Stops audio while gameplay is paused and restarts the loop on resume.
     startHealth: 0,
     startMaxHealth: 0,
     lastAttackReceivedAt: -Infinity,
@@ -147,7 +148,7 @@
     }
 
     const dimensions = playerDimensions();
-    const phase = Math.max(0, t - state.startedAt) * 0.001 * Math.PI * 2 * ARM_ROLL_HZ;
+    const phase = state.elapsedMs * 0.001 * Math.PI * 2 * ARM_ROLL_HZ;
     for (const side of ['left', 'right']) {
       const socket = sockets[side];
       const base = state.handBase[side];
@@ -288,12 +289,11 @@
 
   function finish(reason, extra = {}) {
     if (!state.active) return false;
-    const endedAt = now();
     state.active = false;
     stopBandageAudio();
     releaseOwnership();
     state.poseFrameId = -1;
-    state.lastEnd = { reason, at:Date.now(), elapsedMs:Math.max(0, endedAt - state.startedAt), ...extra };
+    state.lastEnd = { reason, at:Date.now(), elapsedMs:state.elapsedMs, ...extra };
     emit(reason === 'complete' ? 'complete' : 'cancel', { reason, ...extra });
     global.ProceduralHandFrameDriver?.syncNow?.();
     return true;
@@ -333,7 +333,8 @@
 
     state.active = true;
     state.player = player;
-    state.startedAt = now();
+    state.elapsedMs = 0;
+    state.paused = false;
     state.startHealth = health;
     state.startMaxHealth = maxHealth;
     state.lastAttackReceivedAt = Number(player.lastAttackReceivedAt) || -Infinity;
@@ -348,8 +349,17 @@
     return true;
   }
 
-  function tick(timestamp = now()) {
+  function update(dt, paused = false) {
     if (!state.active) return false;
+    if (paused) {
+      if (!state.paused) stopBandageAudio();
+      state.paused = true;
+      return true;
+    }
+    if (state.paused) {
+      state.paused = false;
+      playBandageLoop(state.audioGeneration);
+    }
     const player = currentPlayer();
     if (!player || player !== state.player) return cancel('player-changed');
     if (!(Number(player.health) > 0)) return cancel('player-down');
@@ -361,7 +371,10 @@
     if (!(maxHealth > 0)) return cancel('health-unavailable');
     if (player.health >= maxHealth - 0.05) return finish('complete');
 
-    const elapsedMs = Math.max(0, timestamp - state.startedAt);
+    const deltaSeconds = Number(dt); // Rejects malformed deltas instead of poisoning the active healing clock.
+    if (!Number.isFinite(deltaSeconds) || deltaSeconds < 0) return false;
+    state.elapsedMs = Math.min(DURATION_MS, state.elapsedMs + deltaSeconds * 1000);
+    const elapsedMs = state.elapsedMs;
     const desired = Math.min(maxHealth, targetHealth(elapsedMs, maxHealth));
     const before = Number(player.health) || 0;
     if (desired > before) {
@@ -390,30 +403,23 @@
     cancel('hit', { damageReason:String(detail.reason || 'damage') });
   }
 
-  function installScheduler() {
-    if (!global.RuntimeFrameScheduler?.register) return false;
-    global.RuntimeFrameScheduler.register('bandage-healing', ({ timestamp }) => tick(timestamp), {
-      phase: 'post-game',
-      owner: 'BandageSystem',
-      description: 'Advances the interruptible accelerating bandage heal after gameplay damage for the frame has resolved.',
-    });
-    return true;
-  }
-
+  // Gameplay healing belongs to gameLoop; the render sentinel only applies the current hand pose.
   global.addEventListener?.('hobunji-resource-change', onResourceChange);
-  if (!installScheduler() && global.SceneReadyPoller) global.SceneReadyPoller.pollUntilReady(installScheduler, 10000, 50);
 
   global.BandageSystem = Object.freeze({
     installed: true,
     start,
     cancel,
+    update,
     sampleCurve,
     get active() { return state.active; },
     debugSnapshot() {
-      const elapsedMs = state.active ? Math.max(0, now() - state.startedAt) : state.lastEnd?.elapsedMs || 0;
+      const elapsedMs = state.active ? state.elapsedMs : state.lastEnd?.elapsedMs || 0;
       const maxHealth = state.active && state.player ? effectiveMaxHealth(state.player) : state.startMaxHealth;
       return {
         active: state.active,
+        paused: state.active && state.paused,
+        clock: 'gameplay-delta',
         cost: 'time-and-interruption-only',
         durationMs: DURATION_MS,
         midpointMs: DURATION_MS / 2,
@@ -443,3 +449,4 @@
     },
   });
 })(window);
+

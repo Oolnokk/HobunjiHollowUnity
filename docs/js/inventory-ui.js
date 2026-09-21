@@ -626,10 +626,12 @@
     const toolMatch = title.match(/^(.*?) \(Mastery (\d+)\/5\) — click to assign/); // Splits tool name from mastery for legibility.
     const label = slot.querySelector('.ies-label');
     if (toolMatch && label) {
-      label.textContent = toolMatch[1]; label.classList.add('gear-item-name');
+      if (label.textContent !== toolMatch[1]) label.textContent = toolMatch[1];
+      label.classList.add('gear-item-name');
       let mastery = slot.querySelector('.ies-mastery');
       if (!mastery) { mastery = document.createElement('span'); mastery.className = 'ies-mastery'; label.insertAdjacentElement('afterend', mastery); }
-      mastery.textContent = `Mastery ${toolMatch[2]}/5`;
+      const masteryText = `Mastery ${toolMatch[2]}/5`; // Compared before writing to avoid retriggering the inventory observer.
+      if (mastery.textContent !== masteryText) mastery.textContent = masteryText;
     }
     if (slot.classList.contains('clothing-owned-slot') && !slot.querySelector('.gear-owned-clothing-name')) {
       const itemName = title.split(' — ')[0].trim();
@@ -649,7 +651,7 @@
     if (!state) { badge?.remove(); return; }
     if (!badge) { badge = document.createElement('span'); badge.className = 'inventory-slot-state'; slot.appendChild(badge); }
     badge.className = `inventory-slot-state ${tone || ''}`.trim();
-    badge.textContent = state;
+    if (badge.textContent !== state) badge.textContent = state;
   }
 
   function decorateInfoPanel() {
@@ -877,3 +879,4 @@
 
   window.InventoryUI = { init, decorate, debugSnapshot, enforceMenuReadability };
 })();
+

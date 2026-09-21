@@ -655,6 +655,8 @@
       dyeA: reweaveItem?.colorA?.dyeId || dyes[0].id, // Reweaving preserves this channel; crafting authors it.
       dyeB: reweaveItem?.colorB?.dyeId || dyes[Math.min(1, dyes.length - 1)].id, // Reweaving preserves this channel; crafting authors it.
       dyeC: reweaveItem?.colorC?.dyeId || dyes[Math.min(2, dyes.length - 1)].id, // Pattern dye remains editable when reweaving.
+      layersReady: false, // Blocks submission until the garment layers and saved weave have been initialized.
+      layerRequest: 0, // Rejects stale layer loads after changing templates or reopening the loom.
       layers: [], // Resolved [{url, role}] for the currently selected blueprint; refreshed whenever the blueprint changes.
       layerPatterns: {}, // role -> {pattern, patternId, patternLabel, swapPatternColors}. Sticky across blueprint switches; the swap flag belongs to this garment layer, not the reusable pattern.
       reweaveSeededUid: null, // Used to hydrate existing saved patterns exactly once before the player starts editing them.
@@ -805,10 +807,17 @@
     }
 
     async function refreshPatternLayerControls() {
+      const request = ++state.layerRequest; // Identifies this asynchronous layer initialization.
+      state.layersReady = false;
+      overlay.querySelector('[data-act="craft"]').disabled = true;
       const bp = selectedBlueprint();
       let layers;
       try { layers = await resolveIconLayers(bp.baseCosmeticId); } catch (error) { lastError = String(error?.message || error); layers = []; }
-      if (!loomOverlay || !patternLayersEl.isConnected || state.blueprintId !== bp.baseCosmeticId) return; // Blueprint may have changed again while this awaited.
+      if (loomOverlay !== overlay || !patternLayersEl.isConnected || request !== state.layerRequest) return;
+      if (isReweave && !layers.length) {
+        patternLayersEl.textContent = 'Garment layers are unavailable. Reweaving is disabled to preserve your saved pattern.';
+        return;
+      }
       state.layers = layers.length ? layers : [{ url: bp.sprite || null, role: null }]; // Falls back to a single unlabeled slot so pattern authoring still works even if layer resolution comes up empty.
       seedReweavePatternsFromItem();
       patternLayersEl.innerHTML = '';
@@ -873,6 +882,8 @@
         row.appendChild(actions);
         patternLayersEl.appendChild(row);
       }
+      state.layersReady = true;
+      refreshPreview(); // Refresh the pattern dye controls and button only after saved patterns are seeded.
     }
 
     async function refreshPreview() {
@@ -888,7 +899,7 @@
       overlay.querySelector('[data-stats]').textContent = `Weight: ${weight.toFixed(1)} units\nDefense: +${Math.round(weight * TUNING.defensePerUnit * 100)}%\nFooting resistance: +${Math.round(weight * TUNING.footingResistancePerUnit * 100)}%\nDodge efficacy: −${Math.round(weight * TUNING.dodgePenaltyPerUnit * 100)}%\nCombat movement: −${Math.round(weight * TUNING.combatMovePenaltyPerUnit * 100)}%\nPattern: ${summarizePatterns()}`;
       const craft = overlay.querySelector('[data-act="craft"]');
       craft.textContent = isReweave ? `Reweave · ${cost} ${material.label}` : 'Craft';
-      craft.disabled = owned < cost;
+      craft.disabled = !state.layersReady || owned < cost;
       const behindToggleBtn = overlay.querySelector('[data-act="toggleBehindView"]');
       const showBehindToggle = await hasBehindView(bp.baseCosmeticId);
       if (!loomOverlay) return; // May have closed while the check above awaited.
@@ -934,6 +945,7 @@
     });
     for (const key of ['dyeA', 'dyeB', 'dyeC']) overlay.querySelector(`[data-field="${key}"]`).onchange = event => { state[key] = event.target.value; refreshPreview(); };
     overlay.querySelector('[data-act="craft"]').onclick = () => {
+      if (loomOverlay !== overlay || !state.layersReady) return false;
       if (isReweave) reweaveFromLoom(reweaveItem, selectedMaterial(), dyeById(state.dyeC), weavingFromState());
       else craftFromLoom(state, selectedBlueprint(), selectedMaterial(), dyeById, hasSecondary(), weavingFromState());
     };
@@ -2152,3 +2164,4 @@
   installArmorHooks();
   installPortraitHooks();
 })();
+
