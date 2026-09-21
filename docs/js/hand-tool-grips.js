@@ -375,6 +375,24 @@
     };
   }
 
+  // Held throw spin is a child-plane visual rotation, while the hand remains on
+  // the authored grip frame. Translate the spinning PNG by P - R(P) so the
+  // authored grip point P stays fixed in tool-holder space as the sprite rotates
+  // around local +Y (the plane's local Z after its fixed -90° X basis).
+  // Use the unscaled authored grip here: the visual parent applies toolScale to
+  // both the sprite and this offset, keeping the pivot correct at every size.
+  function spinPivotOffsetForTool(value, angleRad, context = 'ranged') {
+    const grip = authoredPrimaryGripForTool(value, context);
+    const x = numberOrZero(grip?.position?.x);
+    const z = numberOrZero(grip?.position?.z);
+    const angle = Number(angleRad) || 0;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    const rotatedX = x * cos + z * sin;
+    const rotatedZ = -x * sin + z * cos;
+    return { x: x - rotatedX, y: 0, z: z - rotatedZ };
+  }
+
   function secondaryGripSpanForTool(value, context = currentGripContext()) {
     const entry = ensureTool(value);
     const span = entry?.[secondaryGripSpanFieldForContext(context)];
@@ -844,7 +862,7 @@
     get defaultData() { return normalizeData(DEFAULT_DATA); },
     clone: cleanClone,
     toolKeyFor, ensureTool, toolScaleForTool, normalizeGripContext, currentGripContext,
-    authoredPrimaryGripForTool, primaryGripForTool, secondaryGripSpanForTool, secondaryGripForTool,
+    authoredPrimaryGripForTool, primaryGripForTool, spinPivotOffsetForTool, secondaryGripSpanForTool, secondaryGripForTool,
     currentSecondaryGripAnimationState, animationGripAt, gripModeForTool, setGripMode, replace, mutate, saveLocal, loadLocal, clearLocal, applyPrimaryGripVisuals, debugForTool,
     editorSecondaryGripStateSnapshot, restoreEditorSecondaryGripState,
     getDebug() {
