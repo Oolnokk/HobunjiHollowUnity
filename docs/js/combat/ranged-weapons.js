@@ -1215,11 +1215,13 @@
     window.AudioSystem?.playRangedImpactSfx?.(x, y, p.areaId);
   }
 
-  function projectileHit(p) {
+  function projectileHit(p, maxSegmentT = 1) {
     const start = _projectileHitStart.set(p.prevX / deps.TILE, p.prevWorldY, p.prevY / deps.TILE);
     const end = _projectileHitEnd.set(p.x / deps.TILE, p.worldY, p.y / deps.TILE);
     const projectileRadius = p.def.projectileRadiusPx / deps.TILE;
-    const coverHit = window.NearbyVolumeCollision?.segmentHit?.(start, end, projectileRadius) || null;
+    const segmentLimit = Math.max(0, Math.min(1, Number(maxSegmentT) || 0));
+    const rawCoverHit = window.NearbyVolumeCollision?.segmentHit?.(start, end, projectileRadius) || null;
+    const coverHit = rawCoverHit && rawCoverHit.t <= segmentLimit + AIM_EPSILON ? rawCoverHit : null;
     const falloff = projectileFalloffMultiplier(p);
     const scaledDamage = p.def.damage * falloff * (Number.isFinite(p.damageScale) ? p.damageScale : 1);
     const damage = p.team === 'player' && p.def.rangedType === 'thrown'
@@ -1227,7 +1229,8 @@
       : Math.max(1, scaledDamage);
     const knockbackPxS = p.def.knockbackPxS * p.knockbackMul * falloff;
     if (p.team === 'player') {
-      const nearest = nearestHostileHit(start, end, projectileRadius, p.areaId);
+      let nearest = nearestHostileHit(start, end, projectileRadius, p.areaId);
+      if (nearest && nearest.interval.enter > segmentLimit + AIM_EPSILON) nearest = null;
       if (coverHit && (!nearest || coverHit.t <= nearest.interval.enter)) {
         playProjectileImpactSfx(p, coverHit.t);
         return { kind: 'cover', t: coverHit.t, coverHit };
@@ -1241,8 +1244,10 @@
       return { kind: 'actor', t: nearest.interval.enter, actor: c };
     }
 
-    const playerInterval = segmentHitboxInterval(start, end, actorHitbox(deps.player), projectileRadius);
-    const friendly = nearestHostileHit(start, end, projectileRadius, p.areaId, p.owner);
+    const rawPlayerInterval = segmentHitboxInterval(start, end, actorHitbox(deps.player), projectileRadius);
+    const playerInterval = rawPlayerInterval && rawPlayerInterval.enter <= segmentLimit + AIM_EPSILON ? rawPlayerInterval : null;
+    let friendly = nearestHostileHit(start, end, projectileRadius, p.areaId, p.owner);
+    if (friendly && friendly.interval.enter > segmentLimit + AIM_EPSILON) friendly = null;
     let nearest = playerInterval ? { kind: 'player', interval: playerInterval, actor: deps.player } : null;
     if (friendly && (!nearest || friendly.interval.enter < nearest.interval.enter)) {
       nearest = { kind: 'hostile', interval: friendly.interval, actor: friendly.creature };
@@ -1364,14 +1369,13 @@
 
       const blockedAtTerrain = !deps.canOccupyAt(p.x, p.y, p.def.projectileRadiusPx);
       const groundedAtGround = p.worldY <= deps.worldSurfaceY(p.x, p.y) + 0.08;
-      const hit = projectileHit(p);
+      const sweptTerrainImpact = terrainImpactForStep(p, blockedAtTerrain, groundedAtGround);
+      const hit = projectileHit(p, sweptTerrainImpact?.t ?? 1); // Ground/solid terrain caps the actor sweep so a curved shot cannot damage something behind the first terrain contact.
       if (hit?.kind === 'actor') {
         disposeProjectile(p);
         continue;
       }
-      const terrainImpact = hit?.kind === 'cover'
-        ? hit
-        : (!hit ? terrainImpactForStep(p, blockedAtTerrain, groundedAtGround) : null);
+      const terrainImpact = hit?.kind === 'cover' ? hit : sweptTerrainImpact;
       if (terrainImpact) {
         if (hit?.kind !== 'cover') playProjectileImpactSfx(p, terrainImpact.t);
         if (!embedProjectile(p, terrainImpact)) disposeProjectile(p);
