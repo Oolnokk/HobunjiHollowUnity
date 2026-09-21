@@ -12,7 +12,10 @@
   const SCATTERBOW_FIRE_CHORUS_MS = [0, 28, 56, 84, 112, 140]; // Used by playRangedActionSfx() to stagger one shot sound per scatterbow projectile.
   const PROJECTILE_PERP_DEAD_DEG = 15; // Used only by projectile PNG facing so arrows turn within tighter windows than animals.
   const PROJECTILE_PERP_DEAD_RAD = THREE.MathUtils.degToRad(PROJECTILE_PERP_DEAD_DEG); // Passed to the shared animal deadzone helpers.
-  const PROJECTILE_SPEED_MULTIPLIER = 1.15; // Used by every ranged projectile simulation step for a modest 15% faster flight without changing authored weapon balance/range values.
+  const DEFAULT_PROJECTILE_SPEED_MULTIPLIER = 1.15; // Backward-compatible default for ranged definitions that have not authored their own per-weapon flight-speed multiplier.
+  const DEFAULT_PROJECTILE_EMBED_PERSIST_S = 10; // Embedded projectile lifetime including its normal end-of-life fade.
+  const DEFAULT_PROJECTILE_EMBED_FADE_S = 0.65; // Short fade used both at normal expiry and when an older embedded projectile is displaced by the per-weapon cap.
+  const DEFAULT_PROJECTILE_MAX_EMBEDDED = 3; // Default visible embedded projectile cap per owner + weapon key.
   const FISHING_MACE_SPIN_RATE_DEG_FALLBACK = 9720; // Used only before Fishing is available; matches Fishing.projectileVisuals.maceSpinRateDeg exactly.
   // Reused across calls instead of allocated fresh each time — projectileHit
   // runs every frame for every live projectile until it hits something or
@@ -30,6 +33,8 @@
   const _projectileWorldUp = new THREE.Vector3(0, 1, 0);
   const _projectileBasisMatrix = new THREE.Matrix4();
   const _projectileInverseQuaternion = new THREE.Quaternion();
+  const _projectileCurrentFlightDir = new THREE.Vector3(); // Reused to bend a projectile's launch-frame visual along an authored downward arc without camera steering.
+  const _projectileTrajectoryDeltaQuaternion = new THREE.Quaternion(); // World-space delta from launch direction to current curved-flight direction.
   const PROJECTILE_TRAIL_MAX_POINTS = 14; // Caps each comet ribbon's geometry and per-frame update cost.
   const PROJECTILE_TRAIL_MAX_LANES = 4; // Mirrors the melee trail's readable multi-affliction lane limit.
   const SPECIAL_AMMO_MAX = 8; // Shared character resource cap displayed by the ranged loadout and ammo arch.
@@ -56,6 +61,7 @@
   const actorHitboxCache = new WeakMap(); // Used by actorHitbox() to share one computed portrait volume across same-frame callers.
   let wouldHitCacheAt = -Infinity;
   let wouldHitCacheValue = false;
+  let projectileSerial = 0; // Monotonic launch order used only to choose the oldest embedded copy when a per-weapon visual cap is exceeded.
   let friendlyFireHits = 0;
   let losRepositions = 0;
   let wouldHitCacheHits = 0;
@@ -687,6 +693,110 @@
     }
   }
 
+  function projectileFiniteStat(value, fallback, min = 0) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? Math.max(min, numeric) : fallback;
+  }
+
+  function projectileFlightStats(def) {
+    return {
+      speedMultiplier: projectileFiniteStat(def?.projectileSpeedMultiplier, DEFAULT_PROJECTILE_SPEED_MULTIPLIER, 0.05),
+      dropStartTiles: projectileFiniteStat(def?.projectileDropStartTiles, Infinity, 0),
+      gravityWorldS2: projectileFiniteStat(def?.projectileGravityWorldS2, 0, 0),
+      embedOnTerrain: def?.projectileEmbedOnTerrain === true,
+      persistS: projectileFiniteStat(def?.projectilePersistS, DEFAULT_PROJECTILE_EMBED_PERSIST_S, 0.05),
+      maxEmbedded: Math.max(1, Math.round(projectileFiniteStat(def?.projectileMaxEmbedded, DEFAULT_PROJECTILE_MAX_EMBEDDED, 1))),
+      fadeS: projectileFiniteStat(def?.projectileFadeS, DEFAULT_PROJECTILE_EMBED_FADE_S, 0.05),
+    };
+  }
+
+  function sameProjectilePersistenceOwner(a, b) {
+    if (a?.owner || b?.owner) return a?.owner === b?.owner;
+    return a?.team === b?.team;
+  }
+
+  function setProjectileVisualOpacity(p, opacity) {
+    const alpha = Math.max(0, Math.min(1, Number(opacity) || 0));
+    p.visual?.traverse?.(child => {
+      const materials = Array.isArray(child.material) ? child.material : (child.material ? [child.material] : []);
+      for (const material of materials) {
+        material.transparent = true;
+        material.opacity = alpha;
+        material.needsUpdate = true;
+      }
+    });
+  }
+
+  function disposeProjectileTrails(p) {
+    for (const lane of p.trailMeshes || []) {
+      lane.mesh.parent?.remove(lane.mesh);
+      lane.mesh.geometry?.dispose?.();
+      lane.mesh.material?.dispose?.();
+    }
+    p.trailMeshes = [];
+    p.trailPoints = [];
+  }
+
+  function startProjectileFade(p, reason = 'lifetime', durationS = p?.projectileFadeS || DEFAULT_PROJECTILE_EMBED_FADE_S) {
+    if (!p || p.dead || p.fading) return false;
+    p.fading = true;
+    p.fadeReason = reason;
+    p.fadeElapsedS = 0;
+    p.fadeDurationS = Math.max(0.05, Number(durationS) || DEFAULT_PROJECTILE_EMBED_FADE_S);
+    return true;
+  }
+
+  function enforceEmbeddedProjectileCap(p, reserveForIncomingShot = false) {
+    if (!p?.embedOnTerrain) return;
+    const cap = Math.max(1, Number(p.projectileMaxEmbedded) || DEFAULT_PROJECTILE_MAX_EMBEDDED);
+    const peers = projectiles
+      .filter(other => other !== p && !other.dead && other.embedded && !other.fading && other.itemKey === p.itemKey && sameProjectilePersistenceOwner(other, p))
+      .sort((a, b) => (a.launchSerial || 0) - (b.launchSerial || 0));
+    const allowedExisting = Math.max(0, cap - (reserveForIncomingShot ? 1 : 0));
+    while (peers.length > allowedExisting) startProjectileFade(peers.shift(), 'capacity');
+  }
+
+  function terrainImpactForStep(p, blockedAtTerrain, groundedAtGround) {
+    if (!blockedAtTerrain && !groundedAtGround) return null;
+    let lo = 0, hi = 1;
+    for (let i = 0; i < 8; i++) {
+      const t = (lo + hi) * 0.5;
+      const x = THREE.MathUtils.lerp(p.prevX, p.x, t);
+      const y = THREE.MathUtils.lerp(p.prevY, p.y, t);
+      const worldY = THREE.MathUtils.lerp(p.prevWorldY, p.worldY, t);
+      const blocked = !deps.canOccupyAt(x, y, p.def.projectileRadiusPx);
+      const grounded = worldY <= deps.worldSurfaceY(x, y) + 0.08;
+      if (blocked || grounded) hi = t;
+      else lo = t;
+    }
+    const t = hi;
+    const x = THREE.MathUtils.lerp(p.prevX, p.x, t);
+    const y = THREE.MathUtils.lerp(p.prevY, p.y, t);
+    const worldY = THREE.MathUtils.lerp(p.prevWorldY, p.worldY, t);
+    const kind = worldY <= deps.worldSurfaceY(x, y) + 0.08 ? 'ground' : 'solid-tile';
+    return { kind, t };
+  }
+
+  function embedProjectile(p, impact) {
+    if (!p?.embedOnTerrain || !impact) return false;
+    const t = Math.max(0, Math.min(1, Number(impact.t) || 0));
+    p.x = THREE.MathUtils.lerp(p.prevX, p.x, t);
+    p.y = THREE.MathUtils.lerp(p.prevY, p.y, t);
+    p.worldY = THREE.MathUtils.lerp(p.prevWorldY, p.worldY, t);
+    if (impact.kind === 'ground') p.worldY = Math.max(p.worldY, deps.worldSurfaceY(p.x, p.y) + 0.08);
+    p.mesh.position.set(p.x / deps.TILE, p.worldY, p.y / deps.TILE);
+    updateProjectileVisual(p, 0); // Freeze the current arc-bent launch frame exactly where the projectile contacted terrain/cover.
+    p.embedded = true;
+    p.embeddedAgeS = 0;
+    p.impactKind = impact.kind || 'terrain';
+    p.vx = 0;
+    p.vy = 0;
+    p.vyWorld = 0;
+    disposeProjectileTrails(p);
+    enforceEmbeddedProjectileCap(p, false);
+    return true;
+  }
+
   function spawnProjectile(itemKey, x, y, angle, team, owner, ammoPayload = null, pitch = 0, shotOptions = null) {
     const def = defFor(itemKey);
     if (!def) return null;
@@ -702,7 +812,8 @@
     mesh.position.set(spawnX / deps.TILE, worldY, spawnY / deps.TILE);
     scene.add(mesh);
 
-    const projectileSpeedPxS = def.speedPxS * PROJECTILE_SPEED_MULTIPLIER; // Used for both horizontal and vertical velocity so angled shots keep the same trajectory at the faster overall speed.
+    const flightStats = projectileFlightStats(def); // Resolves every generic per-weapon flight/persistence stat exactly once at launch.
+    const projectileSpeedPxS = def.speedPxS * flightStats.speedMultiplier; // Per-weapon speed multiplier; legacy definitions still receive the shared 1.15 fallback.
     const horizSpeedPxS = projectileSpeedPxS * Math.cos(pitch); // Used by the X/Z velocity components below.
     const direction = new THREE.Vector3(
       Math.cos(angle) * Math.cos(pitch),
@@ -726,7 +837,18 @@
       x: spawnX, y: spawnY, prevX: spawnX, prevY: spawnY, worldY, prevWorldY: worldY,
       vx: Math.cos(angle) * horizSpeedPxS, vy: Math.sin(angle) * horizSpeedPxS,
       vyWorld: Math.sin(pitch) * (projectileSpeedPxS / deps.TILE),
-      projectileSpeedPxS, // Used by the mobile debug snapshot to confirm the applied global speed bump.
+      projectileSpeedPxS,
+      projectileSpeedMultiplier: flightStats.speedMultiplier,
+      dropStartPx: Number.isFinite(flightStats.dropStartTiles) ? flightStats.dropStartTiles * deps.TILE : Infinity,
+      projectileDropStartTiles: flightStats.dropStartTiles,
+      projectileGravityWorldS2: flightStats.gravityWorldS2,
+      embedOnTerrain: flightStats.embedOnTerrain,
+      projectilePersistS: flightStats.persistS,
+      projectileMaxEmbedded: flightStats.maxEmbedded,
+      projectileFadeS: flightStats.fadeS,
+      launchDirection: direction.clone(),
+      launchSerial: ++projectileSerial,
+      embedded: false, embeddedAgeS: 0, fading: false, fadeElapsedS: 0, fadeDurationS: 0, fadeReason: null, impactKind: null,
       angle, pitch, distancePx: 0,
       effectiveRangePx: def.rangeTiles * deps.TILE,
       maxDistancePx: def.rangeTiles * deps.TILE * RANGE_FALLOFF_DISTANCE_MULTIPLIER,
@@ -746,6 +868,7 @@
       trailMeshes: createProjectileTrails(scene, trailColors, def.projectileRadiusPx),
     };
     projectiles.push(p);
+    if (p.embedOnTerrain) enforceEmbeddedProjectileCap(p, true); // "More than three fired": reserve a visual slot at launch, fading the oldest embedded copy immediately when needed.
     return p;
   }
 
@@ -1106,15 +1229,15 @@
       const nearest = nearestHostileHit(start, end, projectileRadius, p.areaId);
       if (coverHit && (!nearest || coverHit.t <= nearest.interval.enter)) {
         playProjectileImpactSfx(p, coverHit.t);
-        return true;
+        return { kind: 'cover', t: coverHit.t, coverHit };
       }
-      if (!nearest) return false;
+      if (!nearest) return null;
       const c = nearest.creature;
       playProjectileImpactSfx(p, nearest.interval.enter);
       deps.damageCreature(c, damage, p.prevX, p.prevY, knockbackPxS, { tag: 'sharp', ranged: true, afflictionBonuses: p.afflictionBonuses, footingDamageMultiplier: p.footingDamageMultiplier });
       applySpecialAmmoDebuff(c, p.specialAmmoId);
       deps.awardRangedMastery?.(p.itemKey);
-      return true;
+      return { kind: 'actor', t: nearest.interval.enter, actor: c };
     }
 
     const playerInterval = segmentHitboxInterval(start, end, actorHitbox(deps.player), projectileRadius);
@@ -1125,20 +1248,20 @@
     }
     if (coverHit && (!nearest || coverHit.t <= nearest.interval.enter)) {
       playProjectileImpactSfx(p, coverHit.t);
-      return true;
+      return { kind: 'cover', t: coverHit.t, coverHit };
     }
-    if (!nearest) return false;
+    if (!nearest) return null;
     playProjectileImpactSfx(p, nearest.interval.enter);
     if (nearest.kind === 'hostile') {
       friendlyFireHits++;
       deps.damageCreature(nearest.actor, damage, p.prevX, p.prevY, knockbackPxS, { tag: 'sharp', ranged: true, friendlyFire: true, afflictionBonuses: p.afflictionBonuses, footingDamageMultiplier: p.footingDamageMultiplier });
       applySpecialAmmoDebuff(nearest.actor, p.specialAmmoId);
       lastEvent = `friendly-fire:${p.owner?.id || 'enemy'}->${nearest.actor.id || nearest.actor.name || 'hostile'}`;
-      return true;
+      return { kind: 'actor', t: nearest.interval.enter, actor: nearest.actor };
     }
     deps.damagePlayer(damage, p.prevX, p.prevY, knockbackPxS, { tag: 'sharp', ranged: true, afflictionBonuses: p.afflictionBonuses, footingDamageMultiplier: p.footingDamageMultiplier });
     applySpecialAmmoDebuff(deps.player, p.specialAmmoId);
-    return true;
+    return { kind: 'actor', t: nearest.interval.enter, actor: deps.player };
   }
 
   // Projectile trajectory/orientation is frozen in its launch frame. Camera
@@ -1151,6 +1274,14 @@
   // arrows/projectiles retain the small camera-readability twist below.
   function updateProjectileVisual(p, dt) {
     p.visual.quaternion.copy(p.baseVisualQuaternion);
+    if (p.projectileGravityWorldS2 > 0 && p.launchDirection?.isVector3) {
+      _projectileCurrentFlightDir.set(p.vx / deps.TILE, p.vyWorld, p.vy / deps.TILE);
+      if (_projectileCurrentFlightDir.lengthSq() > AIM_EPSILON) {
+        _projectileCurrentFlightDir.normalize();
+        _projectileTrajectoryDeltaQuaternion.setFromUnitVectors(p.launchDirection, _projectileCurrentFlightDir);
+        p.visual.quaternion.premultiply(_projectileTrajectoryDeltaQuaternion); // Bend the sampled held transform along the ballistic arc while preserving its authored relative roll/facing.
+      }
+    }
     if (p.spinRateRad) {
       p.spinRad = (p.spinRad + p.spinRateRad * dt) % (Math.PI * 2);
       p.facePivot.rotation.y = 0;
@@ -1181,6 +1312,7 @@
   }
 
   function disposeProjectile(p) {
+    if (!p || p.dead) return;
     p.dead = true;
     p.mesh.parent?.remove(p.mesh);
     p.mesh.traverse(child => {
@@ -1188,29 +1320,66 @@
       child.material?.map?.dispose?.();
       child.material?.dispose?.();
     });
-    for (const lane of p.trailMeshes || []) {
-      lane.mesh.parent?.remove(lane.mesh);
-      lane.mesh.geometry?.dispose?.();
-      lane.mesh.material?.dispose?.();
-    }
+    disposeProjectileTrails(p);
   }
 
   function updateProjectiles(dt) {
     for (const p of projectiles) {
       if (p.dead) continue;
       if (p.areaId !== deps.getCurrentArea()) { disposeProjectile(p); continue; }
+
+      if (p.embedded) {
+        p.embeddedAgeS += dt;
+        const normalFadeDurationS = Math.min(p.projectileFadeS, p.projectilePersistS);
+        if (!p.fading && p.embeddedAgeS >= Math.max(0, p.projectilePersistS - normalFadeDurationS)) {
+          startProjectileFade(p, 'lifetime', normalFadeDurationS);
+        }
+        if (p.fading) {
+          p.fadeElapsedS += dt;
+          setProjectileVisualOpacity(p, 1 - p.fadeElapsedS / Math.max(0.05, p.fadeDurationS));
+          if (p.fadeElapsedS >= p.fadeDurationS) disposeProjectile(p);
+        }
+        continue;
+      }
+
       p.prevX = p.x; p.prevY = p.y; p.prevWorldY = p.worldY;
       const dx = p.vx * dt, dy = p.vy * dt;
-      p.x += dx; p.y += dy; p.worldY += p.vyWorld * dt; p.distancePx += Math.hypot(dx, dy);
+      const horizontalStepPx = Math.hypot(dx, dy);
+      const priorDistancePx = p.distancePx;
+      p.x += dx;
+      p.y += dy;
+      p.distancePx += horizontalStepPx;
+
+      let gravityDt = 0;
+      if (p.projectileGravityWorldS2 > 0 && p.distancePx > p.dropStartPx && horizontalStepPx > AIM_EPSILON) {
+        const postDropPx = Math.max(0, p.distancePx - Math.max(priorDistancePx, p.dropStartPx));
+        gravityDt = dt * Math.max(0, Math.min(1, postDropPx / horizontalStepPx));
+      }
+      p.worldY += p.vyWorld * dt - 0.5 * p.projectileGravityWorldS2 * gravityDt * gravityDt;
+      if (gravityDt > 0) p.vyWorld -= p.projectileGravityWorldS2 * gravityDt;
+
+      p.mesh.position.set(p.x / deps.TILE, p.worldY, p.y / deps.TILE);
+      updateProjectileVisual(p, dt);
+
+      const blockedAtTerrain = !deps.canOccupyAt(p.x, p.y, p.def.projectileRadiusPx);
       const groundedAtGround = p.worldY <= deps.worldSurfaceY(p.x, p.y) + 0.08;
-      if (!deps.canOccupyAt(p.x, p.y, p.def.projectileRadiusPx) || groundedAtGround || projectileHit(p) || p.distancePx >= p.maxDistancePx) {
+      const hit = projectileHit(p);
+      if (hit?.kind === 'actor') {
         disposeProjectile(p);
         continue;
       }
-      p.mesh.position.x = p.x / deps.TILE;
-      p.mesh.position.z = p.y / deps.TILE;
-      p.mesh.position.y = p.worldY;
-      updateProjectileVisual(p, dt);
+      const terrainImpact = hit?.kind === 'cover'
+        ? hit
+        : (!hit ? terrainImpactForStep(p, blockedAtTerrain, groundedAtGround) : null);
+      if (terrainImpact) {
+        if (hit?.kind !== 'cover') playProjectileImpactSfx(p, terrainImpact.t);
+        if (!embedProjectile(p, terrainImpact)) disposeProjectile(p);
+        continue;
+      }
+      if (p.distancePx >= p.maxDistancePx) {
+        disposeProjectile(p);
+        continue;
+      }
       updateProjectileTrails(p);
     }
     for (let i = projectiles.length - 1; i >= 0; i--) if (projectiles[i].dead) projectiles.splice(i, 1);
@@ -1510,7 +1679,7 @@
     get config() { return CONFIG; },
   };
   window.__rangedDebug = {
-    get projectiles() { return projectiles.map(p => ({ itemKey: p.itemKey, team: p.team, ammoId: p.ammoId, x: p.x, y: p.y, vx: p.vx, vy: p.vy, distancePx: p.distancePx, projectileSpeedPxS: p.projectileSpeedPxS, launchTransformMode: p.launchTransformMode, facingSource: p.launchTransformMode === 'held-strike-plane' ? 'sampled-held-plane' : (p.def?.toolEndFlip === true ? 'config-flip-fallback' : 'flight-frame'), spinAxis: p.spinRateRad ? 'png-local-z' : null, trailAfflictionIds: [...p.trailAfflictionIds] })); },
+    get projectiles() { return projectiles.map(p => ({ itemKey: p.itemKey, team: p.team, ammoId: p.ammoId, x: p.x, y: p.y, vx: p.vx, vy: p.vy, worldY: p.worldY, vyWorld: p.vyWorld, distancePx: p.distancePx, projectileSpeedPxS: p.projectileSpeedPxS, projectileSpeedMultiplier: p.projectileSpeedMultiplier, projectileDropStartTiles: p.projectileDropStartTiles, projectileGravityWorldS2: p.projectileGravityWorldS2, embedded: p.embedded, embeddedAgeS: p.embeddedAgeS, impactKind: p.impactKind, fading: p.fading, fadeReason: p.fadeReason, launchTransformMode: p.launchTransformMode, facingSource: p.launchTransformMode === 'held-strike-plane' ? 'sampled-held-plane' : (p.def?.toolEndFlip === true ? 'config-flip-fallback' : 'flight-frame'), spinAxis: p.spinRateRad ? 'png-local-z' : null, trailAfflictionIds: [...p.trailAfflictionIds] })); },
     get playerAction() { return playerAction ? { ...playerAction, def: undefined } : null; },
     get lastEvent() { return lastEvent; },
     get lastAudioEvent() { return lastAudioEvent; },
@@ -1545,11 +1714,13 @@
     idlePose: itemKey => ({ ...idlePose(itemKey) }),
     snapshot: () => ({
       latestChange: 'Enemy bodies now block allied shots and take friendly-fire damage; loaded ranged AI strafes for LOS before firing. Actor hitboxes/projectile perps are shared within the frame and HUD LOS is throttled to 20 Hz.',
-      lastEvent, lastAudioEvent, projectileDeadzoneDeg: PROJECTILE_PERP_DEAD_DEG, projectileSpeedMultiplier: PROJECTILE_SPEED_MULTIPLIER,
+      lastEvent, lastAudioEvent, projectileDeadzoneDeg: PROJECTILE_PERP_DEAD_DEG, defaultProjectileSpeedMultiplier: DEFAULT_PROJECTILE_SPEED_MULTIPLIER,
       equippedRanged: deps?.getEquippedRangedKey?.() || null,
       activeAmmo: activeAmmoId(), specialAmmo: specialAmmoCount(), specialAmmoMax: SPECIAL_AMMO_MAX,
       playerDebuffs: { ...(deps?.player?._rangedAmmoDebuffs || {}) },
       activeProjectiles: projectiles.length,
+      embeddedProjectiles: projectiles.filter(p => p.embedded && !p.dead).length,
+      fadingEmbeddedProjectiles: projectiles.filter(p => p.embedded && p.fading && !p.dead).length,
       activeTrailMeshes: projectiles.reduce((sum, p) => sum + (p.trailMeshes?.length || 0), 0),
       friendlyFireHits, losRepositions, wouldHitCacheHits,
       loaded: Object.fromEntries(playerLoaded),
