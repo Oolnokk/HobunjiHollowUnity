@@ -80,7 +80,7 @@ assert.match(animalAppearance, /data-animal-pattern-status/, 'Character Studio s
 assert.match(animalAppearance, /Preview failed:/, 'Character Studio surfaces the compositor failure reason rather than leaving a plain animal ambiguous');
 assert.match(animalAppearance, /genotypeDraft\.colorPoolPaint/, 'NPC authoring persists the same genotype paint field used by Color Pools');
 assert.match(animalAppearance, /pattern: \{ repoPatternId \}/, 'NPC records store a small committed repo reference instead of motif bytes');
-assert.match(animalAppearance, /CreatureGeneticsRender\.composeFrame\(kind, 'idle', genotype, false\)/, 'Character Studio preview prefers the exact runtime creature compositor');
+assert.match(animalAppearance, /renderer\.composeFrame\(kind, 'idle', genotype, false\)/, 'Character Studio preview uses the exact runtime creature compositor resolved by waitForCanonicalCreatureRenderer');
 assert.match(repoPicker, /repo-pattern-library\.js/, 'Character Studio dynamically loads the repo pattern library');
 assert.match(repoPicker, /clothing-weaving-system\.js/, 'Character Studio dynamically loads the shared pattern compositor');
 assert.match(repoPicker, /creature-genetics-render\.js/, 'Character Studio dynamically loads the canonical creature renderer');
