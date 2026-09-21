@@ -318,7 +318,8 @@
   function setLoaded(itemKey, loaded, owner = null) {
     if (owner) owner._rangedLoaded = !!loaded;
     else playerLoaded.set(itemKey, !!loaded);
-    deps?.setRangedLoadedVisual?.(itemKey, !!loaded, owner);
+    const isHeldPlayerItem = !owner && deps?.getEquippedRangedKey?.() === itemKey; // Used to keep per-item loaded-state updates from repainting another equipped ranged weapon.
+    if (owner || isHeldPlayerItem) deps?.setRangedLoadedVisual?.(itemKey, !!loaded, owner);
     if (!owner) deps?.refreshActionBar?.();
     lastEvent = `${owner ? owner.id : 'player'}:${itemKey}:${loaded ? 'loaded' : 'empty'}`;
   }
@@ -1710,6 +1711,7 @@
     get playerAction() { return playerAction ? { ...playerAction, def: undefined } : null; },
     get lastEvent() { return lastEvent; },
     get lastAudioEvent() { return lastAudioEvent; },
+    get heldVisualState() { return deps?.getHeldRangedVisualState?.() || null; },
     get aimPitchDeg() { return THREE.MathUtils.radToDeg(playerAimSolution()?.pitch ?? deps?.getPlayerAimPitch?.() ?? 0); },
     get aimSolution() {
       const aim = playerAimSolution();

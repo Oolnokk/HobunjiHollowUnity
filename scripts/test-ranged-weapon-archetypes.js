@@ -144,6 +144,63 @@ const gameSource = fs.readFileSync(path.resolve(__dirname, '../docs/game.js'), '
 const scratchbonesConfigSource = fs.readFileSync(path.resolve(__dirname, '../docs/config/scratchbones-config.js'), 'utf8'); // Pins the exact fixed thrown-release recording.
 const attackEditorSource = fs.readFileSync(path.resolve(__dirname, '../docs/tools/attack-animation-editor/index.html'), 'utf8'); // Pins the pick-mining end-flip authoring control/export contract.
 const gameIndexSource = fs.readFileSync(path.resolve(__dirname, '../docs/index.html'), 'utf8'); // Pins the game entry-point cache key that must refresh the held-action bootstrap after throw-pivot changes.
+
+function extractNamedFunction(source, name) {
+  const start = source.indexOf(`function ${name}(`);
+  assert.ok(start >= 0, `Expected ${name} in runtime source.`);
+  const braceStart = source.indexOf('{', start);
+  let depth = 0;
+  for (let i = braceStart; i < source.length; i++) {
+    if (source[i] === '{') depth++;
+    else if (source[i] === '}') {
+      depth--;
+      if (depth === 0) return source.slice(start, i + 1);
+    }
+  }
+  throw new Error(`Unclosed function ${name}`);
+}
+
+const loadedVisualEvents = []; // Captures real setLoaded visual dispatch so off-slot weapon state cannot repaint the equipped Dagger.
+const loadedStateMap = new Map(); // Mirrors RangedWeapons' per-item loaded map for the isolated setLoaded regression harness.
+const setLoadedUnderTest = vm.runInNewContext(
+  `(function(deps, playerLoaded) { let lastEvent = null; ${extractNamedFunction(rangedWeaponsSource, 'setLoaded')} return setLoaded; })`,
+  {},
+)({
+  getEquippedRangedKey: () => 'dagger_copper',
+  setRangedLoadedVisual: (itemKey, value, owner) => loadedVisualEvents.push({ itemKey, value, owner }),
+  refreshActionBar: () => {},
+}, loadedStateMap);
+setLoadedUnderTest('kylie_copper', false);
+assert.strictEqual(loadedStateMap.get('kylie_copper'), false, 'off-slot Kylie loaded state must still be recorded per item.');
+assert.strictEqual(loadedVisualEvents.length, 0, 'off-slot Kylie loaded state must not request a visual refresh on the equipped Dagger.');
+setLoadedUnderTest('dagger_copper', false);
+assert.deepStrictEqual(loadedVisualEvents.map(event => event.itemKey), ['dagger_copper'], 'only the actually equipped Dagger may refresh the player ranged mesh.');
+
+const heldPlane = { material: { map: 'daggerTexture', needsUpdate: false } }; // Synthetic live Dagger plane used to test the game-side item-identity guard.
+const heldDaggerMesh = { userData: { itemKey: 'dagger_copper', toolPlane: heldPlane } }; // Synthetic tool mesh mirrors makeToolPlaneMesh's runtime identity metadata.
+const heldVisualHarness = vm.runInNewContext(
+  `(function(state) {
+    const equipmentSlots = state.equipmentSlots;
+    const toolMeshMap = state.toolMeshMap;
+    const loadedToolTextures = state.loadedToolTextures;
+    const toolTextures = state.toolTextures;
+    ${extractNamedFunction(gameSource, 'setToolMeshLoadedState')}
+    ${extractNamedFunction(gameSource, 'setRangedLoadedVisual')}
+    return { setRangedLoadedVisual };
+  })`,
+  {},
+)({
+  equipmentSlots: { ranged: 'dagger_copper' },
+  toolMeshMap: { ranged: heldDaggerMesh },
+  loadedToolTextures: {},
+  toolTextures: { dagger_copper: 'daggerTexture', kylie_copper: 'kylieTexture' },
+});
+assert.strictEqual(heldVisualHarness.setRangedLoadedVisual('kylie_copper', false), false, 'game-side visual bridge must reject an unequipped Kylie update.');
+assert.strictEqual(heldPlane.material.map, 'daggerTexture', 'rejected Kylie update must leave the Dagger texture untouched.');
+assert.strictEqual(heldVisualHarness.setRangedLoadedVisual('dagger_copper', false), true, 'matching Dagger loaded-state update must still apply normally.');
+assert.strictEqual(heldDaggerMesh.userData.appliedTextureItemKey, 'dagger_copper', 'held mesh debug identity must record the item whose texture was actually applied.');
+assert.match(gameSource, /g\.userData\.itemKey = itemKey/, 'held tool meshes must retain their literal item identity for stale-update rejection and mobile diagnostics.');
+assert.match(rangedWeaponsSource, /get heldVisualState\(\) \{ return deps\?\.getHeldRangedVisualState\?\.\(\) \|\| null; \}/, 'ranged debug snapshot must expose equipped\/mesh\/applied texture identity without requiring devtools.');
 assert.match(gameSource, /function getWeaponSwingWindupPoseProgress\(\)/, 'game runtime must expose visible linear held-windup progress.');
 assert.match(gameSource, /function partialCombatPoseAtCharge\(pose, poseProgress\)/, 'game runtime must support releasing from the currently visible partial pose.');
 assert.match(gameSource, /getHeldRangedTexture:[\s\S]*material\?\.map/, 'ranged projectile appearance must source the exact held tool texture.');
