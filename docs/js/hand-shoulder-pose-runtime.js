@@ -267,13 +267,7 @@
     // before RangedWeapons creates the release playerAction.
     if (global.HobunjiRangedWeaponArchetypes?.activeThrownChargeItemKey?.()) return true;
 
-    const action = global.__rangedDebug?.playerAction || null;
-    if (action?.kind !== 'fire' || !action?.itemKey || !(Number(action.durationS) > 0)) return false;
-    const def = global.RangedWeapons?.config?.[action.itemKey] || null;
-    if (!def) return false;
-    const progress = clamp01(Number(action.t) / Number(action.durationS));
-    const strikeBoundary = clamp01(def.fireAtFrac ?? def.fireStrikeFrac ?? 0.18); // Windup+Strike are authored; Hold/Return resume ordinary proximal targeting.
-    return progress <= strikeBoundary;
+    return global.RangedWeapons?.isPlayerThrownFireThroughStrike?.() === true;
   }
 
   function currentWeights(side) {
