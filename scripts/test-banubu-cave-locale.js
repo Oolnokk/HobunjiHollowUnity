@@ -2,11 +2,24 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const locale = require('../docs/config/locales/locale_banubu_shrine.json');
+const hikiHikiLocale = require('../docs/config/locales/locale_hikihiki_shrine.json'); // Used to lock Hiki-hiki to the Southern Cloud Forest.
+const rahayobiLocale = require('../docs/config/locales/locale_mother_rahayobi_shrine.json'); // Used to lock Mother Rahayobi to the Eastern Mire.
+const nohuknukLocale = require('../docs/config/locales/locale_old_man_nohuknuk_shrine.json'); // Used to lock Old Man Nohuknuk to the Western Slope.
 const index = require('../docs/config/locales/index.json');
 const terrainPlacement = require('../docs/js/locale-terrain-placement.js');
 
 assert.strictEqual(locale.name, "Banubu's Cave", 'Banubu landmark must use the cave name in-game');
 assert.deepStrictEqual(locale.placement?.allowedZones, ['map_northern_cliffs'], 'Banubu Cave must be Northern Cliffs only');
+assert.strictEqual(locale.placement?.alwaysVisibleOnMap, true, 'Banubu Cave must always expose its map waypoint once the zone is generated');
+assert.deepStrictEqual(locale.placement?.terrainFallback, {
+  mode: 'subset',
+  terrainAnchors: ['4,0', '4,2', '4,3'],
+  embeddedTiles: ['4,3'],
+  notes: 'If the full-width cliff fit has no valid site, keep the cave on a north-facing internal plateau cliff using the center approach/mouth/backing probes and center embedded cell.',
+}, 'Banubu Cave must keep its authored center-cliff fallback so a strict no-match does not remove the cave/waypoint from a Tothal layout');
+assert.deepStrictEqual(hikiHikiLocale.placement?.allowedZones, ['map_southern_cloud_forest'], 'Hiki-hiki shrine must be Southern Cloud Forest only');
+assert.deepStrictEqual(rahayobiLocale.placement?.allowedZones, ['map_eastern_mire'], 'Mother Rahayobi shrine must be Eastern Mire only');
+assert.deepStrictEqual(nohuknukLocale.placement?.allowedZones, ['map_western_slope'], 'Old Man Nohuknuk shrine must be Western Slope only');
 assert.strictEqual(locale.placement?.clearanceTiles, 0, 'Banubu default keeps zero clearance');
 assert.strictEqual(locale.placement?.requiresFlatGround, true, 'Banubu approach/floor stays flat');
 assert.strictEqual(locale.placement?.floorMode, 'nextLowerCliffTier', 'Banubu floor must follow the low side of its chosen cliff');
