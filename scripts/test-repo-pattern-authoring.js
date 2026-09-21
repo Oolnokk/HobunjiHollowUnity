@@ -74,8 +74,8 @@ assert.match(animalAppearance, /animalNpcRepoPattern/, 'each visible genetic reg
 assert.match(animalAppearance, /animalNpcRepoPatternInk/, 'each selected repo pattern gets an independent ink-color control');
 assert.match(animalAppearance, /animalNpcRepoPatternScale/, 'each selected animal repo pattern exposes a normalized per-region scale slider');
 assert.match(animalAppearance, /type="range" min="7" max="14" step="0\.1"/, 'animal pattern scale editor exposes the 7×–14× purpose-specific range');
-assert.match(animalAppearance, /animalNpcRepoPatternScaleNumber/, 'animal pattern scale also has a precise numeric 1.00-based editor');
-assert.match(animalAppearance, /1\.00× = this repo pattern's authored scale/, 'Character Studio explains the normalized animal-scale reference');
+assert.match(animalAppearance, /animalNpcRepoPatternScaleNumber/, 'animal pattern scale also has a precise numeric editor for the 7×–14× animal-use range');
+assert.match(animalAppearance, /Animal-use scale only: 7× minimum\/default, up to 14×/, 'Character Studio explains the purpose-specific animal scale range and default');
 assert.match(animalAppearance, /data-animal-pattern-status/, 'Character Studio shows whether each selected animal repo pattern actually rendered');
 assert.match(animalAppearance, /Preview failed:/, 'Character Studio surfaces the compositor failure reason rather than leaving a plain animal ambiguous');
 assert.match(animalAppearance, /genotypeDraft\.colorPoolPaint/, 'NPC authoring persists the same genotype paint field used by Color Pools');
