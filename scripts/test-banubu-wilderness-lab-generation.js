@@ -58,7 +58,8 @@ assert((diagnostic.tested || 0) > 0, 'real generation must actually scan candida
 assert.strictEqual(compiled.tiles.size, 36, 'the authored 3x3 Banubu footprint must expand to 36 final-grid cells at 2x density');
 assert.strictEqual(compiled.probes.size, 24, 'six directional cliff probes plus three 2x2 free-space probes must expand to 24 final-grid probes');
 assert.strictEqual(compiled.embedded.size, 12, 'the three rear embedded cells must expand to twelve final-grid cells at 2x density');
-assert(['placed', 'skipped'].includes(diagnostic.status), `unexpected Banubu diagnostic status: ${diagnostic.status}`);
+assert.strictEqual(diagnostic.status, 'placed', 'Banubu Cave must always find either its strict cliff fit or its authored center-cliff fallback');
+assert(instance, 'Banubu Cave must always register a localeInstance so its cave and map waypoint exist');
 
 const root = (workspace.maps || []).find(map => map && !map.isSubmap);
 assert(root, 'real Northern Cliffs generation must expose a root map');
