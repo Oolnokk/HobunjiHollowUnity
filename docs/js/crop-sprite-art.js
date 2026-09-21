@@ -8,11 +8,11 @@
 
   if (window.HobunjiCropSpriteArt) return;
 
-  const CROP_ART = Object.freeze({ // Used as the single crop-key -> authored PNG/world-render policy table.
-    needlegrain: Object.freeze({ spriteIcon: 'pile_needlegrain.png', worldMode: 'procedural' }),
-    heftroot: Object.freeze({ spriteIcon: 'heftroot.png', worldMode: 'procedural' }),
-    garlink: Object.freeze({ spriteIcon: 'garlink_bunch.png', worldMode: 'billboard' }),
-    ongyums: Object.freeze({ spriteIcon: 'ongyum.png', worldMode: 'billboard' }),
+  const CROP_ART = Object.freeze({ // Used as the single crop-key -> authored PNG/world-render/ingredient-color policy table.
+    needlegrain: Object.freeze({ spriteIcon: 'pile_needlegrain.png', worldMode: 'procedural', ingredientColor: 0x293827 }),
+    heftroot: Object.freeze({ spriteIcon: 'heftroot.png', worldMode: 'procedural', ingredientColor: 0xAAA07C }),
+    garlink: Object.freeze({ spriteIcon: 'garlink_bunch.png', worldMode: 'billboard', ingredientColor: 0xD1D1CB }),
+    ongyums: Object.freeze({ spriteIcon: 'ongyum.png', worldMode: 'billboard', ingredientColor: 0x627F20 }),
   });
   const WORLD_COLOR_TO_CROP = new Map([ // Used to identify generic crop cubes and tag every crop root for soil anchoring; only garlink/ongyums are converted to PNGs.
     [0xd8d0b0, 'garlink'], [0xf2ead0, 'garlink'], [0x8bbf6a, 'garlink'],
@@ -56,6 +56,7 @@
       if (def) {
         def.spriteIcon = art.spriteIcon;
         def.spriteMode = 'direct';
+        def.ingredientColor = art.ingredientColor; // Used by processed foods/drinks without tinting the crop's own source PNG.
         delete def.spriteColor;
         patchedDefs++;
       }
@@ -64,6 +65,7 @@
         if (entry) {
           entry.spriteIcon = art.spriteIcon;
           entry.spriteMode = 'direct';
+          entry.ingredientColor = art.ingredientColor; // Mirrors the canonical definition for processors reading the selectable entry.
           delete entry.spriteColor;
           patchedEntries++;
         }
