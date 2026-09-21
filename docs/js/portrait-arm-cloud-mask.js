@@ -8,7 +8,7 @@
   'use strict';
 
   const previewApi = global.NpcAvatarPreview;
-  const MASK_Y_SCALE_MULTIPLIER = 0.60; // Existing canonical full-portrait cloud scaling.
+  const MASK_Y_SCALE_MULTIPLIER = 0.50; // Canonical full-portrait cloud mask is half-height and bottom-anchored.
   const LOGICAL_W = 200;
   const LOGICAL_H = 200;
   const LAYER_SIZE = 80;
