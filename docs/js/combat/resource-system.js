@@ -24,6 +24,7 @@
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
   const round1 = value => Math.round(value * 10) / 10;
   const nowMs = () => performance.now();
+  const STAMINA_RECOVERY_MULTIPLIER = 1.25; // Used by every time-based Stamina recovery path: ordinary regen, Exhausted debt, and Stamina-affliction recovery.
 
   // Seedable RNG for gameplay-affecting rolls (affliction procs, creature AI
   // decisions, pack spawns, loot quantities, etc.) — everything that two
@@ -479,12 +480,12 @@
     const rest = getRestInfo(entity, cfg);
     const mul = rest.rested ? 2 : 1;
     const isPlayer = entity === window.Combat?.deps?.player; // Used to apply the consumer's central regeneration modifiers.
-    const staminaRate = (opts.staminaRegenPerSec ?? cfg.staminaRegenPerSec) * (isPlayer ? window.AlchemySystem?.getStaminaRegenMultiplier?.() || 1 : 1);
+    const staminaRate = (opts.staminaRegenPerSec ?? cfg.staminaRegenPerSec) * STAMINA_RECOVERY_MULTIPLIER * (isPlayer ? window.AlchemySystem?.getStaminaRegenMultiplier?.() || 1 : 1);
     const healthRate = (opts.healthRegenPerSec ?? cfg.healthRegenPerSec) * (isPlayer ? window.AlchemySystem?.getHealthRegenMultiplier?.() || 1 : 1);
 
     if (entity.exhaustion.active) {
       entity.stamina = 0; // Black Stamina recovery owns the stamina channel until the debt is completely cleared.
-      entity.exhaustion.blackStamina = round1(clamp(entity.exhaustion.blackStamina + cfg.exhaustionRegenPerSec * mul * dt, 0, 100));
+      entity.exhaustion.blackStamina = round1(clamp(entity.exhaustion.blackStamina + cfg.exhaustionRegenPerSec * STAMINA_RECOVERY_MULTIPLIER * mul * dt, 0, 100));
       clearExhaustedIfFull(entity);
     } else {
       entity.stamina = round1(clamp(entity.stamina + staminaRate * mul * dt, 0, getEffectiveMax(entity, "stamina")));
@@ -546,8 +547,12 @@
   }
 
   function resolveGenericRecovery(entity, dt, rest, cfg) {
-    const amount = cfg.afflictionRecoveryPerSec * (rest.rested ? 2 : 1) * dt;
-    for (const id of RECOVERING_AFFLICTIONS) if (getAffliction(entity, id) > 0) removeAffliction(entity, id, amount);
+    const restMultiplier = rest.rested ? 2 : 1; // Used for the existing quiet/rested recovery bonus before resource-specific scaling.
+    for (const id of RECOVERING_AFFLICTIONS) {
+      if (getAffliction(entity, id) <= 0) continue;
+      const staminaMultiplier = AFFLICTIONS[id]?.resource === "stamina" ? STAMINA_RECOVERY_MULTIPLIER : 1; // Keeps Health-affliction recovery unchanged while boosting every Stamina-affliction recovery rate.
+      removeAffliction(entity, id, cfg.afflictionRecoveryPerSec * restMultiplier * staminaMultiplier * dt);
+    }
   }
 
   function maybeTriggerPuke(entity, dt, cfg) {
