@@ -99,6 +99,15 @@
     "line": 288
   },
   {
+    "file": "docs/js/attack-editor-hand-shoulder-controls.js",
+    "owner": "HobunjiAttackEditorHandShoulderControls",
+    "classification": "isolated-context",
+    "function": "statusFrame",
+    "reason": "Permanent status/readout RAF loop confined to the standalone Attack Animation Editor. It keeps interpolated hand shoulder-follow weights visible while scrubbing/playback changes; it is never loaded by the main gameplay page's RuntimeFrameScheduler surface.",
+    "migrationStage": "not-planned",
+    "line": 364
+  },
+  {
     "file": "docs/js/attack-editor-idle-hand-parity.js",
     "owner": "HobunjiAttackEditorIdleHandParity",
     "classification": "one-shot",
