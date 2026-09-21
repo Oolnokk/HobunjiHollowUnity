@@ -87,7 +87,7 @@ assert.match(repoPicker, /creature-genetics-render\.js/, 'Character Studio dynam
 assert.match(gameIndex, /js\/repo-pattern-library\.js/, 'normal game runtime loads committed repo patterns before animal rendering');
 assert.match(gameIndex, /js\/pattern-library-dev-export\.js/, 'normal game runtime loads the dev-only character pattern exporter');
 assert.match(devExporter, /PatternLibrary\?\.listSaved\?\.\(\)/, 'Settings exporter lists only the active character\'s saved patterns, not unlocked catalog motifs');
-assert.match(devExporter, /id = 'patternLibraryDevExportRow'/, 'Settings exporter owns a compact dedicated row');
+assert.match(devExporter, /const ROW_ID = 'patternLibraryDevExportRow'/, 'Settings exporter owns a compact dedicated row with a stable DOM id');
 assert.match(devExporter, /settingDevMode/, 'Settings exporter is gated by the existing authoritative Dev Mode toggle');
 assert.match(devExporter, /data-pattern-export="png"/, 'Settings exporter offers direct motif PNG export');
 assert.match(devExporter, /data-pattern-export="json"/, 'Settings exporter offers repo-ready pattern JSON export');
