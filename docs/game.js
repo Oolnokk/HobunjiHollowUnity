@@ -11399,22 +11399,24 @@
             if (!Number.isFinite(rawRot)) return;
             this.desiredRot = rawRot;
             if (this.animalDef && this.animalAvatarRef) {
-              this.rot += angleDiff(rawRot, this.rot) * Math.min(1, Math.max(0.01, lerp * 6.67)); // Animal root follows its true movement heading; the camera-relative deadzone belongs on the two sprite cards, matching updateCreatureMesh.
+              const animalDt = Number.isFinite(this._lastUpdateDt) ? this._lastUpdateDt : 1 / 60; // Native creature facing uses frame-time smoothing rather than the humanoid NPC lerp parameter.
+              const animalTurnLerp = Math.min(1, animalDt * 10);
+              this.rot += angleDiff(rawRot, this.rot) * animalTurnLerp; // Animal root follows its true movement heading; the camera-relative deadzone belongs on the two sprite cards, matching updateCreatureMesh.
               root.rotation.y = this.rot;
               this.animalPngRot ??= this.rot;
               if (window.PerpRotation.CREATURE_PLANE_ROT_MODE === 'snap') {
                 const moving = this._moveSpeedTiles > 0.05;
-                const solved = window.PerpRotation.creatureSnapSwayTarget(this.perpState, rawRot, cameraRelativeCreaturePerps(), window.PerpRotation.CREATURE_PERP_DEAD_RAD, 1 / 60, moving);
+                const solved = window.PerpRotation.creatureSnapSwayTarget(this.perpState, rawRot, cameraRelativeCreaturePerps(), window.PerpRotation.CREATURE_PERP_DEAD_RAD, animalDt, moving);
                 if (solved.snap) this.animalPngRot = solved.target;
-                else this.animalPngRot += angleDiff(solved.target, this.animalPngRot) * Math.min(1, Math.max(0.01, lerp * 6.67));
+                else this.animalPngRot += angleDiff(solved.target, this.animalPngRot) * animalTurnLerp;
               } else if (window.PerpRotation.CREATURE_PLANE_ROT_MODE === 'sway') {
                 const moving = this._moveSpeedTiles > 0.05;
-                const target = window.PerpRotation.creatureDeadzoneTarget(this.perpState, rawRot, cameraRelativeCreaturePerps(), window.PerpRotation.CREATURE_PERP_DEAD_RAD, 1 / 60, moving);
-                this.animalPngRot += angleDiff(target, this.animalPngRot) * Math.min(1, Math.max(0.01, lerp * 6.67));
+                const target = window.PerpRotation.creatureDeadzoneTarget(this.perpState, rawRot, cameraRelativeCreaturePerps(), window.PerpRotation.CREATURE_PERP_DEAD_RAD, animalDt, moving);
+                this.animalPngRot += angleDiff(target, this.animalPngRot) * animalTurnLerp;
               } else {
                 const solved = window.PerpRotation.perpClamp(this.perpState, rawRot, cameraRelativeCreaturePerps(), window.PerpRotation.CREATURE_PERP_DEAD_RAD);
                 if (solved.snapTo !== null) this.animalPngRot = solved.effectiveTarget;
-                else this.animalPngRot += angleDiff(solved.effectiveTarget, this.animalPngRot) * Math.min(1, Math.max(0.01, lerp * 6.67));
+                else this.animalPngRot += angleDiff(solved.effectiveTarget, this.animalPngRot) * animalTurnLerp;
               }
               const planeDelta = this.animalPngRot - this.rot;
               if (this.animalAvatarRef.frontPlane) this.animalAvatarRef.frontPlane.rotation.y = planeDelta + Math.PI / 2;
@@ -11602,6 +11604,7 @@
             return false;
           },
           update(dt) {
+            this._lastUpdateDt = dt; // Animal-facing deadzone/smoothing consumes the same real dt as updateCreatureMesh.
             // Drives procedural legs (and the move-bob below) from last
             // frame's actual position delta rather than hooking every
             // movement branch below individually — always runs regardless of
