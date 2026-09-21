@@ -130,6 +130,23 @@ assert.equal(api.standardWeightFor({ slot: 'torso', cosmeticId: 'tankan_tunic' }
 assert.equal(api.standardWeightFor({ slot: 'overwear', cosmeticId: 'rugged_poncho' }), 4);
 assert.equal(api.itemWeightUnits({ slot: 'torso', cosmeticId: 'tankan_tunic' }), 3, 'legacy/current clothing gets standard middle weight automatically');
 assert.equal(api.itemWeightUnits({ slot: 'torso', cosmeticId: 'tankan_tunic#loom:x', baseCosmeticId: 'tankan_tunic', weightUnits: 1.8 }), 1.8, 'crafted instance keeps explicit weight');
+assert.equal(api.reweaveMaterialCost({ slot: 'hat' }), 1, 'half-cost reweaving keeps the minimum indivisible wool cost at one');
+assert.equal(api.reweaveMaterialCost({ slot: 'hood' }), 1, 'hood reweaving costs half of two wool');
+assert.equal(api.reweaveMaterialCost({ slot: 'torso' }), 2, 'odd torso half-cost rounds up to an integer wool stack');
+assert.equal(api.reweaveMaterialCost({ slot: 'overwear' }), 2, 'overwear reweaving costs half of four wool');
+const wovenKeyA = api.__test.wovenIconVisualKey({
+  cosmeticId: 'tankan_tunic',
+  colorA: { hex: '#aa0000' },
+  colorC: { hex: '#ffffff' },
+  weaving: { pattern: { meshScale: 1, motifDataUrl: 'data:image/png;base64,AA==' } },
+});
+const wovenKeyB = api.__test.wovenIconVisualKey({
+  cosmeticId: 'tankan_tunic',
+  colorA: { hex: '#aa0000' },
+  colorC: { hex: '#ffffff' },
+  weaving: { pattern: { meshScale: 2, motifDataUrl: 'data:image/png;base64,AA==' } },
+});
+assert.notEqual(wovenKeyA, wovenKeyB, 'inventory woven-icon cache key changes when the applied pattern changes');
 const ten = api.armorStats(10);
 assert(Math.abs(ten.damageTakenMul - 0.75) < 1e-12);
 assert(Math.abs(ten.footingTakenMul - 0.65) < 1e-12);
@@ -190,6 +207,7 @@ assert(!applied.equippedCosmetics.includes(lightTunic.cosmeticId), 'unique craft
 assert.equal(applied.appearance.bodyColors.TORSO_C.dyeId, 'starter-red', 'woven color uses the third torso dye slot');
 assert.equal(applied.appearance.bodyColors.__hobunjiWovenClothing[0].baseCosmeticId, 'tankan_tunic', 'pattern descriptor follows avatar render data only');
 assert(gear.knownClothingBlueprints.some(bp => bp.baseCosmeticId === 'tankan_tunic'), 'obtaining cloth permanently learns its loom blueprint');
+assert.equal(api.hasWovenPattern(lightTunic), true, 'woven item exposes its precomposited-icon status to EquipmentPanel');
 
 windowStub.ResourceSystem.applyDamage(player, 100, {});
 assert(Math.abs(damageSeen - 95.5) < 1e-9, '1.8 units reduce damage by 4.5%');
@@ -227,6 +245,8 @@ assert.equal(windowStub.Combat.getMovementSpeedMul(), 1, 'movement weight has no
 const source = fs.readFileSync('docs/js/clothing-weaving-system.js', 'utf8');
 const patternAuthorSource = fs.readFileSync('docs/js/pattern-authoring.js', 'utf8'); // Used below to lock the normalized shared Pattern scale authoring range.
 const metalPatternSource = fs.readFileSync('docs/js/tool-metal-recolor.js', 'utf8'); // Used below to prevent weaving-only scale normalization from shrinking existing verdigris patterns.
+const equipmentPanelSource = fs.readFileSync('docs/js/equipment-panel.js', 'utf8'); // Guards the inventory icon handoff so woven composites are not tinted a second time.
+const inventoryUiSource = fs.readFileSync('docs/js/inventory-ui.js', 'utf8'); // Guards the one-shot async Pack icon refresh path; no per-frame pattern compositing.
 assert.match(source, /PatternLibrary\.listAvailable/, 'loom reuses shared pattern library');
 assert.match(source, /PatternAuthoring\?\.openEditor/, 'loom reuses shared pattern authoring workflow');
 assert.match(source, /HOOD_C/);
@@ -234,6 +254,14 @@ assert.match(source, /TORSO_C/);
 assert.match(source, /CLOTH_C/);
 assert.match(source, /puktukWool/);
 assert.match(source, /lightWool/);
+assert.match(source, /wovenIconDataUrlPromises/, 'woven inventory icons use a visual-state cache instead of recompositing during UI refreshes');
+assert.match(source, /renderClothingLayers\(id, \{/, 'woven icon cache is populated by the same per-layer dye + pattern renderer as the loom preview');
+assert.match(source, /function reweaveFromLoom\(/, 'loom mutates a selected Gear garment through the dedicated reweave path');
+assert.match(source, /Math\.ceil\(fullCost \/ 2\)/, 'reweaving charges half the authored craft cost while keeping integer wool stacks');
+assert.match(source, /Reweave —/, 'loom operation selector exposes permanent Gear garments as reweave targets');
+assert.match(equipmentPanelSource, /compositeIncludesFinalDyes = !!window\.ClothingWeavingSystem\?\.hasWovenPattern\?\.\(item\)/, 'EquipmentPanel recognizes woven composites as already fully dyed');
+assert.match(equipmentPanelSource, /if \(!compositeIncludesFinalDyes\) tintClothingIcon/, 'woven icon pixels are not washed out by the legacy single-color tint pass');
+assert.match(inventoryUiSource, /attributeFilter:\['src'\]/, 'Pack inventory observes the async icon src completion once instead of polling or compositing every frame');
 assert.match(source, /Swap \$\{role \? layerLabel\(role\)\.toLowerCase\(\) : 'cloth'\} ↔ pattern colors/, 'loom exposes the per-layer color swap outside PatternAuthoring');
 assert.match(source, /swapPatternColors/, 'garment weaving save data carries the per-layer swap flag separately from the pattern definition');
 assert.match(patternAuthorSource, /const PATTERN_SCALE_MIN = 0\.4;/, 'shared Pattern scale authoring minimum is normalized from the former 0.10');

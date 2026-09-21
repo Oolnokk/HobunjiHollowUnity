@@ -185,7 +185,7 @@
       });
       if (meaningful) scheduleDecorate();
     });
-    inventoryObserver.observe(pane, { childList:true, subtree:true });
+    inventoryObserver.observe(pane, { childList:true, subtree:true, attributes:true, attributeFilter:['src'] }); // Async clothing composites finish by changing <img src>; observe only that attribute so Pack clones refresh once without polling/per-frame work.
     pane.addEventListener('click', scheduleDecorate, true);
   }
 

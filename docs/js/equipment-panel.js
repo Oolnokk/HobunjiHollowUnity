@@ -76,7 +76,7 @@
     inventoryUiLoadStarted = true;
     // Versioned source is loaded here so Pack presentation can be decoupled without editing game.js or index.html.
     const script = document.createElement('script');
-    script.src = 'js/inventory-ui.js?v=20260812c';
+    script.src = 'js/inventory-ui.js?v=20260921woven-icons1';
     script.async = false;
     script.onload = () => window.InventoryUI?.init?.(inventoryUiDeps());
     script.onerror = () => {
@@ -383,13 +383,14 @@
     const resolveIcon = window.ClothingWeavingSystem?.iconSpriteForCosmetic;
     if (typeof resolveIcon !== 'function' || !iconEl) return;
     const renderToken = Math.random().toString(36).slice(2, 8);
+    const compositeIncludesFinalDyes = !!window.ClothingWeavingSystem?.hasWovenPattern?.(item); // Woven icon sprites already contain per-layer dyes + motif pixels; running the legacy single-color tint afterward would erase the visible weave.
     iconEl.dataset.clothingIconToken = renderToken;
     resolveIcon(item, fallbackSprite).then(sprite => {
       if (!sprite || sprite === fallbackSprite) return;
       if (iconEl.dataset.clothingIconToken !== renderToken || !iconEl.isConnected) return;
       if (iconEl.tagName === 'IMG') {
         iconEl.src = sprite;
-        tintClothingIcon(iconEl, sprite, item);
+        if (!compositeIncludesFinalDyes) tintClothingIcon(iconEl, sprite, item);
         return;
       }
       // Was the emoji-fallback <span> — morph it into an <img>, carrying over
@@ -400,7 +401,7 @@
       img.alt = clothingArticleLabel(item);
       img.src = sprite;
       iconEl.replaceWith(img);
-      tintClothingIcon(img, sprite, item);
+      if (!compositeIncludesFinalDyes) tintClothingIcon(img, sprite, item);
     }).catch(() => { /* Keep whichever sprite/fallback already rendered. */ });
   }
 
