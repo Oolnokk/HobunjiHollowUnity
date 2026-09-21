@@ -184,6 +184,7 @@
       toolEndFlip: animation.toolEndFlip === true || END_FLIPPED_THROW_SHAPES.has(shapeKey),
       heldSpin: true,
       heldSpinBasisDeg: Number(animation.spinBasisDeg) || 0,
+      heldSpinRevolutions: Math.max(0, Number(animation.spinRevolutions) || 2.5),
       throwDurationS: Number(animation.durationS) || 1.04,
       throwWindupFrac: Number.isFinite(Number(animation.windupFrac)) ? Number(animation.windupFrac) : 0.49,
       throwStrikeFrac: Number.isFinite(Number(animation.strikeFrac)) ? Number(animation.strikeFrac) : 0.57,
