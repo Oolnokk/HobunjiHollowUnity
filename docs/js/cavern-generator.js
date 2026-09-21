@@ -295,6 +295,46 @@
       .filter(([col, row]) => Number.isFinite(col) && Number.isFinite(row));
   }
 
+  function sampleMeshSurfaceAt(mesh, worldX, worldZ) {
+    const positions = mesh?.positions; // Used to sample the same carved surface the player actually sees, instead of assuming the sculptor's reference floor is exactly Y=0.
+    const indices = mesh?.indices;
+    if (!positions?.length || !indices?.length) return 0;
+    let bestY = Infinity; // The lowest mostly-horizontal surface at the tile center is the cavern floor; walls project to near-zero XZ area and are ignored.
+    const EPSILON = 1e-8;
+    for (let i = 0; i + 2 < indices.length; i += 3) {
+      const ia = indices[i] * 3, ib = indices[i + 1] * 3, ic = indices[i + 2] * 3;
+      const ax = positions[ia], ay = positions[ia + 1], az = positions[ia + 2];
+      const bx = positions[ib], by = positions[ib + 1], bz = positions[ib + 2];
+      const cx = positions[ic], cy = positions[ic + 1], cz = positions[ic + 2];
+      const abx = bx - ax, aby = by - ay, abz = bz - az;
+      const acx = cx - ax, acy = cy - ay, acz = cz - az;
+      const normalY = abz * acx - abx * acz; // Y component of AB x AC; magnitude also measures the triangle's projected XZ area.
+      if (Math.abs(normalY) < 0.08) continue; // Vertical/near-vertical wall triangles cannot be a standable floor.
+      const denom = (bz - cz) * (ax - cx) + (cx - bx) * (az - cz);
+      if (Math.abs(denom) < EPSILON) continue;
+      const wa = ((bz - cz) * (worldX - cx) + (cx - bx) * (worldZ - cz)) / denom;
+      const wb = ((cz - az) * (worldX - cx) + (ax - cx) * (worldZ - cz)) / denom;
+      const wc = 1 - wa - wb;
+      if (wa < -1e-5 || wb < -1e-5 || wc < -1e-5) continue;
+      const y = wa * ay + wb * by + wc * cy;
+      if (Number.isFinite(y) && y < bestY) bestY = y;
+    }
+    return Number.isFinite(bestY) ? bestY : 0;
+  }
+
+  function floorSurfaceMap(floor, mesh) {
+    const byTile = {}; // Serialized onto mapData so gameplay grounding and floor rendering consume the exact same sampled surface.
+    const samples = [];
+    for (const [col, row] of floor || []) {
+      const y = sampleMeshSurfaceAt(mesh, Number(col) + 0.5, Number(row) + 0.5);
+      byTile[`${col},${row}`] = y;
+      samples.push(y);
+    }
+    samples.sort((a, b) => a - b);
+    const median = samples.length ? samples[Math.floor(samples.length / 2)] : 0; // Stable fallback for a malformed isolated tile with no covering floor triangle.
+    return { byTile, median };
+  }
+
   function synthesizeLocaleCavernMapData(locale) {
     const cavern = locale?.cavern || {};
     const mapId = String(cavern.mapId || '');
@@ -313,6 +353,7 @@
       { ...(cavern.generation || {}), entrance: { col: primary.col, row: primary.row, side: primary.side } },
       makeRng(seedText + '_locale_cavern')
     );
+    const floorSurface = floorSurfaceMap(floor, generated.mesh); // Couples logical standing height to the actual carved mesh instead of an invisible Y=0 plane.
 
     const exits = connectors.map(connector => ({
       id: connector.id,
@@ -368,6 +409,8 @@
       cols: Number(locale.cols) || (Math.max(...floor.map(tile => tile[0])) + 2),
       rows: Number(locale.rows) || (Math.max(...floor.map(tile => tile[1])) + 2),
       floor,
+      floorSurfaceByTile: floorSurface.byTile,
+      floorSurfaceY: floorSurface.median,
       colliders: [],
       exits,
       entrySpots,
@@ -385,6 +428,7 @@
       denMotherKind: null,
       localeId: locale.id,
       cavernSeed: seedText,
+      cavernCreatureKind: String(cavern.creatureKind || ''),
       cavernFeatures: cavern.features || {},
       isLocaleCavern: true,
     };
@@ -396,6 +440,7 @@
     // instead, so this generic path no longer knows about Banubu or any other
     // individual cave by map id.
     const { floor, cols, rows, exitCol, exitRow, exitTiles, nestCol, nestRow, disconnectedFloorTilesRemoved, mesh } = generateCavernFloor(mapId, { fast: true });
+    const floorSurface = floorSurfaceMap(floor, mesh); // Ordinary dens now share the same rendered-surface grounding contract as authored locale caverns.
     const makeRng = (typeof WildernessMapGenerator !== 'undefined' && WildernessMapGenerator.makeRng) ? WildernessMapGenerator.makeRng : (() => Math.random);
     const decorRng = makeRng(mapId + '_decor');
     const excludeSet = new Set([...exitTiles, [nestCol, nestRow], [nestCol + 1, nestRow], [nestCol, nestRow + 1], [nestCol + 1, nestRow + 1]].map(([c, r]) => c + ',' + r));
@@ -408,7 +453,9 @@
       id: mapId, name: 'A Dark Burrow',
       cols, rows,
       exits: [{ id: 'den_exit', label: 'Back outside', tiles: exitTiles, targetMap: '', spawnCol: 0, spawnRow: 0 }],
-      colliders: [], floor, furniture: [],
+      colliders: [], floor,
+      floorSurfaceByTile: floorSurface.byTile, floorSurfaceY: floorSurface.median,
+      furniture: [],
       wallStyle: 'cavern',
       exitCol, exitRow,
       disconnectedFloorTilesRemoved,
