@@ -195,6 +195,7 @@
       projectileVisualWidthWorld: PROJECTILE_SPINNING_THROWN_SHAPES.has(shapeKey) && animation.projectileSpin !== false ? 0.5 : null,
       projectileSpinSource: PROJECTILE_SPINNING_THROWN_SHAPES.has(shapeKey) && animation.projectileSpin !== false ? 'fishingMace' : null,
       projectileLockLaunchAlignment: animation.projectileLockAlignment === true,
+      projectileBasisDeg: Number(animation.projectileBasisDeg) || 0, // Carries an authored in-plane projectile correction independently of held spin and Tool End Flip.
       fireDurationS: releaseDurationS,
       fireSequence: 'attack',
       fireWindupFrac: 0,
