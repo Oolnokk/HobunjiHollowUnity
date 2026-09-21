@@ -6,7 +6,7 @@
   // gate in front of every later gameplay/UI listener without changing index.html.
   (function loadTitleScreenRuntime() {
     if (typeof document === 'undefined') return;
-    const src = 'js/title-screen-runtime.js?v=20260920startupbgm1'; // Cache-busts the title runtime after earliest-title Remembrance playback/handoff.
+    const src = 'js/title-screen-runtime.js?v=20260921preworldsky2'; // Cache-busts the title runtime after the shared title/onboarding/loading sky lifecycle update.
     if (window.HobunjiTitleScreen || document.querySelector('script[data-hobunji-title-screen]')) return;
     if (document.readyState === 'loading') {
       document.write(`<script src="${src}" data-hobunji-title-screen="1"><\/script>`);
