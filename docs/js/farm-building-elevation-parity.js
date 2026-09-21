@@ -83,11 +83,16 @@
       }
     }
 
+    function refreshFurnitureFollowers() {
+      return window.HobunjiFurnitureSurfaceElevation?.refresh?.() || null;
+    }
+
     const originalSync = controller.sync?.bind(controller);
     if (originalSync) {
       controller.sync = function (force = false) {
         const result = originalSync(force);
         refreshBarnMeshes();
+        refreshFurnitureFollowers();
         return result;
       };
     }
@@ -100,6 +105,7 @@
       controller.refreshGrassSuppression = function (...args) {
         originalSync(false);
         refreshBarnMeshes();
+        refreshFurnitureFollowers();
         return originalRefreshGrass(...args);
       };
     }
@@ -125,6 +131,7 @@
           ...originalDebug(),
           farmBuildingCount: buildings.length,
           farmBuildingMeshesElevated: buildings.reduce((n, entry) => n + (Math.abs(barnLift(entry)) > 1e-7 && entry?._mesh ? 1 : 0), 0),
+          furnitureSurfaceElevation: window.HobunjiFurnitureSurfaceElevation?.getDebug?.() || null,
         };
       };
     }
