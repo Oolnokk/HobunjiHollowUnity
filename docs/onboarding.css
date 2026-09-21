@@ -37,6 +37,34 @@ html.hobunji-preworld-sky-active #ob-overlay {
   gap: 14px;
   font-family: 'KhymeryyanRomanLetters+Numbers', 'DM Mono', ui-monospace, monospace;
   color: #f0ffe6;
+  /* Inherited by all onboarding/save-select copy so bright daytime sky frames
+     cannot wash out labels, buttons, metadata, or instructional text. */
+  text-shadow:
+    -1px -1px 0 rgba(0, 0, 0, 0.96),
+     0    -1px 0 rgba(0, 0, 0, 0.96),
+     1px -1px 0 rgba(0, 0, 0, 0.96),
+    -1px  0    0 rgba(0, 0, 0, 0.96),
+     1px  0    0 rgba(0, 0, 0, 0.96),
+    -1px  1px 0 rgba(0, 0, 0, 0.96),
+     0     1px 0 rgba(0, 0, 0, 0.96),
+     1px  1px 0 rgba(0, 0, 0, 0.96),
+     0 2px 4px rgba(0, 0, 0, 0.82);
+}
+
+/* Native form controls do not consistently paint inherited text-shadow.
+   Apply the outline directly to every onboarding button and its label nodes. */
+#ob-overlay button,
+#ob-overlay button * {
+  text-shadow:
+    -1px -1px 0 rgba(0, 0, 0, 0.96),
+     0    -1px 0 rgba(0, 0, 0, 0.96),
+     1px -1px 0 rgba(0, 0, 0, 0.96),
+    -1px  0    0 rgba(0, 0, 0, 0.96),
+     1px  0    0 rgba(0, 0, 0, 0.96),
+    -1px  1px 0 rgba(0, 0, 0, 0.96),
+     0     1px 0 rgba(0, 0, 0, 0.96),
+     1px  1px 0 rgba(0, 0, 0, 0.96),
+     0 2px 4px rgba(0, 0, 0, 0.82);
 }
 
 .ob-title {

@@ -129,7 +129,7 @@
         text-align:center;
         white-space:nowrap;
         text-transform:none;
-        text-shadow:0 2px 8px rgba(0,0,0,.9);
+        text-shadow:-1px -1px 0 rgba(0,0,0,.96),0 -1px 0 rgba(0,0,0,.96),1px -1px 0 rgba(0,0,0,.96),-1px 0 0 rgba(0,0,0,.96),1px 0 0 rgba(0,0,0,.96),-1px 1px 0 rgba(0,0,0,.96),0 1px 0 rgba(0,0,0,.96),1px 1px 0 rgba(0,0,0,.96),0 2px 8px rgba(0,0,0,.9);
         user-select:none;
         pointer-events:none;
       }
@@ -193,11 +193,11 @@
       @keyframes hobunjiTitlePromptFade {
         0%,100% {
           color:rgba(255,255,255,.14);
-          text-shadow:0 2px 8px rgba(0,0,0,.9);
+          text-shadow:-1px -1px 0 rgba(0,0,0,.96),0 -1px 0 rgba(0,0,0,.96),1px -1px 0 rgba(0,0,0,.96),-1px 0 0 rgba(0,0,0,.96),1px 0 0 rgba(0,0,0,.96),-1px 1px 0 rgba(0,0,0,.96),0 1px 0 rgba(0,0,0,.96),1px 1px 0 rgba(0,0,0,.96),0 2px 8px rgba(0,0,0,.9);
         }
         50% {
           color:rgba(255,255,255,.94);
-          text-shadow:0 2px 8px rgba(0,0,0,.9),0 0 8px rgba(255,255,255,.18);
+          text-shadow:-1px -1px 0 rgba(0,0,0,.96),0 -1px 0 rgba(0,0,0,.96),1px -1px 0 rgba(0,0,0,.96),-1px 0 0 rgba(0,0,0,.96),1px 0 0 rgba(0,0,0,.96),-1px 1px 0 rgba(0,0,0,.96),0 1px 0 rgba(0,0,0,.96),1px 1px 0 rgba(0,0,0,.96),0 2px 8px rgba(0,0,0,.9),0 0 8px rgba(255,255,255,.18);
         }
       }
 

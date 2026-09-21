@@ -16,6 +16,8 @@ const onboardingCss = fs.readFileSync('docs/onboarding.css', 'utf8');
 const onboardingCore = fs.readFileSync('docs/onboarding-core.js', 'utf8');
 const loadingSource = fs.readFileSync('docs/js/loading-screen-runtime.js', 'utf8');
 const gameSource = fs.readFileSync('docs/game.js', 'utf8');
+assert.match(onboardingCss, /#ob-overlay button,\s*#ob-overlay button \*\s*\{[\s\S]*?text-shadow:/,
+  'onboarding button labels must receive their black outline explicitly rather than relying on form-control inheritance');
 assert(!/requestAnimationFrame\(\(\) => pollGamepad/.test(source), 'pollGamepad must no longer self-schedule a raw requestAnimationFrame');
 assert(!source.includes('cancelAnimationFrame(gamepadPollRaf)'), 'stopping the poll must no longer cancel a raw animation frame');
 assert(source.includes('gamepadPollRaf = setInterval(() => pollGamepad(realGetGamepads), 50)'), 'pollGamepad must be driven by a real setInterval instead');
