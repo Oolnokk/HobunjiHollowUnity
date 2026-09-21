@@ -10,6 +10,8 @@ on:
       - 'docs/config/npcs/schedule-overrides.json'
       - 'docs/config/npcs/placeholder-wardrobes.json'
       - 'docs/js/local-db-overrides.js'
+      - 'docs/js/banubu-quest-content.js'
+      - 'docs/js/banubu-questline.js'
       - 'docs/js/named-animal-npc.js'
       - 'docs/js/cavern-generator.js'
       - 'docs/js/interior-scene-builder.js'
@@ -51,6 +53,7 @@ on:
       - 'scripts/test-kurraya-performance-reaction-lock.js'
       - 'scripts/test-npc-gifting-multitrait.js'
       - 'scripts/test-npc-social-rapport-wardrobes.js'
+      - 'scripts/test-banubu-questline.js'
       - 'scripts/test-locale-cavern-interiors.js'
       - 'scripts/test-named-animal-npc-species.js'
       - 'scripts/test-npc-social-seating.js'
@@ -73,6 +76,8 @@ on:
       - 'docs/config/npcs/schedule-overrides.json'
       - 'docs/config/npcs/placeholder-wardrobes.json'
       - 'docs/js/local-db-overrides.js'
+      - 'docs/js/banubu-quest-content.js'
+      - 'docs/js/banubu-questline.js'
       - 'docs/js/named-animal-npc.js'
       - 'docs/js/cavern-generator.js'
       - 'docs/js/interior-scene-builder.js'
@@ -114,6 +119,7 @@ on:
       - 'scripts/test-kurraya-performance-reaction-lock.js'
       - 'scripts/test-npc-gifting-multitrait.js'
       - 'scripts/test-npc-social-rapport-wardrobes.js'
+      - 'scripts/test-banubu-questline.js'
       - 'scripts/test-locale-cavern-interiors.js'
       - 'scripts/test-named-animal-npc-species.js'
       - 'scripts/test-npc-social-seating.js'
@@ -188,6 +194,9 @@ jobs:
           node --check scripts/test-kurraya-performance-reaction-lock.js
           node --check scripts/test-npc-gifting-multitrait.js
           node --check scripts/test-npc-social-seating.js
+          node --check scripts/test-banubu-questline.js
+          node --check docs/js/banubu-quest-content.js
+          node --check docs/js/banubu-questline.js
           node --check scripts/test-npc-swig-offer-cooldown.js
           node --check scripts/test-npc-wardrobe-placeholders.js
           node --check scripts/test-npc-bedroom-storage.js
@@ -213,6 +222,8 @@ jobs:
         run: node scripts/test-npc-gifting-multitrait.js
       - name: Test event-driven Rapport, social gates, dialogue, and wardrobes
         run: node scripts/test-npc-social-rapport-wardrobes.js
+      - name: Test Banubu staged wake-up and quest progression
+        run: node scripts/test-banubu-questline.js
       - name: Test named-animal creature-first runtime
         run: node scripts/test-named-animal-npc-species.js
       - name: Test locale cavern floor and grounding parity
