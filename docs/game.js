@@ -15117,9 +15117,10 @@
         // The source PNG replaces the emoji immediately; the recolored canvas
         // upgrades it below without leaving alcohol as an emoji while loading.
         const spritePath = 'assets/objectsprites/' + def.spriteIcon;
-        const targetColor = def.spriteColor ?? 0xFFFFFF;
+        const hasSpriteColor = def.spriteColor != null && Number.isFinite(Number(def.spriteColor)); // Used below to keep source-colored PNGs untouched while explicitly tinted items still use SpriteRecolor.
+        const targetColor = hasSpriteColor ? Number(def.spriteColor) : null; // Used by the recolor request/log only when this definition actually authors a tint.
         const spriteMode = def.spriteMode || 'direct';
-        const requestKey = `${def.spriteIcon}|${targetColor}|${spriteMode}`;
+        const requestKey = `${def.spriteIcon}|${hasSpriteColor ? targetColor : 'source'}|${spriteMode}`;
         // updateHud refreshes the item strip every frame. Keep an identical
         // pending/ready request intact instead of resetting it to the source
         // green PNG before the asynchronous recolor can be painted.
@@ -15130,6 +15131,7 @@
         el.dataset.itemSpriteState = 'pending';
         el.style.backgroundImage = `url("${spritePath}")`;
         el.classList.add('sprited-icon');
+        if (!hasSpriteColor) { el.dataset.itemSpriteState = 'source'; return; }
         if (!window.SpriteRecolor) { el.dataset.itemSpriteState = 'fallback'; return; }
         window.SpriteRecolor.getRecoloredCanvas(spritePath, targetColor, spriteMode)
           .then(canvas => {
@@ -21080,8 +21082,9 @@
         plane.renderOrder = HELD_OBJECT_RENDER_ORDER;
         plane.userData.ownsTexture = !!spritePath;
         _markPngPlane(plane);
-        if (def.spriteIcon && window.SpriteRecolor) {
-          window.SpriteRecolor.getRecoloredCanvas(spritePath, def.spriteColor ?? 0xFFFFFF, def.spriteMode || 'direct')
+        const hasSpriteColor = def.spriteColor != null && Number.isFinite(Number(def.spriteColor)); // Used to avoid replacing a finished source-color held PNG unless its item definition explicitly authors a tint.
+        if (def.spriteIcon && hasSpriteColor && window.SpriteRecolor) {
+          window.SpriteRecolor.getRecoloredCanvas(spritePath, Number(def.spriteColor), def.spriteMode || 'direct')
             .then(canvas => {
               if (plane.userData.disposed) return;
               // Authored texture replaces the emoji without rebuilding the held item.
