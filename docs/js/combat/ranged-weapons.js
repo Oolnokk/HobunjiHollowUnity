@@ -854,6 +854,7 @@
       areaId: deps.getCurrentArea(), dead: false,
       baseVisualQuaternion,
       launchTransformMode,
+      lockLaunchAlignment: def.projectileLockLaunchAlignment === true,
       faceTwistRad: 0,
       spinRad: 0,
       spinRateRad: mesh.userData.spinningWeapon ? fishingMaceSpinRateRad() : 0,
@@ -1291,6 +1292,10 @@
       return;
     }
     p.facePivot.rotation.z = 0;
+    if (p.lockLaunchAlignment) {
+      p.facePivot.rotation.y = 0; // Fishing Spear keeps the exact sampled Tool-Z release basis; only the whole launch frame bends with the physical ballistic arc above.
+      return;
+    }
 
     const cameraPos = activeCameraWorldPosition();
     if (!cameraPos || !p.facePivot) return;
@@ -1680,7 +1685,7 @@
     get config() { return CONFIG; },
   };
   window.__rangedDebug = {
-    get projectiles() { return projectiles.map(p => ({ itemKey: p.itemKey, team: p.team, ammoId: p.ammoId, x: p.x, y: p.y, vx: p.vx, vy: p.vy, worldY: p.worldY, vyWorld: p.vyWorld, distancePx: p.distancePx, projectileSpeedPxS: p.projectileSpeedPxS, projectileSpeedMultiplier: p.projectileSpeedMultiplier, projectileDropStartTiles: p.projectileDropStartTiles, projectileGravityWorldS2: p.projectileGravityWorldS2, embedded: p.embedded, embeddedAgeS: p.embeddedAgeS, impactKind: p.impactKind, fading: p.fading, fadeReason: p.fadeReason, launchTransformMode: p.launchTransformMode, facingSource: p.launchTransformMode === 'held-strike-plane' ? 'sampled-held-plane' : (p.def?.toolEndFlip === true ? 'config-flip-fallback' : 'flight-frame'), spinAxis: p.spinRateRad ? 'png-local-z' : null, trailAfflictionIds: [...p.trailAfflictionIds] })); },
+    get projectiles() { return projectiles.map(p => ({ itemKey: p.itemKey, team: p.team, ammoId: p.ammoId, x: p.x, y: p.y, vx: p.vx, vy: p.vy, worldY: p.worldY, vyWorld: p.vyWorld, distancePx: p.distancePx, projectileSpeedPxS: p.projectileSpeedPxS, projectileSpeedMultiplier: p.projectileSpeedMultiplier, projectileDropStartTiles: p.projectileDropStartTiles, projectileGravityWorldS2: p.projectileGravityWorldS2, lockLaunchAlignment: p.lockLaunchAlignment, embedded: p.embedded, embeddedAgeS: p.embeddedAgeS, impactKind: p.impactKind, fading: p.fading, fadeReason: p.fadeReason, launchTransformMode: p.launchTransformMode, facingSource: p.launchTransformMode === 'held-strike-plane' ? 'sampled-held-plane' : (p.def?.toolEndFlip === true ? 'config-flip-fallback' : 'flight-frame'), spinAxis: p.spinRateRad ? 'png-local-z' : null, trailAfflictionIds: [...p.trailAfflictionIds] })); },
     get playerAction() { return playerAction ? { ...playerAction, def: undefined } : null; },
     get lastEvent() { return lastEvent; },
     get lastAudioEvent() { return lastAudioEvent; },
