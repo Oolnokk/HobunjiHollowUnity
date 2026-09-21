@@ -149,7 +149,7 @@
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
   <script src="js/held-action-animations.js?v=20260920handreview3-spearoffset-rangedgrip3-toolz1-align1-throwpivot2"></script>
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
-  <script src="js/character-action-locks.js?v=20260921reviewfix1"></script>
+  <script src="js/character-action-locks.js?v=20260921harvestanim2"></script>
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
   <script src="js/npc-character-state.js?v=20260811a"></script>
   <!-- Accepted alcohol handoff + NPC playback; game.js supplies private-state adapters. -->
@@ -328,7 +328,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmAnimals.init(...) during its own setup. -->
-  <script src="js/farm-animals.js?v=20260910review1"></script>
+  <script src="js/farm-animals.js?v=20260921harvestlook2"></script>
   <!-- Farm buildings: barn placement/construction/demolition
        (window.FarmBuildings) — self-contained aside from deps injected
        via init(), and reads window.FarmAnimals at call time (already
