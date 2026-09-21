@@ -20,7 +20,16 @@ let cancelledHolds = 0; // Confirms lost releases cancel the held ranged animati
 const toolDefs = {
   kylie_copper: { label: 'Copper Kylie', sprite: 'assets/toolsprites/kylie.png', slots: ['weapon'], animStyle: 'sweep', shapeKey: 'kylie' },
   bshuakauitl_copper: { label: "Copper B'shuakauitl", sprite: "assets/toolsprites/b'shuakauitl.png", slots: ['weapon'], animStyle: 'sweep', shapeKey: 'bshuakauitl' },
-  dagger_copper: { label: 'Copper Dagger', sprite: 'assets/toolsprites/dagger.png', slots: ['weapon'], animStyle: 'thrust', shapeKey: 'dagger' },
+  dagger_copper: {
+    label: 'Copper Dagger', sprite: 'assets/toolsprites/dagger.png', slots: ['weapon'], animStyle: 'thrust', shapeKey: 'dagger',
+    rangedProjectileSpeedMultiplier: 1.31,
+    rangedProjectileDropStartTiles: 4.5,
+    rangedProjectileGravityWorldS2: 11,
+    rangedProjectileEmbedOnTerrain: true,
+    rangedProjectilePersistS: 7,
+    rangedProjectileMaxEmbedded: 2,
+    rangedProjectileFadeS: 0.4,
+  },
   fishingspear_copper: { label: 'Copper Fishing Spear', sprite: 'assets/toolsprites/harpoon_fishingspear.png', slots: ['weapon'], animStyle: 'sweep', shapeKey: 'fishingspear' },
   hatchet_copper: { label: 'Copper Hatchet', sprite: 'assets/toolsprites/axe_hatchet.png', slots: ['weapon'], animStyle: 'sweep', shapeKey: 'hatchet' },
   daggerSword_copper: { label: 'Copper Dagger-Sword', sprite: 'assets/toolsprites/dagger-sword.png', slots: ['weapon'], animStyle: 'thrust', shapeKey: 'daggerSword', rangedType: 'thrown' },
@@ -161,9 +170,18 @@ assert.match(rangedWeaponsSource, /combatSfxConfig\?\.\(\)\.weaponSwing3/, 'Thro
 assert.match(rangedWeaponsSource, /playWeaponSlashSfx\?\.\(2, swingIndex\)/, 'Thrown player attacks must play swing 3 at 2x pitch instead of ranged-fire SFX.');
 assert.match(scratchbonesConfigSource, /"weaponSwing3"\s*:\s*\{\s*"url"\s*:\s*"assets\/audio\/sfx\/combat\/sfx_swing_3\.mp3"/, 'weaponSwing3 must remain docs/assets/audio/sfx/combat/sfx_swing_3.mp3.');
 assert.match(rangedWeaponsSource, /const PROJECTILE_PERP_DEAD_DEG = 15/, 'Thrown weapons and arrows must share the requested 15-degree camera-facing deadzone.');
-assert.match(rangedWeaponsSource, /const PROJECTILE_SPEED_MULTIPLIER = 1\.15/, 'All ranged projectile flight must receive the requested modest 15% speed increase.');
-assert.match(rangedWeaponsSource, /const projectileSpeedPxS = def\.speedPxS \* PROJECTILE_SPEED_MULTIPLIER/, 'Projectile speed multiplier must be applied centrally rather than rewriting every weapon definition.');
-assert.match(rangedWeaponsSource, /vyWorld: Math\.sin\(pitch\) \* \(projectileSpeedPxS \/ deps\.TILE\)/, 'Vertical projectile velocity must use the same speed multiplier so shot trajectory pitch is preserved.');
+assert.match(rangedWeaponsSource, /const DEFAULT_PROJECTILE_SPEED_MULTIPLIER = 1\.15/, 'Legacy ranged definitions must retain the existing 15% speed fallback.');
+assert.match(rangedWeaponsSource, /const projectileSpeedPxS = def\.speedPxS \* flightStats\.speedMultiplier/, 'Projectile speed must resolve from a generic per-weapon multiplier at launch.');
+assert.match(rangedWeaponsSource, /vyWorld: Math\.sin\(pitch\) \* \(projectileSpeedPxS \/ deps\.TILE\)/, 'Initial vertical projectile velocity must use the same authored speed so launch pitch is preserved.');
+assert.match(rangedWeaponsSource, /dropStartPx:[\s\S]*projectileGravityWorldS2/, 'Projectile state must cache per-weapon drop-start and downward-acceleration stats.');
+assert.match(rangedWeaponsSource, /p\.distancePx > p\.dropStartPx[\s\S]*p\.vyWorld -= p\.projectileGravityWorldS2 \* gravityDt/, 'Downward arc must begin only after the authored straight-line distance and then accelerate continuously.');
+assert.match(rangedWeaponsSource, /setFromUnitVectors\(p\.launchDirection, _projectileCurrentFlightDir\)/, 'Projectile visuals must bend with the ballistic path while preserving their sampled held-transform offset.');
+assert.match(rangedWeaponsSource, /function embedProjectile\(p, impact\)[\s\S]*p\.embedded = true[\s\S]*disposeProjectileTrails\(p\)/, 'Terrain/cover impacts must convert configured projectiles into stationary embedded visuals instead of destroying them.');
+assert.match(rangedWeaponsSource, /DEFAULT_PROJECTILE_EMBED_PERSIST_S = 10/, 'Embedded ranged weapons must persist for ten seconds by default.');
+assert.match(rangedWeaponsSource, /DEFAULT_PROJECTILE_MAX_EMBEDDED = 3/, 'Embedded projectile default cap must be three per owner and weapon.');
+assert.match(rangedWeaponsSource, /enforceEmbeddedProjectileCap\(p, true\)/, 'Firing a new persistent projectile must reserve a slot immediately so the oldest embedded copy starts fading at the cap.');
+assert.match(rangedWeaponsSource, /startProjectileFade\(peers\.shift\(\), 'capacity'\)/, 'The oldest persistent projectile must fade rather than pop when displaced.');
+assert.match(rangedWeaponsSource, /projectileHit\(p, sweptTerrainImpact\?\.t \?\? 1\)/, 'Arcing collision must stop actor sweeps at an earlier terrain impact so projectiles cannot hit through the ground.');
 assert.match(rangedWeaponsSource, /setHeldRangedVisible\?\.\(action\.itemKey, false\)/, 'Held weapon must hide on the projectile-spawn frame.');
 assert.match(rangedWeaponsSource, /restoreHeldThrownWeapon\(action\)/, 'Held weapon must return only when the release action completes back at Neutral.');
 assert.match(rangedWeaponsSource, /p\.def\.damage \* falloff \* \(Number\.isFinite\(p\.damageScale\)/, 'Thrown projectile raw damage must multiply by released visible windup percentage.');
@@ -187,6 +205,20 @@ for (const key of ['dagger_copper', 'hatchet_copper', 'kylie_copper']) {
 }
 assert.strictEqual(windowObject.RangedWeapons.config.fishingspear_copper?.projectileVisualStyle, 'weapon', 'Fishing spear should use its real weapon sprite/material while staying non-spinning.');
 assert.strictEqual(windowObject.RangedWeapons.config.fishingspear_copper?.projectileSpinSource, null, 'Fishing spear must remain non-spinning until its dedicated throw is authored.');
+assert.strictEqual(windowObject.RangedWeapons.config.kylie_copper.projectileSpeedMultiplier, 1.25, 'Thrown weapons should default slightly faster than the previous 1.15 global pace.');
+assert.strictEqual(windowObject.RangedWeapons.config.kylie_copper.projectileDropStartTiles, 6, 'Thrown reticle should remain straight-line accurate for roughly six tiles by default.');
+assert.strictEqual(windowObject.RangedWeapons.config.kylie_copper.projectileGravityWorldS2, 8.5, 'Thrown weapons should use the authored default downward acceleration after six tiles.');
+assert.strictEqual(windowObject.RangedWeapons.config.kylie_copper.projectileEmbedOnTerrain, true, 'Thrown weapon projectiles should embed in ground/cover by default.');
+assert.strictEqual(windowObject.RangedWeapons.config.kylie_copper.projectilePersistS, 10, 'Thrown weapon embeds should live ten seconds including their normal fade.');
+assert.strictEqual(windowObject.RangedWeapons.config.kylie_copper.projectileMaxEmbedded, 3, 'Thrown weapon embeds should retain only the newest three by default.');
+assert.strictEqual(windowObject.RangedWeapons.config.dagger_copper.projectileSpeedMultiplier, 1.31, 'Per-weapon projectile speed override must flow from TOOL_ITEM_DEFS.');
+assert.strictEqual(windowObject.RangedWeapons.config.dagger_copper.projectileDropStartTiles, 4.5, 'Per-weapon reticle-accuracy/drop-start override must flow from TOOL_ITEM_DEFS.');
+assert.strictEqual(windowObject.RangedWeapons.config.dagger_copper.projectileGravityWorldS2, 11, 'Per-weapon downward-arc acceleration override must flow from TOOL_ITEM_DEFS.');
+assert.strictEqual(windowObject.RangedWeapons.config.dagger_copper.projectilePersistS, 7, 'Per-weapon embedded lifetime override must flow from TOOL_ITEM_DEFS.');
+assert.strictEqual(windowObject.RangedWeapons.config.dagger_copper.projectileMaxEmbedded, 2, 'Per-weapon embedded cap override must flow from TOOL_ITEM_DEFS.');
+assert.strictEqual(windowObject.RangedWeapons.config.dagger_copper.projectileFadeS, 0.4, 'Per-weapon embedded fade override must flow from TOOL_ITEM_DEFS.');
+assert.strictEqual(windowObject.RangedWeapons.config.bshuakauitl_copper.projectileGravityWorldS2, 0, 'Blowguns remain straight-flying unless explicitly authored otherwise.');
+assert.strictEqual(windowObject.RangedWeapons.config.bshuakauitl_copper.projectileEmbedOnTerrain, false, 'Blowgun darts do not inherit thrown-weapon terrain embedding by accident.');
 for (const key of ['kylie_copper', 'dagger_copper', 'fishingspear_copper', 'hatchet_copper']) {
   const cfg = windowObject.RangedWeapons.config[key];
   assert.ok(Math.abs(cfg.chargeWindupS - 0.5096) < 1e-9, `${key} must use Weapon Throw (Spin)'s 1.04s × 0.49 authored windup.`);
