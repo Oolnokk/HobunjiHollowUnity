@@ -187,6 +187,7 @@ assert.match(rangedWeaponsSource, /restoreHeldThrownWeapon\(action\)/, 'Held wea
 assert.match(rangedWeaponsSource, /p\.def\.damage \* falloff \* \(Number\.isFinite\(p\.damageScale\)/, 'Thrown projectile raw damage must multiply by released visible windup percentage.');
 assert.doesNotMatch(rangedWeaponsSource, /cameraPitchAxisWorld|fixedPitchAxisWorld/, 'Thrown projectile spin must not derive its axis from the camera or a world-space launch axis.');
 assert.match(rangedWeaponsSource, /p\.facePivot\.rotation\.z = p\.spinRad/, 'Spinning thrown weapons must rotate the projectile PNG around its own local Z axis.');
+assert.match(gameSource, /const rangedThrowSpins = activeTool === 'ranged'[\s\S]*projectileVisualStyle === 'spinningWeapon'[\s\S]*spinPlane\.rotation\.z = baseRotZ - progress \* Math\.PI \* 2 \* TOOL_SPIN_REVOLUTIONS/, 'Held Spin Throw must rotate the visible weapon plane itself throughout Neutral→Windup→Strike, not only rotate the hand rig.');
 assert.match(rangedWeaponsSource, /p\.facePivot\.rotation\.y = 0;[\s\S]*p\.facePivot\.rotation\.z = p\.spinRad;[\s\S]*return;/, 'Spinning throws must not layer the camera-facing deadzone twist onto local-Z spin.');
 assert.match(rangedWeaponsSource, /facePivot\.rotation\.y = p\.faceTwistRad/, 'Non-spinning projectile readability remains isolated to a child long-axis twist.');
 assert.match(rangedWeaponsSource, /Math\.abs\(diff\) > PROJECTILE_PERP_DEAD_RAD/, 'Projectile sprite camera-facing must retain the 15-degree deadzone instead of perfect billboarding.');
@@ -198,13 +199,11 @@ for (const key of ['dagger_copper', 'fishingspear_copper', 'hatchet_copper']) {
   assert.ok(toolDefs[key].slots.includes('ranged'), `${key} should be equippable in the ranged slot.`);
   assert.strictEqual(windowObject.RangedWeapons.config[key]?.rangedType, 'thrown', `${key} should use the shared thrown archetype.`);
 }
-for (const key of ['dagger_copper', 'hatchet_copper', 'kylie_copper']) {
-  assert.strictEqual(windowObject.RangedWeapons.config[key]?.projectileVisualStyle, 'spinningWeapon', `${key} should use the spinning weapon projectile presentation.`);
-  assert.strictEqual(windowObject.RangedWeapons.config[key]?.projectileSpinSource, 'fishingMace', `${key} should reuse the fishing-mace spin source.`);
+for (const key of ['dagger_copper', 'hatchet_copper', 'kylie_copper', 'fishingspear_copper']) {
+  assert.strictEqual(windowObject.RangedWeapons.config[key]?.projectileVisualStyle, 'spinningWeapon', `${key} should use the shared end-over-end Spin Throw projectile presentation.`);
+  assert.strictEqual(windowObject.RangedWeapons.config[key]?.projectileSpinSource, 'fishingMace', `${key} should reuse the fishing-mace projectile spin rate.`);
   assert.strictEqual(windowObject.RangedWeapons.config[key]?.projectileSprite, toolDefs[key].sprite, `${key} projectile should use its actual weapon sprite.`);
 }
-assert.strictEqual(windowObject.RangedWeapons.config.fishingspear_copper?.projectileVisualStyle, 'weapon', 'Fishing spear should use its real weapon sprite/material while staying non-spinning.');
-assert.strictEqual(windowObject.RangedWeapons.config.fishingspear_copper?.projectileSpinSource, null, 'Fishing spear must remain non-spinning until its dedicated throw is authored.');
 assert.strictEqual(windowObject.RangedWeapons.config.kylie_copper.projectileSpeedMultiplier, 1.25, 'Thrown weapons should default slightly faster than the previous 1.15 global pace.');
 assert.strictEqual(windowObject.RangedWeapons.config.kylie_copper.projectileDropStartTiles, 6, 'Thrown reticle should remain straight-line accurate for roughly six tiles by default.');
 assert.strictEqual(windowObject.RangedWeapons.config.kylie_copper.projectileGravityWorldS2, 8.5, 'Thrown weapons should use the authored default downward acceleration after six tiles.');
@@ -226,7 +225,10 @@ for (const key of ['kylie_copper', 'dagger_copper', 'fishingspear_copper', 'hatc
   assert.strictEqual(cfg.gripMode, 'palm-parallel', `${key} must use Weapon Throw (Spin)'s authored palm-parallel grip.`);
 }
 assert.strictEqual(windowObject.RangedWeapons.config.hatchet_copper.chargePose.neutral.roll, -82, 'Hatchet uses Weapon Throw (Spin) exactly as authored.');
-assert.strictEqual(windowObject.RangedWeapons.config.kylie_copper.firePose.strike.roll, -88, 'Kylie uses Weapon Throw (Spin) exactly as authored.');
+assert.strictEqual(windowObject.RangedWeapons.config.kylie_copper.firePose.strike.roll, -88, 'Kylie fire pose uses Weapon Throw (Spin) Strike exactly as authored.');
+assert.strictEqual(windowObject.RangedWeapons.config.fishingspear_copper.chargePose.strike.roll, -88, 'Fishing spear release must reach the authored Strike instead of reusing Windup.');
+assert.strictEqual(windowObject.RangedWeapons.config.fishingspear_copper.chargePose.strike.pitch, -25, 'Fishing spear holder must perform the authored Windup→Strike pitch rotation on release.');
+assert.notStrictEqual(windowObject.RangedWeapons.config.fishingspear_copper.chargePose.strike.yaw, windowObject.RangedWeapons.config.fishingspear_copper.chargePose.windup.yaw, 'Fishing spear Windup and Strike must not collapse to the same holder orientation.');
 for (const key of ['dagger_copper', 'fishingspear_copper']) {
   const cfg = windowObject.RangedWeapons.config[key];
   assert.strictEqual(cfg.toolEndFlip, true, `${key} must use the exact pick-mining end-for-end sprite basis.`);
@@ -288,6 +290,7 @@ assert.match(windowObject.RangedWeapons.playerActionLabel('kylie_copper'), /^Rel
 assert.strictEqual(rangedVisuals.at(-1).durationS, 1.04, 'Thrown hold must use the real authored animation duration, not a synthetic hours-long timer.');
 assert.strictEqual(rangedVisuals.at(-1).options.held, true, 'Thrown press must hold the real ranged animation at Windup.');
 assert.strictEqual(rangedVisuals.at(-1).options.pose.windup.roll, -92, 'Thrown hold visual must use Weapon Throw (Spin) Windup rather than the old flask throw.');
+assert.strictEqual(rangedVisuals.at(-1).options.pose.strike.roll, -88, 'Thrown hold/release visual must retain the authored Strike endpoint for the post-release rotation.');
 assert.strictEqual(rangedVisuals.at(-1).options.gripMode, 'palm-parallel', 'Thrown hold visual must carry the authored palm-parallel grip mode.');
 assert.strictEqual(rangedVisuals.at(-1).options.alignToReticle, true, 'Entire thrown animation must use the live reticle frame.');
 assert.strictEqual(rangedVisuals.at(-1).options.toolEndFlip, false, 'Kylie hold uses the normal tool-end basis.');
