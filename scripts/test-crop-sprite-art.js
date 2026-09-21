@@ -13,6 +13,7 @@ function source(relativePath) {
 const cropArtSource = source('docs/js/crop-sprite-art.js'); // Used to validate both static world-routing policy and executable item-art integration.
 const loaderSource = source('docs/js/combat/combat-config-loader.js'); // Used to ensure crop art initializes before inventory metadata synchronization.
 const cropRenderingSource = source('docs/js/vegetation-crop-rendering.js'); // Used to pin the existing foliage/placeholder crop ownership that must remain untouched.
+const gameSource = source('docs/game.js'); // Used to verify source-colored crop PNGs bypass the shared recolor pipeline in both inventory and held-item rendering.
 
 assert.match(cropRenderingSource, /const FOLIAGE_CROPS = new Set\(\['needlegrain', 'heftroot'\]\);/,
   'needlegrain and heftroot remain owned by the foliage renderer lifecycle');
@@ -38,6 +39,13 @@ assert.match(cropArtSource, /hobunjiCropRootKey = cropKey/,
   'generic crop roots are tagged for the shared flood/soil presentation correction');
 assert.match(cropArtSource, /buildNeedlegrainMesh = function taggedNeedlegrainMesh/,
   'procedural needlegrain receives only a root tag so flood anchoring can include it without replacing its geometry');
+
+assert.match(gameSource, /const hasSpriteColor = def\.spriteColor != null && Number\.isFinite\(Number\(def\.spriteColor\)\);[\s\S]*?if \(!hasSpriteColor\) \{ el\.dataset\.itemSpriteState = 'source'; return; \}/,
+  'inventory icons keep authored source PNG colors when spriteColor is absent instead of defaulting to white');
+assert.match(gameSource, /const hasSpriteColor = def\.spriteColor != null && Number\.isFinite\(Number\(def\.spriteColor\)\);[^\n]*held PNG[\s\S]*?if \(def\.spriteIcon && hasSpriteColor && window\.SpriteRecolor\)/,
+  'held authored item sprites also bypass recoloring unless their definition explicitly supplies spriteColor');
+assert.doesNotMatch(gameSource, /def\.spriteColor \?\? 0xFFFFFF/,
+  'missing spriteColor is never converted into an implicit white tint');
 
 const cropModuleIndex = loaderSource.indexOf('crop-sprite-art.js?v=20260915cropscan1'); // Used to confirm crop item metadata is installed before generic inventory metadata synchronization.
 const inventoryMetadataIndex = loaderSource.indexOf('inventory-action-metadata-bridge.js'); // Used as the ordering boundary for selectable item metadata synchronization.
@@ -90,9 +98,11 @@ for (const cropKey of Object.keys(fakeDefs)) {
   const art = artApi.getArt(cropKey);
   assert.equal(fakeDefs[cropKey].spriteIcon, art.spriteIcon, `${cropKey} canonical definition receives authored spriteIcon`);
   assert.equal(fakeDefs[cropKey].spriteMode, 'direct', `${cropKey} canonical definition uses direct PNG color`);
+  assert.equal(Object.hasOwn(fakeDefs[cropKey], 'spriteColor'), false, `${cropKey} canonical definition intentionally has no tint`);
   const entry = fakeEntries.find(item => item.key === cropKey);
   assert.equal(entry.spriteIcon, art.spriteIcon, `${cropKey} selectable entry receives authored spriteIcon`);
   assert.equal(entry.spriteMode, 'direct', `${cropKey} selectable entry uses direct PNG color`);
+  assert.equal(Object.hasOwn(entry, 'spriteColor'), false, `${cropKey} selectable entry intentionally has no tint`);
 }
 
 assert.equal(artApi.getDebug().patchedDefs, 4, 'all four canonical crop definitions were patched');
