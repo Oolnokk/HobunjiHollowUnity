@@ -265,7 +265,7 @@
   const headwearSource = moduleUrl('animal-npc-headwear.js', '20260905feyhat1');
   const bridgeSource = moduleUrl('animal-chathead-frame.js', '20260915perf1');
   const source = moduleUrl('character-studio-animal-appearance.js', '20260920animal-scale-outline1');
-  const extrasSource = moduleUrl('character-studio-animal-fey-extras.js', '20260920canonical-fey1');
+  const extrasSource = moduleUrl('character-studio-animal-fey-extras.js', '20260921fey-size1');
 
   function appendModule(src, dataKey, errorLabel) {
     if (document.querySelector(`script[data-${dataKey}]`)) return;
