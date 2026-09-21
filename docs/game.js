@@ -20854,14 +20854,13 @@
           side: THREE.DoubleSide,
         });
         const plane = new THREE.Mesh(geo, mat);
-        // Lying flat in XZ, -90° puts the sprite's top (the business end for
-        // every normal tool) forward and its bottom (the grip end) back.
-        // opts.flip reverses that front/back split — end for end, not a
-        // left-right mirror — so the pick-shovel's spike (authored at the
-        // bottom of the handle, meant to be thrust rather than swung like
-        // the blade) faces forward instead when built for the pick slot.
-        plane.rotation.x = opts.flip ? Math.PI / 2 : -Math.PI / 2;
-        plane.userData.toolEndFlipBase = opts.flip === true; // +90° is the exact pick-mining end-for-end basis.
+        // Lying flat in XZ, Tool X = -90° establishes the shared sprite plane.
+        // End-for-end reversal belongs to TOOL Z (the pose editor's Tool Z
+        // rotation / legacy roll channel), not Tool X. Rotating local Z by 180°
+        // swaps the sprite's business/grip ends without changing its plane normal.
+        plane.rotation.x = -Math.PI / 2;
+        plane.rotation.z = opts.flip ? Math.PI : 0;
+        plane.userData.toolEndFlipBase = opts.flip === true; // Logical base flip; updateToolMesh composes it as a 180° Tool-Z rotation with sweep/spin.
         plane.renderOrder = HELD_OBJECT_RENDER_ORDER;
         g.add(plane);
         // Keep a handle on the sprite plane so updateToolMesh can layer the sweep style's
@@ -22009,7 +22008,9 @@
         if (spinPlane) {
           const baseEndFlip = spinPlane.userData?.toolEndFlipBase === true;
           const actionEndFlip = !!combatSwingAnim && combatSwingToolEndFlip;
-          spinPlane.rotation.x = (baseEndFlip !== actionEndFlip) ? Math.PI / 2 : -Math.PI / 2;
+          const effectiveEndFlip = baseEndFlip !== actionEndFlip;
+          spinPlane.rotation.x = -Math.PI / 2; // Tool End Flip never changes Tool X; the editor defines the reversal around Tool Z.
+          const endFlipZ = effectiveEndFlip ? Math.PI : 0;
           // The sweep style's blade-parallel z-twist belongs to whichever anim is actually
           // playing this frame, not whichever style the equipped item defaults to at rest —
           // combat abilities can force any style onto any weapon (a thrust-style quick
@@ -22031,21 +22032,21 @@
             : TOOL_SPIN_REVOLUTIONS;
           if (anim === 'refillTwistOut') {
             // Lerp a 180° length-wise spin out, independent of any item's own "spinning" flag.
-            spinPlane.rotation.z = baseRotZ + progress * Math.PI;
+            spinPlane.rotation.z = endFlipZ + baseRotZ + progress * Math.PI;
           } else if (anim === 'refillTwistBack') {
             // Reverse of the twist-out: lerp back from 180° to 0°.
-            spinPlane.rotation.z = baseRotZ + Math.PI * (1 - progress);
+            spinPlane.rotation.z = endFlipZ + baseRotZ + Math.PI * (1 - progress);
           } else if (rangedThrowSpins) {
             // The held PNG spins around its own plane-normal axis through the exact
             // same timeline whose release frame is sampled into the projectile.
             // Holding Windup freezes this rotation too; release resumes smoothly.
-            spinPlane.rotation.z = baseRotZ + rangedThrowSpinBasisRad - progress * Math.PI * 2 * rangedThrowSpinRevolutions;
+            spinPlane.rotation.z = endFlipZ + baseRotZ + rangedThrowSpinBasisRad - progress * Math.PI * 2 * rangedThrowSpinRevolutions;
           } else {
             // The mace's own fishing-throw twirl is cosmetic to the harpoon cast —
             // it shouldn't also layer onto ordinary melee combat swings.
-            spinPlane.rotation.z = (TOOL_ITEM_DEFS[spinItemKey]?.spinning && !combatSwingAnim)
+            spinPlane.rotation.z = endFlipZ + ((TOOL_ITEM_DEFS[spinItemKey]?.spinning && !combatSwingAnim)
               ? baseRotZ - progress * Math.PI * 2 * TOOL_SPIN_REVOLUTIONS
-              : baseRotZ;
+              : baseRotZ);
           }
           // Backhand combat sweeps mirror the weapon sprite itself, not just the swing arc.
           spinPlane.scale.x = (anim === 'sweep' && combatSwingAnim) ? (posePlaneMirrorSign ?? combatSwingSign) : 1;
