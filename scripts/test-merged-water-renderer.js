@@ -19,7 +19,7 @@ assert.doesNotMatch(waterSystemSource,
 assert.match(waterSystemSource,
   /function _dryRenderBaseline\(\)[\s\S]{0,260}?surfaceY: null/,
   'a dry flood baseline has no surface and therefore needs no NORMAL_TOP lookup');
-assert.match(indexSource, /water-system\.js\?v=20260920startup5/,
+assert.match(indexSource, /water-system\.js\?v=20260921singleflood1/,
   'the shipped page cache-busts the startup-safe WaterSystem');
 
 function cornersForTile(data, tileIndex) {
