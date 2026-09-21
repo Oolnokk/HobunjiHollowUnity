@@ -47,6 +47,13 @@
     };
   }
 
+  function defaultHandTransformForModel(modelKey) {
+    const transform = maoAoHandTransform(); // Shared orientation remains canonical; only the exported grip offset differs for these models.
+    if (modelKey === 'sloth') transform.position = { x: -0.01, y: -0.32, z: 0.25 };
+    if (modelKey === 'parrot') transform.position = { x: -0.01, y: -0.02, z: 0.1 };
+    return transform;
+  }
+
   function defaultScaleForModel(modelKey) {
     return modelKey === 'parrot' ? PARROT_MODEL_SCALE : DEFAULT_MODEL_SCALE;
   }
@@ -72,7 +79,7 @@
         glb: 'assets/models/hands/hand_pachyderm.glb',
         scale: DEFAULT_MODEL_SCALE,
         mirrorX: true,
-        handFromTool: maoAoHandTransform(),
+        handFromTool: defaultHandTransformForModel('pachyderm'),
         // Legacy no-op retained so older code/config readers do not break.
         toolGrip: identityTransform(),
         materialRoles: { MAT_None_7a4e2e: 'body', MAT_EyeSurface_0c0c0c: 'bone' },
@@ -81,7 +88,7 @@
         glb: 'assets/models/hands/hand_sloth.glb',
         scale: DEFAULT_MODEL_SCALE,
         mirrorX: true,
-        handFromTool: maoAoHandTransform(),
+        handFromTool: defaultHandTransformForModel('sloth'),
         toolGrip: identityTransform(),
         materialRoles: { MAT_None_7a4e2e: 'body', MAT_EyeSurface_0c0c0c: 'bone' },
       },
@@ -89,7 +96,7 @@
         glb: 'assets/models/hands/hand_feline.glb',
         scale: DEFAULT_MODEL_SCALE,
         mirrorX: true,
-        handFromTool: maoAoHandTransform(),
+        handFromTool: defaultHandTransformForModel('feline'),
         toolGrip: identityTransform(),
         materialRoles: { MAT_None_7a4e2e: 'body' },
       },
@@ -98,7 +105,7 @@
         scale: PARROT_MODEL_SCALE,
         // Kenkari/Rakako'an use the shared setup with the source handedness flipped.
         mirrorX: false,
-        handFromTool: maoAoHandTransform(),
+        handFromTool: defaultHandTransformForModel('parrot'),
         toolGrip: identityTransform(),
         materialRoles: { MAT_None_7a4e2e: 'body', MAT_EyeSurface_0c0c0c: 'keratin' },
       },
@@ -361,7 +368,7 @@
       // Existing local/exported drafts from before this shared direction migrate once.
       // After the marker is present, editor changes remain freely editable.
       if (migrateToSharedAlignment) {
-        model.handFromTool = maoAoHandTransform(); // Apply the Mao'ao calibration delta uniformly to pachyderm, sloth, feline and parrot GLBs.
+        model.handFromTool = defaultHandTransformForModel(modelKey); // Preserve the shared orientation while applying the exported per-model grip offset.
         if (previousAlignmentPreset !== PREVIOUS_SHARED_ALIGNMENT_PRESET) {
           model.mirrorX = modelKey === 'parrot' ? false : true; // Only truly old/pre-v1 drafts need the historical handedness normalization.
         }
@@ -370,6 +377,22 @@
         // false remains a valid per-model override for a GLB authored as a right hand.
         model.mirrorX = model.mirrorX !== false;
       }
+      // Upgrade only the exact old shared sloth/parrot grip offsets. This keeps
+      // existing custom calibration edits intact while moving untouched profiles
+      // to the newly exported model-specific hand positions.
+      const gripPosition = model.handFromTool?.position;
+      const gripRotation = model.handFromTool?.rotationDeg;
+      const untouchedSharedGrip = gripPosition
+        && Math.abs(numberOrZero(gripPosition.x) - (-0.01)) < 1e-9
+        && Math.abs(numberOrZero(gripPosition.y) - (-0.07)) < 1e-9
+        && Math.abs(numberOrZero(gripPosition.z) - 0.1) < 1e-9
+        && numberOrZero(gripRotation?.pitch) === 0
+        && numberOrZero(gripRotation?.yaw) === 180
+        && numberOrZero(gripRotation?.roll) === 0;
+      if (!migrateToSharedAlignment && untouchedSharedGrip && (modelKey === 'sloth' || modelKey === 'parrot')) {
+        model.handFromTool.position = { ...defaultHandTransformForModel(modelKey).position };
+      }
+
       // Older hand-profile drafts may still contain model.shoulderAim. It is now
       // deliberately discarded because shoulder-axis choices belong to poses.
       delete model.shoulderAim;
