@@ -24,7 +24,7 @@
   let lastError = ''; // Mobile-visible latest guarded-quit error.
   let menuControlsObserver = null; // Watches menu children and open/close state because controls are dynamic.
   let manualSaveBusyTimer = null; // Polls the existing Manual Save disabled state without feeding disabled mutations back into the menu observer.
-  let menuRelabelFrame = 0; // Coalesces resize/font-driven header measurements so relabeling never becomes a per-frame task.
+  let menuRelabelTimer = null; // Coalesces resize/font-driven header measurements without adding another animation-frame owner.
 
   function localSave() {
     return window.LocalSaveFolder || null;
@@ -116,16 +116,11 @@
   }
 
   function scheduleMenuRelabel() {
-    if (menuRelabelFrame) return;
-    const run = () => {
-      menuRelabelFrame = 0;
+    if (menuRelabelTimer !== null) return;
+    menuRelabelTimer = setTimeout(() => {
+      menuRelabelTimer = null;
       labelMenuControls();
-    };
-    if (typeof requestAnimationFrame === 'function') menuRelabelFrame = requestAnimationFrame(run);
-    else {
-      menuRelabelFrame = 1;
-      setTimeout(run, 0);
-    }
+    }, 0);
   }
 
   function finishManualSaveBusyLabel(button) {
