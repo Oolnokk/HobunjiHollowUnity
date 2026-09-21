@@ -117,7 +117,6 @@ function makePostScene(name = 'outline-post') {
           tColor: { value: {} },
           tEdgeId: { value: {} },
           uTexel: { value: {} },
-          uDepthOutlinesOn: { value: 1 },
           uSeamOutlinesOn: { value: 1 },
         },
       },
@@ -180,7 +179,6 @@ function testFixedPostCameraAndUnrelatedPass() {
   assert.strictEqual(overlayCalls.length, 1, 'world popup must be drawn exactly once after the final composite');
 
   const uniforms = postScene.children[0].material.uniforms;
-  assert.strictEqual(uniforms.uDepthOutlinesOn.value, 0, 'obsolete depth outline composite must remain suppressed');
   assert.strictEqual(uniforms.uSeamOutlinesOn.value, 0, 'obsolete material seam composite must remain suppressed');
 }
 
