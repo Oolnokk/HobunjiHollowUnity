@@ -6,11 +6,29 @@
 (() => {
   'use strict';
 
-  const VERSION = 10;
+  const VERSION = 11;
   const PATCH_RETRY_MS = 50; // Used while game.js finishes constructing generated metal weapon definitions.
   const PATCH_RETRY_LIMIT = 160; // Used to stop the bootstrap poll after roughly eight seconds instead of polling forever.
   const THROWN_TYPE = 'thrown';
   const BLOWGUN_TYPE = 'blowgun';
+  const THROWN_PROJECTILE_DEFAULTS = Object.freeze({
+    speedMultiplier: 1.25, // Slightly faster than the legacy/global 1.15 projectile pace.
+    dropStartTiles: 6, // Reticle remains a trustworthy straight-line guide through roughly six horizontal tiles.
+    gravityWorldS2: 8.5, // After dropStartTiles, the projectile bends downward progressively rather than snapping to a fixed lower angle.
+    embedOnTerrain: true,
+    persistS: 10,
+    maxEmbedded: 3,
+    fadeS: 0.65,
+  });
+  const STRAIGHT_PROJECTILE_DEFAULTS = Object.freeze({
+    speedMultiplier: 1.15,
+    dropStartTiles: Infinity,
+    gravityWorldS2: 0,
+    embedOnTerrain: false,
+    persistS: 10,
+    maxEmbedded: 3,
+    fadeS: 0.65,
+  });
   const BLOWGUN_RAW_DAMAGE = 2; // Used as the deliberately tiny direct dart hit; mastery afflictions are the blowgun's real damage identity.
   const BLOWGUN_AFFLICTION_SCALE = 40; // Multiplies the ranged system's normal 0.15-per-rank buildup into a huge 6.0x raw-damage multiplier per chosen affliction rank.
   const BLOWGUN_AFFLICTION_EFFECT_IDS = Object.freeze([
@@ -124,8 +142,23 @@
       : [...fallback];
   }
 
+  function projectileStatsForTool(toolDef, defaults = STRAIGHT_PROJECTILE_DEFAULTS) {
+    const authoredEmbed = toolDef?.rangedProjectileEmbedOnTerrain;
+    return {
+      speedPxS: Number.isFinite(Number(toolDef?.rangedProjectileSpeedPxS)) ? Math.max(1, Number(toolDef.rangedProjectileSpeedPxS)) : null,
+      projectileSpeedMultiplier: Math.max(0.05, finiteOr(toolDef?.rangedProjectileSpeedMultiplier, defaults.speedMultiplier)),
+      projectileDropStartTiles: Math.max(0, finiteOr(toolDef?.rangedProjectileDropStartTiles, defaults.dropStartTiles)),
+      projectileGravityWorldS2: Math.max(0, finiteOr(toolDef?.rangedProjectileGravityWorldS2, defaults.gravityWorldS2)),
+      projectileEmbedOnTerrain: authoredEmbed == null ? defaults.embedOnTerrain : authoredEmbed === true,
+      projectilePersistS: Math.max(0.05, finiteOr(toolDef?.rangedProjectilePersistS, defaults.persistS)),
+      projectileMaxEmbedded: Math.max(1, Math.round(finiteOr(toolDef?.rangedProjectileMaxEmbedded, defaults.maxEmbedded))),
+      projectileFadeS: Math.max(0.05, finiteOr(toolDef?.rangedProjectileFadeS, defaults.fadeS)),
+    };
+  }
+
   function thrownConfig(itemKey, toolDef) {
     const base = crossbowDefaults();
+    const projectileStats = projectileStatsForTool(toolDef, THROWN_PROJECTILE_DEFAULTS);
     const animation = sharedThrowAnimation();
     const shapeKey = shapeKeyFor(itemKey, toolDef);
     const throwPoses = clonePoseSet(animation?.poses);
@@ -141,6 +174,8 @@
     ));
     const config = {
       ...base,
+      ...projectileStats,
+      speedPxS: projectileStats.speedPxS || base.speedPxS,
       label: toolDef?.label || 'Thrown Weapon',
       rangedType: THROWN_TYPE,
       inputMode: 'hold-release',
@@ -193,8 +228,11 @@
 
   function blowgunConfig(toolDef) {
     const base = crossbowDefaults();
+    const projectileStats = projectileStatsForTool(toolDef, STRAIGHT_PROJECTILE_DEFAULTS);
     return {
       ...base,
+      ...projectileStats,
+      speedPxS: projectileStats.speedPxS || base.speedPxS,
       damage: finiteOr(toolDef?.rangedDamage, BLOWGUN_RAW_DAMAGE),
       label: toolDef?.label || 'Blowgun',
       rangedType: BLOWGUN_TYPE,
