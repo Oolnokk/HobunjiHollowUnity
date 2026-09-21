@@ -1165,7 +1165,7 @@ $('toolEndFlipBtn').onclick = () => {
   anim.toolEndFlip = !anim.toolEndFlip;
   syncToolEndFlipUi();
   refreshJsonView();
-  logDebug(`Tool End Flip ${anim.toolEndFlip ? 'enabled' : 'disabled'} (180° around Tool Z / legacy roll)`);
+  logDebug(`Tool End Flip ${anim.toolEndFlip ? 'enabled' : 'disabled'} (180° in-plane tip↔handle reversal)`);
 };
 syncToolEndFlipUi();
 
