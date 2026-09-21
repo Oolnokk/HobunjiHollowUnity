@@ -1402,7 +1402,13 @@ function applyPoseToRig(pose) {
       if (previewT <= anim.windupFrac) neutralWeight = anim.windupFrac > 0.000001 ? 1 - previewT / anim.windupFrac : 0;
       else if (previewT > anim.holdFrac) neutralWeight = Math.max(0, Math.min(1, (previewT - anim.holdFrac) / Math.max(0.000001, 1 - anim.holdFrac)));
     }
-    toolPlane.rotation.z = anim.style === 'sweep' ? -Math.PI / 2 + Math.PI / 2 * neutralWeight : 0;
+    const sweepBasisZ = anim.style === 'sweep' ? -Math.PI / 2 + Math.PI / 2 * neutralWeight : 0;
+    const authoredSpinRevolutions = Math.max(0, Number(anim.spinRevolutions) || 0);
+    const authoredSpinBasisZ = THREE.MathUtils.degToRad(Number(anim.spinBasisDeg) || 0);
+    const authoredSpinZ = authoredSpinRevolutions > 0
+      ? authoredSpinBasisZ - previewT * Math.PI * 2 * authoredSpinRevolutions
+      : 0;
+    toolPlane.rotation.z = sweepBasisZ + authoredSpinZ; // Mirrors game.js: Fishing Spear starts 90° CCW from the generic Spin Throw while sharing the same timeline/revolution count.
   }
   lastAuthoredPose.x = Number(pose.x) || 0; lastAuthoredPose.y = Number(pose.y) || 0; lastAuthoredPose.z = Number(pose.z) || 0;
   poseOrbitScratch.set(toolBase.position.x + lastAuthoredPose.x, toolBase.position.y + lastAuthoredPose.y, toolBase.position.z + lastAuthoredPose.z); // Existing pre-arm-length finished point.
@@ -1447,6 +1453,7 @@ const ACTION_DEFS = [
   { id: 'flurry', group: 'Quick / held attacks', label: 'Accelerating Flurry', statsPath: ['flurry'], templateId: 'hatchet_swing', practical: true },
   { id: 'counter_shield', group: 'Quick / held attacks', label: 'Counter Shield', statsPath: ['counterShield'], heldAnimationKey: 'counterShield', practical: true, toolKey: 'hatchet' },
   { id: 'weapon_throw', group: 'Quick / held attacks', label: 'Thrown Weapon — Spin Throw', heldAnimationKey: 'weaponThrowSpin', practical: true },
+  { id: 'weapon_throw_spear', group: 'Quick / held attacks', label: 'Fishing Spear — Offset Spin Throw', heldAnimationKey: 'weaponThrowSpearSpin', practical: true, toolKey: 'fishingspear' },
   { id: 'flask_throw', group: 'Quick / held attacks', label: 'Flask — Overhead Throw', heldAnimationKey: 'throwFlask', practical: true, toolKey: 'bottle' },
 
   { id: 'crossbow_fire', group: 'Ranged attacks', label: 'Crossbow — Fire', statsPath: ['rangedWeapons','crossbow'], templateId: 'crossbow_fire', practical: true },
