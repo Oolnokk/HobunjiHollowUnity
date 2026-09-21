@@ -842,7 +842,8 @@ function buildToolPlaneMesh(toolKey) {
       const geo = new THREE.PlaneGeometry(planeW, planeH);
       const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.08, side: THREE.DoubleSide });
       const plane = new THREE.Mesh(geo, mat);
-      plane.rotation.x = def.flip ? Math.PI / 2 : -Math.PI / 2;
+      plane.rotation.x = -Math.PI / 2;
+      plane.rotation.z = def.flip ? Math.PI : 0; // Tool End Flip is authored around Tool Z (legacy roll), not Tool X.
       plane.userData.toolEndFlipBase = def.flip === true;
       const g = new THREE.Group();
       g.add(plane);
@@ -1163,7 +1164,7 @@ $('toolEndFlipBtn').onclick = () => {
   anim.toolEndFlip = !anim.toolEndFlip;
   syncToolEndFlipUi();
   refreshJsonView();
-  logDebug(`Tool End Flip ${anim.toolEndFlip ? 'enabled' : 'disabled'} (same local-X basis reversal as pick mining)`);
+  logDebug(`Tool End Flip ${anim.toolEndFlip ? 'enabled' : 'disabled'} (180° around Tool Z / legacy roll)`);
 };
 syncToolEndFlipUi();
 
@@ -1391,7 +1392,8 @@ function applyPoseToRig(pose) {
   if (toolPlane) {
     const baseEndFlip = toolPlane.userData?.toolEndFlipBase === true;
     const effectiveEndFlip = baseEndFlip !== (anim.toolEndFlip === true);
-    toolPlane.rotation.x = effectiveEndFlip ? Math.PI / 2 : -Math.PI / 2;
+    toolPlane.rotation.x = -Math.PI / 2; // End flipping is Tool-Z rotation, matching the pose editor's Tool Z channel.
+    const endFlipZ = effectiveEndFlip ? Math.PI : 0;
     // Runtime derives the -90° sweep basis from the active animation, then
     // weapon-tool-stances fades that basis out at Neutral for every weapon-
     // slot-capable shape. Reproduce both layers so Heavy/Light Neutral and
@@ -1408,7 +1410,7 @@ function applyPoseToRig(pose) {
     const authoredSpinZ = authoredSpinRevolutions > 0
       ? authoredSpinBasisZ - previewT * Math.PI * 2 * authoredSpinRevolutions
       : 0;
-    toolPlane.rotation.z = sweepBasisZ + authoredSpinZ; // Mirrors game.js: Fishing Spear starts 90° CCW from the generic Spin Throw while sharing the same timeline/revolution count.
+    toolPlane.rotation.z = endFlipZ + sweepBasisZ + authoredSpinZ; // Same Tool-Z composition as game.js: end flip + sweep basis + authored throw-spin basis/timeline.
   }
   lastAuthoredPose.x = Number(pose.x) || 0; lastAuthoredPose.y = Number(pose.y) || 0; lastAuthoredPose.z = Number(pose.z) || 0;
   poseOrbitScratch.set(toolBase.position.x + lastAuthoredPose.x, toolBase.position.y + lastAuthoredPose.y, toolBase.position.z + lastAuthoredPose.z); // Existing pre-arm-length finished point.
