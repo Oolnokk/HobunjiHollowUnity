@@ -1,11 +1,9 @@
 /* ── Hobunii Hollow — Onboarding overlay ─────────────────────────────── */
 
-/* Solid black, matching js/title-screen-runtime.js's "Press any input to
-   start" background exactly (not a translucent/blurred scrim) — the farm
-   itself is never rendered behind this (see game.js's gameLoop, which skips
-   renderer.render() entirely until gameStarted), so onboarding reads as a
-   continuation of the title screen's own boot sequence rather than a pause
-   menu laid over an already-running game. */
+/* The overlay keeps its old black fallback, but during the startup/onboarding
+   sequence the title runtime owns one shared real-time sky canvas underneath
+   every UI step. game.js still skips its renderer until gameStarted, so the
+   transparent pre-world overlay cannot expose an uninitialized gameplay frame. */
 #ob-overlay {
   position: fixed;
   inset: 0;
@@ -19,15 +17,18 @@
   transition: opacity 0.4s;
 }
 
+html.hobunji-preworld-sky-active #ob-overlay {
+  background: transparent;
+}
+
 #ob-overlay.ob-fade-out {
   opacity: 0;
   pointer-events: none;
 }
 
-/* No visible box: the card is just a layout wrapper now. Its content sits
-   directly on #ob-overlay's solid black, same as the title screen's own
-   text/logo have no panel behind them — one continuous black screen rather
-   than a green-tinted, bordered panel floating on top of it. */
+/* No visible box: the card is just a layout wrapper now. During startup its
+   content sits directly over the shared real-time sky; outside that startup
+   lifecycle #ob-overlay falls back to the same solid black presentation. */
 .ob-card {
   width: min(720px, 100%);
   padding: 24px;
