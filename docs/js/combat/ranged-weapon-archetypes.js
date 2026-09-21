@@ -40,7 +40,7 @@
   ]); // Used by Kylie ranged mastery so its options mirror the game's blunt affliction family rather than sharp-style buildup.
   const DUAL_ROLE_SHAPES = Object.freeze({ kylie: THROWN_TYPE, dagger: THROWN_TYPE, fishingspear: THROWN_TYPE, hatchet: THROWN_TYPE, bshuakauitl: BLOWGUN_TYPE });
   const PROJECTILE_SPINNING_THROWN_SHAPES = new Set(['hatchet', 'dagger', 'kylie']); // These continue tumbling in flight. Fishing spear uses the offset held spin but freezes that sampled alignment once released.
-  const END_FLIPPED_THROW_SHAPES = new Set(['dagger', 'fishingspear']); // Uses the exact pick-mining sprite-plane X-basis flip, not a pose-roll approximation.
+  const END_FLIPPED_THROW_SHAPES = new Set(['dagger', 'fishingspear']); // Uses the shared 180° Tool-Z end flip from game/editor; no Tool-X plane reversal and no pose-channel rewrite.
   const NON_RANGED_SHAPES = new Set(['daggerSword']); // Used by rangedTypeFor() to hard-block dagger-swords even if stale or external code tags one with rangedType.
   const patchedItems = new Set(); // Used by diagnostics and idempotent definition patching.
   const scaledAfflictionAliases = new Map(); // Used to carry per-shot buildup scaling through the existing projectile affliction map without changing raw damage.
