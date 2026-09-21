@@ -6,12 +6,19 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 const source = fs.readFileSync('docs/js/title-realtime-sky.js', 'utf8');
+const titleRuntime = fs.readFileSync('docs/js/title-screen-runtime.js', 'utf8');
 
 assert(!source.includes('THREE'), 'title real-time sky must not create or depend on a Three.js renderer');
 assert(!source.includes('requestAnimationFrame'), 'title real-time sky must not own a per-frame animation loop');
-assert(source.includes('const DRAW_INTERVAL_MS = 250'), 'title sky must stay on the bounded low-frequency redraw cadence');
+assert(source.includes('const DRAW_INTERVAL_MS = 250'), 'title sky base must stay on the bounded low-frequency redraw cadence');
 assert(source.includes('const MAX_BACKING_PIXELS = 900000'), 'title sky must keep a bounded Canvas2D backing-buffer budget');
-assert(source.includes("renderer:'canvas2d'"), 'debug output must identify the low-cost Canvas2D renderer');
+assert(source.includes("const CLOUD_LAYER_ID = 'hobunjiTitleCloudLayer'"), 'clouds must have a dedicated compositor layer');
+assert(!source.includes('function drawClouds('), 'cloud drift must no longer depend on Canvas2D redraw timers');
+assert(source.includes('image.style.animationDuration'), 'cloud sprites must use CSS animation duration rather than JS position updates');
+assert(source.includes('image.style.animationDelay'), 'cloud sprites must start at distributed compositor phases');
+assert(source.includes("renderer:'canvas2d+css-compositor'"), 'debug output must identify the split Canvas2D/compositor renderer');
+assert(titleRuntime.includes('@keyframes hobunjiTitleCloudDrift'), 'title runtime must provide compositor cloud keyframes');
+assert(titleRuntime.includes('will-change:transform'), 'cloud transforms must be promoted for compositor animation');
 
 const windowObject = {};
 const sandbox = {
