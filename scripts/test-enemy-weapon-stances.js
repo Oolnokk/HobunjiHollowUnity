@@ -14,7 +14,7 @@ let refreshCount = 0; // Counts shared WeaponToolStances definition refreshes to
 const renderCalls = []; // Captures the temporary pose state BanditCombat sees while the adapter delegates each visual update.
 
 const heavyPose = { x: -0.03, y: 0.27, z: 0.02, pitch: -23, yaw: 104, bodyYaw: -15, roll: 89 }; // Representative committed Heavy weapon neutral.
-const lightPose = { x: -0.09, y: -0.08, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 }; // Representative committed Light weapon neutral.
+const lightPose = { x: -0.09, y: 0, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 }; // Representative committed Light weapon neutral.
 const sweepNeutral = { x: 0, y: 0, z: 0.16, pitch: 0, yaw: 0, bodyYaw: 0, roll: 0 }; // Legacy source neutral used by BanditCombat sweep attacks.
 const thrustNeutral = { x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: 0 }; // Legacy source neutral used by BanditCombat thrust attacks.
 
