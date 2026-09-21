@@ -62,7 +62,7 @@
       <summary>Banubu's Cave live preview</summary>
       <div class="card-body">
         <label style="display:flex;gap:6px;align-items:center"><input id="banubuCaveEnabled" type="checkbox" ${state.enabled ? 'checked' : ''} style="width:auto"> Place Banubu's Cave</label>
-        <div class="help" style="margin-top:6px">Uses the repo locale and real plateau carve. The cave mouth is rendered by <code>ZoneDenTotemFeatures.buildAnimalDenMeshes</code> — the same <code>cave_small.glb</code>, UVs, material, sink, shadow flags, and scale math used in-game. Banubu uses his Grehlr idle sprite. The 2D view adds only an authoring outline/label so the generated cave is easy to locate.</div>
+        <div class="help" style="margin-top:6px">Uses the repo locale against an existing plateau cliff with no terrain carve. The cave mouth is rendered by <code>ZoneDenTotemFeatures.buildAnimalDenMeshes</code> — the same <code>cave_small.glb</code>, UVs, material, sink, shadow flags, and scale math used in-game. Banubu uses his Grehlr idle sprite. The 2D view adds only an authoring outline/label so the generated cave is easy to locate.</div>
         <div id="banubuCaveStatus" class="help" style="margin-top:6px">Loading locale…</div>
       </div>`;
     sidebar.appendChild(panel);
@@ -80,8 +80,10 @@
     if (message) { node.textContent = message; return; }
     if (!state.definition) { node.textContent = 'Loading locale…'; return; }
     const embedded = Object.keys(state.definition.embeddedTiles || {}).length;
-    const scale = state.definition.objects?.find(object => object.key === 'cave_small')?.visual?.scale || 2;
-    node.textContent = `${state.enabled ? 'Enabled' : 'Disabled'} · Northern Cliffs only · ${embedded} embedded cells · game cave renderer ×${scale}`;
+    const visual = state.definition.objects?.find(object => object.key === 'cave_small')?.visual || {};
+    const widthScale = Number(visual.scaleX) || Number(visual.scale) || 1;
+    const heightScale = Number(visual.scaleY) || Number(visual.scale) || 1;
+    node.textContent = `${state.enabled ? 'Enabled' : 'Disabled'} · Northern Cliffs only · ${embedded} clipped cells · cave facade ${widthScale}× wide / ${heightScale}× tall · no terrain carve`;
   }
 
   const previousGenerateWorkspace = Generator.generateWorkspace.bind(Generator);
