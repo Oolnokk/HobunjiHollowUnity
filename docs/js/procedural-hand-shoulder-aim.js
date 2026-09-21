@@ -354,6 +354,24 @@
         debugBySide[side] = { weights, applied: false, reason: 'authored-base-missing' };
         return false;
       }
+      if (poseRuntime?.currentTargetingEnabled?.() === false) {
+        // Windup/Strike authored animation owns the complete hand orientation.
+        // Do not even resolve an elbow target here: shoulder/elbow targeting is
+        // a post-process and must be absent, not merely weighted down.
+        socket.quaternion.copy(authoredQuaternion);
+        socket.updateMatrix?.();
+        socket.updateMatrixWorld?.(true);
+        if (paperArmBySide[side]) paperArmBySide[side].root.visible = false;
+        debugBySide[side] = {
+          weights,
+          applied: false,
+          reason: 'authored-ranged-windup-strike',
+          targetingEnabled: false,
+          authoredQuaternion: quaternionDebug(authoredQuaternion),
+          authoredDeg: eulerDebug(authoredQuaternion),
+        };
+        return false;
+      }
       const elbowSolve = resolveElbowInParent(side, shoulder, guideElbow);
       const elbow = elbowSolve?.elbow || shoulder;
       targetDirection.copy(elbow).sub(socket.position); // Forearm direction: the wrist-facing hand axis points back toward the elbow.
