@@ -19,9 +19,9 @@ assert.match(cropRenderingSource, /const FOLIAGE_CROPS = new Set\(\['needlegrain
   'needlegrain and heftroot remain owned by the foliage renderer lifecycle');
 assert.match(cropRenderingSource, /Simple colored cube \(all other crops\)/,
   'non-foliage crops still expose the generic placeholder path that crop-sprite-art upgrades or tags');
-assert.match(cropArtSource, /garlink:\s*Object\.freeze\(\{ spriteIcon: 'garlink_bunch\.png', worldMode: 'billboard' \}\)/,
+assert.match(cropArtSource, /garlink:\s*Object\.freeze\(\{ spriteIcon: 'garlink_bunch\.png', worldMode: 'billboard', ingredientColor: 0xD1D1CB \}\)/,
   'garlink uses its PNG for held/icon art and world billboard clusters');
-assert.match(cropArtSource, /ongyums:\s*Object\.freeze\(\{ spriteIcon: 'ongyum\.png', worldMode: 'billboard' \}\)/,
+assert.match(cropArtSource, /ongyums:\s*Object\.freeze\(\{ spriteIcon: 'ongyum\.png', worldMode: 'billboard', ingredientColor: 0x627F20 \}\)/,
   'ongyums uses the authored PNG for held/icon art and world billboard clusters');
 assert.match(cropArtSource, /CLUSTER_OFFSETS = Object\.freeze\([\s\S]*?-0\.20[\s\S]*?0\.22[\s\S]*?-0\.22/,
   'garlink/ongyums reuse the legacy three-heftroot triangle footprint');
@@ -61,10 +61,10 @@ const sandboxWindow = {
 vm.runInNewContext(cropArtSource, { window: sandboxWindow, performance: { now: () => fakeNowMs } });
 const artApi = sandboxWindow.HobunjiCropSpriteArt; // Used to inspect the public crop-art mapping and invoke item metadata synchronization.
 assert.ok(artApi, 'crop sprite art exposes its runtime API');
-assert.deepEqual({ ...artApi.getArt('needlegrain') }, { spriteIcon: 'pile_needlegrain.png', worldMode: 'procedural' });
-assert.deepEqual({ ...artApi.getArt('heftroot') }, { spriteIcon: 'heftroot.png', worldMode: 'procedural' });
-assert.deepEqual({ ...artApi.getArt('garlink') }, { spriteIcon: 'garlink_bunch.png', worldMode: 'billboard' });
-assert.deepEqual({ ...artApi.getArt('ongyums') }, { spriteIcon: 'ongyum.png', worldMode: 'billboard' });
+assert.deepEqual({ ...artApi.getArt('needlegrain') }, { spriteIcon: 'pile_needlegrain.png', worldMode: 'procedural', ingredientColor: 0x293827 });
+assert.deepEqual({ ...artApi.getArt('heftroot') }, { spriteIcon: 'heftroot.png', worldMode: 'procedural', ingredientColor: 0xAAA07C });
+assert.deepEqual({ ...artApi.getArt('garlink') }, { spriteIcon: 'garlink_bunch.png', worldMode: 'billboard', ingredientColor: 0xD1D1CB });
+assert.deepEqual({ ...artApi.getArt('ongyums') }, { spriteIcon: 'ongyum.png', worldMode: 'billboard', ingredientColor: 0x627F20 });
 
 let firstSceneTraversals = 0; // Counts full-scene crop discovery passes in a crop-free wilderness-style scene.
 const firstScene = { traverse() { firstSceneTraversals++; } };
@@ -98,10 +98,12 @@ for (const cropKey of Object.keys(fakeDefs)) {
   const art = artApi.getArt(cropKey);
   assert.equal(fakeDefs[cropKey].spriteIcon, art.spriteIcon, `${cropKey} canonical definition receives authored spriteIcon`);
   assert.equal(fakeDefs[cropKey].spriteMode, 'direct', `${cropKey} canonical definition uses direct PNG color`);
+  assert.equal(fakeDefs[cropKey].ingredientColor, art.ingredientColor, `${cropKey} canonical definition receives the sampled ingredient color`);
   assert.equal(Object.hasOwn(fakeDefs[cropKey], 'spriteColor'), false, `${cropKey} canonical definition intentionally has no tint`);
   const entry = fakeEntries.find(item => item.key === cropKey);
   assert.equal(entry.spriteIcon, art.spriteIcon, `${cropKey} selectable entry receives authored spriteIcon`);
   assert.equal(entry.spriteMode, 'direct', `${cropKey} selectable entry uses direct PNG color`);
+  assert.equal(entry.ingredientColor, art.ingredientColor, `${cropKey} selectable entry mirrors the sampled ingredient color`);
   assert.equal(Object.hasOwn(entry, 'spriteColor'), false, `${cropKey} selectable entry intentionally has no tint`);
 }
 
