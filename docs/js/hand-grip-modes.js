@@ -40,7 +40,8 @@
   // change gameplay instead of only the editor preview. Tools without a committed
   // choice keep falling back to the tool-name heuristic below.
   function storedModeForTool(value) {
-    const stored = global.HobunjiHandToolGrips?.gripModeForTool?.(value);
+    const context = global.HobunjiHandToolGrips?.currentGripContext?.() || 'melee';
+    const stored = global.HobunjiHandToolGrips?.gripModeForTool?.(value, context);
     return modes[stored] ? stored : null;
   }
 
