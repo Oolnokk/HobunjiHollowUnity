@@ -627,6 +627,11 @@
     _material().uniforms.uTime.value = waterTime;
   }
 
+  function refreshTownWaterRender() {
+    _townWaterSimDirty = true; // Used to invalidate cached flood/permanent-river visibility whenever the town scene is built or revisited.
+    updateTownWaterMeshes(); // Rebuilds only the rendered snapshot from the current town grid; it does not advance water simulation.
+  }
+
   function debugFloodSnapshot() {
     const summarize = (baseline, floodMesh, localMesh) => ({ // Used by the in-game/mobile debug console without requiring DevTools.
       active: !!baseline?.visible,
@@ -662,6 +667,7 @@
     recomputeWater,
     updateWaterMeshes,
     updateTownWaterMeshes,
+    refreshTownWaterRender,
     updateZoneWaterMeshes,
     buildMergedWaterMesh,
     resetFarmWaterMesh,
