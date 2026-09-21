@@ -97,8 +97,12 @@ assert.match(music, /exclusiveSoundtrack === true/,
   'combat suppression reuses the existing exclusiveSoundtrack metadata instead of inventing a second exemption flag');
 assert.doesNotMatch(music, /combatBgmExempt/,
   'music scheduler does not carry a duplicate combat-specific soundtrack exemption concept');
-assert.match(music, /playMusicTrack\(track\.url, baseVol \* trackVolMul,[\s\S]*?\{ loop: track\.loop !== false \}\)/,
-  'combat BGM loops by default until combat ends');
+assert.match(music, /const repeatWhileCombat = track\.loop !== false;[\s\S]*?playMusicTrack\(track\.url, baseVol \* trackVolMul,[\s\S]*?\{ loop: repeatWhileCombat \}\)/,
+  'combat BGM uses native media looping by default until combat ends');
+assert.match(music, /finishCombatBgm = \(\{ repeatIfStillInCombat = true \} = \{\}\) => \{[\s\S]*?deps\.isPlayerInCombat\(\)[\s\S]*?snd\.currentTime = 0;[\s\S]*?requestGameAudioPlay\(snd\)[\s\S]*?return;[\s\S]*?retireMusicTrack\(snd\)/,
+  'if a looping combat M4A still emits ended, the same element restarts immediately while combat remains active instead of entering the scheduler/fade-in path');
+assert.match(music, /snd\.addEventListener\('ended', finishCombatBgm\);/,
+  'combat ended fallback remains reusable across repeated same-element restarts');
 assert.match(music, /Math\.exp\(-4\.6 \* elapsedMs \/ fadeMs\)/,
   'looping background layers converge smoothly when weather or area changes');
 assert.match(music, /if \(intensity <= 0\) return \{ gentle: 0, mid: 0, heavy: 0 \};/,
@@ -132,7 +136,7 @@ assert.match(index, /scratchbones-config\.js\?v=20260920newbgm1/,
   'the browser cache key loads the expanded authored BGM playlists');
 assert.match(formatUtils, /title-screen-runtime\.js\?v=20260920startupbgm1/,
   'the parser-synchronous title loader cache-busts the earliest Remembrance bootstrap');
-assert.match(index, /music-system\.js\?v=20260920startupcontinuity2/,
+assert.match(index, /music-system\.js\?v=20260921skirmishrepeat1/,
   'the browser cache key loads startup-title audio adoption plus per-song gain behavior');
 assert.match(index, /audio-track-gain-settings\.js\?v=20260920trackgain2/,
   'the browser loads the per-song gain Settings controller before game startup');
