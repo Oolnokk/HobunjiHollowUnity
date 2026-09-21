@@ -12,6 +12,10 @@
   const SCATTERBOW_FIRE_CHORUS_MS = [0, 28, 56, 84, 112, 140]; // Used by playRangedActionSfx() to stagger one shot sound per scatterbow projectile.
   const PROJECTILE_PERP_DEAD_DEG = 15; // Used only by projectile PNG facing so arrows turn within tighter windows than animals.
   const PROJECTILE_PERP_DEAD_RAD = THREE.MathUtils.degToRad(PROJECTILE_PERP_DEAD_DEG); // Passed to the shared animal deadzone helpers.
+  const DEFAULT_PROJECTILE_SPEED_MULTIPLIER = 1.15; // Backward-compatible default for ranged definitions that have not authored their own per-weapon flight-speed multiplier.
+  const DEFAULT_PROJECTILE_EMBED_PERSIST_S = 10; // Embedded projectile lifetime including its normal end-of-life fade.
+  const DEFAULT_PROJECTILE_EMBED_FADE_S = 0.65; // Short fade used both at normal expiry and when an older embedded projectile is displaced by the per-weapon cap.
+  const DEFAULT_PROJECTILE_MAX_EMBEDDED = 3; // Default visible embedded projectile cap per owner + weapon key.
   const FISHING_MACE_SPIN_RATE_DEG_FALLBACK = 9720; // Used only before Fishing is available; matches Fishing.projectileVisuals.maceSpinRateDeg exactly.
   // Reused across calls instead of allocated fresh each time — projectileHit
   // runs every frame for every live projectile until it hits something or
@@ -28,9 +32,10 @@
   const _projectileFrameRight = new THREE.Vector3();
   const _projectileWorldUp = new THREE.Vector3(0, 1, 0);
   const _projectileBasisMatrix = new THREE.Matrix4();
-  const _projectileCameraQuaternion = new THREE.Quaternion();
-  const _projectileSpinQuaternion = new THREE.Quaternion();
   const _projectileInverseQuaternion = new THREE.Quaternion();
+  const _projectileCurrentFlightDir = new THREE.Vector3(); // Reused to bend a projectile's launch-frame visual along an authored downward arc without camera steering.
+  const _projectileTrajectoryDeltaQuaternion = new THREE.Quaternion(); // World-space delta from launch direction to current curved-flight direction.
+  const _projectileFallbackToolZFlipQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI); // In flightVisualQuaternion, projectile local +Y is the sprite/tool length axis; that is the held pose's Tool Z after its fixed -90° PNG-plane basis.
   const PROJECTILE_TRAIL_MAX_POINTS = 14; // Caps each comet ribbon's geometry and per-frame update cost.
   const PROJECTILE_TRAIL_MAX_LANES = 4; // Mirrors the melee trail's readable multi-affliction lane limit.
   const SPECIAL_AMMO_MAX = 8; // Shared character resource cap displayed by the ranged loadout and ammo arch.
@@ -57,6 +62,7 @@
   const actorHitboxCache = new WeakMap(); // Used by actorHitbox() to share one computed portrait volume across same-frame callers.
   let wouldHitCacheAt = -Infinity;
   let wouldHitCacheValue = false;
+  let projectileSerial = 0; // Monotonic launch order used only to choose the oldest embedded copy when a per-weapon visual cap is exceeded.
   let friendlyFireHits = 0;
   let losRepositions = 0;
   let wouldHitCacheHits = 0;
@@ -116,6 +122,7 @@
     crossbow: {
       label: 'Crossbow', projectileSprite: 'assets/toolsprites/arrow_long.png',
       projectileCount: 1, spreadDeg: 0, damage: 16, speedPxS: 720,
+      projectileSpeedMultiplier: 1.15, projectileDropStartTiles: Infinity, projectileGravityWorldS2: 0,
       rangeTiles: 9, projectileRadiusPx: 7, knockbackPxS: 130,
       reloadDurationS: 1.04, reloadSequence: 'attack', reloadWindupFrac: 0.55, reloadStrikeFrac: 0.56, reloadHoldFrac: 0.692,
       fireDurationS: 1.04, fireSequence: 'attack', fireWindupFrac: 0.05, fireAtFrac: 0.08, fireHoldFrac: 0.17,
@@ -126,6 +133,7 @@
     scatterbow: {
       label: 'Scatterbow', projectileSprite: 'assets/toolsprites/arrow_short.png',
       projectileCount: 6, spreadDeg: 28, damage: 5, speedPxS: 650,
+      projectileSpeedMultiplier: 1.15, projectileDropStartTiles: Infinity, projectileGravityWorldS2: 0,
       rangeTiles: 6.5, projectileRadiusPx: 4, knockbackPxS: 55,
       reloadDurationS: 1.04, reloadSequence: 'attack', reloadWindupFrac: 0.55, reloadStrikeFrac: 0.56, reloadHoldFrac: 0.692,
       fireDurationS: 1.04, fireSequence: 'attack', fireWindupFrac: 0.05, fireAtFrac: 0.08, fireHoldFrac: 0.17,
@@ -494,7 +502,7 @@
     deps.refreshActionBar?.();
   }
 
-  function createProjectileMesh(def, radiusPx, textureSource = null) {
+  function createProjectileMesh(def, radiusPx, textureSource = null, sourceTransform = null) {
     const root = new THREE.Group();
     root.name = 'rangedProjectile';
     const collider = new THREE.Mesh(
@@ -505,10 +513,10 @@
     collider.userData.rangedCollider = true;
     root.add(collider);
 
-    // visual owns the immutable launch frame plus any fixed-axis thrown spin.
-    // facePivot is the only camera-responsive child: it may twist around the
-    // sprite's long local Y axis, but it cannot steer the projectile or change
-    // the world-space axis the throw was spinning around when released.
+    // visual owns the immutable launch frame sampled at release.
+    // facePivot owns visual-only PNG motion: spinning weapons rotate it around
+    // local Z, while non-spinning projectiles may use its local-Y camera
+    // readability twist. Neither path can steer the projectile trajectory.
     const visual = new THREE.Group();
     visual.name = 'projectileLaunchFrame';
     const facePivot = new THREE.Group();
@@ -517,6 +525,9 @@
 
     const spinningWeapon = def.projectileVisualStyle === 'spinningWeapon';
     const weaponSprite = spinningWeapon || def.projectileVisualStyle === 'weapon';
+    const sourcePlaneWidth = Number(sourceTransform?.planeWidth); // Used to clone the held weapon plane's authored geometry at the release frame.
+    const sourcePlaneHeight = Number(sourceTransform?.planeHeight); // Used with sourcePlaneWidth so the projectile starts with the held silhouette exactly.
+    const hasExactSourcePlane = weaponSprite && sourcePlaneWidth > 0 && sourcePlaneHeight > 0; // Used to bypass guessed weapon dimensions when the live held plane supplied them.
     let plane = null;
     let pendingAspect = 1;
     const updateAspect = loadedTexture => {
@@ -524,7 +535,7 @@
       const imageW = Math.max(1, Number(loadedTexture?.image?.width) || Number(loadedTexture?.image?.naturalWidth) || 1);
       const imageH = Math.max(1, Number(loadedTexture?.image?.height) || Number(loadedTexture?.image?.naturalHeight) || 1);
       pendingAspect = imageH / imageW;
-      if (plane) plane.scale.y = pendingAspect;
+      if (plane && !hasExactSourcePlane) plane.scale.y = pendingAspect;
     };
     let texture = null;
     if (textureSource?.clone) {
@@ -537,17 +548,16 @@
     texture.magFilter = texture.minFilter = THREE.NearestFilter;
     const longArrow = def.projectileSprite.includes('arrow_long');
     const weaponWidth = Math.max(0.08, Number(def.projectileVisualWidthWorld) || 0.5);
+    const projectilePlaneWidth = hasExactSourcePlane ? sourcePlaneWidth : (weaponSprite ? weaponWidth : (longArrow ? 0.09 : 0.065)); // Used by this projectile's one visual plane.
+    const projectilePlaneHeight = hasExactSourcePlane ? sourcePlaneHeight : (weaponSprite ? weaponWidth : (longArrow ? 0.72 : 0.38)); // Used with projectilePlaneWidth to preserve sampled held geometry exactly.
     plane = new THREE.Mesh(
-      new THREE.PlaneGeometry(
-        weaponSprite ? weaponWidth : (longArrow ? 0.09 : 0.065),
-        weaponSprite ? weaponWidth : (longArrow ? 0.72 : 0.38)
-      ),
+      new THREE.PlaneGeometry(projectilePlaneWidth, projectilePlaneHeight),
       new THREE.MeshBasicMaterial({ map: texture, transparent: true, alphaTest: 0.08, side: THREE.DoubleSide })
     );
-    if (weaponSprite) plane.scale.y = pendingAspect;
-    // Do not pre-rotate this plane. Its raw local +Y is the sprite's long
-    // axis, which lets the launch quaternion copy a held plane exactly and
-    // lets facePivot twist around that long axis without disturbing aim.
+    if (weaponSprite && !hasExactSourcePlane) plane.scale.y = pendingAspect;
+    // Do not pre-rotate this plane. Its raw local +Y/+Z axes are the sampled
+    // PNG plane axes: the launch quaternion supplies the exact Strike transform
+    // and spinning weapons rotate only this child around local Z afterward.
     plane.renderOrder = deps.heldObjectRenderOrder || 1.5;
     facePivot.add(plane);
     root.add(visual);
@@ -563,19 +573,6 @@
     if (!camera) return null;
     camera.updateWorldMatrix?.(true, false);
     return camera.getWorldPosition?.(out) || null;
-  }
-
-  function cameraPitchAxisWorld(direction, out = _projectileFrameRight) {
-    const camera = deps.getActiveCamera?.();
-    if (camera?.getWorldQuaternion) {
-      camera.updateWorldMatrix?.(true, false);
-      camera.getWorldQuaternion(_projectileCameraQuaternion);
-      return out.set(1, 0, 0).applyQuaternion(_projectileCameraQuaternion).normalize();
-    }
-    // Fallback is the launch-frame horizontal right axis.
-    out.crossVectors(_projectileWorldUp, direction);
-    if (out.lengthSq() < AIM_EPSILON) out.set(1, 0, 0);
-    return out.normalize();
   }
 
   function flightVisualQuaternion(direction, origin, out = new THREE.Quaternion()) {
@@ -691,12 +688,117 @@
     }
   }
 
+  function projectileFiniteStat(value, fallback, min = 0) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? Math.max(min, numeric) : fallback;
+  }
+
+  function projectileFlightStats(def) {
+    return {
+      speedMultiplier: projectileFiniteStat(def?.projectileSpeedMultiplier, DEFAULT_PROJECTILE_SPEED_MULTIPLIER, 0.05),
+      dropStartTiles: projectileFiniteStat(def?.projectileDropStartTiles, Infinity, 0),
+      gravityWorldS2: projectileFiniteStat(def?.projectileGravityWorldS2, 0, 0),
+      embedOnTerrain: def?.projectileEmbedOnTerrain === true,
+      persistS: projectileFiniteStat(def?.projectilePersistS, DEFAULT_PROJECTILE_EMBED_PERSIST_S, 0.05),
+      maxEmbedded: Math.max(1, Math.round(projectileFiniteStat(def?.projectileMaxEmbedded, DEFAULT_PROJECTILE_MAX_EMBEDDED, 1))),
+      fadeS: projectileFiniteStat(def?.projectileFadeS, DEFAULT_PROJECTILE_EMBED_FADE_S, 0.05),
+    };
+  }
+
+  function sameProjectilePersistenceOwner(a, b) {
+    if (a?.owner || b?.owner) return a?.owner === b?.owner;
+    return a?.team === b?.team;
+  }
+
+  function setProjectileVisualOpacity(p, opacity) {
+    const alpha = Math.max(0, Math.min(1, Number(opacity) || 0));
+    p.visual?.traverse?.(child => {
+      const materials = Array.isArray(child.material) ? child.material : (child.material ? [child.material] : []);
+      for (const material of materials) {
+        material.transparent = true;
+        material.opacity = alpha;
+        material.needsUpdate = true;
+      }
+    });
+  }
+
+  function disposeProjectileTrails(p) {
+    for (const lane of p.trailMeshes || []) {
+      lane.mesh.parent?.remove(lane.mesh);
+      lane.mesh.geometry?.dispose?.();
+      lane.mesh.material?.dispose?.();
+    }
+    p.trailMeshes = [];
+    p.trailPoints = [];
+  }
+
+  function startProjectileFade(p, reason = 'lifetime', durationS = p?.projectileFadeS || DEFAULT_PROJECTILE_EMBED_FADE_S) {
+    if (!p || p.dead || p.fading) return false;
+    p.fading = true;
+    p.fadeReason = reason;
+    p.fadeElapsedS = 0;
+    p.fadeDurationS = Math.max(0.05, Number(durationS) || DEFAULT_PROJECTILE_EMBED_FADE_S);
+    return true;
+  }
+
+  function enforceEmbeddedProjectileCap(p, reserveForIncomingShot = false) {
+    if (!p?.embedOnTerrain) return;
+    const cap = Math.max(1, Number(p.projectileMaxEmbedded) || DEFAULT_PROJECTILE_MAX_EMBEDDED);
+    const peers = projectiles
+      .filter(other => other !== p && !other.dead && other.embedded && !other.fading && other.itemKey === p.itemKey && sameProjectilePersistenceOwner(other, p))
+      .sort((a, b) => (a.launchSerial || 0) - (b.launchSerial || 0));
+    const consumesSlot = reserveForIncomingShot || p.embedded; // The newly fired/inserting projectile itself counts toward the cap even though it is excluded from the peer list.
+    const allowedExisting = Math.max(0, cap - (consumesSlot ? 1 : 0));
+    while (peers.length > allowedExisting) startProjectileFade(peers.shift(), 'capacity');
+  }
+
+  function terrainImpactForStep(p, blockedAtTerrain, groundedAtGround) {
+    if (!blockedAtTerrain && !groundedAtGround) return null;
+    let lo = 0, hi = 1;
+    for (let i = 0; i < 8; i++) {
+      const t = (lo + hi) * 0.5;
+      const x = THREE.MathUtils.lerp(p.prevX, p.x, t);
+      const y = THREE.MathUtils.lerp(p.prevY, p.y, t);
+      const worldY = THREE.MathUtils.lerp(p.prevWorldY, p.worldY, t);
+      const blocked = !deps.canOccupyAt(x, y, p.def.projectileRadiusPx);
+      const grounded = worldY <= deps.worldSurfaceY(x, y) + 0.08;
+      if (blocked || grounded) hi = t;
+      else lo = t;
+    }
+    const t = hi;
+    const x = THREE.MathUtils.lerp(p.prevX, p.x, t);
+    const y = THREE.MathUtils.lerp(p.prevY, p.y, t);
+    const worldY = THREE.MathUtils.lerp(p.prevWorldY, p.worldY, t);
+    const kind = worldY <= deps.worldSurfaceY(x, y) + 0.08 ? 'ground' : 'solid-tile';
+    return { kind, t };
+  }
+
+  function embedProjectile(p, impact) {
+    if (!p?.embedOnTerrain || !impact) return false;
+    const t = Math.max(0, Math.min(1, Number(impact.t) || 0));
+    p.x = THREE.MathUtils.lerp(p.prevX, p.x, t);
+    p.y = THREE.MathUtils.lerp(p.prevY, p.y, t);
+    p.worldY = THREE.MathUtils.lerp(p.prevWorldY, p.worldY, t);
+    if (impact.kind === 'ground') p.worldY = Math.max(p.worldY, deps.worldSurfaceY(p.x, p.y) + 0.08);
+    p.mesh.position.set(p.x / deps.TILE, p.worldY, p.y / deps.TILE);
+    updateProjectileVisual(p, 0); // Freeze the current arc-bent launch frame exactly where the projectile contacted terrain/cover.
+    p.embedded = true;
+    p.embeddedAgeS = 0;
+    p.impactKind = impact.kind || 'terrain';
+    p.vx = 0;
+    p.vy = 0;
+    p.vyWorld = 0;
+    disposeProjectileTrails(p);
+    enforceEmbeddedProjectileCap(p, false);
+    return true;
+  }
+
   function spawnProjectile(itemKey, x, y, angle, team, owner, ammoPayload = null, pitch = 0, shotOptions = null) {
     const def = defFor(itemKey);
     if (!def) return null;
     const scene = deps.getActiveScene();
-    const mesh = createProjectileMesh(def, def.projectileRadiusPx, shotOptions?.textureSource || null);
     const sourceTransform = shotOptions?.sourceTransform || null;
+    const mesh = createProjectileMesh(def, def.projectileRadiusPx, shotOptions?.textureSource || null, sourceTransform);
     const sourcePosition = sourceTransform?.position;
     const hasSourcePosition = Number.isFinite(sourcePosition?.x) && Number.isFinite(sourcePosition?.y) && Number.isFinite(sourcePosition?.z);
     const spawnX = hasSourcePosition ? sourcePosition.x * deps.TILE : x;
@@ -706,7 +808,9 @@
     mesh.position.set(spawnX / deps.TILE, worldY, spawnY / deps.TILE);
     scene.add(mesh);
 
-    const horizSpeedPxS = def.speedPxS * Math.cos(pitch);
+    const flightStats = projectileFlightStats(def); // Resolves every generic per-weapon flight/persistence stat exactly once at launch.
+    const projectileSpeedPxS = def.speedPxS * flightStats.speedMultiplier; // Per-weapon speed multiplier; legacy definitions still receive the shared 1.15 fallback.
+    const horizSpeedPxS = projectileSpeedPxS * Math.cos(pitch); // Used by the X/Z velocity components below.
     const direction = new THREE.Vector3(
       Math.cos(angle) * Math.cos(pitch),
       Math.sin(pitch),
@@ -715,7 +819,15 @@
     const baseVisualQuaternion = (shotOptions?.preserveSourceOrientation && sourceTransform?.quaternion?.isQuaternion)
       ? sourceTransform.quaternion.clone()
       : flightVisualQuaternion(direction, mesh.position, new THREE.Quaternion());
-    const fixedPitchAxisWorld = cameraPitchAxisWorld(direction, new THREE.Vector3()).clone();
+    const fallbackToolZFlip = !sourceTransform && def.rangedType === 'thrown' && def.toolEndFlip === true;
+    if (fallbackToolZFlip) {
+      // Unsampled enemy/fallback throws have no held plane quaternion to copy.
+      // The flight frame maps sprite length to local Y, which corresponds to
+      // the held tool's Z after the fixed PNG-plane basis. Post-multiplying
+      // this local-Y half-turn therefore reproduces the actual Tool-Z flip.
+      baseVisualQuaternion.multiply(_projectileFallbackToolZFlipQuaternion);
+    }
+    const launchTransformMode = shotOptions?.preserveSourceOrientation && hasSourcePosition ? 'held-strike-plane' : 'flight-frame'; // Used by the mobile-safe ranged debug snapshot to identify exact held-transform launches.
     mesh.userData.visual.quaternion.copy(baseVisualQuaternion);
     if (shotOptions?.preserveSourceOrientation && sourceTransform?.scale?.isVector3) {
       mesh.userData.visual.scale.copy(sourceTransform.scale);
@@ -728,13 +840,26 @@
       visual: mesh.userData.visual, facePivot: mesh.userData.facePivot,
       x: spawnX, y: spawnY, prevX: spawnX, prevY: spawnY, worldY, prevWorldY: worldY,
       vx: Math.cos(angle) * horizSpeedPxS, vy: Math.sin(angle) * horizSpeedPxS,
-      vyWorld: Math.sin(pitch) * (def.speedPxS / deps.TILE),
+      vyWorld: Math.sin(pitch) * (projectileSpeedPxS / deps.TILE),
+      projectileSpeedPxS,
+      projectileSpeedMultiplier: flightStats.speedMultiplier,
+      dropStartPx: Number.isFinite(flightStats.dropStartTiles) ? flightStats.dropStartTiles * deps.TILE : Infinity,
+      projectileDropStartTiles: flightStats.dropStartTiles,
+      projectileGravityWorldS2: flightStats.gravityWorldS2,
+      embedOnTerrain: flightStats.embedOnTerrain,
+      projectilePersistS: flightStats.persistS,
+      projectileMaxEmbedded: flightStats.maxEmbedded,
+      projectileFadeS: flightStats.fadeS,
+      launchDirection: direction.clone(),
+      launchSerial: ++projectileSerial,
+      embedded: false, embeddedAgeS: 0, fading: false, fadeElapsedS: 0, fadeDurationS: 0, fadeReason: null, impactKind: null,
       angle, pitch, distancePx: 0,
       effectiveRangePx: def.rangeTiles * deps.TILE,
       maxDistancePx: def.rangeTiles * deps.TILE * RANGE_FALLOFF_DISTANCE_MULTIPLIER,
       areaId: deps.getCurrentArea(), dead: false,
       baseVisualQuaternion,
-      fixedPitchAxisWorld,
+      launchTransformMode,
+      lockLaunchAlignment: def.projectileLockLaunchAlignment === true,
       faceTwistRad: 0,
       spinRad: 0,
       spinRateRad: mesh.userData.spinningWeapon ? fishingMaceSpinRateRad() : 0,
@@ -748,6 +873,7 @@
       trailMeshes: createProjectileTrails(scene, trailColors, def.projectileRadiusPx),
     };
     projectiles.push(p);
+    if (p.embedOnTerrain) enforceEmbeddedProjectileCap(p, true); // "More than three fired": reserve a visual slot at launch, fading the oldest embedded copy immediately when needed.
     return p;
   }
 
@@ -1093,11 +1219,13 @@
     window.AudioSystem?.playRangedImpactSfx?.(x, y, p.areaId);
   }
 
-  function projectileHit(p) {
+  function projectileHit(p, maxSegmentT = 1) {
     const start = _projectileHitStart.set(p.prevX / deps.TILE, p.prevWorldY, p.prevY / deps.TILE);
     const end = _projectileHitEnd.set(p.x / deps.TILE, p.worldY, p.y / deps.TILE);
     const projectileRadius = p.def.projectileRadiusPx / deps.TILE;
-    const coverHit = window.NearbyVolumeCollision?.segmentHit?.(start, end, projectileRadius) || null;
+    const segmentLimit = Math.max(0, Math.min(1, Number(maxSegmentT) || 0));
+    const rawCoverHit = window.NearbyVolumeCollision?.segmentHit?.(start, end, projectileRadius) || null;
+    const coverHit = rawCoverHit && rawCoverHit.t <= segmentLimit + AIM_EPSILON ? rawCoverHit : null;
     const falloff = projectileFalloffMultiplier(p);
     const scaledDamage = p.def.damage * falloff * (Number.isFinite(p.damageScale) ? p.damageScale : 1);
     const damage = p.team === 'player' && p.def.rangedType === 'thrown'
@@ -1105,55 +1233,73 @@
       : Math.max(1, scaledDamage);
     const knockbackPxS = p.def.knockbackPxS * p.knockbackMul * falloff;
     if (p.team === 'player') {
-      const nearest = nearestHostileHit(start, end, projectileRadius, p.areaId);
+      let nearest = nearestHostileHit(start, end, projectileRadius, p.areaId);
+      if (nearest && nearest.interval.enter > segmentLimit + AIM_EPSILON) nearest = null;
       if (coverHit && (!nearest || coverHit.t <= nearest.interval.enter)) {
         playProjectileImpactSfx(p, coverHit.t);
-        return true;
+        return { kind: 'cover', t: coverHit.t, coverHit };
       }
-      if (!nearest) return false;
+      if (!nearest) return null;
       const c = nearest.creature;
       playProjectileImpactSfx(p, nearest.interval.enter);
       deps.damageCreature(c, damage, p.prevX, p.prevY, knockbackPxS, { tag: 'sharp', ranged: true, afflictionBonuses: p.afflictionBonuses, footingDamageMultiplier: p.footingDamageMultiplier });
       applySpecialAmmoDebuff(c, p.specialAmmoId);
       deps.awardRangedMastery?.(p.itemKey);
-      return true;
+      return { kind: 'actor', t: nearest.interval.enter, actor: c };
     }
 
-    const playerInterval = segmentHitboxInterval(start, end, actorHitbox(deps.player), projectileRadius);
-    const friendly = nearestHostileHit(start, end, projectileRadius, p.areaId, p.owner);
+    const rawPlayerInterval = segmentHitboxInterval(start, end, actorHitbox(deps.player), projectileRadius);
+    const playerInterval = rawPlayerInterval && rawPlayerInterval.enter <= segmentLimit + AIM_EPSILON ? rawPlayerInterval : null;
+    let friendly = nearestHostileHit(start, end, projectileRadius, p.areaId, p.owner);
+    if (friendly && friendly.interval.enter > segmentLimit + AIM_EPSILON) friendly = null;
     let nearest = playerInterval ? { kind: 'player', interval: playerInterval, actor: deps.player } : null;
     if (friendly && (!nearest || friendly.interval.enter < nearest.interval.enter)) {
       nearest = { kind: 'hostile', interval: friendly.interval, actor: friendly.creature };
     }
     if (coverHit && (!nearest || coverHit.t <= nearest.interval.enter)) {
       playProjectileImpactSfx(p, coverHit.t);
-      return true;
+      return { kind: 'cover', t: coverHit.t, coverHit };
     }
-    if (!nearest) return false;
+    if (!nearest) return null;
     playProjectileImpactSfx(p, nearest.interval.enter);
     if (nearest.kind === 'hostile') {
       friendlyFireHits++;
       deps.damageCreature(nearest.actor, damage, p.prevX, p.prevY, knockbackPxS, { tag: 'sharp', ranged: true, friendlyFire: true, afflictionBonuses: p.afflictionBonuses, footingDamageMultiplier: p.footingDamageMultiplier });
       applySpecialAmmoDebuff(nearest.actor, p.specialAmmoId);
       lastEvent = `friendly-fire:${p.owner?.id || 'enemy'}->${nearest.actor.id || nearest.actor.name || 'hostile'}`;
-      return true;
+      return { kind: 'actor', t: nearest.interval.enter, actor: nearest.actor };
     }
     deps.damagePlayer(damage, p.prevX, p.prevY, knockbackPxS, { tag: 'sharp', ranged: true, afflictionBonuses: p.afflictionBonuses, footingDamageMultiplier: p.footingDamageMultiplier });
     applySpecialAmmoDebuff(deps.player, p.specialAmmoId);
-    return true;
+    return { kind: 'actor', t: nearest.interval.enter, actor: deps.player };
   }
 
-  // Projectile trajectory/orientation is frozen in its launch frame. Camera
-  // movement after release may only twist the INTERNAL flat sprite around its
-  // own long axis within an animal-style ±15° deadzone; it can never change
-  // the fixed spin axis or flight direction.
+  // Projectile orientation begins from the exact immutable launch frame.
+  // Authored projectile gravity may rotate that whole launch frame only by the
+  // physical trajectory delta as the shot arcs downward; camera movement never
+  // steers it. Spinning thrown weapons still rotate only the PNG child around
+  // local Z, while non-spinning projectiles retain the small camera-readability
+  // twist around their long axis.
   function updateProjectileVisual(p, dt) {
+    p.visual.quaternion.copy(p.baseVisualQuaternion);
+    if (p.projectileGravityWorldS2 > 0 && p.launchDirection?.isVector3) {
+      _projectileCurrentFlightDir.set(p.vx / deps.TILE, p.vyWorld, p.vy / deps.TILE);
+      if (_projectileCurrentFlightDir.lengthSq() > AIM_EPSILON) {
+        _projectileCurrentFlightDir.normalize();
+        _projectileTrajectoryDeltaQuaternion.setFromUnitVectors(p.launchDirection, _projectileCurrentFlightDir);
+        p.visual.quaternion.premultiply(_projectileTrajectoryDeltaQuaternion); // Bend the sampled held transform along the ballistic arc while preserving its authored relative roll/facing.
+      }
+    }
     if (p.spinRateRad) {
       p.spinRad = (p.spinRad + p.spinRateRad * dt) % (Math.PI * 2);
-      _projectileSpinQuaternion.setFromAxisAngle(p.fixedPitchAxisWorld, p.spinRad);
-      p.visual.quaternion.copy(_projectileSpinQuaternion).multiply(p.baseVisualQuaternion);
-    } else {
-      p.visual.quaternion.copy(p.baseVisualQuaternion);
+      p.facePivot.rotation.y = 0;
+      p.facePivot.rotation.z = p.spinRad;
+      return;
+    }
+    p.facePivot.rotation.z = 0;
+    if (p.lockLaunchAlignment) {
+      p.facePivot.rotation.y = 0; // Fishing Spear keeps the exact sampled Tool-Z release basis; only the whole launch frame bends with the physical ballistic arc above.
+      return;
     }
 
     const cameraPos = activeCameraWorldPosition();
@@ -1178,6 +1324,7 @@
   }
 
   function disposeProjectile(p) {
+    if (!p || p.dead) return;
     p.dead = true;
     p.mesh.parent?.remove(p.mesh);
     p.mesh.traverse(child => {
@@ -1185,29 +1332,65 @@
       child.material?.map?.dispose?.();
       child.material?.dispose?.();
     });
-    for (const lane of p.trailMeshes || []) {
-      lane.mesh.parent?.remove(lane.mesh);
-      lane.mesh.geometry?.dispose?.();
-      lane.mesh.material?.dispose?.();
-    }
+    disposeProjectileTrails(p);
   }
 
   function updateProjectiles(dt) {
     for (const p of projectiles) {
       if (p.dead) continue;
       if (p.areaId !== deps.getCurrentArea()) { disposeProjectile(p); continue; }
+
+      if (p.embedded) {
+        p.embeddedAgeS += dt;
+        const normalFadeDurationS = Math.min(p.projectileFadeS, p.projectilePersistS);
+        if (!p.fading && p.embeddedAgeS >= Math.max(0, p.projectilePersistS - normalFadeDurationS)) {
+          startProjectileFade(p, 'lifetime', normalFadeDurationS);
+        }
+        if (p.fading) {
+          p.fadeElapsedS += dt;
+          setProjectileVisualOpacity(p, 1 - p.fadeElapsedS / Math.max(0.05, p.fadeDurationS));
+          if (p.fadeElapsedS >= p.fadeDurationS) disposeProjectile(p);
+        }
+        continue;
+      }
+
       p.prevX = p.x; p.prevY = p.y; p.prevWorldY = p.worldY;
       const dx = p.vx * dt, dy = p.vy * dt;
-      p.x += dx; p.y += dy; p.worldY += p.vyWorld * dt; p.distancePx += Math.hypot(dx, dy);
+      const horizontalStepPx = Math.hypot(dx, dy);
+      const priorDistancePx = p.distancePx;
+      p.x += dx;
+      p.y += dy;
+      p.distancePx += horizontalStepPx;
+
+      let gravityDt = 0;
+      if (p.projectileGravityWorldS2 > 0 && p.distancePx > p.dropStartPx && horizontalStepPx > AIM_EPSILON) {
+        const postDropPx = Math.max(0, p.distancePx - Math.max(priorDistancePx, p.dropStartPx));
+        gravityDt = dt * Math.max(0, Math.min(1, postDropPx / horizontalStepPx));
+      }
+      p.worldY += p.vyWorld * dt - 0.5 * p.projectileGravityWorldS2 * gravityDt * gravityDt;
+      if (gravityDt > 0) p.vyWorld -= p.projectileGravityWorldS2 * gravityDt;
+
+      p.mesh.position.set(p.x / deps.TILE, p.worldY, p.y / deps.TILE);
+      updateProjectileVisual(p, dt);
+
+      const blockedAtTerrain = !deps.canOccupyAt(p.x, p.y, p.def.projectileRadiusPx);
       const groundedAtGround = p.worldY <= deps.worldSurfaceY(p.x, p.y) + 0.08;
-      if (!deps.canOccupyAt(p.x, p.y, p.def.projectileRadiusPx) || groundedAtGround || projectileHit(p) || p.distancePx >= p.maxDistancePx) {
+      const sweptTerrainImpact = terrainImpactForStep(p, blockedAtTerrain, groundedAtGround);
+      const hit = projectileHit(p, sweptTerrainImpact?.t ?? 1); // Ground/solid terrain caps the actor sweep so a curved shot cannot damage something behind the first terrain contact.
+      if (hit?.kind === 'actor') {
         disposeProjectile(p);
         continue;
       }
-      p.mesh.position.x = p.x / deps.TILE;
-      p.mesh.position.z = p.y / deps.TILE;
-      p.mesh.position.y = p.worldY;
-      updateProjectileVisual(p, dt);
+      const terrainImpact = hit?.kind === 'cover' ? hit : sweptTerrainImpact;
+      if (terrainImpact) {
+        if (hit?.kind !== 'cover') playProjectileImpactSfx(p, terrainImpact.t);
+        if (!embedProjectile(p, terrainImpact)) disposeProjectile(p);
+        continue;
+      }
+      if (p.distancePx >= p.maxDistancePx) {
+        disposeProjectile(p);
+        continue;
+      }
       updateProjectileTrails(p);
     }
     for (let i = projectiles.length - 1; i >= 0; i--) if (projectiles[i].dead) projectiles.splice(i, 1);
@@ -1507,7 +1690,7 @@
     get config() { return CONFIG; },
   };
   window.__rangedDebug = {
-    get projectiles() { return projectiles.map(p => ({ itemKey: p.itemKey, team: p.team, ammoId: p.ammoId, x: p.x, y: p.y, vx: p.vx, vy: p.vy, distancePx: p.distancePx, trailAfflictionIds: [...p.trailAfflictionIds] })); },
+    get projectiles() { return projectiles.map(p => ({ itemKey: p.itemKey, team: p.team, ammoId: p.ammoId, x: p.x, y: p.y, vx: p.vx, vy: p.vy, worldY: p.worldY, vyWorld: p.vyWorld, distancePx: p.distancePx, projectileSpeedPxS: p.projectileSpeedPxS, projectileSpeedMultiplier: p.projectileSpeedMultiplier, projectileDropStartTiles: p.projectileDropStartTiles, projectileGravityWorldS2: p.projectileGravityWorldS2, lockLaunchAlignment: p.lockLaunchAlignment, embedded: p.embedded, embeddedAgeS: p.embeddedAgeS, impactKind: p.impactKind, fading: p.fading, fadeReason: p.fadeReason, launchTransformMode: p.launchTransformMode, facingSource: p.launchTransformMode === 'held-strike-plane' ? 'sampled-held-plane' : (p.def?.toolEndFlip === true ? 'config-flip-fallback' : 'flight-frame'), spinAxis: p.spinRateRad ? 'png-local-z' : null, trailAfflictionIds: [...p.trailAfflictionIds] })); },
     get playerAction() { return playerAction ? { ...playerAction, def: undefined } : null; },
     get lastEvent() { return lastEvent; },
     get lastAudioEvent() { return lastAudioEvent; },
@@ -1541,12 +1724,14 @@
     firePlayer: (itemKey) => startPlayerAction(itemKey),
     idlePose: itemKey => ({ ...idlePose(itemKey) }),
     snapshot: () => ({
-      latestChange: 'Enemy bodies now block allied shots and take friendly-fire damage; loaded ranged AI strafes for LOS before firing. Actor hitboxes/projectile perps are shared within the frame and HUD LOS is throttled to 20 Hz.',
-      lastEvent, lastAudioEvent, projectileDeadzoneDeg: PROJECTILE_PERP_DEAD_DEG,
+      latestChange: 'Ranged flight is now per-weapon configurable. Thrown weapons default to faster six-tile-straight ballistic arcs and can embed in terrain/cover for ten seconds with a three-copy fading cap.',
+      lastEvent, lastAudioEvent, projectileDeadzoneDeg: PROJECTILE_PERP_DEAD_DEG, defaultProjectileSpeedMultiplier: DEFAULT_PROJECTILE_SPEED_MULTIPLIER,
       equippedRanged: deps?.getEquippedRangedKey?.() || null,
       activeAmmo: activeAmmoId(), specialAmmo: specialAmmoCount(), specialAmmoMax: SPECIAL_AMMO_MAX,
       playerDebuffs: { ...(deps?.player?._rangedAmmoDebuffs || {}) },
       activeProjectiles: projectiles.length,
+      embeddedProjectiles: projectiles.filter(p => p.embedded && !p.dead).length,
+      fadingEmbeddedProjectiles: projectiles.filter(p => p.embedded && p.fading && !p.dead).length,
       activeTrailMeshes: projectiles.reduce((sum, p) => sum + (p.trailMeshes?.length || 0), 0),
       friendlyFireHits, losRepositions, wouldHitCacheHits,
       loaded: Object.fromEntries(playerLoaded),

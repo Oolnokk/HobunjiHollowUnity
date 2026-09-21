@@ -52,7 +52,7 @@ assert.match(held, /attack-editor-history\.js\?v=/, 'history must load with the 
 
 // Primary grip is now a hand target, never an inverse weapon correction.
 assert.match(grips, /grip authoring moves the RIGHT HAND to that frame and never inverse-moves the weapon/, 'grip contract must be explicit');
-assert.match(grips, /function primaryGripForTool\(value\)/, 'runtime must return the authored primary hand target');
+assert.match(grips, /function primaryGripForTool\(value, context = currentGripContext\(\)\)/, 'runtime must return the authored primary hand target for the active melee/ranged grip set');
 assert.match(grips, /authored\.position\.x\) \* scale/, 'primary hand target must follow intrinsic weapon scale');
 assert.match(grips, /function applyEditorGripPresentation/, 'editor visual path should be presentation-only');
 assert.match(grips, /applyHeldItemScale\(visual, toolScaleForTool\(key\)\)/, 'grip presentation may scale the item but not translate/rotate it');
@@ -60,6 +60,9 @@ assert.doesNotMatch(grips, /function primaryGripForTool\(\) \{ return identityTr
 assert.doesNotMatch(grips, /function inverseTransform|function composePrimaryInverseWithPoint/, 'dead inverse-weapon grip math must not remain after hand-target migration');
 assert.match(grips, /position: \{ x: 0, y: 0, z: itemZ \* itemScale \}/, 'secondary hand span must also resolve directly in item space');
 
+assert.match(direct, /id="handGripContextSelect"[\s\S]*Melee grip[\s\S]*Ranged grip/, 'grip UI must expose independent melee and ranged grip sets.');
+assert.match(grips, /rangedPrimaryGrip/, 'shared grip store must retain independent ranged primary grip metadata.');
+assert.match(driver, /gripContext[\s\S]*primaryGripForTool\(toolKey, gripContext\)/, 'hand driver must consume the selected melee/ranged grip set at runtime.');
 assert.match(direct, /Right-hand target on weapon/, 'grip UI must name what is being authored');
 assert.match(direct, /blue marker is where the right hand is being told to grip/i, 'blue marker semantics must be explained');
 assert.match(direct, /weapon will not move/i, 'pick mode must say that it moves the hand target');

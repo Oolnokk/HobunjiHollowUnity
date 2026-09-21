@@ -29,6 +29,14 @@
   section.className = 'poseGroup';
   section.id = 'handPrimaryGripGroup';
   section.innerHTML = `
+    <div class="field">
+      <label>Grip set</label>
+      <select id="handGripContextSelect">
+        <option value="melee">Melee grip</option>
+        <option value="ranged">Ranged grip</option>
+      </select>
+      <div class="help" style="margin-top:5px">Dual-role weapons can keep completely separate hand targets for melee and ranged use. Existing weapons start with Ranged copied from Melee, so nothing changes until you edit it.</div>
+    </div>
     <div class="poseGroupHead"><span class="dot" style="background:#60a5fa"></span>Right-hand target on weapon</div>
     <div class="help" style="margin-bottom:6px"><b>The blue marker is where the right hand is being told to grip.</b> The hand's own guide/origin should land on that marker after Grip Mode + Hand Model Calibration are applied. Picking a point moves the HAND TARGET; it does not move the weapon.</div>
     <div class="row" style="margin-bottom:7px">
@@ -76,9 +84,11 @@
   $('handSecondaryGripRotationFields').innerHTML = rotationFields.map(field => fieldMarkup('handSecondaryRot', 'Secondary', field)).join('');
 
   function currentToolKey() { return toolGrips.toolKeyFor(toolSelect.value); }
+  function currentGripContext() { return toolGrips.normalizeGripContext?.($('handGripContextSelect')?.value || 'melee') || ($('handGripContextSelect')?.value === 'ranged' ? 'ranged' : 'melee'); }
   function currentToolScale() { return Math.max(0.1, Number(toolGrips.toolScaleForTool?.(currentToolKey())) || 1); }
   function currentEntry() { return toolGrips.ensureTool(currentToolKey()); }
-  function currentPrimary() { return currentEntry()?.primaryGrip || null; }
+  function currentPrimaryField() { return currentGripContext() === 'ranged' ? 'rangedPrimaryGrip' : 'primaryGrip'; }
+  function currentPrimary() { return currentEntry()?.[currentPrimaryField()] || null; }
   function currentSecondary() { return currentEntry()?.secondaryGrip || null; }
 
   function setPair(range, number, value) {
@@ -117,7 +127,8 @@
     const key = currentToolKey();
     if (!key) return;
     toolGrips.ensureTool(key);
-    toolGrips.mutate(data => mutator(data.tools[key][gripKey]));
+    const authoredField = gripKey === 'primaryGrip' ? currentPrimaryField() : gripKey;
+    toolGrips.mutate(data => mutator(data.tools[key][authoredField]));
     global.ProceduralHandFrameDriver?.syncNow?.();
     requestAnimationFrame(() => global.ProceduralHandFrameDriver?.syncNow?.()); // Ensures the same edit is visible after this frame's tool/pose matrices settle.
   }
@@ -184,7 +195,7 @@
       || null;
     if (effectiveStatus) {
       const second = debug?.secondaryActive ? `left→${debug.toolKey || currentToolKey()} secondary` : 'left→idle';
-      effectiveStatus.textContent = `${mappedKey || 'no model'}: model ${modelScale.toFixed(3)} × species ${speciesScale.toFixed(3)} = effective ${(modelScale * speciesScale).toFixed(3)} · item ×${currentToolScale().toFixed(2)} · direct attachment · right→authored primary · ${second} · NO ARM IK`;
+      effectiveStatus.textContent = `${mappedKey || 'no model'}: model ${modelScale.toFixed(3)} × species ${speciesScale.toFixed(3)} = effective ${(modelScale * speciesScale).toFixed(3)} · item ×${currentToolScale().toFixed(2)} · ${currentGripContext().toUpperCase()} grip · direct attachment · right→authored primary · ${second} · NO ARM IK`;
       effectiveStatus.style.color = debug?.hand?.loadError ? '#fb7185' : '';
     }
   }
@@ -201,8 +212,8 @@
     for (const field of rotationFields) setPair($(`handSecondaryRot_${field.key}`), $(`handSecondaryRot_${field.key}_n`), secondary.rotationDeg?.[field.key]);
     if (!pickActive) {
       $('handGripStatus').textContent = secondary.enabled
-        ? `${key || 'held item'}: TWO-HAND · blue target drives RIGHT HAND; animation-gated span drives LEFT HAND. Weapon remains animation-owned.`
-        : `${key || 'held item'}: ONE-HAND · blue target drives RIGHT HAND; left stays idle. Weapon remains animation-owned.`;
+        ? `${key || 'held item'} · ${currentGripContext().toUpperCase()}: TWO-HAND · blue target drives RIGHT HAND; animation-gated span drives LEFT HAND. Weapon remains animation-owned.`
+        : `${key || 'held item'} · ${currentGripContext().toUpperCase()}: ONE-HAND · blue target drives RIGHT HAND; left stays idle. Weapon remains animation-owned.`;
     }
     updatePrimaryMarker();
     refreshDirectStatus();
@@ -263,6 +274,12 @@
   });
 
   toolSelect.addEventListener('change', () => { stopPicking(); syncFields(); });
+  $('handGripContextSelect')?.addEventListener('change', () => {
+    stopPicking();
+    syncFields();
+    global.HobunjiAttackEditorHandGripMode?.syncForTool?.();
+    global.ProceduralHandFrameDriver?.syncNow?.();
+  });
   $('avatarSpecies')?.addEventListener('change', refreshDirectStatus);
   $('avatarGender')?.addEventListener('change', refreshDirectStatus);
   profileSelect.addEventListener('change', refreshDirectStatus);
@@ -272,7 +289,7 @@
   $('handGripSave').addEventListener('click', () => {
     try {
       toolGrips.saveLocal();
-      $('handGripStatus').textContent = `${currentToolKey()}: grip + base-scale draft saved locally.`;
+      $('handGripStatus').textContent = `${currentToolKey()} · ${currentGripContext().toUpperCase()}: grip + base-scale draft saved locally.`;
     } catch (error) {
       $('handGripStatus').textContent = `Grip save failed: ${error?.message || error}`;
     }
@@ -298,7 +315,8 @@
     refreshDirectStatus,
     get toolKey() { return currentToolKey(); },
     get toolScale() { return currentToolScale(); },
-    get primaryGrip() { return toolGrips.primaryGripForTool(currentToolKey()); },
+    get gripContext() { return currentGripContext(); },
+    get primaryGrip() { return toolGrips.primaryGripForTool(currentToolKey(), currentGripContext()); },
   });
 
   syncFields();

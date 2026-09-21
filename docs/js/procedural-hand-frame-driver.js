@@ -138,6 +138,13 @@
     return toolGrips.toolKeyFor(snapshot?.itemKey || snapshot?.shape || '');
   }
 
+  function currentGripContext() {
+    if (typeof toolGrips.currentGripContext === 'function') return toolGrips.currentGripContext();
+    if (inAttackEditor()) return document.getElementById('handGripContextSelect')?.value === 'ranged' ? 'ranged' : 'melee';
+    const snapshot = global.WeaponToolStances?.getRuntimeState?.() || global.WeaponToolStances?.debugSnapshot?.() || null;
+    return snapshot?.activeSlot === 'ranged' ? 'ranged' : 'melee';
+  }
+
   function currentToolHolder(record) {
     if (inAttackEditor()) return findEditorToolHolder(record);
     if (gameDeps?.playerMesh && record.rig?.parent === gameDeps.playerMesh) return gameDeps.toolHolder || null;
@@ -482,7 +489,8 @@
     syncing = true;
     try {
       const toolKey = currentToolKey();
-      const primaryGrip = toolGrips.primaryGripForTool(toolKey);
+      const gripContext = currentGripContext();
+      const primaryGrip = toolGrips.primaryGripForTool(toolKey, gripContext);
       const primarySocket = toolSocketWorld(record, toolHolder, primaryGrip); // Raw target ON the weapon, before Grip Mode or per-GLB hand-model calibration.
       record.rig.placePaperHandGuideWorld?.(primarySocket.position, primarySocket.quaternion); // Locked reference stays on the raw target while Grip Mode + child calibration move the real hand.
       const primary = handSocketAfterGripMode(record, primarySocket);
@@ -490,7 +498,7 @@
       record.rig.placeHandWorld?.('right', primary.position, primary.quaternion, modelCalibration);
       ensureFallbackState(record).owners.right = 'primary-grip';
 
-      const secondaryGrip = toolGrips.secondaryGripForTool(toolKey);
+      const secondaryGrip = toolGrips.secondaryGripForTool(toolKey, gripContext);
       if (secondaryGrip) {
         const secondary = handSocketAfterGripMode(record, toolSocketWorld(record, toolHolder, secondaryGrip));
         record.rig.placeHandWorld?.('left', secondary.position, secondary.quaternion, modelCalibration);
@@ -513,6 +521,7 @@
         modelCalibrationOwnedByVisualChild: true,
         scaleFreeWorldQuaternion: true,
         toolKey: toolKey || null,
+        gripContext,
         gripMode: global.HobunjiHandGripModes?.currentModeKey?.() || null,
         primaryGrip: JSON.parse(JSON.stringify(primaryGrip)),
         secondaryActive: record.secondaryActive,

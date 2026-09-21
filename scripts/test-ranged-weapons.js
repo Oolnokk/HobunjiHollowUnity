@@ -33,8 +33,8 @@ assert.match(ranged, /arrow_long\.png/, 'crossbow must use the long arrow visual
 assert.match(ranged, /arrow_short\.png/, 'scatterbow must use the short arrow visual');
 assert.match(ranged, /SphereGeometry/, 'projectile collision body must be a sphere');
 assert.match(ranged, /visible:\s*false/, 'projectile collider must remain hidden');
-assert.match(ranged, /creatureSnapSwayTarget/, 'projectile PNG must reuse animal snap/deadzone rotation');
-assert.match(ranged, /root sphere's vx\/vy and trajectory angle are never changed/, 'visual deadzone must not steer the projectile');
+assert.match(ranged, /Math\.abs\(diff\) > PROJECTILE_PERP_DEAD_RAD/, 'projectile PNG must retain the shared animal-style 15-degree camera-facing deadzone');
+assert.match(ranged, /facePivot\.rotation\.y = p\.faceTwistRad/, 'visual deadzone must stay isolated to the projectile sprite child instead of steering the projectile');
 assert.ok(fs.existsSync(path.join(root, 'docs/assets/audio/sfx/combat/sfx_loading_mechanism.m4a')), 'loading mechanism recording must be present');
 assert.ok(fs.existsSync(path.join(root, 'docs/assets/audio/sfx/combat/sfx_shootarrow.m4a')), 'arrow firing recording must be present');
 assert.ok(fs.existsSync(path.join(root, 'docs/assets/audio/sfx/combat/sfx_arrow_hit.mp3')), 'arrow impact recording must be present');
@@ -53,7 +53,7 @@ assert.match(ranged, /const layerVolumeScale = itemKey === 'scatterbow' \? \(kin
 assert.match(ranged, /if \(kind === 'load'\) playRangedActionSfx\(itemKey, 'load'\)/, 'player loading must trigger its cue at animation start');
 assert.match(ranged, /playRangedActionSfx\(action\.itemKey, 'fire'\)[\s\S]*spawnVolley/, 'player firing cue must align with projectile release');
 assert.match(ranged, /PROJECTILE_PERP_DEAD_DEG\s*=\s*15/, 'projectile PNGs must use dedicated 15-degree rotation windows');
-assert.match(ranged, /const deadRad = PROJECTILE_PERP_DEAD_RAD/, 'projectile rotation must not inherit the wider animal deadzone');
+assert.match(ranged, /Math\.abs\(diff\) > PROJECTILE_PERP_DEAD_RAD/, 'projectile rotation must use its dedicated 15-degree deadzone rather than the wider animal threshold');
 assert.match(ranged, /function projectileTrailColors\([\s\S]*ResourceRings\?\.AFFLICTION_COLORS[\s\S]*ResourceRings\?\.neonizeColor/, 'projectile trails must reuse the melee/resource-ring affliction palette');
 assert.match(ranged, /function projectileAfflictionBonuses\([\s\S]*team === 'player'\)[\s\S]*ammoPayload\?\.afflictionBonuses[\s\S]*afflictionBonusesForTag/, 'player arrows must use their ammo loadout while enemy arrows retain their tag affliction');
 assert.match(ranged, /function createProjectileTrails\([\s\S]*vertexColors:\s*true[\s\S]*THREE\.AdditiveBlending/, 'projectiles must create additive vertex-colored comet ribbons');
@@ -61,8 +61,8 @@ assert.match(ranged, /afflictionBonuses:\s*p\.afflictionBonuses/, 'projectile im
 assert.match(ranged, /snapshot:\s*\(\) => \(\{[\s\S]*projectileDeadzoneDeg:[\s\S]*activeTrailMeshes:/, 'mobile ranged debug snapshot must report deadzone and comet-trail state');
 assert.match(ranged, /deps\.debugLog\?\.\('Ranged update:/, 'ranged startup must summarize the latest change in the visible mobile debug log');
 assert.match(game, /awardRangedMastery:[\s\S]*debugLog,\s*\/\/ Lets the ranged module report/, 'game bootstrap must supply the visible debug logger to the ranged module');
-assert.match(index, /ranged-weapons\.js\?v=20260909perspectivepoint1/, 'game bootstrap must invalidate the ranged mastery/ammo cache');
-assert.match(index, /scratchbones-config\.js\?v=20260909controller1/, 'game bootstrap must invalidate the mobile-safe ranged/audio/input config cache');
+assert.match(index, /ranged-weapons\.js\?v=20260920orbit1-projectileport1-rangecameraorbit2/, 'game bootstrap must invalidate the ranged projectile/orbit cache');
+assert.match(index, /scratchbones-config\.js\?v=20260919combatbgm2/, 'game bootstrap must keep the current mobile-safe ranged/audio config cache tag');
 assert.match(index, /game\.js\?v=\d+\w*/, 'game bootstrap must invalidate the ranged loadout/input wiring cache');
 
 assert.match(ranged, /SPECIAL_AMMO_MAX\s*=\s*8/, 'special ammo must use the shared 0/8 cap');

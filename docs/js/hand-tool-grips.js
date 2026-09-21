@@ -11,6 +11,8 @@
   const LOCAL_KEY = 'hobunji.handToolGrips.v1';
   const SECONDARY_GRIP_PRESET = 'animation-span-v1'; // Migrates old always-on secondary points into animation-gated Z spans.
   const PRIMARY_ROTATION_PRESET = 'hatchet-primary-xy-rotation-20260921-v3'; // Hatchet is the canonical right-hand grip example: propagate its X, Y, and rotation to every other tool, never its item-specific Z.
+  const RANGED_GRIP_PRESET = 'melee-ranged-split-20260920-v4-editor-authored'; // Ranged starts as an exact melee clone; the Attack Editor is the authority for later divergence.
+  const AUTO_DAGGER_RANGED_PRESETS = new Set(['melee-ranged-split-20260920-v1', 'melee-ranged-split-20260920-v3-dagger']); // Short-lived branch defaults guessed dagger scale/Z; v4 only repairs those exact untouched guesses.
   const HATCHET_PRIMARY_GRIP_EXAMPLE = Object.freeze({
     x: -0.04,
     y: -0.04,
@@ -36,6 +38,7 @@
     schema: SCHEMA,
     secondaryGripPreset: SECONDARY_GRIP_PRESET,
     primaryRotationPreset: PRIMARY_ROTATION_PRESET,
+    rangedGripPreset: RANGED_GRIP_PRESET,
     tools: {
       hatchet: {
         primaryGrip: { position: { x: HATCHET_PRIMARY_GRIP_EXAMPLE.x, y: HATCHET_PRIMARY_GRIP_EXAMPLE.y, z: -0.0106 }, rotationDeg: { ...HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg } },
@@ -164,6 +167,29 @@
     return key || null;
   }
 
+  function normalizeGripContext(raw) {
+    return String(raw || '').toLowerCase() === 'ranged' ? 'ranged' : 'melee';
+  }
+
+  function primaryGripFieldForContext(context) {
+    return normalizeGripContext(context) === 'ranged' ? 'rangedPrimaryGrip' : 'primaryGrip';
+  }
+
+  function secondaryGripSpanFieldForContext(context) {
+    return normalizeGripContext(context) === 'ranged' ? 'rangedSecondaryGripSpan' : 'secondaryGripSpan';
+  }
+
+  function gripModeFieldForContext(context) {
+    return normalizeGripContext(context) === 'ranged' ? 'rangedGripMode' : 'gripMode';
+  }
+
+  function currentGripContext() {
+    if (inAttackEditor()) return normalizeGripContext(document.getElementById('handGripContextSelect')?.value || 'melee');
+    const snapshot = global.WeaponToolStances?.getRuntimeState?.() || global.WeaponToolStances?.debugSnapshot?.() || null;
+    const activeSlot = snapshot?.activeSlot || global.ProceduralHandAttachments?.gameDeps?.getActiveTool?.() || null;
+    return activeSlot === 'ranged' ? 'ranged' : 'melee';
+  }
+
   function inferredSpan(entry) {
     const explicit = entry?.secondaryGripSpan;
     if (explicit && typeof explicit === 'object') {
@@ -187,9 +213,11 @@
   function normalizeData(raw) {
     const next = clone(raw || DEFAULT_DATA);
     const previousPrimaryRotationPreset = next.primaryRotationPreset; // Missing/older marker means saved grip rotations need the new authoritative weapon table once.
+    const previousRangedGripPreset = next.rangedGripPreset; // Missing marker identifies drafts created before melee/ranged grip separation.
     next.schema = SCHEMA;
     next.secondaryGripPreset = SECONDARY_GRIP_PRESET;
     next.primaryRotationPreset = PRIMARY_ROTATION_PRESET;
+    next.rangedGripPreset = RANGED_GRIP_PRESET;
     const rawTools = next.tools && typeof next.tools === 'object' ? next.tools : {}; // Saved drafts override defaults, while newly added weapon defaults still appear after upgrades.
     next.tools = { ...clone(DEFAULT_DATA.tools), ...rawTools };
     for (const [toolKey, entry] of Object.entries(next.tools)) {
@@ -205,6 +233,39 @@
       entry.secondaryGripSpan = inferredSpan(entry);
       entry.secondaryGrip = disabledLegacySecondary();
       entry.gripMode = normalizeGripMode(entry.gripMode);
+      // Ranged grip metadata starts as an exact copy of the melee grip for
+      // legacy/default data, then becomes independently authorable. Existing
+      // weapons therefore keep their current hand placement until an artist
+      // explicitly edits the Ranged set in the Attack Animation Editor.
+      entry.rangedPrimaryGrip = normalizeTransform(entry.rangedPrimaryGrip ?? entry.primaryGrip);
+      entry.rangedSecondaryGripSpan = inferredSpan({
+        secondaryGripSpan: entry.rangedSecondaryGripSpan ?? entry.secondaryGripSpan,
+        primaryGrip: entry.rangedPrimaryGrip,
+      });
+      entry.rangedGripMode = normalizeGripMode(entry.rangedGripMode ?? entry.gripMode);
+      if (AUTO_DAGGER_RANGED_PRESETS.has(previousRangedGripPreset) && toolKey === 'dagger') {
+        // Repair only the exact automatic branch guess (.55 scale, ranged Z .28,
+        // otherwise canonical grip). Any deviation means the user already edited
+        // the draft, so preserve it rather than mistaking authored data for defaults.
+        const ranged = entry.rangedPrimaryGrip;
+        const rr = ranged?.rotationDeg || {};
+        const untouchedAutoGuess = Math.abs(entry.toolScale - 0.55) < 1e-9
+          && Math.abs(numberOrZero(ranged?.position?.x) - HATCHET_PRIMARY_GRIP_EXAMPLE.x) < 1e-9
+          && Math.abs(numberOrZero(ranged?.position?.y) - HATCHET_PRIMARY_GRIP_EXAMPLE.y) < 1e-9
+          && Math.abs(numberOrZero(ranged?.position?.z) - 0.28) < 1e-9
+          && numberOrZero(rr.pitch) === HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg.pitch
+          && numberOrZero(rr.yaw) === HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg.yaw
+          && numberOrZero(rr.roll) === HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg.roll;
+        if (untouchedAutoGuess) {
+          entry.toolScale = normalizeToolScale(DEFAULT_DATA.tools.dagger.toolScale, 1);
+          entry.rangedPrimaryGrip = normalizeTransform(entry.primaryGrip);
+          entry.rangedSecondaryGripSpan = inferredSpan({
+            secondaryGripSpan: entry.secondaryGripSpan,
+            primaryGrip: entry.rangedPrimaryGrip,
+          });
+          entry.rangedGripMode = normalizeGripMode(entry.gripMode);
+        }
+      }
     }
     return next;
   }
@@ -228,6 +289,12 @@
     entry.secondaryGripSpan = inferredSpan(entry);
     entry.secondaryGrip = disabledLegacySecondary();
     entry.gripMode = normalizeGripMode(entry.gripMode);
+    entry.rangedPrimaryGrip = normalizeTransform(entry.rangedPrimaryGrip ?? entry.primaryGrip);
+    entry.rangedSecondaryGripSpan = inferredSpan({
+      secondaryGripSpan: entry.rangedSecondaryGripSpan ?? entry.secondaryGripSpan,
+      primaryGrip: entry.rangedPrimaryGrip,
+    });
+    entry.rangedGripMode = normalizeGripMode(entry.rangedGripMode ?? entry.gripMode);
     return entry;
   }
 
@@ -237,12 +304,13 @@
     return normalizeToolScale(entry?.toolScale, DEFAULT_DATA.tools[key]?.toolScale ?? 1);
   }
 
-  function authoredPrimaryGripForTool(value) {
-    return normalizeTransform(ensureTool(value)?.primaryGrip);
+  function authoredPrimaryGripForTool(value, context = currentGripContext()) {
+    const entry = ensureTool(value);
+    return normalizeTransform(entry?.[primaryGripFieldForContext(context)]);
   }
 
-  function primaryGripForTool(value) {
-    const authored = authoredPrimaryGripForTool(value); // Selected item-local frame the right hand must reach.
+  function primaryGripForTool(value, context = currentGripContext()) {
+    const authored = authoredPrimaryGripForTool(value, context); // Selected melee/ranged item-local frame the right hand must reach.
     const scale = toolScaleForTool(value); // Grip coordinates are authored against the unscaled sprite and expand with its intrinsic size.
     return {
       position: {
@@ -254,8 +322,9 @@
     };
   }
 
-  function secondaryGripSpanForTool(value) {
-    const span = ensureTool(value)?.secondaryGripSpan;
+  function secondaryGripSpanForTool(value, context = currentGripContext()) {
+    const entry = ensureTool(value);
+    const span = entry?.[secondaryGripSpanFieldForContext(context)];
     return span?.enabled ? { enabled: true, startZ: numberOrZero(span.startZ), endZ: numberOrZero(span.endZ) } : null;
   }
 
@@ -345,8 +414,8 @@
 
   function currentSecondaryGripAnimationState() { return inAttackEditor() ? editorAnimationGripState() : runtimeAnimationGripState(); }
 
-  function secondaryGripForTool(value) {
-    const span = secondaryGripSpanForTool(value);
+  function secondaryGripForTool(value, context = currentGripContext()) {
+    const span = secondaryGripSpanForTool(value, context);
     if (!span) return null;
     const state = currentSecondaryGripAnimationState();
     if (!(state.influence > 0.0001)) return null;
@@ -508,12 +577,23 @@
 
   function mutate(mutator) { mutator(data); data = normalizeData(data); notify(); return data; }
 
-  function gripModeForTool(value) { return ensureTool(value)?.gripMode || null; }
-  function setGripMode(value, modeKey) { const entry = ensureTool(value); if (!entry) return null; entry.gripMode = normalizeGripMode(modeKey); notify(); return entry.gripMode; }
+  function gripModeForTool(value, context = currentGripContext()) {
+    const entry = ensureTool(value);
+    return entry?.[gripModeFieldForContext(context)] || null;
+  }
+  function setGripMode(value, modeKey, context = currentGripContext()) {
+    const entry = ensureTool(value);
+    if (!entry) return null;
+    const field = gripModeFieldForContext(context);
+    entry[field] = normalizeGripMode(modeKey);
+    notify();
+    return entry[field];
+  }
   function saveLocal() { localStorage.setItem(LOCAL_KEY, JSON.stringify(cleanClone())); }
   function loadLocal() { const raw = localStorage.getItem(LOCAL_KEY); if (!raw) return false; replace(JSON.parse(raw)); return true; }
   function clearLocal() { localStorage.removeItem(LOCAL_KEY); data = normalizeData(DEFAULT_DATA); notify(); }
   function editorCurrentToolKey() { return toolKeyFor(document.getElementById('toolSpriteSelect')?.value || ''); }
+  function editorGripContext() { return normalizeGripContext(document.getElementById('handGripContextSelect')?.value || 'melee'); }
 
   function editorAnimationJsonObject() {
     const view = document.getElementById('jsonView');
@@ -561,7 +641,9 @@
   function syncEditorSpanUi() {
     if (!editorUi) return;
     const entry = ensureTool(editorCurrentToolKey());
-    const span = entry?.secondaryGripSpan || { enabled: false, startZ: 0, endZ: 0 };
+    const gripContext = editorGripContext();
+    const spanField = secondaryGripSpanFieldForContext(gripContext);
+    const span = entry?.[spanField] || { enabled: false, startZ: 0, endZ: 0 };
     editorUi.scalePair.set(normalizeToolScale(entry?.toolScale));
     editorUi.spanEnabled.checked = span.enabled === true;
     editorUi.startPair.set(numberOrZero(span.startZ)); editorUi.endPair.set(numberOrZero(span.endZ));
@@ -575,8 +657,8 @@
     const state = editorAnimationGripState();
     const scaleLabel = `base scale ×${normalizeToolScale(entry?.toolScale).toFixed(2)}`;
     editorUi.status.textContent = span.enabled
-      ? `${editorCurrentToolKey() || 'held item'} · ${scaleLabel} · off-hand span Z ${numberOrZero(span.startZ).toFixed(2)} → ${numberOrZero(span.endZ).toFixed(2)} · animation influence ${Math.round(state.influence * 100)}% · span position ${Math.round(state.percent)}%`
-      : `${editorCurrentToolKey() || 'held item'} · ${scaleLabel} · no off-hand span; animation secondary-hand settings are ignored.`;
+      ? `${editorCurrentToolKey() || 'held item'} · ${gripContext.toUpperCase()} grip · ${scaleLabel} · off-hand span Z ${numberOrZero(span.startZ).toFixed(2)} → ${numberOrZero(span.endZ).toFixed(2)} · animation influence ${Math.round(state.influence * 100)}% · span position ${Math.round(state.percent)}%`
+      : `${editorCurrentToolKey() || 'held item'} · ${gripContext.toUpperCase()} grip · ${scaleLabel} · no off-hand span; animation secondary-hand settings are ignored.`;
   }
 
   function installEditorUi() {
@@ -622,8 +704,12 @@
       <div class="help" id="handSecondarySpanStatus" style="padding:7px;border:1px solid rgba(245,158,11,.24);border-radius:8px;margin:6px 0"></div>`;
     host.insertBefore(panel, status);
     const spanFields = panel.querySelector('#handSecondarySpanFields'), animationFields = panel.querySelector('#handSecondaryAnimationFields'), spanEnabled = panel.querySelector('#handSecondarySpanEnabled');
-    const startPair = editorFieldPair(spanFields, 'handSecondarySpanStartZ', 'Left-hand span start · tool Z position', 0, -1.5, 1.5, 0.01, value => mutate(() => { ensureTool(editorCurrentToolKey()).secondaryGripSpan.startZ = value; }));
-    const endPair = editorFieldPair(spanFields, 'handSecondarySpanEndZ', 'Left-hand span end · tool Z position', 0, -1.5, 1.5, 0.01, value => mutate(() => { ensureTool(editorCurrentToolKey()).secondaryGripSpan.endZ = value; }));
+    const currentSpan = () => {
+      const entry = ensureTool(editorCurrentToolKey());
+      return entry[secondaryGripSpanFieldForContext(editorGripContext())];
+    };
+    const startPair = editorFieldPair(spanFields, 'handSecondarySpanStartZ', 'Left-hand span start · tool Z position', 0, -1.5, 1.5, 0.01, value => mutate(() => { currentSpan().startZ = value; }));
+    const endPair = editorFieldPair(spanFields, 'handSecondarySpanEndZ', 'Left-hand span end · tool Z position', 0, -1.5, 1.5, 0.01, value => mutate(() => { currentSpan().endZ = value; }));
     const pose = {};
     for (const phase of ['neutral', 'windup', 'strike']) {
       const box = document.createElement('div');
@@ -635,10 +721,14 @@
       enabled.addEventListener('change', () => { editorSecondaryPoses[phase].enabled = enabled.checked; patchEditorJsonView(); syncEditorSpanUi(); });
       pose[phase] = { enabled, percent };
     }
-    spanEnabled.addEventListener('change', () => mutate(() => { ensureTool(editorCurrentToolKey()).secondaryGripSpan.enabled = spanEnabled.checked; }));
+    spanEnabled.addEventListener('change', () => mutate(() => { currentSpan().enabled = spanEnabled.checked; }));
     editorUi = { scalePanel, scalePair, panel, spanEnabled, startPair, endPair, pose, status: panel.querySelector('#handSecondarySpanStatus') };
 
     document.getElementById('toolSpriteSelect')?.addEventListener('change', () => setTimeout(syncEditorSpanUi, 0));
+    document.getElementById('handGripContextSelect')?.addEventListener('change', () => {
+      syncEditorSpanUi();
+      global.ProceduralHandFrameDriver?.syncNow?.();
+    });
     for (const id of ['scrub', 'windupFrac', 'strikeFrac', 'holdFrac', 'playbackSequence']) {
       document.getElementById(id)?.addEventListener('input', syncEditorSpanUi); document.getElementById(id)?.addEventListener('change', syncEditorSpanUi);
     }
@@ -672,8 +762,9 @@
     return {
       toolKey,
       toolScale: toolScaleForTool(toolKey),
-      primaryGrip: authoredPrimaryGripForTool(toolKey),
-      secondaryGripSpan: secondaryGripSpanForTool(toolKey),
+      gripContext: currentGripContext(),
+      primaryGrip: authoredPrimaryGripForTool(toolKey, currentGripContext()),
+      secondaryGripSpan: secondaryGripSpanForTool(toolKey, currentGripContext()),
       secondaryAnimation: currentSecondaryGripAnimationState(),
       secondaryTarget: secondaryGripForTool(toolKey),
     };
@@ -699,7 +790,8 @@
     get data() { return data; },
     get defaultData() { return normalizeData(DEFAULT_DATA); },
     clone: cleanClone,
-    toolKeyFor, ensureTool, toolScaleForTool, authoredPrimaryGripForTool, primaryGripForTool, secondaryGripSpanForTool, secondaryGripForTool,
+    toolKeyFor, ensureTool, toolScaleForTool, normalizeGripContext, currentGripContext,
+    authoredPrimaryGripForTool, primaryGripForTool, secondaryGripSpanForTool, secondaryGripForTool,
     currentSecondaryGripAnimationState, animationGripAt, gripModeForTool, setGripMode, replace, mutate, saveLocal, loadLocal, clearLocal, applyPrimaryGripVisuals, debugForTool,
     editorSecondaryGripStateSnapshot, restoreEditorSecondaryGripState,
     getDebug() {

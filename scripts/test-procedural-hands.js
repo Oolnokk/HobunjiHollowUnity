@@ -388,6 +388,42 @@ for (const toolKey of ['hatchet','hoe','bshuakauitl','pickshovel','daggersword',
     `${toolKey} must inherit hatchet's primary-grip rotation`,
   );
 }
+assert.strictEqual(grips.toolScaleForTool('dagger'), 1, 'Melee/ranged grip separation must not silently rescale the dagger.');
+assert.strictEqual(grips.authoredPrimaryGripForTool('dagger', 'melee').position.z, -0.09, 'Dagger melee grip keeps its existing authored Z.');
+assert.strictEqual(grips.authoredPrimaryGripForTool('dagger', 'ranged').position.z, -0.09, 'Dagger ranged grip starts as an exact copy of melee until the artist edits it.');
+assert.deepStrictEqual(
+  JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('dagger', 'ranged').rotationDeg)),
+  sharedHatchetRotation,
+  'Dagger ranged grip starts with the same rotation as melee; no code-side flip is guessed.',
+);
+const unsplitSnapshot = grips.clone();
+grips.mutate(data => {
+  data.tools.dagger.rangedPrimaryGrip.position.z = 0.28;
+  data.tools.dagger.rangedPrimaryGrip.rotationDeg.roll = 180;
+});
+assert.strictEqual(grips.authoredPrimaryGripForTool('dagger', 'melee').position.z, -0.09, 'Editing ranged dagger Z must not alter its melee grip.');
+assert.strictEqual(grips.authoredPrimaryGripForTool('dagger', 'ranged').position.z, 0.28, 'Ranged dagger Z must be independently authorable.');
+assert.strictEqual(grips.authoredPrimaryGripForTool('dagger', 'melee').rotationDeg.roll, 0, 'Editing ranged dagger rotation must not alter melee rotation.');
+assert.strictEqual(grips.authoredPrimaryGripForTool('dagger', 'ranged').rotationDeg.roll, 180, 'Ranged dagger rotation can be flipped independently in the editor.');
+grips.replace(unsplitSnapshot);
+
+const oldRangedGripDraft = grips.clone();
+delete oldRangedGripDraft.rangedGripPreset;
+delete oldRangedGripDraft.tools.dagger.rangedPrimaryGrip;
+delete oldRangedGripDraft.tools.dagger.rangedSecondaryGripSpan;
+delete oldRangedGripDraft.tools.dagger.rangedGripMode;
+grips.replace(oldRangedGripDraft);
+assert.strictEqual(grips.toolScaleForTool('dagger'), 1, 'Pre-split saved dagger drafts must retain their existing shared scale.');
+assert.strictEqual(grips.authoredPrimaryGripForTool('dagger', 'ranged').position.z, -0.09, 'Pre-split saved dagger drafts must clone melee into ranged rather than receiving guessed values.');
+
+const v1AutoGuessDraft = grips.clone();
+v1AutoGuessDraft.rangedGripPreset = 'melee-ranged-split-20260920-v1';
+v1AutoGuessDraft.tools.dagger.toolScale = 0.55;
+v1AutoGuessDraft.tools.dagger.rangedPrimaryGrip = { position: { x: -0.04, y: -0.04, z: 0.28 }, rotationDeg: { ...sharedHatchetRotation } };
+grips.replace(v1AutoGuessDraft);
+assert.strictEqual(grips.toolScaleForTool('dagger'), 1, 'Untouched short-lived v1 dagger auto-scale must be repaired back to the pre-split scale.');
+assert.strictEqual(grips.authoredPrimaryGripForTool('dagger', 'ranged').position.z, -0.09, 'Untouched short-lived v1 dagger auto-grip must be repaired back to a melee clone.');
+
 const oldRotationDraft = grips.clone();
 delete oldRotationDraft.primaryRotationPreset;
 oldRotationDraft.tools.hatchet.primaryGrip.position = { x: 0.123, y: -0.456, z: 0.789 };
@@ -432,6 +468,10 @@ const hatchetGripScale = grips.toolScaleForTool('hatchet');
 assert.strictEqual(effectiveHatchetGrip.position.x, authoredHatchetGrip.position.x * hatchetGripScale, 'primary grip target X must scale with the visible weapon instead of moving the weapon back to the hand');
 assert.strictEqual(effectiveHatchetGrip.position.y, authoredHatchetGrip.position.y * hatchetGripScale, 'primary grip target Y must scale with the visible weapon');
 assert.strictEqual(effectiveHatchetGrip.position.z, authoredHatchetGrip.position.z * hatchetGripScale, 'primary grip target Z must scale with the visible weapon');
+assert.match(gripConfigSource, /function primaryGripForTool\(value, context = currentGripContext\(\)\)/, 'primary grip API must resolve an explicit melee/ranged context.');
+assert.match(gripConfigSource, /primaryGripFieldForContext[\s\S]*rangedPrimaryGrip/, 'ranged primary grip must be stored independently from melee primaryGrip.');
+assert.match(driverSource, /const gripContext = currentGripContext\(\)[\s\S]*primaryGripForTool\(toolKey, gripContext\)[\s\S]*secondaryGripForTool\(toolKey, gripContext\)/, 'runtime hand driver must switch both hands to ranged grip metadata when the ranged slot is active.');
+assert.match(directEditorSource, /id="handGripContextSelect"[\s\S]*Melee grip[\s\S]*Ranged grip/, 'Attack Editor must expose an explicit Melee/Ranged grip-set selector.');
 assert.match(gripConfigSource, /grip authoring moves the RIGHT HAND to that frame and never inverse-moves the weapon/, 'shared grip contract must keep weapon animation authoritative');
 assert.doesNotMatch(gripConfigSource, /function primaryGripForTool\(\) \{ return identityTransform\(\); \}/, 'primary hand target must no longer be discarded at runtime');
 

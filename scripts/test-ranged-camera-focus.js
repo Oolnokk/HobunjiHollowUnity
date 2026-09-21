@@ -8,7 +8,7 @@ const vm = require('node:vm');
 const source = fs.readFileSync('docs/js/combat/ranged-camera-focus.js', 'utf8');
 const loader = fs.readFileSync('docs/js/combat/combat-config-loader.js', 'utf8');
 
-assert.match(loader, /ranged-camera-focus\.js\?v=20260918reticlezoom1[\s\S]*HobunjiRangedCameraFocus\?\.version\) >= 8/, 'loader requires reticle-centered optical focus v8');
+assert.match(loader, /ranged-camera-focus\.js\?v=20260920rangecameraorbit2[\s\S]*HobunjiRangedCameraFocus\?\.version\) >= 10/, 'loader requires camera-focus v10 with animation pitch ownership returned to game.js');
 assert.doesNotMatch(loader, /attack-camera-player-root/, 'obsolete player-root camera hook stays removed');
 assert.match(source, /change-driven-persistent-cache/, 'combat aim advertises persistent change-driven caching');
 assert.match(source, /intersectObject\(root, true, localHits\)/, 'scene roots remain isolated so one bad root cannot abort the frame');
@@ -21,6 +21,9 @@ assert.doesNotMatch(source, /prototype\.lookAt/, 'combat aim never replaces came
 assert.doesNotMatch(source, /this\.position\.set/, 'combat aim never writes camera position');
 assert.doesNotMatch(source, /mode\.distanceTiles\s*=\s*next/, 'ranged focus never dollies the shoulder camera, avoiding reticle parallax');
 assert.match(source, /mode\.fovDeg\s*=\s*next/, 'ranged focus zooms optically through the native shoulder FOV');
+assert.match(source, /camera\.fov\s*=\s*next[\s\S]*camera\.updateProjectionMatrix/, 'ranged focus applies each eased FOV sample directly to the live camera projection');
+assert.doesNotMatch(source, /settingRangedFocusShoulderOffsetH/, 'ranged focus no longer invents a second horizontal shoulder preset');
+assert.doesNotMatch(source, /dispatchHorizontal|slider\.dispatchEvent/, 'ranged focus cannot quantize camera motion through the 0.05-step Settings slider');
 
 class Vector3 {
   constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; }
@@ -65,8 +68,11 @@ let activeTool = 'ranged';
 let equipped = 'crossbow';
 let loaded = true;
 let thrownCharge = null;
-let sliderValue = 0.60;
+let horizontalSliderValue = 0.60;
+let verticalSliderValue = -0.20;
 let sliderDispatches = 0;
+let projectionUpdates = 0;
+const activeCamera = { fov: 55, updateProjectionMatrix() { projectionUpdates++; } };
 let injectedRangedDeps = null;
 let lastRangedVisual = null;
 let lastMeleeHitOptions = null;
@@ -87,17 +93,21 @@ sceneHits = [
   { object: wallMesh, distance: 6, point: new Vector3(6, 3, 3) },
 ];
 
-const sliderListeners = new Map();
-const slider = {
-  get value() { return String(sliderValue); },
-  set value(value) { sliderValue = Number(value); },
-  addEventListener(type, fn) { sliderListeners.set(type, fn); },
-  dispatchEvent(event) {
-    sliderDispatches++;
-    sliderListeners.get(event.type)?.(event);
-    return true;
-  },
-};
+function makeSlider(readValue, writeValue) {
+  const listeners = new Map(); // Used only by this harness to detect any forbidden synthetic shoulder-setting writes.
+  return {
+    get value() { return String(readValue()); },
+    set value(value) { writeValue(Number(value)); },
+    addEventListener(type, fn) { listeners.set(type, fn); },
+    dispatchEvent(event) {
+      sliderDispatches++;
+      listeners.get(event.type)?.(event);
+      return true;
+    },
+  };
+}
+const horizontalSlider = makeSlider(() => horizontalSliderValue, value => { horizontalSliderValue = value; });
+const verticalSlider = makeSlider(() => verticalSliderValue, value => { verticalSliderValue = value; });
 
 const windowListeners = new Map();
 function addWindowListener(type, fn) {
@@ -108,7 +118,6 @@ function dispatchWindow(type, detail = null) {
   for (const fn of windowListeners.get(type) || []) fn({ type, detail });
 }
 
-const storage = new Map();
 const logs = [];
 let combatDeps = null;
 const Combat = {
@@ -124,10 +133,6 @@ const Combat = {
 
 const windowStub = {
   THREE: { Vector3, Raycaster },
-  localStorage: {
-    getItem: key => storage.has(key) ? storage.get(key) : null,
-    setItem: (key, value) => storage.set(key, String(value)),
-  },
   addEventListener: addWindowListener,
   SCRATCHBONES_CONFIG: { game: { camera: { modes: { shoulderSurf: { distanceTiles: 2.6, fovDeg: 55 } } } } },
   GridTileAccessors: { getActiveScene: () => scene },
@@ -158,7 +163,7 @@ const context = {
   window: windowStub,
   document: {
     readyState: 'complete',
-    getElementById: id => id === 'settingShoulderSurfOffsetH' ? slider : null,
+    getElementById: id => id === 'settingShoulderSurfOffsetH' ? horizontalSlider : id === 'settingShoulderSurfOffsetV' ? verticalSlider : null,
     addEventListener() {},
     createElement: undefined,
   },
@@ -181,6 +186,7 @@ const deps = {
   getPlayerInteractionRay: () => ({ origin: interactionOrigin, direction: interactionDirection }),
   getPlayerAimRay: () => ({ origin: interactionOrigin, direction: interactionDirection }),
   getPlayerAimPitch: () => 0,
+  getActiveCamera: () => activeCamera,
   getPlayerMeleeAimDirection: () => ({ x: 0, y: 0, z: 1 }),
   getPlayerMeleeAimPitch: () => 0,
   currentWeaponKey: () => 'hatchet',
@@ -276,37 +282,41 @@ function settle(frames = 120) {
   }
 }
 
-// Ready zoom remains, but once settled it stops generating synthetic slider writes.
-sliderValue = 0.60;
+// Ready zoom remains continuous while the native melee/Combat H+V framing is left untouched.
+horizontalSliderValue = 0.60;
+verticalSliderValue = -0.20;
 windowStub.RangedWeapons.update(1 / 60);
 windowStub.RangedWeapons.update(1 / 60);
 assert.equal(windowStub.SCRATCHBONES_CONFIG.game.camera.modes.shoulderSurf.distanceTiles, 2.6, 'loaded crossbow must not dolly the shoulder camera toward the player');
 assert(windowStub.SCRATCHBONES_CONFIG.game.camera.modes.shoulderSurf.fovDeg < 55, 'loaded crossbow optically zooms around the already-centered reticle ray');
-assert.equal(windowStub.HobunjiRangedCameraFocus.snapshot().cameraMutation, 'native-shoulder-fov-optical-zoom', 'ranged focus reports reticle-centered optical zoom instead of distance dolly');
-assert(sliderValue < 0.60, 'loaded crossbow still eases toward its independent shoulder offset');
+assert.equal(activeCamera.fov, windowStub.SCRATCHBONES_CONFIG.game.camera.modes.shoulderSurf.fovDeg, 'live camera receives the exact continuous FOV sample');
+assert(projectionUpdates > 0, 'smooth focus refreshes the live projection as eased FOV changes');
+assert.equal(windowStub.HobunjiRangedCameraFocus.snapshot().cameraMutation, 'native-shoulder-fov-optical-zoom+native-combat-offsets', 'ranged focus reports optical zoom plus untouched native Combat framing');
+assert.equal(horizontalSliderValue, 0.60, 'ranged focus preserves the melee Combat horizontal offset exactly');
+assert.equal(verticalSliderValue, -0.20, 'ranged focus preserves the melee Combat vertical offset exactly');
+assert.equal(windowStub.HobunjiRangedCameraFocus.snapshot().combatOffsets.horizontal, 0.60, 'debug snapshot reports native Combat horizontal framing');
+assert.equal(windowStub.HobunjiRangedCameraFocus.snapshot().combatOffsets.vertical, -0.20, 'debug snapshot reports native Combat vertical framing');
 settle(120);
 const dispatchesAtSettledFocus = sliderDispatches;
 const scansAtSettledFocus = windowStub.HobunjiRangedCameraFocus.aimPerformance().surfaceRaycasts;
 settle(240);
-assert.equal(sliderDispatches, dispatchesAtSettledFocus, 'settled focus emits zero continuing synthetic slider input events');
+assert.equal(sliderDispatches, dispatchesAtSettledFocus, 'settled focus emits zero synthetic shoulder-slider input events');
+assert.equal(sliderDispatches, 0, 'ranged focus never writes either shoulder offset slider');
 assert.equal(windowStub.HobunjiRangedCameraFocus.aimPerformance().surfaceRaycasts, scansAtSettledFocus, 'settled focus emits zero continuing scene raycasts');
 
-windowStub.HobunjiRangedCameraFocus.setFocusHorizontalOffset(-0.35);
-assert.equal(storage.get('hobunjiRangedFocusShoulderOffsetH'), '-0.35', 'separate focus shoulder offset still persists independently');
-
-// Loaded crossbow/scatterbow portrait orbit still consumes the shared cached target.
+// Camera focus now owns aim convergence/FOV only; game.js owns all ranged pose orbit rotation.
 const scansBeforePose = windowStub.HobunjiRangedCameraFocus.aimPerformance().surfaceRaycasts;
-const pitchedPose = windowStub.RangedWeapons.playerIdlePose('crossbow');
-assert.notEqual(pitchedPose.pitch, 16, 'crossbow stance still responds to shared 3D vertical aim');
-assert.equal(windowStub.HobunjiRangedCameraFocus.aimPerformance().surfaceRaycasts, scansBeforePose, 'crossbow pose reuses current shared target when aim inputs are unchanged');
-injectedRangedDeps.triggerRangedWeaponVisual(1, {
-  pose: {
-    neutral: { y: 0.08, z: 0.14, pitch: 16 },
-    windup: { y: 0.14, z: 0.11, pitch: -9 },
-    strike: { y: 0.11, z: 0.12, pitch: -9 },
-  },
-});
-assert(lastRangedVisual?.options?.pose, 'loaded crossbow firing pose still receives the aim-aware transform');
+const authoredPose = windowStub.RangedWeapons.playerIdlePose('crossbow');
+assert.equal(authoredPose.pitch, 16, 'camera focus must leave the authored crossbow pose untouched for game.js to orient exactly once');
+assert.equal(windowStub.HobunjiRangedCameraFocus.aimPerformance().surfaceRaycasts, scansBeforePose, 'reading the authored ranged pose performs no extra target scan');
+const authoredFirePose = {
+  neutral: { y: 0.08, z: 0.14, pitch: 16 },
+  windup: { y: 0.14, z: 0.11, pitch: -9 },
+  strike: { y: 0.11, z: 0.12, pitch: -9 },
+};
+injectedRangedDeps.triggerRangedWeaponVisual(1, { pose: authoredFirePose });
+assert.equal(lastRangedVisual?.options?.pose, authoredFirePose, 'camera focus forwards ranged fire poses without mutating animation positions or rotations');
+assert.equal(windowStub.HobunjiRangedCameraFocus.snapshot().animationPitchOwner, 'game.js species-scale-then-camera-orbit');
 
 // Melee range changes invalidate only target convergence; unchanged camera ray keeps the surface scan cached.
 activeTool = 'weapon';
@@ -342,7 +352,9 @@ loaded = false;
 settle();
 assert.equal(windowStub.SCRATCHBONES_CONFIG.game.camera.modes.shoulderSurf.distanceTiles, 2.6, 'camera distance remains untouched after shot');
 assert(Math.abs(windowStub.SCRATCHBONES_CONFIG.game.camera.modes.shoulderSurf.fovDeg - 55) < 0.01, 'authored FOV restores after shot');
-assert(Math.abs(sliderValue - 0.60) < 0.01, 'ordinary Combat horizontal offset restores after shot');
+assert.equal(horizontalSliderValue, 0.60, 'ordinary Combat horizontal offset never changed during the shot');
+assert.equal(verticalSliderValue, -0.20, 'ordinary Combat vertical offset never changed during the shot');
+assert(Math.abs(activeCamera.fov - 55) < 0.01, 'live camera FOV restores smoothly after shot');
 
 equipped = 'kylie';
 thrownCharge = { itemKey: 'kylie', startedAt: 10 };
@@ -388,6 +400,6 @@ assert.equal(windowStub.HobunjiRangedCameraFocus.snapshot().active, false, 'load
 
 assert(logs.some(line => line.includes('focus ON')), 'focus transitions remain visible in in-game log');
 assert.equal(windowStub.HobunjiRangedCameraFocus.tuning.tightFovDeg, 34);
-assert.equal(windowStub.HobunjiRangedCameraFocus.tuning.defaultFocusHorizontalOffsetTiles, 0.18);
-assert.equal(windowStub.HobunjiRangedCameraFocus.tuning.crossbowVerticalPitchLimitDeg, 70);
+assert.equal('transformCrossbowPose' in windowStub.HobunjiRangedCameraFocus, false, 'camera-focus module no longer rewrites ranged animation poses');
+assert.equal('setFocusHorizontalOffset' in windowStub.HobunjiRangedCameraFocus, false, 'obsolete ranged-only shoulder offset API is gone');
 console.log('Change-driven shared interaction-target combat checks passed.');

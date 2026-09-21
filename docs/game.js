@@ -20944,16 +20944,17 @@
           side: THREE.DoubleSide,
         });
         const plane = new THREE.Mesh(geo, mat);
-        // Lying flat in XZ, -90° puts the sprite's top (the business end for
-        // every normal tool) forward and its bottom (the grip end) back.
-        // opts.flip reverses that front/back split — end for end, not a
-        // left-right mirror — so the pick-shovel's spike (authored at the
-        // bottom of the handle, meant to be thrust rather than swung like
-        // the blade) faces forward instead when built for the pick slot.
-        plane.rotation.x = opts.flip ? Math.PI / 2 : -Math.PI / 2;
-        plane.userData.toolEndFlipBase = opts.flip === true; // +90° is the exact pick-mining end-for-end basis.
+        // The PNG's fixed -90° X basis makes it lie in the tool's XZ plane.
+        // Tool End Flip must NOT be applied on this child: after that basis,
+        // plane-local Z is the sprite normal, not the pose editor's Tool Z.
+        plane.rotation.x = -Math.PI / 2;
+        plane.rotation.z = 0;
         plane.renderOrder = HELD_OBJECT_RENDER_ORDER;
         g.add(plane);
+        // g is identity-oriented directly under toolHolder, so g.local Z is
+        // exactly the pose editor's Tool Z / legacy Roll axis.
+        g.rotation.z = opts.flip ? Math.PI : 0;
+        g.userData.toolEndFlipBase = opts.flip === true;
         // Keep a handle on the sprite plane so updateToolMesh can layer the sweep style's
         // blade-parallel twist and the mace-mode "spinning" twirl on top each frame, derived
         // from whichever anim is actually playing rather than baked in per-item here — see
@@ -21478,6 +21479,10 @@
         rigScaleY: 1,
         baseY: 0,
         floorY: 0,
+        reticleOrbitPitchDeg: 0, // Used by the mobile debug snapshot to show the exact vertical angle from the body pivot to the shared reticle point.
+        reticleOrbitYawDeg: 0, // Used with reticleOrbitPitchDeg to verify the ranged orbit frame is derived from the shared reticle point.
+        reticleOrbitApplied: false, // Used to distinguish ordinary species scaling from the reticle-driven ranged orbit path.
+        reticleTargetWorld: null, // Used to prove the orbit is following the same finite 3D reticle target as combat aiming.
       }; // Mobile-visible last transform without DevTools.
       function playerToolPoseCentroidScale() {
         return _speciesPoseScaling?.scaleForPose?.(playerPoseOrbitScale, playerArmLength) ?? playerPoseOrbitScale;
@@ -21519,6 +21524,68 @@
         _toolPoseCentroidDebug.floorY = floorY;
         return point;
       }
+
+      function playerRangedReticleOrbitFrame() {
+        const identity = playerPoseIdentity(); // Used to resolve the rendered body centroid that the species/gender-scaled orbit rotates around.
+        const height = _speciesPoseScaling?.heightMetrics?.(identity.speciesId, identity.gender, playerAvatarModelHeight) || null; // Used to place the orbit pivot at the rendered portrait centroid.
+        const pivotX = playerMesh.position.x; // World X of the ranged orbit pivot.
+        const pivotY = playerMesh.position.y + playerPoseCentroidY * (height?.rigScaleY ?? 1); // World Y of the rendered body centroid used by both reticle direction and orbit rotation.
+        const pivotZ = playerMesh.position.z; // World Z of the ranged orbit pivot.
+        const target = currentPlayerPerspectiveTarget()?.point || null; // The one finite 3D point directly under the reticle shared by ranged/melee/head consumers.
+        const dx = Number(target?.x) - pivotX;
+        const dy = Number(target?.y) - pivotY;
+        const dz = Number(target?.z) - pivotZ;
+        const horizontal = Math.hypot(dx, dz);
+        const length = Math.hypot(dx, dy, dz);
+        if ([dx, dy, dz, horizontal, length].every(Number.isFinite) && length > 1e-8 && horizontal > 1e-8) {
+          return {
+            yawRad: Math.atan2(dx, dz), // Three.js +Z-forward yaw directly toward the shared reticle point.
+            pitchRad: Math.atan2(dy, horizontal), // Positive means the reticle is physically above the body pivot; no camera-pitch sign convention is involved.
+            pivotX, pivotY, pivotZ,
+            target: { x: Number(target.x), y: Number(target.y), z: Number(target.z) },
+            source: 'shared-reticle-point',
+          };
+        }
+        // Fail safe for transitional frames before the perspective target exists.
+        return {
+          yawRad: -currentPlayerAimAngle() + Math.PI / 2,
+          pitchRad: currentPlayerAimPitch(),
+          pivotX, pivotY, pivotZ,
+          target: null,
+          source: 'legacy-aim-fallback',
+        };
+      }
+
+      function orbitScaledRangedToolPointTowardReticle(point, reticleFrame = playerRangedReticleOrbitFrame()) {
+        if (!point) return point;
+        scaleToolWorldPointAroundPlayerCentroid(point);
+        const pitch = Number(reticleFrame?.pitchRad) || 0; // Exact elevation from body centroid to the shared reticle point.
+        const yaw = Number(reticleFrame?.yawRad) || 0; // Exact azimuth from body centroid to the shared reticle point.
+        _toolPoseCentroidDebug.reticleOrbitPitchDeg = THREE.MathUtils.radToDeg(pitch);
+        _toolPoseCentroidDebug.reticleOrbitYawDeg = THREE.MathUtils.radToDeg(yaw);
+        _toolPoseCentroidDebug.reticleOrbitApplied = true;
+        _toolPoseCentroidDebug.reticleTargetWorld = reticleFrame?.target ? { ...reticleFrame.target } : null;
+        if (Math.abs(pitch) < 1e-8) return point;
+
+        const pivotX = Number(reticleFrame?.pivotX) || playerMesh.position.x;
+        const pivotY = Number(reticleFrame?.pivotY) || playerMesh.position.y;
+        const pivotZ = Number(reticleFrame?.pivotZ) || playerMesh.position.z;
+        const rightX = Math.cos(yaw), rightZ = -Math.sin(yaw); // Reticle-right axis: the pitch rotation axis for the entire scaled orbit.
+        const forwardX = Math.sin(yaw), forwardZ = Math.cos(yaw); // Reticle-forward axis points horizontally toward the reticle.
+        const dx = point.x - pivotX, dy = point.y - pivotY, dz = point.z - pivotZ; // Already species/gender-scaled centroid-relative weapon vector.
+        const side = dx * rightX + dz * rightZ; // Preserve lateral authored placement while aiming vertically.
+        const forward = dx * forwardX + dz * forwardZ; // Forward distance that must rise/fall with the reticle.
+        const cosPitch = Math.cos(pitch), sinPitch = Math.sin(pitch);
+        const pitchedForward = forward * cosPitch - dy * sinPitch;
+        const pitchedY = dy * cosPitch + forward * sinPitch; // Reticle above pivot => positive pitch => forward weapon orbit rises, never inverts.
+        point.set(
+          pivotX + rightX * side + forwardX * pitchedForward,
+          pivotY + pitchedY,
+          pivotZ + rightZ * side + forwardZ * pitchedForward
+        );
+        _toolPoseCentroidDebug.finalWorld.x = point.x; _toolPoseCentroidDebug.finalWorld.y = point.y; _toolPoseCentroidDebug.finalWorld.z = point.z;
+        return point;
+      }
       window.HobunjiAttackArmReachDebug = Object.freeze({
         snapshot: () => ({
           speciesId: playerPoseIdentity().speciesId,
@@ -21534,12 +21601,19 @@
           finalScaledWorld: { ..._toolPoseCentroidDebug.finalWorld },
           authoredUnscaledLocal: { x: _toolPoseCentroidDebug.rawWorld.x - playerMesh.position.x, y: _toolPoseCentroidDebug.rawWorld.y - playerMesh.position.y, z: _toolPoseCentroidDebug.rawWorld.z - playerMesh.position.z },
           finalScaledLocal: { x: _toolPoseCentroidDebug.finalWorld.x - playerMesh.position.x, y: _toolPoseCentroidDebug.finalWorld.y - playerMesh.position.y, z: _toolPoseCentroidDebug.finalWorld.z - playerMesh.position.z },
-          mappingMode: 'horizontal-orbit-plus-rigger-height',
-          rule: "X/Z = character center + authored offset * poseOrbitScale; Y = rigger-scaled PNG hand anchor + authored hand-relative Y * renderedCharacterHeightRatio",
+          rangedReticleOrbit: { applied: _toolPoseCentroidDebug.reticleOrbitApplied, yawDeg: _toolPoseCentroidDebug.reticleOrbitYawDeg, pitchDeg: _toolPoseCentroidDebug.reticleOrbitPitchDeg, targetWorld: _toolPoseCentroidDebug.reticleTargetWorld ? { ..._toolPoseCentroidDebug.reticleTargetWorld } : null },
+          mappingMode: _toolPoseCentroidDebug.reticleOrbitApplied ? 'species-scale-then-shared-reticle-orbit' : 'horizontal-orbit-plus-rigger-height',
+          rule: _toolPoseCentroidDebug.reticleOrbitApplied
+            ? "Scale the authored weapon point for species/gender first, then rotate the finished centroid-relative orbit directly toward the shared 3D reticle point."
+            : "X/Z = character center + authored offset * poseOrbitScale; Y = rigger-scaled PNG hand anchor + authored hand-relative Y * renderedCharacterHeightRatio",
         }),
       });
 
       function updateToolMesh(dt) {
+        _toolPoseCentroidDebug.reticleOrbitApplied = false;
+        _toolPoseCentroidDebug.reticleOrbitPitchDeg = 0;
+        _toolPoseCentroidDebug.reticleOrbitYawDeg = 0;
+        _toolPoseCentroidDebug.reticleTargetWorld = null;
         if (window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID, 'tools')) {
           toolHolder.visible = false;
           heldItemHolder.visible = false;
@@ -21719,15 +21793,12 @@
           // not the player's stale ground-facing frame. BodyYaw remains an
           // authored yaw delta while the tool path itself inherits reticle pitch.
           const reticleAligned = combatSwingAlignToReticle && activeTool === 'ranged';
-          const aimBaseYaw = reticleAligned ? (-currentPlayerAimAngle() + Math.PI / 2) : θ;
-          const aimPitchRad = reticleAligned ? currentPlayerAimPitch() : 0;
+          const reticleFrame = reticleAligned ? playerRangedReticleOrbitFrame() : null; // One shared world-space reticle frame drives both visible orientation and the scaled position orbit.
+          const aimBaseYaw = reticleFrame?.yawRad ?? θ;
+          const aimPitchRad = reticleFrame?.pitchRad ?? 0;
           const vθ  = aimBaseYaw + bodyYawRad;
           const vRX =  Math.cos(vθ), vRZ = -Math.sin(vθ);
           const vFX =  Math.sin(vθ), vFZ =  Math.cos(vθ);
-          const aimCos = Math.cos(aimPitchRad), aimSin = Math.sin(aimPitchRad);
-          const pFX = vFX * aimCos, pFY = aimSin, pFZ = vFZ * aimCos;
-          const pUX = -vFX * aimSin, pUY = aimCos, pUZ = -vFZ * aimSin;
-
           playerMesh.rotation.y = vθ;
           _qFac.setFromAxisAngle(_tUp, vθ);
           _qRangedAimPitch.setFromAxisAngle(_xAxis, -aimPitchRad);
@@ -21737,12 +21808,16 @@
           toolHolder.quaternion.copy(_qFac);
           if (reticleAligned) toolHolder.quaternion.multiply(_qRangedAimPitch);
           toolHolder.quaternion.multiply(_qToolYaw).multiply(_qAnim).multiply(_qRoll);
+          // Build the authored pose in its zero-pitch yaw frame first. Species/gender
+          // scaling must happen before camera pitch so the complete scaled orbit,
+          // including its vertical body proportion, rotates rigidly up/down.
           toolHolder.position.set(
-            playerMesh.position.x + vRX * (handBaseX + x) + pUX * y + pFX * z,
-            playerMesh.position.y + playerToolBaseY + pUY * y + pFY * z,
-            playerMesh.position.z + vRZ * (handBaseX + x) + pUZ * y + pFZ * z
+            playerMesh.position.x + vRX * (handBaseX + x) + vFX * z,
+            playerMesh.position.y + playerToolBaseY + y,
+            playerMesh.position.z + vRZ * (handBaseX + x) + vFZ * z
           );
-          scaleToolWorldPointAroundPlayerCentroid(toolHolder.position);
+          if (reticleAligned) orbitScaledRangedToolPointTowardReticle(toolHolder.position, reticleFrame);
+          else scaleToolWorldPointAroundPlayerCentroid(toolHolder.position);
 
         } else if (anim === 'ranged') {
           const rangedIdlePose = window.RangedWeapons?.playerIdlePose?.(equipmentSlots.ranged); // Used to switch between the loaded fire-neutral and empty load-neutral stance.
@@ -21760,23 +21835,30 @@
           // range where the body hasn't turned at all yet. Reloading/empty
           // keeps the ordinary body-relative stance, since there's nothing
           // to aim yet.
-          const toolVθ = window.RangedWeapons?.isLoaded?.(equipmentSlots.ranged) !== false
-            ? (-currentPlayerAimAngle() + Math.PI / 2) + bodyYawOffsetRad
+          const rangedTracksAim = window.RangedWeapons?.isLoaded?.(equipmentSlots.ranged) !== false; // Used to keep reload/empty stances body-relative while a ready ranged weapon follows the reticle in yaw and pitch.
+          const reticleFrame = rangedTracksAim ? playerRangedReticleOrbitFrame() : null; // Exact body-centroid→reticle direction; avoids camera pitch sign conventions entirely.
+          const toolVθ = rangedTracksAim
+            ? (reticleFrame?.yawRad ?? (-currentPlayerAimAngle() + Math.PI / 2)) + bodyYawOffsetRad
             : vθ;
+          const toolAimPitchRad = rangedTracksAim ? (reticleFrame?.pitchRad ?? currentPlayerAimPitch()) : 0; // Positive only when the shared world-space reticle point is actually above the body pivot.
           _debugRangedToolYawRad = toolVθ;
           const vRX = Math.cos(toolVθ), vRZ = -Math.sin(toolVθ);
           const vFX = Math.sin(toolVθ), vFZ = Math.cos(toolVθ);
           _qFac.setFromAxisAngle(_tUp, toolVθ);
+          _qRangedAimPitch.setFromAxisAngle(_xAxis, -toolAimPitchRad);
           _qToolYaw.setFromAxisAngle(_tUp, THREE.MathUtils.degToRad(neutral.yaw));
           _qAnim.setFromAxisAngle(_xAxis, THREE.MathUtils.degToRad(neutral.pitch));
           _qRoll.setFromAxisAngle(_zAxis, THREE.MathUtils.degToRad(neutral.roll));
-          toolHolder.quaternion.copy(_qFac).multiply(_qToolYaw).multiply(_qAnim).multiply(_qRoll);
+          toolHolder.quaternion.copy(_qFac);
+          if (rangedTracksAim) toolHolder.quaternion.multiply(_qRangedAimPitch);
+          toolHolder.quaternion.multiply(_qToolYaw).multiply(_qAnim).multiply(_qRoll);
           toolHolder.position.set(
             playerMesh.position.x + vRX * (playerToolBaseX + neutral.x) + vFX * neutral.z,
             playerMesh.position.y + playerToolBaseY + neutral.y,
             playerMesh.position.z + vRZ * (playerToolBaseX + neutral.x) + vFZ * neutral.z
           );
-          scaleToolWorldPointAroundPlayerCentroid(toolHolder.position);
+          if (rangedTracksAim) orbitScaledRangedToolPointTowardReticle(toolHolder.position, reticleFrame);
+          else scaleToolWorldPointAroundPlayerCentroid(toolHolder.position);
 
         } else if (anim === 'thrust') {
           // THRUST — non-overextending jab authored as a full pose (lateral
@@ -22014,11 +22096,14 @@
         // Layer the sprite's own "spinning" twirl on top of whichever swing style is active —
         // mace-mode harpoon items spin through the swing, spear-mode ones hold their rest pose.
         const spinItemKey = equipmentSlots[activeTool] || equipmentSlots.weapon;
-        const spinPlane    = toolMeshMap[activeTool]?.userData?.toolPlane;
+        const spinMesh     = toolMeshMap[activeTool];
+        const spinPlane    = spinMesh?.userData?.toolPlane;
         if (spinPlane) {
-          const baseEndFlip = spinPlane.userData?.toolEndFlipBase === true;
+          const baseEndFlip = spinMesh?.userData?.toolEndFlipBase === true;
           const actionEndFlip = !!combatSwingAnim && combatSwingToolEndFlip;
-          spinPlane.rotation.x = (baseEndFlip !== actionEndFlip) ? Math.PI / 2 : -Math.PI / 2;
+          const effectiveEndFlip = baseEndFlip !== actionEndFlip;
+          spinMesh.rotation.z = effectiveEndFlip ? Math.PI : 0; // Exact Tool Z / legacy Roll axis because spinMesh is identity-oriented directly beneath toolHolder.
+          spinPlane.rotation.x = -Math.PI / 2; // Fixed sprite-plane basis only.
           // The sweep style's blade-parallel z-twist belongs to whichever anim is actually
           // playing this frame, not whichever style the equipped item defaults to at rest —
           // combat abilities can force any style onto any weapon (a thrust-style quick
@@ -22028,17 +22113,30 @@
           // regardless of what's equipped (and naturally drops to 0 during fishThrowActive,
           // since that always forces anim to 'chop').
           const baseRotZ = anim === 'sweep' ? -Math.PI / 2 : 0;
+          const rangedThrowDef = activeTool === 'ranged' && combatSwingAnim === 'ranged'
+            ? window.RangedWeapons?.config?.[spinItemKey]
+            : null;
+          const rangedThrowSpins = rangedThrowDef?.rangedType === 'thrown' && rangedThrowDef?.heldSpin === true; // Held throw spin is independent from projectile tumbling: fishing spear spins during the throw but freezes its sampled 90°-offset alignment in flight.
+          const rangedThrowSpinBasisRad = rangedThrowSpins
+            ? THREE.MathUtils.degToRad(Number(rangedThrowDef?.heldSpinBasisDeg) || 0)
+            : 0;
+          const rangedThrowSpinRevolutions = rangedThrowSpins
+            ? Math.max(0, Number(rangedThrowDef?.heldSpinRevolutions) || TOOL_SPIN_REVOLUTIONS)
+            : TOOL_SPIN_REVOLUTIONS;
           if (anim === 'refillTwistOut') {
             // Lerp a 180° length-wise spin out, independent of any item's own "spinning" flag.
             spinPlane.rotation.z = baseRotZ + progress * Math.PI;
           } else if (anim === 'refillTwistBack') {
             // Reverse of the twist-out: lerp back from 180° to 0°.
             spinPlane.rotation.z = baseRotZ + Math.PI * (1 - progress);
+          } else if (rangedThrowSpins) {
+            // The held PNG spins around its own plane-normal axis through the exact
+            // same timeline whose release frame is sampled into the projectile.
+            // Holding Windup freezes this rotation too; release resumes smoothly.
+            spinPlane.rotation.z = baseRotZ + rangedThrowSpinBasisRad - progress * Math.PI * 2 * rangedThrowSpinRevolutions;
           } else {
             // The mace's own fishing-throw twirl is cosmetic to the harpoon cast —
-            // it shouldn't also layer onto combat swings when the same item is
-            // equipped in the weapon slot, or every combo/quick-attack would
-            // spin like a fishing throw instead of following its own anim arc.
+            // it shouldn't also layer onto ordinary melee combat swings.
             spinPlane.rotation.z = (TOOL_ITEM_DEFS[spinItemKey]?.spinning && !combatSwingAnim)
               ? baseRotZ - progress * Math.PI * 2 * TOOL_SPIN_REVOLUTIONS
               : baseRotZ;
@@ -25105,6 +25203,13 @@
           const releaseSlot = weaponActionSlot(actionId);
           if (releaseSlot) { window.Combat.input.pressEnd(releaseSlot); return; }
           if (heldItemActionPresses.delete(actionId)) { window.HeldItemActionInput?.release(); return; }
+          if (actionId === 'action1' && heldMode === 'tool' && activeTool === 'ranged') {
+            const thrownBridge = window.HobunjiRangedWeaponArchetypes; // Used so controller/keyboard/mouse Action 1 releases the same active thrown charge through shared input ownership.
+            if (thrownBridge?.activeThrownChargeItemKey?.()) {
+              thrownBridge.releaseThrownCharge?.('input-action-release');
+              return;
+            }
+          }
           return;
         }
         if (window.Fishing?.state?.active) {
@@ -25940,7 +26045,14 @@
         if (mouseAction === 'action2' && heldMode === 'tool' && activeTool === 'ranged') { runInputAction('action2', 'release'); return; }
         if (mouseAction === 'action1') {
           actionHeldDown = false;
-          if (desktopHeldItemMousePresses.delete(e.button)) window.HeldItemActionInput?.release();
+          if (desktopHeldItemMousePresses.delete(e.button)) {
+            window.HeldItemActionInput?.release();
+            return;
+          }
+          if (heldMode === 'tool' && activeTool === 'ranged' && window.HobunjiRangedWeaponArchetypes?.activeThrownChargeItemKey?.()) {
+            runInputAction('action1', 'release');
+            return;
+          }
           return;
         }
         if (mouseAction) runInputAction(mouseAction, 'release');
@@ -26536,10 +26648,13 @@
           const plane = mesh?.userData?.toolPlane || mesh?.children?.[0]?.userData?.toolPlane || null;
           if (!plane) return null;
           plane.updateWorldMatrix(true, false);
+          const planeGeometry = plane.geometry?.parameters || {}; // Used by projectile creation to clone the current held PNG plane dimensions without changing combat pose math.
           return {
             position: plane.getWorldPosition(new THREE.Vector3()),
             quaternion: plane.getWorldQuaternion(new THREE.Quaternion()),
             scale: plane.getWorldScale(new THREE.Vector3()),
+            planeWidth: Number(planeGeometry.width) || TOOL_MODEL_WIDTH,
+            planeHeight: Number(planeGeometry.height) || TOOL_MODEL_WIDTH,
           };
         },
         getActiveCamera: () => camera,
