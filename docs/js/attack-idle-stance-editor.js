@@ -25,12 +25,13 @@
     kind: 'hobunji_weapon_idle_stances',
     stances: Object.freeze({
       tool: Object.freeze({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: 0 }),
-      hoeTool: Object.freeze({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: -90 }),
+      hoeTool: Object.freeze({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: -95 }),
       heavyWeapon: Object.freeze({ x: -0.03, y: 0.27, z: 0.02, pitch: -23, yaw: 104, bodyYaw: -15, roll: 89 }),
-      lightWeapon: Object.freeze({ x: -0.09, y: -0.08, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 }),
+      lightWeapon: Object.freeze({ x: -0.09, y: 0, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 }),
     }),
   });
 
+  const PREVIOUS_LIGHT_WEAPON_STANCE = Object.freeze({ x: -0.09, y: -0.08, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 });
   const clone = value => JSON.parse(JSON.stringify(value));
   const numberOr = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 
@@ -46,6 +47,11 @@
     for (const key of STANCE_ORDER) {
       out.stances[key] = normalizePose(raw?.stances?.[key], fallback.stances[key]);
     }
+    const incomingLight = raw?.stances?.lightWeapon;
+    const wasPreviousDefault = incomingLight && FIELD_DEFS.every(field =>
+      Math.abs(numberOr(incomingLight[field.key]) - PREVIOUS_LIGHT_WEAPON_STANCE[field.key]) < 1e-9
+    );
+    if (wasPreviousDefault) out.stances.lightWeapon.y = 0; // Keep editor/runtime parity for exact old saved defaults without touching authored variants.
     return out;
   }
 

@@ -86,8 +86,14 @@ assert(Math.abs(profiles.modelScaleFor('kenkari') - 2.775) < 1e-12, 'parrot hand
 assert.strictEqual(profiles.data.models.feline.mirrorX, true, 'Mao\'ao keeps the normal source-X mirror');
 assert.strictEqual(profiles.data.models.parrot.mirrorX, false, 'Kenkari/Rakako\'an parrot hands must use the opposite mirror');
 
+const expectedModelGripPositions = {
+  pachyderm: { x: -0.01, y: -0.07, z: 0.1 },
+  sloth: { x: -0.01, y: -0.32, z: 0.25 },
+  feline: { x: -0.01, y: -0.07, z: 0.1 },
+  parrot: { x: -0.01, y: -0.02, z: 0.1 },
+};
 for (const [key, model] of Object.entries(profiles.data.models)) {
-  assert.deepStrictEqual({ ...model.handFromTool.position }, { x: -0.01, y: -0.07, z: 0.1 }, `${key} must inherit the Mao'ao-recalibrated tool-relative hand position`);
+  assert.deepStrictEqual({ ...model.handFromTool.position }, expectedModelGripPositions[key], `${key} must use its authored tool-relative hand grip position`);
   assert.deepStrictEqual({ ...model.handFromTool.rotationDeg }, { pitch: 0, yaw: 180, roll: 0 }, `${key} must inherit the Mao'ao-recalibrated child-local orientation`);
   assert.deepStrictEqual({ ...model.handFromTool.rotationCorrectionDeg }, { x: 0, y: 0, z: 0 }, `${key} must start with zero fixed-basis XYZ correction`);
   const q = model.handFromTool.rotationQuaternion;
@@ -213,8 +219,8 @@ for (const modelKey of ['pachyderm', 'sloth', 'feline', 'parrot']) {
   const transform = sharedDefaultModels[modelKey].handFromTool;
   assert.deepStrictEqual(
     JSON.parse(JSON.stringify(transform.position)),
-    { x: -0.01, y: -0.07, z: 0.1 },
-    `${modelKey} must inherit the Mao'ao-recalibrated shared GLB position baseline`,
+    expectedModelGripPositions[modelKey],
+    `${modelKey} must expose its authored default hand grip position`,
   );
   assert.deepStrictEqual(
     JSON.parse(JSON.stringify(transform.rotationDeg)),
@@ -239,14 +245,27 @@ for (const model of Object.values(v3MigrationProbe.models)) {
 liveProfiles.replace(v3MigrationProbe);
 for (const modelKey of ['pachyderm', 'sloth', 'feline', 'parrot']) {
   const transform = liveProfiles.data.models[modelKey].handFromTool;
-  assert.strictEqual(transform.position.x, -0.01, `${modelKey} v3→v4 migration must apply the Mao'ao-recalibrated X`);
-  assert.strictEqual(transform.position.y, -0.07, `${modelKey} v3→v4 migration must apply the Mao'ao-recalibrated Y`);
-  assert.strictEqual(transform.position.z, 0.1, `${modelKey} v3→v4 migration must apply the Mao'ao-recalibrated Z`);
+  assert.strictEqual(transform.position.x, expectedModelGripPositions[modelKey].x, `${modelKey} v3→v4 migration must apply the authored grip X`);
+  assert.strictEqual(transform.position.y, expectedModelGripPositions[modelKey].y, `${modelKey} v3→v4 migration must apply the authored grip Y`);
+  assert.strictEqual(transform.position.z, expectedModelGripPositions[modelKey].z, `${modelKey} v3→v4 migration must apply the authored grip Z`);
   assert.strictEqual(transform.rotationDeg.pitch, 0, `${modelKey} v3→v4 migration must snap the recalibrated local pitch`);
   assert.strictEqual(transform.rotationDeg.yaw, 180, `${modelKey} v3→v4 migration must snap the recalibrated local yaw`);
   assert.strictEqual(transform.rotationDeg.roll, 0, `${modelKey} v3→v4 migration must snap the recalibrated local roll`);
 }
 assert.strictEqual(liveProfiles.data.models.pachyderm.mirrorX, false, 'v3→v4 calibration migration must preserve an existing per-model mirror choice');
+
+const oldSharedGripProbe = liveProfiles.clone();
+oldSharedGripProbe.alignmentPreset = 'all-species-maoao-local-0-180-0-v4';
+oldSharedGripProbe.models.sloth.handFromTool.position = { x: -0.01, y: -0.07, z: 0.1 };
+oldSharedGripProbe.models.parrot.handFromTool.position = { x: -0.01, y: -0.07, z: 0.1 };
+liveProfiles.replace(oldSharedGripProbe);
+assert.deepStrictEqual(JSON.parse(JSON.stringify(liveProfiles.data.models.sloth.handFromTool.position)), expectedModelGripPositions.sloth, 'untouched old sloth shared grip must migrate to the authored sloth grip offset');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(liveProfiles.data.models.parrot.handFromTool.position)), expectedModelGripPositions.parrot, 'untouched old parrot shared grip must migrate to the authored parrot grip offset');
+
+const customSlothGripProbe = liveProfiles.clone();
+customSlothGripProbe.models.sloth.handFromTool.position = { x: 0.123, y: -0.222, z: 0.333 };
+liveProfiles.replace(customSlothGripProbe);
+assert.deepStrictEqual(JSON.parse(JSON.stringify(liveProfiles.data.models.sloth.handFromTool.position)), { x: 0.123, y: -0.222, z: 0.333 }, 'custom sloth grip calibration must not be overwritten by the narrow default migration');
 const beforeLiveCalibration = liveModes.effectiveFrameForModel('feline', 'palm-parallel');
 liveProfiles.updateModelHandTransform('feline', transform => { transform.position.x += 0.5; });
 const afterLivePosition = liveModes.effectiveFrameForModel('feline', 'palm-parallel');
@@ -388,41 +407,159 @@ for (const toolKey of ['hatchet','hoe','bshuakauitl','pickshovel','daggersword',
     `${toolKey} must inherit hatchet's primary-grip rotation`,
   );
 }
-assert.strictEqual(grips.toolScaleForTool('dagger'), 1, 'Melee/ranged grip separation must not silently rescale the dagger.');
-assert.strictEqual(grips.authoredPrimaryGripForTool('dagger', 'melee').position.z, -0.09, 'Dagger melee grip keeps its existing authored Z.');
-assert.strictEqual(grips.authoredPrimaryGripForTool('dagger', 'ranged').position.z, -0.09, 'Dagger ranged grip starts as an exact copy of melee until the artist edits it.');
+assert.strictEqual(grips.data.rangedGripPreset, 'melee-ranged-split-20260921-v8-spear-end-flip-mirrored', 'Committed grip data must advertise the mirrored end-flip ranged-grip revision.');
+assert.strictEqual(grips.toolScaleForTool('dagger'), 0.55, 'Dagger must use the editor-authored 0.55 item scale.');
+assert.strictEqual(grips.authoredPrimaryGripForTool('dagger', 'melee').position.z, -0.09, 'Dagger melee grip keeps its authored blade-side Z.');
+assert.deepStrictEqual(
+  JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('dagger', 'ranged').position)),
+  { x: 0, y: -0.05, z: -0.28 },
+  'Dagger ranged grip must use the mirrored end-flip hand target independently of melee.',
+);
 assert.deepStrictEqual(
   JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('dagger', 'ranged').rotationDeg)),
   sharedHatchetRotation,
-  'Dagger ranged grip starts with the same rotation as melee; no code-side flip is guessed.',
+  'Dagger ranged grip keeps the authored 90/-90/0 item-local rotation.',
 );
+
+assert.deepStrictEqual(
+  JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('fishingspear', 'melee').position)),
+  { x: -0.04, y: -0.04, z: 0 },
+  'Fishing spear melee grip must stay on its existing unflipped hand target.',
+);
+assert.deepStrictEqual(
+  JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('fishingspear', 'ranged').position)),
+  { x: 0.04, y: -0.04, z: 0 },
+  'Fishing spear ranged grip must mirror its nonzero X across the visible 180-degree Tool End Flip.',
+);
+
+const daggerThrowWindupSpinRad = -0.49 * Math.PI * 2 * 2.5; // Runtime Windup endpoint: 1.225 turns (441°) from the generic Spin Throw.
+const daggerThrowPivot = grips.spinPivotOffsetForTool('dagger', daggerThrowWindupSpinRad, 'ranged');
+const daggerAuthoredRangedGrip = grips.authoredPrimaryGripForTool('dagger', 'ranged').position;
+const spinCos = Math.cos(daggerThrowWindupSpinRad);
+const spinSin = Math.sin(daggerThrowWindupSpinRad);
+const daggerRotatedGrip = {
+  x: daggerAuthoredRangedGrip.x * spinCos + daggerAuthoredRangedGrip.z * spinSin,
+  y: daggerAuthoredRangedGrip.y,
+  z: -daggerAuthoredRangedGrip.x * spinSin + daggerAuthoredRangedGrip.z * spinCos,
+};
+assert(Math.abs(daggerThrowPivot.x + daggerRotatedGrip.x - daggerAuthoredRangedGrip.x) < 1e-12, 'throw-spin X pivot must keep the dagger handle on its authored hand target through Windup');
+assert(Math.abs(daggerThrowPivot.z + daggerRotatedGrip.z - daggerAuthoredRangedGrip.z) < 1e-12, 'throw-spin Z pivot must keep the dagger handle on its authored hand target through Windup');
+const hatchetThrowPivot = grips.spinPivotOffsetForTool('hatchet', daggerThrowWindupSpinRad, 'ranged'); // Uses the same Spin Throw Windup angle to compare the centered-ish axe grip against the offset dagger.
+const hatchetAuthoredRangedGrip = grips.authoredPrimaryGripForTool('hatchet', 'ranged').position; // Used to prove the shared helper fixes the axe grip without special-casing dagger geometry.
+const hatchetRotatedGrip = { // Reconstructs R(P) independently so the helper is checked against its geometric contract.
+  x: hatchetAuthoredRangedGrip.x * spinCos + hatchetAuthoredRangedGrip.z * spinSin,
+  y: hatchetAuthoredRangedGrip.y,
+  z: -hatchetAuthoredRangedGrip.x * spinSin + hatchetAuthoredRangedGrip.z * spinCos,
+};
+assert(Math.abs(hatchetThrowPivot.x + hatchetRotatedGrip.x - hatchetAuthoredRangedGrip.x) < 1e-12, 'throw-spin X pivot must also keep the axe grip fixed through Windup');
+assert(Math.abs(hatchetThrowPivot.z + hatchetRotatedGrip.z - hatchetAuthoredRangedGrip.z) < 1e-12, 'throw-spin Z pivot must also keep the axe grip fixed through Windup');
+const daggerPivotDistance = Math.hypot(daggerThrowPivot.x, daggerThrowPivot.z); // Used to make the regression sensitive to the dagger's visibly large off-center orbit.
+const hatchetPivotDistance = Math.hypot(hatchetThrowPivot.x, hatchetThrowPivot.z); // Used as the centered-ish control case for the same shared spin angle.
+assert(daggerPivotDistance > hatchetPivotDistance * 4, 'far-offset dagger grip must require substantially more pivot compensation than the centered-ish axe grip');
+
+const spearThrowWindupSpinRad = Math.PI / 2 - 0.49 * Math.PI * 2 * 2.5; // Fishing spear's dedicated +90° spin basis evaluated at the same Windup endpoint.
+const spearThrowPivot = grips.spinPivotOffsetForTool('fishingspear', spearThrowWindupSpinRad, 'ranged');
+const spearAuthoredRangedGrip = grips.authoredPrimaryGripForTool('fishingspear', 'ranged').position;
+const spearSpinCos = Math.cos(spearThrowWindupSpinRad);
+const spearSpinSin = Math.sin(spearThrowWindupSpinRad);
+const spearRotatedGrip = {
+  x: spearAuthoredRangedGrip.x * spearSpinCos + spearAuthoredRangedGrip.z * spearSpinSin,
+  y: spearAuthoredRangedGrip.y,
+  z: -spearAuthoredRangedGrip.x * spearSpinSin + spearAuthoredRangedGrip.z * spearSpinCos,
+};
+assert(Math.abs(spearThrowPivot.x + spearRotatedGrip.x - spearAuthoredRangedGrip.x) < 1e-12, 'special +90-degree spear spin must keep the mirrored ranged-grip X fixed through Windup');
+assert(Math.abs(spearThrowPivot.z + spearRotatedGrip.z - spearAuthoredRangedGrip.z) < 1e-12, 'special +90-degree spear spin must keep the mirrored ranged-grip Z fixed through Windup');
+assert.deepStrictEqual(
+  JSON.parse(JSON.stringify(grips.spinPivotOffsetForTool('dagger', 0, 'ranged'))),
+  { x: 0, y: 0, z: 0 },
+  'zero throw spin must add no visual translation, preserving the snug idle dagger grip',
+);
+
+const preSpearMirrorSnapshot = grips.clone();
+const preSpearMirrorDraft = grips.clone();
+preSpearMirrorDraft.rangedGripPreset = 'melee-ranged-split-20260920-v7-end-flip-mirrored';
+preSpearMirrorDraft.tools.fishingspear.rangedPrimaryGrip.position.x = -0.04;
+grips.replace(preSpearMirrorDraft);
+assert.strictEqual(grips.authoredPrimaryGripForTool('fishingspear', 'ranged').position.x, 0.04, 'Untouched v7 fishing-spear ranged X must migrate to the corrected end-flipped side.');
+const customPreSpearMirrorDraft = grips.clone();
+customPreSpearMirrorDraft.rangedGripPreset = 'melee-ranged-split-20260920-v7-end-flip-mirrored';
+customPreSpearMirrorDraft.tools.fishingspear.rangedPrimaryGrip.position.x = 0.11;
+grips.replace(customPreSpearMirrorDraft);
+assert.strictEqual(grips.authoredPrimaryGripForTool('fishingspear', 'ranged').position.x, 0.11, 'Artist-authored pre-v8 fishing-spear ranged X must not be overwritten by the default migration.');
+grips.replace(preSpearMirrorSnapshot);
+
 const unsplitSnapshot = grips.clone();
 grips.mutate(data => {
-  data.tools.dagger.rangedPrimaryGrip.position.z = 0.28;
+  data.tools.dagger.rangedPrimaryGrip.position.z = 0.31;
   data.tools.dagger.rangedPrimaryGrip.rotationDeg.roll = 180;
 });
 assert.strictEqual(grips.authoredPrimaryGripForTool('dagger', 'melee').position.z, -0.09, 'Editing ranged dagger Z must not alter its melee grip.');
-assert.strictEqual(grips.authoredPrimaryGripForTool('dagger', 'ranged').position.z, 0.28, 'Ranged dagger Z must be independently authorable.');
+assert.strictEqual(grips.authoredPrimaryGripForTool('dagger', 'ranged').position.z, 0.31, 'Ranged dagger Z must remain independently authorable.');
 assert.strictEqual(grips.authoredPrimaryGripForTool('dagger', 'melee').rotationDeg.roll, 0, 'Editing ranged dagger rotation must not alter melee rotation.');
-assert.strictEqual(grips.authoredPrimaryGripForTool('dagger', 'ranged').rotationDeg.roll, 180, 'Ranged dagger rotation can be flipped independently in the editor.');
+assert.strictEqual(grips.authoredPrimaryGripForTool('dagger', 'ranged').rotationDeg.roll, 180, 'Ranged dagger rotation can still be edited independently.');
 grips.replace(unsplitSnapshot);
 
 const oldRangedGripDraft = grips.clone();
 delete oldRangedGripDraft.rangedGripPreset;
+oldRangedGripDraft.tools.dagger.toolScale = 1;
 delete oldRangedGripDraft.tools.dagger.rangedPrimaryGrip;
 delete oldRangedGripDraft.tools.dagger.rangedSecondaryGripSpan;
 delete oldRangedGripDraft.tools.dagger.rangedGripMode;
 grips.replace(oldRangedGripDraft);
-assert.strictEqual(grips.toolScaleForTool('dagger'), 1, 'Pre-split saved dagger drafts must retain their existing shared scale.');
-assert.strictEqual(grips.authoredPrimaryGripForTool('dagger', 'ranged').position.z, -0.09, 'Pre-split saved dagger drafts must clone melee into ranged rather than receiving guessed values.');
+assert.strictEqual(grips.toolScaleForTool('dagger'), 1, 'Pre-split saved dagger drafts retain their explicitly stored shared scale.');
+assert.strictEqual(grips.authoredPrimaryGripForTool('dagger', 'ranged').position.z, -0.09, 'Pre-split saved dagger drafts with no ranged metadata still clone melee rather than inventing a ranged edit.');
 
 const v1AutoGuessDraft = grips.clone();
 v1AutoGuessDraft.rangedGripPreset = 'melee-ranged-split-20260920-v1';
 v1AutoGuessDraft.tools.dagger.toolScale = 0.55;
 v1AutoGuessDraft.tools.dagger.rangedPrimaryGrip = { position: { x: -0.04, y: -0.04, z: 0.28 }, rotationDeg: { ...sharedHatchetRotation } };
 grips.replace(v1AutoGuessDraft);
-assert.strictEqual(grips.toolScaleForTool('dagger'), 1, 'Untouched short-lived v1 dagger auto-scale must be repaired back to the pre-split scale.');
-assert.strictEqual(grips.authoredPrimaryGripForTool('dagger', 'ranged').position.z, -0.09, 'Untouched short-lived v1 dagger auto-grip must be repaired back to a melee clone.');
+assert.strictEqual(grips.toolScaleForTool('dagger'), 0.55, 'Untouched short-lived v1 dagger auto-scale must migrate to the final authored scale.');
+assert.deepStrictEqual(
+  JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('dagger', 'ranged').position)),
+  { x: 0, y: -0.05, z: -0.28 },
+  'Untouched short-lived v1 dagger auto-grip must migrate to the final mirrored ranged target.',
+);
+
+const v4CloneDraft = grips.clone();
+v4CloneDraft.rangedGripPreset = 'melee-ranged-split-20260920-v4-editor-authored';
+v4CloneDraft.tools.dagger.toolScale = 1;
+v4CloneDraft.tools.dagger.rangedPrimaryGrip = { position: { x: -0.04, y: -0.04, z: -0.09 }, rotationDeg: { ...sharedHatchetRotation } };
+grips.replace(v4CloneDraft);
+assert.strictEqual(grips.toolScaleForTool('dagger'), 0.55, 'Untouched v4 melee-clone dagger scale must migrate to the authored 0.55 value.');
+assert.deepStrictEqual(
+  JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('dagger', 'ranged').position)),
+  { x: 0, y: -0.05, z: -0.28 },
+  'Untouched v4 melee-clone ranged dagger target must migrate to the mirrored ranged target.',
+);
+
+const v5EndFlipDraft = grips.clone();
+v5EndFlipDraft.rangedGripPreset = 'melee-ranged-split-20260920-v5-authored-values';
+v5EndFlipDraft.tools.dagger.toolScale = 0.55;
+v5EndFlipDraft.tools.dagger.rangedPrimaryGrip = { position: { x: 0, y: -0.05, z: -0.3 }, rotationDeg: { ...sharedHatchetRotation } };
+grips.replace(v5EndFlipDraft);
+assert.deepStrictEqual(
+  JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('dagger', 'ranged').position)),
+  { x: 0, y: -0.05, z: -0.28 },
+  'Untouched v5 ranged dagger target must migrate from the pre-correction Z to the final mirrored Z.',
+);
+
+const v6MirroredTrialDraft = grips.clone();
+v6MirroredTrialDraft.rangedGripPreset = 'melee-ranged-split-20260920-v6-end-flip-adjusted';
+v6MirroredTrialDraft.tools.dagger.toolScale = 0.55;
+v6MirroredTrialDraft.tools.dagger.rangedPrimaryGrip = { position: { x: 0, y: -0.05, z: 0.28 }, rotationDeg: { ...sharedHatchetRotation } };
+grips.replace(v6MirroredTrialDraft);
+assert.deepStrictEqual(
+  JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('dagger', 'ranged').position)),
+  { x: 0, y: -0.05, z: -0.28 },
+  'Untouched v6 +0.28 dagger trial must migrate to the opposite mirrored Z.',
+);
+
+const customV5Draft = grips.clone();
+customV5Draft.rangedGripPreset = 'melee-ranged-split-20260920-v5-authored-values';
+customV5Draft.tools.dagger.rangedPrimaryGrip.position.z = -0.22;
+grips.replace(customV5Draft);
+assert.strictEqual(grips.authoredPrimaryGripForTool('dagger', 'ranged').position.z, -0.22, 'Custom v5 ranged dagger edits must not be overwritten by the narrow migration.');
 
 const oldRotationDraft = grips.clone();
 delete oldRotationDraft.primaryRotationPreset;
@@ -469,6 +606,7 @@ assert.strictEqual(effectiveHatchetGrip.position.x, authoredHatchetGrip.position
 assert.strictEqual(effectiveHatchetGrip.position.y, authoredHatchetGrip.position.y * hatchetGripScale, 'primary grip target Y must scale with the visible weapon');
 assert.strictEqual(effectiveHatchetGrip.position.z, authoredHatchetGrip.position.z * hatchetGripScale, 'primary grip target Z must scale with the visible weapon');
 assert.match(gripConfigSource, /function primaryGripForTool\(value, context = currentGripContext\(\)\)/, 'primary grip API must resolve an explicit melee/ranged context.');
+assert.match(gripConfigSource, /function spinPivotOffsetForTool\(value, angleRad, context = 'ranged'\)[\s\S]*return \{ x: x - rotatedX, y: 0, z: z - rotatedZ \}/, 'shared throw-spin pivot must translate the visual by P - R(P) around the authored primary grip.');
 assert.match(gripConfigSource, /primaryGripFieldForContext[\s\S]*rangedPrimaryGrip/, 'ranged primary grip must be stored independently from melee primaryGrip.');
 assert.match(driverSource, /const gripContext = currentGripContext\(\)[\s\S]*primaryGripForTool\(toolKey, gripContext\)[\s\S]*secondaryGripForTool\(toolKey, gripContext\)/, 'runtime hand driver must switch both hands to ranged grip metadata when the ranged slot is active.');
 assert.match(directEditorSource, /id="handGripContextSelect"[\s\S]*Melee grip[\s\S]*Ranged grip/, 'Attack Editor must expose an explicit Melee/Ranged grip-set selector.');
@@ -527,7 +665,7 @@ assert.match(shoulderScanSpeciesSource, /scanSpecies/, 'fallback must resolve ar
 assert.match(shoulderPoseRuntimeSource, /function weightsAt/, 'pose runtime must interpolate authored shoulder boxes');
 assert.match(shoulderPoseRuntimeSource, /secondaryGripActive/, 'pose runtime must distinguish a gripping vs idle left hand');
 assert.match(shoulderPoseRuntimeSource, /side === 'left'.*!secondaryGripActive/s, 'ungripped left hand must use idle shoulder behavior during active animation');
-assert.match(shoulderPoseRuntimeSource, /__rangedDebug\?\.playerAction/, 'ranged load/fire must use their real action timeline');
+assert.match(shoulderPoseRuntimeSource, /RangedWeapons\?\.playerActionState\?\.\(\)/, 'ranged load/fire hand playback must use the real live ranged action timeline');
 assert.match(shoulderPoseRuntimeSource, /combatNeutralWeight/, 'committed melee defaults must follow the exact neutral lerp weight');
 assert.match(shoulderPoseRuntimeSource, /__weaponToolStanceVisualHooks/, 'runtime must wait until the melee visual wrapper exists before capturing raw authored pose metadata');
 assert.match(shoulderPoseRuntimeSource, /triggerWeaponSwingVisual/, 'runtime must preserve custom per-pose melee shoulderAim metadata before numeric pose normalization');
@@ -561,6 +699,11 @@ assert.match(shoulderAimSource, /elbowPoseAuthoritative: true/, 'paper-arm previ
 assert.match(shoulderAimSource, /visualOnly: true/, 'paper-arm geometry itself must remain visualization-only');
 assert.match(shoulderAimSource, /setPaperArmGuideVisible/, 'editor must be able to toggle paper-arm guides on already-created rigs');
 assert.match(shoulderAimSource, /currentElbow\?\.\(side\)/, 'runtime hand targeting must consume the interpolated direct per-side elbow pose');
+assert.match(shoulderPoseRuntimeSource, /activeThrownChargeItemKey\?\.\(\)[\s\S]*return true/, 'held thrown-weapon Windup must identify the authored active phase before a ranged playerAction exists');
+assert.match(shoulderPoseRuntimeSource, /RangedWeapons\?\.isPlayerThrownFireThroughStrike\?\.\(\) === true/, 'ranged hand targeting must consume the real thrown-action phase API rather than debug state');
+assert.doesNotMatch(shoulderPoseRuntimeSource, /__rangedDebug|WeaponToolStances\?\.debugSnapshot/, 'gameplay hand targeting must never depend on diagnostic snapshots');
+assert.match(shoulderPoseRuntimeSource, /if \(!rangedWindupStrikeActive\(\)\) return weights;[\s\S]*return \{ \.\.\.weights, grip: 0 \}/, 'thrown Windup\/Strike must disable only the local grip-axis correction while preserving palm-normal targeting');
+assert.match(shoulderAimSource, /const appliedPalmNormalAngle = palmNormalAngle \* weights\.palmNormal/, 'palm-normal targeting must remain active through the ordinary shoulder\/elbow solver');
 assert.match(shoulderAimSource, /shoulder\.x \+ Number\(authoredOffset\.x/, 'authored elbow coordinates must be direct shoulder-relative pose offsets');
 assert.match(shoulderAimSource, /legacy-shoulder-target/, 'older animations without elbows must retain the old shoulder target instead of calculating a runtime midpoint');
 assert.doesNotMatch(shoulderAimSource, /copy\(shoulder\)\.add\(socket\.position\)\.multiplyScalar\(0\.5\)/, 'runtime must never synthesize the authoring midpoint');
@@ -589,6 +732,7 @@ assert.match(shoulderPoseRuntimeSource, /returnNeutralMirrorSign/, 'elbow playba
 assert.match(shoulderPoseRuntimeSource, /snapshot\.combatWindupFrac/, 'hand pose playback must use WeaponToolStances exact normalized windup timing');
 assert.match(weaponStanceSource, /runtimeState\.combatDirSign/, 'WeaponToolStances must expose active mirror sign to hand consumers');
 assert.match(weaponStanceSource, /runtimeState\.combatReturnNeutralMirrorSign/, 'WeaponToolStances must expose alternating-heavy return mirror sign to hand consumers');
+assert.match(shoulderPoseRuntimeSource, /WeaponToolStances\?\.getRuntimeState\?\.\(\)/, 'melee hand playback must consume WeaponToolStances borrowed runtime state instead of its debug snapshot');
 assert.match(shoulderControlsSource, /authorMidpointElbow/, 'editor hand controls must provide a one-shot midpoint authoring helper');
 // A point exactly on the straight shoulder<->wrist line aims the wrist the same
 // direction the unauthored fallback already does (both target the shoulder, which
@@ -807,5 +951,25 @@ for (const removed of [
   'docs/js/portrait-arm-compass.js',
   'docs/js/procedural-hand-compass-aim.js',
 ]) assert(!fs.existsSync(path.join(root, removed)), `${removed} should be physically removed`);
+
+// Ranged Windup/Strike disables only the grip-axis correction; palm-normal targeting remains available.
+let activeThrownCharge = 'fishingspear_nativeCopper';
+let thrownFireThroughStrike = false;
+const shoulderPoseGateSandbox = {
+  window: {
+    setInterval: () => 0,
+    HobunjiRangedWeaponArchetypes: { activeThrownChargeItemKey: () => activeThrownCharge },
+    RangedWeapons: { isPlayerThrownFireThroughStrike: () => thrownFireThroughStrike },
+  },
+  console,
+};
+vm.runInNewContext(shoulderPoseRuntimeSource, shoulderPoseGateSandbox, { filename: 'hand-shoulder-pose-runtime.js' });
+const shoulderPoseGate = shoulderPoseGateSandbox.window.HobunjiHandShoulderPoseRuntime;
+assert.strictEqual(shoulderPoseGate.rangedWindupStrikeActive(), true, 'held thrown Windup must enter the grip-axis suppression phase');
+activeThrownCharge = null;
+thrownFireThroughStrike = true;
+assert.strictEqual(shoulderPoseGate.rangedWindupStrikeActive(), true, 'released thrown Strike must keep grip-axis targeting suppressed through the real ranged phase API');
+thrownFireThroughStrike = false;
+assert.strictEqual(shoulderPoseGate.rangedWindupStrikeActive(), false, 'thrown Hold/Return must restore ordinary grip-axis targeting');
 
 console.log('procedural hands: per-pose shoulder lerp + manual/fallback shoulder points + direct sockets PASS');

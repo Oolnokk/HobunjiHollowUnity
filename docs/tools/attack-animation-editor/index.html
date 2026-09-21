@@ -305,7 +305,7 @@ canvas{display:block;width:100%;height:100%}
      loaded by the game's Pixel Probe, so this editor's preview dump and an
      in-game character dump use the exact same code/format. -->
 <script src="../../js/transform-dump-utils.js?v=20260820a"></script>
-<script src="../../js/held-action-animations.js?v=20260920handreview3-spearoffset-rangedgrip3-toolz1-align1"></script>
+<script src="../../js/held-action-animations.js?v=20260920handreview3-spearoffset-rangedgrip3-toolz1-align1-throwpivot2"></script>
 <script src="../../js/combat/melee-pose-spacing.js?v=20260920spacing2"></script>
 <script type="module">
 import * as THREE from 'three';
@@ -843,10 +843,10 @@ function buildToolPlaneMesh(toolKey) {
       const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.08, side: THREE.DoubleSide });
       const plane = new THREE.Mesh(geo, mat);
       plane.rotation.x = -Math.PI / 2;
-      plane.rotation.z = 0; // PNG-local Z is reserved for sweep/throw spin after the fixed sprite-plane basis.
+      plane.rotation.z = def.flip ? Math.PI : 0; // Base end flip is an in-plane 180° turn so the visible tip and handle actually swap.
       const g = new THREE.Group();
       g.add(plane);
-      g.rotation.z = def.flip ? Math.PI : 0; // g is identity-oriented under toolHolder: this is the actual Tool Z / legacy Roll axis shown by the pose editor.
+      g.rotation.z = 0; // Parent stays identity-oriented; pose rotation remains owned by toolHolder.
       g.userData.toolEndFlipBase = def.flip === true;
       g.userData.toolPlane = plane; // Lets applyPoseToRig derive the sprite basis from the previewed animation style, exactly like game.js.
       // Mirror the sprite itself (not just its position/rotation) when the
@@ -905,6 +905,11 @@ let anim = {
   holdFrac: 0.68,
   durationS: 0.5,
   toolEndFlip: false,
+  spinBasisDeg: 0,
+  spinRevolutions: 0,
+  projectileSpin: null,
+  projectileLockAlignment: false,
+  projectileBasisDeg: 0,
   poses: {
     neutral: { ...neutralPoseFor('sweep') },
     windup: defaultPose(0.05, 0.05, -0.15, -15, 0, -60),
@@ -1165,7 +1170,7 @@ $('toolEndFlipBtn').onclick = () => {
   anim.toolEndFlip = !anim.toolEndFlip;
   syncToolEndFlipUi();
   refreshJsonView();
-  logDebug(`Tool End Flip ${anim.toolEndFlip ? 'enabled' : 'disabled'} (180° around Tool Z / legacy roll)`);
+  logDebug(`Tool End Flip ${anim.toolEndFlip ? 'enabled' : 'disabled'} (180° in-plane tip↔handle reversal)`);
 };
 syncToolEndFlipUi();
 
@@ -1216,8 +1221,8 @@ const TOOL_PRESETS = [
     windup: defaultPose(-0.03, 0.27, 0.02, -23, 104, -15, 89), strike: defaultPose(-0.03, 0.27, 0.02, -23, 104, -15, 89),
     windupFrac: 0.16, strikeFrac: 0.28 },
   { id: 'light_weapon_idle', label: 'Light Weapon — Idle (still)', style: 'thrust', toolKey: 'pickshovel', still: true,
-    neutral: defaultPose(-0.09, -0.08, -0.04, 37, -68, -40, -114),
-    windup: defaultPose(-0.09, -0.08, -0.04, 37, -68, -40, -114), strike: defaultPose(-0.09, -0.08, -0.04, 37, -68, -40, -114),
+    neutral: defaultPose(-0.09, 0, -0.04, 37, -68, -40, -114),
+    windup: defaultPose(-0.09, 0, -0.04, 37, -68, -40, -114), strike: defaultPose(-0.09, 0, -0.04, 37, -68, -40, -114),
     windupFrac: 0.16, strikeFrac: 0.28 },
   { id: 'hatchet_idle', label: 'Hatchet — Idle (still)', style: 'sweep', toolKey: 'hatchet', still: true,
     windup: defaultPose(0, 0, 0.16, 0, 0, 0), strike: defaultPose(0, 0, 0.16, 0, 0, 0),
@@ -1307,6 +1312,11 @@ function applyPreset(preset) {
   anim.style = preset.style;
   anim.sequence = preset.sequence || 'attack';
   anim.toolEndFlip = preset.toolEndFlip === true;
+  anim.spinBasisDeg = safeNum(preset.spinBasisDeg, 0);
+  anim.spinRevolutions = Math.max(0, safeNum(preset.spinRevolutions, 0));
+  anim.projectileSpin = typeof preset.projectileSpin === 'boolean' ? preset.projectileSpin : null;
+  anim.projectileLockAlignment = preset.projectileLockAlignment === true;
+  anim.projectileBasisDeg = safeNum(preset.projectileBasisDeg, 0);
   syncToolEndFlipUi();
   clampFracs();
   $('animStyle').value = anim.style;
@@ -1393,7 +1403,8 @@ function applyPoseToRig(pose) {
   if (toolPlane) {
     const baseEndFlip = toolPlaneMesh?.userData?.toolEndFlipBase === true;
     const effectiveEndFlip = baseEndFlip !== (anim.toolEndFlip === true);
-    toolPlaneMesh.rotation.z = effectiveEndFlip ? Math.PI : 0; // Exact Tool Z / legacy Roll axis: this group is identity-oriented directly beneath toolHolder.
+    toolPlaneMesh.rotation.z = 0; // Parent stays identity-oriented; visible end-for-end reversal is composed on the PNG plane below.
+    toolPlane.position.set(0, 0, 0); // Throw-spin pivot compensation is frame-local and must not leak into idle/editor action changes.
     toolPlane.rotation.x = -Math.PI / 2; // Fixed PNG-plane basis only.
     // Runtime derives the -90° sweep basis from the active animation, then
     // weapon-tool-stances fades that basis out at Neutral for every weapon-
@@ -1411,7 +1422,11 @@ function applyPoseToRig(pose) {
     const authoredSpinZ = authoredSpinRevolutions > 0
       ? authoredSpinBasisZ - previewT * Math.PI * 2 * authoredSpinRevolutions
       : 0;
-    toolPlane.rotation.z = sweepBasisZ + authoredSpinZ; // PNG-local spin stays separate from Tool End Flip, which lives on toolPlaneMesh's true Tool-Z axis.
+    toolPlane.rotation.z = (effectiveEndFlip ? Math.PI : 0) + sweepBasisZ + authoredSpinZ; // End flip and authored spin share the visible in-plane axis, so the sprite truly reverses tip-to-handle.
+    if (authoredSpinRevolutions > 0) {
+      const throwSpinPivot = window.HobunjiHandToolGrips?.spinPivotOffsetForTool?.(currentToolKey, authoredSpinZ, 'ranged');
+      if (throwSpinPivot) toolPlane.position.set(throwSpinPivot.x, throwSpinPivot.y, throwSpinPivot.z);
+    }
   }
   lastAuthoredPose.x = Number(pose.x) || 0; lastAuthoredPose.y = Number(pose.y) || 0; lastAuthoredPose.z = Number(pose.z) || 0;
   poseOrbitScratch.set(toolBase.position.x + lastAuthoredPose.x, toolBase.position.y + lastAuthoredPose.y, toolBase.position.z + lastAuthoredPose.z); // Existing pre-arm-length finished point.
@@ -1936,6 +1951,13 @@ function exportAnimObject() {
     toolEndFlip: anim.toolEndFlip === true,
     poses: { neutral: { ...anim.poses.neutral }, windup: { ...anim.poses.windup }, strike: { ...anim.poses.strike } },
   };
+  if (anim.spinRevolutions > 0 || anim.spinBasisDeg) {
+    exported.spinBasisDeg = Number(anim.spinBasisDeg) || 0;
+    exported.spinRevolutions = Math.max(0, Number(anim.spinRevolutions) || 0);
+  }
+  if (typeof anim.projectileSpin === 'boolean') exported.projectileSpin = anim.projectileSpin;
+  if (anim.projectileLockAlignment) exported.projectileLockAlignment = true;
+  if (anim.projectileBasisDeg) exported.projectileBasisDeg = Number(anim.projectileBasisDeg) || 0;
   return window.HobunjiAttackEditorHandShoulderControls?.decorateAnimationObject?.(exported) || exported;
 }
 $('exportBtn').onclick = () => {
@@ -1999,6 +2021,13 @@ function loadAnimObject(data) {
   anim.holdFrac = safeNum(data.holdFrac, anim.strikeFrac);
   anim.durationS = safeNum(data.durationS, anim.durationS);
   anim.toolEndFlip = data.toolEndFlip === true;
+  anim.spinBasisDeg = safeNum(data.spinBasisDeg, safeNum(actionSource?.spinBasisDeg, 0));
+  anim.spinRevolutions = Math.max(0, safeNum(data.spinRevolutions, safeNum(actionSource?.spinRevolutions, 0)));
+  anim.projectileSpin = typeof data.projectileSpin === 'boolean'
+    ? data.projectileSpin
+    : (typeof actionSource?.projectileSpin === 'boolean' ? actionSource.projectileSpin : null);
+  anim.projectileLockAlignment = (data.projectileLockAlignment ?? actionSource?.projectileLockAlignment) === true;
+  anim.projectileBasisDeg = safeNum(data.projectileBasisDeg, safeNum(actionSource?.projectileBasisDeg, 0));
   syncToolEndFlipUi();
   clampFracs();
   // Older exports predate the neutral pose becoming authorable — fall back to

@@ -64,7 +64,7 @@ const windowObject = {
     weaponThrowSpearSpin: {
       name: 'Fishing Spear Throw (Offset Spin)', style: 'chop', sequence: 'attack', gripMode: 'palm-parallel',
       durationS: 1.04, windupFrac: 0.49, strikeFrac: 0.57, holdFrac: 0.82,
-      spinBasisDeg: 90, spinRevolutions: 2.5, projectileSpin: false, projectileLockAlignment: true,
+      toolEndFlip: true, spinBasisDeg: 90, spinRevolutions: 2.5, projectileSpin: false, projectileLockAlignment: true, projectileBasisDeg: -90,
       poses: {
         neutral: { x: 0.03, y: 0.37, z: -0.01, pitch: -155, yaw: -79, bodyYaw: 2, roll: -82, shoulderAim: { grip: true, palmNormal: true } },
         windup: { x: 0.41, y: 0.37, z: 0.42, pitch: -180, yaw: 139, bodyYaw: -152, roll: -92, shoulderAim: { grip: false, palmNormal: false } },
@@ -143,6 +143,7 @@ const gripRuntimeSource = fs.readFileSync(path.resolve(__dirname, '../docs/js/pr
 const gameSource = fs.readFileSync(path.resolve(__dirname, '../docs/game.js'), 'utf8'); // Pins the minimal Charged-Breaker-style partial-release seam used by thrown weapons.
 const scratchbonesConfigSource = fs.readFileSync(path.resolve(__dirname, '../docs/config/scratchbones-config.js'), 'utf8'); // Pins the exact fixed thrown-release recording.
 const attackEditorSource = fs.readFileSync(path.resolve(__dirname, '../docs/tools/attack-animation-editor/index.html'), 'utf8'); // Pins the pick-mining end-flip authoring control/export contract.
+const gameIndexSource = fs.readFileSync(path.resolve(__dirname, '../docs/index.html'), 'utf8'); // Pins the game entry-point cache key that must refresh the held-action bootstrap after throw-pivot changes.
 assert.match(gameSource, /function getWeaponSwingWindupPoseProgress\(\)/, 'game runtime must expose visible linear held-windup progress.');
 assert.match(gameSource, /function partialCombatPoseAtCharge\(pose, poseProgress\)/, 'game runtime must support releasing from the currently visible partial pose.');
 assert.match(gameSource, /getHeldRangedTexture:[\s\S]*material\?\.map/, 'ranged projectile appearance must source the exact held tool texture.');
@@ -156,25 +157,39 @@ assert.ok(gameSource.indexOf('updateToolMesh(dt);') < gameSource.indexOf('window
 assert.doesNotMatch(gameSource, /combatSwingOrbitRigCentroid/, 'projectile-only port must not reintroduce the old thrown-pose centroid animation path.');
 assert.doesNotMatch(rangedArchetypeSource, /orbitRigCentroid:\s*true/, 'projectile-only port must leave current-main held throw animation ownership intact.');
 assert.match(gameSource, /combatSwingAlignToReticle[\s\S]*currentPlayerAimAngle\(\)[\s\S]*currentPlayerAimPitch\(\)/, 'ranged throw/fire animation frames must align to the live reticle yaw and pitch.');
-assert.match(gameSource, /const baseEndFlip = spinMesh\?\.userData\?\.toolEndFlipBase === true[\s\S]*const effectiveEndFlip = baseEndFlip !== actionEndFlip[\s\S]*spinMesh\.rotation\.z = effectiveEndFlip \? Math\.PI : 0[\s\S]*spinPlane\.rotation\.x = -Math\.PI \/ 2/, 'runtime Tool End Flip must rotate the identity-oriented weapon group around the actual Tool-Z axis while leaving the PNG-plane X basis fixed.');
-assert.match(attackEditorSource, /const baseEndFlip = toolPlaneMesh\?\.userData\?\.toolEndFlipBase === true[\s\S]*toolPlaneMesh\.rotation\.z = effectiveEndFlip \? Math\.PI : 0[\s\S]*toolPlane\.rotation\.z = sweepBasisZ \+ authoredSpinZ/, 'Attack Editor must apply Tool End Flip on the identity-oriented visual group Tool-Z axis and keep PNG-local spin separate.');
+assert.match(gameSource, /const aimPitchRad = -\(reticleFrame\?\.pitchRad \?\? 0\)[\s\S]*_qRangedAimPitch\.setFromAxisAngle\(_xAxis, -aimPitchRad\)/, 'ranged throw visuals must invert only the rendered X-axis pitch so reticle-up tilts the animation up while projectile aim remains unchanged.');
+assert.match(gameSource, /const baseEndFlip = spinMesh\?\.userData\?\.toolEndFlipBase === true[\s\S]*const requestedEndFlip = combatSwingAnim \? combatSwingToolEndFlip : \(activeTool === 'ranged'[\s\S]*toolEndFlip === true\)[\s\S]*spinMesh\.rotation\.z = 0[\s\S]*spinPlane\.rotation\.z = \(effectiveEndFlip \? Math\.PI : 0\) \+/, 'runtime Tool End Flip must remain active in the ranged-ready stance and visibly reverse the PNG plane tip-to-handle instead of rolling the parent around weapon length.');
+assert.match(attackEditorSource, /const baseEndFlip = toolPlaneMesh\?\.userData\?\.toolEndFlipBase === true[\s\S]*toolPlaneMesh\.rotation\.z = 0[\s\S]*toolPlane\.rotation\.z = \(effectiveEndFlip \? Math\.PI : 0\) \+ sweepBasisZ \+ authoredSpinZ/, 'Attack Editor must preview the same visible in-plane end flip as runtime.');
+assert.match(attackEditorSource, /anim\.spinBasisDeg = safeNum\(preset\.spinBasisDeg, 0\)[\s\S]*anim\.spinRevolutions = Math\.max\(0, safeNum\(preset\.spinRevolutions, 0\)\)/, 'Attack Editor action presets must retain held Spin Throw metadata instead of dropping the runtime 360°+ flourish.');
+assert.match(attackEditorSource, /toolPlane\.position\.set\(0, 0, 0\)[\s\S]*spinPivotOffsetForTool\?\.\(currentToolKey, authoredSpinZ, 'ranged'\)/, 'Attack Editor must pivot throw spin around the same authored ranged grip as runtime.');
+assert.match(heldActionSource, /new URL\('js\/hand-tool-grips\.js\?v=20260921throwpivot2', docsBase\)\.href/, 'Held-action bootstrap must cache-bust the shared hand-tool-grips runtime so game/editor receive spinPivotOffsetForTool instead of a stale copy.');
+assert.match(gameIndexSource, /held-action-animations\.js\?v=20260920handreview3-spearoffset-rangedgrip3-toolz1-align1-throwpivot2/, 'Game entry point must refresh the held-action bootstrap that owns the shared grip helper URL.');
+assert.match(attackEditorSource, /held-action-animations\.js\?v=20260920handreview3-spearoffset-rangedgrip3-toolz1-align1-throwpivot2/, 'Attack Editor entry point must refresh the same held-action bootstrap before rendering throw spin.');
+assert.match(attackEditorSource, /function phasePreviewT\(phase\)[\s\S]*anim\.windupFrac[\s\S]*anim\.strikeFrac[\s\S]*function focusPreviewOnPhase\(phase\)[\s\S]*previewT = phasePreviewT\(phase\)[\s\S]*applyPoseToRig\(anim\.poses\[phase\]\)/, 'Attack Editor Neutral/Windup/Strike selection must place previewT on the exact runtime timeline keyframe before rendering the pose.');
+assert.match(attackEditorSource, /anim\.projectileSpin = typeof preset\.projectileSpin === 'boolean'[\s\S]*anim\.projectileLockAlignment = preset\.projectileLockAlignment === true[\s\S]*anim\.projectileBasisDeg = safeNum\(preset\.projectileBasisDeg, 0\)/, 'Attack Editor action presets must preserve fishing-spear projectile alignment metadata alongside held spin metadata.');
+assert.match(attackEditorSource, /exported\.spinBasisDeg[\s\S]*exported\.spinRevolutions/, 'Attack Editor exports held spin metadata when present.');
+assert.match(attackEditorSource, /anim\.spinBasisDeg = safeNum\(data\.spinBasisDeg,[\s\S]*anim\.spinRevolutions = Math\.max\(0, safeNum\(data\.spinRevolutions,/, 'Attack Editor imports held spin metadata with the selected action as fallback.');
 assert.match(attackEditorSource, /id="toolEndFlipBtn"/, 'Attack Animation Editor must expose Tool End Flip directly.');
 assert.match(attackEditorSource, /toolEndFlip:\s*anim\.toolEndFlip === true/, 'Attack Animation Editor exports the Tool End Flip bit.');
 assert.match(attackEditorSource, /anim\.toolEndFlip = data\.toolEndFlip === true/, 'Attack Animation Editor imports the Tool End Flip bit.');
 assert.match(heldActionSource, /name:\s*'Weapon Throw \(Spin\)'/, 'Shared held-action library must expose Weapon Throw (Spin).');
+assert.match(heldActionSource, /name:\s*'Fishing Spear Throw \(Offset Spin\)'[\s\S]*toolEndFlip:\s*true[\s\S]*spinBasisDeg:\s*90/, 'Fishing spear shared action must preview the same end-flipped +90-degree held basis that runtime uses.');
+
 assert.match(heldActionSource, /durationS:\s*1\.04[\s\S]*windupFrac:\s*0\.49[\s\S]*strikeFrac:\s*0\.57[\s\S]*holdFrac:\s*0\.82/, 'Weapon Throw (Spin) must retain the supplied authored timing.');
 assert.match(heldActionSource, /gripMode:\s*'palm-parallel'/, 'Weapon Throw (Spin) must retain the supplied palm-parallel grip mode.');
 assert.match(rangedWeaponsSource, /gripMode:\s*def\.gripMode\s*\|\|\s*null/, 'Ranged action playback must forward authored grip mode metadata.');
 assert.match(gripRuntimeSource, /beginHeld:\s*beginHeldMode/, 'Procedural hand grip runtime must expose the held-grip lifecycle to ranged visuals.');
 assert.match(rangedWeaponsSource, /grip\?\.beginHeld\?\.\(options\.gripMode\)/, 'Ranged visuals must activate the authored held grip through the shared grip runtime.');
+assert.match(rangedWeaponsSource, /function isPlayerThrownFireThroughStrike\(\)[\s\S]*action\?\.kind !== 'fire'[\s\S]*action\.def\?\.rangedType !== 'thrown'[\s\S]*return progress <= strikeBoundary/, 'RangedWeapons must expose a thrown-only Windup\/Strike phase predicate for hand targeting without routing gameplay through __rangedDebug.');
+assert.match(rangedWeaponsSource, /playerActionState:\s*\(\) => playerAction/, 'RangedWeapons must expose borrowed live action state for hand interpolation without allocating the __rangedDebug copy.');
 assert.match(fishingSource, /projectileVisuals:\s*FISHING_PROJECTILE_VISUALS/, 'Fishing must expose its projectile visual tuning for combat reuse.');
 assert.match(rangedWeaponsSource, /Fishing\?\.projectileVisuals\?\.maceSpinRateDeg/, 'Thrown spin must read Fishing\'s authored mace spin rate instead of inventing a separate rate.');
 assert.match(rangedWeaponsSource, /textureSource\?\.clone[\s\S]*texture = textureSource\.clone\(\)/, 'Thrown projectiles must clone the exact held texture so metal and verdigris pattern match pixel-for-pixel.');
 assert.match(rangedWeaponsSource, /hasExactSourcePlane[\s\S]*new THREE\.PlaneGeometry\(projectilePlaneWidth, projectilePlaneHeight\)/, 'Thrown projectile geometry must use sampled held-plane dimensions when available.');
-assert.match(rangedWeaponsSource, /const fallbackToolZFlip = !sourceTransform && def\.rangedType === 'thrown' && def\.toolEndFlip === true/, 'Only unsampled fallback thrown projectiles may synthesize the configured Tool-Z flip.');
+assert.match(rangedWeaponsSource, /const fallbackEndFlip = !sourceTransform && def\.rangedType === 'thrown' && def\.toolEndFlip === true/, 'Only unsampled fallback thrown projectiles may synthesize the configured visible end flip.');
 assert.match(rangedWeaponsSource, /sourceTransform\?\.quaternion\?\.isQuaternion[\s\S]*sourceTransform\.quaternion\.clone\(\)/, 'Sampled player throws must preserve the exact held plane quaternion, including fishing-spear end orientation.');
-assert.match(rangedWeaponsSource, /_projectileFallbackToolZFlipQuaternion[\s\S]*new THREE\.Vector3\(0, 1, 0\)[\s\S]*baseVisualQuaternion\.multiply\(_projectileFallbackToolZFlipQuaternion\)/, 'Unsampled fallback must map held Tool Z onto the flight frame sprite-length axis instead of confusing it with PNG-normal Z.');
-assert.doesNotMatch(rangedWeaponsSource, /uv\.setY\(i, 1 - uv\.getY\(i\)\)|plane\.rotation\.z = Math\.PI/, 'Thrown end flipping must not use a UV mirror or PNG-local-Z rotation.');
+assert.match(rangedWeaponsSource, /_projectileLocalPlaneZ = new THREE\.Vector3\(0, 0, 1\)[\s\S]*_projectileFallbackEndFlipQuaternion[\s\S]*setFromAxisAngle\(_projectileLocalPlaneZ, Math\.PI\)[\s\S]*baseVisualQuaternion\.multiply\(_projectileFallbackEndFlipQuaternion\)/, 'Unsampled dagger/spear throws must reproduce the held visible tip↔handle reversal around the projectile PNG-plane normal.');
+assert.doesNotMatch(rangedWeaponsSource, /uv\.setY\(i, 1 - uv\.getY\(i\)\)/, 'Thrown end flipping must not use a UV mirror; it is a true in-plane rotation consistent with the held weapon.');
 assert.match(rangedWeaponsSource, /sourceTransform:\s*heldTransform/, 'Player ranged projectiles must launch from the held plane transform sampled at the current release frame.');
 assert.match(rangedWeaponsSource, /launchTransformMode[^\n]*'held-strike-plane'/, 'Projectile debug state must identify exact held-plane launch transforms.');
 assert.match(rangedWeaponsSource, /facingSource:[^\n]*'sampled-held-plane'/, 'Projectile debug state must report when visible facing came directly from the sampled held weapon.');
@@ -200,7 +215,8 @@ assert.match(rangedWeaponsSource, /restoreHeldThrownWeapon\(action\)/, 'Held wea
 assert.match(rangedWeaponsSource, /p\.def\.damage \* falloff \* \(Number\.isFinite\(p\.damageScale\)/, 'Thrown projectile raw damage must multiply by released visible windup percentage.');
 assert.doesNotMatch(rangedWeaponsSource, /cameraPitchAxisWorld|fixedPitchAxisWorld/, 'Thrown projectile spin must not derive its axis from the camera or a world-space launch axis.');
 assert.match(rangedWeaponsSource, /p\.facePivot\.rotation\.z = p\.spinRad/, 'Spinning thrown weapons must rotate the projectile PNG around its own local Z axis.');
-assert.match(gameSource, /const rangedThrowSpins = rangedThrowDef\?\.rangedType === 'thrown' && rangedThrowDef\?\.heldSpin === true[\s\S]*heldSpinBasisDeg[\s\S]*heldSpinRevolutions[\s\S]*spinPlane\.rotation\.z = baseRotZ \+ rangedThrowSpinBasisRad - progress \* Math\.PI \* 2 \* rangedThrowSpinRevolutions/, 'Held throw spin must stay on PNG-local Z while Tool End Flip is owned independently by the true Tool-Z visual group.');
+assert.match(gameSource, /const rangedThrowDef = activeTool === 'ranged' && combatSwingAnim === 'ranged'[\s\S]*equipmentSlots\.ranged \|\| spinItemKey[\s\S]*const rangedThrowSpins = rangedThrowDef\?\.rangedType === 'thrown' && rangedThrowDef\?\.heldSpin === true[\s\S]*const rangedThrowDynamicSpinRad =[\s\S]*spinPlane\.rotation\.z = \(effectiveEndFlip \? Math\.PI : 0\) \+ baseRotZ \+ rangedThrowDynamicSpinRad[\s\S]*spinPivotOffsetForTool\?\.\(spinItemKey, rangedThrowDynamicSpinRad, 'ranged'\)/, 'Held Spin Throw must resolve the active ranged definition and pivot its PNG around the authored ranged grip instead of the sprite center.');
+assert.match(gameSource, /spinPlane\.position\.set\(0, 0, 0\)[\s\S]*rangedThrowSpins/, 'held throw pivot translation must reset every frame so it cannot leak into idle or another action.');
 assert.match(rangedWeaponsSource, /p\.facePivot\.rotation\.y = 0;[\s\S]*p\.facePivot\.rotation\.z = p\.spinRad;[\s\S]*return;/, 'Spinning throws must not layer the camera-facing deadzone twist onto local-Z spin.');
 assert.match(rangedWeaponsSource, /facePivot\.rotation\.y = p\.faceTwistRad/, 'Non-spinning projectile readability remains isolated to a child long-axis twist.');
 assert.match(rangedWeaponsSource, /Math\.abs\(diff\) > PROJECTILE_PERP_DEAD_RAD/, 'Projectile sprite camera-facing must retain the 15-degree deadzone instead of perfect billboarding.');
@@ -217,9 +233,16 @@ for (const key of ['dagger_copper', 'hatchet_copper', 'kylie_copper']) {
   assert.strictEqual(windowObject.RangedWeapons.config[key]?.projectileSpinSource, 'fishingMace', `${key} should reuse the fishing-mace projectile spin rate.`);
   assert.strictEqual(windowObject.RangedWeapons.config[key]?.projectileSprite, toolDefs[key].sprite, `${key} projectile should use its actual weapon sprite.`);
 }
+assert.strictEqual(windowObject.RangedWeapons.config.dagger_copper.heldSpin, true, 'Dagger must use the same held Spin Throw twirl as hatchet/Kylie.');
+assert.strictEqual(windowObject.RangedWeapons.config.dagger_copper.heldSpinBasisDeg, 0, 'Dagger held spin must use the generic zero-degree spin basis, not the spear offset.');
+assert.strictEqual(windowObject.RangedWeapons.config.dagger_copper.heldSpinRevolutions, 2.5, 'Dagger must share the generic 2.5-revolution held throw.');
+assert.match(rangedArchetypeSource, /const projectileSpins = animation\?\.projectileSpin !== false[\s\S]*projectileVisualStyle: projectileSpins \? 'spinningWeapon' : 'weapon'[\s\S]*projectileSpinSource: projectileSpins \? 'fishingMace' : null/, 'Generic thrown projectile spin must be driven by the shared Spin Throw animation contract rather than a fragile weapon-name allowlist.');
+assert.doesNotMatch(rangedArchetypeSource, /PROJECTILE_SPINNING_THROWN_SHAPES/, 'Thrown projectile spin must not depend on a separate shape allowlist; fishing spear opts out through its dedicated animation.');
+assert.strictEqual(windowObject.RangedWeapons.config.fishingspear_copper.toolEndFlip, true, 'Fishing spear throw must retain the visible tip-to-handle end flip while using its offset spin.');
 assert.strictEqual(windowObject.RangedWeapons.config.fishingspear_copper.projectileVisualStyle, 'weapon', 'Fishing spear must freeze the sampled held alignment after release instead of tumbling in flight.');
 assert.strictEqual(windowObject.RangedWeapons.config.fishingspear_copper.projectileSpinSource, null, 'Fishing spear projectile must not receive the generic local-Z tumble.');
 assert.strictEqual(windowObject.RangedWeapons.config.fishingspear_copper.projectileLockLaunchAlignment, true, 'Fishing spear projectile must lock the sampled release basis instead of receiving camera readability twist.');
+assert.strictEqual(windowObject.RangedWeapons.config.fishingspear_copper.projectileBasisDeg, -90, 'Fishing spear projectile must correct the current 90-degree in-plane mismatch without changing the held throw basis.');
 assert.strictEqual(windowObject.RangedWeapons.config.fishingspear_copper.projectileSprite, toolDefs.fishingspear_copper.sprite, 'Fishing spear projectile still uses the real spear sprite.');
 assert.strictEqual(windowObject.RangedWeapons.config.kylie_copper.projectileSpeedMultiplier, 1.25, 'Thrown weapons should default slightly faster than the previous 1.15 global pace.');
 assert.strictEqual(windowObject.RangedWeapons.config.kylie_copper.projectileDropStartTiles, 6, 'Thrown reticle should remain straight-line accurate for roughly six tiles by default.');
@@ -250,12 +273,14 @@ assert.strictEqual(windowObject.RangedWeapons.config.fishingspear_copper.heldSpi
 assert.strictEqual(windowObject.RangedWeapons.config.fishingspear_copper.heldSpinBasisDeg, 90, 'Fishing spear held spin basis must be 90 degrees counterclockwise from the generic thrown spin.');
 assert.strictEqual(windowObject.RangedWeapons.config.fishingspear_copper.heldSpinRevolutions, 2.5, 'Fishing spear should share the generic throw revolution count.');
 assert.match(heldActionSource, /weaponThrowSpearSpin[\s\S]*spinBasisDeg:\s*90[\s\S]*projectileSpin:\s*false/, 'Shared held-action library must expose a dedicated 90-degree spear throw whose projectile keeps its release alignment.');
-assert.match(heldActionSource, /weaponThrowSpearSpin[\s\S]*projectileLockAlignment:\s*true/, 'Fishing spear held-action metadata must explicitly request a launch-alignment lock.');
+assert.match(heldActionSource, /weaponThrowSpin[\s\S]*windup:[\s\S]*shoulderAim:\s*\{\s*grip:\s*false,\s*palmNormal:\s*true\s*\}[\s\S]*strike:[\s\S]*shoulderAim:\s*\{\s*grip:\s*false,\s*palmNormal:\s*true\s*\}/, 'Thrown Windup and Strike must disable grip-axis targeting while preserving palm-normal targeting in the authored source used by both runtime and editor.');
+assert.match(heldActionSource, /weaponThrowSpearSpin[\s\S]*projectileLockAlignment:\s*true[\s\S]*projectileBasisDeg:\s*-90/, 'Fishing spear metadata must keep held alignment locking while applying the projectile-only clockwise quarter-turn correction.');
+assert.match(rangedWeaponsSource, /projectileBasisDeg[\s\S]*setFromAxisAngle\(_projectileLocalPlaneZ,[\s\S]*baseVisualQuaternion\.multiply\(_projectileBasisQuaternion\)/, 'Projectile basis correction must rotate the immutable launch frame around the PNG plane normal rather than altering held animation channels.');
 assert.match(rangedWeaponsSource, /if \(p\.lockLaunchAlignment\)[\s\S]*p\.facePivot\.rotation\.y = 0;[\s\S]*return;/, 'Locked spear projectiles must bypass the generic camera-readability twist after ballistic frame alignment.');
 
 for (const key of ['dagger_copper', 'fishingspear_copper']) {
   const cfg = windowObject.RangedWeapons.config[key];
-  assert.strictEqual(cfg.toolEndFlip, true, `${key} must use the shared 180-degree Tool-Z end-for-end sprite basis.`);
+  assert.strictEqual(cfg.toolEndFlip, true, `${key} must use the shared 180-degree in-plane tip↔handle reversal.`);
   assert.strictEqual(cfg.chargePose.neutral.roll, -82, `${key} must not fake end flipping by modifying Neutral Roll.`);
   assert.strictEqual(cfg.chargePose.windup.roll, -92, `${key} must not fake end flipping by modifying Windup Roll.`);
   assert.strictEqual(cfg.firePose.strike.roll, -88, `${key} must not fake end flipping by modifying Strike Roll.`);

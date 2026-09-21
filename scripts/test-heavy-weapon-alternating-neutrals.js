@@ -7,10 +7,12 @@ const vm = require('vm'); // Executes the browser IIFE with a minimal gameplay d
 
 const modulePath = path.join(__dirname, '..', 'docs', 'js', 'weapon-tool-stances.js'); // Runtime stance bridge whose prepared pose is exercised below.
 const spacingPath = path.join(__dirname, '..', 'docs', 'js', 'combat', 'melee-pose-spacing.js'); // Shared user-authored melee lift/range calibration.
+const idleStanceEditorPath = path.join(__dirname, '..', 'docs', 'js', 'attack-idle-stance-editor.js'); // Editor fallback must remain byte-for-byte aligned with committed/runtime stance defaults.
 const source = fs.readFileSync(modulePath, 'utf8'); // Full committed module source evaluated without rewriting its logic for the test.
 const spacingSource = fs.readFileSync(spacingPath, 'utf8');
+const idleStanceEditorSource = fs.readFileSync(idleStanceEditorPath, 'utf8');
 const heavyPose = { x: -0.03, y: 0.27, z: 0.02, pitch: -23, yaw: 104, bodyYaw: -15, roll: 89 }; // Built-in Heavy idle expected at each endpoint.
-const lightPose = { x: -0.09, y: -0.08, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 }; // Built-in Light idle used to prove existing behavior stays unchanged.
+const lightPose = { x: -0.09, y: 0, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 }; // Built-in Light idle used to prove existing behavior stays unchanged.
 
 global.window = { __farmLog() {} }; // Browser namespace consumed by the runtime module.
 global.localStorage = { getItem() { return null; } }; // No editor override: exercise committed defaults.
@@ -148,5 +150,7 @@ assert.match(source, /runtimeState\.combatHoldFrac = visual\?\.hf \?\? null/, 'h
 assert.match(source, /runtimeState\.combatDirSign = visual\?\.dirSign \?\? 1/, 'hand consumers must receive the live active mirror sign');
 assert.match(source, /runtimeState\.combatNeutralMirrorSign = visual\?\.neutralMirrorSign \?\? 1/, 'hand consumers must receive the heavy start-neutral mirror sign');
 assert.match(source, /runtimeState\.combatReturnNeutralMirrorSign = visual\?\.returnNeutralMirrorSign \?\? 1/, 'hand consumers must receive the heavy return-neutral mirror sign');
+assert.match(source, /PREVIOUS_LIGHT_WEAPON_STANCE[\s\S]*y: -0\.08[\s\S]*isPreviousLightWeaponPose[\s\S]*normalized\.y = 0/, 'runtime must migrate only the exact previous Light Weapon default so a stale Local Override cannot mask the new Y=0 stance');
+assert.match(idleStanceEditorSource, /hoeTool:\s*Object\.freeze\(\{ x: 0, y: 0, z: 0, pitch: 10\.31, yaw: 0, bodyYaw: 0, roll: -95 \}\)/, 'idle stance editor fallback must match the committed/runtime Hoe Tool stance rather than drifting to -90°');
 
 console.log('test-heavy-weapon-alternating-neutrals: ok');

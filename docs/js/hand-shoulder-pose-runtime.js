@@ -196,7 +196,7 @@
   global.setInterval?.(captureLoop, 250); // Polls only for global.Combat.deps to become available; the post-install check is a cheap no-op, so no per-frame cadence is needed.
 
   function rangedWeights(side) {
-    const action = global.__rangedDebug?.playerAction || null;
+    const action = global.RangedWeapons?.playerActionState?.() || null;
     if (!action?.itemKey || !action?.kind || !(Number(action.durationS) > 0)) return null;
     const def = global.RangedWeapons?.config?.[action.itemKey] || null;
     if (!def) return null;
@@ -224,7 +224,7 @@
     const ranged = rangedWeights(side);
     if (ranged) return ranged;
 
-    const snapshot = global.WeaponToolStances?.debugSnapshot?.() || null;
+    const snapshot = global.WeaponToolStances?.getRuntimeState?.() || null;
     const active = snapshot?.combatNeutralInjected === true && Number.isFinite(Number(snapshot?.combatProgress));
     if (!active) {
       capturedMelee = null;
@@ -259,6 +259,17 @@
     return applyLeftIdleRule(side, toolKey, weights);
   }
 
+  function rangedWindupStrikeActive() {
+    // The authoring editor should always display exactly what its checkboxes/pose data request.
+    if (global.HobunjiAttackEditorHandShoulderControls) return false;
+
+    // Hold-release thrown weapons spend their visible charge in authored Windup
+    // before RangedWeapons creates the release playerAction.
+    if (global.HobunjiRangedWeaponArchetypes?.activeThrownChargeItemKey?.()) return true;
+
+    return global.RangedWeapons?.isPlayerThrownFireThroughStrike?.() === true;
+  }
+
   function currentWeights(side) {
     const editor = global.HobunjiAttackEditorHandShoulderControls;
     if (editor?.currentWeights) {
@@ -266,14 +277,16 @@
       const toolKey = document.getElementById('toolSpriteSelect')?.value || '';
       return applyLeftIdleRule(side, toolKey, normalize(weights, IDLE));
     }
-    return gameWeights(side);
+    const weights = gameWeights(side);
+    if (!rangedWindupStrikeActive()) return weights;
+    return { ...weights, grip: 0 }; // Ranged Windup/Strike disables the grip-axis correction only; palm-normal targeting still follows the authored elbow/shoulder target.
   }
 
   function currentElbow(side) {
     const editor = global.HobunjiAttackEditorHandShoulderControls;
     if (editor?.currentElbow) return normalizeElbowPoint(editor.currentElbow(side));
 
-    const action = global.__rangedDebug?.playerAction || null;
+    const action = global.RangedWeapons?.playerActionState?.() || null;
     if (action?.itemKey && action?.kind && Number(action.durationS) > 0) {
       const def = global.RangedWeapons?.config?.[action.itemKey] || null;
       if (def) {
@@ -292,7 +305,7 @@
       }
     }
 
-    const snapshot = global.WeaponToolStances?.debugSnapshot?.() || null;
+    const snapshot = global.WeaponToolStances?.getRuntimeState?.() || null;
     const active = snapshot?.combatNeutralInjected === true && Number.isFinite(Number(snapshot?.combatProgress));
     if (!active) return null;
     const rawPose = capturedMelee?.opts?.pose;
@@ -336,6 +349,7 @@
     elbowAt,
     currentWeights,
     currentElbow,
+    rangedWindupStrikeActive,
     installMeleeCapture,
   });
 })(window);

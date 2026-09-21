@@ -11,8 +11,12 @@
   const LOCAL_KEY = 'hobunji.handToolGrips.v1';
   const SECONDARY_GRIP_PRESET = 'animation-span-v1'; // Migrates old always-on secondary points into animation-gated Z spans.
   const PRIMARY_ROTATION_PRESET = 'hatchet-primary-xy-rotation-20260921-v3'; // Hatchet is the canonical right-hand grip example: propagate its X, Y, and rotation to every other tool, never its item-specific Z.
-  const RANGED_GRIP_PRESET = 'melee-ranged-split-20260920-v4-editor-authored'; // Ranged starts as an exact melee clone; the Attack Editor is the authority for later divergence.
-  const AUTO_DAGGER_RANGED_PRESETS = new Set(['melee-ranged-split-20260920-v1', 'melee-ranged-split-20260920-v3-dagger']); // Short-lived branch defaults guessed dagger scale/Z; v4 only repairs those exact untouched guesses.
+  const PRE_AUTHORED_RANGED_GRIP_PRESET = 'melee-ranged-split-20260920-v4-editor-authored'; // Previous committed split cloned melee into ranged; used only to migrate untouched old dagger defaults.
+  const PRE_END_FLIP_DAGGER_RANGED_PRESET = 'melee-ranged-split-20260920-v5-authored-values'; // Previous authored dagger used ranged Z -0.30 before Tool End Flip's visible-axis correction changed the needed hand target.
+  const PRE_MIRRORED_DAGGER_RANGED_PRESET = 'melee-ranged-split-20260920-v6-end-flip-adjusted'; // First post-flip trial used +0.28 before confirming the visible 180° flip mirrors tool-local Z.
+  const PRE_SPEAR_END_FLIP_RANGED_PRESET = 'melee-ranged-split-20260920-v7-end-flip-mirrored'; // Previous preset corrected the dagger's flipped Z grip but left the fishing spear's nonzero X on the unflipped side.
+  const RANGED_GRIP_PRESET = 'melee-ranged-split-20260921-v8-spear-end-flip-mirrored'; // End-flipped ranged grips now mirror every nonzero in-plane coordinate needed by their authored hand target.
+  const AUTO_DAGGER_RANGED_PRESETS = new Set(['melee-ranged-split-20260920-v1', 'melee-ranged-split-20260920-v3-dagger']); // Short-lived branch guesses used scale .55 with ranged Z .28; untouched copies migrate to the authored dagger values.
   const HATCHET_PRIMARY_GRIP_EXAMPLE = Object.freeze({
     x: -0.04,
     y: -0.04,
@@ -41,76 +45,103 @@
     rangedGripPreset: RANGED_GRIP_PRESET,
     tools: {
       hatchet: {
-        primaryGrip: { position: { x: HATCHET_PRIMARY_GRIP_EXAMPLE.x, y: HATCHET_PRIMARY_GRIP_EXAMPLE.y, z: -0.0106 }, rotationDeg: { ...HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg } },
+        primaryGrip: { position: { x: -0.04, y: -0.04, z: -0.0106 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
         gripMode: null,
         secondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
+        toolScale: 1,
+        rangedPrimaryGrip: { position: { x: -0.04, y: -0.04, z: -0.0106 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
+        rangedSecondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
+        rangedGripMode: null,
       },
       hoe: {
-        primaryGrip: { position: { x: HATCHET_PRIMARY_GRIP_EXAMPLE.x, y: HATCHET_PRIMARY_GRIP_EXAMPLE.y, z: 0 }, rotationDeg: { ...HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg } },
+        primaryGrip: { position: { x: -0.04, y: -0.04, z: 0 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
         gripMode: null,
         secondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
+        toolScale: 1,
+        rangedPrimaryGrip: { position: { x: -0.04, y: -0.04, z: 0 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
+        rangedSecondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
+        rangedGripMode: null,
       },
       bshuakauitl: {
-        toolScale: 1.30,
-        primaryGrip: { position: { x: HATCHET_PRIMARY_GRIP_EXAMPLE.x, y: HATCHET_PRIMARY_GRIP_EXAMPLE.y, z: 0.14 }, rotationDeg: { ...HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg } },
+        toolScale: 1.3,
+        primaryGrip: { position: { x: -0.04, y: -0.04, z: 0.14 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
         gripMode: null,
         secondaryGripSpan: { enabled: true, startZ: -0.23, endZ: -0.16 },
+        rangedPrimaryGrip: { position: { x: -0.04, y: -0.04, z: 0.14 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
+        rangedSecondaryGripSpan: { enabled: true, startZ: -0.23, endZ: -0.16 },
+        rangedGripMode: null,
       },
       pickshovel: {
-        primaryGrip: { position: { x: HATCHET_PRIMARY_GRIP_EXAMPLE.x, y: HATCHET_PRIMARY_GRIP_EXAMPLE.y, z: 0 }, rotationDeg: { ...HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg } },
+        primaryGrip: { position: { x: -0.04, y: -0.04, z: 0 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
         gripMode: null,
         secondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
+        toolScale: 1,
+        rangedPrimaryGrip: { position: { x: -0.04, y: -0.04, z: 0 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
+        rangedSecondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
+        rangedGripMode: null,
       },
       daggersword: {
-        toolScale: 1.30,
-        primaryGrip: { position: { x: HATCHET_PRIMARY_GRIP_EXAMPLE.x, y: HATCHET_PRIMARY_GRIP_EXAMPLE.y, z: 0.1687 }, rotationDeg: { ...HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg } },
+        toolScale: 1.3,
+        primaryGrip: { position: { x: -0.04, y: -0.04, z: 0.1687 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
         gripMode: null,
         secondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
+        rangedPrimaryGrip: { position: { x: -0.04, y: -0.04, z: 0.1687 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
+        rangedSecondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
+        rangedGripMode: null,
       },
       plainssword: {
-        toolScale: 1.30,
-        primaryGrip: { position: { x: HATCHET_PRIMARY_GRIP_EXAMPLE.x, y: HATCHET_PRIMARY_GRIP_EXAMPLE.y, z: -0.2672 }, rotationDeg: { ...HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg } },
+        toolScale: 1.3,
+        primaryGrip: { position: { x: -0.04, y: -0.04, z: -0.2672 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
         gripMode: null,
         secondaryGripSpan: { enabled: true, startZ: -0.54, endZ: -0.39 },
+        rangedPrimaryGrip: { position: { x: -0.04, y: -0.04, z: -0.2672 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
+        rangedSecondaryGripSpan: { enabled: true, startZ: -0.54, endZ: -0.39 },
+        rangedGripMode: null,
       },
       dagger: {
-        toolScale: 1.00,
-        primaryGrip: { position: { x: HATCHET_PRIMARY_GRIP_EXAMPLE.x, y: HATCHET_PRIMARY_GRIP_EXAMPLE.y, z: -0.09 }, rotationDeg: { ...HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg } },
+        toolScale: 0.55,
+        primaryGrip: { position: { x: -0.04, y: -0.04, z: -0.09 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
         gripMode: null,
         secondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
+        rangedPrimaryGrip: { position: { x: 0, y: -0.05, z: -0.28 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
+        rangedSecondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
+        rangedGripMode: null,
       },
       kylie: {
         toolScale: 1.05,
-        primaryGrip: { position: { x: HATCHET_PRIMARY_GRIP_EXAMPLE.x, y: HATCHET_PRIMARY_GRIP_EXAMPLE.y, z: 0.0038 }, rotationDeg: { ...HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg } },
+        primaryGrip: { position: { x: -0.04, y: -0.04, z: 0.0038 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
         gripMode: null,
         secondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
+        rangedPrimaryGrip: { position: { x: -0.04, y: -0.04, z: 0.0038 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
+        rangedSecondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
+        rangedGripMode: null,
       },
       warcleaver: {
         toolScale: 1.05,
-        primaryGrip: { position: { x: HATCHET_PRIMARY_GRIP_EXAMPLE.x, y: HATCHET_PRIMARY_GRIP_EXAMPLE.y, z: 0.01 }, rotationDeg: { ...HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg } },
+        primaryGrip: { position: { x: -0.04, y: -0.04, z: 0.01 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
         gripMode: null,
         secondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
+        rangedPrimaryGrip: { position: { x: -0.04, y: -0.04, z: 0.01 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
+        rangedSecondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
+        rangedGripMode: null,
       },
       fishingspear: {
         toolScale: 1.15,
-        primaryGrip: { position: { x: HATCHET_PRIMARY_GRIP_EXAMPLE.x, y: HATCHET_PRIMARY_GRIP_EXAMPLE.y, z: 0 }, rotationDeg: { ...HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg } },
+        primaryGrip: { position: { x: -0.04, y: -0.04, z: 0 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
         gripMode: null,
         secondaryGripSpan: { enabled: true, startZ: -0.5, endZ: -0.16 },
+        rangedPrimaryGrip: { position: { x: 0.04, y: -0.04, z: 0 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
+        rangedSecondaryGripSpan: { enabled: true, startZ: -0.5, endZ: -0.16 },
+        rangedGripMode: null,
       },
-      // Was missing entirely: toolKeyFor() already normalized 'fishingmace' correctly,
-      // but with no DEFAULT_DATA entry, ensureTool() fell back to a blank {} and
-      // normalizeTransform(undefined) collapsed to identity rotation -- the raw GLB
-      // origin, none of the shared hatchet grip. weapon-png-scale.js already claimed
-      // it "carries an intrinsic held-item scale in hand-tool-grips.js"; that just
-      // wasn't true until now. Not a two-handed grip: fishing mace spins in-game
-      // and isn't in ranged-weapon-archetypes.js's DUAL_ROLE_SHAPES the way
-      // fishingspear is, so its off-hand span stays disabled like the other
-      // one-handed tools.
       fishingmace: {
         toolScale: 1.15,
-        primaryGrip: { position: { x: HATCHET_PRIMARY_GRIP_EXAMPLE.x, y: HATCHET_PRIMARY_GRIP_EXAMPLE.y, z: 0 }, rotationDeg: { ...HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg } },
+        primaryGrip: { position: { x: -0.04, y: -0.04, z: 0 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
         gripMode: null,
         secondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
+        rangedPrimaryGrip: { position: { x: -0.04, y: -0.04, z: 0 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
+        rangedSecondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
+        rangedGripMode: null,
       },
     },
   };
@@ -243,27 +274,69 @@
         primaryGrip: entry.rangedPrimaryGrip,
       });
       entry.rangedGripMode = normalizeGripMode(entry.rangedGripMode ?? entry.gripMode);
-      if (AUTO_DAGGER_RANGED_PRESETS.has(previousRangedGripPreset) && toolKey === 'dagger') {
-        // Repair only the exact automatic branch guess (.55 scale, ranged Z .28,
-        // otherwise canonical grip). Any deviation means the user already edited
-        // the draft, so preserve it rather than mistaking authored data for defaults.
+      if (toolKey === 'dagger') {
         const ranged = entry.rangedPrimaryGrip;
         const rr = ranged?.rotationDeg || {};
-        const untouchedAutoGuess = Math.abs(entry.toolScale - 0.55) < 1e-9
+        const untouchedAutoGuess = AUTO_DAGGER_RANGED_PRESETS.has(previousRangedGripPreset)
+          && Math.abs(entry.toolScale - 0.55) < 1e-9
           && Math.abs(numberOrZero(ranged?.position?.x) - HATCHET_PRIMARY_GRIP_EXAMPLE.x) < 1e-9
           && Math.abs(numberOrZero(ranged?.position?.y) - HATCHET_PRIMARY_GRIP_EXAMPLE.y) < 1e-9
           && Math.abs(numberOrZero(ranged?.position?.z) - 0.28) < 1e-9
           && numberOrZero(rr.pitch) === HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg.pitch
           && numberOrZero(rr.yaw) === HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg.yaw
           && numberOrZero(rr.roll) === HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg.roll;
-        if (untouchedAutoGuess) {
-          entry.toolScale = normalizeToolScale(DEFAULT_DATA.tools.dagger.toolScale, 1);
-          entry.rangedPrimaryGrip = normalizeTransform(entry.primaryGrip);
+        const untouchedPreviousAuthoredGrip = previousRangedGripPreset === PRE_END_FLIP_DAGGER_RANGED_PRESET
+          && Math.abs(entry.toolScale - 0.55) < 1e-9
+          && Math.abs(numberOrZero(ranged?.position?.x) - 0) < 1e-9
+          && Math.abs(numberOrZero(ranged?.position?.y) - (-0.05)) < 1e-9
+          && Math.abs(numberOrZero(ranged?.position?.z) - (-0.3)) < 1e-9
+          && numberOrZero(rr.pitch) === HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg.pitch
+          && numberOrZero(rr.yaw) === HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg.yaw
+          && numberOrZero(rr.roll) === HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg.roll;
+        const untouchedPreviousMirroredTrial = previousRangedGripPreset === PRE_MIRRORED_DAGGER_RANGED_PRESET
+          && Math.abs(entry.toolScale - 0.55) < 1e-9
+          && Math.abs(numberOrZero(ranged?.position?.x) - 0) < 1e-9
+          && Math.abs(numberOrZero(ranged?.position?.y) - (-0.05)) < 1e-9
+          && Math.abs(numberOrZero(ranged?.position?.z) - 0.28) < 1e-9
+          && numberOrZero(rr.pitch) === HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg.pitch
+          && numberOrZero(rr.yaw) === HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg.yaw
+          && numberOrZero(rr.roll) === HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg.roll;
+        const untouchedPreAuthoredClone = previousRangedGripPreset === PRE_AUTHORED_RANGED_GRIP_PRESET
+          && Math.abs(entry.toolScale - 1) < 1e-9
+          && Math.abs(numberOrZero(ranged?.position?.x) - HATCHET_PRIMARY_GRIP_EXAMPLE.x) < 1e-9
+          && Math.abs(numberOrZero(ranged?.position?.y) - HATCHET_PRIMARY_GRIP_EXAMPLE.y) < 1e-9
+          && Math.abs(numberOrZero(ranged?.position?.z) - numberOrZero(entry.primaryGrip?.position?.z)) < 1e-9
+          && numberOrZero(rr.pitch) === HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg.pitch
+          && numberOrZero(rr.yaw) === HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg.yaw
+          && numberOrZero(rr.roll) === HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg.roll;
+        if (untouchedAutoGuess || untouchedPreviousAuthoredGrip || untouchedPreviousMirroredTrial || untouchedPreAuthoredClone) {
+          const authoredDagger = DEFAULT_DATA.tools.dagger; // Canonical authored dagger values replace only known untouched generated defaults.
+          entry.toolScale = normalizeToolScale(authoredDagger.toolScale, 1);
+          entry.rangedPrimaryGrip = normalizeTransform(authoredDagger.rangedPrimaryGrip);
           entry.rangedSecondaryGripSpan = inferredSpan({
-            secondaryGripSpan: entry.secondaryGripSpan,
+            secondaryGripSpan: authoredDagger.rangedSecondaryGripSpan,
             primaryGrip: entry.rangedPrimaryGrip,
           });
-          entry.rangedGripMode = normalizeGripMode(entry.gripMode);
+          entry.rangedGripMode = normalizeGripMode(authoredDagger.rangedGripMode);
+        }
+      }
+      if (toolKey === 'fishingspear') {
+        const ranged = entry.rangedPrimaryGrip;
+        const rr = ranged?.rotationDeg || {};
+        const untouchedPreSpearMirrorGrip = previousRangedGripPreset === PRE_SPEAR_END_FLIP_RANGED_PRESET
+          && Math.abs(entry.toolScale - 1.15) < 1e-9
+          && Math.abs(numberOrZero(ranged?.position?.x) - (-0.04)) < 1e-9
+          && Math.abs(numberOrZero(ranged?.position?.y) - (-0.04)) < 1e-9
+          && Math.abs(numberOrZero(ranged?.position?.z) - 0) < 1e-9
+          && numberOrZero(rr.pitch) === HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg.pitch
+          && numberOrZero(rr.yaw) === HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg.yaw
+          && numberOrZero(rr.roll) === HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg.roll;
+        if (untouchedPreSpearMirrorGrip) {
+          // The corrected Tool End Flip rotates the sprite 180° in its own plane.
+          // Fishing spear's ranged grip is center-length (Z=0) but has X=-0.04,
+          // so the same physical grip point moves to +0.04 after that flip.
+          // Migrate only the exact old default; artist-authored ranged X stays untouched.
+          entry.rangedPrimaryGrip = normalizeTransform(DEFAULT_DATA.tools.fishingspear.rangedPrimaryGrip);
         }
       }
     }
@@ -320,6 +393,24 @@
       },
       rotationDeg: { ...authored.rotationDeg },
     };
+  }
+
+  // Held throw spin is a child-plane visual rotation, while the hand remains on
+  // the authored grip frame. Translate the spinning PNG by P - R(P) so the
+  // authored grip point P stays fixed in tool-holder space as the sprite rotates
+  // around local +Y (the plane's local Z after its fixed -90° X basis).
+  // Use the unscaled authored grip here: the visual parent applies toolScale to
+  // both the sprite and this offset, keeping the pivot correct at every size.
+  function spinPivotOffsetForTool(value, angleRad, context = 'ranged') {
+    const grip = authoredPrimaryGripForTool(value, context);
+    const x = numberOrZero(grip?.position?.x);
+    const z = numberOrZero(grip?.position?.z);
+    const angle = Number(angleRad) || 0;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    const rotatedX = x * cos + z * sin;
+    const rotatedZ = -x * sin + z * cos;
+    return { x: x - rotatedX, y: 0, z: z - rotatedZ };
   }
 
   function secondaryGripSpanForTool(value, context = currentGripContext()) {
@@ -791,7 +882,7 @@
     get defaultData() { return normalizeData(DEFAULT_DATA); },
     clone: cleanClone,
     toolKeyFor, ensureTool, toolScaleForTool, normalizeGripContext, currentGripContext,
-    authoredPrimaryGripForTool, primaryGripForTool, secondaryGripSpanForTool, secondaryGripForTool,
+    authoredPrimaryGripForTool, primaryGripForTool, spinPivotOffsetForTool, secondaryGripSpanForTool, secondaryGripForTool,
     currentSecondaryGripAnimationState, animationGripAt, gripModeForTool, setGripMode, replace, mutate, saveLocal, loadLocal, clearLocal, applyPrimaryGripVisuals, debugForTool,
     editorSecondaryGripStateSnapshot, restoreEditorSecondaryGripState,
     getDebug() {

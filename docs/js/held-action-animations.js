@@ -64,12 +64,12 @@
       },
       windup: {
         x: 0.41, y: 0.37, z: 0.42, pitch: -180, yaw: 139, bodyYaw: -152, roll: -92,
-        shoulderAim: { grip: false, palmNormal: false },
+        shoulderAim: { grip: false, palmNormal: true },
         secondaryGrip: { enabled: false, percent: 50 },
       },
       strike: {
         x: -0.57, y: 0.33, z: 0.17, pitch: -25, yaw: -65, bodyYaw: 63, roll: -88,
-        shoulderAim: { grip: true, palmNormal: false },
+        shoulderAim: { grip: false, palmNormal: true },
         secondaryGrip: { enabled: false, percent: 50 },
       },
     },
@@ -82,9 +82,11 @@
   const weaponThrowSpearSpin = {
     ...weaponThrowSpin,
     name: 'Fishing Spear Throw (Offset Spin)',
+    toolEndFlip: true, // Runtime already end-flips fishing spear throws; keep the shared editor source on that exact visible basis too.
     spinBasisDeg: 90,
     projectileSpin: false,
     projectileLockAlignment: true,
+    projectileBasisDeg: -90, // Corrects only the launched spear PNG a quarter-turn clockwise; held spin/end-flip authoring stays unchanged.
     poses: {
       neutral: { ...weaponThrowSpin.poses.neutral, shoulderAim: { ...weaponThrowSpin.poses.neutral.shoulderAim }, secondaryGrip: { ...weaponThrowSpin.poses.neutral.secondaryGrip } },
       windup: { ...weaponThrowSpin.poses.windup, shoulderAim: { ...weaponThrowSpin.poses.windup.shoulderAim }, secondaryGrip: { ...weaponThrowSpin.poses.windup.secondaryGrip } },
@@ -196,7 +198,7 @@
     new URL('config/hand-shoulder-points.js?v=20260818b', docsBase).href,
     new URL('config/hand-shoulder-pose-profiles.js?v=20260920localhinge1', docsBase).href,
     new URL('js/procedural-hand-foot-material-roles.js?v=20260821e', docsBase).href,
-    new URL('js/hand-tool-grips.js?v=20260920hatchetexample2-rangedgrip3', docsBase).href,
+    new URL('js/hand-tool-grips.js?v=20260921throwpivot2', docsBase).href,
     new URL('js/hand-grip-modes.js?v=20260920palmflip1-rangedgrip1', docsBase).href,
     new URL('js/hand-shoulder-pose-runtime.js?v=20260920elbow5', docsBase).href,
     new URL('js/portrait-arm-cloud-mask.js?v=20260817a', docsBase).href,
