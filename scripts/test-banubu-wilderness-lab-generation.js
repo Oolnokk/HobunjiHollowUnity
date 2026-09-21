@@ -82,7 +82,11 @@ if (diagnostic.status === 'placed') {
     assert(!tile?.borderEscarpment && !tile?.generatedBorderEscarpment && !tile?.distantBoundaryLandscape, 'Banubu plateauCliff probes must never resolve to boundary-escarpment terrain');
   }
   const embedded = diagnostic.selected.embedded || [];
-  assert(embedded.length > 0 && embedded.every(cell => cell.matched && cell.hostTier >= diagnostic.selected.floorTier + 1), 'rear embedded cells must originate in high plateau mass before carving');
+  assert(embedded.length > 0 && embedded.every(cell => cell.matched && cell.hostTier >= diagnostic.selected.floorTier + 1), 'rear embedded cells must overlap naturally generated high plateau mass');
+  for (const cell of embedded) {
+    const hostTile = root.tiles?.[`${cell.c},${cell.r}`]; // Used to prove placement left the selected host cliff intact after stamping.
+    assert(hostTile?.plateau, `embedded host ${cell.c},${cell.r} must retain plateau membership because Banubu clips into the cliff instead of carving it`);
+  }
   assert((instance.objects || []).some(object => object.key === 'cave_small'), 'placed Banubu locale must carry its cave_small object into runtime data');
   assert(!(instance.npcAnchors || []).some(anchor => anchor.npcId === 'banubu'), 'Banubu exterior locale must not spawn Banubu; he lives in the cavern interior');
   const banubuTransition = (root.transitions || []).find(transition => transition.generatedLocaleId === locale.id); // Used to verify the post-shift walkable entrance generated from the placed locale.
