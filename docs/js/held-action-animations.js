@@ -54,6 +54,7 @@
     holdFrac: 0.82,
     gripMode: 'palm-parallel',
     spinBasisDeg: 0,
+    spinRevolutions: 2.5,
     projectileSpin: true,
     poses: {
       neutral: {
