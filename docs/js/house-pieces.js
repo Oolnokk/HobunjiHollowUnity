@@ -75,7 +75,7 @@
     ['BuildingSubtleElevation', 'building-subtle-elevation.js?v=20260811a'],
     ['BuildingGrassSuppression', 'building-grass-suppression.js?v=20260823b'],
     ['PlayerHouseElevation', 'player-house-elevation.js?v=20260823b'],
-    ['FarmBuildingElevationParity', 'farm-building-elevation-parity.js?v=20260823a'],
+    ['FarmBuildingElevationParity', 'farm-building-elevation-parity.js?v=20260920furniture1'],
     ['HousePieces', 'house-pieces-core.js?v=20260815b'],
     [null, 'house-pieces-registry-stability.js?v=20260906a'],
     [null, 'house-pieces-elevation-bootstrap.js?v=20260823a'],
