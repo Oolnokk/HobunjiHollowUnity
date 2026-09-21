@@ -2741,7 +2741,7 @@
         const def = PROCESSING_FURNITURE_DEFS[furnitureKey];
         if (!def) return null;
         const mesh = buildFurnitureVisual(furnitureKey, def.color);
-        mesh.position.set(col + 0.5, tileSurfaceY(grid[row][col].type), row + 0.5);
+        mesh.position.set(col + 0.5, farmSurfaceYAtWorld(col + 0.5, row + 0.5), row + 0.5);
         mesh.rotation.y = rotYDeg * Math.PI / 180;
         _markOutline(mesh);
         _markFurnitureEdgeId(mesh);
@@ -2961,7 +2961,7 @@
         worldObjects.delete(obj.col + ',' + obj.row);
         obj.col = col; obj.row = row;
         obj.id = 'processor_' + obj.furnitureKey + '_' + col + '_' + row;
-        obj.mesh.position.set(col + 0.5, tileSurfaceY(grid[row][col].type), row + 0.5);
+        obj.mesh.position.set(col + 0.5, farmSurfaceYAtWorld(col + 0.5, row + 0.5), row + 0.5);
         worldObjects.set(col + ',' + row, obj);
         window.DewVats?.retargetAssignments(oldId, obj.id);
         window.FarmEditor.saveFarmLayout();
@@ -3292,8 +3292,11 @@
         const def = DECORATIVE_FURNITURE_DEFS[furnitureKey];
         if (!def) return null;
         const { fw, fd } = decorativeFurnitureSize(furnitureKey, rotYDeg);
+        const centerX = col + fw * 0.5; // Furniture anchor X used by placement and the farm's continuous height sampler.
+        const centerZ = row + fd * 0.5; // Furniture anchor Z paired with centerX for slope-conforming placement.
+        const surfaceY = furnitureSurfaceYAtWorld(area, centerX, centerZ); // Farm decor follows the farmhouse/barn hill; interiors and authored external maps keep their existing local Y.
         const group = buildFurnitureVisual(furnitureKey, def.color || 0x8b6540);
-        group.position.set(col + fw * 0.5, 0, row + fd * 0.5);
+        group.position.set(centerX, surfaceY, centerZ);
         group.rotation.y = rotYDeg * Math.PI / 180;
         _markOutline(group);
         _markFurnitureEdgeId(group);
@@ -3301,10 +3304,10 @@
 
         let light = null;
         if (def.light) {
-          light = makeFurniturePointLight(def.light, col + fw * 0.5, def.light.height || 0.6, row + fd * 0.5);
+          light = makeFurniturePointLight(def.light, centerX, surfaceY + (def.light.height || 0.6), centerZ);
           targetScene.add(light);
         }
-        const sfxSource = window.Music?.registerFurnitureSfxSource(area, col + fw * 0.5, row + fd * 0.5, window.Music?.resolveFurnitureSfx(def));
+        const sfxSource = window.Music?.registerFurnitureSfxSource(area, centerX, centerZ, window.Music?.resolveFurnitureSfx(def));
 
         return { mesh: group, light, sfxSource };
       }
@@ -3373,8 +3376,11 @@
         if (obj.area === 'farm' && def?.sit) worldObjects.delete(obj.col + ',' + obj.row);
         unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area));
         obj.col = col; obj.row = row;
-        obj.mesh.position.set(col + fw * 0.5, 0, row + fd * 0.5);
-        if (obj.light) obj.light.position.set(col + fw * 0.5, def?.light?.height || 0.6, row + fd * 0.5);
+        const centerX = col + fw * 0.5; // Moved furniture center used for both visual placement and exact farm grounding.
+        const centerZ = row + fd * 0.5; // Moved furniture center paired with centerX for the continuous height sample.
+        const surfaceY = furnitureSurfaceYAtWorld(obj.area, centerX, centerZ); // Recomputed so moving onto/off the farmhouse incline cannot retain stale Y.
+        obj.mesh.position.set(centerX, surfaceY, centerZ);
+        if (obj.light) obj.light.position.set(centerX, surfaceY + (def?.light?.height || 0.6), centerZ);
         window.Music?.unregisterFurnitureSfxSource(obj.sfxSource);
         obj.sfxSource = window.Music?.registerFurnitureSfxSource(obj.area, col + fw * 0.5, row + fd * 0.5, window.Music?.resolveFurnitureSfx(def));
         if (obj.area === 'interior') Object.assign(obj, furnitureOwnerFields(col, row));
@@ -3407,8 +3413,11 @@
         if (obj.area === 'farm' && def?.sit) worldObjects.delete(obj.col + ',' + obj.row);
         obj.rotYDeg = nextRot;
         obj.mesh.rotation.y = nextRot * Math.PI / 180;
-        obj.mesh.position.set(obj.col + fw * 0.5, 0, obj.row + fd * 0.5);
-        if (obj.light) obj.light.position.set(obj.col + fw * 0.5, def?.light?.height || 0.6, obj.row + fd * 0.5);
+        const centerX = obj.col + fw * 0.5; // Rotated footprint center can move for non-square furniture, so its farm sample must move too.
+        const centerZ = obj.row + fd * 0.5; // Rotated footprint center paired with centerX for exact surface grounding.
+        const surfaceY = furnitureSurfaceYAtWorld(obj.area, centerX, centerZ); // Prevents a 45°/90° rotation from snapping the object back to Y=0.
+        obj.mesh.position.set(centerX, surfaceY, centerZ);
+        if (obj.light) obj.light.position.set(centerX, surfaceY + (def?.light?.height || 0.6), centerZ);
         window.Music?.unregisterFurnitureSfxSource(obj.sfxSource);
         obj.sfxSource = window.Music?.registerFurnitureSfxSource(obj.area, obj.col + fw * 0.5, obj.row + fd * 0.5, window.Music?.resolveFurnitureSfx(def));
         if (obj.area === 'interior') Object.assign(obj, furnitureOwnerFields(obj.col, obj.row));
@@ -3417,6 +3426,52 @@
         window.FarmEditor.saveFarmLayout();
         return { ok: true, message: `${def?.icon || '🪑'} ${def?.name || 'Furniture'} rotated 45°.` };
       }
+
+      function refreshFarmFurnitureSurfaceElevation() {
+        let decorative = 0; // Count returned to runtime/mobile diagnostics after re-grounding existing outdoor decor.
+        for (const obj of interiorFurnitureObjects) {
+          if (obj?.area !== 'farm' || !obj.mesh?.position) continue;
+          const def = DECORATIVE_FURNITURE_DEFS[obj.key];
+          const { fw, fd } = decorativeFurnitureSize(obj.key, obj.rotYDeg || 0);
+          const centerX = obj.col + fw * 0.5; // Existing decor center resampled whenever the house/barn footprint changes.
+          const centerZ = obj.row + fd * 0.5; // Existing decor center paired with centerX for the refreshed heightfield.
+          const surfaceY = farmSurfaceYAtWorld(centerX, centerZ); // New live surface after a nearby building move/build/demolish.
+          obj.mesh.position.y = surfaceY;
+          if (obj.light?.position) obj.light.position.y = surfaceY + (def?.light?.height || 0.6);
+          decorative++;
+        }
+        let processing = 0; // Count returned with decorative so diagnostics cover both outdoor furniture registries.
+        for (const obj of processingFurnitureObjects) {
+          if (!obj?.mesh?.position) continue;
+          obj.mesh.position.y = farmSurfaceYAtWorld(obj.col + 0.5, obj.row + 0.5);
+          processing++;
+        }
+        return { decorative, processing };
+      }
+
+      function farmFurnitureSurfaceElevationDebug() {
+        const decorate = obj => {
+          const size = decorativeFurnitureSize(obj.key, obj.rotYDeg || 0); // Current rotated footprint locates the real rendered anchor.
+          const x = obj.col + size.fw * 0.5; // Debug X for comparing actual mesh Y with the shared farm surface.
+          const z = obj.row + size.fd * 0.5; // Debug Z paired with x for the same comparison.
+          return { id: obj.id, key: obj.key, col: obj.col, row: obj.row, actualY: obj.mesh?.position?.y ?? null, targetY: farmSurfaceYAtWorld(x, z) };
+        };
+        return {
+          samplerReady: typeof window.HobunjiFarmSubtleElevation?.sampleHeightAt === 'function',
+          decorative: interiorFurnitureObjects.filter(obj => obj?.area === 'farm').map(decorate),
+          processing: [...processingFurnitureObjects].map(obj => ({
+            id: obj.id, key: obj.furnitureKey, col: obj.col, row: obj.row,
+            actualY: obj.mesh?.position?.y ?? null,
+            targetY: farmSurfaceYAtWorld(obj.col + 0.5, obj.row + 0.5),
+          })),
+        };
+      }
+
+      window.HobunjiFurnitureSurfaceElevation = Object.freeze({
+        surfaceYAt: farmSurfaceYAtWorld,
+        refresh: refreshFarmFurnitureSurfaceElevation,
+        getDebug: farmFurnitureSurfaceElevationDebug,
+      });
 
       function transformFurnitureWithHousePiece(pieceId, oldRect, newRect, rotateClockwise) {
         interiorFurnitureObjects.filter(o => o.area === 'interior').forEach(obj => {
@@ -3568,8 +3623,13 @@
           furniturePlacementGhost = { group, kind: spec.kind, key: spec.key, rotYDeg: spec.rotYDeg, area: currentArea };
         }
         const { fw, fd } = isProcessing ? { fw: 1, fd: 1 } : decorativeFurnitureSize(spec.key, spec.rotYDeg);
-        const previewY = isProcessing ? tileSurfaceY(grid[row]?.[col]?.type) : 0.04;
-        furniturePlacementGhost.group.position.set(col + fw * 0.5, previewY, row + fd * 0.5);
+        const previewX = col + fw * 0.5; // Shared preview center used for both placement X and the exact farm-height sample.
+        const previewZ = row + fd * 0.5; // Shared preview center used for both placement Z and the exact farm-height sample.
+        const previewBaseY = currentArea === 'farm'
+          ? farmSurfaceYAtWorld(previewX, previewZ)
+          : (isProcessing ? tileSurfaceY(grid[row]?.[col]?.type) : 0); // Interior decor stays on its local floor.
+        const previewY = previewBaseY + (isProcessing ? 0 : 0.04); // Preserve the decor ghost's tiny anti-z-fighting hover.
+        furniturePlacementGhost.group.position.set(previewX, previewY, previewZ);
         furniturePlacementGhost.group.visible = true;
         furniturePlacementGhost.group.traverse(child => {
           if (child.isMesh) child.material.color.set(valid ? 0x5cff7a : 0xff5555);
@@ -10940,9 +11000,12 @@
         const g = npcGridForArea(area);
         const tile = g?.[r]?.[c];
         if (!tile) return 0;
-        // Zone terrain has real plateau tiers/ramps — tileSurfaceY(type) alone
-        // (used by every other area, all flat ground) would ignore them.
-        const base = _isZoneArea(area) ? surfaceYAtWorld(area, c + 0.5, r + 0.5) : tileSurfaceY(tile.type);
+        // Zones have plateau/ramp heightfields; the farm additionally has the
+        // live farmhouse/barn subtle hill. Other areas retain their flat local
+        // tile surface.
+        const base = area === 'farm'
+          ? farmSurfaceYAtWorld(c + 0.5, r + 0.5)
+          : (_isZoneArea(area) ? surfaceYAtWorld(area, c + 0.5, r + 0.5) : tileSurfaceY(tile.type));
         // Furniture/porch "stages" (walkableElevation:true) sit on top of the
         // ordinary tile surface and aren't part of the terrain grid at all —
         // folding that lift in here means every consumer of npcSurfaceY (the
@@ -17255,6 +17318,7 @@
       // other player-ground consumers so each shares the same ramp,
       // plateau-tier, and subtle visual-height result as the player avatar.
       function activeSurfaceYAtWorld(worldX, worldZ) {
+        if (currentArea === 'farm') return farmSurfaceYAtWorld(worldX, worldZ);
         if (_isZoneArea(currentArea)) return surfaceYAtWorld(currentArea, worldX, worldZ);
         const tile = window.GridTileAccessors.getActiveGrid()?.[Math.floor(worldZ)]?.[Math.floor(worldX)];
         return tile ? tileSurfaceYInArea(tile, currentArea) : 0;
@@ -20210,6 +20274,32 @@
           case TileType.ROCK:      return ROCK_TOP;
           default:              return NORMAL_TOP;
         }
+      }
+
+      // The farmhouse/barn heightfield is also baked into farm tile elevTier
+      // at each tile CENTER so legacy grounding keeps working. Consumers that
+      // render between centers must replace that baked center sample with the
+      // exact continuous sample, not add the exact sample on top a second time.
+      function farmSurfaceYAtWorld(worldX, worldZ) {
+        const x = Number(worldX); // Exact world X used by furniture, seats, and other smooth farm-surface followers.
+        const z = Number(worldZ); // Exact world Z paired with x for the continuous building-height sample.
+        if (!Number.isFinite(x) || !Number.isFinite(z)) return 0;
+        const col = Math.floor(x); // Tile column used to recover the ordinary gameplay surface beneath the subtle hill.
+        const row = Math.floor(z); // Tile row paired with col for the same base-surface lookup.
+        const tile = grid?.[row]?.[col];
+        if (!tile) return 0;
+        const tileSurface = tileSurfaceYInArea(tile, 'farm'); // Includes real plateau/ramp state plus any center-sampled house lift already baked into elevTier.
+        const sampler = window.HobunjiFarmSubtleElevation?.sampleHeightAt; // Existing shared house+barn continuous sampler; no parallel heightfield is created here.
+        if (typeof sampler !== 'function') return tileSurface;
+        const exactLift = Number(sampler(x, z)) || 0; // Replaces the tile-center approximation at this rendered X/Z.
+        const centerLift = tile.type === TileType.RAMP
+          ? 0
+          : (Number(sampler(col + 0.5, row + 0.5)) || 0); // Non-ramp elevTier already contains this exact center contribution.
+        return tileSurface + exactLift - centerLift;
+      }
+
+      function furnitureSurfaceYAtWorld(area, worldX, worldZ) {
+        return area === 'farm' ? farmSurfaceYAtWorld(worldX, worldZ) : 0;
       }
 
       // Terrain/path tile geometry builders (floor slabs, dug/raised tile
