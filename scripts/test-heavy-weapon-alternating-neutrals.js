@@ -148,5 +148,6 @@ assert.match(source, /runtimeState\.combatHoldFrac = visual\?\.hf \?\? null/, 'h
 assert.match(source, /runtimeState\.combatDirSign = visual\?\.dirSign \?\? 1/, 'hand consumers must receive the live active mirror sign');
 assert.match(source, /runtimeState\.combatNeutralMirrorSign = visual\?\.neutralMirrorSign \?\? 1/, 'hand consumers must receive the heavy start-neutral mirror sign');
 assert.match(source, /runtimeState\.combatReturnNeutralMirrorSign = visual\?\.returnNeutralMirrorSign \?\? 1/, 'hand consumers must receive the heavy return-neutral mirror sign');
+assert.match(source, /PREVIOUS_LIGHT_WEAPON_STANCE[\s\S]*y: -0\.08[\s\S]*isPreviousLightWeaponPose[\s\S]*normalized\.y = 0/, 'runtime must migrate only the exact previous Light Weapon default so a stale Local Override cannot mask the new Y=0 stance');
 
 console.log('test-heavy-weapon-alternating-neutrals: ok');
