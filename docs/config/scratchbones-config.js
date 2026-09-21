@@ -3520,6 +3520,7 @@ window.SCRATCHBONES_CONFIG = {
         "combatBgm": [
           { "url": "assets/audio/music/bgm/bgm_skirmish.m4a", "loop": true }
         ],
+        "startupBgm": { "url": "assets/audio/music/bgm/bgm_remembrance.m4a", "loop": true },
         "musicFadeMs": 280,
         "songFadeInMs": 2200,
         "songFadeOutMs": 2600,
@@ -3530,11 +3531,15 @@ window.SCRATCHBONES_CONFIG = {
           "farm": [
             { "url": "assets/audio/music/bgm/bgm_farm1.m4a", "fallback": true, "rainingOnly": true },
             { "url": "assets/audio/music/bgm/bgm_still_waking_up.mp3", "sunriseOnly": true, "oncePerDay": true, "sunriseHour": 6, "sunriseWindowHours": 1 },
+            { "url": "assets/audio/music/bgm/bgm_quiet_hope.m4a", "startHour": 6, "endHour": 12 },
+            { "url": "assets/audio/music/bgm/bgm_gentle_twilight.m4a", "startHour": 2, "endHour": 19 },
             { "url": "assets/audio/music/bgm/bgm_follow_the_signs.ogg", "nightOnly": true }
           ],
           "town": [
             { "url": "assets/audio/music/bgm/bgm_farm1.m4a", "fallback": true, "rainingOnly": true },
             { "url": "assets/audio/music/bgm/bgm_still_waking_up.mp3", "sunriseOnly": true, "oncePerDay": true, "sunriseHour": 6, "sunriseWindowHours": 1 },
+            { "url": "assets/audio/music/bgm/bgm_quiet_hope.m4a", "startHour": 6, "endHour": 12 },
+            { "url": "assets/audio/music/bgm/bgm_gentle_twilight.m4a", "startHour": 2, "endHour": 19 },
             { "url": "assets/audio/music/bgm/bgm_follow_the_signs.ogg", "nightOnly": true }
           ],
           "map_northern_cliffs": [
@@ -3545,6 +3550,7 @@ window.SCRATCHBONES_CONFIG = {
             { "url": "assets/audio/music/bgm/bgm_still_waking_up.mp3", "sunriseOnly": true, "oncePerDay": true, "sunriseHour": 6, "sunriseWindowHours": 1 }
           ],
           "map_western_slope": [
+            { "url": "assets/audio/music/bgm/bgm_snow_and_darkness.m4a", "nightOnly": true, "exclusiveSoundtrack": true },
             { "url": "assets/audio/music/bgm/bgm_still_waking_up.mp3", "sunriseOnly": true, "oncePerDay": true, "sunriseHour": 6, "sunriseWindowHours": 1 }
           ],
           "map_eastern_mire": [

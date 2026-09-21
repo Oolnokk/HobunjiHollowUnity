@@ -117,7 +117,7 @@
   <script src="debug.js?v=20260916perf1"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20260918collision2"></script>
-  <script src="config/scratchbones-config.js?v=20260919combatbgm2"></script>
+  <script src="config/scratchbones-config.js?v=20260920newbgm1"></script>
   <script src="config/colors/config.js?v=20260728c"></script>
   <script src="config/attachment-rig-profiles.js?v=20260920armreach3"></script>
   <link rel="stylesheet" href="style.css?v=20260914transienttarget1">
@@ -2344,7 +2344,7 @@
        time, and must load before game.js, which calls
        window.Music.init(...) during its own setup. Depends on
        window.AudioSystem (gameAudioConfig/playObjectSfx), so loads after it. -->
-  <script src="js/music-system.js?v=20260919combatbgm2"></script>
+  <script src="js/music-system.js?v=20260920newbgm1"></script>
   <!-- Shared local-transform dump utility (window.HobunjiTransformDump) —
        also loaded by the Attack Animation Editor, so a probed character's
        node-by-node local transforms use the exact same code/format as the

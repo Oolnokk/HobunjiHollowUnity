@@ -14,7 +14,13 @@
   // plain-.volume fallback. That's a pre-existing quirk of the system being
   // moved, not something this extraction changes.
   let deps = null;
-  function init(injectedDeps) { deps = injectedDeps; }
+  let _startupBgm = null; // Holds Remembrance while the title/save/onboarding sequence owns the soundtrack.
+  let _startupSequenceComplete = false; // Prevents startup music from restarting after the player-ready handoff.
+  function init(injectedDeps) {
+    deps = injectedDeps;
+    if (window.__hobunjiGameStarted === true || window.__hobunjiPlayerProfile) _startupSequenceComplete = true;
+    startStartupBgm();
+  }
 
   const _audioCueIndexes = new Map();
   const _mapAudioIndexes = new Map();
@@ -370,6 +376,48 @@
     return snd;
   }
 
+  function startStartupBgm() {
+    if (_startupSequenceComplete || _startupBgm || window.__hobunjiGameStarted === true) return false;
+    const audioCfg = window.AudioSystem?.gameAudioConfig?.() || {}; // Supplies the authored Remembrance entry and shared BGM volume.
+    const track = audioCfg.startupBgm; // Startup-only soundtrack config used until onboarding emits hobunjiPlayerReady.
+    if (audioCfg.enabled === false || !track?.url) return false;
+    const fade = musicFadeConfig(); // Reuses the normal song fades so the startup/gameplay handoff is musical.
+    const baseVol = Math.max(0, Math.min(1, Number(audioCfg.bgmVolume) || 0.48)); // Uses the same master BGM level as area music.
+    const snd = playMusicTrack(track.url, baseVol, fade.songFadeInMs, fade.songFadeOutMs, { loop: track.loop !== false }); // Persists across title, save source, character, and world selection.
+    snd._musicEntry = track;
+    _startupBgm = snd;
+    const finishStartup = () => {
+      if (_startupBgm === snd) _startupBgm = null;
+      retireMusicTrack(snd);
+    };
+    snd.addEventListener('ended', finishStartup, { once: true });
+    snd.addEventListener('error', () => {
+      if (isRealMediaError(snd)) markAudioUrlFailed(track.url, 'startup media error');
+      finishStartup();
+    }, { once: true });
+    requestGameAudioPlay(snd).catch(err => {
+      const errName = err?.name || ''; // Distinguishes browser autoplay blocking from a real media failure.
+      if (errName === 'NotAllowedError') return; // The shared unlock gate retries Remembrance on the first title/onboarding gesture.
+      if (errName !== 'AbortError') markAudioUrlFailed(track.url, errName || 'startup play failed');
+      finishStartup();
+    });
+    return true;
+  }
+
+  function stopStartupBgm(reason = 'startup complete') {
+    _startupSequenceComplete = true;
+    const snd = _startupBgm; // Captures the current startup owner before clearing its slot.
+    _startupBgm = null;
+    if (!snd) return false;
+    const fadeMs = musicFadeConfig().songFadeOutMs; // Delays ordinary area music until Remembrance has actually faded away.
+    _ambientCueState.blockUntil = Math.max(_ambientCueState.blockUntil, performance.now() + fadeMs);
+    audioDebug('fading startup bgm reason=' + reason + ' url=' + snd.src, 'startup-bgm-stop-' + reason, 0, 'bgm');
+    snd._stopMusic?.(fadeMs);
+    return true;
+  }
+
+  document.addEventListener('hobunjiPlayerReady', () => stopStartupBgm('player ready'));
+
   function markAudioUrlFailed(url, reason) {
     const resolved = resolveAudioUrl(url);
     if (!resolved) return;
@@ -430,6 +478,7 @@
     }
   }
 
+  window.addEventListener('hobunji-title-starting', () => unlockGameAudio('title start')); // Runs synchronously inside the title's swallowed trusted input so Remembrance can satisfy browser autoplay policy.
   document.addEventListener('pointerdown', () => unlockGameAudio('pointerdown'), { capture: true });
   document.addEventListener('keydown', () => unlockGameAudio('keydown'), { capture: true });
   document.addEventListener('touchstart', () => unlockGameAudio('touchstart'), { capture: true, passive: true });
@@ -626,11 +675,25 @@
     return hour >= sunriseHour && hour < sunriseHour + windowHours;
   }
 
+  function isAuthoredHourWindowEligible(track) {
+    const rawStart = Number(track?.startHour); // Optional inclusive gameplay-clock lower bound for a BGM entry.
+    const rawEnd = Number(track?.endHour); // Optional exclusive gameplay-clock upper bound for a BGM entry.
+    const hasStart = Number.isFinite(rawStart); // Distinguishes an omitted lower bound from midnight.
+    const hasEnd = Number.isFinite(rawEnd); // Distinguishes an omitted upper bound from midnight.
+    if (!hasStart && !hasEnd) return true;
+    const hour = Math.max(0, Math.min(23.999999, Number(deps.getHour()) || 0)); // Normalized current game hour used for the authored window check.
+    const start = hasStart ? Math.max(0, Math.min(24, rawStart)) : 0; // Inclusive start used below, with omitted values defaulting to midnight.
+    const end = hasEnd ? Math.max(0, Math.min(24, rawEnd)) : 24; // Exclusive end used below, with omitted values defaulting to day end.
+    if (start === end) return true;
+    return start < end ? (hour >= start && hour < end) : (hour >= start || hour < end);
+  }
+
   function isBgmTrackEligible(track, area = deps.getCurrentArea(), { alreadyPlaying = false } = {}) {
     if (!track?.url) return false;
     if (track.rainingOnly && !deps.calendar.isRaining) return false;
     if (track.nightOnly && !isNightTime()) return false;
     if (!isSunriseBgmEligible(track)) return false;
+    if (!isAuthoredHourWindowEligible(track)) return false;
     if (!alreadyPlaying && track.oncePerDay && _dailyBgmPlayed.has(bgmDailyKey(track))) return false;
     return isAudioEntryEligible(track, area) && !audioUrlFailed(track.url);
   }
@@ -687,6 +750,10 @@
   function updateAmbientCues() {
     const currentArea = deps.getCurrentArea();
     const audioCfg = window.AudioSystem?.gameAudioConfig();
+    if (_startupBgm && !_startupBgm._musicRetired) {
+      audioTrace('ambient scheduler suppressed by startup soundtrack', 'ambient-startup-owner', 5000, 'bgm');
+      return;
+    }
     if (audioCfg.enabled === false) {
       stopAmbientCue('audio disabled');
       stopMusicSlot('currentCombatBgm', 'audio disabled');

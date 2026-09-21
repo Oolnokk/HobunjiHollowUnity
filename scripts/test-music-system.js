@@ -15,6 +15,10 @@ const config = source('docs/config/scratchbones-config.js');
 const index = source('docs/index.html');
 const nightbugsPath = path.join(__dirname, '../docs/assets/audio/sfx/bgs/bgs_nightbugs1.mp3'); // Points the asset-presence check at the normalized runtime recording.
 const skirmishPath = path.join(__dirname, '../docs/assets/audio/music/bgm/bgm_skirmish.m4a'); // Confirms the authored combat loop exists at the configured runtime path.
+const remembrancePath = path.join(__dirname, '../docs/assets/audio/music/bgm/bgm_remembrance.m4a'); // Confirms the opening/title/onboarding soundtrack exists.
+const quietHopePath = path.join(__dirname, '../docs/assets/audio/music/bgm/bgm_quiet_hope.m4a'); // Confirms the farm/town morning candidate exists.
+const gentleTwilightPath = path.join(__dirname, '../docs/assets/audio/music/bgm/bgm_gentle_twilight.m4a'); // Confirms the farm/town 02:00-nightfall candidate exists.
+const snowAndDarknessPath = path.join(__dirname, '../docs/assets/audio/music/bgm/bgm_snow_and_darkness.m4a'); // Confirms the Western Slope night song exists at the configured runtime path.
 
 assert.equal((music.match(/snd\.play\(\)/g) || []).length, 1,
   'all managed audio playback must pass through the single pending-play gate');
@@ -34,6 +38,16 @@ assert.match(music, /isAudioEntryEligible\(cue, currentArea\)/,
   'ineligible weather/map/time cues are excluded before selection');
 assert.match(music, /if \(track\.rainingOnly && !deps\.calendar\.isRaining\) return false;/,
   'rain-only BGM uses the live rain window rather than the daily forecast');
+assert.match(music, /function isAuthoredHourWindowEligible\(track\)[\s\S]*?start < end \? \(hour >= start && hour < end\) : \(hour >= start \|\| hour < end\)/,
+  'authored BGM hour windows support both ordinary and midnight-wrapping ranges');
+assert.match(music, /function startStartupBgm\(\)[\s\S]*?audioCfg\.startupBgm[\s\S]*?requestGameAudioPlay\(snd\)/,
+  'Remembrance uses the shared music playback/unlock pipeline during startup');
+assert.match(music, /window\.addEventListener\('hobunji-title-starting',[\s\S]*?unlockGameAudio\('title start'\)/,
+  'the title screen\'s swallowed first input still unlocks Remembrance synchronously');
+assert.match(music, /document\.addEventListener\('hobunjiPlayerReady',[\s\S]*?stopStartupBgm\('player ready'\)/,
+  'player-ready is the handoff that fades the startup soundtrack');
+assert.match(music, /if \(_startupBgm && !_startupBgm\._musicRetired\)[\s\S]*?return;/,
+  'ordinary area/combat music cannot interrupt the startup soundtrack');
 assert.match(music, /stopMusicSlot\('currentBgm', 'bgm conditions expired', musicFadeConfig\(\)\.songFadeOutMs\)/,
   'BGM whose live conditions expire uses the slow authored song fade');
 assert.match(music, /snd\._pauseMusic = [\s\S]*?snd\.pause\(\)/,
@@ -71,24 +85,38 @@ assert.match(config, /"bgsFadeMs": 1600/,
   'background-loop fading remains authored in audio config');
 assert.match(config, /"combatBgm": \[[\s\S]*?"url": "assets\/audio\/music\/bgm\/bgm_skirmish\.m4a", "loop": true/,
   'Skirmish is the configured looping combat soundtrack');
+assert.match(config, /"startupBgm": \{ "url": "assets\/audio\/music\/bgm\/bgm_remembrance\.m4a", "loop": true \}/,
+  'Remembrance loops throughout the opening/title/save/onboarding sequence');
+assert.equal((config.match(/"url": "assets\/audio\/music\/bgm\/bgm_quiet_hope\.m4a", "startHour": 6, "endHour": 12/g) || []).length, 2,
+  'Quiet Hope is authored only in the farm and town morning pools');
+assert.equal((config.match(/"url": "assets\/audio\/music\/bgm\/bgm_gentle_twilight\.m4a", "startHour": 2, "endHour": 19/g) || []).length, 2,
+  'Gentle Twilight is authored only in farm and town from 02:00 until nightfall');
+assert.match(config, /"map_western_slope": \[[\s\S]*?"url": "assets\/audio\/music\/bgm\/bgm_snow_and_darkness\.m4a", "nightOnly": true, "exclusiveSoundtrack": true/,
+  'Snow and Darkness is a Western Slope night track that retains soundtrack ownership during combat');
 assert.match(config, /"nightbugsVolume": 0\.34/,
   'nightbugs use the reviewed post-normalization mix level');
 assert.match(config, /"nightbugs": "assets\/audio\/sfx\/bgs\/bgs_nightbugs1\.mp3"/,
   'runtime config uses the normalized nightbugs recording');
 assert.equal((config.match(/"url": "assets\/audio\/music\/bgm\/bgm_farm1\.m4a", "fallback": true, "rainingOnly": true/g) || []).length, 2,
   'the shared farm/town theme is authored as rain-only in both playlists');
-assert.match(index, /scratchbones-config\.js\?v=\d+\w*/,
-  'the browser cache key loads the rain-only playlist');
-assert.match(index, /music-system\.js\?v=20260919combatbgm1/,
-  'the browser cache key loads the combat-aware scheduler');
-assert.match(index, /scratchbones-config\.js\?v=20260919combatbgm1/,
-  'the browser cache key loads the Skirmish combat playlist');
-assert.match(index, /town-mine\.js\?v=20260919combatbgm1/,
+assert.match(index, /scratchbones-config\.js\?v=20260920newbgm1/,
+  'the browser cache key loads the expanded authored BGM playlists');
+assert.match(index, /music-system\.js\?v=20260920newbgm1/,
+  'the browser cache key loads startup and authored-hour-window music behavior');
+assert.match(index, /town-mine\.js\?v=20260919combatbgm2/,
   'the browser cache key loads the Ghoul soundtrack combat exemption');
 
 assert.ok(fs.statSync(nightbugsPath).size > 600000,
   'normalized nightbugs recording must be present and nontrivial');
 assert.ok(fs.statSync(skirmishPath).size > 100000,
   'Skirmish combat music must be present and nontrivial');
+assert.ok(fs.statSync(remembrancePath).size > 1000000,
+  'Remembrance must be present and nontrivial');
+assert.ok(fs.statSync(quietHopePath).size > 1000000,
+  'Quiet Hope must be present and nontrivial');
+assert.ok(fs.statSync(gentleTwilightPath).size > 1000000,
+  'Gentle Twilight must be present and nontrivial');
+assert.ok(fs.statSync(snowAndDarknessPath).size > 1000000,
+  'Snow and Darkness must be present as the real recording, not a placeholder');
 
 console.log('music system tests passed');
