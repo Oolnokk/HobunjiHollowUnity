@@ -77,7 +77,11 @@
     // A deliberate manual pick is committed to the tool's shared grip-mode entry so
     // gameplay (which reads the same HobunjiHandToolGrips data) uses it too, instead
     // of this choice only ever affecting the editor preview.
-    if (manual) global.HobunjiHandToolGrips?.setGripMode?.(toolSelect?.value || '', key);
+    if (manual) global.HobunjiHandToolGrips?.setGripMode?.(
+      toolSelect?.value || '',
+      key,
+      global.HobunjiHandToolGrips?.currentGripContext?.() || 'melee',
+    );
     const mode = gripModes.modes[key];
     if (help) help.textContent = `${mode.description} Palm clearance: ${gripModes.palmClearance.toFixed(2)} hand-height units.`;
     refreshJsonGripMode();
