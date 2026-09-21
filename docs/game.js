@@ -22019,17 +22019,24 @@
           // regardless of what's equipped (and naturally drops to 0 during fishThrowActive,
           // since that always forces anim to 'chop').
           const baseRotZ = anim === 'sweep' ? -Math.PI / 2 : 0;
+          const rangedThrowSpins = activeTool === 'ranged'
+            && combatSwingAnim === 'ranged'
+            && window.RangedWeapons?.config?.[spinItemKey]?.rangedType === 'thrown'
+            && window.RangedWeapons?.config?.[spinItemKey]?.projectileVisualStyle === 'spinningWeapon'; // The shared Spin Throw rotates the visible weapon plane itself; hand pose rotation alone is not a substitute for weapon spin.
           if (anim === 'refillTwistOut') {
             // Lerp a 180° length-wise spin out, independent of any item's own "spinning" flag.
             spinPlane.rotation.z = baseRotZ + progress * Math.PI;
           } else if (anim === 'refillTwistBack') {
             // Reverse of the twist-out: lerp back from 180° to 0°.
             spinPlane.rotation.z = baseRotZ + Math.PI * (1 - progress);
+          } else if (rangedThrowSpins) {
+            // The held PNG spins around its own plane-normal axis through the exact
+            // same timeline whose release frame is sampled into the projectile.
+            // Holding Windup freezes this rotation too; release resumes smoothly.
+            spinPlane.rotation.z = baseRotZ - progress * Math.PI * 2 * TOOL_SPIN_REVOLUTIONS;
           } else {
             // The mace's own fishing-throw twirl is cosmetic to the harpoon cast —
-            // it shouldn't also layer onto combat swings when the same item is
-            // equipped in the weapon slot, or every combo/quick-attack would
-            // spin like a fishing throw instead of following its own anim arc.
+            // it shouldn't also layer onto ordinary melee combat swings.
             spinPlane.rotation.z = (TOOL_ITEM_DEFS[spinItemKey]?.spinning && !combatSwingAnim)
               ? baseRotZ - progress * Math.PI * 2 * TOOL_SPIN_REVOLUTIONS
               : baseRotZ;
