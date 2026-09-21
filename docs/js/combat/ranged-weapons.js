@@ -36,6 +36,8 @@
   const _projectileCurrentFlightDir = new THREE.Vector3(); // Reused to bend a projectile's launch-frame visual along an authored downward arc without camera steering.
   const _projectileTrajectoryDeltaQuaternion = new THREE.Quaternion(); // World-space delta from launch direction to current curved-flight direction.
   const _projectileFallbackToolZFlipQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI); // In flightVisualQuaternion, projectile local +Y is the sprite/tool length axis; that is the held pose's Tool Z after its fixed -90° PNG-plane basis.
+  const _projectileLocalPlaneZ = new THREE.Vector3(0, 0, 1); // Local sprite-plane normal used for authored in-plane projectile-only quarter-turn corrections.
+  const _projectileBasisQuaternion = new THREE.Quaternion(); // Reused when applying projectileBasisDeg without allocating a quaternion per shot.
   const PROJECTILE_TRAIL_MAX_POINTS = 14; // Caps each comet ribbon's geometry and per-frame update cost.
   const PROJECTILE_TRAIL_MAX_LANES = 4; // Mirrors the melee trail's readable multi-affliction lane limit.
   const SPECIAL_AMMO_MAX = 8; // Shared character resource cap displayed by the ranged loadout and ammo arch.
@@ -826,6 +828,11 @@
       // the held tool's Z after the fixed PNG-plane basis. Post-multiplying
       // this local-Y half-turn therefore reproduces the actual Tool-Z flip.
       baseVisualQuaternion.multiply(_projectileFallbackToolZFlipQuaternion);
+    }
+    const projectileBasisDeg = Number(def.projectileBasisDeg) || 0; // Projectile-only in-plane correction; does not modify the held throw spin or Tool End Flip.
+    if (projectileBasisDeg) {
+      _projectileBasisQuaternion.setFromAxisAngle(_projectileLocalPlaneZ, THREE.MathUtils.degToRad(projectileBasisDeg));
+      baseVisualQuaternion.multiply(_projectileBasisQuaternion);
     }
     const launchTransformMode = shotOptions?.preserveSourceOrientation && hasSourcePosition ? 'held-strike-plane' : 'flight-frame'; // Used by the mobile-safe ranged debug snapshot to identify exact held-transform launches.
     mesh.userData.visual.quaternion.copy(baseVisualQuaternion);
