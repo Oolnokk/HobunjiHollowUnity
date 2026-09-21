@@ -22026,6 +22026,9 @@
           const rangedThrowSpinBasisRad = rangedThrowSpins
             ? THREE.MathUtils.degToRad(Number(rangedThrowDef?.heldSpinBasisDeg) || 0)
             : 0;
+          const rangedThrowSpinRevolutions = rangedThrowSpins
+            ? Math.max(0, Number(rangedThrowDef?.heldSpinRevolutions) || TOOL_SPIN_REVOLUTIONS)
+            : TOOL_SPIN_REVOLUTIONS;
           if (anim === 'refillTwistOut') {
             // Lerp a 180° length-wise spin out, independent of any item's own "spinning" flag.
             spinPlane.rotation.z = baseRotZ + progress * Math.PI;
@@ -22036,7 +22039,7 @@
             // The held PNG spins around its own plane-normal axis through the exact
             // same timeline whose release frame is sampled into the projectile.
             // Holding Windup freezes this rotation too; release resumes smoothly.
-            spinPlane.rotation.z = baseRotZ + rangedThrowSpinBasisRad - progress * Math.PI * 2 * TOOL_SPIN_REVOLUTIONS;
+            spinPlane.rotation.z = baseRotZ + rangedThrowSpinBasisRad - progress * Math.PI * 2 * rangedThrowSpinRevolutions;
           } else {
             // The mace's own fishing-throw twirl is cosmetic to the harpoon cast —
             // it shouldn't also layer onto ordinary melee combat swings.
