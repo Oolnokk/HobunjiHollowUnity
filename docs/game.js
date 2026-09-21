@@ -21053,6 +21053,7 @@
         // Keep the parent identity-oriented; pose rotations stay on toolHolder.
         g.rotation.z = 0;
         g.userData.toolEndFlipBase = opts.flip === true;
+        g.userData.itemKey = itemKey; // Used by ranged visual updates to prove the mesh still belongs to the item whose loaded state changed.
         // Keep a handle on the sprite plane so updateToolMesh can layer the sweep style's
         // blade-parallel twist and the mace-mode "spinning" twirl on top each frame, derived
         // from whichever anim is actually playing rather than baked in per-item here — see
@@ -21063,15 +21064,20 @@
       }
 
       function setToolMeshLoadedState(mesh, itemKey, loaded) {
+        const meshItemKey = mesh?.userData?.itemKey || null; // Used to reject stale/asynchronous loaded-state updates aimed at another weapon's live mesh.
+        if (meshItemKey && meshItemKey !== itemKey) return false;
         const plane = mesh?.userData?.toolPlane || mesh?.children?.[0]?.userData?.toolPlane;
-        if (!plane) return;
+        if (!plane) return false;
         plane.material.map = loaded && loadedToolTextures[itemKey] ? loadedToolTextures[itemKey] : toolTextures[itemKey];
         plane.material.needsUpdate = true;
+        mesh.userData.appliedTextureItemKey = itemKey;
+        return true;
       }
 
       function setRangedLoadedVisual(itemKey, loaded, owner = null) {
+        if (!owner && equipmentSlots.ranged !== itemKey) return false;
         const mesh = owner ? owner._banditRangedToolHolder?.children?.[0] : toolMeshMap.ranged;
-        setToolMeshLoadedState(mesh, itemKey, loaded);
+        return setToolMeshLoadedState(mesh, itemKey, loaded);
       }
 
       // ── Kurraya hold assembly + reactive twitch ─────────────────────
@@ -26751,6 +26757,14 @@
           const mesh = toolMeshMap.ranged;
           const plane = mesh?.userData?.toolPlane || mesh?.children?.[0]?.userData?.toolPlane || null;
           return plane?.material?.map || toolTextures[itemKey] || null;
+        },
+        getHeldRangedVisualState: () => {
+          const mesh = toolMeshMap.ranged;
+          return {
+            equippedItemKey: equipmentSlots.ranged || null,
+            meshItemKey: mesh?.userData?.itemKey || null,
+            appliedTextureItemKey: mesh?.userData?.appliedTextureItemKey || null,
+          };
         },
         getHeldRangedWorldTransform: itemKey => {
           if (equipmentSlots.ranged !== itemKey) return null;
