@@ -210,7 +210,7 @@
     "floorMode": "nextLowerCliffTier",
     "minDistanceFromEntry": 0,
     "sameSectorAsEntry": false,
-    "alwaysVisibleOnMap": false,
+    "alwaysVisibleOnMap": true,
     "groundOnly": false,
     "notes": "Northern Cliffs only. The cave mouth is pinned to the LOW side of a north-facing internal plateau cliff, the center rear cell is pinned to the HIGH side, and the rear row is embedded into plateau mass then carved down to the cave floor. Flanking cliff probes are preferred rather than required so irregular natural cliff edges can still host the cave. The three cells directly north/in front of the north-facing mouth must be free, open terrain on the cave floor. Boundary escarpments are rejected. The cave entrance prop renders at 2x its normal in-game cave scale.",
     "terrainAnchors": {
@@ -345,6 +345,18 @@
         },
         "carveToLocaleFloor": true
       }
+    },
+    "terrainFallback": {
+      "mode": "subset",
+      "terrainAnchors": [
+        "4,0",
+        "4,2",
+        "4,3"
+      ],
+      "embeddedTiles": [
+        "4,3"
+      ],
+      "notes": "If the full-width cliff fit has no valid site, keep the cave on a north-facing internal plateau cliff using the center approach/mouth/backing probes and center embedded cell."
     }
   },
   "meta": {
