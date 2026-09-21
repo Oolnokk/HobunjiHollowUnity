@@ -1,0 +1,20 @@
+{
+  "schema": "hobunji_neck_patch_deformations.v1",
+  "patches": {
+    "poncho": {
+      "source": "./assets/cosmetics/clothes/overwear/portrait/patchsprite_poncho-behind.png",
+      "sourceBounds": null,
+      "variants": {}
+    },
+    "bodywrap": {
+      "source": "./assets/cosmetics/clothes/overwear/portrait/patchsprite_bodywrap-behind.png",
+      "sourceBounds": null,
+      "variants": {}
+    },
+    "tunic": {
+      "source": "./assets/cosmetics/clothes/torso/portrait/patchsprite_tankantunic-behind.png",
+      "sourceBounds": null,
+      "variants": {}
+    }
+  }
+}
