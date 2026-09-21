@@ -14,7 +14,8 @@
   const PRE_AUTHORED_RANGED_GRIP_PRESET = 'melee-ranged-split-20260920-v4-editor-authored'; // Previous committed split cloned melee into ranged; used only to migrate untouched old dagger defaults.
   const PRE_END_FLIP_DAGGER_RANGED_PRESET = 'melee-ranged-split-20260920-v5-authored-values'; // Previous authored dagger used ranged Z -0.30 before Tool End Flip's visible-axis correction changed the needed hand target.
   const PRE_MIRRORED_DAGGER_RANGED_PRESET = 'melee-ranged-split-20260920-v6-end-flip-adjusted'; // First post-flip trial used +0.28 before confirming the visible 180° flip mirrors tool-local Z.
-  const RANGED_GRIP_PRESET = 'melee-ranged-split-20260920-v7-end-flip-mirrored'; // Current dagger ranged grip mirrors Z across the flipped weapon origin.
+  const PRE_SPEAR_END_FLIP_RANGED_PRESET = 'melee-ranged-split-20260920-v7-end-flip-mirrored'; // Previous preset corrected the dagger's flipped Z grip but left the fishing spear's nonzero X on the unflipped side.
+  const RANGED_GRIP_PRESET = 'melee-ranged-split-20260921-v8-spear-end-flip-mirrored'; // End-flipped ranged grips now mirror every nonzero in-plane coordinate needed by their authored hand target.
   const AUTO_DAGGER_RANGED_PRESETS = new Set(['melee-ranged-split-20260920-v1', 'melee-ranged-split-20260920-v3-dagger']); // Short-lived branch guesses used scale .55 with ranged Z .28; untouched copies migrate to the authored dagger values.
   const HATCHET_PRIMARY_GRIP_EXAMPLE = Object.freeze({
     x: -0.04,
@@ -129,7 +130,7 @@
         primaryGrip: { position: { x: -0.04, y: -0.04, z: 0 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
         gripMode: null,
         secondaryGripSpan: { enabled: true, startZ: -0.5, endZ: -0.16 },
-        rangedPrimaryGrip: { position: { x: -0.04, y: -0.04, z: 0 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
+        rangedPrimaryGrip: { position: { x: 0.04, y: -0.04, z: 0 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
         rangedSecondaryGripSpan: { enabled: true, startZ: -0.5, endZ: -0.16 },
         rangedGripMode: null,
       },
@@ -317,6 +318,25 @@
             primaryGrip: entry.rangedPrimaryGrip,
           });
           entry.rangedGripMode = normalizeGripMode(authoredDagger.rangedGripMode);
+        }
+      }
+      if (toolKey === 'fishingspear') {
+        const ranged = entry.rangedPrimaryGrip;
+        const rr = ranged?.rotationDeg || {};
+        const untouchedPreSpearMirrorGrip = previousRangedGripPreset === PRE_SPEAR_END_FLIP_RANGED_PRESET
+          && Math.abs(entry.toolScale - 1.15) < 1e-9
+          && Math.abs(numberOrZero(ranged?.position?.x) - (-0.04)) < 1e-9
+          && Math.abs(numberOrZero(ranged?.position?.y) - (-0.04)) < 1e-9
+          && Math.abs(numberOrZero(ranged?.position?.z) - 0) < 1e-9
+          && numberOrZero(rr.pitch) === HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg.pitch
+          && numberOrZero(rr.yaw) === HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg.yaw
+          && numberOrZero(rr.roll) === HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg.roll;
+        if (untouchedPreSpearMirrorGrip) {
+          // The corrected Tool End Flip rotates the sprite 180° in its own plane.
+          // Fishing spear's ranged grip is center-length (Z=0) but has X=-0.04,
+          // so the same physical grip point moves to +0.04 after that flip.
+          // Migrate only the exact old default; artist-authored ranged X stays untouched.
+          entry.rangedPrimaryGrip = normalizeTransform(DEFAULT_DATA.tools.fishingspear.rangedPrimaryGrip);
         }
       }
     }

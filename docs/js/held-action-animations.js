@@ -82,6 +82,7 @@
   const weaponThrowSpearSpin = {
     ...weaponThrowSpin,
     name: 'Fishing Spear Throw (Offset Spin)',
+    toolEndFlip: true, // Runtime already end-flips fishing spear throws; keep the shared editor source on that exact visible basis too.
     spinBasisDeg: 90,
     projectileSpin: false,
     projectileLockAlignment: true,
@@ -197,7 +198,7 @@
     new URL('config/hand-shoulder-points.js?v=20260818b', docsBase).href,
     new URL('config/hand-shoulder-pose-profiles.js?v=20260920localhinge1', docsBase).href,
     new URL('js/procedural-hand-foot-material-roles.js?v=20260821e', docsBase).href,
-    new URL('js/hand-tool-grips.js?v=20260921throwpivot1', docsBase).href,
+    new URL('js/hand-tool-grips.js?v=20260921throwpivot2', docsBase).href,
     new URL('js/hand-grip-modes.js?v=20260920palmflip1-rangedgrip1', docsBase).href,
     new URL('js/hand-shoulder-pose-runtime.js?v=20260920elbow5', docsBase).href,
     new URL('js/portrait-arm-cloud-mask.js?v=20260817a', docsBase).href,

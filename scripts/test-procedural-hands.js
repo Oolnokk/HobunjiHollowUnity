@@ -407,7 +407,7 @@ for (const toolKey of ['hatchet','hoe','bshuakauitl','pickshovel','daggersword',
     `${toolKey} must inherit hatchet's primary-grip rotation`,
   );
 }
-assert.strictEqual(grips.data.rangedGripPreset, 'melee-ranged-split-20260920-v7-end-flip-mirrored', 'Committed grip data must advertise the mirrored end-flip ranged-grip revision.');
+assert.strictEqual(grips.data.rangedGripPreset, 'melee-ranged-split-20260921-v8-spear-end-flip-mirrored', 'Committed grip data must advertise the mirrored end-flip ranged-grip revision.');
 assert.strictEqual(grips.toolScaleForTool('dagger'), 0.55, 'Dagger must use the editor-authored 0.55 item scale.');
 assert.strictEqual(grips.authoredPrimaryGripForTool('dagger', 'melee').position.z, -0.09, 'Dagger melee grip keeps its authored blade-side Z.');
 assert.deepStrictEqual(
@@ -419,6 +419,17 @@ assert.deepStrictEqual(
   JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('dagger', 'ranged').rotationDeg)),
   sharedHatchetRotation,
   'Dagger ranged grip keeps the authored 90/-90/0 item-local rotation.',
+);
+
+assert.deepStrictEqual(
+  JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('fishingspear', 'melee').position)),
+  { x: -0.04, y: -0.04, z: 0 },
+  'Fishing spear melee grip must stay on its existing unflipped hand target.',
+);
+assert.deepStrictEqual(
+  JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('fishingspear', 'ranged').position)),
+  { x: 0.04, y: -0.04, z: 0 },
+  'Fishing spear ranged grip must mirror its nonzero X across the visible 180-degree Tool End Flip.',
 );
 
 const daggerThrowWindupSpinRad = -0.49 * Math.PI * 2 * 2.5; // Runtime Windup endpoint: 1.225 turns (441°) from the generic Spin Throw.
@@ -445,11 +456,38 @@ assert(Math.abs(hatchetThrowPivot.z + hatchetRotatedGrip.z - hatchetAuthoredRang
 const daggerPivotDistance = Math.hypot(daggerThrowPivot.x, daggerThrowPivot.z); // Used to make the regression sensitive to the dagger's visibly large off-center orbit.
 const hatchetPivotDistance = Math.hypot(hatchetThrowPivot.x, hatchetThrowPivot.z); // Used as the centered-ish control case for the same shared spin angle.
 assert(daggerPivotDistance > hatchetPivotDistance * 4, 'far-offset dagger grip must require substantially more pivot compensation than the centered-ish axe grip');
+
+const spearThrowWindupSpinRad = Math.PI / 2 - 0.49 * Math.PI * 2 * 2.5; // Fishing spear's dedicated +90° spin basis evaluated at the same Windup endpoint.
+const spearThrowPivot = grips.spinPivotOffsetForTool('fishingspear', spearThrowWindupSpinRad, 'ranged');
+const spearAuthoredRangedGrip = grips.authoredPrimaryGripForTool('fishingspear', 'ranged').position;
+const spearSpinCos = Math.cos(spearThrowWindupSpinRad);
+const spearSpinSin = Math.sin(spearThrowWindupSpinRad);
+const spearRotatedGrip = {
+  x: spearAuthoredRangedGrip.x * spearSpinCos + spearAuthoredRangedGrip.z * spearSpinSin,
+  y: spearAuthoredRangedGrip.y,
+  z: -spearAuthoredRangedGrip.x * spearSpinSin + spearAuthoredRangedGrip.z * spearSpinCos,
+};
+assert(Math.abs(spearThrowPivot.x + spearRotatedGrip.x - spearAuthoredRangedGrip.x) < 1e-12, 'special +90-degree spear spin must keep the mirrored ranged-grip X fixed through Windup');
+assert(Math.abs(spearThrowPivot.z + spearRotatedGrip.z - spearAuthoredRangedGrip.z) < 1e-12, 'special +90-degree spear spin must keep the mirrored ranged-grip Z fixed through Windup');
 assert.deepStrictEqual(
   JSON.parse(JSON.stringify(grips.spinPivotOffsetForTool('dagger', 0, 'ranged'))),
   { x: 0, y: 0, z: 0 },
   'zero throw spin must add no visual translation, preserving the snug idle dagger grip',
 );
+
+const preSpearMirrorSnapshot = grips.clone();
+const preSpearMirrorDraft = grips.clone();
+preSpearMirrorDraft.rangedGripPreset = 'melee-ranged-split-20260920-v7-end-flip-mirrored';
+preSpearMirrorDraft.tools.fishingspear.rangedPrimaryGrip.position.x = -0.04;
+grips.replace(preSpearMirrorDraft);
+assert.strictEqual(grips.authoredPrimaryGripForTool('fishingspear', 'ranged').position.x, 0.04, 'Untouched v7 fishing-spear ranged X must migrate to the corrected end-flipped side.');
+const customPreSpearMirrorDraft = grips.clone();
+customPreSpearMirrorDraft.rangedGripPreset = 'melee-ranged-split-20260920-v7-end-flip-mirrored';
+customPreSpearMirrorDraft.tools.fishingspear.rangedPrimaryGrip.position.x = 0.11;
+grips.replace(customPreSpearMirrorDraft);
+assert.strictEqual(grips.authoredPrimaryGripForTool('fishingspear', 'ranged').position.x, 0.11, 'Artist-authored pre-v8 fishing-spear ranged X must not be overwritten by the default migration.');
+grips.replace(preSpearMirrorSnapshot);
+
 const unsplitSnapshot = grips.clone();
 grips.mutate(data => {
   data.tools.dagger.rangedPrimaryGrip.position.z = 0.31;
