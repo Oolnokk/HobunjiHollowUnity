@@ -12,7 +12,8 @@
   const SECONDARY_GRIP_PRESET = 'animation-span-v1'; // Migrates old always-on secondary points into animation-gated Z spans.
   const PRIMARY_ROTATION_PRESET = 'hatchet-primary-xy-rotation-20260921-v3'; // Hatchet is the canonical right-hand grip example: propagate its X, Y, and rotation to every other tool, never its item-specific Z.
   const PRE_AUTHORED_RANGED_GRIP_PRESET = 'melee-ranged-split-20260920-v4-editor-authored'; // Previous committed split cloned melee into ranged; used only to migrate untouched old dagger defaults.
-  const RANGED_GRIP_PRESET = 'melee-ranged-split-20260920-v5-authored-values'; // Marks the committed editor-authored melee/ranged grip values supplied after the split landed.
+  const PRE_END_FLIP_DAGGER_RANGED_PRESET = 'melee-ranged-split-20260920-v5-authored-values'; // Previous authored dagger used ranged Z -0.30 before Tool End Flip's visible-axis correction changed the needed hand target.
+  const RANGED_GRIP_PRESET = 'melee-ranged-split-20260920-v6-end-flip-adjusted'; // Current committed ranged grips after the corrected visible Tool End Flip basis.
   const AUTO_DAGGER_RANGED_PRESETS = new Set(['melee-ranged-split-20260920-v1', 'melee-ranged-split-20260920-v3-dagger']); // Short-lived branch guesses used scale .55 with ranged Z .28; untouched copies migrate to the authored dagger values.
   const HATCHET_PRIMARY_GRIP_EXAMPLE = Object.freeze({
     x: -0.04,
@@ -100,7 +101,7 @@
         primaryGrip: { position: { x: -0.04, y: -0.04, z: -0.09 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
         gripMode: null,
         secondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
-        rangedPrimaryGrip: { position: { x: 0, y: -0.05, z: -0.3 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
+        rangedPrimaryGrip: { position: { x: 0, y: -0.05, z: 0.28 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
         rangedSecondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
         rangedGripMode: null,
       },
@@ -282,6 +283,14 @@
           && numberOrZero(rr.pitch) === HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg.pitch
           && numberOrZero(rr.yaw) === HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg.yaw
           && numberOrZero(rr.roll) === HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg.roll;
+        const untouchedPreviousAuthoredGrip = previousRangedGripPreset === PRE_END_FLIP_DAGGER_RANGED_PRESET
+          && Math.abs(entry.toolScale - 0.55) < 1e-9
+          && Math.abs(numberOrZero(ranged?.position?.x) - 0) < 1e-9
+          && Math.abs(numberOrZero(ranged?.position?.y) - (-0.05)) < 1e-9
+          && Math.abs(numberOrZero(ranged?.position?.z) - (-0.3)) < 1e-9
+          && numberOrZero(rr.pitch) === HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg.pitch
+          && numberOrZero(rr.yaw) === HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg.yaw
+          && numberOrZero(rr.roll) === HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg.roll;
         const untouchedPreAuthoredClone = previousRangedGripPreset === PRE_AUTHORED_RANGED_GRIP_PRESET
           && Math.abs(entry.toolScale - 1) < 1e-9
           && Math.abs(numberOrZero(ranged?.position?.x) - HATCHET_PRIMARY_GRIP_EXAMPLE.x) < 1e-9
@@ -290,7 +299,7 @@
           && numberOrZero(rr.pitch) === HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg.pitch
           && numberOrZero(rr.yaw) === HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg.yaw
           && numberOrZero(rr.roll) === HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg.roll;
-        if (untouchedAutoGuess || untouchedPreAuthoredClone) {
+        if (untouchedAutoGuess || untouchedPreviousAuthoredGrip || untouchedPreAuthoredClone) {
           const authoredDagger = DEFAULT_DATA.tools.dagger; // Canonical authored dagger values replace only known untouched generated defaults.
           entry.toolScale = normalizeToolScale(authoredDagger.toolScale, 1);
           entry.rangedPrimaryGrip = normalizeTransform(authoredDagger.rangedPrimaryGrip);
