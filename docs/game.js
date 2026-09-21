@@ -14246,7 +14246,10 @@
       }
 
       function buildTownScene() {
-        if (_townSceneBuilt) return;
+        if (_townSceneBuilt) {
+          window.WaterSystem.refreshTownWaterRender(); // Re-evaluates cached flood/permanent-river visibility immediately whenever the player revisits the existing town scene.
+          return;
+        }
         _townSceneBuilt = true;
 
         townScene = new THREE.Scene();
@@ -14394,6 +14397,7 @@
           name: 'town_merged_river_water', statKey: 'town rivers',
         });
         _townRiverWaterMeshes = townRiverMesh ? [townRiverMesh] : [];
+        window.WaterSystem.refreshTownWaterRender(); // Builds the current dry/flood render snapshot only after the permanent river surface exists, without ticking water simulation.
 
         window.VegetationCropRendering.buildTownGrassBillboards(TCOLS, TROWS);
         window.BorderTerrain.buildTownBorderTerrain();

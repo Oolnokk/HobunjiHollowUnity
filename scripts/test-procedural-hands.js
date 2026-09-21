@@ -37,6 +37,8 @@ const weaponScaleSource = read('docs/js/weapon-png-scale.js');
 const materialRoleSource = read('docs/js/procedural-hand-foot-material-roles.js');
 const attachmentRigProfileSource = read('docs/config/attachment-rig-profiles.js'); // Executed below against the Animation Author's config-late loading order.
 const proceduralFeetSource = read('docs/js/procedural-leg-animation.js'); // Validates the shared gameplay/shoulder-rig foot runtime and nested-tool asset resolution.
+const pixelProbeSource = read('docs/js/pixel-probe.js'); // Guards mobile-readable water/foot contact diagnostics used to distinguish perspective from real submergence.
+const indexSource = read('docs/index.html'); // Guards the cache-bust for the water/foot diagnostic change.
 const furnitureAuthorSource = read('docs/tools/furniture-avatar-author/index.html'); // Guards the legacy seated-avatar fallback after body scales become gender maps.
 const npcDatabase = JSON.parse(read('docs/config/npcs/hobunji-starter-npc-database.json')); // Confirms child anatomy is driven by authored NPC metadata rather than a name-only runtime exception.
 const pngAvatarSource = read('docs/js/png-plane-avatar.js'); // Executes the real child-scale classifier against Garanki's authored record below.
@@ -818,6 +820,10 @@ assert.match(animationAuthorSource, /getStandingPoseDebug/, 'Shoulder Rig diagno
 assert.match(proceduralFeetSource, /function footBoundsInRoot\(foot\)/, 'the shared foot runtime must measure rendered geometry in avatar floor space');
 assert.match(proceduralFeetSource, /HOBUNJI_ATTACHMENT_RIG_MATH\?\.characterPosteriorY/, 'procedural legs must resolve their hip/posterior with the shared floor-relative rule');
 assert.match(proceduralFeetSource, /group: root, update, dispose, applyRecordedLegPose, getStandingPoseDebug/, 'game and rigger feet handles must expose the same standing-pose diagnostic');
+assert.match(pixelProbeSource, /function _pixelProbeWaterFootContactLines\(activeScene, currentArea, playerMesh\)/, 'Pixel Probe must expose a mobile-readable rendered water/foot contact diagnostic');
+assert.match(pixelProbeSource, /waterInto=\$\{fmt\(waterIntoFoot\)\} \(\$\{Math\.round\(submergedFraction \* 100\)\}% foot height\)/, 'water/foot diagnostics quantify how much rendered foot height lies below the visible water plane');
+assert.match(pixelProbeSource, /hitPointText[\s\S]{0,180}world=\(\$\{hit\.point\.x\.toFixed\(3\)\},\$\{hit\.point\.y\.toFixed\(3\)\},\$\{hit\.point\.z\.toFixed\(3\)\}\)/, 'Pixel Probe ray entries include exact world hit points for foot-versus-water comparisons');
+assert.match(indexSource, /pixel-probe\.js\?v=20260921waterblend1/, 'the shipped page cache-busts the water/foot Pixel Probe diagnostics');
 assert(animationAuthorSource.lastIndexOf('installCanonicalCharacterRigProfilesV1537(animationAuthor.attachmentRigProfiles)') > animationAuthorSource.indexOf('installApprovedRigLibraryV1524(animationAuthor.attachmentRigProfiles'), 'canonical character profiles must install after the V15.24 full-library replacement');
 assert.match(animationAuthorSource, /if \(options\.fromAutosave\)[\s\S]*installCanonicalCharacterRigProfilesV1537\(animationAuthor\.attachmentRigProfiles\)/, 'autosave restoration must not reintroduce pre-calibration embedded character coordinates');
 assert.match(animationAuthorSource, /rigReferenceOnly = true/, 'reference NPC must be explicitly marked as comparison-only');

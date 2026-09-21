@@ -9,6 +9,7 @@ const { buildSurfaceData, buildMapWidePlaneSurfaceData, buildInvertedSurfaceData
 const rendererSource = fs.readFileSync(path.join(__dirname, '../docs/js/merged-water-renderer.js'), 'utf8');
 const waterSystemSource = fs.readFileSync(path.join(__dirname, '../docs/js/water-system.js'), 'utf8');
 const indexSource = fs.readFileSync(path.join(__dirname, '../docs/index.html'), 'utf8');
+const gameSource = fs.readFileSync(path.join(__dirname, '../docs/game.js'), 'utf8'); // Guards the town-scene handoff that must immediately resync permanent river visibility.
 
 assert.match(waterSystemSource,
   /function init\(injectedDeps\) \{[\s\S]{0,360}?deps = injectedDeps;[\s\S]{0,40}?\}/,
@@ -19,8 +20,8 @@ assert.doesNotMatch(waterSystemSource,
 assert.match(waterSystemSource,
   /function _dryRenderBaseline\(\)[\s\S]{0,260}?surfaceY: null/,
   'a dry flood baseline has no surface and therefore needs no NORMAL_TOP lookup');
-assert.match(indexSource, /water-system\.js\?v=20260921singleflood1/,
-  'the shipped page cache-busts the startup-safe WaterSystem');
+assert.match(indexSource, /water-system\.js\?v=20260921townriver1/,
+  'the shipped page cache-busts the town permanent-river render refresh');
 
 function cornersForTile(data, tileIndex) {
   const start = tileIndex * 12;
@@ -189,6 +190,14 @@ assert.match(waterSystemSource, /if \(!sceneObj\?\.add\) \{[\s\S]*?return null;[
   'merged water construction waits until its destination scene exists');
 assert.match(waterSystemSource, /function updateTownWaterMeshes\(\) \{[\s\S]*?if \(!townScene\) return;[\s\S]*?if \(_townWaterSimDirty\)/,
   'town water keeps its dirty flag until the town scene is available');
+assert.match(waterSystemSource, /function refreshTownWaterRender\(\) \{[\s\S]{0,260}?_townWaterSimDirty = true;[\s\S]{0,260}?updateTownWaterMeshes\(\);/,
+  'town entry can rebuild the render snapshot immediately without advancing the water simulation');
+assert.match(waterSystemSource, /window\.WaterSystem = \{[\s\S]{0,500}?refreshTownWaterRender,/,
+  'WaterSystem exposes the render-only town refresh to the town scene lifecycle');
+assert.match(gameSource, /function buildTownScene\(\) \{[\s\S]{0,260}?if \(_townSceneBuilt\) \{[\s\S]{0,220}?WaterSystem\.refreshTownWaterRender\(\);[\s\S]{0,320}?return;/,
+  're-entering an already-built town immediately resyncs permanent river versus flood visibility');
+assert.match(gameSource, /_townRiverWaterMeshes = townRiverMesh \? \[townRiverMesh\] : \[\];[\s\S]{0,220}?WaterSystem\.refreshTownWaterRender\(\);/,
+  'a newly-built town refreshes water only after its permanent river mesh exists');
 assert.match(waterSystemSource, /mapWidePlane:\s*true[\s\S]{0,120}?cols[\s\S]{0,120}?rows[\s\S]{0,120}?baseline/,
   'flood rendering explicitly requests one full-map plane');
 assert.match(waterSystemSource, /function _filterLocalWaterCellsForFlood[\s\S]{0,700}?baseline\?\.visible[\s\S]{0,220}?return \[\]/,
