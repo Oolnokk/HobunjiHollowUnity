@@ -11379,8 +11379,8 @@
         const walker = {
           root, rec, profile, avatarGroup, avatarHeight, alcoholPoseGroup, groundShadow,
           avatarFrontCanvas: frontCanvas, avatarBackCanvas: backCanvas, area: spawnArea,
-          animalKind: namedAnimalKind, animalDef: namedAnimalDef, animalGenotype: namedAnimalGenotype,
-          animalAvatarRef: namedAnimalAvatarRef, animalFrames: namedAnimalFrames, animalRunFrame: 0, animalRunFrameDistPx: 0, animalFrameKey: 'idle',
+          animalKind: namedAnimalKind, animalDef: namedAnimalDef, animalGenotype: namedAnimalGenotype, animalSizeScale: namedAnimalSizeScale,
+          animalAvatarRef: namedAnimalAvatarRef, animalFrames: namedAnimalFrames, animalRunFrame: 0, animalRunFrameDistPx: 0, animalFrameKey: 'idle', animalPngRot: Math.PI / 2,
           // The head-turn bone built by buildSinglePlaneAvatarModel's neckRig
           // option (null if no neck pivot could be detected for this NPC's
           // portrait) — see faceNpcDialogueParticipants for the one place
@@ -11398,6 +11398,29 @@
           applyFacingDeadzone(rawRot = this.desiredRot, lerp = 0.15) {
             if (!Number.isFinite(rawRot)) return;
             this.desiredRot = rawRot;
+            if (this.animalDef && this.animalAvatarRef) {
+              this.rot += angleDiff(rawRot, this.rot) * Math.min(1, Math.max(0.01, lerp * 6.67)); // Animal root follows its true movement heading; the camera-relative deadzone belongs on the two sprite cards, matching updateCreatureMesh.
+              root.rotation.y = this.rot;
+              this.animalPngRot ??= this.rot;
+              if (window.PerpRotation.CREATURE_PLANE_ROT_MODE === 'snap') {
+                const moving = this._moveSpeedTiles > 0.05;
+                const solved = window.PerpRotation.creatureSnapSwayTarget(this.perpState, rawRot, cameraRelativeCreaturePerps(), window.PerpRotation.CREATURE_PERP_DEAD_RAD, 1 / 60, moving);
+                if (solved.snap) this.animalPngRot = solved.target;
+                else this.animalPngRot += angleDiff(solved.target, this.animalPngRot) * Math.min(1, Math.max(0.01, lerp * 6.67));
+              } else if (window.PerpRotation.CREATURE_PLANE_ROT_MODE === 'sway') {
+                const moving = this._moveSpeedTiles > 0.05;
+                const target = window.PerpRotation.creatureDeadzoneTarget(this.perpState, rawRot, cameraRelativeCreaturePerps(), window.PerpRotation.CREATURE_PERP_DEAD_RAD, 1 / 60, moving);
+                this.animalPngRot += angleDiff(target, this.animalPngRot) * Math.min(1, Math.max(0.01, lerp * 6.67));
+              } else {
+                const solved = window.PerpRotation.perpClamp(this.perpState, rawRot, cameraRelativeCreaturePerps(), window.PerpRotation.CREATURE_PERP_DEAD_RAD);
+                if (solved.snapTo !== null) this.animalPngRot = solved.effectiveTarget;
+                else this.animalPngRot += angleDiff(solved.effectiveTarget, this.animalPngRot) * Math.min(1, Math.max(0.01, lerp * 6.67));
+              }
+              const planeDelta = this.animalPngRot - this.rot;
+              if (this.animalAvatarRef.frontPlane) this.animalAvatarRef.frontPlane.rotation.y = planeDelta + Math.PI / 2;
+              if (this.animalAvatarRef.backPlane) this.animalAvatarRef.backPlane.rotation.y = planeDelta - Math.PI / 2;
+              return;
+            }
             this.rot = window.PerpRotation.clampedRotation(
               this.perpState, this.rot, rawRot, cameraRelativePerps(), lerp,
             );
@@ -11603,6 +11626,8 @@
                 setCreatureFrame(this.animalAvatarRef, frameUrl, null, frameKey, null, false);
                 this.animalFrameKey = frameKey;
               }
+              const breathScaleY = window.CreatureGenetics.creatureBreathScaleY(this.animalAvatarRef, performance.now()); // Named animals keep the same subtle alive-at-rest scale cycle as ordinary creatures.
+              window.CreatureGenetics.applyCreatureBillboardScale(this.avatarGroup, this.animalSizeScale, breathScaleY);
             }
             if (window.NpcCharacterState?.update?.(this, dt, {
               resolveScheduleTarget: resolveNpcScheduleTarget,
