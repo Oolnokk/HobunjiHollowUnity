@@ -167,7 +167,7 @@
        other), but they're a matched pair. -->
   <script src="js/creature-genetics.js?v=20260828breath1"></script>
   <!-- Creature genotype recolor + pattern-overlay compositing. -->
-  <script src="js/creature-genetics-render.js?v=20260905cacheaudit1"></script>
+  <script src="js/creature-genetics-render.js?v=20260920animal-pattern-preview1"></script>
   <!-- Shared per-frame "where is this creature/character's head" cache — see
        its own file header for why. No dependencies of its own; must load
        before anything that calls window.CreatureHeadCache. -->
@@ -193,6 +193,9 @@
        reserving one before generation; used by bandit camps. -->
   <script src="js/temporary-locales.js?v=20260725a"></script>
   <!-- Local database overrides (window.LocalDBOverrides) — lets docs/tools/
+  <!-- Banubu's quest dialogue defaults load before LocalDBOverrides so the
+       editor/runtime database composition can replace his generic chatter. -->
+  <script src="js/banubu-quest-content.js?v=20260919tea1"></script>
        editors save edited repo-tracked JSON into localStorage and have the
        game load that instead of the repo file when Local source is selected. -->
   <script src="js/local-db-overrides.js?v=20260920orbit1"></script>
@@ -213,7 +216,7 @@
   <!-- Optional local-folder save mirror (window.LocalSaveFolder) — self-contained,
        only reads/writes the same hobunjiSaveMeta localStorage key onboarding.js/
        game.js already use. See docs/js/local-save-folder.js. -->
-  <script src="js/local-save-folder.js?v=20260910review1"></script>
+  <script src="js/local-save-folder.js?v=20260920patterns1"></script>
   <!-- Onboarding overlay -->
   <link rel="stylesheet" href="onboarding.css?v=20260728b">
   <script src="onboarding.js?v=20260910review1"></script>
@@ -279,12 +282,16 @@
   <script src="js/cooking-data.js?v=20260811a"></script>
   <script src="js/food-processing.js?v=20260811a"></script>
   <script src="js/cooking-system.js?v=20260811b"></script>
+  <script src="js/key-item-system.js?v=20260918banubu1"></script>
   <!-- Alchemy (reagent/effect defs, potion brewing, shared timed effects) —
        window.AlchemySystem. Self-contained aside from deps injected via
        init(), so load order relative to the other systems above doesn't
        matter; must load before game.js, which calls
        window.AlchemySystem.init(...) during its own setup. -->
   <script src="js/alchemy-system.js?v=20260918blackstamina2"></script>
+  <!-- Banubu's Tea Grinder delegates trait legality/targeting to AlchemySystem
+       but outputs cooking Tea Blends, so it must load after both systems. -->
+  <script src="js/tea-grinder.js?v=20260919tea1"></script>
   <script src="js/alchemy-flasks.js?v=20260830shoulderaim1"></script>
   <!-- Dye catalog/ownership (window.DyeSystem) — character creation, the
        redye panel, General Store clothing stock, and treasure loot all
@@ -454,7 +461,7 @@
        injection and everything on it fails soft, so load order doesn't
        matter beyond being available before pattern-authoring.js's save
        flow and the weaving/verdigris render paths call it. -->
-  <script src="js/motif-store.js?v=20260918a"></script>
+  <script src="js/motif-store.js?v=20260920patterns1"></script>
   <!-- Generic motif-sketch + placement/tiling editor modal
        (window.PatternAuthoring) — knows nothing about verdigris or
        clothing, just hands a caller-supplied preview hook a placement
@@ -469,6 +476,15 @@
        Needs init(deps) from game.js, so must load before it, same as
        dye-system.js. -->
   <script src="js/pattern-library.js?v=20260912a"></script>
+  <!-- Dev-mode Settings exporter for the active character's saved PatternLibrary entries. -->
+  <script src="js/pattern-library-dev-export.js?v=20260920export1"></script>
+  <!-- Repo-authored reusable patterns (JSON + motif PNG). Runtime animal/NPC
+       paint can reference a small repoPatternId instead of embedding motif bytes. -->
+  <script src="js/repo-pattern-library.js?v=20260920repo1"></script>
+  <!-- Banubu Color Pools: max-level Stable animal paint UI + cave pool visuals.
+       Uses PatternAuthoring/PatternLibrary now; the shared weaving compositor
+       is resolved at interaction/render time after combat-config-loader loads it. -->
+  <script src="js/color-pools-system.js?v=20260920colorpools1"></script>
   <!-- Sloomi/Kzubug's smithing counter (window.MetalCraftShop) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -2312,7 +2328,7 @@
   </div>
 
   <script src="js/tool-icon-render.js?v=20260910review1"></script>
-  <script src="js/sprite-recolor.js?v=20260815a"></script>
+  <script src="js/sprite-recolor.js?v=20260920relative-shade1"></script>
   <script src="js/tool-metal-recolor.js?v=20260918scale2"></script>
   <!-- Mount ride system (window.Mounts) — must load before game.js, which
        calls window.Mounts.init(...) during its own setup. -->
@@ -2345,6 +2361,7 @@
        openNpcDialogue/closeNpcDialogue (camera/staging/save) stay in
        game.js and call into this module. -->
   <script src="js/dialogue-content.js?v=20260831syllable4"></script>
+  <script src="js/banubu-questline.js?v=20260919tea1"></script>
   <!-- World-space Float+ combat text and centered five-row reward lists. -->
   <script src="js/world-popup-text.js?v=20260831interactioncolors2"></script>
   <!-- Lore loading-screen overlay, shown while a wilderness zone or mine

@@ -70,8 +70,9 @@
   const finite = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 
   function resolvedPatternMeshScale(patternDef) {
-    const normalizedScale = clamp(finite(patternDef?.meshScale, 1), PATTERN_SCALE_MIN, PATTERN_SCALE_MAX); // Used by woven rendering so saved 1.00 stays 1.00 in data but renders at the former 0.25.
-    return normalizedScale * PATTERN_SCALE_REFERENCE;
+    const normalizedScale = clamp(finite(patternDef?.meshScale, 1), PATTERN_SCALE_MIN, PATTERN_SCALE_MAX); // Reusable pattern's authored normalized scale: 1.00 renders at the former physical 0.25.
+    const usageScaleMultiplier = clamp(finite(patternDef?.usageScaleMultiplier, 1), 0.1, 20); // Transient purpose-specific multiplier; animal paint currently uses 7–14× while reusable pattern JSON remains unchanged.
+    return normalizedScale * PATTERN_SCALE_REFERENCE * usageScaleMultiplier;
   }
 
   function baseCosmeticId(item) {
@@ -1285,7 +1286,7 @@
   const FRAME_SHAPES = Object.freeze({
     // Every shape (including these two) clips to its own rectangle — the
     // frame is a hard crop boundary, not just a tiling-pitch guide — see
-    // buildPatternMask's clipToPolygon below.
+    // buildPatternMask's drawCell polygon clip below.
     square: { label: 'Square', paired: false, basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: 0, y: h } }), polygon: (w, h) => [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }, { x: 0, y: h }] },
     brick: { label: 'Brick', paired: false, basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: w / 2, y: h } }), polygon: (w, h) => [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }, { x: 0, y: h }] },
     diamond: {
@@ -1340,10 +1341,99 @@
     };
   }
 
+  // Finds a one-pixel watershed between disconnected opaque islands in ONE
+  // source motif. The separator is transformed/stamped with each motif instance
+  // below, so later thickness/outline growth cannot join two islands that were
+  // authored separately inside that instance. Finished motif instances are
+  // still unioned normally with one another.
+  function buildMotifClusterSeparatorMask(mask, width, height) {
+    const labels = new Int32Array(mask.length).fill(-1);
+    const stack = [];
+    let clusterCount = 0;
+    for (let start = 0; start < mask.length; start++) {
+      if (!mask[start] || labels[start] !== -1) continue;
+      const label = clusterCount++;
+      labels[start] = label;
+      stack.push(start);
+      while (stack.length) {
+        const p = stack.pop();
+        const x = p % width, y = (p / width) | 0;
+        for (let oy = -1; oy <= 1; oy++) {
+          for (let ox = -1; ox <= 1; ox++) {
+            if (!ox && !oy) continue;
+            const nx = x + ox, ny = y + oy;
+            if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+            const np = ny * width + nx;
+            if (mask[np] && labels[np] === -1) { labels[np] = label; stack.push(np); }
+          }
+        }
+      }
+    }
+    if (clusterCount < 2) return null;
+
+    // Multi-source flood assigns every transparent pixel to its nearest ink
+    // island. Wherever two ownership regions meet becomes the permanent moat
+    // for this motif instance. Four-way propagation keeps the watershed stable
+    // and deterministic while the source islands themselves use 8-connectivity.
+    const owners = new Int32Array(mask.length).fill(-1);
+    const queue = new Int32Array(mask.length);
+    let head = 0, tail = 0;
+    for (let p = 0; p < mask.length; p++) {
+      if (!mask[p]) continue;
+      owners[p] = labels[p];
+      queue[tail++] = p;
+    }
+    while (head < tail) {
+      const p = queue[head++];
+      const x = p % width, y = (p / width) | 0, owner = owners[p];
+      const neighbors = [p - 1, p + 1, p - width, p + width];
+      const valid = [x > 0, x < width - 1, y > 0, y < height - 1];
+      for (let n = 0; n < 4; n++) {
+        if (!valid[n]) continue;
+        const np = neighbors[n];
+        if (owners[np] !== -1) continue;
+        owners[np] = owner;
+        queue[tail++] = np;
+      }
+    }
+
+    const separator = new Uint8Array(mask.length);
+    for (let p = 0; p < mask.length; p++) {
+      if (mask[p]) continue;
+      const x = p % width, y = (p / width) | 0, owner = owners[p];
+      for (let oy = -1; oy <= 1 && !separator[p]; oy++) {
+        for (let ox = -1; ox <= 1; ox++) {
+          if (!ox && !oy) continue;
+          const nx = x + ox, ny = y + oy;
+          if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+          const other = owners[ny * width + nx];
+          if (other !== -1 && other !== owner) { separator[p] = 1; break; }
+        }
+      }
+    }
+    return separator;
+  }
+
+  function maskCanvas(mask, width, height) {
+    if (!mask) return null;
+    const canvas = Object.assign(document.createElement('canvas'), { width, height });
+    const ctx = canvas.getContext('2d');
+    const image = ctx.createImageData(width, height);
+    for (let p = 0, i = 0; p < mask.length; p++, i += 4) {
+      if (!mask[p]) continue;
+      image.data[i] = 255; image.data[i + 1] = 255; image.data[i + 2] = 255; image.data[i + 3] = 255;
+    }
+    ctx.putImageData(image, 0, 0);
+    return canvas;
+  }
+
   function buildPatternMask(width, height, rawPatternDef, motifImg) {
     const patternDef = legacyFrameFields(rawPatternDef);
     const canvas = Object.assign(document.createElement('canvas'), { width, height }), ctx = canvas.getContext('2d');
+    const clusterSeparatorCanvas = Object.assign(document.createElement('canvas'), { width, height }); // Per-instance intra-motif watershed sampled alongside the ordinary alpha mask.
+    const clusterSeparatorCtx = clusterSeparatorCanvas.getContext('2d');
     ctx.imageSmoothingEnabled = false;
+    clusterSeparatorCtx.imageSmoothingEnabled = false;
     const motifScale = Math.max(.05, Number(patternDef?.motifScale ?? patternDef?.scale) || 1);
     const frameScale = Math.max(.05, Number(patternDef?.frameScale) || 1);
     const meshScale = resolvedPatternMeshScale(patternDef);
@@ -1364,12 +1454,24 @@
     srcCtx.drawImage(motifImg, -naturalW / 2, -naturalH / 2, naturalW, naturalH);
     const srcData = srcCtx.getImageData(0, 0, srcSize, srcSize).data, srcMask = new Uint8Array(srcSize * srcSize);
     for (let p = 0, i = 0; i < srcData.length; i += 4, p++) if (srcData[i + 3] > 16) srcMask[p] = 1;
-    const bbox = findOpaqueBounds(srcMask, srcSize, srcSize);
+    const bbox = findOpaqueBounds(srcMask, srcSize, srcSize); // Frame geometry intentionally stays based on the original authored ink, not the thickness-adjusted ink.
+    const sourceClusterSeparatorMask = patternDef?.invert ? null : buildMotifClusterSeparatorMask(srcMask, srcSize, srcSize); // Inverted patterns treat transparency as ink, so source-ink island separation does not apply.
+    const sourceAllowedMask = new Uint8Array(srcMask.length); sourceAllowedMask.fill(1); // Source-space thickening may expand anywhere inside the rotated motif work canvas; the frame clip still decides what finally prints.
+    const sourceSignedThickness = (patternDef?.invert ? -1 : 1) * (Number(patternDef?.motifThinPx) || 0); // Inversion flips foreground/background, so reverse the source operation to preserve positive=visibly thinner semantics.
+    const adjustedSrcMask = adjustMaskThickness(srcMask, sourceAllowedMask, srcSize, srcSize, sourceSignedThickness, sourceClusterSeparatorMask); // Motif thinning/thickening is measured here, before motif/frame/mesh scaling.
+    const adjustedSrc = maskCanvas(adjustedSrcMask, srcSize, srcSize);
+    const clusterSeparatorSrc = maskCanvas(sourceClusterSeparatorMask, srcSize, srcSize);
 
     ctx.save();
     ctx.translate(width / 2, height / 2);
     ctx.rotate(meshRad);
     ctx.scale(meshScale, meshScale);
+    if (clusterSeparatorSrc) {
+      clusterSeparatorCtx.save();
+      clusterSeparatorCtx.translate(width / 2, height / 2);
+      clusterSeparatorCtx.rotate(meshRad);
+      clusterSeparatorCtx.scale(meshScale, meshScale);
+    }
 
     if (bbox) {
       // The frame is a crop window laid over the source ink: frameX/frameY
@@ -1389,31 +1491,41 @@
       const polygon = shape.polygon(cellW, cellH);
       const midpoint = { x: cellW / 2, y: cellH / 2 };
       // Draws one cell at the CURRENT origin (the caller has already
-      // translated to that cell's own top-left corner): clips to the
-      // frame's own boundary FIRST — a fixed size that never grows to
-      // chase motifScale — then samples the source ink through the
-      // frame's own position/rotation, with motifScale zooming the ink
-      // within that fixed window. A motif scaled past 1x therefore
-      // genuinely overflows past this crop instead of stretching the
-      // frame to avoid ever being cut.
-      function drawCell() {
-        ctx.save();
-        ctx.beginPath();
-        polygon.forEach((p, i) => { if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); });
-        ctx.closePath();
-        ctx.clip();
-        ctx.translate(cellW / 2, cellH / 2);
-        ctx.rotate(frameRad);
-        ctx.scale(motifScale, motifScale);
-        ctx.translate(-winCenterX, -winCenterY);
-        ctx.drawImage(src, 0, 0);
-        ctx.restore();
+      // translated to that cell's own top-left corner). The frame polygon
+      // is clipped FIRST and remains active while motifScale zooms the
+      // source ink inside it. Pixels transformed outside that polygon are
+      // discarded, so motifScale changes what fits inside a fixed cell but
+      // never enlarges the crop boundary or the lattice spacing.
+      function drawCell(targetCtx, sourceImage) {
+        targetCtx.save();
+        targetCtx.beginPath();
+        polygon.forEach((p, i) => { if (i === 0) targetCtx.moveTo(p.x, p.y); else targetCtx.lineTo(p.x, p.y); });
+        targetCtx.closePath();
+        targetCtx.clip();
+        targetCtx.translate(cellW / 2, cellH / 2);
+        targetCtx.rotate(frameRad);
+        targetCtx.scale(motifScale, motifScale);
+        targetCtx.translate(-winCenterX, -winCenterY);
+        targetCtx.drawImage(sourceImage, 0, 0);
+        targetCtx.restore();
+      }
+
+      function stampCell(targetCtx, sourceImage, ox, oy) {
+        targetCtx.save(); targetCtx.translate(ox, oy); drawCell(targetCtx, sourceImage); targetCtx.restore();
+        if (!shape.paired) return;
+        targetCtx.save();
+        targetCtx.translate(ox + midpoint.x, oy + midpoint.y);
+        targetCtx.rotate(Math.PI);
+        targetCtx.translate(-midpoint.x, -midpoint.y);
+        drawCell(targetCtx, sourceImage);
+        targetCtx.restore();
       }
       if (patternDef?.tiling !== false) {
         const { u: basisU, v: basisV } = shape.basis(cellW, cellH);
-        const stamp = shape.paired
-          ? (ox,oy)=>{ctx.save();ctx.translate(ox,oy);drawCell();ctx.restore();ctx.save();ctx.translate(ox+midpoint.x,oy+midpoint.y);ctx.rotate(Math.PI);ctx.translate(-midpoint.x,-midpoint.y);drawCell();ctx.restore();}
-          : (ox,oy)=>{ctx.save();ctx.translate(ox,oy);drawCell();ctx.restore();};
+        const stamp = (ox, oy) => {
+          stampCell(ctx, adjustedSrc, ox, oy);
+          if (clusterSeparatorSrc) stampCell(clusterSeparatorCtx, clusterSeparatorSrc, ox, oy);
+        };
         // How far the lattice needs to extend (in basisU/basisV step
         // counts) to cover the whole canvas — inverting the (generally
         // skewed, non-axis-aligned) basis matrix rather than assuming a
@@ -1441,18 +1553,29 @@
           if (Math.hypot(ox,oy) <= reach) stamp(ox,oy);
         }
       } else {
-        ctx.save(); ctx.translate(-cellW/2, -cellH/2); drawCell(); ctx.restore();
+        stampCell(ctx, adjustedSrc, -cellW / 2, -cellH / 2);
+        if (clusterSeparatorSrc) stampCell(clusterSeparatorCtx, clusterSeparatorSrc, -cellW / 2, -cellH / 2);
       }
     }
     ctx.restore();
+    if (clusterSeparatorSrc) clusterSeparatorCtx.restore();
     if(patternDef?.invert){const image=ctx.getImageData(0,0,width,height),data=image.data;for(let i=0;i<data.length;i+=4)data[i+3]=255-data[i+3];ctx.putImageData(image,0,0);}
+    canvas.__motifClusterSeparatorCanvas = clusterSeparatorSrc ? clusterSeparatorCanvas : null; // Consumed only by the later thickness/outline passes; ordinary callers still receive a Canvas.
     return canvas;
   }
 
   function loadImageUrl(url) {
     if (!url) return Promise.resolve(null);
-    if (typeof window.loadImg === 'function' && !String(url).startsWith('data:')) return window.loadImg(normalizeAssetPath(url));
-    return new Promise((resolve, reject) => { const image = new Image(); image.crossOrigin = 'anonymous'; image.onload = () => resolve(image); image.onerror = reject; image.src = url; });
+    const value = String(url);
+    const isAbsoluteOrBlob = /^(?:https?:|blob:|data:|\/\/)/i.test(value); // RepoPatternLibrary emits absolute motifUrl values on raw.githack/CDN builds; never feed those through game-relative loadImg path normalization.
+    if (typeof window.loadImg === 'function' && !isAbsoluteOrBlob) return window.loadImg(normalizeAssetPath(value));
+    return new Promise((resolve, reject) => {
+      const image = new Image();
+      image.crossOrigin = 'anonymous';
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error(`Failed to load pattern motif ${value}`));
+      image.src = value;
+    });
   }
 
   function patternCanvasKey(imageOrCanvas, pattern, colorHex, cachePrefix = '') {
@@ -1464,13 +1587,27 @@
   const PATTERN_OUTLINE_WIDTH = 1; // Half of ToolMetalRecolor's DEFAULT_OUTLINE_WIDTH (2) — a woven motif's outline reads thinner than verdigris removal's by design.
 
   // Mirrors ToolMetalRecolor's buildOxidationOutlineMask (docs/js/tool-metal-recolor.js):
-  // stamps a boundary ring on the untinted side of the motif edge so the
-  // woven pattern has the same black-outline definition as a removed
-  // verdigris pattern, instead of just a flat color swap.
-  function buildPatternOutlineMask(patternMask, garmentMask, width, height, outlineWidth) {
+  // centers a boundary ring across the motif edge: half covers the already-
+  // filled motif edge and half extends into the surrounding garment. The
+  // outline is still painted after the color fill, so black wins on overlap.
+  const outlineDiskOffsetCache = new Map(); // radius -> [{x,y,d2}]; shared by every patterned sprite so large animal outlines never rebuild/hypot-test the same disks.
+  function outlineDiskOffsets(radius) {
+    const r = Math.max(0, radius | 0);
+    if (outlineDiskOffsetCache.has(r)) return outlineDiskOffsetCache.get(r);
+    const offsets = [];
+    const r2 = r * r;
+    for (let y = -r; y <= r; y++) for (let x = -r; x <= r; x++) {
+      const d2 = x * x + y * y;
+      if (d2 <= r2) offsets.push({ x, y, d2 });
+    }
+    outlineDiskOffsetCache.set(r, offsets);
+    return offsets;
+  }
+
+  function buildPatternOutlineMask(patternMask, garmentMask, width, height, outlineWidth, clusterSeparatorMask = null) {
     const outline = new Uint8Array(patternMask.length);
     if (!outlineWidth) return outline;
-    const boundary = new Uint8Array(patternMask.length);
+    const boundaryPixels = []; // Expanding from actual motif boundaries is far cheaper than searching a radius around every garment pixel, especially at 7–14× animal scale.
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         const p = y * width + x;
@@ -1485,24 +1622,27 @@
             if (!patternMask[np] && garmentMask[np]) { isEdge = true; break; }
           }
         }
-        if (isEdge) boundary[p] = 1;
+        if (isEdge) boundaryPixels.push(p);
       }
     }
-    const radius = Math.max(1, (outlineWidth | 0) * 5);
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
+    const totalRadius = Math.max(1, Math.round(Number(outlineWidth || 0) * 5));
+    const inwardRadius = Math.floor(totalRadius / 2); // Used to move half of the old outward width onto the motif itself.
+    const outwardRadius = totalRadius - inwardRadius; // Keeps the remaining half outside the motif.
+    const maxRadius = Math.max(inwardRadius, outwardRadius);
+    const offsets = outlineDiskOffsets(maxRadius);
+    const inward2 = inwardRadius * inwardRadius, outward2 = outwardRadius * outwardRadius;
+    for (const boundaryPixel of boundaryPixels) {
+      const bx = boundaryPixel % width, by = (boundaryPixel / width) | 0;
+      for (const offset of offsets) {
+        const x = bx + offset.x, y = by + offset.y;
+        if (x < 0 || y < 0 || x >= width || y >= height) continue;
         const p = y * width + x;
-        if (!garmentMask[p] || patternMask[p]) continue;
-        let nearBoundary = false;
-        for (let oy = -radius; oy <= radius && !nearBoundary; oy++) {
-          for (let ox = -radius; ox <= radius; ox++) {
-            if (Math.hypot(ox, oy) > radius + 0.01) continue;
-            const nx = x + ox, ny = y + oy;
-            if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
-            if (boundary[ny * width + nx]) { nearBoundary = true; break; }
-          }
+        if (!garmentMask[p]) continue;
+        if (patternMask[p]) {
+          if (offset.d2 <= inward2) outline[p] = 1;
+        } else if (!clusterSeparatorMask?.[p] && offset.d2 <= outward2) {
+          outline[p] = 1;
         }
-        if (nearBoundary) outline[p] = 1;
       }
     }
     return outline;
@@ -1539,14 +1679,13 @@
     return { labels, cellCount };
   }
 
-  // Erodes mask inward by radiusPx: any set pixel within radiusPx of an
-  // unset pixel (or the canvas edge) gets cleared. Mirrors
-  // buildPatternOutlineMask's own boundary+radius-search shape, just
-  // clearing near the boundary instead of growing outward from it — see
-  // pattern-authoring.js's "Motif thinning" slider (PATTERN_DEFAULTS.motifThinPx).
-  function erodeMask(mask, width, height, radiusPx) {
-    const px = Math.max(0, Math.round(radiusPx) || 0);
-    if (!px) return mask;
+  // Applies the signed "Motif thinning / thickening" contour offset before
+  // color fill and outline generation. Positive values erode inward; negative
+  // values dilate outward but stay clipped to the valid garment surface.
+  function adjustMaskThickness(mask, allowedMask, width, height, signedPx, clusterSeparatorMask = null) {
+    const amount = Math.round(Number(signedPx) || 0);
+    if (!amount) return mask;
+
     const boundary = new Uint8Array(mask.length);
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
@@ -1557,46 +1696,68 @@
           for (let ox = -1; ox <= 1; ox++) {
             if (!ox && !oy) continue;
             const nx = x + ox, ny = y + oy;
-            if (nx < 0 || ny < 0 || nx >= width || ny >= height) { isEdge = true; break; }
-            if (!mask[ny * width + nx]) { isEdge = true; break; }
+            if (nx < 0 || ny < 0 || nx >= width || ny >= height || !mask[ny * width + nx]) { isEdge = true; break; }
           }
         }
         if (isEdge) boundary[p] = 1;
       }
     }
-    const eroded = new Uint8Array(mask.length);
+
+    if (amount > 0) {
+      const thinned = new Uint8Array(mask.length); // Used when the signed authoring slider is positive: removes exactly the requested nearest edge layers.
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const p = y * width + x;
+          if (!mask[p]) continue;
+          let nearBoundary = false;
+          for (let oy = -amount; oy <= amount && !nearBoundary; oy++) {
+            for (let ox = -amount; ox <= amount; ox++) {
+              if (Math.hypot(ox, oy) >= amount - 0.01) continue;
+              const nx = x + ox, ny = y + oy;
+              if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+              if (boundary[ny * width + nx]) { nearBoundary = true; break; }
+            }
+          }
+          if (!nearBoundary) thinned[p] = 1;
+        }
+      }
+      return thinned;
+    }
+
+    const radius = Math.abs(amount);
+    const thickened = new Uint8Array(mask); // Used when the signed authoring slider is negative: grows into nearby valid surface pixels without crossing the garment/metal silhouette.
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         const p = y * width + x;
-        if (!mask[p]) continue;
+        if (mask[p] || !allowedMask[p] || clusterSeparatorMask?.[p]) continue; // Never let outward thickening fill the per-instance moat between separate source ink islands.
         let nearBoundary = false;
-        for (let oy = -px; oy <= px && !nearBoundary; oy++) {
-          for (let ox = -px; ox <= px; ox++) {
-            // Strictly-less-than px, not <=: a boundary pixel is layer 0 (distance
-            // 0 from itself) and should already count as removed at px=1, so
-            // erosion removes exactly the px nearest layers (0..px-1), giving a
-            // real px-pixel inset instead of px+1 (was previously inclusive of
-            // distance===px, eroding one layer deeper than the setting implied).
-            if (Math.hypot(ox, oy) >= px - 0.01) continue;
+        for (let oy = -radius; oy <= radius && !nearBoundary; oy++) {
+          for (let ox = -radius; ox <= radius; ox++) {
+            if (Math.hypot(ox, oy) > radius + 0.01) continue;
             const nx = x + ox, ny = y + oy;
             if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
             if (boundary[ny * width + nx]) { nearBoundary = true; break; }
           }
         }
-        if (!nearBoundary) eroded[p] = 1;
+        if (nearBoundary) thickened[p] = 1;
       }
     }
-    return eroded;
+    return thickened;
   }
 
-  // A woven motif's outline never grows past its own default thickness (a
-  // scaled-up motif reads fine with the same line weight it always had) but
-  // does thin down for a scaled-down one, clamped so it never disappears
-  // below 1px.
+  // Reusable clothing patterns keep their ordinary line weight. Large
+  // purpose-specific uses (animal surface paint) boost line weight
+  // sublinearly so the outline remains visible without growing as fast as
+  // the motif itself. sqrt(7)≈2.65 and sqrt(14)≈3.74.
   function scaledOutlineWidth(defaultWidth, rawPattern) {
     const pattern = legacyFrameFields(rawPattern);
-    const scale = Math.min(Number(pattern?.motifScale) || 1, 1) * Math.min(Number(pattern?.frameScale) || 1, 1) * Math.min(resolvedPatternMeshScale(pattern), 1);
-    return Math.max(1, Math.min(defaultWidth, Math.round(defaultWidth * scale)));
+    const usageScale = clamp(finite(pattern?.usageScaleMultiplier, 1), 0.1, 20);
+    const authoredMeshScale = clamp(finite(pattern?.meshScale, 1), PATTERN_SCALE_MIN, PATTERN_SCALE_MAX) * PATTERN_SCALE_REFERENCE;
+    const shrinkScale = Math.min(Number(pattern?.motifScale) || 1, 1)
+      * Math.min(Number(pattern?.frameScale) || 1, 1)
+      * Math.min(authoredMeshScale, 1);
+    const baseWidth = Math.max(1, defaultWidth * shrinkScale);
+    return Math.max(1, baseWidth * Math.sqrt(Math.max(1, usageScale)));
   }
 
   // A per-item "Custom" pattern's motif may live in MotifStore instead of
@@ -1612,14 +1773,14 @@
   }
 
   async function applyPatternToTintedImage(imageOrCanvas, pattern, colorHex, cachePrefix = '') {
-    if (!imageOrCanvas || !(pattern?.motifDataUrl || pattern?.customMotifId)) return imageOrCanvas;
+    if (!imageOrCanvas || !(pattern?.motifDataUrl || pattern?.motifUrl || pattern?.customMotifId)) return imageOrCanvas;
     const width = imageOrCanvas.naturalWidth || imageOrCanvas.width || 1, height = imageOrCanvas.naturalHeight || imageOrCanvas.height || 1;
     const key = patternCanvasKey(imageOrCanvas, pattern, colorHex, cachePrefix);
     if (patternedCanvasCache.has(key)) return patternedCanvasCache.get(key);
     // A per-item "Custom" pattern's motif may live in MotifStore instead of
     // being embedded directly (see pattern-authoring.js's offloadMotif) —
     // resolve either shape the same way from here on.
-    const motifUrl = pattern.motifDataUrl || await window.MotifStore?.loadMotif?.(pattern.customMotifId);
+    const motifUrl = pattern.motifDataUrl || pattern.motifUrl || await window.MotifStore?.loadMotif?.(pattern.customMotifId);
     if (!motifUrl) return imageOrCanvas;
     const motif = await loadImageUrl(motifUrl);
     if (!motif) return imageOrCanvas;
@@ -1634,18 +1795,12 @@
     ctx.drawImage(imageOrCanvas, 0, 0, width, height);
     const base = ctx.getImageData(0, 0, width, height);
     const paddedMaskData = patternMaskCanvas.getContext('2d').getImageData(0, 0, maskWidth, height + pad * 2).data;
+    const separatorCanvas = patternMaskCanvas.__motifClusterSeparatorCanvas;
+    const paddedSeparatorData = separatorCanvas ? separatorCanvas.getContext('2d').getImageData(0, 0, maskWidth, height + pad * 2).data : null; // Same pattern-space raster as paddedMaskData, but only the intra-instance no-fuse watershed.
     const [r, g, b] = hexRgb(colorHex);
-    // Reuses SpriteRecolor's own "direct" shade-fill formula (the same one
-    // the garment's primary-dye recolor already goes through via
-    // SpriteRecolor.getRecoloredCanvas) instead of an HSV hue/sat-only
-    // substitution: the dye's own chosen brightness is the anchor, only
-    // modulated — not replaced outright — by the original pixel's relative
-    // light/dark. An HSV substitution (value taken entirely from the
-    // original pixel) made every pattern read at the cloth's own brightness
-    // regardless of how light or dark the chosen dye was.
-    const shadeCfg = window.SpriteRecolor?.shadeFillConfig?.() || { shadowFloor: 0.18, highlightBoost: 1.18, neutralLuminance: 0.55, gamma: 1 };
-    const luminanceOf = window.SpriteRecolor?.relativeLuminance || ((rr, gg, bb) => (0.2126 * rr + 0.7152 * gg + 0.0722 * bb) / 255);
-    const neutralLuminance = Math.max(0.0001, shadeCfg.neutralLuminance);
+    // Motif ink uses SpriteRecolor's exact canonical direct shade-fill, the
+    // same function used for the garment base and animal recoloring.
+    const directShadeFill = window.SpriteRecolor?.directShadeFillPixels;
 
     const pixelCount = width * height;
     const garmentMask = new Uint8Array(pixelCount); // Opaque, non-authored-outline cloth pixels — this pattern's equivalent of the tool's metalMask.
@@ -1661,6 +1816,7 @@
     // across the seam as a single flat surface.
     const { labels: cellLabels } = labelPatternCells(garmentMask, width, height);
     const patternMask = new Uint8Array(pixelCount); // Pixels the motif actually covers, after each cell's own sample offset.
+    const clusterSeparatorMask = paddedSeparatorData ? new Uint8Array(pixelCount) : null; // Preserves disconnected ink islands inside each stamped motif instance.
     for (let p = 0; p < pixelCount; p++) {
       if (!garmentMask[p]) continue;
       const x = p % width, y = (p / width) | 0;
@@ -1668,23 +1824,38 @@
       const mx = x + pad - off, my = y + pad - off;
       const mi = (my * maskWidth + mx) * 4;
       if (paddedMaskData[mi + 3] > 16) patternMask[p] = 1;
+      if (clusterSeparatorMask && paddedSeparatorData[mi + 3] > 16) clusterSeparatorMask[p] = 1;
     }
-    // Thins the placed ink inward before anything else reads patternMask, so
-    // both the fill below and the outline that follows see the eroded shape
-    // — see pattern-authoring.js's "Motif thinning" slider.
-    const thinnedMask = erodeMask(patternMask, width, height, pattern.motifThinPx);
+    // Thickness was already applied in source-motif pixels before any pattern
+    // scaling/stamping. Keep this alias so fill + outline consume the exact same
+    // final sampled silhouette without a second, output-pixel morphology pass.
+    const adjustedMask = patternMask;
 
-    for (let p = 0, i = 0; i < base.data.length; i += 4, p++) {
-      if (!garmentMask[p] || !thinnedMask[p]) continue;
-      const lum = luminanceOf(base.data[i], base.data[i + 1], base.data[i + 2]);
-      const normalized = Math.pow(Math.max(0, lum) / neutralLuminance, shadeCfg.gamma);
-      const shade = Math.max(shadeCfg.shadowFloor, Math.min(shadeCfg.highlightBoost, normalized));
-      base.data[i] = Math.max(0, Math.min(255, Math.round(r * shade)));
-      base.data[i + 1] = Math.max(0, Math.min(255, Math.round(g * shade)));
-      base.data[i + 2] = Math.max(0, Math.min(255, Math.round(b * shade)));
+    if (typeof directShadeFill === 'function') {
+      directShadeFill(base.data, [r, g, b], i => {
+        const p = i >> 2;
+        return !!garmentMask[p] && !!adjustedMask[p];
+      });
+    } else {
+      // Bootstrap-only fallback if SpriteRecolor failed to load.
+      const shadeCfg = window.SpriteRecolor?.shadeFillConfig?.() || { shadowFloor: 0.18, highlightBoost: 1.18, neutralLuminance: 0.55, gamma: 1 };
+      const luminanceOf = window.SpriteRecolor?.relativeLuminance || ((rr, gg, bb) => (0.2126 * rr + 0.7152 * gg + 0.0722 * bb) / 255);
+      const neutralLuminance = Math.max(0.0001, shadeCfg.neutralLuminance);
+      for (let p = 0, i = 0; i < base.data.length; i += 4, p++) {
+        if (!garmentMask[p] || !adjustedMask[p]) continue;
+        const lum = luminanceOf(base.data[i], base.data[i + 1], base.data[i + 2]);
+        const normalized = Math.pow(Math.max(0, lum) / neutralLuminance, shadeCfg.gamma);
+        const shade = Math.max(shadeCfg.shadowFloor, Math.min(shadeCfg.highlightBoost, normalized));
+        base.data[i] = Math.max(0, Math.min(255, Math.round(r * shade)));
+        base.data[i + 1] = Math.max(0, Math.min(255, Math.round(g * shade)));
+        base.data[i + 2] = Math.max(0, Math.min(255, Math.round(b * shade)));
+      }
     }
 
-    const outlineMask = buildPatternOutlineMask(thinnedMask, garmentMask, width, height, scaledOutlineWidth(PATTERN_OUTLINE_WIDTH, pattern));
+    // buildPatternMask flattened every repeated stamp into one alpha field before
+    // patternMask/adjustedMask were derived, so overlapping repeats intentionally
+    // share this one silhouette instead of receiving per-stamp outlines.
+    const outlineMask = buildPatternOutlineMask(adjustedMask, garmentMask, width, height, scaledOutlineWidth(PATTERN_OUTLINE_WIDTH, pattern), clusterSeparatorMask);
     for (let p = 0, i = 0; i < base.data.length; i += 4, p++) {
       if (!outlineMask[p]) continue;
       base.data[i] = 0; base.data[i + 1] = 0; base.data[i + 2] = 0;
@@ -1798,10 +1969,11 @@
     combatActive,
     learnOwnedBlueprints,
     renderClothingLayers,
+    applyPatternToTintedImage, // Shared motif compositor used by Color Pools and animal-NPC authoring; callers supply their own already-tinted/clipped surface.
     hasBehindView,
     iconSpriteForCosmetic,
     debugSnapshot,
-    __test: Object.freeze({ baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask, applyPatternToTintedImage, labelPatternCells, behindViewUrlsFor, behindViewResultFor, buildPortraitPatternMap, collectPatternImageUrls, cosmeticConfig, summarizeWeavingLabel, weavingPatternForRole, weavingSwapsPatternColorsForRole, weavingHasAnyPattern, resolvedPatternMeshScale, erodeMask, scaledOutlineWidth, requestPlayerAvatarRefresh }),
+    __test: Object.freeze({ baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask, applyPatternToTintedImage, labelPatternCells, behindViewUrlsFor, behindViewResultFor, buildPortraitPatternMap, collectPatternImageUrls, cosmeticConfig, summarizeWeavingLabel, weavingPatternForRole, weavingSwapsPatternColorsForRole, weavingHasAnyPattern, resolvedPatternMeshScale, buildMotifClusterSeparatorMask, adjustMaskThickness, buildPatternOutlineMask, scaledOutlineWidth, requestPlayerAvatarRefresh }),
   });
   window.__clothingWeavingDebug = debugSnapshot;
 

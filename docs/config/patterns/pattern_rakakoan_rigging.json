@@ -5,16 +5,16 @@
   "motifPng": "assets/patterns/motif_rakakoan_rigging.png",
   "settings": {
     "motifScale": 1,
-    "motifRotationDeg": 0,
+    "motifRotationDeg": -91,
     "tiling": true,
     "invert": false,
     "motifThinPx": 0,
     "frameShape": "triangle",
-    "frameX": -11.524272518172296,
-    "frameY": 6.722358955099608,
-    "frameRotationDeg": 0,
-    "frameScale": 1,
-    "meshScale": 1.52,
+    "frameX": -34,
+    "frameY": 14,
+    "frameRotationDeg": 14,
+    "frameScale": 1.06,
+    "meshScale": 1.6,
     "meshRotationDeg": 0
   }
 }

@@ -228,16 +228,15 @@
   }
 
   async function composeAnimal(appearance) {
-    const kind = activeKind(appearance), meta = speciesMeta(kind); if (!kind || !meta) return null;
-    const genotype = genotypeWithOverrides(appearance), masks = await loadMasks(), mask = masks?.[kind]?.idle || null;
-    const storedBaseColor = genotype?.base?.color, stripes = genotype?.bodystripes;
-    const swap = kind === 'drenkirra' && storedBaseColor && stripes?.enabled && Number(stripes.copies) > 0 && stripes.color;
-    const baseColor = swap ? stripes.color : storedBaseColor;
-    const baseUrl = docsUrl(meta.base?.idle || `assets/creaturesprites/${ANIMAL_META[kind]?.base || ''}`);
-    const baseSource = baseColor && mask ? await recoloredSource(baseUrl, baseColor, mask) : await loadImage(baseUrl);
-    const width = baseSource.naturalWidth || baseSource.width, height = baseSource.naturalHeight || baseSource.height, output = makeCanvas(width, height), ctx = output.getContext('2d'); ctx.drawImage(baseSource, 0, 0, width, height);
-    for (const patternId of (kind === 'uumkaoii' ? ['fur', 'plates'] : patternIdsFor(kind))) { const layer = genotype?.[patternId]; if (!layer?.color || Number(layer.copies) <= 0 || layer.enabled === false) continue; const renderColor = swap && patternId === 'bodystripes' ? storedBaseColor : layer.color; try { ctx.drawImage(await recoloredSource(patternUrl(kind, patternId), renderColor, null), 0, 0, width, height); } catch (_) {} }
-    if (meta.eyes?.open) try { ctx.drawImage(await loadImage(docsUrl(meta.eyes.open)), 0, 0, width, height); } catch (_) {}
+    const kind = activeKind(appearance);
+    if (!kind) return null;
+    const renderer = window.CreatureGeneticsRender;
+    if (typeof renderer?.composeFrame !== 'function') throw new Error('CreatureGeneticsRender.composeFrame unavailable.');
+    const genotype = genotypeWithOverrides(appearance); // Keeps Fey/custom exact RGB overrides while preserving colorPoolPaint, including repo pattern + normalized animal scale.
+    const output = await renderer.composeFrame(kind, 'idle', genotype, false); // Single authoritative animal compositor: shared pattern tint, repo surface paint, eyes, and runtime layer order.
+    if (!output) throw new Error(`Canonical animal renderer returned no ${kind} frame.`);
+    window.CharacterStudioAnimalAppearance?.refreshSurfacePatternStatuses?.(); // Surface row now reflects the exact composeFrame result even though Fey extras owns the outer preview wrapper.
+    window.CharacterStudioAnimalAppearance?.noteCanonicalRender?.(kind, null);
     return window.AnimalNpcHeadwear?.composeWithHat ? window.AnimalNpcHeadwear.composeWithHat(output, kind, appearance) : output;
   }
 
@@ -263,8 +262,15 @@
         : appearance;
       if (target?.id === 'apCanvas' && appearanceRenderSignature(liveAppearance) !== startedSignature) return true; // Leave the last valid frame in place; the next animation tick renders the new state.
       const ok = fitToCanvas(source, target, liveAppearance, options);
-      debugState.lastRender = ok ? `fey:${activeKind(liveAppearance)}` : 'fey-failed'; debugState.lastError = ok ? null : 'canvas unavailable'; refreshDebug(); return ok;
-    } catch (error) { debugState.lastError = error.message; debugState.lastRender = 'failed'; refreshDebug(); return false; }
+      debugState.lastRender = ok ? `canonical+fey:${activeKind(liveAppearance)}` : 'canonical+fey-failed'; debugState.lastError = ok ? null : 'canvas unavailable'; refreshDebug(); return ok;
+    } catch (error) {
+      debugState.lastError = error.message;
+      debugState.lastRender = 'canonical+fey-failed';
+      window.CharacterStudioAnimalAppearance?.noteCanonicalRender?.(activeKind(appearance), error);
+      window.CharacterStudioAnimalAppearance?.refreshSurfacePatternStatuses?.();
+      refreshDebug();
+      return false;
+    }
   }
 
   function appearanceFromProfile(profile) {

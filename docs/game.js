@@ -2342,6 +2342,10 @@
           itemKey: 'handMillFurniture', icon: '⚙️', name: 'Hand Mill', method: 'grinding', color: 0x8f8a78,
           desc: 'Placeable processor for grinding: needlegrain/heftroot into flour and mustard seed into powder.'
         },
+        teaGrinder: {
+          itemKey: 'teaGrinderFurniture', icon: '🍵', name: 'Tea Grinder', method: 'teaGrinding', specialMode: 'teaGrinder', questOnly: true, color: 0x617a4b,
+          desc: 'Banubu’s placeable three-herb Tea Blend grinder. Uses Alchemy trait-source logic but permits only beneficial cooking-buff reactions.'
+        },
         dryingRack: {
           itemKey: 'dryingRackFurniture', icon: '☀️', name: 'Drying Rack', method: 'drying', color: 0xcaa45e,
           desc: 'Placeable processor for drying wet/fresh ingredients. Dry-default grain/root crops are intentionally not dryable.'
@@ -2368,7 +2372,7 @@
       // widens this set; 'grindingFeed' is added by hand because the feed
       // grinder (a barn fixture, see feedGrinderFurniture) predates/isn't
       // part of that table.
-      const PROCESSING_METHODS = [...new Set(Object.values(PROCESSING_FURNITURE_DEFS).map(def => def.method))].concat('grindingFeed');
+      const PROCESSING_METHODS = [...new Set(Object.values(PROCESSING_FURNITURE_DEFS).filter(def => !def.specialMode).map(def => def.method))].concat('grindingFeed'); // Special UI-driven processors such as Tea Grinder do not make held items wheel-eligible through ItemProcessing.
 
       // furnitureKey -> audio.objectSfx key for that machine's distinctive
       // "product's ready" cue (see makeProcessingFurniture's onAction) —
@@ -2376,12 +2380,12 @@
       // of it, so a machine finishing still reads as a machine, not just
       // another ding.
       const PROCESSING_SFX_KEY = {
-        pestle: 'processPestle', squeezer: 'processSqueezer', handMill: 'processHandmill',
+        pestle: 'processPestle', squeezer: 'processSqueezer', handMill: 'processHandmill', teaGrinder: 'processHandmill',
         dryingRack: 'processDryingrack', smoker: 'processSmoker',
         agingBarrel: 'processAgingbarrel', agingVase: 'processAgingvase',
       };
 
-      const PROCESSING_FURNITURE_CATALOG = Object.values(PROCESSING_FURNITURE_DEFS).map(def => ({
+      const PROCESSING_FURNITURE_CATALOG = Object.values(PROCESSING_FURNITURE_DEFS).filter(def => !def.questOnly).map(def => ({ // Quest-only stations such as Banubu's Tea Grinder are granted by story and never appear in ordinary purchase catalogs.
         key: def.itemKey,
         icon: def.icon,
         name: def.name,
@@ -2422,6 +2426,7 @@
         rug:           { itemKey: 'rugFurniture',           icon: '🧶', name: 'Woven Rug',            modelFile: 'rug_woven_small.glb',          price: 22, fw: 2, fd: 2, color: 0x8a5a3a, area: 'interior', walkable: true, desc: 'A small decorative woven rug.' },
         standingLamp:  { itemKey: 'standingLampFurniture',  icon: '💡', name: 'Bronze Standing Lamp', modelFile: 'standing_lamp_bronze.glb',     price: 28, fw: 1, fd: 1, color: 0xb87333, area: 'interior', desc: 'A tall bronze oil lamp.', light: { color: 0xffc266, intensity: 0.9, distance: 6, height: 1.3 } },
         statue:        { itemKey: 'statueFurniture',        icon: '🗿', name: 'Weathered Statue',     modelFile: 'statue_weathered.glb',         price: 30, fw: 1, fd: 1, color: 0x54585e, area: 'any',      desc: 'A weathered stone statue, worn by time.' },
+        stonePedestal: { itemKey: 'colorPoolsAltarFurniture', icon: '🎨', name: 'Color Pools Altar', price: 0, fw: 1, fd: 1, color: 0x7b7466, area: 'interior', desc: 'A strange stone altar used to paint trained animals in Banubu’s hidden Color Pools.', fixture: true },
         stool:         { itemKey: 'stoolFurniture',         icon: '🪑', name: 'Round Stool',          modelFile: 'stool_round.glb',              price: 10, fw: 1, fd: 1, color: 0x7a5c3a, area: 'any',      desc: 'A simple round stool.', sit: true },
         tableLong:     { itemKey: 'tableLongFurniture',     icon: '🍽️', name: 'Long Table',           modelFile: 'table_long.glb',               price: 42, fw: 4, fd: 1, color: 0x7a5c3a, area: 'interior', desc: 'A long communal dining table.' },
         tableRound:    { itemKey: 'tableRoundFurniture',    icon: '🍽️', name: 'Round Table',          modelFile: 'table_round.glb',              price: 28, fw: 2, fd: 2, color: 0x7a5c3a, area: 'interior', desc: 'A round wooden dining table.' },
@@ -2488,7 +2493,7 @@
         'chest', 'crateStack', 'copperBarrel', 'desk', 'dresser', 'hearth', 'loom',
         'nightstand', 'rug', 'standingLamp', 'statue', 'tableLong', 'tableRound',
         'tableSmall', 'wardrobe', 'washTub', 'counter', 'alchemyTable', 'bulletinBoard',
-        'feedGrinder', 'trough', 'campfire', 'mineLadder',
+        'feedGrinder', 'trough', 'campfire', 'mineLadder', 'stonePedestal',
         // Town business signs, placed as ordinary map_hobunji_town decor
         // (see DECORATIVE_FURNITURE_DEFS above). Without these, buildFurnitureVisual
         // falls back to ProceduralFurniture, which has no recipe for either
@@ -2822,6 +2827,9 @@
           startTimedJob({ outputs, inputStars, inputLabel, source } = {}) { return startTimedJob(outputs, inputStars, inputLabel, source); }, // Used by assigned livestock without coupling dew-vats.js to timeline internals.
           getJob() { return job; }, // read by saveFarmLayout
           getButtons() {
+            if (def.specialMode === 'teaGrinder') {
+              return [{ icon: def.icon, label: 'Blend Tea Leaves', action: 'obj_process_' + furnitureKey, style: 'primary', allowed: true }]; // Tea Grinder owns a three-input modal rather than the generic one-held-item processor contract.
+            }
             if (job?.kind === 'timed') {
               const seconds = Math.max(1, Math.ceil(timedJobRemainingS()));
               return [{ icon: '🫗', label: `Squeezing… ${seconds}s`, action: 'obj_process_' + furnitureKey, style: 'secondary', allowed: false }];
@@ -2856,6 +2864,7 @@
           },
           onAction(action) {
             if (action !== 'obj_process_' + furnitureKey) return { ok: false, message: 'Unknown processor action.' };
+            if (def.specialMode === 'teaGrinder') return window.TeaGrinder?.open?.() || { ok: false, message: 'Tea Grinder failed to initialize.' }; // Uses the processor's normal world interaction while delegating three-herb recipe UI/state.
             if (job?.kind === 'timed') return { ok: false, message: `${def.name} is still squeezing — ${Math.max(1, Math.ceil(timedJobRemainingS()))}s left.` };
             if (isAging && job) {
               if (calendar.day < job.readyDay) return { ok: false, message: 'Still aging — not ready yet.' };
@@ -2903,6 +2912,7 @@
           // re-validates everything itself (held item, job state, and the
           // ItemProcessing result) from scratch rather than trusting this.
           beginHeldInsertion() {
+            if (def.specialMode === 'teaGrinder') return { ok: false, message: 'Use the Tea Grinder interaction to choose three herbs.' }; // Tea Grinder never consumes a single held item through the generic drink-style insertion animation.
             if (job) return { ok: false, message: `${def.name} is busy right now.` };
             if (heldMode !== 'item') return { ok: false, message: def.name + ' needs a held ingredient.' };
             const active = getActiveInventoryItem();
@@ -9274,6 +9284,13 @@
       let _townBuildingGroups = [];    // { group, bldg, piece, wbOpts, wbGableOpts }[]
       const _buildingScenes = new Map(); // mapId → { scene, grid, cols, rows, transitions } | null
       window.HobunjiCacheAudit?.register('game.buildingScenes (loaded interiors)', () => _buildingScenes.size);
+      window.addEventListener('hobunji:key-item-granted', event => {
+        const keyId = String(event?.detail?.id || ''); // Reveals already-loaded locale-cavern secret doors immediately after their world key persists.
+        if (!keyId) return;
+        for (const info of _buildingScenes.values()) {
+          for (const record of (info?.keyDoorGroups || [])) if (record.keyId === keyId) record.group.visible = true;
+        }
+      });
       // mapId → the `layouts` entry id (or 'default') actually baked into
       // that map's currently-live _buildingScenes entry — compared against
       // window.MapLayoutSystem's live resolution to notice a scheduled
@@ -9369,9 +9386,14 @@
           },
         }),
         mineLadderFurniture: () => window.TownMine.makeLadderInteractable(),
+        colorPoolsAltarFurniture: () => window.ColorPoolsSystem?.makeAltarInteractable?.() || ({
+          getButtons: () => [{ icon: '🎨', label: 'Color Pools unavailable', action: 'obj_color_pools', style: 'secondary', allowed: false }],
+          onAction: () => ({ ok: false, message: 'The Color Pools system is unavailable.' }),
+        }),
       };
       let _currentBuildingMapId = null;
       let _pendingEntrySpawnFromExit = false; // true when enterBuilding fired before scene loaded
+      let _pendingEntrySpotId = ''; // Named locale-cavern connector requested before its destination scene finished generating.
       let _workspaceMaps = null;       // all maps from town-workspace-v1.json, cached for building interiors
       let _workspaceDefinition = null; // Resolved full workspace used to merge one live-preview map without leaking unrelated editor edits.
       const _livePreviewMapIds = new Set(); // Map ids whose in-memory editor snapshot must outrank standalone config files until reload.
@@ -9381,7 +9403,12 @@
       // requires tools/weapons to actually work there, unlike every other
       // building interior (see the combat-update gate in gameLoop and the
       // toolHolder/reticle scene wiring in enterBuilding below).
-      function _isCavernBuildingArea(area) { return typeof area === 'string' && (area.startsWith('map_i_den_') || !!window.TownMine?.floorFromMapId?.(area)); }
+      function _isCavernBuildingArea(area) {
+        return typeof area === 'string' && (
+          area.startsWith('map_i_den_') || !!window.TownMine?.floorFromMapId?.(area) ||
+          window.CavernGenerator?.isLocaleCavernMapId?.(area) === true || _buildingScenes.get(area)?.wallStyle === 'cavern'
+        );
+      }
       // ── Exterior zones (Northern Cliffs / Southern Cloud Forest) ──────
       const _zoneScenes = new Map(); // mapId → { scene, grid, cols, rows, transitions }
       window.HobunjiCacheAudit?.register('game.zoneScenes (loaded zones)', () => _zoneScenes.size);
@@ -10272,6 +10299,7 @@
         else pool = area === 'town' ? worldTownTransitions : worldTransitions;
         const t = pool.find(x =>
           (_isBuildingArea(area) || _isZoneArea(area) || x.area === area) && x.col === pc && x.row === pr &&
+          (!x.requiresKeyItem || !!window.KeyItemSystem?.has?.(x.requiresKeyItem)) &&
           (x.target === 'building' ? !!x.targetMapId : x.target === 'zone' ? !!x.targetMapId : x.target === 'exit_building' ? true : (Number.isFinite(x.targetCol) && Number.isFinite(x.targetRow))));
         if (t !== _pendingSpotTransition) { _pendingSpotTransition = t || null; refreshActionBar(); }
         // Farm interior exit fires automatically (legacy behaviour)
@@ -10306,7 +10334,7 @@
           exitBuilding();
         } else if (t.target === 'building') {
           const proceduralMineTarget = !!window.TownMine?.floorFromMapId?.(t.targetMapId); // Used to let the generated floor choose its guaranteed-walkable entrance instead of stale 0,0 coordinates.
-          enterBuilding(t.targetMapId, proceduralMineTarget ? undefined : t.targetCol, proceduralMineTarget ? undefined : t.targetRow);
+          enterBuilding(t.targetMapId, proceduralMineTarget ? undefined : t.targetCol, proceduralMineTarget ? undefined : t.targetRow, t.targetSpotId || '');
         } else if (t.target === 'interior') {
           if (currentArea !== 'interior') enterInterior();
           const c = window.FormatUtils.clamp(t.targetCol, 0, INTERIOR_COLS - 1);
@@ -12520,6 +12548,9 @@
         _buildingScenes.set(mapId, null); // sentinel: loading in progress
         let mapData = null;
         let loadSource = 'missing';
+        const localeCavernDefinition = (!window.TownMine?.floorFromMapId?.(mapId) && !mapId.startsWith('map_i_barn_'))
+          ? await window.CavernGenerator?.loadLocaleCavernDefinition?.(mapId)
+          : null; // Story caves resolve from cave_interior locales before the generic map_i_den_ fallback.
         if (window.TownMine?.floorFromMapId?.(mapId)) {
           const mineLoadingLabel = document.getElementById('denLoadingLabel'); // Used to give mobile players feedback during the reused synchronous Den carve.
           if (mineLoadingLabel) mineLoadingLabel.style.display = 'flex';
@@ -12528,6 +12559,13 @@
           window.TownMine.recordFloorReached(mapData?.mineFloor);
           loadSource = 'town-mine';
           if (mineLoadingLabel) mineLoadingLabel.style.display = 'none';
+        } else if (localeCavernDefinition) {
+          const caveLoadingLabel = document.getElementById('denLoadingLabel');
+          if (caveLoadingLabel) caveLoadingLabel.style.display = 'flex';
+          await new Promise(res => requestAnimationFrame(() => requestAnimationFrame(res)));
+          mapData = window.CavernGenerator.synthesizeLocaleCavernMapData(localeCavernDefinition);
+          loadSource = 'locale-cavern';
+          if (caveLoadingLabel) caveLoadingLabel.style.display = 'none';
         } else if (mapId.startsWith('map_i_den_')) {
           // A den's cavern is generated in-memory, never fetched/persisted
           // (see synthesizeCavernMapData) — but that generation is one
@@ -12620,7 +12658,12 @@
             const target = exit.targetMap ? 'building' : 'exit_building';
             for (const [tc, tr] of (exit.tiles || [])) {
               exitTileSet.add(`${tc},${tr}`);
-              const t = { col: tc, row: tr, area: mapId, target, exitId: exit.id };
+              const t = {
+                col: tc, row: tr, area: mapId, target, exitId: exit.id,
+                targetSpotId: exit.targetSpotId || '',
+                requiresKeyItem: exit.requiresKeyItem || '',
+                hiddenUntilKeyItem: exit.hiddenUntilKeyItem === true,
+              };
               if (exit.targetMap) { t.targetMapId = exit.targetMap; t.targetCol = exit.spawnCol || 0; t.targetRow = exit.spawnRow || 0; }
               transitions.push(t);
             }
@@ -12635,12 +12678,21 @@
             for (const t of (_wsOverride.transitions || [])) {
               if (!Number.isFinite(t.col) || !Number.isFinite(t.row)) continue;
               const target = !t.targetMapId ? 'exit_building' : 'building';
-              const tr = { col: t.col, row: t.row, area: mapId, target, exitId: t.exitId };
+              const tr = {
+                col: t.col, row: t.row, area: mapId, target, exitId: t.exitId,
+                targetSpotId: t.targetSpotId || '',
+                requiresKeyItem: t.requiresKeyItem || '',
+                hiddenUntilKeyItem: t.hiddenUntilKeyItem === true,
+              };
               if (t.targetMapId) { tr.targetMapId = t.targetMapId; tr.targetCol = t.spawnCol ?? 0; tr.targetRow = t.spawnRow ?? 0; }
               transitions.push(tr);
               if (!t.targetMapId) exitTileSet.add(`${t.col},${t.row}`);
             }
           }
+          const entranceLightTileSet = Array.isArray(mapData.entranceLightTiles) && mapData.entranceLightTiles.length
+            ? new Set(mapData.entranceLightTiles.map(([c, r]) => c + ',' + r))
+            : exitTileSet; // Secret/keyed exits must not drag the daylight glow away from the actual cave mouth.
+          const keyDoorGroups = []; // Scene-local authored door groups toggled by the world-key grant event above.
           const bScene = new THREE.Scene();
           bScene.background = new THREE.Color(mapData.wallStyle === 'mine' ? 0x000000 : 0x2a1a0a);
           // A den's cavern is meant to read as genuinely dark — the warm
@@ -12711,10 +12763,10 @@
           // in for daylight spilling through the mouth, plus a lighter floor
           // patch, makes it read as "the way out" and gives the player's
           // spawn point some actual light instead of pitch dark.
-          if (mapData.wallStyle === 'cavern' && exitTileSet.size) {
+          if (mapData.wallStyle === 'cavern' && entranceLightTileSet.size) {
             let ex = 0, ez = 0;
-            for (const key of exitTileSet) { const [c, r] = key.split(',').map(Number); ex += c; ez += r; }
-            ex = ex / exitTileSet.size + 0.5; ez = ez / exitTileSet.size + 0.5;
+            for (const key of entranceLightTileSet) { const [c, r] = key.split(',').map(Number); ex += c; ez += r; }
+            ex = ex / entranceLightTileSet.size + 0.5; ez = ez / entranceLightTileSet.size + 0.5;
             const doorLight = new THREE.PointLight(0xfff2d0, 1.4, 7, 2);
             doorLight.position.set(ex, 1.6, ez + 0.6);
             bScene.add(doorLight);
@@ -12733,6 +12785,34 @@
             glow.position.set(ex, 0.15, ez);
             bScene.add(glow);
           }
+          window.ColorPoolsSystem?.decorateScene?.({ THREE, scene: bScene, mapData }); // Renders Color Pools metadata as the three tinted 2x2 water surfaces without adding a second cave-generation path.
+          // Key-gated locale-cavern doors are authored connector metadata, not holes
+          // punched into the footprint mesh. The wall therefore remains visually
+          // solid until the key is owned, at which point the normal authored door
+          // appears on that boundary and the separately-gated transition becomes usable.
+          for (const door of (mapData.keyGatedDoors || [])) {
+            const furnitureKey = door.furnitureKey || 'door';
+            let doorData = window.AuthoredFurniture?.peek?.(furnitureKey) || null;
+            if (!doorData && window.AuthoredFurniture?.load) {
+              try { doorData = await window.AuthoredFurniture.load(furnitureKey); } catch (_) {}
+            }
+            if (!doorData || !window.AuthoredFurniture?.buildGroup) continue;
+            const group = window.AuthoredFurniture.buildGroup(doorData, 0x8b6540);
+            const side = String(door.side || 'south').toLowerCase();
+            let x = Number(door.col) + 0.5, z = Number(door.row) + 0.5;
+            if (side === 'north') z = Number(door.row) + 0.03;
+            else if (side === 'south') z = Number(door.row) + 0.97;
+            else if (side === 'east') x = Number(door.col) + 0.97;
+            else if (side === 'west') x = Number(door.col) + 0.03;
+            group.position.set(x, 0, z);
+            group.rotation.y = THREE.MathUtils.degToRad(Number(door.rotY) || 0);
+            group.visible = !door.hiddenUntilKeyItem || !door.requiresKeyItem || !!window.KeyItemSystem?.has?.(door.requiresKeyItem);
+            group.name = 'key_gated_cavern_door_' + (door.id || door.requiresKeyItem || furnitureKey);
+            _markOutline(group);
+            bScene.add(group);
+            keyDoorGroups.push({ group, keyId: String(door.requiresKeyItem || '') });
+          }
+
           // Furniture: build combined itemKey -> def/furnitureKey lookup
           const allFurnDefs = {};
           const furnKeyByItemKey = {};
@@ -13062,7 +13142,7 @@
           // whole scene graph every frame in occlusionSafeCameraPosition.
           const occlusionMeshes = [];
           bScene.traverse(o => { if (o.userData?.cameraObstacle) occlusionMeshes.push(o); });
-          const info = { scene: bScene, grid: bGrid, cols, rows, transitions, vendorZones: mapData.vendorZones || [], routes: buildingRoutes, loadSource, fallback: loadSource !== 'config', name: mapData.name || mapId, mineFloor: mapData.mineFloor || null, minePlacementSafeTileCount: mapData.minePlacementSafeTileCount ?? null, disconnectedFloorTilesRemoved: mapData.disconnectedFloorTilesRemoved ?? 0, occlusionMeshes };
+          const info = { scene: bScene, grid: bGrid, cols, rows, transitions, vendorZones: mapData.vendorZones || [], routes: buildingRoutes, loadSource, fallback: loadSource !== 'config', name: mapData.name || mapId, wallStyle: mapData.wallStyle || '', entrySpots: mapData.entrySpots || {}, keyDoorGroups, mineFloor: mapData.mineFloor || null, minePlacementSafeTileCount: mapData.minePlacementSafeTileCount ?? null, disconnectedFloorTilesRemoved: mapData.disconnectedFloorTilesRemoved ?? 0, occlusionMeshes };
           _buildingScenes.set(mapId, info);
           if (info.disconnectedFloorTilesRemoved > 0) window.__farmLog?.(`[cavern] ${mapId}: sealed ${info.disconnectedFloorTilesRemoved} unreachable floor tiles`, 'warn', mapData.wallStyle === 'mine' ? 'mine' : undefined);
           for (const w of npcWalkers) {
@@ -13079,8 +13159,13 @@
               bScene.add(reticleCircleMesh); bScene.add(reticleRingMesh);
               bScene.add(reticleWavyGroup);
             }
-            if (_pendingEntrySpawnFromExit) {
+            if (_pendingEntrySpawnFromExit || _pendingEntrySpotId) {
+              const requestedSpotId = _pendingEntrySpotId;
               _pendingEntrySpawnFromExit = false;
+              _pendingEntrySpotId = '';
+              // A named cave-to-cave connector wins over the generic entrance
+              // spawn; if absent/invalid, fall back to the cavern's guaranteed
+              // primary entrance exactly like an ordinary generated den.
               // A den's cavern skips the generic "average exit col, one
               // tile north" heuristic — mapData.exitCol/exitRow (the
               // guaranteed-walkable middle entrance tile generateCavernFloor
@@ -13088,9 +13173,12 @@
               // land outside the organic floor blob (see denTransitions'
               // comment in performTothalShift for why this is resolved
               // lazily here rather than eagerly at zone-generation time).
-              const sp = (mapData.wallStyle === 'cavern' || mapData.wallStyle === 'mine') && Number.isFinite(mapData.exitCol) && Number.isFinite(mapData.exitRow)
-                ? { col: mapData.exitCol, row: mapData.exitRow }
-                : buildingSpawnFromExit(info, cols, rows);
+              const requestedSpot = requestedSpotId ? mapData.entrySpots?.[requestedSpotId] : null;
+              const sp = Number.isFinite(Number(requestedSpot?.col)) && Number.isFinite(Number(requestedSpot?.row))
+                ? { col: Number(requestedSpot.col), row: Number(requestedSpot.row) }
+                : (mapData.wallStyle === 'cavern' || mapData.wallStyle === 'mine') && Number.isFinite(mapData.exitCol) && Number.isFinite(mapData.exitRow)
+                  ? { col: mapData.exitCol, row: mapData.exitRow }
+                  : buildingSpawnFromExit(info, cols, rows);
               const intendedX = (sp.col + 0.5) * TILE;
               const intendedY = (sp.row + 0.5) * TILE;
               const safeSpawn = canOccupyAt(intendedX, intendedY, PLAYER_RADIUS * 0.72)
@@ -13209,7 +13297,7 @@
         window.__farmLog?.(`[map] ${label}: currentMap=${area} name="${mapDebugName(area)}" source=${source} fallback=${fallback}${loading ? ' loading=true' : ''}${target} heldObjects=${heldObjectAttachment}`, fallback ? 'warn' : 'info');
       }
 
-      function enterBuilding(mapId, defaultCol, defaultRow) {
+      function enterBuilding(mapId, defaultCol, defaultRow, targetSpotId = '') {
         if (window.TownMine?.floorFromMapId?.(mapId) && _buildingScenes.get(mapId)) discardGeneratedMineFloor(mapId);
         // A room visited earlier this session and still cached may no longer
         // match its own `layouts` schedule (e.g. the temple's spirit
@@ -13240,11 +13328,13 @@
         // Default entry is one tile north of the building's exit. Explicit
         // inter-floor spawn coordinates still win when an exit supplies them.
         const exitSpawn = buildingSpawnFromExit(bi, bCols, bRows);
-        const col = Number.isFinite(defaultCol) ? defaultCol : exitSpawn.col;
-        const row = Number.isFinite(defaultRow) ? defaultRow : exitSpawn.row;
-        // If the scene hasn't loaded yet (bi===null) and no explicit coords, defer
-        // the spawn correction to when loadBuildingScene finishes.
-        _pendingEntrySpawnFromExit = !bi && !Number.isFinite(defaultCol);
+        const namedSpot = targetSpotId && bi?.entrySpots?.[targetSpotId] ? bi.entrySpots[targetSpotId] : null;
+        const col = Number.isFinite(Number(namedSpot?.col)) ? Number(namedSpot.col) : Number.isFinite(defaultCol) ? defaultCol : exitSpawn.col;
+        const row = Number.isFinite(Number(namedSpot?.row)) ? Number(namedSpot.row) : Number.isFinite(defaultRow) ? defaultRow : exitSpawn.row;
+        // If the scene hasn't loaded yet, preserve a requested named connector
+        // so loadBuildingScene can resolve it against the generated locale data.
+        _pendingEntrySpotId = !bi && targetSpotId ? String(targetSpotId) : '';
+        _pendingEntrySpawnFromExit = !bi && !_pendingEntrySpotId && !Number.isFinite(defaultCol);
         player.x = (col + 0.5) * TILE; player.y = (row + 0.5) * TILE;
         player.vx = 0; player.vy = 0;
         facingAngle = Math.PI / 2; player.angle = facingAngle;
@@ -26761,6 +26851,36 @@
         getInCombat: () => isPlayerInCombat(),
       });
 
+      window.TeaGrinder?.init({
+        ITEM_DEFS,
+        inventory,
+        clampInventoryStack,
+        refreshItemScroll: window.HudUpdate.refreshItemScroll,
+        buildInventoryGrid,
+        refreshActionBar,
+        saveMemberWorldData,
+        showToast,
+        random: rnd,
+        setInteractionBlocked(blocked) {
+          menuOpen = blocked; // Used to share the same movement/action input gate as Cooking while Tea Grinder's self-owned modal is open.
+          if (blocked) {
+            player.vx = 0; player.vy = 0; input.x = 0; input.y = 0;
+            releaseShoulderSurfPointerLock();
+          }
+        },
+      });
+
+      window.ColorPoolsSystem?.init({
+        showToast,
+        setInteractionBlocked(blocked) {
+          menuOpen = blocked; // Uses the same movement/action gate as Cooking/Tea Grinder while the altar's modal owns input.
+          if (blocked) {
+            player.vx = 0; player.vy = 0; input.x = 0; input.y = 0;
+            releaseShoulderSurfPointerLock();
+          }
+        },
+      });
+
       window.AlchemyFlasks?.init({
         THREE,
         TILE,
@@ -26982,6 +27102,12 @@
         WMAP_ZONE_LABELS,
         getQuestProgress: () => questProgress,
         inventory,
+      });
+
+      window.BanubuQuestline?.init?.({
+        getQuestProgress: () => questProgress, // Banubu must mutate the same live object TasksPanel and saveMemberWorldData read.
+        setQuestStatus,
+        saveMemberWorldData,
       });
 
       window.SupplyPage?.init({

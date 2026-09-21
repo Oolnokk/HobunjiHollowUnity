@@ -5,7 +5,7 @@
   const ITEM_ALIASES = { uumkaoiiEggs: 'uumkaoiiEgg', drenkirraEggs: 'drenkirraEgg' }; // Used to reuse existing singular inventory items from the prototype's plural ids.
   const NON_INGREDIENT_CATEGORIES = new Set(['wool', 'mineral', 'material']); // Used to omit prototype reference materials that are not edible/cookable ingredients.
   const CATEGORY_ICONS = {
-    sweetPaste: '🍯', sweetLiquid: '🫙', liquor: '🍶', grain: '🌾', powder: '🥣', curds: '🥛', mayonnaise: '🥚', mustardSeed: '🌱', pungentPaste: '🧄', noodleBase: '🍜', cheese: '🧀', poultry: '🍗', meat: '🥩', whiteMilk: '🥛', seeds: '🌱', spice: '🌶️', fish: '🐟', mollusk: '🐚', starchVegetable: '🥔', butter: '🧈', vegetable: '🥬', brothBase: '🫕', berry: '🫐', fruit: '🍎', flour: '🥣', bread: '🍞', oil: '🫗', nut: '🥜', egg: '🥚', dairy: '🥛', sauce: '🫙', juice: '🧃', wine: '🍷', mead: '🍯', herb: '🌿', crop: '🌾', processedCrop: '🥣', processedProtein: '🍖', uumkaoiiDew: '💧', uumkaoiiMilk: '🥛', uumkaoiiCurds: '🥣', uumkaoiiCheese: '🧀', whiteCurds: '🥣', whiteCheese: '🧀',
+    sweetPaste: '🍯', sweetLiquid: '🫙', liquor: '🍶', grain: '🌾', teaBlend: '🍃', powder: '🥣', curds: '🥛', mayonnaise: '🥚', mustardSeed: '🌱', pungentPaste: '🧄', noodleBase: '🍜', cheese: '🧀', poultry: '🍗', meat: '🥩', whiteMilk: '🥛', seeds: '🌱', spice: '🌶️', fish: '🐟', mollusk: '🐚', starchVegetable: '🥔', butter: '🧈', vegetable: '🥬', brothBase: '🫕', berry: '🫐', fruit: '🍎', flour: '🥣', bread: '🍞', oil: '🫗', nut: '🥜', egg: '🥚', dairy: '🥛', sauce: '🫙', juice: '🧃', wine: '🍷', mead: '🍯', herb: '🌿', crop: '🌾', processedCrop: '🥣', processedProtein: '🍖', uumkaoiiDew: '💧', uumkaoiiMilk: '🥛', uumkaoiiCurds: '🥣', uumkaoiiCheese: '🧀', whiteCurds: '🥣', whiteCheese: '🧀',
   }; // Used to give every prototype ingredient an inventory and picker icon.
   const EFFECT_ICONS = { strength: '💪', fortitude: '🛡️', vigor: '⚡', speed: '🏃', perception: '👁️', clarity: '🧠', combat: '⚔️', farming: '🌾', fishing: '🎣', foraging: '🌿', cooking: '🍲', mining: '⛏️' }; // Used by food previews and the shared buff bar.
 
@@ -15,6 +15,7 @@
   let qualityBuckets = {}; // Used to persist actual 1–5-star quantities without changing the game's stack inventory shape.
   let cookedDefinitions = {}; // Used to restore procedurally named food item definitions on reload.
   let activeFoodEffects = []; // Used as an independent timed effect source beside alchemy.
+  let unlockedRecipeIds = new Set(); // Used to persist opt-in recipe templates such as Banubu's Three-Fish Pie.
   let cookTimer = null; // Used to prevent duplicate cooks during the hearth animation.
   let maxIngredientsLimit = null; // Used by the Foraging Survivalist perk to cap recipes when cooking away from an indoor hearth.
 
@@ -186,7 +187,70 @@
   }
 
   function recipeAllowed(recipe) {
+    if (recipe?.lockedByDefault && !unlockedRecipeIds.has(recipe.id)) return false;
     return !maxIngredientsLimit || recipe.slots.length <= maxIngredientsLimit;
+  }
+
+  function unlockRecipe(recipeId) {
+    const recipe = data().recipes.find(entry => entry?.id === recipeId); // Used to reject typos while authoring unlock actions.
+    if (!recipe) return { ok: false, message: 'Unknown cooking recipe.' };
+    const wasKnown = unlockedRecipeIds.has(recipeId); // Used to make repeated dialogue actions idempotent.
+    unlockedRecipeIds.add(recipeId);
+    if (selectedRecipeId && !recipeAllowed(data().recipes.find(entry => entry.id === selectedRecipeId) || {})) selectedRecipeId = null;
+    if (isOpen()) render();
+    deps.saveMemberWorldData?.();
+    return { ok: true, unlocked: !wasKnown, recipeId };
+  }
+
+  function isRecipeUnlocked(recipeId) {
+    const recipe = data().recipes.find(entry => entry?.id === recipeId); // Used to distinguish ordinary always-known recipes from locked templates.
+    return !!recipe && (!recipe.lockedByDefault || unlockedRecipeIds.has(recipeId));
+  }
+
+  function listIngredientDefinitions(category = null) {
+    return Object.entries(deps?.ITEM_DEFS || {}).filter(([, definition]) => {
+      const categories = definition?.cookingCategories || []; // Used to filter the full registered ingredient catalog by an optional cooking category.
+      return categories.length && (!category || categories.includes(category));
+    }).map(([key, definition]) => ({ key, definition }));
+  }
+
+  function listCookedInventory() {
+    return Object.entries(cookedDefinitions).filter(([key]) => (deps?.inventory?.[key] || 0) > 0)
+      .map(([key, definition]) => ({ key, count: deps.inventory[key], definition }));
+  }
+
+  function consumeCookedInventoryItem(key, amount = 1) {
+    const requested = Math.max(1, Math.floor(Number(amount) || 1)); // Used to validate the quest/feature caller's requested serving count.
+    if (!cookedDefinitions[key] || (deps?.inventory?.[key] || 0) < requested) return { ok: false, message: 'That cooked food is no longer in your bag.' };
+    const consumed = consumeQualityByPolicy(key, requested, 'lowest'); // Used to preserve higher-quality servings while consuming quest turn-ins.
+    if (!consumed) return { ok: false, message: 'That cooked food stack could not be consumed.' };
+    deps.refreshItemScroll?.();
+    deps.buildInventoryGrid?.();
+    deps.refreshActionBar?.();
+    deps.saveMemberWorldData?.();
+    return { ok: true, key, amount: requested, consumed };
+  }
+
+  const FOOD_EFFECT_STRENGTH_TIERS = Object.freeze([ // Used anywhere cooking needs a culinary description for a numeric buff-stack amount.
+    Object.freeze({ minStacks: 5, label: 'Exceptional' }),
+    Object.freeze({ minStacks: 4, label: 'Potent' }),
+    Object.freeze({ minStacks: 3, label: 'Concentrated' }),
+    Object.freeze({ minStacks: 2, label: 'Hearty' }),
+    Object.freeze({ minStacks: 1, label: 'Mild' }),
+  ]);
+
+  function effectLabel(effectKey) {
+    return data().effectLabels?.[effectKey] || String(effectKey || ''); // Used by quests and diagnostics to present canonical cooking-effect names.
+  }
+
+  function effectStrengthLabel(stacks) {
+    const amount = Math.max(0, Number(stacks) || 0); // Used to choose the highest cooking-strength tier satisfied by this exact stack count.
+    return FOOD_EFFECT_STRENGTH_TIERS.find(tier => amount >= tier.minStacks)?.label || 'Trace';
+  }
+
+  function formatEffectStrength(effectKey, stacks) {
+    const amount = Math.max(0, Number(stacks) || 0); // Used by cooking UI/descriptions so numeric stacks and their shared culinary tier never drift apart.
+    return `${effectStrengthLabel(amount)} ${effectLabel(effectKey)} (+${amount})`;
   }
 
   function selectedRecipe() {
@@ -215,6 +279,7 @@
     const totals = {}; // Used to preview and persist the chosen ingredients' food buffs.
     if (!recipe) return totals;
     recipe.slots.forEach(slot => {
+      if (slot.contributesEffects === false) return; // Structural ingredients such as Nine Leaf Tea's milk can be required without adding an unrelated food buff.
       const selected = selectedSlots[slot.id];
       const definition = selected ? deps.ITEM_DEFS[selected.key] : null;
       if (definition?.foodEffects && Object.keys(definition.foodEffects).length) {
@@ -268,6 +333,7 @@
   }
 
   function recipeOutputIcon(recipe) {
+    if (recipe?.outputIcon) return String(recipe.outputIcon); // Used by bespoke recipes such as Three-Fish Pie and Nine Leaf Tea without special-casing their ids here.
     const categories = recipe.inventoryCategories || []; // Used to visually distinguish reusable bases from finished meals.
     if (categories.includes('noodleBase')) return '🍜';
     if (categories.includes('mayonnaise')) return '🥣';
@@ -298,7 +364,7 @@
         if ((deps.random || Math.random)() < saveChance) saved.push(deps.ITEM_DEFS[selected.key]?.label || selected.key);
         else consumeQuality(selected.key, selected.stars, 1);
       });
-      const effectText = Object.entries(effects).map(([effect, amount]) => `${data().effectLabels[effect] || effect} +${amount}`).join(', ');
+      const effectText = Object.entries(effects).map(([effect, amount]) => formatEffectStrength(effect, amount)).join(', ');
       registerCookedDefinition(key, {
         icon: recipeOutputIcon(recipe), label, cat: 'food', sellPrice: Math.max(4, recipe.slots.length * 4 + stars * 3),
         tags: ['Cooked Food', ...recipe.outputTags, `${stars} Star`],
@@ -344,7 +410,7 @@
   function foodBuffEntries() {
     const now = performance.now() / 1000; // Used to convert absolute timers for the shared buff renderer.
     return activeFoodEffects.map(effect => ({
-      key: effect.key, label: data().effectLabels[effect.key] || effect.key, icon: EFFECT_ICONS[effect.key] || '🍲', kind: 'boon',
+      key: effect.key, label: `${effectStrengthLabel(effect.stacks)} ${effectLabel(effect.key)}`, icon: EFFECT_ICONS[effect.key] || '🍲', kind: 'boon',
       sourceLabel: 'Food', stacks: effect.stacks, durationS: effect.durationS, remainingS: effect.expiresAt - now,
     }));
   }
@@ -368,11 +434,13 @@
       qualityBuckets: JSON.parse(JSON.stringify(qualityBuckets)),
       cookedDefinitions: JSON.parse(JSON.stringify(cookedDefinitions)),
       activeFoodEffects: activeFoodEffects.map(effect => ({ key: effect.key, stacks: effect.stacks, durationS: effect.durationS, remainingS: effect.expiresAt - now })).filter(effect => effect.remainingS > 0),
+      unlockedRecipeIds: [...unlockedRecipeIds],
     };
   }
 
   function restore(saved = {}) {
     qualityBuckets = saved.qualityBuckets && typeof saved.qualityBuckets === 'object' ? JSON.parse(JSON.stringify(saved.qualityBuckets)) : {};
+    unlockedRecipeIds = new Set(Array.isArray(saved.unlockedRecipeIds) ? saved.unlockedRecipeIds : []); // Used to restore opt-in recipe visibility before the next hearth render.
     cookedDefinitions = {};
     Object.entries(saved.cookedDefinitions || {}).forEach(([key, definition]) => registerCookedDefinition(key, definition));
     const now = performance.now() / 1000; // Used to rebuild absolute effect expiry times for this page session.
@@ -426,7 +494,7 @@
     const query = document.querySelector('[data-recipe-search]')?.value.trim().toLowerCase() || ''; // Used to filter the 17 prototype recipes.
     list.innerHTML = data().recipes.filter(recipeAllowed).filter(recipe => !query || `${recipe.name} ${recipe.description}`.toLowerCase().includes(query)).map(recipe => {
       const ready = recipe.slots.every(slot => !slot.required || ingredientCandidates(slot).length); // Used to show whether any valid ingredient combination exists.
-      return `<button type="button" class="cooking-recipe-card${recipe.id === selectedRecipeId ? ' selected' : ''}" data-recipe="${esc(recipe.id)}"><span>🍲</span><div><strong>${esc(recipe.name)}</strong><small>${recipe.slots.length} ingredients · ${ready ? 'available' : 'missing items'}</small></div></button>`;
+      return `<button type="button" class="cooking-recipe-card${recipe.id === selectedRecipeId ? ' selected' : ''}" data-recipe="${esc(recipe.id)}"><span>${esc(recipeOutputIcon(recipe))}</span><div><strong>${esc(recipe.name)}</strong><small>${recipe.slots.length} ingredients · ${ready ? 'available' : 'missing items'}</small></div></button>`;
     }).join('') || `<p class="cooking-empty">${maxIngredientsLimit ? 'No recipes this simple yet — improve Survivalist to cook more at camp.' : 'No recipes match.'}</p>`;
     list.querySelectorAll('[data-recipe]').forEach(button => button.addEventListener('click', () => { selectedRecipeId = button.dataset.recipe; selectedSlots = {}; render(); }));
   }
@@ -443,7 +511,7 @@
       </section>`;
     }).join('');
     const effects = effectTotals(recipe);
-    const effectMarkup = Object.entries(effects).map(([effect, amount]) => `<span>${EFFECT_ICONS[effect] || '✦'} ${esc(data().effectLabels[effect] || effect)} +${amount}</span>`).join('') || '<span>No effects until ingredients are selected.</span>';
+    const effectMarkup = Object.entries(effects).map(([effect, amount]) => `<span>${EFFECT_ICONS[effect] || '✦'} ${esc(formatEffectStrength(effect, amount))}</span>`).join('') || '<span>No effects until ingredients are selected.</span>';
     root.innerHTML = `<div class="cooking-recipe-head"><h3>${esc(recipe.name)}</h3><p>${esc(recipe.description)}</p></div>${slots}<div class="cooking-preview"><strong>Meal effects</strong><div>${effectMarkup}</div></div><div class="cooking-footer"><button type="button" data-auto-fill>Auto-fill best</button><button type="button" class="cooking-primary" data-cook-now ${selectionIsValid(recipe) ? '' : 'disabled'}>🔥 Cook</button></div>`;
     root.querySelectorAll('[data-pick-slot]').forEach(button => button.addEventListener('click', () => { selectedSlots[button.dataset.pickSlot] = { key: button.dataset.pickKey, stars: Number(button.dataset.pickStars) }; renderDetail(); renderDebug(); }));
     root.querySelectorAll('[data-clear-slot]').forEach(button => button.addEventListener('click', () => { delete selectedSlots[button.dataset.clearSlot]; renderDetail(); renderDebug(); }));
@@ -457,7 +525,8 @@
     const tracked = Object.values(qualityBuckets).reduce((sum, bucket) => sum + Object.values(bucket).reduce((inner, count) => inner + (Number(count) || 0), 0), 0); // Used for mobile-visible state verification.
     const processingDiagnostics = window.HobunjiFoodProcessing?.diagnosticsText?.() || 'Processing module: unavailable'; // Used to expose vat/source wiring on mobile without developer tools.
     const lastProcessing = window.SkillSystem?.processingDiagnosticsText?.(); // Used to make the most recent processing-quality roll auditable on mobile — see SkillSystem.rollProcessingQuality.
-    output.textContent = `Station: ${isOpen() ? 'hearth open' : 'closed'}\nRecipes: ${data().recipes.length}\nRegistered ingredients: ${Object.keys(deps.ITEM_DEFS).filter(key => deps.ITEM_DEFS[key].cookingCategories).length}\nTracked quality units: ${tracked}\nCooked definitions: ${Object.keys(cookedDefinitions).length}\nActive food effects: ${activeFoodEffects.map(effect => `${effect.key}+${effect.stacks}`).join(', ') || 'none'}\n\n${processingDiagnostics}${lastProcessing ? `\n\n${lastProcessing}` : ''}`;
+    const banubuDiagnostics = window.BanubuQuestline?.diagnosticsText?.(); // Used to expose fish-pie target feasibility/progress on mobile without browser developer tools.
+    output.textContent = `Station: ${isOpen() ? 'hearth open' : 'closed'}\nRecipes: ${data().recipes.length}\nUnlocked special recipes: ${[...unlockedRecipeIds].join(', ') || 'none'}\nRegistered ingredients: ${Object.keys(deps.ITEM_DEFS).filter(key => deps.ITEM_DEFS[key].cookingCategories).length}\nTracked quality units: ${tracked}\nCooked definitions: ${Object.keys(cookedDefinitions).length}\nActive food effects: ${activeFoodEffects.map(effect => `${effect.key}+${effect.stacks}`).join(', ') || 'none'}\n\n${processingDiagnostics}${lastProcessing ? `\n\n${lastProcessing}` : ''}${banubuDiagnostics ? `\n\n${banubuDiagnostics}` : ''}`;
   }
 
   function render() {
@@ -506,5 +575,7 @@
     init, restore, serialize, update, openAtHearth, close, isOpen, eat, recordItemQuality, consumeBestQuality,
     getFoodEffectStacks, getSpeedMultiplier, getStaminaRegenMultiplier, registerIngredientItems, availableQualityEntries,
     consumeQuality, consumeLowestQuality, consumeQualityByPolicy, peekLowestQuality, valueMultiplierForStars,
+    unlockRecipe, isRecipeUnlocked, listIngredientDefinitions, listCookedInventory, consumeCookedInventoryItem, effectLabel,
+    FOOD_EFFECT_STRENGTH_TIERS, effectStrengthLabel, formatEffectStrength,
   };
 })();

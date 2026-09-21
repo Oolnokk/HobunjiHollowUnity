@@ -590,6 +590,12 @@
     for (const redirect of scheduleOverrides.stationRedirects || []) _applyStationRedirect(merged, redirect);
     for (const redirect of scheduleOverrides.positionRedirects || []) _applyPositionRedirect(merged, redirect);
     for (const redirect of scheduleOverrides.ruleRedirects || []) _applyScheduleRuleRedirect(merged, redirect);
+    for (const replacement of scheduleOverrides.scheduleReplacements || []) {
+      const npc = merged.npcs.find(entry => entry?.id === replacement?.npcId); // Used to replace a small NPC's complete home routine without rewriting the giant source database.
+      if (!npc || !replacement?.scheduleHooks) continue;
+      npc.scheduleHooks = JSON.parse(JSON.stringify(replacement.scheduleHooks));
+      if (replacement.defaultPosition) npc.defaultPosition = JSON.parse(JSON.stringify(replacement.defaultPosition));
+    }
     for (const schedule of scheduleOverrides.visitorSchedules || []) _applyVisitorSchedule(merged, schedule);
     for (const choice of scheduleOverrides.presenceChoices || []) _applyPresenceChoice(merged, choice);
     return merged;
@@ -649,6 +655,11 @@
       composed = applyShopDialogueAccess(composed, shopStock);
     } catch (error) {
       console.warn('[LocalDBOverrides] Could not compose Shop or Chat dialogue trees:', error);
+    }
+    try {
+      composed = window.BanubuQuestContent?.mergeDialogueTreesIntoDatabase?.(composed) || composed; // Used to make the five-stage quest editable without hand-rewriting the giant starter NPC database.
+    } catch (error) {
+      console.warn('[LocalDBOverrides] Could not compose Banubu quest dialogue:', error);
     }
     return composed;
   }

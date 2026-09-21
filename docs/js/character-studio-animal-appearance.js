@@ -257,6 +257,91 @@
       return `<button type="button" class="colorSwatch animalNpcColor ${active ? 'swatchActive' : ''}" data-layer="${esc(layerId)}" data-color="${esc(entry.hex)}" title="${esc(entry.name || entry.id || entry.hex)}" style="background:${esc(entry.hex)}"></button>`;
     }).join('');
   }
+  function repoPatternEntries() {
+    return window.RepoPatternLibrary?.listCached?.() || []; // Committed patterns only; Character Studio never reads the player's character-saved PatternLibrary.
+  }
+
+  function paintableSurfaceRegions(kind, genotype) {
+    const spec = window.CreatureGeneticsRender?.SPECIES?.[kind];
+    const ids = spec?.patterns || (kind === 'uumkaoii' ? ['fur', 'plates'] : patternIdsFor(kind));
+    const regions = [];
+    if (genotype?.base?.color) regions.push({ id: 'base', label: 'Base coat', color: genotype.base.color });
+    for (const id of ids) {
+      const layer = genotype?.[id];
+      if (!layer?.color || layer.enabled === false || !(Number(layer.copies) > 0)) continue;
+      regions.push({ id, label: title(id), color: layer.color });
+    }
+    return regions;
+  }
+
+  function surfacePaintFor(genotype, regionId) {
+    return genotype?.colorPoolPaint?.layers?.[regionId] || null;
+  }
+
+  function surfacePatternPreviewStatus(regionId, selectedPattern) {
+    if (!selectedPattern) return '';
+    const debug = window.CreatureGeneticsRender?.getLastPatternPaintDebug?.()?.layers?.[regionId];
+    if (!debug) return 'Preview: pending…';
+    if (debug.status === 'applied') return `Preview: applied ✓ at ${Number(debug.patternScale || 1).toFixed(2)}×`;
+    return `Preview failed: ${debug.reason || debug.status || 'unknown error'}`;
+  }
+
+  function refreshSurfacePatternStatuses() {
+    if (!controls) return;
+    controls.querySelectorAll('[data-animal-pattern-status]').forEach(status => {
+      const regionId = status.dataset.animalPatternStatus;
+      const select = controls.querySelector(`.animalNpcRepoPattern[data-region="${CSS.escape(regionId)}"]`);
+      const message = surfacePatternPreviewStatus(regionId, select?.value || '');
+      status.textContent = message;
+      status.style.color = message.includes('failed') ? '#ff9d9d' : message.includes('applied') ? '#9fe2a6' : 'var(--muted,#999)';
+    });
+  }
+
+  function noteCanonicalRender(kind, error = null) {
+    debugState.lastRender = error ? 'canonical-failed' : `canonical:${kind || debugState.kind || 'animal'}`; // Lets the Fey extras outer wrapper keep the base animal diagnostics synchronized with the canonical compositor it now calls.
+    debugState.lastError = error ? `canonical render ${kind || 'animal'}: ${String(error?.message || error)}` : null;
+    refreshSurfacePatternStatuses();
+    refreshDebug();
+  }
+
+  function updateRepoSurfacePaint(regionId, repoPatternId, dyeHex, normalizedScale = null) {
+    updateGenotype(genotypeDraft => {
+      const existingRoot = genotypeDraft.colorPoolPaint && typeof genotypeDraft.colorPoolPaint === 'object'
+        ? clone(genotypeDraft.colorPoolPaint) : { version: 1, layers: {} };
+      if (!existingRoot.layers || typeof existingRoot.layers !== 'object') existingRoot.layers = {};
+      const previous = existingRoot.layers[regionId] || {};
+      if (!repoPatternId) {
+        delete existingRoot.layers[regionId];
+      } else {
+        const requestedScale = Number(normalizedScale);
+        const patternScale = Math.max(7, Math.min(14, Number.isFinite(requestedScale) ? requestedScale : (Number(previous.patternScale) || 7))); // Animal surface patterns need a much larger normalized usage scale than clothing; 7× is the minimum/default.
+        existingRoot.layers[regionId] = {
+          ...previous,
+          repoPatternId,
+          dyeHex: dyeHex || previous.dyeHex || '#ffffff',
+          patternScale,
+          pattern: { repoPatternId }, // Small committed-library reference; runtime resolves the PNG/settings lazily and applies patternScale transiently.
+        };
+      }
+      if (Object.keys(existingRoot.layers).length) genotypeDraft.colorPoolPaint = { ...existingRoot, version: 1 };
+      else delete genotypeDraft.colorPoolPaint;
+    }, repoPatternId ? `${regionId} surface pattern → ${repoPatternId}` : `cleared ${regionId} surface pattern`);
+  }
+
+  function loadRepoPatterns() {
+    const loader = window.RepoPatternLibrary?.load?.();
+    if (!loader?.then) return Promise.resolve(false);
+    return loader.then(() => {
+      lastSyncSignature = '';
+      syncUi(true);
+      return true;
+    }).catch(error => {
+      debugState.lastError = `repo patterns: ${error.message}`;
+      refreshDebug();
+      return false;
+    });
+  }
+
   function renderAnimalControls(kind, appearance) {
     if (!controls) return;
     const genotype = normalizeGenotype(kind, appearance.creatureGenotype || appearance.genotype); // Normalized view prevents malformed imported JSON from breaking controls.
@@ -292,10 +377,51 @@
           <div class="selGroup" style="margin-top:7px">${swatchButtons(kind, patternId, layer.color)}</div>`;
       }
     }
+    const repoPatterns = repoPatternEntries();
+    const surfaceRegions = paintableSurfaceRegions(kind, genotype);
+    const surfaceHtml = `
+      <div class="hr"></div>
+      <div class="row" style="justify-content:space-between;align-items:center">
+        <b style="font-size:12px">Surface pattern paint</b>
+        <span class="sectionTag">repo patterns</span>
+      </div>
+      <div class="help" style="margin:5px 0 8px">Applies a repo-authored motif over each selected genetic PNG region. This is the same <code>colorPoolPaint</code> data/runtime compositor used by the Color Pools altar, so Banubu’s authored paint matches his in-game plane and chathead.</div>
+      ${repoPatterns.length ? surfaceRegions.map(region => {
+        const paint = surfacePaintFor(genotype, region.id) || {};
+        const selectedPattern = paint.repoPatternId || paint.pattern?.repoPatternId || '';
+        const ink = paint.dyeHex || '#ffffff';
+        const animalPatternScale = Math.max(7, Math.min(14, Number(paint.patternScale) || 7));
+        return `
+          <div class="panelItem" style="margin-top:7px" data-surface-region="${esc(region.id)}">
+            <div class="row" style="align-items:center;gap:7px;margin-bottom:6px">
+              <span style="width:18px;height:18px;border-radius:50%;border:1px solid rgba(255,255,255,.35);background:${esc(region.color)}"></span>
+              <b style="font-size:11px;flex:1">${esc(region.label)}</b>
+              <span class="help">${esc(region.color)}</span>
+            </div>
+            <div class="grid2">
+              <div class="col"><label>Repo pattern</label><select class="animalNpcRepoPattern" data-region="${esc(region.id)}">
+                <option value="">None</option>
+                ${repoPatterns.map(pattern => `<option value="${esc(pattern.id)}" ${selectedPattern === pattern.id ? 'selected' : ''}>${esc(pattern.label || pattern.id)}</option>`).join('')}
+              </select></div>
+              <div class="col"><label>Pattern ink</label><input class="animalNpcRepoPatternInk" data-region="${esc(region.id)}" type="color" value="${esc(ink)}" ${selectedPattern ? '' : 'disabled'}></div>
+            </div>
+            <div class="row" style="gap:7px;align-items:center;margin-top:7px">
+              <label style="margin:0;white-space:nowrap">Animal scale</label>
+              <input class="animalNpcRepoPatternScale" data-region="${esc(region.id)}" type="range" min="7" max="14" step="0.1" value="${animalPatternScale}" ${selectedPattern ? '' : 'disabled'} style="flex:1;min-width:90px">
+              <input class="animalNpcRepoPatternScaleNumber" data-region="${esc(region.id)}" type="number" min="7" max="14" step="0.1" value="${animalPatternScale.toFixed(2)}" ${selectedPattern ? '' : 'disabled'} style="width:72px">
+              <span class="help">×</span>
+            </div>
+            <div class="help" style="margin-top:3px">Animal-use scale only: 7× minimum/default, up to 14×. Clothing/metal pattern settings are unchanged. Outline weight increases automatically with this scale.</div>
+            <div class="help" data-animal-pattern-status="${esc(region.id)}" style="margin-top:3px">${esc(surfacePatternPreviewStatus(region.id, selectedPattern))}</div>
+          </div>`;
+      }).join('') : '<div class="help">No committed repo patterns yet. Author/export them from Dev Tools → Pattern Editor, commit their PNG + JSON, and add them to config/patterns/index.json.</div>'}
+    `;
+
     controls.innerHTML = `
       <div class="help" style="margin-bottom:7px">Animal species</div>
       <div class="selGroup">${speciesButtons}</div>
       ${geneticsHtml}
+      ${surfaceHtml}
       <div class="row" style="margin-top:10px">
         <button type="button" id="animalNpcResetCoat" class="secondary">Reset coat</button>
         <button type="button" id="animalNpcCopyJson" class="secondary">Copy animal JSON</button>
@@ -326,6 +452,49 @@
         }, `${patternId} ${input.checked ? 'enabled' : 'disabled'}`);
       });
     });
+    controls.querySelectorAll('.animalNpcRepoPattern').forEach(select => {
+      select.addEventListener('change', () => {
+        const regionId = select.dataset.region;
+        const ink = controls.querySelector(`.animalNpcRepoPatternInk[data-region="${CSS.escape(regionId)}"]`);
+        const scale = controls.querySelector(`.animalNpcRepoPatternScaleNumber[data-region="${CSS.escape(regionId)}"]`);
+        updateRepoSurfacePaint(regionId, select.value, ink?.value || '#ffffff', scale?.value);
+      });
+    });
+    controls.querySelectorAll('.animalNpcRepoPatternInk').forEach(input => {
+      input.addEventListener('input', () => {
+        const regionId = input.dataset.region;
+        const select = controls.querySelector(`.animalNpcRepoPattern[data-region="${CSS.escape(regionId)}"]`);
+        const scale = controls.querySelector(`.animalNpcRepoPatternScaleNumber[data-region="${CSS.escape(regionId)}"]`);
+        if (select?.value) updateRepoSurfacePaint(regionId, select.value, input.value, scale?.value);
+      });
+    });
+    controls.querySelectorAll('.animalNpcRepoPatternScale').forEach(input => {
+      input.addEventListener('input', () => {
+        const regionId = input.dataset.region;
+        const number = controls.querySelector(`.animalNpcRepoPatternScaleNumber[data-region="${CSS.escape(regionId)}"]`);
+        if (number) number.value = Number(input.value).toFixed(2);
+      });
+      input.addEventListener('change', () => {
+        const regionId = input.dataset.region;
+        const select = controls.querySelector(`.animalNpcRepoPattern[data-region="${CSS.escape(regionId)}"]`);
+        const ink = controls.querySelector(`.animalNpcRepoPatternInk[data-region="${CSS.escape(regionId)}"]`);
+        if (select?.value) updateRepoSurfacePaint(regionId, select.value, ink?.value || '#ffffff', input.value);
+      });
+    });
+    controls.querySelectorAll('.animalNpcRepoPatternScaleNumber').forEach(input => {
+      input.addEventListener('change', () => {
+        const regionId = input.dataset.region;
+        const scale = Math.max(7, Math.min(14, Number(input.value) || 7));
+        const range = controls.querySelector(`.animalNpcRepoPatternScale[data-region="${CSS.escape(regionId)}"]`);
+        if (range) range.value = String(scale);
+        input.value = scale.toFixed(2);
+        const select = controls.querySelector(`.animalNpcRepoPattern[data-region="${CSS.escape(regionId)}"]`);
+        const ink = controls.querySelector(`.animalNpcRepoPatternInk[data-region="${CSS.escape(regionId)}"]`);
+        if (select?.value) updateRepoSurfacePaint(regionId, select.value, ink?.value || '#ffffff', scale);
+      });
+    });
+    refreshSurfacePatternStatuses();
+
     controls.querySelector('#animalNpcResetCoat')?.addEventListener('click', () => {
       const appearanceNow = parseAppearance(); // Preserves non-animal appearance fields while resetting only the selected animal genotype.
       writeAppearance({ ...appearanceNow, avatarType: 'animal', creatureKind: kind, creatureGenotype: defaultAnimalGenotype(kind) }, `reset ${kind} coat`);
@@ -612,22 +781,44 @@
     ctx.restore();
     return true;
   }
+  let canonicalRendererPromise = null; // Shared wait so every Character Studio preview converges on the exact runtime creature compositor instead of racing into a local tint fallback.
+  function waitForCanonicalCreatureRenderer() {
+    if (window.CreatureGeneticsRender?.composeFrame) return Promise.resolve(window.CreatureGeneticsRender);
+    if (canonicalRendererPromise) return canonicalRendererPromise;
+    canonicalRendererPromise = new Promise((resolve, reject) => {
+      const started = Date.now();
+      const poll = () => {
+        if (window.CreatureGeneticsRender?.composeFrame) { resolve(window.CreatureGeneticsRender); return; }
+        if (Date.now() - started >= 5000) { reject(new Error('CreatureGeneticsRender.composeFrame did not become available.')); return; }
+        setTimeout(poll, 25);
+      };
+      poll();
+    }).finally(() => { canonicalRendererPromise = null; });
+    return canonicalRendererPromise;
+  }
+
   async function renderStudioAnimal(target, appearance, renderOptions = {}) {
     const kind = activeKind(appearance); // Explicit current animal species selected in Character Studio.
     if (!kind) return false;
     const genotype = normalizeGenotype(kind, appearance.creatureGenotype || appearance.genotype); // Same authored genotype passed to runtime on export.
     try {
-      const source = await composeEditorAnimal(kind, genotype); // Tool-safe compositor resolves assets from the module, not the nested page URL.
+      const renderer = await waitForCanonicalCreatureRenderer(); // Never substitute the old editor-only shade-fill compositor: preview must be runtime-identical.
+      const source = await renderer.composeFrame(kind, 'idle', genotype, false); // Exact game compositor: base tint + genetics + Color Pools/repo surface paint + eyes.
+      if (!source) throw new Error(`Runtime creature compositor returned no ${kind} frame.`);
+      debugState.lastRender = `canonical:${kind}`;
+      refreshSurfacePatternStatuses(); // Makes repo-pattern success/failure visible immediately after the exact preview compositor finishes.
       const rendered = fitSourceToCanvas(source, target, renderOptions);
-      debugState.lastRender = rendered ? `studio-fallback:${kind}` : `studio-fallback-failed:${kind}`;
-      debugState.lastError = rendered ? debugState.lastError : 'target canvas unavailable';
+      if (!rendered) debugState.lastError = 'target canvas unavailable';
       refreshDebug();
       return rendered;
     } catch (error) {
-      debugState.lastError = `render ${kind}: ${error.message}`;
-      debugState.lastRender = 'failed';
+      debugState.lastError = `canonical render ${kind}: ${error.message}`;
+      debugState.lastRender = 'canonical-failed';
+      refreshSurfacePatternStatuses();
+      const ctx = target?.getContext?.('2d');
+      if (ctx) ctx.clearRect(0, 0, target.width, target.height); // A blank/error preview is preferable to showing colors produced by a different tint algorithm.
       refreshDebug();
-      return false;
+      return !!ctx;
     }
   }
 
@@ -698,6 +889,7 @@
     debugState.installed = true;
     debugState.lastAction = 'installed';
     installPreviewHooks();
+    loadRepoPatterns().catch(() => {}); // Repo pattern rows repaint once the committed library index is available.
     loadBreedingDefinitions().catch(() => {});
     syncUi(true);
     setInterval(() => {
@@ -713,6 +905,8 @@
     defaultAnimalGenotype,
     normalizeGenotype,
     renderStudioAnimal,
+    refreshSurfacePatternStatuses,
+    noteCanonicalRender,
     patternPaletteRules: PATTERN_PALETTE_RULES,
     getDebug: () => ({ ...debugState, appearance: isNpcTarget() ? clone(parseAppearance()) : null }),
   };

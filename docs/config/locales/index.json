@@ -23,6 +23,22 @@
       "singleton": true
     },
     {
+      "id": "locale_banubu_cave_interior",
+      "file": "config/locales/locale_banubu_cave_interior.json",
+      "name": "Banubu's Cavern",
+      "category": "cave_interior",
+      "singleton": true,
+      "mapId": "map_i_den_banubu"
+    },
+    {
+      "id": "locale_color_pools_cave",
+      "file": "config/locales/locale_color_pools_cave.json",
+      "name": "Banubu's Color Pools",
+      "category": "cave_interior",
+      "singleton": true,
+      "mapId": "map_i_color_pools"
+    },
+    {
       "id": "locale_hikihiki_shrine",
       "file": "config/locales/locale_hikihiki_shrine.json",
       "name": "Hiki-hiki's Shrine",

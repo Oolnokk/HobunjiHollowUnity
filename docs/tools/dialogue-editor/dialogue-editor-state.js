@@ -36,10 +36,12 @@ const CHOICE_ACTION_TYPES=[
   {type:'startChat',label:'Start chat',field:null},
   {type:'acceptFavor',label:'Accept favor',field:'taskId',fieldLabel:'Task ID'},
   {type:'declineFavor',label:'Decline favor',field:'taskId',fieldLabel:'Task ID'},
-  {type:'turnInTask',label:'Turn in task',field:'taskId',fieldLabel:'Task ID'}
+  {type:'turnInTask',label:'Turn in task',field:'taskId',fieldLabel:'Task ID'},
+  {type:'banubuQuest',label:'Banubu quest progression',field:null,kind:'banubuQuest'}
 ];
 const BUILT_IN_TOKENS=[
-  ['{{npcName}}','NPC name'],['{{playerName}}','Player name'],['{{playerNickname}}','Player nickname'],['{{playerLocalNickname}}','NPC-specific nickname'],['{{timeOfDay}}','Trust-visit greeting time'],['{{npcSpecies}}','NPC species'],['{{playerSpecies}}','Player species'],['{{role}}','NPC role'],['{{playerPronoun1}}','he/she/they'],['{{playerPronoun2}}','him/her/them'],['{{playerPronoun3}}','his/her/their'],['{{playerPronounSelf}}','reflexive pronoun'],['{{playerFirstL2V1}}','name fragment']
+  ['{{npcName}}','NPC name'],['{{playerName}}','Player name'],['{{playerNickname}}','Player nickname'],['{{playerLocalNickname}}','NPC-specific nickname'],['{{timeOfDay}}','Trust-visit greeting time'],['{{npcSpecies}}','NPC species'],['{{playerSpecies}}','Player species'],['{{role}}','NPC role'],['{{playerPronoun1}}','he/she/they'],['{{playerPronoun2}}','him/her/them'],['{{playerPronoun3}}','his/her/their'],['{{playerPronounSelf}}','reflexive pronoun'],['{{playerFirstL2V1}}','name fragment'],
+  ['{{banubuRequestedBuffs}}','Current Banubu requested buffs'],['{{banubuNextRequestedBuffs}}','Next-stage Banubu requested buffs'],['{{banubuRequiredStrength}}','Current required cooking strength'],['{{banubuNextRequiredStrength}}','Next-stage required cooking strength'],['{{banubuRewardName}}','Banubu quest reward'],['{{banubuQuestNumber}}','Banubu quest number']
 ];
 function mapLabel(id){return mapRegistry.find(m=>m.id===id)?.name||id}
 function stationsForMap(id){return mapRegistry.find(m=>m.id===id)?.stations||[]}
@@ -131,6 +133,7 @@ function normalizeDatabase(raw){
   // missing IDs so an exported/hand-authored tree with the same ID remains
   // authoritative and immediately editable instead of being overwritten.
   window.WeaponTrustVisits?.mergeDialogueTreesIntoDatabase?.(db);
+  window.BanubuQuestContent?.mergeDialogueTreesIntoDatabase?.(db); // Used so manually imported canonical/raw NPC databases expose the same Banubu quest trees as normal LocalDBOverrides boot.
   db.schema??='hobunji_npc_database.v2';
   db.npcs.forEach((npc,ni)=>{
     npc.id??=`npc_${ni}`;npc.name??=npc.id;

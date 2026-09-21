@@ -247,7 +247,7 @@
   const FRAME_SHAPES = Object.freeze({
     // Every shape (including these two) clips to its own rectangle — the
     // frame is a hard crop boundary, not just a tiling-pitch guide — see
-    // buildAuthoredClearedMask's clipToPolygon below.
+    // buildAuthoredClearedMask's drawCell polygon clip below.
     square: { label: 'Square', paired: false, basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: 0, y: h } }), polygon: (w, h) => [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }, { x: 0, y: h }] },
     brick: { label: 'Brick', paired: false, basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: w / 2, y: h } }), polygon: (w, h) => [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }, { x: 0, y: h }] },
     diamond: {
@@ -294,6 +294,83 @@
   // knows nothing about metal/verdigris, just stamps a black motif image
   // (tiled via the triangle-tessellation lattice above, when enabled)
   // across a transparent raster per the placement fields the editor wrote.
+  function buildMotifClusterSeparatorMask(mask, width, height) {
+    const labels = new Int32Array(mask.length).fill(-1);
+    const stack = [];
+    let clusterCount = 0;
+    for (let start = 0; start < mask.length; start++) {
+      if (!mask[start] || labels[start] !== -1) continue;
+      const label = clusterCount++;
+      labels[start] = label;
+      stack.push(start);
+      while (stack.length) {
+        const p = stack.pop();
+        const x = p % width, y = (p / width) | 0;
+        for (let oy = -1; oy <= 1; oy++) {
+          for (let ox = -1; ox <= 1; ox++) {
+            if (!ox && !oy) continue;
+            const nx = x + ox, ny = y + oy;
+            if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+            const np = ny * width + nx;
+            if (mask[np] && labels[np] === -1) { labels[np] = label; stack.push(np); }
+          }
+        }
+      }
+    }
+    if (clusterCount < 2) return null;
+
+    const owners = new Int32Array(mask.length).fill(-1);
+    const queue = new Int32Array(mask.length);
+    let head = 0, tail = 0;
+    for (let p = 0; p < mask.length; p++) {
+      if (!mask[p]) continue;
+      owners[p] = labels[p];
+      queue[tail++] = p;
+    }
+    while (head < tail) {
+      const p = queue[head++];
+      const x = p % width, y = (p / width) | 0, owner = owners[p];
+      const neighbors = [p - 1, p + 1, p - width, p + width];
+      const valid = [x > 0, x < width - 1, y > 0, y < height - 1];
+      for (let n = 0; n < 4; n++) {
+        if (!valid[n]) continue;
+        const np = neighbors[n];
+        if (owners[np] !== -1) continue;
+        owners[np] = owner;
+        queue[tail++] = np;
+      }
+    }
+
+    const separator = new Uint8Array(mask.length);
+    for (let p = 0; p < mask.length; p++) {
+      if (mask[p]) continue;
+      const x = p % width, y = (p / width) | 0, owner = owners[p];
+      for (let oy = -1; oy <= 1 && !separator[p]; oy++) {
+        for (let ox = -1; ox <= 1; ox++) {
+          if (!ox && !oy) continue;
+          const nx = x + ox, ny = y + oy;
+          if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+          const other = owners[ny * width + nx];
+          if (other !== -1 && other !== owner) { separator[p] = 1; break; }
+        }
+      }
+    }
+    return separator;
+  }
+
+  function maskCanvas(mask, width, height) {
+    const canvas = document.createElement('canvas');
+    canvas.width = width; canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    const image = ctx.createImageData(width, height);
+    for (let p = 0, i = 0; p < mask.length; p++, i += 4) {
+      if (!mask[p]) continue;
+      image.data[i] = 255; image.data[i + 1] = 255; image.data[i + 2] = 255; image.data[i + 3] = 255;
+    }
+    ctx.putImageData(image, 0, 0);
+    return canvas;
+  }
+
   function buildAuthoredClearedMask(width, height, rawPatternDef, motifImg) {
     const patternDef = legacyFrameFields(rawPatternDef);
     const canvas = document.createElement('canvas');
@@ -335,7 +412,11 @@
     const srcData = srcCtx.getImageData(0, 0, srcSize, srcSize).data;
     const srcMask = new Uint8Array(srcSize * srcSize);
     for (let p = 0, i = 0; i < srcData.length; i += 4, p++) if (srcData[i + 3] > 16) srcMask[p] = 1;
-    const bbox = findOpaqueBounds(srcMask, srcSize, srcSize);
+    const bbox = findOpaqueBounds(srcMask, srcSize, srcSize); // Keep authored frame geometry stable while only the source ink's contour changes.
+    const sourceClusterSeparatorMask = patternDef.invert ? null : buildMotifClusterSeparatorMask(srcMask, srcSize, srcSize);
+    const sourceAllowedMask = new Uint8Array(srcMask.length); sourceAllowedMask.fill(1); // Allows motif-space thickening before the fixed frame clip is applied.
+    const adjustedSrcMask = adjustMaskThickness(srcMask, sourceAllowedMask, srcSize, srcSize, patternDef.motifThinPx, sourceClusterSeparatorMask);
+    const adjustedSrc = maskCanvas(adjustedSrcMask, srcSize, srcSize);
 
     ctx.save();
     ctx.translate(width / 2, height / 2);
@@ -358,13 +439,11 @@
       const midpoint = { x: cellW / 2, y: cellH / 2 };
 
       // Draws one cell at the CURRENT origin (the caller has already
-      // translated to that cell's own top-left corner): clips to the
-      // frame's own boundary FIRST — a fixed size that never grows to
-      // chase motifScale — then samples the source ink through the
-      // frame's own position/rotation, with motifScale zooming the ink
-      // within that fixed window. A motif scaled past 1x therefore
-      // genuinely overflows past this crop instead of stretching the
-      // frame to avoid ever being cut.
+      // translated to that cell's own top-left corner). The frame polygon
+      // is clipped FIRST and remains active while motifScale zooms the
+      // source ink inside it. Pixels transformed outside that polygon are
+      // discarded, so motifScale changes what fits inside a fixed cell but
+      // never enlarges the crop boundary or the lattice spacing.
       function drawCell() {
         ctx.save();
         ctx.beginPath();
@@ -377,7 +456,7 @@
         ctx.rotate(frameRad);
         ctx.scale(motifScale, motifScale);
         ctx.translate(-winCenterX, -winCenterY);
-        ctx.drawImage(src, 0, 0);
+        ctx.drawImage(adjustedSrc, 0, 0);
         ctx.restore();
       }
 
@@ -446,7 +525,7 @@
     return mask;
   }
 
-  function buildOxidationOutlineMask(oxidationMask, metalMask, width, height, outlineWidth) {
+  function buildOxidationOutlineMask(oxidationMask, metalMask, width, height, outlineWidth, centered = false) {
     const outline = new Uint8Array(oxidationMask.length);
     if (!outlineWidth) return outline;
 
@@ -476,11 +555,15 @@
       }
     }
 
-    const radius = Math.max(1, (outlineWidth | 0) * 5);
+    const totalRadius = Math.max(1, (outlineWidth | 0) * 5);
+    const inwardRadius = centered ? Math.floor(totalRadius / 2) : 0; // Authored patterns move half of the old outward-only border onto the filled side.
+    const outwardRadius = centered ? totalRadius - inwardRadius : totalRadius; // Procedural verdigris keeps its legacy outward-only border.
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         const p = y * width + x;
-        if (!metalMask[p] || oxidationMask[p]) continue;
+        if (!metalMask[p]) continue;
+        const radius = oxidationMask[p] ? inwardRadius : outwardRadius;
+        if (radius <= 0) continue;
         let nearBoundary = false;
         for (let oy = -radius; oy <= radius && !nearBoundary; oy++) {
           for (let ox = -radius; ox <= radius; ox++) {
@@ -500,14 +583,13 @@
     return outline;
   }
 
-  // Erodes mask inward by radiusPx: any set pixel within radiusPx of an
-  // unset pixel (or the canvas edge) gets cleared. Same shape as
-  // buildOxidationOutlineMask's own boundary+radius-search, just clearing
-  // near the boundary instead of growing outward from it — see
-  // pattern-authoring.js's "Motif thinning" slider (motifThinPx).
-  function erodeMask(mask, width, height, radiusPx) {
-    const px = Math.max(0, Math.round(radiusPx) || 0);
-    if (!px) return mask;
+  // Applies the signed "Motif thinning / thickening" contour offset to the
+  // authored cleared-mask shape. Positive values erode inward; negative
+  // values dilate outward but stay clipped to the valid metal surface.
+  function adjustMaskThickness(mask, allowedMask, width, height, signedPx) {
+    const amount = Math.round(Number(signedPx) || 0);
+    if (!amount) return mask;
+
     const boundary = new Uint8Array(mask.length);
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
@@ -518,36 +600,53 @@
           for (let ox = -1; ox <= 1; ox++) {
             if (!ox && !oy) continue;
             const nx = x + ox, ny = y + oy;
-            if (nx < 0 || ny < 0 || nx >= width || ny >= height) { isEdge = true; break; }
-            if (!mask[ny * width + nx]) { isEdge = true; break; }
+            if (nx < 0 || ny < 0 || nx >= width || ny >= height || !mask[ny * width + nx]) { isEdge = true; break; }
           }
         }
         if (isEdge) boundary[p] = 1;
       }
     }
-    const eroded = new Uint8Array(mask.length);
+
+    if (amount > 0) {
+      const thinned = new Uint8Array(mask.length); // Used when the signed authoring slider is positive: removes exactly the requested nearest edge layers.
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const p = y * width + x;
+          if (!mask[p]) continue;
+          let nearBoundary = false;
+          for (let oy = -amount; oy <= amount && !nearBoundary; oy++) {
+            for (let ox = -amount; ox <= amount; ox++) {
+              if (Math.hypot(ox, oy) >= amount - 0.01) continue;
+              const nx = x + ox, ny = y + oy;
+              if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+              if (boundary[ny * width + nx]) { nearBoundary = true; break; }
+            }
+          }
+          if (!nearBoundary) thinned[p] = 1;
+        }
+      }
+      return thinned;
+    }
+
+    const radius = Math.abs(amount);
+    const thickened = new Uint8Array(mask); // Used when the signed authoring slider is negative: grows into nearby valid surface pixels without crossing the garment/metal silhouette.
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         const p = y * width + x;
-        if (!mask[p]) continue;
+        if (mask[p] || !allowedMask[p]) continue;
         let nearBoundary = false;
-        for (let oy = -px; oy <= px && !nearBoundary; oy++) {
-          for (let ox = -px; ox <= px; ox++) {
-            // Strictly-less-than px, not <=: a boundary pixel is layer 0 (distance
-            // 0 from itself) and should already count as removed at px=1, so
-            // erosion removes exactly the px nearest layers (0..px-1), giving a
-            // real px-pixel inset instead of px+1 (was previously inclusive of
-            // distance===px, eroding one layer deeper than the setting implied).
-            if (Math.hypot(ox, oy) >= px - 0.01) continue;
+        for (let oy = -radius; oy <= radius && !nearBoundary; oy++) {
+          for (let ox = -radius; ox <= radius; ox++) {
+            if (Math.hypot(ox, oy) > radius + 0.01) continue;
             const nx = x + ox, ny = y + oy;
             if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
             if (boundary[ny * width + nx]) { nearBoundary = true; break; }
           }
         }
-        if (!nearBoundary) eroded[p] = 1;
+        if (nearBoundary) thickened[p] = 1;
       }
     }
-    return eroded;
+    return thickened;
   }
 
   // An authored pattern's outline never grows past whatever outlineWidth the
@@ -629,10 +728,9 @@
       // not where it grows, so everything else on the metal mask stays
       // oxidized (this only ever runs on an already mastery-5/fully-grown
       // tool — see toolVerdigrisPatternEligible in game.js).
-      // Thins the placed motif shape inward before invert/oxidation logic
-      // sees it, so the same eroded shape drives both the cleared region and
-      // (further down) the outline drawn around it.
-      const clearedMask = erodeMask(buildAuthoredClearedMask(width, height, authoredPattern, motifImg), width, height, authoredPattern.motifThinPx);
+      // buildAuthoredClearedMask already applies motifThinPx in source-motif
+      // pixels before frame/mesh scaling, so do not run a second output-pixel pass.
+      const clearedMask = buildAuthoredClearedMask(width, height, authoredPattern, motifImg);
       // invert swaps which side of the motif keeps verdigris: normally the
       // motif itself is the cleared shape and everything else stays
       // oxidized; inverted, the motif shape stays oxidized and everything
@@ -656,6 +754,7 @@
       width,
       height,
       outlineWidth,
+      !!authoredPattern, // Authored motif outlines are centered; procedural verdigris intentionally keeps its legacy outward-only border.
     );
 
     let oxidizedPixels = 0;
@@ -852,7 +951,7 @@
     rgbToHsv,
     hsvToRgb,
     SOURCE_HEX,
-    __test: Object.freeze({ erodeMask, scaledOutlineWidthForPattern, buildAuthoredClearedMask }),
+    __test: Object.freeze({ adjustMaskThickness, scaledOutlineWidthForPattern, buildAuthoredClearedMask }),
   };
 
   debugLog({}, 'module loaded', {

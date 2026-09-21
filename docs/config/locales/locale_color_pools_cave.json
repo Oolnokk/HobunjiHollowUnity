@@ -1,0 +1,442 @@
+{
+  "schema": "hobunji_locale.v1",
+  "id": "locale_color_pools_cave",
+  "name": "Banubu's Color Pools",
+  "category": "cave_interior",
+  "singleton": true,
+  "description": "The hidden Color Pools cavern behind Banubu's home. Three small colored pools surround a central stone altar.",
+  "tags": [
+    "cave",
+    "interior",
+    "banubu",
+    "color_pools",
+    "story"
+  ],
+  "cols": 15,
+  "rows": 15,
+  "tiles": {
+    "5,2": {
+      "type": "grass"
+    },
+    "6,2": {
+      "type": "grass"
+    },
+    "7,2": {
+      "type": "grass"
+    },
+    "8,2": {
+      "type": "grass"
+    },
+    "9,2": {
+      "type": "grass"
+    },
+    "3,3": {
+      "type": "grass"
+    },
+    "4,3": {
+      "type": "grass"
+    },
+    "5,3": {
+      "type": "grass"
+    },
+    "6,3": {
+      "type": "grass"
+    },
+    "7,3": {
+      "type": "grass"
+    },
+    "8,3": {
+      "type": "grass"
+    },
+    "9,3": {
+      "type": "grass"
+    },
+    "10,3": {
+      "type": "grass"
+    },
+    "11,3": {
+      "type": "grass"
+    },
+    "2,4": {
+      "type": "grass"
+    },
+    "3,4": {
+      "type": "grass"
+    },
+    "4,4": {
+      "type": "grass"
+    },
+    "5,4": {
+      "type": "grass"
+    },
+    "6,4": {
+      "type": "grass"
+    },
+    "7,4": {
+      "type": "grass"
+    },
+    "8,4": {
+      "type": "grass"
+    },
+    "9,4": {
+      "type": "grass"
+    },
+    "10,4": {
+      "type": "grass"
+    },
+    "11,4": {
+      "type": "grass"
+    },
+    "12,4": {
+      "type": "grass"
+    },
+    "2,5": {
+      "type": "grass"
+    },
+    "3,5": {
+      "type": "grass"
+    },
+    "4,5": {
+      "type": "grass"
+    },
+    "5,5": {
+      "type": "grass"
+    },
+    "6,5": {
+      "type": "grass"
+    },
+    "7,5": {
+      "type": "grass"
+    },
+    "8,5": {
+      "type": "grass"
+    },
+    "9,5": {
+      "type": "grass"
+    },
+    "10,5": {
+      "type": "grass"
+    },
+    "11,5": {
+      "type": "grass"
+    },
+    "12,5": {
+      "type": "grass"
+    },
+    "2,6": {
+      "type": "grass"
+    },
+    "3,6": {
+      "type": "grass"
+    },
+    "4,6": {
+      "type": "grass"
+    },
+    "5,6": {
+      "type": "grass"
+    },
+    "6,6": {
+      "type": "grass"
+    },
+    "7,6": {
+      "type": "grass"
+    },
+    "8,6": {
+      "type": "grass"
+    },
+    "9,6": {
+      "type": "grass"
+    },
+    "10,6": {
+      "type": "grass"
+    },
+    "11,6": {
+      "type": "grass"
+    },
+    "12,6": {
+      "type": "grass"
+    },
+    "2,7": {
+      "type": "grass"
+    },
+    "3,7": {
+      "type": "grass"
+    },
+    "4,7": {
+      "type": "grass"
+    },
+    "5,7": {
+      "type": "grass"
+    },
+    "6,7": {
+      "type": "grass"
+    },
+    "7,7": {
+      "type": "grass"
+    },
+    "8,7": {
+      "type": "grass"
+    },
+    "9,7": {
+      "type": "grass"
+    },
+    "10,7": {
+      "type": "grass"
+    },
+    "11,7": {
+      "type": "grass"
+    },
+    "12,7": {
+      "type": "grass"
+    },
+    "2,8": {
+      "type": "grass"
+    },
+    "3,8": {
+      "type": "grass"
+    },
+    "4,8": {
+      "type": "grass"
+    },
+    "5,8": {
+      "type": "grass"
+    },
+    "6,8": {
+      "type": "grass"
+    },
+    "7,8": {
+      "type": "grass"
+    },
+    "8,8": {
+      "type": "grass"
+    },
+    "9,8": {
+      "type": "grass"
+    },
+    "10,8": {
+      "type": "grass"
+    },
+    "11,8": {
+      "type": "grass"
+    },
+    "12,8": {
+      "type": "grass"
+    },
+    "3,9": {
+      "type": "grass"
+    },
+    "4,9": {
+      "type": "grass"
+    },
+    "5,9": {
+      "type": "grass"
+    },
+    "6,9": {
+      "type": "grass"
+    },
+    "7,9": {
+      "type": "grass"
+    },
+    "8,9": {
+      "type": "grass"
+    },
+    "9,9": {
+      "type": "grass"
+    },
+    "10,9": {
+      "type": "grass"
+    },
+    "11,9": {
+      "type": "grass"
+    },
+    "4,10": {
+      "type": "grass"
+    },
+    "5,10": {
+      "type": "grass"
+    },
+    "6,10": {
+      "type": "grass"
+    },
+    "7,10": {
+      "type": "grass"
+    },
+    "8,10": {
+      "type": "grass"
+    },
+    "9,10": {
+      "type": "grass"
+    },
+    "10,10": {
+      "type": "grass"
+    },
+    "5,11": {
+      "type": "grass"
+    },
+    "6,11": {
+      "type": "grass"
+    },
+    "7,11": {
+      "type": "grass"
+    },
+    "8,11": {
+      "type": "grass"
+    },
+    "9,11": {
+      "type": "grass"
+    },
+    "6,12": {
+      "type": "grass"
+    },
+    "7,12": {
+      "type": "grass"
+    },
+    "8,12": {
+      "type": "grass"
+    },
+    "6,13": {
+      "type": "grass"
+    },
+    "7,13": {
+      "type": "grass"
+    },
+    "8,13": {
+      "type": "grass"
+    }
+  },
+  "objects": [
+    {
+      "id": "color_pools_altar",
+      "kind": "furniture",
+      "key": "stonePedestal",
+      "itemKey": "colorPoolsAltarFurniture",
+      "label": "Color Pools Altar",
+      "col": 7,
+      "row": 7,
+      "w": 1,
+      "h": 1,
+      "rot": 0
+    }
+  ],
+  "npcAnchors": [],
+  "connectors": [
+    {
+      "id": "conn_banubu",
+      "col": 7,
+      "row": 13,
+      "side": "south",
+      "label": "Back to Banubu's Cave",
+      "targetMap": "map_i_den_banubu",
+      "targetSpotId": "color_pools_door"
+    }
+  ],
+  "terrainAnchors": {},
+  "embeddedTiles": {},
+  "placement": {
+    "mode": "fixed",
+    "maxInstances": 1,
+    "allowedZones": [],
+    "clearanceTiles": 0,
+    "requiresFlatGround": true,
+    "floorMode": "footprint",
+    "minDistanceFromEntry": 0,
+    "sameSectorAsEntry": false,
+    "alwaysVisibleOnMap": false,
+    "groundOnly": false,
+    "notes": "Interior-only cavern locale; painted cells are the authoritative cave floor footprint.",
+    "terrainAnchors": {},
+    "embeddedTiles": {}
+  },
+  "cavern": {
+    "mapId": "map_i_color_pools",
+    "seed": "color-pools-v1",
+    "primaryEntranceConnectorId": "conn_banubu",
+    "generation": {
+      "tileSize": 1,
+      "gridN": 48,
+      "probeRadius": 0.78,
+      "brushRadius": 0.4,
+      "organicJitter": 0.15,
+      "sizeY": 3
+    },
+    "features": {
+      "colorPools": [
+        {
+          "id": "red",
+          "color": "#a62f38",
+          "tiles": [
+            [
+              3,
+              3
+            ],
+            [
+              4,
+              3
+            ],
+            [
+              3,
+              4
+            ],
+            [
+              4,
+              4
+            ]
+          ]
+        },
+        {
+          "id": "green",
+          "color": "#2e8b57",
+          "tiles": [
+            [
+              10,
+              3
+            ],
+            [
+              11,
+              3
+            ],
+            [
+              10,
+              4
+            ],
+            [
+              11,
+              4
+            ]
+          ]
+        },
+        {
+          "id": "deepBlue",
+          "color": "#173f8f",
+          "tiles": [
+            [
+              6,
+              10
+            ],
+            [
+              7,
+              10
+            ],
+            [
+              6,
+              11
+            ],
+            [
+              7,
+              11
+            ]
+          ]
+        }
+      ],
+      "altar": {
+        "objectId": "color_pools_altar",
+        "col": 7,
+        "row": 7
+      }
+    }
+  },
+  "meta": {
+    "createdAt": "2026-09-19T00:00:00.000Z",
+    "updatedAt": "2026-09-19T00:00:00.000Z"
+  }
+}

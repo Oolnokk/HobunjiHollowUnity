@@ -19,6 +19,7 @@ const folderLoader = read('docs/js/local-save-folder.js');
 const onboardingLoader = read('docs/onboarding.js');
 const css = read('docs/folder-save-primary.css');
 const core = read('docs/js/local-save-folder-core.js');
+const motifStore = read('docs/js/motif-store.js');
 const startupGuard = read('docs/js/session-persistence-startup-guard.js');
 const quitGuard = read('docs/js/folder-save-quit-guard.js');
 
@@ -29,6 +30,8 @@ new Function(debugUi);
 new Function(bridge);
 new Function(creatorHandoff);
 new Function(quitGuard);
+new Function(core);
+new Function(motifStore);
 console.log('OK  folder-save lifecycle modules parse as JavaScript');
 
 const coreIndex = folderLoader.indexOf('local-save-folder-core.js');
@@ -68,6 +71,17 @@ assert(primary.includes("window.addEventListener('pagehide'"), 'pagehide request
 assert(startupGuard.includes('stopImmediatePropagation'), 'existing startup persistence guard still blocks unsafe transient exit saves');
 assert(core.includes('describeDataLossRisk'), 'existing core data-loss guard remains installed');
 assert(core.includes('_syncPromise'), 'existing core still serializes folder writes within a tab');
+assert(core.includes("const PATTERNS_DIR = 'patterns'"), 'primary folder save reserves a portable patterns directory');
+assert(core.includes('async function mirrorPatternFile'), 'folder core can write custom motif PNG bytes');
+assert(core.includes('async function readPatternFile'), 'folder core can recover custom motif PNG bytes on another device');
+assert(core.includes('async function deletePatternFile'), 'folder core can clean up mirrored custom motif PNGs');
+assert(core.includes('window.MotifStore?.mirrorReferencedMotifs'), 'every folder save retries all customMotifId files referenced by save metadata');
+assert(core.includes('patternMirror: _lastPatternMirror'), 'pattern portability results are visible in save diagnostics');
+assert(motifStore.includes('await mirror(id, bytes)'), 'new custom motifs finish their connected-folder mirror before saveMotif returns');
+assert(motifStore.includes('readPatternFile'), 'MotifStore falls back to the connected folder when OPFS lacks a custom motif');
+assert(motifStore.includes('writeOpfsMotif(id, bytes).catch'), 'folder-recovered motifs are hydrated back into OPFS for later local rendering');
+assert(motifStore.includes('function collectCustomMotifIds'), 'MotifStore can discover pre-existing custom motifs when a folder is connected later');
+assert(motifStore.includes('async function mirrorReferencedMotifs'), 'MotifStore can mirror every custom motif referenced by a save snapshot');
 
 const primaryReloads = (primary.match(/location\.reload\s*\(/g) || []).length;
 assert(primaryReloads === 1, 'primary UX has exactly one deliberate reload path for replacing an active gameplay runtime');

@@ -558,6 +558,7 @@
       terrainAware: true,
       floorTier: selected.floorTier,
       alwaysVisible: !!locale.placement?.alwaysVisibleOnMap,
+      interior: locale.interior ? JSON.parse(JSON.stringify(locale.interior)) : null, // Used by runtime diagnostics and the terrain-aware transition exporter without mutating authored locale data.
       connectors: (locale.connectors || []).map(connector => ({ ...scaledPoint(selected.anchorC, selected.anchorR, compiled.scale, connector), side: connector.side, label: connector.label })),
       npcAnchors: (locale.npcAnchors || []).map(anchor => ({ ...scaledPoint(selected.anchorC, selected.anchorR, compiled.scale, anchor), npcId: anchor.npcId, name: anchor.name, facing: anchor.facing })),
       objects: (locale.objects || []).map(object => ({
@@ -569,6 +570,30 @@
         interactable: object.interactable ? { ...object.interactable } : undefined,
       })),
     };
+  }
+
+  function appendInteriorTransition(context, locale, instance) {
+    const interior = locale?.interior; // Used to decide whether this terrain-aware locale links to a separate map.
+    if (!interior?.targetMapId || !context?.root) return null;
+    const connector = instance?.connectors?.[0] || null; // Used as the authored, already shifted/scaled entrance location for this locale.
+    const structure = instance?.objects?.find(object => object?.kind === 'structure') || null; // Used only as a fallback when an older interior locale lacks connectors.
+    const trigger = connector || structure || (Number.isFinite(instance?.x) && Number.isFinite(instance?.y) ? { x: instance.x, y: instance.y } : null); // Used as the final-grid transition tile.
+    if (!trigger || !Number.isFinite(Number(trigger.x)) || !Number.isFinite(Number(trigger.y))) return null;
+    const transitionId = `sp_locale_${locale.id}`; // Used to deduplicate placement retries and match legacy locale transition naming.
+    const transition = { // Used by the ordinary wilderness transition loader after terrain-aware placement has finished.
+      id: transitionId,
+      label: interior.label || locale.name || 'Enter',
+      col: Math.round(Number(trigger.x)),
+      row: Math.round(Number(trigger.y)),
+      targetMapId: interior.targetMapId,
+      targetSpotId: interior.targetSpotId || '',
+      generatedLocaleId: locale.id,
+    };
+    context.root.transitions = Array.isArray(context.root.transitions) ? context.root.transitions : [];
+    const existingIndex = context.root.transitions.findIndex(entry => entry?.id === transitionId); // Used to make regeneration/replacement idempotent.
+    if (existingIndex >= 0) context.root.transitions[existingIndex] = transition;
+    else context.root.transitions.push(transition);
+    return transition;
   }
 
   function placeOne(context, locale, options = {}) {
@@ -584,9 +609,11 @@
     const instance = localeInstance(compiled, search.best); // Runtime consumes the same localeInstances shape used by legacy stamped locales.
     context.workspace.localeInstances = Array.isArray(context.workspace.localeInstances) ? context.workspace.localeInstances : [];
     context.workspace.localeInstances.push(instance);
+    const interiorTransition = appendInteriorTransition(context, locale, instance); // Used to add the interior link after the base exporter has already finalized root.transitions.
     return {
       placed: true,
       instance,
+      interiorTransition,
       diagnostic: {
         localeId: locale.id,
         name: locale.name,
@@ -669,6 +696,7 @@
     hasTerrainRules,
     compileLocale,
     inferGenerationScale,
+    appendInteriorTransition,
     placeTerrainAwareLocales,
     evaluateCandidateForTest(workspace, locale, anchorC, anchorR, options = {}) {
       const scale = Math.max(1, Number(options.scale) || inferGenerationScale(workspace, options.sourceWidth)); // Test hook uses the same compiler/context as production placement.

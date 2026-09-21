@@ -83,7 +83,11 @@ if (diagnostic.status === 'placed') {
   const embedded = diagnostic.selected.embedded || [];
   assert(embedded.length > 0 && embedded.every(cell => cell.matched && cell.hostTier >= diagnostic.selected.floorTier + 1), 'rear embedded cells must originate in high plateau mass before carving');
   assert((instance.objects || []).some(object => object.key === 'cave_small'), 'placed Banubu locale must carry its cave_small object into runtime data');
-  assert(!(instance.npcAnchors || []).some(anchor => anchor.npcId === 'banubu'), 'Banubu exterior locale must not spawn Banubu; he belongs in the future interior');
+  assert(!(instance.npcAnchors || []).some(anchor => anchor.npcId === 'banubu'), 'Banubu exterior locale must not spawn Banubu; he lives in the cavern interior');
+  const banubuTransition = (root.transitions || []).find(transition => transition.generatedLocaleId === locale.id); // Used to verify the post-shift walkable entrance generated from the placed locale.
+  assert(banubuTransition, 'a placed Banubu locale must export a runtime transition from its walkable path anchor');
+  assert.strictEqual(banubuTransition.targetMapId, 'map_i_den_banubu', 'Banubu wilderness entrance must lead to his generated cavern');
+  assert.strictEqual(banubuTransition.label, "Enter Banubu's Cave");
 } else {
   assert.strictEqual(instance, null, 'a skipped Banubu diagnostic must not fabricate a localeInstance');
   assert.strictEqual(diagnostic.reason, 'no terrain-aware placement matched', 'a skipped Banubu locale should report an ordinary no-match');
@@ -109,6 +113,9 @@ for (const seed of previewSeeds) {
   assert((previewDiagnostic.valid || 0) > 0, `known former no-match preview seed ${seed} must expose at least one valid cliff-base candidate`);
   assert(previewInstance, `known former no-match preview seed ${seed} must create a runtime locale instance`);
   assert.strictEqual(previewInstance.floorTier, previewDiagnostic.selected?.floorTier, `preview runtime cave floor must match the selected lower cliff tier for ${seed}`);
+  const previewRoot = (previewWorkspace.maps || []).find(map => map && !map.isSubmap); // Used to verify the transition survives the same exact preview seeds used by the editor.
+  const previewTransition = (previewRoot?.transitions || []).find(transition => transition.generatedLocaleId === locale.id); // Used to locate the locale-derived cave entrance after random placement.
+  assert(previewTransition && previewTransition.targetMapId === 'map_i_den_banubu', `known preview seed ${seed} must connect Banubu's placed cave to his cavern interior`);
   previewResults.push(`${previewDiagnostic.valid} valid`);
 }
 

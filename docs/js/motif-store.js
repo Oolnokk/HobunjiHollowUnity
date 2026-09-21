@@ -8,7 +8,9 @@
 // touched. This store moves that PNG out to its own file, written once when
 // the pattern is authored and read back only by whatever render/recolor call
 // actually needs its pixels — the save itself keeps only a small
-// customMotifId reference (see pattern-authoring.js's offloadMotif).
+// customMotifId reference (see pattern-authoring.js's offloadMotif). When a
+// primary save folder is connected, the same PNG is mirrored to
+// <save-folder>/patterns/<customMotifId>.png so the reference is portable.
 //
 // Backing store is the Origin Private File System (navigator.storage.
 // getDirectory()) — no permission dialog, broad modern-browser support,
@@ -66,28 +68,48 @@
     return typeof crypto?.randomUUID === 'function' ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   }
 
-  // Writes a freshly authored motif's pixel data and returns its id, or
-  // null if the store is unavailable/the write failed (caller keeps the
-  // plain embedded motifDataUrl in that case).
-  async function saveMotif(dataUrl) {
-    if (!dataUrl) return null;
+  async function writeOpfsMotif(id, bytes) {
     const dir = await motifDir();
-    if (!dir) return null;
-    const id = generateId();
-    const bytes = dataUrlToBytes(dataUrl);
+    if (!dir) return false;
     try {
       const fileHandle = await dir.getFileHandle(`${id}.png`, { create: true });
       const writable = await fileHandle.createWritable();
       await writable.write(bytes);
       await writable.close();
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  async function readOpfsMotif(id) {
+    const dir = await motifDir();
+    if (!dir) return null;
+    try {
+      const fileHandle = await dir.getFileHandle(`${id}.png`);
+      const file = await fileHandle.getFile();
+      return new Uint8Array(await file.arrayBuffer());
     } catch (_) {
       return null;
     }
+  }
+
+  // Writes a freshly authored motif's pixel data and returns its id, or
+  // null if the store is unavailable/the write failed (caller keeps the
+  // plain embedded motifDataUrl in that case).
+  async function saveMotif(dataUrl) {
+    if (!dataUrl) return null;
+    const id = generateId();
+    const bytes = dataUrlToBytes(dataUrl);
+    if (!(await writeOpfsMotif(id, bytes))) return null; // OPFS remains the browser-local authoritative copy for custom motifs.
     memoryCache.set(id, dataUrl);
-    // Best-effort bonus backup into the player's connected local save
-    // folder, if any (see local-save-folder-core.js) — never required for
-    // the motif to keep working, so any failure here is silently ignored.
-    try { window.LocalSaveFolder?.mirrorPatternFile?.(id, bytes); } catch (_) { /* fire-and-forget */ }
+    // A connected primary save folder is part of the save, not merely a
+    // fire-and-forget bonus. Await the mirror before returning the id so a
+    // newly-authored item cannot reference a motif that has not reached disk.
+    try {
+      const mirror = window.LocalSaveFolder?.mirrorPatternFile;
+      if (typeof mirror === 'function') await mirror(id, bytes);
+    } catch (_) { /* OPFS copy is still valid; the next folder Save Now retries referenced motifs. */ }
     return id;
   }
 
@@ -97,17 +119,22 @@
   async function loadMotif(id) {
     if (!id) return null;
     if (memoryCache.has(id)) return memoryCache.get(id);
-    const dir = await motifDir();
-    if (!dir) return null;
-    try {
-      const fileHandle = await dir.getFileHandle(`${id}.png`);
-      const file = await fileHandle.getFile();
-      const dataUrl = bytesToDataUrl(new Uint8Array(await file.arrayBuffer()));
-      memoryCache.set(id, dataUrl);
-      return dataUrl;
-    } catch (_) {
-      return null;
+
+    let bytes = await readOpfsMotif(id);
+    if (!bytes) {
+      // Cross-device/clean-browser recovery: the save JSON carries only the
+      // customMotifId, so fall back to the connected folder's matching PNG.
+      try {
+        const readFolder = window.LocalSaveFolder?.readPatternFile;
+        if (typeof readFolder === 'function') bytes = await readFolder(id);
+      } catch (_) { bytes = null; }
+      if (bytes?.byteLength) writeOpfsMotif(id, bytes).catch(() => {}); // Best-effort local hydration makes later renders independent of folder reads.
     }
+    if (!bytes?.byteLength) return null;
+
+    const dataUrl = bytesToDataUrl(bytes);
+    memoryCache.set(id, dataUrl);
+    return dataUrl;
   }
 
   // Removes a motif that's no longer referenced by anything. Not currently
@@ -118,9 +145,50 @@
     if (!id) return;
     memoryCache.delete(id);
     const dir = await motifDir();
-    if (!dir) return;
-    try { await dir.removeEntry(`${id}.png`); } catch (_) { /* already gone */ }
+    if (dir) {
+      try { await dir.removeEntry(`${id}.png`); } catch (_) { /* already gone */ }
+    }
+    try {
+      const removeFolder = window.LocalSaveFolder?.deletePatternFile;
+      if (typeof removeFolder === 'function') await removeFolder(id);
+    } catch (_) { /* folder cleanup is best-effort */ }
   }
 
-  window.MotifStore = { saveMotif, loadMotif, deleteMotif, supported: opfsSupported };
+  function collectCustomMotifIds(value) {
+    const ids = new Set();
+    const seen = new WeakSet(); // Save metadata should be JSON-shaped, but this prevents accidental cycles from trapping a manual/debug call.
+    const visit = node => {
+      if (!node || typeof node !== 'object') return;
+      if (seen.has(node)) return;
+      seen.add(node);
+      if (typeof node.customMotifId === 'string' && node.customMotifId) ids.add(node.customMotifId);
+      if (Array.isArray(node)) {
+        for (const item of node) visit(item);
+      } else {
+        for (const item of Object.values(node)) visit(item);
+      }
+    };
+    visit(value);
+    return [...ids];
+  }
+
+  async function mirrorReferencedMotifs(saveValue) {
+    const ids = collectCustomMotifIds(saveValue);
+    const result = { referenced: ids.length, mirrored: 0, missing: 0, failed: 0 }; // Exposed through LocalSaveFolder status for mobile diagnostics.
+    const mirror = window.LocalSaveFolder?.mirrorPatternFile;
+    if (typeof mirror !== 'function') return result;
+    for (const id of ids) {
+      const dataUrl = await loadMotif(id);
+      if (!dataUrl) { result.missing++; continue; }
+      try {
+        if (await mirror(id, dataUrlToBytes(dataUrl))) result.mirrored++;
+        else result.failed++;
+      } catch (_) {
+        result.failed++;
+      }
+    }
+    return result;
+  }
+
+  window.MotifStore = { saveMotif, loadMotif, deleteMotif, mirrorReferencedMotifs, supported: opfsSupported };
 })();

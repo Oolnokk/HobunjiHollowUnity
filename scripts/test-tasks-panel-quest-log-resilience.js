@@ -65,6 +65,9 @@ const context = vm.createContext({
       async maybeRefreshPosting() { throw new Error('forced bounty refresh failure'); },
       getCurrentPostings() { return []; },
     },
+    BanubuQuestline: {
+      menuStatus() { return { active: true, ready: true, objective: 'Cook a qualifying Three-Fish Pie.' }; },
+    },
   },
 });
 
@@ -115,6 +118,30 @@ context.window.TasksPanel.init({
   const secondDebug = context.window.TasksPanel.getDebug(); // Used to verify the healthy bounty pass does not inherit prior render errors.
   assert.strictEqual(secondDebug.activeCount, 1, 'debug state must count the accepted bounty');
   assert.strictEqual(secondDebug.errors.length, 0, 'render diagnostics must reset between Tasks panel renders');
+
+  delete questProgress.bounty_test;
+  questProgress.banubu_fish_pies = {
+    status: 'active',
+    progress: {
+      kind: 'story',
+      provider: 'banubu',
+      npcId: 'banubu',
+      npcName: 'Banubu',
+      title: 'Banubu — Three-Fish Pie',
+      icon: '🥧',
+      objective: 'Cook a Three-Fish Pie with three requested buffs.',
+      detail: 'Use exactly three fish.',
+      stage: 1,
+    },
+  };
+
+  await context.window.TasksPanel.render();
+  assert(tasksList.children.some(row => /Banubu — Three-Fish Pie/.test(row.innerHTML)), 'accepted Banubu story quest must appear in the shared Tasks log');
+  assert(tasksList.children.some(row => /Cook a qualifying Three-Fish Pie/.test(row.innerHTML)), 'story quest row must use the live Banubu readiness/objective provider');
+  assert(tasksList.children.some(row => /Ready — return to Banubu/.test(row.innerHTML)), 'story quest row must expose ready-to-turn-in state');
+  const thirdDebug = context.window.TasksPanel.getDebug();
+  assert.strictEqual(thirdDebug.activeCount, 1, 'debug state must count the active story quest');
+  assert.strictEqual(thirdDebug.kindCounts.story, 1, 'debug state must classify authored story quests');
 
   console.log('Tasks panel quest-log resilience test passed');
 })().catch(error => {

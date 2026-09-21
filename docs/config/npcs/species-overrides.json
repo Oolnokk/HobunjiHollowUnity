@@ -38,35 +38,48 @@
           "creatureKind": "grehlr",
           "avatarType": "animal",
           "creatureColorOverrides": {
-            "base": "#14D948",
-            "mitts": "#17FFF3",
-            "coloredstripe": "#17FFF3",
-            "spectacles": "#17FFF3"
+            "base": "#4F757D",
+            "mitts": "#c3e3e9",
+            "spectacles": "#c3e3e9",
+            "coloredstripe": "#c3e3e9"
           },
           "creatureGenotype": {
             "base": {
-              "color": "#14D948",
+              "color": "#4F757D",
               "copies": 2,
               "inheritance": "dominant"
             },
             "sizeClass": "medium",
             "mitts": {
-              "color": "#17FFF3",
+              "color": "#c3e3e9",
               "copies": 1,
               "inheritance": "dominant",
               "enabled": true
             },
             "spectacles": {
-              "color": "#ae8430",
+              "color": "#c3e3e9",
               "copies": 1,
               "inheritance": "dominant",
               "enabled": true
             },
             "coloredstripe": {
-              "color": "#ae8430",
+              "color": "#c3e3e9",
               "copies": 1,
               "inheritance": "dominant",
               "enabled": true
+            },
+            "colorPoolPaint": {
+              "version": 1,
+              "layers": {
+                "base": {
+                  "repoPatternId": "fey_thorns",
+                  "dyeHex": "#c3e3e9",
+                  "patternScale": 8.6,
+                  "pattern": {
+                    "repoPatternId": "fey_thorns"
+                  }
+                }
+              }
             }
           }
         },

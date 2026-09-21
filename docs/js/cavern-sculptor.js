@@ -1700,10 +1700,160 @@
     };
   }
 
+
+  // Locale-authored cave interiors use their painted cells as the authoritative
+  // walkable footprint, then pass that mask through the same SDF/octree/dual-
+  // contour pipeline as ordinary dens. This deliberately does NOT invent a
+  // second cave mesher: tile columns are carved into the real sculpt field,
+  // boundary bleed is healed with the same wall solver, and the same clipped
+  // mesh extractor produces the final rock shell. Only the primary connector
+  // cuts a vestibule through the outer wall; secondary/keyed connectors remain
+  // solid wall boundaries until their runtime door/transition is revealed.
+  function carveFootprintCavern(footprintTiles, options = {}, rng = Math.random) {
+    const opts = Object.assign({}, DEFAULT_OPTS, options || {});
+    const seen = new Set();
+    const authored = [];
+    for (const tile of (footprintTiles || [])) {
+      const c = Math.trunc(Number(tile?.[0])), r = Math.trunc(Number(tile?.[1]));
+      if (!Number.isFinite(c) || !Number.isFinite(r)) continue;
+      const key = c + ',' + r;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      authored.push([c, r]);
+    }
+    if (!authored.length) throw new Error('carveFootprintCavern requires at least one painted locale tile.');
+
+    const ts = Math.max(0.125, Number(opts.tileSize) || 1); // Physical carve scale; output is converted back to one-unit-per-authored-tile coordinates below.
+    const minC = Math.min(...authored.map(tile => tile[0])), maxC = Math.max(...authored.map(tile => tile[0]));
+    const minR = Math.min(...authored.map(tile => tile[1])), maxR = Math.max(...authored.map(tile => tile[1]));
+    const offsetC = Math.floor((minC + maxC + 1) / 2); // Integer recentering keeps carveTileColumn's grid contract intact while shrinking the SDF domain.
+    const offsetR = Math.floor((minR + maxR + 1) / 2);
+    const localTiles = authored.map(([c, r]) => [c - offsetC, r - offsetR]);
+    const localClaimed = new Set(localTiles.map(([c, r]) => c + ',' + r));
+
+    const probeRadius = Number(opts.probeRadius) || DEFAULT_OPTS.probeRadius;
+    const brushRadius = Number(opts.brushRadius) || DEFAULT_OPTS.brushRadius;
+    const pad = Math.max(3, probeRadius * 3 + brushRadius * 3 + 1.5); // Leaves real solid rock around the painted mask before the octree's open-air padding begins.
+    const spanX = (maxC - minC + 1) * ts, spanZ = (maxR - minR + 1) * ts;
+    const dims = { x: spanX + pad * 2, y: Number(opts.sizeY) || DEFAULT_OPTS.sizeY, z: spanZ + pad * 2 };
+    const st = createSculptState(dims, Math.max(16, Math.trunc(Number(opts.gridN) || DEFAULT_OPTS.gridN)), Math.max(1, Math.trunc(Number(opts.baseCell) || DEFAULT_OPTS.baseCell)));
+
+    // Match carveMazeCavern's vertical sweep exactly so locale caves share the
+    // same floor reference, open ceiling, lighting assumptions, and mesh shape.
+    const probeYRadius = probeRadius * (opts.probeYStretch ?? DEFAULT_OPTS.probeYStretch);
+    const halfY = dims.y / 2;
+    const pathYShift = dims.y * (opts.pathYShiftFrac ?? DEFAULT_OPTS.pathYShiftFrac);
+    const lowLevel = -halfY + probeYRadius * 1.05 + pathYShift;
+    const highLevel = halfY + probeYRadius * 1.3 + pathYShift;
+    const levelSpacing = probeYRadius * 1.6;
+    const levelCount = Math.max(1, Math.ceil((highLevel - lowLevel) / levelSpacing) + 1);
+    const levels = Array.from({ length: levelCount }, (_, i) =>
+      levelCount > 1 ? lerp(lowLevel, highLevel, i / (levelCount - 1)) : lowLevel);
+    const floorY = lowLevel - probeYRadius + (Number(opts.floorOffset) || 0);
+    const carveOpts = Object.assign({}, opts, { tileSize: ts, floorY, ceilingY: null, probeYRadius, levels });
+
+    // A light organic pre-carve gives the dual-contour field the same rounded
+    // language as generated dens; carveTileColumn then guarantees every
+    // authored cell is actually walkable. Boundary healing below prevents the
+    // pre-carve from expanding gameplay collision beyond the locale mask.
+    const organicJitter = Math.max(0, Math.min(0.45, Number(opts.organicJitter ?? 0.12)));
+    if (organicJitter > 0) {
+      for (const [c, r] of localTiles) {
+        const boundary = [[1,0],[-1,0],[0,1],[0,-1]].some(([dc, dr]) => !localClaimed.has((c + dc) + ',' + (r + dr)));
+        if (!boundary) continue;
+        const center = {
+          x: (c + 0.5 + (rng() * 2 - 1) * organicJitter) * ts,
+          y: levels[Math.floor(levels.length / 2)],
+          z: (r + 0.5 + (rng() * 2 - 1) * organicJitter) * ts,
+        };
+        carveHook(st, center, { x: 1, y: 0, z: 0 }, Math.max(probeRadius, ts * 0.52), 1, carveOpts, rng);
+      }
+    }
+    for (const [c, r] of localTiles) carveTileColumn(st, c, r, carveOpts);
+
+    const sideInfo = {
+      north: { dc: 0, dr: -1, cap: 'N' },
+      east:  { dc: 1, dr: 0, cap: 'E' },
+      south: { dc: 0, dr: 1, cap: 'S' },
+      west:  { dc: -1, dr: 0, cap: 'W' },
+    };
+    const authoredEntrance = options?.entrance || null;
+    const entranceSide = sideInfo[String(authoredEntrance?.side || 'south').toLowerCase()] || sideInfo.south;
+    const entranceCol = Math.trunc(Number(authoredEntrance?.col));
+    const entranceRow = Math.trunc(Number(authoredEntrance?.row));
+    const hasAuthoredEntrance = Number.isFinite(entranceCol) && Number.isFinite(entranceRow) && seen.has(entranceCol + ',' + entranceRow);
+    const fallbackEntrance = authored.reduce((best, tile) => tile[1] > best[1] ? tile : best, authored[0]);
+    const actualEntrance = hasAuthoredEntrance ? [entranceCol, entranceRow] : fallbackEntrance;
+    const localEntrance = [actualEntrance[0] - offsetC, actualEntrance[1] - offsetR];
+    const entranceTiles = [actualEntrance.slice()];
+    const vestibuleTiles = new Set();
+    const vestibuleDepth = Math.max(2, Math.round(2 / ts));
+    for (let step = 1; step <= vestibuleDepth; step++) {
+      const vc = localEntrance[0] + entranceSide.dc * step;
+      const vr = localEntrance[1] + entranceSide.dr * step;
+      carveTileColumn(st, vc, vr, carveOpts);
+      vestibuleTiles.add(vc + ',' + vr);
+    }
+    const skipCapEdges = new Set([localEntrance[0] + ',' + localEntrance[1] + ',' + entranceSide.cap]);
+
+    solidifyBoundaryWalls(
+      st,
+      localClaimed,
+      Math.max(brushRadius, probeRadius) + (opts.wallGridMargin ?? DEFAULT_OPTS.wallGridMargin),
+      vestibuleTiles,
+      ts,
+      carveOpts
+    );
+
+    const touched = computeTouchedTiles(st, ts, opts.cullTouchTolerance ?? DEFAULT_OPTS.cullTouchTolerance);
+    for (const key of localClaimed) touched.add(key);
+    const mesh = extractMesh(st, touched, skipCapEdges, ts, localClaimed, floorY, opts.enforceWalkableClearance);
+
+    // Convert the centered sculptor coordinate frame back to the Locale
+    // Editor's authored col/row frame while preserving floor-at-y=0.
+    for (let i = 0; i < mesh.positions.length; i += 3) {
+      mesh.positions[i] = mesh.positions[i] / ts + offsetC;
+      mesh.positions[i + 1] += -floorY;
+      mesh.positions[i + 2] = mesh.positions[i + 2] / ts + offsetR;
+    }
+
+    // A useful deterministic farthest point for diagnostics/future authored
+    // encounters. Locale caves do not implicitly spawn Den-Mothers.
+    const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+    const startKey = actualEntrance.join(',');
+    const dist = new Map([[startKey, 0]]);
+    const queue = [actualEntrance.slice()];
+    let farthest = actualEntrance.slice(), farthestDistance = 0;
+    while (queue.length) {
+      const [c, r] = queue.shift();
+      const d = dist.get(c + ',' + r) || 0;
+      for (const [dc, dr] of dirs) {
+        const next = [c + dc, r + dr], key = next.join(',');
+        if (!seen.has(key) || dist.has(key)) continue;
+        dist.set(key, d + 1);
+        queue.push(next);
+        if (d + 1 > farthestDistance) { farthestDistance = d + 1; farthest = next; }
+      }
+    }
+
+    return {
+      claimed: new Set(authored.map(tile => tile.join(','))),
+      entranceTiles,
+      nestTile: farthest,
+      mesh,
+      levels: levels.map(level => level - floorY),
+      probeYRadius,
+      dims,
+      domainTopY: dims.y * 0.5 * 1.08 - floorY,
+      footprintBounds: { minC, minR, maxC, maxR },
+      authoredTileCount: authored.length,
+    };
+  }
+
   window.CavernSculptor = {
     createSculptState, carveHook, carveSphere, buildMazePaths, sampleSpline,
     carveAlongSpline2D, snapClaimTiles, carveTileColumn, solidifyBoundaryWalls,
     computeTouchedTiles, classifyDeformedBoundaryTiles,
-    extractMesh, carveMazeCavern,
+    extractMesh, carveMazeCavern, carveFootprintCavern,
   };
 })();

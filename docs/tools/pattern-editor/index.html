@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Hobunji Hollow — Pattern Editor</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:#081018;color:#edf5ff;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+body{padding:14px}.shell{max-width:1100px;margin:0 auto}.head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}.head h1{font-size:18px;margin:0}.muted{color:#9fb4cf;font-size:12px;line-height:1.45}
+.grid{display:grid;grid-template-columns:minmax(250px,330px) 1fr;gap:12px}.card{border:1px solid rgba(255,255,255,.12);background:#111b28;border-radius:14px;padding:12px}.card h2{font-size:12px;text-transform:uppercase;letter-spacing:.35px;color:#b9cbe0;margin:0 0 9px}
+button{border:1px solid rgba(106,167,255,.32);background:rgba(106,167,255,.13);color:#edf5ff;border-radius:9px;padding:8px 11px;font-weight:750;cursor:pointer}button.secondary{background:rgba(255,255,255,.055);border-color:rgba(255,255,255,.14)}button:disabled{opacity:.45;cursor:default}
+input,select{width:100%;background:#0d1621;border:1px solid rgba(255,255,255,.14);color:#edf5ff;border-radius:8px;padding:8px}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.row>*{min-width:0}
+.library{display:flex;flex-direction:column;gap:6px;max-height:440px;overflow:auto}.lib{display:flex;align-items:center;gap:7px;padding:8px;border:1px solid rgba(255,255,255,.1);border-radius:9px;background:rgba(255,255,255,.025)}.lib b{flex:1;font-size:12px}
+.previewWrap{display:grid;place-items:center;min-height:330px;border:1px solid rgba(255,255,255,.1);border-radius:12px;background:#060a0d;background-image:linear-gradient(45deg,rgba(255,255,255,.04) 25%,transparent 25%),linear-gradient(-45deg,rgba(255,255,255,.04) 25%,transparent 25%),linear-gradient(45deg,transparent 75%,rgba(255,255,255,.04) 75%),linear-gradient(-45deg,transparent 75%,rgba(255,255,255,.04) 75%);background-size:18px 18px;background-position:0 0,0 9px,9px -9px,-9px 0}
+#preview{max-width:100%;height:auto;image-rendering:pixelated}.fields{display:grid;grid-template-columns:minmax(170px,1fr) minmax(150px,190px) 120px 120px;gap:8px;margin-bottom:10px}.fields label{font-size:11px;color:#9fb4cf}.fields input[type=color]{padding:2px;height:38px}
+#status{margin-top:8px;white-space:pre-wrap}.path{font:11px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;color:#a9bed7;background:#0a1119;border-radius:8px;padding:8px;margin-top:8px}
+@media(max-width:760px){.grid{grid-template-columns:1fr}.fields{grid-template-columns:1fr 1fr}.fields label:first-child{grid-column:1/-1}.previewWrap{min-height:230px}}
+</style>
+<script src="../../js/scene-ready-poller.js"></script>
+<script src="../../js/sprite-recolor.js"></script>
+<script src="../../js/clothing-weaving-system.js"></script>
+<script src="../../js/pattern-authoring.js"></script>
+<script src="../../js/repo-pattern-library.js"></script>
+</head>
+<body>
+<div class="shell">
+  <div class="head">
+    <div><h1>Pattern Editor</h1><div class="muted">The same motif/frame/tiling editor used by weaving and verdigris, backed by repo-authored patterns.</div></div>
+    <button id="newBtn">＋ New pattern</button>
+  </div>
+  <div class="grid">
+    <section class="card">
+      <h2>Repo library</h2>
+      <div class="muted" style="margin-bottom:8px">Loaded from <code>config/patterns/index.json</code>. Repo entries are read-only here; edit one, then export replacement files.</div>
+      <div id="library" class="library"><div class="muted">Loading…</div></div>
+    </section>
+    <section class="card">
+      <h2>Current pattern</h2>
+      <div class="fields">
+        <label>Name<input id="patternName" value="untitled_pattern" maxlength="60"></label>
+        <label>Background texture
+          <select id="surfaceTexture">
+            <option value="canvas.png" selected>canvas.png</option>
+            <option value="boards.png">boards.png</option>
+            <option value="carved_smooth.png">carved_smooth.png</option>
+            <option value="log.png">log.png</option>
+            <option value="wavy_surface.png">wavy_surface.png</option>
+            <option value="wibbly_surface.png">wibbly_surface.png</option>
+          </select>
+        </label>
+        <label>Surface tint<input id="baseColor" type="color" value="#9b8b73"></label>
+        <label>Pattern ink<input id="inkColor" type="color" value="#315c8f"></label>
+      </div>
+      <div class="previewWrap"><canvas id="preview" width="384" height="240"></canvas></div>
+      <div class="row" style="margin-top:10px">
+        <button id="editBtn">Open pattern editor</button>
+        <button id="pngBtn" class="secondary" disabled>Export motif PNG</button>
+        <button id="jsonBtn" class="secondary" disabled>Export pattern JSON</button>
+        <button id="bothBtn" class="secondary" disabled>Export both</button>
+        <button id="indexBtn" class="secondary" disabled>Copy index entry</button>
+      </div>
+      <div id="paths" class="path">PNG → assets/patterns/motif_&lt;pattern name&gt;.png
+JSON → config/patterns/pattern_&lt;pattern name&gt;.json</div>
+      <div id="status" class="muted">Create a new pattern or load one from the repo.</div>
+    </section>
+  </div>
+</div>
+<script>
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  let draft = null;
+  let loadedRepoId = null;
+
+  function slugName(value) {
+    return String(value || 'untitled_pattern').trim().toLowerCase()
+      .replace(/[’']/g, '')
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '') || 'untitled_pattern';
+  }
+
+  function cleanSettings(pattern) {
+    if (!pattern) return {};
+    const out = { ...pattern };
+    for (const key of ['motifDataUrl','motifUrl','customMotifId','repoPatternId','repoPatternName']) delete out[key];
+    return out;
+  }
+
+  const previewTextureCache = new Map(); // Reuses decoded repo surface textures while the author changes pattern/tint settings.
+  function loadPreviewTexture(filename) {
+    const safeName = String(filename || 'canvas.png').replace(/[^a-z0-9_.-]/gi, '');
+    const url = '../../assets/textures/' + safeName; // Used by the generic preview to choose which repository texture becomes the cloth-like source raster.
+    if (previewTextureCache.has(url)) return previewTextureCache.get(url);
+    const request = new Promise((resolve, reject) => {
+      const image = new Image();
+      image.crossOrigin = 'anonymous';
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error('Failed to load preview texture ' + url));
+      image.src = url;
+    });
+    previewTextureCache.set(url, request);
+    return request;
+  }
+
+  async function makeSurface() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 384; canvas.height = 240;
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
+    const tintHex = parseInt($('baseColor').value.slice(1), 16); // Used exactly like a clothing layer dye: direct shade-fill after the source raster is in its working canvas.
+    const textureName = $('surfaceTexture').value || 'canvas.png'; // Used by the preview selector; canvas.png remains the default.
+    try {
+      const source = await loadPreviewTexture(textureName);
+      ctx.drawImage(source, 0, 0, canvas.width, canvas.height); // Stretch-to-fit once, analogous to clothing using its source raster at the full working-layer dimensions.
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      window.SpriteRecolor.recolorImageData(imageData.data, tintHex, 'direct'); // Same direct shade-fill path renderClothingLayers uses before weaving.
+      ctx.putImageData(imageData, 0, 0);
+    } catch (error) {
+      console.warn('[pattern-editor] preview texture failed to load; using flat tint fallback', error);
+      ctx.fillStyle = $('baseColor').value;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+    return canvas;
+  }
+
+  async function renderSimple(pattern) {
+    const base = await makeSurface();
+    if (!pattern?.motifDataUrl && !pattern?.motifUrl) return base;
+    return window.ClothingWeavingSystem.applyPatternToTintedImage(
+      base,
+      pattern,
+      $('inkColor').value,
+      'pattern-tool:' + $('surfaceTexture').value + ':' + $('baseColor').value + ':' + $('inkColor').value
+    );
+  }
+
+  async function refreshPreview(pattern = draft) {
+    const canvas = $('preview'), ctx = canvas.getContext('2d');
+    const rendered = await renderSimple(pattern);
+    canvas.width = rendered.width; canvas.height = rendered.height;
+    ctx.imageSmoothingEnabled = false;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(rendered, 0, 0);
+  }
+
+  function dataUrlDownload(dataUrl, filename) {
+    const a = document.createElement('a');
+    a.href = dataUrl; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+  }
+
+  function jsonDownload(value, filename) {
+    const blob = new Blob([JSON.stringify(value, null, 2) + '\n'], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  function exportPayload() {
+    if (!draft?.motifDataUrl) return null;
+    const name = $('patternName').value.trim() || 'Untitled pattern';
+    const id = slugName(name);
+    return {
+      id, name,
+      motifFile: 'motif_' + id + '.png',
+      jsonFile: 'pattern_' + id + '.json',
+      json: {
+        schema: 'hobunji_pattern.v1',
+        id,
+        name,
+        motifPng: 'assets/patterns/motif_' + id + '.png',
+        settings: cleanSettings(draft),
+      },
+    };
+  }
+
+  function syncExportState() {
+    const ready = !!draft?.motifDataUrl;
+    for (const id of ['pngBtn','jsonBtn','bothBtn','indexBtn']) $(id).disabled = !ready;
+    if (!ready) return;
+    const p = exportPayload();
+    $('paths').textContent =
+      'PNG → assets/patterns/' + p.motifFile + '\n' +
+      'JSON → config/patterns/' + p.jsonFile + '\n' +
+      'Index → { "id": "' + p.id + '", "name": "' + p.name + '", "file": "config/patterns/' + p.jsonFile + '" }';
+  }
+
+  async function openEditor(initial = draft, libraryId = null) {
+    await window.RepoPatternLibrary.preloadEditable();
+    window.PatternAuthoring.openEditor({
+      title: 'Repo pattern — ' + ($('patternName').value.trim() || 'Untitled'),
+      motifHint: 'Draw the reusable black motif. The preview stretches the selected repository texture to the full surface, shade-fills it like an in-game clothing layer, then applies the real weaving compositor.',
+      initialPattern: initial,
+      initialPatternLibraryId: libraryId,
+      library: {
+        readOnly: true,
+        list: () => window.RepoPatternLibrary.listCached(),
+        get: id => window.RepoPatternLibrary.getCachedEditableById(id),
+      },
+      renderPreview: renderSimple,
+      onSave: async patternData => {
+        draft = { ...patternData };
+        loadedRepoId = null;
+        await refreshPreview();
+        syncExportState();
+        $('status').textContent = 'Pattern ready to export. Commit the PNG + JSON and add the shown entry to config/patterns/index.json.';
+        return true;
+      },
+    });
+  }
+
+  async function loadRepoPattern(id) {
+    $('status').textContent = 'Loading repo pattern…';
+    const entry = window.RepoPatternLibrary.listCached().find(item => item.id === id);
+    const editable = await window.RepoPatternLibrary.getEditableById(id);
+    if (!editable) throw new Error('Pattern not found: ' + id);
+    loadedRepoId = id;
+    draft = editable;
+    $('patternName').value = entry?.label || id;
+    await refreshPreview();
+    syncExportState();
+    $('status').textContent = 'Loaded ' + (entry?.label || id) + ' from the repo. Open the editor to revise it.';
+  }
+
+  async function renderLibrary() {
+    await window.RepoPatternLibrary.preloadEditable();
+    const list = window.RepoPatternLibrary.listCached();
+    const holder = $('library');
+    if (!list.length) {
+      holder.innerHTML = '<div class="muted">No committed repo patterns yet. Create one, export its files, then add its entry to <code>config/patterns/index.json</code>.</div>';
+      return;
+    }
+    holder.innerHTML = '';
+    for (const entry of list) {
+      const row = document.createElement('div');
+      row.className = 'lib';
+      const name = document.createElement('b'); name.textContent = entry.label;
+      const button = document.createElement('button'); button.className = 'secondary'; button.textContent = 'Load';
+      button.onclick = () => loadRepoPattern(entry.id).catch(error => { $('status').textContent = error.message; });
+      row.append(name, button); holder.appendChild(row);
+    }
+  }
+
+  $('newBtn').onclick = () => {
+    draft = null; loadedRepoId = null; $('patternName').value = 'untitled_pattern';
+    refreshPreview(null); syncExportState(); openEditor(null, null);
+  };
+  $('editBtn').onclick = () => openEditor(draft, loadedRepoId);
+  $('surfaceTexture').onchange = () => refreshPreview();
+  $('baseColor').oninput = () => refreshPreview();
+  $('inkColor').oninput = () => refreshPreview();
+  $('patternName').oninput = syncExportState;
+
+  $('pngBtn').onclick = () => {
+    const p = exportPayload(); if (!p) return;
+    dataUrlDownload(draft.motifDataUrl, p.motifFile);
+  };
+  $('jsonBtn').onclick = () => {
+    const p = exportPayload(); if (!p) return;
+    jsonDownload(p.json, p.jsonFile);
+  };
+  $('bothBtn').onclick = () => {
+    const p = exportPayload(); if (!p) return;
+    dataUrlDownload(draft.motifDataUrl, p.motifFile);
+    jsonDownload(p.json, p.jsonFile);
+  };
+  $('indexBtn').onclick = async () => {
+    const p = exportPayload(); if (!p) return;
+    const entry = { id: p.id, name: p.name, file: 'config/patterns/' + p.jsonFile };
+    await navigator.clipboard.writeText(JSON.stringify(entry, null, 2));
+    $('status').textContent = 'Copied index entry.';
+  };
+
+  refreshPreview(null);
+  renderLibrary().then(() => { $('status').textContent = 'Repo library ready.'; }).catch(error => { $('status').textContent = 'Repo library load failed: ' + error.message; });
+})();
+</script>
+</body>
+</html>

@@ -257,10 +257,15 @@
 
   const current = document.currentScript; // Resolves every animal/fey module beside repo-picker.js regardless of hosting prefix/commit URL.
   const moduleUrl = (name, version) => current?.src ? new URL(`${name}?v=${version}`, current.src).href : `../../js/${name}?v=${version}`;
+  const scenePollerSource = moduleUrl('scene-ready-poller.js', '20260917a');
+  const spriteRecolorSource = moduleUrl('sprite-recolor.js', '20260920relative-shade1');
+  const repoPatternSource = moduleUrl('repo-pattern-library.js', '20260920repo1');
+  const weavingSource = moduleUrl('clothing-weaving-system.js', '20260920animal-scale-outline1');
+  const creatureRendererSource = moduleUrl('creature-genetics-render.js', '20260920animal-scale-outline1');
   const headwearSource = moduleUrl('animal-npc-headwear.js', '20260905feyhat1');
   const bridgeSource = moduleUrl('animal-chathead-frame.js', '20260915perf1');
-  const source = moduleUrl('character-studio-animal-appearance.js', '20260905animalnpc1');
-  const extrasSource = moduleUrl('character-studio-animal-fey-extras.js', '20260905feyhat1');
+  const source = moduleUrl('character-studio-animal-appearance.js', '20260920animal-scale-outline1');
+  const extrasSource = moduleUrl('character-studio-animal-fey-extras.js', '20260920canonical-fey1');
 
   function appendModule(src, dataKey, errorLabel) {
     if (document.querySelector(`script[data-${dataKey}]`)) return;
@@ -272,6 +277,14 @@
     document.head.appendChild(script);
   }
 
+  // Dynamic classic scripts with async=false preserve insertion order, so the
+  // animal appearance extension sees the same pattern compositor/renderer as
+  // the game rather than maintaining a Character-Studio-only approximation.
+  appendModule(scenePollerSource, 'character-studio-scene-poller', 'scene-ready-poller.js for Character Studio');
+  appendModule(spriteRecolorSource, 'character-studio-sprite-recolor', 'sprite-recolor.js for Character Studio');
+  appendModule(repoPatternSource, 'character-studio-repo-pattern-library', 'repo-pattern-library.js for Character Studio');
+  appendModule(weavingSource, 'character-studio-weaving-compositor', 'clothing-weaving-system.js for Character Studio');
+  appendModule(creatureRendererSource, 'character-studio-creature-renderer', 'creature-genetics-render.js for Character Studio');
   appendModule(headwearSource, 'character-studio-animal-headwear', 'animal-npc-headwear.js for Character Studio');
   appendModule(bridgeSource, 'character-studio-animal-profile-bridge', 'animal-chathead-frame.js for Character Studio');
   appendModule(source, 'character-studio-animal-appearance', 'character-studio-animal-appearance.js');

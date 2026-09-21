@@ -32,13 +32,13 @@
   const PATTERN_SCALE_MAX = 3.2; // Used by the Pattern scale slider; renders at the former 0.80 physical mesh scale after normalization.
 
   const PATTERN_DEFAULTS = Object.freeze({
-    motifScale: 1, // size of the drawn ink itself, relative to its own opaque-ink bounds
+    motifScale: 1, // source-ink zoom inside the fixed frame crop; pixels outside the frame are clipped
     motifRotationDeg: 0,
     tiling: true,
     invert: false, // swap which side of the motif stays vs. clears (see tool-metal-recolor.js)
-    // Erodes the placed/tiled ink mask inward by this many px before the
-    // outline (if any) is drawn around it — see buildPatternMask/
-    // recolorAndOxidize's erodeMask call. 0 = no thinning.
+    // Signed source-motif contour offset applied before frame/mesh scaling:
+    // positive values thin inward, negative values thicken outward, and 0
+    // preserves the authored footprint. Kept as motifThinPx for save compatibility.
     motifThinPx: 0,
     // The frame is a crop window laid over the drawn ink, in the same
     // coordinate space the motif is sketched in: frameX/frameY/
@@ -78,9 +78,9 @@
   const FRAME_SHAPES = Object.freeze({
     // Every shape (including these two) now clips to its own rectangle —
     // the frame is a hard crop boundary, not just a tiling-pitch guide —
-    // so a motif drawn larger than the frame is actually cut at its edge
-    // instead of tiling unclipped past it (see buildPatternMask's
-    // clipToPolygon in clothing-weaving-system.js/tool-metal-recolor.js).
+    // so a motif zoomed larger than the frame is cut at that edge rather
+    // than extending into neighboring cells (see each renderer's drawCell
+    // polygon clip in clothing-weaving-system.js/tool-metal-recolor.js).
     square: { label: 'Square', paired: false, basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: 0, y: h } }), polygon: (w, h) => [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }, { x: 0, y: h }] },
     brick: { label: 'Brick', paired: false, basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: w / 2, y: h } }), polygon: (w, h) => [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }, { x: 0, y: h }] },
     diamond: {
@@ -268,18 +268,19 @@
               <h3>Pattern settings</h3>
               <div class="pa-check"><input type="checkbox" class="pa-in" data-field="tiling" ${cfg.tiling ? 'checked' : ''}><label>Repeat (tile the motif)</label></div>
               <div class="pa-check"><input type="checkbox" class="pa-in" data-field="invert" ${cfg.invert ? 'checked' : ''}><label>Invert pattern</label></div>
-              <div class="pa-field"><label><span>Motif thinning</span><span class="pa-val" data-for="motifThinPx"></span></label><input type="range" class="pa-in" data-field="motifThinPx" min="0" max="12" step="1" value="${cfg.motifThinPx}"></div>
-              <p class="pa-hint">Erodes the placed ink inward from every edge before any outline is drawn around it — like magic-wand-selecting the transparent area with this many px of expansion, then deleting the selection.</p>
+              <div class="pa-field"><label><span>Motif thinning / thickening</span><span class="pa-val" data-for="motifThinPx"></span></label><input type="range" class="pa-in" data-field="motifThinPx" min="-12" max="12" step="1" value="${cfg.motifThinPx}"></div>
+              <p class="pa-hint">0 keeps the motif footprint unchanged. Move right / positive to thin inward; move left / negative to thicken outward. Units are pixels in the motif itself, before Pattern scale, frame scale, or mesh scale are applied; the black outline is drawn afterward.</p>
             </div>
             ${options.library ? `
             <div class="pa-card">
               <h3>Library</h3>
-              <p class="pa-hint">Save this pattern to reuse later, or load one you've already saved or unlocked. Loading replaces the current motif and settings.</p>
+              <p class="pa-hint">${escapeHtml(options.library.readOnly ? 'Load a repo-authored pattern. Saving back to the repo is handled by this tool’s export buttons.' : 'Save this pattern to reuse later, or load one you’ve already saved or unlocked. Loading replaces the current motif and settings.')}</p>
               <div class="pa-libraryList"></div>
+              ${options.library.readOnly ? '' : `
               <div class="pa-row" style="margin-top:9px">
                 <input type="text" class="pa-libraryName" placeholder="Pattern name" maxlength="60">
                 <button type="button" class="pa-btn secondary" data-act="saveToLibrary">Save to library</button>
-              </div>
+              </div>`}
             </div>` : ''}
           </div>
           <div class="pa-col pa-rightCol">
@@ -321,7 +322,7 @@
                   <div class="pa-field"><label><span>Frame scale</span><span class="pa-val" data-for="frameScale"></span></label><input type="range" class="pa-in" data-field="frameScale" min="0.1" max="6" step="0.01" value="${cfg.frameScale}"></div>
                   <div class="pa-field"><label><span>Motif scale</span><span class="pa-val" data-for="motifScale"></span></label><input type="range" class="pa-in" data-field="motifScale" min="0.1" max="3" step="0.01" value="${cfg.motifScale}"></div>
                   <div class="pa-field"><label><span>Motif rotation</span><span class="pa-val" data-for="motifRotationDeg"></span></label><input type="range" class="pa-in" data-field="motifRotationDeg" min="-180" max="180" step="1" value="${cfg.motifRotationDeg}"></div>
-                  <p class="pa-hint">Motif scale zooms the ink within the frame's own fixed crop — below 1× leaves space around it, above 1× lets it overflow past the frame's edge instead of growing the frame to fit.</p>
+                  <p class="pa-hint">Motif scale zooms the source ink inside the frame's fixed crop. Above 1× shows a larger portion of the ink but anything outside the frame is clipped; below 1× leaves more empty space inside the same cell. It never changes frame size or lattice spacing.</p>
                   <div class="pa-row">
                     <button type="button" class="pa-btn secondary" data-act="autoDetect">Auto-detect fit</button>
                     <button type="button" class="pa-btn secondary" data-act="resetPlacement">Reset placement</button>
@@ -343,7 +344,7 @@
     document.body.appendChild(overlay);
 
     const sketchCanvas = overlay.querySelector('.pa-sketch');
-    const sketchCtx = sketchCanvas.getContext('2d');
+    const sketchCtx = sketchCanvas.getContext('2d', { willReadFrequently: true }); // This canvas is sampled repeatedly by motif detection, frame fitting, undo, and export.
     sketchCtx.lineCap = 'round';
     sketchCtx.lineJoin = 'round';
     const frameCanvas = overlay.querySelector('.pa-frameCanvas');
@@ -361,7 +362,10 @@
       overlay.querySelectorAll('.pa-val').forEach(el => {
         const field = el.dataset.for;
         if (field === 'motifScale' || field === 'frameScale' || field === 'meshScale') el.textContent = `${Number(cfg[field]).toFixed(2)}×`;
-        else if (field === 'motifThinPx' || field === 'frameX' || field === 'frameY') el.textContent = `${Math.round(Number(cfg[field]) || 0)}px`;
+        else if (field === 'motifThinPx') {
+          const amount = Math.round(Number(cfg[field]) || 0);
+          el.textContent = amount > 0 ? `Thin ${amount} motif px` : amount < 0 ? `Thicken ${Math.abs(amount)} motif px` : '0 motif px';
+        } else if (field === 'frameX' || field === 'frameY') el.textContent = `${Math.round(Number(cfg[field]) || 0)}px`;
         else el.textContent = `${cfg[field]}°`;
       });
     }
@@ -871,7 +875,7 @@
         row.innerHTML = `
           <span class="pa-libLabel">${escapeHtml(entry.label)}${entry.source === 'catalog' ? ' 🔓' : ''}</span>
           <button type="button" class="pa-btn secondary" data-lib-load="${escapeHtml(entry.id)}">Load</button>
-          ${entry.removable ? `<button type="button" class="pa-btn secondary" data-lib-remove="${escapeHtml(entry.id)}">✕</button>` : ''}
+          ${entry.removable && !options.library.readOnly ? `<button type="button" class="pa-btn secondary" data-lib-remove="${escapeHtml(entry.id)}">✕</button>` : ''}
         `;
         container.appendChild(row);
       });
