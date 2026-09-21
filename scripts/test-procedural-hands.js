@@ -631,8 +631,9 @@ assert.match(shoulderAimSource, /visualOnly: true/, 'paper-arm geometry itself m
 assert.match(shoulderAimSource, /setPaperArmGuideVisible/, 'editor must be able to toggle paper-arm guides on already-created rigs');
 assert.match(shoulderAimSource, /currentElbow\?\.\(side\)/, 'runtime hand targeting must consume the interpolated direct per-side elbow pose');
 assert.match(shoulderPoseRuntimeSource, /activeThrownChargeItemKey\?\.\(\)[\s\S]*return true/, 'held thrown-weapon Windup must identify the authored active phase before a ranged playerAction exists');
-assert.match(shoulderPoseRuntimeSource, /action\?\.kind !== 'fire'[\s\S]*strikeBoundary[\s\S]*return progress <= strikeBoundary/, 'ranged fire Windup\/Strike must remain animation-owned through the Strike boundary');
-assert.match(shoulderPoseRuntimeSource, /if \(!rangedWindupStrikeActive\(\)\) return weights;[\s\S]*return \{ \.\.\.weights, grip: 0 \}/, 'ranged Windup\/Strike must disable only the local grip-axis correction while preserving palm-normal targeting');
+assert.match(shoulderPoseRuntimeSource, /RangedWeapons\?\.isPlayerThrownFireThroughStrike\?\.\(\) === true/, 'ranged hand targeting must consume the real thrown-action phase API rather than debug state');
+assert.doesNotMatch(shoulderPoseRuntimeSource, /__rangedDebug/, 'gameplay hand targeting must never depend on the ranged debug snapshot');
+assert.match(shoulderPoseRuntimeSource, /if \(!rangedWindupStrikeActive\(\)\) return weights;[\s\S]*return \{ \.\.\.weights, grip: 0 \}/, 'thrown Windup\/Strike must disable only the local grip-axis correction while preserving palm-normal targeting');
 assert.match(shoulderAimSource, /const appliedPalmNormalAngle = palmNormalAngle \* weights\.palmNormal/, 'palm-normal targeting must remain active through the ordinary shoulder\/elbow solver');
 assert.match(shoulderAimSource, /shoulder\.x \+ Number\(authoredOffset\.x/, 'authored elbow coordinates must be direct shoulder-relative pose offsets');
 assert.match(shoulderAimSource, /legacy-shoulder-target/, 'older animations without elbows must retain the old shoulder target instead of calculating a runtime midpoint');
@@ -883,12 +884,12 @@ for (const removed of [
 
 // Ranged Windup/Strike disables only the grip-axis correction; palm-normal targeting remains available.
 let activeThrownCharge = 'fishingspear_nativeCopper';
+let thrownFireThroughStrike = false;
 const shoulderPoseGateSandbox = {
   window: {
     setInterval: () => 0,
     HobunjiRangedWeaponArchetypes: { activeThrownChargeItemKey: () => activeThrownCharge },
-    __rangedDebug: { playerAction: null },
-    RangedWeapons: { config: { fishingspear_nativeCopper: { fireAtFrac: 0.2 } } },
+    RangedWeapons: { isPlayerThrownFireThroughStrike: () => thrownFireThroughStrike },
   },
   console,
 };
@@ -896,13 +897,9 @@ vm.runInNewContext(shoulderPoseRuntimeSource, shoulderPoseGateSandbox, { filenam
 const shoulderPoseGate = shoulderPoseGateSandbox.window.HobunjiHandShoulderPoseRuntime;
 assert.strictEqual(shoulderPoseGate.rangedWindupStrikeActive(), true, 'held thrown Windup must enter the grip-axis suppression phase');
 activeThrownCharge = null;
-shoulderPoseGateSandbox.window.__rangedDebug.playerAction = { itemKey: 'fishingspear_nativeCopper', kind: 'fire', t: 0.1, durationS: 1 };
-assert.strictEqual(shoulderPoseGate.rangedWindupStrikeActive(), true, 'ranged Strike approach must remain in the grip-axis suppression phase');
-shoulderPoseGateSandbox.window.__rangedDebug.playerAction.t = 0.2;
-assert.strictEqual(shoulderPoseGate.rangedWindupStrikeActive(), true, 'the exact Strike boundary is still animation-owned');
-shoulderPoseGateSandbox.window.__rangedDebug.playerAction.t = 0.21;
-assert.strictEqual(shoulderPoseGate.rangedWindupStrikeActive(), false, 'Hold/Return immediately after Strike must restore ordinary grip-axis targeting');
-shoulderPoseGateSandbox.window.__rangedDebug.playerAction.kind = 'load';
-assert.strictEqual(shoulderPoseGate.rangedWindupStrikeActive(), false, 'reload/load actions are unchanged by the throw/fire suppression rule');
+thrownFireThroughStrike = true;
+assert.strictEqual(shoulderPoseGate.rangedWindupStrikeActive(), true, 'released thrown Strike must keep grip-axis targeting suppressed through the real ranged phase API');
+thrownFireThroughStrike = false;
+assert.strictEqual(shoulderPoseGate.rangedWindupStrikeActive(), false, 'thrown Hold/Return must restore ordinary grip-axis targeting');
 
 console.log('procedural hands: per-pose shoulder lerp + manual/fallback shoulder points + direct sockets PASS');
