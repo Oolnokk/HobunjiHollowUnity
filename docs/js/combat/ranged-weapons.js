@@ -35,6 +35,7 @@
   const _projectileInverseQuaternion = new THREE.Quaternion();
   const _projectileCurrentFlightDir = new THREE.Vector3(); // Reused to bend a projectile's launch-frame visual along an authored downward arc without camera steering.
   const _projectileTrajectoryDeltaQuaternion = new THREE.Quaternion(); // World-space delta from launch direction to current curved-flight direction.
+  const _projectileFallbackToolZFlipQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI); // In flightVisualQuaternion, projectile local +Y is the sprite/tool length axis; that is the held pose's Tool Z after its fixed -90° PNG-plane basis.
   const PROJECTILE_TRAIL_MAX_POINTS = 14; // Caps each comet ribbon's geometry and per-frame update cost.
   const PROJECTILE_TRAIL_MAX_LANES = 4; // Mirrors the melee trail's readable multi-affliction lane limit.
   const SPECIAL_AMMO_MAX = 8; // Shared character resource cap displayed by the ranged loadout and ammo arch.
@@ -554,10 +555,6 @@
       new THREE.MeshBasicMaterial({ map: texture, transparent: true, alphaTest: 0.08, side: THREE.DoubleSide })
     );
     if (weaponSprite && !hasExactSourcePlane) plane.scale.y = pendingAspect;
-    const projectileDirectionSwap = !sourceTransform && def.rangedType === 'thrown' && def.toolEndFlip === true; // Fallback only: sampled player throws already carry the exact held Tool-Z end flip inside their launch quaternion.
-    if (weaponSprite && projectileDirectionSwap) {
-      plane.rotation.z = Math.PI; // Tool End Flip is a 180° rotation around local Tool Z, not a UV mirror or Tool-X plane reversal.
-    }
     // Do not pre-rotate this plane. Its raw local +Y/+Z axes are the sampled
     // PNG plane axes: the launch quaternion supplies the exact Strike transform
     // and spinning weapons rotate only this child around local Z afterward.
@@ -822,6 +819,14 @@
     const baseVisualQuaternion = (shotOptions?.preserveSourceOrientation && sourceTransform?.quaternion?.isQuaternion)
       ? sourceTransform.quaternion.clone()
       : flightVisualQuaternion(direction, mesh.position, new THREE.Quaternion());
+    const fallbackToolZFlip = !sourceTransform && def.rangedType === 'thrown' && def.toolEndFlip === true;
+    if (fallbackToolZFlip) {
+      // Unsampled enemy/fallback throws have no held plane quaternion to copy.
+      // The flight frame maps sprite length to local Y, which corresponds to
+      // the held tool's Z after the fixed PNG-plane basis. Post-multiplying
+      // this local-Y half-turn therefore reproduces the actual Tool-Z flip.
+      baseVisualQuaternion.multiply(_projectileFallbackToolZFlipQuaternion);
+    }
     const launchTransformMode = shotOptions?.preserveSourceOrientation && hasSourcePosition ? 'held-strike-plane' : 'flight-frame'; // Used by the mobile-safe ranged debug snapshot to identify exact held-transform launches.
     mesh.userData.visual.quaternion.copy(baseVisualQuaternion);
     if (shotOptions?.preserveSourceOrientation && sourceTransform?.scale?.isVector3) {
