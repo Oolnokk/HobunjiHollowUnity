@@ -4,13 +4,17 @@ on:
   pull_request:
     paths:
       - 'docs/js/title-screen-runtime.js'
+      - 'docs/js/title-realtime-sky.js'
       - 'scripts/test-title-screen-runtime-gamepad-poll-timer.js'
+      - 'scripts/test-title-realtime-sky.js'
       - '.github/workflows/raf-ownership-stage12k-regression.yml'
   push:
     branches: [main]
     paths:
       - 'docs/js/title-screen-runtime.js'
+      - 'docs/js/title-realtime-sky.js'
       - 'scripts/test-title-screen-runtime-gamepad-poll-timer.js'
+      - 'scripts/test-title-realtime-sky.js'
       - '.github/workflows/raf-ownership-stage12k-regression.yml'
 
 permissions:
@@ -25,6 +29,12 @@ jobs:
         with:
           node-version: '22'
       - name: Syntax check
-        run: node --check docs/js/title-screen-runtime.js
-      - name: Title screen runtime gamepad poll timer conversion
-        run: node scripts/test-title-screen-runtime-gamepad-poll-timer.js
+        run: |
+          node --check docs/js/title-screen-runtime.js
+          node --check docs/js/title-realtime-sky.js
+          node --check docs/js/loading-screen-runtime.js
+          node --check docs/onboarding-core.js
+      - name: Title screen runtime and pre-world sky regressions
+        run: |
+          node scripts/test-title-screen-runtime-gamepad-poll-timer.js
+          node scripts/test-title-realtime-sky.js
