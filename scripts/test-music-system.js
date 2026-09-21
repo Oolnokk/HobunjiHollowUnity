@@ -134,7 +134,7 @@ assert.equal((config.match(/"url": "assets\/audio\/music\/bgm\/bgm_farm1\.m4a", 
   'the shared farm/town theme is authored as rain-only in both playlists');
 assert.match(index, /scratchbones-config\.js\?v=20260920newbgm1/,
   'the browser cache key loads the expanded authored BGM playlists');
-assert.match(formatUtils, /title-screen-runtime\.js\?v=20260920startupbgm1/,
+assert.match(formatUtils, /title-screen-runtime\.js\?v=20260921preworldsky2/,
   'the parser-synchronous title loader cache-busts the earliest Remembrance bootstrap');
 assert.match(index, /music-system\.js\?v=20260921skirmishrepeat1/,
   'the browser cache key loads startup-title audio adoption plus per-song gain behavior');
