@@ -39,7 +39,6 @@
     'bruisedHealth', 'windedStamina', 'congealedHealth', 'shatteredStamina', 'knockback',
   ]); // Used by Kylie ranged mastery so its options mirror the game's blunt affliction family rather than sharp-style buildup.
   const DUAL_ROLE_SHAPES = Object.freeze({ kylie: THROWN_TYPE, dagger: THROWN_TYPE, fishingspear: THROWN_TYPE, hatchet: THROWN_TYPE, bshuakauitl: BLOWGUN_TYPE });
-  const PROJECTILE_SPINNING_THROWN_SHAPES = new Set(['hatchet', 'dagger', 'kylie']); // These continue tumbling in flight. Fishing spear uses the offset held spin but freezes that sampled alignment once released.
   const END_FLIPPED_THROW_SHAPES = new Set(['dagger', 'fishingspear']); // Uses the shared 180° Tool-Z end flip from game/editor; no Tool-X plane reversal and no pose-channel rewrite.
   const NON_RANGED_SHAPES = new Set(['daggerSword']); // Used by rangedTypeFor() to hard-block dagger-swords even if stale or external code tags one with rangedType.
   const patchedItems = new Set(); // Used by diagnostics and idempotent definition patching.
@@ -163,6 +162,7 @@
     const shapeKey = shapeKeyFor(itemKey, toolDef);
     const animation = sharedThrowAnimation(shapeKey);
     const throwPoses = clonePoseSet(animation?.poses);
+    const projectileSpins = animation?.projectileSpin !== false; // Generic Spin Throw tumbles in flight; the fishing spear's dedicated animation is the sole authored opt-out.
     const scale = Number(toolDef?.rangedScale) || 1.05;
     const releaseDurationS = Math.max(0.12, (animation.durationS || 1.04) * (1 - (animation.windupFrac ?? 0.49)));
     const releaseAtFrac = Math.max(0.01, Math.min(0.98,
@@ -190,10 +190,10 @@
       throwStrikeFrac: Number.isFinite(Number(animation.strikeFrac)) ? Number(animation.strikeFrac) : 0.57,
       throwHoldFrac: Number.isFinite(Number(animation.holdFrac)) ? Number(animation.holdFrac) : 0.82,
       projectileSprite: toolDef?.sprite || 'assets/toolsprites/kylie.png',
-      projectileVisualStyle: PROJECTILE_SPINNING_THROWN_SHAPES.has(shapeKey) && animation.projectileSpin !== false ? 'spinningWeapon' : 'weapon',
+      projectileVisualStyle: projectileSpins ? 'spinningWeapon' : 'weapon',
       projectileWeaponShapeKey: shapeKey,
-      projectileVisualWidthWorld: PROJECTILE_SPINNING_THROWN_SHAPES.has(shapeKey) && animation.projectileSpin !== false ? 0.5 : null,
-      projectileSpinSource: PROJECTILE_SPINNING_THROWN_SHAPES.has(shapeKey) && animation.projectileSpin !== false ? 'fishingMace' : null,
+      projectileVisualWidthWorld: projectileSpins ? 0.5 : null,
+      projectileSpinSource: projectileSpins ? 'fishingMace' : null,
       projectileLockLaunchAlignment: animation.projectileLockAlignment === true,
       projectileBasisDeg: Number(animation.projectileBasisDeg) || 0, // Carries an authored in-plane projectile correction independently of held spin and Tool End Flip.
       fireDurationS: releaseDurationS,
