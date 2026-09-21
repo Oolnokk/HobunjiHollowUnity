@@ -10,6 +10,10 @@ on:
       - 'docs/config/npcs/schedule-overrides.json'
       - 'docs/config/npcs/placeholder-wardrobes.json'
       - 'docs/js/local-db-overrides.js'
+      - 'docs/js/named-animal-npc.js'
+      - 'docs/js/cavern-generator.js'
+      - 'docs/js/interior-scene-builder.js'
+      - 'docs/config/locales/locale_banubu_cave_interior.json'
       - 'docs/js/npc-furniture-wardrobe-bridge-v4.js'
       - 'docs/js/character-action-locks.js'
       - 'docs/game.js'
@@ -47,6 +51,8 @@ on:
       - 'scripts/test-kurraya-performance-reaction-lock.js'
       - 'scripts/test-npc-gifting-multitrait.js'
       - 'scripts/test-npc-social-rapport-wardrobes.js'
+      - 'scripts/test-locale-cavern-interiors.js'
+      - 'scripts/test-named-animal-npc-species.js'
       - 'scripts/test-npc-social-seating.js'
       - 'scripts/test-npc-swig-offer-cooldown.js'
       - 'scripts/test-npc-wardrobe-placeholders.js'
@@ -67,6 +73,10 @@ on:
       - 'docs/config/npcs/schedule-overrides.json'
       - 'docs/config/npcs/placeholder-wardrobes.json'
       - 'docs/js/local-db-overrides.js'
+      - 'docs/js/named-animal-npc.js'
+      - 'docs/js/cavern-generator.js'
+      - 'docs/js/interior-scene-builder.js'
+      - 'docs/config/locales/locale_banubu_cave_interior.json'
       - 'docs/js/npc-furniture-wardrobe-bridge-v4.js'
       - 'docs/js/character-action-locks.js'
       - 'docs/game.js'
@@ -104,6 +114,8 @@ on:
       - 'scripts/test-kurraya-performance-reaction-lock.js'
       - 'scripts/test-npc-gifting-multitrait.js'
       - 'scripts/test-npc-social-rapport-wardrobes.js'
+      - 'scripts/test-locale-cavern-interiors.js'
+      - 'scripts/test-named-animal-npc-species.js'
       - 'scripts/test-npc-social-seating.js'
       - 'scripts/test-npc-swig-offer-cooldown.js'
       - 'scripts/test-npc-wardrobe-placeholders.js'
@@ -145,6 +157,11 @@ jobs:
           node --check docs/js/npc-furniture-wardrobe-bridge-v3.js
           node --check docs/js/npc-furniture-wardrobe-bridge-v4.js
           node --check docs/js/local-db-overrides.js
+          node --check docs/js/named-animal-npc.js
+          node --check docs/js/cavern-generator.js
+          node --check docs/js/interior-scene-builder.js
+          node --check scripts/test-named-animal-npc-species.js
+          node --check scripts/test-locale-cavern-interiors.js
           node --check docs/js/building-interior-npc-wardrobe-editor.js
           node --check docs/js/building-interior-runtime-furniture.js
           node --check docs/js/furniture-vessel-runtime.js
@@ -196,6 +213,10 @@ jobs:
         run: node scripts/test-npc-gifting-multitrait.js
       - name: Test event-driven Rapport, social gates, dialogue, and wardrobes
         run: node scripts/test-npc-social-rapport-wardrobes.js
+      - name: Test named-animal creature-first runtime
+        run: node scripts/test-named-animal-npc-species.js
+      - name: Test locale cavern floor and grounding parity
+        run: node scripts/test-locale-cavern-interiors.js
       - name: Test NPC swig offer visibility and cooldown
         run: node scripts/test-npc-swig-offer-cooldown.js
       - name: Test relationship-aware reactive seating
