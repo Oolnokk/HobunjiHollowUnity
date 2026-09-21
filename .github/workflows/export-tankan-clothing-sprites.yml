@@ -1,0 +1,41 @@
+name: Export Tankan Clothing Sprites
+
+on:
+  push:
+    branches:
+      - export/tankan-clothing-sprites-20260921
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Collect clothing sprites
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p export
+          shopt -s nullglob
+          files=(
+            docs/assets/cosmetics/clothes/torso/portrait/tankantunic_*.png
+            docs/assets/cosmetics/clothes/overwear/portrait/poncho1_*.png
+            docs/assets/cosmetics/clothes/overwear/portrait/ruggedshoulders_*.png
+            docs/assets/cosmetics/clothes/overwear/portrait/tankanbodywrap_*.png
+            docs/assets/cosmetics/clothes/overwear/portrait/tankanwrap_*.png
+          )
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No matching sprites found." >&2
+            exit 1
+          fi
+          cp "${files[@]}" export/
+          printf 'Collected %s sprite files\n' "${#files[@]}"
+          find export -maxdepth 1 -type f -printf '%f\n' | sort
+
+      - name: Upload sprite ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: tankan-clothing-sprites
+          path: export/*.png
+          if-no-files-found: error
+          retention-days: 1
