@@ -85,6 +85,7 @@
     spinBasisDeg: 90,
     projectileSpin: false,
     projectileLockAlignment: true,
+    projectileBasisDeg: -90, // Corrects only the launched spear PNG a quarter-turn clockwise; held spin/end-flip authoring stays unchanged.
     poses: {
       neutral: { ...weaponThrowSpin.poses.neutral, shoulderAim: { ...weaponThrowSpin.poses.neutral.shoulderAim }, secondaryGrip: { ...weaponThrowSpin.poses.neutral.secondaryGrip } },
       windup: { ...weaponThrowSpin.poses.windup, shoulderAim: { ...weaponThrowSpin.poses.windup.shoulderAim }, secondaryGrip: { ...weaponThrowSpin.poses.windup.secondaryGrip } },
