@@ -648,6 +648,11 @@
       const MAX_WATER    = 3.0;  // max depth in "units"
       const RAIN_RATE    = 0.018; // depth added per sim tick during rain (×rainStrength)
 
+      // Canonical active-area state must exist before any subsystem receives a
+      // getCurrentArea closure. NPC/social runtimes can poll as soon as their
+      // planner deps are injected, long before the later scene-switching block.
+      let currentArea = 'farm'; // Used by NPC planning, active-grid routing, travel, rendering, and every area-aware interaction.
+
       // ── Game data ──
       // Regional seasons (Stormtide/Deadgrass/Longpour/Coldmuck) also moved
       // into js/calendar-system.js alongside the calendar derivations —
@@ -16022,7 +16027,8 @@
       window.FarmEditor.cleanupLegacyFarmEntranceRoad();
 
       // ── Area-switching state ───────────────────────────────────────
-      let currentArea     = 'farm';   // 'farm' | 'interior'
+      // currentArea is declared with the core world state above so startup
+      // subsystem getters cannot observe its temporal dead zone.
       let farmPlayerSave  = null;     // {x,y,angle} saved when entering house
       let sceneTransAlpha = 0;        // 0 = fully clear, 1 = fully black
       let sceneTransDir   = 0;        // 0=idle  1=darkening  -1=brightening

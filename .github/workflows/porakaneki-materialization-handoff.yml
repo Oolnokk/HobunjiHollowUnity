@@ -7,6 +7,10 @@ on:
       - 'docs/js/porakaneki-camps-runtime.js'
       - 'docs/js/wilderness-ai-snapshot.js'
       - 'docs/js/house-pieces.js'
+      - 'docs/js/porakaneki-faction-rules.js'
+      - 'docs/js/scene-ready-poller.js'
+      - 'docs/index.html'
+      - 'scripts/test-porakaneki-faction-rules.js'
       - 'scripts/test-porakaneki-camp.js'
       - 'scripts/test-porakaneki-materialization-handoff.js'
       - '.github/workflows/porakaneki-materialization-handoff.yml'
@@ -23,3 +27,5 @@ jobs:
         run: node scripts/test-porakaneki-camp.js
       - name: Materialization handoff regression
         run: node scripts/test-porakaneki-materialization-handoff.js
+      - name: Porakaneki faction rules and startup hooks
+        run: node scripts/test-porakaneki-faction-rules.js

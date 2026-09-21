@@ -57,7 +57,8 @@
     const last = _audioDebugLast.has(key) ? _audioDebugLast.get(key) : -Infinity;
     if (now - last < throttleMs) return;
     _audioDebugLast.set(key, now);
-    deps.debugLog(message, category);
+    const log = deps?.debugLog || window.__farmLog; // Parser-time audio unlock gestures can fire before game.js injects Music deps.
+    if (typeof log === 'function') log(message, category);
   }
 
   function audioTraceEnabled() {
@@ -935,14 +936,44 @@
         const baseVol = Math.max(0, Math.min(1, Number(audioCfg.bgmVolume) || 0.48));
         const trackVolMulRaw = Number(track.volumeMultiplier); // Optional authored per-track gain; Ghoul mine music uses 2x while existing tracks remain 1x.
         const trackVolMul = Number.isFinite(trackVolMulRaw) ? Math.max(0, trackVolMulRaw) : 1;
-        const snd = playMusicTrack(track.url, baseVol * trackVolMul, fade.songFadeInMs, fade.songFadeOutMs, { loop: track.loop !== false });
+        const repeatWhileCombat = track.loop !== false; // Used by native media looping and the same-element ended fallback below.
+        const snd = playMusicTrack(track.url, baseVol * trackVolMul, fade.songFadeInMs, fade.songFadeOutMs, { loop: repeatWhileCombat });
         snd._musicEntry = track;
-        const finishCombatBgm = () => {
-          if (_ambientCueState.currentCombatBgm === snd) _ambientCueState.currentCombatBgm = null;
+        const finishCombatBgm = ({ repeatIfStillInCombat = true } = {}) => {
+          const ownsSlot = _ambientCueState.currentCombatBgm === snd; // Prevents an old ended/error callback from touching a newer combat track.
+          const liveArea = deps.getCurrentArea(); // Re-checks the track against the player's current area before an ended fallback restarts it.
+          // Native HTML media looping is the gapless primary path. Some mobile
+          // media stacks can still surface an ended event for an M4A loop; when
+          // that happens, restart this exact element immediately instead of
+          // retiring it and creating a fresh copy with the normal song fade-in.
+          if (repeatIfStillInCombat
+              && repeatWhileCombat
+              && ownsSlot
+              && !!deps.isPlayerInCombat()
+              && !ambientMusicOwnsSoundtrack()
+              && isAudioEntryEligible(track, liveArea)
+              && !audioUrlFailed(track.url)) {
+            try { snd.currentTime = 0; } catch {}
+            audioTrace('combat bgm ended while combat remains active — immediate same-element repeat url=' + snd.src, 'combat-bgm-repeat-' + snd.src, 0, 'bgm');
+            requestGameAudioPlay(snd).catch(err => {
+              const errName = err?.name || ''; // Routes repeat failures through the existing autoplay-vs-real-error handling.
+              if (errName === 'NotAllowedError') {
+                audioDebug('combat bgm repeat waiting for audio unlock url=' + snd.src, 'combat-bgm-repeat-autoplay-' + snd.src, 0, 'bgm');
+                return;
+              }
+              if (errName !== 'AbortError') markAudioUrlFailed(track.url, errName || 'repeat failed');
+              finishCombatBgm({ repeatIfStillInCombat: false });
+            });
+            return;
+          }
+          if (ownsSlot) _ambientCueState.currentCombatBgm = null;
           retireMusicTrack(snd);
         };
-        snd.addEventListener('ended', finishCombatBgm, { once: true });
-        snd.addEventListener('error', () => { if (isRealMediaError(snd)) markAudioUrlFailed(track.url, 'media error'); finishCombatBgm(); }, { once: true });
+        snd.addEventListener('ended', finishCombatBgm);
+        snd.addEventListener('error', () => {
+          if (isRealMediaError(snd)) markAudioUrlFailed(track.url, 'media error');
+          finishCombatBgm({ repeatIfStillInCombat: false });
+        }, { once: true });
         _ambientCueState.currentCombatBgm = snd;
         requestGameAudioPlay(snd).catch(err => {
           const errName = err?.name || '';
@@ -951,7 +982,7 @@
             return;
           }
           if (errName !== 'NotAllowedError' && errName !== 'AbortError') markAudioUrlFailed(track.url, errName || 'play failed');
-          finishCombatBgm();
+          finishCombatBgm({ repeatIfStillInCombat: false });
         });
       }
       audioTrace('ambient suppressed (in combat) area=' + currentArea + ' combatTracks=' + combatTracks.length, 'ambient-combat-' + currentArea, 5000);

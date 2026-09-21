@@ -41,6 +41,12 @@ for (const f of ['docs/js/npc-agenda.js', 'docs/js/npc-activities.js', 'docs/js/
 const { NpcAgenda: Agenda, NpcActivities: Activities, NpcSocialStimuli: Stimuli, NpcActivityPlanner: Planner } = sandbox.window;
 const plain = x => JSON.parse(JSON.stringify(x));
 
+const gameSource = fs.readFileSync('docs/game.js', 'utf8'); // Startup-order contract: area getters are injected into planner/social systems during game.js boot.
+const currentAreaDeclaration = gameSource.indexOf("let currentArea = 'farm';"); // Canonical active-area declaration must precede any getter handoff.
+const plannerInitIndex = gameSource.indexOf('window.NpcActivityPlanner.init({'); // Earliest planner handoff that exposes getCurrentArea to polling wrappers.
+assert(currentAreaDeclaration >= 0 && plannerInitIndex >= 0 && currentAreaDeclaration < plannerInitIndex,
+  'game.js initializes currentArea before NPC planner/social runtimes can observe getCurrentArea');
+
 // ── fake world: stations, building-scene loading, walkers ──────────────
 const stationsById = new Map();
 function resolveNpcStationTarget(id) { const s = stationsById.get(id); return s ? { ...s, stationId: s.id } : null; }

@@ -88,6 +88,8 @@ const context = {
   },
   Mounts: { rideEntity: { health: 100 } },
   CalendarSystem: {
+    ready: true,
+    isInitialized() { return this.ready; },
     timeDebugSnapshot: () => ({ rawDay }),
     getHour: () => hour,
   },
@@ -180,6 +182,10 @@ gained = newAwards(() => context.BanditCamps.updateTentInteraction(0.1));
 assert.deepEqual(gained.map(x => [x.entry, x.amount]), [['companion-1', 20]], 'bandit camp false-to-cleared transition awards companion XP');
 gained = newAwards(() => context.BanditCamps.updateTentInteraction(0.1));
 assert.equal(gained.length, 0, 'cleared camp cannot award twice');
+
+context.CalendarSystem.ready = false;
+assert.equal(api._test.gameHourSample(), null, 'parser-time Stable XP polling defers until CalendarSystem receives game.js state');
+context.CalendarSystem.ready = true;
 
 api.checkMountTravel(); // seed hour 8
 player.x = 60 * 64;

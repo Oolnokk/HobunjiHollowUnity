@@ -346,6 +346,7 @@
 
   function gameHourSample() {
     const calendar = window.CalendarSystem;
+    if (typeof calendar?.isInitialized === 'function' && !calendar.isInitialized()) return null; // Parser-time install polls before game.js CalendarSystem.init; no travel sample exists yet.
     const deps = combatDeps();
     const player = deps?.player;
     const mount = activePresentEntry('mount');

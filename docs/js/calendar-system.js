@@ -89,6 +89,10 @@
     return ((value % modulus) + modulus) % modulus;
   }
 
+  function isInitialized() {
+    return !!deps?.calendar; // Used by parser-time polling bridges to defer calendar reads until game.js injects the live calendar state.
+  }
+
   function civilDayOffset(day = deps?.calendar?.day ?? 1) {
     return (day - 1) + GAME_START_CIVIL_DAY_OFFSET;
   }
@@ -943,6 +947,7 @@
 
   window.CalendarSystem = {
     init,
+    isInitialized,
     getHour,
     dayOfYear,
     yearNumber, // Existing game.js Tothal integration: stable 1-based deterministic generation cycle, now rolling on Firstrise 1.

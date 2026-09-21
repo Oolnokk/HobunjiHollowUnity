@@ -220,9 +220,9 @@
     "owner": "FishCatalog",
     "classification": "bounded-animation",
     "function": "presentationLoop",
-    "reason": "Started (line 382) only when a fishing cast begins and stops itself once window.Fishing.state clears at the end of that catch attempt - a finite per-session effect rather than a permanent runtime.",
+    "reason": "Started (line 393) only when a fishing cast begins and stops itself once window.Fishing.state clears at the end of that catch attempt - a finite per-session effect rather than a permanent runtime.",
     "migrationStage": "not-planned",
-    "line": 376
+    "line": 387
   },
   {
     "file": "docs/js/folder-save-debug-ui.js",
@@ -420,7 +420,7 @@
     "function": "step (fadeVolume)",
     "reason": "Self-perpetuating RAF loop that ramps an HTMLMediaElement's volume from start to target over `dur` ms; it stops re-arming once t>=1 (fade complete) or once a newer fade token invalidates it, so it runs only for the bounded duration of one fade.",
     "migrationStage": "not-planned",
-    "line": 265
+    "line": 266
   },
   {
     "file": "docs/js/netlify-cloud-save.js",
@@ -429,7 +429,7 @@
     "function": "MutationObserver callback (body observer)",
     "reason": "Guarded by _bodyObserverScheduled, this coalesces a storm of body-mutation events into a single deferred call to ensureLauncher/ensureSettingsRow/renderSettingsRow on the next frame; it is not a self-perpetuating loop, only triggered again by future mutations.",
     "migrationStage": "not-planned",
-    "line": 772
+    "line": 786
   },
   {
     "file": "docs/js/onboarding-character-creation-camera-composition.js",
