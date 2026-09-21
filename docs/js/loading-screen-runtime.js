@@ -71,6 +71,8 @@
     tipPoolGeneration: 0, // Generation the cached tip pool/semantic rules below were built for; a mismatch forces one rebuild per loading session instead of one every ten-second tick.
     tipPoolCache: null,
     semanticRulesCache: null,
+    onboardingPresenceObserver: null, // Watches only direct body-child mount/removal so the loader never competes visually with onboarding.
+    suppressedByOnboarding: false, // Exposed in mobile-visible diagnostics when the pre-world loader is intentionally hidden behind onboarding.
   }; // Used by rendering, transition coverage, real request progress, and the built-in mobile diagnostics panel.
 
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
@@ -171,10 +173,14 @@
     style.id = 'hobunjiLoadScreenStyles';
     style.textContent = `
 #hobunjiLoadScreen{position:fixed;inset:0;z-index:9000;background:#000;display:none;overflow:hidden;pointer-events:none}
+html.hobunji-preworld-sky-active #hobunjiLoadScreen{background:transparent}
 #hobunjiLoadScreen.visible{display:block}
+html.hobunji-onboarding-foreground #hobunjiLoadScreen{visibility:hidden}
+#hobunjiLoadScreen.suppressed-by-onboarding{visibility:hidden}
 #hlsImage{position:absolute;left:50%;top:48%;width:auto;height:auto;max-width:78vw;max-height:70vh;object-fit:contain;transform-origin:center center;will-change:transform}
 #hlsScriptViewport{position:absolute;top:46%;width:min(42vw,540px);height:min(72vh,880px);overflow:hidden;transform:translate(-50%,-50%);visibility:hidden}
 #hobunjiLoadScreen.tankan-font-settled #hlsScriptViewport{visibility:visible}
+html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!important}
 #hlsScriptFloat{position:absolute;left:50%;top:0;will-change:transform}
 #hlsScriptWords{display:flex;flex-direction:row;align-items:flex-start;justify-content:center;gap:0;width:max-content;--script-column-spacing:0em}
 .hlsVerticalWord + .hlsVerticalWord{margin-left:var(--script-column-spacing)}
@@ -579,6 +585,25 @@
     state.hideWaiters = remaining;
   }
 
+  function syncOnboardingForeground() {
+    const root = state.els?.root;
+    if (!root) return false;
+    const preworld = document.documentElement?.classList?.contains?.('hobunji-preworld-sky-active') === true;
+    const onboardingPresent = document.documentElement?.classList?.contains?.('hobunji-onboarding-foreground') === true
+      || !!document.getElementById?.('ob-overlay');
+    const suppress = preworld && onboardingPresent;
+    state.suppressedByOnboarding = suppress;
+    root.classList.toggle('suppressed-by-onboarding', suppress);
+    return suppress;
+  }
+
+  function installOnboardingPresenceObserver() {
+    if (state.onboardingPresenceObserver || typeof MutationObserver !== 'function' || !document.body) return;
+    state.onboardingPresenceObserver = new MutationObserver(() => syncOnboardingForeground()); // Direct body children are enough because #ob-overlay itself is mounted/removed there.
+    state.onboardingPresenceObserver.observe(document.body, { childList:true });
+    syncOnboardingForeground();
+  }
+
   function showImmediate(reason = 'map-change') {
     const previousGeneration = state.generation; // Used to settle any delayed hide promises superseded by a newer loading screen.
     if (state.hideTimer && typeof clearTimeout === 'function') clearTimeout(state.hideTimer);
@@ -597,6 +622,7 @@
     state.activeTipTitle = '';
     const els = buildDom();
     els.root.classList.add('visible');
+    syncOnboardingForeground();
     renderScript(els, DEFAULT_SETTINGS, 'HOBUNJI HOLLOW');
     els.scriptViewport.style.left = '25%';
     els.scriptViewport.style.top = '46%';
@@ -773,6 +799,7 @@
       }
       return;
     }
+    installOnboardingPresenceObserver();
     show({ reason: 'initial-boot' });
     const completeBoot = () => hide('initial-boot-ready'); // Used by the browser load boundary so boot reaches 100 only when page resources are done.
     if (document.readyState === 'complete') completeBoot();
@@ -808,6 +835,7 @@
       minimumVisibleMs: MIN_VISIBLE_MS,
       transitionHookInstalled: state.transitionHookInstalled,
       dependencyInitHooks: state.dependencyInitHooks,
+      suppressedByOnboarding: state.suppressedByOnboarding,
     }),
     formatDebug,
   });
