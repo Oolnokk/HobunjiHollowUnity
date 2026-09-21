@@ -388,13 +388,18 @@ for (const toolKey of ['hatchet','hoe','bshuakauitl','pickshovel','daggersword',
     `${toolKey} must inherit hatchet's primary-grip rotation`,
   );
 }
-assert.strictEqual(grips.toolScaleForTool('dagger'), 1, 'Melee/ranged grip separation must not silently rescale the dagger.');
-assert.strictEqual(grips.authoredPrimaryGripForTool('dagger', 'melee').position.z, -0.09, 'Dagger melee grip keeps its existing authored Z.');
-assert.strictEqual(grips.authoredPrimaryGripForTool('dagger', 'ranged').position.z, -0.09, 'Dagger ranged grip starts as an exact copy of melee until the artist edits it.');
+assert.strictEqual(grips.data.rangedGripPreset, 'melee-ranged-split-20260920-v5-authored-values', 'Committed grip data must advertise the authored-value revision.');
+assert.strictEqual(grips.toolScaleForTool('dagger'), 0.55, 'Dagger must use the editor-authored 0.55 item scale.');
+assert.strictEqual(grips.authoredPrimaryGripForTool('dagger', 'melee').position.z, -0.09, 'Dagger melee grip keeps its authored blade-side Z.');
+assert.deepStrictEqual(
+  JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('dagger', 'ranged').position)),
+  { x: 0, y: -0.05, z: -0.3 },
+  'Dagger ranged grip must use the editor-authored flipped hand target independently of melee.',
+);
 assert.deepStrictEqual(
   JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('dagger', 'ranged').rotationDeg)),
   sharedHatchetRotation,
-  'Dagger ranged grip starts with the same rotation as melee; no code-side flip is guessed.',
+  'Dagger ranged grip keeps the authored 90/-90/0 item-local rotation.',
 );
 const unsplitSnapshot = grips.clone();
 grips.mutate(data => {
@@ -402,27 +407,44 @@ grips.mutate(data => {
   data.tools.dagger.rangedPrimaryGrip.rotationDeg.roll = 180;
 });
 assert.strictEqual(grips.authoredPrimaryGripForTool('dagger', 'melee').position.z, -0.09, 'Editing ranged dagger Z must not alter its melee grip.');
-assert.strictEqual(grips.authoredPrimaryGripForTool('dagger', 'ranged').position.z, 0.28, 'Ranged dagger Z must be independently authorable.');
+assert.strictEqual(grips.authoredPrimaryGripForTool('dagger', 'ranged').position.z, 0.28, 'Ranged dagger Z must remain independently authorable.');
 assert.strictEqual(grips.authoredPrimaryGripForTool('dagger', 'melee').rotationDeg.roll, 0, 'Editing ranged dagger rotation must not alter melee rotation.');
-assert.strictEqual(grips.authoredPrimaryGripForTool('dagger', 'ranged').rotationDeg.roll, 180, 'Ranged dagger rotation can be flipped independently in the editor.');
+assert.strictEqual(grips.authoredPrimaryGripForTool('dagger', 'ranged').rotationDeg.roll, 180, 'Ranged dagger rotation can still be edited independently.');
 grips.replace(unsplitSnapshot);
 
 const oldRangedGripDraft = grips.clone();
 delete oldRangedGripDraft.rangedGripPreset;
+oldRangedGripDraft.tools.dagger.toolScale = 1;
 delete oldRangedGripDraft.tools.dagger.rangedPrimaryGrip;
 delete oldRangedGripDraft.tools.dagger.rangedSecondaryGripSpan;
 delete oldRangedGripDraft.tools.dagger.rangedGripMode;
 grips.replace(oldRangedGripDraft);
-assert.strictEqual(grips.toolScaleForTool('dagger'), 1, 'Pre-split saved dagger drafts must retain their existing shared scale.');
-assert.strictEqual(grips.authoredPrimaryGripForTool('dagger', 'ranged').position.z, -0.09, 'Pre-split saved dagger drafts must clone melee into ranged rather than receiving guessed values.');
+assert.strictEqual(grips.toolScaleForTool('dagger'), 1, 'Pre-split saved dagger drafts retain their explicitly stored shared scale.');
+assert.strictEqual(grips.authoredPrimaryGripForTool('dagger', 'ranged').position.z, -0.09, 'Pre-split saved dagger drafts with no ranged metadata still clone melee rather than inventing a ranged edit.');
 
 const v1AutoGuessDraft = grips.clone();
 v1AutoGuessDraft.rangedGripPreset = 'melee-ranged-split-20260920-v1';
 v1AutoGuessDraft.tools.dagger.toolScale = 0.55;
 v1AutoGuessDraft.tools.dagger.rangedPrimaryGrip = { position: { x: -0.04, y: -0.04, z: 0.28 }, rotationDeg: { ...sharedHatchetRotation } };
 grips.replace(v1AutoGuessDraft);
-assert.strictEqual(grips.toolScaleForTool('dagger'), 1, 'Untouched short-lived v1 dagger auto-scale must be repaired back to the pre-split scale.');
-assert.strictEqual(grips.authoredPrimaryGripForTool('dagger', 'ranged').position.z, -0.09, 'Untouched short-lived v1 dagger auto-grip must be repaired back to a melee clone.');
+assert.strictEqual(grips.toolScaleForTool('dagger'), 0.55, 'Untouched short-lived v1 dagger auto-scale must migrate to the final authored scale.');
+assert.deepStrictEqual(
+  JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('dagger', 'ranged').position)),
+  { x: 0, y: -0.05, z: -0.3 },
+  'Untouched short-lived v1 dagger auto-grip must migrate to the final authored ranged target.',
+);
+
+const v4CloneDraft = grips.clone();
+v4CloneDraft.rangedGripPreset = 'melee-ranged-split-20260920-v4-editor-authored';
+v4CloneDraft.tools.dagger.toolScale = 1;
+v4CloneDraft.tools.dagger.rangedPrimaryGrip = { position: { x: -0.04, y: -0.04, z: -0.09 }, rotationDeg: { ...sharedHatchetRotation } };
+grips.replace(v4CloneDraft);
+assert.strictEqual(grips.toolScaleForTool('dagger'), 0.55, 'Untouched v4 melee-clone dagger scale must migrate to the authored 0.55 value.');
+assert.deepStrictEqual(
+  JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('dagger', 'ranged').position)),
+  { x: 0, y: -0.05, z: -0.3 },
+  'Untouched v4 melee-clone ranged dagger target must migrate to the authored ranged target.',
+);
 
 const oldRotationDraft = grips.clone();
 delete oldRotationDraft.primaryRotationPreset;
