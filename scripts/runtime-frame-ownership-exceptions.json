@@ -258,7 +258,7 @@
     "function": "frame (fallback branch inside the trailing if/else)",
     "reason": "Gameplay uses RuntimeFrameScheduler: installMaintenance() stays scheduler-owned and applyPrimaryGripVisuals() maintains intrinsic held-item scale only. Authored grip targets now move hands and never translate/rotate the weapon. The standalone Attack Animation Editor/Animation Author do not load RuntimeFrameScheduler, so this two-line fallback RAF loop remains isolated to those tool contexts.",
     "migrationStage": "migrated",
-    "line": 852
+    "line": 902
   },
   {
     "file": "docs/js/harlyao-night-march-runtime.js",
@@ -420,7 +420,7 @@
     "function": "step (fadeVolume)",
     "reason": "Self-perpetuating RAF loop that ramps an HTMLMediaElement's volume from start to target over `dur` ms; it stops re-arming once t>=1 (fade complete) or once a newer fade token invalidates it, so it runs only for the bounded duration of one fade.",
     "migrationStage": "not-planned",
-    "line": 227
+    "line": 265
   },
   {
     "file": "docs/js/netlify-cloud-save.js",

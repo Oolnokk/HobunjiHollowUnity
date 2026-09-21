@@ -64,12 +64,12 @@
       },
       windup: {
         x: 0.41, y: 0.37, z: 0.42, pitch: -180, yaw: 139, bodyYaw: -152, roll: -92,
-        shoulderAim: { grip: false, palmNormal: false },
+        shoulderAim: { grip: false, palmNormal: true },
         secondaryGrip: { enabled: false, percent: 50 },
       },
       strike: {
         x: -0.57, y: 0.33, z: 0.17, pitch: -25, yaw: -65, bodyYaw: 63, roll: -88,
-        shoulderAim: { grip: true, palmNormal: false },
+        shoulderAim: { grip: false, palmNormal: true },
         secondaryGrip: { enabled: false, percent: 50 },
       },
     },
@@ -85,6 +85,7 @@
     spinBasisDeg: 90,
     projectileSpin: false,
     projectileLockAlignment: true,
+    projectileBasisDeg: -90, // Corrects only the launched spear PNG a quarter-turn clockwise; held spin/end-flip authoring stays unchanged.
     poses: {
       neutral: { ...weaponThrowSpin.poses.neutral, shoulderAim: { ...weaponThrowSpin.poses.neutral.shoulderAim }, secondaryGrip: { ...weaponThrowSpin.poses.neutral.secondaryGrip } },
       windup: { ...weaponThrowSpin.poses.windup, shoulderAim: { ...weaponThrowSpin.poses.windup.shoulderAim }, secondaryGrip: { ...weaponThrowSpin.poses.windup.secondaryGrip } },

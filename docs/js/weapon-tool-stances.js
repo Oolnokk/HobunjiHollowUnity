@@ -46,8 +46,9 @@
     tool: Object.freeze({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: 0 }),
     hoeTool: Object.freeze({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: -95 }),
     heavyWeapon: Object.freeze({ x: -0.03, y: 0.27, z: 0.02, pitch: -23, yaw: 104, bodyYaw: -15, roll: 89 }),
-    lightWeapon: Object.freeze({ x: -0.09, y: -0.08, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 }),
+    lightWeapon: Object.freeze({ x: -0.09, y: 0, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 }),
   });
+  const PREVIOUS_LIGHT_WEAPON_STANCE = Object.freeze({ x: -0.09, y: -0.08, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 });
 
   // Keep these objects stable so external debug/editor references do not go stale
   // when a fetched config or Local Override replaces their values.
@@ -71,10 +72,16 @@
     return normalizePose(pose, {});
   }
 
+  function isPreviousLightWeaponPose(raw) {
+    return POSE_KEYS.every(key => Math.abs((Number(raw?.[key]) || 0) - PREVIOUS_LIGHT_WEAPON_STANCE[key]) < 1e-9);
+  }
+
   function applyStanceConfig(raw, sourceLabel) {
     if (!raw || raw.kind !== 'hobunji_weapon_idle_stances' || !raw.stances) return false;
     for (const key of Object.keys(idleStances)) {
-      Object.assign(idleStances[key], normalizePose(raw.stances[key], DEFAULT_IDLE_STANCES[key]));
+      const normalized = normalizePose(raw.stances[key], DEFAULT_IDLE_STANCES[key]);
+      if (key === 'lightWeapon' && isPreviousLightWeaponPose(raw.stances[key])) normalized.y = 0; // Migrate only the exact former committed default; authored local overrides remain intact.
+      Object.assign(idleStances[key], normalized);
     }
     stanceConfigSource = sourceLabel;
     return true;
