@@ -194,6 +194,7 @@
       projectileWeaponShapeKey: shapeKey,
       projectileVisualWidthWorld: PROJECTILE_SPINNING_THROWN_SHAPES.has(shapeKey) && animation.projectileSpin !== false ? 0.5 : null,
       projectileSpinSource: PROJECTILE_SPINNING_THROWN_SHAPES.has(shapeKey) && animation.projectileSpin !== false ? 'fishingMace' : null,
+      projectileLockLaunchAlignment: animation.projectileLockAlignment === true,
       fireDurationS: releaseDurationS,
       fireSequence: 'attack',
       fireWindupFrac: 0,
