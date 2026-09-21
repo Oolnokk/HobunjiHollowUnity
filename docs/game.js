@@ -22196,6 +22196,7 @@
           const requestedEndFlip = combatSwingAnim ? combatSwingToolEndFlip : (activeTool === 'ranged' && window.RangedWeapons?.config?.[spinItemKey]?.toolEndFlip === true);
           const effectiveEndFlip = baseEndFlip !== requestedEndFlip;
           spinMesh.rotation.z = 0; // Parent stays identity-oriented; end-for-end reversal belongs to the visible PNG plane.
+          spinPlane.position.set(0, 0, 0); // Child-plane throw-pivot compensation is transient; never leak it into idle or the next action.
           spinPlane.rotation.x = -Math.PI / 2; // Fixed sprite-plane basis only.
           // The sweep style's blade-parallel z-twist belongs to whichever anim is actually
           // playing this frame, not whichever style the equipped item defaults to at rest —
@@ -22216,6 +22217,9 @@
           const rangedThrowSpinRevolutions = rangedThrowSpins
             ? Math.max(0, Number(rangedThrowDef?.heldSpinRevolutions) || TOOL_SPIN_REVOLUTIONS)
             : TOOL_SPIN_REVOLUTIONS;
+          const rangedThrowDynamicSpinRad = rangedThrowSpins
+            ? rangedThrowSpinBasisRad - progress * Math.PI * 2 * rangedThrowSpinRevolutions
+            : 0;
           if (anim === 'refillTwistOut') {
             // Lerp a 180° length-wise spin out, independent of any item's own "spinning" flag.
             spinPlane.rotation.z = (effectiveEndFlip ? Math.PI : 0) + baseRotZ + progress * Math.PI;
@@ -22223,10 +22227,13 @@
             // Reverse of the twist-out: lerp back from 180° to 0°.
             spinPlane.rotation.z = (effectiveEndFlip ? Math.PI : 0) + baseRotZ + Math.PI * (1 - progress);
           } else if (rangedThrowSpins) {
-            // The held PNG spins around its own plane-normal axis through the exact
-            // same timeline whose release frame is sampled into the projectile.
-            // Holding Windup freezes this rotation too; release resumes smoothly.
-            spinPlane.rotation.z = (effectiveEndFlip ? Math.PI : 0) + baseRotZ + rangedThrowSpinBasisRad - progress * Math.PI * 2 * rangedThrowSpinRevolutions;
+            // Keep the authored hand grip fixed while the PNG performs its throw
+            // flourish. Without this pivot correction the sprite spins around its
+            // geometric center, which visibly pulls long-offset grips (especially
+            // the flipped dagger handle) away from the stationary hand.
+            spinPlane.rotation.z = (effectiveEndFlip ? Math.PI : 0) + baseRotZ + rangedThrowDynamicSpinRad;
+            const throwSpinPivot = window.HobunjiHandToolGrips?.spinPivotOffsetForTool?.(spinItemKey, rangedThrowDynamicSpinRad, 'ranged');
+            if (throwSpinPivot) spinPlane.position.set(throwSpinPivot.x, throwSpinPivot.y, throwSpinPivot.z);
           } else {
             // The mace's own fishing-throw twirl is cosmetic to the harpoon cast —
             // it shouldn't also layer onto ordinary melee combat swings.
