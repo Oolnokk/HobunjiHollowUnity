@@ -10,8 +10,9 @@
   const FONT_URL = 'assets/hud/KhymeryyanRomanLetters+Numbers.otf.ttf'; // Existing Khymeryyan Roman font asset.
   const EXIT_MS = 320; // Short fade used after the starting input is consumed.
   const INPUT_ARM_DELAY_MS = 450; // Used to reject navigation/carryover input immediately after page load.
-  const SKY_RUNTIME_SRC = 'js/title-realtime-sky.js?v=20260917a'; // Loads the isolated Canvas2D real-time title sky.
-  const SKY_CANVAS_ID = 'hobunjiTitleSky'; // Matches the canvas created by title-realtime-sky.js.
+  const SKY_RUNTIME_SRC = 'js/title-realtime-sky.js?v=20260921preworldsky2'; // Loads the mixed Canvas2D/compositor real-time title sky.
+  const SKY_CANVAS_ID = 'hobunjiTitleSky'; // Matches the base canvas created by title-realtime-sky.js.
+  const SKY_CLOUD_LAYER_ID = 'hobunjiTitleCloudLayer'; // Matches the compositor-driven cloud layer created by title-realtime-sky.js.
   const GAMEPAD_AXIS_THRESHOLD = 0.72; // Avoids ordinary stick drift counting as the requested starting input.
   const INPUT_EVENTS = Object.freeze([
     'keydown', 'keyup',
@@ -31,6 +32,9 @@
   let lastStartSource = null; // Used by in-game/mobile debug output to identify the accepted start input.
   let titleSkyStarted = false; // Used by debug output to confirm the lightweight sky compositor attached.
   let titleSkyLoadError = null; // Used by debug output if the standalone sky runtime cannot load or start.
+  let gameplayReady = window.__hobunjiGameStarted === true; // Used to defer pre-world sky teardown if a returning save hydrates before the title is dismissed.
+  let backdropReleased = false; // Used to make the one-time pre-world sky teardown idempotent across title/gameplay races.
+  let backdropReleaseReason = null; // Used by mobile-visible diagnostics to report which game-start boundary released the shared sky.
   let gamepadPollRaf = 0; // Owns the rising-edge controller check independent of the game's controller polling.
   let gamepadPollPrimed = false; // Prevents a button already held during page load from instantly skipping the title screen.
   let gamepadWasDown = false; // Tracks the previous real controller snapshot for rising-edge detection.
@@ -51,21 +55,57 @@
         overscroll-behavior:none;
       }
 
-      #${SKY_CANVAS_ID} {
+      #${SKY_CANVAS_ID},
+      #${SKY_CLOUD_LAYER_ID} {
         position:fixed;
         inset:0;
-        z-index:2147483644;
         width:100vw;
         height:100vh;
         display:block;
         opacity:1;
-        background:#000;
         pointer-events:none;
-        transition:opacity ${EXIT_MS}ms ease;
       }
 
-      html.hobunji-title-leaving #${SKY_CANVAS_ID} {
-        opacity:0;
+      #${SKY_CANVAS_ID} {
+        z-index:100;
+        background:#000;
+      }
+
+      #${SKY_CLOUD_LAYER_ID} {
+        z-index:101;
+        overflow:hidden;
+        contain:layout paint style;
+      }
+
+      #${SKY_CLOUD_LAYER_ID} > img {
+        position:absolute;
+        left:-20vw;
+        height:auto;
+        display:block;
+        transform:translate3d(0,0,0);
+        animation-name:hobunjiTitleCloudDrift;
+        animation-timing-function:linear;
+        animation-iteration-count:infinite;
+        will-change:transform;
+        user-select:none;
+        -webkit-user-drag:none;
+      }
+
+      @keyframes hobunjiTitleCloudDrift {
+        from { transform:translate3d(0,0,0); }
+        to { transform:translate3d(140vw,0,0); }
+      }
+
+      /* The same sky becomes the shared pre-world backdrop after the title
+         prompt leaves. During the title itself it must still cover every
+         parser-time loader/UI surface while keeping clouds above the base
+         canvas and below the prompt/logo. */
+      html.hobunji-title-active #${SKY_CANVAS_ID} {
+        z-index:2147483643;
+      }
+
+      html.hobunji-title-active #${SKY_CLOUD_LAYER_ID} {
+        z-index:2147483644;
       }
 
       /* Transparent prompt layer over the lightweight sky canvas. Keeping
@@ -171,6 +211,7 @@
   }
 
   function startLoadedTitleSky() {
+    if (backdropReleased) return;
     try {
       const sky = window.HobunjiTitleRealtimeSky; // Used to start the separately loaded low-cost title compositor.
       if (!sky?.start) throw new Error('title sky API unavailable after load');
@@ -372,6 +413,18 @@
     }
   }
 
+  function releaseBackdrop(reason = 'game-started') {
+    if (backdropReleased) return true;
+    gameplayReady = true;
+    backdropReleaseReason = reason;
+    if (active) return false;
+    backdropReleased = true;
+    document.documentElement.classList.remove('hobunji-preworld-sky-active');
+    try { window.HobunjiTitleRealtimeSky?.destroy?.(); } catch (_) {}
+    titleSkyStarted = false;
+    return true;
+  }
+
   function beginStart(source = 'api') {
     if (!active || starting) return false;
     starting = true;
@@ -387,23 +440,23 @@
     window.dispatchEvent(new CustomEvent('hobunji-title-starting', { detail:{ source } }));
     window.setTimeout(() => {
       active = false;
+      starting = false;
       if (gamepadPollRaf) clearInterval(gamepadPollRaf);
       gamepadPollRaf = 0;
       removeEventGate();
-      try { window.HobunjiTitleRealtimeSky?.destroy?.(); } catch (_) {}
-      titleSkyStarted = false;
       document.documentElement.classList.remove(
         'hobunji-title-active',
         'hobunji-title-font-ready',
         'hobunji-title-leaving',
       );
       window.dispatchEvent(new CustomEvent('hobunji-title-started', { detail:{ source } }));
+      if (gameplayReady) releaseBackdrop(backdropReleaseReason || 'game-started-before-title-exit');
     }, EXIT_MS);
     return true;
   }
 
   installStyles();
-  document.documentElement.classList.add('hobunji-title-active');
+  document.documentElement.classList.add('hobunji-preworld-sky-active', 'hobunji-title-active');
   tryStartStartupBgm(); // Earliest possible soundtrack start; blocked autoplay is retried by beginStart().
   loadTitleSky();
   installEventGate();
@@ -416,6 +469,7 @@
     installed:true,
     isActive:() => active,
     start:() => beginStart('api'),
+    releaseBackdrop,
     claimStartupBgmAudio,
     cancelStartupBgmAudio,
     getRealtimeCalendar:(date = new Date()) => window.HobunjiTitleRealtimeSky?.getRealtimeCalendar?.(date) || null,
@@ -430,6 +484,10 @@
       gamepadPollPrimed,
       titleSkyStarted,
       titleSkyLoadError,
+      gameplayReady,
+      backdropReleased,
+      backdropReleaseReason,
+      preworldSkyClass: document.documentElement.classList.contains?.('hobunji-preworld-sky-active') ?? false,
       startupBgmCreated: !!startupBgmAudio,
       startupBgmPlaying: !!startupBgmAudio && !startupBgmAudio.paused,
       startupBgmCurrentTime: Number(startupBgmAudio?.currentTime || 0),
