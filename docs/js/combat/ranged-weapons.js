@@ -1689,6 +1689,7 @@
   window.RangedWeapons = {
     init, applyConfig, startPlayerAction, cancelPlayerAction, playerActionLabel,
     triggerPlayerVisual, playerWindupPoseProgress, releasePlayerHold, cancelPlayerHold,
+    playerActionState: () => playerAction, // Borrowed read-only live state for animation consumers; unlike __rangedDebug this does not allocate/copy every frame.
     isPlayerThrownFireThroughStrike,
     isLoaded, setLoaded, update, updateBanditAI, updateBanditVisual,
     cancelBanditAction, disposeOwner, playerLockRangePx, playerIdlePose: itemKey => idlePose(itemKey),
