@@ -325,13 +325,20 @@
     if (!mesh) return null;
 
     const identity = `${options?.name || ''} ${options?.statKey || ''}`.toLowerCase(); // Used to classify flood/local/permanent water without adding another caller-side registry.
-    const surfaceYs = (cells || []).map(cell => Number(cell?.surfaceY)).filter(Number.isFinite); // Used to cache this mesh's authored water elevation for flood occlusion.
+    let surfaceMinY = Infinity; // Used to cache this mesh's lowest authored water elevation without allocating a temporary sample array.
+    let surfaceMaxY = -Infinity; // Used to cache this mesh's highest authored water elevation for flood occlusion.
+    for (const cell of cells || []) {
+      const surfaceY = Number(cell?.surfaceY); // Used to fold this cell into the mesh-level elevation bounds.
+      if (!Number.isFinite(surfaceY)) continue;
+      if (surfaceY < surfaceMinY) surfaceMinY = surfaceY;
+      if (surfaceY > surfaceMaxY) surfaceMaxY = surfaceY;
+    }
     const isPermanentSurface = !options?.mapWidePlane
       && !/dynamic|apron|flood/.test(identity)
       && /river|stream|waterway/.test(identity); // Used to hide native river/stream surfaces only while a higher flood sheet covers them.
     mesh.userData.waterSurfaceRole = options?.mapWidePlane ? 'flood' : (isPermanentSurface ? 'permanent' : 'local');
-    mesh.userData.waterSurfaceMinY = surfaceYs.length ? Math.min(...surfaceYs) : null;
-    mesh.userData.waterSurfaceMaxY = surfaceYs.length ? Math.max(...surfaceYs) : null;
+    mesh.userData.waterSurfaceMinY = Number.isFinite(surfaceMinY) ? surfaceMinY : null;
+    mesh.userData.waterSurfaceMaxY = Number.isFinite(surfaceMaxY) ? surfaceMaxY : null;
     mesh.renderOrder = options?.mapWidePlane ? -10 : mesh.renderOrder; // Used to draw the broad flood sheet behind any surviving higher local-water geometry.
     if (isPermanentSurface && /town/.test(identity) && Number.isFinite(mesh.userData.waterSurfaceMaxY)) {
       mesh.visible = !_floodCoversSurface(_townFloodBaseline, mesh.userData.waterSurfaceMaxY);
@@ -505,8 +512,9 @@
   }
 
   function _filterLocalWaterCellsForFlood(cells, baseline) {
-    if (!baseline?.visible) return cells;
-    return cells.filter(cell => !_floodCoversSurface(baseline, cell.surfaceY)); // Used to keep only local water at/above the global flood level.
+    if (!baseline?.visible || !Number.isFinite(baseline.surfaceY)) return cells;
+    return cells.filter(cell => Number.isFinite(cell?.surfaceY)
+      && cell.surfaceY > baseline.surfaceY + FLOOD_SURFACE_HIDE_EPSILON); // Used to keep only water genuinely higher than the one authoritative flood sheet.
   }
 
   function _buildFloodPlane(sceneObj, baseline, cols, rows, statKey) {
