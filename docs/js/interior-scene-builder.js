@@ -225,6 +225,52 @@
     return mesh;
   }
 
+  function buildCavernFloorMesh(THREE, floorTiles, floorSurfaceByTile, options = {}) {
+    const tiles = Array.isArray(floorTiles) ? floorTiles : []; // One merged geometry keeps the authored walkable floor to a single draw call even for a large cave footprint.
+    if (!tiles.length) return new THREE.Group();
+    const positions = [], uvs = [], indices = [];
+    let vertex = 0;
+    const defaultY = Number.isFinite(Number(options.defaultY)) ? Number(options.defaultY) : 0;
+    const visualLift = Number.isFinite(Number(options.visualLift)) ? Number(options.visualLift) : 0.003; // Tiny render-only separation prevents z-fighting with the carved shell; gameplay remains on the sampled surface itself.
+    for (const tile of tiles) {
+      const col = Number(tile?.[0]), row = Number(tile?.[1]);
+      if (!Number.isFinite(col) || !Number.isFinite(row)) continue;
+      const sampled = Number(floorSurfaceByTile?.[`${col},${row}`]);
+      const y = (Number.isFinite(sampled) ? sampled : defaultY) + visualLift;
+      positions.push(
+        col,     y, row,
+        col + 1, y, row,
+        col + 1, y, row + 1,
+        col,     y, row + 1,
+      );
+      uvs.push(col, row, col + 1, row, col + 1, row + 1, col, row + 1); // World-space UVs keep adjacent tiles visually continuous.
+      indices.push(vertex, vertex + 2, vertex + 1, vertex, vertex + 3, vertex + 2);
+      vertex += 4;
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+    const texture = options.textureUrl ? new THREE.TextureLoader().load(options.textureUrl) : null; // Explicit fallback texture guarantees a visible floor even if the natural-surface wrapper is absent.
+    if (texture) {
+      texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+      const repeat = Number(options.textureRepeat) || 0.35;
+      texture.repeat.set(repeat, repeat);
+      if ('colorSpace' in texture && THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
+    }
+    const material = new THREE.MeshLambertMaterial({
+      color: options.color ?? 0x5f5a56,
+      map: texture,
+      side: THREE.DoubleSide,
+    });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.name = options.name || 'cavern_walkable_floor';
+    mesh.receiveShadow = true;
+    mesh.userData.cavernWalkableFloor = true;
+    return mesh;
+  }
+
   // Flat cloth-colored wall panels for a canvas tent interior, tinted to
   // match the exterior tent piece's canvas material (HousePieceGen's
   // matCanvas, 0xcbb489). Exact port of game.js's buildCanvasWalls.
@@ -325,6 +371,6 @@
   root.InteriorSceneBuilder = {
     buildWallPanels, buildWallGroup, buildFloorMaterial,
     buildCavernWalls, buildCanvasWalls, buildFallbackBoxWalls, panelCornersFor,
-    buildCarvedCavernMesh,
+    buildCarvedCavernMesh, buildCavernFloorMesh,
   };
 })(window);
