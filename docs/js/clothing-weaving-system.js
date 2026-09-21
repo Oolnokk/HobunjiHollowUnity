@@ -100,13 +100,13 @@
   }
 
   // A garment's weaving data can carry one pattern per layer role (new
-  // format: { layers: { <role>: { pattern|patternLibraryId, patternLabel } } })
+  // format: { layers: { <role>: { pattern, patternLibraryId?, patternLabel } } })
   // or — from before per-layer authoring existed — a single pattern applied
-  // to every layer of the garment (legacy format: { pattern, ... }). A layer
-  // entry holds either an embedded pattern (custom, never saved to the
-  // library) or just a patternLibraryId reference — resolved here rather
-  // than duplicating the full motif/placement data onto every garment that
-  // reuses the same saved pattern. Both are read through these two helpers
+  // to every layer of the garment (legacy format: { pattern, ... }). Current
+  // crafted/reweaved garments embed their own pattern snapshot; an optional
+  // patternLibraryId is provenance only. The resolver still accepts the
+  // short-lived reference-only shape so those items can be migrated while
+  // their source library pattern still exists. Both formats are read here
   // so every consumer (portrait rendering, loom/redye previews, debug
   // snapshots) agrees on what "this item has a pattern" and "what pattern
   // applies to this specific layer" mean.
@@ -124,8 +124,22 @@
 
   function weavingHasAnyPattern(weaving) {
     if (!weaving) return false;
-    if (weaving.layers) return Object.values(weaving.layers).some(entry => !!(entry?.pattern || entry?.patternLibraryId));
+    if (weaving.layers) return Object.keys(weaving.layers).some(role => !!weavingPatternForRole(weaving, role));
     return !!weaving.pattern;
+  }
+
+  function materializeWeavingLibrarySnapshots(item) {
+    const layers = item?.weaving?.layers; // Mutated in place so an owned reference-only garment becomes self-contained.
+    if (!layers || typeof layers !== 'object') return false;
+    let changed = false; // Used to persist only when a legacy reference was actually upgraded.
+    for (const entry of Object.values(layers)) {
+      if (!entry || entry.pattern || !entry.patternLibraryId) continue;
+      const resolved = window.PatternLibrary?.getById?.(entry.patternLibraryId); // Source motif for the short-lived reference-only save shape.
+      if (!resolved) continue;
+      entry.pattern = clone(resolved);
+      changed = true;
+    }
+    return changed;
   }
 
   // Human-readable summary of a weaving's pattern(s) — "Custom" for a plain
@@ -137,7 +151,7 @@
   function summarizeWeavingLabel(weaving) {
     if (!weavingHasAnyPattern(weaving)) return null;
     if (!weaving.layers) return 'Custom';
-    const entries = Object.entries(weaving.layers).filter(([, entry]) => entry?.pattern || entry?.patternLibraryId);
+    const entries = Object.entries(weaving.layers).filter(([role]) => !!weavingPatternForRole(weaving, role));
     if (entries.length === 1) return entries[0][1].patternLabel || 'Custom';
     return entries.map(([role, entry]) => `${layerLabel(role)}: ${entry.patternLabel || 'Custom'}`).join(', ');
   }
@@ -369,12 +383,16 @@
     if (!gear) return [];
     const known = Array.isArray(gear.knownClothingBlueprints) ? gear.knownClothingBlueprints : (gear.knownClothingBlueprints = []); // Permanent article unlocks learned by ever obtaining eligible cloth.
     const knownIds = new Set(known.map(entry => entry?.baseCosmeticId).filter(Boolean));
-    const candidates = [
+    const gearCandidates = [ // Gear-owned/currently worn records persist through saveGearInventory.
       ...(gear.clothingItems || []),
       ...CLOTHING_SLOTS.map(slot => gear.clothing?.[slot]).filter(Boolean),
-      ...packClothing(),
     ];
-    let changed = false;
+    const packCandidates = packClothing(); // Pack records are world-scoped and need saveMemberWorldData after migration.
+    const candidates = [...gearCandidates, ...packCandidates]; // Combined only for permanent blueprint discovery.
+    let gearChanged = false; // Tracks blueprint additions and pattern snapshot migrations in Gear.
+    let packChanged = false; // Tracks pattern snapshot migrations in Pack clothing.
+    for (const item of gearCandidates) if (materializeWeavingLibrarySnapshots(item)) gearChanged = true;
+    for (const item of packCandidates) if (materializeWeavingLibrarySnapshots(item)) packChanged = true;
     for (const item of candidates) {
       const id = baseCosmeticId(item);
       if (!isCraftableCloth(item) || !id || knownIds.has(id)) continue;
@@ -386,9 +404,10 @@
         baseLabel: articleLabel(item),
         sprite: item.sprite || window.EquipmentPanel?.clothingSpriteForCosmetic?.(id) || null,
       });
-      changed = true;
+      gearChanged = true;
     }
-    if (changed) equipmentDeps?.saveGearInventory?.();
+    if (gearChanged) equipmentDeps?.saveGearInventory?.();
+    if (packChanged) equipmentDeps?.saveMemberWorldData?.();
     return known.filter(isCraftableCloth);
   }
 
@@ -657,6 +676,7 @@
       dyeC: reweaveItem?.colorC?.dyeId || dyes[Math.min(2, dyes.length - 1)].id, // Pattern dye remains editable when reweaving.
       layersReady: false, // Blocks submission until the garment layers and saved weave have been initialized.
       layerRequest: 0, // Rejects stale layer loads after changing templates or reopening the loom.
+      previewRevision: 0, // Rejects stale asynchronous preview renders after garment/dye/view changes.
       layers: [], // Resolved [{url, role}] for the currently selected blueprint; refreshed whenever the blueprint changes.
       layerPatterns: {}, // role -> {pattern, patternId, patternLabel, swapPatternColors}. Sticky across blueprint switches; the swap flag belongs to this garment layer, not the reusable pattern.
       reweaveSeededUid: null, // Used to hydrate existing saved patterns exactly once before the player starts editing them.
@@ -675,19 +695,23 @@
         const key = role || DEFAULT_LAYER_ROLE;
         const entry = state.layerPatterns[key];
         if (!entry) continue;
-        // A library-backed pattern is stored as just the reference, not a
-        // full duplicate copy of the motif/placement data — the same saved
-        // pattern reused across many garments then costs one copy in the
-        // save, not one per garment. Resolved back to real pattern data by
-        // weavingPatternForRole.
+        // Keep the library id as provenance, but snapshot the full pattern
+        // into the literal garment so deleting/renaming the library source
+        // cannot mutate an already-crafted or reweaved item.
+        const pattern = entry.pattern || (entry.patternId ? window.PatternLibrary?.getById?.(entry.patternId) : null);
+        if (!pattern) continue;
         const swapPatternColors = !!entry.swapPatternColors; // Stored beside this garment layer so base/trim can swap independently without changing the source pattern.
-        if (entry.patternId) layers[key] = { patternLibraryId: entry.patternId, patternLabel: entry.patternLabel || 'Custom', ...(swapPatternColors ? { swapPatternColors: true } : {}) };
-        else if (entry.pattern) layers[key] = { pattern: clone(entry.pattern), patternLabel: entry.patternLabel || 'Custom', ...(swapPatternColors ? { swapPatternColors: true } : {}) };
+        layers[key] = {
+          pattern: clone(pattern),
+          ...(entry.patternId ? { patternLibraryId: entry.patternId } : {}),
+          patternLabel: entry.patternLabel || 'Custom',
+          ...(swapPatternColors ? { swapPatternColors: true } : {}),
+        };
       }
       return Object.keys(layers).length ? { layers } : null;
     }
     const hasAnyLayerPattern = () => !!weavingFromState();
-    const summarizePatterns = () => summarizeWeavingLabel(weavingFromState()) || 'None';
+    const summarizePatterns = weaving => summarizeWeavingLabel(weaving) || 'None';
 
     function seedReweavePatternsFromItem() {
       if (!isReweave || state.reweaveSeededUid === reweaveItem.uid) return;
@@ -788,6 +812,7 @@
           : 'Draw the motif to weave onto this garment. It will use the garment\'s third dye slot.',
         initialPattern,
         initialPatternLibraryId: existing?.patternId || null,
+        offloadCustomMotif: false, // A garment owns its custom motif pixels; do not replace them with origin-local storage references.
         library: window.PatternLibrary ? {
           list: () => window.PatternLibrary.listAvailable(),
           get: id => window.PatternLibrary.getById(id),
@@ -796,11 +821,10 @@
         } : null,
         renderPreview: previewFor('front'),
         renderPreviewBehind: supportsBehindView ? previewFor('behind') : undefined,
-        onSave: (patternData, sourceLibraryId) => {
+        onSave: async (patternData, sourceLibraryId) => {
           const patternLabel = sourceLibraryId ? (window.PatternLibrary?.listAvailable?.().find(entry => entry.id === sourceLibraryId)?.label || 'Custom') : 'Custom';
           state.layerPatterns[roleKey] = { pattern: clone(patternData), patternId: sourceLibraryId || '', patternLabel, swapPatternColors };
-          refreshPatternLayerControls();
-          refreshPreview();
+          await refreshPatternLayerControls(); // This seeds controls and triggers exactly one guarded preview refresh.
           return true;
         },
       });
@@ -887,22 +911,28 @@
     }
 
     async function refreshPreview() {
+      const revision = ++state.previewRevision; // Every awaited stage below validates this before committing UI.
       const bp = selectedBlueprint();
+      const blueprintId = bp.baseCosmeticId; // Used to reject a render for a template that is no longer selected.
       const material = selectedMaterial();
+      const weaving = weavingFromState(); // One immutable snapshot drives stats, controls, and pixels for this refresh.
+      const primaryHex = selectedPrimaryHex(); // Captured before awaits so this render cannot mix dye states.
+      const secondaryHex = selectedSecondaryHex(); // Captured with primaryHex for a coherent preview frame.
+      const patternHex = selectedPatternHex(); // Captured with the weaving snapshot for a coherent preview frame.
       const cost = isReweave ? reweaveMaterialCost(reweaveItem) : (WOOL_COST_BY_SLOT[bp.slot] || 1);
       const owned = Number(equipmentDeps?.inventory?.[material.itemKey]) || 0;
       const weight = isReweave ? itemWeightUnits(reweaveItem) : standardWeightFor(bp) * material.weightMul;
       overlay.querySelector('[data-primary-field]').style.display = isReweave ? 'none' : '';
       overlay.querySelector('[data-trim-field]').style.display = !isReweave && hasSecondary() ? '' : 'none';
-      overlay.querySelector('[data-pattern-dye-field]').style.display = hasAnyLayerPattern() ? '' : 'none';
+      overlay.querySelector('[data-pattern-dye-field]').style.display = weaving ? '' : 'none';
       overlay.querySelector('[data-material-note]').textContent = `${material.label}: ${owned} owned · ${cost} required${isReweave ? ' to reweave (half craft cost, rounded up)' : ''}.`;
-      overlay.querySelector('[data-stats]').textContent = `Weight: ${weight.toFixed(1)} units\nDefense: +${Math.round(weight * TUNING.defensePerUnit * 100)}%\nFooting resistance: +${Math.round(weight * TUNING.footingResistancePerUnit * 100)}%\nDodge efficacy: −${Math.round(weight * TUNING.dodgePenaltyPerUnit * 100)}%\nCombat movement: −${Math.round(weight * TUNING.combatMovePenaltyPerUnit * 100)}%\nPattern: ${summarizePatterns()}`;
+      overlay.querySelector('[data-stats]').textContent = `Weight: ${weight.toFixed(1)} units\nDefense: +${Math.round(weight * TUNING.defensePerUnit * 100)}%\nFooting resistance: +${Math.round(weight * TUNING.footingResistancePerUnit * 100)}%\nDodge efficacy: −${Math.round(weight * TUNING.dodgePenaltyPerUnit * 100)}%\nCombat movement: −${Math.round(weight * TUNING.combatMovePenaltyPerUnit * 100)}%\nPattern: ${summarizePatterns(weaving)}`;
       const craft = overlay.querySelector('[data-act="craft"]');
       craft.textContent = isReweave ? `Reweave · ${cost} ${material.label}` : 'Craft';
       craft.disabled = !state.layersReady || owned < cost;
       const behindToggleBtn = overlay.querySelector('[data-act="toggleBehindView"]');
-      const showBehindToggle = await hasBehindView(bp.baseCosmeticId);
-      if (!loomOverlay) return; // May have closed while the check above awaited.
+      const showBehindToggle = await hasBehindView(blueprintId);
+      if (!loomOverlay || revision !== state.previewRevision || state.blueprintId !== blueprintId) return; // Closed or superseded while awaiting behind-view metadata.
       if (!showBehindToggle) state.previewView = 'front'; // No behind art for this garment — never leave the toggle stuck on.
       behindToggleBtn.style.display = showBehindToggle ? '' : 'none';
       behindToggleBtn.textContent = state.previewView === 'behind' ? 'Front view' : 'Behind view';
@@ -910,14 +940,14 @@
       const preview = overlay.querySelector('[data-preview]');
       preview.innerHTML = '<span class="loomcraft-note">Rendering…</span>';
       try {
-        const { canvas } = await renderClothingLayers(bp.baseCosmeticId, {
-          primaryHex: selectedPrimaryHex(),
-          secondaryHex: selectedSecondaryHex(),
-          patternHex: selectedPatternHex(),
-          weaving: weavingFromState(),
+        const { canvas } = await renderClothingLayers(blueprintId, {
+          primaryHex,
+          secondaryHex,
+          patternHex,
+          weaving,
           view: state.previewView,
         });
-        if (!loomOverlay || !preview.isConnected) return;
+        if (!loomOverlay || revision !== state.previewRevision || state.blueprintId !== blueprintId || !preview.isConnected) return;
         if (!canvas) { preview.innerHTML = '<span class="loomcraft-note">No sprite preview is mapped for this article.</span>'; return; }
         const img = document.createElement('img');
         img.src = canvas.toDataURL('image/png');
@@ -925,12 +955,19 @@
         preview.innerHTML = '';
         preview.appendChild(img);
       } catch (error) {
+        if (!loomOverlay || revision !== state.previewRevision || state.blueprintId !== blueprintId || !preview.isConnected) return;
         lastError = String(error?.message || error);
         preview.innerHTML = '<span class="loomcraft-note">Preview unavailable; crafting still uses the selected settings.</span>';
       }
     }
 
-    blueprintSelect.onchange = () => { state.blueprintId = blueprintSelect.value; state.previewView = 'front'; refreshPatternLayerControls(); refreshPreview(); };
+    blueprintSelect.onchange = async () => {
+      const blueprintId = blueprintSelect.value; // Used after layer resolution to ignore a superseded template selection.
+      state.blueprintId = blueprintId;
+      state.previewView = 'front';
+      await refreshPatternLayerControls(); // Layer initialization owns the follow-up preview refresh.
+      if (!loomOverlay || state.blueprintId !== blueprintId) return;
+    };
     reweaveSelect.onchange = () => openLoom(reweaveSelect.value || null);
     overlay.querySelector('[data-act="toggleBehindView"]').onclick = () => {
       state.previewView = state.previewView === 'behind' ? 'front' : 'behind';
@@ -951,8 +988,7 @@
     };
     overlay.querySelector('.loomcraft-close').onclick = closeLoom;
     overlay.addEventListener('pointerdown', event => { if (event.target === overlay) closeLoom(); });
-    refreshPatternLayerControls();
-    refreshPreview();
+    refreshPatternLayerControls(); // Layer initialization triggers the first guarded preview once state.layers is ready.
     return true;
   }
 
@@ -1471,7 +1507,7 @@
     brick: { label: 'Brick', paired: false, basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: w / 2, y: h } }), polygon: (w, h) => [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }, { x: 0, y: h }] },
     diamond: {
       label: 'Diamond', paired: false,
-      basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: 0, y: h } }),
+      basis: (w, h) => ({ u: { x: w / 2, y: h / 2 }, v: { x: w / 2, y: -h / 2 } }),
       polygon: (w, h) => [{ x: w / 2, y: 0 }, { x: w, y: h / 2 }, { x: w / 2, y: h }, { x: 0, y: h / 2 }],
     },
     triangle: {
@@ -2155,7 +2191,7 @@
     hasWovenPattern: item => weavingHasAnyPattern(item?.weaving),
     reweaveMaterialCost,
     debugSnapshot,
-    __test: Object.freeze({ baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask, applyPatternToTintedImage, labelPatternCells, behindViewUrlsFor, behindViewResultFor, buildPortraitPatternMap, collectPatternImageUrls, cosmeticConfig, summarizeWeavingLabel, weavingPatternForRole, weavingSwapsPatternColorsForRole, weavingHasAnyPattern, wovenIconVisualKey, reweaveMaterialCost, resolvedPatternMeshScale, buildMotifClusterSeparatorMask, adjustMaskThickness, buildPatternOutlineMask, scaledOutlineWidth, requestPlayerAvatarRefresh }),
+    __test: Object.freeze({ baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask, applyPatternToTintedImage, labelPatternCells, behindViewUrlsFor, behindViewResultFor, buildPortraitPatternMap, collectPatternImageUrls, cosmeticConfig, summarizeWeavingLabel, weavingPatternForRole, weavingSwapsPatternColorsForRole, weavingHasAnyPattern, materializeWeavingLibrarySnapshots, frameShapeFor, wovenIconVisualKey, reweaveMaterialCost, resolvedPatternMeshScale, buildMotifClusterSeparatorMask, adjustMaskThickness, buildPatternOutlineMask, scaledOutlineWidth, requestPlayerAvatarRefresh }),
   });
   window.__clothingWeavingDebug = debugSnapshot;
 
