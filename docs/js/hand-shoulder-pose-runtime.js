@@ -259,6 +259,24 @@
     return applyLeftIdleRule(side, toolKey, weights);
   }
 
+  function currentTargetingEnabled() {
+    // The editor must always show authored shoulder/elbow behavior while the user is authoring it.
+    if (global.HobunjiAttackEditorHandShoulderControls) return true;
+
+    // Hold-release thrown weapons run their authored Neutral→Windup before
+    // RangedWeapons creates a playerAction. While that charge exists, the
+    // authored hand quaternion owns the pose completely.
+    if (global.HobunjiRangedWeaponArchetypes?.activeThrownChargeItemKey?.()) return false;
+
+    const action = global.__rangedDebug?.playerAction || null;
+    if (action?.kind !== 'fire' || !action?.itemKey || !(Number(action.durationS) > 0)) return true;
+    const def = global.RangedWeapons?.config?.[action.itemKey] || null;
+    if (!def) return true;
+    const progress = clamp01(Number(action.t) / Number(action.durationS));
+    const strikeBoundary = clamp01(def.fireAtFrac ?? def.fireStrikeFrac ?? 0.18); // Windup+Strike end; Hold/Return may resume arm targeting.
+    return progress > strikeBoundary;
+  }
+
   function currentWeights(side) {
     const editor = global.HobunjiAttackEditorHandShoulderControls;
     if (editor?.currentWeights) {
@@ -336,6 +354,7 @@
     elbowAt,
     currentWeights,
     currentElbow,
+    currentTargetingEnabled,
     installMeleeCapture,
   });
 })(window);
