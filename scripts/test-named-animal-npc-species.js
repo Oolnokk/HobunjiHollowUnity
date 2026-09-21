@@ -51,6 +51,8 @@ assert.match(namedAnimal, /canvas\.toDataURL\('image\/png'\)/, 'world animal pla
 assert.match(namedAnimal, /buildAnimalPlaneAvatarModel/, 'world models must retain the existing side-view animal plane builder');
 assert.match(namedAnimal, /__hobunjiAnimalNpcSourceUrl/, 'world animal planes must prefer the native creature/genotype source instead of the 200x200 NPC portrait canvas');
 assert.match(namedAnimal, /async function worldFrameUrls/, 'named animals must expose native-resolution idle/run frames for in-world locomotion');
+assert.match(namedAnimal, /dialogueEyesClosed = chathead && profile\?\.npcRecord\?\._animalDialogueEyesOpen === false/, 'sleeping animal dialogue portraits must retain closed eyes until their dialogue controller explicitly wakes them');
+assert.match(namedAnimal, /blinkShut: options\.blinkShut === true \|\| dialogueEyesClosed/, 'closed-eye animal dialogue portraits must use the canonical species blink overlay');
 assert.match(namedAnimal, /function creatureScaleMultiplierFor/, 'named animals must read a generic appearance-authored world scale multiplier');
 assert.match(game, /namedAnimalBaseSizeScale = namedAnimalDef \? window\.CreatureGenetics\.creatureSizeScale/, 'named animal scaling must resolve normal creature size class before any custom multiplier');
 assert.match(game, /namedAnimalBaseSizeScale\.x \* namedAnimalScaleMultiplier/, 'named animal custom scale must multiply normal creature X scale rather than replace it');
