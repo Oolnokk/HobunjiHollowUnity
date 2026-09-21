@@ -21,6 +21,8 @@
     'click', 'contextmenu', 'wheel',
   ]); // Captured before gameplay handlers so the start input cannot leak through to the game.
   const START_EVENTS = new Set(['keydown', 'pointerdown', 'mousedown', 'touchstart']); // Only fresh press-style actions dismiss the title; click/wheel carryover is swallowed.
+  const STARTUP_BGM_URL = 'assets/audio/music/bgm/bgm_remembrance.m4a'; // Remembrance begins with the title itself, before the full Music module is available.
+  const STARTUP_BGM_FALLBACK_VOLUME = 0.48; // Mirrors the shared BGM default until Music adopts the element and applies live config.
 
   let active = true; // Remains true through the fade so follow-up key/pointer events are swallowed too.
   let starting = false; // Prevents duplicate start requests from pointerdown + mousedown + click.
@@ -34,6 +36,9 @@
   let gamepadWasDown = false; // Tracks the previous real controller snapshot for rising-edge detection.
   let controllerGateInstalled = false; // Reported by getDebug() so controller leakage can be checked on mobile.
   let fontSettled = false; // Prevents a fallback-font flash before the local Khymeryyan Roman font resolves.
+  let startupBgmAudio = null; // Owns the earliest Remembrance element until Music claims the same playhead later in boot.
+  let startupBgmHandedOff = false; // Prevents both title runtime and Music from independently owning the startup soundtrack.
+  let startupBgmLastPlayError = null; // Exposed in title diagnostics so autoplay-policy failures are visible without a console.
 
   function installStyles() {
     if (document.getElementById(STYLE_ID)) return;
@@ -197,6 +202,69 @@
     (document.head || document.documentElement).appendChild(script);
   }
 
+  function resolvedStartupBgmUrl() {
+    try { return new URL(STARTUP_BGM_URL, document.baseURI).href; }
+    catch (_) { return STARTUP_BGM_URL; }
+  }
+
+  function createStartupBgmAudio() {
+    if (startupBgmAudio) return startupBgmAudio;
+    try {
+      const snd = new Audio(resolvedStartupBgmUrl());
+      snd.preload = 'auto';
+      snd.loop = true;
+      snd.volume = STARTUP_BGM_FALLBACK_VOLUME;
+      startupBgmAudio = snd;
+      try { snd.load(); } catch (_) {}
+      return snd;
+    } catch (error) {
+      startupBgmLastPlayError = String(error?.message || error);
+      return null;
+    }
+  }
+
+  function tryStartStartupBgm(reason = 'title boot') {
+    const snd = createStartupBgmAudio();
+    if (!snd || startupBgmHandedOff || !snd.paused) return snd;
+    try {
+      const result = snd.play();
+      Promise.resolve(result).then(() => {
+        startupBgmLastPlayError = null;
+      }).catch(error => {
+        // Browsers normally block audible autoplay before a user gesture. Keep
+        // the preloaded element alive; beginStart() retries synchronously from
+        // the accepted title input, where autoplay permission can be granted.
+        startupBgmLastPlayError = (error?.name || 'Error') + ': ' + (error?.message || reason);
+      });
+    } catch (error) {
+      startupBgmLastPlayError = (error?.name || 'Error') + ': ' + (error?.message || reason);
+    }
+    return snd;
+  }
+
+  function claimStartupBgmAudio(expectedUrl = STARTUP_BGM_URL) {
+    const snd = startupBgmAudio;
+    if (!snd || startupBgmHandedOff) return null;
+    let expected = expectedUrl;
+    try { expected = new URL(expectedUrl, document.baseURI).href; } catch (_) {}
+    if (expected && snd.src !== expected) {
+      try { snd.pause(); snd.currentTime = 0; } catch (_) {}
+      startupBgmHandedOff = true;
+      return null;
+    }
+    startupBgmHandedOff = true;
+    return snd;
+  }
+
+  function cancelStartupBgmAudio() {
+    if (startupBgmHandedOff) return false;
+    const snd = startupBgmAudio;
+    startupBgmHandedOff = true;
+    if (!snd) return false;
+    try { snd.pause(); snd.currentTime = 0; } catch (_) {}
+    return true;
+  }
+
   function settleFont() {
     if (fontSettled) return;
     fontSettled = true;
@@ -312,6 +380,10 @@
     if (inputArmTimer && typeof window.clearTimeout === 'function') window.clearTimeout(inputArmTimer);
     inputArmTimer = 0;
     document.documentElement.classList.add('hobunji-title-leaving');
+    // This call stays inside the accepted keyboard/pointer event. If page-load
+    // autoplay was blocked, the browser can now authorize Remembrance before
+    // the title runtime swallows the same input from gameplay.
+    tryStartStartupBgm('title input: ' + source);
     window.dispatchEvent(new CustomEvent('hobunji-title-starting', { detail:{ source } }));
     window.setTimeout(() => {
       active = false;
@@ -332,6 +404,7 @@
 
   installStyles();
   document.documentElement.classList.add('hobunji-title-active');
+  tryStartStartupBgm(); // Earliest possible soundtrack start; blocked autoplay is retried by beginStart().
   loadTitleSky();
   installEventGate();
   armInputGate();
@@ -343,6 +416,8 @@
     installed:true,
     isActive:() => active,
     start:() => beginStart('api'),
+    claimStartupBgmAudio,
+    cancelStartupBgmAudio,
     getRealtimeCalendar:(date = new Date()) => window.HobunjiTitleRealtimeSky?.getRealtimeCalendar?.(date) || null,
     getDebug:() => ({
       active,
@@ -355,6 +430,11 @@
       gamepadPollPrimed,
       titleSkyStarted,
       titleSkyLoadError,
+      startupBgmCreated: !!startupBgmAudio,
+      startupBgmPlaying: !!startupBgmAudio && !startupBgmAudio.paused,
+      startupBgmCurrentTime: Number(startupBgmAudio?.currentTime || 0),
+      startupBgmHandedOff,
+      startupBgmLastPlayError,
       titleSky: window.HobunjiTitleRealtimeSky?.getDebug?.() || null,
     }),
   });

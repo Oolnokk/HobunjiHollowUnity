@@ -10,6 +10,8 @@ function source(relativePath) {
 }
 
 const music = source('docs/js/music-system.js');
+const title = source('docs/js/title-screen-runtime.js');
+const formatUtils = source('docs/js/format-utils.js');
 const game = source('docs/game.js');
 const config = source('docs/config/scratchbones-config.js');
 const index = source('docs/index.html');
@@ -40,12 +42,38 @@ assert.match(music, /if \(track\.rainingOnly && !deps\.calendar\.isRaining\) ret
   'rain-only BGM uses the live rain window rather than the daily forecast');
 assert.match(music, /function isAuthoredHourWindowEligible\(track\)[\s\S]*?start < end \? \(hour >= start && hour < end\) : \(hour >= start \|\| hour < end\)/,
   'authored BGM hour windows support both ordinary and midnight-wrapping ranges');
-assert.match(music, /function startStartupBgm\(\)[\s\S]*?audioCfg\.startupBgm[\s\S]*?requestGameAudioPlay\(snd\)/,
-  'Remembrance uses the shared music playback/unlock pipeline during startup');
+assert.match(title, /const STARTUP_BGM_URL = 'assets\/audio\/music\/bgm\/bgm_remembrance\.m4a'/,
+  'the earliest title runtime points at the authored Remembrance startup track');
+assert.match(title, /document\.documentElement\.classList\.add\('hobunji-title-active'\);[\s\S]*?tryStartStartupBgm\(\);[\s\S]*?loadTitleSky\(\)/,
+  'Remembrance is attempted immediately when the title screen itself is installed');
+assert.match(title, /function beginStart\([\s\S]*?tryStartStartupBgm\('title input: ' \+ source\);[\s\S]*?hobunji-title-starting/,
+  'the accepted title input retries autoplay synchronously before the swallowed input is released');
+assert.match(title, /claimStartupBgmAudio,[\s\S]*?cancelStartupBgmAudio/,
+  'the title runtime exposes one-way startup-audio handoff/cancellation APIs');
+assert.match(music, /function startStartupBgm\(\)[\s\S]*?audioCfg\.startupBgm[\s\S]*?claimStartupBgmAudio\?\.\(track\.url\)[\s\S]*?existingAudio: earlyTitleAudio[\s\S]*?requestGameAudioPlay\(snd\)/,
+  'Music adopts the title runtime\'s existing Remembrance element/playhead and keeps the shared playback gate');
+assert.match(music, /function playMusicTrack\([\s\S]*?existingAudio = null[\s\S]*?const snd = existingAudio \|\| makeGameAudio/,
+  'the shared music player can adopt an already-playing title soundtrack without creating a duplicate element');
+assert.doesNotMatch(music, /__hobunjiGameStarted === true \|\| window\.__hobunjiPlayerProfile/,
+  'loading/selecting a profile no longer falsely ends the title/save/onboarding soundtrack');
 assert.match(music, /window\.addEventListener\('hobunji-title-starting',[\s\S]*?unlockGameAudio\('title start'\)/,
-  'the title screen\'s swallowed first input still unlocks Remembrance synchronously');
-assert.match(music, /document\.addEventListener\('hobunjiPlayerReady',[\s\S]*?stopStartupBgm\('player ready'\)/,
-  'player-ready is the handoff that fades the startup soundtrack');
+  'the full music system still retries a claimed autoplay-blocked Remembrance element on title input');
+assert.match(music, /document\.addEventListener\('hobunjiPlayerReady', finishStartupWhenGameActuallyStarts\)/,
+  'player-ready begins the final loading handoff without stopping Remembrance');
+assert.match(music, /function finishStartupWhenGameActuallyStarts\(\)[\s\S]*?window\.__hobunjiGameStarted === true[\s\S]*?stopStartupBgm\('game started'\)[\s\S]*?setInterval\([\s\S]*?50\)/,
+  'startup music waits through loading until game.js marks the selected world fully hydrated');
+assert.match(music, /if \(_startupBgm && window\.__hobunjiGameStarted === true\) stopStartupBgm\('game started'\)/,
+  'the first gameplay audio tick provides a redundant no-gap stop fallback once the world is actually playable');
+assert.doesNotMatch(music, /stopStartupBgm\('player ready'\)/,
+  'opening/loading a selected world cannot fade Remembrance merely because player-ready fired');
+assert.match(music, /existingAudio: earlyTitleAudio \}\); \/\/ Persists continuously across title, every pre-game menu\/loading surface, and world hydration/,
+  'Music keeps ownership of the title element/playhead throughout the complete pre-game sequence');
+assert.match(music, /Math\.max\(0, Number\(snd\._musicTarget\) \|\| 0\) > 1\.0001/,
+  'gesture unlock promotes only tracks that actually need gain above the HTML volume ceiling');
+assert.doesNotMatch(music, /plainVolumeOnly|_forcePlainMusicVolume/,
+  'startup Remembrance is not exempt from manual >100% gain once Web Audio is safely running');
+assert.doesNotMatch(music, /if \(!_musicGainNodes\.has\(snd\)\) attachMusicGain\(snd\)/,
+  'ordinary music is never unconditionally rerouted through the historically fragile GainNode path');
 assert.match(music, /if \(_startupBgm && !_startupBgm\._musicRetired\)[\s\S]*?return;/,
   'ordinary area/combat music cannot interrupt the startup soundtrack');
 assert.match(music, /stopMusicSlot\('currentBgm', 'bgm conditions expired', musicFadeConfig\(\)\.songFadeOutMs\)/,
@@ -101,8 +129,12 @@ assert.equal((config.match(/"url": "assets\/audio\/music\/bgm\/bgm_farm1\.m4a", 
   'the shared farm/town theme is authored as rain-only in both playlists');
 assert.match(index, /scratchbones-config\.js\?v=20260920newbgm1/,
   'the browser cache key loads the expanded authored BGM playlists');
-assert.match(index, /music-system\.js\?v=20260920newbgm1/,
-  'the browser cache key loads startup and authored-hour-window music behavior');
+assert.match(formatUtils, /title-screen-runtime\.js\?v=20260920startupbgm1/,
+  'the parser-synchronous title loader cache-busts the earliest Remembrance bootstrap');
+assert.match(index, /music-system\.js\?v=20260920startupcontinuity2/,
+  'the browser cache key loads startup-title audio adoption plus per-song gain behavior');
+assert.match(index, /audio-track-gain-settings\.js\?v=20260920trackgain2/,
+  'the browser loads the per-song gain Settings controller before game startup');
 assert.match(index, /town-mine\.js\?v=20260919combatbgm2/,
   'the browser cache key loads the Ghoul soundtrack combat exemption');
 

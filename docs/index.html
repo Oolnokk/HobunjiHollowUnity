@@ -1668,6 +1668,19 @@
             </div>
             <span class="settings-toggle"><input type="checkbox" id="settingBanditCamps" checked><span class="toggle-slider"></span></span>
           </label>
+          <div class="settings-section-title" style="margin-top:10px">Audio</div>
+          <div class="settings-row settings-row--stacked">
+            <div class="settings-label">
+              <div class="settings-name">Per-Song Music Gain</div>
+              <div class="settings-desc">Choose a BGM track, then fine-tune its calibrated gain. Defaults are matched by measured loudness to Follow the Signs; values above 100% use real audio gain rather than stopping at the browser volume ceiling.</div>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;width:100%">
+              <select id="settingMusicTrackGainSong" class="settings-select" style="min-width:190px;flex:1 1 230px"></select>
+              <input type="range" id="settingMusicTrackGain" min="0" max="500" step="5" value="100" style="flex:1 1 220px;min-width:160px">
+              <span id="settingMusicTrackGainValue" class="settings-slider-value">100%</span>
+              <button type="button" id="settingMusicTrackGainReset" class="settings-small-btn">Reference</button>
+            </div>
+          </div>
           <div class="settings-section-title" style="margin-top:10px">Camera</div>
           <label class="settings-row">
             <div class="settings-label">
@@ -2344,7 +2357,8 @@
        time, and must load before game.js, which calls
        window.Music.init(...) during its own setup. Depends on
        window.AudioSystem (gameAudioConfig/playObjectSfx), so loads after it. -->
-  <script src="js/music-system.js?v=20260920newbgm1"></script>
+  <script src="js/music-system.js?v=20260920startupcontinuity2"></script>
+  <script src="js/audio-track-gain-settings.js?v=20260920trackgain2"></script>
   <!-- Shared local-transform dump utility (window.HobunjiTransformDump) —
        also loaded by the Attack Animation Editor, so a probed character's
        node-by-node local transforms use the exact same code/format as the

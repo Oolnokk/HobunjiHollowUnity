@@ -14,11 +14,18 @@
   // plain-.volume fallback. That's a pre-existing quirk of the system being
   // moved, not something this extraction changes.
   let deps = null;
-  let _startupBgm = null; // Holds Remembrance while the title/save/onboarding sequence owns the soundtrack.
-  let _startupSequenceComplete = false; // Prevents startup music from restarting after the player-ready handoff.
+  let _startupBgm = null; // Holds Remembrance while the title/save/onboarding/loading sequence owns the soundtrack.
+  let _startupSequenceComplete = false; // Prevents startup music from restarting after actual gameplay hydration.
+  let _startupGameStartWatch = 0; // Short-lived post-selection watcher; cleared as soon as game.js marks the hydrated world started.
   function init(injectedDeps) {
     deps = injectedDeps;
-    if (window.__hobunjiGameStarted === true || window.__hobunjiPlayerProfile) _startupSequenceComplete = true;
+    // A loaded/selected profile is still part of the authored startup sequence;
+    // only the actual player-ready/game-start handoff ends Remembrance.
+    if (window.__hobunjiGameStarted === true) {
+      _startupSequenceComplete = true;
+      window.HobunjiTitleScreen?.cancelStartupBgmAudio?.();
+      return;
+    }
     startStartupBgm();
   }
 
@@ -120,40 +127,80 @@
 
   function getMusicAudioCtx() {
     if (_musicAudioCtx) return _musicAudioCtx;
+    // Reuse AudioSystem's already-proven audible Web Audio context instead of
+    // creating an isolated music-only destination. Object SFX gainBoost uses
+    // this same context successfully for >100% gain.
+    if (window._footstepAudioCtx) {
+      _musicAudioCtx = window._footstepAudioCtx;
+      return _musicAudioCtx;
+    }
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
     if (!AudioCtx) return null;
-    try { _musicAudioCtx = new AudioCtx(); }
-    catch (e) { audioDebug('music audio context unavailable: ' + (e?.message || e), 'music-ctx-fail', 0); _musicAudioCtx = null; }
+    try {
+      _musicAudioCtx = new AudioCtx();
+      window._footstepAudioCtx = _musicAudioCtx;
+    } catch (e) {
+      audioDebug('music audio context unavailable: ' + (e?.message || e), 'music-ctx-fail', 0);
+      _musicAudioCtx = null;
+    }
     return _musicAudioCtx;
   }
 
-  // Routes a music <audio> element through a GainNode so it can be faded
-  // smoothly and boosted past the element's volume<=1 ceiling (needed to
-  // normalize quiet tracks up to the target level). Falls back to plain
-  // `snd.volume` (capped at 1, no boosting) if Web Audio is unavailable.
+  // Routes a music <audio> element through the same GainNode path already
+  // proven by AudioSystem's boosted object SFX. This is required for authored
+  // per-song gains above the HTMLMediaElement.volume ceiling of 1.0.
   //
-  // Disabled (always returns null) as of a live debugging session: bgs
-  // tracks (birds/wind/nightbugs — see setLoopingBgs), which use plain
-  // `snd.volume` and never touch this GainNode graph, were reliably
-  // audible; bgm/cues routed through this graph were not, even while
-  // every JS-visible signal reported healthy (ctx.state === 'running',
-  // live gain at its ramped target, unmuted — see logAudioTickDiagnostics
-  // below). That combination means the graph's actual connection to
-  // ctx.destination isn't reaching real output in this environment, which
-  // nothing on the JS side can detect or recover from — so route bgm/cues
-  // through the same plain-volume path that's proven to work instead. Left
-  // in place (rather than deleted) in case a future environment's Web
-  // Audio destination behaves correctly and this is worth re-enabling;
-  // loudness-boosting quiet tracks above volume 1.0 is the one feature
-  // lost by staying on the plain path.
+  // The earlier music GainNode attempt mirrored the gain value onto
+  // snd.volume as well. HTML media volume can still attenuate a media-element
+  // source before it reaches Web Audio, so that effectively applied the same
+  // reduction twice on ordinary BGM. Keep the media element itself at unity
+  // and let exactly one GainNode own music loudness/fades instead.
   function attachMusicGain(snd) {
-    return null;
+    const ctx = getMusicAudioCtx();
+    if (!ctx) return null;
+    if (_musicGainNodes.has(snd)) return _musicGainNodes.get(snd);
+    if (ctx.state !== 'running') {
+      // Never capture a live media element into a silent AudioContext. Resume
+      // first and keep this call on the plain-volume fallback; once running,
+      // refresh the same track so >100% gain can be attached without a dropout.
+      ctx.resume().then(() => {
+        if (!snd?._musicRetired) snd._refreshMusicTarget?.(120);
+      }).catch(err => audioDebug('music audio resume failed before gain attach: ' + (err?.name || err), 'music-pre-attach-resume-fail', 0));
+      return null;
+    }
+    try {
+      const source = ctx.createMediaElementSource(snd);
+      const gain = ctx.createGain();
+      // Preserve the level actually coming out of the HTML audio element at
+      // the instant routing changes. Using the requested final target here
+      // would make a >100% song jump straight to full gain and skip fade-in.
+      const initialTarget = Math.max(0, Math.min(1, Number(snd.volume) || 0));
+      gain.gain.value = initialTarget;
+      source.connect(gain).connect(ctx.destination);
+      snd._fadeToken = null;
+      snd.volume = 1;
+      const node = { ctx, source, gain, target: initialTarget };
+      _musicGainNodes.set(snd, node);
+      return node;
+    } catch (e) {
+      audioDebug('music gain attach failed ' + snd.src + ': ' + (e?.message || e), 'music-gain-attach-fail', 0);
+      return null;
+    }
   }
 
   function releaseMusicGain(snd) {
     const node = _musicGainNodes.get(snd);
-    if (node) { try { node.gain.disconnect(); } catch {} }
+    if (node) {
+      try { node.source?.disconnect(); } catch {}
+      try { node.gain.disconnect(); } catch {}
+    }
     _musicGainNodes.delete(snd);
+  }
+
+  function musicWantsAudible(snd) {
+    if (!snd || snd._musicRetired) return false;
+    if (snd._musicResumePending) return true;
+    return Math.max(0, Number(snd._musicTarget) || 0) > 0.0001;
   }
 
   // Permanently removes a completed/failed/superseded music element from
@@ -171,31 +218,30 @@
 
   function setMusicVolumeNow(snd, value) {
     const v = Math.max(0, value);
-    const node = _musicGainNodes.get(snd);
+    snd._musicTarget = v; // Preserves the intended level even while pre-gesture playback is still on the plain-volume fallback.
+    let node = _musicGainNodes.get(snd);
+    if (!node && v > 1.0001) node = attachMusicGain(snd); // Only cross into Web Audio when plain HTML volume genuinely lacks enough headroom.
     const clampedTarget = Math.max(0, Math.min(1, v));
     if (node) {
       node.target = v;
       node.gain.gain.cancelScheduledValues(node.ctx.currentTime);
       node.gain.gain.setValueAtTime(v, node.ctx.currentTime);
-      // The element's own .volume no longer affects audible output once
-      // routed through the GainNode, but unlockGameAudio()'s retry loop
-      // still reads it to tell "should be audible" apart from
-      // "intentionally silent/stopped" — keep it mirroring the target.
-      snd.volume = clampedTarget;
+      snd.volume = 1; // GainNode is the sole audible level control on this path.
     } else {
       snd.volume = clampedTarget;
     }
   }
 
   // Ramps a music element's volume to `target` over `durationMs`. Uses
-  // Web Audio gain automation when available (immune to rAF/timer jitter),
-  // and a rAF-driven fallback on `.volume` otherwise. `onDone` fires once
-  // this specific ramp completes (skipped if a later fade supersedes it).
+  // Web Audio gain automation when available (including real >100% gain),
+  // and a rAF-driven plain-volume fallback if Web Audio cannot attach.
   function fadeMusicVolume(snd, target, durationMs, onDone) {
     const v = Math.max(0, target);
+    snd._musicTarget = v; // Used by autoplay retry and by deferred GainNode attachment.
     const dur = Math.max(0, Number(durationMs) || 0);
     const clampedTarget = Math.max(0, Math.min(1, v));
-    const node = _musicGainNodes.get(snd);
+    let node = _musicGainNodes.get(snd);
+    if (!node && v > 1.0001) node = attachMusicGain(snd); // Ordinary <=100%-of-element playback stays on the proven direct-audio path.
     if (node) {
       node.target = v;
       const now = node.ctx.currentTime;
@@ -203,11 +249,7 @@
       node.gain.gain.setValueAtTime(node.gain.gain.value, now);
       if (dur <= 0) node.gain.gain.setValueAtTime(v, now);
       else node.gain.gain.linearRampToValueAtTime(v, now + dur / 1000);
-      // Mirror the *target* onto .volume immediately (not waiting for the
-      // ramp) — it no longer drives audible output once routed through
-      // the GainNode, but unlockGameAudio()'s retry loop reads it to know
-      // whether a paused element wants to be playing.
-      snd.volume = clampedTarget;
+      snd.volume = 1; // Do not double-attenuate the MediaElementSource.
       if (onDone) setTimeout(() => { if (node.target === v) onDone(); }, dur);
       return;
     }
@@ -218,13 +260,6 @@
     snd._fadeToken = token;
     const step = now => {
       if (snd._fadeToken !== token) return;
-      // rAF's own `now` timestamp isn't guaranteed to line up with the
-      // performance.now() captured above (some browsers snapshot it at
-      // the start of the frame, which can land a hair earlier) — an
-      // unclamped lower bound let a barely-negative t extrapolate volume
-      // to a barely-negative number on the very first frame of a fade-in
-      // from 0, and HTMLMediaElement.volume throws (IndexSizeError) on
-      // anything outside [0,1], aborting the whole ramp right there.
       const t = Math.max(0, Math.min(1, (now - startTime) / dur));
       snd.volume = Math.max(0, Math.min(1, start + (clampedTarget - start) * t));
       if (t < 1) requestAnimationFrame(step);
@@ -250,6 +285,15 @@
   function musicLoudnessGain(url) {
     const resolved = resolveAudioUrl(url);
     if (!resolved) return Promise.resolve(1);
+    // Authored BGM files now carry explicit LUFS-derived reference gains in
+    // AudioTrackGainSettings, calibrated against Follow the Signs. Do not
+    // stack the older RMS normalizer on top of those hand-audited values.
+    // Ambient cue files that are not in the BGM dropdown still use RMS
+    // normalization automatically.
+    if (window.AudioTrackGainSettings?.hasTrack?.(url)) {
+      _musicLoudnessGain.set(resolved, 1);
+      return Promise.resolve(1);
+    }
     if (_musicLoudnessGain.has(resolved)) return Promise.resolve(_musicLoudnessGain.get(resolved));
     if (_musicLoudnessPending.has(resolved)) return _musicLoudnessPending.get(resolved);
     const ctx = getMusicAudioCtx();
@@ -285,25 +329,47 @@
     };
   }
 
-  // Plays a music track (BGM song or ambient cue) with automatic loudness
-  // normalization and a fade-in at the start / fade-out before it ends
-  // naturally. `baseVolume` is the pre-normalization target (0..1) from
-  // config; the measured loudness multiplier is layered on top once the
-  // (cached, async) analysis resolves. Returns the <audio> element, with
+  // Plays a music track (BGM song or ambient cue) with a fade-in at the
+  // start / fade-out before it ends naturally. Authored BGM uses the
+  // Follow-the-Signs LUFS calibration from AudioTrackGainSettings; unlisted
+  // ambient cues retain the automatic RMS normalizer. `baseVolume` remains
+  // the shared pre-track-gain target from config. Returns the <audio> element, with
   // a `_stopMusic(fadeMs)` helper attached for fading out an interruption
   // (e.g. switching areas) instead of cutting the track off mid-note.
-  function playMusicTrack(url, baseVolume, fadeInMs, fadeOutMs, { loop = false } = {}) {
-    const snd = makeGameAudio(url, { loop });
+  function playMusicTrack(url, baseVolume, fadeInMs, fadeOutMs, { loop = false, existingAudio = null } = {}) {
+    // Startup Remembrance can already be playing before this module is fully
+    // initialized. Adopt that exact element so title -> onboarding keeps one
+    // uninterrupted playhead instead of restarting/overlapping the track.
+    const snd = existingAudio || makeGameAudio(url, { loop });
+    if (existingAudio) {
+      snd.loop = !!loop;
+      snd.preload = 'auto';
+      snd._musicRetired = false;
+      _gameAudioElements.add(snd);
+    }
     snd._trackUrl = url; // lets area-change handling recognize "same song on both playlists" — see areaBgmIncludesTrack
-    attachMusicGain(snd);
-    setMusicVolumeNow(snd, 0);
     let fadingOut = false;
     let ducked = _lyreDucked; // A track that starts while the Lyre minigame is already sounding (e.g. the previous song looped over) should come up silent, not at full volume.
     let transportPaused = false; // Used by scheduler interruptions that must preserve this track's playhead instead of retiring it.
-    const targetVolume = () => ducked ? 0 : Math.max(0, baseVolume) * (_musicLoudnessGain.get(resolveAudioUrl(url)) ?? 1);
-    fadeMusicVolume(snd, targetVolume(), fadeInMs);
+    const targetVolume = () => {
+      if (ducked) return 0;
+      const measuredGain = _musicLoudnessGain.get(resolveAudioUrl(url)) ?? 1;
+      const userTrackGainRaw = Number(window.AudioTrackGainSettings?.gainForUrl?.(url));
+      const userTrackGain = Number.isFinite(userTrackGainRaw) ? Math.max(0, userTrackGainRaw) : 1;
+      return Math.max(0, baseVolume) * measuredGain * userTrackGain;
+    };
+    if (existingAudio) setMusicVolumeNow(snd, targetVolume());
+    else {
+      setMusicVolumeNow(snd, 0);
+      fadeMusicVolume(snd, targetVolume(), fadeInMs);
+    }
+    snd._refreshMusicTarget = (fadeMs = 120) => {
+      if (fadingOut || transportPaused || snd._musicRetired) return false;
+      fadeMusicVolume(snd, targetVolume(), Math.max(0, Number(fadeMs) || 0));
+      return true;
+    };
     musicLoudnessGain(url).then(() => {
-      if (!fadingOut && !transportPaused && !snd.paused) fadeMusicVolume(snd, targetVolume(), 400);
+      if (!fadingOut && !transportPaused && !snd.paused) snd._refreshMusicTarget(400);
     });
     if (!loop && fadeOutMs > 0) {
       snd.addEventListener('timeupdate', () => {
@@ -380,10 +446,14 @@
     if (_startupSequenceComplete || _startupBgm || window.__hobunjiGameStarted === true) return false;
     const audioCfg = window.AudioSystem?.gameAudioConfig?.() || {}; // Supplies the authored Remembrance entry and shared BGM volume.
     const track = audioCfg.startupBgm; // Startup-only soundtrack config used until onboarding emits hobunjiPlayerReady.
-    if (audioCfg.enabled === false || !track?.url) return false;
+    if (audioCfg.enabled === false || !track?.url) {
+      window.HobunjiTitleScreen?.cancelStartupBgmAudio?.();
+      return false;
+    }
     const fade = musicFadeConfig(); // Reuses the normal song fades so the startup/gameplay handoff is musical.
     const baseVol = Math.max(0, Math.min(1, Number(audioCfg.bgmVolume) || 0.48)); // Uses the same master BGM level as area music.
-    const snd = playMusicTrack(track.url, baseVol, fade.songFadeInMs, fade.songFadeOutMs, { loop: track.loop !== false }); // Persists across title, save source, character, and world selection.
+    const earlyTitleAudio = window.HobunjiTitleScreen?.claimStartupBgmAudio?.(track.url) || null; // Takes over the title runtime's already-loaded/already-playing Remembrance element without resetting currentTime.
+    const snd = playMusicTrack(track.url, baseVol, fade.songFadeInMs, fade.songFadeOutMs, { loop: track.loop !== false, existingAudio: earlyTitleAudio }); // Persists continuously across title, every pre-game menu/loading surface, and world hydration. Its calibrated default stays below the HTML volume ceiling, so it remains on direct audio unless the user explicitly boosts it high enough to require Web Audio.
     snd._musicEntry = track;
     _startupBgm = snd;
     const finishStartup = () => {
@@ -406,6 +476,7 @@
 
   function stopStartupBgm(reason = 'startup complete') {
     _startupSequenceComplete = true;
+    clearStartupGameStartWatch();
     const snd = _startupBgm; // Captures the current startup owner before clearing its slot.
     _startupBgm = null;
     if (!snd) return false;
@@ -416,7 +487,28 @@
     return true;
   }
 
-  document.addEventListener('hobunjiPlayerReady', () => stopStartupBgm('player ready'));
+  function clearStartupGameStartWatch() {
+    if (!_startupGameStartWatch) return;
+    clearInterval(_startupGameStartWatch);
+    _startupGameStartWatch = 0;
+  }
+
+  function finishStartupWhenGameActuallyStarts() {
+    if (_startupSequenceComplete) return;
+    if (window.__hobunjiGameStarted === true) {
+      clearStartupGameStartWatch();
+      stopStartupBgm('game started');
+      return;
+    }
+    if (_startupGameStartWatch) return;
+    _startupGameStartWatch = setInterval(() => {
+      if (window.__hobunjiGameStarted !== true) return;
+      clearStartupGameStartWatch();
+      stopStartupBgm('game started');
+    }, 50); // Bounded handoff poll: exists only between world selection and spawnPlayerAvatar's final hydrated-game flag.
+  }
+
+  document.addEventListener('hobunjiPlayerReady', finishStartupWhenGameActuallyStarts); // PlayerReady begins loading; Remembrance continues until the playable world is hydrated.
 
   function markAudioUrlFailed(url, reason) {
     const resolved = resolveAudioUrl(url);
@@ -450,13 +542,11 @@
   }
 
   function unlockGameAudio(reason = 'user gesture') {
-    // Resuming a suspended AudioContext must happen on every gesture, not just
-    // the first: _musicAudioCtx is created lazily (the first time music
-    // actually tries to play), which is often well after the player's
-    // first click/tap — by which point a one-shot unlock would already be
-    // spent and the newly-created context would stay suspended (silently)
-    // forever.
-    if (_musicAudioCtx?.state === 'suspended') _musicAudioCtx.resume().catch(err => audioDebug('music audio resume failed: ' + (err?.name || err), 'music-resume-fail', 0));
+    // Create/resume the shared music context while we still have a trusted
+    // gesture. Otherwise the first >100% song might create it much later,
+    // outside user activation, then route itself into a suspended/silent graph.
+    const musicCtx = getMusicAudioCtx();
+    if (musicCtx?.state === 'suspended') musicCtx.resume().catch(err => audioDebug('music audio resume failed: ' + (err?.name || err), 'music-resume-fail', 0));
     if (!_gameAudioUnlocked) {
       _gameAudioUnlocked = true;
       audioDebug('audio unlock from ' + reason, 'audio-unlock', 0);
@@ -468,7 +558,14 @@
     // later gesture to retry play() — a one-shot retry only ever catches
     // whatever happened to be paused at that first moment.
     for (const snd of _gameAudioElements) {
-      if (!snd || snd._musicRetired || (!snd._musicResumePending && snd.volume <= 0) || !snd.paused) continue;
+      if (!snd) continue;
+      if (!_musicGainNodes.has(snd) && Math.max(0, Number(snd._musicTarget) || 0) > 1.0001) {
+        attachMusicGain(snd); // Promote only tracks whose requested level really exceeds the HTMLMediaElement ceiling; ordinary/startup music stays on direct audio.
+      }
+      if (!musicWantsAudible(snd) || !snd.paused) {
+        if (!snd.paused) snd._refreshMusicTarget?.(90);
+        continue;
+      }
       requestGameAudioPlay(snd).then(() => {
         if (snd._musicResumePending) snd._finishMusicResume?.();
         audioTrace('unlock replay started ' + snd.src, 'unlock-play-' + snd.src, 0);
@@ -479,6 +576,14 @@
   }
 
   window.addEventListener('hobunji-title-starting', () => unlockGameAudio('title start')); // Runs synchronously inside the title's swallowed trusted input so Remembrance can satisfy browser autoplay policy.
+  window.addEventListener('hobunji-track-gain-changed', event => {
+    const changedUrl = resolveAudioUrl(event?.detail?.url || '');
+    if (!changedUrl) return;
+    for (const snd of _gameAudioElements) {
+      if (!snd?._trackUrl || resolveAudioUrl(snd._trackUrl) !== changedUrl) continue;
+      snd._refreshMusicTarget?.(90);
+    }
+  }); // Settings slider updates the selected song in-place without waiting for the next scheduler start.
   document.addEventListener('pointerdown', () => unlockGameAudio('pointerdown'), { capture: true });
   document.addEventListener('keydown', () => unlockGameAudio('keydown'), { capture: true });
   document.addEventListener('touchstart', () => unlockGameAudio('touchstart'), { capture: true, passive: true });
@@ -750,6 +855,7 @@
   function updateAmbientCues() {
     const currentArea = deps.getCurrentArea();
     const audioCfg = window.AudioSystem?.gameAudioConfig();
+    if (_startupBgm && window.__hobunjiGameStarted === true) stopStartupBgm('game started'); // Redundant no-poll fallback at the first real gameplay audio tick.
     if (_startupBgm && !_startupBgm._musicRetired) {
       audioTrace('ambient scheduler suppressed by startup soundtrack', 'ambient-startup-owner', 5000, 'bgm');
       return;
