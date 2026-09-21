@@ -9,11 +9,13 @@
   const QUIT_BUTTON_ID = 'menuQuitBtn'; // Existing menu Quit button intercepted before local-save-flow's bubble listener.
   const RESET_BUTTON_ID = 'menuResetBtn'; // Legacy one-click farm reset control kept inert and hidden so it cannot be triggered accidentally.
   const MANUAL_SAVE_BUTTON_ID = 'menuManualSaveBtn'; // Existing checkpoint button receives a temporary busy label without observing disabled mutations.
-  const MENU_CONTROL_LABELS = Object.freeze([ // Visible labels applied to the icon-only menu controls, including buttons installed later by checkpoint code.
-    { id: 'menuPauseBtn', text: '⏯ Pause', minWidth: '70px' },
-    { id: MANUAL_SAVE_BUTTON_ID, text: '💾 Manual Save', minWidth: '96px' },
-    { id: 'menuRecoveryBtn', text: '🛟 Recovery', minWidth: '82px' },
-    { id: 'mpClose', text: 'Close', minWidth: '66px' },
+  const MENU_COMPACT_CLASS = 'menu-controls-compact'; // Applied to #menuPanel when touch input or real header pressure requires the tab/control lanes to separate.
+  const MENU_CONTROL_LABELS = Object.freeze([ // Full desktop labels plus the symbol-first compact labels used when header space is constrained.
+    { id: 'menuPauseBtn', text: '⏯ Pause', minWidth: '70px', compactText: '⏯', compactMinWidth: '34px' },
+    { id: MANUAL_SAVE_BUTTON_ID, text: '💾 Manual Save', minWidth: '96px', compactText: '💾 Save', compactMinWidth: '58px' },
+    { id: 'menuRecoveryBtn', text: '🛟 Recovery', minWidth: '82px', compactText: '🛟 Rec', compactMinWidth: '52px' },
+    { id: QUIT_BUTTON_ID, text: '🚪 Quit', minWidth: '72px', compactText: '🚪 Quit', compactMinWidth: '56px' },
+    { id: 'mpClose', text: 'Close', minWidth: '66px', compactText: '✕', compactMinWidth: '34px' },
   ]);
   const MENU_OVERLAY_CONTROL_IDS = Object.freeze(['menuBtn', 'farmEditBtn', 'mapEditBtn']); // Fixed HUD tabs hidden while the menu is open so they cannot cover menu actions.
   let busy = false; // Prevents double-clicks from starting overlapping runtime/folder saves.
@@ -22,6 +24,7 @@
   let lastError = ''; // Mobile-visible latest guarded-quit error.
   let menuControlsObserver = null; // Watches menu children and open/close state because controls are dynamic.
   let manualSaveBusyTimer = null; // Polls the existing Manual Save disabled state without feeding disabled mutations back into the menu observer.
+  let menuRelabelFrame = 0; // Coalesces resize/font-driven header measurements so relabeling never becomes a per-frame task.
 
   function localSave() {
     return window.LocalSaveFolder || null;
@@ -31,7 +34,7 @@
     if (!button) return;
     if (!button.dataset.folderQuitLabel) button.dataset.folderQuitLabel = button.textContent || '🚪 Quit';
     button.disabled = value;
-    button.textContent = value ? label : button.dataset.folderQuitLabel;
+    button.textContent = value ? (menuControlsShouldCompact() ? '🚪 …' : label) : button.dataset.folderQuitLabel;
   }
 
   function disableFarmResetControl() {
@@ -60,29 +63,69 @@
     return true;
   }
 
-  function menuControlLabel(spec, button) {
-    return spec.id === MANUAL_SAVE_BUTTON_ID && button?.dataset?.manualSaveBusy === '1' ? 'Saving…' : spec.text;
+  function menuControlsShouldCompact() {
+    const touchPoints = Number(globalThis.navigator?.maxTouchPoints) || 0; // Desktop-site mode on phones still exposes touch capability even when CSS viewport/pointer media queries look desktop-like.
+    if (touchPoints > 0) return true;
+
+    const header = document.querySelector?.('#menuPanel .mp-header'); // Header width is the actual collision boundary between the tab lane and fixed controls.
+    const tabs = document.querySelector?.('#menuPanel .mp-tabs'); // Tab child scroll widths approximate their uncompressed label demand.
+    const controls = document.querySelector?.('#menuPanel .mp-ctrls'); // Existing controls determine which configured button widths must be reserved.
+    if (!header || !tabs || !controls || typeof window.getComputedStyle !== 'function') return false;
+
+    const tabDemand = Array.from(tabs.querySelectorAll('.mp-tab')).reduce((sum, tab) => {
+      return sum + Math.max(Number(tab.scrollWidth) || 0, Number(tab.offsetWidth) || 0);
+    }, 0);
+    const presentSpecs = MENU_CONTROL_LABELS.filter(spec => document.getElementById(spec.id));
+    const controlsStyle = window.getComputedStyle(controls);
+    const controlsGap = Number.parseFloat(controlsStyle.columnGap || controlsStyle.gap) || 0;
+    const controlsDemand = presentSpecs.reduce((sum, spec) => sum + (Number.parseFloat(spec.minWidth) || 0), 0)
+      + Math.max(0, presentSpecs.length - 1) * controlsGap;
+    const headerStyle = window.getComputedStyle(header);
+    const horizontalPadding = (Number.parseFloat(headerStyle.paddingLeft) || 0) + (Number.parseFloat(headerStyle.paddingRight) || 0);
+    const available = Math.max(0, (Number(header.clientWidth) || 0) - horizontalPadding);
+    return tabDemand + controlsDemand > available;
+  }
+
+  function menuControlLabel(spec, button, compact) {
+    if (spec.id === MANUAL_SAVE_BUTTON_ID && button?.dataset?.manualSaveBusy === '1') return compact ? '💾 …' : 'Saving…';
+    return compact ? spec.compactText : spec.text;
   }
 
   function labelMenuControls() {
     if (typeof document?.querySelector !== 'function' || typeof document?.getElementById !== 'function') return false;
+    const menuPanel = document.getElementById('menuPanel'); // Receives the compact-layout class that separates scrolling tabs from fixed actions.
     const controls = document.querySelector('#menuPanel .mp-ctrls'); // Existing control-row parent receives readable labels without replacing handlers.
-    if (!controls) return false;
+    if (!controls || !menuPanel) return false;
+    const compact = menuControlsShouldCompact(); // Touch-capable phones stay compact even in desktop-site mode; non-touch layouts compact only if their header really overflows.
+    if (menuPanel.classList.contains(MENU_COMPACT_CLASS) !== compact) menuPanel.classList.toggle(MENU_COMPACT_CLASS, compact);
 
     for (const spec of MENU_CONTROL_LABELS) { // Each spec keeps one menu action readable without changing its existing click handler or id.
       const button = document.getElementById(spec.id); // Existing button may be static markup or dynamically installed by the checkpoint manager.
       if (!button) continue;
-      const label = menuControlLabel(spec, button); // Manual Save preserves its explicit busy label until the original save handler re-enables the button.
+      const label = menuControlLabel(spec, button, compact); // Manual Save preserves its explicit busy label until the original save handler re-enables the button.
       if (button.textContent !== label) button.textContent = label;
       button.style.width = 'auto';
-      button.style.minWidth = spec.minWidth;
-      button.style.padding = '0 7px';
+      button.style.minWidth = compact ? spec.compactMinWidth : spec.minWidth;
+      button.style.padding = compact ? '0 4px' : '0 7px';
       button.style.whiteSpace = 'nowrap';
     }
 
     disableFarmResetControl();
     syncMenuOverlayControls();
     return true;
+  }
+
+  function scheduleMenuRelabel() {
+    if (menuRelabelFrame) return;
+    const run = () => {
+      menuRelabelFrame = 0;
+      labelMenuControls();
+    };
+    if (typeof requestAnimationFrame === 'function') menuRelabelFrame = requestAnimationFrame(run);
+    else {
+      menuRelabelFrame = 1;
+      setTimeout(run, 0);
+    }
   }
 
   function finishManualSaveBusyLabel(button) {
@@ -252,6 +295,9 @@
     installMenuSafetyUi();
   }
 
+  window.addEventListener?.('resize', scheduleMenuRelabel, { passive: true });
+  globalThis.document?.fonts?.ready?.then?.(scheduleMenuRelabel).catch?.(() => {});
+
   // A browser refresh/close that bypasses the menu cannot await folder I/O,
   // but the live localStorage snapshot itself is synchronous. Capture phase on
   // window runs before the core module's normal beforeunload folder-sync handler,
@@ -267,6 +313,8 @@
       quitAttempts,
       successfulFolderFlushes,
       lastError: lastError || null,
+      compactMenuControls: menuControlsShouldCompact(),
+      touchPoints: Number(globalThis.navigator?.maxTouchPoints) || 0,
       farmResetDisabled: typeof document?.getElementById === 'function' && document.getElementById(RESET_BUTTON_ID)?.disabled === true,
       labeledMenuButtons: typeof document?.getElementById === 'function'
         ? MENU_CONTROL_LABELS.filter(spec => {
