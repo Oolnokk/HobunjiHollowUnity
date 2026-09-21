@@ -53,6 +53,8 @@
     strikeFrac: 0.57,
     holdFrac: 0.82,
     gripMode: 'palm-parallel',
+    spinBasisDeg: 0,
+    projectileSpin: true,
     poses: {
       neutral: {
         x: 0.03, y: 0.37, z: -0.01, pitch: -155, yaw: -79, bodyYaw: 2, roll: -82,
@@ -69,6 +71,22 @@
         shoulderAim: { grip: true, palmNormal: false },
         secondaryGrip: { enabled: false, percent: 50 },
       },
+    },
+  };
+
+  // Fishing spears use the same arm/body path, but the weapon's in-plane
+  // spinning basis is rotated 90° counterclockwise. On release the projectile
+  // keeps the exact sampled spear-plane orientation instead of continuing to
+  // tumble like a hatchet/dagger/Kylie.
+  const weaponThrowSpearSpin = {
+    ...weaponThrowSpin,
+    name: 'Fishing Spear Throw (Offset Spin)',
+    spinBasisDeg: 90,
+    projectileSpin: false,
+    poses: {
+      neutral: { ...weaponThrowSpin.poses.neutral, shoulderAim: { ...weaponThrowSpin.poses.neutral.shoulderAim }, secondaryGrip: { ...weaponThrowSpin.poses.neutral.secondaryGrip } },
+      windup: { ...weaponThrowSpin.poses.windup, shoulderAim: { ...weaponThrowSpin.poses.windup.shoulderAim }, secondaryGrip: { ...weaponThrowSpin.poses.windup.secondaryGrip } },
+      strike: { ...weaponThrowSpin.poses.strike, shoulderAim: { ...weaponThrowSpin.poses.strike.shoulderAim }, secondaryGrip: { ...weaponThrowSpin.poses.strike.secondaryGrip } },
     },
   };
 
@@ -92,7 +110,7 @@
     },
   };
 
-  window.HeldActionAnimations = Object.freeze({ drink, throwFlask, weaponThrowSpin, counterShield });
+  window.HeldActionAnimations = Object.freeze({ drink, throwFlask, weaponThrowSpin, weaponThrowSpearSpin, counterShield });
 
   // Shared direct-hand bootstrap. There are no arm bones, IK, reach clamps, or
   // rotating arm sprites. Shoulder coordinates are either manually authored in
