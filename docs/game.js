@@ -11388,6 +11388,7 @@
           avatarFrontCanvas: frontCanvas, avatarBackCanvas: backCanvas, area: spawnArea,
           animalKind: namedAnimalKind, animalDef: namedAnimalDef, animalGenotype: namedAnimalGenotype, animalSizeScale: namedAnimalSizeScale, animalScaleMultiplier: namedAnimalScaleMultiplier,
           animalAvatarRef: namedAnimalAvatarRef, animalFrames: namedAnimalFrames, animalRunFrame: 0, animalRunFrameDistPx: 0, animalFrameKey: 'idle', animalPngRot: Math.PI / 2,
+          _animalSleepRequested: false, _animalSleepPresentationRegistered: false,
           // The head-turn bone built by buildSinglePlaneAvatarModel's neckRig
           // option (null if no neck pivot could be detected for this NPC's
           // portrait) — see faceNpcDialogueParticipants for the one place
@@ -11612,6 +11613,17 @@
           },
           update(dt) {
             this._lastUpdateDt = dt; // Animal-facing deadzone/smoothing consumes the same real dt as updateCreatureMesh.
+            if (this.animalDef && !this._animalSleepPresentationRegistered && window.AnimalSleepPresentation?.registerExternalSleeper) {
+              this._animalSleepPresentationRegistered = window.AnimalSleepPresentation.registerExternalSleeper(this, {
+                id: this.rec?.id || this.animalKind,
+                avatarRef: this.animalAvatarRef,
+                kind: this.animalKind,
+                genotype: this.animalGenotype,
+                def: this.animalDef,
+                isSleeping: () => this._animalSleepRequested === true,
+                eyesClosed: () => !(dialogueOpen && _dialogueWalker === this && this.rec?._animalDialogueEyesOpen === true),
+              }); // Named-animal NPCs now use the exact livestock/wilderness sleep frame, flattening, head-down, and blink-overlay pipeline.
+            }
             // Drives procedural legs (and the move-bob below) from last
             // frame's actual position delta rather than hooking every
             // movement branch below individually — always runs regardless of
@@ -11639,12 +11651,15 @@
               const breathScaleY = window.CreatureGenetics.creatureBreathScaleY(this.animalAvatarRef, performance.now()); // Named animals keep the same subtle alive-at-rest scale cycle as ordinary creatures.
               window.CreatureGenetics.applyCreatureBillboardScale(this.avatarGroup, this.animalSizeScale, breathScaleY);
             }
+            const target = resolveNpcScheduleTarget(this.rec);
+            this.currentScheduleTarget = target || null;
+            this._animalSleepRequested = !!this.animalDef && /sleep/i.test(String(target?.activity || '')); // Schedule-authored sleeping named animals enter the same visual sleep system before any state module can early-return.
+            if (this._animalSleepRequested && this.rec && typeof this.rec._animalDialogueEyesOpen !== 'boolean') this.rec._animalDialogueEyesOpen = false; // Closed is the safe default until an authored dialogue system explicitly wakes the animal's eyes.
             if (window.NpcCharacterState?.update?.(this, dt, {
               resolveScheduleTarget: resolveNpcScheduleTarget,
               surfaceY: npcSurfaceY,
               shadowSurfaceOffset: characterGroundShadowSurfaceOffset,
             })) return;
-            const target = resolveNpcScheduleTarget(this.rec);
             const targetArea = target ? normalizeNpcArea(target.area) : null;
             const cfg = npcMovementConfig();
             const seatTransform = targetArea === this.area ? npcSeatTransformForTarget(target) : null; // Supplies the same authored seat anchor the player uses.
@@ -11681,7 +11696,6 @@
             this._legsPrevX = root.position.x; this._legsPrevZ = root.position.z;
             if (this.pause === Infinity) return;
             this.applyFacingDeadzone(this.desiredRot, 0.15);
-            this.currentScheduleTarget = target || null;
             // Wardrobe reroll: fires once per sleeping period, the instant
             // this NPC's schedule activity transitions INTO "sleeping" (not
             // every frame they stay asleep) — see js/npc-wardrobe.js's
@@ -11931,6 +11945,7 @@
         if (index < 0) return false;
         walker.root?.parent?.remove?.(walker.root);
         walker.root?._npcScene?.remove?.(walker.root);
+        if (walker._animalSleepPresentationRegistered) window.AnimalSleepPresentation?.unregisterExternalSleeper?.(walker); // Releases the shared sleep presenter when a visitor despawns.
         walker.legs?.dispose?.();
         walker.root?.traverse?.(object => {
           object.geometry?.dispose?.();
