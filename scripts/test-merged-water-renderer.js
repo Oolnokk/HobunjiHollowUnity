@@ -191,8 +191,10 @@ assert.match(waterSystemSource, /function updateTownWaterMeshes\(\) \{[\s\S]*?if
   'town water keeps its dirty flag until the town scene is available');
 assert.match(waterSystemSource, /mapWidePlane:\s*true[\s\S]{0,120}?cols[\s\S]{0,120}?rows[\s\S]{0,120}?baseline/,
   'flood rendering explicitly requests one full-map plane');
-assert.match(waterSystemSource, /function _filterLocalWaterCellsForFlood[\s\S]{0,600}?cell\.surfaceY > baseline\.surfaceY \+ FLOOD_SURFACE_HIDE_EPSILON/,
-  'local trench and puddle surfaces at or below the flood sheet are omitted so the flood stays one plane');
+assert.match(waterSystemSource, /function _filterLocalWaterCellsForFlood[\s\S]{0,700}?baseline\?\.visible[\s\S]{0,220}?return \[\]/,
+  'an active global flood suppresses every local puddle/trench quad so the map renders one authoritative dynamic-water plane');
+assert.doesNotMatch(waterSystemSource, /_filterLocalWaterCellsForFlood[\s\S]{0,700}?cell\.surfaceY > baseline\.surfaceY/,
+  'local dynamic water is never allowed to poke a nearly coplanar surface through an active flood sheet');
 assert.match(waterSystemSource, /waterSurfaceRole = options\?\.mapWidePlane \? 'flood' : \(isPermanentSurface \? 'permanent' : 'local'\)/,
   'merged permanent river surfaces are tagged for flood visibility control');
 assert.match(waterSystemSource, /function _syncPermanentWaterVisibility[\s\S]{0,600}?object\.visible = !_floodCoversSurface\(baseline, surfaceY\)/,
