@@ -9,6 +9,7 @@
 
   const TIME_ZONE = 'America/New_York'; // Used by title-screen real-time calendar mapping and debug output.
   const CANVAS_ID = 'hobunjiTitleSky'; // Used by title-screen-runtime.js CSS and teardown.
+  const CLOUD_LAYER_ID = 'hobunjiTitleCloudLayer'; // Hosts compositor-driven cloud sprites so synchronous loading work cannot stall their transforms.
   const ASSET_BASE = 'assets/sky_sprites/'; // Reuses the authored gameplay sky sprites.
   const CLOUD_NAMES = Object.freeze(['cloud1.png','cloud2.png','cloud3.png','cloud4.png','cloud5.png','cloud6.png','cloud7.png','cloud8.png']);
   const MONTH_NAMES = Object.freeze([
@@ -30,9 +31,11 @@
     hourCycle: 'h23',
   }); // Used by wallClockParts() to avoid dependence on the browser's host timezone.
 
-  let canvas = null; // Used as the single lightweight title-sky drawing surface.
-  let ctx = null; // Used by draw() for all title-sky rendering.
-  let timer = 0; // Used to own the 4 FPS title redraw interval.
+  let canvas = null; // Used as the lightweight title-sky base drawing surface.
+  let ctx = null; // Used by draw() for gradient/stars/celestial rendering.
+  let cloudLayer = null; // Used as the compositor-owned DOM layer for uninterrupted cloud drift during synchronous loading work.
+  let cloudNodes = []; // Used to update cloud opacity and rebuild the responsive compositor layout on resize.
+  let timer = 0; // Used to own the 4 FPS base-sky redraw interval.
   let resizePending = true; // Used to rebuild cached backing-size-dependent layers only when necessary.
   let starsCanvas = null; // Used as a cached static star field instead of a per-pixel shader.
   let assets = { sun:null, moon:null, clouds:[] }; // Used by draw() after asynchronous sprite loading.
@@ -42,7 +45,6 @@
   let moonPhaseDay = -1; // Used to invalidate moonPhaseCanvas only when the mapped civil day changes.
   let mappedSnapshot = null; // Used by draw() between slow calendar refreshes.
   let mappedSnapshotAt = 0; // Used to throttle Intl/date mapping work.
-  let startedAt = 0; // Used to derive deterministic cloud drift without accumulating frame deltas.
   let drawCount = 0; // Used by debug output to confirm the bounded redraw cadence.
   let lastDrawAt = 0; // Used by debug output to expose whether the canvas is still animating.
   let reducedMotion = false; // Used to render a static sky for users requesting reduced motion.
@@ -273,19 +275,68 @@
     moonPhaseDay = day;
   }
 
-  function cloudLayout(index, width, height, elapsedSeconds) {
-    const band = index % 3; // Used to give the flat compositor three distinct apparent cloud depths.
-    const baseX = seededRandom(index * 11 + 2) * (width * 1.35) - width * 0.18;
-    const baseY = height * (0.08 + seededRandom(index * 11 + 3) * 0.52);
+  function cloudLayout(index, viewportWidth) {
+    const band = index % 3; // Used to give the compositor three distinct apparent cloud depths.
+    const phase = seededRandom(index * 11 + 2); // Used as a negative animation delay so clouds begin distributed across the sky instead of entering in a line.
+    const topVh = 8 + seededRandom(index * 11 + 3) * 52;
     const speed = [2.1, 1.35, 0.8][band];
-    const x = ((baseX + elapsedSeconds * speed + width * 0.2) % (width * 1.4)) - width * 0.2;
-    const scale = 0.08 + seededRandom(index * 11 + 4) * 0.12;
+    const widthVw = 8 + seededRandom(index * 11 + 4) * 12;
+    const travelPx = Math.max(1, viewportWidth) * 1.4;
+    const durationSeconds = Math.max(1, travelPx / speed);
     return {
-      x,
-      y: baseY,
-      width: Math.max(24, width * scale),
+      band,
+      phase,
+      topVh,
+      widthVw,
       alpha: [0.28, 0.24, 0.20][band],
+      durationSeconds,
     };
+  }
+
+  function cloudCount() {
+    return Math.min(18, Math.max(10, Math.round(Math.max(1, window.innerWidth || 1) / 80)));
+  }
+
+  function cloudOpacity(index, snapshot) {
+    const daylight = 1 - nightFactor(snapshot.hour);
+    return cloudLayout(index, window.innerWidth || 1).alpha * lerp(0.72, 1, daylight);
+  }
+
+  function updateCloudOpacity(snapshot) {
+    for (let i = 0; i < cloudNodes.length; i++) {
+      cloudNodes[i].style.opacity = cloudOpacity(i, snapshot).toFixed(3);
+    }
+  }
+
+  function rebuildCloudLayer(snapshot = refreshSnapshot(false)) {
+    if (!assets.clouds.length || !document.documentElement) return;
+    if (!cloudLayer) {
+      cloudLayer = document.getElementById(CLOUD_LAYER_ID) || document.createElement('div');
+      cloudLayer.id = CLOUD_LAYER_ID;
+      cloudLayer.setAttribute('aria-hidden', 'true');
+      if (!cloudLayer.parentNode) document.documentElement.appendChild(cloudLayer);
+    }
+
+    cloudLayer.textContent = '';
+    cloudNodes = [];
+    const viewportWidth = Math.max(1, window.innerWidth || document.documentElement.clientWidth || 1);
+    const count = cloudCount();
+    for (let i = 0; i < count; i++) {
+      const source = assets.clouds[i % assets.clouds.length];
+      const placement = cloudLayout(i, viewportWidth);
+      const image = document.createElement('img'); // Uses CSS transform animation so the browser compositor can keep drifting clouds while loading JS blocks the main thread.
+      image.alt = '';
+      image.draggable = false;
+      image.src = source.currentSrc || source.src;
+      image.style.top = placement.topVh.toFixed(3) + 'vh';
+      image.style.width = placement.widthVw.toFixed(3) + 'vw';
+      image.style.opacity = cloudOpacity(i, snapshot).toFixed(3);
+      image.style.animationDuration = placement.durationSeconds.toFixed(3) + 's';
+      image.style.animationDelay = (-placement.phase * placement.durationSeconds).toFixed(3) + 's';
+      image.style.animationPlayState = reducedMotion ? 'paused' : 'running';
+      cloudLayer.appendChild(image);
+      cloudNodes.push(image);
+    }
   }
 
   function drawGradient(snapshot, width, height) {
@@ -324,24 +375,6 @@
     ctx.restore();
   }
 
-  function drawClouds(snapshot, width, height, elapsedSeconds) {
-    if (!assets.clouds.length) return;
-    const daylight = 1 - nightFactor(snapshot.hour);
-    const count = Math.min(18, Math.max(10, Math.round(width / 80))); // Used to cap draw calls regardless of screen size.
-    for (let i = 0; i < count; i++) {
-      const cloud = assets.clouds[i % assets.clouds.length];
-      const placement = cloudLayout(i, width, height, reducedMotion ? 0 : elapsedSeconds);
-      const ratio = (cloud.naturalHeight || cloud.height || 1) / Math.max(1, cloud.naturalWidth || cloud.width || 1);
-      ctx.save();
-      ctx.globalAlpha = placement.alpha * lerp(0.72, 1, daylight);
-      ctx.drawImage(cloud, placement.x, placement.y, placement.width, placement.width * ratio);
-      if (placement.x + placement.width > width) {
-        ctx.drawImage(cloud, placement.x - width * 1.4, placement.y, placement.width, placement.width * ratio);
-      }
-      ctx.restore();
-    }
-  }
-
   function refreshSnapshot(force = false) {
     const now = Date.now();
     if (!force && mappedSnapshot && now - mappedSnapshotAt < CALENDAR_REFRESH_MS) return mappedSnapshot;
@@ -357,11 +390,10 @@
     const snapshot = refreshSnapshot(forceCalendar);
     const width = canvas.width;
     const height = canvas.height;
-    const elapsedSeconds = Math.max(0, (performance.now() - startedAt) / 1000); // Used only for slow cloud drift.
     drawGradient(snapshot, width, height);
     drawCelestial('sun', assets.sun, snapshot, width, height);
     drawCelestial('moon', assets.moon, snapshot, width, height);
-    drawClouds(snapshot, width, height, elapsedSeconds);
+    updateCloudOpacity(snapshot);
     drawCount += 1;
     lastDrawAt = performance.now();
   }
@@ -375,7 +407,9 @@
       ]);
       assets = { sun, moon, clouds };
       assetsReady = true;
-      ensureMoonPhase(refreshSnapshot(true).lunarDay);
+      const snapshot = refreshSnapshot(true);
+      ensureMoonPhase(snapshot.lunarDay);
+      rebuildCloudLayer(snapshot);
       draw(true);
     } catch (error) {
       loadError = String(error?.message || error);
@@ -385,6 +419,7 @@
 
   function onResize() {
     resizePending = true;
+    rebuildCloudLayer(refreshSnapshot(false));
     draw(false);
   }
 
@@ -401,7 +436,6 @@
       return canvas;
     }
     reducedMotion = Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches);
-    startedAt = performance.now();
     resizePending = true;
     window.addEventListener('resize', onResize, { passive:true });
     draw(true);
@@ -415,8 +449,11 @@
     timer = 0;
     window.removeEventListener('resize', onResize);
     canvas?.remove?.();
+    cloudLayer?.remove?.();
     canvas = null;
     ctx = null;
+    cloudLayer = null;
+    cloudNodes = [];
     starsCanvas = null;
     moonPhaseCanvas = null;
   }
@@ -425,8 +462,11 @@
     return {
       installed:true,
       active:Boolean(canvas),
-      renderer:'canvas2d',
+      renderer:'canvas2d+css-compositor',
       drawIntervalMs:DRAW_INTERVAL_MS,
+      cloudMotion:'compositor-transform',
+      cloudLayerActive:Boolean(cloudLayer),
+      cloudCount:cloudNodes.length,
       calendarRefreshMs:CALENDAR_REFRESH_MS,
       maxBackingPixels:MAX_BACKING_PIXELS,
       backingSize:canvas ? { width:canvas.width, height:canvas.height } : null,
