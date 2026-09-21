@@ -20,6 +20,11 @@ assert.match(wildernessSource, /state\.mode = 'sleeping'/, 'wilderness Drenkirra
 assert.match(welfareSource, /_outdoorSleepBlend/, 'outdoor livestock publish the sleep blend consumed by the shared presenter');
 assert.match(source, /phase: 'pre-render'/, 'sleep presentation prepares through the shared pre-render scheduler checkpoint');
 assert.match(source, /phase: 'post-game'/, 'sleep presentation restores temporary transforms after the frame driver completes');
+assert.match(source, /function registerExternalSleeper\(/, 'named-animal NPCs can opt into the shared animal sleep presenter');
+assert.match(source, /function applyExternalSleepers\(/, 'external sleeping animals are prepared at the same render checkpoint as livestock and wilderness sleepers');
+assert.match(source, /sleep-eyes-\$\{eyesClosed \? 'closed' : 'open'\}/, 'sleep cache distinguishes closed-eye and dialogue-open-eye versions of the same sleep frame');
+assert.match(source, /renderer\.composeFrame\(kind, descriptor\.frame, genotype \|\| null, eyesClosed\)/, 'sleep body frame uses the canonical species blink overlay only when eyesClosed is requested');
+assert.match(source, /applyTemporaryScale\(group, SLEEP_SCALE_Y, `external:/, 'external sleepers use the same canonical sleep flattening ratio');
 assert.doesNotMatch(source, /WebGLRenderer\?\.prototype|__animalSleepPresentationRenderPatched/, 'sleep presentation never patches the global Three.js renderer');
 assert.match(farmPanelSource, /beginExternalRenderScope\?\.\('farm-house-layout'\)/, 'Farm house-layout live-scene renderer explicitly opts into sleep presentation');
 assert.match(pixelProbeSource, /beginExternalRenderScope\?\.\('pixel-probe'\)/, 'Pixel Probe live-scene rerenders explicitly opt into sleep presentation');
