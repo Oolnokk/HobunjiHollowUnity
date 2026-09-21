@@ -6,7 +6,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 13;
+  const VERSION = 14;
   const PATCH_RETRY_MS = 50; // Used while game.js finishes constructing generated metal weapon definitions.
   const PATCH_RETRY_LIMIT = 160; // Used to stop the bootstrap poll after roughly eight seconds instead of polling forever.
   const THROWN_TYPE = 'thrown';
