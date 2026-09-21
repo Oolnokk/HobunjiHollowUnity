@@ -294,6 +294,22 @@
   let _el          = null;
   let _renderTimer = null;
 
+  function mountOnboardingOverlay() {
+    document.documentElement?.classList?.add('hobunji-onboarding-foreground'); // Claims the foreground before DOM insertion so loading-screen text cannot flash over the first onboarding paint.
+    const overlay = document.createElement('div');
+    overlay.id = 'ob-overlay';
+    document.body.appendChild(overlay);
+    return overlay;
+  }
+
+  function removeOnboardingOverlay() {
+    _el?.remove();
+    _el = null;
+    if (!document.getElementById('ob-overlay')) {
+      document.documentElement?.classList?.remove('hobunji-onboarding-foreground');
+    }
+  }
+
   // Save/load screen state
   let _saveMeta    = null;   // loaded hobunjiSaveMeta object
   let _selCharId   = null;   // selected character id in save-select
@@ -1378,7 +1394,7 @@
     window.__hobunjiPlayerProfile = playerData;
 
     _el.classList.add('ob-fade-out');
-    setTimeout(() => { _el?.remove(); _el = null; }, 420);
+    setTimeout(removeOnboardingOverlay, 420);
     document.dispatchEvent(new CustomEvent('hobunjiPlayerReady', { detail: playerData }));
   }
 
@@ -1744,7 +1760,7 @@
 
     if (_el) {
       _el.classList.add('ob-fade-out');
-      setTimeout(() => { _el?.remove(); _el = null; }, 420);
+      setTimeout(removeOnboardingOverlay, 420);
     }
 
     document.dispatchEvent(new CustomEvent('hobunjiPlayerReady', { detail: playerData }));
@@ -1840,9 +1856,7 @@
             .sort((a, b) => (b.lastPlayed ?? 0) - (a.lastPlayed ?? 0));
           if (charWorlds.length) _selWorldId = charWorlds[0].id;
         }
-        _el = document.createElement('div');
-        _el.id = 'ob-overlay';
-        document.body.appendChild(_el);
+        _el = mountOnboardingOverlay();
         _showSaveSelect();
         return;
       }
@@ -1872,9 +1886,7 @@
         saveSaveMeta(_saveMeta);
         _selCharId  = charId;
         _selWorldId = newWorld.id;
-        _el = document.createElement('div');
-        _el.id = 'ob-overlay';
-        document.body.appendChild(_el);
+        _el = mountOnboardingOverlay();
         _showSaveSelect();
         return;
       }
@@ -1888,9 +1900,7 @@
     _colorAIdx = 0;
     _colorBIdx = 0;
 
-    _el = document.createElement('div');
-    _el.id = 'ob-overlay';
-    document.body.appendChild(_el);
+    _el = mountOnboardingOverlay();
     rerender();
 
     ensureCosmetics().then(() => schedulePreviewRender());
