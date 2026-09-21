@@ -14,6 +14,7 @@ new Function(animalElevationSource);
 // reporting stale terrain after that controller is disposed/replaced.
 {
   let disposed = false; // Confirms the sampler does not outlive the controller that owns its farm heightfield.
+  let furnitureRefreshes = 0; // Confirms house/barn footprint changes re-ground already-placed farm furniture.
   const controller = {
     sampleWorldY() { return 0.24; },
     sync() { return true; },
@@ -27,6 +28,10 @@ new Function(animalElevationSource);
     window: {
       PlayerHouseElevation: {
         create() { return controller; },
+      },
+      HobunjiFurnitureSurfaceElevation: {
+        refresh() { furnitureRefreshes++; return { decorative: 1, processing: 1 }; },
+        getDebug() { return { marker: 'furniture-grounding' }; },
       },
     },
   };
@@ -42,6 +47,16 @@ new Function(animalElevationSource);
     'farm subtle-elevation sampler delegates to the live combined house+barn controller');
   assert.equal(context.window.HobunjiFarmSubtleElevation.getDebug().marker, 'combined-house-barn-heightfield',
     'farm subtle-elevation diagnostics come from the same live controller');
+  assert.equal(context.window.HobunjiFarmSubtleElevation.getDebug().furnitureSurfaceElevation.marker, 'furniture-grounding',
+    'farm elevation diagnostics include the current furniture grounding snapshot');
+
+  created.sync(true);
+  assert.equal(furnitureRefreshes, 1,
+    'a farmhouse/barn heightfield sync re-grounds existing farm furniture');
+
+  created.refreshGrassSuppression();
+  assert.equal(furnitureRefreshes, 2,
+    'the existing building-footprint refresh hook also re-grounds existing farm furniture');
 
   created.dispose();
   assert.equal(disposed, true, 'wrapped controller disposal preserves the original dispose call');

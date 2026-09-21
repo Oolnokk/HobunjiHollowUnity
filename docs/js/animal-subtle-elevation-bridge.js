@@ -535,9 +535,13 @@
   }
 
   function debugSnapshot() {
+    const farmFurniture = activeArea() === 'farm'
+      ? (window.HobunjiFurnitureSurfaceElevation?.getDebug?.() || null)
+      : null; // Included in the existing mobile Surface Debug alert so furniture grounding can be checked without devtools.
     return {
       ...lastDebug,
       renderDepth,
+      farmFurniture,
       proneWaterHazard: {
         ticks: hazardTicks,
         lastActor: lastHazardActor,

@@ -18,7 +18,7 @@ new Function(interiorSyncSource);
 assert.match(runtimeSource, /FURNITURE_METADATA_KEY = 'walkableElevation'/, 'runtime uses stable instance metadata');
 assert.match(runtimeSource, /new THREE\.Box3\(\)\.setFromObject\(object\)/, 'furniture collider is derived from complete rendered geometry');
 assert.match(runtimeSource, /registerPiecePorches/, 'porches register authored support surfaces');
-assert.match(gameSource, /function npcSurfaceY\(area, c, r\)[\s\S]{0,950}HobunjiWalkableElevation\?\.surfaceLiftAt\?\.\(c \+ 0\.5, r \+ 0\.5, area\)/, 'NPC walkers share the support registry');
+assert.match(gameSource, /function npcSurfaceY\(area, c, r\)[\s\S]{0,1400}HobunjiWalkableElevation\?\.surfaceLiftAt\?\.\(c \+ 0\.5, r \+ 0\.5, area\)/, 'NPC walkers share the support registry after farm subtle-surface resolution');
 assert.match(runtimeSource, /walkElevDebug=1/, 'mobile runtime diagnostics are available without devtools');
 
 assert.match(interiorEditorSource, /WALKABLE_ELEVATION_KEY = 'walkableElevation'/, 'Interior Author persists the same metadata');

@@ -96,6 +96,37 @@ assert.match(gameSource,
   /processingKey\s*\? placeProcessingFurniture\(col, row, processingKey\)/,
   'placement clicks route processing items through the existing processor placement function');
 assert.match(gameSource,
+  /function farmSurfaceYAtWorld\(worldX, worldZ\)[\s\S]{0,2200}tileSurface \+ exactLift - centerLift/,
+  'farm surface resolver replaces the baked tile-center house sample with the exact rendered X/Z sample');
+assert.match(gameSource,
+  /function showFurniturePlacementGhost\(col, row\)[\s\S]{0,2600}farmSurfaceYAtWorld\(previewX, previewZ\)/,
+  'placement ghost previews the same farm surface used by committed furniture');
+assert.match(gameSource,
+  /function makeProcessingFurniture\(col, row, furnitureKey[\s\S]{0,500}farmSurfaceYAtWorld\(col \+ 0\.5, row \+ 0\.5\)/,
+  'processing furniture uses the shared farm surface at creation');
+assert.match(gameSource,
+  /function moveProcessingFurniture\(id, col, row\)[\s\S]{0,900}farmSurfaceYAtWorld\(col \+ 0\.5, row \+ 0\.5\)/,
+  'processing furniture re-samples farm elevation when moved');
+assert.match(gameSource,
+  /function makeDecorativeFurnitureMesh\(col, row, furnitureKey[\s\S]{0,900}furnitureSurfaceYAtWorld\(area, centerX, centerZ\)/,
+  'decorative furniture, including benches, samples its rendered footprint center');
+assert.match(gameSource,
+  /function moveDecorativeFurniture\(id, col, row\)[\s\S]{0,1300}furnitureSurfaceYAtWorld\(obj\.area, centerX, centerZ\)/,
+  'moving decorative furniture recomputes its surface Y');
+assert.match(gameSource,
+  /function rotateDecorativeFurniture\(id, degrees = 45\)[\s\S]{0,1500}furnitureSurfaceYAtWorld\(obj\.area, centerX, centerZ\)/,
+  'rotating non-square decorative furniture recomputes its shifted center surface Y');
+assert.match(gameSource,
+  /HobunjiFurnitureSurfaceElevation = Object\.freeze\([\s\S]{0,220}refresh: refreshFarmFurnitureSurfaceElevation/,
+  'farm furniture exposes one shared re-grounding hook for building-footprint elevation changes');
+assert.match(gameSource,
+  /function activeSurfaceYAtWorld\(worldX, worldZ\)[\s\S]{0,220}currentArea === 'farm'\) return farmSurfaceYAtWorld/,
+  'seated camera and other active-surface consumers use the exact farm hill');
+assert.match(gameSource,
+  /function npcSurfaceY\(area, c, r\)[\s\S]{0,650}area === 'farm'[\s\S]{0,120}farmSurfaceYAtWorld/,
+  'farm NPC surface queries share the corrected farmhouse/barn height');
+
+assert.match(gameSource,
   /kind: 'processing'[\s\S]{0,1400}canPlaceFurnitureAt\(col, row, spec\.ignoreObject\)/,
   'processing furniture previews use the existing farm placement validation');
 assert.match(gameSource,
