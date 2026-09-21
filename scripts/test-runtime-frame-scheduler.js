@@ -108,7 +108,11 @@ for (const [name, source, id] of [
 assert(!quick.includes('requestAnimationFrame('), 'Quick Attack no longer owns a private RAF');
 assert(quick.includes("RuntimeFrameScheduler.register"), 'Quick Attack registers with the shared browser-frame owner');
 assert(quick.includes("phase: 'pre-game'"), 'Quick Attack must be on the pre-game phase so it keeps running before gameLoop, now expressed as an explicit phase instead of independent RAF registration order');
-assert(index.indexOf('quick-attack-bonus-indicator.js') < index.indexOf('<script src="game.js?'), 'Quick Attack still loads before game.js (no longer load-order-significant for cadence, but still a sensible script order)');
+const quickAt = index.indexOf('quick-attack-bonus-indicator.js');
+const popupAt = index.indexOf('world-popup-text.js');
+const gameAt = index.indexOf('<script src="game.js?');
+assert(quickAt > popupAt, 'Quick Attack loads only after WorldPopupText exposes avatarCentroidWorld');
+assert(quickAt < gameAt, 'Quick Attack still loads before game.js so its pre-game scheduler subscription is ready for gameplay');
 assert(melee.includes("document.addEventListener('DOMContentLoaded', init"), 'melee scheduler registration remains after gameLoop setup');
 assert(ranged.includes("document.addEventListener('DOMContentLoaded', init"), 'ranged scheduler registration remains after gameLoop setup');
 assert(quick.includes('drawProceduralReticle(sight, nowMs)'), 'Quick Attack keeps its animated procedural fallback');

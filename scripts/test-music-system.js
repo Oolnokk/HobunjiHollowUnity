@@ -22,6 +22,7 @@ const quietHopePath = path.join(__dirname, '../docs/assets/audio/music/bgm/bgm_q
 const gentleTwilightPath = path.join(__dirname, '../docs/assets/audio/music/bgm/bgm_gentle_twilight.m4a'); // Confirms the farm/town 02:00-nightfall candidate exists.
 const snowAndDarknessPath = path.join(__dirname, '../docs/assets/audio/music/bgm/bgm_snow_and_darkness.m4a'); // Confirms the Western Slope night song exists at the configured runtime path.
 
+assert.match(music, /const log = deps\?\.debugLog \|\| window\.__farmLog/, 'pre-init audio unlock logging cannot dereference null Music deps');
 assert.equal((music.match(/snd\.play\(\)/g) || []).length, 1,
   'all managed audio playback must pass through the single pending-play gate');
 assert.match(music, /if \(errName === 'NotAllowedError'\) return; \/\/ Remains the sole owner/,

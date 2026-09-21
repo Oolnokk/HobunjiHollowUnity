@@ -35,6 +35,7 @@ assert.match(playback, /clipTuning\.tempo \* utteranceTempo/, 'recording speed m
 assert.match(playback, /clipTuning\.pitchSemitones \+ utterancePitch \+ sizePitch/, 'recording, utterance and global-size pitch add once');
 assert.match(playback, /capturePreparedAnimalElement/, 'AudioSystem still owns range/falloff/preload and initial preparation');
 assert.match(playback, /wsolaStretch/, 'constant renderer retains only minimum independent tempo/pitch compensation');
+assert.match(playback, /ensureContext\(\);[\s\S]{0,120}installGestureUnlock\(\)/, 'animal voice AudioContext is constructed before the first gesture handler runs');
 
 assert.equal(utteranceIndex.clips.length, 22, 'utterance manifest exposes all 22 uploaded sounds');
 const indexedNames = new Set(utteranceIndex.clips.map(entry => entry.file));

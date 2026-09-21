@@ -4,12 +4,14 @@ on:
   push:
     paths:
       - 'docs/js/livestock-item-genotype-persistence.js'
+      - 'docs/index.html'
       - 'docs/js/scene-ready-poller.js'
       - 'scripts/test-livestock-item-genotype-persistence.js'
       - '.github/workflows/livestock-item-genotype-persistence-regression.yml'
   pull_request:
     paths:
       - 'docs/js/livestock-item-genotype-persistence.js'
+      - 'docs/index.html'
       - 'docs/js/scene-ready-poller.js'
       - 'scripts/test-livestock-item-genotype-persistence.js'
       - '.github/workflows/livestock-item-genotype-persistence-regression.yml'

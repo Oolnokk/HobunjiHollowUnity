@@ -1,12 +1,24 @@
 name: Water body overlay regression
 
 on:
+  push:
+    paths:
+      - 'docs/js/water-body-outline-overlay.js'
+      - 'docs/js/house-pieces.js'
+      - 'docs/js/zone-terrain-features.js'
+      - 'docs/js/water-system.js'
+      - 'docs/js/merged-water-renderer.js'
+      - 'docs/index.html'
+      - 'scripts/test-water-body-outline-overlay.js'
+      - 'scripts/test-merged-water-renderer.js'
+      - '.github/workflows/water-body-overlay-regression.yml'
   pull_request:
     paths:
       - 'docs/js/water-body-outline-overlay.js'
       - 'docs/js/house-pieces.js'
       - 'docs/js/zone-terrain-features.js'
       - 'docs/js/water-system.js'
+      - 'docs/index.html'
       - 'docs/js/merged-water-renderer.js'
       - 'scripts/test-water-body-outline-overlay.js'
       - '.github/workflows/water-body-overlay-regression.yml'
@@ -24,3 +36,5 @@ jobs:
         run: node --check docs/js/water-body-outline-overlay.js
       - name: Test water overlay topology and shader isolation
         run: node scripts/test-water-body-outline-overlay.js
+      - name: Test merged flood water rendering
+        run: node scripts/test-merged-water-renderer.js

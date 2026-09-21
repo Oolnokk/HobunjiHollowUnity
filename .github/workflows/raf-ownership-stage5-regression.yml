@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'docs/js/combat/quick-attack-bonus-indicator.js'
+      - 'docs/index.html'
       - 'docs/js/runtime-frame-scheduler.js'
       - 'scripts/test-quick-attack-bonus-indicator-scheduler.js'
       - 'scripts/test-transient-attack-alignment.js'
@@ -12,6 +13,7 @@ on:
     branches: [main]
     paths:
       - 'docs/js/combat/quick-attack-bonus-indicator.js'
+      - 'docs/index.html'
       - 'docs/js/runtime-frame-scheduler.js'
       - 'scripts/test-quick-attack-bonus-indicator-scheduler.js'
       - 'scripts/test-transient-attack-alignment.js'

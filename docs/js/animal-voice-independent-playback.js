@@ -672,6 +672,11 @@
     isInstalled: () => adapterInstalled,
   };
 
+  // Construct the one shared AudioContext during module setup instead of on
+  // the player's first pointerdown. Browsers keep it suspended until the
+  // trusted gesture; the gesture handler then only resumes it and avoids a
+  // large synchronous AudioContext-construction hitch on input.
+  ensureContext();
   installGestureUnlock();
   requestSimpleEditor();
   // window.AudioSystem is assigned exactly once at its own module's load

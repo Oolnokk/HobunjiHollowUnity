@@ -170,6 +170,28 @@
     };
   }
 
+  function buildMapWidePlaneSurfaceData(options = {}) {
+    const cols = Math.max(0, Number(options.cols) || 0); // Used as the flood plane's full map width in world-tile units.
+    const rows = Math.max(0, Number(options.rows) || 0); // Used as the flood plane's full map depth in world-tile units.
+    const baseline = normalizeBaseline(options); // Used as the single authoritative flood surface height/color/coverage.
+    const data = emptySurfaceData(Math.ceil(cols) * Math.ceil(rows)); // Used by diagnostics to report how much map area this one quad covers.
+    data.representation = 'map-wide-plane';
+    data.baselineVisible = baseline.visible;
+    data.baselineDepth = baseline.depth;
+    data.baselineCoverage = baseline.coverage;
+    data.baselineSurfaceY = baseline.surfaceY;
+    if (!cols || !rows || !baseline.visible) return data;
+
+    const yOffset = Number.isFinite(options.yOffset) ? options.yOffset : 0.015; // Used to prevent the flood sheet from z-fighting with equal-height terrain.
+    const textureTileSize = Math.max(0.001, Number.isFinite(options.textureTileSize)
+      ? options.textureTileSize
+      : DEFAULT_TEXTURE_TILE_SIZE); // Used to preserve the same world-space water texture scale across the whole map.
+    const mapRectangle = { col: 0, row: 0, width: cols, height: rows }; // Used to emit exactly one quad spanning the playable map.
+    appendFlatRectangle(data, mapRectangle, baseline, yOffset, textureTileSize);
+    data.baselineRectangles = 1;
+    return data;
+  }
+
   function normalizeGrid(cells, cols, rows) {
     const grid = new Array(cols * rows); // Used by inversion for numeric O(1) lookup instead of string-key Maps.
     for (const source of cells || []) {
@@ -419,9 +441,11 @@
   }
 
   function createMesh(THREE, material, cells, options = {}) {
-    const data = options.inverted
-      ? buildInvertedSurfaceData(cells, options)
-      : buildSurfaceData(cells, options); // Used to construct one BufferGeometry for either representation.
+    const data = options.mapWidePlane
+      ? buildMapWidePlaneSurfaceData(options)
+      : options.inverted
+        ? buildInvertedSurfaceData(cells, options)
+        : buildSurfaceData(cells, options); // Used to construct one BufferGeometry for map-wide flood, inverted, or classic local water.
     if (!data.indices.length) return null;
     const geometry = new THREE.BufferGeometry(); // Used by the one water Mesh/draw call.
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(data.positions, 3));
@@ -481,6 +505,7 @@
     TEXTURE_SCROLL_U,
     TEXTURE_SCROLL_V,
     buildSurfaceData,
+    buildMapWidePlaneSurfaceData,
     buildInvertedSurfaceData,
     collectBaselineRectangles,
     createMaterial,

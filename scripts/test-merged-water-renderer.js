@@ -4,10 +4,23 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { buildSurfaceData, buildInvertedSurfaceData } = require('../docs/js/merged-water-renderer.js');
+const { buildSurfaceData, buildMapWidePlaneSurfaceData, buildInvertedSurfaceData } = require('../docs/js/merged-water-renderer.js');
 
 const rendererSource = fs.readFileSync(path.join(__dirname, '../docs/js/merged-water-renderer.js'), 'utf8');
 const waterSystemSource = fs.readFileSync(path.join(__dirname, '../docs/js/water-system.js'), 'utf8');
+const indexSource = fs.readFileSync(path.join(__dirname, '../docs/index.html'), 'utf8');
+
+assert.match(waterSystemSource,
+  /function init\(injectedDeps\) \{[\s\S]{0,360}?deps = injectedDeps;[\s\S]{0,40}?\}/,
+  'WaterSystem init stores late world-constant getters without invoking them during startup');
+assert.doesNotMatch(waterSystemSource,
+  /function init\(injectedDeps\)[\s\S]{0,500}?_dryRenderBaseline\(/,
+  'WaterSystem init never resolves a dry baseline while NORMAL_TOP is still in its temporal dead zone');
+assert.match(waterSystemSource,
+  /function _dryRenderBaseline\(\)[\s\S]{0,260}?surfaceY: null/,
+  'a dry flood baseline has no surface and therefore needs no NORMAL_TOP lookup');
+assert.match(indexSource, /water-system\.js\?v=20260921singleflood1/,
+  'the shipped page cache-busts the startup-safe WaterSystem');
 
 function cornersForTile(data, tileIndex) {
   const start = tileIndex * 12;
@@ -55,6 +68,23 @@ const coverage = buildSurfaceData([
 ], { yOffset: 0 });
 assert.deepEqual(coverage.coverages.slice(0, 4), [1, 1, 1, 1], 'permanent streams can reach the authored 80% maximum independently of color depth');
 assert.deepEqual(coverage.coverages.slice(4, 8), [0.2, 0.2, 0.2, 0.2], 'temporary water defaults coverage to its simulated depth');
+
+const floodPlane = buildMapWidePlaneSurfaceData({
+  cols: 60,
+  rows: 50,
+  yOffset: 0,
+  baseline: { visible: true, surfaceY: 0.4, depth: 0.8, coverage: 0.8 },
+});
+assert.equal(floodPlane.representation, 'map-wide-plane', 'flooding uses a dedicated map-wide representation');
+assert.equal(floodPlane.positions.length / 3, 4, 'the entire 60x50 flood is one quad regardless of terrain obstacles');
+assert.equal(floodPlane.indices.length / 3, 2, 'the map-wide flood plane is exactly two triangles');
+assert.deepEqual(floodPlane.positions, [
+  0, 0.4, 0,
+  60, 0.4, 0,
+  0, 0.4, 50,
+  60, 0.4, 50,
+], 'the flood sheet spans the full playable map without tile holes');
+assert.equal(floodPlane.baselineRectangles, 1);
 
 const invertedCells = [
   { col: 0, row: 0, surfaceY: 0.1, depth: 0.2, coverage: 0.2, visible: true },
@@ -143,11 +173,11 @@ assert.doesNotMatch(waterSystemSource,
   /cells\.push\(\{[\s\S]{0,220}?visible:\s*false/,
   'the collector never allocates invisible per-tile records');
 assert.match(waterSystemSource,
-  /INVERTED_WATER_MIN_WET_FRACTION = 0\.25/,
-  'sparse water has an explicit density gate before baseline analysis');
+  /FLOOD_PLANE_MIN_WET_FRACTION = 0\.25/,
+  'sparse water has an explicit density gate before becoming a map-wide flood');
 assert.match(waterSystemSource,
-  /const minimumInversionWetCells = Math\.ceil\(rows \* cols \* INVERTED_WATER_MIN_WET_FRACTION\);[\s\S]{0,280}?cells\.length < minimumInversionWetCells[\s\S]{0,280}?_dryRenderBaseline\(\)/,
-  'the sparse collector returns directly to the classic path before allocating baseline samples');
+  /const minimumFloodWetCells = Math\.ceil\(rows \* cols \* FLOOD_PLANE_MIN_WET_FRACTION\);[\s\S]{0,280}?cells\.length < minimumFloodWetCells[\s\S]{0,280}?_dryRenderBaseline\(\)/,
+  'the sparse collector returns directly to local-water rendering before allocating flood baseline samples');
 assert.match(waterSystemSource,
   /function _newBaselineSamples\(\)[\s\S]{0,900}?wet:\s*\[\][\s\S]{0,900}?dryCount:/,
   'dense-state baseline sampling counts dry cells separately and retains only wet values that can affect a visible median');
@@ -159,5 +189,19 @@ assert.match(waterSystemSource, /if \(!sceneObj\?\.add\) \{[\s\S]*?return null;[
   'merged water construction waits until its destination scene exists');
 assert.match(waterSystemSource, /function updateTownWaterMeshes\(\) \{[\s\S]*?if \(!townScene\) return;[\s\S]*?if \(_townWaterSimDirty\)/,
   'town water keeps its dirty flag until the town scene is available');
+assert.match(waterSystemSource, /mapWidePlane:\s*true[\s\S]{0,120}?cols[\s\S]{0,120}?rows[\s\S]{0,120}?baseline/,
+  'flood rendering explicitly requests one full-map plane');
+assert.match(waterSystemSource, /function _filterLocalWaterCellsForFlood[\s\S]{0,700}?baseline\?\.visible[\s\S]{0,220}?return \[\]/,
+  'an active global flood suppresses every local puddle/trench quad so the map renders one authoritative dynamic-water plane');
+assert.doesNotMatch(waterSystemSource, /_filterLocalWaterCellsForFlood[\s\S]{0,700}?cell\.surfaceY > baseline\.surfaceY/,
+  'local dynamic water is never allowed to poke a nearly coplanar surface through an active flood sheet');
+assert.match(waterSystemSource, /waterSurfaceRole = options\?\.mapWidePlane \? 'flood' : \(isPermanentSurface \? 'permanent' : 'local'\)/,
+  'merged permanent river surfaces are tagged for flood visibility control');
+assert.match(waterSystemSource, /function _syncPermanentWaterVisibility[\s\S]{0,600}?object\.visible = !_floodCoversSurface\(baseline, surfaceY\)/,
+  'permanent river surfaces stay hidden until the flood is no longer above their elevation');
+assert.doesNotMatch(waterSystemSource, /name: 'farm_merged_dynamic_water'[\s\S]{0,180}?inverted:\s*true/,
+  'farm flood rendering no longer relies on obstacle-punched inverted baseline geometry');
+assert.doesNotMatch(waterSystemSource, /name: 'town_merged_dynamic_water'[\s\S]{0,180}?inverted:\s*true/,
+  'town flood rendering no longer relies on obstacle-punched inverted baseline geometry');
 
 console.log('merged water renderer tests passed');

@@ -1,0 +1,64 @@
+name: Audio and item startup regression
+
+on:
+  push:
+    paths:
+      - 'docs/js/music-system.js'
+      - 'docs/js/animal-vocalizations.js'
+      - 'docs/js/animal-voice-independent-playback.js'
+      - 'docs/js/fish-catalog.js'
+      - 'docs/js/sprite-recolor.js'
+      - 'docs/tools/ambient-dialogue-editor/index.html'
+      - 'docs/index.html'
+      - 'scripts/test-music-system.js'
+      - 'scripts/test-animal-vocalizations.js'
+      - 'scripts/test-strength-fish-buffs.js'
+      - 'scripts/test-netlify-cloud-save-static-preview.js'
+      - '.github/workflows/audio-startup-regression.yml'
+  pull_request:
+    paths:
+      - 'docs/js/music-system.js'
+      - 'docs/js/animal-vocalizations.js'
+      - 'docs/js/animal-voice-independent-playback.js'
+      - 'docs/js/fish-catalog.js'
+      - 'docs/js/sprite-recolor.js'
+      - 'docs/tools/ambient-dialogue-editor/index.html'
+      - 'docs/index.html'
+      - 'scripts/test-music-system.js'
+      - 'scripts/test-animal-vocalizations.js'
+      - 'scripts/test-strength-fish-buffs.js'
+      - 'scripts/test-netlify-cloud-save-static-preview.js'
+      - '.github/workflows/audio-startup-regression.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Syntax check startup modules
+        run: |
+          node --check docs/js/music-system.js
+          node --check docs/js/animal-vocalizations.js
+          node --check docs/js/animal-voice-independent-playback.js
+          node --check docs/js/fish-catalog.js
+          node --check docs/js/sprite-recolor.js
+          node --check scripts/test-music-system.js
+          node --check scripts/test-animal-vocalizations.js
+          node --check scripts/test-strength-fish-buffs.js
+          node --check scripts/test-netlify-cloud-save-static-preview.js
+      - name: Test music startup and unlock
+        run: node scripts/test-music-system.js
+      - name: Test animal voice playback
+        run: node scripts/test-animal-vocalizations.js
+      - name: Test fish item bridge and cooking buffs
+        run: node scripts/test-strength-fish-buffs.js
+      - name: Test static-preview cloud host gate
+        run: node scripts/test-netlify-cloud-save-static-preview.js

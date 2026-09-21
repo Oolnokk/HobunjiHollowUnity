@@ -57,7 +57,8 @@
     const last = _audioDebugLast.has(key) ? _audioDebugLast.get(key) : -Infinity;
     if (now - last < throttleMs) return;
     _audioDebugLast.set(key, now);
-    deps.debugLog(message, category);
+    const log = deps?.debugLog || window.__farmLog; // Parser-time audio unlock gestures can fire before game.js injects Music deps.
+    if (typeof log === 'function') log(message, category);
   }
 
   function audioTraceEnabled() {

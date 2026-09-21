@@ -12,8 +12,11 @@ on:
       - 'docs/js/local-db-overrides.js'
       - 'docs/js/npc-furniture-wardrobe-bridge-v4.js'
       - 'docs/js/character-action-locks.js'
+      - 'docs/game.js'
+      - 'docs/js/npc-activity-planner.js'
       - 'docs/js/npc-performance-reaction-lock-runtime.js'
       - 'docs/js/map-layout-system.js'
+      - 'scripts/test-npc-activity-planner.js'
       - 'docs/js/npc-gifting.js'
       - 'docs/js/npc-social-relationship-bridge-v2.js'
       - 'docs/js/npc-social-seating-bridge.js'
@@ -66,8 +69,11 @@ on:
       - 'docs/js/local-db-overrides.js'
       - 'docs/js/npc-furniture-wardrobe-bridge-v4.js'
       - 'docs/js/character-action-locks.js'
+      - 'docs/game.js'
+      - 'docs/js/npc-activity-planner.js'
       - 'docs/js/npc-performance-reaction-lock-runtime.js'
       - 'docs/js/map-layout-system.js'
+      - 'scripts/test-npc-activity-planner.js'
       - 'docs/js/npc-gifting.js'
       - 'docs/js/npc-social-relationship-bridge-v2.js'
       - 'docs/js/npc-social-seating-bridge.js'
@@ -127,8 +133,11 @@ jobs:
         run: |
           node --check docs/config/npcs/social-relations.js
           node --check docs/js/character-action-locks.js
+          node --check docs/game.js
+          node --check docs/js/npc-activity-planner.js
           node --check docs/js/npc-performance-reaction-lock-runtime.js
           node --check docs/js/map-layout-system.js
+          node --check scripts/test-npc-activity-planner.js
           node --check docs/js/npc-gifting.js
           node --check docs/js/npc-social-relationship-bridge-v2.js
           node --check docs/js/npc-social-seating-bridge.js
@@ -171,6 +180,8 @@ jobs:
           node --check scripts/test-world-text-outline-overlay.js
           node --check scripts/audit-npc-wardrobe-placeholders.js
           node --check scripts/generate-placeholder-wardrobes.js
+      - name: Test NPC planner and startup area ordering
+        run: node scripts/test-npc-activity-planner.js
       - name: Test continuous player-dance Rapport rate
         run: node scripts/test-dance-rapport-rate.js
       - name: Test Kurraya performer physical-reaction lock
