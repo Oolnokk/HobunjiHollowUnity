@@ -73,7 +73,8 @@
   }
 
   function generateCavernFloor(seedText, generationOptions = {}) {
-    const cacheKey = generationOptions.fast ? `${seedText}:fast` : seedText;
+    const singleRoom = generationOptions.singleRoom === true; // Explicit callers may request a compact room; named story caves no longer leak into the generic generator through map-id special cases.
+    const cacheKey = `${seedText}${generationOptions.fast ? ':fast' : ''}${singleRoom ? ':single-room' : ''}`; // Used to prevent a normal den carve from poisoning the one-room cache.
     const useCache = generationOptions.cache !== false; // Regenerating roguelike floors opt out so one cache entry is not retained for every visit.
     if (useCache && _cavernFloorCache.has(cacheKey)) return _cavernFloorCache.get(cacheKey);
     const makeRng = (typeof WildernessMapGenerator !== 'undefined' && WildernessMapGenerator.makeRng) ? WildernessMapGenerator.makeRng : (s => { let a = 1; for (let i = 0; i < s.length; i++) a = (a * 33 + s.charCodeAt(i)) >>> 0; return () => (a = (a * 1664525 + 1013904223) >>> 0) / 4294967296; });
@@ -82,23 +83,25 @@
     // branchCount is the main knob controlling how many tiles the maze
     // ends up claiming — scaled from the target so bigger dens actually
     // grow bigger networks instead of just denser/thicker corridors.
-    const branchCount = Math.max(6, Math.round(targetTiles / 7));
+    const branchCount = singleRoom ? 0 : Math.max(6, Math.round(targetTiles / 7)); // Used to eliminate side tunnels in Banubu's private cavern while preserving ordinary den branching.
     // entranceLength (the root's point count, see carveMazeCavern) has to
     // scale right alongside branchCount — a short root with a lot of
     // branches all crowd the same small patch near the entrance and merge
     // into one open pit with no walls between corridors, instead of a real
     // branching network. Root points are spaced one branchLength apart, so
     // this gives every branch genuine room to land somewhere distinct.
-    const entranceLength = Math.max(6, Math.round(branchCount * 0.6));
+    const entranceLength = singleRoom ? 4 : Math.max(6, Math.round(branchCount * 0.6)); // Used by the sculptor's entrance/root sizing for the compact home cavern.
 
     // Half the tool's own default tile size (1) — same physical cave, but
     // snapped to a twice-as-fine tile grid, so dens read as genuinely
     // bigger maps (roughly 4x the tile count for the same footprint)
     // without changing how large or branchy the actual carve is.
     const tileSize = 0.5;
-    const sculptOptions = generationOptions.fast
-      ? { branchCount, entranceLength, tileSize, gridN: 32, splineSamples: 5, hitsPerStep: 1, probeDigBursts: 2, probeMaxPasses: 45, enforceWalkableClearance: 1 }
-      : { branchCount, entranceLength, tileSize };
+    const sculptOptions = singleRoom
+      ? { branchCount: 0, entranceLength, tileSize, pathPointCount: 4, pathWiggle: 0.08, turnChaos: 0, loopChance: 0, probeRadius: 1.05, brushRadius: 0.42, gridN: generationOptions.fast ? 32 : 48, splineSamples: 5, hitsPerStep: 2, probeDigBursts: 3, probeMaxPasses: 70, enforceWalkableClearance: 1 }
+      : generationOptions.fast
+        ? { branchCount, entranceLength, tileSize, gridN: 32, splineSamples: 5, hitsPerStep: 1, probeDigBursts: 2, probeMaxPasses: 45, enforceWalkableClearance: 1 }
+        : { branchCount, entranceLength, tileSize };
     const result = window.CavernSculptor.carveMazeCavern(sculptOptions, rng);
 
     // Shift every tile coordinate (and the mesh's X/Z) from the sculptor's
@@ -217,20 +220,185 @@
     return kinds[Math.floor(rng() * kinds.length)];
   }
 
-  function synthesizeCavernMapData(mapId) {
-    // Same sculptOptions town-mine.js's synthesizeFloorMapData requests
-    // (fast: true — smaller gridN/splineSamples/probe budget, see
-    // generateCavernFloor's sculptOptions branch) so a den's cavern carves
-    // with the exact same generation method/settings a mine floor uses,
-    // rather than the slower high-fidelity defaults. Unlike a mine floor
-    // this still caches per mapId (the default): a den is one fixed lair
-    // tied to a specific world location, not a roguelike floor re-rolled
-    // fresh on every visit.
-    const { floor, cols, rows, exitCol, exitRow, exitTiles, nestCol, nestRow, disconnectedFloorTilesRemoved, mesh } = generateCavernFloor(mapId, { fast: true });
+  const _localeCavernDefsByMapId = new Map(); // Resolved cave-interior locales, keyed by their runtime map id.
+  const _knownLocaleCavernMapIds = new Set(); // Index-only knowledge lets game.js classify a cave before its scene finishes loading.
+  let _localeCavernIndexPromise = null; // One repo-index fetch per page; individual cave definitions are fetched lazily.
 
+  function localOverrideCavern(mapId) {
+    if (window.LocalDBOverrides?.getSourceMode?.() !== 'local') return null;
+    const override = window.LocalDBOverrides.getOverride?.('locales');
+    return (override?.locales || []).find(locale =>
+      locale?.category === 'cave_interior' && String(locale?.cavern?.mapId || '') === String(mapId || '')) || null;
+  }
+
+  async function localeCavernIndex() {
+    if (_localeCavernIndexPromise) return _localeCavernIndexPromise;
+    _localeCavernIndexPromise = (async () => {
+      try {
+        const response = await fetch('config/locales/index.json', { cache: 'no-store' });
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        const index = await response.json();
+        for (const entry of (index.locales || [])) {
+          if (entry?.category === 'cave_interior' && entry.mapId) _knownLocaleCavernMapIds.add(String(entry.mapId));
+        }
+        return index;
+      } catch (error) {
+        console.warn('[CavernGenerator] cave locale index failed to load:', error);
+        return { locales: [] };
+      }
+    })();
+    return _localeCavernIndexPromise;
+  }
+
+  async function loadLocaleCavernDefinition(mapId) {
+    const id = String(mapId || '');
+    if (!id) return null;
+    const local = localOverrideCavern(id);
+    if (local) {
+      _knownLocaleCavernMapIds.add(id);
+      return local;
+    }
+    if (_localeCavernDefsByMapId.has(id)) return _localeCavernDefsByMapId.get(id);
+    const index = await localeCavernIndex();
+    const entry = (index.locales || []).find(candidate =>
+      candidate?.category === 'cave_interior' && String(candidate?.mapId || '') === id);
+    if (!entry?.file) return null;
+    try {
+      const response = await fetch(entry.file, { cache: 'no-store' });
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      const locale = await response.json();
+      if (locale?.category !== 'cave_interior' || String(locale?.cavern?.mapId || '') !== id) {
+        throw new Error('locale cavern mapId/category mismatch');
+      }
+      _localeCavernDefsByMapId.set(id, locale);
+      _knownLocaleCavernMapIds.add(id);
+      return locale;
+    } catch (error) {
+      console.warn('[CavernGenerator] cave locale failed to load for ' + id + ':', error);
+      return null;
+    }
+  }
+
+  function isLocaleCavernMapId(mapId) {
+    const id = String(mapId || '');
+    if (!id) return false;
+    if (localOverrideCavern(id)) return true;
+    return _knownLocaleCavernMapIds.has(id) || _localeCavernDefsByMapId.has(id);
+  }
+
+  function facingRotation(side) {
+    return ({ north: 0, east: 90, south: 180, west: 270 })[String(side || 'south').toLowerCase()] ?? 180;
+  }
+
+  function localeFootprint(locale) {
+    return Object.keys(locale?.tiles || {}).map(key => key.split(',').map(Number))
+      .filter(([col, row]) => Number.isFinite(col) && Number.isFinite(row));
+  }
+
+  function synthesizeLocaleCavernMapData(locale) {
+    const cavern = locale?.cavern || {};
+    const mapId = String(cavern.mapId || '');
+    if (!mapId) throw new Error('cave_interior locale is missing cavern.mapId');
+    const floor = localeFootprint(locale);
+    if (!floor.length) throw new Error(locale.id + ' has no painted cavern footprint');
+    const connectors = Array.isArray(locale.connectors) ? locale.connectors : [];
+    const primary = connectors.find(connector => connector.id === cavern.primaryEntranceConnectorId) || connectors[0];
+    if (!primary) throw new Error(locale.id + ' has no cavern connector/entrance');
+    const seedText = String(cavern.seed || locale.id || mapId);
+    const makeRng = (typeof WildernessMapGenerator !== 'undefined' && WildernessMapGenerator.makeRng)
+      ? WildernessMapGenerator.makeRng
+      : (seed => { let a = 1; for (let i = 0; i < seed.length; i++) a = (a * 33 + seed.charCodeAt(i)) >>> 0; return () => (a = (a * 1664525 + 1013904223) >>> 0) / 4294967296; });
+    const generated = window.CavernSculptor.carveFootprintCavern(
+      floor,
+      { ...(cavern.generation || {}), entrance: { col: primary.col, row: primary.row, side: primary.side } },
+      makeRng(seedText + '_locale_cavern')
+    );
+
+    const exits = connectors.map(connector => ({
+      id: connector.id,
+      label: connector.label || connector.id,
+      tiles: [[Number(connector.col), Number(connector.row)]],
+      targetMap: String(connector.targetMap || ''),
+      targetSpotId: String(connector.targetSpotId || ''),
+      spawnCol: Number.isFinite(Number(connector.spawnCol)) ? Number(connector.spawnCol) : 0,
+      spawnRow: Number.isFinite(Number(connector.spawnRow)) ? Number(connector.spawnRow) : 0,
+      requiresKeyItem: String(connector.requiresKeyItem || ''),
+      hiddenUntilKeyItem: connector.hiddenUntilKeyItem === true,
+      doorFurnitureKey: String(connector.doorFurnitureKey || ''),
+      side: String(connector.side || 'south'),
+    }));
+    const entrySpots = Object.fromEntries(connectors.map(connector => [
+      connector.id,
+      { col: Number(connector.col), row: Number(connector.row), side: String(connector.side || 'south') },
+    ]));
+    const keyGatedDoors = connectors.filter(connector => connector.requiresKeyItem).map(connector => ({
+      id: connector.id,
+      col: Number(connector.col),
+      row: Number(connector.row),
+      rotY: facingRotation(connector.side),
+      side: String(connector.side || 'south'),
+      requiresKeyItem: String(connector.requiresKeyItem),
+      hiddenUntilKeyItem: connector.hiddenUntilKeyItem === true,
+      furnitureKey: String(connector.doorFurnitureKey || 'door'),
+    }));
+    const npcStations = (locale.npcAnchors || []).map(anchor => ({
+      id: anchor.id,
+      label: anchor.name || anchor.id,
+      npcId: anchor.npcId || '',
+      col: Number(anchor.col),
+      row: Number(anchor.row),
+      rotY: facingRotation(anchor.facing),
+      pose: anchor.pose || 'stand',
+      toolKey: anchor.toolKey || '',
+      toolIntervalSec: Number(anchor.toolIntervalSec) || 0,
+      toolAnimStyle: anchor.toolAnimStyle || '',
+    }));
+    const furniture = (locale.objects || []).filter(object => object.itemKey).map(object => ({
+      id: object.id,
+      itemKey: object.itemKey,
+      col: Number(object.col),
+      row: Number(object.row),
+      rotY: Number(object.rot ?? object.rotY) || 0,
+    }));
+
+    return {
+      schema: 'hobunji_building_interior.v1',
+      id: mapId,
+      name: locale.name || mapId,
+      cols: Number(locale.cols) || (Math.max(...floor.map(tile => tile[0])) + 2),
+      rows: Number(locale.rows) || (Math.max(...floor.map(tile => tile[1])) + 2),
+      floor,
+      colliders: [],
+      exits,
+      entrySpots,
+      keyGatedDoors,
+      entranceLightTiles: [[Number(primary.col), Number(primary.row)]],
+      furniture,
+      npcStations,
+      wallStyle: 'cavern',
+      exitCol: Number(primary.col),
+      exitRow: Number(primary.row),
+      disconnectedFloorTilesRemoved: 0,
+      mesh: generated.mesh,
+      oreRocks: [],
+      creatureSpawns: [],
+      denMotherKind: null,
+      localeId: locale.id,
+      cavernSeed: seedText,
+      cavernFeatures: cavern.features || {},
+      isLocaleCavern: true,
+    };
+  }
+
+  function synthesizeCavernMapData(mapId) {
+    // Ordinary wildlife dens remain fully procedural. Named/story caverns are
+    // authored as cave_interior locales and use synthesizeLocaleCavernMapData
+    // instead, so this generic path no longer knows about Banubu or any other
+    // individual cave by map id.
+    const { floor, cols, rows, exitCol, exitRow, exitTiles, nestCol, nestRow, disconnectedFloorTilesRemoved, mesh } = generateCavernFloor(mapId, { fast: true });
     const makeRng = (typeof WildernessMapGenerator !== 'undefined' && WildernessMapGenerator.makeRng) ? WildernessMapGenerator.makeRng : (() => Math.random);
     const decorRng = makeRng(mapId + '_decor');
-    const excludeSet = new Set([...exitTiles, [nestCol, nestRow], [nestCol + 1, nestRow], [nestCol, nestRow + 1], [nestCol + 1, nestRow + 1]].map(([c, r]) => `${c},${r}`));
+    const excludeSet = new Set([...exitTiles, [nestCol, nestRow], [nestCol + 1, nestRow], [nestCol, nestRow + 1], [nestCol + 1, nestRow + 1]].map(([c, r]) => c + ',' + r));
     const { nativeSpecies } = nativeSpeciesFor(mapId);
     const oreRocks = pickOreRockTiles(decorRng, floor, excludeSet);
     const creatureSpawns = pickCreatureSpawnTiles(decorRng, floor, excludeSet, nativeSpecies);
@@ -239,29 +407,13 @@
       schema: 'hobunji_building_interior.v1',
       id: mapId, name: 'A Dark Burrow',
       cols, rows,
-      // All 3 entrance tiles share one exit id — checkTransitionSpots
-      // fires from any of them (buildWallPanelsFromFloorSet's merged-gap
-      // reasoning no longer applies since the carved mesh replaces flat
-      // wall panels entirely, but the transition-trigger contract is the
-      // same either way).
       exits: [{ id: 'den_exit', label: 'Back outside', tiles: exitTiles, targetMap: '', spawnCol: 0, spawnRow: 0 }],
       colliders: [], floor, furniture: [],
       wallStyle: 'cavern',
-      // The guaranteed-walkable middle entrance tile — game.js's
-      // loadBuildingScene reads mapData.exitCol/exitRow directly to place
-      // the player exactly here on entry instead of falling back to its
-      // generic buildingSpawnFromExit heuristic, which its own comment
-      // notes "can land outside the organic floor blob" for a cavern's
-      // non-rectangular shape. Forwarding these was missing entirely here
-      // (exitCol/exitRow existed on generateCavernFloor's own return value
-      // but never made it into this object), so every den silently used
-      // that fallback and could spawn the player overlapping solid rock.
       exitCol, exitRow,
       disconnectedFloorTilesRemoved,
       mesh,
       oreRocks, creatureSpawns,
-      // Den-Mother/nest placement — read by loadBuildingScene after the
-      // scene/floor/walls are built (see its 'map_i_den_' handling).
       nestCol, nestRow, denMotherKind: pickDenMotherKind(mapId),
     };
   }
@@ -272,5 +424,8 @@
     entranceConnectedFloor,
     pickDenMotherKind,
     synthesizeCavernMapData,
+    loadLocaleCavernDefinition,
+    synthesizeLocaleCavernMapData,
+    isLocaleCavernMapId,
   };
 })();

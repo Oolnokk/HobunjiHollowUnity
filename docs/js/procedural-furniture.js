@@ -438,6 +438,18 @@ function campfireRecipe() {
   // a small pointed cap -- explicit stone-gray colors (not tinted off the
   // passed-in base color) so it reads consistently regardless of what a
   // placement happens to pass as its "furniture color".
+  // Fallback for the repo-authored stone pedestal used as the Color Pools altar.
+  // The real geometry is docs/config/furniture-authored/stonePedestal.json;
+  // this exact five-stage silhouette prevents a placeholder cube if authored
+  // furniture finishes loading a frame after the cave scene.
+  CATALOG.stonePedestal = [
+    box(0, .05, 0, .78, .10, .78, 1, { color: 0x625c52 }),
+    box(0, .14, 0, .64, .08, .64, 1, { color: 0x7b7466, topScaleX: .94, topScaleZ: .94 }),
+    box(0, .43, 0, .46, .50, .46, 1, { color: 0x7b7466, topScaleX: .88, topScaleZ: .88, bottomScaleX: 1.04, bottomScaleZ: 1.04 }),
+    box(0, .71, 0, .56, .08, .56, 1, { color: 0x928a78 }),
+    box(0, .80, 0, .76, .10, .76, 1, { color: 0x928a78, topScaleX: .96, topScaleZ: .96 }),
+  ];
+
   CATALOG.statue = [
     box(0, .06, 0, .68, .12, .68, 1, { color: 0x63666c }),
     cyl(0, .34, 0, .42, .5, .42, 1, { color: 0x54585e, topScaleX: .8, topScaleZ: .8, segments: 8 }),
@@ -513,6 +525,18 @@ function campfireRecipe() {
     box(0, .22, 0, .62, .44, .62, .85),
     disc(0, .48, 0, .56, .14, .56, 1.1, { segments: 18 }),
     cyl(.32, .5, 0, .06, .3, .06, .7, { rz: 90, segments: 8 }),
+  ];
+
+  // Banubu's Tea Grinder: a low green-stained rotary stone with three
+  // ingredient cups around the grinding plate, visually distinct from the
+  // ordinary Hand Mill while staying inside the existing processor renderer.
+  CATALOG.teaGrinder = [
+    box(0, .18, 0, .7, .36, .7, .72),
+    disc(0, .43, 0, .62, .16, .62, 1.15, { segments: 20 }),
+    cyl(.34, .48, 0, .055, .32, .055, .65, { rz: 90, segments: 8 }),
+    cyl(-.25, .48, -.28, .2, .12, .2, 1.25, { segments: 12, topScaleX: 1.15, topScaleZ: 1.15, bottomScaleX: .75, bottomScaleZ: .75 }),
+    cyl(.25, .48, -.28, .2, .12, .2, 1.05, { segments: 12, topScaleX: 1.15, topScaleZ: 1.15, bottomScaleX: .75, bottomScaleZ: .75 }),
+    cyl(0, .48, .32, .2, .12, .2, .9, { segments: 12, topScaleX: 1.15, topScaleZ: 1.15, bottomScaleX: .75, bottomScaleZ: .75 }),
   ];
 
   CATALOG.dryingRack = [

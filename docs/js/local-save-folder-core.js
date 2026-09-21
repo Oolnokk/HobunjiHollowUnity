@@ -15,6 +15,7 @@
   const CHARACTERS_DIR = 'characters';
   const WORLDS_DIR = 'worlds';
   const FARM_LAYOUTS_DIR = 'farm-layouts';
+  const PATTERNS_DIR = 'patterns'; // Portable custom motif PNGs live here beside the canonical character/world save directories.
   const RECOVERY_DIR = 'recovery'; // Folder-first recovery history lives beside, but never replaces, the canonical save directories.
   const RECOVERY_FILES = Object.freeze({ // Stable recovery slot filenames used by the checkpoint manager and recovery UI.
     manual: 'manual.json',
@@ -118,6 +119,7 @@
   let _syncPromise = null; // Used to serialize filesystem writes so two save operations cannot overlap.
   let _lastKnownFolderMeta = null; // Last meta.json content known to actually be on disk; the data-loss guard's baseline.
   let _lastDataLossRisk = null; // Set when a push was skipped because it looked like it would destroy folder data.
+  let _lastPatternMirror = null; // Most recent custom-motif portability result, surfaced through save diagnostics.
   const _listeners = new Set();
 
   function getStatus() {
@@ -133,6 +135,7 @@
       needsFarmLayoutUpgrade: _state === 'ready' && !_folderSupportsFarmLayouts,
       autoSyncArmed: _autoSyncArmed,
       dataLossRisk: _lastDataLossRisk,
+      patternMirror: _lastPatternMirror,
       recoverySaveVersion: RECOVERY_SAVE_VERSION,
     };
   }
@@ -246,6 +249,52 @@
       return JSON.parse(await file.text());
     } catch (error) {
       if (error?.name === 'NotFoundError') return null;
+      throw error;
+    }
+  }
+
+
+  function patternFilename(id) {
+    const value = String(id || '').trim();
+    if (!/^[a-z0-9][a-z0-9._-]{0,127}$/i.test(value) || value.includes('..')) throw new Error('Invalid custom pattern id.');
+    return value + '.png';
+  }
+
+  async function mirrorPatternFile(id, bytes) {
+    if (_state !== 'ready' || !_handle) return false;
+    if (!(await ensurePermission(_handle, false))) return false;
+    const payload = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes || 0); // MotifStore supplies Uint8Array PNG bytes; this also accepts other ArrayBuffer views safely.
+    if (!payload.byteLength) return false;
+    const dirHandle = await _handle.getDirectoryHandle(PATTERNS_DIR, { create: true });
+    const fileHandle = await dirHandle.getFileHandle(patternFilename(id), { create: true });
+    const writable = await fileHandle.createWritable();
+    await writable.write(payload);
+    await writable.close();
+    return true;
+  }
+
+  async function readPatternFile(id) {
+    if (_state !== 'ready' || !_handle) return null;
+    if (!(await ensurePermission(_handle, false))) return null;
+    try {
+      const dirHandle = await _handle.getDirectoryHandle(PATTERNS_DIR);
+      const file = await (await dirHandle.getFileHandle(patternFilename(id))).getFile();
+      return new Uint8Array(await file.arrayBuffer());
+    } catch (error) {
+      if (error?.name === 'NotFoundError') return null;
+      throw error;
+    }
+  }
+
+  async function deletePatternFile(id) {
+    if (_state !== 'ready' || !_handle) return false;
+    if (!(await ensurePermission(_handle, false))) return false;
+    try {
+      const dirHandle = await _handle.getDirectoryHandle(PATTERNS_DIR);
+      await dirHandle.removeEntry(patternFilename(id));
+      return true;
+    } catch (error) {
+      if (error?.name === 'NotFoundError') return false;
       throw error;
     }
   }
@@ -535,6 +584,16 @@
       _farmLayoutCount = await writeFarmLayouts(meta, farmLayouts);
       _folderSupportsFarmLayouts = true;
 
+      // Custom pattern PNGs are stored outside character/world JSON. Mirror every
+      // customMotifId referenced by the snapshot so connecting a folder after the
+      // motif was authored still produces a complete portable save.
+      _lastPatternMirror = null;
+      const mirrorReferencedMotifs = window.MotifStore?.mirrorReferencedMotifs;
+      if (typeof mirrorReferencedMotifs === 'function') {
+        try { _lastPatternMirror = await mirrorReferencedMotifs(meta); }
+        catch (error) { _lastPatternMirror = { error: String(error?.message || error) }; }
+      }
+
       const savedAt = Date.now();
       await writeJsonFile(_handle, MANIFEST_FILE_NAME, {
         version: meta.version ?? 1,
@@ -760,6 +819,7 @@
     _lastObservedFingerprint = null;
     _lastKnownFolderMeta = null;
     _lastDataLossRisk = null;
+    _lastPatternMirror = null;
     try { await idbDelete(HANDLE_KEY); } catch {}
     notify();
     return getStatus();
@@ -797,6 +857,9 @@
     readRecoveryCheckpoint,
     readRecoveryCheckpoints,
     writeRecoveryCheckpoint,
+    mirrorPatternFile,
+    readPatternFile,
+    deletePatternFile,
   };
 
   // Mobile-accessible debug surface: inspect current persistence state without DevTools.

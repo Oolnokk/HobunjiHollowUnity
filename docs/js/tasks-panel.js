@@ -297,9 +297,17 @@
     const progress = _questProgressSnapshot(); // Used to ensure this pass reads one consistent live quest-state object.
     const summary = _questStateSummary(progress); // Used by both filtering and mobile diagnostics.
     const active = summary.entries
-      .filter(([, state]) => state?.status === 'available' && ['request', 'favor', 'bounty'].includes(state?.progress?.kind))
+      .filter(([, state]) => {
+        const kind = state?.progress?.kind;
+        if (state?.progress?.hidden) return false;
+        if (kind === 'story') return state?.status === 'active'; // Authored multi-stage quests keep their own dialogue phase names while still living in the shared questProgress record.
+        return state?.status === 'available' && ['request', 'favor', 'bounty'].includes(kind);
+      })
       .map(([id, state]) => ({ id, ...state.progress }))
-      .sort((a, b) => (a.kind === 'request' ? 0 : a.kind === 'favor' ? 1 : 2) - (b.kind === 'request' ? 0 : b.kind === 'favor' ? 1 : 2)); // Used as the exact set of accepted quests shown to the player.
+      .sort((a, b) => {
+        const order = kind => kind === 'story' ? 0 : kind === 'request' ? 1 : kind === 'favor' ? 2 : 3;
+        return order(a.kind) - order(b.kind);
+      }); // Used as the exact set of accepted quests shown to the player.
 
     lastRenderDebug.savedCount = summary.entries.length;
     lastRenderDebug.activeCount = active.length;
@@ -329,6 +337,19 @@
               <div class="sh-name">Bounty: ${deps.esc(task.captainName)}</div>
               <div class="sh-desc" style="margin-top:1px;color:var(--accent);">${dangerRatingMarkup(task.tier)}</div>
               <div class="sh-desc">${deps.esc(zoneLabel)}. ${marked ? 'Camp located — marked on the map.' : `Still tracking ${pronouns.object} down...`} Reward: ${task.rewardGold}g on ${pronouns.possessive} camp's destruction.</div>
+            </div>
+          `;
+        } else if (task.kind === 'story') {
+          const live = task.provider === 'banubu' ? window.BanubuQuestline?.menuStatus?.() : null; // Optional live readiness comes from the same matcher that routes Banubu to his ready-to-turn-in dialogue.
+          const ready = live?.active ? !!live.ready : !!task.ready;
+          const giver = task.npcName || 'Quest giver';
+          row.innerHTML = `
+            <div class="sh-icon">${deps.esc(task.icon || '📖')}</div>
+            <div class="sh-info">
+              <div class="sh-name">${deps.esc(task.title || 'Quest')}</div>
+              <div class="sh-desc">${deps.esc(live?.objective || task.objective || 'Continue the quest.')}</div>
+              ${task.detail ? `<div class="sh-desc" style="margin-top:2px;">${deps.esc(task.detail)}</div>` : ''}
+              <div class="sh-desc" style="margin-top:2px;color:${ready ? 'var(--accent)' : 'inherit'};">${ready ? `Ready — return to ${deps.esc(giver)}.` : `In progress — return to ${deps.esc(giver)} when the objective is complete.`}</div>
             </div>
           `;
         } else {

@@ -119,6 +119,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
                 <option value="great_fey_shrine">great_fey_shrine</option>
                 <option value="story_poi">story_poi</option>
                 <option value="bandit_camp">bandit_camp</option>
+                <option value="cave_interior">cave_interior</option>
                 <option value="misc">misc</option>
               </select>
             </div>
@@ -180,6 +181,20 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
           <div style="margin-top:6px"><label>Placement notes</label><textarea id="locPlacementNotes" rows="2"></textarea></div>
           <button class="sec" id="applyPlacementBtn" style="width:100%;margin-top:6px">Apply</button>
           <p class="muted" style="margin-top:6px">Fixed locales reserve a flat, fully open rectangle (footprint + clearance) before the wilderness generator places flora/dens/structures, by random search — keep the footprint small and clearance low (1–2) for one to reliably find room. Temporary locales (see docs/js/temporary-locales.js) instead scan the <em>already-generated</em> zone for a same-elevation, unoccupied, river/path-free rectangle, clear whatever flora/rocks are there, and stamp in — used for things like bandit camps that can be destroyed and re-rolled elsewhere without a full Tothal Shift. By default, a locale placed on/against a plateau is folded into that plateau's own flat top instead of sinking to ground level — check "Always flat ground level" above to opt out and force ground level regardless of what it lands on.</p>
+        </div>
+
+        <!-- CAVERN INTERIOR -->
+        <div class="section" id="cavernSettingsSection" style="--sec:#64748b;--secBg:rgba(100,116,139,.10);display:none">
+          <div class="sect-head"><b>Cavern Generation</b><span class="sect-tag">cave_interior</span></div>
+          <p class="muted">For cave interiors, painted locale cells are the authoritative walkable footprint. The shared cavern SDF generator carves that footprint with this fixed seed; only the primary connector cuts a physical opening through the rock.</p>
+          <div class="g2" style="margin-top:7px">
+            <div><label>Runtime map id</label><input id="cavernMapId" placeholder="map_i_example_cave"></div>
+            <div><label>Fixed cavern seed</label><input id="cavernSeed" placeholder="example-cave-v1"></div>
+          </div>
+          <div style="margin-top:6px"><label>Primary entrance connector</label><select id="cavernPrimaryEntrance"></select></div>
+          <div style="margin-top:6px"><label>Generation options (JSON)</label><textarea id="cavernGenerationJson" rows="5" spellcheck="false"></textarea></div>
+          <button class="ok" id="applyCavernBtn" style="width:100%;margin-top:6px">Apply cavern settings</button>
+          <p class="muted" style="margin-top:6px">Secondary connectors may target other caves and may be key-gated. They stay solid wall boundaries rather than punching permanent holes through the generated rock.</p>
         </div>
 
         <!-- VALIDATION -->
@@ -288,6 +303,7 @@ function makeLocale(id, name, category) {
     connectors: [],    // { id, col, row, side, label }
     terrainAnchors: {}, // Runtime terrain probes; mirrored into placement for editor persistence.
     embeddedTiles: {},  // Runtime embedded-host cells; mirrored into placement for editor persistence.
+    cavern: null,        // cave_interior only: map id, fixed seed, primary connector, and shared cavern-generation options.
     placement: { mode: 'fixed', maxInstances: 1, allowedZones: [], clearanceTiles: 2, requiresFlatGround: true, floorMode: 'footprint', minDistanceFromEntry: 0, sameSectorAsEntry: false, alwaysVisibleOnMap: false, groundOnly: false, notes: '', terrainAnchors: {}, embeddedTiles: {} },
     meta: { createdAt: nowIso(), updatedAt: nowIso() }
   };
@@ -306,6 +322,7 @@ function sanitizeLoaded(raw) {
     cols: clamp(Math.round(Number(raw.cols) || 16), 4, 120),
     rows: clamp(Math.round(Number(raw.rows) || 16), 4, 120),
     tiles: {}, objects: [], npcAnchors: [], connectors: [],
+    cavern: raw.cavern && typeof raw.cavern === "object" ? JSON.parse(JSON.stringify(raw.cavern)) : null,
     placement: Object.assign({ mode: 'fixed', maxInstances: 1, allowedZones: [], clearanceTiles: 2, requiresFlatGround: true, floorMode: 'footprint', minDistanceFromEntry: 0, sameSectorAsEntry: false, alwaysVisibleOnMap: false, groundOnly: false, notes: '' }, raw.placement || {}),
     meta: Object.assign({ createdAt: nowIso(), updatedAt: nowIso() }, raw.meta || {})
   });
@@ -326,6 +343,7 @@ function sanitizeLoaded(raw) {
   }
   for (const o of (raw.objects || [])) {
     const obj = { id: o.id || uid('obj'), kind: o.kind || 'decor', key: o.key || 'bench', label: o.label || '', col: o.col|0, row: o.row|0, w: Math.max(1, o.w|0 || 1), h: Math.max(1, o.h|0 || 1), rot: o.rot || 0 };
+    if (o.itemKey) obj.itemKey = String(o.itemKey); // Interior cave fixtures may route through ordinary building-furniture item keys.
     if (o.visual && typeof o.visual === 'object') obj.visual = JSON.parse(JSON.stringify(o.visual)); // Preserve authored renderer/scale/facing metadata such as cave_small visual overrides.
     // Tents (and any future lootable/burnable prop) carry a held-action
     // spec the wilderness runtime reads directly -- see docs/js/temporary-locales.js.
@@ -341,10 +359,15 @@ function sanitizeLoaded(raw) {
     m.objects.push(obj);
   }
   for (const n of (raw.npcAnchors || [])) {
-    m.npcAnchors.push({ id: n.id || uid('npc'), npcId: n.npcId || '', name: n.name || 'NPC', col: n.col|0, row: n.row|0, facing: n.facing || 'south' });
+    m.npcAnchors.push({ id: n.id || uid('npc'), npcId: n.npcId || '', name: n.name || 'NPC', col: n.col|0, row: n.row|0, facing: n.facing || 'south', pose: n.pose || 'stand', toolKey: n.toolKey || '', toolIntervalSec: Number(n.toolIntervalSec) || 0, toolAnimStyle: n.toolAnimStyle || '' });
   }
   for (const c of (raw.connectors || [])) {
-    m.connectors.push({ id: c.id || uid('conn'), col: c.col|0, row: c.row|0, side: c.side || 'south', label: c.label || 'Wilderness path' });
+    m.connectors.push({
+      id: c.id || uid('conn'), col: c.col|0, row: c.row|0, side: c.side || 'south', label: c.label || 'Wilderness path',
+      targetMap: c.targetMap || '', targetSpotId: c.targetSpotId || '',
+      spawnCol: Number.isFinite(Number(c.spawnCol)) ? Number(c.spawnCol) : 0, spawnRow: Number.isFinite(Number(c.spawnRow)) ? Number(c.spawnRow) : 0,
+      requiresKeyItem: c.requiresKeyItem || '', hiddenUntilKeyItem: c.hiddenUntilKeyItem === true, doorFurnitureKey: c.doorFurnitureKey || ''
+    });
   }
   return m;
 }
@@ -905,6 +928,7 @@ function renderSettings() {
   $('locGroundOnly').checked = !!m.placement.groundOnly;
   $('locPlacementNotes').value = m.placement.notes;
   renderZoneChecks();
+  renderCavernSettings();
 }
 
 function renderZoneChecks() {
@@ -921,6 +945,41 @@ function renderZoneChecks() {
   }
 }
 
+function renderCavernSettings() {
+  const m = activeLocale();
+  const section = $('cavernSettingsSection');
+  if (!section) return;
+  const isCave = m?.category === 'cave_interior';
+  section.style.display = isCave ? '' : 'none';
+  if (!isCave) return;
+  const cavern = m.cavern || {};
+  $('cavernMapId').value = cavern.mapId || '';
+  $('cavernSeed').value = cavern.seed || '';
+  const select = $('cavernPrimaryEntrance');
+  select.innerHTML = '';
+  for (const connector of (m.connectors || [])) {
+    const option = document.createElement('option');
+    option.value = connector.id;
+    option.textContent = (connector.label || connector.id) + ' (' + connector.id + ')';
+    option.selected = connector.id === cavern.primaryEntranceConnectorId;
+    select.appendChild(option);
+  }
+  if (!select.options.length) {
+    const option = document.createElement('option'); option.value = ''; option.textContent = 'Add a connector first'; select.appendChild(option);
+  }
+  $('cavernGenerationJson').value = JSON.stringify(cavern.generation || { tileSize: 1, gridN: 48, probeRadius: 0.8, brushRadius: 0.42, organicJitter: 0.12, sizeY: 3 }, null, 2);
+}
+
+$('applyCavernBtn').addEventListener('click', () => {
+  const m = activeLocale();
+  if (!m || m.category !== 'cave_interior') return;
+  let generation;
+  try { generation = JSON.parse($('cavernGenerationJson').value || '{}'); }
+  catch (error) { alert('Generation options must be valid JSON: ' + error.message); return; }
+  m.cavern = { ...(m.cavern || {}), mapId: $('cavernMapId').value.trim(), seed: $('cavernSeed').value.trim(), primaryEntranceConnectorId: $('cavernPrimaryEntrance').value, generation };
+  m.meta.updatedAt = nowIso();
+  saveWorkspace(); updateAll(); setStatus('Cavern settings saved to this locale.');
+});
 $('applySettingsBtn').addEventListener('click', () => {
   const m = activeLocale();
   if (!m) return;

@@ -10,12 +10,21 @@ on:
       - 'docs/js/animal-chathead-frame.js'
       - 'docs/js/animal-npc-headwear.js'
       - 'docs/js/character-studio-animal-appearance.js'
+      - 'docs/js/repo-pattern-library.js'
+      - 'docs/js/pattern-authoring.js'
+      - 'docs/js/clothing-weaving-system.js'
+      - 'docs/js/creature-genetics-render.js'
+      - 'docs/config/patterns/**'
       - 'docs/js/character-studio-animal-fey-extras.js'
       - 'docs/js/repo-picker.js'
       - 'docs/js/npc-avatar-preview-utils.js'
       - 'docs/js/png-plane-avatar.js'
       - 'docs/tools/character-studio/index.html'
+      - 'docs/tools/pattern-editor/**'
+      - 'docs/tools/index.html'
+      - 'docs/index.html'
       - 'scripts/test-named-animal-npc-species.js'
+      - 'scripts/test-repo-pattern-authoring.js'
       - '.github/workflows/named-animal-npc-regression.yml'
   pull_request:
     paths:
@@ -26,12 +35,21 @@ on:
       - 'docs/js/animal-chathead-frame.js'
       - 'docs/js/animal-npc-headwear.js'
       - 'docs/js/character-studio-animal-appearance.js'
+      - 'docs/js/repo-pattern-library.js'
+      - 'docs/js/pattern-authoring.js'
+      - 'docs/js/clothing-weaving-system.js'
+      - 'docs/js/creature-genetics-render.js'
+      - 'docs/config/patterns/**'
       - 'docs/js/character-studio-animal-fey-extras.js'
       - 'docs/js/repo-picker.js'
       - 'docs/js/npc-avatar-preview-utils.js'
       - 'docs/js/png-plane-avatar.js'
       - 'docs/tools/character-studio/index.html'
+      - 'docs/tools/pattern-editor/**'
+      - 'docs/tools/index.html'
+      - 'docs/index.html'
       - 'scripts/test-named-animal-npc-species.js'
+      - 'scripts/test-repo-pattern-authoring.js'
       - '.github/workflows/named-animal-npc-regression.yml'
 
 permissions:
@@ -53,8 +71,15 @@ jobs:
           node --check docs/js/named-animal-npc.js
           node --check docs/js/animal-npc-headwear.js
           node --check docs/js/character-studio-animal-appearance.js
+          node --check docs/js/repo-pattern-library.js
+          node --check docs/js/pattern-authoring.js
+          node --check docs/js/clothing-weaving-system.js
+          node --check docs/js/creature-genetics-render.js
           node --check docs/js/character-studio-animal-fey-extras.js
           node --check docs/js/repo-picker.js
           node --check scripts/test-named-animal-npc-species.js
+          node --check scripts/test-repo-pattern-authoring.js
       - name: Test named animal NPC species integration
         run: node scripts/test-named-animal-npc-species.js
+      - name: Test repo Pattern Editor and animal surface patterns
+        run: node scripts/test-repo-pattern-authoring.js

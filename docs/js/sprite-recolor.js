@@ -73,6 +73,47 @@
     };
   }
 
+  function directShadeFillPixels(data, targetRgb, predicate = null) {
+    const [tr, tg, tb] = targetRgb; // Canonical direct pattern/weaving tint target; cloth, motifs, and animals all call this exact implementation.
+    const cfg = shadeFillConfig();
+
+    // The chosen RGB is the neutral/overall color. Source art contributes only
+    // relative shading: normalize every affected pixel around the affected
+    // region's own median luminance instead of comparing it to one global
+    // absolute luminance. A dark source sprite therefore stays shaded but no
+    // longer drags the selected color dark as a whole.
+    const luminanceBins = new Uint32Array(256); // O(n+256) median histogram avoids sorting/allocating one Number per tinted pixel on repeated animal/cloth composites.
+    let luminanceCount = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      if (data[i + 3] === 0 || (predicate && !predicate(i))) continue;
+      const lum = relativeLuminance(data[i], data[i + 1], data[i + 2]);
+      if (cfg.preserveNearBlackOutlines && lum <= cfg.outlineThreshold) continue;
+      luminanceBins[Math.max(0, Math.min(255, Math.round(lum * 255)))]++;
+      luminanceCount++;
+    }
+    if (!luminanceCount) return;
+    const lowerRank = (luminanceCount - 1) >> 1;
+    const upperRank = luminanceCount >> 1;
+    let seen = 0, lowerBin = 0, upperBin = 0;
+    for (let bin = 0; bin < luminanceBins.length; bin++) {
+      seen += luminanceBins[bin];
+      if (seen > lowerRank && !lowerBin) lowerBin = bin;
+      if (seen > upperRank) { upperBin = bin; break; }
+    }
+    const neutral = Math.max(0.0001, ((lowerBin + upperBin) * 0.5) / 255);
+
+    for (let i = 0; i < data.length; i += 4) {
+      if (data[i + 3] === 0 || (predicate && !predicate(i))) continue;
+      const lum = relativeLuminance(data[i], data[i + 1], data[i + 2]);
+      if (cfg.preserveNearBlackOutlines && lum <= cfg.outlineThreshold) continue;
+      const normalized = Math.pow(Math.max(0, lum) / neutral, cfg.gamma);
+      const shade = Math.max(cfg.shadowFloor, Math.min(cfg.highlightBoost, normalized));
+      data[i] = clampByte(tr * shade);
+      data[i + 1] = clampByte(tg * shade);
+      data[i + 2] = clampByte(tb * shade);
+    }
+  }
+
   function recolorImageData(data, targetHex, mode, opts) {
     const tr = (targetHex >> 16) & 255, tg = (targetHex >> 8) & 255, tb = targetHex & 255;
     if (mode === 'keyed') {
@@ -90,25 +131,7 @@
       return;
     }
 
-    if (window.CreatureGeneticsRender?.recolorPixels) {
-      window.CreatureGeneticsRender.recolorPixels(data, [tr, tg, tb], null);
-      return;
-    }
-
-    const cfg = shadeFillConfig();
-    const neutral = Math.max(0.0001, cfg.neutralLuminance);
-    for (let i = 0; i < data.length; i += 4) {
-      const a = data[i + 3];
-      if (a === 0) continue;
-      const r = data[i], g = data[i + 1], b = data[i + 2];
-      const lum = relativeLuminance(r, g, b);
-      if (cfg.preserveNearBlackOutlines && lum <= cfg.outlineThreshold) continue;
-      const normalized = Math.pow(Math.max(0, lum) / neutral, cfg.gamma);
-      const shade = Math.max(cfg.shadowFloor, Math.min(cfg.highlightBoost, normalized));
-      data[i] = clampByte(tr * shade);
-      data[i + 1] = clampByte(tg * shade);
-      data[i + 2] = clampByte(tb * shade);
-    }
+    directShadeFillPixels(data, [tr, tg, tb], null);
   }
 
   const _imgCache = new Map();
@@ -167,7 +190,7 @@
     parserOrderedScript('fishing-presentation-debug.js','fishing-presentation-debug','20260826a',()=>!!window.FishingPresentationDebug);
   }
 
-  window.SpriteRecolor={getRecoloredCanvas,recolorImageData,relativeLuminance,shadeFillConfig,DEFAULT_KEY_A,DEFAULT_KEY_B,KEY_HUE_TOLERANCE};
+  window.SpriteRecolor={getRecoloredCanvas,recolorImageData,directShadeFillPixels,relativeLuminance,shadeFillConfig,DEFAULT_KEY_A,DEFAULT_KEY_B,KEY_HUE_TOLERANCE};
   loadFishCatalogForGame();
   loadFishingEventsForGame();
   loadAmphibiousFishingForGame();

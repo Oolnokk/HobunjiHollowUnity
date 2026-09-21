@@ -15,11 +15,36 @@ on:
       - 'docs/js/panel-ui.js'
       - 'docs/js/puktuk-den-nest-registration.js'
       - 'docs/js/wilderness-map-generator.js'
+      - 'docs/js/cavern-generator.js'
+      - 'docs/js/color-pools-system.js'
+      - 'docs/js/creature-genetics-render.js'
+      - 'docs/js/clothing-weaving-system.js'
+      - 'docs/js/stable-animal-progression.js'
+      - 'docs/js/procedural-furniture.js'
+      - 'docs/config/furniture-authored/stonePedestal.json'
+      - 'docs/js/cavern-sculptor.js'
+      - 'docs/js/banubu-quest-content.js'
+      - 'docs/js/banubu-questline.js'
+      - 'docs/js/tea-grinder.js'
+      - 'docs/js/key-item-system.js'
+      - 'docs/js/cooking-system.js'
+      - 'docs/js/dialogue-content.js'
+      - 'docs/js/local-db-overrides.js'
+      - 'docs/js/procedural-furniture.js'
+      - 'docs/game.js'
+      - 'docs/onboarding-core.js'
+      - 'docs/index.html'
+      - 'docs/config/npcs/schedule-overrides.json'
+      - 'docs/config/npcs/hobunji-starter-npc-database.json'
+      - 'docs/tools/dialogue-editor/**'
       - 'docs/tools/wilderness-generation-lab/**'
       - 'docs/tools/locale-editor/**'
       - 'scripts/test-locale-terrain-placement.js'
       - 'scripts/test-banubu-cave-locale.js'
+      - 'scripts/test-locale-cavern-interiors.js'
+      - 'scripts/test-color-pools.js'
       - 'scripts/test-banubu-wilderness-lab-generation.js'
+      - 'scripts/test-banubu-questline.js'
       - 'scripts/test-den-nest-individual-content.js'
       - 'scripts/test-den-locale-runtime.js'
       - 'scripts/test-den-locale-authoring.js'
@@ -47,12 +72,38 @@ jobs:
           node --check docs/js/puktuk-den-nest-registration.js
           node --check docs/js/dev-arena-nest-spawner.js
           node -e "const fs=require('fs');const s=fs.readFileSync('docs/tools/locale-editor/locale-preview3d.js','utf8');for(const needle of ['Host above Δ≥+1','setRelativeHeight(1, null)','THREE.OrbitControls','cave_small.glb','embeddedTiles','previewRoot.remove(child)','parent !== previewRoot'])if(!s.includes(needle))throw new Error('missing '+needle);"
+      - name: Syntax check Banubu quest runtime and editor integration
+        run: |
+          node --check docs/js/banubu-quest-content.js
+          node --check docs/js/banubu-questline.js
+          node --check docs/js/tea-grinder.js
+          node --check docs/js/key-item-system.js
+          node --check docs/js/cooking-system.js
+          node --check docs/js/dialogue-content.js
+          node --check docs/js/cavern-generator.js
+          node --check docs/js/color-pools-system.js
+          node --check docs/js/creature-genetics-render.js
+          node --check docs/js/clothing-weaving-system.js
+          node --check docs/js/stable-animal-progression.js
+          node --check docs/js/procedural-furniture.js
+          node --check docs/js/cavern-sculptor.js
+          node --check docs/js/local-db-overrides.js
+          node --check docs/js/procedural-furniture.js
+          node --check docs/game.js
+          node --check docs/tools/dialogue-editor/dialogue-editor-state.js
+          node --check docs/tools/dialogue-editor/dialogue-editor-inspector.js
       - name: Test terrain-aware locale placement
         run: node scripts/test-locale-terrain-placement.js
       - name: Test Banubu authored cave rules and runtime parity
         run: node scripts/test-banubu-cave-locale.js
+      - name: Test locale-authored cavern interiors
+        run: node scripts/test-locale-cavern-interiors.js
+      - name: Test Color Pools animal painting
+        run: node scripts/test-color-pools.js
       - name: Test Banubu in real Wilderness Lab Northern Cliffs generation
         run: node scripts/test-banubu-wilderness-lab-generation.js
+      - name: Test Banubu cavern, dialogue, questline, and key-item scopes
+        run: node scripts/test-banubu-questline.js
       - name: Test individual den nest content and bootstrap isolation
         run: node scripts/test-den-nest-individual-content.js
       - name: Test den locale runtime behavior

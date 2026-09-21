@@ -1,0 +1,25 @@
+{
+  "schema": "hobunji_pattern_library.v1",
+  "patterns": [
+    {
+      "id": "fey_thorns",
+      "name": "Fey Thorns",
+      "file": "config/patterns/pattern_fey_thorns.json"
+    },
+    {
+      "id": "gruumlarr_links",
+      "name": "gruumlarr_links",
+      "file": "config/patterns/pattern_gruumlarr_links.json"
+    },
+    {
+      "id": "omgurku_knot",
+      "name": "Omgurku Knot",
+      "file": "config/patterns/pattern_omgurku_knot.json"
+    },
+    {
+      "id": "rakakoan_rigging",
+      "name": "Rakako'an Rigging",
+      "file": "config/patterns/pattern_rakakoan_rigging.json"
+    }
+  ]
+}

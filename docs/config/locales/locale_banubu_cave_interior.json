@@ -1,0 +1,342 @@
+{
+  "schema": "hobunji_locale.v1",
+  "id": "locale_banubu_cave_interior",
+  "name": "Banubu's Cavern",
+  "category": "cave_interior",
+  "singleton": true,
+  "description": "Banubu's authored home cavern. The painted locale footprint is carved through the shared cavern SDF generator with a fixed seed.",
+  "tags": [
+    "cave",
+    "interior",
+    "banubu",
+    "great_fey",
+    "story"
+  ],
+  "cols": 13,
+  "rows": 12,
+  "tiles": {
+    "5,1": {
+      "type": "grass"
+    },
+    "6,1": {
+      "type": "grass"
+    },
+    "7,1": {
+      "type": "grass"
+    },
+    "3,2": {
+      "type": "grass"
+    },
+    "4,2": {
+      "type": "grass"
+    },
+    "5,2": {
+      "type": "grass"
+    },
+    "6,2": {
+      "type": "grass"
+    },
+    "7,2": {
+      "type": "grass"
+    },
+    "8,2": {
+      "type": "grass"
+    },
+    "9,2": {
+      "type": "grass"
+    },
+    "2,3": {
+      "type": "grass"
+    },
+    "3,3": {
+      "type": "grass"
+    },
+    "4,3": {
+      "type": "grass"
+    },
+    "5,3": {
+      "type": "grass"
+    },
+    "6,3": {
+      "type": "grass"
+    },
+    "7,3": {
+      "type": "grass"
+    },
+    "8,3": {
+      "type": "grass"
+    },
+    "9,3": {
+      "type": "grass"
+    },
+    "10,3": {
+      "type": "grass"
+    },
+    "1,4": {
+      "type": "grass"
+    },
+    "2,4": {
+      "type": "grass"
+    },
+    "3,4": {
+      "type": "grass"
+    },
+    "4,4": {
+      "type": "grass"
+    },
+    "5,4": {
+      "type": "grass"
+    },
+    "6,4": {
+      "type": "grass"
+    },
+    "7,4": {
+      "type": "grass"
+    },
+    "8,4": {
+      "type": "grass"
+    },
+    "9,4": {
+      "type": "grass"
+    },
+    "10,4": {
+      "type": "grass"
+    },
+    "11,4": {
+      "type": "grass"
+    },
+    "1,5": {
+      "type": "grass"
+    },
+    "2,5": {
+      "type": "grass"
+    },
+    "3,5": {
+      "type": "grass"
+    },
+    "4,5": {
+      "type": "grass"
+    },
+    "5,5": {
+      "type": "grass"
+    },
+    "6,5": {
+      "type": "grass"
+    },
+    "7,5": {
+      "type": "grass"
+    },
+    "8,5": {
+      "type": "grass"
+    },
+    "9,5": {
+      "type": "grass"
+    },
+    "10,5": {
+      "type": "grass"
+    },
+    "11,5": {
+      "type": "grass"
+    },
+    "1,6": {
+      "type": "grass"
+    },
+    "2,6": {
+      "type": "grass"
+    },
+    "3,6": {
+      "type": "grass"
+    },
+    "4,6": {
+      "type": "grass"
+    },
+    "5,6": {
+      "type": "grass"
+    },
+    "6,6": {
+      "type": "grass"
+    },
+    "7,6": {
+      "type": "grass"
+    },
+    "8,6": {
+      "type": "grass"
+    },
+    "9,6": {
+      "type": "grass"
+    },
+    "10,6": {
+      "type": "grass"
+    },
+    "11,6": {
+      "type": "grass"
+    },
+    "1,7": {
+      "type": "grass"
+    },
+    "2,7": {
+      "type": "grass"
+    },
+    "3,7": {
+      "type": "grass"
+    },
+    "4,7": {
+      "type": "grass"
+    },
+    "5,7": {
+      "type": "grass"
+    },
+    "6,7": {
+      "type": "grass"
+    },
+    "7,7": {
+      "type": "grass"
+    },
+    "8,7": {
+      "type": "grass"
+    },
+    "9,7": {
+      "type": "grass"
+    },
+    "10,7": {
+      "type": "grass"
+    },
+    "11,7": {
+      "type": "grass"
+    },
+    "2,8": {
+      "type": "grass"
+    },
+    "3,8": {
+      "type": "grass"
+    },
+    "4,8": {
+      "type": "grass"
+    },
+    "5,8": {
+      "type": "grass"
+    },
+    "6,8": {
+      "type": "grass"
+    },
+    "7,8": {
+      "type": "grass"
+    },
+    "8,8": {
+      "type": "grass"
+    },
+    "9,8": {
+      "type": "grass"
+    },
+    "10,8": {
+      "type": "grass"
+    },
+    "3,9": {
+      "type": "grass"
+    },
+    "4,9": {
+      "type": "grass"
+    },
+    "5,9": {
+      "type": "grass"
+    },
+    "6,9": {
+      "type": "grass"
+    },
+    "7,9": {
+      "type": "grass"
+    },
+    "8,9": {
+      "type": "grass"
+    },
+    "9,9": {
+      "type": "grass"
+    },
+    "5,10": {
+      "type": "grass"
+    },
+    "6,10": {
+      "type": "grass"
+    },
+    "7,10": {
+      "type": "grass"
+    }
+  },
+  "objects": [],
+  "npcAnchors": [
+    {
+      "id": "station_banubu_cave_awake",
+      "npcId": "banubu",
+      "name": "Banubu's Cave",
+      "col": 6,
+      "row": 5,
+      "facing": "south",
+      "pose": "stand"
+    },
+    {
+      "id": "station_banubu_cave_sleep",
+      "npcId": "banubu",
+      "name": "Banubu's Sleeping Spot",
+      "col": 9,
+      "row": 7,
+      "facing": "west",
+      "pose": "lie"
+    }
+  ],
+  "connectors": [
+    {
+      "id": "banubu_cave_exit",
+      "col": 6,
+      "row": 10,
+      "side": "south",
+      "label": "Back outside",
+      "targetMap": ""
+    },
+    {
+      "id": "color_pools_door",
+      "col": 6,
+      "row": 1,
+      "side": "north",
+      "label": "Color Pools",
+      "targetMap": "map_i_color_pools",
+      "targetSpotId": "conn_banubu",
+      "requiresKeyItem": "color_pools_key",
+      "hiddenUntilKeyItem": true,
+      "doorFurnitureKey": "door"
+    }
+  ],
+  "terrainAnchors": {},
+  "embeddedTiles": {},
+  "placement": {
+    "mode": "fixed",
+    "maxInstances": 1,
+    "allowedZones": [],
+    "clearanceTiles": 0,
+    "requiresFlatGround": true,
+    "floorMode": "footprint",
+    "minDistanceFromEntry": 0,
+    "sameSectorAsEntry": false,
+    "alwaysVisibleOnMap": false,
+    "groundOnly": false,
+    "notes": "Interior-only cavern locale; painted cells are the authoritative cave floor footprint.",
+    "terrainAnchors": {},
+    "embeddedTiles": {}
+  },
+  "cavern": {
+    "mapId": "map_i_den_banubu",
+    "seed": "banubu-home-v1",
+    "primaryEntranceConnectorId": "banubu_cave_exit",
+    "generation": {
+      "tileSize": 1,
+      "gridN": 48,
+      "probeRadius": 0.82,
+      "brushRadius": 0.42,
+      "organicJitter": 0.12,
+      "sizeY": 3
+    }
+  },
+  "meta": {
+    "createdAt": "2026-09-19T00:00:00.000Z",
+    "updatedAt": "2026-09-19T00:00:00.000Z"
+  }
+}

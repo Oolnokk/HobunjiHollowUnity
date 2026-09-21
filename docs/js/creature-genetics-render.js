@@ -26,6 +26,14 @@
 (function () {
   'use strict';
 
+  const MODULE_SCRIPT_URL = typeof document !== 'undefined' ? (document.currentScript?.src || '') : ''; // Lets the exact runtime compositor run from nested docs/tools pages without changing asset semantics in-game.
+  const DOCS_BASE_URL = MODULE_SCRIPT_URL ? new URL('../', MODULE_SCRIPT_URL).href : ''; // creature-genetics-render.js lives in docs/js/, so ../ is the docs root.
+  function docsUrl(path) {
+    const value = String(path || '');
+    if (!value || /^(?:data:|blob:|https?:)/i.test(value) || !DOCS_BASE_URL) return value;
+    return new URL(value.replace(/^\.\//, ''), DOCS_BASE_URL).href;
+  }
+
   const SPECIES = {
     'gar-wolf': {
       prefix: 'gw',
@@ -94,7 +102,8 @@
 
   const _imageCache = new Map(); // url -> Promise<HTMLImageElement>
   function loadImage(url) {
-    if (_imageCache.has(url)) return _imageCache.get(url);
+    const resolvedUrl = docsUrl(url); // Nested Character Studio and ordinary game pages now share one authoritative creature compositor.
+    if (_imageCache.has(resolvedUrl)) return _imageCache.get(resolvedUrl);
     const p = new Promise((resolve, reject) => {
       const img = new Image();
       // Without this, an image served from a different origin than the page
@@ -108,10 +117,10 @@
       // already do for exactly this reason.
       img.crossOrigin = 'anonymous';
       img.onload = () => resolve(img);
-      img.onerror = () => reject(new Error('Failed to load ' + url));
-      img.src = url;
+      img.onerror = () => reject(new Error('Failed to load ' + resolvedUrl));
+      img.src = resolvedUrl;
     });
-    _imageCache.set(url, p);
+    _imageCache.set(resolvedUrl, p);
     return p;
   }
 
@@ -146,12 +155,21 @@
   // replace, which measured ~0.25 average value there and crushed every
   // target hue toward the same dark, muddy tone).
   function recolorPixels(px, targetRgb, predicate) {
+    // Animal base/pattern recoloring intentionally uses the exact same direct
+    // shade-fill implementation as ClothingWeavingSystem / Pattern Editor.
+    const shared = window.SpriteRecolor?.directShadeFillPixels;
+    if (typeof shared === 'function') {
+      shared(px, targetRgb, predicate || null);
+      return;
+    }
+
+    // Defensive bootstrap fallback only. Normal game + Character Studio load
+    // sprite-recolor.js first, so this path should not be the rendered result.
     const cfg = shadeFillConfig();
     const neutral = Math.max(0.0001, cfg.neutralLuminance);
     const [tr, tg, tb] = targetRgb;
     for (let i = 0; i < px.length; i += 4) {
-      if (px[i + 3] === 0) continue;
-      if (predicate && !predicate(i)) continue;
+      if (px[i + 3] === 0 || (predicate && !predicate(i))) continue;
       const lum = relativeLuminance(px[i], px[i + 1], px[i + 2]);
       if (cfg.preserveNearBlackOutlines && lum <= cfg.outlineThreshold) continue;
       const normalized = Math.pow(Math.max(0, lum) / neutral, cfg.gamma);
@@ -210,7 +228,7 @@
   let _maskPromise = null;
   function loadBaseMasks() {
     if (_maskPromise) return _maskPromise;
-    _maskPromise = fetch('config/creature-base-masks.json').then(r => r.json()).then(raw => {
+    _maskPromise = fetch(docsUrl('config/creature-base-masks.json')).then(r => r.json()).then(raw => {
       const out = {};
       for (const [kind, frames] of Object.entries(raw || {})) {
         out[kind] = {};
@@ -230,6 +248,106 @@
       && !!stripes?.color;
   }
 
+  function compactHashText(value) {
+    const text = String(value || ''); // Compact deterministic cache/signature token without leaking large embedded motif data into keys.
+    let hash = 2166136261;
+    for (let i = 0; i < text.length; i++) {
+      hash ^= text.charCodeAt(i);
+      hash = Math.imul(hash, 16777619);
+    }
+    return (hash >>> 0).toString(36);
+  }
+
+  function colorPoolPaintSignature(genotype) {
+    const layers = genotype?.colorPoolPaint?.layers;
+    if (!layers || typeof layers !== 'object') return '';
+    const compact = Object.keys(layers).sort().map(regionId => {
+      const paint = layers[regionId] || {};
+      return [
+        regionId,
+        paint.dyeId || '',
+        paint.dyeHex || '',
+        paint.patternLibraryId || '',
+        paint.repoPatternId || paint.pattern?.repoPatternId || '',
+        Math.max(7, Math.min(14, Number(paint.patternScale) || 7)).toFixed(3),
+        compactHashText(JSON.stringify(paint.pattern || null)),
+      ].join(':');
+    }).join('|');
+    return compactHashText(compact);
+  }
+
+  function maskedRegionCanvas(imageOrCanvas, mask) {
+    if (!imageOrCanvas || !mask) return imageOrCanvas;
+    const width = imageOrCanvas.naturalWidth || imageOrCanvas.width || 0;
+    const height = imageOrCanvas.naturalHeight || imageOrCanvas.height || 0;
+    if (!width || !height || mask.width !== width || mask.height !== height) return imageOrCanvas;
+    const canvas = makeCanvas(width, height);
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(imageOrCanvas, 0, 0, width, height);
+    const image = ctx.getImageData(0, 0, width, height);
+    for (let p = 0, i = 0; p < mask.data.length; p++, i += 4) {
+      if (!mask.data[p]) image.data[i + 3] = 0;
+    }
+    ctx.putImageData(image, 0, 0);
+    return canvas;
+  }
+
+  function colorPoolPaintFor(genotype, regionId) {
+    return genotype?.colorPoolPaint?.layers?.[regionId] || null;
+  }
+
+  let lastPatternPaintDebug = { kind: null, frame: null, layers: {} }; // Latest composeFrame surface-paint resolution; Character Studio exposes this so missing motifs are visible instead of silently looking plain.
+  function setPatternPaintDebug(regionId, detail) {
+    lastPatternPaintDebug.layers[regionId] = { regionId, ...detail };
+  }
+  function getLastPatternPaintDebug() {
+    return JSON.parse(JSON.stringify(lastPatternPaintDebug));
+  }
+
+  async function applyColorPoolPaint(imageOrCanvas, genotype, regionId, regionMask, cachePrefix) {
+    const paint = colorPoolPaintFor(genotype, regionId);
+    if (!paint) return null;
+    const dyeHex = paint.dyeHex || window.DyeSystem?.getById?.(paint.dyeId)?.hex || null;
+    let pattern = paint.pattern || (paint.patternLibraryId ? window.PatternLibrary?.getById?.(paint.patternLibraryId) : null);
+    const repoPatternId = paint.repoPatternId || pattern?.repoPatternId || null; // Character Studio stores only this small committed-library reference.
+    const animalPatternScale = Math.max(7, Math.min(14, Number(paint.patternScale) || 7)); // Animal surface paint intentionally lives at a much larger purpose-specific scale than clothing; 7× is the minimum/default.
+    const debugBase = { repoPatternId, patternScale: animalPatternScale, dyeHex, status: 'pending' };
+    try {
+      if (repoPatternId && !(pattern?.motifDataUrl || pattern?.motifUrl || pattern?.customMotifId)) {
+        pattern = await window.RepoPatternLibrary?.getById?.(repoPatternId) || pattern;
+      }
+      if (pattern) pattern = { ...pattern, usageScaleMultiplier: animalPatternScale }; // Purpose-specific render field consumed after the reusable pattern's own normalized meshScale has been resolved.
+      const compositor = window.ClothingWeavingSystem?.applyPatternToTintedImage
+        || window.ClothingWeavingSystem?.__test?.applyPatternToTintedImage;
+      const motifRef = pattern?.motifDataUrl || pattern?.motifUrl || pattern?.customMotifId || null;
+      if (!dyeHex) {
+        setPatternPaintDebug(regionId, { ...debugBase, status: 'failed', reason: 'missing pattern ink color' });
+        return null;
+      }
+      if (!motifRef) {
+        setPatternPaintDebug(regionId, { ...debugBase, status: 'failed', reason: repoPatternId ? 'repo pattern did not resolve a motif PNG' : 'pattern has no motif image' });
+        return null;
+      }
+      if (!compositor) {
+        setPatternPaintDebug(regionId, { ...debugBase, status: 'failed', reason: 'weaving compositor unavailable', motifRef });
+        return null;
+      }
+      const clippedSource = regionMask ? maskedRegionCanvas(imageOrCanvas, regionMask) : imageOrCanvas;
+      const rendered = await compositor(clippedSource, pattern, dyeHex, cachePrefix);
+      const applied = !!rendered && rendered !== clippedSource;
+      setPatternPaintDebug(regionId, {
+        ...debugBase,
+        status: applied ? 'applied' : 'failed',
+        reason: applied ? null : 'compositor returned the unpatterned source',
+        motifRef,
+      });
+      return applied ? rendered : null;
+    } catch (error) {
+      setPatternPaintDebug(regionId, { ...debugBase, status: 'failed', reason: String(error?.message || error) });
+      throw error;
+    }
+  }
+
   // Draw order matches SPECIES[kind].patterns — the same fixed layer order
   // the HTML lab uses (each species' patterns object insertion order).
   // blinkShut swaps in the species' eye-shut art for one frame's compose;
@@ -242,6 +360,7 @@
   // already fully painted eye sprites, not a recolor target.
   async function composeFrame(kind, frame, genotype, blinkShut = false) {
     const t0 = performance.now();
+    lastPatternPaintDebug = { kind, frame, layers: {} }; // Reset per composite so Character Studio status reflects this exact preview frame.
     const spec = SPECIES[kind];
     if (!spec) {
       window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): no SPECIES config for "${kind}" — returning null (creature falls back to its plain sprite)`, 'wildlife');
@@ -266,6 +385,12 @@
     const bw = baseSource.naturalWidth || baseSource.width, bh = baseSource.naturalHeight || baseSource.height;
     const c = makeCanvas(bw, bh), ctx = c.getContext('2d');
     ctx.drawImage(baseSource, 0, 0);
+    try {
+      const paintedBase = await applyColorPoolPaint(baseSource, genotype, 'base', fullBaseRecolor ? null : mask, `animal:${kind}:${frame}:base:${baseColor || 'native'}`);
+      if (paintedBase) ctx.drawImage(paintedBase, 0, 0, c.width, c.height);
+    } catch (error) {
+      window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): Color Pools base paint failed — skipped: ${error.message}`, 'warn');
+    }
     const drawnPatterns = [];
     for (const patternId of spec.patterns) {
       const layer = genotype?.[patternId];
@@ -282,7 +407,13 @@
         // ordinary layer.color.
         const renderColor = bodyStripesColorSwap && patternId === 'bodystripes' ? storedBaseColor : layer.color; // Effective color for this overlay only.
         const recolored = await recoloredPattern(url, renderColor);
-        ctx.drawImage(recolored, 0, 0, c.width, c.height);
+        let renderedLayer = recolored;
+        try {
+          renderedLayer = await applyColorPoolPaint(recolored, genotype, patternId, null, `animal:${kind}:${frame}:${patternId}:${renderColor || 'native'}`) || recolored;
+        } catch (paintError) {
+          window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): Color Pools paint for "${patternId}" failed — genetic layer kept: ${paintError.message}`, 'warn');
+        }
+        ctx.drawImage(renderedLayer, 0, 0, c.width, c.height);
         drawnPatterns.push(patternId);
       } catch (e) {
         window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): pattern "${patternId}" failed to load/recolor (${url}) — skipped: ${e.message}`, 'warn');
@@ -343,10 +474,12 @@
       const l = genotype?.[id];
       parts.push((l?.enabled !== false && l?.copies > 0 && l?.color) ? `${id}:${l.color}` : '');
     }
+    const paintSig = colorPoolPaintSignature(genotype);
+    if (paintSig) parts.push(`paint:${paintSig}`);
     return parts.join('|');
   }
 
-  window.CreatureGeneticsRender = { composeFrame, genotypeSignature, prewarm, SPECIES, recolorPixels, hexToRgb };
+  window.CreatureGeneticsRender = { composeFrame, genotypeSignature, colorPoolPaintSignature, getLastPatternPaintDebug, prewarm, SPECIES, recolorPixels, hexToRgb };
 
   window.HobunjiCacheAudit?.register('CreatureGeneticsRender.imageCache', () => _imageCache.size);
   window.HobunjiCacheAudit?.register('CreatureGeneticsRender.recolorCache', () => _recolorCache.size);

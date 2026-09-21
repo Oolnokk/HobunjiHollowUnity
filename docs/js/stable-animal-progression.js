@@ -897,7 +897,11 @@
 
   const api = {
     install,
+    maxLevel: MAX_LEVEL, // StableAnimalTrainingRefinements replaces this live value with the corrected cap (currently 10).
     trees: TREES,
+    stableEntries, // Shared live Stable collection; Color Pools edits the existing genotype objects rather than introducing a parallel save.
+    findStableEntry,
+    saveStable,
     roleForEntry,
     normalizeEntry,
     xpToNext,
