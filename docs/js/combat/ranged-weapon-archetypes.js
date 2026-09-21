@@ -6,7 +6,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 11;
+  const VERSION = 12;
   const PATCH_RETRY_MS = 50; // Used while game.js finishes constructing generated metal weapon definitions.
   const PATCH_RETRY_LIMIT = 160; // Used to stop the bootstrap poll after roughly eight seconds instead of polling forever.
   const THROWN_TYPE = 'thrown';
@@ -39,7 +39,7 @@
     'bruisedHealth', 'windedStamina', 'congealedHealth', 'shatteredStamina', 'knockback',
   ]); // Used by Kylie ranged mastery so its options mirror the game's blunt affliction family rather than sharp-style buildup.
   const DUAL_ROLE_SHAPES = Object.freeze({ kylie: THROWN_TYPE, dagger: THROWN_TYPE, fishingspear: THROWN_TYPE, hatchet: THROWN_TYPE, bshuakauitl: BLOWGUN_TYPE });
-  const SPINNING_THROWN_SHAPES = new Set(['hatchet', 'dagger', 'kylie']); // Dagger is the current knife-class shape; these reuse Fishing's outbound fishing-mace spin.
+  const SPINNING_THROWN_SHAPES = new Set(['hatchet', 'dagger', 'kylie', 'fishingspear']); // Every current thrown weapon uses the shared end-over-end Spin Throw presentation; projectile spin continues from the exact sampled held-plane transform.
   const END_FLIPPED_THROW_SHAPES = new Set(['dagger', 'fishingspear']); // Uses the exact pick-mining sprite-plane X-basis flip, not a pose-roll approximation.
   const NON_RANGED_SHAPES = new Set(['daggerSword']); // Used by rangedTypeFor() to hard-block dagger-swords even if stale or external code tags one with rangedType.
   const patchedItems = new Set(); // Used by diagnostics and idempotent definition patching.
@@ -214,7 +214,11 @@
       chargePose: {
         neutral: withScale(throwPoses.neutral, scale),
         windup: withScale(throwPoses.windup, scale),
-        strike: withScale(throwPoses.windup, scale),
+        // Release resumes at the held Windup boundary and must actually travel
+        // to the authored Strike. Pointing Strike back at Windup made the hand
+        // rig continue its release behavior while the visible weapon holder had
+        // no Windup→Strike rotation to perform.
+        strike: withScale(throwPoses.strike, scale),
       },
       chargeWindupS: Math.max(0.05, (animation.durationS || 1.04) * (animation.windupFrac ?? 0.49)),
     };
