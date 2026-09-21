@@ -603,8 +603,8 @@
     const embeddedKeys = new Set(Array.isArray(fallback.embeddedTiles) ? fallback.embeddedTiles.map(String) : []); // Used to retain only fallback-approved embedded host checks.
     const terrainAnchors = {}; // Used as the fallback locale's reduced non-generating probe map.
     const embeddedTiles = {}; // Used as the fallback locale's reduced embedded-terrain requirement map.
-    for (const key of anchorKeys) if (locale?.terrainAnchors?.[key]) terrainAnchors[key] = clonePlain(locale.terrainAnchors[key]);
-    for (const key of embeddedKeys) if (locale?.embeddedTiles?.[key]) embeddedTiles[key] = clonePlain(locale.embeddedTiles[key]);
+    for (const key of anchorKeys) if (locale?.terrainAnchors?.[key]) terrainAnchors[key] = JSON.parse(JSON.stringify(locale.terrainAnchors[key]));
+    for (const key of embeddedKeys) if (locale?.embeddedTiles?.[key]) embeddedTiles[key] = JSON.parse(JSON.stringify(locale.embeddedTiles[key]));
     if (!Object.keys(terrainAnchors).length && !Object.keys(embeddedTiles).length) return null;
     return { ...locale, terrainAnchors, embeddedTiles };
   }
