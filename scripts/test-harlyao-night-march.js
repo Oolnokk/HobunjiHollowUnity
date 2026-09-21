@@ -9,7 +9,7 @@ const root = path.resolve(__dirname, '..'); // Repository root used for all prod
 const read = relative => fs.readFileSync(path.join(root, relative), 'utf8');
 
 const config = JSON.parse(read('docs/config/harlyao-night-march.json')); // Authored nightly route/equipment/visual/music/atmosphere contract under test.
-const runtimeSource = read('docs/js/harlyao-night-march-runtime.js'); // Corrected controller that owns hourly chunk-only simulation and observed marching.
+const runtimeSource = read('docs/js/harlyao-night-march-runtime.js'); // Corrected controller that owns coarse-step chunk-only simulation and observed marching.
 const musicSource = read('docs/js/harlyao-night-march-music.js'); // Scheduler-owned exclusive Ghoul-track soundtrack adapter.
 const musicCoreSource = read('docs/js/music-system.js'); // Shared soundtrack scheduler now owns generic loop/exclusive-track behavior.
 const atmosphereSource = read('docs/js/harlyao-night-march-atmosphere.js'); // Second outdoor darkness pass that preserves existing local light masks.
@@ -34,7 +34,7 @@ assert.deepEqual(config.equipment.forcedCosmetics, ['rugged_poncho'], 'every mar
 assert.deepEqual(config.equipment.weaponShapes, ['daggerSword', 'hatchet', 'fishingspear'], 'army weapon pool is dagger-sword, hatchet, or fishing spear only');
 assert.equal(config.activeHours.start, 0, 'march starts at civil midnight');
 assert.equal(config.activeHours.end, 6, 'march disappears at 06:00');
-assert.equal(config.activeHours.coarseStepHours, 1, 'offscreen route state advances only once per game hour');
+assert.equal(config.activeHours.coarseStepHours, 0.4, 'offscreen route state advances in smaller configured steps so a player can keep pace with the march');
 assert.equal(config.behavior.maleOnlyUntilFemaleHeadArt, true, 'night army remains explicitly male-only until female head art exists');
 assert.equal(config.visuals.color.toLowerCase(), '#4fd9c6', 'spectral fill stays blue-green');
 assert(config.visuals.opacity > 0 && config.visuals.opacity < 1, 'spectral body remains semi-transparent');
@@ -65,8 +65,10 @@ assert(loaderSource.indexOf("['Ghostify'") < loaderSource.indexOf("['HarlyaoNigh
 assert(loaderSource.indexOf("['HarlyaoNightMarch'") < loaderSource.indexOf("['HarlyaoNightMarchMusic'"), 'march state must exist before soundtrack proximity reads its chunks');
 assert(loaderSource.indexOf("['HarlyaoNightMarchMusic'") < loaderSource.indexOf("['HarlyaoNightMarchPixelProbe'"), 'music diagnostics must exist before Pixel Probe formats them');
 
-assert.match(runtimeSource, /const hour = Math\.floor\(gameHour\(\)\)/, 'offscreen schedule keys use whole game-hours only');
-assert.match(runtimeSource, /const key = `\$\{day\}:\$\{hour\}`/, 'civil day + whole hour is the coarse simulation cache key');
+assert.match(runtimeSource, /const hour = gameHour\(\)/, 'offscreen scheduling keeps full game-hour precision before coarse-step bucketing');
+assert.match(runtimeSource, /const stepHours = Math\.max\(0\.25, Number\(cfg\?\.activeHours\?\.coarseStepHours\) \|\| 1\)/, 'offscreen scheduling reads the authored coarse-step cadence');
+assert.match(runtimeSource, /const bucket = Math\.floor\(hour \/ stepHours\)/, 'offscreen scheduling buckets time by the configured coarse-step cadence');
+assert.match(runtimeSource, /const key = `\$\{day\}:\$\{bucket\}`/, 'civil day + coarse-step bucket is the simulation cache key');
 assert.match(runtimeSource, /if \(!sameChunk\(playerChunk\(\), chunk\)\) return;/, 'hidden army does no entity work unless player shares its cached chunk');
 assert.match(runtimeSource, /deps\.moveCreatureToward\?\.\(/, 'observed formation physically paths toward its next chunk');
 assert.match(runtimeSource, /detectHit\(\)/, 'visible formation checks for player provocation');
@@ -142,31 +144,42 @@ assert.equal(testApi.routeForDay(3, config).zoneId, 'map_southern_cloud_forest')
 assert.equal(testApi.routeForDay(4, config).zoneId, 'map_western_slope');
 assert.equal(testApi.routeForDay(5, config).zoneId, 'map_northern_cliffs', 'daily route repeats clockwise after western zone');
 
-const expectedForward = [0, 2, 5, 7, 10, 12]; // Six hourly slots stretched over the current thirteen-chunk route axis.
-const expectedReverse = [...expectedForward].reverse(); // Physical indices for east→west and south→north legs.
-for (let hour = 0; hour < 6; hour++) {
+const stepHours = config.activeHours.coarseStepHours;
+const stepCount = Math.ceil((config.activeHours.end - config.activeHours.start) / stepHours);
+const sampleHours = Array.from({ length: stepCount }, (_, slot) => config.activeHours.start + slot * stepHours + 1e-9); // Tiny epsilon avoids floating-point boundary drift at exact decimal step edges.
+const expectedForward = [0, 1, 2, 3, 3, 4, 5, 6, 7, 8, 9, 9, 10, 11, 12]; // Fifteen 0.4-hour slots traverse every thirteen-chunk route position without multi-chunk jumps.
+const expectedReverse = [...expectedForward].map(index => 12 - index); // Physical indices for east→west and south→north legs.
+assert.equal(sampleHours.length, expectedForward.length, 'configured 0.4-hour cadence yields fifteen active coarse-route slots');
+
+for (let slot = 0; slot < sampleHours.length; slot++) {
+  const hour = sampleHours[slot];
+
   const north = testApi.coarseStateFor(1, hour, config, { cols: 200, rows: 200 });
-  assert.equal(north.cx, expectedForward[hour], `Northern Cliffs hour ${hour} maps west→east across actual chunk count`);
+  assert.equal(north.cx, expectedForward[slot], `Northern Cliffs coarse slot ${slot} maps west→east without skipping route chunks`);
   assert.equal(north.cz, 6, 'Northern Cliffs keeps one central north/south lane');
 
   const east = testApi.coarseStateFor(2, hour, config, { cols: 200, rows: 200 });
-  assert.equal(east.cz, expectedForward[hour], `Eastern Mire hour ${hour} maps north→south across actual chunk count`);
+  assert.equal(east.cz, expectedForward[slot], `Eastern Mire coarse slot ${slot} maps north→south without skipping route chunks`);
   assert.equal(east.cx, 6, 'Eastern Mire keeps one central west/east lane');
 
   const south = testApi.coarseStateFor(3, hour, config, { cols: 200, rows: 200 });
-  assert.equal(south.cx, expectedReverse[hour], `Southern Cloud Forest hour ${hour} maps east→west across actual chunk count`);
+  assert.equal(south.cx, expectedReverse[slot], `Southern Cloud Forest coarse slot ${slot} maps east→west without skipping route chunks`);
   assert.equal(south.cz, 6, 'Southern Cloud Forest keeps one central north/south lane');
 
   const west = testApi.coarseStateFor(4, hour, config, { cols: 200, rows: 200 });
-  assert.equal(west.cz, expectedReverse[hour], `Western Slope hour ${hour} maps south→north across actual chunk count`);
+  assert.equal(west.cz, expectedReverse[slot], `Western Slope coarse slot ${slot} maps south→north without skipping route chunks`);
   assert.equal(west.cx, 6, 'Western Slope keeps one central west/east lane');
+}
+
+for (let slot = 1; slot < expectedForward.length; slot++) {
+  assert(expectedForward[slot] - expectedForward[slot - 1] <= 1, '0.4-hour coarse stepping must never skip a wilderness route chunk');
 }
 
 assert.equal(testApi.coarseStateFor(1, 6, config, { cols: 200, rows: 200 }).active, false, '06:00 is outside the nightly presence window');
 assert.equal(testApi.coarseStateFor(1, 23, config, { cols: 200, rows: 200 }).active, false, 'army does not appear before civil midnight');
 
-const shortNorth = Array.from({ length: 6 }, (_, hour) => testApi.coarseStateFor(1, hour, config, { cols: 97, rows: 65 }).cx);
-assert.deepEqual(shortNorth, [0, 1, 2, 4, 5, 6], 'hour mapping derives from the live route-axis chunk count rather than assuming thirteen chunks');
+const shortNorth = sampleHours.map(hour => testApi.coarseStateFor(1, hour, config, { cols: 97, rows: 65 }).cx);
+assert.deepEqual(shortNorth, [0, 0, 1, 1, 2, 2, 3, 3, 3, 4, 4, 5, 5, 6, 6], 'coarse-step mapping derives from the live route-axis chunk count rather than assuming thirteen chunks');
 
 assert.equal(typeof context.window.HarlyaoNightMarch.debugSnapshot, 'function', 'mobile-accessible structured night-march diagnostics remain exposed');
 assert.equal(typeof context.window.HarlyaoNightMarch.formatDebug, 'function', 'mobile-accessible copyable night-march diagnostics remain exposed');
