@@ -259,22 +259,21 @@
     return applyLeftIdleRule(side, toolKey, weights);
   }
 
-  function currentTargetingEnabled() {
-    // The editor must always show authored shoulder/elbow behavior while the user is authoring it.
-    if (global.HobunjiAttackEditorHandShoulderControls) return true;
+  function rangedWindupStrikeActive() {
+    // The authoring editor should always display exactly what its checkboxes/pose data request.
+    if (global.HobunjiAttackEditorHandShoulderControls) return false;
 
-    // Hold-release thrown weapons run their authored Neutral→Windup before
-    // RangedWeapons creates a playerAction. While that charge exists, the
-    // authored hand quaternion owns the pose completely.
-    if (global.HobunjiRangedWeaponArchetypes?.activeThrownChargeItemKey?.()) return false;
+    // Hold-release thrown weapons spend their visible charge in authored Windup
+    // before RangedWeapons creates the release playerAction.
+    if (global.HobunjiRangedWeaponArchetypes?.activeThrownChargeItemKey?.()) return true;
 
     const action = global.__rangedDebug?.playerAction || null;
-    if (action?.kind !== 'fire' || !action?.itemKey || !(Number(action.durationS) > 0)) return true;
+    if (action?.kind !== 'fire' || !action?.itemKey || !(Number(action.durationS) > 0)) return false;
     const def = global.RangedWeapons?.config?.[action.itemKey] || null;
-    if (!def) return true;
+    if (!def) return false;
     const progress = clamp01(Number(action.t) / Number(action.durationS));
-    const strikeBoundary = clamp01(def.fireAtFrac ?? def.fireStrikeFrac ?? 0.18); // Windup+Strike end; Hold/Return may resume arm targeting.
-    return progress > strikeBoundary;
+    const strikeBoundary = clamp01(def.fireAtFrac ?? def.fireStrikeFrac ?? 0.18); // Windup+Strike are authored; Hold/Return resume ordinary proximal targeting.
+    return progress <= strikeBoundary;
   }
 
   function currentWeights(side) {
@@ -284,7 +283,9 @@
       const toolKey = document.getElementById('toolSpriteSelect')?.value || '';
       return applyLeftIdleRule(side, toolKey, normalize(weights, IDLE));
     }
-    return gameWeights(side);
+    const weights = gameWeights(side);
+    if (!rangedWindupStrikeActive()) return weights;
+    return { ...weights, grip: 0 }; // Ranged Windup/Strike disables the grip-axis correction only; palm-normal targeting still follows the authored elbow/shoulder target.
   }
 
   function currentElbow(side) {
@@ -354,7 +355,7 @@
     elbowAt,
     currentWeights,
     currentElbow,
-    currentTargetingEnabled,
+    rangedWindupStrikeActive,
     installMeleeCapture,
   });
 })(window);
