@@ -47,13 +47,6 @@
     };
   }
 
-  function handTransformAt(x, y, z) {
-    return {
-      position: { x, y, z },
-      rotationDeg: { ...MAO_AO_HAND_TRANSFORM.rotationDeg },
-    };
-  }
-
   function defaultScaleForModel(modelKey) {
     return modelKey === 'parrot' ? PARROT_MODEL_SCALE : DEFAULT_MODEL_SCALE;
   }
@@ -79,35 +72,35 @@
         glb: 'assets/models/hands/hand_pachyderm.glb',
         scale: DEFAULT_MODEL_SCALE,
         mirrorX: true,
-        handFromTool: handTransformAt(-0.01, -0.07, 0.1),
+        handFromTool: maoAoHandTransform(),
         // Legacy no-op retained so older code/config readers do not break.
         toolGrip: identityTransform(),
-        materialRoles: { MAT_None_7a4e2e: 'bone', MAT_EyeSurface_0c0c0c: 'body', 'Mat 1': 'bone', 'Mat 2': 'body' },
+        materialRoles: { MAT_None_7a4e2e: 'body', MAT_EyeSurface_0c0c0c: 'bone' },
       },
       sloth: {
         glb: 'assets/models/hands/hand_sloth.glb',
         scale: DEFAULT_MODEL_SCALE,
         mirrorX: true,
-        handFromTool: handTransformAt(-0.01, -0.32, 0.25),
+        handFromTool: maoAoHandTransform(),
         toolGrip: identityTransform(),
-        materialRoles: { MAT_None_7a4e2e: 'bone', MAT_EyeSurface_0c0c0c: 'body', 'Mat 1': 'bone', 'Mat 2': 'body' },
+        materialRoles: { MAT_None_7a4e2e: 'body', MAT_EyeSurface_0c0c0c: 'bone' },
       },
       feline: {
         glb: 'assets/models/hands/hand_feline.glb',
         scale: DEFAULT_MODEL_SCALE,
         mirrorX: true,
-        handFromTool: handTransformAt(-0.01, -0.07, 0.1),
+        handFromTool: maoAoHandTransform(),
         toolGrip: identityTransform(),
-        materialRoles: { MAT_None_7a4e2e: 'body', 'Mat 1': 'body' },
+        materialRoles: { MAT_None_7a4e2e: 'body' },
       },
       parrot: {
         glb: 'assets/models/hands/hand_parrot.glb',
         scale: PARROT_MODEL_SCALE,
         // Kenkari/Rakako'an use the shared setup with the source handedness flipped.
         mirrorX: false,
-        handFromTool: handTransformAt(-0.01, -0.02, 0.1),
+        handFromTool: maoAoHandTransform(),
         toolGrip: identityTransform(),
-        materialRoles: { MAT_None_7a4e2e: 'keratin', MAT_EyeSurface_0c0c0c: 'body', 'Mat 1': 'keratin', 'Mat 2': 'body' },
+        materialRoles: { MAT_None_7a4e2e: 'body', MAT_EyeSurface_0c0c0c: 'keratin' },
       },
     },
     speciesModels: {
@@ -117,18 +110,9 @@
       'engh-sho': 'feline',
       kenkari: 'parrot',
       rakakoan: 'parrot',
-      harlyao: 'feline',
-      porakaneki: 'pachyderm',
     },
-    speciesScaleOverrides: {
-      tletingan: { male: 0.95, female: 0.925 },
-      'engh-sho': { male: 1.45, female: 1.3 },
-      'mao-ao': { male: 1.2, female: 1.15 },
-      kenkari: { male: 1, female: 0.93 },
-      mashtzarr: { male: 1, female: 0.95 },
-      harlyao: { male: 1.45, female: 1.3 },
-      porakaneki: { male: 1 },
-    },
+    // Missing overrides deliberately inherit proceduralFeet.footScale.
+    speciesScaleOverrides: {},
   };
 
   const LOCAL_KEY = 'hobunji.handModelProfiles.v1';
@@ -360,15 +344,6 @@
       thumbPoints: 'left',
       toolGripOrigin: { x: 0, y: 0, z: 0 },
     };
-    next.speciesModels = { ...clone(DEFAULT_DATA.speciesModels), ...(next.speciesModels || {}) };
-    const savedScaleOverrides = next.speciesScaleOverrides && typeof next.speciesScaleOverrides === 'object' ? next.speciesScaleOverrides : {};
-    next.speciesScaleOverrides = {};
-    for (const [speciesKey, defaultByGender] of Object.entries(DEFAULT_DATA.speciesScaleOverrides)) {
-      next.speciesScaleOverrides[speciesKey] = { ...defaultByGender, ...(savedScaleOverrides[speciesKey] || {}) };
-    }
-    for (const [speciesKey, savedByGender] of Object.entries(savedScaleOverrides)) {
-      if (!next.speciesScaleOverrides[speciesKey]) next.speciesScaleOverrides[speciesKey] = { ...savedByGender };
-    }
     next.models = next.models || {};
     for (const [modelKey, model] of Object.entries(next.models)) {
       if (!model || typeof model !== 'object') continue;
@@ -395,36 +370,6 @@
         // false remains a valid per-model override for a GLB authored as a right hand.
         model.mirrorX = model.mirrorX !== false;
       }
-      // The supplied profile moved only sloth/parrot away from the old shared
-      // Mao'ao position. Upgrade exact untouched old defaults; preserve authored edits.
-      const oldSharedPosition = model.handFromTool?.position;
-      const oldSharedRotation = model.handFromTool?.rotationDeg;
-      const untouchedSharedCalibration = oldSharedPosition
-        && Math.abs(numberOrZero(oldSharedPosition.x) - (-0.01)) < 1e-9
-        && Math.abs(numberOrZero(oldSharedPosition.y) - (-0.07)) < 1e-9
-        && Math.abs(numberOrZero(oldSharedPosition.z) - 0.1) < 1e-9
-        && numberOrZero(oldSharedRotation?.pitch) === 0
-        && numberOrZero(oldSharedRotation?.yaw) === 180
-        && numberOrZero(oldSharedRotation?.roll) === 0;
-      if (modelKey === 'sloth' && untouchedSharedCalibration) model.handFromTool.position = { x: -0.01, y: -0.32, z: 0.25 };
-      if (modelKey === 'parrot' && untouchedSharedCalibration) model.handFromTool.position = { x: -0.01, y: -0.02, z: 0.1 };
-
-      const roles = model.materialRoles || {};
-      const roleKeys = Object.keys(roles).sort().join('|');
-      if ((modelKey === 'pachyderm' || modelKey === 'sloth')
-          && roleKeys === 'MAT_EyeSurface_0c0c0c|MAT_None_7a4e2e'
-          && roles.MAT_None_7a4e2e === 'body' && roles.MAT_EyeSurface_0c0c0c === 'bone') {
-        model.materialRoles = clone(DEFAULT_DATA.models[modelKey].materialRoles);
-      } else if (modelKey === 'feline'
-          && roleKeys === 'MAT_None_7a4e2e'
-          && roles.MAT_None_7a4e2e === 'body') {
-        model.materialRoles = clone(DEFAULT_DATA.models.feline.materialRoles);
-      } else if (modelKey === 'parrot'
-          && roleKeys === 'MAT_EyeSurface_0c0c0c|MAT_None_7a4e2e'
-          && roles.MAT_None_7a4e2e === 'body' && roles.MAT_EyeSurface_0c0c0c === 'keratin') {
-        model.materialRoles = clone(DEFAULT_DATA.models.parrot.materialRoles);
-      }
-
       // Older hand-profile drafts may still contain model.shoulderAim. It is now
       // deliberately discarded because shoulder-axis choices belong to poses.
       delete model.shoulderAim;
