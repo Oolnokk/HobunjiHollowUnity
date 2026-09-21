@@ -388,13 +388,13 @@ for (const toolKey of ['hatchet','hoe','bshuakauitl','pickshovel','daggersword',
     `${toolKey} must inherit hatchet's primary-grip rotation`,
   );
 }
-assert.strictEqual(grips.data.rangedGripPreset, 'melee-ranged-split-20260920-v5-authored-values', 'Committed grip data must advertise the authored-value revision.');
+assert.strictEqual(grips.data.rangedGripPreset, 'melee-ranged-split-20260920-v6-end-flip-adjusted', 'Committed grip data must advertise the end-flip-adjusted ranged-grip revision.');
 assert.strictEqual(grips.toolScaleForTool('dagger'), 0.55, 'Dagger must use the editor-authored 0.55 item scale.');
 assert.strictEqual(grips.authoredPrimaryGripForTool('dagger', 'melee').position.z, -0.09, 'Dagger melee grip keeps its authored blade-side Z.');
 assert.deepStrictEqual(
   JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('dagger', 'ranged').position)),
-  { x: 0, y: -0.05, z: -0.3 },
-  'Dagger ranged grip must use the editor-authored flipped hand target independently of melee.',
+  { x: 0, y: -0.05, z: 0.28 },
+  'Dagger ranged grip must use the end-flip-adjusted hand target independently of melee.',
 );
 assert.deepStrictEqual(
   JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('dagger', 'ranged').rotationDeg)),
@@ -403,11 +403,11 @@ assert.deepStrictEqual(
 );
 const unsplitSnapshot = grips.clone();
 grips.mutate(data => {
-  data.tools.dagger.rangedPrimaryGrip.position.z = 0.28;
+  data.tools.dagger.rangedPrimaryGrip.position.z = 0.31;
   data.tools.dagger.rangedPrimaryGrip.rotationDeg.roll = 180;
 });
 assert.strictEqual(grips.authoredPrimaryGripForTool('dagger', 'melee').position.z, -0.09, 'Editing ranged dagger Z must not alter its melee grip.');
-assert.strictEqual(grips.authoredPrimaryGripForTool('dagger', 'ranged').position.z, 0.28, 'Ranged dagger Z must remain independently authorable.');
+assert.strictEqual(grips.authoredPrimaryGripForTool('dagger', 'ranged').position.z, 0.31, 'Ranged dagger Z must remain independently authorable.');
 assert.strictEqual(grips.authoredPrimaryGripForTool('dagger', 'melee').rotationDeg.roll, 0, 'Editing ranged dagger rotation must not alter melee rotation.');
 assert.strictEqual(grips.authoredPrimaryGripForTool('dagger', 'ranged').rotationDeg.roll, 180, 'Ranged dagger rotation can still be edited independently.');
 grips.replace(unsplitSnapshot);
@@ -430,8 +430,8 @@ grips.replace(v1AutoGuessDraft);
 assert.strictEqual(grips.toolScaleForTool('dagger'), 0.55, 'Untouched short-lived v1 dagger auto-scale must migrate to the final authored scale.');
 assert.deepStrictEqual(
   JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('dagger', 'ranged').position)),
-  { x: 0, y: -0.05, z: -0.3 },
-  'Untouched short-lived v1 dagger auto-grip must migrate to the final authored ranged target.',
+  { x: 0, y: -0.05, z: 0.28 },
+  'Untouched short-lived v1 dagger auto-grip must migrate to the final adjusted ranged target.',
 );
 
 const v4CloneDraft = grips.clone();
@@ -442,9 +442,26 @@ grips.replace(v4CloneDraft);
 assert.strictEqual(grips.toolScaleForTool('dagger'), 0.55, 'Untouched v4 melee-clone dagger scale must migrate to the authored 0.55 value.');
 assert.deepStrictEqual(
   JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('dagger', 'ranged').position)),
-  { x: 0, y: -0.05, z: -0.3 },
-  'Untouched v4 melee-clone ranged dagger target must migrate to the authored ranged target.',
+  { x: 0, y: -0.05, z: 0.28 },
+  'Untouched v4 melee-clone ranged dagger target must migrate to the adjusted ranged target.',
 );
+
+const v5EndFlipDraft = grips.clone();
+v5EndFlipDraft.rangedGripPreset = 'melee-ranged-split-20260920-v5-authored-values';
+v5EndFlipDraft.tools.dagger.toolScale = 0.55;
+v5EndFlipDraft.tools.dagger.rangedPrimaryGrip = { position: { x: 0, y: -0.05, z: -0.3 }, rotationDeg: { ...sharedHatchetRotation } };
+grips.replace(v5EndFlipDraft);
+assert.deepStrictEqual(
+  JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('dagger', 'ranged').position)),
+  { x: 0, y: -0.05, z: 0.28 },
+  'Untouched v5 ranged dagger target must migrate from the pre-correction Z to the end-flip-adjusted Z.',
+);
+
+const customV5Draft = grips.clone();
+customV5Draft.rangedGripPreset = 'melee-ranged-split-20260920-v5-authored-values';
+customV5Draft.tools.dagger.rangedPrimaryGrip.position.z = -0.22;
+grips.replace(customV5Draft);
+assert.strictEqual(grips.authoredPrimaryGripForTool('dagger', 'ranged').position.z, -0.22, 'Custom v5 ranged dagger edits must not be overwritten by the narrow migration.');
 
 const oldRotationDraft = grips.clone();
 delete oldRotationDraft.primaryRotationPreset;
@@ -583,6 +600,9 @@ assert.match(shoulderAimSource, /elbowPoseAuthoritative: true/, 'paper-arm previ
 assert.match(shoulderAimSource, /visualOnly: true/, 'paper-arm geometry itself must remain visualization-only');
 assert.match(shoulderAimSource, /setPaperArmGuideVisible/, 'editor must be able to toggle paper-arm guides on already-created rigs');
 assert.match(shoulderAimSource, /currentElbow\?\.\(side\)/, 'runtime hand targeting must consume the interpolated direct per-side elbow pose');
+assert.match(shoulderAimSource, /currentTargetingEnabled\?\.\(\) === false[\s\S]*socket\.quaternion\.copy\(authoredQuaternion\)[\s\S]*return false;[\s\S]*const elbowSolve = resolveElbowInParent/, 'ranged Windup\/Strike suppression must restore the authored hand quaternion and return before resolving any shoulder\/elbow target');
+assert.match(shoulderPoseRuntimeSource, /activeThrownChargeItemKey\?\.\(\)[\s\S]*return false/, 'held thrown-weapon Windup must disable shoulder\/elbow targeting before a ranged playerAction exists');
+assert.match(shoulderPoseRuntimeSource, /action\?\.kind !== 'fire'[\s\S]*strikeBoundary[\s\S]*return progress > strikeBoundary/, 'ranged fire targeting must stay disabled through the Strike boundary and resume for Hold\/Return');
 assert.match(shoulderAimSource, /shoulder\.x \+ Number\(authoredOffset\.x/, 'authored elbow coordinates must be direct shoulder-relative pose offsets');
 assert.match(shoulderAimSource, /legacy-shoulder-target/, 'older animations without elbows must retain the old shoulder target instead of calculating a runtime midpoint');
 assert.doesNotMatch(shoulderAimSource, /copy\(shoulder\)\.add\(socket\.position\)\.multiplyScalar\(0\.5\)/, 'runtime must never synthesize the authoring midpoint');
@@ -829,5 +849,29 @@ for (const removed of [
   'docs/js/portrait-arm-compass.js',
   'docs/js/procedural-hand-compass-aim.js',
 ]) assert(!fs.existsSync(path.join(root, removed)), `${removed} should be physically removed`);
+
+// Ranged authored Windup/Strike owns the hand completely; shoulder/elbow targeting resumes only after Strike.
+let activeThrownCharge = 'fishingspear_nativeCopper';
+const shoulderPoseGateSandbox = {
+  window: {
+    setInterval: () => 0,
+    HobunjiRangedWeaponArchetypes: { activeThrownChargeItemKey: () => activeThrownCharge },
+    __rangedDebug: { playerAction: null },
+    RangedWeapons: { config: { fishingspear_nativeCopper: { fireAtFrac: 0.2 } } },
+  },
+  console,
+};
+vm.runInNewContext(shoulderPoseRuntimeSource, shoulderPoseGateSandbox, { filename: 'hand-shoulder-pose-runtime.js' });
+const shoulderPoseGate = shoulderPoseGateSandbox.window.HobunjiHandShoulderPoseRuntime;
+assert.strictEqual(shoulderPoseGate.currentTargetingEnabled(), false, 'held thrown Windup must suppress shoulder/elbow targeting');
+activeThrownCharge = null;
+shoulderPoseGateSandbox.window.__rangedDebug.playerAction = { itemKey: 'fishingspear_nativeCopper', kind: 'fire', t: 0.1, durationS: 1 };
+assert.strictEqual(shoulderPoseGate.currentTargetingEnabled(), false, 'ranged Strike approach must keep shoulder/elbow targeting suppressed');
+shoulderPoseGateSandbox.window.__rangedDebug.playerAction.t = 0.2;
+assert.strictEqual(shoulderPoseGate.currentTargetingEnabled(), false, 'the exact Strike boundary is still animation-owned');
+shoulderPoseGateSandbox.window.__rangedDebug.playerAction.t = 0.21;
+assert.strictEqual(shoulderPoseGate.currentTargetingEnabled(), true, 'Hold/Return immediately after Strike may resume shoulder/elbow targeting');
+shoulderPoseGateSandbox.window.__rangedDebug.playerAction.kind = 'load';
+assert.strictEqual(shoulderPoseGate.currentTargetingEnabled(), true, 'reload/load actions are unchanged by the throw/fire suppression rule');
 
 console.log('procedural hands: per-pose shoulder lerp + manual/fallback shoulder points + direct sockets PASS');
