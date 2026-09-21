@@ -554,13 +554,9 @@
       new THREE.MeshBasicMaterial({ map: texture, transparent: true, alphaTest: 0.08, side: THREE.DoubleSide })
     );
     if (weaponSprite && !hasExactSourcePlane) plane.scale.y = pendingAspect;
-    const projectileDirectionSwap = !sourceTransform && def.rangedType === 'thrown' && def.toolEndFlip === true; // Used only as a fallback when no held plane was sampled; a sampled held quaternion already contains the spear/knife's exact visible end-for-end orientation.
+    const projectileDirectionSwap = !sourceTransform && def.rangedType === 'thrown' && def.toolEndFlip === true; // Fallback only: sampled player throws already carry the exact held Tool-Z end flip inside their launch quaternion.
     if (weaponSprite && projectileDirectionSwap) {
-      const uv = plane.geometry?.attributes?.uv; // Used only by unsampled fallback projectile copies; sampled player throws must not double-flip the held weapon.
-      if (uv) {
-        for (let i = 0; i < uv.count; i++) uv.setY(i, 1 - uv.getY(i));
-        uv.needsUpdate = true;
-      }
+      plane.rotation.z = Math.PI; // Tool End Flip is a 180° rotation around local Tool Z, not a UV mirror or Tool-X plane reversal.
     }
     // Do not pre-rotate this plane. Its raw local +Y/+Z axes are the sampled
     // PNG plane axes: the launch quaternion supplies the exact Strike transform
