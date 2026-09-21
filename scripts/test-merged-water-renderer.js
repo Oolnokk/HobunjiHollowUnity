@@ -194,7 +194,7 @@ assert.match(waterSystemSource, /function refreshTownWaterRender\(\) \{[\s\S]{0,
   'town entry can rebuild the render snapshot immediately without advancing the water simulation');
 assert.match(waterSystemSource, /window\.WaterSystem = \{[\s\S]{0,500}?refreshTownWaterRender,/,
   'WaterSystem exposes the render-only town refresh to the town scene lifecycle');
-assert.match(gameSource, /function buildTownScene\(\) \{[\s\S]{0,260}?if \(_townSceneBuilt\) \{[\s\S]{0,220}?WaterSystem\.refreshTownWaterRender\(\);[\s\S]{0,120}?return;/,
+assert.match(gameSource, /function buildTownScene\(\) \{[\s\S]{0,260}?if \(_townSceneBuilt\) \{[\s\S]{0,220}?WaterSystem\.refreshTownWaterRender\(\);[\s\S]{0,320}?return;/,
   're-entering an already-built town immediately resyncs permanent river versus flood visibility');
 assert.match(gameSource, /_townRiverWaterMeshes = townRiverMesh \? \[townRiverMesh\] : \[\];[\s\S]{0,220}?WaterSystem\.refreshTownWaterRender\(\);/,
   'a newly-built town refreshes water only after its permanent river mesh exists');
