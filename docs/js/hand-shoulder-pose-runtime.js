@@ -196,7 +196,7 @@
   global.setInterval?.(captureLoop, 250); // Polls only for global.Combat.deps to become available; the post-install check is a cheap no-op, so no per-frame cadence is needed.
 
   function rangedWeights(side) {
-    const action = global.__rangedDebug?.playerAction || null;
+    const action = global.RangedWeapons?.playerActionState?.() || null;
     if (!action?.itemKey || !action?.kind || !(Number(action.durationS) > 0)) return null;
     const def = global.RangedWeapons?.config?.[action.itemKey] || null;
     if (!def) return null;
@@ -224,7 +224,7 @@
     const ranged = rangedWeights(side);
     if (ranged) return ranged;
 
-    const snapshot = global.WeaponToolStances?.debugSnapshot?.() || null;
+    const snapshot = global.WeaponToolStances?.getRuntimeState?.() || null;
     const active = snapshot?.combatNeutralInjected === true && Number.isFinite(Number(snapshot?.combatProgress));
     if (!active) {
       capturedMelee = null;
@@ -286,7 +286,7 @@
     const editor = global.HobunjiAttackEditorHandShoulderControls;
     if (editor?.currentElbow) return normalizeElbowPoint(editor.currentElbow(side));
 
-    const action = global.__rangedDebug?.playerAction || null;
+    const action = global.RangedWeapons?.playerActionState?.() || null;
     if (action?.itemKey && action?.kind && Number(action.durationS) > 0) {
       const def = global.RangedWeapons?.config?.[action.itemKey] || null;
       if (def) {
@@ -305,7 +305,7 @@
       }
     }
 
-    const snapshot = global.WeaponToolStances?.debugSnapshot?.() || null;
+    const snapshot = global.WeaponToolStances?.getRuntimeState?.() || null;
     const active = snapshot?.combatNeutralInjected === true && Number.isFinite(Number(snapshot?.combatProgress));
     if (!active) return null;
     const rawPose = capturedMelee?.opts?.pose;
