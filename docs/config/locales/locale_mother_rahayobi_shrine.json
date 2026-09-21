@@ -4,7 +4,7 @@
   "name": "Mother Rahayobi's Shrine",
   "category": "great_fey_shrine",
   "singleton": true,
-  "description": "A Great Fey shrine sacred to Mother Rahayobi, hidden in the wilderness.",
+  "description": "A Great Fey shrine sacred to Mother Rahayobi in the Eastern Mire.",
   "tags": [
     "great_fey",
     "shrine",
@@ -140,11 +140,13 @@
     }
   ],
   "placement": {
-    "allowedZones": [],
+    "allowedZones": [
+      "map_eastern_mire"
+    ],
     "clearanceTiles": 1,
     "requiresFlatGround": true,
     "minDistanceFromEntry": 0,
-    "notes": ""
+    "notes": "Mother Rahayobi's shrine belongs only to the Eastern Mire."
   },
   "meta": {
     "createdAt": "2026-07-19T00:00:00.000Z",
