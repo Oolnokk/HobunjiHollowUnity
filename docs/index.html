@@ -14,7 +14,7 @@
   <script src="js/GLTFLoader.js?v=20260712d"></script>
   <script src="js/WallBuilder.js?v=20260809a"></script>
   <script src="js/HousePieceGen.js?v=20260809a"></script>
-  <script src="js/interior-scene-builder.js?v=20260902cavesafe1"></script>
+  <script src="js/interior-scene-builder.js?v=20260921banubufloor1"></script>
   <script src="js/building-door.js?v=20260725a"></script>
   <script src="js/tile-pathfinding.js?v=20260808a"></script>
   <!-- Small formatting/math helpers (esc/clamp/roundRect/formatClock/etc.)
@@ -205,7 +205,7 @@
   <script src="js/banubu-quest-content.js?v=20260919tea1"></script>
        editors save edited repo-tracked JSON into localStorage and have the
        game load that instead of the repo file when Local source is selected. -->
-  <script src="js/local-db-overrides.js?v=20260920orbit1"></script>
+  <script src="js/local-db-overrides.js?v=20260921namedanimal1"></script>
   <script>
     // species-pose-scaling parser-loads earlier for avatar consumers, then
     // re-resolves its config now that LocalDBOverrides knows the selected
@@ -662,7 +662,7 @@
        Framework-agnostic pure data/math — must load before cavern-generator.js,
        whose generateCavernFloor calls window.CavernSculptor.carveMazeCavern(...). -->
   <script src="js/cavern-sculptor.js?v=20260902cavesafe1"></script>
-  <script src="js/cavern-generator.js?v=20260902cavesafe1"></script>
+  <script src="js/cavern-generator.js?v=20260921banubufloor1"></script>
   <script src="js/town-mine.js?v=20260919combatbgm2"></script>
   <!-- A wilderness zone's in-bounds elevated plateau/mesa terrain
        (window.ZonePlateauMesa) — pure scene-graph generation, no other
@@ -2498,7 +2498,7 @@
        exported functions) and before game.js (whose boot calls into all
        three and reads window.DevTestingSwitchbox.flags directly). -->
   <script src="js/dev-testing-switchbox.js?v=20260912a"></script>
-  <script src="game.js?v=20260921banubuclip1"></script>
+  <script src="game.js?v=20260921banubufloor1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
   <script src="js/controller-ui-nav.js?v=20260915perf1"></script>
   <script>
