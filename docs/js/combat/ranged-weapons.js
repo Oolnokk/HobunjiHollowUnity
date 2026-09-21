@@ -35,8 +35,8 @@
   const _projectileInverseQuaternion = new THREE.Quaternion();
   const _projectileCurrentFlightDir = new THREE.Vector3(); // Reused to bend a projectile's launch-frame visual along an authored downward arc without camera steering.
   const _projectileTrajectoryDeltaQuaternion = new THREE.Quaternion(); // World-space delta from launch direction to current curved-flight direction.
-  const _projectileFallbackToolZFlipQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI); // In flightVisualQuaternion, projectile local +Y is the sprite/tool length axis; that is the held pose's Tool Z after its fixed -90° PNG-plane basis.
-  const _projectileLocalPlaneZ = new THREE.Vector3(0, 0, 1); // Local sprite-plane normal used for authored in-plane projectile-only quarter-turn corrections.
+  const _projectileLocalPlaneZ = new THREE.Vector3(0, 0, 1); // Local sprite-plane normal: held Tool End Flip and projectileBasisDeg are both visible in-plane rotations around this axis.
+  const _projectileFallbackEndFlipQuaternion = new THREE.Quaternion().setFromAxisAngle(_projectileLocalPlaneZ, Math.PI); // Unsampled throws reproduce the same visible tip↔handle reversal as the held PNG plane.
   const _projectileBasisQuaternion = new THREE.Quaternion(); // Reused when applying projectileBasisDeg without allocating a quaternion per shot.
   const PROJECTILE_TRAIL_MAX_POINTS = 14; // Caps each comet ribbon's geometry and per-frame update cost.
   const PROJECTILE_TRAIL_MAX_LANES = 4; // Mirrors the melee trail's readable multi-affliction lane limit.
@@ -417,6 +417,14 @@
   function cancelPlayerHold() {
     deps.cancelRangedWeaponHold?.();
     window.ProceduralHandGripRuntime?.clear?.();
+  }
+
+  function isPlayerThrownFireThroughStrike() {
+    const action = playerAction;
+    if (action?.kind !== 'fire' || action.def?.rangedType !== 'thrown' || !(Number(action.durationS) > 0)) return false;
+    const progress = Math.max(0, Math.min(1, Number(action.t) / Number(action.durationS)));
+    const strikeBoundary = Math.max(0, Math.min(1, Number(action.def.fireAtFrac ?? action.def.fireStrikeFrac ?? 0.18)));
+    return progress <= strikeBoundary;
   }
 
   function startPlayerAction(itemKey, options = {}) {
@@ -821,13 +829,12 @@
     const baseVisualQuaternion = (shotOptions?.preserveSourceOrientation && sourceTransform?.quaternion?.isQuaternion)
       ? sourceTransform.quaternion.clone()
       : flightVisualQuaternion(direction, mesh.position, new THREE.Quaternion());
-    const fallbackToolZFlip = !sourceTransform && def.rangedType === 'thrown' && def.toolEndFlip === true;
-    if (fallbackToolZFlip) {
+    const fallbackEndFlip = !sourceTransform && def.rangedType === 'thrown' && def.toolEndFlip === true;
+    if (fallbackEndFlip) {
       // Unsampled enemy/fallback throws have no held plane quaternion to copy.
-      // The flight frame maps sprite length to local Y, which corresponds to
-      // the held tool's Z after the fixed PNG-plane basis. Post-multiplying
-      // this local-Y half-turn therefore reproduces the actual Tool-Z flip.
-      baseVisualQuaternion.multiply(_projectileFallbackToolZFlipQuaternion);
+      // Tool End Flip is now a visible in-plane 180° turn, so reproduce it on
+      // the projectile's local PNG-plane normal—not around its length axis.
+      baseVisualQuaternion.multiply(_projectileFallbackEndFlipQuaternion);
     }
     const projectileBasisDeg = Number(def.projectileBasisDeg) || 0; // Projectile-only in-plane correction; does not modify the held throw spin or Tool End Flip.
     if (projectileBasisDeg) {
@@ -1682,6 +1689,7 @@
   window.RangedWeapons = {
     init, applyConfig, startPlayerAction, cancelPlayerAction, playerActionLabel,
     triggerPlayerVisual, playerWindupPoseProgress, releasePlayerHold, cancelPlayerHold,
+    isPlayerThrownFireThroughStrike,
     isLoaded, setLoaded, update, updateBanditAI, updateBanditVisual,
     cancelBanditAction, disposeOwner, playerLockRangePx, playerIdlePose: itemKey => idlePose(itemKey),
     isPlayerAttacking: () => playerAction?.kind === 'fire', // Lets shared body-facing logic distinguish firing from the visually similar reload action.
