@@ -259,13 +259,14 @@
   async function renderCreatureProfile(canvas, profile, options = {}) {
     const kind = creatureKindForProfile(profile, options);
     if (!kind) return false;
-    const source = await sourceForCreature(kind, profile, options);
-    if (!source) return false;
-    const appearance = appearanceFor(profile, options);
-    const opacity = appearance.animalOpacity ?? profile?.animalOpacity ?? 1;
     const chathead = options.animalChathead === true
       || canvas?.id === 'npcPortraitCanvas'
       || String(options?.seatId || '').startsWith('ambient:');
+    const dialogueEyesClosed = chathead && profile?.npcRecord?._animalDialogueEyesOpen === false; // Sleeping named animals can keep the blink/closed-eye overlay through pre-wake dialogue attempts.
+    const source = await sourceForCreature(kind, profile, { ...options, blinkShut: options.blinkShut === true || dialogueEyesClosed });
+    if (!source) return false;
+    const appearance = appearanceFor(profile, options);
+    const opacity = appearance.animalOpacity ?? profile?.animalOpacity ?? 1;
     const rendered = chathead
       ? drawChathead(source, canvas, kind, opacity)
       : drawFullFrame(source, canvas, opacity);
