@@ -71,10 +71,13 @@
         secondaryGripSpan: { enabled: true, startZ: -0.54, endZ: -0.39 },
       },
       dagger: {
-        toolScale: 1.00,
+        toolScale: 0.55,
         primaryGrip: { position: { x: HATCHET_PRIMARY_GRIP_EXAMPLE.x, y: HATCHET_PRIMARY_GRIP_EXAMPLE.y, z: -0.09 }, rotationDeg: { ...HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg } },
+        rangedPrimaryGrip: { position: { x: HATCHET_PRIMARY_GRIP_EXAMPLE.x, y: HATCHET_PRIMARY_GRIP_EXAMPLE.y, z: 0.28 }, rotationDeg: { ...HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg } },
         gripMode: null,
+        rangedGripMode: null,
         secondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
+        rangedSecondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
       },
       kylie: {
         toolScale: 1.05,
