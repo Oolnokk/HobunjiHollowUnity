@@ -24531,6 +24531,7 @@
             let _pressSlot = null; // 1 or 2 while a weapon tool-action button is mid-press
             let _heldItemPress = false; // true while a holdToCommit action (consume_held_item / processor insertion) is mid-press
             let _selectorHoldTimer = null, _selectorArcOpen = false, _selectorKind = null; // Ammo and potions both require a sustained original input and commit on its release.
+            let _selectorDownX = 0, _selectorDownY = 0, _selectorMoved = false; // Used to keep normal touch jitter from selecting an arch entry before a Potion Select tap can resolve as bandaging.
             let _flaskGesture = false, _flaskCanceled = false; // Used by mobile hold-drag-release flask aiming.
             const DRAG_THRESH = 10;
             // Legacy behavior: holding+dragging an action button like a stick used to
@@ -24613,8 +24614,9 @@
               if (_flaskGesture && !window.AlchemyFlasks?.aiming) _abtFire(); // Mobile press enters aim without consuming.
               if (act === 'ammo_select' || act === 'potion_select') {
                 _selectorKind = act === 'ammo_select' ? 'ammo' : 'potions';
+                _selectorDownX = ev.clientX; _selectorDownY = ev.clientY; _selectorMoved = false; // A tap stays centered logically even if the browser emits tiny pointermove jitter.
                 window._desktopSelectionArc?.beginHeldSelection?.(_selectorKind); // Lets a physical mouse wheel navigate while this on-screen button owns the hold.
-                _selectorArcOpen = true; // These actions have no tap behavior to preserve, so show their choices as soon as the held input begins.
+                _selectorArcOpen = true; // Show choices immediately; deliberate drag, not incidental touch jitter, is what changes the highlighted choice.
                 if (_selectorKind === 'ammo') window._desktopSelectionArc?.openAmmo();
                 else window._desktopSelectionArc?.openPotions();
               }
@@ -24655,7 +24657,9 @@
                 return;
               }
               if (_selectorKind) {
-                if (_selectorArcOpen) window._desktopSelectionArc?.movePointer(ev.clientX, ev.clientY);
+                const selectorTravel = Math.hypot(ev.clientX - _selectorDownX, ev.clientY - _selectorDownY); // Compare against the finger's actual press point, not the action-button center.
+                if (!_selectorMoved && selectorTravel > DRAG_THRESH) _selectorMoved = true;
+                if (_selectorArcOpen && _selectorMoved) window._desktopSelectionArc?.movePointer(ev.clientX, ev.clientY);
                 return;
               }
               // Held-item hold-to-commit actions (eating/drinking/inserting)
@@ -24719,6 +24723,7 @@
               _drag = false;
               _chargeFiredOnPress = false;
               _selectorArcOpen = false;
+              _selectorMoved = false;
               if (_selectorKind) window._desktopSelectionArc?.endHeldSelection?.();
               _selectorKind = null;
               document.querySelectorAll('.flask-cancel-hover').forEach(button => button.classList.remove('flask-cancel-hover'));

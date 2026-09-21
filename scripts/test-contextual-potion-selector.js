@@ -33,6 +33,7 @@ let heldItemKey = null; // Exact ordinary item key committed by the fake game.js
 let heldItemLabel = null; // Friendly label for assertions/debug.
 let activeCombatSlot = 'ranged'; // Exact combat slot Potion Select must restore.
 let weaponSwitchClicks = 0; // Confirms restoration uses the real quick-switch seam.
+let bandageStarts = 0; // Confirms an untouched quick Potion Select tap routes to BandageSystem instead of Cancel.
 const listeners = new Map(); // Minimal CustomEvent bus.
 const injectedNodes = new Map(); // Minimal style-node registry for the selector's spacer CSS.
 const itemName = { textContent:'Potion of Strength' }; // Deliberately stale: reproduces the old wrong-item bug.
@@ -187,6 +188,10 @@ global.window = {
   _desktopSelectionArc:arc,
   SharedSelectionArch:arc,
   WeaponToolStances:{ debugSnapshot:() => ({ activeSlot:activeCombatSlot }) },
+  BandageSystem:{
+    start() { bandageStarts++; return true; },
+    debugSnapshot() { return { lastError:null }; },
+  },
 };
 window.AlchemySystem = {
   RECIPE_DEFS:defs,
@@ -200,6 +205,15 @@ window.AlchemySystem = {
 require(path.join(__dirname, '..', 'docs/js/mobile-potion-category-drag.js'));
 const selector = window._desktopSelectionArc;
 const debug = () => window.ContextualPotionSelector.diagnostics();
+
+// An untouched quick tap is now the free bandage gesture; it must close the
+// root without changing held equipment or entering the potion hierarchy.
+selector.openPotions();
+const combatSlotBeforeBandage = activeCombatSlot;
+selector.releaseSelection();
+assert.strictEqual(bandageStarts, 1, 'quick untouched Potion Select release must start bandaging');
+assert.strictEqual(activeCombatSlot, combatSlotBeforeBandage, 'bandaging must preserve the current combat stance');
+assert.strictEqual(debug().lastTapBandage.started, true, 'tap-to-bandage routing must be visible in diagnostics');
 
 // Reproduce the reported bug: HUD text claims Strength while the underlying
 // ordinary item index is Control Remedy. Exact-key routing must ignore it.

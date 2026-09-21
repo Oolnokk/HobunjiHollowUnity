@@ -273,7 +273,9 @@ assert.match(actionArcUi, /_arcMove\(px, py\); \/\/ Re-evaluate the same continu
 assert.match(actionArcUi, /_openPotionItems\(category\.id\);[\s\S]*_arcMove\(px, py\); \/\/ The replacement Cancel button/, 'continuous drag must focus the replacement Cancel without another pointer event');
 assert.match(actionArcUi, /entries:potion-items-[\s\S]*Math\.max\(0, Math\.min\(_arcSlots\.length - 1, nextIndex\)\)/, 'final potion lists must clamp so repeated wheel events cannot wrap past Cancel');
 assert.match(game, /potionAction3Press\.held = true; \/\/ Potion Select is exclusively[\s\S]*openPotions\(\)/, 'held potion input must display Medicine and Utility immediately rather than waiting for wheel movement');
-assert.match(game, /_selectorArcOpen = true; \/\/ These actions have no tap behavior[\s\S]*openPotions\(\)/, 'pointer-held potion input must also display its root options immediately');
+assert.match(game, /_selectorArcOpen = true; \/\/ Show choices immediately[\s\S]*openPotions\(\)/, 'pointer-held potion input must also display its root options immediately');
+assert.match(game, /_selectorDownX = ev\.clientX; _selectorDownY = ev\.clientY; _selectorMoved = false;/, 'mobile potion/ammo selector gestures must remember the true touch-down point');
+assert.match(game, /selectorTravel = Math\.hypot\(ev\.clientX - _selectorDownX, ev\.clientY - _selectorDownY\)[\s\S]*selectorTravel > DRAG_THRESH[\s\S]*_selectorArcOpen && _selectorMoved[\s\S]*movePointer/, 'mobile selector pointer jitter must not move the arch until the touch exceeds the deliberate drag threshold');
 assert.match(style, /\.arc-slot\.potion-cancel[\s\S]*\.arc-slot\.potion-cancel\.arc-active/, 'Cancel must have readable idle and selected presentation');
 assert.match(actionArcUi, /_openPotionRoot\(\)[\s\S]*_outerR\(\)[\s\S]*function _openPotionBranch[\s\S]*_outerR\(\)[\s\S]*function _openPotionItems[\s\S]*_outerR\(\)/, 'all potion hierarchy levels must use the ordinary tool/item arch radius');
 assert.doesNotMatch(actionArcUi, /_openPotion(?:Root|Branch|Items)[\s\S]{0,1400}_innerR\(/, 'potion selectors must not use the smaller inner-ring radius');

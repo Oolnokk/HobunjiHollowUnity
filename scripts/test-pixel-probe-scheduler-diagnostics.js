@@ -32,6 +32,10 @@ assert(source.includes('const animalSleepLines = _pixelProbeAnimalSleepLines();'
 assert(source.includes('if (animalSleepLines) lines.push(...animalSleepLines);'), 'animal-sleep diagnostics must be merged into the same mobile report');
 assert(source.includes("beginExternalRenderScope?.('pixel-probe')"), 'Pixel Probe rerenders must explicitly request live sleep presentation');
 assert(source.includes('endExternalRenderScope?.()'), 'Pixel Probe rerenders must restore explicit sleep presentation afterward');
+assert(source.includes('window.BandageSystem?.debugSnapshot?.()'), 'Pixel Probe must include live bandage runtime diagnostics for mobile testing');
+assert(source.includes('Bandage: ${bandageDebug.active'), 'Pixel Probe must emit a compact copyable Bandage status line');
+assert(source.includes('window.ContextualPotionSelector?.diagnostics?.()'), 'Pixel Probe must expose Potion Select tap classification without DevTools');
+assert(source.includes('Potion Select bandage tap:'), 'Pixel Probe must report the most recent tap-to-bandage routing result');
 assert(!source.includes('WebGLRenderer.prototype.render ='), 'Pixel Probe integration must not recreate a global renderer monkey-patch');
 
 const match = source.match(/function _pixelProbeSchedulerLines\(\) \{[\s\S]*?\n  \}\n/);

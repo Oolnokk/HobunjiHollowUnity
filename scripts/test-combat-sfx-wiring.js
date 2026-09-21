@@ -23,11 +23,14 @@ const expectedAssets = [
   'sfx_blunt_hit_small.mp3', 'sfx_blunt_hit_medium.mp3', 'sfx_blunt_hit_large.mp3', 'sfx_blunt_hit_huge.mp3',
   'sfx_block.mp3',
   'sfx_arrow_hit.mp3',
+  'sfx_bandage_start.mp3', 'sfx_bandage_loop.mp3',
 ];
 for (const file of expectedAssets) {
   assert(fs.existsSync(`docs/assets/audio/sfx/combat/${file}`), `missing combat asset ${file}`);
   assert(config.includes(`assets/audio/sfx/combat/${file}`), `combat config does not wire ${file}`);
 }
+assert.match(config, /"bandageStart": \{[^\n]*"gainBoost": 2/, 'bandage start must use true 2x WebAudio gain');
+assert.match(config, /"bandageLoop": \{[^\n]*"preload": true, "overlapMs": 120/, 'bandage loop must preload and overlap each pass by 120 ms');
 
 assert(core.includes('action.data?.comboStep'), 'staged swing playback must receive the combo step');
 assert.equal(attackValues.combo.COMBO_RESET_S, 1.8, 'authored combo reset window must be doubled to 1.8 seconds');
@@ -70,6 +73,8 @@ const combatSfx = {
   weaponHitSharpHuge: { url: 'sharp-huge.mp3', volume: 1, preload: true },
   counterShieldBlock: { url: 'block.mp3', volume: 1, preload: true },
   rangedImpact: { url: 'arrow-hit.mp3', volume: 1, preload: true },
+  bandageStart: { url: 'bandage-start.mp3', volume: 1, gainBoost: 2 },
+  bandageLoop: { url: 'bandage-loop.mp3', volume: 1, preload: true, overlapMs: 120 },
 };
 const context = {
   Audio: FakeAudio,
@@ -88,7 +93,10 @@ context.window.AudioSystem.init({
 });
 // 6 combat cues x 2-voice pool, plus the 3 runtime-owned hard-footstep
 // recordings (always preloaded regardless of config) x their own 2-voice pool.
-assert.equal(FakeAudio.loads, 18, 'each configured low-latency combat cue should fill its two-voice pool');
+assert.equal(FakeAudio.loads, 20, 'each configured low-latency combat cue should fill its two-voice pool');
+
+const bandageLoopVoice = context.window.AudioSystem.playCombatSfxKey('bandageLoop');
+assert(bandageLoopVoice instanceof FakeAudio, 'semantic combat-SFX playback should return its started voice for lifecycle control');
 
 context.window.AudioSystem.playWeaponSlashSfx(undefined, 0);
 let debug = context.window.AudioSystem.combatSfxDebugSnapshot();
@@ -110,6 +118,6 @@ debug = context.window.AudioSystem.combatSfxDebugSnapshot();
 assert.equal(debug.last.key, 'rangedImpact');
 assert.equal(debug.last.detail.rangedImpact, true);
 assert.equal(debug.maxStartDelayMs, 140, 'stale mobile combat play requests need a strict deadline');
-assert.equal(FakeAudio.plays, 4, 'swing, melee impact, block, and arrow impact should each render exactly once');
+assert.equal(FakeAudio.plays, 5, 'named bandage loop plus swing, melee impact, block, and arrow impact should each render exactly once');
 
 console.log('combat SFX wiring: ok');

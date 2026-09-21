@@ -1,6 +1,6 @@
-// Contextual held Potion Select adapter.
-// Replaces the old Medicine / Utility hierarchy with one hold-and-scroll selector
-// shared by mobile, mouse-wheel, keyboard, and controller inputs.
+// Contextual Potion Select adapter.
+// A quick untouched tap starts bandaging; holding/navigating keeps the existing
+// contextual potion selector shared by mobile, mouse-wheel, keyboard, and controller inputs.
 (() => {
   'use strict';
 
@@ -9,6 +9,7 @@
   const FLASK_MODE = 'potion-contextual-flasks'; // Used by the shared arch while browsing throwable flasks.
   const MAX_ITEM_SCAN = 512; // Safety cap used only for contextual restoratives absent from the legacy potion hierarchy.
   const DRINK_RESTORE_PAD_MS = 40; // Keeps the bottle visible through the last authored drink-animation frames.
+  const TAP_BANDAGE_MAX_MS = 300; // Used to distinguish a deliberate quick tap from a held Potion Select browse.
 
   let installed = false; // Guards the proxy against duplicate installation from load-order retries.
   let stage = null; // Tracks which custom potion view owns the shared arch for release/navigation handling.
@@ -20,6 +21,9 @@
   let lastSelection = null; // Exposed through diagnostics to report the most recent committed bottle and commit path.
   let lastRestore = null; // Exposed through diagnostics to verify temporary potion handoff and exact combat-slot restoration.
   let lastError = null; // Exposed through diagnostics when a displayed potion cannot be resolved/restored.
+  let rootOpenedAt = 0; // Used by releaseSelection to time the current root gesture for tap-to-bandage.
+  let rootNavigated = false; // Used to prevent a selector browse that returns to Cancel from accidentally bandaging.
+  let lastTapBandage = null; // Exposed through diagnostics so mobile testing can verify quick-tap routing without DevTools.
 
   const normalized = value => String(value || '').replace(/\s+/g, ' ').trim();
   const activeSlot = () => document.querySelector('.arc-slot.arc-active:not(.arc-arrow):not(.shared-selection-exit-ghost)');
@@ -180,6 +184,8 @@
     function closeSelector() {
       stage = null;
       selectionOriginSlot = null;
+      rootOpenedAt = 0;
+      rootNavigated = false;
       baseClose();
     }
 
@@ -231,6 +237,8 @@
     function openRoot() {
       stage = 'root';
       selectionOriginSlot = currentCombatSlot();
+      rootOpenedAt = performance.now();
+      rootNavigated = false;
       lastError = null;
       baseOpenEntries(ROOT_MODE, contextualRootEntries());
       markEntryIds();
@@ -363,6 +371,7 @@
       openPotions() { return openRoot(); },
       scrollEntries(dir) {
         if (!stage) return baseScrollEntries(dir);
+        if (stage === 'root' && Number(dir)) rootNavigated = true;
         const moved = baseScrollEntries(dir);
         markEntryIds();
         if (returnFromSpacer()) return moved;
@@ -370,16 +379,33 @@
         return moved;
       },
       movePointer(x, y) {
+        const rootGesture = stage === 'root';
         const result = baseMovePointer(x, y);
         markEntryIds();
+        if (rootGesture && activeId() !== 'cancel') rootNavigated = true;
         if (returnFromSpacer()) return result;
         maybeEnterGateway(x, y);
         return result;
       },
       releaseSelection() {
         if (!stage) return arc.releaseSelection();
-        // Root starts on Cancel, so releasing the original held input without
-        // movement executes Cancel. Contextual/category items commit normally.
+        const elapsedMs = rootOpenedAt ? Math.max(0, performance.now() - rootOpenedAt) : Infinity;
+        if (stage === 'root' && activeId() === 'cancel' && !rootNavigated && elapsedMs <= TAP_BANDAGE_MAX_MS) {
+          const priorSlot = selectionOriginSlot;
+          closeSelector();
+          const started = !!window.BandageSystem?.start?.({ source:'potion-select-tap' });
+          const bandageDebug = window.BandageSystem?.debugSnapshot?.() || null;
+          lastTapBandage = {
+            started,
+            elapsedMs:Math.round(elapsedMs),
+            priorSlot,
+            reason:started ? 'started' : (bandageDebug?.lastError || 'bandage-system-unavailable'),
+            at:Date.now(),
+          };
+          return started;
+        }
+        // A held or navigated gesture keeps the original selector contract:
+        // Cancel closes it, while contextual/category items commit normally.
         return baseCommit();
       },
       close() { closeSelector(); },
@@ -413,6 +439,8 @@
       flasks:currentCategoryEntries('flasks').map(entry => ({ itemKey:entry.itemKey, label:inventoryLabel(entry), count:entry.count })),
       lastSelection:lastSelection && { ...lastSelection },
       lastRestore:lastRestore && { ...lastRestore },
+      tapBandageMaxMs:TAP_BANDAGE_MAX_MS,
+      lastTapBandage:lastTapBandage && { ...lastTapBandage },
       lastError,
     });
     window.ContextualPotionSelector = Object.freeze({ diagnostics, open:openRoot, restorePreviousEquipment });

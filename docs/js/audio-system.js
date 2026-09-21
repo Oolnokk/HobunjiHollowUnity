@@ -662,16 +662,22 @@
   // file staged (no procedural WebAudio fallback needed).
   function playOneShotSfx(cfgEntry, volumeScale = 1, pitch = 1) {
     const audioCfg = gameAudioConfig();
-    if (audioCfg.enabled === false || !cfgEntry?.url) return;
-    if (combatSfxConfig().enabled === false) return;
+    if (audioCfg.enabled === false || !cfgEntry?.url) return null;
+    if (combatSfxConfig().enabled === false) return null;
     const volume = Math.max(0, Math.min(1, Number(cfgEntry.volume) || 0.8))
       * Math.max(0, Number(audioCfg.sfxVolume) || 1) * Math.max(0, volumeScale);
-    if (volume <= 0.002) return;
+    if (volume <= 0.002) return null;
     const snd = acquireCombatSfxAudio(cfgEntry.url) || new Audio(cfgEntry.url);
     const pitchVariance = Number(cfgEntry.pitchVarianceMul) || 0;
     snd.playbackRate = Math.max(0.3, pitch * (1 + (Math.random() * 2 - 1) * pitchVariance));
     if (snd._combatRequestedAt != null && !(Number(cfgEntry.gainBoost) > 1)) playPooledCombatSfx(snd, volume);
     else playSfxAudioElement(snd, volume, Number(cfgEntry.gainBoost) || 1);
+    return snd;
+  }
+
+  function playCombatSfxKey(key, volumeScale = 1, pitch = 1) {
+    const cfgEntry = combatSfxConfig()[key]; // Keeps gameplay modules on semantic cue names instead of hard-coded asset paths.
+    return cfgEntry ? playOneShotSfx(cfgEntry, volumeScale, pitch) : null;
   }
 
   function objectSfxConfig() { return gameAudioConfig().objectSfx || {}; }
@@ -1124,6 +1130,7 @@
     playHeavyLandingSfx,
     combatSfxConfig,
     playOneShotSfx,
+    playCombatSfxKey,
     objectSfxConfig,
     playObjectSfx,
     playObjectSfxKey,

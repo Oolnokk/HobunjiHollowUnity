@@ -3792,6 +3792,8 @@ window.SCRATCHBONES_CONFIG = {
           "weaponHitBluntLarge": { "url": "assets/audio/sfx/combat/sfx_blunt_hit_large.mp3", "volume": 0.96, "pitchVarianceMul": 0.02, "preload": true },
           "weaponHitBluntHuge": { "url": "assets/audio/sfx/combat/sfx_blunt_hit_huge.mp3", "volume": 1.0, "pitchVarianceMul": 0.015, "preload": true },
           "counterShieldBlock": { "url": "assets/audio/sfx/combat/sfx_block.mp3", "volume": 1.0, "pitchVarianceMul": 0.02, "preload": true },
+          "bandageStart": { "url": "assets/audio/sfx/combat/sfx_bandage_start.mp3", "volume": 1.0, "gainBoost": 2 },
+          "bandageLoop": { "url": "assets/audio/sfx/combat/sfx_bandage_loop.mp3", "volume": 1.0, "preload": true, "overlapMs": 120 },
           "creatureBark": {
             "url": "assets/audio/sfx/sfx_gar-wolf_bark.wav",
             "volume": 0.85,
