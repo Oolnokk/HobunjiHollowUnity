@@ -420,7 +420,7 @@
     "function": "step (fadeVolume)",
     "reason": "Self-perpetuating RAF loop that ramps an HTMLMediaElement's volume from start to target over `dur` ms; it stops re-arming once t>=1 (fade complete) or once a newer fade token invalidates it, so it runs only for the bounded duration of one fade.",
     "migrationStage": "not-planned",
-    "line": 227
+    "line": 219
   },
   {
     "file": "docs/js/netlify-cloud-save.js",
