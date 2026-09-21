@@ -22019,10 +22019,13 @@
           // regardless of what's equipped (and naturally drops to 0 during fishThrowActive,
           // since that always forces anim to 'chop').
           const baseRotZ = anim === 'sweep' ? -Math.PI / 2 : 0;
-          const rangedThrowSpins = activeTool === 'ranged'
-            && combatSwingAnim === 'ranged'
-            && window.RangedWeapons?.config?.[spinItemKey]?.rangedType === 'thrown'
-            && window.RangedWeapons?.config?.[spinItemKey]?.projectileVisualStyle === 'spinningWeapon'; // The shared Spin Throw rotates the visible weapon plane itself; hand pose rotation alone is not a substitute for weapon spin.
+          const rangedThrowDef = activeTool === 'ranged' && combatSwingAnim === 'ranged'
+            ? window.RangedWeapons?.config?.[spinItemKey]
+            : null;
+          const rangedThrowSpins = rangedThrowDef?.rangedType === 'thrown' && rangedThrowDef?.heldSpin === true; // Held throw spin is independent from projectile tumbling: fishing spear spins during the throw but freezes its sampled 90°-offset alignment in flight.
+          const rangedThrowSpinBasisRad = rangedThrowSpins
+            ? THREE.MathUtils.degToRad(Number(rangedThrowDef?.heldSpinBasisDeg) || 0)
+            : 0;
           if (anim === 'refillTwistOut') {
             // Lerp a 180° length-wise spin out, independent of any item's own "spinning" flag.
             spinPlane.rotation.z = baseRotZ + progress * Math.PI;
@@ -22033,7 +22036,7 @@
             // The held PNG spins around its own plane-normal axis through the exact
             // same timeline whose release frame is sampled into the projectile.
             // Holding Windup freezes this rotation too; release resumes smoothly.
-            spinPlane.rotation.z = baseRotZ - progress * Math.PI * 2 * TOOL_SPIN_REVOLUTIONS;
+            spinPlane.rotation.z = baseRotZ + rangedThrowSpinBasisRad - progress * Math.PI * 2 * TOOL_SPIN_REVOLUTIONS;
           } else {
             // The mace's own fishing-throw twirl is cosmetic to the harpoon cast —
             // it shouldn't also layer onto ordinary melee combat swings.
