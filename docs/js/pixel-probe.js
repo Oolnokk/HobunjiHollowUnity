@@ -472,6 +472,46 @@
     return lines;
   }
 
+  function _pixelProbeWaterFootContactLines(activeScene, currentArea, playerMesh) {
+    if (!activeScene || !playerMesh) return null;
+    const floodState = window.WaterSystem?.debugFloodSnapshot?.()?.[currentArea] || null; // Used to compare simulation baseline with the actually rendered flood plane.
+    let floodMesh = null; // Used to measure the visible water sheet in world space instead of assuming its render offset.
+    activeScene.traverseVisible?.(object => {
+      if (floodMesh || !object?.isMesh) return;
+      if (object.userData?.waterSurfaceRole === 'flood') floodMesh = object;
+    });
+    if (!floodMesh && !floodState?.active) return null;
+
+    const floodBounds = floodMesh ? new THREE.Box3().setFromObject(floodMesh) : null; // Used to read final rendered water Y after parent/world transforms.
+    const renderedWaterY = floodBounds && !floodBounds.isEmpty()
+      ? (floodBounds.min.y + floodBounds.max.y) * 0.5
+      : null;
+    const baselineWaterY = Number.isFinite(Number(floodState?.surfaceY)) ? Number(floodState.surfaceY) : null; // Used to expose pre-render flood height beside the visible plane.
+    const feetRoot = playerMesh.getObjectByName?.('player_procedural_feet') || null; // Used to limit foot lookup to the player's procedural leg rig.
+    const fmt = value => Number.isFinite(value) ? value.toFixed(5) : '-';
+    const clamp01 = value => Math.max(0, Math.min(1, value));
+    const footSummary = side => {
+      const foot = feetRoot?.getObjectByName?.(`${side}_foot`) || null; // Used to measure this side's actual rendered GLB/primitive geometry.
+      if (!foot) return `${side}=missing`;
+      const bounds = new THREE.Box3().setFromObject(foot); // Used to compare visible sole/top against water in one world coordinate system.
+      if (bounds.isEmpty()) return `${side}=empty`;
+      const bottomY = bounds.min.y; // Used to report whether the sole is physically below or above the visible water surface.
+      const topY = bounds.max.y; // Used with bottomY to report how much rendered foot height intersects water.
+      if (!Number.isFinite(renderedWaterY)) return `${side}Y=${fmt(bottomY)}..${fmt(topY)} water=-`;
+      const height = Math.max(0, topY - bottomY); // Used to normalize the waterline as a percentage of rendered foot height.
+      const waterIntoFoot = renderedWaterY - bottomY; // Positive means the visible water plane is above the sole.
+      if (waterIntoFoot <= 0) return `${side}Y=${fmt(bottomY)}..${fmt(topY)} soleAbove=${fmt(-waterIntoFoot)}`;
+      if (renderedWaterY >= topY) return `${side}Y=${fmt(bottomY)}..${fmt(topY)} fullyUnderBy=${fmt(renderedWaterY - topY)}`;
+      const submergedFraction = height > 1e-6 ? clamp01(waterIntoFoot / height) : 1; // Used to distinguish tiny sole intersection from water reaching high up the foot.
+      return `${side}Y=${fmt(bottomY)}..${fmt(topY)} waterInto=${fmt(waterIntoFoot)} (${Math.round(submergedFraction * 100)}% foot height)`;
+    };
+
+    return [
+      `Water/feet contact: area=${currentArea} flood=${floodState?.active ? 'active' : 'mesh-only'} baselineY=${fmt(baselineWaterY)} renderedY=${fmt(renderedWaterY)} mesh=${floodMesh?.name || '-'}`,
+      `  ${footSummary('left')} | ${footSummary('right')}`,
+    ];
+  }
+
   // A shoulder pet visibly clipping through the player has exactly two
   // possible mechanisms: a depthWrite/renderOrder mismatch (see
   // updatePetLayering — its overrides only get (re)applied when the
@@ -920,7 +960,9 @@
     const gridDebug = window.GridTileAccessors?.debugSnapshot?.(); // Makes building-footprint cache effectiveness visible during movement without a console.
     if (gridDebug) lines.push(`Building footprint cache: builds=${gridDebug.buildingFootprintCacheBuilds} hits=${gridDebug.buildingFootprintCacheHits}`);
     const heldRenderDebug = window.HeldObjectRenderOrder?.snapshot?.(); // Exposes the retained selective-x-ray render mode and pass counters on mobile.
-    if (heldRenderDebug) lines.push(`Held x-ray: mode=${heldRenderDebug.mode} ground=${heldRenderDebug.groundMeshes} held=${heldRenderDebug.heldMeshes} passes=${heldRenderDebug.baseWorldRenders}/${heldRenderDebug.selectiveOverlays}/${heldRenderDebug.nonGroundDepthReplays}/${heldRenderDebug.groundDepthRestores}`);
+    if (heldRenderDebug) lines.push(`Held x-ray: mode=${heldRenderDebug.mode} ground=${heldRenderDebug.groundMeshes} held=${heldRenderDebug.heldMeshes} waterBlend=${heldRenderDebug.waterReplayMeshes ?? '-'}/${heldRenderDebug.waterReplays ?? '-'} passes=${heldRenderDebug.baseWorldRenders}/${heldRenderDebug.selectiveOverlays}/${heldRenderDebug.nonGroundDepthReplays}/${heldRenderDebug.groundDepthRestores}`);
+    const waterFootLines = _pixelProbeWaterFootContactLines(activeScene, currentArea, playerMesh); // Used to distinguish real foot/water intersection from camera-perspective illusions on mobile.
+    if (waterFootLines) lines.push(...waterFootLines);
     const controllerDebug = window.HOBUNJI_CONTROLLER_STATUS; // Published by game.js so controller ownership and raw browser mapping are copyable on mobile.
     if (controllerDebug) {
       const axis = stick => `${Number(stick?.x || 0).toFixed(2)},${Number(stick?.y || 0).toFixed(2)}`;
@@ -1108,7 +1150,8 @@
     hits.slice(0, 25).forEach((hit, i) => {
       const o = hit.object;
       const mats = Array.isArray(o.material) ? o.material : [o.material];
-      lines.push(`${i}. "${o.name || '(unnamed)'}" dist=${hit.distance.toFixed(3)} visible=${o.visible} renderOrder=${o.renderOrder}`);
+      const hitPointText = hit.point ? ` world=(${hit.point.x.toFixed(3)},${hit.point.y.toFixed(3)},${hit.point.z.toFixed(3)})` : ''; // Used to compare exact foot and water intersections along this screen ray.
+      lines.push(`${i}. "${o.name || '(unnamed)'}" dist=${hit.distance.toFixed(3)}${hitPointText} visible=${o.visible} renderOrder=${o.renderOrder}`);
       if (hit.point && (o.userData?.terrainRenderChunk || o.userData?.wildernessGlobalPathGround || o.userData?.cameraObstacle)) {
         const tileC = Math.floor(hit.point.x), tileR = Math.floor(hit.point.z); // Used to correlate a mobile terrain hit with its live tile metadata.
         const tileDebug = o.userData?.terrainTileDebug?.(tileC, tileR); // Used to expose route exclusion state without requiring desktop devtools.

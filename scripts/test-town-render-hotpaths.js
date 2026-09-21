@@ -26,6 +26,18 @@ assert.match(heldRender, /colorBuffer\.setMask\(false\)[\s\S]{0,100}colorBuffer\
   'the selective depth replay suppresses color through the renderer buffer');
 assert.match(heldRender, /prepareCutoutDepthMaterials\(collectVisible\(pngDepthRegistry, scene\)\)/,
   'only registered PNG cutouts receive temporary depth-material repair');
+assert.doesNotMatch(heldRender, /forceWaterDepth|waterDepthRegistry/,
+  'water must not become a hard depth occluder during the held overlay');
+assert.match(heldRender, /prepareHeldStencilMaterials\(held\)[\s\S]{0,600}HELD_OVERLAY_MASK/,
+  'held overlay stamps only its visible fragments into stencil');
+assert.match(heldRender, /prepareWaterStencilMaterials\(water\)[\s\S]{0,500}WATER_REPLAY_MASK/,
+  'water is replayed through its private layer after the held overlay');
+assert.match(heldRender, /stencilFunc = THREE\.EqualStencilFunc/,
+  'replayed water is limited to held-overlay stencil pixels');
+assert.match(heldRender, /stencilWriteMask = 0x00/,
+  'water replay tests stencil without overwriting the held mask');
+assert.match(heldRender, /renderer\.clearStencil\?\.\(\)/,
+  'held/water stencil markers are cleared around the private composite pass');
 
 assert.match(stances, /function idleBodyYawSnapshot\(target = \{\}\)/,
   'weapon stances expose a lightweight idle-yaw snapshot');
