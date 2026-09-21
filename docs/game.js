@@ -8490,6 +8490,19 @@
             }
 
             const toTownExit = workspace.entry ? { col: workspace.entry.col, row: workspace.entry.row, label: 'To Hobunji Hollow' } : null;
+            const workspaceRoot = (workspace.maps || []).find(map => map && !map.isSubmap) || workspace.maps?.[0] || null; // Used to promote terrain-aware locale interiors into the live zone interaction pool.
+            const generatedLocaleTransitions = (workspaceRoot?.transitions || [])
+              .filter(t => t?.generatedLocaleId && t?.targetMapId && _isBuildingArea(t.targetMapId))
+              .map(t => ({
+                id: t.id,
+                label: t.label,
+                col: t.col,
+                row: t.row,
+                target: 'building',
+                targetMapId: t.targetMapId,
+                targetSpotId: t.targetSpotId || '',
+                generatedLocaleId: t.generatedLocaleId,
+              })); // Terrain placement exports these after generation; without this promotion they existed only in workspace JSON and never became an interactable in-game spot.
             // One entrance transition per den, at its mouth tile — leads into
             // the procedurally generated cavern synthesized in-memory by
             // loadBuildingScene (see its 'map_i_den_' handling). Den ids are
@@ -8534,6 +8547,7 @@
               transitions: [
                 ...preserved.map(t => ({ id: t.id, label: t.label, col: t.col, row: t.row, target: 'building', targetMapId: t.targetMapId })),
                 ...tentTransitions,
+                ...generatedLocaleTransitions,
                 ...denTransitions,
               ],
               toTownExit, mesas: merged.mesas, buildings: [...(merged.buildings || []), ...tentBuilding], decor: tentDecor, furniture: [],
