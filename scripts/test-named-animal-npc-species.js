@@ -23,6 +23,8 @@ assert.equal(overrides.npcs.hiki_hiki.species, 'drenkirra', 'Hiki-hiki must be a
 assert.equal(overrides.npcs.hiki_hiki.kind, 'animal', 'Hiki-hiki must use the animal NPC route');
 assert.equal(overrides.npcs.banubu.avatarExport.appearance.creatureColorOverrides.base, '#4F757D', 'Banubu repo default must retain the authored blue-gray custom base');
 assert.equal(overrides.npcs.banubu.avatarExport.appearance.creatureColorOverrides.mitts, '#c3e3e9', 'Banubu repo default must retain the authored pale-cyan custom mitts');
+assert.equal(overrides.npcs.banubu.avatarExport.appearance.creatureGenotype.sizeClass, 'large', 'Banubu must use Large Grehlr genetics scale before any Fey-only boost');
+assert.equal(overrides.npcs.banubu.avatarExport.appearance.creatureScaleMultiplier, 1.5, 'Banubu must apply a 1.5x named-animal size multiplier on top of Large Grehlr scale');
 assert.equal(overrides.npcs.banubu.avatarExport.appearance.creatureGenotype.coloredstripe.enabled, true, 'Banubu colored stripe must remain expressed');
 assert.equal(overrides.npcs.hiki_hiki.avatarExport.appearance.creatureGenotype.base.color, '#ff7a18', 'Hiki-hiki repo default must retain the authored orange base');
 assert.equal(overrides.npcs.hiki_hiki.avatarExport.appearance.creatureGenotype.bodystripes.color, '#19c7c1', 'Hiki-hiki bodystripes must retain the authored cyan color');
@@ -49,6 +51,11 @@ assert.match(namedAnimal, /canvas\.toDataURL\('image\/png'\)/, 'world animal pla
 assert.match(namedAnimal, /buildAnimalPlaneAvatarModel/, 'world models must retain the existing side-view animal plane builder');
 assert.match(namedAnimal, /__hobunjiAnimalNpcSourceUrl/, 'world animal planes must prefer the native creature/genotype source instead of the 200x200 NPC portrait canvas');
 assert.match(namedAnimal, /async function worldFrameUrls/, 'named animals must expose native-resolution idle/run frames for in-world locomotion');
+assert.match(namedAnimal, /function creatureScaleMultiplierFor/, 'named animals must read a generic appearance-authored world scale multiplier');
+assert.match(game, /namedAnimalBaseSizeScale = namedAnimalDef \? window\.CreatureGenetics\.creatureSizeScale/, 'named animal scaling must resolve normal creature size class before any custom multiplier');
+assert.match(game, /namedAnimalBaseSizeScale\.x \* namedAnimalScaleMultiplier/, 'named animal custom scale must multiply normal creature X scale rather than replace it');
+assert.match(game, /namedAnimalBaseSizeScale\.y \* namedAnimalScaleMultiplier/, 'named animal custom scale must multiply normal creature Y scale rather than replace it');
+assert.match(game, /namedAnimalBaseGroundOffset \* namedAnimalScaleMultiplier/, 'named animal custom scale must proportionally scale ground lift so feet remain on the floor');
 assert.match(game, /const namedAnimalDef = namedAnimalKind \? CREATURE_DB\[namedAnimalKind\]/, 'NPC walker construction must resolve animal physics from the normal creature database');
 assert.match(game, /CreatureGenetics\.creatureSizeScale\(namedAnimalKind, namedAnimalGenotype\)/, 'named animal world scale must use the same genetics size-class path as normal creatures');
 assert.match(game, /const legs = namedAnimalDef \? null : window\.ProceduralLegAnimation/, 'animal NPCs must never receive humanoid procedural feet');
@@ -96,6 +103,8 @@ assert.ok(studio.indexOf('scratchbones-config.js') < studio.indexOf('repo-picker
 assert.match(studio, /repo-picker\.js\?v=20260920animal-tint-parity1/, 'Character Studio must cache-bust the canonical animal runtime loader after tint-parity changes');
 
 assert.match(feyExtras, /class=\"animalNpcCustomHex\"/, 'native extension must retain independent #RRGGBB fields for animal layers');
+assert.match(feyExtras, /id=\"animalNpcScaleMultiplier\"/, 'Fey/custom appearance controls must expose the named-animal in-game size multiplier next to the other non-genetic overrides');
+assert.match(feyExtras, /creatureScaleMultiplier/, 'Fey/custom appearance must persist the generic scale multiplier on the appearance record');
 assert.match(feyExtras, /Each base\/pattern layer has its own independent #RRGGBB override/, 'hex overrides must remain intentionally independent of breeding presets');
 assert.match(feyExtras, /id=\"animalNpcOpacity\" type=\"range\"/, 'native extension must retain animal opacity control');
 assert.match(feyExtras, /id=\"animalNpcHatSelect\"/, 'native extension must retain animal hat selection');
@@ -163,6 +172,8 @@ assert.equal(banubu.appearance.creatureColorOverrides.base, '#4F757D');
 assert.equal(banubu.appearance.creatureColorOverrides.mitts, '#c3e3e9');
 assert.equal(banubu.appearance.creatureColorOverrides.spectacles, '#c3e3e9');
 assert.equal(banubu.appearance.creatureColorOverrides.coloredstripe, '#c3e3e9');
+assert.equal(banubu.appearance.creatureGenotype.sizeClass, 'large');
+assert.equal(banubu.appearance.creatureScaleMultiplier, 1.5);
 assert.equal(banubu.appearance.creatureGenotype.base.color, '#4F757D');
 assert.equal(banubu.appearance.creatureGenotype.mitts.color, '#c3e3e9');
 assert.equal(banubu.appearance.creatureGenotype.spectacles.color, '#c3e3e9');
