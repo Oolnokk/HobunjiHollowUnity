@@ -596,7 +596,7 @@ assert.match(shoulderScanSpeciesSource, /scanSpecies/, 'fallback must resolve ar
 assert.match(shoulderPoseRuntimeSource, /function weightsAt/, 'pose runtime must interpolate authored shoulder boxes');
 assert.match(shoulderPoseRuntimeSource, /secondaryGripActive/, 'pose runtime must distinguish a gripping vs idle left hand');
 assert.match(shoulderPoseRuntimeSource, /side === 'left'.*!secondaryGripActive/s, 'ungripped left hand must use idle shoulder behavior during active animation');
-assert.match(shoulderPoseRuntimeSource, /__rangedDebug\?\.playerAction/, 'ranged load/fire must use their real action timeline');
+assert.match(shoulderPoseRuntimeSource, /RangedWeapons\?\.playerActionState\?\.\(\)/, 'ranged load/fire hand playback must use the real live ranged action timeline');
 assert.match(shoulderPoseRuntimeSource, /combatNeutralWeight/, 'committed melee defaults must follow the exact neutral lerp weight');
 assert.match(shoulderPoseRuntimeSource, /__weaponToolStanceVisualHooks/, 'runtime must wait until the melee visual wrapper exists before capturing raw authored pose metadata');
 assert.match(shoulderPoseRuntimeSource, /triggerWeaponSwingVisual/, 'runtime must preserve custom per-pose melee shoulderAim metadata before numeric pose normalization');
@@ -632,7 +632,7 @@ assert.match(shoulderAimSource, /setPaperArmGuideVisible/, 'editor must be able 
 assert.match(shoulderAimSource, /currentElbow\?\.\(side\)/, 'runtime hand targeting must consume the interpolated direct per-side elbow pose');
 assert.match(shoulderPoseRuntimeSource, /activeThrownChargeItemKey\?\.\(\)[\s\S]*return true/, 'held thrown-weapon Windup must identify the authored active phase before a ranged playerAction exists');
 assert.match(shoulderPoseRuntimeSource, /RangedWeapons\?\.isPlayerThrownFireThroughStrike\?\.\(\) === true/, 'ranged hand targeting must consume the real thrown-action phase API rather than debug state');
-assert.doesNotMatch(shoulderPoseRuntimeSource, /__rangedDebug/, 'gameplay hand targeting must never depend on the ranged debug snapshot');
+assert.doesNotMatch(shoulderPoseRuntimeSource, /__rangedDebug|WeaponToolStances\?\.debugSnapshot/, 'gameplay hand targeting must never depend on diagnostic snapshots');
 assert.match(shoulderPoseRuntimeSource, /if \(!rangedWindupStrikeActive\(\)\) return weights;[\s\S]*return \{ \.\.\.weights, grip: 0 \}/, 'thrown Windup\/Strike must disable only the local grip-axis correction while preserving palm-normal targeting');
 assert.match(shoulderAimSource, /const appliedPalmNormalAngle = palmNormalAngle \* weights\.palmNormal/, 'palm-normal targeting must remain active through the ordinary shoulder\/elbow solver');
 assert.match(shoulderAimSource, /shoulder\.x \+ Number\(authoredOffset\.x/, 'authored elbow coordinates must be direct shoulder-relative pose offsets');
@@ -663,6 +663,7 @@ assert.match(shoulderPoseRuntimeSource, /returnNeutralMirrorSign/, 'elbow playba
 assert.match(shoulderPoseRuntimeSource, /snapshot\.combatWindupFrac/, 'hand pose playback must use WeaponToolStances exact normalized windup timing');
 assert.match(weaponStanceSource, /runtimeState\.combatDirSign/, 'WeaponToolStances must expose active mirror sign to hand consumers');
 assert.match(weaponStanceSource, /runtimeState\.combatReturnNeutralMirrorSign/, 'WeaponToolStances must expose alternating-heavy return mirror sign to hand consumers');
+assert.match(shoulderPoseRuntimeSource, /WeaponToolStances\?\.getRuntimeState\?\.\(\)/, 'melee hand playback must consume WeaponToolStances borrowed runtime state instead of its debug snapshot');
 assert.match(shoulderControlsSource, /authorMidpointElbow/, 'editor hand controls must provide a one-shot midpoint authoring helper');
 // A point exactly on the straight shoulder<->wrist line aims the wrist the same
 // direction the unauthored fallback already does (both target the shoulder, which
