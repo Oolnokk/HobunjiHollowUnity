@@ -169,6 +169,7 @@ assert.match(rangedWeaponsSource, /gripMode:\s*def\.gripMode\s*\|\|\s*null/, 'Ra
 assert.match(gripRuntimeSource, /beginHeld:\s*beginHeldMode/, 'Procedural hand grip runtime must expose the held-grip lifecycle to ranged visuals.');
 assert.match(rangedWeaponsSource, /grip\?\.beginHeld\?\.\(options\.gripMode\)/, 'Ranged visuals must activate the authored held grip through the shared grip runtime.');
 assert.match(rangedWeaponsSource, /function isPlayerThrownFireThroughStrike\(\)[\s\S]*action\?\.kind !== 'fire'[\s\S]*action\.def\?\.rangedType !== 'thrown'[\s\S]*return progress <= strikeBoundary/, 'RangedWeapons must expose a thrown-only Windup\/Strike phase predicate for hand targeting without routing gameplay through __rangedDebug.');
+assert.match(rangedWeaponsSource, /playerActionState:\s*\(\) => playerAction/, 'RangedWeapons must expose borrowed live action state for hand interpolation without allocating the __rangedDebug copy.');
 assert.match(fishingSource, /projectileVisuals:\s*FISHING_PROJECTILE_VISUALS/, 'Fishing must expose its projectile visual tuning for combat reuse.');
 assert.match(rangedWeaponsSource, /Fishing\?\.projectileVisuals\?\.maceSpinRateDeg/, 'Thrown spin must read Fishing\'s authored mace spin rate instead of inventing a separate rate.');
 assert.match(rangedWeaponsSource, /textureSource\?\.clone[\s\S]*texture = textureSource\.clone\(\)/, 'Thrown projectiles must clone the exact held texture so metal and verdigris pattern match pixel-for-pixel.');
