@@ -1312,7 +1312,7 @@
     }
     p.facePivot.rotation.z = 0;
     if (p.lockLaunchAlignment) {
-      p.facePivot.rotation.y = 0; // Fishing Spear keeps the exact sampled Tool-Z release basis; only the whole launch frame bends with the physical ballistic arc above.
+      p.facePivot.rotation.y = 0; // Fishing Spear keeps the exact sampled held-plane release basis; only the whole launch frame bends with the physical ballistic arc above.
       return;
     }
 
