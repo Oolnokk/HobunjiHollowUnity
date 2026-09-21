@@ -6,7 +6,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 12;
+  const VERSION = 13;
   const PATCH_RETRY_MS = 50; // Used while game.js finishes constructing generated metal weapon definitions.
   const PATCH_RETRY_LIMIT = 160; // Used to stop the bootstrap poll after roughly eight seconds instead of polling forever.
   const THROWN_TYPE = 'thrown';
@@ -39,7 +39,7 @@
     'bruisedHealth', 'windedStamina', 'congealedHealth', 'shatteredStamina', 'knockback',
   ]); // Used by Kylie ranged mastery so its options mirror the game's blunt affliction family rather than sharp-style buildup.
   const DUAL_ROLE_SHAPES = Object.freeze({ kylie: THROWN_TYPE, dagger: THROWN_TYPE, fishingspear: THROWN_TYPE, hatchet: THROWN_TYPE, bshuakauitl: BLOWGUN_TYPE });
-  const SPINNING_THROWN_SHAPES = new Set(['hatchet', 'dagger', 'kylie', 'fishingspear']); // Every current thrown weapon uses the shared end-over-end Spin Throw presentation; projectile spin continues from the exact sampled held-plane transform.
+  const PROJECTILE_SPINNING_THROWN_SHAPES = new Set(['hatchet', 'dagger', 'kylie']); // These continue tumbling in flight. Fishing spear uses the offset held spin but freezes that sampled alignment once released.
   const END_FLIPPED_THROW_SHAPES = new Set(['dagger', 'fishingspear']); // Uses the exact pick-mining sprite-plane X-basis flip, not a pose-roll approximation.
   const NON_RANGED_SHAPES = new Set(['daggerSword']); // Used by rangedTypeFor() to hard-block dagger-swords even if stale or external code tags one with rangedType.
   const patchedItems = new Set(); // Used by diagnostics and idempotent definition patching.
@@ -74,7 +74,8 @@
 
   function withScale(pose, scale) { return { ...clonePose(pose), scale }; }
 
-  function sharedThrowAnimation() {
+  function sharedThrowAnimation(shapeKey = null) {
+    if (shapeKey === 'fishingspear' && window.HeldActionAnimations?.weaponThrowSpearSpin) return window.HeldActionAnimations.weaponThrowSpearSpin;
     return window.HeldActionAnimations?.weaponThrowSpin || {
       name: 'Weapon Throw (Spin)',
       style: 'chop',
@@ -159,8 +160,8 @@
   function thrownConfig(itemKey, toolDef) {
     const base = crossbowDefaults();
     const projectileStats = projectileStatsForTool(toolDef, THROWN_PROJECTILE_DEFAULTS);
-    const animation = sharedThrowAnimation();
     const shapeKey = shapeKeyFor(itemKey, toolDef);
+    const animation = sharedThrowAnimation(shapeKey);
     const throwPoses = clonePoseSet(animation?.poses);
     const scale = Number(toolDef?.rangedScale) || 1.05;
     const releaseDurationS = Math.max(0.12, (animation.durationS || 1.04) * (1 - (animation.windupFrac ?? 0.49)));
@@ -181,15 +182,17 @@
       inputMode: 'hold-release',
       gripMode: animation.gripMode || 'palm-parallel',
       toolEndFlip: animation.toolEndFlip === true || END_FLIPPED_THROW_SHAPES.has(shapeKey),
+      heldSpin: true,
+      heldSpinBasisDeg: Number(animation.spinBasisDeg) || 0,
       throwDurationS: Number(animation.durationS) || 1.04,
       throwWindupFrac: Number.isFinite(Number(animation.windupFrac)) ? Number(animation.windupFrac) : 0.49,
       throwStrikeFrac: Number.isFinite(Number(animation.strikeFrac)) ? Number(animation.strikeFrac) : 0.57,
       throwHoldFrac: Number.isFinite(Number(animation.holdFrac)) ? Number(animation.holdFrac) : 0.82,
       projectileSprite: toolDef?.sprite || 'assets/toolsprites/kylie.png',
-      projectileVisualStyle: SPINNING_THROWN_SHAPES.has(shapeKey) ? 'spinningWeapon' : 'weapon',
+      projectileVisualStyle: PROJECTILE_SPINNING_THROWN_SHAPES.has(shapeKey) && animation.projectileSpin !== false ? 'spinningWeapon' : 'weapon',
       projectileWeaponShapeKey: shapeKey,
-      projectileVisualWidthWorld: SPINNING_THROWN_SHAPES.has(shapeKey) ? 0.5 : null,
-      projectileSpinSource: SPINNING_THROWN_SHAPES.has(shapeKey) ? 'fishingMace' : null,
+      projectileVisualWidthWorld: PROJECTILE_SPINNING_THROWN_SHAPES.has(shapeKey) && animation.projectileSpin !== false ? 0.5 : null,
+      projectileSpinSource: PROJECTILE_SPINNING_THROWN_SHAPES.has(shapeKey) && animation.projectileSpin !== false ? 'fishingMace' : null,
       fireDurationS: releaseDurationS,
       fireSequence: 'attack',
       fireWindupFrac: 0,
