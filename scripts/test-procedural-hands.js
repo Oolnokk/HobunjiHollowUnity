@@ -420,6 +420,24 @@ assert.deepStrictEqual(
   sharedHatchetRotation,
   'Dagger ranged grip keeps the authored 90/-90/0 item-local rotation.',
 );
+
+const daggerThrowWindupSpinRad = -0.49 * Math.PI * 2 * 2.5; // Runtime Windup endpoint: 1.225 turns (441°) from the generic Spin Throw.
+const daggerThrowPivot = grips.spinPivotOffsetForTool('dagger', daggerThrowWindupSpinRad, 'ranged');
+const daggerAuthoredRangedGrip = grips.authoredPrimaryGripForTool('dagger', 'ranged').position;
+const spinCos = Math.cos(daggerThrowWindupSpinRad);
+const spinSin = Math.sin(daggerThrowWindupSpinRad);
+const daggerRotatedGrip = {
+  x: daggerAuthoredRangedGrip.x * spinCos + daggerAuthoredRangedGrip.z * spinSin,
+  y: daggerAuthoredRangedGrip.y,
+  z: -daggerAuthoredRangedGrip.x * spinSin + daggerAuthoredRangedGrip.z * spinCos,
+};
+assert(Math.abs(daggerThrowPivot.x + daggerRotatedGrip.x - daggerAuthoredRangedGrip.x) < 1e-12, 'throw-spin X pivot must keep the dagger handle on its authored hand target through Windup');
+assert(Math.abs(daggerThrowPivot.z + daggerRotatedGrip.z - daggerAuthoredRangedGrip.z) < 1e-12, 'throw-spin Z pivot must keep the dagger handle on its authored hand target through Windup');
+assert.deepStrictEqual(
+  JSON.parse(JSON.stringify(grips.spinPivotOffsetForTool('dagger', 0, 'ranged'))),
+  { x: 0, y: 0, z: 0 },
+  'zero throw spin must add no visual translation, preserving the snug idle dagger grip',
+);
 const unsplitSnapshot = grips.clone();
 grips.mutate(data => {
   data.tools.dagger.rangedPrimaryGrip.position.z = 0.31;
@@ -538,6 +556,7 @@ assert.strictEqual(effectiveHatchetGrip.position.x, authoredHatchetGrip.position
 assert.strictEqual(effectiveHatchetGrip.position.y, authoredHatchetGrip.position.y * hatchetGripScale, 'primary grip target Y must scale with the visible weapon');
 assert.strictEqual(effectiveHatchetGrip.position.z, authoredHatchetGrip.position.z * hatchetGripScale, 'primary grip target Z must scale with the visible weapon');
 assert.match(gripConfigSource, /function primaryGripForTool\(value, context = currentGripContext\(\)\)/, 'primary grip API must resolve an explicit melee/ranged context.');
+assert.match(gripConfigSource, /function spinPivotOffsetForTool\(value, angleRad, context = 'ranged'\)[\s\S]*return \{ x: x - rotatedX, y: 0, z: z - rotatedZ \}/, 'shared throw-spin pivot must translate the visual by P - R(P) around the authored primary grip.');
 assert.match(gripConfigSource, /primaryGripFieldForContext[\s\S]*rangedPrimaryGrip/, 'ranged primary grip must be stored independently from melee primaryGrip.');
 assert.match(driverSource, /const gripContext = currentGripContext\(\)[\s\S]*primaryGripForTool\(toolKey, gripContext\)[\s\S]*secondaryGripForTool\(toolKey, gripContext\)/, 'runtime hand driver must switch both hands to ranged grip metadata when the ranged slot is active.');
 assert.match(directEditorSource, /id="handGripContextSelect"[\s\S]*Melee grip[\s\S]*Ranged grip/, 'Attack Editor must expose an explicit Melee/Ranged grip-set selector.');
