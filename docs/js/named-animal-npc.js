@@ -257,6 +257,7 @@
       : drawFullFrame(source, canvas, opacity);
     if (rendered) {
       debugState.lastCreatureKind = kind;
+      canvas.__hobunjiAnimalNpcSourceUrl = sourceUrl(source); // World-plane construction reads this first so a 200x200 dialogue/preview canvas never becomes the in-world animal texture.
       canvas.__hobunjiAnimalNpcAppearance = {
         kind,
         opacity: normalizeOpacity(opacity),
@@ -304,6 +305,25 @@
     try { return canvas.toDataURL('image/png'); } catch { return ''; }
   }
 
+  function sourceUrl(source) {
+    const direct = String(source?.currentSrc || source?.src || '').trim(); // Keeps native creature PNG resolution when the genetics renderer returned an Image.
+    if (direct) return direct;
+    if (!source?.toDataURL) return '';
+    try { return source.toDataURL('image/png'); } catch { return ''; } // Genotype-composited canvases stay at their native creature-frame resolution instead of being downsampled through the NPC portrait canvas.
+  }
+
+  async function worldFrameUrls(profile, options = {}) {
+    const kind = creatureKindForProfile(profile, options);
+    if (!kind) return null;
+    const result = {};
+    for (const frame of ['idle', 'run1', 'run2']) {
+      const source = await sourceForCreature(kind, profile, { ...options, frame });
+      const url = sourceUrl(source);
+      if (url) result[frame] = url;
+    }
+    return Object.keys(result).length ? result : null;
+  }
+
   function installPlaneBridge() {
     const api = window.PNGPlaneAvatar;
     const currentBuild = api?.buildSinglePlaneAvatarModel;
@@ -314,7 +334,7 @@
         if (!kind) return currentBuild.call(this, THREE, sourceCanvas, options);
         const creature = registry()?.creatureFor?.(kind);
         const fallbackPath = creature?.sprites?.idle;
-        const spriteUrl = canvasDataUrl(sourceCanvas) || registry()?.assetUrl?.(fallbackPath) || fallbackPath;
+        const spriteUrl = sourceCanvas?.__hobunjiAnimalNpcSourceUrl || canvasDataUrl(sourceCanvas) || registry()?.assetUrl?.(fallbackPath) || fallbackPath;
         if (!spriteUrl) return currentBuild.call(this, THREE, sourceCanvas, options);
         const modelWidth = Number(creature?.modelWidth) > 0 ? Number(creature.modelWidth) : Number(options.modelWidth) || 1;
         const spriteAspect = Number(creature?.spriteAspect) > 0 ? Number(creature.spriteAspect) : 1;
@@ -534,6 +554,7 @@
     makeCreatureProfile,
     effectiveGenotype,
     renderCreatureProfile,
+    worldFrameUrls,
     installAll,
     debugSnapshot: () => ({ ...debugState }),
   };
