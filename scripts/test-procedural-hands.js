@@ -86,8 +86,14 @@ assert(Math.abs(profiles.modelScaleFor('kenkari') - 2.775) < 1e-12, 'parrot hand
 assert.strictEqual(profiles.data.models.feline.mirrorX, true, 'Mao\'ao keeps the normal source-X mirror');
 assert.strictEqual(profiles.data.models.parrot.mirrorX, false, 'Kenkari/Rakako\'an parrot hands must use the opposite mirror');
 
+const expectedModelGripPositions = {
+  pachyderm: { x: -0.01, y: -0.07, z: 0.1 },
+  sloth: { x: -0.01, y: -0.32, z: 0.25 },
+  feline: { x: -0.01, y: -0.07, z: 0.1 },
+  parrot: { x: -0.01, y: -0.02, z: 0.1 },
+};
 for (const [key, model] of Object.entries(profiles.data.models)) {
-  assert.deepStrictEqual({ ...model.handFromTool.position }, { x: -0.01, y: -0.07, z: 0.1 }, `${key} must inherit the Mao'ao-recalibrated tool-relative hand position`);
+  assert.deepStrictEqual({ ...model.handFromTool.position }, expectedModelGripPositions[key], `${key} must use its authored tool-relative hand grip position`);
   assert.deepStrictEqual({ ...model.handFromTool.rotationDeg }, { pitch: 0, yaw: 180, roll: 0 }, `${key} must inherit the Mao'ao-recalibrated child-local orientation`);
   assert.deepStrictEqual({ ...model.handFromTool.rotationCorrectionDeg }, { x: 0, y: 0, z: 0 }, `${key} must start with zero fixed-basis XYZ correction`);
   const q = model.handFromTool.rotationQuaternion;
@@ -213,8 +219,8 @@ for (const modelKey of ['pachyderm', 'sloth', 'feline', 'parrot']) {
   const transform = sharedDefaultModels[modelKey].handFromTool;
   assert.deepStrictEqual(
     JSON.parse(JSON.stringify(transform.position)),
-    { x: -0.01, y: -0.07, z: 0.1 },
-    `${modelKey} must inherit the Mao'ao-recalibrated shared GLB position baseline`,
+    expectedModelGripPositions[modelKey],
+    `${modelKey} must expose its authored default hand grip position`,
   );
   assert.deepStrictEqual(
     JSON.parse(JSON.stringify(transform.rotationDeg)),
@@ -239,14 +245,27 @@ for (const model of Object.values(v3MigrationProbe.models)) {
 liveProfiles.replace(v3MigrationProbe);
 for (const modelKey of ['pachyderm', 'sloth', 'feline', 'parrot']) {
   const transform = liveProfiles.data.models[modelKey].handFromTool;
-  assert.strictEqual(transform.position.x, -0.01, `${modelKey} v3→v4 migration must apply the Mao'ao-recalibrated X`);
-  assert.strictEqual(transform.position.y, -0.07, `${modelKey} v3→v4 migration must apply the Mao'ao-recalibrated Y`);
-  assert.strictEqual(transform.position.z, 0.1, `${modelKey} v3→v4 migration must apply the Mao'ao-recalibrated Z`);
+  assert.strictEqual(transform.position.x, expectedModelGripPositions[modelKey].x, `${modelKey} v3→v4 migration must apply the authored grip X`);
+  assert.strictEqual(transform.position.y, expectedModelGripPositions[modelKey].y, `${modelKey} v3→v4 migration must apply the authored grip Y`);
+  assert.strictEqual(transform.position.z, expectedModelGripPositions[modelKey].z, `${modelKey} v3→v4 migration must apply the authored grip Z`);
   assert.strictEqual(transform.rotationDeg.pitch, 0, `${modelKey} v3→v4 migration must snap the recalibrated local pitch`);
   assert.strictEqual(transform.rotationDeg.yaw, 180, `${modelKey} v3→v4 migration must snap the recalibrated local yaw`);
   assert.strictEqual(transform.rotationDeg.roll, 0, `${modelKey} v3→v4 migration must snap the recalibrated local roll`);
 }
 assert.strictEqual(liveProfiles.data.models.pachyderm.mirrorX, false, 'v3→v4 calibration migration must preserve an existing per-model mirror choice');
+
+const oldSharedGripProbe = liveProfiles.clone();
+oldSharedGripProbe.alignmentPreset = 'all-species-maoao-local-0-180-0-v4';
+oldSharedGripProbe.models.sloth.handFromTool.position = { x: -0.01, y: -0.07, z: 0.1 };
+oldSharedGripProbe.models.parrot.handFromTool.position = { x: -0.01, y: -0.07, z: 0.1 };
+liveProfiles.replace(oldSharedGripProbe);
+assert.deepStrictEqual(JSON.parse(JSON.stringify(liveProfiles.data.models.sloth.handFromTool.position)), expectedModelGripPositions.sloth, 'untouched old sloth shared grip must migrate to the authored sloth grip offset');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(liveProfiles.data.models.parrot.handFromTool.position)), expectedModelGripPositions.parrot, 'untouched old parrot shared grip must migrate to the authored parrot grip offset');
+
+const customSlothGripProbe = liveProfiles.clone();
+customSlothGripProbe.models.sloth.handFromTool.position = { x: 0.123, y: -0.222, z: 0.333 };
+liveProfiles.replace(customSlothGripProbe);
+assert.deepStrictEqual(JSON.parse(JSON.stringify(liveProfiles.data.models.sloth.handFromTool.position)), { x: 0.123, y: -0.222, z: 0.333 }, 'custom sloth grip calibration must not be overwritten by the narrow default migration');
 const beforeLiveCalibration = liveModes.effectiveFrameForModel('feline', 'palm-parallel');
 liveProfiles.updateModelHandTransform('feline', transform => { transform.position.x += 0.5; });
 const afterLivePosition = liveModes.effectiveFrameForModel('feline', 'palm-parallel');
