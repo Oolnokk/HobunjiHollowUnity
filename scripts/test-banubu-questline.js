@@ -183,8 +183,30 @@ assert(banubu.dialogueTrees.some(tree => tree.banubuQuest?.phase === 'blocked' &
 // Quest 1 target is generated before intro text resolves, so its three buff names are real and stable.
 let state = questline.ensureQuestState();
 assert.strictEqual(state.status, 'intro');
+assert.strictEqual(state.introTalkAttempts, 0);
+const introSleep1 = questline.selectTree(banubu);
+assert.strictEqual(introSleep1.id, 'banubu_intro_sleep_1');
+assert.strictEqual(introSleep1.nodes.length, 1);
+assert.strictEqual(introSleep1.nodes[0].text, 'Zzzzz.');
+assert.strictEqual(introSleep1.nodes[0].next, null);
+assert.strictEqual(state.introTalkAttempts, 1);
+assert.strictEqual(banubu._animalDialogueEyesOpen, false);
+const introSleep2 = questline.selectTree(banubu);
+assert.strictEqual(introSleep2.id, 'banubu_intro_sleep_2');
+assert.strictEqual(introSleep2.nodes.length, 1);
+assert.strictEqual(introSleep2.nodes[0].text, 'Let me rest my eyes for just a few more minutes.');
+assert.strictEqual(introSleep2.nodes[0].next, null);
+assert.strictEqual(state.introTalkAttempts, 2);
+assert.strictEqual(banubu._animalDialogueEyesOpen, false);
 const intro = questline.selectTree(banubu);
+assert.strictEqual(intro.id, 'banubu_intro');
 assert.strictEqual(intro.banubuQuest.phase, 'intro');
+assert.strictEqual(intro.entryNode, 'banubu_intro_3');
+assert.strictEqual(state.introTalkAttempts, 3);
+assert.strictEqual(banubu._animalDialogueEyesOpen, true);
+assert.strictEqual(questline.dialogueEyesOpen(), true);
+assert.strictEqual(questline.selectTree(banubu).id, 'banubu_intro', 'later pre-quest talks must not replay the two sleep-only attempts');
+assert.strictEqual(state.introTalkAttempts, 3);
 assert.strictEqual(state.target.questType, 'threeFishPie');
 assert.strictEqual(state.target.requiredEffects.length, 3);
 assert.strictEqual(state.target.solutionFishKeys.length, 3);
@@ -334,6 +356,14 @@ assert.strictEqual(banubuSchedule.scheduleHooks.rules.length, 1);
 assert.strictEqual(banubuSchedule.scheduleHooks.rules[0].from, '00:00');
 assert.strictEqual(banubuSchedule.scheduleHooks.rules[0].to, '24:00');
 assert(!banubuSchedule.scheduleHooks.rules.some(rule => rule.stationId === 'station_banubu_cave_awake'));
+
+const sleepPresentation = read('docs/js/animal-sleep-presentation.js');
+assert.match(sleepPresentation, /function registerExternalSleeper\(/, 'named animal NPCs must be able to opt into the shared animal sleep presenter');
+assert.match(sleepPresentation, /eyesClosed = typeof config\.eyesClosed === 'function'/, 'external sleepers must be able to open only their eyes while preserving the sleep body pose');
+assert.match(sleepPresentation, /frameCacheKey\(kind, frame, genotype, eyesClosed = true\)/, 'sleep frame cache must distinguish open-eye and closed-eye versions of the same species sleep frame');
+assert.match(gameSource, /_animalSleepRequested = !!this\.animalDef && \/sleep\/i\.test/, 'named animal NPC sleeping must come from the authored schedule activity');
+assert.match(gameSource, /AnimalSleepPresentation\.registerExternalSleeper\(this/, 'named animal walkers must register with the shared sleep animation system');
+assert.match(gameSource, /eyesClosed: \(\) => !\(dialogueOpen && _dialogueWalker === this && this\.rec\?\._animalDialogueEyesOpen === true\)/, 'sleeping named animals may open their eyes only while their own eligible dialogue is open');
 
 const speciesOverrides = require('../docs/config/npcs/species-overrides.json');
 assert.strictEqual(speciesOverrides.npcs.banubu.species, 'grehlr');
