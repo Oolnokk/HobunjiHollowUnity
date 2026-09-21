@@ -54,6 +54,17 @@ const windowObject = {
     weaponThrowSpin: {
       name: 'Weapon Throw (Spin)', style: 'chop', sequence: 'attack', gripMode: 'palm-parallel',
       durationS: 1.04, windupFrac: 0.49, strikeFrac: 0.57, holdFrac: 0.82,
+      spinBasisDeg: 0, spinRevolutions: 2.5, projectileSpin: true,
+      poses: {
+        neutral: { x: 0.03, y: 0.37, z: -0.01, pitch: -155, yaw: -79, bodyYaw: 2, roll: -82, shoulderAim: { grip: true, palmNormal: true } },
+        windup: { x: 0.41, y: 0.37, z: 0.42, pitch: -180, yaw: 139, bodyYaw: -152, roll: -92, shoulderAim: { grip: false, palmNormal: false } },
+        strike: { x: -0.57, y: 0.33, z: 0.17, pitch: -25, yaw: -65, bodyYaw: 63, roll: -88, shoulderAim: { grip: true, palmNormal: false } },
+      },
+    },
+    weaponThrowSpearSpin: {
+      name: 'Fishing Spear Throw (Offset Spin)', style: 'chop', sequence: 'attack', gripMode: 'palm-parallel',
+      durationS: 1.04, windupFrac: 0.49, strikeFrac: 0.57, holdFrac: 0.82,
+      spinBasisDeg: 90, spinRevolutions: 2.5, projectileSpin: false,
       poses: {
         neutral: { x: 0.03, y: 0.37, z: -0.01, pitch: -155, yaw: -79, bodyYaw: 2, roll: -82, shoulderAim: { grip: true, palmNormal: true } },
         windup: { x: 0.41, y: 0.37, z: 0.42, pitch: -180, yaw: 139, bodyYaw: -152, roll: -92, shoulderAim: { grip: false, palmNormal: false } },
@@ -187,7 +198,7 @@ assert.match(rangedWeaponsSource, /restoreHeldThrownWeapon\(action\)/, 'Held wea
 assert.match(rangedWeaponsSource, /p\.def\.damage \* falloff \* \(Number\.isFinite\(p\.damageScale\)/, 'Thrown projectile raw damage must multiply by released visible windup percentage.');
 assert.doesNotMatch(rangedWeaponsSource, /cameraPitchAxisWorld|fixedPitchAxisWorld/, 'Thrown projectile spin must not derive its axis from the camera or a world-space launch axis.');
 assert.match(rangedWeaponsSource, /p\.facePivot\.rotation\.z = p\.spinRad/, 'Spinning thrown weapons must rotate the projectile PNG around its own local Z axis.');
-assert.match(gameSource, /const rangedThrowSpins = activeTool === 'ranged'[\s\S]*projectileVisualStyle === 'spinningWeapon'[\s\S]*spinPlane\.rotation\.z = baseRotZ - progress \* Math\.PI \* 2 \* TOOL_SPIN_REVOLUTIONS/, 'Held Spin Throw must rotate the visible weapon plane itself throughout Neutral→Windup→Strike, not only rotate the hand rig.');
+assert.match(gameSource, /const rangedThrowSpins = rangedThrowDef\?\.rangedType === 'thrown' && rangedThrowDef\?\.heldSpin === true[\s\S]*heldSpinBasisDeg[\s\S]*heldSpinRevolutions[\s\S]*spinPlane\.rotation\.z = baseRotZ \+ rangedThrowSpinBasisRad - progress \* Math\.PI \* 2 \* rangedThrowSpinRevolutions/, 'Held throw spin must be driven by per-weapon basis/revolution metadata, not by projectile-tumble classification.');
 assert.match(rangedWeaponsSource, /p\.facePivot\.rotation\.y = 0;[\s\S]*p\.facePivot\.rotation\.z = p\.spinRad;[\s\S]*return;/, 'Spinning throws must not layer the camera-facing deadzone twist onto local-Z spin.');
 assert.match(rangedWeaponsSource, /facePivot\.rotation\.y = p\.faceTwistRad/, 'Non-spinning projectile readability remains isolated to a child long-axis twist.');
 assert.match(rangedWeaponsSource, /Math\.abs\(diff\) > PROJECTILE_PERP_DEAD_RAD/, 'Projectile sprite camera-facing must retain the 15-degree deadzone instead of perfect billboarding.');
@@ -199,11 +210,14 @@ for (const key of ['dagger_copper', 'fishingspear_copper', 'hatchet_copper']) {
   assert.ok(toolDefs[key].slots.includes('ranged'), `${key} should be equippable in the ranged slot.`);
   assert.strictEqual(windowObject.RangedWeapons.config[key]?.rangedType, 'thrown', `${key} should use the shared thrown archetype.`);
 }
-for (const key of ['dagger_copper', 'hatchet_copper', 'kylie_copper', 'fishingspear_copper']) {
-  assert.strictEqual(windowObject.RangedWeapons.config[key]?.projectileVisualStyle, 'spinningWeapon', `${key} should use the shared end-over-end Spin Throw projectile presentation.`);
+for (const key of ['dagger_copper', 'hatchet_copper', 'kylie_copper']) {
+  assert.strictEqual(windowObject.RangedWeapons.config[key]?.projectileVisualStyle, 'spinningWeapon', `${key} should continue the end-over-end Spin Throw tumble in flight.`);
   assert.strictEqual(windowObject.RangedWeapons.config[key]?.projectileSpinSource, 'fishingMace', `${key} should reuse the fishing-mace projectile spin rate.`);
   assert.strictEqual(windowObject.RangedWeapons.config[key]?.projectileSprite, toolDefs[key].sprite, `${key} projectile should use its actual weapon sprite.`);
 }
+assert.strictEqual(windowObject.RangedWeapons.config.fishingspear_copper.projectileVisualStyle, 'weapon', 'Fishing spear must freeze the sampled held alignment after release instead of tumbling in flight.');
+assert.strictEqual(windowObject.RangedWeapons.config.fishingspear_copper.projectileSpinSource, null, 'Fishing spear projectile must not receive the generic local-Z tumble.');
+assert.strictEqual(windowObject.RangedWeapons.config.fishingspear_copper.projectileSprite, toolDefs.fishingspear_copper.sprite, 'Fishing spear projectile still uses the real spear sprite.');
 assert.strictEqual(windowObject.RangedWeapons.config.kylie_copper.projectileSpeedMultiplier, 1.25, 'Thrown weapons should default slightly faster than the previous 1.15 global pace.');
 assert.strictEqual(windowObject.RangedWeapons.config.kylie_copper.projectileDropStartTiles, 6, 'Thrown reticle should remain straight-line accurate for roughly six tiles by default.');
 assert.strictEqual(windowObject.RangedWeapons.config.kylie_copper.projectileGravityWorldS2, 8.5, 'Thrown weapons should use the authored default downward acceleration after six tiles.');
@@ -229,6 +243,11 @@ assert.strictEqual(windowObject.RangedWeapons.config.kylie_copper.firePose.strik
 assert.strictEqual(windowObject.RangedWeapons.config.fishingspear_copper.chargePose.strike.roll, -88, 'Fishing spear release must reach the authored Strike instead of reusing Windup.');
 assert.strictEqual(windowObject.RangedWeapons.config.fishingspear_copper.chargePose.strike.pitch, -25, 'Fishing spear holder must perform the authored Windup→Strike pitch rotation on release.');
 assert.notStrictEqual(windowObject.RangedWeapons.config.fishingspear_copper.chargePose.strike.yaw, windowObject.RangedWeapons.config.fishingspear_copper.chargePose.windup.yaw, 'Fishing spear Windup and Strike must not collapse to the same holder orientation.');
+assert.strictEqual(windowObject.RangedWeapons.config.fishingspear_copper.heldSpin, true, 'Fishing spear must still spin while held during its throw animation.');
+assert.strictEqual(windowObject.RangedWeapons.config.fishingspear_copper.heldSpinBasisDeg, 90, 'Fishing spear held spin basis must be 90 degrees counterclockwise from the generic thrown spin.');
+assert.strictEqual(windowObject.RangedWeapons.config.fishingspear_copper.heldSpinRevolutions, 2.5, 'Fishing spear should share the generic throw revolution count.');
+assert.match(heldActionSource, /weaponThrowSpearSpin[\s\S]*spinBasisDeg:\s*90[\s\S]*projectileSpin:\s*false/, 'Shared held-action library must expose a dedicated 90-degree spear throw whose projectile keeps its release alignment.');
+
 for (const key of ['dagger_copper', 'fishingspear_copper']) {
   const cfg = windowObject.RangedWeapons.config[key];
   assert.strictEqual(cfg.toolEndFlip, true, `${key} must use the exact pick-mining end-for-end sprite basis.`);
