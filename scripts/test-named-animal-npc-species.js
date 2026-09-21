@@ -75,7 +75,9 @@ assert.match(feyExtras, /canonical\+fey:/, 'Fey preview debug explicitly reports
 assert.doesNotMatch(feyExtras.slice(feyExtras.indexOf('async function composeAnimal'), feyExtras.indexOf('function fitToCanvas')), /recoloredSource\(/, 'Fey preview compose path must not use its obsolete private recolor/pattern compositor');
 assert.match(nativeAppearance, /renderStudioAnimal/, 'native editor must retain the regular Character Studio live preview integration');
 assert.match(spriteRecolor, /function directShadeFillPixels\(data, targetRgb, predicate = null\)/, 'pattern system exposes the canonical direct tint used for Banubu');
-assert.match(spriteRecolor, /luminances\.sort/, 'Banubu tint preserves relative source-pixel value differences without inheriting the source sprite\'s overall darkness');
+assert.match(spriteRecolor, /const luminanceBins = new Uint32Array\(256\)/, 'Banubu tint preserves relative source-pixel value differences using the allocation-light luminance histogram median');
+assert.match(spriteRecolor, /const neutral = Math\.max\(0\.0001, \(\(lowerBin \+ upperBin\) \* 0\.5\) \/ 255\)/, 'Banubu tint centers relative shading on the histogram-derived median luminance');
+assert.doesNotMatch(spriteRecolor, /luminances\.sort/, 'Banubu tint must not regress to sorting one allocated luminance value per affected pixel');
 assert.match(creatureRenderer, /window\.SpriteRecolor\?\.directShadeFillPixels/, 'Banubu and other animals must tint through the exact pattern-system direct shade-fill function');
 assert.match(nativeAppearance, /waitForCanonicalCreatureRenderer/, 'animal previews must wait for the shared runtime creature compositor instead of racing into an editor-only tint path');
 assert.match(nativeAppearance, /await renderer\.composeFrame\(kind, 'idle', genotype, false\)/, 'Character Studio animal tint/pattern preview must call the exact runtime composeFrame implementation');
