@@ -191,13 +191,16 @@
         const groundY = deps.NORMAL_TOP + elevTier * deps.PLATEAU_UNIT;
         const visual = cave.visual || {}; // Authored scale/facing controls modify the same normal den cave prop rather than creating a second renderer.
         const variant = visual.surface === 'grehlr' ? DEN_CAVE_VARIANTS.grehlr : DEN_CAVE_VARIANTS.default;
-        const authoredScale = Math.max(0.1, Number(visual.scale) || 1);
-        const scale = (Math.min(w, h) / templateSpan) * DEN_SIZE_SCALE * authoredScale;
+        const authoredScale = Math.max(0.1, Number(visual.scale) || 1); // Legacy uniform cave scale still multiplies all authored axes.
+        const baseScale = (Math.min(w, h) / templateSpan) * DEN_SIZE_SCALE * authoredScale; // Shared footprint fit used before facade-only axis overrides.
+        const scaleX = baseScale * Math.max(0.1, Number(visual.scaleX) || 1); // Used to widen authored cave mouths without pushing them deeper into cliffs.
+        const scaleY = baseScale * Math.max(0.1, Number(visual.scaleY) || 1); // Used to raise authored cave mouths while preserving their ground contact.
+        const scaleZ = baseScale * Math.max(0.1, Number(visual.scaleZ) || 1); // Used to keep or independently tune cave depth into the host cliff.
         const mesh = template.clone();
         mesh.material = caveMaterialFor(variant);
-        mesh.scale.set(scale, scale, scale);
+        mesh.scale.set(scaleX, scaleY, scaleZ);
         mesh.rotation.y = caveFacingRotation(visual.facing, Number.isFinite(Number(cave.rot)) ? cave.rot : null);
-        mesh.position.set(centerCol, groundY - DEN_SINK - box.min.y * scale, centerRow);
+        mesh.position.set(centerCol, groundY - DEN_SINK - box.min.y * scaleY, centerRow);
         mesh.castShadow = true;
         mesh.receiveShadow = true;
         mesh.userData.cameraObstacle = true;
