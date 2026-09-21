@@ -291,8 +291,10 @@
   }
 
   function ingredientColor(input, fallback) {
-    const color = Number(input?.spriteColor); // Used to tint churn liquid/output from the actual held ingredient.
-    return Number.isFinite(color) ? color : fallback;
+    const semanticColor = Number(input?.ingredientColor); // Used by source-colored crops whose own PNG must remain untinted.
+    if (Number.isFinite(semanticColor)) return semanticColor;
+    const spriteColor = Number(input?.spriteColor); // Preserves existing color inheritance for genuinely tint-authored ingredients.
+    return Number.isFinite(spriteColor) ? spriteColor : fallback;
   }
 
   function isStinkOil(inputKey, input) {

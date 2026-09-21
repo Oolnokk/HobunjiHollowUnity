@@ -50,10 +50,14 @@ assert.equal(Math.max(...keyedPixels.slice(4, 7)), 0x8F,
 assert.match(itemProcessing,
   /function normalizeAlcoholItemDef[\s\S]*?def\.spriteIcon = 'bottle_wine\.png';[\s\S]*?def\.spriteColor = mixedIngredientColor/,
   'all alcohol definitions normalize to an ingredient-colored wine bottle');
-assert.match(itemProcessing, /heftroot: 0xF0D15A/,
-  'heftroot vodka uses the ripe heftroot gold as its ingredient color');
-assert.match(combatCore, /heftrootVodka[\s\S]*?spriteColor: 0xF0D15A/,
-  'the canonical combat vodka fallback uses the same ripe heftroot gold');
+assert.match(itemProcessing, /needlegrain: 0x293827[\s\S]*?heftroot: 0xAAA07C[\s\S]*?garlink: 0xD1D1CB[\s\S]*?ongyums: 0x627F20/,
+  'crop alcohol fallbacks mirror the sampled edible/body colors');
+assert.match(itemProcessing, /return def\?\.ingredientColor \?\? def\?\.spriteColor/,
+  'semantic ingredientColor takes precedence over presentation-only spriteColor');
+assert.match(combatCore, /needlegrainSake[\s\S]*?spriteColor: 0x293827/,
+  'Needlegrain Sake fallback uses the sampled dark-green ingredient color');
+assert.match(combatCore, /heftrootVodka[\s\S]*?spriteColor: 0xAAA07C/,
+  'Heftroot Vodka fallback uses the sampled yellow-tan ingredient color');
 
 for (const ingredient of ['berryKey', 'inputKey']) {
   assert.match(itemProcessing, new RegExp(`ingredientKeys: \\[${ingredient}\\]`),

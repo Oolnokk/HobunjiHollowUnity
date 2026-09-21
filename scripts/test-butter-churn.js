@@ -65,6 +65,7 @@ const itemDefs = {
     sellPrice: 14,
     tags: ['Processed', 'Oil', 'Nut'],
     cookingCategories: ['oil'],
+    ingredientColor: 0x765B36, // Distinct from spriteColor so this test proves semantic ingredient color wins.
     spriteColor: 0x8F6A3F,
   },
   grehlrStinkOil: {
@@ -93,6 +94,7 @@ assert.equal(dewButter?.[0]?.key, 'butter', 'white milk variants use the same bu
 const margarine = window.ItemProcessing.getProcessingOutputs('churning', 'shadewoodNutOil');
 assert.equal(margarine?.length, 1, 'cooking oil produces exactly one churn output');
 assert.equal(margarine[0].key, 'margarine', 'cooking oil churns into margarine');
+assert.equal(margarine[0].spriteColor, 0x765B36, 'processed output prefers semantic ingredientColor over the source sprite tint');
 assert(margarine[0].cookingCategories.includes('butter'), 'margarine can substitute anywhere a butter-category ingredient is accepted');
 assert(!margarine[0].cookingCategories.includes('oil'), 'margarine is a butter substitute, not merely the unchanged raw-oil ingredient');
 

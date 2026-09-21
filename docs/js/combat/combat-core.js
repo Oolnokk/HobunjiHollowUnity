@@ -993,15 +993,15 @@
       desc: "Barrel-aged needlegrain liquor, colored like dark pine needles.",
       ingredientKeys: ["needlegrain"],
       swigsPerBottle: 4,
-      spriteIcon: "bottle_wine.png", spriteColor: 0x2F4A2E, spriteMode: "keyed"
+      spriteIcon: "bottle_wine.png", spriteColor: 0x293827, spriteMode: "keyed"
     };
     itemDefs.heftrootVodka ||= {
       icon: "🥃", label: "Heftroot Vodka", cat: "processed", sellPrice: 26,
       tags: ["Processed", "Vodka", "Aged", "Heftroot"],
-      desc: "Barrel-aged heftroot spirit, golden-yellow like ripe heftroot.",
+      desc: "Barrel-aged heftroot spirit, yellow-tan like ripe heftroot.",
       ingredientKeys: ["heftroot"],
       swigsPerBottle: 4,
-      spriteIcon: "bottle_wine.png", spriteColor: 0xF0D15A, spriteMode: "keyed"
+      spriteIcon: "bottle_wine.png", spriteColor: 0xAAA07C, spriteMode: "keyed"
     };
   }
 

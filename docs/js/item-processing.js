@@ -42,10 +42,13 @@
   // Ingredient colors used by alcohol recipes whose raw item has no
   // recolorable sprite of its own. These feed mixedIngredientColor below.
   const ALCOHOL_INGREDIENT_COLORS = {
-    needlegrain: 0x2F4A2E,
-    // Match ripe heftroot: vodka uses the animal-color shade-fill so the
-    // bottle keeps its painted highlights, shadows, and transparency.
-    heftroot: 0xF0D15A,
+    // Fallbacks mirror the sampled edible/body colors from crop-sprite-art.js
+    // in case a processor resolves before that presentation bridge patches the
+    // canonical crop definition.
+    needlegrain: 0x293827,
+    heftroot: 0xAAA07C,
+    garlink: 0xD1D1CB,
+    ongyums: 0x627F20,
   };
   // Alcohol words accepted by normalizeAlcoholItemDef, shared with the
   // drinking system's classification so every alcoholic output gets the
@@ -63,9 +66,11 @@
   }
 
   function ingredientColorForItem(key) {
-    // The resolved definition supplies colors for bottled milk/dew ingredients.
+    // ingredientColor is the semantic food/material color; spriteColor remains
+    // presentation-only and may be absent when an authored source PNG must not
+    // be recolored (notably the four harvested crop sprites).
     const def = deps.ITEM_DEFS[key];
-    return def?.spriteColor ?? BERRY_COLORS[key] ?? ALCOHOL_INGREDIENT_COLORS[key] ?? null;
+    return def?.ingredientColor ?? def?.spriteColor ?? BERRY_COLORS[key] ?? ALCOHOL_INGREDIENT_COLORS[key] ?? null;
   }
 
   function mixedIngredientColor(ingredientKeys, fallback = 0x8A5FB0) {
@@ -163,10 +168,10 @@
       return { key: inputKey.replace(/Milk$/, 'Nectar'), icon: '🍷', label: properLabel + " Uumkao'ii Nectar", cat: 'processed', sellPrice: Math.max(14, (input.sellPrice || 14) + 10), tags: ['Processed', 'Nectar', "Uumkao'ii", 'Aged'], desc: 'Barrel-aged Uumkao\'ii milk.', ingredientKeys: [inputKey], spriteIcon: 'bottle_wine.png', spriteColor: input.spriteColor, spriteMode: 'keyed' };
     }
     if (methodId === 'barrelAging' && inputKey === 'needlegrain') {
-      return { key: 'needlegrainSake', icon: '🍶', label: 'Needlegrain Sake', cat: 'processed', sellPrice: 24, tags: ['Processed', 'Sake', 'Aged', 'Needlegrain'], desc: 'Barrel-aged needlegrain liquor, colored like dark pine needles.', ingredientKeys: [inputKey], spriteIcon: 'bottle_wine.png', spriteColor: 0x2F4A2E, spriteMode: 'keyed' };
+      return { key: 'needlegrainSake', icon: '🍶', label: 'Needlegrain Sake', cat: 'processed', sellPrice: 24, tags: ['Processed', 'Sake', 'Aged', 'Needlegrain'], desc: 'Barrel-aged needlegrain liquor, colored like dark pine needles.', ingredientKeys: [inputKey], spriteIcon: 'bottle_wine.png', spriteColor: 0x293827, spriteMode: 'keyed' };
     }
     if (methodId === 'barrelAging' && inputKey === 'heftroot') {
-      return { key: 'heftrootVodka', icon: '🥃', label: 'Heftroot Vodka', cat: 'processed', sellPrice: 26, tags: ['Processed', 'Vodka', 'Aged', 'Heftroot'], desc: 'Barrel-aged heftroot spirit, golden-yellow like ripe heftroot.', ingredientKeys: [inputKey], spriteIcon: 'bottle_wine.png', spriteColor: 0xF0D15A, spriteMode: 'keyed' };
+      return { key: 'heftrootVodka', icon: '🥃', label: 'Heftroot Vodka', cat: 'processed', sellPrice: 26, tags: ['Processed', 'Vodka', 'Aged', 'Heftroot'], desc: 'Barrel-aged heftroot spirit, yellow-tan like ripe heftroot.', ingredientKeys: [inputKey], spriteIcon: 'bottle_wine.png', spriteColor: 0xAAA07C, spriteMode: 'keyed' };
     }
     if (methodId === 'barrelAging' && inputKey === 'garWolfMilk') {
       return { key: 'garWolfAirag', icon: '🍶', label: 'Gar-wolf Airag', cat: 'processed', sellPrice: 22, tags: ['Processed', 'Airag', 'Aged', 'Gar-wolf'], desc: 'Barrel-fermented gar-wolf milk.', ingredientKeys: [inputKey], spriteIcon: 'bottle_wine.png', spriteColor: input.spriteColor, spriteMode: 'keyed' };
