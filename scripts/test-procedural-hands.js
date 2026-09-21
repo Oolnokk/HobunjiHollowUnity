@@ -388,13 +388,13 @@ for (const toolKey of ['hatchet','hoe','bshuakauitl','pickshovel','daggersword',
     `${toolKey} must inherit hatchet's primary-grip rotation`,
   );
 }
-assert.strictEqual(grips.data.rangedGripPreset, 'melee-ranged-split-20260920-v6-end-flip-adjusted', 'Committed grip data must advertise the end-flip-adjusted ranged-grip revision.');
+assert.strictEqual(grips.data.rangedGripPreset, 'melee-ranged-split-20260920-v7-end-flip-mirrored', 'Committed grip data must advertise the mirrored end-flip ranged-grip revision.');
 assert.strictEqual(grips.toolScaleForTool('dagger'), 0.55, 'Dagger must use the editor-authored 0.55 item scale.');
 assert.strictEqual(grips.authoredPrimaryGripForTool('dagger', 'melee').position.z, -0.09, 'Dagger melee grip keeps its authored blade-side Z.');
 assert.deepStrictEqual(
   JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('dagger', 'ranged').position)),
-  { x: 0, y: -0.05, z: 0.28 },
-  'Dagger ranged grip must use the end-flip-adjusted hand target independently of melee.',
+  { x: 0, y: -0.05, z: -0.28 },
+  'Dagger ranged grip must use the mirrored end-flip hand target independently of melee.',
 );
 assert.deepStrictEqual(
   JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('dagger', 'ranged').rotationDeg)),
@@ -430,8 +430,8 @@ grips.replace(v1AutoGuessDraft);
 assert.strictEqual(grips.toolScaleForTool('dagger'), 0.55, 'Untouched short-lived v1 dagger auto-scale must migrate to the final authored scale.');
 assert.deepStrictEqual(
   JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('dagger', 'ranged').position)),
-  { x: 0, y: -0.05, z: 0.28 },
-  'Untouched short-lived v1 dagger auto-grip must migrate to the final adjusted ranged target.',
+  { x: 0, y: -0.05, z: -0.28 },
+  'Untouched short-lived v1 dagger auto-grip must migrate to the final mirrored ranged target.',
 );
 
 const v4CloneDraft = grips.clone();
@@ -442,8 +442,8 @@ grips.replace(v4CloneDraft);
 assert.strictEqual(grips.toolScaleForTool('dagger'), 0.55, 'Untouched v4 melee-clone dagger scale must migrate to the authored 0.55 value.');
 assert.deepStrictEqual(
   JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('dagger', 'ranged').position)),
-  { x: 0, y: -0.05, z: 0.28 },
-  'Untouched v4 melee-clone ranged dagger target must migrate to the adjusted ranged target.',
+  { x: 0, y: -0.05, z: -0.28 },
+  'Untouched v4 melee-clone ranged dagger target must migrate to the mirrored ranged target.',
 );
 
 const v5EndFlipDraft = grips.clone();
@@ -453,8 +453,19 @@ v5EndFlipDraft.tools.dagger.rangedPrimaryGrip = { position: { x: 0, y: -0.05, z:
 grips.replace(v5EndFlipDraft);
 assert.deepStrictEqual(
   JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('dagger', 'ranged').position)),
-  { x: 0, y: -0.05, z: 0.28 },
-  'Untouched v5 ranged dagger target must migrate from the pre-correction Z to the end-flip-adjusted Z.',
+  { x: 0, y: -0.05, z: -0.28 },
+  'Untouched v5 ranged dagger target must migrate from the pre-correction Z to the final mirrored Z.',
+);
+
+const v6MirroredTrialDraft = grips.clone();
+v6MirroredTrialDraft.rangedGripPreset = 'melee-ranged-split-20260920-v6-end-flip-adjusted';
+v6MirroredTrialDraft.tools.dagger.toolScale = 0.55;
+v6MirroredTrialDraft.tools.dagger.rangedPrimaryGrip = { position: { x: 0, y: -0.05, z: 0.28 }, rotationDeg: { ...sharedHatchetRotation } };
+grips.replace(v6MirroredTrialDraft);
+assert.deepStrictEqual(
+  JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('dagger', 'ranged').position)),
+  { x: 0, y: -0.05, z: -0.28 },
+  'Untouched v6 +0.28 dagger trial must migrate to the opposite mirrored Z.',
 );
 
 const customV5Draft = grips.clone();
