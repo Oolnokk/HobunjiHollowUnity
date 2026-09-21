@@ -16284,7 +16284,11 @@
         window.AudioSystem?.playFootstepSfx(currentArea, tile, 1);
       }
 
+      let playerResolvedMoveDx = 0; // Actual normal-movement X displacement from the most recent updateMovement frame, including collision tangent sidesteps.
+      let playerResolvedMoveDy = 0; // Actual normal-movement Y displacement paired with playerResolvedMoveDx for swim-facing direction.
       function updateMovement(dt) {
+        playerResolvedMoveDx = 0;
+        playerResolvedMoveDy = 0;
         updateMeleeAttackFacingCommitLifecycle();
         const viewModeKeyboard = getKeyboardVector();
         const viewModeMoveMagnitude = viewModeKeyboard.active
@@ -16645,6 +16649,8 @@
         if (Math.hypot(player.x - moveStartX, player.y - moveStartY) < 0.001) {
           tryPlayerTileSidestep(moveStartX, moveStartY, nextX, nextY, minX, maxX, minY, maxY);
         }
+        playerResolvedMoveDx = player.x - moveStartX;
+        playerResolvedMoveDy = player.y - moveStartY;
 
         // ── Facing ────────────────────────────────────────────
         // Persistent target swapping is ranged-only; melee alignment is automatic and transient.
@@ -22439,6 +22445,15 @@
           // legsSuppressed below) could halt at an orientation that doesn't
           // match the mount's actual rendered silhouette and poke through it.
           playerFacing += angleDiff(mountRideEntity.pngRot, playerFacing) * 0.25;
+          playerMesh.rotation.y = playerFacing;
+          if (playerLegs?.group) playerLegs.group.rotation.y = 0;
+        } else if (!player.prone && !window.FarmAnimals.isHarvesting() && !window.ImpactRagdollPlayback?.isActive?.() && window.HobunjiProceduralSwimGait?.facingYawFromMovement && isPlayerSwimming()) {
+          // Swimming owns one coherent facing for the whole rig: use this
+          // frame's actual resolved displacement (including tile-edge tangent
+          // sidesteps), bypass the billboard dead-zone, and keep the procedural
+          // leg root aligned with the torso instead of ground-walk counter-rotation.
+          const swimFacing = window.HobunjiProceduralSwimGait?.facingYawFromMovement?.(playerResolvedMoveDx, playerResolvedMoveDy);
+          if (Number.isFinite(swimFacing)) playerFacing = swimFacing;
           playerMesh.rotation.y = playerFacing;
           if (playerLegs?.group) playerLegs.group.rotation.y = 0;
         } else {

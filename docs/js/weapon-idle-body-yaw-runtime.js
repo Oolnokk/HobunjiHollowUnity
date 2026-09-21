@@ -32,6 +32,15 @@
     const resolved = stances.idleBodyYawSnapshot(idleState);
     const playerMesh = composer.getPlayerMesh?.() || null;
     const composerChanged = composer !== lastComposer || playerMesh !== lastPlayerMesh;
+    const swimming = !!global.Combat?.deps?.isPlayerSwimming?.(); // Swim facing owns whole-body yaw; weapon-idle flourish must not turn the torso away from movement.
+    if (swimming) {
+      if (lastYawDeg != null || composerChanged) composer.clearChannel(CHANNEL);
+      lastYawDeg = null;
+      lastComposer = composer;
+      lastPlayerMesh = playerMesh;
+      lastReason = 'swimming';
+      return;
+    }
     const resolvedYawDeg = finite(resolved.yawDeg);
     if (resolved.active && Math.abs(resolvedYawDeg) > 1e-6) {
       if (composerChanged || lastYawDeg !== resolvedYawDeg) composer.setChannel(CHANNEL, {

@@ -129,6 +129,7 @@
     ['js/combat/combat-camera-alignment-bridge.js?v=20260917charge3', () => Number(window.HobunjiCombatCameraAlignment?.version) >= 4],
     ['js/combat/ranged-dual-role-anim-style.js?v=20260918throwables1', () => Number(window.HobunjiDualRoleRangedAnimStyle?.version) >= 2],
     ['js/drunk-prone-composition-bridge.js?v=20260812b', () => !!window.HobunjiDrunkProneCompositionBridge],
+    ['js/procedural-swim-gait.js?v=20260917c', () => Number(window.HobunjiProceduralSwimGait?.version) >= 1],
     ['js/prone-motion-exclusivity.js?v=20260812a', () => !!window.HobunjiProneMotionExclusivity],
     ['js/footing-damage-recovery-bridge.js?v=20260812a', () => !!window.HobunjiFootingDamageRecovery],
     ['js/combat/combat-grehlr-burrow.js?v=20260817a', () => !!window.HobunjiGrehlrBurrow],
