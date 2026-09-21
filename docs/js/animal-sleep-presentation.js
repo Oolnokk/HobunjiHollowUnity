@@ -334,8 +334,10 @@
     state.sleeping = true;
     const entry = sleepTextureEntry(kind, genotype, def, eyesClosed);
     if (!entry) return;
-    state.entry = entry;
-    if (entry.pair) applyPair(group, entry.pair, state.planeMaterials); // Reasserted once each pre-render frame after normal blink/animation updates.
+    if (entry.pair) {
+      state.entry = entry; // Keep ownership of the visible sleep maps until the replacement composite is ready.
+      applyPair(group, entry.pair, state.planeMaterials);
+    } // Reasserted once each pre-render frame after normal blink/animation updates.
   }
 
   function forceHeadDown(avatarRef, entity = null) {
@@ -501,6 +503,8 @@
 
   function unregisterExternalSleeper(entity) {
     if (!entity) return false;
+    const state = liveFrameStates.get(entity); // Restore owned sleep textures before releasing a still-live external actor.
+    if (state?.group) setLiveFrame(entity, state.group, 'external', null, null, false);
     externalSleepers.delete(entity);
     liveFrameStates.delete(entity);
     return true;

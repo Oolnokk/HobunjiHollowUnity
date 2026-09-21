@@ -14389,7 +14389,10 @@
       }
 
       function buildTownScene() {
-        if (_townSceneBuilt) return;
+        if (_townSceneBuilt) {
+          window.WaterSystem.refreshTownWaterRender(); // Re-evaluates cached flood/permanent-river visibility immediately whenever the player revisits the existing town scene.
+          return;
+        }
         _townSceneBuilt = true;
 
         townScene = new THREE.Scene();
@@ -14537,6 +14540,7 @@
           name: 'town_merged_river_water', statKey: 'town rivers',
         });
         _townRiverWaterMeshes = townRiverMesh ? [townRiverMesh] : [];
+        window.WaterSystem.refreshTownWaterRender(); // Builds the current dry/flood render snapshot only after the permanent river surface exists, without ticking water simulation.
 
         window.VegetationCropRendering.buildTownGrassBillboards(TCOLS, TROWS);
         window.BorderTerrain.buildTownBorderTerrain();
@@ -23515,7 +23519,10 @@
           window.Fishing?.updateFx(dt);
           // Water sim ticks every 1/8 game-hour (~9s real-time)
           // Uses game time so rain and drainage are clock-consistent
-          simAccumulator += dt / DAY_LENGTH_SECONDS * (NIGHT_HOUR - MORNING_HOUR); // game-hours per sec
+          // Match the simulation's area gate: time in caves/wilderness must not queue a frame-by-frame water rebuild on return.
+          if (currentArea === 'farm' || currentArea === 'town') {
+            simAccumulator += dt / DAY_LENGTH_SECONDS * (NIGHT_HOUR - MORNING_HOUR); // game-hours per sec
+          }
           if (simAccumulator >= 0.125 && (currentArea === 'farm' || currentArea === 'town')) {
             simAccumulator -= 0.125;
             if (currentArea === 'farm') {
@@ -23529,6 +23536,8 @@
           }
           window.PerfProfiler?.end(miscGameplayPerf);
         }
+
+        window.BandageSystem?.update?.(dt, paused); // Heal after gameplay damage using the same clock/pause state as combat.
 
         // ── Camera smooth follow ─────────────────────────────────
         const targetPosition = activeCameraTarget?.position;

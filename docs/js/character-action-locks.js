@@ -107,13 +107,13 @@
   const base = src ? new URL('.', src).href : 'js/';
   const chathead = new URL('animal-chathead-frame.js?v=20260915perf1', base).href;
   const dialogue = new URL('livestock-dialogue.js?v=20260902modular1', base).href;
-  const livestockHarvestStaging = new URL('livestock-harvest-staging.js?v=20260906harvest1', base).href; // Loads the harvest-only animal staging/approach-suppression bridge before FarmAnimals is assigned.
+  const livestockHarvestStaging = new URL('livestock-harvest-staging.js?v=20260921harvestanim2', base).href; // Loads exact multi-avatar harvest playback plus staging before FarmAnimals is assigned.
   const social = new URL('social-action-wheel.js?v=20260910controller1', base).href;
   const socialArchAdapter = new URL('social-action-wheel-arch-adapter.js?v=20260905social17', base).href; // Keeps the centered wheel while sharing selection-arch hold/wheel/release controls and HUD styling.
   const controllerSelectionUi = new URL('controller-selection-ui.js?v=20260910controller1', base).href; // Gives held controller wheel/arch openers automatic both-stick navigation with no authored mode shift.
   const archButtonLabels = new URL('arch-button-labels.js?v=20260910archlabels1', base).href; // Adds centered non-attack meanings plus live lower-right configured-input subscripts to gameplay arch icons.
   const inputDefaultsResetUi = new URL('input-default-reset-ui.js?v=20260909controller4', base).href; // Adds independent keyboard/controller Reset to Defaults buttons after the Settings binding lists render.
-  const bandageSystem = new URL('bandage-system.js?v=20260921bandage1', base).href; // Bandaging shares these action locks and must exist before the post-load Potion Select adapter can route quick taps into it.
+  const bandageSystem = new URL('bandage-system.js?v=20260921reviewfix1', base).href; // Bandaging shares these action locks and must exist before the post-load Potion Select adapter can route quick taps into it.
   const socialRhythmRuntime = new URL('social-rhythm-runtime.js?v=20260903social8', base).href;
   const socialRenderBridge = new URL('social-action-r128-render-bridge.js?v=20260903social5', base).href;
   const npcAmbientMusicStimuliRuntime = new URL('npc-ambient-music-stimuli-runtime.js?v=20260903social10', base).href;
@@ -127,3 +127,4 @@
   const npcPerformanceReactionLockRuntime = new URL('npc-performance-reaction-lock-runtime.js?v=20260914kurraya1', base).href; // Loads last so it can guard every social physical-reaction wrapper while an NPC is actively performing an instrument.
   document.write(`<script src="${chathead}"><\/script><script src="${dialogue}"><\/script><script src="${livestockHarvestStaging}"><\/script><script src="${social}"><\/script><script src="${socialArchAdapter}"><\/script><script src="${controllerSelectionUi}"><\/script><script src="${archButtonLabels}"><\/script><script src="${inputDefaultsResetUi}"><\/script><script src="${bandageSystem}"><\/script><script src="${socialRhythmRuntime}"><\/script><script src="${socialRenderBridge}"><\/script><script src="${npcAmbientMusicStimuliRuntime}"><\/script><script src="${npcSocialInhibitionRuntime}"><\/script><script src="${socialDanceRuntime}"><\/script><script src="${socialBodyPlaneRuntime}"><\/script><script src="${socialCameraRuntime}"><\/script><script src="${npcDancePresentationRuntime}"><\/script><script src="${proceduralHandForearmAlignmentRuntime}"><\/script><script src="${npcSillinessReactionRuntime}"><\/script><script src="${npcPerformanceReactionLockRuntime}"><\/script>`);
 })();
+

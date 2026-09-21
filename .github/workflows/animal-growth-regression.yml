@@ -36,6 +36,10 @@ on:
       - 'docs/js/livestock-nursery-install-bridge.js'
       - 'docs/js/outdoor-livestock-welfare.js'
       - 'docs/js/outdoor-livestock-presence.js'
+      - 'docs/js/farm-animals.js'
+      - 'docs/js/livestock-harvest-staging.js'
+      - 'docs/js/character-action-locks.js'
+      - 'scripts/test-livestock-harvest-staging.js'
       - 'scripts/test-animal-growth-kunji-shop.js'
       - 'scripts/test-stable-animal-progression.js'
       - 'scripts/test-stable-animal-ambient-sequencing.js'
@@ -92,6 +96,10 @@ on:
       - 'docs/js/livestock-nursery-install-bridge.js'
       - 'docs/js/outdoor-livestock-welfare.js'
       - 'docs/js/outdoor-livestock-presence.js'
+      - 'docs/js/farm-animals.js'
+      - 'docs/js/livestock-harvest-staging.js'
+      - 'docs/js/character-action-locks.js'
+      - 'scripts/test-livestock-harvest-staging.js'
       - 'scripts/test-animal-growth-kunji-shop.js'
       - 'scripts/test-stable-animal-progression.js'
       - 'scripts/test-stable-animal-ambient-sequencing.js'
@@ -157,6 +165,10 @@ jobs:
           node --check docs/js/livestock-nursery-install-bridge.js
           node --check docs/js/outdoor-livestock-welfare.js
           node --check docs/js/outdoor-livestock-presence.js
+          node --check docs/js/farm-animals.js
+          node --check docs/js/livestock-harvest-staging.js
+          node --check docs/js/character-action-locks.js
+          node --check scripts/test-livestock-harvest-staging.js
       - name: Test Growth Tonic and Kunji shop
         run: node scripts/test-animal-growth-kunji-shop.js
       - name: Test stable animal progression
@@ -195,5 +207,7 @@ jobs:
         run: node scripts/test-outdoor-livestock-welfare.js
       - name: Test outdoor livestock world presence
         run: node scripts/test-outdoor-livestock-presence.js
+      - name: Test authored livestock harvest animation playback
+        run: node scripts/test-livestock-harvest-staging.js
       - name: Test Farm menu layout and Nursery controller continuity
         run: node scripts/test-farm-menu-layout.js

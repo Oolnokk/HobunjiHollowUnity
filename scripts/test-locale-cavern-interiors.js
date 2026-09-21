@@ -100,4 +100,30 @@ assert(gameSource.includes('mapData.denMotherKind || mapData.cavernCreatureKind'
 assert(editorSource.includes('value="cave_interior"') && editorSource.includes('cavernSeed') && editorSource.includes('raw.cavern'), 'Locale Editor must author and preserve cave-interior generator metadata');
 assert.strictEqual(fs.existsSync(path.join(root, 'docs/config/maps/map_i_color_pools.json')), false, 'Color Pools must not retain a competing static rectangular map definition');
 
+// Exercise real triangle sampling, including sub-tile tessellation and missing coverage.
+const samplingLocale = { ...banubu, tiles: { '0,0': {}, '1,0': {}, '2,0': {} } }; // Tiny footprint isolates sample and fallback behavior.
+const samplingMesh = { positions: [], indices: [] }; // Fixture contains a small flat floor and a steep wall below it.
+function addSampleTriangle(vertices) {
+  const offset = samplingMesh.positions.length / 3; // Vertex offset for this independently authored triangle.
+  samplingMesh.positions.push(...vertices.flat());
+  samplingMesh.indices.push(offset, offset + 1, offset + 2);
+}
+addSampleTriangle([[0.4, 2, 0.4], [0.6, 2, 0.4], [0.5, 2, 0.7]]);
+addSampleTriangle([[0, -10, 0], [1, 10, 0], [0.5, -10, 1]]);
+addSampleTriangle([[1, 3, 0], [2, 3, 0], [1.5, 3, 1]]);
+context.CavernSculptor.carveFootprintCavern = () => ({ mesh: samplingMesh });
+const sampled = context.CavernGenerator.synthesizeLocaleCavernMapData(samplingLocale); // Real synthesis must preserve tiny floor faces and reject steep walls.
+assert.strictEqual(sampled.floorSurfaceByTile['0,0'], 2, 'small horizontal triangles are valid regardless of projected area');
+assert.strictEqual(sampled.floorSurfaceByTile['1,0'], 3, 'independent floor heights remain intact');
+assert.strictEqual(sampled.floorSurfaceByTile['2,0'], 3, 'uncovered tiles use the valid-sample median');
+
+// Count mesh reads instead of timing a machine-dependent benchmark.
+let meshReads = 0; // Sampling should read each triangle only during index construction.
+samplingMesh.positions = new Proxy(samplingMesh.positions, { get(target, key) {
+  if (/^\d+$/.test(String(key))) meshReads++;
+  return Reflect.get(target, key);
+} });
+context.CavernGenerator.synthesizeLocaleCavernMapData(banubu);
+assert(meshReads <= samplingMesh.indices.length * 3, 'sampling must not reread every triangle for every tile');
+
 console.log('Locale-authored cavern footprint, fixed-seed synthesis, keyed connector, and editor integration checks passed');

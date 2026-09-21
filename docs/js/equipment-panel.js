@@ -76,7 +76,7 @@
     inventoryUiLoadStarted = true;
     // Versioned source is loaded here so Pack presentation can be decoupled without editing game.js or index.html.
     const script = document.createElement('script');
-    script.src = 'js/inventory-ui.js?v=20260921woven-icons1';
+    script.src = 'js/inventory-ui.js?v=20260921reviewfix1';
     script.async = false;
     script.onload = () => window.InventoryUI?.init?.(inventoryUiDeps());
     script.onerror = () => {
@@ -389,6 +389,7 @@
       if (!sprite || sprite === fallbackSprite) return;
       if (iconEl.dataset.clothingIconToken !== renderToken || !iconEl.isConnected) return;
       if (iconEl.tagName === 'IMG') {
+        delete iconEl.dataset.clothingTintToken; // Invalidates the initial flat-sprite tint before installing the final composite.
         iconEl.src = sprite;
         if (!compositeIncludesFinalDyes) tintClothingIcon(iconEl, sprite, item);
         return;

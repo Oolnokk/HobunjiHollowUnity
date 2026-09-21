@@ -295,43 +295,53 @@
       .filter(([col, row]) => Number.isFinite(col) && Number.isFinite(row));
   }
 
-  function sampleMeshSurfaceAt(mesh, worldX, worldZ) {
-    const positions = mesh?.positions; // Used to sample the same carved surface the player actually sees, instead of assuming the sculptor's reference floor is exactly Y=0.
-    const indices = mesh?.indices;
-    if (!positions?.length || !indices?.length) return 0;
-    let bestY = Infinity; // The lowest mostly-horizontal surface at the tile center is the cavern floor; walls project to near-zero XZ area and are ignored.
-    const EPSILON = 1e-8;
-    for (let i = 0; i + 2 < indices.length; i += 3) {
-      const ia = indices[i] * 3, ib = indices[i + 1] * 3, ic = indices[i + 2] * 3;
-      const ax = positions[ia], ay = positions[ia + 1], az = positions[ia + 2];
-      const bx = positions[ib], by = positions[ib + 1], bz = positions[ib + 2];
-      const cx = positions[ic], cy = positions[ic + 1], cz = positions[ic + 2];
-      const abx = bx - ax, aby = by - ay, abz = bz - az;
-      const acx = cx - ax, acy = cy - ay, acz = cz - az;
-      const normalY = abz * acx - abx * acz; // Y component of AB x AC; magnitude also measures the triangle's projected XZ area.
-      if (Math.abs(normalY) < 0.08) continue; // Vertical/near-vertical wall triangles cannot be a standable floor.
-      const denom = (bz - cz) * (ax - cx) + (cx - bx) * (az - cz);
-      if (Math.abs(denom) < EPSILON) continue;
-      const wa = ((bz - cz) * (worldX - cx) + (cx - bx) * (worldZ - cz)) / denom;
+  function sampleMeshSurfaceAt(triangles, worldX, worldZ) {
+    let bestY = Infinity; // Lowest standable surface underneath this tile center.
+    for (const triangle of triangles || []) { // Spatial bin contains only triangles whose bounds cover this center.
+      const { ax, ay, az, bx, by, bz, cx, cy, cz, denom } = triangle;
+      const wa = ((bz - cz) * (worldX - cx) + (cx - bx) * (worldZ - cz)) / denom; // Barycentric weights interpolate the carved surface.
       const wb = ((cz - az) * (worldX - cx) + (ax - cx) * (worldZ - cz)) / denom;
       const wc = 1 - wa - wb;
       if (wa < -1e-5 || wb < -1e-5 || wc < -1e-5) continue;
-      const y = wa * ay + wb * by + wc * cy;
+      const y = wa * ay + wb * by + wc * cy; // Sampled floor height, independent of triangle tessellation size.
       if (Number.isFinite(y) && y < bestY) bestY = y;
     }
-    return Number.isFinite(bestY) ? bestY : 0;
+    return Number.isFinite(bestY) ? bestY : null;
   }
 
   function floorSurfaceMap(floor, mesh) {
-    const byTile = {}; // Serialized onto mapData so gameplay grounding and floor rendering consume the exact same sampled surface.
-    const samples = [];
+    const bins = new Map(); // Index only requested tile centers so sampling no longer scans the full mesh for every floor tile.
+    for (const [col, row] of floor || []) bins.set(`${col},${row}`, []);
+    const positions = mesh?.positions || [], indices = mesh?.indices || []; // Read each mesh triangle once while building the temporary spatial index.
+    for (let i = 0; i + 2 < indices.length; i += 3) {
+      const ia = indices[i] * 3, ib = indices[i + 1] * 3, ic = indices[i + 2] * 3; // Vertex offsets for this triangle.
+      const ax = positions[ia], ay = positions[ia + 1], az = positions[ia + 2];
+      const bx = positions[ib], by = positions[ib + 1], bz = positions[ib + 2];
+      const cx = positions[ic], cy = positions[ic + 1], cz = positions[ic + 2];
+      if (![ax, ay, az, bx, by, bz, cx, cy, cz].every(Number.isFinite)) continue;
+      const abx = bx - ax, aby = by - ay, abz = bz - az; // Edges used to measure slope independently of triangle area.
+      const acx = cx - ax, acy = cy - ay, acz = cz - az;
+      const nx = aby * acz - abz * acy, ny = abz * acx - abx * acz, nz = abx * acy - aby * acx;
+      const denom = (bz - cz) * (ax - cx) + (cx - bx) * (az - cz); // Projected area used for barycentric interpolation.
+      if (Math.abs(denom) < 1e-12 || Math.abs(ny) < Math.hypot(nx, ny, nz) * 0.5) continue;
+      const triangle = { ax, ay, az, bx, by, bz, cx, cy, cz, denom }; // Shared by all tile bins overlapped by this triangle.
+      const minCol = Math.ceil(Math.min(ax, bx, cx) - 0.5 - 1e-5), maxCol = Math.floor(Math.max(ax, bx, cx) - 0.5 + 1e-5);
+      const minRow = Math.ceil(Math.min(az, bz, cz) - 0.5 - 1e-5), maxRow = Math.floor(Math.max(az, bz, cz) - 0.5 + 1e-5);
+      for (let row = minRow; row <= maxRow; row++) {
+        for (let col = minCol; col <= maxCol; col++) bins.get(`${col},${row}`)?.push(triangle);
+      }
+    }
+    const byTile = {}; // Serialized onto mapData for shared gameplay and rendering grounding.
+    const samples = [], missing = []; // Missing samples use the median of valid samples instead of dragging it toward zero.
     for (const [col, row] of floor || []) {
-      const y = sampleMeshSurfaceAt(mesh, Number(col) + 0.5, Number(row) + 0.5);
-      byTile[`${col},${row}`] = y;
-      samples.push(y);
+      const key = `${col},${row}`; // Lookup for this tile's triangles and final height.
+      const y = sampleMeshSurfaceAt(bins.get(key), Number(col) + 0.5, Number(row) + 0.5);
+      if (y === null) missing.push(key);
+      else { byTile[key] = y; samples.push(y); }
     }
     samples.sort((a, b) => a - b);
-    const median = samples.length ? samples[Math.floor(samples.length / 2)] : 0; // Stable fallback for a malformed isolated tile with no covering floor triangle.
+    const median = samples.length ? samples[Math.floor(samples.length / 2)] : 0; // Stable fallback for missing/degenerate mesh coverage.
+    for (const key of missing) byTile[key] = median;
     return { byTile, median };
   }
 
