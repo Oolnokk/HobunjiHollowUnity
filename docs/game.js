@@ -22203,8 +22203,8 @@
           // regardless of what's equipped (and naturally drops to 0 during fishThrowActive,
           // since that always forces anim to 'chop').
           const baseRotZ = anim === 'sweep' ? -Math.PI / 2 : 0;
-          const rangedThrowDef = activeTool === 'ranged' && combatSwingAnim === 'ranged'
-            ? window.RangedWeapons?.config?.[spinItemKey]
+          const rangedThrowDef = combatSwingAnim === 'ranged'
+            ? window.RangedWeapons?.config?.[equipmentSlots.ranged || spinItemKey]
             : null;
           const rangedThrowSpins = rangedThrowDef?.rangedType === 'thrown' && rangedThrowDef?.heldSpin === true; // Held throw spin is independent from projectile tumbling: fishing spear spins during the throw but freezes its sampled 90°-offset alignment in flight.
           const rangedThrowSpinBasisRad = rangedThrowSpins
