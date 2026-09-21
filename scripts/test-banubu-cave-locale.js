@@ -15,7 +15,7 @@ assert.deepStrictEqual(locale.placement?.terrainFallback, {
   mode: 'subset',
   terrainAnchors: ['4,0', '4,2', '4,3'],
   embeddedTiles: ['4,3'],
-  notes: 'If the full-width cliff fit has no valid site, keep the cave on a north-facing internal plateau cliff using the center approach/mouth/backing probes and center embedded cell.',
+  notes: 'If the full-width cliff fit has no valid site, keep the cave on an existing north-facing internal plateau cliff using the center approach/mouth/backing probes and center embedded cell; never carve the host cliff.',
 }, 'Banubu Cave must keep its authored center-cliff fallback so a strict no-match does not remove the cave/waypoint from a Tothal layout');
 assert.deepStrictEqual(hikiHikiLocale.placement?.allowedZones, ['map_southern_cloud_forest'], 'Hiki-hiki shrine must be Southern Cloud Forest only');
 assert.deepStrictEqual(rahayobiLocale.placement?.allowedZones, ['map_eastern_mire'], 'Mother Rahayobi shrine must be Eastern Mire only');
@@ -34,6 +34,7 @@ assert.strictEqual(caveObject.kind, 'structure');
 assert.strictEqual(caveObject.key, 'cave_small');
 assert.strictEqual(caveObject.label, "Banubu's Cave");
 assert.deepStrictEqual({ col: caveObject.col, row: caveObject.row, w: caveObject.w, h: caveObject.h, rot: caveObject.rot }, { col: 3, row: 1, w: 3, h: 3, rot: 180 }, 'repo default must match the user-authored cave transform');
+assert.deepStrictEqual(caveObject.visual, { renderer: 'cave_small', scaleX: 1.5, scaleY: 1.5, scaleZ: 1, facing: 'north' }, 'Banubu cave facade must be 1.5x wider and taller without increasing its depth into the cliff');
 
 assert.deepStrictEqual(locale.npcAnchors || [], [], 'Banubu must live in the cavern interior, not on the wilderness cave-mouth footprint');
 assert.deepStrictEqual(locale.interior, {
@@ -89,7 +90,7 @@ for (const key of expectedEmbedded) {
   assert.strictEqual(rule?.height?.mode, 'relativeRange');
   assert.strictEqual(rule?.height?.min, 1);
   assert.strictEqual(rule?.height?.max, null);
-  assert.strictEqual(rule?.carveToLocaleFloor, true, `${key} must carve the backing plateau down to the cave floor after placement`);
+  assert.strictEqual(rule?.carveToLocaleFloor, false, `${key} must preserve the existing plateau so the cave clips into the natural cliff instead of cutting it`);
 }
 assert.deepStrictEqual(locale.placement?.embeddedTiles, locale.embeddedTiles, 'editor-persistence embedded tiles must mirror runtime embedded tiles');
 
@@ -111,6 +112,8 @@ const localeEditorPreview = fs.readFileSync(path.join(repoRoot, 'docs/tools/loca
 const localeEditorIndex = fs.readFileSync(path.join(repoRoot, 'docs/tools/locale-editor/index.html'), 'utf8');
 const localeTerrainEditor = fs.readFileSync(path.join(repoRoot, 'docs/tools/locale-editor/terrain-placement.js'), 'utf8');
 const placementSource = fs.readFileSync(path.join(repoRoot, 'docs/js/locale-terrain-placement.js'), 'utf8');
+const gameSource = fs.readFileSync(path.join(repoRoot, 'docs/game.js'), 'utf8');
+const gameIndex = fs.readFileSync(path.join(repoRoot, 'docs/index.html'), 'utf8');
 assert(caveRuntime.includes('generateZoneWorkspace = function localeCaveGenerateZoneWorkspace'), 'game wilderness generation must register placed locale caves');
 assert(zoneRenderer.includes('LocaleCaveRuntime?.cavesForZone?.(mapId)'), 'game cave renderer must consume locale cave registrations');
 assert(caveRuntime.includes('floorTier: Number.isFinite(Number(instance.floorTier))'), 'locale cave registry must preserve the placed locale floor tier');
@@ -130,5 +133,8 @@ assert(localeTerrainEditor.includes('reconcileRulesFromLocale(locale)'), 'terrai
 assert(localeTerrainEditor.includes('isBanubuRulesMissingFrontClearance'), 'terrain sidecar must migrate the immediately-previous Banubu browser rules to include the new front clearance apron');
 assert(localeTerrainEditor.includes('syncRulesToMainLocale(locale.id, rules);'), 'terrain brush edits must update the live workspace locale immediately');
 assert(placementSource.includes('lowSideRelative'), 'density scaling must distinguish low-side directional cliff probes from high-side probes');
+assert(zoneRenderer.includes('visual.scaleX') && zoneRenderer.includes('visual.scaleY') && zoneRenderer.includes('visual.scaleZ'), 'game cave renderer must support independent facade width/height/depth scaling');
+assert(gameSource.includes('const generatedLocaleTransitions = (workspaceRoot?.transitions || [])') && gameSource.includes('...generatedLocaleTransitions,'), 'Tothal Shift must promote terrain-aware locale cave transitions into the live zone interaction pool');
+assert(gameIndex.includes('js/locale-terrain-placement.js?v=20260921banubuclip1'), 'the actual game page must load terrain-aware locale placement after the wilderness generator');
 
 console.log('Banubu cliff-base authoring + terrain/runtime + editor rule-sync regression checks passed');
