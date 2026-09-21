@@ -21035,15 +21035,15 @@
         });
         const plane = new THREE.Mesh(geo, mat);
         // The PNG's fixed -90° X basis makes it lie in the tool's XZ plane.
-        // Tool End Flip must NOT be applied on this child: after that basis,
-        // plane-local Z is the sprite normal, not the pose editor's Tool Z.
+        // Tool End Flip is an in-plane 180° turn on the visible sprite, so
+        // the business end actually swaps with the handle instead of merely
+        // rolling the parent around the weapon's own length axis.
         plane.rotation.x = -Math.PI / 2;
-        plane.rotation.z = 0;
+        plane.rotation.z = opts.flip ? Math.PI : 0;
         plane.renderOrder = HELD_OBJECT_RENDER_ORDER;
         g.add(plane);
-        // g is identity-oriented directly under toolHolder, so g.local Z is
-        // exactly the pose editor's Tool Z / legacy Roll axis.
-        g.rotation.z = opts.flip ? Math.PI : 0;
+        // Keep the parent identity-oriented; pose rotations stay on toolHolder.
+        g.rotation.z = 0;
         g.userData.toolEndFlipBase = opts.flip === true;
         // Keep a handle on the sprite plane so updateToolMesh can layer the sweep style's
         // blade-parallel twist and the mace-mode "spinning" twirl on top each frame, derived
@@ -21649,7 +21649,7 @@
       function orbitScaledRangedToolPointTowardReticle(point, reticleFrame = playerRangedReticleOrbitFrame()) {
         if (!point) return point;
         scaleToolWorldPointAroundPlayerCentroid(point);
-        const pitch = Number(reticleFrame?.pitchRad) || 0; // Exact elevation from body centroid to the shared reticle point.
+        const pitch = -(Number(reticleFrame?.pitchRad) || 0); // Visual orbit uses the opposite X-axis sign: reticle-up must raise the authored weapon orbit, never lower it.
         const yaw = Number(reticleFrame?.yawRad) || 0; // Exact azimuth from body centroid to the shared reticle point.
         _toolPoseCentroidDebug.reticleOrbitPitchDeg = THREE.MathUtils.radToDeg(pitch);
         _toolPoseCentroidDebug.reticleOrbitYawDeg = THREE.MathUtils.radToDeg(yaw);
@@ -21885,7 +21885,7 @@
           const reticleAligned = combatSwingAlignToReticle && activeTool === 'ranged';
           const reticleFrame = reticleAligned ? playerRangedReticleOrbitFrame() : null; // One shared world-space reticle frame drives both visible orientation and the scaled position orbit.
           const aimBaseYaw = reticleFrame?.yawRad ?? θ;
-          const aimPitchRad = reticleFrame?.pitchRad ?? 0;
+          const aimPitchRad = -(reticleFrame?.pitchRad ?? 0); // Visual pose pitch is sign-corrected independently from the actual reticle/projectile aim ray.
           const vθ  = aimBaseYaw + bodyYawRad;
           const vRX =  Math.cos(vθ), vRZ = -Math.sin(vθ);
           const vFX =  Math.sin(vθ), vFZ =  Math.cos(vθ);
@@ -21930,7 +21930,7 @@
           const toolVθ = rangedTracksAim
             ? (reticleFrame?.yawRad ?? (-currentPlayerAimAngle() + Math.PI / 2)) + bodyYawOffsetRad
             : vθ;
-          const toolAimPitchRad = rangedTracksAim ? (reticleFrame?.pitchRad ?? currentPlayerAimPitch()) : 0; // Positive only when the shared world-space reticle point is actually above the body pivot.
+          const toolAimPitchRad = rangedTracksAim ? -(reticleFrame?.pitchRad ?? currentPlayerAimPitch()) : 0; // Three.js visual X rotation is opposite the aim-elevation sign: looking up must lift the ready weapon.
           _debugRangedToolYawRad = toolVθ;
           const vRX = Math.cos(toolVθ), vRZ = -Math.sin(toolVθ);
           const vFX = Math.sin(toolVθ), vFZ = Math.cos(toolVθ);
@@ -22190,9 +22190,9 @@
         const spinPlane    = spinMesh?.userData?.toolPlane;
         if (spinPlane) {
           const baseEndFlip = spinMesh?.userData?.toolEndFlipBase === true;
-          const actionEndFlip = !!combatSwingAnim && combatSwingToolEndFlip;
-          const effectiveEndFlip = baseEndFlip !== actionEndFlip;
-          spinMesh.rotation.z = effectiveEndFlip ? Math.PI : 0; // Exact Tool Z / legacy Roll axis because spinMesh is identity-oriented directly beneath toolHolder.
+          const requestedEndFlip = combatSwingAnim ? combatSwingToolEndFlip : (activeTool === 'ranged' && window.RangedWeapons?.config?.[spinItemKey]?.toolEndFlip === true);
+          const effectiveEndFlip = baseEndFlip !== requestedEndFlip;
+          spinMesh.rotation.z = 0; // Parent stays identity-oriented; end-for-end reversal belongs to the visible PNG plane.
           spinPlane.rotation.x = -Math.PI / 2; // Fixed sprite-plane basis only.
           // The sweep style's blade-parallel z-twist belongs to whichever anim is actually
           // playing this frame, not whichever style the equipped item defaults to at rest —
@@ -22215,21 +22215,21 @@
             : TOOL_SPIN_REVOLUTIONS;
           if (anim === 'refillTwistOut') {
             // Lerp a 180° length-wise spin out, independent of any item's own "spinning" flag.
-            spinPlane.rotation.z = baseRotZ + progress * Math.PI;
+            spinPlane.rotation.z = (effectiveEndFlip ? Math.PI : 0) + baseRotZ + progress * Math.PI;
           } else if (anim === 'refillTwistBack') {
             // Reverse of the twist-out: lerp back from 180° to 0°.
-            spinPlane.rotation.z = baseRotZ + Math.PI * (1 - progress);
+            spinPlane.rotation.z = (effectiveEndFlip ? Math.PI : 0) + baseRotZ + Math.PI * (1 - progress);
           } else if (rangedThrowSpins) {
             // The held PNG spins around its own plane-normal axis through the exact
             // same timeline whose release frame is sampled into the projectile.
             // Holding Windup freezes this rotation too; release resumes smoothly.
-            spinPlane.rotation.z = baseRotZ + rangedThrowSpinBasisRad - progress * Math.PI * 2 * rangedThrowSpinRevolutions;
+            spinPlane.rotation.z = (effectiveEndFlip ? Math.PI : 0) + baseRotZ + rangedThrowSpinBasisRad - progress * Math.PI * 2 * rangedThrowSpinRevolutions;
           } else {
             // The mace's own fishing-throw twirl is cosmetic to the harpoon cast —
             // it shouldn't also layer onto ordinary melee combat swings.
-            spinPlane.rotation.z = (TOOL_ITEM_DEFS[spinItemKey]?.spinning && !combatSwingAnim)
+            spinPlane.rotation.z = (effectiveEndFlip ? Math.PI : 0) + ((TOOL_ITEM_DEFS[spinItemKey]?.spinning && !combatSwingAnim)
               ? baseRotZ - progress * Math.PI * 2 * TOOL_SPIN_REVOLUTIONS
-              : baseRotZ;
+              : baseRotZ);
           }
           // Backhand combat sweeps mirror the weapon sprite itself, not just the swing arc.
           spinPlane.scale.x = (anim === 'sweep' && combatSwingAnim) ? (posePlaneMirrorSign ?? combatSwingSign) : 1;
