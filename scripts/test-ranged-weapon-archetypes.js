@@ -156,7 +156,8 @@ assert.ok(gameSource.indexOf('updateToolMesh(dt);') < gameSource.indexOf('window
 assert.doesNotMatch(gameSource, /combatSwingOrbitRigCentroid/, 'projectile-only port must not reintroduce the old thrown-pose centroid animation path.');
 assert.doesNotMatch(rangedArchetypeSource, /orbitRigCentroid:\s*true/, 'projectile-only port must leave current-main held throw animation ownership intact.');
 assert.match(gameSource, /combatSwingAlignToReticle[\s\S]*currentPlayerAimAngle\(\)[\s\S]*currentPlayerAimPitch\(\)/, 'ranged throw/fire animation frames must align to the live reticle yaw and pitch.');
-assert.match(gameSource, /toolEndFlipBase[\s\S]*Math\.PI \/ 2 : -Math\.PI \/ 2/, 'runtime Tool End Flip must use the same +90/-90 local-X basis as pick mining.');
+assert.match(gameSource, /const effectiveEndFlip = baseEndFlip !== actionEndFlip[\s\S]*spinPlane\.rotation\.x = -Math\.PI \/ 2[\s\S]*const endFlipZ = effectiveEndFlip \? Math\.PI : 0/, 'runtime Tool End Flip must leave Tool X fixed and reverse the weapon by 180 degrees around Tool Z.');
+assert.match(attackEditorSource, /const endFlipZ = effectiveEndFlip \? Math\.PI : 0[\s\S]*toolPlane\.rotation\.z = endFlipZ \+ sweepBasisZ \+ authoredSpinZ/, 'Attack Editor must compose Tool End Flip on the same Tool-Z axis as its Tool Z rotation field.');
 assert.match(attackEditorSource, /id="toolEndFlipBtn"/, 'Attack Animation Editor must expose Tool End Flip directly.');
 assert.match(attackEditorSource, /toolEndFlip:\s*anim\.toolEndFlip === true/, 'Attack Animation Editor exports the Tool End Flip bit.');
 assert.match(attackEditorSource, /anim\.toolEndFlip = data\.toolEndFlip === true/, 'Attack Animation Editor imports the Tool End Flip bit.');
@@ -172,7 +173,8 @@ assert.match(rangedWeaponsSource, /textureSource\?\.clone[\s\S]*texture = textur
 assert.match(rangedWeaponsSource, /hasExactSourcePlane[\s\S]*new THREE\.PlaneGeometry\(projectilePlaneWidth, projectilePlaneHeight\)/, 'Thrown projectile geometry must use sampled held-plane dimensions when available.');
 assert.match(rangedWeaponsSource, /const projectileDirectionSwap = !sourceTransform && def\.rangedType === 'thrown' && def\.toolEndFlip === true/, 'Only unsampled fallback thrown projectiles may apply the configured end flip.');
 assert.match(rangedWeaponsSource, /sourceTransform\?\.quaternion\?\.isQuaternion[\s\S]*sourceTransform\.quaternion\.clone\(\)/, 'Sampled player throws must preserve the exact held plane quaternion, including fishing-spear end orientation.');
-assert.match(rangedWeaponsSource, /sampled player throws must not double-flip the held weapon/, 'Sampled fishing spear/knife projectile copies must explicitly avoid the old second PNG flip.');
+assert.match(rangedWeaponsSource, /plane\.rotation\.z = Math\.PI/, 'Unsampled thrown fallback end flips must also use a 180-degree local Tool-Z rotation.');
+assert.doesNotMatch(rangedWeaponsSource, /uv\.setY\(i, 1 - uv\.getY\(i\)\)/, 'Thrown end flipping must not fall back to a one-axis UV mirror.');
 assert.match(rangedWeaponsSource, /sourceTransform:\s*heldTransform/, 'Player ranged projectiles must launch from the held plane transform sampled at the current release frame.');
 assert.match(rangedWeaponsSource, /launchTransformMode[^\n]*'held-strike-plane'/, 'Projectile debug state must identify exact held-plane launch transforms.');
 assert.match(rangedWeaponsSource, /facingSource:[^\n]*'sampled-held-plane'/, 'Projectile debug state must report when visible facing came directly from the sampled held weapon.');
@@ -250,7 +252,7 @@ assert.match(heldActionSource, /weaponThrowSpearSpin[\s\S]*spinBasisDeg:\s*90[\s
 
 for (const key of ['dagger_copper', 'fishingspear_copper']) {
   const cfg = windowObject.RangedWeapons.config[key];
-  assert.strictEqual(cfg.toolEndFlip, true, `${key} must use the exact pick-mining end-for-end sprite basis.`);
+  assert.strictEqual(cfg.toolEndFlip, true, `${key} must use the shared 180-degree Tool-Z end-for-end sprite basis.`);
   assert.strictEqual(cfg.chargePose.neutral.roll, -82, `${key} must not fake end flipping by modifying Neutral Roll.`);
   assert.strictEqual(cfg.chargePose.windup.roll, -92, `${key} must not fake end flipping by modifying Windup Roll.`);
   assert.strictEqual(cfg.firePose.strike.roll, -88, `${key} must not fake end flipping by modifying Strike Roll.`);
