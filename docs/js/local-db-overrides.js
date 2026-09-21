@@ -278,7 +278,7 @@
   function _installNamedAnimalNpcModule() {
     if (typeof document === 'undefined' || !LOCAL_DB_SCRIPT_URL) return;
     if (document.querySelector('script[data-hobunji-named-animal-npc="1"]')) return;
-    const moduleUrl = new URL('named-animal-npc.js', LOCAL_DB_SCRIPT_URL).href; // Shared bridge URL resolved next to local-db-overrides.js in docs/js/.
+    const moduleUrl = new URL('named-animal-npc.js?v=20260921creaturefirst1', LOCAL_DB_SCRIPT_URL).href; // Shared bridge URL resolved next to local-db-overrides.js in docs/js/; explicit version prevents a stale 200px world-animal bridge after deploy.
     if (document.readyState === 'loading' && typeof document.write === 'function') {
       document.write(`<script src="${moduleUrl}" data-hobunji-named-animal-npc="1"><\/script>`); // Parser-synchronous load guarantees global assignment hooks exist before later avatar/game scripts execute.
       return;
