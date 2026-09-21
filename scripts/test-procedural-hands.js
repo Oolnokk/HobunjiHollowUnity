@@ -433,6 +433,18 @@ const daggerRotatedGrip = {
 };
 assert(Math.abs(daggerThrowPivot.x + daggerRotatedGrip.x - daggerAuthoredRangedGrip.x) < 1e-12, 'throw-spin X pivot must keep the dagger handle on its authored hand target through Windup');
 assert(Math.abs(daggerThrowPivot.z + daggerRotatedGrip.z - daggerAuthoredRangedGrip.z) < 1e-12, 'throw-spin Z pivot must keep the dagger handle on its authored hand target through Windup');
+const hatchetThrowPivot = grips.spinPivotOffsetForTool('hatchet', daggerThrowWindupSpinRad, 'ranged'); // Uses the same Spin Throw Windup angle to compare the centered-ish axe grip against the offset dagger.
+const hatchetAuthoredRangedGrip = grips.authoredPrimaryGripForTool('hatchet', 'ranged').position; // Used to prove the shared helper fixes the axe grip without special-casing dagger geometry.
+const hatchetRotatedGrip = { // Reconstructs R(P) independently so the helper is checked against its geometric contract.
+  x: hatchetAuthoredRangedGrip.x * spinCos + hatchetAuthoredRangedGrip.z * spinSin,
+  y: hatchetAuthoredRangedGrip.y,
+  z: -hatchetAuthoredRangedGrip.x * spinSin + hatchetAuthoredRangedGrip.z * spinCos,
+};
+assert(Math.abs(hatchetThrowPivot.x + hatchetRotatedGrip.x - hatchetAuthoredRangedGrip.x) < 1e-12, 'throw-spin X pivot must also keep the axe grip fixed through Windup');
+assert(Math.abs(hatchetThrowPivot.z + hatchetRotatedGrip.z - hatchetAuthoredRangedGrip.z) < 1e-12, 'throw-spin Z pivot must also keep the axe grip fixed through Windup');
+const daggerPivotDistance = Math.hypot(daggerThrowPivot.x, daggerThrowPivot.z); // Used to make the regression sensitive to the dagger's visibly large off-center orbit.
+const hatchetPivotDistance = Math.hypot(hatchetThrowPivot.x, hatchetThrowPivot.z); // Used as the centered-ish control case for the same shared spin angle.
+assert(daggerPivotDistance > hatchetPivotDistance * 4, 'far-offset dagger grip must require substantially more pivot compensation than the centered-ish axe grip');
 assert.deepStrictEqual(
   JSON.parse(JSON.stringify(grips.spinPivotOffsetForTool('dagger', 0, 'ranged'))),
   { x: 0, y: 0, z: 0 },
