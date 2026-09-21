@@ -905,6 +905,11 @@ let anim = {
   holdFrac: 0.68,
   durationS: 0.5,
   toolEndFlip: false,
+  spinBasisDeg: 0,
+  spinRevolutions: 0,
+  projectileSpin: null,
+  projectileLockAlignment: false,
+  projectileBasisDeg: 0,
   poses: {
     neutral: { ...neutralPoseFor('sweep') },
     windup: defaultPose(0.05, 0.05, -0.15, -15, 0, -60),
@@ -1307,6 +1312,11 @@ function applyPreset(preset) {
   anim.style = preset.style;
   anim.sequence = preset.sequence || 'attack';
   anim.toolEndFlip = preset.toolEndFlip === true;
+  anim.spinBasisDeg = safeNum(preset.spinBasisDeg, 0);
+  anim.spinRevolutions = Math.max(0, safeNum(preset.spinRevolutions, 0));
+  anim.projectileSpin = typeof preset.projectileSpin === 'boolean' ? preset.projectileSpin : null;
+  anim.projectileLockAlignment = preset.projectileLockAlignment === true;
+  anim.projectileBasisDeg = safeNum(preset.projectileBasisDeg, 0);
   syncToolEndFlipUi();
   clampFracs();
   $('animStyle').value = anim.style;
@@ -1394,6 +1404,7 @@ function applyPoseToRig(pose) {
     const baseEndFlip = toolPlaneMesh?.userData?.toolEndFlipBase === true;
     const effectiveEndFlip = baseEndFlip !== (anim.toolEndFlip === true);
     toolPlaneMesh.rotation.z = 0; // Parent stays identity-oriented; visible end-for-end reversal is composed on the PNG plane below.
+    toolPlane.position.set(0, 0, 0); // Throw-spin pivot compensation is frame-local and must not leak into idle/editor action changes.
     toolPlane.rotation.x = -Math.PI / 2; // Fixed PNG-plane basis only.
     // Runtime derives the -90° sweep basis from the active animation, then
     // weapon-tool-stances fades that basis out at Neutral for every weapon-
@@ -1412,6 +1423,10 @@ function applyPoseToRig(pose) {
       ? authoredSpinBasisZ - previewT * Math.PI * 2 * authoredSpinRevolutions
       : 0;
     toolPlane.rotation.z = (effectiveEndFlip ? Math.PI : 0) + sweepBasisZ + authoredSpinZ; // End flip and authored spin share the visible in-plane axis, so the sprite truly reverses tip-to-handle.
+    if (authoredSpinRevolutions > 0) {
+      const throwSpinPivot = window.HobunjiHandToolGrips?.spinPivotOffsetForTool?.(currentToolKey, authoredSpinZ, 'ranged');
+      if (throwSpinPivot) toolPlane.position.set(throwSpinPivot.x, throwSpinPivot.y, throwSpinPivot.z);
+    }
   }
   lastAuthoredPose.x = Number(pose.x) || 0; lastAuthoredPose.y = Number(pose.y) || 0; lastAuthoredPose.z = Number(pose.z) || 0;
   poseOrbitScratch.set(toolBase.position.x + lastAuthoredPose.x, toolBase.position.y + lastAuthoredPose.y, toolBase.position.z + lastAuthoredPose.z); // Existing pre-arm-length finished point.
@@ -1936,6 +1951,13 @@ function exportAnimObject() {
     toolEndFlip: anim.toolEndFlip === true,
     poses: { neutral: { ...anim.poses.neutral }, windup: { ...anim.poses.windup }, strike: { ...anim.poses.strike } },
   };
+  if (anim.spinRevolutions > 0 || anim.spinBasisDeg) {
+    exported.spinBasisDeg = Number(anim.spinBasisDeg) || 0;
+    exported.spinRevolutions = Math.max(0, Number(anim.spinRevolutions) || 0);
+  }
+  if (typeof anim.projectileSpin === 'boolean') exported.projectileSpin = anim.projectileSpin;
+  if (anim.projectileLockAlignment) exported.projectileLockAlignment = true;
+  if (anim.projectileBasisDeg) exported.projectileBasisDeg = Number(anim.projectileBasisDeg) || 0;
   return window.HobunjiAttackEditorHandShoulderControls?.decorateAnimationObject?.(exported) || exported;
 }
 $('exportBtn').onclick = () => {
@@ -1999,6 +2021,13 @@ function loadAnimObject(data) {
   anim.holdFrac = safeNum(data.holdFrac, anim.strikeFrac);
   anim.durationS = safeNum(data.durationS, anim.durationS);
   anim.toolEndFlip = data.toolEndFlip === true;
+  anim.spinBasisDeg = safeNum(data.spinBasisDeg, safeNum(actionSource?.spinBasisDeg, 0));
+  anim.spinRevolutions = Math.max(0, safeNum(data.spinRevolutions, safeNum(actionSource?.spinRevolutions, 0)));
+  anim.projectileSpin = typeof data.projectileSpin === 'boolean'
+    ? data.projectileSpin
+    : (typeof actionSource?.projectileSpin === 'boolean' ? actionSource.projectileSpin : null);
+  anim.projectileLockAlignment = (data.projectileLockAlignment ?? actionSource?.projectileLockAlignment) === true;
+  anim.projectileBasisDeg = safeNum(data.projectileBasisDeg, safeNum(actionSource?.projectileBasisDeg, 0));
   syncToolEndFlipUi();
   clampFracs();
   // Older exports predate the neutral pose becoming authorable — fall back to
