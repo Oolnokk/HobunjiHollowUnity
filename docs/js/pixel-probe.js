@@ -1061,6 +1061,16 @@
       const lockState = held.characterActionLocks.map(lock => `${lock.owner}[${lock.participants.map(participant => `${participant.id}:${participant.channels.join('+')}`).join(',')}]`).join(' ');
       lines.push(`Character action locks: ${lockState}`);
     }
+    const bandageDebug = window.BandageSystem?.debugSnapshot?.(); // Mobile-readable state for the interruptible tap-to-bandage mechanic.
+    if (bandageDebug) {
+      const healthNow = bandageDebug.currentHealth == null ? '-' : Number(bandageDebug.currentHealth).toFixed(1); // Used only in the copyable Bandage status line below.
+      const healthMax = bandageDebug.currentMaxHealth == null ? '-' : Number(bandageDebug.currentMaxHealth).toFixed(1); // Paired with healthNow so effective max-health changes are visible.
+      const bandageEnd = bandageDebug.lastEnd?.reason || '-'; // Shows whether the prior attempt completed, was hit-cancelled, or stopped for another reason.
+      lines.push(`Bandage: ${bandageDebug.active ? 'ACTIVE' : 'idle'} elapsed=${(Number(bandageDebug.elapsedMs || 0) / 1000).toFixed(2)}s/${(Number(bandageDebug.durationMs || 8000) / 1000).toFixed(2)}s hp=${healthNow}/${healthMax} curve=${Math.round(Number(bandageDebug.curveProgress || 0) * 100)}% hands=${bandageDebug.playerHandCaptured ? 'yes' : 'no'} lock=${bandageDebug.actionLocked ? 'yes' : 'no'} last=${bandageEnd} error=${bandageDebug.lastError || '-'}`);
+    }
+    const selectorDebug = window.ContextualPotionSelector?.diagnostics?.(); // Lets a phone report prove whether the quick Potion Select gesture was classified as a bandage tap.
+    const tapBandage = selectorDebug?.lastTapBandage; // Most recent tap-routing result, separate from the longer-lived bandage runtime state.
+    if (tapBandage) lines.push(`Potion Select bandage tap: started=${tapBandage.started ? 'yes' : 'no'} downFor=${(Number(tapBandage.elapsedMs || 0) / 1000).toFixed(3)}s prior=${tapBandage.priorSlot || '-'} reason=${tapBandage.reason || '-'}`);
     if (held?.npcDrinkInteractions?.length) {
       const drinkState = held.npcDrinkInteractions.map(interaction => `${interaction.npcId}:${interaction.itemKey}/${interaction.phase}/${Math.round(interaction.progress * 100)}%`).join(' ');
       lines.push(`NPC drink interactions: ${drinkState}`);
