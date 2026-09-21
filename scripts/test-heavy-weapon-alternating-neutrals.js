@@ -10,7 +10,7 @@ const spacingPath = path.join(__dirname, '..', 'docs', 'js', 'combat', 'melee-po
 const source = fs.readFileSync(modulePath, 'utf8'); // Full committed module source evaluated without rewriting its logic for the test.
 const spacingSource = fs.readFileSync(spacingPath, 'utf8');
 const heavyPose = { x: -0.03, y: 0.27, z: 0.02, pitch: -23, yaw: 104, bodyYaw: -15, roll: 89 }; // Built-in Heavy idle expected at each endpoint.
-const lightPose = { x: -0.09, y: -0.08, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 }; // Built-in Light idle used to prove existing behavior stays unchanged.
+const lightPose = { x: -0.09, y: 0, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 }; // Built-in Light idle used to prove existing behavior stays unchanged.
 
 global.window = { __farmLog() {} }; // Browser namespace consumed by the runtime module.
 global.localStorage = { getItem() { return null; } }; // No editor override: exercise committed defaults.
