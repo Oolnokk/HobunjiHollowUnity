@@ -61,7 +61,7 @@
     if (!store) return null;
     let state = store[QUEST_ID];
     if (!state || typeof state !== 'object') {
-      state = { status: 'intro', stage: 0, target: null, nextTarget: null, progress: { kind: 'story', provider: 'banubu', hidden: true } };
+      state = { status: 'intro', stage: 0, introTalkAttempts: 0, target: null, nextTarget: null, progress: { kind: 'story', provider: 'banubu', hidden: true } };
       store[QUEST_ID] = state;
       persistMemberState();
       return state;
@@ -83,6 +83,13 @@
     if (!Object.prototype.hasOwnProperty.call(state, 'nextTarget')) {
       state.nextTarget = null;
       migrated = true;
+    }
+    if (!Object.prototype.hasOwnProperty.call(state, 'introTalkAttempts')) {
+      state.introTalkAttempts = state.status === 'intro' ? 0 : 3; // Existing progressed saves have already completed the wake-up sequence; untouched intro saves start from the first snore.
+      migrated = true;
+    } else {
+      const attempts = Math.max(0, Math.min(3, Math.trunc(Number(state.introTalkAttempts) || 0)));
+      if (attempts !== state.introTalkAttempts) { state.introTalkAttempts = attempts; migrated = true; }
     }
     syncTaskDescriptor(state);
     if (migrated) persistMemberState();
@@ -345,13 +352,28 @@
     if (!state) return null;
     const trees = treesForBanubu(record);
     let phase = state.status || 'intro';
-    if (phase === 'intro') ensureIntroTarget(record, state);
-    else if (phase === 'active' && matchingMeal(state)) phase = 'ready';
+    let introAttempt = 3;
+    if (phase === 'intro') {
+      ensureIntroTarget(record, state);
+      introAttempt = Math.min(3, Math.max(1, (Number(state.introTalkAttempts) || 0) + 1)); // Exactly one wake-up step is consumed per distinct conversation attempt.
+      if (introAttempt !== state.introTalkAttempts) {
+        state.introTalkAttempts = introAttempt;
+        persistMemberState();
+      }
+    } else if (phase === 'active' && matchingMeal(state)) phase = 'ready';
     else if (phase === 'offer' || phase === 'active') ensureTarget(record, state);
     if (phase === 'blocked') state.stage = 3;
+    if (record) record._animalDialogueEyesOpen = phase !== 'intro' || introAttempt >= 3; // Shared named-animal sleep presenter reads this only while dialogue is actually open; outside dialogue Banubu's eyes remain shut.
     const selected = trees.find(tree => tree?.banubuQuest?.phase === phase
-      && (phase === 'intro' || Number(tree?.banubuQuest?.stage) === Number(state.stage)));
+      && (phase === 'intro'
+        ? Number(tree?.banubuQuest?.introAttempt || 3) === introAttempt
+        : Number(tree?.banubuQuest?.stage) === Number(state.stage)));
     return selected ? resolveQuestTokens(selected, record, state) : null;
+  }
+
+  function dialogueEyesOpen() {
+    const state = ensureQuestState();
+    return !!state && (state.status !== 'intro' || Number(state.introTalkAttempts) >= 3);
   }
 
   function unlockRecipe(record = null) {
@@ -475,6 +497,7 @@
       'Banubu quest:',
       `  installed=${installed}`,
       `  status=${state?.status || 'unavailable'} stage=${state?.stage ?? '-'}`,
+      `  introTalkAttempts=${state?.introTalkAttempts ?? '-'} dialogueEyesOpen=${dialogueEyesOpen()}`,
       `  questType=${target?.questType || 'none'}`,
       `  requested=${joinedEffectLabels(target)}`,
       `  minimumStrength=${target ? strengthLabel(target.minStacks || 1) + ' (+' + (target.minStacks || 1) + ')' : 'none'}`,
@@ -522,6 +545,7 @@
     init,
     install,
     selectTree,
+    dialogueEyesOpen,
     ensureQuestState,
     stageDefinition,
     allFeasibleTargets: allFeasibleFishTargets,
