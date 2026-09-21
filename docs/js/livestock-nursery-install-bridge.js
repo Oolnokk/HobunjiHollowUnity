@@ -16,7 +16,7 @@
     { globalKey: 'StableAnimalPerkAdjustments', src: 'js/stable-animal-perk-adjustments.js?v=20260915ambient2' },
     { globalKey: 'StableAnimalTownFamiliarity', src: 'js/stable-animal-town-familiarity.js?v=20260917rapport2' },
     { globalKey: 'StableAnimalTrainingRefinements', src: 'js/stable-animal-training-refinements.js?v=20260912pets3' },
-    { globalKey: 'StableAnimalXpEvents', src: 'js/stable-animal-xp-events.js?v=20260913xp1' },
+    { globalKey: 'StableAnimalXpEvents', src: 'js/stable-animal-xp-events.js?v=20260920startup1' },
     { globalKey: 'StableTrainingCompendiumPatch', src: 'js/stable-training-compendium-patch.js?v=20260912stableNative1' },
     { globalKey: 'BARN_INCUBATOR_CONFIG', src: 'config/barn-incubator-config.js?v=20260916sleep1' },
     { globalKey: 'BarnIncubator', src: 'js/barn-incubator.js?v=20260903incubator1' },

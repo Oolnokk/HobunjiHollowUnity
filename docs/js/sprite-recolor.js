@@ -177,7 +177,7 @@
 
   function loadFishCatalogForGame(){
     if(typeof document==='undefined'||!document.getElementById('fishingOverlay'))return;
-    parserOrderedScript('fish-catalog.js','fish-catalog','20260826amphib1',()=>!!window.FishCatalog);
+    parserOrderedScript('fish-catalog.js','fish-catalog','20260920startup2',()=>!!window.FishCatalog);
   }
   function loadFishingEventsForGame(){
     if(typeof document==='undefined'||!document.getElementById('fishingOverlay'))return;

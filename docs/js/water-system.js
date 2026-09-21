@@ -22,7 +22,12 @@
   // townScene, grid, townGrid, _townZone, _zoneWaterMeshes) aren't actually
   // assigned yet when init() runs.
   let deps = null;
-  function init(injectedDeps) { deps = injectedDeps; }
+  function init(injectedDeps) {
+    // Startup runs thousands of lines before game.js initializes NORMAL_TOP,
+    // SLAB_H, WATER_UNIT, and other late world constants. Store their getter
+    // closures here, but do not invoke them until simulation/render work runs.
+    deps = injectedDeps;
+  }
 
   // ── Water simulation constants ──
   // Water is a float depth (0..MAX_WATER) sitting above the tile floor.
@@ -63,7 +68,8 @@
   // ── Merged water mesh apron constants ──
   const FAR_APRON_ROWS = 2;      // how many tile-rows of apron beyond the seam
   const FAR_APRON_FALLOFF = 0.55; // depth multiplier per extra apron row out
-  const INVERTED_WATER_MIN_WET_FRACTION = 0.25; // Used to keep sparse/dry states on the old sparse collector+renderer path instead of paying baseline-analysis overhead.
+  const FLOOD_PLANE_MIN_WET_FRACTION = 0.25; // Used to require genuinely map-wide wetness before promoting local water into the global flood sheet.
+  const FLOOD_SURFACE_HIDE_EPSILON = 0.001; // Used when deciding whether the flood sheet is visibly above a local/permanent water surface.
 
   // Helper: floor Z for a tile type. Trenches shallow out toward 0 as they silt up.
   function floorZ(type, depth = 1) {
@@ -285,10 +291,11 @@
 
   // ── Merged water mesh rendering ─────────────────────────────────
   // The PNG tiles across world X/Z and scrolls as one continuous surface.
-  // Farm/town dynamic water use an inverted geometry representation: ordinary
-  // weather-level cells are greedily merged into large flat rectangles; dry,
-  // solid, permanent-water, and locally different cells are literal holes,
-  // with wet local deviations appended as exception geometry in the same mesh.
+  // Farm/town flooding is rendered as one literal map-wide quad at the common
+  // weather level. Local puddles/trenches remain a separate merged mesh and are
+  // suppressed while the global flood sheet sits above them, so rocks/objects
+  // cannot punch visual holes in the flood and lower native water does not
+  // double-render through it.
   let mergedWaterMaterial = null;
   function _material() {
     if (!mergedWaterMaterial) {
@@ -321,6 +328,29 @@
       ...options,
     });
     if (!mesh) return null;
+
+    const identity = `${options?.name || ''} ${options?.statKey || ''}`.toLowerCase(); // Used to classify flood/local/permanent water without adding another caller-side registry.
+    let surfaceMinY = Infinity; // Used to cache this mesh's lowest authored water elevation without allocating a temporary sample array.
+    let surfaceMaxY = -Infinity; // Used to cache this mesh's highest authored water elevation for flood occlusion.
+    for (const cell of cells || []) {
+      const surfaceY = Number(cell?.surfaceY); // Used to fold this cell into the mesh-level elevation bounds.
+      if (!Number.isFinite(surfaceY)) continue;
+      if (surfaceY < surfaceMinY) surfaceMinY = surfaceY;
+      if (surfaceY > surfaceMaxY) surfaceMaxY = surfaceY;
+    }
+    const isPermanentSurface = !options?.mapWidePlane
+      && !/dynamic|apron|flood/.test(identity)
+      && /river|stream|waterway/.test(identity); // Used to hide native river/stream surfaces only while a higher flood sheet covers them.
+    mesh.userData.waterSurfaceRole = options?.mapWidePlane ? 'flood' : (isPermanentSurface ? 'permanent' : 'local');
+    mesh.userData.waterSurfaceMinY = Number.isFinite(surfaceMinY) ? surfaceMinY : null;
+    mesh.userData.waterSurfaceMaxY = Number.isFinite(surfaceMaxY) ? surfaceMaxY : null;
+    mesh.renderOrder = options?.mapWidePlane ? -10 : mesh.renderOrder; // Used to draw the broad flood sheet behind any surviving higher local-water geometry.
+    if (isPermanentSurface && /town/.test(identity) && Number.isFinite(mesh.userData.waterSurfaceMaxY)) {
+      mesh.visible = !_floodCoversSurface(_townFloodBaseline, mesh.userData.waterSurfaceMaxY);
+    } else if (isPermanentSurface && /farm/.test(identity) && Number.isFinite(mesh.userData.waterSurfaceMaxY)) {
+      mesh.visible = !_floodCoversSurface(_farmFloodBaseline, mesh.userData.waterSurfaceMaxY);
+    }
+
     sceneObj.add(mesh);
     deps._markTerrainEdgeId(mesh, 'water');
     return mesh;
@@ -328,10 +358,14 @@
 
   // Global water time — updated in gameLoop
   let waterTime = 0;
-  let farmWaterMesh = null;        // Rebuilt by updateWaterMeshes() after each farm simulation tick.
-  let townWaterMesh = null;        // Rebuilt by updateTownWaterMeshes() after each town simulation tick.
+  let farmWaterMesh = null;        // Rebuilt by updateWaterMeshes() as the farm's local puddle/trench water layer.
+  let townWaterMesh = null;        // Rebuilt by updateTownWaterMeshes() as the town's local puddle/trench water layer.
+  let farmFloodMesh = null;        // Used as the farm's one-quad map-wide flood sheet while the common flood baseline is active.
+  let townFloodMesh = null;        // Used as the town's one-quad map-wide flood sheet while the common flood baseline is active.
   let farmFarAquiferMesh = null;   // Used by the farm's south-edge continuation renderer.
   let townFarAquiferMesh = null;   // Used by the town's south-edge continuation renderer.
+  let _farmFloodBaseline = _dryRenderBaseline(); // Used by local/permanent visibility gating and mobile-visible flood diagnostics.
+  let _townFloodBaseline = _dryRenderBaseline(); // Used by town river visibility gating and mobile-visible flood diagnostics.
   let _flowingTrenchTiles = [];        // Used by WeatherFX's trench particle emitter.
   let _townFlowingTrenchTiles = [];    // Same, town-side.
 
@@ -376,7 +410,7 @@
   function _dryRenderBaseline() {
     return { // Used to route sparse states through the classic renderer without any baseline-analysis pass.
       visible: false,
-      surfaceY: deps.getNormalTop(),
+      surfaceY: null, // A dry baseline has no rendered surface; keeping this dependency-free makes both module load and init safe before NORMAL_TOP exists.
       depth: 0,
       coverage: 0,
       flowX: 0,
@@ -435,8 +469,8 @@
       }
     }
 
-    const minimumInversionWetCells = Math.ceil(rows * cols * INVERTED_WATER_MIN_WET_FRACTION); // Used to avoid all baseline-analysis overhead when water is sparse.
-    if (cells.length < minimumInversionWetCells) {
+    const minimumFloodWetCells = Math.ceil(rows * cols * FLOOD_PLANE_MIN_WET_FRACTION); // Used to avoid map-wide flood analysis while water is still sparse/local.
+    if (cells.length < minimumFloodWetCells) {
       return { cells, flowingTrenches, baseline: _dryRenderBaseline() };
     }
 
@@ -475,6 +509,41 @@
     return { cells, flowingTrenches, baseline };
   }
 
+  function _floodCoversSurface(baseline, surfaceY) {
+    return !!baseline?.visible
+      && Number.isFinite(baseline.surfaceY)
+      && Number.isFinite(surfaceY)
+      && baseline.surfaceY > surfaceY + FLOOD_SURFACE_HIDE_EPSILON;
+  }
+
+  function _filterLocalWaterCellsForFlood(cells, baseline) {
+    if (!baseline?.visible || !Number.isFinite(baseline.surfaceY)) return cells;
+    return cells.filter(cell => Number.isFinite(cell?.surfaceY)
+      && cell.surfaceY > baseline.surfaceY + FLOOD_SURFACE_HIDE_EPSILON); // Used to keep only water genuinely higher than the one authoritative flood sheet.
+  }
+
+  function _buildFloodPlane(sceneObj, baseline, cols, rows, statKey) {
+    if (!baseline?.visible) return null;
+    return buildMergedWaterMesh(sceneObj, [], {
+      name: statKey.replace(/\s+/g, '_') + '_mesh',
+      statKey,
+      mapWidePlane: true,
+      cols,
+      rows,
+      baseline,
+    });
+  }
+
+  function _syncPermanentWaterVisibility(sceneObj, baseline) {
+    if (!sceneObj?.traverse) return;
+    sceneObj.traverse(object => {
+      if (object?.userData?.waterSurfaceRole !== 'permanent') return;
+      const surfaceY = object.userData.waterSurfaceMaxY; // Used to restore the permanent surface as soon as flood level is no longer above it.
+      if (!Number.isFinite(surfaceY)) return;
+      object.visible = !_floodCoversSurface(baseline, surfaceY);
+    });
+  }
+
   // The shallow decorative puddle apron is also one merged draw call. Its
   // World-space UVs keep the tiled PNG continuous across the playable-grid
   // seam without making a separate texture instance for the apron.
@@ -500,6 +569,7 @@
   // torn down and rebuilt wholesale (buildTileMeshes).
   function resetFarmWaterMesh() {
     farmWaterMesh = _disposeMergedWaterMesh(deps.getScene(), farmWaterMesh, 'farm dynamic');
+    farmFloodMesh = _disposeMergedWaterMesh(deps.getScene(), farmFloodMesh, 'farm flood');
     _waterSimDirty = true;
   }
 
@@ -511,14 +581,15 @@
       _waterSimDirty = false;
       const snapshot = _collectDynamicWaterCells(deps.getGrid(), deps.ROWS, deps.COLS, false);
       _flowingTrenchTiles = snapshot.flowingTrenches;
+      _farmFloodBaseline = snapshot.baseline;
+      const localCells = _filterLocalWaterCellsForFlood(snapshot.cells, snapshot.baseline); // Used to keep trenches/puddles hidden while a higher map-wide flood sheet covers them.
       farmWaterMesh = _disposeMergedWaterMesh(scene, farmWaterMesh, 'farm dynamic');
-      farmWaterMesh = buildMergedWaterMesh(scene, snapshot.cells, {
+      farmWaterMesh = buildMergedWaterMesh(scene, localCells, {
         name: 'farm_merged_dynamic_water', statKey: 'farm dynamic',
-        inverted: true,
-        cols: deps.COLS,
-        rows: deps.ROWS,
-        baseline: snapshot.baseline,
       });
+      farmFloodMesh = _disposeMergedWaterMesh(scene, farmFloodMesh, 'farm flood');
+      farmFloodMesh = _buildFloodPlane(scene, snapshot.baseline, deps.COLS, deps.ROWS, 'farm flood');
+      _syncPermanentWaterVisibility(scene, snapshot.baseline);
       farmFarAquiferMesh = _disposeMergedWaterMesh(scene, farmFarAquiferMesh, 'farm south apron');
       farmFarAquiferMesh = _buildFarAquiferApron(deps.COLS, deps.ROWS, _farSouthLevel(), scene, 'farm south apron');
     }
@@ -538,18 +609,33 @@
       _townWaterSimDirty = false;
       const snapshot = _collectDynamicWaterCells(deps.getTownGrid(), TROWS, TCOLS, true);
       _townFlowingTrenchTiles = snapshot.flowingTrenches;
+      _townFloodBaseline = snapshot.baseline;
+      const localCells = _filterLocalWaterCellsForFlood(snapshot.cells, snapshot.baseline); // Used to keep town ditches hidden while a higher map-wide flood sheet covers them.
       townWaterMesh = _disposeMergedWaterMesh(townScene, townWaterMesh, 'town dynamic');
-      townWaterMesh = buildMergedWaterMesh(townScene, snapshot.cells, {
+      townWaterMesh = buildMergedWaterMesh(townScene, localCells, {
         name: 'town_merged_dynamic_water', statKey: 'town dynamic',
-        inverted: true,
-        cols: TCOLS,
-        rows: TROWS,
-        baseline: snapshot.baseline,
       });
+      townFloodMesh = _disposeMergedWaterMesh(townScene, townFloodMesh, 'town flood');
+      townFloodMesh = _buildFloodPlane(townScene, snapshot.baseline, TCOLS, TROWS, 'town flood');
+      _syncPermanentWaterVisibility(townScene, snapshot.baseline);
       townFarAquiferMesh = _disposeMergedWaterMesh(townScene, townFarAquiferMesh, 'town south apron');
       townFarAquiferMesh = _buildFarAquiferApron(TCOLS, TROWS, deps.getTownSouthLevel(), townScene, 'town south apron');
     }
     _material().uniforms.uTime.value = waterTime;
+  }
+
+  function debugFloodSnapshot() {
+    const summarize = (baseline, floodMesh, localMesh) => ({ // Used by the in-game/mobile debug console without requiring DevTools.
+      active: !!baseline?.visible,
+      surfaceY: Number.isFinite(baseline?.surfaceY) ? baseline.surfaceY : null,
+      depth: Number.isFinite(baseline?.depth) ? baseline.depth : 0,
+      floodPlaneVisible: !!floodMesh?.visible,
+      localWaterVisible: !!localMesh?.visible,
+    });
+    return {
+      farm: summarize(_farmFloodBaseline, farmFloodMesh, farmWaterMesh),
+      town: summarize(_townFloodBaseline, townFloodMesh, townWaterMesh),
+    };
   }
 
   // Animates a zone's waterfall curtain mesh(es) (see
@@ -576,6 +662,7 @@
     updateZoneWaterMeshes,
     buildMergedWaterMesh,
     resetFarmWaterMesh,
+    debugFloodSnapshot,
     getFlowingTrenchTiles: () => _flowingTrenchTiles,
     getTownFlowingTrenchTiles: () => _townFlowingTrenchTiles,
   };

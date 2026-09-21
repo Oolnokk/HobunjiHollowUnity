@@ -12,6 +12,7 @@
   const PANEL_ID = 'hobunjiCloudSavePanel';
   const LAUNCHER_ID = 'hobunjiCloudSaveLauncher';
   const SETTINGS_ROW_ID = 'hobunjiCloudSaveSettingsRow';
+  const STATIC_PREVIEW_HOSTS = new Set(['raw.githack.com', 'rawgit.com', 'localhost', '127.0.0.1', '::1']); // Hosts that cannot serve this repo's Netlify Functions and should not emit expected 404 probes.
 
   let _user = null;
   let _remote = null;
@@ -126,7 +127,19 @@
     }
   }
 
+  function netlifyFunctionsAvailableHere() {
+    const runtimeLocation = globalThis.location;
+    if (!runtimeLocation) return true;
+    const host = String(runtimeLocation.hostname || '').toLowerCase();
+    if (runtimeLocation.protocol === 'file:') return false;
+    if (STATIC_PREVIEW_HOSTS.has(host) || host.endsWith('.github.io')) return false;
+    return true;
+  }
+
   async function postJson(url, payload) {
+    if (String(url || '').startsWith('/.netlify/functions/') && !netlifyFunctionsAvailableHere()) {
+      throw new CloudRequestError('Netlify cloud save is unavailable on this static preview host.', 404, null);
+    }
     let response;
     try {
       response = await fetch(url, {

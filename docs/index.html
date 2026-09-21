@@ -5,6 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <title>Tropical Wet/Dry Trench Farm</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <!-- Parser-time dependency gate used by modules that may be dynamically
+       injected long before game.js. Keep this near the top: livestock
+       genotype persistence and Porakaneki faction hooks can request it while
+       the document parser is still loading the main module list. -->
+  <script src="js/scene-ready-poller.js?v=20260920startup4"></script>
   <script src="https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js"></script>
   <script src="js/GLTFLoader.js?v=20260712d"></script>
   <script src="js/WallBuilder.js?v=20260809a"></script>
@@ -216,7 +221,7 @@
   <!-- Optional local-folder save mirror (window.LocalSaveFolder) — self-contained,
        only reads/writes the same hobunjiSaveMeta localStorage key onboarding.js/
        game.js already use. See docs/js/local-save-folder.js. -->
-  <script src="js/local-save-folder.js?v=20260920patterns1"></script>
+  <script src="js/local-save-folder.js?v=20260920startup4"></script>
   <!-- Onboarding overlay -->
   <link rel="stylesheet" href="onboarding.css?v=20260728b">
   <script src="onboarding.js?v=20260910review1"></script>
@@ -238,7 +243,6 @@
   <script src="js/combat/combat-input.js?v=20260914transienttarget1"></script>
   <script src="js/combat/combat-combo.js?v=20260915enemydodge1"></script>
   <script src="js/combat/combat-quickattacks.js?v=20260918blackstamina2"></script>
-  <script src="js/combat/quick-attack-bonus-indicator.js?v=20260914followfix1"></script>
   <script src="js/combat/combat-counter-shield.js?v=20260917charge4"></script>
   <script src="js/combat/combat-blink-dodge.js?v=20260918ninjery3"></script>
   <script src="js/combat/combat-charged-breaker.js?v=20260917charge4"></script>
@@ -385,7 +389,7 @@
        relative to the other systems above doesn't matter; must load before
        game.js, which calls window.CalendarSystem.init(...) during its own
        setup. -->
-  <script src="js/calendar-system.js?v=20260830release1"></script>
+  <script src="js/calendar-system.js?v=20260920startup1"></script>
   <!-- Resolves a map/interior's active alternate `layouts` entry (see
        docs/config/maps/map_i_temple.json's spirit_communion layout) against
        the current calendar time — window.MapLayoutSystem. Pure/stateless, no
@@ -542,7 +546,7 @@
        createInitialGrid() call (which itself calls recomputeWater()
        synchronously to settle day-one water levels), well before most of
        the other window.<Namespace>.init(...) calls below. -->
-  <script src="js/water-system.js?v=20260910review1"></script>
+  <script src="js/water-system.js?v=20260920startup5"></script>
   <!-- Weather rolling, day/night + weather lighting overlay, and trench
        water particle/paddy ripple FX (window.WeatherFX) — reads
        window.CalendarSystem at call time (already global by then), so load
@@ -2351,7 +2355,7 @@
   <script src="js/audio-system.js?v=20260830flaskcues1"></script>
   <!-- Semantic animal-call scheduler. Gameplay systems emit vocal intents;
        AudioSystem above remains the replaceable low-level renderer. -->
-  <script src="js/animal-vocalizations.js?v=20260828animalvoices3"></script>
+  <script src="js/animal-vocalizations.js?v=20260920startup2"></script>
   <!-- Background music/ambient cues/bgs/furniture-proximity SFX
        (window.Music) — wires its own DOM audio-unlock listeners at load
        time, and must load before game.js, which calls
@@ -2378,6 +2382,11 @@
   <script src="js/banubu-questline.js?v=20260919tea1"></script>
   <!-- World-space Float+ combat text and centered five-row reward lists. -->
   <script src="js/world-popup-text.js?v=20260831interactioncolors2"></script>
+  <!-- Quick Attack opportunity reticle needs WorldPopupText's avatar centroid
+       helper at module evaluation time, so it belongs here rather than in the
+       earlier combat-definition block. It still loads before game.js and
+       registers in RuntimeFrameScheduler's pre-game phase. -->
+  <script src="js/combat/quick-attack-bonus-indicator.js?v=20260920startup4"></script>
   <!-- Lore loading-screen overlay, shown while a wilderness zone or mine
        floor rebuilds from scratch. Content authored via
        tools/loading-screen-editor/index.html. -->
@@ -2487,10 +2496,7 @@
        exported functions) and before game.js (whose boot calls into all
        three and reads window.DevTestingSwitchbox.flags directly). -->
   <script src="js/dev-testing-switchbox.js?v=20260912a"></script>
-  <!-- Generic poll-until-ready/timeout helper; game.js's
-       waitForBuildingSceneReady calls into it directly. -->
-  <script src="js/scene-ready-poller.js?v=20260917a"></script>
-  <script src="game.js?v=20260920furniture1"></script>
+  <script src="game.js?v=20260920startup1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
   <script src="js/controller-ui-nav.js?v=20260915perf1"></script>
   <script>

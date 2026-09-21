@@ -185,17 +185,28 @@
     Object.defineProperty(window,'Fishing',{configurable:true,enumerable:true,get:()=>cur,set:v=>{cur=wrap(v)}});
   }
 
-  function registerItems() {
-    let n=0;
-    const go=()=>{
-      if(window.ShippingPanel?.registerItemDefinitions?.(buildItemDefs(),buildBasePrices())===true){
-        window.__farmLog?.(`[fish-catalog] registered ${FISH.length} authored fish (${FISH.filter(f=>f.amphibious).length} amphibious at ${AMPHIBIOUS_SELL_MULTIPLIER}x value)`,'items');
-        return;
-      }
-      if(n++<40)setTimeout(go,250);
-      else console.warn('[fish-catalog] item bridge unavailable');
+  let itemsRegistered = false; // Prevents duplicate ITEM_DEFS/BASE_PRICES writes when ShippingPanel.init is wrapped or re-run.
+  function registerItemsWhenReady() {
+    if (itemsRegistered) return true;
+    if (window.ShippingPanel?.registerItemDefinitions?.(buildItemDefs(), buildBasePrices()) !== true) return false;
+    itemsRegistered = true;
+    window.__farmLog?.(`[fish-catalog] registered ${FISH.length} authored fish (${FISH.filter(f=>f.amphibious).length} amphibious at ${AMPHIBIOUS_SELL_MULTIPLIER}x value)`,'items');
+    return true;
+  }
+  function hookShippingItemBridge() {
+    const api = window.ShippingPanel; // ShippingPanel loads before this module in the shipped game; its init receives ITEM_DEFS later in game.js.
+    if (!api?.init || api.__fishCatalogItemBridgeWrapped) {
+      registerItemsWhenReady();
+      return;
+    }
+    const originalInit = api.init;
+    api.init = function fishCatalogShippingInit(injectedDeps, ...rest) {
+      const result = originalInit.call(this, injectedDeps, ...rest);
+      registerItemsWhenReady(); // Event-driven handoff replaces the old fixed 10-second polling deadline.
+      return result;
     };
-    go();
+    api.__fishCatalogItemBridgeWrapped = true;
+    registerItemsWhenReady(); // Also handles unusual contexts where ShippingPanel was already initialized before FishCatalog loaded.
   }
 
   function configureCatchCamera() {
@@ -385,5 +396,5 @@
   window.FishCatalog={entries:FISH,get:k=>byKey.get(k)||null,buildFishingDefs,buildItemDefs,buildBasePrices,getRecoloredCanvas};
   configureCatchCamera();
   hookFishing();
-  registerItems();
+  hookShippingItemBridge();
 })();
