@@ -112,7 +112,7 @@ assert.match(weaving, /__test: Object\.freeze\([^]*buildMotifClusterSeparatorMas
 assert.match(weaving, /function buildMotifClusterSeparatorMask\(mask, width, height\)/, 'weaving derives a watershed between disconnected opaque islands in one source motif');
 assert.match(weaving, /canvas\.__motifClusterSeparatorCanvas = clusterSeparatorSrc \? clusterSeparatorCanvas : null/, 'each rendered motif mesh carries its transformed per-instance no-fuse watershed');
 assert.match(weaving, /clusterSeparatorMask && paddedSeparatorData\[mi \+ 3\] > 16/, 'garment-cell sampling applies the same offset to motif ink and its island separator');
-assert.match(weaving, /!patternMask\[p\] && clusterSeparatorMask\?\.\[p\]/, 'outward outline growth cannot paint across an intra-motif island separator');
+assert.match(weaving, /!clusterSeparatorMask\?\.\[p\] && offset\.d2 <= outward2/, 'outward outline growth skips intra-motif island separator pixels while expanding from motif boundaries');
 assert.match(weaving, /!allowedMask\[p\] \|\| clusterSeparatorMask\?\.\[p\]/, 'motif thickening cannot bridge two separate ink islands inside one motif instance');
 assert.match(weaving, /const adjustedSrcMask = adjustMaskThickness\(srcMask, sourceAllowedMask, srcSize, srcSize, sourceSignedThickness, sourceClusterSeparatorMask\)/, 'weaving measures signed contour thickness in rotated source-motif pixels');
 assert.match(weaving, /const sourceSignedThickness = \(patternDef\?\.invert \? -1 : 1\)/, 'inverted weaving reverses source morphology so positive values remain visibly thinner');
