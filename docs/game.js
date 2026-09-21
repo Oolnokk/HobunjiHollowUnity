@@ -23720,6 +23720,10 @@
 
         window.DialogueContent?.updateNpcDialoguePortrait(now);
         window.HudUpdate.updateHud();
+        if (!preworldBackdropReleased) {
+          preworldBackdropReleased = !window.HobunjiTitleScreen?.releaseBackdrop
+            || window.HobunjiTitleScreen.releaseBackdrop('first-world-frame') === true;
+        }
         window.PerfProfiler?.end(overlayPerf);
         window.PerfProfiler?.end(gameLoopTotalPerf);
       }
@@ -28426,6 +28430,7 @@
 
       // ── Onboarding gate ────────────────────────────────────────────
       let gameStarted = false;
+      let preworldBackdropReleased = false; // Used to hand the startup sky off only after the first hydrated world frame has actually been drawn.
       window.__hobunjiGameStarted = false;
 
       async function spawnPlayerAvatar(playerData) {
