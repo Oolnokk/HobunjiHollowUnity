@@ -265,20 +265,11 @@
   "objects": [],
   "npcAnchors": [
     {
-      "id": "station_banubu_cave_awake",
-      "npcId": "banubu",
-      "name": "Banubu's Cave",
-      "col": 6,
-      "row": 5,
-      "facing": "south",
-      "pose": "stand"
-    },
-    {
       "id": "station_banubu_cave_sleep",
       "npcId": "banubu",
       "name": "Banubu's Sleeping Spot",
-      "col": 9,
-      "row": 7,
+      "col": 6,
+      "row": 5,
       "facing": "west",
       "pose": "lie"
     }
@@ -338,7 +329,7 @@
   },
   "meta": {
     "createdAt": "2026-09-19T00:00:00.000Z",
-    "updatedAt": "2026-09-22T00:00:00.000Z"
+    "updatedAt": "2026-09-22T22:55:00.000Z"
   },
   "cinematicCameras": [
     {
@@ -350,31 +341,33 @@
         "z": 7.4
       },
       "target": {
-        "x": 6.5,
-        "y": 0.85,
-        "z": 5.5
+        "x": 0,
+        "y": 0,
+        "z": 0
       },
       "fovDeg": 38,
       "blendSeconds": 0.5,
-      "dialogueNpcId": "banubu",
+      "dialogueNpcId": "",
       "fadePets": true,
       "playerStage": {
         "x": 3.5,
         "z": 8.5
-      }
+      },
+      "targetNpcId": "banubu",
+      "targetAnchorId": "station_banubu_cave_sleep"
     },
     {
       "id": "banubu_dialogue_sleep",
       "label": "Banubu dialogue — sleeping",
       "position": {
-        "x": 7.1,
-        "y": 0.28,
-        "z": 9.4
+        "x": 7.6,
+        "y": -0.78,
+        "z": 8.3
       },
       "target": {
-        "x": 9.5,
-        "y": 0.55,
-        "z": 7.5
+        "x": 0,
+        "y": 0,
+        "z": 0
       },
       "fovDeg": 40,
       "blendSeconds": 0.5,
@@ -383,7 +376,9 @@
       "playerStage": {
         "x": 6.5,
         "z": 10.5
-      }
+      },
+      "targetNpcId": "banubu",
+      "targetAnchorId": "station_banubu_cave_sleep"
     }
   ]
 }
