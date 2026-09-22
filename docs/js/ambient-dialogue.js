@@ -515,6 +515,22 @@
     return window.DialogueSpeechCadence?.buildSchedule(text, cfg) || [];
   }
 
+  function ambientRestingExpression(options = {}) {
+    const rec = options.faceWalker?.rec || null; // Used to resolve the same live Favor-driven resting face as full dialogue when an NPC speaks ambiently.
+    const expression = rec ? window.DialogueContent?.npcRestingExpression?.(rec) : null; // Reuses DialogueContent's single relationship/personality policy rather than duplicating thresholds here.
+    return ['neutral', 'smile', 'frown', 'laugh'].includes(expression) ? expression : 'neutral';
+  }
+
+  function ambientLineExpression(options = {}, restingExpression = 'neutral') {
+    const explicit = String(options.expression || '').trim().toLowerCase(); // Used by reaction systems to request a temporary emotion for this exact ambient line.
+    if (['neutral', 'smile', 'frown', 'laugh'].includes(explicit)) return explicit;
+    const tone = String(options.tone || '').trim().toLowerCase(); // Used as a small fallback for existing call sites that already communicate obvious positive/negative tone.
+    if (tone === 'jeer' || tone === 'refuse' || /reaction-.+-negative$/.test(tone)) return 'frown';
+    if (tone === 'cheer' || tone === 'accept' || /reaction-silliness-positive$/.test(tone)) return tone.includes('silliness') ? 'laugh' : 'smile';
+    if (/reaction-.+-positive$/.test(tone)) return 'smile';
+    return restingExpression;
+  }
+
   function disposePart(part) {
     part.plane.parent?.remove(part.plane);
     part.geometry.dispose();
@@ -527,6 +543,10 @@
     event.group.parent?.remove(event.group);
     disposePart(event.textPart);
     if (event.headPart) disposePart(event.headPart);
+    if (event.seatId && window.portraitBreathingComposer) {
+      window.portraitBreathingComposer.clearExpression?.(event.seatId);
+      window.portraitBreathingComposer.setDefaultExpression?.(event.seatId, null);
+    }
   }
 
   // Crops sourceCanvas down to its visible-pixel bounding box (padded) and
@@ -632,10 +652,19 @@
       seatId: `ambient:${options.speakerId || 'speaker'}:${Math.round(now)}`,
       tone: options.tone || 'greeting', startedAt: now,
       durationMs: Number(options.durationMs) || state.settings.durationMs,
+      restingExpression: ambientRestingExpression(options), // Used by ambient greetings/chatheads so the NPC keeps their live Favor-driven demeanor outside the full dialogue UI.
+      expression: null, // Filled immediately below with either an authored reaction emotion or the live resting expression.
       revealSchedule: revealSchedule(message), // Shared syllable cadence keeps text and mouth pulses synchronized.
       cadenceTimers: [],
       visibleChars: -1,
     };
+    event.expression = ambientLineExpression(options, event.restingExpression);
+    if (headPart && window.portraitBreathingComposer) {
+      window.portraitBreathingComposer.setDefaultExpression?.(event.seatId, event.restingExpression);
+      if (event.expression !== event.restingExpression) {
+        window.portraitBreathingComposer.setExpression?.(event.seatId, event.expression, event.durationMs);
+      }
+    }
     state.active.push(event);
     drawText(event, '');
     if (!event.revealSchedule.length) {
@@ -661,7 +690,20 @@
     if (headPart) {
       renderChathead(event, now, true);
     }
-    window.dispatchEvent(new CustomEvent('hobunji-ambient-dialogue', { detail: { speakerId: options.speakerId || null, text: message, mode, tone: event.tone } }));
+    window.dispatchEvent(new CustomEvent('hobunji-ambient-dialogue', {
+      detail: {
+        speakerId: event.speakerId,
+        text: message,
+        mode,
+        tone: event.tone,
+        greeting: event.greeting,
+        directedAtPlayer: event.directedAtPlayer,
+        startedAt: event.startedAt,
+        durationMs: event.durationMs,
+        restingExpression: event.restingExpression,
+        expression: event.expression,
+      },
+    }));
     return event;
   }
 
@@ -935,6 +977,7 @@
     loadSettings,
     resolveTargetName,
     renderChatheadImage,
+    hasActiveGreetingFor,
   };
   window.AmbientDialogue = api;
 })();
