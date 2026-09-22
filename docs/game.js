@@ -29471,6 +29471,7 @@
           cutscenePreviewActive = false;
           cutscenePreviewZoomPercent = 100; // never leak an authored zoom into normal gameplay afterward
           cutscenePreviewDialogueSpeaker = null;
+          window.CinematicCameraRuntime?.deactivate?.(); // A Camera card must never leak its fixed shot back into ordinary gameplay after the preview ends.
           enterDefaultCameraMode();
           activeCameraTarget = null;
           window.CutscenePreviewHelpers.cutscenePreviewBanner(message || `🎬 ${payload.title || 'Cutscene'} — finished.`, false);
@@ -29874,6 +29875,7 @@
         runCutscenePreview(window.__hobunjiCutscenePreview).catch(err => {
           console.error('[cutscene preview] failed to start:', err);
           cutscenePreviewActive = false;
+          window.CinematicCameraRuntime?.deactivate?.(); // Startup failures release any camera card activated before the exception.
           window.CutscenePreviewHelpers.cutscenePreviewBanner('Preview failed to start — see console.', true);
         });
       }
