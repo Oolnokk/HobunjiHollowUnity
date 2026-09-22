@@ -170,9 +170,9 @@
     await loadScript('../../js/portrait-utils.js', () => !!window.getShadeFillCanvas && !!window.parseHexColor);
     await loadScript('../../js/terrain-preview.js', () => !!window.TerrainPreview?.buildMergedZoneGrid);
     await loadScript('../../js/wilderness-map-generator.js', () => !!window.WildernessMapGenerator?.generateZoneWorkspace);
-    await loadScript('../../js/locale-terrain-placement.js', () => !!window.LocaleTerrainPlacement?.evaluateCandidateForTest);
-    await loadScript('../../js/locale-cave-runtime.js', () => !!window.LocaleCaveRuntime?.registerWorkspace);
-    await loadScript('../../js/zone-den-totem-features.js', () => !!window.ZoneDenTotemFeatures?.buildAnimalDenMeshes);
+    await loadScript('../../js/locale-terrain-placement.js?v=20260922localecaverotation1', () => !!window.LocaleTerrainPlacement?.evaluateCandidateForTest);
+    await loadScript('../../js/locale-cave-runtime.js?v=20260922localecaverotation1', () => !!window.LocaleCaveRuntime?.registerWorkspace);
+    await loadScript('../../js/zone-den-totem-features.js?v=20260922localecaverotation1', () => !!window.ZoneDenTotemFeatures?.buildAnimalDenMeshes);
     await loadMaterialConfig();
   }
   async function loadMaterialConfig() {
@@ -353,7 +353,9 @@
     const anchorC = finiteCoordinate(placed?.x) ?? finiteCoordinate(placed?.col) ?? finiteCoordinate(currentCandidate?.anchorC);
     const anchorR = finiteCoordinate(placed?.y) ?? finiteCoordinate(placed?.row) ?? finiteCoordinate(currentCandidate?.anchorR);
     if (anchorC == null || anchorR == null) return null;
-    const compiled = window.LocaleTerrainPlacement?.compileLocale?.(currentLocale, scale);
+    const rotationDeg = Number(placed?.rotationDeg ?? currentCandidate?.rotationDeg) || 0; // Debug terrain windows must describe the same cardinal footprint currently rendered in the preview.
+    const placedLocale = previewLocaleVariant(currentLocale, rotationDeg);
+    const compiled = window.LocaleTerrainPlacement?.compileLocale?.(placedLocale, scale);
     const bounds = compiled?.footprint || compiled?.bounds;
     const minC = anchorC + (finiteCoordinate(bounds?.minC) ?? 0);
     const minR = anchorR + (finiteCoordinate(bounds?.minR) ?? 0);
