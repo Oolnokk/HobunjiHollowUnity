@@ -539,12 +539,26 @@
     return walker?.rec?.id || walker?.rec?.name || 'npcDialogue';
   }
 
+  function _npcFriendlinessExpressionForFavor(rec, favor) {
+    const friendliness = rec?.personality?.friendliness; // Used as this NPC's authored Favor thresholds for their unprompted/resting face.
+    const policy = friendliness && typeof friendliness === 'object' ? friendliness : {}; // Used so NPCs without authored friendliness inherit the ordinary 0-Favor behavior.
+    const rawSmileAt = Number(policy.smileAtFavor); // Used to let reserved NPCs stay neutral for a few positive Favor points before smiling.
+    const rawFrownBelow = Number(policy.frownBelowFavor); // Used to let unusually frosty NPCs frown above the ordinary zero-Favor boundary.
+    const smileAtFavor = Number.isFinite(rawSmileAt) ? rawSmileAt : 0; // Used as the inclusive smiling threshold; ordinary NPCs smile at zero.
+    const frownBelowFavor = Math.min(smileAtFavor, Number.isFinite(rawFrownBelow) ? rawFrownBelow : 0); // Used as the exclusive frowning threshold while preserving a valid neutral band.
+    const favorScore = Number.isFinite(Number(favor)) ? Number(favor) : 0; // Used as the live permanent Favor-point value that drives the resting expression.
+    if (favorScore >= smileAtFavor) return 'smile';
+    if (favorScore < frownBelowFavor) return 'frown';
+    return 'neutral';
+  }
+
   function _npcRestingExpression(rec = _dlgNpcRec || deps.getDialogueWalker()?.rec) {
     const cfg = window.SCRATCHBONES_CONFIG?.game?.portrait?.expressions || {};
     const fallback = String(cfg.defaultResting || 'neutral').toLowerCase();
     const available = Array.isArray(cfg.available) ? cfg.available.map(value => String(value).toLowerCase()) : [];
-    const authored = String(rec?.restingExpression || fallback).toLowerCase();
-    return !available.length || available.includes(authored) ? authored : fallback;
+    const favor = rec?.id ? getNpcDlgState(rec.id).favor : 0; // Used to recalculate the resting face from the relationship every time a dialogue line is presented.
+    const derived = _npcFriendlinessExpressionForFavor(rec, favor); // Used instead of a static authored restingExpression so relationship changes visibly affect demeanor.
+    return !available.length || available.includes(derived) ? derived : fallback;
   }
 
   function _playNpcDialogueLetterSfx(char, rec = _dlgNpcRec || deps.getDialogueWalker()?.rec) {
@@ -843,6 +857,7 @@
     hideChoiceButtons,
     dialogueSeatId,
     npcRestingExpression: _npcRestingExpression,
+    npcFriendlinessExpressionForFavor: _npcFriendlinessExpressionForFavor,
     getNpcDlgState,
     resetDialogueState,
     beginSyntheticChoice,
