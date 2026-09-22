@@ -374,6 +374,10 @@ assert.match(read('docs/js/livestock-nursery-install-bridge.js'), /animal-sleep-
 const speciesOverrides = require('../docs/config/npcs/species-overrides.json');
 assert.strictEqual(speciesOverrides.npcs.banubu.species, 'grehlr');
 assert.strictEqual(speciesOverrides.npcs.banubu.avatarExport.appearance.avatarType, 'animal');
+assert.strictEqual(speciesOverrides.npcs.banubu.avatarExport.appearance.dialogueFacePlayer, false, 'sleepy Banubu must keep his existing pose instead of turning toward the player while speaking');
+assert.match(gameSource, /const npcFacesPlayer = walker\.profile\?\.appearance\?\.dialogueFacePlayer !== false/, 'full NPC dialogue must read the authored facing opt-out');
+assert.match(gameSource, /if \(npcFacesPlayer\) walker\.applyFacingDeadzone/, 'full NPC dialogue must skip body rotation when the facing opt-out is false');
+assert.match(gameSource, /if \(npcFacesPlayer && walker\.neckJoint\)/, 'full NPC dialogue must skip NPC eye-contact neck tracking when the facing opt-out is false');
 
 // The real current Alchemy definitions—not only the synthetic filter fixture above—must keep Quest 2 feasible.
 const liveContext = { console, JSON, Math, Date }; // Used as a dependency-light VM for pure alchemy/Tea Grinder enumeration.
