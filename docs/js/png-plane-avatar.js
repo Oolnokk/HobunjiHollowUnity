@@ -1377,6 +1377,8 @@
     group.remove(backPlane);
     group.add(front.mesh);
     group.add(back.mesh);
+    avatarRef.frontPlane = front.mesh; // Keeps public frame/facing/dialogue callers pointed at the live rigged front mesh rather than the detached legacy card.
+    avatarRef.backPlane = back.mesh; // Keeps the mirrored public plane reference synchronized with the live rigged back mesh.
 
     const legacyDispose = typeof avatarRef.dispose === 'function' ? avatarRef.dispose.bind(avatarRef) : null; // Preserves legacy texture/material/old-geometry cleanup.
     const state = {

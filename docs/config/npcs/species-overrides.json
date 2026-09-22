@@ -82,7 +82,8 @@
               }
             }
           },
-          "creatureScaleMultiplier": 1.5
+          "creatureScaleMultiplier": 1.5,
+          "dialogueFacePlayer": false
         },
         "equippedCosmetics": [],
         "appliedDyes": {}

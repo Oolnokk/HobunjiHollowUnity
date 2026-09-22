@@ -8,6 +8,7 @@ on:
       - 'docs/js/local-db-overrides.js'
       - 'docs/js/named-animal-npc.js'
       - 'docs/js/animal-chathead-frame.js'
+      - 'docs/js/ambient-dialogue.js'
       - 'docs/js/animal-npc-headwear.js'
       - 'docs/js/character-studio-animal-appearance.js'
       - 'docs/js/repo-pattern-library.js'
@@ -24,6 +25,7 @@ on:
       - 'docs/tools/index.html'
       - 'docs/index.html'
       - 'scripts/test-named-animal-npc-species.js'
+      - 'scripts/test-animal-chathead-ambient.js'
       - 'scripts/test-repo-pattern-authoring.js'
       - '.github/workflows/named-animal-npc-regression.yml'
   pull_request:
@@ -33,6 +35,7 @@ on:
       - 'docs/js/local-db-overrides.js'
       - 'docs/js/named-animal-npc.js'
       - 'docs/js/animal-chathead-frame.js'
+      - 'docs/js/ambient-dialogue.js'
       - 'docs/js/animal-npc-headwear.js'
       - 'docs/js/character-studio-animal-appearance.js'
       - 'docs/js/repo-pattern-library.js'
@@ -49,6 +52,7 @@ on:
       - 'docs/tools/index.html'
       - 'docs/index.html'
       - 'scripts/test-named-animal-npc-species.js'
+      - 'scripts/test-animal-chathead-ambient.js'
       - 'scripts/test-repo-pattern-authoring.js'
       - '.github/workflows/named-animal-npc-regression.yml'
 
@@ -69,6 +73,7 @@ jobs:
         run: |
           node --check docs/js/local-db-overrides.js
           node --check docs/js/named-animal-npc.js
+          node --check docs/js/ambient-dialogue.js
           node --check docs/js/animal-npc-headwear.js
           node --check docs/js/character-studio-animal-appearance.js
           node --check docs/js/repo-pattern-library.js
@@ -81,5 +86,7 @@ jobs:
           node --check scripts/test-repo-pattern-authoring.js
       - name: Test named animal NPC species integration
         run: node scripts/test-named-animal-npc-species.js
+      - name: Test animal ambient chathead integration
+        run: node scripts/test-animal-chathead-ambient.js
       - name: Test repo Pattern Editor and animal surface patterns
         run: node scripts/test-repo-pattern-authoring.js

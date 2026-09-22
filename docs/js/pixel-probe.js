@@ -702,6 +702,12 @@
     return lines;
   }
 
+  function _pixelProbeAmbientDialogueLines() {
+    const debug = window.AmbientDialogue?.debugSnapshot?.();
+    if (!debug) return null;
+    return [`Ambient dialogue: active=${Number(debug.activeEvents) || 0} animalLive=${Number(debug.animalChatheadLiveTextureHits) || 0} animalFallback=${Number(debug.animalChatheadFallbackRenders) || 0} animalSkipped=${Number(debug.animalChatheadSkippedFrames) || 0} renderBusy=${debug.renderQueuePending ? 1 : 0}`];
+  }
+
   // A scheduled NPC behaving visibly wrong — wandering somewhere they
   // shouldn't, or standing still without ever picking up their instrument
   // — is a state-machine question, not a rendering one, but it's exactly
@@ -955,6 +961,8 @@
     if (schedulerLines) lines.push(...schedulerLines);
     const animalSleepLines = _pixelProbeAnimalSleepLines();
     if (animalSleepLines) lines.push(...animalSleepLines);
+    const ambientDialogueLines = _pixelProbeAmbientDialogueLines();
+    if (ambientDialogueLines) lines.push(...ambientDialogueLines);
     const controllerUiDebug = window.ControllerUI?.debugState?.(); // Confirms that ordinary gameplay reads the cached closed-panel state instead of forcing layout.
     if (controllerUiDebug) lines.push(`Controller UI cache: panels=${controllerUiDebug.knownPanels} active=${controllerUiDebug.stackDepth} top=${controllerUiDebug.panelId || 'none'}`);
     const gridDebug = window.GridTileAccessors?.debugSnapshot?.(); // Makes building-footprint cache effectiveness visible during movement without a console.

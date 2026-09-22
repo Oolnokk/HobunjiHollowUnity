@@ -187,14 +187,14 @@ assert.strictEqual(state.introTalkAttempts, 0);
 const introSleep1 = questline.selectTree(banubu);
 assert.strictEqual(introSleep1.id, 'banubu_intro_sleep_1');
 assert.strictEqual(introSleep1.nodes.length, 1);
-assert.strictEqual(introSleep1.nodes[0].text, 'Zzzzz.');
+assert.strictEqual(introSleep1.nodes[0].text, 'Zzzzz');
 assert.strictEqual(introSleep1.nodes[0].next, null);
 assert.strictEqual(state.introTalkAttempts, 1);
 assert.strictEqual(banubu._animalDialogueEyesOpen, false);
 const introSleep2 = questline.selectTree(banubu);
 assert.strictEqual(introSleep2.id, 'banubu_intro_sleep_2');
 assert.strictEqual(introSleep2.nodes.length, 1);
-assert.strictEqual(introSleep2.nodes[0].text, 'Let me rest my eyes for just a few more minutes.');
+assert.strictEqual(introSleep2.nodes[0].text, 'Hmm? Let me rest my eyes for just a few more minutes.');
 assert.strictEqual(introSleep2.nodes[0].next, null);
 assert.strictEqual(state.introTalkAttempts, 2);
 assert.strictEqual(banubu._animalDialogueEyesOpen, false);
@@ -210,6 +210,13 @@ assert.strictEqual(state.introTalkAttempts, 3);
 assert.strictEqual(state.target.questType, 'threeFishPie');
 assert.strictEqual(state.target.requiredEffects.length, 3);
 assert.strictEqual(state.target.solutionFishKeys.length, 3);
+const introTextById = Object.fromEntries(intro.nodes.map(node => [node.id, node.text]));
+assert.strictEqual(introTextById.banubu_intro_6, 'I think that if I only had something to eat, maybe I’d have the energy to get up and the strength needed to help. But I’m far too tired to get up and hunt.', 'Banubu’s full energy/strength explanation must not be condensed away');
+assert.strictEqual(introTextById.banubu_intro_9, 'But if you want me to be any real help, it’s gotta be really nutritious. I haven’t eaten in so long, and it hasn’t been good for my health.', 'Banubu’s health consequence line must remain in the authored intro');
+const q1ReadyAuthored = content.dialogueTrees.find(tree => tree.id === 'banubu_q1_ready');
+const q1ReadyTextById = Object.fromEntries((q1ReadyAuthored?.nodes || []).map(node => [node.id, node.text]));
+assert.strictEqual(q1ReadyTextById.banubu_q1_ready_5, 'Ha! Look at that, the key to my Color Pools. I was wondering where that went. I was worried someone snatched it while I was asleep.', 'Color Pools key discovery wording must remain authored');
+assert(q1ReadyTextById.banubu_q1_ready_17.includes('Here, take the recipe.'), 'tea handoff must preserve the explicit recipe-giving beat');
 assert.strictEqual(context.CookingSystem.effectStrengthLabel(3), 'Concentrated');
 assert.strictEqual(questline.unlockRecipe(banubu).ok, true);
 assert(unlockedRecipeIds.has(content.THREE_FISH_PIE_RECIPE_ID));
@@ -374,6 +381,17 @@ assert.match(read('docs/js/livestock-nursery-install-bridge.js'), /animal-sleep-
 const speciesOverrides = require('../docs/config/npcs/species-overrides.json');
 assert.strictEqual(speciesOverrides.npcs.banubu.species, 'grehlr');
 assert.strictEqual(speciesOverrides.npcs.banubu.avatarExport.appearance.avatarType, 'animal');
+assert.strictEqual(speciesOverrides.npcs.banubu.avatarExport.appearance.dialogueFacePlayer, false, 'sleepy Banubu must keep his existing pose instead of turning toward the player while speaking');
+assert.match(gameSource, /const npcFacesPlayer = walker\.profile\?\.appearance\?\.dialogueFacePlayer !== false/, 'full NPC dialogue must read the authored facing opt-out');
+assert.match(gameSource, /if \(npcFacesPlayer\) walker\.applyFacingDeadzone/, 'full NPC dialogue must skip body rotation when the facing opt-out is false');
+assert.match(gameSource, /if \(npcFacesPlayer && walker\.neckJoint\)/, 'full NPC dialogue must skip NPC eye-contact neck tracking when the facing opt-out is false');
+assert.match(gameSource, /function animalDialogueChatheadWorldFrame\(walker\)/, 'animal dialogue camera must resolve a dedicated world-space chathead target');
+assert.match(gameSource, /AnimalChatheadFrame\?\.frameForKind\?\.\(kind\)/, 'animal dialogue camera must reuse the exact authored chathead crop');
+assert.match(gameSource, /AnimalSleepPresentation\?\.SLEEP_SCALE_Y/, 'animal dialogue camera target must compensate for Banubu sleep flattening before render');
+assert.match(gameSource, /cameraY: playerCenter\.y/, 'animal dialogue camera must lower to player portrait-center height');
+assert.match(gameSource, /lookY: animalFrame\.center\.y \+ animalFrame\.frameHeightWorld \* clearanceFrames/, 'animal chathead frame must sit just beneath the reticle rather than whole-body centering');
+const cameraConfigSource = read('docs/config/scratchbones-config.js');
+assert.match(cameraConfigSource, /animalChatheadReticleClearanceFrames["']?:\s*0\.18/, 'animal dialogue reticle gap must remain centrally tunable');
 
 // The real current Alchemy definitions—not only the synthetic filter fixture above—must keep Quest 2 feasible.
 const liveContext = { console, JSON, Math, Date }; // Used as a dependency-light VM for pure alchemy/Tea Grinder enumeration.

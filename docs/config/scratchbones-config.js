@@ -188,6 +188,7 @@ window.SCRATCHBONES_CONFIG = {
           "alignToDialoguePortraitCenters": true,
           "portraitCenterMinDistanceTiles": 0.001,
           "maxUpwardPortraitPitchDeg": 0,
+          "animalChatheadReticleClearanceFrames": 0.18,
           "runtimeZoom": {
             "enabled": true,
             "initialPercent": 75,

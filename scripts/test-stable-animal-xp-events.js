@@ -4,6 +4,7 @@ const assert = require('assert');
 
 const source = fs.readFileSync('docs/js/stable-animal-xp-events.js', 'utf8');
 const loader = fs.readFileSync('docs/js/livestock-nursery-install-bridge.js', 'utf8');
+const gameSource = fs.readFileSync('docs/game.js', 'utf8'); // Guards the caller-side zone gate that keeps this module's discovery wrapper out of interiors.
 
 const player = { x: 0, y: 0 };
 const companion = { id: 'companion-actor', health: 100, stableRole: 'companion', master: player, areaId: 'zone-a', avatarRef: { group: { visible: true } } };
@@ -131,6 +132,7 @@ vm.runInContext(source, context, { filename: 'stable-animal-xp-events.js' });
 const api = context.StableAnimalXpEvents.install();
 assert(api, 'StableAnimalXpEvents installs');
 assert.match(loader, /StableAnimalXpEvents/, 'farm bootstrap loads the stable animal XP bridge');
+assert.match(gameSource, /if \(_isZoneArea\(currentArea\)\) window\.WildernessMap\.updateFogAroundPlayer\(\);/, 'game loop must not enter wilderness fog/discovery wrapper chains while the player is inside a cave or building');
 
 function newAwards(fn) {
   const start = xpAwards.length;

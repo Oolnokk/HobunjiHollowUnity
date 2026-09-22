@@ -14,6 +14,7 @@ const studio = fs.readFileSync('docs/tools/character-studio/index.html', 'utf8')
 const chathead = fs.readFileSync('docs/js/animal-chathead-frame.js', 'utf8');
 const spriteRecolor = fs.readFileSync('docs/js/sprite-recolor.js', 'utf8');
 const creatureRenderer = fs.readFileSync('docs/js/creature-genetics-render.js', 'utf8');
+const pngPlaneAvatar = fs.readFileSync('docs/js/png-plane-avatar.js', 'utf8'); // Guards live animal-plane refs used by named-animal frame swaps and dialogue targeting.
 const overrides = JSON.parse(fs.readFileSync('docs/config/npcs/species-overrides.json', 'utf8'));
 const game = fs.readFileSync('docs/game.js', 'utf8');
 
@@ -49,6 +50,8 @@ assert.match(namedAnimal, /animalHatId/, 'runtime bridge must carry native edito
 assert.match(namedAnimal, /AnimalNpcHeadwear\.composeWithHat/, 'runtime render must reuse the restored animal headwear compositor');
 assert.match(namedAnimal, /canvas\.toDataURL\('image\/png'\)/, 'world animal planes must use the composed authored appearance rather than a plain base sprite when possible');
 assert.match(namedAnimal, /buildAnimalPlaneAvatarModel/, 'world models must retain the existing side-view animal plane builder');
+assert.match(pngPlaneAvatar, /avatarRef\.frontPlane = front\.mesh/, 'animal head-rig upgrade must repoint the public frontPlane ref to the live skinned replacement');
+assert.match(pngPlaneAvatar, /avatarRef\.backPlane = back\.mesh/, 'animal head-rig upgrade must repoint the public backPlane ref to the live skinned replacement');
 assert.match(namedAnimal, /__hobunjiAnimalNpcSourceUrl/, 'world animal planes must prefer the native creature/genotype source instead of the 200x200 NPC portrait canvas');
 assert.match(namedAnimal, /async function worldFrameUrls/, 'named animals must expose native-resolution idle/run frames for in-world locomotion');
 assert.match(namedAnimal, /dialogueEyesClosed = chathead && profile\?\.npcRecord\?\._animalDialogueEyesOpen === false/, 'sleeping animal dialogue portraits must retain closed eyes until their dialogue controller explicitly wakes them');
