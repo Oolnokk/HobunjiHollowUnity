@@ -14,7 +14,7 @@
   let active = null; // { areaId, camera, reason } consumed by game.js's camera override.
   let dialogueContext = null; // Current NPC conversation, used by node-level camera swaps.
   let petFade = 0; // 0 = ordinary pet visibility, 1 = fully faded for the current cinematic shot.
-  const fadedMaterials = new Map(); // mesh -> [{material, opacity, transparent, depthWrite}] restored after cinematic fade.
+  const fadedMaterials = new Map(); // mesh -> { originalMaterial, states }; temporary fade clones are restored/disposed when the shot ends.
 
   function finite(value, fallback = 0) {
     const n = Number(value);
@@ -194,27 +194,49 @@
   function captureFadeMaterials(root) {
     root?.traverse?.(object => {
       if (!object?.isMesh || !object.material || fadedMaterials.has(object)) return;
-      const source = Array.isArray(object.material) ? object.material : [object.material];
+      const originalMaterial = object.material; // Restored verbatim after the fade so repeated conversations never accumulate cloned avatar materials.
+      const source = Array.isArray(originalMaterial) ? originalMaterial : [originalMaterial];
       const cloned = source.map(material => material?.clone ? material.clone() : material);
-      object.material = Array.isArray(object.material) ? cloned : cloned[0];
-      fadedMaterials.set(object, cloned.map(material => ({
-        material,
-        opacity: Number.isFinite(Number(material?.opacity)) ? Number(material.opacity) : 1,
-        transparent: !!material?.transparent,
-        depthWrite: material?.depthWrite !== false,
-      })));
+      object.material = Array.isArray(originalMaterial) ? cloned : cloned[0];
+      fadedMaterials.set(object, {
+        originalMaterial,
+        states: cloned.map((material, index) => ({
+          material,
+          ownedClone: material !== source[index], // Only temporary clones are ours to dispose; non-cloneable originals are merely property-restored.
+          opacity: Number.isFinite(Number(material?.opacity)) ? Number(material.opacity) : 1,
+          transparent: !!material?.transparent,
+          depthWrite: material?.depthWrite !== false,
+        })),
+      });
     });
+  }
+
+  function restoreFadeEntry(mesh, record) {
+    if (!record) return;
+    for (const state of record.states || []) {
+      if (!state.material) continue;
+      if (state.ownedClone) {
+        state.material.dispose?.(); // Temporary per-shot material clone; textures remain shared and are not disposed here.
+      } else {
+        state.material.opacity = state.opacity;
+        state.material.transparent = state.transparent;
+        state.material.depthWrite = state.depthWrite;
+        state.material.needsUpdate = true;
+      }
+    }
+    if (mesh) mesh.material = record.originalMaterial;
   }
 
   function applyPetOpacity(visibleFactor) {
     const roots = petRoots();
     for (const root of roots) captureFadeMaterials(root);
-    for (const [mesh, states] of fadedMaterials) {
+    for (const [mesh, record] of fadedMaterials) {
       if (!mesh?.parent) {
+        restoreFadeEntry(mesh, record);
         fadedMaterials.delete(mesh);
         continue;
       }
-      for (const state of states) {
+      for (const state of record.states || []) {
         if (!state.material) continue;
         state.material.opacity = state.opacity * visibleFactor;
         state.material.transparent = state.transparent || visibleFactor < 0.999;
@@ -225,17 +247,9 @@
   }
 
   function restorePetMaterials() {
-    for (const [mesh, states] of fadedMaterials) {
-      for (const state of states) {
-        if (!state.material) continue;
-        state.material.opacity = state.opacity;
-        state.material.transparent = state.transparent;
-        state.material.depthWrite = state.depthWrite;
-        state.material.needsUpdate = true;
-      }
-      if (!mesh?.parent) fadedMaterials.delete(mesh);
-    }
-    if (petFade <= 0.0001) fadedMaterials.clear();
+    if (petFade > 0.0001) return;
+    for (const [mesh, record] of fadedMaterials) restoreFadeEntry(mesh, record);
+    fadedMaterials.clear();
   }
 
   function update(dt) {
