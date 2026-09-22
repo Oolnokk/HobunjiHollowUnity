@@ -88,6 +88,9 @@ const assert = require('assert');
 
   vm.createContext(context);
   const policyPath = path.join(__dirname, '..', 'docs', 'js', 'mastery-policy.js'); // Used to test the repository copy rather than an inline fixture.
+  const rangedWeaponsPath = path.join(__dirname, '..', 'docs', 'js', 'combat', 'ranged-weapons.js'); // Used to pin the production projectile-to-mastery routing that the old fixture accidentally bypassed.
+  const rangedWeaponsSource = fs.readFileSync(rangedWeaponsPath, 'utf8'); // Used to verify runtime ranged kills call the public mastery policy instead of relying on an absent game callback.
+  assert.match(rangedWeaponsSource, /healthBefore[\s\S]*HobunjiMasteryPolicy[\s\S]*recordRangedKill\(p\.itemKey, c, healthBefore\)/, 'player projectile kills must route directly into mastery policy with the exact firing itemKey');
   vm.runInContext(fs.readFileSync(policyPath, 'utf8'), context, { filename: policyPath });
 
   const equipmentDeps = {
@@ -191,6 +194,18 @@ const assert = require('assert');
   combatDeps.damageCreature(target, 20, 0, 0, 0, {ranged:true});
   combatDeps.awardRangedMastery('crossbow');
   assert.equal(gear.toolMastery.crossbow.xp, 2.5, 'legacy ranged kill should get double XP');
+
+  // Production RangedWeapons owns a separate reference to game.js damageCreature,
+  // so reproduce that real path by bypassing Combat's patched dependency object entirely.
+  gear.toolMastery.dagger_nativeCopper = {xp:0};
+  const runtimeDaggerTarget = { health:10, def:{label:'Runtime Dagger Target',health:60,damage:8} }; // Used to reproduce the real unwrapped projectile damage path that still earns Combat XP through SkillSystem.
+  const runtimeDaggerHealthBefore = runtimeDaggerTarget.health; // Used by the public mastery entry point to retain pre-hit enemy difficulty.
+  damageCreature(runtimeDaggerTarget, 20);
+  assert.equal(gear.toolMastery.dagger_nativeCopper.xp, 0, 'unwrapped ranged damage alone must demonstrate the old production bug: no dagger mastery callback exists');
+  policy.recordRangedKill('dagger_nativeCopper', runtimeDaggerTarget, runtimeDaggerHealthBefore);
+  assert.equal(gear.toolMastery.dagger_nativeCopper.xp, 2.5, 'direct ranged kill routing must award dagger mastery on the real unwrapped damage path');
+  policy.recordRangedKill('dagger_nativeCopper', runtimeDaggerTarget, runtimeDaggerHealthBefore);
+  assert.equal(gear.toolMastery.dagger_nativeCopper.xp, 2.5, 'direct and wrapped ranged routes must not double-credit the same defeated entity');
 
   // Modern projectiles carry the exact generated itemKey inside damage metadata,
   // so every current dual-role ranged tool gets its own mastery even if the
