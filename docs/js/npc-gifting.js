@@ -229,7 +229,7 @@
     if (held.kind === 'clothing') {
       const verdict = window.NpcWardrobe?.offerClothing?.(npcId, held.instance);
       kept = verdict ? verdict.accepted !== false : true;
-      keepNote = kept ? ' It goes into their wardrobe.' : ` ${name} hands it right back — not ${window.NpcWardrobe ? 'their style' : 'able to store it'}.`;
+      keepNote = kept ? (verdict?.worn ? ' They put it on.' : ' It goes into their wardrobe.') : ` ${name} hands it right back — not ${window.NpcWardrobe ? 'their style' : 'able to store it'}.`;
     }
 
     if (kept) applyGiftRelationshipDelta(npcId, evaluation);
