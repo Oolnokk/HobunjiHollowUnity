@@ -25,7 +25,7 @@ assert.equal(overrides.npcs.hiki_hiki.kind, 'animal', 'Hiki-hiki must use the an
 assert.equal(overrides.npcs.banubu.avatarExport.appearance.creatureColorOverrides.base, '#4F757D', 'Banubu repo default must retain the authored blue-gray custom base');
 assert.equal(overrides.npcs.banubu.avatarExport.appearance.creatureColorOverrides.mitts, '#c3e3e9', 'Banubu repo default must retain the authored pale-cyan custom mitts');
 assert.equal(overrides.npcs.banubu.avatarExport.appearance.creatureGenotype.sizeClass, 'large', 'Banubu must use Large Grehlr genetics scale before any Fey-only boost');
-assert.equal(overrides.npcs.banubu.avatarExport.appearance.creatureScaleMultiplier, 1.5, 'Banubu must apply a 1.5x named-animal size multiplier on top of Large Grehlr scale');
+assert.equal(overrides.npcs.banubu.avatarExport.appearance.creatureScaleMultiplier, 3.0, 'Banubu must render at 3x on top of Large Grehlr scale, exactly double his previous 1.5x Fey multiplier');
 assert.equal(overrides.npcs.banubu.avatarExport.appearance.creatureGenotype.coloredstripe.enabled, true, 'Banubu colored stripe must remain expressed');
 assert.equal(overrides.npcs.hiki_hiki.avatarExport.appearance.creatureGenotype.base.color, '#ff7a18', 'Hiki-hiki repo default must retain the authored orange base');
 assert.equal(overrides.npcs.hiki_hiki.avatarExport.appearance.creatureGenotype.bodystripes.color, '#19c7c1', 'Hiki-hiki bodystripes must retain the authored cyan color');
