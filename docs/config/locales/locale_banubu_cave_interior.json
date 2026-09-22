@@ -338,6 +338,52 @@
   },
   "meta": {
     "createdAt": "2026-09-19T00:00:00.000Z",
-    "updatedAt": "2026-09-21T17:25:00.000Z"
-  }
+    "updatedAt": "2026-09-22T00:00:00.000Z"
+  },
+  "cinematicCameras": [
+    {
+      "id": "banubu_dialogue_awake",
+      "label": "Banubu dialogue — awake",
+      "position": {
+        "x": 4.2,
+        "y": 0.28,
+        "z": 7.4
+      },
+      "target": {
+        "x": 6.5,
+        "y": 0.85,
+        "z": 5.5
+      },
+      "fovDeg": 38,
+      "blendSeconds": 0.5,
+      "dialogueNpcId": "banubu",
+      "fadePets": true,
+      "playerStage": {
+        "x": 3.5,
+        "z": 8.5
+      }
+    },
+    {
+      "id": "banubu_dialogue_sleep",
+      "label": "Banubu dialogue — sleeping",
+      "position": {
+        "x": 7.1,
+        "y": 0.28,
+        "z": 9.4
+      },
+      "target": {
+        "x": 9.5,
+        "y": 0.55,
+        "z": 7.5
+      },
+      "fovDeg": 40,
+      "blendSeconds": 0.5,
+      "dialogueNpcId": "banubu",
+      "fadePets": true,
+      "playerStage": {
+        "x": 6.5,
+        "z": 10.5
+      }
+    }
+  ]
 }
