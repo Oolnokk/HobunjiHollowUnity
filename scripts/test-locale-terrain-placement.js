@@ -75,6 +75,91 @@ Placement.placeTerrainAwareLocales(flatWorkspace, [cave], { seed: 'unit', scale:
 assert.strictEqual(flatWorkspace.localeInstances.length, 0);
 assert.strictEqual(flatWorkspace.localeTerrainDiagnostics[0].status, 'skipped');
 
+// Cardinal rotation must rotate the entire locale, not just the cave mesh.
+function makeRotationWorkspace() {
+  const root = { schema: 'hobunji_map.v1', id: 'rotation-root', cols: 8, rows: 8, tiles: {}, generatedFrom: { seed: 'rotation-unit', note: 'Flattened after 1x tile-density expansion.' } };
+  for (let r = 0; r < root.rows; r++) for (let c = 0; c < root.cols; c++) root.tiles[`${c},${r}`] = { type: 'grass', crop: '' };
+  const sub = { schema: 'hobunji_map.v1', id: 'rotation-p2-map', isSubmap: true, plateauGroupId: 'rotation-p2', elevation: 2, anchorC: 4, anchorR: 0, cols: 4, rows: 8, tiles: {} };
+  for (let r = 0; r < 8; r++) for (let c = 4; c < 8; c++) {
+    root.tiles[`${c},${r}`].plateau = 'rotation-p2';
+    sub.tiles[`${c - 4},${r}`] = { type: 'grass', crop: '' };
+  }
+  for (let c = 4; c < 8; c++) {
+    root.tiles[`${c},0`].borderEscarpment = true;
+    root.tiles[`${c},7`].borderEscarpment = true;
+  }
+  for (let r = 0; r < 8; r++) root.tiles[`7,${r}`].borderEscarpment = true;
+  return { schema: 'hobunji_map_editor_workspace.v1', maps: [root, sub], plateauGroups: [{ id: 'rotation-p2', elevation: 2 }], localeInstances: [], entry: { col: 0, row: 4, side: 'west' } };
+}
+
+const rotatingCave = {
+  schema: 'hobunji_locale.v1', id: 'locale_rotating_cave', name: 'Rotating Cave', category: 'cave', cols: 2, rows: 1,
+  tiles: { '0,0': { type: 'grass' } },
+  terrainAnchors: { '0,0': { terrain: 'plateauCliff', strength: 'required', facing: 'north', height: { mode: 'any', min: null, max: null } } },
+  embeddedTiles: {},
+  objects: [{ id: 'cave', kind: 'structure', key: 'cave_small', col: 0, row: 0, w: 1, h: 1, rot: 180 }],
+  npcAnchors: [],
+  connectors: [{ id: 'mouth', col: 0, row: 0, side: 'north', label: 'Cave mouth' }],
+  placement: { mode: 'fixed', rotationMode: 'cardinal', clearanceTiles: 0, requiresFlatGround: false, minDistanceFromEntry: 0, allowedZones: [] },
+};
+const rotationWorkspace = makeRotationWorkspace();
+Placement.placeTerrainAwareLocales(rotationWorkspace, [rotatingCave], { seed: 'rotation-unit', scale: 1 });
+assert.strictEqual(rotationWorkspace.localeInstances.length, 1, 'cardinal cave locale should rotate to the only non-boundary cliff face');
+const rotationInstance = rotationWorkspace.localeInstances[0];
+const rotationDiagnostic = rotationWorkspace.localeTerrainDiagnostics[0];
+assert.strictEqual(rotationDiagnostic.selected.rotationDeg, 270, 'authored north-facing cave should rotate 270° to the only west-facing internal cliff');
+assert.strictEqual(rotationInstance.rotationDeg, 270, 'runtime locale instance must preserve the selected terrain-placement rotation');
+assert.strictEqual(rotationInstance.connectors[0].side, 'west', 'entrance connector must rotate with the locale rather than remaining north-facing');
+assert.strictEqual(rotationInstance.objects[0].rot, 90, 'cave object yaw must rotate with the locale footprint');
+
+// Non-rotating terrain-aware locales must keep the pre-rotation deterministic tie-break behavior.
+function legacyTie(seed, localeId, c, r) {
+  let hash = 2166136261;
+  for (const char of `${seed}|${localeId}|${c}|${r}`) { hash ^= char.charCodeAt(0); hash = Math.imul(hash, 16777619); }
+  return (hash >>> 0) / 4294967296;
+}
+function makeFlatTieWorkspace() {
+  const root = { schema: 'hobunji_map.v1', id: 'tie-root', cols: 4, rows: 3, tiles: {}, generatedFrom: { seed: 'tie-seed', note: 'Flattened after 1x tile-density expansion.' } };
+  for (let r = 0; r < root.rows; r++) for (let c = 0; c < root.cols; c++) root.tiles[`${c},${r}`] = { type: 'grass', crop: '' };
+  return { schema: 'hobunji_map_editor_workspace.v1', maps: [root], plateauGroups: [], localeInstances: [], entry: { col: 0, row: 0, side: 'west' } };
+}
+const stableLocale = {
+  schema: 'hobunji_locale.v1', id: 'locale_stable_tie', name: 'Stable Tie', category: 'test', cols: 1, rows: 1,
+  tiles: { '0,0': { type: 'grass' } },
+  terrainAnchors: { '0,0': { terrain: 'ground', strength: 'required', facing: 'any', height: { mode: 'any', min: null, max: null } } },
+  embeddedTiles: {}, objects: [], npcAnchors: [], connectors: [],
+  placement: { mode: 'fixed', clearanceTiles: 0, requiresFlatGround: true, minDistanceFromEntry: 0, allowedZones: [] },
+};
+const tieWorkspace = makeFlatTieWorkspace();
+let expectedTie = null;
+for (let r = 0; r < 3; r++) for (let c = 0; c < 4; c++) {
+  const tie = legacyTie('tie-seed', stableLocale.id, c, r);
+  if (!expectedTie || tie > expectedTie.tie) expectedTie = { c, r, tie };
+}
+Placement.placeTerrainAwareLocales(tieWorkspace, [stableLocale], { seed: 'tie-seed', scale: 1 });
+assert.deepStrictEqual(
+  { x: tieWorkspace.localeInstances[0].x, y: tieWorkspace.localeInstances[0].y },
+  { x: expectedTie.c, y: expectedTie.r },
+  'adding cardinal-rotation support must not reshuffle equal-score placement for locales that do not opt into rotation'
+);
+
+// The shared rotation helper used by previews must match production object/connector/facing transforms.
+const rotatedPreviewLocale = Placement.rotateLocaleCardinal({
+  ...rotatingCave,
+  cols: 3,
+  rows: 2,
+  objects: [{ id: 'cave', kind: 'structure', key: 'cave_small', col: 0, row: 0, w: 2, h: 1, rot: 180, visual: { renderer: 'cave_small', facing: 'north' } }],
+  connectors: [{ id: 'mouth', col: 0, row: 0, side: 'north', label: 'Cave mouth' }],
+}, 90);
+assert.deepStrictEqual(
+  { cols: rotatedPreviewLocale.cols, rows: rotatedPreviewLocale.rows, col: rotatedPreviewLocale.objects[0].col, row: rotatedPreviewLocale.objects[0].row, w: rotatedPreviewLocale.objects[0].w, h: rotatedPreviewLocale.objects[0].h },
+  { cols: 2, rows: 3, col: 1, row: 0, w: 1, h: 2 },
+  '90° cardinal rotation must rotate a non-square object rectangle around the locale canvas correctly'
+);
+assert.strictEqual(rotatedPreviewLocale.objects[0].rot, 270, 'rotation helper must rotate cave object yaw');
+assert.strictEqual(rotatedPreviewLocale.objects[0].visual.facing, 'east', 'rotation helper must rotate cave visual facing');
+assert.strictEqual(rotatedPreviewLocale.connectors[0].side, 'east', 'rotation helper must rotate connector side');
+
 // Installing the adapter must keep a legacy locale on the old generator path.
 const legacy = { id: 'legacy', tiles: { '0,0': { type: 'grass' } }, placement: {} };
 let receivedLocales = null;

@@ -219,7 +219,7 @@
     "sameSectorAsEntry": false,
     "alwaysVisibleOnMap": true,
     "groundOnly": false,
-    "notes": "Northern Cliffs only. The cave mouth is pinned to the LOW side of a naturally generated north-facing internal plateau cliff and the rear row must already overlap HIGH plateau mass. The locale never carves, lowers, removes, or reshapes plateau cells: cave_small clips into the existing cliff face. The three cells directly north/in front of the mouth must be free, open terrain on the cave floor. Boundary escarpments are rejected. Banubu's cave facade renders at 1.5x width and 1.5x height while keeping its original depth.",
+    "notes": "Northern Cliffs only. The authored north-facing cave template may rotate to any cardinal direction so the cave mouth can match a naturally generated internal plateau cliff from any side. The cave sits on the LOW side and the rear row must already overlap HIGH plateau mass. The locale never carves, lowers, removes, or reshapes plateau cells: cave_small clips into the existing cliff face. The three cells directly in front of the mouth must be free, open terrain on the cave floor.",
     "terrainAnchors": {
       "3,2": {
         "terrain": "plateauCliff",
@@ -363,8 +363,9 @@
       "embeddedTiles": [
         "4,3"
       ],
-      "notes": "If the full-width cliff fit has no valid site, keep the cave on an existing north-facing internal plateau cliff using the center approach/mouth/backing probes and center embedded cell; never carve the host cliff."
-    }
+      "notes": "If the full-width cliff fit has no valid site, keep the cave on an existing internal plateau cliff using the rotated center approach/mouth/backing probes and center embedded cell; never carve the host cliff."
+    },
+    "rotationMode": "cardinal"
   },
   "meta": {
     "createdAt": "2026-07-19T00:00:00.000Z",

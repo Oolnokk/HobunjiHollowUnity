@@ -74,9 +74,11 @@ if (diagnostic.status === 'placed') {
   const required = cliffProbes.filter(probe => probe.rule?.strength === 'required');
   const lowRequired = required.filter(probe => probe.rule?.height?.max === 0);
   const highRequired = required.filter(probe => probe.rule?.height?.min >= 1);
+  const rotationDeg = Number(diagnostic.selected.rotationDeg) || 0; // Used to derive the world-facing cliff direction selected by cardinal locale placement.
+  const expectedFacing = ['north', 'east', 'south', 'west'][((Math.round(rotationDeg / 90) % 4) + 4) % 4]; // Used to verify terrain rules and connector direction rotate with the cave.
   assert(lowRequired.length > 0 && highRequired.length > 0, 'placed Banubu candidate must preserve paired required low/high cliff probes');
-  assert(lowRequired.every(probe => probe.rule.facing === 'north' && probe.matched && Math.abs(probe.hostTier - diagnostic.selected.floorTier) <= 0.05), 'required cave-mouth probes must sit on the local lower tier');
-  assert(highRequired.every(probe => probe.rule.facing === 'north' && probe.matched && probe.hostTier >= diagnostic.selected.floorTier + 1), 'required rear probes must sit on the higher side of the same north-facing cliff');
+  assert(lowRequired.every(probe => probe.rule.facing === expectedFacing && probe.matched && Math.abs(probe.hostTier - diagnostic.selected.floorTier) <= 0.05), 'required cave-mouth probes must rotate with the locale and sit on the local lower tier');
+  assert(highRequired.every(probe => probe.rule.facing === expectedFacing && probe.matched && probe.hostTier >= diagnostic.selected.floorTier + 1), 'required rear probes must rotate with the locale and sit on the higher side of the same cliff');
   for (const probe of required) {
     const tile = root.tiles?.[`${probe.c},${probe.r}`];
     assert(!tile?.borderEscarpment && !tile?.generatedBorderEscarpment && !tile?.distantBoundaryLandscape, 'Banubu plateauCliff probes must never resolve to boundary-escarpment terrain');
@@ -87,7 +89,11 @@ if (diagnostic.status === 'placed') {
     const hostTile = root.tiles?.[`${cell.c},${cell.r}`]; // Used to prove placement left the selected host cliff intact after stamping.
     assert(hostTile?.plateau, `embedded host ${cell.c},${cell.r} must retain plateau membership because Banubu clips into the cliff instead of carving it`);
   }
-  assert((instance.objects || []).some(object => object.key === 'cave_small'), 'placed Banubu locale must carry its cave_small object into runtime data');
+  const placedCave = (instance.objects || []).find(object => object.key === 'cave_small'); // Used to verify the visible cave object's yaw follows the selected locale rotation.
+  assert(placedCave, 'placed Banubu locale must carry its cave_small object into runtime data');
+  assert.strictEqual(instance.rotationDeg, rotationDeg, 'runtime locale instance must preserve the diagnostic cardinal rotation');
+  assert.strictEqual(placedCave.rot, (180 + rotationDeg) % 360, 'cave_small object yaw must rotate with the full locale');
+  assert.strictEqual(instance.connectors?.[0]?.side, expectedFacing, 'Banubu entrance connector must face the same rotated cliff direction as the locale');
   assert(!(instance.npcAnchors || []).some(anchor => anchor.npcId === 'banubu'), 'Banubu exterior locale must not spawn Banubu; he lives in the cavern interior');
   const banubuTransition = (root.transitions || []).find(transition => transition.generatedLocaleId === locale.id); // Used to verify the post-shift walkable entrance generated from the placed locale.
   assert(banubuTransition, 'a placed Banubu locale must export a runtime transition from its walkable path anchor');

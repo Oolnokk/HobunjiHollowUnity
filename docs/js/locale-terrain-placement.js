@@ -84,6 +84,109 @@
 
   function sourceKey(c, r) { return `${c},${r}`; }
 
+  function cloneJson(value) {
+    return value == null ? value : JSON.parse(JSON.stringify(value));
+  }
+
+  function normalizedQuarterTurns(value) {
+    const turns = Math.round(Number(value) || 0); // Used by every locale rotation helper to keep cardinal transforms in the 0..3 range.
+    return ((turns % 4) + 4) % 4;
+  }
+
+  function rotateFacing(facing, quarterTurns) {
+    const order = ['north', 'east', 'south', 'west']; // Used to rotate authored cliff/connector/NPC facings with the locale footprint.
+    const index = order.indexOf(String(facing || '').toLowerCase()); // Used to preserve non-cardinal values such as "any" unchanged.
+    if (index < 0) return facing;
+    return order[(index + normalizedQuarterTurns(quarterTurns)) % order.length];
+  }
+
+  function rotateCell(c, r, cols, rows, quarterTurns) {
+    const turns = normalizedQuarterTurns(quarterTurns); // Used to map authored tile/probe coordinates into the selected cardinal orientation.
+    if (turns === 1) return { c: rows - 1 - r, r: c };
+    if (turns === 2) return { c: cols - 1 - c, r: rows - 1 - r };
+    if (turns === 3) return { c: r, r: cols - 1 - c };
+    return { c, r };
+  }
+
+  function rotateRect(col, row, width, height, cols, rows, quarterTurns) {
+    const turns = normalizedQuarterTurns(quarterTurns); // Used to rotate structure rectangles without changing which cells their footprint occupies.
+    if (turns === 1) return { col: rows - (row + height), row: col, w: height, h: width };
+    if (turns === 2) return { col: cols - (col + width), row: rows - (row + height), w: width, h: height };
+    if (turns === 3) return { col: row, row: cols - (col + width), w: height, h: width };
+    return { col, row, w: width, h: height };
+  }
+
+  function rotateKeyedCells(record, cols, rows, quarterTurns, rotateValue = null) {
+    const output = {}; // Used to rebuild tiles, terrain probes, and embedded-host rules under a cardinal locale rotation.
+    for (const [key, raw] of Object.entries(record || {})) {
+      const parsed = parseCellKey(key); // Used to ignore malformed editor keys instead of corrupting placement data.
+      if (!parsed) continue;
+      const rotated = rotateCell(parsed.c, parsed.r, cols, rows, quarterTurns); // Used as the new authored-local key for this rotation variant.
+      output[sourceKey(rotated.c, rotated.r)] = rotateValue ? rotateValue(raw) : cloneJson(raw);
+    }
+    return output;
+  }
+
+  function rotatedLocaleVariant(locale, quarterTurns) {
+    const turns = normalizedQuarterTurns(quarterTurns); // Used to stamp a deterministic cardinal variant without mutating the authored locale document.
+    const cols = Math.max(1, Number(locale?.cols) || 1); // Used as the source-grid width for tile, point, and rectangle rotation.
+    const rows = Math.max(1, Number(locale?.rows) || 1); // Used as the source-grid height for tile, point, and rectangle rotation.
+    const variant = cloneJson(locale) || {}; // Used as the runtime-only locale definition consumed by compileLocale and localeInstance.
+    const rotateRule = raw => {
+      const rule = cloneJson(raw) || {}; // Used to preserve authored terrain metadata while rotating only its world-facing direction.
+      if (rule.facing) rule.facing = rotateFacing(rule.facing, turns);
+      return rule;
+    };
+    const rotatePoint = point => {
+      const source = cloneJson(point) || {}; // Used to carry connector/NPC metadata into its rotated tile coordinate.
+      const rotated = rotateCell(Number(point?.col) || 0, Number(point?.row) || 0, cols, rows, turns); // Used as the point's cardinally rotated local coordinate.
+      source.col = rotated.c;
+      source.row = rotated.r;
+      if (source.side) source.side = rotateFacing(source.side, turns);
+      if (source.facing) source.facing = rotateFacing(source.facing, turns);
+      return source;
+    };
+
+    variant.cols = turns % 2 ? rows : cols;
+    variant.rows = turns % 2 ? cols : rows;
+    variant.tiles = rotateKeyedCells(locale?.tiles, cols, rows, turns);
+    variant.terrainAnchors = rotateKeyedCells(locale?.terrainAnchors, cols, rows, turns, rotateRule);
+    variant.embeddedTiles = rotateKeyedCells(locale?.embeddedTiles, cols, rows, turns, rotateRule);
+    variant.connectors = (locale?.connectors || []).map(rotatePoint);
+    variant.npcAnchors = (locale?.npcAnchors || []).map(rotatePoint);
+    variant.objects = (locale?.objects || []).map(object => {
+      const source = cloneJson(object) || {}; // Used to retain authored structure metadata while its occupied rectangle rotates with the locale.
+      const rect = rotateRect(Number(object?.col) || 0, Number(object?.row) || 0, Math.max(1, Number(object?.w) || 1), Math.max(1, Number(object?.h) || 1), cols, rows, turns); // Used to keep structure top-left and dimensions aligned to the rotated footprint.
+      source.col = rect.col;
+      source.row = rect.row;
+      source.w = rect.w;
+      source.h = rect.h;
+      source.rot = (((Number(object?.rot) || 0) + turns * 90) % 360 + 360) % 360;
+      if (source.visual?.facing) source.visual.facing = rotateFacing(source.visual.facing, turns);
+      return source;
+    });
+    variant.placement = cloneJson(locale?.placement) || {};
+    if (Object.prototype.hasOwnProperty.call(variant.placement, 'terrainAnchors')) variant.placement.terrainAnchors = cloneJson(variant.terrainAnchors);
+    if (Object.prototype.hasOwnProperty.call(variant.placement, 'embeddedTiles')) variant.placement.embeddedTiles = cloneJson(variant.embeddedTiles);
+    const fallback = variant.placement.terrainFallback; // Used to rotate subset-fallback key references alongside the full terrain rule maps.
+    if (fallback?.mode === 'subset') {
+      const rotateFallbackKey = key => {
+        const parsed = parseCellKey(key); // Used to preserve malformed/legacy fallback keys instead of dropping them silently.
+        if (!parsed) return key;
+        const rotated = rotateCell(parsed.c, parsed.r, cols, rows, turns); // Used to point the fallback at the same logical probe after rotation.
+        return sourceKey(rotated.c, rotated.r);
+      };
+      if (Array.isArray(fallback.terrainAnchors)) fallback.terrainAnchors = fallback.terrainAnchors.map(rotateFallbackKey);
+      if (Array.isArray(fallback.embeddedTiles)) fallback.embeddedTiles = fallback.embeddedTiles.map(rotateFallbackKey);
+    }
+    variant.__terrainPlacementRotationDeg = turns * 90; // Used by candidate tie-breaking, runtime instances, and diagnostics; never written back to the authored locale.
+    return variant;
+  }
+
+  function localeRotationTurns(locale) {
+    return locale?.placement?.rotationMode === 'cardinal' ? [0, 1, 2, 3] : [0]; // Used to opt terrain-aware locales into four-way placement without changing legacy/fixed locales.
+  }
+
   function scaledCellEntries(record, scale, transformValue) {
     const output = new Map(); // Expanded final-grid cells make terrain-aware locales match legacy locale physical scale.
     for (const [key, raw] of Object.entries(record || {})) {
@@ -444,6 +547,7 @@
     let best = null; // Highest preferred-probe score wins; deterministic tie noise breaks equal scores.
     let tested = 0;
     let valid = 0;
+    const rotationDeg = Number(compiled.locale?.__terrainPlacementRotationDeg) || 0; // Used to keep cardinal variants distinct in tie-breaking and mobile-visible diagnostics.
     const step = Math.max(1, compiled.scale); // Source-tile alignment preserves the same grid phase as legacy pre-density locale stamping.
     const minAnchorC = -compiled.bounds.minC;
     const minAnchorR = -compiled.bounds.minR;
@@ -454,16 +558,44 @@
         tested++;
         const result = evaluateCandidate(context, compiled, anchorC, anchorR);
         if (!result.ok) {
-          if (rejected.length < maxRejected) rejected.push({ anchorC, anchorR, reason: result.reason, floorTier: result.floorTier ?? null, failAt: result.failAt || null, probes: result.probes || [], embedded: result.embedded || [] });
+          if (rejected.length < maxRejected) rejected.push({ anchorC, anchorR, rotationDeg, reason: result.reason, floorTier: result.floorTier ?? null, failAt: result.failAt || null, probes: result.probes || [], embedded: result.embedded || [] });
           continue;
         }
         valid++;
-        const tie = candidateTie(context.seed, compiled.locale.id, anchorC, anchorR);
-        const ranked = { anchorC, anchorR, tie, ...result };
+        const tieKey = rotationDeg === 0 ? compiled.locale.id : `${compiled.locale.id}|rot:${rotationDeg}`; // Preserve legacy deterministic placement for unrotated locales while keeping rotated variants independently distributed.
+        const tie = candidateTie(context.seed, tieKey, anchorC, anchorR);
+        const ranked = { anchorC, anchorR, rotationDeg, tie, ...result };
         if (!best || ranked.score > best.score + 1e-9 || (Math.abs(ranked.score - best.score) <= 1e-9 && ranked.tie > best.tie)) best = ranked;
       }
     }
     return { best, rejected, tested, valid };
+  }
+
+  function findLocaleCandidate(context, locale, scale, options = {}, useFallback = false) {
+    const turns = localeRotationTurns(locale); // Used to scan every allowed orientation before choosing the single best site/orientation pair.
+    const maxRejected = Math.max(0, Number(options.maxRejectedDiagnostics) || 48); // Used to cap combined diagnostics across all cardinal variants.
+    const perVariantLimit = turns.length ? Math.ceil(maxRejected / turns.length) : maxRejected; // Used to stop four-way locales from quadrupling workspace debug payloads.
+    let best = null; // Used as the best candidate across all orientation-specific searches.
+    let bestCompiled = null; // Used by stamping/runtime export so it consumes the same rotated locale that won candidate selection.
+    let tested = 0;
+    let valid = 0;
+    const rejected = []; // Used by editor/mobile diagnostics to show failures from more than one orientation.
+    for (const quarterTurns of turns) {
+      const rotated = rotatedLocaleVariant(locale, quarterTurns); // Used to rotate terrain rules, footprint, objects, and entrance metadata as one coherent locale.
+      const candidateLocale = useFallback ? compileTerrainFallbackLocale(rotated) : rotated; // Used to preserve the authored subset fallback after the same cardinal rotation.
+      const compiled = candidateLocale ? compileLocale(candidateLocale, scale) : null; // Used to evaluate this orientation with the ordinary placement engine.
+      if (!compiled) continue;
+      const search = findCandidate(context, compiled, { ...options, maxRejectedDiagnostics: perVariantLimit }); // Used to score all legal anchors for this orientation.
+      tested += search.tested;
+      valid += search.valid;
+      for (const rejection of search.rejected) if (rejected.length < maxRejected) rejected.push(rejection);
+      if (!search.best) continue;
+      if (!best || search.best.score > best.score + 1e-9 || (Math.abs(search.best.score - best.score) <= 1e-9 && search.best.tie > best.tie)) {
+        best = search.best;
+        bestCompiled = compiled;
+      }
+    }
+    return { best, compiled: bestCompiled, rejected, tested, valid };
   }
 
   function clearGeneratedObject(context, objectId) {
@@ -556,6 +688,7 @@
       row: selected.anchorR,
       fixed: false,
       terrainAware: true,
+      rotationDeg: Number(locale.__terrainPlacementRotationDeg) || 0, // Used by runtime/debug consumers to report the cardinal orientation selected by terrain placement.
       floorTier: selected.floorTier,
       alwaysVisible: !!locale.placement?.alwaysVisibleOnMap,
       interior: locale.interior ? JSON.parse(JSON.stringify(locale.interior)) : null, // Used by runtime diagnostics and the terrain-aware transition exporter without mutating authored locale data.
@@ -611,38 +744,35 @@
 
   function placeOne(context, locale, options = {}) {
     const scale = Math.max(1, Number(options.scale) || inferGenerationScale(context.workspace, options.sourceWidth)); // Resolved density scale keeps authored dimensions consistent with legacy locale stamping.
-    const compiled = compileLocale(locale, scale);
-    if (!compiled) return { placed: false, diagnostic: { localeId: locale?.id || 'unknown', status: 'skipped', reason: 'no footprint cells', scale } };
-    let search = findCandidate(context, compiled, options); // Used first for the exact authored terrain rules, then replaced only when an authored fallback succeeds.
+    const strictSearch = findLocaleCandidate(context, locale, scale, options, false); // Used to test every allowed cardinal orientation against the full authored terrain rules.
+    let search = strictSearch;
+    let compiled = strictSearch.compiled; // Used by stamping/export so the winning orientation owns all final runtime coordinates.
     let fallbackDiagnostic = null; // Used by mobile/editor diagnostics to reveal when a locale needed its authored relaxed terrain pass.
-    if (!search.best) {
-      const strictSearch = search; // Used to preserve exact-rule counts when a fallback pass is attempted.
-      const fallbackLocale = compileTerrainFallbackLocale(locale); // Used to derive the authored subset of constraints without hard-coding any locale id.
-      const fallbackCompiled = fallbackLocale ? compileLocale(fallbackLocale, scale) : null; // Used to search the same full footprint under the reduced host-terrain checks.
-      if (fallbackCompiled) {
-        const fallbackSearch = findCandidate(context, fallbackCompiled, options); // Used as the second deterministic placement pass for an authored fixed locale.
-        fallbackDiagnostic = {
-          mode: locale.placement.terrainFallback.mode,
-          strictTested: strictSearch.tested,
-          strictValid: strictSearch.valid,
-          fallbackTested: fallbackSearch.tested,
-          fallbackValid: fallbackSearch.valid,
-        };
-        if (fallbackSearch.best) search = fallbackSearch;
-        else {
-          return { placed: false, diagnostic: { localeId: locale.id, name: locale.name, status: 'skipped', reason: 'no terrain-aware placement matched', scale, tested: strictSearch.tested + fallbackSearch.tested, valid: 0, rejected: fallbackSearch.rejected, fallback: fallbackDiagnostic } };
-        }
+    if (!search.best && locale?.placement?.terrainFallback?.mode === 'subset') {
+      const fallbackSearch = findLocaleCandidate(context, locale, scale, options, true); // Used as the second deterministic placement pass across the same allowed orientations.
+      fallbackDiagnostic = {
+        mode: locale.placement.terrainFallback.mode,
+        strictTested: strictSearch.tested,
+        strictValid: strictSearch.valid,
+        fallbackTested: fallbackSearch.tested,
+        fallbackValid: fallbackSearch.valid,
+      };
+      if (fallbackSearch.best) {
+        search = fallbackSearch;
+        compiled = fallbackSearch.compiled;
+      } else {
+        return { placed: false, diagnostic: { localeId: locale.id, name: locale.name, status: 'skipped', reason: 'no terrain-aware placement matched', scale, tested: strictSearch.tested + fallbackSearch.tested, valid: 0, rejected: fallbackSearch.rejected, fallback: fallbackDiagnostic } };
       }
     }
-    if (!search.best) {
+    if (!search.best || !compiled) {
       return { placed: false, diagnostic: { localeId: locale.id, name: locale.name, status: 'skipped', reason: 'no terrain-aware placement matched', scale, tested: search.tested, valid: search.valid, rejected: search.rejected } };
     }
     const clearedObjectIds = clearClearableObjectsUnderFootprint(context, compiled, search.best.anchorC, search.best.anchorR); // Clearable clutter is removed before tile metadata is overwritten.
     for (const cell of compiled.tiles.values()) paintLocaleTile(context, compiled, search.best, cell);
-    const instance = localeInstance(compiled, search.best); // Runtime consumes the same localeInstances shape used by legacy stamped locales.
+    const instance = localeInstance(compiled, search.best); // Runtime consumes the same rotated localeInstances shape that won terrain placement.
     context.workspace.localeInstances = Array.isArray(context.workspace.localeInstances) ? context.workspace.localeInstances : [];
     context.workspace.localeInstances.push(instance);
-    const interiorTransition = appendInteriorTransition(context, locale, instance); // Used to add the interior link after the base exporter has already finalized root.transitions.
+    const interiorTransition = appendInteriorTransition(context, compiled.locale, instance); // Used to keep the entrance connector/transition aligned to the winning cardinal orientation.
     return {
       placed: true,
       instance,
@@ -657,6 +787,7 @@
         selected: {
           anchorC: search.best.anchorC,
           anchorR: search.best.anchorR,
+          rotationDeg: search.best.rotationDeg,
           floorTier: search.best.floorTier,
           floorGroupId: search.best.floorGroupId || null,
           score: search.best.score,
@@ -730,6 +861,9 @@
     hasTerrainRules,
     compileLocale,
     inferGenerationScale,
+    rotateLocaleCardinal(locale, rotationDeg = 0) {
+      return rotatedLocaleVariant(locale, Math.round((Number(rotationDeg) || 0) / 90)); // Shared preview/debug helper uses the exact production cardinal transform without mutating authored data.
+    },
     appendInteriorTransition,
     placeTerrainAwareLocales,
     evaluateCandidateForTest(workspace, locale, anchorC, anchorR, options = {}) {
