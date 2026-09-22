@@ -19,6 +19,11 @@ assert.match(ambientEditor, /ambient-dialogue-reaction-editor\.js/, 'Ambient Dia
 assert.doesNotMatch(runtimeSource, /silliness-reactions\.json/, 'runtime no longer reads the retired standalone silliness config');
 assert.match(runtimeSource, /\['silliness', 'dance', 'music'\]/, 'automatic player reactions include silliness, dance, and music');
 assert.match(runtimeSource, /stable_animal_recognition_/, 'stable-animal recognition copy is routed through reaction profiles');
+assert.match(runtimeSource, /return reactionType === 'silliness' \? 'laugh' : 'smile'/, 'positive social reactions map silliness to laugh and dance/music to smile');
+assert.match(runtimeSource, /if \(polarity === 'negative'\) return 'frown'/, 'negative social reactions use a frown');
+assert.match(runtimeSource, /expression: reactionExpression\(reactionType, polarity\)/, 'ambient social reaction renderer receives the derived reaction expression');
+assert.match(runtimeSource, /tier === 'wary'\) return 'frown'/, 'wary pet reactions frown');
+assert.match(runtimeSource, /tier === 'recognized' \|\| tier === 'trained'\) return 'smile'/, 'warm trained or recognized pet reactions smile');
 assert.match(editorSource, /NPC personality assignments/, 'editor exposes per-NPC personality assignment');
 assert.match(editorSource, /Animal reactions/, 'editor exposes animal reaction pools');
 assert.match(editorSource, /Silliness \/ pranks/, 'editor exposes silliness pools');
