@@ -261,11 +261,14 @@
       const npcId = String(options?.speakerId || ''); // Speaker selects personality assignment for animal-directed lines.
       const animal = npcId && options?.directedAtPlayer === true ? activeAnimalForTarget(options) : null; // Existing directed animal face target distinguishes stable reactions from ordinary greetings.
       if (animal) {
-        const replacement = animalLine(npcId, animal); // Personality line replaces only the old hardcoded stable-animal copy.
+        const tier = animalTier(npcId, animal); // Used both for personality copy selection and the matching ambient facial reaction.
+        const replacement = animalLine(npcId, animal, tier); // Personality line replaces only the old hardcoded stable-animal copy.
         if (replacement) {
           text = replacement;
           state.animalLineReplacements++;
         }
+        const expression = animalReactionExpression(tier); // Uses a temporary emotion only for clearly warm/wary animal reactions; otherwise resting Favor expression wins.
+        if (expression && !options.expression) options = { ...options, expression };
       }
       return originalShow(target, text, options);
     };
@@ -357,6 +360,15 @@
     const type = String(value || 'silliness'); // Public/automatic stimulus type normalized to one authored reaction category.
     return ALLOWED_SOCIAL_TYPES.includes(type) ? type : 'silliness';
   }
+  function reactionExpression(reactionType, polarity) {
+    if (polarity === 'negative') return 'frown'; // Negative silliness/dance/music reactions visibly disapprove instead of keeping the NPC's resting mouth.
+    return reactionType === 'silliness' ? 'laugh' : 'smile'; // Positive pranks get the stronger laugh mouth; positive dance/music reactions smile.
+  }
+  function animalReactionExpression(tier) {
+    if (tier === 'wary') return 'frown'; // Wary animal copy should read as concern/disapproval.
+    if (tier === 'recognized' || tier === 'trained') return 'smile'; // Familiar successful pet greetings visibly warm the NPC's expression.
+    return null; // Familiar-but-not-trained copy keeps the NPC's Favor-driven resting expression.
+  }
   function socialLine(npcId, reactionType, polarity, serial) {
     return resolve({
       npcId,
@@ -420,6 +432,7 @@
       mode: 'chathead',
       durationMs: Math.max(800, finite(state.config?.settings?.durationMs, 4400)),
       tone: `reaction-${reactionType}-${polarity}`,
+      expression: reactionExpression(reactionType, polarity),
       directedAtPlayer: true,
       faceWalker: walker,
       faceTarget: player,
