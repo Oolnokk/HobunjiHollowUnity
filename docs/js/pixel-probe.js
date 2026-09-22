@@ -962,7 +962,7 @@
     const heldRenderDebug = window.HeldObjectRenderOrder?.snapshot?.(); // Exposes the retained selective-x-ray render mode and pass counters on mobile.
     if (heldRenderDebug) lines.push(`Held x-ray: mode=${heldRenderDebug.mode} ground=${heldRenderDebug.groundMeshes} held=${heldRenderDebug.heldMeshes} waterBlend=${heldRenderDebug.waterReplayMeshes ?? '-'}/${heldRenderDebug.waterReplays ?? '-'} passes=${heldRenderDebug.baseWorldRenders}/${heldRenderDebug.selectiveOverlays}/${heldRenderDebug.nonGroundDepthReplays}/${heldRenderDebug.groundDepthRestores}`);
     const grassBankDebug = window.VegetationCropRendering?.debugGrassBankSnapshot?.(); // Exposes the river-bank grass clamp without requiring desktop DevTools.
-    if (grassBankDebug) lines.push(`Grass bank inset: townTiles=${grassBankDebug.townRiverBankInsetTiles} margin=${Number(grassBankDebug.bankSwayMargin || 0).toFixed(3)}u`);
+    if (grassBankDebug) lines.push(`Grass bank inset: townTiles=${grassBankDebug.townRiverBankInsetTiles} margin=${Number(grassBankDebug.bankSwayMargin || 0).toFixed(3)}u lip=${Number(grassBankDebug.bankLipHeight || 0).toFixed(3)}u`);
     const waterFootLines = _pixelProbeWaterFootContactLines(activeScene, currentArea, playerMesh); // Used to distinguish real foot/water intersection from camera-perspective illusions on mobile.
     if (waterFootLines) lines.push(...waterFootLines);
     const controllerDebug = window.HOBUNJI_CONTROLLER_STATUS; // Published by game.js so controller ownership and raw browser mapping are copyable on mobile.
