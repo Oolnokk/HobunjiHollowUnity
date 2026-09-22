@@ -75,6 +75,43 @@ Placement.placeTerrainAwareLocales(flatWorkspace, [cave], { seed: 'unit', scale:
 assert.strictEqual(flatWorkspace.localeInstances.length, 0);
 assert.strictEqual(flatWorkspace.localeTerrainDiagnostics[0].status, 'skipped');
 
+// Cardinal rotation must rotate the entire locale, not just the cave mesh.
+function makeRotationWorkspace() {
+  const root = { schema: 'hobunji_map.v1', id: 'rotation-root', cols: 8, rows: 8, tiles: {}, generatedFrom: { seed: 'rotation-unit', note: 'Flattened after 1x tile-density expansion.' } };
+  for (let r = 0; r < root.rows; r++) for (let c = 0; c < root.cols; c++) root.tiles[`${c},${r}`] = { type: 'grass', crop: '' };
+  const sub = { schema: 'hobunji_map.v1', id: 'rotation-p2-map', isSubmap: true, plateauGroupId: 'rotation-p2', elevation: 2, anchorC: 4, anchorR: 0, cols: 4, rows: 8, tiles: {} };
+  for (let r = 0; r < 8; r++) for (let c = 4; c < 8; c++) {
+    root.tiles[`${c},${r}`].plateau = 'rotation-p2';
+    sub.tiles[`${c - 4},${r}`] = { type: 'grass', crop: '' };
+  }
+  for (let c = 4; c < 8; c++) {
+    root.tiles[`${c},0`].borderEscarpment = true;
+    root.tiles[`${c},7`].borderEscarpment = true;
+  }
+  for (let r = 0; r < 8; r++) root.tiles[`7,${r}`].borderEscarpment = true;
+  return { schema: 'hobunji_map_editor_workspace.v1', maps: [root, sub], plateauGroups: [{ id: 'rotation-p2', elevation: 2 }], localeInstances: [], entry: { col: 0, row: 4, side: 'west' } };
+}
+
+const rotatingCave = {
+  schema: 'hobunji_locale.v1', id: 'locale_rotating_cave', name: 'Rotating Cave', category: 'cave', cols: 2, rows: 1,
+  tiles: { '0,0': { type: 'grass' } },
+  terrainAnchors: { '0,0': { terrain: 'plateauCliff', strength: 'required', facing: 'north', height: { mode: 'any', min: null, max: null } } },
+  embeddedTiles: {},
+  objects: [{ id: 'cave', kind: 'structure', key: 'cave_small', col: 0, row: 0, w: 1, h: 1, rot: 180 }],
+  npcAnchors: [],
+  connectors: [{ id: 'mouth', col: 0, row: 0, side: 'north', label: 'Cave mouth' }],
+  placement: { mode: 'fixed', rotationMode: 'cardinal', clearanceTiles: 0, requiresFlatGround: false, minDistanceFromEntry: 0, allowedZones: [] },
+};
+const rotationWorkspace = makeRotationWorkspace();
+Placement.placeTerrainAwareLocales(rotationWorkspace, [rotatingCave], { seed: 'rotation-unit', scale: 1 });
+assert.strictEqual(rotationWorkspace.localeInstances.length, 1, 'cardinal cave locale should rotate to the only non-boundary cliff face');
+const rotationInstance = rotationWorkspace.localeInstances[0];
+const rotationDiagnostic = rotationWorkspace.localeTerrainDiagnostics[0];
+assert.strictEqual(rotationDiagnostic.selected.rotationDeg, 270, 'authored north-facing cave should rotate 270° to the only west-facing internal cliff');
+assert.strictEqual(rotationInstance.rotationDeg, 270, 'runtime locale instance must preserve the selected terrain-placement rotation');
+assert.strictEqual(rotationInstance.connectors[0].side, 'west', 'entrance connector must rotate with the locale rather than remaining north-facing');
+assert.strictEqual(rotationInstance.objects[0].rot, 90, 'cave object yaw must rotate with the locale footprint');
+
 // Installing the adapter must keep a legacy locale on the old generator path.
 const legacy = { id: 'legacy', tiles: { '0,0': { type: 'grass' } }, placement: {} };
 let receivedLocales = null;
