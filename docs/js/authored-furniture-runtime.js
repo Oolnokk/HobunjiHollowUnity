@@ -48,6 +48,7 @@
     if (!data || !Array.isArray(data.parts)) return group;
     group.name = `authored_furniture_${data.key || 'unknown'}`;
     group.userData.authoredFurnitureKey = data.key || null; // Used by Pixel Probe/runtime diagnostics to identify authored furniture instances.
+    if (data.puzzle) window.FurniturePuzzleProperties?.applyToObject3D?.(group, data.puzzle, data.key); // Authored activators/mechanisms carry the same metadata into gameplay that the editors wire per instance.
     const meshById = new Map();
     const partById = new Map(); // Used by timeline liquid geometry, linked-container warps, and stomp anchors.
     for (const part of data.parts) partById.set(part.id, part);
@@ -72,6 +73,7 @@
     }
     group.userData.meshById = meshById;
     group.userData.partById = partById;
+    group.userData.authoredParticleEmitters = (data.particleEmitters || []).map(record => JSON.parse(JSON.stringify(record))); // FurniturePuzzleRuntime scales these between OFF/ON emission states.
     group.userData.timelineLiquidStates = new Map(); // Used by the live stomp anchor to follow the animated surface level.
     return group;
   }

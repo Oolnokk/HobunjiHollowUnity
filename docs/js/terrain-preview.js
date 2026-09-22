@@ -184,6 +184,11 @@
         // see wilderness-map-generator.js line ~306) which isn't threaded
         // through to the tile record. See game.js's isMineableRockTile.
         rockKind: type === 'rock' ? (t.generatedObjectType || null) : undefined,
+        // Exact generator identity lets the runtime assemble this authored
+        // multi-tile boulder once instead of rediscovering it per chunk.
+        boulderId: type === 'rock' && t.generatedObjectType === 'undiggableBoulder' && t.generatedObjectId
+          ? m.id + ':' + t.generatedObjectId
+          : undefined,
       });
     }
 

@@ -1,0 +1,244 @@
+name: Smoke Random Ruin Walls and Inputs
+
+on:
+  push:
+    branches:
+      - agent/tool-hub-debrisifier-active
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Syntax checks
+        run: |
+          node --check docs/js/dev-random-ruin-interactions.js
+          node --check docs/js/dev-random-ruin-wall-planes.js
+          node --check docs/js/dev-random-ruin-wall-render-proxy.js
+          node --check docs/js/camera-look-clamp.js
+
+      - name: Install Chromium smoke runtime
+        run: |
+          npm install --no-save playwright@1.49.1 three@0.128.0
+          npx playwright install --with-deps chromium
+
+      - name: Serve docs
+        run: |
+          python3 -m http.server 4173 --directory docs >/tmp/hobunji-http.log 2>&1 &
+          echo $! >/tmp/hobunji-http.pid
+
+      - name: Browser smoke
+        timeout-minutes: 5
+        run: |
+          cat > /tmp/ruin-smoke.cjs <<'NODE'
+          const { chromium } = require(process.cwd() + '/node_modules/playwright');
+          const assert = require('node:assert/strict');
+          const fs = require('node:fs');
+
+          (async () => {
+            let browser = null;
+            try {
+              browser = await chromium.launch({ headless:true });
+              const page = await browser.newPage({ viewport:{ width:1024, height:768 } });
+              const pageErrors = [];
+              page.on('pageerror', error => pageErrors.push(String(error?.stack || error)));
+              page.on('console', msg => {
+                const text = msg.text();
+                if (msg.type() === 'error') console.log('[browser console error]', text);
+              });
+              // Keep the smoke independent of third-party CDN availability while
+              // serving the exact Three.js r128 files used by docs/index.html.
+              await page.route('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js', route =>
+                route.fulfill({ contentType:'application/javascript', body:fs.readFileSync(process.cwd() + '/node_modules/three/build/three.min.js') }));
+              await page.route('https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js', route =>
+                route.fulfill({ contentType:'application/javascript', body:fs.readFileSync(process.cwd() + '/node_modules/three/examples/js/controls/TransformControls.js') }));
+              await page.addInitScript(() => {
+                localStorage.setItem('hobunjiDevMode', '1');
+                // game.js only starts its render loop after onboarding supplies a
+                // player. Give this isolated page a disposable session profile so
+                // the smoke exercises the same active-scene render path as play.
+                window.__hobunjiPlayerProfile = {
+                  playerId:'ruin-smoke-player', characterId:'ruin-smoke-character',
+                  worldId:'ruin-smoke-world', worldLabel:'Ruin Smoke',
+                  worldOwnerCharacterId:'ruin-smoke-character', isWorldOwner:true,
+                  nickname:'Ruin Smoke', farmhandPermissions:{},
+                  appearance:{ speciesId:'mao-ao', gender:'male', cosmetics:{} },
+                  equippedCosmetics:[], appliedDyes:{}, nonGearInventory:{},
+                  packClothing:[], npcRelationships:{}, questProgress:{},
+                  isNewWorld:true,
+                };
+              });
+              await page.goto('http://127.0.0.1:4173/index.html', { waitUntil:'domcontentloaded', timeout:90000 });
+              await page.waitForFunction(() =>
+                !!window.DevRandomRuin?.generate &&
+                !!window.DevRandomRuinWallPlanes?.snapshot &&
+                !!window.DevRandomRuinWallRenderProxy?.snapshot &&
+                !!window.DevRandomRuinInteractions?.snapshot &&
+                !!window.WorldPopupText?.debugSnapshot &&
+                !!window.GridTileAccessors?.getCurrentArea,
+                null, { timeout:90000 });
+
+              await page.waitForFunction(() => window.__hobunjiGameStarted === true, null, { timeout:120000 });
+              await page.evaluate(() => window.HobunjiTitleScreen?.start?.());
+              await page.waitForFunction(() => !window.HobunjiTitleScreen?.isActive?.(), null, { timeout:15000 });
+
+              // Capture the exact camera used when the gameplay renderer draws
+              // the generated ruin. The production runtime deliberately keeps
+              // this camera private; this page-local wrapper is only a CI probe.
+              await page.evaluate(() => {
+                const renderer = window.__hobunjiGameRenderer;
+                const originalRender = renderer.render;
+                renderer.render = function (scene, camera) {
+                  if (window.GridTileAccessors?.getCurrentArea?.() === 'map_i_dev_random_ruin' &&
+                      scene === window.GridTileAccessors?.getActiveScene?.()) {
+                    window.__ruinSmokeRenderedCamera = camera;
+                  }
+                  return originalRender.call(this, scene, camera);
+                };
+              });
+
+              const generated = await page.evaluate(async () => await window.DevRandomRuin.generate(0x5eed1234));
+              assert.equal(generated, true, 'ruin generation should succeed');
+              await page.waitForFunction(() => window.GridTileAccessors.getCurrentArea() === 'map_i_dev_random_ruin', null, { timeout:30000 });
+              await page.waitForFunction(() =>
+                !!window.__ruinSmokeRenderedCamera &&
+                window.DevRandomRuinWallRenderProxy.snapshot().rendererSubmittedProxies > 0,
+              null, { timeout:30000 });
+              await page.waitForTimeout(250);
+
+              const state = await page.evaluate(() => ({
+                area: window.GridTileAccessors.getCurrentArea(),
+                gameStarted: !!window.__hobunjiGameStarted,
+                wallSource: window.DevRandomRuinWallPlanes.snapshot(),
+                wallRender: window.DevRandomRuinWallRenderProxy.snapshot(),
+                interactions: window.DevRandomRuinInteractions.snapshot(),
+                popup: window.WorldPopupText.debugSnapshot(),
+                obsoleteToggle: !!document.getElementById('devRandomRuinWallPlanesRow'),
+                persistedToggle: localStorage.getItem('hobunjiDevRandomRuinWallPlanes'),
+                ladderNodes: (() => {
+                  const root = window.GridTileAccessors.getActiveScene()?.children?.find?.(o => /^dev_v50_ruin_/.test(o?.name || ''));
+                  const rows = [];
+                  root?.traverse?.(o => {
+                    if (o.userData?.generatedAccessType === 'stoneLadder') {
+                      const meshChildren = (o.children || []).filter(c => c.isMesh);
+                      rows.push({
+                        name:o.name || '',
+                        tagged:o.userData?.devRuinInteractionType || '',
+                        childNames:meshChildren.map(c => c.name || ''),
+                        childOwnerResolved:meshChildren.every(child => window.DevRandomRuinInteractions.resolveInteractionOwner(child) === o),
+                      });
+                    }
+                  });
+                  return rows;
+                })(),
+              }));
+
+              const framebuffer = await page.evaluate(() => {
+                const renderer = window.__hobunjiGameRenderer;
+                const scene = window.GridTileAccessors.getActiveScene();
+                const camera = window.__ruinSmokeRenderedCamera;
+                const proxies = [];
+                scene.traverse(object => {
+                  if (object.userData?.devRuinWallRenderProxy && object.isMesh) proxies.push(object);
+                });
+                if (!renderer || !scene || !camera || !proxies.length) {
+                  return { changedPixels:0, totalDelta:0, proxyCount:proxies.length, width:0, height:0 };
+                }
+
+                const gl = renderer.getContext();
+                const width = gl.drawingBufferWidth;
+                const height = gl.drawingBufferHeight;
+                const readFrame = () => {
+                  const pixels = new Uint8Array(width * height * 4);
+                  gl.finish();
+                  gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+                  return pixels;
+                };
+
+                // Two synchronous renders keep camera, lighting, and animation
+                // state identical. Any changed pixels therefore come from the
+                // only state changed between them: the visible wall proxies.
+                renderer.render(scene, camera);
+                const withWalls = readFrame();
+                const priorVisibility = proxies.map(proxy => proxy.visible);
+                proxies.forEach(proxy => { proxy.visible = false; });
+                renderer.render(scene, camera);
+                const withoutWalls = readFrame();
+                proxies.forEach((proxy, index) => { proxy.visible = priorVisibility[index]; });
+                renderer.render(scene, camera);
+
+                let changedPixels = 0;
+                let totalDelta = 0;
+                for (let offset = 0; offset < withWalls.length; offset += 4) {
+                  const delta = Math.abs(withWalls[offset] - withoutWalls[offset]) +
+                    Math.abs(withWalls[offset + 1] - withoutWalls[offset + 1]) +
+                    Math.abs(withWalls[offset + 2] - withoutWalls[offset + 2]);
+                  totalDelta += delta;
+                  if (delta > 3) changedPixels++;
+                }
+                return { changedPixels, totalDelta, proxyCount:proxies.length, width, height };
+              });
+
+              console.log(JSON.stringify({ state, framebuffer }, null, 2));
+              assert.equal(state.area, 'map_i_dev_random_ruin');
+              assert.equal(state.gameStarted, true, 'smoke must exercise the running gameplay renderer');
+              assert.equal(state.wallSource.enabled, true, 'structural wall switch must be permanently enabled');
+              assert.ok(state.wallSource.count > 0, 'V50 must generate wall source meshes');
+              assert.equal(state.wallSource.meshVisible, state.wallSource.count, 'all source wall transforms must remain enabled');
+              assert.equal(state.wallRender.sourceWalls, state.wallSource.count, 'render proxy should cover every source wall');
+              assert.equal(state.wallRender.renderProxyCount, state.wallRender.sourceWalls, 'each source wall must have a parent-realm proxy');
+              assert.equal(state.wallRender.proxyRootAttached, true, 'wall proxies must be parented directly into the active game scene');
+              assert.equal(state.wallRender.transformSyncedProxies, state.wallRender.renderProxyCount, 'every wall proxy must have a finite copied world transform');
+              assert.equal(state.wallRender.proxyMaterialsVisible, state.wallRender.renderProxyCount, 'all wall proxy materials must render');
+              assert.ok(state.wallRender.geometryProbeHits > 0, 'rebuilt wall geometry must accept direct mesh intersection probes');
+              assert.ok(state.wallRender.rendererSubmittedProxies > 0, 'the gameplay renderer must submit wall proxy geometry for drawing');
+              assert.ok(state.wallRender.renderSubmitCount > 0, 'wall render submission counter must advance during gameplay');
+              assert.equal(framebuffer.proxyCount, state.wallRender.renderProxyCount, 'framebuffer probe must cover every wall proxy');
+              assert.ok(framebuffer.width > 0 && framebuffer.height > 0, 'gameplay WebGL framebuffer must be readable');
+              assert.ok(framebuffer.changedPixels >= 32, `wall proxies must change visible framebuffer pixels: ${JSON.stringify(framebuffer)}`);
+              assert.ok(framebuffer.totalDelta > 0, `wall proxies must contribute framebuffer color: ${JSON.stringify(framebuffer)}`);
+              assert.equal(state.wallRender.raycastableProxies, 0, 'visual wall proxies must not participate in public interaction raycasts');
+              assert.equal(state.wallRender.interactionRaycastDisabled, state.wallRender.renderProxyCount, 'every visual wall proxy must leave V50 interactables unobscured');
+              assert.equal(state.wallRender.mainRealmMaterials, state.wallRender.renderProxyCount, 'visible wall materials must belong to the game THREE realm');
+              assert.equal(state.wallRender.sourceMaterialIsolation, state.wallRender.renderProxyCount, 'wall suppression must not hide V50 shared stone materials used by ladders, floors, and props');
+              assert.equal(state.obsoleteToggle, false, 'obsolete wall visibility setting must be removed');
+              assert.equal(state.persistedToggle, null, 'persisted wall-off preference must be cleared');
+
+              assert.equal(state.interactions.nativeProviderMode, true, 'ruin interactions should use direct runtime providers');
+              assert.equal(state.interactions.customPromptBridgeInstalled, false, 'ruin interactions must not wrap the custom ActionPromptUI');
+              assert.ok(state.interactions.providerCount >= 2, 'base and prototype ruin controls should both feed the shared input list');
+              assert.ok(state.interactions.rows.length > 0, 'spawn should expose at least the normal Leave Test Ruin interaction');
+              assert.ok(state.popup.interactionRows.length > 0, 'WorldPopupText should own the visible interaction list');
+              assert.ok(state.popup.interactionRows.every(row => row.inputActionId), 'interaction rows should carry semantic input action ids');
+              assert.ok(state.popup.interactionRows.every(row => row.inputHint), 'interaction rows should carry real binding labels');
+              assert.ok(state.popup.interactionRows.every(row => row.inputColor), 'interaction rows should carry action-arch input colors');
+
+              assert.equal(state.interactions.ladderCount, state.ladderNodes.length, 'late-added V50 ladder groups must be discovered by the throttled semantic rescan');
+              for (const ladder of state.ladderNodes) {
+                assert.match(ladder.name, /^dev_ruin_stone_ladder_/, 'V50 ladder root should have a semantic runtime name');
+                assert.equal(ladder.tagged, 'stoneLadder', 'V50 ladder root should carry runtime interaction tag');
+                assert.ok(ladder.childNames.length > 0, 'ladder should contain raycastable child meshes');
+                assert.ok(ladder.childNames.every(name => /^dev_ruin_stone_ladder_\d+_part_\d+$/.test(name)), 'ladder rung/rail children should be named for Pixel Probe and parent resolution');
+                assert.equal(ladder.childOwnerResolved, true, 'a hit on any ladder child mesh must resolve upward to its semantic V50 ladder owner');
+              }
+
+              if (pageErrors.length) {
+                console.log('Page errors:', pageErrors.join('\n---\n'));
+                throw new Error(`browser raised ${pageErrors.length} page error(s)`);
+              }
+            } finally {
+              await browser?.close?.();
+            }
+          })().catch(error => {
+            console.error(error);
+            process.exit(1);
+          });
+          NODE
+          node /tmp/ruin-smoke.cjs
