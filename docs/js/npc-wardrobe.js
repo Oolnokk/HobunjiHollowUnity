@@ -230,45 +230,71 @@
           <h2 style="margin:0;font-size:15px;color:#6aa7ff">${name}'s Wardrobe</h2>
           <button id="npcWardrobeClose" style="border:none;background:transparent;color:#9fb2cc;font-size:18px;cursor:pointer">×</button>
         </div>
-        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#9fb2cc;margin:10px 0 6px">Currently Worn (changes only at bedtime)</div>
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#9fb2cc;margin:10px 0 6px">Currently Worn</div>
         <div>${worn.length ? worn.map(rowHtml).join('') : '<p style="color:#9fb2cc;font-size:12px">Nothing on hand.</p>'}</div>
         <div style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#9fb2cc;margin:14px 0 6px">Stored</div>
         <div>${storedItems.length ? storedItems.map(rowHtml).join('') : '<p style="color:#9fb2cc;font-size:12px">Nothing stored yet — gift them clothing they\'ll wear.</p>'}</div>
       `;
       panel.querySelector('#npcWardrobeClose').addEventListener('click', closeWardrobePanel);
+      panel.querySelectorAll('.npc-wardrobe-store').forEach(btn => btn.addEventListener('click', async () => {
+        if (await storeWornItem(npcId, btn.dataset.cosmeticId)) {
+          deps?.showToast?.('Stored ' + (btn.dataset.label || 'the garment') + '. Outfit updated.', true);
+          render();
+        }
+      }));
+      panel.querySelectorAll('.npc-wardrobe-wear').forEach(btn => btn.addEventListener('click', async () => {
+        if (await wearStoredItem(npcId, btn.dataset.uid)) {
+          deps?.showToast?.('Put on ' + (btn.dataset.label || 'the garment') + '.', true);
+          render();
+        }
+      }));
       panel.querySelectorAll('.npc-wardrobe-take').forEach(btn => btn.addEventListener('click', () => {
         takeFromWardrobe(npcId, btn.dataset.uid);
         deps?.showToast?.('Took ' + (btn.dataset.label || 'the garment') + ' from the wardrobe.', true);
         render();
       }));
     }
-
     function rowHtml(item) {
       const label = item.label || prettifyCosmeticId(item.cosmeticId);
       const swatch = item.colorA?.hex ? `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${item.colorA.hex};margin-right:6px"></span>` : '';
-      return `<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid #26384f;border-radius:9px;margin-bottom:6px">
-        <span style="flex:1;font-size:12.5px">${swatch}${label}</span>
-        ${item.worn ? '<span style="font-size:10px;color:#9fb2cc">worn</span>' : `<button class="npc-wardrobe-take" data-uid="${item.uid}" data-label="${label}" style="border:1px solid rgba(106,167,255,.4);background:rgba(106,167,255,.16);color:#edf4ff;border-radius:8px;padding:4px 8px;font-size:11px;cursor:pointer">Take</button>`}
-      </div>`;
+      const buttons = item.worn
+        ? `<button class="npc-wardrobe-store" data-cosmetic-id="${item.cosmeticId}" data-label="${label}" style="border:1px solid rgba(106,167,255,.4);background:rgba(106,167,255,.16);color:#edf4ff;border-radius:8px;padding:4px 8px;font-size:11px;cursor:pointer">Store</button>`
+        : `<button class="npc-wardrobe-wear" data-uid="${item.uid}" data-label="${label}" style="border:1px solid rgba(106,167,255,.4);background:rgba(106,167,255,.16);color:#edf4ff;border-radius:8px;padding:4px 8px;font-size:11px;cursor:pointer">Wear</button><button class="npc-wardrobe-take" data-uid="${item.uid}" data-label="${label}" style="border:1px solid rgba(106,167,255,.4);background:rgba(106,167,255,.16);color:#edf4ff;border-radius:8px;padding:4px 8px;font-size:11px;cursor:pointer">Take</button>`;
+      return `<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid #26384f;border-radius:9px;margin-bottom:6px"><span style="flex:1;font-size:12.5px">${swatch}${label}</span>${buttons}</div>`;
     }
-
     render();
     document.body.appendChild(overlay);
   }
 
   // ── Save/load ────────────────────────────────────────────────────
-  function serialize() { return stored; }
+  function serialize() {
+    return { version: 2, stored, outfits: outfitOverrides };
+  }
   function restore(data) {
     Object.keys(stored).forEach(k => delete stored[k]);
-    if (data && typeof data === 'object') Object.assign(stored, data);
-  }
+    Object.keys(outfitOverrides).forEach(k => delete outfitOverrides[k]);
+    if (!data || typeof data !== 'object') return;
 
+    const isV2 = Number(data.version) >= 2 && data.stored && typeof data.stored === 'object'; // Distinguishes stored+outfit saves from legacy npcId->items wardrobe saves.
+    Object.assign(stored, isV2 ? data.stored : data);
+    if (!isV2 || !data.outfits || typeof data.outfits !== 'object') return;
+    Object.assign(outfitOverrides, data.outfits);
+    for (const [npcId, outfit] of Object.entries(outfitOverrides)) {
+      const walker = findWalker(npcId);
+      const rec = walker?.rec;
+      if (!rec || !outfit) continue;
+      rec.equippedCosmetics = [...(outfit.equippedCosmetics || [])];
+      rec.appliedDyes = { ...(outfit.appliedDyes || {}) };
+      void refreshWalkerAppearance(walker);
+    }
+  }
   window.NpcWardrobe = {
     init,
     offerClothing,
     getWardrobeContents,
     takeFromWardrobe,
-    rerollForSleep,
+    wearStoredItem,
+    storeWornItem,
     openWardrobePanel,
     closeWardrobePanel,
     serialize,
