@@ -17,6 +17,11 @@ const assert = require('assert');
     hatchet: { label: 'Hatchet', slots: ['axe','weapon'] },
     sword: { label: 'Sword', slots: ['weapon'] },
     crossbow: { label: 'Crossbow', slots: ['ranged'] },
+    hatchet_nativeCopper: { label: 'Native Copper Hatchet', slots: ['axe','weapon','ranged'] },
+    fishingspear_nativeCopper: { label: 'Native Copper Fishing Spear', slots: ['harpoon','weapon','ranged'] },
+    dagger_nativeCopper: { label: 'Native Copper Dagger', slots: ['weapon','ranged'] },
+    kylie_nativeCopper: { label: 'Native Copper Kylie', slots: ['weapon','ranged'] },
+    bshuakauitl_nativeCopper: { label: "Native Copper B'shuakauitl", slots: ['weapon','ranged'] },
   };
   const itemDefs = {
     heftroot: { label: 'Heftroot', sellPrice: 25 },
@@ -83,6 +88,9 @@ const assert = require('assert');
 
   vm.createContext(context);
   const policyPath = path.join(__dirname, '..', 'docs', 'js', 'mastery-policy.js'); // Used to test the repository copy rather than an inline fixture.
+  const rangedWeaponsPath = path.join(__dirname, '..', 'docs', 'js', 'combat', 'ranged-weapons.js'); // Used to pin the production projectile-to-mastery routing that the old fixture accidentally bypassed.
+  const rangedWeaponsSource = fs.readFileSync(rangedWeaponsPath, 'utf8'); // Used to verify runtime ranged kills call the public mastery policy instead of relying on an absent game callback.
+  assert.match(rangedWeaponsSource, /healthBefore[\s\S]*HobunjiMasteryPolicy[\s\S]*recordRangedKill\(p\.itemKey, c, healthBefore\)/, 'player projectile kills must route directly into mastery policy with the exact firing itemKey');
   vm.runInContext(fs.readFileSync(policyPath, 'utf8'), context, { filename: policyPath });
 
   const equipmentDeps = {
@@ -181,11 +189,45 @@ const assert = require('assert');
   combatDeps.awardRangedMastery('crossbow');
   assert.equal(gear.toolMastery.crossbow.xp, 0, 'nonlethal ranged hit must get no XP');
 
-  // Lethal ranged uses exact itemKey and double combat rate.
+  // Lethal legacy ranged uses its callback itemKey and double combat rate.
   const target = { health:10, def:{label:'Target',health:60,damage:8} };
   combatDeps.damageCreature(target, 20, 0, 0, 0, {ranged:true});
   combatDeps.awardRangedMastery('crossbow');
-  assert.equal(gear.toolMastery.crossbow.xp, 2.5, 'ranged kill should get double XP');
+  assert.equal(gear.toolMastery.crossbow.xp, 2.5, 'legacy ranged kill should get double XP');
+
+  // Production RangedWeapons owns a separate reference to game.js damageCreature,
+  // so reproduce that real path by bypassing Combat's patched dependency object entirely.
+  gear.toolMastery.dagger_nativeCopper = {xp:0};
+  const runtimeDaggerTarget = { health:10, def:{label:'Runtime Dagger Target',health:60,damage:8} }; // Used to reproduce the real unwrapped projectile damage path that still earns Combat XP through SkillSystem.
+  const runtimeDaggerHealthBefore = runtimeDaggerTarget.health; // Used by the public mastery entry point to retain pre-hit enemy difficulty.
+  damageCreature(runtimeDaggerTarget, 20);
+  assert.equal(gear.toolMastery.dagger_nativeCopper.xp, 0, 'unwrapped ranged damage alone must demonstrate the old production bug: no dagger mastery callback exists');
+  policy.recordRangedKill('dagger_nativeCopper', runtimeDaggerTarget, runtimeDaggerHealthBefore);
+  assert.equal(gear.toolMastery.dagger_nativeCopper.xp, 2.5, 'direct ranged kill routing must award dagger mastery on the real unwrapped damage path');
+  policy.recordRangedKill('dagger_nativeCopper', runtimeDaggerTarget, runtimeDaggerHealthBefore);
+  assert.equal(gear.toolMastery.dagger_nativeCopper.xp, 2.5, 'direct and wrapped ranged routes must not double-credit the same defeated entity');
+
+  // Modern projectiles carry the exact generated itemKey inside damage metadata,
+  // so every current dual-role ranged tool gets its own mastery even if the
+  // equipped ranged slot points somewhere else and the old callback is absent.
+  const dualRoleRangedKeys = ['hatchet_nativeCopper', 'fishingspear_nativeCopper', 'dagger_nativeCopper', 'kylie_nativeCopper', 'bshuakauitl_nativeCopper']; // Used to cover every current generated melee/ranged archetype.
+  for (const itemKey of dualRoleRangedKeys) {
+    gear.toolMastery[itemKey] = {xp:0};
+    const dualRoleTarget = { health:10, def:{label:`Target for ${itemKey}`,health:60,damage:8} }; // Used to verify exact projectile-source attribution for this generated item.
+    combatDeps.damageCreature(dualRoleTarget, 20, 0, 0, 0, {ranged:true, rangedItemKey:itemKey});
+    assert.equal(gear.toolMastery[itemKey].xp, 2.5, `${itemKey} ranged kill should credit the fired item without the legacy callback`);
+    combatDeps.awardRangedMastery(itemKey);
+    assert.equal(gear.toolMastery[itemKey].xp, 2.5, `${itemKey} legacy callback must not double-credit metadata-attributed kills`);
+  }
+  assert.equal(gear.toolMastery.crossbow.xp, 2.5, 'dual-role kills must not fall back to the currently equipped crossbow');
+
+  // Friendly-fire projectile deaths carry source metadata for diagnostics but never award mastery.
+  const friendlyBefore = gear.toolMastery.hatchet_nativeCopper.xp; // Used to prove friendly-fire kills cannot increase the firing tool's mastery.
+  const friendlyTarget = { health:10, def:{label:'Friendly Target',health:60,damage:8} }; // Used to exercise the ranged friendly-fire guard.
+  combatDeps.damageCreature(friendlyTarget, 20, 0, 0, 0, {ranged:true, rangedItemKey:'hatchet_nativeCopper', friendlyFire:true});
+  await Promise.resolve();
+  assert.equal(gear.toolMastery.hatchet_nativeCopper.xp, friendlyBefore, 'friendly-fire ranged kills must not award mastery');
+  assert.equal(gear.toolMastery.crossbow.xp, 2.5, 'friendly-fire ranged kills must not award fallback mastery to the equipped ranged slot');
 
   // Crop harvest: exact currently-equipped hoe, yield worth * quality.
   gear.toolMastery.bronzehoe = {xp:0};
