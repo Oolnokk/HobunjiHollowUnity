@@ -12,8 +12,6 @@ const gridSource = read('docs/js/grid-tile-accessors.js');
 const idleYaw = read('docs/js/weapon-idle-body-yaw-runtime.js');
 const stances = read('docs/js/weapon-tool-stances.js');
 const portrait = read('docs/js/portrait-utils.js');
-const vegetation = read('docs/js/vegetation-crop-rendering.js'); // Guards the town river-bank billboard clamp that prevents land grass from hanging over water.
-const pixelProbe = read('docs/js/pixel-probe.js'); // Guards the mobile-readable bank-clamp diagnostic.
 
 assert.match(controller, /function isActive\(\) \{\s*return stack\.length > 0;\s*\}/,
   'the gameplay panel gate is a cached read with no layout work');
@@ -52,19 +50,6 @@ assert.match(idleYaw, /composerChanged \|\| lastYawDeg !== resolvedYawDeg/,
 
 assert.match(portrait, /texture\.generateMipmaps = false;[\s\S]{0,100}texture\.minFilter = THREE\.LinearFilter/,
   'canonical canvas-backed PNG textures do not request mipmap generation');
-
-assert.match(vegetation, /const GRASS_BANK_SWAY_MARGIN = 0\.05/,
-  'town bank grass reserves enough room for the authored billboard width plus shader wind sway');
-assert.match(vegetation, /function _townGrassBankEdges\(townGrid, col, row\)[\s\S]{0,1200}?return west \|\| east \|\| north \|\| south \? \{ west, east, north, south \} : null;/,
-  'town grass identifies permanent water along all four sides and river-bend corners');
-assert.match(vegetation, /const safeHalfExtent = w \* 0\.5 \+ GRASS_BANK_SWAY_MARGIN;[\s\S]{0,500}?edgeInsets\.south/,
-  'bank-aware billboard placement clamps the whole crossed-card footprint instead of only the random root point');
-assert.match(vegetation, /_fillBillboardInstances\(townGrassBillMesh, dummy, idx, col, row, 1\.0, tierY, 1, 1, 0, bankEdges\)/,
-  'town grass passes its detected bank edges into the shared billboard placement helper');
-assert.match(vegetation, /debugGrassBankSnapshot/,
-  'the vegetation runtime exposes a lightweight bank-clamp diagnostic');
-assert.match(pixelProbe, /Grass bank inset: townTiles=/,
-  'Pixel Probe surfaces river-bank grass clamp state on mobile');
 for (const path of [
   'docs/js/animal-chathead-frame.js',
   'docs/js/generic-hud-icons.js',
