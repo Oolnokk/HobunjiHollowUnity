@@ -326,6 +326,7 @@ assert(!/Fifteen Fish Pie|morning pool|too hungry to hunt/i.test(JSON.stringify(
 
 // Runtime integration: processor placement, module order, shared strength vocabulary, and editor controls.
 const gameSource = read('docs/game.js');
+const contentSource = read('docs/js/banubu-quest-content.js');
 assert.match(gameSource, /teaGrinder:[\s\S]{0,420}specialMode:\s*'teaGrinder'/);
 assert.match(gameSource, /TeaGrinder\?\.init\(/);
 assert.match(gameSource, /def\.specialMode === 'teaGrinder'[\s\S]{0,260}TeaGrinder\?\.open/);
