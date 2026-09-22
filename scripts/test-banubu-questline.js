@@ -363,6 +363,8 @@ assert.strictEqual(banubuSchedule.scheduleHooks.rules.length, 1);
 assert.strictEqual(banubuSchedule.scheduleHooks.rules[0].from, '00:00');
 assert.strictEqual(banubuSchedule.scheduleHooks.rules[0].to, '24:00');
 assert(!banubuSchedule.scheduleHooks.rules.some(rule => rule.stationId === 'station_banubu_cave_awake'));
+assert.match(banubuSchedule.note, /one physical sleeping station/, 'Banubu awake/sleep presentation must not be modeled as duplicate physical NPC stations');
+assert.match(contentSource, /cameraId: 'banubu_dialogue_awake'/, 'Banubu\'s third intro attempt must switch the same live NPC to the awake authored camera shot');
 
 const sleepPresentation = read('docs/js/animal-sleep-presentation.js');
 assert.match(sleepPresentation, /function registerExternalSleeper\(/, 'named animal NPCs must be able to opt into the shared animal sleep presenter');
