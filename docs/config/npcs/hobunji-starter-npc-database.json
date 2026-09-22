@@ -2772,6 +2772,12 @@
                   "gender": "male",
                   "ageBand": "old",
                   "role": "swamp resident",
+                  "personality": {
+                        "friendliness": {
+                              "smileAtFavor": 5,
+                              "frownBelowFavor": 0
+                        }
+                  },
                   "tags": [
                         "little_swamp_house",
                         "swamp resident",
@@ -2891,7 +2897,7 @@
                         "canMarry": false,
                         "maxHearts": 10,
                         "decayRule": "unknown",
-                        "baseDisposition": 10,
+                        "baseDisposition": 0,
                         "speciesStartingDisposition": [],
                         "friendshipUnlocks": []
                   },
@@ -8463,6 +8469,12 @@
                   "gender": "<unknown gender>",
                   "ageBand": "<unknown age>",
                   "role": "<unknown role>",
+                  "personality": {
+                        "friendliness": {
+                              "smileAtFavor": 2,
+                              "frownBelowFavor": 0
+                        }
+                  },
                   "tags": [
                         "temple",
                         "romanceable"
@@ -9625,6 +9637,12 @@
                   "gender": "<unknown gender>",
                   "ageBand": "<unknown age>",
                   "role": "potion shop resident",
+                  "personality": {
+                        "friendliness": {
+                              "smileAtFavor": 1,
+                              "frownBelowFavor": 1
+                        }
+                  },
                   "tags": [
                         "potion_shop",
                         "potion shop resident",
@@ -9732,7 +9750,7 @@
                         "canMarry": false,
                         "maxHearts": 10,
                         "decayRule": "unknown",
-                        "baseDisposition": 10,
+                        "baseDisposition": 0,
                         "speciesStartingDisposition": [],
                         "friendshipUnlocks": []
                   },
@@ -12859,6 +12877,12 @@
                   "gender": "male",
                   "ageBand": "<unknown age>",
                   "role": "watch captain",
+                  "personality": {
+                        "friendliness": {
+                              "smileAtFavor": 2,
+                              "frownBelowFavor": 0
+                        }
+                  },
                   "tags": [
                         "watch",
                         "watch captain",
