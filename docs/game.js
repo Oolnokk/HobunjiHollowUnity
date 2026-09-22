@@ -356,6 +356,13 @@
         _dialogueWalker = walker;
         activeCameraMode   = npcDialogueCameraMode();
         activeCameraTarget = walker.root;
+        const authoredDialogueCameraId = String(rec?.dialogueCameraId || walker.profile?.appearance?.dialogueCameraId || ''); // Optional explicit camera beats the area's nearest NPC-tagged shot.
+        window.CinematicCameraRuntime?.beginDialogue?.({
+          areaId: currentArea,
+          npcId: rec?.id || '',
+          cameraId: authoredDialogueCameraId,
+          walker,
+        });
         beginNpcDialogueStaging(walker);
         updateDialogueZoomIndicator();
         walker.pause = Infinity;
@@ -498,6 +505,7 @@
 
       function closeNpcDialogue() {
         dialogueOpen = false;
+        window.CinematicCameraRuntime?.endDialogue?.();
         window.DialogueContent?.resetDialogueState();
         window.DialogueContent?.stopNpcDialogueTypewriter(false);
         window.DialogueContent?.hideChoiceButtons();
@@ -10214,6 +10222,7 @@
         const cullables = [];
         zScene.traverse(o => { if (o.userData?.cullSphere) cullables.push(o); });
 
+        window.CinematicCameraRuntime?.registerArea?.(mapId, zoneData?.cinematicCameras || []); // Exterior map cameras are already in root-zone tile coordinates.
         const info = { scene: zScene, grid: zGrid, cols: ZCOLS, rows: ZROWS, transitions, occlusionMeshes, canopyZones, cullables, chunkController: null, pathNet: zonePathNet };
         _zoneScenes.set(mapId, info);
 
@@ -10700,6 +10709,14 @@
         if (!Number.isFinite(npcX) || !Number.isFinite(npcZ)) { npcDialogueStaging = null; return; }
         const playerWorldX = player.x / TILE;
         const playerWorldZ = player.y / TILE;
+        const authoredStage = window.CinematicCameraRuntime?.currentPlayerStage?.(); // Camera-local player blocking point; uses the existing walk/lerp path below instead of teleporting.
+        if (authoredStage && Number.isFinite(Number(authoredStage.x)) && Number.isFinite(Number(authoredStage.z))) {
+          const target = { x: Number(authoredStage.x), z: Number(authoredStage.z) };
+          npcDialogueStaging = { walker, targetX: target.x, targetZ: target.z };
+          player.vx = 0;
+          player.vy = 0;
+          return;
+        }
         const candidates = npcDialogueStagingOffsets().map(offset => ({
           x: npcX + (Number(offset.x) || 0),
           z: npcZ + (Number(offset.y) || 0),
@@ -12264,6 +12281,9 @@
             } catch(_) { return m; }
           }));
           _workspaceMaps = resolvedMaps;
+          for (const map of resolvedMaps) window.CinematicCameraRuntime?.registerArea?.(map.id, map.cinematicCameras || []); // Makes Map Editor camera records addressable before a lazy scene build.
+          const townCameraMap = resolvedMaps.find(map => map.id === 'map_hobunji_town');
+          if (townCameraMap) window.CinematicCameraRuntime?.registerArea?.('town', townCameraMap.cinematicCameras || []); // Runtime town area uses the short alias while authoring uses map_hobunji_town.
 
           // Plateau sub-maps are purely an authoring convenience in the Map Editor —
           // in-game every tier of a plateau stack is merged into its root zone's
@@ -12967,6 +12987,7 @@
               ? { textureUrl: 'assets/textures/carved_smooth.png', color: 0x8a8d91, textureRepeat: 0.42, useLambert: true, emissive: 0x000000 }
               : denCaveVariant ? { textureUrl: denCaveVariant.textureUrl, color: denCaveVariant.color, textureRepeat: 0.35, useLambert: true, emissive: 0x000000 }
               : { textureUrl: 'assets/textures/carved_smooth.png', color: 0x808080, textureRepeat: 0.35, useLambert: true, emissive: 0x000000 }; // Never leave an authored cavern on an untextured material fallback.
+            cavernMaterialOpts.doubleSided = mapData.isLocaleCavern === true; // Footprint-authored rooms have no hidden maze pockets, so reversed shell facets may safely render instead of exposing black void.
             const cavernMesh = InteriorSceneBuilder.buildCarvedCavernMesh(THREE, mapData.mesh, cavernMaterialOpts);
             _markOutline(cavernMesh);
             bScene.add(cavernMesh);
@@ -13382,6 +13403,7 @@
           // whole scene graph every frame in occlusionSafeCameraPosition.
           const occlusionMeshes = [];
           bScene.traverse(o => { if (o.userData?.cameraObstacle) occlusionMeshes.push(o); });
+          window.CinematicCameraRuntime?.registerArea?.(mapId, mapData.cinematicCameras || []); // Building/cave authored cameras use the same local tile coordinate space as this scene.
           const info = { scene: bScene, grid: bGrid, cols, rows, transitions, vendorZones: mapData.vendorZones || [], routes: buildingRoutes, loadSource, fallback: loadSource !== 'config', name: mapData.name || mapId, wallStyle: mapData.wallStyle || '', entrySpots: mapData.entrySpots || {}, keyDoorGroups, mineFloor: mapData.mineFloor || null, minePlacementSafeTileCount: mapData.minePlacementSafeTileCount ?? null, disconnectedFloorTilesRemoved: mapData.disconnectedFloorTilesRemoved ?? 0, occlusionMeshes };
           _buildingScenes.set(mapId, info);
           if (info.disconnectedFloorTilesRemoved > 0) window.__farmLog?.(`[cavern] ${mapId}: sealed ${info.disconnectedFloorTilesRemoved} unreachable floor tiles`, 'warn', mapData.wallStyle === 'mine' ? 'mine' : undefined);
@@ -19731,6 +19753,8 @@
       let _seatedOcclusionDistance = null; // smoothed seated-camera distance used while an obstruction clears
       let _seatedOcclusionUpdatedAt = 0; // previous seated occlusion update time used to calculate smoothing delta
       let _seatedCameraDebug = null; // latest seated obstruction solve, exposed to Pixel Probe for mobile diagnosis
+      let _cavernOcclusionDistance = null; // Smooths ordinary follow-camera release across the cavern shell's many small organic facets.
+      let _cavernOcclusionUpdatedAt = 0; // Previous cavern solve time used by the exponential outward lerp.
       function occlusionSafeCameraPosition(lookAtX, lookAtY, lookAtZ, idealX, idealY, idealZ) {
         let resultX = idealX, resultY = idealY, resultZ = idealZ;
         const obstacles = currentAreaOcclusionMeshes();
@@ -19834,6 +19858,23 @@
             _seatedOcclusionUpdatedAt = 0;
             _seatedCameraDebug = null;
           }
+          const smoothCavernOcclusion = _isCavernBuildingArea(currentArea) && activeCameraMode !== 'seated';
+          if (smoothCavernOcclusion) {
+            const now = performance.now();
+            const dt = _cavernOcclusionUpdatedAt ? Math.min(0.1, (now - _cavernOcclusionUpdatedAt) / 1000) : 0;
+            _cavernOcclusionUpdatedAt = now;
+            if (_cavernOcclusionDistance == null) _cavernOcclusionDistance = desiredSafeDist;
+            if (desiredSafeDist < _cavernOcclusionDistance) {
+              _cavernOcclusionDistance = desiredSafeDist; // New obstruction pulls in immediately so no frame can sit inside rock.
+            } else {
+              const alpha = 1 - Math.exp(-6 * dt); // Losing/reselecting adjacent shell facets eases outward instead of visibly snapping.
+              _cavernOcclusionDistance += (desiredSafeDist - _cavernOcclusionDistance) * alpha;
+            }
+            safeDist = window.FormatUtils.clamp(_cavernOcclusionDistance, Math.min(3, dist), dist);
+          } else {
+            _cavernOcclusionDistance = null;
+            _cavernOcclusionUpdatedAt = 0;
+          }
           if (safeDist < dist - 1e-4) {
             const shrink = window.FormatUtils.clamp(1 - safeDist / dist, 0, 1);
             // Side-sliding supplies seated clearance; lifting a billboard
@@ -19903,7 +19944,37 @@
         }
         return floor;
       }
+      let _cinematicCameraBlend = null; // Captures the outgoing camera pose so authored camera changes blend instead of snapping.
+      function applyAuthoredCinematicCamera() {
+        const record = window.CinematicCameraRuntime?.activeRecord?.();
+        const shot = record?.camera;
+        if (!shot || window.__mapEditorOrbitActive) { _cinematicCameraBlend = null; return false; }
+        const blendKey = `${record.areaId}:${shot.id}:${record.activatedAt}`;
+        if (!_cinematicCameraBlend || _cinematicCameraBlend.key !== blendKey) {
+          _cinematicCameraBlend = {
+            key: blendKey,
+            startedAt: performance.now(),
+            startPosition: camera.position.clone(),
+            startTarget: new THREE.Vector3(camTargetX, camTargetY, camTargetZ),
+            startFov: camera.fov,
+          };
+        }
+        const durationMs = Math.max(0, Number(shot.blendSeconds) || 0) * 1000;
+        const rawT = durationMs > 0 ? window.FormatUtils.clamp((performance.now() - _cinematicCameraBlend.startedAt) / durationMs, 0, 1) : 1;
+        const t = rawT * rawT * (3 - 2 * rawT); // Smoothstep keeps camera starts/stops soft while preserving exact authored endpoints.
+        const desiredPosition = new THREE.Vector3(Number(shot.position.x) || 0, Number(shot.position.y) || 0, Number(shot.position.z) || 0);
+        const desiredTarget = new THREE.Vector3(Number(shot.target.x) || 0, Number(shot.target.y) || 0, Number(shot.target.z) || 0);
+        camera.position.lerpVectors(_cinematicCameraBlend.startPosition, desiredPosition, t);
+        const lookTarget = _cinematicCameraBlend.startTarget.clone().lerp(desiredTarget, t);
+        camera.lookAt(lookTarget);
+        camera.fov = THREE.MathUtils.lerp(_cinematicCameraBlend.startFov, Number(shot.fovDeg) || 42, t);
+        camera.aspect = threeContainer.clientWidth / threeContainer.clientHeight;
+        camera.updateProjectionMatrix();
+        return true;
+      }
+
       function updateCameraPosition() {
+        if (applyAuthoredCinematicCamera()) return;
         const modeCfg = cameraModeConfig(activeCameraMode);
         // A cutscene Zoom card's percent (100 = the captured shot's own
         // unmodified framing, higher = closer) — entirely separate from the
@@ -23514,6 +23585,7 @@
         worldPopupRuntime?.update(now);
 
         updateSceneTransition(dt);
+        window.CinematicCameraRuntime?.update?.(dt); // Fades/restores player pets for authored dialogue/cutscene shots without adding a second frame loop.
 
         if (window.Fishing?.state?.active) window.Fishing.update(dt);
         window.MusicMinigame?.tick(dt);
@@ -26748,6 +26820,12 @@
       }
       window.addEventListener('beforeunload', flushSessionPersistence);
       window.addEventListener('pagehide', flushSessionPersistence);
+
+      window.CinematicCameraRuntime?.init?.({
+        getCurrentArea: () => currentArea,
+        getCompanionObjects: () => companionObjects,
+        getPlayer: () => player,
+      });
 
       window.DialogueContent?.init({
         calendar,
