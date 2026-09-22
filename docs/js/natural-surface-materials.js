@@ -5,6 +5,14 @@
   if (!THREE) return;
   if (window.NaturalSurfaceMaterials?.installed) return;
 
+  const NATURAL_SURFACE_SCRIPT_SRC = document.currentScript?.src || ''; // Resolves config texture paths consistently from both docs/index.html and nested editor pages.
+  function resolveTextureAsset(path) {
+    const raw = String(path || '');
+    if (!raw || /^(?:[a-z]+:|\/)/i.test(raw) || !NATURAL_SURFACE_SCRIPT_SRC) return raw;
+    try { return new URL('../' + raw.replace(/^\.\//, ''), NATURAL_SURFACE_SCRIPT_SRC).href; }
+    catch (_) { return raw; }
+  }
+
   const DEFAULTS = {
     texture: 'assets/textures/carved_smooth.png',
     surfaces: {
@@ -43,10 +51,11 @@
   }
 
   function loadBaseTexture(path, wrapMode = 'clamp') {
-    const cacheKey = `${path}|${wrapMode}`;
+    const resolvedPath = resolveTextureAsset(path); // Used here so nested tools load the same docs/assets texture files as the game page.
+    const cacheKey = `${resolvedPath}|${wrapMode}`;
     let tex = textureCache.get(cacheKey);
     if (tex) return tex;
-    tex = markTextureSrgb(new THREE.TextureLoader().load(path));
+    tex = markTextureSrgb(new THREE.TextureLoader().load(resolvedPath));
     const wrapping = wrapMode === 'repeat' ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
     tex.wrapS = wrapping;
     tex.wrapT = wrapping;
