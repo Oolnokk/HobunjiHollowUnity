@@ -523,6 +523,7 @@
         }
         enterDefaultCameraMode();
         activeCameraTarget = null;
+        _snapCameraTarget(); // Dialogue staging may have walked the player off-shot; resume gameplay centered on that current player position, not the stale NPC target.
         dialogueZoomPointers.clear();
         dialoguePinchDistance = null;
         if (dialogueZoomConfig().resetOnDialogueClose) resetDialogueCameraZoom();
