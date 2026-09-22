@@ -8332,6 +8332,10 @@
           x: Math.round((meta.anchorX + col) * localeScale),
           y: Math.round((meta.anchorY + row) * localeScale)
         });
+        const toWorldContinuous = (col, row) => ({
+          x: (meta.anchorX + col) * localeScale,
+          y: (meta.anchorY + row) * localeScale
+        }); // Cinematic shots are not tile-snapped; preserve their authored fractional framing through locale translation/scaling.
         return {
           localeId: meta.localeId,
           name: meta.name,
@@ -8345,13 +8349,13 @@
           npcAnchors: (meta.npcAnchors || []).map(n => ({ npcId: n.npcId, name: n.name, ...toWorld(n.col, n.row), facing: n.facing })),
           cinematicCameras: (meta.cinematicCameras || []).map(camera => {
             const p = camera.position || {}, t = camera.target || {}, stage = camera.playerStage || null;
-            const worldP = toWorld(Number(p.x) || 0, Number(p.z) || 0);
-            const worldT = toWorld(Number(t.x) || 0, Number(t.z) || 0);
+            const worldP = toWorldContinuous(Number(p.x) || 0, Number(p.z) || 0);
+            const worldT = toWorldContinuous(Number(t.x) || 0, Number(t.z) || 0);
             return {
               ...clonePlain(camera),
               position: { x: worldP.x, y: Number(p.y) || 0, z: worldP.y },
               target: { x: worldT.x, y: Number(t.y) || 0, z: worldT.y },
-              playerStage: stage ? (() => { const worldStage = toWorld(Number(stage.x) || 0, Number(stage.z) || 0); return { x: worldStage.x, z: worldStage.y }; })() : null,
+              playerStage: stage ? (() => { const worldStage = toWorldContinuous(Number(stage.x) || 0, Number(stage.z) || 0); return { x: worldStage.x, z: worldStage.y }; })() : null,
               sourceLocaleId: meta.localeId,
             };
           }),
