@@ -1257,7 +1257,7 @@
       if (npcId === 'banubu') {
         const material = new THREE.SpriteMaterial({ map: spriteTexture, transparent: true, depthWrite: false });
         marker = new THREE.Sprite(material);
-        marker.scale.set(2.2, 2.2 / 0.75, 1);
+        marker.scale.set(4.4, 4.4 / 0.75, 1); // Banubu's authored named-animal multiplier was doubled from 1.5x to 3x; keep the cave-camera stand-in doubled too.
         marker.userData.previewMarkerHeight = marker.scale.y;
         marker.userData.previewFaceOffsetY = marker.scale.y * 0.30; // Offset from sprite center to its visible upper-face region; runtime uses the real walker's exact dialogue eye-height.
       } else {
