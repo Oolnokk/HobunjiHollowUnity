@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 const progressionSource = fs.readFileSync('docs/js/stable-animal-progression.js', 'utf8'); // Source guard verifies the slow 700 ms pet scan defers immediately when the NPC is already greeting the player.
-assert.match(progressionSource, /AmbientDialogue\?\.hasActiveGreetingFor\?\.\(npcId\)/, 'pet ambient scan skips NPCs whose player greeting is already active');
+assert.match(progressionSource, /AmbientDialogue\?\.hasActiveGreetingFor\?\.\(npcId\)[\s\S]{0,120}hasPendingPlayerGreetingFor\?\.\(npcId\)/, 'pet ambient scan skips NPCs whose player greeting is active or still in its dwell gate');
 const perkSource = fs.readFileSync('docs/js/stable-animal-perk-adjustments.js', 'utf8'); // Source guard keeps the sequencing fix event-driven rather than intercepting storage or adding polling.
 assert.match(perkSource, /addEventListener\('hobunji-ambient-dialogue'/, 'pet sequencing listens to rendered ambient events');
 assert.doesNotMatch(perkSource, /Storage\?\.prototype|stableAnimalGreetingLedgerSetItem/, 'pet sequencing no longer monkeypatches localStorage');
