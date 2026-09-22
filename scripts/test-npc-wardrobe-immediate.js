@@ -10,14 +10,29 @@ assert.doesNotThrow(() => new vm.Script(source), 'NPC wardrobe runtime parses');
 assert.doesNotMatch(source, /rerollForSleep|Bedtime reroll/, 'sleep-time wardrobe rerolls are removed');
 
 let saves = 0; // Counts persistence requests from manual wardrobe edits.
+const profileBuilds = []; // Captures every wardrobe rerender export so species/gender/body identity cannot silently fall back.
 const rec = {
   id: 'test_npc',
   name: 'Test NPC',
+  species: 'Engh-Sho',
+  gender: 'female',
+  appearance: {
+    speciesId: 'engh-sho',
+    gender: 'female',
+    cosmetics: { eyes: 'engh_snowgoggles' },
+    bodyColors: { A: { h: 17, s: -0.9, v: 0.223 } },
+  },
   equippedCosmetics: ['rugged_poncho'],
   appliedDyes: { CLOTH: 'dye:CLOTH:old' },
   gifts: { liked: ['style:test'] },
 };
-const walker = { rec, profile: { appearance: {} }, avatarGroup: {} };
+const walker = {
+  rec,
+  profile: { appearance: { speciesId: 'mao-ao', gender: 'male' } }, // Deliberately wrong stale profile metadata reproduces the old wardrobe bug if refresh reads from walker.profile.
+  avatarGroup: { userData: { frontTexture: true } },
+  avatarFrontCanvas: {},
+  avatarBackCanvas: null,
+};
 const gearInventory = { clothingItems: [], clothing: {} };
 
 const context = {
@@ -27,6 +42,16 @@ const context = {
   document: {},
   ItemTraits: {
     computeItemTraits() { return ['style:test']; },
+  },
+  NpcAvatarPreview: {
+    buildProfileFromNpcExport(npc) {
+      profileBuilds.push(JSON.parse(JSON.stringify(npc)));
+      return { fighter: { id: 'engh-sho-female' }, bodyColors: { ...(npc.appearance?.bodyColors || {}) } };
+    },
+    async renderProfileToCanvas() { return true; },
+  },
+  PNGPlaneAvatar: {
+    refreshSinglePlaneAvatarModel() { return true; },
   },
 };
 context.window = context;
@@ -59,6 +84,10 @@ wardrobe.init({
 
   assert.equal(await wardrobe.storeWornItem('test_npc', 'fine_poncho'), true, 'Store immediately removes a worn garment');
   assert.equal(rec.equippedCosmetics.length, 0, 'Store leaves the NPC no longer wearing the unwanted gift');
+  const storeRefresh = profileBuilds.at(-1);
+  assert.equal(storeRefresh.appearance.speciesId, 'engh-sho', 'wardrobe rerender preserves NPC species from rec.appearance instead of stale rendered profile data');
+  assert.equal(storeRefresh.appearance.gender, 'female', 'wardrobe rerender preserves NPC gender');
+  assert.deepEqual(storeRefresh.appearance.bodyColors, rec.appearance.bodyColors, 'wardrobe rerender preserves authored body colors');
   contents = wardrobe.getWardrobeContents('test_npc');
   assert.equal(contents.stored.some(item => item.cosmeticId === 'fine_poncho'), true, 'stored unwanted gift remains in the NPC wardrobe');
 
