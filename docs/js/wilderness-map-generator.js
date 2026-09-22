@@ -3384,6 +3384,7 @@
         w: bbox.w, h: bbox.h,
         connectors: (locale.connectors || []).map(c => ({ col: c.col, row: c.row, side: c.side, label: c.label })),
         npcAnchors: (locale.npcAnchors || []).map(n => ({ npcId: n.npcId, name: n.name, col: n.col, row: n.row, facing: n.facing })),
+        cinematicCameras: clonePlain(locale.cinematicCameras || []), // Local-space authored shots are translated after generation scaling with the rest of this locale instance.
         objects: (locale.objects || []).map(o => ({ id: o.id, kind: o.kind, key: o.key, label: o.label, col: o.col, row: o.row, w: o.w, h: o.h }))
       }
     });
@@ -8342,6 +8343,18 @@
           h: meta.h * localeScale,
           connectors: (meta.connectors || []).map(c => ({ ...toWorld(c.col, c.row), side: c.side, label: c.label })),
           npcAnchors: (meta.npcAnchors || []).map(n => ({ npcId: n.npcId, name: n.name, ...toWorld(n.col, n.row), facing: n.facing })),
+          cinematicCameras: (meta.cinematicCameras || []).map(camera => {
+            const p = camera.position || {}, t = camera.target || {}, stage = camera.playerStage || null;
+            const worldP = toWorld(Number(p.x) || 0, Number(p.z) || 0);
+            const worldT = toWorld(Number(t.x) || 0, Number(t.z) || 0);
+            return {
+              ...clonePlain(camera),
+              position: { x: worldP.x, y: Number(p.y) || 0, z: worldP.y },
+              target: { x: worldT.x, y: Number(t.y) || 0, z: worldT.y },
+              playerStage: stage ? (() => { const worldStage = toWorld(Number(stage.x) || 0, Number(stage.z) || 0); return { x: worldStage.x, z: worldStage.y }; })() : null,
+              sourceLocaleId: meta.localeId,
+            };
+          }),
           objects: (meta.objects || []).map(o => ({
             id: o.id, kind: o.kind, key: o.key, label: o.label, ...toWorld(o.col, o.row),
             w: o.w * localeScale, h: o.h * localeScale
