@@ -73,7 +73,7 @@
        partway through its own setup (after camTargetX/pathWallBuilder/
        VEG_CULL_* are declared, well before the first real terrain mesh
        build). -->
-  <script src="js/terrain-geometry.js?v=20260902mod1"></script>
+  <script src="js/terrain-geometry.js?v=20260922rivergrass2"></script>
   <!-- Farm/town grass & weed billboards, crop growth meshes, and per-tile
        ground+vegetation mesh building, extracted out of game.js. Must load
        before game.js, which calls window.VegetationCropRendering.init(...)
@@ -83,7 +83,7 @@
        ZoneGrassBillboards, ReagentPlants, WildBerries, WildTreasure) also
        read its exported mbRng/grassBladeGeo/getGrassBillboardMat helpers
        from their own init() calls further down game.js. -->
-  <script src="js/vegetation-crop-rendering.js?v=20260922rivergrass1"></script>
+  <script src="js/vegetation-crop-rendering.js?v=20260922rivergrass2"></script>
   <!-- Active-area grid/scene/dimension accessors and building/den footprint
        collision checks, extracted out of game.js. Must load before game.js,
        which calls window.GridTileAccessors.init(...) alongside the other
@@ -2373,7 +2373,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20260922rivergrass1"></script>
+  <script src="js/pixel-probe.js?v=20260922rivergrass2"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
