@@ -10804,7 +10804,8 @@
         player.angle = facingAngle;
         const npcTargetAngle = Math.atan2(playerWorldZ - npcZ, playerWorldX - npcX);
         const npcTargetRot = -npcTargetAngle + Math.PI / 2;
-        walker.applyFacingDeadzone(npcTargetRot, cfg.npcFacePlayerLerp ?? 0.28);
+        const npcFacesPlayer = walker.profile?.appearance?.dialogueFacePlayer !== false; // Authored sleepy/aloof NPCs can keep their existing body/head pose while the player still faces them.
+        if (npcFacesPlayer) walker.applyFacingDeadzone(npcTargetRot, cfg.npcFacePlayerLerp ?? 0.28);
         // Eye contact: aims BOTH the NPC's and the player's own neck bone
         // straight at the other's eyes, held for the whole conversation (see
         // _aimNeckAtEyeContact above) — this owns the player's neck bone
@@ -10814,7 +10815,7 @@
         playerMesh.updateMatrixWorld(true);
         const maxYawDeg = cfg.npcHeadMaxYawDeg ?? 28;
         const maxPitchDeg = cfg.npcHeadMaxPitchDeg ?? 24;
-        if (walker.neckJoint) {
+        if (npcFacesPlayer && walker.neckJoint) {
           _aimNeckAtEyeContact(walker.neckJoint, walker.root.position, walker.avatarHeight, playerMesh.position, playerAvatarModelHeight, maxYawDeg, maxPitchDeg, walker);
         }
         if (playerNeckJoint) {
