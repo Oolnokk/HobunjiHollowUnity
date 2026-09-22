@@ -454,6 +454,33 @@
     return geometry;
   }
 
+  function remapInteriorDomain(geometry, options = {}) {
+    const uv = geometry?.getAttribute?.('uv'); // Used as the solved connected-surface UV buffer before shingle-only texture-edge exclusion.
+    if (!geometry || !uv || Number(uv.itemSize || 0) < 2) return null;
+    const insetFraction = Number.isFinite(Number(options.insetFraction))
+      ? Math.max(0, Math.min(0.49, Number(options.insetFraction)))
+      : 0.18; // Keeps the texture's black outer frame off very thin imported meshes while preserving the same PNG interior.
+    const baseSignature = String(geometry.userData?.hobunjiSurfaceStretchSignature || ''); // Invalidates the crop whenever the underlying connected-surface unwrap changes.
+    const signature = `surface-interior-domain-v1|base=${baseSignature}|inset=${insetFraction}`; // Prevents repeated shrinking of an already-cropped UV buffer.
+    if (geometry.userData?.hobunjiSurfaceInteriorDomainSignature === signature) return geometry.userData.hobunjiSurfaceInteriorDomain || null;
+    const span = Math.max(0.001, 1 - insetFraction * 2); // Used to map the full solved surface domain into the non-black interior of the source PNG.
+    for (let index = 0; index < uv.count; index++) {
+      uv.setXY(index, insetFraction + clamp01(uv.getX(index)) * span, insetFraction + clamp01(uv.getY(index)) * span);
+    }
+    uv.needsUpdate = true;
+    geometry.userData = Object.assign({}, geometry.userData || {});
+    geometry.userData.hobunjiSurfaceInteriorDomainSignature = signature;
+    geometry.userData.hobunjiSurfaceInteriorDomain = {
+      version: 1,
+      mapping: 'connected-surface-interior-png-domain',
+      insetFraction,
+      minUv: insetFraction,
+      maxUv: 1 - insetFraction,
+      warpedUvCount: uv.count,
+    };
+    return geometry.userData.hobunjiSurfaceInteriorDomain;
+  }
+
   function mapMesh(mesh, options = {}) {
     if (!mesh?.isMesh || !mesh.geometry) return null;
     const before = mesh.geometry; // Used to detect whether this mapping call replaced geometry.
@@ -572,6 +599,7 @@
     installed: true,
     mapGeometry,
     mapMesh,
+    remapInteriorDomain,
     remapNaturalTerrainMesh,
     settings: { angleToleranceDeg: DEFAULT_SPLIT_ANGLE_DEG },
     snapshot() {

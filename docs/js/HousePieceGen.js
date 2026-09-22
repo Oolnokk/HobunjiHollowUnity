@@ -50,6 +50,9 @@
   var _tplProm = null;
   var _pendingShingleTint = null; // Applied after the shared GLB loads; used by every farmhouse/town roof.
   var _appliedShingleTintKey = ''; // Prevents duplicate texture work when several building systems request the same PNG.
+  var HIGHLAND_SHINGLE_SURFACE_SPLIT_ANGLE_DEG = 52; // Used by _applyShingleSurfaceUvs so the broad banana-curved faces remain one detected texture surface.
+  var HIGHLAND_SHINGLE_TEXTURE_INSET_FRACTION = 0.18; // Used to keep the imported shingle GLB off carved_smooth.png's black outer frame; the existing 3D outline pass supplies the silhouette edge instead.
+  var _shingleSurfaceStats = { meshCount: 0, sourceUvMeshes: 0, sourceUvMissingMeshes: 0, mappedMeshes: 0, interiorDomainMeshes: 0, interiorWarpedUvs: 0, fallbackMeshes: 0, patchCount: 0, fallbackPatchCount: 0, errors: [], meshes: [] }; // Used by shingleSurfaceSnapshot and startup diagnostics to verify UV generation without DevTools.
 
   function loadShingleGlb(basePath) {
     if (_tpl)     return Promise.resolve(_tpl);
@@ -97,25 +100,29 @@
         });
         finalTex = new THREE.CanvasTexture(canvas);
       }
-      finalTex.wrapS = finalTex.wrapT = THREE.RepeatWrapping;
+      finalTex.wrapS = finalTex.wrapT = THREE.ClampToEdgeWrapping;
+      finalTex.userData = Object.assign({}, finalTex.userData || {}, {
+        hobunjiAuthoredSurfaceState: rgb ? 'authored-png-tinted' : 'authored-png',
+        hobunjiAuthoredSurfacePath: pngPath,
+        hobunjiAuthoredSurfaceImageSize: tex.image ? `${tex.image.width || tex.image.naturalWidth || '?'}x${tex.image.height || tex.image.naturalHeight || '?'}` : '-',
+        hobunjiShingleTintColor: fillColor || null,
+      }); // Lets Pixel Probe prove the texture lives on the GLB material itself rather than only on the roof underlay.
       finalTex.needsUpdate = true;
-      mats.forEach(function (m) { m.map = finalTex; if (m.color) m.color.setHex(0xffffff); m.needsUpdate = true; });
+      mats.forEach(function (m) {
+        m.map = finalTex;
+        if (m.color) m.color.setHex(0xffffff);
+        m.userData = Object.assign({}, m.userData || {}, { hobunjiHighlandShingleMaterial: true, texturePath: pngPath, fillColor: fillColor || null }); // Marks the actual imported shingle material for direct ray diagnostics.
+        m.needsUpdate = true;
+      });
     }, undefined, function () { if (_appliedShingleTintKey === tintKey) _appliedShingleTintKey = ''; });
   }
 
-  // Some authored GLBs (e.g. HighlandLongshingle_boned.glb's shell meshes)
-  // carry no `uv` attribute at all — fine for their own baked/vertex-colored
-  // look, but a material.map assigned later (tintShingleMaterial above) would
-  // sample a fixed corner texel for the whole surface instead of actually
-  // varying across it. Generates a simple per-vertex UV by projecting each
-  // vertex onto whichever world axis its normal points along least
-  // (dominant-normal-axis projection), same technique the town-path preview
-  // tool used for its material painter. opts.stretch=true fits the whole PNG
-  // once across each axis group's own bounding box (the preview's "stretch to
-  // bounds" mode) instead of tiling it — opts.tileSize (world/local units per
-  // repeat, matching the tileSize convention used by loadHousePieceFaceTexture/
-  // loadTerrainTileTexture) is ignored in that case. No-op if the geometry
-  // already has a `uv` attribute.
+  // Compatibility fallback for contexts that load HousePieceGen without the
+  // shared HobunjiSurfaceStretchUV module (some standalone editor pages do).
+  // HighlandLongshingle_boned.glb is known to contain shell meshes with no
+  // `uv` attribute, so those contexts still need a basic stretch projection
+  // rather than sampling one fixed texture texel. Main gameplay uses the
+  // connected-surface mapper below instead of this projection.
   function _ensureProjectedUv(geometry, opts) {
     opts = opts || {};
     if (geometry.getAttribute('uv')) return;
@@ -155,12 +162,101 @@
     geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
   }
 
+  function _hasUsableUv(geometry) {
+    var position = geometry && geometry.getAttribute && geometry.getAttribute('position'); // Used as the vertex-count reference when validating a texture coordinate buffer.
+    var uv = geometry && geometry.getAttribute && geometry.getAttribute('uv'); // Used to verify the shingle mesh can actually sample a PNG across its vertices.
+    return !!(position && uv && uv.count === position.count && Number(uv.itemSize || 2) >= 2);
+  }
+
+  function _applyShingleSurfaceUvs(mesh) {
+    if (!mesh || !mesh.isMesh || !mesh.geometry) return null;
+    var sourceGeometry = mesh.geometry; // Used to inspect the GLB's authored UV state before the shared mapper replaces the geometry.
+    var hadSourceUv = _hasUsableUv(sourceGeometry); // Used by mobile-visible diagnostics to distinguish authored UVs from generated ones.
+    var mapper = global.HobunjiSurfaceStretchUV; // Used as the canonical connected-surface detector and full-PNG UV unwrapper.
+    var label = 'HighlandLongshingle:' + (mesh.name || 'mesh'); // Used by the mapper's bounded debug history and startup diagnostics.
+    var report = null; // Used to record the connected-surface mapping result for this shared template mesh.
+    var mapperFailed = false; // Used to decide whether the compatibility projection had to take over.
+
+    _shingleSurfaceStats.meshCount++;
+    if (hadSourceUv) _shingleSurfaceStats.sourceUvMeshes++;
+    else _shingleSurfaceStats.sourceUvMissingMeshes++;
+
+    if (typeof mapper?.mapMesh === 'function') {
+      try {
+        report = mapper.mapMesh(mesh, {
+          label: label,
+          angleToleranceDeg: HIGHLAND_SHINGLE_SURFACE_SPLIT_ANGLE_DEG,
+        });
+        if (report && typeof mapper.remapInteriorDomain === 'function') {
+          mapper.remapInteriorDomain(mesh.geometry, {
+            insetFraction: HIGHLAND_SHINGLE_TEXTURE_INSET_FRACTION,
+          }); // The shingle is a very thin GLB, so sampling the PNG's literal 0/1 border makes grazing views read black; use only the colored interior while keeping the same source texture.
+        }
+      } catch (error) {
+        mapperFailed = true;
+        _shingleSurfaceStats.errors.push(String(error && error.message || error || 'surface mapper failed'));
+      }
+    } else {
+      mapperFailed = true;
+    }
+
+    if (!_hasUsableUv(mesh.geometry)) {
+      mapperFailed = true;
+      _ensureProjectedUv(mesh.geometry, { stretch: true });
+    }
+
+    if (report && _hasUsableUv(mesh.geometry)) {
+      _shingleSurfaceStats.mappedMeshes++;
+      _shingleSurfaceStats.patchCount += Number(report.patchCount) || 0;
+      _shingleSurfaceStats.fallbackPatchCount += Number(report.fallbackCount) || 0;
+      var interiorDomain = mesh.geometry.userData && mesh.geometry.userData.hobunjiSurfaceInteriorDomain; // Used to prove the visible GLB was cropped away from the PNG's black outer frame, not just the roof underlay.
+      if (interiorDomain) {
+        _shingleSurfaceStats.interiorDomainMeshes++;
+        _shingleSurfaceStats.interiorWarpedUvs += Number(interiorDomain.warpedUvCount) || 0;
+      }
+    } else if (mapperFailed) {
+      _shingleSurfaceStats.fallbackMeshes++;
+    }
+
+    _shingleSurfaceStats.meshes.push({
+      name: mesh.name || '(unnamed mesh)',
+      hadSourceUv: hadSourceUv,
+      hasFinalUv: _hasUsableUv(mesh.geometry),
+      mapping: report ? 'connected-surface-stretch' : 'projected-fallback',
+      angleToleranceDeg: report ? HIGHLAND_SHINGLE_SURFACE_SPLIT_ANGLE_DEG : null,
+      patchCount: report ? (Number(report.patchCount) || 0) : null,
+      fallbackPatchCount: report ? (Number(report.fallbackCount) || 0) : null,
+      interiorDomain: mesh.geometry.userData && mesh.geometry.userData.hobunjiSurfaceInteriorDomain ? Object.assign({}, mesh.geometry.userData.hobunjiSurfaceInteriorDomain) : null,
+    });
+    return report;
+  }
+
+  function shingleSurfaceSnapshot() {
+    return {
+      build: 'shingleglb4', // Pixel Probe uses this literal to prove which shingle runtime revision is actually executing on-device.
+      angleToleranceDeg: HIGHLAND_SHINGLE_SURFACE_SPLIT_ANGLE_DEG,
+      texturePath: (_pendingShingleTint && _pendingShingleTint.pngPath) || null,
+      meshCount: _shingleSurfaceStats.meshCount,
+      sourceUvMeshes: _shingleSurfaceStats.sourceUvMeshes,
+      sourceUvMissingMeshes: _shingleSurfaceStats.sourceUvMissingMeshes,
+      mappedMeshes: _shingleSurfaceStats.mappedMeshes,
+      interiorDomainMeshes: _shingleSurfaceStats.interiorDomainMeshes,
+      interiorWarpedUvs: _shingleSurfaceStats.interiorWarpedUvs,
+      textureInsetFraction: HIGHLAND_SHINGLE_TEXTURE_INSET_FRACTION,
+      fallbackMeshes: _shingleSurfaceStats.fallbackMeshes,
+      patchCount: _shingleSurfaceStats.patchCount,
+      fallbackPatchCount: _shingleSurfaceStats.fallbackPatchCount,
+      errors: _shingleSurfaceStats.errors.slice(),
+      meshes: _shingleSurfaceStats.meshes.map(function (entry) { return Object.assign({}, entry); }),
+    };
+  }
+
   // Exact port of analyzeShingleTemplate() from house-piece-author
   function _analyzeShingle(sceneObj) {
     var bone = null;
     sceneObj.traverse(function (o) {
       if (!bone && String(o.name || '').toLowerCase() === 'shinglebone') bone = o;
-      if (o.isMesh && o.geometry) _ensureProjectedUv(o.geometry, { stretch: true });
+      if (o.isMesh && o.geometry) _applyShingleSurfaceUvs(o);
     });
     var boneLength = 1, boneFrameInverse = null;
     if (bone) {
@@ -454,6 +550,7 @@
   global.HousePieceGen = {
     buildGroup: buildGroup, buildGroupFromPiece: buildGroupFromPiece,
     loadShingleGlb: loadShingleGlb, shingleReady: shingleReady, tintShingleMaterial: tintShingleMaterial,
+    shingleSurfaceSnapshot: shingleSurfaceSnapshot,
     cutDoorPortal: cutDoorPortal, buildEntryTunnelGroup: buildEntryTunnelGroup,
     buildChimneyGroup: buildChimneyGroup,
   };

@@ -15,7 +15,7 @@
     ['WildernessTerrainCleanup', 'wilderness-terrain-cleanup.js?v=20260812a'],
     ['NaturalSurfaceRuntimeFixes', 'natural-surface-runtime-fixes.js?v=20260813d'],
     // Uses the Furniture + Avatar Author's shared-edge/adjacent-normal surface recognition before mapping one complete PNG square onto each detected natural terrain surface.
-    ['HobunjiSurfaceStretchUV', 'surface-stretch-uv-furniture.js?v=20260907farmcliff1'],
+    ['HobunjiSurfaceStretchUV', 'surface-stretch-uv-furniture.js?v=20260922shingleglb4'],
     // Adds a black-only protected-band sampler to wilderness waterways and the permanent town river; waterfall curtains unfold as surface tiles in the same wilderness mapping domain.
     ['WaterBodyOutlineOverlay', 'water-body-outline-overlay.js?v=20260918f'],
     // A gradual 24° face chain may walk over a rounded ridge, so split upward terrain from cliff-facing triangles before the final side-only unwrap.
@@ -26,7 +26,7 @@
     ['NaturalSurfaceJigsawExclusion', 'natural-surface-jigsaw-exclusion.js?v=20260902a'],
     // Faceted masonry keeps its authored texture-edge treatment and skips the general shell-outline pass; rounded meshes remain eligible for shells.
     ['FacetedStructureShellReduction', 'faceted-structure-shell-reduction.js?v=20260905a'],
-    ['StructurePreload', 'structure-preload.js?v=20260812a'],
+    ['StructurePreload', 'structure-preload.js?v=20260921shingleuv2'],
     // Shared distance-hysteresis/tick-rate-accumulator math reused by the two LOD modules below and by game.js's NPC walker distance LOD -- must load before both.
     ['EntityDistanceLod', 'entity-distance-lod.js?v=20260919b'],
     ['WildernessSimulationLOD', 'wilderness-simulation-lod.js?v=20260812a'],
@@ -78,7 +78,7 @@
     ['FarmBuildingElevationParity', 'farm-building-elevation-parity.js?v=20260920furniture1'],
     ['HousePieces', 'house-pieces-core.js?v=20260815b'],
     [null, 'house-pieces-registry-stability.js?v=20260906a'],
-    [null, 'house-pieces-elevation-bootstrap.js?v=20260823a'],
+    [null, 'house-pieces-elevation-bootstrap.js?v=20260921shinglesign1'],
   ];
 
   function scriptUrl(file) { return new URL(file, baseUrl).href; }

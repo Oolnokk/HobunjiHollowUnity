@@ -93,6 +93,10 @@
     .then(() => {
       state.shingleReady = true;
       state.shingleMs = elapsedMs();
+      const shingleSurface = window.HousePieceGen?.shingleSurfaceSnapshot?.(); // Used by the buffered mobile-visible startup log to verify source UV presence and connected-surface remapping.
+      if (shingleSurface) {
+        debugLog(`shingle surfaces: meshes=${shingleSurface.meshCount}, sourceUV=${shingleSurface.sourceUvMeshes}, missingSourceUV=${shingleSurface.sourceUvMissingMeshes}, mapped=${shingleSurface.mappedMeshes}, detectedSurfaces=${shingleSurface.patchCount}, mapperFallbackMeshes=${shingleSurface.fallbackMeshes}, angle=${shingleSurface.angleToleranceDeg}deg`);
+      }
       return true;
     })
     .catch(error => {
@@ -171,7 +175,7 @@
     const [wallReady, shingleReady, texturesReady] = await Promise.all([wallReadyPromise, shinglePromise, texturePromise]);
 
     if (wallReady) wallBuilder.tintDefaultGlb('assets/textures/carved_smooth.png', '#4d4d4d');
-    if (shingleReady) window.HousePieceGen?.tintShingleMaterial?.('assets/textures/carved_smooth.png', '#7d7355');
+    if (shingleReady) window.HousePieceGen?.tintShingleMaterial?.('assets/textures/carved_smooth.png', '#765536');
 
     const ready = !!(wallReady && shingleReady); // Used by callers to decide whether placeholder geometry/rebuild fallback is still necessary.
     if (ready && state.readyAtMs == null) state.readyAtMs = elapsedMs();
@@ -194,6 +198,7 @@
       elapsedMs: elapsedMs(),
       wallGlbUrl,
       shingleBaseUrl,
+      shingleSurface: window.HousePieceGen?.shingleSurfaceSnapshot?.() || null,
       pendingDebugLogs: pendingLogs.length,
     };
   }

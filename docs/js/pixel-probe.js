@@ -144,9 +144,12 @@
   function _pixelProbeMatSummary(mat) {
     if (!mat) return '(no material)';
     const colorHex = mat.color?.isColor ? `#${mat.color.getHexString()}` : '-';
+    const shingleTag = mat.userData?.hobunjiHighlandShingleMaterial
+      ? ` shingleGLB=yes shingleTexture=${mat.userData.texturePath || '-'} shingleFill=${mat.userData.fillColor || '-'}`
+      : ''; // Proves a ray hit the imported shingle's own retinted material rather than the separate roof-face underlay.
     return `name="${mat.name || '(unnamed)'}" type=${mat.type} color=${colorHex} map=${mat.map ? (mat.map.name || '(unnamed texture)') : 'none'} transparent=${mat.transparent} opacity=${mat.opacity} `
       + `depthWrite=${mat.depthWrite} depthTest=${mat.depthTest} depthFunc=${mat.depthFunc} alphaTest=${mat.alphaTest ?? 0} `
-      + `stencilWrite=${!!mat.stencilWrite} stencilFunc=${mat.stencilFunc ?? '-'} stencilRef=${mat.stencilRef ?? '-'}`;
+      + `stencilWrite=${!!mat.stencilWrite} stencilFunc=${mat.stencilFunc ?? '-'} stencilRef=${mat.stencilRef ?? '-'}${shingleTag}`;
   }
 
   // Reads a material's own map texture at the raycast hit's exact UV —
@@ -959,6 +962,14 @@
     if (controllerUiDebug) lines.push(`Controller UI cache: panels=${controllerUiDebug.knownPanels} active=${controllerUiDebug.stackDepth} top=${controllerUiDebug.panelId || 'none'}`);
     const gridDebug = window.GridTileAccessors?.debugSnapshot?.(); // Makes building-footprint cache effectiveness visible during movement without a console.
     if (gridDebug) lines.push(`Building footprint cache: builds=${gridDebug.buildingFootprintCacheBuilds} hits=${gridDebug.buildingFootprintCacheHits}`);
+    const shingleSurfaceDebug = window.HousePieceGen?.shingleSurfaceSnapshot?.(); // Exposes the shared Highland shingle template's authored/generated UV state and connected-surface mapping on mobile.
+    if (shingleSurfaceDebug) {
+      lines.push(`Highland shingle UVs: build=${shingleSurfaceDebug.build || '-'} meshes=${shingleSurfaceDebug.meshCount} sourceUV=${shingleSurfaceDebug.sourceUvMeshes} missingSourceUV=${shingleSurfaceDebug.sourceUvMissingMeshes} mapped=${shingleSurfaceDebug.mappedMeshes} interior=${shingleSurfaceDebug.interiorDomainMeshes ?? 0} interiorUVs=${shingleSurfaceDebug.interiorWarpedUvs ?? 0} inset=${Math.round(Number(shingleSurfaceDebug.textureInsetFraction || 0) * 100)}% fallbackMeshes=${shingleSurfaceDebug.fallbackMeshes} surfaces=${shingleSurfaceDebug.patchCount} fallbackSurfaces=${shingleSurfaceDebug.fallbackPatchCount} angle=${shingleSurfaceDebug.angleToleranceDeg}° texture=${shingleSurfaceDebug.texturePath || '-'} errors=${shingleSurfaceDebug.errors?.length || 0}`);
+      for (const entry of (shingleSurfaceDebug.meshes || [])) {
+        const interior = entry.interiorDomain || null; // Shows whether this specific imported GLB mesh was cropped away from the source PNG's black outer frame.
+        lines.push(`  shingle mesh "${entry.name}": sourceUV=${entry.hadSourceUv ? 'yes' : 'no'} finalUV=${entry.hasFinalUv ? 'yes' : 'no'} mapping=${entry.mapping || '-'} surfaces=${entry.patchCount ?? '-'} fallbackSurfaces=${entry.fallbackPatchCount ?? '-'} interior=${interior ? `${Math.round(Number(interior.insetFraction || 0) * 100)}%/${Number(interior.minUv || 0).toFixed(2)}..${Number(interior.maxUv || 1).toFixed(2)}/${interior.warpedUvCount || 0}uv` : 'none'}`);
+      }
+    }
     const heldRenderDebug = window.HeldObjectRenderOrder?.snapshot?.(); // Exposes the retained selective-x-ray render mode and pass counters on mobile.
     if (heldRenderDebug) lines.push(`Held x-ray: mode=${heldRenderDebug.mode} ground=${heldRenderDebug.groundMeshes} held=${heldRenderDebug.heldMeshes} waterBlend=${heldRenderDebug.waterReplayMeshes ?? '-'}/${heldRenderDebug.waterReplays ?? '-'} passes=${heldRenderDebug.baseWorldRenders}/${heldRenderDebug.selectiveOverlays}/${heldRenderDebug.nonGroundDepthReplays}/${heldRenderDebug.groundDepthRestores}`);
     const waterFootLines = _pixelProbeWaterFootContactLines(activeScene, currentArea, playerMesh); // Used to distinguish real foot/water intersection from camera-perspective illusions on mobile.

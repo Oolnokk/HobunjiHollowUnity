@@ -90,7 +90,7 @@
     if (!deps?.houseWallBuilder || typeof HousePieceGen === 'undefined') return;
     const wallBuilder = deps.houseWallBuilder;
     wallBuilder.tintDefaultGlb?.('assets/textures/carved_smooth.png', '#4d4d4d');
-    HousePieceGen.tintShingleMaterial?.('assets/textures/carved_smooth.png', '#7d7355');
+    HousePieceGen.tintShingleMaterial?.('assets/textures/carved_smooth.png', '#765536');
     if (houseAssetUpgradePromise) return;
     houseAssetUpgradePromise = Promise.all([
       wallBuilder.loadDefaultGlb?.() || Promise.resolve(),
@@ -99,7 +99,7 @@
       // Re-issue after load as well; both APIs cache identical tint requests,
       // so this is cheap and also covers assets that were populated elsewhere.
       wallBuilder.tintDefaultGlb?.('assets/textures/carved_smooth.png', '#4d4d4d');
-      HousePieceGen.tintShingleMaterial?.('assets/textures/carved_smooth.png', '#7d7355');
+      HousePieceGen.tintShingleMaterial?.('assets/textures/carved_smooth.png', '#765536');
       // rebuildStructureMeshes is itself wrapped below, so this one public
       // call also performs the elevation resync for the replacement meshes.
       housePieces.rebuildStructureMeshes?.();

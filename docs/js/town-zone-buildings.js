@@ -67,7 +67,7 @@
   // cannot race and leave a newly loaded template on its baked material.
   function _applyBuildingGlbTints() {
     deps.houseWallBuilder.tintDefaultGlb('assets/textures/carved_smooth.png', '#4d4d4d');
-    HousePieceGen.tintShingleMaterial('assets/textures/carved_smooth.png', '#7d7355');
+    HousePieceGen.tintShingleMaterial('assets/textures/carved_smooth.png', '#765536');
   }
 
   // One shared readiness boundary for final brick + shingle geometry. The
