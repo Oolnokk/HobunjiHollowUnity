@@ -9,6 +9,7 @@
   }
 
   let DRAIN_PER_S = 20;
+  const STAMINA_REGEN_BLOCK_SOURCE = 'counter-shield-hold'; // Used to own only Counter Shield's entry in ResourceSystem's composable Stamina-regeneration blocker registry.
   let MIN_STAMINA_TO_RAISE = 6;
   let COUNTER_COOLDOWN_S = 0.62;
   let COUNTER_DAMAGE_MUL = 4.4;
@@ -743,6 +744,7 @@
       bridgePlayerPresentationScene(deps);
       active = true;
       reassertBlockAt = -1;
+      window.ResourceSystem?.setStaminaRegenBlocked?.(deps.player, STAMINA_REGEN_BLOCK_SOURCE, true);
       window.Combat.setPlayerDamageInterceptor(tryAbsorb);
       deps.showToast('Counter Shield raised: blocks and counters on contact.', true);
       raiseBlockPose(deps);
@@ -764,6 +766,7 @@
       );
       if (deps.player.stamina <= 0) {
         active = false;
+        window.ResourceSystem?.setStaminaRegenBlocked?.(deps.player, STAMINA_REGEN_BLOCK_SOURCE, false);
         window.Combat.setPlayerDamageInterceptor(null);
         restorePlayerPresentationScene(deps);
         logPresentationSnapshot('dropped-empty', true);
@@ -781,6 +784,7 @@
       active = false;
       reassertBlockAt = -1;
       const deps = window.Combat.deps;
+      window.ResourceSystem?.setStaminaRegenBlocked?.(deps.player, STAMINA_REGEN_BLOCK_SOURCE, false);
       deps.cancelWeaponSwingHold();
       window.Combat.setPlayerDamageInterceptor(null);
       restorePlayerPresentationScene(deps);
