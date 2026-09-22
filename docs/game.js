@@ -29543,6 +29543,7 @@
           if (stage.type === 'combat') return runCombat(stage);
           if (stage.type === 'fade') return runFade(stage);
           if (stage.type === 'zoom') return runZoom(stage);
+          if (stage.type === 'camera') return runCamera(stage);
 
           const speakerActor  = actorsById.get(stage.speakerId);
           const speakerEntity = entities.get(stage.speakerId);
@@ -29799,6 +29800,19 @@
         // hostileObjects/companionObjects AI already owns their rotation
         // that frame.
         let cutsceneRotLastT = performance.now();
+        // Switches the preview to a camera authored on the current map/locale.
+        // Empty cameraId explicitly releases the authored shot back to normal
+        // preview framing, so a cutscene can both enter and leave a fixed shot.
+        function runCamera(stage) {
+          const cameraId = String(stage.cameraId || '');
+          if (cameraId) window.CinematicCameraRuntime?.activate?.(currentArea, cameraId, { reason: 'cutscene' });
+          else window.CinematicCameraRuntime?.deactivate?.();
+          const delay = Math.max(0, Number(stage.duration) || 0) * 1000;
+          if (delay > 0) setTimeout(() => continueTo(getResolvedNext(stage.id, stage.next)), delay);
+          else continueTo(getResolvedNext(stage.id, stage.next));
+        }
+
+
         function cutsceneRotationTick() {
           if (!running) return;
           const now = performance.now();
