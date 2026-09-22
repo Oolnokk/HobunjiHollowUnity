@@ -768,6 +768,14 @@
     return state.active.some(event => event.greeting && event.speakerId === speakerId);
   }
 
+  function hasPendingPlayerGreetingFor(speakerId) {
+    const id = String(speakerId || ''); // Used by the slower pet-ambient scan to share this module's existing greeting dwell state without duplicating distance or relationship work.
+    if (!id || state.lastDay == null) return false;
+    if (state.greeted.has(greetPairKey(state.lastDay, id, 'player'))) return false;
+    const enteredAt = state.proximity.get(`${id}>player`); // Existing proximity timestamp is created by updateGreetings before StableAnimalProgression's post-update scan runs.
+    return enteredAt != null && Number.isFinite(enteredAt);
+  }
+
   function ensureGreetingLedger(day) {
     const worldId = String(state.deps?.getWorldId?.() || 'local');
     const ledgerKey = `hobunjiAmbientGreetings.v1:${worldId}`;
@@ -978,6 +986,7 @@
     resolveTargetName,
     renderChatheadImage,
     hasActiveGreetingFor,
+    hasPendingPlayerGreetingFor,
   };
   window.AmbientDialogue = api;
 })();
