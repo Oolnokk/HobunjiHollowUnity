@@ -326,8 +326,10 @@ label{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}
           <div class="card section" style="--sec:#fbbf24;--secBg:rgba(251,191,36,.10)">
             <div class="sectionTitle"><b>Dialogue trees</b><span class="sectionTag">full tree JSON</span></div>
             <div class="grid2" style="margin-bottom:8px">
-              <div><label>Resting expression</label><select id="npcRestingExpression"></select></div>
+              <div><label>Smile at Favor</label><input id="npcSmileAtFavor" type="number" step="1" value="0"></div>
+              <div><label>Frown below Favor</label><input id="npcFrownBelowFavor" type="number" step="1" value="0"></div>
             </div>
+            <div class="help" style="margin-bottom:8px">Friendliness drives the resting face from live Favor: smile at/above the first threshold, frown below the second, and stay neutral between them. Ordinary NPCs use 0 / 0.</div>
             <div class="help">No one-way conversations: every entry should include choices. Tokens: {{npcName}}, {{playerName}}, {{npcSpecies}}, {{playerSpecies}}, {{giftName}}, {{role}}, and any character variable.</div>
             <textarea id="dialogueJson" class="jsonBox"></textarea>
           </div>
@@ -432,27 +434,13 @@ function num(id, d = 0) { const v = Number($(id).value); return Number.isFinite(
 function parse(id, fb) { try { return JSON.parse($(id).value || 'null') ?? fb; } catch (e) { log(`Bad JSON in ${id}: ${e.message}`, 'error'); return fb; } }
 function setJ(id, v) { $(id).value = JSON.stringify(v ?? {}, null, 2); }
 function setStatus(m) { $('statusPill').textContent = m; log(m); }
-function availableRestingExpressions() {
-  return Array.from(new Set(
-    (window.SCRATCHBONES_CONFIG?.game?.portrait?.expressions?.available || [])
-      .map(v => String(v || '').trim().toLowerCase())
-      .filter(Boolean)
-  ));
-}
-function normalizeRestingExpression(value) {
-  const raw = String(value || '').trim().toLowerCase();
-  if (!raw) return null;
-  return availableRestingExpressions().includes(raw) ? raw : null;
-}
-function fillRestingExpressionOptions(selectedValue = null) {
-  const el = $('npcRestingExpression');
-  if (!el) return;
-  const selected = normalizeRestingExpression(selectedValue) || '';
-  el.innerHTML = [
-    '<option value="">Default</option>',
-    ...availableRestingExpressions().map(value => `<option value="${esc(value)}">${esc(cap(value))}</option>`)
-  ].join('');
-  el.value = selected;
+function normalizeFriendlinessPolicy(value) {
+  const source = value && typeof value === 'object' ? value : {}; // Used to preserve authored friendliness thresholds while supplying ordinary defaults.
+  const rawSmileAtFavor = Number(source.smileAtFavor); // Used to parse the inclusive Favor threshold where the NPC starts smiling.
+  const rawFrownBelowFavor = Number(source.frownBelowFavor); // Used to parse the exclusive Favor threshold where the NPC starts frowning.
+  const smileAtFavor = Number.isFinite(rawSmileAtFavor) ? rawSmileAtFavor : 0; // Used as the editor/runtime-compatible smiling threshold.
+  const frownBelowFavor = Math.min(smileAtFavor, Number.isFinite(rawFrownBelowFavor) ? rawFrownBelowFavor : 0); // Used to keep the neutral range non-inverted.
+  return { smileAtFavor, frownBelowFavor };
 }
 async function copyText(v, l) {
   try {
@@ -1736,8 +1724,8 @@ function makeNpcRecord(o = {}) {
       speciesStartingDisposition: [], friendshipUnlocks: [],
     },
     gifts: { loved: [], liked: [], neutral: [], disliked: [], hated: [], categoryNotes: [] },
+    personality: { friendliness: normalizeFriendlinessPolicy(o.personality?.friendliness) },
     dialogueTrees: o.dialogue || [],
-    restingExpression: normalizeRestingExpression(o.restingExpression),
     events: o.events || [],
     scheduleHooks: { defaultMapId: 'hobunji_main_town', defaultPathId: '', workBuildingId: o.home || o.homeId || '', shopHours: '', rules: [] },
   };
@@ -1764,8 +1752,10 @@ function ensureNpcDefaults(n) {
   }, n.relationship || {});
   if (!hadRelationship && romance) { n.relationship.canDate = true; n.relationship.canMarry = true; }
   n.gifts = Object.assign({ loved: [], liked: [], neutral: [], disliked: [], hated: [], categoryNotes: [] }, n.gifts || {});
+  n.personality = (n.personality && typeof n.personality === 'object') ? n.personality : {};
+  n.personality.friendliness = normalizeFriendlinessPolicy(n.personality.friendliness);
+  delete n.restingExpression;
   if (!Array.isArray(n.dialogueTrees)) n.dialogueTrees = n.dialogueTrees ? [n.dialogueTrees] : [];
-  n.restingExpression = normalizeRestingExpression(n.restingExpression);
   if (!Array.isArray(n.events)) n.events = n.events ? [n.events] : [];
   n.scheduleHooks = n.scheduleHooks || { defaultMapId: 'hobunji_main_town', defaultPathId: '', workBuildingId: n.homeId || '', shopHours: '', rules: [] };
   return n;
@@ -1848,7 +1838,9 @@ function fillFields(n) {
   $('dislikedGifts').value = (n.gifts?.disliked || []).join('\n');
   $('hatedGifts').value = (n.gifts?.hated || []).join('\n');
   setJ('giftCategoriesJson', n.gifts?.categoryNotes || []);
-  fillRestingExpressionOptions(n.restingExpression);
+  const friendlinessPolicy = normalizeFriendlinessPolicy(n.personality?.friendliness); // Used to populate the two relationship-driven resting-expression controls.
+  $('npcSmileAtFavor').value = friendlinessPolicy.smileAtFavor;
+  $('npcFrownBelowFavor').value = friendlinessPolicy.frownBelowFavor;
   setJ('dialogueJson', n.dialogueTrees || []);
   setJ('worldJson', db.worldContext);
 }
@@ -1904,7 +1896,12 @@ function read() {
     neutral: split($('neutralGifts').value), disliked: split($('dislikedGifts').value),
     hated: split($('hatedGifts').value), categoryNotes: parse('giftCategoriesJson', []),
   };
-  n.restingExpression = normalizeRestingExpression($('npcRestingExpression').value);
+  n.personality = (n.personality && typeof n.personality === 'object') ? n.personality : {};
+  n.personality.friendliness = normalizeFriendlinessPolicy({
+    smileAtFavor: num('npcSmileAtFavor', 0),
+    frownBelowFavor: num('npcFrownBelowFavor', 0),
+  });
+  delete n.restingExpression;
   n.dialogueTrees = parse('dialogueJson', []);
   db.worldContext = parse('worldJson', db.worldContext);
   renderDb(false);
@@ -2088,7 +2085,7 @@ document.querySelectorAll('.tabBtn').forEach(b => b.onclick = () => {
 ['npcId','npcName','homeId','npcSpecies','npcGender','npcAge','npcRole','romanceable','canBefriend','canMarry',
  'npcTags','npcBio','maxHearts','baseDisposition','decayRule','speciesDispositionJson','friendUnlocksJson',
  'appearanceJson','cosmeticsJson','dyesJson','avatarRawJson','lovedGifts','likedGifts','neutralGifts',
- 'dislikedGifts','hatedGifts','giftCategoriesJson','npcRestingExpression','dialogueJson','worldJson'
+ 'dislikedGifts','hatedGifts','giftCategoriesJson','npcSmileAtFavor','npcFrownBelowFavor','dialogueJson','worldJson'
 ].forEach(id => { const el = $(id); if (el) el.addEventListener('input', read); });
 
 $('addNpcBtn').onclick = addNpc;
