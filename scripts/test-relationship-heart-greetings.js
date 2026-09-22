@@ -7,6 +7,7 @@ const path = require('node:path');
 const root = path.resolve(__dirname, '..');
 const dialogueSource = fs.readFileSync(path.join(root, 'docs/js/dialogue-content.js'), 'utf8'); // Used to execute the shipped relationship-heart renderer in isolation.
 const ambientSource = fs.readFileSync(path.join(root, 'docs/js/ambient-dialogue.js'), 'utf8'); // Used to execute the shipped player-greeting policy helpers in isolation.
+const npcDatabase = JSON.parse(fs.readFileSync(path.join(root, 'docs/config/npcs/hobunji-starter-npc-database.json'), 'utf8')); // Used to exercise the authored friendliness thresholds for the named exceptions.
 
 function extract(source, startPattern, endPattern, label) {
   const start = source.search(startPattern); // Used to locate the beginning of the runtime helper block under test.
@@ -16,6 +17,31 @@ function extract(source, startPattern, endPattern, label) {
   assert.ok(endMatch, `Could not locate ${label} end`);
   return tail.slice(0, endMatch.index);
 }
+
+const friendlinessExpressionBlock = extract(
+  dialogueSource,
+  /function _npcFriendlinessExpressionForFavor\(rec, favor\)/,
+  /\n\n  function _npcRestingExpression/,
+  'Favor-driven NPC resting expression'
+);
+const npcFriendlinessExpressionForFavor = new Function(
+  `${friendlinessExpressionBlock}\nreturn _npcFriendlinessExpressionForFavor;`
+)(); // Used to execute the pure Favor/personality policy without browser dialogue dependencies.
+const npcRecord = id => npcDatabase.npcs.find(npc => npc.id === id); // Used by the exception assertions below to read shipped character personality data.
+
+assert.equal(npcFriendlinessExpressionForFavor({}, -1), 'frown', 'ordinary NPCs frown below zero Favor');
+assert.equal(npcFriendlinessExpressionForFavor({}, 0), 'smile', 'ordinary NPCs smile at zero Favor');
+assert.equal(npcFriendlinessExpressionForFavor(npcRecord('leaf'), 0), 'neutral', 'Leaf is neutral at zero Favor');
+assert.equal(npcFriendlinessExpressionForFavor(npcRecord('leaf'), 4), 'neutral', 'Leaf stays neutral through four Favor');
+assert.equal(npcFriendlinessExpressionForFavor(npcRecord('leaf'), 5), 'smile', 'Leaf smiles at five Favor');
+for (const id of ['takua_ao_hakaru', 'spearhead_unumanuk']) {
+  assert.equal(npcFriendlinessExpressionForFavor(npcRecord(id), 1), 'neutral', `${id} stays neutral at one Favor`);
+  assert.equal(npcFriendlinessExpressionForFavor(npcRecord(id), 2), 'smile', `${id} smiles at two Favor`);
+}
+assert.equal(npcFriendlinessExpressionForFavor(npcRecord('kinami_kunji'), 0), 'frown', 'Kinami frowns anywhere below one Favor');
+assert.equal(npcFriendlinessExpressionForFavor(npcRecord('kinami_kunji'), 1), 'smile', 'Kinami smiles once Favor reaches one');
+assert.equal(npcRecord('leaf').relationship.baseDisposition, 0, 'Leaf starts at neutral Favor so the five-point friendliness gate is meaningful');
+assert.equal(npcRecord('kinami_kunji').relationship.baseDisposition, 0, 'Kinami starts at zero Favor so her below-one frown rule is visible immediately');
 
 const heartBlock = extract(
   dialogueSource,
