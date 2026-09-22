@@ -691,6 +691,7 @@
 
   function renderDlgNode(node) {
     if (!node) { deps.closeNpcDialogue(); return; }
+    window.CinematicCameraRuntime?.applyDialogueNodeCamera?.(node); // Optional node.cameraId swaps to an authored map/locale shot without changing dialogue flow.
     _dlgNode = node;
 
     if (node.type === 'end') { deps.closeNpcDialogue(); return; }
