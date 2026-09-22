@@ -467,6 +467,7 @@
     normalizeFloorStyle,
     defaultFloorStyleForWallStyle,
     applyFloorStyleToMaterial,
+    stretchFloorMeshesToSharedBounds,
     applyFloorStyleToScene,
     debugSnapshot,
   });
