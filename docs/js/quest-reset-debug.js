@@ -27,7 +27,8 @@
 
   function isActiveQuest(state) {
     const kind = state?.progress?.kind;
-    if (kind === 'story') return ['active', 'offer', 'intro'].includes(state?.status);
+    if (state?.progress?.hidden) return false; // Match the visible Quest Log: pre-acceptance story setup is not something the player is "on" yet.
+    if (kind === 'story') return state?.status === 'active';
     if (['request', 'favor', 'bounty'].includes(kind)) return state?.status === 'available';
     return false;
   }
