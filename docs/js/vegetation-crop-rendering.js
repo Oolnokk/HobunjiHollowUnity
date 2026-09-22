@@ -113,6 +113,23 @@
     return g;
   })();
   const WEED_PAIR_TILT = THREE.MathUtils.degToRad(20); // Used by weed billboard pairs to splay their tops 40° total from one bottom origin.
+  const GRASS_BANK_SWAY_MARGIN = 0.05; // Used by town river-bank placement to keep each swaying grass card's full footprint inside its source land tile.
+
+  function _isPermanentWaterTile(tile) {
+    const type = tile?.type; // Used below to classify only authored river/stream/waterfall neighbors as permanent bank edges.
+    return type === deps.TileType.RIVER
+      || type === deps.TileType.STREAM
+      || type === deps.TileType.WATERFALL;
+  }
+
+  function _townGrassBankEdges(townGrid, col, row) {
+    const hasWater = (sampleCol, sampleRow) => _isPermanentWaterTile(townGrid?.[sampleRow]?.[sampleCol]); // Used to sample the three neighboring cells along each side of a grass tile.
+    const west = hasWater(col - 1, row - 1) || hasWater(col - 1, row) || hasWater(col - 1, row + 1); // Used to keep bank grass from crossing westward into water, including river bends at the corners.
+    const east = hasWater(col + 1, row - 1) || hasWater(col + 1, row) || hasWater(col + 1, row + 1); // Used to keep bank grass from crossing eastward into water, including river bends at the corners.
+    const north = hasWater(col - 1, row - 1) || hasWater(col, row - 1) || hasWater(col + 1, row - 1); // Used to keep bank grass from crossing northward into water, including river bends at the corners.
+    const south = hasWater(col - 1, row + 1) || hasWater(col, row + 1) || hasWater(col + 1, row + 1); // Used to keep bank grass from crossing southward into water, including river bends at the corners.
+    return west || east || north || south ? { west, east, north, south } : null;
+  }
 
   const _grassBillVert = `
     uniform float uTime;
@@ -269,16 +286,23 @@
   // Fills 14 billboard pairs (28 planes) worth of instance matrices for one tile.
   // pairTiltRad=0 preserves the normal perpendicular grass cross; a nonzero
   // value gives both planes one yaw/origin and opposite local-X tilts.
-  function _fillBillboardInstances(mesh, dummy, startIdx, col, row, sizeMul, yOffset = 0, widthMul = 1, heightMul = 1, pairTiltRad = 0) {
+  function _fillBillboardInstances(mesh, dummy, startIdx, col, row, sizeMul, yOffset = 0, widthMul = 1, heightMul = 1, pairTiltRad = 0, edgeInsets = null) {
     const rand  = _mbRng(((col * 31337 + row * 1009) >>> 0));
     const baseY = deps.tileSurfaceY(deps.TileType.GRASS) + yOffset;
     let idx = startIdx;
     for (let b = 0; b < 14; b++) {
-      const ox  = (rand() - 0.5) * 0.9;
-      const oz  = (rand() - 0.5) * 0.9;
+      let ox  = (rand() - 0.5) * 0.9; // Used as the randomized local-X root before any river-bank safety clamp.
+      let oz  = (rand() - 0.5) * 0.9; // Used as the randomized local-Z root before any river-bank safety clamp.
       const w   = (0.16 + rand() * 0.10) * sizeMul * widthMul;
       const h   = (0.22 + rand() * 0.14) * sizeMul * heightMul;
       const rot = rand() * Math.PI;
+      if (edgeInsets) {
+        const safeHalfExtent = w * 0.5 + GRASS_BANK_SWAY_MARGIN; // Used to bound either crossed card plus the shader's maximum horizontal wind displacement inside the land tile.
+        if (edgeInsets.west) ox = Math.max(ox, -0.5 + safeHalfExtent);
+        if (edgeInsets.east) ox = Math.min(ox, 0.5 - safeHalfExtent);
+        if (edgeInsets.north) oz = Math.max(oz, -0.5 + safeHalfExtent);
+        if (edgeInsets.south) oz = Math.min(oz, 0.5 - safeHalfExtent);
+      }
       const px  = col + 0.5 + ox, pz = row + 0.5 + oz;
 
       dummy.position.set(px, baseY, pz);
@@ -391,17 +415,29 @@
     townGrassBillMesh.userData.isBillboard = true;
     const dummy = new THREE.Object3D();
     let idx = 0;
+    let riverBankInsetTiles = 0; // Used by Pixel Probe diagnostics to confirm how many town grass tiles were constrained away from permanent water.
     for (let row = 0; row < trows; row++) {
       for (let col = 0; col < tcols; col++) {
         const tile = townGrid[row]?.[col];
         if (tile?.type !== deps.TileType.GRASS) continue;
         const tierY = (tile.elevTier || 0) * deps.PLATEAU_UNIT;
-        idx = _fillBillboardInstances(townGrassBillMesh, dummy, idx, col, row, 1.0, tierY);
+        const bankEdges = _townGrassBankEdges(townGrid, col, row); // Used to keep only permanent-water-adjacent town grass from visually overhanging the river.
+        if (bankEdges) riverBankInsetTiles++;
+        idx = _fillBillboardInstances(townGrassBillMesh, dummy, idx, col, row, 1.0, tierY, 1, 1, 0, bankEdges);
       }
     }
     townGrassBillMesh.count = idx;
     townGrassBillMesh.instanceMatrix.needsUpdate = true;
+    townGrassBillMesh.userData.riverBankInsetTiles = riverBankInsetTiles;
+    townGrassBillMesh.userData.riverBankSwayMargin = GRASS_BANK_SWAY_MARGIN;
     townScene.add(townGrassBillMesh);
+  }
+
+  function debugGrassBankSnapshot() {
+    return {
+      townRiverBankInsetTiles: Number(townGrassBillMesh?.userData?.riverBankInsetTiles || 0),
+      bankSwayMargin: GRASS_BANK_SWAY_MARGIN,
+    };
   }
 
   function _rebuildWeedTiles() {
@@ -789,6 +825,7 @@
     getFarmGrassBillMesh: () => farmGrassBillMesh,
     getTownGrassBillMesh: () => townGrassBillMesh,
     buildTownGrassBillboards: _buildTownGrassBillboards,
+    debugGrassBankSnapshot,
     updateCuttableBillboardGlow,
     buildTileMeshes,
     refreshTileMesh,
