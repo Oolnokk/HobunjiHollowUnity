@@ -37,14 +37,14 @@ const portraitScales = {
   'mao-ao::female': 0.8,
   'kenkari::male': 0.75,
   'kenkari::female': 0.75,
-}; // Used below to lock intentional raw-PNG Head percentages; Mao-ao male is now 66% after the requested +10% adjustment from the reduced baseline, while the other non-Mashtzarr profiles remain 75%.
-assert.ok(defaultsWindow.HobunjiCharacterRigScaleDefaults.version >= 11,
-  'Full Character Scale defaults must include the Mao-ao male +10% adjustment');
+}; // Used below to lock intentional raw-PNG Head percentages; Mao-ao male is now 72.6% after the requested additional +10% adjustment, while the other non-Mashtzarr profiles remain 75%.
+assert.ok(defaultsWindow.HobunjiCharacterRigScaleDefaults.version >= 12,
+  'Full Character Scale defaults must include the latest Mao-ao male +10% adjustment');
 for (const [key, tuple] of Object.entries(expected)) {
   const [species, gender] = key.split('::');
   assert.deepStrictEqual(plainScale(defaultsWindow.HobunjiCharacterRigScaleDefaults.scaleFor(species, gender)), tuple, `${key} scale tuple mismatch`);
   if (portraitScales[key]) {
-    const expectedRawHeadPercent = key === 'mao-ao::male' ? 66 : 75;
+    const expectedRawHeadPercent = key === 'mao-ao::male' ? 72.6 : 75;
     assert.ok(Math.abs(tuple.head * portraitScales[key] * 100 - expectedRawHeadPercent) < 1e-9, `${key} raw-PNG Head must equal ${expectedRawHeadPercent}%`);
   }
 }
