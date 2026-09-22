@@ -16,6 +16,7 @@ const dialogueEditorState = read('docs/tools/dialogue-editor/dialogue-editor-sta
 const panelUiSource = read('docs/js/panel-ui.js');
 const loaderSource = read('docs/js/combat/combat-config-loader.js');
 const relationshipsSource = read('docs/js/relationships-panel.js');
+const gameSource = read('docs/game.js'); // Used to verify the wardrobe sleep edge fires before any NPC character-state early return.
 
 for (const [name, source] of Object.entries({ socialSource, wardrobeSource, wardrobeEditorSource, dialogueSource, dialogueEditorState, panelUiSource, loaderSource, relationshipsSource })) {
   assert.doesNotThrow(() => new vm.Script(source, { filename: name }), `${name} must parse as JavaScript`);
@@ -29,6 +30,12 @@ assert.match(socialSource, /mod\?\.key === 'player-dance-invitation'/, 'liquor g
 assert.match(loaderSource, /npc-furniture-wardrobe-bridge-v4\.js[\s\S]*?npc-social-relationship-bridge-v2\.js/, 'bootstrap loads registry-backed wardrobe v4 before event-driven Rapport v2');
 assert.doesNotMatch(loaderSource, /npc-furniture-wardrobe-bridge\.js\?v=/, 'bootstrap no longer executes polling wardrobe v1');
 assert.doesNotMatch(loaderSource, /npc-social-relationship-bridge\.js\?v=/, 'bootstrap no longer executes polling Rapport v1');
+const npcScheduleResolveIndex = gameSource.indexOf('const target = resolveNpcScheduleTarget(this.rec);'); // Used as the start of the per-walker resolved-schedule update block.
+const wardrobeSleepHookIndex = gameSource.indexOf('void window.NpcWardrobe?.rerollForSleep?.(rec?.id);', npcScheduleResolveIndex); // Used to locate the one-shot gifted-clothing reroll.
+const characterStateEarlyReturnIndex = gameSource.indexOf('if (window.NpcCharacterState?.update?.(this, dt, {', npcScheduleResolveIndex); // Used to prove locked/blacked-out NPCs cannot skip the sleep transition anymore.
+assert.ok(npcScheduleResolveIndex >= 0 && wardrobeSleepHookIndex > npcScheduleResolveIndex, 'NPC update resolves a wardrobe sleep edge from the live schedule');
+assert.ok(characterStateEarlyReturnIndex > wardrobeSleepHookIndex, 'wardrobe sleep reroll happens before character-state early returns');
+assert.equal((gameSource.match(/NpcWardrobe\?\.rerollForSleep\?\./g) || []).length, 1, 'NPC update owns exactly one wardrobe sleep reroll call');
 
 let rawDay = 3; // Simulation-day index used to prove the social day still changes at midnight rather than 06:00.
 let time01 = 0.50; // Normalized 24-hour simulation time used by the accepted-sip cooldown.
