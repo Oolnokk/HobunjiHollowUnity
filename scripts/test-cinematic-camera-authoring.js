@@ -35,12 +35,27 @@ const mapEditorSource = read('docs/tools/map-editor/index.html');
 const localeEditorSource = read('docs/tools/locale-editor/index.html');
 const directorSource = read('docs/tools/cutscene-director/index.html');
 
+for (const [label, source] of [
+  ['cinematic camera runtime', runtimeSource],
+  ['wilderness map generator', wildernessSource],
+  ['cavern generator', generatorSource],
+  ['interior scene builder', builderSource],
+  ['dialogue content', read('docs/js/dialogue-content.js')],
+  ['game runtime', gameSource],
+]) {
+  new vm.Script(source, { filename: label });
+}
+
 const runtimeLoad = indexSource.indexOf('src="js/cinematic-camera-runtime.js');
 const dialogueLoad = indexSource.indexOf('src="js/dialogue-content.js');
 assert(runtimeLoad >= 0 && dialogueLoad >= 0 && runtimeLoad < dialogueLoad, 'cinematic camera runtime must load before DialogueContent');
 assert(gameSource.includes('window.CinematicCameraRuntime?.init?.({'), 'game must initialize the cinematic camera runtime');
 assert(gameSource.includes('window.CinematicCameraRuntime?.beginDialogue?.({'), 'ordinary NPC dialogue must activate authored dialogue cameras');
 assert(gameSource.includes('window.CinematicCameraRuntime?.endDialogue?.();'), 'closing dialogue must release authored dialogue cameras');
+const closeDialogueStart = gameSource.indexOf('function closeNpcDialogue()');
+const closeDialogueEnd = gameSource.indexOf('// renderRelationshipHearts now lives', closeDialogueStart);
+const closeDialogueBlock = gameSource.slice(closeDialogueStart, closeDialogueEnd);
+assert(closeDialogueStart >= 0 && closeDialogueEnd > closeDialogueStart && closeDialogueBlock.includes('_snapCameraTarget();'), 'closing dialogue must snap the normal follow target back to the staged player before gameplay camera resumes');
 assert(gameSource.includes('window.CinematicCameraRuntime?.update?.(dt);'), 'pet fading must use the existing gameplay frame driver');
 assert(!runtimeSource.includes('requestAnimationFrame('), 'camera runtime must not add another frame loop');
 
