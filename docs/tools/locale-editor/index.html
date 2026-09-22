@@ -157,13 +157,14 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
           <div id="cinCamFields" style="margin-top:7px">
             <div class="g2"><div><label>Id</label><input id="cinCamId"></div><div><label>Label</label><input id="cinCamLabel"></div></div>
             <div class="g3" style="margin-top:6px"><div><label>Camera X</label><input id="cinCamX" type="number" step=".1"></div><div><label>Height Y</label><input id="cinCamY" type="number" step=".05"></div><div><label>Camera Z</label><input id="cinCamZ" type="number" step=".1"></div></div>
-            <div class="g3" style="margin-top:6px"><div><label>Target X</label><input id="cinTargetX" type="number" step=".1"></div><div><label>Target Y</label><input id="cinTargetY" type="number" step=".05"></div><div><label>Target Z</label><input id="cinTargetZ" type="number" step=".1"></div></div>
+            <div class="g2" style="margin-top:6px"><div><label>Auto target NPC</label><select id="cinTargetNpc"></select></div><div><label>Preview/station anchor</label><select id="cinTargetAnchor"></select></div></div>
+            <div class="g3" style="margin-top:6px"><div><label id="cinTargetLabelX">Target X</label><input id="cinTargetX" type="number" step=".1"></div><div><label id="cinTargetLabelY">Target Y</label><input id="cinTargetY" type="number" step=".05"></div><div><label id="cinTargetLabelZ">Target Z</label><input id="cinTargetZ" type="number" step=".1"></div></div>
             <div class="g3" style="margin-top:6px"><div><label>FOV °</label><input id="cinCamFov" type="number" min="10" max="120"></div><div><label>Blend sec</label><input id="cinCamBlend" type="number" min="0" step=".05"></div><div><label>Dialogue NPC id</label><input id="cinCamNpc" placeholder="banubu"></div></div>
             <div class="g2" style="margin-top:6px"><div><label>Player stage X</label><input id="cinStageX" type="number" step=".1"></div><div><label>Player stage Z</label><input id="cinStageZ" type="number" step=".1"></div></div>
             <label class="chk"><input type="checkbox" id="cinCamFadePets"> Fade player pets in this shot</label>
             <button class="sec" id="cinCamApply" style="width:100%;margin-top:6px">Apply Camera</button>
           </div>
-          <p class="muted" style="margin-top:5px">Coordinates are locale/map tile-space. Dialogue can auto-pick cameras by NPC id; dialogue nodes and cutscene cards can reference a camera id explicitly.</p>
+          <p class="muted" style="margin-top:5px">Camera position is locale/map tile-space. When an NPC target is selected, Target X/Y/Z become offsets from that NPC's live face and follow them automatically; with no NPC target they remain an absolute map point. The station anchor is only an editor/dialogue-selection hint for NPCs with multiple authored stations.</p>
         </div>
 
         <!-- PLACEMENT RULES -->
@@ -977,6 +978,16 @@ function renderSettings() {
 function cinematicCameraById(m, id) {
   return (m?.cinematicCameras || []).find(camera => camera.id === id) || null;
 }
+function cinematicTargetNpcIds(m) {
+  return [...new Set((m?.npcAnchors || []).map(anchor => String(anchor.npcId || '')).filter(Boolean))];
+}
+function populateCinematicTargetAnchorSelect(m, npcId, selectedId = '') {
+  const select = $('cinTargetAnchor');
+  const anchors = (m?.npcAnchors || []).filter(anchor => String(anchor.npcId || '') === String(npcId || ''));
+  select.innerHTML = '<option value="">Auto / current live position</option>' + anchors.map(anchor => `<option value="${escapeAttr(anchor.id)}">${escapeAttr(anchor.name || anchor.id)}</option>`).join('');
+  select.value = anchors.some(anchor => anchor.id === selectedId) ? selectedId : '';
+  select.disabled = !npcId || !anchors.length;
+}
 function renderCinematicCameraPanel() {
   const m = activeLocale();
   const list = m?.cinematicCameras || [];
@@ -986,13 +997,21 @@ function renderCinematicCameraPanel() {
   $('cinCamSelect').value = activeCinematicCameraId || '';
   const cam = cinematicCameraById(m, activeCinematicCameraId);
   $('cinCamFields').style.opacity = cam ? '1' : '.45';
-  for (const id of ['cinCamId','cinCamLabel','cinCamX','cinCamY','cinCamZ','cinTargetX','cinTargetY','cinTargetZ','cinCamFov','cinCamBlend','cinCamNpc','cinStageX','cinStageZ']) $(id).disabled = !cam;
+  for (const id of ['cinCamId','cinCamLabel','cinCamX','cinCamY','cinCamZ','cinTargetNpc','cinTargetX','cinTargetY','cinTargetZ','cinCamFov','cinCamBlend','cinCamNpc','cinStageX','cinStageZ']) $(id).disabled = !cam;
   $('cinCamFadePets').disabled = !cam;
   $('cinCamApply').disabled = !cam;
   if (!cam) return;
   $('cinCamId').value = cam.id || '';
   $('cinCamLabel').value = cam.label || '';
   $('cinCamX').value = Number(cam.position?.x) || 0; $('cinCamY').value = Number(cam.position?.y) || 0; $('cinCamZ').value = Number(cam.position?.z) || 0;
+  const npcIds = cinematicTargetNpcIds(m);
+  $('cinTargetNpc').innerHTML = '<option value="">Absolute map point</option>' + npcIds.map(id => `<option value="${escapeAttr(id)}">${escapeAttr((m.npcAnchors || []).find(anchor => anchor.npcId === id)?.name || id)}</option>`).join('');
+  $('cinTargetNpc').value = cam.targetNpcId || '';
+  populateCinematicTargetAnchorSelect(m, cam.targetNpcId || '', cam.targetAnchorId || '');
+  const faceRelative = !!cam.targetNpcId;
+  $('cinTargetLabelX').textContent = faceRelative ? 'Face offset X' : 'Target X';
+  $('cinTargetLabelY').textContent = faceRelative ? 'Face offset Y' : 'Target Y';
+  $('cinTargetLabelZ').textContent = faceRelative ? 'Face offset Z' : 'Target Z';
   $('cinTargetX').value = Number(cam.target?.x) || 0; $('cinTargetY').value = Number(cam.target?.y) || 0; $('cinTargetZ').value = Number(cam.target?.z) || 0;
   $('cinCamFov').value = Number(cam.fovDeg) || 42; $('cinCamBlend').value = Number(cam.blendSeconds) || 0;
   $('cinCamNpc').value = cam.dialogueNpcId || '';
@@ -1093,12 +1112,27 @@ $('applyPlacementBtn').addEventListener('click', () => {
 // ── Cinematic cameras ─────────────────────────────────────────────────────────
 $('showCinematicCameras').addEventListener('change', () => { showCinematicCameras = $('showCinematicCameras').checked; draw(); });
 $('cinCamSelect').addEventListener('change', () => { activeCinematicCameraId = $('cinCamSelect').value || null; renderCinematicCameraPanel(); draw(); });
+$('cinTargetNpc').addEventListener('change', () => {
+  const npcId = $('cinTargetNpc').value || '';
+  populateCinematicTargetAnchorSelect(activeLocale(), npcId, '');
+  const faceRelative = !!npcId;
+  $('cinTargetLabelX').textContent = faceRelative ? 'Face offset X' : 'Target X';
+  $('cinTargetLabelY').textContent = faceRelative ? 'Face offset Y' : 'Target Y';
+  $('cinTargetLabelZ').textContent = faceRelative ? 'Face offset Z' : 'Target Z';
+  if (faceRelative) { $('cinTargetX').value = 0; $('cinTargetY').value = 0; $('cinTargetZ').value = 0; }
+});
 $('cinCamAdd').addEventListener('click', () => {
   const m = activeLocale(); if (!m) return;
   m.cinematicCameras = m.cinematicCameras || [];
   let id = `camera_${m.cinematicCameras.length + 1}`; while (m.cinematicCameras.some(camera => camera.id === id)) id += '_2';
   const cx = Math.max(0.5, m.cols / 2 - 2), cz = Math.max(0.5, m.rows / 2 + 2);
-  m.cinematicCameras.push({ id, label:id, position:{x:cx,y:.35,z:cz}, target:{x:m.cols/2,y:.8,z:m.rows/2}, fovDeg:42, blendSeconds:.45, dialogueNpcId:'', fadePets:false, playerStage:null });
+  const firstAnchor = (m.npcAnchors || [])[0] || null;
+  m.cinematicCameras.push({
+    id, label:id, position:{x:cx,y:.35,z:cz},
+    target:firstAnchor ? {x:0,y:0,z:0} : {x:m.cols/2,y:.8,z:m.rows/2},
+    targetNpcId:firstAnchor?.npcId || '', targetAnchorId:firstAnchor?.id || '',
+    fovDeg:42, blendSeconds:.45, dialogueNpcId:firstAnchor?.npcId || '', fadePets:false, playerStage:null
+  });
   activeCinematicCameraId = id; finishEdit(); renderCinematicCameraPanel();
 });
 $('cinCamDelete').addEventListener('click', () => {
@@ -1111,6 +1145,8 @@ $('cinCamApply').addEventListener('click', () => {
   const oldId=cam.id;
   cam.id=$('cinCamId').value.trim()||oldId; cam.label=$('cinCamLabel').value.trim()||cam.id;
   cam.position={x:Number($('cinCamX').value)||0,y:Number($('cinCamY').value)||0,z:Number($('cinCamZ').value)||0};
+  cam.targetNpcId=$('cinTargetNpc').value || '';
+  cam.targetAnchorId=cam.targetNpcId ? ($('cinTargetAnchor').value || '') : '';
   cam.target={x:Number($('cinTargetX').value)||0,y:Number($('cinTargetY').value)||0,z:Number($('cinTargetZ').value)||0};
   cam.fovDeg=clamp(Number($('cinCamFov').value)||42,10,120); cam.blendSeconds=Math.max(0,Number($('cinCamBlend').value)||0);
   cam.dialogueNpcId=$('cinCamNpc').value.trim(); cam.fadePets=$('cinCamFadePets').checked;
@@ -1341,6 +1377,8 @@ window._localeEditorBridge = {
       y: finite(next.target.y, cam.target?.y || 0),
       z: finite(next.target.z, cam.target?.z || 0),
     };
+    if (next.targetNpcId !== undefined) cam.targetNpcId = String(next.targetNpcId || '');
+    if (next.targetAnchorId !== undefined) cam.targetAnchorId = cam.targetNpcId ? String(next.targetAnchorId || '') : '';
     if (next.fovDeg != null) cam.fovDeg = clamp(finite(next.fovDeg, cam.fovDeg || 42), 10, 120);
     activeCinematicCameraId = cam.id;
     m.meta.updatedAt = nowIso();
