@@ -102,7 +102,7 @@ function makeEntity(overrides = {}) {
   ResourceSystem.tick(entity, 1, { healthRegenPerSec: 1, footingRegenPerSec: 0 });
   assert.equal(entity.stamina, 10, 'ordinary Stamina regeneration pauses while a hold blocker is active');
   assert.equal(entity.health, 91, 'Stamina regeneration blocking does not pause Health regeneration');
-  assert.deepEqual(ResourceSystem.getStaminaRegenBlockers(entity), ['blink-dodge-hold'], 'debug API reports the active blocker source');
+  assert.equal(ResourceSystem.getStaminaRegenBlockers(entity).join(','), 'blink-dodge-hold', 'debug API reports the active blocker source');
 }
 
 // Blockers compose by source: clearing one held action cannot re-enable regen while another still owns a lock.
