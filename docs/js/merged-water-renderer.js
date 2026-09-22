@@ -158,15 +158,19 @@
 
   function normalizeBaseline(options) {
     const source = options.baseline || {}; // Used to normalize WaterSystem's common weather-driven map level.
-    const depth = Math.max(0, Math.min(1, Number.isFinite(source.depth) ? source.depth : 0)); // Used for baseline water color.
-    const coverage = Math.max(0, Math.min(1, Number.isFinite(source.coverage) ? source.coverage : depth)); // Used for baseline opacity.
+    const simulationDepth = Math.max(0, Math.min(1, Number.isFinite(source.depth) ? source.depth : 0)); // Used to retain the actual simulated flood amount independently of its appearance.
+    const simulationCoverage = Math.max(0, Math.min(1, Number.isFinite(source.coverage) ? source.coverage : simulationDepth)); // Used to decide whether the simulated baseline is genuinely visible.
+    const renderDepth = Math.max(0, Math.min(1, Number.isFinite(source.renderDepth) ? source.renderDepth : simulationDepth)); // Used by the shader when a broad surface should visually match authored stable water instead of changing color with simulated depth.
+    const renderCoverage = Math.max(0, Math.min(1, Number.isFinite(source.renderCoverage) ? source.renderCoverage : simulationCoverage)); // Used by the shader when visual opacity must be independent of simulated flood depth.
+    const renderFlowX = Number.isFinite(source.renderFlowX) ? source.renderFlowX : source.flowX; // Used by the shared sheen shader without mutating the simulation's physical flow vector.
+    const renderFlowZ = Number.isFinite(source.renderFlowZ) ? source.renderFlowZ : source.flowZ; // Used with renderFlowX to match stable-water sheen strength where requested.
     return {
-      visible: source.visible !== false && Number.isFinite(source.surfaceY) && coverage > 0,
+      visible: source.visible !== false && Number.isFinite(source.surfaceY) && simulationCoverage > 0,
       surfaceY: Number.isFinite(source.surfaceY) ? source.surfaceY : 0,
-      depth,
-      coverage,
-      flowX: Number.isFinite(source.flowX) ? source.flowX : 0,
-      flowZ: Number.isFinite(source.flowZ) ? source.flowZ : 0,
+      depth: renderDepth,
+      coverage: renderCoverage,
+      flowX: Number.isFinite(renderFlowX) ? renderFlowX : 0,
+      flowZ: Number.isFinite(renderFlowZ) ? renderFlowZ : 0,
     };
   }
 
