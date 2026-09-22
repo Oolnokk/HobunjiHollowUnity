@@ -142,7 +142,7 @@
     // from inside Puktuk registration. Keeping one parser-owned loader prevents
     // den setup from perturbing held-item/stance bootstrap ordering.
     ['js/den-locale-runtime.js?v=20260914c', () => Number(window.DenLocaleRuntime?.version) >= 4],
-    ['js/puktuk-den-nest-registration.js?v=20260914b', () => Number(window.PuktukDenNestRegistration?.version) >= 2],
+    ['js/puktuk-den-nest-registration.js?v=20260921voorgherd1', () => Number(window.PuktukDenNestRegistration?.version) >= 2],
     ['js/dev-arena-nest-spawner.js?v=20260914a', () => Number(window.DevArenaNestSpawner?.version) >= 1],
     ['js/wildlife-territorial.js?v=20260828animalvoices1', () => !!window.HobunjiTerritorialWildlife],
     ['js/wildlife-drenkirra-grazing.js?v=20260817a', () => !!window.HobunjiDrenkirraGrazing],
