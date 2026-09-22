@@ -11,14 +11,11 @@
   const MOUNT_CLIMB_PER_RANK = 0.10;
   const AMBIENT_REACTION_AFTER_GREETING_MS = 0; // Used so the selected animal reaction begins immediately after the player's greeting fully ends.
   const AMBIENT_REACTION_GREETING_GRACE_MS = 700; // Used only while waiting for a same-encounter player greeting to begin; an observed greeting reschedules the reaction to its exact end.
-  const AMBIENT_DEFAULT_GREETING_MS = 4200; // Mirrors AmbientDialogue's ordinary greeting duration for private greetings observed through its persisted greeting ledger.
-  const AMBIENT_QUEST_GREETING_MS = 5600; // Mirrors AmbientDialogue's minimum pending-request greeting duration for ledger-observed quest call-overs.
-  const AMBIENT_GREETING_LEDGER_PREFIX = 'hobunjiAmbientGreetings.v1:'; // Used to recognize only AmbientDialogue's event-time greeting persistence writes.
+  const AMBIENT_DEFAULT_GREETING_MS = 4200; // Fallback used only if an older AmbientDialogue event omits its rendered duration.
   const AMBIENT_SEQUENCE_TRACE_LIMIT = 16;
 
   let mountDeps = null; // Captured from Mounts.init; temporarily scales only the existing riding inputs during mounted movement.
-  let ambientDialogueDeps = null; // Captured from AmbientDialogue.init; used only to distinguish longer pending-request greetings when the private greeting path writes its ledger.
-  let greetingLedgerHookInstalled = false; // Prevents duplicate Storage.setItem interception if AmbientDialogue is reassigned later.
+  let ambientDialogueEventHookInstalled = false; // Prevents duplicate listeners while observing the actual rendered ambient-greeting event.
   let greetedDay = null;
   const greetedToday = new Set(); // Keys NPC + individual animal so each NPC can reward each greeted rapport-trained pet once per game day.
   const pendingAnimalReactions = new Map(); // Used to combine same-NPC mount/companion/shoulder-pet reactions into one random follow-up.
@@ -222,14 +219,6 @@
     if (!api || api.__stableAnimalGreetingRapportWrapped || typeof api.show !== 'function') return api;
     const originalShow = api.show.bind(api);
 
-    if (typeof api.init === 'function') {
-      const originalInit = api.init.bind(api);
-      api.init = function stableAnimalAmbientGreetingInit(injectedDeps) {
-        ambientDialogueDeps = injectedDeps; // Used by the ledger hook to distinguish ordinary greetings from longer pending-request greetings.
-        return originalInit(injectedDeps);
-      };
-    }
-
     function clearPendingTimer(pending) {
       if (!pending?.timer) return;
       clearTimeout(pending.timer);
@@ -262,53 +251,15 @@
       }
     }
 
-    function parseGreetingLedger(raw) {
-      try {
-        const parsed = JSON.parse(String(raw || 'null')); // Used only for AmbientDialogue's small once-per-greeting ledger payload.
-        return parsed && Array.isArray(parsed.keys) ? parsed : null;
-      } catch (_) {
-        return null;
-      }
-    }
-
-    function installGreetingLedgerHook() {
-      if (greetingLedgerHookInstalled) return;
-      const storagePrototype = window.Storage?.prototype; // Used to observe the private AmbientDialogue greeting path without adding any frame-time polling.
-      const originalSetItem = storagePrototype?.setItem; // Preserved so every unrelated localStorage write remains unchanged.
-      if (!storagePrototype || typeof originalSetItem !== 'function') return;
-      if (originalSetItem.__stableAnimalGreetingLedgerWrapped) {
-        greetingLedgerHookInstalled = true;
-        return;
-      }
-      const wrappedSetItem = function stableAnimalGreetingLedgerSetItem(key, value) {
-        const keyText = String(key || ''); // Used to skip all non-ambient-dialogue storage writes before parsing anything.
-        const shouldInspect = this === window.localStorage && keyText.startsWith(AMBIENT_GREETING_LEDGER_PREFIX); // Used to keep the hook event-driven and effectively free for unrelated storage activity.
-        const beforeRaw = shouldInspect ? this.getItem(keyText) : null; // Used to distinguish the newly added greeting from older same-day ledger entries.
-        const result = originalSetItem.call(this, key, value);
-        if (!shouldInspect) return result;
-        const before = parseGreetingLedger(beforeRaw); // Used as the previous set of already-observed greeting pairs.
-        const after = parseGreetingLedger(value); // Used as the newly persisted set after AmbientDialogue accepts a greeting.
-        if (!after) return result;
-        const beforeKeys = new Set(before?.keys || []); // Used to isolate only entries added by this exact setItem call.
-        const day = Math.floor(Number(after.day)); // Used to validate the `<day>:<npc>>player` ledger format before extracting the NPC id.
-        for (const greetingKey of after.keys) {
-          if (beforeKeys.has(greetingKey) || !String(greetingKey).endsWith('>player')) continue;
-          const prefix = `${day}:`; // Used to strip the persisted day from the directed player greeting key.
-          const keyString = String(greetingKey); // Used for the strict prefix/suffix parse below.
-          if (!Number.isFinite(day) || !keyString.startsWith(prefix)) continue;
-          const npcId = keyString.slice(prefix.length, -'>player'.length); // Used to match pending animal reactions to the NPC whose private greeting just began.
-          if (!npcId) continue;
-          const hasQuestGreeting = !!ambientDialogueDeps?.getPendingRequestGreeting?.(npcId); // Used to match AmbientDialogue's longer 5600 ms call-over duration when applicable.
-          const durationMs = hasQuestGreeting ? AMBIENT_QUEST_GREETING_MS : AMBIENT_DEFAULT_GREETING_MS; // Used as the private greeting's full visible lifetime.
-          recordPlayerGreeting(npcId, sequenceNow(), durationMs, 'ledger');
-        }
-        return result;
-      };
-      Object.defineProperty(wrappedSetItem, '__stableAnimalGreetingLedgerWrapped', { value: true });
-      try {
-        storagePrototype.setItem = wrappedSetItem;
-        greetingLedgerHookInstalled = storagePrototype.setItem === wrappedSetItem;
-      } catch (_) {}
+    function installAmbientDialogueEventHook() {
+      if (ambientDialogueEventHookInstalled || typeof window.addEventListener !== 'function') return;
+      window.addEventListener('hobunji-ambient-dialogue', event => {
+        const detail = event?.detail || {}; // AmbientDialogue emits this only when a line actually renders, including its private lexical greeting path.
+        const npcId = String(detail.speakerId || ''); // Used to match the rendered player greeting to queued reactions from this same NPC.
+        if (!npcId || detail.greeting !== true || detail.directedAtPlayer !== true) return;
+        recordPlayerGreeting(npcId, detail.startedAt, detail.durationMs, 'ambient-event');
+      });
+      ambientDialogueEventHookInstalled = true;
     }
 
     function flushAnimalReaction(npcId) {
@@ -364,23 +315,6 @@
 
     api.show = function stableAnimalGreetingRapportShow(target, text, options = {}) {
       const npcId = String(options?.speakerId || '');
-      const playerGreeting = !!(npcId && options.greeting === true && options.directedAtPlayer === true);
-      if (playerGreeting) {
-        const result = originalShow(target, text, options);
-        if (result) {
-          const startedAt = Number(result.startedAt);
-          const durationMs = Number(result.durationMs);
-          const now = sequenceNow();
-          recordPlayerGreeting(
-            npcId,
-            Number.isFinite(startedAt) ? startedAt : now,
-            Number.isFinite(durationMs) && durationMs > 0 ? durationMs : AMBIENT_DEFAULT_GREETING_MS,
-            'public-show'
-          );
-        }
-        return result;
-      }
-
       const ambientAnimal = animalForAmbientTarget(options);
       if (npcId && ambientAnimal && options.directedAtPlayer === true) {
         return queueAnimalReaction(target, text, options, ambientAnimal);
@@ -392,7 +326,7 @@
       if (result && animal) awardGreetingRapport(options, animal);
       return result;
     };
-    installGreetingLedgerHook();
+    installAmbientDialogueEventHook();
     api.__stableAnimalGreetingRapportWrapped = true;
     return api;
   }
@@ -433,8 +367,7 @@
         greetingDay: greetedDay,
         greetedToday: [...greetedToday],
         mountDepsReady: !!mountDeps,
-        ambientDialogueDepsReady: !!ambientDialogueDeps,
-        greetingLedgerHookInstalled,
+        ambientDialogueEventHookInstalled,
         mount: mountRidingModifiers(),
         ambientReactionTiming: {
           afterGreetingMs: AMBIENT_REACTION_AFTER_GREETING_MS,
