@@ -55,6 +55,7 @@
   // caves multiply this by visual.scale, so visual.scale:2 fills the complete
   // authored footprint while still using the exact den-rendering geometry path.
   const DEN_SIZE_SCALE = 0.5;
+  const LOCALE_CAVE_HORIZONTAL_SCALE = 2; // Used only by authored locale cave GLBs to double X/Z while leaving their vertical Y scale untouched.
   const DEN_SINK = 0.35; // Settles the model's base slightly below ground level so it doesn't look like it's floating on top of the terrain.
   const DEN_CAVE_VARIANTS = {
     grehlr: { textureUrl: zoneFeatureAssetUrl('assets/textures/canvas.png'), color: 0x423d35 },
@@ -152,6 +153,39 @@
     }
   }
 
+  function positionLocaleCaveOnFootprint(mesh, box, centerCol, centerRow, groundY, scaleX, scaleY, scaleZ, rotationY) {
+    const localCenterX = (box.min.x + box.max.x) * 0.5 * scaleX; // Used to remove any X-origin bias baked into cave_small.glb before footprint centering.
+    const localCenterZ = (box.min.z + box.max.z) * 0.5 * scaleZ; // Used to remove any Z-origin bias baked into cave_small.glb before footprint centering.
+    const cosY = Math.cos(rotationY); // Used to rotate the scaled GLB center offset into world X/Z coordinates.
+    const sinY = Math.sin(rotationY); // Used with cosY so nonuniform X/Z scale stays centered after cardinal rotation.
+    const worldCenterOffsetX = localCenterX * cosY + localCenterZ * sinY; // Used to offset mesh.position.x from the requested footprint center.
+    const worldCenterOffsetZ = -localCenterX * sinY + localCenterZ * cosY; // Used to offset mesh.position.z from the requested footprint center.
+    mesh.position.set(
+      centerCol - worldCenterOffsetX,
+      groundY - DEN_SINK - box.min.y * scaleY,
+      centerRow - worldCenterOffsetZ,
+    );
+    return { localCenterX, localCenterZ, worldCenterOffsetX, worldCenterOffsetZ }; // Returned for the in-scene debug snapshot stored on locale cave meshes.
+  }
+
+  function localeCaveDebugSnapshot(scene) {
+    const caves = []; // Used by mobile/debug callers to inspect rendered locale cave centers, scale, rotation, and source ids without DevTools.
+    scene?.traverse?.(object => {
+      if (!object?.userData?.localeCave) return;
+      caves.push({
+        name: object.name || null,
+        localeId: object.userData.localeId || null,
+        localeObjectId: object.userData.localeObjectId || null,
+        footprintCenter: object.userData.localeCaveFootprintCenter || null,
+        scale: { x: object.scale.x, y: object.scale.y, z: object.scale.z },
+        position: { x: object.position.x, y: object.position.y, z: object.position.z },
+        rotationYDeg: object.rotation.y * 180 / Math.PI,
+        centering: object.userData.localeCaveCentering || null,
+      });
+    });
+    return caves;
+  }
+
   function buildAnimalDenMeshes(zScene, zGrid, dens, mapId) {
     const denList = Array.isArray(dens) ? dens : [];
     const localeCaves = window.LocaleCaveRuntime?.cavesForZone?.(mapId) || []; // Authored caves are registered from placed localeInstances after wilderness generation.
@@ -193,20 +227,23 @@
         const variant = visual.surface === 'grehlr' ? DEN_CAVE_VARIANTS.grehlr : DEN_CAVE_VARIANTS.default;
         const authoredScale = Math.max(0.1, Number(visual.scale) || 1); // Legacy uniform cave scale still multiplies all authored axes.
         const baseScale = (Math.min(w, h) / templateSpan) * DEN_SIZE_SCALE * authoredScale; // Shared footprint fit used before facade-only axis overrides.
-        const scaleX = baseScale * Math.max(0.1, Number(visual.scaleX) || 1); // Used to widen authored cave mouths without pushing them deeper into cliffs.
-        const scaleY = baseScale * Math.max(0.1, Number(visual.scaleY) || 1); // Used to raise authored cave mouths while preserving their ground contact.
-        const scaleZ = baseScale * Math.max(0.1, Number(visual.scaleZ) || 1); // Used to keep or independently tune cave depth into the host cliff.
+        const scaleX = baseScale * Math.max(0.1, Number(visual.scaleX) || 1) * LOCALE_CAVE_HORIZONTAL_SCALE; // Used to double authored locale cave width while preserving its existing per-locale X tuning.
+        const scaleY = baseScale * Math.max(0.1, Number(visual.scaleY) || 1); // Used to preserve authored cave height exactly; the horizontal doubling never touches Y.
+        const scaleZ = baseScale * Math.max(0.1, Number(visual.scaleZ) || 1) * LOCALE_CAVE_HORIZONTAL_SCALE; // Used to double authored locale cave depth while preserving its existing per-locale Z tuning.
+        const rotationY = caveFacingRotation(visual.facing, Number.isFinite(Number(cave.rot)) ? cave.rot : null); // Used by both mesh orientation and rotated bounding-box centering.
         const mesh = template.clone();
         mesh.material = caveMaterialFor(variant);
         mesh.scale.set(scaleX, scaleY, scaleZ);
-        mesh.rotation.y = caveFacingRotation(visual.facing, Number.isFinite(Number(cave.rot)) ? cave.rot : null);
-        mesh.position.set(centerCol, groundY - DEN_SINK - box.min.y * scaleY, centerRow);
+        mesh.rotation.y = rotationY;
+        const centering = positionLocaleCaveOnFootprint(mesh, box, centerCol, centerRow, groundY, scaleX, scaleY, scaleZ, rotationY); // Used to center the actual GLB bounds, not merely its possibly-offset origin, on the locale footprint.
         mesh.castShadow = true;
         mesh.receiveShadow = true;
         mesh.userData.cameraObstacle = true;
         mesh.userData.localeCave = true;
         mesh.userData.localeId = cave.localeId || null;
         mesh.userData.localeObjectId = cave.sourceObjectId || cave.id || null;
+        mesh.userData.localeCaveFootprintCenter = { x: centerCol, z: centerRow }; // Used by localeCaveDebugSnapshot to verify footprint centering on mobile.
+        mesh.userData.localeCaveCentering = centering; // Used by localeCaveDebugSnapshot to expose the GLB-origin correction applied after scale/rotation.
         deps.markOutline(mesh);
         group.add(mesh);
       }
@@ -258,7 +295,7 @@
     return group;
   }
 
-  const api = { init, canonicalRootTotemRecipe, denCaveVariantFor, buildAnimalDenMeshes, buildRootTotemMeshes };
+  const api = { init, canonicalRootTotemRecipe, denCaveVariantFor, buildAnimalDenMeshes, buildRootTotemMeshes, localeCaveDebugSnapshot };
   Object.defineProperty(api, 'CANONICAL_ROOT_TOTEM_RECIPE', { enumerable: true, get: canonicalRootTotemRecipe });
   window.ZoneDenTotemFeatures = api;
 })();
