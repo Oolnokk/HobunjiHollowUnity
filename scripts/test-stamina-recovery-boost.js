@@ -95,6 +95,29 @@ function makeEntity(overrides = {}) {
   delete windowStub.AlchemySystem;
 }
 
+// A held-action regeneration blocker pauses ordinary Stamina without suppressing unrelated resource ticks.
+{
+  const entity = makeEntity({ stamina: 10, health: 90 });
+  ResourceSystem.setStaminaRegenBlocked(entity, 'blink-dodge-hold', true);
+  ResourceSystem.tick(entity, 1, { healthRegenPerSec: 1, footingRegenPerSec: 0 });
+  assert.equal(entity.stamina, 10, 'ordinary Stamina regeneration pauses while a hold blocker is active');
+  assert.equal(entity.health, 91, 'Stamina regeneration blocking does not pause Health regeneration');
+  assert.deepEqual(ResourceSystem.getStaminaRegenBlockers(entity), ['blink-dodge-hold'], 'debug API reports the active blocker source');
+}
+
+// Blockers compose by source: clearing one held action cannot re-enable regen while another still owns a lock.
+{
+  const entity = makeEntity({ stamina: 10 });
+  ResourceSystem.setStaminaRegenBlocked(entity, 'blink-dodge-hold', true);
+  ResourceSystem.setStaminaRegenBlocked(entity, 'counter-shield-hold', true);
+  ResourceSystem.setStaminaRegenBlocked(entity, 'blink-dodge-hold', false);
+  ResourceSystem.tick(entity, 1, { healthRegenPerSec: 0, footingRegenPerSec: 0 });
+  assert.equal(entity.stamina, 10, 'remaining hold blocker keeps ordinary Stamina regeneration paused');
+  ResourceSystem.setStaminaRegenBlocked(entity, 'counter-shield-hold', false);
+  ResourceSystem.tick(entity, 1, { healthRegenPerSec: 0, footingRegenPerSec: 0 });
+  assert.equal(entity.stamina, 27.5, 'ordinary Stamina regeneration resumes after the final blocker clears');
+}
+
 // Exhausted/black-Stamina recovery: 24/s becomes 30/s.
 {
   const entity = makeEntity();
@@ -103,6 +126,19 @@ function makeEntity(overrides = {}) {
   ResourceSystem.tick(entity, 1, { staminaRegenPerSec: 0, healthRegenPerSec: 0, footingRegenPerSec: 0 });
   assert.equal(entity.exhaustion.blackStamina, 30, 'Exhausted black-Stamina debt recovers 25% faster');
   assert.equal(entity.stamina, 0, 'ordinary Stamina stays locked while Exhausted');
+}
+
+// Held-action blockers also pause Exhausted black-Stamina regeneration until the hold releases.
+{
+  const entity = makeEntity();
+  entity.exhaustion.active = true;
+  entity.exhaustion.blackStamina = 25;
+  ResourceSystem.setStaminaRegenBlocked(entity, 'counter-shield-hold', true);
+  ResourceSystem.tick(entity, 1, { staminaRegenPerSec: 0, healthRegenPerSec: 0, footingRegenPerSec: 0 });
+  assert.equal(entity.exhaustion.blackStamina, 25, 'black-Stamina regeneration pauses while a hold blocker is active');
+  ResourceSystem.setStaminaRegenBlocked(entity, 'counter-shield-hold', false);
+  ResourceSystem.tick(entity, 1, { staminaRegenPerSec: 0, healthRegenPerSec: 0, footingRegenPerSec: 0 });
+  assert.equal(entity.exhaustion.blackStamina, 55, 'black-Stamina regeneration resumes after the hold blocker clears');
 }
 
 // Recovering Stamina afflictions gain x1.25, while recovering Health afflictions keep their old rate.
