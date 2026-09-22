@@ -139,6 +139,7 @@ assert.strictEqual(context.CinematicCameraRuntime.activeCamera().id, 'banubu_dia
 
 context.CinematicCameraRuntime.endDialogue();
 for (let i = 0; i < 30; i++) context.CinematicCameraRuntime.update(0.1);
+assert.strictEqual(petMesh.material, material, 'ending dialogue should restore the exact original pet material object');
 assert(Math.abs(petMesh.material.opacity - 1) < 0.01, 'ending dialogue should fade player pets back in');
 assert.strictEqual(context.CinematicCameraRuntime.isActive(), false);
 
