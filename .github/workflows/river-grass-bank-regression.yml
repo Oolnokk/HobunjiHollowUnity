@@ -1,0 +1,39 @@
+name: River grass bank regression
+
+on:
+  push:
+    paths:
+      - 'docs/js/vegetation-crop-rendering.js'
+      - 'docs/js/pixel-probe.js'
+      - 'docs/index.html'
+      - 'scripts/test-town-render-hotpaths.js'
+      - 'scripts/test-procedural-hands.js'
+      - '.github/workflows/river-grass-bank-regression.yml'
+  pull_request:
+    paths:
+      - 'docs/js/vegetation-crop-rendering.js'
+      - 'docs/js/pixel-probe.js'
+      - 'docs/index.html'
+      - 'scripts/test-town-render-hotpaths.js'
+      - 'scripts/test-procedural-hands.js'
+      - '.github/workflows/river-grass-bank-regression.yml'
+  workflow_dispatch:
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Syntax check river-bank runtime
+        run: |
+          node --check docs/js/vegetation-crop-rendering.js
+          node --check docs/js/pixel-probe.js
+      - name: Test town render hot paths and river-bank grass clamp
+        run: node scripts/test-town-render-hotpaths.js
+      - name: Test Pixel Probe and procedural-hand integration
+        run: node scripts/test-procedural-hands.js
+      - name: Test merged water rendering
+        run: node scripts/test-merged-water-renderer.js
