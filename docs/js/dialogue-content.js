@@ -77,7 +77,7 @@
     return {
       enabled: cfg.enabled !== false,
       msPerChar: finiteClamped(cfg.msPerChar, 22, 1, 250),
-      syllablesPerSecond: finiteClamped(cfg.syllablesPerSecond, 6, 1, 20),
+      syllablesPerSecond: finiteClamped(cfg.syllablesPerSecond, 10, 1, 20),
       punctuationPauseMs: finiteClamped(cfg.punctuationPauseMs, 120, 0, 2000),
       whitespacePauseMs: finiteClamped(cfg.whitespacePauseMs, 0, 0, 250)
     };
