@@ -86,7 +86,7 @@ const wildlifeDeps = {
   CREATURE_DB: creatureDb,
   EXTERIOR_ZONES: {
     map_western_slope: { herbivoreSpecies: ['drenkirra'] },
-    map_northern_cliffs: { herbivoreSpecies: ['grehlr', 'uumkaoii-wild'] },
+    map_northern_cliffs: { packSpecies: ['grehlr'], herbivoreSpecies: ['uumkaoii-wild'] },
   },
 };
 assert.equal(windowStub.WildlifeSpawn.init(wildlifeDeps), 'ok');
@@ -96,12 +96,17 @@ assert.equal(creatureDb['voorg-ass'].hostile, false);
 assert.equal(creatureDb['voorg-ass'].defaultSizeClass, 'large');
 assert.equal(creatureDb['voorg-ass'].lootPool, 'creature_voorg-ass');
 assert.equal(creatureDb['voorg-ass'].speed, 1.1, 'Voorg-Ass retains the replaced Northern Cliffs prey behavior baseline');
-assert.deepEqual(JSON.parse(JSON.stringify(wildlifeDeps.EXTERIOR_ZONES.map_northern_cliffs.herbivoreSpecies)), ['grehlr', 'voorg-ass']);
+assert.deepEqual(JSON.parse(JSON.stringify(wildlifeDeps.EXTERIOR_ZONES.map_northern_cliffs.herbivoreSpecies)), [], 'Voorg-Ass no longer occupies the cavern/den herbivore pool');
+assert.deepEqual(JSON.parse(JSON.stringify(wildlifeDeps.EXTERIOR_ZONES.map_northern_cliffs.roamingHerdSpecies)), ['voorg-ass'], 'Voorg-Ass is registered as exterior-only roaming herd wildlife');
+assert.equal(wildlifeDeps.EXTERIOR_ZONES.map_northern_cliffs.roamingHerdCount, 2, 'Northern Cliffs maintain two large roaming herd slots');
+assert.equal(creatureDb['voorg-ass-herd-mother'].label, 'Herd-Mother');
+assert.equal(creatureDb['voorg-ass-herd-mother'].defaultSizeClass, 'large');
+assert.equal(creatureDb['voorg-ass-herd-mother'].lootPool, 'creature_voorg-ass');
 assert.equal(windowStub.SCRATCHBONES_CONFIG.game.livestock.resources['voorg-ass'].itemKey, 'lightWool');
 assert.equal(windowStub.SCRATCHBONES_CONFIG.game.livestock.resources['voorg-ass'].verb, 'Shear');
 assert.equal(windowStub.SCRATCHBONES_CONFIG.game.livestock.resources['voorg-ass'].cooldownDays, 1);
 assert.equal(windowStub.SCRATCHBONES_CONFIG.game.livestock.diet['voorg-ass'], 'prey');
-assert(logs.some(entry => /\[voorg-ass\].*Uumkao'ii replacements=1/.test(entry.message)), 'mobile-visible debug log reports the Northern Cliffs replacement count');
+assert(logs.some(entry => /\[voorg-ass\].*removedLegacyDenHerbivores=1.*roaming=\[voorg-ass\].*herdCount=2/.test(entry.message)), 'mobile-visible debug log reports the Northern Cliffs herd migration');
 
 for (let i = 0; i < 500; i++) {
   const genotype = windowStub.CreatureGenetics.makeDefaultGenotype('voorg-ass');
