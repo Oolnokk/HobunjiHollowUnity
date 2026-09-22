@@ -10,15 +10,16 @@ const root = path.resolve(__dirname, '..');
 const read = relative => fs.readFileSync(path.join(root, relative), 'utf8');
 const socialSource = read('docs/js/npc-social-relationship-bridge-v2.js');
 const wardrobeSource = read('docs/js/npc-furniture-wardrobe-bridge-v4.js'); // v4 is the version combat-config-loader.js actually boots; v2 is unused dead code.
+const npcWardrobeSource = read('docs/js/npc-wardrobe.js'); // NPC clothing container now owns immediate wear/store behavior rather than sleep-time rerolls.
 const wardrobeEditorSource = read('docs/js/building-interior-npc-wardrobe-editor.js');
 const dialogueSource = read('docs/js/dialogue-content.js');
 const dialogueEditorState = read('docs/tools/dialogue-editor/dialogue-editor-state.js');
 const panelUiSource = read('docs/js/panel-ui.js');
 const loaderSource = read('docs/js/combat/combat-config-loader.js');
 const relationshipsSource = read('docs/js/relationships-panel.js');
-const gameSource = read('docs/game.js'); // Used to verify the wardrobe sleep edge fires before any NPC character-state early return.
+const gameSource = read('docs/game.js'); // Used to verify the old schedule/sleep wardrobe trigger is completely gone.
 
-for (const [name, source] of Object.entries({ socialSource, wardrobeSource, wardrobeEditorSource, dialogueSource, dialogueEditorState, panelUiSource, loaderSource, relationshipsSource })) {
+for (const [name, source] of Object.entries({ socialSource, wardrobeSource, npcWardrobeSource, wardrobeEditorSource, dialogueSource, dialogueEditorState, panelUiSource, loaderSource, relationshipsSource })) {
   assert.doesNotThrow(() => new vm.Script(source, { filename: name }), `${name} must parse as JavaScript`);
 }
 assert.doesNotMatch(socialSource, /\b(?:requestAnimationFrame|setInterval)\s*\(/, 'loaded Rapport v2 must add no permanent tick/poll loop');
@@ -30,12 +31,12 @@ assert.match(socialSource, /mod\?\.key === 'player-dance-invitation'/, 'liquor g
 assert.match(loaderSource, /npc-furniture-wardrobe-bridge-v4\.js[\s\S]*?npc-social-relationship-bridge-v2\.js/, 'bootstrap loads registry-backed wardrobe v4 before event-driven Rapport v2');
 assert.doesNotMatch(loaderSource, /npc-furniture-wardrobe-bridge\.js\?v=/, 'bootstrap no longer executes polling wardrobe v1');
 assert.doesNotMatch(loaderSource, /npc-social-relationship-bridge\.js\?v=/, 'bootstrap no longer executes polling Rapport v1');
-const npcScheduleResolveIndex = gameSource.indexOf('const target = resolveNpcScheduleTarget(this.rec);'); // Used as the start of the per-walker resolved-schedule update block.
-const wardrobeSleepHookIndex = gameSource.indexOf('void window.NpcWardrobe?.rerollForSleep?.(rec?.id);', npcScheduleResolveIndex); // Used to locate the one-shot gifted-clothing reroll.
-const characterStateEarlyReturnIndex = gameSource.indexOf('if (window.NpcCharacterState?.update?.(this, dt, {', npcScheduleResolveIndex); // Used to prove locked/blacked-out NPCs cannot skip the sleep transition anymore.
-assert.ok(npcScheduleResolveIndex >= 0 && wardrobeSleepHookIndex > npcScheduleResolveIndex, 'NPC update resolves a wardrobe sleep edge from the live schedule');
-assert.ok(characterStateEarlyReturnIndex > wardrobeSleepHookIndex, 'wardrobe sleep reroll happens before character-state early returns');
-assert.equal((gameSource.match(/NpcWardrobe\?\.rerollForSleep\?\./g) || []).length, 1, 'NPC update owns exactly one wardrobe sleep reroll call');
+assert.doesNotMatch(gameSource, /NpcWardrobe\?\.rerollForSleep|_prevScheduleActivity/, 'NPC movement update no longer waits for a sleep transition to change gifted clothing');
+assert.doesNotMatch(npcWardrobeSource, /function rerollForSleep|Bedtime reroll/, 'NPC wardrobe contains no sleep-time random outfit path');
+assert.match(npcWardrobeSource, /const worn = equipStoredItemData\(npcId, gifted\.uid\)/, 'accepted clothing is tried on immediately');
+assert.match(npcWardrobeSource, /async function wearStoredItem\(npcId, uid\)/, 'stored clothing can be worn immediately from the wardrobe');
+assert.match(npcWardrobeSource, /async function storeWornItem\(npcId, cosmeticId\)/, 'currently worn clothing can be stored immediately');
+assert.match(npcWardrobeSource, /version: 2, stored, outfits: outfitOverrides/, 'manual NPC outfit corrections persist with wardrobe contents');
 
 let rawDay = 3; // Simulation-day index used to prove the social day still changes at midnight rather than 06:00.
 let time01 = 0.50; // Normalized 24-hour simulation time used by the accepted-sip cooldown.
