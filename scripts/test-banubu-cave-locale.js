@@ -113,11 +113,13 @@ const localeEditorPreview = fs.readFileSync(path.join(repoRoot, 'docs/tools/loca
 const localeEditorIndex = fs.readFileSync(path.join(repoRoot, 'docs/tools/locale-editor/index.html'), 'utf8');
 const localeTerrainEditor = fs.readFileSync(path.join(repoRoot, 'docs/tools/locale-editor/terrain-placement.js'), 'utf8');
 const placementSource = fs.readFileSync(path.join(repoRoot, 'docs/js/locale-terrain-placement.js'), 'utf8');
+const panelUiSource = fs.readFileSync(path.join(repoRoot, 'docs/js/panel-ui.js'), 'utf8');
 const gameSource = fs.readFileSync(path.join(repoRoot, 'docs/game.js'), 'utf8');
 const gameIndex = fs.readFileSync(path.join(repoRoot, 'docs/index.html'), 'utf8');
 assert(caveRuntime.includes('generateZoneWorkspace = function localeCaveGenerateZoneWorkspace'), 'game wilderness generation must register placed locale caves');
 assert(zoneRenderer.includes('LocaleCaveRuntime?.cavesForZone?.(mapId)'), 'game cave renderer must consume locale cave registrations');
 assert(caveRuntime.includes('floorTier: Number.isFinite(Number(instance.floorTier))'), 'locale cave registry must preserve the placed locale floor tier');
+assert(caveRuntime.includes('visual: clone(placed.visual || source?.visual'), 'locale cave registry must prefer the rotated placed visual metadata over the unrotated source definition');
 assert(zoneRenderer.includes('Number.isFinite(Number(cave.floorTier)) ? Number(cave.floorTier) : sampledTier'), 'locale cave renderer must anchor terrain-aware caves to their locale floor tier');
 assert(zoneRenderer.includes('THREE.ClampToEdgeWrapping') && zoneRenderer.includes('tex.repeat.set(1, 1)'), 'cave material must stretch once across the fitted cave UVs instead of tiling');
 assert(zoneRenderer.includes('fitCaveUvToTexture') && zoneRenderer.includes('(sourceUv.getX(i) - minU) / spanU'), 'cave UVs must be normalized to the full 0–1 texture span');
@@ -126,6 +128,8 @@ assert(labPreview.includes('ZoneFeatures.buildAnimalDenMeshes(scene, mergedZGrid
 assert(localeEditorPreview.includes('const placed = currentInstance || currentWorkspace?.localeInstances'), 'Locale Editor preview camera must focus the actual rendered locale instance first');
 assert(localeEditorPreview.includes("if (value == null || value === '') return null"), 'Locale Editor preview camera must not coerce a missing anchor to tile 0,0');
 assert(localeEditorPreview.includes('const bounds = compiled?.footprint || compiled?.bounds'), 'Locale Editor preview camera must orbit the painted locale footprint');
+assert(localeEditorPreview.includes('previewLocaleVariant') && localeEditorPreview.includes('placed?.rotationDeg ?? currentCandidate?.rotationDeg'), 'Locale Editor preview camera/rules must compile the selected cardinal locale variant rather than the unrotated authoring template');
+assert(localeEditorPreview.includes("rotationMode === 'cardinal' ? [0, 90, 180, 270] : [0]"), 'Locale Editor failure previews must search the same cardinal orientations as production placement');
 assert(localeEditorPreview.includes('hasPlacementAnchors ? placement.terrainAnchors'), '3D preview must prefer persisted workspace terrain rules over stale sidecar cache');
 assert(localeEditorPreview.includes('output.placement = { ...placement, terrainAnchors: clone(output.terrainAnchors)'), 'preview/debug locale must serialize synchronized top-level and placement terrain rules');
 assert(localeEditorIndex.includes('setTerrainRules: (localeId, rules) =>'), 'main Locale Editor must expose live terrain-rule synchronization');
@@ -143,5 +147,6 @@ assert(placementSource.includes("rotationMode === 'cardinal'") && placementSourc
 assert(gameSource.includes('const generatedLocaleTransitions = (workspaceRoot?.transitions || [])') && gameSource.includes('...generatedLocaleTransitions,'), 'Tothal Shift must promote terrain-aware locale cave transitions into the live zone interaction pool');
 assert(gameIndex.includes('js/locale-terrain-placement.js?v=20260922localecaverotation1'), 'the actual game page must load the cardinal terrain-aware locale placement build after the wilderness generator');
 assert(gameIndex.includes('js/zone-den-totem-features.js?v=20260922localecaverotation1'), 'the actual game page must load the horizontally scaled/centered locale cave renderer build');
+assert(panelUiSource.includes("locale-preview3d.js?v=20260922localecaverotation1"), 'Locale Editor must cache-bust the cardinal-rotation-aware 3D preview build');
 
 console.log('Banubu cliff-base authoring + terrain/runtime + editor rule-sync regression checks passed');
