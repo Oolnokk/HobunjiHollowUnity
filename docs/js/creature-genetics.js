@@ -25,7 +25,8 @@
   const PUKTUK_VISUAL_SCALE = 0.75; // Legacy fallback only: old/stripped configs that lack Puktuk's own authored rig still borrow Gar-wolf at 75% scale.
   const PUKTUK_WESTERN_ZONE_ID = 'map_western_slope'; // Used to replace Drenkirra only in the Western Incline/Slope zone.
   const VOORG_ASS_KIND = 'voorg-ass'; // Used across genetics/render/spawn/livestock registration for the Northern Cliffs species.
-  const VOORG_ASS_NORTHERN_ZONE_ID = 'map_northern_cliffs'; // Used to replace only the Northern Cliffs wild Uumkao'ii population.
+  const VOORG_ASS_HERD_MOTHER_KIND = 'voorg-ass-herd-mother'; // Exterior-only mother variant: same genotype/art, distinct player-facing label and corpse loot.
+  const VOORG_ASS_NORTHERN_ZONE_ID = 'map_northern_cliffs'; // Used to move the legacy Northern Cliffs Uumkao'ii slot into the roaming-herd pool.
   const LIGHT_WOOL_ITEM_KEY = 'lightWool'; // Used by Vorg-Ass shearing and runtime item registration.
 
   function configurePuktukStaticData() {
@@ -284,6 +285,7 @@
     'uumkaoii-wild-den-mother': 'uumkaoii',
     'grehlr-den-mother': 'grehlr',
     'drenkirra-den-mother': 'drenkirra',
+    'voorg-ass-herd-mother': 'voorg-ass',
   };
   const CREATURE_SIZE_PROFILE_ALIAS = {
     puktuk: 'gar-wolf',
@@ -743,7 +745,7 @@
           ...existing,
           label: 'Voorg-Ass',
           hostile: false,
-          defaultSizeClass: existing.defaultSizeClass || preyBaseline.defaultSizeClass || 'large',
+          defaultSizeClass: 'large',
           modelWidth: Number(existing.modelWidth) || Number(preyBaseline.modelWidth) || 1.5,
           spriteAspect: Number(existing.spriteAspect) || Number(preyBaseline.spriteAspect) || (600 / 1375),
           lootPool: 'creature_voorg-ass',
@@ -752,20 +754,37 @@
             run: ['assets/creaturesprites/voorg-ass_run1.png', 'assets/creaturesprites/voorg-ass_run2.png'],
           },
         };
+        const baseVoorg = creatureDb[VOORG_ASS_KIND]; // Used by the Herd-Mother variant so combat/render/stat changes stay aligned with ordinary adults.
+        const existingMother = creatureDb[VOORG_ASS_HERD_MOTHER_KIND] || {}; // Preserves future mother-specific stat tuning while enforcing herd-only identity.
+        creatureDb[VOORG_ASS_HERD_MOTHER_KIND] = {
+          ...baseVoorg,
+          ...existingMother,
+          label: 'Herd-Mother',
+          hostile: false,
+          defaultSizeClass: 'large',
+          lootPool: 'creature_voorg-ass',
+          sprites: baseVoorg.sprites,
+        };
       }
 
-      const northernZone = injectedDeps?.EXTERIOR_ZONES?.[VOORG_ASS_NORTHERN_ZONE_ID]; // Shared zone object also read by cavern den generation.
-      const herbivores = northernZone?.herbivoreSpecies; // Mutated in place so existing exterior/cavern references see the replacement immediately.
+      const northernZone = injectedDeps?.EXTERIOR_ZONES?.[VOORG_ASS_NORTHERN_ZONE_ID]; // Shared zone object also read by cavern generation and roaming-herd spawn.
+      const herbivores = northernZone?.herbivoreSpecies; // Cavern-associated herbivore pool; Voorg-Asses are deliberately removed from it.
       let replacements = 0;
       if (Array.isArray(herbivores)) {
-        for (let i = 0; i < herbivores.length; i++) {
-          if (herbivores[i] !== 'uumkaoii-wild' && herbivores[i] !== 'uumkaoii') continue;
-          herbivores[i] = VOORG_ASS_KIND;
+        for (let i = herbivores.length - 1; i >= 0; i--) {
+          if (herbivores[i] !== 'uumkaoii-wild' && herbivores[i] !== 'uumkaoii' && herbivores[i] !== VOORG_ASS_KIND) continue;
+          herbivores.splice(i, 1);
           replacements++;
         }
       }
+      const roamingHerdSpecies = northernZone
+        ? (Array.isArray(northernZone.roamingHerdSpecies) ? northernZone.roamingHerdSpecies : (northernZone.roamingHerdSpecies = []))
+        : null; // Exterior-only populations never feed CavernGenerator.nativeSpeciesFor.
+      if (Array.isArray(roamingHerdSpecies) && !roamingHerdSpecies.includes(VOORG_ASS_KIND)) roamingHerdSpecies.push(VOORG_ASS_KIND);
+      if (northernZone) northernZone.roamingHerdCount = Math.max(2, Math.floor(Number(northernZone.roamingHerdCount) || 2)); // Used by WildlifeSpawn to maintain multiple large herds instead of one den-sized cluster.
       const lightWoolReady = window.HobunjiCookingData?.items?.[LIGHT_WOOL_ITEM_KEY]?.name === 'Light Wool'; // Included in mobile-visible diagnostics.
-      window.__farmLog?.(`[voorg-ass] registered species: default=${creatureDb?.[VOORG_ASS_KIND]?.defaultSizeClass || 'unknown'} sizeProfile=voorg-ass belly=always optionalPatterns=none livestock=${LIGHT_WOOL_ITEM_KEY}(Light Wool) woolReady=${lightWoolReady}; ${VOORG_ASS_NORTHERN_ZONE_ID} Uumkao'ii replacements=${replacements} herbivores=[${Array.isArray(herbivores) ? herbivores.join(',') : 'missing'}]`, replacements > 0 && lightWoolReady ? 'wildlife' : 'warn');
+      const herdReady = Array.isArray(roamingHerdSpecies) && roamingHerdSpecies.includes(VOORG_ASS_KIND) && creatureDb?.[VOORG_ASS_HERD_MOTHER_KIND]?.defaultSizeClass === 'large'; // Used to keep mobile diagnostics actionable.
+      window.__farmLog?.(`[voorg-ass] registered species: default=${creatureDb?.[VOORG_ASS_KIND]?.defaultSizeClass || 'unknown'} mother=${creatureDb?.[VOORG_ASS_HERD_MOTHER_KIND]?.label || 'missing'} sizeProfile=voorg-ass belly=always optionalPatterns=none livestock=${LIGHT_WOOL_ITEM_KEY}(Light Wool) woolReady=${lightWoolReady}; ${VOORG_ASS_NORTHERN_ZONE_ID} removedLegacyDenHerbivores=${replacements} roaming=[${Array.isArray(roamingHerdSpecies) ? roamingHerdSpecies.join(',') : 'missing'}] herdCount=${northernZone?.roamingHerdCount || 0}`, herdReady && lightWoolReady ? 'wildlife' : 'warn');
       return originalInit.call(this, injectedDeps);
     };
     wildlifeApi.__voorgAssBootstrapInstalled = true;

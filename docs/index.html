@@ -170,7 +170,7 @@
        before its rendering sibling below since creature-genetics-render.js
        doesn't itself depend on it (each reads genotype data, not each
        other), but they're a matched pair. -->
-  <script src="js/creature-genetics.js?v=20260828breath1"></script>
+  <script src="js/creature-genetics.js?v=20260921voorgherd1"></script>
   <!-- Creature genotype recolor + pattern-overlay compositing. -->
   <script src="js/creature-genetics-render.js?v=20260920animal-pattern-preview1"></script>
   <!-- Shared per-frame "where is this creature/character's head" cache — see
@@ -253,7 +253,7 @@
   <!-- Dedicated ranged slot, loading/firing poses, and hidden-sphere
        projectiles. Loads before bandits so their dual loadouts can call it. -->
   <script src="js/nearby-volume-collision.js?v=20260827treecover2"></script>
-  <script src="js/combat/ranged-weapons.js?v=20260920orbit1-projectileport1-rangecameraorbit2-arcembed2-toolz2-align2"></script>
+  <script src="js/combat/ranged-weapons.js?v=20260920orbit1-projectileport1-rangecameraorbit2-arcembed2-toolz2-align2-mastery2"></script>
   <script src="js/combat/ranged-hud-reticle.js?v=20260916perf1"></script>
   <script src="js/combat/melee-hud-reticle.js?v=20260917charge1"></script>
   <!-- Bandit gang combat AI + weapon visuals (window.BanditCombat) — must
@@ -278,7 +278,7 @@
   <script src="js/bounty-board.js?v=20260831spearheadexisting1"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20260921reviewfix1"></script>
+  <script src="js/combat/combat-config-loader.js?v=20260921reviewfix1-rangedmastery2"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -429,7 +429,7 @@
        (already global by then), so load order relative to the other systems
        above doesn't matter; must load before game.js, which calls
        window.WildernessAiSnapshot.init(...) during its own setup. -->
-  <script src="js/wilderness-ai-snapshot.js?v=20260915wildlifesnapshot1"></script>
+  <script src="js/wilderness-ai-snapshot.js?v=20260921voorgherdsnapshot1"></script>
   <!-- Cliff climbing scripted crossing (window.ClimbSystem) — self-contained
        aside from deps injected via init(), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
@@ -474,7 +474,7 @@
        definition; used today by metal-craft-shop.js's authored
        verdigris-removal pattern service, meant to be reused later by a
        weaving/dye system. No deps injection, so load order doesn't matter. -->
-  <script src="js/pattern-authoring.js?v=20260918scale1"></script>
+  <script src="js/pattern-authoring.js?v=20260921weaveaudit1"></script>
   <!-- Character-saved pattern library (window.PatternLibrary) — the
        player's own saved motifs plus a small unlockable premade catalog,
        reusable across whatever pattern-authoring.js sessions the game
@@ -503,7 +503,7 @@
        at call time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.WildlifeSpawn.init(...) during its own setup. -->
-  <script src="js/wildlife-spawn.js?v=20260915drenkirrascatter1"></script>
+  <script src="js/wildlife-spawn.js?v=20260921voorgherd2"></script>
   <!-- Town/zone building mesh spawning + decorative furniture/prop spawning
        (window.TownZoneBuildings) — reads globally-loaded HousePieceGen/
        WallBuilder/BuildingDoor/window.ProceduralFurniture/window.Music at
@@ -597,7 +597,7 @@
   <script src="js/tasks-panel.js?v=20260807a"></script>
   <script src="js/supply-page.js?v=20260807a"></script>
   <script src="js/whistle-equip.js?v=20260807a"></script>
-  <script src="js/wildlife-debug-panel.js?v=20260915wildlifedebug1"></script>
+  <script src="js/wildlife-debug-panel.js?v=20260921voorgherd1"></script>
   <script src="js/wildlife-behavior-map.js?v=20260829a"></script>
   <!-- Shipping tab (player bag <-> shipping-box transfer UI, window.
        ShippingPanel) — pure DOM/state, no other window.* system reads;
@@ -2348,7 +2348,7 @@
 
   <script src="js/tool-icon-render.js?v=20260910review1"></script>
   <script src="js/sprite-recolor.js?v=20260920relative-shade1"></script>
-  <script src="js/tool-metal-recolor.js?v=20260918scale2"></script>
+  <script src="js/tool-metal-recolor.js?v=20260921weaveaudit1"></script>
   <!-- Mount ride system (window.Mounts) — must load before game.js, which
        calls window.Mounts.init(...) during its own setup. -->
   <script src="js/mount-system.js?v=20260911mountleap1"></script>

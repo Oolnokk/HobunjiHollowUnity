@@ -5,6 +5,13 @@ on:
     paths:
       - 'docs/config/attachment-rig-profiles.js'
       - 'docs/js/creature-genetics.js'
+      - 'docs/js/wildlife-spawn.js'
+      - 'docs/js/puktuk-den-nest-registration.js'
+      - 'docs/js/wildlife-debug-panel.js'
+      - 'docs/js/wilderness-ai-snapshot.js'
+      - 'docs/game.js'
+      - 'docs/index.html'
+      - 'docs/js/combat/combat-config-loader.js'
       - 'docs/js/creature-genetics-render.js'
       - 'docs/js/animal-chathead-frame.js'
       - 'docs/js/character-action-locks.js'
@@ -15,6 +22,9 @@ on:
       - 'scripts/test-attachment-rig-master.js'
       - 'scripts/test-puktuk-species.js'
       - 'scripts/test-voorg-ass-species.js'
+      - 'scripts/test-voorg-ass-herds.js'
+      - 'scripts/test-drenkirra-nest-scatter-performance.js'
+      - 'scripts/test-puktuk-den-nest-registration.js'
       - 'scripts/test-new-creature-rig-coordinates.js'
       - 'scripts/test-puktuk-voorg-canonical-rig.js'
       - '.github/workflows/voorg-ass-regression.yml'
@@ -22,6 +32,13 @@ on:
     paths:
       - 'docs/config/attachment-rig-profiles.js'
       - 'docs/js/creature-genetics.js'
+      - 'docs/js/wildlife-spawn.js'
+      - 'docs/js/puktuk-den-nest-registration.js'
+      - 'docs/js/wildlife-debug-panel.js'
+      - 'docs/js/wilderness-ai-snapshot.js'
+      - 'docs/game.js'
+      - 'docs/index.html'
+      - 'docs/js/combat/combat-config-loader.js'
       - 'docs/js/creature-genetics-render.js'
       - 'docs/js/animal-chathead-frame.js'
       - 'docs/js/character-action-locks.js'
@@ -32,6 +49,9 @@ on:
       - 'scripts/test-attachment-rig-master.js'
       - 'scripts/test-puktuk-species.js'
       - 'scripts/test-voorg-ass-species.js'
+      - 'scripts/test-voorg-ass-herds.js'
+      - 'scripts/test-drenkirra-nest-scatter-performance.js'
+      - 'scripts/test-puktuk-den-nest-registration.js'
       - 'scripts/test-new-creature-rig-coordinates.js'
       - 'scripts/test-puktuk-voorg-canonical-rig.js'
       - '.github/workflows/voorg-ass-regression.yml'
@@ -51,6 +71,16 @@ jobs:
           node-version: '20'
       - name: Syntax check creature genetics
         run: node --check docs/js/creature-genetics.js
+      - name: Syntax check roaming herd runtime
+        run: node --check docs/js/wildlife-spawn.js
+      - name: Syntax check livestock-young registration
+        run: node --check docs/js/puktuk-den-nest-registration.js
+      - name: Syntax check wildlife debug panel
+        run: node --check docs/js/wildlife-debug-panel.js
+      - name: Syntax check wilderness AI snapshot
+        run: node --check docs/js/wilderness-ai-snapshot.js
+      - name: Syntax check game integration
+        run: node --check docs/game.js
       - name: Syntax check Rig Coordinates helper
         run: node --check docs/js/animal-chathead-frame.js
       - name: Syntax check canonical attachment rig
@@ -63,6 +93,12 @@ jobs:
         run: node scripts/test-puktuk-species.js
       - name: Test Voorg-Ass integration
         run: node scripts/test-voorg-ass-species.js
+      - name: Test Voorg-Ass roaming herds
+        run: node scripts/test-voorg-ass-herds.js
+      - name: Test roaming-herd wilderness snapshot coverage
+        run: node scripts/test-drenkirra-nest-scatter-performance.js
+      - name: Test Puktuk and Voorg-Ass young registration
+        run: node scripts/test-puktuk-den-nest-registration.js
       - name: Test new livestock Rig Coordinates integration
         run: node scripts/test-new-creature-rig-coordinates.js
       - name: Test canonical livestock rig and Puktuk eyes

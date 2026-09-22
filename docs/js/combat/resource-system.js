@@ -25,6 +25,33 @@
   const round1 = value => Math.round(value * 10) / 10;
   const nowMs = () => performance.now();
   const STAMINA_RECOVERY_MULTIPLIER = 1.25; // Used by every time-based Stamina recovery path: ordinary regen, Exhausted debt, and Stamina-affliction recovery.
+  const staminaRegenBlockers = new WeakMap(); // Used by held actions to compose temporary Stamina-regeneration locks without storing transient Sets on saveable entities.
+
+  function setStaminaRegenBlocked(entity, source, blocked) {
+    if (!entity) return false;
+    const sourceKey = String(source || '').trim(); // Used as the stable per-system key so one hold cannot accidentally clear another hold's regeneration lock.
+    if (!sourceKey) return false;
+    let blockers = staminaRegenBlockers.get(entity); // Used to mutate only this entity's active regeneration-blocking sources.
+    if (blocked) {
+      if (!blockers) {
+        blockers = new Set();
+        staminaRegenBlockers.set(entity, blockers);
+      }
+      blockers.add(sourceKey);
+    } else if (blockers) {
+      blockers.delete(sourceKey);
+      if (!blockers.size) staminaRegenBlockers.delete(entity);
+    }
+    return !!staminaRegenBlockers.get(entity)?.size;
+  }
+
+  function isStaminaRegenBlocked(entity) {
+    return !!entity && !!staminaRegenBlockers.get(entity)?.size;
+  }
+
+  function getStaminaRegenBlockers(entity) {
+    return entity ? Array.from(staminaRegenBlockers.get(entity) || []) : [];
+  }
 
   // Seedable RNG for gameplay-affecting rolls (affliction procs, creature AI
   // decisions, pack spawns, loot quantities, etc.) — everything that two
@@ -482,12 +509,15 @@
     const isPlayer = entity === window.Combat?.deps?.player; // Used to apply the consumer's central regeneration modifiers.
     const staminaRate = (opts.staminaRegenPerSec ?? cfg.staminaRegenPerSec) * STAMINA_RECOVERY_MULTIPLIER * (isPlayer ? window.AlchemySystem?.getStaminaRegenMultiplier?.() || 1 : 1);
     const healthRate = (opts.healthRegenPerSec ?? cfg.healthRegenPerSec) * (isPlayer ? window.AlchemySystem?.getHealthRegenMultiplier?.() || 1 : 1);
+    const staminaRegenBlocked = isStaminaRegenBlocked(entity); // Used to pause both ordinary and Exhausted Stamina regeneration while any held-action blocker is active.
 
     if (entity.exhaustion.active) {
       entity.stamina = 0; // Black Stamina recovery owns the stamina channel until the debt is completely cleared.
-      entity.exhaustion.blackStamina = round1(clamp(entity.exhaustion.blackStamina + cfg.exhaustionRegenPerSec * STAMINA_RECOVERY_MULTIPLIER * mul * dt, 0, 100));
+      if (!staminaRegenBlocked) {
+        entity.exhaustion.blackStamina = round1(clamp(entity.exhaustion.blackStamina + cfg.exhaustionRegenPerSec * STAMINA_RECOVERY_MULTIPLIER * mul * dt, 0, 100));
+      }
       clearExhaustedIfFull(entity);
-    } else {
+    } else if (!staminaRegenBlocked) {
       entity.stamina = round1(clamp(entity.stamina + staminaRate * mul * dt, 0, getEffectiveMax(entity, "stamina")));
     }
 
@@ -614,6 +644,9 @@
     removeAfflictionsByTag,
     getEffectiveMax,
     getExhaustionSpeed,
+    setStaminaRegenBlocked,
+    isStaminaRegenBlocked,
+    getStaminaRegenBlockers,
     restoreStamina,
     spendStamina,
     spendFooting,

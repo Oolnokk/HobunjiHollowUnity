@@ -41,6 +41,7 @@
   let buildingSceneMap = null; // Stores the live game building-scene Map once GridTileAccessors exposes it.
   let lastFloorMapId = null; // Included in the mobile-friendly debug snapshot after a floor style is applied.
   let lastFloorMaterialCount = 0; // Included in debug output so a map can prove its floor meshes were found.
+  let lastFloorStretchMeshCount = 0; // Included in debug output so mobile tests can verify one-PNG floor UV stretching actually reached the scene meshes.
   let lastFloorError = null; // Captures the most recent per-map floor config/texture failure without requiring devtools.
   let lastAmbientKey = null; // Captures the most recently attached ambient-fire furniture key for diagnostics.
   let registeredDefinitions = false; // Reports whether the real campfire/bonfire decorative definitions reached game deps.
@@ -253,14 +254,15 @@
     if (!style || typeof style !== 'object') return null;
     const texture = normalizeTextureFilename(style.texture || style.textureFile || style.png); // Used as the safe repo texture filename.
     const tint = /^#[0-9a-f]{6}$/i.test(String(style.tint || '')) ? String(style.tint) : '#ffffff'; // Used as the material color multiplied over the PNG.
-    const tilesPerTile = Math.max(0.05, Math.min(64, Number(style.tilesPerTile ?? style.repeat ?? 1) || 1)); // Used as the UV repeat on every 1x1 floor tile.
-    return { texture, tint, tilesPerTile };
+    const tilesPerTile = Math.max(0.05, Math.min(64, Number(style.tilesPerTile ?? style.repeat ?? 1) || 1)); // Used as the UV repeat on every 1x1 floor tile when stretchToSurface is false.
+    const stretchToSurface = style.stretchToSurface === true; // Used by tent floors to map one PNG across the complete connected floor footprint instead of repeating per tile.
+    return { texture, tint, tilesPerTile, stretchToSurface };
   }
 
   function defaultFloorStyleForWallStyle(wallStyle) {
     if (wallStyle === 'cavern') return { texture: '', tint: '#4a463f', tilesPerTile: 1 };
     if (wallStyle === 'mine') return { texture: 'carved_smooth.png', tint: '#8a8d91', tilesPerTile: 0.42 };
-    if (wallStyle === 'canvas') return { texture: '', tint: '#8a7a5c', tilesPerTile: 1 };
+    if (wallStyle === 'canvas') return { texture: 'canvas.png', tint: '#ffffff', tilesPerTile: 1, stretchToSurface: true };
     return { texture: 'boards.png', tint: '#ffffff', tilesPerTile: 1 };
   }
 
@@ -292,8 +294,8 @@
         texture.dispose?.();
         return;
       }
-      texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-      texture.repeat.set(normalized.tilesPerTile, normalized.tilesPerTile);
+      texture.wrapS = texture.wrapT = normalized.stretchToSurface ? THREE.ClampToEdgeWrapping : THREE.RepeatWrapping;
+      texture.repeat.set(normalized.stretchToSurface ? 1 : normalized.tilesPerTile, normalized.stretchToSurface ? 1 : normalized.tilesPerTile);
       if ('colorSpace' in texture && THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
       material.map = texture;
       material.color?.set?.(normalized.tint);
@@ -340,20 +342,58 @@
     return promise;
   }
 
+  function stretchFloorMeshesToSharedBounds(meshes) {
+    const list = Array.from(meshes || []).filter(mesh => mesh?.geometry?.getAttribute?.('position')); // Used as the complete authored floor surface whose tiles must share one 0..1 PNG field.
+    if (!list.length) return 0;
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity; // Shared surface bounds used to keep neighboring floor tiles in one continuous texture instead of restarting at each tile.
+    const point = new THREE.Vector3(); // Reused while reading local geometry vertices in scene/world coordinates.
+    for (const mesh of list) {
+      mesh.updateMatrixWorld?.(true);
+      const position = mesh.geometry.getAttribute('position'); // Source vertices used both for bounds and rewritten UVs.
+      for (let i = 0; i < position.count; i++) {
+        point.fromBufferAttribute(position, i).applyMatrix4(mesh.matrixWorld);
+        minX = Math.min(minX, point.x); maxX = Math.max(maxX, point.x);
+        minZ = Math.min(minZ, point.z); maxZ = Math.max(maxZ, point.z);
+      }
+    }
+    const spanX = Math.max(1e-6, maxX - minX); // Prevents division by zero on a one-column floor.
+    const spanZ = Math.max(1e-6, maxZ - minZ); // Prevents division by zero on a one-row floor.
+    for (const mesh of list) {
+      const position = mesh.geometry.getAttribute('position'); // Re-read after bounds are known so each tile receives UVs in the same global floor coordinate system.
+      const uv = new Float32Array(position.count * 2); // Replaces BoxGeometry's per-face 0..1 UVs, which were what caused canvas.png to restart on every tile.
+      for (let i = 0; i < position.count; i++) {
+        point.fromBufferAttribute(position, i).applyMatrix4(mesh.matrixWorld);
+        uv[i * 2] = (point.x - minX) / spanX;
+        uv[i * 2 + 1] = (point.z - minZ) / spanZ;
+      }
+      mesh.geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+      mesh.geometry.attributes.uv.needsUpdate = true;
+      mesh.userData = Object.assign({}, mesh.userData, { hobunjiInteriorFloorSurfaceStretch: 'shared-xz-bounds' });
+    }
+    return list.length;
+  }
+
   function applyFloorStyleToScene(mapId, sceneRecord) {
     if (!sceneRecord?.scene?.traverse) return Promise.resolve(0);
     return loadFloorStyleForMap(mapId).then(style => {
       if (!style) return 0;
       const materials = new Set(); // Used to apply the texture once even though every floor tile shares the same material.
+      const floorMeshes = new Set(); // Used by stretchToSurface floors to place all tile geometries in one shared UV field.
       sceneRecord.scene.traverse(object => {
+        let ownsFloorMaterial = false; // Used to avoid treating furniture meshes as part of the floor stretch bounds.
         for (const material of (Array.isArray(object?.material) ? object.material : [object?.material]).filter(Boolean)) {
-          if (material.userData?.hobunjiInteriorFloorMaterial) materials.add(material);
+          if (material.userData?.hobunjiInteriorFloorMaterial) {
+            materials.add(material);
+            ownsFloorMaterial = true;
+          }
         }
+        if (ownsFloorMaterial && object?.isMesh && object.geometry) floorMeshes.add(object);
       });
+      lastFloorStretchMeshCount = style.stretchToSurface ? stretchFloorMeshesToSharedBounds(floorMeshes) : 0;
       for (const material of materials) applyFloorStyleToMaterial(material, style, 'assets/');
       lastFloorMapId = mapId;
       lastFloorMaterialCount = materials.size;
-      window.__farmLog?.(`[interior-floor] ${mapId} texture=${style.texture || 'flat'} tint=${style.tint} repeat=${style.tilesPerTile} materials=${materials.size}`);
+      window.__farmLog?.(`[interior-floor] ${mapId} texture=${style.texture || 'flat'} tint=${style.tint} repeat=${style.tilesPerTile} stretch=${style.stretchToSurface ? 'surface' : 'tile'} meshes=${lastFloorStretchMeshCount} materials=${materials.size}`);
       return materials.size;
     });
   }
@@ -414,6 +454,7 @@
       floorConfigCacheKeys: [...floorConfigCache.keys()],
       lastFloorMapId,
       lastFloorMaterialCount,
+      lastFloorStretchMeshCount,
       lastFloorError,
     };
   }
@@ -426,6 +467,7 @@
     normalizeFloorStyle,
     defaultFloorStyleForWallStyle,
     applyFloorStyleToMaterial,
+    stretchFloorMeshesToSharedBounds,
     applyFloorStyleToScene,
     debugSnapshot,
   });

@@ -92,10 +92,10 @@
     ['js/heftroot-billboard-bridge.js?v=20260814a', () => !!window.HobunjiHeftrootBillboardBridge],
     ['js/crop-billboard-presentation.js?v=20260814a', () => !!window.HobunjiCropBillboardPresentation],
     ['js/crop-ready-presentation.js?v=20260818a', () => !!window.HobunjiCropReadyPresentation],
-    ['js/mastery-policy.js?v=20260826death1', () => !!window.HobunjiMasteryPolicy],
+    ['js/mastery-policy.js?v=20260921rangedmastery2', () => !!window.HobunjiMasteryPolicy],
     ['js/inventory-action-metadata-bridge.js?v=20260813b', () => !!window.HobunjiInventoryActionMetadataBridge],
     ['js/inventory-held-override.js?v=20260918blackstamina1', () => !!window.InventoryHeldOverride],
-    ['js/clothing-weaving-system.js?v=20260921reviewfix1', () => Number(window.ClothingWeavingSystem?.version) >= 1],
+    ['js/clothing-weaving-system.js?v=20260921weaveaudit1', () => Number(window.ClothingWeavingSystem?.version) >= 1],
     ['js/clothing-weight-dodge-policy.js?v=20260913a', () => Number(window.ClothingWeightDodgePolicy?.version) >= 1],
     ['js/inventory-character-effects.js?v=20260915a', () => Number(window.InventoryCharacterEffects?.version) >= 1],
     ['js/inventory-gear-compact-effects.js?v=20260915b', () => Number(window.InventoryGearCompactEffects?.version) >= 2],
@@ -142,7 +142,7 @@
     // from inside Puktuk registration. Keeping one parser-owned loader prevents
     // den setup from perturbing held-item/stance bootstrap ordering.
     ['js/den-locale-runtime.js?v=20260914c', () => Number(window.DenLocaleRuntime?.version) >= 4],
-    ['js/puktuk-den-nest-registration.js?v=20260914b', () => Number(window.PuktukDenNestRegistration?.version) >= 2],
+    ['js/puktuk-den-nest-registration.js?v=20260921voorgherd1', () => Number(window.PuktukDenNestRegistration?.version) >= 2],
     ['js/dev-arena-nest-spawner.js?v=20260914a', () => Number(window.DevArenaNestSpawner?.version) >= 1],
     ['js/wildlife-territorial.js?v=20260828animalvoices1', () => !!window.HobunjiTerritorialWildlife],
     ['js/wildlife-drenkirra-grazing.js?v=20260817a', () => !!window.HobunjiDrenkirraGrazing],

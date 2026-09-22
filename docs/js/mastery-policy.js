@@ -35,6 +35,7 @@
   const guardedMaps = new WeakMap(); // Used to keep one Proxy per raw mastery map.
   const guardedRecords = new WeakMap(); // Used to keep one Proxy per raw mastery record.
   const guardedRecordProxies = new WeakSet(); // Used to avoid proxy nesting.
+  const awardedEnemyKills = new WeakSet(); // Used to make direct ranged attribution and wrapped Combat attribution converge on one mastery award per defeated entity.
   const debug = {
     blockedWrites: 0, suppressedLegacyCombatAwards: 0, suppressedLegacyPopups: 0,
     lastBlocked: null, lastAward: null, lastKill: null, lastHarvest: null, lastTreasure: null, lastDeathRecovery: null,
@@ -224,11 +225,20 @@
 
   function awardKill(itemKey, enemy, ranged = false) {
     if (!itemKey || !enemy) return 0;
+    if (typeof enemy === 'object' && awardedEnemyKills.has(enemy)) return 0;
     const difficulty = enemyDifficulty(enemy);
     const multiplier = isPureCombatWeapon(itemKey, ranged) ? CONFIG.pureCombatMultiplier : 1;
     const amount = round1(difficulty * multiplier);
     debug.lastKill = { enemy: enemy?.def?.label || enemy?.label || enemy?.id || 'hostile', itemKey, ranged: !!ranged, difficulty: round1(difficulty), multiplier, amount, at: now() };
-    return award(itemKey, amount, ranged ? 'ranged kill' : 'melee kill', { enemy: debug.lastKill.enemy, difficulty: debug.lastKill.difficulty, combatOnlyMultiplier: multiplier });
+    const granted = award(itemKey, amount, ranged ? 'ranged kill' : 'melee kill', { enemy: debug.lastKill.enemy, difficulty: debug.lastKill.difficulty, combatOnlyMultiplier: multiplier }); // Used to mark the defeated entity only after mastery storage actually accepts the award.
+    if (granted > 0 && typeof enemy === 'object') awardedEnemyKills.add(enemy);
+    return granted;
+  }
+
+  function recordRangedKill(itemKey, enemy, observedHealth = null) {
+    const observed = Number(observedHealth); // Used to preserve pre-hit difficulty when RangedWeapons owns a separate, unwrapped damageCreature reference.
+    if (enemy && Number.isFinite(observed) && observed > Number(enemy._masteryObservedMaxHealth || 0)) enemy._masteryObservedMaxHealth = observed;
+    return awardKill(itemKey || rangedKey(), enemy, true);
   }
 
   function patchCombat(api) {
@@ -241,6 +251,9 @@
       if (typeof damageCreature === 'function' && !damageCreature.__masteryPolicyWrapped) {
         const wrapped = function masteryPolicyDamageCreature(enemy, ...args) {
           const before = Math.max(0, Number(enemy?.health) || 0);
+          const options = args[4] && typeof args[4] === 'object' ? args[4] : {}; // Used to resolve the exact source weapon before lethal damage can complete.
+          const rangedItemKey = options.ranged === true && options.friendlyFire !== true && typeof options.rangedItemKey === 'string' && options.rangedItemKey
+            ? options.rangedItemKey : null; // Used by modern projectile hits so generated dual-role tools never depend on the later legacy mastery callback for attribution.
           if (enemy && before > Number(enemy._masteryObservedMaxHealth || 0)) enemy._masteryObservedMaxHealth = before;
           let result; // Used to preserve the wrapped damage result or the safe lethal-transition recovery result.
           try {
@@ -260,16 +273,22 @@
             result = false;
           }
           const after = Math.max(0, Number(enemy?.health) || 0);
-          const options = args[4] && typeof args[4] === 'object' ? args[4] : {};
           if (before > 0 && after <= 0) {
             if (options.ranged) {
-              const kill = { enemy, at: now() }; // Used until ranged-weapons.js supplies the exact firing itemKey on its next line.
-              pendingRangedKill = kill;
-              queueMicrotask(() => {
-                if (pendingRangedKill !== kill) return;
+              if (options.friendlyFire === true) {
                 pendingRangedKill = null;
-                awardKill(rangedKey(), enemy, true);
-              });
+              } else if (rangedItemKey) {
+                pendingRangedKill = null;
+                awardKill(rangedItemKey, enemy, true);
+              } else {
+                const kill = { enemy, at: now() }; // Used only by legacy ranged callers that do not yet carry rangedItemKey in their damage metadata.
+                pendingRangedKill = kill;
+                queueMicrotask(() => {
+                  if (pendingRangedKill !== kill) return;
+                  pendingRangedKill = null;
+                  awardKill(rangedKey(), enemy, true);
+                });
+              }
             } else awardKill(meleeKey(), enemy, false);
           }
           return result;
@@ -492,7 +511,7 @@
   }
 
   window.HobunjiMasteryPolicy = {
-    getDebug, formatDebug, worthMasteryXp: worthXp, enemyDifficultyScore: enemyDifficulty, isPureCombatWeapon,
+    getDebug, formatDebug, worthMasteryXp: worthXp, enemyDifficultyScore: enemyDifficulty, isPureCombatWeapon, recordRangedKill,
     _test: { awardMastery: award, guardGearInventory: guardGear, armPolicy: arm, treasureLootWorth: treasureWorth, detectTreasureDigTransitions: detectTreasure, recordTreasureStates: recordTreasure },
   };
 
