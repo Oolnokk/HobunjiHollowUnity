@@ -8590,8 +8590,10 @@
                   target: 'building', targetMapId: cavernMapId,
                 };
               });
+            const localeCinematicCameras = localeInstances.flatMap(instance => instance.cinematicCameras || []); // Cameras authored inside a moving locale have already been translated into this generated zone's final tile space.
             _zoneLayouts.set(zoneId, {
               cols: merged.cols, rows: merged.rows, tiles: [...merged.tiles.values()],
+              cinematicCameras: localeCinematicCameras,
               transitions: [
                 ...preserved.map(t => ({ id: t.id, label: t.label, col: t.col, row: t.row, target: 'building', targetMapId: t.targetMapId })),
                 ...tentTransitions,
@@ -12571,7 +12573,7 @@
             // path (WildernessMapGenerator) produces those (see
             // performTothalShift), so wild packs simply don't spawn here yet.
             const visualHeights = window.TerrainPreview?.buildMergedZoneGrid(ws, zoneMapId)?.visualHeights || new Map();
-            _zoneLayouts.set(zoneMapId, { cols: zm.cols, rows: zm.rows, tiles: zTiles, visualHeights, transitions: zTransitions, toTownExit, mesas, buildings: outBuildings, decor: outDecor, furniture: outFurniture, dens: [], foliagePatches: [], ambushStations: [] });
+            _zoneLayouts.set(zoneMapId, { cols: zm.cols, rows: zm.rows, tiles: zTiles, visualHeights, transitions: zTransitions, toTownExit, mesas, buildings: outBuildings, decor: outDecor, furniture: outFurniture, cinematicCameras: zm.cinematicCameras || [], dens: [], foliagePatches: [], ambushStations: [] });
             console.log(`%c[zone:${zoneMapId}] loaded ${zm.cols}x${zm.rows}, tiles=${zTiles.length}, mesas=${mesas.length}, buildings=${outBuildings.length}, decor=${outDecor.length}, furniture=${outFurniture.length}, toTownExit=${toTownExit ? `(${toTownExit.col},${toTownExit.row})` : 'none (using placeholder)'}, zoneTransitions=${zTransitions.length}`, 'color:#22c55e;font-weight:bold');
           }
           const townM = resolvedMaps.find(m => m.id === 'map_hobunji_town');
@@ -12581,7 +12583,7 @@
           }
           _workspaceDefinition = window.MapLivePreview.clone({ ...ws, maps: resolvedMaps });
           await window.TownMine?.decorateTownMap?.(townM);
-          const layout = { version: 1, name: townM.name || 'Hobunji Hollow — Town', cols: townM.cols, rows: townM.rows, tiles: [], npcPaths: [], transitions: [], npcStations: [], buildings: townM.buildings || [], decor: townM.decor || [], furniture: townM.furniture || [] };
+          const layout = { version: 1, name: townM.name || 'Hobunji Hollow — Town', cols: townM.cols, rows: townM.rows, tiles: [], npcPaths: [], transitions: [], npcStations: [], buildings: townM.buildings || [], decor: townM.decor || [], furniture: townM.furniture || [], cinematicCameras: townM.cinematicCameras || [] };
           for (let r = 0; r < townM.rows; r++) for (let c = 0; c < townM.cols; c++) {
             const t = townM.tiles[`${c},${r}`];
             if (t) layout.tiles.push({ c, r, type: t.type || 'grass' });
@@ -12628,6 +12630,7 @@
       function initTownTravel(layout, options = {}) {
         if (!layout || layout.version !== 1) return;
         _townZone = layout;
+        window.CinematicCameraRuntime?.registerArea?.('town', layout.cinematicCameras || []); // Town's runtime area id differs from its Map Editor id.
         const TCOLS = layout.cols || 60, TROWS = layout.rows || 50;
         townGrid = Array.from({ length: TROWS }, (_, r) =>
           Array.from({ length: TCOLS }, (_, c) => ({
