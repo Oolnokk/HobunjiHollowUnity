@@ -62,4 +62,8 @@ assert.match(ambientSource, /animalChatheadSkippedFrames/, 'skipped former portr
 assert.match(ambientSource, /profileFacesSpeechTarget\(profile\)/, 'ambient dialogue must honor authored no-face speech posture');
 assert.match(ambientSource, /dialogueFacePlayer !== false/, 'the no-face posture flag must be checked before ambient facing updates');
 assert.match(ambientSource, /chatheadRenderSource = 'live-animal-texture'/, 'live-texture fast path must identify itself for debugging');
+assert.match(ambientSource, /PERMANENTLY_DISABLED_SPEAKERS = new Set\(\['banubu'\]\)/, 'Banubu must remain permanently excluded from ambient dialogue');
+assert.match(ambientSource, /isSpeakerEnabled\(options\.speakerId, options\.profile\)/, 'ambient rendering must reject disabled speakers before creating a bubble');
+const speciesOverrides = JSON.parse(fs.readFileSync('docs/config/npcs/species-overrides.json', 'utf8'));
+assert.strictEqual(speciesOverrides.npcs.banubu.avatarExport.appearance.ambientDialogueEnabled, false, 'Banubu appearance records the ambient-dialogue opt-out');
 console.log('animal ambient chathead wiring tests passed');

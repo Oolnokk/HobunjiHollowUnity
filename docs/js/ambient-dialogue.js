@@ -483,6 +483,14 @@
     return { canvas, texture, geometry, material, plane, nextFrameAt: 0, busy: false, staticAnimalRendered: false };
   }
 
+  const PERMANENTLY_DISABLED_SPEAKERS = new Set(['banubu']); // Banubu is intentionally excluded from all incidental ambient speech/reactions; deliberate quest dialogue remains separate.
+  function isSpeakerEnabled(speakerId, profile = null) {
+    const id = String(speakerId || '').toLowerCase();
+    if (PERMANENTLY_DISABLED_SPEAKERS.has(id)) return false;
+    return profile?.appearance?.ambientDialogueEnabled !== false
+      && profile?.npcRecord?.appearance?.ambientDialogueEnabled !== false;
+  }
+
   function profileFacesSpeechTarget(profile) {
     return profile?.appearance?.dialogueFacePlayer !== false
       && profile?.npcRecord?.appearance?.dialogueFacePlayer !== false;
@@ -661,7 +669,7 @@
     const THREE = state.deps?.THREE;
     const scene = options.scene || state.deps?.getActiveScene?.();
     const message = String(text || '').trim();
-    if (!THREE || !root || !scene || !message || state.settings.enabled === false) return null;
+    if (!THREE || !root || !scene || !message || state.settings.enabled === false || !isSpeakerEnabled(options.speakerId, options.profile)) return null;
     const mode = options.mode === 'overhead' ? 'overhead' : 'chathead';
     const textPart = textPlane(message);
     textPart.text = message;
@@ -819,7 +827,7 @@
 
   function tryGreeting(walker, target, now, day, override = null) {
     const speakerId = walker?.rec?.id;
-    if (!speakerId || walker.area !== state.deps.getCurrentArea()) return false;
+    if (!speakerId || walker.area !== state.deps.getCurrentArea() || !isSpeakerEnabled(speakerId, walker.profile)) return false;
     if (window.HobunjiDrunkGameplayBridge?.isNpcBlackedOut?.(speakerId)) return false;
     // The active event remains in this list through its final opacity fade,
     // so this releases the NPC only after the prior greeting is fully gone.
@@ -1015,6 +1023,7 @@
     loadSettings,
     resolveTargetName,
     renderChatheadImage,
+    isSpeakerEnabled,
     debugSnapshot,
   };
   window.AmbientDialogue = api;

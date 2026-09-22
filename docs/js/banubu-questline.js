@@ -376,6 +376,19 @@
     return !!state && (state.status !== 'intro' || Number(state.introTalkAttempts) >= 3);
   }
 
+  function resetForDebug() {
+    const store = questStore(); // Canonical live quest object shared with TasksPanel/game save state.
+    if (!store) return { ok: false, message: 'No active quest store.' };
+    delete store[QUEST_ID];
+    debugState.lastAction = 'resetForDebug';
+    debugState.lastTarget = null;
+    debugState.lastTurnIn = null;
+    debugState.lastError = null;
+    const state = ensureQuestState(); // Recreates the untouched intro state, including first-attempt sleep dialogue.
+    persistMemberState();
+    return { ok: !!state, state: state ? JSON.parse(JSON.stringify(state)) : null };
+  }
+
   function unlockRecipe(record = null) {
     const state = ensureQuestState();
     if (!state) return { ok: false, message: 'No active save.' };
@@ -547,6 +560,7 @@
     selectTree,
     dialogueEyesOpen,
     ensureQuestState,
+    resetForDebug,
     stageDefinition,
     allFeasibleTargets: allFeasibleFishTargets,
     allFeasibleFishTargets,

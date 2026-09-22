@@ -399,6 +399,7 @@
     if (state.plannerDeps?.isDialogueOpen?.() || state.plannerDeps?.isPaused?.()) return false;
 
     const id = String(walker.rec.id); // NPC ID selects personality and relationship state.
+    if (global.AmbientDialogue?.isSpeakerEnabled?.(id, walker.profile) === false) return false; // Banubu and other authored opt-outs never rotate, consume cooldown state, or emit a reaction.
     const hearts = heartsFor(id); // Raw favor/heart value remains the sole positive-vs-negative polarity rule.
     const polarity = hearts < 0 ? 'negative' : 'positive'; // Existing relationship behavior preserved exactly.
     const serial = Number(options.serial) || 1; // Encounter serial seeds deterministic line choice and repeat tracking.

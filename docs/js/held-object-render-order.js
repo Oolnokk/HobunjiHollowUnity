@@ -41,10 +41,10 @@
   const heldMeshes = new WeakSet();
   const groundMeshes = new WeakSet();
   const waterMeshes = new WeakSet(); // Used by classifyObject to count each canonical water surface once across fallback rescans.
-  const heldRegistry = new Set();
-  const groundRegistry = new Set();
-  const waterRegistry = new Set(); // Used by the stencil-masked translucent replay after held/foot overlay rendering.
-  const pngDepthRegistry = new Set(); // Used by the colorless replay to repair only cutout depth materials instead of traversing every visible object.
+  const heldRegistryByScene = new WeakMap(); // Scene -> held meshes; keeps per-frame collection bounded to the currently rendered scene instead of every cached interior.
+  const groundRegistryByScene = new WeakMap(); // Scene -> ground meshes used by the selective depth restore for only that scene.
+  const waterRegistryByScene = new WeakMap(); // Scene -> water meshes used by the stencil-masked translucent replay for only that scene.
+  const pngDepthRegistryByScene = new WeakMap(); // Scene -> cutout depth meshes, avoiding a global scan across cached/off-area avatars and props.
   const preparedLights = new WeakSet();
   const lastSceneScan = new WeakMap();
 
@@ -62,6 +62,10 @@
   let invariantRepairCount = 0;
   let internalReplay = false;
   let lastDebugSignature = '';
+  let lastBaseScene = null; // Most recently rendered gameplay scene; used by the compatibility invariant repair API without retaining every scene's meshes globally.
+  let lastActiveHeldCount = 0; // Reported by snapshot()/Pixel Probe to distinguish current-scene work from lifetime classifications.
+  let lastActiveGroundCount = 0; // Reported by snapshot()/Pixel Probe for the current scene's replay ground set.
+  let lastActiveWaterCount = 0; // Reported by snapshot()/Pixel Probe for the current scene's replay water set.
   // Gameplay keeps this enabled in every camera mode so a low shoulder-surf
   // angle cannot bury weapon PNGs beneath terrain or grass planes.
   let enabled = true;
@@ -189,11 +193,23 @@
     return repaired;
   }
 
+  function registerSceneObject(registryByScene, object) {
+    const scene = sceneForObject(object); // Resolves the object's actual owner so cached interiors never share one hot iterable registry.
+    if (!scene) return false;
+    let registry = registryByScene.get(scene); // Reuses the scene-local set on every later classification pass.
+    if (!registry) {
+      registry = new Set();
+      registryByScene.set(scene, registry);
+    }
+    registry.add(object);
+    return true;
+  }
+
   function markHeldPlane(mesh) {
     if (!mesh?.isMesh) return false;
     const already = heldMeshes.has(mesh) || mesh.userData?.hobunjiHeldObjectPlane === true;
     heldMeshes.add(mesh);
-    heldRegistry.add(mesh);
+    registerSceneObject(heldRegistryByScene, mesh);
     enforceHeldMesh(mesh);
     if (!already) heldCount++;
     return !already;
@@ -219,7 +235,7 @@
     if (!mesh?.isMesh || !kind) return false;
     const already = groundMeshes.has(mesh) || mesh.userData?.hobunjiHeldGroundReplay === true;
     groundMeshes.add(mesh);
-    groundRegistry.add(mesh);
+    registerSceneObject(groundRegistryByScene, mesh);
     enforceGroundMesh(mesh);
     if (!already) {
       groundCount++;
@@ -235,9 +251,9 @@
     if (object.isLight) prepareLight(object);
     if (!object.isMesh) return;
     if (isLegacyHeldPlane(object)) markHeldPlane(object);
-    if (hasLayer(object, PNG_OCCLUDER_LAYER) || materialHasAlphaCutout(object.material)) pngDepthRegistry.add(object);
+    if (hasLayer(object, PNG_OCCLUDER_LAYER) || materialHasAlphaCutout(object.material)) registerSceneObject(pngDepthRegistryByScene, object);
     if (isWaterSurface(object)) {
-      waterRegistry.add(object);
+      registerSceneObject(waterRegistryByScene, object);
       if (!hasLayer(object, WATER_REPLAY_LAYER)) object.layers.enable(WATER_REPLAY_LAYER);
       if (!waterMeshes.has(object)) {
         waterMeshes.add(object);
@@ -326,7 +342,9 @@
     return false;
   }
 
-  function collectVisible(registry, scene) {
+  function collectVisible(registryByScene, scene) {
+    const registry = registryByScene.get(scene); // Only the currently rendered scene is iterable; cached interiors no longer add O(all-history) work to each frame.
+    if (!registry?.size) return [];
     const result = [];
     for (const object of registry) {
       if (!object?.isMesh) {
@@ -335,11 +353,14 @@
       }
       const ownerScene = sceneForObject(object);
       if (!ownerScene) {
-        // Detached runtime meshes should not be kept alive by our iterable set.
-        registry.delete(object);
+        registry.delete(object); // Detached runtime meshes stop being strongly retained by this scene bucket.
         continue;
       }
-      if (ownerScene !== scene) continue;
+      if (ownerScene !== scene) {
+        registry.delete(object); // A moved mesh no longer belongs to this scene bucket.
+        registerSceneObject(registryByScene, object); // Re-home it immediately so the destination scene sees it without a global scan.
+        continue;
+      }
       if (!ancestorsVisible(object, scene)) continue;
       result.push(object);
     }
@@ -545,7 +566,7 @@
       const colorBuffer = renderer.state?.buffers?.color; // Three's locked color mask keeps every original material shader/alpha cutout while suppressing all color writes globally.
       const canLockColorMask = !!colorBuffer?.setMask && !!colorBuffer?.setLocked;
       const depthMaterialStates = canLockColorMask
-        ? prepareCutoutDepthMaterials(collectVisible(pngDepthRegistry, scene))
+        ? prepareCutoutDepthMaterials(collectVisible(pngDepthRegistryByScene, scene))
         : prepareNonGroundDepthMaterials(scene);
       if (canLockColorMask) {
         colorBuffer.setMask(false);
@@ -637,9 +658,13 @@
     if (!enabled || !isBaseWorldPass(scene, camera)) return originalRender.call(this, scene, camera);
 
     const originalCameraMask = Number(camera.layers.mask) >>> 0;
-    const held = collectVisible(heldRegistry, scene);
-    const ground = collectVisible(groundRegistry, scene);
-    const water = collectVisible(waterRegistry, scene); // Used by the stencil-masked translucent replay after the held overlay.
+    const held = collectVisible(heldRegistryByScene, scene);
+    const ground = collectVisible(groundRegistryByScene, scene);
+    const water = collectVisible(waterRegistryByScene, scene); // Used by the stencil-masked translucent replay after the held overlay.
+    lastBaseScene = scene;
+    lastActiveHeldCount = held.length;
+    lastActiveGroundCount = ground.length;
+    lastActiveWaterCount = water.length;
     if (!held.length || !ground.length) return originalRender.call(this, scene, camera);
 
     baseWorldRenderCount++;
@@ -678,11 +703,14 @@
       heldOverlayLayer: HELD_OVERLAY_LAYER,
       groundReplayLayer: GROUND_REPLAY_LAYER,
       heldMeshes: heldCount,
+      activeHeldMeshes: lastActiveHeldCount,
       groundMeshes: groundCount,
+      activeGroundMeshes: lastActiveGroundCount,
       grassMeshes: grassCount,
       roadMeshes: roadCount,
       terrainMeshes: terrainCount,
       waterReplayMeshes: waterMeshCount,
+      activeWaterReplayMeshes: lastActiveWaterCount,
       waterReplays: waterReplayCount,
       baseWorldRenders: baseWorldRenderCount,
       selectiveOverlays: selectiveOverlayCount,
@@ -719,8 +747,9 @@
     // Retained as a compatibility no-op for the former camera-mode toggle.
     // Ground/grass x-ray is now an invariant of held weapon presentation.
     setEnabled() { enabled = true; },
-    enforceHeldInvariant() {
-      for (const mesh of heldRegistry) enforceHeldMesh(mesh);
+    enforceHeldInvariant(scene = lastBaseScene) {
+      if (!scene?.isScene) return;
+      for (const mesh of collectVisible(heldRegistryByScene, scene)) enforceHeldMesh(mesh);
     },
     classify(object) {
       return {

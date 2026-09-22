@@ -22,10 +22,18 @@ assert.match(controller, /transitionend[\s\S]{0,160}scheduleReconcile/,
 
 assert.doesNotMatch(heldRender, /\.updateMatrixWorld = function heldGround/,
   'held/ground invariants no longer wrap every matrix update');
+assert.match(heldRender, /const heldRegistryByScene = new WeakMap\(\)/,
+  'held meshes are indexed by owner scene instead of one global hot-path set');
+assert.match(heldRender, /const pngDepthRegistryByScene = new WeakMap\(\)/,
+  'cutout depth meshes are also scoped to the rendered scene');
+assert.doesNotMatch(heldRender, /const heldRegistry = new Set\(\)/,
+  'cached interiors cannot accumulate held meshes in a global per-frame registry');
+assert.match(heldRender, /collectVisible\(heldRegistryByScene, scene\)/,
+  'the render path collects held meshes only from the current scene bucket');
 assert.match(heldRender, /colorBuffer\.setMask\(false\)[\s\S]{0,100}colorBuffer\.setLocked\(true\)/,
   'the selective depth replay suppresses color through the renderer buffer');
-assert.match(heldRender, /prepareCutoutDepthMaterials\(collectVisible\(pngDepthRegistry, scene\)\)/,
-  'only registered PNG cutouts receive temporary depth-material repair');
+assert.match(heldRender, /prepareCutoutDepthMaterials\(collectVisible\(pngDepthRegistryByScene, scene\)\)/,
+  'only current-scene registered PNG cutouts receive temporary depth-material repair');
 assert.doesNotMatch(heldRender, /forceWaterDepth|waterDepthRegistry/,
   'water must not become a hard depth occluder during the held overlay');
 assert.match(heldRender, /prepareHeldStencilMaterials\(held\)[\s\S]{0,600}HELD_OVERLAY_MASK/,
