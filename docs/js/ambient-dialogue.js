@@ -49,6 +49,9 @@
     lastDay: null,
     ledgerKey: null,
     renderQueue: Promise.resolve(),
+    animalChatheadLiveTextureHits: 0, // Counts zero-recompose animal chatheads copied from the already-rendered world avatar.
+    animalChatheadFallbackRenders: 0, // Counts one-shot animal chatheads that had to fall back through NpcAvatarPreview.
+    animalChatheadSkippedFrames: 0, // Counts former 30-FPS animal portrait refreshes skipped after the first stable render.
   };
 
   function structuredCloneSafe(value) {
@@ -477,7 +480,50 @@
     const plane = new THREE.Mesh(geometry, material);
     plane.renderOrder = 1211;
     plane.frustumCulled = false;
-    return { canvas, texture, geometry, material, plane, nextFrameAt: 0, busy: false };
+    return { canvas, texture, geometry, material, plane, nextFrameAt: 0, busy: false, staticAnimalRendered: false };
+  }
+
+  function profileFacesSpeechTarget(profile) {
+    return profile?.appearance?.dialogueFacePlayer !== false
+      && profile?.npcRecord?.appearance?.dialogueFacePlayer !== false;
+  }
+
+  function animalChatheadKind(profile, seatId) {
+    return window.NamedAnimalNpc?.creatureKindForProfile?.(profile)
+      || window.AnimalChatheadFrame?.creatureKindFor?.(profile, { seatId })
+      || null;
+  }
+
+  function liveAnimalChatheadSource(root) {
+    let source = null; // Reuses the world avatar's existing texture so ambient speech never recomposes patterned creature pixels.
+    root?.traverse?.(child => {
+      if (source || !String(child?.name || '').endsWith('_front_plane')) return;
+      const materials = Array.isArray(child.material) ? child.material : [child.material];
+      for (const material of materials) {
+        const image = material?.map?.image;
+        const width = Number(image?.naturalWidth || image?.videoWidth || image?.width);
+        const height = Number(image?.naturalHeight || image?.videoHeight || image?.height);
+        if (width > 0 && height > 0) {
+          source = image;
+          break;
+        }
+      }
+    });
+    return source;
+  }
+
+  function renderLiveAnimalChathead(event) {
+    const kind = event?.animalChatheadKind;
+    const source = kind ? liveAnimalChatheadSource(event.root) : null;
+    const resolved = kind ? window.AnimalChatheadFrame?.frameForKind?.(kind) : null;
+    const frame = resolved?.frame || resolved;
+    if (!source || !frame || !window.AnimalChatheadFrame?.drawFrameToCanvas) return false;
+    if (!window.AnimalChatheadFrame.drawFrameToCanvas(source, event.headPart.canvas, frame)) return false;
+    event.headPart.texture.needsUpdate = true;
+    event.headPart.plane.userData.chatheadRenderSource = 'live-animal-texture';
+    event.headPart.plane.userData.chatheadCreatureKind = kind;
+    state.animalChatheadLiveTextureHits++;
+    return true;
   }
 
   function portraitBounds(canvas) {
@@ -550,7 +596,23 @@
   }
 
   function renderChathead(event, now, force = false) {
-    if (!event.headPart || !event.profile || event.headPart.busy || (!force && now < event.headPart.nextFrameAt)) return;
+    if (!event.headPart || !event.profile) return;
+    if (event.animalChatheadKind && event.headPart.staticAnimalRendered) {
+      state.animalChatheadSkippedFrames++;
+      return;
+    }
+    if (event.headPart.busy || (!force && now < event.headPart.nextFrameAt)) return;
+
+    // Creature portraits are visually static between speech events. More importantly,
+    // named animals may carry expensive per-pixel Color Pools paint. Copy the exact
+    // already-rendered world texture once instead of rebuilding + PNG-encoding it at
+    // the normal 30 FPS portrait cadence.
+    if (event.animalChatheadKind && renderLiveAnimalChathead(event)) {
+      event.headPart.staticAnimalRendered = true;
+      event.headPart.nextFrameAt = Number.POSITIVE_INFINITY;
+      return;
+    }
+
     const source = event.headSource || (event.headSource = Object.assign(document.createElement('canvas'), { width: 200, height: 200 }));
     event.headPart.busy = true;
     const portraitFps = Math.max(1, Number(window.SCRATCHBONES_CONFIG?.game?.npcDialogue?.portrait?.maxFps) || 30);
@@ -566,6 +628,12 @@
       const bounds = compositeChatheadSquare(source, event.headPart.canvas.getContext('2d'), 200);
       event.headPart.plane.userData.portraitBounds = { ...bounds }; // Mobile Pixel Probe/debug inspection hook.
       event.headPart.texture.needsUpdate = true;
+      if (event.animalChatheadKind) {
+        event.headPart.staticAnimalRendered = true;
+        event.headPart.nextFrameAt = Number.POSITIVE_INFINITY;
+        event.headPart.plane.userData.chatheadRenderSource = 'one-shot-profile-fallback';
+        state.animalChatheadFallbackRenders++;
+      }
     }).catch(error => state.deps?.debugLog?.(`[ambient-dialogue] chathead render failed: ${error?.message || error}`, 'warn'))
       .finally(() => { event.headPart.busy = false; });
   }
@@ -636,6 +704,7 @@
       cadenceTimers: [],
       visibleChars: -1,
     };
+    event.animalChatheadKind = headPart ? animalChatheadKind(event.profile, event.seatId) : null;
     state.active.push(event);
     drawText(event, '');
     if (!event.revealSchedule.length) {
@@ -704,7 +773,7 @@
         event.group.position.copy(anchor);
       }
       event.group.quaternion.copy(camera.quaternion);
-      if (event.faceWalker && event.faceTarget) {
+      if (event.faceWalker && event.faceTarget && profileFacesSpeechTarget(event.profile)) {
         const targetPosition = event.faceTarget.root?.position || event.faceTarget;
         const angle = -Math.atan2(targetPosition.z - event.faceWalker.root.position.z, targetPosition.x - event.faceWalker.root.position.x) + Math.PI / 2;
         event.faceWalker.applyFacingDeadzone?.(angle, 0.34);
@@ -776,7 +845,7 @@
     saveGreetingLedger(day);
     state.lastGreetingAt = now;
     const angle = -Math.atan2(target.z - walker.root.position.z, target.x - walker.root.position.x) + Math.PI / 2;
-    walker.applyFacingDeadzone?.(angle, 0.34);
+    if (profileFacesSpeechTarget(walker.profile)) walker.applyFacingDeadzone?.(angle, 0.34);
     // A pending-request override (see getPendingRequestGreeting) replaces the
     // ordinary nickname-templated line with the quest-giver's own purple
     // call-over line, so it can't be mistaken for a random ambient greeting.
@@ -880,7 +949,7 @@
       state.active.splice(index, 1);
     }
     const player = state.deps?.getPlayerPosition?.();
-    if (player) {
+    if (player && profileFacesSpeechTarget(walker.profile)) {
       const angle = -Math.atan2(player.z - walker.root.position.z, player.x - walker.root.position.x) + Math.PI / 2;
       walker.applyFacingDeadzone?.(angle, 0.34);
     }
@@ -921,6 +990,17 @@
     return api;
   }
 
+  function debugSnapshot() {
+    return {
+      activeEvents: state.active.length,
+      animalChatheadLiveTextureHits: state.animalChatheadLiveTextureHits,
+      animalChatheadFallbackRenders: state.animalChatheadFallbackRenders,
+      animalChatheadSkippedFrames: state.animalChatheadSkippedFrames,
+      renderQueuePending: state.active.some(event => event.headPart?.busy === true),
+      mostRecentChange: 'Animal ambient chatheads reuse the live world texture once per bubble instead of recomposing patterned creature art at portrait FPS.',
+    };
+  }
+
   const api = {
     init,
     update,
@@ -935,6 +1015,8 @@
     loadSettings,
     resolveTargetName,
     renderChatheadImage,
+    debugSnapshot,
   };
   window.AmbientDialogue = api;
+  window.__ambientDialogueDebug = debugSnapshot;
 })();
