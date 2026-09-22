@@ -65,7 +65,8 @@ assert.equal(itemDefs.bar_lowTinBronze.sellPrice, 400, 'Low-Tin Bronze must rece
 assert.equal(itemDefs.bar_tinBronze.sellPrice, 500, 'Tin Bronze must receive the bronze value floor');
 assert.equal(itemDefs.bar_highTinBronze.sellPrice, 650, 'High-Tin Bronze must receive the bronze value floor');
 assert.equal(context.window.HobunjiCurrencyLore.name, 'ganang', 'legacy inventory.gold must be presented as ganang currency');
-assert.equal(context.window.HobunjiCurrencyLore.meaning, 'bronze', 'ganang must explicitly mean bronze');
+assert.equal(context.window.HobunjiCurrencyLore.meaning, 'bronze money', 'ganang must explicitly mean bronze money rather than a metal name');
+assert.equal(context.window.HobunjiCurrencyLore.kind, 'currency', 'ganang must be classified as currency, never as a metal or ore');
 assert.equal(context.window.HobunjiCurrencyLore.suffix, 'g', 'the Tankan-script g glyph remains the currency suffix');
 
 const formatCurrencyText = context.window.HobunjiCurrencyLore.formatText; // Uses the same conservative renderer installed in the browser for legacy UI copy.
@@ -74,7 +75,11 @@ assert.equal(formatCurrencyText("Not enough gold for the smith's labor."), "Not 
 assert.equal(formatCurrencyText('Reward: 25 gold'), 'Reward: 25 ganang', 'spelled-out numeric currency rewards must become ganang');
 assert.equal(formatCurrencyText('Gold reward'), 'Ganang reward', 'currency reward labels must become ganang');
 assert.equal(formatCurrencyText('Gold Ore'), 'Gold Ore', 'physical Gold Ore names must remain gold');
+assert.equal(formatCurrencyText('1 Gold Ore'), '1 Gold Ore', 'counted physical Gold Ore must never become ganang ore');
+assert.equal(formatCurrencyText('12 gold ores'), '12 gold ores', 'lowercase/plural counted Gold Ore must never become ganang ore');
 assert.equal(formatCurrencyText('Gold Bar'), 'Gold Bar', 'physical Gold Bar names must remain gold');
+assert.equal(formatCurrencyText('3 Gold Bars'), '3 Gold Bars', 'counted physical Gold Bars must never become ganang bars');
+assert.equal(formatCurrencyText('2 gold ingots'), '2 gold ingots', 'other counted physical gold forms must remain gold');
 assert.equal(formatCurrencyText('gold-colored trim'), 'gold-colored trim', 'ordinary color language must not be rewritten as currency');
 
 for (const file of [ // These are the known legacy callers from the repo-wide copy audit; their rendered insufficient-funds text is normalized centrally without renaming internal wallet fields.
