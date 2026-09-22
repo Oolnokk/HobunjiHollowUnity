@@ -62,6 +62,7 @@ assert(runtimeSource.includes('function resolvedTargetFor(') && runtimeSource.in
 assert(gameSource.includes('getNpcFacePosition: walker =>') && gameSource.includes('_dialogueEyeWorldPosition(walker.root.position, walker.avatarHeight)'), 'camera targeting must reuse the game\'s exact NPC dialogue face-height calculation');
 assert(gameSource.includes('CinematicCameraRuntime?.resolvedTarget?.()'), 'authored camera application must resolve a live NPC target every frame');
 assert(localeEditorSource.includes('id="cinTargetNpc"') && localeEditorSource.includes('Face offset X'), 'Locale Editor must author NPC targets with face-offset fields');
+assert(mapEditorSource.includes('id="cinTargetNpc"') && mapEditorSource.includes('Face offset X'), 'Map Editor must author the same generic NPC face-target camera schema');
 assert(localePreview3dSource.includes('id="localeCameraTargetNpc"') && localePreview3dSource.includes('resolvedPreviewCameraTarget'), 'Locale 3D preview must edit and resolve NPC face-relative camera targets');
 assert(!runtimeSource.includes('requestAnimationFrame('), 'camera runtime must not add another frame loop');
 
@@ -78,7 +79,7 @@ assert(builderSource.includes('options.doubleSided === true ? THREE.DoubleSide :
 assert(wildernessSource.includes('const toWorldContinuous = (col, row)'), 'stamped locale cameras need a non-snapping coordinate transform');
 assert(wildernessSource.includes('const worldP = toWorldContinuous('), 'camera positions must retain fractional coordinates after Tothal scaling');
 assert(wildernessSource.includes('const npcTargeted = !!camera.targetNpcId'), 'stamped locale cameras must distinguish NPC face-relative targets from absolute map targets');
-assert(wildernessSource.includes('never receive its world translation'), 'NPC face-relative target offsets must scale with a locale without inheriting the locale world translation');
+assert(wildernessSource.includes('neither locale translation nor Tothal density scaling'), 'NPC face-relative target offsets must stay in live NPC/world units rather than being transformed like locale coordinates');
 assert(wildernessSource.includes('const worldStage = toWorldContinuous('), 'player staging points must retain fractional coordinates after Tothal scaling');
 
 for (const [label, source] of [['Map Editor', mapEditorSource], ['Locale Editor', localeEditorSource]]) {
