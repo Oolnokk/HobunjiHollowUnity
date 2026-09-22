@@ -37,6 +37,8 @@
   let scene = null;
   let camera = null;
   let controls = null;
+  let ambientLight = null; // Reused preview ambient; cavern mode lowers it to the live game's den-interior value.
+  let sunLight = null; // Reused preview directional light; cavern mode mirrors the live game's near-dark key light.
   let worldRoot = null; // Owns terrain + locale visuals so each randomization can be removed atomically.
   let terrainMaterialConfig = { byMap: {} };
   let terrainMaterials = new Map();
@@ -565,6 +567,17 @@
     if (rulesLabel) rulesLabel.style.opacity = interior ? '0.42' : '1';
     const wireframeLabel = document.getElementById('localeCavernWireframeLabel');
     if (wireframeLabel) wireframeLabel.style.display = interior ? 'flex' : 'none';
+    if (scene && renderer) {
+      const background = interior ? 0x2a1a0a : GAME_FOG_COLOR;
+      scene.background = new THREE.Color(background);
+      scene.fog = interior ? null : new THREE.FogExp2(GAME_FOG_COLOR, 0.018);
+      renderer.setClearColor(background, 1);
+      if (ambientLight) ambientLight.intensity = interior ? 0.15 : 0.7;
+      if (sunLight) {
+        sunLight.intensity = interior ? 0.08 : 1.1;
+        sunLight.position.set(interior ? 5 : 4, interior ? 10 : 8, interior ? 5 : 2);
+      }
+    }
     refreshCinematicCameraChoices(locale);
   }
   function syncZoneChoices(locale) {
@@ -600,11 +613,12 @@
     controls.maxPolarAngle = Math.PI * 0.495;
     controls.minDistance = 2;
     controls.maxDistance = 400;
-    scene.add(new THREE.AmbientLight(0xfff0e0, 0.7));
-    const sun = new THREE.DirectionalLight(0xffeedd, 1.1);
-    sun.position.set(4, 8, 2);
-    sun.castShadow = true;
-    scene.add(sun);
+    ambientLight = new THREE.AmbientLight(0xfff0e0, 0.7);
+    scene.add(ambientLight);
+    sunLight = new THREE.DirectionalLight(0xffeedd, 1.1);
+    sunLight.position.set(4, 8, 2);
+    sunLight.castShadow = true;
+    scene.add(sunLight);
     worldRoot = new THREE.Group();
     worldRoot.name = 'localeSandboxWorld';
     scene.add(worldRoot);
@@ -1295,14 +1309,27 @@
 
   function fitCavernCamera() {
     const root = scene?.getObjectByName?.('localeSandboxCavernInterior');
-    if (!root || !camera || !controls) return;
-    const box = new THREE.Box3().setFromObject(root);
-    const center = box.getCenter(new THREE.Vector3());
-    const size = box.getSize(new THREE.Vector3());
-    const span = Math.max(8, size.x, size.z, size.y * 2);
-    controls.target.set(center.x, Math.max(center.y, currentCavernMapData?.floorSurfaceY || 0) + 0.7, center.z);
-    camera.position.set(center.x + span * 0.66, controls.target.y + span * 0.48, center.z + span * 0.72);
-    camera.fov = 55;
+    if (!root || !camera || !controls || !currentCavernMapData) return;
+    const authored = currentLocale?.cinematicCameras?.[0]; // Best default inspect pose for story caverns: starts inside the shell at a shot the author already considers valid.
+    if (authored?.position && authored?.target) {
+      const p = authored.position, t = authored.target;
+      camera.position.set(Number(p.x) || 0, Number(p.y) || 0, Number(p.z) || 0);
+      controls.target.set(Number(t.x) || 0, Number(t.y) || 0, Number(t.z) || 0);
+      camera.fov = clamp(Number(authored.fovDeg) || 55, 10, 120);
+    } else {
+      const floor = currentCavernMapData.floor || [];
+      if (!floor.length) return;
+      let centerX = 0, centerZ = 0;
+      for (const tile of floor) { centerX += Number(tile[0]) + 0.5; centerZ += Number(tile[1]) + 0.5; }
+      centerX /= floor.length; centerZ /= floor.length;
+      const entrance = currentLocale?.connectors?.find(item => item.id === currentLocale?.cavern?.primaryEntranceConnectorId) || currentLocale?.connectors?.[0];
+      const px = Number.isFinite(Number(entrance?.col)) ? Number(entrance.col) + 0.5 : centerX + 1.5;
+      const pz = Number.isFinite(Number(entrance?.row)) ? Number(entrance.row) + 0.5 : centerZ + 1.5;
+      const floorY = cavernSurfaceY(currentCavernMapData, px, pz);
+      camera.position.set(px, floorY + 0.9, pz);
+      controls.target.set(centerX, cavernSurfaceY(currentCavernMapData, centerX, centerZ) + 0.8, centerZ);
+      camera.fov = 55;
+    }
     camera.near = 0.05;
     camera.far = 3000;
     camera.updateProjectionMatrix();
