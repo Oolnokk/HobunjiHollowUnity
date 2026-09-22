@@ -31,6 +31,7 @@
     lastDig: null,
   };
   let currencyTextObserver = null; // Used to normalize legacy currency wording produced by older shop/task modules without renaming their save-compatible `gold` fields.
+  const PHYSICAL_GOLD_NOUN_RE = /^\s+(?:ore|ores|bar|bars|ingot|ingots|nugget|nuggets|dust|flake|flakes|vein|veins|metal)\b/i; // Used by formatCurrencyText() to keep counted physical gold materials from being mistaken for legacy currency amounts.
 
   function firstFinite(...values) {
     for (const value of values) if (Number.isFinite(Number(value))) return Number(value);
@@ -48,7 +49,10 @@
     const original = String(value ?? ''); // Used as the exact rendered copy supplied by legacy systems before currency-lore normalization.
     let text = original;
     text = text.replace(/\bNot enough gold\b/gi, match => match[0] === 'N' ? 'Not enough ganang' : 'not enough ganang');
-    text = text.replace(/\b(\d[\d,]*(?:\.\d+)?)\s+gold\b/gi, '$1 ganang');
+    text = text.replace(/\b(\d[\d,]*(?:\.\d+)?)\s+gold\b/gi, (match, amount, offset, source) => {
+      const followingText = source.slice(offset + match.length); // Used to distinguish legacy currency amounts from physical Gold Ore/Gold Bar/etc. names that happen to start with a number.
+      return PHYSICAL_GOLD_NOUN_RE.test(followingText) ? match : `${amount} ganang`;
+    });
     text = text.replace(/\bGold\s+(reward|wallet|currency|payment|payout|bounty|wages?)\b/g, 'Ganang $1');
     text = text.replace(/\bgold\s+(reward|wallet|currency|payment|payout|bounty|wages?|fee|cost)\b/g, 'ganang $1');
     text = text.replace(/\b(reward|fee|cost|price|payment|payout|bounty|wages?)\s+in\s+gold\b/gi, (match, noun) => `${noun} in ganang`);
@@ -148,7 +152,8 @@
     window.HobunjiCurrencyLore = Object.freeze({ // Used as the canonical player-facing interpretation of the legacy inventory.gold save key.
       storageKey: 'gold',
       name: 'ganang',
-      meaning: 'bronze',
+      meaning: 'bronze money',
+      kind: 'currency',
       suffix: 'g',
       formatText: formatCurrencyText,
       rewriteSubtree: rewriteCurrencySubtree,
