@@ -378,6 +378,13 @@ assert.strictEqual(speciesOverrides.npcs.banubu.avatarExport.appearance.dialogue
 assert.match(gameSource, /const npcFacesPlayer = walker\.profile\?\.appearance\?\.dialogueFacePlayer !== false/, 'full NPC dialogue must read the authored facing opt-out');
 assert.match(gameSource, /if \(npcFacesPlayer\) walker\.applyFacingDeadzone/, 'full NPC dialogue must skip body rotation when the facing opt-out is false');
 assert.match(gameSource, /if \(npcFacesPlayer && walker\.neckJoint\)/, 'full NPC dialogue must skip NPC eye-contact neck tracking when the facing opt-out is false');
+assert.match(gameSource, /function animalDialogueChatheadWorldFrame\(walker\)/, 'animal dialogue camera must resolve a dedicated world-space chathead target');
+assert.match(gameSource, /AnimalChatheadFrame\?\.frameForKind\?\.\(kind\)/, 'animal dialogue camera must reuse the exact authored chathead crop');
+assert.match(gameSource, /AnimalSleepPresentation\?\.SLEEP_SCALE_Y/, 'animal dialogue camera target must compensate for Banubu sleep flattening before render');
+assert.match(gameSource, /cameraY: playerCenter\.y/, 'animal dialogue camera must lower to player portrait-center height');
+assert.match(gameSource, /lookY: animalFrame\.center\.y \+ animalFrame\.frameHeightWorld \* clearanceFrames/, 'animal chathead frame must sit just beneath the reticle rather than whole-body centering');
+const cameraConfigSource = read('docs/config/scratchbones-config.js');
+assert.match(cameraConfigSource, /animalChatheadReticleClearanceFrames["']?:\s*0\.18/, 'animal dialogue reticle gap must remain centrally tunable');
 
 // The real current Alchemy definitions—not only the synthetic filter fixture above—must keep Quest 2 feasible.
 const liveContext = { console, JSON, Math, Date }; // Used as a dependency-light VM for pure alchemy/Tea Grinder enumeration.
