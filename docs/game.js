@@ -1423,11 +1423,12 @@
           // wiped-out den's replacement pack isn't necessarily the same
           // species as the one it replaces.
           packSpecies: ['grehlr'],
-          // Species pool a den's next HERD is randomly drawn from, when a den
-          // rolls a herbivore population instead of a predator pack this
-          // cycle (see spawnPackAtDen) — kept as a sibling pool to packSpecies
-          // since a den's population type is decided per spawn, not fixed.
-          herbivoreSpecies: ['uumkaoii-wild'],
+          // Northern Cliffs caverns are Grehlr dens. Voorg-Asses are not
+          // den wildlife at all: WildlifeSpawn maintains two independent
+          // large exterior herds that bed down together in the open at night.
+          herbivoreSpecies: [],
+          roamingHerdSpecies: ['voorg-ass'],
+          roamingHerdCount: 2,
           entryCol: 11, entryRow: 14,
           exitCol: 11, exitRow: 15,
           townReturnCol: 30, townReturnRow: 2,
@@ -4426,6 +4427,13 @@
               if (meatStars) window.CookingSystem.recordItemQuality(key, meatStars, qty);
               parts.push((meatStars ? window.LootRolling.starRatingText(meatStars) + ' ' : '') + itemIconForKey(key) + '×' + qty);
             });
+            const carriedBabyKey = c.carriedBabyItemKey; // Herd-Mothers expose their carried young only through the corpse interaction, never while alive.
+            const carriedBabyCount = Math.max(0, Math.floor(Number(c.carriedBabyCount) || 0));
+            if (carriedBabyKey && carriedBabyCount > 0) {
+              inventory[carriedBabyKey] = Math.min(99, (inventory[carriedBabyKey] || 0) + carriedBabyCount);
+              parts.push(`${itemIconForKey(carriedBabyKey)}×${carriedBabyCount} ${ITEM_DEFS[carriedBabyKey]?.label || carriedBabyKey}`);
+              c.carriedBabyCount = 0; // One-shot even if an external caller somehow re-enters corpse action before despawn completes.
+            }
             const specialAmmo = window.RangedWeapons?.rollSpecialAmmoLoot?.() || 0; // Every creature corpse gets the same high-chance shared-ammo roll as bandits.
             if (specialAmmo) parts.push(`🏹 Special Ammo×${specialAmmo}`);
             corpseObjects.delete(c);
@@ -4609,6 +4617,8 @@
           // actually reaching the movement this state is supposed to
           // trigger. A no-op for anything not currently on a branch.
           window.HobunjiCloudForestWildlife?.interruptForFlee?.(c);
+          c._animalSleeping = false; // A hit wakes open-air herd sleepers immediately before the flee state takes ownership of movement.
+          c.scaleY = 1;
           c.state = 'fleeing-low-health';
           c.targetCreature = null;
         }
@@ -5801,6 +5811,12 @@
           window.AnimalVocalizations?.tickCreature?.(c, entityDt);
           const def = c.def;
           c.attackCooldownT = Math.max(0, c.attackCooldownT - entityDt);
+          const herdNight = !!c.herdKey && !!window.Music?.isNightTime?.(); // Used by open-air herd sleeping; unlike den packs these animals remain visible in a tight group.
+          if (!herdNight && c._animalSleeping) {
+            c._animalSleeping = false;
+            c.scaleY = 1;
+            if (c.state === 'herd-sleeping' || c.state === 'herd-settling') c.state = 'idle';
+          }
 
           // Aggro/chase locks onto whichever player is nearest at the moment
           // it's acquired (see nearestPlayer) rather than the single global
@@ -6098,6 +6114,28 @@
           } else if (c.state === 'return') {
             moving = travelCreatureToward(c, c.homeX, c.homeY, def.moveSpeed, entityDt);
             if (moving) aimAngle = Math.atan2(c.homeY - c.y, c.homeX - c.x);
+          } else if (c.herdKey && herdNight) {
+            // Roaming herds do not use dens. At night every member returns to
+            // its own small slot around the herd's shared sleep center, stays
+            // visible, and opts into AnimalSleepPresentation via
+            // _animalSleeping rather than being hidden at a cave mouth.
+            const sleepX = (c.herdSleepX ?? c.herdHomeX ?? c.homeX) + (Number(c.herdSleepOffsetX) || 0);
+            const sleepY = (c.herdSleepY ?? c.herdHomeY ?? c.homeY) + (Number(c.herdSleepOffsetY) || 0);
+            const distFromSleep = Math.hypot(c.x - sleepX, c.y - sleepY);
+            if (distFromSleep > DEN_SETTLE_RADIUS_PX) {
+              c.state = 'herd-settling';
+              c._animalSleeping = false;
+              c.scaleY = 1;
+              moving = travelCreatureToward(c, sleepX, sleepY, def.moveSpeed, entityDt);
+              if (moving) aimAngle = Math.atan2(sleepY - c.y, sleepX - c.x);
+            } else {
+              c.x = sleepX; c.y = sleepY; c.vx = 0; c.vy = 0;
+              c.state = 'herd-sleeping';
+              c._animalSleeping = true; // AnimalSleepPresentation closes eyes, picks run2, and preserves ground contact at render time.
+              c.scaleY = 0.5; // Legacy authored sleep pose normalized to the shared 0.75 visible scale by AnimalSleepPresentation.
+              moving = false;
+              aimAngle = idleCreatureAimAngle(c.groupRot);
+            }
           } else if (c.denKey && (window.Music?.isNightTime() || window.HobunjiCloudForestWildlife?.isPackOffShift?.(c))) {
             // Denned pack, off the clock — head for the den's own mouth
             // tile (denEntranceX/Y, set at spawn from the den's
@@ -6162,7 +6200,7 @@
                   aimAngle = idleCreatureAimAngle(c.groupRot);
                 }
               } else {
-                const wanderRadiusPx = c.denKey ? DEN_PACK_WANDER_RADIUS_PX : TILE * 2.2;
+                const wanderRadiusPx = Number(c.wanderRadiusPx) || (c.denKey ? DEN_PACK_WANDER_RADIUS_PX : TILE * 2.2);
                 moving = wanderTick(c, entityDt, c.homeX, c.homeY, wanderRadiusPx);
                 aimAngle = moving ? Math.atan2(c.vy, c.vx) : idleCreatureAimAngle(c.groupRot);
               }
@@ -6188,7 +6226,7 @@
           } else {
             // Pack creatures roam a wider territory around their den by day
             // than the tight loiter radius everything else uses.
-            const wanderRadiusPx = c.denKey ? DEN_PACK_WANDER_RADIUS_PX : TILE * 2.2;
+            const wanderRadiusPx = Number(c.wanderRadiusPx) || (c.denKey ? DEN_PACK_WANDER_RADIUS_PX : TILE * 2.2);
             moving = wanderTick(c, entityDt, c.homeX, c.homeY, wanderRadiusPx);
             // Wandering has an explicit heading; paused between legs, there's no
             // specific direction to look, so settle broadside to the camera.
@@ -6210,6 +6248,7 @@
           if (def.hostile === false && !territorialActive) {
             const canLook = livestockLookCandidate
               && !c.prone
+              && !c._animalSleeping
               && c.state !== 'return'
               && c.state !== 'patrol-chase'
               && !window.Combat?.telegraph?.isBusy(c)
@@ -6268,9 +6307,10 @@
           // flee, settle) be observed purely as text via window.__farmLog's
           // debug panel or window.__wildlifeDebug.dump(), without needing to
           // watch the 3D scene.
-          if (c.denKey && c.state !== c._prevAiState) {
+          if ((c.denKey || c.herdKey) && c.state !== c._prevAiState) {
             const tx = Math.round(c.x / TILE), ty = Math.round(c.y / TILE);
-            window.__farmLog?.(`[wildlife] ${c.creatureKey} (${c.id}) den=${c.denKey}: ${c._prevAiState || '(spawn)'} -> ${c.state} @ (${tx},${ty})`, 'wildlife');
+            const homeTag = c.herdKey ? `herd=${c.herdKey}` : `den=${c.denKey}`; // Lets the mobile Wildlife log distinguish open-air herds from cavern packs.
+            window.__farmLog?.(`[wildlife] ${c.creatureKey} (${c.id}) ${homeTag}: ${c._prevAiState || '(spawn)'} -> ${c.state} @ (${tx},${ty})`, 'wildlife');
             c._prevAiState = c.state;
           }
 

@@ -87,14 +87,21 @@ snapshotWindow.WildernessAiSnapshot.init({
       state: 'idle', nestTreeKey: 'cloud:nesttree:80,80', x: 800, y: 810,
       homeX: 800, homeY: 800, _cfDrenkirra: { mode: 'sleeping' },
     },
+    {
+      id: 'herd-mother', creatureKey: 'voorg-ass-herd-mother', areaId: 'map_southern_cloud_forest',
+      state: 'herd-sleeping', herdKey: 'cloud:roaming-herd:0', x: 500, y: 510,
+      homeX: 500, homeY: 500, isHerdMother: true, carriedBabyCount: 3, _animalSleeping: true,
+    },
   ]),
 });
 const snapshot = snapshotWindow.WildernessAiSnapshot.captureSnapshotText();
-assert.match(snapshot, /instantiatedWildlife=2 denCreatures=1 nestCreatures=1/,
-  'wilderness snapshots count both ordinary den packs and Drenkirra nest families');
+assert.match(snapshot, /instantiatedWildlife=3 denCreatures=1 nestCreatures=1 herdCreatures=1 herdMothers=1 carriedBabies=3 sleepingHerdCreatures=1/,
+  'wilderness snapshots count den packs, Drenkirra nest families, and roaming herds');
 assert.match(snapshot, /id=bird source=nest:cloud:nesttree:80,80 species=drenkirra[\s\S]*mode=sleeping/,
   'the omitted Drenkirra now identifies its exact nest and current cloud-forest behavior');
 assert.match(snapshot, /id=wolf source=den:cloud:den:1 species=gar-wolf/,
   'ordinary den residents retain an explicit den source in the same snapshot');
+assert.match(snapshot, /id=herd-mother source=herd:cloud:roaming-herd:0 species=voorg-ass-herd-mother[\s\S]*mode=sleeping[\s\S]*role=Herd-Mother carriedBabies=3/,
+  'roaming Herd-Mothers expose their herd source, sleep state, and carried young');
 
 console.log('Drenkirra nest scatter and complete wilderness snapshot regression passed.');

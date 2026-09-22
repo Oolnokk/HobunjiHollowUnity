@@ -4,11 +4,11 @@
   const PUKTUK_KIND = 'puktuk'; // Species key shared by wild Puktuk, livestock, and the existing genotype renderer.
   const PUKTUK_BABY_ITEM_KEY = 'puktukBaby'; // Livestock item created when a Puktuk den baby is taken from its nest.
   const HEAVY_WOOL_ITEM_KEY = 'puktukWool'; // Save-compatible key presented to players as Heavy Wool.
-  const VOORG_ASS_KIND = 'voorg-ass'; // Species key used to register Northern Cliffs Voorg-Asses with the shared den system.
-  const VOORG_ASS_ZONE_ID = 'map_northern_cliffs'; // Exterior-zone key whose cavern dens should use Voorg-Ass occupants.
-  const VOORG_ASS_BABY_ITEM_KEY = 'voorgAssBaby'; // Livestock item created when a Voorg-Ass den baby is taken from its nest.
+  const VOORG_ASS_KIND = 'voorg-ass'; // Species key used by the Northern Cliffs roaming-herd population.
+  const VOORG_ASS_ZONE_ID = 'map_northern_cliffs'; // Exterior-zone key whose open-air herd ecology owns Voorg-Asses.
+  const VOORG_ASS_BABY_ITEM_KEY = 'voorgAssBaby'; // Livestock item recovered from a killed Voorg-Ass Herd-Mother.
   const LIGHT_WOOL_ITEM_KEY = 'lightWool'; // Voorg-Ass shearing output presented to players as Light Wool.
-  const GREHLR_KIND = 'grehlr'; // Existing Northern Cliffs den species preserved when an explicit den roster is first authored.
+  const LEGACY_UUMKAOII_KEYS = new Set(['uumkaoii', 'uumkaoii-wild']); // Used when migrating the Northern Cliffs from the old den-herd pool to roaming Voorg-Ass herds.
 
   function registerDenNestConfig() {
     const game = window.SCRATCHBONES_CONFIG?.game; // Config is loaded before this bridge and snapshotted later by game.js.
@@ -24,12 +24,9 @@
       nestItemKey: existingPuktukMother.nestItemKey || PUKTUK_BABY_ITEM_KEY,
     };
 
-    const existingVoorgMother = denMothers[VOORG_ASS_KIND] || {}; // Preserves future authored Voorg-Ass Den-Mother overrides.
-    denMothers[VOORG_ASS_KIND] = {
-      ...existingVoorgMother,
-      creatureKey: existingVoorgMother.creatureKey || VOORG_ASS_KIND,
-      nestItemKey: existingVoorgMother.nestItemKey || VOORG_ASS_BABY_ITEM_KEY,
-    };
+    // Voorg-Asses do not use cavern Den-Mothers or nest pickups. Remove any
+    // stale pre-v3 registration before game.js snapshots DEN_MOTHER_DEFS.
+    delete denMothers[VOORG_ASS_KIND];
 
     const livestock = game.livestock || (game.livestock = {}); // Existing farm/stable livestock config shared with FarmAnimals.
     const itemKinds = livestock.itemKinds || (livestock.itemKinds = {}); // Maps undeployed livestock items back to their species.
@@ -55,7 +52,7 @@
       cat: 'livestock',
       sellPrice: 0,
       tags: ['Livestock', 'Baby'],
-      desc: 'A Voorg-Ass baby taken from a Northern Cliffs den. Add it to a farm or stable to raise it.',
+      desc: 'A Voorg-Ass baby recovered from a fallen Herd-Mother. Add it to a farm or stable to raise it.',
       ...(itemDefs[VOORG_ASS_BABY_ITEM_KEY] || {}),
     };
     return true;
@@ -93,56 +90,49 @@
     return true;
   }
 
-  function registerVoorgAssDenRuntime(injectedDeps) {
-    const northernZone = injectedDeps?.EXTERIOR_ZONES?.[VOORG_ASS_ZONE_ID]; // Shared live zone object consumed by cavern den population selection.
-    const hadExplicitDenSpecies = Array.isArray(northernZone?.denSpecies); // Used so converting legacy ecology to an explicit den roster does not erase existing den species.
-    const legacyPackSpecies = !hadExplicitDenSpecies && Array.isArray(northernZone?.packSpecies)
-      ? [...northernZone.packSpecies]
-      : []; // Existing predator den candidates copied only when this bridge is creating the explicit roster for the first time.
-    const grehlrWasEligible = !hadExplicitDenSpecies && (
-      legacyPackSpecies.includes(GREHLR_KIND)
-      || (Array.isArray(northernZone?.herbivoreSpecies) && northernZone.herbivoreSpecies.includes(GREHLR_KIND))
-    ); // Grehlr historically reached Northern Cliffs dens through the legacy pack/herd resolver and must survive the switch to explicit denSpecies.
+  function registerVoorgAssHerdRuntime(injectedDeps) {
+    const northernZone = injectedDeps?.EXTERIOR_ZONES?.[VOORG_ASS_ZONE_ID]; // Shared live zone object consumed by the roaming-herd spawner.
+    if (!northernZone) return false;
 
-    const denSpecies = northernZone
-      ? (hadExplicitDenSpecies ? northernZone.denSpecies : (northernZone.denSpecies = []))
-      : null; // Explicit den occupants override ordinary pack/herd ecology, so seed legacy occupants before adding Voorg-Ass.
-    if (Array.isArray(denSpecies) && !hadExplicitDenSpecies) {
-      for (const speciesKey of legacyPackSpecies) {
-        if (speciesKey && !denSpecies.includes(speciesKey)) denSpecies.push(speciesKey);
+    const herbivores = Array.isArray(northernZone.herbivoreSpecies) ? northernZone.herbivoreSpecies : (northernZone.herbivoreSpecies = []); // Legacy den-herd pool must no longer contain Voorg-Ass/Uumkao'ii.
+    for (let i = herbivores.length - 1; i >= 0; i--) {
+      if (herbivores[i] === VOORG_ASS_KIND || LEGACY_UUMKAOII_KEYS.has(herbivores[i])) herbivores.splice(i, 1);
+    }
+
+    const roamingHerdSpecies = Array.isArray(northernZone.roamingHerdSpecies)
+      ? northernZone.roamingHerdSpecies
+      : (northernZone.roamingHerdSpecies = []); // New population pool used by WildlifeSpawn independently of cavern den anchors.
+    if (!roamingHerdSpecies.includes(VOORG_ASS_KIND)) roamingHerdSpecies.push(VOORG_ASS_KIND);
+    northernZone.roamingHerdCount = Math.max(2, Math.floor(Number(northernZone.roamingHerdCount) || 2)); // Two independently roaming herds keep the Northern Cliffs populated without tying them to cave count.
+
+    const denSpecies = Array.isArray(northernZone.denSpecies) ? northernZone.denSpecies : null; // Existing explicit cave rosters stay intact except for stale Voorg-Ass entries.
+    if (denSpecies) {
+      for (let i = denSpecies.length - 1; i >= 0; i--) {
+        if (denSpecies[i] === VOORG_ASS_KIND) denSpecies.splice(i, 1);
       }
-      if (grehlrWasEligible && !denSpecies.includes(GREHLR_KIND)) denSpecies.push(GREHLR_KIND);
-    }
-    if (Array.isArray(denSpecies) && !denSpecies.includes(VOORG_ASS_KIND)) denSpecies.push(VOORG_ASS_KIND);
-
-    const denMotherDefs = injectedDeps?.DEN_MOTHER_DEFS; // CavernGenerator rejects den species that lack a corresponding Den-Mother definition.
-    if (denMotherDefs) {
-      const existingMother = denMotherDefs[VOORG_ASS_KIND] || {}; // Retains authored overrides while guaranteeing the runtime snapshot is complete.
-      denMotherDefs[VOORG_ASS_KIND] = {
-        ...existingMother,
-        creatureKey: existingMother.creatureKey || VOORG_ASS_KIND,
-        nestItemKey: existingMother.nestItemKey || VOORG_ASS_BABY_ITEM_KEY,
-      };
     }
 
-    const grehlrPreserved = !grehlrWasEligible || denSpecies?.includes(GREHLR_KIND); // Legacy Northern Cliffs Grehlr eligibility is part of successful registration.
-    const ready = Array.isArray(denSpecies)
-      && denSpecies.includes(VOORG_ASS_KIND)
-      && grehlrPreserved
-      && denMotherDefs?.[VOORG_ASS_KIND]?.creatureKey === VOORG_ASS_KIND;
-    window.__farmLog?.(`[voorg-ass] den registration zone=${VOORG_ASS_ZONE_ID} dens=[${Array.isArray(denSpecies) ? denSpecies.join(',') : 'missing'}] grehlrPreserved=${grehlrPreserved ? 1 : 0} denMother=${denMotherDefs?.[VOORG_ASS_KIND]?.creatureKey || 'missing'} reward=${denMotherDefs?.[VOORG_ASS_KIND]?.nestItemKey || 'missing'}`, ready ? 'wildlife' : 'warn');
+    const denMotherDefs = injectedDeps?.DEN_MOTHER_DEFS; // Cavern generation must never synthesize a Voorg-Ass Den-Mother/nest.
+    if (denMotherDefs) delete denMotherDefs[VOORG_ASS_KIND];
+
+    const ready = roamingHerdSpecies.includes(VOORG_ASS_KIND)
+      && !herbivores.includes(VOORG_ASS_KIND)
+      && !herbivores.some(kind => LEGACY_UUMKAOII_KEYS.has(kind))
+      && !(denSpecies?.includes(VOORG_ASS_KIND))
+      && !denMotherDefs?.[VOORG_ASS_KIND];
+    window.__farmLog?.(`[voorg-ass] herd registration zone=${VOORG_ASS_ZONE_ID} roaming=[${roamingHerdSpecies.join(',')}] herdCount=${northernZone.roamingHerdCount} denSpecies=[${denSpecies?.join(',') || 'legacy'}] denMother=none herbivores=[${herbivores.join(',')}]`, ready ? 'wildlife' : 'warn');
     return ready;
   }
 
   function patchWildlifeSpawn(api) {
     if (!api?.init) return false;
-    if (api.__voorgAssDenRegistrationInstalled) return true;
+    if (api.__voorgAssHerdRegistrationInstalled) return true;
     const originalInit = api.init; // Preserves CreatureGenetics and every other WildlifeSpawn.init wrapper already in the chain.
-    api.init = function voorgAssDenAwareWildlifeInit(injectedDeps) {
-      registerVoorgAssDenRuntime(injectedDeps);
+    api.init = function voorgAssHerdAwareWildlifeInit(injectedDeps) {
+      registerVoorgAssHerdRuntime(injectedDeps);
       return originalInit.call(this, injectedDeps);
     };
-    api.__voorgAssDenRegistrationInstalled = true;
+    api.__voorgAssHerdRegistrationInstalled = true;
     return true;
   }
 
@@ -241,7 +231,7 @@
   const woolBridgeReady = watchCookingSystemAssignment();
 
   window.PuktukDenNestRegistration = {
-    version: 2,
+    version: 3,
     PUKTUK_KIND,
     PUKTUK_BABY_ITEM_KEY,
     HEAVY_WOOL_ITEM_KEY,
@@ -249,24 +239,24 @@
     VOORG_ASS_ZONE_ID,
     VOORG_ASS_BABY_ITEM_KEY,
     LIGHT_WOOL_ITEM_KEY,
-    GREHLR_KIND,
     registerPuktukNestConfig: registerDenNestConfig,
     registerPuktukBabyItem: registerDenBabyItems,
     registerDenNestConfig,
     registerDenBabyItems,
     registerWoolInventoryItems,
-    registerVoorgAssDenRuntime,
+    registerVoorgAssHerdRuntime,
+    registerVoorgAssDenRuntime: registerVoorgAssHerdRuntime, // Compatibility alias for older diagnostics; v3 no longer creates a den.
     debugSnapshot: () => ({
       configReady: window.SCRATCHBONES_CONFIG?.game?.wildlife?.denMothers?.[PUKTUK_KIND]?.nestItemKey === PUKTUK_BABY_ITEM_KEY,
       livestockReady: window.SCRATCHBONES_CONFIG?.game?.livestock?.itemKinds?.[PUKTUK_BABY_ITEM_KEY] === PUKTUK_KIND,
-      voorgConfigReady: window.SCRATCHBONES_CONFIG?.game?.wildlife?.denMothers?.[VOORG_ASS_KIND]?.nestItemKey === VOORG_ASS_BABY_ITEM_KEY,
+      voorgConfigReady: !window.SCRATCHBONES_CONFIG?.game?.wildlife?.denMothers?.[VOORG_ASS_KIND],
       voorgLivestockReady: window.SCRATCHBONES_CONFIG?.game?.livestock?.itemKinds?.[VOORG_ASS_BABY_ITEM_KEY] === VOORG_ASS_KIND,
       initBridgeReady: !!window.DenNestSystem?.__denBabyItemBridgeInstalled,
-      wildlifeBridgeReady: !!window.WildlifeSpawn?.__voorgAssDenRegistrationInstalled || wildlifeBridgeReady,
+      wildlifeBridgeReady: !!window.WildlifeSpawn?.__voorgAssHerdRegistrationInstalled || wildlifeBridgeReady,
       woolBridgeReady: !!window.CookingSystem?.__livestockWoolItemBridgeInstalled || woolBridgeReady,
       denLocaleReady: !!window.DenLocaleRuntime,
     }),
   };
 
-  window.__farmLog?.(`[den-clutch] species registration config=${configReady ? 'ok' : 'missing'} itemBridge=${bridgeReady ? 'ok' : 'missing'} wildlifeBridge=${wildlifeBridgeReady ? 'ok' : 'missing'} woolBridge=${woolBridgeReady ? 'ok' : 'missing'} rewards=${PUKTUK_BABY_ITEM_KEY},${VOORG_ASS_BABY_ITEM_KEY}`, configReady && bridgeReady && wildlifeBridgeReady && woolBridgeReady ? 'wildlife' : 'warn');
+  window.__farmLog?.(`[livestock-young] registration config=${configReady ? 'ok' : 'missing'} itemBridge=${bridgeReady ? 'ok' : 'missing'} wildlifeBridge=${wildlifeBridgeReady ? 'ok' : 'missing'} woolBridge=${woolBridgeReady ? 'ok' : 'missing'} items=${PUKTUK_BABY_ITEM_KEY},${VOORG_ASS_BABY_ITEM_KEY}`, configReady && bridgeReady && wildlifeBridgeReady && woolBridgeReady ? 'wildlife' : 'warn');
 })();

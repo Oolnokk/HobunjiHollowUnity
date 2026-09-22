@@ -170,7 +170,7 @@
        before its rendering sibling below since creature-genetics-render.js
        doesn't itself depend on it (each reads genotype data, not each
        other), but they're a matched pair. -->
-  <script src="js/creature-genetics.js?v=20260828breath1"></script>
+  <script src="js/creature-genetics.js?v=20260921voorgherd1"></script>
   <!-- Creature genotype recolor + pattern-overlay compositing. -->
   <script src="js/creature-genetics-render.js?v=20260920animal-pattern-preview1"></script>
   <!-- Shared per-frame "where is this creature/character's head" cache — see
@@ -429,7 +429,7 @@
        (already global by then), so load order relative to the other systems
        above doesn't matter; must load before game.js, which calls
        window.WildernessAiSnapshot.init(...) during its own setup. -->
-  <script src="js/wilderness-ai-snapshot.js?v=20260915wildlifesnapshot1"></script>
+  <script src="js/wilderness-ai-snapshot.js?v=20260921voorgherdsnapshot1"></script>
   <!-- Cliff climbing scripted crossing (window.ClimbSystem) — self-contained
        aside from deps injected via init(), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
@@ -503,7 +503,7 @@
        at call time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.WildlifeSpawn.init(...) during its own setup. -->
-  <script src="js/wildlife-spawn.js?v=20260915drenkirrascatter1"></script>
+  <script src="js/wildlife-spawn.js?v=20260921voorgherd2"></script>
   <!-- Town/zone building mesh spawning + decorative furniture/prop spawning
        (window.TownZoneBuildings) — reads globally-loaded HousePieceGen/
        WallBuilder/BuildingDoor/window.ProceduralFurniture/window.Music at
@@ -597,7 +597,7 @@
   <script src="js/tasks-panel.js?v=20260807a"></script>
   <script src="js/supply-page.js?v=20260807a"></script>
   <script src="js/whistle-equip.js?v=20260807a"></script>
-  <script src="js/wildlife-debug-panel.js?v=20260915wildlifedebug1"></script>
+  <script src="js/wildlife-debug-panel.js?v=20260921voorgherd1"></script>
   <script src="js/wildlife-behavior-map.js?v=20260829a"></script>
   <!-- Shipping tab (player bag <-> shipping-box transfer UI, window.
        ShippingPanel) — pure DOM/state, no other window.* system reads;
