@@ -11693,6 +11693,14 @@
             }
             const target = resolveNpcScheduleTarget(this.rec);
             this.currentScheduleTarget = target || null;
+            // Wardrobe reroll must observe the resolved schedule before any
+            // character-state lock/blackout path can return early. Fire once
+            // on the transition into a sleeping activity, never every frame.
+            const scheduleActivity = target?.activity || ''; // Used to edge-detect this NPC entering or leaving the authored sleeping period.
+            if (/sleep/i.test(scheduleActivity) && !/sleep/i.test(this._prevScheduleActivity || '')) {
+              void window.NpcWardrobe?.rerollForSleep?.(rec?.id);
+            }
+            this._prevScheduleActivity = scheduleActivity;
             this._animalSleepRequested = !!this.animalDef && /sleep/i.test(String(target?.activity || '')); // Schedule-authored sleeping named animals enter the same visual sleep system before any state module can early-return.
             if (this._animalSleepRequested && this.rec && typeof this.rec._animalDialogueEyesOpen !== 'boolean') this.rec._animalDialogueEyesOpen = false; // Closed is the safe default until an authored dialogue system explicitly wakes the animal's eyes.
             if (window.NpcCharacterState?.update?.(this, dt, {
@@ -11736,15 +11744,6 @@
             this._legsPrevX = root.position.x; this._legsPrevZ = root.position.z;
             if (this.pause === Infinity) return;
             this.applyFacingDeadzone(this.desiredRot, 0.15);
-            // Wardrobe reroll: fires once per sleeping period, the instant
-            // this NPC's schedule activity transitions INTO "sleeping" (not
-            // every frame they stay asleep) — see js/npc-wardrobe.js's
-            // rerollForSleep for what it actually changes.
-            const scheduleActivity = target?.activity || '';
-            if (/sleep/i.test(scheduleActivity) && !/sleep/i.test(this._prevScheduleActivity || '')) {
-              window.NpcWardrobe?.rerollForSleep?.(rec?.id);
-            }
-            this._prevScheduleActivity = scheduleActivity;
             if (!target) return;
             if (target.visitorDeparture && targetArea === this.area && Math.hypot(root.position.x - tx, root.position.z - tz) <= arrival) {
               despawnNpcVisitor(this); // Used to remove a recurring visitor only after they physically reach the authored exit.
