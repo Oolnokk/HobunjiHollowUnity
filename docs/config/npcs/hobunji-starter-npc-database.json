@@ -120,12 +120,11 @@
                   "homeId": "researchers_tent",
                   "species": "Mao-ao",
                   "gender": "male",
-                  "ageBand": "child",
+                  "ageBand": "adult",
                   "role": "researcher",
                   "tags": [
                         "researchers_tent",
                         "researcher",
-                        "child",
                         "villager"
                   ],
                   "bio": "Mao'ao professor of Ikiology (anthropology) from the Tower of Learning in Kumapirra, drawn to the Highlands by its unstudied ruins and uncatalogued wildlife. Cheerful, a little oblivious to how remote he really is.",
