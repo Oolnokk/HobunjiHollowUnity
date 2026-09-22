@@ -22,7 +22,7 @@ assert.match(waterSystemSource,
   'a dry flood baseline has no surface and therefore needs no NORMAL_TOP lookup');
 assert.match(indexSource, /merged-water-renderer\.js\?v=20260921floodvisual1/,
   'the shipped page cache-busts the flood visual-attribute renderer support');
-assert.match(indexSource, /water-system\.js\?v=20260921floodvisual1/,
+assert.match(indexSource, /water-system\.js\?v=20260922wateropacity1/,
   'the shipped page cache-busts the stable-water flood visual profile');
 
 function cornersForTile(data, tileIndex) {
@@ -217,8 +217,10 @@ assert.match(gameSource, /function buildTownScene\(\) \{[\s\S]{0,260}?if \(_town
   're-entering an already-built town immediately resyncs permanent river versus flood visibility');
 assert.match(gameSource, /_townRiverWaterMeshes = townRiverMesh \? \[townRiverMesh\] : \[\];[\s\S]{0,220}?WaterSystem\.refreshTownWaterRender\(\);/,
   'a newly-built town refreshes water only after its permanent river mesh exists');
+assert.match(waterSystemSource, /opacity: 0\.65/,
+  'the singleton merged-water material uses the shared midpoint opacity for flood and stable surfaces');
 assert.match(waterSystemSource, /FLOOD_VISUAL_DEPTH = 0\.8[\s\S]{0,260}?FLOOD_VISUAL_COVERAGE = 1[\s\S]{0,320}?FLOOD_VISUAL_FLOW_MAGNITUDE = 1/,
-  'the flood plane uses the deep stable-water color, full opacity coverage, and normal sheen profile');
+  'the flood plane uses the deep stable-water color, full shared-material coverage, and normal sheen profile');
 assert.match(waterSystemSource, /renderDepth: FLOOD_VISUAL_DEPTH[\s\S]{0,180}?renderCoverage: FLOOD_VISUAL_COVERAGE[\s\S]{0,180}?renderFlowZ: FLOOD_VISUAL_FLOW_MAGNITUDE/,
   'the simulated flood baseline keeps explicit stable-water visual overrides');
 assert.match(waterSystemSource, /mapWidePlane:\s*true[\s\S]{0,120}?cols[\s\S]{0,120}?rows[\s\S]{0,120}?baseline/,
