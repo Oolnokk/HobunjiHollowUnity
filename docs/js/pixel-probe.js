@@ -144,9 +144,12 @@
   function _pixelProbeMatSummary(mat) {
     if (!mat) return '(no material)';
     const colorHex = mat.color?.isColor ? `#${mat.color.getHexString()}` : '-';
+    const shingleTag = mat.userData?.hobunjiHighlandShingleMaterial
+      ? ` shingleGLB=yes shingleTexture=${mat.userData.texturePath || '-'} shingleFill=${mat.userData.fillColor || '-'}`
+      : ''; // Proves a ray hit the imported shingle's own retinted material rather than the separate roof-face underlay.
     return `name="${mat.name || '(unnamed)'}" type=${mat.type} color=${colorHex} map=${mat.map ? (mat.map.name || '(unnamed texture)') : 'none'} transparent=${mat.transparent} opacity=${mat.opacity} `
       + `depthWrite=${mat.depthWrite} depthTest=${mat.depthTest} depthFunc=${mat.depthFunc} alphaTest=${mat.alphaTest ?? 0} `
-      + `stencilWrite=${!!mat.stencilWrite} stencilFunc=${mat.stencilFunc ?? '-'} stencilRef=${mat.stencilRef ?? '-'}`;
+      + `stencilWrite=${!!mat.stencilWrite} stencilFunc=${mat.stencilFunc ?? '-'} stencilRef=${mat.stencilRef ?? '-'}${shingleTag}`;
   }
 
   // Reads a material's own map texture at the raycast hit's exact UV —
@@ -961,9 +964,10 @@
     if (gridDebug) lines.push(`Building footprint cache: builds=${gridDebug.buildingFootprintCacheBuilds} hits=${gridDebug.buildingFootprintCacheHits}`);
     const shingleSurfaceDebug = window.HousePieceGen?.shingleSurfaceSnapshot?.(); // Exposes the shared Highland shingle template's authored/generated UV state and connected-surface mapping on mobile.
     if (shingleSurfaceDebug) {
-      lines.push(`Highland shingle UVs: meshes=${shingleSurfaceDebug.meshCount} sourceUV=${shingleSurfaceDebug.sourceUvMeshes} missingSourceUV=${shingleSurfaceDebug.sourceUvMissingMeshes} mapped=${shingleSurfaceDebug.mappedMeshes} fallbackMeshes=${shingleSurfaceDebug.fallbackMeshes} surfaces=${shingleSurfaceDebug.patchCount} fallbackSurfaces=${shingleSurfaceDebug.fallbackPatchCount} angle=${shingleSurfaceDebug.angleToleranceDeg}° texture=${shingleSurfaceDebug.texturePath || '-'} errors=${shingleSurfaceDebug.errors?.length || 0}`);
+      lines.push(`Highland shingle UVs: meshes=${shingleSurfaceDebug.meshCount} sourceUV=${shingleSurfaceDebug.sourceUvMeshes} missingSourceUV=${shingleSurfaceDebug.sourceUvMissingMeshes} mapped=${shingleSurfaceDebug.mappedMeshes} framed=${shingleSurfaceDebug.perimeterFramedMeshes ?? 0} frameUVs=${shingleSurfaceDebug.perimeterWarpedUvs ?? 0} edge=${Math.round(Number(shingleSurfaceDebug.sourceEdgeFraction || 0) * 100)}%→${Math.round(Number(shingleSurfaceDebug.surfaceEdgeFraction || 0) * 100)}% fallbackMeshes=${shingleSurfaceDebug.fallbackMeshes} surfaces=${shingleSurfaceDebug.patchCount} fallbackSurfaces=${shingleSurfaceDebug.fallbackPatchCount} angle=${shingleSurfaceDebug.angleToleranceDeg}° texture=${shingleSurfaceDebug.texturePath || '-'} errors=${shingleSurfaceDebug.errors?.length || 0}`);
       for (const entry of (shingleSurfaceDebug.meshes || [])) {
-        lines.push(`  shingle mesh "${entry.name}": sourceUV=${entry.hadSourceUv ? 'yes' : 'no'} finalUV=${entry.hasFinalUv ? 'yes' : 'no'} mapping=${entry.mapping || '-'} surfaces=${entry.patchCount ?? '-'} fallbackSurfaces=${entry.fallbackPatchCount ?? '-'}`);
+        const frame = entry.perimeterFrame || null; // Shows whether this specific imported GLB mesh received the protected-border UV warp.
+        lines.push(`  shingle mesh "${entry.name}": sourceUV=${entry.hadSourceUv ? 'yes' : 'no'} finalUV=${entry.hasFinalUv ? 'yes' : 'no'} mapping=${entry.mapping || '-'} surfaces=${entry.patchCount ?? '-'} fallbackSurfaces=${entry.fallbackPatchCount ?? '-'} perimeter=${frame ? `${Math.round(Number(frame.sourceEdgeFraction || 0) * 100)}%→${Math.round(Number(frame.surfaceEdgeFraction || 0) * 100)}%/${frame.warpedUvCount || 0}uv` : 'none'}`);
       }
     }
     const heldRenderDebug = window.HeldObjectRenderOrder?.snapshot?.(); // Exposes the retained selective-x-ray render mode and pass counters on mobile.
