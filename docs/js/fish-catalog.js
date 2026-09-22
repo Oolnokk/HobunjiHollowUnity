@@ -85,7 +85,11 @@
       out[f.key] = {
         icon:'🐟', label:f.label, cat:'material', category:'Fish', sellPrice:f.sellPrice,
         tags, amphibious:f.amphibious,
+        cookingCategories:['fish'],
         cookingPrimaryEffect:COOKING_EFFECT_BY_SPECIES[f.species] || 'fishing',
+        cookingBaseBoost:1,
+        cookingProcessingTier:'raw',
+        cookingDefaultStars:3,
         desc:f.amphibious
           ? `${f.label}, an amphibious fish worth triple normal value because landing it only starts the fight.`
           : `${f.label}, a fish found around Hobunji Hollow.`,
