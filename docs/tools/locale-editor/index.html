@@ -149,6 +149,23 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
           <div id="inspectorBox"><p class="muted">Select an object, NPC anchor, or connector on the canvas to edit it here.</p></div>
         </div>
 
+        <!-- CINEMATIC CAMERAS -->
+        <div class="section" style="--sec:#fb7185;--secBg:rgba(251,113,133,.08)">
+          <div class="sect-head"><b>Cinematic Cameras</b><span class="sect-tag" id="cinCamCountTag">0</span></div>
+          <label class="chk"><input type="checkbox" id="showCinematicCameras" checked> Show floating camera markers</label>
+          <div class="row" style="margin-top:6px"><select id="cinCamSelect" style="flex:1"></select><button class="ok" id="cinCamAdd">+ Camera</button><button class="bad" id="cinCamDelete">Delete</button></div>
+          <div id="cinCamFields" style="margin-top:7px">
+            <div class="g2"><div><label>Id</label><input id="cinCamId"></div><div><label>Label</label><input id="cinCamLabel"></div></div>
+            <div class="g3" style="margin-top:6px"><div><label>Camera X</label><input id="cinCamX" type="number" step=".1"></div><div><label>Height Y</label><input id="cinCamY" type="number" step=".05"></div><div><label>Camera Z</label><input id="cinCamZ" type="number" step=".1"></div></div>
+            <div class="g3" style="margin-top:6px"><div><label>Target X</label><input id="cinTargetX" type="number" step=".1"></div><div><label>Target Y</label><input id="cinTargetY" type="number" step=".05"></div><div><label>Target Z</label><input id="cinTargetZ" type="number" step=".1"></div></div>
+            <div class="g3" style="margin-top:6px"><div><label>FOV °</label><input id="cinCamFov" type="number" min="10" max="120"></div><div><label>Blend sec</label><input id="cinCamBlend" type="number" min="0" step=".05"></div><div><label>Dialogue NPC id</label><input id="cinCamNpc" placeholder="banubu"></div></div>
+            <div class="g2" style="margin-top:6px"><div><label>Player stage X</label><input id="cinStageX" type="number" step=".1"></div><div><label>Player stage Z</label><input id="cinStageZ" type="number" step=".1"></div></div>
+            <label class="chk"><input type="checkbox" id="cinCamFadePets"> Fade player pets in this shot</label>
+            <button class="sec" id="cinCamApply" style="width:100%;margin-top:6px">Apply Camera</button>
+          </div>
+          <p class="muted" style="margin-top:5px">Coordinates are locale/map tile-space. Dialogue can auto-pick cameras by NPC id; dialogue nodes and cutscene cards can reference a camera id explicitly.</p>
+        </div>
+
         <!-- PLACEMENT RULES -->
         <div class="section" style="--sec:#a78bfa;--secBg:rgba(167,139,250,.08)">
           <div class="sect-head"><b>Placement Rules</b><span class="sect-tag">for the generator</span></div>
@@ -301,6 +318,7 @@ function makeLocale(id, name, category) {
     objects: [],       // { id, kind, key, label, col, row, w, h, rot }
     npcAnchors: [],    // { id, npcId, name, col, row, facing }
     connectors: [],    // { id, col, row, side, label }
+    cinematicCameras: [], // Authored fixed shots: camera/target positions, dialogue tag, optional player stage and pet fade.
     terrainAnchors: {}, // Runtime terrain probes; mirrored into placement for editor persistence.
     embeddedTiles: {},  // Runtime embedded-host cells; mirrored into placement for editor persistence.
     cavern: null,        // cave_interior only: map id, fixed seed, primary connector, and shared cavern-generation options.
@@ -322,6 +340,7 @@ function sanitizeLoaded(raw) {
     cols: clamp(Math.round(Number(raw.cols) || 16), 4, 120),
     rows: clamp(Math.round(Number(raw.rows) || 16), 4, 120),
     tiles: {}, objects: [], npcAnchors: [], connectors: [],
+    cinematicCameras: Array.isArray(raw.cinematicCameras) ? JSON.parse(JSON.stringify(raw.cinematicCameras)) : [],
     cavern: raw.cavern && typeof raw.cavern === "object" ? JSON.parse(JSON.stringify(raw.cavern)) : null,
     placement: Object.assign({ mode: 'fixed', maxInstances: 1, allowedZones: [], clearanceTiles: 2, requiresFlatGround: true, floorMode: 'footprint', minDistanceFromEntry: 0, sameSectorAsEntry: false, alwaysVisibleOnMap: false, groundOnly: false, notes: '' }, raw.placement || {}),
     meta: Object.assign({ createdAt: nowIso(), updatedAt: nowIso() }, raw.meta || {})
@@ -401,6 +420,8 @@ let paletteNpc = null; // { npcId, name } or null = custom
 let painting = false;
 let paintErase = false;
 let markerDrag = null; // Active direct-manipulation drag for an object/NPC/connector; committed once on pointerup.
+let activeCinematicCameraId = null; // Camera selected in the dedicated cinematic-camera authoring panel.
+let showCinematicCameras = true; // Checkbox-controlled map overlay; authoring data is never deleted when hidden.
 
 // ── View / canvas ─────────────────────────────────────────────────────────────
 const canvas = $('canvas2d');
@@ -560,6 +581,27 @@ function draw() {
     const dir = { north:[0,-1], south:[0,1], east:[1,0], west:[-1,0] }[npc.facing] || [0,1];
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x+dir[0]*cs*0.5, y+dir[1]*cs*0.5); ctx.stroke();
+  }
+
+  // Cinematic cameras — floating camera icon plus look-at ray. Kept out of
+  // normal object selection so hiding the overlay cannot affect map editing.
+  if (showCinematicCameras) {
+    for (const cam of (m.cinematicCameras || [])) {
+      const px = Number(cam.position?.x) * cs, py = Number(cam.position?.z) * cs;
+      const tx = Number(cam.target?.x) * cs, ty = Number(cam.target?.z) * cs;
+      if (![px,py,tx,ty].every(Number.isFinite)) continue;
+      const selectedCam = cam.id === activeCinematicCameraId;
+      ctx.save();
+      ctx.strokeStyle = selectedCam ? '#fff' : '#fb7185';
+      ctx.fillStyle = '#fb7185';
+      ctx.lineWidth = selectedCam ? 3 : 2;
+      ctx.setLineDash([Math.max(3,cs*.14), Math.max(2,cs*.1)]);
+      ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(tx, ty); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.beginPath(); ctx.arc(px, py, Math.max(5,cs*.22), 0, Math.PI*2); ctx.fill(); ctx.strokeStyle='#111'; ctx.lineWidth=1; ctx.stroke();
+      ctx.fillStyle='#fff'; ctx.font=`${Math.max(9,Math.round(cs*.38))}px system-ui`; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('🎥',px,py);
+      ctx.restore();
+    }
   }
 
   // Hover highlight
@@ -929,6 +971,33 @@ function renderSettings() {
   $('locPlacementNotes').value = m.placement.notes;
   renderZoneChecks();
   renderCavernSettings();
+  renderCinematicCameraPanel();
+}
+
+function cinematicCameraById(m, id) {
+  return (m?.cinematicCameras || []).find(camera => camera.id === id) || null;
+}
+function renderCinematicCameraPanel() {
+  const m = activeLocale();
+  const list = m?.cinematicCameras || [];
+  $('cinCamCountTag').textContent = String(list.length);
+  if (!activeCinematicCameraId || !cinematicCameraById(m, activeCinematicCameraId)) activeCinematicCameraId = list[0]?.id || null;
+  $('cinCamSelect').innerHTML = list.length ? list.map(camera => `<option value="${escapeAttr(camera.id)}">${escapeAttr(camera.label || camera.id)}</option>`).join('') : '<option value="">— no cameras —</option>';
+  $('cinCamSelect').value = activeCinematicCameraId || '';
+  const cam = cinematicCameraById(m, activeCinematicCameraId);
+  $('cinCamFields').style.opacity = cam ? '1' : '.45';
+  for (const id of ['cinCamId','cinCamLabel','cinCamX','cinCamY','cinCamZ','cinTargetX','cinTargetY','cinTargetZ','cinCamFov','cinCamBlend','cinCamNpc','cinStageX','cinStageZ']) $(id).disabled = !cam;
+  $('cinCamFadePets').disabled = !cam;
+  $('cinCamApply').disabled = !cam;
+  if (!cam) return;
+  $('cinCamId').value = cam.id || '';
+  $('cinCamLabel').value = cam.label || '';
+  $('cinCamX').value = Number(cam.position?.x) || 0; $('cinCamY').value = Number(cam.position?.y) || 0; $('cinCamZ').value = Number(cam.position?.z) || 0;
+  $('cinTargetX').value = Number(cam.target?.x) || 0; $('cinTargetY').value = Number(cam.target?.y) || 0; $('cinTargetZ').value = Number(cam.target?.z) || 0;
+  $('cinCamFov').value = Number(cam.fovDeg) || 42; $('cinCamBlend').value = Number(cam.blendSeconds) || 0;
+  $('cinCamNpc').value = cam.dialogueNpcId || '';
+  $('cinStageX').value = cam.playerStage?.x ?? ''; $('cinStageZ').value = cam.playerStage?.z ?? '';
+  $('cinCamFadePets').checked = cam.fadePets === true;
 }
 
 function renderZoneChecks() {
@@ -1019,6 +1088,35 @@ $('applyPlacementBtn').addEventListener('click', () => {
   m.placement.notes = $('locPlacementNotes').value;
   m.placement.allowedZones = Array.from($('zoneChecks').querySelectorAll('input[data-zone]:checked')).map(i => i.dataset.zone);
   finishEdit();
+});
+
+// ── Cinematic cameras ─────────────────────────────────────────────────────────
+$('showCinematicCameras').addEventListener('change', () => { showCinematicCameras = $('showCinematicCameras').checked; draw(); });
+$('cinCamSelect').addEventListener('change', () => { activeCinematicCameraId = $('cinCamSelect').value || null; renderCinematicCameraPanel(); draw(); });
+$('cinCamAdd').addEventListener('click', () => {
+  const m = activeLocale(); if (!m) return;
+  m.cinematicCameras = m.cinematicCameras || [];
+  let id = `camera_${m.cinematicCameras.length + 1}`; while (m.cinematicCameras.some(camera => camera.id === id)) id += '_2';
+  const cx = Math.max(0.5, m.cols / 2 - 2), cz = Math.max(0.5, m.rows / 2 + 2);
+  m.cinematicCameras.push({ id, label:id, position:{x:cx,y:.35,z:cz}, target:{x:m.cols/2,y:.8,z:m.rows/2}, fovDeg:42, blendSeconds:.45, dialogueNpcId:'', fadePets:false, playerStage:null });
+  activeCinematicCameraId = id; finishEdit(); renderCinematicCameraPanel();
+});
+$('cinCamDelete').addEventListener('click', () => {
+  const m=activeLocale(); if(!m || !activeCinematicCameraId) return;
+  m.cinematicCameras=(m.cinematicCameras||[]).filter(camera=>camera.id!==activeCinematicCameraId);
+  activeCinematicCameraId=m.cinematicCameras[0]?.id||null; finishEdit(); renderCinematicCameraPanel();
+});
+$('cinCamApply').addEventListener('click', () => {
+  const m=activeLocale(), cam=cinematicCameraById(m,activeCinematicCameraId); if(!cam) return;
+  const oldId=cam.id;
+  cam.id=$('cinCamId').value.trim()||oldId; cam.label=$('cinCamLabel').value.trim()||cam.id;
+  cam.position={x:Number($('cinCamX').value)||0,y:Number($('cinCamY').value)||0,z:Number($('cinCamZ').value)||0};
+  cam.target={x:Number($('cinTargetX').value)||0,y:Number($('cinTargetY').value)||0,z:Number($('cinTargetZ').value)||0};
+  cam.fovDeg=clamp(Number($('cinCamFov').value)||42,10,120); cam.blendSeconds=Math.max(0,Number($('cinCamBlend').value)||0);
+  cam.dialogueNpcId=$('cinCamNpc').value.trim(); cam.fadePets=$('cinCamFadePets').checked;
+  const sx=$('cinStageX').value.trim(), sz=$('cinStageZ').value.trim();
+  cam.playerStage=sx!==''&&sz!==''?{x:Number(sx)||0,z:Number(sz)||0}:null;
+  activeCinematicCameraId=cam.id; finishEdit(); renderCinematicCameraPanel();
 });
 
 // ── New / duplicate / delete ─────────────────────────────────────────────────────
