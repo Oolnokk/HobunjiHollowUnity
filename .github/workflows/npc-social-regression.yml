@@ -20,6 +20,13 @@ on:
       - 'docs/js/npc-furniture-wardrobe-bridge-v4.js'
       - 'docs/js/character-action-locks.js'
       - 'docs/game.js'
+      - 'docs/index.html'
+      - 'docs/js/cinematic-camera-runtime.js'
+      - 'docs/js/wilderness-map-generator.js'
+      - 'docs/tools/map-editor/index.html'
+      - 'docs/tools/locale-editor/index.html'
+      - 'docs/tools/cutscene-director/index.html'
+      - 'scripts/test-cinematic-camera-authoring.js'
       - 'docs/js/npc-activity-planner.js'
       - 'docs/js/npc-performance-reaction-lock-runtime.js'
       - 'docs/js/map-layout-system.js'
@@ -88,6 +95,13 @@ on:
       - 'docs/js/npc-furniture-wardrobe-bridge-v4.js'
       - 'docs/js/character-action-locks.js'
       - 'docs/game.js'
+      - 'docs/index.html'
+      - 'docs/js/cinematic-camera-runtime.js'
+      - 'docs/js/wilderness-map-generator.js'
+      - 'docs/tools/map-editor/index.html'
+      - 'docs/tools/locale-editor/index.html'
+      - 'docs/tools/cutscene-director/index.html'
+      - 'scripts/test-cinematic-camera-authoring.js'
       - 'docs/js/npc-activity-planner.js'
       - 'docs/js/npc-performance-reaction-lock-runtime.js'
       - 'docs/js/map-layout-system.js'
@@ -170,6 +184,9 @@ jobs:
           node --check docs/js/named-animal-npc.js
           node --check docs/js/cavern-generator.js
           node --check docs/js/interior-scene-builder.js
+          node --check docs/js/cinematic-camera-runtime.js
+          node --check docs/js/wilderness-map-generator.js
+          node --check scripts/test-cinematic-camera-authoring.js
           node --check scripts/test-named-animal-npc-species.js
           node --check scripts/test-locale-cavern-interiors.js
           node --check docs/js/building-interior-npc-wardrobe-editor.js
@@ -236,6 +253,8 @@ jobs:
         run: node scripts/test-named-animal-npc-species.js
       - name: Test locale cavern floor and grounding parity
         run: node scripts/test-locale-cavern-interiors.js
+      - name: Test cinematic camera runtime and authoring
+        run: node scripts/test-cinematic-camera-authoring.js
       - name: Test NPC swig offer visibility and cooldown
         run: node scripts/test-npc-swig-offer-cooldown.js
       - name: Test relationship-aware reactive seating
