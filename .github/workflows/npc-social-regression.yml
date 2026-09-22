@@ -24,6 +24,8 @@ on:
       - 'docs/js/map-layout-system.js'
       - 'scripts/test-npc-activity-planner.js'
       - 'docs/js/npc-gifting.js'
+      - 'docs/js/npc-wardrobe.js'
+      - 'scripts/test-npc-wardrobe-immediate.js'
       - 'docs/config/npcs/hobunji-starter-npc-database.json'
       - 'scripts/seed-npc-gift-preferences.js'
       - 'scripts/test-npc-gift-color-preferences.js'
@@ -94,6 +96,8 @@ on:
       - 'docs/js/map-layout-system.js'
       - 'scripts/test-npc-activity-planner.js'
       - 'docs/js/npc-gifting.js'
+      - 'docs/js/npc-wardrobe.js'
+      - 'scripts/test-npc-wardrobe-immediate.js'
       - 'docs/config/npcs/hobunji-starter-npc-database.json'
       - 'scripts/seed-npc-gift-preferences.js'
       - 'scripts/test-npc-gift-color-preferences.js'
@@ -165,6 +169,8 @@ jobs:
           node --check docs/js/map-layout-system.js
           node --check scripts/test-npc-activity-planner.js
           node --check docs/js/npc-gifting.js
+          node --check docs/js/npc-wardrobe.js
+          node --check scripts/test-npc-wardrobe-immediate.js
           node --check docs/js/npc-social-relationship-bridge-v2.js
           node --check docs/js/npc-social-seating-bridge.js
           node --check docs/js/npc-furniture-wardrobe-bridge-v2.js
@@ -231,6 +237,8 @@ jobs:
         run: node scripts/test-interior-fire-void.js
       - name: Test balanced multi-trait NPC gifting
         run: node scripts/test-npc-gifting-multitrait.js
+      - name: Test immediate NPC wardrobe try-on and correction
+        run: node scripts/test-npc-wardrobe-immediate.js
       - name: Test NPC gift colors against worn outfits
         run: node scripts/test-npc-gift-color-preferences.js
       - name: Test stale learned NPC gift preference reconciliation
