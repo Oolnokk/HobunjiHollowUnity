@@ -659,7 +659,6 @@
     currentMerged = null;
     currentInstance = null; // Do not leave the orbit target attached to a locale from the previous generated scenario.
     currentCavernMapData = null;
-    activeCinematicCameraId = '';
     orbitCameraState = null;
     if (controls) controls.enabled = true;
     // Regression compatibility from the old lightweight preview: previewRoot.remove(child), parent !== previewRoot.
@@ -1232,6 +1231,7 @@
     if (!select) return;
     const cameras = Array.isArray(locale?.cinematicCameras) ? locale.cinematicCameras : [];
     const selected = activeCinematicCameraId && cameras.some(item => item.id === activeCinematicCameraId) ? activeCinematicCameraId : '';
+    if (!selected) activeCinematicCameraId = '';
     select.innerHTML = '<option value="">Camera: Orbit / inspect</option>' + cameras.map(record =>
       `<option value="${String(record.id || '').replace(/"/g, '&quot;')}">${String(record.label || record.id || 'Camera')}</option>`
     ).join('');
@@ -1344,6 +1344,7 @@
     applyCavernWireframe();
     refreshCinematicCameraChoices(locale);
     fitCavernCamera();
+    if (activeCinematicCameraId) applySelectedCinematicCamera();
 
     const shellBounds = debugBox(shell);
     setStatus(`GENERATED CAVERN INTERIOR · ${locale.name || locale.id} · ${mapData.floor?.length || 0} floor tiles · ${Math.floor((mapData.mesh?.indices?.length || 0) / 3)} shell triangles${shellBounds ? ` · bounds ${shellBounds.size.x}×${shellBounds.size.y}×${shellBounds.size.z}` : ''}`);
@@ -1388,6 +1389,7 @@
     if (token !== generationToken) return;
     addRuleOverlay(locale, instance, candidate, currentMerged);
     fitCamera();
+    if (activeCinematicCameraId) applySelectedCinematicCamera();
 
     const failure = candidate?.result;
     const closeness = candidate?.closeness;
