@@ -55,6 +55,18 @@
     return defaultTraitSets[npcId] || new Set();
   }
 
+  function clothingWearability(rec, item) {
+    const traits = window.ItemTraits?.computeItemTraits(item?.cosmeticId, item) || []; // Used to veto wearing any garment carrying an explicitly disliked/hated NPC trait.
+    const hatedTrait = (rec?.gifts?.hated || []).find(trait => traits.includes(trait)); // Hated traits take precedence in refusal feedback when both bad tiers match.
+    const dislikedTrait = (rec?.gifts?.disliked || []).find(trait => traits.includes(trait)); // Disliked traits also hard-veto wearing regardless of positive traits on the same garment.
+    const blockedTrait = hatedTrait || dislikedTrait || null; // Single refusal reason used by gifting, wardrobe buttons, and manual Wear attempts.
+    return {
+      allowed: !blockedTrait,
+      blockedTrait,
+      tier: hatedTrait ? 'hated' : (dislikedTrait ? 'disliked' : null),
+    };
+  }
+
   // ── Gift acceptance ──────────────────────────────────────────────
   function offerClothing(npcId, instance) {
     const walker = findWalker(npcId);
@@ -68,9 +80,10 @@
     const list = stored[npcId] || (stored[npcId] = []);
     const gifted = { ...instance, uid: 'wcloth_' + Math.random().toString(36).slice(2, 10) }; // Stored copy keeps the player's original inventory identity out of NPC persistence.
     list.push(gifted);
-    const worn = equipStoredItemData(npcId, gifted.uid); // Accepted clothing is tried on immediately instead of waiting for a sleep transition.
+    const wearability = clothingWearability(walker?.rec, gifted); // Gift preference is a hard wear veto even when the garment otherwise fits this NPC's wardrobe style.
+    const worn = wearability.allowed ? equipStoredItemData(npcId, gifted.uid) : false; // Disliked/hated clothing stays stored instead of appearing on the NPC.
     if (worn) void refreshWalkerAppearance(walker);
-    return { accepted: true, worn };
+    return { accepted: true, worn, wearBlockedBy: wearability.blockedTrait, wearBlockTier: wearability.tier };
   }
   // ── Contents / taking items back out ────────────────────────────
   function getWardrobeContents(npcId) {
@@ -138,6 +151,7 @@
     if (!rec || storedIdx === -1) return false;
 
     const winner = list[storedIdx];
+    if (!clothingWearability(rec, winner).allowed) return false; // Manual Wear obeys the same disliked/hated-trait veto as immediate gift try-on.
     const slot = winner.slot || guessSlot(winner.cosmeticId); // Gift/player slot wins; guessed slot is only a fallback for older persisted wardrobe items.
     const equipped = rec.equippedCosmetics || (rec.equippedCosmetics = []);
     const currentIdx = equipped.findIndex(id => guessSlot(id) === slot);
@@ -155,6 +169,13 @@
 
   async function wearStoredItem(npcId, uid) {
     const walker = findWalker(npcId);
+    const item = (stored[npcId] || []).find(entry => entry.uid === uid); // Used to provide refusal feedback before the equip mutation path runs.
+    const wearability = item ? clothingWearability(walker?.rec, item) : { allowed: false, blockedTrait: null, tier: null }; // Same hard veto used during gifting.
+    if (!wearability.allowed) {
+      const traitLabel = wearability.blockedTrait ? (window.ItemTraits?.getTraitLabel?.(wearability.blockedTrait) || wearability.blockedTrait) : 'that style'; // Player-facing reason avoids a silent dead Wear button.
+      deps?.showToast?.(`${walker?.rec?.name || 'They'} won't wear it — they ${wearability.tier === 'hated' ? 'hate' : 'dislike'} ${traitLabel}.`, false);
+      return false;
+    }
     const changed = equipStoredItemData(npcId, uid);
     if (!changed) return false;
     await refreshWalkerAppearance(walker);
@@ -263,9 +284,13 @@
     function rowHtml(item) {
       const label = item.label || prettifyCosmeticId(item.cosmeticId);
       const swatch = item.colorA?.hex ? `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${item.colorA.hex};margin-right:6px"></span>` : '';
+      const wearability = item.worn ? { allowed: true } : clothingWearability(walker?.rec, item); // Stored rows show the same preference veto enforced by the Wear action.
+      const wearButton = wearability.allowed
+        ? `<button class="npc-wardrobe-wear" data-uid="${item.uid}" data-label="${label}" style="border:1px solid rgba(106,167,255,.4);background:rgba(106,167,255,.16);color:#edf4ff;border-radius:8px;padding:4px 8px;font-size:11px;cursor:pointer">Wear</button>`
+        : `<span style="font-size:10px;color:#d99696">won't wear</span>`;
       const buttons = item.worn
         ? `<button class="npc-wardrobe-store" data-cosmetic-id="${item.cosmeticId}" data-label="${label}" style="border:1px solid rgba(106,167,255,.4);background:rgba(106,167,255,.16);color:#edf4ff;border-radius:8px;padding:4px 8px;font-size:11px;cursor:pointer">Store</button>`
-        : `<button class="npc-wardrobe-wear" data-uid="${item.uid}" data-label="${label}" style="border:1px solid rgba(106,167,255,.4);background:rgba(106,167,255,.16);color:#edf4ff;border-radius:8px;padding:4px 8px;font-size:11px;cursor:pointer">Wear</button><button class="npc-wardrobe-take" data-uid="${item.uid}" data-label="${label}" style="border:1px solid rgba(106,167,255,.4);background:rgba(106,167,255,.16);color:#edf4ff;border-radius:8px;padding:4px 8px;font-size:11px;cursor:pointer">Take</button>`;
+        : `${wearButton}<button class="npc-wardrobe-take" data-uid="${item.uid}" data-label="${label}" style="border:1px solid rgba(106,167,255,.4);background:rgba(106,167,255,.16);color:#edf4ff;border-radius:8px;padding:4px 8px;font-size:11px;cursor:pointer">Take</button>`;
       return `<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid #26384f;border-radius:9px;margin-bottom:6px"><span style="flex:1;font-size:12.5px">${swatch}${label}</span>${buttons}</div>`;
     }
     render();
@@ -299,6 +324,7 @@
     offerClothing,
     getWardrobeContents,
     takeFromWardrobe,
+    clothingWearability,
     wearStoredItem,
     storeWornItem,
     openWardrobePanel,
