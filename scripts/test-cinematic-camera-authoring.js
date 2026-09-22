@@ -58,6 +58,11 @@ const closeDialogueEnd = gameSource.indexOf('// renderRelationshipHearts now liv
 const closeDialogueBlock = gameSource.slice(closeDialogueStart, closeDialogueEnd);
 assert(closeDialogueStart >= 0 && closeDialogueEnd > closeDialogueStart && closeDialogueBlock.includes('_snapCameraTarget();'), 'closing dialogue must snap the normal follow target back to the staged player before gameplay camera resumes');
 assert(gameSource.includes('window.CinematicCameraRuntime?.update?.(dt);'), 'pet fading must use the existing gameplay frame driver');
+assert(runtimeSource.includes('function resolvedTargetFor(') && runtimeSource.includes('targetNpcId'), 'cinematic runtime must support NPC-targeted face-relative camera records');
+assert(gameSource.includes('getNpcFacePosition: walker =>') && gameSource.includes('_dialogueEyeWorldPosition(walker.root.position, walker.avatarHeight)'), 'camera targeting must reuse the game\'s exact NPC dialogue face-height calculation');
+assert(gameSource.includes('CinematicCameraRuntime?.resolvedTarget?.()'), 'authored camera application must resolve a live NPC target every frame');
+assert(localeEditorSource.includes('id="cinTargetNpc"') && localeEditorSource.includes('Face offset X'), 'Locale Editor must author NPC targets with face-offset fields');
+assert(localePreview3dSource.includes('id="localeCameraTargetNpc"') && localePreview3dSource.includes('resolvedPreviewCameraTarget'), 'Locale 3D preview must edit and resolve NPC face-relative camera targets');
 assert(!runtimeSource.includes('requestAnimationFrame('), 'camera runtime must not add another frame loop');
 
 const finishBlock = gameSource.match(/const finish = message => \{[\s\S]*?\n        \};/);
@@ -72,7 +77,8 @@ assert(builderSource.includes('options.doubleSided === true ? THREE.DoubleSide :
 
 assert(wildernessSource.includes('const toWorldContinuous = (col, row)'), 'stamped locale cameras need a non-snapping coordinate transform');
 assert(wildernessSource.includes('const worldP = toWorldContinuous('), 'camera positions must retain fractional coordinates after Tothal scaling');
-assert(wildernessSource.includes('const worldT = toWorldContinuous('), 'camera targets must retain fractional coordinates after Tothal scaling');
+assert(wildernessSource.includes('const npcTargeted = !!camera.targetNpcId'), 'stamped locale cameras must distinguish NPC face-relative targets from absolute map targets');
+assert(wildernessSource.includes('never receive its world translation'), 'NPC face-relative target offsets must scale with a locale without inheriting the locale world translation');
 assert(wildernessSource.includes('const worldStage = toWorldContinuous('), 'player staging points must retain fractional coordinates after Tothal scaling');
 
 for (const [label, source] of [['Map Editor', mapEditorSource], ['Locale Editor', localeEditorSource]]) {
@@ -92,22 +98,26 @@ parseInlineScripts('docs/tools/locale-editor/index.html');
 parseInlineScripts('docs/tools/cutscene-director/index.html');
 
 const stations = new Map((banubu.npcAnchors || []).map(station => [station.id, station]));
-const awakeStation = stations.get('station_banubu_cave_awake');
 const sleepStation = stations.get('station_banubu_cave_sleep');
+const banubuStations = (banubu.npcAnchors || []).filter(station => station.npcId === 'banubu');
 const cameras = new Map((banubu.cinematicCameras || []).map(camera => [camera.id, camera]));
 const awakeCamera = cameras.get('banubu_dialogue_awake');
 const sleepCamera = cameras.get('banubu_dialogue_sleep');
-assert(awakeCamera && sleepCamera, 'Banubu needs separate awake and sleeping dialogue shots');
-assert.strictEqual(awakeCamera.target.x, awakeStation.col + 0.5);
-assert.strictEqual(awakeCamera.target.z, awakeStation.row + 0.5);
-assert.strictEqual(sleepCamera.target.x, sleepStation.col + 0.5);
-assert.strictEqual(sleepCamera.target.z, sleepStation.row + 0.5);
+assert.strictEqual(banubuStations.length, 1, 'Banubu is one NPC with one physical station; awake/sleep are presentation states, not duplicate NPC anchors');
+assert(sleepStation && sleepStation.pose === 'lie', 'Banubu must retain his one schedule-driven sleeping station');
+assert(!stations.has('station_banubu_cave_awake'), 'the stale unused awake Banubu station must stay removed');
+assert(awakeCamera && sleepCamera, 'Banubu still needs separate awake and sleeping dialogue shots');
 for (const camera of [awakeCamera, sleepCamera]) {
+  assert.strictEqual(camera.targetNpcId, 'banubu', camera.id + ' must target the live Banubu NPC');
+  assert.strictEqual(camera.targetAnchorId, 'station_banubu_cave_sleep', camera.id + ' preview hint must point at Banubu\'s one physical station');
+  assert.deepStrictEqual(camera.target, { x: 0, y: 0, z: 0 }, camera.id + ' target transform must start as a neutral face-relative offset');
   assert(camera.position.y < 0.5, camera.id + ' should remain near ground level');
-  assert.strictEqual(camera.dialogueNpcId, 'banubu');
   assert.strictEqual(camera.fadePets, true);
   assert(Number.isFinite(camera.playerStage?.x) && Number.isFinite(camera.playerStage?.z), camera.id + ' needs an authored off-shot player staging point');
 }
+assert.strictEqual(sleepCamera.dialogueNpcId, 'banubu', 'sleeping Banubu shot should be the automatic dialogue camera');
+assert.strictEqual(awakeCamera.dialogueNpcId, '', 'awake Banubu shot should only activate explicitly from dialogue content');
+assert.deepStrictEqual(sleepCamera.position, { x: 7.6, y: -0.78, z: 8.3 }, 'repo camera must preserve the user\'s latest sleeping-shot position while discarding the old absolute target');
 
 // Execute the real browser runtime in a tiny VM to cover camera selection,
 // node-level camera swaps, player staging lookup, and pet fade/restore.
@@ -135,26 +145,42 @@ const material = {
 const petMesh = { isMesh: true, material, parent: {} };
 const petRoot = { traverse(fn) { fn(petMesh); } };
 const pet = { health: 10, areaId: 'map_i_den_banubu', master: player, stableRole: 'companion', avatarRef: { group: petRoot } };
+const banubuWalker = {
+  rec: { id: 'banubu' },
+  root: { position: { x: 6.5, y: -0.95, z: 5.5 } },
+  avatarHeight: 3,
+  currentScheduleTarget: { stationId: 'station_banubu_cave_sleep' },
+};
 context.CinematicCameraRuntime.init({
   getCurrentArea: () => 'map_i_den_banubu',
   getCompanionObjects: () => [pet],
   getPlayer: () => player,
+  getNpcWalker: npcId => npcId === 'banubu' ? banubuWalker : null,
+  getNpcFacePosition: walker => ({ x: walker.root.position.x, y: walker.root.position.y + 2.25, z: walker.root.position.z }),
 });
 context.CinematicCameraRuntime.registerArea('map_i_den_banubu', banubu.cinematicCameras);
 
 const selected = context.CinematicCameraRuntime.beginDialogue({
   areaId: 'map_i_den_banubu',
   npcId: 'banubu',
-  walker: { root: { position: { x: 9.45, z: 7.45 } } },
+  walker: banubuWalker,
 });
-assert.strictEqual(selected.camera.id, 'banubu_dialogue_sleep', 'nearest Banubu station should select the sleeping shot');
+assert.strictEqual(selected.camera.id, 'banubu_dialogue_sleep', 'Banubu dialogue should automatically select the one authored default sleeping shot');
 assert.strictEqual(context.CinematicCameraRuntime.currentPlayerStage().z, sleepCamera.playerStage.z);
+assert.deepStrictEqual(
+  JSON.parse(JSON.stringify(context.CinematicCameraRuntime.resolvedTarget())),
+  { x: 6.5, y: 1.3, z: 5.5 },
+  'NPC-targeted camera must resolve target transform from the live face plus authored offset'
+);
+banubuWalker.root.position.x = 7.25;
+assert.strictEqual(context.CinematicCameraRuntime.resolvedTarget().x, 7.25, 'NPC-targeted camera must keep following the live face after the NPC moves');
 
 for (let i = 0; i < 30; i++) context.CinematicCameraRuntime.update(0.1);
 assert(petMesh.material.opacity < 0.01, 'active Banubu shot should fade player pets out');
 
 context.CinematicCameraRuntime.applyDialogueNodeCamera({ cameraId: 'banubu_dialogue_awake' });
 assert.strictEqual(context.CinematicCameraRuntime.activeCamera().id, 'banubu_dialogue_awake', 'dialogue nodes should be able to swap authored cameras');
+assert.strictEqual(context.CinematicCameraRuntime.resolvedTarget().x, 7.25, 'awake shot must keep targeting the same live Banubu face rather than a second NPC/station');
 
 context.CinematicCameraRuntime.endDialogue();
 for (let i = 0; i < 30; i++) context.CinematicCameraRuntime.update(0.1);
