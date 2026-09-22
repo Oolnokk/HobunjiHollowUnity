@@ -777,45 +777,57 @@
     const ratio = passed / constraintTotal;
     return clamp(stage + ratio * (1 - stage) * 0.82, 0, 0.995);
   }
+  function previewLocaleVariant(locale, rotationDeg = 0) {
+    const Placement = window.LocaleTerrainPlacement; // Shared production placement API keeps editor overlays/ghosts on the same rotated locale definition as runtime.
+    return Placement?.rotateLocaleCardinal ? Placement.rotateLocaleCardinal(locale, rotationDeg) : locale;
+  }
+
   function findFailureCandidate(workspace, locale, seed, mode) {
     const Placement = window.LocaleTerrainPlacement;
     const root = rootMap(workspace);
     if (!root) return null;
     const scale = Math.max(1, Placement.inferGenerationScale(workspace));
-    const compiled = Placement.compileLocale(locale, scale);
-    if (!compiled) return null;
+    const rotations = locale?.placement?.rotationMode === 'cardinal' ? [0, 90, 180, 270] : [0]; // Failure previews search the same allowed orientations as production placement.
     const step = scale;
-    const minC = -compiled.bounds.minC, minR = -compiled.bounds.minR;
-    const maxC = root.cols - 1 - compiled.bounds.maxC, maxR = root.rows - 1 - compiled.bounds.maxR;
     const target = 0.52;
     let best = null;
-    for (let r = minR; r <= maxR; r += step) {
-      for (let c = minC; c <= maxC; c += step) {
-        const result = Placement.evaluateCandidateForTest(workspace, locale, c, r, { scale, seed });
-        if (result.ok) continue;
-        const closeness = candidateCloseness(result, compiled);
-        const item = { anchorC: c, anchorR: r, scale, result, closeness };
-        if (mode === 'almost') {
-          if (!best || closeness > best.closeness) best = item;
-        } else {
-          const distance = Math.abs(closeness - target);
-          if (!best || distance < best.distance) best = { ...item, distance };
+    for (const rotationDeg of rotations) {
+      const placedLocale = previewLocaleVariant(locale, rotationDeg); // Rotated probes/footprint/object metadata must stay together while evaluating near-miss candidates.
+      const compiled = Placement.compileLocale(placedLocale, scale);
+      if (!compiled) continue;
+      const minC = -compiled.bounds.minC, minR = -compiled.bounds.minR;
+      const maxC = root.cols - 1 - compiled.bounds.maxC, maxR = root.rows - 1 - compiled.bounds.maxR;
+      for (let r = minR; r <= maxR; r += step) {
+        for (let c = minC; c <= maxC; c += step) {
+          const result = Placement.evaluateCandidateForTest(workspace, placedLocale, c, r, { scale, seed });
+          if (result.ok) continue;
+          const closeness = candidateCloseness(result, compiled);
+          const item = { anchorC: c, anchorR: r, scale, rotationDeg, result, closeness };
+          if (mode === 'almost') {
+            if (!best || closeness > best.closeness) best = item;
+          } else {
+            const distance = Math.abs(closeness - target);
+            if (!best || distance < best.distance) best = { ...item, distance };
+          }
         }
       }
     }
     return best;
   }
+
   function virtualInstance(locale, candidate) {
     const scale = candidate.scale;
+    const rotationDeg = Number(candidate.rotationDeg) || 0; // Ghost previews carry the same cardinal orientation metadata as production locale instances.
+    const placedLocale = previewLocaleVariant(locale, rotationDeg); // Objects/connectors/NPC anchors must be drawn from the rotated definition, not the authored north-facing template.
     const anchorC = candidate.anchorC, anchorR = candidate.anchorR;
     const point = item => ({ ...clone(item), x: anchorC + (Number(item.col) || 0) * scale, y: anchorR + (Number(item.row) || 0) * scale });
     return {
       localeId: locale.id, name: locale.name, category: locale.category,
-      x: anchorC, y: anchorR, col: anchorC, row: anchorR, terrainAware: true,
+      x: anchorC, y: anchorR, col: anchorC, row: anchorR, terrainAware: true, rotationDeg,
       floorTier: Number(candidate.result?.floorTier) || 0, ghostFailure: true,
-      objects: (locale.objects || []).map(object => ({ ...point(object), id: object.id, kind: object.kind, key: object.key, label: object.label, w: Math.max(1, Number(object.w) || 1) * scale, h: Math.max(1, Number(object.h) || 1) * scale, rot: object.rot || 0 })),
-      npcAnchors: (locale.npcAnchors || []).map(point),
-      connectors: (locale.connectors || []).map(point),
+      objects: (placedLocale.objects || []).map(object => ({ ...point(object), id: object.id, kind: object.kind, key: object.key, label: object.label, w: Math.max(1, Number(object.w) || 1) * scale, h: Math.max(1, Number(object.h) || 1) * scale, rot: object.rot || 0 })),
+      npcAnchors: (placedLocale.npcAnchors || []).map(point),
+      connectors: (placedLocale.connectors || []).map(point),
     };
   }
   async function generateScenario(locale, zoneId, seed, scenario) {
@@ -841,13 +853,16 @@
       const Placement = window.LocaleTerrainPlacement;
       const root = rootMap(workspace);
       const scale = Placement.inferGenerationScale(workspace);
-      const compiled = Placement.compileLocale(locale, scale);
+      const rotations = locale?.placement?.rotationMode === 'cardinal' ? [0, 90, 180, 270] : [0]; // Unfiltered preview samples one of the same orientations production is allowed to use.
+      const rotationDeg = rotations[Math.floor(Math.random() * rotations.length)] || 0;
+      const placedLocale = previewLocaleVariant(locale, rotationDeg);
+      const compiled = Placement.compileLocale(placedLocale, scale);
       if (!compiled || !root) return { workspace, instance: null, seed, kind: 'no-candidate', reason: 'Locale could not compile' };
       const anchors = [];
       for (let r = -compiled.bounds.minR; r <= root.rows - 1 - compiled.bounds.maxR; r += scale) for (let c = -compiled.bounds.minC; c <= root.cols - 1 - compiled.bounds.maxC; c += scale) anchors.push([c, r]);
       const [anchorC, anchorR] = anchors[Math.floor(Math.random() * anchors.length)] || [0, 0];
-      const result = Placement.evaluateCandidateForTest(workspace, locale, anchorC, anchorR, { scale, seed });
-      const candidate = { anchorC, anchorR, scale, result, closeness: result.ok ? 1 : candidateCloseness(result, compiled) };
+      const result = Placement.evaluateCandidateForTest(workspace, placedLocale, anchorC, anchorR, { scale, seed });
+      const candidate = { anchorC, anchorR, scale, rotationDeg, result, closeness: result.ok ? 1 : candidateCloseness(result, compiled) };
       return { workspace, instance: virtualInstance(locale, candidate), seed, kind: result.ok ? 'raw-valid' : 'raw-failure', candidate, reason: result.reason || 'valid candidate' };
     }
     const picked = findFailureCandidate(workspace, locale, seed, scenario);
@@ -999,7 +1014,9 @@
       mesh.renderOrder = 60;
       group.add(mesh);
     };
-    const compiled = window.LocaleTerrainPlacement.compileLocale(locale, scale);
+    const rotationDeg = Number(instance?.rotationDeg ?? candidate?.rotationDeg) || 0; // Placed cardinal orientation selects the exact footprint/probe definition drawn by the overlay.
+    const placedLocale = previewLocaleVariant(locale, rotationDeg);
+    const compiled = window.LocaleTerrainPlacement.compileLocale(placedLocale, scale);
     for (const cell of compiled?.tiles?.values?.() || []) tile(anchorC + cell.c, anchorR + cell.r, 0xf5a623, instance.ghostFailure ? 0.20 : 0.10, 0.035);
     for (const cell of compiled?.probes?.values?.() || []) {
       const rule = cell.value;
@@ -1023,7 +1040,9 @@
     const placed = currentInstance || currentWorkspace?.localeInstances?.find(item => item.localeId === currentLocale.id) || null;
     const anchorC = finiteCoordinate(placed?.x) ?? finiteCoordinate(placed?.col) ?? finiteCoordinate(currentCandidate?.anchorC);
     const anchorR = finiteCoordinate(placed?.y) ?? finiteCoordinate(placed?.row) ?? finiteCoordinate(currentCandidate?.anchorR);
-    const compiled = window.LocaleTerrainPlacement.compileLocale(currentLocale, scale);
+    const rotationDeg = Number(placed?.rotationDeg ?? currentCandidate?.rotationDeg) || 0; // Camera footprint bounds must follow the selected cardinal locale orientation.
+    const placedLocale = previewLocaleVariant(currentLocale, rotationDeg);
+    const compiled = window.LocaleTerrainPlacement.compileLocale(placedLocale, scale);
     const bounds = compiled?.footprint || compiled?.bounds;
     let centerX, centerZ, spanX, spanZ;
     if (anchorC != null && anchorR != null) {
@@ -1082,6 +1101,7 @@
         anchorC: Number(instance.x) || 0,
         anchorR: Number(instance.y) || 0,
         scale: window.LocaleTerrainPlacement.inferGenerationScale(result.workspace),
+        rotationDeg: Number(instance.rotationDeg) || 0,
         floorTier: instance.floorTier,
       };
     }
