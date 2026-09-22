@@ -241,6 +241,17 @@
         <button class="sec" id="localePreviewDebugBtn" type="button" title="Copy numeric state for this exact rendered preview">📋 Copy Preview Debug</button>
         <button class="sec" id="locale3dFitBtn" type="button">Fit</button>
       </div>
+      <div id="localeCameraSliderPanel" style="display:none;position:absolute;right:8px;top:72px;width:min(340px,calc(100% - 16px));max-height:calc(100% - 138px);overflow:auto;background:rgba(4,8,13,.92);border:1px solid rgba(255,255,255,.16);border-radius:10px;padding:9px;color:#dbeafe;backdrop-filter:blur(5px);touch-action:auto">
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:7px"><b id="localeCameraSliderTitle" style="flex:1">Camera view</b><button class="sec" id="localeCameraSliderOrbit" type="button">Orbit</button></div>
+        <div class="localeCameraSliderRow" data-camera-row="position.x"><label style="display:flex;justify-content:space-between;font-size:11px">Camera X <span data-camera-value="position.x"></span></label><input data-camera-slider="position.x" type="range" step=".05" style="width:100%"></div>
+        <div class="localeCameraSliderRow" data-camera-row="position.y"><label style="display:flex;justify-content:space-between;font-size:11px">Camera Y <span data-camera-value="position.y"></span></label><input data-camera-slider="position.y" type="range" step=".02" style="width:100%"></div>
+        <div class="localeCameraSliderRow" data-camera-row="position.z"><label style="display:flex;justify-content:space-between;font-size:11px">Camera Z <span data-camera-value="position.z"></span></label><input data-camera-slider="position.z" type="range" step=".05" style="width:100%"></div>
+        <div class="localeCameraSliderRow" data-camera-row="target.x"><label style="display:flex;justify-content:space-between;font-size:11px">Target X <span data-camera-value="target.x"></span></label><input data-camera-slider="target.x" type="range" step=".05" style="width:100%"></div>
+        <div class="localeCameraSliderRow" data-camera-row="target.y"><label style="display:flex;justify-content:space-between;font-size:11px">Target Y <span data-camera-value="target.y"></span></label><input data-camera-slider="target.y" type="range" step=".02" style="width:100%"></div>
+        <div class="localeCameraSliderRow" data-camera-row="target.z"><label style="display:flex;justify-content:space-between;font-size:11px">Target Z <span data-camera-value="target.z"></span></label><input data-camera-slider="target.z" type="range" step=".05" style="width:100%"></div>
+        <div class="localeCameraSliderRow" data-camera-row="fovDeg"><label style="display:flex;justify-content:space-between;font-size:11px">FOV <span data-camera-value="fovDeg"></span></label><input data-camera-slider="fovDeg" type="range" min="10" max="120" step="1" style="width:100%"></div>
+        <div style="font-size:10px;opacity:.7;margin-top:6px">Drag for a live preview. The final value is saved when you release the slider; cave geometry is not regenerated.</div>
+      </div>
       <div id="locale3dStatus" style="position:absolute;left:8px;bottom:8px;max-width:min(720px,calc(100% - 16px));background:rgba(4,8,13,.88);border:1px solid rgba(255,255,255,.14);border-radius:9px;padding:7px 9px;color:#dbeafe;font-size:11px;line-height:1.35;pointer-events:none">3D sandbox</div>`;
     view.appendChild(overlay);
 
@@ -272,6 +283,15 @@
     });
     document.getElementById('localeSandboxRandomize').addEventListener('click', () => regenerateScenario({ newSeed: currentPreviewMode === 'exterior', force: true }));
     document.getElementById('localeSandboxCamera').addEventListener('change', () => applySelectedCinematicCamera());
+    overlay.querySelectorAll('[data-camera-slider]').forEach(input => {
+      input.addEventListener('input', () => updateCameraFromSlider(input, false));
+      input.addEventListener('change', () => updateCameraFromSlider(input, true));
+    });
+    document.getElementById('localeCameraSliderOrbit').addEventListener('click', () => {
+      const select = document.getElementById('localeSandboxCamera');
+      if (select) select.value = '';
+      leaveCinematicCameraPreview();
+    });
     document.getElementById('localeCavernWireframe').addEventListener('change', event => {
       currentCavernWireframe = !!event.target.checked;
       applyCavernWireframe();
@@ -858,8 +878,8 @@
       id: locale.id, cols: locale.cols, rows: locale.rows, tiles: locale.tiles,
       placement: locale.placement, terrainAnchors: locale.terrainAnchors, embeddedTiles: locale.embeddedTiles,
       objects: locale.objects, npcAnchors: locale.npcAnchors, connectors: locale.connectors,
-      cavern: locale.cavern, cinematicCameras: locale.cinematicCameras,
-    });
+      cavern: locale.cavern,
+    }); // Cinematic cameras are intentionally excluded: editing a shot must never regenerate the cavern/wilderness geometry.
   }
   function previewSignature(locale) {
     return localeSignature(locale) + '|preview:' + currentPreviewMode; // Keep the poll comparison identical to the signature stored after a render.
@@ -1257,6 +1277,66 @@
     return (locale?.cinematicCameras || []).find(record => String(record.id || '') === String(id || '')) || null;
   }
 
+  function cameraSliderRange(path, locale) {
+    const horizontalX = Math.max(2, Number(locale?.cols) || 1) + 2;
+    const horizontalZ = Math.max(2, Number(locale?.rows) || 1) + 2;
+    const verticalMax = Math.max(5, Number(locale?.cavern?.generation?.sizeY) || 3) + 3;
+    if (path === 'fovDeg') return { min: 10, max: 120 };
+    if (path.endsWith('.y')) return { min: -2, max: verticalMax };
+    if (path.endsWith('.x')) return { min: -2, max: horizontalX };
+    return { min: -2, max: horizontalZ };
+  }
+  function cameraRecordValue(record, path) {
+    if (path === 'fovDeg') return Number(record?.fovDeg) || 42;
+    const [group, axis] = path.split('.');
+    return Number(record?.[group]?.[axis]) || 0;
+  }
+  function setCameraRecordValue(record, path, rawValue) {
+    const value = Number(rawValue);
+    if (!record || !Number.isFinite(value)) return;
+    if (path === 'fovDeg') {
+      record.fovDeg = clamp(value, 10, 120);
+      return;
+    }
+    const [group, axis] = path.split('.');
+    record[group] = { ...(record[group] || {}), [axis]: value };
+  }
+  function syncCameraSliderPanel(locale, record) {
+    const panel = document.getElementById('localeCameraSliderPanel');
+    if (!panel) return;
+    panel.style.display = record && activeCinematicCameraId ? 'block' : 'none';
+    if (!record) return;
+    const title = document.getElementById('localeCameraSliderTitle');
+    if (title) title.textContent = record.label || record.id || 'Camera view';
+    panel.querySelectorAll('[data-camera-slider]').forEach(input => {
+      const path = input.dataset.cameraSlider;
+      const range = cameraSliderRange(path, locale);
+      input.min = String(range.min);
+      input.max = String(range.max);
+      const value = cameraRecordValue(record, path);
+      input.value = String(value);
+      const output = panel.querySelector(`[data-camera-value="${path}"]`);
+      if (output) output.textContent = path === 'fovDeg' ? `${Math.round(value)}°` : value.toFixed(2);
+    });
+  }
+  function updateCameraFromSlider(input, commit) {
+    const record = cameraPreviewRecord(currentLocale, activeCinematicCameraId);
+    if (!record || !input) return;
+    const path = input.dataset.cameraSlider;
+    setCameraRecordValue(record, path, input.value);
+    const output = document.querySelector(`[data-camera-value="${path}"]`);
+    const value = cameraRecordValue(record, path);
+    if (output) output.textContent = path === 'fovDeg' ? `${Math.round(value)}°` : value.toFixed(2);
+    applySelectedCinematicCamera({ syncSliders: false });
+    if (!commit) return;
+    const saved = window._localeEditorBridge?.updateCinematicCamera?.(currentLocale?.id, record.id, {
+      position: { ...(record.position || {}) },
+      target: { ...(record.target || {}) },
+      fovDeg: record.fovDeg,
+    });
+    if (saved) Object.assign(record, saved);
+  }
+
   function refreshCinematicCameraChoices(locale) {
     const select = document.getElementById('localeSandboxCamera');
     if (!select) return;
@@ -1268,6 +1348,7 @@
     ).join('');
     select.value = selected;
     select.disabled = !cameras.length || !previewVisible;
+    syncCameraSliderPanel(locale, selected ? cameraPreviewRecord(locale, selected) : null);
   }
 
   function captureOrbitCameraState() {
@@ -1293,11 +1374,12 @@
     if (controls) controls.enabled = true;
     const select = document.getElementById('localeSandboxCamera');
     if (select) select.value = '';
+    syncCameraSliderPanel(currentLocale, null);
     controls?.update?.();
     requestPreviewRender();
   }
 
-  function applySelectedCinematicCamera() {
+  function applySelectedCinematicCamera(options = {}) {
     const select = document.getElementById('localeSandboxCamera');
     const id = String(select?.value || '');
     if (!id) { leaveCinematicCameraPreview(); return; }
@@ -1321,6 +1403,7 @@
     camera.fov = clamp(Number(record.fovDeg) || 42, 10, 120);
     camera.lookAt(tx, Number(t.y) || 0, tz);
     camera.updateProjectionMatrix();
+    if (options.syncSliders !== false) syncCameraSliderPanel(currentLocale, record);
     requestPreviewRender();
   }
 
