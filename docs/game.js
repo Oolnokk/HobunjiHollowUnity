@@ -11736,15 +11736,6 @@
             this._legsPrevX = root.position.x; this._legsPrevZ = root.position.z;
             if (this.pause === Infinity) return;
             this.applyFacingDeadzone(this.desiredRot, 0.15);
-            // Wardrobe reroll: fires once per sleeping period, the instant
-            // this NPC's schedule activity transitions INTO "sleeping" (not
-            // every frame they stay asleep) — see js/npc-wardrobe.js's
-            // rerollForSleep for what it actually changes.
-            const scheduleActivity = target?.activity || '';
-            if (/sleep/i.test(scheduleActivity) && !/sleep/i.test(this._prevScheduleActivity || '')) {
-              window.NpcWardrobe?.rerollForSleep?.(rec?.id);
-            }
-            this._prevScheduleActivity = scheduleActivity;
             if (!target) return;
             if (target.visitorDeparture && targetArea === this.area && Math.hypot(root.position.x - tx, root.position.z - tz) <= arrival) {
               despawnNpcVisitor(this); // Used to remove a recurring visitor only after they physically reach the authored exit.
