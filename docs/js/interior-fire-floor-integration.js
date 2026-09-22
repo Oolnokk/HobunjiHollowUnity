@@ -21,11 +21,14 @@
     floorControlsInstalled: false,
     floorMeshBridgeInstalled: false,
     previewFloorMaterials: 0,
+    previewFloorStretchMeshes: 0,
     previewFloorSignature: null,
     lastFloorSignature: null,
     reimports: 0,
     lastError: null,
   };
+  const previewFloorMeshes = new Set(); // Holds currently attached editor floor tiles so stretch mode can give the whole floor one shared UV field after a rebuild.
+  let previewFloorStretchQueued = false; // Coalesces one synchronous editor rebuild into a single post-build UV remap.
 
   // The environment bridge is deliberately a sibling companion rather than
   // more code inside the already-broad fire/floor runtime. It owns wallHeight,
@@ -182,6 +185,7 @@
       texture: document.getElementById('biaFloorTexture')?.value || '',
       tint: document.getElementById('biaFloorTint')?.value || '#ffffff',
       tilesPerTile: document.getElementById('biaFloorRepeat')?.value || 1,
+      stretchToSurface: document.getElementById('biaFloorStretch')?.checked === true,
     });
   }
 
@@ -190,9 +194,11 @@
     const texture = document.getElementById('biaFloorTexture');
     const tint = document.getElementById('biaFloorTint');
     const repeat = document.getElementById('biaFloorRepeat');
+    const stretch = document.getElementById('biaFloorStretch'); // Used to preserve authored one-PNG-per-floor behavior when a canvas interior is reopened and resaved.
     if (texture) texture.value = normalized?.texture || '';
     if (tint) tint.value = normalized?.tint || '#ffffff';
     if (repeat) repeat.value = normalized?.tilesPerTile ?? 1;
+    if (stretch) stretch.checked = normalized?.stretchToSurface === true;
   }
 
   function editorPreviewFloorStyle() {
@@ -226,6 +232,17 @@
         if (style) {
           const materials = (Array.isArray(material) ? material : [material]).filter(Boolean);
           for (const mat of materials) window.InteriorFireFloorRuntime?.applyFloorStyleToMaterial?.(mat, style, '../../assets/');
+          if (style.stretchToSurface) {
+            previewFloorMeshes.add(mesh);
+            if (!previewFloorStretchQueued) {
+              previewFloorStretchQueued = true;
+              queueMicrotask(() => {
+                previewFloorStretchQueued = false;
+                for (const candidate of [...previewFloorMeshes]) if (!candidate.parent) previewFloorMeshes.delete(candidate);
+                editorState.previewFloorStretchMeshes = window.InteriorFireFloorRuntime?.stretchFloorMeshesToSharedBounds?.(previewFloorMeshes) || 0;
+              });
+            }
+          }
           editorState.previewFloorMaterials = materials.length;
           editorState.previewFloorSignature = JSON.stringify(style);
         }
@@ -260,6 +277,7 @@
         <div class="field"><label>Tint</label><input id="biaFloorTint" type="color" value="#ffffff"></div>
         <div class="field"><label>Textures per tile</label><input id="biaFloorRepeat" type="number" min="0.05" max="64" step="0.05" value="1"></div>
       </div>
+      <label class="hint" style="display:flex;align-items:center;gap:7px;margin-top:7px"><input id="biaFloorStretch" type="checkbox"> Stretch one PNG across the complete floor surface</label>
       <div class="row" style="margin-top:7px">
         <button id="biaFloorApply" type="button">Apply floor</button>
         <button id="biaFloorDefault" type="button">Use wall-style default</button>

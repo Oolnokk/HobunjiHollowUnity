@@ -11,14 +11,19 @@ const json = p => JSON.parse(read(p));
 
 const core = read('docs/js/interior-fire-floor-runtime.js');
 const integration = read('docs/js/interior-fire-floor-integration.js');
+const sceneBuilder = read('docs/js/interior-scene-builder.js'); // Guards one-full-canvas-per-inner-wall UVs.
+const housePieceGen = read('docs/js/HousePieceGen.js'); // Guards one-full-canvas-per-authored exterior tent face.
 const environment = read('docs/js/interior-environment-runtime.js');
 const vessel = read('docs/js/furniture-vessel-runtime.js');
 const mapLayoutSystem = read('docs/js/map-layout-system.js');
 const temple = json('docs/config/maps/map_i_temple.json');
 const hunundiRoom = json('docs/config/maps/map_i_temple_basement_hunundi.json');
+const researchersTent = json('docs/config/maps/map_i_researchers_tent.json'); // Guards the authored one-PNG floor-surface mode.
 
 assert.doesNotThrow(() => new vm.Script(core, { filename: 'interior-fire-floor-runtime.js' }));
 assert.doesNotThrow(() => new vm.Script(integration, { filename: 'interior-fire-floor-integration.js' }));
+assert.doesNotThrow(() => new vm.Script(sceneBuilder, { filename: 'interior-scene-builder.js' }));
+assert.doesNotThrow(() => new vm.Script(housePieceGen, { filename: 'HousePieceGen.js' }));
 assert.doesNotThrow(() => new vm.Script(environment, { filename: 'interior-environment-runtime.js' }));
 assert.doesNotThrow(() => new vm.Script(vessel, { filename: 'furniture-vessel-runtime.js' }));
 assert.doesNotThrow(() => new vm.Script(mapLayoutSystem, { filename: 'map-layout-system.js' }));
@@ -34,6 +39,23 @@ assert(core.includes("id: 'candle_table_fire'"), 'candle tables must receive the
 assert(core.includes('floorStyle'), 'runtime must support per-map floorStyle data');
 assert(core.includes('tilesPerTile'), 'floor style must expose texture density in textures per tile');
 assert(core.includes('applyFloorStyleToScene'), 'loaded building scenes must receive authored floor style');
+assert(core.includes('stretchFloorMeshesToSharedBounds'), 'floor runtime must support one shared UV field across a complete authored floor');
+assert(core.includes('stretchToSurface ? THREE.ClampToEdgeWrapping : THREE.RepeatWrapping'),
+  'surface-stretched floors must clamp one PNG instead of repeating it');
+assert(sceneBuilder.includes("uv.push(0, 0, 1, 0, 1, 1, 0, 1)"),
+  'each canvas interior wall panel must receive an independent full 0..1 canvas.png UV island');
+assert(sceneBuilder.includes("canvasSurfaceStretch = 'one-png-per-wall-panel'"),
+  'canvas wall debug metadata must expose the per-panel stretch policy');
+assert(housePieceGen.includes("var stretchCanvasFace = tag === 'canvas'"),
+  'HousePieceGen must distinguish cloth faces from ordinary tiled building materials');
+assert(housePieceGen.includes('var uLen = stretchCanvasFace ? 1') && housePieceGen.includes('var vLen = stretchCanvasFace ? 1'),
+  'every authored exterior canvas face must stretch exactly one PNG in both UV axes');
+assert.deepStrictEqual(researchersTent.floorStyle, {
+  texture: 'canvas.png',
+  tint: '#ffffff',
+  tilesPerTile: 1,
+  stretchToSurface: true,
+}, 'Researcher\'s Tent floor must stretch one canvas.png across its complete floor surface');
 
 assert(integration.includes("bonfireFurniture: Object.freeze({ key: 'bonfireFurniture', label: 'Bonfire', fw: 2, fd: 2"),
   'Interior Editor catalog compatibility entry must use the real 2x2 bonfire footprint');
@@ -48,6 +70,9 @@ assert(integration.includes("bonfireFurniture"), 'Interior Editor catalog must e
 assert(integration.includes("biaFloorTexture"), 'Interior Editor must expose the PNG floor texture field');
 assert(integration.includes("biaFloorTint"), 'Interior Editor must expose the floor tint field');
 assert(integration.includes("biaFloorRepeat"), 'Interior Editor must expose textures-per-tile');
+assert(integration.includes("biaFloorStretch"), 'Interior Editor must preserve the one-PNG-across-surface floor mode');
+assert(integration.includes('stretchFloorMeshesToSharedBounds?.(previewFloorMeshes)'),
+  'Interior Editor preview must remap all attached floor tiles into the same shared UV bounds');
 assert(integration.includes('function installEditorFloorMeshBridge()'),
   'Interior Editor must patch newly rebuilt floor meshes instead of trusting the wall-style-only material cache');
 assert(integration.includes("geometry?.type === 'BoxGeometry'"),

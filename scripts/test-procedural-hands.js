@@ -362,11 +362,11 @@ assert.match(driverSource, /profile: options\.profile \|\| null/, 'avatar profil
 assert.match(driverSource, /profile: record\.profile/, 'hand attachment must receive the original avatar profile');
 assert.doesNotMatch(driverSource, /clampDeltaWorld|armLength|elbow/, 'driver must never perform arm reach correction');
 const garanki = npcDatabase.npcs.find(npc => npc.id === 'garanki_gabu');
-assert(garanki?.tags?.includes('child'), 'Garanki must use the shared child avatar/anatomy scale marker');
-assert.strictEqual(garanki.ageBand, 'child', 'Garanki child classification must remain visible in authoring tools');
+assert(!garanki?.tags?.includes('child'), 'Garanki must not carry the shared child avatar/anatomy scale marker');
+assert.strictEqual(garanki.ageBand, 'adult', 'Garanki adult classification must remain visible in authoring tools');
 const pngAvatarSandbox = { window: { SCRATCHBONES_CONFIG: { game: { appearanceEditor: { species: {} }, assets: { pngPlaneAvatar: { portraitScaleBySpecies: { 'mao-ao': 1, 'engh-sho': { default: 0.95, male: 1.1, female: 0.9 } }, childScaleMultiplier: 0.5, childMarkers: { roles: ['child'], tags: ['child'] } } } } } } }; // Mirrors legacy and gender-specific production scales without constructing Three.js meshes.
 vm.runInNewContext(pngAvatarSource, pngAvatarSandbox, { filename: 'png-plane-avatar.js' });
-assert.strictEqual(pngAvatarSandbox.window.PNGPlaneAvatar.avatarScaleMultiplierFor({ npcRecord: garanki }), 0.5, 'Garanki must resolve to the configured child anatomy multiplier');
+assert.strictEqual(pngAvatarSandbox.window.PNGPlaneAvatar.avatarScaleMultiplierFor({ npcRecord: garanki }), 1, 'Garanki must resolve to ordinary adult anatomy scale');
 assert.strictEqual(pngAvatarSandbox.window.PNGPlaneAvatar.avatarScaleMultiplierFor({ speciesId: 'engh-sho', gender: 'male' }), 1.1, 'male portrait scale must resolve independently');
 assert.strictEqual(pngAvatarSandbox.window.PNGPlaneAvatar.avatarScaleMultiplierFor({ speciesId: 'engh-sho', gender: 'female' }), 0.9, 'female portrait scale must resolve independently');
 assert.match(furnitureAuthorSource, /seatedPortraitScaleMultiplier\(species,gender\)/, 'furniture avatar fallback must accept gender-specific portrait scales');
