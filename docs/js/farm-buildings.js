@@ -21,7 +21,7 @@
   function _applySharedFarmStructureTints() {
     if (!deps?.houseWallBuilder || typeof HousePieceGen === 'undefined') return;
     deps.houseWallBuilder.tintDefaultGlb?.('assets/textures/carved_smooth.png', '#4d4d4d');
-    HousePieceGen.tintShingleMaterial?.('assets/textures/carved_smooth.png', '#7d7355');
+    HousePieceGen.tintShingleMaterial?.('assets/textures/carved_smooth.png', '#765536');
   }
 
   // WallBuilder intentionally lets structures render immediately with a brown
