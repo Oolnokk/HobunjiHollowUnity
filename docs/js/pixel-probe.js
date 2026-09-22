@@ -970,6 +970,10 @@
         ? `Controller: #${controllerDebug.index} ${controllerDebug.id} mapping=${controllerDebug.mapping} owner=${controllerDebug.owner} LS=${axis(controllerDebug.move)} RS=${axis(controllerDebug.look)}`
         : 'Controller: not detected');
     }
+    const boulderShellDebug = window.ZoneTerrainFeatures?.boulderShellSnapshot?.(); // Copyable proof that streamed chunks reuse one map-wide boulder index instead of rescanning the map.
+    if (boulderShellDebug) {
+      lines.push(`Boulder shells: indexBuilds=${boulderShellDebug.indexBuilds} cacheHits=${boulderShellDebug.indexHits} gridTilesScanned=${boulderShellDebug.gridTilesScanned} chunkBuilds=${boulderShellDebug.shellBuilds}`);
+    }
     const objectSfxDebug = window.AudioSystem?.objectSfxDebugSnapshot?.(); // Makes tool-cue preload/lookup state visible without requiring a mobile console.
     if (objectSfxDebug) {
       const lastCue = objectSfxDebug.last;
@@ -1129,6 +1133,11 @@
       if (iconErrors.length) lines.push(`Item sprite recolor error: ${iconErrors.join(' | ')}`);
     }
     lines.push(pxBuf ? `Raw color under cursor: rgba(${pxBuf[0]},${pxBuf[1]},${pxBuf[2]},${pxBuf[3]})` : 'Raw color under cursor: (readback failed)');
+    const furniturePuzzles = window.FurniturePuzzleRuntime?.debug?.() || []; // Mobile-visible OFF/ON transform and dynamic-collision diagnostics.
+    if (furniturePuzzles.length) {
+      const puzzleSummary = furniturePuzzles.map(map => `${map.mapId}:${map.nodes.map(node => `${node.id}[${node.role}/${node.behavior} ${Math.round(node.progress * 100)}% ${node.blocked ? 'blocked' : 'open'}]`).join(',') || 'none'} wires=${map.wires}`).join(' | ');
+      lines.push(`Furniture mechanisms: ${puzzleSummary}`);
+    }
     const characterView = window.HOBUNJI_CHARACTER_VIEW_STATUS; // Published by game.js so mobile reports can verify the private camera/body lock state.
     if (characterView) {
       lines.push(`Character View: ${characterView.enabled ? 'ON' : 'off'} reason=${characterView.lastChangeReason || '-'} facing=${Number(characterView.facingAngleDeg || 0).toFixed(2)}° body=${Number(characterView.bodyYawDeg || 0).toFixed(2)}° neck=${Number(characterView.neckYawDeg || 0).toFixed(2)}°`);

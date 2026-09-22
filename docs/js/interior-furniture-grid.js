@@ -40,6 +40,8 @@
     smokerFurniture: [2, 2],
     agingBarrelFurniture: [1, 1],
     agingVaseFurniture: [1, 1],
+    doorFurniture: [1, 1],
+    woodenDoorFurniture: [1, 1],
   });
 
   const state = { // Used by debugSnapshot() so mobile diagnostics can inspect the last runtime adaptation without developer tools.
@@ -133,6 +135,11 @@
     return !!piece && !piece.nonColliding && !piece.walkableElevation;
   }
 
+  function isDynamicMechanism(piece) {
+    const puzzle = window.FurniturePuzzleProperties?.normalizePuzzle?.(piece?.puzzle);
+    return puzzle?.role === 'mechanism' && puzzle.blocksMovement;
+  }
+
   function mergedColliders(mapData, furniture = mapData?.furniture) {
     const out = [];
     const seen = new Set();
@@ -148,7 +155,7 @@
     }
     const manualCount = out.length;
     for (const piece of (Array.isArray(furniture) ? furniture : [])) {
-      if (!providesCollision(piece)) continue;
+      if (!providesCollision(piece) || isDynamicMechanism(piece)) continue; // Dynamic furniture owns these exact tiles through FurniturePuzzleRuntime instead of baking permanent colliders.
       for (const [col, row] of occupiedTiles(piece)) {
         const key = `${col},${row}`;
         if (seen.has(key)) continue;
@@ -178,6 +185,7 @@
       return transformed;
     });
     const collision = mergedColliders(mapData, sourceFurniture);
+    const manualColliderKeys = (mapData.colliders || []).map(tile => `${Math.round(finiteNumber(tile?.[0], NaN))},${Math.round(finiteNumber(tile?.[1], NaN))}`); // Gameplay uses this to avoid reopening a manually-solid tile under a moving door.
 
     const stations = Array.isArray(mapData.npcStations) ? mapData.npcStations.map(station => {
       const binding = transformedById.get(String(station?.sourceFurnitureId || ''));
@@ -205,6 +213,7 @@
       ...mapData,
       furniture,
       colliders: collision.colliders,
+      _interiorManualColliderKeys: manualColliderKeys,
       ...(Array.isArray(stations) ? { npcStations: stations } : {}),
       _interiorFurnitureGridApplied: true,
     };
@@ -237,6 +246,7 @@
     legacyRecordFor,
     occupiedTiles,
     providesCollision,
+    isDynamicMechanism,
     mergedColliders,
     adaptEffectiveMap,
     installRuntimeBridge,

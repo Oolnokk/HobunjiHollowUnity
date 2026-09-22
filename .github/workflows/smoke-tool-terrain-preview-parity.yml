@@ -1,0 +1,62 @@
+name: Smoke Tool Terrain Preview Parity
+
+on:
+  push:
+    paths:
+      - '.github/workflows/smoke-tool-terrain-preview-parity.yml'
+      - 'docs/js/panel-ui.js'
+      - 'docs/js/panel-ui-core.js'
+      - 'docs/js/map-editor-terrain-texture-fix.js'
+      - 'docs/js/tool-terrain-preview-parity.js'
+      - 'docs/js/surface-stretch-uv-furniture.js'
+      - 'docs/js/natural-surface-materials.js'
+      - 'docs/js/natural-surface-jigsaw-exclusion.js'
+      - 'docs/js/terrain-render-chunks.js'
+      - 'docs/js/house-pieces.js'
+      - 'docs/config/natural-surface-materials.js'
+      - 'docs/tools/map-editor/index.html'
+      - 'docs/tools/cutscene-director/index.html'
+      - 'docs/tools/wilderness-generation-lab/**'
+      - 'docs/tools/background-scenery-author/**'
+      - 'scripts/test-tool-terrain-preview-parity.js'
+      - 'scripts/test-boundary-current-vs-jigsaw.js'
+      - 'scripts/test-surface-stretch-uv.js'
+      - 'scripts/test-farm-border-road-loader-order.js'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  terrain-preview-parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Syntax check shared preview bootstrap
+        run: |
+          node --check docs/js/panel-ui.js
+          node --check docs/js/map-editor-terrain-texture-fix.js
+          node --check docs/js/tool-terrain-preview-parity.js
+          node --check docs/js/natural-surface-jigsaw-exclusion.js
+          node --check docs/tools/background-scenery-author/protected-edge-stretch.js
+          node --check docs/tools/background-scenery-author/scenery-3d-preview.js
+
+      - name: Tool terrain parity regression
+        run: node scripts/test-tool-terrain-preview-parity.js
+
+      - name: Boundary authored-preview vs Jigsaw regression
+        run: node scripts/test-boundary-current-vs-jigsaw.js
+
+      - name: Central surface stretch regression
+        run: node scripts/test-surface-stretch-uv.js
+
+      - name: Farm cliff integration regression
+        run: node scripts/test-farm-border-road-loader-order.js

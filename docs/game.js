@@ -2469,6 +2469,7 @@
         // placed by an authored map, just synthesized instead of authored.
         feedGrinder:   { itemKey: 'feedGrinderFurniture',   icon: '⚙️', name: 'Feed Grinder',         price: 0,  fw: 1, fd: 1, color: 0x8f8a78, area: 'interior', desc: 'Grinds a held crop, raw meat, or fish into Plant/Meat Fodder for barn troughs.', fixture: true },
         trough:        { itemKey: 'troughFurniture',        icon: '🪣', name: 'Feed Trough',          price: 0,  fw: 1, fd: 1, color: 0x8a6a3a, area: 'interior', desc: 'Holds up to a week of feed (7 units) for one housed animal.', fixture: true },
+        woodenDoor:    { itemKey: 'woodenDoorFurniture',    icon: '🚪', name: 'Wooden Door',          price: 0,  fw: 1, fd: 1, color: 0x8b6540, area: 'interior', desc: 'A directly toggleable authored door using the shared OFF/ON furniture transition.', fixture: true },
         // Authored town business signs (see AUTHORED_FURNITURE_KEYS below) —
         // ordinary exterior decor entries so they're placeable, selectable,
         // and reflectable through the Map Editor like anything else, rather
@@ -2504,7 +2505,7 @@
         // (see DECORATIVE_FURNITURE_DEFS above). Without these, buildFurnitureVisual
         // falls back to ProceduralFurniture, which has no recipe for either
         // key and silently returns an empty group — the signs never render.
-        'generalStoreSign', 'innSign',
+        'generalStoreSign', 'innSign', 'woodenDoor',
       ]);
       for (const key of AUTHORED_FURNITURE_KEYS) window.AuthoredFurniture?.load(key);
 
@@ -2512,7 +2513,7 @@
       // richer authored geometry once it's loaded, otherwise the old crude
       // procedural stand-in (never blocks placement on the fetch completing).
       function buildFurnitureVisual(furnitureKey, color) {
-        const authored = AUTHORED_FURNITURE_KEYS.has(furnitureKey) ? window.AuthoredFurniture?.peek(furnitureKey) : null;
+        const authored = window.AuthoredFurniture?.peek(furnitureKey); // Explicitly loaded future mechanism furniture need not be added to the eager-preload set merely to render.
         if (authored) return window.AuthoredFurniture.buildGroup(authored, color);
         return window.ProceduralFurniture.buildFurnitureGroup(furnitureKey, color);
       }
