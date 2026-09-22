@@ -233,6 +233,7 @@
 
   function shingleSurfaceSnapshot() {
     return {
+      build: 'shingleglb4', // Pixel Probe uses this literal to prove which shingle runtime revision is actually executing on-device.
       angleToleranceDeg: HIGHLAND_SHINGLE_SURFACE_SPLIT_ANGLE_DEG,
       texturePath: (_pendingShingleTint && _pendingShingleTint.pngPath) || null,
       meshCount: _shingleSurfaceStats.meshCount,
