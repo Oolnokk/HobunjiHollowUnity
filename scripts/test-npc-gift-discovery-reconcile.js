@@ -70,9 +70,9 @@ assert.deepEqual(Array.from(gorobi.hated), [], 'old Gorobi hated-Muted discovery
 assert.deepEqual(Array.from(gorobi.liked), ['muted'], 'old Gorobi Muted knowledge moves to his current liked tier');
 
 const saved = gifting.serializeDiscoveredPrefs();
-assert.deepEqual(saved.kinami_kunji.hated, [], 'cleaned Kinami tier is what gets saved back');
+assert.deepEqual(Array.from(saved.kinami_kunji.hated), [], 'cleaned Kinami tier is what gets saved back');
 assert.ok(saved.kinami_kunji.liked.includes('muted'), 'corrected Kinami Muted knowledge persists');
-assert.deepEqual(saved.gorobi_ginju.hated, [], 'cleaned Gorobi tier is what gets saved back');
+assert.deepEqual(Array.from(saved.gorobi_ginju.hated), [], 'cleaned Gorobi tier is what gets saved back');
 assert.ok(saved.gorobi_ginju.liked.includes('muted'), 'corrected Gorobi Muted knowledge persists');
 
 console.log('NPC discovered gift preference reconciliation passed.');
