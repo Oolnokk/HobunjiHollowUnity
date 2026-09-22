@@ -24,7 +24,7 @@ const rec = {
   },
   equippedCosmetics: ['rugged_poncho'],
   appliedDyes: { CLOTH: 'dye:CLOTH:old' },
-  gifts: { liked: ['style:test'] },
+  gifts: { loved: ['style:test'], liked: [], disliked: ['style:itchy'], hated: ['style:garish'] },
 };
 const walker = {
   rec,
@@ -41,7 +41,12 @@ const context = {
   Math,
   document: {},
   ItemTraits: {
-    computeItemTraits() { return ['style:test']; },
+    computeItemTraits(cosmeticId) {
+      if (cosmeticId === 'itchy_poncho') return ['style:test', 'style:itchy']; // Mixed loved+disliked garment must still be refused for wearing.
+      if (cosmeticId === 'garish_hat') return ['style:test', 'style:garish']; // Hated trait is also a hard wear veto.
+      return ['style:test'];
+    },
+    getTraitLabel(trait) { return trait; },
   },
   NpcAvatarPreview: {
     buildProfileFromNpcExport(npc) {
@@ -81,6 +86,32 @@ wardrobe.init({
   assert.equal(contents.worn[0].cosmeticId, 'fine_poncho', 'gift appears as currently worn without a sleep transition');
   assert.equal(contents.stored.length, 1, 'displaced original garment moves into storage');
   assert.equal(contents.stored[0].cosmeticId, 'rugged_poncho', 'the previous garment remains recoverable');
+
+  const dislikedGift = wardrobe.offerClothing('test_npc', {
+    uid: 'player_owned_disliked',
+    cosmeticId: 'itchy_poncho',
+    slot: 'overwear',
+    colorA: null,
+  });
+  assert.equal(dislikedGift.accepted, true, 'compatible disliked clothing may still be accepted into the wardrobe');
+  assert.equal(dislikedGift.worn, false, 'any disliked clothing trait vetoes immediate wearing even when another trait is loved');
+  assert.equal(dislikedGift.wearBlockedBy, 'style:itchy', 'gift result reports the exact disliked trait that blocked wearing');
+  assert.deepEqual(Array.from(rec.equippedCosmetics), ['fine_poncho'], 'disliked gift does not replace the currently worn garment');
+
+  const dislikedStored = wardrobe.getWardrobeContents('test_npc').stored.find(item => item.cosmeticId === 'itchy_poncho');
+  assert.ok(dislikedStored?.uid, 'disliked accepted clothing remains stored');
+  assert.equal(await wardrobe.wearStoredItem('test_npc', dislikedStored.uid), false, 'manual Wear also refuses a stored garment with a disliked trait');
+  assert.deepEqual(Array.from(rec.equippedCosmetics), ['fine_poncho'], 'failed manual Wear leaves the outfit unchanged');
+
+  const hatedGift = wardrobe.offerClothing('test_npc', {
+    uid: 'player_owned_hated',
+    cosmeticId: 'garish_hat',
+    slot: 'hat',
+    colorA: null,
+  });
+  assert.equal(hatedGift.accepted, true, 'compatible hated-trait clothing can still be stored');
+  assert.equal(hatedGift.worn, false, 'any hated trait vetoes wearing');
+  assert.equal(hatedGift.wearBlockTier, 'hated', 'hated refusal keeps the stronger preference tier');
 
   assert.equal(await wardrobe.storeWornItem('test_npc', 'fine_poncho'), true, 'Store immediately removes a worn garment');
   assert.equal(rec.equippedCosmetics.length, 0, 'Store leaves the NPC no longer wearing the unwanted gift');
