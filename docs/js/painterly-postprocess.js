@@ -6,7 +6,7 @@
   // world-space dialogue/chat text remain crisp and outside the effect.
   const STORAGE_KEY = 'hobunjiPainterlyPostprocessMode';
   const MODE_TO_VALUE = Object.freeze({ off: 0, low: 1, medium: 2, high: 3 });
-  const MODE_SAMPLE_COUNT = Object.freeze({ off: 0, low: 6, medium: 10, high: 18 });
+  const MODE_SAMPLE_COUNT = Object.freeze({ off: 0, low: 10, medium: 14, high: 22 });
 
   let mode = loadMode(); // Read by the settings control and shader uniforms.
   let rendererAttached = false; // Reported by the in-game status/debug API.
@@ -82,6 +82,75 @@
       return mix(color, stepped, amount);
     }
 
+    vec3 hobunjiPaintSoftenInk(vec3 paintedColor, vec2 uv) {
+      // The shell-outline pass is already baked into tColor before this
+      // composite. Treat near-black high-contrast pixels as pigment to be
+      // carried into their neighboring cel colors instead of preserving them
+      // as razor-thin dividers.
+      vec2 texel = max(uTexel, vec2(0.000001));
+      float spreadPx = uHobunjiPaintMode < 1.5 ? 1.25
+        : (uHobunjiPaintMode < 2.5 ? 1.75 : 2.25);
+      vec2 o = texel * spreadPx;
+
+      vec3 raw = hobunjiPaintSample(uv);
+      vec3 nL = hobunjiPaintSample(uv - vec2(o.x, 0.0));
+      vec3 nR = hobunjiPaintSample(uv + vec2(o.x, 0.0));
+      vec3 nU = hobunjiPaintSample(uv + vec2(0.0, o.y));
+      vec3 nD = hobunjiPaintSample(uv - vec2(0.0, o.y));
+
+      float rawL = hobunjiPaintLuma(raw);
+      float lL = hobunjiPaintLuma(nL);
+      float lR = hobunjiPaintLuma(nR);
+      float lU = hobunjiPaintLuma(nU);
+      float lD = hobunjiPaintLuma(nD);
+      float maxNeighborL = max(max(lL, lR), max(lU, lD));
+      float minNeighborL = min(min(lL, lR), min(lU, lD));
+      vec3 neighborMean = (nL + nR + nU + nD) * 0.25;
+
+      // Favor the brightest adjacent cel as the color carried across a black
+      // ink core. This keeps a thin outline from surviving as a black comb of
+      // pixels after the oil-region quantization.
+      vec3 carrier = nL;
+      float carrierL = lL;
+      if (lR > carrierL) { carrier = nR; carrierL = lR; }
+      if (lU > carrierL) { carrier = nU; carrierL = lU; }
+      if (lD > carrierL) { carrier = nD; carrierL = lD; }
+      carrier = mix(neighborMean, carrier, 0.58);
+
+      float inkCore = smoothstep(0.10, 0.40, maxNeighborL - rawL)
+        * (1.0 - smoothstep(0.20, 0.40, rawL));
+      float inkBeside = smoothstep(0.08, 0.34, rawL - minNeighborL)
+        * (1.0 - smoothstep(0.20, 0.44, minNeighborL));
+
+      float coreLift = uHobunjiPaintMode < 1.5 ? 0.44
+        : (uHobunjiPaintMode < 2.5 ? 0.58 : 0.68);
+      float sideSpread = uHobunjiPaintMode < 1.5 ? 0.12
+        : (uHobunjiPaintMode < 2.5 ? 0.18 : 0.24);
+
+      // Lift the black center toward the adjacent cel color, then drag a much
+      // smaller amount of that darkness outward into nearby colored pixels.
+      // Together these turn the outline into a soft shape accent rather than
+      // a hard separator.
+      vec3 liftedCore = mix(paintedColor, carrier, 0.78);
+      paintedColor = mix(paintedColor, liftedCore, inkCore * coreLift);
+
+      vec3 spreadTone = mix(paintedColor, neighborMean * 0.64, 0.46);
+      paintedColor = mix(paintedColor, spreadTone, inkBeside * sideSpread);
+      return clamp(paintedColor, 0.0, 1.0);
+    }
+
+    vec3 hobunjiPainterlyCompositeEdge(vec3 color, float edge) {
+      if (uHobunjiPaintMode < 0.5) return mix(color, vec3(0.0), edge);
+
+      // Furniture/material seam outlines are generated here in the final
+      // composite rather than baked into tColor, so they need their own
+      // treatment: dark local pigment, never a fresh pure-black line.
+      float edgeOpacity = uHobunjiPaintMode < 1.5 ? 0.72
+        : (uHobunjiPaintMode < 2.5 ? 0.62 : 0.54);
+      vec3 accentPigment = color * 0.20;
+      return mix(color, accentPigment, edge * edgeOpacity);
+    }
+
     vec3 hobunjiPainterlyColor(vec2 uv) {
       vec3 source = hobunjiPaintSample(uv);
       if (uHobunjiPaintMode < 0.5) return source;
@@ -140,7 +209,7 @@
         vec2 grainCell = floor(pixel / 5.0);
         float grain = (hobunjiPaintHash(grainCell) - 0.5) * 0.012;
         color *= 1.0 + grain;
-        return clamp(color, 0.0, 1.0);
+        return hobunjiPaintSoftenInk(clamp(color, 0.0, 1.0), uv);
       }
 
       vec3 ul = hobunjiPaintSample(paintUv + vec2(-stepUv.x,  stepUv.y));
@@ -232,7 +301,7 @@
         * (uHobunjiPaintMode > 2.5 ? 0.020 : 0.014);
       color *= 1.0 + grain;
 
-      return clamp(color, 0.0, 1.0);
+      return hobunjiPaintSoftenInk(clamp(color, 0.0, 1.0), uv);
     }
   `;
   function patchCompositeMaterial(material) {
@@ -248,9 +317,17 @@
     }
 
     material.uniforms.uHobunjiPaintMode = { value: modeValue() };
+    const finalCompositeLine = 'gl_FragColor = vec4(mix(color, vec3(0.0), edge), 1.0);';
+    if (!source.includes(finalCompositeLine)) {
+      lastError = 'Paint shader patch skipped: outline output signature changed.';
+      updateStatus();
+      return false;
+    }
+
     material.fragmentShader = source
       .replace(varyingLine, `${varyingLine}\n${GLSL_HELPERS}`)
-      .replace(colorLine, 'vec3 color = hobunjiPainterlyColor(vUv);');
+      .replace(colorLine, 'vec3 color = hobunjiPainterlyColor(vUv);')
+      .replace(finalCompositeLine, 'gl_FragColor = vec4(hobunjiPainterlyCompositeEdge(color, edge), 1.0);');
     material.userData ||= {};
     material.userData.hobunjiPainterlyPatched = true;
     material.needsUpdate = true;
@@ -288,7 +365,7 @@
     if (!rendererAttached) return `${mode} selected — waiting for the gameplay renderer.`;
     if (!patchedMaterials.size) return `${mode} selected — waiting for the outline composite's first frame.`;
     if (outlinesEnabled() === false) return `${mode} selected, but Outlines are off; this experiment currently reuses the outline composite and is inactive.`;
-    return `${mode[0].toUpperCase() + mode.slice(1)} active — about ${MODE_SAMPLE_COUNT[mode]} world-color samples/pixel; coarse stable paint cells + watercolor stain + corrective detail/chroma; HUD and dialogue overlays stay crisp.`;
+    return `${mode[0].toUpperCase() + mode.slice(1)} active — about ${MODE_SAMPLE_COUNT[mode]} world-color samples/pixel; black shell ink is softened into neighboring cel color and final seam ink is tinted/diffused instead of pure black; HUD and dialogue overlays stay crisp.`;
   }
 
   function updateStatus() {
@@ -361,7 +438,7 @@
     setMode,
     getMode: () => mode,
     snapshot: () => ({
-      latestChange: 'Stronger screenshot-first paint stack: coarse region grouping, watercolor pooling/stain, then a restrained anti-blur/anti-brown/chroma corrective pass.',
+      latestChange: 'Painterly outlines now behave as smeared dark pigment: shell ink softens into neighboring cel colors and final seam ink no longer redraws as hard pure black.',
       mode,
       sampleCount: MODE_SAMPLE_COUNT[mode],
       rendererAttached,
