@@ -1724,7 +1724,7 @@ function makeNpcRecord(o = {}) {
       speciesStartingDisposition: [], friendshipUnlocks: [],
     },
     gifts: { loved: [], liked: [], neutral: [], disliked: [], hated: [], categoryNotes: [] },
-    personality: { friendliness: normalizeFriendlinessPolicy(o.personality?.friendliness) },
+    personality: { ...((o.personality && typeof o.personality === 'object') ? o.personality : {}), friendliness: normalizeFriendlinessPolicy(o.personality?.friendliness) },
     dialogueTrees: o.dialogue || [],
     events: o.events || [],
     scheduleHooks: { defaultMapId: 'hobunji_main_town', defaultPathId: '', workBuildingId: o.home || o.homeId || '', shopHours: '', rules: [] },
