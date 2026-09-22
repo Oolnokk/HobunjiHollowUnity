@@ -41,9 +41,21 @@ const zoneLayout = {
   ],
   tiles: [],
 };
+// Deliberately starts WITHOUT Voorg-Ass defs. This mirrors the real parser-time
+// failure that originally produced configured herd slots but zero live animals:
+// CreatureGenetics' deferred DOMContentLoaded wrapper had not populated the
+// live CREATURE_DB yet when WildlifeSpawn.init ran.
 const creatureDb = {
-  'voorg-ass': { label: 'Voorg-Ass', hostile: false, defaultSizeClass: 'large', diet: 'herbivore' },
-  'voorg-ass-herd-mother': { label: 'Voorg-Ass Herd-Mother', hostile: false, defaultSizeClass: 'large', diet: 'herbivore' },
+  drenkirra: {
+    label: 'Drenkirra',
+    hostile: false,
+    defaultSizeClass: 'medium',
+    modelWidth: 1.5,
+    spriteAspect: 600 / 1375,
+    maxHealth: 100,
+    maxStamina: 100,
+    sprites: { idle: 'drenkirra_idle.png', run: ['drenkirra_run1.png', 'drenkirra_run2.png'] },
+  },
 };
 
 let rngState = 0x51a77; // Deterministic but non-constant so herd size/formation paths get realistic variation.
@@ -68,6 +80,7 @@ const windowStub = {
       return sizeClass === 'small' ? { x: 0.27, y: 0.27 } : { x: 0.97, y: 0.97 };
     },
   },
+  CreatureGeneticsRender: { SPECIES: {} },
   WildernessMapGenerator: {
     makeRng(seed) {
       let h = 2166136261;
@@ -81,6 +94,7 @@ const windowStub = {
 };
 
 function makeCreatureEntity(creatureKey, x, y, opts) {
+  if (!creatureDb[creatureKey]) return null; // Matches real game.js: unknown CREATURE_DB species cannot spawn.
   const group = new Group();
   const frontPlane = plane();
   const backPlane = plane();
@@ -129,6 +143,13 @@ const deps = {
 const context = vm.createContext({ window: windowStub, console, Math, Map, Set, performance: { now: () => 0 } });
 vm.runInContext(wildlifeSource, context, { filename: 'wildlife-spawn.js' });
 windowStub.WildlifeSpawn.init(deps);
+assert.equal(creatureDb['voorg-ass']?.label, 'Voorg-Ass', 'WildlifeSpawn.init synchronously installs the missing live Voorg-Ass creature def');
+assert.equal(creatureDb['voorg-ass']?.defaultSizeClass, 'large');
+assert.equal(creatureDb['voorg-ass-herd-mother']?.label, 'Herd-Mother', 'WildlifeSpawn.init synchronously installs the missing Herd-Mother variant');
+assert.equal(creatureDb['voorg-ass-herd-mother']?.defaultSizeClass, 'large');
+assert(windowStub.CreatureGeneticsRender.SPECIES['voorg-ass'], 'WildlifeSpawn.init makes Voorg-Ass genotype rendering available before DOMContentLoaded');
+assert.deepEqual(deps.EXTERIOR_ZONES[zoneId].roamingHerdSpecies, ['voorg-ass']);
+assert.equal(deps.EXTERIOR_ZONES[zoneId].roamingHerdCount, 2);
 windowStub.WildlifeSpawn.updateHostileSpawning(3);
 
 const living = [...hostiles].filter(c => c.health > 0);
