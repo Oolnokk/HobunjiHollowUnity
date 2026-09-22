@@ -86,8 +86,95 @@
     return ready;
   }
 
+  // Same parser-time race as Puktuk above, but more severe for roaming herds:
+  // makeCreatureEntity returns null for an unknown CREATURE_DB key, so the
+  // authored herd slots can look configured while spawning zero animals.
+  // Register the live creature defs + renderer/zone hooks synchronously at
+  // WildlifeSpawn.init instead of relying on CreatureGenetics' later
+  // DOMContentLoaded wrapper.
+  function ensureVoorgAssRuntimeRegistration(injectedDeps) {
+    const creatureDb = injectedDeps?.CREATURE_DB;
+    const preyBaseline = creatureDb?.['uumkaoii-wild'] || creatureDb?.uumkaoii || creatureDb?.drenkirra || {};
+    if (creatureDb) {
+      const existing = creatureDb['voorg-ass'] || {};
+      creatureDb['voorg-ass'] = {
+        ...preyBaseline,
+        ...existing,
+        label: 'Voorg-Ass',
+        hostile: false,
+        defaultSizeClass: 'large',
+        modelWidth: Number(existing.modelWidth) || Number(preyBaseline.modelWidth) || 1.5,
+        spriteAspect: Number(existing.spriteAspect) || Number(preyBaseline.spriteAspect) || (600 / 1375),
+        lootPool: 'creature_voorg-ass',
+        sprites: {
+          idle: 'assets/creaturesprites/voorg-ass_idle.png',
+          run: ['assets/creaturesprites/voorg-ass_run1.png', 'assets/creaturesprites/voorg-ass_run2.png'],
+        },
+      };
+      const baseVoorg = creatureDb['voorg-ass'];
+      const existingMother = creatureDb['voorg-ass-herd-mother'] || {};
+      creatureDb['voorg-ass-herd-mother'] = {
+        ...baseVoorg,
+        ...existingMother,
+        label: 'Herd-Mother',
+        hostile: false,
+        defaultSizeClass: 'large',
+        lootPool: 'creature_voorg-ass',
+        sprites: baseVoorg.sprites,
+      };
+    }
+
+    // CreatureGeneticsRender is already loaded by the time game.js invokes
+    // WildlifeSpawn.init. Install this tiny species record here too so the
+    // first herd frame gets genotype compositing immediately, not only after
+    // DOMContentLoaded runs CreatureGenetics' deferred installer.
+    const rendererSpecies = window.CreatureGeneticsRender?.SPECIES;
+    if (rendererSpecies && !rendererSpecies['voorg-ass']) {
+      rendererSpecies['voorg-ass'] = {
+        prefix: 'voorg-ass',
+        base: {
+          idle: 'assets/creaturesprites/voorg-ass_idle.png',
+          run1: 'assets/creaturesprites/voorg-ass_run1.png',
+          run2: 'assets/creaturesprites/voorg-ass_run2.png',
+        },
+        patterns: ['belly'],
+      };
+    }
+
+    const northernZone = injectedDeps?.EXTERIOR_ZONES?.map_northern_cliffs;
+    const herbivores = northernZone
+      ? (Array.isArray(northernZone.herbivoreSpecies) ? northernZone.herbivoreSpecies : (northernZone.herbivoreSpecies = []))
+      : null;
+    if (Array.isArray(herbivores)) {
+      for (let i = herbivores.length - 1; i >= 0; i--) {
+        if (herbivores[i] === 'voorg-ass' || herbivores[i] === 'uumkaoii' || herbivores[i] === 'uumkaoii-wild') herbivores.splice(i, 1);
+      }
+    }
+    const roaming = northernZone
+      ? (Array.isArray(northernZone.roamingHerdSpecies) ? northernZone.roamingHerdSpecies : (northernZone.roamingHerdSpecies = []))
+      : null;
+    if (Array.isArray(roaming) && !roaming.includes('voorg-ass')) roaming.push('voorg-ass');
+    if (northernZone) {
+      northernZone.roamingHerdCount = Math.max(2, Math.floor(Number(northernZone.roamingHerdCount) || 2));
+      if (Array.isArray(northernZone.denSpecies)) {
+        for (let i = northernZone.denSpecies.length - 1; i >= 0; i--) {
+          if (northernZone.denSpecies[i] === 'voorg-ass') northernZone.denSpecies.splice(i, 1);
+        }
+      }
+    }
+    if (injectedDeps?.DEN_MOTHER_DEFS) delete injectedDeps.DEN_MOTHER_DEFS['voorg-ass'];
+
+    const ready = !!creatureDb?.['voorg-ass']
+      && !!creatureDb?.['voorg-ass-herd-mother']
+      && Array.isArray(roaming) && roaming.includes('voorg-ass')
+      && Number(northernZone?.roamingHerdCount) >= 2;
+    window.__farmLog?.(`[voorg-ass] WildlifeSpawn.init fallback: ready=${ready ? 1 : 0} creature=${creatureDb?.['voorg-ass'] ? 1 : 0} mother=${creatureDb?.['voorg-ass-herd-mother'] ? 1 : 0} renderer=${rendererSpecies?.['voorg-ass'] ? 1 : 0} roaming=[${Array.isArray(roaming) ? roaming.join(',') : 'missing'}] herdCount=${northernZone?.roamingHerdCount || 0}`, ready ? 'wildlife' : 'warn');
+    return ready;
+  }
+
   function init(injectedDeps) {
     ensurePuktukRuntimeRegistration(injectedDeps);
+    ensureVoorgAssRuntimeRegistration(injectedDeps);
     deps = injectedDeps;
   }
 
