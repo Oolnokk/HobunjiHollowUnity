@@ -36,17 +36,13 @@ assert.deepEqual(
   { creatureKey: 'puktuk', nestItemKey: 'puktukBaby' },
   'Puktuk Den-Mother registration must provide the live-birth baby item before game.js snapshots DEN_MOTHER_ITEM_KEYS',
 );
-assert.deepEqual(
-  JSON.parse(JSON.stringify(windowStub.SCRATCHBONES_CONFIG.game.wildlife.denMothers['voorg-ass'])),
-  { creatureKey: 'voorg-ass', nestItemKey: 'voorgAssBaby' },
-  'Voorg-Ass must use the same pre-snapshot Den-Mother registration path as Puktuk',
-);
+assert.equal(windowStub.SCRATCHBONES_CONFIG.game.wildlife.denMothers['voorg-ass'], undefined, 'Voorg-Ass must not register a cavern Den-Mother');
 assert.equal(windowStub.SCRATCHBONES_CONFIG.game.livestock.itemKinds.puktukBaby, 'puktuk', 'Puktuk baby must use the shared livestock item-to-species path');
 assert.equal(windowStub.SCRATCHBONES_CONFIG.game.livestock.itemKinds.voorgAssBaby, 'voorg-ass', 'Voorg-Ass baby must use the shared livestock item-to-species path');
 const denMotherItemKeys = Object.fromEntries(Object.values(windowStub.SCRATCHBONES_CONFIG.game.wildlife.denMothers).map(def => [def.creatureKey, def.nestItemKey]));
 assert.equal(denMotherItemKeys.puktuk, 'puktukBaby', 'game.js DEN_MOTHER_ITEM_KEYS snapshot must contain the Puktuk clutch reward');
-assert.equal(denMotherItemKeys['voorg-ass'], 'voorgAssBaby', 'game.js DEN_MOTHER_ITEM_KEYS snapshot must contain the Voorg-Ass clutch reward');
-assert.equal(windowStub.PuktukDenNestRegistration.version, 2);
+assert.equal(denMotherItemKeys['voorg-ass'], undefined, 'game.js DEN_MOTHER_ITEM_KEYS snapshot must exclude Voorg-Ass; carried babies are corpse-only');
+assert.equal(windowStub.PuktukDenNestRegistration.version, 3);
 assert.equal(windowStub.PuktukDenNestRegistration.debugSnapshot().configReady, true);
 assert.equal(windowStub.PuktukDenNestRegistration.debugSnapshot().livestockReady, true);
 assert.equal(windowStub.PuktukDenNestRegistration.debugSnapshot().voorgConfigReady, true);
@@ -79,7 +75,7 @@ assert.deepEqual(
     cat: 'livestock',
     sellPrice: 0,
     tags: ['Livestock', 'Baby'],
-    desc: 'A Voorg-Ass baby taken from a Northern Cliffs den. Add it to a farm or stable to raise it.',
+    desc: 'A Voorg-Ass baby recovered from a fallen Herd-Mother. Add it to a farm or stable to raise it.',
   },
   'Voorg-Ass den babies must use the same livestock pickup path as Puktuk babies',
 );
@@ -112,7 +108,7 @@ windowStub.WildlifeSpawn = {
 };
 const wildlifeDeps = {
   EXTERIOR_ZONES: {
-    map_northern_cliffs: { herbivoreSpecies: ['grehlr', 'voorg-ass'] },
+    map_northern_cliffs: { packSpecies: ['grehlr'], herbivoreSpecies: ['uumkaoii-wild'] },
   },
   DEN_MOTHER_DEFS: {
     'gar-wolf': { creatureKey: 'gar-wolf-den-mother', nestItemKey: 'garWolfBaby' },
@@ -121,21 +117,16 @@ const wildlifeDeps = {
 };
 assert.equal(windowStub.WildlifeSpawn.init(wildlifeDeps), 'wildlife-initialized');
 assert.equal(originalWildlifeInitDeps, wildlifeDeps, 'WildlifeSpawn.init must still receive the untouched dependency object');
-assert.deepEqual(
-  JSON.parse(JSON.stringify(wildlifeDeps.EXTERIOR_ZONES.map_northern_cliffs.denSpecies)),
-  ['grehlr', 'voorg-ass'],
-  'Authoring explicit Northern Cliffs den species must preserve Grehlr while adding Voorg-Ass',
-);
-assert.deepEqual(
-  JSON.parse(JSON.stringify(wildlifeDeps.DEN_MOTHER_DEFS['voorg-ass'])),
-  { creatureKey: 'voorg-ass', nestItemKey: 'voorgAssBaby' },
-  'Runtime den assignment must satisfy CavernGenerator Den-Mother filtering',
-);
+assert.equal(wildlifeDeps.EXTERIOR_ZONES.map_northern_cliffs.denSpecies, undefined, 'Voorg-Ass herd registration must not create an explicit cavern den roster');
+assert.deepEqual(JSON.parse(JSON.stringify(wildlifeDeps.EXTERIOR_ZONES.map_northern_cliffs.herbivoreSpecies)), [], 'legacy Northern Cliffs den-herbivore slot is cleared');
+assert.deepEqual(JSON.parse(JSON.stringify(wildlifeDeps.EXTERIOR_ZONES.map_northern_cliffs.roamingHerdSpecies)), ['voorg-ass'], 'Voorg-Ass is registered in the exterior roaming-herd pool');
+assert.equal(wildlifeDeps.EXTERIOR_ZONES.map_northern_cliffs.roamingHerdCount, 2, 'two large herd slots are configured');
+assert.equal(wildlifeDeps.DEN_MOTHER_DEFS['voorg-ass'], undefined, 'runtime cavern Den-Mother registry excludes Voorg-Ass');
 assert.deepEqual(
   JSON.parse(JSON.stringify(wildlifeDeps.DEN_MOTHER_DEFS.grehlr)),
   { creatureKey: 'grehlr-den-mother', nestItemKey: 'grehlrBaby' },
   'Existing Grehlr Den-Mother authoring must remain untouched',
 );
-assert(logs.some(entry => /\[voorg-ass\] den registration .*dens=\[grehlr,voorg-ass\].*grehlrPreserved=1.*reward=voorgAssBaby/.test(entry.message) && entry.channel === 'wildlife'), 'mobile-visible diagnostics must report successful mixed Grehlr + Voorg-Ass den registration');
+assert(logs.some(entry => /\[voorg-ass\] herd registration .*roaming=\[voorg-ass\].*herdCount=2.*denMother=none/.test(entry.message) && entry.channel === 'wildlife'), 'mobile-visible diagnostics must report exterior herd registration');
 
-console.log('Puktuk + Grehlr + Voorg-Ass den clutch and wool inventory registration regression passed.');
+console.log('Puktuk den clutch + Voorg-Ass roaming-herd and wool registration regression passed.');
