@@ -337,7 +337,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmBuildings.init(...) during its own setup. -->
-  <script src="js/farm-buildings.js?v=20260807a"></script>
+  <script src="js/farm-buildings.js?v=20260921shinglesign1"></script>
   <!-- Barn trough system: barn-interior map synthesis, the live fill-level
        mesh registry, and the open-trough bag/slot panel (window.FarmTroughs)
        — self-contained aside from deps injected via init(), and reads
@@ -353,7 +353,7 @@
        time, not at load time, so script order relative to them doesn't
        matter; must load before game.js, which calls
        window.HousePieces.init(...) during its own setup. -->
-  <script src="js/house-pieces.js?v=20260920furniture1"></script>
+  <script src="js/house-pieces.js?v=20260921shinglesign1"></script>
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -512,7 +512,7 @@
        calls window.TownZoneBuildings.init(...) during its own setup (and
        reads window.TownZoneBuildings.loadHousePieceFaceTexture as one of
        window.FarmBuildings' own init deps, at that same call-time point). -->
-  <script src="js/town-zone-buildings.js?v=20260909livepreview1"></script>
+  <script src="js/town-zone-buildings.js?v=20260921shinglesign1"></script>
   <!-- Same-origin live Map Editor transport + runtime bridge. Loaded before
        game.js so its private scene state can be injected during setup. -->
   <script src="js/map-live-preview.js?v=20260909a"></script>
