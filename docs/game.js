@@ -19557,6 +19557,57 @@
         return center;
       }
 
+      function animalDialogueChatheadWorldFrame(walker) {
+        const avatarRef = walker?.animalAvatarRef; // Supplies the exact live creature plane currently visible in world dialogue.
+        const plane = avatarRef?.frontPlane; // Used to map the authored chathead crop back onto Banubu/the animal's world-space sprite.
+        const kind = walker?.animalKind || walker?.animalDef?.id || walker?.animalDef?.key; // Resolves the same species key consumed by AnimalChatheadFrame.
+        const resolved = kind ? window.AnimalChatheadFrame?.frameForKind?.(kind) : null; // Reuses the exact crop shown by the dialogue/ambient chathead renderer.
+        const frame = resolved?.frame || resolved;
+        if (!plane?.localToWorld || !frame) return null;
+
+        const modelWidth = Number(walker.avatarGroup?.userData?.portraitModelWidth) || Number(walker.animalDef?.modelWidth) || 1; // Converts normalized crop X into this named animal's native plane units.
+        const modelHeight = Number(walker.avatarGroup?.userData?.portraitModelHeight)
+          || modelWidth * (Number(walker.animalDef?.spriteAspect) || 1); // Converts normalized crop Y into this named animal's native plane units.
+        const rigState = avatarRef.headRig; // Supplies the live authored head pitch so camera framing follows the same sleepy head pose the player sees.
+        const rig = rigState?.rig;
+        const pitchDeg = Number(rigState?.appliedDeg);
+        const hasRigPitch = rig?.pivot && Number.isFinite(pitchDeg);
+        const pitchRad = hasRigPitch ? THREE.MathUtils.degToRad(pitchDeg) : 0; // Used below to rotate crop landmarks around the authored neck pivot.
+        const pitchCos = Math.cos(pitchRad); // Cached for the three frame landmark transforms in this call.
+        const pitchSin = Math.sin(pitchRad); // Cached for the three frame landmark transforms in this call.
+        const pivotX = hasRigPitch ? (Number(rig.pivot.x) - 0.5) * modelWidth : 0; // Local neck pivot used by the front animal head bone.
+        const pivotY = hasRigPitch ? (0.5 - Number(rig.pivot.y)) * modelHeight : 0; // Local neck pivot used by the front animal head bone.
+
+        const framePointWorld = (u, v) => {
+          let x = (u - 0.5) * modelWidth; // Local source-pixel X for this crop landmark.
+          let y = (0.5 - v) * modelHeight; // Local source-pixel Y for this crop landmark.
+          if (hasRigPitch) {
+            const dx = x - pivotX; // Offset rotated by the same front-head-bone Z angle as the visible sprite.
+            const dy = y - pivotY; // Offset rotated by the same front-head-bone Z angle as the visible sprite.
+            x = pivotX + dx * pitchCos - dy * pitchSin;
+            y = pivotY + dx * pitchSin + dy * pitchCos;
+          }
+          plane.updateWorldMatrix?.(true, false);
+          return plane.localToWorld(new THREE.Vector3(x, y, 0));
+        };
+
+        const centerU = Number(frame.x) + Number(frame.width) * 0.5; // Horizontal center of the exact authored chathead crop.
+        const centerV = Number(frame.y) + Number(frame.height) * 0.5; // Vertical center of the exact authored chathead crop.
+        const center = framePointWorld(centerU, centerV); // World target the dialogue camera keeps just beneath the reticle.
+        const top = framePointWorld(centerU, Number(frame.y)); // Used only to measure the crop's displayed world height.
+        const bottom = framePointWorld(centerU, Number(frame.y) + Number(frame.height)); // Paired crop-height sample.
+        const spriteBottom = framePointWorld(0.5, 1); // Ground reference used to mirror sleep presentation's bottom-preserving Y compression.
+        if (walker._animalSleepRequested) {
+          const sleepScaleY = Number(window.AnimalSleepPresentation?.SLEEP_SCALE_Y) || 1; // Matches the render-only flattening applied after gameplay camera calculation.
+          for (const point of [center, top, bottom]) point.y = spriteBottom.y + (point.y - spriteBottom.y) * sleepScaleY;
+        }
+        return {
+          center,
+          frameHeightWorld: Math.max(0.001, Math.abs(top.y - bottom.y)),
+          source: resolved?.source || 'unknown',
+        };
+      }
+
       // Cutscene dialogue's stand-in for a "player" anchor: the real
       // dialoguePortraitCameraAim below hardcodes the actual player mesh as
       // one of its two portrait-center anchors, which is meaningless here
@@ -19583,8 +19634,21 @@
         }
         if (!_dialogueWalker?.root) return null;
         const playerCenter = portraitAvatarCenterWorldPosition(playerMesh);
+        if (!playerCenter) return null;
+        const animalFrame = animalDialogueChatheadWorldFrame(_dialogueWalker); // Named animals aim at their authored chathead crop instead of their whole-body portrait center.
+        if (animalFrame) {
+          const configuredGap = Number(modeCfg.animalChatheadReticleClearanceFrames); // Fraction of one chathead-frame height kept between the reticle and framed head center.
+          const clearanceFrames = Number.isFinite(configuredGap) ? Math.max(0, configuredGap) : 0.18; // Small positive gap places the framed head immediately below screen-center/reticle.
+          const rootPosition = _dialogueWalker.root.position; // Offsets the smoothed dialogue follow target from root center to the live framed head.
+          return {
+            cameraY: playerCenter.y, // Animal conversations stay at the player's portrait-center height instead of using the taller NPC midpoint camera.
+            lookY: animalFrame.center.y + animalFrame.frameHeightWorld * clearanceFrames,
+            targetX: tx + (animalFrame.center.x - rootPosition.x),
+            targetZ: tz + (animalFrame.center.z - rootPosition.z),
+          };
+        }
         const npcCenter = portraitAvatarCenterWorldPosition(_dialogueWalker.root);
-        if (!playerCenter || !npcCenter) return null;
+        if (!npcCenter) return null;
         const minDistance = modeCfg.portraitCenterMinDistanceTiles ?? 0.001;
         const portraitDistance = Math.max(
           minDistance,
@@ -23484,7 +23548,7 @@
           window.PerfProfiler?.end(wildernessChunkPerf);
           const worldSystemsPerf = window.PerfProfiler?.begin('world systems'); // Campfire/fog/vitals/alchemy/cooking/bounty updates that run every frame regardless of area.
           window.WildernessCampfire?.updateVfx(dt);
-          window.WildernessMap.updateFogAroundPlayer();
+          if (_isZoneArea(currentArea)) window.WildernessMap.updateFogAroundPlayer(); // Skip the entire fog-wrapper chain indoors; Stable XP and Porakaneki adapters otherwise parse/scan wilderness state every frame before WildernessMap can early-return.
           window.PlayerVitals.updatePlayerVitals(dt);
           window.AlchemySystem.update();
           window.AlchemyFlasks?.update(dt);
