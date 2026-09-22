@@ -1250,6 +1250,7 @@
         material.needsUpdate = true;
       }
     });
+    requestPreviewRender();
   }
 
   function cameraPreviewRecord(locale, id) {
@@ -1293,6 +1294,7 @@
     const select = document.getElementById('localeSandboxCamera');
     if (select) select.value = '';
     controls?.update?.();
+    requestPreviewRender();
   }
 
   function applySelectedCinematicCamera() {
@@ -1319,6 +1321,7 @@
     camera.fov = clamp(Number(record.fovDeg) || 42, 10, 120);
     camera.lookAt(tx, Number(t.y) || 0, tz);
     camera.updateProjectionMatrix();
+    requestPreviewRender();
   }
 
   function fitCavernCamera() {
@@ -1349,6 +1352,7 @@
     camera.updateProjectionMatrix();
     controls.enabled = true;
     controls.update();
+    requestPreviewRender();
   }
 
   async function renderCavernInterior(locale, token) {
