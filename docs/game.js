@@ -11693,14 +11693,6 @@
             }
             const target = resolveNpcScheduleTarget(this.rec);
             this.currentScheduleTarget = target || null;
-            // Wardrobe reroll must observe the resolved schedule before any
-            // character-state lock/blackout path can return early. Fire once
-            // on the transition into a sleeping activity, never every frame.
-            const scheduleActivity = target?.activity || ''; // Used to edge-detect this NPC entering or leaving the authored sleeping period.
-            if (/sleep/i.test(scheduleActivity) && !/sleep/i.test(this._prevScheduleActivity || '')) {
-              void window.NpcWardrobe?.rerollForSleep?.(rec?.id);
-            }
-            this._prevScheduleActivity = scheduleActivity;
             this._animalSleepRequested = !!this.animalDef && /sleep/i.test(String(target?.activity || '')); // Schedule-authored sleeping named animals enter the same visual sleep system before any state module can early-return.
             if (this._animalSleepRequested && this.rec && typeof this.rec._animalDialogueEyesOpen !== 'boolean') this.rec._animalDialogueEyesOpen = false; // Closed is the safe default until an authored dialogue system explicitly wakes the animal's eyes.
             if (window.NpcCharacterState?.update?.(this, dt, {
