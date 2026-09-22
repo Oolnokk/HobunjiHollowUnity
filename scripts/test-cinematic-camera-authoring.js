@@ -82,6 +82,9 @@ for (const [label, source] of [['Map Editor', mapEditorSource], ['Locale Editor'
 assert(directorSource.includes('stage.type === "camera"'), 'Cutscene Director preview must dispatch Camera cards');
 assert(directorSource.includes('cinematicCameraSelectHtml'), 'Cutscene Director must offer authored camera IDs');
 assert(directorSource.includes('runCameraStage'), 'Cutscene Director must preview authored camera shots');
+assert(localeEditorSource.includes('id="localeCameraSliderPanel"'), 'Locale Editor 3D preview must expose in-shot camera sliders');
+assert(localeEditorSource.includes('updateCinematicCamera: (localeId, cameraId, next) =>'), 'Locale Editor must persist preview-slider camera edits through its workspace bridge');
+assert(localeEditorSource.includes('cinematicCameras: m.cinematicCameras || []'), 'Locale Editor export must retain authored cinematic cameras');
 
 parseInlineScripts('docs/tools/map-editor/index.html');
 parseInlineScripts('docs/tools/locale-editor/index.html');
