@@ -1810,6 +1810,19 @@
               <option value="0.5">50%</option>
             </select>
           </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Paint Filter <span style="font-size:10px;opacity:.7">(Experimental)</span></div>
+              <div class="settings-desc">Strong screenshot-style oil grouping + watercolor wash/stain with a small crispness/color corrective pass. World render only; HUD, menus, reticle UI, and dialogue overlays stay crisp. High is intentionally heavier.</div>
+              <div class="settings-desc" id="painterlyPostprocessStatus" role="status" aria-live="polite">Off — no extra texture samples are executed.</div>
+            </div>
+            <select id="settingPainterlyPostprocess" style="font-size:12px;padding:5px 8px;background:rgba(255,255,255,.06);border:1px solid var(--border-bright);border-radius:6px;color:var(--text);align-self:center">
+              <option value="off">Off</option>
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+            </select>
+          </label>
           <div class="settings-section-title" style="margin-top:10px">Local Save Folder</div>
           <div class="settings-row settings-row--stacked" id="localSaveFolderRow">
             <div class="settings-label">
@@ -2498,6 +2511,10 @@
        exported functions) and before game.js (whose boot calls into all
        three and reads window.DevTestingSwitchbox.flags directly). -->
   <script src="js/dev-testing-switchbox.js?v=20260912a"></script>
+  <!-- Optional world-only painterly postprocess. It patches the existing
+       fullscreen world composite after renderer creation, persists only its
+       quality mode, and owns no requestAnimationFrame loop. -->
+  <script src="js/painterly-postprocess.js?v=20260922paint2"></script>
   <script src="game.js?v=20260922banubureview1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
   <script src="js/controller-ui-nav.js?v=20260915perf1"></script>
