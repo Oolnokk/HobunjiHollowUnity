@@ -11,11 +11,12 @@ const terrainPlacement = require('../docs/js/locale-terrain-placement.js');
 assert.strictEqual(locale.name, "Banubu's Cave", 'Banubu landmark must use the cave name in-game');
 assert.deepStrictEqual(locale.placement?.allowedZones, ['map_northern_cliffs'], 'Banubu Cave must be Northern Cliffs only');
 assert.strictEqual(locale.placement?.alwaysVisibleOnMap, true, 'Banubu Cave must always expose its map waypoint once the zone is generated');
+assert.strictEqual(locale.placement?.rotationMode, 'cardinal', 'Banubu Cave must be allowed to rotate as a whole to match cliffs on any cardinal side');
 assert.deepStrictEqual(locale.placement?.terrainFallback, {
   mode: 'subset',
   terrainAnchors: ['4,0', '4,2', '4,3'],
   embeddedTiles: ['4,3'],
-  notes: 'If the full-width cliff fit has no valid site, keep the cave on an existing north-facing internal plateau cliff using the center approach/mouth/backing probes and center embedded cell; never carve the host cliff.',
+  notes: 'If the full-width cliff fit has no valid site, keep the cave on an existing internal plateau cliff using the rotated center approach/mouth/backing probes and center embedded cell; never carve the host cliff.',
 }, 'Banubu Cave must keep its authored center-cliff fallback so a strict no-match does not remove the cave/waypoint from a Tothal layout');
 assert.deepStrictEqual(hikiHikiLocale.placement?.allowedZones, ['map_southern_cloud_forest'], 'Hiki-hiki shrine must be Southern Cloud Forest only');
 assert.deepStrictEqual(rahayobiLocale.placement?.allowedZones, ['map_eastern_mire'], 'Mother Rahayobi shrine must be Eastern Mire only');
@@ -134,7 +135,13 @@ assert(localeTerrainEditor.includes('isBanubuRulesMissingFrontClearance'), 'terr
 assert(localeTerrainEditor.includes('syncRulesToMainLocale(locale.id, rules);'), 'terrain brush edits must update the live workspace locale immediately');
 assert(placementSource.includes('lowSideRelative'), 'density scaling must distinguish low-side directional cliff probes from high-side probes');
 assert(zoneRenderer.includes('visual.scaleX') && zoneRenderer.includes('visual.scaleY') && zoneRenderer.includes('visual.scaleZ'), 'game cave renderer must support independent facade width/height/depth scaling');
+assert(zoneRenderer.includes('const LOCALE_CAVE_HORIZONTAL_SCALE = 2') && zoneRenderer.includes('* LOCALE_CAVE_HORIZONTAL_SCALE'), 'locale cave GLBs must double X/Z through a locale-only horizontal multiplier');
+assert(zoneRenderer.includes('const scaleY = baseScale * Math.max(0.1, Number(visual.scaleY) || 1);'), 'locale cave horizontal doubling must leave Y scale unchanged');
+assert(zoneRenderer.includes('positionLocaleCaveOnFootprint') && zoneRenderer.includes('centerCol - worldCenterOffsetX') && zoneRenderer.includes('centerRow - worldCenterOffsetZ'), 'locale cave GLB bounding-box center must stay on the footprint center after scale and rotation');
+assert(zoneRenderer.includes('localeCaveDebugSnapshot'), 'locale cave transforms must expose an in-scene debug snapshot for mobile diagnostics');
+assert(placementSource.includes("rotationMode === 'cardinal'") && placementSource.includes('rotatedLocaleVariant'), 'terrain-aware locale placement must support full cardinal locale rotation');
 assert(gameSource.includes('const generatedLocaleTransitions = (workspaceRoot?.transitions || [])') && gameSource.includes('...generatedLocaleTransitions,'), 'Tothal Shift must promote terrain-aware locale cave transitions into the live zone interaction pool');
-assert(gameIndex.includes('js/locale-terrain-placement.js?v=20260921banubuclip1'), 'the actual game page must load terrain-aware locale placement after the wilderness generator');
+assert(gameIndex.includes('js/locale-terrain-placement.js?v=20260922localecaverotation1'), 'the actual game page must load the cardinal terrain-aware locale placement build after the wilderness generator');
+assert(gameIndex.includes('js/zone-den-totem-features.js?v=20260922localecaverotation1'), 'the actual game page must load the horizontally scaled/centered locale cave renderer build');
 
 console.log('Banubu cliff-base authoring + terrain/runtime + editor rule-sync regression checks passed');
