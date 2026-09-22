@@ -9,10 +9,15 @@ const banubu = require('../docs/config/locales/locale_banubu_cave_interior.json'
 
 function parseInlineScripts(filePath) {
   const source = read(filePath);
-  const scripts = [...source.matchAll(/<script(?![^>]*\\bsrc=)([^>]*)>([\\s\\S]*?)<\\/script>/gi)];
+  const chunks = source.split('<script').slice(1);
   let parsed = 0;
-  for (const [, attrs, code] of scripts) {
-    if (/type\\s*=\\s*["']application\\/(?:json|ld\\+json)["']/i.test(attrs)) continue;
+  for (const chunk of chunks) {
+    const openEnd = chunk.indexOf('>');
+    const close = chunk.indexOf('</script>', openEnd + 1);
+    if (openEnd < 0 || close < 0) continue;
+    const attrs = chunk.slice(0, openEnd);
+    if (/\bsrc\s*=/.test(attrs) || /application\/(?:json|ld\+json)/i.test(attrs)) continue;
+    const code = chunk.slice(openEnd + 1, close);
     if (!code.trim()) continue;
     new vm.Script(code, { filename: filePath + '#inline-' + parsed });
     parsed++;
