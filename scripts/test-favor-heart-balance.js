@@ -9,9 +9,15 @@ const vm = require('node:vm');
 const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'docs/js/favor-heart-balance.js'), 'utf8');
 const gameSource = fs.readFileSync(path.join(root, 'docs/game.js'), 'utf8'); // Used by the browser-shell regression below to ensure HTML heart markup is actually rendered.
+const proceduralTasksSource = fs.readFileSync(path.join(root, 'docs/js/procedural-tasks.js'), 'utf8'); // Used to keep generated/persisted task rewards on the same 40-Favor-per-heart scale.
+const tasksPanelSource = fs.readFileSync(path.join(root, 'docs/js/tasks-panel.js'), 'utf8'); // Used to verify legacy task rewards are normalized before the player sees them.
 assert.doesNotThrow(() => new vm.Script(source, { filename: 'favor-heart-balance.js' }), 'favor-heart-balance.js must parse');
 assert.match(gameSource, /_npcDialogueHeartsEl\.innerHTML\s*=\s*window\.DialogueContent\?\.renderRelationshipHearts\(rec\)\s*\|\|\s*'';/, 'NPC dialogue must insert relationship-heart markup as HTML so fractional hearts render');
 assert.doesNotMatch(gameSource, /_npcDialogueHeartsEl\.textContent\s*=\s*window\.DialogueContent\?\.renderRelationshipHearts\(rec\)/, 'NPC dialogue must not escape fractional-heart markup as text');
+assert.match(proceduralTasksSource, /FRIENDSHIP_TIER_THRESHOLDS\s*=\s*\[0,\s*80,\s*160,\s*240,\s*320,\s*400\]/, 'procedural friendship tiers must use Favor points internally, not old heart units');
+assert.match(proceduralTasksSource, /TASK_FRIENDSHIP_REWARD\s*=\s*\{\s*favor:\s*\[40,\s*60,\s*80,\s*100,\s*120,\s*160\],\s*request:\s*60\s*\}/, 'one old favor-heart reward must become forty Favor points while preserving tier scaling');
+assert.match(proceduralTasksSource, /taskFriendshipRewardPoints\(task\.rewardFriendship\)/, 'turn-in must normalize already-persisted old-scale task rewards');
+assert.match(tasksPanelSource, /taskFriendshipRewardPoints\?\.\(task\.rewardFriendship\)/, 'quest log must display already-persisted rewards in Favor points');
 
 const states = new Map();
 const rewards = [];
