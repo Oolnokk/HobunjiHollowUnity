@@ -112,6 +112,13 @@
   // still brings them back together at night.
   const GREHLR_DAY_SPREAD_TILES_MIN = 5;
   const GREHLR_DAY_SPREAD_TILES_MAX = 12;
+  const VOORG_ASS_SPECIES = 'voorg-ass'; // Exterior-only herd species; deliberately excluded from cavern den population selection.
+  const VOORG_ASS_HERD_MOTHER_SPECIES = 'voorg-ass-herd-mother'; // Uses Voorg-Ass art/genetics but carries the herd's recoverable babies.
+  const VOORG_ASS_BABY_ITEM_KEY = 'voorgAssBaby'; // Added to the Herd-Mother corpse only after she has been killed.
+  const ROAMING_HERD_SIZE_MIN = 8;
+  const ROAMING_HERD_SIZE_MAX = 12;
+  const ROAMING_HERD_WANDER_TILES = 7; // Passed onto each member so game.js's ordinary wanderTick keeps the herd mobile over a broad cliff territory.
+  const ROAMING_HERD_SLEEP_RADIUS_TILES = 1.35; // Night positions form one visible bedded-down group instead of disappearing into a cave.
   const DEN_CHECK_INTERVAL_S = 2;
   let denCheckTimer = 0;
 
@@ -232,8 +239,12 @@
   // next day (game.js's advanceDay/sleepInBed clear these) rather than
   // instantly refilling.
   const pendingDenRespawn = new Set();
+  const roamingHerdEverSpawned = new Set(); // Used to avoid refilling a partially/wiped herd immediately during the same day.
+  const roamingHerdLastKnownAlive = new Map(); // Herd-key -> prior alive state, mirroring denLastKnownAlive.
+  const pendingRoamingHerdRespawn = new Set(); // Cleared with the other wildlife respawn gates when a new day begins.
 
   function denKeyFor(zoneId, den) { return `${zoneId}:${den.id}`; }
+  function roamingHerdKeyFor(zoneId, index) { return `${zoneId}:roaming-herd:${index}`; } // Stable per-zone slot, independent of cave/den ids.
   // cavernMapId -> the zone it belongs to — zoneId/denId can't be
   // reliably parsed back out of "map_i_den_<zoneId>_<denId>" (both
   // halves can themselves contain underscores), so this side table is
@@ -328,6 +339,10 @@
     for (const key of pendingNestTreeRespawn) if (key.startsWith(prefix)) pendingNestTreeRespawn.delete(key);
     for (const key of [...nestTreeLastKnownAlive.keys()]) if (key.startsWith(prefix)) nestTreeLastKnownAlive.delete(key);
     _nestTreeSelectionCache.delete(zoneId);
+    const herdPrefix = `${zoneId}:roaming-herd:`; // Terrain regeneration also invalidates the open-air herd anchors derived from this zone's foliage layout.
+    for (const key of roamingHerdEverSpawned) if (key.startsWith(herdPrefix)) roamingHerdEverSpawned.delete(key);
+    for (const key of pendingRoamingHerdRespawn) if (key.startsWith(herdPrefix)) pendingRoamingHerdRespawn.delete(key);
+    for (const key of [...roamingHerdLastKnownAlive.keys()]) if (key.startsWith(herdPrefix)) roamingHerdLastKnownAlive.delete(key);
     // Den ids (e.g. "animalDen_3") are assigned sequentially per zone
     // generation, so a fresh Tothal Shift very likely reuses an old
     // den's exact id — without this, that den's cavern would keep
@@ -345,6 +360,159 @@
   function isDenPackAlive(denKey) {
     for (const c of deps.hostileObjects) if (c.denKey === denKey && c.health > 0) return true;
     return false;
+  }
+
+
+  function isRoamingHerdAlive(herdKey) {
+    for (const c of deps.hostileObjects) if (c.herdKey === herdKey && c.health > 0) return true;
+    return false;
+  }
+
+  function roamingHerdAnchor(zoneId, herdIndex, herdCount) {
+    const zoneData = deps.zoneLayouts.get(zoneId); // Generated foliage patches give the herd a naturally walkable/grazable outdoor anchor.
+    const patches = (zoneData?.foliagePatches || []).filter(patch => Array.isArray(patch?.tiles) && patch.tiles.length);
+    if (patches.length) {
+      const slot = Math.min(patches.length - 1, Math.floor(((herdIndex + 0.5) / Math.max(1, herdCount)) * patches.length));
+      const patch = patches[slot];
+      const centroid = patch.centroid || patch.tiles[Math.floor(patch.tiles.length / 2)] || { x: 0, y: 0 };
+      return {
+        x: (Number(centroid.x) + 0.5) * deps.TILE,
+        y: (Number(centroid.y) + 0.5) * deps.TILE,
+        tiles: patch.tiles,
+      };
+    }
+    const zdef = deps.EXTERIOR_ZONES?.[zoneId] || {};
+    const cols = Number(zoneData?.cols) || Number(zdef.cols) || 22;
+    const rows = Number(zoneData?.rows) || Number(zdef.rows) || 16;
+    return {
+      x: ((herdIndex + 1) / (Math.max(1, herdCount) + 1) * cols + 0.5) * deps.TILE,
+      y: (rows * 0.5 + 0.5) * deps.TILE,
+      tiles: [],
+    };
+  }
+
+  function attachVoorgBabiesToMother(mother, babyCount) {
+    const parent = mother?.avatarRef?.group;
+    const front = mother?.avatarRef?.frontPlane;
+    const back = mother?.avatarRef?.backPlane;
+    const THREE_NS = window.THREE;
+    if (!parent || !front || !back || !THREE_NS?.Group) return 0;
+
+    const saddle = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[VOORG_ASS_SPECIES]?.anchors?.saddle?.position || { x: 0, y: 0.12, z: 0 };
+    const largeScale = window.CreatureGenetics?.creatureSizeScale?.(VOORG_ASS_SPECIES, 'large') || { x: 1, y: 1 };
+    const smallScale = window.CreatureGenetics?.creatureSizeScale?.(VOORG_ASS_SPECIES, 'small') || { x: 0.28, y: 0.28 };
+    const ratioX = (Number(smallScale.x) || 0.28) / Math.max(0.001, Number(largeScale.x) || 1); // Converts the adult parent scale into the authored small-class visual size.
+    const ratioY = (Number(smallScale.y) || 0.28) / Math.max(0.001, Number(largeScale.y) || 1); // Used independently because creature size profiles can be non-uniform.
+    const offsets = [
+      [-0.085, 0.035, -0.045, -0.16],
+      [ 0.080, 0.025,  0.035,  0.12],
+      [-0.010, 0.090,  0.060, -0.04],
+      [ 0.025, 0.075, -0.090,  0.20],
+    ]; // Local offsets around the existing saddle attach point; no new per-species anchor is required.
+
+    const visuals = []; // Stored on the mother for diagnostics and automatic scene-graph cleanup with the corpse.
+    for (let i = 0; i < Math.max(0, Math.min(offsets.length, babyCount)); i++) {
+      const [ox, oy, oz, yaw] = offsets[i];
+      const baby = new THREE_NS.Group();
+      baby.name = `voorg_ass_carried_baby_${i + 1}`;
+      baby.userData.voorgAssCarriedBaby = true;
+      baby.add(front.clone(), back.clone()); // Shares the mother's geometry/material maps, so genotype tint/animation updates cost no new texture composites.
+      baby.position.set((Number(saddle.x) || 0) + ox, (Number(saddle.y) || 0.12) + oy, (Number(saddle.z) || 0) + oz);
+      baby.rotation.y = yaw;
+      baby.scale.set(ratioX, ratioY, ratioX);
+      parent.add(baby);
+      visuals.push(baby);
+    }
+    mother._carriedBabyVisuals = visuals;
+    return visuals.length;
+  }
+
+  function spawnRoamingHerd(zoneId, herdIndex, herdKey) {
+    const zdef = deps.EXTERIOR_ZONES?.[zoneId];
+    const pool = zdef?.roamingHerdSpecies || [];
+    if (!pool.length) return 0;
+    const speciesKey = pool[Math.floor(deps.rnd() * pool.length)];
+    const herdCount = Math.max(1, Math.floor(Number(zdef.roamingHerdCount) || 1));
+    const anchor = roamingHerdAnchor(zoneId, herdIndex, herdCount);
+    const count = ROAMING_HERD_SIZE_MIN + Math.floor(deps.rnd() * (ROAMING_HERD_SIZE_MAX - ROAMING_HERD_SIZE_MIN + 1));
+    const zoneData = deps.zoneLayouts.get(zoneId);
+    const waterTile = nearestWaterTile(zoneData, anchor.x, anchor.y);
+    const motherIndex = speciesKey === VOORG_ASS_SPECIES ? Math.floor(deps.rnd() * count) : -1; // Exactly one Herd-Mother per Voorg-Ass herd.
+    const motherBabyCount = motherIndex >= 0 ? 2 + Math.floor(deps.rnd() * 3) : 0;
+    let spawned = 0;
+
+    for (let i = 0; i < count; i++) {
+      const formationAngle = (i / Math.max(1, count)) * Math.PI * 2 + herdIndex * 0.47;
+      const formationRadius = deps.TILE * (0.55 + (i % 3) * 0.35);
+      const tile = anchor.tiles?.length ? anchor.tiles[(i * 5 + herdIndex * 3) % anchor.tiles.length] : null;
+      const x = tile ? (tile.x + 0.5) * deps.TILE : anchor.x + Math.cos(formationAngle) * formationRadius;
+      const y = tile ? (tile.y + 0.5) * deps.TILE : anchor.y + Math.sin(formationAngle) * formationRadius;
+      const homeOffset = deps.TILE * (0.4 + (i % 4) * 0.18);
+      const sleepAngle = formationAngle + 0.31;
+      const sleepRadius = deps.TILE * (0.25 + (i % 4) / 4 * ROAMING_HERD_SLEEP_RADIUS_TILES);
+      const genotype = window.CreatureGenetics?.makeDefaultGenotype?.(speciesKey) || null;
+      if (genotype) genotype.sizeClass = 'large'; // Wild Voorg-Ass adults are always large even if a future breeding mutation path permits other farm sizes.
+      const isMother = i === motherIndex;
+      const creatureKey = isMother ? VOORG_ASS_HERD_MOTHER_SPECIES : speciesKey;
+      const opts = {
+        homeX: anchor.x + Math.cos(formationAngle) * homeOffset,
+        homeY: anchor.y + Math.sin(formationAngle) * homeOffset,
+        state: 'idle',
+        herdKey,
+        herdHomeX: anchor.x,
+        herdHomeY: anchor.y,
+        herdSleepX: anchor.x,
+        herdSleepY: anchor.y,
+        herdSleepOffsetX: Math.cos(sleepAngle) * sleepRadius,
+        herdSleepOffsetY: Math.sin(sleepAngle) * sleepRadius,
+        wanderRadiusPx: deps.TILE * ROAMING_HERD_WANDER_TILES,
+        genotype,
+        ...(waterTile ? { waterTile } : {}),
+        ...(isMother ? {
+          isHerdMother: true,
+          herdMotherLabel: 'Herd-Mother',
+          carriedBabyItemKey: VOORG_ASS_BABY_ITEM_KEY,
+          carriedBabyCount: motherBabyCount,
+        } : {}),
+      };
+      const creature = deps.makeCreatureEntity(creatureKey, x, y, opts);
+      if (!creature) continue;
+      if (isMother) attachVoorgBabiesToMother(creature, motherBabyCount);
+      deps.hostileObjects.add(creature);
+      spawned++;
+    }
+
+    if (spawned > 0) {
+      window.__farmLog?.(`[voorg-ass] spawned roaming herd key=${herdKey} size=${spawned} mother=${motherIndex >= 0 ? 1 : 0} babies=${motherBabyCount} anchor=(${Math.round(anchor.x / deps.TILE)},${Math.round(anchor.y / deps.TILE)})`, 'wildlife');
+      if (zoneId === deps.getCurrentArea() && speciesKey === VOORG_ASS_SPECIES) deps.showToast('A large Voorg-Ass herd is roaming the cliffs.', false);
+    }
+    return spawned;
+  }
+
+  function ensureCurrentZoneRoamingHerds() {
+    const zoneId = deps.getCurrentArea();
+    const zdef = deps.EXTERIOR_ZONES?.[zoneId];
+    if (!Array.isArray(zdef?.roamingHerdSpecies) || !zdef.roamingHerdSpecies.length) return;
+    const herdCount = Math.max(1, Math.floor(Number(zdef.roamingHerdCount) || 1));
+    for (let index = 0; index < herdCount; index++) {
+      const key = roamingHerdKeyFor(zoneId, index);
+      const alive = isRoamingHerdAlive(key);
+      if (alive) { roamingHerdLastKnownAlive.set(key, true); continue; }
+
+      if (!roamingHerdEverSpawned.has(key)) {
+        roamingHerdEverSpawned.add(key);
+        roamingHerdLastKnownAlive.set(key, false);
+        spawnRoamingHerd(zoneId, index, key);
+        continue;
+      }
+      if (roamingHerdLastKnownAlive.get(key) !== false) {
+        roamingHerdLastKnownAlive.set(key, false);
+        pendingRoamingHerdRespawn.add(key);
+        continue;
+      }
+      if (pendingRoamingHerdRespawn.has(key)) continue;
+      spawnRoamingHerd(zoneId, index, key);
+    }
   }
 
   function denSpeciesFor(zoneId, cavernMapId) {
@@ -736,6 +904,7 @@
     denCheckTimer = DEN_CHECK_INTERVAL_S;
     if (!deps.buildZoneScene(currentArea)) return;
     ensureCurrentZoneDenPacks();
+    ensureCurrentZoneRoamingHerds();
     ensureCurrentZoneNestTrees();
     window.BanditCamps.ensureCurrentZoneCamps();
     if (_zoneEntryAnimalLogPending === currentArea) {
@@ -795,6 +964,23 @@
     updateHostileSpawning,
     onZoneEntered,
     denNestCensus,
+    roamingHerdCensus: (zoneId = deps.getCurrentArea()) => {
+      const zdef = deps.EXTERIOR_ZONES?.[zoneId] || {};
+      const herdCount = Math.max(0, Math.floor(Number(zdef.roamingHerdCount) || 0));
+      const herds = [];
+      for (let index = 0; index < herdCount; index++) {
+        const herdKey = roamingHerdKeyFor(zoneId, index);
+        let adults = 0, mothers = 0, babies = 0, sleeping = 0;
+        for (const c of deps.hostileObjects) {
+          if (c.herdKey !== herdKey || c.health <= 0) continue;
+          adults++;
+          if (c.isHerdMother) { mothers++; babies += Math.max(0, Number(c.carriedBabyCount) || 0); }
+          if (c._animalSleeping) sleeping++;
+        }
+        herds.push({ herdKey, adults, mothers, carriedBabies: babies, sleeping });
+      }
+      return { zoneId, configuredHerds: herdCount, species: [...(zdef.roamingHerdSpecies || [])], herds };
+    },
     __test: Object.freeze({
       extendScatteredNestSelection,
       minimumNestSeparationTiles: NEST_TREE_MIN_SEPARATION_TILES,
@@ -803,6 +989,6 @@
     // next day exactly like a wiped den (see ensureCurrentZoneNestTrees),
     // so it rides the same day-advance call sites as den respawn instead of
     // needing its own.
-    clearPendingDenRespawn: () => { pendingDenRespawn.clear(); pendingNestTreeRespawn.clear(); },
+    clearPendingDenRespawn: () => { pendingDenRespawn.clear(); pendingNestTreeRespawn.clear(); pendingRoamingHerdRespawn.clear(); },
   };
 })();
