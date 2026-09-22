@@ -178,7 +178,7 @@ assert.equal(banubu.appearance.creatureColorOverrides.mitts, '#c3e3e9');
 assert.equal(banubu.appearance.creatureColorOverrides.spectacles, '#c3e3e9');
 assert.equal(banubu.appearance.creatureColorOverrides.coloredstripe, '#c3e3e9');
 assert.equal(banubu.appearance.creatureGenotype.sizeClass, 'large');
-assert.equal(banubu.appearance.creatureScaleMultiplier, 1.5);
+assert.equal(banubu.appearance.creatureScaleMultiplier, 3.0);
 assert.equal(banubu.appearance.creatureGenotype.base.color, '#4F757D');
 assert.equal(banubu.appearance.creatureGenotype.mitts.color, '#c3e3e9');
 assert.equal(banubu.appearance.creatureGenotype.spectacles.color, '#c3e3e9');
