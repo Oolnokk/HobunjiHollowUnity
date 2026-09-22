@@ -27,6 +27,7 @@ on:
       - 'docs/config/npcs/hobunji-starter-npc-database.json'
       - 'scripts/seed-npc-gift-preferences.js'
       - 'scripts/test-npc-gift-color-preferences.js'
+      - 'scripts/test-npc-gift-discovery-reconcile.js'
       - 'docs/js/npc-social-relationship-bridge-v2.js'
       - 'docs/js/npc-social-seating-bridge.js'
       - 'docs/js/npc-furniture-wardrobe-bridge-v2.js'
@@ -96,6 +97,7 @@ on:
       - 'docs/config/npcs/hobunji-starter-npc-database.json'
       - 'scripts/seed-npc-gift-preferences.js'
       - 'scripts/test-npc-gift-color-preferences.js'
+      - 'scripts/test-npc-gift-discovery-reconcile.js'
       - 'docs/js/npc-social-relationship-bridge-v2.js'
       - 'docs/js/npc-social-seating-bridge.js'
       - 'docs/js/npc-furniture-wardrobe-bridge-v2.js'
@@ -201,6 +203,7 @@ jobs:
           node --check scripts/test-npc-gifting-multitrait.js
           node --check scripts/seed-npc-gift-preferences.js
           node --check scripts/test-npc-gift-color-preferences.js
+          node --check scripts/test-npc-gift-discovery-reconcile.js
           node --check scripts/test-npc-social-seating.js
           node --check scripts/test-banubu-questline.js
           node --check docs/js/banubu-quest-content.js
@@ -230,6 +233,8 @@ jobs:
         run: node scripts/test-npc-gifting-multitrait.js
       - name: Test NPC gift colors against worn outfits
         run: node scripts/test-npc-gift-color-preferences.js
+      - name: Test stale learned NPC gift preference reconciliation
+        run: node scripts/test-npc-gift-discovery-reconcile.js
       - name: Test event-driven Rapport, social gates, dialogue, and wardrobes
         run: node scripts/test-npc-social-rapport-wardrobes.js
       - name: Test Banubu staged wake-up and quest progression
