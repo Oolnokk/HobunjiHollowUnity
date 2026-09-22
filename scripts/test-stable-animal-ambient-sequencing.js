@@ -3,6 +3,12 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
+const progressionSource = fs.readFileSync('docs/js/stable-animal-progression.js', 'utf8'); // Source guard verifies the slow 700 ms pet scan defers immediately when the NPC is already greeting the player.
+assert.match(progressionSource, /AmbientDialogue\?\.hasActiveGreetingFor\?\.\(npcId\)/, 'pet ambient scan skips NPCs whose player greeting is already active');
+const perkSource = fs.readFileSync('docs/js/stable-animal-perk-adjustments.js', 'utf8'); // Source guard keeps the sequencing fix event-driven rather than intercepting storage or adding polling.
+assert.match(perkSource, /addEventListener\('hobunji-ambient-dialogue'/, 'pet sequencing listens to rendered ambient events');
+assert.doesNotMatch(perkSource, /Storage\?\.prototype|stableAnimalGreetingLedgerSetItem/, 'pet sequencing no longer monkeypatches localStorage');
+
 let now = 1000;
 let nextTimerId = 1;
 const timers = new Map();
@@ -39,13 +45,15 @@ function advance(ms) {
   now = target;
 }
 
-class FakeStorage {
-  constructor() { this.values = new Map(); }
-  getItem(key) { return this.values.has(String(key)) ? this.values.get(String(key)) : null; }
-  setItem(key, value) { this.values.set(String(key), String(value)); }
+const ambientListeners = new Map(); // Event listeners reproduce AmbientDialogue's render-time CustomEvent handoff without polling or storage interception.
+function addEventListener(type, listener) {
+  if (!ambientListeners.has(type)) ambientListeners.set(type, []);
+  ambientListeners.get(type).push(listener);
+}
+function emitAmbientDialogue(detail) {
+  for (const listener of ambientListeners.get('hobunji-ambient-dialogue') || []) listener({ detail });
 }
 
-const localStorage = new FakeStorage(); // Used to reproduce AmbientDialogue's private tryGreeting ledger write without routing that greeting through the public show method.
 const player = { id: 'player' };
 const entries = {
   companion: { id: 'comp1', role: 'companion', animalPerks: { rapportBond: 1 } },
@@ -71,8 +79,7 @@ const context = {
   Math: Object.create(Math),
   setTimeout: setFakeTimeout,
   clearTimeout: clearFakeTimeout,
-  Storage: FakeStorage,
-  localStorage,
+  addEventListener,
   StableAnimalProgression: progression,
   Combat: {
     deps: {
@@ -106,19 +113,13 @@ vm.createContext(context);
 vm.runInContext(fs.readFileSync('docs/js/stable-animal-perk-adjustments.js', 'utf8'), context, { filename: 'stable-animal-perk-adjustments.js' });
 context.AmbientDialogue.init({ getPendingRequestGreeting: () => null });
 
-function writeGreetingLedger(keys) {
-  localStorage.setItem('hobunjiAmbientGreetings.v1:test-world', JSON.stringify({ day: 1, keys }));
-}
-
-function privateGreeting(npcId, text) {
-  const greetingKey = `1:${npcId}>player`; // Used to reproduce tryGreeting's ledger key exactly before its private lexical show() call.
-  const current = JSON.parse(localStorage.getItem('hobunjiAmbientGreetings.v1:test-world') || '{"day":1,"keys":[]}'); // Used to preserve earlier same-day greeting entries exactly like AmbientDialogue's ledger.
-  writeGreetingLedger([...new Set([...(current.keys || []), greetingKey])]);
+function privateGreeting(npcId, text, durationMs = 4200) {
   shown.push({ target: {}, text, options: { speakerId: npcId, greeting: true, directedAtPlayer: true }, at: now, privatePath: true });
+  emitAmbientDialogue({ speakerId: npcId, text, greeting: true, directedAtPlayer: true, startedAt: now, durationMs }); // Mirrors AmbientDialogue.show's real render event, including private lexical greetings.
 }
 
 // Regression: real proximity greetings use AmbientDialogue's private lexical show(),
-// so the public show wrapper never sees them. The persisted greeting ledger must
+// so the public show wrapper never sees them. The rendered ambient event must
 // still become the authoritative event-time signal for the animal follow-up.
 privateGreeting('friend1', 'Hello there!');
 context.AmbientDialogue.show({}, 'Companion reaction', {
@@ -168,9 +169,9 @@ assert.equal(rapportCalls.length, 1, 'the chosen rapport-trained companion recei
 
 const debug = context.StableAnimalPerkAdjustments.getDebug();
 assert.equal(debug.ambientReactionTiming.afterGreetingMs, 0, 'debug timing exposes the requested zero post-greeting pause');
-assert.equal(debug.greetingLedgerHookInstalled, true, 'debug confirms the event-driven private-greeting hook is installed');
+assert.equal(debug.ambientDialogueEventHookInstalled, true, 'debug confirms the event-driven rendered-greeting event hook is installed');
 assert.equal(debug.pendingAmbientReactions.length, 0, 'the candidate queue is emptied after each follow-up is chosen');
-assert(debug.ambientSequenceTrace.some(row => row.type === 'greeting-shown' && row.source === 'ledger'), 'debug trace records private greetings observed through the ledger');
+assert(debug.ambientSequenceTrace.some(row => row.type === 'greeting-shown' && row.source === 'ambient-event'), 'debug trace records private greetings observed through the ambient event');
 assert.equal(debug.ambientSequenceTrace.filter(row => row.type === 'reaction-queued').some(row => row.candidateCount === 3), true, 'debug trace exposes all three coalesced candidates');
 assert.equal(debug.ambientSequenceTrace.filter(row => row.type === 'reaction-shown').length, 2, 'debug trace proves one follow-up rendered for each greeting');
 assert.equal(debug.ambientSequenceTrace.filter(row => row.type === 'reaction-shown')[0].role, 'mount', 'debug trace records which role won the random three-way choice');
