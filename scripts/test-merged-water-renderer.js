@@ -20,8 +20,10 @@ assert.doesNotMatch(waterSystemSource,
 assert.match(waterSystemSource,
   /function _dryRenderBaseline\(\)[\s\S]{0,260}?surfaceY: null/,
   'a dry flood baseline has no surface and therefore needs no NORMAL_TOP lookup');
-assert.match(indexSource, /water-system\.js\?v=20260921townriver1/,
-  'the shipped page cache-busts the town permanent-river render refresh');
+assert.match(indexSource, /merged-water-renderer\.js\?v=20260921floodvisual1/,
+  'the shipped page cache-busts the flood visual-attribute renderer support');
+assert.match(indexSource, /water-system\.js\?v=20260922wateropacity1/,
+  'the shipped page cache-busts the stable-water flood visual profile');
 
 function cornersForTile(data, tileIndex) {
   const start = tileIndex * 12;
@@ -74,7 +76,16 @@ const floodPlane = buildMapWidePlaneSurfaceData({
   cols: 60,
   rows: 50,
   yOffset: 0,
-  baseline: { visible: true, surfaceY: 0.4, depth: 0.8, coverage: 0.8 },
+  baseline: {
+    visible: true,
+    surfaceY: 0.4,
+    depth: 0.2,
+    coverage: 0.2,
+    renderDepth: 0.8,
+    renderCoverage: 1,
+    renderFlowX: 0,
+    renderFlowZ: 1,
+  },
 });
 assert.equal(floodPlane.representation, 'map-wide-plane', 'flooding uses a dedicated map-wide representation');
 assert.equal(floodPlane.positions.length / 3, 4, 'the entire 60x50 flood is one quad regardless of terrain obstacles');
@@ -86,6 +97,14 @@ assert.deepEqual(floodPlane.positions, [
   60, 0.4, 50,
 ], 'the flood sheet spans the full playable map without tile holes');
 assert.equal(floodPlane.baselineRectangles, 1);
+assert.deepEqual(floodPlane.uvs, [0, 0, 15, 0, 0, 12.5, 15, 12.5],
+  'the flood plane keeps the same four-world-tile texture scale as stable water');
+assert.deepEqual(floodPlane.depths, [0.8, 0.8, 0.8, 0.8],
+  'the flood plane can keep physical depth at 0.2 while using deep stable-water shading');
+assert.deepEqual(floodPlane.coverages, [1, 1, 1, 1],
+  'the flood plane can keep physical coverage at 0.2 while using stable-water opacity');
+assert.deepEqual(floodPlane.flows, [0, 1, 0, 1, 0, 1, 0, 1],
+  'the flood plane can match stable-water sheen strength without changing physical flow');
 
 const invertedCells = [
   { col: 0, row: 0, surfaceY: 0.1, depth: 0.2, coverage: 0.2, visible: true },
@@ -198,6 +217,12 @@ assert.match(gameSource, /function buildTownScene\(\) \{[\s\S]{0,260}?if \(_town
   're-entering an already-built town immediately resyncs permanent river versus flood visibility');
 assert.match(gameSource, /_townRiverWaterMeshes = townRiverMesh \? \[townRiverMesh\] : \[\];[\s\S]{0,220}?WaterSystem\.refreshTownWaterRender\(\);/,
   'a newly-built town refreshes water only after its permanent river mesh exists');
+assert.match(waterSystemSource, /opacity: 0\.65/,
+  'the singleton merged-water material uses the shared midpoint opacity for flood and stable surfaces');
+assert.match(waterSystemSource, /FLOOD_VISUAL_DEPTH = 0\.8[\s\S]{0,260}?FLOOD_VISUAL_COVERAGE = 1[\s\S]{0,320}?FLOOD_VISUAL_FLOW_MAGNITUDE = 1/,
+  'the flood plane uses the deep stable-water color, full shared-material coverage, and normal sheen profile');
+assert.match(waterSystemSource, /renderDepth: FLOOD_VISUAL_DEPTH[\s\S]{0,180}?renderCoverage: FLOOD_VISUAL_COVERAGE[\s\S]{0,180}?renderFlowZ: FLOOD_VISUAL_FLOW_MAGNITUDE/,
+  'the simulated flood baseline keeps explicit stable-water visual overrides');
 assert.match(waterSystemSource, /mapWidePlane:\s*true[\s\S]{0,120}?cols[\s\S]{0,120}?rows[\s\S]{0,120}?baseline/,
   'flood rendering explicitly requests one full-map plane');
 assert.match(waterSystemSource, /function _filterLocalWaterCellsForFlood[\s\S]{0,700}?baseline\?\.visible[\s\S]{0,220}?return \[\]/,
