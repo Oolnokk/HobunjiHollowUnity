@@ -6,7 +6,7 @@ on:
       - 'docs/js/vegetation-crop-rendering.js'
       - 'docs/js/pixel-probe.js'
       - 'docs/index.html'
-      - 'scripts/test-town-render-hotpaths.js'
+      - 'scripts/test-river-grass-bank.js'
       - 'scripts/test-procedural-hands.js'
       - '.github/workflows/river-grass-bank-regression.yml'
   pull_request:
@@ -14,7 +14,7 @@ on:
       - 'docs/js/vegetation-crop-rendering.js'
       - 'docs/js/pixel-probe.js'
       - 'docs/index.html'
-      - 'scripts/test-town-render-hotpaths.js'
+      - 'scripts/test-river-grass-bank.js'
       - 'scripts/test-procedural-hands.js'
       - '.github/workflows/river-grass-bank-regression.yml'
   workflow_dispatch:
@@ -31,8 +31,8 @@ jobs:
         run: |
           node --check docs/js/vegetation-crop-rendering.js
           node --check docs/js/pixel-probe.js
-      - name: Test town render hot paths and river-bank grass clamp
-        run: node scripts/test-town-render-hotpaths.js
+      - name: Test focused river-bank grass clamp
+        run: node scripts/test-river-grass-bank.js
       - name: Test Pixel Probe and procedural-hand integration
         run: node scripts/test-procedural-hands.js
       - name: Test merged water rendering
