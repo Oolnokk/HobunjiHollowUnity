@@ -286,13 +286,14 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
           <div id="cinCamFields" style="margin-top:7px">
             <div class="g2"><div><label>Id</label><input id="cinCamId"></div><div><label>Label</label><input id="cinCamLabel"></div></div>
             <div class="g3" style="margin-top:6px"><div><label>Camera X</label><input id="cinCamX" type="number" step=".1"></div><div><label>Height Y</label><input id="cinCamY" type="number" step=".05"></div><div><label>Camera Z</label><input id="cinCamZ" type="number" step=".1"></div></div>
-            <div class="g3" style="margin-top:6px"><div><label>Target X</label><input id="cinTargetX" type="number" step=".1"></div><div><label>Target Y</label><input id="cinTargetY" type="number" step=".05"></div><div><label>Target Z</label><input id="cinTargetZ" type="number" step=".1"></div></div>
+            <div style="margin-top:6px"><label>Auto target NPC id</label><input id="cinTargetNpc" placeholder="banubu"></div>
+            <div class="g3" style="margin-top:6px"><div><label id="cinTargetLabelX">Target X</label><input id="cinTargetX" type="number" step=".1"></div><div><label id="cinTargetLabelY">Target Y</label><input id="cinTargetY" type="number" step=".05"></div><div><label id="cinTargetLabelZ">Target Z</label><input id="cinTargetZ" type="number" step=".1"></div></div>
             <div class="g3" style="margin-top:6px"><div><label>FOV °</label><input id="cinCamFov" type="number" min="10" max="120"></div><div><label>Blend sec</label><input id="cinCamBlend" type="number" min="0" step=".05"></div><div><label>Dialogue NPC id</label><input id="cinCamNpc" placeholder="banubu"></div></div>
             <div class="g2" style="margin-top:6px"><div><label>Player stage X</label><input id="cinStageX" type="number" step=".1"></div><div><label>Player stage Z</label><input id="cinStageZ" type="number" step=".1"></div></div>
             <label class="chk"><input type="checkbox" id="cinCamFadePets"> Fade player pets in this shot</label>
             <button class="sec" id="cinCamApply" style="width:100%;margin-top:6px">Apply Camera</button>
           </div>
-          <p class="muted" style="margin-top:5px">Camera and target coordinates are this map's tile-space. Dialogue may auto-pick by NPC id; dialogue nodes and cutscene Camera cards may reference the id directly.</p>
+          <p class="muted" style="margin-top:5px">Camera position is map tile-space. With Auto target NPC id set, Target X/Y/Z are offsets from that live NPC's face; otherwise they are an absolute map point. Dialogue may auto-pick by Dialogue NPC id, while dialogue nodes and cutscene Camera cards may reference the camera id directly.</p>
         </div>
 
         <!-- ENTRY POINTS (Entry mode only) — named drop-spots for MapLayoutSystem's
@@ -1717,11 +1718,16 @@ function renderCinematicCameraPanel() {
   $('cinCamSelect').value = activeCinematicCameraId || '';
   const cameraDef = cinematicCameraById(m, activeCinematicCameraId);
   $('cinCamFields').style.opacity = cameraDef ? '1' : '.45';
-  for (const id of ['cinCamId','cinCamLabel','cinCamX','cinCamY','cinCamZ','cinTargetX','cinTargetY','cinTargetZ','cinCamFov','cinCamBlend','cinCamNpc','cinStageX','cinStageZ']) $(id).disabled = !cameraDef;
+  for (const id of ['cinCamId','cinCamLabel','cinCamX','cinCamY','cinCamZ','cinTargetNpc','cinTargetX','cinTargetY','cinTargetZ','cinCamFov','cinCamBlend','cinCamNpc','cinStageX','cinStageZ']) $(id).disabled = !cameraDef;
   $('cinCamFadePets').disabled = !cameraDef; $('cinCamApply').disabled = !cameraDef;
   if (!cameraDef) return;
   $('cinCamId').value = cameraDef.id || ''; $('cinCamLabel').value = cameraDef.label || '';
   $('cinCamX').value = Number(cameraDef.position?.x) || 0; $('cinCamY').value = Number(cameraDef.position?.y) || 0; $('cinCamZ').value = Number(cameraDef.position?.z) || 0;
+  $('cinTargetNpc').value = cameraDef.targetNpcId || '';
+  const faceRelative = !!cameraDef.targetNpcId;
+  $('cinTargetLabelX').textContent = faceRelative ? 'Face offset X' : 'Target X';
+  $('cinTargetLabelY').textContent = faceRelative ? 'Face offset Y' : 'Target Y';
+  $('cinTargetLabelZ').textContent = faceRelative ? 'Face offset Z' : 'Target Z';
   $('cinTargetX').value = Number(cameraDef.target?.x) || 0; $('cinTargetY').value = Number(cameraDef.target?.y) || 0; $('cinTargetZ').value = Number(cameraDef.target?.z) || 0;
   $('cinCamFov').value = Number(cameraDef.fovDeg) || 42; $('cinCamBlend').value = Number(cameraDef.blendSeconds) || 0;
   $('cinCamNpc').value = cameraDef.dialogueNpcId || ''; $('cinStageX').value = cameraDef.playerStage?.x ?? ''; $('cinStageZ').value = cameraDef.playerStage?.z ?? '';
@@ -1815,10 +1821,21 @@ function renderLayoutsPanel() {
 // ── Cinematic camera controls ─────────────────────────────────────────────────
 $('showCinematicCameras').addEventListener('change', () => { showCinematicCameras = $('showCinematicCameras').checked; draw(); });
 $('cinCamSelect').addEventListener('change', () => { activeCinematicCameraId = $('cinCamSelect').value || null; renderCinematicCameraPanel(); draw(); });
+$('cinTargetNpc').addEventListener('input', () => {
+  const faceRelative = !!$('cinTargetNpc').value.trim();
+  $('cinTargetLabelX').textContent = faceRelative ? 'Face offset X' : 'Target X';
+  $('cinTargetLabelY').textContent = faceRelative ? 'Face offset Y' : 'Target Y';
+  $('cinTargetLabelZ').textContent = faceRelative ? 'Face offset Z' : 'Target Z';
+});
+$('cinTargetNpc').addEventListener('change', () => {
+  if ($('cinTargetNpc').value.trim()) {
+    $('cinTargetX').value = 0; $('cinTargetY').value = 0; $('cinTargetZ').value = 0;
+  }
+});
 $('cinCamAdd').addEventListener('click', () => {
   const m=activeMap(); m.cinematicCameras=m.cinematicCameras||[];
   let id=`camera_${m.cinematicCameras.length+1}`; while(m.cinematicCameras.some(camera=>camera.id===id)) id+='_2';
-  m.cinematicCameras.push({id,label:id,position:{x:m.cols/2-2,y:.35,z:m.rows/2+2},target:{x:m.cols/2,y:.8,z:m.rows/2},fovDeg:42,blendSeconds:.45,dialogueNpcId:'',fadePets:false,playerStage:null});
+  m.cinematicCameras.push({id,label:id,position:{x:m.cols/2-2,y:.35,z:m.rows/2+2},target:{x:m.cols/2,y:.8,z:m.rows/2},targetNpcId:'',fovDeg:42,blendSeconds:.45,dialogueNpcId:'',fadePets:false,playerStage:null});
   activeCinematicCameraId=id; updateAll();
 });
 $('cinCamDelete').addEventListener('click', () => {
@@ -1830,6 +1847,7 @@ $('cinCamApply').addEventListener('click', () => {
   const m=activeMap(), cameraDef=cinematicCameraById(m,activeCinematicCameraId); if(!cameraDef)return;
   const oldId=cameraDef.id; cameraDef.id=$('cinCamId').value.trim()||oldId; cameraDef.label=$('cinCamLabel').value.trim()||cameraDef.id;
   cameraDef.position={x:Number($('cinCamX').value)||0,y:Number($('cinCamY').value)||0,z:Number($('cinCamZ').value)||0};
+  cameraDef.targetNpcId=$('cinTargetNpc').value.trim();
   cameraDef.target={x:Number($('cinTargetX').value)||0,y:Number($('cinTargetY').value)||0,z:Number($('cinTargetZ').value)||0};
   cameraDef.fovDeg=clamp(Number($('cinCamFov').value)||42,10,120); cameraDef.blendSeconds=Math.max(0,Number($('cinCamBlend').value)||0);
   cameraDef.dialogueNpcId=$('cinCamNpc').value.trim(); cameraDef.fadePets=$('cinCamFadePets').checked;
