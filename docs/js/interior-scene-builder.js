@@ -22,6 +22,20 @@
   // buildCavernWalls (its only user here) avoids a hard load-order dependency
   // on TerrainPreview for anything except the bump-field math itself.
   const ROCK_MOUND_CELLS_PER_TILE = 6;
+  const INTERIOR_CANVAS_TEXTURE_URL = (() => { // Used by every canvas-wall build so game/editor/cutscene resolve the same repo texture from the shared script location.
+    try { return new URL('../assets/textures/canvas.png', document.currentScript?.src || location.href).href; }
+    catch (_) { return 'assets/textures/canvas.png'; }
+  })();
+  let _interiorCanvasTexture = null; // Cached by canvasTexture() so all tent wall panels share one decoded/GPU texture while keeping independent UV islands.
+
+  function canvasTexture(THREE) {
+    if (_interiorCanvasTexture) return _interiorCanvasTexture;
+    const texture = new THREE.TextureLoader().load(INTERIOR_CANVAS_TEXTURE_URL); // Used by buildCanvasWallsWithColor; each panel supplies its own 0..1 UV rectangle.
+    texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
+    if ('colorSpace' in texture && THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
+    _interiorCanvasTexture = texture;
+    return texture;
+  }
 
   function applyTownCliffMaterial(THREE, mesh, fallbackMaterial) {
     const natural = root.NaturalSurfaceMaterials; // Used by mine and den cave meshes to share the exact town-border cliff material factory instead of maintaining a separate lit cave material.
@@ -271,9 +285,10 @@
     return mesh;
   }
 
-  // Flat cloth-colored wall panels for a canvas tent interior, tinted to
-  // match the exterior tent piece's canvas material (HousePieceGen's
-  // matCanvas, 0xcbb489). Exact port of game.js's buildCanvasWalls.
+  // Canvas tent interior walls use the same canvas.png as the exterior.
+  // Every derived boundary panel is its own cloth surface and receives a full
+  // 0..1 copy of the PNG, so long walls do not tile and neighboring walls do
+  // not share one continuous UV field.
   function buildCanvasWalls(THREE, wallPanels) {
     return buildCanvasWallsWithColor(THREE, wallPanels, 0xcbb489);
   }
@@ -281,21 +296,25 @@
   function buildCanvasWallsWithColor(THREE, wallPanels, color) {
     const group = new THREE.Group();
     if (!wallPanels.length) return group;
-    const mat = new THREE.MeshLambertMaterial({ color, side: THREE.DoubleSide });
-    const pos = [], idx = []; let vi = 0;
+    const texture = canvasTexture(THREE); // Shared image; panel-local UVs below make each wall independently stretch it to fit.
+    const mat = new THREE.MeshLambertMaterial({ color: 0xffffff, map: texture, side: THREE.DoubleSide });
+    const pos = [], uv = [], idx = []; let vi = 0;
     for (const panel of wallPanels) {
       const [bl, br, tr, tl] = panelCornersFor(THREE, panel);
       pos.push(bl.x, bl.y, bl.z, br.x, br.y, br.z, tr.x, tr.y, tr.z, tl.x, tl.y, tl.z);
+      uv.push(0, 0, 1, 0, 1, 1, 0, 1); // One complete canvas.png per inner wall panel.
       idx.push(vi, vi + 1, vi + 2, vi, vi + 2, vi + 3);
       vi += 4;
     }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
     geo.setIndex(idx);
     geo.computeVertexNormals();
     const mesh = new THREE.Mesh(geo, mat);
     mesh.receiveShadow = true;
     mesh.userData.cameraObstacle = true;
+    mesh.userData.canvasSurfaceStretch = 'one-png-per-wall-panel';
     group.add(mesh);
     return group;
   }
