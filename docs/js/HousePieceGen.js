@@ -51,9 +51,8 @@
   var _pendingShingleTint = null; // Applied after the shared GLB loads; used by every farmhouse/town roof.
   var _appliedShingleTintKey = ''; // Prevents duplicate texture work when several building systems request the same PNG.
   var HIGHLAND_SHINGLE_SURFACE_SPLIT_ANGLE_DEG = 52; // Used by _applyShingleSurfaceUvs so the broad banana-curved faces remain one detected texture surface.
-  var HIGHLAND_SHINGLE_SOURCE_EDGE_FRACTION = 0.16; // Used by the shingle-only perimeter frame to match carved_smooth.png's protected outer border.
-  var HIGHLAND_SHINGLE_SURFACE_EDGE_FRACTION = 0.06; // Used to compress that source border into the same narrow rendered band as natural-surface perimeter mapping.
-  var _shingleSurfaceStats = { meshCount: 0, sourceUvMeshes: 0, sourceUvMissingMeshes: 0, mappedMeshes: 0, perimeterFramedMeshes: 0, perimeterWarpedUvs: 0, fallbackMeshes: 0, patchCount: 0, fallbackPatchCount: 0, errors: [], meshes: [] }; // Used by shingleSurfaceSnapshot and startup diagnostics to verify UV generation without DevTools.
+  var HIGHLAND_SHINGLE_TEXTURE_INSET_FRACTION = 0.18; // Used to keep the imported shingle GLB off carved_smooth.png's black outer frame; the existing 3D outline pass supplies the silhouette edge instead.
+  var _shingleSurfaceStats = { meshCount: 0, sourceUvMeshes: 0, sourceUvMissingMeshes: 0, mappedMeshes: 0, interiorDomainMeshes: 0, interiorWarpedUvs: 0, fallbackMeshes: 0, patchCount: 0, fallbackPatchCount: 0, errors: [], meshes: [] }; // Used by shingleSurfaceSnapshot and startup diagnostics to verify UV generation without DevTools.
 
   function loadShingleGlb(basePath) {
     if (_tpl)     return Promise.resolve(_tpl);
@@ -188,11 +187,10 @@
           label: label,
           angleToleranceDeg: HIGHLAND_SHINGLE_SURFACE_SPLIT_ANGLE_DEG,
         });
-        if (report && typeof mapper.remapPerimeterFrame === 'function') {
-          mapper.remapPerimeterFrame(mesh.geometry, {
-            sourceEdgeFraction: HIGHLAND_SHINGLE_SOURCE_EDGE_FRACTION,
-            surfaceEdgeFraction: HIGHLAND_SHINGLE_SURFACE_EDGE_FRACTION,
-          }); // Applies the same carved_smooth protected-edge compression used by the natural-surface perimeter treatment to the imported GLB itself.
+        if (report && typeof mapper.remapInteriorDomain === 'function') {
+          mapper.remapInteriorDomain(mesh.geometry, {
+            insetFraction: HIGHLAND_SHINGLE_TEXTURE_INSET_FRACTION,
+          }); // The shingle is a very thin GLB, so sampling the PNG's literal 0/1 border makes grazing views read black; use only the colored interior while keeping the same source texture.
         }
       } catch (error) {
         mapperFailed = true;
@@ -211,10 +209,10 @@
       _shingleSurfaceStats.mappedMeshes++;
       _shingleSurfaceStats.patchCount += Number(report.patchCount) || 0;
       _shingleSurfaceStats.fallbackPatchCount += Number(report.fallbackCount) || 0;
-      var perimeterFrame = mesh.geometry.userData && mesh.geometry.userData.hobunjiSurfacePerimeterFrame; // Used to prove the visible GLB received the protected-border warp, not just the roof underlay.
-      if (perimeterFrame) {
-        _shingleSurfaceStats.perimeterFramedMeshes++;
-        _shingleSurfaceStats.perimeterWarpedUvs += Number(perimeterFrame.warpedUvCount) || 0;
+      var interiorDomain = mesh.geometry.userData && mesh.geometry.userData.hobunjiSurfaceInteriorDomain; // Used to prove the visible GLB was cropped away from the PNG's black outer frame, not just the roof underlay.
+      if (interiorDomain) {
+        _shingleSurfaceStats.interiorDomainMeshes++;
+        _shingleSurfaceStats.interiorWarpedUvs += Number(interiorDomain.warpedUvCount) || 0;
       }
     } else if (mapperFailed) {
       _shingleSurfaceStats.fallbackMeshes++;
@@ -228,7 +226,7 @@
       angleToleranceDeg: report ? HIGHLAND_SHINGLE_SURFACE_SPLIT_ANGLE_DEG : null,
       patchCount: report ? (Number(report.patchCount) || 0) : null,
       fallbackPatchCount: report ? (Number(report.fallbackCount) || 0) : null,
-      perimeterFrame: mesh.geometry.userData && mesh.geometry.userData.hobunjiSurfacePerimeterFrame ? Object.assign({}, mesh.geometry.userData.hobunjiSurfacePerimeterFrame) : null,
+      interiorDomain: mesh.geometry.userData && mesh.geometry.userData.hobunjiSurfaceInteriorDomain ? Object.assign({}, mesh.geometry.userData.hobunjiSurfaceInteriorDomain) : null,
     });
     return report;
   }
@@ -241,10 +239,9 @@
       sourceUvMeshes: _shingleSurfaceStats.sourceUvMeshes,
       sourceUvMissingMeshes: _shingleSurfaceStats.sourceUvMissingMeshes,
       mappedMeshes: _shingleSurfaceStats.mappedMeshes,
-      perimeterFramedMeshes: _shingleSurfaceStats.perimeterFramedMeshes,
-      perimeterWarpedUvs: _shingleSurfaceStats.perimeterWarpedUvs,
-      sourceEdgeFraction: HIGHLAND_SHINGLE_SOURCE_EDGE_FRACTION,
-      surfaceEdgeFraction: HIGHLAND_SHINGLE_SURFACE_EDGE_FRACTION,
+      interiorDomainMeshes: _shingleSurfaceStats.interiorDomainMeshes,
+      interiorWarpedUvs: _shingleSurfaceStats.interiorWarpedUvs,
+      textureInsetFraction: HIGHLAND_SHINGLE_TEXTURE_INSET_FRACTION,
       fallbackMeshes: _shingleSurfaceStats.fallbackMeshes,
       patchCount: _shingleSurfaceStats.patchCount,
       fallbackPatchCount: _shingleSurfaceStats.fallbackPatchCount,
