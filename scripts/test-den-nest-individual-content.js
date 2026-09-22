@@ -156,7 +156,7 @@ assert.ok(denRuntimeIndex >= 0 && puktukIndex > denRuntimeIndex,
   'combat bootstrap owns den runtime and Puktuk registration as ordered sibling modules');
 assert.doesNotMatch(puktukRegistration, /document\.write|ensureDenLocaleRuntime/,
   'Puktuk registration must never nest parser-time script injection inside combat bootstrap');
-assert.match(puktukRegistration, /version: 2/,
+assert.match(puktukRegistration, /version: 3/,
   'isolated Puktuk registration version is exposed for bootstrap cache checks');
 
 console.log('Individual nest rendering plus authored furniture/locale/Den-Mother/clutch transform checks passed.');
