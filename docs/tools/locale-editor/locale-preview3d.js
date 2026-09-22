@@ -44,6 +44,7 @@
   let terrainMaterials = new Map();
   let resizeObserver = null;
   let renderLoopStarted = false;
+  let renderDirty = true; // Static previews render only when something changes; OrbitControls damping dirties only the frames it actually moves.
   let generationToken = 0; // Prevents stale async GLB loads attaching after a newer randomization.
   let currentLocaleSignature = '';
   let currentScenario = 'valid'; // valid | almost | somewhat | random
@@ -597,11 +598,10 @@
     const THREE = window.THREE;
     const canvas = document.getElementById('locale3dCanvas');
     renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-    renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+    renderer.setPixelRatio(Math.min(1.25, window.devicePixelRatio || 1)); // Preview-only cap avoids 4x high-DPI shading cost without changing authored camera geometry.
     if (THREE.sRGBEncoding != null) renderer.outputEncoding = THREE.sRGBEncoding;
     renderer.setClearColor(GAME_FOG_COLOR, 1);
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.enabled = false; // Camera/geometry authoring does not need realtime shadow-map passes.
     scene = new THREE.Scene();
     scene.background = new THREE.Color(GAME_FOG_COLOR);
     scene.fog = new THREE.FogExp2(GAME_FOG_COLOR, 0.018);
@@ -617,7 +617,7 @@
     scene.add(ambientLight);
     sunLight = new THREE.DirectionalLight(0xffeedd, 1.1);
     sunLight.position.set(4, 8, 2);
-    sunLight.castShadow = true;
+    sunLight.castShadow = false;
     scene.add(sunLight);
     worldRoot = new THREE.Group();
     worldRoot.name = 'localeSandboxWorld';
@@ -625,16 +625,26 @@
     resizeObserver = new ResizeObserver(resizeRenderer);
     resizeObserver.observe(document.getElementById('locale3dPreview'));
     resizeRenderer();
+    controls.addEventListener?.('change', requestPreviewRender);
     if (!renderLoopStarted) {
       renderLoopStarted = true;
       const tick = () => {
         requestAnimationFrame(tick);
         if (!previewVisible || !renderer) return;
-        controls.update();
+        const controlsChanged = !!controls?.enabled && !!controls.update?.();
+        if (controlsChanged) renderDirty = true;
+        if (!renderDirty) return;
         renderer.render(scene, camera);
+        renderDirty = false;
       };
       tick();
     }
+  }
+  function requestPreviewRender() { renderDirty = true; }
+  function requestPreviewRenderBurst() {
+    requestPreviewRender();
+    setTimeout(requestPreviewRender, 120);
+    setTimeout(requestPreviewRender, 500);
   }
   function resizeRenderer() {
     if (!renderer || !camera) return;
@@ -643,6 +653,7 @@
     renderer.setSize(rect.width, rect.height, false);
     camera.aspect = rect.width / rect.height;
     camera.updateProjectionMatrix();
+    requestPreviewRender();
   }
   function disposeTree(root, preserveMaterials = false) {
     if (!root) return;
@@ -849,6 +860,9 @@
       objects: locale.objects, npcAnchors: locale.npcAnchors, connectors: locale.connectors,
       cavern: locale.cavern, cinematicCameras: locale.cinematicCameras,
     });
+  }
+  function previewSignature(locale) {
+    return localeSignature(locale) + '|preview:' + currentPreviewMode; // Keep the poll comparison identical to the signature stored after a render.
   }
   function candidateCloseness(result, compiled) {
     if (result.ok) return 1;
@@ -1375,6 +1389,7 @@
     fitCavernCamera();
     if (activeCinematicCameraId) applySelectedCinematicCamera();
 
+    requestPreviewRenderBurst();
     const shellBounds = debugBox(shell);
     setStatus(`GENERATED CAVERN INTERIOR · ${locale.name || locale.id} · ${mapData.floor?.length || 0} floor tiles · ${Math.floor((mapData.mesh?.indices?.length || 0) / 3)} shell triangles${shellBounds ? ` · bounds ${shellBounds.size.x}×${shellBounds.size.y}×${shellBounds.size.z}` : ''}`);
   }
@@ -1423,6 +1438,7 @@
     const failure = candidate?.result;
     const closeness = candidate?.closeness;
     const matchText = Number.isFinite(closeness) ? ` · ${(closeness * 100).toFixed(0)}% rule fit` : '';
+    requestPreviewRenderBurst();
     const reason = result.reason || failure?.reason;
     setStatus(`${scenarioLabel(result.kind)} · ${locale.name || locale.id} · ${ZONES.find(([id]) => id === zoneId)?.[1] || zoneId} · seed ${result.seed}${matchText}${reason ? ` · ${reason}` : ''}${instance?.ghostFailure ? ' · locale shown as a ghost because the game would not place it here' : ''}`);
   }
@@ -1434,7 +1450,7 @@
     syncPreviewModeChoices(locale);
     syncZoneChoices(locale);
     const zoneId = currentZoneId || document.getElementById('localeSandboxZone')?.value || ZONES[0][0];
-    const signature = localeSignature(locale) + '|preview:' + currentPreviewMode;
+    const signature = previewSignature(locale);
     if (!force && signature === currentLocaleSignature) return;
     currentLocaleSignature = signature;
     const requestToken = ++generationToken;
@@ -1468,7 +1484,7 @@
     setInterval(() => {
       if (!previewVisible || !renderer) return;
       const locale = activeMergedLocale();
-      const signature = localeSignature(locale);
+      const signature = previewSignature(locale);
       if (locale && signature !== currentLocaleSignature) regenerateScenario({ newSeed: false, force: true });
     }, 500);
     console.log('[LocaleEditorSandbox] in-game terrain + GLB locale preview ready');
