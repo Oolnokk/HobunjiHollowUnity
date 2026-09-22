@@ -85,6 +85,7 @@ const editorSource = read('docs/tools/locale-editor/index.html');
 const interiorBuilderSource = read('docs/js/interior-scene-builder.js');
 const localePreview3dSource = read('docs/tools/locale-editor/locale-preview3d.js');
 const panelUiSource = read('docs/js/panel-ui.js');
+const naturalSurfaceSource = read('docs/js/natural-surface-materials.js');
 assert(sculptorSource.includes('function carveFootprintCavern(') && sculptorSource.includes('carveMazeCavern, carveFootprintCavern'), 'shared cavern sculptor must expose footprint-driven generation');
 assert(generatorSource.includes('loadLocaleCavernDefinition') && generatorSource.includes('synthesizeLocaleCavernMapData'), 'runtime must resolve cave interiors through locale files');
 assert(!generatorSource.includes("seedText === 'map_i_den_banubu'"), 'generic generator must not special-case Banubu by seed/map id');
@@ -108,6 +109,7 @@ assert(localePreview3dSource.includes("id=\"localeSandboxCamera\"") && localePre
 assert(localePreview3dSource.includes("id=\"localeCavernWireframe\"") && localePreview3dSource.includes('applyCavernWireframe'), 'Locale Editor cavern preview must expose a shell wireframe diagnostic');
 assert(localePreview3dSource.includes('cavern: locale.cavern, cinematicCameras: locale.cinematicCameras'), 'cavern generation and cinematic camera edits must invalidate/rebuild the live preview');
 assert(panelUiSource.includes('locale-preview3d.js?v=20260922cavernpreview1'), 'Locale Editor must cache-bust the generated-cavern preview sidecar');
+assert(naturalSurfaceSource.includes('NATURAL_SURFACE_SCRIPT_SRC') && naturalSurfaceSource.includes("new URL('../' + raw.replace"), 'shared natural-surface textures must resolve from their script path so nested editor previews use the same assets as the game');
 assert.strictEqual(fs.existsSync(path.join(root, 'docs/config/maps/map_i_color_pools.json')), false, 'Color Pools must not retain a competing static rectangular map definition');
 
 // Exercise real triangle sampling, including sub-tile tessellation and missing coverage.
