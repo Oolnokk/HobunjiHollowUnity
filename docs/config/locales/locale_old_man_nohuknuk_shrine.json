@@ -4,7 +4,7 @@
   "name": "Old Man Nohuknuk's Shrine",
   "category": "great_fey_shrine",
   "singleton": true,
-  "description": "A Great Fey shrine sacred to Old Man Nohuknuk, hidden in the wilderness.",
+  "description": "A Great Fey shrine sacred to Old Man Nohuknuk on the Western Slope.",
   "tags": [
     "great_fey",
     "shrine",
@@ -131,11 +131,13 @@
     }
   ],
   "placement": {
-    "allowedZones": [],
+    "allowedZones": [
+      "map_western_slope"
+    ],
     "clearanceTiles": 1,
     "requiresFlatGround": true,
     "minDistanceFromEntry": 0,
-    "notes": ""
+    "notes": "Old Man Nohuknuk's shrine belongs only to the Western Slope."
   },
   "meta": {
     "createdAt": "2026-07-19T00:00:00.000Z",

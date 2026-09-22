@@ -20,6 +20,11 @@ assert.match(wildernessSource, /state\.mode = 'sleeping'/, 'wilderness Drenkirra
 assert.match(welfareSource, /_outdoorSleepBlend/, 'outdoor livestock publish the sleep blend consumed by the shared presenter');
 assert.match(source, /phase: 'pre-render'/, 'sleep presentation prepares through the shared pre-render scheduler checkpoint');
 assert.match(source, /phase: 'post-game'/, 'sleep presentation restores temporary transforms after the frame driver completes');
+assert.match(source, /function registerExternalSleeper\(/, 'named-animal NPCs can opt into the shared animal sleep presenter');
+assert.match(source, /function applyExternalSleepers\(/, 'external sleeping animals are prepared at the same render checkpoint as livestock and wilderness sleepers');
+assert.match(source, /sleep-eyes-\$\{eyesClosed \? 'closed' : 'open'\}/, 'sleep cache distinguishes closed-eye and dialogue-open-eye versions of the same sleep frame');
+assert.match(source, /renderer\.composeFrame\(kind, descriptor\.frame, genotype \|\| null, eyesClosed\)/, 'sleep body frame uses the canonical species blink overlay only when eyesClosed is requested');
+assert.match(source, /applyTemporaryScale\(group, SLEEP_SCALE_Y, `external:/, 'external sleepers use the same canonical sleep flattening ratio');
 assert.doesNotMatch(source, /WebGLRenderer\?\.prototype|__animalSleepPresentationRenderPatched/, 'sleep presentation never patches the global Three.js renderer');
 assert.match(farmPanelSource, /beginExternalRenderScope\?\.\('farm-house-layout'\)/, 'Farm house-layout live-scene renderer explicitly opts into sleep presentation');
 assert.match(pixelProbeSource, /beginExternalRenderScope\?\.\('pixel-probe'\)/, 'Pixel Probe live-scene rerenders explicitly opt into sleep presentation');
@@ -339,6 +344,34 @@ vm.runInContext(source, context, { filename: 'animal-sleep-presentation.js' });
   assert.equal(debug.externalRenderDepth, 0, 'secondary render scope nesting is fully unwound after restoration');
   assert.equal(debug.lastExternalContext, 'test-secondary', 'diagnostics identify the most recent secondary render consumer');
   assert.equal(debug.activeTemporaryTransforms, 0, 'no sleep-only transform survives scheduler or secondary-scope restoration');
+  const externalGroup = makeGroup('named-animal', 1, 1); // External named actor exercises asynchronous eye-state changes.
+  const externalEntity = {}; // Registration identity reused through sleep and wake.
+  const externalIdleMap = externalGroup.children[0].material.map; // Must be restored on wake or unregister.
+  let externalSleeping = true, externalEyesClosed = true; // Callbacks mirror schedule and dialogue state.
+  windowStub.AnimalSleepPresentation.registerExternalSleeper(externalEntity, {
+    group: externalGroup, kind: 'drenkirra', genotype: { sig: 'external' },
+    isSleeping: () => externalSleeping, eyesClosed: () => externalEyesClosed,
+  });
+  const externalFrame = () => { // Drive the same pre/post-render checkpoints as gameplay.
+    windowStub.AnimalSleepPresentation.beginExternalRenderScope('named-test');
+    windowStub.AnimalSleepPresentation.endExternalRenderScope();
+  };
+  externalFrame();
+  await new Promise(resolve => setImmediate(resolve));
+  externalFrame();
+  assert.notEqual(externalGroup.children[0].material.map, externalIdleMap, 'external actor displays its composed sleep frame');
+  externalEyesClosed = false;
+  externalFrame(); // New open-eye composite is still pending when the actor wakes.
+  externalSleeping = false;
+  externalFrame();
+  assert.equal(externalGroup.children[0].material.map, externalIdleMap, 'waking during an eye composite restores the owned visible frame');
+  await new Promise(resolve => setImmediate(resolve));
+  externalSleeping = true;
+  externalFrame();
+  assert.notEqual(externalGroup.children[0].material.map, externalIdleMap);
+  windowStub.AnimalSleepPresentation.unregisterExternalSleeper(externalEntity);
+  assert.equal(externalGroup.children[0].material.map, externalIdleMap, 'unregister restores the live actor before releasing its state');
+  assert.equal(windowStub.AnimalSleepPresentation.getDebug().externalSleepers, 0);
   console.log('animal sleep presentation regression tests passed');
 })().catch(error => {
   console.error(error);

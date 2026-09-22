@@ -49,7 +49,7 @@
               "copies": 2,
               "inheritance": "dominant"
             },
-            "sizeClass": "medium",
+            "sizeClass": "large",
             "mitts": {
               "color": "#c3e3e9",
               "copies": 1,
@@ -81,7 +81,8 @@
                 }
               }
             }
-          }
+          },
+          "creatureScaleMultiplier": 1.5
         },
         "equippedCosmetics": [],
         "appliedDyes": {}

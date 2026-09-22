@@ -8490,6 +8490,19 @@
             }
 
             const toTownExit = workspace.entry ? { col: workspace.entry.col, row: workspace.entry.row, label: 'To Hobunji Hollow' } : null;
+            const workspaceRoot = (workspace.maps || []).find(map => map && !map.isSubmap) || workspace.maps?.[0] || null; // Used to promote terrain-aware locale interiors into the live zone interaction pool.
+            const generatedLocaleTransitions = (workspaceRoot?.transitions || [])
+              .filter(t => t?.generatedLocaleId && t?.targetMapId && _isBuildingArea(t.targetMapId))
+              .map(t => ({
+                id: t.id,
+                label: t.label,
+                col: t.col,
+                row: t.row,
+                target: 'building',
+                targetMapId: t.targetMapId,
+                targetSpotId: t.targetSpotId || '',
+                generatedLocaleId: t.generatedLocaleId,
+              })); // Terrain placement exports these after generation; without this promotion they existed only in workspace JSON and never became an interactable in-game spot.
             // One entrance transition per den, at its mouth tile — leads into
             // the procedurally generated cavern synthesized in-memory by
             // loadBuildingScene (see its 'map_i_den_' handling). Den ids are
@@ -8534,6 +8547,7 @@
               transitions: [
                 ...preserved.map(t => ({ id: t.id, label: t.label, col: t.col, row: t.row, target: 'building', targetMapId: t.targetMapId })),
                 ...tentTransitions,
+                ...generatedLocaleTransitions,
                 ...denTransitions,
               ],
               toTownExit, mesas: merged.mesas, buildings: [...(merged.buildings || []), ...tentBuilding], decor: tentDecor, furniture: [],
@@ -9646,6 +9660,8 @@
       // so players/creatures crossing a ramp follow its slope rather than snapping
       // to a flat tier height.
       function tileSurfaceYInArea(tile, areaId) {
+        const exactSurfaceY = Number(tile?.surfaceY); // Cavern generation stores the sampled rendered floor here so player/NPC physics cannot drift from the visible shell/floor mesh.
+        if (Number.isFinite(exactSurfaceY)) return exactSurfaceY;
         if (tile && tile.type === TileType.RAMP) return NORMAL_TOP + (tile.rampElevation || 0) * PLATEAU_UNIT;
         return tileSurfaceY(tile ? tile.type : TileType.GRASS) + (tile?.elevTier || 0) * PLATEAU_UNIT;
       }
@@ -11010,7 +11026,7 @@
         // tile surface.
         const base = area === 'farm'
           ? farmSurfaceYAtWorld(c + 0.5, r + 0.5)
-          : (_isZoneArea(area) ? surfaceYAtWorld(area, c + 0.5, r + 0.5) : tileSurfaceY(tile.type));
+          : (_isZoneArea(area) ? surfaceYAtWorld(area, c + 0.5, r + 0.5) : tileSurfaceYInArea(tile, area));
         // Furniture/porch "stages" (walkableElevation:true) sit on top of the
         // ordinary tile surface and aren't part of the terrain grid at all —
         // folding that lift in here means every consumer of npcSurfaceY (the
@@ -11271,6 +11287,20 @@
         });
         if (!profile) return null;
 
+        const namedAnimalKind = window.NamedAnimalNpc?.creatureKindForProfile?.(profile, { npcRecord: rec }) || null; // Creature identity is resolved before NPC-specific presentation so animals inherit their species pipeline first.
+        const namedAnimalDef = namedAnimalKind ? CREATURE_DB[namedAnimalKind] || null : null; // Reuses the exact wildlife size/speed/sprite definition instead of parallel NPC constants.
+        const namedAnimalGenotype = namedAnimalDef ? window.NamedAnimalNpc?.effectiveGenotype?.(profile, { npcRecord: rec }) || null : null; // Carries authored size class/patterns into the same genetics scaling path as wild/stabled creatures.
+        const namedAnimalFrames = namedAnimalDef ? await window.NamedAnimalNpc?.worldFrameUrls?.(profile, { npcRecord: rec }) || null : null; // Native-resolution idle/run frames avoid the 200px NPC portrait canvas in world.
+        const namedAnimalBaseSizeScale = namedAnimalDef ? window.CreatureGenetics.creatureSizeScale(namedAnimalKind, namedAnimalGenotype) : null; // Canonical wildlife species+size-class scale is always resolved first.
+        const namedAnimalScaleMultiplier = namedAnimalDef ? window.NamedAnimalNpc?.creatureScaleMultiplierFor?.(profile, { npcRecord: rec }) || 1 : 1; // Fey/custom appearance multiplier is authored beside the animal's other non-genetic overrides.
+        const namedAnimalSizeScale = namedAnimalDef ? {
+          ...namedAnimalBaseSizeScale,
+          x: namedAnimalBaseSizeScale.x * namedAnimalScaleMultiplier,
+          y: namedAnimalBaseSizeScale.y * namedAnimalScaleMultiplier,
+        } : null; // Final world scale = ordinary creature genetics scale × optional authored named-animal multiplier.
+        const namedAnimalBaseGroundOffset = namedAnimalDef ? window.CreatureGenetics.creatureGroundOffset(namedAnimalKind, namedAnimalGenotype) : null;
+        const namedAnimalGroundOffset = Number.isFinite(namedAnimalBaseGroundOffset) ? namedAnimalBaseGroundOffset * namedAnimalScaleMultiplier : null; // Keeps the enlarged animal's feet on the same floor instead of scaling around an unshifted origin.
+
         const avatarCfg = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar || {};
         const MODEL_W = avatarCfg.worldModelWidth ?? 0.9;
         const PORTRAIT_SIZE = avatarCfg.previewPortraitCanvasSize ?? 200;
@@ -11292,12 +11322,33 @@
           THREE, frontCanvas,
           { backCanvas, headCanvas, profile, npcRecord: rec, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0, alphaTest: avatarCfg.worldAlphaTest ?? 0.01, neckRig: true }
         );
-        const avatarHeight = avatarGroup.userData?.portraitModelHeight || MODEL_W;
-        avatarGroup.position.set(0, avatarHeight / 2, 0);
+        const baseAvatarHeight = avatarGroup.userData?.portraitModelHeight || MODEL_W; // Unscaled model height produced by the portrait/animal-plane builder.
+        const avatarHeight = namedAnimalDef ? baseAvatarHeight * namedAnimalSizeScale.y : baseAvatarHeight; // Dialogue/interaction height follows the actually rendered animal size.
+        const avatarGroundLift = namedAnimalDef
+          ? (Number.isFinite(namedAnimalGroundOffset) ? namedAnimalGroundOffset : avatarHeight / 2)
+          : avatarHeight / 2; // Animal ground lift exactly mirrors makeCreatureEntity; humanoids keep their historical center placement.
+        if (namedAnimalDef) window.CreatureGenetics.applyCreatureBillboardScale(avatarGroup, namedAnimalSizeScale); // Grehlr size class owns world scaling before any NPC state wrapper.
+        avatarGroup.position.set(0, avatarGroundLift, 0);
+        const namedAnimalAvatarRef = namedAnimalDef ? avatarGroup.userData?.animalAvatarRef || null : null; // Used for native animal frame swapping without rebuilding the NPC root.
+        if (namedAnimalDef && namedAnimalAvatarRef) {
+          const idleUrl = namedAnimalFrames?.idle || namedAnimalDef.sprites?.idle;
+          if (idleUrl) {
+            setCreatureFrame(namedAnimalAvatarRef, idleUrl, null, 'idle', null, false);
+            resolveCreatureGroundAnchorRatio(namedAnimalDef.sprites?.idle || idleUrl, (bottomRatio) => {
+              const offsetY = creaturePlaneGroundOffset(baseAvatarHeight, bottomRatio); // Matches makeCreatureEntity: plane padding correction happens before group size scaling.
+              if (namedAnimalAvatarRef.frontPlane) namedAnimalAvatarRef.frontPlane.position.y = offsetY;
+              if (namedAnimalAvatarRef.backPlane) namedAnimalAvatarRef.backPlane.position.y = offsetY;
+            });
+          }
+        }
         _markPngPlane(avatarGroup);
         const root = new THREE.Group();
         root.name = 'npc_walker_' + (rec?.id || rec?.name || '');
         const groundShadow = makeCharacterGroundShadow('npc_ground_shadow');
+        if (namedAnimalDef) {
+          const animalShadow = creatureGroundShadowRadii(namedAnimalDef, namedAnimalSizeScale.x); // Same footprint calculation as a normal grehlr entity.
+          groundShadow.scale.set(animalShadow.radiusX, 1, animalShadow.radiusZ);
+        }
         root.add(groundShadow);
         const alcoholPoseGroup = window.NpcCharacterState?.attachAlcoholPose?.(THREE, root, avatarGroup, rec?.id);
         if (!alcoholPoseGroup) root.add(avatarGroup);
@@ -11323,7 +11374,7 @@
         // NOT under avatarGroup (offset up by avatarHeight/2 — see
         // buildSinglePlaneAvatarModel) — see docs/js/procedural-leg-animation.js.
         // Creatures/wildlife never call this; only humanoid species get legs.
-        const legs = window.ProceduralLegAnimation?.attach(THREE, root, {
+        const legs = namedAnimalDef ? null : window.ProceduralLegAnimation?.attach(THREE, root, {
           speciesId: appearance.speciesId, gender: appearance.gender, bodyColors: profile?.bodyColors || appearance.bodyColors,
           modelWidth: avatarGroup.userData?.portraitModelWidth || MODEL_W, modelHeight: avatarHeight,
           handAttachY: avatarGroup.userData?.handAttachY,
@@ -11335,6 +11386,9 @@
         const walker = {
           root, rec, profile, avatarGroup, avatarHeight, alcoholPoseGroup, groundShadow,
           avatarFrontCanvas: frontCanvas, avatarBackCanvas: backCanvas, area: spawnArea,
+          animalKind: namedAnimalKind, animalDef: namedAnimalDef, animalGenotype: namedAnimalGenotype, animalSizeScale: namedAnimalSizeScale, animalScaleMultiplier: namedAnimalScaleMultiplier,
+          animalAvatarRef: namedAnimalAvatarRef, animalFrames: namedAnimalFrames, animalRunFrame: 0, animalRunFrameDistPx: 0, animalFrameKey: 'idle', animalPngRot: Math.PI / 2,
+          _animalSleepRequested: false, _animalSleepPresentationRegistered: false,
           // The head-turn bone built by buildSinglePlaneAvatarModel's neckRig
           // option (null if no neck pivot could be detected for this NPC's
           // portrait) — see faceNpcDialogueParticipants for the one place
@@ -11352,6 +11406,31 @@
           applyFacingDeadzone(rawRot = this.desiredRot, lerp = 0.15) {
             if (!Number.isFinite(rawRot)) return;
             this.desiredRot = rawRot;
+            if (this.animalDef && this.animalAvatarRef) {
+              const animalDt = Number.isFinite(this._lastUpdateDt) ? this._lastUpdateDt : 1 / 60; // Native creature facing uses frame-time smoothing rather than the humanoid NPC lerp parameter.
+              const animalTurnLerp = Math.min(1, animalDt * 10);
+              this.rot += angleDiff(rawRot, this.rot) * animalTurnLerp; // Animal root follows its true movement heading; the camera-relative deadzone belongs on the two sprite cards, matching updateCreatureMesh.
+              root.rotation.y = this.rot;
+              this.animalPngRot ??= this.rot;
+              if (window.PerpRotation.CREATURE_PLANE_ROT_MODE === 'snap') {
+                const moving = this._moveSpeedTiles > 0.05;
+                const solved = window.PerpRotation.creatureSnapSwayTarget(this.perpState, rawRot, cameraRelativeCreaturePerps(), window.PerpRotation.CREATURE_PERP_DEAD_RAD, animalDt, moving);
+                if (solved.snap) this.animalPngRot = solved.target;
+                else this.animalPngRot += angleDiff(solved.target, this.animalPngRot) * animalTurnLerp;
+              } else if (window.PerpRotation.CREATURE_PLANE_ROT_MODE === 'sway') {
+                const moving = this._moveSpeedTiles > 0.05;
+                const target = window.PerpRotation.creatureDeadzoneTarget(this.perpState, rawRot, cameraRelativeCreaturePerps(), window.PerpRotation.CREATURE_PERP_DEAD_RAD, animalDt, moving);
+                this.animalPngRot += angleDiff(target, this.animalPngRot) * animalTurnLerp;
+              } else {
+                const solved = window.PerpRotation.perpClamp(this.perpState, rawRot, cameraRelativeCreaturePerps(), window.PerpRotation.CREATURE_PERP_DEAD_RAD);
+                if (solved.snapTo !== null) this.animalPngRot = solved.effectiveTarget;
+                else this.animalPngRot += angleDiff(solved.effectiveTarget, this.animalPngRot) * animalTurnLerp;
+              }
+              const planeDelta = this.animalPngRot - this.rot;
+              if (this.animalAvatarRef.frontPlane) this.animalAvatarRef.frontPlane.rotation.y = planeDelta + Math.PI / 2;
+              if (this.animalAvatarRef.backPlane) this.animalAvatarRef.backPlane.rotation.y = planeDelta - Math.PI / 2;
+              return;
+            }
             this.rot = window.PerpRotation.clampedRotation(
               this.perpState, this.rot, rawRot, cameraRelativePerps(), lerp,
             );
@@ -11388,7 +11467,7 @@
             } else { scene.add(root); root._npcScene = scene; }
             this.area = area;
             this.resetRouteState();
-            root.position.set(spawnPos.c + 0.5, _isBuildingArea(area) ? 0 : npcSurfaceY(area, spawnPos.c, spawnPos.r), spawnPos.r + 0.5);
+            root.position.set(spawnPos.c + 0.5, npcSurfaceY(area, spawnPos.c, spawnPos.r), spawnPos.r + 0.5); // Buildings/caverns can carry nonzero rendered floor surfaces; never force animal/person walkers to Y=0.
           },
           // Surface/interior-aware placeholder footstep hook — shared by every
           // NPC movement path since they all funnel through moveToward().
@@ -11516,7 +11595,8 @@
             if (!Number.isFinite(tx) || !Number.isFinite(tz)) return false;
             const cfg = npcMovementConfig();
             const sobrietySpeedMul = window.NpcCharacterState?.movementSpeedMultiplier?.(rec?.id) ?? 1;
-            const speed = (cfg.speedTilesPerSecond ?? 1.25) * this.catchup * sobrietySpeedMul;
+            const speciesSpeedTiles = this.animalDef ? (Number(this.animalDef.moveSpeed) || 0) * devGlobalSpeedMul / TILE : 0; // Named animals walk at their real creature speed before NPC catch-up/sobriety modifiers.
+            const speed = (this.animalDef ? speciesSpeedTiles : (cfg.speedTilesPerSecond ?? 1.25)) * this.catchup * sobrietySpeedMul;
             const dx = tx - root.position.x, dz = tz - root.position.z;
             const d = Math.hypot(dx, dz);
             if (d <= Math.max(0.001, speed * dt)) {
@@ -11532,6 +11612,18 @@
             return false;
           },
           update(dt) {
+            this._lastUpdateDt = dt; // Animal-facing deadzone/smoothing consumes the same real dt as updateCreatureMesh.
+            if (this.animalDef && !this._animalSleepPresentationRegistered && window.AnimalSleepPresentation?.registerExternalSleeper) {
+              this._animalSleepPresentationRegistered = window.AnimalSleepPresentation.registerExternalSleeper(this, {
+                id: this.rec?.id || this.animalKind,
+                avatarRef: this.animalAvatarRef,
+                kind: this.animalKind,
+                genotype: this.animalGenotype,
+                def: this.animalDef,
+                isSleeping: () => this._animalSleepRequested === true,
+                eyesClosed: () => !(dialogueOpen && _dialogueWalker === this && this.rec?._animalDialogueEyesOpen === true),
+              }); // Named-animal NPCs now use the exact livestock/wilderness sleep frame, flattening, head-down, and blink-overlay pipeline.
+            }
             // Drives procedural legs (and the move-bob below) from last
             // frame's actual position delta rather than hooking every
             // movement branch below individually — always runs regardless of
@@ -11539,12 +11631,35 @@
             // frame of lag; imperceptible at 60fps.
             const moveDistTiles = Math.hypot(root.position.x - this._legsPrevX, root.position.z - this._legsPrevZ);
             this._moveSpeedTiles = dt > 0 ? moveDistTiles / dt : 0;
+            if (this.animalDef && this.animalAvatarRef) {
+              const movingAnimal = this._moveSpeedTiles > 0.05;
+              let frameKey = 'idle';
+              if (movingAnimal && this.animalDef.sprites?.run?.length) {
+                this.animalRunFrameDistPx += moveDistTiles * TILE; // Same distance-driven cadence as updateCreatureAnimFrame, so schedule movement looks like ordinary wildlife movement.
+                while (this.animalRunFrameDistPx >= RUN_FRAME_STRIDE_PX) {
+                  this.animalRunFrameDistPx -= RUN_FRAME_STRIDE_PX;
+                  this.animalRunFrame = (this.animalRunFrame + 1) % this.animalDef.sprites.run.length;
+                }
+                frameKey = 'run' + (this.animalRunFrame + 1);
+              }
+              const frameUrl = this.animalFrames?.[frameKey]
+                || (frameKey === 'idle' ? this.animalDef.sprites?.idle : this.animalDef.sprites?.run?.[this.animalRunFrame]);
+              if (frameUrl && frameKey !== this.animalFrameKey) {
+                setCreatureFrame(this.animalAvatarRef, frameUrl, null, frameKey, null, false);
+                this.animalFrameKey = frameKey;
+              }
+              const breathScaleY = window.CreatureGenetics.creatureBreathScaleY(this.animalAvatarRef, performance.now()); // Named animals keep the same subtle alive-at-rest scale cycle as ordinary creatures.
+              window.CreatureGenetics.applyCreatureBillboardScale(this.avatarGroup, this.animalSizeScale, breathScaleY);
+            }
+            const target = resolveNpcScheduleTarget(this.rec);
+            this.currentScheduleTarget = target || null;
+            this._animalSleepRequested = !!this.animalDef && /sleep/i.test(String(target?.activity || '')); // Schedule-authored sleeping named animals enter the same visual sleep system before any state module can early-return.
+            if (this._animalSleepRequested && this.rec && typeof this.rec._animalDialogueEyesOpen !== 'boolean') this.rec._animalDialogueEyesOpen = false; // Closed is the safe default until an authored dialogue system explicitly wakes the animal's eyes.
             if (window.NpcCharacterState?.update?.(this, dt, {
               resolveScheduleTarget: resolveNpcScheduleTarget,
               surfaceY: npcSurfaceY,
               shadowSurfaceOffset: characterGroundShadowSurfaceOffset,
             })) return;
-            const target = resolveNpcScheduleTarget(this.rec);
             const targetArea = target ? normalizeNpcArea(target.area) : null;
             const cfg = npcMovementConfig();
             const seatTransform = targetArea === this.area ? npcSeatTransformForTarget(target) : null; // Supplies the same authored seat anchor the player uses.
@@ -11581,7 +11696,6 @@
             this._legsPrevX = root.position.x; this._legsPrevZ = root.position.z;
             if (this.pause === Infinity) return;
             this.applyFacingDeadzone(this.desiredRot, 0.15);
-            this.currentScheduleTarget = target || null;
             // Wardrobe reroll: fires once per sleeping period, the instant
             // this NPC's schedule activity transitions INTO "sleeping" (not
             // every frame they stay asleep) — see js/npc-wardrobe.js's
@@ -11816,7 +11930,7 @@
             // NPC's own actual movement speed (tiles/sec, from moveDistTiles
             // above) approaches its own max (cfg.speedTilesPerSecond),
             // rather than a flat distance whenever it's walking at all.
-            if (this._moveSpeedTiles > 0.05) {
+            if (!this.animalDef && this._moveSpeedTiles > 0.05) {
               const npcBobEffort = window.FormatUtils.clamp(this._moveSpeedTiles / (cfg.speedTilesPerSecond ?? 1.25), 0, 1);
               root.position.y += Math.sin(performance.now() / 120) * (MOVE_BOB_WALK_AMP + (MOVE_BOB_RUN_AMP - MOVE_BOB_WALK_AMP) * npcBobEffort);
             }
@@ -11831,6 +11945,7 @@
         if (index < 0) return false;
         walker.root?.parent?.remove?.(walker.root);
         walker.root?._npcScene?.remove?.(walker.root);
+        if (walker._animalSleepPresentationRegistered) window.AnimalSleepPresentation?.unregisterExternalSleeper?.(walker); // Releases the shared sleep presenter when a visitor despawns.
         walker.legs?.dispose?.();
         walker.root?.traverse?.(object => {
           object.geometry?.dispose?.();
@@ -12713,7 +12828,13 @@
           // Fill floor tiles as walkable
           const floorSet = new Set();
           for (const [c, r] of (mapData.floor || [])) {
-            if (bGrid[r]?.[c]) { bGrid[r][c].type = TileType.GRASS; floorSet.add(`${c},${r}`); }
+            if (bGrid[r]?.[c]) {
+              bGrid[r][c].type = TileType.GRASS;
+              const sampledSurfaceY = Number(mapData.floorSurfaceByTile?.[`${c},${r}`]); // Authoritative rendered cavern-floor sample produced by CavernGenerator.
+              if (Number.isFinite(sampledSurfaceY)) bGrid[r][c].surfaceY = sampledSurfaceY;
+              else if (Number.isFinite(Number(mapData.floorSurfaceY))) bGrid[r][c].surfaceY = Number(mapData.floorSurfaceY);
+              floorSet.add(`${c},${r}`);
+            }
           }
           // Colliders override back to solid
           for (const [c, r] of (mapData.colliders || [])) {
@@ -12799,12 +12920,20 @@
             // rather than mine's fixed stone look — a grehlr den reads as
             // trench soil throughout, a gar-wolf/uumkao'ii den as farm-cliff
             // rock throughout.
-            const denCaveVariant = mapData.wallStyle === 'cavern' ? window.ZoneDenTotemFeatures?.denCaveVariantFor?.(mapData.denMotherKind) : null;
-            const cavernMesh = InteriorSceneBuilder.buildCarvedCavernMesh(THREE, mapData.mesh, mapData.wallStyle === 'mine'
+            const cavernFamily = mapData.denMotherKind || mapData.cavernCreatureKind || ''; // Authored story caverns can declare their native creature family without pretending to contain a Den-Mother.
+            const denCaveVariant = mapData.wallStyle === 'cavern' ? window.ZoneDenTotemFeatures?.denCaveVariantFor?.(cavernFamily) : null;
+            const cavernMaterialOpts = mapData.wallStyle === 'mine'
               ? { textureUrl: 'assets/textures/carved_smooth.png', color: 0x8a8d91, textureRepeat: 0.42, useLambert: true, emissive: 0x000000 }
-              : denCaveVariant ? { textureUrl: denCaveVariant.textureUrl, color: denCaveVariant.color, textureRepeat: 0.35, useLambert: true, emissive: 0x000000 } : undefined);
+              : denCaveVariant ? { textureUrl: denCaveVariant.textureUrl, color: denCaveVariant.color, textureRepeat: 0.35, useLambert: true, emissive: 0x000000 }
+              : { textureUrl: 'assets/textures/carved_smooth.png', color: 0x808080, textureRepeat: 0.35, useLambert: true, emissive: 0x000000 }; // Never leave an authored cavern on an untextured material fallback.
+            const cavernMesh = InteriorSceneBuilder.buildCarvedCavernMesh(THREE, mapData.mesh, cavernMaterialOpts);
             _markOutline(cavernMesh);
             bScene.add(cavernMesh);
+            const cavernFloorMesh = InteriorSceneBuilder.buildCavernFloorMesh?.(
+              THREE, mapData.floor || [], mapData.floorSurfaceByTile || {},
+              { ...cavernMaterialOpts, defaultY: mapData.floorSurfaceY, name: mapId + '_walkable_floor' },
+            ); // Explicit surface guarantees the entire logical footprint has visible textured ground at the exact Y used by player/NPC grounding.
+            if (cavernFloorMesh) bScene.add(cavernFloorMesh);
           } else {
             const floorMat = InteriorSceneBuilder.buildFloorMaterial(THREE, mapData.wallStyle, 'assets/');
             // Floor tiles only for defined floor set
@@ -12850,7 +12979,8 @@
             // reading as "a little arch of light placed inside a rock,
             // cutting a hole in it" instead of lying flat on open floor.
             // 0.15 clears that transition with real margin.
-            glow.position.set(ex, 0.15, ez);
+            const glowTileY = tileSurfaceYInArea(bGrid?.[Math.floor(ez)]?.[Math.floor(ex)], mapId);
+            glow.position.set(ex, glowTileY + 0.02, ez);
             bScene.add(glow);
           }
           window.ColorPoolsSystem?.decorateScene?.({ THREE, scene: bScene, mapData }); // Renders Color Pools metadata as the three tinted 2x2 water surfaces without adding a second cave-generation path.
@@ -12872,7 +13002,8 @@
             else if (side === 'south') z = Number(door.row) + 0.97;
             else if (side === 'east') x = Number(door.col) + 0.97;
             else if (side === 'west') x = Number(door.col) + 0.03;
-            group.position.set(x, 0, z);
+            const doorSurfaceY = tileSurfaceYInArea(bGrid?.[Math.floor(z)]?.[Math.floor(x)], mapId); // Keeps keyed cave doors seated on the same sampled floor as actors.
+            group.position.set(x, doorSurfaceY, z);
             group.rotation.y = THREE.MathUtils.degToRad(Number(door.rotY) || 0);
             group.visible = !door.hiddenUntilKeyItem || !door.requiresKeyItem || !!window.KeyItemSystem?.has?.(door.requiresKeyItem);
             group.name = 'key_gated_cavern_door_' + (door.id || door.requiresKeyItem || furnitureKey);
@@ -12895,7 +13026,7 @@
             const scY = f.postSY != null ? f.postSY : (f.postScale != null ? f.postScale : 1);
             const scZ = f.postSZ != null ? f.postSZ : (f.postScale != null ? f.postScale : 1);
             const bx = (f.col + (def?.fw || 1) * 0.5) + (f.postX || 0);
-            const by = f.postY || 0;
+            const by = tileSurfaceYInArea(bGrid?.[f.row]?.[f.col], mapId) + (f.postY || 0); // Building furniture follows exact cavern floor samples; ordinary flat interiors remain zero-based.
             const bz = (f.row + (def?.fd || 1) * 0.5) + (f.postZ || 0);
             const rotRad = THREE.MathUtils.degToRad(f.rotY || 0);
             let renderedFurniture = null;
@@ -13217,6 +13348,8 @@
             if (w.root._pendingBuildingAdd === mapId) {
               w.root._pendingBuildingAdd = null;
               bScene.add(w.root); w.root._npcScene = bScene;
+              const wc = Math.floor(w.root.position.x), wr = Math.floor(w.root.position.z); // Scene load can finish after NPC creation, so resolve the real cavern floor now rather than waiting for a later visible-area tick.
+              w.root.position.y = npcSurfaceY(mapId, wc, wr);
             }
           }
           if (_currentBuildingMapId === mapId && _isBuildingArea(currentArea)) {
@@ -13254,6 +13387,11 @@
                 : findNearestWalkableTileCenter(intendedX, intendedY); // Used to keep asynchronous cavern entry out of a wall sliver if future generation changes invalidate its authored exit tile.
               player.x = safeSpawn?.x ?? intendedX;
               player.y = safeSpawn?.y ?? intendedY;
+              const spawnCol = window.FormatUtils.clamp(Math.floor(player.x / TILE), 0, cols - 1);
+              const spawnRow = window.FormatUtils.clamp(Math.floor(player.y / TILE), 0, rows - 1);
+              const spawnSurfaceY = tileSurfaceYInArea(bGrid?.[spawnRow]?.[spawnCol], mapId); // Prevents one or more frames at stale/zero Y when a generated cavern finishes loading asynchronously.
+              playerMesh.position.y = spawnSurfaceY;
+              playerGroundShadow.position.y = spawnSurfaceY + characterGroundShadowSurfaceOffset();
               if (safeSpawn && (safeSpawn.x !== intendedX || safeSpawn.y !== intendedY)) window.__farmLog?.(`[cavern] corrected unsafe entry spawn in ${mapId}`, 'warn', 'mine');
               _snapCameraTarget();
             }
@@ -13405,6 +13543,11 @@
         _pendingEntrySpawnFromExit = !bi && !_pendingEntrySpotId && !Number.isFinite(defaultCol);
         player.x = (col + 0.5) * TILE; player.y = (row + 0.5) * TILE;
         player.vx = 0; player.vy = 0;
+        if (bi?.grid) {
+          const entrySurfaceY = tileSurfaceYInArea(bi.grid?.[Math.floor(row)]?.[Math.floor(col)], mapId); // Cached cave re-entry should not lerp up/down from the previous area's stale Y.
+          playerMesh.position.y = entrySurfaceY;
+          playerGroundShadow.position.y = entrySurfaceY + characterGroundShadowSurfaceOffset();
+        }
         facingAngle = Math.PI / 2; player.angle = facingAngle;
         _snapCameraTarget();
         if (fromScene) {

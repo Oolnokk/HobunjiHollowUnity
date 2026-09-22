@@ -596,11 +596,44 @@
     return transition;
   }
 
+  function compileTerrainFallbackLocale(locale) {
+    const fallback = locale?.placement?.terrainFallback; // Used to opt individual authored locales into a narrower second-pass terrain search.
+    if (fallback?.mode !== 'subset') return null;
+    const anchorKeys = new Set(Array.isArray(fallback.terrainAnchors) ? fallback.terrainAnchors.map(String) : []); // Used to retain only fallback-approved terrain probes.
+    const embeddedKeys = new Set(Array.isArray(fallback.embeddedTiles) ? fallback.embeddedTiles.map(String) : []); // Used to retain only fallback-approved embedded host checks.
+    const terrainAnchors = {}; // Used as the fallback locale's reduced non-generating probe map.
+    const embeddedTiles = {}; // Used as the fallback locale's reduced embedded-terrain requirement map.
+    for (const key of anchorKeys) if (locale?.terrainAnchors?.[key]) terrainAnchors[key] = JSON.parse(JSON.stringify(locale.terrainAnchors[key]));
+    for (const key of embeddedKeys) if (locale?.embeddedTiles?.[key]) embeddedTiles[key] = JSON.parse(JSON.stringify(locale.embeddedTiles[key]));
+    if (!Object.keys(terrainAnchors).length && !Object.keys(embeddedTiles).length) return null;
+    return { ...locale, terrainAnchors, embeddedTiles };
+  }
+
   function placeOne(context, locale, options = {}) {
     const scale = Math.max(1, Number(options.scale) || inferGenerationScale(context.workspace, options.sourceWidth)); // Resolved density scale keeps authored dimensions consistent with legacy locale stamping.
     const compiled = compileLocale(locale, scale);
     if (!compiled) return { placed: false, diagnostic: { localeId: locale?.id || 'unknown', status: 'skipped', reason: 'no footprint cells', scale } };
-    const search = findCandidate(context, compiled, options);
+    let search = findCandidate(context, compiled, options); // Used first for the exact authored terrain rules, then replaced only when an authored fallback succeeds.
+    let fallbackDiagnostic = null; // Used by mobile/editor diagnostics to reveal when a locale needed its authored relaxed terrain pass.
+    if (!search.best) {
+      const strictSearch = search; // Used to preserve exact-rule counts when a fallback pass is attempted.
+      const fallbackLocale = compileTerrainFallbackLocale(locale); // Used to derive the authored subset of constraints without hard-coding any locale id.
+      const fallbackCompiled = fallbackLocale ? compileLocale(fallbackLocale, scale) : null; // Used to search the same full footprint under the reduced host-terrain checks.
+      if (fallbackCompiled) {
+        const fallbackSearch = findCandidate(context, fallbackCompiled, options); // Used as the second deterministic placement pass for an authored fixed locale.
+        fallbackDiagnostic = {
+          mode: locale.placement.terrainFallback.mode,
+          strictTested: strictSearch.tested,
+          strictValid: strictSearch.valid,
+          fallbackTested: fallbackSearch.tested,
+          fallbackValid: fallbackSearch.valid,
+        };
+        if (fallbackSearch.best) search = fallbackSearch;
+        else {
+          return { placed: false, diagnostic: { localeId: locale.id, name: locale.name, status: 'skipped', reason: 'no terrain-aware placement matched', scale, tested: strictSearch.tested + fallbackSearch.tested, valid: 0, rejected: fallbackSearch.rejected, fallback: fallbackDiagnostic } };
+        }
+      }
+    }
     if (!search.best) {
       return { placed: false, diagnostic: { localeId: locale.id, name: locale.name, status: 'skipped', reason: 'no terrain-aware placement matched', scale, tested: search.tested, valid: search.valid, rejected: search.rejected } };
     }
@@ -632,6 +665,7 @@
           footprint: search.best.footprint || [],
         },
         rejected: search.rejected,
+        fallback: fallbackDiagnostic,
         clearedObjectIds,
       },
     };

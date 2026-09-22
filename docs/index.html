@@ -14,13 +14,13 @@
   <script src="js/GLTFLoader.js?v=20260712d"></script>
   <script src="js/WallBuilder.js?v=20260809a"></script>
   <script src="js/HousePieceGen.js?v=20260809a"></script>
-  <script src="js/interior-scene-builder.js?v=20260902cavesafe1"></script>
+  <script src="js/interior-scene-builder.js?v=20260921banubufloor1"></script>
   <script src="js/building-door.js?v=20260725a"></script>
   <script src="js/tile-pathfinding.js?v=20260808a"></script>
   <!-- Small formatting/math helpers (esc/clamp/roundRect/formatClock/etc.)
        extracted out of game.js; must load before game.js and before every
        other module whose init(deps) is handed window.FormatUtils.clamp/esc. -->
-  <script src="js/format-utils.js?v=20260902mod1"></script>
+  <script src="js/format-utils.js?v=20260922banubureview1"></script>
   <!-- Movement virtual-joystick handlers extracted out of game.js; uses
        window.FormatUtils.clamp, so must load after it and before game.js. -->
   <script src="js/virtual-joystick.js?v=20260902mod1"></script>
@@ -191,6 +191,8 @@
        headless Wilderness Map Generator core (Tothal Shift wilderness reroll) -->
   <script src="js/terrain-preview.js?v=20260712d"></script>
   <script src="js/wilderness-map-generator.js?v=20260914b"></script>
+  <!-- Terrain-aware authored locales inspect the finished wilderness and place against existing host terrain. Must load after WildernessMapGenerator so its wrapper installs in the game, not only in editor/tests. -->
+  <script src="js/locale-terrain-placement.js?v=20260921banubuclip1"></script>
   <script src="js/foliage-furniture-renderer.js?v=20260816a"></script>
   <script src="js/foliage-furniture-runtime.js?v=20260816a"></script>
   <!-- Generic post-generation locale placement (window.TemporaryLocales) —
@@ -200,10 +202,10 @@
   <!-- Local database overrides (window.LocalDBOverrides) — lets docs/tools/
   <!-- Banubu's quest dialogue defaults load before LocalDBOverrides so the
        editor/runtime database composition can replace his generic chatter. -->
-  <script src="js/banubu-quest-content.js?v=20260919tea1"></script>
+  <script src="js/banubu-quest-content.js?v=20260921wake3"></script>
        editors save edited repo-tracked JSON into localStorage and have the
        game load that instead of the repo file when Local source is selected. -->
-  <script src="js/local-db-overrides.js?v=20260920orbit1"></script>
+  <script src="js/local-db-overrides.js?v=20260921namedanimal1"></script>
   <script>
     // species-pose-scaling parser-loads earlier for avatar consumers, then
     // re-resolves its config now that LocalDBOverrides knows the selected
@@ -343,7 +345,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmTroughs.init(...) during its own setup. -->
-  <script src="js/farm-troughs.js?v=20260916perf1"></script>
+  <script src="js/farm-troughs.js?v=20260922banubureview1"></script>
   <!-- Modular player house (window.HousePieces) — barn-shaped foundation/
        build/demolish pipeline for house-piece deeds bought from the
        Carpenter, replacing the old singular Highland House GLB. Depends on
@@ -660,7 +662,7 @@
        Framework-agnostic pure data/math — must load before cavern-generator.js,
        whose generateCavernFloor calls window.CavernSculptor.carveMazeCavern(...). -->
   <script src="js/cavern-sculptor.js?v=20260902cavesafe1"></script>
-  <script src="js/cavern-generator.js?v=20260902cavesafe1"></script>
+  <script src="js/cavern-generator.js?v=20260922banubureview1"></script>
   <script src="js/town-mine.js?v=20260919combatbgm2"></script>
   <!-- A wilderness zone's in-bounds elevated plateau/mesa terrain
        (window.ZonePlateauMesa) — pure scene-graph generation, no other
@@ -687,7 +689,7 @@
        window.ZoneDenTotemFeatures.init(...) alongside its sibling systems
        and its build*(...) functions lazily, from buildZoneScene, never
        synchronously during initial boot. -->
-  <script src="js/zone-den-totem-features.js?v=20260912signretire1"></script>
+  <script src="js/zone-den-totem-features.js?v=20260921banubuclip1"></script>
   <!-- Wilderness-zone grass and rich-foliage-patch billboards
        (window.ZoneGrassBillboards) — pure scene-graph generation, no
        other window.* system reads; must load before game.js, which calls
@@ -2379,7 +2381,7 @@
        openNpcDialogue/closeNpcDialogue (camera/staging/save) stay in
        game.js and call into this module. -->
   <script src="js/dialogue-content.js?v=20260831syllable4"></script>
-  <script src="js/banubu-questline.js?v=20260919tea1"></script>
+  <script src="js/banubu-questline.js?v=20260921wake3"></script>
   <!-- World-space Float+ combat text and centered five-row reward lists. -->
   <script src="js/world-popup-text.js?v=20260831interactioncolors2"></script>
   <!-- Quick Attack opportunity reticle needs WorldPopupText's avatar centroid
@@ -2496,7 +2498,7 @@
        exported functions) and before game.js (whose boot calls into all
        three and reads window.DevTestingSwitchbox.flags directly). -->
   <script src="js/dev-testing-switchbox.js?v=20260912a"></script>
-  <script src="game.js?v=20260921reviewfix1"></script>
+  <script src="game.js?v=20260922banubureview1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
   <script src="js/controller-ui-nav.js?v=20260915perf1"></script>
   <script>
@@ -2518,4 +2520,3 @@
   <script>HobunjiOnboarding.init();</script>
 </body>
 </html>
-

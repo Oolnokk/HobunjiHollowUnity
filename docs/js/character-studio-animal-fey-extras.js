@@ -24,6 +24,7 @@
     return match ? `#${match[1].toUpperCase()}` : null;
   };
   const normalizeOpacity = value => Number.isFinite(Number(value)) ? Math.max(0, Math.min(1, Number(value))) : 1;
+  const normalizeCreatureScaleMultiplier = value => Number.isFinite(Number(value)) ? Math.max(0.1, Math.min(4, Number(value))) : 1; // Fey/custom world-size override layered after genetics size class.
   const esc = value => String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   const title = value => String(value || '').replace(/[-_]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 
@@ -125,6 +126,7 @@
       appearance.creatureGenotype || null,
       appearance.creatureColorOverrides || null,
       normalizeOpacity(appearance.animalOpacity),
+      normalizeCreatureScaleMultiplier(appearance.creatureScaleMultiplier),
       appearance.animalHatId || 'none',
       hatOptions.map(option => [option?.id || '', option?.label || '']),
     ]);
@@ -143,6 +145,7 @@
     }
     const overrides = appearance.creatureColorOverrides || {};
     const opacity = normalizeOpacity(appearance.animalOpacity);
+    const scaleMultiplier = normalizeCreatureScaleMultiplier(appearance.creatureScaleMultiplier);
     const hatId = appearance.animalHatId || 'none';
     const hatOptions = hatOptionsCache || [];
     const signature = controlsStateSignature(kind, appearance, hatOptions);
@@ -160,6 +163,9 @@
       <div class="help"><b>Fey / custom color overrides</b><br>Breeding colors above are presets only. Each base/pattern layer has its own independent #RRGGBB override and is not clamped to animal genetics.</div>
       ${colorRows}
       <div class="hr"></div>
+      <label>In-game size multiplier <input id="animalNpcScaleMultiplier" type="number" min="0.1" max="4" step="0.05" value="${scaleMultiplier}"></label>
+      <div class="help">Applied after the normal genetics size class. Large × 1.5 means the named animal uses Large calibration, then renders 50% larger in-world.</div>
+      <div class="hr"></div>
       <label>In-game opacity <span id="animalNpcOpacityLabel">${Math.round(opacity * 100)}%</span><input id="animalNpcOpacity" type="range" min="0" max="1" step=".01" value="${opacity}"></label>
       <div class="hr"></div>
       <label>Hat<select id="animalNpcHatSelect"><option value="none">No hat</option>${hatOptions.filter(option => option?.id && option.id !== 'none').map(option => `<option value="${esc(option.id)}" ${option.id === hatId ? 'selected' : ''}>${esc(option.label || option.id)}</option>`).join('')}</select></label>
@@ -171,6 +177,11 @@
       input.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); input.blur(); } });
     });
     extras.querySelectorAll('.animalNpcClearHex').forEach(button => button.addEventListener('click', () => clearCustomColor(button.dataset.layer)));
+    $('animalNpcScaleMultiplier')?.addEventListener('change', () => {
+      const appearanceNow = parseAppearance();
+      const value = normalizeCreatureScaleMultiplier($('animalNpcScaleMultiplier').value);
+      writeAppearance({ ...appearanceNow, creatureScaleMultiplier: value }, `size multiplier → ${value}`);
+    });
     $('animalNpcOpacity')?.addEventListener('input', () => { const value = normalizeOpacity($('animalNpcOpacity').value); $('animalNpcOpacityLabel').textContent = `${Math.round(value * 100)}%`; });
     $('animalNpcOpacity')?.addEventListener('change', () => { const appearanceNow = parseAppearance(); writeAppearance({ ...appearanceNow, animalOpacity: normalizeOpacity($('animalNpcOpacity').value) }, `opacity → ${$('animalNpcOpacity').value}`); });
     $('animalNpcHatSelect')?.addEventListener('change', () => { const appearanceNow = parseAppearance(); writeAppearance({ ...appearanceNow, animalHatId: $('animalNpcHatSelect').value || 'none' }, `hat → ${$('animalNpcHatSelect').value}`); });
@@ -182,7 +193,7 @@
     const el = $('animalNpcFeyDebug');
     if (!el) return;
     const appearance = parseAppearance();
-    el.textContent = `Debug: ${JSON.stringify({ action: debugState.lastAction, render: debugState.lastRender, opacity: normalizeOpacity(appearance.animalOpacity), hat: appearance.animalHatId || 'none', overrides: appearance.creatureColorOverrides || {}, error: debugState.lastError })}`;
+    el.textContent = `Debug: ${JSON.stringify({ action: debugState.lastAction, render: debugState.lastRender, scaleMultiplier: normalizeCreatureScaleMultiplier(appearance.creatureScaleMultiplier), opacity: normalizeOpacity(appearance.animalOpacity), hat: appearance.animalHatId || 'none', overrides: appearance.creatureColorOverrides || {}, error: debugState.lastError })}`;
     window.__animalNpcFeyExtrasDebug = { ...debugState, controlsSignature, appearance: clone(appearance) };
   }
 

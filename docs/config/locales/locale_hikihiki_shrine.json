@@ -4,7 +4,7 @@
   "name": "Hiki-hiki's Shrine",
   "category": "great_fey_shrine",
   "singleton": true,
-  "description": "A Great Fey shrine sacred to Hiki-hiki, hidden in the wilderness.",
+  "description": "A Great Fey shrine sacred to Hiki-hiki in the Southern Cloud Forest.",
   "tags": [
     "great_fey",
     "shrine",
@@ -119,11 +119,13 @@
     }
   ],
   "placement": {
-    "allowedZones": [],
+    "allowedZones": [
+      "map_southern_cloud_forest"
+    ],
     "clearanceTiles": 1,
     "requiresFlatGround": true,
     "minDistanceFromEntry": 0,
-    "notes": ""
+    "notes": "Hiki-hiki's shrine belongs only to the Southern Cloud Forest."
   },
   "meta": {
     "createdAt": "2026-07-19T00:00:00.000Z",

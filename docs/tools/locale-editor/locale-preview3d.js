@@ -85,7 +85,9 @@
     // The main editor sanitizer historically stripped visual metadata. Cave identity by key still works,
     // and this restores the canonical cave visual when that metadata is absent.
     for (const object of output.objects || []) {
-      if (object.key === 'cave_small' && !object.visual) object.visual = { renderer: 'cave_small', scale: output.id === 'locale_banubu_shrine' ? 2 : 1, facing: 'north' };
+      if (object.key === 'cave_small' && !object.visual) object.visual = output.id === 'locale_banubu_shrine'
+        ? { renderer: 'cave_small', scaleX: 1.5, scaleY: 1.5, scaleZ: 1, facing: 'north' }
+        : { renderer: 'cave_small', scale: 1, facing: 'north' };
     }
     return output;
   }

@@ -36,6 +36,7 @@
   const staticSleepers = new Map(); // group -> { avatarRef, kind }; retains the head controller for barn/nest/incubator sleepers.
   const pendingStaticComposes = new Map(); // kind -> [{group, createdAt}], pairing a new static sleeper with its first genotype compose.
   const liveFrameStates = new WeakMap(); // Live entity -> original plane maps and sleep-only body-facing state so waking restores ordinary behavior.
+  const externalSleepers = new Map(); // Named-animal NPCs and other non-livestock actors opt into the same sleep presentation through callbacks instead of duplicating pose/eye logic.
   const frameCache = new Map(); // kind|frame|genotype -> permanently closed-eye texture pair for sleeping presentation.
   const temporaryTransforms = []; // Render-only scale/position changes restored by the post-game scheduler phase after all gameplay render passes.
   const groundingScaleCoefficients = new WeakMap(); // group -> parent-local Y correction per unit of group.scale.y; measured once from exact Box3 bounds, then reused.
@@ -224,30 +225,30 @@
     return { front, back };
   }
 
-  function frameCacheKey(kind, frame, genotype) {
+  function frameCacheKey(kind, frame, genotype, eyesClosed = true) {
     let signature = '';
     try {
       signature = window.CreatureGeneticsRender?.genotypeSignature?.(kind, genotype) || JSON.stringify(genotype || null);
     } catch (_) { signature = String(genotype?.id || 'plain'); }
-    return `${kind}|${frame}|${signature}|sleep-eyes-closed`;
+    return `${kind}|${frame}|${signature}|sleep-eyes-${eyesClosed ? 'closed' : 'open'}`; // Same sleep body frame can be rendered with open eyes during authored dialogue.
   }
 
-  function sleepTextureEntry(kind, genotype, def = null) {
+  function sleepTextureEntry(kind, genotype, def = null, eyesClosed = true) {
     const descriptor = frameDescriptor(kind, def, true);
     const renderer = window.CreatureGeneticsRender;
     if (!renderer?.composeFrame) return null;
-    const key = frameCacheKey(kind, descriptor.frame, genotype);
+    const key = frameCacheKey(kind, descriptor.frame, genotype, eyesClosed);
     let entry = frameCache.get(key);
     if (entry) return entry;
     entry = { key, descriptor, blinkOverlay: blinkOverlayFor(kind), pair: null, promise: null };
-    closedEyeComposites++;
+    if (eyesClosed) closedEyeComposites++;
     entry.promise = (async () => {
       let canvas = null;
       try {
-        // `true` is deliberate and permanent for this cached sleep texture.
-        // It selects the species' *_blink.png eye overlay and prevents an
-        // ordinary awake-eye composite from ever entering the sleep cache.
-        canvas = await renderer.composeFrame(kind, descriptor.frame, genotype || null, true);
+        // Closed sleepers use the species' *_blink.png overlay. External named
+        // sleepers can deliberately request the same run2/head-down sleep body
+        // with awake eyes while an authored conversation is active.
+        canvas = await renderer.composeFrame(kind, descriptor.frame, genotype || null, eyesClosed);
       } catch (_) {}
       const pair = canvas ? pairFromCanvas(canvas) : null;
       entry.pair = pair;
@@ -301,7 +302,7 @@
     return applied > 0;
   }
 
-  function setLiveFrame(entity, group, kind, genotype, def, sleeping) {
+  function setLiveFrame(entity, group, kind, genotype, def, sleeping, eyesClosed = true) {
     if (!entity || !group || !kind) return;
     let state = liveFrameStates.get(entity);
     if (!sleeping) {
@@ -331,10 +332,12 @@
     state = captureOriginalMaps(entity, group);
     if (!state.sleeping) state.sleepBodyYaw = null; // A fresh sleep period captures a fresh last-travel heading below.
     state.sleeping = true;
-    const entry = sleepTextureEntry(kind, genotype, def);
+    const entry = sleepTextureEntry(kind, genotype, def, eyesClosed);
     if (!entry) return;
-    state.entry = entry;
-    if (entry.pair) applyPair(group, entry.pair, state.planeMaterials); // Reasserted once each pre-render frame after normal blink/animation updates.
+    if (entry.pair) {
+      state.entry = entry; // Keep ownership of the visible sleep maps until the replacement composite is ready.
+      applyPair(group, entry.pair, state.planeMaterials);
+    } // Reasserted once each pre-render frame after normal blink/animation updates.
   }
 
   function forceHeadDown(avatarRef, entity = null) {
@@ -492,6 +495,38 @@
     return [combatDeps?.hostileObjects, combatDeps?.companionObjects].filter(Boolean);
   }
 
+  function registerExternalSleeper(entity, config = {}) {
+    if (!entity) return false;
+    externalSleepers.set(entity, { ...config }); // Callbacks are evaluated at pre-render time so dialogue/schedule state can change without re-registering.
+    return true;
+  }
+
+  function unregisterExternalSleeper(entity) {
+    if (!entity) return false;
+    const state = liveFrameStates.get(entity); // Restore owned sleep textures before releasing a still-live external actor.
+    if (state?.group) setLiveFrame(entity, state.group, 'external', null, null, false);
+    externalSleepers.delete(entity);
+    liveFrameStates.delete(entity);
+    return true;
+  }
+
+  function applyExternalSleepers() {
+    for (const [entity, config] of externalSleepers) {
+      const avatarRef = typeof config.avatarRef === 'function' ? config.avatarRef() : config.avatarRef;
+      const group = avatarRef?.group || (typeof config.group === 'function' ? config.group() : config.group);
+      if (!group?.parent || group.visible === false) continue;
+      const sleeping = typeof config.isSleeping === 'function' ? config.isSleeping() === true : config.sleeping === true;
+      const eyesClosed = typeof config.eyesClosed === 'function' ? config.eyesClosed() !== false : config.eyesClosed !== false;
+      const kind = typeof config.kind === 'function' ? config.kind() : config.kind;
+      const genotype = typeof config.genotype === 'function' ? config.genotype() : config.genotype;
+      const def = typeof config.def === 'function' ? config.def() : config.def;
+      setLiveFrame(entity, group, kind, genotype, def, sleeping, eyesClosed);
+      if (!sleeping) continue;
+      forceHeadDown(avatarRef, entity);
+      if (applyTemporaryScale(group, SLEEP_SCALE_Y, `external:${config.id || entity?.rec?.id || kind || 'animal'}`)) liveSleepFrames++; // External actors are authored upright, so apply the canonical sleep ratio directly.
+    }
+  }
+
   function applyWildernessSleepers() {
     for (const setLike of wildernessSets()) {
       if (typeof setLike?.[Symbol.iterator] !== 'function') continue;
@@ -522,6 +557,7 @@
       applyStaticSleepers();
       applyFarmSleepers();
       applyWildernessSleepers();
+      applyExternalSleepers();
     } finally {
       lastPreparedBoundsScans = frameBoundsScans;
     }
@@ -546,6 +582,7 @@
       applyStaticSleepers();
       applyFarmSleepers();
       applyWildernessSleepers();
+      applyExternalSleepers();
       externalRenderPrepared = true;
       externalRenderScopes++;
       lastExternalContext = String(contextLabel || 'external-render');
@@ -602,6 +639,7 @@
       sleepingHead: 'authored-max-down',
       sleepingBody: 'last-travel-heading-locked',
       staticSleepers: [...staticSleepers.keys()].filter(group => !!group?.parent).length,
+      externalSleepers: externalSleepers.size,
       cachedSleepFrames: frameCache.size,
       pendingStaticComposes: [...pendingStaticComposes.values()].reduce((sum, queue) => sum + queue.length, 0),
       run2Redirects,
@@ -635,6 +673,8 @@
     blinkOverlayFor,
     forceHeadDown,
     registerStaticSleeper,
+    registerExternalSleeper,
+    unregisterExternalSleeper,
     beginExternalRenderScope,
     endExternalRenderScope,
     install,

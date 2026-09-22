@@ -37,6 +37,10 @@
     const number = Number(value);
     return Number.isFinite(number) ? Math.max(0, Math.min(1, number)) : 1;
   }
+  function normalizeCreatureScaleMultiplier(value) {
+    const number = Number(value); // Authored in the Fey/custom appearance card; 1 means ordinary species+size-class scale.
+    return Number.isFinite(number) ? Math.max(0.1, Math.min(4, number)) : 1;
+  }
   function normalizeHex(value) {
     const match = String(value || '').trim().match(/^#?([0-9a-f]{6})$/i);
     return match ? `#${match[1].toUpperCase()}` : null;
@@ -84,6 +88,16 @@
   }
   function appearanceFor(profile, options = {}) {
     return options?.npcRecord?.appearance || profile?.appearance || profile?.npcRecord?.appearance || {};
+  }
+  function creatureScaleMultiplierFor(profile, options = {}) {
+    return normalizeCreatureScaleMultiplier(
+      options?.creatureScaleMultiplier
+      ?? options?.npcRecord?.creatureScaleMultiplier
+      ?? options?.npcRecord?.appearance?.creatureScaleMultiplier
+      ?? profile?.creatureScaleMultiplier
+      ?? profile?.appearance?.creatureScaleMultiplier
+      ?? profile?.npcRecord?.appearance?.creatureScaleMultiplier
+    ); // Generic named-animal world-scale override layered after normal genetics size class.
   }
   function effectiveGenotype(profile, options = {}) {
     const source = creatureGenotypeFor(profile, options);
@@ -245,18 +259,20 @@
   async function renderCreatureProfile(canvas, profile, options = {}) {
     const kind = creatureKindForProfile(profile, options);
     if (!kind) return false;
-    const source = await sourceForCreature(kind, profile, options);
-    if (!source) return false;
-    const appearance = appearanceFor(profile, options);
-    const opacity = appearance.animalOpacity ?? profile?.animalOpacity ?? 1;
     const chathead = options.animalChathead === true
       || canvas?.id === 'npcPortraitCanvas'
       || String(options?.seatId || '').startsWith('ambient:');
+    const dialogueEyesClosed = chathead && profile?.npcRecord?._animalDialogueEyesOpen === false; // Sleeping named animals can keep the blink/closed-eye overlay through pre-wake dialogue attempts.
+    const source = await sourceForCreature(kind, profile, { ...options, blinkShut: options.blinkShut === true || dialogueEyesClosed });
+    if (!source) return false;
+    const appearance = appearanceFor(profile, options);
+    const opacity = appearance.animalOpacity ?? profile?.animalOpacity ?? 1;
     const rendered = chathead
       ? drawChathead(source, canvas, kind, opacity)
       : drawFullFrame(source, canvas, opacity);
     if (rendered) {
       debugState.lastCreatureKind = kind;
+      canvas.__hobunjiAnimalNpcSourceUrl = sourceUrl(source); // World-plane construction reads this first so a 200x200 dialogue/preview canvas never becomes the in-world animal texture.
       canvas.__hobunjiAnimalNpcAppearance = {
         kind,
         opacity: normalizeOpacity(opacity),
@@ -304,6 +320,25 @@
     try { return canvas.toDataURL('image/png'); } catch { return ''; }
   }
 
+  function sourceUrl(source) {
+    const direct = String(source?.currentSrc || source?.src || '').trim(); // Keeps native creature PNG resolution when the genetics renderer returned an Image.
+    if (direct) return direct;
+    if (!source?.toDataURL) return '';
+    try { return source.toDataURL('image/png'); } catch { return ''; } // Genotype-composited canvases stay at their native creature-frame resolution instead of being downsampled through the NPC portrait canvas.
+  }
+
+  async function worldFrameUrls(profile, options = {}) {
+    const kind = creatureKindForProfile(profile, options);
+    if (!kind) return null;
+    const result = {};
+    for (const frame of ['idle', 'run1', 'run2']) {
+      const source = await sourceForCreature(kind, profile, { ...options, frame });
+      const url = sourceUrl(source);
+      if (url) result[frame] = url;
+    }
+    return Object.keys(result).length ? result : null;
+  }
+
   function installPlaneBridge() {
     const api = window.PNGPlaneAvatar;
     const currentBuild = api?.buildSinglePlaneAvatarModel;
@@ -314,7 +349,7 @@
         if (!kind) return currentBuild.call(this, THREE, sourceCanvas, options);
         const creature = registry()?.creatureFor?.(kind);
         const fallbackPath = creature?.sprites?.idle;
-        const spriteUrl = canvasDataUrl(sourceCanvas) || registry()?.assetUrl?.(fallbackPath) || fallbackPath;
+        const spriteUrl = sourceCanvas?.__hobunjiAnimalNpcSourceUrl || canvasDataUrl(sourceCanvas) || registry()?.assetUrl?.(fallbackPath) || fallbackPath;
         if (!spriteUrl) return currentBuild.call(this, THREE, sourceCanvas, options);
         const modelWidth = Number(creature?.modelWidth) > 0 ? Number(creature.modelWidth) : Number(options.modelWidth) || 1;
         const spriteAspect = Number(creature?.spriteAspect) > 0 ? Number(creature.spriteAspect) : 1;
@@ -533,7 +568,9 @@
     creatureKindForProfile,
     makeCreatureProfile,
     effectiveGenotype,
+    creatureScaleMultiplierFor,
     renderCreatureProfile,
+    worldFrameUrls,
     installAll,
     debugSnapshot: () => ({ ...debugState }),
   };

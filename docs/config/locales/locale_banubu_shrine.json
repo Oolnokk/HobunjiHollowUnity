@@ -4,7 +4,7 @@
   "name": "Banubu's Cave",
   "category": "great_fey_shrine",
   "singleton": true,
-  "description": "Banubu's cave-shrine, cut into a plateau cliff in the Northern Cliffs.",
+  "description": "Banubu's cave-shrine, clipped into an existing plateau cliff in the Northern Cliffs.",
   "tags": [
     "great_fey",
     "shrine",
@@ -153,7 +153,7 @@
         "min": 1,
         "max": null
       },
-      "carveToLocaleFloor": true
+      "carveToLocaleFloor": false
     },
     "4,3": {
       "terrain": "plateau",
@@ -163,7 +163,7 @@
         "min": 1,
         "max": null
       },
-      "carveToLocaleFloor": true
+      "carveToLocaleFloor": false
     },
     "5,3": {
       "terrain": "plateau",
@@ -173,7 +173,7 @@
         "min": 1,
         "max": null
       },
-      "carveToLocaleFloor": true
+      "carveToLocaleFloor": false
     }
   },
   "objects": [
@@ -186,7 +186,14 @@
       "row": 1,
       "w": 3,
       "h": 3,
-      "rot": 180
+      "rot": 180,
+      "visual": {
+        "renderer": "cave_small",
+        "scaleX": 1.5,
+        "scaleY": 1.5,
+        "scaleZ": 1,
+        "facing": "north"
+      }
     }
   ],
   "npcAnchors": [],
@@ -210,9 +217,9 @@
     "floorMode": "nextLowerCliffTier",
     "minDistanceFromEntry": 0,
     "sameSectorAsEntry": false,
-    "alwaysVisibleOnMap": false,
+    "alwaysVisibleOnMap": true,
     "groundOnly": false,
-    "notes": "Northern Cliffs only. The cave mouth is pinned to the LOW side of a north-facing internal plateau cliff, the center rear cell is pinned to the HIGH side, and the rear row is embedded into plateau mass then carved down to the cave floor. Flanking cliff probes are preferred rather than required so irregular natural cliff edges can still host the cave. The three cells directly north/in front of the north-facing mouth must be free, open terrain on the cave floor. Boundary escarpments are rejected. The cave entrance prop renders at 2x its normal in-game cave scale.",
+    "notes": "Northern Cliffs only. The cave mouth is pinned to the LOW side of a naturally generated north-facing internal plateau cliff and the rear row must already overlap HIGH plateau mass. The locale never carves, lowers, removes, or reshapes plateau cells: cave_small clips into the existing cliff face. The three cells directly north/in front of the mouth must be free, open terrain on the cave floor. Boundary escarpments are rejected. Banubu's cave facade renders at 1.5x width and 1.5x height while keeping its original depth.",
     "terrainAnchors": {
       "3,2": {
         "terrain": "plateauCliff",
@@ -323,7 +330,7 @@
           "min": 1,
           "max": null
         },
-        "carveToLocaleFloor": true
+        "carveToLocaleFloor": false
       },
       "4,3": {
         "terrain": "plateau",
@@ -333,7 +340,7 @@
           "min": 1,
           "max": null
         },
-        "carveToLocaleFloor": true
+        "carveToLocaleFloor": false
       },
       "5,3": {
         "terrain": "plateau",
@@ -343,13 +350,25 @@
           "min": 1,
           "max": null
         },
-        "carveToLocaleFloor": true
+        "carveToLocaleFloor": false
       }
+    },
+    "terrainFallback": {
+      "mode": "subset",
+      "terrainAnchors": [
+        "4,0",
+        "4,2",
+        "4,3"
+      ],
+      "embeddedTiles": [
+        "4,3"
+      ],
+      "notes": "If the full-width cliff fit has no valid site, keep the cave on an existing north-facing internal plateau cliff using the center approach/mouth/backing probes and center embedded cell; never carve the host cliff."
     }
   },
   "meta": {
     "createdAt": "2026-07-19T00:00:00.000Z",
-    "updatedAt": "2026-09-13T21:30:00.000Z"
+    "updatedAt": "2026-09-21T16:50:00.000Z"
   },
   "interior": {
     "targetMapId": "map_i_den_banubu",

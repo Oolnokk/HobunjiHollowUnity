@@ -69,15 +69,37 @@
     }; // Used to keep every Banubu interaction explicitly quest-routed rather than situational/daily.
   }
 
+  const INTRO_SLEEP_1 = tree(
+    'banubu_intro_sleep_1',
+    'Banubu — Still Sleeping I',
+    'intro',
+    0,
+    'banubu_intro_sleep_1_line',
+    [
+      textNode('banubu_intro_sleep_1_line', 'Zzzzz.', null),
+    ],
+    { questType: 'threeFishPie', buffCount: 3, minStacks: 1, introAttempt: 1 },
+  );
+
+  const INTRO_SLEEP_2 = tree(
+    'banubu_intro_sleep_2',
+    'Banubu — Still Sleeping II',
+    'intro',
+    0,
+    'banubu_intro_sleep_2_line',
+    [
+      textNode('banubu_intro_sleep_2_line', 'Let me rest my eyes for just a few more minutes.', null),
+    ],
+    { questType: 'threeFishPie', buffCount: 3, minStacks: 1, introAttempt: 2 },
+  );
+
   const INTRO_TREE = tree(
     'banubu_intro',
     'Banubu — Ask for Help',
     'intro',
     0,
-    'banubu_intro_1',
+    'banubu_intro_3',
     [
-      textNode('banubu_intro_1', 'Zzzzz.', 'banubu_intro_2'),
-      textNode('banubu_intro_2', 'Hmm? Let me rest my eyes for a few more minutes.', 'banubu_intro_3'),
       choiceNode('banubu_intro_3', 'Alright, alright, I’m up. What do you want?', [
         {
           label: 'Ask for help',
@@ -94,7 +116,7 @@
       textNode('banubu_intro_10', 'I need a good Three-Fish Pie that can give me {{banubuRequestedBuffs}}.', 'banubu_intro_11'),
       textNode('banubu_intro_11', 'Bring me one of those and we can get started.', null),
     ],
-    { questType: 'threeFishPie', buffCount: 3, minStacks: 1 },
+    { questType: 'threeFishPie', buffCount: 3, minStacks: 1, introAttempt: 3 },
   );
 
   const Q1_OFFER = tree(
@@ -234,6 +256,8 @@
   );
 
   const DEFAULT_DIALOGUE_TREES = Object.freeze([
+    INTRO_SLEEP_1,
+    INTRO_SLEEP_2,
     INTRO_TREE,
     Q1_OFFER,
     Q1_ACTIVE,

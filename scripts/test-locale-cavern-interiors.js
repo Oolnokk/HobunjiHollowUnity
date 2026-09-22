@@ -20,6 +20,7 @@ for (const locale of [banubu, colorPools]) {
   assert(idx && idx.category === 'cave_interior' && idx.mapId === locale.cavern.mapId, locale.id + ' must be discoverable by mapId through the locale index');
 }
 
+assert.strictEqual(banubu.cavern.creatureKind, 'grehlr', 'Banubu cavern must use the Grehlr cave-surface family');
 const secret = banubu.connectors.find(c => c.id === 'color_pools_door');
 assert(secret, 'Banubu cave must author its hidden rear connector');
 assert.strictEqual(secret.targetMap, 'map_i_color_pools');
@@ -66,6 +67,9 @@ assert.strictEqual(built.id, 'map_i_den_banubu');
 assert.strictEqual(built.wallStyle, 'cavern');
 assert.strictEqual(built.isLocaleCavern, true);
 assert.strictEqual(built.denMotherKind, null, 'story cave locales must not inherit den encounter content');
+assert.strictEqual(built.cavernCreatureKind, 'grehlr', 'locale synthesis must carry the authored creature habitat into runtime material selection');
+assert.strictEqual(Object.keys(built.floorSurfaceByTile || {}).length, built.floor.length, 'every cavern floor tile must get a rendered-surface Y sample');
+assert(Number.isFinite(built.floorSurfaceY), 'cavern synthesis must expose a finite fallback floor surface Y');
 assert.strictEqual(built.floor.length, Object.keys(banubu.tiles).length);
 assert.strictEqual(carveCall.floor.length, built.floor.length, 'the exact painted locale footprint must be handed to the cavern sculptor');
 assert.deepStrictEqual(carveCall.options.entrance, { col: 6, row: 10, side: 'south' });
@@ -77,6 +81,7 @@ const sculptorSource = read('docs/js/cavern-sculptor.js');
 const generatorSource = read('docs/js/cavern-generator.js');
 const gameSource = read('docs/game.js');
 const editorSource = read('docs/tools/locale-editor/index.html');
+const interiorBuilderSource = read('docs/js/interior-scene-builder.js');
 assert(sculptorSource.includes('function carveFootprintCavern(') && sculptorSource.includes('carveMazeCavern, carveFootprintCavern'), 'shared cavern sculptor must expose footprint-driven generation');
 assert(generatorSource.includes('loadLocaleCavernDefinition') && generatorSource.includes('synthesizeLocaleCavernMapData'), 'runtime must resolve cave interiors through locale files');
 assert(!generatorSource.includes("seedText === 'map_i_den_banubu'"), 'generic generator must not special-case Banubu by seed/map id');
@@ -85,7 +90,40 @@ assert(gameSource.includes('loadLocaleCavernDefinition?.(mapId)') && gameSource.
 assert(gameSource.includes('(!x.requiresKeyItem || !!window.KeyItemSystem?.has?.(x.requiresKeyItem))'), 'key-gated cave connectors must be mechanically inaccessible without their key');
 assert(gameSource.includes("targetSpotId: exit.targetSpotId || ''") && gameSource.includes("_pendingEntrySpotId"), 'cave-to-cave travel must preserve named connector destinations across async generation');
 assert(gameSource.includes('entranceLightTileSet'), 'secret exits must not affect the primary cave-mouth daylight');
+assert(generatorSource.includes('function sampleMeshSurfaceAt(') && generatorSource.includes('floorSurfaceByTile: floorSurface.byTile'), 'cavern generation must sample the rendered shell and export per-tile ground Y');
+assert(interiorBuilderSource.includes('function buildCavernFloorMesh(') && interiorBuilderSource.includes('cavernWalkableFloor'), 'caverns must render an explicit merged textured walkable floor');
+assert(gameSource.includes('const exactSurfaceY = Number(tile?.surfaceY)') && gameSource.includes('bGrid[r][c].surfaceY = sampledSurfaceY'), 'player tile grounding must consume the exact cavern floor surface sample');
+assert(gameSource.includes(': (_isZoneArea(area) ? surfaceYAtWorld(area, c + 0.5, r + 0.5) : tileSurfaceYInArea(tile, area))'), 'NPC building grounding must share the exact tile surface resolver with the player');
+assert(!gameSource.includes('_isBuildingArea(area) ? 0 : npcSurfaceY(area, spawnPos.c, spawnPos.r)'), 'NPC building transfers must never force Y=0');
+assert(gameSource.includes('InteriorSceneBuilder.buildCavernFloorMesh?.('), 'game cavern scenes must add the explicit textured walkable floor mesh');
+assert(gameSource.includes('mapData.denMotherKind || mapData.cavernCreatureKind'), 'authored caverns must select texture family from their authored creature habitat');
 assert(editorSource.includes('value="cave_interior"') && editorSource.includes('cavernSeed') && editorSource.includes('raw.cavern'), 'Locale Editor must author and preserve cave-interior generator metadata');
 assert.strictEqual(fs.existsSync(path.join(root, 'docs/config/maps/map_i_color_pools.json')), false, 'Color Pools must not retain a competing static rectangular map definition');
+
+// Exercise real triangle sampling, including sub-tile tessellation and missing coverage.
+const samplingLocale = { ...banubu, tiles: { '0,0': {}, '1,0': {}, '2,0': {} } }; // Tiny footprint isolates sample and fallback behavior.
+const samplingMesh = { positions: [], indices: [] }; // Fixture contains a small flat floor and a steep wall below it.
+function addSampleTriangle(vertices) {
+  const offset = samplingMesh.positions.length / 3; // Vertex offset for this independently authored triangle.
+  samplingMesh.positions.push(...vertices.flat());
+  samplingMesh.indices.push(offset, offset + 1, offset + 2);
+}
+addSampleTriangle([[0.4, 2, 0.4], [0.6, 2, 0.4], [0.5, 2, 0.7]]);
+addSampleTriangle([[0, -10, 0], [1, 10, 0], [0.5, -10, 1]]);
+addSampleTriangle([[1, 3, 0], [2, 3, 0], [1.5, 3, 1]]);
+context.CavernSculptor.carveFootprintCavern = () => ({ mesh: samplingMesh });
+const sampled = context.CavernGenerator.synthesizeLocaleCavernMapData(samplingLocale); // Real synthesis must preserve tiny floor faces and reject steep walls.
+assert.strictEqual(sampled.floorSurfaceByTile['0,0'], 2, 'small horizontal triangles are valid regardless of projected area');
+assert.strictEqual(sampled.floorSurfaceByTile['1,0'], 3, 'independent floor heights remain intact');
+assert.strictEqual(sampled.floorSurfaceByTile['2,0'], 3, 'uncovered tiles use the valid-sample median');
+
+// Count mesh reads instead of timing a machine-dependent benchmark.
+let meshReads = 0; // Sampling should read each triangle only during index construction.
+samplingMesh.positions = new Proxy(samplingMesh.positions, { get(target, key) {
+  if (/^\d+$/.test(String(key))) meshReads++;
+  return Reflect.get(target, key);
+} });
+context.CavernGenerator.synthesizeLocaleCavernMapData(banubu);
+assert(meshReads <= samplingMesh.indices.length * 3, 'sampling must not reread every triangle for every tile');
 
 console.log('Locale-authored cavern footprint, fixed-seed synthesis, keyed connector, and editor integration checks passed');

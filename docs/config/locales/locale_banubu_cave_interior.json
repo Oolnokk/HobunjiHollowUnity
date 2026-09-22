@@ -333,10 +333,11 @@
       "brushRadius": 0.42,
       "organicJitter": 0.12,
       "sizeY": 3
-    }
+    },
+    "creatureKind": "grehlr"
   },
   "meta": {
     "createdAt": "2026-09-19T00:00:00.000Z",
-    "updatedAt": "2026-09-19T00:00:00.000Z"
+    "updatedAt": "2026-09-21T17:25:00.000Z"
   }
 }
