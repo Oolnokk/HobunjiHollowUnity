@@ -5,6 +5,12 @@
   "cols": 8,
   "rows": 8,
   "wallStyle": "canvas",
+  "floorStyle": {
+    "texture": "canvas.png",
+    "tint": "#ffffff",
+    "tilesPerTile": 1,
+    "stretchToSurface": true
+  },
   "furniture": [
     {
       "id": "f_tent_cot",
