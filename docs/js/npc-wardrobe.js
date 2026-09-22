@@ -188,9 +188,15 @@
   async function refreshWalkerAppearance(walker) {
     if (!walker?.avatarGroup?.userData?.frontTexture || !window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
     const rec = walker.rec;
+    const guessedSpecies = String(rec?.species || '').toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-|-$/g, ''); // Used only as the same legacy-record fallback as makeNpcWalker when appearance.speciesId is absent.
+    const appearance = rec?.appearance?.speciesId ? rec.appearance : {
+      speciesId: guessedSpecies || undefined,
+      gender: rec?.gender === 'female' ? 'female' : 'male',
+      cosmetics: {},
+    }; // Wardrobe refresh must rebuild from the NPC record, because a rendered profile does not retain the source appearance/species metadata.
     const profile = window.NpcAvatarPreview.buildProfileFromNpcExport({
       name: rec?.name || rec?.id || 'npc',
-      appearance: walker.profile?.appearance || { speciesId: undefined, gender: rec?.gender === 'female' ? 'female' : 'male', cosmetics: {} },
+      appearance,
       equippedCosmetics: rec?.equippedCosmetics || [],
       appliedDyes: rec?.appliedDyes || {},
     });
