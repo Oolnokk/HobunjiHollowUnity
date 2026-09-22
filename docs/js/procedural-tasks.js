@@ -45,18 +45,13 @@
 
   const TASK_DOMAINS = ['farming', 'fishing', 'combat', 'alchemy'];
 
-  // Friendship tiers ride the exact same per-NPC favor counter the
-  // relationship hearts render from (DialogueContent's
-  // getNpcDlgState/adjustNpcFavor, and renderRelationshipHearts's -5..10
-  // clamp) — no separate counter or scale of its own. Thresholds are
-  // spaced two favor/hearts apart so "Friendship Tier N" always lines up
-  // with 2N hearts filled; every other system that reads favor (gift
-  // reactions in npc-gifting.js's TIER_FAVOR, the rapport→favor rollover
-  // in npc-social-relationship-bridge-v2.js, the social-inhibition and
-  // silliness-reaction runtimes) already assumes this same small scale, so
-  // reward amounts below are sized to match rather than the old
-  // hundreds-of-favor scale that used to live here.
-  const FRIENDSHIP_TIER_THRESHOLDS = [0, 2, 4, 6, 8, 10];
+  // Friendship tiers use the same permanent Favor-point counter as the
+  // relationship hearts. One heart is 40 Favor, and tiers remain two hearts
+  // apart, so this closure must use point-space thresholds directly. This is
+  // intentionally correct here (not only on the exported API) because
+  // maybeOfferFavor() calls friendshipTier() internally.
+  const FAVOR_POINTS_PER_HEART = 40; // Used by procedural task tier thresholds, rewards, and legacy task reward conversion.
+  const FRIENDSHIP_TIER_THRESHOLDS = [0, 80, 160, 240, 320, 400];
   function friendshipFavor(npcId) { return window.DialogueContent?.getNpcDlgState(npcId).favor || 0; }
   function friendshipTier(npcId) {
     const favor = friendshipFavor(npcId);
@@ -77,7 +72,14 @@
   const FAVOR_CHANCE_BY_TIER       = [0, 0.12, 0.20, 0.30, 0.42, 0.55];
   const TASK_QTY_BY_TIER           = [1, 2, 2, 3, 4, 5];
   const FAVOR_REWARD_MULT          = 1.6;
-  const TASK_FRIENDSHIP_REWARD     = { favor: [1, 1.5, 2, 2.5, 3, 4], request: 1.5 };
+  const TASK_FRIENDSHIP_REWARD     = { favor: [40, 60, 80, 100, 120, 160], request: 60 };
+  const LEGACY_TASK_REWARD_MAX_HEARTS = 4; // Used by taskFriendshipRewardPoints() to recognize persisted tasks authored before Favor switched to point-space.
+
+  function taskFriendshipRewardPoints(value) {
+    const reward = Number(value) || 0; // Used as the normalized reward shown by the quest log and applied at turn-in.
+    if (reward > 0 && reward <= LEGACY_TASK_REWARD_MAX_HEARTS) return reward * FAVOR_POINTS_PER_HEART;
+    return reward;
+  }
 
   // role (free-text NPC job, e.g. "carpenter / roofing family
   // connection", "great fae / fishing solution") → which item pool their
@@ -565,10 +567,12 @@
     const onTime = task.deadlineDay == null || deps.calendar.day <= task.deadlineDay;
     const paidGold = onTime ? Math.round(task.rewardGold * (task.bonusMultiplier || 1)) : task.rewardGold;
     deps.inventory.gold = (deps.inventory.gold || 0) + paidGold;
-    window.DialogueContent?.adjustNpcFavor(task.npcId, task.rewardFriendship, 'task_' + task.kind);
+    const friendshipReward = taskFriendshipRewardPoints(task.rewardFriendship); // Used to migrate an already-accepted pre-point-scale task at the moment it pays out.
+    task.rewardFriendship = friendshipReward;
+    window.DialogueContent?.adjustNpcFavor(task.npcId, friendshipReward, 'task_' + task.kind);
     setTaskStatus(taskId, 'completed', {});
     const bonusNote = onTime && task.bonusMultiplier > 1 ? ' (on-time bonus!)' : '';
-    deps.showToast(`✅ Task complete! +${paidGold}g${bonusNote}, +${task.rewardFriendship} friendship with ${task.npcName}.`, true);
+    deps.showToast(`✅ Task complete! +${paidGold}g${bonusNote}, +${friendshipReward} Favor with ${task.npcName}.`, true);
     return { ok: true, message: 'Task turned in.' };
   }
 
@@ -578,6 +582,7 @@
     friendshipFavor,
     friendshipTier,
     friendshipTierProgress,
+    taskFriendshipRewardPoints,
     npcSkillDomain,
     isQuestEligibleNpc,
     taskItemPoolFor,
