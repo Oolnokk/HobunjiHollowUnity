@@ -241,6 +241,9 @@
       if (typeof damageCreature === 'function' && !damageCreature.__masteryPolicyWrapped) {
         const wrapped = function masteryPolicyDamageCreature(enemy, ...args) {
           const before = Math.max(0, Number(enemy?.health) || 0);
+          const options = args[4] && typeof args[4] === 'object' ? args[4] : {}; // Used to resolve the exact source weapon before lethal damage can complete.
+          const rangedItemKey = options.ranged === true && options.friendlyFire !== true && typeof options.rangedItemKey === 'string' && options.rangedItemKey
+            ? options.rangedItemKey : null; // Used by modern projectile hits so generated dual-role tools never depend on the later legacy mastery callback for attribution.
           if (enemy && before > Number(enemy._masteryObservedMaxHealth || 0)) enemy._masteryObservedMaxHealth = before;
           let result; // Used to preserve the wrapped damage result or the safe lethal-transition recovery result.
           try {
@@ -260,16 +263,22 @@
             result = false;
           }
           const after = Math.max(0, Number(enemy?.health) || 0);
-          const options = args[4] && typeof args[4] === 'object' ? args[4] : {};
           if (before > 0 && after <= 0) {
             if (options.ranged) {
-              const kill = { enemy, at: now() }; // Used until ranged-weapons.js supplies the exact firing itemKey on its next line.
-              pendingRangedKill = kill;
-              queueMicrotask(() => {
-                if (pendingRangedKill !== kill) return;
+              if (options.friendlyFire === true) {
                 pendingRangedKill = null;
-                awardKill(rangedKey(), enemy, true);
-              });
+              } else if (rangedItemKey) {
+                pendingRangedKill = null;
+                awardKill(rangedItemKey, enemy, true);
+              } else {
+                const kill = { enemy, at: now() }; // Used only by legacy ranged callers that do not yet carry rangedItemKey in their damage metadata.
+                pendingRangedKill = kill;
+                queueMicrotask(() => {
+                  if (pendingRangedKill !== kill) return;
+                  pendingRangedKill = null;
+                  awardKill(rangedKey(), enemy, true);
+                });
+              }
             } else awardKill(meleeKey(), enemy, false);
           }
           return result;
