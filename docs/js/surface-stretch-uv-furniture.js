@@ -454,38 +454,6 @@
     return geometry;
   }
 
-  function remapPerimeterFrame(geometry, options = {}) {
-    const uv = geometry?.getAttribute?.('uv'); // Used as the solved square-domain UV buffer produced by mapGeometry before the PNG edge is compressed.
-    if (!geometry || !uv || Number(uv.itemSize || 0) < 2) return null;
-    const sourceEdgeFraction = Number.isFinite(Number(options.sourceEdgeFraction)) ? Math.max(0, Math.min(0.49, Number(options.sourceEdgeFraction))) : 0.16; // Matches the carved_smooth protected source border used by natural-surface perimeter framing.
-    const surfaceEdgeFraction = Number.isFinite(Number(options.surfaceEdgeFraction)) ? Math.max(0.001, Math.min(0.49, Number(options.surfaceEdgeFraction))) : 0.06; // Matches the narrow rendered edge band used by natural-surface perimeter framing.
-    const baseSignature = String(geometry.userData?.hobunjiSurfaceStretchSignature || ''); // Invalidates the frame automatically whenever the underlying connected-surface unwrap changes.
-    const signature = `surface-perimeter-frame-v1|base=${baseSignature}|source=${sourceEdgeFraction}|surface=${surfaceEdgeFraction}`; // Prevents repeated nonlinear remapping of an already-framed geometry.
-    if (geometry.userData?.hobunjiSurfacePerimeterFrameSignature === signature) return geometry.userData.hobunjiSurfacePerimeterFrame || null;
-
-    function frameCoordinate(value) {
-      const t = clamp01(value); // Existing full-square surface coordinate before protected-border compression.
-      if (t <= surfaceEdgeFraction) return (t / surfaceEdgeFraction) * sourceEdgeFraction;
-      if (t >= 1 - surfaceEdgeFraction) return 1 - sourceEdgeFraction + ((t - (1 - surfaceEdgeFraction)) / surfaceEdgeFraction) * sourceEdgeFraction;
-      return sourceEdgeFraction + ((t - surfaceEdgeFraction) / (1 - surfaceEdgeFraction * 2)) * (1 - sourceEdgeFraction * 2);
-    }
-
-    for (let index = 0; index < uv.count; index++) {
-      uv.setXY(index, frameCoordinate(uv.getX(index)), frameCoordinate(uv.getY(index)));
-    }
-    uv.needsUpdate = true;
-    geometry.userData = Object.assign({}, geometry.userData || {});
-    geometry.userData.hobunjiSurfacePerimeterFrameSignature = signature;
-    geometry.userData.hobunjiSurfacePerimeterFrame = {
-      version: 1,
-      mapping: 'continuous-detected-surface-perimeter',
-      sourceEdgeFraction,
-      surfaceEdgeFraction,
-      warpedUvCount: uv.count,
-    };
-    return geometry.userData.hobunjiSurfacePerimeterFrame;
-  }
-
   function remapInteriorDomain(geometry, options = {}) {
     const uv = geometry?.getAttribute?.('uv'); // Used as the solved connected-surface UV buffer before shingle-only texture-edge exclusion.
     if (!geometry || !uv || Number(uv.itemSize || 0) < 2) return null;
@@ -631,7 +599,6 @@
     installed: true,
     mapGeometry,
     mapMesh,
-    remapPerimeterFrame,
     remapInteriorDomain,
     remapNaturalTerrainMesh,
     settings: { angleToleranceDeg: DEFAULT_SPLIT_ANGLE_DEG },
