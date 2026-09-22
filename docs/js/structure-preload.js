@@ -93,6 +93,10 @@
     .then(() => {
       state.shingleReady = true;
       state.shingleMs = elapsedMs();
+      const shingleSurface = window.HousePieceGen?.shingleSurfaceSnapshot?.(); // Used by the buffered mobile-visible startup log to verify source UV presence and connected-surface remapping.
+      if (shingleSurface) {
+        debugLog(`shingle surfaces: meshes=${shingleSurface.meshCount}, sourceUV=${shingleSurface.sourceUvMeshes}, missingSourceUV=${shingleSurface.sourceUvMissingMeshes}, mapped=${shingleSurface.mappedMeshes}, detectedSurfaces=${shingleSurface.patchCount}, mapperFallbackMeshes=${shingleSurface.fallbackMeshes}, angle=${shingleSurface.angleToleranceDeg}deg`);
+      }
       return true;
     })
     .catch(error => {
@@ -194,6 +198,7 @@
       elapsedMs: elapsedMs(),
       wallGlbUrl,
       shingleBaseUrl,
+      shingleSurface: window.HousePieceGen?.shingleSurfaceSnapshot?.() || null,
       pendingDebugLogs: pendingLogs.length,
     };
   }
