@@ -33,6 +33,7 @@ const wildernessSource = read('docs/js/wilderness-map-generator.js');
 const builderSource = read('docs/js/interior-scene-builder.js');
 const mapEditorSource = read('docs/tools/map-editor/index.html');
 const localeEditorSource = read('docs/tools/locale-editor/index.html');
+const localePreview3dSource = read('docs/tools/locale-editor/locale-preview3d.js');
 const directorSource = read('docs/tools/cutscene-director/index.html');
 
 for (const [label, source] of [
@@ -82,7 +83,7 @@ for (const [label, source] of [['Map Editor', mapEditorSource], ['Locale Editor'
 assert(directorSource.includes('stage.type === "camera"'), 'Cutscene Director preview must dispatch Camera cards');
 assert(directorSource.includes('cinematicCameraSelectHtml'), 'Cutscene Director must offer authored camera IDs');
 assert(directorSource.includes('runCameraStage'), 'Cutscene Director must preview authored camera shots');
-assert(localeEditorSource.includes('id="localeCameraSliderPanel"'), 'Locale Editor 3D preview must expose in-shot camera sliders');
+assert(localePreview3dSource.includes('id="localeCameraSliderPanel"'), 'Locale Editor 3D preview must expose in-shot camera sliders');
 assert(localeEditorSource.includes('updateCinematicCamera: (localeId, cameraId, next) =>'), 'Locale Editor must persist preview-slider camera edits through its workspace bridge');
 assert(localeEditorSource.includes('cinematicCameras: m.cinematicCameras || []'), 'Locale Editor export must retain authored cinematic cameras');
 
