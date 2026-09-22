@@ -12871,8 +12871,10 @@
             if (bGrid[r]?.[c]) {
               bGrid[r][c].type = TileType.GRASS;
               const sampledSurfaceY = Number(mapData.floorSurfaceByTile?.[`${c},${r}`]); // Authoritative rendered cavern-floor sample produced by CavernGenerator.
-              if (Number.isFinite(sampledSurfaceY)) bGrid[r][c].surfaceY = sampledSurfaceY;
-              else if (Number.isFinite(Number(mapData.floorSurfaceY))) bGrid[r][c].surfaceY = Number(mapData.floorSurfaceY);
+              const fallbackSurfaceY = Number(mapData.floorSurfaceY); // Used only when a generated cavern has no per-tile sample for this authored floor cell.
+              bGrid[r][c].surfaceY = Number.isFinite(sampledSurfaceY)
+                ? sampledSurfaceY
+                : (Number.isFinite(fallbackSurfaceY) ? fallbackSurfaceY : 0); // Ordinary building floors are explicitly Y=0 so later furniture-collider ROCK tagging cannot masquerade as +0.75 terrain.
               floorSet.add(`${c},${r}`);
             }
           }
@@ -13066,7 +13068,9 @@
             const scY = f.postSY != null ? f.postSY : (f.postScale != null ? f.postScale : 1);
             const scZ = f.postSZ != null ? f.postSZ : (f.postScale != null ? f.postScale : 1);
             const bx = (f.col + (def?.fw || 1) * 0.5) + (f.postX || 0);
-            const by = tileSurfaceYInArea(bGrid?.[f.row]?.[f.col], mapId) + (f.postY || 0); // Building furniture follows exact cavern floor samples; ordinary flat interiors remain zero-based.
+            const floorSurfaceY = tileSurfaceYInArea(bGrid?.[f.row]?.[f.col], mapId); // Used to ground this furniture on the authored floor surface even when its footprint tile is also collision-solid.
+            const authoredPostY = Number(f.postY) || 0; // Used to preserve intentional editor-authored stacking/lift above the floor.
+            const by = floorSurfaceY + authoredPostY; // Final furniture root Y shared by the visual, light, and mobile grounding diagnostics below.
             const bz = (f.row + (def?.fd || 1) * 0.5) + (f.postZ || 0);
             const rotRad = THREE.MathUtils.degToRad(f.rotY || 0);
             let renderedFurniture = null;
@@ -13105,6 +13109,15 @@
               postX: f.postX || 0, postY: f.postY || 0, postZ: f.postZ || 0, rotY: f.rotY || 0,
               postSX: scX, postSY: scY, postSZ: scZ,
             };
+            renderedFurniture.userData.buildingFurnitureGrounding = {
+              mapId,
+              furnitureId: f.id || null,
+              itemKey: f.itemKey,
+              floorSurfaceY,
+              authoredPostY,
+              placedRootY: renderedFurniture.position.y,
+              collisionTileType: bGrid?.[f.row]?.[f.col]?.type || null,
+            }; // Pixel Probe walks up from any hit child to this root so mobile testing can compare floor Y, authored lift, and final root Y without devtools.
             // Building-map furniture bypasses makeDecorativeFurnitureMesh,
             // so add its configured lamp/candle light explicitly here.
             let furnitureLight = null;

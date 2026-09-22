@@ -12,6 +12,8 @@ const wardrobeEditorSource = read('docs/js/building-interior-npc-wardrobe-editor
 const indexSource = read('docs/index.html');
 const mapEditorSource = read('docs/tools/map-editor/index.html');
 const mapEditorSyncSource = read('docs/js/map-editor-interior-instance-sync.js');
+const gameSource = read('docs/game.js'); // Used to pin the production building-scene floor/furniture grounding contract that interacts with generated furniture colliders.
+const pixelProbeSource = read('docs/js/pixel-probe.js'); // Used to keep the mobile grounding diagnostic wired whenever this regression is touched.
 
 new Function(helperSource);
 new Function(wardrobeEditorSource);
@@ -111,6 +113,35 @@ const nonColliding = window.MapLayoutSystem.getEffectiveMapData({
   ],
 });
 assert.deepStrictEqual(Array.from(nonColliding.colliders, tile => Array.from(tile)), [[0, 0]], 'non-colliding and walkable-elevation furniture add no tile blockers');
+
+// Production integration regression: InteriorFurnitureGrid intentionally turns ordinary furniture
+// footprint cells into collision solids. loadBuildingScene must pin the authored floor height
+// before that mutation, or tileSurfaceYInArea reads ROCK_TOP (+0.75) and floats the furniture.
+assert.match(
+  gameSource,
+  /bGrid\[r\]\[c\]\.surfaceY\s*=\s*Number\.isFinite\(sampledSurfaceY\)[\s\S]{0,260}Number\.isFinite\(fallbackSurfaceY\)[\s\S]{0,120}:\s*0\)/,
+  'ordinary building floor cells explicitly retain Y=0 when no cavern surface sample exists'
+);
+assert.ok(
+  gameSource.indexOf('bGrid[r][c].surfaceY = Number.isFinite(sampledSurfaceY)') <
+    gameSource.indexOf('for (const [c, r] of (mapData.colliders || []))'),
+  'building floor surface Y is established before furniture-derived colliders change tile type'
+);
+assert.match(
+  gameSource,
+  /const floorSurfaceY = tileSurfaceYInArea\(bGrid\?\.\[f\.row\]\?\.\[f\.col\], mapId\);[\s\S]{0,700}const by = floorSurfaceY \+ authoredPostY;/,
+  'building furniture composes the authoritative floor surface with only its authored vertical offset'
+);
+assert.match(
+  gameSource,
+  /buildingFurnitureGrounding\s*=\s*\{[\s\S]{0,420}floorSurfaceY,[\s\S]{0,220}placedRootY:/,
+  'rendered building furniture carries copyable grounding diagnostics'
+);
+assert.match(
+  pixelProbeSource,
+  /building furniture grounding:[\s\S]{0,260}floorY=[\s\S]{0,260}rootY=/,
+  'Pixel Probe exposes building floor and furniture root Y on mobile'
+);
 
 assert.match(editorSource, /id="gridRotLeftBtn"/, 'interior editor exposes 90-degree grid rotation');
 assert.match(editorSource, /id="gridRot180Btn"/, 'interior editor exposes direct 180-degree grid rotation');

@@ -1168,6 +1168,12 @@
         const neighborhood = _pixelProbeTextureNeighborhood(m, hit.uv);
         if (neighborhood) lines.push(`     texture neighborhood: ${neighborhood.samples} samples unique=${neighborhood.unique} rgbRange=R${neighborhood.mins[0]}-${neighborhood.maxs[0]} G${neighborhood.mins[1]}-${neighborhood.maxs[1]} B${neighborhood.mins[2]}-${neighborhood.maxs[2]}`);
       });
+      let groundingNode = o; // Used to walk from a hit furniture child mesh to the building-interior furniture root that owns grounding diagnostics.
+      while (groundingNode && !groundingNode.userData?.buildingFurnitureGrounding) groundingNode = groundingNode.parent;
+      const grounding = groundingNode?.userData?.buildingFurnitureGrounding; // Used to expose floor-vs-root Y in the copyable mobile Pixel Probe report.
+      if (grounding) {
+        lines.push(`     building furniture grounding: map=${grounding.mapId || '-'} id=${grounding.furnitureId || '-'} item=${grounding.itemKey || '-'} floorY=${Number(grounding.floorSurfaceY || 0).toFixed(5)} postY=${Number(grounding.authoredPostY || 0).toFixed(5)} rootY=${Number(grounding.placedRootY || 0).toFixed(5)} collisionTile=${grounding.collisionTileType || '-'}`);
+      }
       const owner = _pixelProbeOwnerInfo(o);
       if (owner) {
         lines.push(`     owner: ${owner.kind} "${owner.label}" species=${owner.speciesId || '?'} gender=${owner.gender || '-'} bodyColors: ${_pixelProbeBodyColorSummary(owner.bodyColors, owner.speciesId)}`);
