@@ -959,6 +959,13 @@
     if (controllerUiDebug) lines.push(`Controller UI cache: panels=${controllerUiDebug.knownPanels} active=${controllerUiDebug.stackDepth} top=${controllerUiDebug.panelId || 'none'}`);
     const gridDebug = window.GridTileAccessors?.debugSnapshot?.(); // Makes building-footprint cache effectiveness visible during movement without a console.
     if (gridDebug) lines.push(`Building footprint cache: builds=${gridDebug.buildingFootprintCacheBuilds} hits=${gridDebug.buildingFootprintCacheHits}`);
+    const shingleSurfaceDebug = window.HousePieceGen?.shingleSurfaceSnapshot?.(); // Exposes the shared Highland shingle template's authored/generated UV state and connected-surface mapping on mobile.
+    if (shingleSurfaceDebug) {
+      lines.push(`Highland shingle UVs: meshes=${shingleSurfaceDebug.meshCount} sourceUV=${shingleSurfaceDebug.sourceUvMeshes} missingSourceUV=${shingleSurfaceDebug.sourceUvMissingMeshes} mapped=${shingleSurfaceDebug.mappedMeshes} fallbackMeshes=${shingleSurfaceDebug.fallbackMeshes} surfaces=${shingleSurfaceDebug.patchCount} fallbackSurfaces=${shingleSurfaceDebug.fallbackPatchCount} angle=${shingleSurfaceDebug.angleToleranceDeg}° texture=${shingleSurfaceDebug.texturePath || '-'} errors=${shingleSurfaceDebug.errors?.length || 0}`);
+      for (const entry of (shingleSurfaceDebug.meshes || [])) {
+        lines.push(`  shingle mesh "${entry.name}": sourceUV=${entry.hadSourceUv ? 'yes' : 'no'} finalUV=${entry.hasFinalUv ? 'yes' : 'no'} mapping=${entry.mapping || '-'} surfaces=${entry.patchCount ?? '-'} fallbackSurfaces=${entry.fallbackPatchCount ?? '-'}`);
+      }
+    }
     const heldRenderDebug = window.HeldObjectRenderOrder?.snapshot?.(); // Exposes the retained selective-x-ray render mode and pass counters on mobile.
     if (heldRenderDebug) lines.push(`Held x-ray: mode=${heldRenderDebug.mode} ground=${heldRenderDebug.groundMeshes} held=${heldRenderDebug.heldMeshes} waterBlend=${heldRenderDebug.waterReplayMeshes ?? '-'}/${heldRenderDebug.waterReplays ?? '-'} passes=${heldRenderDebug.baseWorldRenders}/${heldRenderDebug.selectiveOverlays}/${heldRenderDebug.nonGroundDepthReplays}/${heldRenderDebug.groundDepthRestores}`);
     const waterFootLines = _pixelProbeWaterFootContactLines(activeScene, currentArea, playerMesh); // Used to distinguish real foot/water intersection from camera-perspective illusions on mobile.
