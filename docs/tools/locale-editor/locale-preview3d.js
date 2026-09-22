@@ -179,6 +179,8 @@
     await loadScript('../../js/locale-terrain-placement.js', () => !!window.LocaleTerrainPlacement?.evaluateCandidateForTest);
     await loadScript('../../js/locale-cave-runtime.js', () => !!window.LocaleCaveRuntime?.registerWorkspace);
     await loadScript('../../js/zone-den-totem-features.js', () => !!window.ZoneDenTotemFeatures?.buildAnimalDenMeshes);
+    await loadScript('../../config/natural-surface-materials.js', () => !!window.NaturalSurfaceMaterialConfig);
+    await loadScript('../../js/natural-surface-materials.js', () => !!window.NaturalSurfaceMaterials?.installed);
     await loadScript('../../js/cavern-sculptor.js', () => !!window.CavernSculptor?.carveFootprintCavern);
     await loadScript('../../js/cavern-generator.js', () => !!window.CavernGenerator?.synthesizeLocaleCavernMapData);
     await loadScript('../../js/interior-scene-builder.js', () => !!window.InteriorSceneBuilder?.buildCarvedCavernMesh);
