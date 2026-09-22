@@ -9,6 +9,7 @@
   if (!window.Combat?.abilities) { console.error('combat-blink-dodge.js requires combat-core.js + combat-loadout.js to load first'); return; }
 
   const PASSIVE_DRAIN_BASE_PER_S = 2.2; // Used by passiveDrainPerS() as Blink's stamina drain at normal 1.0x movement speed.
+  const STAMINA_REGEN_BLOCK_SOURCE = 'blink-dodge-hold'; // Used to own only Blink Dodge's entry in ResourceSystem's composable Stamina-regeneration blocker registry.
   const PASSIVE_DRAIN_QUANTUM = 0.1; // Used by spendPassiveDrain() to survive ResourceSystem's tenth-point stamina rounding without frame-rate-dependent loss.
   const ZIP_COST = 20;
   const ZIP_DISTANCE_PX = 82;
@@ -245,6 +246,7 @@
       passiveDrainCarry = 0;
       blinkRuntimeDebug.passiveDrainCarry = 0;
       blinkRuntimeDebug.active = false;
+      window.ResourceSystem?.setStaminaRegenBlocked?.(window.Combat.deps?.player, STAMINA_REGEN_BLOCK_SOURCE, false);
       window.Combat.setMovementSpeedMul(null);
       if (wasActive && message) window.Combat.deps.showToast(message, false);
     }
@@ -256,6 +258,7 @@
       nextZipAt = -99;
       blinkRuntimeDebug.passiveDrainCarry = 0;
       blinkRuntimeDebug.active = true;
+      window.ResourceSystem?.setStaminaRegenBlocked?.(window.Combat.deps?.player, STAMINA_REGEN_BLOCK_SOURCE, true);
       window.Combat.setMovementSpeedMul(speedMul);
       window.Combat.deps.showToast('Blink Dodge active: hop, build speed, reverse sharply to hop again.', true);
     }
