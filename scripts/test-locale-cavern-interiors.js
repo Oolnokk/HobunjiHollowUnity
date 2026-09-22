@@ -75,7 +75,7 @@ assert.strictEqual(carveCall.floor.length, built.floor.length, 'the exact painte
 assert.deepStrictEqual(carveCall.options.entrance, { col: 6, row: 10, side: 'south' });
 assert.strictEqual(built.keyGatedDoors[0].requiresKeyItem, 'color_pools_key');
 assert.deepStrictEqual(JSON.parse(JSON.stringify(built.entrySpots.color_pools_door)), { col: 6, row: 1, side: 'north' });
-assert(built.npcStations.some(station => station.id === 'station_banubu_cave_sleep' && station.pose === 'lie'));
+assert(built.npcStations.some(station => station.id === 'station_banubu_cave_sleep' && station.pose === 'lie'));\nassert.deepStrictEqual(JSON.parse(JSON.stringify(built.cinematicCameras)), banubu.cinematicCameras, 'locale cavern synthesis must preserve authored cinematic camera records');
 
 const sculptorSource = read('docs/js/cavern-sculptor.js');
 const generatorSource = read('docs/js/cavern-generator.js');
