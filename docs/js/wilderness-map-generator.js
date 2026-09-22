@@ -8350,11 +8350,14 @@
           cinematicCameras: (meta.cinematicCameras || []).map(camera => {
             const p = camera.position || {}, t = camera.target || {}, stage = camera.playerStage || null;
             const worldP = toWorldContinuous(Number(p.x) || 0, Number(p.z) || 0);
-            const worldT = toWorldContinuous(Number(t.x) || 0, Number(t.z) || 0);
+            const npcTargeted = !!camera.targetNpcId;
+            const worldT = npcTargeted
+              ? { x: (Number(t.x) || 0) * localeScale, y: Number(t.y) || 0, z: (Number(t.z) || 0) * localeScale } // Face-relative offsets scale with the moving locale, but never receive its world translation.
+              : (() => { const target = toWorldContinuous(Number(t.x) || 0, Number(t.z) || 0); return { x: target.x, y: Number(t.y) || 0, z: target.y }; })();
             return {
               ...clonePlain(camera),
               position: { x: worldP.x, y: Number(p.y) || 0, z: worldP.y },
-              target: { x: worldT.x, y: Number(t.y) || 0, z: worldT.y },
+              target: worldT,
               playerStage: stage ? (() => { const worldStage = toWorldContinuous(Number(stage.x) || 0, Number(stage.z) || 0); return { x: worldStage.x, z: worldStage.y }; })() : null,
               sourceLocaleId: meta.localeId,
             };
