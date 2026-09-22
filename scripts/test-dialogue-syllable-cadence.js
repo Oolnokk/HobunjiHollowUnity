@@ -92,7 +92,7 @@ assert.match(configText, /"npcDialogue"[\s\S]{0,500}"maxFps": 30/, 'dialogue por
 
 const index = read('docs/index.html');
 assert.match(index, /portrait-breathing\.js\?v=20260831syllable4/);
-assert.match(index, /dialogue-content\.js\?v=20260831syllable4/);
-assert.match(index, /ambient-dialogue\.js\?v=20260831syllable4/);
+assert.match(index, /dialogue-content\.js\?v=20260922friendface1/);
+assert.match(index, /ambient-dialogue\.js\?v=20260922friendface2/);
 
 console.log('Dialogue syllable cadence test passed');
