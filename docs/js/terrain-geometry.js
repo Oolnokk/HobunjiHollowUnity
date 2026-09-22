@@ -24,6 +24,8 @@
   let deps = null;
   function init(injectedDeps) { deps = injectedDeps; }
 
+  const TOWN_WATER_BANK_GRASS_LIP_HEIGHT = 0.14; // Used by soft town waterways to give adjacent grass a real opaque shoreline lip instead of letting low camera rays see water through the lower tuft gaps.
+
   // Geometry — full 1.0×1.0 footprint, no gaps
   // Per-tile floor: 2×2 top subdivisions with seam-free vertex displacement.
   // Displacement key is (round(worldX*2), round(worldZ*2)) so shared edge
@@ -959,7 +961,7 @@
     // to the trench geometry itself for that renderer. Ordered samples keep
     // each quad front-facing toward the surrounding ground and share edge
     // vertices so normals remain smooth along the wall.
-    const wallIdx = [];
+    const wallIdx = []; // Used for full-depth wilderness/trench cut walls.
     if (isDepression && options.includeCutWalls) {
       const sharesBasin = neighborType => isTrench
         ? neighborType === deps.TileType.TRENCH
@@ -991,6 +993,35 @@
       if (!sharesBasin(srcGrid[row]?.[col + 1]?.type)) appendWall(Array.from({ length: VERTS }, (_, i) => ({ vi: CELLS, vj: CELLS - i })), false);
     }
 
+    const bankGrassLipIdx = []; // Used only by softly tapered town waterways where a neighboring GRASS tile can otherwise silhouette against water through the lower billboard gaps.
+    if (isDepression && !options.includeCutWalls && deps.WATERWAY_TYPES.has(type)) {
+      const neighborIsGrass = neighborType => neighborType === deps.TileType.GRASS; // Used to keep the lip scoped to actual grass-bank presentation rather than paths, buildings, or other shoreline materials.
+      const appendGrassBankLip = (samples, horizontal) => {
+        const first = positions.length / 3; // Used as the index base for this shoreline strip's paired top/base vertices.
+        for (const { vi, vj } of samples) {
+          const x = vi * STEP - 0.5, z = vj * STEP - 0.5;
+          const worldX = col + vi * STEP, worldZ = row + vj * STEP;
+          const baseY = seamDisp(worldX, worldZ); // Used to meet the neighboring land surface at the exact shared-edge height.
+          const topY = baseY + TOWN_WATER_BANK_GRASS_LIP_HEIGHT; // Used to cover the lower grass-card sightline without changing collision, water height, or the tapered river bed.
+          const along = horizontal ? worldX : worldZ;
+          positions.push(x, topY, z, x, baseY, z);
+          uvs.push(along, topY, along, baseY);
+        }
+        for (let i = 0; i < samples.length - 1; i++) {
+          const top0 = first + i * 2, base0 = top0 + 1;
+          const top1 = top0 + 2, base1 = top0 + 3;
+          // Reverse the cut-wall winding: this face points toward the grass
+          // bank/camera, so it blocks river color behind the lower tuft gaps
+          // while the existing soft bed remains unchanged on the water side.
+          bankGrassLipIdx.push(top0, base0, base1, top0, base1, top1);
+        }
+      };
+      if (neighborIsGrass(srcGrid[row - 1]?.[col]?.type)) appendGrassBankLip(Array.from({ length: VERTS }, (_, i) => ({ vi: CELLS - i, vj: 0 })), true);
+      if (neighborIsGrass(srcGrid[row + 1]?.[col]?.type)) appendGrassBankLip(Array.from({ length: VERTS }, (_, i) => ({ vi: i, vj: CELLS })), true);
+      if (neighborIsGrass(srcGrid[row]?.[col - 1]?.type)) appendGrassBankLip(Array.from({ length: VERTS }, (_, i) => ({ vi: 0, vj: i })), false);
+      if (neighborIsGrass(srcGrid[row]?.[col + 1]?.type)) appendGrassBankLip(Array.from({ length: VERTS }, (_, i) => ({ vi: CELLS, vj: CELLS - i })), false);
+    }
+
     // Split cells: dirt where significantly depressed (trench) or elevated (raised);
     // grass on flat edge cells that blend back to ground level.
     const DIRT_THRESH = 0.05;
@@ -1009,6 +1040,7 @@
     const posAttr = new THREE.Float32BufferAttribute(positions, 3);
     const uvAttr  = new THREE.Float32BufferAttribute(uvs, 2);
     dirtIdx.push(...wallIdx);
+    grassIdx.push(...bankGrassLipIdx);
     const makeGeo = idx => {
       if (!idx.length) return null;
       const g = new THREE.BufferGeometry();
@@ -1023,6 +1055,7 @@
 
   window.TerrainGeometry = {
     init,
+    TOWN_WATER_BANK_GRASS_LIP_HEIGHT,
     makeFloorGeo, _mergeTileGeos, buildPathTileGeo, buildPathNetworkGeo,
     preparePathSplineData, buildAllPathBrickChunks, registerPathBrickChunks,
     updatePathBrickCulling, buildRockTileGeo, buildTerrainTileGeo,
