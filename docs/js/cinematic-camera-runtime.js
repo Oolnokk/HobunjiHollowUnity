@@ -34,7 +34,8 @@
     const camera = raw && typeof raw === 'object' ? raw : {};
     const id = String(camera.id || `camera_${index + 1}`);
     const position = normalizePoint(camera.position, 0.35);
-    const target = normalizePoint(camera.target, 0.8);
+    const targetNpcId = String(camera.targetNpcId || '');
+    const target = normalizePoint(camera.target, targetNpcId ? 0 : 0.8); // When targetNpcId is set this is a face-relative offset; otherwise it remains an absolute authored point.
     const stageRaw = camera.playerStage && typeof camera.playerStage === 'object' ? camera.playerStage : null;
     return {
       ...camera,
@@ -42,6 +43,8 @@
       label: String(camera.label || id),
       position,
       target,
+      targetNpcId,
+      targetAnchorId: String(camera.targetAnchorId || ''),
       fovDeg: Math.max(10, Math.min(120, finite(camera.fovDeg, 42))),
       blendSeconds: Math.max(0, finite(camera.blendSeconds, 0.45)),
       dialogueNpcId: String(camera.dialogueNpcId || ''),
@@ -92,6 +95,8 @@
       areaId: String(areaId || ''),
       camera,
       reason: String(options.reason || 'manual'),
+      targetWalker: options.targetWalker || null,
+      lastResolvedTarget: null,
       activatedAt: performance.now(),
     };
     return active;
@@ -99,6 +104,39 @@
 
   function deactivate() {
     active = null;
+  }
+
+  function walkerNpcId(walker) {
+    return String(walker?.rec?.id || walker?.npcId || '');
+  }
+
+  function targetWalkerFor(camera, record = active) {
+    const npcId = String(camera?.targetNpcId || '');
+    if (!npcId) return null;
+    const direct = record?.targetWalker;
+    if (direct && walkerNpcId(direct) === npcId) return direct;
+    return deps?.getNpcWalker?.(npcId, record?.areaId || deps?.getCurrentArea?.()) || null;
+  }
+
+  function resolvedTargetFor(camera, record = active) {
+    if (!camera) return null;
+    if (!camera.targetNpcId) return { ...camera.target };
+    const walker = targetWalkerFor(camera, record);
+    const face = walker ? deps?.getNpcFacePosition?.(walker) : null;
+    if (!face || !Number.isFinite(Number(face.x)) || !Number.isFinite(Number(face.y)) || !Number.isFinite(Number(face.z))) {
+      return record?.lastResolvedTarget ? { ...record.lastResolvedTarget } : null;
+    }
+    const resolved = {
+      x: Number(face.x) + finite(camera.target?.x, 0),
+      y: Number(face.y) + finite(camera.target?.y, 0),
+      z: Number(face.z) + finite(camera.target?.z, 0),
+    };
+    if (record) record.lastResolvedTarget = resolved;
+    return { ...resolved };
+  }
+
+  function resolvedTarget() {
+    return resolvedTargetFor(active?.camera, active);
   }
 
   function nearestDialogueCamera(context) {
@@ -118,12 +156,20 @@
     const z = finite(root?.position?.z, NaN);
     if (!Number.isFinite(x) || !Number.isFinite(z)) return candidates[0];
 
+    const stationId = String(context?.walker?.currentScheduleTarget?.stationId || context?.walker?.currentScheduleTarget?.id || context?.walker?._seatedStationKey || '');
+    if (stationId) {
+      const stationMatch = candidates.find(camera => camera.targetAnchorId && camera.targetAnchorId === stationId);
+      if (stationMatch) return stationMatch;
+    }
+
     let best = candidates[0];
     let bestDistance = Infinity;
     for (const camera of candidates) {
-      const tx = finite(camera.target?.x, 0);
-      const tz = finite(camera.target?.z, 0);
-      const distance = (tx - x) * (tx - x) + (tz - z) * (tz - z);
+      // NPC-targeted cameras store target as a face-relative offset, so it cannot identify which authored shot is spatially nearest.
+      // Use the camera position as the fallback discriminator; legacy absolute-target cameras keep their old target-based behavior.
+      const px = camera.targetNpcId ? finite(camera.position?.x, 0) : finite(camera.target?.x, 0);
+      const pz = camera.targetNpcId ? finite(camera.position?.z, 0) : finite(camera.target?.z, 0);
+      const distance = (px - x) * (px - x) + (pz - z) * (pz - z);
       if (distance < bestDistance) {
         best = camera;
         bestDistance = distance;
@@ -144,14 +190,14 @@
       active = null;
       return null;
     }
-    return activate(dialogueContext.areaId, camera.id, { reason: 'dialogue' });
+    return activate(dialogueContext.areaId, camera.id, { reason: 'dialogue', targetWalker: dialogueContext.walker });
   }
 
   function applyDialogueNodeCamera(node) {
     if (!dialogueContext || !node || typeof node !== 'object') return active;
     const cameraId = String(node.cameraId || '');
     if (!cameraId) return active;
-    return activate(dialogueContext.areaId, cameraId, { reason: 'dialogue-node' }) || active;
+    return activate(dialogueContext.areaId, cameraId, { reason: 'dialogue-node', targetWalker: dialogueContext.walker }) || active;
   }
 
   function endDialogue() {
@@ -285,6 +331,7 @@
     endDialogue,
     activeCamera,
     activeRecord,
+    resolvedTarget,
     currentPlayerStage,
     isActive,
     update,
