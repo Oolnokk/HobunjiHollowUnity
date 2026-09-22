@@ -95,7 +95,7 @@
     ['js/mastery-policy.js?v=20260921rangedmastery2', () => !!window.HobunjiMasteryPolicy],
     ['js/inventory-action-metadata-bridge.js?v=20260813b', () => !!window.HobunjiInventoryActionMetadataBridge],
     ['js/inventory-held-override.js?v=20260918blackstamina1', () => !!window.InventoryHeldOverride],
-    ['js/clothing-weaving-system.js?v=20260921reviewfix1', () => Number(window.ClothingWeavingSystem?.version) >= 1],
+    ['js/clothing-weaving-system.js?v=20260921weaveaudit1', () => Number(window.ClothingWeavingSystem?.version) >= 1],
     ['js/clothing-weight-dodge-policy.js?v=20260913a', () => Number(window.ClothingWeightDodgePolicy?.version) >= 1],
     ['js/inventory-character-effects.js?v=20260915a', () => Number(window.InventoryCharacterEffects?.version) >= 1],
     ['js/inventory-gear-compact-effects.js?v=20260915b', () => Number(window.InventoryGearCompactEffects?.version) >= 2],

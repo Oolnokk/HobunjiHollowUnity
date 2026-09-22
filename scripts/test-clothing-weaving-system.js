@@ -81,7 +81,10 @@ const windowStub = {
     toClothingColor(dye) { return { dyeId: dye.id, label: dye.label, hex: dye.hex }; },
     ownedByHue() { return []; },
   },
-  PatternLibrary: { listAvailable() { return []; } },
+  PatternLibrary: {
+    listAvailable() { return []; },
+    getById() { return null; },
+  },
   PatternAuthoring: {},
   ActionPromptUI: { getLastInputDevice() { return 'desktop'; } },
   __hobunjiFurnitureDebug: { getCurrentArea() { return null; }, playerState: player, targetAimAngleDeg: 0 },
@@ -196,7 +199,14 @@ const lightTunic = {
   colorC: { dyeId: 'starter-red', hex: '#aa0000' },
   weightUnits: 1.8,
   weaveMaterial: 'light',
-  weaving: { pattern: { motifDataUrl: 'data:image/png;base64,AA==' } },
+  weaving: {
+    layers: {
+      __default: {
+        pattern: { motifDataUrl: 'data:image/png;base64,AA==' },
+        patternLabel: 'Custom',
+      },
+    },
+  },
 };
 gear.clothingItems.push(lightTunic);
 gear.clothing.torso = lightTunic;
@@ -206,6 +216,25 @@ assert(applied.equippedCosmetics.includes('tankan_tunic'), 'crafted cosmetic tra
 assert(!applied.equippedCosmetics.includes(lightTunic.cosmeticId), 'unique crafted id never leaks into portrait cosmetic lookup');
 assert.equal(applied.appearance.bodyColors.TORSO_C.dyeId, 'starter-red', 'woven color uses the third torso dye slot');
 assert.equal(applied.appearance.bodyColors.__hobunjiWovenClothing[0].baseCosmeticId, 'tankan_tunic', 'pattern descriptor follows avatar render data only');
+assert.equal(api.__test.weavingPatternForRole(lightTunic.weaving, null).motifDataUrl, 'data:image/png;base64,AA==', 'modern per-layer weaving resolves the default layer');
+const legacyPattern = { motifDataUrl: 'data:image/png;base64,LEGACY==' }; // Keeps pre-layer-save compatibility covered while the main fixture exercises the modern format.
+assert.equal(api.__test.weavingPatternForRole({ pattern: legacyPattern }, 'anything'), legacyPattern, 'legacy single-pattern saves still resolve across every layer');
+windowStub.PatternLibrary.getById = id => id === 'live-pattern' ? { motifDataUrl: 'data:image/png;base64,MIGRATED==' } : null;
+const referenceOnlyItem = { weaving: { layers: { base: { patternLibraryId: 'live-pattern', patternLabel: 'Saved' } } } }; // Models a garment made by the short-lived reference-only implementation.
+assert.equal(api.__test.materializeWeavingLibrarySnapshots(referenceOnlyItem), true, 'reference-only garment is upgraded while its source library entry still exists');
+assert.equal(referenceOnlyItem.weaving.layers.base.pattern.motifDataUrl, 'data:image/png;base64,MIGRATED==', 'migration embeds the resolved source motif on the garment');
+assert.equal(api.__test.materializeWeavingLibrarySnapshots(referenceOnlyItem), false, 'already snapshotted garment is not rewritten repeatedly');
+windowStub.PatternLibrary.getById = () => null;
+const deadLibraryOnlyWeaving = { layers: { base: { patternLibraryId: 'deleted-pattern', patternLabel: 'Deleted' } } };
+assert.equal(api.__test.weavingPatternForRole(deadLibraryOnlyWeaving, 'base'), null, 'deleted library-only references resolve to no pattern');
+assert.equal(api.__test.weavingHasAnyPattern(deadLibraryOnlyWeaving), false, 'deleted library-only references do not keep the woven state alive');
+assert.equal(api.__test.summarizeWeavingLabel(deadLibraryOnlyWeaving), null, 'deleted library-only references do not produce a misleading pattern label');
+const bakedLibrarySnapshot = { layers: { base: { pattern: { motifDataUrl: 'data:image/png;base64,BAKED==' }, patternLibraryId: 'deleted-pattern', patternLabel: 'Diamond' } } };
+assert.equal(api.__test.weavingPatternForRole(bakedLibrarySnapshot, 'base').motifDataUrl, 'data:image/png;base64,BAKED==', 'embedded garment snapshot survives deletion of its source library entry');
+assert.equal(api.__test.weavingHasAnyPattern(bakedLibrarySnapshot), true, 'embedded garment snapshot remains visibly woven');
+assert.equal(api.__test.summarizeWeavingLabel(bakedLibrarySnapshot), 'Diamond', 'embedded garment snapshot keeps its authored label');
+const diamondBasis = api.__test.frameShapeFor('diamond').basis(100, 80); // Locks the edge-sharing lattice that prevents uncovered corner gaps.
+assert.deepEqual(diamondBasis, { u: { x: 50, y: 40 }, v: { x: 50, y: -40 } });
 assert(gear.knownClothingBlueprints.some(bp => bp.baseCosmeticId === 'tankan_tunic'), 'obtaining cloth permanently learns its loom blueprint');
 assert.equal(api.hasWovenPattern(lightTunic), true, 'woven item exposes its precomposited-icon status to EquipmentPanel');
 
@@ -254,6 +283,14 @@ assert.match(source, /TORSO_C/);
 assert.match(source, /CLOTH_C/);
 assert.match(source, /puktukWool/);
 assert.match(source, /lightWool/);
+assert.match(source, /offloadCustomMotif:\s*false/, 'loom keeps custom motif pixels inside the literal garment save');
+assert.match(source, /previewRevision/, 'loom preview has a revision guard for stale asynchronous renders');
+assert.match(source, /pattern: clone\(pattern\),[\s\S]*patternLibraryId: entry\.patternId/, 'library-backed garments retain provenance while embedding their own pattern snapshot');
+assert.match(patternAuthorSource, /options\.offloadCustomMotif === false/, 'shared pattern authoring lets weaving opt out of auxiliary motif storage');
+const diamondLatticeSource = 'basis: (w, h) => ({ u: { x: w / 2, y: h / 2 }, v: { x: w / 2, y: -h / 2 } })';
+assert(source.includes(diamondLatticeSource), 'weaving uses the edge-sharing diamond lattice');
+assert(patternAuthorSource.includes(diamondLatticeSource), 'pattern authoring uses the same diamond lattice');
+assert(metalPatternSource.includes(diamondLatticeSource), 'metal pattern rendering uses the same diamond lattice');
 assert.match(source, /wovenIconDataUrlPromises/, 'woven inventory icons use a visual-state cache instead of recompositing during UI refreshes');
 assert.match(source, /renderClothingLayers\(id, \{/, 'woven icon cache is populated by the same per-layer dye + pattern renderer as the loom preview');
 assert.match(source, /function reweaveFromLoom\(/, 'loom mutates a selected Gear garment through the dedicated reweave path');

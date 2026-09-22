@@ -1,13 +1,11 @@
 // Motif Store — off-save storage for player-drawn pattern motifs.
 //
-// A per-item "Custom" pattern (one drawn in pattern-authoring.js and applied
-// straight to a garment layer or a tool's verdigris plating, never saved to
-// the shared PatternLibrary) used to embed its full motif PNG as a base64
-// data URL directly inside gearInventory, which then got re-serialized on
-// every single gearInventory save regardless of whether that motif was
-// touched. This store moves that PNG out to its own file, written once when
-// the pattern is authored and read back only by whatever render/recolor call
-// actually needs its pixels — the save itself keeps only a small
+// A per-item "Custom" pattern can opt into storing its motif PNG outside the
+// main save instead of embedding a base64 data URL that is re-serialized on
+// every gearInventory save. Tool verdigris patterns use this compact path.
+// Crafted/reweaved clothing deliberately opts out because the motif is part
+// of the literal garment and must remain intact even if its source library or
+// auxiliary motif storage disappears. Opted-in callers keep only a small
 // customMotifId reference (see pattern-authoring.js's offloadMotif). When a
 // primary save folder is connected, the same PNG is mirrored to
 // <save-folder>/patterns/<customMotifId>.png so the reference is portable.
