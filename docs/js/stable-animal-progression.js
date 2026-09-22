@@ -529,6 +529,7 @@
     for (const walker of walkers) {
       const npcId = walker.rec?.id;
       if (!npcId) continue;
+      if (window.AmbientDialogue?.hasActiveGreetingFor?.(npcId)) continue; // Existing greeting owns this encounter until its chathead fully clears; the 700 ms animal scan can retry afterward without another per-frame path.
       const distance = Math.hypot(walker.root.position.x - player.x, walker.root.position.z - player.z);
       if (distance > 3.3) continue;
       const animal = animals[Math.abs(hashCode(`${npcId}:${day}`)) % animals.length];
