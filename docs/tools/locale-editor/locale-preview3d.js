@@ -243,12 +243,14 @@
       </div>
       <div id="localeCameraSliderPanel" style="display:none;position:absolute;right:8px;top:72px;width:min(340px,calc(100% - 16px));max-height:calc(100% - 138px);overflow:auto;background:rgba(4,8,13,.92);border:1px solid rgba(255,255,255,.16);border-radius:10px;padding:9px;color:#dbeafe;backdrop-filter:blur(5px);touch-action:auto">
         <div style="display:flex;gap:8px;align-items:center;margin-bottom:7px"><b id="localeCameraSliderTitle" style="flex:1">Camera view</b><button class="sec" id="localeCameraSliderOrbit" type="button">Orbit</button></div>
+        <label style="display:block;font-size:11px;margin-bottom:5px">Auto target NPC<select id="localeCameraTargetNpc" style="width:100%;margin-top:2px"></select></label>
+        <label style="display:block;font-size:11px;margin-bottom:7px">Preview/station anchor<select id="localeCameraTargetAnchor" style="width:100%;margin-top:2px"></select></label>
         <div class="localeCameraSliderRow" data-camera-row="position.x"><label style="display:flex;justify-content:space-between;font-size:11px">Camera X <span data-camera-value="position.x"></span></label><input data-camera-slider="position.x" type="range" step=".05" style="width:100%"></div>
         <div class="localeCameraSliderRow" data-camera-row="position.y"><label style="display:flex;justify-content:space-between;font-size:11px">Camera Y <span data-camera-value="position.y"></span></label><input data-camera-slider="position.y" type="range" step=".02" style="width:100%"></div>
         <div class="localeCameraSliderRow" data-camera-row="position.z"><label style="display:flex;justify-content:space-between;font-size:11px">Camera Z <span data-camera-value="position.z"></span></label><input data-camera-slider="position.z" type="range" step=".05" style="width:100%"></div>
-        <div class="localeCameraSliderRow" data-camera-row="target.x"><label style="display:flex;justify-content:space-between;font-size:11px">Target X <span data-camera-value="target.x"></span></label><input data-camera-slider="target.x" type="range" step=".05" style="width:100%"></div>
-        <div class="localeCameraSliderRow" data-camera-row="target.y"><label style="display:flex;justify-content:space-between;font-size:11px">Target Y <span data-camera-value="target.y"></span></label><input data-camera-slider="target.y" type="range" step=".02" style="width:100%"></div>
-        <div class="localeCameraSliderRow" data-camera-row="target.z"><label style="display:flex;justify-content:space-between;font-size:11px">Target Z <span data-camera-value="target.z"></span></label><input data-camera-slider="target.z" type="range" step=".05" style="width:100%"></div>
+        <div class="localeCameraSliderRow" data-camera-row="target.x"><label style="display:flex;justify-content:space-between;font-size:11px"><span data-camera-target-label="x">Target X</span> <span data-camera-value="target.x"></span></label><input data-camera-slider="target.x" type="range" step=".05" style="width:100%"></div>
+        <div class="localeCameraSliderRow" data-camera-row="target.y"><label style="display:flex;justify-content:space-between;font-size:11px"><span data-camera-target-label="y">Target Y</span> <span data-camera-value="target.y"></span></label><input data-camera-slider="target.y" type="range" step=".02" style="width:100%"></div>
+        <div class="localeCameraSliderRow" data-camera-row="target.z"><label style="display:flex;justify-content:space-between;font-size:11px"><span data-camera-target-label="z">Target Z</span> <span data-camera-value="target.z"></span></label><input data-camera-slider="target.z" type="range" step=".05" style="width:100%"></div>
         <div class="localeCameraSliderRow" data-camera-row="fovDeg"><label style="display:flex;justify-content:space-between;font-size:11px">FOV <span data-camera-value="fovDeg"></span></label><input data-camera-slider="fovDeg" type="range" min="10" max="120" step="1" style="width:100%"></div>
         <div style="font-size:10px;opacity:.7;margin-top:6px">Drag for a live preview. The final value is saved when you release the slider; cave geometry is not regenerated.</div>
       </div>
@@ -283,6 +285,23 @@
     });
     document.getElementById('localeSandboxRandomize').addEventListener('click', () => regenerateScenario({ newSeed: currentPreviewMode === 'exterior', force: true }));
     document.getElementById('localeSandboxCamera').addEventListener('change', () => applySelectedCinematicCamera());
+    document.getElementById('localeCameraTargetNpc').addEventListener('change', event => {
+      const record = cameraPreviewRecord(currentLocale, activeCinematicCameraId);
+      if (!record) return;
+      record.targetNpcId = String(event.target.value || '');
+      record.targetAnchorId = record.targetNpcId ? (currentLocale?.npcAnchors || []).find(anchor => anchor.npcId === record.targetNpcId)?.id || '' : '';
+      if (record.targetNpcId) record.target = { x: 0, y: 0, z: 0 };
+      commitPreviewCameraRecord(record);
+      syncCameraSliderPanel(currentLocale, record);
+      applySelectedCinematicCamera({ syncSliders: false });
+    });
+    document.getElementById('localeCameraTargetAnchor').addEventListener('change', event => {
+      const record = cameraPreviewRecord(currentLocale, activeCinematicCameraId);
+      if (!record) return;
+      record.targetAnchorId = String(event.target.value || '');
+      commitPreviewCameraRecord(record);
+      applySelectedCinematicCamera({ syncSliders: false });
+    });
     overlay.querySelectorAll('[data-camera-slider]').forEach(input => {
       input.addEventListener('input', () => updateCameraFromSlider(input, false));
       input.addEventListener('change', () => updateCameraFromSlider(input, true));
@@ -1204,27 +1223,55 @@
     };
   }
 
+  function previewAnchorForNpc(locale, npcId, record = null) {
+    const anchors = (locale?.npcAnchors || []).filter(anchor => String(anchor.npcId || '') === String(npcId || ''));
+    if (!anchors.length) return null;
+    const preferredId = record?.targetNpcId === npcId ? String(record.targetAnchorId || '') : '';
+    return anchors.find(anchor => anchor.id === preferredId) || anchors[0];
+  }
+
+  function positionCavernNpcMarker(marker, anchor, mapData) {
+    if (!marker || !anchor) return;
+    const x = Number(anchor.col) + 0.5, z = Number(anchor.row) + 0.5;
+    const floorY = cavernSurfaceY(mapData, x, z);
+    const markerHeight = Number(marker.userData?.previewMarkerHeight) || 0.8;
+    marker.position.set(x, floorY + markerHeight * 0.5, z);
+    marker.userData.previewAnchorId = anchor.id || '';
+    marker.userData.previewFaceOffsetY = Number(marker.userData?.previewFaceOffsetY) || markerHeight * 0.40;
+  }
+
+  function syncPreviewNpcMarkerForCamera(locale, record) {
+    if (!record?.targetNpcId || !currentCavernMapData) return;
+    const marker = scene?.getObjectByName?.('localeSandboxCavernNpc_' + record.targetNpcId);
+    const anchor = previewAnchorForNpc(locale, record.targetNpcId, record);
+    if (marker && anchor) positionCavernNpcMarker(marker, anchor, currentCavernMapData);
+  }
+
   function renderCavernMarkers(group, locale, mapData) {
     const spriteTexture = new THREE.TextureLoader().load(new URL('../../assets/creaturesprites/grehlr_idle.png', location.href).href);
-    for (const anchor of locale?.npcAnchors || []) {
-      const x = Number(anchor.col) + 0.5, z = Number(anchor.row) + 0.5;
-      const y = cavernSurfaceY(mapData, x, z);
-      if (anchor.npcId === 'banubu') {
+    const uniqueNpcIds = [...new Set((locale?.npcAnchors || []).map(anchor => String(anchor.npcId || '')).filter(Boolean))];
+    for (const npcId of uniqueNpcIds) {
+      const anchor = previewAnchorForNpc(locale, npcId, cameraPreviewRecord(locale, activeCinematicCameraId));
+      if (!anchor) continue;
+      let marker;
+      if (npcId === 'banubu') {
         const material = new THREE.SpriteMaterial({ map: spriteTexture, transparent: true, depthWrite: false });
-        const sprite = new THREE.Sprite(material);
-        sprite.name = 'localeSandboxCavernNpc_' + anchor.npcId;
-        sprite.scale.set(2.2, 2.2 / 0.75, 1);
-        sprite.position.set(x, y + sprite.scale.y * 0.5, z);
-        group.add(sprite);
+        marker = new THREE.Sprite(material);
+        marker.scale.set(2.2, 2.2 / 0.75, 1);
+        marker.userData.previewMarkerHeight = marker.scale.y;
+        marker.userData.previewFaceOffsetY = marker.scale.y * 0.30; // Offset from sprite center to its visible upper-face region; runtime uses the real walker's exact dialogue eye-height.
       } else {
-        const marker = new THREE.Mesh(
+        marker = new THREE.Mesh(
           new THREE.CylinderGeometry(0.18, 0.24, 0.8, 10),
           new THREE.MeshBasicMaterial({ color: 0x60a5fa, transparent: true, opacity: 0.9 }),
         );
-        marker.name = 'localeSandboxCavernNpc_' + (anchor.npcId || anchor.id || 'npc');
-        marker.position.set(x, y + 0.4, z);
-        group.add(marker);
+        marker.userData.previewMarkerHeight = 0.8;
+        marker.userData.previewFaceOffsetY = 0.30;
       }
+      marker.name = 'localeSandboxCavernNpc_' + npcId;
+      marker.userData.previewNpcId = npcId;
+      positionCavernNpcMarker(marker, anchor, mapData);
+      group.add(marker);
     }
     for (const connector of locale?.connectors || []) {
       const x = Number(connector.col) + 0.5, z = Number(connector.row) + 0.5;
@@ -1277,11 +1324,12 @@
     return (locale?.cinematicCameras || []).find(record => String(record.id || '') === String(id || '')) || null;
   }
 
-  function cameraSliderRange(path, locale) {
+  function cameraSliderRange(path, locale, record = null) {
     const horizontalX = Math.max(2, Number(locale?.cols) || 1) + 2;
     const horizontalZ = Math.max(2, Number(locale?.rows) || 1) + 2;
     const verticalMax = Math.max(5, Number(locale?.cavern?.generation?.sizeY) || 3) + 3;
     if (path === 'fovDeg') return { min: 10, max: 120 };
+    if (record?.targetNpcId && path.startsWith('target.')) return { min: -3, max: 3 }; // NPC target transforms are small offsets from the live face, never map coordinates.
     if (path.endsWith('.y')) return { min: -2, max: verticalMax };
     if (path.endsWith('.x')) return { min: -2, max: horizontalX };
     return { min: -2, max: horizontalZ };
@@ -1301,6 +1349,63 @@
     const [group, axis] = path.split('.');
     record[group] = { ...(record[group] || {}), [axis]: value };
   }
+  function commitPreviewCameraRecord(record) {
+    if (!record) return null;
+    const saved = window._localeEditorBridge?.updateCinematicCamera?.(currentLocale?.id, record.id, {
+      position: { ...(record.position || {}) },
+      target: { ...(record.target || {}) },
+      targetNpcId: record.targetNpcId || '',
+      targetAnchorId: record.targetAnchorId || '',
+      fovDeg: record.fovDeg,
+    });
+    if (saved) Object.assign(record, saved);
+    return saved;
+  }
+  function previewNpcFacePosition(locale, record) {
+    if (!record?.targetNpcId) return null;
+    syncPreviewNpcMarkerForCamera(locale, record);
+    if (currentPreviewMode === 'interior') {
+      const marker = scene?.getObjectByName?.('localeSandboxCavernNpc_' + record.targetNpcId);
+      if (marker) {
+        const p = new THREE.Vector3();
+        marker.getWorldPosition(p);
+        return { x: p.x, y: p.y + (Number(marker.userData?.previewFaceOffsetY) || 0), z: p.z };
+      }
+    }
+    const anchor = previewAnchorForNpc(locale, record.targetNpcId, record);
+    if (!anchor) return null;
+    if (currentPreviewMode === 'exterior') {
+      const scale = currentCandidate?.scale || window.LocaleTerrainPlacement?.inferGenerationScale?.(currentWorkspace) || 1;
+      const placed = currentInstance || currentWorkspace?.localeInstances?.find(item => item.localeId === locale?.id);
+      const anchorX = finiteCoordinate(placed?.x) ?? finiteCoordinate(placed?.col) ?? finiteCoordinate(currentCandidate?.anchorC) ?? 0;
+      const anchorZ = finiteCoordinate(placed?.y) ?? finiteCoordinate(placed?.row) ?? finiteCoordinate(currentCandidate?.anchorR) ?? 0;
+      const x = anchorX + (Number(anchor.col) + 0.5) * scale;
+      const z = anchorZ + (Number(anchor.row) + 0.5) * scale;
+      return { x, y: surfaceY(currentMerged, x, z) + 0.8, z };
+    }
+    return null;
+  }
+  function resolvedPreviewCameraTarget(locale, record) {
+    const t = record?.target || {};
+    if (record?.targetNpcId) {
+      const face = previewNpcFacePosition(locale, record);
+      if (face) return {
+        x: face.x + (Number(t.x) || 0),
+        y: face.y + (Number(t.y) || 0),
+        z: face.z + (Number(t.z) || 0),
+      };
+    }
+    let x = Number(t.x) || 0, y = Number(t.y) || 0, z = Number(t.z) || 0;
+    if (currentPreviewMode === 'exterior') {
+      const scale = currentCandidate?.scale || window.LocaleTerrainPlacement?.inferGenerationScale?.(currentWorkspace) || 1;
+      const placed = currentInstance || currentWorkspace?.localeInstances?.find(item => item.localeId === locale?.id);
+      const anchorX = finiteCoordinate(placed?.x) ?? finiteCoordinate(placed?.col) ?? finiteCoordinate(currentCandidate?.anchorC) ?? 0;
+      const anchorZ = finiteCoordinate(placed?.y) ?? finiteCoordinate(placed?.row) ?? finiteCoordinate(currentCandidate?.anchorR) ?? 0;
+      x = anchorX + x * scale;
+      z = anchorZ + z * scale;
+    }
+    return { x, y, z };
+  }
   function syncCameraSliderPanel(locale, record) {
     const panel = document.getElementById('localeCameraSliderPanel');
     if (!panel) return;
@@ -1308,9 +1413,26 @@
     if (!record) return;
     const title = document.getElementById('localeCameraSliderTitle');
     if (title) title.textContent = record.label || record.id || 'Camera view';
+    const npcSelect = document.getElementById('localeCameraTargetNpc');
+    const anchorSelect = document.getElementById('localeCameraTargetAnchor');
+    const npcIds = [...new Set((locale?.npcAnchors || []).map(anchor => String(anchor.npcId || '')).filter(Boolean))];
+    if (npcSelect) {
+      npcSelect.innerHTML = '<option value="">Absolute map point</option>' + npcIds.map(id => `<option value="${id.replace(/"/g, '&quot;')}">${id}</option>`).join('');
+      npcSelect.value = record.targetNpcId || '';
+    }
+    const anchors = (locale?.npcAnchors || []).filter(anchor => anchor.npcId === record.targetNpcId);
+    if (anchorSelect) {
+      anchorSelect.innerHTML = '<option value="">Auto / current live position</option>' + anchors.map(anchor => `<option value="${String(anchor.id || '').replace(/"/g, '&quot;')}">${String(anchor.name || anchor.id || 'Anchor')}</option>`).join('');
+      anchorSelect.value = anchors.some(anchor => anchor.id === record.targetAnchorId) ? record.targetAnchorId : '';
+      anchorSelect.disabled = !record.targetNpcId || !anchors.length;
+    }
+    panel.querySelectorAll('[data-camera-target-label]').forEach(label => {
+      const axis = String(label.dataset.cameraTargetLabel || '').toUpperCase();
+      label.textContent = record.targetNpcId ? `Face offset ${axis}` : `Target ${axis}`;
+    });
     panel.querySelectorAll('[data-camera-slider]').forEach(input => {
       const path = input.dataset.cameraSlider;
-      const range = cameraSliderRange(path, locale);
+      const range = cameraSliderRange(path, locale, record);
       input.min = String(range.min);
       input.max = String(range.max);
       const value = cameraRecordValue(record, path);
@@ -1329,12 +1451,7 @@
     if (output) output.textContent = path === 'fovDeg' ? `${Math.round(value)}°` : value.toFixed(2);
     applySelectedCinematicCamera({ syncSliders: false });
     if (!commit) return;
-    const saved = window._localeEditorBridge?.updateCinematicCamera?.(currentLocale?.id, record.id, {
-      position: { ...(record.position || {}) },
-      target: { ...(record.target || {}) },
-      fovDeg: record.fovDeg,
-    });
-    if (saved) Object.assign(record, saved);
+    commitPreviewCameraRecord(record);
   }
 
   function refreshCinematicCameraChoices(locale) {
@@ -1388,20 +1505,19 @@
     captureOrbitCameraState();
     activeCinematicCameraId = id;
     controls.enabled = false;
-    const p = record.position || {}, t = record.target || {};
+    const p = record.position || {};
     let px = Number(p.x) || 0, pz = Number(p.z) || 0;
-    let tx = Number(t.x) || 0, tz = Number(t.z) || 0;
     if (currentPreviewMode === 'exterior') {
       const scale = currentCandidate?.scale || window.LocaleTerrainPlacement?.inferGenerationScale?.(currentWorkspace) || 1;
       const placed = currentInstance || currentWorkspace?.localeInstances?.find(item => item.localeId === currentLocale?.id);
       const anchorX = finiteCoordinate(placed?.x) ?? finiteCoordinate(placed?.col) ?? finiteCoordinate(currentCandidate?.anchorC) ?? 0;
       const anchorZ = finiteCoordinate(placed?.y) ?? finiteCoordinate(placed?.row) ?? finiteCoordinate(currentCandidate?.anchorR) ?? 0;
       px = anchorX + px * scale; pz = anchorZ + pz * scale;
-      tx = anchorX + tx * scale; tz = anchorZ + tz * scale;
     }
+    const target = resolvedPreviewCameraTarget(currentLocale, record) || { x: 0, y: 0, z: 0 };
     camera.position.set(px, Number(p.y) || 0, pz);
     camera.fov = clamp(Number(record.fovDeg) || 42, 10, 120);
-    camera.lookAt(tx, Number(t.y) || 0, tz);
+    camera.lookAt(target.x, target.y, target.z);
     camera.updateProjectionMatrix();
     if (options.syncSliders !== false) syncCameraSliderPanel(currentLocale, record);
     requestPreviewRender();
@@ -1412,9 +1528,10 @@
     if (!root || !camera || !controls || !currentCavernMapData) return;
     const authored = currentLocale?.cinematicCameras?.[0]; // Best default inspect pose for story caverns: starts inside the shell at a shot the author already considers valid.
     if (authored?.position && authored?.target) {
-      const p = authored.position, t = authored.target;
+      const p = authored.position;
+      const target = resolvedPreviewCameraTarget(currentLocale, authored) || { x: 0, y: 0, z: 0 };
       camera.position.set(Number(p.x) || 0, Number(p.y) || 0, Number(p.z) || 0);
-      controls.target.set(Number(t.x) || 0, Number(t.y) || 0, Number(t.z) || 0);
+      controls.target.set(target.x, target.y, target.z);
       camera.fov = clamp(Number(authored.fovDeg) || 55, 10, 120);
     } else {
       const floor = currentCavernMapData.floor || [];
