@@ -434,9 +434,11 @@
   }
 
   function debugGrassBankSnapshot() {
+    const bankLipHeight = Number(window.TerrainGeometry?.TOWN_WATER_BANK_GRASS_LIP_HEIGHT || 0); // Used by Pixel Probe to distinguish the real shoreline-geometry fix from the earlier billboard-only inset.
     return {
       townRiverBankInsetTiles: Number(townGrassBillMesh?.userData?.riverBankInsetTiles || 0),
       bankSwayMargin: GRASS_BANK_SWAY_MARGIN,
+      bankLipHeight,
     };
   }
 
