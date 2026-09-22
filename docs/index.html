@@ -1813,7 +1813,7 @@
           <label class="settings-row">
             <div class="settings-label">
               <div class="settings-name">Paint Filter <span style="font-size:10px;opacity:.7">(Experimental)</span></div>
-              <div class="settings-desc">Strong screenshot-style oil grouping + watercolor wash/stain with a small crispness/color corrective pass. World render only; HUD, menus, reticle UI, and dialogue overlays stay crisp. Currently uses the outline composite, so Outlines must remain enabled. High is intentionally heavier.</div>
+              <div class="settings-desc">Strong screenshot-style oil grouping + watercolor wash/stain + corrective pass. Hard world outlines are intentionally softened and smudged into nearby cel colors so they read as shape accents instead of black dividers. HUD, menus, reticle UI, and dialogue overlays stay crisp. Currently uses the outline composite, so Outlines must remain enabled. High is intentionally heavier.</div>
               <div class="settings-desc" id="painterlyPostprocessStatus" role="status" aria-live="polite">Off — no extra texture samples are executed.</div>
             </div>
             <select id="settingPainterlyPostprocess" style="font-size:12px;padding:5px 8px;background:rgba(255,255,255,.06);border:1px solid var(--border-bright);border-radius:6px;color:var(--text);align-self:center">
@@ -2514,7 +2514,7 @@
   <!-- Optional world-only painterly postprocess. It patches the existing
        fullscreen world composite after renderer creation, persists only its
        quality mode, and owns no requestAnimationFrame loop. -->
-  <script src="js/painterly-postprocess.js?v=20260922paint2"></script>
+  <script src="js/painterly-postprocess.js?v=20260922paint3"></script>
   <script src="game.js?v=20260922banubureview1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
   <script src="js/controller-ui-nav.js?v=20260915perf1"></script>
