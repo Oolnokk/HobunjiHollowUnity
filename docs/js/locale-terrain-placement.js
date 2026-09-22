@@ -562,7 +562,8 @@
           continue;
         }
         valid++;
-        const tie = candidateTie(context.seed, `${compiled.locale.id}|rot:${rotationDeg}`, anchorC, anchorR);
+        const tieKey = rotationDeg === 0 ? compiled.locale.id : `${compiled.locale.id}|rot:${rotationDeg}`; // Preserve legacy deterministic placement for unrotated locales while keeping rotated variants independently distributed.
+        const tie = candidateTie(context.seed, tieKey, anchorC, anchorR);
         const ranked = { anchorC, anchorR, rotationDeg, tie, ...result };
         if (!best || ranked.score > best.score + 1e-9 || (Math.abs(ranked.score - best.score) <= 1e-9 && ranked.tie > best.tie)) best = ranked;
       }
@@ -860,6 +861,9 @@
     hasTerrainRules,
     compileLocale,
     inferGenerationScale,
+    rotateLocaleCardinal(locale, rotationDeg = 0) {
+      return rotatedLocaleVariant(locale, Math.round((Number(rotationDeg) || 0) / 90)); // Shared preview/debug helper uses the exact production cardinal transform without mutating authored data.
+    },
     appendInteriorTransition,
     placeTerrainAwareLocales,
     evaluateCandidateForTest(workspace, locale, anchorC, anchorR, options = {}) {
