@@ -356,6 +356,7 @@
           const itemList = (task.items || []).map(it => `${deps.esc(deps.ITEM_DEFS[it.itemKey]?.label || it.itemKey)} ×${it.qty} (have ${deps.inventory[it.itemKey] || 0})`).join(', ') || 'No delivery items recorded'; // Used to keep one malformed legacy task from aborting every quest row.
           const npcName = task.npcName || 'Unknown quest giver'; // Used by legacy/incomplete task rows that lack the newer npcName field.
           const source = task.kind === 'request' ? `${deps.esc(npcName)}'s request` : `${deps.esc(npcName)}'s favor`;
+          const rewardFriendship = window.ProceduralTasks?.taskFriendshipRewardPoints?.(task.rewardFriendship) ?? task.rewardFriendship ?? 0; // Used to display persisted pre-point-scale tasks using today's Favor-point units.
           const bonusNote = task.deadlineDay != null
             ? ((deps.calendar?.day || 0) <= task.deadlineDay
               ? ` Deliver by day ${task.deadlineDay} for ${task.rewardGold * (task.bonusMultiplier || 1)}g instead of ${task.rewardGold}g.`
@@ -365,7 +366,7 @@
             <div class="sh-icon">${task.kind === 'request' ? '❗' : '💌'}</div>
             <div class="sh-info">
               <div class="sh-name">${source} — ${itemList}</div>
-              <div class="sh-desc">Reward: ${task.rewardGold}g + ${task.rewardFriendship} friendship. Turn in to ${deps.esc(npcName)}.${bonusNote}</div>
+              <div class="sh-desc">Reward: ${task.rewardGold}g + ${rewardFriendship} Favor. Turn in to ${deps.esc(npcName)}.${bonusNote}</div>
             </div>
           `;
         }
