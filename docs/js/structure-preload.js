@@ -175,7 +175,7 @@
     const [wallReady, shingleReady, texturesReady] = await Promise.all([wallReadyPromise, shinglePromise, texturePromise]);
 
     if (wallReady) wallBuilder.tintDefaultGlb('assets/textures/carved_smooth.png', '#4d4d4d');
-    if (shingleReady) window.HousePieceGen?.tintShingleMaterial?.('assets/textures/carved_smooth.png', '#7d7355');
+    if (shingleReady) window.HousePieceGen?.tintShingleMaterial?.('assets/textures/carved_smooth.png', '#765536');
 
     const ready = !!(wallReady && shingleReady); // Used by callers to decide whether placeholder geometry/rebuild fallback is still necessary.
     if (ready && state.readyAtMs == null) state.readyAtMs = elapsedMs();
