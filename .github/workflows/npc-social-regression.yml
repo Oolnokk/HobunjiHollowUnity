@@ -12,6 +12,7 @@ on:
       - 'docs/js/local-db-overrides.js'
       - 'docs/js/banubu-quest-content.js'
       - 'docs/js/banubu-questline.js'
+      - 'docs/js/quest-reset-debug.js'
       - 'docs/js/named-animal-npc.js'
       - 'docs/js/cavern-generator.js'
       - 'docs/js/interior-scene-builder.js'
@@ -54,6 +55,7 @@ on:
       - 'scripts/test-npc-gifting-multitrait.js'
       - 'scripts/test-npc-social-rapport-wardrobes.js'
       - 'scripts/test-banubu-questline.js'
+      - 'scripts/test-quest-reset-debug.js'
       - 'scripts/test-locale-cavern-interiors.js'
       - 'scripts/test-named-animal-npc-species.js'
       - 'scripts/test-npc-social-seating.js'
@@ -78,6 +80,7 @@ on:
       - 'docs/js/local-db-overrides.js'
       - 'docs/js/banubu-quest-content.js'
       - 'docs/js/banubu-questline.js'
+      - 'docs/js/quest-reset-debug.js'
       - 'docs/js/named-animal-npc.js'
       - 'docs/js/cavern-generator.js'
       - 'docs/js/interior-scene-builder.js'
@@ -120,6 +123,7 @@ on:
       - 'scripts/test-npc-gifting-multitrait.js'
       - 'scripts/test-npc-social-rapport-wardrobes.js'
       - 'scripts/test-banubu-questline.js'
+      - 'scripts/test-quest-reset-debug.js'
       - 'scripts/test-locale-cavern-interiors.js'
       - 'scripts/test-named-animal-npc-species.js'
       - 'scripts/test-npc-social-seating.js'
@@ -197,6 +201,8 @@ jobs:
           node --check scripts/test-banubu-questline.js
           node --check docs/js/banubu-quest-content.js
           node --check docs/js/banubu-questline.js
+          node --check docs/js/quest-reset-debug.js
+          node --check scripts/test-quest-reset-debug.js
           node --check scripts/test-npc-swig-offer-cooldown.js
           node --check scripts/test-npc-wardrobe-placeholders.js
           node --check scripts/test-npc-bedroom-storage.js
@@ -224,6 +230,8 @@ jobs:
         run: node scripts/test-npc-social-rapport-wardrobes.js
       - name: Test Banubu staged wake-up and quest progression
         run: node scripts/test-banubu-questline.js
+      - name: Test active quest + dialogue reset debug tool
+        run: node scripts/test-quest-reset-debug.js
       - name: Test named-animal creature-first runtime
         run: node scripts/test-named-animal-npc-species.js
       - name: Test locale cavern floor and grounding parity
