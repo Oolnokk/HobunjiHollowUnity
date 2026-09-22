@@ -70,6 +70,9 @@ assert.equal(timers.length, 2, 'one revealed diphthong syllable still schedules 
 assert.ok(timers[1].delay > timers[0].delay, 'the diphthong vowel pulses are distributed inside one syllable interval');
 
 const dialogueContent = read('docs/js/dialogue-content.js');
+const scratchbonesConfig = read('docs/config/scratchbones-config.js');
+assert.match(scratchbonesConfig, /\"syllablesPerSecond\": 10/, 'default dialogue reveal cadence stays at the faster 10 syllables per second');
+assert.match(dialogueContent, /syllablesPerSecond: finiteClamped\(cfg\.syllablesPerSecond, 10, 1, 20\)/, 'dialogue fallback matches the configured faster cadence');
 assert.match(dialogueContent, /_npcDialogueTextEl\.textContent \+= unit\.text/, 'NPC dialogue reveals a whole cadence unit per timer');
 assert.match(dialogueContent, /_playNpcDialogueLetterSfx\(unit\.vowels\[index\]\)/, 'NPC dialogue plays exactly one tick for every vowel in a syllable');
 assert.match(dialogueContent, /portraitBreathingComposer\?\.triggerYap/, 'the same vowel reveal directly triggers one mouth yap');
