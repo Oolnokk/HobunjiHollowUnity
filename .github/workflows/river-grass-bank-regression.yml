@@ -4,7 +4,6 @@ on:
   push:
     paths:
       - 'docs/js/terrain-geometry.js'
-      - 'docs/js/terrain-geometry.js'
       - 'docs/js/vegetation-crop-rendering.js'
       - 'docs/js/pixel-probe.js'
       - 'docs/index.html'
@@ -13,6 +12,7 @@ on:
       - '.github/workflows/river-grass-bank-regression.yml'
   pull_request:
     paths:
+      - 'docs/js/terrain-geometry.js'
       - 'docs/js/vegetation-crop-rendering.js'
       - 'docs/js/pixel-probe.js'
       - 'docs/index.html'
