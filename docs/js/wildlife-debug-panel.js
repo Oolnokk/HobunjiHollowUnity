@@ -56,13 +56,28 @@
     </div>`;
   }
 
+  function renderRoamingHerdCensus() {
+    const zoneId = deps.getCurrentArea?.();
+    if (!zoneId || !deps._isZoneArea?.(zoneId)) return '';
+    const census = window.WildlifeSpawn.roamingHerdCensus?.(zoneId);
+    if (!census?.configuredHerds) return '';
+    const rows = census.herds.map(herd =>
+      `<div><b>${deps.esc(herd.herdKey)}</b>: ${herd.adults} adults · ${herd.mothers} Herd-Mother · ${herd.carriedBabies} carried babies · ${herd.sleeping} sleeping</div>`
+    ).join('');
+    return `<div style="padding:8px 10px;margin-bottom:8px;background:rgba(133,190,120,.08);border:1px solid rgba(133,190,120,.28);border-radius:6px;font-size:12px">
+      <div style="font-weight:600;color:#e5e7eb;margin-bottom:2px">Roaming Herd Census — ${deps.esc(zoneId)}</div>
+      <div>Configured: <b>${census.configuredHerds}</b> herd(s) · species: ${census.species.map(deps.esc).join(', ') || 'none'}</div>
+      ${rows || '<div style="opacity:.72">No living herd members spawned yet.</div>'}
+    </div>`;
+  }
+
   function renderWildlifeDebugPanel() {
     syncWildlifeTabVisibility();
     const container = document.getElementById('wildlifeDenList');
     if (!container) return;
-    const censusHtml = renderDenNestCensus();
+    const censusHtml = renderDenNestCensus() + renderRoamingHerdCensus();
     if (!window.WildlifeSpawn.getDenGenotypes().size) {
-      container.innerHTML = censusHtml + '<div style="opacity:.6;padding:8px 0">No den packs generated yet this session — enter a wilderness zone with wild dens, or force a Tothal Shift below, to populate this list.</div>';
+      container.innerHTML = censusHtml + '<div style="opacity:.6;padding:8px 0">No den-family genotypes generated yet this session. Roaming herds are reported separately above because they do not belong to caverns.</div>';
       return;
     }
     const swatch = (hex, size) => `<span style="display:inline-block;width:${size}px;height:${size}px;border-radius:3px;background:${deps.esc(hex)};vertical-align:middle;margin-right:4px;border:1px solid rgba(255,255,255,.3)"></span>`;
