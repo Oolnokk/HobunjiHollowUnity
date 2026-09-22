@@ -1221,6 +1221,8 @@ function buildExport(m) {
     id: m.id, name: m.name, category: m.category, singleton: m.singleton,
     description: m.description, tags: m.tags, cols: m.cols, rows: m.rows,
     tiles: m.tiles, objects: m.objects, npcAnchors: m.npcAnchors, connectors: m.connectors,
+    cinematicCameras: m.cinematicCameras || [],
+    cavern: m.cavern || null,
     terrainAnchors: m.terrainAnchors || {}, embeddedTiles: m.embeddedTiles || {},
     placement: m.placement, meta: m.meta
   };
@@ -1324,6 +1326,30 @@ setMode('pan');
 // Expose a tiny bridge so the dev-tools hub (docs/tools/index.html) can hook in later.
 window._localeEditorBridge = {
   getWorkspace: () => JSON.parse(JSON.stringify(ws)),
+  updateCinematicCamera: (localeId, cameraId, next) => {
+    const m = ws.locales.find(locale => locale.id === localeId);
+    const cam = (m?.cinematicCameras || []).find(camera => camera.id === cameraId);
+    if (!m || !cam || !next) return null;
+    const finite = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
+    if (next.position) cam.position = {
+      x: finite(next.position.x, cam.position?.x || 0),
+      y: finite(next.position.y, cam.position?.y || 0),
+      z: finite(next.position.z, cam.position?.z || 0),
+    };
+    if (next.target) cam.target = {
+      x: finite(next.target.x, cam.target?.x || 0),
+      y: finite(next.target.y, cam.target?.y || 0),
+      z: finite(next.target.z, cam.target?.z || 0),
+    };
+    if (next.fovDeg != null) cam.fovDeg = clamp(finite(next.fovDeg, cam.fovDeg || 42), 10, 120);
+    activeCinematicCameraId = cam.id;
+    m.meta.updatedAt = nowIso();
+    saveWorkspace();
+    renderCinematicCameraPanel();
+    renderJson();
+    draw();
+    return JSON.parse(JSON.stringify(cam));
+  },
   setTerrainRules: (localeId, rules) => {
     const m = ws.locales.find(locale => locale.id === localeId);
     if (!m) return false;
