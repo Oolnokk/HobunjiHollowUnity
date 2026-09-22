@@ -27613,6 +27613,7 @@
       // window.NpcWardrobe (js/npc-wardrobe.js), initialized just below.
       window.NpcGifting?.init({
         getItemDefs: () => ITEM_DEFS,
+        getNpcRecordById: npcId => scheduledNpcRecords.get(npcId) || npcWalkers.find(walker => walker.rec?.id === npcId)?.rec || null, // Canonical live preference source used to reconcile saved learned gift tiers after authored data changes.
         getHeldGiftItem,
         clearManualHeldItem,
         getGearInventory: () => gearInventory,
