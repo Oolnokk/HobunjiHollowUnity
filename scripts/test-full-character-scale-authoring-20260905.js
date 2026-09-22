@@ -21,7 +21,7 @@ const expected = {
   'tletingan::female': { x: 0.915, y: 0.89, head: 0.8823529411764706, offsetY: 0 },
   'engh-sho::male': { x: 0.8, y: 0.845, head: 0.7894736842105263, offsetY: 0 },
   'engh-sho::female': { x: 0.795, y: 0.81, head: 0.7894736842105263, offsetY: 0 },
-  'mao-ao::male': { x: 0.7425, y: 0.99, head: 0.66, offsetY: 0 },
+  'mao-ao::male': { x: 0.81675, y: 1.089, head: 0.726, offsetY: 0 },
   'mao-ao::female': { x: 1.045, y: 1.30625, head: 0.9375, offsetY: 0 },
   'kenkari::male': { x: 1.225, y: 1.225, head: 1, offsetY: 0 },
   'kenkari::female': { x: 1.1, y: 1.1, head: 1, offsetY: 0 },
