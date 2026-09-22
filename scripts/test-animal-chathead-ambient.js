@@ -54,4 +54,12 @@ assert.equal(event.opts.profile.chatheadCreatureKind, 'grehlr', 'den-mother vari
 assert.equal(event.opts.profile.creatureGenotype.sizeClass, 'large', 'genotype is preserved for composed chathead art');
 assert.equal(event.opts.profile.creatureGenotype.base.color, '#aa8877', 'genotype coloration reaches the shared renderer unchanged');
 assert.equal(event.opts.tone, 'animal');
+
+const ambientSource = fs.readFileSync('docs/js/ambient-dialogue.js', 'utf8');
+assert.match(ambientSource, /function liveAnimalChatheadSource\(root\)/, 'ambient animal chatheads must reuse the already-rendered world texture');
+assert.match(ambientSource, /event\.headPart\.staticAnimalRendered = true/, 'animal ambient portraits must become one-shot after their first render');
+assert.match(ambientSource, /animalChatheadSkippedFrames/, 'skipped former portrait-FPS refreshes must remain visible in diagnostics');
+assert.match(ambientSource, /profileFacesSpeechTarget\(profile\)/, 'ambient dialogue must honor authored no-face speech posture');
+assert.match(ambientSource, /dialogueFacePlayer !== false/, 'the no-face posture flag must be checked before ambient facing updates');
+assert.match(ambientSource, /chatheadRenderSource = 'live-animal-texture'/, 'live-texture fast path must identify itself for debugging');
 console.log('animal ambient chathead wiring tests passed');
