@@ -83,6 +83,8 @@ const generatorSource = read('docs/js/cavern-generator.js');
 const gameSource = read('docs/game.js');
 const editorSource = read('docs/tools/locale-editor/index.html');
 const interiorBuilderSource = read('docs/js/interior-scene-builder.js');
+const localePreview3dSource = read('docs/tools/locale-editor/locale-preview3d.js');
+const panelUiSource = read('docs/js/panel-ui.js');
 assert(sculptorSource.includes('function carveFootprintCavern(') && sculptorSource.includes('carveMazeCavern, carveFootprintCavern'), 'shared cavern sculptor must expose footprint-driven generation');
 assert(generatorSource.includes('loadLocaleCavernDefinition') && generatorSource.includes('synthesizeLocaleCavernMapData'), 'runtime must resolve cave interiors through locale files');
 assert(!generatorSource.includes("seedText === 'map_i_den_banubu'"), 'generic generator must not special-case Banubu by seed/map id');
@@ -99,6 +101,13 @@ assert(!gameSource.includes('_isBuildingArea(area) ? 0 : npcSurfaceY(area, spawn
 assert(gameSource.includes('InteriorSceneBuilder.buildCavernFloorMesh?.('), 'game cavern scenes must add the explicit textured walkable floor mesh');
 assert(gameSource.includes('mapData.denMotherKind || mapData.cavernCreatureKind'), 'authored caverns must select texture family from their authored creature habitat');
 assert(editorSource.includes('value="cave_interior"') && editorSource.includes('cavernSeed') && editorSource.includes('raw.cavern'), 'Locale Editor must author and preserve cave-interior generator metadata');
+assert(localePreview3dSource.includes("currentPreviewMode = canRenderInterior ? 'interior' : 'exterior'"), 'cave_interior locales must default the live 3D preview to their generated cavern interior');
+assert(localePreview3dSource.includes('CavernGenerator.synthesizeLocaleCavernMapData(locale)'), 'Locale Editor cavern preview must synthesize the same authored footprint map data as runtime');
+assert(localePreview3dSource.includes('InteriorSceneBuilder.buildCarvedCavernMesh') && localePreview3dSource.includes('InteriorSceneBuilder.buildCavernFloorMesh'), 'Locale Editor cavern preview must render the shared runtime cavern shell and walkable floor');
+assert(localePreview3dSource.includes("id=\"localeSandboxCamera\"") && localePreview3dSource.includes('applySelectedCinematicCamera'), 'Locale Editor 3D preview must allow looking through authored cinematic cameras');
+assert(localePreview3dSource.includes("id=\"localeCavernWireframe\"") && localePreview3dSource.includes('applyCavernWireframe'), 'Locale Editor cavern preview must expose a shell wireframe diagnostic');
+assert(localePreview3dSource.includes('cavern: locale.cavern, cinematicCameras: locale.cinematicCameras'), 'cavern generation and cinematic camera edits must invalidate/rebuild the live preview');
+assert(panelUiSource.includes('locale-preview3d.js?v=20260922cavernpreview1'), 'Locale Editor must cache-bust the generated-cavern preview sidecar');
 assert.strictEqual(fs.existsSync(path.join(root, 'docs/config/maps/map_i_color_pools.json')), false, 'Color Pools must not retain a competing static rectangular map definition');
 
 // Exercise real triangle sampling, including sub-tile tessellation and missing coverage.
