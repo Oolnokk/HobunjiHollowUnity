@@ -71,7 +71,7 @@
   const FLOOD_PLANE_MIN_WET_FRACTION = 0.25; // Used to require genuinely map-wide wetness before promoting local water into the global flood sheet.
   const FLOOD_SURFACE_HIDE_EPSILON = 0.001; // Used when deciding whether the flood sheet is visibly above a local/permanent water surface.
   const FLOOD_VISUAL_DEPTH = 0.8; // Used by the flood plane's shader attributes to match the authored deep stable-river/waterway shading profile.
-  const FLOOD_VISUAL_COVERAGE = 1; // Used by the flood plane's shader attributes to match stable water's full coverage (0.8 material-opacity ceiling) instead of fading with rain depth.
+  const FLOOD_VISUAL_COVERAGE = 1; // Used by the flood plane's shader attributes to match stable water's full coverage (0.65 shared material-opacity ceiling) instead of fading with rain depth.
   const FLOOD_VISUAL_FLOW_MAGNITUDE = 1; // Used only for shared shader sheen; the shader reads flow length, so this matches ordinary stable-water sheen without imposing directional flood physics.
 
   // Helper: floor Z for a tile type. Trenches shallow out toward 0 as they silt up.
@@ -304,7 +304,7 @@
     if (!mergedWaterMaterial) {
       mergedWaterMaterial = window.MergedWaterRenderer.createMaterial(THREE, {
         textureUrl: 'assets/textures/wibbly_surface.png',
-        opacity: 0.8,
+        opacity: 0.65,
         log: deps.debugLog,
       });
     }
