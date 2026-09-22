@@ -19967,7 +19967,12 @@
         const rawT = durationMs > 0 ? window.FormatUtils.clamp((performance.now() - _cinematicCameraBlend.startedAt) / durationMs, 0, 1) : 1;
         const t = rawT * rawT * (3 - 2 * rawT); // Smoothstep keeps camera starts/stops soft while preserving exact authored endpoints.
         const desiredPosition = new THREE.Vector3(Number(shot.position.x) || 0, Number(shot.position.y) || 0, Number(shot.position.z) || 0);
-        const desiredTarget = new THREE.Vector3(Number(shot.target.x) || 0, Number(shot.target.y) || 0, Number(shot.target.z) || 0);
+        const resolvedTarget = window.CinematicCameraRuntime?.resolvedTarget?.(); // NPC-targeted shots resolve against the live walker's face every frame; plain cameras still return their authored absolute target.
+        const desiredTarget = new THREE.Vector3(
+          Number(resolvedTarget?.x ?? shot.target?.x) || 0,
+          Number(resolvedTarget?.y ?? shot.target?.y) || 0,
+          Number(resolvedTarget?.z ?? shot.target?.z) || 0
+        );
         camera.position.lerpVectors(_cinematicCameraBlend.startPosition, desiredPosition, t);
         const lookTarget = _cinematicCameraBlend.startTarget.clone().lerp(desiredTarget, t);
         camera.lookAt(lookTarget);
@@ -26829,6 +26834,12 @@
         getCurrentArea: () => currentArea,
         getCompanionObjects: () => companionObjects,
         getPlayer: () => player,
+        getNpcWalker: (npcId, areaId = currentArea) => npcWalkers.find(walker => walker.rec?.id === npcId && walker.area === areaId) || null,
+        getNpcFacePosition: walker => {
+          if (!walker?.root?.position || !Number.isFinite(Number(walker.avatarHeight))) return null;
+          const face = _dialogueEyeWorldPosition(walker.root.position, walker.avatarHeight); // Reuse the exact eye-height math already used for NPC↔player dialogue eye contact.
+          return { x: face.x, y: face.y, z: face.z };
+        },
       });
 
       window.DialogueContent?.init({
