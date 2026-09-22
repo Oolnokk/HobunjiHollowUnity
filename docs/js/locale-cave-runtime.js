@@ -30,7 +30,7 @@
           localeId: instance.localeId,
           localeName: instance.name || locale.name || instance.localeId,
           floorTier: Number.isFinite(Number(instance.floorTier)) ? Number(instance.floorTier) : null, // Locale floor remains authoritative even when the cave object overlaps embedded high terrain.
-          visual: clone(source?.visual || placed.visual || { renderer: 'cave_small', scale: 1 }),
+          visual: clone(placed.visual || source?.visual || { renderer: 'cave_small', scale: 1 }), // Placed runtime metadata wins so cardinally rotated facing/visual overrides stay synchronized with the selected locale variant.
           sourceObjectId: source?.id || placed.id,
         });
       }
