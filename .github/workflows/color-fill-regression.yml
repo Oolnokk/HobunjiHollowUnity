@@ -1,0 +1,83 @@
+name: Shared Color Fill Regression
+
+on:
+  push:
+    paths:
+      - 'docs/js/color-fill.js'
+      - 'docs/js/sprite-recolor.js'
+      - 'docs/js/tool-metal-recolor.js'
+      - 'docs/js/clothing-weaving-system.js'
+      - 'docs/js/creature-genetics-render.js'
+      - 'docs/js/pixel-probe.js'
+      - 'docs/js/repo-picker.js'
+      - 'docs/tools/character-studio/index.html'
+      - 'docs/tools/pattern-editor/index.html'
+      - 'docs/tools/foliage-generator/index.html'
+      - 'docs/index.html'
+      - 'scripts/test-clothing-weaving-system.js'
+      - 'scripts/test-named-animal-npc-species.js'
+      - 'scripts/test-repo-pattern-authoring.js'
+      - 'scripts/test-alcohol-bottle-held-pose.js'
+      - 'scripts/test-drenkirra-bodystripes-colors.js'
+      - 'docs/js/portrait-utils.js'
+      - 'docs/tools/portrait-arm-mask/index.html'
+      - 'docs/tools/map-editor/index.html'
+      - 'docs/tools/world-popup-editor/index.html'
+      - 'docs/tools/cutscene-director/index.html'
+      - 'docs/tools/wilderness-generation-lab/index.html'
+      - 'docs/tools/attack-animation-editor/index.html'
+      - 'docs/tools/locale-editor/locale-preview3d.js'
+      - 'scripts/test-portrait-torso-grayscale-preservation.js'
+      - '.github/workflows/color-fill-regression.yml'
+  pull_request:
+    paths:
+      - 'docs/js/color-fill.js'
+      - 'docs/js/sprite-recolor.js'
+      - 'docs/js/tool-metal-recolor.js'
+      - 'docs/js/clothing-weaving-system.js'
+      - 'docs/js/creature-genetics-render.js'
+      - 'docs/js/pixel-probe.js'
+      - 'docs/js/repo-picker.js'
+      - 'docs/tools/character-studio/index.html'
+      - 'docs/tools/pattern-editor/index.html'
+      - 'docs/tools/foliage-generator/index.html'
+      - 'docs/index.html'
+      - 'scripts/test-clothing-weaving-system.js'
+      - 'scripts/test-named-animal-npc-species.js'
+      - 'scripts/test-repo-pattern-authoring.js'
+      - 'scripts/test-alcohol-bottle-held-pose.js'
+      - 'scripts/test-drenkirra-bodystripes-colors.js'
+      - '.github/workflows/color-fill-regression.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax check shared color renderers
+        run: |
+          node --check docs/js/color-fill.js
+          node --check docs/js/sprite-recolor.js
+          node --check docs/js/tool-metal-recolor.js
+          node --check docs/js/clothing-weaving-system.js
+          node --check docs/js/creature-genetics-render.js
+          node --check docs/js/pixel-probe.js
+          node --check docs/js/repo-picker.js
+      - name: Test weaving source-shading inheritance
+        run: node scripts/test-clothing-weaving-system.js
+      - name: Test animal and pattern-editor shared-fill integration
+        run: |
+          node scripts/test-named-animal-npc-species.js
+          node scripts/test-repo-pattern-authoring.js
+          node scripts/test-drenkirra-bodystripes-colors.js
+      - name: Test portrait and authored item shared-fill integration
+        run: |
+          node scripts/test-portrait-torso-grayscale-preservation.js
+          node scripts/check-rakakoan-portrait-resolution.js
+          node scripts/test-alcohol-bottle-held-pose.js

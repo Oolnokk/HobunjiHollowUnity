@@ -126,58 +126,13 @@
 
   function hexToRgb(hex) { const n = parseInt(hex.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
   function clampByte(v) { return Math.max(0, Math.min(255, Math.round(v))); }
-  function relativeLuminance(r, g, b) { return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255; }
-
-  // Same config surface (and same defaults) as portrait-utils.js's
-  // getPortraitTintingConfig — reads window.SCRATCHBONES_CONFIG.game.
-  // portrait.tinting so tuning that dial once affects NPCs and creatures
-  // alike, instead of duplicating a second set of hand-picked constants.
-  function shadeFillConfig() {
-    const cfg = window.SCRATCHBONES_CONFIG?.game?.portrait?.tinting || {};
-    return {
-      shadowFloor: Number.isFinite(Number(cfg.shadowFloor)) ? Number(cfg.shadowFloor) : 0.18,
-      highlightBoost: Number.isFinite(Number(cfg.highlightBoost)) ? Number(cfg.highlightBoost) : 1.18,
-      neutralLuminance: Number.isFinite(Number(cfg.neutralLuminance)) ? Number(cfg.neutralLuminance) : 0.55,
-      gamma: Number.isFinite(Number(cfg.gamma)) && Number(cfg.gamma) > 0 ? Number(cfg.gamma) : 1,
-      preserveNearBlackOutlines: cfg.preserveNearBlackOutlines !== false,
-      outlineThreshold: Number.isFinite(Number(cfg.outlineThreshold)) ? Number(cfg.outlineThreshold) : 0.08,
-    };
-  }
-
-  // "Hex shade-fill": the target color's own RGB channels are scaled by a
-  // per-pixel shade factor derived from that pixel's ORIGINAL relative
-  // luminance (normalized against neutralLuminance, gamma-curved, clamped
-  // to [shadowFloor, highlightBoost]) — a multiplicative tint, not an HSV
-  // hue/saturation replace. Near-black outline ink (luminance at/below
-  // outlineThreshold) is left untouched entirely, same as the NPC
-  // pipeline's automatic ink protection. This reads correctly on the
-  // creature art's fairly dark cel-shaded fur (unlike a raw HSV value
-  // replace, which measured ~0.25 average value there and crushed every
-  // target hue toward the same dark, muddy tone).
   function recolorPixels(px, targetRgb, predicate) {
-    // Animal base/pattern recoloring intentionally uses the exact same direct
-    // shade-fill implementation as ClothingWeavingSystem / Pattern Editor.
-    const shared = window.SpriteRecolor?.directShadeFillPixels;
-    if (typeof shared === 'function') {
-      shared(px, targetRgb, predicate || null);
-      return;
-    }
-
-    // Defensive bootstrap fallback only. Normal game + Character Studio load
-    // sprite-recolor.js first, so this path should not be the rendered result.
-    const cfg = shadeFillConfig();
-    const neutral = Math.max(0.0001, cfg.neutralLuminance);
-    const [tr, tg, tb] = targetRgb;
-    for (let i = 0; i < px.length; i += 4) {
-      if (px[i + 3] === 0 || (predicate && !predicate(i))) continue;
-      const lum = relativeLuminance(px[i], px[i + 1], px[i + 2]);
-      if (cfg.preserveNearBlackOutlines && lum <= cfg.outlineThreshold) continue;
-      const normalized = Math.pow(Math.max(0, lum) / neutral, cfg.gamma);
-      const shade = Math.max(cfg.shadowFloor, Math.min(cfg.highlightBoost, normalized));
-      px[i] = clampByte(tr * shade);
-      px[i + 1] = clampByte(tg * shade);
-      px[i + 2] = clampByte(tb * shade);
-    }
+    const shared = window.ColorFill?.shadeFillPixels;
+    if (typeof shared !== 'function') throw new Error('ColorFill unavailable during creature recolor');
+    shared(px, targetRgb, {
+      applyPredicate: predicate || null,
+      samplePredicate: predicate || null,
+    });
   }
 
   const _recolorCache = new Map(); // key -> Promise<canvas>
@@ -333,7 +288,7 @@
         return null;
       }
       const clippedSource = regionMask ? maskedRegionCanvas(imageOrCanvas, regionMask) : imageOrCanvas;
-      const rendered = await compositor(clippedSource, pattern, dyeHex, cachePrefix);
+      const rendered = await compositor(clippedSource, pattern, dyeHex, cachePrefix, null, 'animal-surface-pattern');
       const applied = !!rendered && rendered !== clippedSource;
       setPatternPaintDebug(regionId, {
         ...debugBase,

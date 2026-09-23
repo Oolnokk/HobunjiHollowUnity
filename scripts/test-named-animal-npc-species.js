@@ -12,10 +12,14 @@ const headwear = fs.readFileSync('docs/js/animal-npc-headwear.js', 'utf8');
 const repoPicker = fs.readFileSync('docs/js/repo-picker.js', 'utf8');
 const studio = fs.readFileSync('docs/tools/character-studio/index.html', 'utf8');
 const chathead = fs.readFileSync('docs/js/animal-chathead-frame.js', 'utf8');
+const colorFill = fs.readFileSync('docs/js/color-fill.js', 'utf8'); // Canonical source-art color-fill math used by animals, weaving, tools, and item sprites.
 const spriteRecolor = fs.readFileSync('docs/js/sprite-recolor.js', 'utf8');
 const creatureRenderer = fs.readFileSync('docs/js/creature-genetics-render.js', 'utf8');
 const overrides = JSON.parse(fs.readFileSync('docs/config/npcs/species-overrides.json', 'utf8'));
 const game = fs.readFileSync('docs/game.js', 'utf8');
+
+assert.match(creatureRenderer, /compositor\(clippedSource, pattern, dyeHex, cachePrefix, null, 'animal-surface-pattern'\)/,
+  'animal Color Pools labels its shared compositor pass separately from clothing weaving');
 
 assert.equal(overrides.npcs.banubu.species, 'grehlr', 'Banubu must be authored as Grehlr');
 assert.equal(overrides.npcs.banubu.kind, 'animal', 'Banubu must use the animal NPC route');
@@ -92,17 +96,19 @@ assert.match(feyExtras, /await renderer\.composeFrame\(kind, 'idle', genotype, f
 assert.match(feyExtras, /canonical\+fey:/, 'Fey preview debug explicitly reports that the canonical compositor supplied the animal frame');
 assert.doesNotMatch(feyExtras.slice(feyExtras.indexOf('async function composeAnimal'), feyExtras.indexOf('function fitToCanvas')), /recoloredSource\(/, 'Fey preview compose path must not use its obsolete private recolor/pattern compositor');
 assert.match(nativeAppearance, /renderStudioAnimal/, 'native editor must retain the regular Character Studio live preview integration');
-assert.match(spriteRecolor, /function directShadeFillPixels\(data, targetRgb, predicate = null\)/, 'pattern system exposes the canonical direct tint used for Banubu');
-assert.match(spriteRecolor, /const luminanceBins = new Uint32Array\(256\)/, 'Banubu tint preserves relative source-pixel value differences using the allocation-light luminance histogram median');
-assert.match(spriteRecolor, /const neutral = Math\.max\(0\.0001, \(\(lowerBin \+ upperBin\) \* 0\.5\) \/ 255\)/, 'Banubu tint centers relative shading on the histogram-derived median luminance');
-assert.doesNotMatch(spriteRecolor, /luminances\.sort/, 'Banubu tint must not regress to sorting one allocated luminance value per affected pixel');
-assert.match(creatureRenderer, /window\.SpriteRecolor\?\.directShadeFillPixels/, 'Banubu and other animals must tint through the exact pattern-system direct shade-fill function');
+assert.match(spriteRecolor, /function directShadeFillPixels\(data, targetRgb, predicateOrOptions = null\)/, 'SpriteRecolor retains its public direct-tint compatibility seam');
+assert.match(spriteRecolor, /colorFillApi\(\)\.shadeFillPixels/, 'SpriteRecolor direct tint delegates to the canonical ColorFill module');
+assert.match(colorFill, /if \(lum > peakLuminance\) peakLuminance = lum;/, 'Banubu tint anchors the requested color to the brightest eligible authored pixel');
+assert.match(colorFill, /lum \/ peakLuminance/, 'Banubu and other animal shading scales darker pixels relative to that authored peak');
+assert.doesNotMatch(colorFill, /luminanceBins|luminances\.sort/, 'peak-anchored tint does not need a median histogram or per-pixel luminance sort');
+assert.match(creatureRenderer, /window\.ColorFill\?\.shadeFillPixels/, 'Banubu and other animals tint through the same canonical ColorFill implementation used by weaving');
 assert.match(nativeAppearance, /waitForCanonicalCreatureRenderer/, 'animal previews must wait for the shared runtime creature compositor instead of racing into an editor-only tint path');
 assert.match(nativeAppearance, /await renderer\.composeFrame\(kind, 'idle', genotype, false\)/, 'Character Studio animal tint/pattern preview must call the exact runtime composeFrame implementation');
 assert.doesNotMatch(nativeAppearance.slice(nativeAppearance.indexOf('async function renderStudioAnimal'), nativeAppearance.indexOf('function installPreviewHooks')), /composeEditorAnimal/, 'authoritative Character Studio animal preview must never fall back to the approximate editor-only compositor');
 assert.match(nativeAppearance, /canonical-failed/, 'renderer failure must surface as a canonical preview failure rather than silently changing tint algorithms');
 assert.ok(studio.indexOf('scratchbones-config.js') < studio.indexOf('repo-picker.js'), 'Character Studio must load shared tint configuration before booting its animal runtime modules');
-assert.match(studio, /repo-picker\.js\?v=20260920animal-tint-parity1/, 'Character Studio must cache-bust the canonical animal runtime loader after tint-parity changes');
+assert.match(studio, /repo-picker\.js\?v=20260923colorfill4/, 'Character Studio must cache-bust the canonical animal runtime loader after shared color-fill changes');
+assert.ok(repoPicker.indexOf("color-fill.js") < repoPicker.indexOf("sprite-recolor.js"), 'Character Studio loads ColorFill before dependent sprite/animal renderers');
 
 assert.match(feyExtras, /class=\"animalNpcCustomHex\"/, 'native extension must retain independent #RRGGBB fields for animal layers');
 assert.match(feyExtras, /id=\"animalNpcScaleMultiplier\"/, 'Fey/custom appearance controls must expose the named-animal in-game size multiplier next to the other non-genetic overrides');

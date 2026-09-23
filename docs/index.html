@@ -123,6 +123,8 @@
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20260918collision2"></script>
   <script src="config/scratchbones-config.js?v=20260920newbgm1"></script>
+  <!-- Canonical source-art color fill math shared by portraits, creatures, weaving, tools, terrain, and item sprites. -->
+  <script src="js/color-fill.js?v=20260923colorfill4"></script>
   <script src="config/colors/config.js?v=20260728c"></script>
   <script src="config/attachment-rig-profiles.js?v=20260920armreach3"></script>
   <link rel="stylesheet" href="style.css?v=20260914transienttarget1">
@@ -138,7 +140,7 @@
       window.SCRATCHBONES_CONFIG.game.assets.portrait.configBase = './config/';
     }
   </script>
-  <script src="js/portrait-utils.js?v=20260920armreach1"></script>
+  <script src="js/portrait-utils.js?v=20260923colorfill4"></script>
   <script src="js/portrait-breathing.js?v=20260831syllable4"></script>
   <script src="js/npc-avatar-preview-utils.js?v=20260830flip2"></script>
   <script src="js/png-plane-avatar.js?v=20260920armreach2"></script>
@@ -175,7 +177,7 @@
   <script src="js/voorg-ass-registration.js?v=20260923review1"></script> <!-- Shared Voorg-Ass creature/renderer/herd registration used by the three scripts below. -->
   <script src="js/creature-genetics.js?v=20260923review1"></script>
   <!-- Creature genotype recolor + pattern-overlay compositing. -->
-  <script src="js/creature-genetics-render.js?v=20260920animal-pattern-preview1"></script>
+  <script src="js/creature-genetics-render.js?v=20260923colorfill2"></script>
   <!-- Shared per-frame "where is this creature/character's head" cache — see
        its own file header for why. No dependencies of its own; must load
        before anything that calls window.CreatureHeadCache. -->
@@ -2367,8 +2369,8 @@
   </div>
 
   <script src="js/tool-icon-render.js?v=20260923heldwater2"></script>
-  <script src="js/sprite-recolor.js?v=20260920relative-shade1"></script>
-  <script src="js/tool-metal-recolor.js?v=20260921weaveaudit1"></script>
+  <script src="js/sprite-recolor.js?v=20260923colorfill2"></script>
+  <script src="js/tool-metal-recolor.js?v=20260923colorfill2"></script>
   <!-- Mount ride system (window.Mounts) — must load before game.js, which
        calls window.Mounts.init(...) during its own setup. -->
   <script src="js/mount-system.js?v=20260911mountleap1"></script>

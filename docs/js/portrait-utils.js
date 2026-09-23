@@ -352,12 +352,18 @@ function parseHexColor(hex) {
   };
 }
 
+function colorFillApi() {
+  const api = window.ColorFill; // Shared raster-fill owner used by portraits, weaving, creatures, tools, terrain, and authored PNG surfaces.
+  if (!api) throw new Error('ColorFill must load before portrait-utils.js');
+  return api;
+}
+
 function clampByte(value) {
   return Math.max(0, Math.min(255, Math.round(Number(value) || 0)));
 }
 
 function relativeLuminance(r, g, b) {
-  return (0.2126 * (Number(r) || 0) + 0.7152 * (Number(g) || 0) + 0.0722 * (Number(b) || 0)) / 255;
+  return colorFillApi().relativeLuminance(r, g, b);
 }
 
 function isEffectivelyZeroSaturation(r, g, b) {
@@ -365,55 +371,19 @@ function isEffectivelyZeroSaturation(r, g, b) {
   return Math.max(r, g, b) - Math.min(r, g, b) <= 1;
 }
 
-// Pure HSV math, kept local (rather than shared with sprite-recolor.js's
-// copy) since portrait-utils.js is loaded standalone in several contexts
-// (character-tools, cutscene director, npc preview) with no guaranteed load
-// order against sprite-recolor.js.
 function _rgbToHsvPU(r, g, b) {
-  r /= 255; g /= 255; b /= 255;
-  const max = Math.max(r, g, b), min = Math.min(r, g, b);
-  const d = max - min;
-  let h = 0;
-  if (d !== 0) {
-    if (max === r) h = ((g - b) / d) % 6;
-    else if (max === g) h = (b - r) / d + 2;
-    else h = (r - g) / d + 4;
-    h *= 60;
-    if (h < 0) h += 360;
-  }
-  const s = max === 0 ? 0 : d / max;
-  return { h, s };
+  return colorFillApi().rgbToHsv(r, g, b);
 }
 
 function _hsvToRgbPU(h, s, v) {
-  const hNorm = ((Number(h) % 360) + 360) % 360;
-  const c = v * s;
-  const x = c * (1 - Math.abs(((hNorm / 60) % 2) - 1));
-  const m = v - c;
-  let r = 0, g = 0, b = 0;
-  if (hNorm < 60)       { r = c; g = x; b = 0; }
-  else if (hNorm < 120) { r = x; g = c; b = 0; }
-  else if (hNorm < 180) { r = 0; g = c; b = x; }
-  else if (hNorm < 240) { r = 0; g = x; b = c; }
-  else if (hNorm < 300) { r = x; g = 0; b = c; }
-  else                  { r = c; g = 0; b = x; }
-  return [(r + m) * 255, (g + m) * 255, (b + m) * 255];
+  return colorFillApi().hsvToRgb(h, s, v);
 }
 
 function getPortraitTintingConfig() {
   const cfg = window.SCRATCHBONES_CONFIG?.game?.portrait?.tinting || {};
   return {
-    preserveNearBlackOutlines: cfg.preserveNearBlackOutlines !== false,
-    outlineThreshold: Number.isFinite(Number(cfg.outlineThreshold)) ? Number(cfg.outlineThreshold) : 0.08,
+    ...colorFillApi().shadeFillConfig(),
     cacheEnabled: cfg.cacheEnabled !== false,
-    // shadeFill-only knobs -- same config surface (and same defaults) as
-    // creature-genetics-render.js's shadeFillConfig(), so a mashtzarr set to
-    // bodyTintMode: "shadeFill" paints with literally the same math as
-    // animal fur/pattern layers, not just a visually-similar approximation.
-    shadowFloor: Number.isFinite(Number(cfg.shadowFloor)) ? Number(cfg.shadowFloor) : 0.18,
-    highlightBoost: Number.isFinite(Number(cfg.highlightBoost)) ? Number(cfg.highlightBoost) : 1.18,
-    neutralLuminance: Number.isFinite(Number(cfg.neutralLuminance)) ? Number(cfg.neutralLuminance) : 0.55,
-    gamma: Number.isFinite(Number(cfg.gamma)) && Number(cfg.gamma) > 0 ? Number(cfg.gamma) : 1,
   };
 }
 
@@ -486,10 +456,10 @@ function _resolveTargetRgbColor(color, referenceHex) {
   return result;
 }
 
-// Multiplicative luminance-based tint -- literally the same algorithm as
-// creature-genetics-render.js's recolorPixels (see that file's comment for
-// why: it reads correctly on dark, cel-shaded art where a hue/sat value-
-// replace crushes everything toward one muddy tone). Used for species whose
+// Multiplicative luminance-based tint descriptor consumed by ColorFill's
+// canonical shade-fill implementation. It reads correctly on dark, cel-shaded
+// art where a hue/sat value-replace crushes everything toward one muddy tone.
+// Used for species whose
 // body art needs to look like animal fur/pattern layers rather than the
 // standard NPC hueSatFill skin.
 function shadeFillTintForBodyColor(color, referenceHex) {
@@ -498,22 +468,16 @@ function shadeFillTintForBodyColor(color, referenceHex) {
   return { mode: 'shadeFill', rgb, options: getPortraitTintingConfig() };
 }
 
-// shadeFill is the default tint algorithm everywhere now (body colors AND
-// clothing dyes) -- the hue/sat value-replace crushes dark, cel-shaded art
-// toward one muddy tone regardless of whether that art is skin, fur, or
-// cloth, which is exactly why animals never used it. A species (bodyTintMode)
-// or the whole game (tinting.clothingTintMode) can still opt back into the
-// old hueSatFill behavior explicitly if some particular art needs it.
-function bodyTintModeForSpecies(speciesId) {
-  const key = _normalizeSpeciesKey(speciesId);
-  const speciesCfg = window.SCRATCHBONES_CONFIG?.game?.appearanceEditor?.species || {};
-  const entry = speciesCfg[key] || speciesCfg[String(speciesId || '')];
-  return entry?.bodyTintMode === 'hueSatFill' ? 'hueSatFill' : 'shadeFill';
+// Body colors and clothing dyes deliberately share the same peak-anchored
+// shade-fill as animal genotypes/patterns and weaving. Keep these helpers as
+// compatibility seams for callers, but do not permit per-species/clothing
+// overrides to silently select a different raster color algorithm.
+function bodyTintModeForSpecies(_speciesId) {
+  return 'shadeFill';
 }
 
 function clothingTintMode() {
-  const cfg = window.SCRATCHBONES_CONFIG?.game?.portrait?.tinting || {};
-  return cfg.clothingTintMode === 'hueSatFill' ? 'hueSatFill' : 'shadeFill';
+  return 'shadeFill';
 }
 
 // Body/fur tint slots are the bare letters A/B/C (see BODYCOLOR_LIMITS);
@@ -550,18 +514,19 @@ function getHueSatFillCanvas(img, sourceKey, tint) {
   offCtx.drawImage(img, 0, 0);
   const imageData = offCtx.getImageData(0, 0, canvas.width, canvas.height);
   const data = imageData.data;
-  for (let i = 0; i < data.length; i += 4) {
-    const a = data[i + 3];
-    if (a === 0) continue;
+  const shared = colorFillApi(); // Canonical value-preserving HSV fill; portrait code only supplies its semantic preserve mask.
+  const shouldTint = i => {
+    if (data[i + 3] === 0) return false;
     const r = data[i], g = data[i + 1], b = data[i + 2];
-    if (options.preserveNearBlackOutlines && relativeLuminance(r, g, b) <= options.outlineThreshold) continue;
-    if (options.preserveZeroSaturation && isEffectivelyZeroSaturation(r, g, b)) continue;
-    const v = Math.max(r, g, b) / 255;
-    const [nr, ng, nb] = _hsvToRgbPU(tint.hue, tint.sat, v);
-    data[i] = clampByte(nr);
-    data[i + 1] = clampByte(ng);
-    data[i + 2] = clampByte(nb);
-  }
+    if (options.preserveNearBlackOutlines && shared.relativeLuminance(r, g, b) <= options.outlineThreshold) return false;
+    if (options.preserveZeroSaturation && isEffectivelyZeroSaturation(r, g, b)) return false;
+    return true;
+  };
+  shared.hsvValueFillPixels(data, shared.hsvToRgb(tint.hue, tint.sat, 1), {
+    sourceData: data,
+    applyPredicate: shouldTint,
+    saturationMode: 'target',
+  });
   offCtx.putImageData(imageData, 0, 0);
   if (options.cacheEnabled) _HUESAT_FILL_CACHE.set(cacheKey, canvas);
   return canvas;
@@ -587,19 +552,16 @@ function getShadeFillCanvas(img, sourceKey, tint) {
   offCtx.drawImage(img, 0, 0);
   const imageData = offCtx.getImageData(0, 0, canvas.width, canvas.height);
   const data = imageData.data;
-  const neutral = Math.max(0.0001, options.neutralLuminance);
-  for (let i = 0; i < data.length; i += 4) {
-    if (data[i + 3] === 0) continue;
-    const r = data[i], g = data[i + 1], b = data[i + 2];
-    const lum = relativeLuminance(r, g, b);
-    if (options.preserveNearBlackOutlines && lum <= options.outlineThreshold) continue;
-    if (options.preserveZeroSaturation && isEffectivelyZeroSaturation(r, g, b)) continue;
-    const normalized = Math.pow(Math.max(0, lum) / neutral, options.gamma);
-    const shade = Math.max(options.shadowFloor, Math.min(options.highlightBoost, normalized));
-    data[i] = clampByte(tr * shade);
-    data[i + 1] = clampByte(tg * shade);
-    data[i + 2] = clampByte(tb * shade);
-  }
+  const shouldTint = i => {
+    if (data[i + 3] === 0) return false;
+    return !(options.preserveZeroSaturation && isEffectivelyZeroSaturation(data[i], data[i + 1], data[i + 2]));
+  };
+  colorFillApi().shadeFillPixels(data, [tr, tg, tb], {
+    sourceData: data,
+    samplePredicate: shouldTint,
+    applyPredicate: shouldTint,
+    config: options,
+  });
   offCtx.putImageData(imageData, 0, 0);
   if (options.cacheEnabled) _SHADE_FILL_CACHE.set(cacheKey, canvas);
   return canvas;
@@ -643,9 +605,7 @@ function _getFlippedImage(img) {
 // recoloring cannot diverge between 2D character art and 3D surface textures.
 function bodySpriteTintForColor(color, speciesId, slot = 'A') {
   const referenceHex = _dyeReferenceHexForSlot(slot, speciesId);
-  return bodyTintModeForSpecies(speciesId) === 'shadeFill'
-    ? shadeFillTintForBodyColor(color, referenceHex)
-    : tintForBodyColor(color, referenceHex);
+  return shadeFillTintForBodyColor(color, referenceHex);
 }
 
 function getBodyTintedCanvas(img, sourceKey, color, speciesId = '', slot = 'A') {
@@ -1261,15 +1221,12 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   ctx.clearRect(0, 0, PORTRAIT_CW, PORTRAIT_CH);
 
   const _tintSpeciesId = resolvedFighter?.speciesId || fighter?.speciesId || '';
-  const _clothingTintMode = clothingTintMode();
   const tintFor = (slot) => {
     if (!slot) return { mode: 'none' };
     const isBodySlot = slot === 'A' || slot === 'B' || slot === 'C';
     if (isBodySlot) return bodySpriteTintForColor(bodyColors[slot], _tintSpeciesId, slot);
     const referenceHex = _dyeReferenceHexForSlot(slot, _tintSpeciesId);
-    return _clothingTintMode === 'shadeFill'
-      ? shadeFillTintForBodyColor(bodyColors[slot], referenceHex)
-      : tintForBodyColor(bodyColors[slot], referenceHex);
+    return shadeFillTintForBodyColor(bodyColors[slot], referenceHex);
   };
   const tintA = tintFor('A');
 

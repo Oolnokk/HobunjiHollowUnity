@@ -7,7 +7,7 @@ const vm = require('node:vm');
 
 const WIDTH = 3; // Three probe pixels isolate bodystripes, another pattern, and unobstructed base.
 const HEIGHT = 1; // A single row is sufficient for compositor color-role validation.
-const NEUTRAL = 128; // Matches the injected neutral luminance so recoloring produces exact target RGB values.
+const NEUTRAL = 128; // Uniform mock art: every eligible pixel is also the brightest pixel, so peak-anchored recoloring produces the exact target RGB.
 
 function rgbaPixels(opaqueIndex = null) {
   const pixels = new Uint8ClampedArray(WIDTH * HEIGHT * 4); // Used as one mocked sprite or pattern image.
@@ -74,6 +74,7 @@ const context = {
     __farmLog: () => {},
   },
 };
+vm.runInNewContext(fs.readFileSync('docs/js/color-fill.js', 'utf8'), context);
 vm.runInNewContext(fs.readFileSync('docs/js/creature-genetics-render.js', 'utf8'), context);
 
 (async () => {

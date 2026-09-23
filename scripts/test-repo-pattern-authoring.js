@@ -10,7 +10,8 @@ const hub = read('docs/tools/index.html');
 const authoring = read('docs/js/pattern-authoring.js');
 const weaving = read('docs/js/clothing-weaving-system.js'); // Used by ordering regressions for the live woven/NPC motif compositor.
 const metalRecolor = read('docs/js/tool-metal-recolor.js'); // Used to keep Pattern Authoring motif-scale semantics identical on verdigris.
-const spriteRecolor = read('docs/js/sprite-recolor.js'); // Canonical direct shade-fill shared by cloth, motif ink, and animals.
+const colorFill = read('docs/js/color-fill.js'); // Canonical source-art shade/value fill math shared by cloth, animals, tools, and authored item sprites.
+const spriteRecolor = read('docs/js/sprite-recolor.js'); // Compatibility wrapper for direct/keyed authored sprite recoloring.
 const repoLibrary = read('docs/js/repo-pattern-library.js');
 const devExporter = read('docs/js/pattern-library-dev-export.js');
 const renderer = read('docs/js/creature-genetics-render.js');
@@ -24,20 +25,23 @@ assert(Array.isArray(index.patterns), 'repo pattern index exposes a patterns arr
 
 assert.match(tool, /PatternAuthoring\.openEditor/, 'standalone tool reuses the real shared PatternAuthoring modal');
 assert.match(tool, /ClothingWeavingSystem\.applyPatternToTintedImage/, 'simple canvas preview uses the actual weaving pattern compositor');
+assert.match(tool, /'pattern-editor-motif'/, 'Pattern Editor labels its shared compositor pass separately from clothing and animal surface paint');
 assert.match(tool, /canvas\.width = 384; canvas\.height = 240/, 'tool preview keeps the dedicated 384x240 canvas surface');
 assert.match(tool, /id="surfaceTexture"/, 'tool preview exposes a background-texture selector');
 assert.match(tool, /value="canvas\.png" selected/, 'tool preview defaults to canvas.png');
 assert.match(tool, /boards\.png/, 'tool preview can switch to another repository surface texture');
 assert.match(tool, /ctx\.drawImage\(source, 0, 0, canvas\.width, canvas\.height\)/, 'selected preview texture is stretched once to fill the complete 384x240 raster');
 assert.match(tool, /SpriteRecolor\.recolorImageData\(imageData\.data, tintHex, 'direct'\)/, 'preview shade-fills the stretched raster through the same direct clothing recolor path');
-assert.match(spriteRecolor, /function directShadeFillPixels\(data, targetRgb, predicate = null\)/, 'SpriteRecolor owns one canonical direct shade-fill implementation');
-assert.match(spriteRecolor, /const luminanceBins = new Uint32Array\(256\)/, 'direct shade-fill derives the relative-shading median with a fixed histogram instead of sorting every tinted pixel');
-assert.doesNotMatch(spriteRecolor, /luminances\.sort/, 'direct shade-fill must not allocate and sort a per-pixel luminance array');
-assert.match(spriteRecolor, /const neutral = Math\.max\(0\.0001, \(\(lowerBin \+ upperBin\) \* 0\.5\) \/ 255\)/, 'chosen tint brightness remains anchored at the affected region median');
-assert.match(spriteRecolor, /directShadeFillPixels\(data, \[tr, tg, tb\], null\)/, 'SpriteRecolor direct mode routes through the canonical shade-fill implementation');
+assert.match(spriteRecolor, /function directShadeFillPixels\(data, targetRgb, predicateOrOptions = null\)/, 'SpriteRecolor retains its public direct shade-fill compatibility seam');
+assert.match(spriteRecolor, /colorFillApi\(\)\.shadeFillPixels/, 'SpriteRecolor routes direct fills into the canonical ColorFill owner');
+assert.match(colorFill, /if \(lum > peakLuminance\) peakLuminance = lum;/, 'direct shade-fill derives its anchor from the brightest eligible source pixel');
+assert.doesNotMatch(colorFill, /luminanceBins|luminances\.sort/, 'direct shade-fill no longer needs median histogram/sort work');
+assert.match(colorFill, /lum \/ peakLuminance/, 'chosen tint brightness scales each source pixel relative to the sampled source-region peak');
+assert.match(spriteRecolor, /directShadeFillPixels\(data, \[tr, tg, tb\], null\)/, 'SpriteRecolor direct mode routes through the shared shade-fill implementation');
 assert.doesNotMatch(spriteRecolor, /CreatureGeneticsRender\?\.recolorPixels/, 'pattern tint must not delegate back into the animal renderer');
-assert.match(weaving, /window\.SpriteRecolor\?\.directShadeFillPixels/, 'woven motif ink uses the same canonical direct shade-fill implementation as its cloth base');
-assert.match(renderer, /window\.SpriteRecolor\?\.directShadeFillPixels/, 'animal base and genetic pattern recoloring use the pattern system direct shade-fill implementation');
+assert.match(weaving, /window\.ColorFill\?\.shadeFillPixels/, 'woven motif ink uses the canonical ColorFill shade implementation directly');
+assert.match(weaving, /sourceData: shadeSourceData,[\s\S]*?samplePredicate:[\s\S]*?applyPredicate:/, 'woven motifs measure source shading separately from their paint mask');
+assert.match(renderer, /window\.ColorFill\?\.shadeFillPixels/, 'animal base and genetic pattern recoloring use the same canonical ColorFill implementation');
 assert.doesNotMatch(tool, /ctx\.createPattern\(/, 'preview must not tile the background texture');
 assert.match(tool, /'pattern-tool:' \+ \$\('surfaceTexture'\)\.value/, 'preview cache identity includes the selected surface texture');
 assert.match(tool, /'motif_' \+ id \+ '\.png'/, 'motif exports use motif_<pattern name>.png');

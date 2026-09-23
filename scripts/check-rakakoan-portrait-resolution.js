@@ -39,6 +39,7 @@ global.fetch = async (input) => {
   }
 };
 
+require(path.join(repoRoot, 'docs', 'js', 'color-fill.js')); // Portrait tint helpers depend on the canonical shared pixel-fill implementation.
 require(path.join(repoRoot, 'docs', 'js', 'portrait-utils.js'));
 
 async function main() {

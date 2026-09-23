@@ -258,10 +258,11 @@
   const current = document.currentScript; // Resolves every animal/fey module beside repo-picker.js regardless of hosting prefix/commit URL.
   const moduleUrl = (name, version) => current?.src ? new URL(`${name}?v=${version}`, current.src).href : `../../js/${name}?v=${version}`;
   const scenePollerSource = moduleUrl('scene-ready-poller.js', '20260917a');
-  const spriteRecolorSource = moduleUrl('sprite-recolor.js', '20260920relative-shade1');
+  const colorFillSource = moduleUrl('color-fill.js', '20260923colorfill4'); // Shared source-art fill math required by sprite, creature, and weaving renderers.
+  const spriteRecolorSource = moduleUrl('sprite-recolor.js', '20260923colorfill2');
   const repoPatternSource = moduleUrl('repo-pattern-library.js', '20260920repo1');
-  const weavingSource = moduleUrl('clothing-weaving-system.js', '20260920animal-scale-outline1');
-  const creatureRendererSource = moduleUrl('creature-genetics-render.js', '20260920animal-scale-outline1');
+  const weavingSource = moduleUrl('clothing-weaving-system.js', '20260923colorfill2');
+  const creatureRendererSource = moduleUrl('creature-genetics-render.js', '20260923colorfill2');
   const headwearSource = moduleUrl('animal-npc-headwear.js', '20260905feyhat1');
   const bridgeSource = moduleUrl('animal-chathead-frame.js', '20260915perf1');
   const source = moduleUrl('character-studio-animal-appearance.js', '20260920animal-scale-outline1');
@@ -281,6 +282,7 @@
   // animal appearance extension sees the same pattern compositor/renderer as
   // the game rather than maintaining a Character-Studio-only approximation.
   appendModule(scenePollerSource, 'character-studio-scene-poller', 'scene-ready-poller.js for Character Studio');
+  appendModule(colorFillSource, 'character-studio-color-fill', 'color-fill.js for Character Studio');
   appendModule(spriteRecolorSource, 'character-studio-sprite-recolor', 'sprite-recolor.js for Character Studio');
   appendModule(repoPatternSource, 'character-studio-repo-pattern-library', 'repo-pattern-library.js for Character Studio');
   appendModule(weavingSource, 'character-studio-weaving-compositor', 'clothing-weaving-system.js for Character Studio');
