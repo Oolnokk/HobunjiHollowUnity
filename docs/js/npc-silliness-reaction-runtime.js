@@ -18,6 +18,9 @@
   const AMBIENT_CONFIG_PATH = 'config/dialogue/ambient-dialogue.json'; // Used only to mirror AmbientDialogue's greeting radius for greeting replacement.
   const ALLOWED_SOCIAL_TYPES = Object.freeze(['silliness', 'dance', 'music']); // Used by automatic player-stimulus selection and public react() normalization.
   const ROLE_IDS = Object.freeze(['companion', 'mount', 'shoulderPet']); // Used when matching an animal-directed AmbientDialogue event back to the active stable animal.
+  const CREATURE_SIZE_CLASSES = Object.freeze(['small', 'medium', 'large']); // Used to compare a pet's bred size against its species-normal size without duplicating genetics behavior.
+  const RARE_SIZE_TIER_BY_DELTA = Object.freeze({ '-2': 'sizeTwoSmaller', '-1': 'sizeOneSmaller', 1: 'sizeOneLarger', 2: 'sizeTwoLarger' }); // Maps size-class distance to the authored rare-size reaction pool.
+  const RARE_SIZE_TIERS = new Set(Object.values(RARE_SIZE_TIER_BY_DELTA)); // Used by animal pool lookup to distinguish role-independent rare-size reactions from role-specific tiers.
 
   const FALLBACK_CONFIG = Object.freeze({ // Used only if the authored JSON cannot be loaded, so reactions never become fatal.
     settings: Object.freeze({ reactionRadiusTiles: 4, cooldownMs: 9000, durationMs: 4400, directPetGreetingRank: 3 }),
@@ -27,6 +30,10 @@
         label: 'Neighborly',
         animal: Object.freeze({
           recognized: Object.freeze(['Hello, {animalName}!']),
+          sizeTwoLarger: Object.freeze(['Dear Breath, that has to be the biggest {species} I have ever seen in my life.']),
+          sizeOneLarger: Object.freeze(['I think you might be overfeeding your {species}.']),
+          sizeOneSmaller: Object.freeze(['What a cute little fellow. Runt of the litter?']),
+          sizeTwoSmaller: Object.freeze(['Dear Breath, that has to be the tiniest {species} I have ever seen in my life.']),
           trained: Object.freeze({ mount: Object.freeze(["That's a fine {species}." ]), companion: Object.freeze(['Good {species}.']), shoulderPet: Object.freeze(['Well, hello up there.']) }),
           familiar: Object.freeze({ mount: Object.freeze(["They're settling in nicely."]), companion: Object.freeze(['{animalName} listens well.']), shoulderPet: Object.freeze(['{animalName} looks comfortable up there.']) }),
           wary: Object.freeze({ mount: Object.freeze(['Easy with that {species}.']), companion: Object.freeze(['Keep {animalName} close, please.']), shoulderPet: Object.freeze(['Oh! I almost missed {animalName}.']) }),
@@ -91,7 +98,7 @@
     if (!profile) return [];
     if (category === 'animal') {
       const tier = String(options.tier || 'wary'); // Animal familiarity tier selects recognized/trained/familiar/wary/recognition authoring.
-      if (tier === 'recognized') return cleanPool(profile.animal?.recognized);
+      if (tier === 'recognized' || RARE_SIZE_TIERS.has(tier)) return cleanPool(profile.animal?.[tier]);
       const role = String(options.role || 'companion'); // Stable role selects the role-specific animal pool within the tier.
       return cleanPool(profile.animal?.[tier]?.[role]);
     }
@@ -223,6 +230,19 @@
   function speciesLabel(entry) {
     return global.CREATURE_DB?.[entry?.kind]?.label || entry?.kind || 'animal';
   }
+  function normalizedCreatureSize(value) {
+    const normalized = String(value || '').trim().toLowerCase(); // Canonical size token used for species-default versus bred-size comparison.
+    return CREATURE_SIZE_CLASSES.includes(normalized) ? normalized : null;
+  }
+  function rareSizeTierForEntry(entry) {
+    const kind = String(entry?.kind || ''); // Stable species key used to read its ordinary size from CREATURE_DB.
+    const defaultSize = normalizedCreatureSize(global.CREATURE_DB?.[kind]?.defaultSizeClass); // Species-normal size is the baseline for deciding whether this pet is unusually large or small.
+    if (!defaultSize) return null;
+    const actualSize = normalizedCreatureSize(entry?.genotype?.sizeClass || entry?.sizeClass || defaultSize); // Bred genotype size is preferred; legacy entries quietly fall back to their species normal.
+    if (!actualSize) return null;
+    const sizeDelta = CREATURE_SIZE_CLASSES.indexOf(actualSize) - CREATURE_SIZE_CLASSES.indexOf(defaultSize); // One-step and opposite-end differences select different authored reactions.
+    return RARE_SIZE_TIER_BY_DELTA[String(sizeDelta)] || null;
+  }
   function socialDay() {
     const rapportDay = Number(global.NpcRapport?.currentGameDay?.()); // Rapport's social-day bridge is preferred when available.
     if (Number.isFinite(rapportDay)) return Math.floor(rapportDay);
@@ -244,13 +264,15 @@
   function animalLine(npcId, animal, tier = animalTier(npcId, animal)) {
     const animalName = animal.entry?.name || speciesLabel(animal.entry); // Placeholder value prefers the stable animal's player-given name.
     const species = speciesLabel(animal.entry); // Placeholder value exposes the creature species label for generic lines.
+    const rareSizeTier = tier === 'recognition' ? null : rareSizeTierForEntry(animal.entry); // One-time recognition keeps its progression-specific copy; ordinary pet reactions may be replaced by a size quip.
+    const resolvedTier = rareSizeTier || tier; // Rare bred size takes priority over the ordinary familiarity tier for ambient pet copy.
     return resolve({
       npcId,
       category: 'animal',
-      tier,
+      tier: resolvedTier,
       role: animal.role,
       values: { animalName, species },
-      seed: `${npcId}|${animal.entry?.id}|${socialDay()}|${tier}|${animal.role}`,
+      seed: `${npcId}|${animal.entry?.id}|${socialDay()}|${resolvedTier}|${animal.role}`,
     });
   }
 
@@ -539,6 +561,7 @@
     installed: true,
     resolve,
     profileForNpc: npcId => ({ ...profileForNpc(String(npcId || '')) }),
+    rareSizeTierForEntry: entry => rareSizeTierForEntry(entry),
     reload: loadConfig,
     getDebug,
   });
