@@ -10767,6 +10767,10 @@
         const kind = String(walker?.animalKind || '');
         if (!plane || !kind) return null;
 
+        if (walker._animalSleepRequested === true) {
+          window.AnimalSleepPresentation?.forceHeadDown?.(avatarRef, walker); // Apply the same sleep head pose before resolving the face point, including the very first dialogue frame.
+        }
+
         const authoredFrame = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[kind]?.chatheadFrame;
         const frameCenter = window.AnimalChatheadFrame?.frameCenterForKind?.(kind)
           || (authoredFrame ? {
