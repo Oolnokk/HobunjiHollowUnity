@@ -8694,6 +8694,7 @@
             }
 
             const localeInstances = workspace.localeInstances || [];
+            window.LocaleCaveRuntime?.registerWorkspace?.(zoneId, workspace, localeDefs, merged.tiles); // Cached and new zones need the low-side tier and exterior GLB registry rebuilt.
             if (localeInstances.length) {
               const placedIds = new Set(localeInstances.map(inst => inst.localeId));
               remainingLocales = remainingLocales.filter(l => !placedIds.has(l.id));
@@ -13332,6 +13333,12 @@
               : denCaveVariant ? { textureUrl: denCaveVariant.textureUrl, color: denCaveVariant.color, textureRepeat: 0.35, useLambert: true, emissive: 0x000000 }
               : { textureUrl: 'assets/textures/carved_smooth.png', color: 0x808080, textureRepeat: 0.35, useLambert: true, emissive: 0x000000 }; // Never leave an authored cavern on an untextured material fallback.
             const cavernMesh = InteriorSceneBuilder.buildCarvedCavernMesh(THREE, mapData.mesh, cavernMaterialOpts);
+            if (mapData.id === 'map_i_den_banubu' && cavernMesh.isMesh) {
+              const stone = cavernMesh.material; // Reuses the canonical cliff texture/UVs while letting Banubu's cloud point lights reach the rock.
+              cavernMesh.material = new THREE.MeshLambertMaterial({
+                map: stone.map, color: stone.color, side: stone.side,
+              });
+            }
             _markOutline(cavernMesh);
             bScene.add(cavernMesh);
             const cavernFloorMesh = InteriorSceneBuilder.buildCavernFloorMesh?.(
@@ -13389,6 +13396,7 @@
             bScene.add(glow);
           }
           window.ColorPoolsSystem?.decorateScene?.({ THREE, scene: bScene, mapData }); // Renders Color Pools metadata as the three tinted 2x2 water surfaces without adding a second cave-generation path.
+          window.BanubuCaveClouds?.decorate?.({ THREE, scene: bScene, mapData }); // Authored low clouds and nearby cool lights only in Banubu's cavern.
           // Key-gated locale-cavern doors are authored connector metadata, not holes
           // punched into the footprint mesh. The wall therefore remains visually
           // solid until the key is owned, at which point the normal authored door
@@ -13757,6 +13765,7 @@
           // whole scene graph every frame in occlusionSafeCameraPosition.
           const occlusionMeshes = [];
           bScene.traverse(o => { if (o.userData?.cameraObstacle) occlusionMeshes.push(o); });
+          window.BanubuCaveClouds?.validateCaveMaterials?.({ THREE, scene: bScene, mapData }); // Repairs malformed cave texture UV transforms once before Three.js renders the scene.
           window.CinematicCameraRuntime?.registerArea?.(mapId, mapData.cinematicCameras || []); // Cave/building cameras share this scene's local tile coordinate space.
           const info = { scene: bScene, grid: bGrid, cols, rows, transitions, vendorZones: mapData.vendorZones || [], routes: buildingRoutes, loadSource, fallback: loadSource !== 'config', name: mapData.name || mapId, wallStyle: mapData.wallStyle || '', entrySpots: mapData.entrySpots || {}, keyDoorGroups, mineFloor: mapData.mineFloor || null, minePlacementSafeTileCount: mapData.minePlacementSafeTileCount ?? null, disconnectedFloorTilesRemoved: mapData.disconnectedFloorTilesRemoved ?? 0, occlusionMeshes };
           _buildingScenes.set(mapId, info);

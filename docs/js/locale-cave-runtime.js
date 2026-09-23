@@ -15,21 +15,27 @@
     return !!object && (object.key === 'cave_small' || object.visual?.renderer === 'cave_small');
   }
 
-  function registerWorkspace(mapId, workspace, localeDefinitions = []) {
+  function registerWorkspace(mapId, workspace, localeDefinitions = [], foldedTiles = null) {
     const defs = new Map((localeDefinitions || []).filter(Boolean).map(locale => [locale.id, locale]));
     const caves = [];
     for (const instance of workspace?.localeInstances || []) {
       const locale = defs.get(instance?.localeId);
-      if (!locale) continue;
-      const sourceById = new Map((locale.objects || []).map(object => [object.id, object]));
+      const entrance = instance.connectors?.[0]; // Low-side connector is the reliable floor tier when the cave overlaps high cliff cells.
+      const entranceTile = entrance && foldedTiles?.get?.(`${entrance.x},${entrance.y}`);
+      const floorTier = instance.floorTier != null && Number.isFinite(Number(instance.floorTier))
+        ? Number(instance.floorTier)
+        : Number.isFinite(Number(entranceTile?.elevTier)) && entranceTile
+          ? Number(entranceTile.elevTier) : null;
+      // Cached Tothal workspaces retain placed objects but do not rerun the generator capture.
+      const sourceById = new Map((locale?.objects || []).map(object => [object.id, object]));
       for (const placed of instance.objects || []) {
         const source = sourceById.get(placed.id);
         if (!caveObjectDefinition(source) && !caveObjectDefinition(placed)) continue;
         caves.push({
           ...clone(placed),
           localeId: instance.localeId,
-          localeName: instance.name || locale.name || instance.localeId,
-          floorTier: Number.isFinite(Number(instance.floorTier)) ? Number(instance.floorTier) : null, // Locale floor remains authoritative even when the cave object overlaps embedded high terrain.
+          localeName: instance.name || locale?.name || instance.localeId,
+          floorTier, // The low-side connector, rather than the high rear plateau or an absent value coerced to zero, anchors the facade.
           visual: clone(source?.visual || placed.visual || { renderer: 'cave_small', scale: 1 }),
           sourceObjectId: source?.id || placed.id,
         });

@@ -1,6 +1,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 const locale = require('../docs/config/locales/locale_banubu_shrine.json');
 const hikiHikiLocale = require('../docs/config/locales/locale_hikihiki_shrine.json'); // Used to lock Hiki-hiki to the Southern Cloud Forest.
 const rahayobiLocale = require('../docs/config/locales/locale_mother_rahayobi_shrine.json'); // Used to lock Mother Rahayobi to the Eastern Mire.
@@ -116,8 +117,20 @@ const gameSource = fs.readFileSync(path.join(repoRoot, 'docs/game.js'), 'utf8');
 const gameIndex = fs.readFileSync(path.join(repoRoot, 'docs/index.html'), 'utf8');
 assert(caveRuntime.includes('generateZoneWorkspace = function localeCaveGenerateZoneWorkspace'), 'game wilderness generation must register placed locale caves');
 assert(zoneRenderer.includes('LocaleCaveRuntime?.cavesForZone?.(mapId)'), 'game cave renderer must consume locale cave registrations');
-assert(caveRuntime.includes('floorTier: Number.isFinite(Number(instance.floorTier))'), 'locale cave registry must preserve the placed locale floor tier');
-assert(zoneRenderer.includes('Number.isFinite(Number(cave.floorTier)) ? Number(cave.floorTier) : sampledTier'), 'locale cave renderer must anchor terrain-aware caves to their locale floor tier');
+assert(caveRuntime.includes('const floorTier = instance.floorTier != null'), 'locale cave registry must preserve the placed locale floor tier');
+assert(caveRuntime.includes('entranceTile.elevTier'), 'locale cave registry must use the low-side connector for folded terrain tier');
+const caveContext = { window: null }; // Exercises registration after an IndexedDB cache restore with no fresh generator call.
+caveContext.window = caveContext;
+vm.createContext(caveContext);
+vm.runInContext(caveRuntime, caveContext, { filename: 'locale-cave-runtime.js' });
+const restoredWorkspace = { localeInstances: [{ localeId: locale.id, name: locale.name,
+  connectors: [{ x: 4, y: 5 }], objects: [{ id: 'obj_structure', key: 'cave_small', x: 3, y: 3, w: 3, h: 3 }] }] };
+caveContext.LocaleCaveRuntime.registerWorkspace('map_northern_cliffs', restoredWorkspace, [locale], new Map([['4,5', { elevTier: 2 }]]));
+const restoredCaves = caveContext.LocaleCaveRuntime.cavesForZone('map_northern_cliffs');
+assert.strictEqual(restoredCaves.length, 1, 'cached Tothal locale must reconstruct its GLB visual registry');
+assert.strictEqual(restoredCaves[0].floorTier, 2, 'cached cave must stand on its low-side connector tier');
+assert.strictEqual(restoredCaves[0].visual.scaleX, 1.5, 'restored cave keeps authored facade scaling');
+assert(zoneRenderer.includes('cave.floorTier != null && Number.isFinite(Number(cave.floorTier))'), 'locale cave renderer must anchor terrain-aware caves to their locale floor tier');
 assert(zoneRenderer.includes('THREE.ClampToEdgeWrapping') && zoneRenderer.includes('tex.repeat.set(1, 1)'), 'cave material must stretch once across the fitted cave UVs instead of tiling');
 assert(zoneRenderer.includes('fitCaveUvToTexture') && zoneRenderer.includes('(sourceUv.getX(i) - minU) / spanU'), 'cave UVs must be normalized to the full 0–1 texture span');
 assert(!zoneRenderer.includes('THREE.RepeatWrapping'), 'cave renderer must not use repeating texture wrapping');
