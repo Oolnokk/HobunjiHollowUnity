@@ -2,8 +2,16 @@ name: Smoke Random Ruin Walls and Inputs
 
 on:
   push:
-    branches:
-      - agent/tool-hub-debrisifier-active
+    branches: [main]
+    paths:
+      - '.github/workflows/smoke-dev-random-ruin-walls-inputs.yml'
+      - 'docs/js/dev-random-ruin-*.js'
+      - 'docs/js/camera-look-clamp.js'
+  pull_request:
+    paths:
+      - '.github/workflows/smoke-dev-random-ruin-walls-inputs.yml'
+      - 'docs/js/dev-random-ruin-*.js'
+      - 'docs/js/camera-look-clamp.js'
   workflow_dispatch:
 
 jobs:
