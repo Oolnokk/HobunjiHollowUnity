@@ -233,6 +233,10 @@
     );
   }
 
+  function dialogueSpeciesLabel(targetSpeciesId, speakerSpeciesId) {
+    return window.DialogueSpeciesNames?.labelFor?.(targetSpeciesId, speakerSpeciesId) ?? String(targetSpeciesId || '');
+  }
+
   function resolveDialogueNicknameTokens(text, rec, walker, depth = 0) {
     const deps = state.dialogueDeps;
     const player = deps?.getPlayerData?.() || null;
@@ -247,6 +251,7 @@
     for (const ch of playerName) { firstL2V1 += ch; if (vowels.has(ch)) break; }
     const dlgState = window.DialogueContent?.getNpcDlgState?.(rec?.id) || {};
     const localNickname = dlgState.localNickname || playerName;
+    const speakerSpeciesId = rec?.appearance?.speciesId || rec?.speciesId || rec?.species || ''; // Used to resolve dialogue species words from this ambient speaker's point of view.
     let out = String(text || '')
       .replace(/\{\{npcName\}\}/g, rec?.name || '')
       .replace(/\{\{playerName\}\}/g, playerName)
@@ -258,8 +263,8 @@
       .replace(/\{\{playerPronounSelf\}\}/g, prSelf)
       .replace(/\{\{playerFirstL2V1\}\}/g, firstL2V1)
       .replace(/\{\{role\}\}/g, rec?.role || '')
-      .replace(/\{\{npcSpecies\}\}/g, rec?.appearance?.speciesId || rec?.species || '')
-      .replace(/\{\{playerSpecies\}\}/g, player?.appearance?.speciesId || '');
+      .replace(/\{\{npcSpecies\}\}/g, dialogueSpeciesLabel(speakerSpeciesId, speakerSpeciesId))
+      .replace(/\{\{playerSpecies\}\}/g, dialogueSpeciesLabel(player?.appearance?.speciesId, speakerSpeciesId));
     if (depth < 4) {
       out = out.replace(/\{\{pool:([^}]+)\}\}/g, (_token, poolId) => {
         const nested = (rec?.phrasePools || []).find(pool => pool.id === poolId.trim() || pool.name === poolId.trim());
