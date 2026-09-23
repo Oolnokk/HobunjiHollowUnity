@@ -929,7 +929,15 @@
     if (knockbackImpactDebug) {
       const effectText = Object.entries(knockbackImpactDebug.effects || {}).map(([key, value]) => `${key}=${value}`).join(', '); // Full scaled profile before caps/lethality.
       const appliedText = Object.entries(knockbackImpactDebug.appliedEffects || {}).map(([key, value]) => `${key}=${value}`).join(', '); // Effects that actually landed before any lethal cutoff.
-      lines.push(`Knockback collision: ${knockbackImpactDebug.label} kind=${knockbackImpactDebug.kind} deficit=${Number(knockbackImpactDebug.deficitTiles || 0).toFixed(2)}t strength=${Number(knockbackImpactDebug.strengthPercent || 0).toFixed(0)}% travel=${Number(knockbackImpactDebug.traveledTiles || 0).toFixed(2)}/${Number(knockbackImpactDebug.intendedTiles || 0).toFixed(2)}t lethal=${knockbackImpactDebug.lethal ? 1 : 0} hazards=blade:${knockbackImpactDebug.bladedHazard ? 1 : 0},fire:${knockbackImpactDebug.fireHazard ? 1 : 0} profile=[${effectText || 'none'}] applied=[${appliedText || 'none'}]`);
+      lines.push(`Knockback collision: ${knockbackImpactDebug.label} mode=${knockbackImpactDebug.mode || 'horizontal'} kind=${knockbackImpactDebug.kind} deficit=${Number(knockbackImpactDebug.deficitTiles || 0).toFixed(2)}t strength=${Number(knockbackImpactDebug.strengthPercent || 0).toFixed(0)}% travel=${Number(knockbackImpactDebug.traveledTiles || 0).toFixed(2)}/${Number(knockbackImpactDebug.intendedTiles || 0).toFixed(2)}t drop=${Number(knockbackImpactDebug.dropTiers || 0).toFixed(2)}tier/${Number(knockbackImpactDebug.dropWorld || 0).toFixed(2)}y lethal=${knockbackImpactDebug.lethal ? 1 : 0} hazards=blade:${knockbackImpactDebug.bladedHazard ? 1 : 0},fire:${knockbackImpactDebug.fireHazard ? 1 : 0} profile=[${effectText || 'none'}] applied=[${appliedText || 'none'}]`);
+    }
+    const knockbackLedgeDebug = window.__knockbackLedgeDebug; // Latest cliff-edge decision/fall state written by game.js for mobile-only validation.
+    if (knockbackLedgeDebug) {
+      lines.push(`Knockback ledge: entity=${knockbackLedgeDebug.entity || '-'} phase=${knockbackLedgeDebug.phase || '-'} originY=${Number(knockbackLedgeDebug.originSurfaceY || 0).toFixed(2)} landingY=${Number(knockbackLedgeDebug.landingSurfaceY || 0).toFixed(2)} drop=${Number(knockbackLedgeDebug.dropTiers || 0).toFixed(2)}tier reason=${knockbackLedgeDebug.reason || '-'}`);
+    }
+    const burningVfxDebug = window.BurningAfflictionVfx?.debugSnapshot?.(); // Confirms authored furniture fire emitters are attached without requiring a console.
+    if (burningVfxDebug) {
+      lines.push(`Burning VFX: active=${burningVfxDebug.activeEntities || 0} template=${burningVfxDebug.templateReady ? 'ready' : (burningVfxDebug.loading ? 'loading' : 'missing')} last=${burningVfxDebug.lastEvent?.phase || '-'} entity=${burningVfxDebug.lastEvent?.entity || '-'}`);
     }
     const tentDebug = window.BanditCamps?.tentInteractionDebug; // Identifies missing ray/focus/nearby state without requiring a console.
     if (tentDebug?.focus) lines.push(`Bandit tent focus: ${tentDebug.focus.result} nearby=${tentDebug.focus.nearby} ray=${tentDebug.focus.hasRay ? 1 : 0} api=${tentDebug.focus.hasFocusApi ? 1 : 0}`);
