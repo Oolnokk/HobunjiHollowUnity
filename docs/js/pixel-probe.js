@@ -927,6 +927,12 @@
     lines.push(`Livestock caller stack tracing: ${window.PerfProfiler?.traceLivestockCallers === true ? 'ON (expensive)' : 'off'}`);
     const playerVitalsDebug = window.PlayerVitals?.getDebug?.(); // Confirms lethal resource ticks reached the shared death handler on mobile.
     if (playerVitalsDebug) lines.push(`Player vitals: hp=${playerVitalsDebug.health}/${playerVitalsDebug.maxHealth} deathHandled=${playerVitalsDebug.deathHandled ? 1 : 0}`);
+    const dialogueCameraDebug = window.CinematicCameraRuntime?.debugSnapshot?.(); // Mobile-verifiable live camera/face target after removing the screen-space portrait.
+    if (dialogueCameraDebug?.activeCameraId) {
+      const cp = dialogueCameraDebug.cameraPosition || {};
+      const tp = dialogueCameraDebug.resolvedTarget || {};
+      lines.push(`Dialogue camera: id=${dialogueCameraDebug.activeCameraId} reason=${dialogueCameraDebug.activeReason || '-'} npc=${dialogueCameraDebug.targetNpcId || '-'} camera=(${Number(cp.x).toFixed(2)},${Number(cp.y).toFixed(2)},${Number(cp.z).toFixed(2)}) face=(${Number(tp.x).toFixed(2)},${Number(tp.y).toFixed(2)},${Number(tp.z).toFixed(2)}) latest="${dialogueCameraDebug.latestChange || '-'}"`);
+    }
     const banubuSnoreDebug = window.BanubuSnore?.debugSnapshot?.(); // Exposes entrance-origin, chunk gate, and elevation attenuation for phone testing without devtools.
     if (banubuSnoreDebug) {
       const hDist = Number(banubuSnoreDebug.horizontalDistanceTiles); // Used only to format the current horizontal component in the copyable report.
