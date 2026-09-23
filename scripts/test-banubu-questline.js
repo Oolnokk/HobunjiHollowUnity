@@ -219,6 +219,8 @@ assert.strictEqual(questline.acceptQuest(banubu, 1).ok, true);
 assert.strictEqual(state.status, 'active');
 assert.strictEqual(state.progress.kind, 'story');
 assert.strictEqual(state.progress.provider, 'banubu');
+assert.strictEqual(state.progress.npcName, 'Lord Banubu');
+assert.match(state.progress.title, /^Lord Banubu — /);
 assert.strictEqual(state.progress.stage, 1);
 assert.match(state.progress.title, /Three-Fish Pie/);
 assert.match(state.progress.objective, /Three-Fish Pie/);
@@ -310,6 +312,7 @@ context.__hobunjiPlayerProfile.worldId = 'world_test';
 // Canonical source database must itself be clean so the Dialogue Editor does not resurrect generated daily chatter.
 const npcDatabase = JSON.parse(read('docs/config/npcs/hobunji-starter-npc-database.json'));
 const sourceBanubu = npcDatabase.npcs.find(npc => npc.id === 'banubu');
+assert.strictEqual(sourceBanubu.name, 'Lord Banubu', 'canonical NPC database must expose Lord Banubu as the player-facing name');
 assert(sourceBanubu);
 assert.deepStrictEqual(sourceBanubu.dialogueTrees, []);
 assert.deepStrictEqual(sourceBanubu.phrasePools, []);
