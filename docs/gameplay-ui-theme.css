@@ -71,8 +71,48 @@
   #npcWardrobeOverlay,
   #hobunjiDayProgressReview,
   .time-passage-backdrop
-) :is(button, button *, input, select, textarea, label, kbd, summary) {
+) :is(button, input, select, textarea, label, kbd, summary, [role="button"]) {
   text-shadow: var(--game-ui-text-outline);
+}
+
+/* Artwork is already authored with its own silhouette/outline. The broad text
+   treatment above is inherited, so explicitly stop it at icon/media leaves.
+   This also protects color emoji that are correctly marked as icon/role=img
+   content from being buried under eight black text-shadow copies. */
+:is(
+  #menuPanel,
+  #farmEditorPanel,
+  #mapEditPanel,
+  #devSpawnPanel,
+  #furniturePlacerPanel,
+  #npcDialogue,
+  #dyePanel,
+  #shippingStandaloneRoot,
+  .hobunji-cooking-layer,
+  .cp-overlay,
+  .pa-overlay,
+  .loomcraft-overlay,
+  #troughPanelOverlay,
+  #npcWardrobeOverlay,
+  #hobunjiDayProgressReview,
+  .time-passage-backdrop
+) :is(
+  img,
+  picture,
+  svg,
+  canvas,
+  video,
+  [role="img"],
+  [data-icon],
+  [data-ui-icon],
+  [data-ui-art],
+  [class~="icon"],
+  [class*="-icon"],
+  [class*="_icon"],
+  [class*="Icon"]
+) {
+  text-shadow: none !important;
+  -webkit-text-stroke: 0 transparent !important;
 }
 
 /* Backdrops now dim the world just enough to separate UI without replacing it
