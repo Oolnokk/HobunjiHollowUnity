@@ -62,12 +62,12 @@
   // findNpcAreaLink() searches below. Mirrors the exact matching rules the
   // single-hop version of this code used to use, so existing direct links
   // (town↔building, building→town, farm↔interior) behave identically.
-  function areaLinksFrom(area) {
+  function areaLinksFrom(area, { warmBuildings = true } = {}) {
     const pool = deps.npcTransitionPool(area);
     const links = [];
     for (const t of pool) {
       if (t.target === 'building' && t.targetMapId) {
-        if (!deps.buildingScenes.has(t.targetMapId)) deps.loadBuildingScene(t.targetMapId); // warm it up before an NPC reaches the door
+        if (warmBuildings && !deps.buildingScenes.has(t.targetMapId)) deps.loadBuildingScene(t.targetMapId); // Normal routing warms the destination; topology-only callers such as flood shelter selection can explicitly skip that cost.
         const bi = deps.buildingScenes.get(t.targetMapId);
         const spawn = bi ? deps.buildingSpawnFromExit(bi, bi.cols, bi.rows)
           : { col: t.targetCol ?? 0, row: t.targetRow ?? 0 };
@@ -93,13 +93,13 @@
   // returns only the *first* hop; the caller re-resolves on arrival,
   // which naturally chains the walk leg by leg instead of skipping
   // straight to the final room.
-  function findNpcAreaLink(fromArea, toArea) {
+  function findNpcAreaLink(fromArea, toArea, { warmBuildings = true } = {}) {
     if (fromArea === toArea) return null;
     const visited = new Set([fromArea]);
     const queue = [{ area: fromArea, firstHop: null }];
     while (queue.length) {
       const { area, firstHop } = queue.shift();
-      for (const link of areaLinksFrom(area)) {
+      for (const link of areaLinksFrom(area, { warmBuildings })) {
         const hop = firstHop || link;
         if (link.toArea === toArea) return hop;
         if (!visited.has(link.toArea)) {

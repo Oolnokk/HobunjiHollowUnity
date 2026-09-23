@@ -121,6 +121,9 @@
   }
 
   const npcStationsById = new Map(); // stationId → { id, label, area, c, r, rotY, pose, toolKey, toolIntervalSec, ... }
+  const floodShelterAssignmentsByNpcId = new Map(); // Used to keep each NPC committed to one shelter/seat for the whole flood emergency instead of retargeting every planner tick.
+  let floodShelterTownBuildingLinks = null; // Used to cache direct town-to-building doors for one emergency; cleared when schedules resume.
+  let floodShelterEmergencyWasActive = false; // Used to clear cached shelter commitments once flood hysteresis releases.
 
   // Optional ambient gaze target — see game.js's _applyNpcAmbientLook, which
   // reads this off whatever station an idling/seated NPC currently resolves
@@ -202,6 +205,187 @@
       out.push({ ...station, stationId: station.id });
     }
     return out;
+  }
+
+  function _townFloodEmergencyActive() {
+    const active = !!window.WaterSystem?.isTownFloodEmergency?.(); // Used to gate the schedule override from WaterSystem's hysteretic town flood state.
+    if (!active && floodShelterEmergencyWasActive) {
+      floodShelterAssignmentsByNpcId.clear();
+      floodShelterTownBuildingLinks = null;
+    }
+    floodShelterEmergencyWasActive = active;
+    return active;
+  }
+
+  function _townBuildingShelterLinks() {
+    if (floodShelterTownBuildingLinks?.length) return floodShelterTownBuildingLinks;
+    const areaLinksFrom = window.NpcPathfinding?.areaLinksFrom;
+    if (typeof areaLinksFrom !== 'function') return [];
+    let links = [];
+    try {
+      links = (areaLinksFrom('town', { warmBuildings: false }) || []).filter(link =>
+        deps.isBuildingArea?.(link?.toArea)
+        && Number.isFinite(link?.exit?.c) && Number.isFinite(link?.exit?.r));
+    } catch (error) {
+      window.__farmLog?.('[flood shelter] unable to inspect town building doors: ' + (error?.message || error), 'warn');
+      return [];
+    }
+    if (links.length) floodShelterTownBuildingLinks = links.map(link => ({
+      toArea: link.toArea,
+      exit: { c: link.exit.c, r: link.exit.r },
+    }));
+    return floodShelterTownBuildingLinks || [];
+  }
+
+  function _firstTownHopToArea(area) {
+    if (!area || area === 'town') return null;
+    try { return window.NpcPathfinding?.findNpcAreaLink?.('town', area, { warmBuildings: false }) || null; }
+    catch { return null; }
+  }
+
+  function _areaBelongsToTown(area, shelterLinks) {
+    const normalized = deps.normalizeNpcArea(area || '');
+    if (normalized === 'town') return true;
+    const hop = _firstTownHopToArea(normalized);
+    return !!hop && shelterLinks.some(link => link.toArea === hop.toArea);
+  }
+
+  function _scheduledTownAnchor(normalTarget, walker) {
+    const targetArea = deps.normalizeNpcArea(normalTarget?.area || '');
+    if (targetArea === 'town' && Number.isFinite(normalTarget?.c) && Number.isFinite(normalTarget?.r)) {
+      return { c: normalTarget.c, r: normalTarget.r };
+    }
+    const hop = _firstTownHopToArea(targetArea);
+    if (Number.isFinite(hop?.exit?.c) && Number.isFinite(hop?.exit?.r)) {
+      return { c: hop.exit.c, r: hop.exit.r };
+    }
+    if (walker?.area === 'town' && Number.isFinite(walker.root?.position?.x) && Number.isFinite(walker.root?.position?.z)) {
+      return { c: walker.root.position.x - 0.5, r: walker.root.position.z - 0.5 };
+    }
+    return null;
+  }
+
+  function _shelterSeatIsTaken(station, npcId) {
+    const stationId = station?.stationId || station?.id;
+    if (!stationId) return true;
+    const reserved = [...floodShelterAssignmentsByNpcId.entries()].some(([otherNpcId, assignment]) =>
+      otherNpcId !== npcId && assignment?.stationId === stationId); // Used to prevent same-tick flood evacuees from reserving one chair before walker targets catch up.
+    if (reserved) return true;
+    if (window.NpcActivities?.isStationOccupied) {
+      return window.NpcActivities.isStationOccupied(station, { npcId });
+    }
+    return (deps.npcWalkers || []).some(walker =>
+      walker.rec?.id && walker.rec.id !== npcId && walker.currentScheduleTarget?.stationId === stationId);
+  }
+
+  function _buildingExitTile(area) {
+    const scene = deps.buildingScenes?.get?.(area); // Used as a guaranteed walkable indoor fallback when a shelter has no available sit station.
+    const exit = scene?.transitions?.find?.(transition => transition?.target === 'exit_building');
+    return Number.isFinite(exit?.col) && Number.isFinite(exit?.row) ? { c: exit.col, r: exit.row } : null;
+  }
+
+  function _pickShelterSeat(rec, assignment) {
+    if (assignment.stationId) {
+      const existing = resolveNpcStationTarget(assignment.stationId);
+      if (existing && existing.area === assignment.buildingArea && !_shelterSeatIsTaken(existing, rec.id)) return existing;
+      assignment.stationId = null;
+    }
+    const seats = findStationsByRole('sit', { area: assignment.buildingArea })
+      .filter(station => !_shelterSeatIsTaken(station, rec.id));
+    if (!seats.length) return null;
+    const indoorEntry = _buildingExitTile(assignment.buildingArea); // Used to prefer a nearby free chair rather than an arbitrary far-corner seat.
+    seats.sort((a, b) => {
+      const da = indoorEntry ? Math.hypot(a.c - indoorEntry.c, a.r - indoorEntry.r) : 0;
+      const db = indoorEntry ? Math.hypot(b.c - indoorEntry.c, b.r - indoorEntry.r) : 0;
+      return da - db || String(a.stationId || a.id).localeCompare(String(b.stationId || b.id));
+    });
+    const chosen = seats[0];
+    assignment.stationId = chosen.stationId || chosen.id;
+    return chosen;
+  }
+
+  function _floodShelterTarget(rec, assignment) {
+    const scene = deps.buildingScenes?.get?.(assignment.buildingArea);
+    if (!scene) {
+      deps.loadBuildingScene?.(assignment.buildingArea);
+      return {
+        area: 'town', c: assignment.entranceC, r: assignment.entranceR, pose: 'stand',
+        activity: 'Seeking flood shelter', floodShelterWaitingForInterior: true,
+      };
+    }
+
+    const seat = _pickShelterSeat(rec, assignment);
+    if (seat) return { ...seat, stationId: seat.stationId || seat.id, pose: 'sit', activity: 'Sheltering from flood' };
+
+    const fallback = assignment.scheduledArea === assignment.buildingArea
+      && Number.isFinite(assignment.scheduledC) && Number.isFinite(assignment.scheduledR)
+      ? { c: assignment.scheduledC, r: assignment.scheduledR }
+      : _buildingExitTile(assignment.buildingArea);
+    if (!fallback) {
+      return {
+        area: 'town', c: assignment.entranceC, r: assignment.entranceR, pose: 'stand',
+        activity: 'Seeking flood shelter', floodShelterWaitingForInterior: true,
+      };
+    }
+    return { area: assignment.buildingArea, c: fallback.c, r: fallback.r, pose: 'stand', activity: 'Sheltering from flood' };
+  }
+
+  function applyTownFloodShelter(rec, normalTarget) {
+    if (!normalTarget || !_townFloodEmergencyActive()) return normalTarget;
+    const shelterLinks = _townBuildingShelterLinks();
+    if (!shelterLinks.length) return normalTarget;
+    const walker = (deps.npcWalkers || []).find(candidate => candidate.rec?.id === rec?.id) || null; // Used to include NPCs currently caught outdoors in town even when today's schedule points elsewhere.
+    let assignment = floodShelterAssignmentsByNpcId.get(rec?.id);
+
+    if (!assignment) {
+      const targetArea = deps.normalizeNpcArea(normalTarget.area || '');
+      const walkerArea = deps.normalizeNpcArea(walker?.area || '');
+      const townExposed = _areaBelongsToTown(targetArea, shelterLinks) || _areaBelongsToTown(walkerArea, shelterLinks);
+      if (!townExposed) return normalTarget;
+
+      const anchor = _scheduledTownAnchor(normalTarget, walker);
+      if (!anchor) return normalTarget;
+      const closest = [...shelterLinks].sort((a, b) =>
+        Math.hypot(a.exit.c - anchor.c, a.exit.r - anchor.r) - Math.hypot(b.exit.c - anchor.c, b.exit.r - anchor.r))[0];
+      if (!closest) return normalTarget;
+
+      assignment = {
+        buildingArea: closest.toArea,
+        entranceC: closest.exit.c,
+        entranceR: closest.exit.r,
+        scheduledArea: targetArea,
+        scheduledC: Number.isFinite(normalTarget.c) ? normalTarget.c : null,
+        scheduledR: Number.isFinite(normalTarget.r) ? normalTarget.r : null,
+        stationId: null,
+      };
+      floodShelterAssignmentsByNpcId.set(rec.id, assignment);
+    }
+
+    const shelter = _floodShelterTarget(rec, assignment);
+    return {
+      ...shelter,
+      semanticActivity: 'floodShelter',
+      obligation: 'critical',
+      plannerSource: 'flood-emergency',
+      plannerStatus: 'READY',
+      floodShelter: true,
+      floodShelterBuildingArea: assignment.buildingArea,
+      floodShelterScheduledArea: assignment.scheduledArea,
+      floodShelterScheduledC: assignment.scheduledC,
+      floodShelterScheduledR: assignment.scheduledR,
+    };
+  }
+
+  function floodShelterSnapshot(npcId) {
+    const assignment = npcId ? floodShelterAssignmentsByNpcId.get(String(npcId)) || null : null; // Used by mobile-friendly debug output for one NPC without dumping every schedule record.
+    return {
+      emergency: _townFloodEmergencyActive(),
+      water: window.WaterSystem?.debugFloodSnapshot?.()?.town || null,
+      assignment: assignment ? { ...assignment } : null,
+      assignmentCount: floodShelterAssignmentsByNpcId.size,
+      shelters: (floodShelterTownBuildingLinks || (_townFloodEmergencyActive() ? _townBuildingShelterLinks() : []))
+        .map(link => ({ area: link.toArea, c: link.exit.c, r: link.exit.r })),
+    };
   }
 
   const _scheduleFallbackLogKeys = new Set();
@@ -334,14 +518,22 @@
         c: visitor.entrance.c, r: visitor.entrance.r,
         label: visitor.entrance.label || 'Visitor entrance',
       };
-      if (!visitor.active) return hasWalker ? { ...entrance, activity: 'departing town', visitorDeparture: true } : null;
-      if (!hasWalker) return { ...entrance, activity: 'arriving in town', visitorArrival: true };
+      if (!visitor.active) {
+        const departureTarget = hasWalker ? { ...entrance, activity: 'departing town', visitorDeparture: true } : null; // Used as the normal visitor lifecycle target before flood sheltering gets a chance to suspend departure.
+        return applyTownFloodShelter(rec, departureTarget);
+      }
+      if (!hasWalker) {
+        const arrivalTarget = { ...entrance, activity: 'arriving in town', visitorArrival: true }; // Used as the normal visitor arrival target before a severe flood redirects them indoors.
+        return applyTownFloodShelter(rec, arrivalTarget);
+      }
     }
-    if (!window.NpcActivityPlanner) return resolveLegacyNpcScheduleTarget(rec);
-    return window.NpcActivityPlanner.resolveNpcTarget(rec, {
-      legacyResolve: resolveLegacyNpcScheduleTarget,
-      hasExistingWalker: hasExistingNpcWalker(rec),
-    }) || null;
+    const normalTarget = !window.NpcActivityPlanner
+      ? resolveLegacyNpcScheduleTarget(rec)
+      : window.NpcActivityPlanner.resolveNpcTarget(rec, {
+          legacyResolve: resolveLegacyNpcScheduleTarget,
+          hasExistingWalker: hasExistingNpcWalker(rec),
+        }) || null; // Used to preserve the NPC's intended schedule location as the anchor for choosing the nearest flood shelter.
+    return applyTownFloodShelter(rec, normalTarget);
   }
 
   // ── Dev/test-only scheduling hooks ────────────────────────────────────
@@ -413,7 +605,15 @@
         x: walker.root?.position?.x, z: walker.root?.position?.z,
         stationToolKey: walker.stationToolKey || null,
         currentScheduleTarget: walker.currentScheduleTarget ? { ...walker.currentScheduleTarget } : null,
+        floodShelter: floodShelterAssignmentsByNpcId.get(npcId) ? { ...floodShelterAssignmentsByNpcId.get(npcId) } : null,
       };
+    },
+    floodShelterSnapshot,
+    setTownFloodShelterDebug(value) {
+      const normalized = value === null || value === undefined ? null : !!value; // Used to force/release flood shelter mode from the existing in-game debug surface.
+      window.WaterSystem?.setTownFloodEmergencyDebugOverride?.(normalized);
+      if (normalized === false) _townFloodEmergencyActive();
+      return floodShelterSnapshot();
     },
   };
 
@@ -427,6 +627,8 @@
     findStationsByRole,
     getVisitorPresence,
     resolveNpcScheduleTarget,
+    applyTownFloodShelter,
+    floodShelterSnapshot,
     // The unwrapped original resolver, exposed for the Agenda/Activity
     // Planner's own "legacyScheduleActivity" activity and for tests —
     // everyone else should keep calling resolveNpcScheduleTarget above.

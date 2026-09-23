@@ -64,6 +64,9 @@
   // Rain gradually silts trenches back in — depth drains while raining and the
   // trench reverts to grass once fully filled. Redigging (single tap) restores depth to 1.
   const TRENCH_SILT_RATE  = 0.0006;  // depth lost per sim tick, per unit rain strength
+  const TOWN_DRAIN_RAIN_EQUIVALENT = 1.65; // Used by Hobunji's passive storm drains: cancels ordinary strength-2 rain on normal town ground while leaving strength-3 storms able to accumulate.
+  const TOWN_FLOOD_SHELTER_ENTER_FRACTION = 0.88; // Used to start the NPC shelter emergency only when the town-wide flood sheet reaches 88% of MAX_WATER.
+  const TOWN_FLOOD_SHELTER_EXIT_FRACTION = 0.70; // Used as hysteresis so NPC schedules do not flicker on/off until the flood falls below 70% of MAX_WATER.
 
   // ── Merged water mesh apron constants ──
   const FAR_APRON_ROWS = 2;      // how many tile-rows of apron beyond the seam
@@ -98,6 +101,8 @@
   // own far terrain/edge inflow tracks its own average instead (see
   // recomputeWater's farLevel computation).
   let _townWaterLevel = 0.5;
+  let _townFloodEmergency = false; // Used by NPC scheduling to suspend ordinary town routines while flood depth is near maximum.
+  let _townFloodEmergencyDebugOverride = null; // Used by in-game/mobile diagnostics to force shelter behavior without waiting for a natural flood.
 
   function _farSouthLevel() {
     if (!farSouthLevel) farSouthLevel = new Float32Array(deps.COLS).fill(0.5);
@@ -217,6 +222,18 @@
         if (col === 0 || col === cols - 1) {
           const target = farLevel * deps.MAX_WATER;
           if (t.water < target) t.water += (target - t.water) * SIDE_INFLOW_RATE;
+        }
+
+        // Hobunji's streets have passive storm drainage in addition to the
+        // terrain's normal absorption/evaporation. Keep it rain-rate-relative:
+        // at the authored RAIN_RATE this is only just stronger than the
+        // remainder of ordinary strength-2 rain on hard-packed paths, while a
+        // strength-3 storm still has positive accumulation and can eventually
+        // overwhelm the system. Trenches/paddies deliberately retain their
+        // authored water so drainage does not erase irrigation/ditch behavior.
+        if (isTown && t.type !== TileType.TRENCH && t.type !== TileType.PADDY) {
+          const townDrainPerTick = deps.RAIN_RATE * TOWN_DRAIN_RAIN_EQUIVALENT; // Used here so the drain stays calibrated if global rain tuning changes later.
+          t.water = Math.max(0, t.water - townDrainPerTick);
         }
 
         t.water = Math.min(tileWaterCapacity(t), t.water);
@@ -421,6 +438,29 @@
     };
   }
 
+  function _syncTownFloodEmergency(baseline) {
+    const depthFraction = baseline?.visible && Number.isFinite(baseline.depth)
+      ? deps.clamp(baseline.depth, 0, 1)
+      : 0; // Used to drive hysteretic shelter state from the rendered flood baseline, whose depth is already normalized to MAX_WATER.
+    if (!_townFloodEmergency && depthFraction >= TOWN_FLOOD_SHELTER_ENTER_FRACTION) _townFloodEmergency = true;
+    else if (_townFloodEmergency && depthFraction <= TOWN_FLOOD_SHELTER_EXIT_FRACTION) _townFloodEmergency = false;
+    return _townFloodEmergency;
+  }
+
+  function debugTownFloodEmergencyStep(depthFraction) {
+    const normalized = deps.clamp(Number(depthFraction) || 0, 0, 1); // Used by mobile/manual diagnostics and regression tests to exercise the real hysteresis transition without manufacturing a whole flooded town grid.
+    return _syncTownFloodEmergency({ visible: normalized > 0, depth: normalized });
+  }
+
+  function isTownFloodEmergency() {
+    return _townFloodEmergencyDebugOverride === null ? _townFloodEmergency : _townFloodEmergencyDebugOverride;
+  }
+
+  function setTownFloodEmergencyDebugOverride(value) {
+    _townFloodEmergencyDebugOverride = value === null || value === undefined ? null : !!value;
+    return isTownFloodEmergency();
+  }
+
   // Pass 1 deliberately mirrors the old sparse collector: only actually visible
   // dynamic-water cells are allocated, and all per-cell flow/cache work is the
   // same work the classic merged renderer already required. If less than 25%
@@ -620,6 +660,7 @@
       const snapshot = _collectDynamicWaterCells(deps.getTownGrid(), TROWS, TCOLS, true);
       _townFlowingTrenchTiles = snapshot.flowingTrenches;
       _townFloodBaseline = snapshot.baseline;
+      _syncTownFloodEmergency(snapshot.baseline);
       const localCells = _filterLocalWaterCellsForFlood(snapshot.cells, snapshot.baseline); // Used to keep town ditches hidden while a higher map-wide flood sheet covers them.
       townWaterMesh = _disposeMergedWaterMesh(townScene, townWaterMesh, 'town dynamic');
       townWaterMesh = buildMergedWaterMesh(townScene, localCells, {
@@ -654,9 +695,19 @@
       floodPlaneVisible: !!floodMesh?.visible,
       localWaterVisible: !!localMesh?.visible,
     });
+    const town = summarize(_townFloodBaseline, townFloodMesh, townWaterMesh); // Used to append town-only drainage/shelter diagnostics without changing the farm snapshot shape.
+    town.stormDrainPerTick = deps ? deps.RAIN_RATE * TOWN_DRAIN_RAIN_EQUIVALENT : 0;
+    town.stormDrainRainEquivalent = TOWN_DRAIN_RAIN_EQUIVALENT;
+    town.floodEmergency = isTownFloodEmergency();
+    town.simulatedFloodEmergency = _townFloodEmergency;
+    town.floodEmergencyDebugOverride = _townFloodEmergencyDebugOverride;
+    town.floodEmergencyEnterFraction = TOWN_FLOOD_SHELTER_ENTER_FRACTION;
+    town.floodEmergencyExitFraction = TOWN_FLOOD_SHELTER_EXIT_FRACTION;
+    town.floodEmergencyEnterDepth = deps ? deps.MAX_WATER * TOWN_FLOOD_SHELTER_ENTER_FRACTION : 0;
+    town.floodEmergencyExitDepth = deps ? deps.MAX_WATER * TOWN_FLOOD_SHELTER_EXIT_FRACTION : 0;
     return {
       farm: summarize(_farmFloodBaseline, farmFloodMesh, farmWaterMesh),
-      town: summarize(_townFloodBaseline, townFloodMesh, townWaterMesh),
+      town,
     };
   }
 
@@ -686,6 +737,9 @@
     buildMergedWaterMesh,
     resetFarmWaterMesh,
     debugFloodSnapshot,
+    isTownFloodEmergency,
+    setTownFloodEmergencyDebugOverride,
+    debugTownFloodEmergencyStep,
     getFlowingTrenchTiles: () => _flowingTrenchTiles,
     getTownFlowingTrenchTiles: () => _townFlowingTrenchTiles,
   };
