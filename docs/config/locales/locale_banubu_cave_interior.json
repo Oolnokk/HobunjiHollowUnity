@@ -305,6 +305,34 @@
       "doorFurnitureKey": "door"
     }
   ],
+  "cinematicCameras": [
+    {
+      "id": "banubu_dialogue_awake",
+      "label": "Banubu dialogue — awake",
+      "position": { "x": 7.2, "y": 0, "z": 9.4 },
+      "target": { "x": 0, "y": 0, "z": 0 },
+      "fovDeg": 38,
+      "blendSeconds": 0.5,
+      "dialogueNpcId": "",
+      "fadePets": true,
+      "playerStage": { "x": 6.5, "z": 10.5 },
+      "targetNpcId": "banubu",
+      "targetAnchorId": "station_banubu_cave_sleep"
+    },
+    {
+      "id": "banubu_dialogue_sleep",
+      "label": "Banubu dialogue — sleeping",
+      "position": { "x": 7.6, "y": 0, "z": 8.3 },
+      "target": { "x": 0, "y": 0, "z": 0 },
+      "fovDeg": 57,
+      "blendSeconds": 0.5,
+      "dialogueNpcId": "banubu",
+      "fadePets": true,
+      "playerStage": { "x": 6.5, "z": 10.5 },
+      "targetNpcId": "banubu",
+      "targetAnchorId": "station_banubu_cave_sleep"
+    }
+  ],
   "terrainAnchors": {},
   "embeddedTiles": {},
   "placement": {
