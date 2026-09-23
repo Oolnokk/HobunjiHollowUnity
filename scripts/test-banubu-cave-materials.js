@@ -35,9 +35,12 @@ assert.match(cavernGenerator, /generated\.mesh\.surfaceMaterial = surfaceMateria
 assert.match(interiorBuilder, /natural\.naturalizeMesh\(mesh, 'rocks', 'planar-stretch'\)/, 'farm-cliff cave surfaces use the same canonical rock material factory as farm cliffs');
 assert.match(interiorBuilder, /HobunjiSurfaceStretchUV/, 'farm-cliff cave surfaces reuse the central connected-surface detector');
 assert.match(interiorBuilder, /mapper\.mapMesh\(mesh, \{ label: 'interior-cavern:farm-cliff', maxPatchWorldSize: 6 \}\)/, 'each detected cave surface uses the farm-scale stretch-to-fit mapper');
-assert.match(source, /CLOUD_OUTLINE_VALUE_MAX/, 'cave cloud recoloring must preserve authored dark outline pixels');
-assert.match(source, /CLOUD_DEPTH_EROSION_PX/, 'cave clouds use a slightly inset hard overlap mask like sky clouds');
-assert.match(source, /colorWrite: false,[\s\S]*depthWrite: true/, 'cave overlap masks write depth without painting visible geometry');
-assert.match(source, /23 floor-hugging cloud PNGs|CLOUDS\.length/, 'cave diagnostics report the denser floor-hugging cloud layer');
+assert.doesNotMatch(source, /CLOUD_OUTLINE_VALUE_MAX|CLOUD_DEPTH_EROSION_PX|makeDepthMaskMaterial/, 'Banubu clouds must keep the original pre-mask renderer after the requested rollback');
+assert.match(source, /Math\.max\(0, \(value - 0\.08\) \/ 0\.75\) \* 0\.67/, 'Banubu clouds retain the original silvery-blue alpha/recolor behavior');
+const cloudListMatch = source.match(/const CLOUDS = (\[[\s\S]*?\]); \/\/ Original cloud rendering\/height behavior retained;/); // Extracts only the static authored cloud list for layout assertions.
+assert(cloudListMatch, 'Banubu cloud source exposes the dense perimeter list');
+const cloudList = vm.runInNewContext(cloudListMatch[1]); // Evaluates the literal array without executing rendering code.
+assert(cloudList.length >= 20, 'Banubu cave keeps a whole bunch of atmospheric clouds');
+assert(cloudList.every(([x, z]) => !(x >= 4.5 && x <= 8.5 && z >= 3.4 && z <= 8.4)), 'Banubu dialogue/sleep center remains clear of cloud anchors');
 
 console.log('Banubu cave texture matrix preflight checks passed.');
