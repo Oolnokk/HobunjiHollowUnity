@@ -296,8 +296,8 @@ colorFillWindow.ColorFill.shadeFillPixels(shadowProbe, [240, 220, 180], {
   samplePredicate: () => true,
   applyPredicate: i => i === 0,
 });
-assert.deepEqual(Array.from(shadowProbe.slice(0, 3)), [168, 154, 126],
-  '30%-black authored shadow reapplies as a 30% darkening of the requested color');
+assert.deepEqual(Array.from(shadowProbe.slice(0, 3)), [169, 155, 127],
+  'authored near-30%-black shadow preserves its perceptual luminance relationship to the requested color');
 assert.deepEqual(Array.from(shadowProbe.slice(4, 12)), [20, 17, 14, 255, 255, 255, 255, 255],
   'shade-map inheritance paints only motif-selected pixels while sampling the whole source region');
 const fillDebug = colorFillWindow.ColorFill.debugSnapshot().lastShadeFill;
@@ -305,8 +305,8 @@ assert.equal(fillDebug.sampledCount, 2, 'shared shade fill excludes white detail
 assert.equal(fillDebug.appliedCount, 1, 'shared shade fill paints only the motif mask');
 assert.equal(fillDebug.separateSampleMask, true, 'diagnostics expose separate sample and application masks');
 assert.equal(fillDebug.externalSource, true, 'diagnostics prove woven fill sampled the original untinted source raster');
-assert.equal(fillDebug.baseValue, Number((20 / 255).toFixed(4)),
-  'white outlier does not hijack the near-black brightest-eligible reference');
+assert.equal(fillDebug.baseValue, Number((((0.2126 * 20 + 0.7152 * 17 + 0.0722 * 14) / 255)).toFixed(4)),
+  'white outlier does not hijack the near-black brightest-eligible luminance reference');
 assert.equal(fillDebug.peak, fillDebug.baseValue,
   'Pixel Probe peak diagnostics report the same normalization anchor used by the fill');
 const wovenDebug = colorFillWindow.ColorFill.debugSnapshot().shadeFillsByLabel['woven-motif'];
@@ -320,9 +320,9 @@ colorFillWindow.ColorFill.shadeFillPixels(mapProbe, [240, 220, 180], {
   applyPredicate: i => i < 8,
 });
 assert.deepEqual(Array.from(mapProbe.slice(0, 8)), [
-  168, 154, 126, 255,
+  169, 155, 127, 255,
   240, 220, 180, 255,
-], 'peak-anchored target fill preserves the authored 70% shadow relationship exactly');
+], 'peak-anchored target fill preserves the authored perceptual shadow relationship');
 const whiteDetailProbe = new Uint8ClampedArray([
   14, 12, 10, 255, 20, 17, 14, 255,
   255, 255, 255, 255, 248, 248, 248, 255, 250, 246, 220, 255,
