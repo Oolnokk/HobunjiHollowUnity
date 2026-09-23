@@ -238,10 +238,8 @@
     const recipeId = target.questType === 'nineLeafTea' ? CONTENT()?.NINE_LEAF_TEA_RECIPE_ID : CONTENT()?.THREE_FISH_PIE_RECIPE_ID;
     if (entry.definition?.recipeId !== recipeId) return false;
     const foodEffects = entry.definition?.foodEffects || {};
-    const present = Object.keys(foodEffects).filter(key => Number(foodEffects[key]) > 0);
-    if (!sameEffectSet(present, target.requiredEffects)) return false; // Unrequested extra buffs do not satisfy Banubu's exact order.
     const minimum = Math.max(1, Number(target.minStacks) || 1);
-    return target.requiredEffects.every(effect => Number(foodEffects[effect]) >= minimum); // Quest 2 requires both requested buffs to reach Concentrated strength.
+    return target.requiredEffects.every(effect => Number(foodEffects[effect]) >= minimum); // Extra buffs are allowed; crust ingredients can satisfy requested effects while Quest 2 still enforces Concentrated strength.
   }
 
   function matchingMeal(state) {
@@ -281,7 +279,7 @@
       : `Cook a Three-Fish Pie that provides ${requested}.`;
     const detail = questType === 'nineLeafTea'
       ? 'Use three Tea Blends plus White Milk; each Tea Blend is made from exactly three herbs in Banubu’s Tea Grinder.'
-      : 'Use exactly three fish. Bring the finished pie back to Banubu.';
+      : 'Use exactly three fish plus flour and cooking fat. Every ingredient can contribute cooking buffs. Bring the finished pie back to Banubu.';
     return {
       kind: 'story',
       provider: 'banubu',
