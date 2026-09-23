@@ -306,7 +306,9 @@ assert.equal(fillDebug.appliedCount, 1, 'shared shade fill paints only the motif
 assert.equal(fillDebug.separateSampleMask, true, 'diagnostics expose separate sample and application masks');
 assert.equal(fillDebug.externalSource, true, 'diagnostics prove woven fill sampled the original untinted source raster');
 assert.equal(fillDebug.baseValue, Number((20 / 255).toFixed(4)),
-  'white outlier does not hijack the inferred near-black flat-cel reference');
+  'white outlier does not hijack the near-black brightest-eligible reference');
+assert.equal(fillDebug.peak, fillDebug.baseValue,
+  'Pixel Probe peak diagnostics report the same normalization anchor used by the fill');
 const wovenDebug = colorFillWindow.ColorFill.debugSnapshot().shadeFillsByLabel['woven-motif'];
 assert.equal(wovenDebug.sequence, fillDebug.sequence, 'named woven diagnostic retains the exact motif pass for Pixel Probe');
 assert.equal(wovenDebug.appliedCount, 1, 'named woven diagnostic keeps motif-only paint count');
@@ -320,7 +322,7 @@ colorFillWindow.ColorFill.shadeFillPixels(mapProbe, [240, 220, 180], {
 assert.deepEqual(Array.from(mapProbe.slice(0, 8)), [
   168, 154, 126, 255,
   240, 220, 180, 255,
-], 'direct target fill plus recovered black-opacity map reproduces flat cel and 30%-black shadow exactly');
+], 'peak-anchored target fill preserves the authored 70% shadow relationship exactly');
 const whiteDetailProbe = new Uint8ClampedArray([
   14, 12, 10, 255, 20, 17, 14, 255,
   255, 255, 255, 255, 248, 248, 248, 255, 250, 246, 220, 255,
@@ -330,12 +332,26 @@ assert.equal(whiteReference.count, 3, 'white and near-white neutral details are 
 colorFillWindow.ColorFill.shadeFillPixels(whiteDetailProbe, [240, 220, 180]);
 assert.deepEqual(Array.from(whiteDetailProbe.slice(8, 16)), [255, 255, 255, 255, 248, 248, 248, 255],
   'authored white details remain unchanged by the shared fill');
-assert.match(colorFillSource, /AUTHORED_SHADOW_VALUE_RATIO = 0\.70/,
-  'shared ColorFill encodes the authored 30%-black shadow convention');
-assert.match(colorFillSource, /const score = baseMass \+ shadowMass;/,
-  'flat-cel reference is inferred from the base/shadow value pair instead of the absolute brightest pixel');
+const nuancedSource = new Uint8ClampedArray([
+  8, 7, 6, 255,
+  12, 10, 9, 255,
+  16, 14, 12, 255,
+  20, 17, 14, 255,
+]);
+const nuancedProbe = new Uint8ClampedArray(nuancedSource);
+colorFillWindow.ColorFill.shadeFillPixels(nuancedProbe, [240, 220, 180]);
+assert.deepEqual(Array.from(nuancedProbe), [
+  96, 88, 72, 255,
+  144, 132, 108, 255,
+  192, 176, 144, 255,
+  240, 220, 180, 255,
+], 'body/animal recolors preserve all authored intermediate shades instead of flattening values above an inferred shadow cluster');
+assert.match(colorFillSource, /peakValue = Math\.max\(peakValue, sourceValue/,
+  'shared ColorFill derives its normalization anchor from the brightest eligible authored pixel');
+assert.doesNotMatch(colorFillSource, /AUTHORED_SHADOW_VALUE_RATIO|histogramMass|bestScore/,
+  'shared ColorFill no longer assumes a fixed flat-cel plus 30%-black-shadow palette');
 assert.match(colorFillSource, /value \/ baseValue/,
-  'final tint reapplies the recovered shadow map as a relative value multiplier');
+  'final tint preserves source value proportion relative to the brightest eligible authored pixel');
 assert.match(source, /shadingSource = null, debugLabel = 'woven-motif'/,
   'shared motif compositor accepts a caller-specific diagnostic label without changing its rendering inputs');
 assert.match(colorFillSource, /function createShadeReference\(sourceData, predicate = null, options = \{\}\)/,
