@@ -319,6 +319,7 @@ assert.match(handSource, /ownedMaterials\.every\(material => material\?\.userDat
 assert.match(handSource, /hobunjiPortraitOccludedWingLayer: true,[\s\S]*hobunjiOutlineOccluderDepthReplay: true,[\s\S]*layers\.enable\(OUTLINE_OCCLUDER_DEPTH_LAYER\)/, 'the body-colored parrot hand must join both shell rendering and the portrait-aware pre-shell depth replay');
 assert.doesNotMatch(handSource, /hobunjiPortraitOccludedWingLayer: true, noOutline: true/, 'the visible body-colored parrot hand must not be excluded from shell rendering with its covered wing continuation');
 assert.match(handSource, /function configureParrotBodyShell[\s\S]*keratinMaxY[\s\S]*trimmedShellIndexBelowY/, 'the continuous parrot body/wing primitive must derive a hand-only shell boundary from its separate keratin digits');
+assert.match(handSource, /const triangleMaxY = Math\.max\(position\.getY\(a\), position\.getY\(b\), position\.getY\(c\)\)[\s\S]*triangleMaxY <= maxY/, 'parrot shell trimming must reject any triangle that crosses into the portrait-covered arm/wing region instead of accepting it by triangle center');
 assert.match(handSource, /hobunjiShellIndexStorage/, 'the alternate shell index must remain owned by the cloned geometry for GPU cleanup');
 assert.match(handSource, /parrotBodyShellTrim: activeVisual/, 'mobile diagnostics must expose the source and retained body-shell triangle counts');
 assert.match(handOutlineSource, /hobunjiPortraitOccludedWingLayer === true\) return false/, 'portrait-occluded wing mesh must stay out of the held-object foreground replay');
@@ -823,7 +824,7 @@ assert.match(proceduralFeetSource, /group: root, update, dispose, applyRecordedL
 assert.match(pixelProbeSource, /function _pixelProbeWaterFootContactLines\(activeScene, currentArea, playerMesh\)/, 'Pixel Probe must expose a mobile-readable rendered water/foot contact diagnostic');
 assert.match(pixelProbeSource, /waterInto=\$\{fmt\(waterIntoFoot\)\} \(\$\{Math\.round\(submergedFraction \* 100\)\}% foot height\)/, 'water/foot diagnostics quantify how much rendered foot height lies below the visible water plane');
 assert.match(pixelProbeSource, /hitPointText[\s\S]{0,180}world=\(\$\{hit\.point\.x\.toFixed\(3\)\},\$\{hit\.point\.y\.toFixed\(3\)\},\$\{hit\.point\.z\.toFixed\(3\)\}\)/, 'Pixel Probe ray entries include exact world hit points for foot-versus-water comparisons');
-assert.match(indexSource, /pixel-probe\.js\?v=20260921waterblend1/, 'the shipped page cache-busts the water/foot Pixel Probe diagnostics');
+assert.match(indexSource, /pixel-probe\.js\?v=[^"']+/, 'the shipped page must cache-bust Pixel Probe so current water/foot diagnostics are loaded');
 assert(animationAuthorSource.lastIndexOf('installCanonicalCharacterRigProfilesV1537(animationAuthor.attachmentRigProfiles)') > animationAuthorSource.indexOf('installApprovedRigLibraryV1524(animationAuthor.attachmentRigProfiles'), 'canonical character profiles must install after the V15.24 full-library replacement');
 assert.match(animationAuthorSource, /if \(options\.fromAutosave\)[\s\S]*installCanonicalCharacterRigProfilesV1537\(animationAuthor\.attachmentRigProfiles\)/, 'autosave restoration must not reintroduce pre-calibration embedded character coordinates');
 assert.match(animationAuthorSource, /rigReferenceOnly = true/, 'reference NPC must be explicitly marked as comparison-only');

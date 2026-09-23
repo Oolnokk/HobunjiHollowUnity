@@ -269,8 +269,8 @@
     const source = sourceIndex.array;
     for (let offset = 0; offset + 2 < source.length; offset += 3) {
       const a = source[offset], b = source[offset + 1], c = source[offset + 2];
-      const centerY = (position.getY(a) + position.getY(b) + position.getY(c)) / 3;
-      if (centerY <= maxY) kept.push(a, b, c);
+      const triangleMaxY = Math.max(position.getY(a), position.getY(b), position.getY(c)); // Rejects shell triangles that cross upward into the portrait-covered arm/wing continuation.
+      if (triangleMaxY <= maxY) kept.push(a, b, c);
     }
     if (kept.length === 0 || kept.length === source.length) return null;
 
