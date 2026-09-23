@@ -76,11 +76,13 @@
 
   function orientCameraMarker(node, areaId, camera) {
     if (!node || !camera) return;
-    const target = resolvedCameraTarget(areaId, camera); // Used both for the marker heading and the rotation gizmo's preserved target distance.
+    const liveTarget = window.CinematicCameraRuntime?.resolvedTargetForCamera?.(areaId, camera.id); // Kept separate from the visual fallback so an unloaded NPC can never produce a fake face-relative authoring base.
+    const targetResolved = !!(liveTarget && [liveTarget.x, liveTarget.y, liveTarget.z].every(Number.isFinite)); // Used to gate face-relative rotation authoring.
+    const target = targetResolved ? new THREE.Vector3(liveTarget.x, liveTarget.y, liveTarget.z) : resolvedCameraTarget(areaId, camera); // Used for marker heading even when only a harmless fallback direction is available.
     node.position.set(Number(camera.position?.x) || 0, Number(camera.position?.y) || 0, Number(camera.position?.z) || 0);
     if (target.distanceToSquared(node.position) > 1e-8) node.lookAt(target);
     node.userData.cameraTargetDistance = Math.max(0.25, node.position.distanceTo(target));
-    if (camera.targetNpcId) {
+    if (camera.targetNpcId && targetResolved) {
       node.userData.cameraTargetBase = new THREE.Vector3(
         target.x - (Number(camera.target?.x) || 0),
         target.y - (Number(camera.target?.y) || 0),
@@ -399,7 +401,10 @@
       const targetWorld = node.position.clone().addScaledVector(direction, selectedPlacement.cameraTargetDistance || 1);
       let target = targetWorld;
       if (camera.targetNpcId) {
-        const base = selectedPlacement.cameraTargetBase;
+        const liveResolved = runtime.resolvedTargetForCamera?.(areaId, ref.id); // Refreshes the NPC face base during a drag so breathing/pose motion cannot stale the face-relative conversion.
+        const base = liveResolved && [liveResolved.x, liveResolved.y, liveResolved.z].every(Number.isFinite)
+          ? new THREE.Vector3(liveResolved.x - (Number(camera.target?.x) || 0), liveResolved.y - (Number(camera.target?.y) || 0), liveResolved.z - (Number(camera.target?.z) || 0))
+          : selectedPlacement.cameraTargetBase;
         if (base) target = targetWorld.clone().sub(base);
         else target = null; // Do not corrupt a face-relative target if its NPC is currently unavailable for world-space resolution.
       }
