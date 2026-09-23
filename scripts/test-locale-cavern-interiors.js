@@ -75,7 +75,7 @@ assert.strictEqual(carveCall.floor.length, built.floor.length, 'the exact painte
 assert.deepStrictEqual(carveCall.options.entrance, { col: 6, row: 10, side: 'south' });
 assert.strictEqual(built.keyGatedDoors[0].requiresKeyItem, 'color_pools_key');
 assert.deepStrictEqual(JSON.parse(JSON.stringify(built.entrySpots.color_pools_door)), { col: 6, row: 1, side: 'north' });
-assert(built.npcStations.some(station => station.id === 'station_banubu_cave_sleep' && station.pose === 'lie'));
+assert(built.npcStations.some(station => station.id === 'station_banubu_cave_sleep' && station.pose === 'lie' && station.col === 9 && station.row === 7), 'Banubu\'s single physical sleeping station must stay at its authored location');
 assert.strictEqual(built.npcStations.filter(station => station.npcId === 'banubu').length, 1, 'Banubu cavern must register one physical Banubu station, not separate awake/sleep NPC copies');
 assert(!built.npcStations.some(station => station.id === 'station_banubu_cave_awake'), 'unused awake Banubu station must stay removed');
 assert.deepStrictEqual(JSON.parse(JSON.stringify(built.cinematicCameras)), banubu.cinematicCameras, 'locale cavern synthesis must preserve authored cinematic camera records');
@@ -122,9 +122,11 @@ assert(localePreview3dSource.includes('window._localeEditorBridge?.updateCinemat
 assert(localePreview3dSource.includes("const uniqueNpcIds = [...new Set") && localePreview3dSource.includes("marker.name = 'localeSandboxCavernNpc_' + npcId"), 'cavern preview must render one visible marker per NPC id even when a locale has several station anchors');
 assert(localePreview3dSource.includes("record?.targetNpcId && path.startsWith('target.')") && localePreview3dSource.includes('Face offset'), 'NPC-targeted preview sliders must be small face-relative offsets rather than map-coordinate target sliders');
 assert(localePreview3dSource.includes('previewNpcFacePosition') && localePreview3dSource.includes('resolvedPreviewCameraTarget'), 'Locale preview must resolve authored NPC target offsets from the preview NPC face');
+assert(localePreview3dSource.includes("../../config/attachment-rig-profiles.js") && localePreview3dSource.includes('chatheadFrame'), 'Locale preview must use the source-controlled species face frame instead of a generic height guess');
+assert(localePreview3dSource.includes('const grehlrBaseWidth = 2.2') && localePreview3dSource.includes('const banubuScaleMultiplier = 3') && localePreview3dSource.includes("anchor.pose === 'lie'"), 'Banubu camera preview must match his canonical Grehlr dimensions, named-animal scale, and sleep flattening');
 assert(editorSource.includes('updateCinematicCamera: (localeId, cameraId, next) =>'), 'Locale Editor bridge must persist live preview camera edits');
 assert(editorSource.includes('cinematicCameras: m.cinematicCameras || []') && editorSource.includes('cavern: m.cavern || null'), 'Locale JSON export must retain cinematic cameras and cavern metadata');
-assert(panelUiSource.includes('locale-preview3d.js?v=20260922npctarget1'), 'Locale Editor must cache-bust the NPC-target camera preview sidecar');
+assert(panelUiSource.includes('locale-preview3d.js?v=20260922npctarget2'), 'Locale Editor must cache-bust the corrected visible-face camera preview sidecar');
 assert(naturalSurfaceSource.includes('NATURAL_SURFACE_SCRIPT_SRC') && naturalSurfaceSource.includes("new URL('../' + raw.replace"), 'shared natural-surface textures must resolve from their script path so nested editor previews use the same assets as the game');
 assert.strictEqual(fs.existsSync(path.join(root, 'docs/config/maps/map_i_color_pools.json')), false, 'Color Pools must not retain a competing static rectangular map definition');
 
