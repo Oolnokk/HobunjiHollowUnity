@@ -164,6 +164,7 @@ const banubu = composed.npcs.find(npc => npc.id === 'banubu');
 const hikiHiki = composed.npcs.find(npc => npc.id === 'hiki_hiki');
 const ordinary = composed.npcs.find(npc => npc.id === 'ordinary');
 
+assert.equal(banubu.name, 'Lord Banubu', 'reviewed named-NPC override must migrate stale local player-facing names');
 assert.equal(banubu.species, 'grehlr');
 assert.equal(banubu.gender, 'male');
 assert.equal(banubu.creatureKind, 'grehlr');
@@ -189,7 +190,7 @@ assert.equal(banubu.appearance.creatureGenotype.colorPoolPaint.layers.base.patte
 assert.deepEqual(banubu.appearance.cosmetics, {}, 'authored Banubu export must replace stale humanoid appearance cosmetics');
 assert.deepEqual(banubu.equippedCosmetics, [], 'authored Banubu export must clear stale equipped humanoid cosmetics');
 assert.deepEqual(banubu.appliedDyes, {}, 'authored Banubu export must clear stale humanoid dyes');
-assert.equal(banubu.avatarEditor.rawExport.name, 'Banubu', 'Character Studio raw bridge must use the authored Banubu export');
+assert.equal(banubu.avatarEditor.rawExport.name, 'Lord Banubu', 'Character Studio raw bridge must use the authored Lord Banubu export');
 assert.equal(banubu.avatarEditor.rawExport.appearance.creatureColorOverrides.coloredstripe, '#c3e3e9');
 assert.equal(banubu.avatarEditor.rawExport.appearance.creatureGenotype.colorPoolPaint.layers.base.patternScale, 8.6);
 
