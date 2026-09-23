@@ -378,6 +378,9 @@
         candidateCount: pending.candidates.size,
         waitingForGreeting: !greeting,
       });
+      if (!greeting && greetingPriorityWaitMs > 0) {
+        traceAmbientSequence('reaction-yielding-to-greeting', { npcId, waitMs: Math.round(greetingPriorityWaitMs), phase: 'queue' }); // Mobile debug shows the pre-start cooldown/dwell handoff even when the greeting begins before this timer ever wakes.
+      }
       return { queued: true, speakerId: npcId, animalId: animal.entry.id, role: animal.role };
     }
 
