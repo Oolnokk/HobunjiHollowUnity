@@ -690,6 +690,7 @@
 
   function renderDlgNode(node) {
     if (!node) { deps.closeNpcDialogue(); return; }
+    window.CinematicCameraRuntime?.applyDialogueNodeCamera?.(node); // Optional node.cameraId swaps authored world shots without reintroducing a portrait overlay.
     _dlgNode = node;
 
     if (node.type === 'end') { deps.closeNpcDialogue(); return; }
