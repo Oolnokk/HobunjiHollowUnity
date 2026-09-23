@@ -1530,16 +1530,14 @@
       transform: translateY(0);
     }
 
-    /* ── NPC Dialogue Window: grid x:0 y:10 w:32 h:8 (32×18) ──
-       Full-width bottom panel. Portrait peeks above from left.
-       Inner content is a 32×6 logical grid (bottom 6 of 8 rows).
-       Right 7 cols: Response Panel (spans all 6 inner rows).    */
+    /* ── NPC Dialogue Window: grid x:0 y:12 w:32 h:6 (32×18) ──
+       World-space characters remain visible above this text/action shell. */
     #npcDialogue {
       position: fixed;
       left: var(--play-left);
-      top: calc(var(--oy) + 10 * var(--row));
+      top: calc(var(--oy) + 12 * var(--row));
       width: calc(var(--play-right) - var(--play-left));
-      height: calc(8 * var(--row));
+      height: calc(6 * var(--row));
       z-index: 40;
       display: flex;
       flex-direction: row;
@@ -1555,25 +1553,6 @@
       transform: translateY(0);
     }
 
-    /* Portrait: rises from bottom-left, peeks into game area above panel */
-    #npcPortraitWrap {
-      flex-shrink: 0;
-      width: calc(4.2 * var(--row));
-      align-self: flex-end;
-      border-radius: 12px 12px 0 0;
-      border: 1px solid var(--border-bright);
-      border-bottom: none;
-      overflow: hidden;
-      background: #1b3529;
-      box-shadow: 0 -4px 18px rgba(0,0,0,0.45);
-    }
-    #npcPortraitCanvas {
-      display: block;
-      width: 100%;
-      height: auto;
-      image-rendering: auto;
-    }
-
     /* Inner panel: flex row (left content | right response panel) */
     #npcDialogueInner {
       flex: 1;
@@ -1585,7 +1564,7 @@
       background: var(--glass-2);
       border: 1px solid var(--border-bright);
       border-bottom: none;
-      border-left: none;
+      border-left: 1px solid var(--border-bright);
       border-radius: 0 16px 0 0;
       backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
       box-shadow: 0 -4px 28px rgba(0,0,0,0.5);
