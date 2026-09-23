@@ -20,7 +20,6 @@
   function init(injectedDeps) { deps = injectedDeps; }
 
   const _npcDialogueEl      = document.getElementById('npcDialogue');
-  const _npcPortraitCanvas  = document.getElementById('npcPortraitCanvas');
   const _npcDialogueNameEl  = document.getElementById('npcDialogueName');
   const _npcDialogueTextEl  = document.getElementById('npcDialogueText');
   const _npcDialogueHeartsEl = document.getElementById('npcDialogueHearts');
@@ -662,15 +661,16 @@
   async function _renderNpcDialoguePortrait() {
     const walker = deps.getDialogueWalker();
     if (!deps.getDialogueOpen() || !walker?.profile || !window.NpcAvatarPreview) return false;
+    if (walker.avatarGroup?.userData?.namedAnimalNpc) return false; // Named animals already animate their live creature plane; do not keep repainting an unused hidden portrait canvas.
+    if (!walker.avatarFrontCanvas || !window.PNGPlaneAvatar?.refreshSinglePlaneAvatarModel) return false;
     const renderOptions = {
       breathingComposer: window.portraitBreathingComposer || null,
       seatId: dialogueSeatId(),
     };
-    await window.NpcAvatarPreview.renderProfileToCanvas(_npcPortraitCanvas, walker.profile, renderOptions);
-    if (walker.avatarFrontCanvas && window.PNGPlaneAvatar?.refreshSinglePlaneAvatarModel) {
-      await window.NpcAvatarPreview.renderProfileToCanvas(walker.avatarFrontCanvas, walker.profile, renderOptions);
-      window.PNGPlaneAvatar.refreshSinglePlaneAvatarModel(walker.avatarGroup, walker.avatarFrontCanvas);
-    }
+    // Dialogue expressions/yap now update the NPC's existing world-space avatar only.
+    // The obsolete fixed viewport portrait canvas was intentionally removed.
+    await window.NpcAvatarPreview.renderProfileToCanvas(walker.avatarFrontCanvas, walker.profile, renderOptions);
+    window.PNGPlaneAvatar.refreshSinglePlaneAvatarModel(walker.avatarGroup, walker.avatarFrontCanvas);
     return true;
   }
 
@@ -691,6 +691,7 @@
 
   function renderDlgNode(node) {
     if (!node) { deps.closeNpcDialogue(); return; }
+    window.CinematicCameraRuntime?.applyDialogueNodeCamera?.(node); // Optional node.cameraId swaps authored world shots without reintroducing a portrait overlay.
     _dlgNode = node;
 
     if (node.type === 'end') { deps.closeNpcDialogue(); return; }

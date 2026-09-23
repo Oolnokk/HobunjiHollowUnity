@@ -106,7 +106,7 @@
           next: 'banubu_intro_4',
           actions: [{ type: 'banubuQuest', operation: 'unlockRecipe', stage: 0 }],
         },
-      ]),
+      ], { cameraId: 'banubu_dialogue_awake' }),
       textNode('banubu_intro_4', 'Oh, those glowy fellows? Yeah, I wish they’d leave me alone too. I get real bad dreams when they’re around.', 'banubu_intro_5'),
       textNode('banubu_intro_5', 'I’d love to help, and I get how urgent this all is with your little village and all that, but I’m in a bit of a pickle. I’m just so dang sleepy these days. Even if I got up, I ain’t got the energy to be much help.', 'banubu_intro_6'),
       textNode('banubu_intro_6', 'I think if I only had something good to eat, maybe it’d give me enough of a push to get moving. But I’m far too tired to get up and hunt.', 'banubu_intro_7'),

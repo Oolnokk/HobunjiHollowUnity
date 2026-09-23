@@ -21,6 +21,11 @@ for (const locale of [banubu, colorPools]) {
 }
 
 assert.strictEqual(banubu.cavern.creatureKind, 'grehlr', 'Banubu cavern must use the Grehlr cave-surface family');
+
+const banubuDialogueCameras = banubu.cinematicCameras || [];
+assert.strictEqual(banubuDialogueCameras.length, 2, 'Banubu cavern must author awake and sleeping world-space dialogue shots');
+assert(banubuDialogueCameras.every(camera => camera.position?.y === 0), 'Banubu dialogue cameras must both sit at world Y=0');
+assert(banubuDialogueCameras.every(camera => camera.targetNpcId === 'banubu'), 'Banubu shots must target Banubu by live NPC id instead of a fixed viewport portrait');
 const secret = banubu.connectors.find(c => c.id === 'color_pools_door');
 assert(secret, 'Banubu cave must author its hidden rear connector');
 assert.strictEqual(secret.targetMap, 'map_i_color_pools');
@@ -68,6 +73,7 @@ assert.strictEqual(built.wallStyle, 'cavern');
 assert.strictEqual(built.isLocaleCavern, true);
 assert.strictEqual(built.denMotherKind, null, 'story cave locales must not inherit den encounter content');
 assert.strictEqual(built.cavernCreatureKind, 'grehlr', 'locale synthesis must carry the authored creature habitat into runtime material selection');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(built.cinematicCameras)), JSON.parse(JSON.stringify(banubu.cinematicCameras)), 'locale cavern synthesis must preserve authored cinematic cameras');
 assert.strictEqual(Object.keys(built.floorSurfaceByTile || {}).length, built.floor.length, 'every cavern floor tile must get a rendered-surface Y sample');
 assert(Number.isFinite(built.floorSurfaceY), 'cavern synthesis must expose a finite fallback floor surface Y');
 assert.strictEqual(built.floor.length, Object.keys(banubu.tiles).length);
@@ -81,12 +87,30 @@ assert(built.npcStations.some(station => station.id === 'station_banubu_cave_sle
 const sculptorSource = read('docs/js/cavern-sculptor.js');
 const generatorSource = read('docs/js/cavern-generator.js');
 const gameSource = read('docs/game.js');
+const gameIndexSource = read('docs/index.html');
+const dialogueSource = read('docs/js/dialogue-content.js');
+const dialogueStyleSource = read('docs/style.css');
+const cinematicCameraSource = read('docs/js/cinematic-camera-runtime.js');
+const banubuQuestContentSource = read('docs/js/banubu-quest-content.js');
 const editorSource = read('docs/tools/locale-editor/index.html');
 const interiorBuilderSource = read('docs/js/interior-scene-builder.js');
 assert(sculptorSource.includes('function carveFootprintCavern(') && sculptorSource.includes('carveMazeCavern, carveFootprintCavern'), 'shared cavern sculptor must expose footprint-driven generation');
 assert(generatorSource.includes('loadLocaleCavernDefinition') && generatorSource.includes('synthesizeLocaleCavernMapData'), 'runtime must resolve cave interiors through locale files');
 assert(!generatorSource.includes("seedText === 'map_i_den_banubu'"), 'generic generator must not special-case Banubu by seed/map id');
 assert(!generatorSource.includes('isBanubuHome'), 'Banubu-specific interior synthesis must be removed');
+
+assert(!gameIndexSource.includes('id="npcPortraitCanvas"') && !gameIndexSource.includes('id="npcPortraitWrap"'), 'legacy screen-space NPC portrait canvas must be removed from gameplay HTML');
+assert(!dialogueStyleSource.includes('#npcPortraitCanvas') && !dialogueStyleSource.includes('#npcPortraitWrap'), 'legacy screen-space NPC portrait CSS must be removed');
+assert(!gameSource.includes('_npcPortraitCanvas'), 'game runtime must not retain a viewport portrait canvas handle');
+assert(!dialogueSource.includes('_npcPortraitCanvas'), 'dialogue renderer must not draw expressions into a viewport portrait canvas');
+assert(dialogueSource.includes('renderProfileToCanvas(walker.avatarFrontCanvas'), 'dialogue expression/yap rendering must update the existing world-space NPC avatar');
+assert(gameIndexSource.indexOf('js/cinematic-camera-runtime.js') < gameIndexSource.indexOf('js/dialogue-content.js'), 'world-space camera runtime must load before dialogue content');
+assert(gameSource.includes('function _namedAnimalFaceWorldPosition(walker)') && gameSource.includes('headBone.localToWorld(face)'), 'named-animal dialogue targeting must resolve the live transformed face rather than unscaled standing height');
+assert(gameSource.includes('resolveSkinnedPixelWorldPosition(walker.avatarGroup, centroid)'), 'humanoid dialogue targeting must resolve the live skinned head centroid');
+assert(gameSource.includes("setPlayerFacingInstant(-Math.PI / 2, { clearLook: true, syncCamera: true })"), 'Banubu async cave entry must reassert north across the complete facing authority');
+assert(gameSource.includes('mouseLookAngle = nextFacing;') && gameSource.includes('controllerLookAngle = nextFacing;') && gameSource.includes('lastMoveAngle = nextFacing;'), 'instant entry facing must synchronize mouse, controller, and movement-facing authorities');
+assert(cinematicCameraSource.includes('getNpcFacePosition') && cinematicCameraSource.includes('Number(face.y) + finite(camera.target?.y, 0)'), 'NPC-targeted authored cameras must resolve their target from the live face point each frame');
+assert(banubuQuestContentSource.includes("{ cameraId: 'banubu_dialogue_awake' }"), 'Banubu wake-up dialogue must switch to the authored awake world camera');
 assert(gameSource.includes('loadLocaleCavernDefinition?.(mapId)') && gameSource.includes("loadSource = 'locale-cavern'"), 'building loader must prefer cave-interior locales');
 assert(gameSource.includes('(!x.requiresKeyItem || !!window.KeyItemSystem?.has?.(x.requiresKeyItem))'), 'key-gated cave connectors must be mechanically inaccessible without their key');
 assert(gameSource.includes("targetSpotId: exit.targetSpotId || ''") && gameSource.includes("_pendingEntrySpotId"), 'cave-to-cave travel must preserve named connector destinations across async generation');
@@ -126,5 +150,35 @@ samplingMesh.positions = new Proxy(samplingMesh.positions, { get(target, key) {
 } });
 context.CavernGenerator.synthesizeLocaleCavernMapData(banubu);
 assert(meshReads <= samplingMesh.indices.length * 3, 'sampling must not reread every triangle for every tile');
+
+
+{
+  const cameraContext = { console, performance: { now: () => 100 }, window: null };
+  cameraContext.window = cameraContext;
+  vm.createContext(cameraContext);
+  vm.runInContext(cinematicCameraSource, cameraContext, { filename: 'cinematic-camera-runtime.js' });
+  const walker = { rec: { id: 'banubu' }, root: { position: { x: 6.5, y: 0, z: 5.5 } } };
+  cameraContext.CinematicCameraRuntime.init({
+    getCurrentArea: () => 'map_i_den_banubu',
+    getNpcWalker: () => walker,
+    getNpcFacePosition: () => ({ x: 6.5, y: 4.25, z: 5.5 }),
+    getCompanionObjects: () => [],
+    getPlayer: () => ({}),
+  });
+  cameraContext.CinematicCameraRuntime.registerArea('map_i_den_banubu', [{
+    id: 'test_face',
+    position: { x: 7.2, y: 0, z: 9.4 },
+    target: { x: 0.25, y: 0.5, z: -0.25 },
+    dialogueNpcId: 'banubu',
+    targetNpcId: 'banubu',
+  }]);
+  cameraContext.CinematicCameraRuntime.beginDialogue({ areaId: 'map_i_den_banubu', npcId: 'banubu', walker });
+  assert.deepStrictEqual(
+    JSON.parse(JSON.stringify(cameraContext.CinematicCameraRuntime.resolvedTarget())),
+    { x: 6.75, y: 4.75, z: 5.25 },
+    'world-space cinematic target resolves live face offsets instead of a screen-space portrait center'
+  );
+  assert.strictEqual(cameraContext.CinematicCameraRuntime.activeCamera().position.y, 0, 'authored camera runtime must preserve exact world Y=0');
+}
 
 console.log('Locale-authored cavern footprint, fixed-seed synthesis, keyed connector, and editor integration checks passed');
