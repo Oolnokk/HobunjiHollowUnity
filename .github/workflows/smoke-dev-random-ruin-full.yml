@@ -1,10 +1,14 @@
-# Temporary verification workflow; remove after Random Test Ruin collision smoke passes.
 name: Smoke Random Test Ruin Full Runtime
 
 on:
   push:
-    branches:
-      - agent/tool-hub-debrisifier-active
+    branches: [main]
+    paths:
+      - '.github/workflows/smoke-dev-random-ruin-full.yml'
+      - 'docs/js/dev-random-ruin-*.js'
+      - 'docs/js/dynamic-surfaces.js'
+      - 'scripts/test-dev-random-ruin-*.js'
+  pull_request:
     paths:
       - '.github/workflows/smoke-dev-random-ruin-full.yml'
       - 'docs/js/dev-random-ruin-*.js'
