@@ -76,6 +76,7 @@ assert.deepStrictEqual(carveCall.options.entrance, { col: 6, row: 10, side: 'sou
 assert.strictEqual(built.keyGatedDoors[0].requiresKeyItem, 'color_pools_key');
 assert.deepStrictEqual(JSON.parse(JSON.stringify(built.entrySpots.color_pools_door)), { col: 6, row: 1, side: 'north' });
 assert(built.npcStations.some(station => station.id === 'station_banubu_cave_sleep' && station.pose === 'lie'));
+assert(built.npcStations.some(station => station.id === 'station_banubu_cave_sleep' && station.col === 6 && station.row === 5), 'Banubu sleeps on the cave centerline rather than beside the entrance');
 
 const sculptorSource = read('docs/js/cavern-sculptor.js');
 const generatorSource = read('docs/js/cavern-generator.js');
