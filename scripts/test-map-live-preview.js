@@ -77,6 +77,15 @@ assert.match(runtimeSource, /controls paused/, 'runtime gizmo reports that contr
 assert.match(runtimeSource, /endpoint\.send\(request\);[\s\S]*attachPlacement/, 'in-game selection syncs without forcing focus into the Map Editor window');
 assert.match(gameSource, /if \(window\.__mapEditorGizmoActive\)/, 'game input is suppressed for the complete gizmo session');
 assert.match(runtimeSource, /type: 'placement-transform'/, 'runtime gizmo mirrors transforms into the Map Editor workspace');
+assert.match(indexHtml, /id="mapEditCameraSection"/, 'in-game Map Edit exposes cinematic cameras in rooms/locales');
+assert.match(indexHtml, /id="mapEditGizmoTransform"/, 'in-game Map Edit exposes live numeric transform values without DevTools');
+assert.match(runtimeSource, /map_edit_cinematic_camera_/, 'runtime builds visible world-space cinematic camera markers');
+assert.match(runtimeSource, /resolvedTargetForCamera/, 'camera markers resolve the same live NPC-relative target used by playback');
+assert.match(runtimeSource, /updateCameraTransform/, 'camera gizmo writes directly into the live cinematic camera registry');
+assert.match(runtimeSource, /mode === 'rotate'/, 'camera rotation authors a new aim direction while translation follows the existing target');
+assert.match(runtimeSource, /kind === 'cinematicCamera'/, 'runtime selection accepts cinematic cameras alongside decor and furniture');
+assert.match(editorHtml, /selection\.kind === 'cinematicCamera' \? \(map\?\.cinematicCameras \|\| \[\]\)/, 'authored room camera transforms can persist into the Map Editor workspace');
+assert.match(editorHtml, /status: 'runtime-only'/, 'locale camera edits report when no ordinary Map Editor source record exists');
 assert.match(townZoneSource, /postSX.*postScale/, 'outdoor runtime decor consumes per-axis placement scale');
 assert.match(editorHtml, /isFarmEditorMap\(rootId\)/, 'Map Editor rejects reflection for the linked farm root');
 assert.match(gameSource, /player\.x = playerBefore\.x; player\.y = playerBefore\.y/, 'scene rebuild restores exact player position');
