@@ -9,11 +9,11 @@
   const QUIT_BUTTON_ID = 'menuQuitBtn'; // Existing menu Quit button intercepted before local-save-flow's bubble listener.
   const RESET_BUTTON_ID = 'menuResetBtn'; // Legacy one-click farm reset control kept inert and hidden so it cannot be triggered accidentally.
   const MANUAL_SAVE_BUTTON_ID = 'menuManualSaveBtn'; // Existing checkpoint button receives a temporary busy label without observing disabled mutations.
-  const MENU_CONTROL_LABELS = Object.freeze([ // Visible labels applied to the icon-only menu controls, including buttons installed later by checkpoint code.
-    { id: 'menuPauseBtn', text: '⏯ Pause', minWidth: '70px' },
-    { id: MANUAL_SAVE_BUTTON_ID, text: '💾 Manual Save', minWidth: '96px' },
-    { id: 'menuRecoveryBtn', text: '🛟 Recovery', minWidth: '82px' },
-    { id: 'mpClose', text: 'Close', minWidth: '66px' },
+  const MENU_CONTROL_LABELS = Object.freeze([ // Full and compact labels let the menu header refit itself without hiding any action.
+    { id: 'menuPauseBtn', text: '⏯ Pause', compactText: '⏯', minWidth: '70px', accessibleLabel: 'Pause or resume' },
+    { id: MANUAL_SAVE_BUTTON_ID, text: '💾 Manual Save', compactText: '💾', minWidth: '96px', accessibleLabel: 'Manual save' },
+    { id: 'menuRecoveryBtn', text: '🛟 Recovery', compactText: '🛟', minWidth: '82px', accessibleLabel: 'Recovery' },
+    { id: 'mpClose', text: 'Close', compactText: '✕', minWidth: '66px', accessibleLabel: 'Close menu' },
   ]);
   const MENU_OVERLAY_CONTROL_IDS = Object.freeze(['menuBtn', 'farmEditBtn', 'mapEditBtn']); // Fixed HUD tabs hidden while the menu is open so they cannot cover menu actions.
   let busy = false; // Prevents double-clicks from starting overlapping runtime/folder saves.
@@ -22,6 +22,8 @@
   let lastError = ''; // Mobile-visible latest guarded-quit error.
   let menuControlsObserver = null; // Watches menu children and open/close state because controls are dynamic.
   let manualSaveBusyTimer = null; // Polls the existing Manual Save disabled state without feeding disabled mutations back into the menu observer.
+  let menuControlsCompact = false; // Reported in mobile-visible diagnostics and used to keep the measured header mode stable.
+  let menuControlRelayoutFrame = 0; // Coalesces resize/orientation bursts into one menu-header measurement.
 
   function localSave() {
     return window.LocalSaveFolder || null;
@@ -60,8 +62,30 @@
     return true;
   }
 
-  function menuControlLabel(spec, button) {
-    return spec.id === MANUAL_SAVE_BUTTON_ID && button?.dataset?.manualSaveBusy === '1' ? 'Saving…' : spec.text;
+  function menuControlLabel(spec, button, compact = menuControlsCompact) {
+    if (spec.id === MANUAL_SAVE_BUTTON_ID && button?.dataset?.manualSaveBusy === '1') return compact ? '…' : 'Saving…';
+    return compact ? spec.compactText : spec.text;
+  }
+
+  function applyMenuControlLabels(compact) {
+    menuControlsCompact = compact;
+    for (const spec of MENU_CONTROL_LABELS) { // Each existing action keeps its handler while only its presentation changes.
+      const button = document.getElementById(spec.id); // Static and late-installed controls use the same responsive treatment.
+      if (!button) continue;
+      const label = menuControlLabel(spec, button, compact); // The busy Manual Save label also compacts without changing save state.
+      if (button.textContent !== label) button.textContent = label;
+      button.setAttribute('aria-label', spec.accessibleLabel);
+      button.title = spec.accessibleLabel;
+      button.style.width = compact ? '' : 'auto';
+      button.style.minWidth = compact ? '32px' : spec.minWidth;
+      button.style.padding = compact ? '0 5px' : '0 7px';
+      button.style.whiteSpace = 'nowrap';
+    }
+  }
+
+  function menuTabsOverflow() {
+    const tabs = document.querySelector('#menuPanel .mp-tabs'); // The tab strip is the measured sibling competing with menu controls for header width.
+    return Boolean(tabs && tabs.scrollWidth > tabs.clientWidth + 1);
   }
 
   function labelMenuControls() {
@@ -69,20 +93,20 @@
     const controls = document.querySelector('#menuPanel .mp-ctrls'); // Existing control-row parent receives readable labels without replacing handlers.
     if (!controls) return false;
 
-    for (const spec of MENU_CONTROL_LABELS) { // Each spec keeps one menu action readable without changing its existing click handler or id.
-      const button = document.getElementById(spec.id); // Existing button may be static markup or dynamically installed by the checkpoint manager.
-      if (!button) continue;
-      const label = menuControlLabel(spec, button); // Manual Save preserves its explicit busy label until the original save handler re-enables the button.
-      if (button.textContent !== label) button.textContent = label;
-      button.style.width = 'auto';
-      button.style.minWidth = spec.minWidth;
-      button.style.padding = '0 7px';
-      button.style.whiteSpace = 'nowrap';
-    }
+    applyMenuControlLabels(false); // Prefer readable full labels whenever the current viewport has room.
+    if (menuTabsOverflow()) applyMenuControlLabels(true); // Compact the sibling controls only when the live tab strip would otherwise overlap.
 
     disableFarmResetControl();
     syncMenuOverlayControls();
     return true;
+  }
+
+  function scheduleMenuControlRelayout() {
+    if (menuControlRelayoutFrame || typeof requestAnimationFrame !== 'function') return;
+    menuControlRelayoutFrame = requestAnimationFrame(() => {
+      menuControlRelayoutFrame = 0;
+      labelMenuControls();
+    });
   }
 
   function finishManualSaveBusyLabel(button) {
@@ -251,6 +275,7 @@
   } else {
     installMenuSafetyUi();
   }
+  window.addEventListener('resize', scheduleMenuControlRelayout, { passive: true }); // Re-expands or recompacts after rotation and mobile browser chrome changes.
 
   // A browser refresh/close that bypasses the menu cannot await folder I/O,
   // but the live localStorage snapshot itself is synchronous. Capture phase on
@@ -260,18 +285,21 @@
     window.HobunjiRuntimeSave?.flushNow?.({ reason: 'beforeunload' });
   }, { capture: true });
 
-  window.FolderSaveQuitGuard = { guardedQuit, labelMenuControls, disableFarmResetControl, syncMenuOverlayControls, startManualSaveBusyLabel };
+  window.FolderSaveQuitGuard = { guardedQuit, labelMenuControls, disableFarmResetControl, syncMenuOverlayControls, startManualSaveBusyLabel, scheduleMenuControlRelayout };
   window.__hobunjiFolderSaveQuitDebug = {
     snapshot: () => ({
       busy,
       quitAttempts,
       successfulFolderFlushes,
       lastError: lastError || null,
+      menuControlsCompact,
+      menuTabsFit: !menuTabsOverflow(),
+      latestChange: 'Menu controls now compact only when needed so mobile-widescreen tabs cannot overlap them.',
       farmResetDisabled: typeof document?.getElementById === 'function' && document.getElementById(RESET_BUTTON_ID)?.disabled === true,
       labeledMenuButtons: typeof document?.getElementById === 'function'
         ? MENU_CONTROL_LABELS.filter(spec => {
             const button = document.getElementById(spec.id);
-            return button?.textContent === menuControlLabel(spec, button);
+            return button?.textContent === menuControlLabel(spec, button, menuControlsCompact);
           }).length
         : 0,
       menuOverlayControlsHidden: typeof document?.getElementById === 'function'
