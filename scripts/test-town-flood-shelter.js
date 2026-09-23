@@ -56,6 +56,19 @@ function makeGrid(rows, cols, type, water = 0) {
   assert.equal(windowObject.WaterSystem.setTownFloodEmergencyDebugOverride(true), true, 'debug override should force emergency on');
   assert.equal(windowObject.WaterSystem.isTownFloodEmergency(), true, 'forced emergency should be observable');
   windowObject.WaterSystem.setTownFloodEmergencyDebugOverride(null);
+
+  // Exercise the real hysteresis state machine with the same normalized
+  // baseline depth updateTownWaterMeshes supplies in-game.
+  windowObject.WaterSystem.debugTownFloodEmergencyStep(0);
+  assert.equal(windowObject.WaterSystem.isTownFloodEmergency(), false);
+  windowObject.WaterSystem.debugTownFloodEmergencyStep(0.87);
+  assert.equal(windowObject.WaterSystem.isTownFloodEmergency(), false, '87% flood depth must remain below emergency');
+  windowObject.WaterSystem.debugTownFloodEmergencyStep(0.88);
+  assert.equal(windowObject.WaterSystem.isTownFloodEmergency(), true, '88% flood depth must enter emergency');
+  windowObject.WaterSystem.debugTownFloodEmergencyStep(0.75);
+  assert.equal(windowObject.WaterSystem.isTownFloodEmergency(), true, 'emergency must remain latched between enter and release thresholds');
+  windowObject.WaterSystem.debugTownFloodEmergencyStep(0.70);
+  assert.equal(windowObject.WaterSystem.isTownFloodEmergency(), false, '70% flood depth must release the emergency');
 }
 
 // --- Pathfinding topology reads must not load every building interior. ---
