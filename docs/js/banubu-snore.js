@@ -8,7 +8,8 @@
   const IDLE_RECHECK_MS = 250; // Used only while no snore is playing so range/night checks stay cheap off-screen.
   const FAILED_START_RETRY_MS = 1000; // Used to avoid frame-spamming a temporarily blocked audio backend.
   const SNORE_TEMPO = 1 / 9; // Used to triple the existing one-third-speed Grehlr snore's audible duration.
-  const PAUSE_DURATION_MULTIPLIER = 1; // Keeps the silence between calls equal to the newly lengthened snore duration.
+  const SHORT_SNORE_TEMPO = 1; // Restores the Grehlr utterance's normal length for the second breath of each pair.
+  const SHORT_SNORE_PITCH_OFFSET = 2; // Raises only the short follow-up by a couple of semitones.
   const ACOUSTIC_EARSHOT_CHUNKS = 5; // Used only for smooth distance/elevation attenuation after the stricter two-chunk gate passes.
   const SCHEDULER_ID = 'banubu-night-snore'; // Used to keep development reloads from registering duplicate frame subscribers.
 
@@ -18,6 +19,9 @@
   let schedulerUnsubscribe = null; // Used by dispose() so a development reload can cleanly detach this feature.
   let lastLoggedStatus = ''; // Used to keep the in-game debug log readable instead of logging every proximity poll.
   let activeSnoreController = null; // Cancels an already audible snore as soon as Banubu is addressed.
+  let nextSnorePhase = 'long'; // Chooses the long or short call when the next eligible frame starts playback.
+  let cycleDurationMs = 0; // Accumulates audible durations of the two calls for the following equal-length pause.
+  let activeSnoreToken = 0; // Invalidates delayed audio callbacks after dialogue or disposal cancels a call.
 
   const debugState = {
     status: 'booting',
@@ -38,11 +42,15 @@
     baseVolume: null,
     acousticGain: null,
     tempo: SNORE_TEMPO,
+    phase: 'long',
     playing: false,
     lastStartedAt: null,
     lastFinishedAt: null,
     lastDurationMs: null,
+    lastLongDurationMs: null,
+    lastShortDurationMs: null,
     lastPauseMs: null,
+    cycleDurationMs: 0,
     lastError: null,
   }; // Exposed through debugSnapshot() and Pixel Probe so mobile testing does not require a console.
 
@@ -225,17 +233,38 @@
     };
   }
 
-  function markFinished(error = null) {
+  function markFinished(phase, error = null) {
     const finishedAt = nowMs(); // Used for real-duration diagnostics and to schedule the following silence.
     snorePlaying = false;
     activeSnoreController = null;
     debugState.playing = false;
     debugState.lastFinishedAt = Date.now();
     debugState.lastDurationMs = lastStartedAtMs > 0 ? Math.max(0, finishedAt - lastStartedAtMs) : null;
+    if (!error) {
+      if (phase === 'long') debugState.lastLongDurationMs = debugState.lastDurationMs;
+      else debugState.lastShortDurationMs = debugState.lastDurationMs;
+    }
     debugState.lastError = error ? String(error?.message || error) : null;
-    debugState.lastPauseMs = error ? null : debugState.lastDurationMs * PAUSE_DURATION_MULTIPLIER;
-    nextAttemptAtMs = finishedAt + (error ? FAILED_START_RETRY_MS : debugState.lastPauseMs);
-    setStatus(error ? 'playback error' : 'pausing between snores', debugState.lastError);
+    if (error) {
+      nextSnorePhase = 'long';
+      cycleDurationMs = 0;
+      debugState.lastPauseMs = null;
+      nextAttemptAtMs = finishedAt + FAILED_START_RETRY_MS;
+    } else {
+      cycleDurationMs += debugState.lastDurationMs || 0;
+      if (phase === 'long') {
+        nextSnorePhase = 'short';
+        nextAttemptAtMs = finishedAt;
+      } else {
+        nextSnorePhase = 'long';
+        debugState.lastPauseMs = cycleDurationMs;
+        nextAttemptAtMs = finishedAt + cycleDurationMs;
+        cycleDurationMs = 0;
+      }
+    }
+    debugState.phase = error ? 'long' : (phase === 'long' ? 'short next' : 'pause');
+    debugState.cycleDurationMs = cycleDurationMs;
+    setStatus(error ? 'playback error' : (phase === 'long' ? 'short snore next' : 'pausing between pairs'), debugState.lastError);
   }
 
   function startSnore(acoustics, timestamp) {
@@ -264,14 +293,17 @@
     const baseVolume = Math.max(0, Math.min(1, finite(authored.chatter.volume, 0.31)));
     debugState.baseVolume = baseVolume;
 
+    const phase = nextSnorePhase; // Captures which breath owns these asynchronous playback callbacks.
+    if (phase === 'long') debugState.lastPauseMs = null;
+    const token = ++activeSnoreToken; // Guards against a cancelled long breath completing after dialogue ends.
     let started = false; // Used to measure the actual rendered duration rather than decode/preparation time.
     activeSnoreController = new AbortController(); // Passed to the independent voice renderer for immediate dialogue cancellation.
     const accepted = audio.playAnimalVoiceUtterance(source, {
       meaning: 'chatter',
       reason: 'banubu-snore',
-      tempo: SNORE_TEMPO,
+      tempo: phase === 'long' ? SNORE_TEMPO : SHORT_SNORE_TEMPO,
       signal: activeSnoreController.signal,
-      pitchSemitones: authored.pitchSemitones,
+      pitchSemitones: authored.pitchSemitones + (phase === 'short' ? SHORT_SNORE_PITCH_OFFSET : 0),
       sizePitchSemitones: authored.sizePitchSemitones,
       allowedClips: [...authored.chatter.allowedClips],
       clipTuning: authored.profile.clipTuning,
@@ -279,18 +311,21 @@
       earshotTiles: acoustics.earshotTiles,
       acousticDistancePx: acoustics.acousticDistanceTiles * acoustics.tileSize,
       onStarted() {
+        if (token !== activeSnoreToken) return;
         started = true;
         lastStartedAtMs = nowMs();
         debugState.lastStartedAt = Date.now();
         debugState.lastError = null;
-        setStatus('snoring');
+        debugState.phase = phase;
+        setStatus(`${phase} snore`);
       },
       onFinished() {
+        if (token !== activeSnoreToken) return;
         if (!started) lastStartedAtMs = nowMs();
-        markFinished();
+        markFinished(phase);
       },
       onError(error) {
-        markFinished(error);
+        if (token === activeSnoreToken) markFinished(phase, error);
       },
     });
 
@@ -311,7 +346,14 @@
     const timestamp = finite(frameContext.timestamp, nowMs());
     const deps = gameDeps(); // Dialogue state is authoritative even while a slowed snore is already playing.
     if (deps?.isDialogueOpen?.() && (currentArea(deps) === BANUBU_INTERIOR_ID || currentArea(deps) === BANUBU_AREA_ID)) {
+      activeSnoreToken++;
       activeSnoreController?.abort();
+      activeSnoreController = null;
+      snorePlaying = false;
+      nextSnorePhase = 'long';
+      cycleDurationMs = 0;
+      debugState.phase = 'dialogue';
+      debugState.playing = false;
       setStatus('paused for dialogue');
       nextAttemptAtMs = timestamp + IDLE_RECHECK_MS;
       return;
@@ -350,6 +392,7 @@
   function dispose() {
     schedulerUnsubscribe?.();
     schedulerUnsubscribe = null;
+    activeSnoreToken++;
     activeSnoreController?.abort();
     activeSnoreController = null;
     snorePlaying = false;

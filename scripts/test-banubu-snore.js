@@ -121,47 +121,60 @@ const completed = windowObject.BanubuSnore.debugSnapshot();
 assert.equal(completed.originSource, 'entrance transition', 'mobile diagnostics must identify the authoritative entrance origin');
 assert.equal(completed.chunkDistance, 0, 'mock player and entrance begin in the same chunk');
 assert.equal(Math.round(completed.lastDurationMs), 10500, 'diagnostics measure the actual rendered slowed-call duration');
-assert.equal(completed.lastPauseMs, 10500, 'pause matches the new audible snore duration');
+assert.equal(completed.phase, 'short next', 'the second breath follows the long call immediately');
+assert.equal(completed.lastPauseMs, null, 'there is no pause between the long and short snores');
 
-now = 21999;
+now = 11501;
 scheduled({ timestamp: now });
-assert.equal(calls.length, 1, 'the next snore waits throughout the full measured pause');
-now = 22000;
-scheduled({ timestamp: now });
-assert.equal(calls.length, 2, 'the next snore begins when the measured pause finishes');
-
+assert.equal(calls.length, 2, 'the short snore begins immediately after the long one');
+assert.equal(calls[1].options.tempo, 1, 'the second snore uses the original utterance duration');
+assert.equal(calls[1].options.pitchSemitones, -7, 'the short snore is two semitones higher');
 calls[1].options.onStarted();
-now = 25000;
+now = 13501;
 calls[1].options.onFinished();
-phase = 'day';
-now = 25300;
+assert.equal(windowObject.BanubuSnore.debugSnapshot().lastPauseMs, 12500, 'silence equals the sum of both audible durations');
+now = 26000;
 scheduled({ timestamp: now });
-assert.equal(calls.length, 2, 'daytime must suppress Banubu snoring');
+assert.equal(calls.length, 2, 'the next pair cannot begin before the full silence');
+now = 26001;
+scheduled({ timestamp: now });
+assert.equal(calls.length, 3, 'the next pair begins with a long snore after the summed pause');
+assert.equal(calls[2].options.tempo, 1 / 9);
+
+calls[2].options.onStarted();
+phase = 'day';
+now = 26100;
+calls[2].options.onFinished();
+now = 26200;
+scheduled({ timestamp: now });
+assert.equal(calls.length, 3, 'daytime must suppress Banubu snoring outdoors');
 
 let talking = false; // Simulates Banubu dialogue while the player is indoors.
 windowObject.Combat.deps.isDialogueOpen = () => talking;
 windowObject.Combat.deps.getCurrentArea = () => 'map_i_den_banubu';
 player.x = 6.5 * TILE;
 player.y = 6.5 * TILE;
-now = 28000;
+now = 26450;
 scheduled({ timestamp: now });
-assert.equal(calls.length, 3, 'Banubu should snore indoors even during daytime');
-assert.equal(calls[2].sourceEntity.x, 6.5 * TILE, 'indoor snoring comes from his sleeping station');
-assert.equal(calls[2].sourceEntity.y, 5.5 * TILE, 'indoor snoring comes from his sleeping station');
-assert.equal(calls[2].options.earshotTiles, 16, 'indoor snoring uses a room-scale earshot');
+assert.equal(calls.length, 4, 'Banubu should snore indoors even during daytime');
+assert.equal(calls[3].sourceEntity.x, 6.5 * TILE, 'indoor snoring comes from his sleeping station');
+assert.equal(calls[3].sourceEntity.y, 5.5 * TILE, 'indoor snoring comes from his sleeping station');
+assert.equal(calls[3].options.earshotTiles, 16, 'indoor snoring uses a room-scale earshot');
+assert.equal(calls[3].options.tempo, 1, 'the short follow-up resumes indoors when daylight interrupted it outdoors');
 talking = true;
-now = 28100;
+now = 26550;
 scheduled({ timestamp: now });
-assert(calls[2].options.signal.aborted, 'starting dialogue must cancel a snore already in progress');
+assert(calls[3].options.signal.aborted, 'starting dialogue must cancel a snore already in progress');
+calls[3].options.onFinished(); // A stale audio completion must not turn the cancelled short snore into a pause.
 assert.match(windowObject.BanubuSnore.debugSnapshot().status, /paused for dialogue/);
 windowObject.Combat.deps.getCurrentArea = () => 'map_northern_cliffs';
 talking = false;
 
 phase = 'night';
 player.x = (64.5) * TILE; // Entrance chunk=1, player chunk=4 -> three chunks away.
-now = 28400;
+now = 26850;
 scheduled({ timestamp: now });
-assert.equal(calls.length, 3, 'player more than two chunks away must not hear a new snore');
+assert.equal(calls.length, 4, 'player more than two chunks away must not hear a new snore');
 assert.match(windowObject.BanubuSnore.debugSnapshot().status, /outside two-chunk range/, 'debug state must explain the chunk-range suppression');
 
 assert(audioSource.includes('function animalVoiceAcousticDistancePx(c, opts = {})'), 'AudioSystem must accept an acoustic-distance override');
@@ -173,7 +186,7 @@ assert(playbackSource.includes('let completed = false;'), 'animal voice adapter 
 assert(playbackSource.includes('onError: error => complete(error)'), 'animal voice adapter must route playback errors through the single completion bridge');
 assert(playbackSource.includes('onFinished: () => complete()'), 'animal voice adapter must forward successful processed playback completion to the caller');
 assert(!playbackSource.includes('onFinished: release'), 'animal voice adapter must not swallow the caller onFinished callback');
-assert(indexSource.includes('js/banubu-snore.js?v=20260923snorelength1'), 'game index must load the Banubu snore runtime');
+assert(indexSource.includes('js/banubu-snore.js?v=20260923snorepair1'), 'game index must load the Banubu snore runtime');
 assert(pixelProbeSource.includes('Banubu snore:'), 'Pixel Probe must expose Banubu snore diagnostics on mobile');
 assert(logs.length > 0, 'runtime status changes should also reach the existing in-game audio log');
 

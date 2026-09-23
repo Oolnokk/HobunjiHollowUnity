@@ -296,7 +296,7 @@
   }
 
   function sampleMeshSurfaceAt(triangles, worldX, worldZ) {
-    let bestY = Infinity; // Lowest standable surface underneath this tile center.
+    let bestY = Infinity; // Lowest upward-facing standable surface underneath this tile center.
     for (const triangle of triangles || []) { // Spatial bin contains only triangles whose bounds cover this center.
       const { ax, ay, az, bx, by, bz, cx, cy, cz, denom } = triangle;
       const wa = ((bz - cz) * (worldX - cx) + (cx - bx) * (worldZ - cz)) / denom; // Barycentric weights interpolate the carved surface.
@@ -323,7 +323,7 @@
       const acx = cx - ax, acy = cy - ay, acz = cz - az;
       const nx = aby * acz - abz * acy, ny = abz * acx - abx * acz, nz = abx * acy - aby * acx;
       const denom = (bz - cz) * (ax - cx) + (cx - bx) * (az - cz); // Projected area used for barycentric interpolation.
-      if (Math.abs(denom) < 1e-12 || Math.abs(ny) < Math.hypot(nx, ny, nz) * 0.5) continue;
+      if (Math.abs(denom) < 1e-12 || ny < Math.hypot(nx, ny, nz) * 0.5) continue; // Exclude the downward-facing underside of the cave slab, one unit below its visible floor.
       const triangle = { ax, ay, az, bx, by, bz, cx, cy, cz, denom }; // Shared by all tile bins overlapped by this triangle.
       const minCol = Math.ceil(Math.min(ax, bx, cx) - 0.5 - 1e-5), maxCol = Math.floor(Math.max(ax, bx, cx) - 0.5 + 1e-5);
       const minRow = Math.ceil(Math.min(az, bz, cz) - 0.5 - 1e-5), maxRow = Math.floor(Math.max(az, bz, cz) - 0.5 + 1e-5);

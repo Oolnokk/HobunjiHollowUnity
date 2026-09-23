@@ -4,13 +4,14 @@
 
   const CAVE_ID = 'map_i_den_banubu'; // Limits the atmosphere to Banubu's own cave.
   const CLOUDS = [
-    [3.5, 4.5, 1.45, 'cloud1.png', 0.0],
-    [8.5, 3.7, 1.85, 'cloud4.png', 1.7],
-    [4.2, 7.3, 1.35, 'cloud7.png', 3.1],
-    [8.8, 7.5, 1.65, 'cloud1.png', 4.6],
-    [6.2, 3.3, 2.05, 'cloud4.png', 2.2],
+    [3.5, 4.5, 0.45, 'cloud1.png', 0.0],
+    [8.5, 3.7, 0.85, 'cloud4.png', 1.7],
+    [4.2, 7.3, 0.35, 'cloud7.png', 3.1],
+    [8.8, 7.5, 0.65, 'cloud1.png', 4.6],
+    [6.2, 3.3, 1.05, 'cloud4.png', 2.2],
   ]; // Fixed heights keep all animation horizontal without vertical bob.
   const textureCache = new Map(); // Reuses recolored PNG canvases across cave reloads.
+  let lastCloudGroup = null; // Read by Pixel Probe so cloud and cave-floor heights can be compared without devtools.
   const TEXTURE_SLOTS = ['map', 'specularMap', 'displacementMap', 'normalMap', 'bumpMap', 'roughnessMap', 'metalnessMap', 'alphaMap', 'emissiveMap', 'aoMap', 'lightMap']; // Material maps whose UV transforms Three.js reads during a cave render.
 
   function validateCaveMaterials({ THREE, scene, mapData }) {
@@ -68,16 +69,19 @@
 
   function decorate({ THREE, scene, mapData }) {
     if (mapData?.id !== CAVE_ID || !THREE || !scene) return;
-    const surface = Number(mapData.floorSurfaceY) || 0; // Places clouds relative to the same carved floor used for player grounding.
+    const fallbackSurface = Number(mapData.floorSurfaceY) || 0; // Used when a cloud has no authored floor tile directly beneath it.
     const group = new THREE.Group(); // Keeps cave-specific meshes and lights together for scene disposal.
     group.name = 'banubu_silvery_clouds';
     const geometry = new THREE.PlaneGeometry(3.6, 1.2); // Shared geometry for the five small atmospheric planes.
     CLOUDS.forEach(([x, z, height, filename, phase], index) => {
+      const sampledSurface = Number(mapData.floorSurfaceByTile?.[`${Math.floor(x)},${Math.floor(z)}`]); // Uses the same corrected local cave floor sample as character grounding.
+      const surface = Number.isFinite(sampledSurface) ? sampledSurface : fallbackSurface; // Prevents a missing tile sample from putting one cloud underground.
       const material = window.HobunjiSpritePngSurface.makeMaterial(THREE, textureFor(THREE, filename), `banubu_cloud_${index}`, {
         transparent: true, alphaTest: 0.01, depthWrite: false, side: THREE.DoubleSide,
       }); // Uses the canonical authored PNG-plane texture and material settings.
       const cloud = new THREE.Mesh(geometry, material);
       cloud.name = `banubu_cloud_${index}`;
+      cloud.userData.banubuFloorY = surface; // Records the local tile sample used for this cloud's fixed altitude.
       cloud.position.set(x, surface + height, z);
       cloud.frustumCulled = false;
       cloud.renderOrder = 45;
@@ -95,8 +99,14 @@
       }
     });
     scene.add(group);
+    lastCloudGroup = group;
+    group.userData.banubuCloudFloorY = fallbackSurface; // Exposed to Pixel Probe to compare the cloud plane with the standing surface on mobile.
     window.__farmLog?.('[banubu-clouds] 5 fixed-height cloud PNGs and 3 local lights', 'render');
   }
 
-  window.BanubuCaveClouds = { decorate, validateCaveMaterials };
+  function debugSnapshot() {
+    return lastCloudGroup?.children.map(cloud => ({ name: cloud.name, floorY: cloud.userData.banubuFloorY, y: cloud.position.y })) || []; // Used only on demand by Pixel Probe.
+  }
+
+  window.BanubuCaveClouds = { decorate, validateCaveMaterials, debugSnapshot };
 })();

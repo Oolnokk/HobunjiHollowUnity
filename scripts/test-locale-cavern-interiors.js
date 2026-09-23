@@ -133,9 +133,10 @@ function addSampleTriangle(vertices) {
   samplingMesh.positions.push(...vertices.flat());
   samplingMesh.indices.push(offset, offset + 1, offset + 2);
 }
-addSampleTriangle([[0.4, 2, 0.4], [0.6, 2, 0.4], [0.5, 2, 0.7]]);
+addSampleTriangle([[0.4, 2, 0.4], [0.5, 2, 0.7], [0.6, 2, 0.4]]);
+addSampleTriangle([[0.4, 1, 0.4], [0.6, 1, 0.4], [0.5, 1, 0.7]]); // Downward-facing underside must not be chosen as the standable floor.
 addSampleTriangle([[0, -10, 0], [1, 10, 0], [0.5, -10, 1]]);
-addSampleTriangle([[1, 3, 0], [2, 3, 0], [1.5, 3, 1]]);
+addSampleTriangle([[1, 3, 0], [1.5, 3, 1], [2, 3, 0]]);
 context.CavernSculptor.carveFootprintCavern = () => ({ mesh: samplingMesh });
 const sampled = context.CavernGenerator.synthesizeLocaleCavernMapData(samplingLocale); // Real synthesis must preserve tiny floor faces and reject steep walls.
 assert.strictEqual(sampled.floorSurfaceByTile['0,0'], 2, 'small horizontal triangles are valid regardless of projected area');
