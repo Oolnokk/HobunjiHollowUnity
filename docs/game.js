@@ -1098,15 +1098,19 @@
         const nextX = c.x + (Number(c.proneThrowVX) || 0) * dt;
         const nextY = c.y + (Number(c.proneThrowVY) || 0) * dt;
         const throwVX = Number(c.proneThrowVX) || 0, throwVY = Number(c.proneThrowVY) || 0; // Preserved until the shared collision resolver has measured the lost travel.
-        const swept = sweptMove(c.x, c.y, nextX, nextY, (x, y) => canOccupyAt(x, y, TILE * 0.32), true);
+        const swept = sweepKnockbackMotion(c, nextX, nextY, TILE * 0.32, throwVX, throwVY, (x, y) => canOccupyAt(x, y, TILE * 0.32));
         c.x = swept.x; c.y = swept.y;
         if (swept.blockedX || swept.blockedY) {
-          resolveKnockbackCollision(c, swept, TILE * 0.32, throwVX, throwVY);
+          const impact = resolveKnockbackCollision(c, swept, TILE * 0.32, throwVX, throwVY);
           c.proneThrowT = 0;
           c.proneThrowVX = 0; c.proneThrowVY = 0;
+          if (c._knockbackLedgeAir) {
+            if (impact?.lethal) clearKnockbackLedgeMotion(c);
+            else beginKnockbackLedgeFall(c);
+          }
         } else if (c.proneThrowT <= 0) {
           c.proneThrowVX = 0; c.proneThrowVY = 0;
-          window.KnockbackCollisionImpact?.cancel?.(c);
+          if (!beginKnockbackLedgeFall(c)) window.KnockbackCollisionImpact?.cancel?.(c);
         }
         return true;
       }
@@ -3218,17 +3222,199 @@
         return { kind: 'fallback', label: 'unspecified collision' };
       }
 
-      function resolveKnockbackCollision(entity, swept, radiusPx, velocityX, velocityY) {
-        if (!entity || !(swept?.blockedX || swept?.blockedY)) return null;
-        const api = window.KnockbackCollisionImpact; // Shared deficit/profile resolver; no impact work runs during unobstructed motion.
-        if (!api?.resolve) return null;
-        const speed = Math.hypot(Number(velocityX) || 0, Number(velocityY) || 0); // Used to find the obstacle-facing edge and existing directional knockdown clip.
-        const dirX = speed > 1e-6 ? velocityX / speed : 0;
-        const dirY = speed > 1e-6 ? velocityY / speed : 0;
-        const blockedAt = swept.blockedAt || { x: entity.x, y: entity.y }; // First rejected swept center retained specifically for collider classification.
+      const KNOCKBACK_LEDGE_HEIGHT_EPSILON = 0.08; // Separates a real downward ledge from flat/subtle terrain noise during forced movement.
+      const KNOCKBACK_LEDGE_LANDING_SEARCH_TILES = 6; // Bounds the nearest-safe-tile search on the far side of a cliff.
+      let knockbackLedgeDebug = null; // Latest ledge decision/event exposed through Pixel Probe for mobile testing.
+
+      function knockbackSurfaceAtPixel(wx, wy) {
+        const grid = window.GridTileAccessors.getActiveGrid(); // Uses the live merged terrain grid that owns plateau elevation tiers.
+        const col = Math.floor(wx / TILE), row = Math.floor(wy / TILE);
+        const tile = grid?.[row]?.[col];
+        return tile ? tileSurfaceYInArea(tile, currentArea) : null;
+      }
+
+      function setKnockbackLedgeDebug(entity, phase, details = {}) {
+        knockbackLedgeDebug = { // Kept as plain data so Pixel Probe can report the current path without console access.
+          at: Date.now(),
+          entity: entity === player ? 'player' : (entity?.id || entity?.name || entity?.creatureKey || 'entity'),
+          phase,
+          ...details,
+        };
+        window.__knockbackLedgeDebug = knockbackLedgeDebug;
+      }
+
+      function clearKnockbackLedgeMotion(entity, phase = null) {
+        if (!entity) return;
+        const hadMotion = !!(entity._knockbackLedgeAir || entity._knockbackLedgeFall);
+        entity._knockbackLedgeAir = null;
+        entity._knockbackLedgeFall = null;
+        if (phase && hadMotion) setKnockbackLedgeDebug(entity, phase);
+      }
+
+      function knockbackLedgeCandidateSurface(col, row) {
+        const grid = window.GridTileAccessors.getActiveGrid(); // Reads candidate landing elevation without changing ordinary walkability.
+        const tile = grid?.[row]?.[col];
+        return tile ? tileSurfaceYInArea(tile, currentArea) : null;
+      }
+
+      function findClosestKnockbackLedgeLanding(targetX, targetY, ledgeX, ledgeY, dirX, dirY, radiusPx, originSurfaceY) {
+        const cols = window.GridTileAccessors.getActiveCols(), rows = window.GridTileAccessors.getActiveRows();
+        const centerCol = Math.floor(targetX / TILE), centerRow = Math.floor(targetY / TILE);
+        let best = null; // Closest strict-safe lower tile to the horizontal shove endpoint wins.
+        for (let ring = 0; ring <= KNOCKBACK_LEDGE_LANDING_SEARCH_TILES; ring++) {
+          for (let dr = -ring; dr <= ring; dr++) {
+            for (let dc = -ring; dc <= ring; dc++) {
+              if (Math.max(Math.abs(dc), Math.abs(dr)) !== ring) continue;
+              const col = centerCol + dc, row = centerRow + dr;
+              if (col < 0 || row < 0 || col >= cols || row >= rows) continue;
+              const x = (col + 0.5) * TILE, y = (row + 0.5) * TILE;
+              const forward = (x - ledgeX) * dirX + (y - ledgeY) * dirY;
+              const lateral = Math.abs((x - ledgeX) * -dirY + (y - ledgeY) * dirX); // Keeps recovery on the shove's far-side corridor instead of snapping sideways to an unrelated valley tile.
+              if (!(forward > TILE * 0.12) || lateral > TILE * 1.5) continue; // Landing must truly be beyond the crossed cliff edge and near the horizontal knockback line.
+              const surfaceY = knockbackLedgeCandidateSurface(col, row);
+              if (!Number.isFinite(surfaceY) || !(surfaceY < originSurfaceY - KNOCKBACK_LEDGE_HEIGHT_EPSILON)) continue;
+              if (!canOccupyAt(x, y, radiusPx)) continue;
+              const distance = Math.hypot(x - targetX, y - targetY);
+              if (!best || distance < best.distance) best = { x, y, col, row, surfaceY, distance };
+            }
+          }
+          if (best) break;
+        }
+        return best;
+      }
+
+      function knockbackInclineTopSurface(col, row) {
+        const grid = window.GridTileAccessors.getActiveGrid(); // Incline tiles store the lower support tier, so neighboring caps reveal the wall's actual top.
+        let top = knockbackLedgeCandidateSurface(col, row);
+        for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const neighbor = grid?.[row + dr]?.[col + dc];
+          if (!neighbor) continue;
+          top = Math.max(Number.isFinite(top) ? top : -Infinity, tileSurfaceYInArea(neighbor, currentArea));
+        }
+        return Number.isFinite(top) ? top : null;
+      }
+
+      function knockbackAirborneCanOccupyAt(wx, wy, radiusPx, air) {
+        const originSurfaceY = air?.originSurfaceY;
+        const cols = window.GridTileAccessors.getActiveCols(), rows = window.GridTileAccessors.getActiveRows();
+        const samples = [ // Mirrors canOccupyAt's four-corner footprint while allowing lower terrain to pass beneath the airborne target.
+          [wx - radiusPx, wy - radiusPx], [wx + radiusPx, wy - radiusPx],
+          [wx - radiusPx, wy + radiusPx], [wx + radiusPx, wy + radiusPx],
+        ];
+        for (const [sx, sy] of samples) {
+          if (sx < 0 || sy < 0 || sx >= cols * TILE || sy >= rows * TILE) return false;
+          const col = Math.floor(sx / TILE), row = Math.floor(sy / TILE);
+          const tile = window.GridTileAccessors.getActiveGrid()?.[row]?.[col];
+          if (!tile) return false;
+          if (tile?.incline) {
+            const firstLedgeDistance = Math.hypot(sx - air.ledgeX, sy - air.ledgeY); // Only the cliff just crossed is unconditionally transparent to the horizontal shove.
+            if (firstLedgeDistance <= TILE * 1.5) continue;
+            const inclineTopY = knockbackInclineTopSurface(col, row);
+            if (Number.isFinite(inclineTopY) && inclineTopY >= originSurfaceY - KNOCKBACK_LEDGE_HEIGHT_EPSILON) return false;
+            continue;
+          }
+          if (tileSpeedAt(sx, sy) !== null) continue;
+          const obstacleSurfaceY = tileSurfaceYInArea(tile, currentArea);
+          if (obstacleSurfaceY >= originSurfaceY - KNOCKBACK_LEDGE_HEIGHT_EPSILON) return false; // Same/higher obstruction still collides and contributes a deficit.
+        }
+        return true;
+      }
+
+      function tryStartKnockbackLedgeTransit(entity, swept, radiusPx, velocityX, velocityY) {
+        if (!entity || entity._knockbackLedgeAir || entity._knockbackLedgeFall) return !!entity?._knockbackLedgeAir;
+        const speed = Math.hypot(Number(velocityX) || 0, Number(velocityY) || 0);
+        if (!(speed > 1e-6)) return false;
+        const dirX = velocityX / speed, dirY = velocityY / speed;
+        const blockedAt = swept?.blockedAt || { x: entity.x, y: entity.y };
         const descriptor = knockbackCollisionDescriptorAt(blockedAt.x, blockedAt.y, radiusPx, dirX, dirY);
-        const sourceX = entity.x + dirX * TILE, sourceY = entity.y + dirY * TILE; // Represents the obstacle side for the existing hit-direction classifier.
-        return api.resolve(entity, descriptor, TILE, {
+        if (descriptor?.label !== 'Cliff side') return false;
+        const originSurfaceY = knockbackSurfaceAtPixel(entity.x, entity.y);
+        if (!Number.isFinite(originSurfaceY)) return false;
+        const impactState = entity._knockbackCollisionImpact;
+        const traveledPx = impactState ? Math.hypot(entity.x - impactState.startX, entity.y - impactState.startY) : 0;
+        const remainingPx = Math.max(TILE * 0.2, (Number(impactState?.intendedPx) || 0) - traveledPx);
+        const targetX = entity.x + dirX * remainingPx, targetY = entity.y + dirY * remainingPx;
+        const landing = findClosestKnockbackLedgeLanding(targetX, targetY, blockedAt.x, blockedAt.y, dirX, dirY, radiusPx, originSurfaceY);
+        if (!landing) {
+          swept.knockbackDescriptorOverride = { kind: 'fallback', label: 'Unsafe cliff edge' }; // No viable far-side landing means this stays an ordinary fallback collision.
+          setKnockbackLedgeDebug(entity, 'fallback', {
+            originSurfaceY, ledgeX: blockedAt.x, ledgeY: blockedAt.y,
+            reason: 'no-safe-lower-tile',
+          });
+          return false;
+        }
+        entity._knockbackLedgeAir = { // Persists the original ledge height while horizontal knockback travels over lower terrain.
+          originSurfaceY,
+          ledgeX: blockedAt.x, ledgeY: blockedAt.y,
+          dirX, dirY, radiusPx,
+          preflightLandingX: landing.x, preflightLandingY: landing.y,
+          preflightLandingSurfaceY: landing.surfaceY,
+        };
+        setKnockbackLedgeDebug(entity, 'airborne', {
+          originSurfaceY, ledgeX: blockedAt.x, ledgeY: blockedAt.y,
+          landingX: landing.x, landingY: landing.y,
+          landingSurfaceY: landing.surfaceY,
+          dropWorld: Math.max(0, originSurfaceY - landing.surfaceY),
+        });
+        return true;
+      }
+
+      function sweepKnockbackMotion(entity, desiredX, desiredY, radiusPx, velocityX, velocityY, ordinaryCanOccupy) {
+        const air = entity?._knockbackLedgeAir;
+        const occupancy = air
+          ? (x, y) => knockbackAirborneCanOccupyAt(x, y, radiusPx, air)
+          : ordinaryCanOccupy;
+        let swept = sweptMove(entity.x, entity.y, desiredX, desiredY, occupancy, true);
+        if (!air && (swept.blockedX || swept.blockedY) && tryStartKnockbackLedgeTransit(entity, swept, radiusPx, velocityX, velocityY)) {
+          const startedAir = entity._knockbackLedgeAir; // Re-sweeps this same frame from the pre-edge point with only lower terrain ignored.
+          swept = sweptMove(
+            entity.x, entity.y, desiredX, desiredY,
+            (x, y) => knockbackAirborneCanOccupyAt(x, y, radiusPx, startedAir),
+            true,
+          );
+          swept.knockbackLedgeStarted = true;
+        }
+        return swept;
+      }
+
+      function beginKnockbackLedgeFall(entity) {
+        const air = entity?._knockbackLedgeAir;
+        if (!air) return false;
+        const landing = findClosestKnockbackLedgeLanding(
+          entity.x, entity.y, air.ledgeX, air.ledgeY, air.dirX, air.dirY, air.radiusPx, air.originSurfaceY,
+        ) || {
+          x: air.preflightLandingX, y: air.preflightLandingY,
+          surfaceY: air.preflightLandingSurfaceY,
+        };
+        if (!Number.isFinite(landing?.surfaceY)) {
+          clearKnockbackLedgeMotion(entity, 'fall-cancelled');
+          return false;
+        }
+        const dropWorld = Math.max(0, air.originSurfaceY - landing.surfaceY);
+        const dropTiers = dropWorld / Math.max(0.001, PLATEAU_UNIT);
+        const duration = window.FormatUtils.clamp(0.14 + dropTiers * 0.055, 0.16, 0.36);
+        entity._knockbackLedgeFall = { // Drives rapid X/Y landing correction and visual world-Y interpolation after horizontal push is complete.
+          startX: entity.x, startY: entity.y,
+          endX: landing.x, endY: landing.y,
+          startSurfaceY: air.originSurfaceY, endSurfaceY: landing.surfaceY,
+          visualSurfaceY: air.originSurfaceY,
+          elapsed: 0, duration, dropWorld, dropTiers,
+          dirX: air.dirX, dirY: air.dirY,
+        };
+        entity._knockbackLedgeAir = null;
+        window.KnockbackCollisionImpact?.cancel?.(entity); // An unobstructed ledge crossing never converts leftover horizontal travel into collision deficit.
+        setKnockbackLedgeDebug(entity, 'falling', {
+          originSurfaceY: air.originSurfaceY,
+          landingSurfaceY: landing.surfaceY,
+          landingX: landing.x, landingY: landing.y,
+          dropWorld, dropTiers, duration,
+        });
+        return true;
+      }
+
+      function knockbackImpactHooks(entity, descriptor, dirX, dirY) {
+        const sourceX = entity.x + dirX * TILE, sourceY = entity.y + dirY * TILE; // Represents the impact side for the existing hit-direction classifier.
+        return {
           dealHealthDamage(target, amount) {
             const opts = { environmentalImpact: true, reason: 'knockback collision', source: descriptor.label }; // Retains normal death authority without treating impact as a second weapon hit.
             return target === player
@@ -3242,7 +3428,59 @@
             const direction = hitDirectionRelativeToFacing(facing, target.x, target.y, sourceX, sourceY);
             enterProneIfFootingDepleted(target, isPlayerTarget, direction);
           },
+        };
+      }
+
+      function resolveKnockbackLedgeFallImpact(entity, fall) {
+        const api = window.KnockbackCollisionImpact;
+        if (!api?.resolveStrength || !(fall?.dropTiers > 0)) return null;
+        const descriptor = { kind: 'stone', label: 'Cliff fall' };
+        return api.resolveStrength(
+          entity, descriptor, fall.dropTiers, TILE,
+          knockbackImpactHooks(entity, descriptor, fall.dirX, fall.dirY),
+          { mode: 'ledge-fall', dropWorld: fall.dropWorld, dropTiers: fall.dropTiers },
+        );
+      }
+
+      function advanceKnockbackLedgeFall(entity, dt) {
+        const fall = entity?._knockbackLedgeFall;
+        if (!fall) return false;
+        fall.elapsed = Math.min(fall.duration, fall.elapsed + Math.max(0, Number(dt) || 0));
+        const t = fall.duration > 0 ? window.FormatUtils.clamp(fall.elapsed / fall.duration, 0, 1) : 1;
+        const eased = 1 - Math.pow(1 - t, 3); // Fast ease-out reads as a fall/landing rather than a slow scripted elevator.
+        entity.x = fall.startX + (fall.endX - fall.startX) * eased;
+        entity.y = fall.startY + (fall.endY - fall.startY) * eased;
+        fall.visualSurfaceY = fall.startSurfaceY + (fall.endSurfaceY - fall.startSurfaceY) * eased;
+        entity.vx = 0; entity.vy = 0;
+        if (t < 1) return true;
+        entity.x = fall.endX; entity.y = fall.endY;
+        entity._knockbackLedgeFall = null;
+        setKnockbackLedgeDebug(entity, 'landed', {
+          originSurfaceY: fall.startSurfaceY,
+          landingSurfaceY: fall.endSurfaceY,
+          landingX: fall.endX, landingY: fall.endY,
+          dropWorld: fall.dropWorld, dropTiers: fall.dropTiers,
         });
+        resolveKnockbackLedgeFallImpact(entity, fall);
+        return false;
+      }
+
+      function knockbackVisualSurfaceY(entity, ordinarySurfaceY) {
+        if (Number.isFinite(entity?._knockbackLedgeFall?.visualSurfaceY)) return entity._knockbackLedgeFall.visualSurfaceY;
+        if (Number.isFinite(entity?._knockbackLedgeAir?.originSurfaceY)) return entity._knockbackLedgeAir.originSurfaceY;
+        return ordinarySurfaceY;
+      }
+
+      function resolveKnockbackCollision(entity, swept, radiusPx, velocityX, velocityY) {
+        if (!entity || !(swept?.blockedX || swept?.blockedY)) return null;
+        const api = window.KnockbackCollisionImpact; // Shared deficit/profile resolver; no impact work runs during unobstructed motion.
+        if (!api?.resolve) return null;
+        const speed = Math.hypot(Number(velocityX) || 0, Number(velocityY) || 0); // Used to find the obstacle-facing edge and existing directional knockdown clip.
+        const dirX = speed > 1e-6 ? velocityX / speed : 0;
+        const dirY = speed > 1e-6 ? velocityY / speed : 0;
+        const blockedAt = swept.blockedAt || { x: entity.x, y: entity.y }; // First rejected swept center retained specifically for collider classification.
+        const descriptor = swept.knockbackDescriptorOverride || knockbackCollisionDescriptorAt(blockedAt.x, blockedAt.y, radiusPx, dirX, dirY);
+        return api.resolve(entity, descriptor, TILE, knockbackImpactHooks(entity, descriptor, dirX, dirY));
       }
 
       // Which placed decorative-furniture keys the player can interact with
@@ -4354,6 +4592,8 @@
       }
 
       function despawnCreature(c) {
+        window.BurningAfflictionVfx?.disposeEntity?.(c); // Removes any Burning Health emitter before the avatar group leaves its scene.
+        clearKnockbackLedgeMotion(c);
         (c.scene || scene).remove(c.avatarRef.group);
         c.avatarRef.dispose();
         if (c.groundShadow) {
@@ -5282,10 +5522,12 @@
         // climbSurfaceY exists: it's mid-crossing through impassable incline
         // tiles, so a raw tile lookup would pop between the cliff base and
         // landing the instant the crossing tile flips underneath it.
-        const surfY = c.onBranch ? c.branchSurfaceY
+        const ordinarySurfY = c.onBranch ? c.branchSurfaceY
           : c._climbLeap ? c._climbLeap.surfaceY
           : (g[row]?.[col] ? tileSurfaceYInArea(g[row][col], c.areaId) : 0);
+        const surfY = knockbackVisualSurfaceY(c, ordinarySurfY);
         const grp = c.avatarRef.group;
+        window.BurningAfflictionVfx?.syncEntity?.(c, grp); // Burning Health presentation follows the same live creature group used by every avatar update.
         // scaleY (driven by attacks like Pounce, default 1) squashes the
         // sprite plane vertically around its own bottom edge rather than its
         // center — the target height keeps the creature's feet grounded at
@@ -5323,7 +5565,7 @@
         // Tracks the body's own smoothed XZ (not the raw target, and not
         // its squash/height) so the shadow doesn't lead a fast-moving
         // creature or float with it during a pounce crouch.
-        if (c.groundShadow) c.groundShadow.position.set(grp.position.x, surfY + characterGroundShadowSurfaceOffset(), grp.position.z);
+        if (c.groundShadow) c.groundShadow.position.set(grp.position.x, ordinarySurfY + characterGroundShadowSurfaceOffset(), grp.position.z);
         if (window.ResourceRings) {
           const ringRadius = window.FormatUtils.clamp((c.visualModelWidth || c.def.modelWidth || 2) * .34, .2, 2.6);
           const ringScene = c.scene || scene;
@@ -5336,7 +5578,7 @@
           // that isn't really being auto-aimed.
           const isTarget = !c.isCompanion && c === findAutoTarget();
           const ringHud = window.ResourceRings.updateRingHud(c, ringScene, ringRadius, { isTarget });
-          ringHud.position.set(grp.position.x, surfY + characterGroundShadowSurfaceOffset(), grp.position.z);
+          ringHud.position.set(grp.position.x, ordinarySurfY + characterGroundShadowSurfaceOffset(), grp.position.z);
         }
 
         // def.aimAngleOffset is a fixed correction for a creature whose avatar
@@ -5932,13 +6174,15 @@
           }
 
           let moving = false, aimAngle = c.facing || 0;
-          if (c.prone) {
+          if (c._knockbackLedgeFall) {
+            advanceKnockbackLedgeFall(c, entityDt);
+          } else if (c.prone) {
             // The dedicated throw channel survives the general prone-motion
             // cleanup adapters and moves through the same swept terrain test
             // as ordinary knockback. ImpactRagdollPlayback simultaneously
             // drives the quarter-turned animal/bandit breakThrow pose.
             advanceCreatureProneThrow(c, entityDt);
-            if (c.footing >= c.maxFooting && !(c.proneThrowT > 0)) beginCreatureSomersaultRecovery(c, targetPlayer);
+            if (c.footing >= c.maxFooting && !(c.proneThrowT > 0) && !c._knockbackLedgeFall) beginCreatureSomersaultRecovery(c, targetPlayer);
           } else if (c.knockbackT > 0) {
             // Reeling from a hit; let the impulse play out before resuming AI.
             // Per-axis canOccupyAt check (same primitive/radius convention as
@@ -5948,14 +6192,18 @@
             c.knockbackT = Math.max(0, c.knockbackT - entityDt);
             const knockbackVX = c.knockbackVX, knockbackVY = c.knockbackVY; // Preserved until collision deficit/profile resolution completes.
             const nkx = c.x + knockbackVX * entityDt, nky = c.y + knockbackVY * entityDt;
-            const ckSwept = sweptMove(c.x, c.y, nkx, nky, (x, y) => canOccupyAt(x, y, TILE * 0.32), true);
+            const ckSwept = sweepKnockbackMotion(c, nkx, nky, TILE * 0.32, knockbackVX, knockbackVY, (x, y) => canOccupyAt(x, y, TILE * 0.32));
             c.x = ckSwept.x; c.y = ckSwept.y;
             if (ckSwept.blockedX || ckSwept.blockedY) {
-              resolveKnockbackCollision(c, ckSwept, TILE * 0.32, knockbackVX, knockbackVY);
+              const impact = resolveKnockbackCollision(c, ckSwept, TILE * 0.32, knockbackVX, knockbackVY);
               c.knockbackT = 0;
               c.knockbackVX = 0; c.knockbackVY = 0;
+              if (c._knockbackLedgeAir) {
+                if (impact?.lethal) clearKnockbackLedgeMotion(c);
+                else beginKnockbackLedgeFall(c);
+              }
             } else if (c.knockbackT <= 0) {
-              window.KnockbackCollisionImpact?.cancel?.(c);
+              if (!beginKnockbackLedgeFall(c)) window.KnockbackCollisionImpact?.cancel?.(c);
             }
           } else if (c.state === 'fleeing-low-health') {
             // Beelines home ignoring player/prey aggro (see the guards above)
@@ -7439,11 +7687,15 @@
             && !window.Combat?.telegraph?.isBusy(c)) _tickCompanionHorizonScan(c, master, dt);
 
           let moving = false, runInPlace = false, aimAngle = c.facing || 0;
-          if (c.prone) {
+          if (c._knockbackLedgeFall) {
+            _clearCompanionTreasureCue(c, dt, 'falling');
+            _clearCompanionWatchIdle(c, 'falling');
+            advanceKnockbackLedgeFall(c, dt);
+          } else if (c.prone) {
             _clearCompanionTreasureCue(c, dt, 'prone');
             _clearCompanionWatchIdle(c, 'prone');
             advanceCreatureProneThrow(c, dt);
-            if (c.footing >= c.maxFooting && !(c.proneThrowT > 0)) {
+            if (c.footing >= c.maxFooting && !(c.proneThrowT > 0) && !c._knockbackLedgeFall) {
               c.prone = false;
               window.ResourceSystem?.spendStamina(c, SOMERSAULT_STAMINA_COST, 'somersault recovery');
               c.retreatT = Math.max(c.retreatT || 0, FORCED_SOMERSAULT_RETREAT_S);
@@ -7457,14 +7709,18 @@
             c.knockbackT = Math.max(0, c.knockbackT - dt);
             const knockbackVX = c.knockbackVX, knockbackVY = c.knockbackVY; // Preserved until collision deficit/profile resolution completes.
             const nkx = c.x + knockbackVX * dt, nky = c.y + knockbackVY * dt;
-            const ckSwept = sweptMove(c.x, c.y, nkx, nky, (x, y) => canOccupyAt(x, y, TILE * 0.32), true);
+            const ckSwept = sweepKnockbackMotion(c, nkx, nky, TILE * 0.32, knockbackVX, knockbackVY, (x, y) => canOccupyAt(x, y, TILE * 0.32));
             c.x = ckSwept.x; c.y = ckSwept.y;
             if (ckSwept.blockedX || ckSwept.blockedY) {
-              resolveKnockbackCollision(c, ckSwept, TILE * 0.32, knockbackVX, knockbackVY);
+              const impact = resolveKnockbackCollision(c, ckSwept, TILE * 0.32, knockbackVX, knockbackVY);
               c.knockbackT = 0;
               c.knockbackVX = 0; c.knockbackVY = 0;
+              if (c._knockbackLedgeAir) {
+                if (impact?.lethal) clearKnockbackLedgeMotion(c);
+                else beginKnockbackLedgeFall(c);
+              }
             } else if (c.knockbackT <= 0) {
-              window.KnockbackCollisionImpact?.cancel?.(c);
+              if (!beginKnockbackLedgeFall(c)) window.KnockbackCollisionImpact?.cancel?.(c);
             }
           } else if (target) {
             const dist = Math.hypot(target.x - c.x, target.y - c.y);
@@ -8927,14 +9183,18 @@
         const knockbackVX = player.knockbackVX, knockbackVY = player.knockbackVY; // Preserved until the collision resolver measures intended-vs-actual travel.
         const desiredX = window.FormatUtils.clamp(player.x + knockbackVX * dt, minX, maxX);
         const desiredY = window.FormatUtils.clamp(player.y + knockbackVY * dt, minY, maxY);
-        const kbSwept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerOccupy, true);
+        const kbSwept = sweepKnockbackMotion(player, desiredX, desiredY, PLAYER_RADIUS * 0.72, knockbackVX, knockbackVY, canPlayerOccupy);
         player.x = kbSwept.x; player.y = kbSwept.y;
         if (kbSwept.blockedX || kbSwept.blockedY) {
-          resolveKnockbackCollision(player, kbSwept, PLAYER_RADIUS * 0.72, knockbackVX, knockbackVY);
+          const impact = resolveKnockbackCollision(player, kbSwept, PLAYER_RADIUS * 0.72, knockbackVX, knockbackVY);
           player.knockbackT = 0;
           player.knockbackVX = 0; player.knockbackVY = 0;
+          if (player._knockbackLedgeAir) {
+            if (impact?.lethal) clearKnockbackLedgeMotion(player);
+            else beginKnockbackLedgeFall(player);
+          }
         } else if (player.knockbackT <= 0) {
-          window.KnockbackCollisionImpact?.cancel?.(player);
+          if (!beginKnockbackLedgeFall(player)) window.KnockbackCollisionImpact?.cancel?.(player);
         }
         player.vx = player.knockbackVX;
         player.vy = player.knockbackVY;
@@ -8948,19 +9208,23 @@
         const throwVX = Number(player.proneThrowVX) || 0, throwVY = Number(player.proneThrowVY) || 0; // Preserved through the shared one-shot wall-impact resolver.
         const desiredX = window.FormatUtils.clamp(player.x + throwVX * dt, minX, maxX);
         const desiredY = window.FormatUtils.clamp(player.y + throwVY * dt, minY, maxY);
-        const swept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerOccupy, true);
+        const swept = sweepKnockbackMotion(player, desiredX, desiredY, PLAYER_RADIUS * 0.72, throwVX, throwVY, canPlayerOccupy);
         player.x = swept.x; player.y = swept.y;
         if (swept.blockedX || swept.blockedY) {
-          resolveKnockbackCollision(player, swept, PLAYER_RADIUS * 0.72, throwVX, throwVY);
+          const impact = resolveKnockbackCollision(player, swept, PLAYER_RADIUS * 0.72, throwVX, throwVY);
           player.proneThrowT = 0;
           player.proneThrowVX = 0; player.proneThrowVY = 0;
+          if (player._knockbackLedgeAir) {
+            if (impact?.lethal) clearKnockbackLedgeMotion(player);
+            else beginKnockbackLedgeFall(player);
+          }
         }
         player.vx = Number(player.proneThrowVX) || 0;
         player.vy = Number(player.proneThrowVY) || 0;
         if (player.proneThrowT <= 0) {
           player.proneThrowVX = 0; player.proneThrowVY = 0;
           player.vx = 0; player.vy = 0;
-          window.KnockbackCollisionImpact?.cancel?.(player);
+          if (!beginKnockbackLedgeFall(player)) window.KnockbackCollisionImpact?.cancel?.(player);
         }
       }
 
@@ -16497,7 +16761,7 @@
         const viewModeMoveMagnitude = viewModeKeyboard.active
           ? Math.hypot(viewModeKeyboard.x, viewModeKeyboard.y)
           : Math.hypot(input.x, input.y); // Used here to disable character view from keyboard, touch, or controller movement through one input threshold.
-        const viewModeForcedMovement = player.dodging || player.lunging || player.knockbackT > 0 || Math.hypot(player.vx, player.vy) > 1;
+        const viewModeForcedMovement = player.dodging || player.lunging || player.knockbackT > 0 || !!player._knockbackLedgeFall || Math.hypot(player.vx, player.vy) > 1;
         if (characterViewMode.enabled && !sitInteraction && (viewModeMoveMagnitude > 0.08 || viewModeForcedMovement)) {
           setCharacterViewMode(false, 'movement');
         }
@@ -16547,6 +16811,7 @@
         if (window.Fishing?.state?.active) return;
         if (window.MusicMinigame?.state?.active) return;
         if (window.Mounts?.rideState === 'mounted') { window.Mounts.updateMountedMovement(dt); return; }
+        if (player._knockbackLedgeFall) { advanceKnockbackLedgeFall(player, dt); return; }
         // Zero-Footing ragdoll/prone — see enterProneIfFootingDepleted above
         // and performDodge below (the somersault-recovery trigger). Covers
         // both the settled hold (ImpactRagdollPlayback.isHolding()) and the
@@ -22530,9 +22795,11 @@
         // updateClimb instead of a raw tile lookup, which would pop between
         // the cliff base and plateau top the instant the crossing tile
         // flips (see startClimb/updateClimb).
-        const standY = player.onBranch ? player.branchSurfaceY
+        const ordinaryStandY = player.onBranch ? player.branchSurfaceY
           : player.climbing ? player.climbSurfaceY
           : (_isZoneArea(currentArea) ? surfaceYAtWorld(currentArea, wx, wz) : tileSurfaceYInArea(tile, currentArea));
+        const standY = knockbackVisualSurfaceY(player, ordinaryStandY);
+        window.BurningAfflictionVfx?.syncEntity?.(player, playerMesh); // Burning Health uses the authored furniture flame emitter on the player's live avatar root.
 
         // Riding a mount lifts the rider up so their posterior anchor
         // coincides with the mount's saddle anchor (see
@@ -22607,7 +22874,7 @@
         // independent lerps. Mounting/dismounting states intentionally keep
         // the transition positioning above.
         window.Mounts?.pinMountedRiderMesh(playerMesh, mountSeatLift);
-        playerGroundShadow.position.set(playerMesh.position.x, standY + characterGroundShadowSurfaceOffset(), playerMesh.position.z);
+        playerGroundShadow.position.set(playerMesh.position.x, ordinaryStandY + characterGroundShadowSurfaceOffset(), playerMesh.position.z);
         // Ground-projected Health/Stamina ring HUD — replaces the flat
         // vitals bar (see #vitalsBar in style.css). Sits just above the
         // ground shadow, tracking the same smoothed XZ. Uses the actually
@@ -22619,7 +22886,7 @@
         // wasn't the one actually being rendered.
         if (window.ResourceRings) {
           const ringHud = window.ResourceRings.updateRingHud(player, window.GridTileAccessors.getActiveScene(), .62);
-          ringHud.position.set(playerMesh.position.x, standY + characterGroundShadowSurfaceOffset(), playerMesh.position.z);
+          ringHud.position.set(playerMesh.position.x, ordinaryStandY + characterGroundShadowSurfaceOffset(), playerMesh.position.z);
         }
 
         // Rotate to face movement direction with perp clamp (dead zone ±15° from east/west).
