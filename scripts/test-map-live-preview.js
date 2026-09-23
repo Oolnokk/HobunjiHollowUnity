@@ -60,7 +60,9 @@ assert.equal(api.consumePendingNavigation(), null, 'cold-start navigation is one
 assert.match(indexHtml, /id="mapEditBtn"[\s\S]*style="display:none;"/, 'off-farm Map Edit control starts hidden');
 assert.deepEqual(uiOverrides.elements['#mapEditBtn'], uiOverrides.elements['#farmEditBtn'], 'Map Edit tab uses the Farm Editor tab geometry override');
 assert.match(runtimeSource, /area === 'farm'.*Farm editing uses the in-game Farm Editor/, 'runtime explicitly leaves farm authoring to Farm Editor');
-assert.match(runtimeSource, /mapSnapshot: generated \? deps\.exportGeneratedMap/, 'procedural zones export a session snapshot to the editor');
+assert.match(runtimeSource, /function currentDescriptor\(\{ includeSnapshot = true \} = \{\}\)/, 'runtime descriptors default to including generated snapshots for endpoint/navigation sends');
+assert.match(runtimeSource, /mapSnapshot: includeSnapshot && generated \? deps\.exportGeneratedMap\(mapId\) : null/, 'procedural zones export a session snapshot only when the caller requests one');
+assert.match(runtimeSource, /currentDescriptor\(\{ includeSnapshot: false \}\)/, 'panel and gizmo status refreshes avoid repeatedly exporting an entire generated zone');
 assert.match(editorHtml, /id="reflectBtn">↻ Reflect in Game/, 'Map Editor exposes Reflect in Game');
 assert.match(editorHtml, /id="openInterior3dBtn"/, 'Map Editor exposes a direct 3D Interior Editor handoff');
 assert.match(editorHtml, /type: 'open-interior-author'/, 'Map Editor mirrors unsaved interior data into a standalone 3D editor');
