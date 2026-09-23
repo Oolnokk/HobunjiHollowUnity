@@ -342,7 +342,6 @@
       // openNpcDialogue/closeNpcDialogue stay here since they own
       // camera/staging/save-persistence, which this module doesn't touch.
       const _npcDialogueEl      = document.getElementById('npcDialogue');
-      const _npcPortraitCanvas  = document.getElementById('npcPortraitCanvas');
       const _npcDialogueNameEl  = document.getElementById('npcDialogueName');
       const _npcDialogueHeartsEl = document.getElementById('npcDialogueHearts');
       const _arcContainerEl     = document.getElementById('arcContainer');
@@ -356,6 +355,13 @@
         _dialogueWalker = walker;
         activeCameraMode   = npcDialogueCameraMode();
         activeCameraTarget = walker.root;
+        const authoredDialogueCameraId = String(rec?.dialogueCameraId || walker.profile?.appearance?.dialogueCameraId || ''); // Optional explicit camera beats the area's NPC-tagged default.
+        window.CinematicCameraRuntime?.beginDialogue?.({
+          areaId: currentArea,
+          npcId: rec?.id || '',
+          cameraId: authoredDialogueCameraId,
+          walker,
+        });
         beginNpcDialogueStaging(walker);
         updateDialogueZoomIndicator();
         walker.pause = Infinity;
@@ -364,10 +370,7 @@
         _arcContainerEl?.classList.add('arc-hidden');
 
         if (walker.profile && window.NpcAvatarPreview) {
-          const ctx = _npcPortraitCanvas.getContext('2d');
-          ctx.fillStyle = '#1b3529';
-          ctx.fillRect(0, 0, _npcPortraitCanvas.width, _npcPortraitCanvas.height);
-          await window.DialogueContent?.renderNpcDialoguePortrait();
+          await window.DialogueContent?.renderNpcDialoguePortrait(); // Updates the existing world-space avatar/expression texture only.
         }
 
         _npcDialogueEl.classList.add('open');
@@ -498,6 +501,7 @@
 
       function closeNpcDialogue() {
         dialogueOpen = false;
+        window.CinematicCameraRuntime?.endDialogue?.();
         window.DialogueContent?.resetDialogueState();
         window.DialogueContent?.stopNpcDialogueTypewriter(false);
         window.DialogueContent?.hideChoiceButtons();
@@ -515,6 +519,7 @@
         }
         enterDefaultCameraMode();
         activeCameraTarget = null;
+        _snapCameraTarget(); // Dialogue may have staged the player away from the old NPC follow point.
         dialogueZoomPointers.clear();
         dialoguePinchDistance = null;
         if (dialogueZoomConfig().resetOnDialogueClose) resetDialogueCameraZoom();
@@ -10972,6 +10977,13 @@
         if (!Number.isFinite(npcX) || !Number.isFinite(npcZ)) { npcDialogueStaging = null; return; }
         const playerWorldX = player.x / TILE;
         const playerWorldZ = player.y / TILE;
+        const authoredStage = window.CinematicCameraRuntime?.currentPlayerStage?.(); // Reuses the existing collision-aware staging walk for authored shots.
+        if (authoredStage && Number.isFinite(Number(authoredStage.x)) && Number.isFinite(Number(authoredStage.z))) {
+          npcDialogueStaging = { walker, targetX: Number(authoredStage.x), targetZ: Number(authoredStage.z) };
+          player.vx = 0;
+          player.vy = 0;
+          return;
+        }
         const candidates = npcDialogueStagingOffsets().map(offset => ({
           x: npcX + (Number(offset.x) || 0),
           z: npcZ + (Number(offset.y) || 0),
@@ -10999,6 +11011,84 @@
       // exchange, not just the moment right after it opens).
       function _dialogueEyeWorldPosition(rootPosition, modelHeight) {
         return new THREE.Vector3(rootPosition.x, rootPosition.y + modelHeight * PLAYER_FACE_HEIGHT_RATIO, rootPosition.z);
+      }
+
+      function _finiteNpcFacePoint(point) {
+        return point
+          && Number.isFinite(Number(point.x))
+          && Number.isFinite(Number(point.y))
+          && Number.isFinite(Number(point.z));
+      }
+
+      // Resolve the visible face itself in world space. Named animal NPCs use
+      // their authored chathead crop and live head bone; humanoids use their
+      // skinned head centroid. Parent/root scaling is therefore included by
+      // localToWorld/resolveSkinnedPixelWorldPosition instead of guessed from
+      // an unscaled standing-height constant.
+      function _namedAnimalFaceWorldPosition(walker) {
+        const avatarRef = walker?.animalAvatarRef;
+        const plane = avatarRef?.frontPlane;
+        const kind = String(walker?.animalKind || '');
+        if (!plane || !kind) return null;
+
+        if (walker._animalSleepRequested === true) {
+          window.AnimalSleepPresentation?.forceHeadDown?.(avatarRef, walker);
+        }
+
+        const authoredFrame = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[kind]?.chatheadFrame;
+        const frameCenter = window.AnimalChatheadFrame?.frameCenterForKind?.(kind)
+          || (authoredFrame ? {
+            x: Number(authoredFrame.x) + Number(authoredFrame.width) * 0.5,
+            y: Number(authoredFrame.y) + Number(authoredFrame.height) * 0.5,
+          } : null);
+        if (!frameCenter || !Number.isFinite(Number(frameCenter.x)) || !Number.isFinite(Number(frameCenter.y))) return null;
+
+        const params = plane.geometry?.parameters || {};
+        const width = Number(params.width) || Number(walker.animalDef?.modelWidth) || 1;
+        const height = Number(params.height)
+          || (Number(walker.animalDef?.modelWidth) || 1) * (Number(walker.animalDef?.spriteAspect) || 1);
+        const localX = (Number(frameCenter.x) - 0.5) * width;
+        const localY = (0.5 - Number(frameCenter.y)) * height;
+        let face = null;
+
+        const headBone = avatarRef.headRig?.frontHeadBone;
+        if (headBone?.localToWorld && headBone.position) {
+          headBone.updateWorldMatrix?.(true, false);
+          face = new THREE.Vector3(
+            localX - (Number(headBone.position.x) || 0),
+            localY - (Number(headBone.position.y) || 0),
+            -(Number(headBone.position.z) || 0),
+          );
+          headBone.localToWorld(face);
+        } else if (plane.localToWorld) {
+          plane.updateWorldMatrix?.(true, false);
+          face = plane.localToWorld(new THREE.Vector3(localX, localY, 0));
+        }
+        if (!_finiteNpcFacePoint(face)) return null;
+
+        if (walker._animalSleepRequested === true && window.AnimalSleepPresentation?.projectExternalSleeperWorldPoint) {
+          const projected = window.AnimalSleepPresentation.projectExternalSleeperWorldPoint(walker, face);
+          if (_finiteNpcFacePoint(projected)) face = projected;
+        }
+        return face;
+      }
+
+      function _npcFaceWorldPosition(walker) {
+        if (!walker?.root?.position) return null;
+        if (walker.animalDef && walker.animalAvatarRef) {
+          const animalFace = _namedAnimalFaceWorldPosition(walker);
+          if (_finiteNpcFacePoint(animalFace)) return animalFace;
+        }
+
+        const rig = walker.avatarGroup?.userData?.neckRig;
+        const centroid = rig?.headCentroidPx;
+        if (rig?.available && centroid && window.PNGPlaneAvatar?.resolveSkinnedPixelWorldPosition) {
+          const skinnedFace = window.PNGPlaneAvatar.resolveSkinnedPixelWorldPosition(walker.avatarGroup, centroid);
+          if (_finiteNpcFacePoint(skinnedFace)) return skinnedFace;
+        }
+
+        if (!Number.isFinite(Number(walker.avatarHeight))) return null;
+        return _dialogueEyeWorldPosition(walker.root.position, walker.avatarHeight);
       }
 
       // Shared core behind _aimNeckAtEyeContact below: rotates a neck-rig
@@ -13667,6 +13757,7 @@
           // whole scene graph every frame in occlusionSafeCameraPosition.
           const occlusionMeshes = [];
           bScene.traverse(o => { if (o.userData?.cameraObstacle) occlusionMeshes.push(o); });
+          window.CinematicCameraRuntime?.registerArea?.(mapId, mapData.cinematicCameras || []); // Cave/building cameras share this scene's local tile coordinate space.
           const info = { scene: bScene, grid: bGrid, cols, rows, transitions, vendorZones: mapData.vendorZones || [], routes: buildingRoutes, loadSource, fallback: loadSource !== 'config', name: mapData.name || mapId, wallStyle: mapData.wallStyle || '', entrySpots: mapData.entrySpots || {}, keyDoorGroups, mineFloor: mapData.mineFloor || null, minePlacementSafeTileCount: mapData.minePlacementSafeTileCount ?? null, disconnectedFloorTilesRemoved: mapData.disconnectedFloorTilesRemoved ?? 0, occlusionMeshes };
           _buildingScenes.set(mapId, info);
           if (info.disconnectedFloorTilesRemoved > 0) window.__farmLog?.(`[cavern] ${mapId}: sealed ${info.disconnectedFloorTilesRemoved} unreachable floor tiles`, 'warn', mapData.wallStyle === 'mine' ? 'mine' : undefined);
@@ -13719,6 +13810,7 @@
               playerMesh.position.y = spawnSurfaceY;
               playerGroundShadow.position.y = spawnSurfaceY + characterGroundShadowSurfaceOffset();
               if (safeSpawn && (safeSpawn.x !== intendedX || safeSpawn.y !== intendedY)) window.__farmLog?.(`[cavern] corrected unsafe entry spawn in ${mapId}`, 'warn', 'mine');
+              if (mapId === 'map_i_den_banubu') setPlayerFacingInstant(-Math.PI / 2, { clearLook: true, syncCamera: true }); // Async cave completion must not restore the exterior look authority.
               _snapCameraTarget();
             }
             window.LoadingScreenRuntime?.hide();
@@ -13874,7 +13966,8 @@
           playerMesh.position.y = entrySurfaceY;
           playerGroundShadow.position.y = entrySurfaceY + characterGroundShadowSurfaceOffset();
         }
-        facingAngle = mapId === 'map_i_den_banubu' ? -Math.PI / 2 : Math.PI / 2; player.angle = facingAngle; // The cave entrance faces north toward its interior.
+        const entryFacing = mapId === 'map_i_den_banubu' ? -Math.PI / 2 : Math.PI / 2; // -Z/north for Banubu's south-edge entrance; ordinary interiors retain their existing south-facing default.
+        setPlayerFacingInstant(entryFacing, { clearLook: mapId === 'map_i_den_banubu', syncCamera: mapId === 'map_i_den_banubu' });
         _snapCameraTarget();
         if (fromScene) {
           fromScene.remove(playerMesh); fromScene.remove(playerGroundShadow);
@@ -16618,6 +16711,25 @@
       let controllerLookAngle = -Math.PI / 2;
       let controllerLookActive = false;
       let controllerCameraX = 0, controllerCameraY = 0; // Radial-deadzone right-stick values consumed by applyControllerCameraLook each frame.
+
+      function setPlayerFacingInstant(angle, options = {}) {
+        const nextFacing = Number(angle); // Used for map-entry/teleport snaps where every input authority must agree immediately.
+        if (!Number.isFinite(nextFacing)) return;
+        facingAngle = nextFacing;
+        player.angle = nextFacing;
+        lastMoveAngle = nextFacing;
+        targetAimAngle = nextFacing;
+        mouseLookAngle = nextFacing;
+        controllerLookAngle = nextFacing;
+        cardinalHoldTimer = 0;
+        if (options.clearLook === true) {
+          mouseLookActive = false;
+          controllerLookActive = false;
+          controllerCameraX = 0;
+          controllerCameraY = 0;
+        }
+        if (options.syncCamera === true && activeCameraMode === SHOULDER_SURF_MODE) snapShoulderSurfAzimuth();
+      }
       const CONTROLLER_LOOK_SENSITIVITY_STORAGE_KEY = 'scratchbones.controllerLookSensitivity.v1';
       const CONTROLLER_INVERT_Y_STORAGE_KEY = 'scratchbones.controllerInvertY.v1';
       let s_controllerLookSensitivity = window.FormatUtils.clamp(Number(localStorage.getItem(CONTROLLER_LOOK_SENSITIVITY_STORAGE_KEY)) || 1, 0.5, 2); // Multiplies the authored right-stick camera turn rate.
@@ -20134,7 +20246,48 @@
         }
         return floor;
       }
+      let _cinematicCameraBlend = null; // Outgoing pose used to blend authored dialogue/cutscene camera changes instead of snapping.
+      function applyAuthoredCinematicCamera() {
+        const record = window.CinematicCameraRuntime?.activeRecord?.();
+        const shot = record?.camera;
+        if (!shot || window.__mapEditorOrbitActive) { _cinematicCameraBlend = null; return false; }
+        const blendKey = `${record.areaId}:${shot.id}:${record.activatedAt}`;
+        if (!_cinematicCameraBlend || _cinematicCameraBlend.key !== blendKey) {
+          _cinematicCameraBlend = {
+            key: blendKey,
+            startedAt: performance.now(),
+            startPosition: camera.position.clone(),
+            startTarget: new THREE.Vector3(camTargetX, camTargetY, camTargetZ),
+            startFov: camera.fov,
+          };
+        }
+        const durationMs = Math.max(0, Number(shot.blendSeconds) || 0) * 1000;
+        const rawT = durationMs > 0
+          ? window.FormatUtils.clamp((performance.now() - _cinematicCameraBlend.startedAt) / durationMs, 0, 1)
+          : 1;
+        const t = rawT * rawT * (3 - 2 * rawT);
+        const desiredPosition = new THREE.Vector3(
+          Number(shot.position?.x) || 0,
+          Number(shot.position?.y) || 0,
+          Number(shot.position?.z) || 0
+        );
+        const resolvedTarget = window.CinematicCameraRuntime?.resolvedTarget?.();
+        const desiredTarget = new THREE.Vector3(
+          Number(resolvedTarget?.x ?? shot.target?.x) || 0,
+          Number(resolvedTarget?.y ?? shot.target?.y) || 0,
+          Number(resolvedTarget?.z ?? shot.target?.z) || 0
+        );
+        camera.position.lerpVectors(_cinematicCameraBlend.startPosition, desiredPosition, t);
+        const lookTarget = _cinematicCameraBlend.startTarget.clone().lerp(desiredTarget, t);
+        camera.lookAt(lookTarget);
+        camera.fov = THREE.MathUtils.lerp(_cinematicCameraBlend.startFov, Number(shot.fovDeg) || 42, t);
+        camera.aspect = threeContainer.clientWidth / threeContainer.clientHeight;
+        camera.updateProjectionMatrix();
+        return true;
+      }
+
       function updateCameraPosition() {
+        if (applyAuthoredCinematicCamera()) return;
         const modeCfg = cameraModeConfig(activeCameraMode);
         // A cutscene Zoom card's percent (100 = the captured shot's own
         // unmodified framing, higher = closer) — entirely separate from the
@@ -23747,6 +23900,7 @@
         worldPopupRuntime?.update(now);
 
         updateSceneTransition(dt);
+        window.CinematicCameraRuntime?.update?.(dt); // Authored dialogue shots fade/restore pets without a second RAF loop.
 
         if (window.Fishing?.state?.active) window.Fishing.update(dt);
         window.MusicMinigame?.tick(dt);
@@ -26971,6 +27125,17 @@
       }
       window.addEventListener('beforeunload', flushSessionPersistence);
       window.addEventListener('pagehide', flushSessionPersistence);
+
+      window.CinematicCameraRuntime?.init?.({
+        getCurrentArea: () => currentArea,
+        getCompanionObjects: () => companionObjects,
+        getPlayer: () => player,
+        getNpcWalker: (npcId, areaId = currentArea) => npcWalkers.find(walker => walker.rec?.id === npcId && walker.area === areaId) || null,
+        getNpcFacePosition: walker => {
+          const face = _npcFaceWorldPosition(walker);
+          return _finiteNpcFacePoint(face) ? { x: face.x, y: face.y, z: face.z } : null;
+        },
+      });
 
       window.DialogueContent?.init({
         calendar,
