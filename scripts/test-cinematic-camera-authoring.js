@@ -110,7 +110,7 @@ const awakeCamera = cameras.get('banubu_dialogue_awake');
 const sleepCamera = cameras.get('banubu_dialogue_sleep');
 assert.strictEqual(banubuStations.length, 1, 'Banubu is one NPC with one physical station; awake/sleep are presentation states, not duplicate NPC anchors');
 assert(sleepStation && sleepStation.pose === 'lie', 'Banubu must retain his one schedule-driven sleeping station');
-assert.deepStrictEqual({ col: sleepStation.col, row: sleepStation.row }, { col: 9, row: 7 }, 'de-duplicating Banubu must not relocate his real sleeping station to the discarded awake anchor');
+assert.deepStrictEqual({ col: sleepStation.col, row: sleepStation.row }, { col: 6, row: 5 }, 'latest authored Banubu cavern export must place his one real sleeping station at the edited anchor');
 assert(!stations.has('station_banubu_cave_awake'), 'the stale unused awake Banubu station must stay removed');
 assert(awakeCamera && sleepCamera, 'Banubu still needs separate awake and sleeping dialogue shots');
 for (const camera of [awakeCamera, sleepCamera]) {
@@ -124,6 +124,7 @@ for (const camera of [awakeCamera, sleepCamera]) {
 assert.strictEqual(sleepCamera.dialogueNpcId, 'banubu', 'sleeping Banubu shot should be the automatic dialogue camera');
 assert.strictEqual(awakeCamera.dialogueNpcId, '', 'awake Banubu shot should only activate explicitly from dialogue content');
 assert.deepStrictEqual(sleepCamera.position, { x: 7.6, y: -0.78, z: 8.3 }, 'repo camera must preserve the user\'s latest sleeping-shot position while discarding the old absolute target');
+assert.strictEqual(sleepCamera.fovDeg, 57, 'repo camera must preserve the latest authored sleeping-shot FOV');
 assert.deepStrictEqual(awakeCamera.position, { x: 7.2, y: 0.28, z: 9.4 }, 'awake shot must be translated with the removed awake anchor so it keeps its original composition around the one real Banubu');
 assert.deepStrictEqual(awakeCamera.playerStage, { x: 6.5, z: 10.5 }, 'awake player staging must move with the translated awake composition');
 
