@@ -637,6 +637,7 @@
     if (!species) return false;
     species[PUKTUK_KIND] = {
       prefix: 'puktuk',
+      baseShadeReferenceHex: '#99BF99', // Authored full-strength Puktuk coat color used as the fixed base-recolor normalization anchor.
       fullBaseRecolor: true, // Puktuk base art is a single recolorable body layer; recolor every opaque non-outline pixel before belly/foxtail overlays.
       base: {
         idle: 'assets/creaturesprites/puktuk_idle.png',

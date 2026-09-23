@@ -37,6 +37,7 @@
   const SPECIES = {
     'gar-wolf': {
       prefix: 'gw',
+      baseShadeReferenceHex: '#565047', // Authored full-strength Gar-wolf coat color; fixed anchor prevents unrelated highlights from changing coat tint.
       base: {
         idle: 'assets/creaturesprites/gar-wolf_idle.png',
         run1: 'assets/creaturesprites/gar-wolf_run1.png',
@@ -47,6 +48,7 @@
     },
     'dabinggi-hound': {
       prefix: 'dh',
+      baseShadeReferenceHex: '#585E5D', // Authored full-strength Dabingi-hound coat color; fixed anchor prevents unrelated highlights from changing coat tint.
       base: {
         idle: 'assets/creaturesprites/dabinggi-hound_idle.png',
         run1: 'assets/creaturesprites/dabinggi-hound_run1.png',
@@ -57,12 +59,14 @@
     },
     grehlr: {
       prefix: 'grehlr',
+      baseShadeReferenceHex: '#424242', // Authored full-strength Grehlr coat color; exact source anchor for genotype recoloring.
       base: { idle: 'assets/creaturesprites/grehlr_idle.png', run1: 'assets/creaturesprites/grehlr_run1.png', run2: 'assets/creaturesprites/grehlr_run2.png' },
       patterns: ['mitts', 'spectacles'],
       eyes: { open: 'assets/creaturesprites/grehlr_eye.png', blink: 'assets/creaturesprites/grehlr_blink.png' },
     },
     drenkirra: {
       prefix: 'drnk',
+      baseShadeReferenceHex: '#68D127', // Authored full-strength Drenkirra base-coat color; species without this field retain automatic peak fallback.
       base: { idle: 'assets/creaturesprites/drenkirra_idle.png', run1: 'assets/creaturesprites/drenkirra_run1.png', run2: 'assets/creaturesprites/drenkirra_run2.png' },
       patterns: ['bodystripes', 'spectacles'],
       eyes: { open: 'assets/creaturesprites/drenkirra_eye.png', blink: 'assets/creaturesprites/drenkirra_blink.png' },
@@ -126,18 +130,35 @@
 
   function hexToRgb(hex) { const n = parseInt(hex.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
   function clampByte(v) { return Math.max(0, Math.min(255, Math.round(v))); }
-  function recolorPixels(px, targetRgb, predicate) {
+  function recolorPixels(px, targetRgb, predicate, sourceReferenceHex = null, debugLabel = null) {
     const shared = window.ColorFill?.shadeFillPixels;
     if (typeof shared !== 'function') throw new Error('ColorFill unavailable during creature recolor');
+    let shadeReference = null; // Base coats may supply an exact authored source color instead of inferring a peak from unrelated sprite details.
+    if (sourceReferenceHex) {
+      const sourceRgb = hexToRgb(sourceReferenceHex);
+      const luminanceOf = typeof shared.relativeLuminance === 'function'
+        ? shared.relativeLuminance
+        : ((r, g, b) => (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255);
+      const referenceValue = Math.max(1 / 255, luminanceOf(...sourceRgb));
+      shadeReference = {
+        baseValue: referenceValue,
+        peakLuminance: referenceValue,
+        count: 0,
+        referenceHex: sourceReferenceHex.toUpperCase(),
+      };
+      if (typeof shared.shadeFillConfig === 'function') shadeReference.config = shared.shadeFillConfig();
+    }
     shared(px, targetRgb, {
       applyPredicate: predicate || null,
       samplePredicate: predicate || null,
+      shadeReference,
+      debugLabel,
     });
   }
 
   const _recolorCache = new Map(); // key -> Promise<canvas>
-  async function recoloredBase(url, color, mask, allowUnmasked = false) {
-    const key = `base|${url}|${color}|full:${allowUnmasked}`;
+  async function recoloredBase(url, color, mask, allowUnmasked = false, sourceReferenceHex = null, kind = '') {
+    const key = `base|${url}|${color}|ref:${sourceReferenceHex || 'auto'}|full:${allowUnmasked}`;
     if (_recolorCache.has(key)) return _recolorCache.get(key);
     const promise = (async () => {
       const img = await loadImage(url);
@@ -146,7 +167,13 @@
       const c = makeCanvas(img.naturalWidth, img.naturalHeight), ctx = c.getContext('2d', { willReadFrequently: true });
       ctx.drawImage(img, 0, 0);
       const data = ctx.getImageData(0, 0, c.width, c.height), px = data.data;
-      recolorPixels(px, hexToRgb(color), maskMatches ? (i) => mask.data[i / 4] : null);
+      recolorPixels(
+        px,
+        hexToRgb(color),
+        maskMatches ? (i) => mask.data[i / 4] : null,
+        sourceReferenceHex,
+        kind ? `animal-base:${kind}` : 'animal-base',
+      );
       ctx.putImageData(data, 0, 0);
       return c;
     })().catch(err => { _recolorCache.delete(key); throw err; });
@@ -335,7 +362,9 @@
     // always undefined for it and this would otherwise fire every call for
     // no reason.
     if (baseColor && !mask && !fullBaseRecolor) window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): no base mask found — base fur will render unrecolored`, 'wildlife');
-    const baseSource = (baseColor && (mask || fullBaseRecolor)) ? await recoloredBase(baseUrl, baseColor, mask, fullBaseRecolor) : await loadImage(baseUrl);
+    const baseSource = (baseColor && (mask || fullBaseRecolor))
+      ? await recoloredBase(baseUrl, baseColor, mask, fullBaseRecolor, spec.baseShadeReferenceHex || null, kind)
+      : await loadImage(baseUrl);
     const tBase = performance.now();
     const bw = baseSource.naturalWidth || baseSource.width, bh = baseSource.naturalHeight || baseSource.height;
     const c = makeCanvas(bw, bh), ctx = c.getContext('2d');
@@ -390,7 +419,7 @@
     // covers the base sprite's network load + recolor pixel pass, patternMs
     // covers every enabled pattern layer's load+recolor combined.
     const baseFillMode = !baseColor ? 'none' : fullBaseRecolor ? 'full-sprite' : mask ? 'mask' : 'missing-mask'; // Included in the in-game farm log so mobile builds can verify which recolor path actually ran.
-    window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): base=${baseColor || '(none)'} baseFill=${baseFillMode} patterns=[${drawnPatterns.join(',') || 'none'}] bodystripesSwap=${bodyStripesColorSwap} timing: masksMs=${(tMasks - t0).toFixed(0)} baseMs=${(tBase - tMasks).toFixed(0)} patternMs=${(tEnd - tBase).toFixed(0)} totalMs=${(tEnd - t0).toFixed(0)}`, 'wildlife');
+    window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): base=${baseColor || '(none)'} baseFill=${baseFillMode} sourceRef=${spec.baseShadeReferenceHex || 'auto'} patterns=[${drawnPatterns.join(',') || 'none'}] bodystripesSwap=${bodyStripesColorSwap} timing: masksMs=${(tMasks - t0).toFixed(0)} baseMs=${(tBase - tMasks).toFixed(0)} patternMs=${(tEnd - tBase).toFixed(0)} totalMs=${(tEnd - t0).toFixed(0)}`, 'wildlife');
     return c;
   }
 

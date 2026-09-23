@@ -258,7 +258,7 @@
   const current = document.currentScript; // Resolves every animal/fey module beside repo-picker.js regardless of hosting prefix/commit URL.
   const moduleUrl = (name, version) => current?.src ? new URL(`${name}?v=${version}`, current.src).href : `../../js/${name}?v=${version}`;
   const scenePollerSource = moduleUrl('scene-ready-poller.js', '20260917a');
-  const colorFillSource = moduleUrl('color-fill.js', '20260923colorfill6'); // Shared source-art fill math required by sprite, creature, and weaving renderers.
+  const colorFillSource = moduleUrl('color-fill.js', '20260923colorfill7'); // Shared source-art fill math required by sprite, creature, and weaving renderers.
   const spriteRecolorSource = moduleUrl('sprite-recolor.js', '20260923colorfill2');
   const repoPatternSource = moduleUrl('repo-pattern-library.js', '20260920repo1');
   const weavingSource = moduleUrl('clothing-weaving-system.js', '20260923colorfill2');

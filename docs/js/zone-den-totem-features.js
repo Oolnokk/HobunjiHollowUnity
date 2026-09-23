@@ -24,11 +24,11 @@
   ensureCompanionScript('FurnitureVesselRuntime', 'furniture-vessel-runtime.js');
   ensureCompanionScript('FurnitureDecalRuntime', 'furniture-decal-runtime.js');
   ensureCompanionScript('StructuralWrap', 'structural-wrap.js');
-  ensureCompanionScript('DeadzoneBillboard', 'deadzone-billboard.js');
+  ensureCompanionScript('DeadzoneBillboard', 'deadzone-billboard.js?v=20260923texready1');
   ensureCompanionScript('LocaleCaveRuntime', 'locale-cave-runtime.js');
   // Generic rigid piece animation reuses the Root Totem wind helpers and
   // patches AuthoredFurniture.buildGroup before any live furniture is built.
-  ensureCompanionScript('FurniturePieceAnimationRuntime', 'furniture-piece-animation-runtime.js');
+  ensureCompanionScript('FurniturePieceAnimationRuntime', 'furniture-piece-animation-runtime.js?v=20260923texready1');
   ensureCompanionScript('FoliageGenerator', 'foliage-generator.js');
   ensureCompanionScript('RootTotemSurfaceStyle', 'root-totem-surface-style.js');
   ensureCompanionScript('RootTotemPlants', 'root-totem-plants.js');
@@ -72,7 +72,8 @@
     tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
     tex.repeat.set(1, 1);
     tex.offset.set(0, 0);
-    tex.needsUpdate = true;
+    // TextureLoader marks the texture dirty after assigning its decoded image.
+    // Do not set needsUpdate here while image is still undefined.
     if ('colorSpace' in tex && THREE.SRGBColorSpace) tex.colorSpace = THREE.SRGBColorSpace;
     _caveTextureCache.set(url, tex);
     return tex;

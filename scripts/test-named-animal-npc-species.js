@@ -105,7 +105,7 @@ assert.match(nativeAppearance, /await renderer\.composeFrame\(kind, 'idle', geno
 assert.doesNotMatch(nativeAppearance.slice(nativeAppearance.indexOf('async function renderStudioAnimal'), nativeAppearance.indexOf('function installPreviewHooks')), /composeEditorAnimal/, 'authoritative Character Studio animal preview must never fall back to the approximate editor-only compositor');
 assert.match(nativeAppearance, /canonical-failed/, 'renderer failure must surface as a canonical preview failure rather than silently changing tint algorithms');
 assert.ok(studio.indexOf('scratchbones-config.js') < studio.indexOf('repo-picker.js'), 'Character Studio must load shared tint configuration before booting its animal runtime modules');
-assert.match(studio, /repo-picker\.js\?v=20260923colorfill6/, 'Character Studio must cache-bust the canonical animal runtime loader after shared color-fill changes');
+assert.match(studio, /repo-picker\.js\?v=20260923colorfill7/, 'Character Studio must cache-bust the canonical animal runtime loader after shared color-fill changes');
 assert.ok(repoPicker.indexOf("color-fill.js") < repoPicker.indexOf("sprite-recolor.js"), 'Character Studio loads ColorFill before dependent sprite/animal renderers');
 
 assert.match(feyExtras, /class=\"animalNpcCustomHex\"/, 'native extension must retain independent #RRGGBB fields for animal layers');

@@ -9,7 +9,7 @@
   const tmpA = new THREE.Vector3(), tmpB = new THREE.Vector3(), tmpMid = new THREE.Vector3(), tmpDir = new THREE.Vector3();
   const tmpPos = new THREE.Vector3(), tmpQuat = new THREE.Quaternion(), tmpScale = new THREE.Vector3();
   const tmpMat = new THREE.Matrix4(), tmpAnchorMat = new THREE.Matrix4(), tmpGroupInv = new THREE.Matrix4();
-  const sharedRopeTextures = new Map(); // Source URL -> shared loaded rope texture; instances clone it only for repeat values.
+  const sharedRopeTextures = new Map(); // Source URL -> {base,pending}; clones receive the decoded image before needsUpdate is set.
   const FALLBACK_WIND = Object.freeze({
     spatialPhaseX:1.7, spatialPhaseZ:2.3, calmStrength:0.03, maximumStrengthScale:4,
     primaryFrequency:1.6, secondaryFrequency:1.1, secondaryAmplitudeRatio:0.45, secondaryPhaseMultiplier:1.3,
@@ -78,17 +78,39 @@
     return assetBase + trimmed;
   }
 
+  function ropeTextureEntry(sourceUrl) {
+    let entry = sharedRopeTextures.get(sourceUrl);
+    if (entry) return entry;
+    entry = { base: null, pending: new Set() }; // Same pending-clone rule as procedural furniture textures.
+    entry.base = new THREE.TextureLoader().load(sourceUrl, loaded => {
+      for (const clone of entry.pending) {
+        clone.image = loaded.image;
+        clone.format = loaded.format;
+        clone.type = loaded.type;
+        if ('colorSpace' in clone && 'colorSpace' in loaded) clone.colorSpace = loaded.colorSpace;
+        else if ('encoding' in clone && 'encoding' in loaded) clone.encoding = loaded.encoding;
+        clone.needsUpdate = true;
+      }
+      entry.pending.clear();
+    });
+    entry.base.wrapS = entry.base.wrapT = THREE.RepeatWrapping;
+    if ('colorSpace' in entry.base && THREE.SRGBColorSpace) entry.base.colorSpace = THREE.SRGBColorSpace;
+    sharedRopeTextures.set(sourceUrl, entry);
+    return entry;
+  }
+
   function makeRope(connector, assetBase) {
     // Closed ends plus a tiny endpoint overlap prevent a visible seam where a
     // swinging connector meets its beam/board attachment point.
     const geometry = new THREE.CylinderGeometry(connector.radius, connector.radius*.94, 1, connector.sides, 1, false);
     const sourceUrl=assetUrl(connector.texture, assetBase);
-    let shared=sharedRopeTextures.get(sourceUrl);
-    if(!shared){shared=new THREE.TextureLoader().load(sourceUrl);shared.wrapS=shared.wrapT=THREE.RepeatWrapping;if('colorSpace' in shared&&THREE.SRGBColorSpace)shared.colorSpace=THREE.SRGBColorSpace;sharedRopeTextures.set(sourceUrl,shared);}
-    const texture=shared.clone();
+    const entry=ropeTextureEntry(sourceUrl);
+    const texture=entry.base.clone();
     texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
     texture.repeat.set(1, 3);
-    texture.needsUpdate=true;
+    texture.userData = { ...(texture.userData || {}), hobunjiPendingTextureEntry: entry };
+    if (entry.base.image) { texture.image = entry.base.image; texture.needsUpdate = true; }
+    else entry.pending.add(texture);
     const material = new THREE.MeshLambertMaterial({map:texture,color:connector.color,side:THREE.FrontSide});
     const mesh = new THREE.Mesh(geometry, material);
     mesh.name = 'furniture_piece_animation_rope';
@@ -123,7 +145,10 @@
     rope.scale.set(1,visualLength,1);
     if (rope.material?.map) {
       const repeat = Math.max(1,visualLength/.09);
-      if (Math.abs(rope.material.map.repeat.y-repeat)>.05) { rope.material.map.repeat.y=repeat; rope.material.map.needsUpdate=true; }
+      if (Math.abs(rope.material.map.repeat.y-repeat)>.05) {
+        rope.material.map.repeat.y=repeat;
+        if (rope.material.map.image) rope.material.map.needsUpdate=true;
+      }
     }
     rope.updateMatrixWorld(true);
   }
@@ -217,7 +242,9 @@
         if (mesh && ropeRecord.previousBefore !== undefined) mesh.onBeforeRender = ropeRecord.previousBefore;
         mesh?.parent?.remove(mesh);
         mesh?.geometry?.dispose?.();
-        mesh?.material?.map?.dispose?.();
+        const map=mesh?.material?.map;
+        map?.userData?.hobunjiPendingTextureEntry?.pending?.delete?.(map);
+        map?.dispose?.();
         mesh?.material?.dispose?.();
       }
       pivot?.parent?.remove(pivot);

@@ -62,6 +62,7 @@
     if (!species) return false;
     species[KIND] = {
       prefix: KIND,
+      baseShadeReferenceHex: '#99BF99', // Authored full-strength Voorg-Ass coat color used as the fixed base-recolor normalization anchor.
       base: { idle: SPRITES.idle, run1: SPRITES.run1, run2: SPRITES.run2 },
       patterns: ['belly'],
     };

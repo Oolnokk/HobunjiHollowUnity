@@ -296,8 +296,8 @@ colorFillWindow.ColorFill.shadeFillPixels(shadowProbe, [240, 220, 180], {
   samplePredicate: () => true,
   applyPredicate: i => i === 0,
 });
-assert.deepEqual(Array.from(shadowProbe.slice(0, 3)), [168, 154, 126],
-  '30%-black authored shadow reapplies as a 30% darkening of the requested color');
+assert.deepEqual(Array.from(shadowProbe.slice(0, 3)), [169, 155, 127],
+  'authored near-30%-black shadow preserves its perceptual luminance relationship to the requested color');
 assert.deepEqual(Array.from(shadowProbe.slice(4, 12)), [20, 17, 14, 255, 255, 255, 255, 255],
   'shade-map inheritance paints only motif-selected pixels while sampling the whole source region');
 const fillDebug = colorFillWindow.ColorFill.debugSnapshot().lastShadeFill;
@@ -305,8 +305,10 @@ assert.equal(fillDebug.sampledCount, 2, 'shared shade fill excludes white detail
 assert.equal(fillDebug.appliedCount, 1, 'shared shade fill paints only the motif mask');
 assert.equal(fillDebug.separateSampleMask, true, 'diagnostics expose separate sample and application masks');
 assert.equal(fillDebug.externalSource, true, 'diagnostics prove woven fill sampled the original untinted source raster');
-assert.equal(fillDebug.baseValue, Number((20 / 255).toFixed(4)),
-  'white outlier does not hijack the inferred near-black flat-cel reference');
+assert.equal(fillDebug.baseValue, Number((((0.2126 * 20 + 0.7152 * 17 + 0.0722 * 14) / 255)).toFixed(4)),
+  'white outlier does not hijack the near-black brightest-eligible luminance reference');
+assert.equal(fillDebug.peak, fillDebug.baseValue,
+  'Pixel Probe peak diagnostics report the same normalization anchor used by the fill');
 const wovenDebug = colorFillWindow.ColorFill.debugSnapshot().shadeFillsByLabel['woven-motif'];
 assert.equal(wovenDebug.sequence, fillDebug.sequence, 'named woven diagnostic retains the exact motif pass for Pixel Probe');
 assert.equal(wovenDebug.appliedCount, 1, 'named woven diagnostic keeps motif-only paint count');
@@ -318,9 +320,9 @@ colorFillWindow.ColorFill.shadeFillPixels(mapProbe, [240, 220, 180], {
   applyPredicate: i => i < 8,
 });
 assert.deepEqual(Array.from(mapProbe.slice(0, 8)), [
-  168, 154, 126, 255,
+  169, 155, 127, 255,
   240, 220, 180, 255,
-], 'direct target fill plus recovered black-opacity map reproduces flat cel and 30%-black shadow exactly');
+], 'peak-anchored target fill preserves the authored perceptual shadow relationship');
 const whiteDetailProbe = new Uint8ClampedArray([
   14, 12, 10, 255, 20, 17, 14, 255,
   255, 255, 255, 255, 248, 248, 248, 255, 250, 246, 220, 255,
@@ -330,12 +332,42 @@ assert.equal(whiteReference.count, 3, 'white and near-white neutral details are 
 colorFillWindow.ColorFill.shadeFillPixels(whiteDetailProbe, [240, 220, 180]);
 assert.deepEqual(Array.from(whiteDetailProbe.slice(8, 16)), [255, 255, 255, 255, 248, 248, 248, 255],
   'authored white details remain unchanged by the shared fill');
-assert.match(colorFillSource, /AUTHORED_SHADOW_VALUE_RATIO = 0\.70/,
-  'shared ColorFill encodes the authored 30%-black shadow convention');
-assert.match(colorFillSource, /const score = baseMass \+ shadowMass;/,
-  'flat-cel reference is inferred from the base/shadow value pair instead of the absolute brightest pixel');
+const nuancedSource = new Uint8ClampedArray([
+  8, 7, 6, 255,
+  12, 10, 9, 255,
+  16, 14, 12, 255,
+  20, 17, 14, 255,
+]);
+const nuancedProbe = new Uint8ClampedArray(nuancedSource);
+colorFillWindow.ColorFill.shadeFillPixels(nuancedProbe, [240, 220, 180]);
+assert.deepEqual(Array.from(nuancedProbe), [
+  98, 90, 74, 255,
+  143, 131, 107, 255,
+  197, 180, 148, 255,
+  240, 220, 180, 255,
+], 'body/animal recolors preserve all authored intermediate perceptual shades instead of flattening values above an inferred shadow cluster');
+const grehlrDarkSource = new Uint8ClampedArray([
+  8, 10, 12, 255,
+  12, 15, 18, 255,
+  16, 20, 24, 255,
+  20, 25, 30, 255,
+]);
+const grehlrDarkProbe = new Uint8ClampedArray(grehlrDarkSource);
+colorFillWindow.ColorFill.shadeFillPixels(grehlrDarkProbe, [79, 117, 125]);
+assert.deepEqual(Array.from(grehlrDarkProbe), [
+  32, 47, 50, 255,
+  47, 70, 75, 255,
+  63, 94, 100, 255,
+  79, 117, 125, 255,
+], 'dark blue-gray Grehlr-style source shading preserves the authored target hue and perceptual shade spacing');
+assert.match(colorFillSource, /return relativeLuminance\(r, g, b\)/,
+  'shared shade reference measures perceptual luminance rather than HSV max-channel value');
+assert.match(colorFillSource, /peakValue = Math\.max\(peakValue, sourceValue/,
+  'shared ColorFill derives its normalization anchor from the brightest eligible authored pixel');
+assert.doesNotMatch(colorFillSource, /AUTHORED_SHADOW_VALUE_RATIO|histogramMass|bestScore/,
+  'shared ColorFill no longer assumes a fixed flat-cel plus 30%-black-shadow palette');
 assert.match(colorFillSource, /value \/ baseValue/,
-  'final tint reapplies the recovered shadow map as a relative value multiplier');
+  'final tint preserves source value proportion relative to the brightest eligible authored pixel');
 assert.match(source, /shadingSource = null, debugLabel = 'woven-motif'/,
   'shared motif compositor accepts a caller-specific diagnostic label without changing its rendering inputs');
 assert.match(colorFillSource, /function createShadeReference\(sourceData, predicate = null, options = \{\}\)/,
@@ -391,3 +423,19 @@ assert.match(gameSource, /if \(o\.key === 'loom'\) return makeLoomInteractable\(
 assert.match(gameSource, /loomFurniture: \(\) => makeLoomInteractable\(\)/, 'map-authored loom uses the same core interactable factory');
 assert.match(gameSource, /function makeLoomInteractable\(\)/, 'loom interaction is owned by the core furniture system');
 console.log('clothing weaving system tests passed');
+
+assert.match(creatureRendererSource, /'gar-wolf':[\s\S]*?baseShadeReferenceHex: '#565047'/,
+  'Gar-wolf base recolor uses its authored #565047 full-strength coat anchor');
+assert.match(creatureRendererSource, /'dabinggi-hound':[\s\S]*?baseShadeReferenceHex: '#585E5D'/,
+  'Dabingi-hound base recolor uses its authored #585E5D full-strength coat anchor');
+assert.match(creatureRendererSource, /grehlr:[\s\S]*?baseShadeReferenceHex: '#424242'/,
+  'Grehlr base recolor uses its authored #424242 full-strength coat anchor');
+assert.match(creatureRendererSource, /recoloredBase\(baseUrl, baseColor, mask, fullBaseRecolor, spec\.baseShadeReferenceHex \|\| null, kind\)/,
+  'runtime base recolor passes the species-authored anchor instead of rediscovering a peak from sprite pixels');
+assert.match(creatureRendererSource, /shadeReference = \{[\s\S]*?baseValue: referenceValue,[\s\S]*?peakLuminance: referenceValue,[\s\S]*?referenceHex: sourceReferenceHex\.toUpperCase\(\)/,
+  'fixed creature coat references override only the normalization anchor while keeping shared shade-fill math');
+
+assert.match(creatureRendererSource, /drenkirra:[\s\S]*?baseShadeReferenceHex: '#68D127'/,
+  'Drenkirra base recolor uses its authored #68D127 full-strength coat anchor');
+assert.match(creatureRendererSource, /spec\.baseShadeReferenceHex \|\| null/,
+  'species without an authored coat anchor keep the existing automatic peak-based fallback path');
