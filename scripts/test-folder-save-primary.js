@@ -1,6 +1,7 @@
 'use strict';
 
 const fs = require('fs');
+const vm = require('vm'); // Executes the real quit-guard module against a deterministic fake DOM for rotation-loop regression coverage.
 const path = require('path');
 
 const root = path.resolve(__dirname, '..');
@@ -101,6 +102,158 @@ assert(quitGuard.includes('if (!resetButton.disabled) resetButton.disabled = tru
 assert(quitGuard.includes("button.dataset.manualSaveBusy = '1'"), 'Manual Save busy feedback uses explicit local UI state');
 assert(quitGuard.includes("button.textContent = 'Saving…'"), 'Manual Save replaces its actual label while saving');
 assert(quitGuard.includes('startManualSaveBusyLabel(button)'), 'Manual Save busy feedback is driven from its click path instead of a global disabled observer');
+assert(quitGuard.includes('changedNodes.some(node => node?.nodeType === 1)'), 'menu observer reacts only to structural child changes, not its own text-label mutations');
+assert(quitGuard.includes('if (visibilityChange || structuralChange) scheduleMenuControlRelayout()'), 'menu mutations schedule a coalesced relayout instead of synchronously re-entering label measurement');
+assert(quitGuard.includes('menuControlRelayoutTimer = setTimeout'), 'rotation resize bursts are debounced until layout settles');
+assert(!quitGuard.includes('requestAnimationFrame('), 'menu resize handling does not create a direct RAF outside RuntimeFrameScheduler ownership');
+
+function runQuitGuardRelayoutBehaviorRegression() {
+  let observerCallback = null; // Receives MutationObserver records emitted after the fake menu observer is armed.
+  let observerArmed = false; // Prevents pre-observe setup writes from being reported as mutations.
+  const pendingMutations = []; // Collects button text mutations so the test can flush them like a browser microtask checkpoint.
+  const timers = new Map(); // Models the trailing resize debounce and lets the test verify only one timer survives a burst.
+  let nextTimerId = 1; // Generates deterministic timeout handles for the fake timer queue.
+  const windowListeners = new Map(); // Captures resize/beforeunload listeners installed by the production module.
+  const attributesByNode = new WeakMap(); // Stores fake DOM attributes used by the menu-safety helpers.
+
+  function attributesFor(node) {
+    let attributes = attributesByNode.get(node); // Reuses a stable attribute bag for each fake DOM node.
+    if (!attributes) {
+      attributes = new Map();
+      attributesByNode.set(node, attributes);
+    }
+    return attributes;
+  }
+
+  function makeButton(initialText = '') {
+    let textValue = initialText; // Backs textContent so production label writes can emit realistic text-node childList records.
+    const button = { // Minimal button surface used by label, reset, and overlay-control code.
+      dataset: {},
+      style: {},
+      disabled: false,
+      hidden: false,
+      tabIndex: 0,
+      isConnected: true,
+      setAttribute(name, value) { attributesFor(button).set(name, String(value)); },
+      getAttribute(name) { return attributesFor(button).get(name) ?? null; },
+    };
+    Object.defineProperty(button, 'textContent', {
+      get() { return textValue; },
+      set(value) {
+        const nextValue = String(value); // Normalizes assigned labels the same way DOM textContent does.
+        if (nextValue === textValue) return;
+        textValue = nextValue;
+        if (observerArmed) {
+          pendingMutations.push({
+            type: 'childList',
+            target: button,
+            addedNodes: [{ nodeType: 3 }],
+            removedNodes: [{ nodeType: 3 }],
+          });
+        }
+      },
+    });
+    return button;
+  }
+
+  const menuPanel = { // Supplies only the open-state API consumed by the quit guard.
+    classList: { contains: className => className === 'open' },
+  };
+  const controls = {}; // Presence of the menu control row enables responsive label installation.
+  const tabs = { scrollWidth: 480, clientWidth: 300 }; // Forces the narrow/rotated compact-label path throughout this regression.
+  const nodes = new Map([ // Resolves the exact element IDs the production module reads.
+    ['menuPanel', menuPanel],
+    ['menuPauseBtn', makeButton('Pause')],
+    ['menuManualSaveBtn', makeButton('Manual Save')],
+    ['menuRecoveryBtn', makeButton('Recovery')],
+    ['mpClose', makeButton('Close')],
+    ['menuResetBtn', makeButton('Reset')],
+    ['menuBtn', makeButton('Menu')],
+    ['farmEditBtn', makeButton('Farm')],
+    ['mapEditBtn', makeButton('Map')],
+  ]);
+
+  const documentObject = { // Minimal document contract needed to execute the unmodified production IIFE.
+    readyState: 'complete',
+    getElementById(id) { return nodes.get(id) || null; },
+    querySelector(selector) {
+      if (selector === '#menuPanel .mp-ctrls') return controls;
+      if (selector === '#menuPanel .mp-tabs') return tabs;
+      return null;
+    },
+    addEventListener() {},
+  };
+  const windowObject = { // Captures production window listeners and later exposes the installed debug API.
+    addEventListener(type, callback) { windowListeners.set(type, callback); },
+  };
+  const context = { // Browser-like globals used by the real quit-guard source under vm.
+    window: windowObject,
+    document: documentObject,
+    MutationObserver: class MutationObserver {
+      constructor(callback) { observerCallback = callback; }
+      observe() { observerArmed = true; }
+    },
+    setTimeout(callback) {
+      const id = nextTimerId++; // Returned handle is stored by production debounce state and clearTimeout.
+      timers.set(id, callback);
+      return id;
+    },
+    clearTimeout(id) { timers.delete(id); },
+    confirm: () => false,
+    alert: () => {},
+    location: { reload() {} },
+    console,
+  };
+
+  vm.runInNewContext(quitGuard, context, { filename: 'folder-save-quit-guard.js' });
+  assert(typeof observerCallback === 'function', 'rotation regression installs the menu MutationObserver');
+  assert(typeof windowListeners.get('resize') === 'function', 'rotation regression installs the responsive resize listener');
+
+  const flushObserverMutations = () => { // Delivers queued text-node mutations in one observer callback, like a browser microtask checkpoint.
+    if (!pendingMutations.length) return;
+    const records = pendingMutations.splice(0);
+    observerCallback(records);
+  };
+  const runPendingTimer = () => { // Executes the single surviving debounce timer and removes it from the fake queue first.
+    assert(timers.size === 1, 'rotation debounce has exactly one pending relayout');
+    const [id, callback] = timers.entries().next().value;
+    timers.delete(id);
+    callback();
+  };
+
+  windowObject.FolderSaveQuitGuard.labelMenuControls();
+  flushObserverMutations();
+  assert(timers.size === 0, 'label text mutations do not schedule recursive menu relayouts');
+
+  const resize = windowListeners.get('resize'); // Reuses the exact production resize callback for an orientation-style event burst.
+  for (let i = 0; i < 12; i++) resize();
+  assert(timers.size === 1, 'orientation-style resize burst coalesces to one relayout timer');
+  runPendingTimer();
+  flushObserverMutations();
+  assert(timers.size === 0, 'post-rotation label writes settle without scheduling another relayout');
+
+  const afterResize = windowObject.__hobunjiFolderSaveQuitDebug.snapshot(); // Confirms the scheduled callback actually completed once.
+  assert(afterResize.menuControlRelayouts === 1, 'orientation-style resize burst performs exactly one responsive relayout');
+  assert(afterResize.relayoutPending === false, 'rotation debounce clears its pending state after relayout');
+
+  observerCallback([{ // Real element insertion should still request a responsive recalculation.
+    type: 'childList',
+    target: controls,
+    addedNodes: [{ nodeType: 1 }],
+    removedNodes: [],
+  }]);
+  observerCallback([{ // Menu visibility changes should coalesce with that structural update rather than create a second timer.
+    type: 'attributes',
+    target: menuPanel,
+    attributeName: 'class',
+  }]);
+  assert(timers.size === 1, 'real menu structure/class mutations coalesce to one relayout');
+  runPendingTimer();
+  flushObserverMutations();
+  assert(timers.size === 0, 'structural relayout also settles without observer feedback');
+}
+
+runQuitGuardRelayoutBehaviorRegression();
 
 assert(primary.includes('__hobunjiFolderSavePrimaryDebug'), 'primary save behavior exposes diagnostics data');
 assert(emptyBootstrap.includes('__hobunjiFolderSaveEmptyBootstrapDebug'), 'first-run empty-folder state exposes diagnostics data');
