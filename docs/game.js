@@ -11314,6 +11314,7 @@
       }
 
       async function makeNpcWalker(rec, initialTarget) {
+        window.NpcWardrobe?.applyOutfitOverrideToRecord?.(rec); // Applies a restored manual outfit before profile construction, including deferred/visitor NPCs that had no walker when save restoration ran.
         const guessSpecies = (rec?.species || '').toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-|-$/g, '');
         const appearance = (rec?.appearance && rec.appearance.speciesId) ? rec.appearance : {
           speciesId: NPC_SPECIES_IDS.includes(guessSpecies) ? guessSpecies : undefined,
@@ -11969,6 +11970,7 @@
             groundShadow.position.y = ty - root.position.y + characterGroundShadowSurfaceOffset();
           },
         };
+        await window.NpcWardrobe?.syncWalkerOutfit?.(walker); // Rechecks after async avatar construction so a restore landing mid-build cannot leave this newly spawned walker rendering stale clothes.
         return walker;
       }
 
@@ -27625,6 +27627,7 @@
       });
 
       window.NpcWardrobe?.init({
+        getNpcRecordById: npcId => scheduledNpcRecords.get(npcId) || npcWalkers.find(walker => walker.rec?.id === npcId)?.rec || null, // Canonical record access lets wardrobe restore reach offscreen/deferred NPCs before a walker exists.
         getGearInventory: () => gearInventory,
         saveGearInventory,
         showToast,
