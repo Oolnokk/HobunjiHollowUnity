@@ -353,6 +353,7 @@
   "cavern": {
     "mapId": "map_i_den_banubu",
     "seed": "banubu-home-v1",
+    "surfaceMaterial": "farm-cliff",
     "primaryEntranceConnectorId": "banubu_cave_exit",
     "generation": {
       "tileSize": 1,
