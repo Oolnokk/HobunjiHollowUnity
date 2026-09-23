@@ -45,8 +45,8 @@ assert.match(music, /function isAuthoredHourWindowEligible\(track\)[\s\S]*?start
   'authored BGM hour windows support both ordinary and midnight-wrapping ranges');
 assert.match(title, /const STARTUP_BGM_URL = 'assets\/audio\/music\/bgm\/bgm_remembrance\.m4a'/,
   'the earliest title runtime points at the authored Remembrance startup track');
-assert.match(title, /document\.documentElement\.classList\.add\('hobunji-title-active'\);[\s\S]*?tryStartStartupBgm\(\);[\s\S]*?loadTitleSky\(\)/,
-  'Remembrance is attempted immediately when the title screen itself is installed');
+assert.match(title, /document\.documentElement\.classList\.add\([^;]*'hobunji-title-active'\);[\s\S]*?tryStartStartupBgm\(\);[\s\S]*?loadTitleSky\(\)/,
+  'Remembrance is attempted immediately after the title/pre-world lifecycle classes are installed');
 assert.match(title, /function beginStart\([\s\S]*?tryStartStartupBgm\('title input: ' \+ source\);[\s\S]*?hobunji-title-starting/,
   'the accepted title input retries autoplay synchronously before the swallowed input is released');
 assert.match(title, /claimStartupBgmAudio,[\s\S]*?cancelStartupBgmAudio/,
