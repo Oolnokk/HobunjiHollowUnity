@@ -1,0 +1,423 @@
+{
+  "schema": "hobunji_furniture_authored_runtime.v1",
+  "key": "woodenDoor",
+  "name": "Wooden Door",
+  "footprint": {
+    "w": 1,
+    "d": 1
+  },
+  "parts": [
+    {
+      "id": "part_mud7wn1z_xz7os",
+      "kind": "box",
+      "name": "Wooden Door Slab",
+      "transform": {
+        "x": 0.0145,
+        "y": 0.54,
+        "z": 0.0112,
+        "rx": 89.766,
+        "ry": 0.236,
+        "rz": 0.985,
+        "sx": 0.6222,
+        "sy": 0.1338,
+        "sz": 1.0805
+      },
+      "color": "#8b6540",
+      "segments": 4,
+      "taperAxis": "z",
+      "topScaleX": 1,
+      "topScaleZ": 1,
+      "bottomScaleX": 1,
+      "bottomScaleZ": 1,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.68,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0.015,
+      "materialRole": "wood",
+      "materialTexture": "carved_smooth.png",
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": false,
+      "materialFillColor": null,
+      "surfaceOpacity": 1,
+      "substanceColor": "#8b6540",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1
+    },
+    {
+      "id": "part_mud7wn20_wsg35",
+      "kind": "box",
+      "name": "Wooden Door Latch",
+      "transform": {
+        "x": -0.1252,
+        "y": 0.518,
+        "z": 0.1057,
+        "rx": 90.563,
+        "ry": 1.112,
+        "rz": 1.628,
+        "sx": 0.2929,
+        "sy": 0.0846,
+        "sz": 0.142
+      },
+      "color": "#8b6540",
+      "segments": 4,
+      "taperAxis": "y",
+      "topScaleX": 1,
+      "topScaleZ": 1,
+      "bottomScaleX": 1,
+      "bottomScaleZ": 1,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.68,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0.015,
+      "materialRole": "wood",
+      "materialTexture": "carved_smooth.png",
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": false,
+      "materialFillColor": null,
+      "surfaceOpacity": 1,
+      "substanceColor": "#8b6540",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1
+    },
+    {
+      "id": "part_mud7z5pj_azlux",
+      "kind": "legSquare",
+      "name": "Right Door Post",
+      "transform": {
+        "x": 0.4086,
+        "y": 0.5708,
+        "z": 0.0063,
+        "rx": 42.685,
+        "ry": 89.364,
+        "rz": -42.856,
+        "sx": 0.18,
+        "sy": 1.1618,
+        "sz": 0.191
+      },
+      "color": "#6b4a28",
+      "segments": 4,
+      "taperAxis": "y",
+      "topScaleX": 1,
+      "topScaleZ": 1,
+      "bottomScaleX": 1,
+      "bottomScaleZ": 1,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.68,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0.002,
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": false,
+      "materialFillColor": null,
+      "surfaceOpacity": 1,
+      "substanceColor": "#6b4a28",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1
+    },
+    {
+      "id": "part_mud8eq3v_qowsz",
+      "kind": "legSquare",
+      "name": "Left Door Post",
+      "transform": {
+        "x": -0.4017,
+        "y": 0.5708,
+        "z": 0,
+        "rx": 42.685,
+        "ry": 89.364,
+        "rz": -42.856,
+        "sx": 0.18,
+        "sy": 1.1618,
+        "sz": 0.191
+      },
+      "color": "#6b4a28",
+      "segments": 4,
+      "taperAxis": "y",
+      "topScaleX": 1,
+      "topScaleZ": 1,
+      "bottomScaleX": 1,
+      "bottomScaleZ": 1,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.68,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0.002,
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": false,
+      "materialFillColor": null,
+      "surfaceOpacity": 1,
+      "substanceColor": "#6b4a28",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1
+    },
+    {
+      "id": "part_mud8fo7d_zlwk9",
+      "kind": "legSquare",
+      "name": "Doorway Header",
+      "transform": {
+        "x": 0.0002,
+        "y": 1.1832,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 90,
+        "sx": 0.2271,
+        "sy": 1.0158,
+        "sz": 0.2021
+      },
+      "color": "#6b4a28",
+      "segments": 4,
+      "taperAxis": "y",
+      "topScaleX": 1,
+      "topScaleZ": 1,
+      "bottomScaleX": 1,
+      "bottomScaleZ": 1,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.68,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0.002,
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": false,
+      "materialFillColor": null,
+      "surfaceOpacity": 1,
+      "substanceColor": "#6b4a28",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1
+    }
+  ],
+  "seatAnchors": [],
+  "particleEmitters": [],
+  "processingWarps": [],
+  "processTimelines": [],
+  "stompAttachPoints": [],
+  "pieceAnimations": [],
+  "puzzle": {
+    "version": 3,
+    "role": "mechanism",
+    "behavior": "toggle",
+    "channel": "door",
+    "startsActive": false,
+    "blocksMovement": true,
+    "directInteraction": true,
+    "interactionRange": 1.65,
+    "activationSeconds": 0,
+    "resetSeconds": 0,
+    "prompt": "Use door",
+    "onPrompt": "Open",
+    "offPrompt": "Close",
+    "motion": {
+      "durationSeconds": 0.55,
+      "collisionOpenProgress": 0.55,
+      "off": {
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "emission": {
+          "color": "#000000",
+          "intensity": 0,
+          "particleRateScale": 0,
+          "opacity": 1
+        }
+      },
+      "on": {
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "emission": {
+          "color": "#000000",
+          "intensity": 0,
+          "particleRateScale": 0,
+          "opacity": 1
+        }
+      },
+      "parts": {
+        "part_mud7wn1z_xz7os": {
+          "off": {
+            "x": 0.0145,
+            "y": 0.54,
+            "z": 0.0112,
+            "rx": 89.766,
+            "ry": 0.236,
+            "rz": 0.985,
+            "sx": 0.6222,
+            "sy": 0.1338,
+            "sz": 1.0805
+          },
+          "on": {
+            "x": 0.252,
+            "y": 0.5415,
+            "z": -0.2565,
+            "rx": 89.766,
+            "ry": -0.236,
+            "rz": 91.599,
+            "sx": 0.6222,
+            "sy": 0.1338,
+            "sz": 1.0805
+          }
+        },
+        "part_mud7wn20_wsg35": {
+          "off": {
+            "x": -0.1252,
+            "y": 0.518,
+            "z": 0.1057,
+            "rx": 90.563,
+            "ry": 1.112,
+            "rz": 1.628,
+            "sx": 0.2929,
+            "sy": 0.0846,
+            "sz": 0.142
+          },
+          "on": {
+            "x": 0.1591,
+            "y": 0.5195,
+            "z": -0.3973,
+            "rx": 88.882,
+            "ry": 0.551,
+            "rz": 92.253,
+            "sx": 0.2929,
+            "sy": 0.0846,
+            "sz": 0.142
+          }
+        },
+        "part_mud7z5pj_azlux": {
+          "off": {
+            "x": 0.4086,
+            "y": 0.5708,
+            "z": 0.0063,
+            "rx": 42.685,
+            "ry": 89.364,
+            "rz": -42.856,
+            "sx": 0.18,
+            "sy": 1.1618,
+            "sz": 0.191
+          },
+          "on": {
+            "x": 0.4086,
+            "y": 0.5708,
+            "z": 0.0063,
+            "rx": 42.685,
+            "ry": 89.364,
+            "rz": -42.856,
+            "sx": 0.18,
+            "sy": 1.1618,
+            "sz": 0.191
+          }
+        },
+        "part_mud8eq3v_qowsz": {
+          "off": {
+            "x": -0.4017,
+            "y": 0.5708,
+            "z": 0,
+            "rx": 42.685,
+            "ry": 89.364,
+            "rz": -42.856,
+            "sx": 0.18,
+            "sy": 1.1618,
+            "sz": 0.191
+          },
+          "on": {
+            "x": -0.4017,
+            "y": 0.5708,
+            "z": 0,
+            "rx": 42.685,
+            "ry": 89.364,
+            "rz": -42.856,
+            "sx": 0.18,
+            "sy": 1.1618,
+            "sz": 0.191
+          }
+        },
+        "part_mud8fo7d_zlwk9": {
+          "off": {
+            "x": 0.0002,
+            "y": 1.1832,
+            "z": 0,
+            "rx": 0,
+            "ry": 0,
+            "rz": 90,
+            "sx": 0.2271,
+            "sy": 1.0158,
+            "sz": 0.2021
+          },
+          "on": {
+            "x": 0.0002,
+            "y": 1.1832,
+            "z": 0,
+            "rx": 0,
+            "ry": 0,
+            "rz": 90,
+            "sx": 0.2271,
+            "sy": 1.0158,
+            "sz": 0.2021
+          }
+        }
+      }
+    }
+  }
+}

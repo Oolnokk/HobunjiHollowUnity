@@ -70,6 +70,9 @@
   const FAR_APRON_FALLOFF = 0.55; // depth multiplier per extra apron row out
   const FLOOD_PLANE_MIN_WET_FRACTION = 0.25; // Used to require genuinely map-wide wetness before promoting local water into the global flood sheet.
   const FLOOD_SURFACE_HIDE_EPSILON = 0.001; // Used when deciding whether the flood sheet is visibly above a local/permanent water surface.
+  const FLOOD_VISUAL_DEPTH = 0.8; // Used by the flood plane's shader attributes to match the authored deep stable-river/waterway shading profile.
+  const FLOOD_VISUAL_COVERAGE = 1; // Used by the flood plane's shader attributes to match stable water's full coverage (0.65 shared material-opacity ceiling) instead of fading with rain depth.
+  const FLOOD_VISUAL_FLOW_MAGNITUDE = 1; // Used only for shared shader sheen; the shader reads flow length, so this matches ordinary stable-water sheen without imposing directional flood physics.
 
   // Helper: floor Z for a tile type. Trenches shallow out toward 0 as they silt up.
   function floorZ(type, depth = 1) {
@@ -301,7 +304,7 @@
     if (!mergedWaterMaterial) {
       mergedWaterMaterial = window.MergedWaterRenderer.createMaterial(THREE, {
         textureUrl: 'assets/textures/wibbly_surface.png',
-        opacity: 0.8,
+        opacity: 0.65,
         log: deps.debugLog,
       });
     }
@@ -498,13 +501,17 @@
       : fallbackBaselineSamples; // Used once to derive the common weather-level visual baseline.
     const baselineWater = _baselineMedian(baselineSamples); // Used as the map-wide baseline water amount for this simulation snapshot.
     const baselineDepth = deps.clamp(baselineWater / deps.MAX_WATER, 0, 1); // Used by the water shader for baseline color/coverage.
-    const baseline = { // Used by the inverted renderer as the map-wide weather sheet.
+    const baseline = { // Used by the map-wide renderer as the weather-driven flood sheet.
       visible: baselineWater >= 0.003,
       surfaceY: NORMAL_TOP + baselineWater * WATER_UNIT,
       depth: baselineDepth,
       coverage: baselineDepth,
       flowX: 0,
       flowZ: 0,
+      renderDepth: FLOOD_VISUAL_DEPTH,
+      renderCoverage: FLOOD_VISUAL_COVERAGE,
+      renderFlowX: 0,
+      renderFlowZ: FLOOD_VISUAL_FLOW_MAGNITUDE,
     };
     return { cells, flowingTrenches, baseline };
   }
@@ -637,6 +644,13 @@
       active: !!baseline?.visible,
       surfaceY: Number.isFinite(baseline?.surfaceY) ? baseline.surfaceY : null,
       depth: Number.isFinite(baseline?.depth) ? baseline.depth : 0,
+      coverage: Number.isFinite(baseline?.coverage) ? baseline.coverage : 0,
+      visualDepth: Number.isFinite(baseline?.renderDepth) ? baseline.renderDepth : (Number.isFinite(baseline?.depth) ? baseline.depth : 0),
+      visualCoverage: Number.isFinite(baseline?.renderCoverage) ? baseline.renderCoverage : (Number.isFinite(baseline?.coverage) ? baseline.coverage : 0),
+      visualSheen: Math.hypot(
+        Number.isFinite(baseline?.renderFlowX) ? baseline.renderFlowX : (Number.isFinite(baseline?.flowX) ? baseline.flowX : 0),
+        Number.isFinite(baseline?.renderFlowZ) ? baseline.renderFlowZ : (Number.isFinite(baseline?.flowZ) ? baseline.flowZ : 0),
+      ),
       floodPlaneVisible: !!floodMesh?.visible,
       localWaterVisible: !!localMesh?.visible,
     });

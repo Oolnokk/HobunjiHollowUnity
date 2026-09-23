@@ -87,6 +87,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
 #qhelpPopover .qhelp-close:hover{color:#edf5ff}
 </style>
 <script src="../../js/panel-ui.js"></script>
+<script src="../../js/furniture-puzzle-properties.js?v=20260922perpiece1"></script>
 <script src="../../js/map-live-preview.js?v=20260909a"></script>
 </head>
 <body>
@@ -543,7 +544,8 @@ const DECOR = {
   alchemyTable:{icon:'⚗️',label:'Alchemy Table',fw:1,fd:1,area:'interior'}, bulletinBoard:{icon:'📋',label:'Bulletin Board',fw:1,fd:1,area:'interior'},
   mineLadder:{icon:'🪜',label:'Mine Ladder',fw:1,fd:1,area:'interior'}, campfire:{icon:'🔥',label:'Campfire',fw:1,fd:1,area:'any'},
   feedGrinder:{icon:'⚙️',label:'Feed Grinder',fw:1,fd:1,area:'interior'}, trough:{icon:'🪣',label:'Feed Trough',fw:1,fd:1,area:'interior'},
-  generalStoreSign:{icon:'🪧',label:'General Store Sign',fw:1,fd:1,area:'any'}, innSign:{icon:'🪧',label:'Inn Sign',fw:1,fd:1,area:'any'}
+  generalStoreSign:{icon:'🪧',label:'General Store Sign',fw:1,fd:1,area:'any'}, innSign:{icon:'🪧',label:'Inn Sign',fw:1,fd:1,area:'any'},
+  door:{icon:'🚪',label:'Interior Door',fw:1,fd:1,area:'interior',puzzle:{role:'mechanism',behavior:'toggle',directInteraction:true,blocksMovement:true}}
 };
 
 // Shared routes and transition spots are supported on BOTH map categories.
@@ -590,6 +592,7 @@ function makeMap(name, category, cols, rows) {
     buildings: [],    // { id, label, pieceFile, gridX, gridZ, footprintW, footprintD, wbOpts, wbGableOpts }
     entryPoints: [],  // { id, label, col, row } — named drop-spots for MapLayoutSystem.pickEntryPoint
     layouts: [],      // { id, name, priority, entryPointId?, conditions:[...], decor:[...] } — see map-layout-system.js.
+    puzzleWiring: [], // Per-instance activator -> mechanism links for interior furniture.
                        // Only `decor` is authored/edited per-layout by this tool (see activeDecor below);
                        // any other overridable key (furniture/buildings/objects/routes/etc.) round-trips
                        // untouched through Copy/Download/Import but has no dedicated UI here.
@@ -648,7 +651,8 @@ function buildingInteriorToWorkspaceMap(mapData, entry = {}) {
       delete out.furniture;
       return out;
     }),
-    buildingInteriorBase: JSON.parse(JSON.stringify(mapData))
+    buildingInteriorBase: JSON.parse(JSON.stringify(mapData)),
+    puzzleWiring: window.FurniturePuzzleProperties.normalizeWiring(mapData.puzzleWiring)
   };
 }
 
@@ -696,6 +700,7 @@ function buildBuildingInteriorMapV1(m) {
     return out;
   };
   base.furniture = (m.decor || []).map(furnitureRecord);
+  base.puzzleWiring = window.FurniturePuzzleProperties.normalizeWiring(m.puzzleWiring);
   base.entryPoints = JSON.parse(JSON.stringify(m.entryPoints || []));
   base.layouts = (m.layouts || []).map(layout => {
     const out = JSON.parse(JSON.stringify(layout));
@@ -1047,6 +1052,7 @@ function loadWorkspace() {
           m.npcStations = Array.isArray(m.npcStations) ? m.npcStations : [];
           m.entryPoints = Array.isArray(m.entryPoints) ? m.entryPoints : [];
           m.layouts = Array.isArray(m.layouts) ? m.layouts : [];
+          m.puzzleWiring = window.FurniturePuzzleProperties.normalizeWiring(m.puzzleWiring);
           m.isSubmap = !!m.isSubmap;
           m.parentMapId = m.parentMapId || null;
           m.plateauGroupId = m.plateauGroupId || null;
@@ -3035,6 +3041,18 @@ function draw() {
     ctx.lineWidth = 1;
     if (z > 9) ctx.fillText(info.icon, p.x + info.fw*z/2, p.y + info.fd*z/2);
   });
+  // Interior puzzle wiring is visible in the editor and persisted verbatim to
+  // the building-interior JSON consumed by gameplay.
+  for (const wire of (m.puzzleWiring || [])) {
+    const from = activeDecor(m).find(record => record.id === wire.fromId);
+    const to = activeDecor(m).find(record => record.id === wire.toId);
+    if (!from || !to) continue;
+    const fromInfo = DECOR[from.key] || { fw:1, fd:1 }, toInfo = DECOR[to.key] || { fw:1, fd:1 };
+    const a = w2s(from.col + fromInfo.fw / 2, from.row + fromInfo.fd / 2);
+    const b = w2s(to.col + toInfo.fw / 2, to.row + toInfo.fd / 2);
+    ctx.strokeStyle = wire.invert ? '#fb7185' : '#facc15'; ctx.lineWidth = Math.max(2, z * .08);
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+  }
   // Shared routes
   (m.routes || []).forEach(pa => {
     const isActive = pa.id === activePathId;
@@ -3280,7 +3298,9 @@ function applyAt(tile) {
       selectedPlacement = { kind: 'decor', id: existingDecor.id };
       setStatus(`Selected ${DECOR[existingDecor.key]?.label || existingDecor.key} at (${existingDecor.col},${existingDecor.row}). Press Delete to remove.`);
     } else if (info && c + info.fw <= m.cols && r + info.fd <= m.rows) {
-      decorArr.push({ id: uid('decor'), key: brush.decor, col: c, row: r, rotY: 0, postX: 0, postY: 0, postZ: 0, postSX: 1, postSY: 1, postSZ: 1 });
+      const placedDecor = { id: uid('decor'), key: brush.decor, col: c, row: r, rotY: 0, postX: 0, postY: 0, postZ: 0, postSX: 1, postSY: 1, postSZ: 1 }; // Used by puzzle wiring so catalog-backed mechanism defaults persist on each instance.
+      if (info.puzzle) placedDecor.puzzle = JSON.parse(JSON.stringify(info.puzzle));
+      decorArr.push(placedDecor);
       selectedPlacement = null;
     }
   } else if (mode === 'entry') {
@@ -4549,6 +4569,7 @@ function importAny(obj) {
     m.npcStations = Array.isArray(obj.npcStations) ? obj.npcStations : [];
     m.entryPoints = Array.isArray(obj.entryPoints) ? obj.entryPoints : [];
     m.layouts = Array.isArray(obj.layouts) ? obj.layouts : [];
+    m.puzzleWiring = window.FurniturePuzzleProperties.normalizeWiring(obj.puzzleWiring);
     m.audioIndex = obj.audioIndex || '';
     ws.maps.push(m); ws.activeId = m.id;
     captureBaseline(m);
@@ -4575,6 +4596,7 @@ function importAny(obj) {
       m.npcStations = Array.isArray(src.npcStations) ? src.npcStations : [];
       m.entryPoints = Array.isArray(src.entryPoints) ? src.entryPoints : [];
       m.layouts = Array.isArray(src.layouts) ? src.layouts : [];
+      m.puzzleWiring = window.FurniturePuzzleProperties.normalizeWiring(src.puzzleWiring);
       m.audioIndex = src.audioIndex || '';
       if (src.buildingInteriorBase) m.buildingInteriorBase = src.buildingInteriorBase;
       m.isSubmap = !!src.isSubmap;
@@ -5213,8 +5235,26 @@ _mapLiveEndpoint.send({ type: 'editor-ready', mapId: activeMap()?.id, layoutId: 
 loadAudioCueIndexes();
 loadBuildingInteriorMaps();
 loadTerrainMaterials();
+window.PuzzleWiringEditorAdapter = {
+  modeBar: () => $('modeBar'), sidebar: () => $('sidebar-scroll'), canvas: () => canvas,
+  getMode: () => mode,
+  setMode: nextMode => {
+    if (nextMode === 'puzzle-wire' && !isInteriorMap(activeMap())) { setStatus('Puzzle wiring is available on interior maps.'); return; }
+    setMode(nextMode);
+  },
+  draw, changed: () => { pushUndo(); saveWorkspace(); refreshPreview(); }, status: setStatus,
+  nodes: () => isInteriorMap(activeMap()) ? activeDecor(activeMap()) : [],
+  getWiring: () => activeMap()?.puzzleWiring || [],
+  setWiring: wiring => { if (activeMap()) activeMap().puzzleWiring = wiring; },
+  cellFromEvent: event => { const point = canvasPt(event), world = s2w(point.x, point.y); return { c:Math.floor(world.x), r:Math.floor(world.y) }; },
+  hitNode: ({ c, r }) => [...(isInteriorMap(activeMap()) ? activeDecor(activeMap()) : [])].reverse().find(record => {
+    const footprint = DECOR[record.key] || { fw:1, fd:1 };
+    return c >= record.col && c < record.col + footprint.fw && r >= record.row && r < record.row + footprint.fd;
+  }),
+};
 })();
 </script>
+<script src="../../js/puzzle-wiring-editor.js?v=20260922ruinpuzzle1"></script>
 <script>
 PanelUI.makeResizableEdge(document.getElementById('sidebar'), {
   edge: 'right',

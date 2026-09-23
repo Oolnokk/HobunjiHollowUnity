@@ -1,0 +1,21 @@
+{
+  "sha": "v50-embedded-ruin-assets-20260913",
+  "truncated": false,
+  "tree": [
+    {"path":"docs/config/furniture-authored/statue.json","type":"blob"},
+    {"path":"docs/assets/models/furniture/data/obelisk_stone.json","type":"blob"},
+    {"path":"docs/assets/models/furniture/data/pillar_carved.json","type":"blob"},
+    {"path":"docs/assets/models/furniture/data/pillar_heavy.json","type":"blob"},
+    {"path":"docs/assets/models/furniture/data/pillar_round.json","type":"blob"},
+    {"path":"docs/assets/models/furniture/data/pillar_ruined.json","type":"blob"},
+    {"path":"docs/assets/models/furniture/data/pillar_square.json","type":"blob"},
+    {"path":"docs/assets/models/furniture/data/stone_arch.json","type":"blob"},
+    {"path":"docs/assets/models/furniture/data/stone_buttress.json","type":"blob"},
+    {"path":"docs/assets/models/furniture/data/stone_pedestal.json","type":"blob"},
+    {"path":"docs/assets/models/furniture/data/timber_support_post.json","type":"blob"},
+    {"path":"docs/assets/textures/carved_smooth.png","type":"blob"},
+    {"path":"docs/assets/textures/inn_sign_text.png","type":"blob"},
+    {"path":"docs/assets/textures/general_store_sign_text.png","type":"blob"},
+    {"path":"docs/assets/models/Roughbrick1.glb","type":"blob"}
+  ]
+}

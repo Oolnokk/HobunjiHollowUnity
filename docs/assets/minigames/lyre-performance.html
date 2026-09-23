@@ -1327,6 +1327,7 @@
   const ROMAN_DEGREES = ['I','II','III','IV','V','VI','VII'];
   const STRUM_NOTE_DELAY_MS = 22; // Spaces the six virtual strings during right-stick chord sweeps.
   const PULSE_LOOKAHEAD_MS = 90; // Fires automatic pluck-continuation timers this much early so the precise Web Audio start() call (not the jitter-prone JS timer) governs exactly when each pulse actually sounds.
+  const TRANSPORT_AUDIO_LOOKAHEAD_MS = PULSE_LOOKAHEAD_MS; // Keeps the metronome/footstep and chord-root pad on the same ahead-of-time audio grid as automatic Kurraya notes.
   const HARMONY_REGISTER_OFFSET = -12; // Keeps left-stick arpeggios and right-stick chord strums one octave below direct notes.
   const NOTE_COLORS = ['#7be6d7','#f8b368','#ff95ac','#b49bff'];
   const GROUP_COLORS_BY_OFFSET = {0:'#67e3d3',4:'#ffb86c',8:'#ff92a9',12:'#b39cff',16:'#92efbb'}; // Used by the five color groups so each bank has one consistent hue across the Lyre and hosted controls.
@@ -1487,6 +1488,8 @@
     harmonyStartTime:nowMs(),
     lastHarmonyStep:-1,
     lastMetronomeBeat:-1,
+    scheduledHarmonyStep:null, // Future harmony step already queued on the Web Audio clock; prevents render frames from double-triggering the root pad at the boundary.
+    scheduledMetronomeBeat:null, // Future transport beat already queued on the Web Audio clock; keeps footsteps/clicks sample-aligned with Kurraya note scheduling.
     freePlayCapoCue:null, // Holds the currently falling curved capo cue for the next hidden free-play chord.
     freePlayCapoTargetStep:-1, // Identifies which progression step the current capo is predicting so landing flashes occur only at the correct boundary. // Prevents the visual metronome from retriggering more than once per beat.
     auditoryMetronome:true, // Enabled by default; plays the synth click or imported stomp sample on each visual metronome beat.
@@ -1851,18 +1854,18 @@
     return clamp(state.game.active ? state.bpm : state.harmonyBpm, 40, 300); // One tempo source drives every timing-dependent system.
   }
 
-  function gameClockElapsedMs() {
+  function gameClockElapsedMs(referenceNowMs = nowMs()) {
     if (!state.game.active) return 0;
     if (state.paused && state.game.pausedAt) return Math.max(0, state.game.pausedAt - state.game.startTime - state.game.pauseAccum);
-    return Math.max(0, gameTime());
+    return Math.max(0, referenceNowMs - state.game.startTime - state.game.pauseAccum);
   }
 
-  function sharedTransportData() {
+  function sharedTransportData(referenceNowMs = nowMs()) {
     const bpm = activeClockBpm();
     const meter = activeSongMeter();
     const quarterBeatMs = 60000 / bpm;
     const beatMs = quarterBeatMs * meter.quarterUnitsPerBeat; // Audible/shared beat follows the selected denominator rather than always assuming quarter notes.
-    const transportElapsedMs = state.game.active ? gameClockElapsedMs() : Math.max(0, nowMs() - state.harmonyStartTime);
+    const transportElapsedMs = state.game.active ? gameClockElapsedMs(referenceNowMs) : Math.max(0, referenceNowMs - state.harmonyStartTime);
     const countInBeats = state.game.active ? Math.max(0, Math.round(state.game.countInBeats || meter.numerator)) : 0;
     const countInMs = state.game.active ? (state.game.countInMs || beatMs * countInBeats) : 0;
     const inCountIn = state.game.active && transportElapsedMs < countInMs;
@@ -1884,10 +1887,10 @@
     return Array.isArray(melody?.chords) && melody.chords.length ? melody.chords : null;
   }
 
-  function currentSongChordSegment() {
+  function currentSongChordSegment(clock = sharedTransportData()) {
     const timeline = activeSongChordTimeline();
     if (!timeline) return null;
-    const beatPosition = sharedTransportData().performanceBeatFloat;
+    const beatPosition = clock.performanceBeatFloat;
     let startBeat = 0;
     for (let index = 0; index < timeline.length; index++) {
       const entry = timeline[index];
@@ -1902,18 +1905,18 @@
     return null;
   }
 
-  function currentHarmonyStep() {
-    const songSegment = currentSongChordSegment();
+  function currentHarmonyStep(clock = sharedTransportData()) {
+    const songSegment = currentSongChordSegment(clock);
     if (songSegment) return songSegment.index;
     const progression = HARMONY_PATTERNS[state.harmonyPattern] || HARMONY_PATTERNS['1–5–6–4'];
-    const stepDuration = (60000 / activeClockBpm()) * state.harmonyChordBeats;
-    return Math.floor(harmonyElapsedMs() / Math.max(1, stepDuration)) % progression.length;
+    const stepDuration = (60000 / clock.bpm) * state.harmonyChordBeats;
+    return Math.floor(clock.performanceElapsedMs / Math.max(1, stepDuration)) % progression.length;
   }
 
-  function currentHarmonyData() {
-    const songSegment = currentSongChordSegment();
+  function currentHarmonyData(clock = sharedTransportData()) {
+    const songSegment = currentSongChordSegment(clock);
     const progression = HARMONY_PATTERNS[state.harmonyPattern] || HARMONY_PATTERNS['1–5–6–4'];
-    const step = songSegment ? songSegment.index : currentHarmonyStep();
+    const step = songSegment ? songSegment.index : currentHarmonyStep(clock);
     const progressionDegree = songSegment ? songSegment.degree : progression[step % progression.length];
     const scale = scalePitchClasses();
     const rootDegree = ((progressionDegree % scale.length) + scale.length) % scale.length;
@@ -2282,15 +2285,14 @@
     return {delay:Math.max(0,nextTarget - currentTime),nextStep:gridStep,beatAnchorAt:timing.beatAnchorAt,beatStopAt:fret.beatStopAt,remainingBeforeBeat,totalTapAttacks:1 + remainingBeforeBeat};
   }
 
-  function currentHarmonyBeatData() {
-    const clock = sharedTransportData();
+  function currentHarmonyBeatData(clock = sharedTransportData()) {
     const meter = clock.meter;
     const measureBeat = modulo(clock.performanceAbsoluteBeat,meter.numerator);
     if (clock.inCountIn) {
       const beatInChord = modulo(clock.transportAbsoluteBeat,meter.numerator);
       return {absoluteBeat:clock.transportAbsoluteBeat,beatInChord,beatsPerChord:meter.numerator,inCountIn:true,source:'count-in',meter,groupStarts:meter.groupStarts,isMeasureStart:beatInChord===0,isGroupStart:meter.groupStarts.includes(beatInChord)};
     }
-    const songSegment = currentSongChordSegment();
+    const songSegment = currentSongChordSegment(clock);
     if (songSegment) {
       const beatsPerChord = Math.max(1,Math.round(songSegment.beats / meter.quarterUnitsPerBeat));
       const segmentMeterBeatFloat = (clock.performanceBeatFloat - songSegment.startBeat) / meter.quarterUnitsPerBeat;
@@ -2302,6 +2304,41 @@
     const beatsPerChord = Math.max(1,Math.round(state.harmonyChordBeats / meter.quarterUnitsPerBeat));
     const beatInChord = clock.performanceAbsoluteBeat % beatsPerChord;
     return {absoluteBeat:clock.transportAbsoluteBeat,beatInChord,beatsPerChord,inCountIn:false,source:'free-progression',meter,groupStarts:[0],isMeasureStart:measureBeat===0,isGroupStart:beatInChord===0};
+  }
+
+  function findUpcomingTransportBoundary(valueForClock) {
+    const sampledAt = nowMs(); // Samples the wall clock once so beat/chord prediction cannot drift between repeated nowMs() calls.
+    const currentClock = sharedTransportData(sampledAt);
+    const currentValue = valueForClock(currentClock);
+    const horizonAt = sampledAt + TRANSPORT_AUDIO_LOOKAHEAD_MS;
+    const horizonClock = sharedTransportData(horizonAt);
+    const horizonValue = valueForClock(horizonClock);
+    if (Object.is(currentValue, horizonValue)) return null;
+    let low = sampledAt;
+    let high = horizonAt;
+    for (let iteration = 0; iteration < 14; iteration++) {
+      const midpoint = (low + high) * 0.5;
+      if (Object.is(valueForClock(sharedTransportData(midpoint)), currentValue)) low = midpoint;
+      else high = midpoint;
+    }
+    const atMs = high;
+    const clock = sharedTransportData(atMs + 0.25); // Samples just across the boundary so floor-based beat/step state resolves to the arriving value.
+    return { atMs, value:valueForClock(clock), clock };
+  }
+
+  function scheduleTransportAudioAhead() {
+    if (state.paused || document.hidden || !state.audioContext || state.audioContext.state !== 'running' || !state.master) return;
+    const beatBoundary = findUpcomingTransportBoundary(clock => clock.transportAbsoluteBeat);
+    if (beatBoundary && state.scheduledMetronomeBeat !== beatBoundary.value) {
+      playMetronomeClick(currentHarmonyBeatData(beatBoundary.clock), false, beatBoundary.atMs);
+      state.scheduledMetronomeBeat = beatBoundary.value;
+    }
+    if (!state.rootPadEnabled) return;
+    const chordBoundary = findUpcomingTransportBoundary(clock => currentHarmonyStep(clock));
+    if (chordBoundary && state.scheduledHarmonyStep !== chordBoundary.value) {
+      syncRootPad(false, chordBoundary.atMs, chordBoundary.clock);
+      state.scheduledHarmonyStep = chordBoundary.value;
+    }
   }
 
   function restartCssAnimation(element, className) {
@@ -2330,7 +2367,7 @@
     refs.metronomeLabel.textContent = beat.inCountIn ? `Count-in ${beat.beatInChord + 1} / ${beat.beatsPerChord} · ${beat.meter.label}` : `${beat.source === 'song' ? 'Song chord · ' : ''}Beat ${beat.beatInChord + 1} / ${beat.beatsPerChord} · ${beat.meter.label}`;
   }
 
-  function playMetronomeClick(beatData = 0, force = false) {
+  function playMetronomeClick(beatData = 0, force = false, whenMs = null) {
     // An ambient NPC performance (state.game.loopDemo — see startAmbientLead)
     // always keeps its footstep-sample beat regardless of the player's own
     // auditory-metronome preference: that toggle is a practice aid for the
@@ -2338,7 +2375,7 @@
     // should be silenced by.
     if ((!state.auditoryMetronome && !force && !state.game.loopDemo) || !state.audioContext || state.audioContext.state !== 'running' || !state.master) return;
     const context = state.audioContext; // Provides sample-accurate scheduling for either the imported stomp or synthesized click.
-    const startTime = context.currentTime;
+    const startTime = audioStartTimeFor(context, whenMs); // Uses the same performance.now() -> AudioContext clock bridge as scheduled Kurraya notes.
     const beatInChord = typeof beatData === 'number' ? beatData : beatData.beatInChord;
     const accented = beatInChord === 0 || !!beatData?.isMeasureStart;
     const groupAccent = !accented && !!beatData?.isGroupStart;
@@ -2382,8 +2419,8 @@
     return 440 * Math.pow(2, (midi - 69) / 12);
   }
 
-  function rootPadTargetMidi() {
-    const harmony = currentHarmonyData();
+  function rootPadTargetMidi(clock = sharedTransportData()) {
+    const harmony = currentHarmonyData(clock);
     return state.tonicMidi + harmony.rootOffset - 12; // V92 keeps the fallback pad one octave below the tonic register so small speakers can reproduce it while it remains a foundation voice.
   }
 
@@ -2392,12 +2429,12 @@
     return clamp(0.024 + state.rootPadLevel * 2.6, 0.024, 0.24); // V92 gives the synth fallback a dependable audible floor while the user-facing level still controls its mix.
   }
 
-  function fadeOutRootPadVoice(voice, fadeSeconds = 0.7) {
+  function fadeOutRootPadVoice(voice, fadeSeconds = 0.7, whenMs = null) {
     if (!voice || voice.stopping || !state.audioContext) return;
     voice.stopping = true;
     voice.active = false;
     const context = state.audioContext;
-    const now = context.currentTime;
+    const now = audioStartTimeFor(context, whenMs);
     const end = now + Math.max(0.04, fadeSeconds);
     try {
       voice.gain.gain.cancelScheduledValues(now);
@@ -2405,11 +2442,12 @@
       voice.gain.gain.exponentialRampToValueAtTime(0.0001, end);
       voice.oscillators.forEach(oscillator => { try { oscillator.stop(end + 0.05); } catch {} });
     } catch {}
+    const cleanupLeadMs = Number.isFinite(whenMs) ? Math.max(0, whenMs - nowMs()) : 0;
     setTimeout(() => {
       voice.oscillators.forEach(oscillator => { try { oscillator.disconnect(); } catch {} });
       try { voice.filter.disconnect(); voice.gain.disconnect(); } catch {}
       state.rootPadVoices = state.rootPadVoices.filter(candidate => candidate !== voice);
-    }, Math.ceil((fadeSeconds + 0.12) * 1000));
+    }, Math.ceil(cleanupLeadMs + (fadeSeconds + 0.12) * 1000));
   }
 
   function stopRootPad(fadeSeconds = 0.5) {
@@ -2417,10 +2455,10 @@
     state.rootPadRootMidi = null;
   }
 
-  function createRootPadVoice(midi) {
+  function createRootPadVoice(midi, whenMs = null) {
     const context = state.audioContext;
     if (!context || context.state !== 'running' || !state.master) return null;
-    const now = context.currentTime;
+    const now = audioStartTimeFor(context, whenMs);
     const frequency = midiFrequency(midi);
     const rootOscillator = context.createOscillator(); // Carries the fundamental root as a soft sine wave.
     const upperOscillator = context.createOscillator(); // Adds a barely audible octave for a less sterile pad texture.
@@ -2452,11 +2490,11 @@
     return voice;
   }
 
-  function createRootPadSampleVoice(midi) {
+  function createRootPadSampleVoice(midi, whenMs = null) {
     const context = state.audioContext;
     const buffer = state.rootPadSampleBuffer;
     if (!context || context.state !== 'running' || !state.master || !buffer) return null;
-    const now = context.currentTime;
+    const now = audioStartTimeFor(context, whenMs);
     const source = context.createBufferSource(); // Loops the imported sustained pad and repitches it to the current chord root.
     const filter = context.createBiquadFilter();
     const gain = context.createGain();
@@ -2480,17 +2518,18 @@
     return voice;
   }
 
-  function syncRootPad(force = false) {
+  function syncRootPad(force = false, whenMs = null, clock = null) {
     if (!state.rootPadEnabled || state.paused || document.hidden) {
       if (state.rootPadVoices.length) stopRootPad(0.35);
       return;
     }
     if (!state.audioContext || state.audioContext.state !== 'running' || !state.master) return;
-    const targetMidi = rootPadTargetMidi();
+    const targetClock = clock || sharedTransportData(Number.isFinite(whenMs) ? whenMs + 0.25 : nowMs());
+    const targetMidi = rootPadTargetMidi(targetClock);
     const desiredKind = state.rootPadSampleBuffer ? 'sample' : 'synth';
     const liveVoices = state.rootPadVoices.filter(voice => !voice.stopping && voice.active !== false);
     if (!force && state.rootPadRootMidi === targetMidi && liveVoices.some(voice => voice.kind === desiredKind)) {
-      const now = state.audioContext.currentTime;
+      const now = audioStartTimeFor(state.audioContext, whenMs);
       liveVoices.filter(voice => voice.kind === desiredKind).forEach(voice => {
         voice.gain.gain.cancelScheduledValues(now);
         const targetGain = desiredKind === 'sample' ? state.rootPadSampleLevel : rootPadSynthGain();
@@ -2498,9 +2537,9 @@
       });
       return;
     }
-    state.rootPadVoices.slice().forEach(voice => fadeOutRootPadVoice(voice, 0.5));
+    state.rootPadVoices.slice().forEach(voice => fadeOutRootPadVoice(voice, 0.5, whenMs));
     state.rootPadRootMidi = targetMidi;
-    const voice = desiredKind === 'sample' ? createRootPadSampleVoice(targetMidi) : createRootPadVoice(targetMidi);
+    const voice = desiredKind === 'sample' ? createRootPadSampleVoice(targetMidi, whenMs) : createRootPadVoice(targetMidi, whenMs);
     if (!voice) {
       state.rootPadRootMidi = null; // Lets the next frame self-heal instead of thinking a dead pad is already running.
       return;
@@ -3715,6 +3754,7 @@
     state.scaleName = SCALE_NAMES[index];
     refs.scaleSelect.value = state.scaleName;
     state.lastHarmonyStep = -1;
+    state.scheduledHarmonyStep = null;
     updateHUD();
     updatePitchLabels();
     updateArpeggioUI();
@@ -3968,7 +4008,9 @@
     $('#resetHarmonyClockBtn').addEventListener('click', () => {
       state.harmonyStartTime = nowMs();
       state.lastHarmonyStep = -1;
+      state.scheduledHarmonyStep = null;
       state.lastMetronomeBeat = -1;
+      state.scheduledMetronomeBeat = null;
       updateArpeggioUI();
       updateHarmonyVisual(true, true);
       feedback('Harmony restarted', '#67f4a4');
@@ -4936,11 +4978,19 @@
     refs.timingPromptBeatsSelect.addEventListener('change', () => setTimingPromptBeats(refs.timingPromptBeatsSelect.value));
     ['trimStart','loopIn','loopOut','trimEnd'].forEach(id => $(`#${id}`).addEventListener('input', () => { readMarkersFromSliders(id); schedulePersistImportedSample(); }));
     refs.sampleRoot.addEventListener('change', () => { state.sampleRootMidi = Number(refs.sampleRoot.value); invalidatePitchCache('sample root changed'); schedulePitchCacheBuild(); schedulePersistImportedSample(); updateSampleUI(); saveSettings(); });
-    refs.tonicSelect.addEventListener('change', () => { state.tonicMidi = Number(refs.tonicSelect.value); invalidatePitchCache('tonic changed'); schedulePitchCacheBuild(); state.lastHarmonyStep = -1; updateHUD(); updatePitchLabels(); syncRootPad(true); saveSettings(); });
-    refs.scaleSelect.addEventListener('change', () => { interruptAutoReleaseTail('note set selected in sampler'); state.scaleName = refs.scaleSelect.value; invalidatePitchCache('note set changed'); schedulePitchCacheBuild(); state.lastHarmonyStep = -1; updateHUD(); updatePitchLabels(); syncRootPad(true); saveSettings(); });
-    refs.harmonyProgression.addEventListener('change', () => { state.harmonyPattern = refs.harmonyProgression.value; state.harmonyStartTime = nowMs(); state.lastHarmonyStep = -1; state.lastMetronomeBeat = -1; updatePitchLabels(); updateHarmonyVisual(true, true); syncRootPad(true); saveSettings(); log('Hidden progression changed', state.harmonyPattern); });
-    refs.harmonyBpm.addEventListener('change', () => { state.harmonyBpm = clamp(Number(refs.harmonyBpm.value) || 96, 40, 240); refs.harmonyBpm.value = String(state.harmonyBpm); state.harmonyStartTime = nowMs(); state.lastHarmonyStep = -1; state.lastMetronomeBeat = -1; updateHarmonyVisual(true, true); saveSettings(); });
-    refs.harmonyChordBeats.addEventListener('change', () => { state.harmonyChordBeats = Number(refs.harmonyChordBeats.value) || 8; state.harmonyStartTime = nowMs(); state.lastHarmonyStep = -1; state.lastMetronomeBeat = -1; updateHarmonyVisual(true, true); saveSettings(); });
+    refs.tonicSelect.addEventListener('change', () => { state.tonicMidi = Number(refs.tonicSelect.value); invalidatePitchCache('tonic changed'); schedulePitchCacheBuild(); state.lastHarmonyStep = -1;
+      state.scheduledHarmonyStep = null; updateHUD(); updatePitchLabels(); syncRootPad(true); saveSettings(); });
+    refs.scaleSelect.addEventListener('change', () => { interruptAutoReleaseTail('note set selected in sampler'); state.scaleName = refs.scaleSelect.value; invalidatePitchCache('note set changed'); schedulePitchCacheBuild(); state.lastHarmonyStep = -1;
+      state.scheduledHarmonyStep = null; updateHUD(); updatePitchLabels(); syncRootPad(true); saveSettings(); });
+    refs.harmonyProgression.addEventListener('change', () => { state.harmonyPattern = refs.harmonyProgression.value; state.harmonyStartTime = nowMs(); state.lastHarmonyStep = -1;
+      state.scheduledHarmonyStep = null; state.lastMetronomeBeat = -1;
+      state.scheduledMetronomeBeat = null; updatePitchLabels(); updateHarmonyVisual(true, true); syncRootPad(true); saveSettings(); log('Hidden progression changed', state.harmonyPattern); });
+    refs.harmonyBpm.addEventListener('change', () => { state.harmonyBpm = clamp(Number(refs.harmonyBpm.value) || 96, 40, 240); refs.harmonyBpm.value = String(state.harmonyBpm); state.harmonyStartTime = nowMs(); state.lastHarmonyStep = -1;
+      state.scheduledHarmonyStep = null; state.lastMetronomeBeat = -1;
+      state.scheduledMetronomeBeat = null; updateHarmonyVisual(true, true); saveSettings(); });
+    refs.harmonyChordBeats.addEventListener('change', () => { state.harmonyChordBeats = Number(refs.harmonyChordBeats.value) || 8; state.harmonyStartTime = nowMs(); state.lastHarmonyStep = -1;
+      state.scheduledHarmonyStep = null; state.lastMetronomeBeat = -1;
+      state.scheduledMetronomeBeat = null; updateHarmonyVisual(true, true); saveSettings(); });
     refs.auditoryMetronome.addEventListener('change', async () => {
       state.auditoryMetronome = refs.auditoryMetronome.value === 'on';
       if (state.auditoryMetronome) {
@@ -6118,6 +6168,7 @@
       state.scaleName = melody.scaleName; // Public-domain songs use fixed diatonic degrees so their familiar interval pattern stays intact.
       refs.scaleSelect.value = state.scaleName;
       state.lastHarmonyStep = -1;
+      state.scheduledHarmonyStep = null;
       updateHUD();
       updatePitchLabels();
       syncRootPad(true);
@@ -6132,7 +6183,9 @@
     document.body.classList.toggle('backup-accompaniment',!!state.game.backupAccompaniment);
     state.visibilityPauseStarted = 0;
     state.lastHarmonyStep = -1;
+    state.scheduledHarmonyStep = null;
     state.lastMetronomeBeat = -1;
+    state.scheduledMetronomeBeat = null;
     state.paused = false;
     updateHUD();
     closeAllModals();
@@ -6165,7 +6218,9 @@
     state.visibilityPauseStarted = 0;
     state.harmonyStartTime = nowMs();
     state.lastHarmonyStep = -1;
+    state.scheduledHarmonyStep = null;
     state.lastMetronomeBeat = -1;
+    state.scheduledMetronomeBeat = null;
     clearNoteElements();
     state.game.events = [];
     state.game.songType = null;
@@ -6208,7 +6263,9 @@
       } else if (!state.game.active && state.gameplaySelection === 'freeplay') {
         state.harmonyStartTime = nowMs(); // Starting Free Play from pause begins a fresh shared beat/harmony clock.
         state.lastHarmonyStep = -1;
+        state.scheduledHarmonyStep = null;
         state.lastMetronomeBeat = -1;
+        state.scheduledMetronomeBeat = null;
         updateFreePlayStatus('Free Play.');
       }
       refs.transportStatus.innerHTML = state.game.active ? '<strong>Resumed.</strong>' : refs.transportStatus.innerHTML;
@@ -6393,6 +6450,7 @@
       requestAnimationFrame(updateGameFrame);
       return;
     }
+    scheduleTransportAudioAhead(); // Queues predictable beat/chord audio before the render frame reaches the boundary, matching automatic-note look-ahead.
     const harmonyStep = currentHarmonyStep();
     const beatData = currentHarmonyBeatData();
     const chordChanged = harmonyStep !== state.lastHarmonyStep;
@@ -6402,14 +6460,14 @@
       state.lastHarmonyStep = harmonyStep;
       updateArpeggioUI();
       if (usesAutomaticPluckInput() && state.pluckInputMode && currentFretData()) restartActiveFrettedPluck();
-      syncRootPad();
+      if (state.scheduledHarmonyStep !== harmonyStep) syncRootPad(); // Fallback only: the normal path was already scheduled on the AudioContext clock.
     }
     else if (state.rootPadEnabled && state.audioContext?.state === 'running' && !state.rootPadVoices.some(voice => !voice.stopping && voice.active !== false)) {
       syncRootPad(true); // Self-heals a pad voice that ended or failed without waiting for the next chord boundary.
     }
     if (beatChanged) {
       state.lastMetronomeBeat = beatData.absoluteBeat;
-      playMetronomeClick(beatData);
+      if (state.scheduledMetronomeBeat !== beatData.absoluteBeat) playMetronomeClick(beatData); // Fallback for startup or a stall longer than the look-ahead horizon.
     }
     if (chordChanged || beatChanged) updateHarmonyVisual(chordChanged, beatChanged);
     updateFreePlayCapoCue(); // Free-play chord guidance runs continuously even though there are no song-note events to spawn.
@@ -6720,7 +6778,9 @@
     resetHarmony() {
       state.harmonyStartTime = nowMs();
       state.lastHarmonyStep = -1;
+      state.scheduledHarmonyStep = null;
       state.lastMetronomeBeat = -1;
+      state.scheduledMetronomeBeat = null;
       updateArpeggioUI();
       updateHarmonyVisual(true, true);
       feedback('Harmony restarted', '#67f4a4');
@@ -6801,7 +6861,9 @@
       if (refs.harmonyProgression) refs.harmonyProgression.value = requested;
       state.harmonyStartTime = nowMs();
       state.lastHarmonyStep = -1;
+      state.scheduledHarmonyStep = null;
       state.lastMetronomeBeat = -1;
+      state.scheduledMetronomeBeat = null;
       updatePitchLabels();
       updateHarmonyVisual(true,true);
       syncRootPad(true);
@@ -6937,6 +6999,11 @@
         selectedSongTitle: songTitle(state.selectedSong),
         harmonyPattern: state.harmonyPattern,
         paused: !!state.paused,
+        transportAudioLookaheadMs: TRANSPORT_AUDIO_LOOKAHEAD_MS,
+        scheduledMetronomeBeat: state.scheduledMetronomeBeat,
+        scheduledHarmonyStep: state.scheduledHarmonyStep,
+        transportAbsoluteBeat: sharedTransportData().transportAbsoluteBeat,
+        transportHarmonyStep: currentHarmonyStep(),
       };
     },
   };

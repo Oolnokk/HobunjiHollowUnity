@@ -5,10 +5,23 @@
   if (!THREE || window.HobunjiSurfaceStretchUV?.installed) return;
 
   const DEFAULT_SPLIT_ANGLE_DEG = 24; // Used to match the Furniture + Avatar Author's default edge-adjacent surface split threshold.
+  const DEFAULT_EDGE_SOURCE_FRACTION = 0.16; // Used as the protected source-PNG border width on each side.
+  const DEFAULT_EDGE_REFERENCE_WORLD_SIZE = 6; // Used as the world size at which one complete PNG is at its native stretch scale.
+  const MAX_EDGE_SURFACE_FRACTION = 0.495; // Used only when a surface is too small to fit both native-size borders without overlap.
   const MAX_RELAX_ITERATIONS = 140; // Used by the harmonic UV solver after an irregular perimeter is pinned to the texture square.
   const RELAX_EPSILON = 1e-5; // Used to stop the harmonic solver once free UV vertices have converged.
   const DEBUG_HISTORY_LIMIT = 16; // Used to keep mobile-visible mapping history bounded.
-  const debugState = { mappedMeshes: 0, mappedGeometries: 0, patches: 0, fallbacks: 0, successLogs: 0, history: [] }; // Used by snapshot() and the in-game render log.
+  const CROSS_MESH_UV_OWNER = 'plateau-cliff-cross-mesh-v1'; // Used to preserve a connected plateau solve that spans several mesh objects.
+  const debugState = {
+    mappedMeshes: 0,
+    mappedGeometries: 0,
+    patches: 0,
+    fallbacks: 0,
+    edgeProtectedPatches: 0,
+    edgeFallbackPatches: 0,
+    successLogs: 0,
+    history: [],
+  }; // Used by snapshot() and the in-game render log.
   const wrapperState = { borderDeps: null, patchedObjects: new WeakSet() }; // Used by late-load wrappers around terrain builders.
 
   function debugLog(message, level = 'info') {
@@ -18,7 +31,7 @@
     else console.debug(text);
   }
 
-  function clamp01(value) { return Math.max(0, Math.min(1, value)); }
+  function clamp01(value) { return Math.max(0, Math.min(1, Number(value) || 0)); }
   function edgeKey(a, b) { return a < b ? `${a}|${b}` : `${b}|${a}`; }
 
   function chooseQuantizationEpsilon(geometry) {
@@ -74,33 +87,24 @@
     return clone;
   }
 
-  function collectTriangles(geometry, materialIndex, epsilon, maxPatchWorldSize = null) {
+  function collectTriangles(geometry, materialIndex, epsilon) {
     const position = geometry.getAttribute('position'); // Used to read each non-indexed triangle corner.
     const selected = selectedTriangleSet(geometry, materialIndex); // Used to omit non-cliff triangles on shared plateau geometry.
     const triangleCount = Math.floor(position.count / 3); // Used as the source triangle count in the expanded geometry.
     const triangles = []; // Used by adjacency recognition and UV writing.
     const vertexPositions = new Map(); // Used to retain one representative 3D position for each logical topology vertex.
     const edgeToTriangles = new Map(); // Used to build the same shared-edge adjacency graph as the furniture editor.
-    geometry.computeBoundingBox();
-    const patchOrigin = geometry.boundingBox?.min || new THREE.Vector3(); // Used only by optional bounded natural-surface UV islands.
 
     for (let triangleIndex = 0; triangleIndex < triangleCount; triangleIndex++) {
       if (selected && !selected.has(triangleIndex)) continue;
       const base = triangleIndex * 3; // Used as the first BufferAttribute vertex for this triangle.
-      let keys = [vertexKey(position, base, epsilon), vertexKey(position, base + 1, epsilon), vertexKey(position, base + 2, epsilon)]; // Used to reconstruct shared topology edges.
+      const keys = [vertexKey(position, base, epsilon), vertexKey(position, base + 1, epsilon), vertexKey(position, base + 2, epsilon)]; // Used to reconstruct shared topology edges without artificial spatial patch seams.
       const a = new THREE.Vector3(position.getX(base), position.getY(base), position.getZ(base)); // Used to calculate the face normal.
       const b = new THREE.Vector3(position.getX(base + 1), position.getY(base + 1), position.getZ(base + 1)); // Used to calculate the face normal.
       const c = new THREE.Vector3(position.getX(base + 2), position.getY(base + 2), position.getZ(base + 2)); // Used to calculate the face normal.
       const cross = new THREE.Vector3().crossVectors(b.clone().sub(a), c.clone().sub(a)); // Used for face area and orientation.
       const twiceArea = cross.length(); // Used as a degeneracy test and later area weight.
       const normal = twiceArea > 1e-10 ? cross.multiplyScalar(1 / twiceArea) : new THREE.Vector3(0, 1, 0); // Used by the furniture-style adjacent-face angle test.
-      if (Number.isFinite(maxPatchWorldSize) && maxPatchWorldSize > 0) {
-        const minX = Math.min(a.x, b.x, c.x), minZ = Math.min(a.z, b.z, c.z); // Keeps both triangles of a generated cliff cell in the same bounded UV region.
-        const patchX = Math.floor((minX - patchOrigin.x + epsilon) / maxPatchWorldSize); // Used to prevent one connected wall from consuming one PNG across its full width.
-        const patchZ = Math.floor((minZ - patchOrigin.z + epsilon) / maxPatchWorldSize); // Used to bound the same surface along its depth without changing positions.
-        const patchSuffix = `@uvpatch:${patchX},${patchZ}`; // Changes adjacency identity only without colliding with edgeKey's separator; rendered cliff geometry remains watertight.
-        keys = keys.map(key => key + patchSuffix);
-      }
       const localIndex = triangles.length; // Used by compact adjacency lists instead of sparse source triangle numbers.
       triangles.push({ triangleIndex, base, keys, normal, area: twiceArea * 0.5 });
 
@@ -121,11 +125,6 @@
     return { triangles, vertexPositions, edgeToTriangles };
   }
 
-  // Mirrors the Furniture + Avatar Author's surface recognition rule: topology
-  // first, then flood-fill across a real shared edge only when the CURRENT face
-  // and neighboring face are within the split angle. There is deliberately no
-  // seed-normal or growing-average veto, so a gently curving cliff remains one
-  // recognized surface when every local step is smooth enough.
   function segmentSurfaceIslands(topology, splitAngleDeg) {
     const triangles = topology.triangles; // Used as the face set consumed by the furniture-style flood fill.
     const cosThreshold = Math.cos(THREE.MathUtils.degToRad(splitAngleDeg)); // Used as the adjacent-face normal similarity threshold.
@@ -336,7 +335,7 @@
   }
 
   function projectedBounds(projected, keys) {
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity; // Used to normalize fallback and interior UV initialization.
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity; // Used to normalize fallback, interior UV initialization, and world-scale edge preservation.
     for (const key of keys) {
       const point = projected.get(key); // Used to extend projected surface bounds.
       minX = Math.min(minX, point[0]); maxX = Math.max(maxX, point[0]); minY = Math.min(minY, point[1]); maxY = Math.max(maxY, point[1]);
@@ -381,8 +380,49 @@
     for (const key of data.vertices) uvByKey.set(key, projectedUv(data.projected.get(key), bounds, 0));
   }
 
-  function unwrapIsland(topology, island, uvAttribute) {
-    const data = islandData(topology, island); // Used to derive this recognized surface's perimeter, adjacency, and local 2D projection.
+  function protectedSurfaceEdgeFraction(worldSpan, sourceEdgeFraction, referenceWorldSize) {
+    const nativeEdgeWorldSize = sourceEdgeFraction * referenceWorldSize; // Used as the fixed perpendicular world thickness assigned to the PNG border.
+    if (!(worldSpan > 1e-6) || !(nativeEdgeWorldSize > 0)) return sourceEdgeFraction;
+    return Math.min(MAX_EDGE_SURFACE_FRACTION, nativeEdgeWorldSize / worldSpan);
+  }
+
+  function remapProtectedEdgeCoordinate(value, sourceEdgeFraction, surfaceEdgeFraction) {
+    const t = clamp01(value); // Used as the solved normalized surface coordinate before nine-slice-style redistribution.
+    const sourceEdge = Math.max(0, Math.min(0.495, Number(sourceEdgeFraction) || 0)); // Used as the raw-PNG border fraction that must retain its perpendicular scale.
+    const surfaceEdge = Math.max(1e-6, Math.min(MAX_EDGE_SURFACE_FRACTION, Number(surfaceEdgeFraction) || sourceEdge)); // Used as the world-derived destination band occupied by that source edge.
+    if (!(sourceEdge > 0) || Math.abs(surfaceEdge - sourceEdge) < 1e-9) return t;
+    if (t <= surfaceEdge) return (t / surfaceEdge) * sourceEdge;
+    if (t >= 1 - surfaceEdge) return 1 - sourceEdge + ((t - (1 - surfaceEdge)) / surfaceEdge) * sourceEdge;
+    const surfaceCenter = Math.max(1e-6, 1 - surfaceEdge * 2); // Used as the destination center span that absorbs any extra stretch.
+    const sourceCenter = Math.max(0, 1 - sourceEdge * 2); // Used as the source-PNG center span stretched over the remaining destination.
+    return sourceEdge + ((t - surfaceEdge) / surfaceCenter) * sourceCenter;
+  }
+
+  function preserveEdgeScale(data, uvByKey, options) {
+    const bounds = projectedBounds(data.projected, data.vertices); // Used as the island-local physical span corresponding to the solved U/V axes.
+    const sourceEdgeFraction = options.edgeSourceFraction; // Used as the protected source-PNG border width on both axes.
+    const referenceWorldSize = options.edgeReferenceWorldSize; // Used as the native one-PNG world span on both axes.
+    const surfaceEdgeU = protectedSurfaceEdgeFraction(bounds.dx, sourceEdgeFraction, referenceWorldSize); // Used to keep left/right border thickness fixed in world units.
+    const surfaceEdgeV = protectedSurfaceEdgeFraction(bounds.dy, sourceEdgeFraction, referenceWorldSize); // Used to keep top/bottom border thickness fixed in world units.
+    for (const [key, value] of uvByKey) {
+      uvByKey.set(key, [
+        remapProtectedEdgeCoordinate(value[0], sourceEdgeFraction, surfaceEdgeU),
+        remapProtectedEdgeCoordinate(value[1], sourceEdgeFraction, surfaceEdgeV),
+      ]);
+    }
+    return {
+      sourceEdgeFraction,
+      referenceWorldSize,
+      edgeWorldSize: sourceEdgeFraction * referenceWorldSize,
+      projectedSpanU: bounds.dx,
+      projectedSpanV: bounds.dy,
+      surfaceEdgeFractionU: surfaceEdgeU,
+      surfaceEdgeFractionV: surfaceEdgeV,
+    };
+  }
+
+  function unwrapIsland(topology, island, uvAttribute, options) {
+    const data = islandData(topology, island); // Used to derive this recognized surface's perimeter, adjacency, local projection, and physical edge scale.
     const loops = traceBoundaryLoops(data.boundaryAdjacency); // Used to identify the outer irregular outline and any holes.
     let outerLoop = null; // Used as the boundary component that consumes the full texture-square outline.
     let outerArea = -1; // Used to choose the largest projected boundary as the outer perimeter.
@@ -399,79 +439,131 @@
       const extraLoops = loops.filter(loop => loop !== outerLoop); // Used to keep holes from collapsing during relaxation.
       relaxInteriorUvs(data, outerLoop, extraLoops, uvByKey);
     }
+    const edgeScale = preserveEdgeScale(data, uvByKey, options); // Used after the continuous unwrap so only the center absorbs scale beyond the native PNG size.
     for (const triangleIndex of island.triangleIndices) {
       const triangle = topology.triangles[triangleIndex]; // Used to write solved logical UVs back to this triangle's independent corners.
       for (let corner = 0; corner < 3; corner++) {
-        const uv = uvByKey.get(triangle.keys[corner]) || [0, 0]; // Used as this corner's final texture coordinate.
+        const uv = uvByKey.get(triangle.keys[corner]) || [0, 0]; // Used as this corner's final edge-preserving texture coordinate.
         uvAttribute.setXY(triangle.base + corner, uv[0], uv[1]);
       }
     }
-    return { usedFallback, boundaryLoops: loops.length, vertices: data.vertices.size };
+    return { usedFallback, boundaryLoops: loops.length, vertices: data.vertices.size, edgeScale };
+  }
+
+  function mappingOptions(options = {}) {
+    const sourceEdgeRaw = Number(options.edgeSourceFraction); // Used to allow specialized authored surfaces to override only the central source-border fraction.
+    const referenceRaw = Number(options.edgeReferenceWorldSize ?? options.maxPatchWorldSize); // Used to treat the old patch-size hint as a compatibility alias for native one-PNG scale.
+    const edgeSourceFraction = Number.isFinite(sourceEdgeRaw) ? Math.max(0, Math.min(0.495, sourceEdgeRaw)) : DEFAULT_EDGE_SOURCE_FRACTION; // Used by every island's perpendicular edge preservation.
+    const edgeReferenceWorldSize = Number.isFinite(referenceRaw) ? Math.max(0.5, referenceRaw) : DEFAULT_EDGE_REFERENCE_WORLD_SIZE; // Used by every island to convert the source border into fixed world thickness.
+    return { edgeSourceFraction, edgeReferenceWorldSize };
   }
 
   function mapGeometry(sourceGeometry, options = {}) {
     if (!sourceGeometry?.getAttribute?.('position')) return sourceGeometry;
     const splitAngleDeg = Number.isFinite(Number(options.angleToleranceDeg)) ? Math.max(1, Math.min(89, Number(options.angleToleranceDeg))) : DEFAULT_SPLIT_ANGLE_DEG; // Used as the furniture-style adjacent-face split threshold.
     const materialIndex = options.materialIndex == null ? null : Number(options.materialIndex); // Used to isolate only the cliff material slot on a shared grass/cliff mesh.
-    const maxPatchWorldSize = Number.isFinite(Number(options.maxPatchWorldSize)) ? Math.max(0.5, Number(options.maxPatchWorldSize)) : null; // Optional cap used by continuous generated walls that would otherwise become one enormous surface.
-    const signature = `surface-island-v2|furniture-adjacency|angle=${splitAngleDeg}|material=${materialIndex == null ? '*' : materialIndex}|maxPatch=${maxPatchWorldSize == null ? '*' : maxPatchWorldSize}`; // Used to invalidate every older seed/average-normal unwrap automatically.
+    const edgeOptions = mappingOptions(options); // Used as the single centralized edge-preserving stretch policy for every caller.
+    const signature = `surface-island-v3|furniture-adjacency|angle=${splitAngleDeg}|material=${materialIndex == null ? '*' : materialIndex}|edge=${edgeOptions.edgeSourceFraction}|reference=${edgeOptions.edgeReferenceWorldSize}`; // Used to invalidate all older uniform/perimeter-compression mappings automatically.
     const sourcePosition = sourceGeometry.getAttribute('position'); // Used to validate a cached signature against the actual surviving vertex buffer.
     const sourceUv = sourceGeometry.getAttribute('uv'); // Used to reject stale metadata when downstream code lost the UV attribute.
-    const cachedUvValid = !!(sourcePosition && sourceUv?.count === sourcePosition.count && Number(sourceUv.itemSize || 2) >= 2); // Used to trust the v2 signature only when real UV data still exists.
+    const cachedUvValid = !!(sourcePosition && sourceUv?.count === sourcePosition.count && Number(sourceUv.itemSize || 2) >= 2); // Used to trust the v3 signature only when real UV data still exists.
     if (sourceGeometry.userData?.hobunjiSurfaceStretchSignature === signature && cachedUvValid) return sourceGeometry;
 
     const geometry = cloneForIndependentUvs(sourceGeometry); // Used as the seam-capable geometry that replaces the source mesh geometry.
     const uv = seedUvIfMissing(geometry); // Used as the writable final UV buffer while preserving non-target material coordinates.
     if (!uv) return sourceGeometry;
     const epsilon = chooseQuantizationEpsilon(geometry); // Used to reconstruct shared topology after non-indexing.
-    const topology = collectTriangles(geometry, materialIndex, epsilon, maxPatchWorldSize); // Used by furniture-style surface recognition and irregular perimeter mapping.
+    const topology = collectTriangles(geometry, materialIndex, epsilon); // Used by furniture-style surface recognition without obsolete fixed-distance UV patch splitting.
     if (!topology.triangles.length) return sourceGeometry;
-    const islands = segmentSurfaceIslands(topology, splitAngleDeg); // Used so each furniture-recognized cliff surface gets its own complete PNG domain.
+    const islands = segmentSurfaceIslands(topology, splitAngleDeg); // Used so each true connected furniture-recognized surface gets one continuous PNG domain.
     let fallbackCount = 0; // Used to summarize malformed/tiny surface fallbacks.
     let boundaryLoopCount = 0; // Used to expose recognized-boundary complexity in diagnostics.
+    const edgeBands = []; // Used to expose per-island physical edge preservation without requiring DevTools geometry inspection.
     for (const island of islands) {
-      const report = unwrapIsland(topology, island, uv); // Used to map one recognized surface after segmentation is complete.
+      const report = unwrapIsland(topology, island, uv, edgeOptions); // Used to map one recognized surface and then preserve its PNG borders at native perpendicular scale.
       if (report.usedFallback) fallbackCount++;
       boundaryLoopCount += report.boundaryLoops;
+      edgeBands.push(report.edgeScale);
     }
     uv.needsUpdate = true;
+    const edgeWorldSize = edgeOptions.edgeSourceFraction * edgeOptions.edgeReferenceWorldSize; // Used by reports and compatibility metadata as the protected border's physical thickness.
+    const surfaceReport = {
+      version: 3,
+      segmentation: 'furniture-edge-adjacency',
+      mapping: 'edge-preserving-nine-slice',
+      angleToleranceDeg: splitAngleDeg,
+      materialIndex,
+      maxPatchWorldSize: null,
+      legacyPatchHintIgnored: Object.prototype.hasOwnProperty.call(options, 'maxPatchWorldSize'),
+      edgeSourceFraction: edgeOptions.edgeSourceFraction,
+      edgeReferenceWorldSize: edgeOptions.edgeReferenceWorldSize,
+      edgeWorldSize,
+      patchCount: islands.length,
+      fallbackCount,
+      boundaryLoopCount,
+      edgeBands,
+    }; // Used as the authoritative shared surface-mapping report for farm, wilderness, rocks, cliffs, and runtime repair.
+    const perimeterFrame = {
+      version: 2,
+      mapping: 'edge-preserving-nine-slice',
+      sourceEdgeFraction: edgeOptions.edgeSourceFraction,
+      referenceWorldSize: edgeOptions.edgeReferenceWorldSize,
+      edgeWorldSize,
+      materialIndex,
+      patchCount: islands.length,
+      warpedUvCount: topology.triangles.length * 3,
+      ignoredPatchSplitting: true,
+    }; // Used for compatibility with the later post-Jigsaw/cross-mesh diagnostics layer.
+    surfaceReport.perimeterFrame = perimeterFrame;
     geometry.userData = Object.assign({}, geometry.userData, {
       hobunjiSurfaceStretchSignature: signature,
-      hobunjiSurfaceStretch: {
-        version: 2,
-        segmentation: 'furniture-edge-adjacency',
-        angleToleranceDeg: splitAngleDeg,
-        materialIndex,
-        maxPatchWorldSize,
-        patchCount: islands.length,
-        fallbackCount,
-        boundaryLoopCount,
-      },
+      hobunjiSurfaceStretch: surfaceReport,
+      hobunjiSurfacePerimeterFrameSignature: `edge-preserving-v2|base=${signature}`,
+      hobunjiSurfacePerimeterFrame: perimeterFrame,
     });
     debugState.mappedGeometries++;
     debugState.patches += islands.length;
     debugState.fallbacks += fallbackCount;
+    debugState.edgeProtectedPatches += islands.length;
+    debugState.edgeFallbackPatches += fallbackCount;
     return geometry;
   }
 
   function mapMesh(mesh, options = {}) {
     if (!mesh?.isMesh || !mesh.geometry) return null;
     const before = mesh.geometry; // Used to detect whether this mapping call replaced geometry.
-    const mapped = mapGeometry(before, options); // Used as the furniture-recognized, independently seamable output geometry.
+    const mapped = mapGeometry(before, options); // Used as the furniture-recognized, independently seamable, edge-preserving output geometry.
     if (mapped !== before) { mesh.geometry = mapped; debugState.mappedMeshes++; }
     const report = mesh.geometry?.userData?.hobunjiSurfaceStretch || null; // Used for mobile-visible mapping diagnostics.
     if (report) {
       const label = options.label || mesh.name || '(unnamed mesh)'; // Used to identify the mapped terrain piece without DevTools.
-      debugState.history.push({ label, patchCount: report.patchCount, fallbackCount: report.fallbackCount, materialIndex: report.materialIndex, segmentation: report.segmentation });
+      debugState.history.push({
+        label,
+        patchCount: report.patchCount,
+        fallbackCount: report.fallbackCount,
+        materialIndex: report.materialIndex,
+        segmentation: report.segmentation,
+        mapping: report.mapping,
+        edgeWorldSize: report.edgeWorldSize,
+      });
       while (debugState.history.length > DEBUG_HISTORY_LIMIT) debugState.history.shift();
-      if (report.fallbackCount) debugLog(`${label}: ${report.patchCount} furniture-style surface(s), ${report.fallbackCount} fallback unwrap(s).`, 'warn');
-      else if (debugState.successLogs < 8) { debugState.successLogs++; debugLog(`${label}: ${report.patchCount} furniture-style connected surface(s), full PNG square mapped to each.`); }
+      if (report.fallbackCount) debugLog(`${label}: ${report.patchCount} connected surface(s), ${report.fallbackCount} fallback unwrap(s); protected PNG border=${report.edgeWorldSize.toFixed(3)} world units.`, 'warn');
+      else if (debugState.successLogs < 8) {
+        debugState.successLogs++;
+        debugLog(`${label}: ${report.patchCount} connected surface(s), one continuous PNG each; border keeps ${report.edgeWorldSize.toFixed(3)} world-unit thickness and center absorbs stretch.`);
+      }
     }
     return report;
   }
 
   function remapNaturalTerrainMesh(mesh, label = '') {
     if (!mesh?.isMesh) return null;
+    const crossMeshOwner = mesh.userData?.naturalSurfaceCrossMeshUvOwner; // Used to keep a combined plateau UV solve authoritative during later runtime repair.
+    const position = mesh.geometry?.getAttribute?.('position'); // Used to validate that a preserved cross-mesh solve still has real geometry.
+    const uv = mesh.geometry?.getAttribute?.('uv'); // Used to invalidate cross-mesh ownership automatically if downstream code actually loses its UV buffer.
+    if (crossMeshOwner === CROSS_MESH_UV_OWNER && position && uv?.count === position.count && Number(uv.itemSize || 0) >= 2) {
+      return mesh.geometry?.userData?.hobunjiSurfaceStretch || null;
+    }
     const surface = mesh.userData?.naturalSurface; // Used to route natural rocks/cliffs while leaving cylindrical foliage alone.
     const cliffSlot = mesh.userData?.naturalSurfaceCliffSlot; // Used to isolate stone triangles on a shared plateau grass/cliff geometry.
     if (cliffSlot != null) return mapMesh(mesh, { materialIndex: Number(cliffSlot), label: label || `${mesh.name || 'terrain'} cliff-slot` });
@@ -568,22 +660,59 @@
     }
   }
 
-  window.HobunjiSurfaceStretchUV = {
+  const mapperApi = {
     installed: true,
     mapGeometry,
     mapMesh,
     remapNaturalTerrainMesh,
-    settings: { angleToleranceDeg: DEFAULT_SPLIT_ANGLE_DEG },
+    settings: {
+      angleToleranceDeg: DEFAULT_SPLIT_ANGLE_DEG,
+      edgeSourceFraction: DEFAULT_EDGE_SOURCE_FRACTION,
+      edgeReferenceWorldSize: DEFAULT_EDGE_REFERENCE_WORLD_SIZE,
+      edgeWorldSize: DEFAULT_EDGE_SOURCE_FRACTION * DEFAULT_EDGE_REFERENCE_WORLD_SIZE,
+    },
     snapshot() {
       return {
-        version: 2,
+        version: 3,
         segmentation: 'furniture-edge-adjacency',
+        mapping: 'edge-preserving-nine-slice',
         angleToleranceDeg: DEFAULT_SPLIT_ANGLE_DEG,
+        edgeSourceFraction: DEFAULT_EDGE_SOURCE_FRACTION,
+        edgeReferenceWorldSize: DEFAULT_EDGE_REFERENCE_WORLD_SIZE,
+        edgeWorldSize: DEFAULT_EDGE_SOURCE_FRACTION * DEFAULT_EDGE_REFERENCE_WORLD_SIZE,
         mappedMeshes: debugState.mappedMeshes,
         mappedGeometries: debugState.mappedGeometries,
         patches: debugState.patches,
         fallbacks: debugState.fallbacks,
+        edgeProtectedPatches: debugState.edgeProtectedPatches,
+        edgeFallbackPatches: debugState.edgeFallbackPatches,
         recent: debugState.history.slice(),
+      };
+    },
+  }; // Used as the single authoritative stretch-to-fit implementation consumed by every natural-surface caller.
+  mapperApi.__continuousPerimeterFrameWrapped = true; // Prevents the legacy post-Jigsaw module from layering its old fixed-percent edge compression over this central implementation.
+  window.HobunjiSurfaceStretchUV = mapperApi;
+
+  window.HobunjiSurfacePerimeterFrame = {
+    installed: true,
+    centralizedInSurfaceMapper: true,
+    sourceEdgeFraction: DEFAULT_EDGE_SOURCE_FRACTION,
+    referenceWorldSize: DEFAULT_EDGE_REFERENCE_WORLD_SIZE,
+    edgeWorldSize: DEFAULT_EDGE_SOURCE_FRACTION * DEFAULT_EDGE_REFERENCE_WORLD_SIZE,
+    snapshot() {
+      const surface = mapperApi.snapshot(); // Used to preserve the old diagnostics API while reporting the new central edge-preserving mapper.
+      return {
+        installed: true,
+        centralizedInSurfaceMapper: true,
+        mapping: surface.mapping,
+        sourceEdgeFraction: surface.edgeSourceFraction,
+        referenceWorldSize: surface.edgeReferenceWorldSize,
+        edgeWorldSize: surface.edgeWorldSize,
+        warpedGeometries: surface.mappedGeometries,
+        warpedUvs: null,
+        edgeProtectedPatches: surface.edgeProtectedPatches,
+        edgeFallbackPatches: surface.edgeFallbackPatches,
+        recent: surface.recent,
       };
     },
   };
@@ -593,5 +722,5 @@
   chainGlobal('ZonePlateauMesa', patchPlateauMesa);
   chainGlobal('BorderTerrain', patchBorderTerrain);
 
-  debugLog(`installed v2: furniture-style shared-edge surface recognition (${DEFAULT_SPLIT_ANGLE_DEG}°) runs before irregular full-square PNG mapping.`);
+  debugLog(`installed v3: one centralized furniture-style surface mapper keeps the outer ${(DEFAULT_EDGE_SOURCE_FRACTION * 100).toFixed(0)}% PNG border at ${(DEFAULT_EDGE_SOURCE_FRACTION * DEFAULT_EDGE_REFERENCE_WORLD_SIZE).toFixed(2)} world-unit thickness; only the center absorbs additional stretch.`);
 })();
