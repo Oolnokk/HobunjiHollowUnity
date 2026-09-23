@@ -801,6 +801,30 @@
     return true;
   }
 
+  function playerGreetingWaitMsForWalker(walker, now = performance.now()) {
+    const speakerId = String(walker?.rec?.id || ''); // Speaker whose pet reaction is deciding whether an ordinary player greeting still has priority.
+    if (!speakerId || !state.deps || walker?.area !== state.deps.getCurrentArea?.()) return 0;
+    if (state.deps.isDialogueOpen?.() || state.deps.isPaused?.() || window.HobunjiDrunkGameplayBridge?.isNpcBlackedOut?.(speakerId)) return 0;
+    const player = state.deps.getPlayerPosition?.();
+    if (!player) return 0;
+    const day = Number(state.deps.getDay?.()) || 1;
+    ensureGreetingLedger(day);
+    const activeGreeting = state.active.find(event => event.greeting && event.speakerId === speakerId); // Existing rendered greeting always owns the speaker until its fade completes.
+    if (activeGreeting) return Math.max(0, activeGreeting.startedAt + activeGreeting.durationMs - now);
+    const key = greetPairKey(day, speakerId, 'player');
+    if (state.greeted.has(key)) return 0; // This NPC already completed/started today's player greeting, so pet speech no longer needs to yield.
+    const distance = Math.hypot(walker.root?.position?.x - player.x, walker.root?.position?.z - player.z);
+    if (!Number.isFinite(distance) || distance > state.settings.greetingRadiusTiles) return 0;
+    const policy = playerGreetingPolicy(walker);
+    if (!policy.allowed) return 0;
+    const proximityKey = `${speakerId}>player`;
+    const enteredAt = state.proximity.get(proximityKey);
+    const dwellRemaining = enteredAt == null ? 500 : Math.max(0, 300 - (now - enteredAt)); // No entry means the next 5 Hz greeting scan still needs to register proximity, then satisfy its 300 ms dwell.
+    const cooldownRemaining = Math.max(0, state.settings.greetingCooldownMs - (now - state.lastGreetingAt)); // Global greeting cooldown can legitimately postpone this NPC well beyond the old fixed 700 ms pet grace.
+    const wait = Math.max(dwellRemaining, cooldownRemaining);
+    return wait > 0 ? wait + 250 : 250; // One 5 Hz scan of slack lets the private greeting claim its ledger synchronously before a queued pet line may flush.
+  }
+
   function updateGreetings(now) {
     if (state.deps?.isDialogueOpen?.() || state.deps?.isPaused?.()) return;
     const day = Number(state.deps?.getDay?.()) || 1;
@@ -931,6 +955,7 @@
     jeer: (root, options) => crowd(root, 'jeer', options),
     resolveAlcoholOffer,
     showAlcoholOfferResponse,
+    playerGreetingWaitMsForWalker,
     clear,
     loadSettings,
     resolveTargetName,

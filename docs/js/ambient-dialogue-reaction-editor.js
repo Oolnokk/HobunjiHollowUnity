@@ -11,6 +11,12 @@
     ['wary', 'Untrained / wary'],
     ['recognition', 'One-time recognition conversation'],
   ]); // Drives the repeated animal-role authoring controls.
+  const SIZE_REACTION_TIERS = Object.freeze([
+    ['sizeTwoLarger', 'Two sizes larger', 'Small species bred Large: the biggest-species reaction.'],
+    ['sizeOneLarger', 'One size larger', 'Any pet one genetic size above its species normal.'],
+    ['sizeOneSmaller', 'One size smaller', 'Any pet one genetic size below its species normal.'],
+    ['sizeTwoSmaller', 'Two sizes smaller', 'Large species bred Small: the tiniest-species reaction.'],
+  ]); // Drives role-independent rare-size reaction authoring while ordinary pet copy remains familiarity/role based.
   const ROLES = Object.freeze([
     ['mount', 'Mount'],
     ['companion', 'Companion'],
@@ -54,6 +60,7 @@
   function ensureProfileShape(profile) {
     profile.animal ||= {};
     profile.animal.recognized ||= [];
+    for (const [tier] of SIZE_REACTION_TIERS) profile.animal[tier] ||= [];
     for (const [tier] of ANIMAL_TIERS) {
       profile.animal[tier] ||= {};
       for (const [role] of ROLES) profile.animal[tier][role] ||= [];
@@ -148,6 +155,7 @@
     </div>
     ${assignmentEditor()}
     <div class="card"><h3>Animal reactions</h3><div class="muted">Recognized is used for ordinary ambient greetings once this NPC knows the individual animal. The other tiers are role-specific.</div>${poolEditor('animal|recognized', 'Recognized animal greetings', profile.animal.recognized, 'Applies to mounts, companions, and shoulder pets after recognition.')}</div>
+    <div class="card"><h3>Rare size reactions</h3><div class="muted">These override ordinary ambient pet copy when a bred Size differs from the species default. Recognition conversations keep their own lines. Blank pools inherit from the default personality.</div><div class="grid" style="margin-top:10px">${SIZE_REACTION_TIERS.map(([tier, label, help]) => poolEditor(`animal|${tier}`, label, profile.animal?.[tier], help)).join('')}</div></div>
     ${ANIMAL_TIERS.map(([tier, label]) => animalTierEditor(profile, tier, label)).join('')}
     ${SOCIAL_CATEGORIES.map(([category, label]) => socialEditor(profile, category, label)).join('')}`;
 

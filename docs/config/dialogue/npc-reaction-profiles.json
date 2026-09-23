@@ -16,6 +16,18 @@
           "{animalName}! Good to see you.",
           "Hello, {animalName}!"
         ],
+        "sizeTwoLarger": [
+          "Dear Breath, that has to be the biggest {species} I have ever seen in my life."
+        ],
+        "sizeOneLarger": [
+          "I think you might be overfeeding your {species}."
+        ],
+        "sizeOneSmaller": [
+          "What a cute little fellow. Runt of the litter?"
+        ],
+        "sizeTwoSmaller": [
+          "Dear Breath, that has to be the tiniest {species} I have ever seen in my life."
+        ],
         "trained": {
           "mount": ["That's a fine {species}.", "Looking good, {animalName}."],
           "companion": ["Good {species}.", "Hello, {animalName}."],

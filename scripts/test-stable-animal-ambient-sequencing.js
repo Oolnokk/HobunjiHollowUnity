@@ -8,6 +8,7 @@ let nextTimerId = 1;
 const timers = new Map();
 const shown = [];
 const rapportCalls = [];
+const greetingPriorityUntil = new Map(); // Simulates AmbientDialogue's real dwell/global-cooldown window for a nearby NPC whose greeting has not fired yet.
 
 function setFakeTimeout(callback, delay = 0) {
   const id = nextTimerId++;
@@ -92,6 +93,9 @@ const context = {
   },
   AmbientDialogue: {
     init() { return this; },
+    playerGreetingWaitMsForWalker(walker, at = now) {
+      return Math.max(0, Number(greetingPriorityUntil.get(walker?.rec?.id)) - Number(at) || 0);
+    },
     show(target, text, options = {}) {
       shown.push({ target, text, options, at: now });
       return { startedAt: now, durationMs: Number(options.durationMs) || 4200 };
@@ -166,13 +170,39 @@ assert.equal(shown[3].text, 'Early companion reaction');
 assert.equal(shown[3].at, 9700, 'the race-path follow-up also has zero post-greeting pause');
 assert.equal(rapportCalls.length, 1, 'the chosen rapport-trained companion receives one greeting rapport award');
 
+// Regression: another NPC greeting can hold AmbientDialogue's global 1300 ms
+// greeting cooldown, so the old fixed 700 ms grace released a wary/caution
+// animal line before this NPC's perfectly valid player greeting could start.
+const delayedWalker = { rec: { id: 'friend3' } };
+greetingPriorityUntil.set('friend3', now + 1500);
+context.AmbientDialogue.show({}, 'Cautious companion reaction', {
+  speakerId: 'friend3',
+  directedAtPlayer: true,
+  faceWalker: delayedWalker,
+  faceTarget: { root: companion.avatarRef.group },
+});
+advance(700);
+assert.equal(shown.length, 4, 'a caution reaction does not fire at the old fixed 700 ms grace while this NPC still owes a nearby player greeting');
+advance(600);
+privateGreeting('friend3', 'Sorry, hello first!');
+assert.equal(shown.length, 5, 'the delayed ordinary greeting wins the speaker before the queued caution reaction');
+advance(4199);
+assert.equal(shown.length, 5, 'the caution reaction still cannot overlap the delayed greeting');
+advance(1);
+assert.equal(shown.length, 6, 'the queued caution reaction renders only after the delayed greeting fully ends');
+assert.equal(shown[5].text, 'Cautious companion reaction');
+
+const ambientSource = fs.readFileSync('docs/js/ambient-dialogue.js', 'utf8'); // Production AmbientDialogue must expose its real dwell/cooldown state rather than relying on this fixture's synthetic timing.
+assert.match(ambientSource, /playerGreetingWaitMsForWalker/, 'AmbientDialogue exposes event-time player greeting priority to stable-animal sequencing');
+
 const debug = context.StableAnimalPerkAdjustments.getDebug();
 assert.equal(debug.ambientReactionTiming.afterGreetingMs, 0, 'debug timing exposes the requested zero post-greeting pause');
 assert.equal(debug.greetingLedgerHookInstalled, true, 'debug confirms the event-driven private-greeting hook is installed');
 assert.equal(debug.pendingAmbientReactions.length, 0, 'the candidate queue is emptied after each follow-up is chosen');
 assert(debug.ambientSequenceTrace.some(row => row.type === 'greeting-shown' && row.source === 'ledger'), 'debug trace records private greetings observed through the ledger');
 assert.equal(debug.ambientSequenceTrace.filter(row => row.type === 'reaction-queued').some(row => row.candidateCount === 3), true, 'debug trace exposes all three coalesced candidates');
-assert.equal(debug.ambientSequenceTrace.filter(row => row.type === 'reaction-shown').length, 2, 'debug trace proves one follow-up rendered for each greeting');
+assert.equal(debug.ambientSequenceTrace.filter(row => row.type === 'reaction-shown').length, 3, 'debug trace proves one follow-up rendered for each greeting');
+assert(debug.ambientSequenceTrace.some(row => row.type === 'reaction-yielding-to-greeting'), 'debug trace records when a queued pet reaction yields to an eligible delayed player greeting');
 assert.equal(debug.ambientSequenceTrace.filter(row => row.type === 'reaction-shown')[0].role, 'mount', 'debug trace records which role won the random three-way choice');
 
 console.log('Stable animal ambient sequencing regression tests passed.');

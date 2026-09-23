@@ -251,6 +251,18 @@
       pending.timer = setTimeout(() => flushAnimalReaction(npcId), Math.max(0, Number(delayMs) || 0));
     }
 
+    function pendingPlayerGreetingWaitMs(pending, now = sequenceNow()) {
+      let waitMs = 0; // Maximum same-NPC player-greeting priority window across coalesced animal candidates.
+      const helper = window.AmbientDialogue?.playerGreetingWaitMsForWalker;
+      if (typeof helper !== 'function') return 0;
+      for (const candidate of pending?.candidates?.values?.() || []) {
+        const walker = candidate?.options?.faceWalker; // StableAnimalProgression already supplies the exact NPC walker on every ambient animal reaction.
+        if (!walker) continue;
+        waitMs = Math.max(waitMs, Math.max(0, Number(helper(walker, now)) || 0));
+      }
+      return waitMs;
+    }
+
     function recordPlayerGreeting(npcId, startedAt, durationMs, source) {
       const safeStartedAt = Number.isFinite(Number(startedAt)) ? Number(startedAt) : sequenceNow(); // Used as the exact event-time anchor for the follow-up schedule.
       const safeDurationMs = Number.isFinite(Number(durationMs)) && Number(durationMs) > 0 ? Number(durationMs) : AMBIENT_DEFAULT_GREETING_MS; // Used to prevent a missing duration from releasing a pet reaction early.
@@ -321,6 +333,12 @@
         scheduleAnimalReaction(npcId, greeting.endAt + AMBIENT_REACTION_AFTER_GREETING_MS - now);
         return null;
       }
+      const greetingWaitMs = pendingPlayerGreetingWaitMs(pending, now); // If an ordinary greeting is still eligible but delayed by dwell/global cooldown, it keeps priority instead of racing this caution/pet line.
+      if (greetingWaitMs > 0) {
+        scheduleAnimalReaction(npcId, greetingWaitMs);
+        traceAmbientSequence('reaction-yielding-to-greeting', { npcId, waitMs: Math.round(greetingWaitMs) });
+        return null;
+      }
       const candidates = [...pending.candidates.values()];
       pendingAnimalReactions.delete(npcId);
       if (!candidates.length) return null;
@@ -348,9 +366,10 @@
       pending.candidates.set(animal.entry.id, { target, text, options: { ...options }, animal });
       const now = sequenceNow();
       const greeting = liveGreetingFor(npcId, now);
+      const greetingPriorityWaitMs = pendingPlayerGreetingWaitMs(pending, now); // Event-time query handles the real greeting dwell/cooldown instead of assuming 700 ms is always enough.
       const delay = greeting
         ? Math.max(0, greeting.endAt + AMBIENT_REACTION_AFTER_GREETING_MS - now)
-        : AMBIENT_REACTION_GREETING_GRACE_MS;
+        : Math.max(AMBIENT_REACTION_GREETING_GRACE_MS, greetingPriorityWaitMs);
       scheduleAnimalReaction(npcId, delay);
       traceAmbientSequence('reaction-queued', {
         npcId,
@@ -359,6 +378,9 @@
         candidateCount: pending.candidates.size,
         waitingForGreeting: !greeting,
       });
+      if (!greeting && greetingPriorityWaitMs > 0) {
+        traceAmbientSequence('reaction-yielding-to-greeting', { npcId, waitMs: Math.round(greetingPriorityWaitMs), phase: 'queue' }); // Mobile debug shows the pre-start cooldown/dwell handoff even when the greeting begins before this timer ever wakes.
+      }
       return { queued: true, speakerId: npcId, animalId: animal.entry.id, role: animal.role };
     }
 
