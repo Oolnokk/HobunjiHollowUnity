@@ -7,7 +7,13 @@ const vm = require('node:vm');
 
 const WIDTH = 3; // Three probe pixels isolate bodystripes, another pattern, and unobstructed base.
 const HEIGHT = 1; // A single row is sufficient for compositor color-role validation.
-const NEUTRAL = 128; // Uniform mock art: every eligible pixel is also the brightest pixel, so peak-anchored recoloring produces the exact target RGB.
+const NEUTRAL = 128; // Uniform mock art used to distinguish auto-peak pattern recolors from Drenkirra's authored base-coat anchor.
+const DRENKIRRA_BASE_REFERENCE = [0x68, 0xD1, 0x27]; // Authored full-strength base source color configured in CreatureGeneticsRender.
+const DRENKIRRA_REFERENCE_LUMINANCE = (0.2126 * DRENKIRRA_BASE_REFERENCE[0] + 0.7152 * DRENKIRRA_BASE_REFERENCE[1] + 0.0722 * DRENKIRRA_BASE_REFERENCE[2]) / 255;
+function expectedAnchoredBase(rgb) {
+  const shade = Math.min(1, (NEUTRAL / 255) / DRENKIRRA_REFERENCE_LUMINANCE);
+  return rgb.map(channel => Math.round(channel * shade));
+}
 
 function rgbaPixels(opaqueIndex = null) {
   const pixels = new Uint8ClampedArray(WIDTH * HEIGHT * 4); // Used as one mocked sprite or pattern image.
@@ -88,7 +94,8 @@ vm.runInNewContext(fs.readFileSync('docs/js/creature-genetics-render.js', 'utf8'
 
   assert.deepEqual(rgbAt(0), [0x11, 0x22, 0x33], 'bodystripes use the stored base color');
   assert.deepEqual(rgbAt(1), [0xff, 0x55, 0x00], 'other combined patterns retain their normal pattern color');
-  assert.deepEqual(rgbAt(2), [0xaa, 0xbb, 0xcc], 'unstriped body uses the bodystripes pattern color');
+  assert.deepEqual(rgbAt(2), expectedAnchoredBase([0xaa, 0xbb, 0xcc]),
+    'unstriped body uses the bodystripes pattern color through the authored #68D127 base-coat anchor');
   assert.equal(genotype.base.color, '#112233', 'rendering does not mutate inherited base color');
   assert.equal(genotype.bodystripes.color, '#aabbcc', 'rendering does not mutate inherited pattern color');
 
@@ -97,8 +104,8 @@ vm.runInNewContext(fs.readFileSync('docs/js/creature-genetics-render.js', 'utf8'
     bodystripes: { color: '#aabbcc', copies: 1, enabled: false },
   };
   const carriedCanvas = await context.window.CreatureGeneticsRender.composeFrame('drenkirra', 'idle', carriedOnly);
-  assert.deepEqual(Array.from(carriedCanvas.pixels.slice(8, 11)), [0x11, 0x22, 0x33],
-    'carried but unexpressed bodystripes leave the base color unchanged');
+  assert.deepEqual(Array.from(carriedCanvas.pixels.slice(8, 11)), expectedAnchoredBase([0x11, 0x22, 0x33]),
+    'carried but unexpressed bodystripes leave the base color role unchanged while retaining the authored Drenkirra base anchor');
 
   console.log('Drenkirra bodystripes color tests passed');
 })().catch(error => {
