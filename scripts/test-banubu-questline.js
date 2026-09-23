@@ -142,9 +142,13 @@ assert.strictEqual(questline.init({
 assert.strictEqual(questline.install(), true, 'Banubu quest controller install remains idempotent after dependency injection');
 assert(registeredProviders.has('banubu') && registeredActions.has('banubuQuest'), 'Banubu dialogue provider/action handler must be registered');
 
-// Recipes: exactly three fish for Quest 1; exactly three Tea Blends + White Milk for Quest 2.
-assert.strictEqual(content.threeFishPieRecipe.slots.length, 3);
-assert(content.threeFishPieRecipe.slots.every(slot => slot.required && slot.accepts[0] === 'fish'));
+// Recipes: exactly three fish plus flour + fat for Quest 1; exactly three Tea Blends + White Milk for Quest 2.
+assert.strictEqual(content.threeFishPieRecipe.slots.length, 5);
+assert.strictEqual(content.threeFishPieRecipe.slots.filter(slot => slot.accepts[0] === 'fish').length, 3);
+const pieFlourSlot = content.threeFishPieRecipe.slots.find(slot => slot.id === 'flour');
+const pieFatSlot = content.threeFishPieRecipe.slots.find(slot => slot.id === 'fat');
+assert(pieFlourSlot?.required && pieFlourSlot.accepts.includes('flour') && pieFlourSlot.contributesEffects !== false, 'Three-Fish Pie flour must be required and allowed to contribute buffs');
+assert(pieFatSlot?.required && pieFatSlot.accepts.includes('oil') && pieFatSlot.accepts.includes('butter') && pieFatSlot.contributesEffects !== false, 'Three-Fish Pie fat must accept oil/butter and contribute buffs');
 assert.strictEqual(content.nineLeafTeaRecipe.slots.length, 4);
 assert.strictEqual(content.nineLeafTeaRecipe.slots.filter(slot => slot.accepts[0] === 'teaBlend').length, 3);
 const milkSlot = content.nineLeafTeaRecipe.slots.find(slot => slot.accepts[0] === 'whiteMilk');
@@ -224,17 +228,27 @@ assert.match(state.progress.title, /^Lord Banubu — /);
 assert.strictEqual(state.progress.stage, 1);
 assert.match(state.progress.title, /Three-Fish Pie/);
 assert.match(state.progress.objective, /Three-Fish Pie/);
+assert.match(state.progress.detail, /flour and cooking fat/i, 'Quest 1 task detail must mention the crust requirements');
 assert.strictEqual(questline.menuStatus().ready, false);
 
+cookedInventory = [{
+  key: 'food_banubu_q1_missing',
+  count: 1,
+  definition: {
+    recipeId: content.THREE_FISH_PIE_RECIPE_ID,
+    foodEffects: { ...Object.fromEntries(state.target.requiredEffects.slice(0, 2).map(effect => [effect, 1])), cooking: 2 },
+  },
+}];
+assert.strictEqual(questline.matchingMeal(state), null, 'crust buffs cannot replace a requested effect unless they actually provide that effect');
 cookedInventory = [{
   key: 'food_banubu_q1',
   count: 1,
   definition: {
     recipeId: content.THREE_FISH_PIE_RECIPE_ID,
-    foodEffects: Object.fromEntries(state.target.requiredEffects.map(effect => [effect, 1])),
+    foodEffects: { ...Object.fromEntries(state.target.requiredEffects.map(effect => [effect, 1])), cooking: 2 },
   },
 }];
-assert(questline.matchingMeal(state), 'exact three-buff Three-Fish Pie must satisfy Quest 1');
+assert(questline.matchingMeal(state), 'Three-Fish Pie may carry extra crust buffs while satisfying all requested effects');
 assert.strictEqual(questline.menuStatus().ready, true, 'Tasks menu readiness must use the same cooked-inventory matcher as Banubu dialogue');
 
 // The Color Pools Key is world-scoped. A missing persistent world must fail
