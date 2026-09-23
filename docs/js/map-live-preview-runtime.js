@@ -636,8 +636,9 @@
       endpoint.send({ type: 'game-state', map: currentDescriptor(), revision });
       return;
     }
-    if (message.type === 'placement-transform-result' && message.status === 'applied') {
-      setStatus('Placement updated in Map Editor.');
+    if (message.type === 'placement-transform-result') {
+      if (message.status === 'applied') setStatus('Transform updated in Map Editor.');
+      else if (message.status === 'runtime-only') setStatus('Camera updated live; this locale/source is not loaded as a Map Editor map, so the numeric transform remains available here for authoring.');
       return;
     }
     if (message.type === 'reflect-request') handleReflect(message);
