@@ -37,11 +37,14 @@
   let scene = null;
   let camera = null;
   let controls = null;
+  let ambientLight = null; // Reused preview ambient; cavern mode lowers it to the live game's den-interior value.
+  let sunLight = null; // Reused preview directional light; cavern mode mirrors the live game's near-dark key light.
   let worldRoot = null; // Owns terrain + locale visuals so each randomization can be removed atomically.
   let terrainMaterialConfig = { byMap: {} };
   let terrainMaterials = new Map();
   let resizeObserver = null;
   let renderLoopStarted = false;
+  let renderDirty = true; // Static previews render only when something changes; OrbitControls damping dirties only the frames it actually moves.
   let generationToken = 0; // Prevents stale async GLB loads attaching after a newer randomization.
   let currentLocaleSignature = '';
   let currentScenario = 'valid'; // valid | almost | somewhat | random
@@ -53,6 +56,12 @@
   let currentWorkspace = null;
   let currentLocale = null;
   let showRules = true;
+  let currentPreviewMode = 'exterior'; // Chooses wilderness-placement vs generated cave-interior rendering for the active locale.
+  let currentPreviewModeLocaleId = ''; // Resets the default preview mode when the editor switches to a different locale.
+  let currentCavernMapData = null; // Holds the synthesized cave map currently rendered for debug snapshots/camera lookup.
+  let currentCavernWireframe = false; // Drives the optional cavern-shell wireframe diagnostic in interior preview mode.
+  let activeCinematicCameraId = ''; // Non-empty while the preview renderer is looking through one authored cinematic camera.
+  let orbitCameraState = null; // Restores the user's inspect/orbit view after leaving an authored camera shot.
   const glbTemplateCache = new Map();
 
   function clone(value) { return value == null ? value : JSON.parse(JSON.stringify(value)); }
@@ -168,11 +177,17 @@
     await loadScript('https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js', () => !!window.THREE?.OrbitControls);
     await loadScript('../../js/GLTFLoader.js', () => !!window.THREE?.GLTFLoader);
     await loadScript('../../js/portrait-utils.js', () => !!window.getShadeFillCanvas && !!window.parseHexColor);
+    await loadScript('../../config/attachment-rig-profiles.js', () => !!window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures);
     await loadScript('../../js/terrain-preview.js', () => !!window.TerrainPreview?.buildMergedZoneGrid);
     await loadScript('../../js/wilderness-map-generator.js', () => !!window.WildernessMapGenerator?.generateZoneWorkspace);
     await loadScript('../../js/locale-terrain-placement.js', () => !!window.LocaleTerrainPlacement?.evaluateCandidateForTest);
     await loadScript('../../js/locale-cave-runtime.js', () => !!window.LocaleCaveRuntime?.registerWorkspace);
     await loadScript('../../js/zone-den-totem-features.js', () => !!window.ZoneDenTotemFeatures?.buildAnimalDenMeshes);
+    await loadScript('../../config/natural-surface-materials.js', () => !!window.NaturalSurfaceMaterialConfig);
+    await loadScript('../../js/natural-surface-materials.js', () => !!window.NaturalSurfaceMaterials?.installed);
+    await loadScript('../../js/cavern-sculptor.js', () => !!window.CavernSculptor?.carveFootprintCavern);
+    await loadScript('../../js/cavern-generator.js', () => !!window.CavernGenerator?.synthesizeLocaleCavernMapData);
+    await loadScript('../../js/interior-scene-builder.js', () => !!window.InteriorSceneBuilder?.buildCarvedCavernMesh);
     await loadMaterialConfig();
   }
   async function loadMaterialConfig() {
@@ -211,15 +226,34 @@
     overlay.innerHTML = `
       <canvas id="locale3dCanvas" style="display:block;width:100%;height:100%;touch-action:none"></canvas>
       <div id="localeSandboxToolbar" style="position:absolute;left:8px;top:8px;right:8px;display:flex;gap:5px;align-items:center;flex-wrap:wrap;background:rgba(4,8,13,.82);border:1px solid rgba(255,255,255,.14);border-radius:9px;padding:5px;backdrop-filter:blur(4px)">
+        <select id="localeSandboxView" style="min-height:32px" title="Preview the locale in wilderness or render its generated cave interior">
+          <option value="exterior">Exterior wilderness</option>
+          <option value="interior">Generated cavern interior</option>
+        </select>
         <button class="sec" id="localeSandboxRandomize" type="button">🎲 Randomize surroundings</button>
         <button class="sec act" data-sandbox-scenario="valid" type="button">✓ Valid</button>
         <button class="sec" data-sandbox-scenario="almost" type="button">⚠ Almost right</button>
         <button class="sec" data-sandbox-scenario="somewhat" type="button">≈ Somewhat right</button>
         <button class="sec" data-sandbox-scenario="random" type="button">? Unfiltered</button>
         <select id="localeSandboxZone" style="min-height:32px"></select>
-        <label style="display:flex;gap:4px;align-items:center;font-size:11px;color:#dbeafe"><input id="localeSandboxRules" type="checkbox" checked> Rule overlay</label>
+        <label id="localeSandboxRulesLabel" style="display:flex;gap:4px;align-items:center;font-size:11px;color:#dbeafe"><input id="localeSandboxRules" type="checkbox" checked> Rule overlay</label>
+        <select id="localeSandboxCamera" style="min-height:32px" title="Look through an authored cinematic camera"><option value="">Camera: Orbit / inspect</option></select>
+        <label id="localeCavernWireframeLabel" style="display:none;gap:4px;align-items:center;font-size:11px;color:#dbeafe"><input id="localeCavernWireframe" type="checkbox"> Wall wireframe</label>
         <button class="sec" id="localePreviewDebugBtn" type="button" title="Copy numeric state for this exact rendered preview">📋 Copy Preview Debug</button>
         <button class="sec" id="locale3dFitBtn" type="button">Fit</button>
+      </div>
+      <div id="localeCameraSliderPanel" style="display:none;position:absolute;right:8px;top:72px;width:min(340px,calc(100% - 16px));max-height:calc(100% - 138px);overflow:auto;background:rgba(4,8,13,.92);border:1px solid rgba(255,255,255,.16);border-radius:10px;padding:9px;color:#dbeafe;backdrop-filter:blur(5px);touch-action:auto">
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:7px"><b id="localeCameraSliderTitle" style="flex:1">Camera view</b><button class="sec" id="localeCameraSliderOrbit" type="button">Orbit</button></div>
+        <label style="display:block;font-size:11px;margin-bottom:5px">Auto target NPC<select id="localeCameraTargetNpc" style="width:100%;margin-top:2px"></select></label>
+        <label style="display:block;font-size:11px;margin-bottom:7px">Preview/station anchor<select id="localeCameraTargetAnchor" style="width:100%;margin-top:2px"></select></label>
+        <div class="localeCameraSliderRow" data-camera-row="position.x"><label style="display:flex;justify-content:space-between;font-size:11px">Camera X <span data-camera-value="position.x"></span></label><input data-camera-slider="position.x" type="range" step=".05" style="width:100%"></div>
+        <div class="localeCameraSliderRow" data-camera-row="position.y"><label style="display:flex;justify-content:space-between;font-size:11px">Camera Y <span data-camera-value="position.y"></span></label><input data-camera-slider="position.y" type="range" step=".02" style="width:100%"></div>
+        <div class="localeCameraSliderRow" data-camera-row="position.z"><label style="display:flex;justify-content:space-between;font-size:11px">Camera Z <span data-camera-value="position.z"></span></label><input data-camera-slider="position.z" type="range" step=".05" style="width:100%"></div>
+        <div class="localeCameraSliderRow" data-camera-row="target.x"><label style="display:flex;justify-content:space-between;font-size:11px"><span data-camera-target-label="x">Target X</span> <span data-camera-value="target.x"></span></label><input data-camera-slider="target.x" type="range" step=".05" style="width:100%"></div>
+        <div class="localeCameraSliderRow" data-camera-row="target.y"><label style="display:flex;justify-content:space-between;font-size:11px"><span data-camera-target-label="y">Target Y</span> <span data-camera-value="target.y"></span></label><input data-camera-slider="target.y" type="range" step=".02" style="width:100%"></div>
+        <div class="localeCameraSliderRow" data-camera-row="target.z"><label style="display:flex;justify-content:space-between;font-size:11px"><span data-camera-target-label="z">Target Z</span> <span data-camera-value="target.z"></span></label><input data-camera-slider="target.z" type="range" step=".05" style="width:100%"></div>
+        <div class="localeCameraSliderRow" data-camera-row="fovDeg"><label style="display:flex;justify-content:space-between;font-size:11px">FOV <span data-camera-value="fovDeg"></span></label><input data-camera-slider="fovDeg" type="range" min="10" max="120" step="1" style="width:100%"></div>
+        <div style="font-size:10px;opacity:.7;margin-top:6px">Drag for a live preview. The final value is saved when you release the slider; cave geometry is not regenerated.</div>
       </div>
       <div id="locale3dStatus" style="position:absolute;left:8px;bottom:8px;max-width:min(720px,calc(100% - 16px));background:rgba(4,8,13,.88);border:1px solid rgba(255,255,255,.14);border-radius:9px;padding:7px 9px;color:#dbeafe;font-size:11px;line-height:1.35;pointer-events:none">3D sandbox</div>`;
     view.appendChild(overlay);
@@ -236,16 +270,57 @@
       try {
         await ensureRuntime();
         ensureRenderer();
-        syncZoneChoices(activeMergedLocale());
+        const locale = activeMergedLocale();
+        syncPreviewModeChoices(locale);
+        syncZoneChoices(locale);
         await regenerateScenario({ newSeed: !currentSeed, force: true });
       } catch (error) {
         console.error('[LocaleEditorSandbox]', error);
         setStatus(`Preview unavailable: ${error.message}`);
       }
     });
-    document.getElementById('localeSandboxRandomize').addEventListener('click', () => regenerateScenario({ newSeed: true, force: true }));
+    document.getElementById('localeSandboxView').addEventListener('change', event => {
+      currentPreviewMode = event.target.value === 'interior' ? 'interior' : 'exterior';
+      updatePreviewModeUi(activeMergedLocale());
+      regenerateScenario({ newSeed: currentPreviewMode === 'exterior', force: true });
+    });
+    document.getElementById('localeSandboxRandomize').addEventListener('click', () => regenerateScenario({ newSeed: currentPreviewMode === 'exterior', force: true }));
+    document.getElementById('localeSandboxCamera').addEventListener('change', () => applySelectedCinematicCamera());
+    document.getElementById('localeCameraTargetNpc').addEventListener('change', event => {
+      const record = cameraPreviewRecord(currentLocale, activeCinematicCameraId);
+      if (!record) return;
+      record.targetNpcId = String(event.target.value || '');
+      record.targetAnchorId = record.targetNpcId ? (currentLocale?.npcAnchors || []).find(anchor => anchor.npcId === record.targetNpcId)?.id || '' : '';
+      if (record.targetNpcId) record.target = { x: 0, y: 0, z: 0 };
+      commitPreviewCameraRecord(record);
+      syncCameraSliderPanel(currentLocale, record);
+      applySelectedCinematicCamera({ syncSliders: false });
+    });
+    document.getElementById('localeCameraTargetAnchor').addEventListener('change', event => {
+      const record = cameraPreviewRecord(currentLocale, activeCinematicCameraId);
+      if (!record) return;
+      record.targetAnchorId = String(event.target.value || '');
+      commitPreviewCameraRecord(record);
+      applySelectedCinematicCamera({ syncSliders: false });
+    });
+    overlay.querySelectorAll('[data-camera-slider]').forEach(input => {
+      input.addEventListener('input', () => updateCameraFromSlider(input, false));
+      input.addEventListener('change', () => updateCameraFromSlider(input, true));
+    });
+    document.getElementById('localeCameraSliderOrbit').addEventListener('click', () => {
+      const select = document.getElementById('localeSandboxCamera');
+      if (select) select.value = '';
+      leaveCinematicCameraPreview();
+    });
+    document.getElementById('localeCavernWireframe').addEventListener('change', event => {
+      currentCavernWireframe = !!event.target.checked;
+      applyCavernWireframe();
+    });
     document.getElementById('localePreviewDebugBtn').addEventListener('click', copyPreviewDebugSnapshot);
-    document.getElementById('locale3dFitBtn').addEventListener('click', fitCamera);
+    document.getElementById('locale3dFitBtn').addEventListener('click', () => {
+      leaveCinematicCameraPreview();
+      fitCamera();
+    });
     document.getElementById('localeSandboxRules').addEventListener('change', event => {
       showRules = !!event.target.checked;
       const ruleRoot = scene?.getObjectByName('localeSandboxRuleOverlay');
@@ -419,9 +494,12 @@
       page: location.href,
       preview: {
         visible: previewVisible,
+        mode: currentPreviewMode,
         scenario: currentScenario,
         seed: currentSeed,
         zoneId: currentZoneId,
+        activeCinematicCameraId: activeCinematicCameraId || null,
+        cavernWireframe: currentCavernWireframe,
         statusText: document.getElementById('locale3dStatus')?.textContent || '',
         generationScale: scale,
       },
@@ -451,6 +529,15 @@
       },
       rendered: {
         cave: debugNode(caveRoot),
+        cavernInterior: currentCavernMapData ? {
+          mapId: currentCavernMapData.id,
+          floorTiles: currentCavernMapData.floor?.length || 0,
+          shellVertices: Math.floor((currentCavernMapData.mesh?.positions?.length || 0) / 3),
+          shellTriangles: Math.floor((currentCavernMapData.mesh?.indices?.length || 0) / 3),
+          floorSurfaceY: debugRound(currentCavernMapData.floorSurfaceY, 4),
+          shell: debugNode(scene?.getObjectByName?.('localeSandboxCavernShell')),
+          floor: debugNode(scene?.getObjectByName?.('localeSandboxCavernFloor')),
+        } : null,
         nodes: renderedNodes,
       },
       terrainWindow,
@@ -490,6 +577,50 @@
     }
   }
 
+  function isCavernLocale(locale) {
+    return locale?.category === 'cave_interior' || !!locale?.cavern?.mapId;
+  }
+  function syncPreviewModeChoices(locale) {
+    const select = document.getElementById('localeSandboxView');
+    if (!select) return;
+    const canRenderInterior = isCavernLocale(locale);
+    const interiorOption = [...select.options].find(option => option.value === 'interior');
+    if (interiorOption) interiorOption.disabled = !canRenderInterior;
+    if (String(locale?.id || '') !== currentPreviewModeLocaleId) {
+      currentPreviewModeLocaleId = String(locale?.id || '');
+      currentPreviewMode = canRenderInterior ? 'interior' : 'exterior';
+    } else if (!canRenderInterior && currentPreviewMode === 'interior') {
+      currentPreviewMode = 'exterior';
+    }
+    select.value = currentPreviewMode;
+    updatePreviewModeUi(locale);
+  }
+  function updatePreviewModeUi(locale) {
+    const interior = currentPreviewMode === 'interior' && isCavernLocale(locale);
+    const randomize = document.getElementById('localeSandboxRandomize');
+    if (randomize) randomize.textContent = interior ? '↻ Rebuild cavern' : '🎲 Randomize surroundings';
+    document.querySelectorAll('[data-sandbox-scenario]').forEach(button => { button.disabled = interior; });
+    const zone = document.getElementById('localeSandboxZone');
+    if (zone) zone.disabled = interior;
+    const rules = document.getElementById('localeSandboxRules');
+    if (rules) rules.disabled = interior;
+    const rulesLabel = document.getElementById('localeSandboxRulesLabel');
+    if (rulesLabel) rulesLabel.style.opacity = interior ? '0.42' : '1';
+    const wireframeLabel = document.getElementById('localeCavernWireframeLabel');
+    if (wireframeLabel) wireframeLabel.style.display = interior ? 'flex' : 'none';
+    if (scene && renderer) {
+      const background = interior ? 0x2a1a0a : GAME_FOG_COLOR;
+      scene.background = new THREE.Color(background);
+      scene.fog = interior ? null : new THREE.FogExp2(GAME_FOG_COLOR, 0.018);
+      renderer.setClearColor(background, 1);
+      if (ambientLight) ambientLight.intensity = interior ? 0.15 : 0.7;
+      if (sunLight) {
+        sunLight.intensity = interior ? 0.08 : 1.1;
+        sunLight.position.set(interior ? 5 : 4, interior ? 10 : 8, interior ? 5 : 2);
+      }
+    }
+    refreshCinematicCameraChoices(locale);
+  }
   function syncZoneChoices(locale) {
     const select = document.getElementById('localeSandboxZone');
     if (!select) return;
@@ -507,11 +638,10 @@
     const THREE = window.THREE;
     const canvas = document.getElementById('locale3dCanvas');
     renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-    renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+    renderer.setPixelRatio(Math.min(1.25, window.devicePixelRatio || 1)); // Preview-only cap avoids 4x high-DPI shading cost without changing authored camera geometry.
     if (THREE.sRGBEncoding != null) renderer.outputEncoding = THREE.sRGBEncoding;
     renderer.setClearColor(GAME_FOG_COLOR, 1);
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.enabled = false; // Camera/geometry authoring does not need realtime shadow-map passes.
     scene = new THREE.Scene();
     scene.background = new THREE.Color(GAME_FOG_COLOR);
     scene.fog = new THREE.FogExp2(GAME_FOG_COLOR, 0.018);
@@ -523,27 +653,38 @@
     controls.maxPolarAngle = Math.PI * 0.495;
     controls.minDistance = 2;
     controls.maxDistance = 400;
-    scene.add(new THREE.AmbientLight(0xfff0e0, 0.7));
-    const sun = new THREE.DirectionalLight(0xffeedd, 1.1);
-    sun.position.set(4, 8, 2);
-    sun.castShadow = true;
-    scene.add(sun);
+    ambientLight = new THREE.AmbientLight(0xfff0e0, 0.7);
+    scene.add(ambientLight);
+    sunLight = new THREE.DirectionalLight(0xffeedd, 1.1);
+    sunLight.position.set(4, 8, 2);
+    sunLight.castShadow = false;
+    scene.add(sunLight);
     worldRoot = new THREE.Group();
     worldRoot.name = 'localeSandboxWorld';
     scene.add(worldRoot);
     resizeObserver = new ResizeObserver(resizeRenderer);
     resizeObserver.observe(document.getElementById('locale3dPreview'));
     resizeRenderer();
+    controls.addEventListener?.('change', requestPreviewRender);
     if (!renderLoopStarted) {
       renderLoopStarted = true;
       const tick = () => {
         requestAnimationFrame(tick);
         if (!previewVisible || !renderer) return;
-        controls.update();
+        const controlsChanged = !!controls?.enabled && !!controls.update?.();
+        if (controlsChanged) renderDirty = true;
+        if (!renderDirty) return;
         renderer.render(scene, camera);
+        renderDirty = false;
       };
       tick();
     }
+  }
+  function requestPreviewRender() { renderDirty = true; }
+  function requestPreviewRenderBurst() {
+    requestPreviewRender();
+    setTimeout(requestPreviewRender, 120);
+    setTimeout(requestPreviewRender, 500);
   }
   function resizeRenderer() {
     if (!renderer || !camera) return;
@@ -552,6 +693,7 @@
     renderer.setSize(rect.width, rect.height, false);
     camera.aspect = rect.width / rect.height;
     camera.updateProjectionMatrix();
+    requestPreviewRender();
   }
   function disposeTree(root, preserveMaterials = false) {
     if (!root) return;
@@ -583,6 +725,9 @@
     terrainMaterials.clear();
     currentMerged = null;
     currentInstance = null; // Do not leave the orbit target attached to a locale from the previous generated scenario.
+    currentCavernMapData = null;
+    orbitCameraState = null;
+    if (controls) controls.enabled = true;
     // Regression compatibility from the old lightweight preview: previewRoot.remove(child), parent !== previewRoot.
   }
 
@@ -753,7 +898,11 @@
       id: locale.id, cols: locale.cols, rows: locale.rows, tiles: locale.tiles,
       placement: locale.placement, terrainAnchors: locale.terrainAnchors, embeddedTiles: locale.embeddedTiles,
       objects: locale.objects, npcAnchors: locale.npcAnchors, connectors: locale.connectors,
-    });
+      cavern: locale.cavern,
+    }); // Cinematic cameras are intentionally excluded: editing a shot must never regenerate the cavern/wilderness geometry.
+  }
+  function previewSignature(locale) {
+    return localeSignature(locale) + '|preview:' + currentPreviewMode; // Keep the poll comparison identical to the signature stored after a render.
   }
   function candidateCloseness(result, compiled) {
     if (result.ok) return 1;
@@ -1018,6 +1167,7 @@
     return Number.isFinite(numeric) ? numeric : null;
   }
   function fitCamera() {
+    if (currentPreviewMode === 'interior' && currentCavernMapData) { fitCavernCamera(); return; }
     if (!camera || !controls || !currentLocale) return;
     const scale = currentCandidate?.scale || window.LocaleTerrainPlacement.inferGenerationScale(currentWorkspace) || 1;
     const placed = currentInstance || currentWorkspace?.localeInstances?.find(item => item.localeId === currentLocale.id) || null;
@@ -1054,6 +1204,418 @@
     controls.update();
   }
 
+
+  function cavernSurfaceY(mapData, x, z) {
+    const col = Math.floor(Number(x) || 0), row = Math.floor(Number(z) || 0);
+    const sampled = Number(mapData?.floorSurfaceByTile?.[`${col},${row}`]);
+    return Number.isFinite(sampled) ? sampled : (Number(mapData?.floorSurfaceY) || 0);
+  }
+
+  function cavernMaterialOptions(mapData) {
+    const family = mapData?.denMotherKind || mapData?.cavernCreatureKind || '';
+    const variant = window.ZoneDenTotemFeatures?.denCaveVariantFor?.(family);
+    return {
+      textureUrl: variant?.textureUrl || new URL('../../assets/textures/carved_smooth.png', location.href).href,
+      color: variant?.color ?? 0x808080,
+      textureRepeat: 0.35,
+      useLambert: true,
+      emissive: 0x000000,
+      doubleSided: mapData?.isLocaleCavern === true,
+    };
+  }
+
+  function previewAnchorForNpc(locale, npcId, record = null) {
+    const anchors = (locale?.npcAnchors || []).filter(anchor => String(anchor.npcId || '') === String(npcId || ''));
+    if (!anchors.length) return null;
+    const preferredId = record?.targetNpcId === npcId ? String(record.targetAnchorId || '') : '';
+    return anchors.find(anchor => anchor.id === preferredId) || anchors[0];
+  }
+
+  function positionCavernNpcMarker(marker, anchor, mapData) {
+    if (!marker || !anchor) return;
+    const x = Number(anchor.col) + 0.5, z = Number(anchor.row) + 0.5;
+    const floorY = cavernSurfaceY(mapData, x, z);
+    const baseHeight = Number(marker.userData?.previewBaseHeight) || Number(marker.userData?.previewMarkerHeight) || 0.8;
+    const sleepScaleY = anchor.pose === 'lie' ? (Number(marker.userData?.previewSleepScaleY) || 1) : 1;
+    const markerHeight = baseHeight * sleepScaleY;
+    const markerWidth = Number(marker.userData?.previewMarkerWidth) || Number(marker.scale?.x) || 0.8;
+    if (marker.isSprite) marker.scale.set(markerWidth, markerHeight, 1);
+    marker.position.set(x, floorY + markerHeight * 0.5, z);
+    marker.userData.previewAnchorId = anchor.id || '';
+
+    const faceCenter = marker.userData?.previewFaceCenter;
+    marker.userData.previewFaceOffsetY = faceCenter && Number.isFinite(Number(faceCenter.y))
+      ? (0.5 - Number(faceCenter.y)) * markerHeight
+      : markerHeight * 0.30;
+  }
+
+  function syncPreviewNpcMarkerForCamera(locale, record) {
+    if (!record?.targetNpcId || !currentCavernMapData) return;
+    const marker = scene?.getObjectByName?.('localeSandboxCavernNpc_' + record.targetNpcId);
+    const anchor = previewAnchorForNpc(locale, record.targetNpcId, record);
+    if (marker && anchor) positionCavernNpcMarker(marker, anchor, currentCavernMapData);
+  }
+
+  function renderCavernMarkers(group, locale, mapData) {
+    const spriteTexture = new THREE.TextureLoader().load(new URL('../../assets/creaturesprites/grehlr_idle.png', location.href).href);
+    const uniqueNpcIds = [...new Set((locale?.npcAnchors || []).map(anchor => String(anchor.npcId || '')).filter(Boolean))];
+    for (const npcId of uniqueNpcIds) {
+      const anchor = previewAnchorForNpc(locale, npcId, cameraPreviewRecord(locale, activeCinematicCameraId));
+      if (!anchor) continue;
+      let marker;
+      if (npcId === 'banubu') {
+        const material = new THREE.SpriteMaterial({ map: spriteTexture, transparent: true, depthWrite: false });
+        marker = new THREE.Sprite(material);
+        const grehlrBaseWidth = 2.2; // Canonical bestiary modelWidth.
+        const grehlrSpriteAspect = 0.75; // Canonical modelHeight/modelWidth, not width/height.
+        const banubuScaleMultiplier = 3; // Source-controlled named-animal override; Large Grehlr itself is 1×.
+        const faceFrame = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.grehlr?.chatheadFrame;
+        marker.userData.previewMarkerWidth = grehlrBaseWidth * banubuScaleMultiplier;
+        marker.userData.previewBaseHeight = grehlrBaseWidth * grehlrSpriteAspect * banubuScaleMultiplier;
+        marker.userData.previewSleepScaleY = 0.75; // Shared AnimalSleepPresentation flattening.
+        marker.userData.previewFaceCenter = faceFrame ? {
+          x: Number(faceFrame.x) + Number(faceFrame.width) * 0.5,
+          y: Number(faceFrame.y) + Number(faceFrame.height) * 0.5,
+        } : { x: 0.235, y: 0.527 };
+      } else {
+        marker = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.18, 0.24, 0.8, 10),
+          new THREE.MeshBasicMaterial({ color: 0x60a5fa, transparent: true, opacity: 0.9 }),
+        );
+        marker.userData.previewMarkerWidth = 0.4;
+        marker.userData.previewBaseHeight = 0.8;
+        marker.userData.previewFaceCenter = { x: 0.5, y: 0.125 };
+      }
+      marker.name = 'localeSandboxCavernNpc_' + npcId;
+      marker.userData.previewNpcId = npcId;
+      positionCavernNpcMarker(marker, anchor, mapData);
+      group.add(marker);
+    }
+    for (const connector of locale?.connectors || []) {
+      const x = Number(connector.col) + 0.5, z = Number(connector.row) + 0.5;
+      const y = cavernSurfaceY(mapData, x, z) + 0.09;
+      const ring = new THREE.Mesh(
+        new THREE.TorusGeometry(0.28, 0.055, 8, 20),
+        new THREE.MeshBasicMaterial({ color: 0x34d399, transparent: true, opacity: 0.92 }),
+      );
+      ring.name = 'localeSandboxCavernConnector_' + (connector.id || 'connector');
+      ring.rotation.x = Math.PI * 0.5;
+      ring.position.set(x, y, z);
+      group.add(ring);
+    }
+  }
+
+  function addCavernEntranceLight(group, mapData) {
+    const tiles = Array.isArray(mapData?.entranceLightTiles) ? mapData.entranceLightTiles : [];
+    if (!tiles.length) return;
+    let x = 0, z = 0;
+    for (const tile of tiles) { x += Number(tile[0]); z += Number(tile[1]); }
+    x = x / tiles.length + 0.5;
+    z = z / tiles.length + 0.5;
+    const y = cavernSurfaceY(mapData, x, z);
+    const light = new THREE.PointLight(0xfff2d0, 1.4, 7, 2);
+    light.position.set(x, y + 1.6, z + 0.6);
+    group.add(light);
+    const glow = new THREE.Mesh(
+      new THREE.CircleGeometry(1.8, 20),
+      new THREE.MeshBasicMaterial({ color: 0xe9dcb8, transparent: true, opacity: 0.35, depthWrite: false }),
+    );
+    glow.rotation.x = -Math.PI / 2;
+    glow.position.set(x, y + 0.02, z);
+    group.add(glow);
+  }
+
+  function applyCavernWireframe() {
+    const shell = scene?.getObjectByName?.('localeSandboxCavernShell');
+    shell?.traverse?.(node => {
+      if (!node?.isMesh) return;
+      for (const material of (Array.isArray(node.material) ? node.material : [node.material])) {
+        if (!material) continue;
+        material.wireframe = currentCavernWireframe;
+        material.needsUpdate = true;
+      }
+    });
+    requestPreviewRender();
+  }
+
+  function cameraPreviewRecord(locale, id) {
+    return (locale?.cinematicCameras || []).find(record => String(record.id || '') === String(id || '')) || null;
+  }
+
+  function cameraSliderRange(path, locale, record = null) {
+    const horizontalX = Math.max(2, Number(locale?.cols) || 1) + 2;
+    const horizontalZ = Math.max(2, Number(locale?.rows) || 1) + 2;
+    const verticalMax = Math.max(5, Number(locale?.cavern?.generation?.sizeY) || 3) + 3;
+    if (path === 'fovDeg') return { min: 10, max: 120 };
+    if (record?.targetNpcId && path.startsWith('target.')) return { min: -3, max: 3 }; // NPC target transforms are small offsets from the live face, never map coordinates.
+    if (path.endsWith('.y')) return { min: -2, max: verticalMax };
+    if (path.endsWith('.x')) return { min: -2, max: horizontalX };
+    return { min: -2, max: horizontalZ };
+  }
+  function cameraRecordValue(record, path) {
+    if (path === 'fovDeg') return Number(record?.fovDeg) || 42;
+    const [group, axis] = path.split('.');
+    return Number(record?.[group]?.[axis]) || 0;
+  }
+  function setCameraRecordValue(record, path, rawValue) {
+    const value = Number(rawValue);
+    if (!record || !Number.isFinite(value)) return;
+    if (path === 'fovDeg') {
+      record.fovDeg = clamp(value, 10, 120);
+      return;
+    }
+    const [group, axis] = path.split('.');
+    record[group] = { ...(record[group] || {}), [axis]: value };
+  }
+  function commitPreviewCameraRecord(record) {
+    if (!record) return null;
+    const saved = window._localeEditorBridge?.updateCinematicCamera?.(currentLocale?.id, record.id, {
+      position: { ...(record.position || {}) },
+      target: { ...(record.target || {}) },
+      targetNpcId: record.targetNpcId || '',
+      targetAnchorId: record.targetAnchorId || '',
+      fovDeg: record.fovDeg,
+    });
+    if (saved) Object.assign(record, saved);
+    return saved;
+  }
+  function previewNpcFacePosition(locale, record) {
+    if (!record?.targetNpcId) return null;
+    syncPreviewNpcMarkerForCamera(locale, record);
+    if (currentPreviewMode === 'interior') {
+      const marker = scene?.getObjectByName?.('localeSandboxCavernNpc_' + record.targetNpcId);
+      if (marker) {
+        const p = new THREE.Vector3();
+        marker.getWorldPosition(p);
+        return { x: p.x, y: p.y + (Number(marker.userData?.previewFaceOffsetY) || 0), z: p.z };
+      }
+    }
+    const anchor = previewAnchorForNpc(locale, record.targetNpcId, record);
+    if (!anchor) return null;
+    if (currentPreviewMode === 'exterior') {
+      const scale = currentCandidate?.scale || window.LocaleTerrainPlacement?.inferGenerationScale?.(currentWorkspace) || 1;
+      const placed = currentInstance || currentWorkspace?.localeInstances?.find(item => item.localeId === locale?.id);
+      const anchorX = finiteCoordinate(placed?.x) ?? finiteCoordinate(placed?.col) ?? finiteCoordinate(currentCandidate?.anchorC) ?? 0;
+      const anchorZ = finiteCoordinate(placed?.y) ?? finiteCoordinate(placed?.row) ?? finiteCoordinate(currentCandidate?.anchorR) ?? 0;
+      const x = anchorX + (Number(anchor.col) + 0.5) * scale;
+      const z = anchorZ + (Number(anchor.row) + 0.5) * scale;
+      return { x, y: surfaceY(currentMerged, x, z) + 0.8, z };
+    }
+    return null;
+  }
+  function resolvedPreviewCameraTarget(locale, record) {
+    const t = record?.target || {};
+    if (record?.targetNpcId) {
+      const face = previewNpcFacePosition(locale, record);
+      if (face) return {
+        x: face.x + (Number(t.x) || 0),
+        y: face.y + (Number(t.y) || 0),
+        z: face.z + (Number(t.z) || 0),
+      };
+    }
+    let x = Number(t.x) || 0, y = Number(t.y) || 0, z = Number(t.z) || 0;
+    if (currentPreviewMode === 'exterior') {
+      const scale = currentCandidate?.scale || window.LocaleTerrainPlacement?.inferGenerationScale?.(currentWorkspace) || 1;
+      const placed = currentInstance || currentWorkspace?.localeInstances?.find(item => item.localeId === locale?.id);
+      const anchorX = finiteCoordinate(placed?.x) ?? finiteCoordinate(placed?.col) ?? finiteCoordinate(currentCandidate?.anchorC) ?? 0;
+      const anchorZ = finiteCoordinate(placed?.y) ?? finiteCoordinate(placed?.row) ?? finiteCoordinate(currentCandidate?.anchorR) ?? 0;
+      x = anchorX + x * scale;
+      z = anchorZ + z * scale;
+    }
+    return { x, y, z };
+  }
+  function syncCameraSliderPanel(locale, record) {
+    const panel = document.getElementById('localeCameraSliderPanel');
+    if (!panel) return;
+    panel.style.display = record && activeCinematicCameraId ? 'block' : 'none';
+    if (!record) return;
+    const title = document.getElementById('localeCameraSliderTitle');
+    if (title) title.textContent = record.label || record.id || 'Camera view';
+    const npcSelect = document.getElementById('localeCameraTargetNpc');
+    const anchorSelect = document.getElementById('localeCameraTargetAnchor');
+    const npcIds = [...new Set((locale?.npcAnchors || []).map(anchor => String(anchor.npcId || '')).filter(Boolean))];
+    if (npcSelect) {
+      npcSelect.innerHTML = '<option value="">Absolute map point</option>' + npcIds.map(id => `<option value="${id.replace(/"/g, '&quot;')}">${id}</option>`).join('');
+      npcSelect.value = record.targetNpcId || '';
+    }
+    const anchors = (locale?.npcAnchors || []).filter(anchor => anchor.npcId === record.targetNpcId);
+    if (anchorSelect) {
+      anchorSelect.innerHTML = '<option value="">Auto / current live position</option>' + anchors.map(anchor => `<option value="${String(anchor.id || '').replace(/"/g, '&quot;')}">${String(anchor.name || anchor.id || 'Anchor')}</option>`).join('');
+      anchorSelect.value = anchors.some(anchor => anchor.id === record.targetAnchorId) ? record.targetAnchorId : '';
+      anchorSelect.disabled = !record.targetNpcId || !anchors.length;
+    }
+    panel.querySelectorAll('[data-camera-target-label]').forEach(label => {
+      const axis = String(label.dataset.cameraTargetLabel || '').toUpperCase();
+      label.textContent = record.targetNpcId ? `Face offset ${axis}` : `Target ${axis}`;
+    });
+    panel.querySelectorAll('[data-camera-slider]').forEach(input => {
+      const path = input.dataset.cameraSlider;
+      const range = cameraSliderRange(path, locale, record);
+      input.min = String(range.min);
+      input.max = String(range.max);
+      const value = cameraRecordValue(record, path);
+      input.value = String(value);
+      const output = panel.querySelector(`[data-camera-value="${path}"]`);
+      if (output) output.textContent = path === 'fovDeg' ? `${Math.round(value)}°` : value.toFixed(2);
+    });
+  }
+  function updateCameraFromSlider(input, commit) {
+    const record = cameraPreviewRecord(currentLocale, activeCinematicCameraId);
+    if (!record || !input) return;
+    const path = input.dataset.cameraSlider;
+    setCameraRecordValue(record, path, input.value);
+    const output = document.querySelector(`[data-camera-value="${path}"]`);
+    const value = cameraRecordValue(record, path);
+    if (output) output.textContent = path === 'fovDeg' ? `${Math.round(value)}°` : value.toFixed(2);
+    applySelectedCinematicCamera({ syncSliders: false });
+    if (!commit) return;
+    commitPreviewCameraRecord(record);
+  }
+
+  function refreshCinematicCameraChoices(locale) {
+    const select = document.getElementById('localeSandboxCamera');
+    if (!select) return;
+    const cameras = Array.isArray(locale?.cinematicCameras) ? locale.cinematicCameras : [];
+    const selected = activeCinematicCameraId && cameras.some(item => item.id === activeCinematicCameraId) ? activeCinematicCameraId : '';
+    if (!selected) activeCinematicCameraId = '';
+    select.innerHTML = '<option value="">Camera: Orbit / inspect</option>' + cameras.map(record =>
+      `<option value="${String(record.id || '').replace(/"/g, '&quot;')}">${String(record.label || record.id || 'Camera')}</option>`
+    ).join('');
+    select.value = selected;
+    select.disabled = !cameras.length || !previewVisible;
+    syncCameraSliderPanel(locale, selected ? cameraPreviewRecord(locale, selected) : null);
+  }
+
+  function captureOrbitCameraState() {
+    if (!camera || !controls || orbitCameraState) return;
+    orbitCameraState = {
+      position: camera.position.clone(),
+      quaternion: camera.quaternion.clone(),
+      target: controls.target.clone(),
+      fov: camera.fov,
+    };
+  }
+
+  function leaveCinematicCameraPreview(restore = true) {
+    if (restore && orbitCameraState && camera && controls) {
+      camera.position.copy(orbitCameraState.position);
+      camera.quaternion.copy(orbitCameraState.quaternion);
+      camera.fov = orbitCameraState.fov;
+      controls.target.copy(orbitCameraState.target);
+      camera.updateProjectionMatrix();
+    }
+    activeCinematicCameraId = '';
+    orbitCameraState = null;
+    if (controls) controls.enabled = true;
+    const select = document.getElementById('localeSandboxCamera');
+    if (select) select.value = '';
+    syncCameraSliderPanel(currentLocale, null);
+    controls?.update?.();
+    requestPreviewRender();
+  }
+
+  function applySelectedCinematicCamera(options = {}) {
+    const select = document.getElementById('localeSandboxCamera');
+    const id = String(select?.value || '');
+    if (!id) { leaveCinematicCameraPreview(); return; }
+    const record = cameraPreviewRecord(currentLocale, id);
+    if (!record || !camera || !controls) return;
+    captureOrbitCameraState();
+    activeCinematicCameraId = id;
+    controls.enabled = false;
+    const p = record.position || {};
+    let px = Number(p.x) || 0, pz = Number(p.z) || 0;
+    if (currentPreviewMode === 'exterior') {
+      const scale = currentCandidate?.scale || window.LocaleTerrainPlacement?.inferGenerationScale?.(currentWorkspace) || 1;
+      const placed = currentInstance || currentWorkspace?.localeInstances?.find(item => item.localeId === currentLocale?.id);
+      const anchorX = finiteCoordinate(placed?.x) ?? finiteCoordinate(placed?.col) ?? finiteCoordinate(currentCandidate?.anchorC) ?? 0;
+      const anchorZ = finiteCoordinate(placed?.y) ?? finiteCoordinate(placed?.row) ?? finiteCoordinate(currentCandidate?.anchorR) ?? 0;
+      px = anchorX + px * scale; pz = anchorZ + pz * scale;
+    }
+    const target = resolvedPreviewCameraTarget(currentLocale, record) || { x: 0, y: 0, z: 0 };
+    camera.position.set(px, Number(p.y) || 0, pz);
+    camera.fov = clamp(Number(record.fovDeg) || 42, 10, 120);
+    camera.lookAt(target.x, target.y, target.z);
+    camera.updateProjectionMatrix();
+    if (options.syncSliders !== false) syncCameraSliderPanel(currentLocale, record);
+    requestPreviewRender();
+  }
+
+  function fitCavernCamera() {
+    const root = scene?.getObjectByName?.('localeSandboxCavernInterior');
+    if (!root || !camera || !controls || !currentCavernMapData) return;
+    const authored = currentLocale?.cinematicCameras?.[0]; // Best default inspect pose for story caverns: starts inside the shell at a shot the author already considers valid.
+    if (authored?.position && authored?.target) {
+      const p = authored.position;
+      const target = resolvedPreviewCameraTarget(currentLocale, authored) || { x: 0, y: 0, z: 0 };
+      camera.position.set(Number(p.x) || 0, Number(p.y) || 0, Number(p.z) || 0);
+      controls.target.set(target.x, target.y, target.z);
+      camera.fov = clamp(Number(authored.fovDeg) || 55, 10, 120);
+    } else {
+      const floor = currentCavernMapData.floor || [];
+      if (!floor.length) return;
+      let centerX = 0, centerZ = 0;
+      for (const tile of floor) { centerX += Number(tile[0]) + 0.5; centerZ += Number(tile[1]) + 0.5; }
+      centerX /= floor.length; centerZ /= floor.length;
+      const entrance = currentLocale?.connectors?.find(item => item.id === currentLocale?.cavern?.primaryEntranceConnectorId) || currentLocale?.connectors?.[0];
+      const px = Number.isFinite(Number(entrance?.col)) ? Number(entrance.col) + 0.5 : centerX + 1.5;
+      const pz = Number.isFinite(Number(entrance?.row)) ? Number(entrance.row) + 0.5 : centerZ + 1.5;
+      const floorY = cavernSurfaceY(currentCavernMapData, px, pz);
+      camera.position.set(px, floorY + 0.9, pz);
+      controls.target.set(centerX, cavernSurfaceY(currentCavernMapData, centerX, centerZ) + 0.8, centerZ);
+      camera.fov = 55;
+    }
+    camera.near = 0.05;
+    camera.far = 3000;
+    camera.updateProjectionMatrix();
+    controls.enabled = true;
+    controls.update();
+    requestPreviewRender();
+  }
+
+  async function renderCavernInterior(locale, token) {
+    if (!isCavernLocale(locale)) throw new Error('Active locale is not a cave interior.');
+    clearWorld();
+    token = generationToken;
+    currentWorkspace = null;
+    currentMerged = null;
+    currentCandidate = null;
+    currentInstance = null;
+    currentLocale = locale;
+    currentCavernMapData = window.CavernGenerator.synthesizeLocaleCavernMapData(locale);
+    const mapData = currentCavernMapData;
+    if (token !== generationToken) return;
+
+    const group = new THREE.Group();
+    group.name = 'localeSandboxCavernInterior';
+    const materialOptions = cavernMaterialOptions(mapData);
+    const shell = window.InteriorSceneBuilder.buildCarvedCavernMesh(THREE, mapData.mesh, materialOptions);
+    shell.name = 'localeSandboxCavernShell';
+    shell.userData.localePreviewCavernShell = true;
+    group.add(shell);
+    const floor = window.InteriorSceneBuilder.buildCavernFloorMesh(
+      THREE,
+      mapData.floor || [],
+      mapData.floorSurfaceByTile || {},
+      { ...materialOptions, defaultY: mapData.floorSurfaceY, name: 'localeSandboxCavernFloor' },
+    );
+    if (floor) {
+      floor.name = 'localeSandboxCavernFloor';
+      group.add(floor);
+    }
+    addCavernEntranceLight(group, mapData);
+    renderCavernMarkers(group, locale, mapData);
+    worldRoot.add(group);
+    applyCavernWireframe();
+    refreshCinematicCameraChoices(locale);
+    fitCavernCamera();
+    if (activeCinematicCameraId) applySelectedCinematicCamera();
+
+    requestPreviewRenderBurst();
+    const shellBounds = debugBox(shell);
+    setStatus(`GENERATED CAVERN INTERIOR · ${locale.name || locale.id} · ${mapData.floor?.length || 0} floor tiles · ${Math.floor((mapData.mesh?.indices?.length || 0) / 3)} shell triangles${shellBounds ? ` · bounds ${shellBounds.size.x}×${shellBounds.size.y}×${shellBounds.size.z}` : ''}`);
+  }
+
   function scenarioLabel(kind) {
     if (kind === 'valid') return 'VALID PLACEMENT';
     if (kind === 'almost') return 'ALMOST RIGHT — intentionally rejected';
@@ -1069,6 +1631,8 @@
     token = generationToken;
     currentWorkspace = result.workspace;
     currentLocale = locale;
+    currentCavernMapData = null;
+    refreshCinematicCameraChoices(locale);
     const root = rootMap(result.workspace);
     if (!root) throw new Error('Generated workspace has no root map');
     const terrainRoot = buildTerrainRoot(result.workspace, root.id);
@@ -1091,10 +1655,12 @@
     if (token !== generationToken) return;
     addRuleOverlay(locale, instance, candidate, currentMerged);
     fitCamera();
+    if (activeCinematicCameraId) applySelectedCinematicCamera();
 
     const failure = candidate?.result;
     const closeness = candidate?.closeness;
     const matchText = Number.isFinite(closeness) ? ` · ${(closeness * 100).toFixed(0)}% rule fit` : '';
+    requestPreviewRenderBurst();
     const reason = result.reason || failure?.reason;
     setStatus(`${scenarioLabel(result.kind)} · ${locale.name || locale.id} · ${ZONES.find(([id]) => id === zoneId)?.[1] || zoneId} · seed ${result.seed}${matchText}${reason ? ` · ${reason}` : ''}${instance?.ghostFailure ? ' · locale shown as a ghost because the game would not place it here' : ''}`);
   }
@@ -1103,13 +1669,24 @@
     if (!previewVisible || !renderer) return;
     const locale = activeMergedLocale();
     if (!locale) { setStatus('No active locale.'); return; }
+    syncPreviewModeChoices(locale);
     syncZoneChoices(locale);
     const zoneId = currentZoneId || document.getElementById('localeSandboxZone')?.value || ZONES[0][0];
-    const signature = localeSignature(locale);
+    const signature = previewSignature(locale);
     if (!force && signature === currentLocaleSignature) return;
     currentLocaleSignature = signature;
-    if (newSeed || !currentSeed) currentSeed = randomSeed(locale, zoneId);
     const requestToken = ++generationToken;
+    if (currentPreviewMode === 'interior') {
+      setStatus('Generating the authored cavern footprint with the runtime den/cavern generator…');
+      try {
+        await renderCavernInterior(locale, requestToken);
+      } catch (error) {
+        console.error('[LocaleEditorSandbox] cavern preview failed:', error);
+        setStatus(`Cavern preview failed: ${error.message}`);
+      }
+      return;
+    }
+    if (newSeed || !currentSeed) currentSeed = randomSeed(locale, zoneId);
     setStatus(`Generating ${currentScenario === 'valid' ? 'valid placement' : currentScenario === 'almost' ? 'near-miss failure' : currentScenario === 'somewhat' ? 'partial-match failure' : 'unfiltered candidate'} with the game wilderness generator…`);
     try {
       const result = await Promise.resolve(generateScenario(locale, zoneId, currentSeed, currentScenario));
@@ -1129,7 +1706,7 @@
     setInterval(() => {
       if (!previewVisible || !renderer) return;
       const locale = activeMergedLocale();
-      const signature = localeSignature(locale);
+      const signature = previewSignature(locale);
       if (locale && signature !== currentLocaleSignature) regenerateScenario({ newSeed: false, force: true });
     }, 500);
     console.log('[LocaleEditorSandbox] in-game terrain + GLB locale preview ready');

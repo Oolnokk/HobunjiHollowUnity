@@ -15,272 +15,102 @@
   "cols": 13,
   "rows": 12,
   "tiles": {
-    "5,1": {
-      "type": "grass"
-    },
-    "6,1": {
-      "type": "grass"
-    },
-    "7,1": {
-      "type": "grass"
-    },
-    "3,2": {
-      "type": "grass"
-    },
-    "4,2": {
-      "type": "grass"
-    },
-    "5,2": {
-      "type": "grass"
-    },
-    "6,2": {
-      "type": "grass"
-    },
-    "7,2": {
-      "type": "grass"
-    },
-    "8,2": {
-      "type": "grass"
-    },
-    "9,2": {
-      "type": "grass"
-    },
-    "2,3": {
-      "type": "grass"
-    },
-    "3,3": {
-      "type": "grass"
-    },
-    "4,3": {
-      "type": "grass"
-    },
-    "5,3": {
-      "type": "grass"
-    },
-    "6,3": {
-      "type": "grass"
-    },
-    "7,3": {
-      "type": "grass"
-    },
-    "8,3": {
-      "type": "grass"
-    },
-    "9,3": {
-      "type": "grass"
-    },
-    "10,3": {
-      "type": "grass"
-    },
-    "1,4": {
-      "type": "grass"
-    },
-    "2,4": {
-      "type": "grass"
-    },
-    "3,4": {
-      "type": "grass"
-    },
-    "4,4": {
-      "type": "grass"
-    },
-    "5,4": {
-      "type": "grass"
-    },
-    "6,4": {
-      "type": "grass"
-    },
-    "7,4": {
-      "type": "grass"
-    },
-    "8,4": {
-      "type": "grass"
-    },
-    "9,4": {
-      "type": "grass"
-    },
-    "10,4": {
-      "type": "grass"
-    },
-    "11,4": {
-      "type": "grass"
-    },
-    "1,5": {
-      "type": "grass"
-    },
-    "2,5": {
-      "type": "grass"
-    },
-    "3,5": {
-      "type": "grass"
-    },
-    "4,5": {
-      "type": "grass"
-    },
-    "5,5": {
-      "type": "grass"
-    },
-    "6,5": {
-      "type": "grass"
-    },
-    "7,5": {
-      "type": "grass"
-    },
-    "8,5": {
-      "type": "grass"
-    },
-    "9,5": {
-      "type": "grass"
-    },
-    "10,5": {
-      "type": "grass"
-    },
-    "11,5": {
-      "type": "grass"
-    },
-    "1,6": {
-      "type": "grass"
-    },
-    "2,6": {
-      "type": "grass"
-    },
-    "3,6": {
-      "type": "grass"
-    },
-    "4,6": {
-      "type": "grass"
-    },
-    "5,6": {
-      "type": "grass"
-    },
-    "6,6": {
-      "type": "grass"
-    },
-    "7,6": {
-      "type": "grass"
-    },
-    "8,6": {
-      "type": "grass"
-    },
-    "9,6": {
-      "type": "grass"
-    },
-    "10,6": {
-      "type": "grass"
-    },
-    "11,6": {
-      "type": "grass"
-    },
-    "1,7": {
-      "type": "grass"
-    },
-    "2,7": {
-      "type": "grass"
-    },
-    "3,7": {
-      "type": "grass"
-    },
-    "4,7": {
-      "type": "grass"
-    },
-    "5,7": {
-      "type": "grass"
-    },
-    "6,7": {
-      "type": "grass"
-    },
-    "7,7": {
-      "type": "grass"
-    },
-    "8,7": {
-      "type": "grass"
-    },
-    "9,7": {
-      "type": "grass"
-    },
-    "10,7": {
-      "type": "grass"
-    },
-    "11,7": {
-      "type": "grass"
-    },
-    "2,8": {
-      "type": "grass"
-    },
-    "3,8": {
-      "type": "grass"
-    },
-    "4,8": {
-      "type": "grass"
-    },
-    "5,8": {
-      "type": "grass"
-    },
-    "6,8": {
-      "type": "grass"
-    },
-    "7,8": {
-      "type": "grass"
-    },
-    "8,8": {
-      "type": "grass"
-    },
-    "9,8": {
-      "type": "grass"
-    },
-    "10,8": {
-      "type": "grass"
-    },
-    "3,9": {
-      "type": "grass"
-    },
-    "4,9": {
-      "type": "grass"
-    },
-    "5,9": {
-      "type": "grass"
-    },
-    "6,9": {
-      "type": "grass"
-    },
-    "7,9": {
-      "type": "grass"
-    },
-    "8,9": {
-      "type": "grass"
-    },
-    "9,9": {
-      "type": "grass"
-    },
-    "5,10": {
-      "type": "grass"
-    },
-    "6,10": {
-      "type": "grass"
-    },
-    "7,10": {
-      "type": "grass"
-    }
+    "5,1": { "type": "grass" },
+    "6,1": { "type": "grass" },
+    "7,1": { "type": "grass" },
+    "3,2": { "type": "grass" },
+    "4,2": { "type": "grass" },
+    "5,2": { "type": "grass" },
+    "6,2": { "type": "grass" },
+    "7,2": { "type": "grass" },
+    "8,2": { "type": "grass" },
+    "9,2": { "type": "grass" },
+    "2,3": { "type": "grass" },
+    "3,3": { "type": "grass" },
+    "4,3": { "type": "grass" },
+    "5,3": { "type": "grass" },
+    "6,3": { "type": "grass" },
+    "7,3": { "type": "grass" },
+    "8,3": { "type": "grass" },
+    "9,3": { "type": "grass" },
+    "10,3": { "type": "grass" },
+    "1,4": { "type": "grass" },
+    "2,4": { "type": "grass" },
+    "3,4": { "type": "grass" },
+    "4,4": { "type": "grass" },
+    "5,4": { "type": "grass" },
+    "6,4": { "type": "grass" },
+    "7,4": { "type": "grass" },
+    "8,4": { "type": "grass" },
+    "9,4": { "type": "grass" },
+    "10,4": { "type": "grass" },
+    "11,4": { "type": "grass" },
+    "1,5": { "type": "grass" },
+    "2,5": { "type": "grass" },
+    "3,5": { "type": "grass" },
+    "4,5": { "type": "grass" },
+    "5,5": { "type": "grass" },
+    "6,5": { "type": "grass" },
+    "7,5": { "type": "grass" },
+    "8,5": { "type": "grass" },
+    "9,5": { "type": "grass" },
+    "10,5": { "type": "grass" },
+    "11,5": { "type": "grass" },
+    "1,6": { "type": "grass" },
+    "2,6": { "type": "grass" },
+    "3,6": { "type": "grass" },
+    "4,6": { "type": "grass" },
+    "5,6": { "type": "grass" },
+    "6,6": { "type": "grass" },
+    "7,6": { "type": "grass" },
+    "8,6": { "type": "grass" },
+    "9,6": { "type": "grass" },
+    "10,6": { "type": "grass" },
+    "11,6": { "type": "grass" },
+    "1,7": { "type": "grass" },
+    "2,7": { "type": "grass" },
+    "3,7": { "type": "grass" },
+    "4,7": { "type": "grass" },
+    "5,7": { "type": "grass" },
+    "6,7": { "type": "grass" },
+    "7,7": { "type": "grass" },
+    "8,7": { "type": "grass" },
+    "9,7": { "type": "grass" },
+    "10,7": { "type": "grass" },
+    "11,7": { "type": "grass" },
+    "2,8": { "type": "grass" },
+    "3,8": { "type": "grass" },
+    "4,8": { "type": "grass" },
+    "5,8": { "type": "grass" },
+    "6,8": { "type": "grass" },
+    "7,8": { "type": "grass" },
+    "8,8": { "type": "grass" },
+    "9,8": { "type": "grass" },
+    "10,8": { "type": "grass" },
+    "3,9": { "type": "grass" },
+    "4,9": { "type": "grass" },
+    "5,9": { "type": "grass" },
+    "6,9": { "type": "grass" },
+    "7,9": { "type": "grass" },
+    "8,9": { "type": "grass" },
+    "9,9": { "type": "grass" },
+    "5,10": { "type": "grass" },
+    "6,10": { "type": "grass" },
+    "7,10": { "type": "grass" }
   },
   "objects": [],
   "npcAnchors": [
     {
-      "id": "station_banubu_cave_awake",
-      "npcId": "banubu",
-      "name": "Banubu's Cave",
-      "col": 6,
-      "row": 5,
-      "facing": "south",
-      "pose": "stand"
-    },
-    {
       "id": "station_banubu_cave_sleep",
       "npcId": "banubu",
       "name": "Banubu's Sleeping Spot",
-      "col": 9,
-      "row": 7,
+      "col": 6,
+      "row": 5,
       "facing": "west",
-      "pose": "lie"
+      "pose": "lie",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
     }
   ],
   "connectors": [
@@ -288,9 +118,15 @@
       "id": "banubu_cave_exit",
       "col": 6,
       "row": 10,
-      "side": "south",
+      "side": "north",
       "label": "Back outside",
-      "targetMap": ""
+      "targetMap": "",
+      "targetSpotId": "",
+      "spawnCol": 0,
+      "spawnRow": 0,
+      "requiresKeyItem": "",
+      "hiddenUntilKeyItem": false,
+      "doorFurnitureKey": ""
     },
     {
       "id": "color_pools_door",
@@ -300,13 +136,79 @@
       "label": "Color Pools",
       "targetMap": "map_i_color_pools",
       "targetSpotId": "conn_banubu",
+      "spawnCol": 0,
+      "spawnRow": 0,
       "requiresKeyItem": "color_pools_key",
       "hiddenUntilKeyItem": true,
       "doorFurnitureKey": "door"
     }
   ],
+  "cinematicCameras": [
+    {
+      "id": "banubu_dialogue_awake",
+      "label": "Banubu dialogue — awake",
+      "position": {
+        "x": 7.2,
+        "y": 0.28,
+        "z": 9.4
+      },
+      "target": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "fovDeg": 38,
+      "blendSeconds": 0.5,
+      "dialogueNpcId": "",
+      "fadePets": true,
+      "playerStage": {
+        "x": 6.5,
+        "z": 10.5
+      },
+      "targetNpcId": "banubu",
+      "targetAnchorId": "station_banubu_cave_sleep"
+    },
+    {
+      "id": "banubu_dialogue_sleep",
+      "label": "Banubu dialogue — sleeping",
+      "position": {
+        "x": 7.6,
+        "y": -0.78,
+        "z": 8.3
+      },
+      "target": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "fovDeg": 57,
+      "blendSeconds": 0.5,
+      "dialogueNpcId": "banubu",
+      "fadePets": true,
+      "playerStage": {
+        "x": 6.5,
+        "z": 10.5
+      },
+      "targetNpcId": "banubu",
+      "targetAnchorId": "station_banubu_cave_sleep"
+    }
+  ],
   "terrainAnchors": {},
   "embeddedTiles": {},
+  "cavern": {
+    "mapId": "map_i_den_banubu",
+    "seed": "banubu-home-v1",
+    "primaryEntranceConnectorId": "banubu_cave_exit",
+    "generation": {
+      "tileSize": 1,
+      "gridN": 48,
+      "probeRadius": 0.82,
+      "brushRadius": 0.42,
+      "organicJitter": 0.12,
+      "sizeY": 3
+    },
+    "creatureKind": "grehlr"
+  },
   "placement": {
     "mode": "fixed",
     "maxInstances": 1,
@@ -322,22 +224,8 @@
     "terrainAnchors": {},
     "embeddedTiles": {}
   },
-  "cavern": {
-    "mapId": "map_i_den_banubu",
-    "seed": "banubu-home-v1",
-    "primaryEntranceConnectorId": "banubu_cave_exit",
-    "generation": {
-      "tileSize": 1,
-      "gridN": 48,
-      "probeRadius": 0.82,
-      "brushRadius": 0.42,
-      "organicJitter": 0.12,
-      "sizeY": 3
-    },
-    "creatureKind": "grehlr"
-  },
   "meta": {
     "createdAt": "2026-09-19T00:00:00.000Z",
-    "updatedAt": "2026-09-21T17:25:00.000Z"
+    "updatedAt": "2026-09-23T02:47:43.229Z"
   }
 }

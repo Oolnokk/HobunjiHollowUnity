@@ -457,6 +457,79 @@
     temporaryTransforms.length = 0;
   }
 
+  // Projects an already-resolved world-space point through the same temporary
+  // Y-scale + bottom-preserving correction applyTemporaryScale uses at render
+  // time, but restores the group synchronously and never registers a temporary
+  // render transform. The first call may perform the same one-time Box3
+  // measurement used by the renderer; afterwards both paths share the cached
+  // grounding coefficient.
+  function projectTemporaryScaledWorldPoint(group, worldPoint, ratio) {
+    const numericRatio = Number(ratio);
+    if (!group?.scale || !group?.position || !worldPoint?.clone || !Number.isFinite(numericRatio) || numericRatio <= 0) return null;
+    if (Math.abs(numericRatio - 1) < 1e-5) return worldPoint.clone();
+
+    const originalScaleY = Number(group.scale.y) || 1;
+    const originalPositionY = Number(group.position.y) || 0;
+    const targetScaleY = originalScaleY * numericRatio;
+    const scaleDeltaY = targetScaleY - originalScaleY;
+    group.updateMatrixWorld?.(true);
+    const localPoint = group.worldToLocal?.(worldPoint.clone());
+    if (!localPoint) return null;
+
+    let coefficient = groundingScaleCoefficients.get(group);
+    if (!Number.isFinite(coefficient)) {
+      const THREE_NS = window.THREE || globalThis.THREE;
+      boxBefore ||= THREE_NS?.Box3 ? new THREE_NS.Box3() : null;
+      boxAfter ||= THREE_NS?.Box3 ? new THREE_NS.Box3() : null;
+      parentScale ||= THREE_NS?.Vector3 ? new THREE_NS.Vector3(1, 1, 1) : null;
+      try {
+        group.scale.y = originalScaleY;
+        group.position.y = originalPositionY;
+        const bottomBefore = worldBottom(group, boxBefore);
+        group.scale.y = targetScaleY;
+        const bottomAfter = worldBottom(group, boxAfter);
+        if (Number.isFinite(bottomBefore) && Number.isFinite(bottomAfter) && Math.abs(scaleDeltaY) > 1e-8) {
+          let parentScaleY = 1;
+          try {
+            if (group.parent?.getWorldScale && parentScale) {
+              group.parent.getWorldScale(parentScale);
+              parentScaleY = Number(parentScale.y) || 1;
+            }
+          } catch (_) {}
+          const correctionY = (bottomBefore - bottomAfter) / parentScaleY;
+          coefficient = correctionY / scaleDeltaY;
+          groundingScaleCoefficients.set(group, coefficient);
+        }
+      } finally {
+        group.scale.y = originalScaleY;
+        group.position.y = originalPositionY;
+        group.updateMatrixWorld?.(true);
+      }
+    }
+
+    try {
+      group.scale.y = targetScaleY;
+      group.position.y = originalPositionY + (Number.isFinite(coefficient) ? coefficient * scaleDeltaY : 0);
+      group.updateMatrixWorld?.(true);
+      return group.localToWorld?.(localPoint) || null;
+    } finally {
+      group.scale.y = originalScaleY;
+      group.position.y = originalPositionY;
+      group.updateMatrixWorld?.(true);
+    }
+  }
+
+  function projectExternalSleeperWorldPoint(entity, worldPoint) {
+    const config = externalSleepers.get(entity);
+    if (!config || !worldPoint) return worldPoint?.clone?.() || null;
+    const sleeping = typeof config.isSleeping === 'function' ? config.isSleeping() === true : config.sleeping === true;
+    if (!sleeping) return worldPoint?.clone?.() || null;
+    const avatarRef = typeof config.avatarRef === 'function' ? config.avatarRef() : config.avatarRef;
+    const group = avatarRef?.group || (typeof config.group === 'function' ? config.group() : config.group);
+    if (!group?.parent) return worldPoint?.clone?.() || null;
+    return projectTemporaryScaledWorldPoint(group, worldPoint, SLEEP_SCALE_Y) || worldPoint?.clone?.() || null;
+  }
+
   function applyStaticSleepers() {
     for (const [group, record] of staticSleepers) {
       if (!group?.parent) { staticSleepers.delete(group); continue; }
@@ -675,6 +748,7 @@
     registerStaticSleeper,
     registerExternalSleeper,
     unregisterExternalSleeper,
+    projectExternalSleeperWorldPoint,
     beginExternalRenderScope,
     endExternalRenderScope,
     install,

@@ -14,7 +14,7 @@
   <script src="js/GLTFLoader.js?v=20260712d"></script>
   <script src="js/WallBuilder.js?v=20260809a"></script>
   <script src="js/HousePieceGen.js?v=20260809a"></script>
-  <script src="js/interior-scene-builder.js?v=20260921banubufloor1"></script>
+  <script src="js/interior-scene-builder.js?v=20260922cinematiccave1"></script>
   <script src="js/building-door.js?v=20260725a"></script>
   <script src="js/tile-pathfinding.js?v=20260808a"></script>
   <!-- Small formatting/math helpers (esc/clamp/roundRect/formatClock/etc.)
@@ -2380,7 +2380,8 @@
        window.DialogueContent.init(...) during its own setup.
        openNpcDialogue/closeNpcDialogue (camera/staging/save) stay in
        game.js and call into this module. -->
-  <script src="js/dialogue-content.js?v=20260831syllable4"></script>
+  <script src="js/cinematic-camera-runtime.js?v=20260922cinematiccave2"></script>
+  <script src="js/dialogue-content.js?v=20260922cinematiccave1"></script>
   <script src="js/banubu-questline.js?v=20260922questreset1"></script>
   <script src="js/quest-reset-debug.js?v=20260922questreset1"></script>
   <!-- World-space Float+ combat text and centered five-row reward lists. -->
@@ -2499,7 +2500,7 @@
        exported functions) and before game.js (whose boot calls into all
        three and reads window.DevTestingSwitchbox.flags directly). -->
   <script src="js/dev-testing-switchbox.js?v=20260912a"></script>
-  <script src="game.js?v=20260922banubucam1"></script>
+  <script src="game.js?v=20260922cinematiccave3"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
   <script src="js/controller-ui-nav.js?v=20260915perf1"></script>
   <script>

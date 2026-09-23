@@ -278,6 +278,24 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
           </div>
         </div>
 
+        <!-- CINEMATIC CAMERAS — fixed authored shots usable by dialogue/cutscenes. -->
+        <div class="section" id="cinematicCamerasSection" style="--sec:#fb7185;--secBg:rgba(251,113,133,.08)">
+          <div class="sect-head"><b>Cinematic Cameras</b><span class="sect-tag" id="cinCamCountTag">0</span></div>
+          <label class="chk"><input type="checkbox" id="showCinematicCameras" checked> Show floating camera markers</label>
+          <div class="row" style="margin-top:6px"><select id="cinCamSelect" style="flex:1"></select><button class="ok" id="cinCamAdd">+ Camera</button><button class="bad" id="cinCamDelete">Delete</button></div>
+          <div id="cinCamFields" style="margin-top:7px">
+            <div class="g2"><div><label>Id</label><input id="cinCamId"></div><div><label>Label</label><input id="cinCamLabel"></div></div>
+            <div class="g3" style="margin-top:6px"><div><label>Camera X</label><input id="cinCamX" type="number" step=".1"></div><div><label>Height Y</label><input id="cinCamY" type="number" step=".05"></div><div><label>Camera Z</label><input id="cinCamZ" type="number" step=".1"></div></div>
+            <div style="margin-top:6px"><label>Auto target NPC id</label><input id="cinTargetNpc" placeholder="banubu"></div>
+            <div class="g3" style="margin-top:6px"><div><label id="cinTargetLabelX">Target X</label><input id="cinTargetX" type="number" step=".1"></div><div><label id="cinTargetLabelY">Target Y</label><input id="cinTargetY" type="number" step=".05"></div><div><label id="cinTargetLabelZ">Target Z</label><input id="cinTargetZ" type="number" step=".1"></div></div>
+            <div class="g3" style="margin-top:6px"><div><label>FOV °</label><input id="cinCamFov" type="number" min="10" max="120"></div><div><label>Blend sec</label><input id="cinCamBlend" type="number" min="0" step=".05"></div><div><label>Dialogue NPC id</label><input id="cinCamNpc" placeholder="banubu"></div></div>
+            <div class="g2" style="margin-top:6px"><div><label>Player stage X</label><input id="cinStageX" type="number" step=".1"></div><div><label>Player stage Z</label><input id="cinStageZ" type="number" step=".1"></div></div>
+            <label class="chk"><input type="checkbox" id="cinCamFadePets"> Fade player pets in this shot</label>
+            <button class="sec" id="cinCamApply" style="width:100%;margin-top:6px">Apply Camera</button>
+          </div>
+          <p class="muted" style="margin-top:5px">Camera position is map tile-space. With Auto target NPC id set, Target X/Y/Z are offsets from that live NPC's face; otherwise they are an absolute map point. Dialogue may auto-pick by Dialogue NPC id, while dialogue nodes and cutscene Camera cards may reference the camera id directly.</p>
+        </div>
+
         <!-- ENTRY POINTS (Entry mode only) — named drop-spots for MapLayoutSystem's
              pickEntryPoint (see docs/js/map-layout-system.js). Always base-level,
              never per-layout: a room's physical entry points don't change just
@@ -587,6 +605,7 @@ function makeMap(name, category, cols, rows) {
     npcPaths: [],     // legacy compatibility only: { id, label, npcId, nodes: [[c,r],...] }
     transitions: [],  // { id, label, col, row, targetMapId, targetSpotId }
     npcStations: [], // { id, label, col, row, rotY, pose, toolKey, toolIntervalSec, toolAnimStyle }
+    cinematicCameras: [], // Fixed authored camera/target shots referenced by dialogue and cutscenes.
     buildings: [],    // { id, label, pieceFile, gridX, gridZ, footprintW, footprintD, wbOpts, wbGableOpts }
     entryPoints: [],  // { id, label, col, row } — named drop-spots for MapLayoutSystem.pickEntryPoint
     layouts: [],      // { id, name, priority, entryPointId?, conditions:[...], decor:[...] } — see map-layout-system.js.
@@ -641,6 +660,7 @@ function buildingInteriorToWorkspaceMap(mapData, entry = {}) {
     npcPaths: Array.isArray(mapData.npcPaths) ? mapData.npcPaths : [],
     transitions,
     objects: {}, furniture: [], decor: (mapData.furniture || []).map(decorRecord), buildings: [], npcStations: Array.isArray(mapData.npcStations) ? mapData.npcStations : [],
+    cinematicCameras: JSON.parse(JSON.stringify(mapData.cinematicCameras || [])),
     entryPoints: JSON.parse(JSON.stringify(mapData.entryPoints || [])),
     layouts: (mapData.layouts || []).map(layout => {
       const out = JSON.parse(JSON.stringify(layout));
@@ -688,6 +708,7 @@ function buildBuildingInteriorMapV1(m) {
   base.exits = Array.from(generated.values());
   base.routes = (m.routes || []).map(p => ({ id: p.id, label: p.label, nodes: (p.nodes || []).map(n => [n[0], n[1]]) })).filter(p => p.nodes.length);
   base.npcStations = (m.npcStations || []).map(st => ({ id: st.id, label: st.label || st.id, col: st.col, row: st.row, rotY: st.rotY || 0, pose: st.pose || 'stand', toolKey: st.toolKey || '', toolIntervalSec: st.toolIntervalSec || 0, toolAnimStyle: st.toolAnimStyle || '', wanderRadiusTiles: st.wanderRadiusTiles || 0, wanderMode: st.wanderMode === 'shape' ? 'shape' : 'radius', wanderShapeTiles: Array.isArray(st.wanderShapeTiles) ? st.wanderShapeTiles : [] }));
+  base.cinematicCameras = JSON.parse(JSON.stringify(m.cinematicCameras || []));
   const furnitureRecord = decor => {
     const out = JSON.parse(JSON.stringify(decor));
     out.itemKey = String(out.key || out.itemKey || '');
@@ -712,7 +733,7 @@ const _baselines = new Map();
 function _snapMap(m) {
   return JSON.parse(JSON.stringify({
     tiles: m.tiles, visualHeights: m.visualHeights, routes: m.routes, rivers: m.rivers, buildings: m.buildings,
-    transitions: m.transitions, npcStations: m.npcStations,
+    transitions: m.transitions, npcStations: m.npcStations, cinematicCameras: m.cinematicCameras,
     cols: m.cols, rows: m.rows
   }));
 }
@@ -740,7 +761,7 @@ function computeMapDiff(m) {
   if (Object.keys(tileGroups).length) diff.tiles = tileGroups;
 
   // Entity arrays
-  for (const key of ['routes', 'rivers', 'buildings', 'transitions', 'npcStations']) {
+  for (const key of ['routes', 'rivers', 'buildings', 'transitions', 'npcStations', 'cinematicCameras']) {
     const curr = m[key] || [], prev = base[key] || [];
     const prevMap = new Map(prev.map(x => [x.id, x]));
     const currMap = new Map(curr.map(x => [x.id, x]));
@@ -767,6 +788,7 @@ function computeMapDiff(m) {
 let ws = loadWorkspace();
 function ensurePlacementIds() {
   for (const map of ws.maps || []) {
+    if (!Array.isArray(map.cinematicCameras)) map.cinematicCameras = []; // Migrates older editor workspaces without touching unrelated map fields.
     if (map.category === 'building_interior' && !map.decor?.length && map.buildingInteriorBase?.furniture?.length) {
       map.decor = map.buildingInteriorBase.furniture.map(furniture => {
         const item = JSON.parse(JSON.stringify(furniture));
@@ -1682,6 +1704,36 @@ function renderPlateauGroupList() {
   }));
 }
 
+// ── Cinematic cameras panel (sidebar) ────────────────────────────────────────
+function cinematicCameraById(map, id) {
+  return (map?.cinematicCameras || []).find(camera => camera.id === id) || null;
+}
+function renderCinematicCameraPanel() {
+  const m = activeMap();
+  m.cinematicCameras = Array.isArray(m.cinematicCameras) ? m.cinematicCameras : [];
+  const list = m.cinematicCameras;
+  $('cinCamCountTag').textContent = String(list.length);
+  if (!activeCinematicCameraId || !cinematicCameraById(m, activeCinematicCameraId)) activeCinematicCameraId = list[0]?.id || null;
+  $('cinCamSelect').innerHTML = list.length ? list.map(camera => `<option value="${camera.id}">${camera.label || camera.id}</option>`).join('') : '<option value="">— no cameras —</option>';
+  $('cinCamSelect').value = activeCinematicCameraId || '';
+  const cameraDef = cinematicCameraById(m, activeCinematicCameraId);
+  $('cinCamFields').style.opacity = cameraDef ? '1' : '.45';
+  for (const id of ['cinCamId','cinCamLabel','cinCamX','cinCamY','cinCamZ','cinTargetNpc','cinTargetX','cinTargetY','cinTargetZ','cinCamFov','cinCamBlend','cinCamNpc','cinStageX','cinStageZ']) $(id).disabled = !cameraDef;
+  $('cinCamFadePets').disabled = !cameraDef; $('cinCamApply').disabled = !cameraDef;
+  if (!cameraDef) return;
+  $('cinCamId').value = cameraDef.id || ''; $('cinCamLabel').value = cameraDef.label || '';
+  $('cinCamX').value = Number(cameraDef.position?.x) || 0; $('cinCamY').value = Number(cameraDef.position?.y) || 0; $('cinCamZ').value = Number(cameraDef.position?.z) || 0;
+  $('cinTargetNpc').value = cameraDef.targetNpcId || '';
+  const faceRelative = !!cameraDef.targetNpcId;
+  $('cinTargetLabelX').textContent = faceRelative ? 'Face offset X' : 'Target X';
+  $('cinTargetLabelY').textContent = faceRelative ? 'Face offset Y' : 'Target Y';
+  $('cinTargetLabelZ').textContent = faceRelative ? 'Face offset Z' : 'Target Z';
+  $('cinTargetX').value = Number(cameraDef.target?.x) || 0; $('cinTargetY').value = Number(cameraDef.target?.y) || 0; $('cinTargetZ').value = Number(cameraDef.target?.z) || 0;
+  $('cinCamFov').value = Number(cameraDef.fovDeg) || 42; $('cinCamBlend').value = Number(cameraDef.blendSeconds) || 0;
+  $('cinCamNpc').value = cameraDef.dialogueNpcId || ''; $('cinStageX').value = cameraDef.playerStage?.x ?? ''; $('cinStageZ').value = cameraDef.playerStage?.z ?? '';
+  $('cinCamFadePets').checked = cameraDef.fadePets === true;
+}
+
 // ── Entry points panel (sidebar) ─────────────────────────────────────────────
 function renderEntryPointsPanel() {
   const m = activeMap();
@@ -1766,6 +1818,43 @@ function renderLayoutsPanel() {
   $('layoutCondFlag').value = cond.flag || '';
 }
 
+// ── Cinematic camera controls ─────────────────────────────────────────────────
+$('showCinematicCameras').addEventListener('change', () => { showCinematicCameras = $('showCinematicCameras').checked; draw(); });
+$('cinCamSelect').addEventListener('change', () => { activeCinematicCameraId = $('cinCamSelect').value || null; renderCinematicCameraPanel(); draw(); });
+$('cinTargetNpc').addEventListener('input', () => {
+  const faceRelative = !!$('cinTargetNpc').value.trim();
+  $('cinTargetLabelX').textContent = faceRelative ? 'Face offset X' : 'Target X';
+  $('cinTargetLabelY').textContent = faceRelative ? 'Face offset Y' : 'Target Y';
+  $('cinTargetLabelZ').textContent = faceRelative ? 'Face offset Z' : 'Target Z';
+});
+$('cinTargetNpc').addEventListener('change', () => {
+  if ($('cinTargetNpc').value.trim()) {
+    $('cinTargetX').value = 0; $('cinTargetY').value = 0; $('cinTargetZ').value = 0;
+  }
+});
+$('cinCamAdd').addEventListener('click', () => {
+  const m=activeMap(); m.cinematicCameras=m.cinematicCameras||[];
+  let id=`camera_${m.cinematicCameras.length+1}`; while(m.cinematicCameras.some(camera=>camera.id===id)) id+='_2';
+  m.cinematicCameras.push({id,label:id,position:{x:m.cols/2-2,y:.35,z:m.rows/2+2},target:{x:m.cols/2,y:.8,z:m.rows/2},targetNpcId:'',fovDeg:42,blendSeconds:.45,dialogueNpcId:'',fadePets:false,playerStage:null});
+  activeCinematicCameraId=id; updateAll();
+});
+$('cinCamDelete').addEventListener('click', () => {
+  const m=activeMap(); if(!activeCinematicCameraId)return;
+  m.cinematicCameras=(m.cinematicCameras||[]).filter(camera=>camera.id!==activeCinematicCameraId);
+  activeCinematicCameraId=m.cinematicCameras[0]?.id||null; updateAll();
+});
+$('cinCamApply').addEventListener('click', () => {
+  const m=activeMap(), cameraDef=cinematicCameraById(m,activeCinematicCameraId); if(!cameraDef)return;
+  const oldId=cameraDef.id; cameraDef.id=$('cinCamId').value.trim()||oldId; cameraDef.label=$('cinCamLabel').value.trim()||cameraDef.id;
+  cameraDef.position={x:Number($('cinCamX').value)||0,y:Number($('cinCamY').value)||0,z:Number($('cinCamZ').value)||0};
+  cameraDef.targetNpcId=$('cinTargetNpc').value.trim();
+  cameraDef.target={x:Number($('cinTargetX').value)||0,y:Number($('cinTargetY').value)||0,z:Number($('cinTargetZ').value)||0};
+  cameraDef.fovDeg=clamp(Number($('cinCamFov').value)||42,10,120); cameraDef.blendSeconds=Math.max(0,Number($('cinCamBlend').value)||0);
+  cameraDef.dialogueNpcId=$('cinCamNpc').value.trim(); cameraDef.fadePets=$('cinCamFadePets').checked;
+  const sx=$('cinStageX').value.trim(), sz=$('cinStageZ').value.trim(); cameraDef.playerStage=sx!==''&&sz!==''?{x:Number(sx)||0,z:Number(sz)||0}:null;
+  activeCinematicCameraId=cameraDef.id; updateAll();
+});
+
 // ── Mode / brush state ────────────────────────────────────────────────────────
 let mode = 'pan';
 const HEIGHT_EDITOR = HOBUNJI_CONFIG.editor;
@@ -1779,6 +1868,8 @@ let activeRiverNodeIndex = null; // selected node index in active river
 let activeSpotId = null;   // transition spot selected in spot mode
 let activeStationId = null; // NPC station selected in station mode
 let activeEntryId = null;  // entry point selected in entry mode (see Entry Points panel)
+let activeCinematicCameraId = null; // Camera selected in the always-visible cinematic-camera authoring panel.
+let showCinematicCameras = true; // Checkbox-controlled 2D overlay; camera records remain authored while hidden.
 let _stationPaintMode = false; // painting the active station's wanderShapeTiles instead of placing/selecting stations
 let _stationPaintRadius = 1; // brush size (tiles) for station shape painting — 1 keeps the original single-tile toggle-on-click behavior
 let activeRampId = null;   // ramp being extended in ramp mode
@@ -3159,6 +3250,27 @@ function draw() {
     ctx.restore();
     if (z > 12) { ctx.fillStyle = '#cffafe'; ctx.font = `${clamp(z*.25,8,11)}px system-ui`; ctx.fillText(st.label || st.id, p.x, p.y + s + clamp(z*.3,7,10)); ctx.font = `${Math.floor(z*0.5)}px system-ui`; }
   });
+  // Cinematic cameras — floating camera markers with dashed look-at rays.
+  if (showCinematicCameras) {
+    for (const cameraDef of (m.cinematicCameras || [])) {
+      const px = Number(cameraDef.position?.x), pz = Number(cameraDef.position?.z);
+      const tx = Number(cameraDef.target?.x), tz = Number(cameraDef.target?.z);
+      if (![px,pz,tx,tz].every(Number.isFinite)) continue;
+      const p = w2s(px, pz), target = w2s(tx, tz);
+      const selectedCamera = cameraDef.id === activeCinematicCameraId;
+      ctx.save();
+      ctx.strokeStyle = selectedCamera ? '#fff' : '#fb7185';
+      ctx.fillStyle = '#fb7185';
+      ctx.lineWidth = selectedCamera ? 3 : 2;
+      ctx.setLineDash([Math.max(3,z*.14), Math.max(2,z*.1)]);
+      ctx.beginPath(); ctx.moveTo(p.x,p.y); ctx.lineTo(target.x,target.y); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.beginPath(); ctx.arc(p.x,p.y,Math.max(5,z*.22),0,Math.PI*2); ctx.fill(); ctx.strokeStyle='#111'; ctx.lineWidth=1; ctx.stroke();
+      ctx.fillStyle='#fff'; ctx.font=`${Math.max(9,Math.round(z*.38))}px system-ui`; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('🎥',p.x,p.y);
+      ctx.restore();
+    }
+  }
+
   // Entry points (green pucks) — named drop-spots, see Entry Points panel.
   (m.entryPoints || []).forEach((ep, i) => {
     const p = w2s(ep.col + .5, ep.row + .5);
@@ -3680,12 +3792,12 @@ function renderMapList() {
     const submapTag = m.isSubmap ? `<span style="color:${group?.color||'#c084fc'}">⛰ ${group ? `#${group.number} ` : ''}tier ${m.elevation} ·</span> ` : '';
     return `<div class="item ${m.id===ws.activeId?'sel':''}" data-id="${m.id}" style="margin-left:${indent}px">
       <div class="item-name">${m.isSubmap ? '↳ ' : ''}${icon(m)} ${m.name}</div>
-      <div class="item-meta">${submapTag}${m.category} · ${m.cols}×${m.rows} · ${Object.keys(m.tiles).length} tiles · ${(m.routes||[]).length} routes · ${(m.rivers||[]).length} rivers · ${(m.transitions||[]).length} spots · ${(m.npcStations||[]).length} stations · ${(m.entryPoints||[]).length} entries${(m.layouts||[]).length ? ` · ${(m.layouts||[]).length} layouts` : ''}</div>
+      <div class="item-meta">${submapTag}${m.category} · ${m.cols}×${m.rows} · ${Object.keys(m.tiles).length} tiles · ${(m.routes||[]).length} routes · ${(m.rivers||[]).length} rivers · ${(m.transitions||[]).length} spots · ${(m.npcStations||[]).length} stations · ${(m.entryPoints||[]).length} entries · ${(m.cinematicCameras||[]).length} cameras${(m.layouts||[]).length ? ` · ${(m.layouts||[]).length} layouts` : ''}</div>
     </div>`;
   }).join('');
   $('mapList').querySelectorAll('.item').forEach(el => el.addEventListener('click', () => {
     ws.activeId = el.dataset.id; undoStack.length = 0; redoStack.length = 0; activePathId = null; activeRiverId = null; activeRampId = null; activeSpotId = null;
-    activeEntryId = null; editingLayoutId = null; selectedPlacement = null;
+    activeEntryId = null; activeCinematicCameraId = null; editingLayoutId = null; selectedPlacement = null;
     updateAll(); fitView();
   }));
   $('mapCountTag').textContent = String(ws.maps.length);
@@ -4318,7 +4430,7 @@ function runQuickCheck() {
 }
 
 function setStatus(msg) { $('statusPill').textContent = msg; }
-function updateAll() { syncViewOffset(); renderMapList(); fillSettings(); renderPalette(); renderPlateauGroupList(); renderEntryPointsPanel(); renderLayoutsPanel(); refreshPreview(); updateBrushPill(); refreshBuildingDetection(); draw(); saveWorkspace(); }
+function updateAll() { syncViewOffset(); renderMapList(); fillSettings(); renderPalette(); renderPlateauGroupList(); renderCinematicCameraPanel(); renderEntryPointsPanel(); renderLayoutsPanel(); refreshPreview(); updateBrushPill(); refreshBuildingDetection(); draw(); saveWorkspace(); }
 
 // ── Game bridge: hobunji_farm_layout_v3 ──────────────────────────────────────
 function buildFarmLayoutV3() {

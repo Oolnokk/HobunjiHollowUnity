@@ -326,6 +326,7 @@ assert(!/Fifteen Fish Pie|morning pool|too hungry to hunt/i.test(JSON.stringify(
 
 // Runtime integration: processor placement, module order, shared strength vocabulary, and editor controls.
 const gameSource = read('docs/game.js');
+const contentSource = read('docs/js/banubu-quest-content.js');
 assert.match(gameSource, /teaGrinder:[\s\S]{0,420}specialMode:\s*'teaGrinder'/);
 assert.match(gameSource, /TeaGrinder\?\.init\(/);
 assert.match(gameSource, /def\.specialMode === 'teaGrinder'[\s\S]{0,260}TeaGrinder\?\.open/);
@@ -363,9 +364,12 @@ assert.strictEqual(banubuSchedule.scheduleHooks.rules.length, 1);
 assert.strictEqual(banubuSchedule.scheduleHooks.rules[0].from, '00:00');
 assert.strictEqual(banubuSchedule.scheduleHooks.rules[0].to, '24:00');
 assert(!banubuSchedule.scheduleHooks.rules.some(rule => rule.stationId === 'station_banubu_cave_awake'));
+assert.match(banubuSchedule.note, /one physical sleeping station/, 'Banubu awake/sleep presentation must not be modeled as duplicate physical NPC stations');
+assert.match(contentSource, /cameraId: 'banubu_dialogue_awake'/, 'Banubu\'s third intro attempt must switch the same live NPC to the awake authored camera shot');
 
 const sleepPresentation = read('docs/js/animal-sleep-presentation.js');
 assert.match(sleepPresentation, /function registerExternalSleeper\(/, 'named animal NPCs must be able to opt into the shared animal sleep presenter');
+assert.match(sleepPresentation, /function projectExternalSleeperWorldPoint\(/, 'cinematic cameras must be able to project a named-animal face through the exact render-time sleep transform');
 assert.match(sleepPresentation, /eyesClosed = typeof config\.eyesClosed === 'function'/, 'external sleepers must be able to open only their eyes while preserving the sleep body pose');
 assert.match(sleepPresentation, /frameCacheKey\(kind, frame, genotype, eyesClosed = true\)/, 'sleep frame cache must distinguish open-eye and closed-eye versions of the same species sleep frame');
 assert.match(sleepPresentation, /if \(sleeping && run2\) return \{ frame: 'run2'/, 'sleep presentation must prefer each species run2 frame when available');

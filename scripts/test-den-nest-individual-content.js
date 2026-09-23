@@ -151,12 +151,12 @@ assert.match(localeRuntime, /const result = originalUpdate\(dt\);[\s\S]*?safeSyn
   'authored transforms run after DenNestSystem layout without allowing locale errors to interrupt the gameplay frame');
 
 const denRuntimeIndex = combatLoader.indexOf("js/den-locale-runtime.js?v=20260914c");
-const puktukIndex = combatLoader.indexOf("js/puktuk-den-nest-registration.js?v=20260914b");
+const puktukIndex = combatLoader.indexOf("js/puktuk-den-nest-registration.js?v=20260921voorgherd1");
 assert.ok(denRuntimeIndex >= 0 && puktukIndex > denRuntimeIndex,
   'combat bootstrap owns den runtime and Puktuk registration as ordered sibling modules');
 assert.doesNotMatch(puktukRegistration, /document\.write|ensureDenLocaleRuntime/,
   'Puktuk registration must never nest parser-time script injection inside combat bootstrap');
-assert.match(puktukRegistration, /version: 2/,
+assert.match(puktukRegistration, /version: 3/,
   'isolated Puktuk registration version is exposed for bootstrap cache checks');
 
 console.log('Individual nest rendering plus authored furniture/locale/Den-Mother/clutch transform checks passed.');

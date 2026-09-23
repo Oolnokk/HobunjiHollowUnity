@@ -47,12 +47,12 @@
     return { phase, stage, ...extra }; // Used by runtime tree routing and Dialogue Editor quest controls.
   }
 
-  function textNode(id, text, next = null) {
-    return { id, type: 'text', text, next, pos: { x: 80, y: 80 }, expression: 'neutral', expressionHold: 2, revealSpeed: 'normal' };
+  function textNode(id, text, next = null, extra = {}) {
+    return { id, type: 'text', text, next, pos: { x: 80, y: 80 }, expression: 'neutral', expressionHold: 2, revealSpeed: 'normal', ...extra };
   }
 
-  function choiceNode(id, text, choices) {
-    return { id, type: 'choice', text, choices, pos: { x: 80, y: 80 }, expression: 'neutral', expressionHold: 2, revealSpeed: 'normal' };
+  function choiceNode(id, text, choices, extra = {}) {
+    return { id, type: 'choice', text, choices, pos: { x: 80, y: 80 }, expression: 'neutral', expressionHold: 2, revealSpeed: 'normal', ...extra };
   }
 
   function tree(id, label, phase, stage, entryNode, nodes, extra = {}) {
@@ -106,7 +106,7 @@
           next: 'banubu_intro_4',
           actions: [{ type: 'banubuQuest', operation: 'unlockRecipe', stage: 0 }],
         },
-      ]),
+      ], { cameraId: 'banubu_dialogue_awake' }),
       textNode('banubu_intro_4', 'Oh, those glowy fellows? Yeah, I wish they’d leave me alone too. I get real bad dreams when they’re around.', 'banubu_intro_5'),
       textNode('banubu_intro_5', 'I’d love to help, and I get how urgent this all is with your little village and all that, but I’m in a bit of a pickle. I’m just so dang sleepy these days. Even if I got up, I ain’t got the energy to be much help.', 'banubu_intro_6'),
       textNode('banubu_intro_6', 'I think that if I only had something to eat, maybe I’d have the energy to get up and the strength needed to help. But I’m far too tired to get up and hunt.', 'banubu_intro_7'),

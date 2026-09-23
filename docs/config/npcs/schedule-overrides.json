@@ -188,7 +188,7 @@
   "scheduleReplacements": [
     {
       "npcId": "banubu",
-      "note": "Banubu, the Sleeping Grehlr, remains asleep indefinitely in his generated cavern. His awake station is retained only as unused authoring data; no active schedule rule targets it.",
+      "note": "Banubu, the Sleeping Grehlr, remains at one physical sleeping station indefinitely; waking is a dialogue/presentation state of that same NPC, not a second station.",
       "scheduleHooks": {
         "defaultMapId": "map_i_den_banubu",
         "defaultStationId": "station_banubu_cave_sleep",

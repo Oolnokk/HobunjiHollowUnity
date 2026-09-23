@@ -213,10 +213,13 @@
       texture.repeat.set(options.textureRepeat || 0.35, options.textureRepeat || 0.35);
       if ('colorSpace' in texture && THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
     }
-    // Dual-contour winding faces the carved air volume, so FrontSide shows
-    // the playable tunnel shell while culling reverse faces seen from solid
-    // inter-tunnel pockets. DoubleSide made those pockets look like rooms.
-    const materialOptions = { color: options.color ?? 0x5f5a56, map: texture, flatShading: !texture, side: THREE.FrontSide };
+    // Procedural maze dens stay FrontSide so reverse faces inside solid
+    // inter-tunnel pockets cannot masquerade as rooms. Authored footprint
+    // caverns may opt into DoubleSide: their bounded room footprint has no
+    // hidden inter-tunnel pockets, and two-sided facets prevent a locally
+    // reversed lower-wall triangle from exposing the scene's black void.
+    const shellSide = options.doubleSided === true ? THREE.DoubleSide : THREE.FrontSide; // Authored locale caverns opt in; ordinary procedural dens keep one-sided shells.
+    const materialOptions = { color: options.color ?? 0x5f5a56, map: texture, flatShading: !texture, side: shellSide };
     const fallbackMat = new THREE.MeshBasicMaterial(materialOptions);
     const mesh = new THREE.Mesh(geo, fallbackMat);
     applyTownCliffMaterial(THREE, mesh, fallbackMat);

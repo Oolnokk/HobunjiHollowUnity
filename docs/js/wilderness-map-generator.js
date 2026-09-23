@@ -3384,6 +3384,7 @@
         w: bbox.w, h: bbox.h,
         connectors: (locale.connectors || []).map(c => ({ col: c.col, row: c.row, side: c.side, label: c.label })),
         npcAnchors: (locale.npcAnchors || []).map(n => ({ npcId: n.npcId, name: n.name, col: n.col, row: n.row, facing: n.facing })),
+        cinematicCameras: clonePlain(locale.cinematicCameras || []), // Local-space authored shots are translated after generation scaling with the rest of this locale instance.
         objects: (locale.objects || []).map(o => ({ id: o.id, kind: o.kind, key: o.key, label: o.label, col: o.col, row: o.row, w: o.w, h: o.h }))
       }
     });
@@ -8331,6 +8332,10 @@
           x: Math.round((meta.anchorX + col) * localeScale),
           y: Math.round((meta.anchorY + row) * localeScale)
         });
+        const toWorldContinuous = (col, row) => ({
+          x: (meta.anchorX + col) * localeScale,
+          y: (meta.anchorY + row) * localeScale
+        }); // Cinematic shots are not tile-snapped; preserve their authored fractional framing through locale translation/scaling.
         return {
           localeId: meta.localeId,
           name: meta.name,
@@ -8342,6 +8347,21 @@
           h: meta.h * localeScale,
           connectors: (meta.connectors || []).map(c => ({ ...toWorld(c.col, c.row), side: c.side, label: c.label })),
           npcAnchors: (meta.npcAnchors || []).map(n => ({ npcId: n.npcId, name: n.name, ...toWorld(n.col, n.row), facing: n.facing })),
+          cinematicCameras: (meta.cinematicCameras || []).map(camera => {
+            const p = camera.position || {}, t = camera.target || {}, stage = camera.playerStage || null;
+            const worldP = toWorldContinuous(Number(p.x) || 0, Number(p.z) || 0);
+            const npcTargeted = !!camera.targetNpcId;
+            const worldT = npcTargeted
+              ? { x: Number(t.x) || 0, y: Number(t.y) || 0, z: Number(t.z) || 0 } // Face-relative offsets live in NPC/world units: neither locale translation nor Tothal density scaling may distort the intended facial framing.
+              : (() => { const target = toWorldContinuous(Number(t.x) || 0, Number(t.z) || 0); return { x: target.x, y: Number(t.y) || 0, z: target.y }; })();
+            return {
+              ...clonePlain(camera),
+              position: { x: worldP.x, y: Number(p.y) || 0, z: worldP.y },
+              target: worldT,
+              playerStage: stage ? (() => { const worldStage = toWorldContinuous(Number(stage.x) || 0, Number(stage.z) || 0); return { x: worldStage.x, z: worldStage.y }; })() : null,
+              sourceLocaleId: meta.localeId,
+            };
+          }),
           objects: (meta.objects || []).map(o => ({
             id: o.id, kind: o.kind, key: o.key, label: o.label, ...toWorld(o.col, o.row),
             w: o.w * localeScale, h: o.h * localeScale

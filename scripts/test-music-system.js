@@ -45,7 +45,7 @@ assert.match(music, /function isAuthoredHourWindowEligible\(track\)[\s\S]*?start
   'authored BGM hour windows support both ordinary and midnight-wrapping ranges');
 assert.match(title, /const STARTUP_BGM_URL = 'assets\/audio\/music\/bgm\/bgm_remembrance\.m4a'/,
   'the earliest title runtime points at the authored Remembrance startup track');
-assert.match(title, /document\.documentElement\.classList\.add\('hobunji-title-active'\);[\s\S]*?tryStartStartupBgm\(\);[\s\S]*?loadTitleSky\(\)/,
+assert.match(title, /document\.documentElement\.classList\.add\('hobunji-preworld-sky-active', 'hobunji-title-active'\);[\s\S]*?tryStartStartupBgm\(\);[\s\S]*?loadTitleSky\(\)/,
   'Remembrance is attempted immediately when the title screen itself is installed');
 assert.match(title, /function beginStart\([\s\S]*?tryStartStartupBgm\('title input: ' \+ source\);[\s\S]*?hobunji-title-starting/,
   'the accepted title input retries autoplay synchronously before the swallowed input is released');
@@ -132,7 +132,7 @@ assert.match(config, /"nightbugs": "assets\/audio\/sfx\/bgs\/bgs_nightbugs1\.mp3
   'runtime config uses the normalized nightbugs recording');
 assert.equal((config.match(/"url": "assets\/audio\/music\/bgm\/bgm_farm1\.m4a", "fallback": true, "rainingOnly": true/g) || []).length, 2,
   'the shared farm/town theme is authored as rain-only in both playlists');
-assert.match(index, /scratchbones-config\.js\?v=20260920newbgm1/,
+assert.match(index, /scratchbones-config\.js\?v=20260922banubucam1/,
   'the browser cache key loads the expanded authored BGM playlists');
 assert.match(formatUtils, /title-screen-runtime\.js\?v=20260921preworldsky2/,
   'the parser-synchronous title loader cache-busts the earliest Remembrance bootstrap');

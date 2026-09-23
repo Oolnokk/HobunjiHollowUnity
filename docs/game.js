@@ -356,6 +356,13 @@
         _dialogueWalker = walker;
         activeCameraMode   = npcDialogueCameraMode();
         activeCameraTarget = walker.root;
+        const authoredDialogueCameraId = String(rec?.dialogueCameraId || walker.profile?.appearance?.dialogueCameraId || ''); // Optional explicit camera beats the area's nearest NPC-tagged shot.
+        window.CinematicCameraRuntime?.beginDialogue?.({
+          areaId: currentArea,
+          npcId: rec?.id || '',
+          cameraId: authoredDialogueCameraId,
+          walker,
+        });
         beginNpcDialogueStaging(walker);
         updateDialogueZoomIndicator();
         walker.pause = Infinity;
@@ -498,6 +505,7 @@
 
       function closeNpcDialogue() {
         dialogueOpen = false;
+        window.CinematicCameraRuntime?.endDialogue?.();
         window.DialogueContent?.resetDialogueState();
         window.DialogueContent?.stopNpcDialogueTypewriter(false);
         window.DialogueContent?.hideChoiceButtons();
@@ -515,6 +523,7 @@
         }
         enterDefaultCameraMode();
         activeCameraTarget = null;
+        _snapCameraTarget(); // Dialogue staging may have walked the player off-shot; resume gameplay centered on that current player position, not the stale NPC target.
         dialogueZoomPointers.clear();
         dialoguePinchDistance = null;
         if (dialogueZoomConfig().resetOnDialogueClose) resetDialogueCameraZoom();
@@ -8582,8 +8591,10 @@
                   target: 'building', targetMapId: cavernMapId,
                 };
               });
+            const localeCinematicCameras = localeInstances.flatMap(instance => instance.cinematicCameras || []); // Cameras authored inside a moving locale have already been translated into this generated zone's final tile space.
             _zoneLayouts.set(zoneId, {
               cols: merged.cols, rows: merged.rows, tiles: [...merged.tiles.values()],
+              cinematicCameras: localeCinematicCameras,
               transitions: [
                 ...preserved.map(t => ({ id: t.id, label: t.label, col: t.col, row: t.row, target: 'building', targetMapId: t.targetMapId })),
                 ...tentTransitions,
@@ -10214,6 +10225,7 @@
         const cullables = [];
         zScene.traverse(o => { if (o.userData?.cullSphere) cullables.push(o); });
 
+        window.CinematicCameraRuntime?.registerArea?.(mapId, zoneData?.cinematicCameras || []); // Exterior map cameras are already in root-zone tile coordinates.
         const info = { scene: zScene, grid: zGrid, cols: ZCOLS, rows: ZROWS, transitions, occlusionMeshes, canopyZones, cullables, chunkController: null, pathNet: zonePathNet };
         _zoneScenes.set(mapId, info);
 
@@ -10700,6 +10712,14 @@
         if (!Number.isFinite(npcX) || !Number.isFinite(npcZ)) { npcDialogueStaging = null; return; }
         const playerWorldX = player.x / TILE;
         const playerWorldZ = player.y / TILE;
+        const authoredStage = window.CinematicCameraRuntime?.currentPlayerStage?.(); // Camera-local player blocking point; uses the existing walk/lerp path below instead of teleporting.
+        if (authoredStage && Number.isFinite(Number(authoredStage.x)) && Number.isFinite(Number(authoredStage.z))) {
+          const target = { x: Number(authoredStage.x), z: Number(authoredStage.z) };
+          npcDialogueStaging = { walker, targetX: target.x, targetZ: target.z };
+          player.vx = 0;
+          player.vy = 0;
+          return;
+        }
         const candidates = npcDialogueStagingOffsets().map(offset => ({
           x: npcX + (Number(offset.x) || 0),
           z: npcZ + (Number(offset.y) || 0),
@@ -10727,6 +10747,93 @@
       // exchange, not just the moment right after it opens).
       function _dialogueEyeWorldPosition(rootPosition, modelHeight) {
         return new THREE.Vector3(rootPosition.x, rootPosition.y + modelHeight * PLAYER_FACE_HEIGHT_RATIO, rootPosition.z);
+      }
+
+      function _finiteNpcFacePoint(point) {
+        return point
+          && Number.isFinite(Number(point.x))
+          && Number.isFinite(Number(point.y))
+          && Number.isFinite(Number(point.z));
+      }
+
+      // Cinematic NPC-target cameras need the visible face itself, not merely
+      // "root + 76% of standing height". Humanoid portraits already publish a
+      // skinned head centroid; named animals instead publish a species-authored
+      // chathead frame plus their live animal head bone. Resolve those exact
+      // surfaces first, then fall back to the old dialogue eye-height estimate.
+      function _namedAnimalFaceWorldPosition(walker) {
+        const avatarRef = walker?.animalAvatarRef;
+        const plane = avatarRef?.frontPlane;
+        const kind = String(walker?.animalKind || '');
+        if (!plane || !kind) return null;
+
+        if (walker._animalSleepRequested === true) {
+          window.AnimalSleepPresentation?.forceHeadDown?.(avatarRef, walker); // Apply the same sleep head pose before resolving the face point, including the very first dialogue frame.
+        }
+
+        const authoredFrame = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[kind]?.chatheadFrame;
+        const frameCenter = window.AnimalChatheadFrame?.frameCenterForKind?.(kind)
+          || (authoredFrame ? {
+            x: Number(authoredFrame.x) + Number(authoredFrame.width) * 0.5,
+            y: Number(authoredFrame.y) + Number(authoredFrame.height) * 0.5,
+          } : null);
+        if (!frameCenter || !Number.isFinite(Number(frameCenter.x)) || !Number.isFinite(Number(frameCenter.y))) return null;
+
+        const params = plane.geometry?.parameters || {};
+        const width = Number(params.width) || Number(walker.animalDef?.modelWidth) || 1;
+        const height = Number(params.height)
+          || (Number(walker.animalDef?.modelWidth) || 1) * (Number(walker.animalDef?.spriteAspect) || 1);
+        const localX = (Number(frameCenter.x) - 0.5) * width;
+        const localY = (0.5 - Number(frameCenter.y)) * height;
+        let face = null;
+
+        // Painted animal head rigs rotate around a real per-species pivot.
+        // Treat the authored face center as head-owned so a sleeping/head-down
+        // Banubu keeps the camera trained on the visibly rotated face instead
+        // of the undeformed bind-pose card.
+        const headBone = avatarRef.headRig?.frontHeadBone;
+        if (headBone?.localToWorld && headBone.position) {
+          headBone.updateWorldMatrix?.(true, false);
+          face = new THREE.Vector3(
+            localX - (Number(headBone.position.x) || 0),
+            localY - (Number(headBone.position.y) || 0),
+            -(Number(headBone.position.z) || 0),
+          );
+          headBone.localToWorld(face);
+        } else if (plane.localToWorld) {
+          plane.updateWorldMatrix?.(true, false);
+          face = plane.localToWorld(new THREE.Vector3(localX, localY, 0));
+        }
+        if (!_finiteNpcFacePoint(face)) return null;
+
+        // AnimalSleepPresentation's flattening is render-only and happens
+        // after updateCameraPosition. Ask that system to project this exact
+        // head-bone point through its own cached Y-scale + bottom-preserving
+        // grounding correction so the cinematic target matches rendered pixels.
+        if (walker._animalSleepRequested === true && window.AnimalSleepPresentation?.projectExternalSleeperWorldPoint) {
+          const projected = window.AnimalSleepPresentation.projectExternalSleeperWorldPoint(walker, face);
+          if (_finiteNpcFacePoint(projected)) face = projected;
+        }
+        return face;
+      }
+
+      function _npcFaceWorldPosition(walker) {
+        if (!walker?.root?.position) return null;
+
+        if (walker.animalDef && walker.animalAvatarRef) {
+          const animalFace = _namedAnimalFaceWorldPosition(walker);
+          if (_finiteNpcFacePoint(animalFace)) return animalFace;
+        }
+
+        const rig = walker.avatarGroup?.userData?.neckRig;
+        const centroid = rig?.headCentroidPx;
+        if (rig?.available && centroid && window.PNGPlaneAvatar?.resolveSkinnedPixelWorldPosition) {
+          const skinnedFace = window.PNGPlaneAvatar.resolveSkinnedPixelWorldPosition(walker.avatarGroup, centroid);
+          if (_finiteNpcFacePoint(skinnedFace)) return skinnedFace;
+        }
+
+        if (!Number.isFinite(Number(walker.avatarHeight))) return null;
+        return _dialogueEyeWorldPosition(walker.root.position, walker.avatarHeight);
       }
 
       // Shared core behind _aimNeckAtEyeContact below: rotates a neck-rig
@@ -12264,6 +12371,9 @@
             } catch(_) { return m; }
           }));
           _workspaceMaps = resolvedMaps;
+          for (const map of resolvedMaps) window.CinematicCameraRuntime?.registerArea?.(map.id, map.cinematicCameras || []); // Makes Map Editor camera records addressable before a lazy scene build.
+          const townCameraMap = resolvedMaps.find(map => map.id === 'map_hobunji_town');
+          if (townCameraMap) window.CinematicCameraRuntime?.registerArea?.('town', townCameraMap.cinematicCameras || []); // Runtime town area uses the short alias while authoring uses map_hobunji_town.
 
           // Plateau sub-maps are purely an authoring convenience in the Map Editor —
           // in-game every tier of a plateau stack is merged into its root zone's
@@ -12551,7 +12661,7 @@
             // path (WildernessMapGenerator) produces those (see
             // performTothalShift), so wild packs simply don't spawn here yet.
             const visualHeights = window.TerrainPreview?.buildMergedZoneGrid(ws, zoneMapId)?.visualHeights || new Map();
-            _zoneLayouts.set(zoneMapId, { cols: zm.cols, rows: zm.rows, tiles: zTiles, visualHeights, transitions: zTransitions, toTownExit, mesas, buildings: outBuildings, decor: outDecor, furniture: outFurniture, dens: [], foliagePatches: [], ambushStations: [] });
+            _zoneLayouts.set(zoneMapId, { cols: zm.cols, rows: zm.rows, tiles: zTiles, visualHeights, transitions: zTransitions, toTownExit, mesas, buildings: outBuildings, decor: outDecor, furniture: outFurniture, cinematicCameras: zm.cinematicCameras || [], dens: [], foliagePatches: [], ambushStations: [] });
             console.log(`%c[zone:${zoneMapId}] loaded ${zm.cols}x${zm.rows}, tiles=${zTiles.length}, mesas=${mesas.length}, buildings=${outBuildings.length}, decor=${outDecor.length}, furniture=${outFurniture.length}, toTownExit=${toTownExit ? `(${toTownExit.col},${toTownExit.row})` : 'none (using placeholder)'}, zoneTransitions=${zTransitions.length}`, 'color:#22c55e;font-weight:bold');
           }
           const townM = resolvedMaps.find(m => m.id === 'map_hobunji_town');
@@ -12561,7 +12671,7 @@
           }
           _workspaceDefinition = window.MapLivePreview.clone({ ...ws, maps: resolvedMaps });
           await window.TownMine?.decorateTownMap?.(townM);
-          const layout = { version: 1, name: townM.name || 'Hobunji Hollow — Town', cols: townM.cols, rows: townM.rows, tiles: [], npcPaths: [], transitions: [], npcStations: [], buildings: townM.buildings || [], decor: townM.decor || [], furniture: townM.furniture || [] };
+          const layout = { version: 1, name: townM.name || 'Hobunji Hollow — Town', cols: townM.cols, rows: townM.rows, tiles: [], npcPaths: [], transitions: [], npcStations: [], buildings: townM.buildings || [], decor: townM.decor || [], furniture: townM.furniture || [], cinematicCameras: townM.cinematicCameras || [] };
           for (let r = 0; r < townM.rows; r++) for (let c = 0; c < townM.cols; c++) {
             const t = townM.tiles[`${c},${r}`];
             if (t) layout.tiles.push({ c, r, type: t.type || 'grass' });
@@ -12608,6 +12718,7 @@
       function initTownTravel(layout, options = {}) {
         if (!layout || layout.version !== 1) return;
         _townZone = layout;
+        window.CinematicCameraRuntime?.registerArea?.('town', layout.cinematicCameras || []); // Town's runtime area id differs from its Map Editor id.
         const TCOLS = layout.cols || 60, TROWS = layout.rows || 50;
         townGrid = Array.from({ length: TROWS }, (_, r) =>
           Array.from({ length: TCOLS }, (_, c) => ({
@@ -12967,6 +13078,7 @@
               ? { textureUrl: 'assets/textures/carved_smooth.png', color: 0x8a8d91, textureRepeat: 0.42, useLambert: true, emissive: 0x000000 }
               : denCaveVariant ? { textureUrl: denCaveVariant.textureUrl, color: denCaveVariant.color, textureRepeat: 0.35, useLambert: true, emissive: 0x000000 }
               : { textureUrl: 'assets/textures/carved_smooth.png', color: 0x808080, textureRepeat: 0.35, useLambert: true, emissive: 0x000000 }; // Never leave an authored cavern on an untextured material fallback.
+            cavernMaterialOpts.doubleSided = mapData.isLocaleCavern === true; // Footprint-authored rooms have no hidden maze pockets, so reversed shell facets may safely render instead of exposing black void.
             const cavernMesh = InteriorSceneBuilder.buildCarvedCavernMesh(THREE, mapData.mesh, cavernMaterialOpts);
             _markOutline(cavernMesh);
             bScene.add(cavernMesh);
@@ -13382,6 +13494,7 @@
           // whole scene graph every frame in occlusionSafeCameraPosition.
           const occlusionMeshes = [];
           bScene.traverse(o => { if (o.userData?.cameraObstacle) occlusionMeshes.push(o); });
+          window.CinematicCameraRuntime?.registerArea?.(mapId, mapData.cinematicCameras || []); // Building/cave authored cameras use the same local tile coordinate space as this scene.
           const info = { scene: bScene, grid: bGrid, cols, rows, transitions, vendorZones: mapData.vendorZones || [], routes: buildingRoutes, loadSource, fallback: loadSource !== 'config', name: mapData.name || mapId, wallStyle: mapData.wallStyle || '', entrySpots: mapData.entrySpots || {}, keyDoorGroups, mineFloor: mapData.mineFloor || null, minePlacementSafeTileCount: mapData.minePlacementSafeTileCount ?? null, disconnectedFloorTilesRemoved: mapData.disconnectedFloorTilesRemoved ?? 0, occlusionMeshes };
           _buildingScenes.set(mapId, info);
           if (info.disconnectedFloorTilesRemoved > 0) window.__farmLog?.(`[cavern] ${mapId}: sealed ${info.disconnectedFloorTilesRemoved} unreachable floor tiles`, 'warn', mapData.wallStyle === 'mine' ? 'mine' : undefined);
@@ -19731,6 +19844,8 @@
       let _seatedOcclusionDistance = null; // smoothed seated-camera distance used while an obstruction clears
       let _seatedOcclusionUpdatedAt = 0; // previous seated occlusion update time used to calculate smoothing delta
       let _seatedCameraDebug = null; // latest seated obstruction solve, exposed to Pixel Probe for mobile diagnosis
+      let _cavernOcclusionDistance = null; // Smooths ordinary follow-camera release across the cavern shell's many small organic facets.
+      let _cavernOcclusionUpdatedAt = 0; // Previous cavern solve time used by the exponential outward lerp.
       function occlusionSafeCameraPosition(lookAtX, lookAtY, lookAtZ, idealX, idealY, idealZ) {
         let resultX = idealX, resultY = idealY, resultZ = idealZ;
         const obstacles = currentAreaOcclusionMeshes();
@@ -19834,6 +19949,23 @@
             _seatedOcclusionUpdatedAt = 0;
             _seatedCameraDebug = null;
           }
+          const smoothCavernOcclusion = _isCavernBuildingArea(currentArea) && activeCameraMode !== 'seated';
+          if (smoothCavernOcclusion) {
+            const now = performance.now();
+            const dt = _cavernOcclusionUpdatedAt ? Math.min(0.1, (now - _cavernOcclusionUpdatedAt) / 1000) : 0;
+            _cavernOcclusionUpdatedAt = now;
+            if (_cavernOcclusionDistance == null) _cavernOcclusionDistance = desiredSafeDist;
+            if (desiredSafeDist < _cavernOcclusionDistance) {
+              _cavernOcclusionDistance = desiredSafeDist; // New obstruction pulls in immediately so no frame can sit inside rock.
+            } else {
+              const alpha = 1 - Math.exp(-6 * dt); // Losing/reselecting adjacent shell facets eases outward instead of visibly snapping.
+              _cavernOcclusionDistance += (desiredSafeDist - _cavernOcclusionDistance) * alpha;
+            }
+            safeDist = window.FormatUtils.clamp(_cavernOcclusionDistance, Math.min(3, dist), dist);
+          } else {
+            _cavernOcclusionDistance = null;
+            _cavernOcclusionUpdatedAt = 0;
+          }
           if (safeDist < dist - 1e-4) {
             const shrink = window.FormatUtils.clamp(1 - safeDist / dist, 0, 1);
             // Side-sliding supplies seated clearance; lifting a billboard
@@ -19903,7 +20035,42 @@
         }
         return floor;
       }
+      let _cinematicCameraBlend = null; // Captures the outgoing camera pose so authored camera changes blend instead of snapping.
+      function applyAuthoredCinematicCamera() {
+        const record = window.CinematicCameraRuntime?.activeRecord?.();
+        const shot = record?.camera;
+        if (!shot || window.__mapEditorOrbitActive) { _cinematicCameraBlend = null; return false; }
+        const blendKey = `${record.areaId}:${shot.id}:${record.activatedAt}`;
+        if (!_cinematicCameraBlend || _cinematicCameraBlend.key !== blendKey) {
+          _cinematicCameraBlend = {
+            key: blendKey,
+            startedAt: performance.now(),
+            startPosition: camera.position.clone(),
+            startTarget: new THREE.Vector3(camTargetX, camTargetY, camTargetZ),
+            startFov: camera.fov,
+          };
+        }
+        const durationMs = Math.max(0, Number(shot.blendSeconds) || 0) * 1000;
+        const rawT = durationMs > 0 ? window.FormatUtils.clamp((performance.now() - _cinematicCameraBlend.startedAt) / durationMs, 0, 1) : 1;
+        const t = rawT * rawT * (3 - 2 * rawT); // Smoothstep keeps camera starts/stops soft while preserving exact authored endpoints.
+        const desiredPosition = new THREE.Vector3(Number(shot.position.x) || 0, Number(shot.position.y) || 0, Number(shot.position.z) || 0);
+        const resolvedTarget = window.CinematicCameraRuntime?.resolvedTarget?.(); // NPC-targeted shots resolve against the live walker's face every frame; plain cameras still return their authored absolute target.
+        const desiredTarget = new THREE.Vector3(
+          Number(resolvedTarget?.x ?? shot.target?.x) || 0,
+          Number(resolvedTarget?.y ?? shot.target?.y) || 0,
+          Number(resolvedTarget?.z ?? shot.target?.z) || 0
+        );
+        camera.position.lerpVectors(_cinematicCameraBlend.startPosition, desiredPosition, t);
+        const lookTarget = _cinematicCameraBlend.startTarget.clone().lerp(desiredTarget, t);
+        camera.lookAt(lookTarget);
+        camera.fov = THREE.MathUtils.lerp(_cinematicCameraBlend.startFov, Number(shot.fovDeg) || 42, t);
+        camera.aspect = threeContainer.clientWidth / threeContainer.clientHeight;
+        camera.updateProjectionMatrix();
+        return true;
+      }
+
       function updateCameraPosition() {
+        if (applyAuthoredCinematicCamera()) return;
         const modeCfg = cameraModeConfig(activeCameraMode);
         // A cutscene Zoom card's percent (100 = the captured shot's own
         // unmodified framing, higher = closer) — entirely separate from the
@@ -23514,6 +23681,7 @@
         worldPopupRuntime?.update(now);
 
         updateSceneTransition(dt);
+        window.CinematicCameraRuntime?.update?.(dt); // Fades/restores player pets for authored dialogue/cutscene shots without adding a second frame loop.
 
         if (window.Fishing?.state?.active) window.Fishing.update(dt);
         window.MusicMinigame?.tick(dt);
@@ -26749,6 +26917,17 @@
       window.addEventListener('beforeunload', flushSessionPersistence);
       window.addEventListener('pagehide', flushSessionPersistence);
 
+      window.CinematicCameraRuntime?.init?.({
+        getCurrentArea: () => currentArea,
+        getCompanionObjects: () => companionObjects,
+        getPlayer: () => player,
+        getNpcWalker: (npcId, areaId = currentArea) => npcWalkers.find(walker => walker.rec?.id === npcId && walker.area === areaId) || null,
+        getNpcFacePosition: walker => {
+          const face = _npcFaceWorldPosition(walker);
+          return _finiteNpcFacePoint(face) ? { x: face.x, y: face.y, z: face.z } : null;
+        },
+      });
+
       window.DialogueContent?.init({
         calendar,
         getNpcRecords: () => npcWalkers.map(w => w.rec).filter(Boolean), // Used by adjustNpcFavor's household/workplace spillover.
@@ -29390,6 +29569,7 @@
           cutscenePreviewActive = false;
           cutscenePreviewZoomPercent = 100; // never leak an authored zoom into normal gameplay afterward
           cutscenePreviewDialogueSpeaker = null;
+          window.CinematicCameraRuntime?.deactivate?.(); // A Camera card must never leak its fixed shot back into ordinary gameplay after the preview ends.
           enterDefaultCameraMode();
           activeCameraTarget = null;
           window.CutscenePreviewHelpers.cutscenePreviewBanner(message || `🎬 ${payload.title || 'Cutscene'} — finished.`, false);
@@ -29465,6 +29645,7 @@
           if (stage.type === 'combat') return runCombat(stage);
           if (stage.type === 'fade') return runFade(stage);
           if (stage.type === 'zoom') return runZoom(stage);
+          if (stage.type === 'camera') return runCamera(stage);
 
           const speakerActor  = actorsById.get(stage.speakerId);
           const speakerEntity = entities.get(stage.speakerId);
@@ -29721,6 +29902,19 @@
         // hostileObjects/companionObjects AI already owns their rotation
         // that frame.
         let cutsceneRotLastT = performance.now();
+        // Switches the preview to a camera authored on the current map/locale.
+        // Empty cameraId explicitly releases the authored shot back to normal
+        // preview framing, so a cutscene can both enter and leave a fixed shot.
+        function runCamera(stage) {
+          const cameraId = String(stage.cameraId || '');
+          if (cameraId) window.CinematicCameraRuntime?.activate?.(currentArea, cameraId, { reason: 'cutscene' });
+          else window.CinematicCameraRuntime?.deactivate?.();
+          const delay = Math.max(0, Number(stage.duration) || 0) * 1000;
+          if (delay > 0) setTimeout(() => continueTo(getResolvedNext(stage.id, stage.next)), delay);
+          else continueTo(getResolvedNext(stage.id, stage.next));
+        }
+
+
         function cutsceneRotationTick() {
           if (!running) return;
           const now = performance.now();
@@ -29779,6 +29973,7 @@
         runCutscenePreview(window.__hobunjiCutscenePreview).catch(err => {
           console.error('[cutscene preview] failed to start:', err);
           cutscenePreviewActive = false;
+          window.CinematicCameraRuntime?.deactivate?.(); // Startup failures release any camera card activated before the exception.
           window.CutscenePreviewHelpers.cutscenePreviewBanner('Preview failed to start — see console.', true);
         });
       }

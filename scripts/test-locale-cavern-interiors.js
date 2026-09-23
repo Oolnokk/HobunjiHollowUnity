@@ -72,16 +72,22 @@ assert.strictEqual(Object.keys(built.floorSurfaceByTile || {}).length, built.flo
 assert(Number.isFinite(built.floorSurfaceY), 'cavern synthesis must expose a finite fallback floor surface Y');
 assert.strictEqual(built.floor.length, Object.keys(banubu.tiles).length);
 assert.strictEqual(carveCall.floor.length, built.floor.length, 'the exact painted locale footprint must be handed to the cavern sculptor');
-assert.deepStrictEqual(carveCall.options.entrance, { col: 6, row: 10, side: 'south' });
+assert.deepStrictEqual(carveCall.options.entrance, { col: 6, row: 10, side: 'north' });
 assert.strictEqual(built.keyGatedDoors[0].requiresKeyItem, 'color_pools_key');
 assert.deepStrictEqual(JSON.parse(JSON.stringify(built.entrySpots.color_pools_door)), { col: 6, row: 1, side: 'north' });
-assert(built.npcStations.some(station => station.id === 'station_banubu_cave_sleep' && station.pose === 'lie'));
+assert(built.npcStations.some(station => station.id === 'station_banubu_cave_sleep' && station.pose === 'lie' && station.col === 6 && station.row === 5), 'Banubu\'s single physical sleeping station must stay at its latest authored location');
+assert.strictEqual(built.npcStations.filter(station => station.npcId === 'banubu').length, 1, 'Banubu cavern must register one physical Banubu station, not separate awake/sleep NPC copies');
+assert(!built.npcStations.some(station => station.id === 'station_banubu_cave_awake'), 'unused awake Banubu station must stay removed');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(built.cinematicCameras)), banubu.cinematicCameras, 'locale cavern synthesis must preserve authored cinematic camera records');
 
 const sculptorSource = read('docs/js/cavern-sculptor.js');
 const generatorSource = read('docs/js/cavern-generator.js');
 const gameSource = read('docs/game.js');
 const editorSource = read('docs/tools/locale-editor/index.html');
 const interiorBuilderSource = read('docs/js/interior-scene-builder.js');
+const localePreview3dSource = read('docs/tools/locale-editor/locale-preview3d.js');
+const panelUiSource = read('docs/js/panel-ui.js');
+const naturalSurfaceSource = read('docs/js/natural-surface-materials.js');
 assert(sculptorSource.includes('function carveFootprintCavern(') && sculptorSource.includes('carveMazeCavern, carveFootprintCavern'), 'shared cavern sculptor must expose footprint-driven generation');
 assert(generatorSource.includes('loadLocaleCavernDefinition') && generatorSource.includes('synthesizeLocaleCavernMapData'), 'runtime must resolve cave interiors through locale files');
 assert(!generatorSource.includes("seedText === 'map_i_den_banubu'"), 'generic generator must not special-case Banubu by seed/map id');
@@ -98,6 +104,30 @@ assert(!gameSource.includes('_isBuildingArea(area) ? 0 : npcSurfaceY(area, spawn
 assert(gameSource.includes('InteriorSceneBuilder.buildCavernFloorMesh?.('), 'game cavern scenes must add the explicit textured walkable floor mesh');
 assert(gameSource.includes('mapData.denMotherKind || mapData.cavernCreatureKind'), 'authored caverns must select texture family from their authored creature habitat');
 assert(editorSource.includes('value="cave_interior"') && editorSource.includes('cavernSeed') && editorSource.includes('raw.cavern'), 'Locale Editor must author and preserve cave-interior generator metadata');
+assert(localePreview3dSource.includes("currentPreviewMode = canRenderInterior ? 'interior' : 'exterior'"), 'cave_interior locales must default the live 3D preview to their generated cavern interior');
+assert(localePreview3dSource.includes('CavernGenerator.synthesizeLocaleCavernMapData(locale)'), 'Locale Editor cavern preview must synthesize the same authored footprint map data as runtime');
+assert(localePreview3dSource.includes('InteriorSceneBuilder.buildCarvedCavernMesh') && localePreview3dSource.includes('InteriorSceneBuilder.buildCavernFloorMesh'), 'Locale Editor cavern preview must render the shared runtime cavern shell and walkable floor');
+assert(localePreview3dSource.includes("id=\"localeSandboxCamera\"") && localePreview3dSource.includes('applySelectedCinematicCamera'), 'Locale Editor 3D preview must allow looking through authored cinematic cameras');
+assert(localePreview3dSource.includes("id=\"localeCavernWireframe\"") && localePreview3dSource.includes('applyCavernWireframe'), 'Locale Editor cavern preview must expose a shell wireframe diagnostic');
+assert(localePreview3dSource.includes('ambientLight.intensity = interior ? 0.15 : 0.7') && localePreview3dSource.includes('sunLight.intensity = interior ? 0.08 : 1.1') && localePreview3dSource.includes('scene.fog = interior ? null'), 'cavern preview lighting/background must mirror the live den-interior scene instead of wilderness lighting');
+assert(localePreview3dSource.includes('const authored = currentLocale?.cinematicCameras?.[0]'), 'cavern orbit inspection must start inside the shell from an authored camera when one exists');
+assert(localePreview3dSource.includes("return localeSignature(locale) + '|preview:' + currentPreviewMode"), 'Locale preview must compare the same mode-qualified signature it stores after regeneration');
+assert(localePreview3dSource.includes('const signature = previewSignature(locale);') && !localePreview3dSource.includes("const signature = localeSignature(locale) + '|preview:' + currentPreviewMode;"), 'Locale preview polling must not force a cavern SDF rebuild every 500 ms');
+assert(localePreview3dSource.includes('let renderDirty = true') && localePreview3dSource.includes('if (!renderDirty) return;'), 'Locale preview must render on demand instead of redrawing a static scene every animation frame');
+assert(localePreview3dSource.includes('renderer.shadowMap.enabled = false') && localePreview3dSource.includes('Math.min(1.25, window.devicePixelRatio || 1)'), 'Locale preview should avoid preview-only shadow and high-DPI GPU costs');
+assert(localePreview3dSource.includes('cavern: locale.cavern,') && !localePreview3dSource.includes('cavern: locale.cavern, cinematicCameras: locale.cinematicCameras'), 'cavern geometry invalidation must ignore cinematic-camera-only edits so slider drags never re-run SDF generation');
+assert(localePreview3dSource.includes('id="localeCameraSliderPanel"') && localePreview3dSource.includes('data-camera-slider="position.x"') && localePreview3dSource.includes('data-camera-slider="target.y"') && localePreview3dSource.includes('data-camera-slider="fovDeg"'), 'camera preview must expose live position, target, and FOV sliders while looking through the shot');
+assert(localePreview3dSource.includes('updateCameraFromSlider(input, false)') && localePreview3dSource.includes('updateCameraFromSlider(input, true)'), 'camera sliders must preview continuously but commit only on slider release/change');
+assert(localePreview3dSource.includes('window._localeEditorBridge?.updateCinematicCamera?.'), 'camera slider commits must persist through the Locale Editor workspace bridge without rebuilding geometry');
+assert(localePreview3dSource.includes("const uniqueNpcIds = [...new Set") && localePreview3dSource.includes("marker.name = 'localeSandboxCavernNpc_' + npcId"), 'cavern preview must render one visible marker per NPC id even when a locale has several station anchors');
+assert(localePreview3dSource.includes("record?.targetNpcId && path.startsWith('target.')") && localePreview3dSource.includes('Face offset'), 'NPC-targeted preview sliders must be small face-relative offsets rather than map-coordinate target sliders');
+assert(localePreview3dSource.includes('previewNpcFacePosition') && localePreview3dSource.includes('resolvedPreviewCameraTarget'), 'Locale preview must resolve authored NPC target offsets from the preview NPC face');
+assert(localePreview3dSource.includes("../../config/attachment-rig-profiles.js") && localePreview3dSource.includes('chatheadFrame'), 'Locale preview must use the source-controlled species face frame instead of a generic height guess');
+assert(localePreview3dSource.includes('const grehlrBaseWidth = 2.2') && localePreview3dSource.includes('const banubuScaleMultiplier = 3') && localePreview3dSource.includes("anchor.pose === 'lie'"), 'Banubu camera preview must match his canonical Grehlr dimensions, named-animal scale, and sleep flattening');
+assert(editorSource.includes('updateCinematicCamera: (localeId, cameraId, next) =>'), 'Locale Editor bridge must persist live preview camera edits');
+assert(editorSource.includes('cinematicCameras: m.cinematicCameras || []') && editorSource.includes('cavern: m.cavern || null'), 'Locale JSON export must retain cinematic cameras and cavern metadata');
+assert(panelUiSource.includes('locale-preview3d.js?v=20260922npctarget2'), 'Locale Editor must cache-bust the corrected visible-face camera preview sidecar');
+assert(naturalSurfaceSource.includes('NATURAL_SURFACE_SCRIPT_SRC') && naturalSurfaceSource.includes("new URL('../' + raw.replace"), 'shared natural-surface textures must resolve from their script path so nested editor previews use the same assets as the game');
 assert.strictEqual(fs.existsSync(path.join(root, 'docs/config/maps/map_i_color_pools.json')), false, 'Color Pools must not retain a competing static rectangular map definition');
 
 // Exercise real triangle sampling, including sub-tile tessellation and missing coverage.
