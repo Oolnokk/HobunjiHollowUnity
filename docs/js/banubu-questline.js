@@ -226,14 +226,22 @@
     return target;
   }
 
+  function sameEffectSet(left, right) {
+    const a = [...new Set(left || [])].sort(); // Used by Nine Leaf Tea to preserve its authored exact-effect requirement.
+    const b = [...new Set(right || [])].sort();
+    return a.length === b.length && a.every((entry, index) => entry === b[index]);
+  }
+
   function mealMatchesTarget(entry, state) {
     const target = state?.target;
     if (!target?.requiredEffects?.length) return false;
     const recipeId = target.questType === 'nineLeafTea' ? CONTENT()?.NINE_LEAF_TEA_RECIPE_ID : CONTENT()?.THREE_FISH_PIE_RECIPE_ID;
     if (entry.definition?.recipeId !== recipeId) return false;
     const foodEffects = entry.definition?.foodEffects || {};
+    const present = Object.keys(foodEffects).filter(key => Number(foodEffects[key]) > 0); // Used to preserve Quest 2's exact two-effect requirement while letting pie crust add incidental buffs.
+    if (target.questType === 'nineLeafTea' && !sameEffectSet(present, target.requiredEffects)) return false;
     const minimum = Math.max(1, Number(target.minStacks) || 1);
-    return target.requiredEffects.every(effect => Number(foodEffects[effect]) >= minimum); // Extra buffs are allowed; crust ingredients can satisfy requested effects while Quest 2 still enforces Concentrated strength.
+    return target.requiredEffects.every(effect => Number(foodEffects[effect]) >= minimum); // Three-Fish Pie may carry extra crust buffs; both quests still require every requested effect at the authored minimum.
   }
 
   function matchingMeal(state) {
