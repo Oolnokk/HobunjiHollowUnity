@@ -341,11 +341,27 @@ const nuancedSource = new Uint8ClampedArray([
 const nuancedProbe = new Uint8ClampedArray(nuancedSource);
 colorFillWindow.ColorFill.shadeFillPixels(nuancedProbe, [240, 220, 180]);
 assert.deepEqual(Array.from(nuancedProbe), [
-  96, 88, 72, 255,
-  144, 132, 108, 255,
-  192, 176, 144, 255,
+  98, 90, 74, 255,
+  143, 131, 107, 255,
+  197, 180, 148, 255,
   240, 220, 180, 255,
-], 'body/animal recolors preserve all authored intermediate shades instead of flattening values above an inferred shadow cluster');
+], 'body/animal recolors preserve all authored intermediate perceptual shades instead of flattening values above an inferred shadow cluster');
+const grehlrDarkSource = new Uint8ClampedArray([
+  8, 10, 12, 255,
+  12, 15, 18, 255,
+  16, 20, 24, 255,
+  20, 25, 30, 255,
+]);
+const grehlrDarkProbe = new Uint8ClampedArray(grehlrDarkSource);
+colorFillWindow.ColorFill.shadeFillPixels(grehlrDarkProbe, [79, 117, 125]);
+assert.deepEqual(Array.from(grehlrDarkProbe), [
+  32, 47, 50, 255,
+  47, 70, 75, 255,
+  63, 94, 100, 255,
+  79, 117, 125, 255,
+], 'dark blue-gray Grehlr-style source shading preserves the authored target hue and perceptual shade spacing');
+assert.match(colorFillSource, /return relativeLuminance\(r, g, b\)/,
+  'shared shade reference measures perceptual luminance rather than HSV max-channel value');
 assert.match(colorFillSource, /peakValue = Math\.max\(peakValue, sourceValue/,
   'shared ColorFill derives its normalization anchor from the brightest eligible authored pixel');
 assert.doesNotMatch(colorFillSource, /AUTHORED_SHADOW_VALUE_RATIO|histogramMass|bestScore/,
