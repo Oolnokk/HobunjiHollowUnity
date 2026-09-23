@@ -5,7 +5,7 @@
   // one fixed tempo/pitch per recording, one fixed tempo/pitch per utterance,
   // and the species size-class pitch offset. No random ranges, normalization,
   // contours, splice-tempo or behavior-specific modulation remain.
-  const MIN_TEMPO = 0.35;
+  const MIN_TEMPO = 1 / 3; // Allows Banubu's authored night snore to reuse a Grehlr call at the requested exact one-third tempo.
   const MAX_TEMPO = 2;
   const MAX_SHIFT_SEMITONES = 12;
   const WSOLA_FRAME_S = 0.056;
@@ -580,13 +580,15 @@
       // has a real tile position (den/nest/wherever it's currently
       // patrolling) — pan and extra echo are both derived straight from
       // that, so the call always originates from the right direction.
-      const spatial = audioSystem.creatureAudioSpatial?.(c) || { panX: 0, extraWetBoost: 0 };
+      const spatial = audioSystem.creatureAudioSpatial?.(c, opts) || { panX: 0, extraWetBoost: 0 }; // Carries optional fixed-emitter acoustic distance through the normal panning/reverb path.
       activeVoiceCount++;
-      let released = false;
-      const release = () => {
-        if (released) return;
-        released = true;
+      let completed = false; // Used to forward exactly one terminal callback even when an error path also triggers renderer cleanup.
+      const complete = (error = null) => {
+        if (completed) return;
+        completed = true;
         activeVoiceCount = Math.max(0, activeVoiceCount - 1);
+        if (error) opts.onError?.(error);
+        else opts.onFinished?.();
       };
       play(url, {
         tempo,
@@ -596,8 +598,8 @@
         panX: spatial.panX,
         extraWetBoost: spatial.extraWetBoost,
         onStarted: opts.onStarted,
-        onError: (error) => { release(); opts.onError?.(error); },
-        onFinished: release,
+        onError: error => complete(error),
+        onFinished: () => complete(),
         fallbackAudio: capture.audio,
       });
       return true;

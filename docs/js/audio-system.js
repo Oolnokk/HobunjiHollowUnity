@@ -905,9 +905,16 @@
   // facing tightly enough for a facing-relative pan to read as more
   // correct, and every other panned sound in this file already uses raw
   // world X.
-  function creatureAudioSpatial(c) {
+  function animalVoiceAcousticDistancePx(c, opts = {}) {
+    const overridePx = Number(opts?.acousticDistancePx); // Used by fixed world emitters such as Banubu's cave entrance when elevation must contribute to loudness.
+    if (Number.isFinite(overridePx) && overridePx >= 0) return overridePx;
+    if (!deps?.player || !Number.isFinite(c?.x) || !Number.isFinite(c?.y)) return 0;
+    return Math.hypot(c.x - deps.player.x, c.y - deps.player.y);
+  }
+
+  function creatureAudioSpatial(c, opts = {}) {
     if (!deps?.player || !Number.isFinite(c?.x) || !Number.isFinite(c?.y)) return { panX: 0, extraWetBoost: 0, distance: 0 };
-    const distance = Math.hypot(c.x - deps.player.x, c.y - deps.player.y);
+    const distance = animalVoiceAcousticDistancePx(c, opts); // Feeds elevation-aware distance into attenuation/reverb while keeping stereo origin tied to the source's real X position.
     const panX = Math.max(-1, Math.min(1, (c.x - deps.player.x) / Math.max(1, ANIMAL_VOICE_PAN_RANGE_PX)));
     const chunkPx = (window.WildernessChunks?.constants?.CHUNK_TILES || 16) * deps.TILE;
     const wetT = Math.max(0, Math.min(1, distance / Math.max(1, chunkPx)));
@@ -946,7 +953,7 @@
     if (audioCfg.enabled === false || combatSfxConfig().enabled === false) return false;
     if (zoneEntryVoiceGraceActive(c.areaId)) return false;
     const earshot = deps.TILE * Math.max(1, Number(opts.earshotTiles) || 16);
-    const distance = Math.hypot(c.x - deps.player.x, c.y - deps.player.y);
+    const distance = animalVoiceAcousticDistancePx(c, opts); // Optional override lets authored fixed emitters include vertical separation without changing ordinary creature calls.
     if (distance > earshot) return false;
     const url = pool[Math.floor(Math.random() * pool.length)];
     const preload = animalVoicePreloads.get(url);

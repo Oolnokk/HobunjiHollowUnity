@@ -6,6 +6,9 @@ on:
       - 'docs/js/music-system.js'
       - 'docs/js/animal-vocalizations.js'
       - 'docs/js/animal-voice-independent-playback.js'
+      - 'docs/js/audio-system.js'
+      - 'docs/js/banubu-snore.js'
+      - 'docs/js/pixel-probe.js'
       - 'docs/js/fish-catalog.js'
       - 'docs/js/sprite-recolor.js'
       - 'docs/tools/ambient-dialogue-editor/index.html'
@@ -14,6 +17,7 @@ on:
       - 'scripts/test-music-system.js'
       - 'scripts/test-kurraya-transport-audio-sync.js'
       - 'scripts/test-animal-vocalizations.js'
+      - 'scripts/test-banubu-snore.js'
       - 'scripts/test-strength-fish-buffs.js'
       - 'scripts/test-netlify-cloud-save-static-preview.js'
       - '.github/workflows/audio-startup-regression.yml'
@@ -22,6 +26,9 @@ on:
       - 'docs/js/music-system.js'
       - 'docs/js/animal-vocalizations.js'
       - 'docs/js/animal-voice-independent-playback.js'
+      - 'docs/js/audio-system.js'
+      - 'docs/js/banubu-snore.js'
+      - 'docs/js/pixel-probe.js'
       - 'docs/js/fish-catalog.js'
       - 'docs/js/sprite-recolor.js'
       - 'docs/tools/ambient-dialogue-editor/index.html'
@@ -30,6 +37,7 @@ on:
       - 'scripts/test-music-system.js'
       - 'scripts/test-kurraya-transport-audio-sync.js'
       - 'scripts/test-animal-vocalizations.js'
+      - 'scripts/test-banubu-snore.js'
       - 'scripts/test-strength-fish-buffs.js'
       - 'scripts/test-netlify-cloud-save-static-preview.js'
       - '.github/workflows/audio-startup-regression.yml'
@@ -52,13 +60,19 @@ jobs:
           node --check docs/js/music-system.js
           node --check docs/js/animal-vocalizations.js
           node --check docs/js/animal-voice-independent-playback.js
+          node --check docs/js/audio-system.js
+          node --check docs/js/banubu-snore.js
+          node --check docs/js/pixel-probe.js
           node --check docs/js/fish-catalog.js
           node --check docs/js/sprite-recolor.js
           node --check scripts/test-music-system.js
           node --check scripts/test-kurraya-transport-audio-sync.js
           node --check scripts/test-animal-vocalizations.js
+          node --check scripts/test-banubu-snore.js
           node --check scripts/test-strength-fish-buffs.js
           node --check scripts/test-netlify-cloud-save-static-preview.js
+      - name: Test Banubu night snore
+        run: node scripts/test-banubu-snore.js
       - name: Test music startup and unlock
         run: node scripts/test-music-system.js
       - name: Test Kurraya transport audio sync

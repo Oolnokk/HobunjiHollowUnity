@@ -927,6 +927,14 @@
     lines.push(`Livestock caller stack tracing: ${window.PerfProfiler?.traceLivestockCallers === true ? 'ON (expensive)' : 'off'}`);
     const playerVitalsDebug = window.PlayerVitals?.getDebug?.(); // Confirms lethal resource ticks reached the shared death handler on mobile.
     if (playerVitalsDebug) lines.push(`Player vitals: hp=${playerVitalsDebug.health}/${playerVitalsDebug.maxHealth} deathHandled=${playerVitalsDebug.deathHandled ? 1 : 0}`);
+    const banubuSnoreDebug = window.BanubuSnore?.debugSnapshot?.(); // Exposes entrance-origin, chunk gate, and elevation attenuation for phone testing without devtools.
+    if (banubuSnoreDebug) {
+      const hDist = Number(banubuSnoreDebug.horizontalDistanceTiles); // Used only to format the current horizontal component in the copyable report.
+      const eDist = Number(banubuSnoreDebug.elevationDistanceTiles); // Used only to format the current elevation component in the copyable report.
+      const aDist = Number(banubuSnoreDebug.acousticDistanceTiles); // Used only to format the combined acoustic distance in the copyable report.
+      const gain = Number(banubuSnoreDebug.acousticGain); // Used only to show the current post-distance gain before the master SFX slider.
+      lines.push(`Banubu snore: status=${banubuSnoreDebug.status || '-'} night=${banubuSnoreDebug.night ? 1 : 0} playing=${banubuSnoreDebug.playing ? 1 : 0} origin=${banubuSnoreDebug.originSource || '-'}@${banubuSnoreDebug.entranceCol ?? '?'},${banubuSnoreDebug.entranceRow ?? '?'} chunkDist=${banubuSnoreDebug.chunkDistance ?? '-'} horizontal=${Number.isFinite(hDist) ? hDist.toFixed(2) : '-'}t elevation=${Number.isFinite(eDist) ? eDist.toFixed(2) : '-'}t acoustic=${Number.isFinite(aDist) ? aDist.toFixed(2) : '-'}t gain=${Number.isFinite(gain) ? gain.toFixed(2) : '-'} tempo=${Number(banubuSnoreDebug.tempo || 0).toFixed(3)} lastDuration=${banubuSnoreDebug.lastDurationMs == null ? '-' : Math.round(banubuSnoreDebug.lastDurationMs) + 'ms'}`);
+    }
     const knockbackImpactDebug = window.KnockbackCollisionImpact?.debugSnapshot?.(); // Latest forced-movement collision so mobile testing can verify collider type, scaling, and lethal suppression without a console.
     if (knockbackImpactDebug) {
       const effectText = Object.entries(knockbackImpactDebug.effects || {}).map(([key, value]) => `${key}=${value}`).join(', '); // Full scaled profile before caps/lethality.
