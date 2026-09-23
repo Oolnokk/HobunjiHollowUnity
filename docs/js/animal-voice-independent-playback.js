@@ -586,11 +586,15 @@
       const complete = (error = null) => {
         if (completed) return;
         completed = true;
+        opts.signal?.removeEventListener?.('abort', cancelPlayback);
         activeVoiceCount = Math.max(0, activeVoiceCount - 1);
         if (error) opts.onError?.(error);
         else opts.onFinished?.();
       };
-      play(url, {
+      const cancelPlayback = () => { handle?.stop?.(); complete(); }; // Used by authored ambient voices to end immediately when dialogue begins.
+      let handle = null; // Kept only while this voice owns its independent playback, for cancellation.
+      opts.signal?.addEventListener?.('abort', cancelPlayback, { once: true });
+      handle = play(url, {
         tempo,
         pitchSemitones,
         volume: clamp(finite(capture.audio.volume, opts.volume ?? 0.7), 0, 1),
@@ -602,6 +606,7 @@
         onFinished: () => complete(),
         fallbackAudio: capture.audio,
       });
+      if (opts.signal?.aborted) cancelPlayback();
       return true;
     };
     audioSystem.__simpleAnimalVoiceWrapped = true;

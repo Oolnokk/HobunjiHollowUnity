@@ -16,6 +16,7 @@
   let lastStartedAtMs = 0; // Used to measure the real rendered snore duration for mobile diagnostics.
   let schedulerUnsubscribe = null; // Used by dispose() so a development reload can cleanly detach this feature.
   let lastLoggedStatus = ''; // Used to keep the in-game debug log readable instead of logging every proximity poll.
+  let activeSnoreController = null; // Cancels an already audible snore as soon as Banubu is addressed.
 
   const debugState = {
     status: 'booting',
@@ -127,6 +128,20 @@
     if (!deps?.player) return { ok: false, reason: 'waiting for player/runtime' };
     const area = currentArea(deps);
     debugState.area = area;
+    if (area === BANUBU_INTERIOR_ID) {
+      const col = 6, row = 5; // Banubu's authored sleeping station in the cave interior.
+      const tileSize = Math.max(1, finite(deps.TILE, 64));
+      const sourceX = (col + 0.5) * tileSize, sourceY = (row + 0.5) * tileSize;
+      const horizontalDistanceTiles = Math.hypot(sourceX - finite(deps.player.x), sourceY - finite(deps.player.y)) / tileSize;
+      const sourceElevation = surfaceYAt(deps, area, col, row);
+      const elevationDistanceTiles = Math.abs(playerSurfaceY(deps, area, tileSize) - sourceElevation);
+      const acousticDistanceTiles = Math.hypot(horizontalDistanceTiles, elevationDistanceTiles);
+      Object.assign(debugState, { originSource: 'sleeping station', entranceCol: col, entranceRow: row,
+        entranceElevation: sourceElevation, playerElevation: playerSurfaceY(deps, area, tileSize),
+        horizontalDistanceTiles, elevationDistanceTiles, acousticDistanceTiles,
+        acousticGain: Math.max(0, 1 - acousticDistanceTiles / 16), chunkDistance: 0 });
+      return { ok: true, deps, area, tileSize, earshotTiles: 16, acousticDistanceTiles, sourceX, sourceY };
+    }
     if (area !== BANUBU_AREA_ID) return { ok: false, reason: 'outside Northern Cliffs' };
 
     const layout = deps?.zoneLayouts?.get?.(area);
@@ -211,6 +226,7 @@
   function markFinished(error = null) {
     const finishedAt = nowMs(); // Used both for real-duration diagnostics and immediate start eligibility of the next snore.
     snorePlaying = false;
+    activeSnoreController = null;
     debugState.playing = false;
     debugState.lastFinishedAt = Date.now();
     debugState.lastDurationMs = lastStartedAtMs > 0 ? Math.max(0, finishedAt - lastStartedAtMs) : null;
@@ -246,10 +262,12 @@
     debugState.baseVolume = baseVolume;
 
     let started = false; // Used to measure the actual rendered duration rather than decode/preparation time.
+    activeSnoreController = new AbortController(); // Passed to the independent voice renderer for immediate dialogue cancellation.
     const accepted = audio.playAnimalVoiceUtterance(source, {
       meaning: 'chatter',
       reason: 'banubu-snore',
       tempo: SNORE_TEMPO,
+      signal: activeSnoreController.signal,
       pitchSemitones: authored.pitchSemitones,
       sizePitchSemitones: authored.sizePitchSemitones,
       allowedClips: [...authored.chatter.allowedClips],
@@ -274,6 +292,7 @@
     });
 
     if (!accepted) {
+      activeSnoreController = null;
       setStatus('audio start deferred');
       nextAttemptAtMs = timestamp + FAILED_START_RETRY_MS;
       return false;
@@ -286,13 +305,20 @@
   }
 
   function update(frameContext = {}) {
-    if (snorePlaying) return;
     const timestamp = finite(frameContext.timestamp, nowMs());
+    const deps = gameDeps(); // Dialogue state is authoritative even while a slowed snore is already playing.
+    if (deps?.isDialogueOpen?.() && (currentArea(deps) === BANUBU_INTERIOR_ID || currentArea(deps) === BANUBU_AREA_ID)) {
+      activeSnoreController?.abort();
+      setStatus('paused for dialogue');
+      nextAttemptAtMs = timestamp + IDLE_RECHECK_MS;
+      return;
+    }
+    if (snorePlaying) return;
     if (timestamp < nextAttemptAtMs) return;
 
     const night = window.Fishing?.timeOfDay?.() === 'night';
     debugState.night = night;
-    if (!night) {
+    if (!night && currentArea(deps) !== BANUBU_INTERIOR_ID) {
       setStatus('daytime');
       nextAttemptAtMs = timestamp + IDLE_RECHECK_MS;
       return;
@@ -321,6 +347,8 @@
   function dispose() {
     schedulerUnsubscribe?.();
     schedulerUnsubscribe = null;
+    activeSnoreController?.abort();
+    activeSnoreController = null;
     snorePlaying = false;
     debugState.playing = false;
     setStatus('disposed');
@@ -338,7 +366,7 @@
     schedulerUnsubscribe = window.RuntimeFrameScheduler.register(SCHEDULER_ID, update, {
       phase: 'post-game',
       owner: 'BanubuSnore',
-      description: 'Plays Banubu night snores from his live cave-entrance transition with chunk/elevation attenuation.',
+      description: 'Plays Banubu snores indoors all day or at night near his live exterior cave entrance.',
     });
     setStatus('ready');
   } else {

@@ -64,6 +64,7 @@ const windowObject = {
   AudioSystem: {
     playAnimalVoiceUtterance(sourceEntity, options) {
       calls.push({ sourceEntity: { ...sourceEntity }, options });
+      options.signal?.addEventListener('abort', () => options.onFinished(), { once: true }); // Mimics the independent voice renderer's cancellation callback.
       return true;
     },
   },
@@ -89,6 +90,7 @@ const context = {
   Array,
   Object,
   Map,
+  AbortController,
   console,
 };
 vm.createContext(context);
@@ -132,11 +134,30 @@ now = 6300;
 scheduled({ timestamp: now });
 assert.equal(calls.length, 2, 'daytime must suppress Banubu snoring');
 
-phase = 'night';
-player.x = (64.5) * TILE; // Entrance chunk=1, player chunk=4 -> three chunks away.
+let talking = false; // Simulates Banubu dialogue while the player is indoors.
+windowObject.Combat.deps.isDialogueOpen = () => talking;
+windowObject.Combat.deps.getCurrentArea = () => 'map_i_den_banubu';
+player.x = 6.5 * TILE;
+player.y = 6.5 * TILE;
 now = 6600;
 scheduled({ timestamp: now });
-assert.equal(calls.length, 2, 'player more than two chunks away must not hear a new snore');
+assert.equal(calls.length, 3, 'Banubu should snore indoors even during daytime');
+assert.equal(calls[2].sourceEntity.x, 6.5 * TILE, 'indoor snoring comes from his sleeping station');
+assert.equal(calls[2].sourceEntity.y, 5.5 * TILE, 'indoor snoring comes from his sleeping station');
+assert.equal(calls[2].options.earshotTiles, 16, 'indoor snoring uses a room-scale earshot');
+talking = true;
+now = 6700;
+scheduled({ timestamp: now });
+assert(calls[2].options.signal.aborted, 'starting dialogue must cancel a snore already in progress');
+assert.match(windowObject.BanubuSnore.debugSnapshot().status, /paused for dialogue/);
+windowObject.Combat.deps.getCurrentArea = () => 'map_northern_cliffs';
+talking = false;
+
+phase = 'night';
+player.x = (64.5) * TILE; // Entrance chunk=1, player chunk=4 -> three chunks away.
+now = 7000;
+scheduled({ timestamp: now });
+assert.equal(calls.length, 3, 'player more than two chunks away must not hear a new snore');
 assert.match(windowObject.BanubuSnore.debugSnapshot().status, /outside two-chunk range/, 'debug state must explain the chunk-range suppression');
 
 assert(audioSource.includes('function animalVoiceAcousticDistancePx(c, opts = {})'), 'AudioSystem must accept an acoustic-distance override');
@@ -147,7 +168,7 @@ assert(playbackSource.includes('let completed = false;'), 'animal voice adapter 
 assert(playbackSource.includes('onError: error => complete(error)'), 'animal voice adapter must route playback errors through the single completion bridge');
 assert(playbackSource.includes('onFinished: () => complete()'), 'animal voice adapter must forward successful processed playback completion to the caller');
 assert(!playbackSource.includes('onFinished: release'), 'animal voice adapter must not swallow the caller onFinished callback');
-assert(indexSource.includes('js/banubu-snore.js?v=20260923snore2'), 'game index must load the Banubu snore runtime');
+assert(indexSource.includes('js/banubu-snore.js?v=20260923snore3'), 'game index must load the Banubu snore runtime');
 assert(pixelProbeSource.includes('Banubu snore:'), 'Pixel Probe must expose Banubu snore diagnostics on mobile');
 assert(logs.length > 0, 'runtime status changes should also reach the existing in-game audio log');
 

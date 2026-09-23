@@ -670,7 +670,7 @@
        CavernSculptor), ported from docs/references/(HA)TunnelSculptorV1.html.
        Framework-agnostic pure data/math — must load before cavern-generator.js,
        whose generateCavernFloor calls window.CavernSculptor.carveMazeCavern(...). -->
-  <script src="js/cavern-sculptor.js?v=20260902cavesafe1"></script>
+  <script src="js/cavern-sculptor.js?v=20260923banubuwalls1"></script>
   <script src="js/cavern-generator.js?v=20260922banubureview1"></script>
   <script src="js/town-mine.js?v=20260919combatbgm2"></script>
   <!-- A wilderness zone's in-bounds elevated plateau/mesa terrain
@@ -698,7 +698,8 @@
        window.ZoneDenTotemFeatures.init(...) alongside its sibling systems
        and its build*(...) functions lazily, from buildZoneScene, never
        synchronously during initial boot. -->
-  <script src="js/zone-den-totem-features.js?v=20260921banubuclip1"></script>
+  <script src="js/locale-cave-runtime.js?v=20260923caveregistry1"></script>
+  <script src="js/zone-den-totem-features.js?v=20260923caveregistry1"></script>
   <!-- Wilderness-zone grass and rich-foliage-patch billboards
        (window.ZoneGrassBillboards) — pure scene-graph generation, no
        other window.* system reads; must load before game.js, which calls
@@ -2525,9 +2526,10 @@
        fullscreen world composite after renderer creation, persists only its
        quality mode, and owns no requestAnimationFrame loop. -->
   <script src="js/painterly-postprocess.js?v=20260923paintrebase1"></script>
-  <script src="game.js?v=20260923ledge1"></script>
-  <!-- Banubu's exterior night snore — resolves the live shifted cave transition after game.js has initialized Combat/world deps. -->
-  <script src="js/banubu-snore.js?v=20260923snore2"></script>
+  <script src="js/banubu-cave-clouds.js?v=20260923cavecloud1"></script>
+  <script src="game.js?v=20260923banubuatmosphere1"></script>
+  <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
+  <script src="js/banubu-snore.js?v=20260923snore3"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
   <script src="js/controller-ui-nav.js?v=20260915perf1"></script>
   <script>
