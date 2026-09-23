@@ -527,7 +527,6 @@
     const avatarRef = typeof config.avatarRef === 'function' ? config.avatarRef() : config.avatarRef;
     const group = avatarRef?.group || (typeof config.group === 'function' ? config.group() : config.group);
     if (!group?.parent) return worldPoint?.clone?.() || null;
-    forceHeadDown(avatarRef, entity); // Ensure the projected point sees the same authored sleep head pose as the coming render checkpoint.
     return projectTemporaryScaledWorldPoint(group, worldPoint, SLEEP_SCALE_Y) || worldPoint?.clone?.() || null;
   }
 
