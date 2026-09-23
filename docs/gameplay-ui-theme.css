@@ -1,0 +1,236 @@
+/* Character-select visual language for gameplay UI.
+   The onboarding/save-select screens get most of their legibility from strong
+   outlined text plus very light translucent containers. Keep gameplay layouts
+   intact and apply those same presentation primitives at their shared shells. */
+
+:root {
+  --game-ui-surface: rgba(8, 18, 13, 0.38);
+  --game-ui-surface-strong: rgba(8, 18, 13, 0.58);
+  --game-ui-backdrop: rgba(0, 0, 0, 0.18);
+  --game-ui-line: rgba(255, 255, 255, 0.13);
+  --game-ui-line-bright: rgba(255, 255, 255, 0.22);
+  --game-ui-soft-fill: rgba(255, 255, 255, 0.04);
+  --game-ui-active-fill: rgba(249, 226, 138, 0.10);
+  --game-ui-shadow: 0 10px 34px rgba(0, 0, 0, 0.30);
+  --game-ui-text-outline:
+    -1px -1px 0 rgba(0, 0, 0, 0.96),
+     0    -1px 0 rgba(0, 0, 0, 0.96),
+     1px -1px 0 rgba(0, 0, 0, 0.96),
+    -1px  0    0 rgba(0, 0, 0, 0.96),
+     1px  0    0 rgba(0, 0, 0, 0.96),
+    -1px  1px 0 rgba(0, 0, 0, 0.96),
+     0     1px 0 rgba(0, 0, 0, 0.96),
+     1px  1px 0 rgba(0, 0, 0, 0.96),
+     0 2px 4px rgba(0, 0, 0, 0.82);
+}
+
+/* Let existing gameplay components keep using their established --glass and
+   border variables while swapping the heavy shell values for the lighter
+   save-select values. */
+:is(
+  #menuPanel,
+  #farmEditorPanel,
+  #mapEditPanel,
+  #devSpawnPanel,
+  #furniturePlacerPanel,
+  #npcDialogue,
+  #dyePanel,
+  #shippingStandaloneRoot,
+  .hobunji-cooking-layer,
+  .cp-overlay,
+  .pa-overlay,
+  .loomcraft-overlay,
+  #troughPanelOverlay,
+  #npcWardrobeOverlay,
+  #hobunjiDayProgressReview,
+  .time-passage-backdrop
+) {
+  --glass: rgba(8, 18, 13, 0.42);
+  --glass-2: rgba(8, 18, 13, 0.48);
+  --border: var(--game-ui-line);
+  --border-bright: var(--game-ui-line-bright);
+  text-shadow: var(--game-ui-text-outline);
+}
+
+/* Native controls do not paint inherited text shadows consistently on every
+   browser, so mirror onboarding.css and apply the outline directly. */
+:is(
+  #menuPanel,
+  #farmEditorPanel,
+  #mapEditPanel,
+  #devSpawnPanel,
+  #furniturePlacerPanel,
+  #npcDialogue,
+  #dyePanel,
+  #shippingStandaloneRoot,
+  .hobunji-cooking-layer,
+  .cp-overlay,
+  .pa-overlay,
+  .loomcraft-overlay,
+  #troughPanelOverlay,
+  #npcWardrobeOverlay,
+  #hobunjiDayProgressReview,
+  .time-passage-backdrop
+) :is(button, button *, input, select, textarea, label, kbd, summary) {
+  text-shadow: var(--game-ui-text-outline);
+}
+
+/* Backdrops now dim the world just enough to separate UI without replacing it
+   with a black sheet. The text outline carries the readability burden. */
+#menuBackdrop,
+.dye-panel,
+.hobunji-cooking-layer,
+#shippingStandaloneRoot,
+.cp-overlay,
+.pa-overlay,
+.loomcraft-overlay,
+#troughPanelOverlay,
+#npcWardrobeOverlay,
+#hobunjiDayProgressReview,
+.time-passage-backdrop {
+  background: var(--game-ui-backdrop) !important;
+  backdrop-filter: blur(1.5px) !important;
+  -webkit-backdrop-filter: blur(1.5px) !important;
+}
+
+/* CalendarSystem intentionally clears its backdrop while the sleep/wait iris
+   transition owns the screen; do not turn that transition back into a dimmed
+   menu frame. */
+.time-passage-backdrop.transitioning {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Shared translucent outer shells. These are presentation-only overrides:
+   dimensions, scroll ownership, positioning, and interaction behavior stay in
+   the systems that already own each panel. */
+#menuPanel,
+#farmEditorPanel,
+#mapEditPanel,
+#devSpawnPanel,
+#furniturePlacerPanel,
+.dye-panel-inner,
+#npcDialogueInner,
+#shippingStandaloneWindow,
+.hobunji-cooking-panel,
+.cp-modal,
+.pa-modal,
+.loomcraft-panel,
+#troughPanelBox,
+#npcWardrobeOverlay > div,
+.day-review-panel {
+  background: var(--game-ui-surface) !important;
+  border-color: var(--game-ui-line-bright) !important;
+  box-shadow: var(--game-ui-shadow) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+}
+
+/* The main pause/menu is the largest surface, so keep it slightly quieter
+   than the old 92%-opaque card while still readable above bright terrain. */
+#menuPanel {
+  background: rgba(8, 18, 13, 0.34) !important;
+}
+
+/* Dialogue already has a portrait and world framing; avoid placing another
+   dark slab behind the root and only theme its actual text container. */
+#npcDialogue {
+  background: transparent !important;
+}
+#npcDialogueInner {
+  background: rgba(8, 18, 13, 0.42) !important;
+}
+
+/* Character select mostly separates regions with hairline dividers rather than
+   filled title bars. Flatten gameplay headers to the same hierarchy. */
+.mp-header,
+.fed-header,
+.hobunji-cooking-panel > header,
+.shipping-window-bar,
+.cp-head,
+.pa-head,
+.loomcraft-head {
+  background: rgba(255, 255, 255, 0.025) !important;
+  border-color: var(--game-ui-line) !important;
+}
+
+/* Cooking was the main visual outlier: preserve its warm accent colors but
+   convert the opaque brown blocks to the same translucent card vocabulary. */
+.cooking-layout > aside,
+.cooking-recipe-card,
+.cooking-slot,
+.cooking-picker button,
+.cooking-picked,
+.cooking-preview,
+.cooking-footer {
+  background: var(--game-ui-soft-fill) !important;
+}
+.cooking-recipe-card.selected {
+  background: rgba(223, 164, 79, 0.13) !important;
+}
+.cooking-layout input {
+  background: var(--game-ui-surface-strong) !important;
+}
+
+/* Full-screen progress/review screens inject their own styles after page load;
+   these !important overrides keep them in the same family even when their
+   module-local stylesheet wins normal source order. */
+#hobunjiDayProgressReview {
+  color: var(--text) !important;
+}
+.day-review-panel {
+  background: rgba(8, 18, 13, 0.44) !important;
+}
+.day-review-continue {
+  background: rgba(249, 226, 138, 0.11) !important;
+  color: var(--accent) !important;
+}
+
+/* Two older utility panels still author opaque colors inline. Normalize their
+   shell only; their item-specific colors and state indicators remain intact. */
+#troughPanelBox {
+  color: var(--text) !important;
+}
+#npcWardrobeOverlay {
+  font-family: 'KhymeryyanRomanLetters+Numbers', 'DM Mono', ui-monospace, monospace !important;
+}
+#npcWardrobeOverlay > div {
+  color: var(--text) !important;
+}
+
+/* Save-select-like controls: inactive controls stay almost transparent, while
+   focused/active state gets a small accent wash instead of a solid fill. */
+:is(
+  #menuPanel,
+  #farmEditorPanel,
+  #mapEditPanel,
+  #devSpawnPanel,
+  #furniturePlacerPanel,
+  #dyePanel,
+  #shippingStandaloneWindow,
+  .hobunji-cooking-panel,
+  #troughPanelBox,
+  #npcWardrobeOverlay > div
+) :is(button, [role="button"]):not(:disabled):focus-visible {
+  outline: 1px solid rgba(249, 226, 138, 0.48);
+  outline-offset: 1px;
+}
+
+/* Existing controller navigation remains more prominent than ordinary focus. */
+.ctrl-nav-focus {
+  text-shadow: var(--game-ui-text-outline) !important;
+}
+
+/* Small-screen menus need contrast without increasing opacity. */
+@media (max-width: 560px) {
+  #menuPanel,
+  .dye-panel-inner,
+  #shippingStandaloneWindow,
+  .hobunji-cooking-panel,
+  #troughPanelBox,
+  #npcWardrobeOverlay > div,
+  .day-review-panel {
+    background: rgba(8, 18, 13, 0.44) !important;
+  }
+}
