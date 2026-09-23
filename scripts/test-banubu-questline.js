@@ -369,6 +369,7 @@ assert.match(contentSource, /cameraId: 'banubu_dialogue_awake'/, 'Banubu\'s thir
 
 const sleepPresentation = read('docs/js/animal-sleep-presentation.js');
 assert.match(sleepPresentation, /function registerExternalSleeper\(/, 'named animal NPCs must be able to opt into the shared animal sleep presenter');
+assert.match(sleepPresentation, /function projectExternalSleeperWorldPoint\(/, 'cinematic cameras must be able to project a named-animal face through the exact render-time sleep transform');
 assert.match(sleepPresentation, /eyesClosed = typeof config\.eyesClosed === 'function'/, 'external sleepers must be able to open only their eyes while preserving the sleep body pose');
 assert.match(sleepPresentation, /frameCacheKey\(kind, frame, genotype, eyesClosed = true\)/, 'sleep frame cache must distinguish open-eye and closed-eye versions of the same species sleep frame');
 assert.match(sleepPresentation, /if \(sleeping && run2\) return \{ frame: 'run2'/, 'sleep presentation must prefer each species run2 frame when available');
