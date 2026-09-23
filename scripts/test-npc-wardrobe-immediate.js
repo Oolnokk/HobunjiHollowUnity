@@ -58,6 +58,16 @@ const walker = {
   avatarFrontCanvas: {},
   avatarBackCanvas: null,
 };
+const offscreenRec = {
+  id: 'offscreen_npc',
+  name: 'Offscreen NPC',
+  species: 'Engh-Sho',
+  gender: 'female',
+  appearance: { speciesId: 'engh-sho', gender: 'female', cosmetics: {} },
+  equippedCosmetics: ['plain_tunic'],
+  appliedDyes: { TORSO: 'dye:CLOTH:before_restore' },
+  gifts: { loved: ['style:test'], liked: [], disliked: [], hated: [] },
+};
 const fallbackWalker = {
   rec: fallbackRec,
   profile: { appearance: { speciesId: 'mao-ao', gender: 'male' } },
@@ -66,6 +76,7 @@ const fallbackWalker = {
   avatarBackCanvas: null,
 };
 const gearInventory = { clothingItems: [], clothing: {} };
+const recordById = new Map([[rec.id, rec], [fallbackRec.id, fallbackRec], [offscreenRec.id, offscreenRec]]); // Mimics scheduledNpcRecords so persistence is testable without a live walker.
 
 const context = {
   window: null,
@@ -103,6 +114,7 @@ vm.runInContext(source, context, { filename: 'npc-wardrobe.js' });
 const wardrobe = context.NpcWardrobe;
 wardrobe.init({
   npcWalkers: [walker, fallbackWalker],
+  getNpcRecordById: npcId => recordById.get(npcId) || null,
   getGearInventory: () => gearInventory,
   saveGearInventory() {},
   saveMemberWorldData() { saves++; },
@@ -179,6 +191,10 @@ wardrobe.init({
   assert.equal(rec.appliedDyes.CLOTH_B, 'dye:CLOTH:old_trim', 'Wear restores the stored garment\'s secondary dye');
 
   const snapshot = JSON.parse(JSON.stringify(wardrobe.serialize()));
+  snapshot.outfits.offscreen_npc = {
+    equippedCosmetics: ['restored_offscreen_tunic'],
+    appliedDyes: { TORSO: 'dye:CLOTH:offscreen_restored' },
+  };
   assert.equal(snapshot.version, 2, 'wardrobe save format includes outfit overrides');
   assert.deepEqual(snapshot.outfits.test_npc.equippedCosmetics, ['rugged_poncho'], 'corrected worn outfit is persisted');
   assert.equal(snapshot.outfits.test_npc.appliedDyes.CLOTH, 'dye:CLOTH:old_primary', 'corrected outfit dyes are persisted');
@@ -188,6 +204,8 @@ wardrobe.init({
   wardrobe.restore(snapshot);
   assert.deepEqual(Array.from(rec.equippedCosmetics), ['rugged_poncho'], 'load restores the corrected worn outfit');
   assert.equal(rec.appliedDyes.CLOTH, 'dye:CLOTH:old_primary', 'load restores corrected outfit dyes');
+  assert.deepEqual(Array.from(offscreenRec.equippedCosmetics), ['restored_offscreen_tunic'], 'load applies a saved outfit to a canonical NPC record even without a live walker');
+  assert.equal(offscreenRec.appliedDyes.TORSO, 'dye:CLOTH:offscreen_restored', 'offscreen canonical NPC dye state restores without a walker');
 
   assert.equal(await wardrobe.storeWornItem('legacy_identity_npc', 'plain_tunic'), true, 'legacy-identity NPC can be rerendered through the same immediate Store path');
   const fallbackRefresh = profileBuilds.at(-1);
@@ -197,6 +215,26 @@ wardrobe.init({
   assert.deepEqual(fallbackRefresh.appearance.bodyColors, fallbackRec.appearance.bodyColors, 'legacy fallback preserves body colors');
   assert.deepEqual(fallbackRefresh.appearance.bodyDeformation, fallbackRec.appearance.bodyDeformation, 'legacy fallback preserves body deformation');
   assert.deepEqual(fallbackRefresh.appearance.customAppearanceMarker, { keep: true }, 'legacy fallback preserves unknown/future appearance fields');
+
+  wardrobe.restore({
+    version: 2,
+    stored: {},
+    outfits: {
+      late_spawn_npc: {
+        equippedCosmetics: ['late_saved_tunic'],
+        appliedDyes: { TORSO: 'dye:CLOTH:late_saved' },
+      },
+    },
+  });
+  const lateSpawnRec = {
+    id: 'late_spawn_npc',
+    appearance: { speciesId: 'engh-sho', gender: 'female', cosmetics: {} },
+    equippedCosmetics: ['database_default_tunic'],
+    appliedDyes: { TORSO: 'dye:CLOTH:database_default' },
+  };
+  assert.equal(wardrobe.applyOutfitOverrideToRecord(lateSpawnRec), true, 'a record appearing after restore can consume its retained outfit override before walker construction');
+  assert.deepEqual(Array.from(lateSpawnRec.equippedCosmetics), ['late_saved_tunic'], 'late-spawn record receives the saved outfit');
+  assert.equal(lateSpawnRec.appliedDyes.TORSO, 'dye:CLOTH:late_saved', 'late-spawn record receives the saved dyes');
 
   wardrobe.restore({
     test_npc: [{ uid: 'legacy_store', cosmeticId: 'plain_hat', slot: 'hat', colorA: 'dye:CLOTH:legacy_hat' }],
@@ -246,6 +284,9 @@ wardrobe.init({
   assert.equal(gearInventory.clothingItems.length, 0, 'accepted clothing gift leaves player gear ownership');
   assert.deepEqual(Array.from(rec.equippedCosmetics), ['fine_poncho'], 'real gifting flow leaves the accepted garment immediately equipped');
   assert.deepEqual(Array.from(wardrobe.serialize().outfits.test_npc.equippedCosmetics), ['fine_poncho'], 'real gifting save snapshot contains the immediately equipped garment');
+  assert.match(gameSource, /NpcWardrobe\?\.applyOutfitOverrideToRecord\?\.\(rec\)/, 'walker construction applies persisted outfit data before building the avatar');
+  assert.match(gameSource, /await window\.NpcWardrobe\?\.syncWalkerOutfit\?\.\(walker\)/, 'walker construction resyncs after async build to close the restore race');
+  assert.match(gameSource, /NpcWardrobe\?\.init\(\{[\s\S]*?getNpcRecordById:/, 'wardrobe receives canonical NPC-record lookup from game runtime');
 
   assert.ok(saves >= 3, 'manual Store/Wear operations request world persistence');
   console.log('Immediate NPC wardrobe behavior passed.');
