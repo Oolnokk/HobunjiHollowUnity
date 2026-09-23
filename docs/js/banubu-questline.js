@@ -226,12 +226,6 @@
     return target;
   }
 
-  function sameEffectSet(left, right) {
-    const a = [...new Set(left || [])].sort();
-    const b = [...new Set(right || [])].sort();
-    return a.length === b.length && a.every((entry, index) => entry === b[index]);
-  }
-
   function mealMatchesTarget(entry, state) {
     const target = state?.target;
     if (!target?.requiredEffects?.length) return false;
