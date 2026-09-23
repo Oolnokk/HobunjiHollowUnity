@@ -116,6 +116,7 @@ const stapleGrants = { // Used to pin the intended representative staple for eac
   garlinkStaple: 'garlink',
   ongyumsStaple: 'ongyums',
   needlegrainFlourStaple: 'needlegrainFlour',
+  sixfinHoneystripeStaple: 'sixfin_honeystripe',
   crownedPineNutOilStaple: 'crownedPineNutOil',
   uumkaoiiMeatStaple: 'uumkaoiiMeat',
   whiteDewStaple: 'whiteDew',
