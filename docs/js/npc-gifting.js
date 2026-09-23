@@ -42,13 +42,37 @@
     traitIds.forEach(t => bucket[tier].add(t));
   }
 
+  function canonicalGiftPreferences(npcId) {
+    return deps?.getNpcRecordById?.(npcId)?.gifts || null; // Uses the same live NPC record as gifting so saved discoveries cannot outlive a changed authored preference tier.
+  }
+
+  function reconcileDiscoveredBucket(npcId, bucket) {
+    const canonical = canonicalGiftPreferences(npcId);
+    if (!bucket || !canonical) return bucket;
+
+    const discovered = new Set(); // Preserves which traits the player actually learned while allowing their current authored tier to change.
+    for (const tier of PREFERENCE_TIERS) for (const trait of bucket[tier] || []) discovered.add(trait);
+    const next = { loved: new Set(), liked: new Set(), disliked: new Set(), hated: new Set() };
+    for (const trait of discovered) {
+      const currentTier = PREFERENCE_TIERS.find(tier => (canonical[tier] || []).includes(trait));
+      if (currentTier) next[currentTier].add(trait); // Traits removed from current preferences are forgotten; changed traits move to their current tier.
+    }
+    discoveredPrefs[npcId] = next;
+    return next;
+  }
+
+  function reconcileAllDiscoveredPrefs() {
+    for (const [npcId, bucket] of Object.entries(discoveredPrefs)) reconcileDiscoveredBucket(npcId, bucket);
+  }
+
   function getDiscoveredGiftTraits(npcId) {
-    const bucket = discoveredPrefs[npcId];
+    const bucket = reconcileDiscoveredBucket(npcId, discoveredPrefs[npcId]);
     if (!bucket) return { loved: [], liked: [], disliked: [], hated: [] };
     return { loved: [...bucket.loved], liked: [...bucket.liked], disliked: [...bucket.disliked], hated: [...bucket.hated] };
   }
 
   function serializeDiscoveredPrefs() {
+    reconcileAllDiscoveredPrefs(); // Save only current truth so one successful load permanently cleans obsolete learned tiers from older worlds.
     const out = {};
     for (const [npcId, bucket] of Object.entries(discoveredPrefs)) {
       out[npcId] = { loved: [...bucket.loved], liked: [...bucket.liked], disliked: [...bucket.disliked], hated: [...bucket.hated] };
@@ -64,6 +88,7 @@
         disliked: new Set(bucket?.disliked || []), hated: new Set(bucket?.hated || []),
       };
     }
+    reconcileAllDiscoveredPrefs(); // Existing saves self-heal immediately when authored NPC preferences change between versions.
   }
 
   const PREFERENCE_TIERS = ['loved', 'liked', 'disliked', 'hated'];
@@ -204,7 +229,7 @@
     if (held.kind === 'clothing') {
       const verdict = window.NpcWardrobe?.offerClothing?.(npcId, held.instance);
       kept = verdict ? verdict.accepted !== false : true;
-      keepNote = kept ? ' It goes into their wardrobe.' : ` ${name} hands it right back — not ${window.NpcWardrobe ? 'their style' : 'able to store it'}.`;
+      keepNote = kept ? (verdict?.worn ? ' They put it on.' : ' It goes into their wardrobe.') : ` ${name} hands it right back — not ${window.NpcWardrobe ? 'their style' : 'able to store it'}.`;
     }
 
     if (kept) applyGiftRelationshipDelta(npcId, evaluation);
@@ -262,5 +287,6 @@
     getDiscoveredGiftTraits,
     serializeDiscoveredPrefs,
     restoreDiscoveredPrefs,
+    reconcileAllDiscoveredPrefs,
   };
 })();

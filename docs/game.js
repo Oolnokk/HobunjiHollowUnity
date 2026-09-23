@@ -11134,6 +11134,7 @@
         await window.NpcAvatarPreview.ensurePortraitCosmetics({ assetBase: './assets/', configBase: './config/' });
         const deferred = [];
         for (const rec of dbNpcs) {
+          window.NpcWardrobe?.captureDefaultOutfitTraits?.(rec); // Freeze authored default-clothing traits before save restoration/manual outfit overrides can redefine this NPC's gift-acceptance style.
           if (rec?.id) scheduledNpcRecords.set(rec.id, rec);
           const target = resolveNpcScheduleTarget(rec);
           if (!target) { if (!rec?.visitorPresence) deferred.push(rec); continue; }
@@ -11314,6 +11315,8 @@
       }
 
       async function makeNpcWalker(rec, initialTarget) {
+        window.NpcWardrobe?.captureDefaultOutfitTraits?.(rec); // Covers direct/late walker construction paths that do not pass through the initial database loop.
+        window.NpcWardrobe?.applyOutfitOverrideToRecord?.(rec); // Applies a restored manual outfit before profile construction, including deferred/visitor NPCs that had no walker when save restoration ran.
         const guessSpecies = (rec?.species || '').toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-|-$/g, '');
         const appearance = (rec?.appearance && rec.appearance.speciesId) ? rec.appearance : {
           speciesId: NPC_SPECIES_IDS.includes(guessSpecies) ? guessSpecies : undefined,
@@ -11737,15 +11740,6 @@
             this._legsPrevX = root.position.x; this._legsPrevZ = root.position.z;
             if (this.pause === Infinity) return;
             this.applyFacingDeadzone(this.desiredRot, 0.15);
-            // Wardrobe reroll: fires once per sleeping period, the instant
-            // this NPC's schedule activity transitions INTO "sleeping" (not
-            // every frame they stay asleep) — see js/npc-wardrobe.js's
-            // rerollForSleep for what it actually changes.
-            const scheduleActivity = target?.activity || '';
-            if (/sleep/i.test(scheduleActivity) && !/sleep/i.test(this._prevScheduleActivity || '')) {
-              window.NpcWardrobe?.rerollForSleep?.(rec?.id);
-            }
-            this._prevScheduleActivity = scheduleActivity;
             if (!target) return;
             if (target.visitorDeparture && targetArea === this.area && Math.hypot(root.position.x - tx, root.position.z - tz) <= arrival) {
               despawnNpcVisitor(this); // Used to remove a recurring visitor only after they physically reach the authored exit.
@@ -11978,6 +11972,7 @@
             groundShadow.position.y = ty - root.position.y + characterGroundShadowSurfaceOffset();
           },
         };
+        await window.NpcWardrobe?.syncWalkerOutfit?.(walker); // Rechecks after async avatar construction so a restore landing mid-build cannot leave this newly spawned walker rendering stale clothes.
         return walker;
       }
 
@@ -27614,6 +27609,7 @@
       // window.NpcWardrobe (js/npc-wardrobe.js), initialized just below.
       window.NpcGifting?.init({
         getItemDefs: () => ITEM_DEFS,
+        getNpcRecordById: npcId => scheduledNpcRecords.get(npcId) || npcWalkers.find(walker => walker.rec?.id === npcId)?.rec || null, // Canonical live preference source used to reconcile saved learned gift tiers after authored data changes.
         getHeldGiftItem,
         clearManualHeldItem,
         getGearInventory: () => gearInventory,
@@ -27633,6 +27629,7 @@
       });
 
       window.NpcWardrobe?.init({
+        getNpcRecordById: npcId => scheduledNpcRecords.get(npcId) || npcWalkers.find(walker => walker.rec?.id === npcId)?.rec || null, // Canonical record access lets wardrobe restore reach offscreen/deferred NPCs before a walker exists.
         getGearInventory: () => gearInventory,
         saveGearInventory,
         showToast,

@@ -243,9 +243,9 @@
                   },
                   "gifts": {
                         "loved": ["reagent"],
-                        "liked": ["hueBlue","hot","dark"],
+                        "liked": ["hueBlue","hueOrange","hueYellow","hot","dark","bright"],
                         "neutral": [],
-                        "disliked": ["hueRed","hueOrange"],
+                        "disliked": ["hueRed","hueIndigo","hueViolet"],
                         "hated": ["muted"],
                         "categoryNotes": []
                   },
@@ -815,10 +815,10 @@
                   },
                   "gifts": {
                         "loved": ["crop"],
-                        "liked": ["hueYellow","hot","dark"],
+                        "liked": ["hueOrange","hueYellow","muted","dark","bright"],
                         "neutral": [],
-                        "disliked": ["hueIndigo","hueViolet"],
-                        "hated": ["muted"],
+                        "disliked": ["hueBlue","hueIndigo","hueViolet"],
+                        "hated": ["hot"],
                         "categoryNotes": []
                   },
                   "dialogueTrees": [
@@ -2416,10 +2416,10 @@
                   },
                   "gifts": {
                         "loved": ["sweet"],
-                        "liked": ["hueOrange","muted","dark"],
+                        "liked": [],
                         "neutral": [],
-                        "disliked": ["hueBlue","hueIndigo"],
-                        "hated": ["hot"],
+                        "disliked": [],
+                        "hated": [],
                         "categoryNotes": []
                   },
                   "dialogueTrees": [
@@ -2897,9 +2897,9 @@
                   },
                   "gifts": {
                         "loved": ["food"],
-                        "liked": ["hueOrange","muted","dark"],
+                        "liked": ["hueOrange","hueYellow","muted","dark"],
                         "neutral": [],
-                        "disliked": ["hueBlue","hueIndigo"],
+                        "disliked": ["hueBlue","hueIndigo","hueViolet"],
                         "hated": ["hot"],
                         "categoryNotes": []
                   },
@@ -3418,10 +3418,10 @@
                   },
                   "gifts": {
                         "loved": ["food"],
-                        "liked": ["hueGreen","hueBlue","hot","bright"],
+                        "liked": ["hueYellow","hueGreen","hueBlue","muted","hot","bright"],
                         "neutral": [],
-                        "disliked": ["hueRed","hueViolet","hueOrange"],
-                        "hated": ["muted"],
+                        "disliked": ["hueIndigo","hueViolet","hueRed","hueOrange"],
+                        "hated": [],
                         "categoryNotes": []
                   },
                   "dialogueTrees": [
@@ -4138,9 +4138,9 @@
                   },
                   "gifts": {
                         "loved": ["food"],
-                        "liked": ["hueOrange","muted","dark"],
+                        "liked": ["hueRed","hueOrange","muted","dark"],
                         "neutral": [],
-                        "disliked": ["hueBlue","hueIndigo"],
+                        "disliked": ["hueGreen","hueBlue","hueIndigo"],
                         "hated": ["hot"],
                         "categoryNotes": []
                   },
@@ -4883,10 +4883,10 @@
                   },
                   "gifts": {
                         "loved": ["food"],
-                        "liked": ["hueGreen","hueBlue","hot","dark"],
+                        "liked": ["hueGreen","hueBlue","hot","muted","dark"],
                         "neutral": [],
                         "disliked": ["hueRed","hueViolet","hueOrange"],
-                        "hated": ["muted"],
+                        "hated": [],
                         "categoryNotes": []
                   },
                   "dialogueTrees": [
@@ -5904,9 +5904,9 @@
                   },
                   "gifts": {
                         "loved": ["mineral"],
-                        "liked": ["hueYellow","muted","bright"],
+                        "liked": ["hueIndigo","hueYellow","muted","bright"],
                         "neutral": [],
-                        "disliked": ["hueIndigo","hueViolet"],
+                        "disliked": ["hueOrange","hueViolet"],
                         "hated": ["hot"],
                         "categoryNotes": []
                   },
@@ -6439,9 +6439,9 @@
                   },
                   "gifts": {
                         "loved": ["food"],
-                        "liked": ["hueOrange","hot","bright"],
+                        "liked": ["hueOrange","hueYellow","hot","bright","dark"],
                         "neutral": [],
-                        "disliked": ["hueBlue","hueIndigo"],
+                        "disliked": ["hueBlue","hueIndigo","hueViolet"],
                         "hated": ["muted"],
                         "categoryNotes": []
                   },
@@ -6965,10 +6965,10 @@
                   },
                   "gifts": {
                         "loved": ["food"],
-                        "liked": ["hueGreen","hueBlue","hot","dark"],
+                        "liked": ["hueGreen","hueBlue","hueOrange","hueYellow","hot","muted","dark","bright"],
                         "neutral": [],
-                        "disliked": ["hueRed","hueViolet","hueOrange"],
-                        "hated": ["muted"],
+                        "disliked": ["hueRed","hueViolet","hueIndigo"],
+                        "hated": [],
                         "categoryNotes": []
                   },
                   "dialogueTrees": [
@@ -7425,10 +7425,10 @@
                   },
                   "gifts": {
                         "loved": ["medicine"],
-                        "liked": ["hueOrange","hot","dark"],
+                        "liked": ["hueYellow","hueGreen","hueOrange","hot","muted","bright","dark"],
                         "neutral": [],
-                        "disliked": ["hueBlue","hueIndigo"],
-                        "hated": ["muted"],
+                        "disliked": ["hueIndigo","hueViolet","hueRed","hueBlue"],
+                        "hated": [],
                         "categoryNotes": []
                   },
                   "dialogueTrees": [
@@ -8006,9 +8006,9 @@
                   },
                   "gifts": {
                         "loved": ["food"],
-                        "liked": ["hueOrange","hueYellow","hot","bright"],
+                        "liked": ["hueOrange","hueYellow","hueBlue","hot","bright"],
                         "neutral": [],
-                        "disliked": ["hueBlue","hueIndigo","hueViolet"],
+                        "disliked": ["hueIndigo","hueViolet","hueRed"],
                         "hated": ["muted"],
                         "categoryNotes": []
                   },
@@ -9738,10 +9738,10 @@
                   },
                   "gifts": {
                         "loved": ["reagent"],
-                        "liked": ["hueIndigo","hot","bright"],
+                        "liked": ["hueIndigo","hueViolet","hot","muted","bright"],
                         "neutral": [],
-                        "disliked": ["hueOrange","hueYellow"],
-                        "hated": ["muted"],
+                        "disliked": ["hueOrange","hueYellow","hueGreen"],
+                        "hated": [],
                         "categoryNotes": []
                   },
                   "dialogueTrees": [
@@ -10387,9 +10387,9 @@
                   },
                   "gifts": {
                         "loved": ["wood"],
-                        "liked": ["hueYellow","hueGreen","hot","dark"],
+                        "liked": ["hueBlue","hueIndigo","hueYellow","hueGreen","hot","bright","dark"],
                         "neutral": [],
-                        "disliked": ["hueIndigo","hueViolet","hueRed"],
+                        "disliked": ["hueRed","hueOrange","hueViolet"],
                         "hated": ["muted"],
                         "categoryNotes": []
                   },
@@ -10930,9 +10930,9 @@
                   },
                   "gifts": {
                         "loved": ["wood"],
-                        "liked": ["hueBlue","hot","bright"],
+                        "liked": ["hueBlue","hueYellow","hot","bright"],
                         "neutral": [],
-                        "disliked": ["hueRed","hueOrange"],
+                        "disliked": ["hueRed","hueOrange","hueIndigo","hueViolet"],
                         "hated": ["muted"],
                         "categoryNotes": []
                   },
@@ -11928,10 +11928,10 @@
                   },
                   "gifts": {
                         "loved": ["medicine"],
-                        "liked": [],
+                        "liked": ["hueGreen","hueBlue","muted","bright"],
                         "neutral": [],
-                        "disliked": [],
-                        "hated": [],
+                        "disliked": ["hueRed","hueViolet","hueOrange"],
+                        "hated": ["hot"],
                         "categoryNotes": []
                   },
                   "dialogueTrees": [
@@ -12451,9 +12451,9 @@
                   },
                   "gifts": {
                         "loved": ["crop"],
-                        "liked": ["hueBlue","hot","bright"],
+                        "liked": ["hueBlue","hueGreen","hot","bright"],
                         "neutral": [],
-                        "disliked": ["hueRed","hueOrange"],
+                        "disliked": ["hueRed","hueOrange","hueViolet"],
                         "hated": ["muted"],
                         "categoryNotes": []
                   },
@@ -12976,9 +12976,9 @@
                   },
                   "gifts": {
                         "loved": ["valuable"],
-                        "liked": ["hueOrange","hot","dark"],
+                        "liked": ["hueOrange","hueYellow","hot","dark","bright"],
                         "neutral": [],
-                        "disliked": ["hueBlue","hueIndigo"],
+                        "disliked": ["hueBlue","hueIndigo","hueViolet"],
                         "hated": ["muted"],
                         "categoryNotes": []
                   },
@@ -13555,9 +13555,9 @@
                   },
                   "gifts": {
                         "loved": ["valuable"],
-                        "liked": ["hueYellow","hueGreen","muted","dark"],
+                        "liked": ["hueGreen","hueYellow","hueBlue","muted","dark"],
                         "neutral": [],
-                        "disliked": ["hueIndigo","hueViolet","hueRed"],
+                        "disliked": ["hueRed","hueViolet","hueIndigo","hueOrange"],
                         "hated": ["hot"],
                         "categoryNotes": []
                   },
@@ -14129,10 +14129,10 @@
                   },
                   "gifts": {
                         "loved": ["food"],
-                        "liked": ["hueGreen","hueBlue","hot","bright"],
+                        "liked": ["hueGreen","hueBlue","hueViolet","hueIndigo","hot","muted","bright"],
                         "neutral": [],
-                        "disliked": ["hueRed","hueViolet","hueOrange"],
-                        "hated": ["muted"],
+                        "disliked": ["hueRed","hueOrange","hueYellow"],
+                        "hated": [],
                         "categoryNotes": []
                   },
                   "dialogueTrees": [
