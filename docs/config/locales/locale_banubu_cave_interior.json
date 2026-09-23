@@ -268,8 +268,8 @@
       "id": "station_banubu_cave_sleep",
       "npcId": "banubu",
       "name": "Banubu's Sleeping Spot",
-      "col": 6,
-      "row": 5,
+      "col": 9,
+      "row": 7,
       "facing": "west",
       "pose": "lie"
     }
@@ -329,16 +329,16 @@
   },
   "meta": {
     "createdAt": "2026-09-19T00:00:00.000Z",
-    "updatedAt": "2026-09-22T22:55:00.000Z"
+    "updatedAt": "2026-09-22T23:40:00.000Z"
   },
   "cinematicCameras": [
     {
       "id": "banubu_dialogue_awake",
       "label": "Banubu dialogue — awake",
       "position": {
-        "x": 4.2,
+        "x": 7.2,
         "y": 0.28,
-        "z": 7.4
+        "z": 9.4
       },
       "target": {
         "x": 0,
@@ -350,8 +350,8 @@
       "dialogueNpcId": "",
       "fadePets": true,
       "playerStage": {
-        "x": 3.5,
-        "z": 8.5
+        "x": 6.5,
+        "z": 10.5
       },
       "targetNpcId": "banubu",
       "targetAnchorId": "station_banubu_cave_sleep"
