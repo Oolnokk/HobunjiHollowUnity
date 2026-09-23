@@ -28,9 +28,11 @@
   const DEFAULT_LAYER = 0;
   const MATERIAL_ID_LAYER = 3;
   const PNG_OCCLUDER_LAYER = 4;
+  const FOOT_WATER_MASK_LAYER = 26; // Used only to stamp procedural feet that should remain subject to translucent water.
   const WATER_REPLAY_LAYER = 27;
   const GROUND_REPLAY_LAYER = 28;
   const HELD_OVERLAY_LAYER = 29;
+  const FOOT_WATER_MASK = (1 << FOOT_WATER_MASK_LAYER) >>> 0;
   const WATER_REPLAY_MASK = (1 << WATER_REPLAY_LAYER) >>> 0;
   const GROUND_REPLAY_MASK = (1 << GROUND_REPLAY_LAYER) >>> 0;
   const HELD_OVERLAY_MASK = (1 << HELD_OVERLAY_LAYER) >>> 0;
@@ -41,9 +43,11 @@
   const heldMeshes = new WeakSet();
   const groundMeshes = new WeakSet();
   const waterMeshes = new WeakSet(); // Used by classifyObject to count each canonical water surface once across fallback rescans.
+  const waterOccludedMeshes = new WeakSet(); // Used to count each explicitly water-occluded mesh once; procedural feet register here.
   const heldRegistry = new Set();
   const groundRegistry = new Set();
-  const waterRegistry = new Set(); // Used by the stencil-masked translucent replay after held/foot overlay rendering.
+  const waterRegistry = new Set(); // Used by the foot-only translucent-water replay.
+  const waterOccludedRegistry = new Set(); // Used to stencil only feet (never weapons/hands) before replaying water.
   const pngDepthRegistry = new Set(); // Used by the colorless replay to repair only cutout depth materials instead of traversing every visible object.
   const preparedLights = new WeakSet();
   const lastSceneScan = new WeakMap();
@@ -54,7 +58,10 @@
   let roadCount = 0;
   let terrainCount = 0;
   let waterMeshCount = 0; // Exposed in debugState so mobile diagnostics can confirm water surfaces are eligible for translucent replay.
-  let waterReplayCount = 0; // Counts successful stencil-masked water compositing passes after held overlays.
+  let waterOccludedMeshCount = 0; // Used by mobile diagnostics to confirm procedural feet registered for water occlusion.
+  let waterReplayCount = 0; // Counts successful foot-only water compositing passes.
+  let missingStencilFootReplaySkipCount = 0; // Safety fallback for auxiliary/offscreen targets that cannot carry the two-bit mask.
+  let lastBaseStencilBits = 0; // STENCIL_BITS of the framebuffer bound for the most recent real world pass.
   let baseWorldRenderCount = 0;
   let selectiveOverlayCount = 0;
   let nonGroundDepthReplayCount = 0;
@@ -78,11 +85,29 @@
     return false;
   }
 
+  function materialLooksLikeGrassBillboard(material) {
+    const materials = Array.isArray(material) ? material : [material];
+    return materials.some(entry => !!(
+      entry?.isShaderMaterial
+      && entry.uniforms?.uGrassTex
+      && entry.uniforms?.uDensity
+      && entry.uniforms?.uStrength
+    ));
+  }
+
   function isGrassGroundCover(object) {
-    if (!object?.isInstancedMesh) return false;
-    return object.userData?.isWildernessGrassChunk === true
-      || object.userData?.isRichFoliageBillboard === true
-      || object.userData?.isBillboard === true;
+    if (!object?.isMesh) return false;
+    const data = object.userData || {};
+    // Preserve the authored grass tags, but do not require InstancedMesh.
+    // Farm/town/wilderness grass currently uses InstancedMesh; other runtime
+    // consumers can reuse the exact same grass ShaderMaterial on a plain Mesh.
+    // Those meshes must also be absent from the held-object depth replay:
+    // submerged grass is painted over by water in the base pass, so allowing
+    // its hidden depth to survive would punch grass-shaped water holes through
+    // an otherwise x-rayed weapon.
+    if (data.isWildernessGrassChunk === true || data.isRichFoliageBillboard === true) return true;
+    if (object.isInstancedMesh && data.isBillboard === true) return true;
+    return materialLooksLikeGrassBillboard(object.material);
   }
 
   function isRoadSurface(object) {
@@ -199,6 +224,18 @@
     return !already;
   }
 
+  function markWaterOccludedMesh(mesh) {
+    if (!mesh?.isMesh) return false;
+    mesh.userData = mesh.userData || {};
+    const already = waterOccludedMeshes.has(mesh) || mesh.userData.hobunjiWaterOccludedBySurface === true;
+    mesh.userData.hobunjiWaterOccludedBySurface = true;
+    waterOccludedMeshes.add(mesh);
+    waterOccludedRegistry.add(mesh);
+    if (!hasLayer(mesh, FOOT_WATER_MASK_LAYER)) mesh.layers.enable(FOOT_WATER_MASK_LAYER);
+    if (!already) waterOccludedMeshCount++;
+    return !already;
+  }
+
   function enforceGroundMesh(mesh) {
     if (!mesh?.isMesh) return false;
     let repaired = false;
@@ -235,6 +272,7 @@
     if (object.isLight) prepareLight(object);
     if (!object.isMesh) return;
     if (isLegacyHeldPlane(object)) markHeldPlane(object);
+    if (object.userData?.hobunjiWaterOccludedBySurface === true) markWaterOccludedMesh(object);
     if (hasLayer(object, PNG_OCCLUDER_LAYER) || materialHasAlphaCutout(object.material)) pngDepthRegistry.add(object);
     if (isWaterSurface(object)) {
       waterRegistry.add(object);
@@ -346,6 +384,15 @@
     return result;
   }
 
+  function currentFramebufferStencilBits(renderer) {
+    try {
+      const gl = renderer?.getContext?.();
+      return Number(gl?.getParameter?.(gl.STENCIL_BITS)) || 0;
+    } catch (_) {
+      return 0;
+    }
+  }
+
   function isBaseWorldPass(scene, camera) {
     if (!scene?.isScene || !camera?.isCamera || scene.overrideMaterial) return false;
     const mask = Number(camera.layers.mask) >>> 0; // Used to distinguish the ordinary world draw from dedicated replay/outline layers.
@@ -441,11 +488,36 @@
     for (const object of held) {
       forEachMaterial(object.material, (material) => {
         saveMaterialState(states, material);
+        // Bit 1 marks weapon/hand pixels. The later foot mask refuses to stamp
+        // across this bit, so water can never be composited back over held gear.
         material.stencilWrite = true;
-        material.stencilWriteMask = 0xFF;
+        material.stencilWriteMask = 0x02;
         material.stencilFunc = THREE.AlwaysStencilFunc;
-        material.stencilRef = 1;
+        material.stencilRef = 2;
         material.stencilFuncMask = 0xFF;
+        material.stencilFail = THREE.KeepStencilOp;
+        material.stencilZFail = THREE.KeepStencilOp;
+        material.stencilZPass = THREE.ReplaceStencilOp;
+      });
+    }
+    return states;
+  }
+
+  function prepareWaterOcclusionStencilMaterials(objects) {
+    const states = new Map();
+    for (const object of objects) {
+      forEachMaterial(object.material, (material) => {
+        saveMaterialState(states, material);
+        material.colorWrite = false;
+        material.depthWrite = false;
+        // Compare only held bit 1: stencilRef=1 has that bit clear, so Equal
+        // passes everywhere except weapon/hand pixels. Replace writes only bit
+        // 0 from the same ref, producing the foot-only water mask value 1.
+        material.stencilWrite = true;
+        material.stencilWriteMask = 0x01;
+        material.stencilFunc = THREE.EqualStencilFunc;
+        material.stencilRef = 1;
+        material.stencilFuncMask = 0x02;
         material.stencilFail = THREE.KeepStencilOp;
         material.stencilZFail = THREE.KeepStencilOp;
         material.stencilZPass = THREE.ReplaceStencilOp;
@@ -459,14 +531,13 @@
     for (const object of water) {
       forEachMaterial(object.material, (material) => {
         saveMaterialState(states, material);
-        // Three enables stencil testing through stencilWrite. A zero write mask
-        // keeps the held-pixel marker untouched while Equal limits this second
-        // translucent draw to pixels actually written by the held overlay.
+        // Test only foot bit 0. Held pixels carry bit 1 and are deliberately
+        // excluded when the foot mask is stamped, so weapons/hands x-ray water.
         material.stencilWrite = true;
         material.stencilWriteMask = 0x00;
         material.stencilFunc = THREE.EqualStencilFunc;
         material.stencilRef = 1;
-        material.stencilFuncMask = 0xFF;
+        material.stencilFuncMask = 0x01;
         material.stencilFail = THREE.KeepStencilOp;
         material.stencilZFail = THREE.KeepStencilOp;
         material.stencilZPass = THREE.KeepStencilOp;
@@ -515,8 +586,13 @@
   const originalRender = rendererProto.render;
   const rawRender = unwrapRendererRender(originalRender);
 
-  function replaySelectiveHeldOverlay(renderer, scene, camera, held, ground, water, originalCameraMask) {
-    if (!held.length || !ground.length) return;
+  function replaySelectiveHeldOverlay(renderer, scene, camera, held, ground, water, waterOccluded, originalCameraMask) {
+    const needsHeldOverlay = held.length > 0; // Used to keep weapon/hand x-ray active even when no water is visible.
+    const requestedFootWaterComposite = water.length > 0 && waterOccluded.length > 0; // Used to skip all foot-water stencil work on dry scenes.
+    const stencilBits = currentFramebufferStencilBits(renderer); // Must describe the CURRENT render target (_mainRT while outlines are on), not the default canvas.
+    const needsFootWaterComposite = requestedFootWaterComposite && stencilBits >= 2;
+    if (requestedFootWaterComposite && !needsFootWaterComposite) missingStencilFootReplaySkipCount++;
+    if (!ground.length || (!needsHeldOverlay && !needsFootWaterComposite)) return;
 
     const oldAutoClear = renderer.autoClear;
     const oldAutoClearColor = renderer.autoClearColor;
@@ -567,44 +643,26 @@
         restoreVisibility(hidden);
       }
 
-      // 2) Draw the held sprite ONCE against non-ground depth while stamping
-      // those exact visible fragments into stencil. Water deliberately keeps
-      // its authored depthWrite=false here, so submerged feet/tools are not
-      // hard-clipped at the surface.
+      // 2) Draw weapons/hands once against non-ground depth and mark their
+      // exact visible fragments in stencil bit 1. This is the actual x-ray:
+      // terrain and water can never be composited over these held pixels.
       renderer.clearStencil?.();
-      const heldStencilStates = prepareHeldStencilMaterials(held);
-      try {
-        camera.layers.mask = HELD_OVERLAY_MASK;
-        const overlayDrawPerf = window.PerfProfiler?.begin('held-overlay: overlay render');
-        rawRender.call(renderer, scene, camera);
-        window.PerfProfiler?.end(overlayDrawPerf);
-        selectiveOverlayCount++;
-      } finally {
-        restoreMaterialStates(heldStencilStates);
-      }
-
-      // 3) Replay the ordinary translucent water shader only where the held
-      // overlay stamped stencil. Depth testing then naturally rejects water
-      // over portions physically above the surface while blending it across
-      // submerged portions. Because the base pass already drew water once,
-      // stencil prevents a second blend anywhere else in the scene.
-      if (water.length) {
-        const waterStencilStates = prepareWaterStencilMaterials(water);
+      if (held.length) {
+        const heldStencilStates = prepareHeldStencilMaterials(held);
         try {
-          camera.layers.mask = WATER_REPLAY_MASK;
-          const waterReplayPerf = window.PerfProfiler?.begin('held-overlay: water composite render');
+          camera.layers.mask = HELD_OVERLAY_MASK;
+          const overlayDrawPerf = window.PerfProfiler?.begin('held-overlay: overlay render');
           rawRender.call(renderer, scene, camera);
-          window.PerfProfiler?.end(waterReplayPerf);
-          waterReplayCount++;
+          window.PerfProfiler?.end(overlayDrawPerf);
+          selectiveOverlayCount++;
         } finally {
-          restoreMaterialStates(waterStencilStates);
+          restoreMaterialStates(heldStencilStates);
         }
       }
-      renderer.clearStencil?.();
 
-      // 4) Put authored ground depth back without touching color. The outline
-      // and material-seam pipeline therefore receives a complete depth buffer
-      // just as if the normal base pass had remained untouched.
+      // 3) Restore authored terrain depth before any water composite. The held
+      // color is already on-screen, so this cannot cover it; it only restores
+      // the real depth boundary. Raised soil therefore blocks a lower flood.
       const groundMaterialStates = prepareGroundDepthMaterials(ground);
       try {
         camera.layers.mask = GROUND_REPLAY_MASK;
@@ -615,6 +673,33 @@
       } finally {
         restoreMaterialStates(groundMaterialStates);
       }
+
+      // 4) Feet intentionally do NOT x-ray water. Stamp only explicitly
+      // registered water-occluded meshes into stencil bit 0, excluding any
+      // overlapping held bit-1 pixels, then replay water through that mask.
+      if (needsFootWaterComposite) {
+        const footStencilStates = prepareWaterOcclusionStencilMaterials(waterOccluded);
+        try {
+          camera.layers.mask = FOOT_WATER_MASK;
+          const footMaskPerf = window.PerfProfiler?.begin('held-overlay: foot water mask render');
+          rawRender.call(renderer, scene, camera);
+          window.PerfProfiler?.end(footMaskPerf);
+        } finally {
+          restoreMaterialStates(footStencilStates);
+        }
+
+        const waterStencilStates = prepareWaterStencilMaterials(water);
+        try {
+          camera.layers.mask = WATER_REPLAY_MASK;
+          const waterReplayPerf = window.PerfProfiler?.begin('held-overlay: foot water composite render');
+          rawRender.call(renderer, scene, camera);
+          window.PerfProfiler?.end(waterReplayPerf);
+          waterReplayCount++;
+        } finally {
+          restoreMaterialStates(waterStencilStates);
+        }
+      }
+      renderer.clearStencil?.();
     } finally {
       camera.layers.mask = originalCameraMask;
       if (shadowMap) shadowMap.autoUpdate = oldShadowAutoUpdate;
@@ -637,10 +722,12 @@
     if (!enabled || !isBaseWorldPass(scene, camera)) return originalRender.call(this, scene, camera);
 
     const originalCameraMask = Number(camera.layers.mask) >>> 0;
+    lastBaseStencilBits = currentFramebufferStencilBits(this);
     const held = collectVisible(heldRegistry, scene);
     const ground = collectVisible(groundRegistry, scene);
-    const water = collectVisible(waterRegistry, scene); // Used by the stencil-masked translucent replay after the held overlay.
-    if (!held.length || !ground.length) return originalRender.call(this, scene, camera);
+    const water = collectVisible(waterRegistry, scene); // Used only when explicitly water-occluded meshes (feet) need a translucent replay.
+    const waterOccluded = collectVisible(waterOccludedRegistry, scene); // Used to keep feet under water while weapons/hands remain above it.
+    if (!ground.length || (!held.length && !(water.length && waterOccluded.length))) return originalRender.call(this, scene, camera);
 
     baseWorldRenderCount++;
     for (const mesh of held) enforceHeldMesh(mesh);
@@ -660,7 +747,7 @@
     }
 
     const replayPerf = window.PerfProfiler?.begin('held-overlay: total replay'); // Sum of the three sub-passes above plus the depth-material-prep traversal; kept separate so it's directly comparable to held-overlay: base render.
-    replaySelectiveHeldOverlay(this, scene, camera, held, ground, water, originalCameraMask);
+    replaySelectiveHeldOverlay(this, scene, camera, held, ground, water, waterOccluded, originalCameraMask);
     window.PerfProfiler?.end(replayPerf);
     return result;
   }
@@ -683,7 +770,10 @@
       roadMeshes: roadCount,
       terrainMeshes: terrainCount,
       waterReplayMeshes: waterMeshCount,
+      waterOccludedMeshes: waterOccludedMeshCount,
       waterReplays: waterReplayCount,
+      stencilBits: lastBaseStencilBits,
+      missingStencilFootReplaySkips: missingStencilFootReplaySkipCount,
       baseWorldRenders: baseWorldRenderCount,
       selectiveOverlays: selectiveOverlayCount,
       nonGroundDepthReplays: nonGroundDepthReplayCount,
@@ -697,7 +787,7 @@
     const signature = JSON.stringify(state);
     if (signature !== lastDebugSignature) {
       lastDebugSignature = signature;
-      const message = `[held-xray] enabled=${state.enabled} held=${state.heldMeshes} ground=${state.groundMeshes} (grass=${state.grassMeshes} road=${state.roadMeshes} terrain=${state.terrainMeshes}) waterBlend=${state.waterReplayMeshes}/${state.waterReplays} base=${state.baseWorldRenders} overlay=${state.selectiveOverlays} depth=${state.nonGroundDepthReplays}/${state.groundDepthRestores} repairs=${state.invariantRepairs}`;
+      const message = `[held-xray] enabled=${state.enabled} held=${state.heldMeshes} ground=${state.groundMeshes} (grass=${state.grassMeshes} road=${state.roadMeshes} terrain=${state.terrainMeshes}) footWater=${state.waterOccludedMeshes}/${state.waterReplayMeshes}/${state.waterReplays} stencil=${state.stencilBits} stencilSkips=${state.missingStencilFootReplaySkips} base=${state.baseWorldRenders} overlay=${state.selectiveOverlays} depth=${state.nonGroundDepthReplays}/${state.groundDepthRestores} repairs=${state.invariantRepairs}`;
       if (typeof window.__farmLog === 'function') window.__farmLog(message, 'render');
       else console.debug(message);
     }
@@ -708,9 +798,11 @@
     installed: true,
     mode: 'selective-depth-replay',
     LEGACY_HELD_RENDER_ORDER,
+    FOOT_WATER_MASK_LAYER,
     HELD_OVERLAY_LAYER,
     GROUND_REPLAY_LAYER,
     markHeldPlane,
+    markWaterOccludedMesh,
     markGroundMesh,
     scanScene,
     snapshot,
@@ -730,6 +822,7 @@
         road: isRoadSurface(object),
         terrain: isTerrainSurface(object),
         waterSurface: isWaterSurface(object),
+        waterOccluded: object?.userData?.hobunjiWaterOccludedBySurface === true,
       };
     },
   };
