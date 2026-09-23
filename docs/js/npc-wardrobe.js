@@ -33,6 +33,10 @@
     return (deps?.npcWalkers || []).find(w => w.rec?.id === npcId) || null;
   }
 
+  function findRecord(npcId) {
+    return deps?.getNpcRecordById?.(npcId) || findWalker(npcId)?.rec || null; // Canonical record access keeps outfit persistence working even while an NPC has no live walker.
+  }
+
   const TINT_KEYS_BY_SLOT = Object.freeze({
     hat: ['HAT'],
     hood: ['HOOD', 'HOOD_B'],
@@ -102,7 +106,8 @@
   // ── Gift acceptance ──────────────────────────────────────────────
   function offerClothing(npcId, instance) {
     const walker = findWalker(npcId);
-    const defaults = ensureDefaults(npcId, walker?.rec);
+    const rec = findRecord(npcId); // Gift targets normally have a walker, but canonical lookup keeps wardrobe mutation tied to persistent NPC data.
+    const defaults = ensureDefaults(npcId, rec);
     const offeredTraits = window.ItemTraits?.computeItemTraits(instance.cosmeticId, instance) || [];
     // No default-trait data at all (should not happen once init() has run)
     // fails open rather than silently rejecting every gift forever.
@@ -112,7 +117,7 @@
     const list = stored[npcId] || (stored[npcId] = []);
     const gifted = { ...instance, uid: 'wcloth_' + Math.random().toString(36).slice(2, 10) }; // Stored copy keeps the player's original inventory identity out of NPC persistence.
     list.push(gifted);
-    const wearability = clothingWearability(walker?.rec, gifted); // Gift preference is a hard wear veto even when the garment otherwise fits this NPC's wardrobe style.
+    const wearability = clothingWearability(rec, gifted); // Gift preference is a hard wear veto even when the garment otherwise fits this NPC's wardrobe style.
     const worn = wearability.allowed ? equipStoredItemData(npcId, gifted.uid) : false; // Disliked/hated clothing stays stored instead of appearing on the NPC.
     if (worn) void refreshWalkerAppearance(walker);
     return { accepted: true, worn, wearBlockedBy: wearability.blockedTrait, wearBlockTier: wearability.tier };
@@ -120,7 +125,7 @@
   // ── Contents / taking items back out ────────────────────────────
   function getWardrobeContents(npcId) {
     const walker = findWalker(npcId);
-    const rec = walker?.rec;
+    const rec = findRecord(npcId);
     const worn = (rec?.equippedCosmetics || []).map((cosmeticId, index) => {
       const slot = guessSlot(cosmeticId); // Used by Store and the row preview to keep this worn article tied to its actual tint channel.
       return {
@@ -183,7 +188,7 @@
 
   function equipStoredItemData(npcId, uid) {
     const walker = findWalker(npcId);
-    const rec = walker?.rec;
+    const rec = findRecord(npcId); // Manual Wear mutates canonical NPC data first; the live walker is only needed for redraw.
     const list = stored[npcId] || [];
     const storedIdx = list.findIndex(item => item.uid === uid);
     if (!rec || storedIdx === -1) return false;
@@ -208,11 +213,12 @@
 
   async function wearStoredItem(npcId, uid) {
     const walker = findWalker(npcId);
+    const rec = findRecord(npcId); // Used for both the wear veto and player-facing naming if the NPC is temporarily offscreen.
     const item = (stored[npcId] || []).find(entry => entry.uid === uid); // Used to provide refusal feedback before the equip mutation path runs.
-    const wearability = item ? clothingWearability(walker?.rec, item) : { allowed: false, blockedTrait: null, tier: null }; // Same hard veto used during gifting.
+    const wearability = item ? clothingWearability(rec, item) : { allowed: false, blockedTrait: null, tier: null }; // Same hard veto used during gifting.
     if (!wearability.allowed) {
       const traitLabel = wearability.blockedTrait ? (window.ItemTraits?.getTraitLabel?.(wearability.blockedTrait) || wearability.blockedTrait) : 'that style'; // Player-facing reason avoids a silent dead Wear button.
-      deps?.showToast?.(`${walker?.rec?.name || 'They'} won't wear it — they ${wearability.tier === 'hated' ? 'hate' : 'dislike'} ${traitLabel}.`, false);
+      deps?.showToast?.(`${rec?.name || 'They'} won't wear it — they ${wearability.tier === 'hated' ? 'hate' : 'dislike'} ${traitLabel}.`, false);
       return false;
     }
     const changed = equipStoredItemData(npcId, uid);
@@ -224,7 +230,7 @@
 
   function storeWornItemData(npcId, cosmeticId) {
     const walker = findWalker(npcId);
-    const rec = walker?.rec;
+    const rec = findRecord(npcId); // Store updates the canonical outfit even when the associated NPC is not currently rendered.
     const equipped = rec?.equippedCosmetics || [];
     const currentIdx = equipped.indexOf(cosmeticId);
     if (!rec || currentIdx === -1) return false;
@@ -339,6 +345,20 @@
   }
 
   // ── Save/load ────────────────────────────────────────────────────
+  function applyOutfitOverrideToRecord(rec) {
+    const outfit = rec?.id ? outfitOverrides[rec.id] : null; // Read by restore and the NPC spawn bridge so deferred/visitor walkers cannot miss a saved manual outfit.
+    if (!rec || !outfit) return false;
+    rec.equippedCosmetics = [...(outfit.equippedCosmetics || [])];
+    rec.appliedDyes = { ...(outfit.appliedDyes || {}) };
+    return true;
+  }
+
+  async function syncWalkerOutfit(walker) {
+    if (!applyOutfitOverrideToRecord(walker?.rec)) return false; // Re-applies after async walker construction to close the restore-vs-spawn race.
+    await refreshWalkerAppearance(walker);
+    return true;
+  }
+
   function serialize() {
     return { version: 2, stored, outfits: outfitOverrides };
   }
@@ -351,13 +371,11 @@
     Object.assign(stored, isV2 ? data.stored : data);
     if (!isV2 || !data.outfits || typeof data.outfits !== 'object') return;
     Object.assign(outfitOverrides, data.outfits);
-    for (const [npcId, outfit] of Object.entries(outfitOverrides)) {
+    for (const npcId of Object.keys(outfitOverrides)) {
+      const rec = findRecord(npcId); // Canonical lookup restores offscreen/deferred NPC data even when no walker exists yet.
+      if (rec) applyOutfitOverrideToRecord(rec);
       const walker = findWalker(npcId);
-      const rec = walker?.rec;
-      if (!rec || !outfit) continue;
-      rec.equippedCosmetics = [...(outfit.equippedCosmetics || [])];
-      rec.appliedDyes = { ...(outfit.appliedDyes || {}) };
-      void refreshWalkerAppearance(walker);
+      if (walker) void refreshWalkerAppearance(walker);
     }
   }
   window.NpcWardrobe = {
@@ -370,6 +388,8 @@
     storeWornItem,
     openWardrobePanel,
     closeWardrobePanel,
+    applyOutfitOverrideToRecord,
+    syncWalkerOutfit,
     serialize,
     restore,
   };
