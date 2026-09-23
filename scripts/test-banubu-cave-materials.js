@@ -35,5 +35,9 @@ assert.match(cavernGenerator, /generated\.mesh\.surfaceMaterial = surfaceMateria
 assert.match(interiorBuilder, /natural\.naturalizeMesh\(mesh, 'rocks', 'planar-stretch'\)/, 'farm-cliff cave surfaces use the same canonical rock material factory as farm cliffs');
 assert.match(interiorBuilder, /HobunjiSurfaceStretchUV/, 'farm-cliff cave surfaces reuse the central connected-surface detector');
 assert.match(interiorBuilder, /mapper\.mapMesh\(mesh, \{ label: 'interior-cavern:farm-cliff', maxPatchWorldSize: 6 \}\)/, 'each detected cave surface uses the farm-scale stretch-to-fit mapper');
+assert.match(source, /CLOUD_OUTLINE_VALUE_MAX/, 'cave cloud recoloring must preserve authored dark outline pixels');
+assert.match(source, /CLOUD_DEPTH_EROSION_PX/, 'cave clouds use a slightly inset hard overlap mask like sky clouds');
+assert.match(source, /colorWrite: false,[\s\S]*depthWrite: true/, 'cave overlap masks write depth without painting visible geometry');
+assert.match(source, /23 floor-hugging cloud PNGs|CLOUDS\.length/, 'cave diagnostics report the denser floor-hugging cloud layer');
 
 console.log('Banubu cave texture matrix preflight checks passed.');
