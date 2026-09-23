@@ -1447,10 +1447,11 @@ window.SCRATCHBONES_CONFIG = {
     },
     "portrait": {
       // Tintable portrait PNG convention: alpha controls shape/opacity. The
-      // default shade-fill transform maps the brightest eligible authored pixel
-      // to the selected target color and scales every darker pixel from that
-      // peak, preserving authored shading for bodies, animal markings, clothing,
-      // and weaving. See getShadeFillCanvas in portrait-utils.js.
+      // default shade-fill recovers the flat authored cel from its normal and
+      // 30%-black shadow values, fills that cel with the selected target color,
+      // then reapplies the recovered black-opacity shading map. Small white/light
+      // details therefore cannot hijack dark source art. See getShadeFillCanvas
+      // in portrait-utils.js.
       "tinting": {
         "preserveNearBlackOutlines": true,
         "outlineThreshold": 0.08,

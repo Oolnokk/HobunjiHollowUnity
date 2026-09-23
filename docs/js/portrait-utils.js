@@ -426,12 +426,9 @@ function tintForBodyColor(color, referenceHex) {
 }
 
 // Same reference-swatch CSS-filter simulation as _resolveTargetHueSat above,
-// but returns the raw absolute RGB instead of converting it to hue/sat --
-// shadeFill scales that absolute color by each pixel's own luminance rather
-// than replacing hue/sat while keeping the pixel's own value, so it needs the
-// literal target color, not a hue/sat pair. Kept as its own cache/function
-// (rather than reusing _TARGET_HUESAT_CACHE) to avoid touching the existing
-// hueSatFill path at all.
+// but returns the raw absolute RGB. The canonical shade-fill first lays down
+// this literal target color, then reapplies the source art's recovered black
+// shadow-opacity map, so it needs RGB rather than only hue/saturation.
 const _TARGET_RGB_CACHE = new Map();
 function _resolveTargetRgbColor(color, referenceHex) {
   if (!color) return null;
@@ -456,20 +453,17 @@ function _resolveTargetRgbColor(color, referenceHex) {
   return result;
 }
 
-// Multiplicative luminance-based tint descriptor consumed by ColorFill's
-// canonical shade-fill implementation. It reads correctly on dark, cel-shaded
-// art where a hue/sat value-replace crushes everything toward one muddy tone.
-// Used for species whose
-// body art needs to look like animal fur/pattern layers rather than the
-// standard NPC hueSatFill skin.
+// Flat-cel + shadow-map tint descriptor consumed by ColorFill. It recovers
+// the authored unshaded cel value (including near-black source art), fills it
+// with the requested RGB, then reapplies the source's black shading.
 function shadeFillTintForBodyColor(color, referenceHex) {
   const rgb = _resolveTargetRgbColor(color, referenceHex);
   if (!rgb) return { mode: 'none' };
   return { mode: 'shadeFill', rgb, options: getPortraitTintingConfig() };
 }
 
-// Body colors and clothing dyes deliberately share the same peak-anchored
-// shade-fill as animal genotypes/patterns and weaving. Keep these helpers as
+// Body colors and clothing dyes deliberately share the same flat-cel/shadow-map
+// fill as animal genotypes/patterns and weaving. Keep these helpers as
 // compatibility seams for callers, but do not permit per-species/clothing
 // overrides to silently select a different raster color algorithm.
 function bodyTintModeForSpecies(_speciesId) {
@@ -539,8 +533,7 @@ function getShadeFillCanvas(img, sourceKey, tint) {
   const [tr, tg, tb] = tint.rgb;
   const cacheKey = [
     sourceKey || img.currentSrc || img.src || 'inline', tr, tg, tb,
-    options.shadowFloor, options.highlightBoost, options.neutralLuminance, options.gamma,
-    options.preserveNearBlackOutlines, options.outlineThreshold, options.preserveZeroSaturation,
+    colorFillApi().version, options.preserveZeroSaturation,
   ].join('|');
   if (options.cacheEnabled && _SHADE_FILL_CACHE.has(cacheKey)) return _SHADE_FILL_CACHE.get(cacheKey);
 

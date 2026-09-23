@@ -1155,16 +1155,16 @@
       const shade = colorFillDebug.lastShadeFill;
       const hsv = colorFillDebug.lastHsvValueFill;
       const shadeText = shade
-        ? `shade#${shade.sequence || '-'}${shade.label ? `[${shade.label}]` : ''} sample=${shade.sampledCount} apply=${shade.appliedCount} peak=${shade.peak} splitMask=${shade.separateSampleMask ? 'yes' : 'no'} source=${shade.externalSource ? 'original' : 'current'}`
+        ? `shade#${shade.sequence || '-'}${shade.label ? `[${shade.label}]` : ''} sample=${shade.sampledCount} apply=${shade.appliedCount} base=${shade.baseValue} splitMask=${shade.separateSampleMask ? 'yes' : 'no'} source=${shade.externalSource ? 'original' : 'current'}`
         : 'shade=none';
       const hsvText = hsv
         ? `hsv apply=${hsv.appliedCount} mode=${hsv.saturationMode} source=${hsv.externalSource ? 'original' : 'current'}`
         : 'hsv=none';
       lines.push(`Color fill: ${shadeText}; ${hsvText}`);
       const woven = colorFillDebug.shadeFillsByLabel?.['woven-motif']; // Clothing-only pass survives unrelated portrait/base/animal fills that run afterward.
-      if (woven) lines.push(`Color fill woven: shade#${woven.sequence || '-'} sample=${woven.sampledCount} apply=${woven.appliedCount} peak=${woven.peak} splitMask=${woven.separateSampleMask ? 'yes' : 'no'} source=${woven.externalSource ? 'original' : 'current'}`);
+      if (woven) lines.push(`Color fill woven: shade#${woven.sequence || '-'} sample=${woven.sampledCount} apply=${woven.appliedCount} base=${woven.baseValue} splitMask=${woven.separateSampleMask ? 'yes' : 'no'} source=${woven.externalSource ? 'original' : 'current'}`);
       const animalSurface = colorFillDebug.shadeFillsByLabel?.['animal-surface-pattern']; // Same compositor, named separately so a Color Pools refresh cannot impersonate clothing weaving.
-      if (animalSurface) lines.push(`Color fill animal pattern: shade#${animalSurface.sequence || '-'} sample=${animalSurface.sampledCount} apply=${animalSurface.appliedCount} peak=${animalSurface.peak} splitMask=${animalSurface.separateSampleMask ? 'yes' : 'no'} source=${animalSurface.externalSource ? 'original' : 'current'}`);
+      if (animalSurface) lines.push(`Color fill animal pattern: shade#${animalSurface.sequence || '-'} sample=${animalSurface.sampledCount} apply=${animalSurface.appliedCount} base=${animalSurface.baseValue} splitMask=${animalSurface.separateSampleMask ? 'yes' : 'no'} source=${animalSurface.externalSource ? 'original' : 'current'}`);
     }
     lines.push(pxBuf ? `Raw color under cursor: rgba(${pxBuf[0]},${pxBuf[1]},${pxBuf[2]},${pxBuf[3]})` : 'Raw color under cursor: (readback failed)');
     const furniturePuzzles = window.FurniturePuzzleRuntime?.debug?.() || []; // Mobile-visible OFF/ON transform and dynamic-collision diagnostics.

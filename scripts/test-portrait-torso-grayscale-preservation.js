@@ -31,12 +31,12 @@ assert.match(
 assert.match(
   portraitSource,
   /function bodyTintModeForSpecies\(_speciesId\) \{[\s\S]{0,80}return 'shadeFill';/,
-  'body colors always use the shared peak-anchored shade fill',
+  'body colors always use the shared flat-cel shadow-map fill',
 );
 assert.match(
   portraitSource,
   /function clothingTintMode\(\) \{[\s\S]{0,80}return 'shadeFill';/,
-  'clothing dyes always use the shared peak-anchored shade fill',
+  'clothing dyes always use the shared flat-cel shadow-map fill',
 );
 assert.doesNotMatch(
   portraitSource,
@@ -46,7 +46,7 @@ assert.doesNotMatch(
 assert.match(
   colorFillSource,
   /function createShadeReference\(sourceData, predicate = null, options = \{\}\)/,
-  'peak-anchored source-shading reference lives in the shared ColorFill module',
+  'flat-cel source/shadow reference lives in the shared ColorFill module',
 );
 assert.match(
   portraitSource,
@@ -75,8 +75,13 @@ assert.doesNotMatch(
 );
 assert.equal(
   (portraitSource.match(/options\.preserveNearBlackOutlines, options\.outlineThreshold, options\.preserveZeroSaturation/g) || []).length,
-  2,
-  'both tint caches distinguish torso-preserving canvases from normally tinted canvases',
+  1,
+  'legacy hue/saturation cache still distinguishes torso-preserving canvases',
+);
+assert.match(
+  portraitSource,
+  /colorFillApi\(\)\.version, options\.preserveZeroSaturation/,
+  'shade-fill cache keys on the shared ColorFill version plus torso grayscale preservation',
 );
 assert.ok(
   gameIndex.indexOf('js/color-fill.js') >= 0
