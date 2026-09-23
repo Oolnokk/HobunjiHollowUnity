@@ -9,7 +9,7 @@
   const cameraPosition=new THREE.Vector3(), parentQuaternion=new THREE.Quaternion();
   const parentEuler=new THREE.Euler(0,0,0,'YXZ');
   let perpRotationInitialized=false;
-  const sharedRopeTextures=new Map();
+  const sharedRopeTextures=new Map(); // path -> {base,pending}; clones receive the decoded image before needsUpdate is set.
   const clamp=(value,min,max)=>Math.max(min,Math.min(max,value));
 
   function angleDiff(a,b){let d=(a-b+Math.PI)%(Math.PI*2);if(d<0)d+=Math.PI*2;return d-Math.PI;}
@@ -82,16 +82,35 @@
     return marker;
   }
 
+  function ropeTextureEntry(path){
+    let entry=sharedRopeTextures.get(path);
+    if(entry)return entry;
+    entry={base:null,pending:new Set()}; // Pending clones must not be uploaded until TextureLoader has assigned an image.
+    entry.base=new THREE.TextureLoader().load(path,loaded=>{
+      for(const clone of entry.pending){
+        clone.image=loaded.image;
+        clone.format=loaded.format;
+        clone.type=loaded.type;
+        if('colorSpace'in clone&&'colorSpace'in loaded)clone.colorSpace=loaded.colorSpace;
+        else if('encoding'in clone&&'encoding'in loaded)clone.encoding=loaded.encoding;
+        clone.needsUpdate=true;
+      }
+      entry.pending.clear();
+    });
+    entry.base.wrapS=entry.base.wrapT=THREE.RepeatWrapping;
+    if('colorSpace'in entry.base&&THREE.SRGBColorSpace)entry.base.colorSpace=THREE.SRGBColorSpace;
+    else if('encoding'in entry.base&&THREE.sRGBEncoding)entry.base.encoding=THREE.sRGBEncoding;
+    sharedRopeTextures.set(path,entry);
+    return entry;
+  }
+
   function ropeTextureForLength(path,length,repeatWorldLength){
-    let shared=sharedRopeTextures.get(path);
-    if(!shared){
-      shared=new THREE.TextureLoader().load(path);shared.wrapS=shared.wrapT=THREE.RepeatWrapping;
-      if('colorSpace'in shared&&THREE.SRGBColorSpace)shared.colorSpace=THREE.SRGBColorSpace;
-      else if('encoding'in shared&&THREE.sRGBEncoding)shared.encoding=THREE.sRGBEncoding;
-      sharedRopeTextures.set(path,shared);
-    }
-    const texture=shared.clone();texture.wrapS=texture.wrapT=THREE.RepeatWrapping;
-    texture.repeat.set(1,Math.max(1,length/Math.max(.001,repeatWorldLength)));texture.needsUpdate=true;
+    const entry=ropeTextureEntry(path);
+    const texture=entry.base.clone();texture.wrapS=texture.wrapT=THREE.RepeatWrapping;
+    texture.repeat.set(1,Math.max(1,length/Math.max(.001,repeatWorldLength)));
+    texture.userData={...(texture.userData||{}),hobunjiPendingTextureEntry:entry};
+    if(entry.base.image){texture.image=entry.base.image;texture.needsUpdate=true;}
+    else entry.pending.add(texture);
     return texture;
   }
 
@@ -230,7 +249,12 @@
       if(object.userData?.deadzoneBillboard)object.userData.deadzoneBillboardDetached=true;
       object.geometry?.dispose?.();
       const materials=Array.isArray(object.material)?object.material:object.material?[object.material]:[];
-      for(const material of materials){material.map?.dispose?.();material.dispose?.();}
+      for(const material of materials){
+        const map=material.map;
+        map?.userData?.hobunjiPendingTextureEntry?.pending?.delete?.(map);
+        map?.dispose?.();
+        material.dispose?.();
+      }
     });
   }
 

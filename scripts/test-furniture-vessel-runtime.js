@@ -14,6 +14,8 @@ const zone = read('docs/js/zone-den-totem-features.js');
 const authoredRuntime = read('docs/js/authored-furniture-runtime.js');
 const procedural = read('docs/js/procedural-furniture.js');
 const lifeTotem = read('docs/js/life-totem-furniture.js');
+const deadzone = read('docs/js/deadzone-billboard.js');
+const pieceAnimation = read('docs/js/furniture-piece-animation-runtime.js');
 const rootTotemConfigSource = read('docs/config/root-totem-config.js');
 
 assert(procedural.includes("part.kind === 'cup' || part.kind === 'liquidSurface'"),
@@ -107,3 +109,16 @@ assert(agingBarrel.parts.some((p) => /Hoop/i.test(p.name || '')),
   'aging barrel must retain its authored hoop details instead of the crude procedural recipe');
 
 console.log('furniture vessel/runtime upgrade regression checks: PASS');
+
+assert(!/caveTextureFor[\s\S]{0,900}tex\.needsUpdate\s*=\s*true/.test(zone),
+  'den/locale cave TextureLoader result must not be marked dirty before its image exists');
+assert(deadzone.includes('entry={base:null,pending:new Set()}'),
+  'deadzone rope textures track clones that were created before the source image loaded');
+assert(deadzone.includes('else entry.pending.add(texture)'),
+  'deadzone rope clones remain clean until the source image is available');
+assert(pieceAnimation.includes('entry = { base: null, pending: new Set() }'),
+  'animated furniture rope textures track pre-load clones');
+assert(pieceAnimation.includes('if (rope.material.map.image) rope.material.map.needsUpdate=true'),
+  'animated rope repeat updates cannot mark an image-less texture dirty');
+assert(!pieceAnimation.includes('texture.needsUpdate=true;\n    const material'),
+  'animated furniture no longer marks a just-cloned image-less texture dirty');
