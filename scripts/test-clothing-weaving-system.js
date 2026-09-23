@@ -424,8 +424,8 @@ assert.match(gameSource, /loomFurniture: \(\) => makeLoomInteractable\(\)/, 'map
 assert.match(gameSource, /function makeLoomInteractable\(\)/, 'loom interaction is owned by the core furniture system');
 console.log('clothing weaving system tests passed');
 
-assert.match(creatureRendererSource, /'gar-wolf':[\s\S]*?baseShadeReferenceHex: '#585E5D'/,
-  'Gar-wolf base recolor uses its authored #585E5D full-strength coat anchor');
+assert.match(creatureRendererSource, /'gar-wolf':[\s\S]*?baseShadeReferenceHex: '#565047'/,
+  'Gar-wolf base recolor uses its authored #565047 full-strength coat anchor');
 assert.match(creatureRendererSource, /'dabinggi-hound':[\s\S]*?baseShadeReferenceHex: '#585E5D'/,
   'Dabingi-hound base recolor uses its authored #585E5D full-strength coat anchor');
 assert.match(creatureRendererSource, /grehlr:[\s\S]*?baseShadeReferenceHex: '#424242'/,

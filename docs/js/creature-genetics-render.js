@@ -37,7 +37,7 @@
   const SPECIES = {
     'gar-wolf': {
       prefix: 'gw',
-      baseShadeReferenceHex: '#585E5D', // Authored full-strength base-coat color; fixed anchor prevents unrelated highlights from changing coat tint.
+      baseShadeReferenceHex: '#565047', // Authored full-strength Gar-wolf coat color; fixed anchor prevents unrelated highlights from changing coat tint.
       base: {
         idle: 'assets/creaturesprites/gar-wolf_idle.png',
         run1: 'assets/creaturesprites/gar-wolf_run1.png',
@@ -48,7 +48,7 @@
     },
     'dabinggi-hound': {
       prefix: 'dh',
-      baseShadeReferenceHex: '#585E5D', // Authored full-strength base-coat color shared with Gar-wolf source art.
+      baseShadeReferenceHex: '#585E5D', // Authored full-strength Dabingi-hound coat color; fixed anchor prevents unrelated highlights from changing coat tint.
       base: {
         idle: 'assets/creaturesprites/dabinggi-hound_idle.png',
         run1: 'assets/creaturesprites/dabinggi-hound_run1.png',

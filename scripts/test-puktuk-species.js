@@ -17,6 +17,7 @@ assert.match(geneticsSource, /puktuk:\s*new Set\(\['belly'\]\)/, 'Puktuk belly i
 assert.match(geneticsSource, /const PUKTUK_FOXTAIL_CHANCE = 0\.08/, 'Puktuk foxtail uses the rare 8% fresh-roll rate');
 assert.match(geneticsSource, /const PUKTUK_VISUAL_SCALE = 0\.75/, 'Puktuk applies a species-only 75% visual scale to every borrowed size class');
 assert.match(rendererSource, /spec\.fullBaseRecolor === true/, 'Shared compositor consumes species opt-in for full base recoloring');
+assert.match(geneticsSource, /species\[PUKTUK_KIND\] = \{[\s\S]*?baseShadeReferenceHex: '#99BF99'/, 'Puktuk renderer uses authored #99BF99 full-strength coat anchor');
 assert.match(geneticsSource, /puktuk:\s*'gar-wolf'/, 'Puktuk reuses Gar-wolf size calibration without a render alias');
 assert.match(geneticsSource, /PUKTUK_WESTERN_ZONE_ID = 'map_western_slope'/, 'Puktuk targets the Western Incline/Slope zone');
 assert.match(geneticsSource, /puktuk_idle\.png[\s\S]*puktuk_run1\.png[\s\S]*puktuk_run2\.png/, 'Puktuk base animation sprites are registered');
