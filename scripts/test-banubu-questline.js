@@ -231,24 +231,25 @@ assert.match(state.progress.objective, /Three-Fish Pie/);
 assert.match(state.progress.detail, /flour and cooking fat/i, 'Quest 1 task detail must mention the crust requirements');
 assert.strictEqual(questline.menuStatus().ready, false);
 
+const [pieEffectA, pieEffectB, pieEffectC] = state.target.requiredEffects; // Used to model two fish-provided effects plus one lucky crust-provided requested effect.
 cookedInventory = [{
   key: 'food_banubu_q1_missing',
   count: 1,
   definition: {
     recipeId: content.THREE_FISH_PIE_RECIPE_ID,
-    foodEffects: { ...Object.fromEntries(state.target.requiredEffects.slice(0, 2).map(effect => [effect, 1])), cooking: 2 },
+    foodEffects: { [pieEffectA]: 1, [pieEffectB]: 1, cooking: 2 },
   },
 }];
-assert.strictEqual(questline.matchingMeal(state), null, 'crust buffs cannot replace a requested effect unless they actually provide that effect');
+assert.strictEqual(questline.matchingMeal(state), null, 'an unrelated crust buff cannot replace a missing requested effect');
 cookedInventory = [{
-  key: 'food_banubu_q1',
+  key: 'food_banubu_q1_crust_helped',
   count: 1,
   definition: {
     recipeId: content.THREE_FISH_PIE_RECIPE_ID,
-    foodEffects: { ...Object.fromEntries(state.target.requiredEffects.map(effect => [effect, 1])), cooking: 2 },
+    foodEffects: { [pieEffectA]: 1, [pieEffectB]: 1, [pieEffectC]: 1, cooking: 2 },
   },
 }];
-assert(questline.matchingMeal(state), 'Three-Fish Pie may carry extra crust buffs while satisfying all requested effects');
+assert(questline.matchingMeal(state), 'a requested effect supplied by the crust may complete the Three-Fish Pie even when it also carries an extra crust buff');
 assert.strictEqual(questline.menuStatus().ready, true, 'Tasks menu readiness must use the same cooked-inventory matcher as Banubu dialogue');
 
 // The Color Pools Key is world-scoped. A missing persistent world must fail
@@ -293,6 +294,15 @@ cookedInventory = [{
   },
 }];
 assert.strictEqual(questline.matchingMeal(state), null, 'Hearty (+2) is below the Concentrated (+3) Quest 2 requirement');
+cookedInventory = [{
+  key: 'food_banubu_q2_extra',
+  count: 1,
+  definition: {
+    recipeId: content.NINE_LEAF_TEA_RECIPE_ID,
+    foodEffects: { ...Object.fromEntries(state.target.requiredEffects.map(effect => [effect, 3])), cooking: 1 },
+  },
+}];
+assert.strictEqual(questline.matchingMeal(state), null, 'Three-Fish Pie extra-buff tolerance must not loosen Nine Leaf Tea\'s exact-effect requirement');
 cookedInventory = [{
   key: 'food_banubu_q2',
   count: 1,
@@ -345,6 +355,7 @@ const cookingSource = read('docs/js/cooking-system.js');
 assert.match(cookingSource, /minStacks:\s*3,\s*label:\s*'Concentrated'/);
 assert.match(cookingSource, /recipe\?\.outputIcon/, 'CookingSystem must honor bespoke recipe output icons');
 assert.match(cookingSource, /slot\.contributesEffects === false/);
+assert.match(cookingSource, /recipe\.slots\.forEach\(slot => \{[\s\S]{0,260}selectedSlots\[slot\.id\][\s\S]{0,520}cookingPrimaryEffect/, 'CookingSystem effect totals must evaluate every contributing recipe slot, including Three-Fish Pie flour and fat');
 assert.match(cookingSource, /formatEffectStrength\(effect, amount\)/);
 assert.match(cookingSource, /effectStrengthLabel\(effect\.stacks\)/);
 
