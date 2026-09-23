@@ -364,6 +364,8 @@
       makeRng(seedText + '_locale_cavern')
     );
     const floorSurface = floorSurfaceMap(floor, generated.mesh); // Couples logical standing height to the actual carved mesh instead of an invisible Y=0 plane.
+    const surfaceMaterial = String(cavern.surfaceMaterial || ''); // Carried on the mesh so the shared interior renderer can opt only this authored locale into farm-cliff material/stretch parity.
+    if (surfaceMaterial) generated.mesh.surfaceMaterial = surfaceMaterial;
 
     const exits = connectors.map(connector => ({
       id: connector.id,
