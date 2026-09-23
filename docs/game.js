@@ -13765,6 +13765,7 @@
           // whole scene graph every frame in occlusionSafeCameraPosition.
           const occlusionMeshes = [];
           bScene.traverse(o => { if (o.userData?.cameraObstacle) occlusionMeshes.push(o); });
+          window.BanubuCaveClouds?.validateCaveMaterials?.({ THREE, scene: bScene, mapData }); // Repairs malformed cave texture UV transforms once before Three.js renders the scene.
           window.CinematicCameraRuntime?.registerArea?.(mapId, mapData.cinematicCameras || []); // Cave/building cameras share this scene's local tile coordinate space.
           const info = { scene: bScene, grid: bGrid, cols, rows, transitions, vendorZones: mapData.vendorZones || [], routes: buildingRoutes, loadSource, fallback: loadSource !== 'config', name: mapData.name || mapId, wallStyle: mapData.wallStyle || '', entrySpots: mapData.entrySpots || {}, keyDoorGroups, mineFloor: mapData.mineFloor || null, minePlacementSafeTileCount: mapData.minePlacementSafeTileCount ?? null, disconnectedFloorTilesRemoved: mapData.disconnectedFloorTilesRemoved ?? 0, occlusionMeshes };
           _buildingScenes.set(mapId, info);

@@ -7,11 +7,12 @@
   const MAX_CHUNK_DISTANCE = 2; // Used by the coarse proximity gate: the player's chunk may be the entrance chunk or up to two chunks away.
   const IDLE_RECHECK_MS = 250; // Used only while no snore is playing so range/night checks stay cheap off-screen.
   const FAILED_START_RETRY_MS = 1000; // Used to avoid frame-spamming a temporarily blocked audio backend.
-  const SNORE_TEMPO = 1 / 3; // Used as the literal playback tempo requested for Banubu's slowed Grehlr chatter call.
+  const SNORE_TEMPO = 1 / 9; // Used to triple the existing one-third-speed Grehlr snore's audible duration.
+  const PAUSE_DURATION_MULTIPLIER = 1; // Keeps the silence between calls equal to the newly lengthened snore duration.
   const ACOUSTIC_EARSHOT_CHUNKS = 5; // Used only for smooth distance/elevation attenuation after the stricter two-chunk gate passes.
   const SCHEDULER_ID = 'banubu-night-snore'; // Used to keep development reloads from registering duplicate frame subscribers.
 
-  let nextAttemptAtMs = 0; // Used to throttle inactive/failed checks without delaying the next breath after a completed snore.
+  let nextAttemptAtMs = 0; // Used to enforce the measured post-snore silence and throttle inactive/failed checks.
   let snorePlaying = false; // Used to guarantee only one slowed chatter call can be active at a time.
   let lastStartedAtMs = 0; // Used to measure the real rendered snore duration for mobile diagnostics.
   let schedulerUnsubscribe = null; // Used by dispose() so a development reload can cleanly detach this feature.
@@ -41,6 +42,7 @@
     lastStartedAt: null,
     lastFinishedAt: null,
     lastDurationMs: null,
+    lastPauseMs: null,
     lastError: null,
   }; // Exposed through debugSnapshot() and Pixel Probe so mobile testing does not require a console.
 
@@ -224,15 +226,16 @@
   }
 
   function markFinished(error = null) {
-    const finishedAt = nowMs(); // Used both for real-duration diagnostics and immediate start eligibility of the next snore.
+    const finishedAt = nowMs(); // Used for real-duration diagnostics and to schedule the following silence.
     snorePlaying = false;
     activeSnoreController = null;
     debugState.playing = false;
     debugState.lastFinishedAt = Date.now();
     debugState.lastDurationMs = lastStartedAtMs > 0 ? Math.max(0, finishedAt - lastStartedAtMs) : null;
     debugState.lastError = error ? String(error?.message || error) : null;
-    nextAttemptAtMs = error ? finishedAt + FAILED_START_RETRY_MS : 0;
-    setStatus(error ? 'playback error' : 'ready for next snore', debugState.lastError);
+    debugState.lastPauseMs = error ? null : debugState.lastDurationMs * PAUSE_DURATION_MULTIPLIER;
+    nextAttemptAtMs = finishedAt + (error ? FAILED_START_RETRY_MS : debugState.lastPauseMs);
+    setStatus(error ? 'playback error' : 'pausing between snores', debugState.lastError);
   }
 
   function startSnore(acoustics, timestamp) {

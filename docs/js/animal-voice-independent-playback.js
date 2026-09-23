@@ -5,7 +5,7 @@
   // one fixed tempo/pitch per recording, one fixed tempo/pitch per utterance,
   // and the species size-class pitch offset. No random ranges, normalization,
   // contours, splice-tempo or behavior-specific modulation remain.
-  const MIN_TEMPO = 1 / 3; // Allows Banubu's authored night snore to reuse a Grehlr call at the requested exact one-third tempo.
+  const MIN_TEMPO = 1 / 9; // Allows Banubu's Grehlr snore to run three times longer than its prior one-third tempo.
   const MAX_TEMPO = 2;
   const MAX_SHIFT_SEMITONES = 12;
   const WSOLA_FRAME_S = 0.056;
@@ -196,7 +196,7 @@
       lastStretchCoverage = 1;
       return channels.map(() => new Float32Array(1));
     }
-    const safeStretch = clamp(finite(stretch, 1), 0.25, 4);
+    const safeStretch = clamp(finite(stretch, 1), 0.25, 9); // Accommodates the snore's one-ninth tempo even after its negative pitch shift.
     const targetLength = Math.max(1, Math.round(sourceLength * safeStretch));
     lastStretchSourceSamples = sourceLength;
     lastStretchTargetSamples = targetLength;
@@ -423,7 +423,7 @@
       // Emergency fallback only. The normal Web Audio path keeps speed/pitch
       // independent; browsers without it necessarily couple them here.
       setPitchPreservation(audio, false);
-      audio.playbackRate = clamp(tempo * pitchRatio, 0.25, 4);
+      audio.playbackRate = clamp(tempo * pitchRatio, MIN_TEMPO, 4);
     }
     let finished = false;
     let started = false;

@@ -11,6 +11,32 @@
     [6.2, 3.3, 2.05, 'cloud4.png', 2.2],
   ]; // Fixed heights keep all animation horizontal without vertical bob.
   const textureCache = new Map(); // Reuses recolored PNG canvases across cave reloads.
+  const TEXTURE_SLOTS = ['map', 'specularMap', 'displacementMap', 'normalMap', 'bumpMap', 'roughnessMap', 'metalnessMap', 'alphaMap', 'emissiveMap', 'aoMap', 'lightMap']; // Material maps whose UV transforms Three.js reads during a cave render.
+
+  function validateCaveMaterials({ THREE, scene, mapData }) {
+    if (mapData?.id !== CAVE_ID || !THREE || !scene) return 0;
+    let repairs = 0; // Counts malformed cave texture slots so the existing render log can identify this failure without frame-spamming.
+    scene.traverse(object => {
+      const materials = Array.isArray(object.material) ? object.material : [object.material]; // Covers groups with more than one authored surface.
+      for (const material of materials) {
+        if (!material) continue;
+        for (const slot of TEXTURE_SLOTS) {
+          const texture = material[slot];
+          if (!texture) continue;
+          if (!texture.isTexture) {
+            material[slot] = null;
+            material.needsUpdate = true;
+          } else if (!texture.matrix?.elements) {
+            texture.matrix = new THREE.Matrix3();
+            texture.matrixAutoUpdate = false;
+          } else continue;
+          repairs++;
+          window.__farmLog?.(`[banubu-clouds] repaired ${object.name || object.type}.${slot} texture UV transform`, 'render');
+        }
+      }
+    });
+    return repairs;
+  }
 
   function textureFor(THREE, filename) {
     if (textureCache.has(filename)) return textureCache.get(filename);
@@ -72,5 +98,5 @@
     window.__farmLog?.('[banubu-clouds] 5 fixed-height cloud PNGs and 3 local lights', 'render');
   }
 
-  window.BanubuCaveClouds = { decorate };
+  window.BanubuCaveClouds = { decorate, validateCaveMaterials };
 })();
