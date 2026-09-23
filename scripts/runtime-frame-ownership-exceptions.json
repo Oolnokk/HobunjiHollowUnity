@@ -15,7 +15,7 @@
     "function": "loadBuildingScene",
     "reason": "A chained double requestAnimationFrame forces the Den/cavern loading label to actually paint before a long synchronous carve starts; it resolves once and never reschedules.",
     "migrationStage": "not-planned",
-    "line": 13044
+    "line": 13143
   },
   {
     "file": "docs/game.js",
@@ -24,7 +24,7 @@
     "function": "runMove",
     "reason": "Steps a previewed cutscene actor toward its move target every frame and stops rescheduling once advanceActorToward reports arrival or the preview's running flag clears.",
     "migrationStage": "not-planned",
-    "line": 29742
+    "line": 29917
   },
   {
     "file": "docs/game.js",
@@ -33,7 +33,7 @@
     "function": "runFade",
     "reason": "Defers writing the fade element's target opacity to the next paint so the CSS transition actually animates instead of jumping instantly; runs once per fade stage.",
     "migrationStage": "not-planned",
-    "line": 29893
+    "line": 30068
   },
   {
     "file": "docs/game.js",
@@ -51,7 +51,7 @@
     "function": "cutsceneRotationTick",
     "reason": "Eases previewed actors' facing every frame for the scene's lifetime, gated on the same running flag every other preview RAF loop checks, so stopping the preview stops it too.",
     "migrationStage": "not-planned",
-    "line": 29984
+    "line": 30159
   },
   {
     "file": "docs/js/action-arc-ui.js",
@@ -601,5 +601,23 @@
     "reason": "Self-terminating readiness retry confined to the standalone Attack Animation Editor; it RAF-retries only until the core editor module has published its state API and Undo/Redo buttons.",
     "migrationStage": "not-planned",
     "line": 214
+  },
+  {
+    "file": "docs/js/furniture-puzzle-runtime.js",
+    "owner": "FurniturePuzzleRuntimeEmitterVfx",
+    "classification": "scheduler",
+    "function": "startEmitterLoop",
+    "reason": "One guarded shared requestAnimationFrame loop advances registered furniture-puzzle emitter visuals. startEmitterLoop starts it at most once for the runtime, so there is no per-puzzle RAF fan-out.",
+    "migrationStage": "not-planned",
+    "line": 103
+  },
+  {
+    "file": "docs/js/furniture-puzzle-runtime.js",
+    "owner": "FurniturePuzzleRuntimeMechanismAnimation",
+    "classification": "bounded-animation",
+    "function": "animate",
+    "reason": "A smoothstep requestAnimationFrame loop runs only while one mechanism moves toward its target and stops at t=1; its revision token cancels superseded re-toggle animations.",
+    "migrationStage": "not-planned",
+    "line": 118
   }
 ]
