@@ -30,6 +30,7 @@ on:
       - 'scripts/test-heavy-weapon-alternating-neutrals.js'
       - 'scripts/test-onboarding-character-creation-life-preview.js'
       - 'scripts/test-onboarding-character-creation-weapon-view-fix.js'
+      - 'scripts/test-npc-held-equipment.js'
       - '.github/workflows/species-gender-pose-orbit-regression.yml'
   workflow_dispatch:
 
@@ -46,6 +47,11 @@ jobs:
         run: |
           node --check scripts/test-species-gender-pose-scaling.js
           node scripts/test-species-gender-pose-scaling.js
+
+      - name: NPC held equipment
+        run: |
+          node --check scripts/test-npc-held-equipment.js
+          node scripts/test-npc-held-equipment.js
 
       - name: Ranged weapon archetypes
         continue-on-error: true

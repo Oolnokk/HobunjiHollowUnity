@@ -429,7 +429,7 @@
       visual.name = `${state.walker.rec.id}_${loadout.toolKey}_visual`;
       visual.userData = { toolPlane: built.plane };
       visual.add(built.root);
-      applyPrimaryCorrection(visual, loadout.toolKey);
+      applyGripScale(visual, loadout.toolKey); // Primary grip is hand-owned now; watchman weapon keeps the authored holder transform and only inherits intrinsic item scale.
       const holder = new three.Group();
       holder.name = `${state.walker.rec.id}_${loadout.toolKey}_holder`;
       holder.userData = { toolPlane: built.plane, npcWatchmanWeapon: true, toolKey: loadout.toolKey };
