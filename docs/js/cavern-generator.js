@@ -428,6 +428,9 @@
       entranceLightTiles: [[Number(primary.col), Number(primary.row)]],
       furniture,
       npcStations,
+      cinematicCameras: Array.isArray(locale.cinematicCameras)
+        ? locale.cinematicCameras.map(camera => ({ ...camera })) // Passed through to the building runtime so authored cave shots survive synthesis.
+        : [],
       wallStyle: 'cavern',
       exitCol: Number(primary.col),
       exitRow: Number(primary.row),
