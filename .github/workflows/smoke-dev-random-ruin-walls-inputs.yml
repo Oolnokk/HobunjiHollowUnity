@@ -23,6 +23,7 @@ jobs:
           node --check docs/js/dev-random-ruin-wall-planes.js
           node --check docs/js/dev-random-ruin-wall-render-proxy.js
           node --check docs/js/camera-look-clamp.js
+          node --check docs/js/dev-random-ruin-bootstrap.js
 
       - name: Install Chromium smoke runtime
         run: |

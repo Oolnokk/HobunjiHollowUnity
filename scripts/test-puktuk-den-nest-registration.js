@@ -29,7 +29,9 @@ const windowStub = {
   },
   __farmLog(message, channel) { logs.push({ message, channel }); },
 };
-vm.runInNewContext(source, { window: windowStub }, { filename: 'puktuk-den-nest-registration.js' });
+const registrationContext = vm.createContext({ window: windowStub });
+vm.runInContext(fs.readFileSync(path.resolve(__dirname, '../docs/js/voorg-ass-registration.js'), 'utf8'), registrationContext, { filename: 'voorg-ass-registration.js' });
+vm.runInContext(source, registrationContext, { filename: 'puktuk-den-nest-registration.js' });
 
 assert.deepEqual(
   JSON.parse(JSON.stringify(windowStub.SCRATCHBONES_CONFIG.game.wildlife.denMothers.puktuk)),

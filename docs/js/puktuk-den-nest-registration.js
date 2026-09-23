@@ -8,7 +8,6 @@
   const VOORG_ASS_ZONE_ID = 'map_northern_cliffs'; // Exterior-zone key whose open-air herd ecology owns Voorg-Asses.
   const VOORG_ASS_BABY_ITEM_KEY = 'voorgAssBaby'; // Livestock item recovered from a killed Voorg-Ass Herd-Mother.
   const LIGHT_WOOL_ITEM_KEY = 'lightWool'; // Voorg-Ass shearing output presented to players as Light Wool.
-  const LEGACY_UUMKAOII_KEYS = new Set(['uumkaoii', 'uumkaoii-wild']); // Used when migrating the Northern Cliffs from the old den-herd pool to roaming Voorg-Ass herds.
 
   function registerDenNestConfig() {
     const game = window.SCRATCHBONES_CONFIG?.game; // Config is loaded before this bridge and snapshotted later by game.js.
@@ -91,37 +90,12 @@
   }
 
   function registerVoorgAssHerdRuntime(injectedDeps) {
-    const northernZone = injectedDeps?.EXTERIOR_ZONES?.[VOORG_ASS_ZONE_ID]; // Shared live zone object consumed by the roaming-herd spawner.
-    if (!northernZone) return false;
-
-    const herbivores = Array.isArray(northernZone.herbivoreSpecies) ? northernZone.herbivoreSpecies : (northernZone.herbivoreSpecies = []); // Legacy den-herd pool must no longer contain Voorg-Ass/Uumkao'ii.
-    for (let i = herbivores.length - 1; i >= 0; i--) {
-      if (herbivores[i] === VOORG_ASS_KIND || LEGACY_UUMKAOII_KEYS.has(herbivores[i])) herbivores.splice(i, 1);
-    }
-
-    const roamingHerdSpecies = Array.isArray(northernZone.roamingHerdSpecies)
-      ? northernZone.roamingHerdSpecies
-      : (northernZone.roamingHerdSpecies = []); // New population pool used by WildlifeSpawn independently of cavern den anchors.
-    if (!roamingHerdSpecies.includes(VOORG_ASS_KIND)) roamingHerdSpecies.push(VOORG_ASS_KIND);
-    northernZone.roamingHerdCount = Math.max(2, Math.floor(Number(northernZone.roamingHerdCount) || 2)); // Two independently roaming herds keep the Northern Cliffs populated without tying them to cave count.
-
-    const denSpecies = Array.isArray(northernZone.denSpecies) ? northernZone.denSpecies : null; // Existing explicit cave rosters stay intact except for stale Voorg-Ass entries.
-    if (denSpecies) {
-      for (let i = denSpecies.length - 1; i >= 0; i--) {
-        if (denSpecies[i] === VOORG_ASS_KIND) denSpecies.splice(i, 1);
-      }
-    }
-
-    const denMotherDefs = injectedDeps?.DEN_MOTHER_DEFS; // Cavern generation must never synthesize a Voorg-Ass Den-Mother/nest.
-    if (denMotherDefs) delete denMotherDefs[VOORG_ASS_KIND];
-
-    const ready = roamingHerdSpecies.includes(VOORG_ASS_KIND)
-      && !herbivores.includes(VOORG_ASS_KIND)
-      && !herbivores.some(kind => LEGACY_UUMKAOII_KEYS.has(kind))
-      && !(denSpecies?.includes(VOORG_ASS_KIND))
-      && !denMotherDefs?.[VOORG_ASS_KIND];
-    window.__farmLog?.(`[voorg-ass] herd registration zone=${VOORG_ASS_ZONE_ID} roaming=[${roamingHerdSpecies.join(',')}] herdCount=${northernZone.roamingHerdCount} denSpecies=[${denSpecies?.join(',') || 'legacy'}] denMother=none herbivores=[${herbivores.join(',')}]`, ready ? 'wildlife' : 'warn');
-    return ready;
+    // Zone/Den-Mother migration is shared with creature-genetics.js and
+    // wildlife-spawn.js via js/voorg-ass-registration.js.
+    const herds = window.VoorgAssRegistration?.ensureNorthernCliffsHerds?.(injectedDeps);
+    if (!herds?.zone) return false;
+    window.__farmLog?.(`[voorg-ass] herd registration zone=${VOORG_ASS_ZONE_ID} roaming=[${herds.roaming.join(',')}] herdCount=${herds.zone.roamingHerdCount} denSpecies=[${herds.denSpecies?.join(',') || 'legacy'}] denMother=none herbivores=[${herds.herbivores.join(',')}]`, herds.ready ? 'wildlife' : 'warn');
+    return herds.ready;
   }
 
   function patchWildlifeSpawn(api) {

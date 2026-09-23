@@ -10,7 +10,7 @@ const vm = require('vm');
 const root = path.resolve(__dirname, '..');
 const read = rel => fs.readFileSync(path.join(root, rel), 'utf8');
 
-const camera = read('docs/js/camera-look-clamp.js');
+const camera = read('docs/js/dev-random-ruin-bootstrap.js');
 const motion = read('docs/js/dev-random-ruin-motion-runtime.js');
 const coverage = read('docs/js/dev-random-ruin-runtime-coverage.js');
 const api = read('docs/tools/debris-ifier/debrisifier-v50-api.js');
@@ -32,7 +32,8 @@ const loadOrder = [
   'dev-random-ruin-motion-runtime.js',
   'dev-random-ruin-runtime-coverage.js',
 ].map(name => camera.indexOf(name));
-assert(loadOrder.every(index => index >= 0), 'camera bootstrap must load every Random Test Ruin runtime module');
+assert(/localStorage\.getItem\('hobunjiDevMode'\) === '1'/.test(camera) && /if \(!devMode/.test(camera), 'ruin runtime must only be injected in Dev Mode');
+assert(loadOrder.every(index => index >= 0), 'ruin bootstrap must load every Random Test Ruin runtime module');
 for (let i = 1; i < loadOrder.length; i++) {
   assert(loadOrder[i] > loadOrder[i - 1], 'Random Test Ruin runtime modules must preserve dependency order');
 }

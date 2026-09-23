@@ -229,9 +229,9 @@
 
     for (let componentIndex = 0; componentIndex < components.length; componentIndex++) {
       const cells = components[componentIndex]; // Exact generated-object footprint rendered by this iteration.
-      const cellSet = new Set(cells.map(([c, r]) => c + ',' + r)); // Membership lookup used by boundary and base-height calculations.
       const renderCells = cells.filter(([c, r]) => c >= range.colStart && c < range.colEnd && r >= range.rowStart && r < range.rowEnd); // Chunk-local tiles emitted from this global shape.
-      if (!renderCells.length) continue;
+      if (!renderCells.length) continue; // Checked before building cellSet so each streamed chunk only pays per-tile setup for boulders it actually touches.
+      const cellSet = new Set(cells.map(([c, r]) => c + ',' + r)); // Membership lookup used by boundary and base-height calculations.
       representedComponentCount++;
 
       const centroid = cells.reduce((sum, [c, r]) => [sum[0] + c + 0.5, sum[1] + r + 0.5], [0, 0]); // Footprint center used to break equally-deep peak candidates.

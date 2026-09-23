@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - 'docs/config/attachment-rig-profiles.js'
+      - 'docs/js/voorg-ass-registration.js'
       - 'docs/js/creature-genetics.js'
       - 'docs/js/wildlife-spawn.js'
       - 'docs/js/puktuk-den-nest-registration.js'
@@ -31,6 +32,7 @@ on:
   pull_request:
     paths:
       - 'docs/config/attachment-rig-profiles.js'
+      - 'docs/js/voorg-ass-registration.js'
       - 'docs/js/creature-genetics.js'
       - 'docs/js/wildlife-spawn.js'
       - 'docs/js/puktuk-den-nest-registration.js'
@@ -69,6 +71,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+      - name: Syntax check shared Voorg-Ass registration
+        run: node --check docs/js/voorg-ass-registration.js
       - name: Syntax check creature genetics
         run: node --check docs/js/creature-genetics.js
       - name: Syntax check roaming herd runtime

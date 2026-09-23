@@ -187,6 +187,61 @@ function makeGrid(rows, cols, type, water = 0) {
   const untouched = windowObject.NpcScheduling.resolveNpcScheduleTarget(outsider);
   assert.equal(untouched.area, 'map_far_zone', 'non-town NPCs must not be pulled into Hobunji shelters');
   assert.equal(untouched.floodShelter, undefined);
+
+  // An NPC already indoors in map_i_b whose schedule points at a street spot
+  // right outside map_i_a must shelter in place, not cross the flooded town.
+  const indoors = { id: 'npc_indoors' };
+  walkers.push({ rec: indoors, area: 'map_i_b', root: { position: { x: 4.5, z: 3.5 } }, currentScheduleTarget: null });
+  normalTarget = { area: 'town', c: 9, r: 10, activity: 'errand by building A' };
+  const inPlace = windowObject.NpcScheduling.resolveNpcScheduleTarget(indoors);
+  assert.equal(inPlace.floodShelter, true);
+  assert.equal(inPlace.area, 'map_i_b', 'NPC already inside a town building must shelter where they are');
+  assert.equal(inPlace.stationId, 'seat_b1', 'in-place shelter still takes a free seat in the current building');
+
+  // Seatless in-place shelter holds the NPC's current indoor spot instead of the door.
+  const indoorsSeatless = { id: 'npc_indoors_seatless' };
+  walkers.push({ rec: indoorsSeatless, area: 'map_i_b', root: { position: { x: 6.5, z: 7.5 } }, currentScheduleTarget: null });
+  const holdSpot = windowObject.NpcScheduling.resolveNpcScheduleTarget(indoorsSeatless);
+  assert.equal(holdSpot.area, 'map_i_b');
+  assert.equal(holdSpot.pose, 'stand');
+  assert.equal(holdSpot.c, 6, 'no free seat → stay at current indoor column');
+  assert.equal(holdSpot.r, 7, 'no free seat → stay at current indoor row');
+}
+
+// --- A shelter interior that is still loading (null sentinel) is loaded only once. ---
+{
+  const walkers = [{ rec: { id: 'npc_wait' }, area: 'town', root: { position: { x: 9.5, z: 10.5 } }, currentScheduleTarget: null }];
+  const scenes = new Map();
+  let loadCalls = 0;
+  const links = [{ toArea: 'map_i_a', exit: { c: 9, r: 10 }, spawn: { c: 1, r: 4 } }];
+  const windowObject = {
+    WaterSystem: { isTownFloodEmergency: () => true },
+    NpcPathfinding: {
+      areaLinksFrom: () => links,
+      findNpcAreaLink: (from, to) => (to === 'map_i_a' ? links[0] : null),
+    },
+    NpcActivityPlanner: { resolveNpcTarget: () => ({ area: 'town', c: 9, r: 11, activity: 'shopping' }) },
+    SCRATCHBONES_CONFIG: { game: { movement: { npc: {} } } },
+  };
+  loadModule('docs/js/npc-scheduling.js', windowObject);
+  windowObject.NpcScheduling.init({
+    npcWalkers: walkers,
+    calendar: { day: 1, time01: 0.5 },
+    getCurrentArea: () => 'town',
+    getWorldNpcPaths: () => [],
+    getSharedSchedules: () => [],
+    isBuildingArea: area => /^map_i_/.test(area || ''),
+    buildingScenes: scenes,
+    loadBuildingScene(mapId) { loadCalls++; scenes.set(mapId, null); }, // Mirrors game.js: in-flight sentinel stays null until the scene resolves.
+    normalizeNpcArea: area => area || 'farm',
+    getDecorativeFurnitureKeyByItemKey: () => '',
+    decorativeFurnitureDefs: {},
+  });
+  for (let frame = 0; frame < 5; frame++) {
+    const waiting = windowObject.NpcScheduling.resolveNpcScheduleTarget(walkers[0].rec);
+    assert.equal(waiting.floodShelterWaitingForInterior, true);
+  }
+  assert.equal(loadCalls, 1, 'per-frame resolves must not restart an in-flight shelter interior load');
 }
 
 console.log('Town flood drainage + shelter regression: PASS');

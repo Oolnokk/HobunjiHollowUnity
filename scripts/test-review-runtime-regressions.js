@@ -113,25 +113,26 @@ async function testLoomInitialization() {
   }
 }
 function testWaterCadence() {
-  const game = read('docs/game.js'); // Executes the real simulation cadence block with lightweight water spies.
-  const code = section(game, '          // Water sim ticks', "          window.PerfProfiler?.end(miscGameplayPerf);"); // Contains accumulation and simulation dispatch.
+  // The cadence block moved out of game.js's frame loop into
+  // WaterSystem.tickSimulation; game.js must still delegate to it every frame.
+  const game = read('docs/game.js');
+  assert(game.includes('window.WaterSystem.tickSimulation(dt, currentArea, {'), 'game loop delegates water cadence to WaterSystem.tickSimulation');
+  assert(game.includes('gameHoursPerSecond: (NIGHT_HOUR - MORNING_HOUR) / DAY_LENGTH_SECONDS'), 'game loop passes the authored game-hour rate');
   let ticks = 0; // Represents water snapshots that would dirty and rebuild geometry.
-  const context = vm.createContext({
-    simAccumulator: 0, dt: 1 / 60, DAY_LENGTH_SECONDS: 1200, NIGHT_HOUR: 22, MORNING_HOUR: 6,
-    currentArea: 'wilderness', _townZone: null, townGrid: [], tickWorldObjects() {},
-    window: { WaterSystem: { recomputeWater() { ticks++; } }, WeatherFX: { spawnRipples() {} } },
-  }); // Uses production accumulation logic, avoiding a duplicate implementation in the test.
-  const step = new vm.Script(code); // Reused for thousands of deterministic frame evaluations.
-  for (let frame = 0; frame < 36000; frame++) step.runInContext(context);
-  assert.equal(ticks, 0);
-  assert.equal(context.simAccumulator, 0, 'ten minutes off-map must not accumulate a water backlog');
-  context.currentArea = 'farm';
-  for (let frame = 0; frame < 60; frame++) step.runInContext(context);
+  const windowStub = {};
+  vm.runInNewContext(read('docs/js/water-system.js'), { window: windowStub, console, Math, Float32Array }, { filename: 'water-system.js' });
+  const water = windowStub.WaterSystem;
+  water.init({ getTownZone: () => null, getTownGrid: () => [] });
+  water.recomputeWater = () => { ticks++; }; // Public-API spy: tickSimulation must route through it (dev switchbox's noWaterSim relies on this).
+  const hooks = { gameHoursPerSecond: (22 - 6) / 1200, onFarmTick() {}, onTick() {} };
+  const dt = 1 / 60;
+  for (let frame = 0; frame < 36000; frame++) water.tickSimulation(dt, 'wilderness', hooks);
+  assert.equal(ticks, 0, 'ten minutes off-map must not accumulate a water backlog');
+  for (let frame = 0; frame < 60; frame++) water.tickSimulation(dt, 'farm', hooks);
   assert.equal(ticks, 0, 'returning does not rebuild water on every frame');
-  for (let frame = 0; frame < 540; frame++) step.runInContext(context);
+  for (let frame = 0; frame < 540; frame++) water.tickSimulation(dt, 'farm', hooks);
   assert.equal(ticks, 1, 'normal farm simulation still ticks at its authored interval');
-  context.currentArea = 'town';
-  for (let frame = 0; frame < 600; frame++) step.runInContext(context);
+  for (let frame = 0; frame < 600; frame++) water.tickSimulation(dt, 'town', hooks);
   assert.equal(ticks, 2, 'town retains the same water cadence');
 }
 (async () => {

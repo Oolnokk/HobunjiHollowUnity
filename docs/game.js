@@ -9830,6 +9830,10 @@
           if (tile.type === TileType.ROCK) {
             _addToBucket(TileType.GRASS, window.TerrainGeometry.makeFloorGeo(c, r), cx, tileYCenter(TileType.GRASS) + tierY, cz);
             if (denTileKeys.has(c + ',' + r)) continue; // plain grass under the den's own mound mesh — see above
+            // Undiggable boulders render as one contiguous shell per boulder
+            // (ZoneTerrainFeatures.buildUndiggableBoulderMeshes, called per chunk
+            // below) instead of a per-tile mound each.
+            if (tile.rockKind === 'undiggableBoulder') continue;
             const { stoneGeo, grassGeo } = window.TerrainGeometry.buildRockTileGeo(c, r);
             if (tile.rockKind === 'diggableRockOre') {
               // Keep resource rocks out of the merged terrain buckets so a
@@ -10068,7 +10072,7 @@
         // elevTier (rendered below as continuous heightfield mesas, one per tier
         // transition, in the same visual style as the distant boundary terrain beyond
         // the playable area) and, for ramp tiles, its own slope-following rampElevation.
-        for (const { c, r, type, elevTier, rampElevation, skipFloor, incline, floraKind, rockKind } of (zoneData?.tiles || [])) {
+        for (const { c, r, type, elevTier, rampElevation, skipFloor, incline, floraKind, rockKind, boulderId } of (zoneData?.tiles || [])) {
           if (!zGrid[r]?.[c]) continue;
           zGrid[r][c].type = type || TileType.GRASS;
           zGrid[r][c].elevTier = elevTier || 0;
@@ -10083,6 +10087,7 @@
           // SHRUB tile in a tree zone as a real tree — the prior behavior.
           if (type === TileType.SHRUB) zGrid[r][c].floraKind = floraKind || null;
           if (type === TileType.ROCK) zGrid[r][c].rockKind = rockKind || null;
+          if (type === TileType.ROCK) zGrid[r][c].boulderId = boulderId || null;
         }
         const restoredChunkTiles = applyWildernessChunkTileDeltas(mapId, zGrid);
         if (restoredChunkTiles) {
@@ -10236,7 +10241,8 @@
             ...(window.ZoneTerrainFeatures.buildZoneRampMeshes(group, zGrid, ZCOLS, ZROWS, mapId, bounds) || []),
             ...(window.ZoneTerrainFeatures.buildRampCurtainMeshes(group, zGrid, ZCOLS, ZROWS, mapId, bounds) || []),
             ...(window.ZoneTerrainFeatures.buildRockFormationMeshes(group, zGrid, ZCOLS, ZROWS, mapId, bounds) || []),
-          ]; // Chunk-owned ramps and solved rock faces.
+            ...(window.ZoneTerrainFeatures.buildUndiggableBoulderMeshes(group, zGrid, ZCOLS, ZROWS, mapId, bounds) || []),
+          ]; // Chunk-owned ramps, solved rock faces, and contiguous boulder shells.
           for (const object of [...floorMeshes, ...featureMeshes]) {
             object.traverse?.(mesh => {
               if (mesh.isMesh && mesh.userData?.wildernessChunkOwnsGeometry) {
@@ -12462,6 +12468,12 @@
                 // field (named rockKind to avoid colliding with the generator's
                 // own per-object oreKind material pick) and isMineableRockTile below.
                 rockKind: type === 'rock' ? (t.generatedObjectType || null) : undefined,
+                // Exact generator identity (mirrors terrain-preview.js) so
+                // ZoneTerrainFeatures.buildUndiggableBoulderMeshes assembles each
+                // multi-tile boulder as one shell instead of rediscovering it.
+                boulderId: type === 'rock' && t.generatedObjectType === 'undiggableBoulder' && t.generatedObjectId
+                  ? m.id + ':' + t.generatedObjectId
+                  : undefined,
               });
             }
 
@@ -16253,7 +16265,6 @@
       let heldMode = 'tool'; // 'tool' | 'item' | 'none' (hands free without clearing gear assignments)
       let lastHeldFarmTool = 'shovel'; // Tool Select tap recalls the last valid tool from its ordinary farm-tool arch.
       let lastTime = performance.now();
-      let simAccumulator = 0;
       let camX = COLS * TILE * 0.5, camY = ROWS * TILE * 0.72;
       let lastActionMessage = 'Stormtide — dig trenches now to route the water.';
       let paused = false;
@@ -23566,23 +23577,13 @@
           updateActionParticles(dt);
           window.WildTreasure.updateSparkles(dt);
           window.Fishing?.updateFx(dt);
-          // Water sim ticks every 1/8 game-hour (~9s real-time)
-          // Uses game time so rain and drainage are clock-consistent
-          // Match the simulation's area gate: time in caves/wilderness must not queue a frame-by-frame water rebuild on return.
-          if (currentArea === 'farm' || currentArea === 'town') {
-            simAccumulator += dt / DAY_LENGTH_SECONDS * (NIGHT_HOUR - MORNING_HOUR); // game-hours per sec
-          }
-          if (simAccumulator >= 0.125 && (currentArea === 'farm' || currentArea === 'town')) {
-            simAccumulator -= 0.125;
-            if (currentArea === 'farm') {
-              window.WaterSystem.recomputeWater(false);
-              tickWorldObjects();
-            } else {
-              const TCOLS = _townZone?.cols || 60, TROWS = _townZone?.rows || 50;
-              window.WaterSystem.recomputeWater(false, townGrid, TROWS, TCOLS);
-            }
-            window.WeatherFX.spawnRipples();
-          }
+          // Water sim cadence (1/8 game-hour ticks + the farm/town area gate)
+          // now lives in js/water-system.js's tickSimulation.
+          window.WaterSystem.tickSimulation(dt, currentArea, {
+            gameHoursPerSecond: (NIGHT_HOUR - MORNING_HOUR) / DAY_LENGTH_SECONDS,
+            onFarmTick: tickWorldObjects,
+            onTick: () => window.WeatherFX.spawnRipples(),
+          });
           window.PerfProfiler?.end(miscGameplayPerf);
         }
 

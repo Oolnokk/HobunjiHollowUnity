@@ -22,7 +22,7 @@ assert.match(waterSystemSource,
   'a dry flood baseline has no surface and therefore needs no NORMAL_TOP lookup');
 assert.match(indexSource, /merged-water-renderer\.js\?v=20260921floodvisual1/,
   'the shipped page cache-busts the flood visual-attribute renderer support');
-assert.match(indexSource, /water-system\.js\?v=20260922wateropacity1/,
+assert.match(indexSource, /water-system\.js\?v=20260923review2/,
   'the shipped page cache-busts the stable-water flood visual profile');
 
 function cornersForTile(data, tileIndex) {
