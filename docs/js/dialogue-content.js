@@ -661,6 +661,7 @@
   async function _renderNpcDialoguePortrait() {
     const walker = deps.getDialogueWalker();
     if (!deps.getDialogueOpen() || !walker?.profile || !window.NpcAvatarPreview) return false;
+    if (walker.avatarGroup?.userData?.namedAnimalNpc) return false; // Named animals already animate their live creature plane; do not keep repainting an unused hidden portrait canvas.
     if (!walker.avatarFrontCanvas || !window.PNGPlaneAvatar?.refreshSinglePlaneAvatarModel) return false;
     const renderOptions = {
       breathingComposer: window.portraitBreathingComposer || null,
