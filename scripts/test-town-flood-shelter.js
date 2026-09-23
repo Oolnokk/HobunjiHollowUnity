@@ -50,6 +50,9 @@ function makeGrid(rows, cols, type, water = 0) {
 
   const debug = windowObject.WaterSystem.debugFloodSnapshot();
   assert.equal(debug.town.stormDrainRainEquivalent, 1.65, 'debug snapshot should expose town drain calibration');
+  assert.equal(debug.town.floodEmergencyEnterFraction, 0.88, 'shelter entry should be calibrated as a fraction of max depth');
+  assert.equal(debug.town.floodEmergencyEnterDepth, 2.64, 'MAX_WATER=3 should put shelter entry near max at 2.64 depth');
+  assert.equal(debug.town.floodEmergencyExitDepth, 2.1, 'release hysteresis should wait until flood depth falls to 2.10');
   assert.equal(windowObject.WaterSystem.setTownFloodEmergencyDebugOverride(true), true, 'debug override should force emergency on');
   assert.equal(windowObject.WaterSystem.isTownFloodEmergency(), true, 'forced emergency should be observable');
   windowObject.WaterSystem.setTownFloodEmergencyDebugOverride(null);
