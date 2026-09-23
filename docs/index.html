@@ -1820,7 +1820,7 @@
           <label class="settings-row">
             <div class="settings-label">
               <div class="settings-name">Paint Filter <span style="font-size:10px;opacity:.7">(Experimental)</span></div>
-              <div class="settings-desc">Live Paint Stack filter at full world resolution. All active tiers share the radius-10 / 3-bin / .27 oil treatment and tone/finish; only watercolor radius/mix changes by tier. Palette correction now separates vivid yellow-green accents from muted tan/ochre so blue suppression no longer mustard-shifts tan surfaces. HUD, menus, reticle UI, and dialogue overlays stay crisp. Currently uses the outline composite, so Outlines must remain enabled.</div>
+              <div class="settings-desc">Full-resolution Paint Stack filter with atmospheric distance styling. Nearby uses the current tan-safe treatment; 18–55 world units blend toward the older stronger preset. The base sky, procedural stars, clouds, sun, moon, and celestial glows are explicitly grouped into the far atmospheric paint band, while world/foreground depth edges remain protected. HUD, menus, reticle UI, and dialogue overlays stay crisp. Currently uses the outline composite, so Outlines must remain enabled.</div>
               <div class="settings-desc" id="painterlyPostprocessStatus" role="status" aria-live="polite">Off — no extra texture samples are executed.</div>
             </div>
             <select id="settingPainterlyPostprocess" style="font-size:12px;padding:5px 8px;background:rgba(255,255,255,.06);border:1px solid var(--border-bright);border-radius:6px;color:var(--text);align-self:center">
@@ -2524,7 +2524,7 @@
   <!-- Optional world-only painterly postprocess. It patches the existing
        fullscreen world composite after renderer creation, persists only its
        quality mode, and owns no requestAnimationFrame loop. -->
-  <script src="js/painterly-postprocess.js?v=20260923paintrebase1"></script>
+  <script src="js/painterly-postprocess.js?v=20260923distance2"></script>
   <script src="game.js?v=20260923ledge1"></script>
   <!-- Banubu's exterior night snore — resolves the live shifted cave transition after game.js has initialized Combat/world deps. -->
   <script src="js/banubu-snore.js?v=20260923snore2"></script>
