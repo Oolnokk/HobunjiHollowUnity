@@ -33,18 +33,50 @@
     return (deps?.npcWalkers || []).find(w => w.rec?.id === npcId) || null;
   }
 
-  function primaryDyeRef(rec) {
-    return Object.values(rec?.appliedDyes || {}).find(Boolean) || null;
+  const TINT_KEYS_BY_SLOT = Object.freeze({
+    hat: ['HAT'],
+    hood: ['HOOD', 'HOOD_B'],
+    torso: ['TORSO'],
+    overwear: ['CLOTH', 'CLOTH_B'],
+  }); // Maps wardrobe clothing slots to the NPC portrait tint channels used by authored appliedDyes.
+
+  function tintKeysForSlot(slot) {
+    return TINT_KEYS_BY_SLOT[slot] || [];
   }
 
-  // Approximation noted at the top of the file: every equipped cosmetic is
-  // colored with the NPC's first applied dye, since the schema doesn't
-  // track which dye belongs to which cosmetic slot by cosmetic id alone.
+  function dyeIdFromColor(colorLike) {
+    if (!colorLike) return null;
+    return typeof colorLike === 'string' ? colorLike : (colorLike.dyeId || null); // Stored NPC clothes may carry authored dye refs as strings while gifted player clothes carry color objects.
+  }
+
+  function clothingColorsFromWorn(rec, slot) {
+    const [primaryKey, secondaryKey] = tintKeysForSlot(slot); // Resolves the currently worn article's actual dye channels instead of borrowing an unrelated appliedDyes entry.
+    const dyes = rec?.appliedDyes || {}; // Read by default-outfit trait snapshots and when a worn garment is moved into storage.
+    return {
+      colorA: primaryKey ? (dyes[primaryKey] || null) : null,
+      colorB: secondaryKey ? (dyes[secondaryKey] || null) : null,
+    };
+  }
+
+  function applyClothingColorsToWorn(rec, slot, item) {
+    const tintKeys = tintKeysForSlot(slot); // Controls which authored NPC dye channels belong to the clothing slot being replaced.
+    if (!tintKeys.length) return;
+    const nextDyes = { ...(rec?.appliedDyes || {}) }; // Preserves every unrelated body/clothing dye while replacing only this garment's channels.
+    for (const tintKey of tintKeys) delete nextDyes[tintKey];
+    const itemColors = [item?.colorA, item?.colorB]; // Gift/stored primary and secondary colors map in order to the slot's portrait tint keys.
+    tintKeys.forEach((tintKey, index) => {
+      const dyeId = dyeIdFromColor(itemColors[index]); // Accepts both player color objects and legacy/authored NPC dye-ref strings.
+      if (dyeId) nextDyes[tintKey] = dyeId;
+    });
+    rec.appliedDyes = nextDyes;
+  }
+
   function computeOutfitTraits(rec) {
     const traits = new Set();
-    const dyeRef = primaryDyeRef(rec);
     for (const cosmeticId of (rec?.equippedCosmetics || [])) {
-      const instance = { cosmeticId, colorA: dyeRef };
+      const slot = guessSlot(cosmeticId); // Associates the authored cosmetic with the same tint channel mapping used by rendering.
+      const colors = clothingColorsFromWorn(rec, slot); // Ensures wardrobe acceptance sees only colors actually worn by this garment.
+      const instance = { cosmeticId, slot, ...colors }; // Passed to ItemTraits so both primary/secondary worn dyes contribute their real traits.
       (window.ItemTraits?.computeItemTraits(cosmeticId, instance) || []).forEach(t => traits.add(t));
     }
     return traits;
@@ -89,11 +121,17 @@
   function getWardrobeContents(npcId) {
     const walker = findWalker(npcId);
     const rec = walker?.rec;
-    const dyeRef = primaryDyeRef(rec);
-    const worn = (rec?.equippedCosmetics || []).map((cosmeticId, index) => ({
-      uid: 'worn_' + index + '_' + cosmeticId, cosmeticId, slot: guessSlot(cosmeticId), colorA: dyeRef, worn: true,
-      label: prettifyCosmeticId(cosmeticId),
-    }));
+    const worn = (rec?.equippedCosmetics || []).map((cosmeticId, index) => {
+      const slot = guessSlot(cosmeticId); // Used by Store and the row preview to keep this worn article tied to its actual tint channel.
+      return {
+        uid: 'worn_' + index + '_' + cosmeticId,
+        cosmeticId,
+        slot,
+        ...clothingColorsFromWorn(rec, slot),
+        worn: true,
+        label: prettifyCosmeticId(cosmeticId),
+      };
+    });
     return { worn, stored: (stored[npcId] || []).map(item => ({ ...item, worn: false })) };
   }
 
@@ -139,7 +177,7 @@
       uid: 'wcloth_' + Math.random().toString(36).slice(2, 10), // Fresh wardrobe identity avoids collisions with player inventory and other stored copies.
       cosmeticId,
       slot,
-      colorA: primaryDyeRef(rec),
+      ...clothingColorsFromWorn(rec, slot), // Keeps the displaced garment's own primary/secondary dyes so wearing it again restores its appearance.
     };
   }
 
@@ -158,11 +196,12 @@
     const displacedId = currentIdx !== -1 ? equipped[currentIdx] : null;
     if (displacedId === winner.cosmeticId) return false;
 
+    const displacedItem = displacedId ? storedCopyFromWorn(rec, displacedId, slot) : null; // Captures the old garment's dyes before this slot's tint channels are replaced.
     if (currentIdx !== -1) equipped.splice(currentIdx, 1, winner.cosmeticId);
     else equipped.push(winner.cosmeticId);
     list.splice(storedIdx, 1);
-    if (displacedId) list.push(storedCopyFromWorn(rec, displacedId, slot));
-    if (winner.colorA?.dyeId) rec.appliedDyes = { ...(rec.appliedDyes || {}), [slot.toUpperCase()]: winner.colorA.dyeId };
+    if (displacedItem) list.push(displacedItem);
+    applyClothingColorsToWorn(rec, slot, winner);
     recordOutfitOverride(npcId, rec);
     return true;
   }
@@ -210,11 +249,13 @@
     if (!walker?.avatarGroup?.userData?.frontTexture || !window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
     const rec = walker.rec;
     const guessedSpecies = String(rec?.species || '').toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-|-$/g, ''); // Used only as the same legacy-record fallback as makeNpcWalker when appearance.speciesId is absent.
-    const appearance = rec?.appearance?.speciesId ? rec.appearance : {
-      speciesId: guessedSpecies || undefined,
-      gender: rec?.gender === 'female' ? 'female' : 'male',
-      cosmetics: {},
-    }; // Wardrobe refresh must rebuild from the NPC record, because a rendered profile does not retain the source appearance/species metadata.
+    const authoredAppearance = (rec?.appearance && typeof rec.appearance === 'object') ? rec.appearance : {}; // Canonical source for every authored appearance field; rendered walker profiles intentionally do not retain this source object.
+    const appearance = {
+      ...authoredAppearance,
+      speciesId: authoredAppearance.speciesId || guessedSpecies || undefined,
+      gender: authoredAppearance.gender || (rec?.gender === 'female' ? 'female' : 'male'),
+      cosmetics: authoredAppearance.cosmetics || {},
+    }; // Fills only missing legacy identity fields while preserving body colors, deformation, cosmetics, and all other authored appearance data.
     const profile = window.NpcAvatarPreview.buildProfileFromNpcExport({
       name: rec?.name || rec?.id || 'npc',
       appearance,
