@@ -229,6 +229,8 @@ jobs:
           node --check scripts/test-world-text-outline-overlay.js
           node --check scripts/audit-npc-wardrobe-placeholders.js
           node --check scripts/generate-placeholder-wardrobes.js
+      - name: Test dialogue speaker-relative species naming
+        run: node scripts/test-dialogue-species-naming.js
       - name: Test NPC planner and startup area ordering
         run: node scripts/test-npc-activity-planner.js
       - name: Test continuous player-dance Rapport rate
@@ -267,8 +269,6 @@ jobs:
         run: node scripts/test-npc-bedroom-storage.js
       - name: Test relationship heart rendering and greeting gates
         run: node scripts/test-relationship-heart-greetings.js
-      - name: Test dialogue speaker-relative species naming
-        run: node scripts/test-dialogue-species-naming.js
       - name: Test target outline alpha-cutout parity
         run: node scripts/test-target-outline-alpha-cutout.js
       - name: Test wilderness map load recovery
