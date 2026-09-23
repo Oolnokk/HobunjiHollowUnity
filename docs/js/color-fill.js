@@ -4,9 +4,9 @@
 (() => {
   'use strict';
 
-  if (Number(window.ColorFill?.version) >= 6) return;
+  if (Number(window.ColorFill?.version) >= 7) return;
 
-  const VERSION = 6;
+  const VERSION = 7;
   let lastShadeFill = null; // Mobile/debug diagnostics: most recent relative-shading fill.
   const lastShadeFillByLabel = new Map(); // Used by Pixel Probe to retain named renderer passes even when later generic fills overwrite "last".
   let shadeFillSequence = 0; // Monotonic render-pass id used to distinguish a current named fill from an older one in copied diagnostics.
