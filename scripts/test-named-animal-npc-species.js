@@ -49,7 +49,7 @@ assert.match(namedAnimal, /animalHatId/, 'runtime bridge must carry native edito
 assert.match(namedAnimal, /AnimalNpcHeadwear\.composeWithHat/, 'runtime render must reuse the restored animal headwear compositor');
 assert.match(namedAnimal, /canvas\.toDataURL\('image\/png'\)/, 'world animal planes must use the composed authored appearance rather than a plain base sprite when possible');
 assert.match(namedAnimal, /buildAnimalPlaneAvatarModel/, 'world models must retain the existing side-view animal plane builder');
-assert.match(namedAnimal, /__hobunjiAnimalNpcSourceUrl/, 'world animal planes must prefer the native creature/genotype source instead of the 200x200 NPC portrait canvas');
+assert.match(namedAnimal, /sourceUrl\(sourceCanvas\.__hobunjiAnimalNpcSource\)/, 'world animal planes must prefer the native creature/genotype source instead of the 200x200 NPC portrait canvas');
 assert.match(namedAnimal, /async function worldFrameUrls/, 'named animals must expose native-resolution idle/run frames for in-world locomotion');
 assert.match(namedAnimal, /dialogueEyesClosed = chathead && profile\?\.npcRecord\?\._animalDialogueEyesOpen === false/, 'sleeping animal dialogue portraits must retain closed eyes until their dialogue controller explicitly wakes them');
 assert.match(namedAnimal, /blinkShut: options\.blinkShut === true \|\| dialogueEyesClosed/, 'closed-eye animal dialogue portraits must use the canonical species blink overlay');

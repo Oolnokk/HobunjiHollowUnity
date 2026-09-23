@@ -124,6 +124,7 @@
   const floodShelterAssignmentsByNpcId = new Map(); // Used to keep each NPC committed to one shelter/seat for the whole flood emergency instead of retargeting every planner tick.
   let floodShelterTownBuildingLinks = null; // Used to cache direct town-to-building doors for one emergency; cleared when schedules resume.
   let floodShelterEmergencyWasActive = false; // Used to clear cached shelter commitments once flood hysteresis releases.
+  const floodShelterTownAreaCache = new Map(); // area -> bool; resolveNpcScheduleTarget runs per NPC per frame, so the town-exposure BFS is memoized for one emergency.
 
   // Optional ambient gaze target — see game.js's _applyNpcAmbientLook, which
   // reads this off whatever station an idling/seated NPC currently resolves
@@ -212,6 +213,7 @@
     if (!active && floodShelterEmergencyWasActive) {
       floodShelterAssignmentsByNpcId.clear();
       floodShelterTownBuildingLinks = null;
+      floodShelterTownAreaCache.clear();
     }
     floodShelterEmergencyWasActive = active;
     return active;
@@ -246,8 +248,11 @@
   function _areaBelongsToTown(area, shelterLinks) {
     const normalized = deps.normalizeNpcArea(area || '');
     if (normalized === 'town') return true;
+    if (floodShelterTownAreaCache.has(normalized)) return floodShelterTownAreaCache.get(normalized);
     const hop = _firstTownHopToArea(normalized);
-    return !!hop && shelterLinks.some(link => link.toArea === hop.toArea);
+    const belongs = !!hop && shelterLinks.some(link => link.toArea === hop.toArea);
+    floodShelterTownAreaCache.set(normalized, belongs);
+    return belongs;
   }
 
   function _scheduledTownAnchor(normalTarget, walker) {
@@ -268,9 +273,9 @@
   function _shelterSeatIsTaken(station, npcId) {
     const stationId = station?.stationId || station?.id;
     if (!stationId) return true;
-    const reserved = [...floodShelterAssignmentsByNpcId.entries()].some(([otherNpcId, assignment]) =>
-      otherNpcId !== npcId && assignment?.stationId === stationId); // Used to prevent same-tick flood evacuees from reserving one chair before walker targets catch up.
-    if (reserved) return true;
+    for (const [otherNpcId, assignment] of floodShelterAssignmentsByNpcId) {
+      if (otherNpcId !== npcId && assignment?.stationId === stationId) return true; // Used to prevent same-tick flood evacuees from reserving one chair before walker targets catch up.
+    }
     if (window.NpcActivities?.isStationOccupied) {
       return window.NpcActivities.isStationOccupied(station, { npcId });
     }
@@ -307,7 +312,9 @@
   function _floodShelterTarget(rec, assignment) {
     const scene = deps.buildingScenes?.get?.(assignment.buildingArea);
     if (!scene) {
-      deps.loadBuildingScene?.(assignment.buildingArea);
+      // buildingScenes holds a null sentinel while a load is in flight; loadBuildingScene
+      // does not dedupe that state, so only kick it off when nothing is loading yet.
+      if (!deps.buildingScenes?.has?.(assignment.buildingArea)) deps.loadBuildingScene?.(assignment.buildingArea);
       return {
         area: 'town', c: assignment.entranceC, r: assignment.entranceR, pose: 'stand',
         activity: 'Seeking flood shelter', floodShelterWaitingForInterior: true,

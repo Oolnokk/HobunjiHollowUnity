@@ -202,9 +202,11 @@
     const equipped = rec.equippedCosmetics || (rec.equippedCosmetics = []);
     const currentIdx = equipped.findIndex(id => guessSlot(id) === slot);
     const displacedId = currentIdx !== -1 ? equipped[currentIdx] : null;
-    if (displacedId === winner.cosmeticId) return false;
-
     const displacedItem = displacedId ? storedCopyFromWorn(rec, displacedId, slot) : null; // Captures the old garment's dyes before this slot's tint channels are replaced.
+    if (displacedId === winner.cosmeticId
+      && dyeIdFromColor(displacedItem.colorA) === dyeIdFromColor(winner.colorA)
+      && dyeIdFromColor(displacedItem.colorB) === dyeIdFromColor(winner.colorB)) return false; // Only an identical garment+dye is a no-op; a recolored copy of the worn cosmetic still swaps in.
+
     if (currentIdx !== -1) equipped.splice(currentIdx, 1, winner.cosmeticId);
     else equipped.push(winner.cosmeticId);
     list.splice(storedIdx, 1);
