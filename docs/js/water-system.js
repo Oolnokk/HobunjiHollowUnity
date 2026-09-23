@@ -439,11 +439,17 @@
   }
 
   function _syncTownFloodEmergency(baseline) {
-    const depth = baseline?.visible && Number.isFinite(baseline.depth) ? baseline.depth : 0; // Used to drive hysteretic shelter state from the same common flood sheet NPCs/players actually see.
-    const depthFraction = deps?.MAX_WATER > 0 ? depth / deps.MAX_WATER : 0; // Used so emergency thresholds remain near-max even if global MAX_WATER is retuned.
+    const depthFraction = baseline?.visible && Number.isFinite(baseline.depth)
+      ? deps.clamp(baseline.depth, 0, 1)
+      : 0; // Used to drive hysteretic shelter state from the rendered flood baseline, whose depth is already normalized to MAX_WATER.
     if (!_townFloodEmergency && depthFraction >= TOWN_FLOOD_SHELTER_ENTER_FRACTION) _townFloodEmergency = true;
     else if (_townFloodEmergency && depthFraction <= TOWN_FLOOD_SHELTER_EXIT_FRACTION) _townFloodEmergency = false;
     return _townFloodEmergency;
+  }
+
+  function debugTownFloodEmergencyStep(depthFraction) {
+    const normalized = deps.clamp(Number(depthFraction) || 0, 0, 1); // Used by mobile/manual diagnostics and regression tests to exercise the real hysteresis transition without manufacturing a whole flooded town grid.
+    return _syncTownFloodEmergency({ visible: normalized > 0, depth: normalized });
   }
 
   function isTownFloodEmergency() {
@@ -733,6 +739,7 @@
     debugFloodSnapshot,
     isTownFloodEmergency,
     setTownFloodEmergencyDebugOverride,
+    debugTownFloodEmergencyStep,
     getFlowingTrenchTiles: () => _flowingTrenchTiles,
     getTownFlowingTrenchTiles: () => _townFlowingTrenchTiles,
   };
