@@ -91,6 +91,7 @@ const gameIndexSource = read('docs/index.html');
 const dialogueSource = read('docs/js/dialogue-content.js');
 const dialogueStyleSource = read('docs/style.css');
 const cinematicCameraSource = read('docs/js/cinematic-camera-runtime.js');
+const banubuQuestContentSource = read('docs/js/banubu-quest-content.js');
 const editorSource = read('docs/tools/locale-editor/index.html');
 const interiorBuilderSource = read('docs/js/interior-scene-builder.js');
 assert(sculptorSource.includes('function carveFootprintCavern(') && sculptorSource.includes('carveMazeCavern, carveFootprintCavern'), 'shared cavern sculptor must expose footprint-driven generation');
@@ -109,6 +110,7 @@ assert(gameSource.includes('resolveSkinnedPixelWorldPosition(walker.avatarGroup,
 assert(gameSource.includes("setPlayerFacingInstant(-Math.PI / 2, { clearLook: true, syncCamera: true })"), 'Banubu async cave entry must reassert north across the complete facing authority');
 assert(gameSource.includes('mouseLookAngle = nextFacing;') && gameSource.includes('controllerLookAngle = nextFacing;') && gameSource.includes('lastMoveAngle = nextFacing;'), 'instant entry facing must synchronize mouse, controller, and movement-facing authorities');
 assert(cinematicCameraSource.includes('getNpcFacePosition') && cinematicCameraSource.includes('Number(face.y) + finite(camera.target?.y, 0)'), 'NPC-targeted authored cameras must resolve their target from the live face point each frame');
+assert(banubuQuestContentSource.includes("{ cameraId: 'banubu_dialogue_awake' }"), 'Banubu wake-up dialogue must switch to the authored awake world camera');
 assert(gameSource.includes('loadLocaleCavernDefinition?.(mapId)') && gameSource.includes("loadSource = 'locale-cavern'"), 'building loader must prefer cave-interior locales');
 assert(gameSource.includes('(!x.requiresKeyItem || !!window.KeyItemSystem?.has?.(x.requiresKeyItem))'), 'key-gated cave connectors must be mechanically inaccessible without their key');
 assert(gameSource.includes("targetSpotId: exit.targetSpotId || ''") && gameSource.includes("_pendingEntrySpotId"), 'cave-to-cave travel must preserve named connector destinations across async generation');
