@@ -23,7 +23,8 @@
   let menuControlsObserver = null; // Watches menu children and open/close state because controls are dynamic.
   let manualSaveBusyTimer = null; // Polls the existing Manual Save disabled state without feeding disabled mutations back into the menu observer.
   let menuControlsCompact = false; // Reported in mobile-visible diagnostics and used to keep the measured header mode stable.
-  let menuControlRelayoutFrame = 0; // Coalesces resize/orientation bursts into one menu-header measurement.
+  let menuControlRelayoutTimer = null; // Debounces resize/orientation bursts so mobile rotation triggers one menu-header measurement after layout settles.
+  let menuControlRelayouts = 0; // Mobile-visible count of responsive menu-header recalculations.
 
   function localSave() {
     return window.LocalSaveFolder || null;
@@ -102,11 +103,12 @@
   }
 
   function scheduleMenuControlRelayout() {
-    if (menuControlRelayoutFrame || typeof requestAnimationFrame !== 'function') return;
-    menuControlRelayoutFrame = requestAnimationFrame(() => {
-      menuControlRelayoutFrame = 0;
+    if (menuControlRelayoutTimer) clearTimeout(menuControlRelayoutTimer);
+    menuControlRelayoutTimer = setTimeout(() => {
+      menuControlRelayoutTimer = null;
+      menuControlRelayouts++;
       labelMenuControls();
-    });
+    }, 80); // Rotation can emit many resize events while CSS/layout is still changing; measure once after the burst.
   }
 
   function finishManualSaveBusyLabel(button) {
@@ -140,7 +142,23 @@
     if (menuControlsObserver || typeof MutationObserver !== 'function') return true;
     const menuPanel = document.getElementById('menuPanel'); // Narrow observation root catches late save controls plus the panel's open/close class changes.
     if (!menuPanel) return false;
-    menuControlsObserver = new MutationObserver(() => { labelMenuControls(); });
+    menuControlsObserver = new MutationObserver(records => {
+      let structuralChange = false; // Element insertions/removals can introduce or remove menu controls and require a fresh measurement.
+      let visibilityChange = false; // The menuPanel class is the authoritative open/closed signal for fixed HUD-tab visibility.
+      for (const record of records) {
+        if (record.type === 'attributes') {
+          if (record.target === menuPanel && record.attributeName === 'class') visibilityChange = true;
+          continue;
+        }
+        if (record.type !== 'childList') continue;
+        const changedNodes = [...record.addedNodes, ...record.removedNodes];
+        if (changedNodes.some(node => node?.nodeType === 1)) structuralChange = true;
+      }
+      // Ignore text-only childList mutations. labelMenuControls() changes button textContent itself,
+      // and reacting to those mutations caused full/compact labels to toggle forever on narrow rotated screens.
+      if (visibilityChange) syncMenuOverlayControls();
+      if (visibilityChange || structuralChange) scheduleMenuControlRelayout();
+    });
     menuControlsObserver.observe(menuPanel, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
     return true;
   }
@@ -294,7 +312,9 @@
       lastError: lastError || null,
       menuControlsCompact,
       menuTabsFit: !menuTabsOverflow(),
-      latestChange: 'Menu controls now compact only when needed so mobile-widescreen tabs cannot overlap them.',
+      menuControlRelayouts,
+      relayoutPending: Boolean(menuControlRelayoutTimer),
+      latestChange: 'Phone rotation relayout is debounced and menu label mutations no longer feed back into the menu observer.',
       farmResetDisabled: typeof document?.getElementById === 'function' && document.getElementById(RESET_BUTTON_ID)?.disabled === true,
       labeledMenuButtons: typeof document?.getElementById === 'function'
         ? MENU_CONTROL_LABELS.filter(spec => {

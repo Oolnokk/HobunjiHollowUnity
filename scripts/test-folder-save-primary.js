@@ -101,6 +101,10 @@ assert(quitGuard.includes('if (!resetButton.disabled) resetButton.disabled = tru
 assert(quitGuard.includes("button.dataset.manualSaveBusy = '1'"), 'Manual Save busy feedback uses explicit local UI state');
 assert(quitGuard.includes("button.textContent = 'Saving…'"), 'Manual Save replaces its actual label while saving');
 assert(quitGuard.includes('startManualSaveBusyLabel(button)'), 'Manual Save busy feedback is driven from its click path instead of a global disabled observer');
+assert(quitGuard.includes('changedNodes.some(node => node?.nodeType === 1)'), 'menu observer reacts only to structural child changes, not its own text-label mutations');
+assert(quitGuard.includes('if (visibilityChange || structuralChange) scheduleMenuControlRelayout()'), 'menu mutations schedule a coalesced relayout instead of synchronously re-entering label measurement');
+assert(quitGuard.includes('menuControlRelayoutTimer = setTimeout'), 'rotation resize bursts are debounced until layout settles');
+assert(!quitGuard.includes('requestAnimationFrame('), 'menu resize handling does not create a direct RAF outside RuntimeFrameScheduler ownership');
 
 assert(primary.includes('__hobunjiFolderSavePrimaryDebug'), 'primary save behavior exposes diagnostics data');
 assert(emptyBootstrap.includes('__hobunjiFolderSaveEmptyBootstrapDebug'), 'first-run empty-folder state exposes diagnostics data');
