@@ -250,6 +250,10 @@
     }
   }
 
+  function dialogueSpeciesLabel(targetSpeciesId, speakerSpeciesId) {
+    return window.DialogueSpeciesNames?.labelFor?.(targetSpeciesId, speakerSpeciesId) ?? String(targetSpeciesId || '');
+  }
+
   function _resolveTokens(text, npcRec, _depth = 0) {
     if (!text) return '';
     const p     = deps.getPlayerData();
@@ -264,6 +268,7 @@
     for (const ch of name) { fl2v1 += ch; if (VOWELS.has(ch)) break; }
     const st    = getNpcDlgState(npcRec?.id);
     const local = st.localNickname || name;
+    const speakerSpeciesId = npcRec?.appearance?.speciesId || npcRec?.speciesId || npcRec?.species || ''; // Used to choose in-group vs broad species names for this NPC's spoken tokens.
     let out = text
       .replace(/\{\{npcName\}\}/g,            npcRec?.name || '')
       .replace(/\{\{playerName\}\}/g,          name)
@@ -275,8 +280,8 @@
       .replace(/\{\{playerPronounSelf\}\}/g,   prS)
       .replace(/\{\{playerFirstL2V1\}\}/g,     fl2v1)
       .replace(/\{\{role\}\}/g,                npcRec?.role || '')
-      .replace(/\{\{npcSpecies\}\}/g,           npcRec?.appearance?.speciesId || npcRec?.species || '')
-      .replace(/\{\{playerSpecies\}\}/g,        p?.appearance?.speciesId || '');
+      .replace(/\{\{npcSpecies\}\}/g,           dialogueSpeciesLabel(speakerSpeciesId, speakerSpeciesId))
+      .replace(/\{\{playerSpecies\}\}/g,        dialogueSpeciesLabel(p?.appearance?.speciesId, speakerSpeciesId));
     // {{pool:<id>}} pulls a conditioned line from a phrase pool authored
     // in the dialogue editor's Phrase Pool Manager — resolved recursively
     // (a pool entry can itself use any token, including another pool),
