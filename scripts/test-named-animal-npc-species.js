@@ -58,6 +58,10 @@ assert.match(namedAnimal, /async function worldFrameUrls/, 'named animals must e
 assert.match(namedAnimal, /dialogueEyesClosed = chathead && profile\?\.npcRecord\?\._animalDialogueEyesOpen === false/, 'sleeping animal dialogue portraits must retain closed eyes until their dialogue controller explicitly wakes them');
 assert.match(namedAnimal, /blinkShut: options\.blinkShut === true \|\| dialogueEyesClosed/, 'closed-eye animal dialogue portraits must use the canonical species blink overlay');
 assert.match(namedAnimal, /function creatureScaleMultiplierFor/, 'named animals must read a generic appearance-authored world scale multiplier');
+assert.match(namedAnimal, /avatarEditor\?\.rawExport\?\.appearance/, 'named-animal runtime must retain the canonical Character Studio appearance as a fallback');
+assert.match(namedAnimal, /return \{ \.\.\.rawAppearance, \.\.\.liveAppearance \}/, 'live NPC appearance overlays the authored raw export without erasing omitted Banubu scale/genotype fields');
+assert.match(namedAnimal, /const appearance = appearanceFor\(profile, options\);[\s\S]*?appearance\?\.creatureGenotype/, 'named-animal genotype resolution must consume the merged authored/live appearance');
+assert.match(namedAnimal, /const appearance = appearanceFor\(profile, options\);[\s\S]*?appearance\?\.creatureScaleMultiplier/, 'named-animal scale resolution must consume the same merged authored/live appearance');
 assert.match(game, /namedAnimalBaseSizeScale = namedAnimalDef \? window\.CreatureGenetics\.creatureSizeScale/, 'named animal scaling must resolve normal creature size class before any custom multiplier');
 assert.match(game, /namedAnimalBaseSizeScale\.x \* namedAnimalScaleMultiplier/, 'named animal custom scale must multiply normal creature X scale rather than replace it');
 assert.match(game, /namedAnimalBaseSizeScale\.y \* namedAnimalScaleMultiplier/, 'named animal custom scale must multiply normal creature Y scale rather than replace it');
