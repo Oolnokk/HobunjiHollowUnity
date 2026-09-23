@@ -83,7 +83,7 @@
               }
             }
           },
-          "creatureScaleMultiplier": 1.5
+          "creatureScaleMultiplier": 3
         },
         "equippedCosmetics": [],
         "appliedDyes": {}
