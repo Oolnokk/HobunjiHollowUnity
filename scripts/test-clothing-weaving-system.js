@@ -434,3 +434,8 @@ assert.match(creatureRendererSource, /recoloredBase\(baseUrl, baseColor, mask, f
   'runtime base recolor passes the species-authored anchor instead of rediscovering a peak from sprite pixels');
 assert.match(creatureRendererSource, /shadeReference\.baseValue = referenceValue;[\s\S]*?shadeReference\.referenceHex = sourceReferenceHex\.toUpperCase\(\)/,
   'fixed creature coat references override only the normalization anchor while keeping shared shade-fill math');
+
+assert.match(creatureRendererSource, /drenkirra:[\s\S]*?baseShadeReferenceHex: '#68D127'/,
+  'Drenkirra base recolor uses its authored #68D127 full-strength coat anchor');
+assert.match(creatureRendererSource, /spec\.baseShadeReferenceHex \|\| null/,
+  'species without an authored coat anchor keep the existing automatic peak-based fallback path');

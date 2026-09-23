@@ -66,6 +66,7 @@
     },
     drenkirra: {
       prefix: 'drnk',
+      baseShadeReferenceHex: '#68D127', // Authored full-strength Drenkirra base-coat color; species without this field retain automatic peak fallback.
       base: { idle: 'assets/creaturesprites/drenkirra_idle.png', run1: 'assets/creaturesprites/drenkirra_run1.png', run2: 'assets/creaturesprites/drenkirra_run2.png' },
       patterns: ['bodystripes', 'spectacles'],
       eyes: { open: 'assets/creaturesprites/drenkirra_eye.png', blink: 'assets/creaturesprites/drenkirra_blink.png' },
