@@ -152,8 +152,8 @@ assert.match(localeRuntime, /function safeSyncCurrentDen[\s\S]*?catch \(error\)[
 assert.match(localeRuntime, /const result = originalUpdate\(dt\);[\s\S]*?safeSyncCurrentDen\('nest-interaction'\)[\s\S]*?return result/,
   'authored transforms run after DenNestSystem layout without allowing locale errors to interrupt the gameplay frame');
 
-const denRuntimeIndex = combatLoader.indexOf("js/den-locale-runtime.js?v=20260914c");
-const puktukIndex = combatLoader.indexOf("js/puktuk-den-nest-registration.js?v=20260914b");
+const denRuntimeIndex = combatLoader.indexOf("js/den-locale-runtime.js?v=");
+const puktukIndex = combatLoader.indexOf("js/puktuk-den-nest-registration.js?v=");
 assert.ok(denRuntimeIndex >= 0 && puktukIndex > denRuntimeIndex,
   'combat bootstrap owns den runtime and Puktuk registration as ordered sibling modules');
 assert.doesNotMatch(puktukRegistration, /document\.write|ensureDenLocaleRuntime/,
