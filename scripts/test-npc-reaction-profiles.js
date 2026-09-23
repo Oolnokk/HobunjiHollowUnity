@@ -82,10 +82,15 @@ vm.runInContext(runtimeSource, context, { filename: 'npc-silliness-reaction-runt
 (async () => {
   await context.NpcReactionProfiles.reload();
   context.CREATURE_DB = {
-    tinyCritter: { label: 'Tiny Critter', defaultSizeClass: 'small' },
-    middleCritter: { label: 'Middle Critter', defaultSizeClass: 'medium' },
-    giantCritter: { label: 'Giant Critter', defaultSizeClass: 'large' },
-  }; // Minimal species defaults exercise every rare-size delta without booting the game.
+    tinyCritter: { label: 'Tiny Critter' },
+    middleCritter: { label: 'Middle Critter' },
+    giantCritter: { label: 'Giant Critter' },
+  }; // Deliberately omits defaultSizeClass: the real bug was assuming the injected genetics registry is always mirrored onto window.CREATURE_DB.
+  const defaultSizes = { tinyCritter: 'small', middleCritter: 'medium', giantCritter: 'large' }; // Authoritative species defaults supplied through the same CreatureGenetics API gameplay uses.
+  context.CreatureGenetics = {
+    defaultLivestockName: kind => context.CREATURE_DB?.[kind]?.label || kind,
+    creatureSizeClass(kind, genotype) { return genotype?.sizeClass || defaultSizes[kind] || 'medium'; },
+  };
   const rareSizeTierForEntry = context.NpcReactionProfiles.rareSizeTierForEntry; // Public pure helper lets regression tests validate the exact default-vs-bred size routing.
   assert.equal(rareSizeTierForEntry({ kind: 'tinyCritter', genotype: { sizeClass: 'large' } }), 'sizeTwoLarger', 'Small -> Large is the extreme larger tier');
   assert.equal(rareSizeTierForEntry({ kind: 'tinyCritter', genotype: { sizeClass: 'medium' } }), 'sizeOneLarger', 'Small -> Medium is one size larger');
@@ -94,6 +99,7 @@ vm.runInContext(runtimeSource, context, { filename: 'npc-silliness-reaction-runt
   assert.equal(rareSizeTierForEntry({ kind: 'giantCritter', genotype: { sizeClass: 'medium' } }), 'sizeOneSmaller', 'Large -> Medium is one size smaller');
   assert.equal(rareSizeTierForEntry({ kind: 'giantCritter', genotype: { sizeClass: 'small' } }), 'sizeTwoSmaller', 'Large -> Small is the extreme smaller tier');
   assert.equal(rareSizeTierForEntry({ kind: 'middleCritter', genotype: { sizeClass: 'medium' } }), null, 'species-normal size keeps ordinary pet reactions');
+  assert.equal(rareSizeTierForEntry({ kind: 'tinyCritter' }, 'mount'), 'sizeTwoLarger', 'active Stable role preserves rare legacy size when an old entry has no genotype payload');
   const inheritedRareLine = context.NpcReactionProfiles.resolve({ npcId: 'father_hunundi_hodu', category: 'animal', tier: 'sizeTwoLarger', role: 'mount', values: { animalName: 'Moss', species: 'Tiny Critter' }, seed: 'rare-size-test' }); // Proper personality intentionally has no rare-size override, so this must inherit the shared default line.
   assert.equal(inheritedRareLine, 'Dear Breath, that has to be the biggest Tiny Critter I have ever seen in my life.', 'rare-size copy inherits through the existing personality fallback');
   assert.equal(context.NpcReactionProfiles.profileForNpc('gantami_ginju').id, 'playful', 'Gantami uses playful reaction personality');
