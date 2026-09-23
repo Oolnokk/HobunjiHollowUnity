@@ -177,6 +177,7 @@
     await loadScript('https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js', () => !!window.THREE?.OrbitControls);
     await loadScript('../../js/GLTFLoader.js', () => !!window.THREE?.GLTFLoader);
     await loadScript('../../js/portrait-utils.js', () => !!window.getShadeFillCanvas && !!window.parseHexColor);
+    await loadScript('../../config/attachment-rig-profiles.js', () => !!window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures);
     await loadScript('../../js/terrain-preview.js', () => !!window.TerrainPreview?.buildMergedZoneGrid);
     await loadScript('../../js/wilderness-map-generator.js', () => !!window.WildernessMapGenerator?.generateZoneWorkspace);
     await loadScript('../../js/locale-terrain-placement.js', () => !!window.LocaleTerrainPlacement?.evaluateCandidateForTest);
@@ -1234,10 +1235,18 @@
     if (!marker || !anchor) return;
     const x = Number(anchor.col) + 0.5, z = Number(anchor.row) + 0.5;
     const floorY = cavernSurfaceY(mapData, x, z);
-    const markerHeight = Number(marker.userData?.previewMarkerHeight) || 0.8;
+    const baseHeight = Number(marker.userData?.previewBaseHeight) || Number(marker.userData?.previewMarkerHeight) || 0.8;
+    const sleepScaleY = anchor.pose === 'lie' ? (Number(marker.userData?.previewSleepScaleY) || 1) : 1;
+    const markerHeight = baseHeight * sleepScaleY;
+    const markerWidth = Number(marker.userData?.previewMarkerWidth) || Number(marker.scale?.x) || 0.8;
+    if (marker.isSprite) marker.scale.set(markerWidth, markerHeight, 1);
     marker.position.set(x, floorY + markerHeight * 0.5, z);
     marker.userData.previewAnchorId = anchor.id || '';
-    marker.userData.previewFaceOffsetY = Number(marker.userData?.previewFaceOffsetY) || markerHeight * 0.40;
+
+    const faceCenter = marker.userData?.previewFaceCenter;
+    marker.userData.previewFaceOffsetY = faceCenter && Number.isFinite(Number(faceCenter.y))
+      ? (0.5 - Number(faceCenter.y)) * markerHeight
+      : markerHeight * 0.30;
   }
 
   function syncPreviewNpcMarkerForCamera(locale, record) {
@@ -1257,16 +1266,25 @@
       if (npcId === 'banubu') {
         const material = new THREE.SpriteMaterial({ map: spriteTexture, transparent: true, depthWrite: false });
         marker = new THREE.Sprite(material);
-        marker.scale.set(4.4, 4.4 / 0.75, 1); // Banubu's authored named-animal multiplier was doubled from 1.5x to 3x; keep the cave-camera stand-in doubled too.
-        marker.userData.previewMarkerHeight = marker.scale.y;
-        marker.userData.previewFaceOffsetY = marker.scale.y * 0.30; // Offset from sprite center to its visible upper-face region; runtime uses the real walker's exact dialogue eye-height.
+        const grehlrBaseWidth = 2.2; // Canonical bestiary modelWidth.
+        const grehlrSpriteAspect = 0.75; // Canonical modelHeight/modelWidth, not width/height.
+        const banubuScaleMultiplier = 3; // Source-controlled named-animal override; Large Grehlr itself is 1×.
+        const faceFrame = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.grehlr?.chatheadFrame;
+        marker.userData.previewMarkerWidth = grehlrBaseWidth * banubuScaleMultiplier;
+        marker.userData.previewBaseHeight = grehlrBaseWidth * grehlrSpriteAspect * banubuScaleMultiplier;
+        marker.userData.previewSleepScaleY = 0.75; // Shared AnimalSleepPresentation flattening.
+        marker.userData.previewFaceCenter = faceFrame ? {
+          x: Number(faceFrame.x) + Number(faceFrame.width) * 0.5,
+          y: Number(faceFrame.y) + Number(faceFrame.height) * 0.5,
+        } : { x: 0.235, y: 0.527 };
       } else {
         marker = new THREE.Mesh(
           new THREE.CylinderGeometry(0.18, 0.24, 0.8, 10),
           new THREE.MeshBasicMaterial({ color: 0x60a5fa, transparent: true, opacity: 0.9 }),
         );
-        marker.userData.previewMarkerHeight = 0.8;
-        marker.userData.previewFaceOffsetY = 0.30;
+        marker.userData.previewMarkerWidth = 0.4;
+        marker.userData.previewBaseHeight = 0.8;
+        marker.userData.previewFaceCenter = { x: 0.5, y: 0.125 };
       }
       marker.name = 'localeSandboxCavernNpc_' + npcId;
       marker.userData.previewNpcId = npcId;
