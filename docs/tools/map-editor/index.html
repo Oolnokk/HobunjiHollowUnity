@@ -951,17 +951,20 @@ function handleLiveMessage(message) {
     const selection = message.selection || {};
     const layout = message.layoutId && message.layoutId !== 'default' ? (map?.layouts || []).find(item => item.id === message.layoutId) : null;
     const records = selection.kind === 'decor' ? (layout?.decor || map?.decor || [])
-      : selection.kind === 'furniture' ? (map?.category === 'building_interior' ? (layout?.decor || map?.decor || []) : (map?.furniture || [])) : [];
+      : selection.kind === 'furniture' ? (map?.category === 'building_interior' ? (layout?.decor || map?.decor || []) : (map?.furniture || []))
+      : selection.kind === 'cinematicCamera' ? (map?.cinematicCameras || []) : [];
     const record = records.find(item => (selection.id && item.id === selection.id)
       || (!selection.id && (item.key || item.itemKey) === String(selection.key || selection.itemKey || '').replace(/Furniture$/, '') && item.col === selection.col && item.row === selection.row));
     if (record && message.transform) {
       Object.assign(record, message.transform);
       delete record.postScale;
       ws.activeId = map.id;
-      editingLayoutId = layout?.id || null;
+      editingLayoutId = selection.kind === 'cinematicCamera' ? null : (layout?.id || null);
       draw(); refreshPreview(); saveWorkspace();
       setStatus(`Live gizmo updated ${selection.kind} ${selection.id}.`);
       _mapLiveEndpoint.send({ type: 'placement-transform-result', requestId: message.requestId, status: 'applied', mapId: map.id });
+    } else if (selection.kind === 'cinematicCamera') {
+      _mapLiveEndpoint.send({ type: 'placement-transform-result', requestId: message.requestId, status: 'runtime-only', mapId: message.mapId, reason: 'This camera belongs to a runtime locale or another source that is not loaded as a Map Editor map.' });
     }
     return;
   }
