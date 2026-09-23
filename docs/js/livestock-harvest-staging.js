@@ -29,6 +29,7 @@
       { time: 2, transform: { position: { x: 0, y: 0, z: 0 }, rotationDeg: { x: -5.5, y: 0, z: 0 }, scale: { x: 1, y: 1, z: 1 } } },
     ],
   }); // Exact venom-subject bob/pitch loop authored by venomExtractionSubjectKeys().
+  const sortedTrackKeys = new WeakMap(); // track -> keyframes sorted by time; sampleTrack runs every frame for both actors during a harvest.
   const harvestClipCache = new Map(); // Lazily stores species-specific runtime clips after any required Matrix4 conversion has been performed once.
   let animationSchedulerReady = false; // Reported by getDebug so mobile QA can tell whether the pre-render handler-pose publisher is installed.
   let farmDeps = null; // Captures FarmAnimals' injected world/player seam for staging and debug output.
@@ -179,7 +180,11 @@
   function sampleTrack(track, time) {
     const THREE = window.THREE;
     if (!THREE || !track) return null;
-    const keys = [...(track.keyframes || [])].sort((a, b) => finite(a.time) - finite(b.time));
+    let keys = sortedTrackKeys.get(track); // Tracks are immutable once cached by harvestClipFor, so sort once instead of per frame.
+    if (!keys) {
+      keys = [...(track.keyframes || [])].sort((a, b) => finite(a.time) - finite(b.time));
+      sortedTrackKeys.set(track, keys);
+    }
     if (!keys.length) {
       const transform = track.baseTransform || identityTransform();
       return { position: { ...transform.position }, quaternion: quaternionForTransform(transform) };

@@ -40,7 +40,7 @@
       return { count:0, meshVisible:0 };
     }
     if (root !== appliedRoot) return applyToRoot(root);
-    return snapshot(root);
+    return { count:null, meshVisible:null, unchanged:true }; // Same root already applied; skip the per-frame full traverse (snapshot() stays available for diagnostics).
   }
 
   function snapshot(root = activeRuinRoot()) {
@@ -64,10 +64,7 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', removeObsoleteToggle, { once:true });
   else removeObsoleteToggle();
 
-  DS.addBeforeRenderClient(() => {
-    removeObsoleteToggle();
-    apply();
-  });
+  DS.addBeforeRenderClient(() => apply()); // removeObsoleteToggle runs once at load; calling it per render hit localStorage every frame for every player.
 
   window.DevRandomRuinWallPlanes = Object.freeze({
     setVisible:() => apply(),

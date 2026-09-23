@@ -239,6 +239,19 @@
     return mesh;
   }
 
+  const _cavernFloorTextures = new Map(); // url|repeat -> texture; every cavern build reuses one decoded/GPU copy instead of reloading it.
+  function cavernFloorTexture(THREE, url, repeat) {
+    const key = url + '|' + repeat;
+    let texture = _cavernFloorTextures.get(key);
+    if (texture) return texture;
+    texture = new THREE.TextureLoader().load(url);
+    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(repeat, repeat);
+    if ('colorSpace' in texture && THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
+    _cavernFloorTextures.set(key, texture);
+    return texture;
+  }
+
   function buildCavernFloorMesh(THREE, floorTiles, floorSurfaceByTile, options = {}) {
     const tiles = Array.isArray(floorTiles) ? floorTiles : []; // One merged geometry keeps the authored walkable floor to a single draw call even for a large cave footprint.
     if (!tiles.length) return new THREE.Group();
@@ -266,13 +279,7 @@
     geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
     geometry.setIndex(indices);
     geometry.computeVertexNormals();
-    const texture = options.textureUrl ? new THREE.TextureLoader().load(options.textureUrl) : null; // Explicit fallback texture guarantees a visible floor even if the natural-surface wrapper is absent.
-    if (texture) {
-      texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-      const repeat = Number(options.textureRepeat) || 0.35;
-      texture.repeat.set(repeat, repeat);
-      if ('colorSpace' in texture && THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
-    }
+    const texture = options.textureUrl ? cavernFloorTexture(THREE, options.textureUrl, Number(options.textureRepeat) || 0.35) : null; // Explicit fallback texture guarantees a visible floor even if the natural-surface wrapper is absent.
     const material = new THREE.MeshLambertMaterial({
       color: options.color ?? 0x5f5a56,
       map: texture,

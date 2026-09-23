@@ -202,9 +202,11 @@
     const equipped = rec.equippedCosmetics || (rec.equippedCosmetics = []);
     const currentIdx = equipped.findIndex(id => guessSlot(id) === slot);
     const displacedId = currentIdx !== -1 ? equipped[currentIdx] : null;
-    if (displacedId === winner.cosmeticId) return false;
-
     const displacedItem = displacedId ? storedCopyFromWorn(rec, displacedId, slot) : null; // Captures the old garment's dyes before this slot's tint channels are replaced.
+    if (displacedId === winner.cosmeticId
+      && dyeIdFromColor(displacedItem.colorA) === dyeIdFromColor(winner.colorA)
+      && dyeIdFromColor(displacedItem.colorB) === dyeIdFromColor(winner.colorB)) return false; // Only an identical garment+dye is a no-op; a recolored copy of the worn cosmetic still swaps in.
+
     if (currentIdx !== -1) equipped.splice(currentIdx, 1, winner.cosmeticId);
     else equipped.push(winner.cosmeticId);
     list.splice(storedIdx, 1);
@@ -289,8 +291,8 @@
 
   function openWardrobePanel(npcId) {
     closeWardrobePanel();
-    const walker = findWalker(npcId);
-    const name = walker?.rec?.name || walker?.rec?.displayName || 'Their';
+    const rec = findRecord(npcId); // Canonical record so name and the Wear veto work even when the NPC has no live walker.
+    const name = rec?.name || rec?.displayName || 'Their';
     const overlay = document.createElement('div');
     overlay.id = 'npcWardrobeOverlay';
     overlay.style.cssText = 'position:fixed;inset:0;z-index:9000;background:rgba(6,10,16,.72);display:flex;align-items:center;justify-content:center;font-family:system-ui,sans-serif;';
@@ -334,7 +336,7 @@
     function rowHtml(item) {
       const label = item.label || prettifyCosmeticId(item.cosmeticId);
       const swatch = item.colorA?.hex ? `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${item.colorA.hex};margin-right:6px"></span>` : '';
-      const wearability = item.worn ? { allowed: true } : clothingWearability(walker?.rec, item); // Stored rows show the same preference veto enforced by the Wear action.
+      const wearability = item.worn ? { allowed: true } : clothingWearability(rec, item); // Stored rows show the same preference veto enforced by the Wear action.
       const wearButton = wearability.allowed
         ? `<button class="npc-wardrobe-wear" data-uid="${item.uid}" data-label="${label}" style="border:1px solid rgba(106,167,255,.4);background:rgba(106,167,255,.16);color:#edf4ff;border-radius:8px;padding:4px 8px;font-size:11px;cursor:pointer">Wear</button>`
         : `<span style="font-size:10px;color:#d99696">won't wear</span>`;

@@ -89,6 +89,7 @@ windowStub.addEventListener = (type, callback) => listeners.set(type, callback);
 windowStub.__farmLog = () => {};
 windowStub.WildlifeSpawn = { init() { return true; } };
 const geneticsContext = vm.createContext({ window: windowStub, console, Math, performance: { now: () => 0 }, Set, Map });
+vm.runInContext(read('docs/js/voorg-ass-registration.js'), geneticsContext, { filename: 'voorg-ass-registration.js' }); // Loaded before creature-genetics.js in index.html; owns the Voorg-Ass renderer entry.
 vm.runInContext(geneticsSource, geneticsContext, { filename: 'creature-genetics.js' });
 const creatureDb = {
   puktuk: { label: 'Puktuk', defaultSizeClass: 'medium' },

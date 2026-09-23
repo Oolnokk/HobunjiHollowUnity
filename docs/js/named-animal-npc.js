@@ -272,7 +272,7 @@
       : drawFullFrame(source, canvas, opacity);
     if (rendered) {
       debugState.lastCreatureKind = kind;
-      canvas.__hobunjiAnimalNpcSourceUrl = sourceUrl(source); // World-plane construction reads this first so a 200x200 dialogue/preview canvas never becomes the in-world animal texture.
+      canvas.__hobunjiAnimalNpcSource = source; // World-plane construction resolves this lazily (see installPlaneBridge) so chathead/portrait refreshes never pay for a PNG toDataURL encode, while a 200x200 dialogue/preview canvas still never becomes the in-world animal texture.
       canvas.__hobunjiAnimalNpcAppearance = {
         kind,
         opacity: normalizeOpacity(opacity),
@@ -349,7 +349,7 @@
         if (!kind) return currentBuild.call(this, THREE, sourceCanvas, options);
         const creature = registry()?.creatureFor?.(kind);
         const fallbackPath = creature?.sprites?.idle;
-        const spriteUrl = sourceCanvas?.__hobunjiAnimalNpcSourceUrl || canvasDataUrl(sourceCanvas) || registry()?.assetUrl?.(fallbackPath) || fallbackPath;
+        const spriteUrl = (sourceCanvas?.__hobunjiAnimalNpcSource ? sourceUrl(sourceCanvas.__hobunjiAnimalNpcSource) : '') || canvasDataUrl(sourceCanvas) || registry()?.assetUrl?.(fallbackPath) || fallbackPath;
         if (!spriteUrl) return currentBuild.call(this, THREE, sourceCanvas, options);
         const modelWidth = Number(creature?.modelWidth) > 0 ? Number(creature.modelWidth) : Number(options.modelWidth) || 1;
         const spriteAspect = Number(creature?.spriteAspect) > 0 ? Number(creature.spriteAspect) : 1;

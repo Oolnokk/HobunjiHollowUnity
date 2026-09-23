@@ -447,6 +447,30 @@
     return _townFloodEmergency;
   }
 
+  // ── Simulation cadence (moved out of game.js's frame loop) ──
+  // Water ticks every 1/8 game-hour (~9s real-time) on the game clock so rain
+  // and drainage stay clock-consistent. Only the area the player is in ticks,
+  // and time in caves/wilderness is never banked, so returning never queues a
+  // backlog of water rebuilds.
+  const SIM_TICK_GAME_HOURS = 0.125;
+  let _simAccumulator = 0; // Game-hours banked toward the next farm/town tick.
+
+  function tickSimulation(dt, currentArea, hooks = {}) {
+    if (currentArea !== 'farm' && currentArea !== 'town') return;
+    _simAccumulator += dt * (Number(hooks.gameHoursPerSecond) || 0);
+    if (_simAccumulator < SIM_TICK_GAME_HOURS) return;
+    _simAccumulator -= SIM_TICK_GAME_HOURS;
+    const recompute = window.WaterSystem?.recomputeWater || recomputeWater; // Public lookup so dev-testing-switchbox's noWaterSim stub still takes effect.
+    if (currentArea === 'farm') {
+      recompute(false);
+      hooks.onFarmTick?.();
+    } else {
+      const townZone = deps.getTownZone();
+      recompute(false, deps.getTownGrid(), townZone?.rows || 50, townZone?.cols || 60);
+    }
+    hooks.onTick?.();
+  }
+
   function debugTownFloodEmergencyStep(depthFraction) {
     const normalized = deps.clamp(Number(depthFraction) || 0, 0, 1); // Used by mobile/manual diagnostics and regression tests to exercise the real hysteresis transition without manufacturing a whole flooded town grid.
     return _syncTownFloodEmergency({ visible: normalized > 0, depth: normalized });
@@ -730,6 +754,7 @@
   window.WaterSystem = {
     init,
     recomputeWater,
+    tickSimulation,
     updateWaterMeshes,
     updateTownWaterMeshes,
     refreshTownWaterRender,

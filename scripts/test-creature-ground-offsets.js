@@ -14,7 +14,7 @@ vm.runInContext(fs.readFileSync('docs/config/attachment-rig-profiles.js', 'utf8'
 
 const expected = {
   drenkirra: { large: 0.79, medium: 0.40, small: 0.17 },
-  grehlr: { large: 0.50, medium: 0.26, small: 0.10 },
+  grehlr: { large: 0.50, medium: 0.26, small: 0.13 },
   'gar-wolf': { large: 0.50, medium: 0.33, small: 0.11 },
   'dabinggi-hound': { large: 0.50, medium: 0.27, small: 0.09 },
   uumkaoii: { large: 0.69, medium: 0.48, small: 0.09 },

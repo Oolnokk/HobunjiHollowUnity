@@ -106,7 +106,7 @@
     ['js/alcohol-gameplay-bridge.js?v=20260918blackstamina1', () => !!window.HobunjiDrunkGameplayBridge],
     ['js/npc-gifting.js?v=20260922wardrobe2', () => !!window.NpcGifting],
     ['js/favor-heart-balance.js?v=20260917points3', () => Number(window.NpcFavorBalance?.version) >= 1],
-    ['js/npc-wardrobe.js?v=20260922immediate5', () => !!window.NpcWardrobe],
+    ['js/npc-wardrobe.js?v=20260923review2', () => !!window.NpcWardrobe],
     ['js/clothing-weaving-npc-compat.js?v=20260913a', () => Number(window.ClothingWeavingNpcCompat?.version) >= 1],
     ['js/npc-furniture-wardrobe-bridge-v4.js?v=20260904placeholder2', () => Number(window.NpcFurnitureWardrobes?.version) >= 4],
     ['config/npcs/social-relations.js?v=20260904a', () => !!window.HobunjiNpcSocialRelationsConfig],
@@ -142,7 +142,7 @@
     // from inside Puktuk registration. Keeping one parser-owned loader prevents
     // den setup from perturbing held-item/stance bootstrap ordering.
     ['js/den-locale-runtime.js?v=20260914c', () => Number(window.DenLocaleRuntime?.version) >= 4],
-    ['js/puktuk-den-nest-registration.js?v=20260921voorgherd1', () => Number(window.PuktukDenNestRegistration?.version) >= 2],
+    ['js/puktuk-den-nest-registration.js?v=20260923review1', () => Number(window.PuktukDenNestRegistration?.version) >= 2],
     ['js/dev-arena-nest-spawner.js?v=20260914a', () => Number(window.DevArenaNestSpawner?.version) >= 1],
     ['js/wildlife-territorial.js?v=20260828animalvoices1', () => !!window.HobunjiTerritorialWildlife],
     ['js/wildlife-drenkirra-grazing.js?v=20260817a', () => !!window.HobunjiDrenkirraGrazing],

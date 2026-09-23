@@ -14,7 +14,7 @@
   <script src="js/GLTFLoader.js?v=20260712d"></script>
   <script src="js/WallBuilder.js?v=20260809a"></script>
   <script src="js/HousePieceGen.js?v=20260809a"></script>
-  <script src="js/interior-scene-builder.js?v=20260921banubufloor1"></script>
+  <script src="js/interior-scene-builder.js?v=20260923review2"></script>
   <script src="js/building-door.js?v=20260725a"></script>
   <script src="js/tile-pathfinding.js?v=20260808a"></script>
   <!-- Small formatting/math helpers (esc/clamp/roundRect/formatClock/etc.)
@@ -151,7 +151,7 @@
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
   <script src="js/held-action-animations.js?v=20260920handreview3-spearoffset-rangedgrip3-toolz1-align1-throwpivot2"></script>
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
-  <script src="js/character-action-locks.js?v=20260921harvestanim2"></script>
+  <script src="js/character-action-locks.js?v=20260923review1"></script>
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
   <script src="js/npc-character-state.js?v=20260811a"></script>
   <!-- Accepted alcohol handoff + NPC playback; game.js supplies private-state adapters. -->
@@ -172,7 +172,8 @@
        before its rendering sibling below since creature-genetics-render.js
        doesn't itself depend on it (each reads genotype data, not each
        other), but they're a matched pair. -->
-  <script src="js/creature-genetics.js?v=20260921voorgherd1"></script>
+  <script src="js/voorg-ass-registration.js?v=20260923review1"></script> <!-- Shared Voorg-Ass creature/renderer/herd registration used by the three scripts below. -->
+  <script src="js/creature-genetics.js?v=20260923review1"></script>
   <!-- Creature genotype recolor + pattern-overlay compositing. -->
   <script src="js/creature-genetics-render.js?v=20260920animal-pattern-preview1"></script>
   <!-- Shared per-frame "where is this creature/character's head" cache — see
@@ -209,7 +210,7 @@
   <script src="js/banubu-quest-content.js?v=20260921wake3"></script>
        editors save edited repo-tracked JSON into localStorage and have the
        game load that instead of the repo file when Local source is selected. -->
-  <script src="js/local-db-overrides.js?v=20260921namedanimal1"></script>
+  <script src="js/local-db-overrides.js?v=20260923review1"></script>
   <script>
     // species-pose-scaling parser-loads earlier for avatar consumers, then
     // re-resolves its config now that LocalDBOverrides knows the selected
@@ -282,7 +283,7 @@
   <script src="js/bounty-board.js?v=20260831spearheadexisting1"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20260922wardrobe5"></script>
+  <script src="js/combat/combat-config-loader.js?v=20260923review2"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -507,7 +508,7 @@
        at call time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.WildlifeSpawn.init(...) during its own setup. -->
-  <script src="js/wildlife-spawn.js?v=20260921voorgherd2"></script>
+  <script src="js/wildlife-spawn.js?v=20260923review1"></script>
   <!-- Town/zone building mesh spawning + decorative furniture/prop spawning
        (window.TownZoneBuildings) — reads globally-loaded HousePieceGen/
        WallBuilder/BuildingDoor/window.ProceduralFurniture/window.Music at
@@ -552,7 +553,7 @@
        createInitialGrid() call (which itself calls recomputeWater()
        synchronously to settle day-one water levels), well before most of
        the other window.<Namespace>.init(...) calls below. -->
-  <script src="js/water-system.js?v=20260922wateropacity1"></script>
+  <script src="js/water-system.js?v=20260923review2"></script>
   <!-- Weather rolling, day/night + weather lighting overlay, and trench
        water particle/paddy ripple FX (window.WeatherFX) — reads
        window.CalendarSystem at call time (already global by then), so load
@@ -686,7 +687,7 @@
        window.ZoneTerrainFeatures.init(...) alongside its sibling systems
        and its build*(...) functions lazily, from buildZoneScene, never
        synchronously during initial boot. -->
-  <script src="js/zone-terrain-features.js?v=20260914boulder2"></script>
+  <script src="js/zone-terrain-features.js?v=20260923review2"></script>
   <!-- Wilderness-zone animal-den rock mounds and root totem meshes
        (window.ZoneDenTotemFeatures) — pure scene-graph generation, no
        other window.* system reads; must load before game.js, which calls
@@ -2432,7 +2433,7 @@
        calls window.NpcScheduling.init(...) during its own setup.
        resolveNpcScheduleTarget itself now bridges into
        window.NpcActivityPlanner (loaded just above) when present. -->
-  <script src="js/npc-scheduling.js?v=20260910jubmir1"></script>
+  <script src="js/npc-scheduling.js?v=20260923review2"></script>
   <!-- Authored NPC relationship tags (partner/family/friend) + social
        seating policy (window.SCRATCHBONES_CONFIG.game.socialRelationships) —
        read lazily at call time by npc-social-seating-bridge.js below, so
@@ -2495,7 +2496,9 @@
     })();
   </script>
   <!-- Directional camera pitch policy is isolated from controller bindings/gameplay dispatch. -->
-  <script src="js/camera-look-clamp.js?v=20260917v50doorsinputs1"></script>
+  <script src="js/camera-look-clamp.js?v=20260923review2"></script>
+  <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
+  <script src="js/dev-random-ruin-bootstrap.js?v=20260923review1"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their
@@ -2503,7 +2506,7 @@
        three and reads window.DevTestingSwitchbox.flags directly). -->
   <script src="js/dev-testing-switchbox.js?v=20260912a"></script>
   <script src="js/random-outdoor-ruins.js?v=20260922ruinpuzzle1"></script>
-  <script src="game.js?v=20260922wardrobe5"></script>
+  <script src="game.js?v=20260923review2"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
   <script src="js/controller-ui-nav.js?v=20260915perf1"></script>
   <script>

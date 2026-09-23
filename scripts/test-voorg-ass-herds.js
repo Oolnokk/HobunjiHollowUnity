@@ -141,6 +141,7 @@ const deps = {
 };
 
 const context = vm.createContext({ window: windowStub, console, Math, Map, Set, performance: { now: () => 0 } });
+vm.runInContext(fs.readFileSync(path.join(ROOT, 'docs/js/voorg-ass-registration.js'), 'utf8'), context, { filename: 'voorg-ass-registration.js' });
 vm.runInContext(wildlifeSource, context, { filename: 'wildlife-spawn.js' });
 windowStub.WildlifeSpawn.init(deps);
 assert.equal(creatureDb['voorg-ass']?.label, 'Voorg-Ass', 'WildlifeSpawn.init synchronously installs the missing live Voorg-Ass creature def');

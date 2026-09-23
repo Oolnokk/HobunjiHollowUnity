@@ -6,14 +6,15 @@ const vm = require('node:vm');
 const ROOT = process.env.HOBUNJI_TEST_ROOT || process.cwd(); // Used so this can run in-repo or against a staged checkout.
 const read = relativePath => fs.readFileSync(path.join(ROOT, relativePath), 'utf8'); // Keeps every fixture read rooted consistently.
 const geneticsSource = read('docs/js/creature-genetics.js'); // Runtime under test: genotype, renderer, livestock, and wildlife registration.
+const registrationSource = read('docs/js/voorg-ass-registration.js'); // Shared creature/renderer/herd registration loaded before creature-genetics.js.
 const loot = JSON.parse(read('docs/config/loot/loot-pools.json')); // Confirms Voorg-Ass kills use the already-authored meat item.
 
 assert.match(geneticsSource, /'voorg-ass':\s*\['belly'\]/, 'Voorg-Ass has only the belly pattern layer');
 assert.match(geneticsSource, /'voorg-ass':\s*new Set\(\['belly'\]\)/, 'Voorg-Ass belly is authored as always-present');
 assert.match(geneticsSource, /VOORG_ASS_NORTHERN_ZONE_ID = 'map_northern_cliffs'/, 'Voorg-Ass targets Northern Cliffs');
 assert.match(geneticsSource, /'voorg-ass':\s*'uumkaoii'/, 'Voorg-Ass borrows Uumkao’ii size/ground calibration only');
-assert.match(geneticsSource, /voorg-ass_idle\.png[\s\S]*voorg-ass_run1\.png[\s\S]*voorg-ass_run2\.png/, 'Voorg-Ass base animation sprites are registered');
-assert.match(geneticsSource, /prefix:\s*VOORG_ASS_KIND[\s\S]*patterns:\s*\['belly'\]/, 'Voorg-Ass renderer has the uploaded belly layer and no optional pattern list');
+assert.match(registrationSource, /voorg-ass_idle\.png[\s\S]*voorg-ass_run1\.png[\s\S]*voorg-ass_run2\.png/, 'Voorg-Ass base animation sprites are registered');
+assert.match(registrationSource, /prefix:\s*KIND[\s\S]*patterns:\s*\['belly'\]/, 'Voorg-Ass renderer has the uploaded belly layer and no optional pattern list');
 assert.match(geneticsSource, /resources\[VOORG_ASS_KIND\]\s*=\s*\{\s*itemKey:\s*LIGHT_WOOL_ITEM_KEY,\s*cooldownDays:\s*1,\s*verb:\s*'Shear'/, 'Voorg-Ass uses the generic one-day shearing path');
 assert.deepEqual(loot.pools?.['creature_voorg-ass']?.entries?.map(entry => entry.itemKey), ['voorgAssMeat'], 'Voorg-Ass has its own meat drop pool');
 
@@ -52,6 +53,7 @@ const windowStub = {
   __farmLog(message, channel) { logs.push({ message, channel }); },
 };
 const context = vm.createContext({ window: windowStub, console, Math: seededMath, performance: { now: () => 0 }, Set, Array }); // Runs only the isolated genetics module with browser globals stubbed.
+vm.runInContext(registrationSource, context);
 vm.runInContext(geneticsSource, context);
 
 const creatureDb = {

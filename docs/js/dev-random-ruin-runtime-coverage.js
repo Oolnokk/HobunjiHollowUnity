@@ -72,9 +72,11 @@
   }
 
   function updateBadge() {
-    const coverage = resolveCoverage();
+    if (window.GridTileAccessors?.getCurrentArea?.() !== MAP_ID) return null; // Frame client runs for every player; skip the snapshot/JSON clone work outside the dev ruin.
     const badge = document.getElementById('devRandomRuinBadge');
-    if (!badge || !coverage.active) return coverage;
+    if (!badge) return null;
+    const coverage = resolveCoverage();
+    if (!coverage.active) return coverage;
     let text = badge.textContent.replace(/ · cross-layer \d+$/, '');
     text = text.replace(/unhandled \d+/, `unhandled ${coverage.effectiveUnhandled.length}`);
     if (coverage.covered.length) text += ` · cross-layer ${coverage.covered.length}`;

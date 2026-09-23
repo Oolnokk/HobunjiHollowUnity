@@ -151,6 +151,23 @@ wardrobe.init({
   assert.equal(contents.stored[0].colorA, 'dye:CLOTH:old_primary', 'displaced garment stores its own slot-specific primary dye instead of the first arbitrary applied dye');
   assert.equal(contents.stored[0].colorB, 'dye:CLOTH:old_trim', 'displaced garment stores its own slot-specific secondary dye');
 
+  const recolorGift = wardrobe.offerClothing('test_npc', {
+    uid: 'player_owned_recolor',
+    cosmeticId: 'fine_poncho',
+    slot: 'overwear',
+    colorA: { dyeId: 'dye:CLOTH:recolor_primary' },
+    colorB: { dyeId: 'dye:CLOTH:recolor_trim' },
+  });
+  assert.equal(recolorGift.worn, true, 'a recolored copy of the currently worn cosmetic is still tried on');
+  assert.equal(rec.appliedDyes.CLOTH, 'dye:CLOTH:recolor_primary', 'recolored copy applies its own primary dye');
+  contents = wardrobe.getWardrobeContents('test_npc');
+  const storedNewColor = contents.stored.find(item => item.colorA === 'dye:CLOTH:new_primary');
+  assert.equal(storedNewColor?.cosmeticId, 'fine_poncho', 'the previously worn same-cosmetic copy moves into storage with its old dye');
+  assert.equal(await wardrobe.wearStoredItem('test_npc', storedNewColor.uid), true, 'manual Wear swaps back to the other color of the same cosmetic');
+  assert.equal(rec.appliedDyes.CLOTH, 'dye:CLOTH:new_primary', 'manual Wear restores the stored copy\'s dye');
+  contents = wardrobe.getWardrobeContents('test_npc');
+  assert.equal(contents.stored.length, 2, 'same-cosmetic swaps keep exactly one stored copy per displaced color');
+
   const dislikedGift = wardrobe.offerClothing('test_npc', {
     uid: 'player_owned_disliked',
     cosmeticId: 'itchy_poncho',
