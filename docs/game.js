@@ -8581,7 +8581,7 @@
         } catch (_) { return []; }
       }
       function _tothalZoneCacheKey(worldId, year, zoneId) {
-        return `hobunji_tothal_zonecache_v1_${_TOTHAL_GEN_VERSION_TAG}_${worldId}_y${year}_${zoneId}`;
+        return `hobunji_tothal_zonecache_v2_${_TOTHAL_GEN_VERSION_TAG}_${worldId}_y${year}_${zoneId}`;
       }
       async function _loadTothalZoneCache(key) {
         const cached = await _tothalCacheGet(key);
@@ -8594,6 +8594,7 @@
             entry: workspace.entry || null,
             animalDens: workspace.animalDens || [],
             localeInstances: workspace.localeInstances || [],
+            localeTransitions: (workspace.maps || []).find(map => map && !map.isSubmap)?.transitions?.filter(t => t?.generatedLocaleId) || [], // Restored zones need the stamped cave entrances as well as their instance markers.
             rootTotems: workspace.rootTotems || [],
             foliagePatches: workspace.foliagePatches || [],
             wildernessFoliageFurniture: workspace.wildernessFoliageFurniture || [],
@@ -8611,10 +8612,10 @@
       // unbounded pile of dead cache entries. Other worlds' caches are left
       // untouched.
       async function _evictStaleTothalZoneCaches(worldId, year) {
-        const prefix = 'hobunji_tothal_zonecache_v1_';
+        const prefixes = ['hobunji_tothal_zonecache_v1_', 'hobunji_tothal_zonecache_v2_']; // Discard obsolete entries that lost stamped locale entrances.
         const keep = new Set(WildernessMapGenerator.zoneMapIds().map(zoneId => _tothalZoneCacheKey(worldId, year, zoneId)));
         const allKeys = await _tothalCacheAllKeys();
-        const stale = allKeys.filter(k => typeof k === 'string' && k.startsWith(prefix) && k.includes(`_${worldId}_y`) && !keep.has(k));
+        const stale = allKeys.filter(k => typeof k === 'string' && prefixes.some(prefix => k.startsWith(prefix)) && k.includes(`_${worldId}_y`) && !keep.has(k));
         await _tothalCacheDeleteKeys(stale);
       }
 
@@ -8788,7 +8789,7 @@
 
             const toTownExit = workspace.entry ? { col: workspace.entry.col, row: workspace.entry.row, label: 'To Hobunji Hollow' } : null;
             const workspaceRoot = (workspace.maps || []).find(map => map && !map.isSubmap) || workspace.maps?.[0] || null; // Used to promote terrain-aware locale interiors into the live zone interaction pool.
-            const generatedLocaleTransitions = (workspaceRoot?.transitions || [])
+            const generatedLocaleTransitions = (workspaceRoot?.transitions || workspace.localeTransitions || [])
               .filter(t => t?.generatedLocaleId && t?.targetMapId && _isBuildingArea(t.targetMapId))
               .map(t => ({
                 id: t.id,
@@ -11075,7 +11076,7 @@
         player.angle = facingAngle;
         const npcTargetAngle = Math.atan2(playerWorldZ - npcZ, playerWorldX - npcX);
         const npcTargetRot = -npcTargetAngle + Math.PI / 2;
-        walker.applyFacingDeadzone(npcTargetRot, cfg.npcFacePlayerLerp ?? 0.28);
+        if (walker.rec?.id !== 'banubu') walker.applyFacingDeadzone(npcTargetRot, cfg.npcFacePlayerLerp ?? 0.28); // Sleeping Banubu keeps his authored facing throughout quest dialogue.
         // Eye contact: aims BOTH the NPC's and the player's own neck bone
         // straight at the other's eyes, held for the whole conversation (see
         // _aimNeckAtEyeContact above) — this owns the player's neck bone
@@ -11085,7 +11086,7 @@
         playerMesh.updateMatrixWorld(true);
         const maxYawDeg = cfg.npcHeadMaxYawDeg ?? 28;
         const maxPitchDeg = cfg.npcHeadMaxPitchDeg ?? 24;
-        if (walker.neckJoint) {
+        if (walker.neckJoint && walker.rec?.id !== 'banubu') {
           _aimNeckAtEyeContact(walker.neckJoint, walker.root.position, walker.avatarHeight, playerMesh.position, playerAvatarModelHeight, maxYawDeg, maxPitchDeg, walker);
         }
         if (playerNeckJoint) {
@@ -13873,7 +13874,7 @@
           playerMesh.position.y = entrySurfaceY;
           playerGroundShadow.position.y = entrySurfaceY + characterGroundShadowSurfaceOffset();
         }
-        facingAngle = Math.PI / 2; player.angle = facingAngle;
+        facingAngle = mapId === 'map_i_den_banubu' ? -Math.PI / 2 : Math.PI / 2; player.angle = facingAngle; // The cave entrance faces north toward its interior.
         _snapCameraTarget();
         if (fromScene) {
           fromScene.remove(playerMesh); fromScene.remove(playerGroundShadow);

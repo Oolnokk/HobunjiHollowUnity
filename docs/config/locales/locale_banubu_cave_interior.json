@@ -277,8 +277,8 @@
       "id": "station_banubu_cave_sleep",
       "npcId": "banubu",
       "name": "Banubu's Sleeping Spot",
-      "col": 9,
-      "row": 7,
+      "col": 6,
+      "row": 5,
       "facing": "west",
       "pose": "lie"
     }

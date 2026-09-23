@@ -590,6 +590,7 @@
   }
 
   function show(root, text, options = {}) {
+    if (String(options.speakerId || '') === 'banubu') return null; // Banubu speaks only through his authored, player-initiated quest dialogue.
     const THREE = state.deps?.THREE;
     const scene = options.scene || state.deps?.getActiveScene?.();
     const message = String(text || '').trim();
@@ -750,6 +751,7 @@
 
   function tryGreeting(walker, target, now, day, override = null) {
     const speakerId = walker?.rec?.id;
+    if (speakerId === 'banubu') return false; // Avoid greeting policy, portrait composition, and ledger work for the sleeping Fey.
     if (!speakerId || walker.area !== state.deps.getCurrentArea()) return false;
     if (window.HobunjiDrunkGameplayBridge?.isNpcBlackedOut?.(speakerId)) return false;
     // The active event remains in this list through its final opacity fade,

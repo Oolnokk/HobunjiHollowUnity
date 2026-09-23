@@ -424,6 +424,7 @@
 
   function react(walker, options = {}) {
     if (!walker?.root || !walker?.rec?.id || !global.AmbientDialogue?.show) return false;
+    if (walker.rec.id === 'banubu') return false; // Banubu does not react to ambient social stimuli.
     if (global.HobunjiDrunkGameplayBridge?.isNpcBlackedOut?.(walker.rec.id)) return false;
     if (state.plannerDeps?.isDialogueOpen?.() || state.plannerDeps?.isPaused?.()) return false;
 
@@ -497,6 +498,7 @@
 
     for (const walker of walkers) {
       const id = String(walker?.rec?.id || ''); // Candidate NPC ID keys encounter state and profile selection.
+      if (id === 'banubu') continue; // Skip reaction state and portrait work for the permanently sleeping Fey.
       if (!id || !walker?.root || stimulus.sourceNpcId === id) continue;
       liveIds.add(id);
       let encounter = state.encounters.get(id); // Existing encounter reused across repeated interval/update calls.

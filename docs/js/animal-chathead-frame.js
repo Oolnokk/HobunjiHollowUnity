@@ -15,6 +15,8 @@
     'hiki-hiki': 'drenkirra',
     hikihiki: 'drenkirra',
   });
+  const paintedHeadCache = new Map(); // Reuses the finished 200px crop in ambient and full dialogue without recomposing large painted animal sprites each frame.
+  const MAX_PAINTED_HEADS = 8; // Bounds the cache to a few small canvases on mobile.
 
   const debugState = {
     installed: false,
@@ -24,6 +26,8 @@
     lastFrame: null,
     lastFrameSource: null,
     lastError: null,
+    paintedCacheHits: 0,
+    paintedCacheMisses: 0,
   };
 
   function clamp(value, min = 0, max = 1) {
@@ -197,7 +201,7 @@
   async function sourceCanvasForKind(kind, options = {}) {
     const renderer = window.CreatureGeneticsRender;
     if (renderer?.composeFrame) {
-      const genotype = options.genotype || options.profile?.creatureGenotype || options.profile?.genotype || null;
+      const genotype = options.genotype || options.profile?.animalGenotype || options.profile?.creatureGenotype || options.profile?.appearance?.animalGenotype || options.profile?.appearance?.creatureGenotype || options.profile?.genotype || null; // Matches the cache signature and the NPC's authored paint source.
       const canvas = await renderer.composeFrame(normalizeKind(kind), options.frame || 'idle', genotype, options.blinkShut === true);
       if (canvas) return canvas;
     }
@@ -214,10 +218,32 @@
 
   async function renderCreatureChathead(targetCanvas, kind, options = {}) {
     try {
-      const source = await sourceCanvasForKind(kind, options);
       const resolved = frameForKind(kind);
-      if (!source || !resolved) return false;
-      const rendered = drawFrameToCanvas(source, targetCanvas, resolved.frame);
+      if (!resolved) return false;
+      const genotype = options.genotype || options.profile?.animalGenotype || options.profile?.creatureGenotype || options.profile?.appearance?.animalGenotype || options.profile?.appearance?.creatureGenotype || options.profile?.genotype || null; // Pattern-bearing genotype selects the cached crop.
+      const signature = genotype?.colorPoolPaint?.layers && window.CreatureGeneticsRender?.genotypeSignature?.(normalizeKind(kind), genotype); // Other creatures keep their existing live compositing path.
+      const cacheKey = signature ? JSON.stringify([normalizeKind(kind), options.frame || 'idle', options.blinkShut === true, signature, resolved.frame]) : null; // Distinguishes paint, blink, and authored framing.
+      let cached = cacheKey && paintedHeadCache.get(cacheKey); // Small precomposed image used by subsequent speech frames.
+      let source = null; // Original sprite used when no painted crop is cached.
+      if (cached) {
+        debugState.paintedCacheHits++;
+        paintedHeadCache.delete(cacheKey);
+        paintedHeadCache.set(cacheKey, cached);
+      } else {
+        if (cacheKey) debugState.paintedCacheMisses++;
+        source = await sourceCanvasForKind(kind, options);
+        if (!source) return false;
+        if (cacheKey) {
+          cached = document.createElement('canvas');
+          cached.width = cached.height = 200;
+          if (!drawFrameToCanvas(source, cached, resolved.frame)) return false;
+          paintedHeadCache.set(cacheKey, cached);
+          if (paintedHeadCache.size > MAX_PAINTED_HEADS) paintedHeadCache.delete(paintedHeadCache.keys().next().value);
+        }
+      }
+      const context = cached && targetCanvas?.getContext?.('2d'); // Cached crop is already framed and must not be padded twice.
+      if (context) { context.clearRect(0, 0, targetCanvas.width, targetCanvas.height); context.drawImage(cached, 0, 0, targetCanvas.width, targetCanvas.height); }
+      const rendered = context ? true : drawFrameToCanvas(source, targetCanvas, resolved.frame);
       if (rendered) {
         debugState.lastKind = normalizeKind(kind);
         debugState.lastSpeakerId = String(options.speakerId || speakerIdFromSeatId(options.seatId) || '');
