@@ -7,11 +7,15 @@ on:
       - 'docs/js/interior-furniture-grid.js'
       - 'docs/js/building-interior-npc-wardrobe-editor.js'
       - 'docs/js/map-editor-interior-instance-sync.js'
+      - 'docs/js/map-live-preview.js'
+      - 'docs/js/map-live-preview-runtime.js'
+      - 'docs/js/cinematic-camera-runtime.js'
       - 'docs/js/panel-ui.js'
       - 'docs/tools/building-interior-author/index.html'
       - 'docs/tools/map-editor/index.html'
       - 'docs/config/maps/*.json'
       - 'scripts/test-interior-furniture-grid.js'
+      - 'scripts/test-map-live-preview.js'
       - '.github/workflows/interior-furniture-grid-regression.yml'
   pull_request:
     paths:
@@ -19,11 +23,15 @@ on:
       - 'docs/js/interior-furniture-grid.js'
       - 'docs/js/building-interior-npc-wardrobe-editor.js'
       - 'docs/js/map-editor-interior-instance-sync.js'
+      - 'docs/js/map-live-preview.js'
+      - 'docs/js/map-live-preview-runtime.js'
+      - 'docs/js/cinematic-camera-runtime.js'
       - 'docs/js/panel-ui.js'
       - 'docs/tools/building-interior-author/index.html'
       - 'docs/tools/map-editor/index.html'
       - 'docs/config/maps/*.json'
       - 'scripts/test-interior-furniture-grid.js'
+      - 'scripts/test-map-live-preview.js'
       - '.github/workflows/interior-furniture-grid-regression.yml'
 
 permissions:
@@ -44,9 +52,15 @@ jobs:
           node --check docs/js/interior-furniture-grid.js
           node --check docs/js/building-interior-npc-wardrobe-editor.js
           node --check docs/js/map-editor-interior-instance-sync.js
+          node --check docs/js/map-live-preview.js
+          node --check docs/js/map-live-preview-runtime.js
+          node --check docs/js/cinematic-camera-runtime.js
           node --check scripts/test-interior-furniture-grid.js
+          node --check scripts/test-map-live-preview.js
       - name: Audit grid footprints, collision, rotation, and editor wiring
         run: node scripts/test-interior-furniture-grid.js
+      - name: Test live Map Edit reflection and cinematic camera authoring
+        run: node scripts/test-map-live-preview.js
       - name: Re-run interacting interior regressions
         run: |
           node scripts/test-interior-seat-surface-post-transform.js
