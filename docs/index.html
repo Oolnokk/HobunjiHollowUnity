@@ -234,7 +234,9 @@
   <script src="onboarding.js?v=20260921foreground1"></script>
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
   <script src="js/combat/resource-system.js?v=20260918collision2"></script>
-  <script src="js/combat/knockback-collision-impact.js?v=20260918collision2"></script>
+  <script src="js/combat/knockback-collision-impact.js?v=20260923ledge1"></script>
+  <!-- Burning Health presentation: reuses the authored campfire fire emitter on afflicted player/enemy avatar roots. -->
+  <script src="js/combat/burning-affliction-vfx.js?v=20260923burn1"></script>
   <script src="js/combat/resource-rings.js?v=20260809a"></script>
   <script src="js/combat/combat-core.js?v=20260917charge3"></script>
   <!-- Stagger/Footing: authored 4-directional ragdoll blend clips + runtime
@@ -2378,7 +2380,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20260923heldwater2"></script>
+  <script src="js/pixel-probe.js?v=20260923ledge1"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -2506,7 +2508,7 @@
        three and reads window.DevTestingSwitchbox.flags directly). -->
   <script src="js/dev-testing-switchbox.js?v=20260912a"></script>
   <script src="js/random-outdoor-ruins.js?v=20260922ruinpuzzle1"></script>
-  <script src="game.js?v=20260923heldwater2"></script>
+  <script src="game.js?v=20260923ledge1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
   <script src="js/controller-ui-nav.js?v=20260915perf1"></script>
   <script>
