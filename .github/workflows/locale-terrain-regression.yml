@@ -8,6 +8,8 @@ on:
       - 'docs/js/combat/combat-config-loader.js'
       - 'docs/js/locale-terrain-placement.js'
       - 'docs/js/locale-cave-runtime.js'
+      - 'docs/js/banubu-cave-clouds.js'
+      - 'docs/js/interior-scene-builder.js'
       - 'docs/js/zone-den-totem-features.js'
       - 'docs/js/den-locale-runtime.js'
       - 'docs/js/den-nest-system.js'
@@ -41,6 +43,7 @@ on:
       - 'docs/tools/locale-editor/**'
       - 'scripts/test-locale-terrain-placement.js'
       - 'scripts/test-banubu-cave-locale.js'
+      - 'scripts/test-banubu-cave-materials.js'
       - 'scripts/test-locale-cavern-interiors.js'
       - 'scripts/test-color-pools.js'
       - 'scripts/test-banubu-wilderness-lab-generation.js'
@@ -96,6 +99,8 @@ jobs:
         run: node scripts/test-locale-terrain-placement.js
       - name: Test Banubu authored cave rules and runtime parity
         run: node scripts/test-banubu-cave-locale.js
+      - name: Test Banubu cave material and cloud masking parity
+        run: node scripts/test-banubu-cave-materials.js
       - name: Test locale-authored cavern interiors
         run: node scripts/test-locale-cavern-interiors.js
       - name: Test Color Pools animal painting
