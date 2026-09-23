@@ -5,10 +5,11 @@
     "banubu": {
       "species": "grehlr",
       "kind": "animal",
+      "displayName": "Lord Banubu",
       "avatarExport": {
         "schema": "npc_avatar_editor_export.v1",
         "source": "character-studio",
-        "name": "Banubu",
+        "name": "Lord Banubu",
         "appearance": {
           "speciesId": "grehlr",
           "gender": "male",
