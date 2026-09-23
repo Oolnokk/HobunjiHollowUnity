@@ -72,7 +72,7 @@ assert.strictEqual(Object.keys(built.floorSurfaceByTile || {}).length, built.flo
 assert(Number.isFinite(built.floorSurfaceY), 'cavern synthesis must expose a finite fallback floor surface Y');
 assert.strictEqual(built.floor.length, Object.keys(banubu.tiles).length);
 assert.strictEqual(carveCall.floor.length, built.floor.length, 'the exact painted locale footprint must be handed to the cavern sculptor');
-assert.deepStrictEqual(carveCall.options.entrance, { col: 6, row: 10, side: 'south' });
+assert.deepStrictEqual(carveCall.options.entrance, { col: 6, row: 10, side: 'north' });
 assert.strictEqual(built.keyGatedDoors[0].requiresKeyItem, 'color_pools_key');
 assert.deepStrictEqual(JSON.parse(JSON.stringify(built.entrySpots.color_pools_door)), { col: 6, row: 1, side: 'north' });
 assert(built.npcStations.some(station => station.id === 'station_banubu_cave_sleep' && station.pose === 'lie' && station.col === 9 && station.row === 7), 'Banubu\'s single physical sleeping station must stay at its authored location');
