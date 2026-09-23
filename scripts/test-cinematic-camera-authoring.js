@@ -62,7 +62,7 @@ assert(runtimeSource.includes('function resolvedTargetFor(') && runtimeSource.in
 assert(gameSource.includes('getNpcFacePosition: walker =>') && gameSource.includes('_npcFaceWorldPosition(walker)'), 'camera runtime hook must resolve the NPC\'s live visible face rather than a raw station/root point');
 assert(gameSource.includes('PNGPlaneAvatar.resolveSkinnedPixelWorldPosition(walker.avatarGroup, centroid)'), 'humanoid camera targets must follow the live skinned head centroid');
 assert(gameSource.includes('AnimalChatheadFrame?.frameCenterForKind?.(kind)') && gameSource.includes('avatarRef.headRig?.frontHeadBone'), 'named-animal camera targets must use the authored species face frame and live head bone');
-assert(gameSource.includes('walker._animalSleepRequested === true') && gameSource.includes('sleepScaleY'), 'sleeping named-animal camera targets must mirror the render-only sleep flattening');
+assert(gameSource.includes('walker._animalSleepRequested === true') && gameSource.includes('projectExternalSleeperWorldPoint(walker, face)'), 'sleeping named-animal camera targets must project through the exact render-time sleep transform');
 assert(gameSource.includes('CinematicCameraRuntime?.resolvedTarget?.()'), 'authored camera application must resolve a live NPC target every frame');
 assert(localeEditorSource.includes('id="cinTargetNpc"') && localeEditorSource.includes('Face offset X'), 'Locale Editor must author NPC targets with face-offset fields');
 assert(mapEditorSource.includes('id="cinTargetNpc"') && mapEditorSource.includes('Face offset X'), 'Map Editor must author the same generic NPC face-target camera schema');
