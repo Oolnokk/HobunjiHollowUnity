@@ -2138,12 +2138,8 @@
   <!-- Gameplay Text Box: grid x:5 y:14 w:15 h:3 -->
   <div id="gameTextBox" role="status" aria-live="polite"></div>
 
-  <!-- NPC Dialogue Window: grid x:0 y:10 w:32 h:8 (32×18) -->
+  <!-- NPC Dialogue Window: world character remains in the viewport; this shell is text/actions only. -->
   <div id="npcDialogue" role="dialog" aria-modal="true" aria-label="NPC Dialogue" aria-hidden="true" data-ctrl-panel>
-    <!-- Portrait: peeks above dialogue panel from bottom-left -->
-    <div id="npcPortraitWrap">
-      <canvas id="npcPortraitCanvas" width="256" height="256"></canvas>
-    </div>
     <!-- Inner panel: left content (name+text) | right response panel -->
     <div id="npcDialogueInner">
       <!-- Left: header row (name + hearts) + dialogue text -->
@@ -2400,6 +2396,8 @@
        window.DialogueContent.init(...) during its own setup.
        openNpcDialogue/closeNpcDialogue (camera/staging/save) stay in
        game.js and call into this module. -->
+  <!-- Authored world-space dialogue/cutscene cameras. Must load before DialogueContent/game.js. -->
+  <script src="js/cinematic-camera-runtime.js?v=20260923worlddialogue1"></script>
   <script src="js/dialogue-content.js?v=20260831syllable4"></script>
   <script src="js/banubu-questline.js?v=20260923lordbanubu1"></script>
   <!-- World-space Float+ combat text and centered five-row reward lists. -->
