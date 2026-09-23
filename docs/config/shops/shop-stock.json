@@ -75,6 +75,18 @@
           "conditions": {}
         },
         {
+          "key": "sixfinHoneystripeStaple",
+          "icon": "🐟",
+          "name": "Sixfin Honeystripe",
+          "desc": "Minimum-quality fish for basic cooking and Three-Fish Pie.",
+          "price": 30,
+          "gives": {
+            "sixfin_honeystripe": 1
+          },
+          "qualityStars": 1,
+          "conditions": {}
+        },
+        {
           "key": "crownedPineNutOilStaple",
           "icon": "🫗",
           "name": "Crowned Pine Nut Oil",

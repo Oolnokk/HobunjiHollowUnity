@@ -15,7 +15,7 @@
   const THREE_FISH_PIE_RECIPE = Object.freeze({
     id: THREE_FISH_PIE_RECIPE_ID,
     name: 'Three-Fish Pie',
-    description: 'Banubu’s favorite pie: exactly three fish, carrying whatever cooking buffs those fish provide.',
+    description: 'Banubu’s favorite pie: exactly three fish in a flour-and-fat crust, carrying whatever cooking buffs all five ingredients provide.',
     baseOutputName: 'Three-Fish Pie',
     outputIcon: '🥧',
     lockedByDefault: true,
@@ -23,6 +23,8 @@
       Object.freeze({ id: 'fishA', label: 'First Fish', accepts: Object.freeze(['fish']), required: true }),
       Object.freeze({ id: 'fishB', label: 'Second Fish', accepts: Object.freeze(['fish']), required: true }),
       Object.freeze({ id: 'fishC', label: 'Third Fish', accepts: Object.freeze(['fish']), required: true }),
+      Object.freeze({ id: 'flour', label: 'Flour', accepts: Object.freeze(['flour']), required: true }),
+      Object.freeze({ id: 'fat', label: 'Oil / Butter', accepts: Object.freeze(['oil', 'butter']), required: true }),
     ]),
     outputTags: Object.freeze(['Meal', 'Pie', 'Fish', 'Banubu']),
   });
@@ -126,7 +128,7 @@
     1,
     'banubu_q1_offer_1',
     [
-      choiceNode('banubu_q1_offer_1', 'Zzz… Oh. Right. The pie. Three fish, and it needs to give me {{banubuRequestedBuffs}}.', [
+      choiceNode('banubu_q1_offer_1', 'Zzz… Oh. Right. The pie. Three fish, flour, and cooking fat—and it needs to give me {{banubuRequestedBuffs}}.', [
         { label: 'I’ll make it.', next: 'banubu_q1_offer_2', actions: [{ type: 'banubuQuest', operation: 'accept', stage: 1 }] },
         { label: 'Not yet.', next: null, actions: [] },
       ]),
@@ -147,7 +149,7 @@
     1,
     'banubu_q1_active_1',
     [
-      textNode('banubu_q1_active_1', 'Zzzzz… Three-Fish Pie… {{banubuRequestedBuffs}}…', null),
+      textNode('banubu_q1_active_1', 'Zzzzz… Three-Fish Pie… three fish… flour… fat… {{banubuRequestedBuffs}}…', null),
     ],
     { questType: 'threeFishPie', buffCount: 3, minStacks: 1 },
   );
