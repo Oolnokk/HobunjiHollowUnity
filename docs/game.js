@@ -29787,19 +29787,15 @@
 
         async function openLine(entity, speakerName, text) {
           dialogueOpen = true;
-          _dialogueWalker = entity?.kind === 'npc' ? { root: entity.root, rec: entity.rec, profile: entity.profile, avatarFrontCanvas: entity.avatarFrontCanvas } : null;
+          _dialogueWalker = entity?.kind === 'npc' ? entity.walker : null; // Reuse the actual world walker so dialogue expression refreshes target the visible avatar, never a detached viewport portrait.
           cutscenePreviewDialogueSpeaker = entity || null;
           activeCameraMode = entity?.kind === 'creature' ? dlgModeKeyCreature : dlgModeKey;
           activeCameraTarget = { position: (entity || entities.values().next().value)?.root.position || new THREE.Vector3() };
           _npcDialogueNameEl.textContent = speakerName;
           if (_npcDialogueHeartsEl) _npcDialogueHeartsEl.textContent = '';
           _arcContainerEl?.classList.add('arc-hidden');
-          const ctx = _npcPortraitCanvas.getContext('2d');
           if (_dialogueWalker?.profile && window.NpcAvatarPreview) {
-            ctx.fillStyle = '#1b3529'; ctx.fillRect(0, 0, _npcPortraitCanvas.width, _npcPortraitCanvas.height);
-            await window.DialogueContent?.renderNpcDialoguePortrait();
-          } else {
-            ctx.clearRect(0, 0, _npcPortraitCanvas.width, _npcPortraitCanvas.height);
+            await window.DialogueContent?.renderNpcDialoguePortrait(); // Updates the visible world avatar only.
           }
           _npcDialogueEl.classList.add('open');
           _npcDialogueEl.setAttribute('aria-hidden', 'false');
