@@ -301,7 +301,7 @@ assert.deepEqual(Array.from(shadowProbe.slice(0, 3)), [168, 154, 126],
 assert.deepEqual(Array.from(shadowProbe.slice(4, 12)), [20, 17, 14, 255, 255, 255, 255, 255],
   'shade-map inheritance paints only motif-selected pixels while sampling the whole source region');
 const fillDebug = colorFillWindow.ColorFill.debugSnapshot().lastShadeFill;
-assert.equal(fillDebug.sampledCount, 3, 'shared shade fill samples the whole authored surface, including light outliers');
+assert.equal(fillDebug.sampledCount, 2, 'shared shade fill excludes white details from its source reference');
 assert.equal(fillDebug.appliedCount, 1, 'shared shade fill paints only the motif mask');
 assert.equal(fillDebug.separateSampleMask, true, 'diagnostics expose separate sample and application masks');
 assert.equal(fillDebug.externalSource, true, 'diagnostics prove woven fill sampled the original untinted source raster');
@@ -321,6 +321,15 @@ assert.deepEqual(Array.from(mapProbe.slice(0, 8)), [
   168, 154, 126, 255,
   240, 220, 180, 255,
 ], 'direct target fill plus recovered black-opacity map reproduces flat cel and 30%-black shadow exactly');
+const whiteDetailProbe = new Uint8ClampedArray([
+  14, 12, 10, 255, 20, 17, 14, 255,
+  255, 255, 255, 255, 248, 248, 248, 255, 250, 246, 220, 255,
+]); // Verifies white details stay out of a dark fur reference while pale cream remains eligible.
+const whiteReference = colorFillWindow.ColorFill.createShadeReference(whiteDetailProbe);
+assert.equal(whiteReference.count, 3, 'white and near-white neutral details are excluded, while pale cream is retained');
+colorFillWindow.ColorFill.shadeFillPixels(whiteDetailProbe, [240, 220, 180]);
+assert.deepEqual(Array.from(whiteDetailProbe.slice(8, 16)), [255, 255, 255, 255, 248, 248, 248, 255],
+  'authored white details remain unchanged by the shared fill');
 assert.match(colorFillSource, /AUTHORED_SHADOW_VALUE_RATIO = 0\.70/,
   'shared ColorFill encodes the authored 30%-black shadow convention');
 assert.match(colorFillSource, /const score = baseMass \+ shadowMass;/,
@@ -331,9 +340,8 @@ assert.match(source, /shadingSource = null, debugLabel = 'woven-motif'/,
   'shared motif compositor accepts a caller-specific diagnostic label without changing its rendering inputs');
 assert.match(colorFillSource, /function createShadeReference\(sourceData, predicate = null, options = \{\}\)/,
   'shared ColorFill owns the peak-derived shading reference');
-assert.match(colorFillSource, /if \(lum > peakLuminance\) peakLuminance = lum;/,
-  'shared shade fill anchors target brightness to the brightest eligible authored pixel');
-assert.equal(fillDebug.peak, Number((200 / 255).toFixed(4)), 'diagnostics expose the authored peak used as the color anchor');
+assert.match(colorFillSource, /isAuthoredWhite\(sourceData\[i\], sourceData\[i \+ 1\], sourceData\[i \+ 2\]\)/,
+  'shared fill excludes white details from source reference and recoloring');
 assert.match(spriteRecolorSource, /colorFillApi\(\)\.shadeFillPixels\(data, targetRgb, predicateOrOptions\)/,
   'SpriteRecolor compatibility path delegates direct fills to ColorFill');
 assert.match(creatureRendererSource, /window\.ColorFill\?\.shadeFillPixels/,

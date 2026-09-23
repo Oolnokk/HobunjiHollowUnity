@@ -4,9 +4,9 @@
 (() => {
   'use strict';
 
-  if (Number(window.ColorFill?.version) >= 5) return;
+  if (Number(window.ColorFill?.version) >= 6) return;
 
-  const VERSION = 5;
+  const VERSION = 6;
   let lastShadeFill = null; // Mobile/debug diagnostics: most recent relative-shading fill.
   const lastShadeFillByLabel = new Map(); // Used by Pixel Probe to retain named renderer passes even when later generic fills overwrite "last".
   let shadeFillSequence = 0; // Monotonic render-pass id used to distinguish a current named fill from an older one in copied diagnostics.
@@ -81,6 +81,10 @@
     return Math.max(r, g, b) / 255; // HSV V without the conversion overhead; black-overlay shading scales this linearly.
   }
 
+  function isAuthoredWhite(r, g, b) {
+    return Math.min(r, g, b) >= 245; // Excludes white and its near-white antialiasing without rejecting cream or pale colored fur.
+  }
+
   function histogramMass(histogram, center, radius = 1) {
     let mass = 0;
     const lo = Math.max(0, center - radius), hi = Math.min(255, center + radius);
@@ -99,7 +103,8 @@
     const histogram = new Uint32Array(256);
     let count = 0;
     for (let i = 0; i < sourceData.length; i += 4) {
-      if (sourceData[i + 3] === 0 || (predicate && !predicate(i))) continue;
+      if (sourceData[i + 3] === 0 || (predicate && !predicate(i))
+        || isAuthoredWhite(sourceData[i], sourceData[i + 1], sourceData[i + 2])) continue;
       const bin = Math.max(0, Math.min(255, Math.round(sourceValue(sourceData[i], sourceData[i + 1], sourceData[i + 2]) * 255)));
       histogram[bin]++;
       count++;
@@ -110,7 +115,7 @@
     let bestBaseMass = -1;
     for (let bin = 1; bin <= 255; bin++) {
       const baseMass = histogramMass(histogram, bin);
-      if (!baseMass) continue; // A real flat cel reference should occur in the authored raster.
+      if (!histogram[bin]) continue; // The reference must be an actual authored pixel, not a neighboring histogram bin.
       const shadowBin = Math.round(bin * AUTHORED_SHADOW_VALUE_RATIO);
       const shadowMass = Math.abs(shadowBin - bin) > 2 ? histogramMass(histogram, shadowBin) : 0;
       const score = baseMass + shadowMass;
@@ -138,7 +143,8 @@
     let appliedCount = 0;
 
     for (let i = 0; i < data.length; i += 4) {
-      if (data[i + 3] === 0 || (applyPredicate && !applyPredicate(i))) continue;
+      if (data[i + 3] === 0 || (applyPredicate && !applyPredicate(i))
+        || isAuthoredWhite(sourceData[i], sourceData[i + 1], sourceData[i + 2])) continue;
       const value = sourceValue(sourceData[i], sourceData[i + 1], sourceData[i + 2]);
       // Equivalent to filling the cel with the requested color and layering
       // the recovered black shadow map back over it: base cel -> 1.0, the

@@ -167,8 +167,8 @@
     await loadScript('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js', () => !!window.THREE?.WebGLRenderer);
     await loadScript('https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js', () => !!window.THREE?.OrbitControls);
     await loadScript('../../js/GLTFLoader.js', () => !!window.THREE?.GLTFLoader);
-    await loadScript('../../js/color-fill.js?v=20260923colorfill4', () => !!window.ColorFill?.shadeFillPixels);
-    await loadScript('../../js/portrait-utils.js?v=20260923colorfill4', () => !!window.getShadeFillCanvas && !!window.parseHexColor);
+    await loadScript('../../js/color-fill.js?v=20260923colorfill6', () => !!window.ColorFill?.shadeFillPixels);
+    await loadScript('../../js/portrait-utils.js?v=20260923colorfill6', () => !!window.getShadeFillCanvas && !!window.parseHexColor);
     await loadScript('../../js/terrain-preview.js', () => !!window.TerrainPreview?.buildMergedZoneGrid);
     await loadScript('../../js/wilderness-map-generator.js', () => !!window.WildernessMapGenerator?.generateZoneWorkspace);
     await loadScript('../../js/locale-terrain-placement.js', () => !!window.LocaleTerrainPlacement?.evaluateCandidateForTest);

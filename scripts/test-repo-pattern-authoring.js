@@ -34,9 +34,7 @@ assert.match(tool, /ctx\.drawImage\(source, 0, 0, canvas\.width, canvas\.height\
 assert.match(tool, /SpriteRecolor\.recolorImageData\(imageData\.data, tintHex, 'direct'\)/, 'preview shade-fills the stretched raster through the same direct clothing recolor path');
 assert.match(spriteRecolor, /function directShadeFillPixels\(data, targetRgb, predicateOrOptions = null\)/, 'SpriteRecolor retains its public direct shade-fill compatibility seam');
 assert.match(spriteRecolor, /colorFillApi\(\)\.shadeFillPixels/, 'SpriteRecolor routes direct fills into the canonical ColorFill owner');
-assert.match(colorFill, /if \(lum > peakLuminance\) peakLuminance = lum;/, 'direct shade-fill derives its anchor from the brightest eligible source pixel');
-assert.doesNotMatch(colorFill, /luminanceBins|luminances\.sort/, 'direct shade-fill no longer needs median histogram/sort work');
-assert.match(colorFill, /lum \/ peakLuminance/, 'chosen tint brightness scales each source pixel relative to the sampled source-region peak');
+assert.match(colorFill, /isAuthoredWhite\(sourceData\[i\], sourceData\[i \+ 1\], sourceData\[i \+ 2\]\)/, 'white sprite pixels are excluded from the common recolor reference');
 assert.match(spriteRecolor, /directShadeFillPixels\(data, \[tr, tg, tb\], null\)/, 'SpriteRecolor direct mode routes through the shared shade-fill implementation');
 assert.doesNotMatch(spriteRecolor, /CreatureGeneticsRender\?\.recolorPixels/, 'pattern tint must not delegate back into the animal renderer');
 assert.match(weaving, /window\.ColorFill\?\.shadeFillPixels/, 'woven motif ink uses the canonical ColorFill shade implementation directly');
