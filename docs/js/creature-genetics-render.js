@@ -136,11 +136,17 @@
     let shadeReference = null; // Base coats may supply an exact authored source color instead of inferring a peak from unrelated sprite details.
     if (sourceReferenceHex) {
       const sourceRgb = hexToRgb(sourceReferenceHex);
-      shadeReference = shared.createShadeReference(px, predicate || null);
-      const referenceValue = Math.max(1 / 255, shared.relativeLuminance(...sourceRgb));
-      shadeReference.baseValue = referenceValue;
-      shadeReference.peakLuminance = referenceValue;
-      shadeReference.referenceHex = sourceReferenceHex.toUpperCase();
+      const luminanceOf = typeof shared.relativeLuminance === 'function'
+        ? shared.relativeLuminance
+        : ((r, g, b) => (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255);
+      const referenceValue = Math.max(1 / 255, luminanceOf(...sourceRgb));
+      shadeReference = {
+        baseValue: referenceValue,
+        peakLuminance: referenceValue,
+        count: 0,
+        referenceHex: sourceReferenceHex.toUpperCase(),
+      };
+      if (typeof shared.shadeFillConfig === 'function') shadeReference.config = shared.shadeFillConfig();
     }
     shared(px, targetRgb, {
       applyPredicate: predicate || null,
