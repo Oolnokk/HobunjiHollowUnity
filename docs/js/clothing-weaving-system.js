@@ -1400,6 +1400,7 @@
       }
       let img = await loadImageUrl(url);
       if (!img) continue;
+      const shadingSource = img; // Original authored raster; pattern ink samples this light/shadow field even after the base dye is applied.
       const pattern = weavingPatternForRole(weaving, role); // Determines whether this exact base/trim layer gets woven at all.
       const swapPatternColors = !!pattern && weavingSwapsPatternColorsForRole(weaving, role); // Swaps only this garment layer's cloth and pattern dyes.
       const clothColorHex = paletteKey === 'B' ? secondaryColorHex : primaryColorHex; // Original sprite dye retained as the pattern dye when swapping.
@@ -1428,7 +1429,7 @@
       // hook's tintKey does (see installPortraitHooks) — this layer's `img`
       // pixels, which the pattern's shade-fill reads its light/dark variation
       // from, depend on which dye tinted it, not just its own url.
-      if (pattern) img = await applyPatternToTintedImage(img, pattern, layerPatternHex, `layer:${url}:${tintValue}:swap${swapPatternColors ? 1 : 0}`);
+      if (pattern) img = await applyPatternToTintedImage(img, pattern, layerPatternHex, `layer:${url}:${tintValue}:swap${swapPatternColors ? 1 : 0}`, shadingSource, 'woven-motif');
       rendered.push(img);
     }
     if (!rendered.length) return { canvas: null, layers };
@@ -1988,7 +1989,7 @@
     return motifDataUrl ? { ...pattern, motifDataUrl } : pattern;
   }
 
-  async function applyPatternToTintedImage(imageOrCanvas, pattern, colorHex, cachePrefix = '') {
+  async function applyPatternToTintedImage(imageOrCanvas, pattern, colorHex, cachePrefix = '', shadingSource = null, debugLabel = 'woven-motif') {
     if (!imageOrCanvas || !(pattern?.motifDataUrl || pattern?.motifUrl || pattern?.customMotifId)) return imageOrCanvas;
     const width = imageOrCanvas.naturalWidth || imageOrCanvas.width || 1, height = imageOrCanvas.naturalHeight || imageOrCanvas.height || 1;
     const key = patternCanvasKey(imageOrCanvas, pattern, colorHex, cachePrefix);
@@ -2010,19 +2011,30 @@
     const ctx = out.getContext('2d');
     ctx.drawImage(imageOrCanvas, 0, 0, width, height);
     const base = ctx.getImageData(0, 0, width, height);
+    let shadeSourceData = base.data; // Defaults to the visible base for callers that do not have the pre-tint raster.
+    if (shadingSource) {
+      try {
+        const shadeCanvas = Object.assign(document.createElement('canvas'), { width, height });
+        const shadeCtx = shadeCanvas.getContext('2d');
+        shadeCtx.drawImage(shadingSource, 0, 0, width, height);
+        shadeSourceData = shadeCtx.getImageData(0, 0, width, height).data;
+      } catch (_) {
+        shadeSourceData = base.data;
+      }
+    }
     const paddedMaskData = patternMaskCanvas.getContext('2d').getImageData(0, 0, maskWidth, height + pad * 2).data;
     const separatorCanvas = patternMaskCanvas.__motifClusterSeparatorCanvas;
     const paddedSeparatorData = separatorCanvas ? separatorCanvas.getContext('2d').getImageData(0, 0, maskWidth, height + pad * 2).data : null; // Same pattern-space raster as paddedMaskData, but only the intra-instance no-fuse watershed.
     const [r, g, b] = hexRgb(colorHex);
-    // Motif ink uses SpriteRecolor's exact canonical direct shade-fill, the
-    // same function used for the garment base and animal recoloring.
-    const directShadeFill = window.SpriteRecolor?.directShadeFillPixels;
+    // Motif ink uses the same canonical source-art shade fill as garment
+    // bases, animal coats/surface paint, and tools.
+    const directShadeFill = window.ColorFill?.shadeFillPixels;
 
     const pixelCount = width * height;
     const garmentMask = new Uint8Array(pixelCount); // Opaque, non-authored-outline cloth pixels — this pattern's equivalent of the tool's metalMask.
     for (let p = 0, i = 0; i < base.data.length; i += 4, p++) {
-      const maxChannel = Math.max(base.data[i], base.data[i + 1], base.data[i + 2]); // Used to preserve authored near-black garment outlines under the weave overlay.
-      if (base.data[i + 3] > 8 && maxChannel > 28) garmentMask[p] = 1;
+      const maxChannel = Math.max(shadeSourceData[i], shadeSourceData[i + 1], shadeSourceData[i + 2]); // Authored source determines cloth/outline membership even after a dark dye.
+      if (shadeSourceData[i + 3] > 8 && maxChannel > 28) garmentMask[p] = 1;
     }
 
     // Each disconnected cell of the garment samples the same tiled pattern
@@ -2047,26 +2059,16 @@
     // final sampled silhouette without a second, output-pixel morphology pass.
     const adjustedMask = patternMask;
 
-    if (typeof directShadeFill === 'function') {
-      directShadeFill(base.data, [r, g, b], i => {
+    if (typeof directShadeFill !== 'function') throw new Error('ColorFill unavailable during woven pattern composition');
+    directShadeFill(base.data, [r, g, b], {
+      sourceData: shadeSourceData,
+      debugLabel, // Caller-specific label lets Pixel Probe distinguish clothing weaving from animal/editor uses of this same compositor.
+      samplePredicate: i => !!garmentMask[i >> 2], // Measure the whole cloth/body region.
+      applyPredicate: i => {
         const p = i >> 2;
-        return !!garmentMask[p] && !!adjustedMask[p];
-      });
-    } else {
-      // Bootstrap-only fallback if SpriteRecolor failed to load.
-      const shadeCfg = window.SpriteRecolor?.shadeFillConfig?.() || { shadowFloor: 0.18, highlightBoost: 1.18, neutralLuminance: 0.55, gamma: 1 };
-      const luminanceOf = window.SpriteRecolor?.relativeLuminance || ((rr, gg, bb) => (0.2126 * rr + 0.7152 * gg + 0.0722 * bb) / 255);
-      const neutralLuminance = Math.max(0.0001, shadeCfg.neutralLuminance);
-      for (let p = 0, i = 0; i < base.data.length; i += 4, p++) {
-        if (!garmentMask[p] || !adjustedMask[p]) continue;
-        const lum = luminanceOf(base.data[i], base.data[i + 1], base.data[i + 2]);
-        const normalized = Math.pow(Math.max(0, lum) / neutralLuminance, shadeCfg.gamma);
-        const shade = Math.max(shadeCfg.shadowFloor, Math.min(shadeCfg.highlightBoost, normalized));
-        base.data[i] = Math.max(0, Math.min(255, Math.round(r * shade)));
-        base.data[i + 1] = Math.max(0, Math.min(255, Math.round(g * shade)));
-        base.data[i + 2] = Math.max(0, Math.min(255, Math.round(b * shade)));
-      }
-    }
+        return !!garmentMask[p] && !!adjustedMask[p]; // Paint only motif-covered pixels.
+      },
+    });
 
     // buildPatternMask flattened every repeated stamp into one alpha field before
     // patternMask/adjustedMask were derived, so overlapping repeats intentionally
@@ -2123,7 +2125,7 @@
       if (cached) return cached;
       if (!pendingPatternCanvasKeys.has(fullKey)) {
         pendingPatternCanvasKeys.add(fullKey);
-        applyPatternToTintedImage(tinted, pattern, colorHex, prefix).then(() => {
+        applyPatternToTintedImage(tinted, pattern, colorHex, prefix, img, 'woven-motif').then(() => {
           requestPlayerAvatarRefresh();
         }).catch(error => { lastError = String(error?.message || error); }).finally(() => pendingPatternCanvasKeys.delete(fullKey));
       }

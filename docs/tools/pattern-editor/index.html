@@ -17,6 +17,7 @@ input,select{width:100%;background:#0d1621;border:1px solid rgba(255,255,255,.14
 @media(max-width:760px){.grid{grid-template-columns:1fr}.fields{grid-template-columns:1fr 1fr}.fields label:first-child{grid-column:1/-1}.previewWrap{min-height:230px}}
 </style>
 <script src="../../js/scene-ready-poller.js"></script>
+<script src="../../js/color-fill.js?v=20260923colorfill6"></script>
 <script src="../../js/sprite-recolor.js"></script>
 <script src="../../js/clothing-weaving-system.js"></script>
 <script src="../../js/pattern-authoring.js"></script>
@@ -112,6 +113,9 @@ JSON → config/patterns/pattern_&lt;pattern name&gt;.json</div>
     try {
       const source = await loadPreviewTexture(textureName);
       ctx.drawImage(source, 0, 0, canvas.width, canvas.height); // Stretch-to-fit once, analogous to clothing using its source raster at the full working-layer dimensions.
+      const shadeSource = Object.assign(document.createElement('canvas'), { width: canvas.width, height: canvas.height }); // Untinted source used by motif ink so preview shading matches runtime inheritance.
+      shadeSource.getContext('2d').drawImage(source, 0, 0, canvas.width, canvas.height);
+      canvas.__hobunjiShadeSource = shadeSource;
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       window.SpriteRecolor.recolorImageData(imageData.data, tintHex, 'direct'); // Same direct shade-fill path renderClothingLayers uses before weaving.
       ctx.putImageData(imageData, 0, 0);
@@ -130,7 +134,9 @@ JSON → config/patterns/pattern_&lt;pattern name&gt;.json</div>
       base,
       pattern,
       $('inkColor').value,
-      'pattern-tool:' + $('surfaceTexture').value + ':' + $('baseColor').value + ':' + $('inkColor').value
+      'pattern-tool:' + $('surfaceTexture').value + ':' + $('baseColor').value + ':' + $('inkColor').value,
+      base.__hobunjiShadeSource || null,
+      'pattern-editor-motif'
     );
   }
 

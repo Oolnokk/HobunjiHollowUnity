@@ -24,55 +24,18 @@
     return [(value >> 16) & 255, (value >> 8) & 255, value & 255];
   }
 
-  function rgbToHsv(r, g, b) {
-    r /= 255; g /= 255; b /= 255;
-    const max = Math.max(r, g, b);
-    const min = Math.min(r, g, b);
-    const delta = max - min;
-    let h = 0;
-    if (delta !== 0) {
-      if (max === r) h = 60 * (((g - b) / delta) % 6);
-      else if (max === g) h = 60 * (((b - r) / delta) + 2);
-      else h = 60 * (((r - g) / delta) + 4);
-    }
-    if (h < 0) h += 360;
-    const s = max === 0 ? 0 : delta / max;
-    return { h, s, v: max };
+  function colorFillApi() {
+    const api = window.ColorFill;
+    if (!api) throw new Error('ColorFill must load before tool-metal-recolor.js');
+    return api;
   }
 
-  function hsvToRgb(h, s, v) {
-    h = ((h % 360) + 360) % 360;
-    s = clamp01(s);
-    v = clamp01(v);
-    const c = v * s;
-    const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
-    const m = v - c;
-    let rp = 0, gp = 0, bp = 0;
-    if (h < 60) [rp, gp, bp] = [c, x, 0];
-    else if (h < 120) [rp, gp, bp] = [x, c, 0];
-    else if (h < 180) [rp, gp, bp] = [0, c, x];
-    else if (h < 240) [rp, gp, bp] = [0, x, c];
-    else if (h < 300) [rp, gp, bp] = [x, 0, c];
-    else [rp, gp, bp] = [c, 0, x];
-    return [
-      Math.round((rp + m) * 255),
-      Math.round((gp + m) * 255),
-      Math.round((bp + m) * 255),
-    ];
-  }
-
-  function hueDistance(a, b) {
-    return Math.abs((((a - b) % 360) + 540) % 360 - 180);
-  }
+  function rgbToHsv(r, g, b) { return colorFillApi().rgbToHsv(r, g, b); }
+  function hsvToRgb(h, s, v) { return colorFillApi().hsvToRgb(h, s, v); }
+  function hueDistance(a, b) { return colorFillApi().hueDistance(a, b); }
 
   function clamp01(value) {
     return Math.max(0, Math.min(1, Number(value) || 0));
-  }
-
-  function resolveOutputSaturation(originalS, sourceS, targetS, mode) {
-    if (mode === 'original') return clamp01(originalS);
-    if (mode === 'offset') return clamp01(targetS + (originalS - sourceS));
-    return clamp01(targetS);
   }
 
   function debugEnabled(opts = {}) {
@@ -663,8 +626,7 @@
     const { data, width, height } = imageData;
     const src = new Uint8ClampedArray(data);
     const sourceHsv = rgbToHsv(...hexToRgb(opts.sourceHex || SOURCE_HEX));
-    const targetHsv = rgbToHsv(...hexToRgb(opts.targetHex));
-    const verdigrisHsv = opts.verdigrisHex ? rgbToHsv(...hexToRgb(opts.verdigrisHex)) : null;
+    const targetRgb = hexToRgb(opts.targetHex);
     const hueTol = opts.hueToleranceDeg ?? DEFAULT_HUE_TOL_DEG;
     const satTol = opts.saturationTolerance ?? DEFAULT_SAT_TOL;
     const alphaMin = opts.alphaMin ?? DEFAULT_ALPHA_MIN;
@@ -672,6 +634,8 @@
     const metalMask = new Uint8Array(width * height);
     let matchedMetalPixels = 0;
 
+    // Detection remains source-keyed, but actual recoloring is delegated to
+    // ColorFill so tools do not maintain a private fill implementation.
     for (let i = 0; i < src.length; i += 4) {
       const alpha = src[i + 3];
       if (alpha < alphaMin) continue;
@@ -679,17 +643,16 @@
       const hueOk = hueDistance(hsv.h, sourceHsv.h) <= hueTol;
       const satOk = Math.abs(hsv.s - sourceHsv.s) <= satTol;
       if (!hueOk || !satOk) continue;
-
-      const pixelIndex = i >> 2;
-      metalMask[pixelIndex] = 1;
+      metalMask[i >> 2] = 1;
       matchedMetalPixels++;
-      const newSat = resolveOutputSaturation(hsv.s, sourceHsv.s, targetHsv.s, saturationMode);
-      const [r, g, b] = hsvToRgb(targetHsv.h, newSat, hsv.v);
-      data[i] = r;
-      data[i + 1] = g;
-      data[i + 2] = b;
-      data[i + 3] = alpha;
     }
+    colorFillApi().hsvValueFillPixels(data, targetRgb, {
+      sourceData: src,
+      applyPredicate: i => !!metalMask[i >> 2],
+      saturationMode,
+      sourceReferenceSaturation: sourceHsv.s,
+    });
+
 
     debugLog(opts, 'source match', {
       sourceHex: opts.sourceHex || SOURCE_HEX,
@@ -712,7 +675,7 @@
     const authoredPattern = opts.authoredPattern;
     const motifImg = opts.motifImage;
 
-    if (!verdigrisHsv || !opts.verdigrisHex || (!authoredPattern && !clamp01(opts.oxidationAmount))) {
+    if (!opts.verdigrisHex || (!authoredPattern && !clamp01(opts.oxidationAmount))) {
       debugLog(opts, 'oxidation skipped', {
         oxidationAmount: clamp01(opts.oxidationAmount),
         hasVerdigrisColor: !!opts.verdigrisHex,
@@ -758,17 +721,12 @@
     );
 
     let oxidizedPixels = 0;
-    for (let p = 0; p < oxidationMask.length; p++) {
-      if (!oxidationMask[p]) continue;
-      oxidizedPixels++;
-      const i = p * 4;
-      const original = rgbToHsv(src[i], src[i + 1], src[i + 2]);
-      const [r, g, b] = hsvToRgb(verdigrisHsv.h, verdigrisHsv.s, original.v);
-      data[i] = r;
-      data[i + 1] = g;
-      data[i + 2] = b;
-      data[i + 3] = src[i + 3];
-    }
+    for (let p = 0; p < oxidationMask.length; p++) if (oxidationMask[p]) oxidizedPixels++;
+    colorFillApi().hsvValueFillPixels(data, hexToRgb(opts.verdigrisHex), {
+      sourceData: src,
+      applyPredicate: i => !!oxidationMask[i >> 2],
+      saturationMode: 'target',
+    });
 
     let outlinePixels = 0;
     for (let p = 0; p < outlineMask.length; p++) {

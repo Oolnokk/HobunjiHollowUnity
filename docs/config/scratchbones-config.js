@@ -1447,10 +1447,10 @@ window.SCRATCHBONES_CONFIG = {
     },
     "portrait": {
       // Tintable portrait PNG convention: alpha controls shape/opacity. The
-      // default shade-fill transform scales the selected target color by each
-      // source pixel's luminance, preserving shading and patterns for bodies,
-      // wild-animal markings, and clothing. See getShadeFillCanvas in
-      // portrait-utils.js. Explicit hueSatFill overrides remain supported.
+      // default shade-fill transform maps the brightest eligible authored pixel
+      // to the selected target color and scales every darker pixel from that
+      // peak, preserving authored shading for bodies, animal markings, clothing,
+      // and weaving. See getShadeFillCanvas in portrait-utils.js.
       "tinting": {
         "preserveNearBlackOutlines": true,
         "outlineThreshold": 0.08,

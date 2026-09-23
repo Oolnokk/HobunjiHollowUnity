@@ -272,10 +272,88 @@ now = 10000;
 assert.equal(windowStub.Combat.getMovementSpeedMul(), 1, 'movement weight has no out-of-combat slowdown');
 
 const source = fs.readFileSync('docs/js/clothing-weaving-system.js', 'utf8');
+const colorFillSource = fs.readFileSync('docs/js/color-fill.js', 'utf8'); // Canonical source-art shading/value-fill math shared across rendered game assets.
+const spriteRecolorSource = fs.readFileSync('docs/js/sprite-recolor.js', 'utf8'); // Compatibility wrapper used by authored item sprites and existing callers.
+const creatureRendererSource = fs.readFileSync('docs/js/creature-genetics-render.js', 'utf8'); // Verifies animal tinting uses the same canonical fill owner.
+const pixelProbeSource = fs.readFileSync('docs/js/pixel-probe.js', 'utf8'); // Keeps mobile-visible diagnostics wired to the shared fill module.
 const patternAuthorSource = fs.readFileSync('docs/js/pattern-authoring.js', 'utf8'); // Used below to lock the normalized shared Pattern scale authoring range.
 const metalPatternSource = fs.readFileSync('docs/js/tool-metal-recolor.js', 'utf8'); // Used below to prevent weaving-only scale normalization from shrinking existing verdigris patterns.
 const equipmentPanelSource = fs.readFileSync('docs/js/equipment-panel.js', 'utf8'); // Guards the inventory icon handoff so woven composites are not tinted a second time.
 const inventoryUiSource = fs.readFileSync('docs/js/inventory-ui.js', 'utf8'); // Guards the one-shot async Pack icon refresh path; no per-frame pattern compositing.
+
+const colorFillWindow = { SCRATCHBONES_CONFIG: { game: { portrait: { tinting: {} } } } }; // Isolated runtime used to prove sample-mask and paint-mask shading behavior.
+const colorFillContext = vm.createContext({ window: colorFillWindow, console });
+vm.runInContext(colorFillSource, colorFillContext, { filename: 'color-fill.js' });
+const shadowSource = new Uint8ClampedArray([
+  14, 12, 10, 255,   // 30%-black shadow of the near-black flat cel below (max value 14 = 70% of 20).
+  20, 17, 14, 255,   // Near-black authored flat cel; this must become the requested color exactly.
+  255, 255, 255, 255, // Small white/light detail: must NOT become the shading reference.
+]);
+const shadowProbe = new Uint8ClampedArray(shadowSource);
+colorFillWindow.ColorFill.shadeFillPixels(shadowProbe, [240, 220, 180], {
+  sourceData: shadowSource,
+  debugLabel: 'woven-motif',
+  samplePredicate: () => true,
+  applyPredicate: i => i === 0,
+});
+assert.deepEqual(Array.from(shadowProbe.slice(0, 3)), [168, 154, 126],
+  '30%-black authored shadow reapplies as a 30% darkening of the requested color');
+assert.deepEqual(Array.from(shadowProbe.slice(4, 12)), [20, 17, 14, 255, 255, 255, 255, 255],
+  'shade-map inheritance paints only motif-selected pixels while sampling the whole source region');
+const fillDebug = colorFillWindow.ColorFill.debugSnapshot().lastShadeFill;
+assert.equal(fillDebug.sampledCount, 2, 'shared shade fill excludes white details from its source reference');
+assert.equal(fillDebug.appliedCount, 1, 'shared shade fill paints only the motif mask');
+assert.equal(fillDebug.separateSampleMask, true, 'diagnostics expose separate sample and application masks');
+assert.equal(fillDebug.externalSource, true, 'diagnostics prove woven fill sampled the original untinted source raster');
+assert.equal(fillDebug.baseValue, Number((20 / 255).toFixed(4)),
+  'white outlier does not hijack the inferred near-black flat-cel reference');
+const wovenDebug = colorFillWindow.ColorFill.debugSnapshot().shadeFillsByLabel['woven-motif'];
+assert.equal(wovenDebug.sequence, fillDebug.sequence, 'named woven diagnostic retains the exact motif pass for Pixel Probe');
+assert.equal(wovenDebug.appliedCount, 1, 'named woven diagnostic keeps motif-only paint count');
+
+const mapProbe = new Uint8ClampedArray(shadowSource);
+colorFillWindow.ColorFill.shadeFillPixels(mapProbe, [240, 220, 180], {
+  sourceData: shadowSource,
+  samplePredicate: () => true,
+  applyPredicate: i => i < 8,
+});
+assert.deepEqual(Array.from(mapProbe.slice(0, 8)), [
+  168, 154, 126, 255,
+  240, 220, 180, 255,
+], 'direct target fill plus recovered black-opacity map reproduces flat cel and 30%-black shadow exactly');
+const whiteDetailProbe = new Uint8ClampedArray([
+  14, 12, 10, 255, 20, 17, 14, 255,
+  255, 255, 255, 255, 248, 248, 248, 255, 250, 246, 220, 255,
+]); // Verifies white details stay out of a dark fur reference while pale cream remains eligible.
+const whiteReference = colorFillWindow.ColorFill.createShadeReference(whiteDetailProbe);
+assert.equal(whiteReference.count, 3, 'white and near-white neutral details are excluded, while pale cream is retained');
+colorFillWindow.ColorFill.shadeFillPixels(whiteDetailProbe, [240, 220, 180]);
+assert.deepEqual(Array.from(whiteDetailProbe.slice(8, 16)), [255, 255, 255, 255, 248, 248, 248, 255],
+  'authored white details remain unchanged by the shared fill');
+assert.match(colorFillSource, /AUTHORED_SHADOW_VALUE_RATIO = 0\.70/,
+  'shared ColorFill encodes the authored 30%-black shadow convention');
+assert.match(colorFillSource, /const score = baseMass \+ shadowMass;/,
+  'flat-cel reference is inferred from the base/shadow value pair instead of the absolute brightest pixel');
+assert.match(colorFillSource, /value \/ baseValue/,
+  'final tint reapplies the recovered shadow map as a relative value multiplier');
+assert.match(source, /shadingSource = null, debugLabel = 'woven-motif'/,
+  'shared motif compositor accepts a caller-specific diagnostic label without changing its rendering inputs');
+assert.match(colorFillSource, /function createShadeReference\(sourceData, predicate = null, options = \{\}\)/,
+  'shared ColorFill owns the peak-derived shading reference');
+assert.match(colorFillSource, /isAuthoredWhite\(sourceData\[i\], sourceData\[i \+ 1\], sourceData\[i \+ 2\]\)/,
+  'shared fill excludes white details from source reference and recoloring');
+assert.match(spriteRecolorSource, /colorFillApi\(\)\.shadeFillPixels\(data, targetRgb, predicateOrOptions\)/,
+  'SpriteRecolor compatibility path delegates direct fills to ColorFill');
+assert.match(creatureRendererSource, /window\.ColorFill\?\.shadeFillPixels/,
+  'animals use the same ColorFill shade-fill implementation as weaving');
+assert.match(metalPatternSource, /colorFillApi\(\)\.hsvValueFillPixels/,
+  'tool metal and verdigris value-preserving fills use the same ColorFill module');
+assert.match(source, /sourceData: shadeSourceData,[\s\S]*?debugLabel,[\s\S]*?samplePredicate:[\s\S]*?garmentMask[\s\S]*?applyPredicate:/,
+  'woven motif color samples the whole authored cloth/body region separately from the motif paint mask');
+assert.match(source, /applyPatternToTintedImage\(tinted, pattern, colorHex, prefix, img, 'woven-motif'\)/,
+  'runtime woven portrait composition passes the original authored raster and clothing-only diagnostic label');
+assert.match(pixelProbeSource, /Color fill: \$\{shadeText\}; \$\{hsvText\}/,
+  'Pixel Probe exposes shared color-fill source/sample diagnostics on mobile');
 assert.match(source, /PatternLibrary\.listAvailable/, 'loom reuses shared pattern library');
 assert.match(source, /PatternAuthoring\?\.openEditor/, 'loom reuses shared pattern authoring workflow');
 assert.match(source, /HOOD_C/);

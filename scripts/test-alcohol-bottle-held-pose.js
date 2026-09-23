@@ -11,6 +11,7 @@ const root = path.resolve(__dirname, '..');
 const game = fs.readFileSync(path.join(root, 'docs/game.js'), 'utf8');
 // Combat source is inspected below to keep drinking and visual alcohol classification aligned.
 const combatCore = fs.readFileSync(path.join(root, 'docs/js/combat/combat-core.js'), 'utf8');
+const colorFillSource = fs.readFileSync(path.join(root, 'docs/js/color-fill.js'), 'utf8'); // Shared color math dependency for sprite recoloring.
 const recolorSource = fs.readFileSync(path.join(root, 'docs/js/sprite-recolor.js'), 'utf8');
 // Pixel Probe source verifies mobile-visible diagnostics for asynchronous recolor failures.
 const pixelProbe = fs.readFileSync(path.join(root, 'docs/js/pixel-probe.js'), 'utf8');
@@ -20,8 +21,8 @@ const itemProcessing = fs.readFileSync(path.join(root, 'docs/js/item-processing.
 const hudUpdate = fs.readFileSync(path.join(root, 'docs/js/hud-update.js'), 'utf8');
 const actionArcUi = fs.readFileSync(path.join(root, 'docs/js/action-arc-ui.js'), 'utf8');
 
-assert.match(recolorSource, /CreatureGeneticsRender\?\.recolorPixels[\s\S]*?CreatureGeneticsRender\.recolorPixels/,
-  'direct whole-sprite fills still delegate to the animal shade-fill recolorer');
+assert.match(recolorSource, /colorFillApi\(\)\.shadeFillPixels/,
+  'direct whole-sprite fills delegate to the shared ColorFill shade-fill implementation');
 assert.match(recolorSource, /img\.crossOrigin\s*=\s*'anonymous';[\s\S]*?img\.src\s*=\s*spritePath/,
   'item sprites use the animal loader CORS mode before canvas pixel readback');
 assert.match(recolorSource,
@@ -29,6 +30,7 @@ assert.match(recolorSource,
   'fish catalog bootstrap stays inert when rendering helpers run without a browser DOM');
 
 const recolorContext = { window: {} };
+vm.runInNewContext(colorFillSource, recolorContext);
 vm.runInNewContext(recolorSource, recolorContext);
 const { recolorImageData } = recolorContext.window.SpriteRecolor;
 const keyedPixels = new Uint8ClampedArray([

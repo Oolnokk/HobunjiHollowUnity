@@ -18,100 +18,23 @@
   const DEFAULT_KEY_B = [0x69, 0x8F, 0x4E];
   const KEY_HUE_TOLERANCE = 35;
 
-  function clampByte(value) {
-    return Math.max(0, Math.min(255, Math.round(value)));
+  function colorFillApi() {
+    const api = window.ColorFill;
+    if (!api) throw new Error('ColorFill must load before sprite-recolor.js');
+    return api;
   }
 
-  function relativeLuminance(r, g, b) {
-    return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
-  }
-
-  function rgbToHsv(r, g, b) {
-    r /= 255; g /= 255; b /= 255;
-    const max = Math.max(r, g, b), min = Math.min(r, g, b);
-    const delta = max - min;
-    let hue = 0;
-    if (delta !== 0) {
-      if (max === r) hue = ((g - b) / delta) % 6;
-      else if (max === g) hue = (b - r) / delta + 2;
-      else hue = (r - g) / delta + 4;
-      hue *= 60;
-      if (hue < 0) hue += 360;
-    }
-    return { h: hue, s: max === 0 ? 0 : delta / max, v: max };
-  }
-
-  function hsvToRgb(h, s, v) {
-    const hue = ((Number(h) % 360) + 360) % 360;
-    const chroma = v * s;
-    const secondary = chroma * (1 - Math.abs(((hue / 60) % 2) - 1));
-    const offset = v - chroma;
-    let r = 0, g = 0, b = 0;
-    if (hue < 60) { r = chroma; g = secondary; }
-    else if (hue < 120) { r = secondary; g = chroma; }
-    else if (hue < 180) { g = chroma; b = secondary; }
-    else if (hue < 240) { g = secondary; b = chroma; }
-    else if (hue < 300) { r = secondary; b = chroma; }
-    else { r = chroma; b = secondary; }
-    return [clampByte((r + offset) * 255), clampByte((g + offset) * 255), clampByte((b + offset) * 255)];
-  }
-
-  function hueDistance(a, b) {
-    const difference = Math.abs(a - b) % 360;
-    return Math.min(difference, 360 - difference);
-  }
+  function relativeLuminance(r, g, b) { return colorFillApi().relativeLuminance(r, g, b); }
+  function rgbToHsv(r, g, b) { return colorFillApi().rgbToHsv(r, g, b); }
+  function hsvToRgb(h, s, v) { return colorFillApi().hsvToRgb(h, s, v); }
+  function hueDistance(a, b) { return colorFillApi().hueDistance(a, b); }
 
   function shadeFillConfig() {
-    const cfg = window.SCRATCHBONES_CONFIG?.game?.portrait?.tinting || {};
-    return {
-      shadowFloor: Number.isFinite(Number(cfg.shadowFloor)) ? Number(cfg.shadowFloor) : 0.18,
-      highlightBoost: Number.isFinite(Number(cfg.highlightBoost)) ? Number(cfg.highlightBoost) : 1.18,
-      neutralLuminance: Number.isFinite(Number(cfg.neutralLuminance)) ? Number(cfg.neutralLuminance) : 0.55,
-      gamma: Number.isFinite(Number(cfg.gamma)) && Number(cfg.gamma) > 0 ? Number(cfg.gamma) : 1,
-      preserveNearBlackOutlines: cfg.preserveNearBlackOutlines !== false,
-      outlineThreshold: Number.isFinite(Number(cfg.outlineThreshold)) ? Number(cfg.outlineThreshold) : 0.08,
-    };
+    return colorFillApi().shadeFillConfig();
   }
 
-  function directShadeFillPixels(data, targetRgb, predicate = null) {
-    const [tr, tg, tb] = targetRgb; // Canonical direct pattern/weaving tint target; cloth, motifs, and animals all call this exact implementation.
-    const cfg = shadeFillConfig();
-
-    // The chosen RGB is the neutral/overall color. Source art contributes only
-    // relative shading: normalize every affected pixel around the affected
-    // region's own median luminance instead of comparing it to one global
-    // absolute luminance. A dark source sprite therefore stays shaded but no
-    // longer drags the selected color dark as a whole.
-    const luminanceBins = new Uint32Array(256); // O(n+256) median histogram avoids sorting/allocating one Number per tinted pixel on repeated animal/cloth composites.
-    let luminanceCount = 0;
-    for (let i = 0; i < data.length; i += 4) {
-      if (data[i + 3] === 0 || (predicate && !predicate(i))) continue;
-      const lum = relativeLuminance(data[i], data[i + 1], data[i + 2]);
-      if (cfg.preserveNearBlackOutlines && lum <= cfg.outlineThreshold) continue;
-      luminanceBins[Math.max(0, Math.min(255, Math.round(lum * 255)))]++;
-      luminanceCount++;
-    }
-    if (!luminanceCount) return;
-    const lowerRank = (luminanceCount - 1) >> 1;
-    const upperRank = luminanceCount >> 1;
-    let seen = 0, lowerBin = 0, upperBin = 0;
-    for (let bin = 0; bin < luminanceBins.length; bin++) {
-      seen += luminanceBins[bin];
-      if (seen > lowerRank && !lowerBin) lowerBin = bin;
-      if (seen > upperRank) { upperBin = bin; break; }
-    }
-    const neutral = Math.max(0.0001, ((lowerBin + upperBin) * 0.5) / 255);
-
-    for (let i = 0; i < data.length; i += 4) {
-      if (data[i + 3] === 0 || (predicate && !predicate(i))) continue;
-      const lum = relativeLuminance(data[i], data[i + 1], data[i + 2]);
-      if (cfg.preserveNearBlackOutlines && lum <= cfg.outlineThreshold) continue;
-      const normalized = Math.pow(Math.max(0, lum) / neutral, cfg.gamma);
-      const shade = Math.max(cfg.shadowFloor, Math.min(cfg.highlightBoost, normalized));
-      data[i] = clampByte(tr * shade);
-      data[i + 1] = clampByte(tg * shade);
-      data[i + 2] = clampByte(tb * shade);
-    }
+  function directShadeFillPixels(data, targetRgb, predicateOrOptions = null) {
+    return colorFillApi().shadeFillPixels(data, targetRgb, predicateOrOptions);
   }
 
   function recolorImageData(data, targetHex, mode, opts) {
@@ -151,7 +74,7 @@
 
   function getRecoloredCanvas(spritePath, targetHex, mode, opts) {
     if (typeof mode === 'string' && mode.startsWith('fish:') && window.FishCatalog?.getRecoloredCanvas) return window.FishCatalog.getRecoloredCanvas(spritePath, mode.slice(5));
-    const cacheKey='hue-key-value-v2|'+spritePath+'|'+mode+'|'+targetHex;
+    const cacheKey='shared-color-fill-v1|'+spritePath+'|'+mode+'|'+targetHex;
     const cached=_canvasCache.get(cacheKey);
     if(cached)return Promise.resolve(cached);
     return loadImage(spritePath).then(img=>{
