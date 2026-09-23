@@ -4,9 +4,9 @@
 (() => {
   'use strict';
 
-  if (Number(window.ColorFill?.version) >= 4) return;
+  if (Number(window.ColorFill?.version) >= 5) return;
 
-  const VERSION = 4;
+  const VERSION = 5;
   let lastShadeFill = null; // Mobile/debug diagnostics: most recent relative-shading fill.
   const lastShadeFillByLabel = new Map(); // Used by Pixel Probe to retain named renderer passes even when later generic fills overwrite "last".
   let shadeFillSequence = 0; // Monotonic render-pass id used to distinguish a current named fill from an older one in copied diagnostics.
@@ -75,24 +75,55 @@
     return predicateOrOptions && typeof predicateOrOptions === 'object' ? predicateOrOptions : {};
   }
 
-  // Measure the source art independently from the pixels that will ultimately
-  // receive color. The brightest eligible authored pixel is the reference:
-  // it maps to the requested target color, while every darker pixel keeps its
-  // relative luminance below that peak. Woven/surface motifs therefore sample
-  // the whole garment/body region even when the motif itself lands in shadow.
+  const AUTHORED_SHADOW_VALUE_RATIO = 0.70; // Source art shades flat cels by drawing black on a 30%-opacity layer.
+
+  function sourceValue(r, g, b) {
+    return Math.max(r, g, b) / 255; // HSV V without the conversion overhead; black-overlay shading scales this linearly.
+  }
+
+  function histogramMass(histogram, center, radius = 1) {
+    let mass = 0;
+    const lo = Math.max(0, center - radius), hi = Math.min(255, center + radius);
+    for (let bin = lo; bin <= hi; bin++) mass += histogram[bin];
+    return mass;
+  }
+
+  // Recover the flat authored cel value from the selected source region rather
+  // than treating the brightest pixel as the base. Source sprites are authored
+  // as one flat color plus a 30%-opacity black shadow layer, so the same color
+  // normally appears as a base-value cluster and a ~70%-value shadow cluster.
+  // Scoring that pair lets a tiny white/light detail stay an outlier instead of
+  // hijacking the entire recolor reference.
   function createShadeReference(sourceData, predicate = null, options = {}) {
     const cfg = options.config || shadeFillConfig();
-    let peakLuminance = 0;
+    const histogram = new Uint32Array(256);
     let count = 0;
     for (let i = 0; i < sourceData.length; i += 4) {
       if (sourceData[i + 3] === 0 || (predicate && !predicate(i))) continue;
-      const lum = relativeLuminance(sourceData[i], sourceData[i + 1], sourceData[i + 2]);
-      if (cfg.preserveNearBlackOutlines && lum <= cfg.outlineThreshold) continue;
-      if (lum > peakLuminance) peakLuminance = lum;
+      const bin = Math.max(0, Math.min(255, Math.round(sourceValue(sourceData[i], sourceData[i + 1], sourceData[i + 2]) * 255)));
+      histogram[bin]++;
       count++;
     }
-    const fallback = Math.max(0.0001, Number(cfg.neutralLuminance) || 0.55); // Legacy config remains only as a no-sample safety fallback.
-    return { peakLuminance: Math.max(0.0001, peakLuminance || fallback), count, config: cfg };
+
+    let bestBin = 0;
+    let bestScore = -1;
+    let bestBaseMass = -1;
+    for (let bin = 1; bin <= 255; bin++) {
+      const baseMass = histogramMass(histogram, bin);
+      if (!baseMass) continue; // A real flat cel reference should occur in the authored raster.
+      const shadowBin = Math.round(bin * AUTHORED_SHADOW_VALUE_RATIO);
+      const shadowMass = Math.abs(shadowBin - bin) > 2 ? histogramMass(histogram, shadowBin) : 0;
+      const score = baseMass + shadowMass;
+      if (score > bestScore || (score === bestScore && baseMass > bestBaseMass)) {
+        bestBin = bin;
+        bestScore = score;
+        bestBaseMass = baseMass;
+      }
+    }
+
+    const fallback = Math.max(1 / 255, Number(cfg.neutralLuminance) || 0.55); // Only used for an empty/malformed selection.
+    const baseValue = bestBin > 0 ? bestBin / 255 : fallback;
+    return { baseValue, peakLuminance: baseValue, count, config: cfg, shadowRatio: AUTHORED_SHADOW_VALUE_RATIO };
   }
 
   function shadeFillPixels(data, targetRgb, predicateOrOptions = null) {
@@ -102,18 +133,17 @@
     const sourceData = options.sourceData?.length === data.length ? options.sourceData : data;
     const reference = options.shadeReference || createShadeReference(sourceData, samplePredicate, options);
     const cfg = reference.config || options.config || shadeFillConfig();
-    const peakLuminance = Math.max(0.0001, Number(reference.peakLuminance) || Number(reference.neutral) || Number(cfg.neutralLuminance) || 0.55); // reference.neutral keeps externally supplied v2 references compatible.
+    const baseValue = Math.max(1 / 255, Number(reference.baseValue) || Number(reference.peakLuminance) || Number(reference.neutral) || Number(cfg.neutralLuminance) || 0.55); // Older supplied references remain compatible.
     const [tr, tg, tb] = targetRgb;
     let appliedCount = 0;
 
     for (let i = 0; i < data.length; i += 4) {
       if (data[i + 3] === 0 || (applyPredicate && !applyPredicate(i))) continue;
-      const lum = relativeLuminance(sourceData[i], sourceData[i + 1], sourceData[i + 2]);
-      if (cfg.preserveNearBlackOutlines && lum <= cfg.outlineThreshold) continue;
-      // Exact authored-value preservation for the shade hierarchy: the
-      // brightest eligible source pixel is 1.0 (the requested target color)
-      // and every darker eligible pixel keeps its original luminance ratio.
-      const shade = Math.max(0, Math.min(1, lum / peakLuminance));
+      const value = sourceValue(sourceData[i], sourceData[i + 1], sourceData[i + 2]);
+      // Equivalent to filling the cel with the requested color and layering
+      // the recovered black shadow map back over it: base cel -> 1.0, the
+      // authored 30%-black shadow -> ~0.70, black outlines -> 0.0.
+      const shade = Math.max(0, Math.min(1, value / baseValue));
       data[i] = clampByte(tr * shade);
       data[i + 1] = clampByte(tg * shade);
       data[i + 2] = clampByte(tb * shade);
@@ -125,7 +155,7 @@
       label: options.debugLabel ? String(options.debugLabel) : null,
       sampledCount: Number(reference.count) || 0,
       appliedCount,
-      peak: Number(peakLuminance.toFixed(4)),
+      baseValue: Number(baseValue.toFixed(4)),
       separateSampleMask: !!samplePredicate && samplePredicate !== applyPredicate,
       externalSource: sourceData !== data,
     };
@@ -175,6 +205,7 @@
   window.ColorFill = Object.freeze({
     version: VERSION,
     relativeLuminance,
+    sourceValue,
     rgbToHsv,
     hsvToRgb,
     hueDistance,
