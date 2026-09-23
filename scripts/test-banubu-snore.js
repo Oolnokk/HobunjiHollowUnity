@@ -186,7 +186,7 @@ assert(playbackSource.includes('let completed = false;'), 'animal voice adapter 
 assert(playbackSource.includes('onError: error => complete(error)'), 'animal voice adapter must route playback errors through the single completion bridge');
 assert(playbackSource.includes('onFinished: () => complete()'), 'animal voice adapter must forward successful processed playback completion to the caller');
 assert(!playbackSource.includes('onFinished: release'), 'animal voice adapter must not swallow the caller onFinished callback');
-assert(indexSource.includes('js/banubu-snore.js?v=20260923snorepair1'), 'game index must load the Banubu snore runtime');
+assert.match(indexSource, /js\/banubu-snore\.js\?v=[^"']+/, 'game index must load a cache-versioned Banubu snore runtime');
 assert(pixelProbeSource.includes('Banubu snore:'), 'Pixel Probe must expose Banubu snore diagnostics on mobile');
 assert(logs.length > 0, 'runtime status changes should also reach the existing in-game audio log');
 
