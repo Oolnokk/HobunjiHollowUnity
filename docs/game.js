@@ -10749,6 +10749,92 @@
         return new THREE.Vector3(rootPosition.x, rootPosition.y + modelHeight * PLAYER_FACE_HEIGHT_RATIO, rootPosition.z);
       }
 
+      function _finiteNpcFacePoint(point) {
+        return point
+          && Number.isFinite(Number(point.x))
+          && Number.isFinite(Number(point.y))
+          && Number.isFinite(Number(point.z));
+      }
+
+      // Cinematic NPC-target cameras need the visible face itself, not merely
+      // "root + 76% of standing height". Humanoid portraits already publish a
+      // skinned head centroid; named animals instead publish a species-authored
+      // chathead frame plus their live animal head bone. Resolve those exact
+      // surfaces first, then fall back to the old dialogue eye-height estimate.
+      function _namedAnimalFaceWorldPosition(walker) {
+        const avatarRef = walker?.animalAvatarRef;
+        const plane = avatarRef?.frontPlane;
+        const kind = String(walker?.animalKind || '');
+        if (!plane || !kind) return null;
+
+        const authoredFrame = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[kind]?.chatheadFrame;
+        const frameCenter = window.AnimalChatheadFrame?.frameCenterForKind?.(kind)
+          || (authoredFrame ? {
+            x: Number(authoredFrame.x) + Number(authoredFrame.width) * 0.5,
+            y: Number(authoredFrame.y) + Number(authoredFrame.height) * 0.5,
+          } : null);
+        if (!frameCenter || !Number.isFinite(Number(frameCenter.x)) || !Number.isFinite(Number(frameCenter.y))) return null;
+
+        const params = plane.geometry?.parameters || {};
+        const width = Number(params.width) || Number(walker.animalDef?.modelWidth) || 1;
+        const height = Number(params.height)
+          || (Number(walker.animalDef?.modelWidth) || 1) * (Number(walker.animalDef?.spriteAspect) || 1);
+        const localX = (Number(frameCenter.x) - 0.5) * width;
+        const localY = (0.5 - Number(frameCenter.y)) * height;
+        let face = null;
+
+        // Painted animal head rigs rotate around a real per-species pivot.
+        // Treat the authored face center as head-owned so a sleeping/head-down
+        // Banubu keeps the camera trained on the visibly rotated face instead
+        // of the undeformed bind-pose card.
+        const headBone = avatarRef.headRig?.frontHeadBone;
+        if (headBone?.localToWorld && headBone.position) {
+          headBone.updateWorldMatrix?.(true, false);
+          face = new THREE.Vector3(
+            localX - (Number(headBone.position.x) || 0),
+            localY - (Number(headBone.position.y) || 0),
+            -(Number(headBone.position.z) || 0),
+          );
+          headBone.localToWorld(face);
+        } else if (plane.localToWorld) {
+          plane.updateWorldMatrix?.(true, false);
+          face = plane.localToWorld(new THREE.Vector3(localX, localY, 0));
+        }
+        if (!_finiteNpcFacePoint(face)) return null;
+
+        // AnimalSleepPresentation's Y-flattening is deliberately render-only:
+        // it happens at the shared pre-render checkpoint and is restored after
+        // drawing, while updateCameraPosition runs earlier in gameLoop. Mirror
+        // that temporary ground-preserving Y scale here so a cinematic target
+        // lands on the face players actually see during the rendered frame.
+        if (walker._animalSleepRequested === true) {
+          const reported = Number(window.AnimalSleepPresentation?.debugSnapshot?.().sleepScaleY);
+          const sleepScaleY = Number.isFinite(reported) && reported > 0 ? reported : 0.75;
+          const floorY = Number(walker.root?.position?.y);
+          if (Number.isFinite(floorY)) face.y = floorY + (face.y - floorY) * sleepScaleY;
+        }
+        return face;
+      }
+
+      function _npcFaceWorldPosition(walker) {
+        if (!walker?.root?.position) return null;
+
+        if (walker.animalDef && walker.animalAvatarRef) {
+          const animalFace = _namedAnimalFaceWorldPosition(walker);
+          if (_finiteNpcFacePoint(animalFace)) return animalFace;
+        }
+
+        const rig = walker.avatarGroup?.userData?.neckRig;
+        const centroid = rig?.headCentroidPx;
+        if (rig?.available && centroid && window.PNGPlaneAvatar?.resolveSkinnedPixelWorldPosition) {
+          const skinnedFace = window.PNGPlaneAvatar.resolveSkinnedPixelWorldPosition(walker.avatarGroup, centroid);
+          if (_finiteNpcFacePoint(skinnedFace)) return skinnedFace;
+        }
+
+        if (!Number.isFinite(Number(walker.avatarHeight))) return null;
+        return _dialogueEyeWorldPosition(walker.root.position, walker.avatarHeight);
+      }
+
       // Shared core behind _aimNeckAtEyeContact below: rotates a neck-rig
       // joint (yaw+pitch, clamped) so its owner's eyes point at an arbitrary
       // world point — not necessarily another character's eyes. This is the
@@ -26836,9 +26922,8 @@
         getPlayer: () => player,
         getNpcWalker: (npcId, areaId = currentArea) => npcWalkers.find(walker => walker.rec?.id === npcId && walker.area === areaId) || null,
         getNpcFacePosition: walker => {
-          if (!walker?.root?.position || !Number.isFinite(Number(walker.avatarHeight))) return null;
-          const face = _dialogueEyeWorldPosition(walker.root.position, walker.avatarHeight); // Reuse the exact eye-height math already used for NPC↔player dialogue eye contact.
-          return { x: face.x, y: face.y, z: face.z };
+          const face = _npcFaceWorldPosition(walker);
+          return _finiteNpcFacePoint(face) ? { x: face.x, y: face.y, z: face.z } : null;
         },
       });
 
