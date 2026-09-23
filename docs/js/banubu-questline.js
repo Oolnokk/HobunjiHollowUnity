@@ -6,6 +6,7 @@
 
   const global = window; // Used as the shared runtime namespace.
   const QUEST_ID = 'banubu_fish_pies'; // Preserved from the prototype so prior test/dev saves migrate into the authored sequence.
+  const NPC_DISPLAY_NAME = 'Lord Banubu'; // Used by player-facing quest/task labels that are serialized independently of the NPC database record.
   const INSTALL_INTERVAL_MS = 250; // Used by the bounded dependency installer while game modules initialize.
   const INSTALL_TIMEOUT_MS = 20000; // Used to stop active polling once late global assignment hooks are sufficient.
 
@@ -285,8 +286,8 @@
       kind: 'story',
       provider: 'banubu',
       npcId: CONTENT()?.NPC_ID || 'banubu',
-      npcName: 'Banubu',
-      title: activeStage ? `Banubu — ${recipeName}` : 'Banubu',
+      npcName: NPC_DISPLAY_NAME,
+      title: activeStage ? `${NPC_DISPLAY_NAME} — ${recipeName}` : NPC_DISPLAY_NAME,
       icon: questType === 'nineLeafTea' ? '🍵' : '🥧',
       stage,
       questType,
