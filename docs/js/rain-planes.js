@@ -585,7 +585,7 @@ if (!window.HobunjiSkyDome) {
   if (document.readyState === 'loading') document.write('<script src="js/sky-dome.js?v=20260923a"></scr' + 'ipt>');
   else {
     const skyScript = document.createElement('script'); // Used only as a late-load fallback outside the normal parser boot path.
-    skyScript.src = 'js/sky-dome.js?v=20260823a';
+    skyScript.src = 'js/sky-dome.js?v=20260923a';
     skyScript.async = false;
     document.head.appendChild(skyScript);
   }
