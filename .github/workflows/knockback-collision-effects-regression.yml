@@ -12,12 +12,14 @@ on:
       - 'docs/config/furniture-authored/hearth.json'
       - 'docs/js/combat/resource-system.js'
       - 'docs/js/combat/knockback-collision-impact.js'
+      - 'docs/js/combat/burning-affliction-vfx.js'
       - 'docs/js/combat/combat-enemy-dodge.js'
       - 'docs/js/player-vitals.js'
       - 'docs/js/pixel-probe.js'
       - 'docs/tools/furniture-avatar-author/index.html'
       - 'scripts/runtime-frame-ownership-exceptions.json'
       - 'scripts/test-knockback-collision-effects.js'
+      - 'scripts/test-burning-affliction-vfx.js'
       - '.github/workflows/knockback-collision-effects-regression.yml'
   push:
     paths:
@@ -30,12 +32,14 @@ on:
       - 'docs/config/furniture-authored/hearth.json'
       - 'docs/js/combat/resource-system.js'
       - 'docs/js/combat/knockback-collision-impact.js'
+      - 'docs/js/combat/burning-affliction-vfx.js'
       - 'docs/js/combat/combat-enemy-dodge.js'
       - 'docs/js/player-vitals.js'
       - 'docs/js/pixel-probe.js'
       - 'docs/tools/furniture-avatar-author/index.html'
       - 'scripts/runtime-frame-ownership-exceptions.json'
       - 'scripts/test-knockback-collision-effects.js'
+      - 'scripts/test-burning-affliction-vfx.js'
       - '.github/workflows/knockback-collision-effects-regression.yml'
 
 jobs:
@@ -51,11 +55,14 @@ jobs:
           node --check docs/game.js
           node --check docs/js/combat/resource-system.js
           node --check docs/js/combat/knockback-collision-impact.js
+          node --check docs/js/combat/burning-affliction-vfx.js
           node --check docs/js/combat/combat-enemy-dodge.js
           node --check docs/js/player-vitals.js
           node --check docs/js/pixel-probe.js
       - name: Knockback collision and Burning regression
         run: node scripts/test-knockback-collision-effects.js
+      - name: Burning Health authored emitter regression
+        run: node scripts/test-burning-affliction-vfx.js
       - name: Resource and affliction regression
         run: node scripts/test-resource-rings.js
       - name: Runtime frame ownership audit
