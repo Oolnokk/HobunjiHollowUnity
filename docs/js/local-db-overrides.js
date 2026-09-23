@@ -125,6 +125,8 @@
       const override = overrides[npc?.id]; // Named correction for this record, if one is explicitly reviewed.
       const species = normalizeNpcSpeciesId(override?.species); // Canonical species id shared by NPC identity, dialogue, portrait, and world rendering.
       if (!species) continue;
+      const displayName = String(override?.displayName || '').trim(); // Used to migrate player-facing named-NPC labels even when a stale local database overrides the repo record.
+      if (displayName) npc.name = displayName;
 
       const avatarExport = override?.avatarExport;
       if (avatarExport && typeof avatarExport === 'object' && !Array.isArray(avatarExport)) {
