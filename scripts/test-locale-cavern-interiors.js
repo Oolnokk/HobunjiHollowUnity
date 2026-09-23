@@ -75,7 +75,7 @@ assert.strictEqual(carveCall.floor.length, built.floor.length, 'the exact painte
 assert.deepStrictEqual(carveCall.options.entrance, { col: 6, row: 10, side: 'north' });
 assert.strictEqual(built.keyGatedDoors[0].requiresKeyItem, 'color_pools_key');
 assert.deepStrictEqual(JSON.parse(JSON.stringify(built.entrySpots.color_pools_door)), { col: 6, row: 1, side: 'north' });
-assert(built.npcStations.some(station => station.id === 'station_banubu_cave_sleep' && station.pose === 'lie' && station.col === 9 && station.row === 7), 'Banubu\'s single physical sleeping station must stay at its authored location');
+assert(built.npcStations.some(station => station.id === 'station_banubu_cave_sleep' && station.pose === 'lie' && station.col === 6 && station.row === 5), 'Banubu\'s single physical sleeping station must stay at its latest authored location');
 assert.strictEqual(built.npcStations.filter(station => station.npcId === 'banubu').length, 1, 'Banubu cavern must register one physical Banubu station, not separate awake/sleep NPC copies');
 assert(!built.npcStations.some(station => station.id === 'station_banubu_cave_awake'), 'unused awake Banubu station must stay removed');
 assert.deepStrictEqual(JSON.parse(JSON.stringify(built.cinematicCameras)), banubu.cinematicCameras, 'locale cavern synthesis must preserve authored cinematic camera records');
