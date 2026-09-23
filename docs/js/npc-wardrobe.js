@@ -23,10 +23,7 @@
 
   function init(injectedDeps) {
     deps = injectedDeps;
-    for (const walker of (deps.npcWalkers || [])) {
-      const rec = walker?.rec;
-      if (rec?.id && !defaultTraitSets[rec.id]) defaultTraitSets[rec.id] = computeOutfitTraits(rec);
-    }
+    for (const walker of (deps.npcWalkers || [])) captureDefaultOutfitTraits(walker?.rec);
   }
 
   function findWalker(npcId) {
@@ -86,8 +83,14 @@
     return traits;
   }
 
+  function captureDefaultOutfitTraits(rec) {
+    if (!rec?.id || defaultTraitSets[rec.id]) return false;
+    defaultTraitSets[rec.id] = computeOutfitTraits(rec); // Immutable authored-style snapshot used for future clothing-gift acceptance, taken before saved/manual outfit overrides can mutate the record.
+    return true;
+  }
+
   function ensureDefaults(npcId, rec) {
-    if (!defaultTraitSets[npcId] && rec) defaultTraitSets[npcId] = computeOutfitTraits(rec);
+    if (!defaultTraitSets[npcId] && rec) captureDefaultOutfitTraits(rec);
     return defaultTraitSets[npcId] || new Set();
   }
 
@@ -388,6 +391,7 @@
     storeWornItem,
     openWardrobePanel,
     closeWardrobePanel,
+    captureDefaultOutfitTraits,
     applyOutfitOverrideToRecord,
     syncWalkerOutfit,
     serialize,

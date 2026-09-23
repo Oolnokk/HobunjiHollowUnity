@@ -11134,6 +11134,7 @@
         await window.NpcAvatarPreview.ensurePortraitCosmetics({ assetBase: './assets/', configBase: './config/' });
         const deferred = [];
         for (const rec of dbNpcs) {
+          window.NpcWardrobe?.captureDefaultOutfitTraits?.(rec); // Freeze authored default-clothing traits before save restoration/manual outfit overrides can redefine this NPC's gift-acceptance style.
           if (rec?.id) scheduledNpcRecords.set(rec.id, rec);
           const target = resolveNpcScheduleTarget(rec);
           if (!target) { if (!rec?.visitorPresence) deferred.push(rec); continue; }
@@ -11314,6 +11315,7 @@
       }
 
       async function makeNpcWalker(rec, initialTarget) {
+        window.NpcWardrobe?.captureDefaultOutfitTraits?.(rec); // Covers direct/late walker construction paths that do not pass through the initial database loop.
         window.NpcWardrobe?.applyOutfitOverrideToRecord?.(rec); // Applies a restored manual outfit before profile construction, including deferred/visitor NPCs that had no walker when save restoration ran.
         const guessSpecies = (rec?.species || '').toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-|-$/g, '');
         const appearance = (rec?.appearance && rec.appearance.speciesId) ? rec.appearance : {

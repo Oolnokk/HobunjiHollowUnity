@@ -64,7 +64,7 @@ const offscreenRec = {
   species: 'Engh-Sho',
   gender: 'female',
   appearance: { speciesId: 'engh-sho', gender: 'female', cosmetics: {} },
-  equippedCosmetics: ['plain_tunic'],
+  equippedCosmetics: ['offscreen_default_tunic'],
   appliedDyes: { TORSO: 'dye:CLOTH:before_restore' },
   gifts: { loved: ['style:test'], liked: [], disliked: [], hated: [] },
 };
@@ -88,6 +88,8 @@ const context = {
     computeItemTraits(cosmeticId, item) {
       if (cosmeticId === 'itchy_poncho') return ['style:test', 'style:itchy'];
       if (cosmeticId === 'garish_hat') return ['style:test', 'style:itchy', 'style:garish'];
+      if (cosmeticId === 'offscreen_default_tunic' || cosmeticId === 'default_style_scarf') return ['style:authored-default'];
+      if (cosmeticId === 'restored_offscreen_tunic') return ['style:saved-override'];
       const traits = ['style:test'];
       if (item?.colorA === 'dye:CLOTH:old_primary') traits.push('color:old-primary');
       if (item?.colorB === 'dye:CLOTH:old_trim') traits.push('color:old-trim');
@@ -190,6 +192,7 @@ wardrobe.init({
   assert.equal(rec.appliedDyes.CLOTH, 'dye:CLOTH:old_primary', 'Wear restores the stored garment\'s primary dye');
   assert.equal(rec.appliedDyes.CLOTH_B, 'dye:CLOTH:old_trim', 'Wear restores the stored garment\'s secondary dye');
 
+  wardrobe.captureDefaultOutfitTraits(offscreenRec); // Mirrors spawnScheduledNpcs: authored style is frozen before the save's corrected outfit is restored.
   const snapshot = JSON.parse(JSON.stringify(wardrobe.serialize()));
   snapshot.outfits.offscreen_npc = {
     equippedCosmetics: ['restored_offscreen_tunic'],
@@ -206,6 +209,20 @@ wardrobe.init({
   assert.equal(rec.appliedDyes.CLOTH, 'dye:CLOTH:old_primary', 'load restores corrected outfit dyes');
   assert.deepEqual(Array.from(offscreenRec.equippedCosmetics), ['restored_offscreen_tunic'], 'load applies a saved outfit to a canonical NPC record even without a live walker');
   assert.equal(offscreenRec.appliedDyes.TORSO, 'dye:CLOTH:offscreen_restored', 'offscreen canonical NPC dye state restores without a walker');
+  const authoredStyleGift = wardrobe.offerClothing('offscreen_npc', {
+    uid: 'offscreen_default_style_gift',
+    cosmeticId: 'default_style_scarf',
+    slot: 'torso',
+    colorA: null,
+  });
+  assert.equal(authoredStyleGift.accepted, true, 'restored manual clothing does not redefine the NPC\'s immutable authored default-style acceptance traits');
+  const overrideStyleGift = wardrobe.offerClothing('offscreen_npc', {
+    uid: 'offscreen_override_style_gift',
+    cosmeticId: 'restored_offscreen_tunic',
+    slot: 'torso',
+    colorA: null,
+  });
+  assert.equal(overrideStyleGift.accepted, false, 'saved corrected outfit traits do not become new default gift-acceptance traits');
 
   assert.equal(await wardrobe.storeWornItem('legacy_identity_npc', 'plain_tunic'), true, 'legacy-identity NPC can be rerendered through the same immediate Store path');
   const fallbackRefresh = profileBuilds.at(-1);
@@ -284,6 +301,7 @@ wardrobe.init({
   assert.equal(gearInventory.clothingItems.length, 0, 'accepted clothing gift leaves player gear ownership');
   assert.deepEqual(Array.from(rec.equippedCosmetics), ['fine_poncho'], 'real gifting flow leaves the accepted garment immediately equipped');
   assert.deepEqual(Array.from(wardrobe.serialize().outfits.test_npc.equippedCosmetics), ['fine_poncho'], 'real gifting save snapshot contains the immediately equipped garment');
+  assert.match(gameSource, /NpcWardrobe\?\.captureDefaultOutfitTraits\?\.\(rec\)/, 'NPC loading snapshots authored default clothing before saved outfit overrides apply');
   assert.match(gameSource, /NpcWardrobe\?\.applyOutfitOverrideToRecord\?\.\(rec\)/, 'walker construction applies persisted outfit data before building the avatar');
   assert.match(gameSource, /await window\.NpcWardrobe\?\.syncWalkerOutfit\?\.\(walker\)/, 'walker construction resyncs after async build to close the restore race');
   assert.match(gameSource, /NpcWardrobe\?\.init\(\{[\s\S]*?getNpcRecordById:/, 'wardrobe receives canonical NPC-record lookup from game runtime');
