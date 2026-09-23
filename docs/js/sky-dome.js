@@ -16,6 +16,10 @@
   const CLOUD_RADII = [176, 184, 192];
   const CLOUD_SPEEDS = [0.0018, 0.00105, 0.00055];
   const CLOUD_COUNTS = [24, 32, 42];
+  const CLOUD_OCCLUSION_INSET_PX = 1.5; // Used to shrink each cloud's hard occlusion silhouette so its own thick black outline can cover the seam instead of exposing a gap.
+  const CLOUD_OCCLUSION_ALPHA_THRESHOLD = 8; // Used only while building cached hard-alpha sprite masks; low antialias fringe stays visual rather than cutting the cloud behind it.
+  const CLOUD_DEPTH_EROSION_PX = 1.5; // Used by the three depth-only cloud shells to keep cross-band masking slightly inside the visible cloud edge.
+  const CLOUD_DEPTH_ALPHA_CUTOFF = 0.12; // Used by the depth-only shell shader to ignore faint atlas fringe while still masking the solid cloud body.
   const SUN_SIZE = 22;
   const MOON_SIZE = 20;
   const CLEAR_CLOUD_COVER = 0.34;
@@ -49,6 +53,7 @@
   let overcastLevel = 0; // Smoothed 0..1 overcast amount used by sky color, cloud brightness, and ambient darkness.
   let overcastInitialized = false; // Prevents weather from fading in from clear when a save initially loads during rain/storm.
   let lastLanternActive = null; // Used only to log threshold crossings for mobile-friendly runtime debugging.
+  const cloudOcclusionMaskCache = new WeakMap(); // Used by atlas rebuilds to reuse one hard-alpha silhouette per authored cloud sprite instead of re-reading pixels for every placement.
 
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
   const mod = (value, modulus) => ((value % modulus) + modulus) % modulus;
@@ -256,6 +261,84 @@
     });
   }
 
+  function cloudOcclusionMask(image) {
+    const cached = cloudOcclusionMaskCache.get(image);
+    if (cached) return cached;
+    const width = Math.max(1, image.naturalWidth || image.width || 1);
+    const height = Math.max(1, image.naturalHeight || image.height || 1);
+    const mask = document.createElement('canvas'); mask.width = width; mask.height = height;
+    const maskCtx = mask.getContext('2d', { willReadFrequently: true });
+    if (!maskCtx) return image;
+    maskCtx.drawImage(image, 0, 0, width, height);
+    const pixels = maskCtx.getImageData(0, 0, width, height);
+    const rgba = pixels.data;
+    for (let i = 0; i < rgba.length; i += 4) {
+      const solid = rgba[i + 3] >= CLOUD_OCCLUSION_ALPHA_THRESHOLD ? 255 : 0;
+      rgba[i] = 255; rgba[i + 1] = 255; rgba[i + 2] = 255; rgba[i + 3] = solid;
+    }
+    maskCtx.putImageData(pixels, 0, 0);
+    cloudOcclusionMaskCache.set(image, mask);
+    return mask;
+  }
+
+  function drawCloudAtlasSprite(ctx, image, x, y, w, h, alpha) {
+    const maxInset = Math.max(0, Math.min(w, h) * 0.08);
+    const inset = Math.min(CLOUD_OCCLUSION_INSET_PX, maxInset); // Used here so tiny far-band clouds never collapse their own occlusion silhouette.
+    const maskW = Math.max(0, w - inset * 2);
+    const maskH = Math.max(0, h - inset * 2);
+    if (maskW > 0 && maskH > 0) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.globalAlpha = 1;
+      ctx.drawImage(cloudOcclusionMask(image), x + inset, y + inset, maskW, maskH);
+      ctx.restore();
+    }
+    ctx.save();
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = alpha;
+    ctx.drawImage(image, x, y, w, h);
+    ctx.restore();
+  }
+
+  function makeCloudDepthMaskMaterial(texture) {
+    const THREE = deps.THREE;
+    const width = Math.max(1, Number(texture?.image?.width) || 2048);
+    const height = Math.max(1, Number(texture?.image?.height) || 1024);
+    return new THREE.ShaderMaterial({
+      side: THREE.BackSide,
+      colorWrite: false,
+      depthTest: true,
+      depthWrite: true,
+      fog: false,
+      blending: THREE.NoBlending,
+      uniforms: {
+        uMap: { value: texture },
+        uOffset: { value: new THREE.Vector2() },
+        uTexel: { value: new THREE.Vector2(1 / width, 1 / height) },
+        uErodePx: { value: CLOUD_DEPTH_EROSION_PX },
+        uCutoff: { value: CLOUD_DEPTH_ALPHA_CUTOFF },
+      },
+      vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+      fragmentShader: `
+        precision highp float; uniform sampler2D uMap; uniform vec2 uOffset; uniform vec2 uTexel; uniform float uErodePx; uniform float uCutoff; varying vec2 vUv;
+        vec2 cloudUv(vec2 delta){ return vec2(fract(vUv.x+uOffset.x+delta.x),clamp(vUv.y+uOffset.y+delta.y,0.0,1.0)); }
+        void main(){
+          vec2 d=uTexel*uErodePx;
+          float a=texture2D(uMap,cloudUv(vec2(0.0))).a;
+          a=min(a,texture2D(uMap,cloudUv(vec2( d.x,0.0))).a);
+          a=min(a,texture2D(uMap,cloudUv(vec2(-d.x,0.0))).a);
+          a=min(a,texture2D(uMap,cloudUv(vec2(0.0, d.y))).a);
+          a=min(a,texture2D(uMap,cloudUv(vec2(0.0,-d.y))).a);
+          a=min(a,texture2D(uMap,cloudUv(vec2( d.x, d.y))).a);
+          a=min(a,texture2D(uMap,cloudUv(vec2(-d.x, d.y))).a);
+          a=min(a,texture2D(uMap,cloudUv(vec2( d.x,-d.y))).a);
+          a=min(a,texture2D(uMap,cloudUv(vec2(-d.x,-d.y))).a);
+          if(a<uCutoff) discard;
+          gl_FragColor=vec4(0.0);
+        }`,
+    });
+  }
+
   function createCloudAtlas(images, bandIndex) {
     const canvas = document.createElement('canvas'); canvas.width = 2048; canvas.height = 1024; const ctx = canvas.getContext('2d');
     const cover = currentCloudCover(), countBoost = lerp(0.92, 2.55, cover), spread = lerp(1, 2.15, cover);
@@ -267,9 +350,12 @@
       const base = bandIndex === 0 ? 118 + random() * 76 : bandIndex === 1 ? 82 + random() * 60 : 56 + random() * 44;
       const size = base * lerp(0.92, 1.16, cover), w = size * spread, h = size * (ih / Math.max(1, iw));
       const x = random() * canvas.width - w * 0.5, y = canvas.height * (0.11 + Math.pow(random(), 0.72) * 0.62) - h * 0.5;
-      ctx.globalAlpha = 0.68 + random() * 0.18; ctx.drawImage(image, x, y, w, h); if (x < 0) ctx.drawImage(image, x + canvas.width, y, w, h); if (x + w > canvas.width) ctx.drawImage(image, x - canvas.width, y, w, h);
+      const alpha = 0.68 + random() * 0.18; // Used by the visible sprite draw after its slightly inset hard mask clears any older cloud underneath.
+      drawCloudAtlasSprite(ctx, image, x, y, w, h, alpha);
+      if (x < 0) drawCloudAtlasSprite(ctx, image, x + canvas.width, y, w, h, alpha);
+      if (x + w > canvas.width) drawCloudAtlasSprite(ctx, image, x - canvas.width, y, w, h, alpha);
     }
-    ctx.globalAlpha = 1; return canvas;
+    return canvas;
   }
 
   function buildMoonPhaseCanvas(image, day) {
@@ -325,13 +411,29 @@
 
   function rebuildClouds(images) {
     if (!cloudGroup || !images.length) return;
-    for (const band of cloudBands) { cloudGroup.remove(band.mesh); band.mesh.geometry.dispose(); band.material.uniforms.uMap.value.dispose(); band.material.dispose(); }
+    for (const band of cloudBands) {
+      cloudGroup.remove(band.depthMesh, band.mesh);
+      band.mesh.geometry.dispose();
+      band.material.uniforms.uMap.value.dispose();
+      band.material.dispose();
+      band.depthMaterial.dispose();
+    }
     cloudBands = CLOUD_RADII.map((radius, index) => {
       const texture = new deps.THREE.CanvasTexture(createCloudAtlas(images, index)); texture.wrapS = deps.THREE.RepeatWrapping; texture.wrapT = deps.THREE.ClampToEdgeWrapping; texture.needsUpdate = true;
-      const material = makeCloudMaterial(texture), mesh = new deps.THREE.Mesh(new deps.THREE.SphereGeometry(radius, 64, 36), material); mesh.frustumCulled = false; mesh.renderOrder = -800 + index; cloudGroup.add(mesh);
-      return { mesh, material, speed: CLOUD_SPEEDS[index], offset: index * 0.173 };
+      const geometry = new deps.THREE.SphereGeometry(radius, 64, 36); // Shared by this band's invisible depth mask and visible cloud shell.
+      const depthMaterial = makeCloudDepthMaskMaterial(texture);
+      const depthMesh = new deps.THREE.Mesh(geometry, depthMaterial);
+      const material = makeCloudMaterial(texture);
+      const mesh = new deps.THREE.Mesh(geometry, material);
+      depthMesh.name = `hobunji_cloud_depth_mask_${index}`;
+      depthMesh.frustumCulled = false;
+      depthMesh.renderOrder = -850 + index;
+      mesh.frustumCulled = false;
+      mesh.renderOrder = -800 + index;
+      cloudGroup.add(depthMesh, mesh);
+      return { depthMesh, depthMaterial, mesh, material, speed: CLOUD_SPEEDS[index], offset: index * 0.173 };
     });
-    lastCloudBucket = currentCloudBucket(); debugLog(`cloud domes rebuilt for weather bucket ${lastCloudBucket}`);
+    lastCloudBucket = currentCloudBucket(); debugLog(`cloud domes rebuilt for weather bucket ${lastCloudBucket} · hard overlap masking active`);
   }
 
   function buildRoot() {
@@ -392,7 +494,18 @@
   function updateClouds(dt, sunUv, moonUv, sunOpacity, moonOpacity, moonIllumination) {
     const effectiveCover = lerp(CLEAR_CLOUD_COVER, 1, currentOvercastLevel());
     const brightness = lerp(1.08, 0.72, effectiveCover);
-    cloudBands.forEach(band => { band.offset = mod(band.offset + dt * band.speed, 1); const u = band.material.uniforms; u.uOffset.value.set(band.offset, 0); u.uBrightness.value = brightness; u.uOpacity.value = 0.90; u.uSunUV.value.set(sunUv.u, sunUv.v); u.uSunLight.value = 1.75 * sunOpacity; u.uMoonUV.value.set(moonUv.u, moonUv.v); u.uMoonLight.value = 0.58 * moonOpacity * moonIllumination; });
+    cloudBands.forEach(band => {
+      band.offset = mod(band.offset + dt * band.speed, 1);
+      const u = band.material.uniforms;
+      u.uOffset.value.set(band.offset, 0);
+      u.uBrightness.value = brightness;
+      u.uOpacity.value = 0.90;
+      u.uSunUV.value.set(sunUv.u, sunUv.v);
+      u.uSunLight.value = 1.75 * sunOpacity;
+      u.uMoonUV.value.set(moonUv.u, moonUv.v);
+      u.uMoonLight.value = 0.58 * moonOpacity * moonIllumination;
+      band.depthMaterial.uniforms.uOffset.value.set(band.offset, 0);
+    });
   }
 
   function init(injectedDeps) {
@@ -464,7 +577,7 @@
 
   function getDebugState() {
     const lighting = fullDayLightingState();
-    return { initialized: !!deps, assetsReady, activeScene: activeScene?.name || activeScene?.uuid || null, hour: getHour(), rawDay: deps?.calendar?.day ?? null, dayOfMonth: lunarDay(), moonPhase: lunarPhaseName(), moonIllumination: lunarIllumination(), stars: starVisibility(), cloudCover: currentCloudCover(), cloudBucket: currentCloudBucket(), overcastTarget: rawOvercastLevel(), overcast: currentOvercastLevel(), overcastDarkness: lighting.overcastDarkness, ambientOverlayAlpha: lighting.a, lanternActivationStrength: lighting.lanternActivation, lanternActive: lighting.a >= LANTERN_ACTIVATION_ALPHA, lanternActivationAlpha: LANTERN_ACTIVATION_ALPHA, lanternFullAlpha: LANTERN_FULL_ALPHA, effectiveDaySeconds: CLOCK_FULL_DAY_TARGET_SECONDS, dayRolloverHour: DAY_ROLLOVER_HOUR, clockHookReady: !!clockDeps, skyRadius: SKY_RADIUS, celestialRadius: CELESTIAL_RADIUS, cameraFar: deps?.camera?.far ?? null, oversizedCelestialGlowDisabled: false, celestialNoOutline: true, celestialAzimuthOffsetU: CELESTIAL_AZIMUTH_OFFSET_U, sunUv: sunUvForHour(), moonUv: moonUvForHour() };
+    return { initialized: !!deps, assetsReady, activeScene: activeScene?.name || activeScene?.uuid || null, hour: getHour(), rawDay: deps?.calendar?.day ?? null, dayOfMonth: lunarDay(), moonPhase: lunarPhaseName(), moonIllumination: lunarIllumination(), stars: starVisibility(), cloudCover: currentCloudCover(), cloudBucket: currentCloudBucket(), overcastTarget: rawOvercastLevel(), overcast: currentOvercastLevel(), overcastDarkness: lighting.overcastDarkness, ambientOverlayAlpha: lighting.a, lanternActivationStrength: lighting.lanternActivation, lanternActive: lighting.a >= LANTERN_ACTIVATION_ALPHA, lanternActivationAlpha: LANTERN_ACTIVATION_ALPHA, lanternFullAlpha: LANTERN_FULL_ALPHA, effectiveDaySeconds: CLOCK_FULL_DAY_TARGET_SECONDS, dayRolloverHour: DAY_ROLLOVER_HOUR, clockHookReady: !!clockDeps, cloudOverlapMasking: true, cloudMaskInsetPx: CLOUD_OCCLUSION_INSET_PX, cloudDepthErosionPx: CLOUD_DEPTH_EROSION_PX, cloudDepthMaskCount: cloudBands.filter(band => !!band.depthMesh).length, skyRadius: SKY_RADIUS, celestialRadius: CELESTIAL_RADIUS, cameraFar: deps?.camera?.far ?? null, oversizedCelestialGlowDisabled: false, celestialNoOutline: true, celestialAzimuthOffsetU: CELESTIAL_AZIMUTH_OFFSET_U, sunUv: sunUvForHour(), moonUv: moonUvForHour() };
   }
 
   installClockHook(); installWeatherHook(); installRainHook();
