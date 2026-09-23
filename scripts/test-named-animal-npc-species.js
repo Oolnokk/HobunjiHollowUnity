@@ -28,7 +28,7 @@ assert.equal(overrides.npcs.hiki_hiki.kind, 'animal', 'Hiki-hiki must use the an
 assert.equal(overrides.npcs.banubu.avatarExport.appearance.creatureColorOverrides.base, '#4F757D', 'Banubu repo default must retain the authored blue-gray custom base');
 assert.equal(overrides.npcs.banubu.avatarExport.appearance.creatureColorOverrides.mitts, '#c3e3e9', 'Banubu repo default must retain the authored pale-cyan custom mitts');
 assert.equal(overrides.npcs.banubu.avatarExport.appearance.creatureGenotype.sizeClass, 'large', 'Banubu must use Large Grehlr genetics scale before any Fey-only boost');
-assert.equal(overrides.npcs.banubu.avatarExport.appearance.creatureScaleMultiplier, 1.5, 'Banubu must apply a 1.5x named-animal size multiplier on top of Large Grehlr scale');
+assert.equal(overrides.npcs.banubu.avatarExport.appearance.creatureScaleMultiplier, 3.0, 'Banubu must apply the later-authored 3.0x named-animal size multiplier on top of Large Grehlr scale');
 assert.equal(overrides.npcs.banubu.avatarExport.appearance.creatureGenotype.coloredstripe.enabled, true, 'Banubu colored stripe must remain expressed');
 assert.equal(overrides.npcs.hiki_hiki.avatarExport.appearance.creatureGenotype.base.color, '#ff7a18', 'Hiki-hiki repo default must retain the authored orange base');
 assert.equal(overrides.npcs.hiki_hiki.avatarExport.appearance.creatureGenotype.bodystripes.color, '#19c7c1', 'Hiki-hiki bodystripes must retain the authored cyan color');
@@ -58,6 +58,10 @@ assert.match(namedAnimal, /async function worldFrameUrls/, 'named animals must e
 assert.match(namedAnimal, /dialogueEyesClosed = chathead && profile\?\.npcRecord\?\._animalDialogueEyesOpen === false/, 'sleeping animal dialogue portraits must retain closed eyes until their dialogue controller explicitly wakes them');
 assert.match(namedAnimal, /blinkShut: options\.blinkShut === true \|\| dialogueEyesClosed/, 'closed-eye animal dialogue portraits must use the canonical species blink overlay');
 assert.match(namedAnimal, /function creatureScaleMultiplierFor/, 'named animals must read a generic appearance-authored world scale multiplier');
+assert.match(namedAnimal, /avatarEditor\?\.rawExport\?\.appearance/, 'named-animal runtime must retain the canonical Character Studio appearance as a fallback');
+assert.match(namedAnimal, /return \{ \.\.\.rawAppearance, \.\.\.liveAppearance \}/, 'live NPC appearance overlays the authored raw export without erasing omitted Banubu scale/genotype fields');
+assert.match(namedAnimal, /const appearance = appearanceFor\(profile, options\);[\s\S]*?appearance\?\.creatureGenotype/, 'named-animal genotype resolution must consume the merged authored/live appearance');
+assert.match(namedAnimal, /const appearance = appearanceFor\(profile, options\);[\s\S]*?appearance\?\.creatureScaleMultiplier/, 'named-animal scale resolution must consume the same merged authored/live appearance');
 assert.match(game, /namedAnimalBaseSizeScale = namedAnimalDef \? window\.CreatureGenetics\.creatureSizeScale/, 'named animal scaling must resolve normal creature size class before any custom multiplier');
 assert.match(game, /namedAnimalBaseSizeScale\.x \* namedAnimalScaleMultiplier/, 'named animal custom scale must multiply normal creature X scale rather than replace it');
 assert.match(game, /namedAnimalBaseSizeScale\.y \* namedAnimalScaleMultiplier/, 'named animal custom scale must multiply normal creature Y scale rather than replace it');
@@ -180,7 +184,7 @@ assert.equal(banubu.appearance.creatureColorOverrides.mitts, '#c3e3e9');
 assert.equal(banubu.appearance.creatureColorOverrides.spectacles, '#c3e3e9');
 assert.equal(banubu.appearance.creatureColorOverrides.coloredstripe, '#c3e3e9');
 assert.equal(banubu.appearance.creatureGenotype.sizeClass, 'large');
-assert.equal(banubu.appearance.creatureScaleMultiplier, 1.5);
+assert.equal(banubu.appearance.creatureScaleMultiplier, 3.0);
 assert.equal(banubu.appearance.creatureGenotype.base.color, '#4F757D');
 assert.equal(banubu.appearance.creatureGenotype.mitts.color, '#c3e3e9');
 assert.equal(banubu.appearance.creatureGenotype.spectacles.color, '#c3e3e9');

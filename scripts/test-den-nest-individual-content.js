@@ -10,6 +10,7 @@ const source = fs.readFileSync(path.join(root, 'docs/js/den-nest-system.js'), 'u
 const localeRuntime = fs.readFileSync(path.join(root, 'docs/js/den-locale-runtime.js'), 'utf8');
 const localeEditor = fs.readFileSync(path.join(root, 'docs/tools/locale-editor/den-encounter-authoring.js'), 'utf8');
 const panelUi = fs.readFileSync(path.join(root, 'docs/js/panel-ui.js'), 'utf8');
+const panelUiCore = fs.readFileSync(path.join(root, 'docs/js/panel-ui-core.js'), 'utf8'); // The bootstrap wrapper delegates the historical tool-specific loader logic here.
 const puktukRegistration = fs.readFileSync(path.join(root, 'docs/js/puktuk-den-nest-registration.js'), 'utf8');
 const combatLoader = fs.readFileSync(path.join(root, 'docs/js/combat/combat-config-loader.js'), 'utf8');
 const wildernessGenerator = fs.readFileSync(path.join(root, 'docs/js/wilderness-map-generator.js'), 'utf8');
@@ -22,7 +23,8 @@ const branchNestFurniture = JSON.parse(fs.readFileSync(path.join(root, 'docs/con
 // accidental syntax damage in the editor/runtime bootstraps before a manual test.
 assert.doesNotThrow(() => new Function(localeRuntime), 'den locale runtime should remain valid JavaScript');
 assert.doesNotThrow(() => new Function(localeEditor), 'den encounter editor sidecar should remain valid JavaScript');
-assert.doesNotThrow(() => new Function(panelUi), 'shared panel loader should remain valid JavaScript');
+assert.doesNotThrow(() => new Function(panelUi), 'shared panel bootstrap should remain valid JavaScript');
+assert.doesNotThrow(() => new Function(panelUiCore), 'shared panel core should remain valid JavaScript');
 assert.doesNotThrow(() => new Function(puktukRegistration), 'Puktuk registration should remain valid JavaScript');
 
 assert.match(source, /const _nestContentStates = new WeakMap\(\)/,
@@ -124,8 +126,8 @@ assert.match(localeEditor, /downloadJsonBtn[\s\S]*?downloadButton\.addEventListe
   'Download JSON is intercepted by the den-aware export hook');
 assert.match(localeEditor, /if \(store\.byLocale\[locale\.id\]\) return store\.byLocale\[locale\.id\];/,
   'switching away and back cannot overwrite live den edits with the inline editor stale meta copy');
-assert.match(panelUi, /den-encounter-authoring\.js\?v=20260914a/,
-  'the den authoring sidecar loads automatically whenever the Locale Editor opens');
+assert.match(panelUiCore, /den-encounter-authoring\.js\?v=[^'"]+/,
+  'the PanelUI core automatically loads a cache-versioned den authoring sidecar whenever the Locale Editor opens');
 
 assert.match(localeRuntime, /getOverride\?\.\('locales'\)/,
   'runtime can playtest the Locale Editor local override instead of requiring a committed JSON edit');
@@ -150,13 +152,14 @@ assert.match(localeRuntime, /function safeSyncCurrentDen[\s\S]*?catch \(error\)[
 assert.match(localeRuntime, /const result = originalUpdate\(dt\);[\s\S]*?safeSyncCurrentDen\('nest-interaction'\)[\s\S]*?return result/,
   'authored transforms run after DenNestSystem layout without allowing locale errors to interrupt the gameplay frame');
 
-const denRuntimeIndex = combatLoader.indexOf("js/den-locale-runtime.js?v=20260914c");
-const puktukIndex = combatLoader.indexOf("js/puktuk-den-nest-registration.js?v=20260914b");
+const denRuntimeIndex = combatLoader.indexOf("js/den-locale-runtime.js?v=");
+const puktukIndex = combatLoader.indexOf("js/puktuk-den-nest-registration.js?v=");
 assert.ok(denRuntimeIndex >= 0 && puktukIndex > denRuntimeIndex,
   'combat bootstrap owns den runtime and Puktuk registration as ordered sibling modules');
 assert.doesNotMatch(puktukRegistration, /document\.write|ensureDenLocaleRuntime/,
   'Puktuk registration must never nest parser-time script injection inside combat bootstrap');
-assert.match(puktukRegistration, /version: 2/,
+const puktukRegistrationVersion = Number(puktukRegistration.match(/version:\s*(\d+)/)?.[1] || 0); // Keeps the bootstrap regression compatible with later Puktuk module revisions while still requiring a versioned API.
+assert.ok(puktukRegistrationVersion >= 2,
   'isolated Puktuk registration version is exposed for bootstrap cache checks');
 
 console.log('Individual nest rendering plus authored furniture/locale/Den-Mother/clutch transform checks passed.');

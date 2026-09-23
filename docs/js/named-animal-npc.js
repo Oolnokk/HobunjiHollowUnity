@@ -73,30 +73,35 @@
       || creatureKindFrom(options?.speciesId)
       || null;
   }
+  function rawAuthoredAppearance(npcLike) {
+    const raw = npcLike?.avatarEditor?.rawExport?.appearance; // Canonical Character Studio export is the fallback when another runtime/editor path leaves the live appearance object incomplete.
+    return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : null;
+  }
+  function appearanceFor(profile, options = {}) {
+    const npcRecord = options?.npcRecord || profile?.npcRecord || null; // Primary NPC record supplies both the mutable live appearance and its preserved authored raw export.
+    const rawAppearance = rawAuthoredAppearance(npcRecord) || {}; // Fills fields such as Banubu's named-NPC scale/genotype if a stale live record omitted them.
+    const liveAppearance = options?.npcRecord?.appearance || profile?.appearance || profile?.npcRecord?.appearance || {}; // Live values remain authoritative whenever they are actually present.
+    return { ...rawAppearance, ...liveAppearance };
+  }
   function creatureGenotypeFor(profile, options = {}) {
+    const appearance = appearanceFor(profile, options); // Merged live+authored appearance prevents named-animal size class from disappearing during partial NPC-record rewrites.
     return options?.animalGenotype
       || options?.creatureGenotype
       || options?.npcRecord?.animalGenotype
-      || options?.npcRecord?.appearance?.animalGenotype
       || options?.npcRecord?.creatureGenotype
-      || options?.npcRecord?.appearance?.creatureGenotype
+      || appearance?.animalGenotype
+      || appearance?.creatureGenotype
       || profile?.animalGenotype
-      || profile?.appearance?.animalGenotype
       || profile?.creatureGenotype
-      || profile?.appearance?.creatureGenotype
       || null;
   }
-  function appearanceFor(profile, options = {}) {
-    return options?.npcRecord?.appearance || profile?.appearance || profile?.npcRecord?.appearance || {};
-  }
   function creatureScaleMultiplierFor(profile, options = {}) {
+    const appearance = appearanceFor(profile, options); // Same merged source as genotype so Large + authored multiplier cannot drift onto separate data paths.
     return normalizeCreatureScaleMultiplier(
       options?.creatureScaleMultiplier
       ?? options?.npcRecord?.creatureScaleMultiplier
-      ?? options?.npcRecord?.appearance?.creatureScaleMultiplier
+      ?? appearance?.creatureScaleMultiplier
       ?? profile?.creatureScaleMultiplier
-      ?? profile?.appearance?.creatureScaleMultiplier
-      ?? profile?.npcRecord?.appearance?.creatureScaleMultiplier
     ); // Generic named-animal world-scale override layered after normal genetics size class.
   }
   function effectiveGenotype(profile, options = {}) {

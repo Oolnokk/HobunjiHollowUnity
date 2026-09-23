@@ -37,13 +37,32 @@
     return texture;
   }
 
-  function applyTownCliffMaterial(THREE, mesh, fallbackMaterial) {
-    const natural = root.NaturalSurfaceMaterials; // Used by mine and den cave meshes to share the exact town-border cliff material factory instead of maintaining a separate lit cave material.
+  function clearSurfaceStretchCache(geometry) {
+    if (!geometry) return;
+    geometry.userData = Object.assign({}, geometry.userData || {});
+    delete geometry.userData.hobunjiSurfaceStretchSignature;
+    delete geometry.userData.hobunjiSurfaceStretch;
+    delete geometry.userData.naturalSurfaceUvMapping;
+  }
+
+  function applyTownCliffMaterial(THREE, mesh, fallbackMaterial, surfacePreset = 'town-cliffs') {
+    const natural = root.NaturalSurfaceMaterials; // Used by ordinary mines/dens for the existing cliff material and by opted-in locales for the farm's canonical rock material factory.
+    const farmCliffParity = surfacePreset === 'farm-cliff'; // Gates the Banubu-specific material/UV path so unrelated cavern interiors keep their existing appearance.
     if (mesh?.isMesh && typeof natural?.naturalizeMesh === 'function') {
       mesh.material = fallbackMaterial;
-      natural.naturalizeMesh(mesh, 'cliffs');
+      if (farmCliffParity) natural.naturalizeMesh(mesh, 'rocks', 'planar-stretch');
+      else natural.naturalizeMesh(mesh, 'cliffs');
+      if (farmCliffParity) {
+        root.FacetedNaturalSurfaceShellReduction?.suppressMesh?.(mesh, 'rocks');
+        const mapper = root.HobunjiSurfaceStretchUV; // Same Furniture + Avatar Author surface detector/stretch-to-fit mapper used by final farm/wilderness cliff passes.
+        if (typeof mapper?.mapMesh === 'function') {
+          clearSurfaceStretchCache(mesh.geometry); // NaturalSurfaceMaterials may already have run its generic wrapper; invalidate it so the farm-scale pass below is authoritative.
+          mapper.mapMesh(mesh, { label: 'interior-cavern:farm-cliff', maxPatchWorldSize: 6 });
+        }
+      }
       mesh.userData = Object.assign({}, mesh.userData, {
-        interiorCavernMaterialParity: 'town-cliffs',
+        interiorCavernMaterialParity: farmCliffParity ? 'farm-cliffs' : 'town-cliffs',
+        interiorCavernSurfaceMapping: farmCliffParity ? 'farm-connected-surface-stretch' : 'default',
       });
       return mesh.material;
     }
@@ -233,7 +252,7 @@
     const materialOptions = { color: options.color ?? 0x5f5a56, map: texture, flatShading: !texture, side: THREE.FrontSide };
     const fallbackMat = new THREE.MeshBasicMaterial(materialOptions);
     const mesh = new THREE.Mesh(geo, fallbackMat);
-    applyTownCliffMaterial(THREE, mesh, fallbackMat);
+    applyTownCliffMaterial(THREE, mesh, fallbackMat, options.surfaceMaterial || meshData.surfaceMaterial || 'town-cliffs');
     mesh.receiveShadow = true;
     mesh.userData.cameraObstacle = true;
     return mesh;

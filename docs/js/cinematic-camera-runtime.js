@@ -86,6 +86,21 @@
     return camerasForArea(areaId).find(camera => camera.id === id) || null;
   }
 
+  function resolvedTargetForCamera(areaId, cameraId) {
+    const camera = cameraForId(areaId, cameraId); // Used by the in-game Map Edit camera marker so NPC-relative authored targets can be shown in their real world-space location.
+    if (!camera) return null;
+    const record = { areaId: String(areaId || ''), camera, targetWalker: null, lastResolvedTarget: null }; // Temporary resolver context; unlike active dialogue state it has no playback side effects.
+    return resolvedTargetFor(camera, record);
+  }
+
+  function updateCameraTransform(areaId, cameraId, transform = {}) {
+    const camera = cameraForId(areaId, cameraId); // Live normalized record shared by dialogue/cutscene playback and the in-game Map Edit gizmo.
+    if (!camera) return null;
+    if (transform.position && typeof transform.position === 'object') camera.position = normalizePoint(transform.position, camera.position?.y ?? 0.35);
+    if (transform.target && typeof transform.target === 'object') camera.target = normalizePoint(transform.target, camera.target?.y ?? (camera.targetNpcId ? 0 : 0.8));
+    return camera;
+  }
+
   function activate(areaId, cameraId, options = {}) {
     const camera = typeof cameraId === 'object'
       ? normalizeCamera(cameraId, 0)
@@ -320,7 +335,7 @@
       targetNpcId: camera?.targetNpcId || null,
       petFade,
       registeredAreas: camerasByArea.size,
-      latestChange: 'World-space dialogue framing; live scaled face targeting; Banubu camera Y=0',
+      latestChange: 'World-space dialogue framing; live scaled face targeting; in-game Map Edit camera transform authoring',
     };
   }
 
@@ -330,6 +345,8 @@
     unregisterArea,
     camerasForArea,
     cameraForId,
+    resolvedTargetForCamera,
+    updateCameraTransform,
     activate,
     deactivate,
     beginDialogue,

@@ -60,7 +60,9 @@ assert.equal(api.consumePendingNavigation(), null, 'cold-start navigation is one
 assert.match(indexHtml, /id="mapEditBtn"[\s\S]*style="display:none;"/, 'off-farm Map Edit control starts hidden');
 assert.deepEqual(uiOverrides.elements['#mapEditBtn'], uiOverrides.elements['#farmEditBtn'], 'Map Edit tab uses the Farm Editor tab geometry override');
 assert.match(runtimeSource, /area === 'farm'.*Farm editing uses the in-game Farm Editor/, 'runtime explicitly leaves farm authoring to Farm Editor');
-assert.match(runtimeSource, /mapSnapshot: generated \? deps\.exportGeneratedMap/, 'procedural zones export a session snapshot to the editor');
+assert.match(runtimeSource, /function currentDescriptor\(\{ includeSnapshot = true \} = \{\}\)/, 'runtime descriptors default to including generated snapshots for endpoint/navigation sends');
+assert.match(runtimeSource, /mapSnapshot: includeSnapshot && generated \? deps\.exportGeneratedMap\(mapId\) : null/, 'procedural zones export a session snapshot only when the caller requests one');
+assert.match(runtimeSource, /currentDescriptor\(\{ includeSnapshot: false \}\)/, 'panel and gizmo status refreshes avoid repeatedly exporting an entire generated zone');
 assert.match(editorHtml, /id="reflectBtn">↻ Reflect in Game/, 'Map Editor exposes Reflect in Game');
 assert.match(editorHtml, /id="openInterior3dBtn"/, 'Map Editor exposes a direct 3D Interior Editor handoff');
 assert.match(editorHtml, /type: 'open-interior-author'/, 'Map Editor mirrors unsaved interior data into a standalone 3D editor');
@@ -77,6 +79,15 @@ assert.match(runtimeSource, /controls paused/, 'runtime gizmo reports that contr
 assert.match(runtimeSource, /endpoint\.send\(request\);[\s\S]*attachPlacement/, 'in-game selection syncs without forcing focus into the Map Editor window');
 assert.match(gameSource, /if \(window\.__mapEditorGizmoActive\)/, 'game input is suppressed for the complete gizmo session');
 assert.match(runtimeSource, /type: 'placement-transform'/, 'runtime gizmo mirrors transforms into the Map Editor workspace');
+assert.match(indexHtml, /id="mapEditCameraSection"/, 'in-game Map Edit exposes cinematic cameras in rooms/locales');
+assert.match(indexHtml, /id="mapEditGizmoTransform"/, 'in-game Map Edit exposes live numeric transform values without DevTools');
+assert.match(runtimeSource, /map_edit_cinematic_camera_/, 'runtime builds visible world-space cinematic camera markers');
+assert.match(runtimeSource, /resolvedTargetForCamera/, 'camera markers resolve the same live NPC-relative target used by playback');
+assert.match(runtimeSource, /updateCameraTransform/, 'camera gizmo writes directly into the live cinematic camera registry');
+assert.match(runtimeSource, /mode === 'rotate'/, 'camera rotation authors a new aim direction while translation follows the existing target');
+assert.match(runtimeSource, /kind === 'cinematicCamera'/, 'runtime selection accepts cinematic cameras alongside decor and furniture');
+assert.match(editorHtml, /selection\.kind === 'cinematicCamera' \? \(map\?\.cinematicCameras \|\| \[\]\)/, 'authored room camera transforms can persist into the Map Editor workspace');
+assert.match(editorHtml, /status: 'runtime-only'/, 'locale camera edits report when no ordinary Map Editor source record exists');
 assert.match(townZoneSource, /postSX.*postScale/, 'outdoor runtime decor consumes per-axis placement scale');
 assert.match(editorHtml, /isFarmEditorMap\(rootId\)/, 'Map Editor rejects reflection for the linked farm root');
 assert.match(gameSource, /player\.x = playerBefore\.x; player\.y = playerBefore\.y/, 'scene rebuild restores exact player position');

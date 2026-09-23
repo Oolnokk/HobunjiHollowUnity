@@ -12,6 +12,11 @@
   let selectedPlacement = null; // {ref,node,basePosition}; mirrors edits back into the Map Editor workspace.
   let gameplayLock = null; // Shared movement/tool/action lock held for the complete placement-edit session.
   let transformSendTimer = null;
+  let cameraMarkerRoot = null; // Holds dev-only cinematic camera markers while the Map Edit session is open.
+  let cameraMarkerArea = ''; // Used to rebuild camera markers only when the active room/locale changes.
+  let cameraMarkerSignature = ''; // Used to detect authored camera-list changes without rebuilding markers on every panel refresh.
+  let cameraListSignature = ''; // Used to avoid regenerating the small camera button list when nothing visible changed.
+  const cameraMarkerById = new Map(); // Maps authored camera ids to their live selectable marker groups.
   const raycaster = new THREE.Raycaster(); // Shared picker raycaster; created once instead of per pointer event.
   let orbitState = null; // {target, azimuth, elevation, distance, dragging, lastX, lastY} while a placement is selected — see startOrbit/stopOrbit.
   const ORBIT_DEG_PER_PX = 0.3;
@@ -58,6 +63,137 @@
     };
   }
 
+  function cinematicCamerasForCurrentArea() {
+    const areaId = String(deps?.getCurrentArea?.() || ''); // CameraRuntime registers rooms/locales under the same runtime area id Map Edit uses.
+    return window.CinematicCameraRuntime?.camerasForArea?.(areaId) || [];
+  }
+
+  function resolvedCameraTarget(areaId, camera) {
+    const resolved = window.CinematicCameraRuntime?.resolvedTargetForCamera?.(areaId, camera?.id); // Resolves NPC-face-relative camera targets through the same runtime used by dialogue.
+    if (resolved && [resolved.x, resolved.y, resolved.z].every(Number.isFinite)) return new THREE.Vector3(resolved.x, resolved.y, resolved.z);
+    return new THREE.Vector3(Number(camera?.position?.x) || 0, Number(camera?.position?.y) || 0, (Number(camera?.position?.z) || 0) - 1); // Visible fallback direction when an NPC target is temporarily unloaded.
+  }
+
+  function orientCameraMarker(node, areaId, camera) {
+    if (!node || !camera) return;
+    const liveTarget = window.CinematicCameraRuntime?.resolvedTargetForCamera?.(areaId, camera.id); // Kept separate from the visual fallback so an unloaded NPC can never produce a fake face-relative authoring base.
+    const targetResolved = !!(liveTarget && [liveTarget.x, liveTarget.y, liveTarget.z].every(Number.isFinite)); // Used to gate face-relative rotation authoring.
+    const target = targetResolved ? new THREE.Vector3(liveTarget.x, liveTarget.y, liveTarget.z) : resolvedCameraTarget(areaId, camera); // Used for marker heading even when only a harmless fallback direction is available.
+    node.position.set(Number(camera.position?.x) || 0, Number(camera.position?.y) || 0, Number(camera.position?.z) || 0);
+    if (target.distanceToSquared(node.position) > 1e-8) node.lookAt(target);
+    node.userData.cameraTargetDistance = Math.max(0.25, node.position.distanceTo(target));
+    if (camera.targetNpcId && targetResolved) {
+      node.userData.cameraTargetBase = new THREE.Vector3(
+        target.x - (Number(camera.target?.x) || 0),
+        target.y - (Number(camera.target?.y) || 0),
+        target.z - (Number(camera.target?.z) || 0),
+      ); // World-space NPC face/base point used to convert a rotated marker back into the authored face-relative target offset.
+    } else {
+      node.userData.cameraTargetBase = null;
+    }
+  }
+
+  function clearCameraMarkers() {
+    if (!cameraMarkerRoot) {
+      cameraMarkerArea = '';
+      cameraMarkerSignature = '';
+      cameraMarkerById.clear();
+      return;
+    }
+    cameraMarkerRoot.parent?.remove(cameraMarkerRoot);
+    const geometries = new Set(); // Dev-only marker geometry disposed when leaving Map Edit so repeated room visits do not accumulate GPU objects.
+    const materials = new Set(); // Dev-only marker materials disposed alongside marker geometry.
+    cameraMarkerRoot.traverse(object => {
+      if (object?.geometry) geometries.add(object.geometry);
+      const source = Array.isArray(object?.material) ? object.material : [object?.material];
+      for (const material of source) if (material) materials.add(material);
+    });
+    geometries.forEach(geometry => geometry.dispose?.());
+    materials.forEach(material => material.dispose?.());
+    cameraMarkerRoot = null;
+    cameraMarkerArea = '';
+    cameraMarkerSignature = '';
+    cameraMarkerById.clear();
+  }
+
+  function createCameraMarker(areaId, camera) {
+    const node = new THREE.Group(); // Selectable transform carrier; child meshes are presentation only and inherit this exact camera transform.
+    node.name = `map_edit_cinematic_camera_${camera.id}`;
+    node.userData.mapEditorRef = { kind: 'cinematicCamera', id: camera.id, mapId: areaId };
+    node.userData.mapEditorCinematicCamera = true;
+    const material = new THREE.MeshBasicMaterial({ color: 0xffd166, transparent: true, opacity: 0.9, depthTest: true, depthWrite: false }); // High-contrast dev marker; never exists outside Map Edit.
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.18, 0.34), material);
+    body.position.z = 0.05;
+    body.userData.hobunjiNoOutline = true;
+    const lens = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.22, 4), material);
+    lens.rotation.x = Math.PI / 2;
+    lens.position.z = 0.31;
+    lens.userData.hobunjiNoOutline = true;
+    node.add(body, lens);
+    orientCameraMarker(node, areaId, camera);
+    cameraMarkerById.set(camera.id, node);
+    return node;
+  }
+
+  function renderCameraList(cameras) {
+    const section = document.getElementById('mapEditCameraSection');
+    const list = document.getElementById('mapEditCameraList');
+    if (section) section.style.display = cameras.length ? '' : 'none';
+    if (!list) return;
+    const selectedId = selectedPlacement?.ref?.kind === 'cinematicCamera' ? selectedPlacement.ref.id : '';
+    const signature = cameras.map(camera => `${camera.id}:${camera.label}`).join('|') + `|selected=${selectedId}`; // Keeps ordinary panel status refreshes from churning camera-list DOM.
+    if (signature === cameraListSignature) return;
+    cameraListSignature = signature;
+    list.replaceChildren();
+    for (const camera of cameras) {
+      const button = document.createElement('button'); // Direct mobile-friendly selection path in addition to clicking the world-space marker.
+      button.type = 'button';
+      button.className = 'fed-btn';
+      button.textContent = camera.label || camera.id;
+      button.classList.toggle('fed-active', camera.id === selectedId);
+      button.addEventListener('click', () => selectCameraById(camera.id));
+      list.appendChild(button);
+    }
+  }
+
+  function syncCameraMarkers(force = false) {
+    const cameras = cinematicCamerasForCurrentArea();
+    renderCameraList(cameras);
+    const shouldShow = !!(window.__mapEditorPanelOpen || armed || selectedPlacement?.ref?.kind === 'cinematicCamera');
+    if (!shouldShow || !cameras.length) {
+      if (!shouldShow || !cameras.length) clearCameraMarkers();
+      return;
+    }
+    const areaId = String(deps?.getCurrentArea?.() || '');
+    const scene = deps?.getActiveScene?.();
+    if (!areaId || !scene) { clearCameraMarkers(); return; }
+    const signature = `${areaId}|${cameras.map(camera => camera.id).join('|')}`; // Rebuild only for area/list changes; transform drags update marker nodes in place.
+    if (force || !cameraMarkerRoot || cameraMarkerRoot.parent !== scene || cameraMarkerArea !== areaId || cameraMarkerSignature !== signature) {
+      if (selectedPlacement?.ref?.kind === 'cinematicCamera') detachPlacement();
+      clearCameraMarkers();
+      cameraMarkerRoot = new THREE.Group();
+      cameraMarkerRoot.name = 'map_edit_cinematic_cameras';
+      cameraMarkerRoot.userData.hobunjiNoOutline = true;
+      for (const camera of cameras) cameraMarkerRoot.add(createCameraMarker(areaId, camera));
+      scene.add(cameraMarkerRoot);
+      cameraMarkerArea = areaId;
+      cameraMarkerSignature = signature;
+      return;
+    }
+    for (const camera of cameras) {
+      const node = cameraMarkerById.get(camera.id);
+      if (!node || selectedPlacement?.node === node) continue;
+      orientCameraMarker(node, areaId, camera);
+    }
+  }
+
+  function selectCameraById(cameraId) {
+    syncCameraMarkers();
+    const node = cameraMarkerById.get(String(cameraId || '')); // Direct list selection resolves to the same world marker used by ray picking.
+    if (!node) { setStatus(`Cinematic camera ${cameraId} is not available in this room/locale.`, false); return; }
+    navigateToRef(node.userData.mapEditorRef, node);
+  }
+
   function refreshVisibility() {
     const button = document.getElementById('mapEditBtn');
     if (!deps) { if (button) button.style.display = 'none'; return; }
@@ -81,7 +217,14 @@
     // movement spins the camera out from under the panel, or fights a
     // Click to Select attempt before anything is even selected yet.
     window.__mapEditorPanelOpen = open;
-    if (open) refreshPanel();
+    if (open) {
+      syncCameraMarkers(true);
+      refreshPanel();
+    } else {
+      disarmPicker();
+      if (selectedPlacement) detachPlacement();
+      clearCameraMarkers();
+    }
   }
 
   function closePanel() {
@@ -91,6 +234,7 @@
     window.__mapEditorPanelOpen = false;
     disarmPicker();
     if (selectedPlacement) detachPlacement();
+    clearCameraMarkers();
   }
 
   function ensureTransformControl() {
@@ -102,7 +246,10 @@
       if (!event.value) sendPlacementTransform(true);
       refreshPanel();
     });
-    transformControl.addEventListener('objectChange', () => sendPlacementTransform(false));
+    transformControl.addEventListener('objectChange', () => {
+      sendPlacementTransform(false);
+      refreshTransformReadout();
+    });
     return transformControl;
   }
 
@@ -111,17 +258,27 @@
   }
 
   function attachPlacement(ref, node) {
-    if (!['decor', 'furniture'].includes(ref?.kind) || !node) { detachPlacement(); return; }
+    const isCamera = ref?.kind === 'cinematicCamera'; // Cinematic cameras use the same TransformControls session but serialize position/target instead of furniture post offsets.
+    if ((!['decor', 'furniture'].includes(ref?.kind) && !isCamera) || !node) { detachPlacement(); return; }
     const control = ensureTransformControl();
     if (!control) { setStatus('Transform gizmo unavailable: TransformControls did not load.', false); return; }
     control.parent?.remove(control);
     deps.getActiveScene()?.add(control);
     const basePosition = node.position.clone();
-    basePosition.x -= ref.postX || 0; basePosition.y -= ref.postY || 0; basePosition.z -= ref.postZ || 0;
+    if (!isCamera) {
+      basePosition.x -= ref.postX || 0; basePosition.y -= ref.postY || 0; basePosition.z -= ref.postZ || 0;
+    }
     selectedPlacement = { ref: { ...ref }, node, basePosition };
+    if (isCamera) {
+      const camera = window.CinematicCameraRuntime?.cameraForId?.(ref.mapId || deps.getCurrentArea(), ref.id); // Exact normalized authored record edited live by this marker.
+      selectedPlacement.cameraRecord = camera || null;
+      selectedPlacement.cameraTargetDistance = Number(node.userData.cameraTargetDistance) || 1;
+      selectedPlacement.cameraTargetBase = node.userData.cameraTargetBase?.clone?.() || null;
+    }
     window.__mapEditorGizmoActive = true;
     gameplayLock = gameplayLock || window.CharacterActionLocks?.acquire?.({ owner: 'map-editor-gizmo', reason: 'Adjusting a map placement', participants: [{ id: 'player', channels: ['movement', 'tools', 'actions'] }] });
     control.attach(node);
+    if (isCamera) setGizmoMode('translate');
     startOrbit(node);
     refreshPanel();
   }
@@ -134,6 +291,8 @@
     window.__mapEditorGizmoActive = false;
     stopOrbit();
     selectedPlacement = null;
+    const scaleButton = document.getElementById('mapEditGizmoScale'); // Re-enabled after leaving a camera, whose authored transform has no scale component.
+    if (scaleButton) scaleButton.disabled = false;
     refreshPanel();
   }
 
@@ -217,14 +376,54 @@
   }
 
   function setGizmoMode(mode) {
+    if (selectedPlacement?.ref?.kind === 'cinematicCamera' && mode === 'scale') return; // Cameras author position + aim; FOV is separate data, not transform scale.
     ensureTransformControl()?.setMode(mode);
     for (const [id, value] of [['mapEditGizmoTranslate','translate'],['mapEditGizmoRotate','rotate'],['mapEditGizmoScale','scale']]) {
       document.getElementById(id)?.classList.toggle('fed-active', value === mode);
     }
   }
 
+  function roundedPoint(point) {
+    return { x: +(Number(point?.x) || 0).toFixed(3), y: +(Number(point?.y) || 0).toFixed(3), z: +(Number(point?.z) || 0).toFixed(3) };
+  }
+
+  function cameraPlacementTransform() {
+    if (selectedPlacement?.ref?.kind !== 'cinematicCamera') return null;
+    const { ref, node } = selectedPlacement;
+    const areaId = String(ref.mapId || deps.getCurrentArea() || ''); // Runtime camera registry key and persisted Map Editor map id for ordinary authored rooms.
+    const runtime = window.CinematicCameraRuntime;
+    const camera = runtime?.cameraForId?.(areaId, ref.id);
+    if (!camera) return null;
+    const position = roundedPoint(node.position); // Authored world-space camera position written directly, unlike decor post-offset transforms.
+    const mode = transformControl?.mode || 'translate'; // Determines whether movement preserves the existing target or rotation authors a new aim point.
+    if (mode === 'rotate') {
+      const direction = new THREE.Vector3(0, 0, 1).applyQuaternion(node.quaternion).normalize(); // Object3D.lookAt points +Z toward the camera target.
+      const targetWorld = node.position.clone().addScaledVector(direction, selectedPlacement.cameraTargetDistance || 1);
+      let target = targetWorld;
+      if (camera.targetNpcId) {
+        const liveResolved = runtime.resolvedTargetForCamera?.(areaId, ref.id); // Refreshes the NPC face base during a drag so breathing/pose motion cannot stale the face-relative conversion.
+        const base = liveResolved && [liveResolved.x, liveResolved.y, liveResolved.z].every(Number.isFinite)
+          ? new THREE.Vector3(liveResolved.x - (Number(camera.target?.x) || 0), liveResolved.y - (Number(camera.target?.y) || 0), liveResolved.z - (Number(camera.target?.z) || 0))
+          : selectedPlacement.cameraTargetBase;
+        if (base) target = targetWorld.clone().sub(base);
+        else target = null; // Do not corrupt a face-relative target if its NPC is currently unavailable for world-space resolution.
+      }
+      runtime.updateCameraTransform?.(areaId, ref.id, target ? { position, target: roundedPoint(target) } : { position });
+    } else {
+      runtime.updateCameraTransform?.(areaId, ref.id, { position });
+      const worldTarget = runtime.resolvedTargetForCamera?.(areaId, ref.id); // Translation moves only the camera; its existing absolute/NPC-relative target stays fixed.
+      if (worldTarget && [worldTarget.x, worldTarget.y, worldTarget.z].every(Number.isFinite)) {
+        node.lookAt(worldTarget.x, worldTarget.y, worldTarget.z);
+        selectedPlacement.cameraTargetDistance = Math.max(0.25, node.position.distanceTo(new THREE.Vector3(worldTarget.x, worldTarget.y, worldTarget.z)));
+      }
+    }
+    const updated = runtime.cameraForId?.(areaId, ref.id) || camera;
+    return { position: roundedPoint(updated.position), target: roundedPoint(updated.target) };
+  }
+
   function placementTransform() {
     if (!selectedPlacement) return null;
+    if (selectedPlacement.ref?.kind === 'cinematicCamera') return cameraPlacementTransform();
     const { node, basePosition } = selectedPlacement;
     const aux = node.userData?.mapEditorAux;
     if (aux?.light && aux.lightOffset) aux.light.position.copy(node.position).add(aux.lightOffset);
@@ -237,6 +436,21 @@
       rotY: +(node.rotation.y * 180 / Math.PI).toFixed(1),
       postSX: +Math.max(.05, node.scale.x).toFixed(3), postSY: +Math.max(.05, node.scale.y).toFixed(3), postSZ: +Math.max(.05, node.scale.z).toFixed(3),
     };
+  }
+
+  function refreshTransformReadout() {
+    const output = document.getElementById('mapEditGizmoTransform');
+    if (!output || !selectedPlacement) { if (output) output.textContent = ''; return; }
+    if (selectedPlacement.ref?.kind === 'cinematicCamera') {
+      const areaId = selectedPlacement.ref.mapId || deps.getCurrentArea();
+      const camera = window.CinematicCameraRuntime?.cameraForId?.(areaId, selectedPlacement.ref.id);
+      if (!camera) { output.textContent = 'Camera transform unavailable.'; return; }
+      const p = roundedPoint(camera.position), t = roundedPoint(camera.target);
+      output.textContent = `Position ${p.x}, ${p.y}, ${p.z} • ${camera.targetNpcId ? 'Face offset' : 'Target'} ${t.x}, ${t.y}, ${t.z}`;
+      return;
+    }
+    const { node, basePosition } = selectedPlacement;
+    output.textContent = `Offset ${(node.position.x - basePosition.x).toFixed(2)}, ${(node.position.y - basePosition.y).toFixed(2)}, ${(node.position.z - basePosition.z).toFixed(2)} • Yaw ${(node.rotation.y * 180 / Math.PI).toFixed(1)}°`;
   }
 
   function sendPlacementTransform(immediate) {
@@ -273,10 +487,14 @@
     }
     if (result) result.textContent = lastResult?.text || 'No live reflection yet.';
     if (generated) generated.style.display = descriptor.generated ? '' : 'none';
+    if (window.__mapEditorPanelOpen || armed || selectedPlacement?.ref?.kind === 'cinematicCamera') syncCameraMarkers();
     const gizmoSection = document.getElementById('mapEditGizmoSection');
     if (gizmoSection) gizmoSection.style.display = selectedPlacement ? '' : 'none';
     const gizmoLabel = document.getElementById('mapEditGizmoSelection');
     if (gizmoLabel && selectedPlacement) gizmoLabel.textContent = `${selectedPlacement.ref.kind} · ${placementIdentity(selectedPlacement.ref)} · controls paused`;
+    const scaleButton = document.getElementById('mapEditGizmoScale');
+    if (scaleButton) scaleButton.disabled = selectedPlacement?.ref?.kind === 'cinematicCamera';
+    refreshTransformReadout();
     const arenaRow = document.getElementById('mapEditArenaTools');
     if (arenaRow) arenaRow.style.display = deps?.getCurrentArea?.() === deps?.DEV_ARENA_ZONE_ID ? '' : 'none';
   }
@@ -310,6 +528,7 @@
   function armPicker() {
     if (!currentDescriptor().editable || armed) return;
     armed = true;
+    syncCameraMarkers(); // Camera markers must already exist before the panel hides and the world-space picker captures the next tap.
     closePanelWithoutDisarming();
     const hint = document.getElementById('mapEditPickHint');
     if (hint) hint.style.display = 'flex';
@@ -373,7 +592,7 @@
     // Open Map Editor button instead of stealing focus during gizmo use.
     window.MapLivePreview.savePendingNavigation(request);
     endpoint.send(request);
-    if (node && ['decor', 'furniture'].includes(selection.kind)) attachPlacement({ ...ref, layoutId: request.layoutId }, node);
+    if (node && ['decor', 'furniture', 'cinematicCamera'].includes(selection.kind)) attachPlacement({ ...ref, layoutId: request.layoutId }, node);
     else detachPlacement();
     const syncNote = editorConnected ? 'Map Editor synchronized.' : 'Open Map Editor to persist this session edit.';
     setStatus(`Selected ${selection.kind}${selection.id ? ` ${selection.id}` : selection.col != null ? ` ${selection.col},${selection.row}` : ''}. ${syncNote}`);
@@ -422,8 +641,9 @@
       endpoint.send({ type: 'game-state', map: currentDescriptor(), revision });
       return;
     }
-    if (message.type === 'placement-transform-result' && message.status === 'applied') {
-      setStatus('Placement updated in Map Editor.');
+    if (message.type === 'placement-transform-result') {
+      if (message.status === 'applied') setStatus('Transform updated in Map Editor.');
+      else if (message.status === 'runtime-only') setStatus('Camera updated live; this locale/source is not loaded as a Map Editor map, so the numeric transform remains available here for authoring.');
       return;
     }
     if (message.type === 'reflect-request') handleReflect(message);
@@ -436,6 +656,7 @@
       `area=${descriptor.area} map=${descriptor.mapId || '-'} layout=${descriptor.layoutId || 'default'} generated=${!!descriptor.generated}`,
       `devMode=${!!deps.isDevMode()} editorConnected=${editorConnected} pickerArmed=${armed} revision=${revision}`,
       `last=${lastResult?.text || 'none'}`,
+      `cinematicCameras=${cinematicCamerasForCurrentArea().length} markers=${cameraMarkerById.size} selected=${selectedPlacement?.ref?.kind || '-'}:${selectedPlacement?.ref?.id || '-'}`,
     ].join('\n');
     navigator.clipboard?.writeText(report).then(() => deps.showToast('Map reflection debug copied.', true)).catch(() => deps.showToast(report, true));
   }

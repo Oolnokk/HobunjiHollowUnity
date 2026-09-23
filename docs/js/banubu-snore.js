@@ -8,7 +8,7 @@
   const IDLE_RECHECK_MS = 250; // Used only while no snore is playing so range/night checks stay cheap off-screen.
   const FAILED_START_RETRY_MS = 1000; // Used to avoid frame-spamming a temporarily blocked audio backend.
   const SNORE_TEMPO = 1 / 9; // Used to triple the existing one-third-speed Grehlr snore's audible duration.
-  const SHORT_SNORE_TEMPO = 1; // Restores the Grehlr utterance's normal length for the second breath of each pair.
+  const SHORT_SNORE_TEMPO = 2 / 3; // Used by the short follow-up so its authored utterance lasts 50% longer while keeping the separate +2-semitone pitch.
   const SHORT_SNORE_PITCH_OFFSET = 2; // Raises only the short follow-up by a couple of semitones.
   const ACOUSTIC_EARSHOT_CHUNKS = 5; // Used only for smooth distance/elevation attenuation after the stricter two-chunk gate passes.
   const SCHEDULER_ID = 'banubu-night-snore'; // Used to keep development reloads from registering duplicate frame subscribers.
