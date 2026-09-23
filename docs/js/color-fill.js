@@ -75,60 +75,33 @@
     return predicateOrOptions && typeof predicateOrOptions === 'object' ? predicateOrOptions : {};
   }
 
-  const AUTHORED_SHADOW_VALUE_RATIO = 0.70; // Source art shades flat cels by drawing black on a 30%-opacity layer.
-
   function sourceValue(r, g, b) {
-    return Math.max(r, g, b) / 255; // HSV V without the conversion overhead; black-overlay shading scales this linearly.
+    return Math.max(r, g, b) / 255; // HSV V without the conversion overhead; proportional shading scales this linearly.
   }
 
   function isAuthoredWhite(r, g, b) {
     return Math.min(r, g, b) >= 245; // Excludes white and its near-white antialiasing without rejecting cream or pale colored fur.
   }
 
-  function histogramMass(histogram, center, radius = 1) {
-    let mass = 0;
-    const lo = Math.max(0, center - radius), hi = Math.min(255, center + radius);
-    for (let bin = lo; bin <= hi; bin++) mass += histogram[bin];
-    return mass;
-  }
-
-  // Recover the flat authored cel value from the selected source region rather
-  // than treating the brightest pixel as the base. Source sprites are authored
-  // as one flat color plus a 30%-opacity black shadow layer, so the same color
-  // normally appears as a base-value cluster and a ~70%-value shadow cluster.
-  // Scoring that pair lets a tiny white/light detail stay an outlier instead of
-  // hijacking the entire recolor reference.
+  // Use the brightest eligible authored source pixel as the normalization
+  // anchor. This preserves every authored intermediate shade instead of
+  // guessing that the art contains only a flat cel plus one fixed shadow
+  // strength. White/near-white neutral details remain excluded so they cannot
+  // hijack dark fur/body sprites whose real color range is intentionally low.
   function createShadeReference(sourceData, predicate = null, options = {}) {
     const cfg = options.config || shadeFillConfig();
-    const histogram = new Uint32Array(256);
+    let peakValue = 0; // Used by shadeFillPixels as the 1.0 normalization anchor for the selected source region.
     let count = 0;
     for (let i = 0; i < sourceData.length; i += 4) {
       if (sourceData[i + 3] === 0 || (predicate && !predicate(i))
         || isAuthoredWhite(sourceData[i], sourceData[i + 1], sourceData[i + 2])) continue;
-      const bin = Math.max(0, Math.min(255, Math.round(sourceValue(sourceData[i], sourceData[i + 1], sourceData[i + 2]) * 255)));
-      histogram[bin]++;
+      peakValue = Math.max(peakValue, sourceValue(sourceData[i], sourceData[i + 1], sourceData[i + 2]));
       count++;
     }
 
-    let bestBin = 0;
-    let bestScore = -1;
-    let bestBaseMass = -1;
-    for (let bin = 1; bin <= 255; bin++) {
-      const baseMass = histogramMass(histogram, bin);
-      if (!histogram[bin]) continue; // The reference must be an actual authored pixel, not a neighboring histogram bin.
-      const shadowBin = Math.round(bin * AUTHORED_SHADOW_VALUE_RATIO);
-      const shadowMass = Math.abs(shadowBin - bin) > 2 ? histogramMass(histogram, shadowBin) : 0;
-      const score = baseMass + shadowMass;
-      if (score > bestScore || (score === bestScore && baseMass > bestBaseMass)) {
-        bestBin = bin;
-        bestScore = score;
-        bestBaseMass = baseMass;
-      }
-    }
-
     const fallback = Math.max(1 / 255, Number(cfg.neutralLuminance) || 0.55); // Only used for an empty/malformed selection.
-    const baseValue = bestBin > 0 ? bestBin / 255 : fallback;
-    return { baseValue, peakLuminance: baseValue, count, config: cfg, shadowRatio: AUTHORED_SHADOW_VALUE_RATIO };
+    const baseValue = peakValue > 0 ? peakValue : fallback;
+    return { baseValue, peakLuminance: baseValue, count, config: cfg };
   }
 
   function shadeFillPixels(data, targetRgb, predicateOrOptions = null) {
@@ -146,9 +119,9 @@
       if (data[i + 3] === 0 || (applyPredicate && !applyPredicate(i))
         || isAuthoredWhite(sourceData[i], sourceData[i + 1], sourceData[i + 2])) continue;
       const value = sourceValue(sourceData[i], sourceData[i + 1], sourceData[i + 2]);
-      // Equivalent to filling the cel with the requested color and layering
-      // the recovered black shadow map back over it: base cel -> 1.0, the
-      // authored 30%-black shadow -> ~0.70, black outlines -> 0.0.
+      // Preserve the source sprite's full authored value range relative to
+      // its brightest eligible pixel. This is shared by base/body recolors and
+      // by overlays that explicitly sample an untouched underlying raster.
       const shade = Math.max(0, Math.min(1, value / baseValue));
       data[i] = clampByte(tr * shade);
       data[i + 1] = clampByte(tg * shade);
@@ -162,6 +135,7 @@
       sampledCount: Number(reference.count) || 0,
       appliedCount,
       baseValue: Number(baseValue.toFixed(4)),
+      peak: Number(baseValue.toFixed(4)),
       separateSampleMask: !!samplePredicate && samplePredicate !== applyPredicate,
       externalSource: sourceData !== data,
     };
