@@ -423,3 +423,14 @@ assert.match(gameSource, /if \(o\.key === 'loom'\) return makeLoomInteractable\(
 assert.match(gameSource, /loomFurniture: \(\) => makeLoomInteractable\(\)/, 'map-authored loom uses the same core interactable factory');
 assert.match(gameSource, /function makeLoomInteractable\(\)/, 'loom interaction is owned by the core furniture system');
 console.log('clothing weaving system tests passed');
+
+assert.match(creatureRendererSource, /'gar-wolf':[\s\S]*?baseShadeReferenceHex: '#585E5D'/,
+  'Gar-wolf base recolor uses its authored #585E5D full-strength coat anchor');
+assert.match(creatureRendererSource, /'dabinggi-hound':[\s\S]*?baseShadeReferenceHex: '#585E5D'/,
+  'Dabingi-hound base recolor uses its authored #585E5D full-strength coat anchor');
+assert.match(creatureRendererSource, /grehlr:[\s\S]*?baseShadeReferenceHex: '#424242'/,
+  'Grehlr base recolor uses its authored #424242 full-strength coat anchor');
+assert.match(creatureRendererSource, /recoloredBase\(baseUrl, baseColor, mask, fullBaseRecolor, spec\.baseShadeReferenceHex \|\| null, kind\)/,
+  'runtime base recolor passes the species-authored anchor instead of rediscovering a peak from sprite pixels');
+assert.match(creatureRendererSource, /shadeReference\.baseValue = referenceValue;[\s\S]*?shadeReference\.referenceHex = sourceReferenceHex\.toUpperCase\(\)/,
+  'fixed creature coat references override only the normalization anchor while keeping shared shade-fill math');
