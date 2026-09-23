@@ -73,6 +73,7 @@ assert.strictEqual(built.wallStyle, 'cavern');
 assert.strictEqual(built.isLocaleCavern, true);
 assert.strictEqual(built.denMotherKind, null, 'story cave locales must not inherit den encounter content');
 assert.strictEqual(built.cavernCreatureKind, 'grehlr', 'locale synthesis must carry the authored creature habitat into runtime material selection');
+assert.strictEqual(built.mesh.surfaceMaterial, 'farm-cliff', 'Banubu carved shell carries its authored farm-cliff material preset into the shared renderer');
 assert.deepStrictEqual(JSON.parse(JSON.stringify(built.cinematicCameras)), JSON.parse(JSON.stringify(banubu.cinematicCameras)), 'locale cavern synthesis must preserve authored cinematic cameras');
 assert.strictEqual(Object.keys(built.floorSurfaceByTile || {}).length, built.floor.length, 'every cavern floor tile must get a rendered-surface Y sample');
 assert(Number.isFinite(built.floorSurfaceY), 'cavern synthesis must expose a finite fallback floor surface Y');
@@ -180,6 +181,25 @@ assert(meshReads <= samplingMesh.indices.length * 3, 'sampling must not reread e
     'world-space cinematic target resolves live face offsets instead of a screen-space portrait center'
   );
   assert.strictEqual(cameraContext.CinematicCameraRuntime.activeCamera().position.y, 0, 'authored camera runtime must preserve exact world Y=0');
+  assert.deepStrictEqual(
+    JSON.parse(JSON.stringify(cameraContext.CinematicCameraRuntime.resolvedTargetForCamera('map_i_den_banubu', 'test_face'))),
+    { x: 6.75, y: 4.75, z: 5.25 },
+    'Map Edit target inspection uses the same NPC-face-relative resolution as active playback'
+  );
+  cameraContext.CinematicCameraRuntime.updateCameraTransform('map_i_den_banubu', 'test_face', {
+    position: { x: 8, y: 0.25, z: 9 },
+    target: { x: 0.5, y: 0.25, z: -0.5 },
+  });
+  assert.deepStrictEqual(
+    JSON.parse(JSON.stringify(cameraContext.CinematicCameraRuntime.activeCamera().position)),
+    { x: 8, y: 0.25, z: 9 },
+    'live authoring updates the exact camera record already consumed by dialogue playback'
+  );
+  assert.deepStrictEqual(
+    JSON.parse(JSON.stringify(cameraContext.CinematicCameraRuntime.resolvedTarget())),
+    { x: 7, y: 4.5, z: 5 },
+    'editing a face-relative target immediately changes the active world-space aim point'
+  );
 }
 
 console.log('Locale-authored cavern footprint, fixed-seed synthesis, keyed connector, and editor integration checks passed');
