@@ -10802,16 +10802,13 @@
         }
         if (!_finiteNpcFacePoint(face)) return null;
 
-        // AnimalSleepPresentation's Y-flattening is deliberately render-only:
-        // it happens at the shared pre-render checkpoint and is restored after
-        // drawing, while updateCameraPosition runs earlier in gameLoop. Mirror
-        // that temporary ground-preserving Y scale here so a cinematic target
-        // lands on the face players actually see during the rendered frame.
-        if (walker._animalSleepRequested === true) {
-          const reported = Number(window.AnimalSleepPresentation?.debugSnapshot?.().sleepScaleY);
-          const sleepScaleY = Number.isFinite(reported) && reported > 0 ? reported : 0.75;
-          const floorY = Number(walker.root?.position?.y);
-          if (Number.isFinite(floorY)) face.y = floorY + (face.y - floorY) * sleepScaleY;
+        // AnimalSleepPresentation's flattening is render-only and happens
+        // after updateCameraPosition. Ask that system to project this exact
+        // head-bone point through its own cached Y-scale + bottom-preserving
+        // grounding correction so the cinematic target matches rendered pixels.
+        if (walker._animalSleepRequested === true && window.AnimalSleepPresentation?.projectExternalSleeperWorldPoint) {
+          const projected = window.AnimalSleepPresentation.projectExternalSleeperWorldPoint(walker, face);
+          if (_finiteNpcFacePoint(projected)) face = projected;
         }
         return face;
       }
