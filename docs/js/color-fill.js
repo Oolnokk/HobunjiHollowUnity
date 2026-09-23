@@ -76,18 +76,19 @@
   }
 
   function sourceValue(r, g, b) {
-    return Math.max(r, g, b) / 255; // HSV V without the conversion overhead; proportional shading scales this linearly.
+    return relativeLuminance(r, g, b); // Perceptual brightness keeps dark colored fur/body art anchored consistently across hues.
   }
 
   function isAuthoredWhite(r, g, b) {
     return Math.min(r, g, b) >= 245; // Excludes white and its near-white antialiasing without rejecting cream or pale colored fur.
   }
 
-  // Use the brightest eligible authored source pixel as the normalization
-  // anchor. This preserves every authored intermediate shade instead of
-  // guessing that the art contains only a flat cel plus one fixed shadow
-  // strength. White/near-white neutral details remain excluded so they cannot
-  // hijack dark fur/body sprites whose real color range is intentionally low.
+  // Use the brightest eligible authored source pixel by perceptual luminance
+  // as the normalization anchor. This preserves every authored intermediate
+  // shade without making a saturated channel (especially on dark blue/green
+  // fur) read artificially brighter than the sprite actually appears.
+  // White/near-white neutral details remain excluded so they cannot hijack
+  // dark fur/body sprites whose real color range is intentionally low.
   function createShadeReference(sourceData, predicate = null, options = {}) {
     const cfg = options.config || shadeFillConfig();
     let peakValue = 0; // Used by shadeFillPixels as the 1.0 normalization anchor for the selected source region.
@@ -119,9 +120,9 @@
       if (data[i + 3] === 0 || (applyPredicate && !applyPredicate(i))
         || isAuthoredWhite(sourceData[i], sourceData[i + 1], sourceData[i + 2])) continue;
       const value = sourceValue(sourceData[i], sourceData[i + 1], sourceData[i + 2]);
-      // Preserve the source sprite's full authored value range relative to
-      // its brightest eligible pixel. This is shared by base/body recolors and
-      // by overlays that explicitly sample an untouched underlying raster.
+      // Preserve the source sprite's full authored perceptual-lightness range
+      // relative to its brightest eligible pixel. This is shared by base/body
+      // recolors and overlays that explicitly sample an untouched source raster.
       const shade = Math.max(0, Math.min(1, value / baseValue));
       data[i] = clampByte(tr * shade);
       data[i + 1] = clampByte(tg * shade);
