@@ -228,18 +228,25 @@
   }
 
   function speciesLabel(entry) {
-    return global.CREATURE_DB?.[entry?.kind]?.label || entry?.kind || 'animal';
+    const kind = String(entry?.kind || ''); // Stable species key used by both the live creature registry and genetics fallback.
+    return global.CREATURE_DB?.[kind]?.label || global.CreatureGenetics?.defaultLivestockName?.(kind) || kind || 'animal';
   }
   function normalizedCreatureSize(value) {
     const normalized = String(value || '').trim().toLowerCase(); // Canonical size token used for species-default versus bred-size comparison.
     return CREATURE_SIZE_CLASSES.includes(normalized) ? normalized : null;
   }
-  function rareSizeTierForEntry(entry) {
-    const kind = String(entry?.kind || ''); // Stable species key used to read its ordinary size from CREATURE_DB.
-    const defaultSize = normalizedCreatureSize(global.CREATURE_DB?.[kind]?.defaultSizeClass); // Species-normal size is the baseline for deciding whether this pet is unusually large or small.
+  function defaultCreatureSize(kind) {
+    const geneticsSize = global.CreatureGenetics?.creatureSizeClass?.(kind, null); // Authoritative injected CREATURE_DB path; unlike window.CREATURE_DB this is guaranteed to be the registry genetics actually uses.
+    return normalizedCreatureSize(geneticsSize) || normalizedCreatureSize(global.CREATURE_DB?.[kind]?.defaultSizeClass);
+  }
+  function rareSizeTierForEntry(entry, role = null) {
+    const kind = String(entry?.kind || ''); // Stable species key used to resolve the species-normal genetic size.
+    const defaultSize = defaultCreatureSize(kind); // Species-normal size comes from CreatureGenetics' own injected dependency rather than assuming CREATURE_DB is globally exposed.
     if (!defaultSize) return null;
-    const actualSize = normalizedCreatureSize(entry?.genotype?.sizeClass || entry?.sizeClass || defaultSize); // Bred genotype size is preferred; legacy entries quietly fall back to their species normal.
-    if (!actualSize) return null;
+    const roleSize = role === 'shoulderPet' ? 'small' : role === 'mount' ? 'large' : role === 'companion' ? 'medium' : null; // Active role is a safe legacy fallback because stable role assignment is itself size-gated.
+    const actualSize = normalizedCreatureSize(entry?.genotype?.sizeClass || entry?.sizeClass || roleSize)
+      || normalizedCreatureSize(global.CreatureGenetics?.creatureSizeClass?.(kind, entry?.genotype))
+      || defaultSize; // Stored genotype wins; active role preserves rare legacy entries whose genotype payload was stripped.
     const sizeDelta = CREATURE_SIZE_CLASSES.indexOf(actualSize) - CREATURE_SIZE_CLASSES.indexOf(defaultSize); // One-step and opposite-end differences select different authored reactions.
     return RARE_SIZE_TIER_BY_DELTA[String(sizeDelta)] || null;
   }
@@ -264,7 +271,7 @@
   function animalLine(npcId, animal, tier = animalTier(npcId, animal)) {
     const animalName = animal.entry?.name || speciesLabel(animal.entry); // Placeholder value prefers the stable animal's player-given name.
     const species = speciesLabel(animal.entry); // Placeholder value exposes the creature species label for generic lines.
-    const rareSizeTier = tier === 'recognition' ? null : rareSizeTierForEntry(animal.entry); // One-time recognition keeps its progression-specific copy; ordinary pet reactions may be replaced by a size quip.
+    const rareSizeTier = tier === 'recognition' ? null : rareSizeTierForEntry(animal.entry, animal.role); // One-time recognition keeps its progression-specific copy; ordinary pet reactions may be replaced by a size quip.
     const resolvedTier = rareSizeTier || tier; // Rare bred size takes priority over the ordinary familiarity tier for ambient pet copy.
     return resolve({
       npcId,
@@ -547,6 +554,21 @@
       recognitionLineReplacements: state.recognitionLineReplacements,
       greetingReplacementEncounters: state.greetingReplacementEncounters,
       greetingSuppressedNpcIds: [...state.greetingSuppressedNpcIds],
+      activeAnimalSizes: ROLE_IDS.map(role => {
+        const entry = global.StableAnimalProgression?.activeEntryForRole?.(role) || null; // On-demand mobile diagnostic; no recurring work is added.
+        if (!entry) return null;
+        const kind = String(entry.kind || '');
+        return {
+          role,
+          id: entry.id || null,
+          kind,
+          defaultSize: defaultCreatureSize(kind),
+          actualSize: normalizedCreatureSize(entry?.genotype?.sizeClass || entry?.sizeClass)
+            || normalizedCreatureSize(global.CreatureGenetics?.creatureSizeClass?.(kind, entry?.genotype))
+            || null,
+          rareTier: rareSizeTierForEntry(entry, role),
+        };
+      }).filter(Boolean),
     };
   }
 
@@ -561,7 +583,7 @@
     installed: true,
     resolve,
     profileForNpc: npcId => ({ ...profileForNpc(String(npcId || '')) }),
-    rareSizeTierForEntry: entry => rareSizeTierForEntry(entry),
+    rareSizeTierForEntry: (entry, role = null) => rareSizeTierForEntry(entry, role),
     reload: loadConfig,
     getDebug,
   });
