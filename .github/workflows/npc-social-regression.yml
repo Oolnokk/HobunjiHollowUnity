@@ -41,6 +41,7 @@ on:
       - 'docs/js/interior-fire-floor-integration.js'
       - 'docs/js/interior-environment-runtime.js'
       - 'docs/js/interior-fire-void-runtime.js'
+      - 'docs/js/dialogue-species-names.js'
       - 'docs/js/dialogue-content.js'
       - 'docs/js/ambient-dialogue.js'
       - 'docs/js/relationships-panel.js'
@@ -67,6 +68,7 @@ on:
       - 'scripts/test-npc-wardrobe-placeholders.js'
       - 'scripts/test-npc-bedroom-storage.js'
       - 'scripts/test-relationship-heart-greetings.js'
+      - 'scripts/test-dialogue-species-naming.js'
       - 'scripts/test-target-outline-alpha-cutout.js'
       - 'scripts/test-wilderness-map-load-recovery.js'
       - 'scripts/test-world-text-outline-overlay.js'
@@ -113,6 +115,7 @@ on:
       - 'docs/js/interior-fire-floor-integration.js'
       - 'docs/js/interior-environment-runtime.js'
       - 'docs/js/interior-fire-void-runtime.js'
+      - 'docs/js/dialogue-species-names.js'
       - 'docs/js/dialogue-content.js'
       - 'docs/js/ambient-dialogue.js'
       - 'docs/js/relationships-panel.js'
@@ -139,6 +142,7 @@ on:
       - 'scripts/test-npc-wardrobe-placeholders.js'
       - 'scripts/test-npc-bedroom-storage.js'
       - 'scripts/test-relationship-heart-greetings.js'
+      - 'scripts/test-dialogue-species-naming.js'
       - 'scripts/test-target-outline-alpha-cutout.js'
       - 'scripts/test-wilderness-map-load-recovery.js'
       - 'scripts/test-world-text-outline-overlay.js'
@@ -190,6 +194,7 @@ jobs:
           node --check docs/js/interior-environment-runtime.js
           node --check docs/js/interior-fire-void-runtime.js
           node --check docs/js/alcohol-gameplay-bridge.js
+          node --check docs/js/dialogue-species-names.js
           node --check docs/js/dialogue-content.js
           node --check docs/js/ambient-dialogue.js
           node --check docs/js/relationships-panel.js
@@ -218,6 +223,7 @@ jobs:
           node --check scripts/test-npc-wardrobe-placeholders.js
           node --check scripts/test-npc-bedroom-storage.js
           node --check scripts/test-relationship-heart-greetings.js
+          node --check scripts/test-dialogue-species-naming.js
           node --check scripts/test-target-outline-alpha-cutout.js
           node --check scripts/test-wilderness-map-load-recovery.js
           node --check scripts/test-world-text-outline-overlay.js
@@ -261,6 +267,8 @@ jobs:
         run: node scripts/test-npc-bedroom-storage.js
       - name: Test relationship heart rendering and greeting gates
         run: node scripts/test-relationship-heart-greetings.js
+      - name: Test dialogue speaker-relative species naming
+        run: node scripts/test-dialogue-species-naming.js
       - name: Test target outline alpha-cutout parity
         run: node scripts/test-target-outline-alpha-cutout.js
       - name: Test wilderness map load recovery
