@@ -285,40 +285,48 @@ const colorFillWindow = { SCRATCHBONES_CONFIG: { game: { portrait: { tinting: {}
 const colorFillContext = vm.createContext({ window: colorFillWindow, console });
 vm.runInContext(colorFillSource, colorFillContext, { filename: 'color-fill.js' });
 const shadowSource = new Uint8ClampedArray([
-  25, 25, 25, 255,   // Dark-but-not-outline pixel: proves no legacy 18% shadow floor survives.
-  100, 100, 100, 255, // Midtone pixel: stays below the authored peak.
-  200, 200, 200, 255, // Brightest eligible pixel: anchors the target color.
+  14, 12, 10, 255,   // 30%-black shadow of the near-black flat cel below (max value 14 = 70% of 20).
+  20, 17, 14, 255,   // Near-black authored flat cel; this must become the requested color exactly.
+  255, 255, 255, 255, // Small white/light detail: must NOT become the shading reference.
 ]);
 const shadowProbe = new Uint8ClampedArray(shadowSource);
-colorFillWindow.ColorFill.shadeFillPixels(shadowProbe, [120, 120, 120], {
+colorFillWindow.ColorFill.shadeFillPixels(shadowProbe, [240, 220, 180], {
   sourceData: shadowSource,
   debugLabel: 'woven-motif',
   samplePredicate: () => true,
   applyPredicate: i => i === 0,
 });
-assert.deepEqual(Array.from(shadowProbe.slice(0, 3)), [15, 15, 15],
-  'motif ink in a shadow scales from the brightest authored surface pixel instead of renormalizing its own shadow patch');
-assert.deepEqual(Array.from(shadowProbe.slice(4, 12)), [100, 100, 100, 255, 200, 200, 200, 255],
-  'shade inheritance paints only motif-selected pixels while using the rest of the source surface for reference');
+assert.deepEqual(Array.from(shadowProbe.slice(0, 3)), [168, 154, 126],
+  '30%-black authored shadow reapplies as a 30% darkening of the requested color');
+assert.deepEqual(Array.from(shadowProbe.slice(4, 12)), [20, 17, 14, 255, 255, 255, 255, 255],
+  'shade-map inheritance paints only motif-selected pixels while sampling the whole source region');
 const fillDebug = colorFillWindow.ColorFill.debugSnapshot().lastShadeFill;
-assert.equal(fillDebug.sampledCount, 3, 'shared shade fill samples the whole authored surface');
+assert.equal(fillDebug.sampledCount, 3, 'shared shade fill samples the whole authored surface, including light outliers');
 assert.equal(fillDebug.appliedCount, 1, 'shared shade fill paints only the motif mask');
 assert.equal(fillDebug.separateSampleMask, true, 'diagnostics expose separate sample and application masks');
 assert.equal(fillDebug.externalSource, true, 'diagnostics prove woven fill sampled the original untinted source raster');
+assert.equal(fillDebug.baseValue, Number((20 / 255).toFixed(4)),
+  'white outlier does not hijack the inferred near-black flat-cel reference');
 const wovenDebug = colorFillWindow.ColorFill.debugSnapshot().shadeFillsByLabel['woven-motif'];
 assert.equal(wovenDebug.sequence, fillDebug.sequence, 'named woven diagnostic retains the exact motif pass for Pixel Probe');
 assert.equal(wovenDebug.appliedCount, 1, 'named woven diagnostic keeps motif-only paint count');
-const peakProbe = new Uint8ClampedArray(shadowSource);
-colorFillWindow.ColorFill.shadeFillPixels(peakProbe, [120, 120, 120], {
+
+const mapProbe = new Uint8ClampedArray(shadowSource);
+colorFillWindow.ColorFill.shadeFillPixels(mapProbe, [240, 220, 180], {
   sourceData: shadowSource,
   samplePredicate: () => true,
-  applyPredicate: () => true,
+  applyPredicate: i => i < 8,
 });
-assert.deepEqual(Array.from(peakProbe), [
-  15, 15, 15, 255,
-  60, 60, 60, 255,
-  120, 120, 120, 255,
-], 'peak-anchored fill maps the brightest authored pixel to the requested color and preserves darker ratios below it');
+assert.deepEqual(Array.from(mapProbe.slice(0, 8)), [
+  168, 154, 126, 255,
+  240, 220, 180, 255,
+], 'direct target fill plus recovered black-opacity map reproduces flat cel and 30%-black shadow exactly');
+assert.match(colorFillSource, /AUTHORED_SHADOW_VALUE_RATIO = 0\.70/,
+  'shared ColorFill encodes the authored 30%-black shadow convention');
+assert.match(colorFillSource, /const score = baseMass \+ shadowMass;/,
+  'flat-cel reference is inferred from the base/shadow value pair instead of the absolute brightest pixel');
+assert.match(colorFillSource, /value \/ baseValue/,
+  'final tint reapplies the recovered shadow map as a relative value multiplier');
 assert.match(source, /shadingSource = null, debugLabel = 'woven-motif'/,
   'shared motif compositor accepts a caller-specific diagnostic label without changing its rendering inputs');
 assert.match(colorFillSource, /function createShadeReference\(sourceData, predicate = null, options = \{\}\)/,
