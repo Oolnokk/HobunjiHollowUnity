@@ -65,8 +65,8 @@
   // trench reverts to grass once fully filled. Redigging (single tap) restores depth to 1.
   const TRENCH_SILT_RATE  = 0.0006;  // depth lost per sim tick, per unit rain strength
   const TOWN_DRAIN_RAIN_EQUIVALENT = 1.65; // Used by Hobunji's passive storm drains: cancels ordinary strength-2 rain on normal town ground while leaving strength-3 storms able to accumulate.
-  const TOWN_FLOOD_SHELTER_ENTER_DEPTH = 0.88; // Used to start the NPC shelter emergency only when the town-wide flood sheet is close to MAX_WATER.
-  const TOWN_FLOOD_SHELTER_EXIT_DEPTH = 0.70; // Used as hysteresis so NPC schedules do not flicker on/off while flood depth hovers near the emergency boundary.
+  const TOWN_FLOOD_SHELTER_ENTER_FRACTION = 0.88; // Used to start the NPC shelter emergency only when the town-wide flood sheet reaches 88% of MAX_WATER.
+  const TOWN_FLOOD_SHELTER_EXIT_FRACTION = 0.70; // Used as hysteresis so NPC schedules do not flicker on/off until the flood falls below 70% of MAX_WATER.
 
   // ── Merged water mesh apron constants ──
   const FAR_APRON_ROWS = 2;      // how many tile-rows of apron beyond the seam
@@ -440,8 +440,9 @@
 
   function _syncTownFloodEmergency(baseline) {
     const depth = baseline?.visible && Number.isFinite(baseline.depth) ? baseline.depth : 0; // Used to drive hysteretic shelter state from the same common flood sheet NPCs/players actually see.
-    if (!_townFloodEmergency && depth >= TOWN_FLOOD_SHELTER_ENTER_DEPTH) _townFloodEmergency = true;
-    else if (_townFloodEmergency && depth <= TOWN_FLOOD_SHELTER_EXIT_DEPTH) _townFloodEmergency = false;
+    const depthFraction = deps?.MAX_WATER > 0 ? depth / deps.MAX_WATER : 0; // Used so emergency thresholds remain near-max even if global MAX_WATER is retuned.
+    if (!_townFloodEmergency && depthFraction >= TOWN_FLOOD_SHELTER_ENTER_FRACTION) _townFloodEmergency = true;
+    else if (_townFloodEmergency && depthFraction <= TOWN_FLOOD_SHELTER_EXIT_FRACTION) _townFloodEmergency = false;
     return _townFloodEmergency;
   }
 
@@ -694,8 +695,10 @@
     town.floodEmergency = isTownFloodEmergency();
     town.simulatedFloodEmergency = _townFloodEmergency;
     town.floodEmergencyDebugOverride = _townFloodEmergencyDebugOverride;
-    town.floodEmergencyEnterDepth = TOWN_FLOOD_SHELTER_ENTER_DEPTH;
-    town.floodEmergencyExitDepth = TOWN_FLOOD_SHELTER_EXIT_DEPTH;
+    town.floodEmergencyEnterFraction = TOWN_FLOOD_SHELTER_ENTER_FRACTION;
+    town.floodEmergencyExitFraction = TOWN_FLOOD_SHELTER_EXIT_FRACTION;
+    town.floodEmergencyEnterDepth = deps ? deps.MAX_WATER * TOWN_FLOOD_SHELTER_ENTER_FRACTION : 0;
+    town.floodEmergencyExitDepth = deps ? deps.MAX_WATER * TOWN_FLOOD_SHELTER_EXIT_FRACTION : 0;
     return {
       farm: summarize(_farmFloodBaseline, farmFloodMesh, farmWaterMesh),
       town,
