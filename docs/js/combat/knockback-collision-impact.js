@@ -85,13 +85,9 @@
     return effects;
   }
 
-  function resolve(entity, descriptor, tilePx, hooks = {}) {
-    const state = entity?._knockbackCollisionImpact;
-    if (!state || state.resolved) return null;
-    const measure = impactStrength(entity, tilePx);
-    state.resolved = true;
-    const deficitTiles = measure.deficitTiles;
-    const effects = effectsFor(descriptor, deficitTiles);
+  function applyResolvedImpact(entity, descriptor, tilePx, hooks, strengthTiles, measure, meta = {}) {
+    const strength = Math.max(0, finite(strengthTiles));
+    const effects = effectsFor(descriptor, strength);
     const appliedEffects = {}; // Pixel Probe reports what actually landed after resource caps/lethality, separate from the full scaled profile.
     const resource = window.ResourceSystem;
     let lethal = false;
@@ -120,22 +116,44 @@
       resource?.enforceCaps?.(entity);
     }
 
+    const tile = Math.max(0.001, finite(tilePx, 1));
     lastImpact = {
       at: Date.now(),
+      mode: meta.mode || 'horizontal',
       label: descriptor?.label || descriptor?.kind || 'unspecified collision',
       kind: descriptor?.kind || 'fallback',
       bladedHazard: descriptor?.bladedHazard === true,
       fireHazard: descriptor?.fireHazard === true,
       lethal,
-      deficitTiles,
-      strengthPercent: deficitTiles * 100,
-      intendedTiles: measure.intendedPx / Math.max(0.001, finite(tilePx, 1)),
-      traveledTiles: measure.traveledPx / Math.max(0.001, finite(tilePx, 1)),
+      deficitTiles: strength,
+      strengthPercent: strength * 100,
+      intendedTiles: Math.max(0, finite(measure?.intendedPx)) / tile,
+      traveledTiles: Math.max(0, finite(measure?.traveledPx)) / tile,
+      dropWorld: Math.max(0, finite(meta.dropWorld)),
+      dropTiers: Math.max(0, finite(meta.dropTiers)),
       effects: Object.fromEntries(Object.entries(effects).map(([key, value]) => [key, Math.round(value * 10) / 10])),
       appliedEffects: Object.fromEntries(Object.entries(appliedEffects).map(([key, value]) => [key, Math.round(value * 10) / 10])),
     };
-    entity._knockbackCollisionImpact = null;
+    if (meta.clearState !== false) entity._knockbackCollisionImpact = null;
     return lastImpact;
+  }
+
+  function resolve(entity, descriptor, tilePx, hooks = {}) {
+    const state = entity?._knockbackCollisionImpact;
+    if (!state || state.resolved) return null;
+    const measure = impactStrength(entity, tilePx);
+    state.resolved = true;
+    return applyResolvedImpact(entity, descriptor, tilePx, hooks, measure.deficitTiles, measure, { mode: 'horizontal' });
+  }
+
+  function resolveStrength(entity, descriptor, strengthTiles, tilePx, hooks = {}, meta = {}) {
+    if (!entity) return null;
+    const strength = Math.max(0, finite(strengthTiles));
+    if (!(strength > 0)) return null;
+    return applyResolvedImpact(entity, descriptor, tilePx, hooks, strength, { intendedPx: 0, traveledPx: 0 }, {
+      ...meta,
+      mode: meta.mode || 'explicit',
+    });
   }
 
   function coolBurningOnDodge(entity) {
@@ -164,6 +182,7 @@
     impactStrength,
     effectsFor,
     resolve,
+    resolveStrength,
     coolBurningOnDodge,
     extinguishInWater,
     debugSnapshot,

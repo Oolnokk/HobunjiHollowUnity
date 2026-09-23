@@ -9,6 +9,8 @@ const impactSource = fs.readFileSync('docs/js/combat/knockback-collision-impact.
 const resourceSource = fs.readFileSync('docs/js/combat/resource-system.js', 'utf8'); // Real affliction implementation, including Burning Health.
 const footingBridgeSource = fs.readFileSync('docs/js/footing-damage-recovery-bridge.js', 'utf8'); // Runtime Footing multiplier used by both direct hits and collision impacts.
 const gameSource = fs.readFileSync('docs/game.js', 'utf8'); // Runtime forced-movement/collision authority.
+const indexSource = fs.readFileSync('docs/index.html', 'utf8'); // Confirms the Burning Health presentation module is shipped before game.js.
+const burningVfxSource = fs.readFileSync('docs/js/combat/burning-affliction-vfx.js', 'utf8'); // Authored furniture fire-emitter presentation for Burning Health.
 const editorSource = fs.readFileSync('docs/tools/furniture-avatar-author/index.html', 'utf8'); // Furniture hazard authoring persistence.
 const playerVitalsSource = fs.readFileSync('docs/js/player-vitals.js', 'utf8'); // Player water-extinguish hook.
 const enemyDodgeSource = fs.readFileSync('docs/js/combat/combat-enemy-dodge.js', 'utf8'); // Non-player roll-dodge burn cooling.
@@ -22,10 +24,20 @@ assert.match(gameSource, /KnockbackCollisionImpact\?\.begin\?\.\(target, speedPx
   'ordinary knockback records its authored intended travel once when the shove starts');
 assert.match(gameSource, /function sweptMove\([^)]*stopOnBlock = false\)[\s\S]{0,1800}blockedAt/,
   'shared swept collision can stop forced movement at the first rejected position and expose that impact point');
-assert.match(gameSource, /resolveKnockbackCollision\(c, ckSwept,[\s\S]{0,260}c\.knockbackT = 0/,
-  'creature knockback resolves one collision impact and terminates the remaining shove');
-assert.match(gameSource, /resolveKnockbackCollision\(player, kbSwept,[\s\S]{0,260}player\.knockbackT = 0/,
-  'player knockback resolves one collision impact and terminates the remaining shove');
+assert.match(gameSource, /function sweepKnockbackMotion[\s\S]{0,1800}tryStartKnockbackLedgeTransit/,
+  'forced knockback owns a shared ledge-aware sweep before ordinary collision resolution');
+assert.match(gameSource, /function knockbackAirborneCanOccupyAt[\s\S]{0,1800}obstacleSurfaceY >= originSurfaceY/,
+  'airborne ledge knockback ignores lower terrain but still collides with same/higher obstructions');
+assert.match(gameSource, /function findClosestKnockbackLedgeLanding[\s\S]{0,2200}canOccupyAt\(x, y, radiusPx\)/,
+  'ledge falls require a strict safe lower landing tile on the far side of the cliff');
+assert.match(gameSource, /knockbackDescriptorOverride = \{ kind: 'fallback', label: 'Unsafe cliff edge' \}/,
+  'a cliff with no safe far-side landing uses the ordinary fallback collision profile');
+assert.match(gameSource, /resolveKnockbackCollision\(c, ckSwept,[\s\S]{0,420}beginKnockbackLedgeFall\(c\)/,
+  'creature knockback resolves a later same-height collision then falls when it had already crossed a ledge');
+assert.match(gameSource, /resolveKnockbackCollision\(player, kbSwept,[\s\S]{0,420}beginKnockbackLedgeFall\(player\)/,
+  'player knockback shares the same ledge-to-fall handoff');
+assert.match(gameSource, /resolveStrength\([\s\S]{0,400}mode: 'ledge-fall'/,
+  'cliff landing impact strength is explicit vertical-drop strength rather than horizontal deficit');
 assert.match(gameSource, /advanceCreatureProneThrow[\s\S]{0,1800}resolveKnockbackCollision/,
   'Footing-break prone throws use the same wall-impact system');
 assert.match(gameSource, /environmentalImpact = dmgOpts\?\.environmentalImpact === true/,
@@ -52,6 +64,20 @@ assert.match(gameSource, /_banditTentCollisionId[\s\S]{0,100}kind: 'wood'/,
   'tent collision is assigned the wood profile');
 assert.match(gameSource, /performDodge[\s\S]{0,2400}coolBurningOnDodge/,
   'player roll dodge cools Burning Health exactly once when the dodge starts');
+
+assert.match(gameSource, /BurningAfflictionVfx\?\.syncEntity\?\.\(player, playerMesh\)/,
+  'player visual update keeps Burning Health VFX attached to the live avatar root');
+assert.match(gameSource, /BurningAfflictionVfx\?\.syncEntity\?\.\(c, grp\)/,
+  'creature visual update keeps Burning Health VFX attached to enemy/companion avatar roots');
+assert.match(burningVfxSource, /AuthoredFurniture\.createEmitterVisual|AuthoredFurniture\?\.createEmitterVisual/,
+  'Burning Health reuses the authored-furniture emitter renderer instead of creating a second particle implementation');
+assert.match(burningVfxSource, /load\('campfire'\)[\s\S]{0,900}type[^\n]*fire|type[^\n]*fire[\s\S]{0,900}load\('campfire'\)/,
+  'Burning Health sources a real fire emitter from the authored campfire furniture data');
+assert.match(burningVfxSource, /ResourceSystem\?\.getAffliction\?\.\(entity, 'burningHealth'\)/,
+  'Burning Health VFX is presentation-only and follows the existing affliction amount');
+assert(indexSource.indexOf('js/combat/burning-affliction-vfx.js') > indexSource.indexOf('js/combat/resource-system.js')
+  && indexSource.indexOf('js/combat/burning-affliction-vfx.js') < indexSource.indexOf('game.js?v='),
+  'Burning Health VFX loads after its resource dependency and before game.js calls it');
 
 assert.match(resourceSource, /burningHealth:\s*\{[\s\S]{0,300}resource:\s*"health"[\s\S]{0,300}tags:\s*\["fire", "physical"\]/,
   'Burning Health is a first-class Health affliction tagged as fire damage');
@@ -194,6 +220,24 @@ const KNOCKBACK_DUR_S = 0.18; // Production fixed knockback duration.
   approx(ResourceSystem.getAffliction(e, 'bruisedHealth'), 30.4, 'stone collision applies scaled Bruised Health');
 }
 
+// Ledge landing damage uses vertical drop tiers directly and does not require a horizontal collision deficit.
+{
+  const e = entity();
+  let healthDamage = 0; // Captures explicit cliff-fall Health damage through the same environmental impact hook.
+  const result = Impact.resolveStrength(e, { kind: 'stone', label: 'Cliff fall' }, 2, TILE, {
+    dealHealthDamage(_target, amount) { healthDamage += amount; return { applied: amount, lethal: false }; },
+  }, { mode: 'ledge-fall', dropWorld: 5, dropTiers: 2 });
+  approx(result.deficitTiles, 2, 'two elevation tiers produce 200% cliff-impact strength');
+  approx(result.strengthPercent, 200, 'explicit fall strength uses the same profile percentage scale');
+  approx(result.effects.health, 8, 'two-tier cliff fall scales stone Health damage to 200%');
+  approx(result.effects.footing, 20, 'two-tier cliff fall scales stone Footing payload to 200% before the shared bridge');
+  approx(healthDamage, 8, 'cliff fall Health damage reaches the existing environmental-damage authority');
+  approx(e.footing, 60, 'shared x2 Footing bridge applies 40 actual Footing loss for a two-tier fall');
+  assert.equal(result.mode, 'ledge-fall', 'debug output distinguishes fall impact from horizontal collision');
+  approx(result.dropWorld, 5, 'debug output retains actual world-Y drop');
+  approx(result.dropTiers, 2, 'debug output retains elevation-tier drop');
+}
+
 // Material and authored-hazard profiles remain distinct.
 {
   const wood = Impact.effectsFor({ kind: 'wood' }, 1.5);
@@ -248,4 +292,4 @@ const KNOCKBACK_DUR_S = 0.18; // Production fixed knockback duration.
   assert.equal(ResourceSystem.getAffliction(e, 'burningHealth'), 0, 'water fully extinguishes Burning');
 }
 
-console.log('Knockback collision + Burning Health regression passed');
+console.log('Knockback collision + ledge fall + Burning Health regression passed');
