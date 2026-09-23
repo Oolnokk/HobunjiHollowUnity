@@ -20,13 +20,16 @@
 
   const activeRigs = new Set(); // Rigs whose newly loaded/replaced foot meshes may need hooks.
   const MAX_SNAPSHOT_AGE_MS = 160;
+  const FOOT_WATER_MASK_LAYER = 26; // Mirrors HeldObjectRenderOrder's private foot-only stencil layer used during water recomposition.
   const OUTLINE_THICKNESS_MULTIPLIER = 2; // Hands/feet only; shared shell uniform is restored after each limb mesh draw. // Allows the adjacent base->held-overlay->outline sequence without accepting old frames.
   const RESCAN_INTERVAL_MS = 150; // Catches the async fallback->GLB foot swap without needing a dedicated signal.
   const RESCAN_ATTEMPTS = 20; // ~3s — generous relative to typical GLB load time.
   let baseMatrixCaptures = 0; // Diagnostic count of visible foot matrices captured by this adapter.
+  let lockedWaterMaskDraws = 0; // Diagnostic count of foot-water stencil draws forced to the captured visible matrix.
   let lockedShellDraws = 0; // Diagnostic count of shell draws forced to the captured visible matrix.
   let lockedMaterialIdDraws = 0; // Diagnostic count of material-ID draws forced to the captured visible matrix.
-  let missedOutlineSnapshots = 0; // Outline draws where no recent visible matrix was available.
+  let missedOutlineSnapshots = 0; // Outline/water-mask draws where no recent visible matrix was available.
+  let waterOccludedTaggedMeshes = 0; // Diagnostic count of current-or-former foot meshes explicitly registered for water occlusion.
 
   function isShellMaterial(material) {
     return !!(
@@ -43,7 +46,12 @@
     );
   }
 
-  function outlinePassKind(scene, material) {
+  function secondaryPassKind(scene, camera, material) {
+    if (
+      !scene?.overrideMaterial
+      && material?.colorWrite === false
+      && camera?.layers?.mask === ((1 << FOOT_WATER_MASK_LAYER) >>> 0)
+    ) return 'water-mask';
     if (!scene?.overrideMaterial) return null;
     if (isShellMaterial(material)) return 'shell';
     if (isMaterialIdMaterial(material)) return 'material-id';
@@ -51,11 +59,35 @@
   }
 
   function isVisibleFootDraw(scene, material) {
-    return !scene?.overrideMaterial && !isShellMaterial(material) && !isMaterialIdMaterial(material);
+    return !scene?.overrideMaterial
+      && material?.colorWrite !== false
+      && !isShellMaterial(material)
+      && !isMaterialIdMaterial(material);
+  }
+
+  function markWaterOccluded(mesh, rigState, side) {
+    if (!mesh?.isMesh) return false;
+    mesh.userData = mesh.userData || {};
+    mesh.userData.hobunjiProceduralFoot = true;
+    mesh.userData.hobunjiProceduralFootSide = side || mesh.userData.hobunjiProceduralFootSide || null;
+    if (mesh.userData.__hobunjiFootWaterOcclusion) return false;
+
+    const renderOrder = global.HeldObjectRenderOrder; // Used to register this exact rendered foot mesh with the foot-only water stencil pass.
+    const registered = !!renderOrder?.markWaterOccludedMesh?.(mesh);
+    if (!registered && !renderOrder?.installed) {
+      // HeldObjectRenderOrder normally exists before the game attaches feet.
+      // Keep the semantic tag as a fallback so its scene scan can adopt us.
+      mesh.userData.hobunjiWaterOccludedBySurface = true;
+    }
+    mesh.userData.__hobunjiFootWaterOcclusion = true;
+    rigState.waterOccludedMeshes++;
+    waterOccludedTaggedMeshes++;
+    return true;
   }
 
   function installMeshHook(mesh, rigState, side) {
     if (!mesh?.isMesh) return false;
+    markWaterOccluded(mesh, rigState, side);
     if (mesh.userData?.__hobunjiFeetOutlineParity) return false;
 
     const previousBefore = typeof mesh.onBeforeRender === 'function' ? mesh.onBeforeRender : null;
@@ -70,6 +102,7 @@
     mesh.onBeforeRender = function feetOutlineParityBefore(...args) {
       previousBefore?.apply(this, args);
       const scene = args[1];
+      const camera = args[2];
       const material = args[4];
       const now = performance.now();
 
@@ -83,7 +116,7 @@
         return;
       }
 
-      const passKind = outlinePassKind(scene, material);
+      const passKind = secondaryPassKind(scene, camera, material);
       if (!passKind) {
         state.restoreStack.push(null);
         state.thicknessRestoreStack.push(null);
@@ -113,7 +146,10 @@
       // material-ID rendering to the exact transform that produced the visible foot.
       state.restoreStack.push(this.matrixWorld.clone());
       this.matrixWorld.copy(state.visibleMatrixWorld);
-      if (passKind === 'shell') {
+      if (passKind === 'water-mask') {
+        rigState.lockedWaterMaskDraws++;
+        lockedWaterMaskDraws++;
+      } else if (passKind === 'shell') {
         rigState.lockedShellDraws++;
         lockedShellDraws++;
       } else {
@@ -162,10 +198,12 @@
 
     const rigState = {
       hookedMeshes: 0, // Number of current-or-former foot meshes that received matrix-lock hooks.
+      waterOccludedMeshes: 0, // Foot meshes explicitly registered with HeldObjectRenderOrder's water-only occlusion path.
       baseMatrixCaptures: 0, // Visible foot draws captured for this leg rig.
+      lockedWaterMaskDraws: 0, // Foot-water stencil draws that reused the exact visible foot matrix.
       lockedShellDraws: 0, // Shell draws that reused the exact visible foot matrix.
       lockedMaterialIdDraws: 0, // Material-ID draws that reused the exact visible foot matrix.
-      missedOutlineSnapshots: 0, // Outline draws without a recent visible matrix to reuse.
+      missedOutlineSnapshots: 0, // Outline/water-mask draws without a recent visible matrix to reuse.
     };
     activeRigs.add(handle);
     // The fallback foot is installed synchronously (hooked by the first scan below);
@@ -192,7 +230,9 @@
     getDebug() {
       return {
         activeRigs: activeRigs.size,
+        waterOccludedTaggedMeshes,
         baseMatrixCaptures,
+        lockedWaterMaskDraws,
         lockedShellDraws,
         lockedMaterialIdDraws,
         missedOutlineSnapshots,

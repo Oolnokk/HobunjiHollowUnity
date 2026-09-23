@@ -19349,14 +19349,24 @@
 
       // Main colour pass render target — keeps a depth texture around so the
       // composite shader below can read real per-pixel scene depth.
-      function _makeSceneRT(w, h) {
+      function _makeSceneRT(w, h, needsStencil = false) {
         const rt = new THREE.WebGLRenderTarget(w, h, {
           minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, format: THREE.RGBAFormat,
+          stencilBuffer: needsStencil,
         });
         rt.depthTexture = new THREE.DepthTexture(w, h);
+        if (needsStencil) {
+          // HeldObjectRenderOrder uses two stencil bits while rendering the
+          // gameplay scene into this offscreen target: bit 1 protects held
+          // weapons/hands, while bit 0 identifies feet that water may repaint.
+          // A plain DepthTexture leaves WebGLRenderTarget with no stencil
+          // attachment, so those masks silently cannot work while outlines are on.
+          rt.depthTexture.format = THREE.DepthStencilFormat;
+          rt.depthTexture.type = THREE.UnsignedInt248Type;
+        }
         return rt;
       }
-      const _mainRT   = _makeSceneRT(1, 1);
+      const _mainRT   = _makeSceneRT(1, 1, true);
       // Furniture/terrain material-ID buffer — alpha 0 means "nothing tagged
       // here". Carries its own depth texture (depth of the tagged objects
       // only, since the pass that fills this target restricts the camera to
@@ -26298,7 +26308,7 @@
       if (isDesktop) {
         threeContainer.addEventListener('contextmenu', (e) => e.preventDefault());
         threeContainer.addEventListener('pointerdown', (e) => {
-          if (menuOpen || farmEditMode || e.shiftKey || window.__mapEditorGizmoActive) return;
+          if (window.PixelProbe?.armed || menuOpen || farmEditMode || e.shiftKey || window.__mapEditorGizmoActive) return;
           const mouseAction = getActionForButton('desktop', 'Mouse' + e.button);
           if (mouseAction === 'action1' && furniturePlacementModeArmed()) {
             desktopFurniturePlacementMousePresses.add(e.button);
