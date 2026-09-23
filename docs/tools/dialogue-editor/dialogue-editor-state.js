@@ -1,6 +1,6 @@
 'use strict';
 const DEFAULT_SETTINGS={
-  workspaceOrientation:'vertical',navPlacement:'left',graphFlow:'vertical',portAttachment:'choiceRows',routeStyle:'orthogonal',nodeDensity:'standard',navStyle:'nested',hierarchy:['trigger','location','relationship','time','season'],emptyHandling:'bucket',multiHandling:'combined',sortMode:'label',showConditionSummary:true,showAlternatives:true,autoArrangeOrthographic:true,colorCodeNodes:true
+  workspaceOrientation:'vertical',navPlacement:'left',graphFlow:'vertical',portAttachment:'choiceRows',routeStyle:'orthogonal',nodeDensity:'standard',navStyle:'nested',hierarchy:['trigger','location','relationship','time','season'],emptyHandling:'bucket',multiHandling:'combined',sortMode:'label',showConditionSummary:true,autoArrangeOrthographic:true,colorCodeNodes:true
 };
 const PRESETS=[
   {id:'baseline',name:'Current-editor baseline',why:'Flat tree list, horizontal BFS graph, choice-row exits.',settings:{...DEFAULT_SETTINGS,workspaceOrientation:'horizontal',graphFlow:'horizontal',hierarchy:[],navStyle:'nested'}},
@@ -14,7 +14,7 @@ const PRESETS=[
 
 let state={
   db:{schema:'hobunji_npc_database.v2',npcs:[]},npcId:null,treeId:null,
-  settings:loadSettings(),search:'',millerPath:[],customPresets:[],errors:[],events:[],fitScale:1,nodeId:null,editorMode:'tree',dragTreeId:null,lastGraphColorIndex:new Map(),history:{past:[],future:[],lastLabel:'No edits yet',lastCoalesceKey:null,lastCoalesceAt:0}
+  settings:loadSettings(),search:'',millerPath:[],customPresets:[],presetPickerOpen:false,errors:[],events:[],fitScale:1,nodeId:null,editorMode:'tree',dragTreeId:null,lastGraphColorIndex:new Map(),history:{past:[],future:[],lastLabel:'No edits yet',lastCoalesceKey:null,lastCoalesceAt:0}
 };
 let poolSel={poolId:null,expandedEntryId:null};
 let randomPromptPicks=[];
@@ -71,6 +71,7 @@ function loadSettings(){
   }catch{return JSON.parse(JSON.stringify(DEFAULT_SETTINGS))}
 }
 function validateSettings(s){
+  delete s.showAlternatives; // Retired overlay preference; preset chooser visibility is session UI state.
   const validDims=new Set(DIMENSIONS.map(d=>d.key));
   s.hierarchy=(Array.isArray(s.hierarchy)?s.hierarchy:[]).filter((v,i,a)=>validDims.has(v)&&a.indexOf(v)===i).slice(0,5);
   return s;

@@ -43,9 +43,10 @@ function wire(){
   $('clearHierarchy').onclick=()=>commitMutation('Switched to flat tree list',()=>{state.settings.hierarchy=[];state.millerPath=[]});
   $('reverseHierarchy').onclick=()=>commitMutation('Reversed hierarchy order',()=>{state.settings.hierarchy=[...state.settings.hierarchy].reverse();state.millerPath=[]},{detail:[...state.settings.hierarchy].reverse()});
   $('pinCurrent').onclick=pinCurrent;$('useDemo').onclick=useDemo;$('resetLayout').onclick=resetLayout;$('exportDbInPanel').onclick=exportDatabase;$('exportLayoutInPanel').onclick=exportLayout;$('fitBtn').onclick=fitGraph;
-  $('toggleAlternatives').onclick=()=>commitMutation(state.settings.showAlternatives?'Hid alternatives':'Showed alternatives',()=>{state.settings.showAlternatives=!state.settings.showAlternatives},{render:'all'});
+  $('toggleAlternatives').onclick=()=>setPresetPickerOpen(!state.presetPickerOpen);
+  $('closeAlternatives').onclick=()=>{setPresetPickerOpen(false);$('toggleAlternatives').focus()};
   addEventListener('pointermove',updateTreePointerDrag,{passive:false});addEventListener('pointerup',finishTreePointerDrag,{passive:false});addEventListener('pointercancel',finishTreePointerDrag,{passive:false});
-  addEventListener('keydown',e=>{const tag=e.target.tagName;if(tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT')return;const mod=e.ctrlKey||e.metaKey;if(mod&&e.key.toLowerCase()==='z'){e.preventDefault();e.shiftKey?redo():undo()}else if(mod&&e.key.toLowerCase()==='y'){e.preventDefault();redo()}else if((e.key==='Delete'||e.key==='Backspace')&&state.nodeId){e.preventDefault();deleteNode()}});
+  addEventListener('keydown',e=>{if(e.key==='Escape'&&state.presetPickerOpen){e.preventDefault();setPresetPickerOpen(false);$('toggleAlternatives').focus();return}const tag=e.target.tagName;if(tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT')return;const mod=e.ctrlKey||e.metaKey;if(mod&&e.key.toLowerCase()==='z'){e.preventDefault();e.shiftKey?redo():undo()}else if(mod&&e.key.toLowerCase()==='y'){e.preventDefault();redo()}else if((e.key==='Delete'||e.key==='Backspace')&&state.nodeId){e.preventDefault();deleteNode()}});
   addEventListener('resize',()=>{if(innerWidth>720)$('controlPanel').classList.remove('open')});
 }
 

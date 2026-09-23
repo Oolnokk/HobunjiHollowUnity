@@ -60,12 +60,18 @@
 .choiceEditRow button,.slotEditRow button{padding:6px 8px}
 .editorNote{font-size:9px;color:var(--muted);line-height:1.4}
 .autoArrangeBadge{color:var(--good);border-color:rgba(67,214,161,.3);background:rgba(67,214,161,.08)}
-#alternatives{position:absolute;left:10px;right:10px;bottom:10px;z-index:8;display:flex;gap:7px;overflow:auto;padding:7px;border:1px solid rgba(255,255,255,.1);background:rgba(8,17,27,.94);backdrop-filter:blur(8px);border-radius:12px;box-shadow:var(--shadow);max-height:162px}
-.altCard{min-width:190px;width:190px;border:1px solid rgba(255,255,255,.1);border-radius:10px;background:rgba(255,255,255,.035);padding:7px;cursor:pointer}
+#toggleAlternatives.active{border-color:var(--accent);background:rgba(106,167,255,.22)}
+#alternatives{flex:0 0 auto;min-height:0;max-height:min(210px,38vh);display:flex;flex-direction:column;border-top:1px solid var(--line);background:#0a1521}
+#alternativesHead{flex:0 0 auto;display:flex;align-items:center;gap:8px;padding:6px 10px;font-size:10px;color:var(--muted)}
+#alternativesHead b{color:var(--text)}
+#alternativesHead button{margin-left:auto;font-size:10px;padding:5px 8px}
+#alternativesList{display:flex;gap:7px;overflow:auto;min-height:0;padding:0 10px 9px;overscroll-behavior:contain}
+.altCard{flex:0 0 190px;min-width:190px;width:190px;text-align:left;display:block;border:1px solid rgba(255,255,255,.1);border-radius:10px;background:rgba(255,255,255,.035);padding:7px;cursor:pointer}
 .altCard:hover{border-color:rgba(106,167,255,.45);background:rgba(106,167,255,.07)}
-.altName{font-size:10px;font-weight:850;color:var(--text)}
-.altWhy{font-size:8px;color:var(--muted);line-height:1.3;margin:2px 0 5px;height:22px;overflow:hidden}
-.miniPreview{height:66px;border:1px solid rgba(255,255,255,.08);border-radius:7px;background:#07111b;position:relative;overflow:hidden}
+.altCard:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.altName{display:block;font-size:10px;font-weight:850;color:var(--text)}
+.altWhy{display:block;font-size:8px;color:var(--muted);line-height:1.3;margin:2px 0 5px;height:22px;overflow:hidden}
+.miniPreview{display:block;height:66px;border:1px solid rgba(255,255,255,.08);border-radius:7px;background:#07111b;position:relative;overflow:hidden}
 .miniNav{position:absolute;background:#101b28;border-color:#2b405a;border-style:solid}
 .miniGraph{position:absolute;display:flex;gap:5px;align-items:center;justify-content:center}
 .miniNode{width:23px;height:14px;border-radius:3px;border:1px solid rgba(106,167,255,.55);background:rgba(106,167,255,.16)}
@@ -87,7 +93,7 @@
 @media (max-width:980px){
   :root{--control-w:290px;--nav-w:270px}
   #brandText div{display:none}
-  #alternatives{max-height:150px}
+  #alternatives{max-height:min(190px,36vh)}
 }
 @media (max-width:720px){
   #topbar{padding-left:7px;padding-right:7px;gap:5px}
@@ -100,8 +106,9 @@
   #workspace{height:100%;width:100%}
   #navigatorPane{min-width:190px;width:43vw}
   .split-vertical #navigatorPane{height:34%;min-height:165px}
-  #alternatives{left:6px;right:6px;bottom:6px;padding:5px}
-  .altCard{min-width:165px;width:165px}
+  #alternativesHead span{display:none}
+  #alternativesList{padding:0 6px 6px}
+  .altCard{flex-basis:165px;min-width:165px;width:165px}
   .dNode{width:200px}
   .dNode.roomy{width:222px}
   #nodeEditor{max-height:48%}
@@ -114,9 +121,8 @@
   #navigatorBody{padding:5px}
   #graphHeader{padding:6px 7px}
   #graphSubtitle{display:none}
-  #alternatives{max-height:135px}
-  .altCard{min-width:148px;width:148px;padding:5px}
+  #alternatives{max-height:min(150px,33vh)}
+  .altCard{flex-basis:148px;min-width:148px;width:148px;padding:5px}
   .altWhy{display:none}
   .miniPreview{height:55px}
 }
-

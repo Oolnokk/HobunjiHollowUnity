@@ -113,7 +113,7 @@
         <div id="graphHeader">
           <div id="graphTitleWrap"><div id="graphTitle">Select a tree</div><div id="graphSubtitle"></div></div>
           <button class="secondary" id="fitBtn">Fit</button>
-          <button class="secondary" id="toggleAlternatives">Alternatives</button>
+          <button class="secondary" id="toggleAlternatives" type="button" aria-controls="alternatives" aria-expanded="false">Layouts</button>
         </div>
         <div id="authorBar" aria-label="Dialogue authoring tools">
           <button class="good" id="addTreeBtn">+ Tree</button>
@@ -140,7 +140,10 @@
           </div>
           <div id="emptyGraph">Choose a dialogue tree in the navigator, or create one with + Tree.</div>
         </div>
-        <div id="alternatives"></div>
+        <section id="alternatives" class="hidden" aria-label="Workspace layouts">
+          <div id="alternativesHead"><b>Workspace layouts</b><span>Choose a layout to apply it and return to the graph.</span><button class="secondary" id="closeAlternatives" type="button" aria-label="Close workspace layouts">Close</button></div>
+          <div id="alternativesList"></div>
+        </section>
       </section>
     </main>
   </div>
