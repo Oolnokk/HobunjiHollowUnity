@@ -3,11 +3,9 @@
 
 // Regression for the Stage 6/7 RAF-ownership decomposition:
 // social-rhythm-runtime.js's combined frame() loop (throttled Kurraya
-// rhythm polling, Character View head-return easing, dance footstep
-// timing, and the player's Kurraya metronome) becomes a single
-// RuntimeFrameScheduler registration, since none of it touches Three.js
-// scene state or has a render-order dependency - it is pure audio/UI-state
-// bookkeeping. This module is only ever dynamically loaded by
+// rhythm polling, dance footstep timing, and the player's Kurraya metronome)
+// uses one RuntimeFrameScheduler registration. Character View pose state is
+// deliberately not owned here; game.js remains its single neck-lock authority. This module is only ever dynamically loaded by
 // character-action-locks.js in the shipped game, never by a docs/tools/*
 // editor page, so it needs no requestAnimationFrame fallback at all.
 
@@ -18,6 +16,8 @@ const vm = require('node:vm');
 const source = fs.readFileSync('docs/js/social-rhythm-runtime.js', 'utf8');
 assert(source.includes("global.RuntimeFrameScheduler.register('social-rhythm-clock', maintainRhythmClock"), 'rhythm-clock maintenance must register with the scheduler');
 assert(!/global\.requestAnimationFrame\(/.test(source), 'this single-context module must have no remaining raw requestAnimationFrame call');
+assert.doesNotMatch(source, /lockedNeck[XY]\s*=/, 'social rhythm must never rewrite Character View locked neck coordinates');
+assert.doesNotMatch(source, /updateCharacterViewHead|characterViewWasEnabled|neckReturn/, 'the removed Character View head-return state machine cannot silently return');
 
 function buildFixture() {
   const registered = new Map();
