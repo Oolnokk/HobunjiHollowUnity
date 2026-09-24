@@ -20,6 +20,11 @@ assert.match(game, /getFootingDamageMultiplier/, 'combat consumes potion Footing
 assert.match(fish, /gurumahi_tawny: 'strength'[\s\S]{0,120}gurumahi_charcoal: 'fishing'[\s\S]{0,120}gurumahi_creamback: 'fortitude'[\s\S]{0,120}gurumahi_snowmuzzle: 'speed'/, 'Gurumahi subspecies no longer share one family-wide cooking buff');
 assert.match(fish, /rockscale_goldplate: 'fortitude'[\s\S]{0,140}rockscale_giltback: 'strength'[\s\S]{0,140}rockscale_silverplate: 'fishing'[\s\S]{0,220}rockscale_slateplate: 'speed'/, 'Rockscale subspecies split fishing and the other fish-food buffs');
 assert.match(fish, /sixfin_honeystripe: 'fishing'[\s\S]{0,140}sixfin_coalbar: 'speed'[\s\S]{0,140}sixfin_redlash: 'strength'[\s\S]{0,360}sixfin_violetreef: 'fortitude'/, 'Sixfin subspecies split fishing and the other fish-food buffs');
+assert.match(fish, /mossfin_fernback: 'fishing'[\s\S]{0,140}mossfin_peatbelly: 'fortitude'[\s\S]{0,140}mossfin_silverfrond: 'speed'[\s\S]{0,140}mossfin_coppergill: 'strength'[\s\S]{0,140}mossfin_frostcap: 'speed'/, 'Mossfin variants are live fish with per-subspecies cooking buffs');
+assert.match(fish, /\['mossfin_fernback','Mossfin Fernback','mossfin'[\s\S]{0,900}\['mossfin_frostcap','Mossfin Frostcap','mossfin'/, 'Mossfin has a five-variant authored catch catalog');
+assert.match(fish, /f\.species === 'mossfin' \? 'fish_mossfin\.png'/, 'Mossfin variants render with the existing Mossfin sprite asset');
+assert.match(fish, /if \(species === 'mossfin'\) return \{ x: s \* 0\.92, y: s \* 1\.08 \}/, 'Mossfin has its own minigame silhouette correction');
+assert.doesNotMatch(fish, /function guruProfile\(/, 'shared hue recoloring is no longer named as Gurumahi-only now that Mossfin uses it');
 for (const [fishKey, effect] of [['gurumahi_charcoal', 'fishing'], ['rockscale_goldplate', 'fortitude'], ['rockscale_giltback', 'strength'], ['rockscale_slateplate', 'speed']]) {
   assert.match(fish, new RegExp(`${fishKey}: '${effect}'`), `${effect} remains obtainable from an any-season fish (${fishKey})`);
 }
