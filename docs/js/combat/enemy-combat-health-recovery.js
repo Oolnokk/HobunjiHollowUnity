@@ -1,15 +1,16 @@
-// Enemy combat Health-recovery policy.
-// Hostile entities keep normal Stamina/Footing and affliction maintenance, but
-// cannot regain current Health until the shared ResourceSystem combat quiet
-// window has elapsed. Player and companion recovery are intentionally unchanged.
+// Shared combat Health-recovery policy.
+// Automatic current-Health recovery is disabled for every live combatant while
+// combat is active. Explicit player actions such as food, potions, and bandages
+// remain separate; Stamina/Footing and affliction maintenance continue normally.
 (() => {
   'use strict';
 
   const RS = window.ResourceSystem; // Used as the existing authoritative resource/combat-recovery system.
-  if (!RS?.tick || !RS?.getRestInfo || !RS?.config || window.EnemyCombatHealthRecoveryPolicy) return;
+  if (!RS?.tick || !RS?.getRestInfo || !RS?.config || window.CombatHealthRecoveryPolicy || window.EnemyCombatHealthRecoveryPolicy) return;
 
-  const previousTick = RS.tick.bind(RS); // Used to preserve every existing ResourceSystem tick behavior before enforcing the enemy-only Health rule.
-  let blockedTickCount = 0; // Used by mobile-readable diagnostics to confirm the guard is actively catching hostile combat ticks.
+  const previousTick = RS.tick.bind(RS); // Used to preserve every existing ResourceSystem tick behavior before enforcing the combat Health rule.
+  const ACTIVE_COMBAT_STATES = new Set(['attack', 'attacking', 'chase', 'chasing', 'aggro', 'patrol-chase', 'flee', 'fleeing', 'fleeing-low-health']); // Used to keep engaged AI in combat even after the short last-hit quiet timer expires.
+  let blockedTickCount = 0; // Used by mobile-readable diagnostics to confirm the guard is actively catching combat ticks.
   let lastBlockedTick = null; // Used by mobile-readable diagnostics to expose the most recent suppressed recovery.
 
   function isHostileEntity(entity) {
@@ -19,49 +20,93 @@
     return entity.def?.hostile === true || entity.hostile === true;
   }
 
+  function explicitCombatReason(entity) {
+    const state = String(entity?.state || '').trim().toLowerCase(); // Used to recognize long-lived AI engagement states such as Gurumahi's current "chasing" state.
+    if (ACTIVE_COMBAT_STATES.has(state)) return `state:${state}`;
+    if (window.Combat?.telegraph?.isBusy?.(entity)) return 'enemy-telegraph';
+    if (window.Combat?.animalAttacks?.isBusy?.(entity)) return 'animal-attack';
+    if (entity?._banditAction || entity?._rangedAction || entity?._banditLunging) return 'enemy-action';
+    return null;
+  }
+
+  function playerThreatReason(entity) {
+    if (entity !== window.Combat?.deps?.player) return null;
+    const hostileObjects = window.Combat?.deps?.hostileObjects; // Used to keep player recovery blocked while an enemy remains actively engaged even if neither side has attacked for longer than quietSeconds.
+    if (!hostileObjects?.[Symbol.iterator]) return null;
+    for (const hostile of hostileObjects) {
+      if (!hostile || !(Number(hostile.health) > 0)) continue;
+      if (entity.areaId && hostile.areaId && entity.areaId !== hostile.areaId) continue;
+      const hostileReason = explicitCombatReason(hostile);
+      if (!hostileReason) continue;
+      if (hostile.targetPlayer === entity) return `targeted-by:${hostileReason}`;
+      if (hostile._amphibiousFishItemKey && String(hostile.state || '').toLowerCase() === 'chasing') return 'targeted-by:amphibious-chasing';
+    }
+    return null;
+  }
+
+  function combatReason(entity) {
+    if (!entity || !(Number(entity.health) > 0)) return null;
+    const explicitReason = explicitCombatReason(entity); // Used before the quiet timer so active pursuit cannot become "rested" during a long attack lull.
+    if (explicitReason) return explicitReason;
+    const threatReason = playerThreatReason(entity); // Used to cover the local player during long enemy chase/attack lulls that do not refresh the player's own attack timestamps.
+    if (threatReason) return threatReason;
+    const cfg = RS.config(); // Used with ResourceSystem's existing quietSeconds value instead of inventing a second recent-combat timeout.
+    const rest = RS.getRestInfo(entity, cfg); // Used to catch players, companions, and creatures that recently attacked or received damage even without an AI state.
+    return rest?.rested === false ? 'resource-quiet-window' : null;
+  }
+
   function combatActive(entity) {
-    const cfg = RS.config(); // Used with the ResourceSystem's own quietSeconds value instead of inventing a second combat timeout.
-    const rest = RS.getRestInfo(entity, cfg); // Used to share the same last-attack combat bookkeeping as normal resource recovery.
-    return !rest?.rested;
+    return !!combatReason(entity);
   }
 
   function entityLabel(entity) {
-    return entity?.def?.label || entity?.name || entity?.id || 'hostile';
+    return entity?.def?.label || entity?.name || entity?.id || 'combatant';
   }
 
-  RS.tick = function enemyCombatHealthRecoveryTick(entity, dt, options = {}) {
-    const blockHealthRecovery = isHostileEntity(entity) && combatActive(entity); // Used to leave players, companions, passive wildlife, and out-of-combat enemies unchanged.
-    if (!blockHealthRecovery) return previousTick(entity, dt, options);
+  function entityKind(entity) {
+    if (entity === window.Combat?.deps?.player) return 'player';
+    if (entity?.isCompanion) return 'companion';
+    if (isHostileEntity(entity)) return 'hostile';
+    return 'creature';
+  }
 
-    const healthBefore = Number(entity.health) || 0; // Used by diagnostics and as the baseline for the corrected post-tick Health delta.
-    const congealedBefore = Number(RS.getAffliction?.(entity, 'congealedHealth')) || 0; // Used to remove Congealed Health's current-Health restoration while still letting the affliction itself recover.
-    const guardedOptions = { ...options, healthRegenPerSec: 0 }; // Used to disable ordinary passive Health regeneration for this hostile combat tick only.
+  RS.tick = function combatHealthRecoveryTick(entity, dt, options = {}) {
+    const reason = combatReason(entity); // Used to apply one shared automatic-Health lock to every actor that is actually in combat.
+    if (!reason) return previousTick(entity, dt, options);
+
+    const healthBefore = Number(entity.health) || 0; // Used by diagnostics to verify automatic current Health never rises during a guarded tick.
+    const congealedBefore = Number(RS.getAffliction?.(entity, 'congealedHealth')) || 0; // Used by diagnostics to prove the affliction can still recover while its current-Health restoration is blocked.
+    const bleedingBefore = Number(RS.getAffliction?.(entity, 'bleedingHealth')) || 0; // Used by diagnostics to confirm rested Bleeding is treated as combat damage rather than healing.
+    const guardedOptions = { ...options, healthRecoveryBlocked: true, healthRegenPerSec: 0 }; // Used to disable every ResourceSystem automatic current-Health gain while preserving non-Health maintenance.
     const result = previousTick(entity, dt, guardedOptions); // Used to preserve damage-over-time, Stamina, Footing, exhaustion, and affliction recovery.
-    const congealedAfter = Number(RS.getAffliction?.(entity, 'congealedHealth')) || 0; // Used to measure only the Congealed amount actually recovered by the wrapped tick.
-    const congealedRecovered = Math.max(0, congealedBefore - congealedAfter); // Used to undo only the Health points Congealed recovery added, without canceling Bleeding/Poison damage from the same tick.
+    const healthAfter = Number(entity.health) || 0; // Used by diagnostics to expose the final Health after the guarded resource tick.
+    const congealedAfter = Number(RS.getAffliction?.(entity, 'congealedHealth')) || 0; // Used to report how much Congealed buildup recovered without restoring current Health.
+    const bleedingAfter = Number(RS.getAffliction?.(entity, 'bleedingHealth')) || 0; // Used to report how much Bleeding resolved as combat damage.
 
-    if (congealedRecovered > 0 && entity.health > 0) {
-      entity.health = Math.max(0, (Number(entity.health) || 0) - congealedRecovered);
-      RS.enforceCaps?.(entity);
-    }
-
-    const healthAfter = Number(entity.health) || 0; // Used by diagnostics to verify the enemy did not gain Health during the guarded tick.
     blockedTickCount += 1;
     lastBlockedTick = {
       label: entityLabel(entity),
+      kind: entityKind(entity),
+      reason,
       healthBefore,
       healthAfter,
-      congealedRecovered,
+      congealedRecovered: Math.max(0, congealedBefore - congealedAfter),
+      bleedingResolved: Math.max(0, bleedingBefore - bleedingAfter),
       dt: Number(dt) || 0,
     };
     return result;
   };
 
+  RS.__combatHealthRecoveryInstalled = true;
   RS.__enemyCombatHealthRecoveryInstalled = true;
 
-  window.EnemyCombatHealthRecoveryPolicy = Object.freeze({
-    version: 1,
+  const policy = Object.freeze({ // Used as both the new shared API and the legacy EnemyCombatHealthRecoveryPolicy alias.
+    version: 2,
+    activeCombatStates: Object.freeze([...ACTIVE_COMBAT_STATES]),
     isHostileEntity,
+    explicitCombatReason,
+    playerThreatReason,
+    combatReason,
     combatActive,
     getDebug() {
       return {
@@ -72,5 +117,8 @@
     },
   });
 
-  window.__enemyCombatHealthRecoveryDebug = () => window.EnemyCombatHealthRecoveryPolicy.getDebug();
+  window.CombatHealthRecoveryPolicy = policy;
+  window.EnemyCombatHealthRecoveryPolicy = policy;
+  window.__combatHealthRecoveryDebug = () => policy.getDebug();
+  window.__enemyCombatHealthRecoveryDebug = window.__combatHealthRecoveryDebug;
 })();

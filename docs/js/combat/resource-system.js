@@ -508,7 +508,8 @@
     const mul = rest.rested ? 2 : 1;
     const isPlayer = entity === window.Combat?.deps?.player; // Used to apply the consumer's central regeneration modifiers.
     const staminaRate = (opts.staminaRegenPerSec ?? cfg.staminaRegenPerSec) * STAMINA_RECOVERY_MULTIPLIER * (isPlayer ? window.AlchemySystem?.getStaminaRegenMultiplier?.() || 1 : 1);
-    const healthRate = (opts.healthRegenPerSec ?? cfg.healthRegenPerSec) * (isPlayer ? window.AlchemySystem?.getHealthRegenMultiplier?.() || 1 : 1);
+    const healthRecoveryBlocked = opts.healthRecoveryBlocked === true; // Used by the shared combat-recovery policy to suppress automatic current-Health gains without disabling the rest of ResourceSystem maintenance.
+    const healthRate = healthRecoveryBlocked ? 0 : (opts.healthRegenPerSec ?? cfg.healthRegenPerSec) * (isPlayer ? window.AlchemySystem?.getHealthRegenMultiplier?.() || 1 : 1);
     const staminaRegenBlocked = isStaminaRegenBlocked(entity); // Used to pause both ordinary and Exhausted Stamina regeneration while any held-action blocker is active.
 
     if (entity.exhaustion.active) {
@@ -530,10 +531,10 @@
       entity.footing = round1(clamp(entity.footing + footingRate * mul * dt, 0, getEffectiveMax(entity, "footing")));
     }
 
-    resolveBleedingTick(entity, dt, rest, cfg);
+    resolveBleedingTick(entity, dt, rest, cfg, healthRecoveryBlocked);
     resolveBurningTick(entity, dt, cfg);
     resolvePoisonTick(entity, dt, cfg);
-    resolveCongealedTick(entity, dt, rest, cfg);
+    resolveCongealedTick(entity, dt, rest, cfg, healthRecoveryBlocked);
     resolveGenericRecovery(entity, dt, rest, cfg);
     const puked = maybeTriggerPuke(entity, dt, cfg);
 
@@ -543,12 +544,12 @@
     return { puked };
   }
 
-  function resolveBleedingTick(entity, dt, rest, cfg) {
+  function resolveBleedingTick(entity, dt, rest, cfg, healthRecoveryBlocked = false) {
     const bleed = getAffliction(entity, "bleedingHealth");
     if (bleed <= 0) return;
     const amount = Math.min(bleed, cfg.bleedTickPerSec * dt);
     removeAffliction(entity, "bleedingHealth", amount);
-    if (rest.rested) entity.health = round1(clamp(entity.health + amount, 0, getEffectiveMax(entity, "health")));
+    if (rest.rested && !healthRecoveryBlocked) entity.health = round1(clamp(entity.health + amount, 0, getEffectiveMax(entity, "health")));
     else entity.health = round1(clamp(entity.health - amount, 0, getEffectiveMax(entity, "health")));
   }
 
@@ -568,12 +569,12 @@
     entity.health = round1(clamp(entity.health - amount, 0, getEffectiveMax(entity, "health")));
   }
 
-  function resolveCongealedTick(entity, dt, rest, cfg) {
+  function resolveCongealedTick(entity, dt, rest, cfg, healthRecoveryBlocked = false) {
     const congealed = getAffliction(entity, "congealedHealth");
     if (congealed <= 0) return;
     const amount = Math.min(congealed, cfg.afflictionRecoveryPerSec * (rest.rested ? 2 : 1) * dt);
     removeAffliction(entity, "congealedHealth", amount);
-    entity.health = round1(clamp(entity.health + amount, 0, getEffectiveMax(entity, "health")));
+    if (!healthRecoveryBlocked) entity.health = round1(clamp(entity.health + amount, 0, getEffectiveMax(entity, "health")));
   }
 
   function resolveGenericRecovery(entity, dt, rest, cfg) {
