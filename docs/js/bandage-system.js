@@ -15,6 +15,8 @@
   const BANDAGE_START_SFX_KEY = 'bandageStart'; // Resolves the authored one-shot start cue through the shared combat-SFX config.
   const BANDAGE_LOOP_SFX_KEY = 'bandageLoop'; // Resolves the authored rolling loop through the shared combat-SFX config.
   const DEFAULT_LOOP_OVERLAP_MS = 120; // Starts each loop slightly early so adjacent recordings cross over instead of hard-seaming.
+  const AFFLICTION_CLEANSE_RATIO = 0.2; // Bandages remove ordinary affliction buildup at one fifth of each actual Health-heal increment.
+  const BANDAGE_AFFLICTION_EXCLUSIONS = new Set(['drunkenHealth', 'drunkenFooting']); // Keeps both alcohol-specific buildup bands untouched while ordinary afflictions are cleansed.
 
   const state = {
     active: false,
@@ -36,6 +38,9 @@
     lastEnd: null,
     lastError: null,
     healEvents: 0,
+    cleanseRemainder: 0, // Carries sub-0.1 cleanse credit forward so the 1/5 ratio is preserved despite tenth-point affliction storage.
+    afflictionCleanseEvents: 0,
+    afflictionCleansed: 0,
     poseApplications: 0,
     audioGeneration: 0,
     audioTimer: null,
@@ -82,6 +87,36 @@
     const max = Math.max(0, Number(maxHealth) || 0);
     const start = Math.min(max, Math.max(0, Number(state.startHealth) || 0));
     return start + (max - start) * curveProgress(elapsedMs);
+  }
+
+  function cleanseAfflictionsForHeal(player, healedAmount) {
+    const healed = Math.max(0, Number(healedAmount) || 0); // Used to derive this update's cleanse credit from actual Health restored, not elapsed time.
+    if (!(healed > 0)) return 0;
+    state.cleanseRemainder += healed * AFFLICTION_CLEANSE_RATIO;
+    const spendable = Math.floor((state.cleanseRemainder + 1e-9) * 10) / 10; // Resource afflictions are stored to tenths, so defer smaller fractions instead of rounding them away.
+    if (!(spendable >= 0.1)) return 0;
+    state.cleanseRemainder = Math.max(0, state.cleanseRemainder - spendable);
+
+    const resourceSystem = global.ResourceSystem;
+    const definitions = resourceSystem?.AFFLICTIONS || {};
+    const ids = Object.keys(definitions)
+      .filter(id => !BANDAGE_AFFLICTION_EXCLUSIONS.has(id) && (Number(resourceSystem?.getAffliction?.(player, id)) || 0) > 0)
+      .sort((a, b) => (Number(definitions[b]?.priority) || 0) - (Number(definitions[a]?.priority) || 0));
+    let remaining = spendable;
+    let removed = 0;
+    for (const id of ids) {
+      if (!(remaining > 0)) break;
+      const delta = Math.max(0, Number(resourceSystem?.removeAffliction?.(player, id, remaining)) || 0);
+      remaining = Math.max(0, remaining - delta);
+      removed += delta;
+    }
+    resourceSystem?.enforceCaps?.(player);
+    removed = round1(removed);
+    if (removed > 0) {
+      state.afflictionCleanseEvents++;
+      state.afflictionCleansed = round1(state.afflictionCleansed + removed);
+    }
+    return removed;
   }
 
   function emit(type, detail = {}) {
@@ -337,6 +372,9 @@
     state.paused = false;
     state.startHealth = health;
     state.startMaxHealth = maxHealth;
+    state.cleanseRemainder = 0;
+    state.afflictionCleanseEvents = 0;
+    state.afflictionCleansed = 0;
     state.lastAttackReceivedAt = Number(player.lastAttackReceivedAt) || -Infinity;
     state.actionLock = actionLock;
     state.poseFrameId = -1;
@@ -383,6 +421,7 @@
       const delta = round1((Number(player.health) || 0) - before);
       if (delta > 0) {
         state.healEvents++;
+        cleanseAfflictionsForHeal(player, delta);
         global.dispatchEvent?.(new CustomEvent('hobunji-resource-change', {
           detail:{ entity:player, delta, reason:'bandage', immediate:false },
         }));
@@ -436,6 +475,13 @@
         hasPreRenderSentinel: !!state.sentinel,
         poseApplications: state.poseApplications,
         healEvents: state.healEvents,
+        afflictionCleanse: {
+          ratio: AFFLICTION_CLEANSE_RATIO,
+          excluded: Array.from(BANDAGE_AFFLICTION_EXCLUSIONS),
+          events: state.afflictionCleanseEvents,
+          totalRemoved: state.afflictionCleansed,
+          remainder: state.cleanseRemainder,
+        },
         audio: {
           activeVoices: state.audioVoices.size,
           startPlays: state.audioStartPlays,
