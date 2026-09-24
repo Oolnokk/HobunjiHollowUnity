@@ -335,8 +335,8 @@
       "id": "banubu_dialogue_sleep",
       "label": "Banubu dialogue — sleeping",
       "position": {
-        "x": 7.6,
-        "y": 0,
+        "x": 7.024,
+        "y": 0.142,
         "z": 8.3
       },
       "target": {
