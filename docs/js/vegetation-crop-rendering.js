@@ -562,6 +562,16 @@
     }
   }
 
+  // Flat floor slabs (makeFloorGeo: a 1x1 box whose top only jitters by
+  // +-1.5cm) sit at ground level, so their shadow can only ever fall below the
+  // ground surface — nothing lit lives there. They were still ~half of the
+  // farm's shadow-map draw calls (one per tile, every frame). receiveShadow
+  // stays on: HeldObjectRenderOrder's terrain classification keys off it.
+  function setFlatSlabShadowFlags(mesh) {
+    mesh.castShadow = false;
+    mesh.receiveShadow = true;
+  }
+
   // Update a single tile mesh (called after shovel actions)
   function _buildOneTileMesh(col, row) {
     const TileType = deps.TileType;
@@ -573,7 +583,7 @@
     if (tile.type === TileType.ROCK) {
       // Floor slab — grass so it blends with surrounding tiles
       const floorMesh = new THREE.Mesh(window.TerrainGeometry.makeFloorGeo(col, row), deps.resolveTileMat('farm', TileType.GRASS));
-      floorMesh.castShadow = floorMesh.receiveShadow = true;
+      setFlatSlabShadowFlags(floorMesh);
       floorMesh.position.set(col + 0.5, deps.NORMAL_TOP - deps.SLAB_H / 2, row + 0.5);
       deps.scene.add(floorMesh);
       tileMeshes[i] = floorMesh;
@@ -606,7 +616,7 @@
     if (tile.type === TileType.SHRUB && window.FoliageGenerator) {
       // Grass floor slab underneath the shrub
       const floorMesh = new THREE.Mesh(window.TerrainGeometry.makeFloorGeo(col, row), deps.vegFloorMat);
-      floorMesh.castShadow = floorMesh.receiveShadow = true;
+      setFlatSlabShadowFlags(floorMesh);
       floorMesh.position.set(col + 0.5, deps.tileYCenter(TileType.GRASS), row + 0.5);
       deps.scene.add(floorMesh);
       tileMeshes[i] = floorMesh;
@@ -628,7 +638,7 @@
     if (tile.type === TileType.WEEDS) {
       // Grass floor slab underneath
       const floorMesh = new THREE.Mesh(window.TerrainGeometry.makeFloorGeo(col, row), deps.vegFloorMat);
-      floorMesh.castShadow = floorMesh.receiveShadow = true;
+      setFlatSlabShadowFlags(floorMesh);
       floorMesh.position.set(col + 0.5, deps.tileYCenter(TileType.GRASS), row + 0.5);
       deps.scene.add(floorMesh);
       tileMeshes[i] = floorMesh;
@@ -722,7 +732,8 @@
     } else {
       mesh = new THREE.Mesh(tile.type === TileType.ROCK ? deps.rockGeo : window.TerrainGeometry.makeFloorGeo(col, row), mat);
     }
-    mesh.castShadow = mesh.receiveShadow = true;
+    if (tile.type === TileType.ROCK || tile.type === TileType.SHRUB || tile.type === TileType.WEEDS) mesh.castShadow = mesh.receiveShadow = true;
+    else setFlatSlabShadowFlags(mesh);
     mesh.position.set(col + 0.5, deps.tileYCenter(tile.type), row + 0.5);
     deps.scene.add(mesh);
     tileMeshes[i] = mesh;

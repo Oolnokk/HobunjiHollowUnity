@@ -631,6 +631,65 @@
   const scissorDrawingSize = new THREE.Vector2();
   const SCISSOR_MARGIN_PX = 4;
   let replayScissorEnabled = true; // Debug A/B switch: HeldObjectRenderOrder.setReplayScissorEnabled(false) restores full-screen replay passes.
+  let scissorTargetWidth = 0; // Framebuffer size the last scissorRect was measured against; used to build the replay cull frustum.
+  let scissorTargetHeight = 0;
+
+  // Scissoring alone only saves fragment work: every replay pass still
+  // submitted every on-screen draw call and transformed every on-screen
+  // vertex, roughly doubling the world's vertex/draw load whenever a tool
+  // was held (which, with NPCs carrying gear, is nearly every frame on every
+  // map). Objects whose bounds project entirely outside the scissor
+  // rectangle cannot touch a single pixel those passes are allowed to write,
+  // so they are hidden for the duration of the replay. The test is the same
+  // bounding-sphere frustum test three.js already applies, just against the
+  // sub-frustum the scissor rectangle carves out of the camera frustum.
+  const CULL_EXTRA_MARGIN_PX = 16; // Slack for vertex-shader sway beyond a mesh's static bounds (three's own culling has none).
+  const replayCullFrustum = new THREE.Frustum();
+  const replayCullMatrix = new THREE.Matrix4();
+  let replayCullEnabled = true; // Debug A/B switch: HeldObjectRenderOrder.setReplayCullEnabled(false).
+  let lastReplayCulledCount = 0; // Renderables hidden from the last scissored replay.
+  let lastReplayKeptCount = 0; // Cullable renderables still drawn by the last scissored replay.
+
+  function setReplayCullFrustum(camera, rect, width, height) {
+    const x0 = Math.max(0, rect.x - CULL_EXTRA_MARGIN_PX), y0 = Math.max(0, rect.y - CULL_EXTRA_MARGIN_PX);
+    const x1 = Math.min(width, rect.x + rect.z + CULL_EXTRA_MARGIN_PX), y1 = Math.min(height, rect.y + rect.w + CULL_EXTRA_MARGIN_PX);
+    if (!(x1 > x0 && y1 > y0)) return false;
+    // NDC-space rectangle of the scissor, then a clip-space remap that sends
+    // it to [-1, 1] (x' = (x - c*w) / h), leaving z/w untouched.
+    const cx = ((x0 + x1) / width) - 1, hx = (x1 - x0) / width;
+    const cy = ((y0 + y1) / height) - 1, hy = (y1 - y0) / height;
+    replayCullMatrix.set(
+      1 / hx, 0, 0, -cx / hx,
+      0, 1 / hy, 0, -cy / hy,
+      0, 0, 1, 0,
+      0, 0, 0, 1,
+    );
+    replayCullMatrix.multiply(camera.projectionMatrix).multiply(camera.matrixWorldInverse);
+    replayCullFrustum.setFromProjectionMatrix(replayCullMatrix);
+    return true;
+  }
+
+  function isReplayCullable(object) {
+    if (object.frustumCulled === false || object.children.length) return false; // Hiding a parent would hide children that may be in view.
+    if (object.isSprite) return true;
+    if (!object.isMesh || object.isInstancedMesh || object.isSkinnedMesh) return false; // r128 bounds these by the base geometry only.
+    const geometry = object.geometry;
+    return !!geometry && !geometry.morphAttributes?.position?.length;
+  }
+
+  function collectReplayCulled(scene, keep) {
+    const culled = [];
+    let kept = 0;
+    scene.traverseVisible((object) => {
+      if (keep.has(object) || !isReplayCullable(object)) return;
+      const inside = object.isSprite ? replayCullFrustum.intersectsSprite(object) : replayCullFrustum.intersectsObject(object);
+      if (inside) kept++;
+      else culled.push(object);
+    });
+    lastReplayCulledCount = culled.length;
+    lastReplayKeptCount = kept;
+    return culled;
+  }
 
   function replayScissorRect(renderer, camera, meshes, out) {
     if (!camera?.isPerspectiveCamera && !camera?.isOrthographicCamera) return false;
@@ -662,6 +721,8 @@
         if (scissorCorner.y > maxY) maxY = scissorCorner.y;
       }
     }
+    scissorTargetWidth = width;
+    scissorTargetHeight = height;
     if (minX === Infinity) { out.set(0, 0, 0, 0); return true; } // Nothing drawable: no replay pixel can change.
     const x0 = Math.max(0, Math.floor((minX * 0.5 + 0.5) * width) - SCISSOR_MARGIN_PX);
     const y0 = Math.max(0, Math.floor((minY * 0.5 + 0.5) * height) - SCISSOR_MARGIN_PX);
@@ -699,11 +760,17 @@
     const glState = renderer.state;
     const scissorMeshes = needsFootWaterComposite ? [...held, ...waterOccluded] : held;
     let scissored = replayScissorEnabled && !!(glState?.scissor && glState?.setScissorTest) && replayScissorRect(renderer, camera, scissorMeshes, scissorRect);
+    let replayCulled = null; // Visibility states of renderables hidden for this replay (see collectReplayCulled).
     try {
       if (scissored) {
         glState.scissor(scissorRect);
         glState.setScissorTest(true);
         scissoredReplayCount++;
+        if (replayCullEnabled && setReplayCullFrustum(camera, scissorRect, scissorTargetWidth, scissorTargetHeight)) {
+          const cullPerf = window.PerfProfiler?.begin('held-overlay: scissor cull');
+          replayCulled = hideObjects(collectReplayCulled(scene, new Set(scissorMeshes)));
+          window.PerfProfiler?.end(cullPerf);
+        }
       } else {
         fullscreenReplayCount++;
         lastReplayScissorCoverage = 1;
@@ -807,6 +874,7 @@
       if (scissored) { restoreRendererScissor(renderer); scissored = false; }
       renderer.clearStencil?.();
     } finally {
+      if (replayCulled) restoreVisibility(replayCulled);
       if (scissored) restoreRendererScissor(renderer);
       camera.layers.mask = originalCameraMask;
       if (shadowMap) shadowMap.autoUpdate = oldShadowAutoUpdate;
@@ -884,6 +952,9 @@
       scissoredReplays: scissoredReplayCount,
       fullscreenReplays: fullscreenReplayCount,
       lastReplayScissorCoverage: Number(lastReplayScissorCoverage.toFixed(4)),
+      replayCullEnabled,
+      lastReplayCulled: lastReplayCulledCount,
+      lastReplayKept: lastReplayKeptCount,
       baseWorldRenders: baseWorldRenderCount,
       selectiveOverlays: selectiveOverlayCount,
       nonGroundDepthReplays: nonGroundDepthReplayCount,
@@ -918,6 +989,7 @@
     snapshot,
     debugLogSnapshot,
     setReplayScissorEnabled: value => { replayScissorEnabled = value !== false; return replayScissorEnabled; },
+    setReplayCullEnabled: value => { replayCullEnabled = value !== false; return replayCullEnabled; },
     get enabled() { return enabled; },
     // Retained as a compatibility no-op for the former camera-mode toggle.
     // Ground/grass x-ray is now an invariant of held weapon presentation.

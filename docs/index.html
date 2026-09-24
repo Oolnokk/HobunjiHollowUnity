@@ -83,7 +83,7 @@
        ZoneGrassBillboards, ReagentPlants, WildBerries, WildTreasure) also
        read its exported mbRng/grassBladeGeo/getGrassBillboardMat helpers
        from their own init() calls further down game.js. -->
-  <script src="js/vegetation-crop-rendering.js?v=20260910review1"></script>
+  <script src="js/vegetation-crop-rendering.js?v=20260924flatslabshadow1"></script>
   <!-- Active-area grid/scene/dimension accessors and building/den footprint
        collision checks, extracted out of game.js. Must load before game.js,
        which calls window.GridTileAccessors.init(...) alongside the other
@@ -2380,7 +2380,7 @@
     <button class="fcv-continue" id="fcvContinueBtn">Continue</button>
   </div>
 
-  <script src="js/tool-icon-render.js?v=20260924perf3"></script>
+  <script src="js/tool-icon-render.js?v=20260924replaycull1"></script>
   <script src="js/sprite-recolor.js?v=20260924perf5"></script>
   <script src="js/tool-metal-recolor.js?v=20260924outline1"></script>
   <!-- Mount ride system (window.Mounts) — must load before game.js, which
