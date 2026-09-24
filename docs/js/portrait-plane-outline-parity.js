@@ -40,6 +40,10 @@
     return mirrorShoulderPerchWithPortrait;
   }
 
+  function isShoulderPetPortraitMirrorActive() {
+    return mirrorShoulderPerchWithPortrait && avatarApi.getPortraitsFlipped?.() === true; // One source of truth for the anchor, resting pet facing, and horizontal perch-relative motion parity.
+  }
+
   function installShoulderPerchMirrorSetting() {
     const doc = global.document;
     if (!doc || doc.getElementById('settingMirrorShoulderPerchWithPortrait')) return;
@@ -51,8 +55,8 @@
     row.className = 'settings-row';
     row.innerHTML = `
       <div class="settings-label">
-        <div class="settings-name">Mirror Shoulder-Pet Perch with Portrait</div>
-        <div class="settings-desc">When PNG portraits are horizontally flipped, mirror the authored shoulder-perch pixel to the matching visible shoulder. Turn this off to keep the original authored pixel X.</div>
+        <div class="settings-name">Mirror Shoulder Pet with Portrait</div>
+        <div class="settings-desc">When PNG portraits are horizontally flipped, mirror the authored shoulder perch plus the pet's resting facing and horizontal perch-relative motion. Turn this off to keep the original authored side and motion parity.</div>
       </div>
       <span class="settings-toggle"><input type="checkbox" id="settingMirrorShoulderPerchWithPortrait"><span class="toggle-slider"></span></span>`;
     rotationRow.parentNode.insertBefore(row, rotationRow);
@@ -108,9 +112,9 @@
       if (![pixelWidth, pixelHeight, modelWidth, modelHeight, pixelX, pixelY].every(Number.isFinite)
         || pixelWidth <= 0 || pixelHeight <= 0 || modelWidth <= 0 || modelHeight <= 0) return null;
 
-      const renderedPixelX = mirrorShoulderPerchWithPortrait && avatarApi.getPortraitsFlipped?.()
+      const renderedPixelX = isShoulderPetPortraitMirrorActive()
         ? pixelWidth - pixelX
-        : pixelX; // Toggle off preserves the authored source X exactly as it behaved before portrait-aware perch mirroring.
+        : pixelX; // Toggle off preserves the authored source X exactly as it behaved before portrait-aware shoulder-pet mirroring.
       const localPoint = new THREE.Vector3(
         -modelWidth / 2 + (renderedPixelX / pixelWidth) * modelWidth,
         modelHeight / 2 - (pixelY / pixelHeight) * modelHeight,
@@ -306,6 +310,7 @@
   global.HobunjiPortraitOutlineParity = Object.freeze({
     SHOULDER_PERCH_MIRROR_STORAGE_KEY,
     getMirrorShoulderPerchWithPortrait: () => mirrorShoulderPerchWithPortrait,
+    isShoulderPetPortraitMirrorActive,
     setMirrorShoulderPerchWithPortrait,
     getDebug() {
       return {
@@ -316,6 +321,7 @@
         maxSnapshotAgeMs: MAX_SNAPSHOT_AGE_MS,
         skinnedPixelCpuParity: !!avatarApi.__hobunjiSkinnedPixelCpuParityInstalled,
         mirrorShoulderPerchWithPortrait,
+        shoulderPetPortraitMirrorActive: isShoulderPetPortraitMirrorActive(),
         frontShoulderPetXrayDisabledByDefault: true,
       };
     },
