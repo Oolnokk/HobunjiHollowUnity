@@ -9,13 +9,17 @@ const localeIndex = JSON.parse(fs.readFileSync('docs/config/locales/index.json',
 const runtimeSource = fs.readFileSync('docs/js/porakaneki-camps-runtime.js', 'utf8'); // Browser-shaped VM exercises actual network/season/LOD transitions.
 const houseLoader = fs.readFileSync('docs/js/house-pieces.js', 'utf8'); // Guards parser-time bootstrap/cache version.
 const socialSource = fs.readFileSync('docs/js/npc-social-relationship-bridge-v2.js', 'utf8'); // Named chief retains normal gift/Rapport/dance/liquor path.
-const porakanekiTentExport = JSON.parse(fs.readFileSync('docs/config/pieces/porakaneki-tent.json', 'utf8')); // Full House Editor export supplied for the Porakaneki shelter.
+const porakanekiTentExport = JSON.parse(fs.readFileSync('docs/config/pieces/porakaneki-tent.json', 'utf8')); // Preserved full-size House Editor export remains available outside hunting camps.
+const huntingTentExport = JSON.parse(fs.readFileSync('docs/config/pieces/porakaneki-hunting-tent.json', 'utf8')); // Dedicated 2x2 half-height hunting-camp shelter under test.
 const banditTentExport = JSON.parse(fs.readFileSync('docs/config/pieces/bandit-tent.json', 'utf8')); // Full House Editor export supplied for the bandit shelter.
 const porakanekiTent = porakanekiTentExport.currentPiece || porakanekiTentExport; // Runtime/editor compatibility accepts wrapped or flat piece JSON.
+const huntingTent = huntingTentExport.currentPiece || huntingTentExport; // Runtime/editor compatibility for the new camp-only shelter.
 const banditTent = banditTentExport.currentPiece || banditTentExport; // Runtime/editor compatibility accepts wrapped or flat piece JSON.
 const banditLocale = JSON.parse(fs.readFileSync('docs/config/locales/locale_bandit_camp_small.json', 'utf8')); // Bandit collision footprint follows the authored 2x3 piece.
 const assetIndex = JSON.parse(fs.readFileSync('docs/assets/index.json', 'utf8')); // House Editor repo picker discoverability.
 const banditRuntimeSource = fs.readFileSync('docs/js/bandit-camps.js', 'utf8'); // Bandit camps must render the authored piece instead of procedural cone geometry.
+const housePieceGenSource = fs.readFileSync('docs/js/HousePieceGen.js', 'utf8'); // Guards semantic door-opening depth bias shared by authored tents.
+const gameIndexSource = fs.readFileSync('docs/index.html', 'utf8'); // Guards cache-busted runtime loading of the shared HousePiece renderer.
 
 const ZONES = [
   'map_northern_cliffs',
@@ -47,21 +51,57 @@ assert.equal(cfg.reputation.minimumFavor, -5);
 assert.equal(cfg.reputation.killPenalty, 0, 'legacy blanket kill penalty stays disabled in favor of context-specific penalties');
 assert.equal(cfg.reputation.selfDefenseKillPenalty, -1);
 assert.equal(cfg.reputation.murderKillPenalty, -3);
+function assertTentsFaceFire(locale, label) {
+  const fire = locale.objects.find(object => object.key === 'bonfire'); // Central target each authored tent must face.
+  assert(fire, `${label} has a bonfire`);
+  const fireCenterX = fire.col + fire.w * 0.5; // Used to compute the normalized tent-to-fire direction.
+  const fireCenterZ = fire.row + fire.h * 0.5; // Used with fireCenterX for facing checks in locale grid space.
+  for (const tent of locale.objects.filter(object => object.kind === 'tent')) {
+    const tentCenterX = tent.col + tent.w * 0.5; // Runtime group center of this 2x2 shelter.
+    const tentCenterZ = tent.row + tent.h * 0.5; // Runtime group center paired with tentCenterX.
+    const dx = fireCenterX - tentCenterX; // Direction toward the center fire on the locale X axis.
+    const dz = fireCenterZ - tentCenterZ; // Direction toward the center fire on the locale Z/row axis.
+    const distance = Math.hypot(dx, dz); // Normalizes the direction before comparing it to authored yaw.
+    const yaw = Number(tent.rot || 0) * Math.PI / 180; // HousePieceGen rotation convention: 0 faces +row, +90 faces +col.
+    const dot = Math.sin(yaw) * (dx / distance) + Math.cos(yaw) * (dz / distance); // 1 means the tent doorway faces exactly at the fire.
+    assert(dot > 0.999, `${label} ${tent.id} faces its bonfire (dot=${dot.toFixed(4)})`);
+  }
+}
+assertTentsFaceFire(smallLocale, 'small camp');
+assertTentsFaceFire(chiefLocale, 'chief camp');
+
 assert.deepEqual(smallLocale.placement.allowedZones, ZONES);
 assert.equal(smallLocale.placement.maxInstances, 4);
 assert.equal(smallLocale.meta.namedNpcs, false);
 assert.deepEqual(chiefLocale.placement.allowedZones, ZONES);
 assert.equal(chiefLocale.placement.maxInstances, 1);
 assert.equal(chiefLocale.meta.namedNpc, 'porakaneki_chief');
-assert.equal(chiefLocale.objects.filter(object => object.kind === 'tent').length, 7);
-assert(smallLocale.objects.filter(object => object.kind === 'tent').every(object => object.w === 3 && object.h === 3), 'every small Porakaneki tent reserves its authored 3x3 footprint');
-assert(chiefLocale.objects.filter(object => object.kind === 'tent').every(object => object.w === 3 && object.h === 3), 'every chief-camp Porakaneki tent reserves its authored 3x3 footprint');
+assert.equal(smallLocale.objects.filter(object => object.kind === 'tent').length, 3, 'small hunting camp keeps three shelters around its open center');
+assert.equal(chiefLocale.objects.filter(object => object.kind === 'tent').length, 8, 'chief camp keeps a full eight-tent ring');
+assert(smallLocale.objects.filter(object => object.kind === 'tent').every(object => object.w === 2 && object.h === 2), 'every small-camp hunting tent reserves its authored 2x2 footprint');
+assert(chiefLocale.objects.filter(object => object.kind === 'tent').every(object => object.w === 2 && object.h === 2), 'every chief-camp hunting tent reserves its authored 2x2 footprint');
+assert.deepEqual(
+  smallLocale.objects.filter(object => object.key === 'bonfire').map(object => [object.w, object.h]),
+  [[2, 2]],
+  'small camp uses exactly one shared 2x2 bonfire',
+);
+assert.deepEqual(
+  chiefLocale.objects.filter(object => object.key === 'bonfire').map(object => [object.w, object.h]),
+  [[2, 2]],
+  'chief camp uses exactly one shared 2x2 council bonfire',
+);
+assert.equal(smallLocale.objects.filter(object => object.key === 'benchlog').length, 2, 'small camp reuses two wild benchlogs');
+assert.equal(chiefLocale.objects.filter(object => object.key === 'benchlog').length, 4, 'chief camp reuses four wild benchlogs');
 assert(banditLocale.objects.filter(object => object.kind === 'tent').every(object => object.w === 2 && object.h === 3), 'bandit collision/loot footprints must match the authored 2x3 tent piece');
 assert.equal(porakanekiTentExport.schema, 'modular-house-piece-author/v38', 'Porakaneki tent should remain a loadable full House Editor export');
 assert.equal(banditTentExport.schema, 'modular-house-piece-author/v38', 'Bandit tent should remain a loadable full House Editor export');
 assert.equal(porakanekiTent.base.height, 2.55, 'Porakaneki tent stays 50% taller than the 1.7-tile bandit tent');
 assert.equal(porakanekiTent.footprint.cells.length, 9, 'Porakaneki tent House Editor footprint is exactly 3x3');
 assert.equal(porakanekiTent.base.faces.length, 8, 'Porakaneki square-taper shell keeps its authored eight-panel topology');
+assert.equal(huntingTentExport.schema, 'modular-house-piece-author/v38', 'hunting tent stays loadable in the same House Editor format');
+assert.equal(huntingTent.base.height, 1.275, 'hunting-camp tent is exactly half the full 2.55-tile height');
+assert.equal(huntingTent.footprint.cells.length, 4, 'hunting-camp tent House Editor footprint is exactly 2x2');
+assert.equal(huntingTent.base.faces.length, 8, 'scaled hunting tent retains the authored eight-panel square-taper topology');
 const poraVertices = porakanekiTent.base.faces.flatMap(face => face.v);
 const poraBottom = poraVertices.filter(vertex => Math.abs(vertex[1]) < 1e-9);
 const poraTop = poraVertices.filter(vertex => Math.abs(vertex[1] - 2.55) < 1e-9);
@@ -70,20 +110,32 @@ assert(Math.abs(span(poraBottom, 0) - 3) < 1e-9, 'Porakaneki tent base X span is
 assert(Math.abs(span(poraBottom, 2) - 3) < 1e-9, 'Porakaneki tent base Z span is 3 tiles');
 assert(Math.abs(span(poraTop, 0) - 1.5) < 1e-9, 'Porakaneki tent square top is half the base X span');
 assert(Math.abs(span(poraTop, 2) - 1.5) < 1e-9, 'Porakaneki tent square top is half the base Z span');
+const huntingVertices = huntingTent.base.faces.flatMap(face => face.v); // Used below to prove the scaled camp shelter is 2x2 with a 1x1 square top.
+const huntingBottom = huntingVertices.filter(vertex => Math.abs(vertex[1]) < 1e-9); // Ground-ring vertices used for the authored footprint span checks.
+const huntingTop = huntingVertices.filter(vertex => Math.abs(vertex[1] - 1.275) < 1e-9); // Peak-ring vertices used for half-width taper checks.
+assert(Math.abs(span(huntingBottom, 0) - 2) < 1e-9, 'hunting tent base X span is exactly 2 tiles');
+assert(Math.abs(span(huntingBottom, 2) - 2) < 1e-9, 'hunting tent base Z span is exactly 2 tiles');
+assert(Math.abs(span(huntingTop, 0) - 1) < 1e-9, 'hunting tent square top remains half the base X span');
+assert(Math.abs(span(huntingTop, 2) - 1) < 1e-9, 'hunting tent square top remains half the base Z span');
 assert.equal(banditTent.base.height, 1.7, 'Bandit tent keeps the authored Researcher-style 1.7-tile height');
 assert.equal(banditTent.footprint.cells.length, 6, 'Bandit tent House Editor footprint is exactly 2x3');
 assert.equal(banditTent.base.faces.length, 8, 'Bandit tent keeps the authored A-frame eight-panel topology');
 assert(assetIndex.housePieces.some(entry => entry.path === 'config/pieces/bandit-tent.json' && entry.category === 'tent'), 'Bandit Tent must be available in the House Editor repo picker');
-assert(assetIndex.housePieces.some(entry => entry.path === 'config/pieces/porakaneki-tent.json' && entry.category === 'tent'), 'Porakaneki Tent must be available in the House Editor repo picker');
-assert(runtimeSource.includes("const TENT_PIECE_URL = 'config/pieces/porakaneki-tent.json'"), 'Porakaneki runtime must load the authored tent piece');
+assert(assetIndex.housePieces.some(entry => entry.path === 'config/pieces/porakaneki-tent.json' && entry.category === 'tent'), 'original Porakaneki Tent must remain available in the House Editor repo picker');
+assert(assetIndex.housePieces.some(entry => entry.path === 'config/pieces/porakaneki-hunting-tent.json' && entry.category === 'tent'), 'Porakaneki Hunting Tent must be available in the House Editor repo picker');
+assert(runtimeSource.includes("const TENT_PIECE_URL = 'config/pieces/porakaneki-hunting-tent.json'"), 'Porakaneki camp runtime must load the dedicated 2x2 hunting tent');
+assert(runtimeSource.includes("const BENCHLOG_KEY = 'benchlog'"), 'camp runtime must reuse the authored wilderness sitting log');
+assert(runtimeSource.includes("const BONFIRE_KEY = 'bonfire'"), 'camp runtime must use the large shared bonfire key');
 assert(runtimeSource.includes('HousePieceGen.buildGroupFromPiece'), 'Porakaneki runtime must render through HousePieceGen');
+assert.match(housePieceGenSource, /mesh\.userData\.housePieceFaceTag = tag[\s\S]{0,450}tag === 'doorOpening'[\s\S]{0,450}mat\.polygonOffsetFactor = 2/, 'authored dark door-opening faces are identified and depth-biased behind their cloth border');
+assert(gameIndexSource.includes('HousePieceGen.js?v=20260924tentclip1'), 'game runtime cache-busts the shared tent clipping fix');
 assert(banditRuntimeSource.includes("const BANDIT_TENT_PIECE_URL = 'config/pieces/bandit-tent.json'"), 'Bandit runtime must load the authored bandit tent clone');
 assert(banditRuntimeSource.includes('HousePieceGen.buildGroupFromPiece'), 'Bandit runtime must render through HousePieceGen');
 assert(!banditRuntimeSource.includes('buildBanditTentCanvasGeometry'), 'old procedural five-sided bandit tent geometry must stay removed');
 assert.deepEqual(cfg.equipment.weaponShapes, ['fishingspear', 'hatchet', 'dagger'], 'Porakaneki must use the true dagger shape, never daggerSword');
 assert(localeIndex.locales.some(entry => entry.id === 'locale_porakaneki_camp_small'));
 assert(localeIndex.locales.some(entry => entry.id === 'locale_porakaneki_camp_chief' && entry.singleton === true));
-assert(houseLoader.includes('porakaneki-camps-runtime.js?v=20260924authoredtent2'));
+assert(houseLoader.includes('porakaneki-camps-runtime.js?v=20260924huntcamp1'));
 assert(socialSource.includes('canGiftToday'), 'chief gifting must retain the ordinary once-per-day NPC gate');
 assert(socialSource.includes('window.NpcRapport'), 'chief must retain the ordinary Rapport bridge');
 assert(runtimeSource.includes("activity: 'break'"), 'chief daytime behavior must remain free-time planner driven');
@@ -126,7 +178,7 @@ function fakeStamp(view, localeDef, opts) {
   view.__stampSeq = (view.__stampSeq || 0) + 1;
   const seq = view.__stampSeq;
   const isChief = localeDef.id === 'locale_porakaneki_camp_chief';
-  const width = isChief ? 19 : 13, height = isChief ? 17 : 12;
+  const width = localeDef.cols, height = localeDef.rows; // Test stamp mirrors the authored locale footprint instead of stale pre-redesign dimensions.
   const x = isChief ? 4 : 24 + ((seq - 2) % 2) * 28;
   const y = isChief ? 4 : 12 + Math.floor((seq - 2) / 2) * 30;
   const id = opts.instanceId;
@@ -139,6 +191,7 @@ function fakeStamp(view, localeDef, opts) {
       y: y + object.row,
       w: object.w,
       h: object.h,
+      rot: object.rot || 0, // Runtime bench/tent facing uses the stamped object's authored yaw.
       temporaryLocaleInstanceId: id,
       destroyed: false,
     });
@@ -178,7 +231,7 @@ const banditCamps = { updateCampBanners() { return 'camp-tick'; } };
 const contextWindow = {
   fetch: async url => {
     const value = String(url);
-    const payload = value.includes('porakaneki-tent.json') ? porakanekiTentExport : value.includes('porakaneki-camp.json') ? cfg : value.includes('chief') ? chiefLocale : smallLocale;
+    const payload = value.includes('porakaneki-hunting-tent.json') ? huntingTentExport : value.includes('porakaneki-tent.json') ? porakanekiTentExport : value.includes('porakaneki-camp.json') ? cfg : value.includes('chief') ? chiefLocale : smallLocale;
     return { ok: true, status: 200, json: async () => payload };
   },
   BanditCombat: banditCombat,
@@ -254,7 +307,7 @@ function hunterDebug(api, zoneId, campId, index) {
 (async () => {
   await flush();
   const api = contextWindow.PorakanekiCamps;
-  assert.equal(api.version, 3);
+  assert.equal(api.version, 4);
   assert.equal(api.__test.isSleepingHour(2), true);
   assert.equal(api.__test.isSleepingHour(12), false);
   assert.equal(api.__test.desiredChiefZone('Stormtide'), 'map_southern_cloud_forest');
@@ -267,7 +320,7 @@ function hunterDebug(api, zoneId, campId, index) {
 
   contextWindow.BanditCamps.updateCampBanners(0.21);
   let debug = api.debugSnapshot();
-  assert.equal(debug.version, 3);
+  assert.equal(debug.version, 4);
   assert.equal(debug.fullSimulationRadiusTiles, 12);
   assert.equal(debug.fullSimulationReleaseRadiusTiles, 16);
   assert.equal(Object.keys(debug.zones).length, 4);
@@ -279,14 +332,26 @@ function hunterDebug(api, zoneId, campId, index) {
   }
   assert.equal(debug.chiefZoneId, 'map_southern_cloud_forest');
   assert.equal(ZONES.filter(zoneId => debug.zones[zoneId].chiefActive).length, 1, 'exactly one large chief camp is active');
-  assert.equal(debug.zones.map_southern_cloud_forest.camps.find(camp => camp.kind === 'chief').residents, 6);
+  const firstChiefDebug = debug.zones.map_southern_cloud_forest.camps.find(camp => camp.kind === 'chief'); // Used below to verify redesigned chief-camp structural diagnostics.
+  assert.equal(firstChiefDebug.residents, 6);
+  assert.equal(firstChiefDebug.tents, 8);
+  assert.equal(firstChiefDebug.bonfires, 1);
+  assert.equal(firstChiefDebug.benchLogs, 4);
+  assert.equal(firstChiefDebug.benchSeats, 8);
+  const chiefBenchStations = stations.filter(station => station.roles?.includes?.('porakaneki-camp-rest')); // Registered shared seating affordances visible to the ordinary NPC free-time planner.
+  assert.equal(chiefBenchStations.length, 8, 'four chief-camp logs expose both authored seat anchors to normal NPC AI');
+  assert(chiefBenchStations.every(station => station.pose === 'sit' && station.furnitureKey === 'benchlog' && station.roles.includes('sit')), 'camp seats reuse the normal sit-station contract');
   assert.equal(chief.rec.scheduleHooks.defaultMapId, 'map_southern_cloud_forest');
   assert.equal(chief.rec.agenda.find(beat => beat.id === 'porakaneki_day').activity, 'break');
   assert.equal(hostileObjects.size, 0, 'all off-zone generated residents remain abstract');
 
   const originalSmallCenters = JSON.stringify(smallCenters(debug));
+  const stationCountBeforeRepeat = stations.length; // Used below to catch accidental duplicate registration during an ordinary same-season camp tick.
+  contextWindow.BanditCamps.updateCampBanners(0.21);
+  assert.equal(stations.length, stationCountBeforeRepeat, 'repeated same-season camp ticks do not duplicate already-registered bench stations');
   season = 'Deadgrass';
   contextWindow.BanditCamps.updateCampBanners(0.21);
+  assert.equal(stations.filter(station => station.roles?.includes?.('porakaneki-camp-rest')).length, 16, 'chief migration registers the new camp seats once while preserving stable station ids from the previous site');
   debug = api.debugSnapshot();
   assert.equal(debug.chiefZoneId, 'map_western_slope');
   assert.equal(ZONES.filter(zoneId => debug.zones[zoneId].chiefActive).length, 1);

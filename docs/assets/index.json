@@ -69,6 +69,7 @@
     { "name": "Stable", "path": "config/pieces/stable.json", "category": "stable" },
     { "name": "Researcher's Tent", "path": "config/pieces/researchers-tent.json", "category": "tent" },
     { "name": "Bandit Tent", "path": "config/pieces/bandit-tent.json", "category": "tent" },
-    { "name": "Porakaneki Tent", "path": "config/pieces/porakaneki-tent.json", "category": "tent" }
+    { "name": "Porakaneki Tent", "path": "config/pieces/porakaneki-tent.json", "category": "tent" },
+    { "name": "Porakaneki Hunting Tent", "path": "config/pieces/porakaneki-hunting-tent.json", "category": "tent" }
   ]
 }

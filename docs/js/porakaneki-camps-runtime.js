@@ -19,7 +19,9 @@
   const CONFIG_URL = 'config/porakaneki-camp.json'; // Network/population/LOD/reputation tuning loaded once at startup.
   const SMALL_LOCALE_URL = 'config/locales/locale_porakaneki_camp_small.json'; // Little procedural-only camp footprint.
   const CHIEF_LOCALE_URL = 'config/locales/locale_porakaneki_camp_chief.json'; // Large seasonal named-chief camp footprint.
-  const TENT_PIECE_URL = 'config/pieces/porakaneki-tent.json'; // Authored 3x3 square-taper tent used by all Porakaneki camps.
+  const TENT_PIECE_URL = 'config/pieces/porakaneki-hunting-tent.json'; // Dedicated half-height 2x2 hunting tent used only by the wilderness camps.
+  const BENCHLOG_KEY = 'benchlog'; // Used by camp log rendering and the shared NPC seating stations.
+  const BONFIRE_KEY = 'bonfire'; // Used to select the shared 2x2 large-fire furniture instead of the old one-tile campfire.
   const SPECIES_ID = 'porakaneki'; // Forced species for every generated camp resident.
   const DORMANT_AREA_PREFIX = '__porakaneki_dormant__:'; // Removes hidden/off-radius residents from the normal hostile loop.
   const TICK_INTERVAL_S = 0.20; // Neutral planner/LOD cadence; actual entity movement/render/combat stays in the normal hostile loop.
@@ -203,6 +205,7 @@
       rng: seededRng(`${generationYear()}:${zoneState.zoneId}:${seedLabel}:residents`),
       hunters: [],
       propMeshes: new Map(),
+      benchStationsRegistered: false,
       provokedUntilMs: 0,
       warningEnteredAtMs: 0,
       warningInitialShown: false,
@@ -233,9 +236,11 @@
   function clearCampMeshes(camp) {
     for (const entry of camp?.propMeshes?.values?.() || []) {
       if (entry.light) entry.light.parent?.remove?.(entry.light);
-      disposeObject3D(entry.mesh);
+      if (entry.sharedFoliage) entry.mesh?.parent?.remove?.(entry.mesh);
+      else disposeObject3D(entry.mesh);
     }
     camp?.propMeshes?.clear?.();
+    if (camp) camp.benchStationsRegistered = false;
   }
   function teardownCamp(camp) {
     if (!camp) return;
@@ -390,8 +395,8 @@
     authored.position.set(-centerCol, -elevationY, -centerRow);
     const group = new THREE.Group();
     group.add(authored);
-    group.userData.projectileCoverHeightTiles = 2.55;
-    group.userData.projectileCoverRadiusTiles = 1.5;
+    group.userData.projectileCoverHeightTiles = 1.275;
+    group.userData.projectileCoverRadiusTiles = 1.0;
     group.userData.projectileCoverKind = 'porakaneki-tent';
     return group;
   }
@@ -403,44 +408,131 @@
     group.add(box);
     return group;
   }
-  function campfireMesh() {
-    const built = window.ProceduralFurniture?.buildFurnitureGroup?.('campfire', 0x6b4a28);
+  function fireMesh(key = 'campfire') {
+    const built = window.ProceduralFurniture?.buildFurnitureGroup?.(key, 0x6b4a28); // Reuses the same furniture catalog as ordinary placed campfires/bonfires.
     if (built) return built;
-    const group = new THREE.Group();
-    const flame = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.48, 6), new THREE.MeshBasicMaterial({ color: 0xff8a22 }));
-    flame.position.y = 0.25;
+    const group = new THREE.Group(); // Fallback keeps the camp visible if procedural furniture has not initialized yet.
+    const isBonfire = key === BONFIRE_KEY; // Used below to keep the fallback proportionate to the requested large fire.
+    const flame = new THREE.Mesh(
+      new THREE.ConeGeometry(isBonfire ? 0.38 : 0.18, isBonfire ? 0.9 : 0.48, 6),
+      new THREE.MeshBasicMaterial({ color: 0xff8a22 }),
+    );
+    flame.position.y = isBonfire ? 0.45 : 0.25;
     group.add(flame);
     return group;
   }
-  function ensureCampMeshes(camp) {
-    if (!camp || currentArea() !== camp.zoneId || typeof THREE === 'undefined') return;
-    const zone = combatDeps.zoneScenes?.get?.(camp.zoneId);
-    if (!zone?.scene) return;
-    const live = new Set();
+
+  function benchRecordForProp(camp, prop) {
+    const width = Math.max(1, num(prop?.w, 2)); // Used to preserve the stamped log's rotated footprint center.
+    const depth = Math.max(1, num(prop?.h, 1)); // Used with width for the exact wilderness-furniture placement record.
+    return {
+      id: `${camp.id}:${prop.id}`,
+      mapId: camp.zoneId,
+      sourceObjectType: 'fallenLog',
+      furnitureKey: BENCHLOG_KEY,
+      col: prop.x,
+      row: prop.y,
+      footprintW: width,
+      footprintD: depth,
+      centerX: prop.x + width * 0.5,
+      centerZ: prop.y + depth * 0.5,
+      yawDeg: num(prop.rot, 0),
+      elevTier: 0,
+    };
+  }
+
+  function registerCampBenchStations(camp) {
+    if (camp?.benchStationsRegistered) return camp.props.filter(prop => prop.key === BENCHLOG_KEY).length * 2;
+    if (!window.NpcScheduling?.registerNpcStations || !camp?.props?.length) return 0;
+    const stations = []; // Registered below so ordinary NPC free-time AI can discover these logs through role:'sit'.
     for (const prop of camp.props) {
-      live.add(prop.id);
-      const prior = camp.propMeshes.get(prop.id);
-      if (prior?.mesh?.parent === zone.scene) continue;
-      if (prior) { if (prior.light) prior.light.parent?.remove?.(prior.light); disposeObject3D(prior.mesh); camp.propMeshes.delete(prop.id); }
-      const col = prop.x + (prop.w || 1) * 0.5, row = prop.y + (prop.h || 1) * 0.5;
-      const tile = zone.grid?.[Math.floor(row)]?.[Math.floor(col)];
-      const y = tile && combatDeps.tileSurfaceYInArea ? num(combatDeps.tileSurfaceYInArea(tile, camp.zoneId), 0) : 0;
-      let mesh = prop.type === 'tent' ? tentMesh(prop, y) : prop.key === 'campfire' ? campfireMesh() : crateMesh();
+      if (prop.key !== BENCHLOG_KEY) continue;
+      const record = benchRecordForProp(camp, prop); // Supplies the same placement center/yaw as the rendered wilderness log.
+      for (let seatIndex = 0; seatIndex < 2; seatIndex++) {
+        stations.push({
+          id: `porakaneki_bench_${camp.id}_${prop.id}_${seatIndex}`,
+          label: camp.kind === 'chief' ? 'Council Sitting Log' : 'Hunting Camp Sitting Log',
+          area: camp.zoneId,
+          c: record.col,
+          r: record.row,
+          rotY: record.yawDeg,
+          pose: 'sit',
+          roles: ['sit', 'porakaneki-camp-rest'],
+          furnitureKey: BENCHLOG_KEY,
+          seatIndex,
+        });
+      }
+    }
+    if (stations.length) {
+      window.NpcScheduling.registerNpcStations(stations, camp.zoneId);
+      camp.benchStationsRegistered = true;
+    }
+    return stations.length;
+  }
+
+  function queueBenchLogMesh(camp, prop, zone, elevationY) {
+    if (!window.FoliageFurnitureRenderer?.buildInstance) return;
+    const record = benchRecordForProp(camp, prop); // Used by the shared wilderness-log renderer so camps do not duplicate log geometry.
+    const generation = buildGeneration; // Used after the async V27 build to discard logs from a torn-down/rebuilt wilderness generation.
+    camp.propMeshes.set(prop.id, { mesh: null, light: null, pending: true, record });
+    window.FoliageFurnitureRenderer.buildInstance(record, camp.zoneState?.layoutRef, {
+      PLATEAU_UNIT: combatDeps?.PLATEAU_UNIT,
+      NORMAL_TOP: combatDeps?.NORMAL_TOP,
+    }).then(({ instance, data }) => {
+      const liveEntry = camp.propMeshes.get(prop.id); // Used to ensure this result still belongs to the current camp before publishing it.
+      if (generation !== buildGeneration || !liveEntry?.pending || currentArea() !== camp.zoneId) {
+        instance.parent?.remove?.(instance);
+        return;
+      }
+      instance.position.set(record.centerX, elevationY, record.centerZ);
+      instance.userData.porakanekiCampBench = true;
+      instance.userData.porakanekiCampId = camp.id;
+      markOutline(instance);
+      zone.scene.add(instance);
+      camp.propMeshes.set(prop.id, { mesh: instance, light: null, pending: false, record, data, sharedFoliage: true });
+    }).catch(error => {
+      if (camp.propMeshes.get(prop.id)?.pending) camp.propMeshes.delete(prop.id);
+      window.__farmLog?.(`[porakaneki] bench log failed (${prop.id}): ${error?.message || error}`, 'warn', 'wildlife');
+    });
+  }
+
+  function ensureCampMeshes(camp) {
+    const zone = combatDeps?.zoneScenes?.get?.(camp.zoneId); // Supplies the active Three.js scene for camp props.
+    if (!zone?.scene || currentArea() !== camp.zoneId) return;
+    registerCampBenchStations(camp);
+    for (const prop of camp.props) {
+      const prior = camp.propMeshes.get(prop.id); // Used to avoid rebuilding both sync props and pending async bench logs every camp tick.
+      if (prior?.mesh?.parent === zone.scene || prior?.pending) continue;
+      if (prior) {
+        if (prior.light) prior.light.parent?.remove?.(prior.light);
+        disposeObject3D(prior.mesh);
+        camp.propMeshes.delete(prop.id);
+      }
+      const col = prop.x + (prop.w || 1) * 0.5; // Runtime center used by fire/crate meshes and terrain sampling.
+      const row = prop.y + (prop.h || 1) * 0.5; // Runtime center paired with col.
+      const grid = combatDeps.getActiveGrid?.(); // Used below to place the prop on the live terrain surface.
+      const tile = grid?.[Math.floor(row)]?.[Math.floor(col)]; // Used to resolve the exact surface elevation under this prop.
+      const elevationY = tile && combatDeps.tileSurfaceYInArea ? num(combatDeps.tileSurfaceYInArea(tile, camp.zoneId), 0) : 0; // Shared world-space surface height for all camp props.
+
+      if (prop.key === BENCHLOG_KEY) {
+        queueBenchLogMesh(camp, prop, zone, elevationY);
+        continue;
+      }
+
+      const isBonfire = prop.key === BONFIRE_KEY; // Used to select the large shared fire and its wider light radius.
+      let mesh = prop.type === 'tent' ? tentMesh(prop, elevationY) : (isBonfire || prop.key === 'campfire') ? fireMesh(prop.key) : crateMesh(); // Keeps tent/fire/crate routing centralized.
       if (!mesh) continue;
-      mesh.position.set(col, y, row);
-      combatDeps.markOutline?.(mesh);
+      mesh.position.set(col, elevationY, row);
+      markOutline(mesh);
       zone.scene.add(mesh);
-      let light = null;
-      if (prop.key === 'campfire') {
-        light = new THREE.PointLight(0xff7722, 1.1, 3.2);
-        light.position.set(col, y + 0.45, row);
-        light.userData.furnitureLightMask = true;
-        window.FurnitureLightRegistry?.register(light);
+      let light = null; // Stored with the mesh so teardown removes the matching fire light.
+      if (isBonfire || prop.key === 'campfire') {
+        light = new THREE.PointLight(0xff7722, isBonfire ? 1.75 : 1.1, isBonfire ? 7.5 : 3.2);
+        light.position.set(col, elevationY + (isBonfire ? 0.8 : 0.45), row);
         zone.scene.add(light);
       }
-      camp.propMeshes.set(prop.id, { mesh, light });
+      camp.propMeshes.set(prop.id, { mesh, light, pending: false });
     }
-    for (const [id, entry] of [...camp.propMeshes]) if (!live.has(id)) { if (entry.light) entry.light.parent?.remove?.(entry.light); disposeObject3D(entry.mesh); camp.propMeshes.delete(id); }
   }
   function ensureCurrentCampMeshes() {
     const zoneState = currentZoneState();
@@ -463,6 +555,7 @@
     if (state.chiefBehaviorKey === key && walker.rec.scheduleHooks?.__porakanekiCampRuntime) return true;
 
     const role = 'porakaneki-chief-sleep';
+    registerCampBenchStations(camp);
     window.NpcScheduling.registerNpcStations(tentCenters(camp).map((tent, index) => ({
       id: `porakaneki_chief_sleep_${camp.zoneId}_${index}`,
       label: 'Porakaneki Chief Camp Tent',
@@ -1103,6 +1196,11 @@
       center: { col: Number(camp.center.col.toFixed(1)), row: Number(camp.center.row.toFixed(1)) },
       residents: camp.residentTarget,
       provoked: campProvoked(camp),
+      tents: camp.props.filter(prop => prop.type === 'tent').length,
+      bonfires: camp.props.filter(prop => prop.key === BONFIRE_KEY).length,
+      benchLogs: camp.props.filter(prop => prop.key === BENCHLOG_KEY).length,
+      benchSeats: camp.props.filter(prop => prop.key === BENCHLOG_KEY).length * 2,
+      benchMeshesReady: [...camp.propMeshes.values()].filter(entry => entry?.sharedFoliage && entry?.mesh).length,
       hunters: camp.hunters.map(hunter => {
         const entity = hunter.entity;
         const group = entity?.avatarRef?.group;
@@ -1151,7 +1249,7 @@
       };
     }
     return {
-      version: 3,
+      version: 4,
       configReady: !!cfg,
       localesReady: !!smallLocaleDef && !!chiefLocaleDef,
       combatDepsReady: !!combatDeps,
@@ -1181,7 +1279,7 @@
   }
 
   window.PorakanekiCamps = Object.freeze({
-    version: 3,
+    version: 4,
     update,
     ensureWorldCamps,
     ensureCampStamp: ensureWorldCamps,
@@ -1191,7 +1289,7 @@
     formatDebug: () => {
       const d = debugSnapshot();
       const zoneBits = Object.entries(d.zones).map(([zoneId, z]) => `${zoneId}:${z.smallCampCount}${z.chiefActive ? '+CHIEF' : ''}`).join(' ');
-      return `Porakaneki camps: v3 season=${d.season} chief=${d.chiefZoneId || '-'} area=${d.currentArea || '-'} small=${d.totalSmallCamps} active=${d.totalActiveCamps} residents=${d.totalGeneratedResidents} favor=${d.favor ?? '-'} AOS=${d.attackOnSight} lod=${d.fullSimulationRadiusTiles}/${d.fullSimulationReleaseRadiusTiles} player=${d.playerTile ? `${d.playerTile.col},${d.playerTile.row}` : '-'} mats=${d.materializations} coarse=${d.coarseTicks} greet=${d.greetings} kills=${d.kills} zones=[${zoneBits}] reason=${d.lastReason}`;
+      return `Porakaneki camps: v4 season=${d.season} chief=${d.chiefZoneId || '-'} area=${d.currentArea || '-'} small=${d.totalSmallCamps} active=${d.totalActiveCamps} residents=${d.totalGeneratedResidents} favor=${d.favor ?? '-'} AOS=${d.attackOnSight} lod=${d.fullSimulationRadiusTiles}/${d.fullSimulationReleaseRadiusTiles} player=${d.playerTile ? `${d.playerTile.col},${d.playerTile.row}` : '-'} mats=${d.materializations} coarse=${d.coarseTicks} greet=${d.greetings} kills=${d.kills} zones=[${zoneBits}] reason=${d.lastReason}`;
     },
     __test: Object.freeze({ isSleepingHour, chunkOf, fullSimulationRadiusTiles, fullSimulationReleaseRadiusTiles, simulationDistanceToPlayer, weaponRoll, currentSeasonName, desiredChiefZone, smallCampCountForZone, smallResidentCount, speakOverheadFromHunter, speakOverheadFromWalker }),
   });
