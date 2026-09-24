@@ -58,6 +58,7 @@ assert(chiefLocale.objects.filter(object => object.kind === 'tent').every(object
 assert(banditLocale.objects.filter(object => object.kind === 'tent').every(object => object.w === 3 && object.h === 3), 'bandit collision/loot footprints must match the authored 3x3 tent piece');
 assert.equal(porakanekiTent.base.height, 2.55, 'Porakaneki tent is 50% taller than the 1.7-tile researcher/bandit tent');
 assert.equal(porakanekiTent.footprint.cells.length, 9, 'Porakaneki tent House Editor footprint is exactly 3x3');
+assert.equal(porakanekiTent.base.faces.length, 8, 'Porakaneki square-taper shell has four sides, a split doorway face, and one square top without duplicate panels');
 const poraVertices = porakanekiTent.base.faces.flatMap(face => face.v);
 const poraBottom = poraVertices.filter(vertex => vertex[1] === 0);
 const poraTop = poraVertices.filter(vertex => vertex[1] === 2.55);
