@@ -631,6 +631,9 @@
           ? Math.hypot(actual.x - expectedX, actual.y - expectedY, actual.z - expectedZ)
           : NaN; // Only reports positional drift once the final pin has produced a complete transform snapshot.
         lines.push(`Attachment rotation source: ${attachmentDebug?.rotationSource || '(awaiting final pin)'} — authored shoulderPerch rotation is relative to the live face.`);
+        if (attachmentDebug?.requestedRotationSource === 'bodyNeckMidpoint') {
+          lines.push(`Shoulder-pet midpoint weapon yaw correction: ${(Number(attachmentDebug.weaponIdleYawCompensationDeg) || 0).toFixed(2)}°`);
+        }
         if (Number.isFinite(drift)) {
           lines.push(`Rig-anchor expected position: (${expectedX.toFixed(4)}, ${expectedY.toFixed(4)}, ${expectedZ.toFixed(4)})   actual mesh position: (${actual.x.toFixed(4)}, ${actual.y.toFixed(4)}, ${actual.z.toFixed(4)})   drift=${drift.toFixed(4)}`);
           if (drift > 0.01) lines.push(`>>> MISMATCH — the pet's mesh isn't where the final face-relative rig-anchor transform says it should be (drift ${drift.toFixed(4)} world units).`);

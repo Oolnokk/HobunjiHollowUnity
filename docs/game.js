@@ -6675,6 +6675,7 @@
       // This lets a perched animal turn and nod with the face without making
       // the shoulder coordinate itself orbit around the neck pivot.
       const SHOULDER_PET_BODY_NECK_BLEND = 0.5; // Equal quaternion midpoint between the player body and neck follow frames.
+      const shoulderPetIdleYawState = {}; // Reused by the midpoint solve to exclude the weapon's cosmetic idle body turn.
       function _shoulderPetSurfaceTransform(perch, grip) {
         const rotationQuaternion = rotationDeg => { // Converts authored YXZ pitch/yaw/roll for the perch and grip composition below.
           const degrees = rotationDeg || {};
@@ -6691,6 +6692,7 @@
           || playerMesh.localToWorld(new THREE.Vector3(perch.x || 0, perch.y || 0, perch.z || 0)); // Position always prefers the authored live-skinned pixel, independent of the rotation dropdown.
         let selectedRotationQuaternion = null; // Receives the world-space frame chosen by the Settings dropdown below.
         let resolvedRotationSource = s_shoulderPetRotationSource;
+        let weaponIdleYawCompensationDeg = 0; // Exposed in the attachment diagnostic for the midpoint's weapon-stance correction.
         switch (s_shoulderPetRotationSource) {
           case 'body':
             selectedRotationQuaternion = playerMesh.getWorldQuaternion(new THREE.Quaternion());
@@ -6707,6 +6709,18 @@
             neckRotationSource.updateWorldMatrix?.(true, false);
             const neckRotationQuaternion = neckRotationSource.getWorldQuaternion(new THREE.Quaternion()).normalize(); // Live neck world orientation used as the second midpoint endpoint.
             selectedRotationQuaternion = bodyRotationQuaternion.clone().slerp(neckRotationQuaternion, SHOULDER_PET_BODY_NECK_BLEND).normalize();
+            // The idle weapon stance turns both player and pet at render time, while
+            // head aiming already subtracts that turn from the neck. Without this
+            // correction the pet inherits half of a cosmetic weapon pose as if it
+            // were an actual body turn. Keep the midpoint for ordinary movement.
+            const idleYawState = window.WeaponToolStances?.idleBodyYawSnapshot?.(shoulderPetIdleYawState);
+            const idleYawDeg = idleYawState?.active ? Number(idleYawState.yawDeg) : 0;
+            if (Number.isFinite(idleYawDeg) && Math.abs(idleYawDeg) > 1e-6) {
+              weaponIdleYawCompensationDeg = idleYawDeg * (1 - SHOULDER_PET_BODY_NECK_BLEND);
+              selectedRotationQuaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(
+                new THREE.Vector3(0, 1, 0), -THREE.MathUtils.degToRad(weaponIdleYawCompensationDeg),
+              ));
+            }
             resolvedRotationSource = 'player-body-neck-midpoint';
             break;
           }
@@ -6745,6 +6759,7 @@
           requestedRotationSource: s_shoulderPetRotationSource,
           rotationSourceInverted: s_invertShoulderPetRotationSource,
           rotationalOffsetCancelled: s_cancelShoulderPetRotationalOffset,
+          weaponIdleYawCompensationDeg,
         };
       }
       // Guessed fallbacks (species-agnostic percent-of-own-height) for the
@@ -7872,7 +7887,7 @@
           ? alignedGripWorldPosition.distanceTo(finalTransform.perchWorldPosition)
           : null; // Exposed in Pixel Probe so mobile testing can verify the invariant without a console.
         group.userData.hobunjiShoulderPetAttachment = { // Mobile-visible Pixel Probe diagnostics for this final authoritative pin.
-          recentChange: 'Authored shoulderPerch position and rotation follow the live skinned portrait surface.',
+          recentChange: 'Body / neck midpoint excludes the idle weapon pose yaw; authored perch and grip corrections remain active.',
           rotationSource: finalTransform.rotationSource,
           positionSource: finalTransform.perchPositionSource,
           expectedWorldPosition: finalTransform.worldPosition.toArray(),
@@ -7883,6 +7898,7 @@
           requestedRotationSource: finalTransform.requestedRotationSource,
           rotationSourceInverted: finalTransform.rotationSourceInverted,
           rotationalOffsetCancelled: finalTransform.rotationalOffsetCancelled,
+          weaponIdleYawCompensationDeg: finalTransform.weaponIdleYawCompensationDeg || 0,
           rotationFrameWorldQuaternion: finalTransform.rotationFrameWorldQuaternion?.toArray?.() || null,
           finalWorldQuaternion: finalTransform.worldQuaternion.toArray(),
         };
