@@ -6,34 +6,65 @@
   const ROCKSCALE_IGNORES = [['#7f6e77',7],['#bababa',45]];
   const AMPHIBIOUS_SPECIES = new Set(['gurumahi']); // Used to gate dangerous fish to casts made while the player is standing in water.
   const AMPHIBIOUS_SELL_MULTIPLIER = 3; // Used to compensate amphibious catches for their post-reel combat/retrieval step.
-  const COOKING_EFFECT_BY_SPECIES = Object.freeze({ gurumahi: 'strength', rockscale: 'fortitude', sixfin: 'speed' }); // Used to give each live fish species a distinct buff when cooked into food.
+  const COOKING_EFFECT_BY_FISH = Object.freeze({
+    gurumahi_tawny: 'strength',
+    gurumahi_charcoal: 'fishing',
+    gurumahi_creamback: 'fortitude',
+    gurumahi_snowmuzzle: 'speed',
+    rockscale_goldplate: 'fortitude',
+    rockscale_giltback: 'strength',
+    rockscale_silverplate: 'fishing',
+    rockscale_ironvein: 'strength',
+    rockscale_slateplate: 'speed',
+    rockscale_quartzshield: 'fortitude',
+    rockscale_copperbloom: 'fishing',
+    sixfin_honeystripe: 'fishing',
+    sixfin_coalbar: 'speed',
+    sixfin_redlash: 'strength',
+    sixfin_mossband: 'fishing',
+    sixfin_azureband: 'speed',
+    sixfin_sunember: 'strength',
+    sixfin_milkstripe: 'fortitude',
+    sixfin_violetreef: 'fortitude',
+    mossfin_fernback: 'fishing',
+    mossfin_peatbelly: 'fortitude',
+    mossfin_silverfrond: 'speed',
+    mossfin_coppergill: 'strength',
+    mossfin_frostcap: 'speed',
+  }); // Used by buildItemDefs so each named fish keeps its own food buff instead of inheriting one family-wide effect.
 
   const ROWS = [
     ['gurumahi_tawny','Gurumahi Tawny','gurumahi','#9b6f49',1.06,.25,'smooth',34,['farm','town'],'spring,summer,fall',['day','dusk'],'common',30],
-    ['gurumahi_charcoal','Gurumahi Charcoal','gurumahi','#4e4f52',1.12,.25,'mixed',46,['town','northernCliffs'],'any',['dawn','day'],'uncommon',42],
+    ['gurumahi_charcoal','Gurumahi Charcoal','gurumahi','#4e4f52',1.12,.25,'mixed',46,['town','northernCliffs'],'fall,winter',['dawn','day'],'uncommon',42],
     ['gurumahi_creamback','Gurumahi Creamback','gurumahi','#d7c39d',.98,.25,'floater',28,['farm'],'spring,summer',['dawn','day'],'common',24],
     ['gurumahi_snowmuzzle','Gurumahi Snowmuzzle','gurumahi','#c9ced1',1.03,.25,'sinker',39,['cloudForest','northernCliffs'],'winter',['day','night'],'uncommon',38],
-    ['rockscale_goldplate','Rockscale Goldplate','rockscale','#c9a24f',1.14,1,'sinker',52,['town','northernCliffs'],'any',['day','dusk'],'common',48],
-    ['rockscale_giltback','Rockscale Giltback','rockscale','#e0bc67',1.18,1,'mixed',56,['town','cloudForest'],'any',['dawn','day'],'common',52],
-    ['rockscale_silverplate','Rockscale Silverplate','rockscale','#b9bec8',1.15,1,'smooth',50,['town','northernCliffs'],'any',['dawn','day'],'uncommon',58],
+    ['rockscale_goldplate','Rockscale Goldplate','rockscale','#c9a24f',1.14,1,'sinker',52,['town','northernCliffs'],'summer,fall',['day','dusk'],'common',48],
+    ['rockscale_giltback','Rockscale Giltback','rockscale','#e0bc67',1.18,1,'mixed',56,['town','cloudForest'],'winter,spring',['dawn','day'],'common',52],
+    ['rockscale_silverplate','Rockscale Silverplate','rockscale','#b9bec8',1.15,1,'smooth',50,['town','northernCliffs'],'winter,spring',['dawn','day'],'uncommon',58],
     ['rockscale_ironvein','Rockscale Ironvein','rockscale','#8e5541',1.17,1,'dart',63,['northernCliffs'],'fall,winter',['day','dusk'],'uncommon',64],
-    ['rockscale_slateplate','Rockscale Slateplate','rockscale','#58616c',1.2,1,'sinker',60,['cloudForest','northernCliffs'],'any',['night'],'uncommon',66],
+    ['rockscale_slateplate','Rockscale Slateplate','rockscale','#58616c',1.2,1,'sinker',60,['cloudForest','northernCliffs'],'fall,winter',['night'],'uncommon',66],
     ['rockscale_quartzshield','Rockscale Quartzshield','rockscale','#d8d4ca',1.1,1,'smooth',44,['farm','cloudForest'],'spring,winter',['dawn','day'],'common',44],
     ['rockscale_copperbloom','Rockscale Copperbloom','rockscale','#9a7352',1.16,1,'mixed',58,['town','cloudForest'],'summer,fall',['day','dusk'],'uncommon',61],
     ['sixfin_honeystripe','Sixfin Honeystripe','sixfin','#fff',.94,0,'mixed',36,['farm','town'],'spring,summer',['day'],'common',26,'#d7b161','#5c3520'],
-    ['sixfin_coalbar','Sixfin Coalbar','sixfin','#fff',1.02,0,'dart',49,['town','northernCliffs'],'any',['dusk','night'],'uncommon',34,'#7c7366','#2f2f34'],
+    ['sixfin_coalbar','Sixfin Coalbar','sixfin','#fff',1.02,0,'dart',49,['town','northernCliffs'],'spring,fall',['dusk','night'],'uncommon',34,'#7c7366','#2f2f34'],
     ['sixfin_redlash','Sixfin Redlash','sixfin','#fff',.98,0,'mixed',41,['farm','town'],'summer,fall',['dawn','day'],'common',28,'#c7a794','#8e4938'],
     ['sixfin_mossband','Sixfin Mossband','sixfin','#fff',1.01,0,'smooth',32,['cloudForest','farm'],'spring,summer,fall',['day','dusk'],'common',27,'#94a780','#415d3e'],
     ['sixfin_azureband','Sixfin Azureband','sixfin','#fff',1.04,0,'floater',38,['cloudForest','town'],'summer',['dawn','day'],'uncommon',33,'#8ab9c8','#315d78'],
     ['sixfin_sunember','Sixfin Sunember','sixfin','#fff',.97,0,'dart',54,['town','cloudForest'],'summer,fall',['day','dusk'],'uncommon',36,'#dbc890','#b55a2c'],
     ['sixfin_milkstripe','Sixfin Milkstripe','sixfin','#fff',.92,0,'smooth',29,['farm'],'spring,winter',['dawn','day'],'common',23,'#e5dbc6','#545257'],
-    ['sixfin_violetreef','Sixfin Violetreef','sixfin','#fff',1.05,0,'mixed',47,['cloudForest','town'],'any',['dusk','night'],'uncommon',35,'#ab99bf','#5a4379']
+    ['sixfin_violetreef','Sixfin Violetreef','sixfin','#fff',1.05,0,'mixed',47,['cloudForest','town'],'fall,winter',['dusk','night'],'uncommon',35,'#ab99bf','#5a4379'],
+    ['mossfin_fernback','Mossfin Fernback','mossfin','#647f50',1.00,.10,'smooth',33,['farm','cloudForest'],'spring,summer',['day','dusk'],'common',29],
+    ['mossfin_peatbelly','Mossfin Peatbelly','mossfin','#6b5848',1.07,.08,'sinker',46,['cloudForest','northernCliffs'],'fall,winter',['dawn','day'],'common',39],
+    ['mossfin_silverfrond','Mossfin Silverfrond','mossfin','#87968d',.96,.12,'floater',40,['town','cloudForest'],'summer,fall',['dawn','day'],'uncommon',43],
+    ['mossfin_coppergill','Mossfin Coppergill','mossfin','#9a6b47',1.10,.12,'dart',55,['town','northernCliffs'],'summer,fall',['dusk','night'],'uncommon',51],
+    ['mossfin_frostcap','Mossfin Frostcap','mossfin','#aab6a2',.94,.06,'mixed',37,['farm','northernCliffs'],'winter,spring',['dawn','day'],'common',35]
   ];
 
   function silhouetteAxes(species, scalar) {
     const s = Math.max(0.2, Number(scalar) || 1);
     if (species === 'gurumahi') return { x: s * 0.90, y: s * 1.15 };
     if (species === 'rockscale') return { x: s * 1.22, y: s * 1.12 };
+    if (species === 'mossfin') return { x: s * 0.92, y: s * 1.08 };
     return { x: s, y: s };
   }
 
@@ -57,7 +88,7 @@
   const canvasCache = new Map();
   const FISH_RING_RADIUS = 96;
 
-  const sprite = f => f.species === 'gurumahi' ? 'fish_gurumahi.png' : f.species === 'rockscale' ? 'fish_rockscale.png' : 'fish_sixfin.png';
+  const sprite = f => f.species === 'gurumahi' ? 'fish_gurumahi.png' : f.species === 'rockscale' ? 'fish_rockscale.png' : f.species === 'mossfin' ? 'fish_mossfin.png' : 'fish_sixfin.png';
   const ignores = f => (f.species === 'gurumahi' ? GURUMAHI_IGNORES : f.species === 'rockscale' ? ROCKSCALE_IGNORES : []).map(([hex,sensitivity]) => ({hex,sensitivity}));
   const seasons = s => s === 'any' ? 'any' : s.split(',').map(x => SEASON[x] || x);
 
@@ -86,7 +117,7 @@
         icon:'🐟', label:f.label, cat:'material', category:'Fish', sellPrice:f.sellPrice,
         tags, amphibious:f.amphibious,
         cookingCategories:['fish'],
-        cookingPrimaryEffect:COOKING_EFFECT_BY_SPECIES[f.species] || 'fishing',
+        cookingPrimaryEffect:COOKING_EFFECT_BY_FISH[f.key] || 'fishing',
         cookingBaseBoost:1,
         cookingProcessingTier:'raw',
         cookingDefaultStars:3,
@@ -123,7 +154,7 @@
     return{enabled:!!f.length,v:hi.v||1,match:(r,g,b)=>cd(chroma(r,g,b),c)<=d};
   }
 
-  function guruProfile(px,list) {
+  function hueProfile(px,list) {
     const bins=36,scores=new Float64Array(bins),u=[];
     for(let i=0;i<px.length;i+=4){if(!px[i+3])continue;const r=px[i],g=px[i+1],b=px[i+2];if((r===255&&g===255&&b===255)||ignored(r,g,b,list))continue;const[h,s,v]=rgbHsv(r,g,b);if(v<=.08)continue;u.push({h,s,v});if(s>=.055)scores[Math.min(bins-1,Math.floor(h*bins))]+=.25+s;}
     if(!u.length)return{enabled:false,v:1};let bi=-1,bs=0;for(let b=0;b<bins;b++){const sc=scores[(b-1+bins)%bins]*.35+scores[b]+scores[(b+1)%bins]*.35;if(sc>bs){bs=sc;bi=b}}
@@ -133,7 +164,7 @@
   }
 
   function recolorBase(data,f) {
-    const px=data.data,t=rgbHsv(...hexRgb(f.baseColor)),list=ignores(f),p=f.species==='rockscale'?rockProfile(px,list):guruProfile(px,list);const hi=p.v||1;
+    const px=data.data,t=rgbHsv(...hexRgb(f.baseColor)),list=ignores(f),p=f.species==='rockscale'?rockProfile(px,list):hueProfile(px,list);const hi=p.v||1;
     for(let i=0;i<px.length;i+=4){if(!px[i+3])continue;const r=px[i],g=px[i+1],b=px[i+2];if((r===255&&g===255&&b===255)||ignored(r,g,b,list))continue;const[H,S,V]=rgbHsv(r,g,b);if(V<=.08)continue;if(p.enabled){const ok=p.match.length===3?p.match(r,g,b):p.match(H,S);if(!ok)continue}const[nr,ng,nb]=hsvRgb(t[0],t[1],clamp(t[2]*(V/hi)*(1+f.valueBoost)));px[i]=nr;px[i+1]=ng;px[i+2]=nb;}
   }
 

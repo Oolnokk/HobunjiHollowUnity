@@ -72,8 +72,9 @@ assert.equal(processing.getProcessingOutputs('squeezing', 'shadewoodNuts', cooki
 const lard = processing.getProcessingOutputs('squeezing', 'garWolfMeat', { label: 'Gar-wolf Meat', tags: ['Meat'], cookingPrimaryEffect: 'strength' })[0];
 assert.equal(lard.label, 'Gar-wolf Lard', 'any tagged meat renders into species-specific lard');
 assert(lard.cookingCategories.includes('oil'), 'lard is reusable anywhere cooking accepts fat');
-const fishOil = processing.getProcessingOutputs('squeezing', 'fish_riverMinnow', { label: 'River Minnow', tags: ['Fish'], cookingPrimaryEffect: 'fishing' })[0];
-assert.equal(fishOil.label, 'River Minnow Oil', 'any tagged fish presses into species-specific fish oil');
+const fishOil = processing.getProcessingOutputs('squeezing', 'rockscale_goldplate', { label: 'Rockscale Goldplate', tags: ['Fish'], cookingPrimaryEffect: 'fortitude' })[0];
+assert.equal(fishOil.label, 'Rockscale Goldplate Oil', 'fish oil preserves the full named fish subspecies');
+assert.equal(fishOil.cookingPrimaryEffect, 'fortitude', 'fish oil inherits the source fish buff instead of becoming generic Fishing oil');
 const nutDrop = processing.rollTreeNutDrop('map_northern_cliffs', () => 0, {
   bonusYieldChance: () => 1,
   rollQuality: () => 5,
