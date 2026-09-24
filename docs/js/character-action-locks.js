@@ -114,7 +114,7 @@
   const archButtonLabels = new URL('arch-button-labels.js?v=20260910archlabels1', base).href; // Adds centered non-attack meanings plus live lower-right configured-input subscripts to gameplay arch icons.
   const inputDefaultsResetUi = new URL('input-default-reset-ui.js?v=20260909controller4', base).href; // Adds independent keyboard/controller Reset to Defaults buttons after the Settings binding lists render.
   const bandageSystem = new URL('bandage-system.js?v=20260924affliction2', base).href; // Bandaging shares these action locks and must exist before the post-load Potion Select adapter can route quick taps into it.
-  const socialRhythmRuntime = new URL('social-rhythm-runtime.js?v=20260924perf1', base).href;
+  const socialRhythmRuntime = new URL('social-rhythm-runtime.js?v=20260924shoulder1', base).href; // Social rhythm no longer rewrites Character View neck state, preventing shoulder-pet grip compensation from looking like camera-driven sliding.
   const socialRenderBridge = new URL('social-action-r128-render-bridge.js?v=20260903social5', base).href;
   const npcAmbientMusicStimuliRuntime = new URL('npc-ambient-music-stimuli-runtime.js?v=20260903social10', base).href;
   const npcSocialInhibitionRuntime = new URL('npc-social-inhibition-runtime.js?v=20260903social9', base).href;
