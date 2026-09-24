@@ -7,7 +7,7 @@
   // contours, splice-tempo or behavior-specific modulation remain.
   const MIN_TEMPO = 1 / 9; // Allows Banubu's Grehlr snore to run three times longer than its prior one-third tempo.
   const MAX_TEMPO = 2;
-  const MAX_SHIFT_SEMITONES = 12;
+  const MAX_SHIFT_SEMITONES = 24; // Allows Banubu's octave-lowered chatter through the shared pitch clamp.
   const WSOLA_FRAME_S = 0.056;
   const WSOLA_OVERLAP_RATIO = 0.62;
   const WSOLA_SEARCH_S = 0.018;

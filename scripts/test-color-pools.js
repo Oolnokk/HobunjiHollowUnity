@@ -60,6 +60,9 @@ const stableSource = read('docs/js/stable-animal-progression.js');
 const furniture = read('docs/js/procedural-furniture.js');
 const game = read('docs/game.js');
 const index = read('docs/index.html');
+const colorPoolsSource = read('docs/js/color-pools-system.js'); // Checks the picker surface against the game's page-wide absolute canvas styling.
+assert.match(read('docs/style.css'), /canvas\s*\{\s*position:\s*absolute/, 'game canvas styling applies globally to the Color Pools canvas');
+assert.match(colorPoolsSource, /\.cp-preview canvas\{position:static;inset:auto;[^}]*pointer-events:none/, 'the preview stays in its own panel and cannot intercept animal-picker input');
 
 assert(renderer.includes('function applyColorPoolPaint('), 'genetic renderer owns the region-aware Color Pools paint seam');
 assert(renderer.includes("applyColorPoolPaint(baseSource, genotype, 'base'"), 'base paint is applied through its dedicated region path');
@@ -73,6 +76,8 @@ assert(stableSource.includes('saveStable,'), 'Color Pools persists through the S
 assert(furniture.includes('CATALOG.stonePedestal'), 'stone pedestal has a loading-race fallback matching the authored asset');
 assert(game.includes("stonePedestal: { itemKey: 'colorPoolsAltarFurniture'"), 'Color Pools altar is a non-shop fixture');
 assert(game.includes("colorPoolsAltarFurniture: () => window.ColorPoolsSystem?.makeAltarInteractable"), 'the authored altar opens the Color Pools workflow');
+const buildingButtons = game.slice(game.indexOf('// Building interior: spot transitions require explicit input'), game.indexOf('// Procedural mine floors are building interiors'));
+assert(buildingButtons.indexOf('if (bInteractable) return bInteractable.getButtons()') < buildingButtons.indexOf("heldMode === 'tool'"), 'altar prompt takes priority over cavern tool actions');
 assert(game.includes('window.ColorPoolsSystem?.decorateScene?.({ THREE, scene: bScene, mapData })'), 'Color Pools feature metadata decorates the generated cave');
 assert(game.includes('window.ColorPoolsSystem?.init({'), 'Color Pools receives the ordinary game movement/input lock');
 assert(index.includes('js/color-pools-system.js'), 'Color Pools system loads before game.js');

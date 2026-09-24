@@ -186,8 +186,27 @@
   // encoded frame in between, which reads as smooth at this swim speed.
   let _fishDeformUrlCache = null;
   let _fishDeformUrlCacheAt = -Infinity;
+  let _fishDeformCollisionMask = null; // Alpha data for the last encoded core fish frame; used until FishCatalog's final curved-frame mask is ready.
+  let _fishDeformMaskReadbackWarned = false; // Deduplicates in-game diagnostics if alpha readback is unavailable.
+  let _fishCollisionSourceLog = ''; // Tracks the last collision-source diagnostic so the mobile debug panel is not spammed every frame.
   const FISH_DEFORM_REENCODE_INTERVAL = 1 / 12; // seconds
+  const FISH_COLLISION_ALPHA_THRESHOLD = 24; // Fallback/core alpha cutoff; FishCatalog uses the same threshold for its final presentation frame.
+  const FISH_COLLISION_SWEEP_STEP_PX = 0.5; // Screen-space sample spacing so fast spear motion cannot tunnel through a one-pixel silhouette edge.
   let _fishDeformLastFailReason = null;
+
+  function readFishDeformCollisionMask(ctx, w, h) {
+    try {
+      const rgba = ctx.getImageData(0, 0, w, h).data; // Captured only when the corresponding displayed PNG frame is encoded.
+      _fishDeformMaskReadbackWarned = false;
+      return { w, h, rgba };
+    } catch (err) {
+      if (!_fishDeformMaskReadbackWarned) {
+        _fishDeformMaskReadbackWarned = true;
+        window.__farmLog?.(`fish core hitbox alpha readback failed: ${err?.name || 'Error'} ${err?.message || ''}`, 'warn');
+      }
+      return null;
+    }
+  }
   function renderFishDeformedTexture(fm) {
     if (!fishBodySpriteImage || !fishBodySpriteImage.naturalWidth) {
       if (_fishDeformLastFailReason !== 'noimg') {
@@ -215,9 +234,12 @@
     if (_fishDeformUrlCache && fm.fishAnimT - _fishDeformUrlCacheAt < FISH_DEFORM_REENCODE_INTERVAL) {
       return { url: _fishDeformUrlCache, w, h };
     }
+    const nextCollisionMask = readFishDeformCollisionMask(ctx, w, h); // Kept paired with this exact encoded visual frame.
     try {
-      _fishDeformUrlCache = canvas.toDataURL('image/png');
+      const nextUrl = canvas.toDataURL('image/png'); // Core frame used when FishCatalog's curved presentation layer has not replaced it yet.
+      _fishDeformUrlCache = nextUrl;
       _fishDeformUrlCacheAt = fm.fishAnimT;
+      _fishDeformCollisionMask = nextCollisionMask;
       _fishDeformLastFailReason = null;
       return { url: _fishDeformUrlCache, w, h };
     } catch (err) {
@@ -445,14 +467,6 @@
     return { x: FISHING_RING.cx + Math.cos(rad) * radius, y: FISHING_RING.cy + Math.sin(rad) * radius };
   }
 
-  function fishingDistPointToSegment(px, py, x1, y1, x2, y2) {
-    const dx = x2 - x1, dy = y2 - y1;
-    const len2 = dx * dx + dy * dy;
-    if (len2 <= 0.0001) return Math.hypot(px - x1, py - y1);
-    const t = deps.clamp(((px - x1) * dx + (py - y1) * dy) / len2, 0, 1);
-    return Math.hypot(px - (x1 + dx * t), py - (y1 + dy * t));
-  }
-
   // ── Fishing FX particles (bait toss / bite splash) ────────────────
   // Small one-off 3D bursts, deliberately separate from the existing
   // actionParticles (2D HUD-canvas tool feedback) and waterParticles
@@ -667,6 +681,8 @@
     fishPickTargetVel(fm);
     _fishDeformUrlCache = null;
     _fishDeformUrlCacheAt = -Infinity;
+    _fishDeformCollisionMask = null;
+    _fishCollisionSourceLog = '';
     fishingReadyPose = false;
     window.__farmLog?.(`fishing ring opened: zone=${fm.zoneKey} fish=${fm.fishDef.key} anchor=(${fm.anchorWorld.x.toFixed(2)},${fm.anchorWorld.y.toFixed(2)},${fm.anchorWorld.z.toFixed(2)}) bodyImgLoaded=${!!(fishBodySpriteImage && fishBodySpriteImage.naturalWidth)}`);
     // The prompt DOM (button/status/panic/cancel) persists across this
@@ -779,6 +795,59 @@
     deps.setFishThrowActive(true);
   }
 
+  function minigamePresentationScale(fm) {
+    const external = window.FishCatalog?.getMinigamePresentationScale?.(fm.fishDef); // Final CSS scale applied by fish-catalog.js when that presentation layer is active.
+    const sx = Math.max(0.2, Number(external?.sx) || 1); // Used to invert the visible species width before fallback/core alpha sampling.
+    const sy = Math.max(0.2, Number(external?.sy) || 1); // Used to invert the visible species height before fallback/core alpha sampling.
+    return { sx, sy };
+  }
+
+  function coreFishSilhouetteContainsLocalPoint(fm, localX, localY) {
+    const mask = _fishDeformCollisionMask; // Last core deform frame actually encoded into #fishDeformedImage.
+    if (!mask) return null;
+    const { sx, sy } = minigamePresentationScale(fm);
+    const px = Math.floor(localX / sx + mask.w * 0.5); // Undo FishCatalog's CSS width scale before alpha lookup.
+    const py = Math.floor(localY / sy + mask.h * 0.5); // Undo FishCatalog's CSS height scale before alpha lookup.
+    if (px < 0 || py < 0 || px >= mask.w || py >= mask.h) return false;
+    return (mask.rgba[(py * mask.w + px) * 4 + 3] || 0) >= FISH_COLLISION_ALPHA_THRESHOLD;
+  }
+
+  function fallbackFishSilhouetteContainsLocalPoint(fm, localX, localY) {
+    const { sx, sy } = minigamePresentationScale(fm);
+    const halfW = FISHING_BRIDGE_ART.imgW * sx * 0.5; // Emergency-only body-width bound used if browser canvas readback is blocked.
+    const halfH = (FISHING_BRIDGE_ART.imgH * 0.5 + 3) * sy; // Includes the authored swim bend while remaining much tighter than the old center circle.
+    const nx = localX / Math.max(0.001, halfW); // Normalized fallback X coordinate.
+    const ny = localY / Math.max(0.001, halfH); // Normalized fallback Y coordinate.
+    return nx * nx + ny * ny <= 1;
+  }
+
+  function fishSilhouetteCollisionSource() {
+    if (window.FishCatalog?.hasMinigameSilhouetteCollisionMask?.()) return 'catalog-alpha';
+    if (_fishDeformCollisionMask) return 'core-alpha';
+    return 'fallback-ellipse';
+  }
+
+  function fishSilhouetteContainsLocalPoint(fm, source, localX, localY) {
+    if (source === 'catalog-alpha') {
+      return window.FishCatalog?.minigameSilhouetteContainsLocalPoint?.(fm, localX, localY) === true;
+    }
+    if (source === 'core-alpha') return coreFishSilhouetteContainsLocalPoint(fm, localX, localY) === true;
+    return fallbackFishSilhouetteContainsLocalPoint(fm, localX, localY);
+  }
+
+  function logFishCollisionSource(fm, source) {
+    const catalogDebug = window.FishCatalog?.getMinigameSilhouetteCollisionDebug?.(); // Included in the in-game debug log so mobile testing does not require devtools.
+    const signature = `${source}:${catalogDebug?.width || _fishDeformCollisionMask?.w || 0}x${catalogDebug?.height || _fishDeformCollisionMask?.h || 0}`; // Used only to dedupe source-change logs.
+    if (_fishCollisionSourceLog === signature) return;
+    _fishCollisionSourceLog = signature;
+    const detail = source === 'catalog-alpha'
+      ? `final curved frame ${catalogDebug?.width || 0}x${catalogDebug?.height || 0}`
+      : source === 'core-alpha'
+        ? `core deformed frame ${_fishDeformCollisionMask?.w || 0}x${_fishDeformCollisionMask?.h || 0}`
+        : 'canvas alpha unavailable; emergency ellipse active';
+    window.__farmLog?.(`fish hitbox source: ${source} (${detail})`, source === 'fallback-ellipse' ? 'warn' : 'fish');
+  }
+
   function fishingTryTipCatch(fm) {
     const b = fm.bridge;
     if (b.caughtFish || !b.spearActive) return false;
@@ -790,10 +859,52 @@
     // instant of a dive, before renderRadius has eased inward enough for
     // distance alone to rule it out.
     if (fm.dive.active) return false;
-    const fishPos = fishingPolarToXY(fm.fish.renderAngle, fm.fish.renderRadius);
-    const colliderRadius = 14;
-    const dist = fishingDistPointToSegment(fishPos.x, fishPos.y, b.prevTipX, b.prevTipY, b.tipX, b.tipY);
-    if (dist <= colliderRadius) { b.caughtFish = true; return true; }
+
+    const fishPos = fishingPolarToXY(fm.fish.renderAngle, fm.fish.renderRadius); // Center of the same SVG rig that renders the silhouette.
+    const renderAngleRad = fm.fish.renderAngle * Math.PI / 180; // Used to invert the visible fish rotation into silhouette-local coordinates.
+    const cosAngle = Math.cos(renderAngleRad); // Cached for every sweep sample in this frame.
+    const sinAngle = Math.sin(renderAngleRad); // Cached for every sweep sample in this frame.
+    const requestedFacing = fm.fish.localFacingScale; // Same turnaround squash/mirror factor used by renderFishingImageFish.
+    const localFacingScale = Math.abs(requestedFacing) < 0.035 ? 0.035 * Math.sign(requestedFacing || 1) : requestedFacing; // Matches the renderer's nonzero clamp exactly.
+    const visibleScaleX = FISHING_BRIDGE_ART.flipX * localFacingScale; // Inverted below so a turning/mirrored silhouette keeps an equally turning/mirrored hitbox.
+    const sweepDx = b.tipX - b.prevTipX; // Current spear-tip swept segment X delta.
+    const sweepDy = b.tipY - b.prevTipY; // Current spear-tip swept segment Y delta.
+    const sweepLength = Math.hypot(sweepDx, sweepDy); // Determines dense subpixel sampling so high-speed throws cannot tunnel through the PNG alpha.
+    const sampleCount = Math.max(1, Math.ceil(sweepLength / FISH_COLLISION_SWEEP_STEP_PX)); // Number of intervals across this frame's swept tip path.
+    const source = fishSilhouetteCollisionSource(); // Prefer FishCatalog's final curved frame, then the core deformed frame, with a logged emergency fallback.
+    let hit = false; // Becomes true on the first opaque silhouette pixel crossed by the spear tip.
+
+    logFishCollisionSource(fm, source);
+    for (let i = 0; i <= sampleCount; i++) {
+      const t = i / sampleCount; // Position along the spear tip's continuous swept segment.
+      const screenX = b.prevTipX + sweepDx * t; // Sample point in fishing-ring SVG coordinates.
+      const screenY = b.prevTipY + sweepDy * t; // Sample point in fishing-ring SVG coordinates.
+      const relX = screenX - fishPos.x; // Translate into the fish rig's origin before undoing rotation.
+      const relY = screenY - fishPos.y; // Translate into the fish rig's origin before undoing rotation.
+      const rotatedX = cosAngle * relX + sinAngle * relY; // Undo renderFishingImageFish's rotate(renderAngle).
+      const rotatedY = -sinAngle * relX + cosAngle * relY; // Undo renderFishingImageFish's rotate(renderAngle).
+      const localX = rotatedX / visibleScaleX; // Undo the renderer's horizontal mirror/turnaround squash.
+      const localY = rotatedY; // Y is unchanged by the core fish transform; FishCatalog's CSS Y scale is undone in the mask sampler.
+      if (fishSilhouetteContainsLocalPoint(fm, source, localX, localY)) {
+        hit = true;
+        break;
+      }
+    }
+
+    b.hitboxDebug = {
+      source,
+      sampleStepPx: FISH_COLLISION_SWEEP_STEP_PX,
+      samples: sampleCount + 1,
+      hit,
+      fishAngle: fm.fish.renderAngle,
+      facingScale: localFacingScale,
+      presentationScale: minigamePresentationScale(fm),
+    };
+    if (hit) {
+      b.caughtFish = true;
+      window.__farmLog?.(`fish silhouette hit: source=${source} samples=${sampleCount + 1}`, 'fish');
+      return true;
+    }
     return false;
   }
 
@@ -1360,5 +1471,6 @@
     projectileVisuals: FISHING_PROJECTILE_VISUALS,
     get state() { return fishingMinigame; },
     get readyPose() { return fishingReadyPose; },
+    get hitboxDebug() { return fishingMinigame?.bridge?.hitboxDebug || null; },
   };
 })();

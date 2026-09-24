@@ -27,7 +27,7 @@ const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const deepCopy=v=>JSON.parse(JSON.stringify(v));
 const genId=prefix=>`${prefix}${Date.now().toString(36)}${(_idSequence++).toString(36)}`; // Used by tree, node, pool, and pool-entry creation.
-const EXPRESSION_OPTIONS=['neutral','smile','frown','laugh','yap'];
+const EXPRESSION_OPTIONS=['neutral','smile','frown','laugh','yap','eyes_open','eyes_closed'];
 const REVEAL_SPEED_OPTIONS=['normal','slow','fast','instant'];
 const CHOICE_ACTION_TYPES=[
   {type:'setLocalNickname',label:'Set nickname',field:'value',fieldLabel:'Nickname'},

@@ -60,6 +60,7 @@ on:
       - 'scripts/test-outdoor-livestock-welfare.js'
       - 'scripts/test-outdoor-livestock-presence.js'
       - 'scripts/test-farm-menu-layout.js'
+      - 'scripts/test-fishing-silhouette-hitbox.js'
       - '.github/workflows/animal-growth-regression.yml'
   pull_request:
     paths:
@@ -120,6 +121,7 @@ on:
       - 'scripts/test-outdoor-livestock-welfare.js'
       - 'scripts/test-outdoor-livestock-presence.js'
       - 'scripts/test-farm-menu-layout.js'
+      - 'scripts/test-fishing-silhouette-hitbox.js'
       - '.github/workflows/animal-growth-regression.yml'
 
 permissions:
@@ -155,6 +157,8 @@ jobs:
           node --check docs/js/carpenter-shop.js
           node --check docs/js/farm-troughs.js
           node --check docs/js/format-utils.js
+          node --check docs/js/fish-catalog.js
+          node --check docs/js/fishing-minigame.js
           node --check docs/js/general-store.js
           node --check docs/js/livestock-nursery.js
           node --check docs/js/livestock-nursery-observer-scope.js
@@ -193,6 +197,8 @@ jobs:
         run: node scripts/test-carpenter-barn-additions.js
       - name: Test fishing economy progression
         run: node scripts/test-economy-progression.js
+      - name: Test fishing silhouette hitboxes
+        run: node scripts/test-fishing-silhouette-hitbox.js
       - name: Test livestock menu row identity
         run: node scripts/test-livestock-menu-regressions.js
       - name: Test livestock Nursery integration

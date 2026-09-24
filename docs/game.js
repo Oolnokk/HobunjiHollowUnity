@@ -12086,6 +12086,7 @@
                 def: this.animalDef,
                 isSleeping: () => this._animalSleepRequested === true,
                 eyesClosed: () => !(dialogueOpen && _dialogueWalker === this && this.rec?._animalDialogueEyesOpen === true),
+                expressionEyesClosed: () => dialogueOpen && _dialogueWalker === this && this.rec?._animalDialogueExpressionEyesClosed === true, // Uses the dialogue editor's eye expression on awake animals too.
               }); // Named-animal NPCs now use the exact livestock/wilderness sleep frame, flattening, head-down, and blink-overlay pipeline.
             }
             // Drives procedural legs (and the move-bob below) from last
@@ -24753,6 +24754,9 @@
             const label = nest.liveBirth ? 'Hold to Take Baby' : 'Hold to Take Egg';
             return [{ icon: nest.liveBirth ? '🐾' : '🥚', label, action: 'nest_take', style: 'primary', allowed: true, worldInteraction: true, promptRoot: nest.mesh || null }];
           }
+          const bReticle = getReticleTile();
+          const bInteractable = _buildingInteractables.get(currentArea + ',' + bReticle.col + ',' + bReticle.row);
+          if (bInteractable) return bInteractable.getButtons();
           // A den's cavern is a boss-fight arena (see _isCavernBuildingArea) —
           // the weapon/tool combo buttons still need to populate the action
           // bar here, same as farm/zone (below), even though every other
@@ -24775,9 +24779,6 @@
             });
             return cavernBtns;
           }
-          const bReticle = getReticleTile();
-          const bInteractable = _buildingInteractables.get(currentArea + ',' + bReticle.col + ',' + bReticle.row);
-          if (bInteractable) return bInteractable.getButtons();
           // Procedural mine floors are building interiors, so they return from
           // this branch before the general wilderness/town action block below.
           // Surface campfires are handled there; mine campfires must expose the

@@ -220,9 +220,9 @@
     "owner": "FishCatalog",
     "classification": "bounded-animation",
     "function": "presentationLoop",
-    "reason": "Started (line 428) only when a fishing cast begins and stops itself once window.Fishing.state clears at the end of that catch attempt - a finite per-session effect rather than a permanent runtime.",
+    "reason": "Started (line 480) only when a fishing cast begins and stops itself once window.Fishing.state clears at the end of that catch attempt - a finite per-session effect rather than a permanent runtime.",
     "migrationStage": "not-planned",
-    "line": 422
+    "line": 474
   },
   {
     "file": "docs/js/folder-save-debug-ui.js",
@@ -501,7 +501,7 @@
     "function": "nextTick (inside flicker diagnostic loop)",
     "reason": "A single requestAnimationFrame races a 200ms setTimeout purely to await the next paint inside a bounded 45-sample flicker diagnostic; it never reschedules itself and the outer sampling loop is a plain for-loop, not a RAF recursion.",
     "migrationStage": "not-planned",
-    "line": 1295
+    "line": 1305
   },
   {
     "file": "docs/js/procedural-hand-frame-driver.js",
