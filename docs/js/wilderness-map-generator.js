@@ -3412,7 +3412,7 @@
       const colliderW = Math.max(1, Math.ceil(rawW));
       const colliderH = Math.max(1, Math.ceil(rawH));
       addObject({
-        type:'structure',
+        type:'localeCollider',
         x:clamp(colliderX, 0, settings.width - 1),
         y:clamp(colliderY, 0, settings.height - 1),
         w:colliderW,
