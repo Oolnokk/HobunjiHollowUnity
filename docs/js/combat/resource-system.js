@@ -27,6 +27,7 @@
   const STAMINA_RECOVERY_MULTIPLIER = 1.25; // Used by every time-based Stamina recovery path: ordinary regen, Exhausted debt, and Stamina-affliction recovery.
   const ACTION_PUNISHMENT_RECOVERY_MULTIPLIER = 4; // Used by action-punishing afflictions after the entity deliberately avoids their punished action.
   const ACTION_PUNISHMENT_RECOVERY_GRACE_MS = 750; // Used to require a short pause after the punished action before the accelerated recovery engages.
+  const punishedActionTimes = new WeakMap(); // Used to keep session-relative action timestamps off saveable entities while action-punishing afflictions decide whether avoidance recovery is active.
   const staminaRegenBlockers = new WeakMap(); // Used by held actions to compose temporary Stamina-regeneration locks without storing transient Sets on saveable entities.
 
   function setStaminaRegenBlocked(entity, source, blocked) {
@@ -196,7 +197,7 @@
     if (entity.exhaustion.active) entity.stamina = 0; // Normalize stale saves/spawns before any action can observe regular Stamina during Black-Stamina debt.
     if (!Number.isFinite(entity.lastAttackAttemptAt)) entity.lastAttackAttemptAt = -1e9;
     if (!Number.isFinite(entity.lastAttackReceivedAt)) entity.lastAttackReceivedAt = -1e9;
-    if (!Number.isFinite(entity.lastStaminaSpendAt)) entity.lastStaminaSpendAt = -1e9; // Used to accelerate recovery of afflictions whose penalty is triggered by spending Stamina when that action is deliberately avoided.
+    if (Object.prototype.hasOwnProperty.call(entity, "lastStaminaSpendAt")) delete entity.lastStaminaSpendAt; // Migrates the briefly-shipped session-relative clock off saveable entity state; runtime timing now lives in punishedActionTimes.
     if (!Number.isFinite(entity.maxFooting)) entity.maxFooting = resourceSystemConfig().footingMax;
     if (!Number.isFinite(entity.footing)) entity.footing = entity.maxFooting;
     // prone: full-ragdoll knockdown state entered at 0 Footing (see game.js's
@@ -375,6 +376,21 @@
   // that still want a hard "too winded" refusal should keep checking
   // entity.stamina/maxStamina themselves before calling this; while
   // Exhausted, entity.stamina reads 0, so those checks keep working.
+  function recordPunishedAction(entity, actionId) {
+    if (!entity || !actionId) return;
+    let times = punishedActionTimes.get(entity); // Used to retain only this runtime entity's latest punished-action clocks.
+    if (!times) {
+      times = new Map();
+      punishedActionTimes.set(entity, times);
+    }
+    times.set(actionId, nowMs());
+  }
+
+  function getPunishedActionElapsedMs(entity, actionId) {
+    const last = punishedActionTimes.get(entity)?.get(actionId);
+    return Number.isFinite(last) ? Math.max(0, nowMs() - last) : Infinity;
+  }
+
   function spendStamina(entity, amount, reason = "action") {
     entity.lastAttackAttemptAt = nowMs();
     if (entity === window.Combat?.deps?.player) {
@@ -382,7 +398,7 @@
       amount *= 1 - Math.min(0.6, (window.PerkSystem?.rank('combat', 'reduceStaminaUse') || 0) * 0.08); // Reduce Stamina Use perk.
     }
     if (!(amount > 0)) return { spent: 0, excess: 0 };
-    entity.lastStaminaSpendAt = nowMs(); // Resets the avoidance bonus for Wounded/Infected/Shattered Stamina whenever the punished action is actually taken.
+    recordPunishedAction(entity, "staminaSpend"); // Resets the avoidance bonus for Wounded/Infected/Shattered Stamina whenever the punished action is actually taken.
 
     if (entity.exhaustion.active) {
       entity.stamina = 0; // Reassert the invariant even if an external/load path injected stale regular Stamina since the previous tick.
@@ -586,9 +602,9 @@
     if (!def?.recovers) return 0;
     let multiplier = rested ? 2 : 1; // Used by diagnostics/tests and the real recovery loop so displayed tuning cannot drift from gameplay.
     if (def.resource === "stamina") multiplier *= STAMINA_RECOVERY_MULTIPLIER;
-    if (def.punishedAction === "staminaSpend") {
-      const elapsedSinceSpendMs = nowMs() - (Number.isFinite(entity?.lastStaminaSpendAt) ? entity.lastStaminaSpendAt : -1e9); // Used to reward refraining from the exact action that triggers this affliction's penalty.
-      if (elapsedSinceSpendMs >= ACTION_PUNISHMENT_RECOVERY_GRACE_MS) multiplier *= ACTION_PUNISHMENT_RECOVERY_MULTIPLIER;
+    if (def.punishedAction) {
+      const elapsedSinceActionMs = getPunishedActionElapsedMs(entity, def.punishedAction); // Used to reward refraining from whichever action this affliction explicitly punishes.
+      if (elapsedSinceActionMs >= ACTION_PUNISHMENT_RECOVERY_GRACE_MS) multiplier *= ACTION_PUNISHMENT_RECOVERY_MULTIPLIER;
     }
     return multiplier;
   }
@@ -661,6 +677,7 @@
     getEffectiveMax,
     getExhaustionSpeed,
     getAfflictionRecoveryMultiplier,
+    getPunishedActionElapsedMs,
     setStaminaRegenBlocked,
     isStaminaRegenBlocked,
     getStaminaRegenBlockers,
