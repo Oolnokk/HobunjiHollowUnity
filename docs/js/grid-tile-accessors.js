@@ -218,7 +218,6 @@
   // doorway gap in the mesh and the cavern-entrance transition tile.
   function isAnimalDenCollisionTile(col, row, area) {
     for (const den of (deps._zoneLayouts.get(area)?.dens || [])) {
-      if (den.mouthAnchor && den.mouthAnchor.x === col && den.mouthAnchor.y === row) continue;
       const authoredState = window.ZoneDenTotemFeatures?.denEntranceCollisionState?.(den) || null; // Full den-template collision state includes furniture/custom colliders plus whether to retain the legacy cave shell.
       if (authoredState) {
         for (const rect of (authoredState.rects || [])) {
@@ -226,6 +225,7 @@
         }
         if (!authoredState.useLegacyCave) continue;
       }
+      if (den.mouthAnchor && den.mouthAnchor.x === col && den.mouthAnchor.y === row) continue; // Mouth exception applies only to the legacy cave shell, never to an explicitly authored furniture/custom collider.
       const w = den.w || 1, h = den.h || 1;
       if (col < den.x || col >= den.x + w || row < den.y || row >= den.y + h) continue;
       // Doorway gap carved into the south wall (30%-70% of the footprint's
