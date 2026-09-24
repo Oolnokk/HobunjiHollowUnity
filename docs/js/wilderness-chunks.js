@@ -19,6 +19,11 @@
   const STREAM_BUILD_INTERVAL_S = LOW_MEMORY_STREAMING ? 0.2 : 0; // Used by updateActive to pace low-memory chunk allocation to at most five new chunks per second.
   const INACTIVE_UNLOAD_DELAY_S = 4; // Used to free a wilderness scene after the player remains in another area.
   const MAX_STREAM_BUILDS_PER_UPDATE = 1; // Used to cap each eligible streaming tick to a single chunk build.
+  // Streamed (not arrival/rebuild) chunks built through config.buildChunkStages
+  // are advanced a stage at a time: each frame runs stages until this budget
+  // is spent (always at least one), so one chunk's floor/feature/UV-bake/
+  // water/grass work spreads over a few frames instead of one long hitch.
+  const STAGED_BUILD_FRAME_BUDGET_MS = 6;
   const DEBUG_REFRESH_MS = 250; // Used to keep mobile diagnostic text inexpensive.
 
   let deps = null; // Receives the current-area/player accessors supplied by game.js.
@@ -127,6 +132,9 @@
       this.cols = config.cols;
       this.rows = config.rows;
       this.buildChunk = config.buildChunk;
+      this.buildChunkStages = typeof config.buildChunkStages === 'function' ? config.buildChunkStages : null; // Optional generator form of buildChunk used for paced streaming.
+      this.staged = null; // At most one in-progress staged build: { key, cx, cz, bounds, group, ctx, iterator, startedAt, workMs, steps }.
+      this.stagedCancels = 0;
       this.disposeChunk = config.disposeChunk || (record => disposeTaggedChunkObjects(record.group));
       this.onChunkLoaded = config.onChunkLoaded || null;
       this.onChunkUnloaded = config.onChunkUnloaded || null;
@@ -161,7 +169,7 @@
     enqueue(cx, cz, distance) {
       if (!this.validChunk(cx, cz)) return;
       const key = chunkKey(cx, cz);
-      if (this.loaded.has(key)) return;
+      if (this.loaded.has(key) || this.staged?.key === key) return;
       const existing = this.queue.get(key);
       if (!existing || distance < existing.distance) this.queue.set(key, { key, cx, cz, distance });
     }
@@ -175,39 +183,108 @@
       }
     }
 
-    load(cx, cz) {
-      if (!this.validChunk(cx, cz)) return null;
-      const key = chunkKey(cx, cz);
-      if (this.loaded.has(key)) return this.loaded.get(key);
-      this.queue.delete(key);
-      const bounds = this.boundsFor(cx, cz);
+    createChunkGroup(cx, cz) {
       const group = new THREE.Group();
       group.name = 'WildernessChunk_' + this.mapId + '_' + cx + '_' + cz;
       group.userData.wildernessChunk = true;
       group.userData.wildernessChunkMapId = this.mapId;
       group.userData.wildernessChunkX = cx;
       group.userData.wildernessChunkZ = cz;
-      group.userData.wildernessChunkBounds = bounds;
+      group.userData.wildernessChunkBounds = this.boundsFor(cx, cz);
       this.scene.add(group);
+      return group;
+    }
+
+    finishLoad(key, cx, cz, bounds, group, payload, buildMs) {
+      const record = { key, cx, cz, bounds, group, payload: payload || {}, buildMs, loadedAt: performance.now(), debugCage: null };
+      this.loaded.set(key, record);
+      this.builds++;
+      this.lastBuildMs = buildMs;
+      this.totalBuildMs += buildMs;
+      this.onChunkLoaded?.(record);
+      updateDebugCage(record, cx === this.centerCx && cz === this.centerCz);
+      return record;
+    }
+
+    failLoad(key, group, error) {
+      this.scene.remove(group);
+      disposeTaggedChunkObjects(group);
+      console.error('[wilderness-chunks] failed ' + this.mapId + ' ' + key, error);
+      window.__farmLog?.('[wilderness-chunks] failed ' + this.mapId + ' ' + key + ': ' + error.message, 'warn');
+      return null;
+    }
+
+    load(cx, cz) {
+      if (!this.validChunk(cx, cz)) return null;
+      const key = chunkKey(cx, cz);
+      if (this.loaded.has(key)) return this.loaded.get(key);
+      if (this.staged?.key === key) return this.stepStaged(Infinity); // Something needs this chunk now: finish its paced build synchronously.
+      this.queue.delete(key);
+      const bounds = this.boundsFor(cx, cz);
+      const group = this.createChunkGroup(cx, cz);
       const startedAt = performance.now();
       try {
         const payload = this.buildChunk({ mapId: this.mapId, key, cx, cz, bounds, group }) || {};
-        const buildMs = performance.now() - startedAt;
-        const record = { key, cx, cz, bounds, group, payload, buildMs, loadedAt: performance.now(), debugCage: null };
-        this.loaded.set(key, record);
-        this.builds++;
-        this.lastBuildMs = buildMs;
-        this.totalBuildMs += buildMs;
-        this.onChunkLoaded?.(record);
-        updateDebugCage(record, cx === this.centerCx && cz === this.centerCz);
-        return record;
+        return this.finishLoad(key, cx, cz, bounds, group, payload, performance.now() - startedAt);
       } catch (error) {
-        this.scene.remove(group);
-        disposeTaggedChunkObjects(group);
-        console.error('[wilderness-chunks] failed ' + this.mapId + ' ' + key, error);
-        window.__farmLog?.('[wilderness-chunks] failed ' + this.mapId + ' ' + key + ': ' + error.message, 'warn');
-        return null;
+        return this.failLoad(key, group, error);
       }
+    }
+
+    beginStaged(cx, cz) {
+      const key = chunkKey(cx, cz);
+      this.queue.delete(key);
+      const bounds = this.boundsFor(cx, cz);
+      const group = this.createChunkGroup(cx, cz);
+      const ctx = { mapId: this.mapId, key, cx, cz, bounds, group, payload: null };
+      try {
+        this.staged = { key, cx, cz, bounds, group, ctx, iterator: this.buildChunkStages(ctx), workMs: 0, steps: 0 };
+      } catch (error) {
+        this.staged = null;
+        this.failLoad(key, group, error);
+      }
+    }
+
+    // Advances the in-progress staged build until it completes or budgetMs of
+    // work has been spent this call. Returns the finished record, if any.
+    stepStaged(budgetMs) {
+      const staged = this.staged;
+      if (!staged) return null;
+      const callStart = performance.now();
+      try {
+        for (;;) {
+          const stepStart = performance.now();
+          const result = staged.iterator.next();
+          staged.workMs += performance.now() - stepStart;
+          staged.steps++;
+          if (result.done) {
+            this.staged = null;
+            return this.finishLoad(staged.key, staged.cx, staged.cz, staged.bounds, staged.group, result.value || staged.ctx.payload, staged.workMs);
+          }
+          if (performance.now() - callStart >= budgetMs) return null;
+        }
+      } catch (error) {
+        this.staged = null;
+        return this.failLoad(staged.key, staged.group, error);
+      }
+    }
+
+    // Abandons a half-built staged chunk. Anything its stages already
+    // registered (vegetation/rock tiles, climb branches, owned GPU resources)
+    // is released through the same unload hooks a finished chunk uses, with
+    // whatever partial payload the stages had filled in.
+    cancelStaged() {
+      const staged = this.staged;
+      if (!staged) return false;
+      this.staged = null;
+      try { staged.iterator.return?.(); } catch (_) {}
+      const record = { key: staged.key, cx: staged.cx, cz: staged.cz, bounds: staged.bounds, group: staged.group, payload: staged.ctx.payload || {}, debugCage: null };
+      try { this.onChunkUnloaded?.(record); } catch (error) { console.error('[wilderness-chunks] staged cancel detach failed ' + staged.key, error); }
+      this.disposeChunk(record);
+      this.scene.remove(staged.group);
+      staged.group.clear?.();
+      this.stagedCancels++;
+      return true;
     }
 
     unload(key) {
@@ -237,9 +314,11 @@
       for (const [key, request] of this.queue) {
         if (chebyshev(request.cx, request.cz, centerCx, centerCz) > LOAD_RADIUS) this.queue.delete(key);
       }
+      if (this.staged && chebyshev(this.staged.cx, this.staged.cz, centerCx, centerCz) > LOAD_RADIUS) this.cancelStaged();
     }
 
     unloadAll() {
+      this.cancelStaged();
       this.queue.clear();
       for (const key of [...this.loaded.keys()]) this.unload(key);
       this.centerCx = null;
@@ -287,10 +366,21 @@
       this.setCenter(col, row);
       const elapsed = Math.max(0, Number(dt) || 0); // Used to count down the low-memory allocation interval without tying it to frame rate.
       this.streamCooldownSeconds = Math.max(0, this.streamCooldownSeconds - elapsed);
+      if (this.staged) {
+        // A paced build is mid-flight: keep advancing it; the next queued chunk
+        // starts only once it has finished.
+        if (this.stepStaged(STAGED_BUILD_FRAME_BUDGET_MS)) this.streamCooldownSeconds = STREAM_BUILD_INTERVAL_S;
+        return;
+      }
       if (!this.queue.size) return; // Steady state once the neighborhood is fully streamed in — skip the array copy/sort below entirely.
       if (this.streamCooldownSeconds > 0) return; // Low-memory mode still unloads every frame above, but delays the next allocation-heavy build.
       const queue = [...this.queue.values()]
         .sort((a, b) => a.distance - b.distance || a.cz - b.cz || a.cx - b.cx);
+      if (this.buildChunkStages) {
+        this.beginStaged(queue[0].cx, queue[0].cz);
+        if (this.stepStaged(STAGED_BUILD_FRAME_BUDGET_MS)) this.streamCooldownSeconds = STREAM_BUILD_INTERVAL_S;
+        return;
+      }
       for (let i = 0; i < Math.min(MAX_STREAM_BUILDS_PER_UPDATE, queue.length); i++) {
         this.load(queue[i].cx, queue[i].cz);
       }
@@ -303,6 +393,12 @@
     }
 
     rebuild(col = null, row = null) {
+      // A paced build started before this edit may already hold stale tile
+      // data; drop it and let it stream in again from the current grid.
+      const restaged = this.staged ? { cx: this.staged.cx, cz: this.staged.cz } : null;
+      if (restaged && this.cancelStaged() && this.centerCx != null) {
+        this.enqueue(restaged.cx, restaged.cz, chebyshev(restaged.cx, restaged.cz, this.centerCx, this.centerCz));
+      }
       let keys;
       if (Number.isFinite(col) && Number.isFinite(row)) {
         const targetCx = tileToChunk(col);
@@ -359,6 +455,9 @@
         immediateRadius: IMMEDIATE_RADIUS,
         lowMemoryStreaming: LOW_MEMORY_STREAMING,
         streamBuildIntervalMs: Math.round(STREAM_BUILD_INTERVAL_S * 1000),
+        stagedBuild: this.staged ? { key: this.staged.key, steps: this.staged.steps, workMs: Number(this.staged.workMs.toFixed(2)) } : null,
+        stagedCancels: this.stagedCancels,
+        stagedFrameBudgetMs: this.buildChunkStages ? STAGED_BUILD_FRAME_BUDGET_MS : null,
       };
     }
   }

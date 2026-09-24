@@ -100,7 +100,7 @@
 
   function loadFishCatalogForGame(){
     if(typeof document==='undefined'||!document.getElementById('fishingOverlay'))return;
-    parserOrderedScript('fish-catalog.js','fish-catalog','20260923silhouettehitbox1',()=>!!window.FishCatalog);
+    parserOrderedScript('fish-catalog.js','fish-catalog','20260924perf5',()=>!!window.FishCatalog);
   }
   function loadFishingEventsForGame(){
     if(typeof document==='undefined'||!document.getElementById('fishingOverlay'))return;

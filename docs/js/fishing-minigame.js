@@ -125,7 +125,7 @@
   function ensureFishDeformCanvas(width, height) {
     const w = Math.max(48, Math.round(width));
     const h = Math.max(24, Math.round(height));
-    if (!fishDeformCanvas) { fishDeformCanvas = document.createElement('canvas'); fishDeformCtx = fishDeformCanvas.getContext('2d'); }
+    if (!fishDeformCanvas) { fishDeformCanvas = document.createElement('canvas'); fishDeformCtx = fishDeformCanvas.getContext('2d', { willReadFrequently: true }); } // CPU-backed: every use is a toDataURL encode plus an alpha-mask readback.
     if (fishDeformCanvas.width !== w || fishDeformCanvas.height !== h) { fishDeformCanvas.width = w; fishDeformCanvas.height = h; }
     return { canvas: fishDeformCanvas, ctx: fishDeformCtx, w, h };
   }
@@ -222,6 +222,13 @@
     const targetW = Math.ceil(art.imgW + pad * 2);
     const targetH = Math.ceil(art.imgH + pad * 2);
     const { canvas, ctx, w, h } = ensureFishDeformCanvas(targetW, targetH);
+    // The deform canvas is only ever consumed through its encoded data URL, so
+    // between re-encodes there is nothing to draw: return the cached frame
+    // before redrawing every bone slice (previously drawn each frame and
+    // discarded ~5 of every 6 frames).
+    if (_fishDeformUrlCache && fm.fishAnimT - _fishDeformUrlCacheAt < FISH_DEFORM_REENCODE_INTERVAL) {
+      return { url: _fishDeformUrlCache, w, h };
+    }
     ctx.clearRect(0, 0, w, h);
 
     const phase = fm.fishAnimT * 7.5 + fm.fish.angle * 0.025;
@@ -232,9 +239,6 @@
     drawFishImageAlongBones(ctx, fishBodySpriteImage, w, h, art.imgW, art.imgH, bodyOffsets, 1);
     if (fishWhiskersSpriteImage && fishWhiskersSpriteImage.naturalWidth) {
       drawFishImageAlongBones(ctx, fishWhiskersSpriteImage, w, h, art.imgW, art.imgH, whiskerOffsets, 0.95);
-    }
-    if (_fishDeformUrlCache && fm.fishAnimT - _fishDeformUrlCacheAt < FISH_DEFORM_REENCODE_INTERVAL) {
-      return { url: _fishDeformUrlCache, w, h };
     }
     const nextCollisionMask = readFishDeformCollisionMask(ctx, w, h); // Kept paired with this exact encoded visual frame.
     try {

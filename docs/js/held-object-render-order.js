@@ -60,6 +60,9 @@
   let waterMeshCount = 0; // Exposed in debugState so mobile diagnostics can confirm water surfaces are eligible for translucent replay.
   let waterOccludedMeshCount = 0; // Used by mobile diagnostics to confirm procedural feet registered for water occlusion.
   let waterReplayCount = 0; // Counts successful foot-only water compositing passes.
+  let scissoredReplayCount = 0; // Replays whose passes were clipped to the held/foot screen rectangle.
+  let fullscreenReplayCount = 0; // Replays that fell back to full-framebuffer passes (see replayScissorRect).
+  let lastReplayScissorCoverage = 1; // Fraction of the framebuffer the last replay's passes touched.
   let missingStencilFootReplaySkipCount = 0; // Safety fallback for auxiliary/offscreen targets that cannot carry the two-bit mask.
   let lastBaseStencilBits = 0; // STENCIL_BITS of the framebuffer bound for the most recent real world pass.
   let baseWorldRenderCount = 0;
@@ -611,6 +614,70 @@
   const originalRender = rendererProto.render;
   const rawRender = unwrapRendererRender(originalRender);
 
+  // The replay passes below only change pixels where held planes (and, for
+  // the foot-water composite, the registered feet) actually land on screen:
+  // everywhere else they rebuild exactly the depth the base pass already
+  // wrote. Clipping the depth clear and every replay draw to a scissor
+  // rectangle around those meshes leaves the rest of the framebuffer's base
+  // depth untouched and stops the GPU re-rasterizing the whole world 3-5
+  // extra times per frame while a tool is held. Anything that can't be
+  // bounded conservatively (skinned/instanced/morphed geometry, a corner
+  // behind the camera, a partial viewport) falls back to the old full-screen
+  // passes.
+  const scissorBox = new THREE.Box3();
+  const scissorCorner = new THREE.Vector3();
+  const scissorRect = new THREE.Vector4();
+  const scissorViewport = new THREE.Vector4();
+  const scissorDrawingSize = new THREE.Vector2();
+  const SCISSOR_MARGIN_PX = 4;
+  let replayScissorEnabled = true; // Debug A/B switch: HeldObjectRenderOrder.setReplayScissorEnabled(false) restores full-screen replay passes.
+
+  function replayScissorRect(renderer, camera, meshes, out) {
+    if (!camera?.isPerspectiveCamera && !camera?.isOrthographicCamera) return false;
+    const target = renderer.getRenderTarget?.() || null;
+    let width, height;
+    if (target) { width = target.width; height = target.height; }
+    else { renderer.getDrawingBufferSize(scissorDrawingSize); width = scissorDrawingSize.x; height = scissorDrawingSize.y; }
+    if (!(width > 0 && height > 0)) return false;
+    renderer.getCurrentViewport?.(scissorViewport);
+    if (scissorViewport.x !== 0 || scissorViewport.y !== 0 || scissorViewport.z !== width || scissorViewport.w !== height) return false;
+
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    const near = Number(camera.near) || 0;
+    for (const mesh of meshes) {
+      const geometry = mesh?.geometry;
+      if (!geometry || mesh.isSkinnedMesh || mesh.isInstancedMesh || geometry.morphAttributes?.position?.length) return false;
+      if (!geometry.boundingBox) geometry.computeBoundingBox();
+      if (!geometry.boundingBox || geometry.boundingBox.isEmpty()) continue;
+      scissorBox.copy(geometry.boundingBox).applyMatrix4(mesh.matrixWorld);
+      const { min, max } = scissorBox;
+      for (let corner = 0; corner < 8; corner++) {
+        scissorCorner.set(corner & 1 ? max.x : min.x, corner & 2 ? max.y : min.y, corner & 4 ? max.z : min.z);
+        scissorCorner.applyMatrix4(camera.matrixWorldInverse);
+        if (camera.isPerspectiveCamera && scissorCorner.z > -near) return false; // At/behind the near plane: projection is unbounded.
+        scissorCorner.applyMatrix4(camera.projectionMatrix);
+        if (scissorCorner.x < minX) minX = scissorCorner.x;
+        if (scissorCorner.x > maxX) maxX = scissorCorner.x;
+        if (scissorCorner.y < minY) minY = scissorCorner.y;
+        if (scissorCorner.y > maxY) maxY = scissorCorner.y;
+      }
+    }
+    if (minX === Infinity) { out.set(0, 0, 0, 0); return true; } // Nothing drawable: no replay pixel can change.
+    const x0 = Math.max(0, Math.floor((minX * 0.5 + 0.5) * width) - SCISSOR_MARGIN_PX);
+    const y0 = Math.max(0, Math.floor((minY * 0.5 + 0.5) * height) - SCISSOR_MARGIN_PX);
+    const x1 = Math.min(width, Math.ceil((maxX * 0.5 + 0.5) * width) + SCISSOR_MARGIN_PX);
+    const y1 = Math.min(height, Math.ceil((maxY * 0.5 + 0.5) * height) + SCISSOR_MARGIN_PX);
+    out.set(x0, y0, Math.max(0, x1 - x0), Math.max(0, y1 - y0));
+    lastReplayScissorCoverage = (out.z * out.w) / (width * height);
+    return true;
+  }
+
+  function restoreRendererScissor(renderer) {
+    // setRenderTarget re-derives viewport/scissor/scissor-test for the current
+    // target exactly as three.js itself would, undoing the clip above.
+    renderer.setRenderTarget(renderer.getRenderTarget(), renderer.getActiveCubeFace?.() || 0, renderer.getActiveMipmapLevel?.() || 0);
+  }
+
   function replaySelectiveHeldOverlay(renderer, scene, camera, held, ground, water, waterOccluded, originalCameraMask) {
     const needsHeldOverlay = held.length > 0; // Used to keep weapon/hand x-ray active even when no water is visible.
     const requestedFootWaterComposite = water.length > 0 && waterOccluded.length > 0; // Used to skip all foot-water stencil work on dry scenes.
@@ -629,7 +696,18 @@
     const oldShadowAutoUpdate = shadowMap?.autoUpdate;
 
     internalReplay = true;
+    const glState = renderer.state;
+    const scissorMeshes = needsFootWaterComposite ? [...held, ...waterOccluded] : held;
+    let scissored = replayScissorEnabled && !!(glState?.scissor && glState?.setScissorTest) && replayScissorRect(renderer, camera, scissorMeshes, scissorRect);
     try {
+      if (scissored) {
+        glState.scissor(scissorRect);
+        glState.setScissorTest(true);
+        scissoredReplayCount++;
+      } else {
+        fullscreenReplayCount++;
+        lastReplayScissorCoverage = 1;
+      }
       renderer.autoClear = false;
       renderer.autoClearColor = false;
       renderer.autoClearDepth = false;
@@ -671,7 +749,9 @@
       // 2) Draw weapons/hands once against non-ground depth and mark their
       // exact visible fragments in stencil bit 1. This is the actual x-ray:
       // terrain and water can never be composited over these held pixels.
+      if (scissored) glState.setScissorTest(false); // Stencil clears stay full-framebuffer, as before.
       renderer.clearStencil?.();
+      if (scissored) glState.setScissorTest(true);
       if (held.length) {
         const heldStencilStates = prepareHeldStencilMaterials(held);
         try {
@@ -724,8 +804,10 @@
           restoreMaterialStates(waterStencilStates);
         }
       }
+      if (scissored) { restoreRendererScissor(renderer); scissored = false; }
       renderer.clearStencil?.();
     } finally {
+      if (scissored) restoreRendererScissor(renderer);
       camera.layers.mask = originalCameraMask;
       if (shadowMap) shadowMap.autoUpdate = oldShadowAutoUpdate;
       scene.autoUpdate = oldSceneAutoUpdate;
@@ -799,6 +881,9 @@
       waterReplays: waterReplayCount,
       stencilBits: lastBaseStencilBits,
       missingStencilFootReplaySkips: missingStencilFootReplaySkipCount,
+      scissoredReplays: scissoredReplayCount,
+      fullscreenReplays: fullscreenReplayCount,
+      lastReplayScissorCoverage: Number(lastReplayScissorCoverage.toFixed(4)),
       baseWorldRenders: baseWorldRenderCount,
       selectiveOverlays: selectiveOverlayCount,
       nonGroundDepthReplays: nonGroundDepthReplayCount,
@@ -812,7 +897,7 @@
     const signature = JSON.stringify(state);
     if (signature !== lastDebugSignature) {
       lastDebugSignature = signature;
-      const message = `[held-xray] enabled=${state.enabled} held=${state.heldMeshes} ground=${state.groundMeshes} (grass=${state.grassMeshes} road=${state.roadMeshes} terrain=${state.terrainMeshes}) footWater=${state.waterOccludedMeshes}/${state.waterReplayMeshes}/${state.waterReplays} stencil=${state.stencilBits} stencilSkips=${state.missingStencilFootReplaySkips} base=${state.baseWorldRenders} overlay=${state.selectiveOverlays} depth=${state.nonGroundDepthReplays}/${state.groundDepthRestores} repairs=${state.invariantRepairs}`;
+      const message = `[held-xray] enabled=${state.enabled} held=${state.heldMeshes} ground=${state.groundMeshes} (grass=${state.grassMeshes} road=${state.roadMeshes} terrain=${state.terrainMeshes}) footWater=${state.waterOccludedMeshes}/${state.waterReplayMeshes}/${state.waterReplays} stencil=${state.stencilBits} stencilSkips=${state.missingStencilFootReplaySkips} base=${state.baseWorldRenders} overlay=${state.selectiveOverlays} depth=${state.nonGroundDepthReplays}/${state.groundDepthRestores} repairs=${state.invariantRepairs} scissor=${state.scissoredReplays}/${state.fullscreenReplays} coverage=${state.lastReplayScissorCoverage}`;
       if (typeof window.__farmLog === 'function') window.__farmLog(message, 'render');
       else console.debug(message);
     }
@@ -832,6 +917,7 @@
     scanScene,
     snapshot,
     debugLogSnapshot,
+    setReplayScissorEnabled: value => { replayScissorEnabled = value !== false; return replayScissorEnabled; },
     get enabled() { return enabled; },
     // Retained as a compatibility no-op for the former camera-mode toggle.
     // Ground/grass x-ray is now an invariant of held weapon presentation.

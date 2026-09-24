@@ -300,7 +300,7 @@
     const pad=Math.ceil(CURVED_FISH_ART.imgH*0.45);
     const w=Math.ceil(CURVED_FISH_ART.imgW+pad*2);
     const h=Math.ceil(CURVED_FISH_ART.imgH+pad*2);
-    if(!curvedCanvas){curvedCanvas=document.createElement('canvas');curvedCtx=curvedCanvas.getContext('2d');}
+    if(!curvedCanvas){curvedCanvas=document.createElement('canvas');curvedCtx=curvedCanvas.getContext('2d',{willReadFrequently:true});} // CPU-backed: each frame is read back for the collision mask and encoded with toDataURL.
     if(curvedCanvas.width!==w||curvedCanvas.height!==h){curvedCanvas.width=w;curvedCanvas.height=h;}
     return {canvas:curvedCanvas,ctx:curvedCtx,w,h};
   }
