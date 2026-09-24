@@ -11,6 +11,8 @@ const avatarPreview = read('docs/js/npc-avatar-preview-utils.js');
 const attachments = read('docs/js/player-body-attachment-bridge.js');
 const impact = read('docs/js/combat/impact-ragdoll-playback.js');
 const drunk = read('docs/js/drunk-locomotion.js');
+const weaponIdle = read('docs/js/weapon-idle-body-yaw-runtime.js');
+const socialActions = read('docs/js/social-action-wheel.js');
 const alcohol = read('docs/js/alcohol-gameplay-bridge.js');
 
 for (const modulePath of [
@@ -38,6 +40,8 @@ assert.ok(composer.includes('setChannel'), 'composer exposes named transform cha
 assert.ok(composer.includes('registerExternalRootProvider'), 'composer exposes body-bound attachment providers');
 assert.ok(composer.includes('prepareNeckForAttachmentSampling'), 'composer exposes the final physical neck pose before skinned attachment sampling');
 assert.match(composer, /function prepareNeckForAttachmentSampling\(\)[\s\S]{0,220}applyPlayerNeckYawLimit\(\)/, 'attachment preparation reuses the renderer physical neck-limit solver');
+assert.ok(composer.includes('setCharacterViewPoseLock'), 'composer exposes Character View pose freezing');
+assert.match(composer, /characterViewFrozenChannels[\s\S]{0,700}freezeInCharacterView/, 'Character View resolves opted-in channels from a frozen snapshot instead of their live writers');
 assert.ok(composer.includes('currentOwnedRoots'), 'composer rediscovers current visual roots instead of pinning stale avatar objects');
 assert.ok(composer.includes('discoverAvatarBodyRoots'), 'composer recursively discovers nested player PNG visual roots');
 assert.ok(composer.includes('isDescendantOf'), 'composer can dedupe nested visual branches before applying a body delta');
@@ -82,6 +86,7 @@ assert.doesNotMatch(attachments, /drunkenFooting|drunkenHealth/, 'body attachmen
 assert.ok(impact.includes("BODY_CHANNEL = 'ragdoll'"), 'impact publishes a ragdoll body channel');
 assert.ok(impact.includes('PlayerBodyTransformComposer?.setChannel'), 'impact uses the composer');
 assert.ok(impact.includes('PlayerBodyTransformComposer?.clearChannel'), 'impact clears ownership instead of zeroing shared rotation');
+assert.doesNotMatch(impact, /freezeInCharacterView/, 'forced ragdoll/impact state stays live during Character View');
 assert.doesNotMatch(impact, /playerMeshRef\s*\.\s*rotation/, 'impact never writes playerMesh rotation');
 assert.doesNotMatch(impact, /playerMeshRef\s*\.\s*position/, 'impact never writes playerMesh position');
 
@@ -96,6 +101,9 @@ assert.doesNotMatch(drunk, /yaw:\s*state\.yaw/, 'drunk body channel never compet
 assert.doesNotMatch(drunk, /DRUNK_MAX_YAW_DEG|yawTarget/, 'drunk gait does not synthesize a second whole-body yaw target');
 assert.ok(drunk.includes('bodyYawOwnedByFacing: true'), 'debug output exposes that facing exclusively owns body yaw');
 assert.doesNotMatch(drunk, /preserveFacingSide/, 'drunk tilt does not request a culling override');
+assert.ok(drunk.includes('freezeInCharacterView: true'), 'drunk visual sway freezes at its Character View entry value');
+assert.ok(weaponIdle.includes('freezeInCharacterView: true'), 'weapon idle body yaw freezes at its Character View entry value');
+assert.ok(socialActions.includes('freezeInCharacterView: true'), 'social-dance body motion freezes at its Character View entry value');
 
 assert.doesNotMatch(alcohol, /registerExternalRootProvider/, 'alcohol integration does not own body attachments');
 assert.doesNotMatch(alcohol, /WebGLRenderer\.prototype/, 'alcohol integration no longer owns renderer transforms');
