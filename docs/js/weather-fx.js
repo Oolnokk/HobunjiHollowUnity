@@ -30,6 +30,8 @@
   let _dispatchingRepairResize = false; // Guards the one synthetic resize used to let game.js resize its private postprocess targets too.
   let _lastPresentationRepair = null; // Last repair reason/dimensions copied into Pixel Probe diagnostics.
   let _lastContextEvent = 'none'; // Last context event copied into Pixel Probe diagnostics.
+  let _sourceTextureRebuilds = 0; // Number of authored surface canvases rebuilt after WebGL restoration, reported by Pixel Probe.
+  let _sourceTextureFailures = 0; // Number of source reloads that could not provide an opaque replacement.
   const PRESENTATION_TEXTURE_SLOTS = Object.freeze(['map', 'alphaMap', 'aoMap', 'lightMap', 'emissiveMap', 'bumpMap', 'normalMap', 'displacementMap', 'roughnessMap', 'metalnessMap']); // Material texture slots re-uploaded only for the active scene after a context restore.
 
   function _presentationRect() {
@@ -71,9 +73,50 @@
         }
       }
     });
-    for (const texture of textures) texture.needsUpdate = true;
+    for (const texture of textures) {
+      texture.needsUpdate = true;
+      if (texture.userData?.naturalSurfaceBodySpriteTint && texture.userData.hobunjiAuthoredSurfacePath) {
+        _rebuildAuthoredSurfaceTexture(texture);
+      }
+    }
     for (const material of materials) material.needsUpdate = true;
     return { materials: materials.size, textures: textures.size };
+  }
+
+  function _hasOpaquePixels(image) {
+    try {
+      const canvas = document.createElement('canvas'); // Temporary readback used only during context recovery to reject a transparent cached canvas.
+      canvas.width = canvas.height = 8;
+      const context = canvas.getContext('2d', { willReadFrequently: true });
+      context.drawImage(image, 0, 0, 8, 8);
+      const pixels = context.getImageData(0, 0, 8, 8).data;
+      for (let index = 3; index < pixels.length; index += 4) if (pixels[index] > 8) return true;
+    } catch (_) { return false; }
+    return false;
+  }
+
+  function _rebuildAuthoredSurfaceTexture(texture) {
+    const path = texture.userData.hobunjiAuthoredSurfacePath; // Original PNG loaded again to replace a canvas whose backing pixels were lost during the GPU reset.
+    const tint = texture.userData.naturalSurfaceBodySpriteTintTarget; // Preserves the surface's existing body-style tint.
+    const image = new Image(); // Fresh decoded source prevents reusing the existing potentially blank canvas.
+    image.crossOrigin = 'anonymous';
+    image.onload = () => {
+      if (!_hasOpaquePixels(image)) { _sourceTextureFailures++; return; }
+      let replacement = image; // Opaque source is the safe fallback if the tint path returns a blank cached canvas.
+      const tintCanvas = window.HobunjiSpritePngSurface?.tintSurfaceCanvas;
+      if (typeof tintCanvas === 'function' && tint) {
+        try {
+          const result = tintCanvas(image, `${path}|${tint}|restore-${_contextRestoreCount}`, { hex: tint }, '', 'A');
+          if (result && _hasOpaquePixels(result)) replacement = result;
+        } catch (_) { /* Preserve the opaque authored PNG when recoloring fails. */ }
+      }
+      texture.image = replacement;
+      texture.userData.hobunjiAuthoredSurfaceState = replacement === image ? 'authored-png-raw-restored' : 'authored-png-tinted-restored';
+      texture.needsUpdate = true;
+      _sourceTextureRebuilds++;
+    };
+    image.onerror = () => { _sourceTextureFailures++; };
+    image.src = path;
   }
 
   function _dispatchPresentationResize() {
@@ -270,6 +313,8 @@
     return {
       contextLosses: _contextLossCount,
       contextRestores: _contextRestoreCount,
+      sourceTextureRebuilds: _sourceTextureRebuilds,
+      sourceTextureFailures: _sourceTextureFailures,
       contextLost,
       repairs: _presentationRepairCount,
       css: rect ? `${rect.width}x${rect.height}` : 'unknown',
