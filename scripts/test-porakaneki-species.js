@@ -93,7 +93,18 @@ const banditEntityConfigs = []; // Captures final configs reaching the original 
 const windowObject = {
   SCRATCHBONES_CONFIG: {
     game: {
-      appearanceEditor: { species: {} },
+      appearanceEditor: {
+        species: {},
+        bodyPalettes: {
+          mashtzarr: {
+            male: [
+              { label: 'Color 1', h: -70, s: -0.8, v: -0.55 },
+              { label: 'Color 2', h: -40, s: -0.7, v: -0.45 },
+              { label: 'Color 3', h: 30, s: -0.6, v: -0.15 },
+            ],
+          },
+        },
+      },
       portrait: {},
       assets: {
         pngPlaneAvatar: {
@@ -158,6 +169,24 @@ const ordinaryKenkariResolution = windowObject.resolveOptionLayers({ id: 'tankan
 assert.equal(ordinaryKenkariResolution.speciesId, 'kenkari');
 assert.equal(ordinaryKenkariResolution.gender, 'male');
 assert.equal(windowObject.SCRATCHBONES_CONFIG.game.portrait.armOnlyOpacityMask.profiles['porakaneki:male'].maskYScaleMultiplier, 1.14);
+const authoredMashtzarrPalette = windowObject.SCRATCHBONES_CONFIG.game.appearanceEditor.bodyPalettes.mashtzarr.male; // Finite donor swatches used to bound portrait tint-cache cardinality.
+const authoredSwatchKeys = new Set(authoredMashtzarrPalette.map(color => `${color.h}|${color.s}|${color.v}`)); // Membership lookup proves generated A colors are exact authored swatches, not continuous range samples.
+const generatedSwatchKeys = new Set(); // Tracks how many authored colors a representative set of resident identities actually reaches.
+for (let index = 0; index < 64; index += 1) {
+  const bodyColors = windowObject.HobunjiPorakanekiSpecies.bodyColorsForSeed(`camp:resident:${index}`, 'male'); // Stable helper under test; called only at entity materialization in production.
+  const key = `${bodyColors.A.h}|${bodyColors.A.s}|${bodyColors.A.v}`; // Exact A-slot signature compared with the finite donor palette.
+  assert(authoredSwatchKeys.has(key), 'Porakaneki body A must be one exact authored Mashtzarr swatch');
+  assert.deepEqual({ ...bodyColors.B }, { ...bodyColors.A }, 'Porakaneki B must reuse the selected authored body swatch');
+  assert.equal(bodyColors.C.h, bodyColors.A.h);
+  assert.equal(bodyColors.C.s, Math.max(-1, Math.min(1, bodyColors.A.s + 0.05)));
+  assert.equal(bodyColors.C.v, Math.max(-1, Math.min(1, bodyColors.A.v + 0.18)));
+  generatedSwatchKeys.add(key);
+}
+assert(generatedSwatchKeys.size > 1, 'different Porakaneki resident identities must reach more than one Mashtzarr swatch');
+assert(generatedSwatchKeys.size <= authoredMashtzarrPalette.length, 'Porakaneki body tint-cache cardinality must be bounded by the authored Mashtzarr palette');
+const stableBodyA = windowObject.HobunjiPorakanekiSpecies.bodyColorsForSeed('same-resident', 'male').A; // Repeated identity check ensures LOD rematerialization does not change color.
+const stableBodyB = windowObject.HobunjiPorakanekiSpecies.bodyColorsForSeed('same-resident', 'male').A; // Second materialization-style call must choose the same swatch.
+assert.deepEqual({ ...stableBodyA }, { ...stableBodyB }, 'same Porakaneki identity must keep its body color across rematerialization');
 
 const porakanekiBanditConfig = {
   speciesWeights: { porakaneki: 1 },
@@ -200,7 +229,7 @@ assert.equal(banditEntityConfigs.at(-1), regularBanditConfig, 'non-Porakaneki ba
   assert.equal(loadedCosmetics.forcedCosmeticsByFighter.porakaneki_male.hat, 'none');
   assert.equal(loadedCosmetics.forcedCosmeticsByFighter.porakaneki_male.hood, 'none');
 
-  const porakanekiBootstrapIndex = bootstrapSource.indexOf('porakaneki-species-runtime.js?v=20260924poracolor1');
+  const porakanekiBootstrapIndex = bootstrapSource.indexOf('porakaneki-species-runtime.js?v=20260924poracolor2');
   const scaleBootstrapIndex = bootstrapSource.indexOf('character-rig-scale.js?v=20260904i');
   assert(porakanekiBootstrapIndex >= 0 && scaleBootstrapIndex > porakanekiBootstrapIndex,
     'Porakaneki profile inheritance must load before whole-rig scale installs profile defaults');
