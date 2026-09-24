@@ -6,7 +6,27 @@
   const ROCKSCALE_IGNORES = [['#7f6e77',7],['#bababa',45]];
   const AMPHIBIOUS_SPECIES = new Set(['gurumahi']); // Used to gate dangerous fish to casts made while the player is standing in water.
   const AMPHIBIOUS_SELL_MULTIPLIER = 3; // Used to compensate amphibious catches for their post-reel combat/retrieval step.
-  const COOKING_EFFECT_BY_SPECIES = Object.freeze({ gurumahi: 'strength', rockscale: 'fortitude', sixfin: 'speed' }); // Used to give each live fish species a distinct buff when cooked into food.
+  const COOKING_EFFECT_BY_FISH = Object.freeze({
+    gurumahi_tawny: 'strength',
+    gurumahi_charcoal: 'fishing',
+    gurumahi_creamback: 'fortitude',
+    gurumahi_snowmuzzle: 'speed',
+    rockscale_goldplate: 'fortitude',
+    rockscale_giltback: 'strength',
+    rockscale_silverplate: 'fishing',
+    rockscale_ironvein: 'strength',
+    rockscale_slateplate: 'speed',
+    rockscale_quartzshield: 'fortitude',
+    rockscale_copperbloom: 'fishing',
+    sixfin_honeystripe: 'fishing',
+    sixfin_coalbar: 'speed',
+    sixfin_redlash: 'strength',
+    sixfin_mossband: 'fishing',
+    sixfin_azureband: 'speed',
+    sixfin_sunember: 'strength',
+    sixfin_milkstripe: 'fortitude',
+    sixfin_violetreef: 'fortitude',
+  }); // Used by buildItemDefs so each named fish keeps its own food buff instead of inheriting one family-wide effect.
 
   const ROWS = [
     ['gurumahi_tawny','Gurumahi Tawny','gurumahi','#9b6f49',1.06,.25,'smooth',34,['farm','town'],'spring,summer,fall',['day','dusk'],'common',30],
@@ -86,7 +106,7 @@
         icon:'🐟', label:f.label, cat:'material', category:'Fish', sellPrice:f.sellPrice,
         tags, amphibious:f.amphibious,
         cookingCategories:['fish'],
-        cookingPrimaryEffect:COOKING_EFFECT_BY_SPECIES[f.species] || 'fishing',
+        cookingPrimaryEffect:COOKING_EFFECT_BY_FISH[f.key] || 'fishing',
         cookingBaseBoost:1,
         cookingProcessingTier:'raw',
         cookingDefaultStars:3,
