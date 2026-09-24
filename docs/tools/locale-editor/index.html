@@ -824,10 +824,18 @@ function renderPalette() {
   } else if (mode === 'object') {
     const search = document.createElement('input');
     search.type = 'search';
+    search.id = 'objectPaletteSearch';
     search.placeholder = 'Search structures / all furniture…';
     search.value = objectPaletteFilter;
     search.style.marginBottom = '6px';
-    search.addEventListener('input', () => { objectPaletteFilter = search.value; renderPalette(); });
+    search.addEventListener('input', () => {
+      objectPaletteFilter = search.value;
+      const caret = search.selectionStart ?? objectPaletteFilter.length; // Used to keep typing uninterrupted when the filtered palette is rebuilt.
+      renderPalette();
+      const next = $('objectPaletteSearch');
+      next?.focus();
+      next?.setSelectionRange?.(caret, caret);
+    });
     box.appendChild(search);
     const needle = objectPaletteFilter.trim().toLowerCase();
     const visible = OBJECT_PALETTE.filter(entry => !needle || (entry.label + ' ' + entry.key + ' ' + entry.kind).toLowerCase().includes(needle));
