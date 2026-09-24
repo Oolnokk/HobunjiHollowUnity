@@ -121,6 +121,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
                 <option value="story_poi">story_poi</option>
                 <option value="bandit_camp">bandit_camp</option>
                 <option value="cave_interior">cave_interior</option>
+                <option value="den_entrance">den_entrance</option>
                 <option value="misc">misc</option>
               </select>
             </div>
@@ -255,20 +256,52 @@ const TILE_INFO = {
 const TILE_ORDER = ['grass','weeds','shrub','path','rock','tilled','raised','trench','paddy','river','stream','waterfall','ramp'];
 
 const OBJECT_PALETTE = [
-  { kind:'structure', key:'structure', label:'Structure (house/tent/shrine)', icon:'🏠', w:3, h:3 },
-  { kind:'tent',      key:'tent',      label:'Tent (lootable/burnable)', icon:'⛺', w:2, h:2 },
-  { kind:'decor',     key:'bench',        label:'Bench',          icon:'🪑', w:1, h:1 },
-  { kind:'decor',     key:'chest',        label:'Storage Chest',  icon:'📦', w:1, h:1 },
-  { kind:'decor',     key:'hearth',       label:'Hearth/Firepit', icon:'🔥', w:1, h:1 },
-  { kind:'decor',     key:'crateStack',   label:'Crate Stack',    icon:'📦', w:1, h:1 },
-  { kind:'decor',     key:'standingLamp', label:'Lantern',        icon:'💡', w:1, h:1 },
-  { kind:'decor',     key:'bucket',       label:'Bucket',         icon:'🪣', w:1, h:1 },
-  { kind:'decor',     key:'stool',        label:'Stool',          icon:'🪑', w:1, h:1 },
-  { kind:'processor', key:'dryingRack',   label:'Drying Rack',    icon:'☀️', w:1, h:1 },
-  { kind:'processor', key:'smoker',       label:'Smoking Hut',    icon:'💨', w:1, h:1 },
-  { kind:'prop',      key:'statue',       label:'Statue/Totem',   icon:'🗿', w:1, h:1 },
-  { kind:'prop',      key:'offering',     label:'Offering Spot',  icon:'✨', w:1, h:1 }
+  // Explicit structural assets. The old generic "structure" record remains
+  // load-compatible, but is intentionally not offered for new placement.
+  { kind:'cave_entrance', key:'cave_small', label:'Cave Entrance · cave_small.glb', icon:'🕳️', w:3, h:3,
+    visual:{ renderer:'cave_small', scaleX:1, scaleY:1, scaleZ:1, offsetX:0, offsetY:0, offsetZ:0, facing:'north', surface:'auto', sink:0.35 },
+    collision:{ mode:'auto' } },
+  { kind:'tent', key:'tent', label:'Camp Tent (runtime tent)', icon:'⛺', w:2, h:2,
+    collision:{ mode:'footprint' } }
 ];
+const AUTHORED_FURNITURE_INDEX_URL = '../../config/furniture-authored/index.json'; // Used to expose every authored furniture file instead of a hand-maintained mini palette.
+let objectPaletteFilter = ''; // Used by the object search field so 50+ furniture entries stay usable on mobile/desktop.
+
+function titleFromKey(key) {
+  return String(key || '').replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/[_-]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+async function loadFullFurniturePalette() {
+  try {
+    const indexResponse = await fetch(AUTHORED_FURNITURE_INDEX_URL, { cache:'no-store' });
+    if (!indexResponse.ok) throw new Error('Furniture index HTTP ' + indexResponse.status);
+    const index = await indexResponse.json();
+    const records = await Promise.all((index.furniture || []).map(async entry => {
+      try {
+        const response = await fetch('../../' + entry.file, { cache:'no-store' });
+        if (!response.ok) return null;
+        const data = await response.json();
+        const key = data.key || entry.key;
+        return {
+          kind:'furniture', key,
+          label:data.name || titleFromKey(key),
+          icon:'🪑',
+          w:Math.max(1, Number(data.footprint?.w) || 1),
+          h:Math.max(1, Number(data.footprint?.d) || 1),
+          collision:{ mode:'footprint' }
+        };
+      } catch (_) { return null; }
+    }));
+    const existing = new Set(OBJECT_PALETTE.map(entry => entry.kind + ':' + entry.key));
+    for (const record of records.filter(Boolean).sort((a,b) => a.label.localeCompare(b.label))) {
+      if (!existing.has(record.kind + ':' + record.key)) OBJECT_PALETTE.push(record);
+    }
+    if (paletteObject && !OBJECT_PALETTE.includes(paletteObject)) paletteObject = OBJECT_PALETTE[0];
+    renderPalette();
+    setStatus('Loaded ' + records.filter(Boolean).length + ' authored furniture entries.');
+  } catch (error) {
+    setStatus('Could not load the full furniture catalog: ' + (error?.message || error), true);
+  }
+}
 
 const NPC_PRESETS = [
   { npcId:'leaf', name:'Leaf' },
@@ -346,6 +379,8 @@ function sanitizeLoaded(raw) {
     const obj = { id: o.id || uid('obj'), kind: o.kind || 'decor', key: o.key || 'bench', label: o.label || '', col: o.col|0, row: o.row|0, w: Math.max(1, o.w|0 || 1), h: Math.max(1, o.h|0 || 1), rot: o.rot || 0 };
     if (o.itemKey) obj.itemKey = String(o.itemKey); // Interior cave fixtures may route through ordinary building-furniture item keys.
     if (o.visual && typeof o.visual === 'object') obj.visual = JSON.parse(JSON.stringify(o.visual)); // Preserve authored renderer/scale/facing metadata such as cave_small visual overrides.
+    if (o.collision && typeof o.collision === 'object') obj.collision = JSON.parse(JSON.stringify(o.collision)); // Explicit locale-object collider; absent preserves the object's legacy runtime behavior.
+    if (o.pieceFile) obj.pieceFile = String(o.pieceFile); // Explicit structural source path, replacing future reliance on the generic "structure" key.
     if (o.puzzle && typeof o.puzzle === 'object') obj.puzzle = window.FurniturePuzzleProperties?.normalizePuzzle?.(o.puzzle) || JSON.parse(JSON.stringify(o.puzzle)); // Furniture puzzle behavior is authored once and wired per locale instance.
     // Tents (and any future lootable/burnable prop) carry a held-action
     // spec the wilderness runtime reads directly -- see docs/js/temporary-locales.js.
@@ -525,6 +560,19 @@ function draw() {
     const sel = selected?.type === 'object' && selected.id === obj.id;
     ctx.fillStyle = obj.kind === 'structure' ? 'rgba(138,91,43,0.55)' : 'rgba(106,167,255,0.35)';
     ctx.fillRect(x, y, w, h);
+    const collision = obj.collision || { mode:'auto' };
+    if (collision.mode === 'footprint' || collision.mode === 'custom') {
+      const cc = collision.mode === 'custom' ? (Number(collision.colOffset) || 0) : 0;
+      const cr = collision.mode === 'custom' ? (Number(collision.rowOffset) || 0) : 0;
+      const cw = collision.mode === 'custom' ? Math.max(.1, Number(collision.w) || obj.w) : obj.w;
+      const ch = collision.mode === 'custom' ? Math.max(.1, Number(collision.h) || obj.h) : obj.h;
+      ctx.save();
+      ctx.setLineDash([Math.max(3, cs*.16), Math.max(2, cs*.10)]);
+      ctx.strokeStyle = 'rgba(248,113,113,.95)';
+      ctx.lineWidth = Math.max(1.5, cs*.07);
+      ctx.strokeRect((obj.col+cc)*cs+2, (obj.row+cr)*cs+2, cw*cs-4, ch*cs-4);
+      ctx.restore();
+    }
     ctx.strokeStyle = sel ? '#fff' : 'rgba(255,255,255,0.6)';
     ctx.lineWidth = sel ? 2 : 1;
     ctx.strokeRect(x+1, y+1, w-2, h-2);
@@ -608,6 +656,9 @@ function placeOrSelectObject(c, r) {
   if (hit) { selected = { type:'object', id: hit.id }; renderInspector(); draw(); return; }
   const p = paletteObject;
   const obj = { id: uid('obj'), kind: p.kind, key: p.key, label: p.label, col: c, row: r, w: p.w, h: p.h, rot: 0 };
+  if (p.visual) obj.visual = JSON.parse(JSON.stringify(p.visual)); // Used by cave/asset-specific runtime renderers instead of an ambiguous generic structure.
+  if (p.collision) obj.collision = JSON.parse(JSON.stringify(p.collision)); // New palette objects carry an explicit collider policy; old loaded objects remain legacy/auto.
+  if (p.pieceFile) obj.pieceFile = p.pieceFile; // Used by explicit authored structural assets when present.
   if (p.kind === 'tent') obj.interactable = { lootable: true, burnable: true, holdSeconds: 4 };
   m.objects.push(obj);
   selected = { type:'object', id: obj.id };
@@ -771,15 +822,35 @@ function renderPalette() {
   } else if (mode === 'erase') {
     box.innerHTML = '<p class="muted">Click or drag over painted footprint cells to open them back up to the wilderness.</p>';
   } else if (mode === 'object') {
-    for (const o of OBJECT_PALETTE) {
+    const search = document.createElement('input');
+    search.type = 'search';
+    search.placeholder = 'Search structures / all furniture…';
+    search.value = objectPaletteFilter;
+    search.style.marginBottom = '6px';
+    search.addEventListener('input', () => { objectPaletteFilter = search.value; renderPalette(); });
+    box.appendChild(search);
+    const needle = objectPaletteFilter.trim().toLowerCase();
+    const visible = OBJECT_PALETTE.filter(entry => !needle || (entry.label + ' ' + entry.key + ' ' + entry.kind).toLowerCase().includes(needle));
+    let priorGroup = '';
+    for (const o of visible) {
+      const group = o.kind === 'furniture' ? 'Furniture' : 'Structures / special objects';
+      if (group !== priorGroup) {
+        const heading = document.createElement('div');
+        heading.className = 'muted';
+        heading.style.cssText = 'margin:6px 0 3px;font-weight:700;text-transform:uppercase;font-size:10px;letter-spacing:.06em';
+        heading.textContent = group;
+        box.appendChild(heading);
+        priorGroup = group;
+      }
       const btn = document.createElement('button');
-      btn.className = 'palBtn sec' + (paletteObject.key === o.key ? ' act' : '');
+      btn.className = 'palBtn sec' + (paletteObject.kind === o.kind && paletteObject.key === o.key ? ' act' : '');
       btn.innerHTML = `${o.icon} ${o.label} <span class="muted" style="margin-left:auto">${o.w}×${o.h}</span>`;
       btn.style.justifyContent = 'space-between';
       btn.addEventListener('click', () => { paletteObject = o; renderPalette(); });
       box.appendChild(btn);
     }
-    box.appendChild(Object.assign(document.createElement('p'), { className: 'muted', textContent: 'Click empty ground to place the selected object; drag an existing object to move it. Rotation is in the Inspector.' }));
+    if (!visible.length) box.appendChild(Object.assign(document.createElement('p'), { className:'muted', textContent:'No matching objects.' }));
+    box.appendChild(Object.assign(document.createElement('p'), { className: 'muted', textContent: 'The furniture list is read from docs/config/furniture-authored, not a reduced editor-only palette. Red dashed outlines are explicit colliders.' }));
   } else if (mode === 'npc') {
     const custom = document.createElement('button');
     custom.className = 'palBtn sec' + (paletteNpc === null ? ' act' : '');
@@ -821,6 +892,21 @@ function renderInspector() {
       <div><label>Height</label><input id="insH" type="number" min="1" value="${o.h}"></div></div>
       <div style="margin-top:6px"><label>Rotation Y°</label><div class="row" style="flex-wrap:nowrap"><button class="sec" id="insRotLeft" type="button">↺ 45°</button><input id="insRot" type="number" step="15" value="${Number(o.rot)||0}"><button class="sec" id="insRotRight" type="button">↻ 45°</button></div></div>
       <p class="muted" style="margin-top:4px">Drag the object directly on the canvas to translate it.</p>
+      ${(o.key === 'cave_small' || o.visual?.renderer === 'cave_small') ? `
+      <div style="margin-top:8px;padding-top:6px;border-top:1px solid rgba(255,255,255,.1)">
+        <strong>Cave GLB transform</strong>
+        <div class="g3" style="margin-top:5px"><div><label>Scale X</label><input id="insVisualSX" type="number" step="0.05" min="0.05" value="${Number(o.visual?.scaleX)||1}"></div><div><label>Scale Y</label><input id="insVisualSY" type="number" step="0.05" min="0.05" value="${Number(o.visual?.scaleY)||1}"></div><div><label>Scale Z</label><input id="insVisualSZ" type="number" step="0.05" min="0.05" value="${Number(o.visual?.scaleZ)||1}"></div></div>
+        <div class="g3" style="margin-top:5px"><div><label>Offset X</label><input id="insVisualOX" type="number" step="0.05" value="${Number(o.visual?.offsetX)||0}"></div><div><label>Offset Y</label><input id="insVisualOY" type="number" step="0.05" value="${Number(o.visual?.offsetY)||0}"></div><div><label>Offset Z</label><input id="insVisualOZ" type="number" step="0.05" value="${Number(o.visual?.offsetZ)||0}"></div></div>
+        <div class="g3" style="margin-top:5px"><div><label>Facing</label><select id="insVisualFacing">${['north','east','south','west'].map(v=>`<option value="${v}" ${(o.visual?.facing||'north')===v?'selected':''}>${v}</option>`).join('')}</select></div><div><label>Surface</label><select id="insVisualSurface">${['auto','default','grehlr'].map(v=>`<option value="${v}" ${(o.visual?.surface||'auto')===v?'selected':''}>${v}</option>`).join('')}</select></div><div><label>Sink</label><input id="insVisualSink" type="number" step="0.05" value="${Number.isFinite(Number(o.visual?.sink))?Number(o.visual.sink):0.35}"></div></div>
+      </div>` : ''}
+      <div style="margin-top:8px;padding-top:6px;border-top:1px solid rgba(255,255,255,.1)">
+        <strong>Collider</strong>
+        <div class="g2" style="margin-top:5px"><div><label>Mode</label><select id="insCollisionMode">
+          <option value="auto">Automatic / legacy</option><option value="footprint">Visual footprint</option><option value="none">None</option><option value="custom">Custom rectangle</option>
+        </select></div><div class="muted" style="align-self:end;padding-bottom:5px">Custom values are relative to the object’s top-left tile.</div></div>
+        <div class="g2" style="margin-top:5px"><div><label>Offset col</label><input id="insCollisionCol" type="number" step="0.25" value="${Number(o.collision?.colOffset)||0}"></div><div><label>Offset row</label><input id="insCollisionRow" type="number" step="0.25" value="${Number(o.collision?.rowOffset)||0}"></div></div>
+        <div class="g2" style="margin-top:5px"><div><label>Collider width</label><input id="insCollisionW" type="number" min="0.1" step="0.25" value="${Number(o.collision?.w)||o.w}"></div><div><label>Collider height</label><input id="insCollisionH" type="number" min="0.1" step="0.25" value="${Number(o.collision?.h)||o.h}"></div></div>
+      </div>
       ${isTent ? `
       <div style="margin-top:8px;padding-top:6px;border-top:1px solid rgba(255,255,255,.1)">
         <label class="chk"><input type="checkbox" id="insLootable" ${ia.lootable ? 'checked' : ''}> Lootable (held action grants loot)</label>
@@ -834,6 +920,7 @@ function renderInspector() {
       </div>
       <div class="row" style="margin-top:8px"><button class="ok" id="insSave">Save</button><button class="bad" id="insDelete">Delete</button></div>`;
     $('insPuzzleRole').value = o.puzzle?.role || 'none';
+    $('insCollisionMode').value = o.collision?.mode || 'auto';
     const rotateBy = delta => {
       o.rot = (((Number(o.rot) || 0) + delta) % 360 + 360) % 360;
       $('insRot').value = o.rot;
@@ -848,6 +935,30 @@ function renderInspector() {
       o.w = Math.max(1, Math.round(Number($('insW').value)) || 1);
       o.h = Math.max(1, Math.round(Number($('insH').value)) || 1);
       o.rot = ((Number($('insRot').value) || 0) % 360 + 360) % 360;
+      o.collision = {
+        mode: $('insCollisionMode').value,
+        colOffset: Number($('insCollisionCol').value) || 0,
+        rowOffset: Number($('insCollisionRow').value) || 0,
+        w: Math.max(.1, Number($('insCollisionW').value) || o.w),
+        h: Math.max(.1, Number($('insCollisionH').value) || o.h)
+      };
+      if (o.collision.mode === 'auto') o.collision = { mode:'auto' };
+      if (o.collision.mode === 'none') o.collision = { mode:'none' };
+      if (o.collision.mode === 'footprint') o.collision = { mode:'footprint' };
+      if (o.key === 'cave_small' || o.visual?.renderer === 'cave_small') {
+        o.visual = {
+          ...(o.visual || {}), renderer:'cave_small',
+          scaleX:Math.max(.05, Number($('insVisualSX').value) || 1),
+          scaleY:Math.max(.05, Number($('insVisualSY').value) || 1),
+          scaleZ:Math.max(.05, Number($('insVisualSZ').value) || 1),
+          offsetX:Number($('insVisualOX').value) || 0,
+          offsetY:Number($('insVisualOY').value) || 0,
+          offsetZ:Number($('insVisualOZ').value) || 0,
+          facing:$('insVisualFacing').value,
+          surface:$('insVisualSurface').value,
+          sink:Number($('insVisualSink').value) || 0
+        };
+      }
       o.puzzle = window.FurniturePuzzleProperties.normalizePuzzle({ role:$('insPuzzleRole').value, behavior:$('insPuzzleBehavior').value, channel:$('insPuzzleChannel').value });
       if (!o.puzzle) delete o.puzzle;
       if (isTent) {
@@ -1241,6 +1352,7 @@ if (!loadWorkspace()) {
 updateAll();
 fitView();
 loadLibrary();
+loadFullFurniturePalette();
 setMode('pan');
 
 // Expose a tiny bridge so the dev-tools hub (docs/tools/index.html) can hook in later.

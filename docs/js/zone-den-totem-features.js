@@ -35,7 +35,10 @@
   ensureCompanionScript('LifeTotemFurniture', 'life-totem-furniture.js');
 
   let deps = null;
-  function init(injectedDeps) { deps = injectedDeps; }
+  function init(injectedDeps) {
+    deps = injectedDeps;
+    loadAnimalDenEntranceLocaleObject(); // Preload the shared den facade/collider so movement can use it as soon as the zone is interactive.
+  }
   function canonicalRootTotemRecipe() {
     return window.HOBUNJI_ROOT_TOTEM_CONFIG?.canonicalRecipe || null;
   }
@@ -51,6 +54,63 @@
     catch (_) { return path; }
   }
   const CAVE_SMALL_GLB_PATH = zoneFeatureAssetUrl('assets/models/cave_small.glb');
+  const ANIMAL_DEN_ENTRANCE_LOCALE_ID = 'locale_animal_den_entrance'; // Shared Locale Editor document cloned by every procedural den.
+  const ANIMAL_DEN_ENTRANCE_LOCALE_URL = zoneFeatureAssetUrl('config/locales/locale_animal_den_entrance.json');
+  let _animalDenEntranceLocalePromise = null; // Repo-backed template request shared across all zone builds.
+  let _animalDenEntranceObject = null; // Synchronous cache used by movement collision after the template has loaded.
+
+  function localAnimalDenEntranceLocale() {
+    try {
+      if (window.LocalDBOverrides?.getSourceMode?.() !== 'local') return null;
+      const override = window.LocalDBOverrides.getOverride?.('locales');
+      const locales = Array.isArray(override) ? override : override?.locales;
+      return Array.isArray(locales) ? locales.find(locale => locale?.id === ANIMAL_DEN_ENTRANCE_LOCALE_ID) || null : null;
+    } catch (_) { return null; }
+  }
+
+  function denEntranceObjectFromLocale(locale) {
+    return (locale?.objects || []).find(object => object?.key === 'cave_small' || object?.visual?.renderer === 'cave_small') || null;
+  }
+
+  function loadAnimalDenEntranceLocaleObject() {
+    const local = denEntranceObjectFromLocale(localAnimalDenEntranceLocale());
+    if (local) {
+      _animalDenEntranceObject = local;
+      return Promise.resolve(local);
+    }
+    if (_animalDenEntranceLocalePromise) return _animalDenEntranceLocalePromise;
+    if (typeof fetch !== 'function') return Promise.resolve(null); // Headless/unit-test runtimes keep the legacy facade without browser fetch.
+    _animalDenEntranceLocalePromise = fetch(ANIMAL_DEN_ENTRANCE_LOCALE_URL, { cache:'no-store' })
+      .then(response => response.ok ? response.json() : null)
+      .then(locale => {
+        _animalDenEntranceObject = denEntranceObjectFromLocale(locale);
+        return _animalDenEntranceObject;
+      })
+      .catch(error => {
+        console.warn('[den entrance locale] shared template failed to load; keeping legacy den facade:', error);
+        return null;
+      });
+    return _animalDenEntranceLocalePromise;
+  }
+
+  function denEntranceCollisionFor(den) {
+    const source = denEntranceObjectFromLocale(localAnimalDenEntranceLocale()) || _animalDenEntranceObject;
+    const collision = source?.collision;
+    if (!collision || collision.mode === 'auto') return null; // Null deliberately means “use the legacy doorway-gap rule”.
+    if (collision.mode === 'none') return { mode:'none', x:0, y:0, w:0, h:0 };
+    const denW = Math.max(.1, Number(den?.w) || 1), denH = Math.max(.1, Number(den?.h) || 1);
+    if (collision.mode === 'footprint') return { mode:'rect', x:Number(den?.x) || 0, y:Number(den?.y) || 0, w:denW, h:denH };
+    if (collision.mode !== 'custom') return null;
+    const sourceW = Math.max(.1, Number(source?.w) || 1), sourceH = Math.max(.1, Number(source?.h) || 1);
+    const scaleX = denW / sourceW, scaleY = denH / sourceH;
+    return {
+      mode:'rect',
+      x:(Number(den?.x) || 0) + (Number(collision.colOffset) || 0) * scaleX,
+      y:(Number(den?.y) || 0) + (Number(collision.rowOffset) || 0) * scaleY,
+      w:Math.max(.1, Number(collision.w) || sourceW) * scaleX,
+      h:Math.max(.1, Number(collision.h) || sourceH) * scaleY,
+    };
+  }
   // Halves a normal den's visual footprint (see buildAnimalDenMeshes). Locale
   // caves multiply this by visual.scale, so visual.scale:2 fills the complete
   // authored footprint while still using the exact den-rendering geometry path.
@@ -157,7 +217,7 @@
     const denList = Array.isArray(dens) ? dens : [];
     const localeCaves = window.LocaleCaveRuntime?.cavesForZone?.(mapId) || []; // Authored caves are registered from placed localeInstances after wilderness generation.
     if (!denList.length && !localeCaves.length) return;
-    loadCaveSmallTemplate().then(template => {
+    Promise.all([loadCaveSmallTemplate(), loadAnimalDenEntranceLocaleObject()]).then(([template, denEntranceObject]) => {
       if (!template) return;
       const box = template.geometry.boundingBox;
       const templateWidth = Math.max(1e-4, box.max.x - box.min.x);
@@ -172,15 +232,31 @@
         const groundY = deps.NORMAL_TOP + elevTier * deps.PLATEAU_UNIT;
         const cavernMapId = window.WildlifeSpawn?.denCavernMapId?.(mapId, den.id) || null;
         const denMotherKind = cavernMapId ? window.CavernGenerator?.pickDenMotherKind?.(cavernMapId) : null;
-        const variant = denCaveVariantFor(denMotherKind);
+        const visual = denEntranceObject?.visual || {};
+        const familyVariant = denCaveVariantFor(denMotherKind);
+        const variant = visual.surface === 'grehlr' ? DEN_CAVE_VARIANTS.grehlr
+          : visual.surface === 'default' ? DEN_CAVE_VARIANTS.default
+          : familyVariant;
+        const authoredScale = Math.max(.05, Number(visual.scale) || 1);
+        const baseScale = (Math.min(w, h) / templateSpan) * DEN_SIZE_SCALE * authoredScale;
+        const scaleX = baseScale * Math.max(.05, Number(visual.scaleX) || 1);
+        const scaleY = baseScale * Math.max(.05, Number(visual.scaleY) || 1);
+        const scaleZ = baseScale * Math.max(.05, Number(visual.scaleZ) || 1);
+        const sink = Number.isFinite(Number(visual.sink)) ? Number(visual.sink) : DEN_SINK;
         const mesh = template.clone();
         mesh.material = caveMaterialFor(variant);
-        const scale = (Math.min(w, h) / templateSpan) * DEN_SIZE_SCALE;
-        mesh.scale.set(scale, scale, scale);
-        mesh.position.set(centerCol, groundY - DEN_SINK - box.min.y * scale, centerRow);
+        mesh.scale.set(scaleX, scaleY, scaleZ);
+        mesh.rotation.y = caveFacingRotation(visual.facing, Number.isFinite(Number(denEntranceObject?.rot)) ? denEntranceObject.rot : null);
+        mesh.position.set(
+          centerCol + (Number(visual.offsetX) || 0),
+          groundY + (Number(visual.offsetY) || 0) - sink - box.min.y * scaleY,
+          centerRow + (Number(visual.offsetZ) || 0)
+        );
         mesh.castShadow = true;
         mesh.receiveShadow = true;
         mesh.userData.cameraObstacle = true;
+        mesh.userData.denEntranceLocaleId = ANIMAL_DEN_ENTRANCE_LOCALE_ID;
+        mesh.userData.denEntranceLocaleObjectId = denEntranceObject?.id || null;
         deps.markOutline(mesh);
         group.add(mesh);
       }
@@ -201,7 +277,12 @@
         mesh.material = caveMaterialFor(variant);
         mesh.scale.set(scaleX, scaleY, scaleZ);
         mesh.rotation.y = caveFacingRotation(visual.facing, Number.isFinite(Number(cave.rot)) ? cave.rot : null);
-        mesh.position.set(centerCol, groundY - DEN_SINK - box.min.y * scaleY, centerRow);
+        const sink = Number.isFinite(Number(visual.sink)) ? Number(visual.sink) : DEN_SINK;
+        mesh.position.set(
+          centerCol + (Number(visual.offsetX) || 0),
+          groundY + (Number(visual.offsetY) || 0) - sink - box.min.y * scaleY,
+          centerRow + (Number(visual.offsetZ) || 0)
+        );
         mesh.castShadow = true;
         mesh.receiveShadow = true;
         mesh.userData.cameraObstacle = true;
@@ -259,7 +340,7 @@
     return group;
   }
 
-  const api = { init, canonicalRootTotemRecipe, denCaveVariantFor, buildAnimalDenMeshes, buildRootTotemMeshes };
+  const api = { init, canonicalRootTotemRecipe, denCaveVariantFor, denEntranceCollisionFor, loadAnimalDenEntranceLocaleObject, buildAnimalDenMeshes, buildRootTotemMeshes };
   Object.defineProperty(api, 'CANONICAL_ROOT_TOTEM_RECIPE', { enumerable: true, get: canonicalRootTotemRecipe });
   window.ZoneDenTotemFeatures = api;
 })();

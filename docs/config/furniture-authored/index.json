@@ -1,0 +1,225 @@
+{
+  "schema": "hobunji-furniture-authored-index/v1",
+  "furniture": [
+    {
+      "key": "agingBarrel",
+      "file": "config/furniture-authored/agingBarrel.json"
+    },
+    {
+      "key": "agingVase",
+      "file": "config/furniture-authored/agingVase.json"
+    },
+    {
+      "key": "alchemyTable",
+      "file": "config/furniture-authored/alchemyTable.json"
+    },
+    {
+      "key": "basicBed",
+      "file": "config/furniture-authored/basicBed.json"
+    },
+    {
+      "key": "bedroll",
+      "file": "config/furniture-authored/bedroll.json"
+    },
+    {
+      "key": "bench",
+      "file": "config/furniture-authored/bench.json"
+    },
+    {
+      "key": "benchlog",
+      "file": "config/furniture-authored/benchlog.json"
+    },
+    {
+      "key": "bookshelf",
+      "file": "config/furniture-authored/bookshelf.json"
+    },
+    {
+      "key": "bucket",
+      "file": "config/furniture-authored/bucket.json"
+    },
+    {
+      "key": "bulletinBoard",
+      "file": "config/furniture-authored/bulletinBoard.json"
+    },
+    {
+      "key": "butterChurn",
+      "file": "config/furniture-authored/butterChurn.json"
+    },
+    {
+      "key": "campfire",
+      "file": "config/furniture-authored/campfire.json"
+    },
+    {
+      "key": "candleTable",
+      "file": "config/furniture-authored/candleTable.json"
+    },
+    {
+      "key": "chairCushion",
+      "file": "config/furniture-authored/chairCushion.json"
+    },
+    {
+      "key": "chairSimple",
+      "file": "config/furniture-authored/chairSimple.json"
+    },
+    {
+      "key": "chairstump",
+      "file": "config/furniture-authored/chairstump.json"
+    },
+    {
+      "key": "chest",
+      "file": "config/furniture-authored/chest.json"
+    },
+    {
+      "key": "copperBarrel",
+      "file": "config/furniture-authored/copperBarrel.json"
+    },
+    {
+      "key": "counter",
+      "file": "config/furniture-authored/counter.json"
+    },
+    {
+      "key": "crateStack",
+      "file": "config/furniture-authored/crateStack.json"
+    },
+    {
+      "key": "desk",
+      "file": "config/furniture-authored/desk.json"
+    },
+    {
+      "key": "door",
+      "file": "config/furniture-authored/door.json"
+    },
+    {
+      "key": "doubleBed",
+      "file": "config/furniture-authored/doubleBed.json"
+    },
+    {
+      "key": "dresser",
+      "file": "config/furniture-authored/dresser.json"
+    },
+    {
+      "key": "dryingRack",
+      "file": "config/furniture-authored/dryingRack.json"
+    },
+    {
+      "key": "feedGrinder",
+      "file": "config/furniture-authored/feedGrinder.json"
+    },
+    {
+      "key": "generalStoreSign",
+      "file": "config/furniture-authored/generalStoreSign.json"
+    },
+    {
+      "key": "handMill",
+      "file": "config/furniture-authored/handMill.json"
+    },
+    {
+      "key": "hangingSign",
+      "file": "config/furniture-authored/hangingSign.json"
+    },
+    {
+      "key": "hearth",
+      "file": "config/furniture-authored/hearth.json"
+    },
+    {
+      "key": "incubator",
+      "file": "config/furniture-authored/incubator.json"
+    },
+    {
+      "key": "innSign",
+      "file": "config/furniture-authored/innSign.json"
+    },
+    {
+      "key": "lifeTotem",
+      "file": "config/furniture-authored/lifeTotem.json"
+    },
+    {
+      "key": "loom",
+      "file": "config/furniture-authored/loom.json"
+    },
+    {
+      "key": "mineLadder",
+      "file": "config/furniture-authored/mineLadder.json"
+    },
+    {
+      "key": "nest",
+      "file": "config/furniture-authored/nest.json"
+    },
+    {
+      "key": "nestBranch",
+      "file": "config/furniture-authored/nestBranch.json"
+    },
+    {
+      "key": "nightstand",
+      "file": "config/furniture-authored/nightstand.json"
+    },
+    {
+      "key": "openBarrel",
+      "file": "config/furniture-authored/openBarrel.json"
+    },
+    {
+      "key": "pestle",
+      "file": "config/furniture-authored/pestle.json"
+    },
+    {
+      "key": "rug",
+      "file": "config/furniture-authored/rug.json"
+    },
+    {
+      "key": "shippingBox",
+      "file": "config/furniture-authored/shippingBox.json"
+    },
+    {
+      "key": "smoker",
+      "file": "config/furniture-authored/smoker.json"
+    },
+    {
+      "key": "squeezer",
+      "file": "config/furniture-authored/squeezer.json"
+    },
+    {
+      "key": "standingLamp",
+      "file": "config/furniture-authored/standingLamp.json"
+    },
+    {
+      "key": "statue",
+      "file": "config/furniture-authored/statue.json"
+    },
+    {
+      "key": "stonePedestal",
+      "file": "config/furniture-authored/stonePedestal.json"
+    },
+    {
+      "key": "stool",
+      "file": "config/furniture-authored/stool.json"
+    },
+    {
+      "key": "tableLong",
+      "file": "config/furniture-authored/tableLong.json"
+    },
+    {
+      "key": "tableRound",
+      "file": "config/furniture-authored/tableRound.json"
+    },
+    {
+      "key": "tableSmall",
+      "file": "config/furniture-authored/tableSmall.json"
+    },
+    {
+      "key": "trough",
+      "file": "config/furniture-authored/trough.json"
+    },
+    {
+      "key": "wardrobe",
+      "file": "config/furniture-authored/wardrobe.json"
+    },
+    {
+      "key": "washTub",
+      "file": "config/furniture-authored/washTub.json"
+    },
+    {
+      "key": "woodenDoor",
+      "file": "config/furniture-authored/woodenDoor.json"
+    }
+  ]
+}

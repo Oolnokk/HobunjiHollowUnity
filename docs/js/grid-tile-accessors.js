@@ -191,14 +191,40 @@
       ? zoneGroups
       : (deps._zoneLayouts.get(area)?.buildings || []).map(bldg => ({ bldg, piece: null }));
     if (zoneBuildingSources.some(({ bldg, piece }) => _buildingFootprintBlocks(bldg, piece, col, row))) return true;
+    if (isLocaleObjectCollisionTile(col, row, area)) return true;
     return isAnimalDenCollisionTile(col, row, area);
   }
+
+  // Locale object collision is authored independently from visuals. Objects
+  // without an explicit collision field retain their old runtime behavior.
+  function isLocaleObjectCollisionTile(col, row, area) {
+    const instances = deps._zoneLayouts.get(area)?.localeInstances || [];
+    for (const instance of instances) {
+      for (const object of (instance?.objects || [])) {
+        const collision = object?.collision;
+        if (!collision || collision.mode === 'auto' || collision.mode === 'none') continue;
+        const x = collision.mode === 'custom' && Number.isFinite(Number(collision.x)) ? Number(collision.x) : Number(object.x);
+        const y = collision.mode === 'custom' && Number.isFinite(Number(collision.y)) ? Number(collision.y) : Number(object.y);
+        const w = collision.mode === 'custom' ? Math.max(.1, Number(collision.w) || Number(object.w) || 1) : Math.max(.1, Number(object.w) || 1);
+        const h = collision.mode === 'custom' ? Math.max(.1, Number(collision.h) || Number(object.h) || 1) : Math.max(.1, Number(object.h) || 1);
+        if (col >= x && col < x + w && row >= y && row < y + h) return true;
+      }
+    }
+    return false;
+  }
+
   // Animal dens are a solid rock volume (see buildAnimalDenMeshes) except
   // their south-facing mouth tile, which stays walkable — it's both the
   // doorway gap in the mesh and the cavern-entrance transition tile.
   function isAnimalDenCollisionTile(col, row, area) {
     for (const den of (deps._zoneLayouts.get(area)?.dens || [])) {
       if (den.mouthAnchor && den.mouthAnchor.x === col && den.mouthAnchor.y === row) continue;
+      const authored = window.ZoneDenTotemFeatures?.denEntranceCollisionFor?.(den) || null; // Shared den-entrance locale can explicitly replace the legacy doorway-gap collider.
+      if (authored) {
+        if (authored.mode === 'none') continue;
+        if (col >= authored.x && col < authored.x + authored.w && row >= authored.y && row < authored.y + authored.h) return true;
+        continue;
+      }
       const w = den.w || 1, h = den.h || 1;
       if (col < den.x || col >= den.x + w || row < den.y || row >= den.y + h) continue;
       // Doorway gap carved into the south wall (30%-70% of the footprint's
@@ -227,6 +253,7 @@
     isFarmBuildingCollisionTile,
     rotateBuildingCollisionCell,
     isTownBuildingCollisionTile,
+    isLocaleObjectCollisionTile,
     isAnimalDenCollisionTile,
     debugSnapshot() {
       return {
