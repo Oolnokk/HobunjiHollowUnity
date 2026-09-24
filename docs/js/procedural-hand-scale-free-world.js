@@ -188,14 +188,25 @@
     return position;
   }
 
+  // withResolvedCharacterProfile calls this on every hand-rig solve (several
+  // times per rig per frame). The mirrored rule binding is only rebuilt when
+  // the source binding or placement ratio actually changed, or when something
+  // else replaced the rule's binding; otherwise the deep clone was identical.
+  const mirroredPosteriorBindings = new WeakMap(); // profile -> { json, ratio, written }
   function mirrorPosteriorBindingToRule(profile) {
     const binding = profile?.anchors?.posterior?.portraitBinding;
     if (!validBinding(binding)) return;
     profile.posteriorRule ||= {};
-    profile.posteriorRule.portraitBinding = {
-      ...clone(binding),
-      currentPlacementRatio: profileAnatomy(profile).placementRatio,
+    const json = JSON.stringify(binding);
+    const ratio = profileAnatomy(profile).placementRatio;
+    const last = mirroredPosteriorBindings.get(profile);
+    if (last && last.json === json && Object.is(last.ratio, ratio) && profile.posteriorRule.portraitBinding === last.written) return;
+    const written = {
+      ...JSON.parse(json),
+      currentPlacementRatio: ratio,
     };
+    profile.posteriorRule.portraitBinding = written;
+    mirroredPosteriorBindings.set(profile, { json, ratio, written });
   }
 
   const portraitAnchorSpace = {

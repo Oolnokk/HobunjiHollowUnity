@@ -81,12 +81,44 @@ than a single tool call's timeout.
 
 ## Getting into the game
 
-**First load** is character creation:
+**First load** shows a title screen, then an empty-save gate, then character
+creation. Two gotchas:
+
+- `js/title-screen-runtime.js` installs window-level capture listeners that
+  swallow **every** click/key/pointer event (and call
+  `stopImmediatePropagation`, so even your own `page.evaluate` listeners and
+  `element.click()` see nothing) until a *trusted* press dismisses it. Send a
+  real key press first, after the ~450ms arming delay.
+- With no saved farmers, `js/save-startup-gate.js` hides the creator behind a
+  "Create New Farmer" card.
 
 ```js
+await page.goto(url, { waitUntil: 'domcontentloaded' });
+await page.waitForTimeout(6000);
+await page.keyboard.press('Enter');            // dismisses the title screen
+await page.waitForTimeout(1500);               // title fade-out
+await page.click('#hobunjiEmptySaveCreate');   // "＋ Create New Farmer"
+await page.waitForTimeout(1500);
 await page.fill('input[placeholder*="name" i]', 'HeadlessTester').catch(() => {});
-await page.click('button:has-text("Start Farming")');
+await page.click('#ob-start-btn');             // "🌱 Start Farming"
 ```
+
+After Start Farming, a brand-new world runs the Tothal Shift (four wilderness
+zones generated synchronously) and then spawns ~25 NPCs one at a time; in this
+sandbox that takes ~2 minutes before the farm reaches a real steady state.
+Wait that long before taking steady-state performance measurements.
+
+To jump to another area: `await window.__hobunjiFurnitureDebug.enterZoneDebug('map_western_slope')`
+(any id from `WildernessMapGenerator.zoneMapIds()`, or `'map_hobunji_town'`).
+The live renderer is `window.__hobunjiGameRenderer`.
+
+**Profiling:** attach a CDP session (`context.newCDPSession(page)`,
+`Profiler.enable` / `Profiler.start` / `Profiler.stop`) and aggregate the
+`.cpuprofile` by function. Software WebGL makes each frame take ~1s here, and
+that time shows up as native `(program)`; use a small viewport (e.g. 360x240)
+and compare JS self/inclusive times rather than FPS. Work throttled by wall-clock
+intervals (e.g. 250-750ms rescans) looks like it runs every frame at this
+frame rate, so check for throttles before blaming it.
 
 **Main menu**, once on the farm:
 

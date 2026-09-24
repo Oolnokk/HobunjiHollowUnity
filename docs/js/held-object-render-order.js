@@ -384,10 +384,35 @@
     return result;
   }
 
+  // gl.getParameter() is a synchronous GPU round-trip in Chrome: calling it
+  // twice per world render stalled the CPU until every previously queued draw
+  // had finished, defeating CPU/GPU pipelining (it was the single largest
+  // self-time entry in a headless frame profile). A framebuffer's stencil
+  // depth is fixed at allocation, so it is measured once per render target
+  // (and once for the default canvas framebuffer) and reused afterwards.
+  const stencilBitsByTarget = new WeakMap(); // Render target -> measured STENCIL_BITS.
+  let defaultFramebufferStencilBits = null; // Measured STENCIL_BITS of the canvas framebuffer.
+  let stencilBitsContext = null; // Invalidates the cache if the renderer's GL context is replaced.
+
   function currentFramebufferStencilBits(renderer) {
     try {
       const gl = renderer?.getContext?.();
-      return Number(gl?.getParameter?.(gl.STENCIL_BITS)) || 0;
+      if (!gl) return 0;
+      if (gl !== stencilBitsContext) {
+        stencilBitsContext = gl;
+        defaultFramebufferStencilBits = null;
+      }
+      const target = renderer.getRenderTarget?.() || null;
+      if (!target) {
+        if (defaultFramebufferStencilBits === null) defaultFramebufferStencilBits = Number(gl.getParameter(gl.STENCIL_BITS)) || 0;
+        return defaultFramebufferStencilBits;
+      }
+      let bits = stencilBitsByTarget.get(target);
+      if (bits === undefined) {
+        bits = Number(gl.getParameter(gl.STENCIL_BITS)) || 0;
+        stencilBitsByTarget.set(target, bits);
+      }
+      return bits;
     } catch (_) {
       return 0;
     }

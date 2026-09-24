@@ -23,7 +23,7 @@ assert.match(reload, /setTimeout\(\(\) => location\.reload\(\), 0\)/, 'creator c
 assert.match(reload, /api\.loadProfile\?\.\(\)/, 'fresh page must resume from the already-saved player profile');
 assert.match(reload, /document\.dispatchEvent\(new CustomEvent\('hobunjiPlayerReady'/, 'fresh page must deliver the saved profile to normal game listeners');
 
-assert.match(entry, /onboarding-character-creation-mashtzarr-female\.js\?v=20260907charcreator21/, 'female Mashtzarr bridge cache key must include the female-body fix');
+assert.match(entry, /onboarding-character-creation-mashtzarr-female\.js\?v=20260924perf1/, 'female Mashtzarr bridge cache key must include the female-body fix');
 assert.match(core, /'mashtzarr':[\s\S]{0,1800}slot: 'hairFront'[\s\S]{0,700}slot: 'hairBack'[\s\S]{0,700}slot: 'hairSide'[\s\S]{0,700}slot: 'hairSideL'/, 'male Mashtzarr core data must contain the hairstyle selectors being borrowed');
 assert.match(mashtzarr, /fallbackMode: 'female-body-male-hair-slots'/, 'female Mashtzarr fallback must borrow only hair controls');
 assert.match(mashtzarr, /configuredFemaleData\(\)/, 'female fallback must use authored female Mashtzarr config as its base');

@@ -428,12 +428,20 @@
         if (!Number.isFinite(numeric)) return descriptor.set.call(calendar, nextValue);
         const delta = numeric - before; // Raw frame delta compared with CalendarSystem's same natural-write threshold.
         const isNaturalFrameWrite = window.__hobunjiGameStarted === true && delta > 0 && delta <= NATURAL_WRITE_MAX;
-        if (!isNaturalFrameWrite || passageOwnsClock()) return descriptor.set.call(calendar, nextValue);
-        if (activeReviewPromise) return; // Natural clock remains pinned immediately before midnight until Continue resolves the review.
+        if (!isNaturalFrameWrite) return descriptor.set.call(calendar, nextValue);
+        // passageOwnsClock() runs two document-wide selector queries, and this
+        // setter fires on every frame of natural clock drift. Its answer only
+        // changes the outcome when a review is pinning the clock or this write
+        // would cross midnight, so it is consulted only in those two cases.
+        if (activeReviewPromise) {
+          if (passageOwnsClock()) return descriptor.set.call(calendar, nextValue);
+          return; // Natural clock remains pinned immediately before midnight until Continue resolves the review.
+        }
 
         const scaledNext = before + delta * naturalClockScale(); // Exact value CalendarSystem's underlying setter would accept for this frame.
         const fromHour = representedHour(before); // Continuous start hour used because public CalendarSystem.getHour wraps midnight to 0.
         const toHour = representedHour(scaledNext); // Continuous scaled destination used to detect the actual 24:00 crossing.
+        if (crossesCivilMidnight(fromHour, toHour) && passageOwnsClock()) return descriptor.set.call(calendar, nextValue);
         if (shouldPauseNaturalMidnight(fromHour, toHour)) {
           requestMidnightReview({ source: 'natural', day: calendarDeps?.calendar?.day, time01: before });
           return;

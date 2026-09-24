@@ -541,7 +541,12 @@
 
   function getObjectById(id) {
     if (!id) return null;
-    if (map.objectById && map.objectById.has(id)) return map.objectById.get(id);
+    // objectById is authoritative whenever it exists: addObject, the copse
+    // thinning splice, and every map.objects reassignment (rebuildObjectCache)
+    // keep it in sync. Falling through to a linear scan on a miss used to run
+    // ~23k full map.objects scans per zone for locale reservation footprints
+    // (markOccupied's `locale_reserve_*` ids are never real objects).
+    if (map.objectById) return map.objectById.get(id) || null;
     const object = (map.objects || []).find(o => o.id === id) || null;
     if (object && map.objectById) map.objectById.set(id, object);
     return object;
@@ -3433,15 +3438,17 @@
   }
 
   function movementNeighbors(tile) {
-    const dirs = [
-      { x: 1, y: 0 }, { x: -1, y: 0 },
-      { x: 0, y: 1 }, { x: 0, y: -1 }
-    ];
+    // Same +x, -x, +y, -y order as before, without allocating a direction
+    // table per call (this runs once per tile per reachability flood fill).
     const result = [];
-    for (const dir of dirs) {
-      const next = tileAt(tile.x + dir.x, tile.y + dir.y);
-      if (canStepBetween(tile, next)) result.push(next);
-    }
+    let next = tileAt(tile.x + 1, tile.y);
+    if (canStepBetween(tile, next)) result.push(next);
+    next = tileAt(tile.x - 1, tile.y);
+    if (canStepBetween(tile, next)) result.push(next);
+    next = tileAt(tile.x, tile.y + 1);
+    if (canStepBetween(tile, next)) result.push(next);
+    next = tileAt(tile.x, tile.y - 1);
+    if (canStepBetween(tile, next)) result.push(next);
     return result;
   }
 
@@ -3450,17 +3457,23 @@
     const fallbackStart = isWalkableTile(tileAt(start.x, start.y)) ? start : nearestFreeWalkableNeighbor(start.x, start.y);
     const origin = tileAt(fallbackStart.x, fallbackStart.y);
     const seen = new Set();
+    // Visited flags by tile index so the flood fill never has to hash a
+    // string key just to test membership; the returned Set of "x,y" keys
+    // (and its insertion order) is unchanged.
+    const visited = new Uint8Array(settings.width * settings.height);
     const queue = [];
     if (origin && isWalkableTile(origin)) {
+      visited[origin.y * settings.width + origin.x] = 1;
       seen.add(`${origin.x},${origin.y}`);
       queue.push(origin);
     }
     for (let i = 0; i < queue.length; i++) {
       const tile = queue[i];
       for (const next of movementNeighbors(tile)) {
-        const key = `${next.x},${next.y}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
+        const index = next.y * settings.width + next.x;
+        if (visited[index]) continue;
+        visited[index] = 1;
+        seen.add(`${next.x},${next.y}`);
         queue.push(next);
       }
     }
@@ -3896,31 +3909,41 @@
     const startTile = tileAt(start.x, start.y);
     const goalTile = tileAt(goal.x, goal.y);
     if (!startTile || !goalTile) return null;
-    const queue = [{ x: start.x, y: start.y }];
-    const parent = new Map([[tileIdXY(start.x, start.y), null]]);
-    const dirs = [
-      { x: 1, y: 0 }, { x: -1, y: 0 },
-      { x: 0, y: 1 }, { x: 0, y: -1 }
-    ];
-    for (let head = 0; head < queue.length; head++) {
-      const current = queue[head];
-      if (current.x === goal.x && current.y === goal.y) {
+    // Typed-array BFS bookkeeping (same visit order as the old Map/object
+    // queue, so paths are identical): PARENT_UNSEEN marks unvisited tiles and
+    // PARENT_ROOT marks the start. This is called hundreds of times per zone
+    // by the reachability sweeps and animal routing.
+    const width = settings.width;
+    const tileCount = width * settings.height;
+    const PARENT_UNSEEN = -2;
+    const PARENT_ROOT = -1;
+    const parent = new Int32Array(tileCount).fill(PARENT_UNSEEN);
+    const queue = new Int32Array(tileCount);
+    let tail = 0;
+    const startId = tileIdXY(start.x, start.y);
+    const goalId = tileIdXY(goal.x, goal.y);
+    parent[startId] = PARENT_ROOT;
+    queue[tail++] = startId;
+    for (let head = 0; head < tail; head++) {
+      const currentId = queue[head];
+      if (currentId === goalId) {
         const path = [];
-        let k = tileIdXY(current.x, current.y);
-        while (k !== null && k !== undefined) {
-          const x = k % settings.width;
-          const y = Math.floor(k / settings.width);
-          path.push({ x, y });
-          k = parent.get(k);
+        let k = currentId;
+        while (k !== PARENT_ROOT) {
+          path.push({ x: k % width, y: Math.floor(k / width) });
+          k = parent[k];
         }
         return path.reverse();
       }
-      const currentTile = tileAt(current.x, current.y);
-      for (const dir of dirs) {
-        const nx = current.x + dir.x;
-        const ny = current.y + dir.y;
+      const cx = currentId % width;
+      const cy = (currentId - cx) / width;
+      const currentTile = tileAt(cx, cy);
+      for (let dir = 0; dir < 4; dir++) {
+        const nx = dir === 0 ? cx + 1 : dir === 1 ? cx - 1 : cx;
+        const ny = dir === 2 ? cy + 1 : dir === 3 ? cy - 1 : cy;
+        if (!inBounds(nx, ny)) continue;
         const nk = tileIdXY(nx, ny);
-        if (!inBounds(nx, ny) || parent.has(nk)) continue;
+        if (parent[nk] !== PARENT_UNSEEN) continue;
         const nextTile = tileAt(nx, ny);
         if (nextTile.borderEscarpment && !nextTile.ramp && !nextTile.navRamp) continue;
         if (nextTile.cliffSkirt && !nextTile.ramp && !nextTile.navRamp && !allowCliffSkirt) continue;
@@ -3930,8 +3953,8 @@
         if (blockingObject && blockingObject.blocksMovement !== false && !allowOccupied) continue;
         const heightDiff = Math.abs(tileHeight(nextTile) - tileHeight(currentTile));
         if (heightDiff >= settings.rampMinDiff && !nextTile.ramp && !currentTile.ramp && !nextTile.navRamp && !currentTile.navRamp && !allowHeight) continue;
-        parent.set(nk, tileIdXY(current.x, current.y));
-        queue.push({ x: nx, y: ny });
+        parent[nk] = currentId;
+        queue[tail++] = nk;
       }
     }
     return null;
@@ -4732,18 +4755,41 @@
     return true;
   }
 
+  // The distance field's "x,y" keys parsed once per field (in Map order), so
+  // estimateVisibleObserverCount's per-candidate scan no longer re-splits
+  // every key of the whole field for every reward candidate.
+  const parsedDistanceEntryCache = new WeakMap();
+  function parsedDistanceEntries(distances) {
+    const cached = parsedDistanceEntryCache.get(distances);
+    if (cached && cached.count === distances.size) return cached;
+    const count = distances.size;
+    const parsed = { count, xs: new Float64Array(count), ys: new Float64Array(count), distances: new Array(count) };
+    let i = 0;
+    distances.forEach((distance, key) => {
+      const [sx, sy] = key.split(',').map(Number);
+      parsed.xs[i] = sx;
+      parsed.ys[i] = sy;
+      parsed.distances[i] = distance;
+      i++;
+    });
+    parsedDistanceEntryCache.set(distances, parsed);
+    return parsed;
+  }
+
   function estimateVisibleObserverCount(candidate, distanceField, options = {}) {
     // NOTE: this is a local gameplay-facing LOS estimate, not a physically perfect vision sim.
     // It intentionally samples walkable observer tiles in a radius so reward placement stays useful on mobile.
     const radius = options.radius || 14;
     const maxSamples = options.maxSamples || 360;
     const observers = [];
-    distanceField.distances.forEach((distance, key) => {
-      const [sx, sy] = key.split(',').map(Number);
+    const parsed = parsedDistanceEntries(distanceField.distances);
+    for (let i = 0; i < parsed.count; i++) {
+      const sx = parsed.xs[i];
+      const sy = parsed.ys[i];
       const manhattan = Math.abs(sx - candidate.x) + Math.abs(sy - candidate.y);
-      if (manhattan === 0 || manhattan > radius) return;
-      observers.push({ x: sx, y: sy, distance });
-    });
+      if (manhattan === 0 || manhattan > radius) continue;
+      observers.push({ x: sx, y: sy, distance: parsed.distances[i] });
+    }
     observers.sort((a, b) => a.distance - b.distance);
     const sampled = observers.slice(0, maxSamples);
     let visible = 0;
@@ -5127,6 +5173,13 @@
     function southFacingCliffShadowScore(x, y) {
       const tile = tileAt(x, y);
       if (!tile || !copseEligible(x, y)) return 0;
+      return eligibleCliffShadowScore(tile, x, y);
+    }
+
+    // southFacingCliffShadowScore without its copseEligible() gate, for
+    // callers that have just established eligibility themselves (the gate
+    // re-runs the whole hasNearbyTreeObject neighborhood scan).
+    function eligibleCliffShadowScore(tile, x, y) {
       let score = 0;
       // South-facing cliff shadow = this copse sits south/downscreen of a raised cliff face.
       const north = tileAt(x, y - 1);
@@ -5142,11 +5195,15 @@
       return score;
     }
 
+    // copseEligible only ever flips true -> false inside this loop (it only
+    // adds copse objects), so each attempt re-filters the previous attempt's
+    // survivors instead of rescanning every tile; order and result match.
+    let eligibleStarts = allTiles();
     for (let attempts = 0; attempts < maxClusterAttempts && placedCopseTiles < targetCopseTiles; attempts++) {
-      const eligibleStarts = allTiles().filter(tile => copseEligible(tile.x, tile.y));
+      eligibleStarts = eligibleStarts.filter(tile => copseEligible(tile.x, tile.y));
       if (!eligibleStarts.length) break;
       const weightedStarts = eligibleStarts.map(tile => {
-        const shadowScore = southFacingCliffShadowScore(tile.x, tile.y);
+        const shadowScore = eligibleCliffShadowScore(tile, tile.x, tile.y);
         return { value: tile, weight: 1 + shadowScore * shadowScore * 0.9 + noise2(tile.x, tile.y, 44119) * 0.4 };
       });
       const startTile = weightedPick(weightedStarts);
@@ -5156,7 +5213,13 @@
       const startShadowScore = southFacingCliffShadowScore(start.x, start.y);
       const desiredSize = Math.min(remaining, startShadowScore > 0 ? randInt(4, 11) : randInt(3, 7));
       const clusterId = `copse_${copseClusterCount + 1}`;
-      const queue = [{ x: start.x, y: start.y }];
+      // Each queued candidate carries its sort score, computed once when it is
+      // queued: nothing in this growth loop changes tile.occupiedBy (the
+      // cluster is only committed via addObject afterwards), so the score is
+      // stable and the old per-comparison recomputation (a full
+      // copseEligible neighborhood scan per call) produced the same order.
+      const queueScore = (x, y, shadowScore = southFacingCliffShadowScore(x, y)) => shadowScore + noise2(x, y, 94411) * 0.25;
+      const queue = [{ x: start.x, y: start.y, score: queueScore(start.x, start.y, startShadowScore) }];
       const seen = new Set([`${start.x},${start.y}`]);
       const chosen = [];
       // Mirrors `chosen`, but as a key set for hasNearbyTreeObject's O(1) lookups —
@@ -5179,7 +5242,7 @@
       }
 
       while (queue.length && chosen.length < desiredSize) {
-        queue.sort((a, b) => (southFacingCliffShadowScore(b.x, b.y) + noise2(b.x, b.y, 94411) * 0.25) - (southFacingCliffShadowScore(a.x, a.y) + noise2(a.x, a.y, 94411) * 0.25));
+        queue.sort((a, b) => b.score - a.score);
         const candidate = queue.shift();
         if (!copseEligible(candidate.x, candidate.y, chosenKeys)) continue;
         chosen.push(candidate);
@@ -5198,7 +5261,7 @@
           if (!copseEligible(nx, ny, chosenKeys)) return;
           const shadowScore = southFacingCliffShadowScore(nx, ny);
           if (!shadowScore && startShadowScore > 0 && chance(0.42)) return;
-          queue.push({ x: nx, y: ny });
+          queue.push({ x: nx, y: ny, score: queueScore(nx, ny, shadowScore) });
         });
       }
 
@@ -6711,9 +6774,12 @@
     for (let y = 0; y < originalHeight; y++) {
       for (let x = 0; x < originalWidth; x++) {
         const sourceTile = tileAt(x, y);
+        // Same JSON round-trip clonePlain does, but the source tile is
+        // serialized once per block instead of once per duplicated tile.
+        const sourceJson = sourceTile == null ? null : JSON.stringify(sourceTile);
         for (let dy = 0; dy < scale; dy++) {
           for (let dx = 0; dx < scale; dx++) {
-            const clone = clonePlain(sourceTile);
+            const clone = sourceJson == null ? clonePlain(sourceTile) : JSON.parse(sourceJson);
             clone.x = x * scale + dx;
             clone.y = y * scale + dy;
             clone.occupiedBy = null;

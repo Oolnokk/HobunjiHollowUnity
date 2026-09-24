@@ -19701,43 +19701,11 @@
       //      so neither the shell pass nor depth edges would draw a line.
       // Layer 3 is reserved for furniture parts feeding the material-ID buffer.
 
-      // Layer 4 is a depth-only replay of visible PNG silhouettes immediately
-      // before outline rendering. It lets avatars whose normal depthWrite is
-      // intentionally disabled for avatar-vs-avatar ordering still occlude
-      // later furniture shell/material-seam outlines.
-      const PNG_PLANE_OUTLINE_OCCLUDER_LAYER = 4;
-
-      // PNG-plane avatars (player/NPCs/animals/creatures) are flat cutout
-      // sprites — running depth-edge detection against them would outline
-      // every alpha-cutout silhouette edge of the sprite art itself, which
-      // reads as noise rather than a deliberate outline. Tagging their root
-      // group lets the depth-only source pass below hide them temporarily
-      // without touching the main colour pass that actually shows them. Each
-      // child mesh also joins the dedicated outline-occluder layer above.
-      // Registered here once per avatar mesh instead of being rediscovered by
-      // a full activeScene.traverse() every frame in
-      // _renderPngPlaneOutlineOccluderDepth below — the active scene can hold
-      // thousands of terrain/foliage/instanced-mesh nodes, so scanning all of
-      // them every single frame just to find the handful tagged with this
-      // layer scaled with total scene size, not with how many avatars
-      // actually exist. See the pruning comment down there for how entries
-      // get cleaned up once an avatar is actually despawned.
-      const _pngPlaneOccluderMeshes = [];
-      function _markPngPlane(obj) {
-        if (!obj) return;
-        obj.userData.isPngPlane = true;
-        obj.traverse(child => {
-          if (!child.isMesh) return;
-          // PNG art supplies its own outline. Disable the shell layer on the
-          // mesh itself, while retaining layer 4 for depth-only occlusion of
-          // genuine 3D outlines behind the sprite.
-          child.userData.isPngPlane = true;
-          child.userData.noOutline = true;
-          child.layers.disable(1);
-          child.layers.enable(PNG_PLANE_OUTLINE_OCCLUDER_LAYER);
-          _pngPlaneOccluderMeshes.push(child);
-        });
-      }
+      // PNG-plane outline occluders (layer 4 registry, _markPngPlane, and the
+      // depth-only replay before the outline passes) now live in
+      // js/png-plane-outline-occluder.js. _markPngPlane stays a hoisted
+      // function here because avatar builders above call it by this name.
+      function _markPngPlane(obj) { window.PngPlaneOutlineOccluder.markPngPlane(obj); }
 
       let _furnitureEdgeIdSeq = 0;
       function _markFurnitureEdgeId(obj) {
@@ -19820,103 +19788,6 @@
       // contribute an edge, since nothing else was rendered into this target
       // to occlude it.
       const _edgeIdRT = _makeSceneRT(1, 1);
-      let _lastPngOutlineOccluderCount = -1; // Used to keep mobile outline diagnostics useful without per-frame log spam.
-      // Reused across calls instead of allocated fresh each frame — this
-      // runs unconditionally every frame outlines are on (the default), for
-      // every visible player/NPC/creature/mount mesh, so a per-frame Map
-      // plus a per-mesh temp array here was pure steady-state GC churn.
-      const _pngOutlineMaterialStates = new Map();
-
-      // Replays only PNG-plane meshes into _mainRT's existing depth buffer.
-      // Their original alpha-tested materials preserve the real sprite
-      // silhouette; forcing colorWrite off avoids touching the finished color
-      // image, while forcing depthWrite on makes every visible pet/player/NPC
-      // capable of blocking the shell and material-seam passes that follow.
-      // Walks each registered mesh up to its root instead of traversing the
-      // whole scene graph. Areas keep their own persistent scene per the
-      // building/zone maps in grid-tile-accessors.js, so a mesh whose root
-      // is some *other* THREE.Scene just belongs to a currently-inactive
-      // area — it's kept in the registry, not pruned. Only a root that isn't
-      // a Scene at all (the avatar's group was actually removed from every
-      // scene) means the entry is truly dead and gets dropped for good.
-      //
-      // Called every frame regardless of s_outlines: _markPngPlane() pushes
-      // into _pngPlaneOccluderMeshes unconditionally as avatars/tools/held
-      // items are created, but _renderPngPlaneOutlineOccluderDepth (which
-      // used to be the only place this array got compacted) only runs while
-      // outlines are on. With outlines off, despawned entries would never
-      // get dropped and the array would grow for the entire session.
-      function _prunePngPlaneOccluderMeshes() {
-        let writeIdx = 0;
-        for (let i = 0; i < _pngPlaneOccluderMeshes.length; i++) {
-          const object = _pngPlaneOccluderMeshes[i];
-          let root = object;
-          while (root.parent) root = root.parent;
-          if (!root.isScene) continue; // Despawned — drop from the registry.
-          _pngPlaneOccluderMeshes[writeIdx++] = object;
-        }
-        _pngPlaneOccluderMeshes.length = writeIdx;
-      }
-
-      function _renderPngPlaneOutlineOccluderDepth(activeScene) {
-        _prunePngPlaneOccluderMeshes();
-        const materialStates = _pngOutlineMaterialStates;
-        let meshCount = 0; // Reported through the existing mobile-visible farm log when it changes.
-        for (let i = 0; i < _pngPlaneOccluderMeshes.length; i++) {
-          const object = _pngPlaneOccluderMeshes[i];
-          let root = object;
-          while (root.parent) root = root.parent;
-          if (root !== activeScene) continue; // Alive, but in a different area's scene right now.
-          if (!object.isMesh || !object.visible || !(object.layers.mask & (1 << PNG_PLANE_OUTLINE_OCCLUDER_LAYER))) continue;
-          meshCount++;
-          if (Array.isArray(object.material)) {
-            for (const material of object.material) {
-              if (!material || materialStates.has(material)) continue;
-              materialStates.set(material, { colorWrite: material.colorWrite, depthWrite: material.depthWrite, depthTest: material.depthTest, depthFunc: material.depthFunc });
-              material.colorWrite = false;
-              material.depthWrite = true;
-              // The replay must obey the completed scene depth. AlwaysDepth let a
-              // player behind furniture overwrite that nearer furniture depth,
-              // so the later black shell appeared through benches and walls.
-              material.depthTest = true;
-              material.depthFunc = THREE.LessEqualDepth;
-            }
-          } else {
-            const material = object.material;
-            if (material && !materialStates.has(material)) {
-              materialStates.set(material, { colorWrite: material.colorWrite, depthWrite: material.depthWrite, depthTest: material.depthTest, depthFunc: material.depthFunc });
-              material.colorWrite = false;
-              material.depthWrite = true;
-              // The replay must obey the completed scene depth. AlwaysDepth let a
-              // player behind furniture overwrite that nearer furniture depth,
-              // so the later black shell appeared through benches and walls.
-              material.depthTest = true;
-              material.depthFunc = THREE.LessEqualDepth;
-            }
-          }
-        }
-        if (meshCount === 0) return;
-
-        const previousLayerMask = camera.layers.mask; // Restored even if the depth replay throws.
-        try {
-          camera.layers.set(PNG_PLANE_OUTLINE_OCCLUDER_LAYER);
-          renderer.render(activeScene, camera);
-        } finally {
-          camera.layers.mask = previousLayerMask;
-          for (const [material, state] of materialStates) {
-            material.colorWrite = state.colorWrite;
-            material.depthWrite = state.depthWrite;
-            material.depthTest = state.depthTest;
-            material.depthFunc = state.depthFunc;
-          }
-          materialStates.clear();
-        }
-        if (meshCount !== _lastPngOutlineOccluderCount) {
-          _lastPngOutlineOccluderCount = meshCount;
-          window.__farmLog?.(`[outline] ${meshCount} PNG avatar plane(s) writing occlusion depth`, 'render');
-        }
-      }
-
       function _resizeOutlineTargets(pixelW, pixelH) {
         _mainRT.setSize(pixelW, pixelH);
         _edgeIdRT.setSize(pixelW, pixelH);
@@ -19999,6 +19870,7 @@
 
       // Camera — mode-driven, with the default preserving the original isometric follow.
       const camera = new THREE.PerspectiveCamera(cameraModeConfig('default').fovDeg ?? 42, 1, 0.1, 200);
+      window.PngPlaneOutlineOccluder.init({ renderer, camera }); // Registry pruning + depth-only PNG silhouette replay: js/png-plane-outline-occluder.js.
       let camTargetX = COLS / 2, camTargetZ = ROWS * 0.72, camTargetY = 0;
       // Snaps the camera's follow target to the player's current position,
       // including ground height — exterior zones now carry real per-tile
@@ -20350,9 +20222,28 @@
         const lookTarget = _cinematicLookTarget.copy(_cinematicCameraBlend.startTarget).lerp(desiredTarget, t);
         camera.lookAt(lookTarget);
         camera.fov = THREE.MathUtils.lerp(_cinematicCameraBlend.startFov, Number(shot.fovDeg) || 42, t);
-        camera.aspect = threeContainer.clientWidth / threeContainer.clientHeight;
+        camera.aspect = cameraContainerAspect();
         camera.updateProjectionMatrix();
         return true;
+      }
+
+      // threeContainer's client size, re-read only after it may have changed.
+      // Reading clientWidth/clientHeight every frame forced a synchronous
+      // style/layout pass whenever earlier gameLoop work (calendar/HUD text)
+      // had already dirtied the DOM. (_threeRect further down can't be used
+      // here: it's still in its TDZ on the first updateCameraPosition() call.)
+      let _cameraContainerWidth = 0, _cameraContainerHeight = 0;
+      let _cameraContainerSizeDirty = true;
+      const _cameraContainerSizeObserved = typeof ResizeObserver === 'function';
+      if (_cameraContainerSizeObserved) new ResizeObserver(() => { _cameraContainerSizeDirty = true; }).observe(threeContainer);
+      window.addEventListener('resize', () => { _cameraContainerSizeDirty = true; }); // Registered before the resize handler that calls updateCameraPosition() directly.
+      function cameraContainerAspect() {
+        if (_cameraContainerSizeDirty || !_cameraContainerSizeObserved) {
+          _cameraContainerWidth = threeContainer.clientWidth;
+          _cameraContainerHeight = threeContainer.clientHeight;
+          _cameraContainerSizeDirty = false;
+        }
+        return _cameraContainerWidth / _cameraContainerHeight;
       }
 
       function updateCameraPosition() {
@@ -20414,7 +20305,7 @@
           camera.lookAt(lookAtX, lookY, lookAtZ);
         }
         camera.fov = modeCfg.fovDeg ?? 42;
-        camera.aspect = threeContainer.clientWidth / threeContainer.clientHeight;
+        camera.aspect = cameraContainerAspect();
         camera.updateProjectionMatrix();
       }
       updateCameraPosition();
@@ -24324,7 +24215,7 @@
           renderer.autoClearColor = false;
           renderer.autoClearDepth = false;
           const rpPngOccluderPerf = window.PerfProfiler?.begin('render: png occluder depth'); // Does a full activeScene.traverse() every frame -- prime suspect for scaling with total scene object count.
-          _renderPngPlaneOutlineOccluderDepth(activeScene);
+          window.PngPlaneOutlineOccluder.renderDepth(activeScene);
           window.PerfProfiler?.end(rpPngOccluderPerf);
 
           // Selective shell outline pass (layer-1 objects only)
@@ -24397,7 +24288,7 @@
           renderer.render(_postScene, _postCamera);
           window.PerfProfiler?.end(rpCompositePerf);
         } else {
-          _prunePngPlaneOccluderMeshes(); // Outlines off skips the pass that otherwise compacts this registry every frame.
+          window.PngPlaneOutlineOccluder.prune(); // Outlines off skips the pass that otherwise compacts this registry every frame.
           renderer.setRenderTarget(null);
           renderer.render(activeScene, camera);
           // Coloured target outline pass (layer-2 objects — green allowed, red blocked)

@@ -54,8 +54,28 @@
     return clamp01(1 - footing / maxFooting);
   }
 
+  // legPart runs six times per legged actor per frame (every NPC walker, not
+  // just drunk ones), and getObjectByName walks the whole leg rig each time.
+  // Lookups are cached per rig root and revalidated (same name, still inside
+  // that root) before reuse, falling back to a fresh search otherwise.
+  const legPartCache = new WeakMap(); // rig root -> Map(name -> Object3D)
+
+  function isInside(object, root) {
+    for (let node = object; node; node = node.parent) if (node === root) return true;
+    return false;
+  }
+
   function legPart(root, name) {
-    return root?.getObjectByName?.(name) || null;
+    if (!root?.getObjectByName) return null;
+    let byName = legPartCache.get(root);
+    const cached = byName?.get(name);
+    if (cached && cached.name === name && isInside(cached, root)) return cached;
+    const found = root.getObjectByName(name) || null;
+    if (found) {
+      if (!byName) { byName = new Map(); legPartCache.set(root, byName); }
+      byName.set(name, found);
+    }
+    return found;
   }
 
   function isNightPhase() {
@@ -125,11 +145,21 @@
     trackedQuaternion.identity();
   }
 
+  let scratchEuler = null; // Reused per-frame Euler input for setFromEuler (read synchronously, never retained).
+  function reuseEuler(THREE, x, y, z) {
+    scratchEuler ||= new THREE.Euler(0, 0, 0, 'YXZ');
+    scratchEuler.x = x;
+    scratchEuler.y = y;
+    scratchEuler.z = z;
+    scratchEuler.order = 'YXZ';
+    return scratchEuler;
+  }
+
   function applyTrackedFootTwist(THREE, foot, yaw, roll, trackedQuaternion) {
     if (!foot?.quaternion || !trackedQuaternion?.isQuaternion) return;
     const safeYaw = Math.max(-FOOT_TWIST_LIMIT, Math.min(FOOT_TWIST_LIMIT, Number(yaw) || 0));
     const safeRoll = Math.max(-FOOT_TWIST_LIMIT, Math.min(FOOT_TWIST_LIMIT, Number(roll) || 0));
-    trackedQuaternion.setFromEuler(new THREE.Euler(0, safeYaw, safeRoll, 'YXZ'));
+    trackedQuaternion.setFromEuler(reuseEuler(THREE, 0, safeYaw, safeRoll));
     foot.quaternion.multiply(trackedQuaternion);
   }
 
@@ -196,7 +226,7 @@
       }
       const bodyRoot = options.drunkBodyRoot;
       if (!bodyRoot?.quaternion) return;
-      state.bodyTilt.setFromEuler(new THREE.Euler(state.pitch, 0, state.roll, 'YXZ'));
+      state.bodyTilt.setFromEuler(reuseEuler(THREE, state.pitch, 0, state.roll));
       bodyRoot.quaternion.multiply(state.bodyTilt);
     }
 

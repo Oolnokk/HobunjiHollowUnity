@@ -366,13 +366,17 @@
   // excluded from the offscreen outlined frame and drawn once after the final
   // composite. This predicate deliberately uses render/material behavior instead
   // of a module-specific name so nested ambient chatheads are covered too.
+  // Runs against every object in the scene on every outlined frame, so the
+  // cheap mesh/renderOrder rejection comes first and no per-object material
+  // array is allocated for the (overwhelmingly common) non-overlay case.
+  function isWorldTextOverlayMaterial(material) {
+    return !!(material?.map?.isCanvasTexture && material.depthTest === false && material.depthWrite === false);
+  }
+
   function isWorldTextOverlayMesh(object) {
-    const materials = Array.isArray(object?.material) ? object.material : [object?.material];
-    return !!(
-      object?.isMesh
-      && Number(object.renderOrder) >= WORLD_TEXT_RENDER_ORDER_MIN
-      && materials.some(material => material?.map?.isCanvasTexture && material.depthTest === false && material.depthWrite === false)
-    );
+    if (!object?.isMesh || !(Number(object.renderOrder) >= WORLD_TEXT_RENDER_ORDER_MIN)) return false;
+    const material = object.material;
+    return Array.isArray(material) ? material.some(isWorldTextOverlayMaterial) : isWorldTextOverlayMaterial(material);
   }
 
   function collectWorldTextOverlayEntries(scene) {

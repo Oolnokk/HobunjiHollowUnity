@@ -110,6 +110,40 @@
     return roots;
   }
 
+  // collectCropRoots is a full traversal of the farm scene, and prepare() runs
+  // on every farm render -- it was the largest per-frame cost in this render
+  // hook chain. Crop roots are direct scene children, so planting, harvesting
+  // and growth-stage rebuilds all change scene.children; a cheap signature of
+  // that list invalidates the cache immediately. Tags applied later to an
+  // existing child (crop-sprite-art's throttled placeholder discovery) are
+  // picked up by a full rescan at that same 250ms discovery cadence.
+  const CROP_ROOT_FULL_RESCAN_MS = 250;
+  const cropRootCache = { scene: null, roots: null, childCount: -1, idSum: 0, idMix: 0, scannedAt: -Infinity };
+
+  function cachedCropRoots(scene) {
+    const children = scene.children || [];
+    let idSum = 0;
+    let idMix = 0;
+    for (let i = 0; i < children.length; i++) {
+      const id = children[i].id | 0;
+      idSum += id;
+      idMix = (idMix ^ Math.imul(id + i, 2654435761)) | 0;
+    }
+    const now = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+    const cache = cropRootCache;
+    if (cache.scene === scene && cache.roots && cache.childCount === children.length && cache.idSum === idSum
+      && cache.idMix === idMix && now - cache.scannedAt < CROP_ROOT_FULL_RESCAN_MS) {
+      return cache.roots;
+    }
+    cache.scene = scene;
+    cache.roots = collectCropRoots(scene);
+    cache.childCount = children.length;
+    cache.idSum = idSum;
+    cache.idMix = idMix;
+    cache.scannedAt = now;
+    return cache.roots;
+  }
+
   function tileForRoot(root) {
     const grid = activeDeps()?.getGrid?.();
     if (!grid || !root?.position) return null;
@@ -125,7 +159,7 @@
     const expectedScene = farmScene();
     if (!expectedScene || scene !== expectedScene) return restore;
 
-    for (const [root, cropKey] of collectCropRoots(scene)) {
+    for (const [root, cropKey] of cachedCropRoots(scene)) {
       const located = tileForRoot(root);
       if (!located?.tile?.crop) continue;
       const waterDepth = Math.max(0, Number(located.tile.water) || 0);

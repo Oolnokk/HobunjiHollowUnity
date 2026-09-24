@@ -25,7 +25,7 @@ assert.match(snapshot, /zeroCreatureGroundOffsetsIgnored: true/,
   'the supplied zero creature ground offsets must never be promoted as authored values');
 
 const snapshotIndex = bootstrap.indexOf('attachment-rig-latest-authored-snapshot.js?v=20260904a');
-const solverIndex = bootstrap.indexOf('procedural-hand-scale-free-world.js?v=20260904posteriorlive1');
+const solverIndex = bootstrap.indexOf('procedural-hand-scale-free-world.js?v=20260924perf1');
 assert(snapshotIndex >= 0 && solverIndex > snapshotIndex,
   'latest authored snapshot must load before the portrait/hand solver');
 
