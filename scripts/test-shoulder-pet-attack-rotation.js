@@ -46,8 +46,14 @@ assert.match(gameSource,
   /const SHOULDER_PET_LAYER_FACE_HYSTERESIS = 0\.1;/,
   'shoulder-pet layer arbitration has an angular hysteresis band around the edge-on boundary');
 assert.match(gameSource,
-  /const normalizedFaceZ = horizontalDistance > 1e-6[\s\S]{0,650}_shoulderPetLayerFrontVisible && normalizedFaceZ < -SHOULDER_PET_LAYER_FACE_HYSTERESIS[\s\S]{0,350}!_shoulderPetLayerFrontVisible && normalizedFaceZ > SHOULDER_PET_LAYER_FACE_HYSTERESIS/,
-  'the whole-sprite arbiter keeps the previous side until the camera decisively crosses the portrait plane');
+  /const logicalYaw = Number\.isFinite\(facingAngle\)[\s\S]{0,180}-facingAngle \+ Math\.PI \/ 2[\s\S]{0,420}const normalizedFaceZ = Math\.cos\(logicalYaw - cameraBearing\)/,
+  'shoulder-pet layer classification uses unclamped logical player facing instead of the portrait deadzone-snapped render yaw');
+assert.doesNotMatch(gameSource,
+  /_playerAvatarFrontMesh\.worldToLocal\(_shoulderPetLayerCameraLocal\)/,
+  'layer classification no longer derives front/back from the deadzone-snapped portrait mesh');
+assert.match(gameSource,
+  /_shoulderPetLayerFrontVisible && normalizedFaceZ < -SHOULDER_PET_LAYER_FACE_HYSTERESIS[\s\S]{0,350}!_shoulderPetLayerFrontVisible && normalizedFaceZ > SHOULDER_PET_LAYER_FACE_HYSTERESIS/,
+  'the whole-sprite arbiter keeps the previous side until logical facing decisively crosses the portrait plane');
 assert.match(gameSource,
   /const nextPet = active \? pet : null;[\s\S]{0,180}_petLayeringPet !== nextPet\) _shoulderPetLayerFrontVisible = null;/,
   'layer-side hysteresis resets whenever the active shoulder attachment changes');
