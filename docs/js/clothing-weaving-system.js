@@ -1962,19 +1962,14 @@
     return thickened;
   }
 
-  // Reusable clothing patterns keep their ordinary line weight. Large
-  // purpose-specific uses (animal surface paint) boost line weight
-  // sublinearly so the outline remains visible without growing as fast as
-  // the motif itself. sqrt(7)≈2.65 and sqrt(14)≈3.74.
-  function scaledOutlineWidth(defaultWidth, rawPattern) {
-    const pattern = legacyFrameFields(rawPattern);
-    const usageScale = clamp(finite(pattern?.usageScaleMultiplier, 1), 0.1, 20);
-    const authoredMeshScale = clamp(finite(pattern?.meshScale, 1), PATTERN_SCALE_MIN, PATTERN_SCALE_MAX) * PATTERN_SCALE_REFERENCE;
-    const shrinkScale = Math.min(Number(pattern?.motifScale) || 1, 1)
-      * Math.min(Number(pattern?.frameScale) || 1, 1)
-      * Math.min(authoredMeshScale, 1);
-    const baseWidth = Math.max(1, defaultWidth * shrinkScale);
-    return Math.max(1, baseWidth * Math.sqrt(Math.max(1, usageScale)));
+  const ANIMAL_PATTERN_OUTLINE_WIDTH = 6; // Used by the explicit animal surface-paint pass so animal motifs read more strongly than 1px clothing patterns without tying line weight to motif scale.
+
+  // Pattern transforms alter motif geometry only. Clothing keeps its caller-
+  // supplied raster-space width, while the explicitly labeled animal surface
+  // pass gets a fixed 6px outline. Neither width changes with motif scaling.
+  function scaledOutlineWidth(defaultWidth, _rawPattern, debugLabel = 'woven-motif') {
+    const baseWidth = Math.max(1, finite(defaultWidth, 1));
+    return debugLabel === 'animal-surface-pattern' ? ANIMAL_PATTERN_OUTLINE_WIDTH : baseWidth;
   }
 
   // A per-item "Custom" pattern's motif may live in MotifStore instead of
@@ -2073,7 +2068,7 @@
     // buildPatternMask flattened every repeated stamp into one alpha field before
     // patternMask/adjustedMask were derived, so overlapping repeats intentionally
     // share this one silhouette instead of receiving per-stamp outlines.
-    const outlineMask = buildPatternOutlineMask(adjustedMask, garmentMask, width, height, scaledOutlineWidth(PATTERN_OUTLINE_WIDTH, pattern), clusterSeparatorMask);
+    const outlineMask = buildPatternOutlineMask(adjustedMask, garmentMask, width, height, scaledOutlineWidth(PATTERN_OUTLINE_WIDTH, pattern, debugLabel), clusterSeparatorMask);
     for (let p = 0, i = 0; i < base.data.length; i += 4, p++) {
       if (!outlineMask[p]) continue;
       base.data[i] = 0; base.data[i + 1] = 0; base.data[i + 2] = 0;

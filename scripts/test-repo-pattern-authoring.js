@@ -63,10 +63,11 @@ assert.match(renderer, /paint\.repoPatternId \|\| paint\.pattern\?\.repoPatternI
 assert.match(renderer, /paint\.patternScale/, 'animal surface paint scale participates in the creature render signature');
 assert.match(renderer, /usageScaleMultiplier: animalPatternScale/, 'animal renderer applies its normalized pattern scale as a transient usage multiplier');
 assert.match(renderer, /Math\.max\(7, Math\.min\(14, Number\(paint\.patternScale\) \|\| 7\)\)/, 'animal pattern usage scale is clamped to the purpose-specific 7×–14× range');
-assert.match(weaving, /Math\.sqrt\(Math\.max\(1, usageScale\)\)/, 'large animal pattern usage boosts outline weight sublinearly with scale');
+assert.match(weaving, /const ANIMAL_PATTERN_OUTLINE_WIDTH = 6;[\s\S]*debugLabel === 'animal-surface-pattern' \? ANIMAL_PATTERN_OUTLINE_WIDTH : baseWidth;/, 'the explicitly labeled animal surface pass uses a fixed 6px outline while clothing retains its ordinary raster-space outline width');
 assert.match(weaving, /const outlineDiskOffsetCache = new Map\(\)/, 'large pattern outlines reuse cached disk neighborhoods');
 assert.match(weaving, /for \(const boundaryPixel of boundaryPixels\)/, 'outline dilation expands from motif boundaries instead of searching around every garment pixel');
 assert.match(weaving, /patternDef\?\.usageScaleMultiplier/, 'shared pattern compositor supports a purpose-specific normalized scale multiplier after authored pattern scale resolution');
+assert.match(weaving, /scaledOutlineWidth\(PATTERN_OUTLINE_WIDTH, pattern, debugLabel\)/, 'the final outline pass receives the compositor label so animal thickness is selected by render purpose rather than inferred from scale');
 assert.match(weaving, /isAbsoluteOrBlob = \/\^\(\?:https\?:\|blob:\|data:\|\\\/\\\/\)\/i/, 'absolute/CDN repo motif URLs bypass game-relative loadImg normalization');
 assert.match(renderer, /getLastPatternPaintDebug/, 'creature compositor exposes per-region pattern paint diagnostics to Character Studio');
 assert.match(renderer, /compositor returned the unpatterned source/, 'creature compositor reports a visibly unapplied pattern instead of failing silently');

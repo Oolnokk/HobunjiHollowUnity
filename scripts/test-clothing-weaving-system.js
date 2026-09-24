@@ -120,6 +120,19 @@ assert.equal(api.__test.resolvedPatternMeshScale({ meshScale: 0.4 }), 0.1, 'norm
 assert.equal(api.__test.resolvedPatternMeshScale({ meshScale: 3.2 }), 0.8, 'normalized upper bound 3.20 renders at the former 0.80 maximum');
 assert.equal(api.__test.resolvedPatternMeshScale({ meshScale: 0.1 }), 0.1, 'saved values below the normalized range clamp to the physical 0.10 minimum without migration');
 assert.equal(api.__test.resolvedPatternMeshScale({ meshScale: 6 }), 0.8, 'saved values above the normalized range clamp to the physical 0.80 maximum without migration');
+assert.equal(api.__test.scaledOutlineWidth(1, { motifScale: 0.1, frameScale: 0.1, meshScale: 0.4, usageScaleMultiplier: 0.1 }, 'woven-motif'), 1, 'scaled-down clothing motifs keep the same 1px woven outline');
+assert.equal(api.__test.scaledOutlineWidth(1, { motifScale: 3, frameScale: 6, meshScale: 3.2, usageScaleMultiplier: 14 }, 'woven-motif'), 1, 'large usage scaling alone does not thicken clothing outlines');
+assert.equal(api.__test.scaledOutlineWidth(1, { motifScale: 0.1, frameScale: 0.1, meshScale: 0.4, usageScaleMultiplier: 7 }, 'animal-surface-pattern'), 6, 'animal surface patterns use a fixed 6-unit outline even when motif geometry is scaled down');
+assert.equal(api.__test.scaledOutlineWidth(1, { motifScale: 3, frameScale: 6, meshScale: 3.2, usageScaleMultiplier: 14 }, 'animal-surface-pattern'), 6, 'animal surface patterns keep the same fixed 6-unit outline when motif geometry is scaled up');
+const outlineProbeSize = 96; // Used to verify the final raster dilation, not just the width selector.
+const outlineProbeGarment = new Uint8Array(outlineProbeSize * outlineProbeSize).fill(1); // Used as an unrestricted patterned surface for the outline geometry probe.
+const outlineProbeMotif = new Uint8Array(outlineProbeSize * outlineProbeSize); // Used as a large square motif whose straight edge makes inward/outward thickness measurable.
+for (let y = 24; y <= 71; y++) for (let x = 24; x <= 71; x++) outlineProbeMotif[y * outlineProbeSize + x] = 1;
+const threeUnitOutline = api.__test.buildPatternOutlineMask(outlineProbeMotif, outlineProbeGarment, outlineProbeSize, outlineProbeSize, 3);
+const sixUnitOutline = api.__test.buildPatternOutlineMask(outlineProbeMotif, outlineProbeGarment, outlineProbeSize, outlineProbeSize, 6);
+assert.equal(threeUnitOutline[48 * outlineProbeSize + 9], 0, 'the former 3-unit animal outline stops before 15 raster pixels outside a straight motif edge');
+assert.equal(sixUnitOutline[48 * outlineProbeSize + 9], 1, 'the 6-unit animal outline reaches 15 raster pixels outside the same edge, confirming the actual raster band doubled');
+assert.equal(sixUnitOutline[48 * outlineProbeSize + 8], 0, 'the doubled outline still stops immediately beyond its intended 15-pixel outward half-band');
 assert.equal(api.__test.weavingSwapsPatternColorsForRole({ layers: { base: { pattern: {}, swapPatternColors: true }, trim: { pattern: {} } } }, 'base'), true, 'base layer can independently swap cloth and pattern colors');
 assert.equal(api.__test.weavingSwapsPatternColorsForRole({ layers: { base: { pattern: {}, swapPatternColors: true }, trim: { pattern: {} } } }, 'trim'), false, 'trim layer keeps its own independent swap state');
 assert.equal(api.__test.weavingSwapsPatternColorsForRole({ pattern: {} }, null), false, 'legacy single-pattern saves default to unswapped colors');
@@ -416,7 +429,7 @@ assert.match(patternAuthorSource, /const PATTERN_SCALE_MAX = 3\.2;/, 'shared Pat
 assert.match(patternAuthorSource, /meshScale: clamp\(Number\(cfg\.meshScale\) \|\| 1, PATTERN_SCALE_MIN, PATTERN_SCALE_MAX\)/, 'saved Pattern scale remains the normalized value and clamps only at authoring bounds');
 assert.doesNotMatch(metalPatternSource, /PATTERN_SCALE_REFERENCE/, 'verdigris does not inherit weaving-only normalized mesh scaling');
 assert.match(metalPatternSource, /const meshScale = Math\.max\(0\.05, Number\(patternDef\.meshScale\) \|\| 1\);/, 'verdigris keeps the pre-weaving raw physical mesh scale so existing tool patterns retain their visual size');
-assert.match(metalPatternSource, /Math\.min\(Number\(patternDef\?\.meshScale\) \|\| 1, 1\)/, 'verdigris outline weight also uses the raw mesh scale instead of the weaving-normalized quarter scale');
+assert.match(metalPatternSource, /function scaledOutlineWidthForPattern\(defaultWidth, _rawPatternDef\)[\s\S]*return Math\.max\(1, Math\.round\(Number\(defaultWidth\) \|\| 0\)\);/, 'verdigris authored-pattern outline width stays fixed regardless of motif, frame, or mesh scale');
 assert.doesNotMatch(source, /clothingLoomInjected|syncLoomActionButton|targetedLoom/, 'weaving module no longer owns a parallel DOM/polling interaction path');
 const gameSource = fs.readFileSync('docs/game.js', 'utf8');
 assert.match(gameSource, /if \(o\.key === 'loom'\) return makeLoomInteractable\(\)/, 'player-placed house loom is a normal interior furniture interactable');

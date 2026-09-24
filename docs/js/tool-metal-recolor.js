@@ -612,14 +612,12 @@
     return thickened;
   }
 
-  // An authored pattern's outline never grows past whatever outlineWidth the
-  // caller configured (a scaled-up motif reads fine with the same line
-  // weight it always had) but does thin down for a scaled-down one, clamped
-  // so it never disappears below 1px.
-  function scaledOutlineWidthForPattern(defaultWidth, rawPatternDef) {
-    const patternDef = legacyFrameFields(rawPatternDef);
-    const scale = Math.min(Number(patternDef?.motifScale) || 1, 1) * Math.min(Number(patternDef?.frameScale) || 1, 1) * Math.min(Number(patternDef?.meshScale) || 1, 1);
-    return Math.max(1, Math.min(defaultWidth, Math.round(defaultWidth * scale)));
+  // Pattern transforms move/scale the motif geometry only. Keep the authored
+  // outline at the caller's raster-space width so changing motif/frame/mesh
+  // scale never changes line weight. The legacy helper name remains exported
+  // through __test for compatibility with existing diagnostics.
+  function scaledOutlineWidthForPattern(defaultWidth, _rawPatternDef) {
+    return Math.max(1, Math.round(Number(defaultWidth) || 0));
   }
 
   function recolorAndOxidize(imageData, opts) {
