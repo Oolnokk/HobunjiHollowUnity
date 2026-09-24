@@ -49,5 +49,6 @@ assert.match(fish, /cookingCategories:\['fish'\][\s\S]{0,180}cookingPrimaryEffec
 assert.match(fish, /function hookShippingItemBridge\(\)[\s\S]{0,900}api\.init = function fishCatalogShippingInit/, 'fish item registration follows ShippingPanel initialization instead of timing out');
 assert.doesNotMatch(fish, /n\+\+<40|item bridge unavailable/, 'fish item bridge no longer uses a fixed startup polling deadline');
 assert.match(cooking, /definition\.cookingPrimaryEffect \|\|= 'fishing'/, 'cooking preserves fish-specific effects and only falls back to fishing when missing');
-assert.match(cooking, /totals\[definition\.cookingPrimaryEffect\]/, 'cooked-food effect totals consume each ingredient cookingPrimaryEffect');
+assert.match(cooking, /function ingredientEffectTotals\(definition, stars\)[\s\S]{0,1400}effects\[definition\.cookingPrimaryEffect\] = amount/, 'each ingredient contributes its own cookingPrimaryEffect');
+assert.match(cooking, /const ingredientEffects = ingredientEffectTotals\(definition, selected\?\.stars\)[\s\S]{0,200}totals\[effect\] = \(totals\[effect\] \|\| 0\) \+ amount/, 'cooked-food effect totals consume each ingredient cookingPrimaryEffect');
 console.log('Strength and fish buff tests passed');

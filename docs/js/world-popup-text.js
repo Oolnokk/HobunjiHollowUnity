@@ -374,24 +374,31 @@
 
   function drainLevelUpAnnouncements() {
     if (state.levelUpActive) return true;
-    const next = state.levelUpQueue.shift(); // Next Skill/Mastery milestone waiting for the shared Ambient Dialogue renderer.
-    if (!next) return true;
-    const root = next.root || state.deps?.playerRoot; // Live player root used to resolve the avatar-only presentation anchor.
-    const show = window.AmbientDialogue?.show; // Existing animal/NPC popup dialogue renderer reused verbatim for progression text.
-    if (!root || typeof show !== 'function') return false;
-    const anchorRoot = avatarMetrics(root)?.avatarRoot || root; // Excludes direct held-item/attachment roots so drawn gear cannot pull the "above head" anchor away from the body.
-    const durationMs = Math.max(500, Number(next.durationMs) || 1600); // Matches the short discovery-text lifetime used by animal companion warnings.
-    const event = show(anchorRoot, next.text, {
-      speakerId: 'player-progression',
-      mode: 'overhead',
-      tone: 'animal',
-      durationMs,
-      scene: next.scene,
-    }); // Active Ambient Dialogue event whose lifetime gates the next queued progression announcement.
-    if (!event) return false;
-    state.levelUpActive = { text: next.text, durationMs };
-    state.levelUpTimer = setTimeout(finishLevelUpAnnouncement, durationMs + 80);
-    return true;
+    // An announcement the renderer rejects (no player root / Ambient Dialogue
+    // unavailable at that moment) is skipped rather than ending the drain:
+    // this also runs from the previous announcement's timer, and returning
+    // early there used to leave the rest of the queue stranded until some
+    // unrelated future level-up happened to restart it.
+    while (state.levelUpQueue.length) {
+      const next = state.levelUpQueue.shift(); // Next Skill/Mastery milestone waiting for the shared Ambient Dialogue renderer.
+      const root = next.root || state.deps?.playerRoot; // Live player root used to resolve the avatar-only presentation anchor.
+      const show = window.AmbientDialogue?.show; // Existing animal/NPC popup dialogue renderer reused verbatim for progression text.
+      if (!root || typeof show !== 'function') continue;
+      const anchorRoot = avatarMetrics(root)?.avatarRoot || root; // Excludes direct held-item/attachment roots so drawn gear cannot pull the "above head" anchor away from the body.
+      const durationMs = Math.max(500, Number(next.durationMs) || 1600); // Matches the short discovery-text lifetime used by animal companion warnings.
+      const event = show(anchorRoot, next.text, {
+        speakerId: 'player-progression',
+        mode: 'overhead',
+        tone: 'animal',
+        durationMs,
+        scene: next.scene,
+      }); // Active Ambient Dialogue event whose lifetime gates the next queued progression announcement.
+      if (!event) continue;
+      state.levelUpActive = { text: next.text, durationMs };
+      state.levelUpTimer = setTimeout(finishLevelUpAnnouncement, durationMs + 80);
+      return true;
+    }
+    return false; // Nothing could be shown (queue now empty); queueLevelUp's caller falls back to a toast.
   }
 
   function queueLevelUp(text, options = {}) {
