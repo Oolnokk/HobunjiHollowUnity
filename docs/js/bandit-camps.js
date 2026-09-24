@@ -4,7 +4,37 @@
   // Bandit camps — temporary-locale zone adapter, props, lifecycle,
   // companion perception, tent interaction, and corpse loot.
   let deps = null;
-  function init(injectedDeps) { deps = injectedDeps; }
+  const BANDIT_TENT_PIECE_URL = 'config/pieces/bandit-tent.json'; // Authored Researcher's-Tent clone used by every bandit-camp tent.
+  let _banditTentPiece = null; // Cached authored tent piece consumed by buildBanditTentMesh().
+  let _banditTentPiecePromise = null; // Shared in-flight fetch so repeated camp setup never duplicates the piece request.
+
+  function _loadBanditTentPiece() {
+    if (_banditTentPiece) return Promise.resolve(_banditTentPiece);
+    if (_banditTentPiecePromise) return _banditTentPiecePromise;
+    _banditTentPiecePromise = fetch(BANDIT_TENT_PIECE_URL)
+      .then(response => {
+        if (!response.ok) throw new Error(`bandit tent HTTP ${response.status}`);
+        return response.json();
+      })
+      .then(piece => {
+        _banditTentPiece = piece;
+        return piece;
+      })
+      .catch(error => {
+        _banditTentPiecePromise = null;
+        deps?.debugLog?.(`Bandits: authored tent failed to load (${error.message}).`, 'warn');
+        return null;
+      });
+    return _banditTentPiecePromise;
+  }
+
+  function init(injectedDeps) {
+    deps = injectedDeps;
+    _loadBanditTentPiece().then(piece => {
+      if (!piece) return;
+      for (const zoneId of _banditCampInstances.keys()) ensureBanditCampMeshes(zoneId);
+    });
+  }
 
   const _BANDIT_CLEARABLE_TYPES = new Set(['shrub']);
   const _banditZoneViews = new Map();
@@ -111,30 +141,6 @@
       return _banditCanvasTexture;
     }
   
-    // Five separate triangles give every flat tent panel a full 0..1 UV
-    // island. ConeGeometry shares its UV strip around the circumference,
-    // which repeated/sliced canvas.png instead of stretching one copy cleanly
-    // across each panel.
-    function buildBanditTentCanvasGeometry() {
-      const sides = 5, radius = 0.9, height = 1.2;
-      const positions = [], uvs = [];
-      for (let i = 0; i < sides; i++) {
-        const a0 = -Math.PI / 2 + i * Math.PI * 2 / sides;
-        const a1 = -Math.PI / 2 + (i + 1) * Math.PI * 2 / sides;
-        positions.push(
-          Math.cos(a0) * radius, 0, Math.sin(a0) * radius,
-          Math.cos(a1) * radius, 0, Math.sin(a1) * radius,
-          0, height, 0,
-        );
-        uvs.push(0, 0, 1, 0, 0.5, 1);
-      }
-      const geo = new THREE.BufferGeometry();
-      geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-      geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-      geo.computeVertexNormals();
-      return geo;
-    }
-  
     function buildBanditFireEffect(scale = 1) {
       const group = new THREE.Group();
       const flames = [];
@@ -188,26 +194,15 @@
   
     
   function buildBanditTentMesh(burning = false) {
-    const group = new THREE.Group();
-    const canvas = new THREE.Mesh(
-      buildBanditTentCanvasGeometry(),
-      new THREE.MeshLambertMaterial({ color: 0xc8b58b, map: banditCanvasTexture(), side: THREE.DoubleSide }),
-    );
-    canvas.castShadow = true;
-    const doorway = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.44, 0.6),
-      new THREE.MeshBasicMaterial({ color: 0x1a1410, side: THREE.DoubleSide }));
-    doorway.position.set(0, 0.3, 0.905);
-    const pole = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.035, 0.035, 1.45, 5),
-      new THREE.MeshLambertMaterial({ color: 0x5a4326 }));
-    pole.position.y = 0.72;
-    // Preserve main-branch projectile-cover metadata.
-    group.userData.projectileCoverHeightTiles = 1.45;
-    group.userData.projectileCoverRadiusTiles = 0.9;
+    if (!_banditTentPiece || !window.HousePieceGen?.buildGroupFromPiece) return null;
+    const group = window.HousePieceGen.buildGroupFromPiece(THREE, _banditTentPiece, -1, -1, {
+      matCanvas: new THREE.MeshLambertMaterial({ color: 0xc8b58b, map: banditCanvasTexture(), side: THREE.DoubleSide }),
+      matDoorOpening: new THREE.MeshBasicMaterial({ color: 0x1a1410, side: THREE.DoubleSide }),
+    });
+    group.userData.projectileCoverHeightTiles = 1.7;
+    group.userData.projectileCoverRadiusTiles = 1.4;
     group.userData.projectileCoverKind = 'bandit-tent';
     group.userData.banditTent = true;
-    group.add(canvas, doorway, pole);
     if (burning) group.add(buildBanditFireEffect(3.4));
     return group;
   }
@@ -291,6 +286,7 @@
         const y = gridTile ? deps.tileSurfaceYInArea(gridTile, zoneId) : deps.NORMAL_TOP;
         if (obj.type === 'tent') {
           const mesh = buildBanditTentMesh(!!obj.burning);
+          if (!mesh) continue;
           const center = banditTentCenterPx(obj);
           mesh.position.set(center.x / deps.TILE, y, center.y / deps.TILE);
           deps.markOutline(mesh);
