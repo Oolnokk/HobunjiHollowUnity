@@ -38,7 +38,7 @@ assert.match(pixelProbe, /rendererBuffer=/, 'Pixel Probe must distinguish the We
 assert.match(pixelProbe, /overlayExpected=/, 'Pixel Probe must report the expected DPR-sized 2D backing dimensions');
 
 for (const file of ['weather-fx', 'cloud-forest-fog', 'pixel-probe']) {
-  assert.match(index, new RegExp(`js/${file}\\.js\\?v=20260924renderrecovery2`), `${file}.js cache-bust must ship the repair`);
+  assert.match(index, new RegExp(`js/${file}\\.js\\?v=${file === 'cloud-forest-fog' ? '20260924renderrecovery2' : '20260924texture-restore1'}`), `${file}.js cache-bust must ship the repair`);
 }
 
 console.log('Render surface/context recovery preflight checks passed.');
