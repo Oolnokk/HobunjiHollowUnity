@@ -55,8 +55,8 @@ assert.match(gameSource,
   /_shoulderPetLayerFrontVisible && normalizedFaceZ < -SHOULDER_PET_LAYER_FACE_HYSTERESIS[\s\S]{0,350}!_shoulderPetLayerFrontVisible && normalizedFaceZ > SHOULDER_PET_LAYER_FACE_HYSTERESIS/,
   'the whole-sprite arbiter keeps the previous side until logical facing decisively crosses the portrait plane');
 assert.match(gameSource,
-  /const nextPet = active \? pet : null;[\s\S]{0,180}_petLayeringPet !== nextPet\) _shoulderPetLayerFrontVisible = null;/,
-  'layer-side hysteresis resets whenever the active shoulder attachment changes');
+  /const nextPet = active \? pet : null;[\s\S]{0,260}_petLayeringPet !== nextPet\)[\s\S]{0,160}_shoulderPetLayerFrontVisible = null;[\s\S]{0,120}_shoulderPetLayerDecision = null;/,
+  'layer-side hysteresis and diagnostics reset whenever the active shoulder attachment changes');
 assert.match(gameSource,
   /const playerDrawsOnTop = frontVisible[\s\S]{0,500}PLAYER_OVER_SHOULDER_PET_RENDER_ORDER : PLAYER_BACK_PLANE_RENDER_ORDER/,
   'the visible character and shoulder pet resolve to one clean whole-sprite draw order');
