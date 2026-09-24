@@ -177,7 +177,7 @@
   <script src="js/voorg-ass-registration.js?v=20260923baseanchor1"></script> <!-- Shared Voorg-Ass creature/renderer/herd registration used by the three scripts below. -->
   <script src="js/creature-genetics.js?v=20260923baseanchor1"></script>
   <!-- Creature genotype recolor + pattern-overlay compositing. -->
-  <script src="js/creature-genetics-render.js?v=20260923baseanchor2"></script>
+  <script src="js/creature-genetics-render.js?v=20260924overpassgap1"></script>
   <!-- Shared per-frame "where is this creature/character's head" cache — see
        its own file header for why. No dependencies of its own; must load
        before anything that calls window.CreatureHeadCache. -->
@@ -287,7 +287,7 @@
   <script src="js/bounty-board.js?v=20260831spearheadexisting1"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20260924perf1"></script>
+  <script src="js/combat/combat-config-loader.js?v=20260924npcweave1"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -483,7 +483,7 @@
        definition; used today by metal-craft-shop.js's authored
        verdigris-removal pattern service, meant to be reused later by a
        weaving/dye system. No deps injection, so load order doesn't matter. -->
-  <script src="js/pattern-authoring.js?v=20260921weaveaudit1"></script>
+  <script src="js/pattern-authoring.js?v=20260924overpassgap1"></script>
   <!-- Character-saved pattern library (window.PatternLibrary) — the
        player's own saved motifs plus a small unlockable premade catalog,
        reusable across whatever pattern-authoring.js sessions the game
@@ -2382,7 +2382,7 @@
 
   <script src="js/tool-icon-render.js?v=20260924replaycull1"></script>
   <script src="js/sprite-recolor.js?v=20260924perf5"></script>
-  <script src="js/tool-metal-recolor.js?v=20260924outline1"></script>
+  <script src="js/tool-metal-recolor.js?v=20260924overpassgap1"></script>
   <!-- Mount ride system (window.Mounts) — must load before game.js, which
        calls window.Mounts.init(...) during its own setup. -->
   <script src="js/mount-system.js?v=20260911mountleap1"></script>
@@ -2534,7 +2534,7 @@
        audio-system.js/water-system.js/foliage-generator.js (wraps their
        exported functions) and before game.js (whose boot calls into all
        three and reads window.DevTestingSwitchbox.flags directly). -->
-  <script src="js/dev-testing-switchbox.js?v=20260912a"></script>
+  <script src="js/dev-testing-switchbox.js?v=20260924dualpattern1"></script>
   <script src="js/random-outdoor-ruins.js?v=20260922ruinpuzzle1"></script>
   <!-- Optional world-only painterly postprocess. It patches the existing
        fullscreen world composite after renderer creation, persists only its

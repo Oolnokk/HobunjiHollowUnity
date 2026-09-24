@@ -69,8 +69,10 @@ assert(renderer.includes("applyColorPoolPaint(baseSource, genotype, 'base'"), 'b
 assert(renderer.includes('fullBaseRecolor ? null : mask'), 'ordinary base paint is clipped by the authored genetic base mask');
 assert(renderer.includes('applyColorPoolPaint(recolored, genotype, patternId, null'), 'body-pattern paint is confined by that transparent genetic overlay');
 assert(renderer.includes('colorPoolPaintSignature(genotype)'), 'paint participates in genotype cache signatures');
-assert(weaving.includes('applyPatternToTintedImage, // Shared motif compositor'), 'the real weaving compositor is public for Color Pools/NPC reuse');
-assert(weaving.includes('pattern?.motifUrl'), 'shared compositor also accepts repo-authored motif URLs');
+assert(weaving.includes('applyPatternStackToTintedImage, // Shared primary+overpass compositor'), 'the real two-slot weaving compositor is public for Color Pools/NPC reuse');
+assert(weaving.includes('pattern.motifDataUrl || pattern.motifUrl'), 'shared stack compositor also accepts repo-authored motif URLs');
+assert(renderer.includes('applyPatternStackToTintedImage'), 'Color Pools routes animal surface paint through the primary+overpass compositor');
+assert(renderer.includes('patterns.length > 1 ? { clearanceMultiplier: Math.max(3, Math.min(12'), 'animal paint diagnostics expose the actual authored/clamped knot-style overpass gap');
 assert(stableSource.includes('stableEntries, // Shared live Stable collection'), 'Stable progression exposes its existing live collection instead of a duplicate store');
 assert(stableSource.includes('saveStable,'), 'Color Pools persists through the Stable owner');
 assert(furniture.includes('CATALOG.stonePedestal'), 'stone pedestal has a loading-race fallback matching the authored asset');

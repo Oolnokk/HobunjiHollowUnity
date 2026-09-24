@@ -10,38 +10,46 @@ body{padding:14px}.shell{max-width:1100px;margin:0 auto}.head{display:flex;align
 .grid{display:grid;grid-template-columns:minmax(250px,330px) 1fr;gap:12px}.card{border:1px solid rgba(255,255,255,.12);background:#111b28;border-radius:14px;padding:12px}.card h2{font-size:12px;text-transform:uppercase;letter-spacing:.35px;color:#b9cbe0;margin:0 0 9px}
 button{border:1px solid rgba(106,167,255,.32);background:rgba(106,167,255,.13);color:#edf5ff;border-radius:9px;padding:8px 11px;font-weight:750;cursor:pointer}button.secondary{background:rgba(255,255,255,.055);border-color:rgba(255,255,255,.14)}button:disabled{opacity:.45;cursor:default}
 input,select{width:100%;background:#0d1621;border:1px solid rgba(255,255,255,.14);color:#edf5ff;border-radius:8px;padding:8px}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.row>*{min-width:0}
-.library{display:flex;flex-direction:column;gap:6px;max-height:440px;overflow:auto}.lib{display:flex;align-items:center;gap:7px;padding:8px;border:1px solid rgba(255,255,255,.1);border-radius:9px;background:rgba(255,255,255,.025)}.lib b{flex:1;font-size:12px}
+.library{display:flex;flex-direction:column;gap:6px;max-height:440px;overflow:auto}.lib{display:flex;align-items:center;gap:7px;padding:8px;border:1px solid rgba(255,255,255,.1);border-radius:9px;background:rgba(255,255,255,.025);flex-wrap:wrap}.lib b{flex:1 1 120px;font-size:12px}.lib button{padding:6px 8px;font-size:11px}
 .previewWrap{display:grid;place-items:center;min-height:330px;border:1px solid rgba(255,255,255,.1);border-radius:12px;background:#060a0d;background-image:linear-gradient(45deg,rgba(255,255,255,.04) 25%,transparent 25%),linear-gradient(-45deg,rgba(255,255,255,.04) 25%,transparent 25%),linear-gradient(45deg,transparent 75%,rgba(255,255,255,.04) 75%),linear-gradient(-45deg,transparent 75%,rgba(255,255,255,.04) 75%);background-size:18px 18px;background-position:0 0,0 9px,9px -9px,-9px 0}
-#preview{max-width:100%;height:auto;image-rendering:pixelated}.fields{display:grid;grid-template-columns:minmax(170px,1fr) minmax(150px,190px) 120px 120px;gap:8px;margin-bottom:10px}.fields label{font-size:11px;color:#9fb4cf}.fields input[type=color]{padding:2px;height:38px}
+#preview{max-width:100%;height:auto;image-rendering:pixelated}.fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:10px}.fields label{font-size:11px;color:#9fb4cf}.fields input[type=color]{padding:2px;height:38px}
 #status{margin-top:8px;white-space:pre-wrap}.path{font:11px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;color:#a9bed7;background:#0a1119;border-radius:8px;padding:8px;margin-top:8px}
 @media(max-width:760px){.grid{grid-template-columns:1fr}.fields{grid-template-columns:1fr 1fr}.fields label:first-child{grid-column:1/-1}.previewWrap{min-height:230px}}
 </style>
 <script src="../../js/scene-ready-poller.js"></script>
 <script src="../../js/color-fill.js?v=20260923colorfill7"></script>
 <script src="../../js/sprite-recolor.js"></script>
-<script src="../../js/clothing-weaving-system.js?v=20260924outline3"></script>
-<script src="../../js/pattern-authoring.js"></script>
+<script src="../../js/clothing-weaving-system.js?v=20260924overpassgap1"></script>
+<script src="../../js/tool-metal-recolor.js?v=20260924overpassgap1"></script>
+<script src="../../js/pattern-authoring.js?v=20260924overpassgap1"></script>
 <script src="../../js/repo-pattern-library.js"></script>
 </head>
 <body>
 <div class="shell">
   <div class="head">
-    <div><h1>Pattern Editor</h1><div class="muted">The same motif/frame/tiling editor used by weaving and verdigris, backed by repo-authored patterns.</div></div>
+    <div><h1>Pattern Editor</h1><div class="muted">The same motif/frame/tiling editor used by the shared pattern system. Dev preview can switch between the real Weaving and Verdigris renderers, including the second same-color overpass pattern.</div></div>
     <button id="newBtn">＋ New pattern</button>
   </div>
   <div class="grid">
     <section class="card">
       <h2>Repo library</h2>
-      <div class="muted" style="margin-bottom:8px">Loaded from <code>config/patterns/index.json</code>. Repo entries are read-only here; edit one, then export replacement files.</div>
+      <div class="muted" style="margin-bottom:8px">Loaded from <code>config/patterns/index.json</code>. Use any repo motif as the primary or as the overpass; each remains an independent reusable pattern.</div>
       <div id="library" class="library"><div class="muted">Loading…</div></div>
     </section>
     <section class="card">
       <h2>Current pattern</h2>
       <div class="fields">
         <label>Name<input id="patternName" value="untitled_pattern" maxlength="60"></label>
-        <label>Background texture
+        <label>Preview mode
+          <select id="previewMode">
+            <option value="weaving" selected>Weaving</option>
+            <option value="verdigris">Verdigris</option>
+          </select>
+        </label>
+        <label data-preview-mode="weaving">Background texture
           <select id="surfaceTexture">
             <option value="canvas.png" selected>canvas.png</option>
+            <option value="@rugged_poncho">Rugged poncho</option>
             <option value="boards.png">boards.png</option>
             <option value="carved_smooth.png">carved_smooth.png</option>
             <option value="log.png">log.png</option>
@@ -49,19 +57,40 @@ input,select{width:100%;background:#0d1621;border:1px solid rgba(255,255,255,.14
             <option value="wibbly_surface.png">wibbly_surface.png</option>
           </select>
         </label>
-        <label>Surface tint<input id="baseColor" type="color" value="#9b8b73"></label>
-        <label>Pattern ink<input id="inkColor" type="color" value="#315c8f"></label>
+        <label data-preview-mode="weaving">Surface tint<input id="baseColor" type="color" value="#9b8b73"></label>
+        <label data-preview-mode="weaving">Pattern ink<input id="inkColor" type="color" value="#315c8f"></label>
+        <label data-preview-mode="verdigris" hidden>Clean metal<input id="metalColor" type="color" value="#CD7F32"></label>
+        <label data-preview-mode="verdigris" hidden>Verdigris<input id="verdigrisColor" type="color" value="#57B38B"></label>
       </div>
+      <div id="previewModeHelp" class="muted" style="margin:-2px 0 8px">Weaving mode shade-fills a repository surface, then applies the shared pattern compositor exactly like woven clothing.</div>
       <div class="previewWrap"><canvas id="preview" width="384" height="240"></canvas></div>
       <div class="row" style="margin-top:10px">
-        <button id="editBtn">Open pattern editor</button>
-        <button id="pngBtn" class="secondary" disabled>Export motif PNG</button>
-        <button id="jsonBtn" class="secondary" disabled>Export pattern JSON</button>
-        <button id="bothBtn" class="secondary" disabled>Export both</button>
-        <button id="indexBtn" class="secondary" disabled>Copy index entry</button>
+        <button id="editBtn">Edit primary</button>
+        <button id="editOverpassBtn" class="secondary">＋ Edit overpass</button>
+        <button id="clearOverpassBtn" class="secondary" disabled>Clear overpass</button>
       </div>
-      <div id="paths" class="path">PNG → assets/patterns/motif_&lt;pattern name&gt;.png
-JSON → config/patterns/pattern_&lt;pattern name&gt;.json</div>
+      <div class="muted" style="margin-top:7px">Overpass behavior: before black outlines are generated, pattern 2 creates an invisible clearance around itself and masks pattern-1 pixels beneath it. Both patterns use the same ink color.</div>
+      <div class="row" style="margin-top:8px;align-items:center">
+        <label for="overpassClearance" style="min-width:145px">Overpass mask gap</label>
+        <input id="overpassClearance" type="range" min="3" max="12" step="0.25" value="3" style="flex:1;min-width:120px">
+        <span id="overpassClearanceValue" class="muted" style="min-width:90px;text-align:right">3.00× outline</span>
+      </div>
+      <div class="muted" style="margin-top:4px">Minimum 3× (the original behavior), maximum 12× (4× the original mask width). This value is saved on the overpass pattern and is also editable in the player Pattern Authoring modal.</div>
+      <div class="row" style="margin-top:10px">
+        <button id="pngBtn" class="secondary" disabled>Export primary PNG</button>
+        <button id="jsonBtn" class="secondary" disabled>Export primary JSON</button>
+        <button id="bothBtn" class="secondary" disabled>Export primary pair</button>
+        <button id="indexBtn" class="secondary" disabled>Copy primary index</button>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button id="overpassPngBtn" class="secondary" disabled>Export overpass PNG</button>
+        <button id="overpassJsonBtn" class="secondary" disabled>Export overpass JSON</button>
+        <button id="overpassBothBtn" class="secondary" disabled>Export overpass pair</button>
+        <button id="overpassIndexBtn" class="secondary" disabled>Copy overpass index</button>
+      </div>
+      <div id="paths" class="path">Primary PNG → assets/patterns/motif_&lt;pattern name&gt;.png
+Primary JSON → config/patterns/pattern_&lt;pattern name&gt;.json
+Overpass → not set</div>
       <div id="status" class="muted">Create a new pattern or load one from the repo.</div>
     </section>
   </div>
@@ -70,8 +99,36 @@ JSON → config/patterns/pattern_&lt;pattern name&gt;.json</div>
 (() => {
   'use strict';
   const $ = id => document.getElementById(id);
-  let draft = null;
-  let loadedRepoId = null;
+  let draft = null; // Primary pattern currently previewed/exported by the dev tool.
+  let loadedRepoId = null; // Repo provenance for the primary pattern while it remains unmodified.
+  let overpassDraft = null; // Optional second pattern; rendered above primary with the shared Celtic-knot clearance behavior.
+  let overpassLoadedRepoId = null; // Repo provenance for the dev-only overpass slot while it remains unmodified.
+  const debugState = { lastAction: 'init', lastError: null }; // Exposed below so mobile/tool debugging can inspect the most recent dual-pattern editor action.
+  const clampOverpassClearance = value => Math.max(3, Math.min(12, Number(value) || 3)); // Shared authored range: old fixed 3× gap through four times that width.
+  function syncOverpassClearanceControl(value = overpassDraft?.overpassClearanceMultiplier) {
+    const normalized = clampOverpassClearance(value); // Keeps repo loads, PatternAuthoring saves, and direct slider edits on one exact value.
+    $('overpassClearance').value = String(normalized);
+    $('overpassClearanceValue').textContent = normalized.toFixed(2) + '× outline';
+    return normalized;
+  }
+
+  const VERDIGRIS_PREVIEW_SPRITE = '../../assets/toolsprites/harpoon_fishingmace.png'; // Fishing mace is the existing visual reference for authored verdigris outline weight.
+  const RUGGED_PONCHO_PREVIEW = '@rugged_poncho'; // Special weaving background: routes through the real authored rugged_poncho layer renderer instead of the generic texture raster.
+  function previewPatterns(primary = draft, overpass = overpassDraft) {
+    const authoredOverpass = overpass ? { ...overpass, overpassClearanceMultiplier: syncOverpassClearanceControl(overpass.overpassClearanceMultiplier) } : null; // Both preview modes consume the exact same two-slot authored pair.
+    return [primary, authoredOverpass].filter(pattern => pattern?.motifDataUrl || pattern?.motifUrl || pattern?.customMotifId).slice(0, 2);
+  }
+  function syncPreviewModeControls() {
+    const mode = $('previewMode').value === 'verdigris' ? 'verdigris' : 'weaving'; // Single dev-only preview switch; it never mutates pattern data.
+    document.querySelectorAll('[data-preview-mode]').forEach(el => { el.hidden = el.dataset.previewMode !== mode; });
+    const ruggedPoncho = mode === 'weaving' && $('surfaceTexture').value === RUGGED_PONCHO_PREVIEW;
+    $('previewModeHelp').textContent = mode === 'verdigris'
+      ? 'Verdigris mode uses the real tool-metal renderer on the fishing mace. Motif ink marks stripped clean metal; the rest stays oxidized, with the real 2px verdigris outline behavior.'
+      : ruggedPoncho
+        ? 'Rugged poncho uses the production clothing-layer renderer and the actual authored poncho + wrap sprites, so pattern position/scale are evaluated on real overwear instead of a rectangular test surface.'
+        : 'Weaving mode shade-fills a repository surface, then applies the shared pattern compositor exactly like woven clothing.';
+    return mode;
+  }
 
   function slugName(value) {
     return String(value || 'untitled_pattern').trim().toLowerCase()
@@ -127,23 +184,55 @@ JSON → config/patterns/pattern_&lt;pattern name&gt;.json</div>
     return canvas;
   }
 
-  async function renderSimple(pattern) {
+  async function renderWeavingPreview(patterns) {
+    const background = $('surfaceTexture').value || 'canvas.png';
+    if (background === RUGGED_PONCHO_PREVIEW) {
+      const weaving = patterns.length ? { patterns } : null; // Legacy/global weaving shape intentionally applies the same dev pair to every authored rugged-poncho layer, matching forced NPC overpass behavior.
+      const { canvas } = await window.ClothingWeavingSystem.renderClothingLayers('rugged_poncho', {
+        primaryHex: $('baseColor').value,
+        secondaryHex: $('baseColor').value,
+        patternHex: $('inkColor').value,
+        weaving,
+        view: 'front',
+      });
+      if (canvas) return canvas;
+      throw new Error('Could not render rugged_poncho preview layers.');
+    }
     const base = await makeSurface();
-    if (!pattern?.motifDataUrl && !pattern?.motifUrl) return base;
-    return window.ClothingWeavingSystem.applyPatternToTintedImage(
+    if (!patterns.length) return base;
+    return window.ClothingWeavingSystem.applyPatternStackToTintedImage(
       base,
-      pattern,
+      patterns,
       $('inkColor').value,
-      'pattern-tool:' + $('surfaceTexture').value + ':' + $('baseColor').value + ':' + $('inkColor').value,
+      'pattern-tool:weaving:' + background + ':' + $('baseColor').value + ':' + $('inkColor').value,
       base.__hobunjiShadeSource || null,
       'pattern-editor-motif'
     );
   }
 
-  async function refreshPreview(pattern = draft) {
+  async function renderVerdigrisPreview(patterns) {
+    return window.ToolMetalRecolor.getRecoloredCanvas(VERDIGRIS_PREVIEW_SPRITE, {
+      targetHex: $('metalColor').value,
+      verdigrisHex: $('verdigrisColor').value,
+      oxidationAmount: 1,
+      authoredPatterns: patterns, // Uses the production dual-pattern verdigris path, including the authored slot-2 clearance multiplier.
+    });
+  }
+
+  async function renderSimple(primary = draft, overpass = overpassDraft) {
+    const patterns = previewPatterns(primary, overpass); // One pair feeds either real production renderer without changing saved pattern data.
+    return syncPreviewModeControls() === 'verdigris'
+      ? renderVerdigrisPreview(patterns)
+      : renderWeavingPreview(patterns);
+  }
+
+  async function refreshPreview(primary = draft, overpass = overpassDraft) {
     const canvas = $('preview'), ctx = canvas.getContext('2d');
-    const rendered = await renderSimple(pattern);
+    const mode = syncPreviewModeControls();
+    const rendered = await renderSimple(primary, overpass);
     canvas.width = rendered.width; canvas.height = rendered.height;
+    const compactSpritePreview = mode === 'verdigris' || (mode === 'weaving' && $('surfaceTexture').value === RUGGED_PONCHO_PREVIEW);
+    canvas.style.width = compactSpritePreview ? Math.min(520, Math.max(rendered.width, rendered.width * 4)) + 'px' : ''; // Pixel-upscale compact real sprites (tool/garment) while leaving the generic 384x240 weaving surface at authored CSS size.
     ctx.imageSmoothingEnabled = false;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(rendered, 0, 0);
@@ -164,10 +253,11 @@ JSON → config/patterns/pattern_&lt;pattern name&gt;.json</div>
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
-  function exportPayload() {
-    if (!draft?.motifDataUrl) return null;
-    const name = $('patternName').value.trim() || 'Untitled pattern';
-    const id = slugName(name);
+  function exportPayload(pattern = draft, slot = 'primary') {
+    if (!pattern?.motifDataUrl) return null;
+    const baseName = $('patternName').value.trim() || 'Untitled pattern';
+    const name = slot === 'overpass' ? baseName + ' overpass' : baseName; // Companion export stays a normal reusable repo pattern rather than inventing a paired-pattern file schema.
+    const id = slot === 'overpass' ? slugName(baseName) + '_overpass' : slugName(baseName);
     return {
       id, name,
       motifFile: 'motif_' + id + '.png',
@@ -177,27 +267,45 @@ JSON → config/patterns/pattern_&lt;pattern name&gt;.json</div>
         id,
         name,
         motifPng: 'assets/patterns/motif_' + id + '.png',
-        settings: cleanSettings(draft),
+        settings: cleanSettings(pattern),
       },
     };
   }
 
   function syncExportState() {
-    const ready = !!draft?.motifDataUrl;
-    for (const id of ['pngBtn','jsonBtn','bothBtn','indexBtn']) $(id).disabled = !ready;
-    if (!ready) return;
-    const p = exportPayload();
-    $('paths').textContent =
-      'PNG → assets/patterns/' + p.motifFile + '\n' +
-      'JSON → config/patterns/' + p.jsonFile + '\n' +
-      'Index → { "id": "' + p.id + '", "name": "' + p.name + '", "file": "config/patterns/' + p.jsonFile + '" }';
+    const primaryReady = !!draft?.motifDataUrl;
+    const overpassReady = !!overpassDraft?.motifDataUrl;
+    for (const id of ['pngBtn','jsonBtn','bothBtn','indexBtn']) $(id).disabled = !primaryReady;
+    for (const id of ['overpassPngBtn','overpassJsonBtn','overpassBothBtn','overpassIndexBtn']) $(id).disabled = !overpassReady;
+    $('clearOverpassBtn').disabled = !overpassDraft;
+    const primary = exportPayload(draft, 'primary');
+    const overpass = exportPayload(overpassDraft, 'overpass');
+    const lines = [];
+    if (primary) {
+      lines.push('Primary PNG → assets/patterns/' + primary.motifFile);
+      lines.push('Primary JSON → config/patterns/' + primary.jsonFile);
+      lines.push('Primary index → { "id": "' + primary.id + '", "name": "' + primary.name + '", "file": "config/patterns/' + primary.jsonFile + '" }');
+    } else {
+      lines.push('Primary → not set');
+    }
+    if (overpass) {
+      lines.push('Overpass PNG → assets/patterns/' + overpass.motifFile);
+      lines.push('Overpass JSON → config/patterns/' + overpass.jsonFile);
+      lines.push('Overpass index → { "id": "' + overpass.id + '", "name": "' + overpass.name + '", "file": "config/patterns/' + overpass.jsonFile + '" }');
+    } else {
+      lines.push('Overpass → not set');
+    }
+    $('paths').textContent = lines.join('\n');
   }
 
-  async function openEditor(initial = draft, libraryId = null) {
+  async function openEditor(slot = 'primary', initial = slot === 'overpass' ? overpassDraft : draft, libraryId = slot === 'overpass' ? overpassLoadedRepoId : loadedRepoId) {
     await window.RepoPatternLibrary.preloadEditable();
+    const isOverpass = slot === 'overpass'; // Used by preview/save callbacks so PatternAuthoring itself remains agnostic about layer order.
     window.PatternAuthoring.openEditor({
-      title: 'Repo pattern — ' + ($('patternName').value.trim() || 'Untitled'),
-      motifHint: 'Draw the reusable black motif. The preview stretches the selected repository texture to the full surface, shade-fills it like an in-game clothing layer, then applies the real weaving compositor.',
+      title: (isOverpass ? 'Overpass pattern — ' : 'Primary pattern — ') + ($('patternName').value.trim() || 'Untitled'),
+      motifHint: isOverpass
+        ? 'Draw pattern 2. In preview/runtime it uses the same ink color, clears pattern 1 beneath an authored 3×–12×-outline-width invisible halo, then receives the ordinary black outline with the combined pattern.'
+        : 'Draw pattern 1. If an overpass is present, pattern 2 will punch its knot-style clearance through this primary before black outlines are generated.',
       initialPattern: initial,
       initialPatternLibraryId: libraryId,
       library: {
@@ -205,29 +313,45 @@ JSON → config/patterns/pattern_&lt;pattern name&gt;.json</div>
         list: () => window.RepoPatternLibrary.listCached(),
         get: id => window.RepoPatternLibrary.getCachedEditableById(id),
       },
-      renderPreview: renderSimple,
+      renderPreview: patternData => isOverpass ? renderSimple(draft, patternData) : renderSimple(patternData, overpassDraft),
       onSave: async patternData => {
-        draft = { ...patternData };
-        loadedRepoId = null;
+        if (isOverpass) {
+          overpassDraft = { ...patternData, overpassClearanceMultiplier: syncOverpassClearanceControl(patternData.overpassClearanceMultiplier) };
+          overpassLoadedRepoId = null;
+          debugState.lastAction = 'saved overpass';
+        } else {
+          draft = { ...patternData };
+          loadedRepoId = null;
+          debugState.lastAction = 'saved primary';
+        }
         await refreshPreview();
         syncExportState();
-        $('status').textContent = 'Pattern ready to export. Commit the PNG + JSON and add the shown entry to config/patterns/index.json.';
+        $('status').textContent = isOverpass
+          ? 'Overpass ready. Its invisible authored clearance is visible only where it crosses the primary.'
+          : 'Primary ready to export. Commit the PNG + JSON and add the shown entry to config/patterns/index.json.';
         return true;
       },
     });
   }
 
-  async function loadRepoPattern(id) {
+  async function loadRepoPattern(id, slot = 'primary') {
     $('status').textContent = 'Loading repo pattern…';
     const entry = window.RepoPatternLibrary.listCached().find(item => item.id === id);
     const editable = await window.RepoPatternLibrary.getEditableById(id);
     if (!editable) throw new Error('Pattern not found: ' + id);
-    loadedRepoId = id;
-    draft = editable;
-    $('patternName').value = entry?.label || id;
+    if (slot === 'overpass') {
+      overpassLoadedRepoId = id;
+      overpassDraft = { ...editable, overpassClearanceMultiplier: syncOverpassClearanceControl(editable.overpassClearanceMultiplier) };
+      debugState.lastAction = 'loaded overpass ' + id;
+    } else {
+      loadedRepoId = id;
+      draft = editable;
+      $('patternName').value = entry?.label || id;
+      debugState.lastAction = 'loaded primary ' + id;
+    }
     await refreshPreview();
     syncExportState();
-    $('status').textContent = 'Loaded ' + (entry?.label || id) + ' from the repo. Open the editor to revise it.';
+    $('status').textContent = 'Loaded ' + (entry?.label || id) + ' as ' + (slot === 'overpass' ? 'the overpass.' : 'the primary.');
   }
 
   async function renderLibrary() {
@@ -243,21 +367,50 @@ JSON → config/patterns/pattern_&lt;pattern name&gt;.json</div>
       const row = document.createElement('div');
       row.className = 'lib';
       const name = document.createElement('b'); name.textContent = entry.label;
-      const button = document.createElement('button'); button.className = 'secondary'; button.textContent = 'Load';
-      button.onclick = () => loadRepoPattern(entry.id).catch(error => { $('status').textContent = error.message; });
-      row.append(name, button); holder.appendChild(row);
+      const primaryButton = document.createElement('button'); primaryButton.className = 'secondary'; primaryButton.textContent = 'Primary';
+      primaryButton.onclick = () => loadRepoPattern(entry.id, 'primary').catch(error => { debugState.lastError = error.message; $('status').textContent = error.message; });
+      const overpassButton = document.createElement('button'); overpassButton.className = 'secondary'; overpassButton.textContent = 'Overpass';
+      overpassButton.onclick = () => loadRepoPattern(entry.id, 'overpass').catch(error => { debugState.lastError = error.message; $('status').textContent = error.message; });
+      row.append(name, primaryButton, overpassButton); holder.appendChild(row);
     }
   }
 
   $('newBtn').onclick = () => {
-    draft = null; loadedRepoId = null; $('patternName').value = 'untitled_pattern';
-    refreshPreview(null); syncExportState(); openEditor(null, null);
+    draft = null; loadedRepoId = null; overpassDraft = null; overpassLoadedRepoId = null; $('patternName').value = 'untitled_pattern'; syncOverpassClearanceControl(3);
+    debugState.lastAction = 'new pattern pair';
+    refreshPreview(null, null); syncExportState(); openEditor('primary', null, null);
   };
-  $('editBtn').onclick = () => openEditor(draft, loadedRepoId);
-  $('surfaceTexture').onchange = () => refreshPreview();
+  $('editBtn').onclick = () => openEditor('primary', draft, loadedRepoId);
+  $('editOverpassBtn').onclick = () => openEditor('overpass', overpassDraft, overpassLoadedRepoId);
+  $('clearOverpassBtn').onclick = () => {
+    overpassDraft = null; overpassLoadedRepoId = null; syncOverpassClearanceControl(3); // Clears only dev slot 2 and resets the pair gap to the legacy/current minimum.
+    debugState.lastAction = 'cleared overpass';
+    refreshPreview(); syncExportState();
+    $('status').textContent = 'Overpass cleared; preview is primary-only.';
+  };
+  $('previewMode').onchange = () => {
+    debugState.lastAction = 'preview mode → ' + syncPreviewModeControls();
+    refreshPreview();
+  };
+  $('surfaceTexture').onchange = () => {
+    debugState.lastAction = 'weaving background → ' + $('surfaceTexture').value;
+    syncPreviewModeControls();
+    refreshPreview();
+  };
   $('baseColor').oninput = () => refreshPreview();
   $('inkColor').oninput = () => refreshPreview();
+  $('metalColor').oninput = () => refreshPreview();
+  $('verdigrisColor').oninput = () => refreshPreview();
   $('patternName').oninput = syncExportState;
+  $('overpassClearance').oninput = () => {
+    const value = syncOverpassClearanceControl($('overpassClearance').value); // Immediate dev preview of the same value the player can author in PatternAuthoring.
+    if (overpassDraft) {
+      overpassDraft = { ...overpassDraft, overpassClearanceMultiplier: value };
+      overpassLoadedRepoId = null; // A direct gap override makes slot 2 a modified dev copy rather than an untouched repo pattern.
+    }
+    debugState.lastAction = 'overpass clearance → ' + value.toFixed(2) + '×';
+    refreshPreview(); syncExportState();
+  };
 
   $('pngBtn').onclick = () => {
     const p = exportPayload(); if (!p) return;
@@ -273,14 +426,47 @@ JSON → config/patterns/pattern_&lt;pattern name&gt;.json</div>
     jsonDownload(p.json, p.jsonFile);
   };
   $('indexBtn').onclick = async () => {
-    const p = exportPayload(); if (!p) return;
+    const p = exportPayload(draft, 'primary'); if (!p) return;
     const entry = { id: p.id, name: p.name, file: 'config/patterns/' + p.jsonFile };
     await navigator.clipboard.writeText(JSON.stringify(entry, null, 2));
-    $('status').textContent = 'Copied index entry.';
+    $('status').textContent = 'Copied primary index entry.';
+  };
+  $('overpassPngBtn').onclick = () => {
+    const p = exportPayload(overpassDraft, 'overpass'); if (!p) return;
+    dataUrlDownload(overpassDraft.motifDataUrl, p.motifFile);
+  };
+  $('overpassJsonBtn').onclick = () => {
+    const p = exportPayload(overpassDraft, 'overpass'); if (!p) return;
+    jsonDownload(p.json, p.jsonFile);
+  };
+  $('overpassBothBtn').onclick = () => {
+    const p = exportPayload(overpassDraft, 'overpass'); if (!p) return;
+    dataUrlDownload(overpassDraft.motifDataUrl, p.motifFile);
+    jsonDownload(p.json, p.jsonFile);
+  };
+  $('overpassIndexBtn').onclick = async () => {
+    const p = exportPayload(overpassDraft, 'overpass'); if (!p) return;
+    const entry = { id: p.id, name: p.name, file: 'config/patterns/' + p.jsonFile };
+    await navigator.clipboard.writeText(JSON.stringify(entry, null, 2));
+    $('status').textContent = 'Copied overpass index entry.';
   };
 
-  refreshPreview(null);
-  renderLibrary().then(() => { $('status').textContent = 'Repo library ready.'; }).catch(error => { $('status').textContent = 'Repo library load failed: ' + error.message; });
+  window.__patternEditorDebug = () => ({ // Mobile-visible console substitute for checking the dev tool's two-slot state.
+    mostRecentChange: 'Dev Pattern Editor can preview/edit two same-color patterns; slot 2 punches a player/dev-authored 3×..12× black-outline-width invisible clearance through slot 1 before outlining.',
+    previewMode: $('previewMode').value,
+    weavingBackground: $('surfaceTexture').value,
+    overpassClearanceMultiplier: clampOverpassClearance($('overpassClearance').value),
+    primaryLoaded: !!draft,
+    overpassLoaded: !!overpassDraft,
+    primaryRepoId: loadedRepoId,
+    overpassRepoId: overpassLoadedRepoId,
+    ...debugState,
+  });
+
+  syncOverpassClearanceControl(3);
+  syncPreviewModeControls();
+  refreshPreview(null, null);
+  renderLibrary().then(() => { $('status').textContent = 'Repo library ready. Choose Primary or Overpass on any entry.'; }).catch(error => { debugState.lastError = error.message; $('status').textContent = 'Repo library load failed: ' + error.message; });
 })();
 </script>
 </body>

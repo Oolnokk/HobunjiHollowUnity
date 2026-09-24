@@ -7,6 +7,7 @@ const vm = require('node:vm');
 
 const source = fs.readFileSync('docs/js/npc-wardrobe.js', 'utf8');
 const giftingSource = fs.readFileSync('docs/js/npc-gifting.js', 'utf8');
+const clothingPatternPolicySource = fs.readFileSync('docs/config/npcs/clothing-patterns.js', 'utf8');
 const gameSource = fs.readFileSync('docs/game.js', 'utf8');
 assert.doesNotThrow(() => new vm.Script(source), 'NPC wardrobe runtime parses');
 assert.doesNotThrow(() => new vm.Script(giftingSource), 'NPC gifting runtime parses');
@@ -15,6 +16,11 @@ assert.doesNotMatch(gameSource, /NpcWardrobe\?\.rerollForSleep|_prevScheduleActi
 
 let saves = 0;
 const profileBuilds = [];
+const wovenRenderBatches = [];
+const giftPrimaryPattern = { motifDataUrl: 'data:image/png;base64,GIFT_PRIMARY==' };
+const giftOriginalOverpass = { motifDataUrl: 'data:image/png;base64,GIFT_OVERPASS==' };
+const forcedNpcOverpass = { motifDataUrl: 'data:image/png;base64,NPC_FORCED==' };
+const defaultNpcPrimary = { motifDataUrl: 'data:image/png;base64,DEFAULT_PRIMARY==' };
 const rec = {
   id: 'test_npc',
   name: 'Test NPC',
@@ -111,6 +117,34 @@ const context = {
 };
 context.window = context;
 vm.createContext(context);
+vm.runInContext(clothingPatternPolicySource, context, { filename: 'clothing-patterns.js' });
+const productionNpcPatternPolicy = context.HobunjiNpcClothingPatterns;
+context.HobunjiNpcClothingPatterns = {
+  ...productionNpcPatternPolicy,
+  npcs: {
+    ...productionNpcPatternPolicy.npcs,
+    test_npc: {
+      defaultClothing: {
+        overwear: {
+          cosmeticId: 'rugged_poncho',
+          slot: 'overwear',
+          colorC: { dyeId: 'dye:CLOTH:default_pattern' },
+          weaving: { patterns: [defaultNpcPrimary] },
+        },
+      },
+      forcedOverpassBySlot: {
+        overwear: { pattern: forcedNpcOverpass, roles: ['poncho'], fallbackColorC: { dyeId: 'dye:CLOTH:forced_fallback' } },
+      },
+    },
+  },
+};
+context.ClothingWeavingSystem = {
+  hasWovenPattern(item) { return !!item?.weaving; },
+  decorateAvatarDataWithWovenItems(avatarData, items) {
+    wovenRenderBatches.push(JSON.parse(JSON.stringify(items)));
+    return avatarData;
+  },
+};
 vm.runInContext(source, context, { filename: 'npc-wardrobe.js' });
 
 const wardrobe = context.NpcWardrobe;
@@ -124,12 +158,21 @@ wardrobe.init({
 });
 
 (async () => {
+  assert.equal(await wardrobe.syncWalkerOutfit(walker), true, 'authored default NPC pattern policy triggers an initial post-spawn rebake without requiring a wardrobe override');
+  const defaultPatternedOverwear = wovenRenderBatches.at(-1).find(item => item.slot === 'overwear');
+  assert.equal(defaultPatternedOverwear.weaving.patterns[0].motifDataUrl, defaultNpcPrimary.motifDataUrl, 'default NPC clothing can carry an ordinary authored first pattern');
+  assert.equal(defaultPatternedOverwear.weaving.forcedOverpassPattern.motifDataUrl, forcedNpcOverpass.motifDataUrl, 'default NPC clothing receives the forced overpass render policy');
+  assert.deepEqual(Array.from(defaultPatternedOverwear.weaving.forcedOverpassRoles), ['poncho'], 'default NPC overpass carries its authored poncho-only sprite-layer scope');
+  assert.equal(defaultPatternedOverwear.colorC.dyeId, 'dye:CLOTH:default_pattern', 'authored default pattern dye wins over the forced-overpass fallback');
+
   const verdict = wardrobe.offerClothing('test_npc', {
     uid: 'player_owned_original',
     cosmeticId: 'fine_poncho',
     slot: 'overwear',
     colorA: { dyeId: 'dye:CLOTH:new_primary' },
     colorB: { dyeId: 'dye:CLOTH:new_trim' },
+    colorC: { dyeId: 'dye:CLOTH:gift_pattern' },
+    weaving: { patterns: [giftPrimaryPattern, giftOriginalOverpass] },
   });
   assert.equal(verdict.accepted, true, 'compatible gift is accepted');
   assert.equal(verdict.worn, true, 'compatible non-disliked gift is tried on immediately');
@@ -139,6 +182,14 @@ wardrobe.init({
   assert.equal(rec.appliedDyes.CLOTH_B, 'dye:CLOTH:new_trim', 'overwear secondary dye writes to the renderer\'s CLOTH_B channel');
   assert.equal(rec.appliedDyes.OVERWEAR, undefined, 'wardrobe does not invent a non-rendered OVERWEAR dye channel');
   assert.equal(rec.appliedDyes.TORSO, 'dye:CLOTH:orphaned_torso', 'equipping overwear leaves unrelated authored dye channels intact');
+  const giftedRenderItem = wovenRenderBatches.at(-1).find(item => item.slot === 'overwear');
+  assert.equal(giftedRenderItem.weaving.patterns[0].motifDataUrl, giftPrimaryPattern.motifDataUrl, 'gifted woven clothing keeps its own first pattern while worn by an NPC');
+  assert.equal(giftedRenderItem.weaving.patterns[1].motifDataUrl, giftOriginalOverpass.motifDataUrl, 'raw gifted slot 2 remains present in the full worn item');
+  assert.equal(giftedRenderItem.weaving.forcedOverpassPattern.motifDataUrl, forcedNpcOverpass.motifDataUrl, 'NPC overpass is attached separately for render-time slot-2 replacement');
+  const wornAfterGift = wardrobe.serialize().outfits.test_npc.wornClothingBySlot.overwear;
+  assert.equal(wornAfterGift.weaving.patterns[0].motifDataUrl, giftPrimaryPattern.motifDataUrl, 'save data preserves gifted slot 1');
+  assert.equal(wornAfterGift.weaving.patterns[1].motifDataUrl, giftOriginalOverpass.motifDataUrl, 'save data preserves gifted original slot 2 for later take-back');
+  assert.equal(wornAfterGift.weaving.forcedOverpassPattern, undefined, 'forced NPC overpass is never destructively baked into the gifted garment');
   const immediateRefresh = profileBuilds.at(-1);
   assert.equal(immediateRefresh.appearance.speciesId, 'engh-sho', 'gift-time rerender preserves canonical species instead of stale walker profile species');
   assert.equal(immediateRefresh.appearance.gender, 'female', 'gift-time rerender preserves canonical gender');
@@ -161,7 +212,7 @@ wardrobe.init({
   assert.equal(recolorGift.worn, true, 'a recolored copy of the currently worn cosmetic is still tried on');
   assert.equal(rec.appliedDyes.CLOTH, 'dye:CLOTH:recolor_primary', 'recolored copy applies its own primary dye');
   contents = wardrobe.getWardrobeContents('test_npc');
-  const storedNewColor = contents.stored.find(item => item.colorA === 'dye:CLOTH:new_primary');
+  const storedNewColor = contents.stored.find(item => (item.colorA?.dyeId || item.colorA) === 'dye:CLOTH:new_primary');
   assert.equal(storedNewColor?.cosmeticId, 'fine_poncho', 'the previously worn same-cosmetic copy moves into storage with its old dye');
   assert.equal(await wardrobe.wearStoredItem('test_npc', storedNewColor.uid), true, 'manual Wear swaps back to the other color of the same cosmetic');
   assert.equal(rec.appliedDyes.CLOTH, 'dye:CLOTH:new_primary', 'manual Wear restores the stored copy\'s dye');
@@ -215,7 +266,7 @@ wardrobe.init({
     equippedCosmetics: ['restored_offscreen_tunic'],
     appliedDyes: { TORSO: 'dye:CLOTH:offscreen_restored' },
   };
-  assert.equal(snapshot.version, 2, 'wardrobe save format includes outfit overrides');
+  assert.equal(snapshot.version, 3, 'wardrobe save format includes full worn garment metadata');
   assert.deepEqual(snapshot.outfits.test_npc.equippedCosmetics, ['rugged_poncho'], 'corrected worn outfit is persisted');
   assert.equal(snapshot.outfits.test_npc.appliedDyes.CLOTH, 'dye:CLOTH:old_primary', 'corrected outfit dyes are persisted');
 
@@ -271,6 +322,12 @@ wardrobe.init({
   assert.equal(lateSpawnRec.appliedDyes.TORSO, 'dye:CLOTH:late_saved', 'late-spawn record receives the saved dyes');
 
   wardrobe.restore({
+    version: 2,
+    stored: { test_npc: [{ uid: 'v2_store', cosmeticId: 'plain_hat', slot: 'hat', colorA: 'dye:CLOTH:v2_hat' }] },
+    outfits: { test_npc: { equippedCosmetics: ['rugged_poncho'], appliedDyes: { CLOTH: 'dye:CLOTH:v2_primary' } } },
+  });
+  assert.equal(wardrobe.getWardrobeContents('test_npc').stored[0].uid, 'v2_store', 'v2 wardrobe saves remain readable after full worn-item persistence was added');
+  wardrobe.restore({
     test_npc: [{ uid: 'legacy_store', cosmeticId: 'plain_hat', slot: 'hat', colorA: 'dye:CLOTH:legacy_hat' }],
   });
   const legacyContents = wardrobe.getWardrobeContents('test_npc');
@@ -323,6 +380,15 @@ wardrobe.init({
   assert.match(gameSource, /await window\.NpcWardrobe\?\.syncWalkerOutfit\?\.\(walker\)/, 'walker construction resyncs after async build to close the restore race');
   assert.match(gameSource, /NpcWardrobe\?\.init\(\{[\s\S]*?getNpcRecordById:/, 'wardrobe receives canonical NPC-record lookup from game runtime');
 
+  for (const npcId of ['oddclaw_unumanuk', 'spearhead_unumanuk']) {
+    assert.equal(productionNpcPatternPolicy.npcs[npcId].defaultClothing.overwear.cosmeticId, 'rugged_poncho', npcId + ' policy targets authored default overwear');
+    assert.equal(productionNpcPatternPolicy.npcs[npcId].defaultClothing.overwear.colorA.dyeId, 'dye:CLOTH:pale_green_blue', npcId + ' default poncho cloth uses Pale Green-Blue');
+    assert.equal(productionNpcPatternPolicy.npcs[npcId].defaultClothing.overwear.colorB, undefined, npcId + ' leaves the rugged poncho shoulder-wrap dye untouched');
+    assert.equal(productionNpcPatternPolicy.npcs[npcId].forcedOverpassBySlot.overwear.pattern.repoPatternId, 'tankan_guard_emblem', npcId + ' uses the independent Tankan Guard Emblem');
+    assert.equal(productionNpcPatternPolicy.npcs[npcId].forcedOverpassBySlot.overwear.pattern.motifUrl, 'assets/patterns/motif_white_bronze_sun.png', npcId + ' reuses the White Bronze Sun raw motif without altering its repo pattern');
+    assert.equal(productionNpcPatternPolicy.npcs[npcId].forcedOverpassBySlot.overwear.pattern.frameY, -186, npcId + ' keeps the adjusted Tankan Guard Emblem placement');
+    assert.deepEqual(Array.from(productionNpcPatternPolicy.npcs[npcId].forcedOverpassBySlot.overwear.roles), ['poncho'], npcId + ' applies the emblem only to the poncho sprite role');
+  }
   assert.ok(saves >= 3, 'manual Store/Wear operations request world persistence');
   console.log('Immediate NPC wardrobe behavior passed.');
 })().catch(error => {

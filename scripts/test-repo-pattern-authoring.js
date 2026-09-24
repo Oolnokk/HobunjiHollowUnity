@@ -24,12 +24,27 @@ assert.equal(index.schema, 'hobunji_pattern_library.v1');
 assert(Array.isArray(index.patterns), 'repo pattern index exposes a patterns array');
 
 assert.match(tool, /PatternAuthoring\.openEditor/, 'standalone tool reuses the real shared PatternAuthoring modal');
-assert.match(tool, /ClothingWeavingSystem\.applyPatternToTintedImage/, 'simple canvas preview uses the actual weaving pattern compositor');
+assert.match(tool, /id="previewMode"/, 'dev Pattern Editor exposes a dedicated preview-mode switch');
+assert.match(tool, /option value="weaving" selected>Weaving/, 'Weaving is the default dev preview mode');
+assert.match(tool, /option value="verdigris">Verdigris/, 'dev preview can switch to the production verdigris path');
+assert.match(tool, /ClothingWeavingSystem\.applyPatternStackToTintedImage/, 'Weaving preview uses the actual shared two-pattern weaving compositor');
+assert.match(tool, /ToolMetalRecolor\.getRecoloredCanvas/, 'Verdigris preview uses the actual production tool-metal recolor compositor');
+assert.match(tool, /authoredPatterns: patterns/, 'Verdigris preview sends the exact primary plus optional overpass stack into the production renderer');
+assert.match(tool, /harpoon_fishingmace\.png/, 'Verdigris preview uses the fishing mace reference sprite whose outline behavior is already the visual baseline');
+assert.match(tool, /id="metalColor" type="color" value="#CD7F32"/, 'Verdigris preview exposes clean-metal color');
+assert.match(tool, /id="verdigrisColor" type="color" value="#57B38B"/, 'Verdigris preview exposes oxidation color');
+assert.match(tool, /id="editOverpassBtn"/, 'dev Pattern Editor exposes the optional overpass slot independently of player unlocks');
+assert.match(tool, /id="overpassClearance" type="range" min="3" max="12"/, 'dev tool exposes the overpass mask gap from the old 3× minimum through the new 12× maximum');
+assert.match(tool, /4× the original mask width/, 'dev tool explains that 12× is four times the previous fixed mask width');
 assert.match(tool, /'pattern-editor-motif'/, 'Pattern Editor labels its shared compositor pass separately from clothing and animal surface paint');
 assert.match(tool, /canvas\.width = 384; canvas\.height = 240/, 'tool preview keeps the dedicated 384x240 canvas surface');
 assert.match(tool, /id="surfaceTexture"/, 'tool preview exposes a background-texture selector');
 assert.match(tool, /value="canvas\.png" selected/, 'tool preview defaults to canvas.png');
 assert.match(tool, /boards\.png/, 'tool preview can switch to another repository surface texture');
+assert.match(tool, /option value="@rugged_poncho">Rugged poncho<\/option>/, 'tool preview offers the actual rugged poncho as a weaving background');
+assert.match(tool, /ClothingWeavingSystem\.renderClothingLayers\('rugged_poncho'/, 'rugged poncho background uses the production per-layer clothing renderer');
+assert.match(tool, /weaving = patterns\.length \? \{ patterns \} : null/, 'rugged poncho preview applies the exact primary/overpass pair across the real authored clothing layers');
+assert.match(tool, /primaryHex: \$\('baseColor'\)\.value[\s\S]*secondaryHex: \$\('baseColor'\)\.value[\s\S]*patternHex: \$\('inkColor'\)\.value/, 'rugged poncho background keeps the dev weaving tint and ink controls');
 assert.match(tool, /ctx\.drawImage\(source, 0, 0, canvas\.width, canvas\.height\)/, 'selected preview texture is stretched once to fill the complete 384x240 raster');
 assert.match(tool, /SpriteRecolor\.recolorImageData\(imageData\.data, tintHex, 'direct'\)/, 'preview shade-fills the stretched raster through the same direct clothing recolor path');
 assert.match(spriteRecolor, /function directShadeFillPixels\(data, targetRgb, predicateOrOptions = null\)/, 'SpriteRecolor retains its public direct shade-fill compatibility seam');
@@ -41,11 +56,11 @@ assert.match(weaving, /window\.ColorFill\?\.shadeFillPixels/, 'woven motif ink u
 assert.match(weaving, /sourceData: shadeSourceData,[\s\S]*?samplePredicate:[\s\S]*?applyPredicate:/, 'woven motifs measure source shading separately from their paint mask');
 assert.match(renderer, /window\.ColorFill\?\.shadeFillPixels/, 'animal base and genetic pattern recoloring use the same canonical ColorFill implementation');
 assert.doesNotMatch(tool, /ctx\.createPattern\(/, 'preview must not tile the background texture');
-assert.match(tool, /'pattern-tool:' \+ \$\('surfaceTexture'\)\.value/, 'preview cache identity includes the selected surface texture');
+assert.match(tool, /'pattern-tool:weaving:' \+ background/, 'Weaving preview cache identity includes its mode plus the selected weaving background');
 assert.match(tool, /'motif_' \+ id \+ '\.png'/, 'motif exports use motif_<pattern name>.png');
 assert.match(tool, /'pattern_' \+ id \+ '\.json'/, 'settings export has a stable sibling JSON filename');
 assert.match(tool, /motifPng: 'assets\/patterns\/motif_' \+ id \+ '\.png'/, 'settings JSON references the exported repo PNG instead of embedding base64');
-assert.match(tool, /settings: cleanSettings\(draft\)/, 'settings JSON strips embedded motif storage fields');
+assert.match(tool, /settings: cleanSettings\(pattern\)/, 'primary and overpass settings JSON strip embedded motif storage fields through the same exporter');
 assert.match(tool, /RepoPatternLibrary\.preloadEditable/, 'tool library is populated from committed repo patterns');
 assert.match(hub, /data-target="pattern-editor"/, 'Dev Tools hub exposes Pattern Editor');
 assert.match(hub, /pattern-editor\/index\.html/, 'Dev Tools hub embeds the standalone Pattern Editor');
@@ -59,7 +74,7 @@ assert.match(repoLibrary, /getEditableById/, 'repo PNGs can be converted back to
 assert.match(renderer, /DOCS_BASE_URL/, 'canonical creature renderer resolves assets correctly from nested tools');
 assert.match(renderer, /docsUrl\('config\/creature-base-masks\.json'\)/, 'canonical base masks use the same docs-root resolution');
 assert.match(renderer, /RepoPatternLibrary\?\.getById\?\.\(repoPatternId\)/, 'animal paint resolves repoPatternId lazily at runtime');
-assert.match(renderer, /paint\.repoPatternId \|\| paint\.pattern\?\.repoPatternId/, 'repo pattern identity participates in paint resolution/signatures');
+assert.match(renderer, /pattern\.repoPatternId \|\| \(patterns\.length === 0 \? paint\.repoPatternId : null\)/, 'repo pattern identity participates in each animal paint slot resolution');
 assert.match(renderer, /paint\.patternScale/, 'animal surface paint scale participates in the creature render signature');
 assert.match(renderer, /usageScaleMultiplier: animalPatternScale/, 'animal renderer applies its normalized pattern scale as a transient usage multiplier');
 assert.match(renderer, /Math\.max\(7, Math\.min\(14, Number\(paint\.patternScale\) \|\| 7\)\)/, 'animal pattern usage scale is clamped to the purpose-specific 7×–14× range');
@@ -67,7 +82,8 @@ assert.match(weaving, /const ANIMAL_PATTERN_OUTLINE_WIDTH = 6;[\s\S]*debugLabel 
 assert.match(weaving, /const outlineDiskOffsetCache = new Map\(\)/, 'large pattern outlines reuse cached disk neighborhoods');
 assert.match(weaving, /for \(const boundaryPixel of boundaryPixels\)/, 'outline dilation expands from motif boundaries instead of searching around every garment pixel');
 assert.match(weaving, /patternDef\?\.usageScaleMultiplier/, 'shared pattern compositor supports a purpose-specific normalized scale multiplier after authored pattern scale resolution');
-assert.match(weaving, /scaledOutlineWidth\(PATTERN_OUTLINE_WIDTH, pattern, debugLabel\)/, 'the final outline pass receives the compositor label so animal thickness is selected by render purpose rather than inferred from scale');
+assert.match(weaving, /scaledOutlineWidth\(PATTERN_OUTLINE_WIDTH, active\[0\]\?\.pattern, debugLabel\)/, 'the final stack outline pass receives the compositor label so animal thickness is selected by render purpose rather than inferred from scale');
+assert.match(weaving, /scaledOutlineWidth\(PATTERN_OUTLINE_WIDTH, active\[1\]\?\.pattern, debugLabel\)/, 'the optional overpass clearance measures the same render-purpose outline width before multiplying it by three');
 assert.match(weaving, /isAbsoluteOrBlob = \/\^\(\?:https\?:\|blob:\|data:\|\\\/\\\/\)\/i/, 'absolute/CDN repo motif URLs bypass game-relative loadImg normalization');
 assert.match(renderer, /getLastPatternPaintDebug/, 'creature compositor exposes per-region pattern paint diagnostics to Character Studio');
 assert.match(renderer, /compositor returned the unpatterned source/, 'creature compositor reports a visibly unapplied pattern instead of failing silently');
@@ -103,18 +119,18 @@ assert.match(devExporter, /MotifStore\.loadMotif/, 'Settings exporter can resolv
 
 const sourceThicknessIndex = weaving.indexOf('const adjustedSrcMask = adjustMaskThickness(srcMask, sourceAllowedMask'); // Signed contour work belongs in motif-source pixels, before scaling/stamping.
 const meshScaleIndex = weaving.indexOf('ctx.scale(meshScale, meshScale)', sourceThicknessIndex);
-const repeatMaskIndex = weaving.indexOf('const patternMask = new Uint8Array(pixelCount)'); // Repeated motif instances still flatten into one final sampled mask.
-const noSecondThicknessIndex = weaving.indexOf('const adjustedMask = patternMask;', repeatMaskIndex); // Final output uses the already-adjusted source silhouette without another coarse raster-space pass.
-const sharedOutlineIndex = weaving.indexOf('buildPatternOutlineMask(adjustedMask', noSecondThicknessIndex);
+const repeatMaskIndex = weaving.indexOf('const sampledMasks = []'); // Repeated motif instances still flatten into one final sampled mask per primary/overpass slot.
+const stackCombineIndex = weaving.indexOf('const combinedMask = new Uint8Array(sampledMasks[0])', repeatMaskIndex); // Slot masks are combined only after their source-pixel contour work and garment-cell sampling are complete.
+const sharedOutlineIndex = weaving.indexOf('buildPatternOutlineMask(combinedMask', stackCombineIndex); // The visible black outline is generated after the overpass has punched and recombined the two paint masks.
 assert(sourceThicknessIndex >= 0 && meshScaleIndex > sourceThicknessIndex, 'woven motif thinning/thickening must happen before whole-pattern mesh scaling');
-assert(repeatMaskIndex > meshScaleIndex && noSecondThicknessIndex > repeatMaskIndex && sharedOutlineIndex > noSecondThicknessIndex, 'repeated instances still union before the shared final outline, with no second output-pixel thickness pass');
+assert(repeatMaskIndex > meshScaleIndex && stackCombineIndex > repeatMaskIndex && sharedOutlineIndex > stackCombineIndex, 'repeated instances union into the two-slot stack before the shared final outline, with no second output-pixel thickness pass');
 
 
 assert.doesNotMatch(weaving, /\berodeMask\b/, 'weaving module must not retain stale erodeMask references after the signed contour refactor');
 assert.match(weaving, /__test: Object\.freeze\([^]*buildMotifClusterSeparatorMask[^]*adjustMaskThickness[^]*buildPatternOutlineMask/, 'weaving test exports expose motif-island topology, signed contour, and centered outline helpers');
 assert.match(weaving, /function buildMotifClusterSeparatorMask\(mask, width, height\)/, 'weaving derives a watershed between disconnected opaque islands in one source motif');
 assert.match(weaving, /canvas\.__motifClusterSeparatorCanvas = clusterSeparatorSrc \? clusterSeparatorCanvas : null/, 'each rendered motif mesh carries its transformed per-instance no-fuse watershed');
-assert.match(weaving, /clusterSeparatorMask && paddedSeparatorData\[mi \+ 3\] > 16/, 'garment-cell sampling applies the same offset to motif ink and its island separator');
+assert.match(weaving, /separator && paddedSeparatorData\[mi \+ 3\] > 16/, 'garment-cell sampling applies the same offset to each motif slot and its island separator');
 assert.match(weaving, /!clusterSeparatorMask\?\.\[p\] && offset\.d2 <= outward2/, 'outward outline growth skips intra-motif island separator pixels while expanding from motif boundaries');
 assert.match(weaving, /!allowedMask\[p\] \|\| clusterSeparatorMask\?\.\[p\]/, 'motif thickening cannot bridge two separate ink islands inside one motif instance');
 assert.match(weaving, /const adjustedSrcMask = adjustMaskThickness\(srcMask, sourceAllowedMask, srcSize, srcSize, sourceSignedThickness, sourceClusterSeparatorMask\)/, 'weaving measures signed contour thickness in rotated source-motif pixels');
@@ -128,6 +144,9 @@ assert.match(authoring, /Motif thinning \/ thickening/, 'Pattern Authoring label
 assert.match(authoring, /data-field="motifThinPx" min="-12" max="12"/, 'thinning/thickening slider is symmetric around the default zero midpoint');
 assert.match(authoring, /Thin \$\{amount\} motif px/, 'signed contour readout explicitly reports source-motif pixels');
 assert.match(authoring, /before Pattern scale, frame scale, or mesh scale/, 'Pattern Authoring explains that contour units are measured before every visual scale');
+assert.match(authoring, /data-field="overpassClearanceMultiplier" min="\$\{OVERPASS_CLEARANCE_MIN\}" max="\$\{OVERPASS_CLEARANCE_MAX\}"/, 'player Pattern Authoring exposes the same authored overpass-gap range');
+assert.match(authoring, /OVERPASS_CLEARANCE_MIN = 3/, 'player-authored overpass gap keeps 3× as its minimum/default');
+assert.match(authoring, /OVERPASS_CLEARANCE_MAX = 12/, 'player-authored overpass gap tops out at four times the old mask width');
 for (const [source, label] of [[weaving, 'weaving'], [metalRecolor, 'metal/verdigris']]) {
   assert.match(source, /function adjustMaskThickness\(mask, allowedMask, width, height, signedPx/, label + ' supports signed motif contour adjustment');
   assert.match(source, /if \(amount > 0\)/, label + ' retains inward erosion for positive values');
@@ -137,7 +156,7 @@ for (const [source, label] of [[weaving, 'weaving'], [metalRecolor, 'metal/verdi
 assert.match(weaving, /const inwardRadius = Math\.floor\(totalRadius \/ 2\)/, 'woven motif outline moves half of its former outward width inward');
 assert.match(weaving, /const outwardRadius = totalRadius - inwardRadius/, 'woven motif outline keeps the other half outside');
 assert.doesNotMatch(weaving, /if \(!garmentMask\[p\] \|\| patternMask\[p\]\) continue;/, 'woven outline no longer excludes all motif pixels from the outline pass');
-assert.match(metalRecolor, /!!authoredPattern, \/\/ Authored motif outlines are centered/, 'authored metal patterns use centered outlines without changing procedural verdigris');
+assert.match(metalRecolor, /activeAuthored\.length > 0, \/\/ Authored motif stacks use the same centered black border/, 'authored metal pattern stacks use centered outlines without changing procedural verdigris');
 
 function assertMainMotifScaleSemantics(source, label) {
   const genericDraw = source.includes('function drawCell(targetCtx, sourceImage)');

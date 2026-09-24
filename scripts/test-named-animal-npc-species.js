@@ -18,8 +18,10 @@ const creatureRenderer = fs.readFileSync('docs/js/creature-genetics-render.js', 
 const overrides = JSON.parse(fs.readFileSync('docs/config/npcs/species-overrides.json', 'utf8'));
 const game = fs.readFileSync('docs/game.js', 'utf8');
 
-assert.match(creatureRenderer, /compositor\(clippedSource, pattern, dyeHex, cachePrefix, null, 'animal-surface-pattern'\)/,
-  'animal Color Pools labels its shared compositor pass separately from clothing weaving');
+assert.match(creatureRenderer, /compositor\(clippedSource, patterns, dyeHex, cachePrefix, null, 'animal-surface-pattern'\)/,
+  'animal Color Pools labels the shared two-pattern compositor pass separately from clothing weaving');
+assert.match(creatureRenderer, /patterns\.length > 1 \? \{ clearanceMultiplier: Math\.max\(3, Math\.min\(12/,
+  'animal surface-paint diagnostics expose the authored 3×..12× overpass path');
 
 assert.equal(overrides.npcs.banubu.species, 'grehlr', 'Banubu must be authored as Grehlr');
 assert.equal(overrides.npcs.banubu.kind, 'animal', 'Banubu must use the animal NPC route');
@@ -109,7 +111,7 @@ assert.match(nativeAppearance, /await renderer\.composeFrame\(kind, 'idle', geno
 assert.doesNotMatch(nativeAppearance.slice(nativeAppearance.indexOf('async function renderStudioAnimal'), nativeAppearance.indexOf('function installPreviewHooks')), /composeEditorAnimal/, 'authoritative Character Studio animal preview must never fall back to the approximate editor-only compositor');
 assert.match(nativeAppearance, /canonical-failed/, 'renderer failure must surface as a canonical preview failure rather than silently changing tint algorithms');
 assert.ok(studio.indexOf('scratchbones-config.js') < studio.indexOf('repo-picker.js'), 'Character Studio must load shared tint configuration before booting its animal runtime modules');
-assert.match(studio, /repo-picker\.js\?v=20260923colorfill7/, 'Character Studio must cache-bust the canonical animal runtime loader after shared color-fill changes');
+assert.match(studio, /repo-picker\.js\?v=20260924overpassgap1/, 'Character Studio must cache-bust the canonical animal runtime loader after dual-pattern compositor changes');
 assert.ok(repoPicker.indexOf("color-fill.js") < repoPicker.indexOf("sprite-recolor.js"), 'Character Studio loads ColorFill before dependent sprite/animal renderers');
 
 assert.match(feyExtras, /class=\"animalNpcCustomHex\"/, 'native extension must retain independent #RRGGBB fields for animal layers');
