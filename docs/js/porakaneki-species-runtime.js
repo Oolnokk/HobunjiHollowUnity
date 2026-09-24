@@ -3,7 +3,7 @@
 // Porakaneki deliberately combines existing character systems instead of
 // duplicating their authored data:
 //   - Kenkari male body/wardrobe sprites and attachment rig.
-//   - Mao-ao body-color ranges.
+//   - Mashtzarr body-color ranges.
 //   - Pachyderm hands and feline feet as explicit cross-species extremity donors.
 //   - Slagothim/Tletingan male hair cosmetics.
 //   - Porakaneki-specific head, rear-head, untinted-head, and torso portrait sprites.
@@ -12,7 +12,7 @@
 
   const SPECIES_ID = 'porakaneki'; // Used as the runtime/config key for every Porakaneki-specific override below.
   const BODY_SPECIES_ID = 'kenkari'; // Used whenever Porakaneki resolves inherited body, wardrobe, or rig data.
-  const COLOR_SPECIES_ID = 'mao-ao'; // Used to inherit the full live Mao-ao body-color palette independently of the Kenkari body donor.
+  const COLOR_SPECIES_ID = 'mashtzarr'; // Used to inherit the full live Mashtzarr body-color palette independently of the Kenkari body donor.
   const HAND_DONOR_SPECIES_ID = 'mashtzarr'; // Used to resolve the canonical pachyderm hand-model family without duplicating its GLB path.
   const FOOT_DONOR_SPECIES_ID = 'engh-sho'; // Used to clone the canonical feline procedural-foot config without duplicating its GLB/material data.
   const HAIR_SPECIES_ID = 'tletingan'; // Documents the cosmetic donor used by config/species/porakaneki.json for male hairstyles.
@@ -49,6 +49,28 @@
 
   const normalizeSpecies = value => String(value || '').trim().toLowerCase().replace(/[’']/g, '').replace(/_/g, '-');
   const clone = value => value == null ? value : JSON.parse(JSON.stringify(value));
+
+  function bodyColorsForSeed(seed, gender = 'male') {
+    const bodyPalettes = window.SCRATCHBONES_CONFIG?.game?.appearanceEditor?.bodyPalettes || window.HOBUNJI_COLOR_CONFIG?.bodyPalettes || {}; // Supplies the finite authored player/NPC swatches instead of creating unbounded continuous tint-cache keys.
+    const palette = bodyPalettes?.[COLOR_SPECIES_ID]?.[gender] || []; // Mashtzarr donor swatches eligible for this Porakaneki gender.
+    if (!palette.length) return null;
+    let hash = 2166136261 >>> 0; // Stable FNV-1a state used only to choose one authored swatch for this resident identity.
+    for (const codePoint of String(seed || SPECIES_ID)) { // codePoint feeds the deterministic palette index without allocating an RNG object.
+      hash ^= codePoint.charCodeAt(0);
+      hash = Math.imul(hash, 16777619) >>> 0;
+    }
+    const swatch = palette[hash % palette.length] || palette[0]; // Exact authored donor color reused across residents, keeping portrait tint-cache cardinality bounded by palette size.
+    const colorA = { h: Number(swatch.h) || 0, s: Number(swatch.s) || 0, v: Number(swatch.v) || 0 }; // Primary body tint reused for slots A/B to match the character-creation palette contract.
+    return {
+      A: { ...colorA },
+      B: { ...colorA },
+      C: {
+        h: colorA.h,
+        s: Math.max(-1, Math.min(1, colorA.s + 0.05)),
+        v: Math.max(-1, Math.min(1, colorA.v + 0.18)),
+      },
+    };
+  }
 
   const status = { // Updated by installers and surfaced through HobunjiPorakanekiSpecies.debugSnapshot() for mobile debugging.
     speciesId: SPECIES_ID,
@@ -173,13 +195,13 @@
     return fighters.find(fighter => normalizeSpecies(fighter?.speciesId) === normalizedSpecies && String(fighter?.gender || '').toLowerCase() === gender) || null;
   }
 
-  function inheritMaoAoBodyColors(cosmetics) {
+  function inheritBodyColors(cosmetics) {
     const ranges = cosmetics?.bodyColorRangesByGender; // Per-fighter body-color map consumed by randomPortraitProfileSeeded().
     if (!ranges) return 0;
     let inherited = 0;
     for (const gender of GENDERS) {
-      const target = fighterFor(SPECIES_ID, gender); // Porakaneki receives the matching live Mao-ao body-color range object.
-      const source = fighterFor(COLOR_SPECIES_ID, gender); // Mao-ao remains the canonical palette source while Kenkari still supplies body geometry.
+      const target = fighterFor(SPECIES_ID, gender); // Porakaneki receives the matching live donor body-color range object.
+      const source = fighterFor(COLOR_SPECIES_ID, gender); // Mashtzarr is the canonical color source while Kenkari still supplies body geometry.
       if (!target || !source || !ranges[source.id]) continue;
       ranges[target.id] = ranges[source.id];
       inherited += 1;
@@ -294,7 +316,7 @@
     }
     const wrapped = async function loadPortraitCosmeticsWithPorakanekiOverrides() {
       const cosmetics = await baseLoad.apply(this, arguments);
-      inheritMaoAoBodyColors(cosmetics);
+      inheritBodyColors(cosmetics);
       applyCosmeticRestrictions(cosmetics);
       return cosmetics;
     };
@@ -349,7 +371,8 @@
     expectedAssets: EXPECTED_ASSETS,
     install,
     installBehindHeadSprite,
-    inheritMaoAoBodyColors,
+    inheritBodyColors,
+    bodyColorsForSeed,
     applyCosmeticRestrictions,
     restrictPorakanekiBanditConfig,
     installBanditWardrobeGuard,

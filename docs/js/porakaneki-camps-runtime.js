@@ -938,6 +938,7 @@
       }, 'grunt', 0, hunter.x * combatDeps.TILE, hunter.y * combatDeps.TILE, {
         zoneId: camp.zoneId,
         nameOverride: 'Porakaneki Hunter',
+        bodyColorsOverride: window.HobunjiPorakanekiSpecies?.bodyColorsForSeed?.(hunter.id, 'male') || null,
         defOverride: {
           label: 'Porakaneki Hunter',
           weaponKey: weapon.weaponKey,

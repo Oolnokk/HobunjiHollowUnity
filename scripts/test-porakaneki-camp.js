@@ -20,6 +20,8 @@ const assetIndex = JSON.parse(fs.readFileSync('docs/assets/index.json', 'utf8'))
 const banditRuntimeSource = fs.readFileSync('docs/js/bandit-camps.js', 'utf8'); // Bandit camps must render the authored piece instead of procedural cone geometry.
 const housePieceGenSource = fs.readFileSync('docs/js/HousePieceGen.js', 'utf8'); // Guards semantic door-opening depth bias shared by authored tents.
 const gameIndexSource = fs.readFileSync('docs/index.html', 'utf8'); // Guards cache-busted runtime loading of the shared HousePiece renderer.
+const combatBanditSource = fs.readFileSync('docs/js/combat/combat-bandit.js', 'utf8'); // Guards the shared bandit-like avatar builder's explicit body-color override handoff.
+const devSpawnerSource = fs.readFileSync('docs/js/dev-spawner.js', 'utf8'); // Guards Testing Arena Porakaneki selecting from the same finite authored body swatches.
 
 const ZONES = [
   'map_northern_cliffs',
@@ -135,7 +137,13 @@ assert(!banditRuntimeSource.includes('buildBanditTentCanvasGeometry'), 'old proc
 assert.deepEqual(cfg.equipment.weaponShapes, ['fishingspear', 'hatchet', 'dagger'], 'Porakaneki must use the true dagger shape, never daggerSword');
 assert(localeIndex.locales.some(entry => entry.id === 'locale_porakaneki_camp_small'));
 assert(localeIndex.locales.some(entry => entry.id === 'locale_porakaneki_camp_chief' && entry.singleton === true));
-assert(houseLoader.includes('porakaneki-camps-runtime.js?v=20260924huntcamp1'));
+assert(houseLoader.includes('porakaneki-camps-runtime.js?v=20260924poracolor2'));
+assert(runtimeSource.includes("bodyColorsOverride: window.HobunjiPorakanekiSpecies?.bodyColorsForSeed?.(hunter.id, 'male') || null"), 'camp residents must choose an authored Mashtzarr swatch only when materializing their avatar');
+const bodyColorWriteIndex = combatBanditSource.indexOf('roster.appearance.bodyColors = opts.bodyColorsOverride'); // Used with avatar-build ordering below to ensure explicit finite colors reach the portrait before raster work begins.
+const banditAvatarBuildIndex = combatBanditSource.indexOf('const avatarRef = await buildBanditAvatar(roster);'); // Must occur after the explicit body-color assignment.
+assert(bodyColorWriteIndex >= 0 && banditAvatarBuildIndex > bodyColorWriteIndex, 'BanditCombat must apply explicit body colors before portrait generation');
+assert(!combatBanditSource.includes('opts.appearanceSeed'), 'Porakaneki color variation must not randomize the whole portrait profile or create continuous body tint-cache keys');
+assert(devSpawnerSource.includes('bodyColorsOverride: window.HobunjiPorakanekiSpecies?.bodyColorsForSeed?.('), 'Testing Arena Porakaneki must use the same bounded authored swatch helper');
 assert(socialSource.includes('canGiftToday'), 'chief gifting must retain the ordinary once-per-day NPC gate');
 assert(socialSource.includes('window.NpcRapport'), 'chief must retain the ordinary Rapport bridge');
 assert(runtimeSource.includes("activity: 'break'"), 'chief daytime behavior must remain free-time planner driven');

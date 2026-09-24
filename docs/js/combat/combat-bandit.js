@@ -1933,6 +1933,9 @@
 
   async function makeBanditEntity(cfg, rank, tier, x, y, opts = {}) {
     const roster = opts.rosterOverride || await rollBanditRoster(cfg, rank, opts.nameOverride);
+    if (opts.bodyColorsOverride && roster?.appearance) {
+      roster.appearance.bodyColors = opts.bodyColorsOverride; // Caller-owned explicit body tint applied before portrait generation without changing any other seeded appearance choices.
+    }
     const avatarRef = await buildBanditAvatar(roster);
     if (roster?.appearance?.speciesId === 'ghoul') makeGhoulAvatarMineLit(avatarRef); // Ghoul PNGs obey the cave's actual light level instead of glowing at full unlit brightness.
     if (!avatarRef) {
