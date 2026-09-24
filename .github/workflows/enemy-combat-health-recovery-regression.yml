@@ -3,6 +3,7 @@ name: Enemy Combat Health Recovery Regression
 on:
   pull_request:
     paths:
+      - 'docs/js/combat/resource-system.js'
       - 'docs/js/combat/enemy-combat-health-recovery.js'
       - 'docs/js/combat/combat-config-loader.js'
       - 'scripts/test-enemy-combat-health-recovery.js'
