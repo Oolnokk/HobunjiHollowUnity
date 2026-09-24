@@ -769,7 +769,7 @@ window.getBodyTintedCanvas = getBodyTintedCanvas;
 
 // ── Canvas helpers ─────────────────────────────────────────
 
-function drawPortraitLayer(ctx, img, xform, tint, sourceKey) {
+function drawPortraitLayer(ctx, img, xform, tint, sourceKey, imageForTint = _imageForTint) {
   const { ax, ay, sx, sy } = xform;
   const h  = PORTRAIT_L * sy;
   const w  = (img.naturalWidth / img.naturalHeight) * PORTRAIT_L * Math.abs(sx);
@@ -781,7 +781,7 @@ function drawPortraitLayer(ctx, img, xform, tint, sourceKey) {
   // pixel content via _getFlippedImage, not a canvas transform -- see its
   // comment for why a translate+scale here breaks as soon as a caller further
   // down (e.g. the mesh-warp path) calls ctx.setTransform.
-  let drawImg = _imageForTint(img, sourceKey, tint);
+  let drawImg = imageForTint(img, sourceKey, tint);
   if (sx < 0) drawImg = _getFlippedImage(drawImg);
   ctx.filter = 'none';
   ctx.drawImage(drawImg, cx - w / 2, cy - h / 2, w, h);
@@ -863,7 +863,7 @@ function _buildNeutralGrid(cols, rows) {
  * in normalised body-layer space). Applied additively on top of the breathing animation
  * (or on top of the neutral grid when no breathing composer is present).
  */
-function drawPortraitLayerWarped(ctx, img, xform, tint, breathingComposer, speciesId, gender, nowMs, phaseOffsetMs, seatId, staticDeform, sourceKey) {
+function drawPortraitLayerWarped(ctx, img, xform, tint, breathingComposer, speciesId, gender, nowMs, phaseOffsetMs, seatId, staticDeform, sourceKey, imageForTint = _imageForTint) {
   const { ax, ay, sx, sy } = xform;
   const h  = PORTRAIT_L * sy;
   const w  = (img.naturalWidth / img.naturalHeight) * PORTRAIT_L * Math.abs(sx);
@@ -878,7 +878,7 @@ function drawPortraitLayerWarped(ctx, img, xform, tint, breathingComposer, speci
   // ctx.setTransform below. This path is the one hood/overwear/torso layers
   // actually take (they're drawn via drawBreathingLayers, not drawEmoteLayers),
   // so it needs the same fix.
-  let drawImg = _imageForTint(img, sourceKey, tint);
+  let drawImg = imageForTint(img, sourceKey, tint);
   if (sx < 0) drawImg = _getFlippedImage(drawImg);
 
   const breathingPts = breathingComposer?.getInterpolatedPoints(speciesId, gender, nowMs, phaseOffsetMs, seatId);
@@ -1204,6 +1204,7 @@ function resolveLayerTintSlot(key, baseTintSlot) {
 async function renderProfile(canvas, profile, renderOptions = {}) {
   const { fighter, hair, hairFront, hairBack, hairSide, hairSideL, hood, eyes, upperFace, facialHair, pauldron, hat, torsoCosmetic, armCosmetic } = profile;
   const bodyColors = profile.bodyColors || {};
+  const imageForTint = typeof renderOptions?.imageForTint === 'function' ? renderOptions.imageForTint : _imageForTint; // Used by every portrait layer draw in this render; weaving injects a render-local resolver so concurrent async portraits cannot share transient pattern state.
   const omitHeadSpriteAndCosmetics = renderOptions?.omitHeadSpriteAndCosmetics === true;
   const onlyHeadSprite = renderOptions?.onlyHeadSprite === true; // Used below to render an alpha mask from the fighter's undecorated base head only.
   const renderBehindView = renderOptions?.portraitView === 'behind' || renderOptions?.view === 'behind';
@@ -1507,7 +1508,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       // See drawPortraitLayer's identical pre-flip via _getFlippedImage.
       ctx.save();
       ctx.globalAlpha = opacity;
-      let drawImg = _imageForTint(img, sourceKey, tint);
+      let drawImg = imageForTint(img, sourceKey, tint);
       if (sx < 0) drawImg = _getFlippedImage(drawImg);
       ctx.filter = 'none';
       _drawPortraitLayerWarped(ctx, drawImg, cx - w / 2, cy - h / 2, w, h, emoteNeutralPts, emoteDeformedPts, 4, 6);
@@ -1515,10 +1516,10 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     } else if (opacity < 1) {
       ctx.save();
       ctx.globalAlpha = opacity;
-      drawPortraitLayer(ctx, img, xform, tint, sourceKey);
+      drawPortraitLayer(ctx, img, xform, tint, sourceKey, imageForTint);
       ctx.restore();
     } else {
-      drawPortraitLayer(ctx, img, xform, tint, sourceKey);
+      drawPortraitLayer(ctx, img, xform, tint, sourceKey, imageForTint);
     }
   };
 
@@ -1536,9 +1537,9 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       const img = imgMap.get(layer.url);
       if (!img) continue;
       if (breathingComposer || staticDeform) {
-        drawPortraitLayerWarped(ctx, img, resolveXform(layer), tint || filter, breathingComposer, speciesId, gender, nowMs, breathingPhaseOffset, seatId, staticDeform, layer.url);
+        drawPortraitLayerWarped(ctx, img, resolveXform(layer), tint || filter, breathingComposer, speciesId, gender, nowMs, breathingPhaseOffset, seatId, staticDeform, layer.url, imageForTint);
       } else {
-        drawPortraitLayer(ctx, img, resolveXform(layer), tint || filter, layer.url);
+        drawPortraitLayer(ctx, img, resolveXform(layer), tint || filter, layer.url, imageForTint);
       }
     }
   };
