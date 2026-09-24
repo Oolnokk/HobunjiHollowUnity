@@ -50,6 +50,28 @@
   const normalizeSpecies = value => String(value || '').trim().toLowerCase().replace(/[’']/g, '').replace(/_/g, '-');
   const clone = value => value == null ? value : JSON.parse(JSON.stringify(value));
 
+  function bodyColorsForSeed(seed, gender = 'male') {
+    const bodyPalettes = window.SCRATCHBONES_CONFIG?.game?.appearanceEditor?.bodyPalettes || window.HOBUNJI_COLOR_CONFIG?.bodyPalettes || {}; // Supplies the finite authored player/NPC swatches instead of creating unbounded continuous tint-cache keys.
+    const palette = bodyPalettes?.[COLOR_SPECIES_ID]?.[gender] || []; // Mashtzarr donor swatches eligible for this Porakaneki gender.
+    if (!palette.length) return null;
+    let hash = 2166136261 >>> 0; // Stable FNV-1a state used only to choose one authored swatch for this resident identity.
+    for (const codePoint of String(seed || SPECIES_ID)) { // codePoint feeds the deterministic palette index without allocating an RNG object.
+      hash ^= codePoint.charCodeAt(0);
+      hash = Math.imul(hash, 16777619) >>> 0;
+    }
+    const swatch = palette[hash % palette.length] || palette[0]; // Exact authored donor color reused across residents, keeping portrait tint-cache cardinality bounded by palette size.
+    const colorA = { h: Number(swatch.h) || 0, s: Number(swatch.s) || 0, v: Number(swatch.v) || 0 }; // Primary body tint reused for slots A/B to match the character-creation palette contract.
+    return {
+      A: { ...colorA },
+      B: { ...colorA },
+      C: {
+        h: colorA.h,
+        s: Math.max(-1, Math.min(1, colorA.s + 0.05)),
+        v: Math.max(-1, Math.min(1, colorA.v + 0.18)),
+      },
+    };
+  }
+
   const status = { // Updated by installers and surfaced through HobunjiPorakanekiSpecies.debugSnapshot() for mobile debugging.
     speciesId: SPECIES_ID,
     npcOnly: true,
@@ -350,6 +372,7 @@
     install,
     installBehindHeadSprite,
     inheritBodyColors,
+    bodyColorsForSeed,
     applyCosmeticRestrictions,
     restrictPorakanekiBanditConfig,
     installBanditWardrobeGuard,
