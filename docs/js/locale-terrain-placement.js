@@ -544,6 +544,22 @@
     }; // Authored local point converted into final exported wilderness coordinates.
   }
 
+  function scaledObjectCollision(anchorC, anchorR, scale, object) {
+    const collision = object?.collision;
+    if (!collision || collision.mode === 'auto') return collision ? { mode:'auto' } : undefined;
+    if (collision.mode === 'none' || collision.mode === 'footprint') return { mode:collision.mode };
+    if (collision.mode !== 'custom') return undefined;
+    const colOffset = Number(collision.colOffset) || 0;
+    const rowOffset = Number(collision.rowOffset) || 0;
+    return {
+      mode:'custom',
+      x: anchorC + ((Number(object.col) || 0) + colOffset) * scale,
+      y: anchorR + ((Number(object.row) || 0) + rowOffset) * scale,
+      w: Math.max(.1, Number(collision.w) || Number(object.w) || 1) * scale,
+      h: Math.max(.1, Number(collision.h) || Number(object.h) || 1) * scale,
+    };
+  }
+
   function localeInstance(compiled, selected) {
     const locale = compiled.locale; // Original locale definition supplies runtime objects/connectors/NPC anchors.
     return {
@@ -567,6 +583,9 @@
         w: Math.max(1, Number(object.w) || 1) * compiled.scale,
         h: Math.max(1, Number(object.h) || 1) * compiled.scale,
         rot: object.rot || 0,
+        visual: object.visual ? JSON.parse(JSON.stringify(object.visual)) : undefined,
+        pieceFile: object.pieceFile || undefined,
+        collision: scaledObjectCollision(selected.anchorC, selected.anchorR, compiled.scale, object),
         interactable: object.interactable ? { ...object.interactable } : undefined,
       })),
     };
