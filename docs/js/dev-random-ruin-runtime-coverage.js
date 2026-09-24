@@ -12,22 +12,27 @@
 
   function activeRoot() {
     if (window.GridTileAccessors?.getCurrentArea?.() !== MAP_ID) return null;
-    let root = null;
-    window.GridTileAccessors?.getActiveScene?.()?.traverse?.(object => {
-      if (!root && String(object.name || '').startsWith('dev_v50_ruin_')) root = object;
+    const scene = window.GridTileAccessors?.getActiveScene?.();
+    return scene?.children?.find?.(object => /^dev_v50_ruin_/.test(object?.name || '')) || null;
+  }
+
+  let indexedRoot = null; // Root the name index below was built from; rebuilt only when the root changes instead of retraversing per audit entry, per frame.
+  let nameIndex = null;
+  function indexFor(root) {
+    if (!root) { indexedRoot = null; nameIndex = null; return null; }
+    if (root === indexedRoot && nameIndex) return nameIndex;
+    nameIndex = new Map();
+    root.traverse?.(object => {
+      const auditName = object.name || `object-${object.id}`;
+      if (!nameIndex.has(auditName)) nameIndex.set(auditName, object);
     });
-    return root;
+    indexedRoot = root;
+    return nameIndex;
   }
 
   function objectForAuditEntry(root, entry) {
     if (!root || !entry?.objectName) return null;
-    let found = null;
-    root.traverse?.(object => {
-      if (found) return;
-      const auditName = object.name || `object-${object.id}`;
-      if (auditName === entry.objectName) found = object;
-    });
-    return found;
+    return indexFor(root)?.get(entry.objectName) || null;
   }
 
   function resolveCoverage() {

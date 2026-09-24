@@ -15,6 +15,7 @@
   let dialogueContext = null; // Current NPC conversation, used by node-level camera swaps.
   let petFade = 0; // 0 = ordinary pet visibility, 1 = fully faded for the current cinematic shot.
   const fadedMaterials = new Map(); // mesh -> { originalMaterial, states }; temporary fade clones are restored/disposed when the shot ends.
+  const capturedRoots = new Set(); // Roots already traversed for the current fade session; avoids a full retraverse every frame while a fade is active.
 
   function finite(value, fallback = 0) {
     const n = Number(value);
@@ -258,7 +259,9 @@
   }
 
   function captureFadeMaterials(root) {
-    root?.traverse?.(object => {
+    if (!root || capturedRoots.has(root)) return;
+    capturedRoots.add(root);
+    root.traverse?.(object => {
       if (!object?.isMesh || !object.material || fadedMaterials.has(object)) return;
       const originalMaterial = object.material; // Restored verbatim after the fade so repeated conversations never accumulate cloned avatar materials.
       const source = Array.isArray(originalMaterial) ? originalMaterial : [originalMaterial];
@@ -316,6 +319,7 @@
     if (petFade > 0.0001) return;
     for (const [mesh, record] of fadedMaterials) restoreFadeEntry(mesh, record);
     fadedMaterials.clear();
+    capturedRoots.clear();
   }
 
   function update(dt) {

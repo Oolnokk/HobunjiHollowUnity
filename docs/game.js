@@ -20312,6 +20312,9 @@
         return floor;
       }
       let _cinematicCameraBlend = null; // Outgoing pose used to blend authored dialogue/cutscene camera changes instead of snapping.
+      const _cinematicDesiredPosition = new THREE.Vector3(); // Reused every frame while a cinematic shot is active to avoid per-frame allocation.
+      const _cinematicDesiredTarget = new THREE.Vector3();
+      const _cinematicLookTarget = new THREE.Vector3();
       function applyAuthoredCinematicCamera() {
         const record = window.CinematicCameraRuntime?.activeRecord?.();
         const shot = record?.camera;
@@ -20331,19 +20334,19 @@
           ? window.FormatUtils.clamp((performance.now() - _cinematicCameraBlend.startedAt) / durationMs, 0, 1)
           : 1;
         const t = rawT * rawT * (3 - 2 * rawT);
-        const desiredPosition = new THREE.Vector3(
+        const desiredPosition = _cinematicDesiredPosition.set(
           Number(shot.position?.x) || 0,
           Number(shot.position?.y) || 0,
           Number(shot.position?.z) || 0
         );
         const resolvedTarget = window.CinematicCameraRuntime?.resolvedTarget?.();
-        const desiredTarget = new THREE.Vector3(
+        const desiredTarget = _cinematicDesiredTarget.set(
           Number(resolvedTarget?.x ?? shot.target?.x) || 0,
           Number(resolvedTarget?.y ?? shot.target?.y) || 0,
           Number(resolvedTarget?.z ?? shot.target?.z) || 0
         );
         camera.position.lerpVectors(_cinematicCameraBlend.startPosition, desiredPosition, t);
-        const lookTarget = _cinematicCameraBlend.startTarget.clone().lerp(desiredTarget, t);
+        const lookTarget = _cinematicLookTarget.copy(_cinematicCameraBlend.startTarget).lerp(desiredTarget, t);
         camera.lookAt(lookTarget);
         camera.fov = THREE.MathUtils.lerp(_cinematicCameraBlend.startFov, Number(shot.fovDeg) || 42, t);
         camera.aspect = threeContainer.clientWidth / threeContainer.clientHeight;
