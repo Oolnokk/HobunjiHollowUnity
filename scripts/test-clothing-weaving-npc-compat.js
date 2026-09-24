@@ -37,7 +37,11 @@ const woven = {
   baseCosmeticId: 'tankan_tunic',
   slot: 'torso',
   weightUnits: 4.5,
-  weaving: { pattern: { motifDataUrl: 'data:image/png;base64,AA==' } },
+  colorC: { dyeId: 'dye:CLOTH:ink' },
+  weaving: { patterns: [
+    { motifDataUrl: 'data:image/png;base64,PRIMARY==' },
+    { motifDataUrl: 'data:image/png;base64,ORIGINAL_OVERPASS==' },
+  ] },
 };
 windowStub.ItemTraits.computeItemTraits(woven.cosmeticId, woven);
 assert.equal(traitKeySeen, 'tankan_tunic', 'crafted copies inherit authored garment traits');
@@ -51,10 +55,15 @@ assert.equal(verdict.accepted, true);
 assert.equal(wardrobeStored[0].cosmeticId, 'tankan_tunic', 'NPC wardrobe stores/render-resolves the authored cosmetic id');
 assert.equal(wardrobeStored[0].__loomPlayerCosmeticId, woven.cosmeticId, 'NPC storage preserves the unique player-side id for take-back');
 assert.equal(wardrobeStored[0].weightUnits, 4.5, 'crafted weight metadata survives NPC storage');
+assert.equal(wardrobeStored[0].weaving.patterns[0].motifDataUrl, 'data:image/png;base64,PRIMARY==', 'gift adapter preserves woven primary pattern');
+assert.equal(wardrobeStored[0].weaving.patterns[1].motifDataUrl, 'data:image/png;base64,ORIGINAL_OVERPASS==', 'gift adapter preserves garment-owned overpass before NPC render policy is applied');
+assert.equal(wardrobeStored[0].colorC.dyeId, 'dye:CLOTH:ink', 'gift adapter preserves pattern dye');
 assert(windowStub.NpcWardrobe.takeFromWardrobe('npc', 'wardrobe-copy'));
 assert.equal(gear.clothingItems[0].cosmeticId, woven.cosmeticId, 'taking the garment back restores its unique player inventory id');
 assert.equal(gear.clothingItems[0].__loomPlayerCosmeticId, undefined, 'temporary NPC compatibility marker is removed on return');
 assert.equal(gear.clothingItems[0].weightUnits, 4.5, 'crafted weight metadata survives the round trip');
+assert.equal(gear.clothingItems[0].weaving.patterns[0].motifDataUrl, 'data:image/png;base64,PRIMARY==', 'taking gifted clothing back preserves its original primary');
+assert.equal(gear.clothingItems[0].weaving.patterns[1].motifDataUrl, 'data:image/png;base64,ORIGINAL_OVERPASS==', 'taking gifted clothing back preserves its original overpass');
 assert.equal(saved, 1, 'restored gear identity is persisted');
 
 const loader = fs.readFileSync('docs/js/combat/combat-config-loader.js', 'utf8');

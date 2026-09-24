@@ -1,0 +1,21 @@
+{
+  "schema": "hobunji_pattern.v1",
+  "id": "white_bronze_sun_overpass",
+  "name": "White Bronze Sun Overpass",
+  "motifPng": "assets/patterns/motif_white_bronze_sun.png",
+  "settings": {
+    "motifScale": 0.6,
+    "motifRotationDeg": 0,
+    "tiling": false,
+    "invert": false,
+    "motifThinPx": 0,
+    "frameShape": "square",
+    "frameX": 0,
+    "frameY": 0,
+    "frameRotationDeg": 0,
+    "frameScale": 1.85,
+    "meshScale": 3.2,
+    "meshRotationDeg": 0,
+    "overpassClearanceMultiplier": 3
+  }
+}

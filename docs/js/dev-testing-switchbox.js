@@ -302,7 +302,7 @@
   if (flags.noVerdigris && window.ToolMetalRecolor && typeof window.ToolMetalRecolor.getRecoloredCanvas === 'function') {
     const nativeGetRecoloredCanvas = window.ToolMetalRecolor.getRecoloredCanvas;
     window.ToolMetalRecolor.getRecoloredCanvas = function (spritePath, opts = {}) {
-      return nativeGetRecoloredCanvas.call(this, spritePath, { ...opts, oxidationAmount: 0, authoredPattern: null });
+      return nativeGetRecoloredCanvas.call(this, spritePath, { ...opts, oxidationAmount: 0, authoredPattern: null, authoredPatterns: [] }); // Disables both legacy slot 1 and the optional dual-pattern stack.
     };
   }
 

@@ -30,6 +30,7 @@ const shopCatalog = [
 
 const classList = () => ({ add() {}, remove() {}, toggle() {}, contains() { return false; } });
 const documentStub = {
+  currentScript: { src: 'https://raw.githack.com/Oolnokk/HobunjiHollowUnity/testsha/docs/js/clothing-weaving-system.js?v=test' },
   documentElement: { dataset: {} },
   body: { appendChild() {}, dataset: {} },
   head: { appendChild() {} },
@@ -115,6 +116,9 @@ vm.runInContext(fs.readFileSync('docs/js/clothing-weaving-system.js', 'utf8'), c
 
 const api = windowStub.ClothingWeavingSystem;
 assert(api, 'ClothingWeavingSystem exported');
+assert.equal(api.__test.docsRelativeUrl('config/cosmetics/index.json'), 'https://raw.githack.com/Oolnokk/HobunjiHollowUnity/testsha/docs/config/cosmetics/index.json', 'standalone tools resolve cosmetic config relative to docs/ instead of their own nested page');
+assert.equal(api.__test.standaloneAssetUrl('./assets/cosmetics/clothes/overwear/portrait/poncho1_mao_m.png'), 'https://raw.githack.com/Oolnokk/HobunjiHollowUnity/testsha/docs/assets/cosmetics/clothes/overwear/portrait/poncho1_mao_m.png', 'standalone clothing preview preserves authored ./assets sprite paths under docs/');
+assert.equal(api.__test.standaloneAssetUrl('cosmetics/clothes/overwear/portrait/poncho1_mao_m.png'), 'https://raw.githack.com/Oolnokk/HobunjiHollowUnity/testsha/docs/assets/cosmetics/clothes/overwear/portrait/poncho1_mao_m.png', 'standalone clothing preview reconstructs assets/ after game-path normalization');
 assert.equal(api.__test.resolvedPatternMeshScale({ meshScale: 1 }), 0.25, 'normalized Pattern scale 1.00 renders at the former 0.25 mesh scale');
 assert.equal(api.__test.resolvedPatternMeshScale({ meshScale: 0.4 }), 0.1, 'normalized lower bound 0.40 renders at the former 0.10 minimum');
 assert.equal(api.__test.resolvedPatternMeshScale({ meshScale: 3.2 }), 0.8, 'normalized upper bound 3.20 renders at the former 0.80 maximum');
@@ -232,6 +236,38 @@ assert.equal(applied.appearance.bodyColors.__hobunjiWovenClothing[0].baseCosmeti
 assert.equal(api.__test.weavingPatternForRole(lightTunic.weaving, null).motifDataUrl, 'data:image/png;base64,AA==', 'modern per-layer weaving resolves the default layer');
 const legacyPattern = { motifDataUrl: 'data:image/png;base64,LEGACY==' }; // Keeps pre-layer-save compatibility covered while the main fixture exercises the modern format.
 assert.equal(api.__test.weavingPatternForRole({ pattern: legacyPattern }, 'anything'), legacyPattern, 'legacy single-pattern saves still resolve across every layer');
+const overpassPattern = { motifDataUrl: 'data:image/png;base64,OVERPASS==' }; // Second-slot fixture verifies the new stack shape without changing legacy primary resolution.
+const dualWeaving = { layers: { base: { patterns: [legacyPattern, overpassPattern], patternLabel: 'Knot pair' } } }; // Models the future unlocked save shape the renderer already accepts.
+assert.deepEqual(api.__test.weavingPatternsForRole(dualWeaving, 'base'), [legacyPattern, overpassPattern], 'weaving resolves at most the primary + overpass in authored order');
+assert.equal(api.__test.weavingPatternForRole(dualWeaving, 'base'), legacyPattern, 'legacy primary-only helper still returns slot 1 from a dual stack');
+assert.equal(api.__test.normalizePatternStack([legacyPattern, overpassPattern, { motifDataUrl: 'third' }]).length, 2, 'shared pattern stack hard-caps rendering at two motifs');
+const forcedNpcPattern = { motifDataUrl: 'data:image/png;base64,NPC==' };
+const giftedWithOwnOverpass = { patterns: [legacyPattern, overpassPattern], forcedOverpassPattern: forcedNpcPattern };
+assert.deepEqual(api.__test.weavingPatternsForRole(giftedWithOwnOverpass, 'anything'), [legacyPattern, forcedNpcPattern], 'NPC forced overpass preserves gifted slot 1 and replaces only gifted slot 2');
+assert.deepEqual(api.__test.weavingPatternsForRole({ layers: {}, forcedOverpassPattern: forcedNpcPattern }, 'poncho'), [forcedNpcPattern], 'forced NPC pattern can render on otherwise-unpatterned default clothing');
+assert.equal(api.__test.weavingHasAnyPattern({ layers: {}, forcedOverpassPattern: forcedNpcPattern }), true, 'forced NPC overpass makes default clothing pattern-renderable without inventing permanent layer data');
+const scopedGiftWeaving = {
+  patterns: [legacyPattern, overpassPattern],
+  forcedOverpassPattern: forcedNpcPattern,
+  forcedOverpassRoles: ['poncho'],
+};
+assert.deepEqual(api.__test.weavingPatternsForRole(scopedGiftWeaving, 'poncho'), [legacyPattern, forcedNpcPattern], 'poncho-scoped NPC emblem preserves gifted slot 1 and replaces slot 2 on the poncho sprite');
+assert.deepEqual(api.__test.weavingPatternsForRole(scopedGiftWeaving, 'wrap'), [legacyPattern, overpassPattern], 'poncho-scoped NPC emblem leaves the shoulder-wrap sprite original primary/overpass stack untouched');
+assert.deepEqual(api.__test.weavingPatternsForRole({ forcedOverpassPattern: forcedNpcPattern, forcedOverpassRoles: ['poncho'] }, 'poncho'), [forcedNpcPattern], 'poncho-scoped emblem can render on an otherwise-unpatterned default poncho layer');
+assert.deepEqual(api.__test.weavingPatternsForRole({ forcedOverpassPattern: forcedNpcPattern, forcedOverpassRoles: ['poncho'] }, 'wrap'), [], 'poncho-scoped emblem does not spill onto the rugged poncho wrap layer');
+const npcAvatarData = api.decorateAvatarDataWithWovenItems({
+  equippedCosmetics: ['rugged_poncho'],
+  appearance: { bodyColors: { A: { h: 0 } } },
+}, [{
+  cosmeticId: 'rugged_poncho',
+  slot: 'overwear',
+  colorA: 'dye:CLOTH:test_primary',
+  colorC: 'dye:CLOTH:test_pattern',
+  weaving: { forcedOverpassPattern: forcedNpcPattern },
+}]);
+assert.equal(npcAvatarData.appearance.bodyColors.CLOTH_C.dyeId, 'dye:CLOTH:test_pattern', 'NPC string dye ids normalize through the same third pattern-color slot as player woven gear');
+assert.equal(npcAvatarData.appearance.bodyColors.__hobunjiWovenClothing[0].colorA.dyeId, 'dye:CLOTH:test_primary', 'NPC default dye strings normalize for woven portrait color swapping');
+assert.equal(npcAvatarData.appearance.bodyColors.__hobunjiWovenClothing[0].weaving.forcedOverpassPattern.motifDataUrl, forcedNpcPattern.motifDataUrl, 'NPC forced-overpass policy reaches the same portrait marker consumed by the shared renderer');
 windowStub.PatternLibrary.getById = id => id === 'live-pattern' ? { motifDataUrl: 'data:image/png;base64,MIGRATED==' } : null;
 const referenceOnlyItem = { weaving: { layers: { base: { patternLibraryId: 'live-pattern', patternLabel: 'Saved' } } } }; // Models a garment made by the short-lived reference-only implementation.
 assert.equal(api.__test.materializeWeavingLibrarySnapshots(referenceOnlyItem), true, 'reference-only garment is upgraded while its source library entry still exists');
@@ -395,8 +431,25 @@ assert.match(metalPatternSource, /colorFillApi\(\)\.hsvValueFillPixels/,
   'tool metal and verdigris value-preserving fills use the same ColorFill module');
 assert.match(source, /sourceData: shadeSourceData,[\s\S]*?debugLabel,[\s\S]*?samplePredicate:[\s\S]*?garmentMask[\s\S]*?applyPredicate:/,
   'woven motif color samples the whole authored cloth/body region separately from the motif paint mask');
-assert.match(source, /applyPatternToTintedImage\(tinted, pattern, colorHex, prefix, img, 'woven-motif'\)/,
-  'runtime woven portrait composition passes the original authored raster and clothing-only diagnostic label');
+assert.match(source, /applyPatternStackToTintedImage\(tinted, patterns, colorHex, prefix, img, 'woven-motif'\)/,
+  'runtime woven portrait composition passes both optional pattern slots plus the original authored raster and clothing-only diagnostic label');
+assert.match(source, /overpassOutlineWidth \* clearanceMultiplier/,
+  'shared compositor punches the primary with the authored overpass clearance multiplier');
+assert.equal(api.__test.overpassClearanceMultiplier({}), 3, 'missing overpass gap preserves the previous 3× behavior');
+assert.equal(api.__test.overpassClearanceMultiplier({ overpassClearanceMultiplier: 2 }), 3, 'overpass gap cannot go below the previous 3× behavior');
+assert.equal(api.__test.overpassClearanceMultiplier({ overpassClearanceMultiplier: 12 }), 12, 'overpass gap can reach four times the previous mask width');
+assert.equal(api.__test.overpassClearanceMultiplier({ overpassClearanceMultiplier: 99 }), 12, 'overpass gap clamps at 12×');
+assert.match(source, /async function applyPatternToTintedImage[\s\S]*?applyPatternStackToTintedImage\(imageOrCanvas, \[pattern\]/,
+  'legacy single-pattern compositor API delegates to the new stack renderer');
+assert.match(creatureRendererSource, /applyPatternStackToTintedImage/,
+  'Color Pools animal painting uses the same dual-pattern stack compositor');
+assert.match(metalPatternSource, /overpassOutlineWidth \* clearanceMultiplier/,
+  'verdigris applies the same authored overpass clearance before its black outline pass');
+assert.match(metalPatternSource, /OVERPASS_CLEARANCE_MIN = 3/, 'verdigris defaults legacy overpasses to the prior 3× gap');
+assert.match(metalPatternSource, /OVERPASS_CLEARANCE_MAX = 12/, 'verdigris permits the authored maximum at four times the prior mask width');
+assert.match(metalPatternSource, /function overpassClearanceMultiplier\(pattern\)/, 'verdigris clamps the same per-pattern overpass setting before rasterizing the gap');
+assert.match(metalPatternSource, /normalizeAuthoredPatterns/,
+  'verdigris accepts a legacy authoredPattern or a future two-slot authoredPatterns array through one normalization seam');
 assert.match(pixelProbeSource, /Color fill: \$\{shadeText\}; \$\{hsvText\}/,
   'Pixel Probe exposes shared color-fill source/sample diagnostics on mobile');
 assert.match(source, /PatternLibrary\.listAvailable/, 'loom reuses shared pattern library');

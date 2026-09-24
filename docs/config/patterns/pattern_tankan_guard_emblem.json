@@ -1,0 +1,21 @@
+{
+  "schema": "hobunji_pattern.v1",
+  "id": "tankan_guard_emblem",
+  "name": "Tankan Guard Emblem",
+  "motifPng": "assets/patterns/motif_white_bronze_sun.png",
+  "settings": {
+    "motifScale": 0.59,
+    "motifRotationDeg": 0,
+    "tiling": false,
+    "invert": false,
+    "motifThinPx": -5,
+    "frameShape": "square",
+    "frameX": -16,
+    "frameY": -186,
+    "frameRotationDeg": 0,
+    "frameScale": 6,
+    "meshScale": 1.94,
+    "meshRotationDeg": 0,
+    "overpassClearanceMultiplier": 3
+  }
+}

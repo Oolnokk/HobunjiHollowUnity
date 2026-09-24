@@ -16,6 +16,8 @@
   const DEFAULT_OXIDATION_SEED = 28480;
   const DEFAULT_BLOTCH_COUNT = 14;
   const DEFAULT_OUTLINE_WIDTH = 2;
+  const OVERPASS_CLEARANCE_MIN = 3; // Legacy/current knot-gap multiplier, and the authored minimum.
+  const OVERPASS_CLEARANCE_MAX = 12; // Player/dev-authored maximum: four times the previous fixed 3× gap.
 
   function hexToRgb(hex) {
     const clean = String(hex).replace('#', '').trim();
@@ -36,6 +38,22 @@
 
   function clamp01(value) {
     return Math.max(0, Math.min(1, Number(value) || 0));
+  }
+
+  function overpassClearanceMultiplier(pattern) {
+    return Math.max(OVERPASS_CLEARANCE_MIN, Math.min(OVERPASS_CLEARANCE_MAX, Number(pattern?.overpassClearanceMultiplier) || OVERPASS_CLEARANCE_MIN)); // Shared pattern-2 setting; old patterns preserve the prior fixed 3× behavior.
+  }
+
+  function normalizeAuthoredPatterns(opts = {}) {
+    const raw = Array.isArray(opts.authoredPatterns) ? opts.authoredPatterns : (opts.authoredPattern ? [opts.authoredPattern] : []); // Used by verdigris rendering so old single-pattern callers and future unlocked two-slot callers share one path.
+    return raw.filter(pattern => !!pattern && typeof pattern === 'object').slice(0, 2);
+  }
+
+  function patternMotifPromise(pattern, opts = {}) {
+    if (pattern?.motifDataUrl) return loadImage(pattern.motifDataUrl, opts);
+    if (pattern?.motifUrl) return loadImage(pattern.motifUrl, opts);
+    if (pattern?.customMotifId) return Promise.resolve(window.MotifStore?.loadMotif?.(pattern.customMotifId)).then(url => url ? loadImage(url, opts) : null);
+    return Promise.resolve(null);
   }
 
   function debugEnabled(opts = {}) {
@@ -670,44 +688,66 @@
       });
     }
 
-    const authoredPattern = opts.authoredPattern;
-    const motifImg = opts.motifImage;
+    const authoredPatterns = normalizeAuthoredPatterns(opts); // Primary + optional overpass; player-facing smith UI still supplies only authoredPattern until its future unlock exists.
+    const motifImages = Array.isArray(opts.motifImages) ? opts.motifImages : (opts.motifImage ? [opts.motifImage] : []);
+    const authoredPattern = authoredPatterns[0] || null; // Legacy name retained for single-pattern behavior/debug wording.
 
-    if (!opts.verdigrisHex || (!authoredPattern && !clamp01(opts.oxidationAmount))) {
+    if (!opts.verdigrisHex || (!authoredPatterns.length && !clamp01(opts.oxidationAmount))) {
       debugLog(opts, 'oxidation skipped', {
         oxidationAmount: clamp01(opts.oxidationAmount),
         hasVerdigrisColor: !!opts.verdigrisHex,
-        hasAuthoredPattern: !!authoredPattern,
+        hasAuthoredPattern: authoredPatterns.length > 0,
+        authoredPatternCount: authoredPatterns.length,
       });
       return imageData;
     }
 
     let oxidationMask;
-    if (authoredPattern && motifImg) {
-      // Authored mode is the inverse of the procedural growth above: the
-      // player has painted where verdigris is stripped back to bare metal,
-      // not where it grows, so everything else on the metal mask stays
-      // oxidized (this only ever runs on an already mastery-5/fully-grown
-      // tool — see toolVerdigrisPatternEligible in game.js).
-      // buildAuthoredClearedMask already applies motifThinPx in source-motif
-      // pixels before frame/mesh scaling, so do not run a second output-pixel pass.
-      const clearedMask = buildAuthoredClearedMask(width, height, authoredPattern, motifImg);
-      // invert swaps which side of the motif keeps verdigris: normally the
-      // motif itself is the cleared shape and everything else stays
-      // oxidized; inverted, the motif shape stays oxidized and everything
-      // else clears instead.
-      const invert = !!authoredPattern.invert;
-      oxidationMask = new Uint8Array(metalMask.length);
-      for (let p = 0; p < metalMask.length; p++) {
-        const cleared = invert ? !clearedMask[p] : !!clearedMask[p];
-        oxidationMask[p] = metalMask[p] && !cleared ? 1 : 0;
+    const activeAuthored = authoredPatterns.map((pattern, index) => ({ pattern, motif: motifImages[index] })).filter(entry => !!entry.motif).slice(0, 2);
+    if (activeAuthored.length) {
+      // Authored mode is the inverse of procedural growth: motif ink marks
+      // where verdigris is stripped back to bare metal. Each slot first
+      // resolves to that literal cleared-metal mask so single-pattern saves
+      // preserve their exact old invert semantics.
+      const clearedMasks = activeAuthored.map(({ pattern, motif }) => {
+        const rawMask = buildAuthoredClearedMask(width, height, pattern, motif);
+        const resolved = new Uint8Array(rawMask.length); // Used below so invert is applied independently per slot before the shared overpass rule.
+        for (let p = 0; p < rawMask.length; p++) {
+          const cleared = pattern.invert ? !rawMask[p] : !!rawMask[p];
+          resolved[p] = metalMask[p] && cleared ? 1 : 0;
+        }
+        return resolved;
+      });
+      const combinedCleared = new Uint8Array(clearedMasks[0]);
+      if (clearedMasks[1]) {
+        const overpassMask = clearedMasks[1]; // Slot 2 is the visually-over strand.
+        const overpassOutlineWidth = scaledOutlineWidthForPattern(Math.max(0, opts.outlineWidth | 0), activeAuthored[1].pattern);
+        const clearanceMultiplier = overpassClearanceMultiplier(activeAuthored[1].pattern); // Same 3×..12× authored gap used by weaving/animal paint.
+        const clearanceMask = buildOxidationOutlineMask(
+          overpassMask,
+          metalMask,
+          width,
+          height,
+          overpassOutlineWidth * clearanceMultiplier, // Invisible clearance uses the exact same raster outline math at the authored 3×..12× multiple.
+          true,
+        );
+        for (let p = 0; p < combinedCleared.length; p++) {
+          if (clearanceMask[p] || overpassMask[p]) combinedCleared[p] = 0; // Punch the primary stripped-metal strand before black outline generation.
+        }
+        for (let p = 0; p < combinedCleared.length; p++) if (overpassMask[p]) combinedCleared[p] = 1;
       }
-      debugLog(opts, 'authored pattern mask applied', { clearedPixels: clearedMask.reduce((a, v) => a + v, 0), invert });
+      oxidationMask = new Uint8Array(metalMask.length);
+      for (let p = 0; p < metalMask.length; p++) oxidationMask[p] = metalMask[p] && !combinedCleared[p] ? 1 : 0;
+      debugLog(opts, 'authored pattern mask applied', {
+        patternCount: activeAuthored.length,
+        clearedPixels: combinedCleared.reduce((a, v) => a + v, 0),
+        overpassClearanceMultiplier: activeAuthored.length > 1 ? overpassClearanceMultiplier(activeAuthored[1].pattern) : null,
+      });
     } else {
       oxidationMask = buildOxidationMask(metalMask, width, height, clamp01(opts.oxidationAmount), opts);
     }
-    const outlineWidth = authoredPattern
-      ? scaledOutlineWidthForPattern(Math.max(0, opts.outlineWidth | 0), authoredPattern)
+    const outlineWidth = activeAuthored.length
+      ? scaledOutlineWidthForPattern(Math.max(0, opts.outlineWidth | 0), activeAuthored[0].pattern)
       : Math.max(0, opts.outlineWidth | 0);
     const outlineMask = buildOxidationOutlineMask(
       oxidationMask,
@@ -715,7 +755,7 @@
       width,
       height,
       outlineWidth,
-      !!authoredPattern, // Authored motif outlines are centered; procedural verdigris intentionally keeps its legacy outward-only border.
+      activeAuthored.length > 0, // Authored motif stacks use the same centered black border; procedural verdigris intentionally keeps its legacy outward-only border.
     );
 
     let oxidizedPixels = 0;
@@ -802,8 +842,9 @@
     // the procedural growth entirely — its full definition (motif image
     // included) has to be part of the cache key since it isn't reducible to
     // a single scalar the way oxidationAmount is.
-    const authoredPattern = opts.authoredPattern || null;
-    const authoredPatternKey = authoredPattern ? JSON.stringify(authoredPattern) : '';
+    const authoredPatterns = normalizeAuthoredPatterns(opts); // Cache identity includes both optional slots while legacy callers still pass authoredPattern.
+    const authoredPattern = authoredPatterns[0] || null;
+    const authoredPatternKey = authoredPatterns.length ? JSON.stringify(authoredPatterns) : '';
     const requestInfo = {
       spritePath,
       sourceHex,
@@ -845,15 +886,10 @@
     if (debugEnabled(opts)) console.trace('[ToolMetalRecolor] request caller');
 
     // A per-tool "Custom" pattern's motif may live in MotifStore instead of
-    // being embedded directly (see pattern-authoring.js's offloadMotif) —
-    // resolve either shape the same way before loading it as an image.
-    const motifLoad = authoredPattern?.motifDataUrl
-      ? loadImage(authoredPattern.motifDataUrl, opts)
-      : authoredPattern?.customMotifId
-        ? Promise.resolve(window.MotifStore?.loadMotif?.(authoredPattern.customMotifId)).then(url => url ? loadImage(url, opts) : null)
-        : Promise.resolve(null);
+    // being embedded directly; resolve each optional slot independently.
+    const motifLoads = authoredPatterns.map(pattern => patternMotifPromise(pattern, opts));
 
-    return Promise.all([loadImage(spritePath, opts), motifLoad]).then(([img, motifImg]) => {
+    return Promise.all([loadImage(spritePath, opts), Promise.all(motifLoads)]).then(([img, motifImages]) => {
       const canvas = document.createElement('canvas');
       canvas.width = img.naturalWidth || img.width || 1;
       canvas.height = img.naturalHeight || img.height || 1;
@@ -873,7 +909,9 @@
         alphaMin,
         saturationMode,
         authoredPattern,
-        motifImage: motifImg,
+        authoredPatterns,
+        motifImage: motifImages[0] || null,
+        motifImages,
       });
       ctx.putImageData(imageData, 0, 0);
       _canvasCache.set(cacheKey, canvas);
@@ -907,7 +945,7 @@
     rgbToHsv,
     hsvToRgb,
     SOURCE_HEX,
-    __test: Object.freeze({ adjustMaskThickness, scaledOutlineWidthForPattern, buildAuthoredClearedMask }),
+    __test: Object.freeze({ adjustMaskThickness, scaledOutlineWidthForPattern, buildAuthoredClearedMask, buildOxidationOutlineMask, normalizeAuthoredPatterns, overpassClearanceMultiplier }),
   };
 
   debugLog({}, 'module loaded', {

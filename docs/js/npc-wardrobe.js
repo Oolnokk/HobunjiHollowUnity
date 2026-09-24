@@ -18,8 +18,10 @@
 
   let deps = null;
   const stored = {}; // npcId -> [clothing instance] persisted as the NPC's wardrobe contents.
-  const outfitOverrides = {}; // npcId -> { equippedCosmetics, appliedDyes } persisted only after gifted/manual outfit changes.
+  const outfitOverrides = {}; // npcId -> { equippedCosmetics, appliedDyes, wornClothingBySlot } persisted after gifted/manual outfit changes.
+  const wornClothingByNpc = {}; // npcId -> { slot: full clothing instance }; preserves weaving/colorC/player-origin metadata while an item is actually worn.
   const defaultTraitSets = {}; // npcId -> Set(trait ids) snapshotted once so later gifted clothes never redefine taste.
+  const clone = value => value == null ? value : JSON.parse(JSON.stringify(value));
 
   function init(injectedDeps) {
     deps = injectedDeps;
@@ -32,6 +34,16 @@
 
   function findRecord(npcId) {
     return deps?.getNpcRecordById?.(npcId) || findWalker(npcId)?.rec || null; // Canonical record access keeps outfit persistence working even while an NPC has no live walker.
+  }
+
+  function clothingPatternPolicy(npcId) {
+    return window.HobunjiNpcClothingPatterns?.npcs?.[npcId] || null; // Authored default-item and forced-overpass rules stay data-driven rather than hardcoded into wardrobe behavior.
+  }
+
+  function wornMapFor(npcId, create = false) {
+    if (!npcId) return null;
+    if (!wornClothingByNpc[npcId] && create) wornClothingByNpc[npcId] = {};
+    return wornClothingByNpc[npcId] || null;
   }
 
   const TINT_KEYS_BY_SLOT = Object.freeze({
@@ -57,6 +69,58 @@
       colorA: primaryKey ? (dyes[primaryKey] || null) : null,
       colorB: secondaryKey ? (dyes[secondaryKey] || null) : null,
     };
+  }
+
+  function rawWornClothingItem(rec, cosmeticId, slot) {
+    if (!rec || !cosmeticId || !slot) return null;
+    const live = wornMapFor(rec.id)?.[slot];
+    if (live?.cosmeticId === cosmeticId) return clone(live); // Gifted/manual garment keeps complete weaving, colorC, material and player-return metadata.
+    const authored = clothingPatternPolicy(rec.id)?.defaultClothing?.[slot];
+    const base = authored && (!authored.cosmeticId || authored.cosmeticId === cosmeticId) ? clone(authored) : {};
+    const colors = clothingColorsFromWorn(rec, slot);
+    return {
+      uid: base.uid || `npc_default_${rec.id}_${slot}`,
+      ...base,
+      cosmeticId,
+      slot,
+      colorA: base.colorA ?? colors.colorA,
+      colorB: base.colorB ?? colors.colorB,
+    }; // Default NPC clothing can carry the same full weaving/colorC shape as player clothing.
+  }
+
+  function effectiveWornClothingItem(rec, rawItem) {
+    if (!rec || !rawItem) return rawItem;
+    const forced = clothingPatternPolicy(rec.id)?.forcedOverpassBySlot?.[rawItem.slot];
+    if (!forced?.pattern) return clone(rawItem);
+    const weaving = {
+      ...(clone(rawItem.weaving) || {}),
+      forcedOverpassPattern: clone(forced.pattern),
+      ...(Array.isArray(forced.roles) && forced.roles.length ? { forcedOverpassRoles: clone(forced.roles) } : {}),
+    }; // Render-only override; raw gifted slot 2 remains untouched, and optional roles limit the emblem to exact authored sprite layers.
+    return {
+      ...clone(rawItem),
+      colorC: clone(rawItem.colorC ?? forced.fallbackColorC ?? null),
+      weaving,
+    };
+  }
+
+  function wornClothingItemsForRecord(rec, effective = false) {
+    return (rec?.equippedCosmetics || []).map(cosmeticId => {
+      const slot = guessSlot(cosmeticId);
+      const raw = rawWornClothingItem(rec, cosmeticId, slot);
+      return effective ? effectiveWornClothingItem(rec, raw) : raw;
+    }).filter(Boolean);
+  }
+
+  function clothingVisualSignature(item) {
+    return JSON.stringify({
+      cosmeticId: item?.cosmeticId || null,
+      baseCosmeticId: item?.baseCosmeticId || null,
+      colorA: item?.colorA || null,
+      colorB: item?.colorB || null,
+      colorC: item?.colorC || null,
+      weaving: item?.weaving || null,
+    }); // Same cosmetic + different weave/pattern dye is a real swap rather than a false no-op.
   }
 
   function applyClothingColorsToWorn(rec, slot, item) {
@@ -127,20 +191,14 @@
   }
   // ── Contents / taking items back out ────────────────────────────
   function getWardrobeContents(npcId) {
-    const walker = findWalker(npcId);
     const rec = findRecord(npcId);
-    const worn = (rec?.equippedCosmetics || []).map((cosmeticId, index) => {
-      const slot = guessSlot(cosmeticId); // Used by Store and the row preview to keep this worn article tied to its actual tint channel.
-      return {
-        uid: 'worn_' + index + '_' + cosmeticId,
-        cosmeticId,
-        slot,
-        ...clothingColorsFromWorn(rec, slot),
-        worn: true,
-        label: prettifyCosmeticId(cosmeticId),
-      };
-    });
-    return { worn, stored: (stored[npcId] || []).map(item => ({ ...item, worn: false })) };
+    const worn = wornClothingItemsForRecord(rec, false).map((item, index) => ({
+      ...clone(item),
+      uid: 'worn_' + index + '_' + item.cosmeticId,
+      worn: true,
+      label: item.label || prettifyCosmeticId(item.cosmeticId),
+    }));
+    return { worn, stored: (stored[npcId] || []).map(item => ({ ...clone(item), worn: false })) };
   }
 
   function prettifyCosmeticId(id) {
@@ -177,15 +235,17 @@
     outfitOverrides[npcId] = {
       equippedCosmetics: [...(rec.equippedCosmetics || [])], // Persists the exact corrected worn list across reloads.
       appliedDyes: { ...(rec.appliedDyes || {}) }, // Persists dye changes made when a gifted/stored garment becomes worn.
+      wornClothingBySlot: clone(wornMapFor(npcId) || {}), // V3 retains full weaving/colorC and future garment metadata while worn.
     };
   }
 
   function storedCopyFromWorn(rec, cosmeticId, slot) {
+    const current = rawWornClothingItem(rec, cosmeticId, slot) || { cosmeticId, slot, ...clothingColorsFromWorn(rec, slot) };
     return {
-      uid: 'wcloth_' + Math.random().toString(36).slice(2, 10), // Fresh wardrobe identity avoids collisions with player inventory and other stored copies.
+      ...clone(current),
+      uid: 'wcloth_' + Math.random().toString(36).slice(2, 10),
       cosmeticId,
       slot,
-      ...clothingColorsFromWorn(rec, slot), // Keeps the displaced garment's own primary/secondary dyes so wearing it again restores its appearance.
     };
   }
 
@@ -202,15 +262,14 @@
     const equipped = rec.equippedCosmetics || (rec.equippedCosmetics = []);
     const currentIdx = equipped.findIndex(id => guessSlot(id) === slot);
     const displacedId = currentIdx !== -1 ? equipped[currentIdx] : null;
-    const displacedItem = displacedId ? storedCopyFromWorn(rec, displacedId, slot) : null; // Captures the old garment's dyes before this slot's tint channels are replaced.
-    if (displacedId === winner.cosmeticId
-      && dyeIdFromColor(displacedItem.colorA) === dyeIdFromColor(winner.colorA)
-      && dyeIdFromColor(displacedItem.colorB) === dyeIdFromColor(winner.colorB)) return false; // Only an identical garment+dye is a no-op; a recolored copy of the worn cosmetic still swaps in.
+    const displacedItem = displacedId ? storedCopyFromWorn(rec, displacedId, slot) : null; // Captures the complete old garment, including default/gifted weaving.
+    if (displacedItem && clothingVisualSignature(displacedItem) === clothingVisualSignature({ ...winner, slot })) return false;
 
     if (currentIdx !== -1) equipped.splice(currentIdx, 1, winner.cosmeticId);
     else equipped.push(winner.cosmeticId);
     list.splice(storedIdx, 1);
     if (displacedItem) list.push(displacedItem);
+    wornMapFor(npcId, true)[slot] = { ...clone(winner), cosmeticId: winner.cosmeticId, slot }; // Preserve raw gifted pattern slots; NPC forced overpass stays render-only.
     applyClothingColorsToWorn(rec, slot, winner);
     recordOutfitOverride(npcId, rec);
     return true;
@@ -241,9 +300,12 @@
     if (!rec || currentIdx === -1) return false;
 
     const slot = guessSlot(cosmeticId);
+    const storedItem = storedCopyFromWorn(rec, cosmeticId, slot); // Snapshot full woven item before clearing the worn metadata.
     equipped.splice(currentIdx, 1);
+    const wornMap = wornMapFor(npcId);
+    if (wornMap) delete wornMap[slot];
     const list = stored[npcId] || (stored[npcId] = []);
-    list.push(storedCopyFromWorn(rec, cosmeticId, slot));
+    list.push(storedItem);
     recordOutfitOverride(npcId, rec);
     return true;
   }
@@ -267,12 +329,17 @@
       gender: authoredAppearance.gender || (rec?.gender === 'female' ? 'female' : 'male'),
       cosmetics: authoredAppearance.cosmetics || {},
     }; // Fills only missing legacy identity fields while preserving body colors, deformation, cosmetics, and all other authored appearance data.
-    const profile = window.NpcAvatarPreview.buildProfileFromNpcExport({
+    const baseExport = {
       name: rec?.name || rec?.id || 'npc',
       appearance,
       equippedCosmetics: rec?.equippedCosmetics || [],
       appliedDyes: rec?.appliedDyes || {},
-    });
+    };
+    const effectiveClothing = wornClothingItemsForRecord(rec, true); // Applies authored default patterns + forced NPC overpass only to this render copy.
+    const renderedExport = window.ClothingWeavingSystem?.decorateAvatarDataWithWovenItems
+      ? window.ClothingWeavingSystem.decorateAvatarDataWithWovenItems(baseExport, effectiveClothing)
+      : baseExport;
+    const profile = window.NpcAvatarPreview.buildProfileFromNpcExport(renderedExport);
     if (!profile) return;
     walker.profile = profile;
     try {
@@ -355,24 +422,30 @@
     if (!rec || !outfit) return false;
     rec.equippedCosmetics = [...(outfit.equippedCosmetics || [])];
     rec.appliedDyes = { ...(outfit.appliedDyes || {}) };
+    if (outfit.wornClothingBySlot && typeof outfit.wornClothingBySlot === 'object') wornClothingByNpc[rec.id] = clone(outfit.wornClothingBySlot);
+    else delete wornClothingByNpc[rec.id]; // V2 save fallback: synthesize from authored/default clothing.
     return true;
   }
 
   async function syncWalkerOutfit(walker) {
-    if (!applyOutfitOverrideToRecord(walker?.rec)) return false; // Re-applies after async walker construction to close the restore-vs-spawn race.
-    await refreshWalkerAppearance(walker);
+    const rec = walker?.rec;
+    const restored = applyOutfitOverrideToRecord(rec);
+    const patternedDefault = wornClothingItemsForRecord(rec, true).some(item => window.ClothingWeavingSystem?.hasWovenPattern?.(item));
+    if (!restored && !patternedDefault) return false;
+    await refreshWalkerAppearance(walker); // Default patterned clothing needs a post-spawn bake even before a wardrobe override exists.
     return true;
   }
 
   function serialize() {
-    return { version: 2, stored, outfits: outfitOverrides };
+    return { version: 3, stored, outfits: outfitOverrides };
   }
   function restore(data) {
     Object.keys(stored).forEach(k => delete stored[k]);
     Object.keys(outfitOverrides).forEach(k => delete outfitOverrides[k]);
+    Object.keys(wornClothingByNpc).forEach(k => delete wornClothingByNpc[k]);
     if (!data || typeof data !== 'object') return;
 
-    const isV2 = Number(data.version) >= 2 && data.stored && typeof data.stored === 'object'; // Distinguishes stored+outfit saves from legacy npcId->items wardrobe saves.
+    const isV2 = Number(data.version) >= 2 && data.stored && typeof data.stored === 'object'; // V3 is a strict superset; legacy stored-only saves still follow the old branch.
     Object.assign(stored, isV2 ? data.stored : data);
     if (!isV2 || !data.outfits || typeof data.outfits !== 'object') return;
     Object.assign(outfitOverrides, data.outfits);
@@ -396,6 +469,7 @@
     captureDefaultOutfitTraits,
     applyOutfitOverrideToRecord,
     syncWalkerOutfit,
+    wornClothingItemsForRecord,
     serialize,
     restore,
   };

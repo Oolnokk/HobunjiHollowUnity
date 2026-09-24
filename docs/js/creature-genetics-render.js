@@ -252,7 +252,7 @@
         paint.patternLibraryId || '',
         paint.repoPatternId || paint.pattern?.repoPatternId || '',
         Math.max(7, Math.min(14, Number(paint.patternScale) || 7)).toFixed(3),
-        compactHashText(JSON.stringify(paint.pattern || null)),
+        compactHashText(JSON.stringify(Array.isArray(paint.patterns) ? paint.patterns.slice(0, 2) : (paint.pattern || null))), // Includes future second-slot paint data in the creature-frame cache key.
       ].join(':');
     }).join('|');
     return compactHashText(compact);
@@ -290,38 +290,48 @@
     const paint = colorPoolPaintFor(genotype, regionId);
     if (!paint) return null;
     const dyeHex = paint.dyeHex || window.DyeSystem?.getById?.(paint.dyeId)?.hex || null;
-    let pattern = paint.pattern || (paint.patternLibraryId ? window.PatternLibrary?.getById?.(paint.patternLibraryId) : null);
-    const repoPatternId = paint.repoPatternId || pattern?.repoPatternId || null; // Character Studio stores only this small committed-library reference.
-    const animalPatternScale = Math.max(7, Math.min(14, Number(paint.patternScale) || 7)); // Animal surface paint intentionally lives at a much larger purpose-specific scale than clothing; 7× is the minimum/default.
-    const debugBase = { repoPatternId, patternScale: animalPatternScale, dyeHex, status: 'pending' };
+    const rawPatterns = Array.isArray(paint.patterns) ? paint.patterns.slice(0, 2) : [
+      paint.pattern || (paint.patternLibraryId ? window.PatternLibrary?.getById?.(paint.patternLibraryId) : null),
+    ]; // Current Color Pools UI writes only the legacy primary slot; a future unlock can populate patterns[1] without changing rendering.
+    const animalPatternScale = Math.max(7, Math.min(14, Number(paint.patternScale) || 7)); // Both slots intentionally share the same animal-use scale and ink color.
+    const debugBase = { patternCount: rawPatterns.filter(Boolean).length, patternScale: animalPatternScale, dyeHex, status: 'pending' };
     try {
-      if (repoPatternId && !(pattern?.motifDataUrl || pattern?.motifUrl || pattern?.customMotifId)) {
-        pattern = await window.RepoPatternLibrary?.getById?.(repoPatternId) || pattern;
+      const patterns = [];
+      for (const raw of rawPatterns) {
+        if (!raw) continue;
+        let pattern = { ...raw };
+        const repoPatternId = pattern.repoPatternId || (patterns.length === 0 ? paint.repoPatternId : null) || null;
+        if (repoPatternId && !(pattern.motifDataUrl || pattern.motifUrl || pattern.customMotifId)) {
+          pattern = await window.RepoPatternLibrary?.getById?.(repoPatternId) || pattern;
+        }
+        if (pattern) patterns.push({ ...pattern, usageScaleMultiplier: animalPatternScale }); // Purpose-specific render field remains transient and identical for both slots.
+        if (patterns.length >= 2) break;
       }
-      if (pattern) pattern = { ...pattern, usageScaleMultiplier: animalPatternScale }; // Purpose-specific render field consumed after the reusable pattern's own normalized meshScale has been resolved.
-      const compositor = window.ClothingWeavingSystem?.applyPatternToTintedImage
-        || window.ClothingWeavingSystem?.__test?.applyPatternToTintedImage;
-      const motifRef = pattern?.motifDataUrl || pattern?.motifUrl || pattern?.customMotifId || null;
+      const compositor = window.ClothingWeavingSystem?.applyPatternStackToTintedImage
+        || window.ClothingWeavingSystem?.__test?.applyPatternStackToTintedImage;
+      const motifRefs = patterns.map(pattern => pattern?.motifDataUrl || pattern?.motifUrl || pattern?.customMotifId || null).filter(Boolean);
       if (!dyeHex) {
         setPatternPaintDebug(regionId, { ...debugBase, status: 'failed', reason: 'missing pattern ink color' });
         return null;
       }
-      if (!motifRef) {
-        setPatternPaintDebug(regionId, { ...debugBase, status: 'failed', reason: repoPatternId ? 'repo pattern did not resolve a motif PNG' : 'pattern has no motif image' });
+      if (!motifRefs.length) {
+        setPatternPaintDebug(regionId, { ...debugBase, status: 'failed', reason: 'surface paint has no resolvable motif image' });
         return null;
       }
       if (!compositor) {
-        setPatternPaintDebug(regionId, { ...debugBase, status: 'failed', reason: 'weaving compositor unavailable', motifRef });
+        setPatternPaintDebug(regionId, { ...debugBase, status: 'failed', reason: 'weaving stack compositor unavailable', motifRefs });
         return null;
       }
       const clippedSource = regionMask ? maskedRegionCanvas(imageOrCanvas, regionMask) : imageOrCanvas;
-      const rendered = await compositor(clippedSource, pattern, dyeHex, cachePrefix, null, 'animal-surface-pattern');
+      const rendered = await compositor(clippedSource, patterns, dyeHex, cachePrefix, null, 'animal-surface-pattern');
       const applied = !!rendered && rendered !== clippedSource;
       setPatternPaintDebug(regionId, {
         ...debugBase,
+        patternCount: patterns.length,
         status: applied ? 'applied' : 'failed',
         reason: applied ? null : 'compositor returned the unpatterned source',
-        motifRef,
+        motifRefs,
+        overpass: patterns.length > 1 ? { clearanceMultiplier: Math.max(3, Math.min(12, Number(patterns[1]?.overpassClearanceMultiplier) || 3)) } : null, // Mirrors the shared compositor's player/dev-authored slot-2 clamp for mobile diagnostics.
       });
       return applied ? rendered : null;
     } catch (error) {

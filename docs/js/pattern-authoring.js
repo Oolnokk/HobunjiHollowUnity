@@ -30,6 +30,8 @@
   const UNDO_LIMIT = 20; // Sketch snapshots are ~200KB each (SKETCH_CANVAS_SIZE^2 * 4 bytes) — capped so a long session's history can't grow unbounded.
   const PATTERN_SCALE_MIN = 0.4; // Used by the Pattern scale slider; renders at the former 0.10 physical mesh scale after normalization.
   const PATTERN_SCALE_MAX = 3.2; // Used by the Pattern scale slider; renders at the former 0.80 physical mesh scale after normalization.
+  const OVERPASS_CLEARANCE_MIN = 3; // Current knot-gap behavior; player/dev authoring cannot make the invisible mask narrower than this.
+  const OVERPASS_CLEARANCE_MAX = 12; // Four times the current 3× gap, matching the authored upper limit requested for slot 2.
 
   const PATTERN_DEFAULTS = Object.freeze({
     motifScale: 1, // source-ink zoom inside the fixed frame crop; pixels outside the frame are clipped
@@ -65,6 +67,7 @@
     // legacy pre-frame-tool field names (see legacyFrameFields below).
     meshScale: 1, // Normalized whole-pattern scale: 1.00 renders at the pre-normalization 0.25 mesh scale.
     meshRotationDeg: 0,
+    overpassClearanceMultiplier: OVERPASS_CLEARANCE_MIN, // Used only when this pattern occupies slot 2; measured against that usage's normal black-outline width.
   });
 
   // Mirrors clothing-weaving-system.js's/tool-metal-recolor.js's own
@@ -232,6 +235,7 @@
     injectStyles();
     const cfg = { ...PATTERN_DEFAULTS, ...legacyFrameFields(options.initialPattern) };
     cfg.meshScale = clamp(Number(cfg.meshScale) || 1, PATTERN_SCALE_MIN, PATTERN_SCALE_MAX); // Keeps loaded/legacy values in the normalized Pattern scale range without migrating the saved number.
+    cfg.overpassClearanceMultiplier = clamp(Number(cfg.overpassClearanceMultiplier) || OVERPASS_CLEARANCE_MIN, OVERPASS_CLEARANCE_MIN, OVERPASS_CLEARANCE_MAX); // Player-authored knot gap is always between the old 3× behavior and four times that amount.
     let closed = false;
     let brushMode = 'brush'; // 'brush' | 'eraser'
     let brushSize = 30;
@@ -268,6 +272,8 @@
               <div class="pa-check"><input type="checkbox" class="pa-in" data-field="invert" ${cfg.invert ? 'checked' : ''}><label>Invert pattern</label></div>
               <div class="pa-field"><label><span>Motif thinning / thickening</span><span class="pa-val" data-for="motifThinPx"></span></label><input type="range" class="pa-in" data-field="motifThinPx" min="-12" max="12" step="1" value="${cfg.motifThinPx}"></div>
               <p class="pa-hint">0 keeps the motif footprint unchanged. Move right / positive to thin inward; move left / negative to thicken outward. Units are pixels in the motif itself, before Pattern scale, frame scale, or mesh scale are applied; the black outline is drawn afterward.</p>
+              <div class="pa-field"><label><span>Overpass mask gap</span><span class="pa-val" data-for="overpassClearanceMultiplier"></span></label><input type="range" class="pa-in" data-field="overpassClearanceMultiplier" min="${OVERPASS_CLEARANCE_MIN}" max="${OVERPASS_CLEARANCE_MAX}" step="0.25" value="${cfg.overpassClearanceMultiplier}"></div>
+              <p class="pa-hint">Used only when this pattern is pattern 2 / the overpass. 3× is the original minimum gap; 12× is the maximum. The value multiplies the normal black-outline width for the current use (clothing, animal paint, or verdigris).</p>
             </div>
             ${options.library ? `
             <div class="pa-card">
@@ -360,6 +366,7 @@
       overlay.querySelectorAll('.pa-val').forEach(el => {
         const field = el.dataset.for;
         if (field === 'motifScale' || field === 'frameScale' || field === 'meshScale') el.textContent = `${Number(cfg[field]).toFixed(2)}×`;
+        else if (field === 'overpassClearanceMultiplier') el.textContent = `${Number(cfg[field]).toFixed(2)}× outline`;
         else if (field === 'motifThinPx') {
           const amount = Math.round(Number(cfg[field]) || 0);
           el.textContent = amount > 0 ? `Thin ${amount} motif px` : amount < 0 ? `Thicken ${Math.abs(amount)} motif px` : '0 motif px';
@@ -392,6 +399,7 @@
         frameScale: Number(cfg.frameScale) || 1,
         meshScale: clamp(Number(cfg.meshScale) || 1, PATTERN_SCALE_MIN, PATTERN_SCALE_MAX),
         meshRotationDeg: Number(cfg.meshRotationDeg) || 0,
+        overpassClearanceMultiplier: clamp(Number(cfg.overpassClearanceMultiplier) || OVERPASS_CLEARANCE_MIN, OVERPASS_CLEARANCE_MIN, OVERPASS_CLEARANCE_MAX), // Saved on the pattern so every shared renderer and future unlocked slot-2 UI reads the same player-authored gap.
       };
     }
 
@@ -756,6 +764,7 @@
     function applyPatternData(data) {
       Object.assign(cfg, PATTERN_DEFAULTS, legacyFrameFields(data) || {});
       cfg.meshScale = clamp(Number(cfg.meshScale) || 1, PATTERN_SCALE_MIN, PATTERN_SCALE_MAX); // Library/legacy loads retain their stored normalized value when valid and clamp only outside the authored range.
+      cfg.overpassClearanceMultiplier = clamp(Number(cfg.overpassClearanceMultiplier) || OVERPASS_CLEARANCE_MIN, OVERPASS_CLEARANCE_MIN, OVERPASS_CLEARANCE_MAX); // Old patterns without the field inherit the former fixed 3× behavior.
       syncInputsFromCfg();
       updateValLabels();
       drawMotifImageIntoSketch(cfg.motifDataUrl);

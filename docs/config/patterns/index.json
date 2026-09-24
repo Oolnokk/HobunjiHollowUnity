@@ -20,6 +20,16 @@
       "id": "rakakoan_rigging",
       "name": "Rakako'an Rigging",
       "file": "config/patterns/pattern_rakakoan_rigging.json"
+    },
+    {
+      "id": "white_bronze_sun_overpass",
+      "name": "White Bronze Sun Overpass",
+      "file": "config/patterns/pattern_white_bronze_sun_overpass.json"
+    },
+    {
+      "id": "tankan_guard_emblem",
+      "name": "Tankan Guard Emblem",
+      "file": "config/patterns/pattern_tankan_guard_emblem.json"
     }
   ]
 }

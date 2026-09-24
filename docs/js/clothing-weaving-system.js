@@ -29,6 +29,21 @@
   const PATTERN_SCALE_REFERENCE = 0.25; // Converts normalized whole-pattern scale to the pre-normalization renderer scale; 1.00 now means the old 0.25.
   const PATTERN_SCALE_MIN = 0.4; // Normalized lower clamp used by woven pattern rendering; equivalent to the old physical 0.10.
   const PATTERN_SCALE_MAX = 3.2; // Normalized upper clamp used by woven pattern rendering; equivalent to the old physical 0.80.
+  const CLOTHING_WEAVING_SCRIPT_URL = (() => {
+    try {
+      const direct = document?.currentScript?.src;
+      if (direct) return direct;
+      const scripts = document?.getElementsByTagName?.('script') || [];
+      for (let i = scripts.length - 1; i >= 0; i--) {
+        const src = scripts[i]?.src || '';
+        if (/\/js\/clothing-weaving-system\.js(?:[?#]|$)/.test(src)) return src;
+      }
+    } catch (_) {}
+    return '';
+  })(); // Captured at module evaluation so standalone tools can resolve game-root assets after document.currentScript becomes null.
+  const CLOTHING_WEAVING_DOCS_BASE_URL = (() => {
+    try { return CLOTHING_WEAVING_SCRIPT_URL ? new URL('../', CLOTHING_WEAVING_SCRIPT_URL).href : ''; } catch (_) { return ''; }
+  })();
 
   let equipmentDeps = null; // Captured from EquipmentPanel.init; used for gear, inventory, saves, and player refresh.
   const AVATAR_REFRESH_RETRY_MS = 200; // Polling interval while waiting for equipmentDeps to become available.
@@ -110,22 +125,55 @@
   // so every consumer (portrait rendering, loom/redye previews, debug
   // snapshots) agrees on what "this item has a pattern" and "what pattern
   // applies to this specific layer" mean.
-  function weavingPatternForRole(weaving, role) {
-    if (!weaving) return null;
+  function normalizePatternStack(value) {
+    const raw = Array.isArray(value) ? value : (Array.isArray(value?.patterns) ? value.patterns : [value]); // Used by every woven/runtime caller so optional second-pattern data has one save-compatible normalization seam.
+    return raw.filter(pattern => !!pattern && typeof pattern === 'object').slice(0, 2); // The shared compositor intentionally supports at most primary + overpass.
+  }
+
+  function forcedOverpassPatternForWeaving(weaving, role = undefined) {
+    const pattern = weaving?.forcedOverpassPattern; // Runtime/NPC policy seam: intentionally outside per-layer authored data so it can replace slot 2 without touching a garment's saved stack.
+    if (!pattern || typeof pattern !== 'object') return null;
+    const roles = Array.isArray(weaving?.forcedOverpassRoles) ? weaving.forcedOverpassRoles.filter(Boolean).map(String) : [];
+    if (role !== undefined && roles.length && !roles.includes(String(role || DEFAULT_LAYER_ROLE))) return null; // Optional role scope lets NPC uniforms stamp the poncho cloth without touching its shoulder-wrap layer.
+    return pattern;
+  }
+
+  function withForcedOverpass(weaving, patterns, role = undefined) {
+    const base = normalizePatternStack(patterns);
+    const forced = forcedOverpassPatternForWeaving(weaving, role);
+    if (!forced) return base;
+    return base[0] ? [base[0], forced] : [forced]; // Preserve garment slot 1; only the scoped role's visual slot 2 is replaced, while the stored garment remains untouched.
+  }
+
+  function weavingPatternsForRole(weaving, role) {
+    if (!weaving) return [];
+    let patterns = [];
     if (weaving.layers) {
       const entry = weavingEntryForRole(weaving, role); // Shared entry also carries the garment-only swapPatternColors flag.
-      if (!entry) return null;
-      if (entry.pattern) return entry.pattern;
-      if (entry.patternLibraryId) return window.PatternLibrary?.getById?.(entry.patternLibraryId) || null;
-      return null;
+      if (entry) {
+        if (Array.isArray(entry.patterns)) patterns = normalizePatternStack(entry.patterns); // Future player unlock writes this; current loom UI still writes only entry.pattern.
+        else if (entry.pattern) patterns = [entry.pattern];
+        else if (entry.patternLibraryId) {
+          const resolved = window.PatternLibrary?.getById?.(entry.patternLibraryId) || null;
+          if (resolved) patterns = [resolved];
+        }
+      }
+      return withForcedOverpass(weaving, patterns, role); // Forced NPC overpasses can target one authored clothing layer role without changing the garment's saved patterns.
     }
-    return weaving.pattern || null; // Legacy save: one pattern, applied to every layer.
+    if (Array.isArray(weaving.patterns)) patterns = normalizePatternStack(weaving.patterns);
+    else if (weaving.pattern) patterns = [weaving.pattern]; // Legacy save: one pattern, applied to every layer.
+    return withForcedOverpass(weaving, patterns, role);
+  }
+
+  function weavingPatternForRole(weaving, role) {
+    return weavingPatternsForRole(weaving, role)[0] || null; // Compatibility helper for callers/tests that still ask for only the primary pattern.
   }
 
   function weavingHasAnyPattern(weaving) {
     if (!weaving) return false;
-    if (weaving.layers) return Object.keys(weaving.layers).some(role => !!weavingPatternForRole(weaving, role));
-    return !!weaving.pattern;
+    if (forcedOverpassPatternForWeaving(weaving)) return true; // Lets an NPC policy put its mark onto default/unpatterned clothing without fabricating a permanent slot-1 pattern.
+    if (weaving.layers) return Object.keys(weaving.layers).some(role => weavingPatternsForRole(weaving, role).length > 0);
+    return weavingPatternsForRole(weaving, null).length > 0;
   }
 
   function materializeWeavingLibrarySnapshots(item) {
@@ -293,6 +341,46 @@
     return ({ hat: 'HAT_C', hood: 'HOOD_C', torso: 'TORSO_C', overwear: 'CLOTH_C' })[slot] || null;
   }
 
+  function portraitClothingColor(color) {
+    if (typeof color === 'string') return { dyeId: color }; // NPC default wardrobe colors are stored as dye-id strings; player garments already carry full color objects.
+    return clone(color);
+  }
+
+  function decorateAvatarDataWithWovenItems(avatarData, items = []) {
+    const out = avatarData && typeof avatarData === 'object' ? avatarData : {};
+    const ids = new Set(Array.isArray(out.equippedCosmetics) ? out.equippedCosmetics : []);
+    const colors = { ...(out?.appearance?.bodyColors || {}) };
+    const wovenDescriptors = [];
+    for (const item of (items || []).filter(Boolean)) {
+      const baseId = baseCosmeticId(item);
+      if (item?.baseCosmeticId && item.cosmeticId) {
+        ids.delete(item.cosmeticId);
+        if (baseId) ids.add(baseId);
+      }
+      const colorC = portraitClothingColor(item?.colorC);
+      const cKey = thirdTintKey(item?.slot);
+      if (cKey && colorC) colors[cKey] = colorC;
+      if (baseId && weavingHasAnyPattern(item?.weaving)) {
+        wovenDescriptors.push({
+          uid: item.uid,
+          slot: item.slot,
+          baseCosmeticId: baseId,
+          weaving: clone(item.weaving),
+          colorA: portraitClothingColor(item.colorA), // NPC authored dye-id strings and player color objects converge before runtime swap/color resolution.
+          colorB: portraitClothingColor(item.colorB),
+          colorC,
+        });
+      }
+    }
+    if (wovenDescriptors.length) colors[CLOTHING_MARKER_KEY] = wovenDescriptors;
+    else delete colors[CLOTHING_MARKER_KEY];
+    return {
+      ...out,
+      equippedCosmetics: [...ids],
+      appearance: { ...(out?.appearance || {}), bodyColors: colors },
+    };
+  }
+
   function uniqueCraftCosmeticId(baseId, uid) { return `${baseId}${CRAFT_ID_MARKER}${uid}`; }
 
   function patchEquipmentPanel(api) {
@@ -314,36 +402,7 @@
         const out = originalApply(playerData);
         const gear = gearInventory();
         const equipped = CLOTHING_SLOTS.map(slot => gear?.clothing?.[slot]).filter(Boolean);
-        const ids = new Set(Array.isArray(out?.equippedCosmetics) ? out.equippedCosmetics : []);
-        const colors = { ...(out?.appearance?.bodyColors || {}) };
-        const wovenDescriptors = [];
-        for (const item of equipped) {
-          const baseId = baseCosmeticId(item);
-          if (item?.baseCosmeticId && item.cosmeticId) {
-            ids.delete(item.cosmeticId);
-            if (baseId) ids.add(baseId);
-          }
-          const cKey = thirdTintKey(item.slot);
-          if (cKey && item.colorC) colors[cKey] = { ...item.colorC };
-          if (baseId && weavingHasAnyPattern(item?.weaving)) {
-            wovenDescriptors.push({
-              uid: item.uid,
-              slot: item.slot,
-              baseCosmeticId: baseId,
-              weaving: clone(item.weaving),
-              colorA: clone(item.colorA), // Used by runtime color swapping to recover this layer's ordinary cloth dye exactly.
-              colorB: clone(item.colorB), // Used by runtime color swapping for trim/B-palette layers.
-              colorC: clone(item.colorC),
-            });
-          }
-        }
-        if (wovenDescriptors.length) colors[CLOTHING_MARKER_KEY] = wovenDescriptors;
-        else delete colors[CLOTHING_MARKER_KEY];
-        return {
-          ...out,
-          equippedCosmetics: [...ids],
-          appearance: { ...(out?.appearance || {}), bodyColors: colors },
-        };
+        return decorateAvatarDataWithWovenItems(out, equipped); // Shared with NPC wardrobe rendering so default/gifted NPC clothes use the exact same portrait marker and third-dye path as player gear.
       };
     }
 
@@ -1099,9 +1158,26 @@
     return value;
   }
 
+  function docsRelativeUrl(path) {
+    const value = String(path || '').replace(/\\/g, '/').replace(/^\.\//, '').replace(/^docs\//, '');
+    if (!CLOTHING_WEAVING_DOCS_BASE_URL) return value; // Game/test fallback preserves the historical relative URL contract.
+    try { return new URL(value, CLOTHING_WEAVING_DOCS_BASE_URL).href; } catch (_) { return value; }
+  }
+
+  function standaloneAssetUrl(url) {
+    const value = String(url || '');
+    if (/^(?:https?:|blob:|data:|\/\/)/i.test(value)) return value;
+    const normalizedSlashes = value.replace(/\\/g, '/');
+    const assetsAt = normalizedSlashes.indexOf('assets/');
+    const docsAssetPath = assetsAt >= 0
+      ? normalizedSlashes.slice(assetsAt)
+      : 'assets/' + normalizeAssetPath(normalizedSlashes);
+    return docsRelativeUrl(docsAssetPath); // Reconstructs docs/assets/... after normalizeAssetPath has intentionally stripped the game loadImg prefix.
+  }
+
   async function cosmeticsIndex() {
     if (!cosmeticsIndexPromise) {
-      cosmeticsIndexPromise = fetch('config/cosmetics/index.json').then(response => {
+      cosmeticsIndexPromise = fetch(docsRelativeUrl('config/cosmetics/index.json')).then(response => {
         if (!response.ok) throw new Error(`Cosmetics index HTTP ${response.status}`);
         return response.json();
       });
@@ -1137,7 +1213,7 @@
         const index = await cosmeticsIndex();
         const entry = (index?.entries || []).find(record => record?.id === id);
         if (!entry?.path) return null;
-        const path = 'config/cosmetics/' + String(entry.path).replace(/^\.\//, '');
+        const path = docsRelativeUrl('config/cosmetics/' + String(entry.path).replace(/^\.\//, ''));
         const response = await fetch(path);
         if (!response.ok) throw new Error(`${id} cosmetic config HTTP ${response.status}`);
         return response.json();
@@ -1322,7 +1398,7 @@
       for (const role of Object.keys(weaving.layers).sort()) {
         const entry = weaving.layers[role] || {};
         resolvedLayers[role] = {
-          pattern: entry.pattern || (entry.patternLibraryId ? window.PatternLibrary?.getById?.(entry.patternLibraryId) : null),
+          patterns: weavingPatternsForRole(weaving, role), // Cache key includes both future second-slot data and legacy primary-only data.
           swapPatternColors: !!entry.swapPatternColors,
         };
       }
@@ -1401,8 +1477,9 @@
       let img = await loadImageUrl(url);
       if (!img) continue;
       const shadingSource = img; // Original authored raster; pattern ink samples this light/shadow field even after the base dye is applied.
-      const pattern = weavingPatternForRole(weaving, role); // Determines whether this exact base/trim layer gets woven at all.
-      const swapPatternColors = !!pattern && weavingSwapsPatternColorsForRole(weaving, role); // Swaps only this garment layer's cloth and pattern dyes.
+      const patterns = weavingPatternsForRole(weaving, role); // Determines the primary + optional overpass motifs for this exact base/trim layer.
+      const pattern = patterns[0] || null; // Retained as the primary-pattern compatibility name used by color/swap code below.
+      const swapPatternColors = patterns.length > 0 && weavingSwapsPatternColorsForRole(weaving, role); // Swaps only this garment layer's cloth and shared pattern dye.
       const clothColorHex = paletteKey === 'B' ? secondaryColorHex : primaryColorHex; // Original sprite dye retained as the pattern dye when swapping.
       const layerBaseHex = swapPatternColors ? patternHex : clothColorHex; // Whole sprite is dyed with the pattern color first when swapping.
       const layerPatternHex = swapPatternColors ? clothColorHex : patternHex; // Motif receives the original cloth dye when swapping.
@@ -1429,7 +1506,7 @@
       // hook's tintKey does (see installPortraitHooks) — this layer's `img`
       // pixels, which the pattern's shade-fill reads its light/dark variation
       // from, depend on which dye tinted it, not just its own url.
-      if (pattern) img = await applyPatternToTintedImage(img, pattern, layerPatternHex, `layer:${url}:${tintValue}:swap${swapPatternColors ? 1 : 0}`, shadingSource, 'woven-motif');
+      if (patterns.length) img = await applyPatternStackToTintedImage(img, patterns, layerPatternHex, `layer:${url}:${tintValue}:swap${swapPatternColors ? 1 : 0}`, shadingSource, 'woven-motif');
       rendered.push(img);
     }
     if (!rendered.length) return { canvas: null, layers };
@@ -1786,22 +1863,32 @@
     const value = String(url);
     const isAbsoluteOrBlob = /^(?:https?:|blob:|data:|\/\/)/i.test(value); // RepoPatternLibrary emits absolute motifUrl values on raw.githack/CDN builds; never feed those through game-relative loadImg path normalization.
     if (typeof window.loadImg === 'function' && !isAbsoluteOrBlob) return window.loadImg(normalizeAssetPath(value));
+    const resolvedValue = isAbsoluteOrBlob ? value : standaloneAssetUrl(value); // Standalone dev tools do not install game.loadImg, so resolve authored ./assets/... and normalized cosmetics/... against docs/.
     return new Promise((resolve, reject) => {
       const image = new Image();
       image.crossOrigin = 'anonymous';
       image.onload = () => resolve(image);
-      image.onerror = () => reject(new Error(`Failed to load pattern motif ${value}`));
-      image.src = value;
+      image.onerror = () => reject(new Error(`Failed to load pattern/clothing image ${resolvedValue}`));
+      image.src = resolvedValue;
     });
   }
 
-  function patternCanvasKey(imageOrCanvas, pattern, colorHex, cachePrefix = '') {
+  function patternStackCanvasKey(imageOrCanvas, patterns, colorHex, cachePrefix = '') {
     const width = imageOrCanvas?.naturalWidth || imageOrCanvas?.width || 1; // Used to keep species/gender sprite-size variants from sharing a composite.
     const height = imageOrCanvas?.naturalHeight || imageOrCanvas?.height || 1; // Used with width in the deterministic pattern cache key.
-    return `${cachePrefix}|${width}x${height}|${colorHex}|${JSON.stringify(pattern || null)}`;
+    return `${cachePrefix}|${width}x${height}|${colorHex}|${JSON.stringify(normalizePatternStack(patterns))}`;
+  }
+
+  function patternCanvasKey(imageOrCanvas, pattern, colorHex, cachePrefix = '') {
+    return patternStackCanvasKey(imageOrCanvas, [pattern], colorHex, cachePrefix); // Legacy single-pattern callers share the exact same cache-key path as the stack compositor.
   }
 
   const PATTERN_OUTLINE_WIDTH = 1; // Half of ToolMetalRecolor's DEFAULT_OUTLINE_WIDTH (2) — a woven motif's outline reads thinner than verdigris removal's by design.
+  const OVERPASS_CLEARANCE_MIN = 3; // Legacy/current knot-gap multiplier, and the authored minimum.
+  const OVERPASS_CLEARANCE_MAX = 12; // Player/dev-authored maximum: four times the previous fixed 3× gap.
+  function overpassClearanceMultiplier(pattern) {
+    return Math.max(OVERPASS_CLEARANCE_MIN, Math.min(OVERPASS_CLEARANCE_MAX, Number(pattern?.overpassClearanceMultiplier) || OVERPASS_CLEARANCE_MIN)); // Slot-2 pattern owns its gap so every caller shares one save-compatible value.
+  }
 
   // Mirrors ToolMetalRecolor's buildOxidationOutlineMask (docs/js/tool-metal-recolor.js):
   // centers a boundary ring across the motif edge: half covers the already-
@@ -1984,24 +2071,25 @@
     return motifDataUrl ? { ...pattern, motifDataUrl } : pattern;
   }
 
-  async function applyPatternToTintedImage(imageOrCanvas, pattern, colorHex, cachePrefix = '', shadingSource = null, debugLabel = 'woven-motif') {
-    if (!imageOrCanvas || !(pattern?.motifDataUrl || pattern?.motifUrl || pattern?.customMotifId)) return imageOrCanvas;
+  async function applyPatternStackToTintedImage(imageOrCanvas, rawPatterns, colorHex, cachePrefix = '', shadingSource = null, debugLabel = 'woven-motif') {
+    const patterns = normalizePatternStack(rawPatterns);
+    if (!imageOrCanvas || !patterns.length) return imageOrCanvas;
+    const renderable = patterns.filter(pattern => !!(pattern?.motifDataUrl || pattern?.motifUrl || pattern?.customMotifId));
+    if (!renderable.length) return imageOrCanvas;
     const width = imageOrCanvas.naturalWidth || imageOrCanvas.width || 1, height = imageOrCanvas.naturalHeight || imageOrCanvas.height || 1;
-    const key = patternCanvasKey(imageOrCanvas, pattern, colorHex, cachePrefix);
+    const key = patternStackCanvasKey(imageOrCanvas, renderable, colorHex, cachePrefix);
     if (patternedCanvasCache.has(key)) return patternedCanvasCache.get(key);
-    // A per-item "Custom" pattern's motif may live in MotifStore instead of
-    // being embedded directly (see pattern-authoring.js's offloadMotif) —
-    // resolve either shape the same way from here on.
-    const motifUrl = pattern.motifDataUrl || pattern.motifUrl || await window.MotifStore?.loadMotif?.(pattern.customMotifId);
-    if (!motifUrl) return imageOrCanvas;
-    const motif = await loadImageUrl(motifUrl);
-    if (!motif) return imageOrCanvas;
-    // Rendered CELL_OFFSET_PAD larger on every side than the sprite itself so
-    // a per-cell sample shift (below) always has real tiled pattern data to
-    // read from instead of running off the edge of what got rendered.
+
+    const motifUrls = await Promise.all(renderable.map(async pattern =>
+      pattern.motifDataUrl || pattern.motifUrl || await window.MotifStore?.loadMotif?.(pattern.customMotifId)
+    )); // Used by primary + optional overpass without changing either reusable pattern definition.
+    const loaded = await Promise.all(motifUrls.map(url => url ? loadImageUrl(url) : Promise.resolve(null)));
+    const active = renderable.map((pattern, index) => ({ pattern, motif: loaded[index] })).filter(entry => !!entry.motif).slice(0, 2);
+    if (!active.length) return imageOrCanvas;
+
     const pad = CELL_OFFSET_PAD;
-    const patternMaskCanvas = buildPatternMask(width + pad * 2, height + pad * 2, pattern, motif);
-    const maskWidth = width + pad * 2;
+    const maskWidth = width + pad * 2, maskHeight = height + pad * 2;
+    const patternCanvases = active.map(({ pattern, motif }) => buildPatternMask(maskWidth, maskHeight, pattern, motif)); // Each slot keeps its own frame/tiling/scale transform.
     const out = Object.assign(document.createElement('canvas'), { width, height });
     const ctx = out.getContext('2d');
     ctx.drawImage(imageOrCanvas, 0, 0, width, height);
@@ -2017,58 +2105,79 @@
         shadeSourceData = base.data;
       }
     }
-    const paddedMaskData = patternMaskCanvas.getContext('2d').getImageData(0, 0, maskWidth, height + pad * 2).data;
-    const separatorCanvas = patternMaskCanvas.__motifClusterSeparatorCanvas;
-    const paddedSeparatorData = separatorCanvas ? separatorCanvas.getContext('2d').getImageData(0, 0, maskWidth, height + pad * 2).data : null; // Same pattern-space raster as paddedMaskData, but only the intra-instance no-fuse watershed.
     const [r, g, b] = hexRgb(colorHex);
-    // Motif ink uses the same canonical source-art shade fill as garment
-    // bases, animal coats/surface paint, and tools.
     const directShadeFill = window.ColorFill?.shadeFillPixels;
-
     const pixelCount = width * height;
     const garmentMask = new Uint8Array(pixelCount); // Opaque, non-authored-outline cloth pixels — this pattern's equivalent of the tool's metalMask.
     for (let p = 0, i = 0; i < base.data.length; i += 4, p++) {
-      const maxChannel = Math.max(shadeSourceData[i], shadeSourceData[i + 1], shadeSourceData[i + 2]); // Authored source determines cloth/outline membership even after a dark dye.
+      const maxChannel = Math.max(shadeSourceData[i], shadeSourceData[i + 1], shadeSourceData[i + 2]);
       if (shadeSourceData[i + 3] > 8 && maxChannel > 28) garmentMask[p] = 1;
     }
 
-    // Each disconnected cell of the garment samples the same tiled pattern
-    // at its own small diagonal shift (see CELL_OFFSET_STEP) instead of all
-    // cells reading from one continuous tiling — a sprite with two separate
-    // cloth pieces baked into it shouldn't look like the motif was printed
-    // across the seam as a single flat surface.
     const { labels: cellLabels } = labelPatternCells(garmentMask, width, height);
-    const patternMask = new Uint8Array(pixelCount); // Pixels the motif actually covers, after each cell's own sample offset.
-    const clusterSeparatorMask = paddedSeparatorData ? new Uint8Array(pixelCount) : null; // Preserves disconnected ink islands inside each stamped motif instance.
-    for (let p = 0; p < pixelCount; p++) {
-      if (!garmentMask[p]) continue;
-      const x = p % width, y = (p / width) | 0;
-      const off = (cellLabels[p] % CELL_OFFSET_CYCLE) * CELL_OFFSET_STEP;
-      const mx = x + pad - off, my = y + pad - off;
-      const mi = (my * maskWidth + mx) * 4;
-      if (paddedMaskData[mi + 3] > 16) patternMask[p] = 1;
-      if (clusterSeparatorMask && paddedSeparatorData[mi + 3] > 16) clusterSeparatorMask[p] = 1;
+    const sampledMasks = []; // Used below to apply the Celtic-knot-style overpass before any visible black outline is generated.
+    const sampledSeparators = [];
+    for (const patternCanvas of patternCanvases) {
+      const paddedMaskData = patternCanvas.getContext('2d').getImageData(0, 0, maskWidth, maskHeight).data;
+      const separatorCanvas = patternCanvas.__motifClusterSeparatorCanvas;
+      const paddedSeparatorData = separatorCanvas ? separatorCanvas.getContext('2d').getImageData(0, 0, maskWidth, maskHeight).data : null;
+      const mask = new Uint8Array(pixelCount);
+      const separator = paddedSeparatorData ? new Uint8Array(pixelCount) : null;
+      for (let p = 0; p < pixelCount; p++) {
+        if (!garmentMask[p]) continue;
+        const x = p % width, y = (p / width) | 0;
+        const off = (cellLabels[p] % CELL_OFFSET_CYCLE) * CELL_OFFSET_STEP;
+        const mx = x + pad - off, my = y + pad - off;
+        const mi = (my * maskWidth + mx) * 4;
+        if (paddedMaskData[mi + 3] > 16) mask[p] = 1;
+        if (separator && paddedSeparatorData[mi + 3] > 16) separator[p] = 1;
+      }
+      sampledMasks.push(mask);
+      sampledSeparators.push(separator);
     }
-    // Thickness was already applied in source-motif pixels before any pattern
-    // scaling/stamping. Keep this alias so fill + outline consume the exact same
-    // final sampled silhouette without a second, output-pixel morphology pass.
-    const adjustedMask = patternMask;
+
+    const combinedMask = new Uint8Array(sampledMasks[0]); // Primary motif is the under-strand when an overpass exists.
+    let combinedSeparator = sampledSeparators[0] ? new Uint8Array(sampledSeparators[0]) : null;
+    if (sampledMasks[1]) {
+      const overpassMask = sampledMasks[1]; // Slot 2 is always the visually-over strand.
+      const overpassOutlineWidth = scaledOutlineWidth(PATTERN_OUTLINE_WIDTH, active[1]?.pattern, debugLabel);
+      const clearanceMultiplier = overpassClearanceMultiplier(active[1]?.pattern); // Player/dev-authored slot-2 gap, clamped to 3×..12× normal outline width.
+      const clearanceMask = buildPatternOutlineMask(
+        overpassMask,
+        garmentMask,
+        width,
+        height,
+        overpassOutlineWidth * clearanceMultiplier, // Invisible clearance uses the authored 3×..12× multiple through the exact same raster-outline function as the visible border.
+        sampledSeparators[1],
+      );
+      for (let p = 0; p < pixelCount; p++) {
+        if (clearanceMask[p] || overpassMask[p]) combinedMask[p] = 0; // Punch the under-strand before any black outline exists.
+      }
+      for (let p = 0; p < pixelCount; p++) if (overpassMask[p]) combinedMask[p] = 1; // Then place the over-strand itself back on top.
+      const overSeparator = sampledSeparators[1];
+      if (combinedSeparator || overSeparator) {
+        const nextSeparator = new Uint8Array(pixelCount);
+        for (let p = 0; p < pixelCount; p++) {
+          const underSeparator = combinedSeparator?.[p] && !clearanceMask[p];
+          nextSeparator[p] = underSeparator || overSeparator?.[p] ? 1 : 0;
+        }
+        combinedSeparator = nextSeparator;
+      }
+    }
 
     if (typeof directShadeFill !== 'function') throw new Error('ColorFill unavailable during woven pattern composition');
     directShadeFill(base.data, [r, g, b], {
       sourceData: shadeSourceData,
-      debugLabel, // Caller-specific label lets Pixel Probe distinguish clothing weaving from animal/editor uses of this same compositor.
-      samplePredicate: i => !!garmentMask[i >> 2], // Measure the whole cloth/body region.
+      debugLabel,
+      samplePredicate: i => !!garmentMask[i >> 2],
       applyPredicate: i => {
         const p = i >> 2;
-        return !!garmentMask[p] && !!adjustedMask[p]; // Paint only motif-covered pixels.
+        return !!garmentMask[p] && !!combinedMask[p];
       },
     });
 
-    // buildPatternMask flattened every repeated stamp into one alpha field before
-    // patternMask/adjustedMask were derived, so overlapping repeats intentionally
-    // share this one silhouette instead of receiving per-stamp outlines.
-    const outlineMask = buildPatternOutlineMask(adjustedMask, garmentMask, width, height, scaledOutlineWidth(PATTERN_OUTLINE_WIDTH, pattern, debugLabel), clusterSeparatorMask);
+    const outlineWidth = scaledOutlineWidth(PATTERN_OUTLINE_WIDTH, active[0]?.pattern, debugLabel);
+    const outlineMask = buildPatternOutlineMask(combinedMask, garmentMask, width, height, outlineWidth, combinedSeparator);
     for (let p = 0, i = 0; i < base.data.length; i += 4, p++) {
       if (!outlineMask[p]) continue;
       base.data[i] = 0; base.data[i + 1] = 0; base.data[i + 2] = 0;
@@ -2077,6 +2186,10 @@
     ctx.putImageData(base, 0, 0);
     patternedCanvasCache.set(key, out);
     return out;
+  }
+
+  async function applyPatternToTintedImage(imageOrCanvas, pattern, colorHex, cachePrefix = '', shadingSource = null, debugLabel = 'woven-motif') {
+    return applyPatternStackToTintedImage(imageOrCanvas, [pattern], colorHex, cachePrefix, shadingSource, debugLabel); // Existing single-pattern API remains binary/save compatible.
   }
 
   async function patternedCanvasForItem(item) {
@@ -2099,8 +2212,9 @@
 
     window._imageForTint = function clothingPatternImageForTint(img, sourceKey, tint) {
       const descriptor = activePortraitPatternMap?.get(normalizeAssetPath(sourceKey));
-      const pattern = descriptor && weavingPatternForRole(descriptor.weaving, descriptor.role); // Per-layer: a trim layer's own pattern, not necessarily the same one as the base layer.
-      if (!pattern) return originalTint(img, sourceKey, tint);
+      const patterns = descriptor ? weavingPatternsForRole(descriptor.weaving, descriptor.role) : []; // Per-layer: base and trim can each own an independent primary + optional overpass.
+      const pattern = patterns[0] || null; // Compatibility name for the primary motif used by the existing dye-swap path.
+      if (!patterns.length) return originalTint(img, sourceKey, tint);
       const swapPatternColors = weavingSwapsPatternColorsForRole(descriptor.weaving, descriptor.role); // Runtime counterpart of the loom's independent base/trim swap checkbox.
       const patternColorHex = resolvePatternHex(descriptor.colorC); // Third dye slot is the ordinary woven-ink color and becomes the sprite color when swapped.
       const clothColorHex = portraitClothHex(descriptor); // Exact saved A/B dye becomes the motif color when this layer is swapped.
@@ -2115,12 +2229,12 @@
       const tintKey = appliedTint?.mode === 'shadeFill' ? `shade:${(appliedTint.rgb || []).join(',')}` : appliedTint?.mode === 'hueSatFill' ? `huesat:${appliedTint.hue}:${appliedTint.sat}` : 'none';
       const prefix = `runtime:${normalizeAssetPath(sourceKey)}:${tintKey}:swap${swapPatternColors ? 1 : 0}`; // Separates normal/swapped composites even when their dye values happen to match.
       const colorHex = swapPatternColors ? clothColorHex : patternColorHex; // Motif color is the opposite member of the cloth↔pattern swap.
-      const fullKey = patternCanvasKey(tinted, pattern, colorHex, prefix);
+      const fullKey = patternStackCanvasKey(tinted, patterns, colorHex, prefix);
       const cached = patternedCanvasCache.get(fullKey);
       if (cached) return cached;
       if (!pendingPatternCanvasKeys.has(fullKey)) {
         pendingPatternCanvasKeys.add(fullKey);
-        applyPatternToTintedImage(tinted, pattern, colorHex, prefix, img, 'woven-motif').then(() => {
+        applyPatternStackToTintedImage(tinted, patterns, colorHex, prefix, img, 'woven-motif').then(() => {
           requestPlayerAvatarRefresh();
         }).catch(error => { lastError = String(error?.message || error); }).finally(() => pendingPatternCanvasKeys.delete(fullKey));
       }
@@ -2182,13 +2296,15 @@
     combatActive,
     learnOwnedBlueprints,
     renderClothingLayers,
-    applyPatternToTintedImage, // Shared motif compositor used by Color Pools and animal-NPC authoring; callers supply their own already-tinted/clipped surface.
+    applyPatternToTintedImage, // Save-compatible single-pattern wrapper.
+    applyPatternStackToTintedImage, // Shared primary+overpass compositor; slot 2 punches an authored 3×..12×-outline-width invisible clearance through slot 1 before black outlining.
+    decorateAvatarDataWithWovenItems, // Reuses the player's woven portrait marker contract for NPC/default clothing without duplicating renderer internals.
     hasBehindView,
     iconSpriteForCosmetic,
     hasWovenPattern: item => weavingHasAnyPattern(item?.weaving),
     reweaveMaterialCost,
     debugSnapshot,
-    __test: Object.freeze({ baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask, applyPatternToTintedImage, labelPatternCells, behindViewUrlsFor, behindViewResultFor, buildPortraitPatternMap, collectPatternImageUrls, cosmeticConfig, summarizeWeavingLabel, weavingPatternForRole, weavingSwapsPatternColorsForRole, weavingHasAnyPattern, materializeWeavingLibrarySnapshots, frameShapeFor, wovenIconVisualKey, reweaveMaterialCost, resolvedPatternMeshScale, buildMotifClusterSeparatorMask, adjustMaskThickness, buildPatternOutlineMask, scaledOutlineWidth, requestPlayerAvatarRefresh }),
+    __test: Object.freeze({ baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask, applyPatternToTintedImage, applyPatternStackToTintedImage, labelPatternCells, behindViewUrlsFor, behindViewResultFor, buildPortraitPatternMap, collectPatternImageUrls, cosmeticConfig, summarizeWeavingLabel, weavingPatternForRole, weavingPatternsForRole, normalizePatternStack, forcedOverpassPatternForWeaving, withForcedOverpass, weavingSwapsPatternColorsForRole, weavingHasAnyPattern, decorateAvatarDataWithWovenItems, materializeWeavingLibrarySnapshots, docsRelativeUrl, standaloneAssetUrl, frameShapeFor, wovenIconVisualKey, reweaveMaterialCost, resolvedPatternMeshScale, buildMotifClusterSeparatorMask, adjustMaskThickness, buildPatternOutlineMask, scaledOutlineWidth, overpassClearanceMultiplier, requestPlayerAvatarRefresh }),
   });
   window.__clothingWeavingDebug = debugSnapshot;
 
