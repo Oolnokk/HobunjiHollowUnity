@@ -23,6 +23,14 @@ assert.match(fish, /sixfin_honeystripe: 'fishing'[\s\S]{0,140}sixfin_coalbar: 's
 assert.match(fish, /mossfin_fernback: 'fishing'[\s\S]{0,140}mossfin_peatbelly: 'fortitude'[\s\S]{0,140}mossfin_silverfrond: 'speed'[\s\S]{0,140}mossfin_coppergill: 'strength'[\s\S]{0,140}mossfin_frostcap: 'speed'/, 'Mossfin variants are live fish with per-subspecies cooking buffs');
 assert.match(fish, /\['mossfin_fernback','Mossfin Fernback','mossfin'[\s\S]{0,900}\['mossfin_frostcap','Mossfin Frostcap','mossfin'/, 'Mossfin has a five-variant authored catch catalog');
 assert.match(fish, /f\.species === 'mossfin' \? 'fish_mossfin\.png'/, 'Mossfin variants render with the existing Mossfin sprite asset');
+const fishBuffMap = fish.match(/const COOKING_EFFECT_BY_FISH = Object\.freeze\(\{([\s\S]*?)\}\);/)?.[1] || '';
+for (const effect of ['fishing', 'strength', 'fortitude', 'speed']) {
+  assert.equal((fishBuffMap.match(new RegExp(`'${effect}'`, 'g')) || []).length, 6, `exactly six live fish provide ${effect}`);
+}
+assert.match(fish, /\['gurumahi_charcoal','Gurumahi Charcoal'[\s\S]{0,180}'any'/, 'Fishing remains available in every season');
+assert.match(fish, /\['rockscale_goldplate','Rockscale Goldplate'[\s\S]{0,180}'any'/, 'Fortitude remains available in every season');
+assert.match(fish, /\['rockscale_giltback','Rockscale Giltback'[\s\S]{0,180}'any'/, 'Strength remains available in every season');
+assert.match(fish, /\['rockscale_slateplate','Rockscale Slateplate'[\s\S]{0,180}'any'/, 'Speed remains available in every season');
 assert.match(fish, /if \(species === 'mossfin'\) return \{ x: s \* 0\.92, y: s \* 1\.08 \}/, 'Mossfin has its own minigame silhouette correction');
 assert.doesNotMatch(fish, /function guruProfile\(/, 'shared hue recoloring is no longer named as Gurumahi-only now that Mossfin uses it');
 for (const [fishKey, effect] of [['gurumahi_charcoal', 'fishing'], ['rockscale_goldplate', 'fortitude'], ['rockscale_giltback', 'strength'], ['rockscale_slateplate', 'speed']]) {
