@@ -376,6 +376,7 @@
     }, 'grunt', tier, x, y, {
       zoneId: DEV_ARENA_ZONE_ID,
       nameOverride: 'Porakaneki Hunter',
+      appearanceSeed: `dev-porakaneki:${x.toFixed(3)}:${y.toFixed(3)}`, // Per-spawn seed keeps same-name test hunters visually varied while remaining reproducible from their spawn point.
       extra: { homeX: x, homeY: y, state: 'idle', isPorakanekiHunter: true },
     });
     if (!creature) { deps.showToast('Could not spawn Porakaneki Hunter — see console/log for details.', false); return; }

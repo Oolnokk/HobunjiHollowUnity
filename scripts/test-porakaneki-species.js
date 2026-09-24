@@ -15,7 +15,7 @@ assert.equal(porakaneki.npcOnly, true);
 assert.equal(porakaneki.playerSelectable, false);
 assert.deepEqual(porakaneki.genders, ['male']);
 assert.equal(porakaneki.inheritanceNotes.wardrobeSpecies, 'kenkari');
-assert.equal(porakaneki.inheritanceNotes.bodyColorSpecies, 'mao-ao');
+assert.equal(porakaneki.inheritanceNotes.bodyColorSpecies, 'mashtzarr');
 assert.equal(porakaneki.inheritanceNotes.handSpecies, 'mashtzarr');
 assert.equal(porakaneki.inheritanceNotes.footSpecies, 'engh-sho');
 assert.equal(porakaneki.inheritanceNotes.hairSpecies, 'tletingan');
@@ -28,7 +28,7 @@ assert.deepEqual(porakaneki.male.portraitBodyLayers.map(layer => layer.url), [
   'portraitsprites/torso_porakaneki_m.png',
   'portraitsprites/arm-R_kenk_m.png',
 ]);
-assert.equal(porakaneki.male.bodyColorRanges, undefined, 'Porakaneki must inherit live Mao-ao ranges rather than freeze a duplicated palette snapshot');
+assert.equal(porakaneki.male.bodyColorRanges, undefined, 'Porakaneki must inherit live Mashtzarr ranges rather than freeze a duplicated palette snapshot');
 assert(porakaneki.male.allowedCosmetics.includes('appearance::Tletingan_M::tl_forwardtuft_long'));
 assert(porakaneki.male.allowedCosmetics.includes('appearance::Tletingan_M::tl_wildbeard'));
 assert(porakaneki.male.allowedCosmetics.includes('bandolier1'));
@@ -59,11 +59,13 @@ const fighters = [
   { id: 'porakaneki_male', speciesId: 'porakaneki', gender: 'male' },
   { id: 'kenkari_male', speciesId: 'kenkari', gender: 'male' },
   { id: 'M', speciesId: 'mao-ao', gender: 'male' },
+  { id: 'mashtzarr_male', speciesId: 'mashtzarr', gender: 'male' },
 ]; // Used by the palette/cosmetic bridge exactly as portrait-utils exposes its live fighter registry.
 const cosmetics = {
   bodyColorRangesByGender: {
     kenkari_male: { A: { source: 'kenkari-male' } },
     M: { A: { source: 'mao-ao-male' }, B: { source: 'mao-ao-male-secondary' } },
+    mashtzarr_male: { A: { source: 'mashtzarr-male' }, B: { source: 'mashtzarr-male-secondary' } },
   },
   allowedCosmeticsByFighter: {
     porakaneki_male: {
@@ -186,7 +188,8 @@ assert.equal(banditEntityConfigs.at(-1), regularBanditConfig, 'non-Porakaneki ba
 
 (async () => {
   const loadedCosmetics = await windowObject.loadPortraitCosmetics();
-  assert.equal(loadedCosmetics.bodyColorRangesByGender.porakaneki_male, loadedCosmetics.bodyColorRangesByGender.M, 'Porakaneki must inherit the full live Mao-ao male palette object');
+  assert.equal(loadedCosmetics.bodyColorRangesByGender.porakaneki_male, loadedCosmetics.bodyColorRangesByGender.mashtzarr_male, 'Porakaneki must inherit the full live Mashtzarr male palette object');
+  assert.notEqual(loadedCosmetics.bodyColorRangesByGender.porakaneki_male, loadedCosmetics.bodyColorRangesByGender.M, 'Porakaneki must not silently fall back to the Mao-ao palette object');
   const allowed = Array.from(loadedCosmetics.allowedCosmeticsByFighter.porakaneki_male.set).sort(); // Normalized in host realm for stable deep-equality assertions.
   const expectedAllowed = Array.from(windowObject.HobunjiPorakanekiSpecies.allowedCosmeticIds).sort();
   assert.deepEqual(allowed, expectedAllowed, 'runtime clamp must remove all inherited Kenkari cosmetics except the two allowed clothing pieces');
@@ -197,7 +200,7 @@ assert.equal(banditEntityConfigs.at(-1), regularBanditConfig, 'non-Porakaneki ba
   assert.equal(loadedCosmetics.forcedCosmeticsByFighter.porakaneki_male.hat, 'none');
   assert.equal(loadedCosmetics.forcedCosmeticsByFighter.porakaneki_male.hood, 'none');
 
-  const porakanekiBootstrapIndex = bootstrapSource.indexOf('porakaneki-species-runtime.js?v=20260917palette1');
+  const porakanekiBootstrapIndex = bootstrapSource.indexOf('porakaneki-species-runtime.js?v=20260924poracolor1');
   const scaleBootstrapIndex = bootstrapSource.indexOf('character-rig-scale.js?v=20260904i');
   assert(porakanekiBootstrapIndex >= 0 && scaleBootstrapIndex > porakanekiBootstrapIndex,
     'Porakaneki profile inheritance must load before whole-rig scale installs profile defaults');
@@ -213,6 +216,7 @@ assert.equal(banditEntityConfigs.at(-1), regularBanditConfig, 'non-Porakaneki ba
   assert.equal(debug.wardrobeResolverInstalled, true);
   assert.equal(debug.banditWardrobeGuardInstalled, true);
   assert.equal(debug.paletteInheritanceInstalled, true);
+  assert.equal(debug.colorSpecies, 'mashtzarr');
   assert.equal(debug.cosmeticRestrictionsApplied, 1);
   assert.equal(debug.eyeDisksSuppressed, true);
   assert.deepEqual(Array.from(debug.allowedCosmeticIds).sort(), expectedAllowed);
