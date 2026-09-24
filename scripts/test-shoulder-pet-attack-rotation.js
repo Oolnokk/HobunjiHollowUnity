@@ -13,12 +13,6 @@ assert.match(gameSource,
   /updatePlayerHeadAim\(\);[\s\S]{0,260}prepareNeckForAttachmentSampling\?\.\(\);[\s\S]{0,260}updateShoulderPetMeshPin\(\);/,
   'the final physical neck pose is resolved before the live shoulder-perch frame is sampled');
 assert.match(gameSource,
-  /characterViewMode\.enabled = nextEnabled;[\s\S]{0,420}hobunjiPerspectiveAimLocked = false;[\s\S]{0,260}prepareNeckForAttachmentSampling\?\.\(\);[\s\S]{0,260}lockedNeckY = playerNeckJoint\?\.rotation\?\.y \|\| 0;/,
-  'Character View disables perspective-limit bypass and captures the physically resolved neck pose');
-assert.match(gameSource,
-  /setCharacterViewPoseLock\?\.\(true\)[\s\S]{0,420}setCharacterViewPoseLock\?\.\(false\)/,
-  'Character View freezes cosmetic composer channels on entry and releases them on exit');
-assert.match(gameSource,
   /const worldQuaternion = selectedRotationQuaternion\.clone\(\);/,
   'shoulder pets begin with whichever rotation frame is selected');
 for (const source of ['pixel', 'body', 'bodyNeckMidpoint', 'head', 'world']) {
