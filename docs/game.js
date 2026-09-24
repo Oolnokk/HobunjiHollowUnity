@@ -7423,9 +7423,11 @@
       const PLAYER_BACK_PLANE_RENDER_ORDER = 4;
       const SHOULDER_PET_PLANE_RENDER_ORDER = 6;
       const PLAYER_OVER_SHOULDER_PET_RENDER_ORDER = 8;
-      const SHOULDER_PET_LAYER_FACE_HYSTERESIS = 0.1; // Used by the face classifier below to prevent layer flips while the camera is nearly edge-on.
-      const _shoulderPetLayerCameraLocal = new THREE.Vector3(); // Reused to choose the currently camera-visible character face.
+      const SHOULDER_PET_LAYER_FACE_HYSTERESIS = 0.1; // Used by the face classifier below to prevent layer flips while the logical facing is nearly edge-on.
+      const _shoulderPetLayerPlayerWorld = new THREE.Vector3(); // Reused by the logical-facing classifier to sample the player's world position without per-frame allocation.
+      const _shoulderPetLayerCameraWorld = new THREE.Vector3(); // Reused by the logical-facing classifier to sample the camera's world position without per-frame allocation.
       let _shoulderPetLayerFrontVisible = null; // Used by the face classifier to retain the last stable front/back side inside the hysteresis band.
+      let _shoulderPetLayerDecision = null; // Used by Pixel Probe diagnostics to report the exact logical-facing layer decision applied this frame.
       let _petLayeringActive = false;
       let _petLayeringPet = null;
       function _setLayerDepthWrite(material, depthWrite) {
@@ -7434,15 +7436,27 @@
         material.needsUpdate = true;
       }
       function _cameraSeesPlayerFrontFace() {
-        if (!_playerAvatarFrontMesh) {
+        if (!playerMesh || !camera) {
           _shoulderPetLayerFrontVisible = true;
+          _shoulderPetLayerDecision = { source: 'fallback-no-player-or-camera', frontVisible: true };
           return true;
         }
-        _playerAvatarFrontMesh.updateWorldMatrix(true, false);
-        _shoulderPetLayerCameraLocal.copy(camera.position);
-        _playerAvatarFrontMesh.worldToLocal(_shoulderPetLayerCameraLocal);
-        const horizontalDistance = Math.hypot(_shoulderPetLayerCameraLocal.x, _shoulderPetLayerCameraLocal.z); // Used to normalize the camera's yaw-side test independently of camera distance.
-        const normalizedFaceZ = horizontalDistance > 1e-6 ? _shoulderPetLayerCameraLocal.z / horizontalDistance : 1; // Used below to apply the same angular deadband at every zoom/distance.
+        playerMesh.updateWorldMatrix?.(true, false);
+        camera.updateWorldMatrix?.(true, false);
+        const playerWorld = playerMesh.getWorldPosition
+          ? playerMesh.getWorldPosition(_shoulderPetLayerPlayerWorld)
+          : _shoulderPetLayerPlayerWorld.copy(playerMesh.position); // World-space origin used to derive the true camera bearing, independent of the portrait deadzone snap.
+        const cameraWorld = camera.getWorldPosition
+          ? camera.getWorldPosition(_shoulderPetLayerCameraWorld)
+          : _shoulderPetLayerCameraWorld.copy(camera.position); // World-space camera position paired with playerWorld above.
+        const dx = cameraWorld.x - playerWorld.x;
+        const dz = cameraWorld.z - playerWorld.z;
+        const horizontalDistance = Math.hypot(dx, dz);
+        const logicalYaw = Number.isFinite(facingAngle)
+          ? -facingAngle + Math.PI / 2
+          : playerMesh.rotation.y; // Matches updatePlayerMesh's rawTargetRotY before perpClamp snaps the flat portrait away from edge-on.
+        const cameraBearing = horizontalDistance > 1e-6 ? Math.atan2(dx, dz) : logicalYaw;
+        const normalizedFaceZ = Math.cos(logicalYaw - cameraBearing); // +1 means camera is in front of the logical player facing, -1 means behind.
         if (_shoulderPetLayerFrontVisible === null) {
           _shoulderPetLayerFrontVisible = normalizedFaceZ >= 0;
         } else if (_shoulderPetLayerFrontVisible && normalizedFaceZ < -SHOULDER_PET_LAYER_FACE_HYSTERESIS) {
@@ -7450,6 +7464,14 @@
         } else if (!_shoulderPetLayerFrontVisible && normalizedFaceZ > SHOULDER_PET_LAYER_FACE_HYSTERESIS) {
           _shoulderPetLayerFrontVisible = true;
         }
+        _shoulderPetLayerDecision = {
+          source: Number.isFinite(facingAngle) ? 'logical-player-facing' : 'rendered-yaw-fallback',
+          logicalYaw,
+          renderedYaw: playerMesh.rotation.y,
+          cameraBearing,
+          normalizedFaceZ,
+          frontVisible: _shoulderPetLayerFrontVisible,
+        };
         return _shoulderPetLayerFrontVisible;
       }
       function _restorePlayerBodyRenderOrder() {
@@ -7466,9 +7488,13 @@
       }
       function updatePetLayering(active, pet) {
         const nextPet = active ? pet : null; // Used here to reset face-side hysteresis whenever the active shoulder attachment changes.
-        if (_petLayeringPet !== nextPet) _shoulderPetLayerFrontVisible = null;
+        if (_petLayeringPet !== nextPet) {
+          _shoulderPetLayerFrontVisible = null;
+          _shoulderPetLayerDecision = null;
+        }
         // Restore a detached/swapped pet before assigning the active pair.
         if (_petLayeringPet && _petLayeringPet !== pet) {
+          if (_petLayeringPet.avatarRef?.group?.userData) delete _petLayeringPet.avatarRef.group.userData.hobunjiShoulderPetLayering;
           for (const m of [_petLayeringPet.avatarRef?.frontPlane?.material, _petLayeringPet.avatarRef?.backPlane?.material]) {
             _setLayerDepthWrite(m, true);
           }
@@ -7494,6 +7520,16 @@
         _setPlayerBodyRenderOrder(
           playerDrawsOnTop ? PLAYER_OVER_SHOULDER_PET_RENDER_ORDER : PLAYER_BACK_PLANE_RENDER_ORDER,
         );
+        if (pet.avatarRef?.group?.userData) {
+          pet.avatarRef.group.userData.hobunjiShoulderPetLayering = {
+            ...(_shoulderPetLayerDecision || {}),
+            frontVisible,
+            playerDrawsOnTop,
+            frontXrayDisabled: s_disableShoulderFrontXray,
+            backXrayDisabled: s_disableShoulderBackXray,
+            recentChange: 'Layer face follows unclamped logical player facing, not the portrait deadzone snap while turning.',
+          };
+        }
 
         for (const m of [pet.avatarRef?.frontPlane?.material, pet.avatarRef?.backPlane?.material]) {
           _setLayerDepthWrite(m, false);
