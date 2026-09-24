@@ -172,7 +172,13 @@
     const afterLevel = level(skillKey); // Used for level-up messaging after the grant.
     if (deps?.queueSkillXp) deps.queueSkillXp(`+${gain} ${SKILLS[skillKey].label} XP`);
     else window.WorldPopupText?.queueReward?.('skillXp', `+${gain} ${SKILLS[skillKey].label} XP`);
-    if (afterLevel > beforeLevel) deps?.showToast?.(`${SKILLS[skillKey].icon} ${SKILLS[skillKey].label} reached level ${afterLevel}!`, true);
+    if (afterLevel > beforeLevel) {
+      let announcedOverhead = false; // Tracks whether the shared world-text bridge accepted at least one crossed Skill level.
+      for (let reachedLevel = beforeLevel + 1; reachedLevel <= afterLevel; reachedLevel++) { // Emits every crossed level when one large XP grant skips multiple thresholds.
+        announcedOverhead = window.WorldPopupText?.queueLevelUp?.(`${SKILLS[skillKey].label} Level ${reachedLevel}!`) === true || announcedOverhead;
+      }
+      if (!announcedOverhead) deps?.showToast?.(`${SKILLS[skillKey].icon} ${SKILLS[skillKey].label} reached level ${afterLevel}!`, true);
+    }
     deps?.debugLog?.(`[skills] ${SKILLS[skillKey].label} +${gain}${reason ? ` (${reason})` : ''}; level ${afterLevel}`);
     persist(true);
     render();
