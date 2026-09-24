@@ -197,6 +197,7 @@
     if (entity.exhaustion.active) entity.stamina = 0; // Normalize stale saves/spawns before any action can observe regular Stamina during Black-Stamina debt.
     if (!Number.isFinite(entity.lastAttackAttemptAt)) entity.lastAttackAttemptAt = -1e9;
     if (!Number.isFinite(entity.lastAttackReceivedAt)) entity.lastAttackReceivedAt = -1e9;
+    if (Object.prototype.hasOwnProperty.call(entity, "lastStaminaSpendAt")) delete entity.lastStaminaSpendAt; // Migrates the briefly-shipped session-relative clock off saveable entity state; runtime timing now lives in punishedActionTimes.
     if (!Number.isFinite(entity.maxFooting)) entity.maxFooting = resourceSystemConfig().footingMax;
     if (!Number.isFinite(entity.footing)) entity.footing = entity.maxFooting;
     // prone: full-ragdoll knockdown state entered at 0 Footing (see game.js's
