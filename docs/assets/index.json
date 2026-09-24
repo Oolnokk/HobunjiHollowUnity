@@ -67,6 +67,8 @@
     { "name": "Inn", "path": "config/pieces/inn.json", "category": "inn" },
     { "name": "Hobunji Hollow Temple", "path": "config/pieces/temple.json", "category": "temple" },
     { "name": "Stable", "path": "config/pieces/stable.json", "category": "stable" },
-    { "name": "Researcher's Tent", "path": "config/pieces/researchers-tent.json", "category": "tent" }
+    { "name": "Researcher's Tent", "path": "config/pieces/researchers-tent.json", "category": "tent" },
+    { "name": "Bandit Tent", "path": "config/pieces/bandit-tent.json", "category": "tent" },
+    { "name": "Porakaneki Tent", "path": "config/pieces/porakaneki-tent.json", "category": "tent" }
   ]
 }

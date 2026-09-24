@@ -19,6 +19,7 @@
   const CONFIG_URL = 'config/porakaneki-camp.json'; // Network/population/LOD/reputation tuning loaded once at startup.
   const SMALL_LOCALE_URL = 'config/locales/locale_porakaneki_camp_small.json'; // Little procedural-only camp footprint.
   const CHIEF_LOCALE_URL = 'config/locales/locale_porakaneki_camp_chief.json'; // Large seasonal named-chief camp footprint.
+  const TENT_PIECE_URL = 'config/pieces/porakaneki-tent.json'; // Authored 3x3 square-taper tent used by all Porakaneki camps.
   const SPECIES_ID = 'porakaneki'; // Forced species for every generated camp resident.
   const DORMANT_AREA_PREFIX = '__porakaneki_dormant__:'; // Removes hidden/off-radius residents from the normal hostile loop.
   const TICK_INTERVAL_S = 0.20; // Neutral planner/LOD cadence; actual entity movement/render/combat stays in the normal hostile loop.
@@ -30,6 +31,8 @@
   let cfg = null; // Parsed porakaneki-camp.json.
   let smallLocaleDef = null; // Parsed small-camp locale.
   let chiefLocaleDef = null; // Parsed large chief-camp locale.
+  let tentPiece = null; // Parsed 3x3 authored Porakaneki tent piece used by tentMesh().
+  let tentCanvasTextureCache = null; // Shared canvas texture reused by every authored Porakaneki tent material.
   let gangCfg = null; // Existing humanoid combat balance reused by generated residents.
   let tickAccum = 0; // Accumulates detailed neutral update time.
   let coarseAccum = 0; // Accumulates off-radius abstract update time.
@@ -359,17 +362,37 @@
   }
   function currentZoneState() { return state.zones.get(currentArea()) || null; }
 
-  function tentMesh() {
+  function tentCanvasTexture() {
+    if (tentCanvasTextureCache) return tentCanvasTextureCache;
+    tentCanvasTextureCache = new THREE.TextureLoader().load(
+      'assets/textures/canvas.png',
+      texture => {
+        texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
+        texture.needsUpdate = true;
+      },
+      undefined,
+      () => window.__farmLog?.('[porakaneki] canvas.png failed to load; tents are using the canvas-color fallback.', 'warn', 'wildlife'),
+    );
+    tentCanvasTextureCache.wrapS = tentCanvasTextureCache.wrapT = THREE.ClampToEdgeWrapping;
+    if ('colorSpace' in tentCanvasTextureCache && THREE.SRGBColorSpace) tentCanvasTextureCache.colorSpace = THREE.SRGBColorSpace;
+    return tentCanvasTextureCache;
+  }
+  function tentMesh(prop, elevationY) {
+    if (!tentPiece || !prop || !window.HousePieceGen?.buildGroupFromPiece) return null;
+    const centerCol = prop.x + (prop.w || 1) * 0.5; // Used to preserve authored House Editor transforms relative to the camp footprint.
+    const centerRow = prop.y + (prop.h || 1) * 0.5; // Used with centerCol so the outer prop group remains centered for runtime systems.
+    const authored = window.HousePieceGen.buildGroupFromPiece(THREE, tentPiece, prop.x, prop.y, {
+      elevationY,
+      rotationDeg: prop.rot || 0,
+      matCanvas: new THREE.MeshLambertMaterial({ color: 0x8b7656, map: tentCanvasTexture(), side: THREE.DoubleSide }),
+      matDoorOpening: new THREE.MeshBasicMaterial({ color: 0x18130f, side: THREE.DoubleSide }),
+    });
+    authored.position.set(-centerCol, -elevationY, -centerRow);
     const group = new THREE.Group();
-    const shell = new THREE.Mesh(new THREE.ConeGeometry(0.9, 1.2, 5, 1, false, -Math.PI / 2), new THREE.MeshLambertMaterial({ color: 0x8b7656, side: THREE.DoubleSide }));
-    shell.position.y = 0.6;
-    shell.castShadow = true;
-    const doorway = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.55), new THREE.MeshBasicMaterial({ color: 0x18130f, side: THREE.DoubleSide }));
-    doorway.position.set(0, 0.28, 0.91);
-    group.userData.projectileCoverHeightTiles = 1.2;
-    group.userData.projectileCoverRadiusTiles = 0.9;
+    group.add(authored);
+    group.userData.projectileCoverHeightTiles = 2.55;
+    group.userData.projectileCoverRadiusTiles = 1.5;
     group.userData.projectileCoverKind = 'porakaneki-tent';
-    group.add(shell, doorway);
     return group;
   }
   function crateMesh() {
@@ -402,7 +425,7 @@
       const col = prop.x + (prop.w || 1) * 0.5, row = prop.y + (prop.h || 1) * 0.5;
       const tile = zone.grid?.[Math.floor(row)]?.[Math.floor(col)];
       const y = tile && combatDeps.tileSurfaceYInArea ? num(combatDeps.tileSurfaceYInArea(tile, camp.zoneId), 0) : 0;
-      let mesh = prop.type === 'tent' ? tentMesh() : prop.key === 'campfire' ? campfireMesh() : crateMesh();
+      let mesh = prop.type === 'tent' ? tentMesh(prop, y) : prop.key === 'campfire' ? campfireMesh() : crateMesh();
       if (!mesh) continue;
       mesh.position.set(col, y, row);
       combatDeps.markOutline?.(mesh);
@@ -987,13 +1010,20 @@
 
   async function loadConfig() {
     try {
-      const [configResponse, smallResponse, chiefResponse] = await Promise.all([fetch(CONFIG_URL), fetch(SMALL_LOCALE_URL), fetch(CHIEF_LOCALE_URL)]);
+      const [configResponse, smallResponse, chiefResponse, tentResponse] = await Promise.all([
+        fetch(CONFIG_URL),
+        fetch(SMALL_LOCALE_URL),
+        fetch(CHIEF_LOCALE_URL),
+        fetch(TENT_PIECE_URL),
+      ]);
       if (!configResponse.ok) throw new Error(`config HTTP ${configResponse.status}`);
       if (!smallResponse.ok) throw new Error(`small locale HTTP ${smallResponse.status}`);
       if (!chiefResponse.ok) throw new Error(`chief locale HTTP ${chiefResponse.status}`);
+      if (!tentResponse.ok) throw new Error(`tent piece HTTP ${tentResponse.status}`);
       cfg = await configResponse.json();
       smallLocaleDef = await smallResponse.json();
       chiefLocaleDef = await chiefResponse.json();
+      tentPiece = await tentResponse.json();
       state.lastReason = 'config-ready';
       return cfg;
     } catch (error) {
