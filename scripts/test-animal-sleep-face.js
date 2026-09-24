@@ -187,7 +187,6 @@ assert.equal(projectedFacePoint.y, 1.5, 'named-animal cinematic target predicts 
 assert.equal(rawFacePoint.y, 2, 'cinematic projection never mutates the raw head-bone face point');
 assert.equal(externalGroup.scale.y, 1, 'cinematic projection restores the authored group scale immediately after sampling');
 assert.equal(externalGroup.position.y, 1, 'cinematic projection restores the authored group position immediately after sampling');
-windowStub.AnimalSleepPresentation.unregisterExternalSleeper(externalSleeper);
 
 const nextTurn = () => new Promise(resolve => setImmediate(resolve)); // Lets nested composeFrame promises finish before inspecting the next rendered frame.
 
@@ -256,6 +255,29 @@ const nextTurn = () => new Promise(resolve => setImmediate(resolve)); // Lets ne
   assert.equal(awake.outdoorBodyYaw, -0.8, 'waking releases the body-facing lock back to ordinary farm-animal rotation');
   assert.equal(awake.outdoorGroupRot, -0.8, 'waking leaves the logical body rotation untouched');
   restoreEntry.callback({ frameId: 4, timestamp: 64, deltaMs: 16 });
+
+  externalSleeper._animalSleepPresentationOverride = 'awake'; // Used to reproduce Banubu's “I’m up” body override while his authored schedule still reports sleeping.
+  externalSleeper._animalHeadPoseOverride = 'max_down'; // Used to reproduce the Color Pools Key realization on the same awake body.
+  externalAvatar.headAngle = -6;
+  prepareEntry.callback({ frameId: 5, timestamp: 80, deltaMs: 16 });
+  assert.equal(externalGroup.scale.y, 1, 'awake presentation override keeps a named animal at regular idle body scale');
+  assert.equal(externalAvatar.headAngle, 32, 'awake named animal can still use the shared authored maximum downward neck limit');
+  restoreEntry.callback({ frameId: 5, timestamp: 80, deltaMs: 16 });
+
+  delete externalSleeper._animalHeadPoseOverride;
+  externalAvatar.headAngle = -7; // Simulates the normal named-animal head controller taking ownership again on the next dialogue line.
+  prepareEntry.callback({ frameId: 6, timestamp: 96, deltaMs: 16 });
+  assert.equal(externalAvatar.headAngle, -7, 'releasing the dialogue neck override stops the sleep presenter from pinning the head downward');
+  restoreEntry.callback({ frameId: 6, timestamp: 96, deltaMs: 16 });
+
+  externalSleeper._animalSleepPresentationOverride = 'sleep'; // Used to reproduce the line after Banubu yawns without changing his schedule data.
+  prepareEntry.callback({ frameId: 7, timestamp: 112, deltaMs: 16 });
+  assert.equal(externalAvatar.headAngle, 32, 'explicit sleep presentation restores the canonical sleeping head pose');
+  assert.equal(externalGroup.scale.y, 0.75, 'explicit sleep presentation restores the canonical sleeping body scale for the render');
+  restoreEntry.callback({ frameId: 7, timestamp: 112, deltaMs: 16 });
+  assert.equal(externalGroup.scale.y, 1, 'post-render restore returns the named animal to authored transform storage');
+  windowStub.AnimalSleepPresentation.unregisterExternalSleeper(externalSleeper);
+
   console.log('animal sleep closed-eye/head-down/body-facing regression tests passed');
 })().catch(error => {
   console.error(error);

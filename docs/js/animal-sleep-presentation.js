@@ -452,9 +452,7 @@
     const config = externalSleepers.get(entity); // Uses the same external-sleeper registration consumed by the pre-render sleep pass.
     const avatarRef = (typeof config?.avatarRef === 'function' ? config.avatarRef() : config?.avatarRef) || entity?.animalAvatarRef;
     const group = avatarRef?.group || (typeof config?.group === 'function' ? config.group() : config?.group) || entity?.avatarGroup;
-    const sleeping = config
-      ? (typeof config.isSleeping === 'function' ? config.isSleeping() === true : config.sleeping === true)
-      : entity?._animalSleepRequested === true;
+    const sleeping = config ? externalSleepingState(entity, config) : entity?._animalSleepRequested === true; // Mirrors the exact body override consumed by the render pass so cinematic face projection cannot target a stale sleeping pose.
     const THREE_NS = window.THREE || globalThis.THREE;
     if (!sleeping || !group?.parent || !group?.scale || !group?.position || !THREE_NS?.Vector3
       || typeof group.worldToLocal !== 'function' || typeof group.localToWorld !== 'function') {
@@ -544,6 +542,13 @@
     return [combatDeps?.hostileObjects, combatDeps?.companionObjects].filter(Boolean);
   }
 
+  function externalSleepingState(entity, config) {
+    const presentationOverride = String(entity?._animalSleepPresentationOverride || ''); // Used by dialogue/cutscene presentation to temporarily supersede an external animal's schedule sleep state.
+    if (presentationOverride === 'sleep') return true;
+    if (presentationOverride === 'awake') return false;
+    return typeof config?.isSleeping === 'function' ? config.isSleeping() === true : config?.sleeping === true;
+  }
+
   function registerExternalSleeper(entity, config = {}) {
     if (!entity) return false;
     externalSleepers.set(entity, { ...config }); // Callbacks are evaluated at pre-render time so dialogue/schedule state can change without re-registering.
@@ -564,14 +569,18 @@
       const avatarRef = typeof config.avatarRef === 'function' ? config.avatarRef() : config.avatarRef;
       const group = avatarRef?.group || (typeof config.group === 'function' ? config.group() : config.group);
       if (!group?.parent || group.visible === false) continue;
-      const sleeping = typeof config.isSleeping === 'function' ? config.isSleeping() === true : config.sleeping === true;
+      const sleeping = externalSleepingState(entity, config); // Uses schedule sleep unless a feature-owned presentation override explicitly requests awake/sleep.
       const eyesClosed = typeof config.eyesClosed === 'function' ? config.eyesClosed() !== false : config.eyesClosed !== false;
       const expressionEyesClosed = typeof config.expressionEyesClosed === 'function' && config.expressionEyesClosed() === true; // Used to show authored closed eyes on an awake named animal during dialogue.
       const kind = typeof config.kind === 'function' ? config.kind() : config.kind;
       const genotype = typeof config.genotype === 'function' ? config.genotype() : config.genotype;
       const def = typeof config.def === 'function' ? config.def() : config.def;
+      const headPoseOverride = String(entity?._animalHeadPoseOverride || ''); // Used by dialogue/cutscene beats that need the canonical authored neck limit without changing body sleep state.
       setLiveFrame(entity, group, kind, genotype, def, sleeping || expressionEyesClosed, sleeping ? eyesClosed : true, sleeping ? null : 'idle');
-      if (!sleeping) continue;
+      if (!sleeping) {
+        if (headPoseOverride === 'max_down') forceHeadDown(avatarRef, entity);
+        continue;
+      }
       forceHeadDown(avatarRef, entity);
       if (applyTemporaryScale(group, SLEEP_SCALE_Y, `external:${config.id || entity?.rec?.id || kind || 'animal'}`)) liveSleepFrames++; // External actors are authored upright, so apply the canonical sleep ratio directly.
     }
@@ -682,7 +691,7 @@
 
   function debugSnapshot() {
     return {
-      mostRecentChange: 'Animal sleep presentation now prepares once at the shared pre-render scheduler checkpoint and restores once post-game instead of rescanning animals around every WebGL render pass.',
+      mostRecentChange: 'External named animals now support temporary awake/sleep body overrides plus canonical max-neck-down presentation overrides, shared by rendering and cinematic face projection.',
       sleepScaleY: SLEEP_SCALE_Y,
       preferredFrame: 'run2-if-present-else-idle',
       sleepingEyes: 'blink-overlay-closed-only',
