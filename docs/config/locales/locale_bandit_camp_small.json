@@ -239,7 +239,7 @@
       "label": "Bandit Tent",
       "col": 1,
       "row": 1,
-      "w": 3,
+      "w": 2,
       "h": 3,
       "rot": 0,
       "interactable": {
@@ -255,7 +255,7 @@
       "label": "Bandit Tent",
       "col": 6,
       "row": 1,
-      "w": 3,
+      "w": 2,
       "h": 3,
       "rot": 0,
       "interactable": {
@@ -271,7 +271,7 @@
       "label": "Bandit Tent",
       "col": 1,
       "row": 5,
-      "w": 3,
+      "w": 2,
       "h": 3,
       "rot": 0,
       "interactable": {
