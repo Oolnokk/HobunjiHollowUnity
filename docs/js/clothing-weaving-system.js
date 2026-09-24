@@ -78,8 +78,8 @@
   const cosmeticConfigPromises = new Map(); // Reuses per-article cosmetic JSON fetches for pattern layer lookup.
   const patternedCanvasCache = new Map(); // Reuses expensive pattern composites across repeated portrait renders.
   const wovenIconDataUrlPromises = new Map(); // Caches fully dyed + patterned inventory sprites by their visual state; rebuilt only when dyes/weaving/species/gender change.
-  const pendingPatternCanvasKeys = new Set(); // Prevents repeated async builds while a synchronous portrait frame uses the unpatterned fallback.
-  const portraitPatternStats = { renderScopes: 0, patternedTintCalls: 0, cacheHits: 0, cacheMisses: 0 }; // Exposed by debugSnapshot so intermittent woven portrait behavior can be diagnosed without a console.
+  const pendingPatternCanvasPromises = new Map(); // Cache key -> in-flight compositor promise; lets overlapping portrait renders wait on the same build instead of each committing a plain fallback frame.
+  const portraitPatternStats = { renderScopes: 0, patternedTintCalls: 0, cacheHits: 0, cacheMisses: 0, retryRenders: 0 }; // Exposed by debugSnapshot so intermittent woven portrait behavior can be diagnosed without a console.
 
   const clamp = (value, lo, hi) => Math.max(lo, Math.min(hi, Number(value) || 0));
   const clone = value => value == null ? value : JSON.parse(JSON.stringify(value));
@@ -2204,7 +2204,7 @@
     return canvas;
   }
 
-  function patternImageForTint(patternMap, baseTintResolver, img, sourceKey, tint) {
+  function patternImageForTint(patternMap, baseTintResolver, onPatternPending, img, sourceKey, tint) {
     const descriptor = patternMap?.get(normalizeAssetPath(sourceKey));
     const patterns = descriptor ? weavingPatternsForRole(descriptor.weaving, descriptor.role) : []; // Render-local lookup: this map belongs only to the portrait currently being drawn.
     const pattern = patterns[0] || null; // Compatibility name for the primary motif used by the existing dye-swap path.
@@ -2231,12 +2231,14 @@
       return cached;
     }
     portraitPatternStats.cacheMisses++;
-    if (!pendingPatternCanvasKeys.has(fullKey)) {
-      pendingPatternCanvasKeys.add(fullKey);
-      applyPatternStackToTintedImage(tinted, patterns, colorHex, prefix, img, 'woven-motif').then(() => {
-        requestPlayerAvatarRefresh();
-      }).catch(error => { lastError = String(error?.message || error); }).finally(() => pendingPatternCanvasKeys.delete(fullKey));
+    let pending = pendingPatternCanvasPromises.get(fullKey);
+    if (!pending) {
+      pending = applyPatternStackToTintedImage(tinted, patterns, colorHex, prefix, img, 'woven-motif')
+        .catch(error => { lastError = String(error?.message || error); throw error; })
+        .finally(() => pendingPatternCanvasPromises.delete(fullKey));
+      pendingPatternCanvasPromises.set(fullKey, pending);
     }
+    onPatternPending?.(pending); // The owning render waits and redraws this same canvas before resolving, so WorldPortraitLife never uploads the temporary plain fallback.
     return tinted;
   }
 
@@ -2253,11 +2255,18 @@
         const descriptors = profile?.bodyColors?.[CLOTHING_MARKER_KEY];
         const patternMap = Array.isArray(descriptors) && descriptors.length ? await buildPortraitPatternMap(descriptors) : null; // Owned by this render call so WorldPortraitLife can refresh many NPCs concurrently without descriptor bleed.
         const baseTintResolver = typeof options?.imageForTint === 'function' ? options.imageForTint : originalTint; // Preserves any upstream render-local tint hook while weaving composes on top of it.
+        const pendingBuilds = new Set(); // This render's cache misses; awaited before its canvas is handed back to WorldPortraitLife/NpcAvatarPreview.
         const imageForTint = patternMap?.size
-          ? (img, sourceKey, tint) => patternImageForTint(patternMap, baseTintResolver, img, sourceKey, tint)
+          ? (img, sourceKey, tint) => patternImageForTint(patternMap, baseTintResolver, pending => pendingBuilds.add(pending), img, sourceKey, tint)
           : baseTintResolver; // Passed into portrait-utils; no mutable module-global pattern map is touched.
         if (patternMap?.size) portraitPatternStats.renderScopes++;
-        return current(canvas, profile, { ...(options || {}), imageForTint });
+        const renderOptions = { ...(options || {}), imageForTint };
+        const firstResult = await current(canvas, profile, renderOptions);
+        if (!pendingBuilds.size) return firstResult;
+        const settled = await Promise.allSettled([...pendingBuilds]);
+        if (!settled.some(result => result.status === 'fulfilled')) return firstResult; // A failed compositor leaves the safe plain fallback in place and records lastError.
+        portraitPatternStats.retryRenders++;
+        return current(canvas, profile, renderOptions); // Cache is now warm; redraw this same canvas before the caller uploads/uses it.
       };
       wrapped.__clothingWeavingPattern = true;
       wrapped.__clothingWeavingOriginal = current;
@@ -2284,7 +2293,7 @@
       equipped: equippedClothItems().map(item => ({ uid: item.uid, article: articleLabel(item), slot: item.slot, material: item.weaveMaterial || 'standard', weightUnits: itemWeightUnits(item), woven: weavingHasAnyPattern(item.weaving) })),
       blueprints: currentBlueprints().map(bp => ({ id: bp.baseCosmeticId, slot: bp.slot, label: bp.label })),
       wool: { light: Number(equipmentDeps?.inventory?.[LIGHT_WOOL_KEY]) || 0, heavy: Number(equipmentDeps?.inventory?.[HEAVY_WOOL_KEY]) || 0 },
-      portraitPatterns: { ...portraitPatternStats, cacheSize: patternedCanvasCache.size, pending: pendingPatternCanvasKeys.size }, // Mobile-visible counters make render races/cache churn diagnosable through __clothingWeavingDebug().
+      portraitPatterns: { ...portraitPatternStats, cacheSize: patternedCanvasCache.size, pending: pendingPatternCanvasPromises.size }, // Mobile-visible counters make render races/cache churn diagnosable through __clothingWeavingDebug().
       lastError,
     };
   }
