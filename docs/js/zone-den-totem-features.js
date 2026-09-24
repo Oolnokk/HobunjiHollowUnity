@@ -79,6 +79,7 @@
       return Promise.resolve(local);
     }
     if (_animalDenEntranceLocalePromise) return _animalDenEntranceLocalePromise;
+    if (typeof fetch !== 'function') return Promise.resolve(null); // Headless/unit-test runtimes keep the legacy facade without browser fetch.
     _animalDenEntranceLocalePromise = fetch(ANIMAL_DEN_ENTRANCE_LOCALE_URL, { cache:'no-store' })
       .then(response => response.ok ? response.json() : null)
       .then(locale => {
