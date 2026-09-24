@@ -4,6 +4,7 @@ function renderNodeEditor(){
   const auto=state.settings.routeStyle==='orthogonal'&&state.settings.autoArrangeOrthographic;
   $('autoArrangeStatus').textContent=auto?'Auto-arrange on':'Auto-arrange off';$('autoArrangeStatus').classList.toggle('autoArrangeBadge',auto);
   if(!tree){panel.classList.add('hidden');body.innerHTML='';return}
+  if(!state.nodeEditorOpen){panel.classList.add('hidden');return}
   panel.classList.remove('hidden');
   if(state.editorMode==='tree'||!node){renderTreeEditor(panel,body,tree);return}
   renderSelectedNodeEditor(panel,body,tree,node);
@@ -69,6 +70,7 @@ function renderTreeEditor(panel,body,tree){
   renderConditionPicker($('treeRequiredConditions'),tree.conditions,()=>{renderNavigator();renderStateSummary();refreshGraphSubtitle()},'require',`tree-required:${tree.id}`);
   renderConditionPicker($('treeExcludedConditions'),tree.excludeConditions,()=>{renderStateSummary();refreshGraphSubtitle()},'exclude',`tree-excluded:${tree.id}`);
   $('editorDeleteTree').addEventListener('click',()=>deleteTree(tree.id));
+  syncNodeEditorResize();
 }
 function renderSelectedNodeEditor(panel,body,tree,node){
   const displayType=nodeDisplayType(node); // Used to expose Access Shop as its own editable node type while retaining runtime-compatible choice data.
@@ -93,6 +95,7 @@ function renderSelectedNodeEditor(panel,body,tree,node){
   else if(node.type==='choice')wireChoiceNodeEditor(tree,node);
   else if(node.type==='sequence')wireSequenceNodeEditor(tree,node);
   renderTagEditor(tree,node);
+  syncNodeEditorResize();
 }
 function changeNodeType(node,type){const tree=currentTree();commitMutation(`Changed node type to ${type}`,()=>{const tags=node.tags||[];Object.keys(node).forEach(k=>{if(!['id','type','tags','pos'].includes(k))delete node[k]});node.tags=tags;if(type==='accessShop')syncAccessShopNode(node,shopRegistry[0]?.id||'generalStoreWares');else{node.type=type;if(type==='text')Object.assign(node,{text:'',next:null,expression:'neutral',expressionHold:2,revealSpeed:'normal'});if(type==='choice')node.choices=[{label:'',next:null}];if(type==='sequence')Object.assign(node,{slots:[],next:null,exhaustedNext:null})}syncInboundAccessShopActions(tree,node)},{render:'graph',resetScale:true})}
 function wireAccessShopNodeEditor(tree,node){const select=$('editAccessShopPool');if(!select)return;select.addEventListener('change',e=>commitMutation('Changed Access Shop pool',()=>{syncAccessShopNode(node,e.target.value);syncInboundAccessShopActions(tree,node)},{render:'graph'}))}

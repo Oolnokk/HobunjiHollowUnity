@@ -15,7 +15,7 @@ const PRESETS=[
 
 let state={
   db:{schema:'hobunji_npc_database.v2',npcs:[]},npcId:null,treeId:null,
-  settings:loadSettings(),search:'',millerPath:[],customPresets:[],presetPickerOpen:false,errors:[],events:[],fitScale:1,nodeId:null,editorMode:'tree',dragTreeId:null,lastGraphColorIndex:new Map(),history:{past:[],future:[],lastLabel:'No edits yet',lastCoalesceKey:null,lastCoalesceAt:0}
+  settings:loadSettings(),search:'',millerPath:[],customPresets:[],presetPickerOpen:false,errors:[],events:[],fitScale:1,nodeId:null,editorMode:'tree',nodeEditorOpen:true,dragTreeId:null,lastGraphColorIndex:new Map(),history:{past:[],future:[],lastLabel:'No edits yet',lastCoalesceKey:null,lastCoalesceAt:0}
 };
 let poolSel={poolId:null,expandedEntryId:null};
 let randomPromptPicks=[];

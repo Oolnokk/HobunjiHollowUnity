@@ -76,6 +76,44 @@ function wirePaneSplitter(){
   });
 }
 
+const NODE_EDITOR_HEIGHT_STORAGE_KEY='hobunjiDialogueEditorInspectorHeight.v1'; // Used to restore the tree/node settings panel height.
+let nodeEditorHeight=null; // Holds the optional user-resized inspector height in pixels.
+try{const storedHeight=Number(localStorage.getItem(NODE_EDITOR_HEIGHT_STORAGE_KEY));if(Number.isFinite(storedHeight)&&storedHeight>0)nodeEditorHeight=storedHeight}catch{}
+function nodeEditorResizeBounds(){
+  const pane=$('graphPane'),alternatives=$('alternatives'),extra=alternatives&&!alternatives.classList.contains('hidden')?alternatives.offsetHeight:0;
+  const min=120,max=Math.max(min,pane.clientHeight-$('graphHeader').offsetHeight-$('authorBar').offsetHeight-extra-140);
+  return{min,max};
+}
+function applyNodeEditorHeight(height,{save=false}={}){
+  const panel=$('nodeEditor'),handle=$('nodeEditorResize');if(!panel||!handle)return;
+  const {min,max}=nodeEditorResizeBounds();height=Math.max(min,Math.min(max,height));nodeEditorHeight=height;
+  panel.style.height=`${height}px`;panel.style.maxHeight=`${max}px`;
+  handle.setAttribute('aria-valuemin',String(min));handle.setAttribute('aria-valuemax',String(Math.round(max)));handle.setAttribute('aria-valuenow',String(Math.round(height)));
+  if(save)try{localStorage.setItem(NODE_EDITOR_HEIGHT_STORAGE_KEY,String(Math.round(height)))}catch{}
+}
+function syncNodeEditorResize(){
+  const panel=$('nodeEditor'),handle=$('nodeEditorResize');if(!panel||!handle)return;
+  handle.hidden=panel.classList.contains('hidden');
+  const {min,max}=nodeEditorResizeBounds(),current=panel.getBoundingClientRect().height;
+  handle.setAttribute('aria-valuemin',String(min));handle.setAttribute('aria-valuemax',String(Math.round(max)));
+  if(Number.isFinite(nodeEditorHeight))applyNodeEditorHeight(nodeEditorHeight);else handle.setAttribute('aria-valuenow',String(Math.round(current)));
+}
+function wireNodeEditorResize(){
+  const handle=$('nodeEditorResize');let drag=null;
+  handle.addEventListener('pointerdown',event=>{
+    if(handle.hidden||event.button!==0)return;
+    drag={start:event.clientY,height:$('nodeEditor').getBoundingClientRect().height};handle.setPointerCapture(event.pointerId);handle.classList.add('dragging');document.body.style.cursor='row-resize';document.body.style.userSelect='none';event.preventDefault();
+  });
+  handle.addEventListener('pointermove',event=>{if(drag)applyNodeEditorHeight(drag.height+drag.start-event.clientY)});
+  const endDrag=()=>{if(!drag)return;drag=null;handle.classList.remove('dragging');document.body.style.cursor='';document.body.style.userSelect='';applyNodeEditorHeight($('nodeEditor').getBoundingClientRect().height,{save:true})};
+  handle.addEventListener('pointerup',endDrag);handle.addEventListener('pointercancel',endDrag);
+  handle.addEventListener('keydown',event=>{
+    const {min,max}=nodeEditorResizeBounds(),current=$('nodeEditor').getBoundingClientRect().height;let next=current;
+    if(event.key==='ArrowUp')next+=16;else if(event.key==='ArrowDown')next-=16;else if(event.key==='Home')next=min;else if(event.key==='End')next=max;else return;
+    event.preventDefault();applyNodeEditorHeight(next,{save:true});
+  });
+}
+
 function diagnosticsText(){
   return `Hobunji Dialogue Editor diagnostic report\nGenerated: ${new Date().toISOString()}\nViewport: ${innerWidth}x${innerHeight}\nUser agent: ${navigator.userAgent}\n\nSTATE\n${safeStringify({npcId:state.npcId,treeId:state.treeId,settings:state.settings,npcCount:state.db?.npcs?.length||0,history:{undo:state.history.past.length,redo:state.history.future.length,last:state.history.lastLabel}})}\n\nERRORS\n${state.errors.length?state.errors.join('\n\n'):'None'}\n\nRECENT EVENTS\n${state.events.join('\n\n')||'None'}`;
 }
@@ -91,12 +129,13 @@ async function copyDiagnostics(){
 function wire(){
   $('controlsToggle').onclick=()=>$('controlPanel').classList.toggle('open');$('closeControls').onclick=()=>$('controlPanel').classList.remove('open');
   wirePaneSplitter();
+  wireNodeEditorResize();
   $('importBtn').onclick=()=>$('fileInput').click();$('fileInput').onchange=e=>{const file=e.target.files[0];if(file)loadFile(file);e.target.value=''};
   $('undoBtn').onclick=undo;$('redoBtn').onclick=redo;$('exportDbBtn').onclick=exportDatabase;$('exportBtn').onclick=exportLayout;
   $('saveDbOverrideBtn').onclick=saveDbOverride;$('clearDbOverrideBtn').onclick=clearDbOverride;$('poolModalBtn').onclick=openPoolModal;$('poolModalClose').onclick=closePoolModal;$('addPoolBtn').onclick=addPool;
   $('randomPromptBtn').onclick=openRandomPrompt;$('randomPromptClose').onclick=closeRandomPrompt;$('rerollBtn').onclick=rerollPrompts;
   $('diagBtn').onclick=()=>{$('diagDrawer').classList.toggle('hidden');renderDiagnostics()};$('closeDiag').onclick=()=>$('diagDrawer').classList.add('hidden');$('copyDiag').onclick=copyDiagnostics;$('clearDiag').onclick=()=>{state.errors=[];state.events=[];$('errorCount').textContent='0';$('errorBadge').classList.remove('show');renderDiagnostics()};
-  $('closeNodeEditor').onclick=()=>{state.nodeId=null;state.editorMode='tree';renderGraph();syncAuthoringButtons()};
+  $('closeNodeEditor').onclick=()=>{state.nodeEditorOpen=false;$('nodeEditor').classList.add('hidden');syncNodeEditorResize();syncAuthoringButtons()};
   $('npcSelect').onchange=e=>{state.npcId=e.target.value;state.treeId=currentNpc()?.dialogueTrees?.[0]?.id||null;state.nodeId=null;state.editorMode='tree';poolSel={poolId:null,expandedEntryId:null};state.millerPath=[];resetGraphScale();renderAll();logEvent('Selected NPC',state.npcId)};
   $('treeSearch').oninput=e=>{state.search=e.target.value;renderNavigator()};
   $('addTreeBtn').onclick=()=>addTree();$('treeEditorBtn').onclick=openTreeEditor;$('deleteTreeBtn').onclick=()=>deleteTree();$('addTextBtn').onclick=()=>addNode('text');$('addChoiceBtn').onclick=()=>addNode('choice');$('addAccessShopBtn').onclick=()=>addNode('accessShop');$('addEndBtn').onclick=()=>addNode('end');$('addSequenceBtn').onclick=()=>addNode('sequence');$('deleteNodeBtn').onclick=()=>deleteNode();$('setEntryBtn').onclick=()=>setEntryNode();
@@ -109,7 +148,7 @@ function wire(){
   $('closeAlternatives').onclick=()=>{setPresetPickerOpen(false);$('toggleAlternatives').focus()};
   addEventListener('pointermove',updateTreePointerDrag,{passive:false});addEventListener('pointerup',finishTreePointerDrag,{passive:false});addEventListener('pointercancel',finishTreePointerDrag,{passive:false});
   addEventListener('keydown',e=>{if(e.key==='Escape'&&state.presetPickerOpen){e.preventDefault();setPresetPickerOpen(false);$('toggleAlternatives').focus();return}const tag=e.target.tagName;if(tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT')return;const mod=e.ctrlKey||e.metaKey;if(mod&&e.key.toLowerCase()==='z'){e.preventDefault();e.shiftKey?redo():undo()}else if(mod&&e.key.toLowerCase()==='y'){e.preventDefault();redo()}else if((e.key==='Delete'||e.key==='Backspace')&&state.nodeId){e.preventDefault();deleteNode()}});
-  addEventListener('resize',()=>{syncPaneSplitter();if(innerWidth>720)$('controlPanel').classList.remove('open')});
+  addEventListener('resize',()=>{syncPaneSplitter();syncNodeEditorResize();if(innerWidth>720)$('controlPanel').classList.remove('open')});
 }
 
 try{wire();resetHistory('No edits yet');renderAll();Promise.all([loadMapRegistry(),loadShopRegistry()]).finally(()=>bootDatabase());logEvent('Dialogue editor initialized',{presets:PRESETS.length})}catch(e){captureError('Initialization failed',e)}

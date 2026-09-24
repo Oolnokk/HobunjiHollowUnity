@@ -132,8 +132,9 @@
           <button class="warn" id="setEntryBtn">Set Entry</button>
         </div>
         <div id="nodeEditor" class="hidden">
-          <div id="nodeEditorHead"><b id="nodeEditorTitle">Node editor</b><span class="pill autoArrangeBadge" id="autoArrangeStatus">Auto-arrange on</span><button class="secondary" id="closeNodeEditor">×</button></div>
+          <div id="nodeEditorHead"><b id="nodeEditorTitle">Node editor</b><span class="pill autoArrangeBadge" id="autoArrangeStatus">Auto-arrange on</span><button class="secondary" id="closeNodeEditor" type="button" aria-label="Hide tree settings" title="Hide tree settings">×</button></div>
           <div id="nodeEditorBody"></div>
+          <div id="nodeEditorResize" role="separator" tabindex="0" aria-label="Resize tree settings panel" aria-orientation="horizontal" aria-controls="nodeEditor" aria-valuemin="120" aria-valuemax="520" aria-valuenow="240" title="Drag vertically to resize tree settings"></div>
         </div>
         <div id="graphViewport">
           <div id="graphStage">
