@@ -515,6 +515,7 @@
 
     window.PlayerBodyTransformComposer?.setChannel?.('social-dance', {
       priority: 60,
+      freezeInCharacterView: true, // Character View freezes the current dance presentation instead of orbiting around a still-animating render-only body delta.
       rotation: { pitch: 0, yaw: motion.twirlRotation, roll: motion.bodySway },
       translation: { x: motion.tangentShift * sizeScale, y: motion.bounce * sizeScale, z: 0 },
     });
