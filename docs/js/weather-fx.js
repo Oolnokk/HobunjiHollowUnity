@@ -21,6 +21,269 @@
   // camera position — likely stale/vestigial pre-existing behavior,
   // preserved as-is rather than "fixed" here).
   let deps = null;
+  const _presentationBufferSize = new THREE.Vector2(); // Reused by render-surface checks so the lighting loop never allocates a Vector2 just to inspect framebuffer size.
+  let _presentationRepairCount = 0; // Count of WebGL/overlay size repairs, surfaced through Pixel Probe for no-console diagnosis.
+  let _contextLossCount = 0; // Count of browser-reported WebGL context losses on the gameplay canvas.
+  let _contextRestoreCount = 0; // Count of browser-reported WebGL context restorations on the gameplay canvas.
+  let _boundRendererCanvas = null; // Gameplay canvas currently carrying the context loss/restore listeners.
+  let _contextRepairQueued = false; // Prevents duplicate restore repairs when a browser emits clustered restoration notifications.
+  let _dispatchingRepairResize = false; // Guards the one synthetic resize used to let game.js resize its private postprocess targets too.
+  let _lastPresentationRepair = null; // Last repair reason/dimensions copied into Pixel Probe diagnostics.
+  let _lastContextEvent = 'none'; // Last context event copied into Pixel Probe diagnostics.
+  const PRESENTATION_TEXTURE_SLOTS = Object.freeze(['map', 'alphaMap', 'aoMap', 'lightMap', 'emissiveMap', 'bumpMap', 'normalMap', 'displacementMap', 'roughnessMap', 'metalnessMap']); // Material texture slots re-uploaded only for the active scene after a context restore.
+
+  function _presentationRect() {
+    const rect = deps?.getThreeRect?.();
+    const width = Number(rect?.width);
+    const height = Number(rect?.height);
+    if (!(width > 1) || !(height > 1)) return null;
+    return { width: Math.max(2, Math.round(width)), height: Math.max(2, Math.round(height)) };
+  }
+
+  function _overlayPixelRatio() {
+    return Math.min(Math.max(Number(window.devicePixelRatio) || 1, 0.1), 2);
+  }
+
+  function _resizePresentationCanvas(canvas, context, width, height, pixelRatio) {
+    if (!canvas) return false;
+    const targetWidth = Math.max(1, Math.round(width * pixelRatio));
+    const targetHeight = Math.max(1, Math.round(height * pixelRatio));
+    if (canvas.width === targetWidth && canvas.height === targetHeight) return false;
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
+    context?.setTransform?.(pixelRatio, 0, 0, pixelRatio, 0, 0);
+    return true;
+  }
+
+  function _refreshActiveSceneGpuResources() {
+    const scene = window.GridTileAccessors?.getActiveScene?.() || deps?.getActiveScene?.() || null;
+    if (!scene?.traverse) return { materials: 0, textures: 0 };
+    const materials = new Set();
+    const textures = new Set();
+    scene.traverse(object => {
+      const list = Array.isArray(object?.material) ? object.material : [object?.material];
+      for (const material of list) {
+        if (!material) continue;
+        materials.add(material);
+        for (const slot of PRESENTATION_TEXTURE_SLOTS) {
+          const texture = material[slot];
+          if (texture?.isTexture) textures.add(texture);
+        }
+      }
+    });
+    for (const texture of textures) texture.needsUpdate = true;
+    for (const material of materials) material.needsUpdate = true;
+    return { materials: materials.size, textures: textures.size };
+  }
+
+  function _dispatchPresentationResize() {
+    if (_dispatchingRepairResize) return false;
+    _dispatchingRepairResize = true;
+    try {
+      window.dispatchEvent?.(new Event('resize'));
+      return true;
+    } catch (_) {
+      return false;
+    } finally {
+      _dispatchingRepairResize = false;
+    }
+  }
+
+  function _bindRendererContextRecovery(renderer = window.__hobunjiGameRenderer) {
+    const canvas = renderer?.domElement;
+    if (!canvas?.addEventListener || canvas === _boundRendererCanvas) return;
+    _boundRendererCanvas = canvas;
+    canvas.addEventListener('webglcontextlost', event => {
+      _contextLossCount++;
+      _lastContextEvent = `lost@${Math.round(performance.now())}ms`;
+      // Three.js also prevents the default internally. Repeating it here makes
+      // restoration explicit even if a renderer wrapper changes listener order.
+      event.preventDefault?.();
+    });
+    canvas.addEventListener('webglcontextrestored', () => {
+      _contextRestoreCount++;
+      _lastContextEvent = `restored@${Math.round(performance.now())}ms`;
+      if (_contextRepairQueued) return;
+      _contextRepairQueued = true;
+      const run = () => {
+        _contextRepairQueued = false;
+        ensurePresentationSurface({
+          forceRenderer: true,
+          refreshScene: true,
+          dispatchResize: true,
+          reason: 'context-restored',
+        });
+      };
+      setTimeout(run, 0); // One-shot post-restore defer; no animation-frame ownership is needed for this recovery task.
+    });
+  }
+
+  function ensurePresentationSurface({
+    forceRenderer = false,
+    refreshScene = false,
+    dispatchResize = false,
+    reason = 'lighting-draw',
+  } = {}) {
+    let rect = _presentationRect();
+    if (!rect) return null;
+
+    const renderer = window.__hobunjiGameRenderer || null;
+    _bindRendererContextRecovery(renderer);
+
+    const lightingCanvas = deps?.lctx?.canvas || document.getElementById('lightingCanvas');
+    const overlayCanvas = document.getElementById('overlayCanvas');
+    const overlayContext = overlayCanvas?.getContext?.('2d') || null;
+    const overlayPixelRatio = _overlayPixelRatio();
+
+    const measure = () => {
+      let actualWidth = 0;
+      let actualHeight = 0;
+      let expectedWidth = 0;
+      let expectedHeight = 0;
+      let rendererBufferWidth = 0;
+      let rendererBufferHeight = 0;
+      if (renderer) {
+        const pixelRatio = Math.max(0.1, Number(renderer.getPixelRatio?.()) || 1);
+        const canvas = renderer.domElement; // Actual WebGL backing store; unlike getDrawingBufferSize(), this catches canvas-vs-renderer state drift after a context reset.
+        actualWidth = Math.round(Number(canvas?.width) || 0);
+        actualHeight = Math.round(Number(canvas?.height) || 0);
+        expectedWidth = Math.max(1, Math.round(rect.width * pixelRatio));
+        expectedHeight = Math.max(1, Math.round(rect.height * pixelRatio));
+        if (renderer.getDrawingBufferSize) {
+          renderer.getDrawingBufferSize(_presentationBufferSize);
+          rendererBufferWidth = Math.round(Number(_presentationBufferSize.x) || 0);
+          rendererBufferHeight = Math.round(Number(_presentationBufferSize.y) || 0);
+        }
+      }
+      const expectedOverlayWidth = Math.max(1, Math.round(rect.width * overlayPixelRatio));
+      const expectedOverlayHeight = Math.max(1, Math.round(rect.height * overlayPixelRatio));
+      return {
+        actualWidth,
+        actualHeight,
+        expectedWidth,
+        expectedHeight,
+        expectedOverlayWidth,
+        expectedOverlayHeight,
+        rendererMismatch: !!renderer && (
+          Math.abs(actualWidth - expectedWidth) > 1
+          || Math.abs(actualHeight - expectedHeight) > 1
+          || (rendererBufferWidth > 0 && Math.abs(rendererBufferWidth - expectedWidth) > 1)
+          || (rendererBufferHeight > 0 && Math.abs(rendererBufferHeight - expectedHeight) > 1)
+        ),
+        rendererBufferWidth,
+        rendererBufferHeight,
+        lightingMismatch: !!lightingCanvas && (
+          lightingCanvas.width !== expectedOverlayWidth
+          || lightingCanvas.height !== expectedOverlayHeight
+        ),
+        overlayMismatch: !!overlayCanvas && (
+          overlayCanvas.width !== expectedOverlayWidth
+          || overlayCanvas.height !== expectedOverlayHeight
+        ),
+      };
+    };
+
+    let measured = measure();
+    const mismatchBeforeRepair = measured.rendererMismatch || measured.lightingMismatch || measured.overlayMismatch;
+    let resizeDispatched = false;
+
+    // game.js is the authoritative resize owner: it updates the gameplay
+    // renderer, private outline render targets, both 2D canvases, and their DPR
+    // transforms together. Reuse that complete path first whenever any surface
+    // has drifted, instead of independently "fixing" only the visible canvas.
+    if (dispatchResize || forceRenderer || mismatchBeforeRepair) {
+      resizeDispatched = _dispatchPresentationResize();
+      rect = _presentationRect() || rect;
+      measured = measure();
+    }
+
+    let rendererResized = false;
+    if (renderer?.setSize && (forceRenderer || measured.rendererMismatch)) {
+      renderer.setRenderTarget?.(null);
+      renderer.setSize(rect.width, rect.height);
+      if (deps?.camera?.isCamera) {
+        deps.camera.aspect = rect.width / rect.height;
+        deps.camera.updateProjectionMatrix?.();
+      }
+      rendererResized = true;
+      measured = measure();
+    }
+
+    const lightingResized = measured.lightingMismatch
+      ? _resizePresentationCanvas(lightingCanvas, deps?.lctx, rect.width, rect.height, overlayPixelRatio)
+      : false;
+    const overlayResized = measured.overlayMismatch
+      ? _resizePresentationCanvas(overlayCanvas, overlayContext, rect.width, rect.height, overlayPixelRatio)
+      : false;
+
+    if (forceRenderer) renderer?.state?.reset?.();
+    const refreshed = refreshScene ? _refreshActiveSceneGpuResources() : { materials: 0, textures: 0 };
+    if (resizeDispatched || rendererResized || lightingResized || overlayResized || refreshScene) {
+      const finalCanvas = renderer?.domElement;
+      const finalFramebuffer = finalCanvas
+        ? `${Math.round(Number(finalCanvas.width) || 0)}x${Math.round(Number(finalCanvas.height) || 0)}`
+        : 'unknown';
+      let finalRendererBuffer = 'unknown';
+      if (renderer?.getDrawingBufferSize) {
+        renderer.getDrawingBufferSize(_presentationBufferSize);
+        finalRendererBuffer = `${Math.round(_presentationBufferSize.x)}x${Math.round(_presentationBufferSize.y)}`;
+      }
+      _presentationRepairCount++;
+      _lastPresentationRepair = {
+        reason,
+        css: `${rect.width}x${rect.height}`,
+        framebuffer: finalFramebuffer,
+        rendererBuffer: finalRendererBuffer,
+        expectedFramebuffer: measured.expectedWidth && measured.expectedHeight ? `${measured.expectedWidth}x${measured.expectedHeight}` : 'unknown',
+        lightingCanvas: lightingCanvas ? `${lightingCanvas.width}x${lightingCanvas.height}` : 'missing',
+        overlayCanvas: overlayCanvas ? `${overlayCanvas.width}x${overlayCanvas.height}` : 'missing',
+        refreshedMaterials: refreshed.materials,
+        refreshedTextures: refreshed.textures,
+      };
+    }
+
+    return { rect, rendererResized, lightingResized, overlayResized };
+  }
+
+  function getRenderRecoveryState() {
+    const rect = _presentationRect();
+    const renderer = window.__hobunjiGameRenderer || null;
+    let framebuffer = 'unknown';
+    let rendererBuffer = 'unknown';
+    let expectedFramebuffer = 'unknown';
+    let contextLost = false;
+    if (renderer) {
+      const pixelRatio = Math.max(0.1, Number(renderer.getPixelRatio?.()) || 1);
+      const canvas = renderer.domElement; // Report the actual WebGL canvas backing dimensions separately from Three.js's cached drawing-buffer dimensions.
+      if (canvas) framebuffer = `${Math.round(Number(canvas.width) || 0)}x${Math.round(Number(canvas.height) || 0)}`;
+      if (renderer.getDrawingBufferSize) {
+        renderer.getDrawingBufferSize(_presentationBufferSize);
+        rendererBuffer = `${Math.round(_presentationBufferSize.x)}x${Math.round(_presentationBufferSize.y)}`;
+      }
+      if (rect) expectedFramebuffer = `${Math.round(rect.width * pixelRatio)}x${Math.round(rect.height * pixelRatio)}`;
+      try { contextLost = !!renderer.getContext?.()?.isContextLost?.(); } catch (_) {}
+    }
+    const overlayPixelRatio = _overlayPixelRatio();
+    const expectedOverlay = rect ? `${Math.round(rect.width * overlayPixelRatio)}x${Math.round(rect.height * overlayPixelRatio)}` : 'unknown';
+    const lightingCanvas = deps?.lctx?.canvas || document.getElementById('lightingCanvas');
+    const overlayCanvas = document.getElementById('overlayCanvas');
+    return {
+      contextLosses: _contextLossCount,
+      contextRestores: _contextRestoreCount,
+      contextLost,
+      repairs: _presentationRepairCount,
+      css: rect ? `${rect.width}x${rect.height}` : 'unknown',
+      framebuffer,
+      rendererBuffer,
+      expectedFramebuffer,
+      expectedOverlay,
+      lightingCanvas: lightingCanvas ? `${lightingCanvas.width}x${lightingCanvas.height}` : 'missing',
+      overlayCanvas: overlayCanvas ? `${overlayCanvas.width}x${overlayCanvas.height}` : 'missing',
+      lastContextEvent: _lastContextEvent,
+      lastRepair: _lastPresentationRepair,
+    };
+  }
+
   const THUNDER_SFX = Object.freeze({
     url: 'assets/audio/sfx/sfx_thunder1.mp3',
     volume: 0.9,
@@ -28,6 +291,8 @@
   let thunderPreload = null;
   function init(injectedDeps) {
     deps = injectedDeps;
+    _bindRendererContextRecovery();
+    ensurePresentationSurface({ reason: 'weather-init' });
     // Warm the real thunder recording once so a strike does not have to begin
     // its first network/decode work at the exact frame the flash starts.
     if (typeof Audio === 'function') {
@@ -204,7 +469,8 @@
     const sceneTransAlpha = deps.getSceneTransAlpha();
     if (now - _lastLightingOverlayTime < 100 && lightningAlpha <= 0 && sceneTransAlpha <= 0) return;
     _lastLightingOverlayTime = now;
-    const rect = deps.getThreeRect();
+    const surface = ensurePresentationSurface({ reason: 'lighting-draw' });
+    const rect = surface?.rect || deps.getThreeRect();
     lctx.clearRect(0, 0, rect.width, rect.height);
 
     const currentArea = deps.getCurrentArea();
@@ -512,6 +778,8 @@
     updateRainState,
     setDebugWeather,
     getDebugWeather,
+    ensurePresentationSurface,
+    getRenderRecoveryState,
     // Debug/QA only — the player lantern's current on-screen shine radius,
     // to verify it stays roughly constant across camera azimuths instead of
     // collapsing/ballooning with view direction (see _lightScreenRadius).

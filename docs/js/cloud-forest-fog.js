@@ -593,7 +593,8 @@
     lastUnifiedLightingDraw = now;
 
     const ctx = lightingDeps.lctx;
-    const rect = lightingDeps.getThreeRect();
+    const surface = window.WeatherFX?.ensurePresentationSurface?.({ reason: 'unified-lighting-draw' }); // Keeps the authoritative replacement lighting pass on the same repaired CSS/backing dimensions as WebGL.
+    const rect = surface?.rect || lightingDeps.getThreeRect();
     ctx.clearRect(0, 0, rect.width, rect.height);
     const currentArea = lightingDeps.getCurrentArea();
     const enclosed = currentArea === 'interior'
