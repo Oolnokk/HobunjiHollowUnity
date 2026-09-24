@@ -38,7 +38,7 @@
       --play-center: 50vw;
     }
 
-    html { background: #000; }
+    html { background: #000; color-scheme: dark; }
     html, body {
       height: 100%; overflow: hidden;
       background: var(--bg);
@@ -47,7 +47,18 @@
       letter-spacing: 0.02em;
       -webkit-font-smoothing: antialiased;
     }
-    button { font: inherit; cursor: pointer; border: none; background: none; }
+    /* Native controls otherwise fall back to browser text colors (commonly black)
+       even though the game shell itself uses the light --text palette. Keep this
+       low-specificity so authored semantic/accent colors still win normally. */
+    :where(button, input, select, textarea, option, optgroup) {
+      font: inherit;
+      color: inherit;
+    }
+    :where(input, textarea)::placeholder {
+      color: var(--muted);
+      opacity: 1;
+    }
+    button { cursor: pointer; border: none; background: none; }
 
     /* ── Full-bleed game shell ───────────────────────────── */
     #gameShell {
