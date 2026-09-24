@@ -219,11 +219,12 @@
   function isAnimalDenCollisionTile(col, row, area) {
     for (const den of (deps._zoneLayouts.get(area)?.dens || [])) {
       if (den.mouthAnchor && den.mouthAnchor.x === col && den.mouthAnchor.y === row) continue;
-      const authored = window.ZoneDenTotemFeatures?.denEntranceCollisionFor?.(den) || null; // Shared den-entrance locale can explicitly replace the legacy doorway-gap collider.
-      if (authored) {
-        if (authored.mode === 'none') continue;
-        if (col >= authored.x && col < authored.x + authored.w && row >= authored.y && row < authored.y + authored.h) return true;
-        continue;
+      const authoredState = window.ZoneDenTotemFeatures?.denEntranceCollisionState?.(den) || null; // Full den-template collision state includes furniture/custom colliders plus whether to retain the legacy cave shell.
+      if (authoredState) {
+        for (const rect of (authoredState.rects || [])) {
+          if (col >= rect.x && col < rect.x + rect.w && row >= rect.y && row < rect.y + rect.h) return true;
+        }
+        if (!authoredState.useLegacyCave) continue;
       }
       const w = den.w || 1, h = den.h || 1;
       if (col < den.x || col >= den.x + w || row < den.y || row >= den.y + h) continue;
