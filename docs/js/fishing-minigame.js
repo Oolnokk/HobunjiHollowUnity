@@ -4,12 +4,9 @@
   // Spearfishing minigame ("Spear Bridge") + its bait-toss/bite-splash FX
   // particles — extracted out of game.js following the same window.<Namespace>
   // + init(deps) pattern already used by js/mount-system.js and the
-  // js/combat/*.js modules. game.js's own tool-swing/avatar rendering code
-  // (updateToolMesh) still reaches into this module's live state for two
-  // things it needs to pose the player's harpoon during a throw: the
-  // in-flight fishing "ready" pose (readyPose getter, mirrors window.Mounts'
-  // getter-property precedent) and the fished tile's anchorWorld point (via
-  // the `state` getter) — both read-only from game.js's side.
+  // js/combat/*.js modules. Fishing now drives the same pose-authored held
+  // throw visual used by ordinary thrown weapons through injected game.js
+  // animation seams; the ring projectile remains fishing-owned.
   //
   // Deliberately NOT moved here: the generic perpClamp() dead-zone helper
   // that happened to sit right after this section in game.js — it's used by
@@ -32,6 +29,11 @@
   const FISHING_BAIT_FLIGHT_S = 0.6; // matches spawnFishingBaitToss's ~0.5-0.62s particle flight time
   const FISHING_BITE_WAIT_MIN_S = 1.2;
   const FISHING_BITE_WAIT_MAX_S = 3.0;
+  const FISHING_CAMERA_SIDE_TILES = 0.9; // Places the fishing camera almost one tile to the player's side so the cast reads close and near-perpendicular.
+  const FISHING_CAMERA_BACK_TILES = 0.55; // Pulls that side position slightly behind the player, creating the requested diagonal-tile hover instead of a perfectly flat profile.
+  const FISHING_CAMERA_ELEVATION_DEG = 18; // Baseline close-side pitch before the explicit world-Y lift below.
+  const FISHING_CAMERA_RAISE_TILES = 0.5; // Raises the resolved fishing camera exactly half a tile without changing its side/diagonal XZ position or water look target.
+  const FISHING_CAMERA_FOV_DEG = 70; // Keeps both the nearby player and aimed water tile legible from the tight diagonal camera position.
   const AMPHIBIOUS_BASE_FOOTING_COST = 20; // Full Footing cost of reeling in a catch before the Amphibious Fish perk discounts it.
   // Escape/respawn sequence timings, ported from the prototype's fishRespawn
   // state: when panic maxes out the fish doesn't just end the round, it visibly
@@ -259,13 +261,115 @@
   let fishingMinigame = null;
   let fishingEls = null; // cached ring SVG DOM refs — built on entering 'active', torn down on close
   const fishingOverlayEl = document.getElementById('fishingOverlay');
-  // Held while waiting on a bite so game.js's tool-swing pose code can hold
-  // the harpoon at its ready extreme (see the readyPose getter below) —
-  // mirrors window.Mounts' rideState/rideEntity getter precedent.
-  let fishingReadyPose = false;
+  let fishingThrowHoldActive = false; // Tracks whether fishing currently owns a held shared-throw windup, so close/release only cancel their own pose.
+  let fishingThrowDebug = null; // Stores the latest selected shared throw profile/release state for mobile-readable fishing diagnostics.
+  let fishingCameraDebug = null; // Stores the latest computed near-player camera position/config for the in-game debug log and on-demand inspection.
   // Saved camera mode/target to restore when the minigame closes.
   let _prevCameraMode = null;
   let _prevCameraTarget = null;
+  let _prevCameraOffsets = null; // Restored after fishing so the dedicated side camera can temporarily ignore prior shoulder/seated free-look rotation.
+
+  function selectedFishingThrowAnimation() {
+    const spear = String(deps?.equipmentSlots?.harpoon || '').toLowerCase().includes('fishingspear'); // Selects the dedicated 90° spear throw across base/crafted keys; Fishing Mace intentionally borrows the generic hatchet Spin Throw.
+    const animation = spear
+      ? window.HeldActionAnimations?.weaponThrowSpearSpin
+      : window.HeldActionAnimations?.weaponThrowSpin;
+    return { key: spear ? 'fishingspear' : 'fishingmace', profile: spear ? 'fishing-spear' : 'hatchet-spin', animation };
+  }
+
+  function beginFishingThrowWindup(reason = 'aim') {
+    const selected = selectedFishingThrowAnimation();
+    const animation = selected.animation;
+    if (!animation?.poses || typeof deps?.triggerFishingWeaponVisual !== 'function') {
+      fishingThrowHoldActive = false;
+      fishingThrowDebug = { reason, key: selected.key, profile: selected.profile, state: 'animation-unavailable' };
+      window.__farmLog?.(`fishing throw animation unavailable: ${selected.profile}`, 'warn');
+      return false;
+    }
+    const durationS = Math.max(0.05, Number(animation.durationS) || 1.04); // Reuses the authored thrown-weapon action duration instead of fishing inventing another timing.
+    const started = deps.triggerFishingWeaponVisual(durationS, {
+      sequence: animation.sequence || 'attack',
+      pose: animation.poses,
+      gripMode: animation.gripMode || 'palm-parallel',
+      toolEndFlip: animation.toolEndFlip === true,
+      alignToReticle: true,
+      aimTarget: fishingMinigame?.anchorWorld || null,
+      held: true,
+      windupFrac: Number.isFinite(Number(animation.windupFrac)) ? Number(animation.windupFrac) : 0.49,
+      strikeFrac: Number.isFinite(Number(animation.strikeFrac)) ? Number(animation.strikeFrac) : 0.57,
+      holdFrac: Number.isFinite(Number(animation.holdFrac)) ? Number(animation.holdFrac) : 0.82,
+      heldSpin: true,
+      heldSpinBasisDeg: Number(animation.spinBasisDeg) || 0,
+      heldSpinRevolutions: Math.max(0, Number(animation.spinRevolutions) || 2.5),
+    });
+    fishingThrowHoldActive = started === true;
+    fishingThrowDebug = { reason, key: selected.key, profile: selected.profile, state: fishingThrowHoldActive ? 'windup-held' : 'start-rejected' };
+    if (fishingThrowHoldActive) window.__farmLog?.(`fishing throw windup: ${selected.profile} (${reason})`, 'fish');
+    return fishingThrowHoldActive;
+  }
+
+  function releaseFishingThrowStrike() {
+    const selected = selectedFishingThrowAnimation();
+    if (!fishingThrowHoldActive) beginFishingThrowWindup('late-release-recovery');
+    const rawProgress = Number(deps?.getFishingWeaponWindupPoseProgress?.()); // Captures the exact visible Neutral→Windup fraction before release so Strike cannot snap.
+    const poseProgress = Number.isFinite(rawProgress) ? Math.max(0, Math.min(1, rawProgress)) : 1;
+    const released = deps?.releaseFishingWeaponHold?.({ poseProgress }) !== false;
+    fishingThrowHoldActive = false;
+    fishingThrowDebug = { reason: 'throw', key: selected.key, profile: selected.profile, state: released ? 'strike' : 'release-unavailable', poseProgress };
+    window.__farmLog?.(`fishing throw strike: ${selected.profile} progress=${poseProgress.toFixed(3)}`, released ? 'fish' : 'warn');
+    return released;
+  }
+
+  function cancelFishingThrowWindup() {
+    if (fishingThrowHoldActive) deps?.cancelFishingWeaponHold?.();
+    fishingThrowHoldActive = false;
+  }
+
+  function configureFishingCamera(anchorWorld) {
+    const cfg = window.SCRATCHBONES_CONFIG?.game?.camera?.modes?.fishing;
+    const playerPos = deps?.playerMesh?.position;
+    if (!cfg || !playerPos || !anchorWorld) return null;
+    let forwardX = Number(anchorWorld.x) - Number(playerPos.x); // Horizontal cast direction, used to build a player-relative side camera rather than a fixed world azimuth.
+    let forwardZ = Number(anchorWorld.z) - Number(playerPos.z);
+    const forwardLength = Math.hypot(forwardX, forwardZ);
+    if (forwardLength > 1e-6) {
+      forwardX /= forwardLength;
+      forwardZ /= forwardLength;
+    } else {
+      forwardX = 0;
+      forwardZ = 1;
+    }
+    const rightX = forwardZ; // Perpendicular player-relative X direction for the side-on camera.
+    const rightZ = -forwardX; // Perpendicular player-relative Z direction for the side-on camera.
+    const cameraX = Number(playerPos.x) + rightX * FISHING_CAMERA_SIDE_TILES - forwardX * FISHING_CAMERA_BACK_TILES;
+    const cameraZ = Number(playerPos.z) + rightZ * FISHING_CAMERA_SIDE_TILES - forwardZ * FISHING_CAMERA_BACK_TILES;
+    const targetToCameraX = cameraX - Number(anchorWorld.x); // Converts the desired physical camera point into the normal target-orbit camera mode parameters.
+    const targetToCameraZ = cameraZ - Number(anchorWorld.z);
+    const horizontalDistance = Math.max(0.25, Math.hypot(targetToCameraX, targetToCameraZ));
+    const baselineElevationRad = FISHING_CAMERA_ELEVATION_DEG * Math.PI / 180;
+    const baselineVerticalDistance = Math.tan(baselineElevationRad) * horizontalDistance; // Reconstructs the old camera Y-above-target for this exact XZ placement.
+    const raisedVerticalDistance = baselineVerticalDistance + FISHING_CAMERA_RAISE_TILES; // Adds the requested half-tile lift in world Y while leaving XZ unchanged.
+    cfg.distanceTiles = Math.hypot(horizontalDistance, raisedVerticalDistance);
+    cfg.angleFromGroundDeg = Math.atan2(raisedVerticalDistance, horizontalDistance) * 180 / Math.PI;
+    cfg.azimuthDeg = Math.atan2(targetToCameraX, targetToCameraZ) * 180 / Math.PI;
+    cfg.fovDeg = FISHING_CAMERA_FOV_DEG;
+    cfg.targetYOffsetTiles = 0;
+    fishingCameraDebug = {
+      player: { x: Number(playerPos.x), z: Number(playerPos.z) },
+      target: { x: Number(anchorWorld.x), y: Number(anchorWorld.y), z: Number(anchorWorld.z) },
+      desiredCameraXZ: { x: cameraX, z: cameraZ },
+      distanceTiles: cfg.distanceTiles,
+      angleFromGroundDeg: cfg.angleFromGroundDeg,
+      raiseTiles: FISHING_CAMERA_RAISE_TILES,
+      azimuthDeg: cfg.azimuthDeg,
+      fovDeg: cfg.fovDeg,
+    };
+    window.__farmLog?.(
+      `fishing camera: side-diagonal @ (${cameraX.toFixed(2)},${cameraZ.toFixed(2)}) target=(${anchorWorld.x.toFixed(2)},${anchorWorld.z.toFixed(2)}) liftY=+${FISHING_CAMERA_RAISE_TILES.toFixed(2)} dist=${cfg.distanceTiles.toFixed(2)} angle=${cfg.angleFromGroundDeg.toFixed(1)} az=${cfg.azimuthDeg.toFixed(1)} fov=${cfg.fovDeg}`,
+      'fish'
+    );
+    return fishingCameraDebug;
+  }
 
   function currentFishZoneKey() {
     const currentArea = deps.getCurrentArea();
@@ -615,10 +719,10 @@
       fishClass: fish.fishClass,
       active: true,
     };
-    // Hold the harpoon at its windup extreme for the whole cast/waiting/
-    // bite sequence, so the character visibly looks like it's getting
-    // ready instead of resting in its normal idle pose.
-    fishingReadyPose = true;
+    // Reuse the authored thrown-weapon Neutral→Windup and hold at Windup
+    // through the cast/wait/bite/aim sequence. The actual second-marker throw
+    // releases this same held timeline directly into its authored Strike.
+    beginFishingThrowWindup('cast');
     const playerMesh = deps.playerMesh;
     spawnFishingBaitToss(
       { x: playerMesh.position.x, y: playerMesh.position.y, z: playerMesh.position.z },
@@ -629,11 +733,14 @@
     fishingEls = null;
     fishingOverlayEl.classList.add('open');
 
-    // Swap to the "fishing" camera mode (fixed diagonal offset, matching the
-    // (HA)SpearFishingMinigameV2 prototype's cube/river framing) and track the
-    // fished water tile instead of the player while the minigame is open.
+    // Swap to a player-relative side-diagonal fishing camera and keep its
+    // look target on the exact water tile. Zero inherited free-look offsets
+    // for the minigame so a prior Shoulder Cam orbit cannot skew this framing.
     _prevCameraMode = deps.getCameraMode();
     _prevCameraTarget = deps.getCameraTarget();
+    _prevCameraOffsets = deps.getCameraOrientationOffsets?.() || null;
+    deps.setCameraOrientationOffsets?.({ azimuthDeg: 0, angleDeg: 0 });
+    configureFishingCamera(anchorWorld);
     deps.setCameraMode('fishing');
     deps.setCameraTarget({ position: new THREE.Vector3(anchorWorld.x, anchorWorld.y, anchorWorld.z) });
 
@@ -683,7 +790,7 @@
     _fishDeformUrlCacheAt = -Infinity;
     _fishDeformCollisionMask = null;
     _fishCollisionSourceLog = '';
-    fishingReadyPose = false;
+    if (!fishingThrowHoldActive) beginFishingThrowWindup('ring-open');
     window.__farmLog?.(`fishing ring opened: zone=${fm.zoneKey} fish=${fm.fishDef.key} anchor=(${fm.anchorWorld.x.toFixed(2)},${fm.anchorWorld.y.toFixed(2)},${fm.anchorWorld.z.toFixed(2)}) bodyImgLoaded=${!!(fishBodySpriteImage && fishBodySpriteImage.naturalWidth)}`);
     // The prompt DOM (button/status/panic/cancel) persists across this
     // transition; only the ring SVG is fresh here.
@@ -735,7 +842,7 @@
   function closeFishingMinigame() {
     if (!fishingMinigame) return;
     fishingMinigame = null;
-    fishingReadyPose = false;
+    cancelFishingThrowWindup();
     fishingOverlayEl.classList.remove('open');
     fishingOverlayEl.innerHTML = '';
     fishingEls = null;
@@ -753,6 +860,8 @@
     if (_prevCameraMode !== null) { deps.setCameraMode(_prevCameraMode); _prevCameraMode = null; }
     deps.setCameraTarget(_prevCameraTarget);
     _prevCameraTarget = null;
+    if (_prevCameraOffsets) deps.setCameraOrientationOffsets?.(_prevCameraOffsets);
+    _prevCameraOffsets = null;
   }
 
   function fireFishingBridge() {
@@ -784,15 +893,10 @@
     fm.message = 'Spear thrown!';
     fm.messageType = '';
 
-    // Cosmetic 3D-world throw: reuse the hoe/chop swing arc (raise → slam) but
-    // fly the held harpoon mesh out to the fishing anchor mid-slam instead of
-    // slamming it down at the player's feet, then ease it back to the hand.
-    // Duration must stay under the 2D ring's shot+retract window (~0.44s) so a
-    // repeat cast can't restart the swing while the mesh is still mid-flight.
-    deps.setToolSwingDur(0.42);
-    deps.setToolSwingT(0.42);
-    deps.setStrikeFired(true); // fishing has no pendingAction to fire on strike
-    deps.setFishThrowActive(true);
+    // Release the exact thrown-weapon Windup already visible on the player
+    // into its authored Strike. Fishing owns the ring projectile, so this is
+    // visual-only and cannot create a duplicate combat projectile.
+    releaseFishingThrowStrike();
   }
 
   function minigamePresentationScale(fm) {
@@ -1214,6 +1318,7 @@
         b.shotTimer = 0;
         b.retractTimer = 0;
         b.caughtFish = false;
+        beginFishingThrowWindup('miss-rearm');
       }
     }
 
@@ -1470,7 +1575,8 @@
     timeOfDay: fishingTimeOfDay,
     projectileVisuals: FISHING_PROJECTILE_VISUALS,
     get state() { return fishingMinigame; },
-    get readyPose() { return fishingReadyPose; },
+    get cameraDebug() { return fishingCameraDebug; },
+    get throwAnimationDebug() { return fishingThrowDebug; },
     get hitboxDebug() { return fishingMinigame?.bridge?.hitboxDebug || null; },
   };
 })();

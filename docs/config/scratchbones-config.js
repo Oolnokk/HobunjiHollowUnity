@@ -200,12 +200,13 @@ window.SCRATCHBONES_CONFIG = {
           }
         },
         "fishing": {
-          "distanceTiles": 11.475,
-          "angleFromGroundDeg": 25.5,
-          "azimuthDeg": 34,
-          "fovDeg": 42,
+          "distanceTiles": 3.2,
+          "angleFromGroundDeg": 18,
+          "azimuthDeg": 90,
+          "fovDeg": 70,
           "followLerp": 0.15,
-          "targetYOffsetTiles": 0.35
+          "targetYOffsetTiles": 0,
+          "ignoreGlobalZoom": true
         },
         "fishCatch": {
           "distanceTiles": 7,

@@ -7028,7 +7028,7 @@
         if (rawMoveInput || playerAutoWalk) return false;
         if (Math.hypot(player.vx || 0, player.vy || 0) > 5) return false;
         if (player.climbing || player.onBranch || player.dodging || player.lunging || player.knockbackT > 0 || player.prone) return false;
-        if (dialogueOpen || sitInteraction || actionHeldDown || chargeAction || toolSwingT > 0 || combatSwingAnim || combatSwingHeld || fishThrowActive) return false;
+        if (dialogueOpen || sitInteraction || actionHeldDown || chargeAction || toolSwingT > 0 || combatSwingAnim || combatSwingHeld) return false;
         if (window.PlayerChat?.isOpen || window.PlayerSocialPoses?.active || window.Fishing?.state?.active || window.MusicMinigame?.state?.active) return false;
         if (window.Mounts?.rideState && window.Mounts.rideState !== 'none') return false;
         if (window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID, 'movement')) return false;
@@ -20282,8 +20282,9 @@
         const tx = camTargetX, tz = camTargetZ;
         // Cutscene/dialogue/portrait framing is deliberately scripted — only
         // clamp the ordinary gameplay camera against tree canopies.
-        let effectiveZoomScale = s_zoomScale;
-        if (!cutscenePreviewActive && !dialogueZoomActive()) {
+        const ignoreGlobalZoom = modeCfg.ignoreGlobalZoom === true; // Scripted close cameras such as fishing keep their authored world-space distance instead of inheriting the player's shoulder-camera zoom.
+        let effectiveZoomScale = ignoreGlobalZoom ? 1 : s_zoomScale;
+        if (!ignoreGlobalZoom && !cutscenePreviewActive && !dialogueZoomActive()) {
           const approxLookY = camTargetY + (modeCfg.targetYOffsetTiles ?? 0);
           const floor = canopyZoomFloor(tx, tz, approxLookY);
           if (floor > effectiveZoomScale) {
@@ -21196,12 +21197,9 @@
       let combatSwingHeld = false;
       let combatSwingWindupSlowdown = 0; // Used by held attacks whose Neutral→Windup pose decelerates instead of advancing linearly.
       let combatSwingWindupPoseProgress = 0; // Used by Charge Breaker to read the exact visible Neutral→Windup interpolation at release.
-      // Fishing's own equivalent of combatSwingHeld (holds the harpoon at
-      // its windup extreme while waiting on a bite) now lives in
-      // js/fishing-minigame.js (window.Fishing) — read below via the
-      // window.Fishing.readyPose getter, since it's deliberately separate
-      // from combatSwingHeld/triggerWeaponHoldVisual (which only work for
-      // activeTool === 'weapon') rather than reusing that system.
+      // Fishing reuses this same pose-driven hold/release timeline through
+      // triggerFishingWeaponVisual below, so the harpoon no longer maintains
+      // a separate ready-pose or bespoke chop animation path.
       // Per-ability post-strike pause, in seconds — set via opts.holdS on a
       // triggerWeaponSwingVisual/triggerWeaponHoldVisual call (a config knob
       // each ability's own file sets, not a built-in engine default). 0 means
@@ -21214,8 +21212,10 @@
       // through anim's bespoke per-style formula — see the pose-driven
       // branch at the top of updateToolMesh's style if/else chain.
       let combatSwingPose = null;
-      let combatSwingAlignToReticle = false; // Ranged fire/throws rotate their authored pose frame onto the live reticle yaw+pitch.
+      let combatSwingAlignToReticle = false; // Ranged fire/throws rotate their authored pose frame onto a resolved aim point; fishing supplies its fixed water target.
+      let combatSwingAimTargetOverride = null; // Optional finite world point used by fishing so a camera move cannot redirect the held throw away from the selected water tile.
       let combatSwingToolEndFlip = false; // Requests the same visible tip↔handle in-plane reversal previewed by the Attack Animation Editor.
+      let fishingThrowSpinVisual = null; // Carries the shared thrown-weapon spin basis/revolutions while the harpoon slot owns a fishing throw pose.
       const _toolMeshPoseMergeCache = { pose: undefined, styleNeutral: undefined, neutral: null, returnNeutral: null }; // Memoizes updateToolMesh's per-frame neutral/returnNeutral merge for the current swing (see the pose-driven branch below).
       // Affliction ids (see resource-system.js's AFFLICTIONS) this swing's
       // ability can actually inflict — set via opts.afflictionIds on
@@ -21379,7 +21379,9 @@
         combatSwingHoldS = holdS;
         combatSwingHeld = false;
         combatSwingAlignToReticle = false;
+        combatSwingAimTargetOverride = null;
         combatSwingToolEndFlip = false;
+        fishingThrowSpinVisual = null;
         combatSwingWindupSlowdown = Math.max(0, Number(opts.windupSlowdown) || 0);
         combatSwingWindupPoseProgress = 0;
         combatSwingSequence = 'attack';
@@ -21390,10 +21392,10 @@
       }
 
       // Ranged actions supply separate load/fire pose sets and independently
-      // authored playback sequences. Current loading weapons use the full
-      // neutral→windup→strike→hold→neutral sequence for both actions.
-      function triggerRangedWeaponVisual(durationS, opts = {}) {
-        if (activeTool !== 'ranged') return;
+      // authored playback sequences. Fishing uses the same pose timeline on
+      // the harpoon slot, but never enters RangedWeapons' projectile state.
+      function triggerPoseDrivenToolVisual(requiredTool, durationS, opts = {}) {
+        if (activeTool !== requiredTool) return false;
         toolSwingDur = Math.max(0.05, durationS);
         toolSwingT = toolSwingDur;
         combatSwingAnim = 'ranged';
@@ -21401,6 +21403,10 @@
         combatSwingSign = 1;
         combatSwingPower = 1;
         combatSwingAlignToReticle = opts.alignToReticle === true;
+        const requestedAimTarget = opts.aimTarget; // Fishing passes the cast tile; ordinary ranged actions leave this null and keep using the shared live reticle point.
+        combatSwingAimTargetOverride = requestedAimTarget && [requestedAimTarget.x, requestedAimTarget.y, requestedAimTarget.z].every(Number.isFinite)
+          ? { x: Number(requestedAimTarget.x), y: Number(requestedAimTarget.y), z: Number(requestedAimTarget.z) }
+          : null;
         combatSwingToolEndFlip = opts.toolEndFlip === true;
         combatSwingWindupFrac = opts.windupFrac ?? 0.55;
         combatSwingStrikeFrac = opts.strikeFrac ?? 0.18;
@@ -21410,6 +21416,24 @@
         combatSwingWindupPoseProgress = 0;
         combatSwingSequence = opts.sequence || 'fire';
         combatSwingSequenceHoldFrac = opts.holdFrac ?? null;
+        return true;
+      }
+
+      function triggerRangedWeaponVisual(durationS, opts = {}) {
+        fishingThrowSpinVisual = null;
+        return triggerPoseDrivenToolVisual('ranged', durationS, opts);
+      }
+
+      function triggerFishingWeaponVisual(durationS, opts = {}) {
+        const started = triggerPoseDrivenToolVisual('harpoon', durationS, opts);
+        if (!started) return false;
+        fishingThrowSpinVisual = {
+          heldSpin: opts.heldSpin === true,
+          heldSpinBasisDeg: Number(opts.heldSpinBasisDeg) || 0,
+          heldSpinRevolutions: Math.max(0, Number(opts.heldSpinRevolutions) || TOOL_SPIN_REVOLUTIONS),
+        };
+        if (opts.gripMode) window.ProceduralHandGripRuntime?.beginHeld?.(opts.gripMode);
+        return true;
       }
 
       // Abilities whose final range/angle isn't known at trigger time
@@ -21498,7 +21522,10 @@
         combatSwingWindupSlowdown = 0;
         combatSwingWindupPoseProgress = 0;
         combatSwingAlignToReticle = false;
+        combatSwingAimTargetOverride = null;
         combatSwingToolEndFlip = false;
+        fishingThrowSpinVisual = null;
+        window.ProceduralHandGripRuntime?.clear?.();
         toolSwingT = 0;
       }
 
@@ -21576,9 +21603,6 @@
       // Per-tool swing durations: thrust fast, chop medium, sweep slow.
       let toolSwingT   = 0;
       let toolSwingDur = 0.22;
-      // Set true for the duration of a fishing-spear throw swing so updateToolMesh
-      // flies the harpoon mesh out to the water anchor instead of slamming in place.
-      let fishThrowActive = false;
       // Full rotations a "spinning" harpoon sprite (e.g. the fishing mace) twirls through over
       // one complete swing; spear-mode harpoon items leave their `spinning` flag false/unset.
       const TOOL_SPIN_REVOLUTIONS = 2.5;
@@ -22251,13 +22275,13 @@
         return point;
       }
 
-      function playerRangedReticleOrbitFrame() {
+      function playerRangedReticleOrbitFrame(targetOverride = null) {
         const identity = playerPoseIdentity(); // Used to resolve the rendered body centroid that the species/gender-scaled orbit rotates around.
         const height = _speciesPoseScaling?.heightMetrics?.(identity.speciesId, identity.gender, playerAvatarModelHeight) || null; // Used to place the orbit pivot at the rendered portrait centroid.
         const pivotX = playerMesh.position.x; // World X of the ranged orbit pivot.
         const pivotY = playerMesh.position.y + playerPoseCentroidY * (height?.rigScaleY ?? 1); // World Y of the rendered body centroid used by both reticle direction and orbit rotation.
         const pivotZ = playerMesh.position.z; // World Z of the ranged orbit pivot.
-        const target = currentPlayerPerspectiveTarget()?.point || null; // The one finite 3D point directly under the reticle shared by ranged/melee/head consumers.
+        const target = targetOverride || currentPlayerPerspectiveTarget()?.point || null; // Fishing can pin this frame to its cast tile; ordinary ranged actions keep the one finite 3D point directly under the reticle.
         const dx = Number(target?.x) - pivotX;
         const dy = Number(target?.y) - pivotY;
         const dz = Number(target?.z) - pivotZ;
@@ -22394,32 +22418,10 @@
           progress   = 1 - toolSwingT / toolSwingDur;
         }
 
-        // Hold a simple raised/pulled-back "ready" pose while waiting on a
-        // fishing bite — deliberately bypasses the per-style branches below
-        // instead of pinning `progress` at their windup extreme: thrust's
-        // windup carries a -45° bodyYaw and sweep's carries a much larger
-        // one (both meant as a brief transient mid-swing), and holding
-        // either of those indefinitely visibly rotated the whole character
-        // away from θ (the facing set by aiming at the fished tile) instead
-        // of leaving them squared up toward it. This pose only tilts the
-        // tool itself — playerMesh.rotation.y stays exactly θ.
-        if (window.Fishing?.readyPose) {
-          playerMesh.rotation.y = θ;
-          _qFac.setFromAxisAngle(_tUp, θ);
-          _qAnim.setFromAxisAngle(_xAxis, THREE.MathUtils.degToRad(10.31));
-          toolHolder.quaternion.copy(_qFac).multiply(_qAnim);
-          toolHolder.position.set(
-            playerMesh.position.x + rightX * playerToolBaseX + fwdX * -0.22,
-            playerMesh.position.y + playerToolBaseY,
-            playerMesh.position.z + rightZ * playerToolBaseX + fwdZ * -0.22
-          );
-          return;
-        }
-
         _qFac.setFromAxisAngle(_tUp, θ);
         _swAxis.set(rightX, 0, rightZ);
 
-        const anim = fishThrowActive ? 'chop' : (chargeAnimOverride || combatSwingAnim || activeAnimStyle());
+        const anim = chargeAnimOverride || combatSwingAnim || activeAnimStyle();
         // Tool actions keep their original fixed 16%/28% split; combat
         // triggers use each ability's own windupS/strikeS ratio (set via
         // triggerWeaponSwingVisual's opts) so a heavily-telegraphed swing
@@ -22444,12 +22446,6 @@
         const HF = (combatSwingAnim && combatSwingHoldS > 0)
           ? Math.min(0.99, SF + combatSwingHoldS / toolSwingDur)
           : Math.min(0.99, SF + (1 - SF) * 0.3);
-
-        // Pin the swing at its windup extreme while waiting on a bite —
-        // fourPhaseLerp(progress===wf, wf, ...) always resolves to exactly
-        // windupV regardless of style, so this holds any equipped harpoon's
-        // ready pose without needing a style-specific pose computation here.
-        if (window.Fishing?.readyPose) progress = WF;
 
         let posePlaneMirrorSign = null; // Pose-authored attacks can return to a different left/right Neutral than the one they started from.
         if (combatSwingAnim && combatSwingPose) {
@@ -22518,8 +22514,8 @@
           // Ranged throws/fire author motion relative to the reticle frame,
           // not the player's stale ground-facing frame. BodyYaw remains an
           // authored yaw delta while the tool path itself inherits reticle pitch.
-          const reticleAligned = combatSwingAlignToReticle && activeTool === 'ranged';
-          const reticleFrame = reticleAligned ? playerRangedReticleOrbitFrame() : null; // One shared world-space reticle frame drives both visible orientation and the scaled position orbit.
+          const reticleAligned = combatSwingAlignToReticle && (activeTool === 'ranged' || activeTool === 'harpoon');
+          const reticleFrame = reticleAligned ? playerRangedReticleOrbitFrame(combatSwingAimTargetOverride) : null; // Fishing pins this to anchorWorld; combat ranged actions pass null and keep the live reticle frame.
           const aimBaseYaw = reticleFrame?.yawRad ?? θ;
           const aimPitchRad = -(reticleFrame?.pitchRad ?? 0); // Visual pose pitch is sign-corrected independently from the actual reticle/projectile aim ray.
           const vθ  = aimBaseYaw + bodyYawRad;
@@ -22665,24 +22661,8 @@
           const handX = playerMesh.position.x + vRX * (playerToolBaseX + x) + vFX * z;
           const handY = playerMesh.position.y + playerToolBaseY + y;
           const handZ = playerMesh.position.z + vRZ * (playerToolBaseX + x) + vFZ * z;
-          if (fishThrowActive && window.Fishing?.state?.anchorWorld) {
-            // Out during the slam (WF→SF), held at the anchor through the
-            // hold (SF→HF), back during the return (HF→1).
-            let travel;
-            if (progress <= WF) travel = 0;
-            else if (progress <= SF) travel = (progress - WF) / (SF - WF);
-            else if (progress <= HF) travel = 1;
-            else travel = 1 - (progress - HF) / (1.0 - HF);
-            const aw = window.Fishing.state.anchorWorld;
-            toolHolder.position.set(
-              handX + (aw.x - handX) * travel,
-              handY + (aw.y - handY) * travel,
-              handZ + (aw.z - handZ) * travel
-            );
-          } else {
-            toolHolder.position.set(handX, handY, handZ);
-            if (combatSwingAnim) scaleToolWorldPointAroundPlayerCentroid(toolHolder.position);
-          }
+          toolHolder.position.set(handX, handY, handZ);
+          if (combatSwingAnim) scaleToolWorldPointAroundPlayerCentroid(toolHolder.position);
 
         } else if (anim === 'toss') {
           // TOSS — reverse hoe: lift the load on the windup, then heave it up
@@ -22837,8 +22817,7 @@
           // attack played on the sweep-styled hatchet, or a sweep combo step played on the
           // thrust-styled pick-shovel), so baking the twist per-item at mesh creation got it
           // backwards in either direction. Deriving it from `anim` here keeps it correct
-          // regardless of what's equipped (and naturally drops to 0 during fishThrowActive,
-          // since that always forces anim to 'chop').
+          // regardless of what's equipped.
           const baseRotZ = anim === 'sweep' ? -Math.PI / 2 : 0;
           const rangedThrowDef = activeTool === 'ranged' && combatSwingAnim === 'ranged'
             ? window.RangedWeapons?.config?.[equipmentSlots.ranged || spinItemKey]
@@ -22853,6 +22832,16 @@
           const rangedThrowDynamicSpinRad = rangedThrowSpins
             ? rangedThrowSpinBasisRad - progress * Math.PI * 2 * rangedThrowSpinRevolutions
             : 0;
+          const fishingThrowSpins = activeTool === 'harpoon' && combatSwingAnim === 'ranged' && fishingThrowSpinVisual?.heldSpin === true; // Fishing shares the thrown flourish without masquerading as a combat ranged weapon.
+          const fishingThrowSpinBasisRad = fishingThrowSpins
+            ? THREE.MathUtils.degToRad(Number(fishingThrowSpinVisual?.heldSpinBasisDeg) || 0)
+            : 0;
+          const fishingThrowSpinRevolutions = fishingThrowSpins
+            ? Math.max(0, Number(fishingThrowSpinVisual?.heldSpinRevolutions) || TOOL_SPIN_REVOLUTIONS)
+            : TOOL_SPIN_REVOLUTIONS;
+          const fishingThrowDynamicSpinRad = fishingThrowSpins
+            ? fishingThrowSpinBasisRad - progress * Math.PI * 2 * fishingThrowSpinRevolutions
+            : 0;
           if (anim === 'refillTwistOut') {
             // Lerp a 180° length-wise spin out, independent of any item's own "spinning" flag.
             spinPlane.rotation.z = (effectiveEndFlip ? Math.PI : 0) + baseRotZ + progress * Math.PI;
@@ -22866,6 +22855,12 @@
             // the flipped dagger handle) away from the stationary hand.
             spinPlane.rotation.z = (effectiveEndFlip ? Math.PI : 0) + baseRotZ + rangedThrowDynamicSpinRad;
             const throwSpinPivot = window.HobunjiHandToolGrips?.spinPivotOffsetForTool?.(spinItemKey, rangedThrowDynamicSpinRad, 'ranged');
+            if (throwSpinPivot) spinPlane.position.set(throwSpinPivot.x, throwSpinPivot.y, throwSpinPivot.z);
+          } else if (fishingThrowSpins) {
+            // Same authored ranged-grip pivot used by the hatchet/spear throw
+            // library, applied to the harpoon slot without spawning a combat projectile.
+            spinPlane.rotation.z = (effectiveEndFlip ? Math.PI : 0) + baseRotZ + fishingThrowDynamicSpinRad;
+            const throwSpinPivot = window.HobunjiHandToolGrips?.spinPivotOffsetForTool?.(spinItemKey, fishingThrowDynamicSpinRad, 'ranged');
             if (throwSpinPivot) spinPlane.position.set(throwSpinPivot.x, throwSpinPivot.y, throwSpinPivot.z);
           } else {
             // The mace's own fishing-throw twirl is cosmetic to the harpoon cast —
@@ -22896,8 +22891,11 @@
           if (pendingSfxKey) window.AudioSystem?.playObjectSfxKey?.(pendingSfxKey);
           firePendingAction();
         }
-        if (fishThrowActive && toolSwingT <= 0) fishThrowActive = false;
-        if (combatSwingAnim && toolSwingT <= 0) { combatSwingAnim = null; combatSwingPose = null; combatSwingHoldS = 0; combatSwingHeld = false; combatSwingWindupSlowdown = 0; combatSwingWindupPoseProgress = 0; combatSwingAlignToReticle = false; combatSwingToolEndFlip = false; combatSwingSequence = 'attack'; combatSwingSequenceHoldFrac = null; combatSwingAfflictionIds = []; combatSwingAfflictionMuls = {}; combatSwingCone = null; }
+        if (combatSwingAnim && toolSwingT <= 0) {
+          const finishedFishingThrow = fishingThrowSpinVisual !== null; // Used to clear the temporary palm-parallel fishing grip only after Strike/return finishes.
+          combatSwingAnim = null; combatSwingPose = null; combatSwingHoldS = 0; combatSwingHeld = false; combatSwingWindupSlowdown = 0; combatSwingWindupPoseProgress = 0; combatSwingAlignToReticle = false; combatSwingAimTargetOverride = null; combatSwingToolEndFlip = false; combatSwingSequence = 'attack'; combatSwingSequenceHoldFrac = null; combatSwingAfflictionIds = []; combatSwingAfflictionMuls = {}; combatSwingCone = null; fishingThrowSpinVisual = null;
+          if (finishedFishingThrow) window.ProceduralHandGripRuntime?.clear?.();
+        }
       }
 
       // Initialize mesh map after toolHolder exists
@@ -26563,6 +26561,7 @@
           setDialogueCameraZoomPercent(dialogueCameraZoomPercent + (-e.deltaY * sensitivity * 100));
           return true;
         }
+        if (cameraModeConfig(activeCameraMode).ignoreGlobalZoom === true) return true; // Fixed-distance authored modes consume wheel input without silently changing the gameplay zoom restored afterward.
         const cfg = desktopControlsConfig();
         const step = Number.isFinite(Number(cfg.wheelZoomStep)) ? Number(cfg.wheelZoomStep) : 0.05;
         setCameraZoomScale(s_zoomScale + (-dir * step));
@@ -27529,10 +27528,15 @@
         setCameraMode: (v) => { activeCameraMode = v; },
         getCameraTarget: () => activeCameraTarget,
         setCameraTarget: (v) => { activeCameraTarget = v; },
-        setToolSwingDur: (v) => { toolSwingDur = v; },
-        setToolSwingT: (v) => { toolSwingT = v; },
-        setStrikeFired: (v) => { strikeFired = v; },
-        setFishThrowActive: (v) => { fishThrowActive = v; },
+        getCameraOrientationOffsets: () => ({ azimuthDeg: cameraAzimuthOffsetDeg, angleDeg: cameraAngleOffsetDeg }),
+        setCameraOrientationOffsets: ({ azimuthDeg = 0, angleDeg = 0 } = {}) => {
+          cameraAzimuthOffsetDeg = Number.isFinite(Number(azimuthDeg)) ? Number(azimuthDeg) : 0;
+          cameraAngleOffsetDeg = Number.isFinite(Number(angleDeg)) ? Number(angleDeg) : 0;
+        },
+        triggerFishingWeaponVisual,
+        getFishingWeaponWindupPoseProgress: getWeaponSwingWindupPoseProgress,
+        releaseFishingWeaponHold: releaseWeaponSwingHold,
+        cancelFishingWeaponHold: cancelWeaponSwingHold,
       });
 
       let _musicPrevCameraMode = null;
