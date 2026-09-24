@@ -360,8 +360,8 @@
     const root = actor.avatarRef?.group;
     const raw = actorRawPosition(actor);
     if (!root || !raw) return false;
-    // `def.canSwim` means the actor avoids the ordinary movement/combat swim
-    // penalty; it does NOT mean the body should float above the water. Natural
+    // `def.canSwim` controls the actor's ordinary swimming/movement behavior;
+    // it does NOT mean the body should float above the water. Natural
     // swimmers still use the exact same visual centroid rule here.
     return applyWaterCentroidSink(root, raw.x, raw.y, actorLabel(actor));
   }

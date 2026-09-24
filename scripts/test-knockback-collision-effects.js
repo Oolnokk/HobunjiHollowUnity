@@ -88,7 +88,7 @@ assert.match(playerVitalsSource, /isPlayerInWater\?\.\(\)[\s\S]{0,120}extinguish
 assert.match(gameSource, /function isWaterSurfaceAt[\s\S]{0,650}WATERWAY_TYPES\.has\(tile\.type\)[\s\S]{0,220}Number\(tile\.water\)[\s\S]{0,120}>= 0\.003/,
   'Burning water detection follows permanent waterways plus WaterSystem-visible dynamic water');
 assert.match(gameSource, /function isSwimmingAt[\s\S]{0,450}type === TileType\.RIVER \|\| type === TileType\.STREAM/,
-  'expanded extinguishing does not broaden the separate swimming movement/attack rule');
+  'expanded extinguishing does not broaden the separate swimming movement rule');
 assert.match(gameSource, /function tickCreatureResources[\s\S]{0,500}isWaterSurfaceAt[\s\S]{0,1800}transitionCreatureToDeath/,
   'creatures extinguish on water and lethal resource ticks hand off to shared death authority');
 assert.match(gameSource, /if \(!tickCreatureResources\(c, entityDt, visuallyLodSleeping\)\) continue;/,

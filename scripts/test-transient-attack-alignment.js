@@ -49,6 +49,7 @@ assert.match(input, /localStorage\.getItem\(AUTO_TARGET_STORAGE_KEY\) === 'true'
 assert.match(input, /if \(!autoTargetEnabled\) \{[\s\S]{0,320}callback\(\);[\s\S]{0,80}return null;/, 'disabled auto-target bypasses target acquisition and starts the attack directly');
 assert.match(input, /id="settingMeleeAutoTarget"/, 'Settings receives a player-facing Auto-target checkbox');
 assert.match(input, /autoTargetSettingsSnapshot/, 'combat input exposes mobile-readable auto-target diagnostics');
+assert.doesNotMatch(input, /blockedBySwimming|Can't fight while swimming|isPlayerSwimming/, 'combat input does not block attacks or holds while swimming');
 
 assert.match(game, /function requestMeleeAttackAlignment\(/, 'game owns a transient melee alignment request');
 assert.match(game, /let meleeAttackTargetLock = null;/, 'game owns one explicit activation-scoped melee target lock');
@@ -101,14 +102,24 @@ assert(Math.abs(runtime.window.Combat.postAttackTurnMultiplier(recoveringActor, 
 
 let alignmentRequests = 0; // Counts calls into the real game-owned transient target/alignment request from the input gate.
 let legacyActions = 0; // Counts attacks that actually begin so both disabled and enabled paths prove they still fire.
+let holdStarts = 0; // Counts held combat actions that start while the fixture reports the player is swimming.
+let holdUpdates = 0; // Counts live held-action updates after the swimming hold crosses its input threshold.
+let holdEnds = 0; // Counts held combat actions that release normally while swimming.
+let inputNowMs = 1000; // Mutable clock used to cross the real combat-input hold threshold deterministically.
 const inputRuntime = { // Minimal DOM/browser shell used to execute combat-input.js and verify the default-off behavior.
   window: {
     Combat: {
-      loadout: { getSlot: () => null },
-      abilities: { get: () => null },
+      loadout: { getSlot: slotId => slotId === 'hold1' ? 'swimHold' : null },
+      abilities: { get: abilityId => abilityId === 'swimHold' ? {
+        category: 'defensiveHold',
+        onHoldStart: () => { holdStarts++; },
+        onHoldUpdate: () => { holdUpdates++; },
+        onHoldEnd: () => { holdEnds++; },
+      } : null },
       deps: {
         player: {},
         fireLegacyWeaponAction: () => { legacyActions++; },
+        isPlayerSwimming: () => true,
         requestMeleeAttackAlignment: callback => { alignmentRequests++; callback(); return null; },
       },
       isStaggered: () => false,
@@ -128,7 +139,7 @@ const inputRuntime = { // Minimal DOM/browser shell used to execute combat-input
     getItem: () => null,
     setItem: () => {},
   },
-  performance: { now: () => 1000 },
+  performance: { now: () => inputNowMs },
   requestAnimationFrame: callback => callback(),
   CustomEvent: function CustomEvent() {},
   console,
@@ -136,15 +147,25 @@ const inputRuntime = { // Minimal DOM/browser shell used to execute combat-input
 vm.runInNewContext(input, inputRuntime);
 inputRuntime.window.Combat.input.fireTap(1);
 assert.equal(alignmentRequests, 0, 'default-off auto-target never asks game.js to select or align a target');
-assert.equal(legacyActions, 1, 'manual/default-off attacks still begin immediately');
+assert.equal(legacyActions, 1, 'manual/default-off attacks still begin immediately while swimming');
 assert.equal(inputRuntime.window.Combat.input.alignmentHandoffSnapshot().phase, 'disabled-bypass', 'diagnostics report the manual bypass path');
 assert.equal(inputRuntime.window.Combat.input.autoTargetSettingsSnapshot().defaultEnabled, false, 'debug snapshot advertises the default-off contract');
 inputRuntime.window.Combat.input.setAutoTargetEnabled(true, { persist: false });
 inputRuntime.window.Combat.input.fireTap(1);
 assert.equal(alignmentRequests, 1, 'enabling auto-target restores the existing transient target/alignment request');
 assert.equal(legacyActions, 2, 'enabled auto-target hands off into the same attack path after alignment');
+inputRuntime.window.Combat.input.pressStart(1);
+inputNowMs += 200;
+inputRuntime.window.Combat.update(0.2);
+assert.equal(holdStarts, 1, 'crossing the real hold threshold starts a held combat action while swimming');
+assert.equal(inputRuntime.window.Combat.input.getState(1).holding, true, 'swimming hold remains owned by the combat input state machine');
+inputRuntime.window.Combat.update(0.016);
+assert.equal(holdUpdates, 1, 'a swimming held combat action continues updating after startup');
+inputRuntime.window.Combat.input.pressEnd(1);
+assert.equal(holdEnds, 1, 'releasing a swimming held combat action reaches its normal hold-end hook');
 
 assert.match(bandit, /attackAlignmentStep\?\.\(c, targetPlayer, dt/, 'bandits align before attack windup');
+assert.doesNotMatch(bandit, /readyToStrike[\s\S]{0,260}isCreatureSwimming/, 'hostile strike readiness is not disabled by swimming');
 assert.doesNotMatch(bandit, /BANDIT_LUNGE_HOMING_RATE/, 'bandits do not home after committing an attack');
 assert.match(bandit, /data: \{ isBandit: true, attacker: c/, 'bandit staged actions identify their attacker for recovery');
 
