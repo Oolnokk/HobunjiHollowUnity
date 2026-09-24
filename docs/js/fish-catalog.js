@@ -154,7 +154,7 @@
     return{enabled:!!f.length,v:hi.v||1,match:(r,g,b)=>cd(chroma(r,g,b),c)<=d};
   }
 
-  function guruProfile(px,list) {
+  function hueProfile(px,list) {
     const bins=36,scores=new Float64Array(bins),u=[];
     for(let i=0;i<px.length;i+=4){if(!px[i+3])continue;const r=px[i],g=px[i+1],b=px[i+2];if((r===255&&g===255&&b===255)||ignored(r,g,b,list))continue;const[h,s,v]=rgbHsv(r,g,b);if(v<=.08)continue;u.push({h,s,v});if(s>=.055)scores[Math.min(bins-1,Math.floor(h*bins))]+=.25+s;}
     if(!u.length)return{enabled:false,v:1};let bi=-1,bs=0;for(let b=0;b<bins;b++){const sc=scores[(b-1+bins)%bins]*.35+scores[b]+scores[(b+1)%bins]*.35;if(sc>bs){bs=sc;bi=b}}
@@ -164,7 +164,7 @@
   }
 
   function recolorBase(data,f) {
-    const px=data.data,t=rgbHsv(...hexRgb(f.baseColor)),list=ignores(f),p=f.species==='rockscale'?rockProfile(px,list):guruProfile(px,list);const hi=p.v||1;
+    const px=data.data,t=rgbHsv(...hexRgb(f.baseColor)),list=ignores(f),p=f.species==='rockscale'?rockProfile(px,list):hueProfile(px,list);const hi=p.v||1;
     for(let i=0;i<px.length;i+=4){if(!px[i+3])continue;const r=px[i],g=px[i+1],b=px[i+2];if((r===255&&g===255&&b===255)||ignored(r,g,b,list))continue;const[H,S,V]=rgbHsv(r,g,b);if(V<=.08)continue;if(p.enabled){const ok=p.match.length===3?p.match(r,g,b):p.match(H,S);if(!ok)continue}const[nr,ng,nb]=hsvRgb(t[0],t[1],clamp(t[2]*(V/hi)*(1+f.valueBoost)));px[i]=nr;px[i+1]=ng;px[i+2]=nb;}
   }
 
