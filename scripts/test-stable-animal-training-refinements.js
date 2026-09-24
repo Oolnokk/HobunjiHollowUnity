@@ -125,11 +125,11 @@ const bridge = fs.readFileSync('docs/js/livestock-nursery-install-bridge.js', 'u
 assert.match(bridge, /globalKey: 'StableAnimalTrainingRefinements'/, 'farm feature bridge loads stable training refinements');
 assert.match(bridge, /installStableAnimalTrainingRefinements\(\)/, 'farm feature bridge installs stable training refinements after base progression');
 const troughSource = fs.readFileSync('docs/js/farm-troughs.js', 'utf8');
-assert.match(troughSource, /livestock-nursery-install-bridge\.js\?v=20260922banubureview1/, 'farm trough bootstrap cache-busts the current feature bridge');
+assert.match(troughSource, /livestock-nursery-install-bridge\.js\?v=20260924perf1/, 'farm trough bootstrap cache-busts the current feature bridge');
 assert.doesNotMatch(troughSource, /livestock-nursery-install-bridge\.js\?v=20260902mainrebuild1/, 'stable training cannot silently reuse the pre-progression bridge cache key');
 const formatUtilsSource = fs.readFileSync('docs/js/format-utils.js', 'utf8');
 assert.match(formatUtilsSource, /loadStableAnimalFeatureBridge/, 'pre-game bootstrap directly owns a Stable feature bridge loader');
-assert.match(formatUtilsSource, /livestock-nursery-install-bridge\.js\?v=20260922banubureview1/, 'direct pre-game Stable loader uses the current bridge cache key');
+assert.match(formatUtilsSource, /livestock-nursery-install-bridge\.js\?v=20260924perf1/, 'direct pre-game Stable loader uses the current bridge cache key');
 assert.match(formatUtilsSource, /data-stable-animal-feature-bridge/, 'direct pre-game Stable loader is parser-synchronous and duplicate guarded');
 assert.match(source, /document\.getElementById\('stableAnimalProgression'\)\?\.remove\(\)/, 'old separate Animal Training block is removed');
 assert.match(source, /expandedStableId === entry\.id \? null : entry\.id/, 'tapping the open animal collapses it and tapping another switches the single expanded tree');

@@ -20,7 +20,7 @@
   <!-- Small formatting/math helpers (esc/clamp/roundRect/formatClock/etc.)
        extracted out of game.js; must load before game.js and before every
        other module whose init(deps) is handed window.FormatUtils.clamp/esc. -->
-  <script src="js/format-utils.js?v=20260922banubureview1"></script>
+  <script src="js/format-utils.js?v=20260924perf1"></script>
   <!-- Movement virtual-joystick handlers extracted out of game.js; uses
        window.FormatUtils.clamp, so must load after it and before game.js. -->
   <script src="js/virtual-joystick.js?v=20260902mod1"></script>
@@ -143,7 +143,7 @@
   <script src="js/portrait-utils.js?v=20260923colorfill7"></script>
   <script src="js/portrait-breathing.js?v=20260831syllable4"></script>
   <script src="js/npc-avatar-preview-utils.js?v=20260830flip2"></script>
-  <script src="js/png-plane-avatar.js?v=20260920armreach2"></script>
+  <script src="js/png-plane-avatar.js?v=20260924perf1"></script>
   <script src="js/species-pose-scaling.js?v=20260920height2"></script>
   <!-- Keeps the portrait plane's occlusion-depth redraws (used so its silhouette can
        occlude 3D held items/tools) on the same matrix as its visible draw when
@@ -151,9 +151,9 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20260821a"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20260920handreview3-spearoffset-rangedgrip3-toolz1-align1-throwpivot2"></script>
+  <script src="js/held-action-animations.js?v=20260924perf1"></script>
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
-  <script src="js/character-action-locks.js?v=20260923review1"></script>
+  <script src="js/character-action-locks.js?v=20260924perf1"></script>
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
   <script src="js/npc-character-state.js?v=20260811a"></script>
   <!-- Accepted alcohol handoff + NPC playback; game.js supplies private-state adapters. -->
@@ -197,7 +197,7 @@
   <!-- Shared plateau/ramp fold math (Map Editor preview + Tothal Shift) and the
        headless Wilderness Map Generator core (Tothal Shift wilderness reroll) -->
   <script src="js/terrain-preview.js?v=20260922ruinrebase1"></script>
-  <script src="js/wilderness-map-generator.js?v=20260914b"></script>
+  <script src="js/wilderness-map-generator.js?v=20260924perf1"></script>
   <!-- Terrain-aware authored locales inspect the finished wilderness and place against existing host terrain. Must load after WildernessMapGenerator so its wrapper installs in the game, not only in editor/tests. -->
   <script src="js/locale-terrain-placement.js?v=20260921banubuclip1"></script>
   <script src="js/foliage-furniture-renderer.js?v=20260816a"></script>
@@ -233,7 +233,7 @@
   <script src="js/local-save-folder.js?v=20260920startup4"></script>
   <!-- Onboarding overlay -->
   <link rel="stylesheet" href="onboarding.css?v=20260921preworldsky1">
-  <script src="onboarding.js?v=20260921foreground1"></script>
+  <script src="onboarding.js?v=20260924perf1"></script>
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
   <script src="js/combat/resource-system.js?v=20260918collision2"></script>
   <script src="js/combat/knockback-collision-impact.js?v=20260923ledge1"></script>
@@ -287,7 +287,7 @@
   <script src="js/bounty-board.js?v=20260831spearheadexisting1"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20260923review2"></script>
+  <script src="js/combat/combat-config-loader.js?v=20260924perf1"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -354,7 +354,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmTroughs.init(...) during its own setup. -->
-  <script src="js/farm-troughs.js?v=20260922banubureview1"></script>
+  <script src="js/farm-troughs.js?v=20260924perf1"></script>
   <!-- Modular player house (window.HousePieces) — barn-shaped foundation/
        build/demolish pipeline for house-piece deeds bought from the
        Carpenter, replacing the old singular Highland House GLB. Depends on
@@ -362,7 +362,7 @@
        time, not at load time, so script order relative to them doesn't
        matter; must load before game.js, which calls
        window.HousePieces.init(...) during its own setup. -->
-  <script src="js/house-pieces.js?v=20260920furniture1"></script>
+  <script src="js/house-pieces.js?v=20260924perf1"></script>
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -711,6 +711,10 @@
        terrain/vegetation chunks while the Tothal generator remains owner of
        each zone's deterministic complete tile blueprint. -->
   <script src="js/wilderness-chunks.js?v=20260910review1"></script>
+  <!-- PNG-plane avatar outline occluders: registry of sprite-plane meshes on
+       outline layer 4 plus the depth-only replay game.js runs before its
+       outline passes (window.PngPlaneOutlineOccluder; game.js calls init). -->
+  <script src="js/png-plane-outline-occluder.js?v=20260924perf1"></script>
 </head>
 <body>
   <!-- Game world -->
@@ -2373,7 +2377,7 @@
     <button class="fcv-continue" id="fcvContinueBtn">Continue</button>
   </div>
 
-  <script src="js/tool-icon-render.js?v=20260923heldwater2"></script>
+  <script src="js/tool-icon-render.js?v=20260924perf1"></script>
   <script src="js/sprite-recolor.js?v=20260923colorfill2"></script>
   <script src="js/tool-metal-recolor.js?v=20260923colorfill2"></script>
   <!-- Mount ride system (window.Mounts) — must load before game.js, which
@@ -2535,7 +2539,7 @@
        quality mode, and owns no requestAnimationFrame loop. -->
   <script src="js/painterly-postprocess.js?v=20260923paintrebase1"></script>
   <script src="js/banubu-cave-clouds.js?v=20260923cloudring3"></script>
-  <script src="game.js?v=20260923shoulderheadlayer2"></script>
+  <script src="game.js?v=20260924perf1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
   <script src="js/banubu-snore.js?v=20260923shortsnore2"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>

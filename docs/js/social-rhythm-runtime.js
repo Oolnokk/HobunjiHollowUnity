@@ -227,8 +227,13 @@
     return { bpm, timeSignature: signature, beatGrouping: grouping, measurePhaseFraction: phaseFraction };
   }
 
+  // Live collection (same elements and document order as
+  // querySelectorAll('iframe')), so the twice-per-frame callers below don't
+  // run a fresh document-wide selector query every frame.
+  let iframeCollection = null;
   function musicFrames() {
-    return [...document.querySelectorAll('iframe')].filter(frame => {
+    if (!iframeCollection && typeof document.getElementsByTagName === 'function') iframeCollection = document.getElementsByTagName('iframe');
+    return Array.prototype.filter.call(iframeCollection || document.querySelectorAll('iframe'), frame => {
       const src = frame.getAttribute?.('src') || '';
       return src.includes(MUSIC_FRAME_FRAGMENT);
     });

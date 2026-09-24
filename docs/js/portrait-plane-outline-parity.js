@@ -3,7 +3,7 @@
 //
 // game.js's outline/held-item pipeline redraws PNG-plane avatars (depth-only,
 // colorWrite=false) twice more per frame so their silhouette can occlude 3D held
-// items and tools appropriately (_renderPngPlaneOutlineOccluderDepth, and
+// items and tools appropriately (PngPlaneOutlineOccluder.renderDepth in js/png-plane-outline-occluder.js, and
 // held-object-render-order.js's own non-ground depth rebuild). Both of those
 // depth-only passes are classified as "secondary" by outline-render-performance.js
 // and run with scene.autoUpdate=false as a performance optimization. Confirmed live
@@ -191,7 +191,7 @@
   }
   installSkinnedPixelCpuParity();
 
-  const PNG_PLANE_OUTLINE_OCCLUDER_LAYER = 4; // Mirrors game.js's own _markPngPlane/_renderPngPlaneOutlineOccluderDepth constant.
+  const PNG_PLANE_OUTLINE_OCCLUDER_LAYER = 4; // Mirrors js/png-plane-outline-occluder.js's LAYER (game.js's _markPngPlane/depth replay).
   const MAX_SNAPSHOT_AGE_MS = 160; // Allows the adjacent base->depth-replay sequence without accepting old frames.
   const RESCAN_INTERVAL_MS = 100; // game.js's own _markPngPlane call (which enables the layer bit below) runs synchronously right after build, but poll briefly in case that ordering ever changes.
   const RESCAN_ATTEMPTS = 20; // ~2s.

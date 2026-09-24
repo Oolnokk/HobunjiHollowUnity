@@ -22,9 +22,30 @@
     const blackSilhouette = !!options.blackSilhouette;
     const width = image.naturalWidth || image.videoWidth || image.width;
     const height = image.naturalHeight || image.videoHeight || image.height;
-    targetCanvas.width = width;
-    targetCanvas.height = height;
+    // Assigning width/height reallocates the backing store even when the size
+    // is unchanged, and the periodic world-portrait "life" refresh redraws
+    // every visible avatar here several times a second; clearRect below
+    // already resets the pixels when the size stays the same.
+    const resized = targetCanvas.width !== width || targetCanvas.height !== height;
+    if (targetCanvas.width !== width) targetCanvas.width = width;
+    if (targetCanvas.height !== height) targetCanvas.height = height;
     const ctx = targetCanvas.getContext('2d', { willReadFrequently: true });
+    if (!resized) {
+      // A size assignment would also have reset the context state; do the
+      // same explicitly so a same-size redraw starts from identical defaults.
+      if (typeof ctx.reset === 'function') ctx.reset();
+      else {
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.globalAlpha = 1;
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.filter = 'none';
+        ctx.imageSmoothingEnabled = true;
+        ctx.shadowColor = 'rgba(0, 0, 0, 0)';
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
+      }
+    }
     ctx.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
     ctx.save();
     if (flipX) {

@@ -129,7 +129,7 @@
       idSum += id;
       idMix = (idMix ^ Math.imul(id + i, 2654435761)) | 0;
     }
-    const now = performance.now();
+    const now = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
     const cache = cropRootCache;
     if (cache.scene === scene && cache.roots && cache.childCount === children.length && cache.idSum === idSum
       && cache.idMix === idMix && now - cache.scannedAt < CROP_ROOT_FULL_RESCAN_MS) {

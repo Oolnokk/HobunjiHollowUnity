@@ -23,7 +23,7 @@ assert.match(
 );
 assert.match(
   housePieces,
-  /\['OutlineRenderPerformance', 'outline-render-performance\.js\?v=20260909targetalpha2'\]/,
+  /\['OutlineRenderPerformance', 'outline-render-performance\.js\?v=20260924perf1'\]/,
   'fog repair must not remove the ordinary outline renderer',
 );
 assert.match(

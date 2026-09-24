@@ -85,7 +85,9 @@
     const originalEntries = Object.entries;
     if (originalEntries.__hobunjiMashtzarrFemaleCapture) return;
 
+    let retired = false; // Once gameplay starts the creator can't reappear without a reload, so capture is pointless.
     const wrappedEntries = function hobunjiMashtzarrFemaleEntries(value) {
+      if (retired) return originalEntries(value);
       const captured = hydratePrivateSpeciesTable(value);
       if (captured && Object.entries === wrappedEntries) {
         Object.entries = originalEntries;
@@ -96,6 +98,19 @@
     wrappedEntries.__hobunjiMashtzarrFemaleCapture = true;
     Object.entries = wrappedEntries;
     entriesWrapped = true;
+
+    // If the creator never enumerated the species table (e.g. a returning
+    // player who went straight to their save), this wrapper used to stay on
+    // Object.entries for the whole session, adding a species-table check to
+    // every Object.entries call in the game -- including per-vertex terrain
+    // baking. Retire it once the player is in the game.
+    if (typeof document !== 'undefined') document.addEventListener('hobunjiPlayerReady', () => {
+      retired = true;
+      if (Object.entries === wrappedEntries) {
+        Object.entries = originalEntries;
+        entriesWrapped = false;
+      }
+    }, { once: true });
   }
 
   function installRandomizerGuard() {

@@ -24,7 +24,7 @@ assert.doesNotMatch(presentation, /root\.scale\.set|mesh\.scale\.set/,
 
 const artIndex = loader.indexOf('crop-sprite-art.js?v=20260915cropscan1');
 const heftrootIndex = loader.indexOf('heftroot-billboard-bridge.js');
-const presentationIndex = loader.indexOf('crop-billboard-presentation.js?v=20260814a');
+const presentationIndex = loader.indexOf('crop-billboard-presentation.js?v=20260924perf1');
 const readyIndex = loader.indexOf('crop-ready-presentation.js?v=20260818a');
 assert.ok(artIndex >= 0 && heftrootIndex > artIndex && presentationIndex > heftrootIndex && readyIndex > presentationIndex,
   'crop sprite conversion, soil anchoring, then ripe sparkle presentation keep their required order');

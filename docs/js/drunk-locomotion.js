@@ -146,13 +146,20 @@
   }
 
   let scratchEuler = null; // Reused per-frame Euler input for setFromEuler (read synchronously, never retained).
+  function reuseEuler(THREE, x, y, z) {
+    scratchEuler ||= new THREE.Euler(0, 0, 0, 'YXZ');
+    scratchEuler.x = x;
+    scratchEuler.y = y;
+    scratchEuler.z = z;
+    scratchEuler.order = 'YXZ';
+    return scratchEuler;
+  }
 
   function applyTrackedFootTwist(THREE, foot, yaw, roll, trackedQuaternion) {
     if (!foot?.quaternion || !trackedQuaternion?.isQuaternion) return;
     const safeYaw = Math.max(-FOOT_TWIST_LIMIT, Math.min(FOOT_TWIST_LIMIT, Number(yaw) || 0));
     const safeRoll = Math.max(-FOOT_TWIST_LIMIT, Math.min(FOOT_TWIST_LIMIT, Number(roll) || 0));
-    scratchEuler ||= new THREE.Euler();
-    trackedQuaternion.setFromEuler(scratchEuler.set(0, safeYaw, safeRoll, 'YXZ'));
+    trackedQuaternion.setFromEuler(reuseEuler(THREE, 0, safeYaw, safeRoll));
     foot.quaternion.multiply(trackedQuaternion);
   }
 
@@ -219,8 +226,7 @@
       }
       const bodyRoot = options.drunkBodyRoot;
       if (!bodyRoot?.quaternion) return;
-      scratchEuler ||= new THREE.Euler();
-      state.bodyTilt.setFromEuler(scratchEuler.set(state.pitch, 0, state.roll, 'YXZ'));
+      state.bodyTilt.setFromEuler(reuseEuler(THREE, state.pitch, 0, state.roll));
       bodyRoot.quaternion.multiply(state.bodyTilt);
     }
 

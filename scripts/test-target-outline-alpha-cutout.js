@@ -25,6 +25,6 @@ assert.match(source, /gl_FragColor = vec4\(uColor, uAlpha \* sourceAlpha\);/, 'l
 assert.match(source, /drawTargetAlphaFill\(renderer, scene, camera, targetAlphaFillEntries, targetMaterial\);/, 'the billboard-style leaf fill must run after the ordinary solid target shell');
 assert.match(source, /targetAlphaBillboardFill: true/, 'mobile-visible outline performance debug state must report billboard-style alpha target filling');
 assert.match(foliage, /leafMesh\.userData\.noOutline = true;/, 'procedural foliage leaf cards must keep the flat-card marker consumed by the target fill pass');
-assert.match(loader, /outline-render-performance\.js\?v=20260909targetalpha2/, 'runtime loader must cache-bust the foliage target-fill renderer');
+assert.match(loader, /outline-render-performance\.js\?v=20260924perf1/, 'runtime loader must cache-bust the foliage target-fill renderer');
 
 console.log('target outline alpha-cutout + billboard-fill regression checks passed');

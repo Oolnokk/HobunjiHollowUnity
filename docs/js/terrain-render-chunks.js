@@ -78,7 +78,6 @@
     return `${x},${y},${z}`;
   }
 
-  function edgeKey(a, b) { return a < b ? `${a}|${b}` : `${b}|${a}`; }
 
   function groupMaterialForElement(groups, element) {
     if (!groups?.length) return 0;
@@ -158,11 +157,28 @@
     const elementCount = Math.floor((index?.count ?? position.count) / 3) * 3;
     if (!elementCount) return null;
 
-    const pKeys = new Array(position.count);
-    for (let vi=0;vi<position.count;vi++) pKeys[vi]=positionKey(position,vi);
+    // Each vertex's quantized position string is interned to a small integer
+    // id once, and every later map key (edges, logical vertices, UV lookups)
+    // is built from those ids instead of concatenated strings. Equal ids <=>
+    // equal position keys, and every Map below sees the same insertion
+    // sequence as the old string keys, so topology and iteration order are
+    // unchanged -- this just runs once per streamed-in terrain chunk mesh.
+    const pKeys = new Int32Array(position.count);
+    const positionIds = new Map();
+    for (let vi=0;vi<position.count;vi++) {
+      const key=positionKey(position,vi);
+      let id=positionIds.get(key);
+      if(id===undefined){id=positionIds.size;positionIds.set(key,id);}
+      pKeys[vi]=id;
+    }
+    const positionIdCount=Math.max(1,positionIds.size);
 
     const triangles=[];
     const edgeOwners=new Map();
+    const addEdgeOwner=(mi,a,b,ti)=>{
+      const k=(mi*positionIdCount+(a<b?a:b))*positionIdCount+(a<b?b:a);
+      let owners=edgeOwners.get(k);if(!owners){owners=[];edgeOwners.set(k,owners);}owners.push(ti);
+    };
     for(let e=0;e<elementCount;e+=3){
       const ia=sourceIndexAt(index,e),ib=sourceIndexAt(index,e+1),ic=sourceIndexAt(index,e+2);
       const mi=groupMaterialForElement(geometry.groups,e);
@@ -170,11 +186,8 @@
       const tri={e,ia,ib,ic,mi,eligible,component:-1};
       const ti=triangles.length;triangles.push(tri);
       if(!eligible)continue;
-      const keys=[pKeys[ia],pKeys[ib],pKeys[ic]];
-      for(const [u,v] of [[0,1],[1,2],[2,0]]){
-        const k=`${mi}:${edgeKey(keys[u],keys[v])}`;
-        let owners=edgeOwners.get(k);if(!owners){owners=[];edgeOwners.set(k,owners);}owners.push(ti);
-      }
+      const ka=pKeys[ia],kb=pKeys[ib],kc=pKeys[ic];
+      addEdgeOwner(mi,ka,kb,ti);addEdgeOwner(mi,kb,kc,ti);addEdgeOwner(mi,kc,ka,ti);
     }
 
     const neighbors=Array.from({length:triangles.length},()=>[]);
@@ -190,11 +203,11 @@
       while(stack.length){const q=stack.pop(),t=triangles[q];list.push(q);for(const n of neighbors[q])if(triangles[n].component<0){triangles[n].component=id;stack.push(n);}}
       components.push({id,triangles:list,materialIndex:triangles[ti].mi});
     }
-    return { geometry, position, uv, index, elementCount, pKeys, triangles, components };
+    return { geometry, position, uv, index, elementCount, pKeys, positionIdCount, triangles, components };
   }
 
   function componentData(analysis, comp, settings) {
-    const {position,pKeys,triangles}=analysis;
+    const {position,pKeys,triangles,positionIdCount}=analysis;
     const pa=position.array,ps=position.itemSize;
     const logical=new Map();
     const edgeCounts=new Map();
@@ -207,6 +220,10 @@
       v={key,x,y,z,source:new Set(),adj:new Map(),boundary:false,dist:Infinity,anchor:null,baseU:0,baseV:0,u:0,v:0};
       logical.set(key,v);minX=Math.min(minX,x);maxX=Math.max(maxX,x);minY=Math.min(minY,y);maxY=Math.max(maxY,y);minZ=Math.min(minZ,z);maxZ=Math.max(maxZ,z);return v;
     }
+    function countEdge(a,b){
+      const lo=a.key<b.key?a.key:b.key,hi=a.key<b.key?b.key:a.key,k=lo*positionIdCount+hi;
+      let rec=edgeCounts.get(k);if(!rec){rec={count:0,a,b};edgeCounts.set(k,rec);}rec.count++;
+    }
     function connect(a,b){
       const dx=a.x-b.x,dy=a.y-b.y,dz=a.z-b.z,w=Math.hypot(dx,dy,dz)||1e-6;
       const old=a.adj.get(b.key);if(old===undefined||w<old){a.adj.set(b.key,w);b.adj.set(a.key,w);}
@@ -216,9 +233,7 @@
       const t=triangles[ti], vs=[ensure(t.ia),ensure(t.ib),ensure(t.ic)];
       vs[0].source.add(t.ia);vs[1].source.add(t.ib);vs[2].source.add(t.ic);
       connect(vs[0],vs[1]);connect(vs[1],vs[2]);connect(vs[2],vs[0]);
-      for(const [a,b] of [[vs[0],vs[1]],[vs[1],vs[2]],[vs[2],vs[0]]]){
-        const k=edgeKey(a.key,b.key);let rec=edgeCounts.get(k);if(!rec){rec={count:0,a,b};edgeCounts.set(k,rec);}rec.count++;
-      }
+      countEdge(vs[0],vs[1]);countEdge(vs[1],vs[2]);countEdge(vs[2],vs[0]);
       const ax=vs[1].x-vs[0].x,ay=vs[1].y-vs[0].y,az=vs[1].z-vs[0].z;
       const bx=vs[2].x-vs[0].x,by=vs[2].y-vs[0].y,bz=vs[2].z-vs[0].z;
       const nx=ay*bz-az*by,ny=az*bx-ax*bz,nz=ax*by-ay*bx,w=Math.hypot(nx,ny,nz);
@@ -308,8 +323,9 @@
 
     const source=analysis.geometry;
     const attrs=source.attributes;
-    const outAttrs={};for(const [name]of Object.entries(attrs))outAttrs[name]=[];
-    const outIndex=[];const remap=new Map();
+    const attrEntries=Object.entries(attrs); // Hoisted: the per-vertex loop below used to rebuild this list for every emitted vertex.
+    const outAttrs={};for(const [name]of attrEntries)outAttrs[name]=[];
+    const outIndex=[];const remap=new Map();const vertexCount=analysis.position.count;
     for(const tri of analysis.triangles){
       let wrapShift=[0,0,0];
       if(tri.component>=0){
@@ -318,12 +334,15 @@
       }
       const vis=[tri.ia,tri.ib,tri.ic];
       for(let k=0;k<3;k++){
-        const vi=vis[k], cid=tri.component, key=`${cid}:${vi}:${wrapShift[k]}`;
+        // Numeric form of the old `${cid}:${vi}:${wrapShift}` key (cid >= -1,
+        // vi < vertexCount, wrapShift is 0/1), so it stays one-to-one.
+        const vi=vis[k], cid=tri.component, key=((cid+1)*vertexCount+vi)*2+wrapShift[k];
         let ni=remap.get(key);
         if(ni===undefined){
           ni=remap.size;remap.set(key,ni);
-          for(const [name,a]of Object.entries(attrs)){
-            for(let c=0;c<a.itemSize;c++)outAttrs[name].push(a.array[vi*a.itemSize+c]);
+          for(const [name,a]of attrEntries){
+            const out=outAttrs[name],src=a.array,size=a.itemSize,base=vi*size;
+            for(let c=0;c<size;c++)out.push(src[base+c]);
           }
           if(cid>=0){
             const cu=componentUv.get(cid),pair=cu.byKey.get(analysis.pKeys[vi]);

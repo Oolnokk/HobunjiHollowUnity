@@ -202,10 +202,14 @@
     return api;
   }
 
-  function discoveredLocaleKeys() {
+  function readSaveMetaRaw() {
+    try { return localStorage.getItem('hobunjiSaveMeta'); } catch (_) { return null; }
+  }
+
+  function discoveredLocaleKeys(raw = readSaveMetaRaw()) {
     const keys = new Set();
     try {
-      const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
+      const meta = JSON.parse(raw || 'null');
       for (const world of meta?.worlds || []) {
         for (const localeId of Object.keys(world?.discoveredLocales || {})) keys.add(`${world.id || 'world'}:${localeId}`);
       }
@@ -218,9 +222,15 @@
     if (typeof api.updateFogAroundPlayer === 'function') {
       const originalFog = api.updateFogAroundPlayer;
       api.updateFogAroundPlayer = function stableAnimalXpFog(...args) {
-        const before = discoveredLocaleKeys();
+        // Runs every frame in the wilderness. The full save meta is only
+        // parsed when the fog update actually rewrote it -- identical stored
+        // strings mean identical discovered-locale sets (nothing added).
+        const beforeRaw = readSaveMetaRaw();
         const result = originalFog.apply(this, args);
-        const after = discoveredLocaleKeys();
+        const afterRaw = readSaveMetaRaw();
+        if (afterRaw === beforeRaw) return result;
+        const before = discoveredLocaleKeys(beforeRaw);
+        const after = discoveredLocaleKeys(afterRaw);
         let added = 0;
         for (const key of after) if (!before.has(key)) added++;
         if (added) awardRole('mount', XP.locationDiscovery * added, `discovered ${added} location${added === 1 ? '' : 's'}`);
