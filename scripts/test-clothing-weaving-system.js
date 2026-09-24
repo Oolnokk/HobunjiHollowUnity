@@ -333,7 +333,9 @@ const inventoryUiSource = fs.readFileSync('docs/js/inventory-ui.js', 'utf8'); //
 assert.doesNotMatch(source, /activePortraitPatternMap/, 'woven portraits no longer share one mutable descriptor map across overlapping async renders');
 assert.doesNotMatch(source, /window\._imageForTint\s*=\s*function\s+clothingPatternImageForTint/, 'weaving no longer replaces the global tint resolver with render-scoped mutable state');
 assert.match(source, /const patternMap = Array\.isArray\(descriptors\)[\s\S]*?buildPortraitPatternMap\(descriptors\)/, 'each woven portrait render builds its own descriptor map');
-assert.match(source, /patternImageForTint\(patternMap, baseTintResolver, img, sourceKey, tint\)/, 'the woven tint resolver closes over that render-local descriptor map');
+assert.match(source, /patternImageForTint\(patternMap, baseTintResolver, pending => pendingBuilds\.add\(pending\), img, sourceKey, tint\)/, 'the woven tint resolver closes over that render-local descriptor map and reports this render\'s cache misses');
+assert.match(source, /await Promise\.allSettled\(\[\.\.\.pendingBuilds\]\)/, 'woven portrait renders wait for missing pattern composites before returning their canvas');
+assert.match(source, /return current\(canvas, profile, renderOptions\); \/\/ Cache is now warm/, 'a cache-miss portrait redraws the same canvas with the warmed pattern cache before callers can upload the fallback');
 assert.match(portraitSource, /renderOptions\?\.imageForTint[\s\S]*?: _imageForTint/, 'portrait rendering accepts a per-render tint resolver with the canonical tint path as fallback');
 assert.match(portraitSource, /drawPortraitLayerWarped\(ctx, img, resolveXform\(layer\)[\s\S]*?layer\.url, imageForTint\)/, 'breathing overwear layers use the same render-local tint resolver during WorldPortraitLife refreshes');
 
