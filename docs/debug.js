@@ -145,9 +145,30 @@
         }
         localStorageBytes = bytes * 2; // UTF-16 code units
       } catch (_) {}
+      const calendar = window.CalendarSystem?.timeDebugSnapshot?.() || null; // Captures the exact civil clock beside performance data so day/night samples can be compared after the fact.
+      const hour = Number(window.CalendarSystem?.getHour?.()); // Used by the fallback day/night label when Music has not exposed its canonical night predicate yet.
+      const musicNight = window.Music?.isNightTime?.(); // Canonical soundtrack/night-state result used when available.
+      const isNight = typeof musicNight === 'boolean' ? musicNight : (Number.isFinite(hour) ? (hour < 6 || hour >= 18) : null); // Human-readable phase for pasted snapshots.
+      const harlyao = window.HarlyaoNightMarch?.debugSnapshot?.() || null; // Route/chunk/member state distinguishes an ordinary night from a live or cached ghost march.
+      const performanceSnapshot = window.PerfProfiler?.snapshot?.() || null; // Opt-in profiler timings are copied only when a snapshot is requested, never from the frame hot path.
       return {
         takenAt: new Date().toISOString(),
+        context: {
+          area: window.GridTileAccessors?.getCurrentArea?.() || null,
+          hour: Number.isFinite(hour) ? hour : null,
+          phase: isNight == null ? 'unknown' : (isNight ? 'night' : 'day'),
+          harlyaoScheduled: !!harlyao?.scheduled,
+          harlyaoVisible: !!harlyao?.visible,
+          harlyaoCachedMembers: Number(harlyao?.membersCached) || 0,
+        },
         gpu: window.PerfProfiler?.getLiveGpuInfo?.() || null,
+        performance: performanceSnapshot,
+        calendar,
+        harlyao,
+        harlyaoRenderComplexity: window.HarlyaoNightMarch?.visualComplexitySnapshot?.() || null,
+        heldOverlay: window.HeldObjectRenderOrder?.snapshot?.() || null,
+        outlineRender: window.OutlineRenderPerformance?.snapshot?.() || null,
+        wildernessLod: window.WildernessSimulationLOD?.snapshot?.() || null,
         localStorageBytes,
         caches,
       };
@@ -320,7 +341,7 @@
       return;
     }
     const script = document.createElement('script');
-    script.src = 'js/performance-debug.js?v=20260916perf1';
+    script.src = 'js/performance-debug.js?v=20260924perf2';
     script.async = true;
     script.dataset.hobunjiPerformanceDebug = '1';
     script.onload = _installCloudForestDevModeGate;

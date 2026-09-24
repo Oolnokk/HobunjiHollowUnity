@@ -19,6 +19,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 const source = fs.readFileSync('docs/js/performance-debug.js', 'utf8');
+const debugSource = fs.readFileSync('docs/debug.js', 'utf8'); // Snapshot context lives in the early debug bootstrap and is source-guarded here with the performance UI.
 assert(source.includes("root.RuntimeFrameScheduler.register(FRAME_LOOP_SCHEDULER_ID, frameLoop"), 'frameLoop must register with the scheduler');
 assert(source.includes('root.RuntimeFrameScheduler.setEnabled(FRAME_LOOP_SCHEDULER_ID, active)'), 'frameLoop must be toggled via setEnabled once registered');
 assert(source.includes("root.RuntimeFrameScheduler.register('performance-debug-lag-watch', lagWatchLoop"), 'lagWatchLoop must register with the scheduler');
@@ -26,6 +27,12 @@ assert(source.includes('root.RuntimeFrameScheduler?.setProfilingEnabled?.(profil
 assert(source.includes('scheduler: schedulerProfileSnapshot()'), 'PerfProfiler snapshots must expose the scheduler phase/subscriber breakdown');
 assert(!/requestAnimationFrame\(frameLoop\)/.test(source), 'frameLoop must no longer self-schedule a raw requestAnimationFrame');
 assert(!/requestAnimationFrame\(lagWatchLoop\)/.test(source), 'lagWatchLoop must no longer self-schedule a raw requestAnimationFrame');
+assert(source.includes('const LAG_SNAPSHOT_FPS_THRESHOLD = 15;'), 'severe-but-playable 8-15 FPS stalls must auto-capture instead of waiting for a 3 FPS near-freeze');
+assert(source.includes("cacheBtn.textContent = 'Copy current'"), 'manual performance snapshots must be copyable in-game without DevTools');
+assert(source.includes('root.HobunjiCacheAudit?.snapshot?.()'), 'lag capture must avoid console.table work while the frame is already slow');
+assert(debugSource.includes('harlyaoRenderComplexity: window.HarlyaoNightMarch?.visualComplexitySnapshot?.() || null'), 'copied snapshots include on-demand Harlyao scene-graph complexity');
+assert(debugSource.includes("phase: isNight == null ? 'unknown' : (isNight ? 'night' : 'day')"), 'copied snapshots label day versus night');
+assert(debugSource.includes('harlyaoVisible: !!harlyao?.visible'), 'copied snapshots identify a visible ghost march');
 
 function buildFixture() {
   const registered = new Map();
