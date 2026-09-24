@@ -710,11 +710,14 @@
   <!-- Minecraft-style finite wilderness streaming: owns 16x16 runtime
        terrain/vegetation chunks while the Tothal generator remains owner of
        each zone's deterministic complete tile blueprint. -->
-  <script src="js/wilderness-chunks.js?v=20260910review1"></script>
+  <script src="js/wilderness-chunks.js?v=20260924perf3"></script>
   <!-- PNG-plane avatar outline occluders: registry of sprite-plane meshes on
        outline layer 4 plus the depth-only replay game.js runs before its
        outline passes (window.PngPlaneOutlineOccluder; game.js calls init). -->
   <script src="js/png-plane-outline-occluder.js?v=20260924perf1"></script>
+  <!-- World-space avatar blink/breathing refresh with distance-scaled rates
+       (window.WorldPortraitLife; game.js calls init and ticks it). -->
+  <script src="js/world-portrait-life.js?v=20260924perf1"></script>
 </head>
 <body>
   <!-- Game world -->
@@ -2377,7 +2380,7 @@
     <button class="fcv-continue" id="fcvContinueBtn">Continue</button>
   </div>
 
-  <script src="js/tool-icon-render.js?v=20260924perf1"></script>
+  <script src="js/tool-icon-render.js?v=20260924perf3"></script>
   <script src="js/sprite-recolor.js?v=20260923colorfill2"></script>
   <script src="js/tool-metal-recolor.js?v=20260924outline1"></script>
   <!-- Mount ride system (window.Mounts) — must load before game.js, which
@@ -2538,7 +2541,7 @@
        quality mode, and owns no requestAnimationFrame loop. -->
   <script src="js/painterly-postprocess.js?v=20260923paintrebase1"></script>
   <script src="js/banubu-cave-clouds.js?v=20260923cloudring3"></script>
-  <script src="game.js?v=20260924perf2-fishingthrowcam7"></script>
+  <script src="game.js?v=20260924perf4"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
   <script src="js/banubu-snore.js?v=20260924snorepitch1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>

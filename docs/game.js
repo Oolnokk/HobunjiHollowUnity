@@ -10553,44 +10553,62 @@
           const removed = new Set(values);
           for (let i = list.length - 1; i >= 0; i--) if (removed.has(list[i])) list.splice(i, 1);
         };
-        const buildRuntimeChunk = ({ group, bounds }) => {
-          const floorMeshes = _buildZoneFloorMeshes(group, zGrid, ZCOLS, ZROWS, mapId, {
+        // Chunk construction as resumable stages (floor, each feature family,
+        // per-mesh jigsaw UV bakes, water, grass). WildernessChunks advances
+        // streamed chunks a few stages per frame within a time budget; arrival
+        // and edit rebuilds run the same stages to completion synchronously.
+        // ctx.payload is filled as each stage lands, so a build cancelled
+        // half-way (player moved away) can be detached/disposed exactly.
+        function* buildRuntimeChunkStages(ctx) {
+          const { group, bounds } = ctx;
+          const payload = ctx.payload = { floorMeshes: [], featureMeshes: [], waterMeshes: [], grassGroups: [], chunkOcclusionMeshes: [], chunkCanopyZones: [], chunkCullables: [] };
+          payload.floorMeshes = _buildZoneFloorMeshes(group, zGrid, ZCOLS, ZROWS, mapId, {
             bounds,
             includeGlobalPath: false,
             resetState: false,
             pathNet: info.pathNet,
-          }); // Chunk-owned ground, rocks and vegetation.
-          const featureMeshes = [
-            ...(window.ZoneTerrainFeatures.buildZoneRampMeshes(group, zGrid, ZCOLS, ZROWS, mapId, bounds) || []),
-            ...(window.ZoneTerrainFeatures.buildRampCurtainMeshes(group, zGrid, ZCOLS, ZROWS, mapId, bounds) || []),
-            ...(window.ZoneTerrainFeatures.buildRockFormationMeshes(group, zGrid, ZCOLS, ZROWS, mapId, bounds) || []),
-            ...(window.ZoneTerrainFeatures.buildUndiggableBoulderMeshes(group, zGrid, ZCOLS, ZROWS, mapId, bounds) || []),
-          ]; // Chunk-owned ramps, solved rock faces, and contiguous boulder shells.
-          for (const object of [...floorMeshes, ...featureMeshes]) {
-            object.traverse?.(mesh => {
-              if (mesh.isMesh && mesh.userData?.wildernessChunkOwnsGeometry) {
-                const baked = window.TerrainJigsawUV?.bakeMesh?.(mesh);
-                if (baked) mesh.userData.wildernessChunkOwnsMaterial = true;
-              }
-            });
+          }) || []; // Chunk-owned ground, rocks and vegetation.
+          yield;
+          // Chunk-owned ramps, solved rock faces, and contiguous boulder shells.
+          payload.featureMeshes.push(...(window.ZoneTerrainFeatures.buildZoneRampMeshes(group, zGrid, ZCOLS, ZROWS, mapId, bounds) || []));
+          yield;
+          payload.featureMeshes.push(...(window.ZoneTerrainFeatures.buildRampCurtainMeshes(group, zGrid, ZCOLS, ZROWS, mapId, bounds) || []));
+          yield;
+          payload.featureMeshes.push(...(window.ZoneTerrainFeatures.buildRockFormationMeshes(group, zGrid, ZCOLS, ZROWS, mapId, bounds) || []));
+          yield;
+          payload.featureMeshes.push(...(window.ZoneTerrainFeatures.buildUndiggableBoulderMeshes(group, zGrid, ZCOLS, ZROWS, mapId, bounds) || []));
+          yield;
+          const bakeTargets = [];
+          for (const object of [...payload.floorMeshes, ...payload.featureMeshes]) {
+            object.traverse?.(mesh => { if (mesh.isMesh && mesh.userData?.wildernessChunkOwnsGeometry) bakeTargets.push(mesh); });
           }
-          const waterMeshes = [
+          for (const mesh of bakeTargets) {
+            const baked = window.TerrainJigsawUV?.bakeMesh?.(mesh);
+            if (baked) mesh.userData.wildernessChunkOwnsMaterial = true;
+            yield;
+          }
+          payload.waterMeshes = [
             ...(window.ZoneTerrainFeatures.buildWaterfallCurtainMeshes(group, zGrid, ZCOLS, ZROWS, mapId, bounds) || []),
             ...(window.ZoneTerrainFeatures.buildZoneRiverWaterMeshes(group, zGrid, ZCOLS, ZROWS, mapId, bounds) || []),
           ]; // Chunk-owned water surfaces and falls.
-          const grassGroups = [
-            window.ZoneGrassBillboards.buildZoneGrassBillboards(group, zGrid, ZCOLS, ZROWS, 0, bounds),
-            window.ZoneGrassBillboards.buildRichFoliageBillboards(group, zoneData, zGrid, 0, bounds),
-          ].filter(Boolean); // Chunk-owned ordinary and rich foliage billboards.
-          const chunkOcclusionMeshes = [];
-          const chunkCanopyZones = [];
-          const chunkCullables = [];
+          yield;
+          const grass = window.ZoneGrassBillboards.buildZoneGrassBillboards(group, zGrid, ZCOLS, ZROWS, 0, bounds);
+          if (grass) payload.grassGroups.push(grass);
+          yield;
+          const richFoliage = window.ZoneGrassBillboards.buildRichFoliageBillboards(group, zoneData, zGrid, 0, bounds);
+          if (richFoliage) payload.grassGroups.push(richFoliage); // Chunk-owned ordinary and rich foliage billboards.
           group.traverse(object => {
-            if (object.userData?.cameraObstacle) chunkOcclusionMeshes.push(object);
-            if (object.userData?.canopyClamp) chunkCanopyZones.push(object.userData.canopyClamp);
-            if (object.userData?.cullSphere) chunkCullables.push(object);
+            if (object.userData?.cameraObstacle) payload.chunkOcclusionMeshes.push(object);
+            if (object.userData?.canopyClamp) payload.chunkCanopyZones.push(object.userData.canopyClamp);
+            if (object.userData?.cullSphere) payload.chunkCullables.push(object);
           });
-          return { floorMeshes, featureMeshes, waterMeshes, grassGroups, chunkOcclusionMeshes, chunkCanopyZones, chunkCullables };
+          return payload;
+        }
+        const buildRuntimeChunk = ctx => {
+          const stages = buildRuntimeChunkStages(ctx);
+          let step = stages.next();
+          while (!step.done) step = stages.next();
+          return step.value;
         };
         const integrateRuntimeChunk = payload => {
           floorRegistry.push(...payload.floorMeshes);
@@ -10645,6 +10663,7 @@
             focusCol: arrivalCol,
             focusRow: arrivalRow,
             buildChunk: buildRuntimeChunk,
+            buildChunkStages: buildRuntimeChunkStages,
             onChunkLoaded: record => integrateRuntimeChunk(record.payload),
             onChunkUnloaded: record => detachRuntimeChunk(record.payload, record.bounds, record.group),
             disposeChunk: disposeRuntimeChunk,
@@ -11553,16 +11572,35 @@
         }
         await window.NpcAvatarPreview.ensurePortraitCosmetics({ assetBase: './assets/', configBase: './config/' });
         const deferred = [];
+        const spawnable = [];
         for (const rec of dbNpcs) {
           window.NpcWardrobe?.captureDefaultOutfitTraits?.(rec); // Freeze authored default-clothing traits before save restoration/manual outfit overrides can redefine this NPC's gift-acceptance style.
           if (rec?.id) scheduledNpcRecords.set(rec.id, rec);
           const target = resolveNpcScheduleTarget(rec);
           if (!target) { if (!rec?.visitorPresence) deferred.push(rec); continue; }
-          if (rec?.visitorPresence) visitorSpawnPending.add(rec.id);
-          try { const w = await makeNpcWalker(rec, target); if (w) npcWalkers.push(w); }
-          catch (e) { console.warn('NPC walker failed for schedule', rec?.id, e); }
-          finally { if (rec?.visitorPresence) visitorSpawnPending.delete(rec.id); }
+          spawnable.push({ rec, target });
         }
+        // Each makeNpcWalker is a long async build (portrait composite, world
+        // frames, image loads). Building them strictly one after another left
+        // a fresh world visibly filling in with NPCs for minutes on slow
+        // devices, in database order regardless of where the player stands.
+        // NPCs in the player's current area are built first, and a few builds
+        // run concurrently so one NPC's image/asset waits overlap another's
+        // CPU work. npcWalkers has no ordering contract (lookups are by id).
+        const NPC_SPAWN_CONCURRENCY = 3;
+        const spawnArea = currentArea;
+        spawnable.sort((a, b) => (b.target.area === spawnArea) - (a.target.area === spawnArea)); // Stable: database order within each group.
+        let nextSpawn = 0;
+        const spawnWorker = async () => {
+          while (nextSpawn < spawnable.length) {
+            const { rec, target } = spawnable[nextSpawn++];
+            if (rec?.visitorPresence) visitorSpawnPending.add(rec.id);
+            try { const w = await makeNpcWalker(rec, target); if (w) npcWalkers.push(w); }
+            catch (e) { console.warn('NPC walker failed for schedule', rec?.id, e); }
+            finally { if (rec?.visitorPresence) visitorSpawnPending.delete(rec.id); }
+          }
+        };
+        await Promise.all(Array.from({ length: Math.min(NPC_SPAWN_CONCURRENCY, spawnable.length) }, spawnWorker));
         console.log(`[NPC] Spawned ${npcWalkers.length}/${dbNpcs.length} walkers. inspect: window._npcWalkers`);
         console.log('[NPC] Areas:', npcWalkers.map(w => (w.rec?.id || '?') + '@' + (w.area || w.root?._pendingBuildingAdd || (w.root?._pendingTownAdd ? 'town(pending)' : '?'))));
         if (deferred.length) {
@@ -12494,77 +12532,17 @@
         window.__farmLog(`[schedule] garanki_gabu DIAG: area=${g.area} pos=(${g.root.position.x.toFixed(1)},${g.root.position.z.toFixed(1)}) state=${g.state} target=${JSON.stringify(g.currentScheduleTarget)} tentBuilding=${tent ? `(${tent.gridX},${tent.gridZ})` : 'none'} tentDoor=${trans ? `(${trans.col},${trans.row})` : 'none'}`, 'info');
       }
 
-      // ── World-space blink/breathing/default-expression (item 3) ─────────
-      // The dialogue/cutscene portrait canvas already re-renders periodically
-      // with the breathing composer (see runAnimation's own breathTimer just
-      // above, and dialogue-content.js's renderNpcDialoguePortrait) so it
-      // blinks/breathes and shows each NPC's own authored restingExpression
-      // — the WORLD-space walking avatar never did, since makeNpcWalker/
-      // refreshPlayerAvatar only ever bake one static forceEyesOpen texture
-      // at spawn/gear-change and never touch it again. This applies that
-      // same periodic-recompose idea (the identical cheap
-      // refreshSinglePlaneAvatarModel texture-only path runAnimation already
-      // uses, not a full geometry rebuild) to both NPC walkers and the
-      // player, at a coarser interval than dialogue's 120ms since many NPCs
-      // can be on screen at once — and only the player's current area's
-      // walkers pay this cost at all (see the area guard below).
-      function _worldPortraitLifeConfig() {
-        const cfg = window.SCRATCHBONES_CONFIG?.game?.portrait?.worldLife || {};
-        return {
-          enabled: cfg.enabled !== false,
-          intervalS: Number.isFinite(Number(cfg.intervalS)) ? Number(cfg.intervalS) : 0.16,
-        };
-      }
-
-      function _tickNpcPortraitLife(walker, dt) {
-        const cfg = _worldPortraitLifeConfig();
-        if (!cfg.enabled || walker.area !== currentArea) return; // Only the player's current scene pays this cost.
-        if (walker._portraitLifePending || !walker.avatarGroup?.userData?.frontTexture) return;
-        walker._portraitLifeT = (walker._portraitLifeT || 0) + dt;
-        if (walker._portraitLifeT < cfg.intervalS) return;
-        walker._portraitLifeT = 0;
-        const composer = window.portraitBreathingComposer;
-        if (!composer || !window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
-        const seatId = window.DialogueContent?.dialogueSeatId(walker) || walker.rec?.id || walker.rec?.name || 'npc';
-        if (!walker._portraitLifeExpressionSet) {
-          // The NPC's own authored default expression (rec.restingExpression
-          // — see dialogue-content.js's _npcRestingExpression, now shared via
-          // window.DialogueContent.npcRestingExpression) applies here too, so
-          // a walking NPC shows the same resting face dialogue already gives
-          // them, not a generic neutral one. Set once per walker (this seatId
-          // is stable for its whole lifetime) rather than every tick.
-          composer.setDefaultExpression(seatId, window.DialogueContent?.npcRestingExpression?.(walker.rec) || null);
-          walker._portraitLifeExpressionSet = true;
-        }
-        if (!Number.isFinite(walker._portraitLifePhaseOffsetMs)) walker._portraitLifePhaseOffsetMs = rnd() * 4000; // Desyncs breathing between simultaneous NPCs.
-        walker._portraitLifePending = true;
-        window.NpcAvatarPreview.renderProfileToCanvas(walker.avatarFrontCanvas, walker.profile, {
-          breathingComposer: composer, seatId, breathingPhaseOffsetMs: walker._portraitLifePhaseOffsetMs,
-        }).then(() => {
-          window.PNGPlaneAvatar.refreshSinglePlaneAvatarModel(walker.avatarGroup, walker.avatarFrontCanvas);
-        }).catch(() => {}).finally(() => { walker._portraitLifePending = false; });
-      }
-
-      let _playerPortraitLifeT = 0;
-      let _playerPortraitLifePending = false;
-      function _tickPlayerPortraitLife(dt) {
-        const cfg = _worldPortraitLifeConfig();
-        if (!cfg.enabled || _playerPortraitLifePending) return;
-        if (!playerAvatarGroup?.userData?.frontTexture || !playerAvatarFrontCanvas || !playerAvatarProfile) return;
-        _playerPortraitLifeT += dt;
-        if (_playerPortraitLifeT < cfg.intervalS) return;
-        _playerPortraitLifeT = 0;
-        const composer = window.portraitBreathingComposer;
-        if (!composer || !window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
-        const generation = playerAvatarRefreshGeneration; // A gear/cosmetic refresh mid-flight replaces the avatar; stale results are dropped below.
-        _playerPortraitLifePending = true;
-        window.NpcAvatarPreview.renderProfileToCanvas(playerAvatarFrontCanvas, playerAvatarProfile, {
-          breathingComposer: composer, seatId: 'player',
-        }).then(() => {
-          if (generation !== playerAvatarRefreshGeneration) return;
-          window.PNGPlaneAvatar.refreshSinglePlaneAvatarModel(playerAvatarGroup, playerAvatarFrontCanvas);
-        }).catch(() => {}).finally(() => { _playerPortraitLifePending = false; });
-      }
+      // World-space blink/breathing/default-expression refresh for walking
+      // avatars (with distance-scaled refresh rates) now lives in
+      // js/world-portrait-life.js.
+      window.WorldPortraitLife.init({
+        getCurrentArea: () => currentArea,
+        getPlayerTile: () => ({ x: player.x / TILE, y: player.y / TILE }),
+        getPlayerAvatar: () => ({ group: playerAvatarGroup, frontCanvas: playerAvatarFrontCanvas, profile: playerAvatarProfile, generation: playerAvatarRefreshGeneration }),
+        rnd,
+      });
+      const _tickNpcPortraitLife = window.WorldPortraitLife.tickNpc;
+      const _tickPlayerPortraitLife = window.WorldPortraitLife.tickPlayer;
 
       function updateNpcWalkers(dt) {
         const previousNearbyNpcWalker = nearbyNpcWalker;
