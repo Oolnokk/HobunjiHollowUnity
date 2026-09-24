@@ -37,6 +37,11 @@ assert(localeIndex.locales.some(entry => entry.id === locale.id && entry.categor
   'animal den entrance template must be discoverable in the normal Locale Editor library');
 
 assert(furnitureIndex.furniture.length >= 50, 'full authored furniture manifest should expose the repository catalog, not a tiny palette');
+const authoredFiles = fs.readdirSync('docs/config/furniture-authored')
+  .filter(name => name.endsWith('.json') && name !== 'index.json')
+  .sort();
+const indexedFiles = furnitureIndex.furniture.map(entry => entry.file.replace('config/furniture-authored/', '')).sort();
+assert.deepEqual(indexedFiles, authoredFiles, 'authored furniture manifest must stay in lockstep with every furniture JSON file');
 for (const key of ['bench','campfire','lifeTotem','stonePedestal','woodenDoor']) {
   assert(furnitureIndex.furniture.some(entry => entry.key === key), 'missing authored furniture manifest key ' + key);
 }
