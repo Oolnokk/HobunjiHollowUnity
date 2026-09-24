@@ -174,14 +174,18 @@ const actionPunishmentEntity = {
   health: 100, maxHealth: 100, stamina: 100, maxStamina: 100,
   footing: 100, maxFooting: 100, exhaustion: { active: false, blackStamina: 100 },
   afflictions: Object.fromEntries(Object.keys(ResourceSystem.AFFLICTIONS).map(id => [id, 0])),
-}; // Verifies that avoiding the action punished by Wounded/Infected/Shattered Stamina is a viable recovery strategy.
+  lastStaminaSpendAt: 999999,
+}; // Verifies action-avoidance recovery and migration away from the briefly-shipped saveable session clock.
 ResourceSystem.initEntity(actionPunishmentEntity);
+assert.equal(Object.prototype.hasOwnProperty.call(actionPunishmentEntity, 'lastStaminaSpendAt'), false, 'init removes the legacy session-relative Stamina-spend timestamp from saveable entity state');
+assert.equal(ResourceSystem.getPunishedActionElapsedMs(actionPunishmentEntity, 'staminaSpend'), Infinity, 'a fresh runtime entity has no stale punished-action cooldown even if its loaded data contained the old timestamp');
 for (const id of ['woundedStamina', 'infectedStamina', 'shatteredStamina', 'windedStamina']) {
   ResourceSystem.addAffliction(actionPunishmentEntity, id, 24);
 }
 testNowMs = 0;
 ResourceSystem.spendStamina(actionPunishmentEntity, 1, 'action-punishment recovery test');
 testNowMs = 500;
+assert.equal(ResourceSystem.getPunishedActionElapsedMs(actionPunishmentEntity, 'staminaSpend'), 500, 'transient punished-action timing follows the current runtime clock');
 assert.equal(ResourceSystem.getAfflictionRecoveryMultiplier(actionPunishmentEntity, 'woundedStamina', false), 1.25, 'Wounded Stamina keeps normal Stamina-affliction recovery during the post-spend grace window');
 assert.equal(ResourceSystem.getAfflictionRecoveryMultiplier(actionPunishmentEntity, 'windedStamina', false), 1.25, 'Winded Stamina never receives the action-avoidance acceleration');
 testNowMs = 1000;
