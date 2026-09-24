@@ -49,19 +49,24 @@ assert.match(editor, /Custom rectangle/);
 assert.match(editor, /id="insVisualSX"/);
 assert.match(editor, /id="insVisualOX"/);
 assert.match(editor, /Red dashed outlines are explicit colliders/);
+assert.match(editor, /key:'offering', label:'Offering Spot'/, 'palette rewrite must retain the old Offering Spot special marker');
 
 assert.match(preview, /addAuthoredFurnitureObject/);
 assert.match(preview, /localeCollider_/);
 assert.match(renderer, /ANIMAL_DEN_ENTRANCE_LOCALE_ID = 'locale_animal_den_entrance'/);
 assert.match(renderer, /loadAnimalDenEntranceLocaleObject/);
+assert.match(renderer, /function loadAnimalDenEntranceLocale\(/, 'runtime must load the full den locale, not only its cave object');
+assert.match(renderer, /renderDenTemplateFurniture/, 'extra authored furniture in the den locale must render at generated dens');
+assert.match(renderer, /function denEntranceCollisionState\(/, 'den-template collision must include all authored object colliders');
 assert.match(renderer, /denEntranceCollisionFor/);
 assert.match(renderer, /visual\.offsetX/);
 assert.match(renderer, /visual\.offsetY/);
 assert.match(renderer, /visual\.offsetZ/);
 
 assert.match(collision, /function isLocaleObjectCollisionTile/);
-assert.match(collision, /ZoneDenTotemFeatures\?\.denEntranceCollisionFor/);
+assert.match(collision, /ZoneDenTotemFeatures\?\.denEntranceCollisionState/);
 assert.match(generator, /o\.kind === 'cave_entrance'/);
+assert.match(generator, /type:'localeCollider'/);
 assert.match(generator, /localeColliderOwnerId/);
 assert.match(generator, /collision: o\.collision/);
 assert.match(placement, /function scaledObjectCollision/);
