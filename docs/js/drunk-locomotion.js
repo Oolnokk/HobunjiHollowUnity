@@ -167,7 +167,6 @@
     window.PlayerBodyTransformComposer?.setChannel(BODY_CHANNEL, {
       priority: BODY_PRIORITY,
       mode: 'additive',
-      freezeInCharacterView: true, // Character View holds the currently visible inspection pose while Footing/drunk simulation continues normally underneath.
       // Facing/dead-zone code owns Y rotation, so drunk sway contributes only
       // pitch/roll. The compositor no longer freezes a pre-tilt portrait side:
       // after this transform, the avatar's normal FrontSide materials decide
