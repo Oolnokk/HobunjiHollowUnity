@@ -26,6 +26,11 @@
     sixfin_sunember: 'strength',
     sixfin_milkstripe: 'fortitude',
     sixfin_violetreef: 'fortitude',
+    mossfin_fernback: 'fishing',
+    mossfin_peatbelly: 'fortitude',
+    mossfin_silverfrond: 'speed',
+    mossfin_coppergill: 'strength',
+    mossfin_frostcap: 'speed',
   }); // Used by buildItemDefs so each named fish keeps its own food buff instead of inheriting one family-wide effect.
 
   const ROWS = [
@@ -47,13 +52,19 @@
     ['sixfin_azureband','Sixfin Azureband','sixfin','#fff',1.04,0,'floater',38,['cloudForest','town'],'summer',['dawn','day'],'uncommon',33,'#8ab9c8','#315d78'],
     ['sixfin_sunember','Sixfin Sunember','sixfin','#fff',.97,0,'dart',54,['town','cloudForest'],'summer,fall',['day','dusk'],'uncommon',36,'#dbc890','#b55a2c'],
     ['sixfin_milkstripe','Sixfin Milkstripe','sixfin','#fff',.92,0,'smooth',29,['farm'],'spring,winter',['dawn','day'],'common',23,'#e5dbc6','#545257'],
-    ['sixfin_violetreef','Sixfin Violetreef','sixfin','#fff',1.05,0,'mixed',47,['cloudForest','town'],'any',['dusk','night'],'uncommon',35,'#ab99bf','#5a4379']
+    ['sixfin_violetreef','Sixfin Violetreef','sixfin','#fff',1.05,0,'mixed',47,['cloudForest','town'],'any',['dusk','night'],'uncommon',35,'#ab99bf','#5a4379'],
+    ['mossfin_fernback','Mossfin Fernback','mossfin','#647f50',1.00,.10,'smooth',33,['farm','cloudForest'],'spring,summer',['day','dusk'],'common',29],
+    ['mossfin_peatbelly','Mossfin Peatbelly','mossfin','#6b5848',1.07,.08,'sinker',46,['cloudForest','northernCliffs'],'fall,winter',['dawn','day'],'common',39],
+    ['mossfin_silverfrond','Mossfin Silverfrond','mossfin','#87968d',.96,.12,'floater',40,['town','cloudForest'],'any',['dawn','day'],'uncommon',43],
+    ['mossfin_coppergill','Mossfin Coppergill','mossfin','#9a6b47',1.10,.12,'dart',55,['town','northernCliffs'],'summer,fall',['dusk','night'],'uncommon',51],
+    ['mossfin_frostcap','Mossfin Frostcap','mossfin','#aab6a2',.94,.06,'mixed',37,['farm','northernCliffs'],'winter,spring',['dawn','day'],'common',35]
   ];
 
   function silhouetteAxes(species, scalar) {
     const s = Math.max(0.2, Number(scalar) || 1);
     if (species === 'gurumahi') return { x: s * 0.90, y: s * 1.15 };
     if (species === 'rockscale') return { x: s * 1.22, y: s * 1.12 };
+    if (species === 'mossfin') return { x: s * 0.92, y: s * 1.08 };
     return { x: s, y: s };
   }
 
@@ -77,7 +88,7 @@
   const canvasCache = new Map();
   const FISH_RING_RADIUS = 96;
 
-  const sprite = f => f.species === 'gurumahi' ? 'fish_gurumahi.png' : f.species === 'rockscale' ? 'fish_rockscale.png' : 'fish_sixfin.png';
+  const sprite = f => f.species === 'gurumahi' ? 'fish_gurumahi.png' : f.species === 'rockscale' ? 'fish_rockscale.png' : f.species === 'mossfin' ? 'fish_mossfin.png' : 'fish_sixfin.png';
   const ignores = f => (f.species === 'gurumahi' ? GURUMAHI_IGNORES : f.species === 'rockscale' ? ROCKSCALE_IGNORES : []).map(([hex,sensitivity]) => ({hex,sensitivity}));
   const seasons = s => s === 'any' ? 'any' : s.split(',').map(x => SEASON[x] || x);
 
