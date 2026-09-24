@@ -50,11 +50,11 @@
   }
 
   function textNode(id, text, next = null) {
-    return { id, type: 'text', text, next, pos: { x: 80, y: 80 }, expression: 'neutral', expressionHold: 2, revealSpeed: 'normal' };
+    return { id, type: 'text', text, next, pos: { x: 80, y: 80 }, expression: /zzz/i.test(text) ? 'eyes_closed' : 'neutral', expressionHold: 2, revealSpeed: 'normal' };
   }
 
   function choiceNode(id, text, choices) {
-    return { id, type: 'choice', text, choices, pos: { x: 80, y: 80 }, expression: 'neutral', expressionHold: 2, revealSpeed: 'normal' };
+    return { id, type: 'choice', text, choices, pos: { x: 80, y: 80 }, expression: /zzz/i.test(text) ? 'eyes_closed' : 'neutral', expressionHold: 2, revealSpeed: 'normal' };
   }
 
   function tree(id, label, phase, stage, entryNode, nodes, extra = {}) {

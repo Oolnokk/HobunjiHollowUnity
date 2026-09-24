@@ -397,7 +397,11 @@ assert.match(creatureRendererSource, /grehlr:[\s\S]{0,420}blink: 'assets\/creatu
 assert.match(gameSource, /_animalSleepRequested = !!this\.animalDef && \/sleep\/i\.test/, 'named animal NPC sleeping must come from the authored schedule activity');
 assert.match(gameSource, /AnimalSleepPresentation\.registerExternalSleeper\(this/, 'named animal walkers must register with the shared sleep animation system');
 assert.match(gameSource, /eyesClosed: \(\) => !\(dialogueOpen && _dialogueWalker === this && this\.rec\?\._animalDialogueEyesOpen === true\)/, 'sleeping named animals may open their eyes only while their own eligible dialogue is open');
-assert.match(read('docs/js/livestock-nursery-install-bridge.js'), /animal-sleep-presentation\.js\?v=20260922banubureview1/, 'runtime loader must deliver the current named-animal sleep presenter');
+assert.match(read('docs/js/livestock-nursery-install-bridge.js'), /animal-sleep-presentation\.js\?v=20260924animaleyes1/, 'runtime loader must deliver the current named-animal sleep presenter');
+assert.match(gameSource, /expressionEyesClosed: \(\) => dialogueOpen && _dialogueWalker === this/, 'awake named animals use their current dialogue eye expression');
+assert.match(sleepPresentation, /sleeping \|\| expressionEyesClosed/, 'awake closed-eye expressions use the existing animal blink composite');
+const banubuContent = read('docs/js/banubu-quest-content.js'); // Verifies every authored Banubu sleep line receives its editor-visible eye expression.
+assert.match(banubuContent, /expression: \/zzz\/i\.test\(text\) \? 'eyes_closed' : 'neutral'/);
 
 const speciesOverrides = require('../docs/config/npcs/species-overrides.json');
 assert.strictEqual(speciesOverrides.npcs.banubu.species, 'grehlr');

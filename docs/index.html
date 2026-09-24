@@ -209,7 +209,7 @@
   <!-- Local database overrides (window.LocalDBOverrides) — lets docs/tools/
   <!-- Banubu's quest dialogue defaults load before LocalDBOverrides so the
        editor/runtime database composition can replace his generic chatter. -->
-  <script src="js/banubu-quest-content.js?v=20260924reply1"></script>
+  <script src="js/banubu-quest-content.js?v=20260924animaleyes1"></script>
        editors save edited repo-tracked JSON into localStorage and have the
        game load that instead of the repo file when Local source is selected. -->
   <script src="js/local-db-overrides.js?v=20260923banubuscale2"></script>
@@ -499,7 +499,7 @@
   <!-- Banubu Color Pools: max-level Stable animal paint UI + cave pool visuals.
        Uses PatternAuthoring/PatternLibrary now; the shared weaving compositor
        is resolved at interaction/render time after combat-config-loader loads it. -->
-  <script src="js/color-pools-system.js?v=20260920colorpools1"></script>
+  <script src="js/color-pools-system.js?v=20260924picker1"></script>
   <!-- Sloomi/Kzubug's smithing counter (window.MetalCraftShop) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -2409,7 +2409,7 @@
        game.js and call into this module. -->
   <!-- Authored world-space dialogue/cutscene cameras. Must load before DialogueContent/game.js. -->
   <script src="js/cinematic-camera-runtime.js?v=20260923stageopt1"></script>
-  <script src="js/dialogue-content.js?v=20260831syllable4"></script>
+  <script src="js/dialogue-content.js?v=20260924animaleyes1"></script>
   <script src="js/banubu-questline.js?v=20260923lordbanubu1"></script>
   <!-- World-space Float+ combat text and centered five-row reward lists. -->
   <script src="js/world-popup-text.js?v=20260831interactioncolors2"></script>
@@ -2535,9 +2535,9 @@
        quality mode, and owns no requestAnimationFrame loop. -->
   <script src="js/painterly-postprocess.js?v=20260923paintrebase1"></script>
   <script src="js/banubu-cave-clouds.js?v=20260923cloudring3"></script>
-  <script src="game.js?v=20260923shoulderheadlayer2"></script>
+  <script src="game.js?v=20260924colorpoolseyes1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
-  <script src="js/banubu-snore.js?v=20260923shortsnore2"></script>
+  <script src="js/banubu-snore.js?v=20260924snorepitch1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
   <script src="js/controller-ui-nav.js?v=20260915perf1"></script>
   <script>

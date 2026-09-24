@@ -233,8 +233,8 @@
     return `${kind}|${frame}|${signature}|sleep-eyes-${eyesClosed ? 'closed' : 'open'}`; // Same sleep body frame can be rendered with open eyes during authored dialogue.
   }
 
-  function sleepTextureEntry(kind, genotype, def = null, eyesClosed = true) {
-    const descriptor = frameDescriptor(kind, def, true);
+  function sleepTextureEntry(kind, genotype, def = null, eyesClosed = true, frameOverride = null) {
+    const descriptor = frameOverride ? { frame: frameOverride } : frameDescriptor(kind, def, true);
     const renderer = window.CreatureGeneticsRender;
     if (!renderer?.composeFrame) return null;
     const key = frameCacheKey(kind, descriptor.frame, genotype, eyesClosed);
@@ -302,7 +302,7 @@
     return applied > 0;
   }
 
-  function setLiveFrame(entity, group, kind, genotype, def, sleeping, eyesClosed = true) {
+  function setLiveFrame(entity, group, kind, genotype, def, sleeping, eyesClosed = true, frameOverride = null) {
     if (!entity || !group || !kind) return;
     let state = liveFrameStates.get(entity);
     if (!sleeping) {
@@ -332,7 +332,7 @@
     state = captureOriginalMaps(entity, group);
     if (!state.sleeping) state.sleepBodyYaw = null; // A fresh sleep period captures a fresh last-travel heading below.
     state.sleeping = true;
-    const entry = sleepTextureEntry(kind, genotype, def, eyesClosed);
+    const entry = sleepTextureEntry(kind, genotype, def, eyesClosed, frameOverride);
     if (!entry) return;
     if (entry.pair) {
       state.entry = entry; // Keep ownership of the visible sleep maps until the replacement composite is ready.
@@ -566,10 +566,11 @@
       if (!group?.parent || group.visible === false) continue;
       const sleeping = typeof config.isSleeping === 'function' ? config.isSleeping() === true : config.sleeping === true;
       const eyesClosed = typeof config.eyesClosed === 'function' ? config.eyesClosed() !== false : config.eyesClosed !== false;
+      const expressionEyesClosed = typeof config.expressionEyesClosed === 'function' && config.expressionEyesClosed() === true; // Used to show authored closed eyes on an awake named animal during dialogue.
       const kind = typeof config.kind === 'function' ? config.kind() : config.kind;
       const genotype = typeof config.genotype === 'function' ? config.genotype() : config.genotype;
       const def = typeof config.def === 'function' ? config.def() : config.def;
-      setLiveFrame(entity, group, kind, genotype, def, sleeping, eyesClosed);
+      setLiveFrame(entity, group, kind, genotype, def, sleeping || expressionEyesClosed, sleeping ? eyesClosed : true, sleeping ? null : 'idle');
       if (!sleeping) continue;
       forceHeadDown(avatarRef, entity);
       if (applyTemporaryScale(group, SLEEP_SCALE_Y, `external:${config.id || entity?.rec?.id || kind || 'animal'}`)) liveSleepFrames++; // External actors are authored upright, so apply the canonical sleep ratio directly.

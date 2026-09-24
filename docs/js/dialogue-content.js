@@ -647,6 +647,15 @@
   }
 
   function _applyNpcDialogueLinePresentation(text, node = null) {
+    const walker = deps.getDialogueWalker(); // Used to limit animal-eye expressions to named animals with the creature renderer.
+    const animal = walker?.animalKind ? walker.rec : null; // Used by the named-animal world plane and chathead for the current authored expression.
+    if (animal) {
+      const expression = String(node?.expression || '').toLowerCase();
+      animal._animalDialogueEyesOpen = expression === 'eyes_closed' ? false
+        : expression === 'eyes_open' ? true
+        : animal.id === 'banubu' ? window.BanubuQuestline?.dialogueEyesOpen?.() !== false : true;
+      animal._animalDialogueExpressionEyesClosed = expression === 'eyes_closed';
+    }
     if (!window.portraitBreathingComposer) return;
     const seatId = dialogueSeatId();
     window.portraitBreathingComposer.setDefaultExpression(seatId, _npcRestingExpression());
