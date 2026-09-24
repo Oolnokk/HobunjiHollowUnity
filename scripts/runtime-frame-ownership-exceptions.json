@@ -220,9 +220,9 @@
     "owner": "FishCatalog",
     "classification": "bounded-animation",
     "function": "presentationLoop",
-    "reason": "Started (line 393) only when a fishing cast begins and stops itself once window.Fishing.state clears at the end of that catch attempt - a finite per-session effect rather than a permanent runtime.",
+    "reason": "Started (line 428) only when a fishing cast begins and stops itself once window.Fishing.state clears at the end of that catch attempt - a finite per-session effect rather than a permanent runtime.",
     "migrationStage": "not-planned",
-    "line": 387
+    "line": 422
   },
   {
     "file": "docs/js/folder-save-debug-ui.js",
