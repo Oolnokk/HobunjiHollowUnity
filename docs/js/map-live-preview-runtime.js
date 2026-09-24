@@ -423,7 +423,7 @@
       }
     }
     const updated = runtime.cameraForId?.(areaId, ref.id) || camera;
-    return { position: roundedPoint(updated.position), target: roundedPoint(updated.target) };
+    return { position: roundedPoint(updated.position), target: roundedPoint(updated.target), stagePlayer: updated.stagePlayer === true };
   }
 
   function placementTransform() {
@@ -441,6 +441,30 @@
       rotY: +(node.rotation.y * 180 / Math.PI).toFixed(1),
       postSX: +Math.max(.05, node.scale.x).toFixed(3), postSY: +Math.max(.05, node.scale.y).toFixed(3), postSZ: +Math.max(.05, node.scale.z).toFixed(3),
     };
+  }
+
+  function refreshCameraStageButton() {
+    const button = document.getElementById('mapEditCameraStagePlayerBtn');
+    if (!button) return;
+    const isCamera = selectedPlacement?.ref?.kind === 'cinematicCamera';
+    button.style.display = isCamera ? '' : 'none';
+    if (!isCamera) return;
+    const areaId = selectedPlacement.ref.mapId || deps.getCurrentArea();
+    const camera = window.CinematicCameraRuntime?.cameraForId?.(areaId, selectedPlacement.ref.id);
+    const enabled = camera?.stagePlayer === true;
+    button.textContent = `Player repositioning: ${enabled ? 'On' : 'Off'}`;
+    button.classList.toggle('fed-active', enabled);
+  }
+
+  function toggleSelectedCameraPlayerStage() {
+    if (selectedPlacement?.ref?.kind !== 'cinematicCamera') return;
+    const areaId = selectedPlacement.ref.mapId || deps.getCurrentArea();
+    const camera = window.CinematicCameraRuntime?.cameraForId?.(areaId, selectedPlacement.ref.id);
+    if (!camera) { setStatus('Selected cinematic camera is no longer available.', false); return; }
+    camera.stagePlayer = camera.stagePlayer !== true; // Per-camera authoring flag consumed by dialogue staging; false is the normalized default.
+    sendPlacementTransform(true); // Uses the normal Map Editor bridge so authored maps persist it and runtime-only locale cameras include it in Copy Edit Diff.
+    refreshCameraStageButton();
+    setStatus(`Player repositioning ${camera.stagePlayer ? 'enabled' : 'disabled'} for ${camera.label || camera.id}.`);
   }
 
   function refreshTransformReadout() {
@@ -530,6 +554,7 @@
     if (gizmoLabel && selectedPlacement) gizmoLabel.textContent = `${selectedPlacement.ref.kind} · ${placementIdentity(selectedPlacement.ref)} · controls paused`;
     const scaleButton = document.getElementById('mapEditGizmoScale');
     if (scaleButton) scaleButton.disabled = selectedPlacement?.ref?.kind === 'cinematicCamera';
+    refreshCameraStageButton();
     refreshTransformReadout();
     const arenaRow = document.getElementById('mapEditArenaTools');
     if (arenaRow) arenaRow.style.display = deps?.getCurrentArea?.() === deps?.DEV_ARENA_ZONE_ID ? '' : 'none';
@@ -792,6 +817,7 @@
     document.getElementById('mapEditOpenBtn')?.addEventListener('click', () => openEditor());
     document.getElementById('mapEditPickBtn')?.addEventListener('click', armPicker);
     document.getElementById('mapEditCopyDiffBtn')?.addEventListener('click', copyEditDiff);
+    document.getElementById('mapEditCameraStagePlayerBtn')?.addEventListener('click', toggleSelectedCameraPlayerStage);
     document.getElementById('mapEditDebugBtn')?.addEventListener('click', copyDebug);
     document.getElementById('mapEditGizmoTranslate')?.addEventListener('click', () => setGizmoMode('translate'));
     document.getElementById('mapEditGizmoRotate')?.addEventListener('click', () => setGizmoMode('rotate'));
