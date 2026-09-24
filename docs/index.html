@@ -122,7 +122,7 @@
   <script src="debug.js?v=20260916perf1"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20260918collision2"></script>
-  <script src="config/scratchbones-config.js?v=20260920newbgm1"></script>
+  <script src="config/scratchbones-config.js?v=20260924fishingthrowcam7"></script>
   <!-- Canonical source-art color fill math shared by portraits, creatures, weaving, tools, terrain, and item sprites. -->
   <script src="js/color-fill.js?v=20260923colorfill7"></script>
   <script src="config/colors/config.js?v=20260728c"></script>
@@ -2432,10 +2432,9 @@
   <script src="js/player-social-poses.js?v=20260810a"></script>
   <script src="js/player-chat.js?v=20260810a"></script>
   <!-- Spearfishing minigame + fishing FX particles (window.Fishing) — must
-       load before game.js, which calls window.Fishing.init(...) during its
-       own setup. game.js's own tool-swing code reads window.Fishing.state/
-       .readyPose directly. -->
-  <script src="js/fishing-minigame.js?v=20260923silhouettehitbox1"></script>
+       load before game.js, which injects the shared thrown-weapon pose seams
+       used by fishing's held Windup → Strike presentation. -->
+  <script src="js/fishing-minigame.js?v=20260924fishingthrowcam7"></script>
   <!-- Kurraya hold-assembly + reactive-twitch visuals (window.KurrayaInstrument)
        — must load before game.js, which calls window.KurrayaInstrument.init(...)
        during its own setup, mirroring window.Fishing above. -->
@@ -2539,7 +2538,7 @@
        quality mode, and owns no requestAnimationFrame loop. -->
   <script src="js/painterly-postprocess.js?v=20260923paintrebase1"></script>
   <script src="js/banubu-cave-clouds.js?v=20260923cloudring3"></script>
-  <script src="game.js?v=20260924perf2"></script>
+  <script src="game.js?v=20260924perf2-fishingthrowcam7"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
   <script src="js/banubu-snore.js?v=20260924snorepitch1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
