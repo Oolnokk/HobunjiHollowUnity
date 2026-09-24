@@ -732,9 +732,9 @@
       geom.computeVertexNormals();
       var mesh = new THREE.Mesh(geom, mat);
       // Semantic face metadata is used by runtime diagnostics and lets callers inspect authored cloth/opening faces without guessing from materials.
-      mesh.userData.housePieceFaceTag = tag;
+      mesh.userData.housePieceFaceTag = f.tag;
       mesh.userData.housePieceFaceId = f.id;
-      if (tag === 'doorOpening') {
+      if (f.tag === 'doorOpening') {
         // Door openings are dark backing planes exactly coplanar with the surrounding authored cloth edges. A small depth bias keeps that backing behind the canvas at grazing camera angles instead of leaking one-pixel black wedges past the cloth.
         mat.polygonOffset = true;
         mat.polygonOffsetFactor = 2;
