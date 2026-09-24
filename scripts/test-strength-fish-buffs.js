@@ -27,14 +27,22 @@ const fishBuffMap = fish.match(/const COOKING_EFFECT_BY_FISH = Object\.freeze\(\
 for (const effect of ['fishing', 'strength', 'fortitude', 'speed']) {
   assert.equal((fishBuffMap.match(new RegExp(`'${effect}'`, 'g')) || []).length, 6, `exactly six live fish provide ${effect}`);
 }
-assert.match(fish, /\['gurumahi_charcoal','Gurumahi Charcoal'[\s\S]{0,180}'any'/, 'Fishing remains available in every season');
-assert.match(fish, /\['rockscale_goldplate','Rockscale Goldplate'[\s\S]{0,180}'any'/, 'Fortitude remains available in every season');
-assert.match(fish, /\['rockscale_giltback','Rockscale Giltback'[\s\S]{0,180}'any'/, 'Strength remains available in every season');
-assert.match(fish, /\['rockscale_slateplate','Rockscale Slateplate'[\s\S]{0,180}'any'/, 'Speed remains available in every season');
+assert.doesNotMatch(fish, /,'any',/, 'seasonal fish rotation contains no year-round catch row');
 assert.match(fish, /if \(species === 'mossfin'\) return \{ x: s \* 0\.92, y: s \* 1\.08 \}/, 'Mossfin has its own minigame silhouette correction');
 assert.doesNotMatch(fish, /function guruProfile\(/, 'shared hue recoloring is no longer named as Gurumahi-only now that Mossfin uses it');
-for (const [fishKey, effect] of [['gurumahi_charcoal', 'fishing'], ['rockscale_goldplate', 'fortitude'], ['rockscale_giltback', 'strength'], ['rockscale_slateplate', 'speed']]) {
-  assert.match(fish, new RegExp(`${fishKey}: '${effect}'`), `${effect} remains obtainable from an any-season fish (${fishKey})`);
+const seasonalCatalogSource = fish.slice(fish.indexOf('const COOKING_EFFECT_BY_FISH'), fish.indexOf('function silhouetteAxes'));
+const seasonalCatalog = new Function(`${seasonalCatalogSource}; return { effects: COOKING_EFFECT_BY_FISH, rows: ROWS };`)();
+const seasonKeys = ['spring', 'summer', 'fall', 'winter'];
+const fishEffectKeys = ['fishing', 'strength', 'fortitude', 'speed'];
+assert.equal(seasonalCatalog.rows.filter(row => row[9] === 'any').length, 0, 'no live fish is available in every season');
+assert.equal(seasonalCatalog.rows.filter(row => seasonKeys.every(season => String(row[9]).split(',').includes(season))).length, 0, 'no live fish manually lists all four seasons either');
+for (const season of seasonKeys) {
+  for (const effect of fishEffectKeys) {
+    assert(
+      seasonalCatalog.rows.some(row => String(row[9]).split(',').includes(season) && seasonalCatalog.effects[row[0]] === effect),
+      `${effect} remains obtainable from at least one fish during ${season}`,
+    );
+  }
 }
 assert.match(fish, /cookingPrimaryEffect:COOKING_EFFECT_BY_FISH\[f\.key\]/, 'live fish expose per-subspecies cooking buffs');
 assert.match(fish, /cookingCategories:\['fish'\][\s\S]{0,180}cookingPrimaryEffect:COOKING_EFFECT_BY_FISH\[f\.key\][\s\S]{0,180}cookingProcessingTier:'raw'[\s\S]{0,120}cookingDefaultStars:3/, 'late-registered fish carry the complete cooking ingredient contract themselves');
