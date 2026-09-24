@@ -223,8 +223,15 @@
       // this observer watches. Nothing in them is visible while closed, so skip the
       // full-tree scan below until the panel actually opens again.
       if (!root.classList.contains('open')) return;
+      // Gear mode's item detail is sized by InventoryGearCompactEffects' own
+      // fitter, which deliberately goes below MENU_MIN_FONT_PX so the whole
+      // detail fits without scrolling. Flooring it here made the two fight:
+      // the fitter released the floor, this pass re-applied it, and the text
+      // flipped between the two sizes.
+      const gearInfo = root.querySelector('#mpInventory.inv-mode-gear #invInfo');
       const elements = [root, ...root.querySelectorAll('*')];
       elements.forEach((element) => {
+        if (gearInfo && gearInfo.contains(element)) return;
         // Inactive tabs (.mp-pane without .active) stay display:none while their tab
         // isn't selected, so their content has no layout box — offsetParent is a cheap
         // way to detect that and skip it, instead of paying for getComputedStyle()

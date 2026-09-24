@@ -10578,6 +10578,11 @@
           yield;
           payload.featureMeshes.push(...(window.ZoneTerrainFeatures.buildUndiggableBoulderMeshes(group, zGrid, ZCOLS, ZROWS, mapId, bounds) || []));
           yield;
+          // Chunk meshes are added to a Group that is already in the scene, so
+          // NaturalSurfaceRuntimeFixes' Scene.add hook never sees them — plain
+          // Lambert rock (e.g. undiggable boulder shells) stayed untextured.
+          // Run the same inspection it would have, before the jigsaw bake.
+          for (const object of [...payload.floorMeshes, ...payload.featureMeshes]) window.NaturalSurfaceRuntimeFixes?.inspectObject?.(object);
           const bakeTargets = [];
           for (const object of [...payload.floorMeshes, ...payload.featureMeshes]) {
             object.traverse?.(mesh => { if (mesh.isMesh && mesh.userData?.wildernessChunkOwnsGeometry) bakeTargets.push(mesh); });
