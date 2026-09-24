@@ -3,6 +3,7 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const vm = require('node:vm');
 
 const read = path => fs.readFileSync(path, 'utf8');
 const json = path => JSON.parse(read(path));
@@ -16,6 +17,14 @@ const renderer = read('docs/js/zone-den-totem-features.js');
 const collision = read('docs/js/grid-tile-accessors.js');
 const generator = read('docs/js/wilderness-map-generator.js');
 const placement = read('docs/js/locale-terrain-placement.js');
+
+// Parse every inline Locale Editor script without executing browser globals. This
+// catches malformed template literals/markup interpolation in the large inline editor.
+for (const [index, match] of [...editor.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)].entries()) {
+  const source = match[1].trim();
+  if (!source) continue;
+  new vm.Script(source, { filename: 'locale-editor-inline-' + index + '.js' });
+}
 
 assert.equal(locale.schema, 'hobunji_locale.v1');
 assert.equal(locale.category, 'den_entrance');
