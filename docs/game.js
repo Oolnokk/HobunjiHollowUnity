@@ -7423,7 +7423,9 @@
       const PLAYER_BACK_PLANE_RENDER_ORDER = 4;
       const SHOULDER_PET_PLANE_RENDER_ORDER = 6;
       const PLAYER_OVER_SHOULDER_PET_RENDER_ORDER = 8;
+      const SHOULDER_PET_LAYER_FACE_HYSTERESIS = 0.1; // Used by the face classifier below to prevent layer flips while the camera is nearly edge-on.
       const _shoulderPetLayerCameraLocal = new THREE.Vector3(); // Reused to choose the currently camera-visible character face.
+      let _shoulderPetLayerFrontVisible = null; // Used by the face classifier to retain the last stable front/back side inside the hysteresis band.
       let _petLayeringActive = false;
       let _petLayeringPet = null;
       function _setLayerDepthWrite(material, depthWrite) {
@@ -7432,11 +7434,23 @@
         material.needsUpdate = true;
       }
       function _cameraSeesPlayerFrontFace() {
-        if (!_playerAvatarFrontMesh) return true;
+        if (!_playerAvatarFrontMesh) {
+          _shoulderPetLayerFrontVisible = true;
+          return true;
+        }
         _playerAvatarFrontMesh.updateWorldMatrix(true, false);
         _shoulderPetLayerCameraLocal.copy(camera.position);
         _playerAvatarFrontMesh.worldToLocal(_shoulderPetLayerCameraLocal);
-        return _shoulderPetLayerCameraLocal.z >= 0;
+        const horizontalDistance = Math.hypot(_shoulderPetLayerCameraLocal.x, _shoulderPetLayerCameraLocal.z); // Used to normalize the camera's yaw-side test independently of camera distance.
+        const normalizedFaceZ = horizontalDistance > 1e-6 ? _shoulderPetLayerCameraLocal.z / horizontalDistance : 1; // Used below to apply the same angular deadband at every zoom/distance.
+        if (_shoulderPetLayerFrontVisible === null) {
+          _shoulderPetLayerFrontVisible = normalizedFaceZ >= 0;
+        } else if (_shoulderPetLayerFrontVisible && normalizedFaceZ < -SHOULDER_PET_LAYER_FACE_HYSTERESIS) {
+          _shoulderPetLayerFrontVisible = false;
+        } else if (!_shoulderPetLayerFrontVisible && normalizedFaceZ > SHOULDER_PET_LAYER_FACE_HYSTERESIS) {
+          _shoulderPetLayerFrontVisible = true;
+        }
+        return _shoulderPetLayerFrontVisible;
       }
       function _restorePlayerBodyRenderOrder() {
         if (_playerAvatarFrontMesh) _playerAvatarFrontMesh.renderOrder = PLAYER_FRONT_PLANE_RENDER_ORDER;
@@ -7451,6 +7465,8 @@
         }
       }
       function updatePetLayering(active, pet) {
+        const nextPet = active ? pet : null; // Used here to reset face-side hysteresis whenever the active shoulder attachment changes.
+        if (_petLayeringPet !== nextPet) _shoulderPetLayerFrontVisible = null;
         // Restore a detached/swapped pet before assigning the active pair.
         if (_petLayeringPet && _petLayeringPet !== pet) {
           for (const m of [_petLayeringPet.avatarRef?.frontPlane?.material, _petLayeringPet.avatarRef?.backPlane?.material]) {
@@ -7462,7 +7478,7 @@
         }
 
         _petLayeringActive = active;
-        _petLayeringPet = active ? pet : null;
+        _petLayeringPet = nextPet;
         _setLayerDepthWrite(_playerAvatarFrontMaterial, !active);
         _setLayerDepthWrite(_playerAvatarBackMaterial, !active);
 
@@ -23391,7 +23407,7 @@
       let s_disableHatXray = false;
       let s_disableShoulderFrontXray = false; // Settings toggle: restores front-plane depth writes while a shoulder pet is attached.
       let s_disableShoulderBackXray = false; // Settings toggle: restores back-plane depth writes while a shoulder pet is attached.
-      let s_shoulderPetRotationSource = 'bodyNeckMidpoint'; // Settings dropdown: selects the live frame used to orient attached shoulder pets.
+      let s_shoulderPetRotationSource = 'head'; // Settings dropdown: selects the live frame used to orient attached shoulder pets; fresh sessions follow the head/neck by default.
       let s_invertShoulderPetRotationSource = false; // Settings toggle: inverses the selected rotation frame before authored perch/grip composition.
       let s_cancelShoulderPetRotationalOffset = false; // Settings toggle: omits authored perch/grip rotation corrections while retaining the selected frame.
       let s_frontSpriteXrayThroughShoulderPet = false; // Settings toggle: draws a front-face-only player overlay after the pet.
@@ -23475,8 +23491,8 @@
         updatePetLayering(_petLayeringActive, _petLayeringPet);
       });
       document.getElementById('settingShoulderPetRotationSource')?.addEventListener('change', e => {
-        const requestedSource = String(e.target.value || 'bodyNeckMidpoint'); // Used here to reject stale or manually-edited DOM values.
-        s_shoulderPetRotationSource = ['pixel', 'body', 'bodyNeckMidpoint', 'head', 'world'].includes(requestedSource) ? requestedSource : 'bodyNeckMidpoint';
+        const requestedSource = String(e.target.value || 'head'); // Used here to reject stale or manually-edited DOM values.
+        s_shoulderPetRotationSource = ['pixel', 'body', 'bodyNeckMidpoint', 'head', 'world'].includes(requestedSource) ? requestedSource : 'head';
       });
       document.getElementById('settingInvertShoulderPetRotationSource')?.addEventListener('change', e => {
         s_invertShoulderPetRotationSource = e.target.checked;
