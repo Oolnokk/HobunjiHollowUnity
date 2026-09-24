@@ -377,12 +377,19 @@
     if ('colorSpace' in tentCanvasTextureCache && THREE.SRGBColorSpace) tentCanvasTextureCache.colorSpace = THREE.SRGBColorSpace;
     return tentCanvasTextureCache;
   }
-  function tentMesh() {
-    if (!tentPiece || !window.HousePieceGen?.buildGroupFromPiece) return null;
-    const group = window.HousePieceGen.buildGroupFromPiece(THREE, tentPiece, -1, -1, {
+  function tentMesh(prop, elevationY) {
+    if (!tentPiece || !prop || !window.HousePieceGen?.buildGroupFromPiece) return null;
+    const centerCol = prop.x + (prop.w || 1) * 0.5; // Used to preserve authored House Editor transforms relative to the camp footprint.
+    const centerRow = prop.y + (prop.h || 1) * 0.5; // Used with centerCol so the outer prop group remains centered for runtime systems.
+    const authored = window.HousePieceGen.buildGroupFromPiece(THREE, tentPiece, prop.x, prop.y, {
+      elevationY,
+      rotationDeg: prop.rot || 0,
       matCanvas: new THREE.MeshLambertMaterial({ color: 0x8b7656, map: tentCanvasTexture(), side: THREE.DoubleSide }),
       matDoorOpening: new THREE.MeshBasicMaterial({ color: 0x18130f, side: THREE.DoubleSide }),
     });
+    authored.position.set(-centerCol, -elevationY, -centerRow);
+    const group = new THREE.Group();
+    group.add(authored);
     group.userData.projectileCoverHeightTiles = 2.55;
     group.userData.projectileCoverRadiusTiles = 1.5;
     group.userData.projectileCoverKind = 'porakaneki-tent';
@@ -418,7 +425,7 @@
       const col = prop.x + (prop.w || 1) * 0.5, row = prop.y + (prop.h || 1) * 0.5;
       const tile = zone.grid?.[Math.floor(row)]?.[Math.floor(col)];
       const y = tile && combatDeps.tileSurfaceYInArea ? num(combatDeps.tileSurfaceYInArea(tile, camp.zoneId), 0) : 0;
-      let mesh = prop.type === 'tent' ? tentMesh() : prop.key === 'campfire' ? campfireMesh() : crateMesh();
+      let mesh = prop.type === 'tent' ? tentMesh(prop, y) : prop.key === 'campfire' ? campfireMesh() : crateMesh();
       if (!mesh) continue;
       mesh.position.set(col, y, row);
       combatDeps.markOutline?.(mesh);
