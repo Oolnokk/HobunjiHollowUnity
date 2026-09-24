@@ -15,6 +15,66 @@ async function loadFile(file){
 function useDemo(){applyLoadedDatabase(DEMO_DB,'Built-in sample');logEvent('Restored demo database')}
 function resetLayout(){commitMutation('Reset layout settings',()=>{state.settings=deepCopy(DEFAULT_SETTINGS);state.millerPath=[]},{resetScale:true})}
 
+const PANE_SPLIT_STORAGE_KEY='hobunjiDialogueEditorPaneSplit.v1'; // Used to restore side-by-side and stacked pane sizes independently.
+const PANE_SPLIT_DEFAULTS={horizontal:320,vertical:null}; // Used until the user adjusts each orientation's divider.
+let paneSplitSizes={...PANE_SPLIT_DEFAULTS}; // Used to retain the two divider positions between orientation changes.
+try{paneSplitSizes={...paneSplitSizes,...JSON.parse(localStorage.getItem(PANE_SPLIT_STORAGE_KEY)||'{}')}}catch{}
+function splitterAxis(){return state.settings.workspaceOrientation==='vertical'?'y':'x'}
+function splitterBounds(){
+  const axis=splitterAxis(),workspace=$('workspace'),available=axis==='x'?workspace.clientWidth:workspace.clientHeight;
+  const small=innerWidth<=720,divider=$('paneSplitter').getBoundingClientRect()[axis==='x'?'width':'height']||10;
+  const min=axis==='x'?(small?145:190):130,graphMin=axis==='x'?(small?145:250):160;
+  return{axis,min,max:Math.max(min,available-divider-graphMin)};
+}
+function applyPaneSplit(size,{save=false}={}){
+  const {axis,min,max}=splitterBounds(),key=axis==='x'?'horizontal':'vertical';
+  if(!Number.isFinite(size))return;
+  size=Math.max(min,Math.min(max,size));
+  $('workspace').style.setProperty('--nav-pane-size',`${size}px`);
+  const splitter=$('paneSplitter');splitter.setAttribute('aria-orientation',axis==='x'?'vertical':'horizontal');splitter.setAttribute('aria-valuemin',String(min));splitter.setAttribute('aria-valuemax',String(Math.round(max)));splitter.setAttribute('aria-valuenow',String(Math.round(size)));
+  paneSplitSizes[key]=size;
+  if(save)try{localStorage.setItem(PANE_SPLIT_STORAGE_KEY,JSON.stringify(paneSplitSizes))}catch{}
+}
+function syncPaneSplitter(){
+  const splitter=$('paneSplitter');if(!splitter)return;
+  const orientation=state.settings.workspaceOrientation==='vertical'?'vertical':'horizontal';
+  const key=orientation==='horizontal'?'horizontal':'vertical';
+  splitter.hidden=state.settings.navPlacement==='hidden';
+  splitter.setAttribute('aria-orientation',orientation==='horizontal'?'vertical':'horizontal');
+  const saved=paneSplitSizes[key];
+  if(Number.isFinite(saved))applyPaneSplit(saved);
+  else{
+    $('workspace').style.removeProperty('--nav-pane-size');
+    const bounds=splitterBounds(),current=$('navigatorPane').getBoundingClientRect()[bounds.axis==='x'?'width':'height'];
+    const fallback=Number.isFinite(bounds.axis==='x'?PANE_SPLIT_DEFAULTS.horizontal:PANE_SPLIT_DEFAULTS.vertical)?(bounds.axis==='x'?PANE_SPLIT_DEFAULTS.horizontal:PANE_SPLIT_DEFAULTS.vertical):current;
+    applyPaneSplit(fallback);
+  }
+}
+function wirePaneSplitter(){
+  const splitter=$('paneSplitter');let drag=null;
+  splitter.addEventListener('pointerdown',event=>{
+    if(splitter.hidden||event.button!==0)return;
+    const {axis}=splitterBounds(),dimension=axis==='x'?'width':'height';
+    drag={axis,start:axis==='x'?event.clientX:event.clientY,size:$('navigatorPane').getBoundingClientRect()[dimension],sign:state.settings.navPlacement==='right'?-1:1};
+    splitter.setPointerCapture(event.pointerId);splitter.classList.add('dragging');document.body.style.cursor=axis==='x'?'col-resize':'row-resize';document.body.style.userSelect='none';event.preventDefault();
+  });
+  splitter.addEventListener('pointermove',event=>{
+    if(!drag)return;const point=drag.axis==='x'?event.clientX:event.clientY;applyPaneSplit(drag.size+(point-drag.start)*drag.sign);
+  });
+  const endDrag=()=>{if(!drag)return;drag=null;splitter.classList.remove('dragging');document.body.style.cursor='';document.body.style.userSelect='';const bounds=splitterBounds();applyPaneSplit($('navigatorPane').getBoundingClientRect()[bounds.axis==='x'?'width':'height'],{save:true})};
+  splitter.addEventListener('pointerup',endDrag);splitter.addEventListener('pointercancel',endDrag);
+  splitter.addEventListener('keydown',event=>{
+    const {axis,min,max}=splitterBounds(),dimension=axis==='x'?'width':'height',current=$('navigatorPane').getBoundingClientRect()[dimension];
+    const negative=axis==='x'?'ArrowLeft':'ArrowUp',positive=axis==='x'?'ArrowRight':'ArrowDown';let next=current;
+    if(event.key===negative)next+=-16*(state.settings.navPlacement==='right'?-1:1);
+    else if(event.key===positive)next+=16*(state.settings.navPlacement==='right'?-1:1);
+    else if(event.key==='Home')next=min;
+    else if(event.key==='End')next=max;
+    else return;
+    event.preventDefault();applyPaneSplit(next,{save:true});
+  });
+}
+
 function diagnosticsText(){
   return `Hobunji Dialogue Editor diagnostic report\nGenerated: ${new Date().toISOString()}\nViewport: ${innerWidth}x${innerHeight}\nUser agent: ${navigator.userAgent}\n\nSTATE\n${safeStringify({npcId:state.npcId,treeId:state.treeId,settings:state.settings,npcCount:state.db?.npcs?.length||0,history:{undo:state.history.past.length,redo:state.history.future.length,last:state.history.lastLabel}})}\n\nERRORS\n${state.errors.length?state.errors.join('\n\n'):'None'}\n\nRECENT EVENTS\n${state.events.join('\n\n')||'None'}`;
 }
@@ -29,6 +89,7 @@ async function copyDiagnostics(){
 
 function wire(){
   $('controlsToggle').onclick=()=>$('controlPanel').classList.toggle('open');$('closeControls').onclick=()=>$('controlPanel').classList.remove('open');
+  wirePaneSplitter();
   $('importBtn').onclick=()=>$('fileInput').click();$('fileInput').onchange=e=>{const file=e.target.files[0];if(file)loadFile(file);e.target.value=''};
   $('undoBtn').onclick=undo;$('redoBtn').onclick=redo;$('exportDbBtn').onclick=exportDatabase;$('exportBtn').onclick=exportLayout;
   $('saveDbOverrideBtn').onclick=saveDbOverride;$('clearDbOverrideBtn').onclick=clearDbOverride;$('poolModalBtn').onclick=openPoolModal;$('poolModalClose').onclick=closePoolModal;$('addPoolBtn').onclick=addPool;
@@ -47,7 +108,7 @@ function wire(){
   $('closeAlternatives').onclick=()=>{setPresetPickerOpen(false);$('toggleAlternatives').focus()};
   addEventListener('pointermove',updateTreePointerDrag,{passive:false});addEventListener('pointerup',finishTreePointerDrag,{passive:false});addEventListener('pointercancel',finishTreePointerDrag,{passive:false});
   addEventListener('keydown',e=>{if(e.key==='Escape'&&state.presetPickerOpen){e.preventDefault();setPresetPickerOpen(false);$('toggleAlternatives').focus();return}const tag=e.target.tagName;if(tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT')return;const mod=e.ctrlKey||e.metaKey;if(mod&&e.key.toLowerCase()==='z'){e.preventDefault();e.shiftKey?redo():undo()}else if(mod&&e.key.toLowerCase()==='y'){e.preventDefault();redo()}else if((e.key==='Delete'||e.key==='Backspace')&&state.nodeId){e.preventDefault();deleteNode()}});
-  addEventListener('resize',()=>{if(innerWidth>720)$('controlPanel').classList.remove('open')});
+  addEventListener('resize',()=>{syncPaneSplitter();if(innerWidth>720)$('controlPanel').classList.remove('open')});
 }
 
 try{wire();resetHistory('No edits yet');renderAll();Promise.all([loadMapRegistry(),loadShopRegistry()]).finally(()=>bootDatabase());logEvent('Dialogue editor initialized',{presets:PRESETS.length})}catch(e){captureError('Initialization failed',e)}

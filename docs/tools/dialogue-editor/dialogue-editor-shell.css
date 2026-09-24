@@ -64,11 +64,17 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#cae
 #workspace.split-vertical{flex-direction:column}
 #workspace.nav-right{flex-direction:row-reverse}
 #workspace.split-vertical.nav-right{flex-direction:column-reverse}
-#navigatorPane{width:var(--nav-w);min-width:235px;max-width:44%;display:flex;flex-direction:column;background:linear-gradient(180deg,#0d1825,#09131e);border-right:1px solid var(--line);min-height:0}
-.split-vertical #navigatorPane{width:100%;max-width:none;min-width:0;height:35%;min-height:190px;border-right:none;border-bottom:1px solid var(--line)}
+#navigatorPane{width:var(--nav-pane-size,var(--nav-w));flex:0 0 var(--nav-pane-size,var(--nav-w));min-width:0;max-width:none;display:flex;flex-direction:column;background:linear-gradient(180deg,#0d1825,#09131e);border-right:1px solid var(--line);min-height:0}
+.split-vertical #navigatorPane{width:100%;height:var(--nav-pane-size,35%);flex-basis:var(--nav-pane-size,35%);min-height:0;border-right:none;border-bottom:1px solid var(--line)}
 .nav-right #navigatorPane{border-right:none;border-left:1px solid var(--line)}
 .split-vertical.nav-right #navigatorPane{border-left:none;border-bottom:none;border-top:1px solid var(--line)}
 #navigatorPane.nav-hidden{display:none}
+#paneSplitter{position:relative;z-index:3;flex:0 0 10px;display:grid;place-items:center;background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.055);touch-action:none;user-select:none;-webkit-user-select:none;cursor:col-resize;transition:background .12s,border-color .12s}
+#paneSplitter[hidden]{display:none}
+#paneSplitter::after{content:'';width:3px;height:32px;border-radius:3px;background:repeating-linear-gradient(to bottom,rgba(190,211,238,.65) 0 3px,transparent 3px 7px)}
+#paneSplitter:hover,#paneSplitter:focus-visible,#paneSplitter.dragging{background:rgba(106,167,255,.16);border-color:rgba(106,167,255,.42);outline:none}
+#paneSplitter[aria-orientation="horizontal"]{cursor:row-resize}
+#paneSplitter[aria-orientation="horizontal"]::after{width:32px;height:3px;background:repeating-linear-gradient(to right,rgba(190,211,238,.65) 0 3px,transparent 3px 7px)}
 #navigatorHead{padding:9px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;flex-direction:column;gap:7px}
 #navigatorHeadTop{display:flex;gap:7px;align-items:center}
 #npcSelect{font-size:12px;font-weight:750}
@@ -116,4 +122,3 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#cae
 .hierCardHead span:first-child{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .hierSub{margin:4px 0;padding-left:7px;border-left:2px solid rgba(106,167,255,.18)}
 .hierSubTitle{font-size:9px;text-transform:uppercase;color:var(--muted);letter-spacing:.4px;margin:5px 0 2px}
-
