@@ -58,14 +58,14 @@
       "rot": 0,
       "visual": {
         "renderer": "cave_small",
-        "scaleX": 1,
-        "scaleY": 1,
-        "scaleZ": 1,
+        "scaleX": 2,
+        "scaleY": 1.5,
+        "scaleZ": 2,
         "offsetX": 0,
         "offsetY": 0,
         "offsetZ": 0,
         "surface": "auto",
-        "sink": 0.35
+        "sink": 0.45
       },
       "collision": {
         "mode": "auto"
@@ -101,6 +101,6 @@
   },
   "meta": {
     "createdAt": "2026-09-24T19:40:00.000Z",
-    "updatedAt": "2026-09-24T19:40:00.000Z"
+    "updatedAt": "2026-09-24T21:06:38.976Z"
   }
 }
