@@ -17,6 +17,13 @@ const collision = read('docs/js/grid-tile-accessors.js');
 const generator = read('docs/js/wilderness-map-generator.js');
 const placement = read('docs/js/locale-terrain-placement.js');
 
+const inlineScripts = [...editor.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)]
+  .map(match => match[1])
+  .filter(code => code.trim());
+for (const [index, code] of inlineScripts.entries()) {
+  assert.doesNotThrow(() => new Function(code), 'Locale Editor inline script ' + index + ' must parse');
+}
+
 assert.equal(locale.schema, 'hobunji_locale.v1');
 assert.equal(locale.category, 'den_entrance');
 const cave = locale.objects.find(object => object.key === 'cave_small');
