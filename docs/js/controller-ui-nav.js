@@ -66,8 +66,8 @@
     up: 'uiUp', down: 'uiDown', left: 'uiLeft', right: 'uiRight',
   }); // Used to keep every discrete menu action routed through the configurable controller binding layer.
 
-  function configuredControllerBinding(actionId) {
-    const currentBindings = window.InputBindings?.getCurrentBindings?.()?.controller; // Used to prefer the player's saved binding, including an explicit Unbound value.
+  function configuredControllerBinding(actionId, currentBindings = undefined) {
+    if (currentBindings === undefined) currentBindings = window.InputBindings?.getCurrentBindings?.()?.controller; // Used by non-poll callers while the frame hot path passes its already-resolved live map.
     if (currentBindings && Object.prototype.hasOwnProperty.call(currentBindings, actionId)) return currentBindings[actionId];
     const defaults = window.InputBindings?.getDefaultBindings?.('controller'); // Keeps controller-only action schema/defaults owned by InputBindings.
     return defaults && Object.prototype.hasOwnProperty.call(defaults, actionId) ? defaults[actionId] : null;
@@ -75,8 +75,8 @@
 
   // Reads this frame's shared analog snapshot rather than re-deriving each
   // action's value from the raw Gamepad object on every call.
-  function controllerActionDown(frame, actionId) {
-    const bindingCode = configuredControllerBinding(actionId); // Used to resolve this menu action without relying on a physical Gamepad button index.
+  function controllerActionDown(frame, actionId, currentBindings = undefined) {
+    const bindingCode = configuredControllerBinding(actionId, currentBindings); // Used to resolve this menu action without relying on a physical Gamepad button index.
     return Boolean(bindingCode) && frame.isDown(bindingCode, { stickThreshold: NAV_PRESS });
   }
 
@@ -117,6 +117,7 @@
   const lastFocusedByPanel = new WeakMap();
   const knownPanels = new Set(); // Reused by visibility reconciliation so gameplay never scans the entire DOM for panel roots.
   let currentTarget = null;
+  const navigationPerf = { targetCount: 0, rectReads: 0 }; // Used by ControllerUI.debugState() to expose the most recent spatial-navigation scan cost without browser devtools.
 
   // Registered panel roots are ordinarily appended directly to <body>, so
   // unlike isVisible() above — which has to walk ancestors for a nav target
@@ -214,23 +215,35 @@
     return Array.from(panel.querySelectorAll(NAV_SELECTOR)).filter(isNavTarget);
   }
 
+  function isModalPanel(panel) {
+    return !!(panel?.matches?.(SEMANTIC_PANEL_SELECTOR) || panel?.getAttribute?.('aria-modal') === 'true');
+  }
+
   function navigationTargets(panel) {
-    // Modal dialogs own focus; otherwise visible panel roots are peers even
-    // when their controls live in different DOM containers.
-    const modal = panel.matches(SEMANTIC_PANEL_SELECTOR) || panel.getAttribute('aria-modal') === 'true';
-    if (modal) return targetsInPanel(panel);
-    const peers = visiblePanels().filter(other => !other.matches(SEMANTIC_PANEL_SELECTOR) && other.getAttribute('aria-modal') !== 'true'); // Used to gather controls across visible menu containers.
+    // Modal dialogs own focus; otherwise the already-reconciled visible panel
+    // stack supplies peer roots without forcing another style/layout pass.
+    if (isModalPanel(panel)) return targetsInPanel(panel);
+    const peers = stack.filter(other => !isModalPanel(other)); // Used to gather controls across visible menu containers from cached visibility state.
     return [...new Set(peers.flatMap(targetsInPanel))];
   }
 
-  function belongsToNavigation(el, panel) {
-    return navigationTargets(panel).includes(el);
+  function owningRegisteredPanel(el) {
+    let owner = el?.closest?.(PANEL_SELECTOR) || null; // Used to map focused descendants back to the registered panel stack without rebuilding every navigation target.
+    while (owner && !knownPanels.has(owner)) owner = owner.parentElement?.closest?.(PANEL_SELECTOR) || null;
+    return owner;
   }
 
-  function pickDefaultTarget(panel) {
+  function belongsToNavigation(el, panel) {
+    const owner = owningRegisteredPanel(el); // Used for constant-small-stack membership checks on focusin/stale-focus paths.
+    if (!owner) return false;
+    if (isModalPanel(panel)) return owner === panel;
+    return stack.includes(owner) && !isModalPanel(owner);
+  }
+
+  function pickDefaultTarget(panel, availableTargets = null) {
     const explicit = panel.querySelector('[data-ctrl-default]');
-    if (explicit && isNavTarget(explicit)) return explicit;
-    const targets = targetsInPanel(panel);
+    if (explicit && isNavTarget(explicit) && (!availableTargets || availableTargets.includes(explicit))) return explicit;
+    const targets = availableTargets || targetsInPanel(panel);
     // Never default-focus the panel's own close/cancel button — a stray A
     // press on first opening a panel shouldn't be able to instantly back
     // back out of it again.
@@ -258,11 +271,13 @@
     }
   }
 
-  function refreshFocusIfStale() {
+  function refreshFocusIfStale(availableTargets = null) {
     const panel = activePanel();
     if (!panel) return;
-    if (currentTarget && isNavTarget(currentTarget) && belongsToNavigation(currentTarget, panel)) return;
-    setFocus(pickDefaultTarget(panel));
+    if (currentTarget) {
+      if (availableTargets ? availableTargets.includes(currentTarget) : (isNavTarget(currentTarget) && belongsToNavigation(currentTarget, panel))) return;
+    }
+    setFocus(pickDefaultTarget(panel, availableTargets));
   }
 
   // ── spatial navigation ──────────────────────────────────────────────
@@ -304,11 +319,11 @@
     return forward + lateral * 2.2;
   }
 
-  function bestVectorCandidate(targets, curRect, dir, halfAngle = null) {
+  function bestVectorCandidate(candidates, curRect, dir, halfAngle = null) {
     let best = null, bestScore = Infinity;
-    for (const cand of targets) {
+    for (const candidate of candidates) {
+      const cand = candidate.el, candRect = candidate.rect;
       if (cand === currentTarget) continue;
-      const candRect = cand.getBoundingClientRect();
       const metrics = halfAngle == null
         ? { score: halfPlaneScore(curRect, candRect, dir) }
         : coneMetrics(curRect, candRect, dir, halfAngle);
@@ -322,16 +337,22 @@
   function moveVector(x, y) {
     const panel = activePanel();
     if (!panel) return false;
-    refreshFocusIfStale();
-    const targets = navigationTargets(panel);
+    const targets = navigationTargets(panel); // Built once for this gesture/repeat and shared by focus validation plus candidate scoring.
+    navigationPerf.targetCount = targets.length;
+    navigationPerf.rectReads = 0;
+    refreshFocusIfStale(targets);
     if (!targets.length) return false;
-    if (!currentTarget) { setFocus(pickDefaultTarget(panel)); return true; }
+    if (!currentTarget) { setFocus(pickDefaultTarget(panel, targets)); return true; }
     const dir = normalizedDirection(x, y);
     if (!dir) return false;
-    const curRect = currentTarget.getBoundingClientRect();
-    const best = bestVectorCandidate(targets, curRect, dir, CONE_HALF_ANGLE)
-      || bestVectorCandidate(targets, curRect, dir, WIDE_CONE_HALF_ANGLE)
-      || bestVectorCandidate(targets, curRect, dir, null);
+    const candidates = targets.map(el => ({ el, rect: el.getBoundingClientRect() })); // Used by all cone passes so each candidate layout rectangle is read only once per navigation step.
+    navigationPerf.rectReads = candidates.length;
+    const currentCandidate = candidates.find(candidate => candidate.el === currentTarget);
+    const curRect = currentCandidate?.rect || currentTarget.getBoundingClientRect();
+    if (!currentCandidate) navigationPerf.rectReads += 1;
+    const best = bestVectorCandidate(candidates, curRect, dir, CONE_HALF_ANGLE)
+      || bestVectorCandidate(candidates, curRect, dir, WIDE_CONE_HALF_ANGLE)
+      || bestVectorCandidate(candidates, curRect, dir, null);
     if (!best) return false;
     setFocus(best);
     return true;
@@ -515,7 +536,17 @@
     }
   }
 
-  let prevButtons = new Set();
+  const edgeActions = Object.freeze([UI_ACTIONS.confirm, UI_ACTIONS.cancel, UI_ACTIONS.tabPrev, UI_ACTIONS.tabNext, UI_ACTIONS.open]); // Used to track only menu actions that need press edges; directional repeats keep their separate state.
+  const actionEdgeState = Object.create(null); // Used as reusable per-action edge memory so active-menu polling does not allocate a Set every frame.
+  for (const actionId of edgeActions) actionEdgeState[actionId] = false;
+  function resetActionEdges() {
+    for (const actionId of edgeActions) actionEdgeState[actionId] = false;
+  }
+  function actionPressed(actionId, isDown) {
+    const pressed = Boolean(isDown) && !actionEdgeState[actionId];
+    actionEdgeState[actionId] = Boolean(isDown);
+    return pressed;
+  }
   let menuOpenEdge = false;
   let lastGamepadPollAt = 0; // Used to keep analog right-stick menu scrolling independent of display refresh rate.
 
@@ -523,25 +554,27 @@
     const now = frame.now;
     if (!frame.focused) return;
     const pad = frame.pad; // Resolved once per frame by the shared polling authority.
-    if (!pad) { prevButtons.clear(); menuOpenEdge = false; resetStickState(); return; }
+    if (!pad) { resetActionEdges(); menuOpenEdge = false; resetStickState(); return; }
     padEverSeen = true;
 
     if (window.InputSettingsPanel?.isControllerListening?.()) {
-      prevButtons.clear();
+      resetActionEdges();
       menuOpenEdge = false;
       resetStickState();
       return;
     }
 
+    const currentBindings = window.InputBindings?.getCurrentBindings?.()?.controller || null; // Used by every menu action in this frame so the live binding map is resolved once instead of once per action.
     if (!isActive()) {
       resetStickState();
       // Nothing to navigate — the only job left is offering a way to open
       // the pause menu at all from a controller with no keyboard nearby.
-      const openDown = controllerActionDown(frame, UI_ACTIONS.open); // Used to let the configured Menu Open/Close action own this edge instead of a fixed View/Share button.
+      const openDown = controllerActionDown(frame, UI_ACTIONS.open, currentBindings); // Used to let the configured Menu Open/Close action own this edge instead of a fixed View/Share button.
+      resetActionEdges();
+      actionEdgeState[UI_ACTIONS.open] = openDown; // Prevents the same held configured open press from immediately closing the menu on its next active frame.
       if (openDown && !menuOpenEdge) {
         document.getElementById('menuBtn')?.click();
-        prevButtons = new Set([UI_ACTIONS.open]); // Prevents the same held configured open press from immediately closing the menu on its next active frame.
-      } else if (!openDown) prevButtons.clear();
+      }
       menuOpenEdge = openDown;
       return;
     }
@@ -549,10 +582,10 @@
 
     const navStick = window.ControllerInput?.normalizeStick?.(pad.axes[0], pad.axes[1], DEADZONE, 1) || { x: pad.axes[0] || 0, y: pad.axes[1] || 0 };
     const rawAx = Number(pad.axes[0]) || 0, rawAy = Number(pad.axes[1]) || 0; // Used to preserve the physical analog direction before cone scoring.
-    const digitalLeft = controllerActionDown(frame, UI_ACTIONS.left);
-    const digitalRight = controllerActionDown(frame, UI_ACTIONS.right);
-    const digitalUp = controllerActionDown(frame, UI_ACTIONS.up);
-    const digitalDown = controllerActionDown(frame, UI_ACTIONS.down);
+    const digitalLeft = controllerActionDown(frame, UI_ACTIONS.left, currentBindings);
+    const digitalRight = controllerActionDown(frame, UI_ACTIONS.right, currentBindings);
+    const digitalUp = controllerActionDown(frame, UI_ACTIONS.up, currentBindings);
+    const digitalDown = controllerActionDown(frame, UI_ACTIONS.down, currentBindings);
     const digitalDirectionActive = digitalLeft || digitalRight || digitalUp || digitalDown;
     pollDirection('left', digitalLeft, now, () => moveOrAdjust('left'));
     pollDirection('right', digitalRight, now, () => moveOrAdjust('right'));
@@ -576,14 +609,16 @@
       if (scrollHost) scrollHost.scrollTop += scrollStick.y * 720 * scrollDt;
     }
 
-    const downActions = new Set(Object.values(UI_ACTIONS).filter(actionId => controllerActionDown(frame, actionId))); // Used as semantic edge state so remapping never depends on physical Gamepad indices.
-    const actionPressed = actionId => downActions.has(actionId) && !prevButtons.has(actionId); // Used to edge-trigger menu actions once per configured press.
-    if (actionPressed(UI_ACTIONS.confirm)) activate();
-    if (actionPressed(UI_ACTIONS.cancel)) cancel();
-    if (actionPressed(UI_ACTIONS.tabPrev)) cycleTabs(-1);
-    if (actionPressed(UI_ACTIONS.tabNext)) cycleTabs(1);
-    if (actionPressed(UI_ACTIONS.open)) cancel();
-    prevButtons = downActions;
+    const confirmDown = controllerActionDown(frame, UI_ACTIONS.confirm, currentBindings);
+    const cancelDown = controllerActionDown(frame, UI_ACTIONS.cancel, currentBindings);
+    const tabPrevDown = controllerActionDown(frame, UI_ACTIONS.tabPrev, currentBindings);
+    const tabNextDown = controllerActionDown(frame, UI_ACTIONS.tabNext, currentBindings);
+    const openDown = controllerActionDown(frame, UI_ACTIONS.open, currentBindings);
+    if (actionPressed(UI_ACTIONS.confirm, confirmDown)) activate();
+    if (actionPressed(UI_ACTIONS.cancel, cancelDown)) cancel();
+    if (actionPressed(UI_ACTIONS.tabPrev, tabPrevDown)) cycleTabs(-1);
+    if (actionPressed(UI_ACTIONS.tabNext, tabNextDown)) cycleTabs(1);
+    if (actionPressed(UI_ACTIONS.open, openDown)) cancel();
   }
   window.ControllerInput?.subscribe?.('controller-ui-nav', pollGamepad, window.ControllerInput.PRIORITY.menuNav);
 
@@ -740,6 +775,8 @@
         targetText: (currentTarget?.textContent || '').trim().slice(0, 40),
         navigationMode: 'vector-cone',
         coneHalfAngleDeg: Math.round(CONE_HALF_ANGLE * 180 / Math.PI),
+        navigationTargetCount: navigationPerf.targetCount,
+        navigationRectReads: navigationPerf.rectReads,
       };
     },
   };
