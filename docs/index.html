@@ -525,7 +525,7 @@
   <!-- Same-origin live Map Editor transport + runtime bridge. Loaded before
        game.js so its private scene state can be injected during setup. -->
   <script src="js/map-live-preview.js?v=20260909a"></script>
-  <script src="js/map-live-preview-runtime.js?v=20260923mapeditcam1"></script>
+  <script src="js/map-live-preview-runtime.js?v=20260923mapeditdiff1"></script>
   <!-- Dev Tools: Testing Arena teleport + creature/bandit/foliage spawner
        panel (window.DevSpawner) — reads window.CreatureGenetics/
        window.CreatureGeneticsRender/window.BanditCombat/
@@ -886,6 +886,7 @@
       <div class="fed-section fed-actions map-edit-actions">
         <button class="fed-action-btn" id="mapEditOpenBtn">Open Map Editor</button>
         <button class="fed-action-btn" id="mapEditPickBtn">🎯 Click to Select</button>
+        <button class="fed-action-btn" id="mapEditCopyDiffBtn">📋 Copy Edit Diff</button>
         <button class="fed-action-btn" id="mapEditDebugBtn">Copy Reflection Debug</button>
       </div>
       <div class="fed-section" id="mapEditCameraSection" style="display:none;">
