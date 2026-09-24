@@ -260,6 +260,8 @@
   };
   let silhouetteBody=null, silhouetteWhiskers=null, silhouetteLoadPromise=null;
   let curvedCanvas=null, curvedCtx=null, lastCurvedUrl=null, lastCurvedAt=-Infinity;
+  let curvedCollisionMask=null; // Alpha data for the exact curved frame used by Fishing's silhouette collision.
+  let collisionMaskReadbackWarned=false; // Deduplicates mobile-visible diagnostics if canvas alpha readback is unavailable.
   let observedFishImage=null, hrefObserver=null, settingHref=false, presentationRunning=false;
 
   function ensureSilhouetteAssets() {
@@ -345,6 +347,53 @@
     ctx.restore();
   }
 
+  const MINIGAME_COLLISION_ALPHA_THRESHOLD=24; // Alpha cutoff used by Fishing so anti-aliased silhouette edges remain hittable without filling transparent gaps.
+
+  function minigamePresentationScale(fishDef) {
+    const sx=Math.max(.2,Number(fishDef?.minigameScaleX??fishDef?.minigameScale??1)||1); // Used by both the visible fish CSS transform and hit-test inversion.
+    const sy=Math.max(.2,Number(fishDef?.minigameScaleY??fishDef?.minigameScale??1)||1); // Used by both the visible fish CSS transform and hit-test inversion.
+    return {sx,sy};
+  }
+
+  function readCurvedCollisionMask(ctx,w,h) {
+    try {
+      const rgba=ctx.getImageData(0,0,w,h).data; // Captured only when a new curved frame is encoded so collision matches the displayed PNG frame.
+      collisionMaskReadbackWarned=false;
+      return {w,h,rgba};
+    } catch(err) {
+      if(!collisionMaskReadbackWarned){
+        collisionMaskReadbackWarned=true;
+        window.__farmLog?.(`fish hitbox alpha readback failed: ${err?.name||'Error'} ${err?.message||''}`,'warn');
+        console.warn('[fish-catalog] silhouette collision alpha readback failed',err);
+      }
+      return null;
+    }
+  }
+
+  function hasMinigameSilhouetteCollisionMask() {
+    return !!curvedCollisionMask;
+  }
+
+  function minigameSilhouetteContainsLocalPoint(state,localX,localY) {
+    const mask=curvedCollisionMask; // Final curved silhouette frame currently presented by this catalog layer.
+    if(!mask)return null;
+    const {sx,sy}=minigamePresentationScale(state?.fishDef);
+    const px=Math.floor(localX/sx+mask.w*0.5); // Undo the <image> CSS X scale before sampling the encoded silhouette alpha.
+    const py=Math.floor(localY/sy+mask.h*0.5); // Undo the <image> CSS Y scale before sampling the encoded silhouette alpha.
+    if(px<0||py<0||px>=mask.w||py>=mask.h)return false;
+    return (mask.rgba[(py*mask.w+px)*4+3]||0)>=MINIGAME_COLLISION_ALPHA_THRESHOLD;
+  }
+
+  function minigameSilhouetteCollisionDebug() {
+    const mask=curvedCollisionMask; // Read by the in-game Fishing debug snapshot; no devtools are required.
+    return {
+      ready:!!mask,
+      width:mask?.w||0,
+      height:mask?.h||0,
+      alphaThreshold:MINIGAME_COLLISION_ALPHA_THRESHOLD,
+    };
+  }
+
   function renderCurvedFishFrame(state,sxScale,syScale) {
     if(!silhouetteBody||state?.phase!=='active')return null;
     if(lastCurvedUrl&&state.fishAnimT-lastCurvedAt<CURVED_FISH_ART.frameInterval)return lastCurvedUrl;
@@ -357,9 +406,12 @@
     const whiskerOffsets=buildWaveOffsets(art.slices,bodyAmp*art.whiskerAmpScale,phase+0.85,art.whiskerRate);
     drawWaveLayerOnRing(ctx,silhouetteBody,w,h,art.imgW,art.imgH,bodyOffsets,sxScale,syScale,1);
     if(silhouetteWhiskers?.naturalWidth)drawWaveLayerOnRing(ctx,silhouetteWhiskers,w,h,art.imgW,art.imgH,whiskerOffsets,sxScale,syScale,0.95);
+    const nextCollisionMask=readCurvedCollisionMask(ctx,w,h); // Paired with this exact encoded frame; the previous mask stays live if encoding itself fails.
     try{
-      lastCurvedUrl=canvas.toDataURL('image/png');
+      const nextCurvedUrl=canvas.toDataURL('image/png'); // Encoded frame whose alpha mask was captured immediately above.
+      lastCurvedUrl=nextCurvedUrl;
       lastCurvedAt=state.fishAnimT;
+      curvedCollisionMask=nextCollisionMask;
       return lastCurvedUrl;
     }catch(err){
       console.warn('[fish-catalog] curved silhouette encode failed',err);
@@ -394,6 +446,7 @@
     observedFishImage=null;
     lastCurvedUrl=null;
     lastCurvedAt=-Infinity;
+    curvedCollisionMask=null;
   }
 
   function presentationLoop() {
@@ -406,8 +459,7 @@
     const image=document.getElementById('fishDeformedImage');
     observeFishImage(image);
     if(image&&fishDef){
-      const sx=Math.max(.2,Number(fishDef.minigameScaleX??fishDef.minigameScale??1)||1);
-      const sy=Math.max(.2,Number(fishDef.minigameScaleY??fishDef.minigameScale??1)||1);
+      const {sx,sy}=minigamePresentationScale(fishDef);
       image.style.transformBox='fill-box';
       image.style.transformOrigin='center';
       image.style.transform=`scale(${sx},${sy})`;
@@ -428,7 +480,18 @@
     requestAnimationFrame(presentationLoop);
   }
 
-  window.FishCatalog={entries:FISH,get:k=>byKey.get(k)||null,buildFishingDefs,buildItemDefs,buildBasePrices,getRecoloredCanvas};
+  window.FishCatalog={
+    entries:FISH,
+    get:k=>byKey.get(k)||null,
+    buildFishingDefs,
+    buildItemDefs,
+    buildBasePrices,
+    getRecoloredCanvas,
+    getMinigamePresentationScale:minigamePresentationScale,
+    hasMinigameSilhouetteCollisionMask,
+    minigameSilhouetteContainsLocalPoint,
+    getMinigameSilhouetteCollisionDebug:minigameSilhouetteCollisionDebug,
+  };
   configureCatchCamera();
   hookFishing();
   hookShippingItemBridge();
