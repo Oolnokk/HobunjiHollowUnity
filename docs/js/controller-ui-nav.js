@@ -275,6 +275,40 @@
     return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
   }
 
+  function visibleTargetRect(el) {
+    const rect = el.getBoundingClientRect(); // Used as the starting screen-space bounds before scroll clipping.
+    let left = Math.max(0, rect.left), top = Math.max(0, rect.top);
+    let right = Math.min(window.innerWidth, rect.right), bottom = Math.min(window.innerHeight, rect.bottom);
+    for (let ancestor = el.parentElement; ancestor; ancestor = ancestor.parentElement) {
+      const style = getComputedStyle(ancestor); // Used to identify ancestors that clip descendants after scrolling.
+      if (!/(auto|scroll|hidden|clip)/.test(`${style.overflow} ${style.overflowX} ${style.overflowY}`)) continue;
+      const bounds = ancestor.getBoundingClientRect(); // Used to exclude controls outside the visible part of a scrolled section.
+      left = Math.max(left, bounds.left);
+      top = Math.max(top, bounds.top);
+      right = Math.min(right, bounds.right);
+      bottom = Math.min(bottom, bounds.bottom);
+      if (right <= left || bottom <= top) return null;
+    }
+    return right > left && bottom > top ? { left, top, right, bottom, width: right - left, height: bottom - top } : null;
+  }
+
+  function rayDistance(origin, rect, dir) {
+    let enter = -Infinity, exit = Infinity;
+    for (const [position, velocity, min, max] of [
+      [origin.x, dir.x, rect.left, rect.right],
+      [origin.y, dir.y, rect.top, rect.bottom],
+    ]) {
+      if (Math.abs(velocity) < 1e-6) {
+        if (position < min || position > max) return null;
+        continue;
+      }
+      const near = (min - position) / velocity, far = (max - position) / velocity;
+      enter = Math.max(enter, Math.min(near, far));
+      exit = Math.min(exit, Math.max(near, far));
+    }
+    return exit >= Math.max(0, enter) ? Math.max(0, enter) : null;
+  }
+
   function normalizedDirection(x, y) {
     const magnitude = Math.hypot(Number(x) || 0, Number(y) || 0);
     if (magnitude <= 1e-6) return null;
@@ -308,13 +342,29 @@
     let best = null, bestScore = Infinity;
     for (const cand of targets) {
       if (cand === currentTarget) continue;
-      const candRect = cand.getBoundingClientRect();
+      const candRect = visibleTargetRect(cand);
+      if (!candRect) continue;
       const metrics = halfAngle == null
         ? { score: halfPlaneScore(curRect, candRect, dir) }
         : coneMetrics(curRect, candRect, dir, halfAngle);
       const score = metrics?.score;
       if (!Number.isFinite(score)) continue;
       if (score < bestScore) { bestScore = score; best = cand; }
+    }
+    return best;
+  }
+
+  function firstRayCandidate(targets, curRect, dir) {
+    const origin = rectCenter(curRect); // Used as the starting point for a stick-directed screen-space ray.
+    let best = null, nearest = Infinity;
+    for (const cand of targets) {
+      if (cand === currentTarget) continue;
+      const rect = visibleTargetRect(cand); // Only the visible portion of a control may intercept the ray.
+      if (!rect) continue;
+      const center = rectCenter(rect); // Used to reject a control whose center is behind the selected control.
+      if ((center.x - origin.x) * dir.x + (center.y - origin.y) * dir.y <= 1) continue;
+      const distance = rayDistance(origin, rect, dir); // Used to select the first intersected control regardless of its container.
+      if (distance !== null && distance < nearest) { nearest = distance; best = cand; }
     }
     return best;
   }
@@ -328,8 +378,9 @@
     if (!currentTarget) { setFocus(pickDefaultTarget(panel)); return true; }
     const dir = normalizedDirection(x, y);
     if (!dir) return false;
-    const curRect = currentTarget.getBoundingClientRect();
-    const best = bestVectorCandidate(targets, curRect, dir, CONE_HALF_ANGLE)
+    const curRect = visibleTargetRect(currentTarget) || currentTarget.getBoundingClientRect();
+    const best = firstRayCandidate(targets, curRect, dir)
+      || bestVectorCandidate(targets, curRect, dir, CONE_HALF_ANGLE)
       || bestVectorCandidate(targets, curRect, dir, WIDE_CONE_HALF_ANGLE)
       || bestVectorCandidate(targets, curRect, dir, null);
     if (!best) return false;
