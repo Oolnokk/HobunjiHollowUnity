@@ -16734,18 +16734,14 @@
           characterViewMode.lockedFacingAngle = facingAngle;
           characterViewMode.lockedPlayerAngle = player.angle;
           characterViewMode.lockedPlayerFacing = playerFacing;
+          characterViewMode.lockedNeckX = playerNeckJoint?.rotation?.x || 0;
+          characterViewMode.lockedNeckY = playerNeckJoint?.rotation?.y || 0;
         }
         characterViewMode.enabled = nextEnabled;
         if (nextEnabled) {
-          if (playerNeckJoint?.userData) playerNeckJoint.userData.hobunjiPerspectiveAimLocked = false;
-          window.PlayerBodyTransformComposer?.prepareNeckForAttachmentSampling?.(); // Character View captures the same physically limited neck pose that the portrait and shoulder perch will actually render.
-          characterViewMode.lockedNeckX = playerNeckJoint?.rotation?.x || 0;
-          characterViewMode.lockedNeckY = playerNeckJoint?.rotation?.y || 0;
-          window.PlayerBodyTransformComposer?.setCharacterViewPoseLock?.(true); // Freeze opted-in cosmetic render channels at their entry values; forced channels such as ragdoll remain live.
           requestShoulderSurfPointerLock();
-        } else {
-          window.PlayerBodyTransformComposer?.setCharacterViewPoseLock?.(false);
-          if (!cursorlessMouseAimRequested()) releaseShoulderSurfPointerLock();
+        } else if (!cursorlessMouseAimRequested()) {
+          releaseShoulderSurfPointerLock();
         }
         characterViewMode.lastChangeReason = reason;
         characterViewMode.changedAtMs = Date.now();
