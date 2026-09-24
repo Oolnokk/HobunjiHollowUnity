@@ -1,0 +1,52 @@
+name: Progression overhead regression
+
+on:
+  push:
+    paths:
+      - 'docs/index.html'
+      - 'docs/js/world-popup-text.js'
+      - 'docs/js/skill-system.js'
+      - 'docs/js/mastery-policy.js'
+      - 'docs/js/combat/combat-config-loader.js'
+      - 'scripts/test-progression-overhead-announcements.js'
+      - 'scripts/test-mastery-policy.js'
+      - 'scripts/test-world-text-outline-overlay.js'
+      - '.github/workflows/progression-overhead-regression.yml'
+  pull_request:
+    paths:
+      - 'docs/index.html'
+      - 'docs/js/world-popup-text.js'
+      - 'docs/js/skill-system.js'
+      - 'docs/js/mastery-policy.js'
+      - 'docs/js/combat/combat-config-loader.js'
+      - 'scripts/test-progression-overhead-announcements.js'
+      - 'scripts/test-mastery-policy.js'
+      - 'scripts/test-world-text-outline-overlay.js'
+      - '.github/workflows/progression-overhead-regression.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Syntax check progression runtime
+        run: |
+          node --check docs/js/world-popup-text.js
+          node --check docs/js/skill-system.js
+          node --check docs/js/mastery-policy.js
+          node --check docs/js/combat/combat-config-loader.js
+          node --check scripts/test-progression-overhead-announcements.js
+      - name: Test overhead progression announcements
+        run: node scripts/test-progression-overhead-announcements.js
+      - name: Test mastery policy integration
+        run: node scripts/test-mastery-policy.js
+      - name: Test world-text overlay handoff
+        run: node scripts/test-world-text-outline-overlay.js
