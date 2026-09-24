@@ -73,6 +73,65 @@
     const guideLocalY = new THREE.Vector3(0, 1, 0); // Plane-strip length axis used by the paper-arm preview.
     const debugEuler = new THREE.Euler(0, 0, 0, 'YXZ');
     const debugBySide = { left: null, right: null };
+    // aimSide runs for every hand rig on every frame, but its detailed debug
+    // record is only ever read through getDebug(). Successful solves write
+    // their raw numbers into these preallocated per-side slots, and the
+    // verbose debug object (toFixed/Euler conversions, ~a dozen nested
+    // allocations) is built on demand from them instead of every frame.
+    const makeAimDebugSnapshot = () => ({
+      valid: false,
+      weights: { grip: 0, palmNormal: 0 },
+      source: null,
+      shoulder: new THREE.Vector3(),
+      wrist: new THREE.Vector3(),
+      elbow: new THREE.Vector3(),
+      diagnosticArmLength: null,
+      upperArmLength: null,
+      forearmLength: null,
+      authoredPolylineLength: null,
+      shoulderWristDistance: null,
+      elbowSource: 'unknown',
+      authoredElbowOffset: null,
+      authoredQuaternion: new THREE.Quaternion(),
+      targetDirectionLocal: new THREE.Vector3(),
+      gripAngle: 0,
+      palmNormalAngle: 0,
+      appliedGripAngle: 0,
+      appliedPalmNormalAngle: 0,
+      residualRad: 0,
+      outputQuaternion: new THREE.Quaternion(),
+    });
+    const aimDebugSnapshotBySide = { left: makeAimDebugSnapshot(), right: makeAimDebugSnapshot() };
+
+    function aimDebugForSide(side) {
+      const snap = aimDebugSnapshotBySide[side];
+      if (!snap.valid) return debugBySide[side];
+      const toDeg = THREE.MathUtils.radToDeg;
+      return {
+        weights: { ...snap.weights },
+        applied: snap.weights.grip > 0 || snap.weights.palmNormal > 0,
+        source: snap.source,
+        shoulder: { x: snap.shoulder.x, y: snap.shoulder.y, z: snap.shoulder.z },
+        wrist: { x: snap.wrist.x, y: snap.wrist.y, z: snap.wrist.z },
+        elbow: { x: snap.elbow.x, y: snap.elbow.y, z: snap.elbow.z },
+        diagnosticArmLength: snap.diagnosticArmLength,
+        upperArmLength: snap.upperArmLength,
+        forearmLength: snap.forearmLength,
+        authoredPolylineLength: snap.authoredPolylineLength,
+        shoulderWristDistance: snap.shoulderWristDistance,
+        elbowSource: snap.elbowSource,
+        authoredElbowOffset: snap.authoredElbowOffset,
+        calibrationOwnership: 'ignored-child-layer',
+        authoredQuaternion: quaternionDebug(snap.authoredQuaternion),
+        authoredDeg: eulerDebug(snap.authoredQuaternion),
+        targetDirectionLocal: { x: snap.targetDirectionLocal.x, y: snap.targetDirectionLocal.y, z: snap.targetDirectionLocal.z },
+        solvedLocalAnglesDeg: { grip: toDeg(snap.gripAngle), palmNormal: toDeg(snap.palmNormalAngle) },
+        appliedLocalAnglesDeg: { grip: toDeg(snap.appliedGripAngle), palmNormal: toDeg(snap.appliedPalmNormalAngle) },
+        residualDeg: toDeg(snap.residualRad),
+        outputQuaternion: quaternionDebug(snap.outputQuaternion),
+        outputDeg: eulerDebug(snap.outputQuaternion),
+      };
+    }
     const authoredBaseBySide = {
       left: new THREE.Quaternion(),
       right: new THREE.Quaternion(),
@@ -347,10 +406,12 @@
       const shoulder = shoulderInParent(side);
       const weights = weightsFor(side);
       if (!socket || !shoulder) {
+        aimDebugSnapshotBySide[side].valid = false;
         debugBySide[side] = { weights, applied: false, reason: shoulderSource[side] || scanState };
         return false;
       }
       if (!copyAuthoredBase(side, authoredQuaternion)) {
+        aimDebugSnapshotBySide[side].valid = false;
         debugBySide[side] = { weights, applied: false, reason: 'authored-base-missing' };
         return false;
       }
@@ -362,6 +423,7 @@
         socket.updateMatrix?.();
         socket.updateMatrixWorld?.(true);
         updatePaperArmGuide(side, shoulder, elbowSolve);
+        aimDebugSnapshotBySide[side].valid = false;
         debugBySide[side] = { weights, applied: false, reason: 'hand-at-elbow' };
         return false;
       }
@@ -399,31 +461,30 @@
 
       aimedWristAxis.copy(localWristProximalAxis).applyQuaternion(outputQuaternion).normalize();
       const residualRad = Math.acos(clampUnit(aimedWristAxis.dot(targetDirection)));
-      const toDeg = THREE.MathUtils.radToDeg;
-      debugBySide[side] = {
-        weights: { ...weights },
-        applied: weights.grip > 0 || weights.palmNormal > 0,
-        source: shoulderSource[side],
-        shoulder: { x: shoulder.x, y: shoulder.y, z: shoulder.z },
-        wrist: { x: socket.position.x, y: socket.position.y, z: socket.position.z },
-        elbow: { x: elbow.x, y: elbow.y, z: elbow.z },
-        diagnosticArmLength: elbowSolve?.diagnosticArmLength ?? armGuideLength(side),
-        upperArmLength: elbowSolve?.upperArmLength ?? null,
-        forearmLength: elbowSolve?.forearmLength ?? null,
-        authoredPolylineLength: elbowSolve?.authoredPolylineLength ?? null,
-        shoulderWristDistance: elbowSolve?.shoulderWristDistance ?? null,
-        elbowSource: elbowSolve?.source || 'unknown',
-        authoredElbowOffset: elbowSolve?.authoredOffset || null,
-        calibrationOwnership: 'ignored-child-layer',
-        authoredQuaternion: quaternionDebug(authoredQuaternion),
-        authoredDeg: eulerDebug(authoredQuaternion),
-        targetDirectionLocal: { x: localTargetDirection.x, y: localTargetDirection.y, z: localTargetDirection.z },
-        solvedLocalAnglesDeg: { grip: toDeg(gripAngle), palmNormal: toDeg(palmNormalAngle) },
-        appliedLocalAnglesDeg: { grip: toDeg(appliedGripAngle), palmNormal: toDeg(appliedPalmNormalAngle) },
-        residualDeg: toDeg(residualRad),
-        outputQuaternion: quaternionDebug(outputQuaternion),
-        outputDeg: eulerDebug(outputQuaternion),
-      };
+      const snap = aimDebugSnapshotBySide[side];
+      snap.valid = true;
+      snap.weights.grip = weights.grip;
+      snap.weights.palmNormal = weights.palmNormal;
+      snap.source = shoulderSource[side];
+      snap.shoulder.set(shoulder.x, shoulder.y, shoulder.z);
+      snap.wrist.set(socket.position.x, socket.position.y, socket.position.z);
+      snap.elbow.set(elbow.x, elbow.y, elbow.z);
+      snap.diagnosticArmLength = elbowSolve?.diagnosticArmLength ?? armGuideLength(side);
+      snap.upperArmLength = elbowSolve?.upperArmLength ?? null;
+      snap.forearmLength = elbowSolve?.forearmLength ?? null;
+      snap.authoredPolylineLength = elbowSolve?.authoredPolylineLength ?? null;
+      snap.shoulderWristDistance = elbowSolve?.shoulderWristDistance ?? null;
+      snap.elbowSource = elbowSolve?.source || 'unknown';
+      snap.authoredElbowOffset = elbowSolve?.authoredOffset || null;
+      snap.authoredQuaternion.copy(authoredQuaternion);
+      snap.targetDirectionLocal.copy(localTargetDirection);
+      snap.gripAngle = gripAngle;
+      snap.palmNormalAngle = palmNormalAngle;
+      snap.appliedGripAngle = appliedGripAngle;
+      snap.appliedPalmNormalAngle = appliedPalmNormalAngle;
+      snap.residualRad = residualRad;
+      snap.outputQuaternion.copy(outputQuaternion);
+      debugBySide[side] = null; // Built on demand by aimDebugForSide().
       return weights.grip > 0 || weights.palmNormal > 0;
     }
 
@@ -564,7 +625,7 @@
           shoulderSource: { ...shoulderSource },
           idlePositionRule: 'shoulder-x + posterior-y + fallback-y-offset',
           resolvedPosteriorY: posteriorYInParent(),
-          sides: debugBySide,
+          sides: { left: aimDebugForSide('left'), right: aimDebugForSide('right') },
         },
       };
     };
