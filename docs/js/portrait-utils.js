@@ -912,100 +912,6 @@ function drawPortraitLayerWarped(ctx, img, xform, tint, breathingComposer, speci
   ctx.restore();
 }
 
-function _mapPortraitWarpPoint(u, v, deformedPts, gridCols, gridRows) {
-  const clampedU = Math.max(0, Math.min(1, Number(u) || 0)); // Used below to select the same regular mesh cell the canvas warp draws.
-  const clampedV = Math.max(0, Math.min(1, Number(v) || 0)); // Used below to select the same regular mesh cell the canvas warp draws.
-  const gridX = clampedU * (gridCols - 1); // Used below for the point's cell-local horizontal coordinate.
-  const gridY = clampedV * (gridRows - 1); // Used below for the point's cell-local vertical coordinate.
-  const col = Math.min(gridCols - 2, Math.max(0, Math.floor(gridX))); // Used below to index the four deformed corners around the point.
-  const row = Math.min(gridRows - 2, Math.max(0, Math.floor(gridY))); // Used below to index the four deformed corners around the point.
-  const tx = gridX - col; // Used below as the triangle-local horizontal barycentric coordinate.
-  const ty = gridY - row; // Used below as the triangle-local vertical barycentric coordinate.
-  const i00 = row * gridCols + col; // Used below for the top-left destination corner.
-  const i10 = i00 + 1; // Used below for the top-right destination corner.
-  const i01 = (row + 1) * gridCols + col; // Used below for the bottom-left destination corner.
-  const i11 = i01 + 1; // Used below for the bottom-right destination corner.
-  const d00 = deformedPts[i00], d10 = deformedPts[i10], d01 = deformedPts[i01], d11 = deformedPts[i11]; // Used below to reproduce _drawPortraitLayerWarped's two-triangle mapping.
-  if (![d00, d10, d01, d11].every(Array.isArray)) return [clampedU, clampedV];
-  if (tx + ty <= 1) {
-    const w00 = 1 - tx - ty; // Used below for triangle (00,10,01), matching the renderer's first triangle.
-    return [
-      d00[0] * w00 + d10[0] * tx + d01[0] * ty,
-      d00[1] * w00 + d10[1] * tx + d01[1] * ty,
-    ];
-  }
-  const w10 = 1 - ty; // Used below for triangle (10,11,01), matching the renderer's second triangle.
-  const w11 = tx + ty - 1; // Used below for triangle (10,11,01), matching the renderer's second triangle.
-  const w01 = 1 - tx; // Used below for triangle (10,11,01), matching the renderer's second triangle.
-  return [
-    d10[0] * w10 + d11[0] * w11 + d01[0] * w01,
-    d10[1] * w10 + d11[1] * w11 + d01[1] * w01,
-  ];
-}
-
-function mapPortraitBodyPointThroughDeformation(profile, sourcePoint, options = {}) {
-  const sourceX = Number(sourcePoint?.x); // Used below as the authored full-canvas X coordinate to follow through body deformation.
-  const sourceY = Number(sourcePoint?.y); // Used below as the authored full-canvas Y coordinate to follow through body deformation.
-  const canvasWidth = Number(options.canvasWidth) || PORTRAIT_CW; // Used below to translate authored/source-canvas pixels into portrait logical coordinates.
-  const canvasHeight = Number(options.canvasHeight) || PORTRAIT_CH; // Used below to translate authored/source-canvas pixels into portrait logical coordinates.
-  if (![sourceX, sourceY, canvasWidth, canvasHeight].every(Number.isFinite) || canvasWidth <= 0 || canvasHeight <= 0) return null;
-
-  const resolvedFighter = resolvePortraitFighter(profile?.fighter) || profile?.fighter; // Used below to match the exact body-layer set and species identity rendered into the canvas.
-  const bodyLayers = resolvedFighter?.bodyLayers || profile?.fighter?.bodyLayers || []; // Used below to find the body-layer coordinate space containing the authored shoulder point.
-  if (!bodyLayers.length) return { x: sourceX, y: sourceY };
-
-  const breathingComposer = options.breathingComposer ?? window.portraitBreathingComposer ?? null; // Used below to sample the same breathing/emote mesh as the baked world texture.
-  const speciesId = resolvedFighter?.speciesId || profile?.fighter?.speciesId || ''; // Used below to resolve the species-specific breathing animation.
-  const gender = resolvedFighter?.gender || profile?.fighter?.gender || ''; // Used below to resolve the gender-specific breathing animation.
-  const nowMs = Number.isFinite(Number(options.nowMs)) ? Number(options.nowMs) : Date.now(); // Used below to reproduce the exact deformation sample baked into the current texture.
-  const phaseOffsetMs = Number(options.phaseOffsetMs) || 0; // Used below to preserve per-avatar breathing phase offsets when supplied.
-  const seatId = options.seatId ?? null; // Used below so seat-scoped emote overlays match the visible portrait.
-  const breathingPts = breathingComposer?.getInterpolatedPoints?.(speciesId, gender, nowMs, phaseOffsetMs, seatId) ?? null; // Used below as the animated mesh destinations.
-  const anim = breathingPts ? breathingComposer?.getAnimData?.(speciesId, gender) : null; // Used below to recover the animated mesh dimensions.
-  const gridCols = Number(anim?.gridCols) || 4; // Used below to match drawPortraitLayerWarped's control-grid width.
-  const gridRows = Number(anim?.gridRows) || 6; // Used below to match drawPortraitLayerWarped's control-grid height.
-  const staticDeform = Array.isArray(profile?.bodyDeform) && profile.bodyDeform.length ? profile.bodyDeform : (options.staticDeform ?? null); // Used below to include the same permanent body warp as the renderer.
-  let finalPts = breathingPts || _buildNeutralGrid(gridCols, gridRows); // Used below as the final destination mesh for the authored shoulder pixel.
-  if (staticDeform && staticDeform.length === finalPts.length) {
-    finalPts = finalPts.map((point, index) => [
-      point[0] + (staticDeform[index]?.[0] ?? 0),
-      point[1] + (staticDeform[index]?.[1] ?? 0),
-    ]);
-  }
-  if (!breathingPts && !(staticDeform && staticDeform.length === finalPts.length)) return { x: sourceX, y: sourceY };
-
-  const logicalX = sourceX * PORTRAIT_CW / canvasWidth; // Used below to compare the authored point against renderer-space layer bounds.
-  const logicalY = sourceY * PORTRAIT_CH / canvasHeight; // Used below to compare the authored point against renderer-space layer bounds.
-  const orderedLayers = [ // Used below to prefer the torso coordinate space for shoulder points, then fall back to either arm.
-    ...bodyLayers.filter(layer => String(layer?.id || '').toLowerCase().includes('torso')),
-    ...bodyLayers.filter(layer => !String(layer?.id || '').toLowerCase().includes('torso')),
-  ];
-  for (const layer of orderedLayers) {
-    const img = IMG_CACHE.get(layer?.url); // Used below only for the rendered layer aspect ratio; rendering has normally already populated this cache.
-    const imgWidth = Number(img?.naturalWidth || img?.width); // Used below to reconstruct the exact layer rectangle drawPortraitLayerWarped used.
-    const imgHeight = Number(img?.naturalHeight || img?.height); // Used below to reconstruct the exact layer rectangle drawPortraitLayerWarped used.
-    if (!(imgWidth > 0 && imgHeight > 0)) continue;
-    const xform = layer?.xformPreset ? getPortraitXformPreset(layer.xformPreset) : { // Used below to reconstruct the exact body-layer placement.
-      ax: layer?.ax ?? 0, ay: layer?.ay ?? 0, sx: layer?.sx ?? 1, sy: layer?.sy ?? 1,
-    };
-    const layerHeight = PORTRAIT_L * xform.sy; // Used below to convert normalized deformation Y back into portrait logical coordinates.
-    const layerWidth = (imgWidth / imgHeight) * PORTRAIT_L * Math.abs(xform.sx); // Used below to convert normalized deformation X back into portrait logical coordinates.
-    const layerCenterX = PORTRAIT_CW / 2 + xform.ay * PORTRAIT_L; // Used below to recover drawPortraitLayerWarped's layer rectangle.
-    const layerCenterY = PORTRAIT_CH / 2 - xform.ax * PORTRAIT_L; // Used below to recover drawPortraitLayerWarped's layer rectangle.
-    const layerX = layerCenterX - layerWidth / 2; // Used below as the normalized-point origin.
-    const layerY = layerCenterY - layerHeight / 2; // Used below as the normalized-point origin.
-    const u = (logicalX - layerX) / layerWidth; // Used below as the authored point's neutral normalized X within this body layer.
-    const v = (logicalY - layerY) / layerHeight; // Used below as the authored point's neutral normalized Y within this body layer.
-    if (u < -1e-6 || u > 1 + 1e-6 || v < -1e-6 || v > 1 + 1e-6) continue;
-    const [du, dv] = _mapPortraitWarpPoint(u, v, finalPts, gridCols, gridRows); // Used below to follow exactly the same triangle mesh that moved the visible body pixels.
-    return {
-      x: (layerX + du * layerWidth) * canvasWidth / PORTRAIT_CW,
-      y: (layerY + dv * layerHeight) * canvasHeight / PORTRAIT_CH,
-    };
-  }
-  return { x: sourceX, y: sourceY };
-}
-
 function applyPortraitOpacityMask(ctx, img, xform) {
   const { ax, ay, sx, sy } = xform;
   const h  = PORTRAIT_L * sy;
@@ -1554,7 +1460,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   }
 
   // Capture current time after image loading so blink-state timing is accurate.
-  const nowMs = Number.isFinite(Number(renderOptions?.nowMs)) ? Number(renderOptions.nowMs) : Date.now(); // Optional fixed sample keeps attachment/deformation metadata synchronized with the exact texture frame being baked.
+  const nowMs = Date.now();
   const headBlinkState = getBlinkState(headUrl);
   if (headBlinkState) {
     headBlinkState.supported = false;
@@ -2963,4 +2869,3 @@ window.randomPortraitProfileSeeded = randomProfileSeeded;
 window.randomColorFromRangeSeeded = randomColorFromRangeSeeded;
 window.ensurePortraitClothingPaletteColors = ensurePortraitClothingPaletteColors;
 window.drawPortraitLayerWarped = drawPortraitLayerWarped;
-window.mapPortraitBodyPointThroughDeformation = mapPortraitBodyPointThroughDeformation;
