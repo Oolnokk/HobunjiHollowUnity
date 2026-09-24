@@ -22,6 +22,14 @@ assert.doesNotMatch(controller, /function visiblePanels\(\)[\s\S]{0,220}querySel
   'panel reconciliation iterates registered panel roots rather than scanning the DOM');
 assert.match(controller, /transitionend[\s\S]{0,160}scheduleReconcile/,
   'opacity-transition completion refreshes cached panel state without frame polling');
+assert.doesNotMatch(controller, /function navigationTargets\(panel\)[\s\S]{0,500}visiblePanels\(\)/,
+  'directional navigation reuses the reconciled panel stack instead of forcing panel visibility/layout checks per move');
+assert.match(controller, /const targets = navigationTargets\(panel\);[^\n]*\n[\s\S]{0,220}refreshFocusIfStale\(targets\)/,
+  'one target discovery pass is shared with stale-focus validation for each spatial navigation step');
+assert.match(controller, /const candidates = targets\.map\(el => \(\{ el, rect: el\.getBoundingClientRect\(\) \}\)\)/,
+  'spatial navigation snapshots each candidate rectangle once before cone scoring');
+assert.doesNotMatch(controller, /function bestVectorCandidate\([\s\S]{0,420}getBoundingClientRect\(/,
+  'narrow, wide, and half-plane scoring reuse rectangle snapshots instead of rereading layout');
 
 assert.doesNotMatch(heldRender, /\.updateMatrixWorld = function heldGround/,
   'held/ground invariants no longer wrap every matrix update');
