@@ -64,7 +64,6 @@
         "offsetX": 0,
         "offsetY": 0,
         "offsetZ": 0,
-        "facing": "north",
         "surface": "auto",
         "sink": 0.35
       },
