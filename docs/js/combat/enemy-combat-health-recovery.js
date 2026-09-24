@@ -29,10 +29,27 @@
     return null;
   }
 
+  function playerThreatReason(entity) {
+    if (entity !== window.Combat?.deps?.player) return null;
+    const hostileObjects = window.Combat?.deps?.hostileObjects; // Used to keep player recovery blocked while an enemy remains actively engaged even if neither side has attacked for longer than quietSeconds.
+    if (!hostileObjects?.[Symbol.iterator]) return null;
+    for (const hostile of hostileObjects) {
+      if (!hostile || !(Number(hostile.health) > 0)) continue;
+      if (entity.areaId && hostile.areaId && entity.areaId !== hostile.areaId) continue;
+      const hostileReason = explicitCombatReason(hostile);
+      if (!hostileReason) continue;
+      if (hostile.targetPlayer === entity) return `targeted-by:${hostileReason}`;
+      if (hostile._amphibiousFishItemKey && String(hostile.state || '').toLowerCase() === 'chasing') return 'targeted-by:amphibious-chasing';
+    }
+    return null;
+  }
+
   function combatReason(entity) {
     if (!entity || !(Number(entity.health) > 0)) return null;
     const explicitReason = explicitCombatReason(entity); // Used before the quiet timer so active pursuit cannot become "rested" during a long attack lull.
     if (explicitReason) return explicitReason;
+    const threatReason = playerThreatReason(entity); // Used to cover the local player during long enemy chase/attack lulls that do not refresh the player's own attack timestamps.
+    if (threatReason) return threatReason;
     const cfg = RS.config(); // Used with ResourceSystem's existing quietSeconds value instead of inventing a second recent-combat timeout.
     const rest = RS.getRestInfo(entity, cfg); // Used to catch players, companions, and creatures that recently attacked or received damage even without an AI state.
     return rest?.rested === false ? 'resource-quiet-window' : null;
@@ -88,6 +105,7 @@
     activeCombatStates: Object.freeze([...ACTIVE_COMBAT_STATES]),
     isHostileEntity,
     explicitCombatReason,
+    playerThreatReason,
     combatReason,
     combatActive,
     getDebug() {
