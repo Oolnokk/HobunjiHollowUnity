@@ -79,7 +79,7 @@
   const patternedCanvasCache = new Map(); // Reuses expensive pattern composites across repeated portrait renders.
   const wovenIconDataUrlPromises = new Map(); // Caches fully dyed + patterned inventory sprites by their visual state; rebuilt only when dyes/weaving/species/gender change.
   const pendingPatternCanvasKeys = new Set(); // Prevents repeated async builds while a synchronous portrait frame uses the unpatterned fallback.
-  let activePortraitPatternMap = null; // URL -> woven descriptor map, scoped to a player render call only.
+  const portraitPatternStats = { renderScopes: 0, patternedTintCalls: 0, cacheHits: 0, cacheMisses: 0 }; // Exposed by debugSnapshot so intermittent woven portrait behavior can be diagnosed without a console.
 
   const clamp = (value, lo, hi) => Math.max(lo, Math.min(hi, Number(value) || 0));
   const clone = value => value == null ? value : JSON.parse(JSON.stringify(value));
@@ -2204,53 +2204,60 @@
     return canvas;
   }
 
+  function patternImageForTint(patternMap, baseTintResolver, img, sourceKey, tint) {
+    const descriptor = patternMap?.get(normalizeAssetPath(sourceKey));
+    const patterns = descriptor ? weavingPatternsForRole(descriptor.weaving, descriptor.role) : []; // Render-local lookup: this map belongs only to the portrait currently being drawn.
+    const pattern = patterns[0] || null; // Compatibility name for the primary motif used by the existing dye-swap path.
+    if (!patterns.length) return baseTintResolver(img, sourceKey, tint);
+    portraitPatternStats.patternedTintCalls++;
+    const swapPatternColors = weavingSwapsPatternColorsForRole(descriptor.weaving, descriptor.role); // Runtime counterpart of the loom's independent base/trim swap checkbox.
+    const patternColorHex = resolvePatternHex(descriptor.colorC); // Third dye slot is the ordinary woven-ink color and becomes the sprite color when swapped.
+    const clothColorHex = portraitClothHex(descriptor); // Exact saved A/B dye becomes the motif color when this layer is swapped.
+    const appliedTint = swapPatternColors ? portraitTintForHex(tint, patternColorHex) : tint; // Recolors the whole sprite before motif compositing, matching loom preview semantics.
+    const tinted = baseTintResolver(img, sourceKey, appliedTint);
+    // _imageForTint is synchronous. Return cached patterned output when available;
+    // otherwise schedule a player-avatar refresh after generating it and use this
+    // one unpatterned frame as a safe fallback.
+    // tintKey folds in the actual base tint that produced `tinted`'s pixels,
+    // including a swapped pattern-color base, so cache entries cannot leak
+    // between normal and swapped layer renders.
+    const tintKey = appliedTint?.mode === 'shadeFill' ? `shade:${(appliedTint.rgb || []).join(',')}` : appliedTint?.mode === 'hueSatFill' ? `huesat:${appliedTint.hue}:${appliedTint.sat}` : 'none';
+    const prefix = `runtime:${normalizeAssetPath(sourceKey)}:${tintKey}:swap${swapPatternColors ? 1 : 0}`; // Separates normal/swapped composites even when their dye values happen to match.
+    const colorHex = swapPatternColors ? clothColorHex : patternColorHex; // Motif color is the opposite member of the cloth↔pattern swap.
+    const fullKey = patternStackCanvasKey(tinted, patterns, colorHex, prefix);
+    const cached = patternedCanvasCache.get(fullKey);
+    if (cached) {
+      portraitPatternStats.cacheHits++;
+      return cached;
+    }
+    portraitPatternStats.cacheMisses++;
+    if (!pendingPatternCanvasKeys.has(fullKey)) {
+      pendingPatternCanvasKeys.add(fullKey);
+      applyPatternStackToTintedImage(tinted, patterns, colorHex, prefix, img, 'woven-motif').then(() => {
+        requestPlayerAvatarRefresh();
+      }).catch(error => { lastError = String(error?.message || error); }).finally(() => pendingPatternCanvasKeys.delete(fullKey));
+    }
+    return tinted;
+  }
+
   function installPortraitHooks() {
     if (portraitHooksInstalled) return true;
     const originalTint = window._imageForTint;
     const originalRender = window.renderProfile;
     if (typeof originalTint !== 'function' || typeof originalRender !== 'function') return false;
 
-    window._imageForTint = function clothingPatternImageForTint(img, sourceKey, tint) {
-      const descriptor = activePortraitPatternMap?.get(normalizeAssetPath(sourceKey));
-      const patterns = descriptor ? weavingPatternsForRole(descriptor.weaving, descriptor.role) : []; // Per-layer: base and trim can each own an independent primary + optional overpass.
-      const pattern = patterns[0] || null; // Compatibility name for the primary motif used by the existing dye-swap path.
-      if (!patterns.length) return originalTint(img, sourceKey, tint);
-      const swapPatternColors = weavingSwapsPatternColorsForRole(descriptor.weaving, descriptor.role); // Runtime counterpart of the loom's independent base/trim swap checkbox.
-      const patternColorHex = resolvePatternHex(descriptor.colorC); // Third dye slot is the ordinary woven-ink color and becomes the sprite color when swapped.
-      const clothColorHex = portraitClothHex(descriptor); // Exact saved A/B dye becomes the motif color when this layer is swapped.
-      const appliedTint = swapPatternColors ? portraitTintForHex(tint, patternColorHex) : tint; // Recolors the whole sprite before motif compositing, matching loom preview semantics.
-      const tinted = originalTint(img, sourceKey, appliedTint);
-      // _imageForTint is synchronous. Return cached patterned output when available;
-      // otherwise schedule a player-avatar refresh after generating it and use this
-      // one unpatterned frame as a safe fallback.
-      // tintKey folds in the actual base tint that produced `tinted`'s pixels,
-      // including a swapped pattern-color base, so cache entries cannot leak
-      // between normal and swapped layer renders.
-      const tintKey = appliedTint?.mode === 'shadeFill' ? `shade:${(appliedTint.rgb || []).join(',')}` : appliedTint?.mode === 'hueSatFill' ? `huesat:${appliedTint.hue}:${appliedTint.sat}` : 'none';
-      const prefix = `runtime:${normalizeAssetPath(sourceKey)}:${tintKey}:swap${swapPatternColors ? 1 : 0}`; // Separates normal/swapped composites even when their dye values happen to match.
-      const colorHex = swapPatternColors ? clothColorHex : patternColorHex; // Motif color is the opposite member of the cloth↔pattern swap.
-      const fullKey = patternStackCanvasKey(tinted, patterns, colorHex, prefix);
-      const cached = patternedCanvasCache.get(fullKey);
-      if (cached) return cached;
-      if (!pendingPatternCanvasKeys.has(fullKey)) {
-        pendingPatternCanvasKeys.add(fullKey);
-        applyPatternStackToTintedImage(tinted, patterns, colorHex, prefix, img, 'woven-motif').then(() => {
-          requestPlayerAvatarRefresh();
-        }).catch(error => { lastError = String(error?.message || error); }).finally(() => pendingPatternCanvasKeys.delete(fullKey));
-      }
-      return tinted;
-    };
-    window._imageForTint.__clothingWeavingPattern = true;
-
     const wrapRenderer = name => {
       const current = window[name];
       if (typeof current !== 'function' || current.__clothingWeavingPattern) return;
       const wrapped = async function clothingWeavingPortraitRenderer(canvas, profile, options) {
         const descriptors = profile?.bodyColors?.[CLOTHING_MARKER_KEY];
-        const previous = activePortraitPatternMap;
-        activePortraitPatternMap = Array.isArray(descriptors) && descriptors.length ? await buildPortraitPatternMap(descriptors) : null;
-        try { return await current(canvas, profile, options); }
-        finally { activePortraitPatternMap = previous; }
+        const patternMap = Array.isArray(descriptors) && descriptors.length ? await buildPortraitPatternMap(descriptors) : null; // Owned by this render call so WorldPortraitLife can refresh many NPCs concurrently without descriptor bleed.
+        const baseTintResolver = typeof options?.imageForTint === 'function' ? options.imageForTint : originalTint; // Preserves any upstream render-local tint hook while weaving composes on top of it.
+        const imageForTint = patternMap?.size
+          ? (img, sourceKey, tint) => patternImageForTint(patternMap, baseTintResolver, img, sourceKey, tint)
+          : baseTintResolver; // Passed into portrait-utils; no mutable module-global pattern map is touched.
+        if (patternMap?.size) portraitPatternStats.renderScopes++;
+        return current(canvas, profile, { ...(options || {}), imageForTint });
       };
       wrapped.__clothingWeavingPattern = true;
       wrapped.__clothingWeavingOriginal = current;
@@ -2277,6 +2284,7 @@
       equipped: equippedClothItems().map(item => ({ uid: item.uid, article: articleLabel(item), slot: item.slot, material: item.weaveMaterial || 'standard', weightUnits: itemWeightUnits(item), woven: weavingHasAnyPattern(item.weaving) })),
       blueprints: currentBlueprints().map(bp => ({ id: bp.baseCosmeticId, slot: bp.slot, label: bp.label })),
       wool: { light: Number(equipmentDeps?.inventory?.[LIGHT_WOOL_KEY]) || 0, heavy: Number(equipmentDeps?.inventory?.[HEAVY_WOOL_KEY]) || 0 },
+      portraitPatterns: { ...portraitPatternStats, cacheSize: patternedCanvasCache.size, pending: pendingPatternCanvasKeys.size }, // Mobile-visible counters make render races/cache churn diagnosable through __clothingWeavingDebug().
       lastError,
     };
   }
