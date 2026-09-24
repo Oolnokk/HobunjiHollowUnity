@@ -81,6 +81,7 @@ assert.match(runtimeSource, /CharacterActionLocks\?\.acquire/, 'runtime gizmo us
 assert.match(runtimeSource, /controls paused/, 'runtime gizmo reports that controls remain paused for the edit session');
 assert.match(runtimeSource, /endpoint\.send\(request\);[\s\S]*attachPlacement/, 'in-game selection syncs without forcing focus into the Map Editor window');
 assert.match(gameSource, /if \(window\.__mapEditorGizmoActive\)/, 'game input is suppressed for the complete gizmo session');
+assert.match(gameSource, /CinematicCameraRuntime\?\.shouldStagePlayer\?\.\(\) === false/, 'cinematic dialogue can suppress ordinary player backup/staging');
 assert.match(runtimeSource, /type: 'placement-transform'/, 'runtime gizmo mirrors transforms into the Map Editor workspace');
 assert.match(indexHtml, /id="mapEditCopyDiffBtn"/, 'in-game Map Edit exposes a one-tap complete diff copy action');
 assert.match(runtimeSource, /type: 'map-edit-diff-request'/, 'in-game copy action requests the authoritative standalone Map Editor diff when connected');
