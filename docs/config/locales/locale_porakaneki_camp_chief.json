@@ -4,36 +4,1531 @@
   "name": "Porakaneki Chief Camp",
   "category": "porakaneki_chief_camp",
   "singleton": true,
-  "description": "The large seasonal Porakaneki camp. The named chief lives here with a larger procedural population; the camp migrates between wilderness maps when the regional season changes.",
-  "tags": ["porakaneki", "camp", "chief", "seasonal", "migrating", "neutral"],
-  "cols": 13,
-  "rows": 11,
+  "description": "The large seasonal Porakaneki camp, opened into a broad ring around a 2×2 council bonfire. Eight low hunting tents face inward and wild-style sitting logs provide off-duty seats for the chief and hunters.",
+  "tags": [
+    "porakaneki",
+    "camp",
+    "chief",
+    "seasonal",
+    "migrating",
+    "neutral"
+  ],
+  "cols": 21,
+  "rows": 21,
   "tiles": {
-    "0,0":{"type":"grass"},
-    "12,0":{"type":"grass"},
-    "0,10":{"type":"grass"},
-    "12,10":{"type":"grass"},
-    "6,5":{"type":"grass"}
+    "0,0": {
+      "type": "grass"
+    },
+    "1,0": {
+      "type": "grass"
+    },
+    "2,0": {
+      "type": "grass"
+    },
+    "3,0": {
+      "type": "grass"
+    },
+    "4,0": {
+      "type": "grass"
+    },
+    "5,0": {
+      "type": "grass"
+    },
+    "6,0": {
+      "type": "grass"
+    },
+    "7,0": {
+      "type": "grass"
+    },
+    "8,0": {
+      "type": "grass"
+    },
+    "9,0": {
+      "type": "grass"
+    },
+    "10,0": {
+      "type": "grass"
+    },
+    "11,0": {
+      "type": "grass"
+    },
+    "12,0": {
+      "type": "grass"
+    },
+    "13,0": {
+      "type": "grass"
+    },
+    "14,0": {
+      "type": "grass"
+    },
+    "15,0": {
+      "type": "grass"
+    },
+    "16,0": {
+      "type": "grass"
+    },
+    "17,0": {
+      "type": "grass"
+    },
+    "18,0": {
+      "type": "grass"
+    },
+    "19,0": {
+      "type": "grass"
+    },
+    "20,0": {
+      "type": "grass"
+    },
+    "0,1": {
+      "type": "grass"
+    },
+    "1,1": {
+      "type": "grass"
+    },
+    "2,1": {
+      "type": "grass"
+    },
+    "3,1": {
+      "type": "grass"
+    },
+    "4,1": {
+      "type": "grass"
+    },
+    "5,1": {
+      "type": "grass"
+    },
+    "6,1": {
+      "type": "grass"
+    },
+    "7,1": {
+      "type": "grass"
+    },
+    "8,1": {
+      "type": "grass"
+    },
+    "9,1": {
+      "type": "grass"
+    },
+    "10,1": {
+      "type": "grass"
+    },
+    "11,1": {
+      "type": "grass"
+    },
+    "12,1": {
+      "type": "grass"
+    },
+    "13,1": {
+      "type": "grass"
+    },
+    "14,1": {
+      "type": "grass"
+    },
+    "15,1": {
+      "type": "grass"
+    },
+    "16,1": {
+      "type": "grass"
+    },
+    "17,1": {
+      "type": "grass"
+    },
+    "18,1": {
+      "type": "grass"
+    },
+    "19,1": {
+      "type": "grass"
+    },
+    "20,1": {
+      "type": "grass"
+    },
+    "0,2": {
+      "type": "grass"
+    },
+    "1,2": {
+      "type": "grass"
+    },
+    "2,2": {
+      "type": "grass"
+    },
+    "3,2": {
+      "type": "grass"
+    },
+    "4,2": {
+      "type": "grass"
+    },
+    "5,2": {
+      "type": "grass"
+    },
+    "6,2": {
+      "type": "grass"
+    },
+    "7,2": {
+      "type": "grass"
+    },
+    "8,2": {
+      "type": "grass"
+    },
+    "9,2": {
+      "type": "grass"
+    },
+    "10,2": {
+      "type": "grass"
+    },
+    "11,2": {
+      "type": "grass"
+    },
+    "12,2": {
+      "type": "grass"
+    },
+    "13,2": {
+      "type": "grass"
+    },
+    "14,2": {
+      "type": "grass"
+    },
+    "15,2": {
+      "type": "grass"
+    },
+    "16,2": {
+      "type": "grass"
+    },
+    "17,2": {
+      "type": "grass"
+    },
+    "18,2": {
+      "type": "grass"
+    },
+    "19,2": {
+      "type": "grass"
+    },
+    "20,2": {
+      "type": "grass"
+    },
+    "0,3": {
+      "type": "grass"
+    },
+    "1,3": {
+      "type": "grass"
+    },
+    "2,3": {
+      "type": "grass"
+    },
+    "3,3": {
+      "type": "grass"
+    },
+    "4,3": {
+      "type": "grass"
+    },
+    "5,3": {
+      "type": "grass"
+    },
+    "6,3": {
+      "type": "grass"
+    },
+    "7,3": {
+      "type": "grass"
+    },
+    "8,3": {
+      "type": "grass"
+    },
+    "9,3": {
+      "type": "grass"
+    },
+    "10,3": {
+      "type": "grass"
+    },
+    "11,3": {
+      "type": "grass"
+    },
+    "12,3": {
+      "type": "grass"
+    },
+    "13,3": {
+      "type": "grass"
+    },
+    "14,3": {
+      "type": "grass"
+    },
+    "15,3": {
+      "type": "grass"
+    },
+    "16,3": {
+      "type": "grass"
+    },
+    "17,3": {
+      "type": "grass"
+    },
+    "18,3": {
+      "type": "grass"
+    },
+    "19,3": {
+      "type": "grass"
+    },
+    "20,3": {
+      "type": "grass"
+    },
+    "0,4": {
+      "type": "grass"
+    },
+    "1,4": {
+      "type": "grass"
+    },
+    "2,4": {
+      "type": "grass"
+    },
+    "3,4": {
+      "type": "grass"
+    },
+    "4,4": {
+      "type": "grass"
+    },
+    "5,4": {
+      "type": "grass"
+    },
+    "6,4": {
+      "type": "grass"
+    },
+    "7,4": {
+      "type": "grass"
+    },
+    "8,4": {
+      "type": "grass"
+    },
+    "9,4": {
+      "type": "grass"
+    },
+    "10,4": {
+      "type": "grass"
+    },
+    "11,4": {
+      "type": "grass"
+    },
+    "12,4": {
+      "type": "grass"
+    },
+    "13,4": {
+      "type": "grass"
+    },
+    "14,4": {
+      "type": "grass"
+    },
+    "15,4": {
+      "type": "grass"
+    },
+    "16,4": {
+      "type": "grass"
+    },
+    "17,4": {
+      "type": "grass"
+    },
+    "18,4": {
+      "type": "grass"
+    },
+    "19,4": {
+      "type": "grass"
+    },
+    "20,4": {
+      "type": "grass"
+    },
+    "0,5": {
+      "type": "grass"
+    },
+    "1,5": {
+      "type": "grass"
+    },
+    "2,5": {
+      "type": "grass"
+    },
+    "3,5": {
+      "type": "grass"
+    },
+    "4,5": {
+      "type": "grass"
+    },
+    "5,5": {
+      "type": "grass"
+    },
+    "6,5": {
+      "type": "grass"
+    },
+    "7,5": {
+      "type": "grass"
+    },
+    "8,5": {
+      "type": "grass"
+    },
+    "9,5": {
+      "type": "grass"
+    },
+    "10,5": {
+      "type": "grass"
+    },
+    "11,5": {
+      "type": "grass"
+    },
+    "12,5": {
+      "type": "grass"
+    },
+    "13,5": {
+      "type": "grass"
+    },
+    "14,5": {
+      "type": "grass"
+    },
+    "15,5": {
+      "type": "grass"
+    },
+    "16,5": {
+      "type": "grass"
+    },
+    "17,5": {
+      "type": "grass"
+    },
+    "18,5": {
+      "type": "grass"
+    },
+    "19,5": {
+      "type": "grass"
+    },
+    "20,5": {
+      "type": "grass"
+    },
+    "0,6": {
+      "type": "grass"
+    },
+    "1,6": {
+      "type": "grass"
+    },
+    "2,6": {
+      "type": "grass"
+    },
+    "3,6": {
+      "type": "grass"
+    },
+    "4,6": {
+      "type": "grass"
+    },
+    "5,6": {
+      "type": "grass"
+    },
+    "6,6": {
+      "type": "grass"
+    },
+    "7,6": {
+      "type": "grass"
+    },
+    "8,6": {
+      "type": "grass"
+    },
+    "9,6": {
+      "type": "grass"
+    },
+    "10,6": {
+      "type": "grass"
+    },
+    "11,6": {
+      "type": "grass"
+    },
+    "12,6": {
+      "type": "grass"
+    },
+    "13,6": {
+      "type": "grass"
+    },
+    "14,6": {
+      "type": "grass"
+    },
+    "15,6": {
+      "type": "grass"
+    },
+    "16,6": {
+      "type": "grass"
+    },
+    "17,6": {
+      "type": "grass"
+    },
+    "18,6": {
+      "type": "grass"
+    },
+    "19,6": {
+      "type": "grass"
+    },
+    "20,6": {
+      "type": "grass"
+    },
+    "0,7": {
+      "type": "grass"
+    },
+    "1,7": {
+      "type": "grass"
+    },
+    "2,7": {
+      "type": "grass"
+    },
+    "3,7": {
+      "type": "grass"
+    },
+    "4,7": {
+      "type": "grass"
+    },
+    "5,7": {
+      "type": "grass"
+    },
+    "6,7": {
+      "type": "grass"
+    },
+    "7,7": {
+      "type": "grass"
+    },
+    "8,7": {
+      "type": "grass"
+    },
+    "9,7": {
+      "type": "grass"
+    },
+    "10,7": {
+      "type": "grass"
+    },
+    "11,7": {
+      "type": "grass"
+    },
+    "12,7": {
+      "type": "grass"
+    },
+    "13,7": {
+      "type": "grass"
+    },
+    "14,7": {
+      "type": "grass"
+    },
+    "15,7": {
+      "type": "grass"
+    },
+    "16,7": {
+      "type": "grass"
+    },
+    "17,7": {
+      "type": "grass"
+    },
+    "18,7": {
+      "type": "grass"
+    },
+    "19,7": {
+      "type": "grass"
+    },
+    "20,7": {
+      "type": "grass"
+    },
+    "0,8": {
+      "type": "grass"
+    },
+    "1,8": {
+      "type": "grass"
+    },
+    "2,8": {
+      "type": "grass"
+    },
+    "3,8": {
+      "type": "grass"
+    },
+    "4,8": {
+      "type": "grass"
+    },
+    "5,8": {
+      "type": "grass"
+    },
+    "6,8": {
+      "type": "grass"
+    },
+    "7,8": {
+      "type": "grass"
+    },
+    "8,8": {
+      "type": "grass"
+    },
+    "9,8": {
+      "type": "grass"
+    },
+    "10,8": {
+      "type": "grass"
+    },
+    "11,8": {
+      "type": "grass"
+    },
+    "12,8": {
+      "type": "grass"
+    },
+    "13,8": {
+      "type": "grass"
+    },
+    "14,8": {
+      "type": "grass"
+    },
+    "15,8": {
+      "type": "grass"
+    },
+    "16,8": {
+      "type": "grass"
+    },
+    "17,8": {
+      "type": "grass"
+    },
+    "18,8": {
+      "type": "grass"
+    },
+    "19,8": {
+      "type": "grass"
+    },
+    "20,8": {
+      "type": "grass"
+    },
+    "0,9": {
+      "type": "grass"
+    },
+    "1,9": {
+      "type": "grass"
+    },
+    "2,9": {
+      "type": "grass"
+    },
+    "3,9": {
+      "type": "grass"
+    },
+    "4,9": {
+      "type": "grass"
+    },
+    "5,9": {
+      "type": "grass"
+    },
+    "6,9": {
+      "type": "grass"
+    },
+    "7,9": {
+      "type": "grass"
+    },
+    "8,9": {
+      "type": "grass"
+    },
+    "9,9": {
+      "type": "grass"
+    },
+    "10,9": {
+      "type": "grass"
+    },
+    "11,9": {
+      "type": "grass"
+    },
+    "12,9": {
+      "type": "grass"
+    },
+    "13,9": {
+      "type": "grass"
+    },
+    "14,9": {
+      "type": "grass"
+    },
+    "15,9": {
+      "type": "grass"
+    },
+    "16,9": {
+      "type": "grass"
+    },
+    "17,9": {
+      "type": "grass"
+    },
+    "18,9": {
+      "type": "grass"
+    },
+    "19,9": {
+      "type": "grass"
+    },
+    "20,9": {
+      "type": "grass"
+    },
+    "0,10": {
+      "type": "grass"
+    },
+    "1,10": {
+      "type": "grass"
+    },
+    "2,10": {
+      "type": "grass"
+    },
+    "3,10": {
+      "type": "grass"
+    },
+    "4,10": {
+      "type": "grass"
+    },
+    "5,10": {
+      "type": "grass"
+    },
+    "6,10": {
+      "type": "grass"
+    },
+    "7,10": {
+      "type": "grass"
+    },
+    "8,10": {
+      "type": "grass"
+    },
+    "9,10": {
+      "type": "grass"
+    },
+    "10,10": {
+      "type": "grass"
+    },
+    "11,10": {
+      "type": "grass"
+    },
+    "12,10": {
+      "type": "grass"
+    },
+    "13,10": {
+      "type": "grass"
+    },
+    "14,10": {
+      "type": "grass"
+    },
+    "15,10": {
+      "type": "grass"
+    },
+    "16,10": {
+      "type": "grass"
+    },
+    "17,10": {
+      "type": "grass"
+    },
+    "18,10": {
+      "type": "grass"
+    },
+    "19,10": {
+      "type": "grass"
+    },
+    "20,10": {
+      "type": "grass"
+    },
+    "0,11": {
+      "type": "grass"
+    },
+    "1,11": {
+      "type": "grass"
+    },
+    "2,11": {
+      "type": "grass"
+    },
+    "3,11": {
+      "type": "grass"
+    },
+    "4,11": {
+      "type": "grass"
+    },
+    "5,11": {
+      "type": "grass"
+    },
+    "6,11": {
+      "type": "grass"
+    },
+    "7,11": {
+      "type": "grass"
+    },
+    "8,11": {
+      "type": "grass"
+    },
+    "9,11": {
+      "type": "grass"
+    },
+    "10,11": {
+      "type": "grass"
+    },
+    "11,11": {
+      "type": "grass"
+    },
+    "12,11": {
+      "type": "grass"
+    },
+    "13,11": {
+      "type": "grass"
+    },
+    "14,11": {
+      "type": "grass"
+    },
+    "15,11": {
+      "type": "grass"
+    },
+    "16,11": {
+      "type": "grass"
+    },
+    "17,11": {
+      "type": "grass"
+    },
+    "18,11": {
+      "type": "grass"
+    },
+    "19,11": {
+      "type": "grass"
+    },
+    "20,11": {
+      "type": "grass"
+    },
+    "0,12": {
+      "type": "grass"
+    },
+    "1,12": {
+      "type": "grass"
+    },
+    "2,12": {
+      "type": "grass"
+    },
+    "3,12": {
+      "type": "grass"
+    },
+    "4,12": {
+      "type": "grass"
+    },
+    "5,12": {
+      "type": "grass"
+    },
+    "6,12": {
+      "type": "grass"
+    },
+    "7,12": {
+      "type": "grass"
+    },
+    "8,12": {
+      "type": "grass"
+    },
+    "9,12": {
+      "type": "grass"
+    },
+    "10,12": {
+      "type": "grass"
+    },
+    "11,12": {
+      "type": "grass"
+    },
+    "12,12": {
+      "type": "grass"
+    },
+    "13,12": {
+      "type": "grass"
+    },
+    "14,12": {
+      "type": "grass"
+    },
+    "15,12": {
+      "type": "grass"
+    },
+    "16,12": {
+      "type": "grass"
+    },
+    "17,12": {
+      "type": "grass"
+    },
+    "18,12": {
+      "type": "grass"
+    },
+    "19,12": {
+      "type": "grass"
+    },
+    "20,12": {
+      "type": "grass"
+    },
+    "0,13": {
+      "type": "grass"
+    },
+    "1,13": {
+      "type": "grass"
+    },
+    "2,13": {
+      "type": "grass"
+    },
+    "3,13": {
+      "type": "grass"
+    },
+    "4,13": {
+      "type": "grass"
+    },
+    "5,13": {
+      "type": "grass"
+    },
+    "6,13": {
+      "type": "grass"
+    },
+    "7,13": {
+      "type": "grass"
+    },
+    "8,13": {
+      "type": "grass"
+    },
+    "9,13": {
+      "type": "grass"
+    },
+    "10,13": {
+      "type": "grass"
+    },
+    "11,13": {
+      "type": "grass"
+    },
+    "12,13": {
+      "type": "grass"
+    },
+    "13,13": {
+      "type": "grass"
+    },
+    "14,13": {
+      "type": "grass"
+    },
+    "15,13": {
+      "type": "grass"
+    },
+    "16,13": {
+      "type": "grass"
+    },
+    "17,13": {
+      "type": "grass"
+    },
+    "18,13": {
+      "type": "grass"
+    },
+    "19,13": {
+      "type": "grass"
+    },
+    "20,13": {
+      "type": "grass"
+    },
+    "0,14": {
+      "type": "grass"
+    },
+    "1,14": {
+      "type": "grass"
+    },
+    "2,14": {
+      "type": "grass"
+    },
+    "3,14": {
+      "type": "grass"
+    },
+    "4,14": {
+      "type": "grass"
+    },
+    "5,14": {
+      "type": "grass"
+    },
+    "6,14": {
+      "type": "grass"
+    },
+    "7,14": {
+      "type": "grass"
+    },
+    "8,14": {
+      "type": "grass"
+    },
+    "9,14": {
+      "type": "grass"
+    },
+    "10,14": {
+      "type": "grass"
+    },
+    "11,14": {
+      "type": "grass"
+    },
+    "12,14": {
+      "type": "grass"
+    },
+    "13,14": {
+      "type": "grass"
+    },
+    "14,14": {
+      "type": "grass"
+    },
+    "15,14": {
+      "type": "grass"
+    },
+    "16,14": {
+      "type": "grass"
+    },
+    "17,14": {
+      "type": "grass"
+    },
+    "18,14": {
+      "type": "grass"
+    },
+    "19,14": {
+      "type": "grass"
+    },
+    "20,14": {
+      "type": "grass"
+    },
+    "0,15": {
+      "type": "grass"
+    },
+    "1,15": {
+      "type": "grass"
+    },
+    "2,15": {
+      "type": "grass"
+    },
+    "3,15": {
+      "type": "grass"
+    },
+    "4,15": {
+      "type": "grass"
+    },
+    "5,15": {
+      "type": "grass"
+    },
+    "6,15": {
+      "type": "grass"
+    },
+    "7,15": {
+      "type": "grass"
+    },
+    "8,15": {
+      "type": "grass"
+    },
+    "9,15": {
+      "type": "grass"
+    },
+    "10,15": {
+      "type": "grass"
+    },
+    "11,15": {
+      "type": "grass"
+    },
+    "12,15": {
+      "type": "grass"
+    },
+    "13,15": {
+      "type": "grass"
+    },
+    "14,15": {
+      "type": "grass"
+    },
+    "15,15": {
+      "type": "grass"
+    },
+    "16,15": {
+      "type": "grass"
+    },
+    "17,15": {
+      "type": "grass"
+    },
+    "18,15": {
+      "type": "grass"
+    },
+    "19,15": {
+      "type": "grass"
+    },
+    "20,15": {
+      "type": "grass"
+    },
+    "0,16": {
+      "type": "grass"
+    },
+    "1,16": {
+      "type": "grass"
+    },
+    "2,16": {
+      "type": "grass"
+    },
+    "3,16": {
+      "type": "grass"
+    },
+    "4,16": {
+      "type": "grass"
+    },
+    "5,16": {
+      "type": "grass"
+    },
+    "6,16": {
+      "type": "grass"
+    },
+    "7,16": {
+      "type": "grass"
+    },
+    "8,16": {
+      "type": "grass"
+    },
+    "9,16": {
+      "type": "grass"
+    },
+    "10,16": {
+      "type": "grass"
+    },
+    "11,16": {
+      "type": "grass"
+    },
+    "12,16": {
+      "type": "grass"
+    },
+    "13,16": {
+      "type": "grass"
+    },
+    "14,16": {
+      "type": "grass"
+    },
+    "15,16": {
+      "type": "grass"
+    },
+    "16,16": {
+      "type": "grass"
+    },
+    "17,16": {
+      "type": "grass"
+    },
+    "18,16": {
+      "type": "grass"
+    },
+    "19,16": {
+      "type": "grass"
+    },
+    "20,16": {
+      "type": "grass"
+    },
+    "0,17": {
+      "type": "grass"
+    },
+    "1,17": {
+      "type": "grass"
+    },
+    "2,17": {
+      "type": "grass"
+    },
+    "3,17": {
+      "type": "grass"
+    },
+    "4,17": {
+      "type": "grass"
+    },
+    "5,17": {
+      "type": "grass"
+    },
+    "6,17": {
+      "type": "grass"
+    },
+    "7,17": {
+      "type": "grass"
+    },
+    "8,17": {
+      "type": "grass"
+    },
+    "9,17": {
+      "type": "grass"
+    },
+    "10,17": {
+      "type": "grass"
+    },
+    "11,17": {
+      "type": "grass"
+    },
+    "12,17": {
+      "type": "grass"
+    },
+    "13,17": {
+      "type": "grass"
+    },
+    "14,17": {
+      "type": "grass"
+    },
+    "15,17": {
+      "type": "grass"
+    },
+    "16,17": {
+      "type": "grass"
+    },
+    "17,17": {
+      "type": "grass"
+    },
+    "18,17": {
+      "type": "grass"
+    },
+    "19,17": {
+      "type": "grass"
+    },
+    "20,17": {
+      "type": "grass"
+    },
+    "0,18": {
+      "type": "grass"
+    },
+    "1,18": {
+      "type": "grass"
+    },
+    "2,18": {
+      "type": "grass"
+    },
+    "3,18": {
+      "type": "grass"
+    },
+    "4,18": {
+      "type": "grass"
+    },
+    "5,18": {
+      "type": "grass"
+    },
+    "6,18": {
+      "type": "grass"
+    },
+    "7,18": {
+      "type": "grass"
+    },
+    "8,18": {
+      "type": "grass"
+    },
+    "9,18": {
+      "type": "grass"
+    },
+    "10,18": {
+      "type": "grass"
+    },
+    "11,18": {
+      "type": "grass"
+    },
+    "12,18": {
+      "type": "grass"
+    },
+    "13,18": {
+      "type": "grass"
+    },
+    "14,18": {
+      "type": "grass"
+    },
+    "15,18": {
+      "type": "grass"
+    },
+    "16,18": {
+      "type": "grass"
+    },
+    "17,18": {
+      "type": "grass"
+    },
+    "18,18": {
+      "type": "grass"
+    },
+    "19,18": {
+      "type": "grass"
+    },
+    "20,18": {
+      "type": "grass"
+    },
+    "0,19": {
+      "type": "grass"
+    },
+    "1,19": {
+      "type": "grass"
+    },
+    "2,19": {
+      "type": "grass"
+    },
+    "3,19": {
+      "type": "grass"
+    },
+    "4,19": {
+      "type": "grass"
+    },
+    "5,19": {
+      "type": "grass"
+    },
+    "6,19": {
+      "type": "grass"
+    },
+    "7,19": {
+      "type": "grass"
+    },
+    "8,19": {
+      "type": "grass"
+    },
+    "9,19": {
+      "type": "grass"
+    },
+    "10,19": {
+      "type": "grass"
+    },
+    "11,19": {
+      "type": "grass"
+    },
+    "12,19": {
+      "type": "grass"
+    },
+    "13,19": {
+      "type": "grass"
+    },
+    "14,19": {
+      "type": "grass"
+    },
+    "15,19": {
+      "type": "grass"
+    },
+    "16,19": {
+      "type": "grass"
+    },
+    "17,19": {
+      "type": "grass"
+    },
+    "18,19": {
+      "type": "grass"
+    },
+    "19,19": {
+      "type": "grass"
+    },
+    "20,19": {
+      "type": "grass"
+    },
+    "0,20": {
+      "type": "grass"
+    },
+    "1,20": {
+      "type": "grass"
+    },
+    "2,20": {
+      "type": "grass"
+    },
+    "3,20": {
+      "type": "grass"
+    },
+    "4,20": {
+      "type": "grass"
+    },
+    "5,20": {
+      "type": "grass"
+    },
+    "6,20": {
+      "type": "grass"
+    },
+    "7,20": {
+      "type": "grass"
+    },
+    "8,20": {
+      "type": "grass"
+    },
+    "9,20": {
+      "type": "grass"
+    },
+    "10,20": {
+      "type": "grass"
+    },
+    "11,20": {
+      "type": "grass"
+    },
+    "12,20": {
+      "type": "grass"
+    },
+    "13,20": {
+      "type": "grass"
+    },
+    "14,20": {
+      "type": "grass"
+    },
+    "15,20": {
+      "type": "grass"
+    },
+    "16,20": {
+      "type": "grass"
+    },
+    "17,20": {
+      "type": "grass"
+    },
+    "18,20": {
+      "type": "grass"
+    },
+    "19,20": {
+      "type": "grass"
+    },
+    "20,20": {
+      "type": "grass"
+    }
   },
   "objects": [
-    {"id":"obj_tent_1","kind":"tent","key":"tent","label":"Porakaneki Tent","col":1,"row":1,"w":3,"h":3,"rot":0},
-    {"id":"obj_tent_2","kind":"tent","key":"tent","label":"Porakaneki Tent","col":5,"row":1,"w":3,"h":3,"rot":0},
-    {"id":"obj_tent_3","kind":"tent","key":"tent","label":"Porakaneki Tent","col":9,"row":1,"w":3,"h":3,"rot":0},
-    {"id":"obj_tent_4","kind":"tent","key":"tent","label":"Porakaneki Tent","col":1,"row":5,"w":3,"h":3,"rot":0},
-    {"id":"obj_tent_5","kind":"tent","key":"tent","label":"Porakaneki Tent","col":9,"row":5,"w":3,"h":3,"rot":0},
-    {"id":"obj_tent_6","kind":"tent","key":"tent","label":"Porakaneki Tent","col":1,"row":8,"w":3,"h":3,"rot":0},
-    {"id":"obj_tent_7","kind":"tent","key":"tent","label":"Porakaneki Chief Tent","col":9,"row":8,"w":3,"h":3,"rot":0},
-    {"id":"obj_campfire","kind":"decor","key":"campfire","label":"Porakaneki Council Fire","col":6,"row":5,"w":1,"h":1,"rot":0},
-    {"id":"obj_crate_1","kind":"decor","key":"crateStack","label":"Hunting Supplies","col":5,"row":8,"w":1,"h":1,"rot":0},
-    {"id":"obj_crate_2","kind":"decor","key":"crateStack","label":"Hunting Supplies","col":7,"row":8,"w":1,"h":1,"rot":0},
-    {"id":"obj_crate_3","kind":"decor","key":"crateStack","label":"Camp Stores","col":6,"row":9,"w":1,"h":1,"rot":0}
+    {
+      "id": "obj_tent_n",
+      "kind": "tent",
+      "key": "tent",
+      "label": "Porakaneki Hunting Tent",
+      "col": 9,
+      "row": 1,
+      "w": 2,
+      "h": 2,
+      "rot": 0
+    },
+    {
+      "id": "obj_tent_ne",
+      "kind": "tent",
+      "key": "tent",
+      "label": "Porakaneki Hunting Tent",
+      "col": 15,
+      "row": 3,
+      "w": 2,
+      "h": 2,
+      "rot": 315
+    },
+    {
+      "id": "obj_tent_e",
+      "kind": "tent",
+      "key": "tent",
+      "label": "Porakaneki Hunting Tent",
+      "col": 17,
+      "row": 9,
+      "w": 2,
+      "h": 2,
+      "rot": 270
+    },
+    {
+      "id": "obj_tent_se",
+      "kind": "tent",
+      "key": "tent",
+      "label": "Porakaneki Hunting Tent",
+      "col": 15,
+      "row": 15,
+      "w": 2,
+      "h": 2,
+      "rot": 225
+    },
+    {
+      "id": "obj_tent_s",
+      "kind": "tent",
+      "key": "tent",
+      "label": "Porakaneki Chief Tent",
+      "col": 9,
+      "row": 17,
+      "w": 2,
+      "h": 2,
+      "rot": 180
+    },
+    {
+      "id": "obj_tent_sw",
+      "kind": "tent",
+      "key": "tent",
+      "label": "Porakaneki Hunting Tent",
+      "col": 3,
+      "row": 15,
+      "w": 2,
+      "h": 2,
+      "rot": 135
+    },
+    {
+      "id": "obj_tent_w",
+      "kind": "tent",
+      "key": "tent",
+      "label": "Porakaneki Hunting Tent",
+      "col": 1,
+      "row": 9,
+      "w": 2,
+      "h": 2,
+      "rot": 90
+    },
+    {
+      "id": "obj_tent_nw",
+      "kind": "tent",
+      "key": "tent",
+      "label": "Porakaneki Hunting Tent",
+      "col": 3,
+      "row": 3,
+      "w": 2,
+      "h": 2,
+      "rot": 45
+    },
+    {
+      "id": "obj_bonfire",
+      "kind": "decor",
+      "key": "bonfire",
+      "label": "Porakaneki Council Bonfire",
+      "col": 9,
+      "row": 9,
+      "w": 2,
+      "h": 2,
+      "rot": 0
+    },
+    {
+      "id": "obj_benchlog_north",
+      "kind": "bench",
+      "key": "benchlog",
+      "label": "Council Sitting Log",
+      "col": 9,
+      "row": 6,
+      "w": 2,
+      "h": 1,
+      "rot": 0
+    },
+    {
+      "id": "obj_benchlog_east",
+      "kind": "bench",
+      "key": "benchlog",
+      "label": "Council Sitting Log",
+      "col": 13,
+      "row": 9,
+      "w": 1,
+      "h": 2,
+      "rot": 270
+    },
+    {
+      "id": "obj_benchlog_south",
+      "kind": "bench",
+      "key": "benchlog",
+      "label": "Council Sitting Log",
+      "col": 9,
+      "row": 13,
+      "w": 2,
+      "h": 1,
+      "rot": 180
+    },
+    {
+      "id": "obj_benchlog_west",
+      "kind": "bench",
+      "key": "benchlog",
+      "label": "Council Sitting Log",
+      "col": 6,
+      "row": 9,
+      "w": 1,
+      "h": 2,
+      "rot": 90
+    },
+    {
+      "id": "obj_crate_1",
+      "kind": "decor",
+      "key": "crateStack",
+      "label": "Hunting Supplies",
+      "col": 14,
+      "row": 18,
+      "w": 1,
+      "h": 1,
+      "rot": 0
+    },
+    {
+      "id": "obj_crate_2",
+      "kind": "decor",
+      "key": "crateStack",
+      "label": "Hunting Supplies",
+      "col": 15,
+      "row": 18,
+      "w": 1,
+      "h": 1,
+      "rot": 0
+    },
+    {
+      "id": "obj_crate_3",
+      "kind": "decor",
+      "key": "crateStack",
+      "label": "Camp Stores",
+      "col": 16,
+      "row": 18,
+      "w": 1,
+      "h": 1,
+      "rot": 0
+    }
   ],
   "npcAnchors": [],
   "connectors": [],
   "placement": {
     "mode": "temporary",
     "maxInstances": 1,
-    "allowedZones": ["map_northern_cliffs", "map_southern_cloud_forest", "map_western_slope", "map_eastern_mire"],
+    "allowedZones": [
+      "map_northern_cliffs",
+      "map_southern_cloud_forest",
+      "map_western_slope",
+      "map_eastern_mire"
+    ],
     "clearanceTiles": 3,
     "requiresFlatGround": true,
     "minDistanceFromEntry": 14,
@@ -43,5 +1538,13 @@
     "groundOnly": false,
     "notes": "PorakanekiCamps reserves one valid chief-camp site in each wilderness generation, but activates/renders exactly one of them according to CalendarSystem.currentSeason()."
   },
-  "meta": {"authoring":"seasonal runtime chief camp","populationFromTents":true,"namedNpc":"porakaneki_chief"}
+  "meta": {
+    "authoring": "seasonal runtime chief camp",
+    "populationFromTents": true,
+    "namedNpc": "porakaneki_chief",
+    "tentPiece": "porakaneki-hunting-tent",
+    "centralFire": "bonfire",
+    "benchFurniture": "benchlog",
+    "benchSeats": 8
+  }
 }
