@@ -36,6 +36,8 @@ assert.ok(
 
 assert.ok(composer.includes('setChannel'), 'composer exposes named transform channels');
 assert.ok(composer.includes('registerExternalRootProvider'), 'composer exposes body-bound attachment providers');
+assert.ok(composer.includes('prepareNeckForAttachmentSampling'), 'composer exposes the final physical neck pose before skinned attachment sampling');
+assert.match(composer, /function prepareNeckForAttachmentSampling\(\)[\s\S]{0,220}applyPlayerNeckYawLimit\(\)/, 'attachment preparation reuses the renderer physical neck-limit solver');
 assert.ok(composer.includes('currentOwnedRoots'), 'composer rediscovers current visual roots instead of pinning stale avatar objects');
 assert.ok(composer.includes('discoverAvatarBodyRoots'), 'composer recursively discovers nested player PNG visual roots');
 assert.ok(composer.includes('isDescendantOf'), 'composer can dedupe nested visual branches before applying a body delta');
