@@ -6,6 +6,9 @@
   // while index.html keeps a single long-lived js/house-pieces.js include.
   const current = document.currentScript;
   const baseUrl = current?.src ? new URL('.', current.src) : new URL('js/', document.baseURI);
+  const naturalSurfaceUvVersion = current?.src ? (new URL(current.src).searchParams.get('v') || '20260924edgepreserve2') : '20260924edgepreserve2'; // Used by the natural rock/cliff UV stack below so every dependent mapper inherits the parent loader's cache generation.
+  window.HobunjiNaturalSurfaceUvLoaderVersion = naturalSurfaceUvVersion; // Used by Pixel Probe diagnostics to show which coherent natural-surface script generation actually loaded on-device.
+  const naturalSurfaceScript = (file) => `${file}?v=${encodeURIComponent(naturalSurfaceUvVersion)}`; // Used only by the tightly-coupled natural-surface UV modules so stale child scripts cannot mix generations.
   const scripts = [
     ['SurfaceTint', 'surface-tint.js?v=20260813c'],
     ['NaturalSurfaceMaterialConfig', '../config/natural-surface-materials.js?v=20260813b'],
@@ -15,15 +18,15 @@
     ['WildernessTerrainCleanup', 'wilderness-terrain-cleanup.js?v=20260812a'],
     ['NaturalSurfaceRuntimeFixes', 'natural-surface-runtime-fixes.js?v=20260813d'],
     // Uses the Furniture + Avatar Author's shared-edge/adjacent-normal surface recognition before mapping one complete PNG square onto each detected natural terrain surface.
-    ['HobunjiSurfaceStretchUV', 'surface-stretch-uv-furniture.js?v=20260907farmcliff1'],
+    ['HobunjiSurfaceStretchUV', naturalSurfaceScript('surface-stretch-uv-furniture.js')],
     // Adds a black-only protected-band sampler to wilderness waterways and the permanent town river; waterfall curtains unfold as surface tiles in the same wilderness mapping domain.
     ['WaterBodyOutlineOverlay', 'water-body-outline-overlay.js?v=20260918f'],
     // A gradual 24° face chain may walk over a rounded ridge, so split upward terrain from cliff-facing triangles before the final side-only unwrap.
-    ['NaturalSurfaceCliffRidgeIsolation', 'natural-surface-cliff-ridge-isolation.js?v=20260902a'],
+    ['NaturalSurfaceCliffRidgeIsolation', naturalSurfaceScript('natural-surface-cliff-ridge-isolation.js')],
     // Used after every older natural-surface/runtime wrapper so flat fallback textures self-heal and legacy cliff UV repair cannot remain authoritative.
-    ['NaturalSurfaceStretchRuntime', 'natural-surface-stretch-runtime.js?v=20260902b'],
+    ['NaturalSurfaceStretchRuntime', naturalSurfaceScript('natural-surface-stretch-runtime.js')],
     // Natural rocks/cliffs have their own authoritative UV mapper now; keep Terrain Jigsaw from cloning/reinterpreting those finished UVs.
-    ['NaturalSurfaceJigsawExclusion', 'natural-surface-jigsaw-exclusion.js?v=20260902a'],
+    ['NaturalSurfaceJigsawExclusion', naturalSurfaceScript('natural-surface-jigsaw-exclusion.js')],
     // Faceted masonry keeps its authored texture-edge treatment and skips the general shell-outline pass; rounded meshes remain eligible for shells.
     ['FacetedStructureShellReduction', 'faceted-structure-shell-reduction.js?v=20260905a'],
     ['StructurePreload', 'structure-preload.js?v=20260812a'],
@@ -68,10 +71,10 @@
     ['FacetedNaturalSurfaceShellReduction', 'faceted-natural-surface-shell-reduction.js?v=20260905a'],
     ['FarmCliffRockOutline', 'farm-cliff-rock-outline.js?v=20260907b'],
     // Wilderness cliff builders can alter geometry after the generic natural-surface pass; rerun the farm-style material + connected-surface stretch once the full builder stack has finished.
-    ['WildernessCliffSurfaceParity', 'wilderness-cliff-surface-parity.js?v=20260907b'],
+    ['WildernessCliffSurfaceParity', naturalSurfaceScript('wilderness-cliff-surface-parity.js')],
     ['TerrainRenderChunks', 'terrain-render-chunks.js?v=20260924perf1'],
     // Terrain Jigsaw still exists for other opaque terrain. This final wrapper remains as a safety net for old/untagged natural surfaces before spatial chunking and drawing.
-    ['NaturalSurfaceStretchPostJigsaw', 'natural-surface-stretch-post-jigsaw.js?v=20260902b'],
+    ['NaturalSurfaceStretchPostJigsaw', naturalSurfaceScript('natural-surface-stretch-post-jigsaw.js')],
     ['BuildingSubtleElevation', 'building-subtle-elevation.js?v=20260811a'],
     ['BuildingGrassSuppression', 'building-grass-suppression.js?v=20260823b'],
     ['PlayerHouseElevation', 'player-house-elevation.js?v=20260823b'],

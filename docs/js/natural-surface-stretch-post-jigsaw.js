@@ -204,7 +204,7 @@
     const lines = [
       '',
       '=== Natural surface edge-preserving stretch diagnostics ===',
-      `Installed=${!!window.HobunjiSurfaceStretchUV?.installed} mapping=${surface.mapping || '-'} sourcePNGEdge=${((surface.edgeSourceFraction || 0) * 100).toFixed(1)}% nativePNGWorldSize=${Number(surface.edgeReferenceWorldSize || 0).toFixed(2)} protectedEdgeWorld=${Number(surface.edgeWorldSize || 0).toFixed(3)}`,
+      `Installed=${!!window.HobunjiSurfaceStretchUV?.installed} loaderGeneration=${window.HobunjiNaturalSurfaceUvLoaderVersion || '-'} mapping=${surface.mapping || '-'} sourcePNGEdge=${((surface.edgeSourceFraction || 0) * 100).toFixed(1)}% nativePNGWorldSize=${Number(surface.edgeReferenceWorldSize || 0).toFixed(2)} protectedEdgeWorld=${Number(surface.edgeWorldSize || 0).toFixed(3)}`,
       `Central mapper: geometries=${surface.mappedGeometries || 0} meshes=${surface.mappedMeshes || 0} surfaces=${surface.patches || 0} fallbacks=${surface.fallbacks || 0}`,
       `Cross-mesh plateau adapter: batches=${crossMeshStats.batches} meshes=${crossMeshStats.meshes} UVvertices=${crossMeshStats.uvVertices} failures=${crossMeshStats.failures}`,
     ]; // Used as a compact self-contained readout that can be pasted back without DevTools.

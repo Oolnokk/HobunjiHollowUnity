@@ -29,7 +29,7 @@ if (!vegetationSource.includes('!pavedRoad') || !vegetationSource.includes('rebu
 if (!cliffSource.includes('queueMicrotask(applyFinishedCliffSurfaces)') || !cliffSource.includes('maxPatchWorldSize: CLIFF_UV_PATCH_WORLD_SIZE')) {
   throw new Error('replacement cliffs are not surface-mapped after construction with the six-unit native texture scale hint');
 }
-for (const expected of ['DEFAULT_EDGE_SOURCE_FRACTION = 0.16', 'DEFAULT_EDGE_REFERENCE_WORLD_SIZE = 6', "mapping: 'edge-preserving-nine-slice'", 'legacyPatchHintIgnored']) {
+for (const expected of ['DEFAULT_EDGE_SOURCE_FRACTION = 0.32', 'DEFAULT_EDGE_REFERENCE_WORLD_SIZE = 6', "mapping: 'edge-preserving-nine-slice'", 'legacyPatchHintIgnored']) {
   if (!surfaceMapperSource.includes(expected)) throw new Error(`missing centralized edge-preserving surface contract: ${expected}`);
 }
 if (surfaceMapperSource.includes('@uvpatch:')) {

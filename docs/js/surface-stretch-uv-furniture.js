@@ -5,7 +5,7 @@
   if (!THREE || window.HobunjiSurfaceStretchUV?.installed) return;
 
   const DEFAULT_SPLIT_ANGLE_DEG = 24; // Used to match the Furniture + Avatar Author's default edge-adjacent surface split threshold.
-  const DEFAULT_EDGE_SOURCE_FRACTION = 0.16; // Used as the protected source-PNG border width on each side.
+  const DEFAULT_EDGE_SOURCE_FRACTION = 0.32; // Used as the protected source-PNG border width on each side so the outer 32% resists heavy stretch.
   const DEFAULT_EDGE_REFERENCE_WORLD_SIZE = 6; // Used as the world size at which one complete PNG is at its native stretch scale.
   const MAX_EDGE_SURFACE_FRACTION = 0.495; // Used only when a surface is too small to fit both native-size borders without overlap.
   const MAX_RELAX_ITERATIONS = 140; // Used by the harmonic UV solver after an irregular perimeter is pinned to the texture square.

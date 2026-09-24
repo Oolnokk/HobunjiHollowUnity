@@ -11,7 +11,8 @@ function assert(condition, message) {
 }
 
 const terrainChunkAt = loader.indexOf("['TerrainRenderChunks', 'terrain-render-chunks.js"); // Used as the source module that can clone a loading texture and replace UVs.
-const postGuardAt = loader.indexOf("['NaturalSurfaceStretchPostJigsaw', 'natural-surface-stretch-post-jigsaw.js"); // Used as the final guard that must load after TerrainRenderChunks.
+const postGuardToken = "['NaturalSurfaceStretchPostJigsaw', naturalSurfaceScript('natural-surface-stretch-post-jigsaw.js')]"; // Used as the coherently-versioned final guard token after TerrainRenderChunks.
+const postGuardAt = loader.indexOf(postGuardToken); // Used as the final guard that must load after TerrainRenderChunks.
 assert(terrainChunkAt >= 0 && postGuardAt > terrainChunkAt, 'post-Jigsaw natural-surface guard must load after TerrainRenderChunks');
 
 assert(/THREE\.Object3D\?\.prototype/.test(runtime), 'runtime repair must observe nested Object3D.add attachments, not only Scene.add');
@@ -28,6 +29,7 @@ assert(jigsawScanAt >= 0, 'post-Jigsaw guard must invoke the existing Jigsaw sca
 assert(naturalRepairAt > jigsawScanAt, 'natural-surface repair must happen after Jigsaw mutation');
 assert(chunkScanAt > naturalRepairAt, 'spatial chunking must happen after natural-surface repair');
 assert(renderAt > chunkScanAt, 'actual rendering must happen after Jigsaw -> natural repair -> chunking');
+assert(post.includes("const mapped = mapper.mapGeometry(combined, { label: \`${label}:touching-mesh-batch\` });"), 'cross-mesh plateau solve must delegate edge preservation to the central mapper without a stale local edge constant');
 
 assert(/terrainGeometryReadyRevision/.test(post) && /onTerrainGeometryReady/.test(post), 'post-Jigsaw wrapper must preserve TerrainRenderChunks geometry-ready notifications');
 assert(/previousBakeMesh/.test(post) && /runtime\.inspectObject\(mesh\)/.test(post), 'manual TerrainJigsawUV.bakeMesh calls must also re-run natural-surface repair');

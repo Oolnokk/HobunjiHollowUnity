@@ -37,7 +37,7 @@ assert.match(waterSystemSource, /textureUrl:\s*'assets\/textures\/wibbly_surface
 assert.match(zoneSource, /neighborIsWater = nt\.type === deps\.TileType\.RIVER \|\| nt\.type === deps\.TileType\.STREAM \|\| nt\.type === deps\.TileType\.WATERFALL/,
   'current main should still build water-aware waterfall curtains');
 
-const mapperAt = loaderSource.indexOf("['HobunjiSurfaceStretchUV', 'surface-stretch-uv-furniture.js");
+const mapperAt = loaderSource.indexOf("['HobunjiSurfaceStretchUV', naturalSurfaceScript('surface-stretch-uv-furniture.js')"); // Used to verify the water overlay still loads after the coherently versioned natural-surface mapper.
 const overlayAt = loaderSource.indexOf("['WaterBodyOutlineOverlay', 'water-body-outline-overlay.js");
 assert.ok(mapperAt >= 0 && overlayAt > mapperAt,
   'water overlay must load after the shared irregular-surface mapper');

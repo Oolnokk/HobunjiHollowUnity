@@ -126,12 +126,13 @@ const nativeScaleRect = mapper.mapGeometry(fanPolygon([[0, 0], [12, 0], [12, 6],
 const nativeScaleReport = nativeScaleRect.userData.hobunjiSurfaceStretch;
 const edgeBand = nativeScaleReport.edgeBands[0];
 if (!edgeBand) throw new Error('Expected edge-band diagnostics for rectangular surface');
-if (!nearlyEqual(edgeBand.edgeWorldSize, 0.96)) throw new Error(`Expected 0.96-world-unit protected edge, got ${edgeBand.edgeWorldSize}`);
-if (!nearlyEqual(edgeBand.surfaceEdgeFractionU * edgeBand.projectedSpanU, 0.96) || !nearlyEqual(edgeBand.surfaceEdgeFractionV * edgeBand.projectedSpanV, 0.96)) {
+if (!nearlyEqual(nativeScaleReport.edgeSourceFraction, 0.32)) throw new Error(`Expected 32% protected source edge, got ${nativeScaleReport.edgeSourceFraction}`);
+if (!nearlyEqual(edgeBand.edgeWorldSize, 1.92)) throw new Error(`Expected 1.92-world-unit protected edge, got ${edgeBand.edgeWorldSize}`);
+if (!nearlyEqual(edgeBand.surfaceEdgeFractionU * edgeBand.projectedSpanU, 1.92) || !nearlyEqual(edgeBand.surfaceEdgeFractionV * edgeBand.projectedSpanV, 1.92)) {
   throw new Error(`Protected edge changed perpendicular world size: ${JSON.stringify(edgeBand)}`);
 }
-if (!nearlyEqual(Math.min(edgeBand.surfaceEdgeFractionU, edgeBand.surfaceEdgeFractionV), 0.08) || !nearlyEqual(Math.max(edgeBand.surfaceEdgeFractionU, edgeBand.surfaceEdgeFractionV), 0.16)) {
-  throw new Error(`Expected 12x6 surface to use 8%/16% destination edge bands: ${JSON.stringify(edgeBand)}`);
+if (!nearlyEqual(Math.min(edgeBand.surfaceEdgeFractionU, edgeBand.surfaceEdgeFractionV), 0.16) || !nearlyEqual(Math.max(edgeBand.surfaceEdgeFractionU, edgeBand.surfaceEdgeFractionV), 0.32)) {
+  throw new Error(`Expected 12x6 surface to use 16%/32% destination edge bands: ${JSON.stringify(edgeBand)}`);
 }
 
 const bentPositions = [
