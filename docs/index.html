@@ -90,7 +90,7 @@
        window.*.init(...) calls — dozens of already-extracted modules also
        read getActiveGrid/getActiveScene/etc. from their own init() calls
        throughout game.js. -->
-  <script src="js/grid-tile-accessors.js?v=20260915perf1"></script>
+  <script src="js/grid-tile-accessors.js?v=20260924localecollider1"></script>
   <!-- Small self-registering lookup for furniture/lantern-mask point lights
        (game.js's makeFurniturePointLight and a few inline PointLight sites
        in bandit-camps.js/porakaneki-camps-runtime.js/deadzone-billboard.js).
@@ -197,9 +197,9 @@
   <!-- Shared plateau/ramp fold math (Map Editor preview + Tothal Shift) and the
        headless Wilderness Map Generator core (Tothal Shift wilderness reroll) -->
   <script src="js/terrain-preview.js?v=20260922ruinrebase1"></script>
-  <script src="js/wilderness-map-generator.js?v=20260924perf1"></script>
+  <script src="js/wilderness-map-generator.js?v=20260924localecollider1"></script>
   <!-- Terrain-aware authored locales inspect the finished wilderness and place against existing host terrain. Must load after WildernessMapGenerator so its wrapper installs in the game, not only in editor/tests. -->
-  <script src="js/locale-terrain-placement.js?v=20260921banubuclip1"></script>
+  <script src="js/locale-terrain-placement.js?v=20260924localecollider1"></script>
   <script src="js/foliage-furniture-renderer.js?v=20260816a"></script>
   <script src="js/foliage-furniture-runtime.js?v=20260816a"></script>
   <!-- Generic post-generation locale placement (window.TemporaryLocales) —
@@ -699,7 +699,7 @@
        and its build*(...) functions lazily, from buildZoneScene, never
        synchronously during initial boot. -->
   <script src="js/locale-cave-runtime.js?v=20260923caveregistry1"></script>
-  <script src="js/zone-den-totem-features.js?v=20260923texready1"></script>
+  <script src="js/zone-den-totem-features.js?v=20260924denlocale1"></script>
   <!-- Wilderness-zone grass and rich-foliage-patch billboards
        (window.ZoneGrassBillboards) — pure scene-graph generation, no
        other window.* system reads; must load before game.js, which calls

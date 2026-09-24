@@ -54,6 +54,7 @@
   let currentLocale = null;
   let showRules = true;
   const glbTemplateCache = new Map();
+  const authoredFurnitureDataCache = new Map(); // Full Locale Editor furniture palette uses the same authored JSON data as gameplay.
 
   function clone(value) { return value == null ? value : JSON.parse(JSON.stringify(value)); }
   function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
@@ -167,6 +168,20 @@
     await loadScript('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js', () => !!window.THREE?.WebGLRenderer);
     await loadScript('https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js', () => !!window.THREE?.OrbitControls);
     await loadScript('../../js/GLTFLoader.js', () => !!window.THREE?.GLTFLoader);
+    // ProceduralFurniture's authored-texture paths are game-root-relative; fix
+    // them once for this nested tool before loading the shared furniture code.
+    if (!THREE.TextureLoader.prototype.load.__localeEditorPathRemap) {
+      const originalTextureLoad = THREE.TextureLoader.prototype.load;
+      function localeEditorTextureLoad(url, ...args) {
+        const resolved = typeof url === 'string' && url.startsWith('assets/textures/')
+          ? '../../' + url : url;
+        return originalTextureLoad.call(this, resolved, ...args);
+      }
+      localeEditorTextureLoad.__localeEditorPathRemap = true;
+      THREE.TextureLoader.prototype.load = localeEditorTextureLoad;
+    }
+    await loadScript('../../js/procedural-furniture.js', () => !!window.ProceduralFurniture?.buildPartMesh);
+    await loadScript('../../js/authored-furniture-runtime.js', () => !!window.AuthoredFurniture?.buildGroup);
     await loadScript('../../js/color-fill.js?v=20260923colorfill7', () => !!window.ColorFill?.shadeFillPixels);
     await loadScript('../../js/portrait-utils.js?v=20260923colorfill7', () => !!window.getShadeFillCanvas && !!window.parseHexColor);
     await loadScript('../../js/terrain-preview.js', () => !!window.TerrainPreview?.buildMergedZoneGrid);
@@ -881,6 +896,49 @@
       node.material = wasArray ? tinted : tinted[0];
     });
   }
+  function loadAuthoredFurnitureData(key) {
+    const id = String(key || '').trim();
+    if (!id) return Promise.resolve(null);
+    if (authoredFurnitureDataCache.has(id)) return authoredFurnitureDataCache.get(id);
+    const promise = fetch('../../config/furniture-authored/' + encodeURIComponent(id) + '.json', { cache:'no-store' })
+      .then(response => response.ok ? response.json() : null)
+      .catch(() => null);
+    authoredFurnitureDataCache.set(id, promise);
+    return promise;
+  }
+
+  async function addAuthoredFurnitureObject(group, object, merged, token, ghost) {
+    if (!window.AuthoredFurniture?.buildGroup) return false;
+    const data = await loadAuthoredFurnitureData(object.key);
+    if (!data || token !== generationToken) return false;
+    const model = window.AuthoredFurniture.buildGroup(data, 0x9a754b);
+    model.name = `localeObject_${object.key}`;
+    const w = Math.max(.1, Number(object.w) || Number(data.footprint?.w) || 1);
+    const h = Math.max(.1, Number(object.h) || Number(data.footprint?.d) || 1);
+    const x = Number(object.x) + w / 2, z = Number(object.y) + h / 2;
+    const groundY = surfaceY(merged, x, z);
+    model.position.set(x, groundY, z);
+    model.rotation.y = THREE.MathUtils.degToRad(Number(object.rot) || 0);
+    tintGhost(model, ghost);
+    group.add(model);
+    return true;
+  }
+
+  function addColliderMarker(group, object, merged) {
+    const collision = object?.collision;
+    if (!collision || collision.mode === 'auto' || collision.mode === 'none') return;
+    const x = collision.mode === 'custom' && Number.isFinite(Number(collision.x)) ? Number(collision.x) : Number(object.x);
+    const z = collision.mode === 'custom' && Number.isFinite(Number(collision.y)) ? Number(collision.y) : Number(object.y);
+    const w = collision.mode === 'custom' ? Math.max(.1, Number(collision.w) || Number(object.w) || 1) : Math.max(.1, Number(object.w) || 1);
+    const h = collision.mode === 'custom' ? Math.max(.1, Number(collision.h) || Number(object.h) || 1) : Math.max(.1, Number(object.h) || 1);
+    const y = surfaceY(merged, x + w/2, z + h/2) + 0.08;
+    const edges = new THREE.EdgesGeometry(new THREE.BoxGeometry(w, .16, h));
+    const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color:0xff6b6b, transparent:true, opacity:.85 }));
+    line.name = `localeCollider_${object.id || object.key || 'object'}`;
+    line.position.set(x + w/2, y, z + h/2);
+    group.add(line);
+  }
+
   async function addGlbObject(group, object, merged, token, ghost) {
     const glb = OBJECT_GLB[object.key];
     if (!glb) return false;
@@ -927,9 +985,21 @@
     group.name = 'localeSandboxExternalObjects';
     scene.add(group);
     for (const object of instance.objects || []) {
-      if (object.key === 'cave_small' || locale.objects?.find(source => source.id === object.id)?.visual?.renderer === 'cave_small') continue;
-      const loaded = await addGlbObject(group, object, merged, token, ghost);
+      const source = locale.objects?.find(item => item.id === object.id);
+      object.visual ||= source?.visual;
+      object.collision ||= source?.collision;
+      object.rot = object.rot ?? source?.rot ?? 0;
+      if (object.key === 'cave_small' || source?.visual?.renderer === 'cave_small') {
+        addColliderMarker(group, object, merged);
+        continue;
+      }
+      let loaded = false;
+      if (['furniture','decor','bench','processor','prop'].includes(object.kind)) {
+        loaded = await addAuthoredFurnitureObject(group, object, merged, token, ghost);
+      }
+      if (!loaded) loaded = await addGlbObject(group, object, merged, token, ghost);
       if (!loaded && token === generationToken) addFallbackObject(group, object, merged, ghost);
+      addColliderMarker(group, object, merged);
     }
     renderAnchorMarkers(group, instance, merged, ghost);
 
