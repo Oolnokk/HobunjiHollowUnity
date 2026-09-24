@@ -14,7 +14,26 @@
   let runtimeDeps = null; // Injected by game.js so Banubu mutates the exact live questProgress object rendered by TasksPanel instead of a detached profile copy.
   let installTimer = null; // Used to stop dependency polling after success/timeout.
   let installStartedAt = 0; // Used to bound dependency polling on editor/partial pages.
-  const debugState = { lastAction: null, lastTarget: null, lastTurnIn: null, lastError: null }; // Used by mobile diagnostics/tests.
+  const debugState = { lastAction: null, lastTarget: null, lastTurnIn: null, lastPresentation: null, lastError: null }; // Used by mobile diagnostics/tests.
+  const presentationState = { walker: null, sparkleVisual: null, schedulerRegistered: false }; // Used to own Banubu's temporary dialogue pose overrides and persistent sparkle emitter.
+  const PRESENTATION_SCHEDULER_ID = 'banubu-dialogue-presentation'; // Stable shared-frame subscriber used only while Banubu's sparkle emitter is active.
+  const SPARKLE_EMITTER_TEMPLATE = Object.freeze({
+    id: 'banubu_key_sparkles',
+    name: 'Banubu Key Sparkles',
+    type: 'sparkle',
+    enabled: true,
+    position: Object.freeze({ x: 0, y: 0, z: 0 }),
+    rotation: Object.freeze({ x: 0, y: 0, z: 0 }),
+    radius: 0.62,
+    size: 0.075,
+    rate: 30,
+    lifetime: 0.8,
+    speed: 0.42,
+    spread: 0.78,
+    gravity: 0.08,
+    colorA: '#fff7c2',
+    colorB: '#bfe9ff',
+  }); // Used by the shared authored-furniture particle renderer, anchored at Banubu's root/world Y.
 
   function CONTENT() { return global.BanubuQuestContent || null; } // Used so the static content module may load before or after this controller.
   function playerData() { return global.__hobunjiPlayerProfile || null; } // Used as the live world-member quest/cooking mirror.
@@ -490,6 +509,90 @@
     return { ...result, skipNav: !result?.ok };
   }
 
+  function updatePresentationFrame(frameContext = {}) {
+    const visual = presentationState.sparkleVisual;
+    if (!visual) {
+      global.RuntimeFrameScheduler?.setEnabled?.(PRESENTATION_SCHEDULER_ID, false);
+      return;
+    }
+    const deltaMs = Number(frameContext.deltaMs); // Used to advance the shared emitter at the browser frame cadence without owning another RAF loop.
+    const dt = Math.max(1 / 240, Math.min(0.05, Number.isFinite(deltaMs) && deltaMs > 0 ? deltaMs / 1000 : 1 / 60));
+    visual.update?.(dt, true);
+  }
+
+  function ensurePresentationScheduler() {
+    if (presentationState.schedulerRegistered) return true;
+    const scheduler = global.RuntimeFrameScheduler; // Used to share the game's single frame cadence with Banubu's transient dialogue VFX.
+    if (!scheduler?.register || !scheduler?.setEnabled) return false;
+    scheduler.register(PRESENTATION_SCHEDULER_ID, updatePresentationFrame, {
+      phase: 'post-game',
+      owner: 'BanubuQuestline',
+      description: 'Updates Lord Banubu’s temporary Color Pools Key dialogue sparkles.',
+      enabled: false,
+    });
+    presentationState.schedulerRegistered = true;
+    return true;
+  }
+
+  function stopSparkles() {
+    try { presentationState.sparkleVisual?.dispose?.(); } catch (_) {}
+    presentationState.sparkleVisual = null;
+    global.RuntimeFrameScheduler?.setEnabled?.(PRESENTATION_SCHEDULER_ID, false);
+  }
+
+  function startSparkles(walker) {
+    if (!walker?.root || !global.AuthoredFurniture?.createEmitterVisual || !ensurePresentationScheduler()) return false;
+    if (presentationState.sparkleVisual && presentationState.walker === walker) return true;
+    stopSparkles();
+    walker.root.userData ||= {};
+    const emitter = {
+      ...SPARKLE_EMITTER_TEMPLATE,
+      position: { ...SPARKLE_EMITTER_TEMPLATE.position },
+      rotation: { ...SPARKLE_EMITTER_TEMPLATE.rotation },
+    }; // Used as a fresh mutable record because the emitter renderer may read live overrides over its lifetime.
+    const visual = global.AuthoredFurniture.createEmitterVisual(walker.root, emitter, 48); // Attached at local y=0, so its world origin shares Banubu's current root Y.
+    if (!visual) return false;
+    presentationState.walker = walker;
+    presentationState.sparkleVisual = visual;
+    global.RuntimeFrameScheduler.setEnabled(PRESENTATION_SCHEDULER_ID, true);
+    return true;
+  }
+
+  function clearDialoguePresentation(walker = presentationState.walker) {
+    if (walker) {
+      delete walker._animalSleepPresentationOverride;
+      delete walker._animalHeadPoseOverride;
+    }
+    stopSparkles();
+    presentationState.walker = null;
+  }
+
+  function onDialogueNode(node, context = {}) {
+    if (String(context?.npc?.id || '') !== String(CONTENT()?.NPC_ID || 'banubu')) return false;
+    const walker = context.walker || presentationState.walker; // Used to keep cleanup working even if the final close occurs after the live walker reference is cleared elsewhere.
+    if (context.ended) {
+      clearDialoguePresentation(walker);
+      debugState.lastPresentation = { nodeId: null, ended: true, sparkles: false };
+      return true;
+    }
+    const cue = node?.banubuPresentation;
+    if (!cue || !walker) return false;
+    presentationState.walker = walker;
+    if (cue.body === 'awake') walker._animalSleepPresentationOverride = 'awake';
+    else if (cue.body === 'sleep') walker._animalSleepPresentationOverride = 'sleep';
+    if (cue.neck === 'max_down') walker._animalHeadPoseOverride = 'max_down';
+    else if (cue.neck === 'release') delete walker._animalHeadPoseOverride;
+    if (cue.sparkles === 'start' && !startSparkles(walker)) debugState.lastError = 'Banubu sparkle emitter could not be created.';
+    else if (cue.sparkles === 'stop') stopSparkles();
+    debugState.lastPresentation = {
+      nodeId: node.id || null,
+      body: cue.body || null,
+      neck: cue.neck || null,
+      sparkles: !!presentationState.sparkleVisual,
+    };
+    return true;
+  }
+
   function diagnosticsText() {
     const state = ensureQuestState();
     const matching = state?.status === 'active' ? matchingMeal(state) : null;
@@ -508,6 +611,7 @@
       `  matchingMeal=${matching?.key || 'none'}`,
       `  nextTarget=${state?.nextTarget ? joinedEffectLabels(state.nextTarget) : 'none'}`,
       `  lastAction=${debugState.lastAction || 'none'}`,
+      `  presentation=${debugState.lastPresentation?.nodeId || 'none'} sparkles=${!!presentationState.sparkleVisual} bodyOverride=${presentationState.walker?._animalSleepPresentationOverride || 'none'} headOverride=${presentationState.walker?._animalHeadPoseOverride || 'none'}`,
       `  lastError=${debugState.lastError || 'none'}`,
     ].join('\n');
   }
@@ -519,12 +623,14 @@
 
   function install() {
     if (installed) return true;
-    if (!global.DialogueContent?.registerTreeProvider || !global.DialogueContent?.registerActionHandler
+    if (!global.DialogueContent?.registerTreeProvider || !global.DialogueContent?.registerActionHandler || !global.DialogueContent?.registerNodeEnterHandler
       || !global.CookingSystem?.unlockRecipe || !global.KeyItemSystem || !global.TeaGrinder?.allBlendEffects || !CONTENT()) return false;
     CONTENT().ensureCookingRecipes?.();
     global.TeaGrinder.registerItemDefs?.();
+    ensurePresentationScheduler(); // Production owns a scheduler; isolated test/editor contexts may omit it until a sparkle is actually requested.
     global.DialogueContent.registerTreeProvider(CONTENT().NPC_ID, selectTree);
     global.DialogueContent.registerActionHandler('banubuQuest', actionHandler);
+    global.DialogueContent.registerNodeEnterHandler(CONTENT().NPC_ID, onDialogueNode);
     global.KeyItemSystem.defineMany?.(CONTENT().keyItems || []); // Keeps reserved Banubu key items registered even when a particular quest no longer grants them.
     for (const fallback of CONTENT().stageDefaults || []) if (fallback?.reward?.id) global.KeyItemSystem.define(fallback.reward);
     installed = true;
@@ -560,8 +666,18 @@
     turnInQuest,
     menuStatus,
     taskDescriptor,
+    onDialogueNode,
     diagnosticsText,
-    debugSnapshot: () => ({ installed, ...JSON.parse(JSON.stringify(debugState)), state: JSON.parse(JSON.stringify(ensureQuestState() || null)) }),
+    debugSnapshot: () => ({
+      installed,
+      ...JSON.parse(JSON.stringify(debugState)),
+      presentation: {
+        sparklesActive: !!presentationState.sparkleVisual,
+        bodyOverride: presentationState.walker?._animalSleepPresentationOverride || null,
+        headOverride: presentationState.walker?._animalHeadPoseOverride || null,
+      },
+      state: JSON.parse(JSON.stringify(ensureQuestState() || null)),
+    }),
   };
 
   if (typeof document !== 'undefined') beginInstallPolling();

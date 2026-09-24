@@ -32,6 +32,12 @@ const consumedKeys = []; // Used to prove each turn-in consumes one actual cooke
 const unlockedRecipeIds = new Set(); // Used to prove Banubu teaches each recipe at the intended transition.
 const registeredActions = new Map(); // Used to verify DialogueContent receives the Banubu action handler.
 const registeredProviders = new Map(); // Used to verify DialogueContent receives the Banubu tree provider.
+const registeredNodeEnterHandlers = new Map(); // Used to verify Banubu owns its dialogue-node presentation through the generic dialogue hook.
+let sparkleCreates = 0; // Used to prove the “I’m up” beat starts exactly one persistent emitter.
+let sparkleDisposes = 0; // Used to prove the key-gift beat removes the persistent emitter immediately.
+let sparkleUpdates = 0; // Used to prove the active emitter advances through RuntimeFrameScheduler rather than a private RAF loop.
+const schedulerCallbacks = new Map(); // Used to capture Banubu's shared-frame subscriber for direct regression driving.
+const schedulerEnabled = new Map(); // Used to verify the transient subscriber sleeps whenever the sparkle effect is inactive.
 
 const fishDefinitions = [
   { key: 'fish_strength', definition: { label: 'Strength Fish', cookingCategories: ['fish'], cookingPrimaryEffect: 'strength' } },
@@ -68,6 +74,35 @@ const context = {
   DialogueContent: {
     registerTreeProvider(id, fn) { registeredProviders.set(id, fn); },
     registerActionHandler(id, fn) { registeredActions.set(id, fn); },
+    registerNodeEnterHandler(id, fn) { registeredNodeEnterHandlers.set(id, fn); },
+  },
+  RuntimeFrameScheduler: {
+    register(id, fn, options = {}) {
+      schedulerCallbacks.set(id, { fn, options });
+      schedulerEnabled.set(id, options.enabled !== false);
+      return () => schedulerCallbacks.delete(id);
+    },
+    setEnabled(id, enabled) {
+      if (!schedulerCallbacks.has(id)) return false;
+      schedulerEnabled.set(id, !!enabled);
+      return true;
+    },
+  },
+  AuthoredFurniture: {
+    createEmitterVisual(group, emitter, maxParticles) {
+      sparkleCreates++;
+      return {
+        group,
+        emitter,
+        maxParticles,
+        update(dt, active) {
+          assert(dt > 0 && dt <= 0.05);
+          assert.strictEqual(active, true);
+          sparkleUpdates++;
+        },
+        dispose() { sparkleDisposes++; },
+      };
+    },
   },
 };
 context.window = context;
@@ -140,7 +175,7 @@ assert.strictEqual(questline.init({
   },
 }), true, 'Banubu quest controller must bind to the game quest store and register once dependencies exist');
 assert.strictEqual(questline.install(), true, 'Banubu quest controller install remains idempotent after dependency injection');
-assert(registeredProviders.has('banubu') && registeredActions.has('banubuQuest'), 'Banubu dialogue provider/action handler must be registered');
+assert(registeredProviders.has('banubu') && registeredActions.has('banubuQuest') && registeredNodeEnterHandlers.has('banubu'), 'Banubu dialogue provider/action/presentation handlers must be registered');
 
 // Recipes: exactly three fish plus flour + fat for Quest 1; exactly three Tea Blends + White Milk for Quest 2.
 assert.strictEqual(content.threeFishPieRecipe.slots.length, 5);
@@ -183,6 +218,37 @@ assert.strictEqual(banubu.phrasePools.length, 0);
 assert.strictEqual(banubu.events.length, 0);
 assert(!banubu.dialogueTrees.some(tree => Number(tree.banubuQuest?.stage) > 2 && tree.banubuQuest?.phase === 'offer'), 'quests 3–5 must have no offer trees');
 assert(banubu.dialogueTrees.some(tree => tree.banubuQuest?.phase === 'blocked' && tree.banubuQuest?.stage === 3), 'stage 3 must be an explicit authoring block');
+
+const q1ReadyPresentationTree = content.dialogueTrees.find(tree => tree.id === 'banubu_q1_ready'); // Used to verify the exact authored line-to-presentation timing requested for the Color Pools Key scene.
+const q1ReadyPresentationNodes = Object.fromEntries(q1ReadyPresentationTree.nodes.map(node => [node.id, node]));
+assert.deepStrictEqual(JSON.parse(JSON.stringify(q1ReadyPresentationNodes.banubu_q1_ready_4.banubuPresentation)), { body: 'awake', sparkles: 'start' }, '“I’m up” must switch Banubu to regular idle and start sparkles');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(q1ReadyPresentationNodes.banubu_q1_ready_5.banubuPresentation)), { neck: 'max_down' }, 'noticing the Color Pools Key must use the canonical maximum downward neck pose');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(q1ReadyPresentationNodes.banubu_q1_ready_6.banubuPresentation)), { neck: 'release' }, 'the key-noticing neck pose must release on the following line instead of sticking');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(q1ReadyPresentationNodes.banubu_q1_ready_7.banubuPresentation)), { sparkles: 'stop' }, 'the sparkles must disappear on the line where Banubu says the player can have the key');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(q1ReadyPresentationNodes.banubu_q1_ready_15.banubuPresentation)), { body: 'sleep', neck: 'release' }, 'the line after the yawn must restore Banubu’s sleeping body pose');
+
+const presentationHandler = registeredNodeEnterHandlers.get('banubu'); // Used to exercise the presentation state machine without a WebGL scene.
+const presentationWalker = { root: { userData: {} } }; // Minimal named-animal walker seam used by BanubuQuestline presentation.
+presentationHandler(q1ReadyPresentationNodes.banubu_q1_ready_4, { npc: banubu, walker: presentationWalker });
+assert.strictEqual(presentationWalker._animalSleepPresentationOverride, 'awake');
+assert.strictEqual(sparkleCreates, 1);
+assert.strictEqual(questline.debugSnapshot().presentation.sparklesActive, true);
+assert.strictEqual(schedulerEnabled.get('banubu-dialogue-presentation'), true, 'starting sparkles must enable Banubu’s shared-frame subscriber');
+schedulerCallbacks.get('banubu-dialogue-presentation').fn({ deltaMs: 16.67 });
+assert.strictEqual(sparkleUpdates, 1, 'the scheduler must advance the live sparkle emitter');
+presentationHandler(q1ReadyPresentationNodes.banubu_q1_ready_5, { npc: banubu, walker: presentationWalker });
+assert.strictEqual(presentationWalker._animalHeadPoseOverride, 'max_down');
+presentationHandler(q1ReadyPresentationNodes.banubu_q1_ready_6, { npc: banubu, walker: presentationWalker });
+assert.strictEqual(presentationWalker._animalHeadPoseOverride, undefined);
+presentationHandler(q1ReadyPresentationNodes.banubu_q1_ready_7, { npc: banubu, walker: presentationWalker });
+assert.strictEqual(sparkleDisposes, 1);
+assert.strictEqual(questline.debugSnapshot().presentation.sparklesActive, false);
+assert.strictEqual(schedulerEnabled.get('banubu-dialogue-presentation'), false, 'the “you can have it” line must stop per-frame sparkle work as well as dispose the visual');
+presentationHandler(q1ReadyPresentationNodes.banubu_q1_ready_15, { npc: banubu, walker: presentationWalker });
+assert.strictEqual(presentationWalker._animalSleepPresentationOverride, 'sleep');
+presentationHandler(null, { npc: banubu, walker: presentationWalker, ended: true });
+assert.strictEqual(presentationWalker._animalSleepPresentationOverride, undefined, 'dialogue cleanup must release the temporary body override back to Banubu’s authored schedule');
+assert.strictEqual(presentationWalker._animalHeadPoseOverride, undefined, 'dialogue cleanup must release any temporary neck override');
 
 // Quest 1 target is generated before intro text resolves, so its three buff names are real and stable.
 let state = questline.ensureQuestState();
@@ -389,6 +455,8 @@ assert(!banubuSchedule.scheduleHooks.rules.some(rule => rule.stationId === 'stat
 const sleepPresentation = read('docs/js/animal-sleep-presentation.js');
 assert.match(sleepPresentation, /function registerExternalSleeper\(/, 'named animal NPCs must be able to opt into the shared animal sleep presenter');
 assert.match(sleepPresentation, /eyesClosed = typeof config\.eyesClosed === 'function'/, 'external sleepers must be able to open only their eyes while preserving the sleep body pose');
+assert.match(sleepPresentation, /function externalSleepingState\(entity, config\)/, 'external named animals must expose a temporary presentation override over schedule sleep');
+assert.match(sleepPresentation, /_animalHeadPoseOverride[\s\S]{0,320}max_down[\s\S]{0,160}forceHeadDown/, 'awake external animals must be able to reuse the canonical maximum downward neck pose');
 assert.match(sleepPresentation, /frameCacheKey\(kind, frame, genotype, eyesClosed = true\)/, 'sleep frame cache must distinguish open-eye and closed-eye versions of the same species sleep frame');
 assert.match(sleepPresentation, /if \(sleeping && run2\) return \{ frame: 'run2'/, 'sleep presentation must prefer each species run2 frame when available');
 assert.match(sleepPresentation, /renderer\.composeFrame\(kind, descriptor\.frame, genotype \|\| null, eyesClosed\)/, 'sleep presentation must use the species blink-shut composite while asleep');
@@ -398,11 +466,19 @@ assert.match(creatureRendererSource, /grehlr:[\s\S]{0,420}blink: 'assets\/creatu
 assert.match(gameSource, /_animalSleepRequested = !!this\.animalDef && \/sleep\/i\.test/, 'named animal NPC sleeping must come from the authored schedule activity');
 assert.match(gameSource, /AnimalSleepPresentation\.registerExternalSleeper\(this/, 'named animal walkers must register with the shared sleep animation system');
 assert.match(gameSource, /eyesClosed: \(\) => !\(dialogueOpen && _dialogueWalker === this && this\.rec\?\._animalDialogueEyesOpen === true\)/, 'sleeping named animals may open their eyes only while their own eligible dialogue is open');
-assert.match(read('docs/js/livestock-nursery-install-bridge.js'), /animal-sleep-presentation\.js\?v=20260924animaleyes1/, 'runtime loader must deliver the current named-animal sleep presenter');
+assert.match(read('docs/js/livestock-nursery-install-bridge.js'), /animal-sleep-presentation\.js\?v=20260924banubupose2/, 'runtime loader must deliver the current named-animal sleep presenter');
 assert.match(gameSource, /expressionEyesClosed: \(\) => dialogueOpen && _dialogueWalker === this/, 'awake named animals use their current dialogue eye expression');
 assert.match(sleepPresentation, /sleeping \|\| expressionEyesClosed/, 'awake closed-eye expressions use the existing animal blink composite');
 const banubuContent = read('docs/js/banubu-quest-content.js'); // Verifies every authored Banubu sleep line receives its editor-visible eye expression.
 assert.match(banubuContent, /expression: \/zzz\/i\.test\(text\) \? 'eyes_closed' : 'neutral'/);
+const dialogueContentSource = read('docs/js/dialogue-content.js'); // Verifies the presentation hook is generic and cleaned up by ordinary dialogue teardown.
+assert.match(dialogueContentSource, /function registerNodeEnterHandler\(npcId, handler\)/);
+assert.match(dialogueContentSource, /_notifyDialogueNodeEnter\(node\)/);
+assert.match(dialogueContentSource, /_notifyDialogueNodeEnter\(null, true\)/);
+const banubuQuestlineSource = read('docs/js/banubu-questline.js'); // Verifies the sparkle effect obeys the repository's single-frame-owner architecture.
+assert.doesNotMatch(banubuQuestlineSource, /requestAnimationFrame\(/);
+assert.match(banubuQuestlineSource, /scheduler\.register\(PRESENTATION_SCHEDULER_ID, updatePresentationFrame/);
+assert.match(banubuQuestlineSource, /RuntimeFrameScheduler\.setEnabled|RuntimeFrameScheduler\?\.setEnabled/);
 
 const speciesOverrides = require('../docs/config/npcs/species-overrides.json');
 assert.strictEqual(speciesOverrides.npcs.banubu.species, 'grehlr');

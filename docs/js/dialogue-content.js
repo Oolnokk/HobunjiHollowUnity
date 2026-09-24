@@ -44,6 +44,7 @@
   const _npcDlgState = new Map(); // npcId → {visitedSeqSlots:{seqId:[slotIdx,...]}, localNickname}
   const _dialogueTreeProviders = new Map(); // npcId → provider(rec), used by stateful systems that select an authored tree at interaction time.
   const _dialogueActionHandlers = new Map(); // action type → handler(action, context), used to extend choice actions without adding NPC-specific branches here.
+  const _dialogueNodeEnterHandlers = new Map(); // npcId → handler(node, context), used by feature-owned world presentation when an authored node becomes current.
   const _npcBaseDispositions = {}; // npcId → baseDisposition from NPC database config
   let _favorRescaleApplied = true; // see loadNpcRelationships/_applyLegacyFavorRescale
 
@@ -358,6 +359,28 @@
     if (!type || typeof handler !== 'function') return false;
     _dialogueActionHandlers.set(String(type), handler);
     return true;
+  }
+
+  function registerNodeEnterHandler(npcId, handler) {
+    if (!npcId || typeof handler !== 'function') return false;
+    _dialogueNodeEnterHandlers.set(String(npcId), handler);
+    return true;
+  }
+
+  function _notifyDialogueNodeEnter(node, ended = false) {
+    const npcId = String(_dlgNpcRec?.id || ''); // Used to route presentation only to the feature that owns the active NPC.
+    const handler = _dialogueNodeEnterHandlers.get(npcId); // Used to avoid hard-coding any NPC-specific presentation semantics into dialogue core.
+    if (!handler) return;
+    try {
+      handler(node, {
+        npc: _dlgNpcRec,
+        tree: _dlgTree,
+        walker: deps.getDialogueWalker?.() || null,
+        ended,
+      });
+    } catch (error) {
+      console.warn('[npc-dialogue] node-enter handler failed', npcId, node?.id || '(end)', error);
+    }
   }
 
   function _pickDialogueTree(rec) {
@@ -702,6 +725,7 @@
     if (!node) { deps.closeNpcDialogue(); return; }
     window.CinematicCameraRuntime?.applyDialogueNodeCamera?.(node); // Optional node.cameraId swaps authored world shots without reintroducing a portrait overlay.
     _dlgNode = node;
+    _notifyDialogueNodeEnter(node); // Feature-owned world presentation tracks the same node transition the player actually sees.
 
     if (node.type === 'end') { deps.closeNpcDialogue(); return; }
 
@@ -822,6 +846,7 @@
   // closeNpcDialogue (which owns ending a conversation, including the
   // camera/staging teardown this module doesn't touch).
   function resetDialogueState() {
+    _notifyDialogueNodeEnter(null, true); // Gives feature-owned presentation a deterministic cleanup point when dialogue closes early or normally.
     _dialogueLines = [];
     _dialogueLineIdx = 0;
     _dlgTree = null; _dlgNodeMap = null; _dlgNode = null; _dlgNpcRec = null; _dlgSeqStack = [];
@@ -868,5 +893,6 @@
     npcBaseDispositions: _npcBaseDispositions,
     registerTreeProvider,
     registerActionHandler,
+    registerNodeEnterHandler,
   };
 })();
