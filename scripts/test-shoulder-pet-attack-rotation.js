@@ -61,8 +61,11 @@ assert.match(gameSource,
   /const playerDrawsOnTop = frontVisible[\s\S]{0,500}PLAYER_OVER_SHOULDER_PET_RENDER_ORDER : PLAYER_BACK_PLANE_RENDER_ORDER/,
   'the visible character and shoulder pet resolve to one clean whole-sprite draw order');
 assert.match(gameSource,
-  /_setLayerDepthWrite\(_playerAvatarFrontMaterial, !active\)[\s\S]{0,900}_setLayerDepthWrite\(m, false\)/,
-  'attached character and pet cutouts stop depth-writing against each other while retaining depth tests');
+  /_setLayerDepthWrite\(_playerAvatarFrontMaterial, !active\)/,
+  'attached player front material stops depth-writing while the pet is active');
+assert.match(gameSource,
+  /for \(const m of \[pet\.avatarRef\?\.frontPlane\?\.material, pet\.avatarRef\?\.backPlane\?\.material\]\)[\s\S]{0,180}_setLayerDepthWrite\(m, false\)/,
+  'attached pet cutouts stop depth-writing against the player while retaining depth tests');
 
 assert.match(gameSource,
   /settingDisableShoulderFrontXray[\s\S]{0,900}settingDisableShoulderBackXray/,
