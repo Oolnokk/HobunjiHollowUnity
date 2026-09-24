@@ -10,6 +10,9 @@ assert.match(gameSource,
   /updateShoulderPetMeshPin\(\);/,
   'the gameplay loop still re-pins shoulder pets');
 assert.match(gameSource,
+  /updatePlayerHeadAim\(\);[\s\S]{0,260}prepareNeckForAttachmentSampling\?\.\(\);[\s\S]{0,260}updateShoulderPetMeshPin\(\);/,
+  'the final physical neck pose is resolved before the live shoulder-perch frame is sampled');
+assert.match(gameSource,
   /const worldQuaternion = selectedRotationQuaternion\.clone\(\);/,
   'shoulder pets begin with whichever rotation frame is selected');
 for (const source of ['pixel', 'body', 'bodyNeckMidpoint', 'head', 'world']) {
