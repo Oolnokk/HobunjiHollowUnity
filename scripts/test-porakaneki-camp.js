@@ -9,6 +9,12 @@ const localeIndex = JSON.parse(fs.readFileSync('docs/config/locales/index.json',
 const runtimeSource = fs.readFileSync('docs/js/porakaneki-camps-runtime.js', 'utf8'); // Browser-shaped VM exercises actual network/season/LOD transitions.
 const houseLoader = fs.readFileSync('docs/js/house-pieces.js', 'utf8'); // Guards parser-time bootstrap/cache version.
 const socialSource = fs.readFileSync('docs/js/npc-social-relationship-bridge-v2.js', 'utf8'); // Named chief retains normal gift/Rapport/dance/liquor path.
+const porakanekiTent = JSON.parse(fs.readFileSync('docs/config/pieces/porakaneki-tent.json', 'utf8')); // Authored square-taper 3x3 Porakaneki shelter.
+const banditTent = JSON.parse(fs.readFileSync('docs/config/pieces/bandit-tent.json', 'utf8')); // Authored bandit shelter cloned from the researcher's tent.
+const researcherTent = JSON.parse(fs.readFileSync('docs/config/pieces/researchers-tent.json', 'utf8')); // Geometry source the bandit tent must stay identical to.
+const banditLocale = JSON.parse(fs.readFileSync('docs/config/locales/locale_bandit_camp_small.json', 'utf8')); // Bandit footprint must match the authored 3x3 piece.
+const assetIndex = JSON.parse(fs.readFileSync('docs/assets/index.json', 'utf8')); // House Editor repo picker discoverability.
+const banditRuntimeSource = fs.readFileSync('docs/js/bandit-camps.js', 'utf8'); // Bandit camps must render the authored piece instead of procedural cone geometry.
 
 const ZONES = [
   'map_northern_cliffs',
@@ -47,10 +53,35 @@ assert.deepEqual(chiefLocale.placement.allowedZones, ZONES);
 assert.equal(chiefLocale.placement.maxInstances, 1);
 assert.equal(chiefLocale.meta.namedNpc, 'porakaneki_chief');
 assert.equal(chiefLocale.objects.filter(object => object.kind === 'tent').length, 7);
+assert(smallLocale.objects.filter(object => object.kind === 'tent').every(object => object.w === 3 && object.h === 3), 'every small Porakaneki tent reserves its authored 3x3 footprint');
+assert(chiefLocale.objects.filter(object => object.kind === 'tent').every(object => object.w === 3 && object.h === 3), 'every chief-camp Porakaneki tent reserves its authored 3x3 footprint');
+assert(banditLocale.objects.filter(object => object.kind === 'tent').every(object => object.w === 3 && object.h === 3), 'bandit collision/loot footprints must match the authored 3x3 tent piece');
+assert.equal(porakanekiTent.base.height, 2.55, 'Porakaneki tent is 50% taller than the 1.7-tile researcher/bandit tent');
+assert.equal(porakanekiTent.footprint.cells.length, 9, 'Porakaneki tent House Editor footprint is exactly 3x3');
+const poraVertices = porakanekiTent.base.faces.flatMap(face => face.v);
+const poraBottom = poraVertices.filter(vertex => vertex[1] === 0);
+const poraTop = poraVertices.filter(vertex => vertex[1] === 2.55);
+const span = (vertices, axis) => Math.max(...vertices.map(vertex => vertex[axis])) - Math.min(...vertices.map(vertex => vertex[axis]));
+assert.equal(span(poraBottom, 0), 3, 'Porakaneki tent base X span is 3 tiles');
+assert.equal(span(poraBottom, 2), 3, 'Porakaneki tent base Z span is 3 tiles');
+assert.equal(span(poraTop, 0), 1.5, 'Porakaneki tent square top/spine is half the base X span');
+assert.equal(span(poraTop, 2), 1.5, 'Porakaneki tent square top/spine is half the base Z span');
+const normalizedBanditTent = JSON.parse(JSON.stringify(banditTent));
+const normalizedResearcherTent = JSON.parse(JSON.stringify(researcherTent));
+delete normalizedBanditTent.id; delete normalizedBanditTent.name;
+delete normalizedResearcherTent.id; delete normalizedResearcherTent.name;
+assert.deepEqual(normalizedBanditTent, normalizedResearcherTent, 'Bandit Tent geometry must remain identical to the Researcher\'s Tent');
+assert(assetIndex.housePieces.some(entry => entry.path === 'config/pieces/bandit-tent.json' && entry.category === 'tent'), 'Bandit Tent must be available in the House Editor repo picker');
+assert(assetIndex.housePieces.some(entry => entry.path === 'config/pieces/porakaneki-tent.json' && entry.category === 'tent'), 'Porakaneki Tent must be available in the House Editor repo picker');
+assert(runtimeSource.includes("const TENT_PIECE_URL = 'config/pieces/porakaneki-tent.json'"), 'Porakaneki runtime must load the authored tent piece');
+assert(runtimeSource.includes('HousePieceGen.buildGroupFromPiece'), 'Porakaneki runtime must render through HousePieceGen');
+assert(banditRuntimeSource.includes("const BANDIT_TENT_PIECE_URL = 'config/pieces/bandit-tent.json'"), 'Bandit runtime must load the authored bandit tent clone');
+assert(banditRuntimeSource.includes('HousePieceGen.buildGroupFromPiece'), 'Bandit runtime must render through HousePieceGen');
+assert(!banditRuntimeSource.includes('buildBanditTentCanvasGeometry'), 'old procedural five-sided bandit tent geometry must stay removed');
 assert.deepEqual(cfg.equipment.weaponShapes, ['fishingspear', 'hatchet', 'dagger'], 'Porakaneki must use the true dagger shape, never daggerSword');
 assert(localeIndex.locales.some(entry => entry.id === 'locale_porakaneki_camp_small'));
 assert(localeIndex.locales.some(entry => entry.id === 'locale_porakaneki_camp_chief' && entry.singleton === true));
-assert(houseLoader.includes('porakaneki-camps-runtime.js?v=20260917dagger1'));
+assert(houseLoader.includes('porakaneki-camps-runtime.js?v=20260924authoredtent1'));
 assert(socialSource.includes('canGiftToday'), 'chief gifting must retain the ordinary once-per-day NPC gate');
 assert(socialSource.includes('window.NpcRapport'), 'chief must retain the ordinary Rapport bridge');
 assert(runtimeSource.includes("activity: 'break'"), 'chief daytime behavior must remain free-time planner driven');
@@ -145,7 +176,7 @@ const banditCamps = { updateCampBanners() { return 'camp-tick'; } };
 const contextWindow = {
   fetch: async url => {
     const value = String(url);
-    const payload = value.includes('porakaneki-camp.json') ? cfg : value.includes('chief') ? chiefLocale : smallLocale;
+    const payload = value.includes('porakaneki-tent.json') ? porakanekiTent : value.includes('porakaneki-camp.json') ? cfg : value.includes('chief') ? chiefLocale : smallLocale;
     return { ok: true, status: 200, json: async () => payload };
   },
   BanditCombat: banditCombat,
