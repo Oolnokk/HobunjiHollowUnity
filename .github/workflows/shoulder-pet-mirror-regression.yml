@@ -7,10 +7,15 @@ on:
       - 'docs/config/attachment-rig-profiles.js'
       - 'docs/js/player-body-transform-composer.js'
       - 'docs/js/portrait-plane-outline-parity.js'
+      - 'docs/js/social-rhythm-runtime.js'
+      - 'docs/js/character-action-locks.js'
       - 'scripts/test-shoulder-perch-mirror-toggle.js'
       - 'scripts/test-shoulder-pet-curiosity.js'
       - 'scripts/test-shoulder-pet-attack-rotation.js'
       - 'scripts/test-player-body-transform-composer.js'
+      - 'scripts/test-character-view-mode.js'
+      - 'scripts/test-character-view-cursorless-aim.js'
+      - 'scripts/test-social-rhythm-scheduler.js'
       - '.github/workflows/shoulder-pet-mirror-regression.yml'
 
 permissions:
@@ -30,6 +35,8 @@ jobs:
           node --check docs/config/attachment-rig-profiles.js
           node --check docs/js/player-body-transform-composer.js
           node --check docs/js/portrait-plane-outline-parity.js
+          node --check docs/js/social-rhythm-runtime.js
+          node --check docs/js/character-action-locks.js
       - name: Shoulder pet portrait mirror regression
         run: node scripts/test-shoulder-perch-mirror-toggle.js
       - name: Shoulder pet curiosity regression
@@ -38,3 +45,9 @@ jobs:
         run: node scripts/test-shoulder-pet-attack-rotation.js
       - name: Player body attachment composer regression
         run: node scripts/test-player-body-transform-composer.js
+      - name: Original Character View behavior regression
+        run: |
+          node scripts/test-character-view-mode.js
+          node scripts/test-character-view-cursorless-aim.js
+      - name: Social rhythm Character View ownership regression
+        run: node scripts/test-social-rhythm-scheduler.js
