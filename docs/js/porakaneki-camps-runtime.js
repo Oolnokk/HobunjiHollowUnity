@@ -786,7 +786,6 @@
       const spawn = randomCampPoint(camp, camp.rng);
       camp.hunters.push({
         id: `${camp.id}:resident:${index}`,
-        appearanceSeed: `${generationYear()}:${camp.id}:resident:${index}`, // Stable per-resident portrait seed preserved across unload/rematerialization cycles.
         index,
         camp,
         weaponShape: weaponRoll(camp.rng),
@@ -939,7 +938,7 @@
       }, 'grunt', 0, hunter.x * combatDeps.TILE, hunter.y * combatDeps.TILE, {
         zoneId: camp.zoneId,
         nameOverride: 'Porakaneki Hunter',
-        appearanceSeed: hunter.appearanceSeed,
+        bodyColorsOverride: window.HobunjiPorakanekiSpecies?.bodyColorsForSeed?.(hunter.id, 'male') || null,
         defOverride: {
           label: 'Porakaneki Hunter',
           weaponKey: weapon.weaponKey,
