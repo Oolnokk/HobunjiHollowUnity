@@ -24131,6 +24131,7 @@
         }
         window.RangedWeapons?.update(dt);
         updatePlayerHeadAim(); // Must follow updateToolMesh's final bodyYaw.
+        window.PlayerBodyTransformComposer?.prepareNeckForAttachmentSampling?.(); // Finalizes render-time neck limits before the shoulder-perch pixel/frame is sampled.
         _tickPlayerPortraitLife(dt);
         updateShoulderPetMeshPin();
         if (currentArea === 'farm') {
