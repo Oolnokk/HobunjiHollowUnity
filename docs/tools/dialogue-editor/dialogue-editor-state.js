@@ -1,15 +1,16 @@
 'use strict';
-const DEFAULT_SETTINGS={
+const LEGACY_DEFAULT_SETTINGS={
   workspaceOrientation:'vertical',navPlacement:'left',graphFlow:'vertical',portAttachment:'choiceRows',routeStyle:'orthogonal',nodeDensity:'standard',navStyle:'nested',hierarchy:['trigger','location','relationship','time','season'],emptyHandling:'bucket',multiHandling:'combined',sortMode:'label',showConditionSummary:true,autoArrangeOrthographic:true,colorCodeNodes:true
 };
+const DEFAULT_SETTINGS={...LEGACY_DEFAULT_SETTINGS,workspaceOrientation:'horizontal',graphFlow:'horizontal',hierarchy:[]};
 const PRESETS=[
-  {id:'baseline',name:'Current-editor baseline',why:'Flat tree list, horizontal BFS graph, choice-row exits.',settings:{...DEFAULT_SETTINGS,workspaceOrientation:'horizontal',graphFlow:'horizontal',hierarchy:[],navStyle:'nested'}},
-  {id:'conversation',name:'Conversation first',why:'Start with why dialogue fired, then social state, then place.',settings:{...DEFAULT_SETTINGS,hierarchy:['trigger','encounter','relationship','location']}},
-  {id:'world',name:'World first',why:'Best for finding gaps by place, season, weather, then time.',settings:{...DEFAULT_SETTINGS,hierarchy:['location','season','weather','time'],navStyle:'columns'}},
-  {id:'social',name:'Social first',why:'Best when relationship progression is the authoring backbone.',settings:{...DEFAULT_SETTINGS,hierarchy:['relationship','encounter','species','trigger'],navStyle:'cards',multiHandling:'combined'}},
-  {id:'vertical',name:'Vertical story flow',why:'Top navigator, top-to-bottom graph, top/bottom ports.',settings:{...DEFAULT_SETTINGS,workspaceOrientation:'vertical',graphFlow:'vertical',portAttachment:'topBottom',routeStyle:'curved',hierarchy:['encounter','relationship','weather'],navStyle:'nested'}},
-  {id:'dense',name:'Dense audit mode',why:'Compact nodes and drill-down columns for coverage inspection.',settings:{...DEFAULT_SETTINGS,nodeDensity:'compact',hierarchy:['specificity','priority','trigger','location'],navStyle:'columns',showConditionSummary:false}},
-  {id:'hybrid',name:'Hybrid ports',why:'Vertical macro flow with left/right node ports to test scanability.',settings:{...DEFAULT_SETTINGS,workspaceOrientation:'horizontal',graphFlow:'vertical',portAttachment:'sides',routeStyle:'orthogonal',hierarchy:['location','trigger','time','weather'],navStyle:'cards'}}
+  {id:'baseline',name:'Current-editor baseline',why:'Flat tree list, horizontal BFS graph, choice-row exits.',settings:{...DEFAULT_SETTINGS}},
+  {id:'conversation',name:'Conversation first',why:'Start with why dialogue fired, then social state, then place.',settings:{...LEGACY_DEFAULT_SETTINGS,hierarchy:['trigger','encounter','relationship','location']}},
+  {id:'world',name:'World first',why:'Best for finding gaps by place, season, weather, then time.',settings:{...LEGACY_DEFAULT_SETTINGS,hierarchy:['location','season','weather','time'],navStyle:'columns'}},
+  {id:'social',name:'Social first',why:'Best when relationship progression is the authoring backbone.',settings:{...LEGACY_DEFAULT_SETTINGS,hierarchy:['relationship','encounter','species','trigger'],navStyle:'cards',multiHandling:'combined'}},
+  {id:'vertical',name:'Vertical story flow',why:'Top navigator, top-to-bottom graph, top/bottom ports.',settings:{...LEGACY_DEFAULT_SETTINGS,workspaceOrientation:'vertical',graphFlow:'vertical',portAttachment:'topBottom',routeStyle:'curved',hierarchy:['encounter','relationship','weather'],navStyle:'nested'}},
+  {id:'dense',name:'Dense audit mode',why:'Compact nodes and drill-down columns for coverage inspection.',settings:{...LEGACY_DEFAULT_SETTINGS,nodeDensity:'compact',hierarchy:['specificity','priority','trigger','location'],navStyle:'columns',showConditionSummary:false}},
+  {id:'hybrid',name:'Hybrid ports',why:'Vertical macro flow with left/right node ports to test scanability.',settings:{...LEGACY_DEFAULT_SETTINGS,workspaceOrientation:'horizontal',graphFlow:'vertical',portAttachment:'sides',routeStyle:'orthogonal',hierarchy:['location','trigger','time','weather'],navStyle:'cards'}}
 ];
 
 let state={
@@ -67,7 +68,10 @@ const SETTINGS_STORAGE_KEY='hobunjiDialogueLayoutLab.v2';
 function loadSettings(){
   try{
     const saved=JSON.parse(localStorage.getItem(SETTINGS_STORAGE_KEY)||'null');
-    return validateSettings({...DEFAULT_SETTINGS,...(saved||{})});
+    if(!saved)return deepCopy(DEFAULT_SETTINGS);
+    const restored=validateSettings({...LEGACY_DEFAULT_SETTINGS,...saved});
+    const wasUnmodifiedLegacyDefault=Object.keys(LEGACY_DEFAULT_SETTINGS).every(key=>JSON.stringify(restored[key])===JSON.stringify(LEGACY_DEFAULT_SETTINGS[key]));
+    return wasUnmodifiedLegacyDefault?deepCopy(DEFAULT_SETTINGS):validateSettings({...DEFAULT_SETTINGS,...saved});
   }catch{return JSON.parse(JSON.stringify(DEFAULT_SETTINGS))}
 }
 function validateSettings(s){

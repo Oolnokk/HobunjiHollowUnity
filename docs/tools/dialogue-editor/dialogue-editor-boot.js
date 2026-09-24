@@ -41,6 +41,7 @@ function syncPaneSplitter(){
   const key=orientation==='horizontal'?'horizontal':'vertical';
   splitter.hidden=state.settings.navPlacement==='hidden';
   splitter.setAttribute('aria-orientation',orientation==='horizontal'?'vertical':'horizontal');
+  splitter.title=orientation==='horizontal'?'Drag horizontally to resize the navigator and graph':'Drag vertically to resize the navigator and graph';
   const saved=paneSplitSizes[key];
   if(Number.isFinite(saved))applyPaneSplit(saved);
   else{
