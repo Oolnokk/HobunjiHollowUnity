@@ -580,6 +580,11 @@
       const curiosity = liveActivePet.shoulderCuriosity; // Used below to correlate a reported visual change with the random curiosity phase.
       lines.push(`Size class: ${sizeClass}   expected group scale=(1.0000, ${expectedScaleY.toFixed(4)}, ${expectedScaleZ.toFixed(4)})   actual=(${actualScale.x.toFixed(4)}, ${actualScale.y.toFixed(4)}, ${actualScale.z.toFixed(4)})`);
       lines.push(`Curiosity: phase=${curiosity?.phase || 'not-started'} bodyLean=${Number(curiosity?.currentLeanDeg || 0).toFixed(2)}° headTurn=${Number(curiosity?.currentPitchDeg || 0).toFixed(2)}°`);
+      const layerDecision = liveActivePet.avatarRef.group.userData?.hobunjiShoulderPetLayering; // Runtime layer decision recorded by game.js so mobile Pixel Probe can distinguish logical-facing changes from portrait deadzone snaps.
+      if (layerDecision) {
+        const deg = radians => Number.isFinite(radians) ? (radians * 180 / Math.PI).toFixed(2) + '°' : '-';
+        lines.push(`Layer face: source=${layerDecision.source || '-'} logical=${deg(layerDecision.logicalYaw)} rendered=${deg(layerDecision.renderedYaw)} camera=${deg(layerDecision.cameraBearing)} dot=${Number.isFinite(layerDecision.normalizedFaceZ) ? layerDecision.normalizedFaceZ.toFixed(4) : '-'} front=${!!layerDecision.frontVisible} playerOnTop=${!!layerDecision.playerDrawsOnTop}`);
+      }
       if (Math.abs(actualScale.x - 1) > 0.001 || Math.abs(actualScale.y - expectedScaleY) > 0.001 || Math.abs(actualScale.z - expectedScaleZ) > 0.001) {
         lines.push('>>> MISMATCH — the live shoulder-pet group scale no longer matches its genotype-derived scale.');
       }
