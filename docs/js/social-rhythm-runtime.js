@@ -23,9 +23,6 @@
     revision: 1,
     lastHeardAtMs: performance.now(),
     lastPollAtMs: 0,
-    actionArcDeps: null,
-    characterViewWasEnabled: false,
-    neckReturn: null,
     socialWheelProxy: null,
     socialWheelTarget: null,
     danceGate: null,
@@ -369,45 +366,6 @@
     } catch (_) {}
   }
 
-  function patchActionArc(api) {
-    if (!api?.init || api.init.__socialRhythmWrapped) return;
-    const original = api.init.bind(api);
-    const wrapped = function socialRhythmActionArcInit(injectedDeps) {
-      state.actionArcDeps = injectedDeps || null;
-      return original(injectedDeps);
-    };
-    wrapped.__socialRhythmWrapped = true;
-    api.init = wrapped;
-  }
-
-  function updateCharacterViewHead(timeMs) {
-    const deps = state.actionArcDeps;
-    const view = deps?.characterViewMode;
-    if (!view) return;
-    const enabled = !!view.enabled;
-    if (enabled && !state.characterViewWasEnabled) {
-      state.neckReturn = {
-        startAtMs: timeMs,
-        startX: Number(view.lockedNeckX) || 0,
-        startY: Number(view.lockedNeckY) || 0,
-      };
-    } else if (!enabled) {
-      state.neckReturn = null;
-    }
-    state.characterViewWasEnabled = enabled;
-    if (!enabled || !state.neckReturn) return;
-    const duration = configuredNumber('characterViewHeadReturnMs', 360, 40, 1600);
-    const t = clamp((timeMs - state.neckReturn.startAtMs) / duration, 0, 1);
-    const eased = 1 - Math.pow(1 - t, 3);
-    view.lockedNeckX = state.neckReturn.startX * (1 - eased);
-    view.lockedNeckY = state.neckReturn.startY * (1 - eased);
-    if (t >= 1) {
-      view.lockedNeckX = 0;
-      view.lockedNeckY = 0;
-      state.neckReturn = null;
-    }
-  }
-
   function dep(name) {
     for (const bag of [global.ProceduralHandAttachments?.gameDeps, global.Combat?.deps]) {
       if (bag && bag[name] != null) return bag[name];
@@ -645,14 +603,12 @@
       patchExistingFrames();
       sampleKurrayaRhythm();
     }
-    updateCharacterViewHead(timestamp);
     updateDanceFootsteps(timestamp);
     updatePlayerKurrayaMetronome(timestamp);
   }
 
   resetToSessionDefault();
   chainGlobal('SocialActionWheel', patchSocialWheel);
-  chainGlobal('ActionArcUI', patchActionArc);
   chainGlobal('AudioSystem', patchAudio);
   document.addEventListener?.('load', event => {
     const frame = event.target;
@@ -677,6 +633,6 @@
 
   global.RuntimeFrameScheduler.register('social-rhythm-clock', maintainRhythmClock, {
     owner: 'SocialRhythmClock',
-    description: 'Polls the Kurraya rhythm source, updates Character View head-return easing, and drives dance/metronome footstep timing. None of this has a render-order dependency.',
+    description: 'Polls the Kurraya rhythm source and drives dance/metronome footstep timing. It does not mutate Character View pose state or touch Three.js scene transforms.',
   });
 })(window);
