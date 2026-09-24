@@ -456,7 +456,7 @@ const sleepPresentation = read('docs/js/animal-sleep-presentation.js');
 assert.match(sleepPresentation, /function registerExternalSleeper\(/, 'named animal NPCs must be able to opt into the shared animal sleep presenter');
 assert.match(sleepPresentation, /eyesClosed = typeof config\.eyesClosed === 'function'/, 'external sleepers must be able to open only their eyes while preserving the sleep body pose');
 assert.match(sleepPresentation, /function externalSleepingState\(entity, config\)/, 'external named animals must expose a temporary presentation override over schedule sleep');
-assert.match(sleepPresentation, /_animalHeadPoseOverride[\s\S]{0,320}max_down[\s\S]{0,160}forceHeadDown/, 'awake external animals must be able to reuse the canonical maximum downward neck pose');
+assert.match(sleepPresentation, /_animalHeadPoseOverride[\s\S]*?max_down[\s\S]*?forceHeadDown\(avatarRef, entity\)/, 'awake external animals must be able to reuse the canonical maximum downward neck pose');
 assert.match(sleepPresentation, /frameCacheKey\(kind, frame, genotype, eyesClosed = true\)/, 'sleep frame cache must distinguish open-eye and closed-eye versions of the same species sleep frame');
 assert.match(sleepPresentation, /if \(sleeping && run2\) return \{ frame: 'run2'/, 'sleep presentation must prefer each species run2 frame when available');
 assert.match(sleepPresentation, /renderer\.composeFrame\(kind, descriptor\.frame, genotype \|\| null, eyesClosed\)/, 'sleep presentation must use the species blink-shut composite while asleep');
