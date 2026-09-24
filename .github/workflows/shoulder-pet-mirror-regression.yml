@@ -1,0 +1,40 @@
+name: Shoulder pet mirror regression
+
+on:
+  pull_request:
+    paths:
+      - 'docs/game.js'
+      - 'docs/config/attachment-rig-profiles.js'
+      - 'docs/js/player-body-transform-composer.js'
+      - 'docs/js/portrait-plane-outline-parity.js'
+      - 'scripts/test-shoulder-perch-mirror-toggle.js'
+      - 'scripts/test-shoulder-pet-curiosity.js'
+      - 'scripts/test-shoulder-pet-attack-rotation.js'
+      - 'scripts/test-player-body-transform-composer.js'
+      - '.github/workflows/shoulder-pet-mirror-regression.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  shoulder-pet-mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax checks
+        run: |
+          node --check docs/game.js
+          node --check docs/config/attachment-rig-profiles.js
+          node --check docs/js/player-body-transform-composer.js
+          node --check docs/js/portrait-plane-outline-parity.js
+      - name: Shoulder pet portrait mirror regression
+        run: node scripts/test-shoulder-perch-mirror-toggle.js
+      - name: Shoulder pet curiosity regression
+        run: node scripts/test-shoulder-pet-curiosity.js
+      - name: Shoulder pet attack/head rotation regression
+        run: node scripts/test-shoulder-pet-attack-rotation.js
+      - name: Player body attachment composer regression
+        run: node scripts/test-player-body-transform-composer.js
