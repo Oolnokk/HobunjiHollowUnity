@@ -12,6 +12,10 @@
   let selectedPlacement = null; // {ref,node,basePosition}; mirrors edits back into the Map Editor workspace.
   let gameplayLock = null; // Shared movement/tool/action lock held for the complete placement-edit session.
   let transformSendTimer = null;
+  const sessionTransformEdits = new Map(); // Tracks the first and latest in-game gizmo transform per placement so runtime-only edits can be included in Copy Edit Diff.
+  const pendingTransformRequests = new Map(); // requestId -> placement key; used to learn whether a live transform was persisted by the standalone Map Editor or remained runtime-only.
+  let pendingDiffRequestId = ''; // Guards the one outstanding Copy Edit Diff request so late editor responses cannot overwrite a newer clipboard result.
+  let diffRequestTimer = null; // Falls back to runtime-only edits when the editor is connected but does not answer a diff request.
   let cameraMarkerRoot = null; // Holds dev-only cinematic camera markers while the Map Edit session is open.
   let cameraMarkerArea = ''; // Used to rebuild camera markers only when the active room/locale changes.
   let cameraMarkerSignature = ''; // Used to detect authored camera-list changes without rebuilding markers on every panel refresh.
@@ -279,6 +283,7 @@
     gameplayLock = gameplayLock || window.CharacterActionLocks?.acquire?.({ owner: 'map-editor-gizmo', reason: 'Adjusting a map placement', participants: [{ id: 'player', channels: ['movement', 'tools', 'actions'] }] });
     control.attach(node);
     if (isCamera) setGizmoMode('translate');
+    selectedPlacement.initialTransform = placementTransform(); // Captures the pre-edit value once so later clipboard output is a true before/after diff instead of only the final transform.
     startOrbit(node);
     refreshPanel();
   }
@@ -453,15 +458,46 @@
     output.textContent = `Offset ${(node.position.x - basePosition.x).toFixed(2)}, ${(node.position.y - basePosition.y).toFixed(2)}, ${(node.position.z - basePosition.z).toFixed(2)} • Yaw ${(node.rotation.y * 180 / Math.PI).toFixed(1)}°`;
   }
 
+  function transformEditKey(mapId, layoutId, selection) {
+    const identity = selection.id || `${selection.key || ''}@${selection.col},${selection.row}`; // Stable across repeated drag events for one authored placement.
+    return `${mapId || '-'}|${layoutId || 'default'}|${selection.kind || '-'}|${identity}`;
+  }
+
+  function rememberPlacementTransform(requestId, mapId, layoutId, selection, transform) {
+    const key = transformEditKey(mapId, layoutId, selection);
+    let edit = sessionTransformEdits.get(key);
+    if (!edit) {
+      edit = {
+        mapId,
+        layoutId,
+        selection: { ...selection },
+        before: selectedPlacement?.initialTransform || null,
+        after: transform,
+        persistedInEditor: false,
+        lastRequestId: requestId,
+      };
+      sessionTransformEdits.set(key, edit);
+    } else {
+      edit.after = transform;
+      edit.persistedInEditor = false; // Every new drag starts unpersisted until the matching editor result confirms otherwise.
+      edit.lastRequestId = requestId;
+    }
+    pendingTransformRequests.set(requestId, key);
+  }
+
   function sendPlacementTransform(immediate) {
     if (!selectedPlacement) return;
-    const send = () => endpoint.send({
-      type: 'placement-transform', requestId: window.MapLivePreview.requestId('gizmo'),
-      mapId: selectedPlacement.ref.mapId || currentDescriptor().mapId,
-      layoutId: selectedPlacement.ref.layoutId || currentDescriptor().layoutId || 'default',
-      selection: { kind: selectedPlacement.ref.kind, id: selectedPlacement.ref.id, key: selectedPlacement.ref.key, col: selectedPlacement.ref.col, row: selectedPlacement.ref.row },
-      transform: placementTransform(),
-    });
+    const send = () => {
+      if (!selectedPlacement) return;
+      const descriptor = currentDescriptor({ includeSnapshot: false });
+      const requestId = window.MapLivePreview.requestId('gizmo');
+      const mapId = selectedPlacement.ref.mapId || descriptor.mapId;
+      const layoutId = selectedPlacement.ref.layoutId || descriptor.layoutId || 'default';
+      const selection = { kind: selectedPlacement.ref.kind, id: selectedPlacement.ref.id, key: selectedPlacement.ref.key, col: selectedPlacement.ref.col, row: selectedPlacement.ref.row };
+      const transform = placementTransform();
+      rememberPlacementTransform(requestId, mapId, layoutId, selection, transform);
+      endpoint.send({ type: 'placement-transform', requestId, mapId, layoutId, selection, transform });
+    };
     clearTimeout(transformSendTimer);
     if (immediate) send(); else transformSendTimer = setTimeout(send, 45);
   }
@@ -642,11 +678,99 @@
       return;
     }
     if (message.type === 'placement-transform-result') {
+      const editKey = pendingTransformRequests.get(message.requestId); // Matches the acknowledgement to the exact drag event that produced it.
+      const edit = editKey ? sessionTransformEdits.get(editKey) : null;
+      if (edit && edit.lastRequestId === message.requestId) edit.persistedInEditor = message.status === 'applied';
+      pendingTransformRequests.delete(message.requestId);
       if (message.status === 'applied') setStatus('Transform updated in Map Editor.');
       else if (message.status === 'runtime-only') setStatus('Camera updated live; this locale/source is not loaded as a Map Editor map, so the numeric transform remains available here for authoring.');
       return;
     }
+    if (message.type === 'map-edit-diff-result') {
+      if (!pendingDiffRequestId || message.requestId !== pendingDiffRequestId) return;
+      clearTimeout(diffRequestTimer);
+      pendingDiffRequestId = '';
+      finishCopyEditDiff(message.status === 'applied' ? message.bundle : null, message.status === 'applied' ? '' : (message.reason || 'Map Editor diff was unavailable.'));
+      return;
+    }
     if (message.type === 'reflect-request') handleReflect(message);
+  }
+
+  function copyText(text) {
+    if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(text);
+    try {
+      const textarea = document.createElement('textarea'); // Mobile/browser fallback used only when the async Clipboard API is unavailable.
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      const copied = document.execCommand?.('copy');
+      textarea.remove();
+      return copied ? Promise.resolve() : Promise.reject(new Error('Clipboard API unavailable'));
+    } catch (error) {
+      return Promise.reject(error);
+    }
+  }
+
+  function runtimeOnlyTransformDiffs() {
+    return [...sessionTransformEdits.values()]
+      .filter(edit => !edit.persistedInEditor && JSON.stringify(edit.before) !== JSON.stringify(edit.after))
+      .map(edit => ({
+        mapId: edit.mapId,
+        layoutId: edit.layoutId,
+        selection: edit.selection,
+        before: edit.before,
+        after: edit.after,
+      }));
+  }
+
+  function finishCopyEditDiff(editorBundle = null, note = '') {
+    const descriptor = currentDescriptor({ includeSnapshot: false });
+    const runtimeOnlyTransforms = runtimeOnlyTransformDiffs(); // Appended only for transforms the standalone workspace did not acknowledge, avoiding duplicate persisted edits.
+    const bundle = {
+      schema: 'hobunji_in_game_map_edit_diff.v1',
+      generatedAt: new Date().toISOString(),
+      currentRuntime: {
+        area: descriptor.area,
+        mapId: descriptor.mapId,
+        layoutId: descriptor.layoutId || 'default',
+        generated: !!descriptor.generated,
+      },
+      mapEditor: editorBundle,
+      runtimeOnlyTransforms,
+      summary: {
+        editorChanged: !!editorBundle?.summary?.changed,
+        editorChangedMaps: Number(editorBundle?.summary?.changedMaps) || 0,
+        runtimeOnlyTransforms: runtimeOnlyTransforms.length,
+      },
+    };
+    if (note) bundle._note = note;
+    const text = JSON.stringify(bundle, null, 2);
+    copyText(text)
+      .then(() => {
+        setStatus(`Copied edit diff: ${bundle.summary.editorChangedMaps} editor map(s), ${runtimeOnlyTransforms.length} runtime-only transform(s).`);
+        deps.showToast('Map Edit diff copied.', true);
+      })
+      .catch(() => deps.showToast(text, true));
+  }
+
+  function copyEditDiff() {
+    clearTimeout(diffRequestTimer);
+    const requestId = window.MapLivePreview.requestId('diff');
+    if (!editorConnected) {
+      finishCopyEditDiff(null, 'Standalone Map Editor is not connected; clipboard contains all in-game runtime-only transform edits available in this session.');
+      return;
+    }
+    pendingDiffRequestId = requestId;
+    endpoint.send({ type: 'map-edit-diff-request', requestId });
+    setStatus('Collecting complete Map Edit diff…');
+    diffRequestTimer = setTimeout(() => {
+      if (pendingDiffRequestId !== requestId) return;
+      pendingDiffRequestId = '';
+      finishCopyEditDiff(null, 'Standalone Map Editor did not answer the diff request; clipboard contains all in-game runtime-only transform edits available in this session.');
+    }, 1200);
   }
 
   function copyDebug() {
@@ -657,8 +781,9 @@
       `devMode=${!!deps.isDevMode()} editorConnected=${editorConnected} pickerArmed=${armed} revision=${revision}`,
       `last=${lastResult?.text || 'none'}`,
       `cinematicCameras=${cinematicCamerasForCurrentArea().length} markers=${cameraMarkerById.size} selected=${selectedPlacement?.ref?.kind || '-'}:${selectedPlacement?.ref?.id || '-'}`,
+      `runtimeOnlyTransforms=${runtimeOnlyTransformDiffs().length}`,
     ].join('\n');
-    navigator.clipboard?.writeText(report).then(() => deps.showToast('Map reflection debug copied.', true)).catch(() => deps.showToast(report, true));
+    copyText(report).then(() => deps.showToast('Map reflection debug copied.', true)).catch(() => deps.showToast(report, true));
   }
 
   function bindUi() {
@@ -666,6 +791,7 @@
     document.getElementById('mapEditCloseBtn')?.addEventListener('click', closePanel);
     document.getElementById('mapEditOpenBtn')?.addEventListener('click', () => openEditor());
     document.getElementById('mapEditPickBtn')?.addEventListener('click', armPicker);
+    document.getElementById('mapEditCopyDiffBtn')?.addEventListener('click', copyEditDiff);
     document.getElementById('mapEditDebugBtn')?.addEventListener('click', copyDebug);
     document.getElementById('mapEditGizmoTranslate')?.addEventListener('click', () => setGizmoMode('translate'));
     document.getElementById('mapEditGizmoRotate')?.addEventListener('click', () => setGizmoMode('rotate'));
@@ -684,6 +810,6 @@
     closePanel,
     armPicker,
     disarmPicker,
-    getDebugState: () => ({ editorConnected, armed, gizmoDragging: !!window.__mapEditorGizmoDragging, selectedPlacement: selectedPlacement?.ref || null, revision, lastResult, map: currentDescriptor() }),
+    getDebugState: () => ({ editorConnected, armed, gizmoDragging: !!window.__mapEditorGizmoDragging, selectedPlacement: selectedPlacement?.ref || null, revision, runtimeOnlyTransforms: runtimeOnlyTransformDiffs(), lastResult, map: currentDescriptor() }),
   };
 })();
