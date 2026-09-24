@@ -261,11 +261,11 @@
   const colorFillSource = moduleUrl('color-fill.js', '20260923colorfill7'); // Shared source-art fill math required by sprite, creature, and weaving renderers.
   const spriteRecolorSource = moduleUrl('sprite-recolor.js', '20260923colorfill2');
   const repoPatternSource = moduleUrl('repo-pattern-library.js', '20260920repo1');
-  const weavingSource = moduleUrl('clothing-weaving-system.js', '20260923colorfill2');
+  const weavingSource = moduleUrl('clothing-weaving-system.js', '20260924outline3');
   const creatureRendererSource = moduleUrl('creature-genetics-render.js', '20260923colorfill2');
   const headwearSource = moduleUrl('animal-npc-headwear.js', '20260905feyhat1');
   const bridgeSource = moduleUrl('animal-chathead-frame.js', '20260915perf1');
-  const source = moduleUrl('character-studio-animal-appearance.js', '20260920animal-scale-outline1');
+  const source = moduleUrl('character-studio-animal-appearance.js', '20260924outline3');
   const extrasSource = moduleUrl('character-studio-animal-fey-extras.js', '20260921fey-size1');
 
   function appendModule(src, dataKey, errorLabel) {

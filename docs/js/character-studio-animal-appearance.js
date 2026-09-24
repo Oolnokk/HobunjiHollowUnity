@@ -411,7 +411,7 @@
               <input class="animalNpcRepoPatternScaleNumber" data-region="${esc(region.id)}" type="number" min="7" max="14" step="0.1" value="${animalPatternScale.toFixed(2)}" ${selectedPattern ? '' : 'disabled'} style="width:72px">
               <span class="help">×</span>
             </div>
-            <div class="help" style="margin-top:3px">Animal-use scale only: 7× minimum/default, up to 14×. Clothing/metal pattern settings are unchanged. Outline weight increases automatically with this scale.</div>
+            <div class="help" style="margin-top:3px">Animal-use scale only: 7× minimum/default, up to 14×. Clothing/metal pattern settings are unchanged. Animal outlines stay fixed at 6px while the motif scales.</div>
             <div class="help" data-animal-pattern-status="${esc(region.id)}" style="margin-top:3px">${esc(surfacePatternPreviewStatus(region.id, selectedPattern))}</div>
           </div>`;
       }).join('') : '<div class="help">No committed repo patterns yet. Author/export them from Dev Tools → Pattern Editor, commit their PNG + JSON, and add them to config/patterns/index.json.</div>'}
