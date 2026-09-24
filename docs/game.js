@@ -16077,11 +16077,36 @@
         return entries.map(entry => `${starGlyphs(entry.stars)} ${QUALITY_DESCRIPTORS[entry.stars]} ×${entry.count}`).join('  ·  ');
       }
 
-      function itemDescriptionWithFlavor(def) {
-        // Vague flavor only — no destination preview, no hop/zone numbers.
-        return window.HobunjiDrunkGameplayBridge?.isAlcoholDef?.(def)
+      function cookingBuffDisplayForItem(key, def) {
+        const buffFormatter = window.CookingSystem?.ingredientBuffText; // Used to keep Pack details on the exact same ingredient-effect math/wording as the Cooking picker.
+        if (!def || typeof buffFormatter !== 'function') return '';
+        const qualityEntries = isQualityTrackedItem(def)
+          ? (window.CookingSystem?.availableQualityEntries?.(key) || [])
+          : []; // Used to describe every actually owned quality bucket instead of inventing one representative quality for a mixed stack.
+        const buffRows = qualityEntries.map(entry => {
+          const buffText = buffFormatter(def, entry.stars); // Used to resolve this quality bucket's exact contribution to a cooked meal.
+          return buffText ? { stars: entry.stars, count: entry.count, buffText } : null;
+        }).filter(Boolean); // Used to distinguish real cooking ingredients from ordinary quality-bearing food with no cooking contribution.
+        if (buffRows.length) {
+          const distinctBuffs = new Set(buffRows.map(row => row.buffText)); // Used to collapse fixed prepared-food effects that do not change with star quality.
+          if (distinctBuffs.size === 1) return `Cooking buff: ${buffRows[0].buffText}`;
+          return `Cooking buffs by quality: ${buffRows.map(row => {
+            const safeStars = Math.max(1, Math.min(5, Math.round(Number(row.stars) || 3))); // Used to keep the inventory quality label aligned with starGlyphs()/QUALITY_DESCRIPTORS.
+            return `${starGlyphs(safeStars)} ${QUALITY_DESCRIPTORS[safeStars]} ×${row.count}: ${row.buffText}`;
+          }).join(' · ')}`;
+        }
+        const defaultStars = Math.max(1, Math.min(5, Math.round(Number(def.cookingDefaultStars) || 3))); // Used only for cooking ingredients that do not participate in tracked-quality stacks.
+        const defaultBuff = buffFormatter(def, defaultStars); // Used to expose a deterministic default-quality cooking contribution for those untracked ingredients.
+        return defaultBuff ? `Cooking buff: ${defaultBuff}` : '';
+      }
+
+      function itemDescriptionWithFlavor(key, def) {
+        // Vague alcohol flavor remains unchanged; cooking contribution is prepended so it stays visible in the scrollable inventory detail rather than the ellipsized quality line.
+        const flavorText = window.HobunjiDrunkGameplayBridge?.isAlcoholDef?.(def)
           ? `${def.desc} Better-made drink tends to produce rather more adventurous blackouts.`
-          : def.desc;
+          : def.desc; // Used as the existing authored description after any inventory-only metadata.
+        const cookingBuffText = cookingBuffDisplayForItem(key, def); // Used to show the same canonical buff the ingredient contributes at its owned quality/qualities.
+        return [cookingBuffText, flavorText].filter(Boolean).join(' — ');
       }
 
       function selectInventoryItem(key, skipGridUpdate) {
@@ -16109,7 +16134,7 @@
         set('iiPrice', def.sellPrice > 0 ? `${def.sellPrice}g each` : '');
         set('iiQuality', qualityDisplayForItem(key, def));
         set('iiTags',  def.tags.map(t => `<span class="ii-tag">${t}</span>`).join(''));
-        set('iiDesc',  itemDescriptionWithFlavor(def));
+        set('iiDesc',  itemDescriptionWithFlavor(key, def));
 
         const actEl = document.getElementById('iiActions');
         if (actEl) {

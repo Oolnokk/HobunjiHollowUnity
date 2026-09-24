@@ -253,6 +253,34 @@
     return `${effectStrengthLabel(amount)} ${effectLabel(effectKey)} (+${amount})`;
   }
 
+  function ingredientEffectTotals(definition, stars) {
+    const effects = {}; // Used by picker labels and meal totals so an ingredient's displayed buff always matches its cooked contribution.
+    if (!definition) return effects;
+    if (definition.foodEffects && Object.keys(definition.foodEffects).length) {
+      Object.entries(definition.foodEffects).forEach(([effect, amount]) => {
+        effects[effect] = Math.max(1, Number(amount) || 1);
+      });
+      return effects;
+    }
+    if (!definition.cookingPrimaryEffect) return effects;
+    const tier = data().processingTiers[definition.cookingProcessingTier] || data().processingTiers.raw || { multiplier: 1 }; // Used to preserve processing-strength multipliers in both the picker and cooked result.
+    const safeStars = Math.max(1, Math.min(5, Math.round(Number(stars) || Number(definition.cookingDefaultStars) || 3))); // Used to make ingredient previews robust for legacy/untracked stacks.
+    const prototypeQuality = 1 + (safeStars - 1) / 2; // Used to preserve the prototype's 1–3 quality effect curve atop 1–5 stars.
+    const amount = Math.max(1, Math.ceil((definition.cookingBaseBoost || 1) * prototypeQuality * (tier.multiplier || 1))); // Used as the exact buff-stack amount contributed by this ingredient quality.
+    effects[definition.cookingPrimaryEffect] = amount;
+    return effects;
+  }
+
+  function ingredientBuffText(definition, stars) {
+    const effects = ingredientEffectTotals(definition, stars); // Used to keep every ingredient label on the same canonical effect calculation as meal previews.
+    return Object.entries(effects).map(([effect, amount]) => `${EFFECT_ICONS[effect] || '✦'} ${formatEffectStrength(effect, amount)}`).join(', ');
+  }
+
+  function ingredientBuffMarkup(definition, stars, contributesEffects = true) {
+    const summary = contributesEffects ? ingredientBuffText(definition, stars) : 'No buff in this recipe'; // Used to explain structural slots that intentionally suppress an ingredient's normal cooking buff.
+    return `<small class="cooking-ingredient-buff">Cooking buff: ${esc(summary || 'None')}</small>`;
+  }
+
   function selectedRecipe() {
     const explicit = data().recipes.find(recipe => recipe.id === selectedRecipeId);
     if (explicit && recipeAllowed(explicit)) return explicit;
@@ -282,17 +310,10 @@
       if (slot.contributesEffects === false) return; // Structural ingredients such as Nine Leaf Tea's milk can be required without adding an unrelated food buff.
       const selected = selectedSlots[slot.id];
       const definition = selected ? deps.ITEM_DEFS[selected.key] : null;
-      if (definition?.foodEffects && Object.keys(definition.foodEffects).length) {
-        Object.entries(definition.foodEffects).forEach(([effect, amount]) => {
-          totals[effect] = (totals[effect] || 0) + Math.max(1, Number(amount) || 1);
-        });
-        return;
-      }
-      if (!definition?.cookingPrimaryEffect) return;
-      const tier = data().processingTiers[definition.cookingProcessingTier] || data().processingTiers.raw || { multiplier: 1 };
-      const prototypeQuality = 1 + (selected.stars - 1) / 2; // Used to preserve the prototype's 1–3 quality effect curve atop 1–5 stars.
-      const amount = Math.max(1, Math.ceil((definition.cookingBaseBoost || 1) * prototypeQuality * (tier.multiplier || 1)));
-      totals[definition.cookingPrimaryEffect] = (totals[definition.cookingPrimaryEffect] || 0) + amount;
+      const ingredientEffects = ingredientEffectTotals(definition, selected?.stars); // Used to ensure the meal preview consumes the exact same per-ingredient buff math shown beside the ingredient.
+      Object.entries(ingredientEffects).forEach(([effect, amount]) => {
+        totals[effect] = (totals[effect] || 0) + amount;
+      });
     });
     return totals;
   }
@@ -507,7 +528,7 @@
       const selected = selectedSlots[slot.id];
       const candidates = ingredientCandidates(slot);
       return `<section class="cooking-slot"><div class="cooking-slot-heading"><div><strong>${esc(slot.label)}</strong><small>${slot.accepts.map(category => data().categoryLabels[category] || category).join(' · ')}</small></div>${selected ? `<button type="button" data-clear-slot="${esc(slot.id)}">Clear</button>` : ''}</div>
-        ${selected ? `<div class="cooking-picked"><span>${esc(deps.ITEM_DEFS[selected.key]?.icon || '🥕')}</span><strong>${esc(deps.ITEM_DEFS[selected.key]?.label || selected.key)}</strong><em>${'★'.repeat(selected.stars)}${'☆'.repeat(5 - selected.stars)}</em></div>` : `<div class="cooking-picker">${candidates.flatMap(([key, definition]) => availableQualityEntries(key).map(entry => `<button type="button" data-pick-slot="${esc(slot.id)}" data-pick-key="${esc(key)}" data-pick-stars="${entry.stars}"><span>${esc(definition.icon || '🥕')}</span><strong>${esc(definition.label)}</strong><em>${'★'.repeat(entry.stars)}${'☆'.repeat(5 - entry.stars)} ×${entry.count}</em></button>`)).join('') || '<p class="cooking-empty">No matching ingredient in your bag yet.</p>'}</div>`}
+        ${selected ? `<div class="cooking-picked"><span>${esc(deps.ITEM_DEFS[selected.key]?.icon || '🥕')}</span><strong>${esc(deps.ITEM_DEFS[selected.key]?.label || selected.key)}</strong>${ingredientBuffMarkup(deps.ITEM_DEFS[selected.key], selected.stars, slot.contributesEffects !== false)}<em>${'★'.repeat(selected.stars)}${'☆'.repeat(5 - selected.stars)}</em></div>` : `<div class="cooking-picker">${candidates.flatMap(([key, definition]) => availableQualityEntries(key).map(entry => `<button type="button" data-pick-slot="${esc(slot.id)}" data-pick-key="${esc(key)}" data-pick-stars="${entry.stars}"><span>${esc(definition.icon || '🥕')}</span><strong>${esc(definition.label)}</strong>${ingredientBuffMarkup(definition, entry.stars, slot.contributesEffects !== false)}<em>${'★'.repeat(entry.stars)}${'☆'.repeat(5 - entry.stars)} ×${entry.count}</em></button>`)).join('') || '<p class="cooking-empty">No matching ingredient in your bag yet.</p>'}</div>`}
       </section>`;
     }).join('');
     const effects = effectTotals(recipe);
@@ -576,6 +597,6 @@
     getFoodEffectStacks, getSpeedMultiplier, getStaminaRegenMultiplier, registerIngredientItems, availableQualityEntries,
     consumeQuality, consumeLowestQuality, consumeQualityByPolicy, peekLowestQuality, valueMultiplierForStars,
     unlockRecipe, isRecipeUnlocked, listIngredientDefinitions, listCookedInventory, consumeCookedInventoryItem, effectLabel,
-    FOOD_EFFECT_STRENGTH_TIERS, effectStrengthLabel, formatEffectStrength,
+    FOOD_EFFECT_STRENGTH_TIERS, effectStrengthLabel, formatEffectStrength, ingredientEffectTotals, ingredientBuffText,
   };
 })();
