@@ -93,8 +93,8 @@ function makeContext({
   window.ResourceSystem.initEntity(entity);
   entity.lastAttackAttemptAt = rested ? NOW_MS - 4000 : NOW_MS - 1000;
   entity.lastAttackReceivedAt = rested ? NOW_MS - 4000 : NOW_MS - 1000;
-  window.ResourceSystem.setAffliction(entity, 'bleedingHealth', bleeding);
-  window.ResourceSystem.setAffliction(entity, 'congealedHealth', congealed);
+  window.ResourceSystem.addAffliction(entity, 'bleedingHealth', bleeding);
+  window.ResourceSystem.addAffliction(entity, 'congealedHealth', congealed);
 
   if (hostile && !companion) window.Combat.deps.hostileObjects.add(entity);
   if (player) window.Combat.deps.player = entity;
