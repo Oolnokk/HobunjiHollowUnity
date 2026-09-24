@@ -130,7 +130,7 @@
   // the body squares up. If that transient ever reads as an overtwist on
   // screen, clamp the locked branch here rather than reintroducing a second
   // aim authority upstream.
-  function applyPlayerNeckYawLimit(renderDebug) {
+  function applyPlayerNeckYawLimit(renderDebug = {}) {
     const neckJoint = currentPlayerNeckJoint();
     if (!neckJoint) return;
     const rawYaw = finite(neckJoint.rotation.y); // Game-authored local neck yaw inspected below before the visual physical limit is applied.
@@ -152,6 +152,12 @@
       perspectiveAimLocked,
       usedCameraFacingFallback: outsideLookRange,
     };
+  }
+
+  function prepareNeckForAttachmentSampling() {
+    if (!playerMesh) return false;
+    applyPlayerNeckYawLimit(); // Finalize the same physical head-turn limit before body-bound attachments sample skinned portrait pixels.
+    return !!currentPlayerNeckJoint();
   }
 
   // Diagnostics only. Runtime composition deliberately does not depend on
@@ -452,6 +458,7 @@
     clearAllChannels,
     registerExternalRootProvider,
     captureNextRenderTransforms,
+    prepareNeckForAttachmentSampling,
     resolvedYawDeltaRad,
     getPlayerMesh: () => playerMesh,
     getVisualRoots: () => currentOwnedRoots().slice(),
