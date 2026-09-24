@@ -34,6 +34,14 @@
     return combatWeaponOut && rangedIsCurrentCombatTool;
   }
 
+  function gameplayReticleSuppressed() {
+    const combatDeps = window.Combat?.deps; // Used below to read the game's authoritative dialogue-open state.
+    const sitInteraction = window.__hobunjiFurnitureDebug?.sitInteraction; // Used below to suppress the sight throughout the seated transition and active seat state.
+    return !!combatDeps?.isDialogueOpen?.()
+      || !!window.HOBUNJI_CHARACTER_VIEW_STATUS?.enabled
+      || (!!sitInteraction && sitInteraction.phase !== 'out');
+  }
+
   function ensureReticle() {
     if (reticleEl?.isConnected) return reticleEl;
 
@@ -74,7 +82,7 @@
     const image = ensureReticle();
     if (!image) return false;
 
-    const visible = rangedWeaponDrawn();
+    const visible = rangedWeaponDrawn() && !gameplayReticleSuppressed();
     const display = visible ? 'block' : 'none'; // Compare the live node so replacement roots retain the original refresh behavior.
     if (image.style.display !== display) image.style.display = display;
     const wouldHit = visible && !!window.RangedWeapons?.wouldHitHostile?.();
@@ -120,7 +128,7 @@
       opacity: RETICLE_OPACITY,
       sizePx: [RETICLE_WIDTH_PX, RETICLE_HEIGHT_PX],
       centeredOn: '#canvasWrap',
-      latestChange: 'Performance-only: unchanged display writes skipped; hit testing, artwork and frame cadence preserved.',
+      latestChange: 'Reticle now hides during dialogue, Character View, and seated states while preserving existing draw/hit behavior.',
     }),
   };
 
