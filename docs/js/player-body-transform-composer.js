@@ -29,20 +29,10 @@
   let renderSequence = 0; // Incremented for Pixel Probe correlation across real render calls.
   let lastRenderDebug = null; // Read by getDebug() so mobile reports can inspect temporary render state after restoration.
   let pendingCapture = null; // One-shot callback fired mid-render, after the temporary delta lands but before it's undone — see captureNextRenderTransforms().
-  let characterViewFrozenChannels = null; // Snapshot of visual-only channels held constant while Character View inspects one stable rendered pose.
 
   function finite(value, fallback = 0) {
     const n = Number(value);
     return Number.isFinite(n) ? n : fallback;
-  }
-
-  function cloneStoredChannel(channel) {
-    return {
-      ...channel,
-      rotation: channel?.rotation ? { ...channel.rotation } : undefined,
-      quaternion: channel?.quaternion?.isQuaternion ? channel.quaternion.clone() : undefined,
-      translation: channel?.translation ? { ...channel.translation } : undefined,
-    }; // Character View snapshots must not share mutable vectors/quaternions with live channel writers.
   }
 
   // Compose orientation strictly from the quaternion hierarchy. Three.js's
@@ -239,14 +229,7 @@
   }
 
   function resolveDelta() {
-    const effectiveChannels = new Map(channels);
-    if (characterViewFrozenChannels) {
-      for (const [name, channel] of effectiveChannels) {
-        if (channel?.freezeInCharacterView) effectiveChannels.delete(name);
-      }
-      for (const [name, channel] of characterViewFrozenChannels) effectiveChannels.set(name, channel);
-    }
-    const ordered = Array.from(effectiveChannels.entries())
+    const ordered = Array.from(channels.entries())
       .filter(([, channel]) => channel && channel.enabled !== false)
       .sort((a, b) => finite(a[1].priority) - finite(b[1].priority) || a[0].localeCompare(b[0]));
 
@@ -307,7 +290,6 @@
       mode: contribution.mode === 'override' ? 'override' : 'additive',
       translationMode: contribution.translationMode === 'override' ? 'override' : 'additive',
       enabled: contribution.enabled !== false,
-      freezeInCharacterView: contribution.freezeInCharacterView === true,
       order: contribution.order || 'YXZ',
       rotation: contribution.rotation ? { ...contribution.rotation } : undefined,
       quaternion: contribution.quaternion?.isQuaternion ? contribution.quaternion.clone() : undefined,
@@ -323,19 +305,6 @@
 
   function clearAllChannels() {
     channels.clear();
-  }
-
-  function setCharacterViewPoseLock(enabled) {
-    if (!enabled) {
-      characterViewFrozenChannels = null;
-      return true;
-    }
-    const snapshot = new Map();
-    for (const [name, channel] of channels) {
-      if (channel?.freezeInCharacterView && channel.enabled !== false) snapshot.set(name, cloneStoredChannel(channel));
-    }
-    characterViewFrozenChannels = snapshot;
-    return true;
   }
 
   function registerExternalRootProvider(name, provider) {
@@ -487,7 +456,6 @@
     setChannel,
     clearChannel,
     clearAllChannels,
-    setCharacterViewPoseLock,
     registerExternalRootProvider,
     captureNextRenderTransforms,
     prepareNeckForAttachmentSampling,
@@ -503,8 +471,6 @@
         posteriorY: playerPosteriorY,
         headMaxYawDeg: PLAYER_HEAD_MAX_YAW_DEG,
         currentNeckYawDeg: neckJoint ? THREE.MathUtils.radToDeg(neckJoint.rotation.y) : null,
-        characterViewPoseLocked: !!characterViewFrozenChannels,
-        characterViewFrozenChannels: characterViewFrozenChannels ? Array.from(characterViewFrozenChannels.keys()) : [],
         renderRoot: playerMesh?.name || playerMesh?.type || null,
         avatarBodyRoots: discoverAvatarBodyRoots().map(root => root.name || root.type),
         visualRoots: currentOwnedRoots().map(root => root.name || root.type),
@@ -516,7 +482,6 @@
           priority: channel.priority,
           mode: channel.mode,
           enabled: channel.enabled !== false,
-          freezeInCharacterView: channel.freezeInCharacterView === true,
           rotation: channel.rotation || null,
           translation: channel.translation || null,
         })),
