@@ -149,6 +149,9 @@ assert(placementSource.includes('lowSideRelative'), 'density scaling must distin
 assert(zoneRenderer.includes('visual.scaleX') && zoneRenderer.includes('visual.scaleY') && zoneRenderer.includes('visual.scaleZ'), 'game cave renderer must support independent facade width/height/depth scaling');
 assert(gameSource.includes('localeTransitions: (workspace.maps || []).find(map => map && !map.isSubmap)?.transitions?.filter(t => t?.generatedLocaleId) || []'), 'zone cache must preserve stamped locale entrances across reloads');
 assert(gameSource.includes('const generatedLocaleTransitions = (workspaceRoot?.transitions || workspace.localeTransitions || [])') && gameSource.includes('...generatedLocaleTransitions,'), 'Tothal Shift must restore terrain-aware locale cave transitions into the live zone interaction pool');
-assert(gameIndex.includes('js/locale-terrain-placement.js?v=20260921banubuclip1'), 'the actual game page must load terrain-aware locale placement after the wilderness generator');
+const generatorScriptIndex = gameIndex.indexOf('js/wilderness-map-generator.js?v=');
+const terrainPlacementScriptIndex = gameIndex.indexOf('js/locale-terrain-placement.js?v=');
+assert(generatorScriptIndex >= 0 && terrainPlacementScriptIndex > generatorScriptIndex,
+  'the actual game page must load terrain-aware locale placement after the wilderness generator');
 
 console.log('Banubu cliff-base authoring + terrain/runtime + editor rule-sync regression checks passed');

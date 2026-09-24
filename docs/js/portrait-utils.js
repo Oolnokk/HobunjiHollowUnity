@@ -254,14 +254,29 @@ function loadImg(relPath) {
   if (cached !== undefined) return cached;  // pending or failed promise
 
   const ensureTrailingSlash = (base) => String(base || './assets/').replace(/\/?$/, '/');
-  const localBase = ensureTrailingSlash(_puAssetBase);
-  const fallbackBase = localBase.includes('/docs/assets/')
-    ? localBase.replace('/docs/assets/', '/assets/')
-    : localBase.replace('/assets/', '/docs/assets/');
+  const baseHref = (typeof document !== 'undefined' && document.baseURI)
+    || (typeof location !== 'undefined' && location.href)
+    || '';
+  const configuredBase = ensureTrailingSlash(_puAssetBase);
+  let localBase = configuredBase;
+  try {
+    // Resolve before deriving the repo-root fallback. A configured "./assets/"
+    // on docs/index.html already resolves to ".../docs/assets/"; manipulating
+    // the unresolved string first produced the bogus ".../docs/docs/assets/"
+    // requests seen in commit-pinned RawGitHack builds.
+    if (baseHref) localBase = ensureTrailingSlash(new URL(configuredBase, baseHref).href);
+  } catch (_) {}
+
+  let fallbackBase = null;
+  if (localBase.includes('/docs/assets/')) {
+    fallbackBase = localBase.replace('/docs/assets/', '/assets/');
+  } else if (localBase.includes('/assets/')) {
+    fallbackBase = localBase.replace('/assets/', '/docs/assets/');
+  }
 
   const candidateUrls = [
     localBase + relPath,
-    fallbackBase + relPath,
+    fallbackBase ? fallbackBase + relPath : null,
   ];
 
   const seen = new Set();
@@ -279,11 +294,13 @@ function loadImg(relPath) {
     img.src = url;
   });
 
-  // Race every candidate at once rather than awaiting them one at a time —
-  // for a genuinely missing asset (no art authored for this species/
-  // expression yet), sequential awaits cost the sum of every candidate's
-  // own failed-request round-trip; racing them costs only the slowest one.
-  const promise = Promise.any(uniqueCandidates.map(tryLoadUrl)).catch(() => {
+  // Try the correctly resolved serving root first. Only probe the alternate
+  // repo-root layout when that request actually fails; racing both candidates
+  // made every successful portrait emit a spurious fallback 404.
+  const promise = uniqueCandidates.reduce(
+    (chain, url) => chain.catch(() => tryLoadUrl(url)),
+    Promise.reject()
+  ).catch(() => {
     const error = new Error(`Failed to load portrait asset "${relPath}"`);
     error.name = 'PortraitImageLoadError';
     error.relPath = relPath;

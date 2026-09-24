@@ -3363,7 +3363,7 @@
     // other landmark), and carries the locale's metadata (in pre-scale
     // coordinates -- see stampLocales/generateWorkspace for the post-scale
     // read-back into workspace.localeInstances).
-    const structureDef = (locale.objects || []).find(o => o.kind === 'structure') || null;
+    const structureDef = (locale.objects || []).find(o => o.kind === 'structure' || o.kind === 'cave_entrance' || o.kind === 'house_piece') || null;
     const primaryConnector = (locale.connectors || [])[0] || null;
     const carrierX = structureDef ? anchorX + structureDef.col : anchorX;
     const carrierY = structureDef ? anchorY + structureDef.row : anchorY;
@@ -3377,7 +3377,7 @@
       y: clamp(carrierY, 0, settings.height - 1),
       w: carrierW,
       h: carrierH,
-      blocksMovement: !!structureDef,
+      blocksMovement: !!structureDef && (!structureDef.collision || structureDef.collision.mode === 'auto'),
       pathAnchor: connectorWorld ? nearestFreeNeighbor(connectorWorld.x, connectorWorld.y) : null,
       localeMeta: {
         localeId: locale.id,
@@ -3389,9 +3389,40 @@
         w: bbox.w, h: bbox.h,
         connectors: (locale.connectors || []).map(c => ({ col: c.col, row: c.row, side: c.side, label: c.label })),
         npcAnchors: (locale.npcAnchors || []).map(n => ({ npcId: n.npcId, name: n.name, col: n.col, row: n.row, facing: n.facing })),
-        objects: (locale.objects || []).map(o => ({ id: o.id, kind: o.kind, key: o.key, label: o.label, col: o.col, row: o.row, w: o.w, h: o.h }))
+        objects: (locale.objects || []).map(o => ({
+          id: o.id, kind: o.kind, key: o.key, label: o.label, col: o.col, row: o.row, w: o.w, h: o.h, rot: o.rot || 0,
+          visual: o.visual ? clonePlain(o.visual) : undefined,
+          pieceFile: o.pieceFile || undefined,
+          collision: o.collision ? clonePlain(o.collision) : undefined
+        }))
       }
     });
+    // Explicit per-object colliders are independent of the visible/object footprint.
+    // Old locale objects with no collision field keep their legacy behavior.
+    for (const object of (locale.objects || [])) {
+      const collision = object?.collision;
+      if (!collision || collision.mode === 'auto' || collision.mode === 'none') continue;
+      const custom = collision.mode === 'custom';
+      const colOffset = custom ? (Number(collision.colOffset) || 0) : 0;
+      const rowOffset = custom ? (Number(collision.rowOffset) || 0) : 0;
+      const rawW = custom ? Math.max(.1, Number(collision.w) || Number(object.w) || 1) : Math.max(.1, Number(object.w) || 1);
+      const rawH = custom ? Math.max(.1, Number(collision.h) || Number(object.h) || 1) : Math.max(.1, Number(object.h) || 1);
+      const colliderX = Math.floor(anchorX + (Number(object.col) || 0) + colOffset);
+      const colliderY = Math.floor(anchorY + (Number(object.row) || 0) + rowOffset);
+      const colliderW = Math.max(1, Math.ceil(rawW));
+      const colliderH = Math.max(1, Math.ceil(rawH));
+      addObject({
+        type:'localeCollider',
+        x:clamp(colliderX, 0, settings.width - 1),
+        y:clamp(colliderY, 0, settings.height - 1),
+        w:colliderW,
+        h:colliderH,
+        blocksMovement:true,
+        localeCollider:true,
+        localeColliderOwnerId:object.id
+      });
+    }
+
     logDebug(`locale stamped: ${locale.id} at (${anchorX},${anchorY})`);
     return carrier;
   }
@@ -8408,10 +8439,21 @@
           h: meta.h * localeScale,
           connectors: (meta.connectors || []).map(c => ({ ...toWorld(c.col, c.row), side: c.side, label: c.label })),
           npcAnchors: (meta.npcAnchors || []).map(n => ({ npcId: n.npcId, name: n.name, ...toWorld(n.col, n.row), facing: n.facing })),
-          objects: (meta.objects || []).map(o => ({
-            id: o.id, kind: o.kind, key: o.key, label: o.label, ...toWorld(o.col, o.row),
-            w: o.w * localeScale, h: o.h * localeScale
-          }))
+          objects: (meta.objects || []).map(o => {
+            const collision = o.collision?.mode === 'custom' ? {
+              mode:'custom',
+              ...toWorld((Number(o.col) || 0) + (Number(o.collision.colOffset) || 0), (Number(o.row) || 0) + (Number(o.collision.rowOffset) || 0)),
+              w: Math.max(.1, Number(o.collision.w) || Number(o.w) || 1) * localeScale,
+              h: Math.max(.1, Number(o.collision.h) || Number(o.h) || 1) * localeScale
+            } : o.collision ? { mode:o.collision.mode || 'auto' } : undefined;
+            return {
+              id: o.id, kind: o.kind, key: o.key, label: o.label, ...toWorld(o.col, o.row),
+              w: o.w * localeScale, h: o.h * localeScale, rot:o.rot || 0,
+              visual:o.visual ? clonePlain(o.visual) : undefined,
+              pieceFile:o.pieceFile || undefined,
+              collision
+            };
+          })
         };
       });
     return workspace;

@@ -1,0 +1,106 @@
+{
+  "schema": "hobunji_locale.v1",
+  "id": "locale_animal_den_entrance",
+  "name": "Animal Den Entrance",
+  "category": "den_entrance",
+  "singleton": false,
+  "description": "Authoring template used by every procedurally generated wilderness animal-den entrance. Edit the cave_small object here to change the shared den facade; Automatic collider mode preserves the den doorway-gap collision rule.",
+  "tags": [
+    "den",
+    "entrance",
+    "template",
+    "cave_small"
+  ],
+  "cols": 7,
+  "rows": 7,
+  "tiles": {
+    "2,2": {
+      "type": "grass"
+    },
+    "3,2": {
+      "type": "grass"
+    },
+    "4,2": {
+      "type": "grass"
+    },
+    "2,3": {
+      "type": "grass"
+    },
+    "3,3": {
+      "type": "grass"
+    },
+    "4,3": {
+      "type": "grass"
+    },
+    "2,4": {
+      "type": "grass"
+    },
+    "3,4": {
+      "type": "grass"
+    },
+    "4,4": {
+      "type": "grass"
+    },
+    "3,5": {
+      "type": "path"
+    }
+  },
+  "objects": [
+    {
+      "id": "den_entrance_cave",
+      "kind": "cave_entrance",
+      "key": "cave_small",
+      "label": "Animal Den Cave Entrance",
+      "col": 2,
+      "row": 2,
+      "w": 3,
+      "h": 3,
+      "rot": 0,
+      "visual": {
+        "renderer": "cave_small",
+        "scaleX": 2,
+        "scaleY": 1.5,
+        "scaleZ": 2,
+        "offsetX": 0,
+        "offsetY": 0,
+        "offsetZ": 0,
+        "surface": "auto",
+        "sink": 0.45
+      },
+      "collision": {
+        "mode": "auto"
+      }
+    }
+  ],
+  "npcAnchors": [],
+  "connectors": [
+    {
+      "id": "den_mouth_path",
+      "col": 3,
+      "row": 5,
+      "side": "south",
+      "label": "Den mouth approach"
+    }
+  ],
+  "terrainAnchors": {},
+  "embeddedTiles": {},
+  "placement": {
+    "mode": "fixed",
+    "maxInstances": 1,
+    "allowedZones": [],
+    "clearanceTiles": 0,
+    "requiresFlatGround": true,
+    "floorMode": "footprint",
+    "minDistanceFromEntry": 0,
+    "sameSectorAsEntry": false,
+    "alwaysVisibleOnMap": false,
+    "groundOnly": false,
+    "notes": "Template-only locale. Procedural dens keep their generated positions; zone-den-totem-features clones this object's authored cave transform onto each den entrance.",
+    "terrainAnchors": {},
+    "embeddedTiles": {}
+  },
+  "meta": {
+    "createdAt": "2026-09-24T19:40:00.000Z",
+    "updatedAt": "2026-09-24T21:06:38.976Z"
+  }
+}

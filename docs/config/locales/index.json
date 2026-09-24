@@ -86,6 +86,13 @@
       "name": "Den-Mother Nest Encounter",
       "category": "den_encounter",
       "singleton": false
+    },
+    {
+      "id": "locale_animal_den_entrance",
+      "file": "config/locales/locale_animal_den_entrance.json",
+      "name": "Animal Den Entrance",
+      "category": "den_entrance",
+      "singleton": false
     }
   ]
 }
