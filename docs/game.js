@@ -7006,7 +7006,8 @@
 
       function _applyShoulderPetCuriosity(c, dt) {
         const state = _tickShoulderPetCuriosity(c, dt);
-        const leanRadians = state.currentLeanDeg * Math.PI / 180; // Used below to lean in the sprite plane without changing its projected width.
+        const shoulderMirrorSign = window.HobunjiPortraitOutlineParity?.isShoulderPetPortraitMirrorActive?.() === true ? -1 : 1; // Used below so horizontal perch-relative pose motion reverses with the portrait while vertical pitch stays unchanged.
+        const leanRadians = state.currentLeanDeg * shoulderMirrorSign * Math.PI / 180; // Mirrored portraits reverse the visible in-plane body lean around the same authored grip.
         if (state.baseFrontRoll === null) state.baseFrontRoll = c.avatarRef.frontPlane?.rotation.z || 0;
         if (state.baseBackRoll === null) state.baseBackRoll = c.avatarRef.backPlane?.rotation.z || 0;
         // updateCreatureMesh owns the attachment root and will be followed by
@@ -7019,7 +7020,7 @@
         if (c.avatarRef.frontPlane) c.avatarRef.frontPlane.rotation.z = state.baseFrontRoll + leanRadians;
         if (c.avatarRef.backPlane) c.avatarRef.backPlane.rotation.z = state.baseBackRoll - leanRadians;
         _updateCompanionHeadRotation(c, _companionHeadRestDeg(c) + state.currentPitchDeg, dt);
-        if (typeof c.avatarRef?.updateHeadYaw === 'function') c.avatarRef.updateHeadYaw(state.currentYawDeg, dt);
+        if (typeof c.avatarRef?.updateHeadYaw === 'function') c.avatarRef.updateHeadYaw(state.currentYawDeg * shoulderMirrorSign, dt);
       }
 
       function _isPlayerGenuinelyIdle() {
@@ -7924,7 +7925,8 @@
           ? alignedGripWorldPosition.distanceTo(finalTransform.perchWorldPosition)
           : null; // Exposed in Pixel Probe so mobile testing can verify the invariant without a console.
         group.userData.hobunjiShoulderPetAttachment = { // Mobile-visible Pixel Probe diagnostics for this final authoritative pin.
-          recentChange: 'Authored shoulderPerch position and rotation follow the live skinned portrait surface.',
+          recentChange: 'Portrait mirroring now carries the shoulder perch, resting pet facing, and horizontal perch-relative motion together.',
+          portraitMirrorActive: window.HobunjiPortraitOutlineParity?.isShoulderPetPortraitMirrorActive?.() === true,
           rotationSource: finalTransform.rotationSource,
           positionSource: finalTransform.perchPositionSource,
           expectedWorldPosition: finalTransform.worldPosition.toArray(),
