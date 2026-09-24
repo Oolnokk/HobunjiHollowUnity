@@ -30,6 +30,15 @@ const cave = locale.objects.find(object => object.key === 'cave_small');
 assert(cave, 'animal den entrance locale must expose cave_small as an editable object');
 assert.equal(cave.kind, 'cave_entrance');
 assert.equal(cave.visual?.renderer, 'cave_small');
+assert.equal(cave.visual?.scaleX, 2, 'shared animal-den cave X scale must preserve the authored wide facade');
+assert.equal(cave.visual?.scaleY, 1.5, 'shared animal-den cave Y scale must preserve the authored height');
+assert.equal(cave.visual?.scaleZ, 2, 'shared animal-den cave Z scale must preserve the authored depth');
+assert.equal(cave.visual?.sink, 0.45, 'shared animal-den cave must preserve the authored ground sink');
+assert.deepEqual(locale.tiles?.['3,5'], { type:'path' }, 'den mouth approach path tile must remain authored at 3,5');
+const mouthConnector = locale.connectors?.find(connector => connector.id === 'den_mouth_path');
+assert(mouthConnector, 'den entrance template must retain its den-mouth approach connector');
+assert.equal(mouthConnector.col, 3);
+assert.equal(mouthConnector.row, 5, 'den-mouth connector must stay aligned with the recovered 3,5 path tile');
 assert.equal(cave.collision?.mode, 'auto', 'default template must preserve the legacy doorway-gap collider until explicitly changed');
 assert(localeIndex.locales.some(entry => entry.id === locale.id && entry.category === 'den_entrance'),
   'animal den entrance template must be discoverable in the normal Locale Editor library');
