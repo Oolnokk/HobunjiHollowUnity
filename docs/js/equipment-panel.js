@@ -76,7 +76,7 @@
     inventoryUiLoadStarted = true;
     // Versioned source is loaded here so Pack presentation can be decoupled without editing game.js or index.html.
     const script = document.createElement('script');
-    script.src = 'js/inventory-ui.js?v=20260921reviewfix1';
+    script.src = 'js/inventory-ui.js?v=20260924gearfontloop1';
     script.async = false;
     script.onload = () => window.InventoryUI?.init?.(inventoryUiDeps());
     script.onerror = () => {

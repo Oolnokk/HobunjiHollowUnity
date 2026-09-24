@@ -197,24 +197,28 @@ const renderedGeometry = new BufferGeometry()
 const renderedMesh = { geometry: renderedGeometry, userData: {} };
 pathNetwork.bindGlobalGroundMesh(renderedMesh);
 renderedMesh.userData.onTerrainGeometryReady(renderedGeometry);
+// Tiles the worn groove never reaches keep only a flat 2x2 grid (8 tris);
+// groove tiles use 4x4 (32 tris) — was 6x6 (72) on every tile of the apron.
+const FLAT_APRON_TILE_TRIANGLES = 8;
+assert.equal(pathNetwork.renderedTileIndexRanges.get('4,4')?.length, 32, 'a path tile keeps the 4x4 grid its worn groove needs');
 const trenchStarts = pathNetwork.renderedTileIndexRanges.get('2,2');
-assert.equal(trenchStarts?.length, 72, 'one final rendered route-apron tile must retain all 72 triangles');
+assert.equal(trenchStarts?.length, FLAT_APRON_TILE_TRIANGLES, 'one final rendered route-apron tile must retain all of its triangles');
 const tileIsCollapsed = starts => starts.every(offset => {
   const a = renderedGeometry.index.array[offset];
   return renderedGeometry.index.array[offset + 1] === a && renderedGeometry.index.array[offset + 2] === a;
 });
 assert(tileIsCollapsed(trenchStarts), 'an initially carved tile must be absent after the final geometry handoff');
 const inclineStarts = pathNetwork.renderedTileIndexRanges.get('4,2');
-assert.equal(inclineStarts?.length, 72, 'one plateau incline tile must retain all 72 restorable apron triangles');
+assert.equal(inclineStarts?.length, FLAT_APRON_TILE_TRIANGLES, 'one plateau incline tile must retain all of its restorable apron triangles');
 assert(tileIsCollapsed(inclineStarts), 'a plateau incline must have no flat grass apron intersecting its cliff skin');
 const renderedCliffStarts = pathNetwork.renderedTileIndexRanges.get('6,2');
-assert.equal(renderedCliffStarts?.length, 72, 'one geometry-confirmed cliff tile must retain all 72 restorable apron triangles');
+assert.equal(renderedCliffStarts?.length, FLAT_APRON_TILE_TRIANGLES, 'one geometry-confirmed cliff tile must retain all of its restorable apron triangles');
 assert(tileIsCollapsed(renderedCliffStarts), 'a rendered steep mesa tile must have no path grass intersecting its cliff skin');
 const mesaTopStarts = pathNetwork.renderedTileIndexRanges.get('6,6');
-assert.equal(mesaTopStarts?.length, 72, 'one flat mesa-top tile must retain all 72 restorable apron triangles');
+assert.equal(mesaTopStarts?.length, FLAT_APRON_TILE_TRIANGLES, 'one flat mesa-top tile must retain all of its restorable apron triangles');
 assert(tileIsCollapsed(mesaTopStarts), 'a flat mesa top must use its own lid instead of a duplicate route-grass sheet');
 const mesaSeamStarts = pathNetwork.renderedTileIndexRanges.get('5,6');
-assert.equal(mesaSeamStarts?.length, 72, 'one low tile beside a mesa must retain all 72 restorable apron triangles');
+assert.equal(mesaSeamStarts?.length, FLAT_APRON_TILE_TRIANGLES, 'one low tile beside a mesa must retain all of its restorable apron triangles');
 assert(tileIsCollapsed(mesaSeamStarts), 'a low neighboring tile must not share raised route vertices with the mesa edge');
 liveGrid[2][2].type = TileType.GRASS;
 assert(pathNetwork.refreshTile(2, 2), 'filling must find the final rendered tile ranges');

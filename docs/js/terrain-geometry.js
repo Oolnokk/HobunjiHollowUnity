@@ -367,6 +367,28 @@
     const smooth = t => t * t * (3 - 2 * t);
     const PATH_DY = -0.05; // shallow — a worn groove, not a trench
 
+    // The mask above stays on the fine CELLS grid (its blur radius and
+    // PATH_THRESH are tuned there), but the rendered heightfield no longer
+    // spends 6x6 quads (72 triangles) on every tile of the route's bounding
+    // box — in a wilderness zone that box is nearly the whole map, ~1.7M
+    // triangles. Tiles the worn groove actually touches render at 4x4
+    // (32 tris), sampling the same blurred mask, so the groove keeps its
+    // shape; every other tile is flat apart from the half-tile-keyed
+    // seamDisp jitter, so 2x2 (8 tris, same as makeFloorGeo's top) holds all
+    // of its detail. Zone relief (displaceZoneGeometry) is bilinear between
+    // tile centers, so it is also exactly representable on the half grid.
+    const RC = 4, RSTEP = 1 / RC; // Render grid cells per tile; even, so half-tile seam vertices exist.
+    const RW = bw * RC + 1, RH = bh * RC + 1;
+    const FLAT_MASK_EPS = 1e-5; // Mask below this contributes < 1e-9 world units of groove depth.
+    const maskAt = (vx, vz) => { // Bilinear sample of the fine blurred mask at a world position.
+      const fx = (vx - minC) * CELLS, fz = (vz - minR) * CELLS;
+      const i0 = Math.min(GW - 2, Math.max(0, Math.floor(fx))), j0 = Math.min(GH - 2, Math.max(0, Math.floor(fz)));
+      const tx = Math.min(1, Math.max(0, fx - i0)), tz = Math.min(1, Math.max(0, fz - j0));
+      const a = mask[j0*GW+i0] * (1 - tx) + mask[j0*GW+i0+1] * tx;
+      const b = mask[(j0+1)*GW+i0] * (1 - tx) + mask[(j0+1)*GW+i0+1] * tx;
+      return a * (1 - tz) + b * tz;
+    };
+
     // Y[] stays tier-independent (local worn-groove height only) since
     // PATH_THRESH below is tuned against it — positions[] is what
     // actually renders, and separately bakes in each vertex's owning
@@ -375,35 +397,61 @@
     // around it sits PLATEAU_UNIT higher (previously: a path crossing a
     // plateau rendered as a hole cut through the mesa, the flat patch
     // sunk far below the actual elevated surface).
-    const Y = new Float32Array(GW * GH);
-    const positions = new Float32Array(GW * GH * 3);
-    for (let gj = 0; gj < GH; gj++)
-      for (let gi = 0; gi < GW; gi++) {
-        const vx = minC + gi * STEP, vz = minR + gj * STEP;
-        const blend = smooth(Math.min(1, Math.max(0, mask[gj*GW+gi])));
+    const Y = new Float32Array(RW * RH);
+    const positions = new Float32Array(RW * RH * 3);
+    const grooveTile = new Uint8Array(bw * bh); // 1 = the groove reaches this tile, so it needs the 4x4 grid.
+    for (let gj = 0; gj < RH; gj++)
+      for (let gi = 0; gi < RW; gi++) {
+        const vx = minC + gi * RSTEP, vz = minR + gj * RSTEP;
+        const m = maskAt(vx, vz);
+        const blend = smooth(Math.min(1, Math.max(0, m)));
         const localY = seamDisp(vx, vz) + blend * PATH_DY + blend * roughDisp(vx, vz);
-        const tci = Math.min(bw - 1, Math.floor(gi / CELLS));
-        const tcj = Math.min(bh - 1, Math.floor(gj / CELLS));
+        const tci = Math.min(bw - 1, Math.floor(gi / RC));
+        const tcj = Math.min(bh - 1, Math.floor(gj / RC));
         const ownerTile = srcGrid[minR + tcj]?.[minC + tci]; // Supplies the absolute terrain tier for this route vertex.
         const tierY = (ownerTile?.elevTier || 0) * deps.PLATEAU_UNIT;
-        const k = gj*GW+gi;
+        const k = gj*RW+gi;
         Y[k] = localY;
         positions[k*3] = vx; positions[k*3+1] = tierY + localY; positions[k*3+2] = vz;
+        if (m > FLAT_MASK_EPS) {
+          // A vertex on a tile edge/corner belongs to every tile sharing it.
+          const c0 = gi % RC === 0 && gi > 0 ? tci - 1 : tci, r0 = gj % RC === 0 && gj > 0 ? tcj - 1 : tcj;
+          for (let rr = r0; rr <= tcj; rr++) for (let cc = c0; cc <= tci; cc++) grooveTile[rr * bw + cc] = 1;
+        }
+      }
+
+    // Crack-proof the coarse/fine seams: a 4x4 neighbor has quarter-tile
+    // vertices along an edge a 2x2 tile spans with one straight segment.
+    // Pull those onto that segment (<= ~1.3cm; the seam jitter itself).
+    const snapEdgeMidpoints = (va, vb, vm) => {
+      for (let a = 0; a < 3; a++) positions[vm*3+a] = (positions[va*3+a] + positions[vb*3+a]) / 2;
+      Y[vm] = (Y[va] + Y[vb]) / 2;
+    };
+    for (let tcj = 0; tcj < bh; tcj++)
+      for (let tci = 0; tci < bw; tci++) {
+        if (grooveTile[tcj * bw + tci]) continue;
+        const gi0 = tci * RC, gj0 = tcj * RC;
+        for (const gj of [gj0, gj0 + RC])
+          for (let s = 1; s < RC; s += 2) snapEdgeMidpoints(gj*RW + gi0 + s - 1, gj*RW + gi0 + s + 1, gj*RW + gi0 + s);
+        for (const gi of [gi0, gi0 + RC])
+          for (let s = 1; s < RC; s += 2) snapEdgeMidpoints((gj0 + s - 1)*RW + gi, (gj0 + s + 1)*RW + gi, (gj0 + s)*RW + gi);
       }
 
     const PATH_THRESH = -0.013; // tuned for PATH_DY=-0.05 after the blur softens the mask
     const pathIdx = [], grassIdx = [];
-    for (let cj = 0; cj < GH-1; cj++)
-      for (let ci = 0; ci < GW-1; ci++) {
-        const tci = Math.min(bw-1, Math.floor(ci / CELLS));
-        const tcj = Math.min(bh-1, Math.floor(cj / CELLS));
-        const v00=cj*GW+ci, v10=cj*GW+ci+1, v01=(cj+1)*GW+ci, v11=(cj+1)*GW+ci+1;
-        const isPath = Math.min(Y[v00],Y[v10],Y[v01],Y[v11]) < PATH_THRESH;
-        const target = isPath ? pathIdx : grassIdx;
-        target.push(v00, v01, v11, v00, v11, v10);
+    for (let tcj = 0; tcj < bh; tcj++)
+      for (let tci = 0; tci < bw; tci++) {
+        const step = grooveTile[tcj * bw + tci] ? 1 : RC / 2;
+        for (let cj = tcj * RC; cj < (tcj + 1) * RC; cj += step)
+          for (let ci = tci * RC; ci < (tci + 1) * RC; ci += step) {
+            const v00=cj*RW+ci, v10=cj*RW+ci+step, v01=(cj+step)*RW+ci, v11=(cj+step)*RW+ci+step;
+            const isPath = Math.min(Y[v00],Y[v10],Y[v01],Y[v11]) < PATH_THRESH;
+            const target = isPath ? pathIdx : grassIdx;
+            target.push(v00, v01, v11, v00, v11, v10);
+          }
       }
 
-    const vertCount = GW * GH;
+    const vertCount = RW * RH;
     const posAttr  = new THREE.Float32BufferAttribute(positions, 3);
     const normAttr = new THREE.Float32BufferAttribute(
       _sharedSplitNormals(positions, vertCount, pathIdx, grassIdx), 3);
