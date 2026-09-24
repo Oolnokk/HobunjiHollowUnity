@@ -61,8 +61,8 @@ const expected = {
   'voorg-ass': {
     saddle: { x: -0.0016655977917167481, y: 0.12286908956931555, z: 0.043832914384796626 },
     grip: { x: 0.01, y: -0.33453636625016553, z: 0.0181046276028018 },
-    scales: { large: { x: 0.97, y: 0.97 }, medium: { x: 0.75, y: 0.75 }, small: { x: 0.27, y: 0.27 } },
-    ground: { large: 0.26, medium: 0.325, small: 0.11 },
+    scales: { large: { x: 1.164, y: 1.164 }, medium: { x: 0.75, y: 0.75 }, small: { x: 0.27, y: 0.27 } },
+    ground: { large: 0.312, medium: 0.325, small: 0.11 },
     chathead: { x: 0.1235, y: 0.14, width: 0.3074, height: 0.3325, coordinateSpace: 'sprite-normalized-top-left', version: 1 },
   },
 };
@@ -72,8 +72,8 @@ for (const [kind, values] of Object.entries(expected)) {
     const profile = library.creatures[kind];
     assert.deepEqual(plain(profile.anchors.saddle.position), values.saddle, kind + ' saddle matches September 15 authoring');
     assert.deepEqual(plain(profile.anchors.shoulderGrip.position), values.grip, kind + ' shoulder grip matches September 15 authoring');
-    assert.deepEqual(plain(profile.sizeScales), values.scales, kind + ' size scales match September 15 authoring');
-    assert.deepEqual(plain(profile.groundOffsets), values.ground, kind + ' ground offsets match September 15 authoring');
+    assert.deepEqual(plain(profile.sizeScales), values.scales, kind + ' size scales match current canonical tuning');
+    assert.deepEqual(plain(profile.groundOffsets), values.ground, kind + ' ground offsets match current canonical tuning');
     assert.deepEqual(plain(profile.chatheadFrame), values.chathead, kind + ' chathead frame matches September 15 authoring');
     assert.equal(profile.saddleRule.authoredFixed, true, kind + ' saddle is canonical');
     assert.equal(profile.shoulderGripRule.authoredFixed, true, kind + ' shoulder grip is canonical');
@@ -83,6 +83,9 @@ for (const [kind, values] of Object.entries(expected)) {
   }
   assert.deepEqual(plain(profiles.creatureShoulderGripDefaults[kind]), values.grip, kind + ' duplicate runtime grip defaults match canonical profile');
 }
+
+assert.equal(expected['voorg-ass'].scales.large.x, 0.97 * 1.2, 'Vorg-ass Large keeps the requested 20% increase over its prior 0.97 calibration');
+assert.equal(expected['voorg-ass'].ground.large, 0.26 * 1.2, 'Vorg-ass Large ground lift scales with the enlarged visual');
 
 const listeners = new Map();
 windowStub.addEventListener = (type, callback) => listeners.set(type, callback);

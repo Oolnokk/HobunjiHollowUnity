@@ -63,6 +63,7 @@
     species[KIND] = {
       prefix: KIND,
       baseShadeReferenceHex: '#99BF99', // Authored full-strength Voorg-Ass coat color used as the fixed base-recolor normalization anchor.
+      fullBaseRecolor: true, // Voorg-Ass base art is one recolorable body layer; no creature-base mask exists, so recolor the full opaque sprite before the belly overlay.
       base: { idle: SPRITES.idle, run1: SPRITES.run1, run2: SPRITES.run2 },
       patterns: ['belly'],
     };
