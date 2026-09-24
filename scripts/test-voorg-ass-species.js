@@ -16,6 +16,7 @@ assert.match(geneticsSource, /'voorg-ass':\s*'uumkaoii'/, 'Voorg-Ass borrows Uum
 assert.match(registrationSource, /voorg-ass_idle\.png[\s\S]*voorg-ass_run1\.png[\s\S]*voorg-ass_run2\.png/, 'Voorg-Ass base animation sprites are registered');
 assert.match(registrationSource, /prefix:\s*KIND[\s\S]*patterns:\s*\['belly'\]/, 'Voorg-Ass renderer has the uploaded belly layer and no optional pattern list');
 assert.match(registrationSource, /prefix:\s*KIND[\s\S]*?baseShadeReferenceHex:\s*'#99BF99'/, 'Voorg-Ass renderer uses authored #99BF99 full-strength coat anchor');
+assert.match(registrationSource, /prefix:\s*KIND[\s\S]*?fullBaseRecolor:\s*true/, 'Voorg-Ass base coat recolors the full opaque sprite when no base mask exists');
 assert.match(geneticsSource, /resources\[VOORG_ASS_KIND\]\s*=\s*\{\s*itemKey:\s*LIGHT_WOOL_ITEM_KEY,\s*cooldownDays:\s*1,\s*verb:\s*'Shear'/, 'Voorg-Ass uses the generic one-day shearing path');
 assert.deepEqual(loot.pools?.['creature_voorg-ass']?.entries?.map(entry => entry.itemKey), ['voorgAssMeat'], 'Voorg-Ass has its own meat drop pool');
 
