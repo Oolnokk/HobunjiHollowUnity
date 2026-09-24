@@ -49,6 +49,13 @@ for (const key of ['crownedPineNuts', 'shadewoodNuts', 'crownedPineNutOil', 'sha
 }
 
 context.window = { HobunjiCookingData: cookingData };
+vm.runInNewContext(fs.readFileSync('docs/js/cooking-system.js', 'utf8'), context);
+const cookingSystem = context.window.CookingSystem; // Used to verify ingredient-facing buff labels reuse the same canonical cooking-effect math as meal totals.
+assert.equal(cookingSystem.ingredientBuffText({ cookingPrimaryEffect: 'fishing', cookingBaseBoost: 1, cookingProcessingTier: 'raw' }, 1), '🎣 Mild Fishing (+1)', 'one-star raw ingredients identify their exact cooking buff before selection');
+assert.equal(cookingSystem.ingredientBuffText({ cookingPrimaryEffect: 'fishing', cookingBaseBoost: 1, cookingProcessingTier: 'raw' }, 5), '🎣 Concentrated Fishing (+3)', 'ingredient buff labels reflect star quality instead of showing a generic effect name');
+assert.equal(cookingSystem.ingredientBuffText({ foodEffects: { fishing: 2, strength: 1 } }, 3), '🎣 Hearty Fishing (+2), 💪 Mild Strength (+1)', 'prepared ingredients list every fixed cooking buff they carry forward');
+
+context.window = { HobunjiCookingData: cookingData };
 vm.runInNewContext(fs.readFileSync('docs/js/food-processing.js', 'utf8'), context);
 const processing = context.window.HobunjiFoodProcessing;
 const expandedRecipeIds = [
@@ -99,7 +106,12 @@ assert.doesNotMatch(indexSource, /<div class="skill-name">Alchemy<\/div>/, 'Alch
 for (const name of ['Foraging', 'Mining', 'Farming', 'Fishing', 'Combat', 'Cooking']) assert(indexSource.includes(`>${name}<`), `${name} appears in the static Skills tab placeholder, immediately replaced by SkillSystem.render()`);
 assert.match(cookingSource, /function openAtHearth\(/, 'cooking owns a hearth-only open entry point');
 assert.match(cookingSource, /recipe\?\.inventoryCategories/, 'saved cooked bases recover their reusable recipe categories');
-assert.match(cookingSource, /definition\?\.foodEffects/, 'multi-stage recipes carry their prepared ingredient effects forward');
+assert.match(cookingSource, /ingredientEffectTotals\(definition, selected\?\.stars\)/, 'meal totals reuse the same per-ingredient buff calculation displayed by the picker');
+assert.match(cookingSource, /Cooking buff:/, 'ingredient candidates and selected ingredients visibly identify their cooking buff');
+assert.match(cookingSource, /No buff in this recipe/, 'structural recipe slots explicitly say when they suppress an ingredient buff');
+assert.match(gameSource, /function cookingBuffDisplayForItem\(key, def\)[\s\S]{0,1800}ingredientBuffText[\s\S]{0,1800}availableQualityEntries/, 'Pack inventory details reuse CookingSystem ingredient buff text and inspect owned quality buckets');
+assert.match(gameSource, /Cooking buffs by quality:[\s\S]{0,700}starGlyphs\(safeStars\)[\s\S]{0,700}row\.buffText/, 'mixed-quality ingredient stacks label each owned quality with its exact cooking contribution');
+assert.match(gameSource, /set\('iiDesc',\s*itemDescriptionWithFlavor\(key, def\)\)/, 'normal inventory item details visibly include the cooking-buff-aware description');
 assert.doesNotMatch(cookingSource, /(?:import|require).*game\.js/, 'the cooking module does not import game.js');
 assert.match(alchemySource, /registerProvider\('alchemy'/, 'alchemy contributes to the shared effect HUD');
 assert.match(cookingSource, /registerProvider\('food'/, 'food contributes to the shared effect HUD independently');

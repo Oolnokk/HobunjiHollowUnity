@@ -60,9 +60,10 @@
 .cooking-picker { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .cooking-picker button, .cooking-picked { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 3px 8px; align-items: center; min-width: 0; padding: 9px; color: #efe1ca; text-align: left; border: 1px solid #513a27; border-radius: 8px; background: #261a13; }
 .cooking-picker button:hover { border-color: #d3994c; }
-.cooking-picker button span, .cooking-picked > span { grid-row: 1 / 3; font-size: 22px; }
+.cooking-picker button span, .cooking-picked > span { grid-row: 1 / 4; font-size: 22px; }
 .cooking-picker button strong, .cooking-picked strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cooking-picker button em, .cooking-picked em { color: #e9b655; font-size: 10px; font-style: normal; }
+.cooking-picker button small, .cooking-picked small { grid-column: 2; color: #c9bca8; font-size: 10px; line-height: 1.25; }
+.cooking-picker button em, .cooking-picked em { grid-column: 2; color: #e9b655; font-size: 10px; font-style: normal; }
 .cooking-preview { margin-top: 15px; padding: 13px; border: 1px solid #66472b; border-radius: 10px; background: #42251966; }
 .cooking-preview > div { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 8px; }
 .cooking-preview span { padding: 5px 8px; color: #f8ddb1; border: 1px solid #875d2d; border-radius: 999px; background: #1b120e; font-size: 12px; }
