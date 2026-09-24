@@ -6,6 +6,7 @@ const vm = require('vm');
 
 const protocolSource = fs.readFileSync('docs/js/map-live-preview.js', 'utf8');
 const runtimeSource = fs.readFileSync('docs/js/map-live-preview-runtime.js', 'utf8');
+const exportFixSource = fs.readFileSync('docs/js/map-editor-export-fixes.js', 'utf8'); // Exercises the authoritative baseline-aware diff bundle shared with the in-game Copy Edit Diff button.
 const gameSource = fs.readFileSync('docs/game.js', 'utf8');
 const editorHtml = fs.readFileSync('docs/tools/map-editor/index.html', 'utf8');
 const interiorEditorHtml = fs.readFileSync('docs/tools/building-interior-author/index.html', 'utf8');
@@ -19,6 +20,8 @@ assert.doesNotThrow(() => new Function(runtimeSource), 'runtime live-preview con
 const inlineScripts = [...editorHtml.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)]
   .map(match => match[1]).filter(source => source.trim());
 inlineScripts.forEach((source, index) => assert.doesNotThrow(() => new Function(source), `Map Editor inline script ${index + 1} parses`));
+assert.doesNotThrow(() => new Function(runtimeSource), 'in-game Map Edit runtime parses');
+assert.doesNotThrow(() => new Function(exportFixSource), 'Map Editor diff companion parses');
 const interiorInlineScripts = [...interiorEditorHtml.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)]
   .map(match => match[1]).filter(source => source.trim());
 interiorInlineScripts.forEach((source, index) => assert.doesNotThrow(() => new Function(source), `Interior Editor inline script ${index + 1} parses`));
@@ -79,6 +82,16 @@ assert.match(runtimeSource, /controls paused/, 'runtime gizmo reports that contr
 assert.match(runtimeSource, /endpoint\.send\(request\);[\s\S]*attachPlacement/, 'in-game selection syncs without forcing focus into the Map Editor window');
 assert.match(gameSource, /if \(window\.__mapEditorGizmoActive\)/, 'game input is suppressed for the complete gizmo session');
 assert.match(runtimeSource, /type: 'placement-transform'/, 'runtime gizmo mirrors transforms into the Map Editor workspace');
+assert.match(indexHtml, /id="mapEditCopyDiffBtn"/, 'in-game Map Edit exposes a one-tap complete diff copy action');
+assert.match(runtimeSource, /type: 'map-edit-diff-request'/, 'in-game copy action requests the authoritative standalone Map Editor diff when connected');
+assert.match(runtimeSource, /type === 'map-edit-diff-result'/, 'in-game copy action consumes the editor diff response');
+assert.match(runtimeSource, /runtimeOnlyTransformDiffs/, 'in-game copy action appends unpersisted runtime-only gizmo changes');
+assert.match(runtimeSource, /before: selectedPlacement\?\.initialTransform/, 'runtime transform tracking preserves a real before value for each edited placement');
+assert.match(editorHtml, /message\.type === 'map-edit-diff-request'/, 'standalone Map Editor answers in-game diff requests');
+assert.match(editorHtml, /MapEditorExportFixes\?\.buildWorkspaceDiffBundle/, 'standalone response reuses the canonical baseline-aware diff implementation');
+assert.match(exportFixSource, /function buildWorkspaceDiffBundle\(\)/, 'diff companion can bundle every changed map plus workspace-level authoring changes');
+assert.match(exportFixSource, /workspaceChanges\.addedMaps/, 'diff bundle includes whole maps created after baseline');
+assert.match(exportFixSource, /workspaceChanges\.removedMaps/, 'diff bundle includes maps removed after baseline');
 assert.match(indexHtml, /id="mapEditCameraSection"/, 'in-game Map Edit exposes cinematic cameras in rooms/locales');
 assert.match(indexHtml, /id="mapEditGizmoTransform"/, 'in-game Map Edit exposes live numeric transform values without DevTools');
 assert.match(runtimeSource, /map_edit_cinematic_camera_/, 'runtime builds visible world-space cinematic camera markers');
