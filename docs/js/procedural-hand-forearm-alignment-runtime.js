@@ -257,6 +257,9 @@
     };
     wrapped.__hobunjiForearmAlignmentWrapped = true;
     wrapped.__hobunjiForearmAlignmentOriginal = originalAttach;
+    // Preserve the secondary-span marker when this wrapper encloses it; otherwise
+    // the grip maintenance retry sees a foreign outer wrapper and wraps again.
+    if (api.attach.__hobunjiSecondarySpanBlend) wrapped.__hobunjiSecondarySpanBlend = true;
     api.attach = wrapped;
   }
 

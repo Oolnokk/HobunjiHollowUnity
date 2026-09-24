@@ -21,6 +21,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 const source = fs.readFileSync('docs/js/hand-tool-grips.js', 'utf8');
+const forearmSource = fs.readFileSync('docs/js/procedural-hand-forearm-alignment-runtime.js', 'utf8'); // Used by the real-wrapper interop regression below.
 assert(source.includes("global.RuntimeFrameScheduler.register('hand-tool-grips-install', installMaintenance"), 'install/UI maintenance must register with the scheduler when present');
 assert(source.includes("global.RuntimeFrameScheduler.register('hand-tool-grips-visuals', applyPrimaryGripVisuals"), 'the primary-grip visual correction must register with the scheduler when present');
 assert(source.includes("phase: 'pre-render'"), 'the visual correction must be on the pre-render phase');
@@ -134,5 +135,72 @@ function buildFixture({ withScheduler, pathname }) {
   assert.equal(toolNode.matrixUpdateCount, 0, 'the editor branch does not mutate the runtime tool visual');
   assert.equal(rafCalls.length, 1, 'the fallback loop reschedules itself exactly like the original frame()');
 }
+
+
+// --- Wrapper interop regression: both real production modules retry their
+// ProceduralHandAttachments.attach installation. Whichever one loads second
+// becomes the outer wrapper, so it must preserve the first wrapper's marker;
+// otherwise the two maintenance loops alternately re-wrap each other forever.
+function assertWrapperInteropStable(loadOrder) {
+  const registered = new Map(); // Captures the real hand-tool-grips scheduler callbacks used for repeated install maintenance.
+  const intervalCallbacks = []; // Captures the forearm module's real 500 ms retry callback so the test can drive it synchronously.
+  const rafCalls = []; // Confirms these shipped-game fixtures do not silently fall back to a private RAF loop.
+  const baseAttach = function baseAttach() { return {}; }; // Represents ProceduralHandAttachments.attach before either compatibility wrapper installs.
+  const combatDeps = { __weaponToolStanceVisualHooks: true, triggerWeaponSwingVisual() {}, triggerWeaponHoldVisual() {}, cancelWeaponSwingHold() {} }; // Satisfies the unrelated combat-capture installer during maintenance.
+  const toolNode = buildToolNode(); // Supplies the minimal held-tool visual expected by hand-tool-grips module initialization.
+  const windowObject = {
+    THREE: {}, // The forearm module only needs THREE to exist until a real rig with authored shoulder data is installed.
+    localStorage: { getItem() { return null; }, setItem() {}, removeItem() {} },
+    Combat: { deps: combatDeps },
+    ProceduralHandAttachments: {
+      attach: baseAttach,
+      gameDeps: {
+        toolHolder: { traverse() {} },
+        toolMeshMap: new Map([['slot1', toolNode]]),
+        equipmentSlots: { slot1: 'hatchet' },
+        getActiveTool() { return 'slot1'; },
+      },
+    },
+    WeaponToolStances: { getRuntimeState() { return { activeSlot: 'slot1', itemKey: 'hatchet' }; } },
+    requestAnimationFrame(callback) { rafCalls.push(callback); },
+    RuntimeFrameScheduler: {
+      register(id, fn, options) { registered.set(id, { fn, options }); },
+    },
+    setInterval(callback) { intervalCallbacks.push(callback); return intervalCallbacks.length; },
+  };
+  const sandbox = {
+    window: windowObject,
+    location: { pathname: '/index.html' },
+    localStorage: windowObject.localStorage,
+    document: { getElementById() { return null; } },
+    performance: { now: () => 0 },
+  }; // Shared VM global used to execute both production modules in the requested load order.
+
+  for (const moduleName of loadOrder) {
+    const moduleSource = moduleName === 'grips' ? source : forearmSource; // Selects the real source file corresponding to this load-order slot.
+    vm.runInNewContext(moduleSource, sandbox, { filename: moduleName === 'grips' ? 'hand-tool-grips.js' : 'procedural-hand-forearm-alignment-runtime.js' });
+  }
+
+  const installMaintenance = registered.get('hand-tool-grips-install')?.fn; // Drives the actual per-frame grip-wrapper installation retry.
+  const forearmRetry = intervalCallbacks[0]; // Drives the actual forearm-wrapper retry registered by the production module.
+  assert.equal(typeof installMaintenance, 'function', 'hand-tool-grips must register its real install maintenance callback');
+  assert.equal(typeof forearmRetry, 'function', 'forearm alignment must register its real retry callback');
+  assert.equal(rafCalls.length, 0, 'wrapper interop fixture must remain on RuntimeFrameScheduler instead of spawning a private RAF loop');
+
+  const stableAttach = windowObject.ProceduralHandAttachments.attach; // Captures the final two-wrapper function; repeated retries must never replace it again.
+  assert.equal(stableAttach.__hobunjiSecondarySpanBlend, true, `${loadOrder.join(' -> ')} must expose the secondary-span installed marker on the outer wrapper`);
+  assert.equal(stableAttach.__hobunjiForearmAlignmentWrapped, true, `${loadOrder.join(' -> ')} must expose the forearm installed marker on the outer wrapper`);
+
+  for (let i = 0; i < 1000; i++) {
+    installMaintenance();
+    forearmRetry();
+    assert.strictEqual(windowObject.ProceduralHandAttachments.attach, stableAttach, `${loadOrder.join(' -> ')} retry cycle ${i + 1} must not add another wrapper layer`);
+  }
+
+  assert.doesNotThrow(() => windowObject.ProceduralHandAttachments.attach(), `${loadOrder.join(' -> ')} stabilized wrapper chain must still call through to the base attachment`);
+}
+
+assertWrapperInteropStable(['forearm', 'grips']);
+assertWrapperInteropStable(['grips', 'forearm']);
 
 console.log('hand tool grips install/visual scheduler split passed');

@@ -577,6 +577,12 @@
       return rig;
     };
     wrappedAttach.__hobunjiSecondarySpanBlend = true;
+    // Preserve the forearm-wrapper marker when this wrapper encloses it; otherwise
+    // the forearm maintenance retry sees a foreign outer wrapper and wraps again.
+    if (hands.attach.__hobunjiForearmAlignmentWrapped) {
+      wrappedAttach.__hobunjiForearmAlignmentWrapped = true;
+      wrappedAttach.__hobunjiForearmAlignmentOriginal = hands.attach.__hobunjiForearmAlignmentOriginal || originalAttach;
+    }
     hands.attach = wrappedAttach;
     return true;
   }
