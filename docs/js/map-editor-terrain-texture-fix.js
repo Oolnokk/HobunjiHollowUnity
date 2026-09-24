@@ -23,6 +23,8 @@
   let hydratedCount = 0; // Exposed for mobile/manual diagnostics.
   let failedCount = 0; // Exposed for mobile/manual diagnostics.
   let resolverWrapped = false; // Records whether the editor's real resolvePreviewMat(mapId,key) path is intercepted.
+  const HYDRATE_SCAN_INTERVAL_MS = 500; // Texture hydration isn't time-critical; throttles the full scene traversal instead of repeating it on every render() call.
+  const lastHydrateAt = new WeakMap(); // scene -> last full-traversal timestamp.
 
   function queueRedraw() {
     if (redrawFrame) return;
@@ -190,11 +192,16 @@
     });
   }
 
-  function hydrateScene(scene) {
+  function hydrateScene(scene, force = true) {
     if (!scene?.traverse) return;
     const map = activeMap();
     if (!map?.id) return;
     if (!terrainConfig) { loadTerrainConfig(); return; }
+    if (!force) {
+      const now = performance.now();
+      if (now - (lastHydrateAt.get(scene) || 0) < HYDRATE_SCAN_INTERVAL_MS) return;
+      lastHydrateAt.set(scene, now);
+    }
     scene.traverse(object => {
       if (!object?.isMesh) return;
       const materials = Array.isArray(object.material) ? object.material : [object.material];
@@ -212,7 +219,7 @@
       rendererProto.render = function mapEditorTextureAwareRender(scene, camera) {
         this.__hobunjiMapEditorLastRender = { scene, camera };
         liveRenderers.add(this);
-        hydrateScene(scene); // Basic guarantee: configured terrain PNGs are attached before the actual draw whenever possible.
+        hydrateScene(scene, false); // Basic guarantee: configured terrain PNGs are attached before the actual draw whenever possible; throttled since materials rarely change between consecutive renders.
         return originalRender.call(this, scene, camera);
       };
       rendererProto.__hobunjiMapEditorTextureRedrawWrapped = true;

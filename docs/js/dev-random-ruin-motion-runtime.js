@@ -36,11 +36,8 @@
   function currentArea() { return deps?.getCurrentArea?.() || null; }
   function activeRoot() {
     if (currentArea() !== MAP_ID) return null;
-    let found = null;
-    deps?.getActiveScene?.()?.traverse?.(object => {
-      if (!found && String(object.name || '').startsWith('dev_v50_ruin_')) found = object;
-    });
-    return found;
+    const scene = deps?.getActiveScene?.();
+    return scene?.children?.find?.(object => /^dev_v50_ruin_/.test(object?.name || '')) || null;
   }
   function generatorApi() {
     return document.getElementById('devRandomRuinGeneratorFrame')?.contentWindow?.DebrisifierV50 || null;

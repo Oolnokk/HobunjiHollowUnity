@@ -375,11 +375,7 @@
   function activeGeneratedRoot() {
     if (deps?.getCurrentArea?.() !== MAP_ID) return null;
     const scene = deps.getActiveScene?.();
-    let found = null;
-    scene?.traverse?.(object => {
-      if (!found && String(object.name || '').startsWith('dev_v50_ruin_')) found = object;
-    });
-    return found;
+    return scene?.children?.find?.(object => /^dev_v50_ruin_/.test(object?.name || '')) || null;
   }
 
   function frameUpdate() {
@@ -455,6 +451,12 @@
     return true;
   }
 
+  let auditCloneCache = null; // { ref, clone } — avoids re-serializing `audit` every frame call (snapshot() is polled from the frame loop) when it hasn't changed since the last snapshot.
+  function auditClone() {
+    if (auditCloneCache?.ref !== audit) auditCloneCache = { ref: audit, clone: JSON.parse(JSON.stringify(audit)) };
+    return auditCloneCache.clone;
+  }
+
   function snapshot() {
     return {
       active: !!root,
@@ -462,7 +464,7 @@
       extraControls: extraControls.map(control => ({ kind:control.kind, object:control.object?.name || control.object?.id || null })),
       transitDoors: transitDoors.length,
       ladders: ladders.length,
-      audit: JSON.parse(JSON.stringify(audit)),
+      audit: auditClone(),
     };
   }
 

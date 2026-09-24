@@ -164,7 +164,26 @@
     return new Map([...staticSources].map(([tileKey, ids]) => [tileKey, new Set(ids)]));
   }
 
+  function cheapStateKey(model) {
+    // Only the fields that can actually change tile occupancy: door open/closed
+    // state and push-block position. Reading these is O(mechanisms) with no
+    // geometry traversal, unlike the full rebuild below.
+    const parts = [];
+    for (const mechanism of model.mechanisms.values()) {
+      if (mechanism.type !== 'stoneDoor') continue;
+      parts.push(`d:${mechanism.id}:${doorIsClosed(mechanism.root) ? 1 : 0}`);
+    }
+    for (const door of model.transitDoors) parts.push(`t:${door.id}:${doorIsClosed(door) ? 1 : 0}`);
+    for (const block of model.pushBlocks) {
+      parts.push(`p:${block.id}:${(block.position?.x || 0).toFixed(3)},${(block.position?.z || 0).toFixed(3)}`);
+    }
+    return parts.join('|');
+  }
+
   function rebuild(model) {
+    const cheapKey = cheapStateKey(model);
+    if (cheapKey === model.cheapKey) return false; // No door/block state has changed since the last check; skip the expensive traversal/signature work below.
+    model.cheapKey = cheapKey;
     const sources = copySources(model.staticSources);
     for (const mechanism of model.mechanisms.values()) {
       if (mechanism.type !== 'stoneDoor') continue;

@@ -167,6 +167,9 @@
     return proxyRoot;
   }
 
+  const _copyTransformSourceWorld = new THREE.Matrix4(); // Reused scratch matrices for copySourceWorldTransform, called once per live proxy every frame.
+  const _copyTransformParentWorldInverse = new THREE.Matrix4();
+  const _copyTransformLocalMatrix = new THREE.Matrix4();
   function copySourceWorldTransform(sourceObject, proxy, scene) {
     if (!sourceObject || !proxy || !scene) return false;
     sourceObject.updateWorldMatrix?.(true, false);
@@ -175,9 +178,9 @@
     proxyRoot?.updateWorldMatrix?.(true, false);
     if (!matrixElementsAreFinite(sourceObject.matrixWorld) || !matrixElementsAreFinite(proxyRoot?.matrixWorld)) return false;
 
-    const sourceWorld = new THREE.Matrix4(); // Used to hold the V50 wall's numeric world transform in the game THREE realm.
-    const parentWorldInverse = new THREE.Matrix4(); // Used to convert source world space into the proxy root's local space.
-    const localMatrix = new THREE.Matrix4(); // Used as the proxy's fixed local matrix beneath the game-realm proxy root.
+    const sourceWorld = _copyTransformSourceWorld; // Holds the V50 wall's numeric world transform in the game THREE realm.
+    const parentWorldInverse = _copyTransformParentWorldInverse; // Converts source world space into the proxy root's local space.
+    const localMatrix = _copyTransformLocalMatrix; // The proxy's fixed local matrix beneath the game-realm proxy root.
     sourceWorld.fromArray(Array.from(sourceObject.matrixWorld.elements, Number));
     parentWorldInverse.fromArray(Array.from(proxyRoot.matrixWorld.elements, Number)).invert();
     localMatrix.multiplyMatrices(parentWorldInverse, sourceWorld);
@@ -371,7 +374,7 @@
     const resolvedRoot = root || activeRoot(scene); // Used as the V50 source hierarchy for wall layout/collision data.
     if (!scene || !resolvedRoot) {
       if (preparedRoot || preparedScene || proxyRoot) clearProxies();
-      return snapshot(resolvedRoot, scene);
+      return null;
     }
     if (resolvedRoot !== preparedRoot || scene !== preparedScene) {
       clearProxies();
@@ -411,7 +414,7 @@
     for (const sourceObject of hiddenSourceMeshes) {
       for (const material of sourceObject.userData?.devRuinProxyHiddenMaterials || []) material.visible = false;
     }
-    return snapshot(resolvedRoot, scene);
+    return null; // Diagnostics-only snapshot() is intentionally not computed here — nothing in the per-frame render loop reads it; call window.DevRandomRuinWallRenderProxy.snapshot() directly when it's actually needed.
   }
 
   function geometryProbe(proxy) {

@@ -15,6 +15,9 @@
   let attachAttempts = 0; // Limits startup polling if the gameplay renderer never appears.
   const patchedMaterials = new Set(); // Updated by setMode() when the quality dropdown changes.
 
+  let cachedRenderScene = null; // Scene identity from the last wrapped render() call; skips re-scanning children when it hasn't changed.
+  let cachedRenderSceneMaterial = null; // Composite material found for cachedRenderScene (or null if that scene has none).
+
   let rendererRef = null; // Used by the multi-pass painterly pipeline when the final world composite is presented.
   let pipeline = null; // Reused low-resolution render targets/scenes; avoids per-frame GPU allocation.
   let pipelineFrames = 0; // Reported by Pixel Probe to prove the screenshot-faithful stack is actually running.
@@ -504,7 +507,14 @@
 
     rendererRef = renderer;
     renderer.render = function hobunjiPainterlyRender(scene, camera) {
-      const material = !this.getRenderTarget?.() ? findCompositeMaterial(scene) : null;
+      let material = null;
+      if (!this.getRenderTarget?.()) {
+        if (scene !== cachedRenderScene) {
+          cachedRenderScene = scene;
+          cachedRenderSceneMaterial = findCompositeMaterial(scene);
+        }
+        material = cachedRenderSceneMaterial;
+      }
       if (material) {
         patchCompositeMaterial(material);
         const p = ensurePipeline(this);
