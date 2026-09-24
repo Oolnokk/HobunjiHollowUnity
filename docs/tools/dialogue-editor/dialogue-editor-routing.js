@@ -57,22 +57,31 @@ function fitGraph(){
 }
 function resetGraphScale(){const stage=$('graphStage');stage.style.transform='';state.fitScale=1}
 
+function setPresetPickerOpen(open){
+  state.presetPickerOpen=!!open; // Used by the Layouts button and preset selection to manage the chooser without changing authored settings.
+  $('alternatives').classList.toggle('hidden',!state.presetPickerOpen);
+  $('toggleAlternatives').setAttribute('aria-expanded',String(state.presetPickerOpen));
+  $('toggleAlternatives').classList.toggle('active',state.presetPickerOpen);
+}
 function renderAlternatives(){
-  const el=$('alternatives');el.classList.toggle('hidden',!state.settings.showAlternatives);
+  setPresetPickerOpen(state.presetPickerOpen);
+  const el=$('alternativesList');
   const all=[...PRESETS,...state.customPresets];
-  el.innerHTML=all.map((p,i)=>{
+  el.innerHTML=all.map(p=>{
     const s=p.settings;const vert=s.graphFlow==='vertical';const stacked=s.workspaceOrientation==='vertical';
     let navStyle=stacked?'left:0;right:0;top:0;height:20px;border-width:0 0 1px 0':'left:0;top:0;bottom:0;width:42px;border-width:0 1px 0 0';
     if(s.navPlacement==='right')navStyle=stacked?'left:0;right:0;bottom:0;height:20px;border-width:1px 0 0 0':'right:0;top:0;bottom:0;width:42px;border-width:0 0 0 1px';
     if(s.navPlacement==='hidden')navStyle='display:none';
     const graphStyle=stacked?'left:5px;right:5px;top:23px;bottom:3px':s.navPlacement==='right'?'left:4px;right:45px;top:3px;bottom:3px':'left:45px;right:4px;top:3px;bottom:3px';
-    return `<div class="altCard" data-preset="${esc(p.id)}"><div class="altName">${esc(p.name)}</div><div class="altWhy">${esc(p.why||'Pinned custom combination.')}</div><div class="miniPreview"><div class="miniNav" style="${navStyle}"></div><div class="miniGraph${vert?' vertical':''}" style="${graphStyle}"><span class="miniNode"></span><span class="miniLine"></span><span class="miniNode"></span><span class="miniLine"></span><span class="miniNode"></span></div></div><div class="altTags"><span class="altTag">${esc(s.workspaceOrientation)}</span><span class="altTag">${esc(s.graphFlow)} flow</span><span class="altTag">${esc((s.hierarchy||[]).length+' levels')}</span></div></div>`;
+    return `<button class="altCard" type="button" data-preset="${esc(p.id)}"><span class="altName">${esc(p.name)}</span><span class="altWhy">${esc(p.why||'Pinned custom combination.')}</span><span class="miniPreview" aria-hidden="true"><span class="miniNav" style="${navStyle}"></span><span class="miniGraph${vert?' vertical':''}" style="${graphStyle}"><span class="miniNode"></span><span class="miniLine"></span><span class="miniNode"></span><span class="miniLine"></span><span class="miniNode"></span></span></span><span class="altTags"><span class="altTag">${esc(s.workspaceOrientation)}</span><span class="altTag">${esc(s.graphFlow)} flow</span><span class="altTag">${esc((s.hierarchy||[]).length+' levels')}</span></span></button>`;
   }).join('');
   el.querySelectorAll('[data-preset]').forEach(card=>card.addEventListener('click',()=>applyPreset(card.dataset.preset)));
 }
 function applyPreset(id){
   const p=[...PRESETS,...state.customPresets].find(x=>x.id===id);if(!p)return;
   commitMutation(`Applied preset: ${p.name}`,()=>{state.settings=validateSettings(deepCopy(p.settings));state.millerPath=[]},{resetScale:true});
+  setPresetPickerOpen(false);
+  $('toggleAlternatives').focus();
 }
 function pinCurrent(){
   const name=prompt('Name this combination:','My layout combination');if(!name)return;

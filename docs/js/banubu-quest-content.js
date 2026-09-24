@@ -132,7 +132,7 @@
         { label: 'I’ll make it.', next: 'banubu_q1_offer_2', actions: [{ type: 'banubuQuest', operation: 'accept', stage: 1 }] },
         { label: 'Not yet.', next: null, actions: [] },
       ]),
-      textNode('banubu_q1_offer_2', 'Good. Wake me when it smells ready. Or don’t. I’ll probably smell it.', null),
+      textNode('banubu_q1_offer_2', 'Good. Bring it here when its ready.', null),
     ],
     {
       questType: 'threeFishPie',

@@ -31,6 +31,7 @@ function renderWorkspaceClasses(){
   ws.className=s.workspaceOrientation==='vertical'?'split-vertical':'split-horizontal';
   if(s.navPlacement==='right')ws.classList.add('nav-right');
   $('navigatorPane').classList.toggle('nav-hidden',s.navPlacement==='hidden');
+  syncPaneSplitter();
 }
 function renderNpcSelect(){
   const sel=$('npcSelect');const npcs=state.db?.npcs||[];
