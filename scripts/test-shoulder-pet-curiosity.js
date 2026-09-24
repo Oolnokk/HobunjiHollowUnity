@@ -151,7 +151,7 @@ assert.match(source,
   /function _tickShoulderPetCuriosity\(c, dt\)[\s\S]{0,1800}state\.phase = 'look'[\s\S]{0,700}targetLeanDeg/,
   'shoulder pets own a randomized look phase instead of turning every frame');
 assert.match(source,
-  /function _applyShoulderPetCuriosity\(c, dt\)[\s\S]{0,1200}frontPlane\.rotation\.z = state\.baseFrontRoll \+ leanRadians[\s\S]{0,260}backPlane\.rotation\.z = state\.baseBackRoll - leanRadians/,
+  /function _applyShoulderPetCuriosity\(c, dt\)[\s\S]{0,1800}frontPlane\.rotation\.z = state\.baseFrontRoll \+ leanRadians[\s\S]{0,320}backPlane\.rotation\.z = state\.baseBackRoll - leanRadians/,
   'curiosity leans within the visible pet planes without perspective foreshortening');
 const applyCuriositySource = source.slice(source.indexOf('function _applyShoulderPetCuriosity'), source.indexOf('function _isPlayerGenuinelyIdle')); // Used below to forbid perspective-changing Y rotation in this one pose function.
 assert.doesNotMatch(applyCuriositySource, /frontPlane\.rotation\.y|backPlane\.rotation\.y/,
