@@ -193,14 +193,21 @@
     }
   
     
-  function buildBanditTentMesh(burning = false) {
-    if (!_banditTentPiece || !window.HousePieceGen?.buildGroupFromPiece) return null;
-    const group = window.HousePieceGen.buildGroupFromPiece(THREE, _banditTentPiece, -1, -1, {
+  function buildBanditTentMesh(obj, elevationY, burning = false) {
+    if (!_banditTentPiece || !obj || !window.HousePieceGen?.buildGroupFromPiece) return null;
+    const centerCol = obj.x + (obj.w || 1) * 0.5; // Used to keep authored House Editor transforms aligned while the runtime wrapper stays interaction-centered.
+    const centerRow = obj.y + (obj.h || 1) * 0.5; // Used with centerCol for tent effects, outline, and prop positioning.
+    const authored = window.HousePieceGen.buildGroupFromPiece(THREE, _banditTentPiece, obj.x, obj.y, {
+      elevationY,
+      rotationDeg: obj.rot || 0,
       matCanvas: new THREE.MeshLambertMaterial({ color: 0xc8b58b, map: banditCanvasTexture(), side: THREE.DoubleSide }),
       matDoorOpening: new THREE.MeshBasicMaterial({ color: 0x1a1410, side: THREE.DoubleSide }),
     });
+    authored.position.set(-centerCol, -elevationY, -centerRow);
+    const group = new THREE.Group();
+    group.add(authored);
     group.userData.projectileCoverHeightTiles = 1.7;
-    group.userData.projectileCoverRadiusTiles = 1.4;
+    group.userData.projectileCoverRadiusTiles = 1.5;
     group.userData.projectileCoverKind = 'bandit-tent';
     group.userData.banditTent = true;
     if (burning) group.add(buildBanditFireEffect(3.4));
@@ -285,7 +292,7 @@
         const gridTile = zi.grid?.[obj.y]?.[obj.x];
         const y = gridTile ? deps.tileSurfaceYInArea(gridTile, zoneId) : deps.NORMAL_TOP;
         if (obj.type === 'tent') {
-          const mesh = buildBanditTentMesh(!!obj.burning);
+          const mesh = buildBanditTentMesh(obj, y, !!obj.burning);
           if (!mesh) continue;
           const center = banditTentCenterPx(obj);
           mesh.position.set(center.x / deps.TILE, y, center.y / deps.TILE);
