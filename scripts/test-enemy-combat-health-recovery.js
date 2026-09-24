@@ -21,6 +21,9 @@ function makeContext({
   bleeding = 0,
   congealed = 0,
   amphibiousFish = false,
+  targetedByState = null,
+  targetedByAmphibious = false,
+  targetedByPlayerLink = true,
 } = {}) {
   const dispatched = []; // Used to retain ResourceSystem change events for optional diagnostic assertions without requiring a browser EventTarget.
   const window = { // Used as the minimum browser-global namespace needed by the two production modules.
@@ -98,6 +101,18 @@ function makeContext({
 
   if (hostile && !companion) window.Combat.deps.hostileObjects.add(entity);
   if (player) window.Combat.deps.player = entity;
+  if (player && targetedByState) {
+    const targetingHostile = { // Used to model an enemy that remains actively engaged with the player after the player's own quiet timer has elapsed.
+      id: targetedByAmphibious ? 'targeting-gurumahi' : 'targeting-hostile',
+      health: 80,
+      state: targetedByState,
+      areaId: entity.areaId,
+      targetPlayer: targetedByPlayerLink ? entity : null,
+      _amphibiousFishItemKey: targetedByAmphibious ? 'gurumahi_test' : null,
+      def: { hostile: true, label: targetedByAmphibious ? 'Gurumahi' : 'Targeting Hostile' },
+    };
+    window.Combat.deps.hostileObjects.add(targetingHostile);
+  }
 
   return { entity, window, dispatched };
 }
@@ -124,6 +139,26 @@ function makeContext({
   harness.window.ResourceSystem.tick(harness.entity, 1, { healthRegenPerSec: 7 });
   assert.strictEqual(harness.entity.health, 50, 'player passive Health regeneration is blocked during recent combat');
   assert.strictEqual(harness.window.CombatHealthRecoveryPolicy.getDebug().lastBlockedTick.kind, 'player', 'debug state identifies player recovery blocks');
+}
+
+{
+  const harness = makeContext({ hostile: false, player: true, rested: true, targetedByState: 'chase' }); // Used to verify an enemy's ongoing chase keeps the player in combat after the player's own recent-action timer expires.
+  harness.window.ResourceSystem.tick(harness.entity, 1, { healthRegenPerSec: 7 });
+  assert.strictEqual(harness.entity.health, 50, 'player cannot passively heal during a long enemy chase lull');
+  assert.strictEqual(harness.window.CombatHealthRecoveryPolicy.getDebug().lastBlockedTick.reason, 'targeted-by:state:chase', 'debug state identifies the engaged hostile that kept player recovery blocked');
+}
+
+{
+  const harness = makeContext({ hostile: false, player: true, rested: true, targetedByState: 'chasing', targetedByAmphibious: true, targetedByPlayerLink: false }); // Used to verify a freshly reeled Gurumahi blocks player recovery even before/without targetPlayer bookkeeping.
+  harness.window.ResourceSystem.tick(harness.entity, 1, { healthRegenPerSec: 7 });
+  assert.strictEqual(harness.entity.health, 50, 'player cannot passively heal while an amphibious fish remains in its authored chasing combat state');
+  assert.strictEqual(harness.window.CombatHealthRecoveryPolicy.getDebug().lastBlockedTick.reason, 'targeted-by:amphibious-chasing', 'debug state identifies the Gurumahi fallback engagement');
+}
+
+{
+  const harness = makeContext({ hostile: false, player: true, rested: true, targetedByState: 'idle' }); // Used to prove mere presence in hostileObjects does not disable ordinary out-of-combat recovery.
+  harness.window.ResourceSystem.tick(harness.entity, 1, { healthRegenPerSec: 7 });
+  assert.strictEqual(harness.entity.health, 64, 'idle hostile presence does not block player rested Health regeneration');
 }
 
 {
