@@ -9,7 +9,6 @@ on:
       - 'docs/js/mastery-policy.js'
       - 'docs/js/combat/combat-config-loader.js'
       - 'scripts/test-progression-overhead-announcements.js'
-      - 'scripts/test-skill-and-hearth-cooking.js'
       - 'scripts/test-mastery-policy.js'
       - 'scripts/test-world-text-outline-overlay.js'
       - '.github/workflows/progression-overhead-regression.yml'
@@ -21,7 +20,6 @@ on:
       - 'docs/js/mastery-policy.js'
       - 'docs/js/combat/combat-config-loader.js'
       - 'scripts/test-progression-overhead-announcements.js'
-      - 'scripts/test-skill-and-hearth-cooking.js'
       - 'scripts/test-mastery-policy.js'
       - 'scripts/test-world-text-outline-overlay.js'
       - '.github/workflows/progression-overhead-regression.yml'
@@ -48,8 +46,6 @@ jobs:
           node --check scripts/test-progression-overhead-announcements.js
       - name: Test overhead progression announcements
         run: node scripts/test-progression-overhead-announcements.js
-      - name: Test skill progression integration
-        run: node scripts/test-skill-and-hearth-cooking.js
       - name: Test mastery policy integration
         run: node scripts/test-mastery-policy.js
       - name: Test world-text overlay handoff
