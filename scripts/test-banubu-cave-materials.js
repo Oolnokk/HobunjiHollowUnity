@@ -34,6 +34,8 @@ assert(game.includes('BanubuCaveClouds?.validateCaveMaterials?.({ THREE, scene: 
 assert.equal(banubuLocale.cavern.surfaceMaterial, 'farm-cliff', 'Banubu alone opts the carved shell into farm-cliff parity');
 assert.match(cavernGenerator, /generated\.mesh\.surfaceMaterial = surfaceMaterial/, 'locale cavern synthesis carries the authored surface preset into the renderer');
 assert.match(interiorBuilder, /natural\.naturalizeMesh\(mesh, 'rocks', 'planar-stretch'\)/, 'farm-cliff cave surfaces use the same canonical rock material factory as farm cliffs');
+assert.doesNotMatch(game, /mapData\.id === 'map_i_den_banubu'[\s\S]{0,500}MeshLambertMaterial/, 'Banubu must not replace the canonical unlit farm-cliff material with a Lambert material after the shared surface pass');
+assert.match(game, /Banubu's shell must retain the same unlit farm-rock PNG material/, 'runtime documents that the shared farm-cliff material remains authoritative for Banubu');
 assert.match(interiorBuilder, /HobunjiSurfaceStretchUV/, 'farm-cliff cave surfaces reuse the central connected-surface detector');
 assert.match(interiorBuilder, /mapper\.mapMesh\(mesh, \{ label: 'interior-cavern:farm-cliff', maxPatchWorldSize: 6 \}\)/, 'each detected cave surface uses the farm-scale stretch-to-fit mapper');
 assert.doesNotMatch(source, /CLOUD_OUTLINE_VALUE_MAX|CLOUD_DEPTH_EROSION_PX|makeDepthMaskMaterial/, 'Banubu clouds must keep the original pre-mask renderer after the requested rollback');
