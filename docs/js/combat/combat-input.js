@@ -131,16 +131,6 @@
     return abilityId ? window.Combat.abilities.get(abilityId) : null;
   }
 
-  // No weapon action (tap or hold — attacks and defensive stances alike)
-  // while swimming in a river/stream (see game.js's isPlayerSwimming) —
-  // single choke point for every ability, instead of each one checking it.
-  function blockedBySwimming() {
-    const deps = window.Combat.deps;
-    if (!deps?.isPlayerSwimming?.()) return false;
-    deps.showToast?.("Can't fight while swimming!", false);
-    return true;
-  }
-
   // Same choke point, for the Footing/impact stagger lockout (see combat-
   // core.js's isStaggered/beginStagger, set from game.js's damagePlayer) —
   // reeling from a hit blocks starting any weapon action, tap or hold alike
@@ -197,7 +187,7 @@
   }
 
   function fireTap(slotIndex) {
-    if (blockedBySwimming() || blockedByStagger()) return;
+    if (blockedByStagger()) return;
     const slotId = 'tap' + slotIndex;
     const ability = abilityForSlot(slotId);
     runAfterAttackAlignment(() => {
@@ -208,7 +198,7 @@
 
   function startHold(slotIndex) {
     const s = slots[slotIndex];
-    if (!s || blockedBySwimming() || blockedByStagger()) return;
+    if (!s || blockedByStagger()) return;
     const slotId = 'hold' + slotIndex;
     const ability = abilityForSlot(slotId);
     s.holdAbility = ability;

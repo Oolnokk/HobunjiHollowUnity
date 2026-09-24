@@ -1480,7 +1480,7 @@
     // than pre-checking it.
     const continuingCombo = c._banditComboIndex > 0;
     const readyToStrike = distToPlayer <= engageRangePx && !!slot && c.attackCooldownT <= 0
-      && (continuingCombo || c.stamina >= def.attackStaminaCost) && !deps.isCreatureSwimming(c);
+      && (continuingCombo || c.stamina >= def.attackStaminaCost);
     if (!readyToStrike) {
       // One unified ring formula for the whole waiting state (slot-
       // holder-on-cooldown, stamina-short, or genuinely queued alike),
