@@ -159,8 +159,27 @@ assert.strictEqual(timers.size, 0, 'hit cancellation clears the pending bandage 
 assert(sfxVoices.slice(-1).every(voice => voice.paused), 'hit cancellation stops the current bandage audio immediately');
 
 player.health = 100;
-assert.strictEqual(bandage.start({ source:'full' }), false, 'full health does not start a pointless bandage action');
+player.afflictions.windedStamina = 0;
+player.afflictions.bleedingHealth = 0;
+assert.strictEqual(bandage.start({ source:'full-alcohol-only' }), false, 'full health still refuses bandaging when only excluded alcohol afflictions remain');
+assert.strictEqual(player.afflictions.drunkenHealth, 10, 'Drunken Health alone cannot make a full-Health bandage eligible');
+assert.strictEqual(player.afflictions.drunkenFooting, 10, 'Drunken Footing alone cannot make a full-Health bandage eligible');
 
+player.afflictions.bleedingHealth = 10;
+assert.strictEqual(bandage.start({ source:'full-cleanse' }), true, 'full health can bandage when an eligible affliction is active');
+assert.strictEqual(bandage.debugSnapshot().afflictionCleanse.cleanseOnly, true, 'diagnostics identify full-Health cleanse-only bandaging');
+now += 4000;
+bandage.update(4, false);
+assert.strictEqual(player.health, 100, 'cleanse-only bandaging never changes already-full Health');
+assert.strictEqual(player.afflictions.bleedingHealth, 6.2, 'full-Health bandaging applies one-fifth cleanse against the same midpoint heal curve');
+assert.strictEqual(player.afflictions.drunkenHealth, 10, 'full-Health cleansing still excludes Drunken Health');
+assert.strictEqual(player.afflictions.drunkenFooting, 10, 'full-Health cleansing still excludes Drunken Footing');
+assert.strictEqual(bandage.active, true, 'cleanse-only bandaging remains active while eligible buildup remains');
+now += 4000;
+bandage.update(4, false);
+assert.strictEqual(player.afflictions.bleedingHealth, 0, 'full-Health bandaging can finish clearing ordinary buildup');
+assert.strictEqual(bandage.active, false, 'cleanse-only bandaging completes when no eligible buildup remains');
+assert.strictEqual(lastLock.released, true, 'cleanse-only completion releases action ownership');
 
 player.health = 1;
 assert.equal(bandage.start(), true);
@@ -183,4 +202,4 @@ assert.equal(player.health, 100, 'four more active seconds completes the origina
 assert.equal(lastLock.released, true);
 assert.equal(timers.size, 0);
 
-console.log('Bandage system curve, pause/resume, audio, and cancellation tests passed.');
+console.log('Bandage system curve, affliction cleanse/full-Health cleanse, pause/resume, audio, and cancellation tests passed.');
