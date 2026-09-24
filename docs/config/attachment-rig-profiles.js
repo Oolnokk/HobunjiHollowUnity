@@ -686,7 +686,9 @@
   const applyShoulderPetObservationAtPinnedPerch = (pet, worldPivot) => {
     const avatar = pet?.avatarRef;
     if (!avatar?.group || !worldPivot) return false;
-    const flipped = !!pet.__hobunjiShoulderObservationFlipped; // Current logical observation parity is consumed only inside the final shoulder-pin solve.
+    const portraitMirrored = window.HobunjiPortraitOutlineParity?.isShoulderPetPortraitMirrorActive?.() === true; // Presentation mirror supplies the resting/default facing parity on the opposite shoulder.
+    const observationMirrored = !!pet.__hobunjiShoulderObservationFlipped; // Curiosity still toggles relative facing independently of portrait presentation.
+    const flipped = portraitMirrored !== observationMirrored; // XOR mirrors the entire observation sequence: mirrored rest, then the same relative flip cadence from that rest state.
     const errors = shoulderObservationMeshes(avatar)
       .map(plane => solveShoulderObservationPlaneAtPivot(plane, worldPivot, flipped))
       .filter(Number.isFinite);
@@ -694,6 +696,8 @@
     avatar.__hobunjiShoulderObservationPivotDebug = {
       mode: 'direct-local-grip-pivot',
       mirrored: flipped,
+      portraitMirrored,
+      observationMirrored,
       meshCount: errors.length,
       worldPivot: [Number(worldPivot.x) || 0, Number(worldPivot.y) || 0, Number(worldPivot.z) || 0],
       maxError,
