@@ -84,6 +84,9 @@ assert.match(gameSource, /if \(window\.__mapEditorGizmoActive\)/, 'game input is
 assert.match(gameSource, /CinematicCameraRuntime\?\.shouldStagePlayer\?\.\(\) === false/, 'cinematic dialogue can suppress ordinary player backup/staging');
 assert.match(runtimeSource, /type: 'placement-transform'/, 'runtime gizmo mirrors transforms into the Map Editor workspace');
 assert.match(indexHtml, /id="mapEditCopyDiffBtn"/, 'in-game Map Edit exposes a one-tap complete diff copy action');
+assert.match(indexHtml, /id="mapEditCameraStagePlayerBtn"/, 'selected cinematic cameras expose a mobile-friendly player-repositioning toggle');
+assert.match(runtimeSource, /stagePlayer: updated\.stagePlayer === true/, 'camera transform bridge persists the player-staging flag with other camera authoring changes');
+assert.match(runtimeSource, /camera\.stagePlayer = camera\.stagePlayer !== true/, 'Map Edit can explicitly toggle cinematic player staging on or off');
 assert.match(runtimeSource, /type: 'map-edit-diff-request'/, 'in-game copy action requests the authoritative standalone Map Editor diff when connected');
 assert.match(runtimeSource, /type === 'map-edit-diff-result'/, 'in-game copy action consumes the editor diff response');
 assert.match(runtimeSource, /runtimeOnlyTransformDiffs/, 'in-game copy action appends unpersisted runtime-only gizmo changes');
