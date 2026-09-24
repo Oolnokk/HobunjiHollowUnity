@@ -30,6 +30,10 @@ assert.match(controller, /const candidates = targets\.map\(el => \(\{ el, rect: 
   'spatial navigation snapshots each candidate rectangle once before cone scoring');
 assert.doesNotMatch(controller, /function bestVectorCandidate\([\s\S]{0,420}getBoundingClientRect\(/,
   'narrow, wide, and half-plane scoring reuse rectangle snapshots instead of rereading layout');
+assert.doesNotMatch(controller, /new Set\(Object\.values\(UI_ACTIONS\)/,
+  'active menu polling reuses edge state instead of allocating a semantic-action Set every controller frame');
+assert.match(controller, /const currentBindings = window\.InputBindings\?\.getCurrentBindings\?\.\(\)\?\.controller \|\| null;/,
+  'active menu polling snapshots the live controller binding map once per frame');
 
 assert.doesNotMatch(heldRender, /\.updateMatrixWorld = function heldGround/,
   'held/ground invariants no longer wrap every matrix update');
