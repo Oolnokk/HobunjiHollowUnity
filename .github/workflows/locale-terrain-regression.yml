@@ -10,6 +10,13 @@ on:
       - 'docs/js/locale-cave-runtime.js'
       - 'docs/js/banubu-cave-clouds.js'
       - 'docs/js/interior-scene-builder.js'
+      - 'docs/js/house-pieces.js'
+      - 'docs/js/surface-stretch-uv-furniture.js'
+      - 'docs/js/natural-surface-stretch-post-jigsaw.js'
+      - 'docs/js/natural-surface-stretch-runtime.js'
+      - 'docs/js/natural-surface-jigsaw-exclusion.js'
+      - 'docs/js/natural-surface-cliff-ridge-isolation.js'
+      - 'docs/js/wilderness-cliff-surface-parity.js'
       - 'docs/js/zone-den-totem-features.js'
       - 'docs/js/den-locale-runtime.js'
       - 'docs/js/den-nest-system.js'
@@ -42,6 +49,15 @@ on:
       - 'docs/tools/wilderness-generation-lab/**'
       - 'docs/tools/locale-editor/**'
       - 'scripts/test-locale-terrain-placement.js'
+      - 'scripts/test-natural-surface-loader-cache.js'
+      - 'scripts/test-natural-surface-post-jigsaw-order.js'
+      - 'scripts/test-surface-stretch-uv.js'
+      - 'scripts/test-natural-surface-stretch-runtime.js'
+      - 'scripts/test-natural-surface-jigsaw-exclusion.js'
+      - 'scripts/test-natural-surface-cliff-ridge-isolation.js'
+      - 'scripts/test-wilderness-cliff-surface-parity.js'
+      - 'scripts/test-boundary-current-vs-jigsaw.js'
+      - 'scripts/test-farm-border-road-loader-order.js'
       - 'scripts/test-banubu-cave-locale.js'
       - 'scripts/test-banubu-cave-materials.js'
       - 'scripts/test-locale-cavern-interiors.js'
@@ -95,6 +111,18 @@ jobs:
           node --check docs/game.js
           node --check docs/tools/dialogue-editor/dialogue-editor-state.js
           node --check docs/tools/dialogue-editor/dialogue-editor-inspector.js
+      - name: Test natural-surface UV loader cache coherence
+        run: node scripts/test-natural-surface-loader-cache.js
+      - name: Test natural-surface edge-preservation stack
+        run: |
+          node scripts/test-surface-stretch-uv.js
+          node scripts/test-natural-surface-stretch-runtime.js
+          node scripts/test-natural-surface-jigsaw-exclusion.js
+          node scripts/test-natural-surface-post-jigsaw-order.js
+          node scripts/test-natural-surface-cliff-ridge-isolation.js
+          node scripts/test-wilderness-cliff-surface-parity.js
+          node scripts/test-boundary-current-vs-jigsaw.js
+          node scripts/test-farm-border-road-loader-order.js
       - name: Test terrain-aware locale placement
         run: node scripts/test-locale-terrain-placement.js
       - name: Test Banubu authored cave rules and runtime parity
