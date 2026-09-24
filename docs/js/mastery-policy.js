@@ -199,7 +199,15 @@
       try { window.WorldPopupText.showChange('masteryXp', delta, { text: `+${delta} ${toolLabel(itemKey)} Mastery` }); }
       finally { popupPermitDepth--; }
     }
-    if (masteryLevel(after) > masteryLevel(before)) equipmentDeps?.showToast?.(`${toolLabel(itemKey)} Mastery ${masteryLevel(after)}/5`, true);
+    const beforeRank = masteryLevel(before); // Previous rank used to identify every threshold crossed by this award.
+    const afterRank = masteryLevel(after); // New rank used for both overhead announcement text and the legacy fallback.
+    if (afterRank > beforeRank) {
+      let announcedOverhead = false; // Tracks whether the player-root Ambient Dialogue bridge accepted at least one crossed Mastery rank.
+      for (let reachedRank = beforeRank + 1; reachedRank <= afterRank; reachedRank++) { // Emits every crossed rank if one unusually large award passes multiple thresholds.
+        announcedOverhead = window.WorldPopupText?.queueLevelUp?.(`${toolLabel(itemKey)} Mastery Rank ${reachedRank}!`) === true || announcedOverhead;
+      }
+      if (!announcedOverhead) equipmentDeps?.showToast?.(`${toolLabel(itemKey)} Mastery ${afterRank}/5`, true);
+    }
     try { window.dispatchEvent?.(new CustomEvent('hobunji-mastery-award', { detail: { ...debug.lastAward } })); } catch (_) {}
     return delta;
   }
