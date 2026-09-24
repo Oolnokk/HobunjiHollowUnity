@@ -214,6 +214,19 @@
     return Array.from(panel.querySelectorAll(NAV_SELECTOR)).filter(isNavTarget);
   }
 
+  function navigationTargets(panel) {
+    // Modal dialogs own focus; otherwise visible panel roots are peers even
+    // when their controls live in different DOM containers.
+    const modal = panel.matches(SEMANTIC_PANEL_SELECTOR) || panel.getAttribute('aria-modal') === 'true';
+    if (modal) return targetsInPanel(panel);
+    const peers = visiblePanels().filter(other => !other.matches(SEMANTIC_PANEL_SELECTOR) && other.getAttribute('aria-modal') !== 'true'); // Used to gather controls across visible menu containers.
+    return [...new Set(peers.flatMap(targetsInPanel))];
+  }
+
+  function belongsToNavigation(el, panel) {
+    return navigationTargets(panel).includes(el);
+  }
+
   function pickDefaultTarget(panel) {
     const explicit = panel.querySelector('[data-ctrl-default]');
     if (explicit && isNavTarget(explicit)) return explicit;
@@ -248,7 +261,7 @@
   function refreshFocusIfStale() {
     const panel = activePanel();
     if (!panel) return;
-    if (currentTarget && isNavTarget(currentTarget) && panel.contains(currentTarget)) return;
+    if (currentTarget && isNavTarget(currentTarget) && belongsToNavigation(currentTarget, panel)) return;
     setFocus(pickDefaultTarget(panel));
   }
 
@@ -310,7 +323,7 @@
     const panel = activePanel();
     if (!panel) return false;
     refreshFocusIfStale();
-    const targets = targetsInPanel(panel);
+    const targets = navigationTargets(panel);
     if (!targets.length) return false;
     if (!currentTarget) { setFocus(pickDefaultTarget(panel)); return true; }
     const dir = normalizedDirection(x, y);
@@ -601,7 +614,7 @@
   // leaves the highlighted target pointing somewhere stale.
   document.addEventListener('focusin', (event) => {
     const panel = activePanel();
-    if (panel && panel.contains(event.target) && isNavTarget(event.target)) {
+    if (panel && isNavTarget(event.target) && belongsToNavigation(event.target, panel)) {
       if (currentTarget && currentTarget !== event.target) currentTarget.classList.remove('ctrl-nav-focus');
       currentTarget = event.target;
       currentTarget.classList.add('ctrl-nav-focus');
