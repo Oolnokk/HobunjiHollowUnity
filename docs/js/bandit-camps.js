@@ -4,7 +4,7 @@
   // Bandit camps — temporary-locale zone adapter, props, lifecycle,
   // companion perception, tent interaction, and corpse loot.
   let deps = null;
-  const BANDIT_TENT_PIECE_URL = 'config/pieces/bandit-tent.json'; // Authored Researcher's-Tent clone used by every bandit-camp tent.
+  const BANDIT_TENT_PIECE_URL = 'config/pieces/bandit-tent.json'; // Authored Researcher-style House Editor piece used by every bandit-camp tent.
   let _banditTentPiece = null; // Cached authored tent piece consumed by buildBanditTentMesh().
   let _banditTentPiecePromise = null; // Shared in-flight fetch so repeated camp setup never duplicates the piece request.
 
