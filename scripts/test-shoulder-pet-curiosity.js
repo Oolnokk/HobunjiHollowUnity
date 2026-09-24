@@ -10,10 +10,12 @@ const rigSource = fs.readFileSync('docs/config/attachment-rig-profiles.js', 'utf
 const probeSource = fs.readFileSync('docs/js/pixel-probe.js', 'utf8'); // Guards the mobile-visible size/curiosity diagnostic added for shoulder pets.
 
 const storage = { getItem() { return null; }, setItem() {}, removeItem() {} }; // Minimal browser storage stub required by the attachment master bootstrap.
+const portraitMirrorState = { active: false }; // Lets the fixture exercise mirrored rest parity without loading the portrait module.
 const rigSandbox = {
   localStorage: storage,
   window: {
     localStorage: storage,
+    HobunjiPortraitOutlineParity: { isShoulderPetPortraitMirrorActive: () => portraitMirrorState.active },
     SCRATCHBONES_CONFIG: {
       game: {
         appearanceEditor: { species: {} },
@@ -120,6 +122,18 @@ assert(plane.scale.x > 0, 'unflipping restores positive canonical face scale');
 assert(Math.abs(plane.position.x - 0.2) < 1e-12 && Math.abs(plane.position.z - 0.4) < 1e-12, 'unflipping restores canonical plane position without accumulated correction drift');
 assert(restoredPivotWorld.distanceTo(shoulderPerchWorld) < 1e-12, 'unflipping keeps the same grip/perch pivot fixed');
 
+portraitMirrorState.active = true;
+fakePet.__hobunjiShoulderObservationFlipped = false;
+rigSandbox.window.ShoulderPetObservationFlip.applyAtPinnedPerch(fakePet, shoulderPerchWorld);
+assert(plane.scale.x < 0, 'portrait mirroring reverses the default/resting shoulder-pet facing around the authored grip');
+assert(plane.localToWorld(authoredGripLocal.clone()).distanceTo(shoulderPerchWorld) < 1e-12, 'mirrored default orientation keeps the grip exactly pinned');
+
+fakePet.__hobunjiShoulderObservationFlipped = true;
+rigSandbox.window.ShoulderPetObservationFlip.applyAtPinnedPerch(fakePet, shoulderPerchWorld);
+assert(plane.scale.x > 0, 'observation flip is relative to the mirrored resting orientation instead of applying the same absolute parity');
+assert(plane.localToWorld(authoredGripLocal.clone()).distanceTo(shoulderPerchWorld) < 1e-12, 'relative observation flip keeps the mirrored grip/perch pivot fixed');
+portraitMirrorState.active = false;
+
 // Change parent scale to mimic live size/breath transforms, then solve a new flip
 // from the canonical state before rendering. The direct equation must still hold.
 root.scale.set(2.4, 2.7, 3.6);
@@ -177,6 +191,9 @@ assert.match(source,
 assert.match(source,
   /_updateCompanionHeadRotation\(c, _companionHeadRestDeg\(c\) \+ state\.currentPitchDeg, dt\)/,
   'shoulder-pet glances add a small pitch when the authored head rig is available');
+assert.match(source,
+  /const shoulderMirrorSign = window\.HobunjiPortraitOutlineParity\?\.isShoulderPetPortraitMirrorActive\?\.\(\) === true \? -1 : 1[\s\S]{0,1600}updateHeadYaw\(state\.currentYawDeg \* shoulderMirrorSign, dt\)/,
+  'portrait mirroring reverses horizontal body lean/head-turn motion while leaving vertical curiosity pitch unchanged');
 assert.match(source,
   /const SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG = 14/,
   'shoulder-pet glances give the head its own visible turn instead of only rotating the body planes');
