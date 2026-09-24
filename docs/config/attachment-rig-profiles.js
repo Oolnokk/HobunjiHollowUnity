@@ -86,7 +86,7 @@
     ['dabinggi-hound',[0,0.12212625800404886,0.6091387381509006],'highest-opaque-pixel-along-idle-sprite-midline',-5,[687.5,210.5],0,[0.01,-0.20203700498816118,0.09104867302389968],[[2,2],[1,1],[0.35,0.35]],null],
     ['uumkaoii',[0,0.26595632314682005,0.02],'built-in-approved-rig-json-v1524',null,null,null,[0.01,-0.3636087789187775,-0.18395679109723],[[1.5,1.5],[1,1],[0.2,0.2]],null],
     ['puktuk',[0,0.16937859550590686,-0.012420318741466083],'animation-author-export-2026-09-15',null,null,null,[0.01,-0.29715994741785007,-0.0010889163404909086],[[1,1],[0.6,0.6],[0.3,0.3]],null],
-    ['voorg-ass',[-0.0016655977917167481,0.12286908956931555,0.043832914384796626],'animation-author-export-2026-09-15',null,null,null,[0.01,-0.33453636625016553,0.0181046276028018],[[0.97,0.97],[0.75,0.75],[0.27,0.27]],null],
+    ['voorg-ass',[-0.0016655977917167481,0.12286908956931555,0.043832914384796626],'animation-author-export-2026-09-15',null,null,null,[0.01,-0.33453636625016553,0.0181046276028018],[[1.164,1.164],[0.75,0.75],[0.27,0.27]],null], // Large is 20% above the September 15 0.97 calibration so wild Large adults read distinctly bigger.
   ];
   const staleCreatureShoulderGrips = Object.freeze({
     grehlr: Object.freeze([Object.freeze([0.01,-0.3719770036140037,0])]),
@@ -107,7 +107,7 @@
     'dabinggi-hound': Object.freeze({ large: 0.50, medium: 0.27, small: 0.09 }),
     uumkaoii: Object.freeze({ large: 0.69, medium: 0.48, small: 0.09 }),
     puktuk: Object.freeze({ large: 0.40, medium: 0.24, small: 0.12 }),
-    'voorg-ass': Object.freeze({ large: 0.26, medium: 0.325, small: 0.11 }),
+    'voorg-ass': Object.freeze({ large: 0.312, medium: 0.325, small: 0.11 }), // Large lift follows the 20% visual-scale increase so the enlarged sprite remains floor-aligned.
   });
   const creatureChatheadFrames = Object.freeze({
     grehlr: Object.freeze({ x: 0.10721275741258315, y: 0.349719408702988, width: 0.2558259151491218, height: 0.35439898228896183, coordinateSpace: 'sprite-normalized-top-left', version: 1 }),
