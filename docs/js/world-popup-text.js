@@ -30,7 +30,11 @@
     },
   };
   const PRIORITY = { skillXp: 0, masteryXp: 1, favor: 2, currency: 3, loot: 4 };
-  const state = { deps: null, settings: DEFAULTS, active: [], sequence: 0, pending: [], flushQueued: false, interactionSignature: '', conditionCallout: null, aimLabel: null };
+  const state = {
+    deps: null, settings: DEFAULTS, active: [], sequence: 0, pending: [], flushQueued: false,
+    interactionSignature: '', conditionCallout: null, aimLabel: null,
+    levelUpQueue: [], levelUpActive: null, levelUpTimer: null, // Serializes player progression announcements so simultaneous Skill/Mastery gains never overlap above the avatar.
+  };
   let tankanFontPromise = null; // Used to load the existing Tankan OTF once before redrawing any persistent callout canvas.
 
   const clone = value => JSON.parse(JSON.stringify(value));
@@ -361,6 +365,46 @@
     return state.sequence;
   }
 
+  function finishLevelUpAnnouncement() {
+    if (state.levelUpTimer != null) clearTimeout(state.levelUpTimer);
+    state.levelUpTimer = null;
+    state.levelUpActive = null;
+    drainLevelUpAnnouncements();
+  }
+
+  function drainLevelUpAnnouncements() {
+    if (state.levelUpActive) return true;
+    const next = state.levelUpQueue.shift(); // Next Skill/Mastery milestone waiting for the shared Ambient Dialogue renderer.
+    if (!next) return true;
+    const root = next.root || state.deps?.playerRoot; // Live player root used to resolve the avatar-only presentation anchor.
+    const show = window.AmbientDialogue?.show; // Existing animal/NPC popup dialogue renderer reused verbatim for progression text.
+    if (!root || typeof show !== 'function') return false;
+    const anchorRoot = avatarMetrics(root)?.avatarRoot || root; // Excludes direct held-item/attachment roots so drawn gear cannot pull the "above head" anchor away from the body.
+    const durationMs = Math.max(500, Number(next.durationMs) || 1600); // Matches the short discovery-text lifetime used by animal companion warnings.
+    const event = show(anchorRoot, next.text, {
+      speakerId: 'player-progression',
+      mode: 'overhead',
+      tone: 'animal',
+      durationMs,
+      scene: next.scene,
+    }); // Active Ambient Dialogue event whose lifetime gates the next queued progression announcement.
+    if (!event) return false;
+    state.levelUpActive = { text: next.text, durationMs };
+    state.levelUpTimer = setTimeout(finishLevelUpAnnouncement, durationMs + 80);
+    return true;
+  }
+
+  function queueLevelUp(text, options = {}) {
+    const message = String(text || '').trim(); // Final milestone copy shown above the player's head.
+    const root = options.root || state.deps?.playerRoot; // Validates that the WorldPopupText bridge has its normal player anchor before accepting the event.
+    if (!message || !root || typeof window.AmbientDialogue?.show !== 'function') return false;
+    state.levelUpQueue.push({ text: message, root, scene: options.scene, durationMs: options.durationMs });
+    if (state.levelUpActive) return true;
+    if (drainLevelUpAnnouncements()) return true;
+    state.levelUpQueue.length = 0;
+    return false;
+  }
+
   function clearInteractionPrompts() {
     for (let index = state.active.length - 1; index >= 0; index--) {
       if (!state.active[index].interactionPrompt) continue;
@@ -604,6 +648,10 @@
   function clear() {
     state.active.splice(0).forEach(dispose);
     state.pending.length = 0;
+    state.levelUpQueue.length = 0;
+    if (state.levelUpTimer != null) clearTimeout(state.levelUpTimer);
+    state.levelUpTimer = null;
+    state.levelUpActive = null;
     state.interactionSignature = '';
     clearConditionCallout();
     clearAimLabel();
@@ -616,7 +664,7 @@
   }
 
   const api = {
-    init, update, showChange, queueReward,
+    init, update, showChange, queueReward, queueLevelUp,
     setInteractionPrompts, syncInteractionPrompts, clearInteractionPrompts,
     setConditionCallout, clearConditionCallout,
     setAimLabel, clearAimLabel,
@@ -629,6 +677,8 @@
         inputColor: event.inputColor, label: event.label,
       })),
       interactionVerbColor: INTERACTION_VERB_COLOR,
+      levelUpQueueLength: state.levelUpQueue.length,
+      levelUpActive: state.levelUpActive ? { ...state.levelUpActive } : null,
     }),
   };
   window.WorldPopupText = api;
