@@ -978,6 +978,11 @@
       lines.push(`Context: ${gl3 instanceof WebGL2RenderingContext ? 'WebGL2' : 'WebGL1'}  DEPTH_BITS=${gl3.getParameter(gl3.DEPTH_BITS)}  STENCIL_BITS=${gl3.getParameter(gl3.STENCIL_BITS)}  devicePixelRatio=${window.devicePixelRatio}`);
     } catch (e) { lines.push('GPU/context info: (read failed)'); }
     lines.push(`Area: ${currentArea}   CSS(${cssX.toFixed(0)},${cssY.toFixed(0)}) framebuffer(${fbX},${fbY})`);
+    const renderRecovery = window.WeatherFX?.getRenderRecoveryState?.(); // Makes WebGL context loss and CSS/backing-buffer desync diagnosable from the in-game report without desktop devtools.
+    if (renderRecovery) {
+      const lastRepair = renderRecovery.lastRepair;
+      lines.push(`Render surface recovery: contextLost=${renderRecovery.contextLost ? 1 : 0} events=${renderRecovery.contextLosses}/${renderRecovery.contextRestores} repairs=${renderRecovery.repairs} css=${renderRecovery.css} fb=${renderRecovery.framebuffer} rendererBuffer=${renderRecovery.rendererBuffer} expected=${renderRecovery.expectedFramebuffer} overlayExpected=${renderRecovery.expectedOverlay} lighting=${renderRecovery.lightingCanvas} overlay=${renderRecovery.overlayCanvas} last=${lastRepair ? `${lastRepair.reason}@${lastRepair.css}->${lastRepair.framebuffer} rendererBuffer=${lastRepair.rendererBuffer} gpuRefresh=${lastRepair.refreshedMaterials}/${lastRepair.refreshedTextures}` : renderRecovery.lastContextEvent}`);
+    }
     const cacheAudit = window.HobunjiCacheAudit?.snapshot?.(); // Gives mobile reports the same resource-pressure evidence previously available only through the desktop console.
     if (cacheAudit?.gpu) {
       lines.push(`Render resources: geometries=${cacheAudit.gpu.geometries} textures=${cacheAudit.gpu.textures} drawCalls=${cacheAudit.gpu.calls} triangles=${cacheAudit.gpu.triangles}`);
