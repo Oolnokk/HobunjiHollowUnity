@@ -62,6 +62,14 @@
       && switchButton?.getAttribute('aria-label') !== 'Switch to melee weapon';
   }
 
+  function gameplayReticleSuppressed() {
+    const combatDeps = window.Combat?.deps; // Used below to read the game's authoritative dialogue-open state.
+    const sitInteraction = window.__hobunjiFurnitureDebug?.sitInteraction; // Used below to suppress the sight throughout the seated transition and active seat state.
+    return !!combatDeps?.isDialogueOpen?.()
+      || !!window.HOBUNJI_CHARACTER_VIEW_STATUS?.enabled
+      || (!!sitInteraction && sitInteraction.phase !== 'out');
+  }
+
   function ensureReticle() {
     if (container?.isConnected) return container;
     host = document.getElementById('canvasWrap');
@@ -257,7 +265,7 @@
   function refresh() {
     const root = ensureReticle();
     const deps = window.Combat?.deps;
-    const visible = !!root && meleeWeaponDrawn();
+    const visible = !!root && meleeWeaponDrawn() && !gameplayReticleSuppressed();
     if (!root || !deps?.player || !visible) {
       if (root) setIfChanged(root.style, 'display', 'none');
       if (lastSnapshot.visible) lastSnapshot = { visible: false, target: null, slots: [] };
