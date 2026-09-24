@@ -267,7 +267,7 @@
     "function": "yieldFrame",
     "reason": "A reusable 'wait for next paint' helper awaited between entity-build batches while materializing the bandit army; each invocation is a single RAF deferral, not a self-perpetuating loop.",
     "migrationStage": "not-planned",
-    "line": 315
+    "line": 337
   },
   {
     "file": "docs/js/input-default-reset-ui.js",

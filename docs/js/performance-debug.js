@@ -1086,16 +1086,24 @@
     const cacheBtnRow = document.createElement('div');
     cacheBtnRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 0';
     const cacheBtnLabel = document.createElement('span');
-    cacheBtnLabel.textContent = 'Cache snapshot';
+    cacheBtnLabel.textContent = 'Performance snapshot';
     cacheBtnLabel.style.fontSize = '12px';
-    cacheBtnLabel.title = 'Lists every registered cache\'s current size (console.table) plus live GPU geometry/texture counts and localStorage size. Also captured automatically whenever FPS drops to 3 or below (20s cooldown) — see window.__hobunjiLagSnapshots.';
+    cacheBtnLabel.title = 'Copies one JSON snapshot containing area/time/day-night phase, Harlyao state and render complexity, live GPU counts, profiler timings (when enabled), render adapters, wilderness LOD, caches, and storage. Auto-captures also trigger at sustained FPS at or below 15.';
     const cacheBtn = document.createElement('button');
     cacheBtn.type = 'button';
-    cacheBtn.textContent = 'Snapshot now';
+    cacheBtn.textContent = 'Copy current';
     cacheBtn.style.cssText = 'font-size:11px;padding:3px 10px;border-radius:6px;cursor:pointer;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);color:#d1d5db';
-    cacheBtn.addEventListener('click', () => {
-      const snap = root.HobunjiCacheAudit?.print?.();
-      flashButtonLabel(cacheBtn, snap ? 'Captured (see console)' : 'Unavailable');
+    cacheBtn.addEventListener('click', async () => {
+      const snap = root.HobunjiCacheAudit?.snapshot?.(); // On-demand snapshot avoids console/table work and includes the new day/night/march context.
+      if (!snap) { flashButtonLabel(cacheBtn, 'Unavailable'); return; }
+      try {
+        const clipboard = root.navigator?.clipboard; // Clipboard API is required for a DevTools-free mobile/desktop handoff of the current snapshot.
+        if (typeof clipboard?.writeText !== 'function') throw new Error('clipboard unavailable');
+        await clipboard.writeText(JSON.stringify(snap, null, 2));
+        flashButtonLabel(cacheBtn, 'Copied!');
+      } catch (_) {
+        flashButtonLabel(cacheBtn, 'Copy failed');
+      }
     });
     cacheBtnRow.append(cacheBtnLabel, cacheBtn);
     box.appendChild(cacheBtnRow);
@@ -1269,7 +1277,7 @@
   // diagnostics already turned on. Deliberately its own tiny scheduler
   // registration rather than reusing frameLoop, which only runs while
   // fpsEnabled or profilerEnabled is true.
-  const LAG_SNAPSHOT_FPS_THRESHOLD = 3;
+  const LAG_SNAPSHOT_FPS_THRESHOLD = 15; // 8-15 FPS is already severe gameplay lag; capture it before a near-freeze reaches the old 3 FPS threshold.
   const LAG_SNAPSHOT_COOLDOWN_MS = 20000; // Keeps a sustained lag spell from spamming a snapshot every sample window.
   const LAG_SNAPSHOT_SAMPLE_MS = 500;
   const lagWatch = { registered: false, sampleStart: 0, sampleFrames: 0, lastSnapshotAt: -Infinity };
@@ -1280,9 +1288,13 @@
     const el = document.getElementById('lagSnapshotStatus');
     if (!el) return;
     const last = root.__hobunjiLagSnapshots[root.__hobunjiLagSnapshots.length - 1];
+    const context = last?.context; // Compact phase/march label lets the player identify the captured condition without opening DevTools.
+    const condition = context
+      ? `${context.phase || 'unknown'} · ${context.area || 'unknown area'} · Harlyao ${context.harlyaoVisible ? 'visible' : (context.harlyaoScheduled ? 'scheduled' : 'inactive')}`
+      : null;
     el.textContent = last
-      ? `Last auto-snapshot: ${new Date(last.takenAt).toLocaleTimeString()} at ${last.triggerFps.toFixed(1)} FPS (${last.caches.length} caches).`
-      : 'No automatic snapshot yet — captured whenever FPS drops to 3 or below.';
+      ? `Last auto-snapshot: ${new Date(last.takenAt).toLocaleTimeString()} at ${last.triggerFps.toFixed(1)} FPS${condition ? ` · ${condition}` : ''}.`
+      : `No automatic snapshot yet — captured whenever FPS stays at or below ${LAG_SNAPSHOT_FPS_THRESHOLD}.`;
   }
 
   function captureLagSnapshot(fps) {
@@ -1290,7 +1302,7 @@
     // through __farmLog/log() here, so a lag spell doesn't spam the regular
     // in-game diagnostic log; the "Copy last auto-snapshot" button below
     // reads root.__hobunjiLagSnapshots directly instead.
-    const snap = root.HobunjiCacheAudit?.print?.();
+    const snap = root.HobunjiCacheAudit?.snapshot?.(); // Never add console.table/formatting work to a frame that is already below the lag threshold.
     if (!snap) return;
     snap.triggerFps = fps;
     root.__hobunjiLagSnapshots.push(snap);

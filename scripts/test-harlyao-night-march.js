@@ -76,6 +76,10 @@ assert.match(runtimeSource, /state\.provoked = true/, 'provoking one marcher pro
 assert.match(runtimeSource, /Math\.max\(MIN_MARCH_SPEED_TILES_S, Number\(cfg\?\.formation\?\.marchSpeedTilesPerSecond\) \|\| 1\.15\)/, 'observed march speed keeps the authored 1.15 tiles/s instead of an accidental high minimum');
 assert.match(runtimeSource, /const gender = 'male';/, 'night army roster stays male-only while only the male Harlyao head is authored');
 assert.doesNotMatch(runtimeSource, /index % 2 \? 'female' : 'male'/, 'night army must not alternate female marchers back in yet');
+assert.match(runtimeSource, /setMemberVisualAttachment\(c, false\)/, 'cached hidden marchers detach their render roots instead of remaining in Three.js matrix traversal');
+assert.match(runtimeSource, /root\.parent\?\.remove\?\.\(root\)/, 'parking a hidden marcher removes each independent visual root from its scene');
+assert.match(runtimeSource, /setMemberVisualAttachment\(c, true\)/, 'waking a marcher restores its parked visual roots to the live scene');
+assert.match(runtimeSource, /function visualComplexitySnapshot\(\)/, 'on-demand march diagnostics can count attached scene nodes without adding frame-loop work');
 
 assert.match(musicSource, /window\.HarlyaoNightMarch\?\.debugSnapshot/, 'music reads the existing march state instead of simulating the army independently');
 assert.match(musicSource, /snapshot\?\.liveChunk \|\| snapshot\?\.scheduled\?\.chunk/, 'observed physical army chunk overrides coarse schedule for audible proximity');
@@ -183,5 +187,6 @@ assert.deepEqual(shortNorth, [0, 0, 1, 1, 2, 2, 3, 3, 3, 4, 4, 5, 5, 6, 6], 'coa
 
 assert.equal(typeof context.window.HarlyaoNightMarch.debugSnapshot, 'function', 'mobile-accessible structured night-march diagnostics remain exposed');
 assert.equal(typeof context.window.HarlyaoNightMarch.formatDebug, 'function', 'mobile-accessible copyable night-march diagnostics remain exposed');
+assert.equal(typeof context.window.HarlyaoNightMarch.visualComplexitySnapshot, 'function', 'performance snapshots can request Harlyao scene-graph complexity on demand');
 
 console.log('Harlyao night march regression passed.');

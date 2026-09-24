@@ -257,6 +257,27 @@
     }
   }
 
+  function memberVisualRoots(c) {
+    return [c?.avatarRef?.group, c?.groundShadow, c?._banditToolHolder, c?._banditRangedToolHolder].filter(Boolean); // Shared root list used when parking/waking cached marchers and by on-demand complexity diagnostics.
+  }
+
+  function setMemberVisualAttachment(c, attached) {
+    if (!c) return;
+    const roots = memberVisualRoots(c); // All independently scene-attached roots created by BanditCombat.makeEntity.
+    if (!attached) {
+      for (const root of roots) root.parent?.remove?.(root); // Invisible Object3D trees still participate in Scene.updateMatrixWorld; parking removes that hidden transform cost entirely.
+      return;
+    }
+    const scene = deps?.getActiveScene?.() || c.scene || null; // Current live scene wins after a wilderness rebuild/re-entry.
+    if (!scene?.add) return;
+    c.scene = scene;
+    for (const root of roots) {
+      if (root.parent === scene) continue;
+      root.parent?.remove?.(root);
+      scene.add(root);
+    }
+  }
+
   function hide(c) {
     if (!c) return;
     c.areaId = `${DORMANT_AREA_PREFIX}${state.zoneId}`; // Existing hostile area guard removes all offscreen AI/update cost.
@@ -264,6 +285,7 @@
     if (c.groundShadow) c.groundShadow.visible = false;
     if (c._banditToolHolder) c._banditToolHolder.visible = false;
     if (c._banditRangedToolHolder) c._banditRangedToolHolder.visible = false;
+    setMemberVisualAttachment(c, false); // Also removes cached hidden rigs from Three's matrix traversal until the army wakes again.
     c.vx = 0;
     c.vy = 0;
   }
@@ -280,6 +302,7 @@
 
   function place(c, tile, zoneId) {
     refreshMemberArea(c, zoneId);
+    setMemberVisualAttachment(c, true); // Reattaches a parked cached rig only when this member is genuinely returning to the live army chunk.
     c.x = tile.col * deps.TILE;
     c.y = tile.row * deps.TILE;
     c.homeX = c.x;
@@ -647,6 +670,50 @@
     });
   }
 
+  function visualComplexitySnapshot() {
+    const geometries = new Set(); // Unique Harlyao geometry resources represented by all cached member visual roots.
+    const materials = new Set(); // Unique Harlyao material resources represented by all cached member visual roots.
+    let roots = 0; // Total avatar/shadow/tool roots owned by cached army members.
+    let attachedRoots = 0; // Roots currently attached to a scene and therefore participating in Scene.updateMatrixWorld.
+    let visibleRoots = 0; // Attached roots whose root-level visibility is enabled.
+    let nodes = 0; // Object3D nodes beneath attached roots; direct proxy for matrix-hierarchy work.
+    let meshes = 0; // Renderable mesh nodes beneath attached roots.
+    let skinnedMeshes = 0; // Skinned portrait planes, a relatively expensive subset of the mesh count.
+    for (const c of state.members) {
+      if (!c) continue;
+      for (const root of memberVisualRoots(c)) {
+        roots++;
+        if (!root.parent) continue;
+        attachedRoots++;
+        if (root.visible !== false) visibleRoots++;
+        const visit = object => {
+          nodes++;
+          if (!object?.isMesh) return;
+          meshes++;
+          if (object.isSkinnedMesh) skinnedMeshes++;
+          if (object.geometry) geometries.add(object.geometry);
+          const list = Array.isArray(object.material) ? object.material : [object.material];
+          for (const material of list) if (material) materials.add(material);
+        };
+        if (typeof root.traverse === 'function') root.traverse(visit);
+        else visit(root);
+      }
+    }
+    return {
+      membersCached: state.members.length,
+      membersAlive: state.members.filter(c => c?.health > 0).length,
+      armyVisible: state.visible,
+      roots,
+      attachedRoots,
+      visibleRoots,
+      attachedNodes: nodes,
+      attachedMeshes: meshes,
+      attachedSkinnedMeshes: skinnedMeshes,
+      uniqueGeometries: geometries.size,
+      uniqueMaterials: materials.size,
+    };
+  }
+
   function debugSnapshot() {
     const s = cfg ? hourlyState() : null; // Same cached hourly schedule used by runtime.
     const chunk = s?.active ? effectiveChunk(s) : null; // Scheduled/effective chunk for mobile verification.
@@ -681,6 +748,7 @@
     loadConfig,
     provoke: () => provoke('debug'),
     debugSnapshot,
+    visualComplexitySnapshot,
     formatDebug: () => {
       const d = debugSnapshot();
       const sched = d.scheduled ? `${d.scheduled.zoneId}/${d.scheduled.direction}@${d.scheduled.chunk.cx},${d.scheduled.chunk.cz}` : 'inactive';
