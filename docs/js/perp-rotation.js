@@ -67,6 +67,11 @@
     return [viewYawWorld + Math.PI / 2, viewYawWorld - Math.PI / 2];
   }
 
+  function cameraRelativeCreaturePerpsAtWorldPosition(worldPosition, cameraPosition) {
+    const playerPerps = cameraRelativePerpsAtWorldPosition(worldPosition, cameraPosition); // Shares the exact world-to-camera bearing with the player/NPC solver.
+    return playerPerps ? [playerPerps[0] - Math.PI / 2, playerPerps[0] + Math.PI / 2] : null;
+  }
+
   function liveCameraPosition() {
     const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
     if (cameraSample && now - cameraSampleAtMs < 4) return cameraSample;
@@ -135,11 +140,14 @@
   }
 
   function perspectivePerpsForState(state, fallbackPerps) {
+    if (state?.cameraPerpsAreWorldSpace) return fallbackPerps; // An attachment that supplies its own current world-to-camera bearing needs no registry lookup.
     const entry = subjectForPerpState(state);
     const cameraPosition = entry ? liveCameraPosition() : null;
     const worldPosition = entry ? worldPositionForSubject(entry.subject) : null;
     if (!entry || !cameraPosition || !worldPosition) return fallbackPerps;
-    const resolved = cameraRelativePerpsAtWorldPosition(worldPosition, cameraPosition);
+    const resolved = entry.kind === 'npc'
+      ? cameraRelativePerpsAtWorldPosition(worldPosition, cameraPosition)
+      : cameraRelativeCreaturePerpsAtWorldPosition(worldPosition, cameraPosition); // Side-view animal cards are edge-on 90° away from front-facing NPC portraits.
     if (!resolved) return fallbackPerps;
 
     const mode = entry.kind === 'npc' ? 'npc-world-camera-bearing' : `${entry.kind}-world-camera-bearing`;
@@ -385,6 +393,7 @@
     perpClamp,
     clampedRotation,
     cameraRelativePerpsAtWorldPosition,
+    cameraRelativeCreaturePerpsAtWorldPosition,
     perspectivePerpsForState,
     creatureDeadzoneTarget,
     creatureSnapSwayTarget,

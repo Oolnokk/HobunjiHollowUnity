@@ -75,7 +75,7 @@ const edgeCreature = {
   avatarRef: { group: { position: { x: 10, y: 0, z: 0 } } },
 };
 context.Combat = { deps: { hostileObjects: [edgeCreature], companionObjects: [] } };
-const creatureFacing = Math.PI / 4;
+const creatureFacing = -Math.PI / 4; // Side-view animal yaw points straight at this camera here; NPC yaw +45° is a different card basis.
 const creatureSnap = context.PerpRotation.creatureSnapSwayTarget(
   creatureState,
   creatureFacing,
@@ -89,7 +89,7 @@ assert.ok(Number.isFinite(creatureSnap.target),
 assert.ok(creatureState.snapSide === 1 || creatureState.snapSide === -1,
   'a fresh stationary creature state initializes snapSide to a real boundary side');
 assert.ok(Math.abs(angleDiff(creatureSnap.target, creatureFacing)) >= context.PerpRotation.CREATURE_PERP_DEAD_RAD - 1e-9,
-  'edge-of-screen creature snap mode clamps around the creature-to-camera bearing');
+  'edge-of-screen creature snap mode clamps around the animal card\'s camera-to-creature bearing');
 assert.equal(creatureState.screenViewPerspectiveDebug?.subjectKind, 'creature',
   'creature screen-view diagnostics identify the resolved live creature');
 
@@ -119,7 +119,7 @@ const edgeFarmAnimal = {
   avatarRef: { group: { position: { x: -10, y: 0, z: 0 } } },
 };
 context.FarmAnimals.init({ animalObjects: new Set([edgeFarmAnimal]), worldObjects: new Map() });
-const farmFacing = Math.PI * 3 / 4;
+const farmFacing = Math.PI / 4; // This side-view card is edge-on along the farm animal's actual camera bearing.
 const farmClamp = context.PerpRotation.perpClamp(
   farmState,
   farmFacing,

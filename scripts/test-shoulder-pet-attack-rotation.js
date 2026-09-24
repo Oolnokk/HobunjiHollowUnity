@@ -22,6 +22,13 @@ assert.match(gameSource,
   /bodyRotationQuaternion\.clone\(\)\.slerp\(neckRotationQuaternion, SHOULDER_PET_BODY_NECK_BLEND\)\.normalize\(\)/,
   'midpoint rotation uses quaternion SLERP rather than Euler averaging');
 assert.match(gameSource,
+  /const worldQuaternion = selectedRotationQuaternion\.clone\(\);[\s\S]*?PerpRotation\.perpClamp\(deadzoneState, rawYaw, cameraPerps,[\s\S]*?worldQuaternion\.premultiply\([\s\S]*?const gripWorldOffset =/,
+  'the final card yaw is clamped before its authored grip offset is computed');
+assert.match(gameSource,
+  /RuntimeFrameScheduler\.checkpoint\('pre-render'\);[\s\S]{0,350}updatePlayerHeadAim\(\);[\s\S]{0,100}updateShoulderPetMeshPin\(\);/,
+  'the midpoint and final card deadzone use this frame\'s weapon body yaw');
+assert.doesNotMatch(gameSource, /weaponIdleYawCompensationDeg/, 'midpoint retains equal weighting instead of cancelling a weapon pose as a speculative fix');
+assert.match(gameSource,
   /resolvedRotationSource = 'player-body-neck-midpoint';/,
   'midpoint mode reports its resolved rotation source');
 assert.match(gameSource,

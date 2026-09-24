@@ -631,8 +631,11 @@
           ? Math.hypot(actual.x - expectedX, actual.y - expectedY, actual.z - expectedZ)
           : NaN; // Only reports positional drift once the final pin has produced a complete transform snapshot.
         lines.push(`Attachment rotation source: ${attachmentDebug?.rotationSource || '(awaiting final pin)'} — authored shoulderPerch rotation is relative to the live face.`);
-        if (attachmentDebug?.requestedRotationSource === 'bodyNeckMidpoint') {
-          lines.push(`Shoulder-pet midpoint weapon yaw correction: ${(Number(attachmentDebug.weaponIdleYawCompensationDeg) || 0).toFixed(2)}°`);
+        if (Number.isFinite(attachmentDebug?.deadzoneRawYawDeg)) {
+          const before = attachmentDebug.deadzoneRawYawDeg.toFixed(1);
+          const after = attachmentDebug.deadzoneSafeYawDeg.toFixed(1);
+          const centers = (attachmentDebug.deadzoneCameraPerpsDeg || []).map(angle => angle.toFixed(1)).join(', ');
+          lines.push(`Shoulder-pet final card deadzone: ${before}° → ${after}°; camera edge-on centers: ${centers}°; animal plane target: ${THREE.MathUtils.radToDeg(Number(liveActivePet.pngRot) || 0).toFixed(1)}°`);
         }
         if (Number.isFinite(drift)) {
           lines.push(`Rig-anchor expected position: (${expectedX.toFixed(4)}, ${expectedY.toFixed(4)}, ${expectedZ.toFixed(4)})   actual mesh position: (${actual.x.toFixed(4)}, ${actual.y.toFixed(4)}, ${actual.z.toFixed(4)})   drift=${drift.toFixed(4)}`);
