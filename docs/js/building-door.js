@@ -270,7 +270,7 @@ if (typeof document !== 'undefined'
   }
   if (!document.querySelector('script[data-map-editor-export-fixes]')) {
     const exportScript = document.createElement('script');
-    exportScript.src = '../../js/map-editor-export-fixes.js';
+    exportScript.src = '../../js/map-editor-export-fixes.js?v=20260923mapeditdiff1';
     exportScript.dataset.mapEditorExportFixes = '1';
     document.head.appendChild(exportScript);
   }

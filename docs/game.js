@@ -10978,7 +10978,13 @@
         if (!Number.isFinite(npcX) || !Number.isFinite(npcZ)) { npcDialogueStaging = null; return; }
         const playerWorldX = player.x / TILE;
         const playerWorldZ = player.y / TILE;
-        const authoredStage = window.CinematicCameraRuntime?.currentPlayerStage?.(); // Reuses the existing collision-aware staging walk for authored shots.
+        if (window.CinematicCameraRuntime?.isActive?.() && window.CinematicCameraRuntime?.shouldStagePlayer?.() === false) {
+          npcDialogueStaging = null; // Cinematic cameras own framing; by default they leave the player's interaction position untouched instead of falling through to ordinary NPC backup offsets.
+          player.vx = 0;
+          player.vy = 0;
+          return;
+        }
+        const authoredStage = window.CinematicCameraRuntime?.currentPlayerStage?.(); // Explicit stagePlayer cameras reuse the existing collision-aware staging walk for authored shots.
         if (authoredStage && Number.isFinite(Number(authoredStage.x)) && Number.isFinite(Number(authoredStage.z))) {
           npcDialogueStaging = { walker, targetX: Number(authoredStage.x), targetZ: Number(authoredStage.z) };
           player.vx = 0;
@@ -13333,12 +13339,10 @@
               : denCaveVariant ? { textureUrl: denCaveVariant.textureUrl, color: denCaveVariant.color, textureRepeat: 0.35, useLambert: true, emissive: 0x000000 }
               : { textureUrl: 'assets/textures/carved_smooth.png', color: 0x808080, textureRepeat: 0.35, useLambert: true, emissive: 0x000000 }; // Never leave an authored cavern on an untextured material fallback.
             const cavernMesh = InteriorSceneBuilder.buildCarvedCavernMesh(THREE, mapData.mesh, cavernMaterialOpts);
-            if (mapData.id === 'map_i_den_banubu' && cavernMesh.isMesh) {
-              const stone = cavernMesh.material; // Reuses the canonical cliff texture/UVs while letting Banubu's cloud point lights reach the rock.
-              cavernMesh.material = new THREE.MeshLambertMaterial({
-                map: stone.map, color: stone.color, side: stone.side,
-              });
-            }
+            // Do not re-wrap authored farm-cliff caverns in a lit material here.
+            // buildCarvedCavernMesh has already applied NaturalSurfaceMaterials,
+            // so Banubu's shell must retain the same unlit farm-rock PNG material
+            // and connected-surface UV treatment as the exterior farm cliffs.
             _markOutline(cavernMesh);
             bScene.add(cavernMesh);
             const cavernFloorMesh = InteriorSceneBuilder.buildCavernFloorMesh?.(

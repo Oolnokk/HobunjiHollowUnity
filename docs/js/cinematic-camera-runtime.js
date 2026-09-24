@@ -50,6 +50,7 @@
       dialogueNpcId: String(camera.dialogueNpcId || ''),
       useForDialogue: camera.useForDialogue === true || !!camera.dialogueNpcId,
       fadePets: camera.fadePets === true,
+      stagePlayer: camera.stagePlayer === true, // Cinematic dialogue never repositions the player unless the camera explicitly opts in.
       playerStage: stageRaw ? {
         x: finite(stageRaw.x ?? stageRaw.col, position.x),
         z: finite(stageRaw.z ?? stageRaw.row, position.z),
@@ -228,8 +229,12 @@
     return active;
   }
 
+  function shouldStagePlayer() {
+    return active?.camera ? active.camera.stagePlayer === true : true; // Ordinary dialogue keeps legacy staging; authored cinematic cameras default to leaving the player exactly where interaction began.
+  }
+
   function currentPlayerStage() {
-    return active?.camera?.playerStage || null;
+    return shouldStagePlayer() ? (active?.camera?.playerStage || null) : null;
   }
 
   function isActive() {
@@ -335,7 +340,7 @@
       targetNpcId: camera?.targetNpcId || null,
       petFade,
       registeredAreas: camerasByArea.size,
-      latestChange: 'World-space dialogue framing; live scaled face targeting; in-game Map Edit camera transform authoring',
+      latestChange: 'World-space dialogue framing; live scaled face targeting; cinematic player staging opt-in; in-game Map Edit camera transform authoring',
     };
   }
 
@@ -355,6 +360,7 @@
     activeCamera,
     activeRecord,
     resolvedTarget,
+    shouldStagePlayer,
     currentPlayerStage,
     isActive,
     update,

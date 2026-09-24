@@ -7,6 +7,7 @@ const game = fs.readFileSync('docs/game.js', 'utf8'); // Confirms the preflight 
 const interiorBuilder = fs.readFileSync('docs/js/interior-scene-builder.js', 'utf8'); // Guards Banubu's opt-in farm-cliff material + surface-stretch path.
 const cavernGenerator = fs.readFileSync('docs/js/cavern-generator.js', 'utf8'); // Guards propagation of locale-authored surface material metadata.
 const banubuLocale = JSON.parse(fs.readFileSync('docs/config/locales/locale_banubu_cave_interior.json', 'utf8')); // Authoritative cave material selection.
+const npcSpeciesOverrides = JSON.parse(fs.readFileSync('docs/config/npcs/species-overrides.json', 'utf8')); // Authoritative Banubu colored-stripe hex used to lock cave-cloud fill parity.
 const logs = []; // Captures the existing in-game render diagnostic for a malformed map.
 const windowObject = { __farmLog: message => logs.push(message) };
 const context = { window: windowObject, Map };
@@ -33,10 +34,22 @@ assert(game.includes('BanubuCaveClouds?.validateCaveMaterials?.({ THREE, scene: 
 assert.equal(banubuLocale.cavern.surfaceMaterial, 'farm-cliff', 'Banubu alone opts the carved shell into farm-cliff parity');
 assert.match(cavernGenerator, /generated\.mesh\.surfaceMaterial = surfaceMaterial/, 'locale cavern synthesis carries the authored surface preset into the renderer');
 assert.match(interiorBuilder, /natural\.naturalizeMesh\(mesh, 'rocks', 'planar-stretch'\)/, 'farm-cliff cave surfaces use the same canonical rock material factory as farm cliffs');
+assert.doesNotMatch(game, /mapData\.id === 'map_i_den_banubu'[\s\S]{0,500}MeshLambertMaterial/, 'Banubu must not replace the canonical unlit farm-cliff material with a Lambert material after the shared surface pass');
+assert.match(game, /Banubu's shell must retain the same unlit farm-rock PNG material/, 'runtime documents that the shared farm-cliff material remains authoritative for Banubu');
 assert.match(interiorBuilder, /HobunjiSurfaceStretchUV/, 'farm-cliff cave surfaces reuse the central connected-surface detector');
 assert.match(interiorBuilder, /mapper\.mapMesh\(mesh, \{ label: 'interior-cavern:farm-cliff', maxPatchWorldSize: 6 \}\)/, 'each detected cave surface uses the farm-scale stretch-to-fit mapper');
 assert.doesNotMatch(source, /CLOUD_OUTLINE_VALUE_MAX|CLOUD_DEPTH_EROSION_PX|makeDepthMaskMaterial/, 'Banubu clouds must keep the original pre-mask renderer after the requested rollback');
-assert.match(source, /Math\.max\(0, \(value - 0\.08\) \/ 0\.75\) \* 0\.67/, 'Banubu clouds retain the original silvery-blue alpha/recolor behavior');
+assert.match(source, /Math\.max\(0, \(value - 0\.08\) \/ 0\.75\) \* 0\.67/, 'Banubu clouds retain their existing brightness-derived alpha behavior');
+const cloudFillMatch = source.match(/const BANUBU_CLOUD_FILL_HEX = '(#[0-9a-fA-F]{6})'/); // Reads the runtime color constant without duplicating its value in this test.
+assert(cloudFillMatch, 'Banubu cave cloud runtime exposes an explicit authored fill hex');
+assert.equal(
+  cloudFillMatch[1].toLowerCase(),
+  npcSpeciesOverrides.npcs.banubu.avatarExport.appearance.creatureColorOverrides.coloredstripe.toLowerCase(),
+  'Banubu cave cloud fill must exactly match Banubu\'s authored coloredstripe hex'
+);
+assert.match(source, /pixels\.data\[i\] = \(fillRgb >> 16\) & 255/, 'cloud red channel comes directly from the authored stripe hex');
+assert.match(source, /pixels\.data\[i \+ 1\] = \(fillRgb >> 8\) & 255/, 'cloud green channel comes directly from the authored stripe hex');
+assert.match(source, /pixels\.data\[i \+ 2\] = fillRgb & 255/, 'cloud blue channel comes directly from the authored stripe hex');
 const cloudListMatch = source.match(/const CLOUDS = (\[[\s\S]*?\]); \/\/ Original cloud rendering\/height behavior retained;/); // Extracts only the static authored cloud list for layout assertions.
 assert(cloudListMatch, 'Banubu cloud source exposes the dense perimeter list');
 const cloudList = vm.runInNewContext(cloudListMatch[1]); // Evaluates the literal array without executing rendering code.

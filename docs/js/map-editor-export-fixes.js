@@ -12,6 +12,8 @@
 
   const baselineById = new Map();
   const baselineObjectById = new Map();
+  let workspaceBaseline = null; // Used by buildWorkspaceDiffBundle() to include authored workspace-level changes such as plateau groups, ramps, and game links.
+  let baselineMapIds = new Set(); // Used by buildWorkspaceDiffBundle() to report whole maps added or removed since the baseline was captured.
   let installed = false;
   let mapListObserver = null;
 
@@ -276,10 +278,70 @@
     baselineObjectById.set(String(map.id), map);
   }
 
+  function workspaceAuthoringSnapshot(ws) {
+    const clone = jsonSafeClone(ws) || {}; // Used only for diffing persistent workspace-level authoring data, not editor navigation state.
+    delete clone.maps;
+    delete clone.activeId;
+    return clone;
+  }
+
+  function buildWorkspaceDiffBundle() {
+    const ws = workspace();
+    if (!ws || !Array.isArray(ws.maps)) throw new Error('No Map Editor workspace is available.');
+    const currentById = new Map(ws.maps.filter(map => map?.id).map(map => [String(map.id), map])); // Used below to distinguish changed existing maps from whole-map additions/removals.
+    const mapDiffs = [];
+    for (const [mapId, map] of currentById) {
+      if (!baselineMapIds.has(mapId)) continue;
+      const diff = buildDetailedDiff(map);
+      if (diff.mode === 'full-map-fallback' || diff.summary?.changed) mapDiffs.push(diff);
+    }
+
+    const workspaceChanges = {};
+    const currentWorkspace = workspaceAuthoringSnapshot(ws);
+    if (workspaceBaseline && stableJson(workspaceBaseline) !== stableJson(currentWorkspace)) {
+      workspaceChanges.fields = { before: workspaceBaseline, after: currentWorkspace };
+    }
+    const addedMaps = [...currentById.keys()].filter(id => !baselineMapIds.has(id));
+    if (addedMaps.length) {
+      workspaceChanges.addedMaps = addedMaps.map(id => ({
+        mapId: id,
+        fullMap: buildStandaloneMapExport(currentById.get(id)),
+      }));
+    }
+    const removedMaps = [...baselineMapIds].filter(id => !currentById.has(id));
+    if (removedMaps.length) {
+      workspaceChanges.removedMaps = removedMaps.map(id => ({
+        mapId: id,
+        baseline: baselineById.get(id) || null,
+      }));
+    }
+
+    const changedWorkspaceFields = Object.keys(workspaceChanges);
+    return {
+      schema: 'hobunji_map_edit_diff_bundle.v1',
+      generatedAt: new Date().toISOString(),
+      activeMapId: activeMap()?.id || null,
+      maps: mapDiffs,
+      workspaceChanges,
+      summary: {
+        changed: mapDiffs.length > 0 || changedWorkspaceFields.length > 0,
+        changedMaps: mapDiffs.length,
+        addedMaps: addedMaps.length,
+        removedMaps: removedMaps.length,
+        workspaceChangeKinds: changedWorkspaceFields,
+      },
+      ...(mapDiffs.length || changedWorkspaceFields.length ? {} : { _note: 'No changes since the Map Editor baseline was captured.' }),
+    };
+  }
+
   function captureWorkspaceBaselines(force = false) {
     const ws = workspace();
     if (!ws || !Array.isArray(ws.maps)) return;
     for (const map of ws.maps) captureMapBaseline(map, force);
+    if (force || !workspaceBaseline) {
+      workspaceBaseline = workspaceAuthoringSnapshot(ws);
+      baselineMapIds = new Set(ws.maps.filter(map => map?.id).map(map => String(map.id)));
+    }
   }
 
   function installMapListObserver() {
@@ -363,10 +425,12 @@
     window.MapEditorExportFixes = {
       buildStandaloneMapExport,
       buildDetailedDiff,
+      buildWorkspaceDiffBundle,
       captureWorkspaceBaselines: () => captureWorkspaceBaselines(true),
       debugSnapshot: () => ({
         installed,
         baselineIds: Array.from(baselineById.keys()),
+        baselineMapIds: Array.from(baselineMapIds),
         activeMapId: activeMap()?.id || null,
       }),
     };

@@ -9,6 +9,7 @@ const source = fs.readFileSync('docs/js/animal-sleep-presentation.js', 'utf8');
 class Vec3 {
   constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; }
   set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; }
+  clone() { return new Vec3(this.x, this.y, this.z); } // Used by the sleeping-face projection regression to preserve the raw cinematic target sample.
 }
 class Box3 {
   constructor() { this.min = { y: 0 }; }
@@ -53,6 +54,18 @@ function makeGroup(name, scaleY = 1) {
     rotation: new Vec3(0, 0, 0),
     children: [front, back],
     traverse(fn) { fn(this); for (const child of this.children) fn(child); },
+    worldToLocal(point) { // Used only by the named-animal cinematic projection fixture; rotation is irrelevant to this Y-scale regression.
+      point.x = (point.x - this.position.x) / (this.scale.x || 1);
+      point.y = (point.y - this.position.y) / (this.scale.y || 1);
+      point.z = (point.z - this.position.z) / (this.scale.z || 1);
+      return point;
+    },
+    localToWorld(point) { // Mirrors the fixture's simple translation/scale hierarchy for the predicted rendered face point.
+      point.x = this.position.x + point.x * (this.scale.x || 1);
+      point.y = this.position.y + point.y * (this.scale.y || 1);
+      point.z = this.position.z + point.z * (this.scale.z || 1);
+      return point;
+    },
     updateMatrixWorld() {},
   };
 }
@@ -158,6 +171,23 @@ windowStub.Combat.init({ hostileObjects: new Set(), companionObjects: new Set() 
 windowStub.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(windowStub.THREE, 'drenkirra_idle.png', {
   name: 'barn_sleep_drenkirra_barn-1', creatureId: 'drenkirra',
 });
+
+const externalGroup = makeGroup('named_animal_banubu', 1); // Used to prove cinematic face targeting predicts the final external-sleeper Y compression before render.
+const externalAvatar = makeAvatar(externalGroup, 32); // Supplies the same avatar/group seam a named animal NPC registers at runtime.
+const externalSleeper = { rec: { id: 'banubu' }, animalAvatarRef: externalAvatar, _animalSleepRequested: true }; // Minimal named-animal entity consumed by projectExternalSleeperWorldPoint().
+windowStub.AnimalSleepPresentation.registerExternalSleeper(externalSleeper, {
+  id: 'banubu',
+  avatarRef: externalAvatar,
+  kind: 'drenkirra',
+  sleeping: true,
+});
+const rawFacePoint = new Vec3(0, 2, 0); // Represents the head-bone-derived face point before the render-only 0.75× sleep flattening.
+const projectedFacePoint = windowStub.AnimalSleepPresentation.projectExternalSleeperWorldPoint(externalSleeper, rawFacePoint);
+assert.equal(projectedFacePoint.y, 1.5, 'named-animal cinematic target predicts the same ground-preserving 0.75× sleep scale used at pre-render');
+assert.equal(rawFacePoint.y, 2, 'cinematic projection never mutates the raw head-bone face point');
+assert.equal(externalGroup.scale.y, 1, 'cinematic projection restores the authored group scale immediately after sampling');
+assert.equal(externalGroup.position.y, 1, 'cinematic projection restores the authored group position immediately after sampling');
+windowStub.AnimalSleepPresentation.unregisterExternalSleeper(externalSleeper);
 
 const nextTurn = () => new Promise(resolve => setImmediate(resolve)); // Lets nested composeFrame promises finish before inspecting the next rendered frame.
 

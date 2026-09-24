@@ -24,7 +24,12 @@ assert.strictEqual(banubu.cavern.creatureKind, 'grehlr', 'Banubu cavern must use
 
 const banubuDialogueCameras = banubu.cinematicCameras || [];
 assert.strictEqual(banubuDialogueCameras.length, 2, 'Banubu cavern must author awake and sleeping world-space dialogue shots');
-assert(banubuDialogueCameras.every(camera => camera.position?.y === 0), 'Banubu dialogue cameras must both sit at world Y=0');
+assert(banubuDialogueCameras.every(camera => camera.stagePlayer === false), 'Banubu cinematic cameras leave the player at the interaction position instead of backing up');
+assert(banubuDialogueCameras.every(camera => camera.fadePets === false), 'Banubu cinematic cameras do not request the pet-fade presentation that can read as a dark screen layer');
+const awakeCamera = banubuDialogueCameras.find(camera => camera.id === 'banubu_dialogue_awake');
+const sleepCamera = banubuDialogueCameras.find(camera => camera.id === 'banubu_dialogue_sleep');
+assert.deepStrictEqual(awakeCamera?.position, { x: 7.2, y: 0, z: 9.4 }, 'Banubu awake camera keeps its authored world-space position');
+assert.deepStrictEqual(sleepCamera?.position, { x: 7.024, y: 0.142, z: 8.3 }, 'Banubu sleeping camera preserves the latest in-game Map Edit authoring diff');
 assert(banubuDialogueCameras.every(camera => camera.targetNpcId === 'banubu'), 'Banubu shots must target Banubu by live NPC id instead of a fixed viewport portrait');
 const secret = banubu.connectors.find(c => c.id === 'color_pools_door');
 assert(secret, 'Banubu cave must author its hidden rear connector');
@@ -111,6 +116,8 @@ assert(gameSource.includes('resolveSkinnedPixelWorldPosition(walker.avatarGroup,
 assert(gameSource.includes("setPlayerFacingInstant(-Math.PI / 2, { clearLook: true, syncCamera: true })"), 'Banubu async cave entry must reassert north across the complete facing authority');
 assert(gameSource.includes('mouseLookAngle = nextFacing;') && gameSource.includes('controllerLookAngle = nextFacing;') && gameSource.includes('lastMoveAngle = nextFacing;'), 'instant entry facing must synchronize mouse, controller, and movement-facing authorities');
 assert(cinematicCameraSource.includes('getNpcFacePosition') && cinematicCameraSource.includes('Number(face.y) + finite(camera.target?.y, 0)'), 'NPC-targeted authored cameras must resolve their target from the live face point each frame');
+assert(cinematicCameraSource.includes('stagePlayer: camera.stagePlayer === true'), 'cinematic camera player staging is opt-in and therefore off by default');
+assert(cinematicCameraSource.includes('function shouldStagePlayer()'), 'cinematic runtime exposes its staging policy to ordinary dialogue opening');
 assert(banubuQuestContentSource.includes("{ cameraId: 'banubu_dialogue_awake' }"), 'Banubu wake-up dialogue must switch to the authored awake world camera');
 assert(gameSource.includes('loadLocaleCavernDefinition?.(mapId)') && gameSource.includes("loadSource = 'locale-cavern'"), 'building loader must prefer cave-interior locales');
 assert(gameSource.includes('(!x.requiresKeyItem || !!window.KeyItemSystem?.has?.(x.requiresKeyItem))'), 'key-gated cave connectors must be mechanically inaccessible without their key');

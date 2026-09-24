@@ -403,44 +403,93 @@
     } catch (_) { return NaN; }
   }
 
-  function applyTemporaryScale(group, ratio, contextLabel) {
-    const numericRatio = Number(ratio);
-    if (!group?.scale || !group?.position || !Number.isFinite(numericRatio) || numericRatio <= 0 || Math.abs(numericRatio - 1) < 1e-5) return false;
+  function groundingCorrectionForScale(group, originalScaleY, targetScaleY) {
+    const scaleDeltaY = targetScaleY - originalScaleY; // Used by both render-time sleep scaling and camera face projection to reproduce the same ground-preserving shift.
+    if (Math.abs(scaleDeltaY) < 1e-8) return 0;
+    const cachedGroundingCoefficient = groundingScaleCoefficients.get(group); // Reused by every later frame so face targeting and rendering avoid repeated hierarchy bounds scans.
+    if (Number.isFinite(cachedGroundingCoefficient)) {
+      groundingCacheHits++;
+      return cachedGroundingCoefficient * scaleDeltaY;
+    }
+
     const THREE_NS = window.THREE || globalThis.THREE;
     boxBefore ||= THREE_NS?.Box3 ? new THREE_NS.Box3() : null;
     boxAfter ||= THREE_NS?.Box3 ? new THREE_NS.Box3() : null;
     parentScale ||= THREE_NS?.Vector3 ? new THREE_NS.Vector3(1, 1, 1) : null;
+    if (!boxBefore || !boxAfter) return 0;
 
-    const originalScaleY = Number(group.scale.y) || 1;
-    const originalPositionY = Number(group.position.y) || 0;
-    const targetScaleY = originalScaleY * numericRatio;
-    const scaleDeltaY = targetScaleY - originalScaleY;
-    const cachedGroundingCoefficient = groundingScaleCoefficients.get(group);
-    group.scale.y = targetScaleY;
-    if (Number.isFinite(cachedGroundingCoefficient)) {
-      groundingCacheHits++;
-      group.position.y += cachedGroundingCoefficient * scaleDeltaY;
-      group.updateMatrixWorld?.(true);
-    } else {
-      groundingCacheMisses++;
-      group.scale.y = originalScaleY; // Measure the same exact before/after bounds as the legacy path once for this stable avatar hierarchy.
+    groundingCacheMisses++;
+    const originalPositionY = Number(group.position?.y) || 0; // Restored before returning because this helper measures without owning visible render state.
+    let correctionY = 0; // Returned to whichever caller is projecting or applying the target scale.
+    try {
+      group.scale.y = originalScaleY;
+      group.position.y = originalPositionY;
       const bottomBefore = worldBottom(group, boxBefore);
       group.scale.y = targetScaleY;
       const bottomAfter = worldBottom(group, boxAfter);
       if (Number.isFinite(bottomBefore) && Number.isFinite(bottomAfter)) {
-        let parentScaleY = 1;
+        let parentScaleY = 1; // Converts the measured world-space bottom delta back into the group's parent-local position units.
         try {
           if (group.parent?.getWorldScale && parentScale) {
             group.parent.getWorldScale(parentScale);
             parentScaleY = Number(parentScale.y) || 1;
           }
         } catch (_) {}
-        const correctionY = (bottomBefore - bottomAfter) / parentScaleY;
-        group.position.y += correctionY;
-        if (Math.abs(scaleDeltaY) > 1e-8) groundingScaleCoefficients.set(group, correctionY / scaleDeltaY); // Future sleep/blend frames reproduce the measured grounding exactly without another Box3 traversal.
-        group.updateMatrixWorld?.(true);
+        correctionY = (bottomBefore - bottomAfter) / parentScaleY;
+        groundingScaleCoefficients.set(group, correctionY / scaleDeltaY); // Shared by the later pre-render transform and cinematic target projection.
       }
+    } finally {
+      group.scale.y = originalScaleY;
+      group.position.y = originalPositionY;
+      group.updateMatrixWorld?.(true);
     }
+    return correctionY;
+  }
+
+  function projectExternalSleeperWorldPoint(entity, worldPoint) {
+    const x = Number(worldPoint?.x), y = Number(worldPoint?.y), z = Number(worldPoint?.z); // Validated inputs are copied so the camera never mutates its raw face sample.
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return null;
+    const config = externalSleepers.get(entity); // Uses the same external-sleeper registration consumed by the pre-render sleep pass.
+    const avatarRef = (typeof config?.avatarRef === 'function' ? config.avatarRef() : config?.avatarRef) || entity?.animalAvatarRef;
+    const group = avatarRef?.group || (typeof config?.group === 'function' ? config.group() : config?.group) || entity?.avatarGroup;
+    const sleeping = config
+      ? (typeof config.isSleeping === 'function' ? config.isSleeping() === true : config.sleeping === true)
+      : entity?._animalSleepRequested === true;
+    const THREE_NS = window.THREE || globalThis.THREE;
+    if (!sleeping || !group?.parent || !group?.scale || !group?.position || !THREE_NS?.Vector3
+      || typeof group.worldToLocal !== 'function' || typeof group.localToWorld !== 'function') {
+      return new THREE_NS.Vector3(x, y, z);
+    }
+
+    group.updateMatrixWorld?.(true);
+    const localPoint = group.worldToLocal(new THREE_NS.Vector3(x, y, z)); // Used to replay the face point through the exact temporary group transform applied immediately before rendering.
+    const originalScaleY = Number(group.scale.y) || 1; // Restored synchronously after projection; no sleep-only transform leaks into simulation.
+    const originalPositionY = Number(group.position.y) || 0; // Restored with scaleY even if matrix projection throws.
+    const targetScaleY = originalScaleY * SLEEP_SCALE_Y; // Matches applyExternalSleepers(), which authors named-animal NPCs upright before the common 0.75× sleep flattening.
+    const correctionY = groundingCorrectionForScale(group, originalScaleY, targetScaleY); // Predicts the same floor-preserving Y shift that pre-render will apply.
+    try {
+      group.scale.y = targetScaleY;
+      group.position.y = originalPositionY + correctionY;
+      group.updateMatrixWorld?.(true);
+      return group.localToWorld(localPoint);
+    } finally {
+      group.scale.y = originalScaleY;
+      group.position.y = originalPositionY;
+      group.updateMatrixWorld?.(true);
+    }
+  }
+
+  function applyTemporaryScale(group, ratio, contextLabel) {
+    const numericRatio = Number(ratio);
+    if (!group?.scale || !group?.position || !Number.isFinite(numericRatio) || numericRatio <= 0 || Math.abs(numericRatio - 1) < 1e-5) return false;
+
+    const originalScaleY = Number(group.scale.y) || 1;
+    const originalPositionY = Number(group.position.y) || 0;
+    const targetScaleY = originalScaleY * numericRatio;
+    const correctionY = groundingCorrectionForScale(group, originalScaleY, targetScaleY); // Shared with cinematic face projection so both see the exact same final sleeping geometry.
+    group.scale.y = targetScaleY;
+    group.position.y = originalPositionY + correctionY;
+    group.updateMatrixWorld?.(true);
     temporaryTransforms.push({ group, scaleY: originalScaleY, positionY: originalPositionY });
     lastContext = contextLabel || group.name || 'sleeping animal';
     return true;
@@ -672,6 +721,7 @@
     frameDescriptor,
     blinkOverlayFor,
     forceHeadDown,
+    projectExternalSleeperWorldPoint,
     registerStaticSleeper,
     registerExternalSleeper,
     unregisterExternalSleeper,
