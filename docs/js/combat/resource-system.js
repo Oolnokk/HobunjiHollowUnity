@@ -25,6 +25,8 @@
   const round1 = value => Math.round(value * 10) / 10;
   const nowMs = () => performance.now();
   const STAMINA_RECOVERY_MULTIPLIER = 1.25; // Used by every time-based Stamina recovery path: ordinary regen, Exhausted debt, and Stamina-affliction recovery.
+  const ACTION_PUNISHMENT_RECOVERY_MULTIPLIER = 4; // Used by action-punishing afflictions after the entity deliberately avoids their punished action.
+  const ACTION_PUNISHMENT_RECOVERY_GRACE_MS = 750; // Used to require a short pause after the punished action before the accelerated recovery engages.
   const staminaRegenBlockers = new WeakMap(); // Used by held actions to compose temporary Stamina-regeneration locks without storing transient Sets on saveable entities.
 
   function setStaminaRegenBlocked(entity, source, blocked) {
@@ -88,9 +90,9 @@
   // windedStamina live on 'stamina'; the rest on 'health'.
   const AFFLICTIONS = {
     woundedStamina: {
-      name: "Wounded Stamina", resource: "stamina", extend: "zero", priority: 55, recovers: true,
+      name: "Wounded Stamina", resource: "stamina", extend: "zero", priority: 55, recovers: true, punishedAction: "staminaSpend",
       family: "damage", tags: ["physical", "breath"],
-      desc: "Spent afflicted Stamina deals itself as Health damage."
+      desc: "Spent afflicted Stamina deals itself as Health damage; avoiding Stamina spend makes it recover much faster."
     },
     bleedingHealth: {
       name: "Bleeding Health", resource: "health", extend: "currentBack", priority: 70, recovers: false,
@@ -103,9 +105,9 @@
       desc: "Temporarily lowers effective Health max, then recovers its own points every tick."
     },
     infectedStamina: {
-      name: "Infected Stamina", resource: "stamina", extend: "zero", priority: 65, recovers: true,
+      name: "Infected Stamina", resource: "stamina", extend: "zero", priority: 65, recovers: true, punishedAction: "staminaSpend",
       family: "damage", tags: ["toxin", "infection"],
-      desc: "Spent like Wounded Stamina. Can cause vomiting, adding Winded Stamina and Poisoned Health."
+      desc: "Spent like Wounded Stamina. Avoiding Stamina spend makes it recover much faster; it can also cause vomiting, adding Winded Stamina and Poisoned Health."
     },
     windedStamina: {
       name: "Winded Stamina", resource: "stamina", extend: "zero", priority: 95, recovers: true,
@@ -118,9 +120,9 @@
       desc: "A subsequent received heavy attack deals bonus damage up to the attack's normal damage, then consumes it."
     },
     shatteredStamina: {
-      name: "Shattered Stamina", resource: "stamina", extend: "zero", priority: 62, recovers: true,
+      name: "Shattered Stamina", resource: "stamina", extend: "zero", priority: 62, recovers: true, punishedAction: "staminaSpend",
       family: "damage", tags: ["physical"],
-      desc: "Spent afflicted Stamina applies Bleeding Health instead of direct Health damage."
+      desc: "Spent afflicted Stamina applies Bleeding Health instead of direct Health damage; avoiding Stamina spend makes it recover much faster."
     },
     poisonedHealth: {
       name: "Poisoned Health", resource: "health", extend: "currentBack", priority: 80, recovers: false,
@@ -194,6 +196,7 @@
     if (entity.exhaustion.active) entity.stamina = 0; // Normalize stale saves/spawns before any action can observe regular Stamina during Black-Stamina debt.
     if (!Number.isFinite(entity.lastAttackAttemptAt)) entity.lastAttackAttemptAt = -1e9;
     if (!Number.isFinite(entity.lastAttackReceivedAt)) entity.lastAttackReceivedAt = -1e9;
+    if (!Number.isFinite(entity.lastStaminaSpendAt)) entity.lastStaminaSpendAt = -1e9; // Used to accelerate recovery of afflictions whose penalty is triggered by spending Stamina when that action is deliberately avoided.
     if (!Number.isFinite(entity.maxFooting)) entity.maxFooting = resourceSystemConfig().footingMax;
     if (!Number.isFinite(entity.footing)) entity.footing = entity.maxFooting;
     // prone: full-ragdoll knockdown state entered at 0 Footing (see game.js's
@@ -379,6 +382,7 @@
       amount *= 1 - Math.min(0.6, (window.PerkSystem?.rank('combat', 'reduceStaminaUse') || 0) * 0.08); // Reduce Stamina Use perk.
     }
     if (!(amount > 0)) return { spent: 0, excess: 0 };
+    entity.lastStaminaSpendAt = nowMs(); // Resets the avoidance bonus for Wounded/Infected/Shattered Stamina whenever the punished action is actually taken.
 
     if (entity.exhaustion.active) {
       entity.stamina = 0; // Reassert the invariant even if an external/load path injected stale regular Stamina since the previous tick.
@@ -577,12 +581,23 @@
     if (!healthRecoveryBlocked) entity.health = round1(clamp(entity.health + amount, 0, getEffectiveMax(entity, "health")));
   }
 
+  function getAfflictionRecoveryMultiplier(entity, id, rested = false) {
+    const def = AFFLICTIONS[id];
+    if (!def?.recovers) return 0;
+    let multiplier = rested ? 2 : 1; // Used by diagnostics/tests and the real recovery loop so displayed tuning cannot drift from gameplay.
+    if (def.resource === "stamina") multiplier *= STAMINA_RECOVERY_MULTIPLIER;
+    if (def.punishedAction === "staminaSpend") {
+      const elapsedSinceSpendMs = nowMs() - (Number.isFinite(entity?.lastStaminaSpendAt) ? entity.lastStaminaSpendAt : -1e9); // Used to reward refraining from the exact action that triggers this affliction's penalty.
+      if (elapsedSinceSpendMs >= ACTION_PUNISHMENT_RECOVERY_GRACE_MS) multiplier *= ACTION_PUNISHMENT_RECOVERY_MULTIPLIER;
+    }
+    return multiplier;
+  }
+
   function resolveGenericRecovery(entity, dt, rest, cfg) {
-    const restMultiplier = rest.rested ? 2 : 1; // Used for the existing quiet/rested recovery bonus before resource-specific scaling.
     for (const id of RECOVERING_AFFLICTIONS) {
       if (getAffliction(entity, id) <= 0) continue;
-      const staminaMultiplier = AFFLICTIONS[id]?.resource === "stamina" ? STAMINA_RECOVERY_MULTIPLIER : 1; // Keeps Health-affliction recovery unchanged while boosting every Stamina-affliction recovery rate.
-      removeAffliction(entity, id, cfg.afflictionRecoveryPerSec * restMultiplier * staminaMultiplier * dt);
+      const recoveryMultiplier = getAfflictionRecoveryMultiplier(entity, id, rest.rested); // Keeps ordinary recovery unchanged while action-punishing afflictions accelerate after their punished action is avoided.
+      removeAffliction(entity, id, cfg.afflictionRecoveryPerSec * recoveryMultiplier * dt);
     }
   }
 
@@ -645,6 +660,7 @@
     removeAfflictionsByTag,
     getEffectiveMax,
     getExhaustionSpeed,
+    getAfflictionRecoveryMultiplier,
     setStaminaRegenBlocked,
     isStaminaRegenBlocked,
     getStaminaRegenBlockers,

@@ -34,9 +34,10 @@ class Color {
   getHex() { return this.hex; }
 }
 
+let testNowMs = 0; // Used to exercise time-gated affliction recovery without real-time sleeps.
 const context = {
   console,
-  performance: { now: () => 0 },
+  performance: { now: () => testNowMs },
   THREE: { Color },
   CustomEvent: class CustomEvent { constructor(type, init) { this.type = type; this.detail = init?.detail; } },
   dispatchEvent() {},
@@ -168,6 +169,34 @@ assert.equal(potionHandoffEntity.stamina, 0, 'instant Black-Stamina recovery can
 const normalRestore = ResourceSystem.restoreStamina(potionHandoffEntity, 100);
 assert.equal(normalRestore.stamina, 70, 'later ordinary Stamina restoration respects Winded Stamina effective max');
 assert.equal(potionHandoffEntity.stamina, 70);
+
+const actionPunishmentEntity = {
+  health: 100, maxHealth: 100, stamina: 100, maxStamina: 100,
+  footing: 100, maxFooting: 100, exhaustion: { active: false, blackStamina: 100 },
+  afflictions: Object.fromEntries(Object.keys(ResourceSystem.AFFLICTIONS).map(id => [id, 0])),
+}; // Verifies that avoiding the action punished by Wounded/Infected/Shattered Stamina is a viable recovery strategy.
+ResourceSystem.initEntity(actionPunishmentEntity);
+for (const id of ['woundedStamina', 'infectedStamina', 'shatteredStamina', 'windedStamina']) {
+  ResourceSystem.addAffliction(actionPunishmentEntity, id, 24);
+}
+testNowMs = 0;
+ResourceSystem.spendStamina(actionPunishmentEntity, 1, 'action-punishment recovery test');
+testNowMs = 500;
+assert.equal(ResourceSystem.getAfflictionRecoveryMultiplier(actionPunishmentEntity, 'woundedStamina', false), 1.25, 'Wounded Stamina keeps normal Stamina-affliction recovery during the post-spend grace window');
+assert.equal(ResourceSystem.getAfflictionRecoveryMultiplier(actionPunishmentEntity, 'windedStamina', false), 1.25, 'Winded Stamina never receives the action-avoidance acceleration');
+testNowMs = 1000;
+assert.equal(ResourceSystem.getAfflictionRecoveryMultiplier(actionPunishmentEntity, 'woundedStamina', false), 5, 'Wounded Stamina gets 4x action-avoidance recovery after the grace window');
+assert.equal(ResourceSystem.getAfflictionRecoveryMultiplier(actionPunishmentEntity, 'infectedStamina', false), 5, 'Infected Stamina shares the action-punishing recovery rule');
+assert.equal(ResourceSystem.getAfflictionRecoveryMultiplier(actionPunishmentEntity, 'shatteredStamina', false), 5, 'Shattered Stamina shares the action-punishing recovery rule');
+const beforeAvoidanceTick = Object.fromEntries(['woundedStamina', 'infectedStamina', 'shatteredStamina', 'windedStamina'].map(id => [id, ResourceSystem.getAffliction(actionPunishmentEntity, id)]));
+ResourceSystem.tick(actionPunishmentEntity, 0.25);
+const woundedAvoidanceRecovery = beforeAvoidanceTick.woundedStamina - ResourceSystem.getAffliction(actionPunishmentEntity, 'woundedStamina');
+const windedNormalRecovery = beforeAvoidanceTick.windedStamina - ResourceSystem.getAffliction(actionPunishmentEntity, 'windedStamina');
+assert.ok(woundedAvoidanceRecovery >= windedNormalRecovery * 3.5, 'avoiding Stamina spend materially accelerates the punished affliction compared with ordinary Stamina-affliction recovery');
+testNowMs = 1100;
+ResourceSystem.spendStamina(actionPunishmentEntity, 1, 'reset action-punishment recovery');
+assert.equal(ResourceSystem.getAfflictionRecoveryMultiplier(actionPunishmentEntity, 'woundedStamina', false), 1.25, 'spending Stamina immediately resets the accelerated Wounded-Stamina recovery');
+testNowMs = 0;
 
 for (const id of Object.keys(ResourceSystem.AFFLICTIONS)) {
   assert.ok(id in ResourceRings.AFFLICTION_COLORS, `${id} has a resource-ring color`);
