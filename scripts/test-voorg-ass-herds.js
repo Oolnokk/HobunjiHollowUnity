@@ -77,7 +77,7 @@ const windowStub = {
     makeDefaultGenotype() { return { sizeClass: 'medium', base: { color: '#777', copies: 2, inheritance: 'dominant' }, belly: { enabled: true } }; },
     creatureSizeScale(kind, sizeClass) {
       assert.equal(kind, 'voorg-ass');
-      return sizeClass === 'small' ? { x: 0.27, y: 0.27 } : { x: 0.97, y: 0.97 };
+      return sizeClass === 'small' ? { x: 0.27, y: 0.27 } : { x: 1.164, y: 1.164 };
     },
   },
   CreatureGeneticsRender: { SPECIES: {} },
