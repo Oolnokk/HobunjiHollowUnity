@@ -117,6 +117,7 @@
   const lastFocusedByPanel = new WeakMap();
   const knownPanels = new Set(); // Reused by visibility reconciliation so gameplay never scans the entire DOM for panel roots.
   let currentTarget = null;
+  const navigationPerf = { targetCount: 0, rectReads: 0 }; // Used by ControllerUI.debugState() to expose the most recent spatial-navigation scan cost without browser devtools.
 
   // Registered panel roots are ordinarily appended directly to <body>, so
   // unlike isVisible() above — which has to walk ancestors for a nav target
@@ -214,23 +215,35 @@
     return Array.from(panel.querySelectorAll(NAV_SELECTOR)).filter(isNavTarget);
   }
 
+  function isModalPanel(panel) {
+    return !!(panel?.matches?.(SEMANTIC_PANEL_SELECTOR) || panel?.getAttribute?.('aria-modal') === 'true');
+  }
+
   function navigationTargets(panel) {
-    // Modal dialogs own focus; otherwise visible panel roots are peers even
-    // when their controls live in different DOM containers.
-    const modal = panel.matches(SEMANTIC_PANEL_SELECTOR) || panel.getAttribute('aria-modal') === 'true';
-    if (modal) return targetsInPanel(panel);
-    const peers = visiblePanels().filter(other => !other.matches(SEMANTIC_PANEL_SELECTOR) && other.getAttribute('aria-modal') !== 'true'); // Used to gather controls across visible menu containers.
+    // Modal dialogs own focus; otherwise the already-reconciled visible panel
+    // stack supplies peer roots without forcing another style/layout pass.
+    if (isModalPanel(panel)) return targetsInPanel(panel);
+    const peers = stack.filter(other => !isModalPanel(other)); // Used to gather controls across visible menu containers from cached visibility state.
     return [...new Set(peers.flatMap(targetsInPanel))];
   }
 
-  function belongsToNavigation(el, panel) {
-    return navigationTargets(panel).includes(el);
+  function owningRegisteredPanel(el) {
+    let owner = el?.closest?.(PANEL_SELECTOR) || null; // Used to map focused descendants back to the registered panel stack without rebuilding every navigation target.
+    while (owner && !knownPanels.has(owner)) owner = owner.parentElement?.closest?.(PANEL_SELECTOR) || null;
+    return owner;
   }
 
-  function pickDefaultTarget(panel) {
+  function belongsToNavigation(el, panel) {
+    const owner = owningRegisteredPanel(el); // Used for constant-small-stack membership checks on focusin/stale-focus paths.
+    if (!owner) return false;
+    if (isModalPanel(panel)) return owner === panel;
+    return stack.includes(owner) && !isModalPanel(owner);
+  }
+
+  function pickDefaultTarget(panel, availableTargets = null) {
     const explicit = panel.querySelector('[data-ctrl-default]');
-    if (explicit && isNavTarget(explicit)) return explicit;
-    const targets = targetsInPanel(panel);
+    if (explicit && isNavTarget(explicit) && (!availableTargets || availableTargets.includes(explicit))) return explicit;
+    const targets = availableTargets || targetsInPanel(panel);
     // Never default-focus the panel's own close/cancel button — a stray A
     // press on first opening a panel shouldn't be able to instantly back
     // back out of it again.
@@ -258,11 +271,13 @@
     }
   }
 
-  function refreshFocusIfStale() {
+  function refreshFocusIfStale(availableTargets = null) {
     const panel = activePanel();
     if (!panel) return;
-    if (currentTarget && isNavTarget(currentTarget) && belongsToNavigation(currentTarget, panel)) return;
-    setFocus(pickDefaultTarget(panel));
+    if (currentTarget) {
+      if (availableTargets ? availableTargets.includes(currentTarget) : (isNavTarget(currentTarget) && belongsToNavigation(currentTarget, panel))) return;
+    }
+    setFocus(pickDefaultTarget(panel, availableTargets));
   }
 
   // ── spatial navigation ──────────────────────────────────────────────
@@ -304,11 +319,11 @@
     return forward + lateral * 2.2;
   }
 
-  function bestVectorCandidate(targets, curRect, dir, halfAngle = null) {
+  function bestVectorCandidate(candidates, curRect, dir, halfAngle = null) {
     let best = null, bestScore = Infinity;
-    for (const cand of targets) {
+    for (const candidate of candidates) {
+      const cand = candidate.el, candRect = candidate.rect;
       if (cand === currentTarget) continue;
-      const candRect = cand.getBoundingClientRect();
       const metrics = halfAngle == null
         ? { score: halfPlaneScore(curRect, candRect, dir) }
         : coneMetrics(curRect, candRect, dir, halfAngle);
@@ -322,16 +337,22 @@
   function moveVector(x, y) {
     const panel = activePanel();
     if (!panel) return false;
-    refreshFocusIfStale();
-    const targets = navigationTargets(panel);
+    const targets = navigationTargets(panel); // Built once for this gesture/repeat and shared by focus validation plus candidate scoring.
+    navigationPerf.targetCount = targets.length;
+    navigationPerf.rectReads = 0;
+    refreshFocusIfStale(targets);
     if (!targets.length) return false;
-    if (!currentTarget) { setFocus(pickDefaultTarget(panel)); return true; }
+    if (!currentTarget) { setFocus(pickDefaultTarget(panel, targets)); return true; }
     const dir = normalizedDirection(x, y);
     if (!dir) return false;
-    const curRect = currentTarget.getBoundingClientRect();
-    const best = bestVectorCandidate(targets, curRect, dir, CONE_HALF_ANGLE)
-      || bestVectorCandidate(targets, curRect, dir, WIDE_CONE_HALF_ANGLE)
-      || bestVectorCandidate(targets, curRect, dir, null);
+    const candidates = targets.map(el => ({ el, rect: el.getBoundingClientRect() })); // Used by all cone passes so each candidate layout rectangle is read only once per navigation step.
+    navigationPerf.rectReads = candidates.length;
+    const currentCandidate = candidates.find(candidate => candidate.el === currentTarget);
+    const curRect = currentCandidate?.rect || currentTarget.getBoundingClientRect();
+    if (!currentCandidate) navigationPerf.rectReads += 1;
+    const best = bestVectorCandidate(candidates, curRect, dir, CONE_HALF_ANGLE)
+      || bestVectorCandidate(candidates, curRect, dir, WIDE_CONE_HALF_ANGLE)
+      || bestVectorCandidate(candidates, curRect, dir, null);
     if (!best) return false;
     setFocus(best);
     return true;
@@ -740,6 +761,8 @@
         targetText: (currentTarget?.textContent || '').trim().slice(0, 40),
         navigationMode: 'vector-cone',
         coneHalfAngleDeg: Math.round(CONE_HALF_ANGLE * 180 / Math.PI),
+        navigationTargetCount: navigationPerf.targetCount,
+        navigationRectReads: navigationPerf.rectReads,
       };
     },
   };
