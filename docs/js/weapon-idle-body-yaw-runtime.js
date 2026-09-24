@@ -37,7 +37,6 @@
       if (composerChanged || lastYawDeg !== resolvedYawDeg) composer.setChannel(CHANNEL, {
         priority: 5,
         mode: 'additive',
-        freezeInCharacterView: true, // Character View snapshots the visible weapon stance instead of letting its render-only yaw drift underneath the locked model.
         rotation: { pitch: 0, yaw: resolvedYawDeg * DEG_TO_RAD, roll: 0 },
       });
       lastYawDeg = resolvedYawDeg;
