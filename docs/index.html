@@ -525,7 +525,7 @@
   <!-- Same-origin live Map Editor transport + runtime bridge. Loaded before
        game.js so its private scene state can be injected during setup. -->
   <script src="js/map-live-preview.js?v=20260909a"></script>
-  <script src="js/map-live-preview-runtime.js?v=20260923mapeditcam1"></script>
+  <script src="js/map-live-preview-runtime.js?v=20260923mapeditdiff1"></script>
   <!-- Dev Tools: Testing Arena teleport + creature/bandit/foliage spawner
        panel (window.DevSpawner) — reads window.CreatureGenetics/
        window.CreatureGeneticsRender/window.BanditCombat/
@@ -886,12 +886,14 @@
       <div class="fed-section fed-actions map-edit-actions">
         <button class="fed-action-btn" id="mapEditOpenBtn">Open Map Editor</button>
         <button class="fed-action-btn" id="mapEditPickBtn">🎯 Click to Select</button>
+        <button class="fed-action-btn" id="mapEditCopyDiffBtn">📋 Copy Edit Diff</button>
         <button class="fed-action-btn" id="mapEditDebugBtn">Copy Reflection Debug</button>
       </div>
       <div class="fed-section" id="mapEditCameraSection" style="display:none;">
         <div class="fed-label">Cinematic cameras</div>
         <div class="fed-grid" id="mapEditCameraList"></div>
-        <div class="map-edit-detail">Gold camera markers are visible only during Map Edit. Tap a name or use Click to Select, then Move/Rotate the real runtime shot.</div>
+        <button class="fed-action-btn" id="mapEditCameraStagePlayerBtn" style="display:none;margin-top:7px">Player repositioning: Off</button>
+        <div class="map-edit-detail">Gold camera markers are visible only during Map Edit. Tap a name or use Click to Select, then Move/Rotate the real runtime shot. Player repositioning is off by default for cinematic cameras.</div>
       </div>
       <div class="fed-section" id="mapEditGizmoSection" style="display:none;">
         <div class="fed-label">Selected transform</div>
@@ -2406,7 +2408,7 @@
        openNpcDialogue/closeNpcDialogue (camera/staging/save) stay in
        game.js and call into this module. -->
   <!-- Authored world-space dialogue/cutscene cameras. Must load before DialogueContent/game.js. -->
-  <script src="js/cinematic-camera-runtime.js?v=20260923mapeditcam1"></script>
+  <script src="js/cinematic-camera-runtime.js?v=20260923stageopt1"></script>
   <script src="js/dialogue-content.js?v=20260831syllable4"></script>
   <script src="js/banubu-questline.js?v=20260923lordbanubu1"></script>
   <!-- World-space Float+ combat text and centered five-row reward lists. -->

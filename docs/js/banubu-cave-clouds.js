@@ -3,6 +3,7 @@
   'use strict';
 
   const CAVE_ID = 'map_i_den_banubu'; // Limits the atmosphere to Banubu's own cave.
+  const BANUBU_CLOUD_FILL_HEX = '#c3e3e9'; // Used by textureFor() so every cave-cloud interior exactly matches Banubu's authored coloredstripe.
   const CLOUDS = [
     // North pocket — dense, but leaves the 5–8 × 4–7 dialogue/sleep center open.
     [3.2, 3.2, 0.45, 'cloud1.png', 0.0],
@@ -65,7 +66,7 @@
 
   function textureFor(THREE, filename) {
     if (textureCache.has(filename)) return textureCache.get(filename);
-    const canvas = document.createElement('canvas'); // Recolors authored sky PNG brightness into silvery blue and removes its heavy black silhouette.
+    const canvas = document.createElement('canvas'); // Recolors the surviving authored cloud pixels to Banubu's stripe hex while retaining the existing cave-cloud alpha treatment.
     const texture = window.HobunjiSpritePngSurface.makeCanvasTexture(THREE, canvas, `banubu_cloud_${filename}`);
     const image = new Image(); // Loaded with CORS so readback and WebGL upload remain valid under GitHack.
     image.crossOrigin = 'anonymous';
@@ -75,11 +76,12 @@
       const context = canvas.getContext('2d', { willReadFrequently: true });
       context.drawImage(image, 0, 0);
       const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+      const fillRgb = Number.parseInt(BANUBU_CLOUD_FILL_HEX.slice(1), 16); // Used below to apply the exact authored stripe color without maintaining a second RGB constant.
       for (let i = 0; i < pixels.data.length; i += 4) {
         const value = Math.max(pixels.data[i], pixels.data[i + 1], pixels.data[i + 2]) / 255;
-        pixels.data[i] = 170 + 58 * value;
-        pixels.data[i + 1] = 202 + 40 * value;
-        pixels.data[i + 2] = 224 + 30 * value;
+        pixels.data[i] = (fillRgb >> 16) & 255;
+        pixels.data[i + 1] = (fillRgb >> 8) & 255;
+        pixels.data[i + 2] = fillRgb & 255;
         pixels.data[i + 3] = Math.round(pixels.data[i + 3] * Math.max(0, (value - 0.08) / 0.75) * 0.67);
       }
       context.putImageData(pixels, 0, 0);

@@ -10978,7 +10978,13 @@
         if (!Number.isFinite(npcX) || !Number.isFinite(npcZ)) { npcDialogueStaging = null; return; }
         const playerWorldX = player.x / TILE;
         const playerWorldZ = player.y / TILE;
-        const authoredStage = window.CinematicCameraRuntime?.currentPlayerStage?.(); // Reuses the existing collision-aware staging walk for authored shots.
+        if (window.CinematicCameraRuntime?.isActive?.() && window.CinematicCameraRuntime?.shouldStagePlayer?.() === false) {
+          npcDialogueStaging = null; // Cinematic cameras own framing; by default they leave the player's interaction position untouched instead of falling through to ordinary NPC backup offsets.
+          player.vx = 0;
+          player.vy = 0;
+          return;
+        }
+        const authoredStage = window.CinematicCameraRuntime?.currentPlayerStage?.(); // Explicit stagePlayer cameras reuse the existing collision-aware staging walk for authored shots.
         if (authoredStage && Number.isFinite(Number(authoredStage.x)) && Number.isFinite(Number(authoredStage.z))) {
           npcDialogueStaging = { walker, targetX: Number(authoredStage.x), targetZ: Number(authoredStage.z) };
           player.vx = 0;

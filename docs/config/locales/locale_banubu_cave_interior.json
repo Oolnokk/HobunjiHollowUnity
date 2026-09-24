@@ -309,28 +309,52 @@
     {
       "id": "banubu_dialogue_awake",
       "label": "Banubu dialogue — awake",
-      "position": { "x": 7.2, "y": 0, "z": 9.4 },
-      "target": { "x": 0, "y": 0, "z": 0 },
+      "position": {
+        "x": 7.2,
+        "y": 0,
+        "z": 9.4
+      },
+      "target": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
       "fovDeg": 25,
       "blendSeconds": 0.5,
       "dialogueNpcId": "",
-      "fadePets": true,
-      "playerStage": { "x": 6.5, "z": 10.5 },
+      "fadePets": false,
+      "playerStage": {
+        "x": 6.5,
+        "z": 10.5
+      },
       "targetNpcId": "banubu",
-      "targetAnchorId": "station_banubu_cave_sleep"
+      "targetAnchorId": "station_banubu_cave_sleep",
+      "stagePlayer": false
     },
     {
       "id": "banubu_dialogue_sleep",
       "label": "Banubu dialogue — sleeping",
-      "position": { "x": 7.6, "y": 0, "z": 8.3 },
-      "target": { "x": 0, "y": 0, "z": 0 },
+      "position": {
+        "x": 7.6,
+        "y": 0,
+        "z": 8.3
+      },
+      "target": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
       "fovDeg": 30,
       "blendSeconds": 0.5,
       "dialogueNpcId": "banubu",
-      "fadePets": true,
-      "playerStage": { "x": 6.5, "z": 10.5 },
+      "fadePets": false,
+      "playerStage": {
+        "x": 6.5,
+        "z": 10.5
+      },
       "targetNpcId": "banubu",
-      "targetAnchorId": "station_banubu_cave_sleep"
+      "targetAnchorId": "station_banubu_cave_sleep",
+      "stagePlayer": false
     }
   ],
   "terrainAnchors": {},

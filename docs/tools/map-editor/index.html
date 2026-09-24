@@ -940,6 +940,21 @@ function reflectInGame() {
 }
 
 function handleLiveMessage(message) {
+  if (message.type === 'map-edit-diff-request') {
+    try {
+      const bundle = window.MapEditorExportFixes?.buildWorkspaceDiffBundle?.(); // Reuses the exact baseline-aware export logic behind the standalone editor's own Diff command.
+      _mapLiveEndpoint.send({
+        type: 'map-edit-diff-result',
+        requestId: message.requestId,
+        status: bundle ? 'applied' : 'unavailable',
+        bundle: bundle || null,
+        reason: bundle ? '' : 'Map Editor diff exporter is not ready.',
+      });
+    } catch (error) {
+      _mapLiveEndpoint.send({ type: 'map-edit-diff-result', requestId: message.requestId, status: 'error', bundle: null, reason: error?.message || String(error) });
+    }
+    return;
+  }
   if (message.type === 'interior-author-update') {
     if (importBuildingInterior(message.interior)) {
       _mapLiveEndpoint.send({ type: 'interior-author-result', requestId: message.requestId, mapId: message.interior.id, status: 'applied' });
