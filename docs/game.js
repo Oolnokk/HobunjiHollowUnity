@@ -345,6 +345,24 @@
       const _npcDialogueNameEl  = document.getElementById('npcDialogueName');
       const _npcDialogueHeartsEl = document.getElementById('npcDialogueHearts');
       const _arcContainerEl     = document.getElementById('arcContainer');
+      let dialogueHeldToolSnapshot = null; // Remembers the exact drawn tool/weapon + selected action so dialogue can holster it and restore it on close.
+
+      function holsterToolForDialogue() {
+        dialogueHeldToolSnapshot = heldMode === 'tool'
+          ? { tool: activeTool, action: activeAction }
+          : null;
+        if (dialogueHeldToolSnapshot) putAwayHeldEquipment({ silent: true });
+      }
+
+      function restoreToolAfterDialogue() {
+        const snapshot = dialogueHeldToolSnapshot;
+        dialogueHeldToolSnapshot = null;
+        if (!snapshot || heldMode !== 'none') return;
+        setActiveTool(snapshot.tool, { silent: true });
+        if (toolActions[snapshot.tool]?.includes(snapshot.action)) activeAction = snapshot.action;
+        refreshActionBar();
+        refreshWeaponSwitchBtn();
+      }
 
       async function openNpcDialogue(walker) {
         const rec  = walker.rec;
@@ -356,6 +374,7 @@
         // frames itself 15 degrees from THIS view rather than from a fixed
         // world direction or the dialogue mode's own default azimuth.
         dialogueEntryCameraAzimuthDeg = THREE.MathUtils.radToDeg(activeCameraAzimuthRad());
+        holsterToolForDialogue();
         dialogueOpen    = true;
         _dialogueWalker = walker;
         activeCameraMode   = npcDialogueCameraMode();
@@ -537,6 +556,7 @@
         _arcContainerEl?.classList.remove('arc-hidden');
         _npcDialogueEl.classList.remove('open');
         _npcDialogueEl.setAttribute('aria-hidden', 'true');
+        restoreToolAfterDialogue();
         saveMemberWorldData(); // persist visited-node/memory state mutated during the conversation
         refreshActionBar();
       }
@@ -24665,7 +24685,7 @@
       // Holsters the visible tool/weapon or bag item without unassigning any
       // gear slots. The remembered activeTool/activeItemIndex are restored by
       // the next tool, item, or weapon selection.
-      function putAwayHeldEquipment() {
+      function putAwayHeldEquipment(opts = {}) {
         if (heldMode === 'none') return;
         heldMode = 'none';
         activeAction = 'none';
@@ -24680,7 +24700,7 @@
         window._desktopSelectionArc?.close?.();
         refreshActionBar();
         refreshWeaponSwitchBtn();
-        showToast('Put away held equipment.', true);
+        if (!opts.silent) showToast('Put away held equipment.', true);
       }
 
       function setActiveAction(action) {
@@ -28076,6 +28096,7 @@
         toolHolder,
         scaleToolWorldPointAroundPlayerCentroid, // WeaponToolStances applies the identical finished-point transform to weapon idle stances.
         getActiveTool: () => activeTool,
+        getHeldMode: () => heldMode, // WeaponToolStances uses this so a holstered weapon cannot keep applying its idle body-yaw stance.
         refreshActionBar,
         setActiveTool,
         isDevMode: () => s_devMode,
