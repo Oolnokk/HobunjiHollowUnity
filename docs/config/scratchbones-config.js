@@ -3519,7 +3519,7 @@ window.SCRATCHBONES_CONFIG = {
         // keeps authored special soundtracks such as Just Beyond the Torchlight
         // uninterrupted and leaves room for more opt-outs later.
         "combatBgm": [
-          { "url": "assets/audio/music/bgm/bgm_skirmish.m4a", "loop": true, "gaplessLoop": { "encoderDelaySamples": 2048, "paddingSamples": 745, "contentSamples": 1256727 } }
+          { "url": "assets/audio/music/bgm/bgm_skirmish.m4a", "loop": true, "gaplessLoop": { "sourceSampleRate": 48000, "encoderDelaySamples": 2048, "paddingSamples": 745, "contentSamples": 1256727 } }
         ],
         "startupBgm": { "url": "assets/audio/music/bgm/bgm_remembrance.m4a", "loop": true },
         "musicFadeMs": 280,
