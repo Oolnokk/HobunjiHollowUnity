@@ -307,7 +307,11 @@
     if (!folderRecoveryAvailable()) return false;
     if (recoveryMirrorPromise) {
       const result = await recoveryMirrorPromise;
-      await ensureFolderBaseline(); // Handles player-ready racing an earlier pre-player mirror pass.
+      try {
+        await withRecoveryReadTimeout(ensureFolderBaseline(), 'Recovery baseline preparation'); // A second caller joining an in-flight mirror gets the same bounded fail-soft behavior.
+      } catch (error) {
+        lastError = [lastError, `baseline: ${String(error?.message || error)}`].filter(Boolean).join('; ');
+      }
       return result;
     }
 
