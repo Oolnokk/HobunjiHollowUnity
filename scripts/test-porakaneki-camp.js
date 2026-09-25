@@ -44,8 +44,8 @@ assert.deepEqual(cfg.chiefCamp.seasonZoneMap, {
   Coldmuck: 'map_northern_cliffs',
 });
 assert.equal(cfg.behavior.fullSimulationChunkTiles, 10, 'legacy chunk size remains only for debug/backward compatibility');
-assert.equal(cfg.behavior.fullSimulationRadiusTiles, 12);
-assert.equal(cfg.behavior.fullSimulationReleaseRadiusTiles, 16);
+assert.equal(cfg.behavior.fullSimulationRadiusTiles, 18);
+assert.equal(cfg.behavior.fullSimulationReleaseRadiusTiles, 24);
 assert(cfg.behavior.fullSimulationReleaseRadiusTiles > cfg.behavior.fullSimulationRadiusTiles, 'LOD hysteresis must have a wider release radius than enter radius');
 assert.equal(cfg.behavior.offChunkTickSeconds, 4);
 assert.equal(cfg.behavior.denHuntGroupMin, 2);
