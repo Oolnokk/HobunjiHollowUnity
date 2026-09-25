@@ -319,27 +319,35 @@
     let peakCount=0;
 
     const pushLayer=(axisCenter,outCenter,width,depth,y0,y1,leanAxis,leanOut,layer,ordinal,rowIndex,snowStart)=>{
-      const t=(layer+0.5)/layerCount; // Used to move each successive plateau slightly toward the peak's authored lean.
-      const topScale=0.16+bgSceneryHash01(axisCenter,outCenter,8601)*0.08; // Used as the final summit-plateau width; still a plateau, never a needle point.
-      const footprintScale=1-(1-topScale)*(layer/Math.max(1,layerCount-1)); // Used to make every tier only slightly smaller than the one below.
-      const cx=axisCenter+leanAxis*t; // Used so the stack can lean gently instead of becoming a perfectly centered ziggurat.
-      const co=outCenter+leanOut*t; // Used for the same gentle lean along the outward axis.
-      const halfAxis=width*footprintScale*0.5,halfOut=depth*footprintScale*0.5; // Used as this tier's simple rectangular plateau footprint.
+      const summitScale=0.16+bgSceneryHash01(axisCenter,outCenter,8601)*0.08; // Used as the final summit-plateau footprint; still a real flat plateau, never a point.
+      const bottomProgress=layer/layerCount; // Used to derive this tier's lower plateau footprint.
+      const topProgress=layer===layerCount-1?1:(layer+0.72)/layerCount; // Used to inset the top enough for one sloped cliff plane while reserving a smaller terrace step before the next tier.
+      const bottomScale=1-(1-summitScale)*bottomProgress; // Used as the broad lower edge of this tier's four cliff planes.
+      const topScale=1-(1-summitScale)*topProgress; // Used as the slightly smaller flat plateau top.
+      const bottomCx=axisCenter+leanAxis*bottomProgress,topCx=axisCenter+leanAxis*topProgress; // Used so the complete stack can lean gently while each cliff side remains one plane.
+      const bottomCo=outCenter+leanOut*bottomProgress,topCo=outCenter+leanOut*topProgress; // Used for the same lean along the outward axis.
+      const bottomHalfAxis=width*bottomScale*0.5,bottomHalfOut=depth*bottomScale*0.5; // Used by the lower edge of each low-poly plateau cliff.
+      const topHalfAxis=width*topScale*0.5,topHalfOut=depth*topScale*0.5; // Used by the inset upper edge and flat terrace top.
       const corners=[[-1,-1],[1,-1],[1,1],[-1,1]]; // Used by all four one-plane cliff sides in winding order.
       const baseIndex=positions.length/3; // Used to offset this tier's eight vertices inside the combined chain mesh.
 
-      for(const y of [y0,y1]){
-        for(const [sa,so] of corners){
-          const axis=cx+sa*halfAxis,out=co+so*halfOut;
-          const [x,z]=horizonPoint(config.side,axis,out,zcols,zrows);
-          positions.push(x,y,z);
-          uvs.push(axis/Math.max(1,span),y/Math.max(1,effectiveHeight));
-        }
+      for(const [sa,so] of corners){
+        const axis=bottomCx+sa*bottomHalfAxis,out=bottomCo+so*bottomHalfOut;
+        const [x,z]=horizonPoint(config.side,axis,out,zcols,zrows);
+        positions.push(x,y0,z);
+        uvs.push(axis/Math.max(1,span),y0/Math.max(1,effectiveHeight));
+      }
+      for(const [sa,so] of corners){
+        const axis=topCx+sa*topHalfAxis,out=topCo+so*topHalfOut;
+        const [x,z]=horizonPoint(config.side,axis,out,zcols,zrows);
+        positions.push(x,y1,z);
+        uvs.push(axis/Math.max(1,span),y1/Math.max(1,effectiveHeight));
       }
 
-      // Exactly one quad (two triangles, one plane) per cliff side. There is
-      // intentionally no horizontal subdivision like the playable plateau
-      // heightfields use; the visual detail comes from stacking many tiers.
+      // Exactly one SLOPED quad (two triangles, one plane) per cliff side,
+      // mirroring the playable plateau's raised-top / blended-cliff idea
+      // without its half-tile heightfield subdivision. The many stacked tiers
+      // supply the silhouette detail instead.
       for(let face=0;face<4;face++){
         const next=(face+1)&3;
         const materialIndex=((face+ordinal+rowIndex+layer)&1); // Alternating flat side tones keep each huge plane readable without extra geometry.
@@ -349,9 +357,9 @@
         );
       }
 
-      // One un-subdivided plateau lid per layer. The next, slightly smaller
-      // tier simply stands on top of it, leaving the exposed perimeter visible
-      // as the terrace just like an in-game plateau stack.
+      // One un-subdivided plateau lid per layer. The next tier's lower
+      // footprint is slightly smaller than this lid, so a narrow flat terrace
+      // remains exposed between successive one-plane cliff slopes.
       const topT=(layer+1)/layerCount;
       if(topT>=snowStart){
         byMaterial[3].push(baseIndex+4,baseIndex+6,baseIndex+5);
