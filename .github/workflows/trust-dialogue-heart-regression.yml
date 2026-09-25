@@ -9,8 +9,11 @@ on:
       - 'docs/js/combat/combat-config-loader.js'
       - 'docs/js/favor-heart-balance.js'
       - 'docs/js/weapon-trust-visits.js'
+      - 'docs/js/weapon-tool-stances.js'
+      - 'docs/js/combat/combat-loadout.js'
       - 'scripts/test-favor-heart-balance.js'
       - 'scripts/test-trust-dialogue-heart-scale.js'
+      - 'scripts/test-dialogue-presentation.js'
       - '.github/workflows/trust-dialogue-heart-regression.yml'
   workflow_dispatch:
 
@@ -25,7 +28,14 @@ jobs:
         run: node --check docs/js/favor-heart-balance.js
       - name: Syntax check trust visit runtime
         run: node --check docs/js/weapon-trust-visits.js
+      - name: Syntax check dialogue presentation integration
+        run: |
+          node --check docs/game.js
+          node --check docs/js/weapon-tool-stances.js
+          node --check scripts/test-dialogue-presentation.js
       - name: Favor heart balance regression
         run: node scripts/test-favor-heart-balance.js
       - name: Trust dialogue heart regression
         run: node scripts/test-trust-dialogue-heart-scale.js
+      - name: Dialogue presentation regression
+        run: node scripts/test-dialogue-presentation.js

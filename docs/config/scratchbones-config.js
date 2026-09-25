@@ -158,14 +158,13 @@ window.SCRATCHBONES_CONFIG = {
         }
       },
       "staging": {
-        "playerDiagonalOffsets": [
-          { "x": -0.5, "y": 1 },
-          { "x": 0.5, "y": 1 }
-        ],
+        "cameraSideAngleDeg": 15,
         "moveSpeedTilesPerSecond": 4.25,
         "arrivalRadiusTiles": 0.08,
         "faceLerp": 0.28,
-        "npcFacePlayerLerp": 0.28
+        "npcFacePlayerLerp": 0.28,
+        "npcHeadMaxYawDeg": 45,
+        "npcHeadMaxPitchDeg": 45
       }
     },
     "camera": {

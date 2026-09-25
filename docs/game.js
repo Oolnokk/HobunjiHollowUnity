@@ -345,12 +345,36 @@
       const _npcDialogueNameEl  = document.getElementById('npcDialogueName');
       const _npcDialogueHeartsEl = document.getElementById('npcDialogueHearts');
       const _arcContainerEl     = document.getElementById('arcContainer');
+      let dialogueHeldToolSnapshot = null; // Remembers the exact drawn tool/weapon + selected action so dialogue can holster it and restore it on close.
+
+      function holsterToolForDialogue() {
+        dialogueHeldToolSnapshot = heldMode === 'tool'
+          ? { tool: activeTool, action: activeAction }
+          : null;
+        if (dialogueHeldToolSnapshot) putAwayHeldEquipment({ silent: true });
+      }
+
+      function restoreToolAfterDialogue() {
+        const snapshot = dialogueHeldToolSnapshot;
+        dialogueHeldToolSnapshot = null;
+        if (!snapshot || heldMode !== 'none') return;
+        setActiveTool(snapshot.tool, { silent: true });
+        if (toolActions[snapshot.tool]?.includes(snapshot.action)) activeAction = snapshot.action;
+        refreshActionBar();
+        refreshWeaponSwitchBtn();
+      }
 
       async function openNpcDialogue(walker) {
         const rec  = walker.rec;
         window.DialogueContent?.recordNpcMemory(rec?.id, 'talked');
         window.WorldPopupText?.clearInteractionPrompts?.();
 
+        // Snapshot the camera's real world azimuth at the exact interaction
+        // moment, before dialogue changes camera modes. Ordinary dialogue
+        // frames itself 15 degrees from THIS view rather than from a fixed
+        // world direction or the dialogue mode's own default azimuth.
+        dialogueEntryCameraAzimuthDeg = THREE.MathUtils.radToDeg(activeCameraAzimuthRad());
+        holsterToolForDialogue();
         dialogueOpen    = true;
         _dialogueWalker = walker;
         activeCameraMode   = npcDialogueCameraMode();
@@ -519,14 +543,20 @@
         }
         enterDefaultCameraMode();
         activeCameraTarget = null;
-        _snapCameraTarget(); // Dialogue may have staged the player away from the old NPC follow point.
+        if (activeCameraMode !== SHOULDER_SURF_MODE) {
+          cameraAzimuthOffsetDeg = 0;
+          cameraAngleOffsetDeg = 0;
+        }
+        _snapCameraTarget(); // Re-centers the restored gameplay camera after dialogue/cinematic framing.
         dialogueZoomPointers.clear();
         dialoguePinchDistance = null;
+        dialogueEntryCameraAzimuthDeg = null;
         if (dialogueZoomConfig().resetOnDialogueClose) resetDialogueCameraZoom();
         else updateDialogueZoomIndicator();
         _arcContainerEl?.classList.remove('arc-hidden');
         _npcDialogueEl.classList.remove('open');
         _npcDialogueEl.setAttribute('aria-hidden', 'true');
+        restoreToolAfterDialogue();
         saveMemberWorldData(); // persist visited-node/memory state mutated during the conversation
         refreshActionBar();
       }
@@ -9730,6 +9760,7 @@
         return creatureAimAngleForGroupRot(broadside);
       }
       let dialogueCameraZoomPercent = cameraModeConfig(npcDialogueCameraMode()).runtimeZoom?.initialPercent ?? 0;
+      let dialogueEntryCameraAzimuthDeg = null; // Captured when Talk begins; ordinary dialogue rotates 15° from this exact interaction-time view.
       const dialogueZoomPointers = new Map();
       let dialoguePinchDistance = null;
       let nearbyNpcWalker    = null;
@@ -11057,45 +11088,48 @@
       // block further down, near spawnScheduledNpcs) so every existing call
       // site here keeps working unchanged.
 
-      function npcDialogueStagingOffsets() {
-        const offsets = npcDialogueStagingConfig().playerDiagonalOffsets;
-        return Array.isArray(offsets) && offsets.length ? offsets : [{ x: -0.5, y: 1 }, { x: 0.5, y: 1 }];
-      }
-
       function beginNpcDialogueStaging(walker) {
-        // Cutscene Preview drives every participant's position/facing itself
-        // (see "Cutscene Preview Mode" below) — walking/turning the real
-        // singleton `player` to stand next to whoever it opened dialogue
-        // with would fight the director's own scripted blocking, and there
-        // may not even be a "player" in the scene the preview is running.
+        // Cutscene Preview and authored cinematic dialogue cameras own their
+        // own blocking. In particular, Banubu's huge-body cave shots are
+        // explicitly authored and must not inherit ordinary dialogue camera
+        // offsets or legacy player repositioning.
         if (cutscenePreviewActive) return;
         const npcX = walker?.root?.position?.x;
         const npcZ = walker?.root?.position?.z;
         if (!Number.isFinite(npcX) || !Number.isFinite(npcZ)) { npcDialogueStaging = null; return; }
-        const playerWorldX = player.x / TILE;
-        const playerWorldZ = player.y / TILE;
-        if (window.CinematicCameraRuntime?.isActive?.() && window.CinematicCameraRuntime?.shouldStagePlayer?.() === false) {
-          npcDialogueStaging = null; // Cinematic cameras own framing; by default they leave the player's interaction position untouched instead of falling through to ordinary NPC backup offsets.
+
+        const cinematicActive = !!window.CinematicCameraRuntime?.isActive?.(); // Gates the ordinary 15-degree camera-side adjustment below so authored shots remain exact.
+        if (cinematicActive && window.CinematicCameraRuntime?.shouldStagePlayer?.() === false) {
+          npcDialogueStaging = null;
           player.vx = 0;
           player.vy = 0;
           return;
         }
-        const authoredStage = window.CinematicCameraRuntime?.currentPlayerStage?.(); // Explicit stagePlayer cameras reuse the existing collision-aware staging walk for authored shots.
+        const authoredStage = window.CinematicCameraRuntime?.currentPlayerStage?.(); // Explicit stagePlayer cameras retain exact authored blocking.
         if (authoredStage && Number.isFinite(Number(authoredStage.x)) && Number.isFinite(Number(authoredStage.z))) {
-          npcDialogueStaging = { walker, targetX: Number(authoredStage.x), targetZ: Number(authoredStage.z) };
+          npcDialogueStaging = { walker, targetX: Number(authoredStage.x), targetZ: Number(authoredStage.z), kind: 'authored' };
           player.vx = 0;
           player.vy = 0;
           return;
         }
-        const candidates = npcDialogueStagingOffsets().map(offset => ({
-          x: npcX + (Number(offset.x) || 0),
-          z: npcZ + (Number(offset.y) || 0),
-        }));
-        candidates.sort((a, b) => Math.hypot(playerWorldX - a.x, playerWorldZ - a.z) - Math.hypot(playerWorldX - b.x, playerWorldZ - b.z));
-        const target = candidates.find(pos => canPlayerOccupy(pos.x * TILE, pos.z * TILE)) || candidates[0];
-        npcDialogueStaging = { walker, targetX: target.x, targetZ: target.z };
+
+        // Ordinary third-person dialogue no longer walks the player to the
+        // old top-down diagonal staging point. Leave both participants where
+        // the interaction began and move the CAMERA slightly to the side
+        // instead, which clears the player's portrait from directly covering
+        // the NPC without making the character shuffle before every line.
+        npcDialogueStaging = null;
         player.vx = 0;
         player.vy = 0;
+        if (!cinematicActive && walker?.rec?.id !== 'banubu') {
+          const cameraSideAngleDeg = Number(npcDialogueStagingConfig().cameraSideAngleDeg) || 15; // Relative turn from the camera azimuth captured when Talk was pressed.
+          const dialogueBaseAzimuthDeg = Number(cameraModeConfig(npcDialogueCameraMode()).azimuthDeg) || 0; // Converted out below so the final world azimuth stays interaction-relative.
+          const interactionAzimuthDeg = Number.isFinite(dialogueEntryCameraAzimuthDeg)
+            ? dialogueEntryCameraAzimuthDeg
+            : THREE.MathUtils.radToDeg(activeCameraAzimuthRad());
+          cameraAzimuthOffsetDeg = wrapAzimuthDeg(interactionAzimuthDeg + cameraSideAngleDeg - dialogueBaseAzimuthDeg);
+          cameraAngleOffsetDeg = 0;
+        }
       }
 
       // Continuous "eye contact" aim, ported from the Multi-Avatar Animation
@@ -11194,6 +11228,20 @@
         return _dialogueEyeWorldPosition(walker.root.position, walker.avatarHeight);
       }
 
+      function _playerFaceWorldPosition() {
+        const cachedHead = window.CreatureHeadCache?.getHeadWorld?.(player, 'player', {
+          x: player.x,
+          y: player.y,
+          mesh: playerMesh,
+          avatarModelHeight: playerAvatarModelHeight,
+        }); // Uses the same live head-height resolver as animal/player gaze elsewhere instead of guessing from overall sprite height.
+        const worldY = Number(cachedHead?.worldY);
+        if (Number.isFinite(worldY)) {
+          return new THREE.Vector3(playerMesh.position.x, worldY, playerMesh.position.z);
+        }
+        return _dialogueEyeWorldPosition(playerMesh.position, playerAvatarModelHeight);
+      }
+
       // Shared core behind _aimNeckAtEyeContact below: rotates a neck-rig
       // joint (yaw+pitch, clamped) so its owner's eyes point at an arbitrary
       // world point — not necessarily another character's eyes. This is the
@@ -11201,10 +11249,12 @@
       // `lookAt` field, applied in makeNpcWalker's update()) builds on, so a
       // seated NPC can fix their gaze on a fire/altar/anything else authored
       // without one of these being a dialogue participant.
-      function _aimNeckAtWorldPoint(neckJoint, selfRootPosition, selfModelHeight, targetWorld, maxYawDeg, maxPitchDeg, debugEntity) {
+      function _aimNeckAtWorldPoint(neckJoint, selfRootPosition, selfModelHeight, targetWorld, maxYawDeg, maxPitchDeg, debugEntity, selfEyeWorldOverride = null) {
         if (!neckJoint?.parent) return false;
         neckJoint.parent.updateMatrixWorld(true);
-        const selfEyeWorld = _dialogueEyeWorldPosition(selfRootPosition, selfModelHeight);
+        const selfEyeWorld = _finiteNpcFacePoint(selfEyeWorldOverride)
+          ? selfEyeWorldOverride.clone()
+          : _dialogueEyeWorldPosition(selfRootPosition, selfModelHeight);
         if (debugEntity) debugEntity._lookAtDebug = { head: { x: selfEyeWorld.x, y: selfEyeWorld.y, z: selfEyeWorld.z }, target: { x: targetWorld.x, y: targetWorld.y, z: targetWorld.z } };
         const direction = neckJoint.parent.worldToLocal(targetWorld.clone()).sub(neckJoint.parent.worldToLocal(selfEyeWorld));
         const horizontal = Math.hypot(direction.x, direction.z);
@@ -11255,6 +11305,25 @@
         }
       }
 
+      function applyNpcDialogueFacingExact(walker, rawRot, lerp) {
+        if (!walker?.root || !Number.isFinite(rawRot)) return;
+        walker.desiredRot = rawRot;
+        if (walker.animalDef && walker.animalAvatarRef) {
+          const animalDt = Number.isFinite(walker._lastUpdateDt) ? walker._lastUpdateDt : 1 / 60; // Uses the same frame-time source as normal named-animal facing, but without its camera-relative billboard deadzone.
+          const animalTurnLerp = Math.min(1, animalDt * 10); // Used only to keep named-animal dialogue turns smooth while preserving exact target-facing.
+          walker.rot += angleDiff(rawRot, walker.rot) * animalTurnLerp;
+          walker.root.rotation.y = walker.rot;
+          walker.animalPngRot = walker.rot;
+          if (walker.animalAvatarRef.frontPlane) walker.animalAvatarRef.frontPlane.rotation.y = Math.PI / 2;
+          if (walker.animalAvatarRef.backPlane) walker.animalAvatarRef.backPlane.rotation.y = -Math.PI / 2;
+          return;
+        }
+        const turnLerp = Math.max(0, Math.min(1, Number(lerp) || 0.28)); // Used only for smooth exact humanoid dialogue body turning.
+        walker.rot += angleDiff(rawRot, walker.rot) * turnLerp;
+        walker.root.rotation.y = walker.rot;
+        if (walker.legs?.group) walker.legs.group.rotation.y = rawRot - walker.root.rotation.y;
+      }
+
       function faceNpcDialogueParticipants() {
         if (cutscenePreviewActive) return; // see beginNpcDialogueStaging
         const walker = npcDialogueStaging?.walker || _dialogueWalker;
@@ -11269,21 +11338,40 @@
         player.angle = facingAngle;
         const npcTargetAngle = Math.atan2(playerWorldZ - npcZ, playerWorldX - npcX);
         const npcTargetRot = -npcTargetAngle + Math.PI / 2;
-        if (walker.rec?.id !== 'banubu') walker.applyFacingDeadzone(npcTargetRot, cfg.npcFacePlayerLerp ?? 0.28); // Sleeping Banubu keeps his authored facing throughout quest dialogue.
-        // Eye contact: aims BOTH the NPC's and the player's own neck bone
-        // straight at the other's eyes, held for the whole conversation (see
-        // _aimNeckAtEyeContact above) — this owns the player's neck bone
-        // exclusively while dialogue is open (updatePlayerHeadAim steps aside
-        // for exactly this reason, see its own dialogueOpen guard).
+        if (walker.rec?.id !== 'banubu') applyNpcDialogueFacingExact(walker, npcTargetRot, cfg.npcFacePlayerLerp ?? 0.28); // Dialogue bypasses camera-facing deadzones; sleeping Banubu keeps his authored quest pose.
+
+        // Dialogue eye contact is continuous and height-aware. Both necks aim
+        // at the OTHER participant's resolved live face point, so short/tall
+        // pairings naturally look up/down instead of sharing a flat pitch.
         walker.root.updateMatrixWorld(true);
         playerMesh.updateMatrixWorld(true);
-        const maxYawDeg = cfg.npcHeadMaxYawDeg ?? 28;
-        const maxPitchDeg = cfg.npcHeadMaxPitchDeg ?? 24;
-        if (walker.neckJoint && walker.rec?.id !== 'banubu') {
-          _aimNeckAtEyeContact(walker.neckJoint, walker.root.position, walker.avatarHeight, playerMesh.position, playerAvatarModelHeight, maxYawDeg, maxPitchDeg, walker);
+        const playerFaceWorld = _playerFaceWorldPosition(); // Used by the NPC neck target below.
+        const npcFaceWorld = _npcFaceWorldPosition(walker); // Used by the player neck target below.
+        const maxYawDeg = cfg.npcHeadMaxYawDeg ?? 45;
+        const maxPitchDeg = cfg.npcHeadMaxPitchDeg ?? 45;
+        if (walker.neckJoint && walker.rec?.id !== 'banubu' && playerFaceWorld) {
+          _aimNeckAtWorldPoint(
+            walker.neckJoint,
+            walker.root.position,
+            walker.avatarHeight,
+            playerFaceWorld,
+            maxYawDeg,
+            maxPitchDeg,
+            walker,
+            npcFaceWorld,
+          );
         }
-        if (playerNeckJoint) {
-          _aimNeckAtEyeContact(playerNeckJoint, playerMesh.position, playerAvatarModelHeight, walker.root.position, walker.avatarHeight, maxYawDeg, maxPitchDeg, player);
+        if (playerNeckJoint && npcFaceWorld) {
+          _aimNeckAtWorldPoint(
+            playerNeckJoint,
+            playerMesh.position,
+            playerAvatarModelHeight,
+            npcFaceWorld,
+            maxYawDeg,
+            maxPitchDeg,
+            player,
+            playerFaceWorld,
+          );
         }
       }
 
@@ -23041,6 +23129,18 @@
           playerFacing = characterViewMode.lockedPlayerFacing;
           playerMesh.rotation.y = playerFacing;
           if (playerLegs?.group) playerLegs.group.rotation.y = 0;
+        } else if (dialogueOpen && _dialogueWalker?.root) {
+          // Dialogue eye contact is a semantic facing requirement, not an
+          // ordinary locomotion pose. The normal camera-relative perpClamp
+          // may deliberately snap a flat portrait by ~90 degrees to keep it
+          // from rendering edge-on; during conversation that made the
+          // visible player look perpendicular to the NPC even though
+          // facingAngle/player.angle were logically correct. Render the true
+          // unclamped body yaw here. faceNpcDialogueParticipants() then owns
+          // the neck's yaw + pitch residual toward the NPC's actual face.
+          playerFacing = -facingAngle + Math.PI / 2;
+          playerMesh.rotation.y = playerFacing;
+          if (playerLegs?.group) playerLegs.group.rotation.y = 0;
         } else if (sitInteraction && sitInteraction.phase !== 'out') {
           // Seated: the body stays pinned to the chair's own facing — no
           // perpClamp/dead-zone tracking of the camera at all (unlike the
@@ -24585,7 +24685,7 @@
       // Holsters the visible tool/weapon or bag item without unassigning any
       // gear slots. The remembered activeTool/activeItemIndex are restored by
       // the next tool, item, or weapon selection.
-      function putAwayHeldEquipment() {
+      function putAwayHeldEquipment(opts = {}) {
         if (heldMode === 'none') return;
         heldMode = 'none';
         activeAction = 'none';
@@ -24600,7 +24700,7 @@
         window._desktopSelectionArc?.close?.();
         refreshActionBar();
         refreshWeaponSwitchBtn();
-        showToast('Put away held equipment.', true);
+        if (!opts.silent) showToast('Put away held equipment.', true);
       }
 
       function setActiveAction(action) {
@@ -27996,6 +28096,7 @@
         toolHolder,
         scaleToolWorldPointAroundPlayerCentroid, // WeaponToolStances applies the identical finished-point transform to weapon idle stances.
         getActiveTool: () => activeTool,
+        getHeldMode: () => heldMode, // WeaponToolStances uses this so a holstered weapon cannot keep applying its idle body-yaw stance.
         refreshActionBar,
         setActiveTool,
         isDevMode: () => s_devMode,
