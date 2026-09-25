@@ -1,0 +1,43 @@
+name: Mounted Climb Regression
+
+on:
+  push:
+    paths:
+      - 'docs/js/climb-system.js'
+      - 'docs/js/mount-system.js'
+      - 'docs/game.js'
+      - 'docs/index.html'
+      - 'docs/js/pixel-probe.js'
+      - 'scripts/test-mounted-climb-exclusion.js'
+      - 'scripts/test-mounted-climb-leap.js'
+      - '.github/workflows/mounted-climb-regression.yml'
+  pull_request:
+    paths:
+      - 'docs/js/climb-system.js'
+      - 'docs/js/mount-system.js'
+      - 'docs/game.js'
+      - 'docs/index.html'
+      - 'docs/js/pixel-probe.js'
+      - 'scripts/test-mounted-climb-exclusion.js'
+      - 'scripts/test-mounted-climb-leap.js'
+      - '.github/workflows/mounted-climb-regression.yml'
+  workflow_dispatch:
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax checks
+        run: |
+          node --check docs/js/climb-system.js
+          node --check docs/js/mount-system.js
+          node --check scripts/test-mounted-climb-exclusion.js
+          node --check scripts/test-mounted-climb-leap.js
+      - name: Mounted climb exclusion and heading regression
+        run: node scripts/test-mounted-climb-exclusion.js
+      - name: Mounted climb leap runtime regression
+        run: node scripts/test-mounted-climb-leap.js
