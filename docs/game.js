@@ -9553,7 +9553,8 @@
       let dialogueOpen       = false;
       let _dialogueWalker    = null;
       let _playerData        = null;  // set from hobunjiPlayerReady event
-      let playerAvatarRefreshGeneration = 0; // Guards async avatar rebuilds from attaching stale planes.
+      let playerAvatarRefreshGeneration = 0;
+      const playerAvatarRefreshDebug = { started: 0, committed: 0, superseded: 0, lastGeneration: 0, lastPatternedTintDelta: 0, lastRenderScopeDelta: 0, textureHasVariantCanvas: false }; // Mobile-visible proof of which woven render actually became the live player avatar. // Guards async avatar rebuilds from attaching stale planes.
       // Set at the end of refreshPlayerAvatar() — the world-avatar equivalent
       // of a dialogue portrait's canvas/profile, kept around so
       // _tickPlayerPortraitLife can cheaply re-render just the front texture
@@ -12650,6 +12651,7 @@
       // World-space blink/breathing/default-expression refresh for walking
       // avatars (with distance-scaled refresh rates) now lives in
       // js/world-portrait-life.js.
+      window.__playerAvatarRefreshDebug = () => ({ ...playerAvatarRefreshDebug, currentGeneration: playerAvatarRefreshGeneration, hasGroup: !!playerAvatarGroup, hasFrontCanvas: !!playerAvatarFrontCanvas, profileWovenDescriptors: Array.isArray(playerAvatarProfile?.bodyColors?.__hobunjiWovenClothing) ? playerAvatarProfile.bodyColors.__hobunjiWovenClothing.length : 0, textureHasVariantCanvas: !!playerAvatarGroup?.userData?.frontTexture?.image && playerAvatarGroup.userData.frontTexture.image !== playerAvatarFrontCanvas });
       window.WorldPortraitLife.init({
         getCurrentArea: () => currentArea,
         getPlayerTile: () => ({ x: player.x / TILE, y: player.y / TILE }),
@@ -16444,11 +16446,11 @@
           const hatlessFrontCanvas = document.createElement('canvas');
           hatlessFrontCanvas.width = hatlessFrontCanvas.height = frontCanvas.width;
           await window.NpcAvatarPreview.renderProfileToCanvas(hatlessFrontCanvas, hatlessProfile, staticRenderOptions);
-          if (refreshGeneration !== playerAvatarRefreshGeneration) return;
+          if (refreshGeneration !== playerAvatarRefreshGeneration) { playerAvatarRefreshDebug.superseded++; return; }
           const hatlessBackCanvas = document.createElement('canvas');
           hatlessBackCanvas.width = hatlessBackCanvas.height = backCanvas.width;
           await window.NpcAvatarPreview.renderProfileToCanvas(hatlessBackCanvas, hatlessProfile, { ...staticRenderOptions, portraitView: 'behind' });
-          if (refreshGeneration !== playerAvatarRefreshGeneration) return;
+          if (refreshGeneration !== playerAvatarRefreshGeneration) { playerAvatarRefreshDebug.superseded++; return; }
 
           // Diff through the SAME per-face variant transform (front: as-is;
           // back: flipX) the base texture pipeline itself applies (see
@@ -16467,7 +16469,7 @@
           // depthWrite would do nothing, since the hat pixels baked into the
           // body plane would still occlude normally regardless.
           window.PNGPlaneAvatar.refreshSinglePlaneAvatarModel(avatarGroup, hatlessFrontCanvas, { backCanvas: hatlessBackCanvas });
-          if (refreshGeneration !== playerAvatarRefreshGeneration) return;
+          if (refreshGeneration !== playerAvatarRefreshGeneration) { playerAvatarRefreshDebug.superseded++; return; }
 
           const assembly = avatarGroup.children[0];
           if (!assembly) return;
@@ -16545,6 +16547,11 @@
       async function refreshPlayerAvatar() {
         if (!_playerData || !window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
         const refreshGeneration = ++playerAvatarRefreshGeneration;
+        playerAvatarRefreshDebug.started++;
+        playerAvatarRefreshDebug.lastGeneration = refreshGeneration;
+        const weaveBefore = window.__clothingWeavingDebug?.()?.portraitPatterns || {};
+        const patternedBefore = Number(weaveBefore.patternedTintCalls) || 0;
+        const scopesBefore = Number(weaveBefore.renderScopes) || 0;
         // Every input playerAttachmentAnchor()/_playerAvatarBodyMaterials()
         // memoize (species/gender, playerAvatarModelHeight, playerToolBaseY,
         // the avatar mesh subtree) is about to be replaced below, so their
@@ -16584,15 +16591,15 @@
         // model stuck with its eyes shut until the next gear/cosmetic change
         // happens to trigger a fresh bake.
         await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile, staticRenderOptions);
-        if (refreshGeneration !== playerAvatarRefreshGeneration) return;
+        if (refreshGeneration !== playerAvatarRefreshGeneration) { playerAvatarRefreshDebug.superseded++; return; }
         const headCanvas = document.createElement('canvas'); // Used by the neck rig to locate the visible base head from its alpha centroid.
         headCanvas.width = headCanvas.height = PORTRAIT_SIZE;
         await window.NpcAvatarPreview.renderProfileToCanvas(headCanvas, profile, { ...staticRenderOptions, onlyHeadSprite: true });
-        if (refreshGeneration !== playerAvatarRefreshGeneration) return;
+        if (refreshGeneration !== playerAvatarRefreshGeneration) { playerAvatarRefreshDebug.superseded++; return; }
         const backCanvas = document.createElement('canvas');
         backCanvas.width = backCanvas.height = PORTRAIT_SIZE;
         await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { ...staticRenderOptions, portraitView: 'behind' });
-        if (refreshGeneration !== playerAvatarRefreshGeneration) return;
+        if (refreshGeneration !== playerAvatarRefreshGeneration) { playerAvatarRefreshDebug.superseded++; return; }
         const avatarGroup = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(
           THREE, frontCanvas,
           { backCanvas, headCanvas, profile, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0, alphaTest: avatarCfg.worldAlphaTest ?? 0.01, neckRig: true }
@@ -16667,6 +16674,11 @@
         playerAvatarGroup = avatarGroup;
         playerAvatarFrontCanvas = frontCanvas;
         playerAvatarProfile = profile;
+        const weaveAfter = window.__clothingWeavingDebug?.()?.portraitPatterns || {};
+        playerAvatarRefreshDebug.committed++;
+        playerAvatarRefreshDebug.lastPatternedTintDelta = Math.max(0, (Number(weaveAfter.patternedTintCalls) || 0) - patternedBefore);
+        playerAvatarRefreshDebug.lastRenderScopeDelta = Math.max(0, (Number(weaveAfter.renderScopes) || 0) - scopesBefore);
+        playerAvatarRefreshDebug.textureHasVariantCanvas = !!avatarGroup?.userData?.frontTexture?.image && avatarGroup.userData.frontTexture.image !== frontCanvas; // PNGPlaneAvatar intentionally copies the committed portrait into a texture-owned variant canvas.
         // Shoulder-pet x-ray presentation is retired: hats remain baked into the ordinary portrait and occlude naturally.
         // Procedural feet attach directly under playerMesh (floor-anchored,
         // Y=0) as a sibling of avatarGroup (offset up by avatarHeight/2), not
@@ -25478,6 +25490,10 @@
         const filteredLog = window.__debugLogMatchesFilter
           ? rawLog.filter(e => window.__debugLogMatchesFilter(e, filter))
           : rawLog;
+        const weavingDiagnostics = (filter === 'all' || filter === 'cat:render')
+          && window.DebugCategories?.isEnabled?.('render') !== false
+          ? window.__weavingRenderDiagnosticsText?.()
+          : '';
         const lines = [
           'Tropical Trench Farm Debug Report',
           ...(filter !== 'all' ? [`Debug filter: ${filter} (${filteredLog.length}/${rawLog.length} entries)`] : []),
@@ -25491,6 +25507,7 @@
           `Calendar: ${window.CalendarSystem.formatCalendarDate()} (raw day ${calendar.day}), ${window.FormatUtils.formatClock(window.CalendarSystem.getHour())}, ${calendar.weather}`,
           `Tool/action: ${window.FormatUtils.toolName(activeTool)} / ${window.FormatUtils.actionName(activeAction)}`,
           `Player: x${player.x.toFixed(0)} y${player.y.toFixed(0)}`,
+          ...(weavingDiagnostics ? ['', ...String(weavingDiagnostics).split('\n')] : []),
           '--- raw log ---',
           ...filteredLog.map(e => `[${e.t}] [${e.lvl}] ${e.msg}`)
         ];
