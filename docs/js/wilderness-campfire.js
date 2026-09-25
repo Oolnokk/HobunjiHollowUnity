@@ -256,10 +256,24 @@
     ];
   }
 
-  function doSave() {
+  async function doSave() {
     recordDebug('manual-save');
+    const checkpoints = window.HobunjiSaveCheckpoints; // Campfire saves use the same integrity guard/recovery checkpoint path as the pause-menu manual save.
+    if (typeof checkpoints?.saveManual === 'function') {
+      let result = await checkpoints.saveManual({ reason: 'campfire-manual-save' });
+      if (!result.ok && result.needsConfirmation) {
+        const warning = result.warning || result.error || 'This save looks destructive.';
+        if (confirm(`This campfire save was blocked because ${warning}. Save it anyway?`)) {
+          result = await checkpoints.saveManual({ reason: 'campfire-manual-save-confirmed', force: true });
+        }
+      }
+      if (result.ok) deps.showToast('💾 Game saved.', true);
+      else deps.showToast('Save blocked: ' + (result.error || result.warning || 'unknown save error'), false);
+      return result;
+    }
     deps.persist?.();
     deps.showToast('💾 Game saved.', true);
+    return { ok: true, legacyFallback: true };
   }
 
   function doCook() {
