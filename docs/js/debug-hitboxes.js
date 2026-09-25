@@ -124,7 +124,7 @@
 
   // Projects all twelve Box3 edges through the live camera. This is the
   // actual portrait-derived combat volume, not a flat proxy at tile height.
-  function _drawDebugPoint3D(point, color, label, radius = 6) {
+  function _drawDebugPoint3D(point, color, label, radius = 6, labelOffsetY = 0) {
     if (!point) return;
     const projected = deps.worldToOverlay(point.x, point.y, point.z);
     if (!projected.visible || ![projected.x, projected.y].every(Number.isFinite)) return;
@@ -145,10 +145,10 @@
     const width = octx.measureText(label).width;
     octx.globalAlpha = 0.82;
     octx.fillStyle = '#070b12';
-    octx.fillRect(projected.x + 8, projected.y - 18, width + 6, 15);
+    octx.fillRect(projected.x + 8, projected.y - 18 + labelOffsetY, width + 6, 15);
     octx.globalAlpha = 1;
     octx.fillStyle = color;
-    octx.fillText(label, projected.x + 11, projected.y - 5);
+    octx.fillText(label, projected.x + 11, projected.y - 5 + labelOffsetY);
     octx.restore();
   }
 
@@ -182,14 +182,14 @@
     const state = _activeShoulderPetAttachmentSnapshot();
     if (!state) return;
     _drawDebugSegment3D(state.perch, state.grip, '#ffffff', false, 2.5, 0.95);
-    _drawDebugPoint3D(state.perch, DEBUG_SHOULDER_PERCH_COLOR, 'PERCH');
-    _drawDebugPoint3D(state.grip, DEBUG_SHOULDER_GRIP_COLOR, 'GRIP');
+    _drawDebugPoint3D(state.perch, DEBUG_SHOULDER_PERCH_COLOR, 'PERCH', 9, -7); // Larger cyan ring stays visible even when the grip is perfectly coincident.
+    _drawDebugPoint3D(state.grip, DEBUG_SHOULDER_GRIP_COLOR, 'GRIP', 5, 10); // Smaller magenta ring nests inside the perch marker instead of hiding it.
     const midpoint = {
       x: (state.perch.x + state.grip.x) * 0.5,
       y: (state.perch.y + state.grip.y) * 0.5,
       z: (state.perch.z + state.grip.z) * 0.5,
     };
-    _drawDebugPoint3D(midpoint, '#ffffff', `error ${state.error.toFixed(5)}u`, 2);
+    _drawDebugPoint3D(midpoint, '#ffffff', `error ${state.error.toFixed(5)}u`, 2, 27);
   }
 
   function _drawDebugBox3(hitbox, color) {
