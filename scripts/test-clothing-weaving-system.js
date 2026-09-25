@@ -272,7 +272,7 @@ const compatibilityRuntimeRegression = (async () => {
         ok: true,
         json: async () => ({
           slot: 'torso',
-          parts: { torso: { layers: { back: { image: { url: './assets/cosmetics/runtime_probe_cloth.png' } } } },
+          parts: { torso: { layers: { back: { image: { url: './assets/cosmetics/runtime_probe_cloth.png' } } } } },
         }),
       };
     }
