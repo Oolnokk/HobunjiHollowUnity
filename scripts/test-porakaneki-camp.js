@@ -438,14 +438,14 @@ function hunterDebug(api, zoneId, campId, index) {
   // few tiles across an old chunk boundary cannot make it disappear like a
   // ghost. Pick a direction that stays inside the 96x96 test map.
   const direction = materialized.x < 48 ? 1 : -1;
-  combatDeps.player.x = (materialized.x + direction * 13) * combatDeps.TILE;
+  combatDeps.player.x = (materialized.x + direction * 19) * combatDeps.TILE;
   combatDeps.player.y = materialized.y * combatDeps.TILE;
   contextWindow.BanditCamps.updateCampBanners(0.21);
   materialized = hunterDebug(api, currentArea, materializedCamp.id, materializedIndex);
   assert.equal(materialized.fullSimulation, true, 'already-live resident remains detailed between enter and release radii');
   assert.equal(materialized.visible, true, 'hysteresis does not blink the portrait off at an arbitrary chunk boundary');
 
-  combatDeps.player.x = (materialized.x + direction * 16.5) * combatDeps.TILE;
+  combatDeps.player.x = (materialized.x + direction * 24.5) * combatDeps.TILE;
   combatDeps.player.y = materialized.y * combatDeps.TILE;
   contextWindow.BanditCamps.updateCampBanners(0.21);
   let collapsed = hunterDebug(api, currentArea, materializedCamp.id, materializedIndex);
