@@ -136,6 +136,9 @@ assert.match(gameSource, /target\.rotY\)\) this\.applyFacingDeadzone/, 'stationa
 assert.match(gameSource, /walker\.applyFacingDeadzone\(npcTargetRot/, 'dialogue facings use the shared clamp');
 assert.match(gameSource, /facing:\s*0,\s*groupRot:\s*0,\s*pngRot:\s*0,\s*perpState:\s*\{\}/,
   'generic combat creatures really do enter snap mode with a fresh empty perpState');
+assert.match(gameSource,
+  /const shoulderPetBypassesPlaneDeadzone = c\.stableRole === 'shoulderPet';[\s\S]{0,900}c\.pngRot = c\.groupRot;[\s\S]{0,900}else if \(window\.PerpRotation\.CREATURE_PLANE_ROT_MODE === 'snap'\)/,
+  'perched shoulder pets bypass the free-standing creature PNG deadzone while ordinary creatures retain it');
 
 const banditSource = fs.readFileSync('docs/js/combat/combat-bandit.js', 'utf8');
 assert.match(banditSource, /facing:\s*0,\s*groupRot:\s*0,\s*pngRot:\s*0,\s*perpState:\s*\{\}/,
