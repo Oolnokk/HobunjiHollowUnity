@@ -7516,24 +7516,41 @@
           if (_petLayeringPet.avatarRef?.group?.userData) delete _petLayeringPet.avatarRef.group.userData.hobunjiShoulderPetLayering;
           for (const m of [_petLayeringPet.avatarRef?.frontPlane?.material, _petLayeringPet.avatarRef?.backPlane?.material]) _setLayerDepthWrite(m, true);
           for (const mesh of [_petLayeringPet.avatarRef?.frontPlane, _petLayeringPet.avatarRef?.backPlane]) if (mesh) mesh.renderOrder = PLAYER_FRONT_PLANE_RENDER_ORDER;
+          window.HobunjiShoulderSplitLayerParity?.syncAvatar?.(_petLayeringPet.avatarRef); // Restore split overlays to the detached pet's ordinary depth state immediately.
         }
 
         _petLayeringActive = active;
         _petLayeringPet = nextPet;
-        _setLayerDepthWrite(_playerAvatarFrontMaterial, true);
-        _setLayerDepthWrite(_playerAvatarBackMaterial, true);
-        _restorePlayerBodyRenderOrder();
         setPlayerHatXray(false);
 
-        if (!active || !pet) return;
+        if (!active || !pet) {
+          _setLayerDepthWrite(_playerAvatarFrontMaterial, true);
+          _setLayerDepthWrite(_playerAvatarBackMaterial, true);
+          _restorePlayerBodyRenderOrder();
+          return;
+        }
 
-        for (const m of [pet.avatarRef?.frontPlane?.material, pet.avatarRef?.backPlane?.material]) _setLayerDepthWrite(m, true);
-        for (const mesh of [pet.avatarRef?.frontPlane, pet.avatarRef?.backPlane]) if (mesh) mesh.renderOrder = PLAYER_FRONT_PLANE_RENDER_ORDER;
+        const inwardFrontPose = pet.__hobunjiShoulderFacingInward === true; // 180° local-Y state from _shoulderPetSurfaceTransform; this pose belongs visually in front of the player.
+        const playerDrawsOnTop = !inwardFrontPose; // Outward/0° stays behind the player; inward/180° draws in front.
+        _setLayerDepthWrite(_playerAvatarFrontMaterial, false);
+        _setLayerDepthWrite(_playerAvatarBackMaterial, false);
+        _setPlayerBodyRenderOrder(
+          playerDrawsOnTop ? PLAYER_OVER_SHOULDER_PET_RENDER_ORDER : PLAYER_BACK_PLANE_RENDER_ORDER,
+        );
+
+        for (const m of [pet.avatarRef?.frontPlane?.material, pet.avatarRef?.backPlane?.material]) _setLayerDepthWrite(m, false);
+        for (const mesh of [pet.avatarRef?.frontPlane, pet.avatarRef?.backPlane]) if (mesh) mesh.renderOrder = SHOULDER_PET_PLANE_RENDER_ORDER;
+        window.HobunjiShoulderSplitLayerParity?.syncAvatar?.(pet.avatarRef); // Propagate the no-depth-write state to coplanar split/masked overlays before render-list draw.
+
         if (pet.avatarRef?.group?.userData) {
           pet.avatarRef.group.userData.hobunjiShoulderPetLayering = {
             xrayEnabled: false,
-            depthMode: 'ordinary-depth',
-            recentChange: 'Shoulder-pet x-rays retired; authored inward/outward rotation now determines natural front/behind occlusion.',
+            depthMode: 'whole-sprite-no-depth-write',
+            inwardFrontPose,
+            playerDrawsOnTop,
+            petRenderOrder: SHOULDER_PET_PLANE_RENDER_ORDER,
+            playerRenderOrder: playerDrawsOnTop ? PLAYER_OVER_SHOULDER_PET_RENDER_ORDER : PLAYER_BACK_PLANE_RENDER_ORDER,
+            recentChange: 'Shoulder pet and player keep depth testing against the world but do not depth-write into each other; 0°/180° pose state alone chooses whole-sprite order.',
           };
         }
       }
