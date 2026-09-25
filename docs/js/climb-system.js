@@ -28,6 +28,7 @@
   }
   const climbSafetyDebug = {
     lastBlockReason: null, lastBlockRideState: 'none', lastBlockAt: 0,
+    lastWallFacingSource: null, lastWallFacingAngle: null, lastWallFacingCardinal: null,
     lastFocusType: null, lastFocusId: null, lastFocusPoint: null,
     lastFocusDistanceWorld: null, lastFocusAt: 0, lastJumpMode: null,
   }; // Used by Pixel Probe and the interaction-ray overlay on mobile.
@@ -60,7 +61,12 @@
   const CLIMB_MAX_WALL_TILES = 4;
   function getWallClimbTarget() {
     const player = deps.player;
-    const dir = deps.facingCardinal(player.angle);
+    const mountHeading = window.Mounts?.rideState === 'mounted' ? Number(window.Mounts?.heading) : NaN; // Used below so cliff targeting follows the carrier while rider look remains independent.
+    const wallFacingAngle = Number.isFinite(mountHeading) ? mountHeading : player.angle; // Used by the shared cardinal wall scan for mounted and on-foot climbing.
+    const dir = deps.facingCardinal(wallFacingAngle);
+    climbSafetyDebug.lastWallFacingSource = Number.isFinite(mountHeading) ? 'mount' : 'player';
+    climbSafetyDebug.lastWallFacingAngle = wallFacingAngle;
+    climbSafetyDebug.lastWallFacingCardinal = dir?.name || `${dir?.x ?? 0},${dir?.y ?? 0}`;
     const grid = deps.getActiveGrid();
     const aC = deps.getActiveCols(), aR = deps.getActiveRows();
     const startCol = Math.floor(player.x / deps.TILE), startRow = Math.floor(player.y / deps.TILE);
