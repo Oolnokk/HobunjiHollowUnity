@@ -28,6 +28,7 @@
   const PROVOKE_SECONDS = 45; // Temporary same-camp self-defense window after an assault without permanent Favor loss.
   const DORMANT_ENTITY_RELEASE_S = 3; // Grace period before a hidden off-radius/sleeping hunter's real entity is torn down.
   const MIN_HUNTING_CAMPS_PER_ZONE = 1; // Hard ecology floor: every wilderness zone keeps at least one ordinary Porakaneki hunting camp.
+  const SCHEDULER_ID = 'porakaneki-camps-runtime'; // Stable shared-frame owner; production no longer depends on the obsolete BanditCamps banner tick being called.
 
   let combatDeps = null; // Captured from BanditCombat.init; movement/scenes/terrain/tools/hostileObjects.
   let schedulingDeps = null; // Captured from NpcScheduling.init; live named-chief walker.
@@ -53,6 +54,8 @@
     greetings: 0, // Friendly Porakaneki greetings shown this session.
     kills: 0, // Player-attributed Porakaneki deaths charged to tribe Favor.
     ecology: { chunk: null, porakaneki: 0, bandits: 0, predators: 0, prey: 0, humanoidTargets: 0, predatorTargets: 0 }, // Copyable mobile debug summary of the currently observed stream-chunk ecology pass.
+    updateTicks: 0, // Counts actual 5 Hz planner updates so a dead runtime cadence is visible in snapshots.
+    tickOwner: 'uninstalled', // 'RuntimeFrameScheduler' in shipped gameplay, legacy BanditCamps wrapper only in isolated tests/tools.
   };
 
   const num = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
@@ -1503,6 +1506,7 @@
     coarseAccum += Math.max(0, num(dt, 0));
     if (tickAccum < TICK_INTERVAL_S) return;
     const step = tickAccum; tickAccum = 0;
+    state.updateTicks += 1;
     const coarseInterval = Math.max(1, num(cfg?.behavior?.offChunkTickSeconds, 4));
     const coarseStep = coarseAccum >= coarseInterval ? coarseAccum : 0;
     if (coarseStep) { coarseAccum = 0; state.coarseTicks += 1; }
@@ -1543,6 +1547,18 @@
     const wrapped = function porakanekiTick(dt) { update(dt); return original(dt); };
     wrapped.__porakanekiCampWrapped = true;
     api.updateCampBanners = wrapped;
+    return true;
+  }
+  function installRuntimeTick() {
+    if (!window.RuntimeFrameScheduler?.register) return false;
+    window.RuntimeFrameScheduler.register(SCHEDULER_ID, frameContext => {
+      update(Math.max(0, num(frameContext?.deltaMs, 0)) / 1000);
+    }, {
+      phase: 'pre-game',
+      owner: 'PorakanekiCamps',
+      description: 'Updates abstract Porakaneki residents, den-hunting parties, LOD promotion, and local ecology before shared hostile AI runs.',
+    });
+    state.tickOwner = 'RuntimeFrameScheduler';
     return true;
   }
   function watchNamespace(name, installer) {
@@ -1633,7 +1649,7 @@
       };
     }
     return {
-      version: 7,
+      version: 8,
       configReady: !!cfg,
       localesReady: !!smallLocaleDef && !!chiefLocaleDef,
       combatDepsReady: !!combatDeps,
@@ -1651,6 +1667,8 @@
       totalSmallCamps,
       totalActiveCamps: totalSmallCamps + (state.chiefZoneId && state.zones.get(state.chiefZoneId)?.chiefCamp ? 1 : 0),
       totalGeneratedResidents,
+      updateTicks: state.updateTicks,
+      tickOwner: state.tickOwner,
       chiefPlannerAgenda: !!chiefWalker()?.rec?.agenda?.some?.(beat => beat.id === 'porakaneki_day'),
       zones,
       stamps: state.stamps,
@@ -1664,7 +1682,7 @@
   }
 
   window.PorakanekiCamps = Object.freeze({
-    version: 7,
+    version: 8,
     update,
     ensureWorldCamps,
     ensureCampStamp: ensureWorldCamps,
@@ -1677,13 +1695,16 @@
     formatDebug: () => {
       const d = debugSnapshot();
       const zoneBits = Object.entries(d.zones).map(([zoneId, z]) => `${zoneId}:${z.smallCampCount}${z.chiefActive ? '+CHIEF' : ''}`).join(' ');
-      return `Porakaneki camps: v7 season=${d.season} chief=${d.chiefZoneId || '-'} area=${d.currentArea || '-'} small=${d.totalSmallCamps} active=${d.totalActiveCamps} residents=${d.totalGeneratedResidents} favor=${d.favor ?? '-'} AOS=${d.attackOnSight} lod=${d.fullSimulationRadiusTiles}/${d.fullSimulationReleaseRadiusTiles} player=${d.playerTile ? `${d.playerTile.col},${d.playerTile.row}` : '-'} ecology=${d.ecology.chunk || '-'}:${d.ecology.porakaneki}/${d.ecology.bandits}/${d.ecology.predators}/${d.ecology.prey} targets=${d.ecology.humanoidTargets}/${d.ecology.predatorTargets} mats=${d.materializations} coarse=${d.coarseTicks} greet=${d.greetings} kills=${d.kills} zones=[${zoneBits}] reason=${d.lastReason}`;
+      return `Porakaneki camps: v8 ticks=${d.updateTicks} owner=${d.tickOwner} season=${d.season} chief=${d.chiefZoneId || '-'} area=${d.currentArea || '-'} small=${d.totalSmallCamps} active=${d.totalActiveCamps} residents=${d.totalGeneratedResidents} favor=${d.favor ?? '-'} AOS=${d.attackOnSight} lod=${d.fullSimulationRadiusTiles}/${d.fullSimulationReleaseRadiusTiles} player=${d.playerTile ? `${d.playerTile.col},${d.playerTile.row}` : '-'} ecology=${d.ecology.chunk || '-'}:${d.ecology.porakaneki}/${d.ecology.bandits}/${d.ecology.predators}/${d.ecology.prey} targets=${d.ecology.humanoidTargets}/${d.ecology.predatorTargets} mats=${d.materializations} coarse=${d.coarseTicks} greet=${d.greetings} kills=${d.kills} zones=[${zoneBits}] reason=${d.lastReason}`;
     },
     __test: Object.freeze({ MIN_HUNTING_CAMPS_PER_ZONE, isSleepingHour, chunkOf, streamChunkSizeTiles, streamChunkKeysForSite, streamChunkOfTile, ecologyRole, nearestEcologyTarget, activePlayerChunkEcology, updateChunkEcology, fullSimulationRadiusTiles, fullSimulationReleaseRadiusTiles, simulationDistanceToPlayer, weaponRoll, currentSeasonName, desiredChiefZone, smallCampCountForZone, smallResidentCount, denExteriorPoint, chooseNextPartyDen, ensureHuntingParty, updateHuntingParty, speakOverheadFromHunter, speakOverheadFromWalker }),
   });
 
   watchNamespace('BanditCombat', installBanditCombat);
   watchNamespace('NpcScheduling', installScheduling);
-  watchNamespace('BanditCamps', installTick);
+  if (!installRuntimeTick()) {
+    state.tickOwner = 'BanditCamps-fallback';
+    watchNamespace('BanditCamps', installTick);
+  }
   loadConfig();
 })();
