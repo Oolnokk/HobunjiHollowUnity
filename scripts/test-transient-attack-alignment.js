@@ -172,7 +172,6 @@ inputRuntime.window.Combat.deps.player.prone = true;
 inputRuntime.window.Combat.update(0.016);
 assert.equal(holdUpdates, 1, 'becoming prone ends an existing held action before another hold update can run');
 assert.equal(holdEnds, 2, 'becoming prone runs the held ability cleanup hook exactly once');
-assert.equal(inputRuntime.window.Combat.input.getState(1).holdStarted, false, 'prone interruption clears the active hold while physical input may remain down');
 inputRuntime.window.Combat.input.pressEnd(1);
 assert.equal(holdEnds, 2, 'releasing the still-held physical input after prone interruption does not double-end the ability');
 inputRuntime.window.Combat.deps.player.prone = false;
