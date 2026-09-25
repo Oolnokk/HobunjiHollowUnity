@@ -63,6 +63,8 @@ assert(bridge.includes('hobunjiSaveStartupFailure'), 'onboarding bridge has an e
 assert(bridge.includes('safeOriginalInit'), 'onboarding bridge catches failures thrown by the onboarding renderer itself');
 assert(bridge.includes('STARTUP_WATCHDOG_MS'), 'onboarding bridge has a watchdog for a preparation promise that never renders any UI');
 assert(bridge.includes('openRecoveryModal'), 'emergency onboarding failure surface exposes Save Recovery before normal onboarding exists');
+assert(read('docs/js/save-checkpoint-manager.js').includes('data-recovery-reselect-folder'), 'recovery modal exposes a fresh-folder retry when filesystem reads fail');
+assert(read('docs/js/save-checkpoint-manager.js').includes('Could not read this checkpoint'), 'recovery UI distinguishes read failure from a genuinely missing checkpoint');
 assert(!bridge.includes('location.reload'), 'in-place onboarding restore bridge never reloads the site');
 
 assert(emptyBootstrap.includes('empty-folder-connected-awaiting-first-save'), 'a new empty folder is a valid first-run save destination');
@@ -85,6 +87,10 @@ assert(core.includes('manifest.json: expected'), 'manifest entity counts detect 
 assert(core.includes("campfire: 'campfire.json'"), 'folder recovery whitelist keeps Campfire Save separate from Manual Save');
 assert(core.includes("if (!_handle) return null; // Recovery history is independent of canonical-save health"), 'recovery reads remain available even when canonical folder inspection is in an error state');
 assert(!/async function readRecoveryCheckpoint\(slot\)[\s\S]{0,160}_state !== 'ready'/.test(core), 'recovery checkpoint reads are not gated on canonical folder ready state');
+assert(core.includes('async function chooseRecoveryFolder()'), 'folder core exposes a recovery-only fresh folder picker');
+assert(core.includes("id: 'hobunji-primary-save-recovery'"), 'recovery picker uses its own remembered picker id');
+assert(!/async function chooseRecoveryFolder\(\)[\s\S]{0,900}inspectConnectedFolder\(/.test(core), 'recovery-only folder selection does not inspect broken canonical files before recovery');
+assert(!/async function chooseRecoveryFolder\(\)[\s\S]{0,700}startIn\s*=\s*_handle/.test(core), 'recovery picker never dereferences the stale remembered handle as startIn');
 assert(core.includes('_syncPromise'), 'existing core still serializes folder writes within a tab');
 assert(core.includes("const PATTERNS_DIR = 'patterns'"), 'primary folder save reserves a portable patterns directory');
 assert(core.includes('async function mirrorPatternFile'), 'folder core can write custom motif PNG bytes');
