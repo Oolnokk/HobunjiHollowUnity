@@ -66,6 +66,29 @@
         </div>
       </div>
       <div class="section">
+        <div class="row" style="justify-content:space-between;align-items:center"><h2 style="margin:0">Colossal horizon terrain</h2><label class="pill" style="display:flex;gap:5px;align-items:center"><input id="horizonEnabled" type="checkbox"> enabled</label></div>
+        <p class="muted" style="margin:6px 0">One permanent, extremely low-poly landmark beyond a map edge. These meshes skip shadows, distance/frustum culling, and scene fog so a huge silhouette can remain visible from anywhere in the zone.</p>
+        <div class="g2">
+          <div class="field"><label>Landform preset</label><select id="horizonPreset"><option value="none">None</option><option value="westernMountainChain">Humongous mountain chain</option><option value="northernPlateau">Humongous plateau</option></select></div>
+          <div class="field"><label>Edge</label><select id="horizonSide"><option value="north">North</option><option value="east">East</option><option value="south">South</option><option value="west">West</option></select></div>
+        </div>
+        <div class="g2">
+          <div class="field"><label>Height (world)</label><input id="horizonHeight" type="number" min="8" max="140" step="1"></div>
+          <div class="field"><label>Clearance from edge (world)</label><input id="horizonDistance" type="number" min="0" max="80" step="1"></div>
+        </div>
+        <div class="g2">
+          <div class="field"><label>Landform depth (world)</label><input id="horizonDepth" type="number" min="8" max="120" step="1"></div>
+          <div class="field"><label>Edge span scale</label><input id="horizonSpan" type="number" min="0.75" max="2" step="0.05"></div>
+        </div>
+        <div class="field"><label>Low-poly segments along horizon</label><input id="horizonSegments" type="number" min="3" max="16" step="1"></div>
+        <div class="row" style="margin-top:6px;flex-wrap:wrap">
+          <button class="sec" id="horizonWestPreset">🏔 West Slope mountains</button>
+          <button class="sec" id="horizonNorthPreset">▰ Northern Cliffs plateau</button>
+          <button class="bad" id="horizonClear">Clear</button>
+        </div>
+        <div id="horizonStats" class="muted" style="margin-top:6px;line-height:1.35">No colossal horizon terrain.</div>
+      </div>
+      <div class="section">
         <div class="row" style="justify-content:space-between;align-items:center"><h2 style="margin:0">Protected texture stretch</h2><label class="pill" style="display:flex;gap:5px;align-items:center"><input id="stretchEnabled" type="checkbox"> authored</label></div>
         <p class="muted" style="margin:6px 0">Protects a thin source-image margin so baked edge detail stays near a fixed world thickness while the center absorbs large stretch. This authoring block is off by default.</p>
         <div class="g2">
