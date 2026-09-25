@@ -47,7 +47,7 @@ let genotypeRoll = 0; // Used to prove a relocated bloodline survives cache inva
 let rngState = 0x12345678; // Deterministic relocation sampling gives this regression stable behavior.
 let forceRelocationFallback = false; // Forces the 700 random placement samples to fail so the exhaustive fallback scan is behaviorally covered.
 const rnd = () => forceRelocationFallback ? 0 : ((rngState = (Math.imul(rngState,1664525)+1013904223)>>>0) / 0x100000000);
-const storage = new Map(); // Browser localStorage stand-in used to verify same-year den persistence.
+const storage = new Map([['hobunjiSaveMeta', JSON.stringify({ worlds:[{ id:'world-den-test' }] })]]); // Portable world metadata stand-in used to verify same-year/cloud-save-compatible den persistence.
 const toasts = [];
 const logs = [];
 const visualSync = [];
@@ -222,7 +222,11 @@ const restoredGenotype = windowStub.WildlifeSpawn.getOrMakeDenGenotype(cavernMap
 assert.deepEqual(restoredGenotype,firstGenotype,'relocated family genotype persists through cache invalidation/reload-style restoration');
 assert.equal(genotypeRoll,2,'restoring relocated family does not reroll it');
 
-assert(storage.size>0,'den turnover state is persisted per world');
+const savedMeta = JSON.parse(storage.get('hobunjiSaveMeta'));
+const savedTurnover = savedMeta.worlds.find(world=>world.id==='world-den-test')?.denTurnover;
+assert.equal(savedTurnover?.year,3,'den turnover is stored inside the portable active-world save metadata');
+assert(savedTurnover?.records?.length===1,'portable world metadata retains the den generation record');
+assert(![...storage.keys()].some(key=>key.startsWith('hobunjiDenTurnoverV1:')),'den turnover must not escape the cloud/local-folder snapshot boundary into a device-only storage key');
 assert(logs.some(entry=>/\[den-turnover\] collapsed/.test(entry.message)));
 assert(logs.some(entry=>/\[den-turnover\] relocated/.test(entry.message)));
 
