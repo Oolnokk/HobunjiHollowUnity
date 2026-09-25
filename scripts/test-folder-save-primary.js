@@ -88,9 +88,12 @@ assert(core.includes("campfire: 'campfire.json'"), 'folder recovery whitelist ke
 assert(core.includes("if (!_handle) return null; // Recovery history is independent of canonical-save health"), 'recovery reads remain available even when canonical folder inspection is in an error state');
 assert(!/async function readRecoveryCheckpoint\(slot\)[\s\S]{0,160}_state !== 'ready'/.test(core), 'recovery checkpoint reads are not gated on canonical folder ready state');
 assert(core.includes('async function chooseRecoveryFolder()'), 'folder core exposes a recovery-only fresh folder picker');
-assert(core.includes("id: 'hobunji-primary-save-recovery'"), 'recovery picker uses its own remembered picker id');
+assert(core.includes("window.showDirectoryPicker({ mode: 'readwrite' })"), 'recovery picker uses the same minimal directory-picker invocation as the normal folder chooser');
 assert(!/async function chooseRecoveryFolder\(\)[\s\S]{0,900}inspectConnectedFolder\(/.test(core), 'recovery-only folder selection does not inspect broken canonical files before recovery');
 assert(!/async function chooseRecoveryFolder\(\)[\s\S]{0,700}startIn\s*=\s*_handle/.test(core), 'recovery picker never dereferences the stale remembered handle as startIn');
+assert(checkpoint.includes('function recoveryHandleNeedsReselect()'), 'recovery modal identifies unhealthy remembered handles before reading them');
+assert(checkpoint.indexOf('if (recoveryHandleNeedsReselect())') < checkpoint.indexOf('recovery = await recoveryChoices()'), 'recovery modal asks for a fresh handle before starting uncancellable filesystem reads');
+assert(checkpoint.includes('data-recovery-choose-fresh-folder'), 'recovery modal exposes a fresh-handle chooser before any stale-handle reads');
 assert(core.includes('_syncPromise'), 'existing core still serializes folder writes within a tab');
 assert(core.includes("const PATTERNS_DIR = 'patterns'"), 'primary folder save reserves a portable patterns directory');
 assert(core.includes('async function mirrorPatternFile'), 'folder core can write custom motif PNG bytes');
