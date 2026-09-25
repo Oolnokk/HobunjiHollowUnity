@@ -6,6 +6,7 @@ const fs = require('node:fs');
 
 const game = fs.readFileSync('docs/game.js', 'utf8'); // Verifies live dialogue staging, camera framing, and eye-contact ownership.
 const config = fs.readFileSync('docs/config/scratchbones-config.js', 'utf8'); // Verifies the authored ordinary-dialogue camera side angle.
+const weaponIdleYaw = fs.readFileSync('docs/js/weapon-idle-body-yaw-runtime.js', 'utf8'); // Verifies held weapon stance cannot add body yaw over dialogue facing.
 
 assert.match(
   game,
@@ -72,3 +73,11 @@ assert.match(
 );
 
 console.log('Dialogue presentation checks passed.');
+
+assert.match(
+  weaponIdleYaw,
+  /const dialogueOpen = !!global\.Combat\?\.deps\?\.isDialogueOpen\?\.\(\);[\s\S]{0,400}if \(!dialogueOpen && resolved\.active/,
+  'weapon idle body-yaw channel must be suppressed while dialogue owns exact body facing',
+);
+
+console.log('Dialogue weapon-yaw suppression check passed.');
