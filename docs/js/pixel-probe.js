@@ -1231,7 +1231,10 @@
       const sourceAgeMs = Number.isFinite(Number(shoulderAttachment.sourceCapturedAt))
         ? Math.max(0, performance.now() - Number(shoulderAttachment.sourceCapturedAt))
         : null;
-      lines.push(`Shoulder attachment: SOURCE=${fmtPoint(shoulderAttachment.sourceWorld)} PERCH=${fmtPoint(shoulderAttachment.perch)} GRIP=${fmtPoint(shoulderAttachment.grip)} source→perch=${Number.isFinite(Number(shoulderAttachment.sourcePerchError)) ? Number(shoulderAttachment.sourcePerchError).toFixed(6) + 'u' : '-'} perch→grip=${Number(shoulderAttachment.error || 0).toFixed(6)}u sourceCapture=${shoulderAttachment.sourceCaptureMode || '-'}${sourceAgeMs == null ? '' : ` age=${sourceAgeMs.toFixed(1)}ms`}`);
+      const petRootAgeMs = Number.isFinite(Number(shoulderAttachment.petRootCapturedAt))
+        ? Math.max(0, performance.now() - Number(shoulderAttachment.petRootCapturedAt))
+        : null;
+      lines.push(`Shoulder attachment: SOURCE=${fmtPoint(shoulderAttachment.sourceWorld)} PERCH=${fmtPoint(shoulderAttachment.perch)} GRIP=${fmtPoint(shoulderAttachment.grip)} PET_ROOT=${fmtPoint(shoulderAttachment.petRootWorld)} source→perch=${Number.isFinite(Number(shoulderAttachment.sourcePerchError)) ? Number(shoulderAttachment.sourcePerchError).toFixed(6) + 'u' : '-'} perch→grip=${Number(shoulderAttachment.error || 0).toFixed(6)}u root→grip=${Number.isFinite(Number(shoulderAttachment.petRootGripDistance)) ? Number(shoulderAttachment.petRootGripDistance).toFixed(6) + 'u' : '-'} sourceCapture=${shoulderAttachment.sourceCaptureMode || '-'}${sourceAgeMs == null ? '' : ` age=${sourceAgeMs.toFixed(1)}ms`} petRootCapture=${shoulderAttachment.petRootCaptureMode || '-'}${petRootAgeMs == null ? '' : ` age=${petRootAgeMs.toFixed(1)}ms`}`);
     }
     if (facingAtClick) {
       lines.push('');
