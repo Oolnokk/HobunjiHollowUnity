@@ -225,8 +225,15 @@
         }
         if (!authoredState.useLegacyCave) continue;
       }
-      if (den.mouthAnchor && den.mouthAnchor.x === col && den.mouthAnchor.y === row) continue; // Mouth exception applies only to the legacy cave shell, never to an explicitly authored furniture/custom collider.
       const w = den.w || 1, h = den.h || 1;
+      if (den.collapsed) {
+        // A cleared den loses its usable entrance after the player leaves:
+        // the shrunken cave facade remains visible, but the former doorway
+        // gap is no longer a walkable/enterable seam until relocation.
+        if (col >= den.x && col < den.x + w && row >= den.y && row < den.y + h) return true;
+        continue;
+      }
+      if (den.mouthAnchor && den.mouthAnchor.x === col && den.mouthAnchor.y === row) continue; // Mouth exception applies only to the legacy cave shell, never to an explicitly authored furniture/custom collider.
       if (col < den.x || col >= den.x + w || row < den.y || row >= den.y + h) continue;
       // Doorway gap carved into the south wall (30%-70% of the footprint's
       // width, on its last row) so the footprint box isn't fully solid with
