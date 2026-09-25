@@ -183,7 +183,7 @@ assert.equal(animalNpcState.screenViewPerspectiveDebug?.planeConvention, 'creatu
 
 const gameSource = fs.readFileSync('docs/game.js', 'utf8');
 assert.match(gameSource, /target\.rotY\)\) this\.applyFacingDeadzone/, 'stationary schedule facings use the shared clamp');
-assert.match(gameSource, /walker\.applyFacingDeadzone\(npcTargetRot/, 'dialogue facings use the shared clamp');
+assert.match(gameSource, /applyNpcDialogueFacingExact\(walker, npcTargetRot/, 'dialogue facings bypass the camera deadzone so NPCs face the player exactly');
 assert.match(gameSource, /facing:\s*0,\s*groupRot:\s*0,\s*pngRot:\s*0,\s*perpState:\s*\{\}/,
   'generic combat creatures really do enter snap mode with a fresh empty perpState');
 assert.match(gameSource,

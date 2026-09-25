@@ -200,6 +200,41 @@
     }
   }
 
+  function _escapeDebugHtml(value) {
+    return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function _weavingRenderDiagnosticsLines() {
+    let snapshot = null;
+    try { snapshot = window.__clothingWeavingDebug?.() || null; }
+    catch (error) { return [`Weaving diagnostics failed: ${error?.message || error}`]; }
+    if (!snapshot) return ['Weaving diagnostics: module not ready.'];
+    const p = snapshot.portraitPatterns || {};
+    const equipped = Array.isArray(snapshot.equipped) && snapshot.equipped.length
+      ? snapshot.equipped.map(item => `${item.slot || '?'}:${item.article || item.uid || '?'} woven=${item.woven ? 'yes' : 'no'}`).join(' | ')
+      : '(none)';
+    return [
+      '=== Weaving / player portrait ===',
+      `ready: equipment=${snapshot.equipmentReady ? 'yes' : 'no'} portraitHooks=${snapshot.portraitHooksInstalled ? 'yes' : 'no'}`,
+      `session: readyEvents=${p.sessionReadyEvents || 0} refreshAttempts=${p.sessionRefreshAttempts || 0} refreshes=${p.sessionRefreshes || 0} gearPrepare=${p.gearPreparePasses || 0}`,
+      `render: scopes=${p.renderScopes || 0} patternedTints=${p.patternedTintCalls || 0} compatibilityTints=${p.compatibilityTintCalls || 0} serialized=${p.serializedRenders || 0}`,
+      `cache: hits=${p.cacheHits || 0} misses=${p.cacheMisses || 0} retryRenders=${p.retryRenders || 0} size=${p.cacheSize || 0} pending=${p.pending || 0}`,
+      `hooks: repairAttempts=${p.hookRepairAttempts || 0} repairs=${p.hookRepairs || 0} gateReaders=${p.gateReaders || 0} writer=${p.gateWriterActive ? 'yes' : 'no'} waitingWriters=${p.gateWaitingWriters || 0}`,
+      `equipped: ${equipped}`,
+      (() => {
+        const a = window.__playerAvatarRefreshDebug?.();
+        return a
+          ? `playerCommit: started=${a.started || 0} committed=${a.committed || 0} superseded=${a.superseded || 0} gen=${a.lastGeneration || 0}/${a.currentGeneration || 0} wovenDescriptors=${a.profileWovenDescriptors || 0} patternedDelta=${a.lastPatternedTintDelta || 0} scopesDelta=${a.lastRenderScopeDelta || 0} textureVariant=${a.textureHasVariantCanvas ? 'yes' : 'NO'}`
+          : 'playerCommit: unavailable';
+      })(),
+    ];
+  }
+
+  function _weavingRenderDiagnosticsHtml() {
+    const lines = _weavingRenderDiagnosticsLines();
+    return lines.map((line, index) => `<span style="color:${index === 0 ? '#a3e635' : '#d1d5db'}">${_escapeDebugHtml(line)}</span>`).join('\n');
+  }
+
   function _renderDebugPanel() {
     const panel = document.getElementById('debugLog');
     if (!panel) return;
@@ -219,7 +254,7 @@
     const stuckToBottom = panel.scrollHeight - panel.scrollTop - panel.clientHeight < 16;
     const prevScrollTop = panel.scrollTop;
     const filter = window.__debugLogFilter || 'all';
-    panel.innerHTML = window.__farmDebugLog
+    const logHtml = window.__farmDebugLog
       .filter(e => categoryEnabled(e.cat || inferCategory(e.msg, e.lvl)))
       .filter(e => _matchesDebugFilter(e, filter))
       .map(e => {
@@ -228,11 +263,18 @@
           .replace(/fallback/gi, m => `<span style="color:#f87171;font-weight:bold">${m}</span>`);
         return `<span style="color:#6b7280">[${e.t}]</span> <span style="color:#64748b">[${e.cat || 'general'}]</span> <span style="color:${c}">${safe}</span>`;
       }).join('\n');
+    const weavingDiagnostics = categoryEnabled('render') && (filter === 'all' || filter === 'cat:render')
+      ? _weavingRenderDiagnosticsHtml()
+      : '';
+    panel.innerHTML = weavingDiagnostics
+      ? `${weavingDiagnostics}${logHtml ? '\n\n' : ''}${logHtml}`
+      : logHtml;
     panel.scrollTop = stuckToBottom ? panel.scrollHeight : prevScrollTop;
   }
 
   window._renderDebugPanel = _renderDebugPanel;
   window.__debugLogMatchesFilter = _matchesDebugFilter;
+  window.__weavingRenderDiagnosticsText = () => _weavingRenderDiagnosticsLines().join('\n'); // Shared with Copy so mobile reports include the synthetic Rendering snapshot, not only raw log entries.
   window.DebugCategories = Object.freeze({
     categories: DEBUG_CATEGORIES,
     infer: inferCategory,

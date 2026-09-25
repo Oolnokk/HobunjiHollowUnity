@@ -13,7 +13,7 @@ const wardrobeSource = read('docs/js/npc-furniture-wardrobe-bridge-v4.js'); // v
 const wardrobeEditorSource = read('docs/js/building-interior-npc-wardrobe-editor.js');
 const dialogueSource = read('docs/js/dialogue-content.js');
 const dialogueEditorState = read('docs/tools/dialogue-editor/dialogue-editor-state.js');
-const panelUiSource = read('docs/js/panel-ui.js');
+const panelUiSource = read('docs/js/panel-ui-core.js'); // Tool loaders live in panel-ui-core.js since #595 split PanelUI; panel-ui.js only bootstraps it.
 const loaderSource = read('docs/js/combat/combat-config-loader.js');
 const relationshipsSource = read('docs/js/relationships-panel.js');
 

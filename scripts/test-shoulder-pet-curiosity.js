@@ -156,7 +156,7 @@ assert.match(source,
   /hobunjiShoulderSpriteCanonicalized === true[\s\S]{0,420}applyAtPinnedPerch\?\.\(c, finalTransform\.perchWorldPosition\)[\s\S]{0,300}hobunjiShoulderSpriteCanonicalized = true/,
   'canonical sprite restoration is a one-time avatar cleanup rather than a per-frame hierarchy traversal');
 assert.match(source,
-  /_applyShoulderPetCuriosity\(c, master, dt\);[\s\S]{0,180}if \(perch && grip\)/,
+  /_applyShoulderPetCuriosity\(c, dt\);[\s\S]{0,180}if \(perch && grip\)/,
   'the sustained pose update remains inside the shoulder-pet branch before attachment pinning');
 assert.match(source,
   /_updateCompanionHeadRotation\(c, _companionHeadRestDeg\(c\) \+ state\.currentPitchDeg, dt\)/,

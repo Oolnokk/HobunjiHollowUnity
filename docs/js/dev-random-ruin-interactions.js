@@ -466,13 +466,7 @@
 
   function controllerBindingDown(binding) {
     if (!binding) return false;
-    let index = null;
-    if (/^Button\d+$/.test(binding)) index = Number(binding.slice(6));
-    else if (binding === 'LeftTrigger') index = 6;
-    else if (binding === 'RightTrigger') index = 7;
-    if (!Number.isInteger(index)) return false;
-    for (const pad of navigator.getGamepads?.() || []) if (pad?.buttons?.[index]?.pressed) return true;
-    return false;
+    return !!window.ControllerInput?.frame?.()?.isDown?.(binding); // Shared per-frame snapshot; ControllerInput is the only gamepad polling authority.
   }
 
   function pollController() {

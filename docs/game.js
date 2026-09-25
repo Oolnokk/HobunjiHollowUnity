@@ -541,12 +541,8 @@
           // temporary catch-up sprint for an NPC who was already in transit.
           _dialogueWalker = null;
         }
-        enterDefaultCameraMode();
+        enterDefaultCameraMode(); // Always Shoulder Cam now; snapShoulderSurfAzimuth() re-centers behind the player.
         activeCameraTarget = null;
-        if (activeCameraMode !== SHOULDER_SURF_MODE) {
-          cameraAzimuthOffsetDeg = 0;
-          cameraAngleOffsetDeg = 0;
-        }
         _snapCameraTarget(); // Re-centers the restored gameplay camera after dialogue/cinematic framing.
         dialogueZoomPointers.clear();
         dialoguePinchDistance = null;
@@ -9430,7 +9426,8 @@
           // Shoulder movement is camera-relative: local up (-Y) is forward.
           return (-iy / length) > 0.35 && Math.abs(ix / length) < 0.85;
         }
-        const facing = player.angle;
+        const mountHeading = window.Mounts?.rideState === 'mounted' ? Number(window.Mounts?.heading) : NaN; // Used below so a mounted forward-dodge follows the carrier rather than independent rider look.
+        const facing = Number.isFinite(mountHeading) ? mountHeading : player.angle; // Used by the forward/side dodge tests below.
         const forward = (ix * Math.cos(facing) + iy * Math.sin(facing)) / length;
         const side = Math.abs(-ix * Math.sin(facing) + iy * Math.cos(facing)) / length;
         return forward > 0.35 && side < 0.85;
@@ -9551,7 +9548,8 @@
       let dialogueOpen       = false;
       let _dialogueWalker    = null;
       let _playerData        = null;  // set from hobunjiPlayerReady event
-      let playerAvatarRefreshGeneration = 0; // Guards async avatar rebuilds from attaching stale planes.
+      let playerAvatarRefreshGeneration = 0;
+      const playerAvatarRefreshDebug = { started: 0, committed: 0, superseded: 0, lastGeneration: 0, lastPatternedTintDelta: 0, lastRenderScopeDelta: 0, textureHasVariantCanvas: false }; // Mobile-visible proof of which woven render actually became the live player avatar. // Guards async avatar rebuilds from attaching stale planes.
       // Set at the end of refreshPlayerAvatar() — the world-avatar equivalent
       // of a dialogue portrait's canvas/profile, kept around so
       // _tickPlayerPortraitLife can cheaply re-render just the front texture
@@ -9627,7 +9625,10 @@
       // so this substitutes for the normal follow camera without needing any
       // special-casing in the other camera modes (seated/fishing/music/etc.
       // all restore whatever mode they captured on entry, unaffected).
-      let s_shoulderSurf = true;
+      // Shoulder Cam is mandatory: the top-down gameplay camera is retired. The
+      // config's "default" mode stays only as an internal fallback (unknown-mode
+      // lookups, Cutscene Preview's actor framing); gameplay never returns to it.
+      const s_shoulderSurf = true;
       // Shoulder-surf's over-the-shoulder framing offsets (Settings →
       // Camera), in tiles, applied relative to the camera's own right/up
       // axes — see updateCameraPosition. Positive H = shift camera/framing
@@ -10939,7 +10940,7 @@
         return modes[mode] || modes[cameraConfig().defaultMode] || modes.default || {};
       }
       function defaultCameraModeKey() {
-        return s_shoulderSurf ? SHOULDER_SURF_MODE : (cameraConfig().defaultMode || 'default');
+        return SHOULDER_SURF_MODE; // Top-down is retired; every "back to gameplay camera" path lands in Shoulder Cam.
       }
       // Same "weapon tool actually equipped AND selected" gate as
       // updateMovement's own weaponEngaged/findAutoTarget's meleeActive —
@@ -12648,6 +12649,7 @@
       // World-space blink/breathing/default-expression refresh for walking
       // avatars (with distance-scaled refresh rates) now lives in
       // js/world-portrait-life.js.
+      window.__playerAvatarRefreshDebug = () => ({ ...playerAvatarRefreshDebug, currentGeneration: playerAvatarRefreshGeneration, hasGroup: !!playerAvatarGroup, hasFrontCanvas: !!playerAvatarFrontCanvas, profileWovenDescriptors: Array.isArray(playerAvatarProfile?.bodyColors?.__hobunjiWovenClothing) ? playerAvatarProfile.bodyColors.__hobunjiWovenClothing.length : 0, textureHasVariantCanvas: !!playerAvatarGroup?.userData?.frontTexture?.image && playerAvatarGroup.userData.frontTexture.image !== playerAvatarFrontCanvas });
       window.WorldPortraitLife.init({
         getCurrentArea: () => currentArea,
         getPlayerTile: () => ({ x: player.x / TILE, y: player.y / TILE }),
@@ -16440,11 +16442,11 @@
           const hatlessFrontCanvas = document.createElement('canvas');
           hatlessFrontCanvas.width = hatlessFrontCanvas.height = frontCanvas.width;
           await window.NpcAvatarPreview.renderProfileToCanvas(hatlessFrontCanvas, hatlessProfile, staticRenderOptions);
-          if (refreshGeneration !== playerAvatarRefreshGeneration) return;
+          if (refreshGeneration !== playerAvatarRefreshGeneration) { playerAvatarRefreshDebug.superseded++; return; }
           const hatlessBackCanvas = document.createElement('canvas');
           hatlessBackCanvas.width = hatlessBackCanvas.height = backCanvas.width;
           await window.NpcAvatarPreview.renderProfileToCanvas(hatlessBackCanvas, hatlessProfile, { ...staticRenderOptions, portraitView: 'behind' });
-          if (refreshGeneration !== playerAvatarRefreshGeneration) return;
+          if (refreshGeneration !== playerAvatarRefreshGeneration) { playerAvatarRefreshDebug.superseded++; return; }
 
           // Diff through the SAME per-face variant transform (front: as-is;
           // back: flipX) the base texture pipeline itself applies (see
@@ -16463,7 +16465,7 @@
           // depthWrite would do nothing, since the hat pixels baked into the
           // body plane would still occlude normally regardless.
           window.PNGPlaneAvatar.refreshSinglePlaneAvatarModel(avatarGroup, hatlessFrontCanvas, { backCanvas: hatlessBackCanvas });
-          if (refreshGeneration !== playerAvatarRefreshGeneration) return;
+          if (refreshGeneration !== playerAvatarRefreshGeneration) { playerAvatarRefreshDebug.superseded++; return; }
 
           const assembly = avatarGroup.children[0];
           if (!assembly) return;
@@ -16541,6 +16543,11 @@
       async function refreshPlayerAvatar() {
         if (!_playerData || !window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
         const refreshGeneration = ++playerAvatarRefreshGeneration;
+        playerAvatarRefreshDebug.started++;
+        playerAvatarRefreshDebug.lastGeneration = refreshGeneration;
+        const weaveBefore = window.__clothingWeavingDebug?.()?.portraitPatterns || {};
+        const patternedBefore = Number(weaveBefore.patternedTintCalls) || 0;
+        const scopesBefore = Number(weaveBefore.renderScopes) || 0;
         // Every input playerAttachmentAnchor()/_playerAvatarBodyMaterials()
         // memoize (species/gender, playerAvatarModelHeight, playerToolBaseY,
         // the avatar mesh subtree) is about to be replaced below, so their
@@ -16580,15 +16587,15 @@
         // model stuck with its eyes shut until the next gear/cosmetic change
         // happens to trigger a fresh bake.
         await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile, staticRenderOptions);
-        if (refreshGeneration !== playerAvatarRefreshGeneration) return;
+        if (refreshGeneration !== playerAvatarRefreshGeneration) { playerAvatarRefreshDebug.superseded++; return; }
         const headCanvas = document.createElement('canvas'); // Used by the neck rig to locate the visible base head from its alpha centroid.
         headCanvas.width = headCanvas.height = PORTRAIT_SIZE;
         await window.NpcAvatarPreview.renderProfileToCanvas(headCanvas, profile, { ...staticRenderOptions, onlyHeadSprite: true });
-        if (refreshGeneration !== playerAvatarRefreshGeneration) return;
+        if (refreshGeneration !== playerAvatarRefreshGeneration) { playerAvatarRefreshDebug.superseded++; return; }
         const backCanvas = document.createElement('canvas');
         backCanvas.width = backCanvas.height = PORTRAIT_SIZE;
         await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { ...staticRenderOptions, portraitView: 'behind' });
-        if (refreshGeneration !== playerAvatarRefreshGeneration) return;
+        if (refreshGeneration !== playerAvatarRefreshGeneration) { playerAvatarRefreshDebug.superseded++; return; }
         const avatarGroup = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(
           THREE, frontCanvas,
           { backCanvas, headCanvas, profile, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0, alphaTest: avatarCfg.worldAlphaTest ?? 0.01, neckRig: true }
@@ -16663,6 +16670,11 @@
         playerAvatarGroup = avatarGroup;
         playerAvatarFrontCanvas = frontCanvas;
         playerAvatarProfile = profile;
+        const weaveAfter = window.__clothingWeavingDebug?.()?.portraitPatterns || {};
+        playerAvatarRefreshDebug.committed++;
+        playerAvatarRefreshDebug.lastPatternedTintDelta = Math.max(0, (Number(weaveAfter.patternedTintCalls) || 0) - patternedBefore);
+        playerAvatarRefreshDebug.lastRenderScopeDelta = Math.max(0, (Number(weaveAfter.renderScopes) || 0) - scopesBefore);
+        playerAvatarRefreshDebug.textureHasVariantCanvas = !!avatarGroup?.userData?.frontTexture?.image && avatarGroup.userData.frontTexture.image !== frontCanvas; // PNGPlaneAvatar intentionally copies the committed portrait into a texture-owned variant canvas.
         // Shoulder-pet x-ray presentation is retired: hats remain baked into the ordinary portrait and occlude naturally.
         // Procedural feet attach directly under playerMesh (floor-anchored,
         // Y=0) as a sibling of avatarGroup (offset up by avatarHeight/2), not
@@ -23854,50 +23866,22 @@
       document.getElementById('settingZoom').addEventListener('change', e => {
         setCameraZoomScale(parseFloat(e.target.value) || 1.5);
       });
-      // Shoulder-surf's mouse-look wants genuine FPS-style relative look —
-      // the OS cursor itself must never move (a free-roaming cursor runs out
-      // of screen/desk space and pins at the display edge, capping how far
-      // you can turn) — so it Pointer-Locks the canvas instead of just
-      // reading movementX/Y off a visible cursor. Locked or not, the
-      // mousemove handler below always reads movementX/Y the same way;
-      // locking only stops the OS cursor from moving/being visible at all,
-      // so those deltas keep coming no matter how far or how many times the
-      // physical mouse moves in one direction.
-      function cursorlessMouseAimRequested() {
-        return characterViewMode.enabled
-          || (s_shoulderSurf && activeCameraMode === SHOULDER_SURF_MODE);
-      }
-      
-      function shoulderSurfPointerLockActive() {
-        return document.pointerLockElement === threeContainer;
-      }
-      function requestShoulderSurfPointerLock() {
-        if (!cursorlessMouseAimRequested() || !isDesktop || shoulderSurfPointerLockActive()) return;
-        // Can reject (no transient user activation, or the browser's own
-        // rate-limit on repeated requests) — that's fine, the click-to-relock
-        // handler below gives the player another chance.
-        try { threeContainer.requestPointerLock()?.catch?.(() => {}); } catch (err) {}
-      }
-      function releaseShoulderSurfPointerLock() {
-        if (shoulderSurfPointerLockActive()) { try { document.exitPointerLock(); } catch (err) {} }
-      }
-      document.getElementById('settingShoulderSurf')?.addEventListener('change', e => {
-        s_shoulderSurf = e.target.checked;
-        // Only live-swap while in one of the two plain gameplay camera
-        // states — mid-dialogue/fishing/seated/cutscene, leave the active
-        // mode alone and let its own existing restore path (now routed
-        // through defaultCameraModeKey()/enterDefaultCameraMode()) pick up
-        // the new toggle state next time it resolves back to gameplay.
-        if (activeCameraMode === (cameraConfig().defaultMode || 'default') || activeCameraMode === SHOULDER_SURF_MODE) {
-          activeCameraMode = defaultCameraModeKey();
-          if (activeCameraMode === SHOULDER_SURF_MODE) snapShoulderSurfAzimuth();
-          else { cameraAzimuthOffsetDeg = 0; cameraAngleOffsetDeg = 0; }
-        }
-        if (s_shoulderSurf) {
-          requestShoulderSurfPointerLock();
-          if (isDesktop) showToast('Shoulder Cam: click the game if mouse-look doesn\'t engage', true);
-        } else releaseShoulderSurfPointerLock();
+      // Shoulder Cam / Character View Pointer Lock now lives in js/shoulder-cam-pointer-lock.js
+      // (window.ShoulderCamPointerLock). These thin wrappers keep every existing call site
+      // (openMenu/closeMenu above run before this line, but only from user events after boot).
+      window.ShoulderCamPointerLock.init({
+        threeContainer,
+        isDesktop,
+        isCharacterViewEnabled: () => characterViewMode.enabled,
+        isShoulderSurfEnabled: () => s_shoulderSurf,
+        getActiveCameraMode: () => activeCameraMode,
+        shoulderSurfMode: SHOULDER_SURF_MODE,
       });
+      function cursorlessMouseAimRequested() { return window.ShoulderCamPointerLock.cursorlessMouseAimRequested(); }
+      function requestShoulderSurfPointerLock() { window.ShoulderCamPointerLock.request(); }
+      function releaseShoulderSurfPointerLock() { window.ShoulderCamPointerLock.release(); }
+      // The Settings "Shoulder Cam" on/off toggle was removed with the top-down camera;
+      // Shoulder Cam is always on (see s_shoulderSurf / defaultCameraModeKey()).
       // Re-engage after the browser's own Escape-releases-lock behavior, or
       // after the settings menu (below) let go of it — a plain click on the
       // game world is the same click-to-resume-look convention most desktop
@@ -25474,6 +25458,10 @@
         const filteredLog = window.__debugLogMatchesFilter
           ? rawLog.filter(e => window.__debugLogMatchesFilter(e, filter))
           : rawLog;
+        const weavingDiagnostics = (filter === 'all' || filter === 'cat:render')
+          && window.DebugCategories?.isEnabled?.('render') !== false
+          ? window.__weavingRenderDiagnosticsText?.()
+          : '';
         const lines = [
           'Tropical Trench Farm Debug Report',
           ...(filter !== 'all' ? [`Debug filter: ${filter} (${filteredLog.length}/${rawLog.length} entries)`] : []),
@@ -25487,6 +25475,7 @@
           `Calendar: ${window.CalendarSystem.formatCalendarDate()} (raw day ${calendar.day}), ${window.FormatUtils.formatClock(window.CalendarSystem.getHour())}, ${calendar.weather}`,
           `Tool/action: ${window.FormatUtils.toolName(activeTool)} / ${window.FormatUtils.actionName(activeAction)}`,
           `Player: x${player.x.toFixed(0)} y${player.y.toFixed(0)}`,
+          ...(weavingDiagnostics ? ['', ...String(weavingDiagnostics).split('\n')] : []),
           '--- raw log ---',
           ...filteredLog.map(e => `[${e.t}] [${e.lvl}] ${e.msg}`)
         ];
@@ -26220,16 +26209,19 @@
           }
         }
         if (potionAction3Press.held) {
-          input.x = 0; input.y = 0; // Potion Select borrows the movement stick while held, so browsing cannot also move the player.
-          controllerCameraX = 0; controllerCameraY = 0; rightStickOwner = 'potion selection';
-          const potionStick = move.rawMagnitude >= look.rawMagnitude
-            ? { x: ax, y: ay, rawMagnitude: move.rawMagnitude }
-            : { x: rx, y: ry, rawMagnitude: look.rawMagnitude }; // Used so left-stick access is added without removing the selector's existing right-stick path.
-          if (potionStick.rawMagnitude >= INPUT_DEFAULTS.axisPressThreshold) {
-            const now = performance.now();
-            if (now - potionAction3Press.lastScrollAt >= 220) {
-              potionAction3Press.lastScrollAt = now;
-              window._desktopSelectionArc?.scrollEntries((Math.abs(potionStick.x) >= Math.abs(potionStick.y) ? potionStick.x : potionStick.y) >= 0 ? 1 : -1);
+          const bandageTapWindowOpen = window.ContextualPotionSelector?.isTapBandageWindowOpen?.() === true; // Used here so a pre-existing movement/look stick cannot turn a quick Potion Select tap into menu navigation.
+          if (!bandageTapWindowOpen) {
+            input.x = 0; input.y = 0; // Once the tap-to-bandage window expires, Potion Select borrows movement for deliberate browsing.
+            controllerCameraX = 0; controllerCameraY = 0; rightStickOwner = 'potion selection';
+            const potionStick = move.rawMagnitude >= look.rawMagnitude
+              ? { x: ax, y: ay, rawMagnitude: move.rawMagnitude }
+              : { x: rx, y: ry, rawMagnitude: look.rawMagnitude }; // Used so left-stick access is added without removing the selector's existing right-stick path.
+            if (potionStick.rawMagnitude >= INPUT_DEFAULTS.axisPressThreshold) {
+              const now = performance.now();
+              if (now - potionAction3Press.lastScrollAt >= 220) {
+                potionAction3Press.lastScrollAt = now;
+                window._desktopSelectionArc?.scrollEntries((Math.abs(potionStick.x) >= Math.abs(potionStick.y) ? potionStick.x : potionStick.y) >= 0 ? 1 : -1);
+              }
             }
           }
         }
@@ -27299,6 +27291,38 @@
         hostileObjects,
         companionObjects,
         getCurrentArea: () => currentArea,
+        // Not used by Combat itself: window.Combat.deps doubles as the shared
+        // world-state seam for modules that load after game.js. BanubuSnore
+        // needs the live zone layout (Banubu's shifted cave entrance) and
+        // surface heights for the exterior night snore, and it plus the HUD
+        // reticles pause/hide on isDialogueOpen. Without these the exterior
+        // snore sat at "waiting for live zone layout" forever.
+        isDialogueOpen: () => dialogueOpen,
+        zoneLayouts: _zoneLayouts,
+        zoneScenes: _zoneScenes,
+        getActiveGrid: window.GridTileAccessors.getActiveGrid,
+        tileSurfaceYInArea,
+        activeSurfaceYAtWorld,
+        // HobunjiAmbientBgs (js/ambient-biome-audio.js) reads the area grid,
+        // tile types and rain state here; without them the river loop never
+        // found water and birds/nightbugs ignored rain.
+        calendar,
+        getHour: window.CalendarSystem.getHour,
+        TileType,
+        WATERWAY_TYPES,
+        npcGridForArea,
+        _isZoneArea,
+        // InventoryUI's tool detail card (metal tier, effect multiplier,
+        // verdigris %, mastery thresholds) and RangedWeaponArchetypes' ammo
+        // loadout sanitizer/action-bar refresh read these here as well.
+        METAL_DEFS,
+        MASTERY_XP_THRESHOLDS,
+        toolEffectiveMetalKey,
+        toolMetalMultiplier,
+        toolVerdigrisFraction,
+        getGearInventory: () => gearInventory,
+        saveGearInventory,
+        refreshActionBar,
         // Named animal projectiles use the same live Three.js elevation as
         // the player/creature renderers so Drenkirra's vertical spit aim is
         // based on actual target height, not a flattened ground plane.
@@ -27604,7 +27628,7 @@
         setActiveTool: (v) => { activeTool = v; },
         setLastActionMessage: (v) => { lastActionMessage = v; },
         getCameraMode: () => activeCameraMode,
-        setCameraMode: (v) => { activeCameraMode = v; },
+        setCameraMode: (v) => { if (v == null || v === (cameraConfig().defaultMode || 'default')) enterDefaultCameraMode(); else activeCameraMode = v; }, // Top-down is retired; restores that fall back to it land in Shoulder Cam.
         getCameraTarget: () => activeCameraTarget,
         setCameraTarget: (v) => { activeCameraTarget = v; },
         getCameraOrientationOffsets: () => ({ azimuthDeg: cameraAzimuthOffsetDeg, angleDeg: cameraAngleOffsetDeg }),
@@ -28936,7 +28960,7 @@
         getFacingAngle: () => facingAngle,
         setFacingAngle: (v) => { facingAngle = v; },
         getCameraMode: () => activeCameraMode,
-        setCameraMode: (v) => { activeCameraMode = v; },
+        setCameraMode: (v) => { if (v == null || v === (cameraConfig().defaultMode || 'default')) enterDefaultCameraMode(); else activeCameraMode = v; }, // Top-down is retired; restores that fall back to it land in Shoulder Cam.
         getCameraTarget: () => activeCameraTarget,
         setCameraTarget: (v) => { activeCameraTarget = v; },
         setWorldLivestockFrameCache: (v) => { _worldLivestockFrameCache = v; },

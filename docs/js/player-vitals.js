@@ -51,10 +51,10 @@
       staminaRegenPerSec: deps.PLAYER_STAMINA_REGEN * window.CookingSystem.getStaminaRegenMultiplier(),
       healthRegenPerSec: deps.PLAYER_HEALTH_REGEN,
     });
-    // Direct hits check death in game.js's damagePlayer(), but bleeding,
-    // poison, and stamina-affliction damage resolve here inside tick(). Route
-    // those lethal ticks through the exact same respawn authority before AI
-    // sees a zero-health player and treats them as a permanently dead target.
+    // Direct hits check death in game.js's damagePlayer(), while already-
+    // applied Bleeding/Burning/Poison buildup can deal lethal damage inside
+    // ResourceSystem.tick(). Route those deaths through the same respawn
+    // authority before AI observes a zero-health player.
     if (deps.player.health <= 0) {
       if (!deathHandled) {
         deathHandled = true;
