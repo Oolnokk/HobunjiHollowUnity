@@ -283,7 +283,6 @@
   const DEN_RELOCATION_DELAY_DAYS = 2; // Used by the Den-Mother turnover lifecycle before a cleared den may reappear at a new site.
   const DEN_RELOCATION_MIN_DISTANCE_TILES = 12; // Used by relocation candidate filtering so a replacement den visibly moves instead of shifting a few tiles.
   const DEN_RELOCATION_PLAYER_CLEARANCE_TILES = 18; // Used while the player is in the same zone so a replacement cave never pops into view nearby.
-  const DEN_TURNOVER_STORAGE_PREFIX = 'hobunjiDenTurnoverV1:'; // Used to keep collapsed/relocated dens stable across reloads within the same Tothal year.
   const denTurnoverByKey = new Map(); // denKey -> persistent Den-Mother clear/collapse/relocation state.
   const processedDenMotherDeaths = new WeakSet(); // Used by the CreatureDeath wrapper to make begin/recover handoffs idempotent.
   let denTurnoverIdentity = null; // Used to detect world/year changes before reading or writing persisted den turnover state.
@@ -300,28 +299,29 @@
     return { worldId, year, key: `${worldId}|${year}` };
   }
 
-  function denTurnoverStorageKey(identity = currentDenTurnoverIdentity()) {
-    return DEN_TURNOVER_STORAGE_PREFIX + identity.worldId;
-  }
-
   function ensureDenTurnoverLoaded() {
     const identity = currentDenTurnoverIdentity();
     if (denTurnoverIdentity === identity.key) return;
     denTurnoverIdentity = identity.key;
     denTurnoverByKey.clear();
+    if (identity.worldId === 'session') return;
     try {
-      const raw = localStorage.getItem(denTurnoverStorageKey(identity));
-      const parsed = raw ? JSON.parse(raw) : null;
-      if (!parsed || Number(parsed.year) !== identity.year || !Array.isArray(parsed.records)) {
-        if (raw) localStorage.removeItem(denTurnoverStorageKey(identity));
+      const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
+      const world = (meta?.worlds || []).find(entry => entry.id === identity.worldId);
+      const saved = world?.denTurnover;
+      if (!saved || Number(saved.year) !== identity.year || !Array.isArray(saved.records)) {
+        if (world?.denTurnover) {
+          delete world.denTurnover;
+          localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
+        }
         return;
       }
-      for (const record of parsed.records) {
+      for (const record of saved.records) {
         if (!record?.denKey || !record?.zoneId || record.denId == null) continue;
         denTurnoverByKey.set(String(record.denKey), record);
       }
     } catch (error) {
-      window.__farmLog?.(`[den-turnover] failed to load persisted state: ${error.message}`, 'warn');
+      window.__farmLog?.(`[den-turnover] failed to load world save state: ${error.message}`, 'warn');
     }
   }
 
@@ -330,13 +330,17 @@
     const identity = currentDenTurnoverIdentity();
     if (identity.worldId === 'session') return;
     try {
-      localStorage.setItem(denTurnoverStorageKey(identity), JSON.stringify({
+      const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
+      const world = (meta?.worlds || []).find(entry => entry.id === identity.worldId);
+      if (!world) return;
+      world.denTurnover = {
         version: 1,
         year: identity.year,
         records: [...denTurnoverByKey.values()],
-      }));
+      }; // Stored inside the portable world metadata captured by local-folder/cloud save snapshots.
+      localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
     } catch (error) {
-      window.__farmLog?.(`[den-turnover] failed to persist state: ${error.message}`, 'warn');
+      window.__farmLog?.(`[den-turnover] failed to persist world save state: ${error.message}`, 'warn');
     }
   }
 
