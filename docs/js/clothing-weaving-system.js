@@ -58,7 +58,11 @@
   const patternedCanvasCache = new Map(); // Reuses expensive pattern composites across repeated portrait renders.
   const wovenIconDataUrlPromises = new Map(); // Caches fully dyed + patterned inventory sprites by their visual state; rebuilt only when dyes/weaving/species/gender change.
   const pendingPatternCanvasPromises = new Map(); // Cache key -> in-flight compositor promise; lets overlapping portrait renders wait on the same build instead of each committing a plain fallback frame.
-  const portraitPatternStats = { renderScopes: 0, patternedTintCalls: 0, cacheHits: 0, cacheMisses: 0, retryRenders: 0 }; // Exposed by debugSnapshot so intermittent woven portrait behavior can be diagnosed without a console.
+  const portraitPatternStats = { renderScopes: 0, patternedTintCalls: 0, compatibilityTintCalls: 0, serializedRenders: 0, cacheHits: 0, cacheMisses: 0, retryRenders: 0 }; // Exposed by debugSnapshot so woven portrait ownership/cache behavior is diagnosable without a console.
+  let activePortraitPatternMap = null; // Compatibility-only URL -> woven descriptor map; non-null only while one serialized woven portrait owns the legacy global tint path.
+  let activePortraitPendingBuilds = null; // Compatibility-only pending set paired with activePortraitPatternMap so global tint fallbacks still participate in the owning render's cache-warm redraw.
+  let portraitBaseTintResolver = null; // Canonical non-weaving tint resolver captured before installing the compatibility wrapper.
+  let wovenPortraitRenderChain = Promise.resolve(); // Serializes only portraits that actually carry woven clothing, preventing compatibility-map bleed between concurrent NPC/player renders.
 
   const clamp = (value, lo, hi) => Math.max(lo, Math.min(hi, Number(value) || 0));
   const clone = value => value == null ? value : JSON.parse(JSON.stringify(value));
@@ -2223,31 +2227,76 @@
 
   async function renderProfileWithWovenPatterns(renderer, canvas, profile, options = {}) {
     if (typeof renderer !== 'function') return false;
-    if (renderer.__clothingWeavingPattern || options?.imageForTint?.__clothingWeavingPattern) return renderer(canvas, profile, options); // A woven renderer or inherited render-local resolver already owns this pass; delegate without nesting another composite.
-    const descriptors = profile?.bodyColors?.[CLOTHING_MARKER_KEY]; // Used below to resolve the woven garment descriptors embedded in this one portrait.
-    const patternMap = Array.isArray(descriptors) && descriptors.length ? await buildPortraitPatternMap(descriptors) : null; // Render-owned lookup; never shared with another async portrait.
+    if (options?.imageForTint?.__clothingWeavingPattern) return renderer(canvas, profile, options); // An inherited render-local resolver already owns this woven pass; delegate without nesting another composite.
+    if (renderer.__clothingWeavingPattern) return renderer(canvas, profile, options); // The installed renderer wrapper will re-enter this helper with its unwrapped downstream renderer.
+
+    const descriptors = profile?.bodyColors?.[CLOTHING_MARKER_KEY]; // Woven garment descriptors embedded into this portrait's transient bodyColors payload.
+    const patternMap = Array.isArray(descriptors) && descriptors.length ? await buildPortraitPatternMap(descriptors) : null; // Built before the serialized lane; config/image lookup can still overlap across portraits.
     if (!patternMap?.size) return renderer(canvas, profile, options);
-    const baseTintResolver = typeof options?.imageForTint === 'function' ? options.imageForTint : window._imageForTint; // Used by patternImageForTint so upstream render-local tint hooks still compose normally.
+
+    const baseTintResolver = typeof options?.imageForTint === 'function'
+      ? options.imageForTint
+      : portraitBaseTintResolver; // Never use the compatibility-wrapped global as the local base or it would recurse back into weaving.
     if (typeof baseTintResolver !== 'function') return renderer(canvas, profile, options);
-    const pendingBuilds = new Set(); // Tracks only this render's async pattern composites so the same canvas can be redrawn before callers upload it.
-    const imageForTint = (img, sourceKey, tint) => patternImageForTint(patternMap, baseTintResolver, pending => pendingBuilds.add(pending), img, sourceKey, tint); // Injected only into this render invocation.
-    imageForTint.__clothingWeavingPattern = true; // Nested/later portrait wrappers use this marker to avoid applying the same woven pass twice.
-    portraitPatternStats.renderScopes++;
-    const renderOptions = { ...(options || {}), imageForTint }; // Passed to portrait-utils without mutating caller-owned options.
-    const firstResult = await renderer(canvas, profile, renderOptions); // Produces either a cache-hit woven frame or the temporary tinted fallback while misses build.
-    if (!pendingBuilds.size) return firstResult;
-    const settled = await Promise.allSettled([...pendingBuilds]); // Waits only for this portrait's cache misses; other portraits remain isolated.
-    if (!settled.some(result => result.status === 'fulfilled')) return firstResult;
-    portraitPatternStats.retryRenders++;
-    return renderer(canvas, profile, renderOptions); // Cache is now warm; redraw this same canvas before WorldPortraitLife/NpcAvatarPreview uploads it.
+
+    const run = async () => {
+      const previousMap = activePortraitPatternMap; // Normally null; saved defensively so a nested non-woven helper cannot corrupt ownership.
+      const previousPending = activePortraitPendingBuilds; // Paired with previousMap for the same ownership restore.
+      const pendingBuilds = new Set(); // Tracks this portrait's async pattern composites for both the render-local and compatibility-global tint paths.
+      const imageForTint = (img, sourceKey, tint) => patternImageForTint(patternMap, baseTintResolver, pending => pendingBuilds.add(pending), img, sourceKey, tint); // Preferred #817 render-local path.
+      imageForTint.__clothingWeavingPattern = true; // Later/nested portrait wrappers can see that this invocation already owns weaving.
+      const renderOptions = { ...(options || {}), imageForTint }; // Caller options stay immutable.
+      activePortraitPatternMap = patternMap; // Legacy compatibility path for any portrait code that still reaches the global _imageForTint instead of renderOptions.imageForTint.
+      activePortraitPendingBuilds = pendingBuilds; // Ensures compatibility-path cache misses delay the same owning canvas before it is uploaded.
+      portraitPatternStats.renderScopes++;
+      portraitPatternStats.serializedRenders++;
+      try {
+        const firstResult = await renderer(canvas, profile, renderOptions); // May use local resolver, global compatibility resolver, or both; both point at this render's map.
+        if (!pendingBuilds.size) return firstResult;
+        const settled = await Promise.allSettled([...pendingBuilds]); // Wait until every cache miss observed by either tint path finishes.
+        if (!settled.some(result => result.status === 'fulfilled')) return firstResult;
+        portraitPatternStats.retryRenders++;
+        return renderer(canvas, profile, renderOptions); // Cache is warm; redraw before WorldPortraitLife/NpcAvatarPreview uploads the canvas.
+      } finally {
+        activePortraitPatternMap = previousMap;
+        activePortraitPendingBuilds = previousPending;
+      }
+    };
+
+    const job = wovenPortraitRenderChain.catch(() => {}).then(run); // Only woven portraits queue; ordinary portraits never wait on this lane.
+    wovenPortraitRenderChain = job.then(() => undefined, () => undefined); // Keep the lane alive after a failed render without swallowing the caller's own rejection.
+    return job;
   }
 
   function installPortraitHooks() {
     if (portraitHooksInstalled) return true;
-    if (typeof window._imageForTint !== 'function' || typeof window.renderProfile !== 'function') return false;
+    const currentTint = window._imageForTint;
+    if (typeof currentTint !== 'function' || typeof window.renderProfile !== 'function') return false;
+
+    if (!currentTint.__clothingWeavingPattern) {
+      portraitBaseTintResolver = currentTint; // Capture the canonical tint function before installing the compatibility interception.
+      const compatibilityTint = function clothingPatternImageForTint(img, sourceKey, tint) {
+        const map = activePortraitPatternMap; // Non-null only while the serialized woven lane owns this global compatibility path.
+        if (!map) return portraitBaseTintResolver(img, sourceKey, tint);
+        portraitPatternStats.compatibilityTintCalls++;
+        return patternImageForTint(
+          map,
+          portraitBaseTintResolver,
+          pending => activePortraitPendingBuilds?.add(pending),
+          img,
+          sourceKey,
+          tint
+        );
+      };
+      compatibilityTint.__clothingWeavingPattern = true;
+      compatibilityTint.__clothingWeavingOriginal = currentTint;
+      window._imageForTint = compatibilityTint;
+    } else {
+      portraitBaseTintResolver = currentTint.__clothingWeavingOriginal || currentTint; // Supports hot reload/re-entry without stacking compatibility wrappers.
+    }
 
     const wrapRenderer = name => {
-      const current = window[name]; // The live renderer at install time; retained as the downstream renderer inside this wrapper.
+      const current = window[name]; // Live renderer at install time; retained as the downstream renderer inside this wrapper.
       if (typeof current !== 'function') return false;
       if (current.__clothingWeavingPattern) return true;
       const wrapped = async function clothingWeavingPortraitRenderer(canvas, profile, options) {
@@ -2258,8 +2307,8 @@
       window[name] = wrapped;
       return true;
     };
-    const profileInstalled = wrapRenderer('renderProfile'); // Tracks the direct portrait entry point used by legacy/editor callers.
-    const portraitInstalled = wrapRenderer('renderPortraitProfile'); // Tracks the alias used by NpcAvatarPreview and live world-avatar refreshes.
+    const profileInstalled = wrapRenderer('renderProfile'); // Direct portrait entry point used by legacy/editor callers.
+    const portraitInstalled = wrapRenderer('renderPortraitProfile'); // Alias used by NpcAvatarPreview and live world-avatar refreshes.
     portraitHooksInstalled = profileInstalled && portraitInstalled;
     return portraitHooksInstalled;
   }
