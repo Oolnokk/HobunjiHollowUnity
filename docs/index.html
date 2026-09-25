@@ -149,7 +149,7 @@
        occlude 3D held items/tools) on the same matrix as its visible draw when
        PlayerBodyTransformComposer is composing a render-time body delta (mirrors
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
-  <script src="js/portrait-plane-outline-parity.js?v=20260924perf1"></script>
+  <script src="js/portrait-plane-outline-parity.js?v=20260924shoulderocclusion1"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
   <script src="js/held-action-animations.js?v=20260924perf1"></script>
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
@@ -424,7 +424,7 @@
        init(), so load order relative to the other systems above doesn't
        matter; must load before game.js, which calls
        window.DebugHitboxes.init(...) during its own setup. -->
-  <script src="js/debug-hitboxes.js?v=20260909perspectivepoint4"></script>
+  <script src="js/debug-hitboxes.js?v=20260924petroot1"></script>
   <!-- Bandit combat-log capture, AI/Claude review tool for the dev Testing
        Arena (window.BanditCombatLog) — reads window.BanditCombat/
        window.BanditCamps/window.Combat at capture time (already global by
@@ -1911,6 +1911,13 @@
           </label>
           <label class="settings-row">
             <div class="settings-label">
+              <div class="settings-name">Show Shoulder-Pet Perch / Grip</div>
+              <div class="settings-desc">Draw the active shoulder perch in cyan, the pet grip in magenta, and their live world-space error</div>
+            </div>
+            <span class="settings-toggle"><input type="checkbox" id="settingShowShoulderPetAttachmentPoints"><span class="toggle-slider"></span></span>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
               <div class="settings-name">Dev Mode</div>
               <div class="settings-desc">Adds a +1 Mastery button to each tool's item-info panel, for testing</div>
             </div>
@@ -1922,68 +1929,6 @@
               <div class="settings-desc">Developer comparison toggle; flipped is the default presentation for both front and back PNG-plane character portraits</div>
             </div>
             <span class="settings-toggle"><input type="checkbox" id="settingFlipPngPortraits"><span class="toggle-slider"></span></span>
-          </label>
-          <label class="settings-row">
-            <div class="settings-label">
-              <div class="settings-name">Disable Shoulder-Pet Hat X-Ray</div>
-              <div class="settings-desc">Debug toggle for the translucent-shoulder-pet investigation — forces the hat plane to occlude normally instead of letting a shoulder pet peek through it, in case that mechanism is contributing to the issue</div>
-            </div>
-            <span class="settings-toggle"><input type="checkbox" id="settingDisableHatXray"><span class="toggle-slider"></span></span>
-          </label>
-          <label class="settings-row">
-            <div class="settings-label">
-              <div class="settings-name">Shoulder-Pet Rotation Source</div>
-              <div class="settings-desc">Chooses which live frame controls shoulder-pet rotation. Position always follows the authored shoulder pixel.</div>
-            </div>
-            <select id="settingShoulderPetRotationSource" class="settings-select" style="align-self:center">
-              <option value="pixel">Skinned Shoulder Pixel</option>
-              <option value="body">Player Body</option>
-              <option value="bodyNeckMidpoint">Body / Neck Midpoint</option>
-              <option value="head" selected>Head / Neck (default)</option>
-              <option value="world">World-Aligned</option>
-            </select>
-          </label>
-          <label class="settings-row">
-            <div class="settings-label">
-              <div class="settings-name">Invert Selected Shoulder Rotation</div>
-              <div class="settings-desc">Uses the inverse of the dropdown's rotation before applying the authored perch and pet-grip corrections.</div>
-            </div>
-            <span class="settings-toggle"><input type="checkbox" id="settingInvertShoulderPetRotationSource"><span class="toggle-slider"></span></span>
-          </label>
-          <label class="settings-row">
-            <div class="settings-label">
-              <div class="settings-name">Cancel Shoulder-Pet Rotational Offset</div>
-              <div class="settings-desc">Uses only the selected pixel/body/head/world frame, omitting the authored perch and inverse-grip rotation corrections. The authored grip position still aligns to the perch.</div>
-            </div>
-            <span class="settings-toggle"><input type="checkbox" id="settingCancelShoulderPetRotationalOffset"><span class="toggle-slider"></span></span>
-          </label>
-          <label class="settings-row">
-            <div class="settings-label">
-              <div class="settings-name">Front Sprite X-Ray Through Shoulder Pet</div>
-              <div class="settings-desc">Explicitly redraws only the player's front portrait face over an attached shoulder pet while preserving ordinary world occlusion.</div>
-            </div>
-            <span class="settings-toggle"><input type="checkbox" id="settingFrontSpriteXrayThroughShoulderPet"><span class="toggle-slider"></span></span>
-          </label>
-          <label class="settings-row">
-            <div class="settings-label">
-              <div class="settings-name">Back Sprite X-Ray Through Shoulder Pet</div>
-              <div class="settings-desc">Explicitly redraws only the player's back portrait face over an attached shoulder pet while preserving ordinary world occlusion.</div>
-            </div>
-            <span class="settings-toggle"><input type="checkbox" id="settingBackSpriteXrayThroughShoulderPet"><span class="toggle-slider"></span></span>
-          </label>
-          <label class="settings-row">
-            <div class="settings-label">
-              <div class="settings-name">Disable Shoulder X-Ray Through Front Plane</div>
-              <div class="settings-desc">Debug toggle: lets the player's front portrait plane write depth again, so an attached shoulder pet can be occluded by it.</div>
-            </div>
-            <span class="settings-toggle"><input type="checkbox" id="settingDisableShoulderFrontXray"><span class="toggle-slider"></span></span>
-          </label>
-          <label class="settings-row">
-            <div class="settings-label">
-              <div class="settings-name">Disable Shoulder X-Ray Through Back Plane</div>
-              <div class="settings-desc">Debug toggle: lets the player's back portrait plane write depth again, so an attached shoulder pet can be occluded by it.</div>
-            </div>
-            <span class="settings-toggle"><input type="checkbox" id="settingDisableShoulderBackXray"><span class="toggle-slider"></span></span>
           </label>
           <div class="settings-row">
             <div class="settings-label">
@@ -2407,7 +2352,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20260924texture-restore1"></script>
+  <script src="js/pixel-probe.js?v=20260924shoulderocclusion1"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -2437,7 +2382,7 @@
   <!-- Spearfishing minigame + fishing FX particles (window.Fishing) — must
        load before game.js, which injects the shared thrown-weapon pose seams
        used by fishing's held Windup → Strike presentation. -->
-  <script src="js/fishing-minigame.js?v=20260924perf5"></script>
+  <script src="js/fishing-minigame.js?v=20260924shoulderocclusion1"></script>
   <!-- Kurraya hold-assembly + reactive-twitch visuals (window.KurrayaInstrument)
        — must load before game.js, which calls window.KurrayaInstrument.init(...)
        during its own setup, mirroring window.Fishing above. -->
@@ -2541,7 +2486,7 @@
        quality mode, and owns no requestAnimationFrame loop. -->
   <script src="js/painterly-postprocess.js?v=20260923paintrebase1"></script>
   <script src="js/banubu-cave-clouds.js?v=20260923cloudring3"></script>
-  <script src="game.js?v=20260924chunkrock1"></script>
+  <script src="game.js?v=20260924shouldersource1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
   <script src="js/banubu-snore.js?v=20260924snorepitch1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>

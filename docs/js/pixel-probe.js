@@ -577,17 +577,16 @@
       const expectedScaleY = (Number(liveActivePet.visualScaleY) || 1) * (Number(liveActivePet.scaleY) || 1); // Used below to detect a real renderer scale overwrite rather than apparent foreshortening.
       const expectedScaleZ = Number(liveActivePet.visualScaleX) || 1; // Used below because animal billboard width is carried on group Z.
       const actualScale = liveActivePet.avatarRef.group.scale; // Used below to compare the live Three.js transform with the genotype-derived scale.
-      const curiosity = liveActivePet.shoulderCuriosity; // Used below to correlate a reported visual change with the random curiosity phase.
+      const curiosity = liveActivePet.shoulderCuriosity; // Used below to report the sustained shoulder pose, remaining hold, and unbiased pose chance.
       lines.push(`Size class: ${sizeClass}   expected group scale=(1.0000, ${expectedScaleY.toFixed(4)}, ${expectedScaleZ.toFixed(4)})   actual=(${actualScale.x.toFixed(4)}, ${actualScale.y.toFixed(4)}, ${actualScale.z.toFixed(4)})`);
-      lines.push(`Curiosity: phase=${curiosity?.phase || 'not-started'} bodyLean=${Number(curiosity?.currentLeanDeg || 0).toFixed(2)}° headTurn=${Number(curiosity?.currentPitchDeg || 0).toFixed(2)}°`);
-      const layerDecision = liveActivePet.avatarRef.group.userData?.hobunjiShoulderPetLayering; // Runtime layer decision recorded by game.js so mobile Pixel Probe can distinguish logical-facing changes from portrait deadzone snaps.
-      if (layerDecision) {
-        const deg = radians => Number.isFinite(radians) ? (radians * 180 / Math.PI).toFixed(2) + '°' : '-';
-        lines.push(`Layer face: source=${layerDecision.source || '-'} logical=${deg(layerDecision.logicalYaw)} rendered=${deg(layerDecision.renderedYaw)} camera=${deg(layerDecision.cameraBearing)} dot=${Number.isFinite(layerDecision.normalizedFaceZ) ? layerDecision.normalizedFaceZ.toFixed(4) : '-'} front=${!!layerDecision.frontVisible} playerOnTop=${!!layerDecision.playerDrawsOnTop}`);
-      }
+      lines.push(`Shoulder pose: ${curiosity?.phase || 'not-started'} hold=${Math.max(0, Number(curiosity?.timer) || 0).toFixed(1)}s inwardChance=${Math.round((Number(curiosity?.inwardChance) || 0) * 100)}% bodyLean=${Number(curiosity?.currentLeanDeg || 0).toFixed(2)}° headPitch=${Number(curiosity?.currentPitchDeg || 0).toFixed(2)}° headYaw=${Number(curiosity?.currentYawDeg || 0).toFixed(2)}°`);
+      const layerDecision = liveActivePet.avatarRef.group.userData?.hobunjiShoulderPetLayering;
+      if (layerDecision) lines.push(`Shoulder occlusion: ${layerDecision.depthMode || 'ordinary-depth'} xray=${layerDecision.xrayEnabled === true ? 'ON' : 'off'}`);
       if (Math.abs(actualScale.x - 1) > 0.001 || Math.abs(actualScale.y - expectedScaleY) > 0.001 || Math.abs(actualScale.z - expectedScaleZ) > 0.001) {
         lines.push('>>> MISMATCH — the live shoulder-pet group scale no longer matches its genotype-derived scale.');
       }
+      const planeDeadzone = liveActivePet.avatarRef.group.userData?.hobunjiShoulderPlaneDeadzone;
+      lines.push(`Shoulder plane deadzone: ${planeDeadzone?.bypassed ? 'BYPASSED' : 'active'} mode=${planeDeadzone?.mode || window.PerpRotation?.CREATURE_PLANE_ROT_MODE || '-'} reason=${planeDeadzone?.reason || '-'}`);
       const billboardYaw = Number.isFinite(liveActivePet.pngRot) ? liveActivePet.pngRot : liveActivePet.groupRot; // Used below to verify final bodyYaw did not leak into the flat pet planes.
       const groupYaw = liveActivePet.avatarRef.group.rotation.y; // Used below to reconstruct each plane's final world yaw from its local transform.
       const frontWorldYaw = groupYaw + (liveActivePet.avatarRef.frontPlane?.rotation.y || 0); // Used below to compare the front card against the billboard yaw selected by updateCreatureMesh.
@@ -636,6 +635,34 @@
           ? Math.hypot(actual.x - expectedX, actual.y - expectedY, actual.z - expectedZ)
           : NaN; // Only reports positional drift once the final pin has produced a complete transform snapshot.
         lines.push(`Attachment rotation source: ${attachmentDebug?.rotationSource || '(awaiting final pin)'} — authored shoulderPerch rotation is relative to the live face.`);
+        lines.push(`Shoulder local facing transform: facing=${attachmentDebug?.facingTowardPlayerCenter ? 'inward/front' : 'outward/behind'} localYTurn=${Number(attachmentDebug?.shoulderFacingTurnDeg) || 0}° spriteMirrored=${attachmentDebug?.spriteMirrored === true}`);
+        const perchWorld = attachmentDebug?.authoredPerchWorldPosition;
+        const gripWorld = attachmentDebug?.alignedGripWorldPosition;
+        const perchWorldValid = Array.isArray(perchWorld) && perchWorld.length >= 3 && perchWorld.slice(0, 3).every(Number.isFinite);
+        const gripWorldValid = Array.isArray(gripWorld) && gripWorld.length >= 3 && gripWorld.slice(0, 3).every(Number.isFinite);
+        if (perchWorldValid && gripWorldValid) {
+          const pointError = Number.isFinite(Number(attachmentDebug?.gripPerchError))
+            ? Number(attachmentDebug.gripPerchError)
+            : Math.hypot(perchWorld[0] - gripWorld[0], perchWorld[1] - gripWorld[1], perchWorld[2] - gripWorld[2]);
+          lines.push(`Attachment points world: PERCH=(${perchWorld.slice(0, 3).map(value => Number(value).toFixed(5)).join(', ')}) GRIP=(${gripWorld.slice(0, 3).map(value => Number(value).toFixed(5)).join(', ')}) error=${pointError.toFixed(6)}u`);
+          const sourceAttachment = window.__hitboxDebug?.shoulderPetAttachment;
+          if (sourceAttachment?.sourceWorld) {
+            const source = sourceAttachment.sourceWorld;
+            const sourcePixel = sourceAttachment.sourcePixel;
+            const renderedPixel = sourceAttachment.renderedPixel;
+            const sourceAgeMs = Number.isFinite(Number(sourceAttachment.sourceCapturedAt))
+              ? Math.max(0, performance.now() - Number(sourceAttachment.sourceCapturedAt))
+              : null;
+            lines.push(`Rendered source pixel world: SOURCE=(${[source.x, source.y, source.z].map(value => Number(value).toFixed(5)).join(', ')}) source→perch=${Number(sourceAttachment.sourcePerchError || 0).toFixed(6)}u sourcePixel=(${Number(sourcePixel?.x).toFixed(2)}, ${Number(sourcePixel?.y).toFixed(2)}) renderedPixel=(${Number(renderedPixel?.x).toFixed(2)}, ${Number(renderedPixel?.y).toFixed(2)}) cell=${sourceAttachment.sourceCell?.column ?? '-'},${sourceAttachment.sourceCell?.row ?? '-'} tri=${sourceAttachment.sourceTriangle ?? '-'} capture=${sourceAttachment.sourceCaptureMode || '-'}${sourceAgeMs == null ? '' : ` age=${sourceAgeMs.toFixed(1)}ms`}`);
+          } else {
+            lines.push('Rendered source pixel world: awaiting one visible SkinnedMesh draw');
+          }
+        } else {
+          lines.push('Attachment points world: awaiting final perch/grip solve');
+        }
+        const perchLocal = [Number(perch.x) || 0, Number(perch.y) || 0, Number(perch.z) || 0];
+        const perchPixel = perch.sourcePixel;
+        lines.push(`Authored shoulderPerch local: (${perchLocal.map(value => value.toFixed(5)).join(', ')})${perchPixel ? ` sourcePixel=(${Number(perchPixel.x).toFixed(2)}, ${Number(perchPixel.y).toFixed(2)})` : ''}`);
         if (Number.isFinite(drift)) {
           lines.push(`Rig-anchor expected position: (${expectedX.toFixed(4)}, ${expectedY.toFixed(4)}, ${expectedZ.toFixed(4)})   actual mesh position: (${actual.x.toFixed(4)}, ${actual.y.toFixed(4)}, ${actual.z.toFixed(4)})   drift=${drift.toFixed(4)}`);
           if (drift > 0.01) lines.push(`>>> MISMATCH — the pet's mesh isn't where the final face-relative rig-anchor transform says it should be (drift ${drift.toFixed(4)} world units).`);
@@ -1195,6 +1222,19 @@
     const characterView = window.HOBUNJI_CHARACTER_VIEW_STATUS; // Published by game.js so mobile reports can verify the private camera/body lock state.
     if (characterView) {
       lines.push(`Character View: ${characterView.enabled ? 'ON' : 'off'} reason=${characterView.lastChangeReason || '-'} facing=${Number(characterView.facingAngleDeg || 0).toFixed(2)}° body=${Number(characterView.bodyYawDeg || 0).toFixed(2)}° neck=${Number(characterView.neckYawDeg || 0).toFixed(2)}°`);
+    }
+    const shoulderAttachment = window.__hitboxDebug?.shoulderPetAttachment;
+    if (shoulderAttachment) {
+      const fmtPoint = point => point
+        ? `(${[point.x, point.y, point.z].map(value => Number(value).toFixed(5)).join(', ')})`
+        : '-';
+      const sourceAgeMs = Number.isFinite(Number(shoulderAttachment.sourceCapturedAt))
+        ? Math.max(0, performance.now() - Number(shoulderAttachment.sourceCapturedAt))
+        : null;
+      const petRootAgeMs = Number.isFinite(Number(shoulderAttachment.petRootCapturedAt))
+        ? Math.max(0, performance.now() - Number(shoulderAttachment.petRootCapturedAt))
+        : null;
+      lines.push(`Shoulder attachment: SOURCE=${fmtPoint(shoulderAttachment.sourceWorld)} PERCH=${fmtPoint(shoulderAttachment.perch)} GRIP=${fmtPoint(shoulderAttachment.grip)} PET_ROOT=${fmtPoint(shoulderAttachment.petRootWorld)} source→perch=${Number.isFinite(Number(shoulderAttachment.sourcePerchError)) ? Number(shoulderAttachment.sourcePerchError).toFixed(6) + 'u' : '-'} perch→grip=${Number(shoulderAttachment.error || 0).toFixed(6)}u root→grip=${Number.isFinite(Number(shoulderAttachment.petRootGripDistance)) ? Number(shoulderAttachment.petRootGripDistance).toFixed(6) + 'u' : '-'} sourceCapture=${shoulderAttachment.sourceCaptureMode || '-'}${sourceAgeMs == null ? '' : ` age=${sourceAgeMs.toFixed(1)}ms`} petRootCapture=${shoulderAttachment.petRootCaptureMode || '-'}${petRootAgeMs == null ? '' : ` age=${petRootAgeMs.toFixed(1)}ms`}`);
     }
     if (facingAtClick) {
       lines.push('');

@@ -21,6 +21,10 @@
   const DEBUG_BODY_AIM_COLOR = '#54a7ff'; // Body/movement/melee/lunge convergence guide.
   const DEBUG_MELEE_AIM_COLOR = '#ff5cf4'; // Melee/lunge label color at the shared body-origin guide.
   const DEBUG_RANGED_ATTACK_COLOR = '#ff6b35'; // Muzzle-to-perspective-point convergence guide.
+  const DEBUG_SHOULDER_PERCH_COLOR = '#5cf2ff'; // Cyan = player-authored live shoulder perch.
+  const DEBUG_SHOULDER_GRIP_COLOR = '#ff5cf4'; // Magenta = pet-authored live shoulder grip after root attachment.
+  const DEBUG_SHOULDER_SOURCE_PIXEL_COLOR = '#fff566'; // Yellow = independently reconstructed live SkinnedMesh position of the authored shoulder source pixel.
+  const DEBUG_SHOULDER_PET_ROOT_COLOR = '#ff9a3c'; // Orange = actual shoulder-pet root captured during its own visible draw.
 
   function playerModelWidthTiles() {
     return window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.worldModelWidth ?? 0.9;
@@ -118,6 +122,283 @@
     octx.fillStyle = color;
     octx.fillText(label, projected.x + 8, projected.y);
     octx.restore();
+  }
+
+  function _drawDebugPoint3D(point, color, label, radius = 6, labelOffsetY = 0) {
+    if (!point) return;
+    const projected = deps.worldToOverlay(point.x, point.y, point.z);
+    if (!projected.visible || ![projected.x, projected.y].every(Number.isFinite)) return;
+    const octx = deps.octx;
+    octx.save();
+    octx.strokeStyle = color;
+    octx.fillStyle = color;
+    octx.lineWidth = 2;
+    octx.beginPath();
+    octx.arc(projected.x, projected.y, radius, 0, Math.PI * 2);
+    octx.moveTo(projected.x - radius - 4, projected.y);
+    octx.lineTo(projected.x + radius + 4, projected.y);
+    octx.moveTo(projected.x, projected.y - radius - 4);
+    octx.lineTo(projected.x, projected.y + radius + 4);
+    octx.stroke();
+    octx.font = '11px monospace';
+    octx.textBaseline = 'bottom';
+    const width = octx.measureText(label).width;
+    octx.globalAlpha = 0.82;
+    octx.fillStyle = '#070b12';
+    octx.fillRect(projected.x + 8, projected.y - 18 + labelOffsetY, width + 6, 15);
+    octx.globalAlpha = 1;
+    octx.fillStyle = color;
+    octx.fillText(label, projected.x + 11, projected.y - 5 + labelOffsetY);
+    octx.restore();
+  }
+
+  function _skinVertexWorld(skinnedPlane, vertexIndex, target = new THREE.Vector3()) {
+    const geometry = skinnedPlane?.geometry;
+    const skeleton = skinnedPlane?.skeleton;
+    const position = geometry?.getAttribute?.('position');
+    const skinIndex = geometry?.getAttribute?.('skinIndex');
+    const skinWeight = geometry?.getAttribute?.('skinWeight');
+    if (!position || !skinIndex || !skinWeight || !skeleton?.bones?.length) return null;
+
+    const bindPoint = new THREE.Vector3(position.getX(vertexIndex), position.getY(vertexIndex), position.getZ(vertexIndex)).applyMatrix4(skinnedPlane.bindMatrix);
+    target.set(0, 0, 0);
+    const boneMatrix = new THREE.Matrix4();
+    const weightedPoint = new THREE.Vector3();
+    for (let slot = 0; slot < 4; slot++) {
+      const weight = Number(skinWeight.getComponent
+        ? skinWeight.getComponent(vertexIndex, slot)
+        : slot === 0 ? skinWeight.getX(vertexIndex)
+          : slot === 1 ? skinWeight.getY(vertexIndex)
+            : slot === 2 ? skinWeight.getZ(vertexIndex)
+              : skinWeight.getW(vertexIndex)) || 0;
+      if (!weight) continue;
+      const boneIndex = Number(skinIndex.getComponent
+        ? skinIndex.getComponent(vertexIndex, slot)
+        : slot === 0 ? skinIndex.getX(vertexIndex)
+          : slot === 1 ? skinIndex.getY(vertexIndex)
+            : slot === 2 ? skinIndex.getZ(vertexIndex)
+              : skinIndex.getW(vertexIndex)) || 0;
+      if (skeleton.boneMatrices?.length >= (boneIndex + 1) * 16) {
+        boneMatrix.fromArray(skeleton.boneMatrices, boneIndex * 16);
+      } else {
+        const bone = skeleton.bones[boneIndex];
+        const inverse = skeleton.boneInverses?.[boneIndex];
+        if (!bone || !inverse) continue;
+        bone.updateWorldMatrix?.(true, false);
+        boneMatrix.multiplyMatrices(bone.matrixWorld, inverse);
+      }
+      weightedPoint.copy(bindPoint).applyMatrix4(boneMatrix);
+      target.addScaledVector(weightedPoint, weight);
+    }
+    target.applyMatrix4(skinnedPlane.bindMatrixInverse);
+    return skinnedPlane.localToWorld(target);
+  }
+
+  function _sourcePixelSampleSpec(skinnedPlane, portraitRoot, sourcePixel) {
+    const geometry = skinnedPlane?.geometry;
+    const sourceCanvas = portraitRoot?.userData?.sourceCanvas;
+    const pixelWidth = Number(sourceCanvas?.naturalWidth || sourceCanvas?.width);
+    const pixelHeight = Number(sourceCanvas?.naturalHeight || sourceCanvas?.height);
+    const segmentsX = Number(geometry?.userData?.segmentsX);
+    const segmentsY = Number(geometry?.userData?.segmentsY);
+    if (!skinnedPlane?.isSkinnedMesh || !sourcePixel
+      || ![pixelWidth, pixelHeight, segmentsX, segmentsY, sourcePixel.x, sourcePixel.y].every(Number.isFinite)
+      || pixelWidth <= 0 || pixelHeight <= 0 || segmentsX <= 0 || segmentsY <= 0) return null;
+
+    const sourceX = window.PNGPlaneAvatar?.getPortraitsFlipped?.()
+      ? pixelWidth - Number(sourcePixel.x)
+      : Number(sourcePixel.x); // Maps the authored source texel to the geometry position where the currently flipped/unflipped texture actually displays it.
+    const sourceY = Number(sourcePixel.y);
+    const safeX = Math.min(pixelWidth - 1e-6, Math.max(0, sourceX));
+    const safeY = Math.min(pixelHeight - 1e-6, Math.max(0, sourceY));
+    const cellX = safeX / pixelWidth * segmentsX;
+    const cellY = safeY / pixelHeight * segmentsY;
+    const column = Math.min(segmentsX - 1, Math.max(0, Math.floor(cellX)));
+    const row = Math.min(segmentsY - 1, Math.max(0, Math.floor(cellY)));
+    const fx = cellX - column;
+    const fy = cellY - row;
+    const base = (row * segmentsX + column) * 6; // Front-face geometry emits exactly six vertices per PNG-grid cell.
+    if (fy >= fx) {
+      return {
+        indices: [base, base + 1, base + 2],
+        weights: [fy - fx, fx, 1 - fy],
+        sourcePixel: { x: Number(sourcePixel.x), y: Number(sourcePixel.y) },
+        renderedPixel: { x: safeX, y: safeY },
+        cell: { column, row },
+        triangle: 0,
+      };
+    }
+    return {
+      indices: [base + 3, base + 4, base + 5],
+      weights: [fy, fx - fy, 1 - fx],
+      sourcePixel: { x: Number(sourcePixel.x), y: Number(sourcePixel.y) },
+      renderedPixel: { x: safeX, y: safeY },
+      cell: { column, row },
+      triangle: 1,
+    };
+  }
+
+  function _sampleSkinnedSourcePixelWorld(skinnedPlane, portraitRoot, sourcePixel) {
+    const spec = _sourcePixelSampleSpec(skinnedPlane, portraitRoot, sourcePixel);
+    if (!spec) return null;
+    skinnedPlane.updateMatrixWorld?.(true);
+    skinnedPlane.skeleton?.update?.(); // Refreshes the exact live bone matrices consumed by the SkinnedMesh shader.
+    const vertices = spec.indices.map(index => _skinVertexWorld(skinnedPlane, index, new THREE.Vector3()));
+    if (vertices.some(vertex => !vertex)) return null;
+    const world = new THREE.Vector3();
+    for (let i = 0; i < 3; i++) world.addScaledVector(vertices[i], spec.weights[i]); // Same triangle interpolation that maps the source UV across the rendered surface.
+    return { ...spec, world };
+  }
+
+  function _ensureShoulderSourcePixelRenderCapture(skinnedPlane, portraitRoot, sourcePixel) {
+    if (!skinnedPlane?.isSkinnedMesh) return null;
+    skinnedPlane.userData = skinnedPlane.userData || {};
+    let state = skinnedPlane.userData.hobunjiShoulderSourcePixelRenderCapture;
+    if (!state) {
+      state = {
+        sourcePixel: null,
+        portraitRoot: null,
+        lastVisibleSample: null,
+        previousBefore: typeof skinnedPlane.onBeforeRender === 'function' ? skinnedPlane.onBeforeRender : null,
+      };
+      skinnedPlane.userData.hobunjiShoulderSourcePixelRenderCapture = state;
+      skinnedPlane.onBeforeRender = function shoulderSourcePixelCaptureBefore(...args) {
+        state.previousBefore?.apply(this, args);
+        const scene = args[1];
+        const material = args[4];
+        if (scene?.overrideMaterial || material?.colorWrite === false || !state.sourcePixel || !state.portraitRoot) return;
+        const sample = _sampleSkinnedSourcePixelWorld(this, state.portraitRoot, state.sourcePixel);
+        if (!sample?.world) return;
+        state.lastVisibleSample = {
+          world: { x: sample.world.x, y: sample.world.y, z: sample.world.z },
+          sourcePixel: sample.sourcePixel,
+          renderedPixel: sample.renderedPixel,
+          cell: sample.cell,
+          triangle: sample.triangle,
+          capturedAt: performance.now(),
+          matrixWorld: Array.from(this.matrixWorld.elements),
+        };
+      };
+    }
+    state.sourcePixel = { x: Number(sourcePixel?.x), y: Number(sourcePixel?.y) };
+    state.portraitRoot = portraitRoot;
+    return state;
+  }
+
+  function _liveShoulderSourcePixelWorld() {
+    const perch = deps.playerAttachmentAnchor?.('shoulderPerch');
+    const sourcePixel = perch?.sourcePixel;
+    const portraitRoot = window.PNGPlaneAvatar?.resolveSkinnedPortraitRoot?.(deps.playerMesh) || deps.playerMesh;
+    const skinnedPlane = portraitRoot?.userData?.neckRig?.skinnedPlane;
+    if (!skinnedPlane?.isSkinnedMesh || !sourcePixel) return null;
+    const state = _ensureShoulderSourcePixelRenderCapture(skinnedPlane, portraitRoot, sourcePixel);
+    const sample = state?.lastVisibleSample;
+    if (!sample || performance.now() - Number(sample.capturedAt || 0) > 250) return null; // Never substitute a resting-state solve for the point actually used by a recent visible draw.
+    return {
+      world: new THREE.Vector3(sample.world.x, sample.world.y, sample.world.z),
+      sourcePixel: sample.sourcePixel,
+      renderedPixel: sample.renderedPixel,
+      cell: sample.cell,
+      triangle: sample.triangle,
+      capturedAt: sample.capturedAt,
+      captureMode: 'visible-skinnedmesh-onBeforeRender',
+    };
+  }
+
+  function _ensureShoulderPetRootRenderCapture(pet) {
+    const group = pet?.avatarRef?.group;
+    const planes = [pet?.avatarRef?.frontPlane, pet?.avatarRef?.backPlane].filter(Boolean);
+    if (!group || !planes.length) return null;
+    group.userData = group.userData || {};
+    let state = group.userData.hobunjiShoulderPetRootRenderCapture;
+    if (!state) {
+      state = { lastVisibleSample: null, hookedPlanes: new WeakSet() };
+      group.userData.hobunjiShoulderPetRootRenderCapture = state;
+    }
+    for (const plane of planes) {
+      if (state.hookedPlanes.has(plane)) continue;
+      const previousBefore = typeof plane.onBeforeRender === 'function' ? plane.onBeforeRender : null;
+      plane.onBeforeRender = function shoulderPetRootCaptureBefore(...args) {
+        previousBefore?.apply(this, args);
+        const scene = args[1];
+        const material = args[4];
+        if (scene?.overrideMaterial || material?.colorWrite === false) return;
+        group.updateWorldMatrix?.(true, false);
+        const world = group.getWorldPosition?.(new THREE.Vector3());
+        if (!world) return;
+        state.lastVisibleSample = {
+          world: { x: world.x, y: world.y, z: world.z },
+          capturedAt: performance.now(),
+          captureMode: 'visible-shoulder-pet-plane-onBeforeRender',
+        };
+      };
+      state.hookedPlanes.add(plane);
+    }
+    return state;
+  }
+
+  function _activeShoulderPetAttachmentSnapshot() {
+    const pet = Array.from(deps?.companionObjects || []).find(c =>
+      c?.stableRole === 'shoulderPet'
+      && c.health > 0
+      && c.areaId === deps.getCurrentArea()
+      && c.avatarRef?.group?.userData?.hobunjiShoulderPetAttachment
+    );
+    const raw = pet?.avatarRef?.group?.userData?.hobunjiShoulderPetAttachment;
+    if (!pet || !raw) return null;
+    const perchArray = raw.authoredPerchWorldPosition;
+    const gripArray = raw.alignedGripWorldPosition;
+    if (!Array.isArray(perchArray) || !Array.isArray(gripArray)) return null;
+    const perch = { x: Number(perchArray[0]), y: Number(perchArray[1]), z: Number(perchArray[2]) };
+    const grip = { x: Number(gripArray[0]), y: Number(gripArray[1]), z: Number(gripArray[2]) };
+    if (![perch.x, perch.y, perch.z, grip.x, grip.y, grip.z].every(Number.isFinite)) return null;
+    const sourcePixel = _liveShoulderSourcePixelWorld();
+    const sourceWorld = sourcePixel?.world
+      ? { x: sourcePixel.world.x, y: sourcePixel.world.y, z: sourcePixel.world.z }
+      : null;
+    const petRootCapture = _ensureShoulderPetRootRenderCapture(pet);
+    const petRootSample = petRootCapture?.lastVisibleSample;
+    const petRootFresh = petRootSample && performance.now() - Number(petRootSample.capturedAt || 0) <= 250;
+    const petRootWorld = petRootFresh ? { ...petRootSample.world } : null;
+    return {
+      creatureKey: pet.creatureKey || pet.id || 'shoulderPet',
+      perch,
+      grip,
+      sourceWorld,
+      sourcePixel: sourcePixel?.sourcePixel || null,
+      renderedPixel: sourcePixel?.renderedPixel || null,
+      sourceCell: sourcePixel?.cell || null,
+      sourceTriangle: sourcePixel?.triangle ?? null,
+      sourceCaptureMode: sourcePixel?.captureMode || null,
+      sourceCapturedAt: Number(sourcePixel?.capturedAt) || null,
+      petRootWorld,
+      petRootCaptureMode: petRootFresh ? petRootSample.captureMode : null,
+      petRootCapturedAt: petRootFresh ? Number(petRootSample.capturedAt) : null,
+      petRootGripDistance: petRootWorld ? Math.hypot(petRootWorld.x - grip.x, petRootWorld.y - grip.y, petRootWorld.z - grip.z) : null,
+      sourcePerchError: sourceWorld ? Math.hypot(sourceWorld.x - perch.x, sourceWorld.y - perch.y, sourceWorld.z - perch.z) : null,
+      error: Math.hypot(perch.x - grip.x, perch.y - grip.y, perch.z - grip.z),
+      rotationSource: raw.rotationSource || null,
+      observationPivotApplied: raw.observationPivotApplied === true,
+    };
+  }
+
+  function _drawShoulderPetAttachmentPoints() {
+    if (!deps.getShowShoulderPetAttachmentPoints?.()) return;
+    const state = _activeShoulderPetAttachmentSnapshot();
+    if (!state) return;
+    if (state.sourceWorld) _drawDebugSegment3D(state.sourceWorld, state.perch, DEBUG_SHOULDER_SOURCE_PIXEL_COLOR, true, 2.5, 0.95);
+    _drawDebugSegment3D(state.perch, state.grip, '#ffffff', false, 2.5, 0.95);
+    if (state.petRootWorld) _drawDebugSegment3D(state.petRootWorld, state.grip, DEBUG_SHOULDER_PET_ROOT_COLOR, true, 2, 0.9);
+    if (state.sourceWorld) _drawDebugPoint3D(state.sourceWorld, DEBUG_SHOULDER_SOURCE_PIXEL_COLOR, 'SOURCE PIXEL', 7, -24);
+    _drawDebugPoint3D(state.perch, DEBUG_SHOULDER_PERCH_COLOR, 'PERCH', 9, -7); // Larger cyan ring stays visible even when the grip is perfectly coincident.
+    _drawDebugPoint3D(state.grip, DEBUG_SHOULDER_GRIP_COLOR, 'GRIP', 5, 10); // Smaller magenta ring nests inside the perch marker instead of hiding it.
+    if (state.petRootWorld) _drawDebugPoint3D(state.petRootWorld, DEBUG_SHOULDER_PET_ROOT_COLOR, 'PET ROOT', 6, 25);
+    const midpoint = {
+      x: (state.perch.x + state.grip.x) * 0.5,
+      y: (state.perch.y + state.grip.y) * 0.5,
+      z: (state.perch.z + state.grip.z) * 0.5,
+    };
+    _drawDebugPoint3D(midpoint, '#ffffff', `grip ${state.error.toFixed(5)}u${Number.isFinite(state.sourcePerchError) ? ` · source ${state.sourcePerchError.toFixed(5)}u` : ''}${Number.isFinite(state.petRootGripDistance) ? ` · root→grip ${state.petRootGripDistance.toFixed(5)}u` : ''}`, 2, 42);
   }
 
   // Projects all twelve Box3 edges through the live camera. This is the
@@ -348,6 +629,7 @@
     _drawInteractionRaycast();
     _drawPlayerMovementAlignmentRays();
     _drawHeadLookRaycasts();
+    _drawShoulderPetAttachmentPoints();
   }
 
   function debugSnapshot() {
@@ -376,6 +658,7 @@
   window.__hitboxDebug = {
     get actors() { return debugSnapshot(); },
     get interactionRay() { return _interactionRaySnapshot(); },
+    get shoulderPetAttachment() { return _activeShoulderPetAttachmentSnapshot(); },
     snapshot: () => ({
       latestChange: 'Shoulder body/root stays idle-free inside the 60° independent neck range, then catches up without restricting the camera; movement and attacks still converge immediately.',
       actors: debugSnapshot(),
@@ -387,6 +670,7 @@
       })),
       interactionRay: _interactionRaySnapshot(),
       movementAlignment: _movementAlignmentSnapshot(),
+      shoulderPetAttachment: _activeShoulderPetAttachmentSnapshot(),
     }),
   };
 })();
