@@ -316,7 +316,8 @@
   }
 
   function enforceCaps(entity) {
-    entity.health = round1(clamp(entity.health, 0, getEffectiveMax(entity, "health")));
+    if (entity.health > 0) applyHealthRecovery(entity, 0);
+    else entity.health = round1(clamp(Number(entity.health) || 0, 0, getLiveEffectiveHealthMax(entity)));
     entity.stamina = entity.exhaustion.active
       ? 0
       : round1(clamp(entity.stamina, 0, getEffectiveMax(entity, "stamina"))); // While Exhausted, black Stamina is the only live stamina pool.
