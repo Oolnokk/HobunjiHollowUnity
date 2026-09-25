@@ -260,8 +260,11 @@
   function enforceWoundedHealthCap(entity, RS) {
     const wounded = Math.max(0, RS.getAffliction(entity, 'woundedHealth') || 0); // Used as recoverable unavailable Health after Gurumahi hits.
     if (!(wounded > 0) || !Number.isFinite(entity?.maxHealth)) return;
-    const authoredMax = Math.max(0, Number(entity.maxHealth) || 0); // Used to keep the Wounded-Health floor bounded by the entity's real authored Health capacity.
-    const cap = authoredMax > 0 ? Math.max(Math.min(1, authoredMax), authoredMax - wounded) : 0; // Used so Wounded Health can reduce living capacity to 1 but never kill outright.
+    const resolvedCap = Number(RS.getEffectiveMax?.(entity, 'health')); // Used to compose Wounded Health with Congealed Health, perks, and any later shared maximum-Health rules.
+    const authoredMax = Math.max(0, Number(entity.maxHealth) || 0); // Used only as a safe fallback if the shared effective-max resolver is unavailable.
+    const cap = Number.isFinite(resolvedCap)
+      ? Math.max(0, resolvedCap)
+      : (authoredMax > 0 ? Math.max(Math.min(1, authoredMax), authoredMax - wounded) : 0);
     if (entity.health > cap) entity.health = Math.round(cap * 10) / 10;
   }
 
