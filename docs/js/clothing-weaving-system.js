@@ -2223,7 +2223,7 @@
 
   async function renderProfileWithWovenPatterns(renderer, canvas, profile, options = {}) {
     if (typeof renderer !== 'function') return false;
-    if (renderer.__clothingWeavingPattern) return renderer(canvas, profile, options); // Already wrapped by this system; delegate without nesting another woven pass.
+    if (renderer.__clothingWeavingPattern || options?.imageForTint?.__clothingWeavingPattern) return renderer(canvas, profile, options); // A woven renderer or inherited render-local resolver already owns this pass; delegate without nesting another composite.
     const descriptors = profile?.bodyColors?.[CLOTHING_MARKER_KEY]; // Used below to resolve the woven garment descriptors embedded in this one portrait.
     const patternMap = Array.isArray(descriptors) && descriptors.length ? await buildPortraitPatternMap(descriptors) : null; // Render-owned lookup; never shared with another async portrait.
     if (!patternMap?.size) return renderer(canvas, profile, options);
@@ -2231,6 +2231,7 @@
     if (typeof baseTintResolver !== 'function') return renderer(canvas, profile, options);
     const pendingBuilds = new Set(); // Tracks only this render's async pattern composites so the same canvas can be redrawn before callers upload it.
     const imageForTint = (img, sourceKey, tint) => patternImageForTint(patternMap, baseTintResolver, pending => pendingBuilds.add(pending), img, sourceKey, tint); // Injected only into this render invocation.
+    imageForTint.__clothingWeavingPattern = true; // Nested/later portrait wrappers use this marker to avoid applying the same woven pass twice.
     portraitPatternStats.renderScopes++;
     const renderOptions = { ...(options || {}), imageForTint }; // Passed to portrait-utils without mutating caller-owned options.
     const firstResult = await renderer(canvas, profile, renderOptions); // Produces either a cache-hit woven frame or the temporary tinted fallback while misses build.
