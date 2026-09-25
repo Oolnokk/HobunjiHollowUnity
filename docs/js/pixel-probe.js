@@ -636,6 +636,21 @@
           ? Math.hypot(actual.x - expectedX, actual.y - expectedY, actual.z - expectedZ)
           : NaN; // Only reports positional drift once the final pin has produced a complete transform snapshot.
         lines.push(`Attachment rotation source: ${attachmentDebug?.rotationSource || '(awaiting final pin)'} — authored shoulderPerch rotation is relative to the live face.`);
+        const perchWorld = attachmentDebug?.authoredPerchWorldPosition;
+        const gripWorld = attachmentDebug?.alignedGripWorldPosition;
+        const perchWorldValid = Array.isArray(perchWorld) && perchWorld.length >= 3 && perchWorld.slice(0, 3).every(Number.isFinite);
+        const gripWorldValid = Array.isArray(gripWorld) && gripWorld.length >= 3 && gripWorld.slice(0, 3).every(Number.isFinite);
+        if (perchWorldValid && gripWorldValid) {
+          const pointError = Number.isFinite(Number(attachmentDebug?.gripPerchError))
+            ? Number(attachmentDebug.gripPerchError)
+            : Math.hypot(perchWorld[0] - gripWorld[0], perchWorld[1] - gripWorld[1], perchWorld[2] - gripWorld[2]);
+          lines.push(`Attachment points world: PERCH=(${perchWorld.slice(0, 3).map(value => Number(value).toFixed(5)).join(', ')}) GRIP=(${gripWorld.slice(0, 3).map(value => Number(value).toFixed(5)).join(', ')}) error=${pointError.toFixed(6)}u`);
+        } else {
+          lines.push('Attachment points world: awaiting final perch/grip solve');
+        }
+        const perchLocal = [Number(perch.x) || 0, Number(perch.y) || 0, Number(perch.z) || 0];
+        const perchPixel = perch.sourcePixel;
+        lines.push(`Authored shoulderPerch local: (${perchLocal.map(value => value.toFixed(5)).join(', ')})${perchPixel ? ` sourcePixel=(${Number(perchPixel.x).toFixed(2)}, ${Number(perchPixel.y).toFixed(2)})` : ''}`);
         if (Number.isFinite(drift)) {
           lines.push(`Rig-anchor expected position: (${expectedX.toFixed(4)}, ${expectedY.toFixed(4)}, ${expectedZ.toFixed(4)})   actual mesh position: (${actual.x.toFixed(4)}, ${actual.y.toFixed(4)}, ${actual.z.toFixed(4)})   drift=${drift.toFixed(4)}`);
           if (drift > 0.01) lines.push(`>>> MISMATCH — the pet's mesh isn't where the final face-relative rig-anchor transform says it should be (drift ${drift.toFixed(4)} world units).`);
