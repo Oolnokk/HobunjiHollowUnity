@@ -2518,12 +2518,13 @@
       ]);
       for (const key of AUTHORED_FURNITURE_KEYS) window.AuthoredFurniture?.load(key);
 
-      // Shared by makeDecorativeFurnitureMesh/makeProcessingFurniture: use the
-      // richer authored geometry once it's loaded, otherwise the old crude
-      // procedural stand-in (never blocks placement on the fetch completing).
+      // Shared by makeDecorativeFurnitureMesh/makeProcessingFurniture and building interiors.
+      // Always enter through ProceduralFurniture's live wrapper: FurnitureVesselRuntime resolves
+      // cached authored geometry or upgrades a temporary fallback, and additive decorators such
+      // as InteriorFireFloorRuntime attach ambient VFX on that same path. Calling
+      // AuthoredFurniture.buildGroup directly here used to bypass hearth/candle flame playback
+      // whenever eager preload had already cached the authored JSON.
       function buildFurnitureVisual(furnitureKey, color) {
-        const authored = window.AuthoredFurniture?.peek(furnitureKey); // Explicitly loaded future mechanism furniture need not be added to the eager-preload set merely to render.
-        if (authored) return window.AuthoredFurniture.buildGroup(authored, color);
         return window.ProceduralFurniture.buildFurnitureGroup(furnitureKey, color);
       }
 
