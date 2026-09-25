@@ -1664,7 +1664,7 @@
   }
 
   window.PorakanekiCamps = Object.freeze({
-    version: 6,
+    version: 7,
     update,
     ensureWorldCamps,
     ensureCampStamp: ensureWorldCamps,
