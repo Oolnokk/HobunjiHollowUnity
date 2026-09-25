@@ -20,6 +20,7 @@ for (const expected of [
   'id="horizonWestPreset"',
   'id="horizonNorthPreset"',
   'id="horizonOverallScale"',
+  'id="horizonMountainLayers"',
 ]) {
   if (!index.includes(expected)) throw new Error(`Boundary author missing authored-preview dependency/label: ${expected}`);
 }
