@@ -19,6 +19,7 @@
 </script>
 <script src="../../js/terrain-render-chunks.js?v=20260914boundary-visualrestore1"></script>
 <script src="../../js/border-terrain.js"></script>
+<script src="../../js/zone-plateau-mesa.js"></script>
 <style>
 #preview3d{position:absolute;inset:0;display:none;background:#08111a;overflow:hidden}
 #preview3dCanvas{display:block;width:100%;height:100%;touch-action:none}
@@ -84,12 +85,24 @@
           <div class="field"><label>Whole landmark scale</label><input id="horizonOverallScale" type="number" min="0.25" max="6" step="0.05"></div>
           <div class="field"><label>Front-row mountains</label><input id="horizonSegments" type="number" min="3" max="16" step="1"></div>
         </div>
-        <div class="field" id="horizonMountainLayersField"><label>Plateau layers per mountain</label><input id="horizonMountainLayers" type="number" min="4" max="24" step="1"></div>
-        <p class="muted" style="margin-top:6px">Mountains are built as many stacked, slightly smaller plateau slabs. Each layer has exactly four un-subdivided cliff-side planes and one flat top. Whole landmark scale enlarges the complete object around the map-edge center; Edge span remains an additional long-axis multiplier so the western chain can extend several map lengths north and south.</p>
+        <div class="field" id="horizonMountainLayersField"><label>Plateau tier resolution cap</label><input id="horizonMountainLayers" type="number" min="8" max="64" step="1"></div>
+        <p class="muted" style="margin-top:6px">The mountain range is generated as one shared synthetic plateau map and rendered by the same plateau/mesa builder as playable terrain. Overlapping mountains share tier masks, merge into each other, and form cliffs/terraces using the normal plateau rules.</p>
         <div class="row" style="margin-top:6px;flex-wrap:wrap">
+          <button class="sec" id="horizonRandomize">🎲 Randomize mountains</button>
           <button class="sec" id="horizonWestPreset">🏔 West Slope mountains</button>
           <button class="sec" id="horizonNorthPreset">▰ Northern Cliffs plateau</button>
           <button class="bad" id="horizonClear">Clear</button>
+        </div>
+        <div id="horizonLockTools" style="margin-top:9px">
+          <div class="g2">
+            <div class="field"><label>2D mountain brush</label><select id="horizonBrushMode"><option value="pan">Pan / edit paths</option><option value="lock">🔒 Lock generated tiles</option><option value="unlock">🔓 Unlock tiles</option></select></div>
+            <div class="field"><label>Brush radius (synthetic tiles)</label><input id="horizonBrushRadius" type="number" min="1" max="8" step="1" value="2"></div>
+          </div>
+          <div class="row" style="align-items:center;flex-wrap:wrap">
+            <button class="bad" id="horizonClearLocks">Clear tile locks</button>
+            <span class="pill" id="horizonLockCount">0 locked tiles</span>
+          </div>
+          <p class="muted" style="margin:6px 0 0">Paint over the colored 2D mountain field. A locked tile keeps its current plateau tier when Randomize changes the rest of the shared map; Unlock frees it again.</p>
         </div>
         <div id="horizonStats" class="muted" style="margin-top:6px;line-height:1.35">No colossal horizon terrain.</div>
       </div>
