@@ -16,6 +16,9 @@ for (const expected of [
   'installBoundaryR128JigsawApiBridge',
   'AUTHORED PREVIEW',
   'JIGSAW SURFACE UV',
+  'id="horizonPreset"',
+  'id="horizonWestPreset"',
+  'id="horizonNorthPreset"',
 ]) {
   if (!index.includes(expected)) throw new Error(`Boundary author missing authored-preview dependency/label: ${expected}`);
 }
@@ -44,6 +47,8 @@ for (const expected of [
   "right.textContent = 'JIGSAW SURFACE UV'",
   'api.bakeMesh(temp,{...settings,force:true,disposeSource:true})',
   'scene.userData.terrainJigsawDisableAuto = true',
+  'BorderTerrain.buildColossalHorizonTerrain?.(',
+  'HORIZON ${horizonStats.kind}',
 ]) {
   if (!preview.includes(expected)) throw new Error(`Boundary authored-vs-Jigsaw preview contract missing: ${expected}`);
 }
