@@ -54,6 +54,13 @@ assert(hearth.parts.filter(part => part.materialRole === 'stone' && part.materia
   'hearth masonry must reuse the altar/pillar carved-smooth stone material language');
 assert(hearth.parts.some(part => /jamb/i.test(part.name || '')) && hearth.parts.some(part => /lintel/i.test(part.name || '')) && hearth.parts.some(part => /mantel/i.test(part.name || '')),
   'hearth silhouette must expose jamb, lintel, and mantel masonry around the firebox');
+const hearthBack = hearth.parts.find(part => part.id === 'hearth_back');
+assert(hearthBack?.depthWrite === false,
+  'hearth firebox back must render without writing depth so transparent flames stay visible over it');
+assert(read('docs/js/procedural-furniture.js').includes('if (part.depthWrite === false) mat.depthWrite = false'),
+  'shared furniture part renderer must honor explicit depthWrite:false without disabling depth testing globally');
+assert(read('docs/js/procedural-furniture.js').includes("materialTexture: 'carved_smooth.png', depthWrite: false"),
+  'procedural hearth fallback must preserve the same VFX-safe firebox-back depth behavior');
 assert(hearth.particleEmitters.some(emitter => emitter.id === 'hearth_fire' && emitter.type === 'fire' && emitter.enabled !== false),
   'hearth must author an always-on fire emitter');
 const candleFlame = candleTable.particleEmitters.find(emitter => emitter.id === 'candle_table_fire');
