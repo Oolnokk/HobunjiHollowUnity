@@ -10,7 +10,10 @@ on:
       - 'docs/js/locale-cave-runtime.js'
       - 'docs/js/banubu-cave-clouds.js'
       - 'docs/js/interior-scene-builder.js'
+      - 'docs/js/interior-environment-runtime.js'
+      - 'docs/js/interior-fire-floor-runtime.js'
       - 'docs/js/house-pieces.js'
+      - 'docs/config/species/mashtzarr.json'
       - 'docs/js/HousePieceGen.js'
       - 'docs/js/portrait-utils.js'
       - 'docs/js/surface-stretch-uv-furniture.js'
@@ -98,6 +101,8 @@ jobs:
           node --check docs/js/wilderness-map-generator.js
           node --check docs/js/HousePieceGen.js
           node --check docs/js/portrait-utils.js
+          node --check docs/js/interior-environment-runtime.js
+          node --check docs/js/interior-fire-floor-runtime.js
           node --check docs/js/puktuk-den-nest-registration.js
           node --check docs/js/dev-arena-nest-spawner.js
           node -e "const fs=require('fs');const s=fs.readFileSync('docs/tools/locale-editor/locale-preview3d.js','utf8');for(const needle of ['Host above Δ≥+1','setRelativeHeight(1, null)','THREE.OrbitControls','cave_small.glb','embeddedTiles','previewRoot.remove(child)','parent !== previewRoot'])if(!s.includes(needle))throw new Error('missing '+needle);"
