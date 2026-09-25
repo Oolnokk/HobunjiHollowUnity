@@ -174,6 +174,7 @@
     mesh.rotation.set((t.rx || 0) * DEG, (t.ry || 0) * DEG, (t.rz || 0) * DEG);
     mesh.name = part.name || part.kind;
     if (part.materialTexture) applyPartTexture(mat, part);
+    if (part.depthWrite === false) mat.depthWrite = false; // Background/firebox planes may stay opaque visually without hiding later transparent VFX.
     return mesh;
   }
 
@@ -396,7 +397,7 @@
   CATALOG.hearth = [
     box(0, .06, 0, 1.82, .12, .88, 1, { color: 0x625c52, topScaleX: .98, topScaleZ: .98, materialTexture: 'carved_smooth.png' }),
     box(0, .15, .08, 1.62, .10, .72, 1, { color: 0x7b7466, topScaleX: .96, topScaleZ: .96, materialTexture: 'carved_smooth.png' }),
-    box(0, .78, -.34, 1.48, 1.16, .18, 1, { color: 0x625c52, materialTexture: 'carved_smooth.png' }),
+    box(0, .78, -.34, 1.48, 1.16, .18, 1, { color: 0x625c52, materialTexture: 'carved_smooth.png', depthWrite: false }),
     box(-.64, .69, -.06, .30, 1.04, .48, 1, { color: 0x7b7466, topScaleX: .92, topScaleZ: .95, bottomScaleX: 1.04, bottomScaleZ: 1.02, materialTexture: 'carved_smooth.png' }),
     box(.64, .69, -.06, .30, 1.04, .48, 1, { color: 0x7b7466, topScaleX: .92, topScaleZ: .95, bottomScaleX: 1.04, bottomScaleZ: 1.02, materialTexture: 'carved_smooth.png' }),
     box(0, 1.20, -.06, 1.50, .20, .48, 1, { color: 0x928a78, topScaleX: .97, topScaleZ: .97, materialTexture: 'carved_smooth.png' }),
