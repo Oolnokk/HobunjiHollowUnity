@@ -78,7 +78,7 @@ jobs:
       - run: node scripts/test-runtime-frame-scheduler.js
       - run: node scripts/test-controller-modern-flow-bridge.js
       - run: node scripts/test-controller-shipping-box.js
-      - run: node scripts/test-controller-input-authority.js
       - run: node scripts/test-controller-experience.js
       - run: node scripts/test-contextual-potion-selector.js
       - run: node scripts/test-bandage-system.js
+      - run: node scripts/test-controller-input-authority.js
