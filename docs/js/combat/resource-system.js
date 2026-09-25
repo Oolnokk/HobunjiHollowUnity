@@ -93,22 +93,22 @@
     woundedStamina: {
       name: "Wounded Stamina", resource: "stamina", extend: "zero", priority: 55, recovers: true, punishedAction: "staminaSpend",
       family: "damage", tags: ["physical", "breath"],
-      desc: "Spent afflicted Stamina deals itself as Health damage; avoiding Stamina spend makes it recover much faster."
+      desc: "Application only converts Stamina into Wounded buildup; spending through that afflicted Stamina later deals lethal Health damage. Avoiding Stamina spend makes it recover much faster."
     },
     bleedingHealth: {
       name: "Bleeding Health", resource: "health", extend: "currentBack", priority: 70, recovers: false,
       family: "damage", tags: ["physical", "blood"],
-      desc: "Ticks as Health loss during combat; while quiet/rested, the same tick heals instead."
+      desc: "Converts Health into Bleeding buildup without damaging on application; during combat, ticks consume that buildup as lethal Health damage, while quiet/rested ticks heal instead."
     },
     congealedHealth: {
       name: "Congealed Health", resource: "health", extend: "zero", priority: 50, recovers: false,
       family: "damage", tags: ["physical", "blood"],
-      desc: "Temporarily lowers effective Health max, then recovers its own points every tick."
+      desc: "Temporarily lowers effective Health max without reducing it below 1, then recovers its own points every tick."
     },
     infectedStamina: {
       name: "Infected Stamina", resource: "stamina", extend: "zero", priority: 65, recovers: true, punishedAction: "staminaSpend",
       family: "damage", tags: ["toxin", "infection"],
-      desc: "Spent like Wounded Stamina. Avoiding Stamina spend makes it recover much faster; it can also cause vomiting, adding Winded Stamina and Poisoned Health."
+      desc: "Application only converts Stamina into Infected buildup; spending through it later deals lethal Health damage. Avoiding Stamina spend makes it recover much faster; it can also cause vomiting, adding Winded Stamina and Poisoned Health."
     },
     windedStamina: {
       name: "Winded Stamina", resource: "stamina", extend: "zero", priority: 95, recovers: true,
@@ -123,17 +123,17 @@
     shatteredStamina: {
       name: "Shattered Stamina", resource: "stamina", extend: "zero", priority: 62, recovers: true, punishedAction: "staminaSpend",
       family: "damage", tags: ["physical"],
-      desc: "Spent afflicted Stamina applies Bleeding Health instead of direct Health damage; avoiding Stamina spend makes it recover much faster."
+      desc: "Application only converts Stamina into Shattered buildup; spending through it later applies Bleeding Health rather than immediate Health damage. Avoiding Stamina spend makes it recover much faster."
     },
     poisonedHealth: {
       name: "Poisoned Health", resource: "health", extend: "currentBack", priority: 80, recovers: false,
       family: "damage", tags: ["toxin"],
-      desc: "Ticks as Health damage over time; does not recover on its own."
+      desc: "Converts Health into Poisoned buildup without damaging on application; ticks consume that buildup as lethal Health damage over time."
     },
     burningHealth: {
       name: "Burning Health", resource: "health", extend: "currentBack", priority: 90, recovers: false,
       family: "damage", tags: ["fire", "physical"],
-      desc: "Rapidly ticks itself away as Health damage. Roll dodges cool part of it; entering water extinguishes it completely."
+      desc: "Converts Health into Burning buildup without damaging on application; ticks consume that buildup as lethal Health damage. Roll dodges cool part of it; entering water extinguishes it completely."
     }
   };
   const RECOVERING_AFFLICTIONS = Object.entries(AFFLICTIONS)
@@ -280,13 +280,43 @@
     const healthMul = isPlayer ? 1 + (window.PerkSystem?.rank('combat', 'increaseHealth') || 0) * 0.08 : 1; // Increase Health perk.
     const footingMul = isPlayer ? window.AlchemySystem?.getMaxFootingMultiplier?.() || 1 : 1; // Used by Poise.
     if (key === "stamina") return clamp((entity.maxStamina || 0) * staminaMul - getAffliction(entity, "windedStamina"), 0, (entity.maxStamina || 0) * staminaMul);
-    if (key === "health") return clamp((entity.maxHealth || 0) * healthMul - getAffliction(entity, "congealedHealth"), 0, (entity.maxHealth || 0) * healthMul);
+    if (key === "health") {
+      const fullHealthMax = Math.max(0, (entity.maxHealth || 0) * healthMul); // Used to keep capacity afflictions nonlethal without inventing Health on entities whose authored maximum is zero.
+      const afflictedHealthMax = clamp(fullHealthMax - getAffliction(entity, "congealedHealth"), 0, fullHealthMax); // Used as the raw Congealed-Health-reduced capacity before the living-target floor.
+      return fullHealthMax > 0 ? Math.max(Math.min(1, fullHealthMax), afflictedHealthMax) : 0;
+    }
     if (key === "footing") return (entity.maxFooting || 0) * footingMul;
     return 0;
   }
 
+  function getLiveEffectiveHealthMax(entity) {
+    const effectiveMaxResolver = window.ResourceSystem?.getEffectiveMax; // Used to include later-installed max-Health reducers such as Wounded Health instead of bypassing their wrapper.
+    return Math.max(0, Number(typeof effectiveMaxResolver === "function"
+      ? effectiveMaxResolver(entity, "health")
+      : getEffectiveMax(entity, "health")) || 0);
+  }
+
+  function applyHealthRecovery(entity, amount) {
+    if (!(entity?.health > 0)) return 0;
+    const before = Number(entity.health) || 0; // Used to keep resource-tick recovery from resurrecting dead actors or rounding tiny living Health to zero.
+    const effectiveMax = getLiveEffectiveHealthMax(entity); // Used so recovery and cap maintenance honor every installed maximum-Health reducer.
+    const livingFloor = Math.min(before, effectiveMax); // Used to allow a lowered max-Health cap to reduce current Health while never reducing it further merely because recovery is rounded to tenths.
+    const target = clamp(before + Math.max(0, Number(amount) || 0), 0, effectiveMax); // Used as the unrounded recovery target before the living floor is reapplied.
+    entity.health = clamp(round1(target), livingFloor, effectiveMax);
+    return round1(entity.health - before);
+  }
+
+  function applyHealthAfflictionDamage(entity, amount) {
+    if (!(amount > 0) || !(entity?.health > 0)) return 0;
+    const before = Number(entity.health) || 0; // Used to report actual Health lost when an already-applied DoT buildup ticks.
+    const effectiveMax = getLiveEffectiveHealthMax(entity); // Used only as the current upper cap; DoT damage itself remains fully lethal down to zero.
+    entity.health = round1(clamp(before - amount, 0, effectiveMax));
+    return round1(before - entity.health);
+  }
+
   function enforceCaps(entity) {
-    entity.health = round1(clamp(entity.health, 0, getEffectiveMax(entity, "health")));
+    if (entity.health > 0) applyHealthRecovery(entity, 0);
+    else entity.health = round1(clamp(Number(entity.health) || 0, 0, getLiveEffectiveHealthMax(entity)));
     entity.stamina = entity.exhaustion.active
       ? 0
       : round1(clamp(entity.stamina, 0, getEffectiveMax(entity, "stamina"))); // While Exhausted, black Stamina is the only live stamina pool.
@@ -542,7 +572,7 @@
       entity.stamina = round1(clamp(entity.stamina + staminaRate * mul * dt, 0, getEffectiveMax(entity, "stamina")));
     }
 
-    if (entity.health > 0) entity.health = round1(clamp(entity.health + healthRate * mul * dt, 0, getEffectiveMax(entity, "health")));
+    if (entity.health > 0) applyHealthRecovery(entity, healthRate * mul * dt);
 
     entity.proneT = entity.prone ? (entity.proneT || 0) + dt : 0;
     const footingRegenGated = entity.prone && entity.proneT < cfg.proneRecoveryDelayS;
@@ -569,8 +599,8 @@
     if (bleed <= 0) return;
     const amount = Math.min(bleed, cfg.bleedTickPerSec * dt);
     removeAffliction(entity, "bleedingHealth", amount);
-    if (rest.rested && !healthRecoveryBlocked) entity.health = round1(clamp(entity.health + amount, 0, getEffectiveMax(entity, "health")));
-    else entity.health = round1(clamp(entity.health - amount, 0, getEffectiveMax(entity, "health")));
+    if (rest.rested && !healthRecoveryBlocked) applyHealthRecovery(entity, amount);
+    else applyHealthAfflictionDamage(entity, amount);
   }
 
   function resolveBurningTick(entity, dt, cfg) {
@@ -578,7 +608,7 @@
     if (burning <= 0) return;
     const amount = Math.min(burning, cfg.burnTickPerSec * dt);
     removeAffliction(entity, "burningHealth", amount);
-    entity.health = round1(clamp(entity.health - amount, 0, getEffectiveMax(entity, "health")));
+    applyHealthAfflictionDamage(entity, amount);
   }
 
   function resolvePoisonTick(entity, dt, cfg) {
@@ -586,7 +616,7 @@
     if (poison <= 0) return;
     const amount = Math.min(poison, cfg.poisonTickPerSec * dt);
     removeAffliction(entity, "poisonedHealth", amount);
-    entity.health = round1(clamp(entity.health - amount, 0, getEffectiveMax(entity, "health")));
+    applyHealthAfflictionDamage(entity, amount);
   }
 
   function resolveCongealedTick(entity, dt, rest, cfg, healthRecoveryBlocked = false) {
@@ -594,7 +624,7 @@
     if (congealed <= 0) return;
     const amount = Math.min(congealed, cfg.afflictionRecoveryPerSec * (rest.rested ? 2 : 1) * dt);
     removeAffliction(entity, "congealedHealth", amount);
-    if (!healthRecoveryBlocked) entity.health = round1(clamp(entity.health + amount, 0, getEffectiveMax(entity, "health")));
+    if (!healthRecoveryBlocked) applyHealthRecovery(entity, amount);
   }
 
   function getAfflictionRecoveryMultiplier(entity, id, rested = false) {
@@ -675,6 +705,7 @@
     removeAfflictionsByFamily,
     removeAfflictionsByTag,
     getEffectiveMax,
+    applyHealthAfflictionDamage,
     getExhaustionSpeed,
     getAfflictionRecoveryMultiplier,
     getPunishedActionElapsedMs,
