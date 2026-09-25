@@ -650,7 +650,10 @@
             const source = sourceAttachment.sourceWorld;
             const sourcePixel = sourceAttachment.sourcePixel;
             const renderedPixel = sourceAttachment.renderedPixel;
-            lines.push(`Rendered source pixel world: SOURCE=(${[source.x, source.y, source.z].map(value => Number(value).toFixed(5)).join(', ')}) source→perch=${Number(sourceAttachment.sourcePerchError || 0).toFixed(6)}u sourcePixel=(${Number(sourcePixel?.x).toFixed(2)}, ${Number(sourcePixel?.y).toFixed(2)}) renderedPixel=(${Number(renderedPixel?.x).toFixed(2)}, ${Number(renderedPixel?.y).toFixed(2)}) cell=${sourceAttachment.sourceCell?.column ?? '-'},${sourceAttachment.sourceCell?.row ?? '-'} tri=${sourceAttachment.sourceTriangle ?? '-'}`);
+            const sourceAgeMs = Number.isFinite(Number(sourceAttachment.sourceCapturedAt))
+              ? Math.max(0, performance.now() - Number(sourceAttachment.sourceCapturedAt))
+              : null;
+            lines.push(`Rendered source pixel world: SOURCE=(${[source.x, source.y, source.z].map(value => Number(value).toFixed(5)).join(', ')}) source→perch=${Number(sourceAttachment.sourcePerchError || 0).toFixed(6)}u sourcePixel=(${Number(sourcePixel?.x).toFixed(2)}, ${Number(sourcePixel?.y).toFixed(2)}) renderedPixel=(${Number(renderedPixel?.x).toFixed(2)}, ${Number(renderedPixel?.y).toFixed(2)}) cell=${sourceAttachment.sourceCell?.column ?? '-'},${sourceAttachment.sourceCell?.row ?? '-'} tri=${sourceAttachment.sourceTriangle ?? '-'} capture=${sourceAttachment.sourceCaptureMode || '-'}${sourceAgeMs == null ? '' : ` age=${sourceAgeMs.toFixed(1)}ms`}`);
           } else {
             lines.push('Rendered source pixel world: awaiting one visible SkinnedMesh draw');
           }
@@ -1219,6 +1222,16 @@
     const characterView = window.HOBUNJI_CHARACTER_VIEW_STATUS; // Published by game.js so mobile reports can verify the private camera/body lock state.
     if (characterView) {
       lines.push(`Character View: ${characterView.enabled ? 'ON' : 'off'} reason=${characterView.lastChangeReason || '-'} facing=${Number(characterView.facingAngleDeg || 0).toFixed(2)}° body=${Number(characterView.bodyYawDeg || 0).toFixed(2)}° neck=${Number(characterView.neckYawDeg || 0).toFixed(2)}°`);
+    }
+    const shoulderAttachment = window.__hitboxDebug?.shoulderPetAttachment;
+    if (shoulderAttachment) {
+      const fmtPoint = point => point
+        ? `(${[point.x, point.y, point.z].map(value => Number(value).toFixed(5)).join(', ')})`
+        : '-';
+      const sourceAgeMs = Number.isFinite(Number(shoulderAttachment.sourceCapturedAt))
+        ? Math.max(0, performance.now() - Number(shoulderAttachment.sourceCapturedAt))
+        : null;
+      lines.push(`Shoulder attachment: SOURCE=${fmtPoint(shoulderAttachment.sourceWorld)} PERCH=${fmtPoint(shoulderAttachment.perch)} GRIP=${fmtPoint(shoulderAttachment.grip)} source→perch=${Number.isFinite(Number(shoulderAttachment.sourcePerchError)) ? Number(shoulderAttachment.sourcePerchError).toFixed(6) + 'u' : '-'} perch→grip=${Number(shoulderAttachment.error || 0).toFixed(6)}u sourceCapture=${shoulderAttachment.sourceCaptureMode || '-'}${sourceAgeMs == null ? '' : ` age=${sourceAgeMs.toFixed(1)}ms`}`);
     }
     if (facingAtClick) {
       lines.push('');
