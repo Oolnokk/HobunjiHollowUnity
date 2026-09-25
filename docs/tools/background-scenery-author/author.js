@@ -73,9 +73,10 @@ function fillHorizonControls(){
   $('horizonDistance').value=Number(cfg.distanceWorld)||0;
   $('horizonDepth').value=Number(cfg.depthWorld)||0;
   $('horizonSpan').value=Number(cfg.spanScale)||1;
+  $('horizonOverallScale').value=Number(cfg.overallScale)||1;
   $('horizonSegments').value=Math.round(Number(cfg.segments)||3);
   $('horizonStats').textContent=cfg.enabled
-    ? `${cfg.kind==='plateau'?'Plateau':`Mountain chain · ${budget.rows} staggered rows / ${budget.peakCount} peaks`} · ${budget.vertices} vertices / ${budget.triangles} triangles · ${cfg.heightWorld}u high · ${cfg.alwaysVisible?'always submitted':'frustum culled'} · ${cfg.fogIndependent?'fog independent':'uses scene fog'}`
+    ? `${cfg.kind==='plateau'?'Plateau':`Mountain chain · ${budget.rows} staggered rows / ${budget.peakCount} peaks`} · ${budget.vertices} vertices / ${budget.triangles} triangles · ${(cfg.heightWorld*(Number(cfg.overallScale)||1)).toFixed(1)}u effective height · ${(Number(cfg.spanScale)||1).toFixed(2)}× span · ${(Number(cfg.overallScale)||1).toFixed(2)}× whole scale · ${cfg.alwaysVisible?'always submitted':'frustum culled'} · ${cfg.fogIndependent?'fog independent':'uses scene fog'}`
     : 'No colossal horizon terrain.';
 }
 function announceHorizonChange(reason){
@@ -116,7 +117,28 @@ function deletePoint(){const a=selected(),o=a&&overrideFor(a.id,false);if(!a||a.
 function resetPoints(){updateOverride(o=>{delete o.controlPoints;});state.selectedPoint=-1;}
 function applyLive(){if(!state.map)return;if(!state.liveMapRef){const a=mapEditorAccess();if(a&&a.map.id===state.map.id){state.liveMapRef=a.map;state.liveMapWindow=a.win;}}if(!state.liveMapRef){log('No matching live Map Editor map. Use “Map Editor Live” first.');return;}state.liveMapRef.backgroundScenery=clone(state.scenery);try{state.liveMapWindow?.saveWorkspace?.();state.liveMapWindow?.refreshPreview?.();state.liveMapWindow?.draw?.();}catch(_){}log(`Applied backgroundScenery to live map ${state.liveMapRef.id}.`);}
 function download(name,obj){const blob=new Blob([JSON.stringify(obj,null,2)+'\n'],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);}
-function fit(){if(!state.map)return;resize();const d=Number(state.scenery?.borderDepthTiles||18)+2;const rw=state.map.cols+d*2,rh=state.map.rows+d*2;const r=canvas.getBoundingClientRect();state.cam.zoom=Math.max(2,Math.min((r.width-30)/rw,(r.height-30)/rh));state.cam.x=r.width/2-(state.map.cols/2)*state.cam.zoom;state.cam.y=r.height/2-(state.map.rows/2)*state.cam.zoom;draw();}
+function fit(){
+  if(!state.map)return;resize();
+  const d=Number(state.scenery?.borderDepthTiles||18)+2; // Used as the ordinary procedural background margin.
+  const cfg=horizonTerrain(); // Used to include the complete colossal landmark when Fit is pressed.
+  const scale=cfg?.enabled?Math.max(0.25,Number(cfg.overallScale)||1):1; // Used to mirror runtime whole-landmark scaling in the author camera.
+  const spanScale=cfg?.enabled?Math.max(0.25,Number(cfg.spanScale)||1):1; // Used to include extreme north/south or east/west overscan.
+  const horizontal=cfg?.side==='north'||cfg?.side==='south'; // Used to decide which map axis receives the long horizon span.
+  const axisLength=horizontal?state.map.cols:state.map.rows; // Used to calculate the authored long-axis extent.
+  const span=cfg?.enabled?axisLength*spanScale*scale:axisLength; // Used as the complete long-axis landmark width.
+  const overscan=Math.max(0,(span-axisLength)*0.5); // Used to symmetrically include landmark overhang beyond both map ends.
+  const outward=cfg?.enabled?(Math.max(0,Number(cfg.distanceWorld)||0)+Math.max(0,Number(cfg.depthWorld)||0)*scale):0; // Used to include the landmark's outward depth without scaling its edge clearance.
+  const left=d+(cfg?.enabled&&cfg.side==='west'?outward:0)+(cfg?.enabled&&!horizontal?overscan:0); // Used by the fitted world rectangle's west extent.
+  const right=d+(cfg?.enabled&&cfg.side==='east'?outward:0)+(cfg?.enabled&&!horizontal?overscan:0); // Used by the fitted world rectangle's east extent.
+  const top=d+(cfg?.enabled&&cfg.side==='north'?outward:0)+(cfg?.enabled&&horizontal?overscan:0); // Used by the fitted world rectangle's north extent.
+  const bottom=d+(cfg?.enabled&&cfg.side==='south'?outward:0)+(cfg?.enabled&&horizontal?overscan:0); // Used by the fitted world rectangle's south extent.
+  const rw=state.map.cols+left+right,rh=state.map.rows+top+bottom; // Used to derive the fit zoom from the true authored footprint.
+  const r=canvas.getBoundingClientRect();
+  state.cam.zoom=Math.max(.25,Math.min((r.width-30)/rw,(r.height-30)/rh));
+  state.cam.x=r.width/2-((state.map.cols+right-left)/2)*state.cam.zoom;
+  state.cam.y=r.height/2-((state.map.rows+bottom-top)/2)*state.cam.zoom;
+  draw();
+}
 function resize(){const r=canvas.getBoundingClientRect(),dpr=Math.min(2,devicePixelRatio||1),w=Math.max(1,Math.round(r.width*dpr)),h=Math.max(1,Math.round(r.height*dpr));if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;}ctx.setTransform(dpr,0,0,dpr,0,0);}
 function w2s(x,y){return{x:state.cam.x+x*state.cam.zoom,y:state.cam.y+y*state.cam.zoom};}function s2w(x,y){return{x:(x-state.cam.x)/state.cam.zoom,y:(y-state.cam.y)/state.cam.zoom};}
 function tileEntries(){if(!state.map)return[];const t=state.map.tiles||{};if(Array.isArray(t))return t.map(v=>[`${v.c},${v.r}`,v]);return Object.entries(t);}
@@ -126,9 +148,10 @@ function drawHorizonTerrain2d(){
   const m=state.map; // Used to convert the selected edge into map-relative world coordinates.
   const horizontal=cfg.side==='north'||cfg.side==='south'; // Used to choose whether the long span follows columns or rows.
   const axisLength=horizontal?m.cols:m.rows; // Used to scale the landmark span against the selected map edge.
-  const span=axisLength*Math.max(0.75,Number(cfg.spanScale)||1); // Used to overscan the map corners so the horizon continues out of view.
+  const overallScale=Math.max(0.25,Number(cfg.overallScale)||1); // Used to make the 2D footprint match whole-object scaling from the runtime builder.
+  const span=axisLength*Math.max(0.25,Number(cfg.spanScale)||1)*overallScale; // Used to show even several-map-length overscan north/south or east/west.
   const start=(axisLength-span)*0.5,end=start+span; // Used as the two long-axis endpoints of the footprint.
-  const near=Math.max(0,Number(cfg.distanceWorld)||0),far=near+Math.max(1,Number(cfg.depthWorld)||1); // Used as the near/far extents beyond the playable edge.
+  const near=Math.max(0,Number(cfg.distanceWorld)||0),far=near+Math.max(1,Number(cfg.depthWorld)||1)*overallScale; // Used as the near/far extents beyond the playable edge while keeping clearance independently authored.
   const worldPoint=(axis,out)=>{ // Used to project generic edge coordinates back into map X/Z space.
     if(cfg.side==='north')return[axis,-out];
     if(cfg.side==='south')return[axis,m.rows+out];
@@ -177,6 +200,7 @@ $('horizonHeight').onchange=()=>updateHorizon(o=>o.heightWorld=Number($('horizon
 $('horizonDistance').onchange=()=>updateHorizon(o=>o.distanceWorld=Number($('horizonDistance').value),'horizon-distance');
 $('horizonDepth').onchange=()=>updateHorizon(o=>o.depthWorld=Number($('horizonDepth').value),'horizon-depth');
 $('horizonSpan').onchange=()=>updateHorizon(o=>o.spanScale=Number($('horizonSpan').value),'horizon-span');
+$('horizonOverallScale').onchange=()=>updateHorizon(o=>o.overallScale=Number($('horizonOverallScale').value),'horizon-overall-scale');
 $('horizonSegments').onchange=()=>updateHorizon(o=>o.segments=Number($('horizonSegments').value),'horizon-segments');
 $('horizonWestPreset').onclick=()=>replaceHorizonPreset('westernMountainChain','horizon-west-preset');
 $('horizonNorthPreset').onclick=()=>replaceHorizonPreset('northernPlateau','horizon-north-preset');
