@@ -54,6 +54,9 @@ assert(reloadHandoffIndex > bridgeIndex, 'folder/onboarding bridge is installed 
 
 assert(primary.includes('prepareBeforeOnboarding'), 'primary layer exposes pre-onboarding folder reconciliation');
 assert(primary.includes("lastUiAction = 'startup-auto-load-folder'"), 'remembered ready folders automatically load before save selection');
+assert(primary.includes('data-folder-primary-recovery'), 'startup gate exposes Save Recovery when a remembered folder cannot be loaded safely');
+assert(primary.includes('openRecoveryModal'), 'startup recovery action opens the checkpoint recovery UI before onboarding');
+assert(primary.includes('const initialError = lastUiError || status.lastError'), 'startup gate shows the folder-load failure immediately instead of a blank reconnect screen');
 assert(bridge.includes('prepareBeforeOnboarding'), 'onboarding init waits for primary folder reconciliation');
 assert(bridge.includes('refreshFromStorage'), 'folder restore can rebuild save selection in place');
 assert(!bridge.includes('location.reload'), 'in-place onboarding restore bridge never reloads the site');
@@ -71,6 +74,10 @@ assert(primary.includes("document.addEventListener('visibilitychange'"), 'mobile
 assert(primary.includes("window.addEventListener('pagehide'"), 'pagehide requests a best-effort folder flush');
 assert(startupGuard.includes('stopImmediatePropagation'), 'existing startup persistence guard still blocks unsafe transient exit saves');
 assert(core.includes('describeDataLossRisk'), 'existing core data-loss guard remains installed');
+assert(core.includes("!name.toLowerCase().endsWith('.json')"), 'canonical reader ignores harmless non-JSON files in character/world folders');
+assert(core.includes('canonical entity JSON is missing a valid id'), 'canonical reader rejects syntactically valid but structurally invalid entity JSON');
+assert(core.includes('duplicate canonical entity id'), 'canonical reader rejects ambiguous duplicate character/world ids');
+assert(core.includes('manifest.json: expected'), 'manifest entity counts detect missing canonical character/world files');
 assert(core.includes('_syncPromise'), 'existing core still serializes folder writes within a tab');
 assert(core.includes("const PATTERNS_DIR = 'patterns'"), 'primary folder save reserves a portable patterns directory');
 assert(core.includes('async function mirrorPatternFile'), 'folder core can write custom motif PNG bytes');
@@ -260,7 +267,7 @@ assert(emptyBootstrap.includes('__hobunjiFolderSaveEmptyBootstrapDebug'), 'first
 assert(bridge.includes('__hobunjiFolderSaveOnboardingDebug'), 'onboarding reconciliation exposes diagnostics data');
 assert(debugUi.includes("button.textContent = 'Save Diagnostics'"), 'Settings exposes a mobile-visible Save Diagnostics button');
 assert(debugUi.includes('SAVE DIAGNOSTICS'), 'mobile diagnostics render without requiring DevTools');
-assert(debugUi.includes('folder recovery is authoritative'), 'Settings includes the current audited save-protection summary');
+assert(debugUi.includes('wilderness treasure meshes are excluded from save JSON') && debugUi.includes('unreadable character/world files block folder import'), 'Settings includes the current audited save-corruption protection summary');
 assert(debugUi.includes('__hobunjiSaveCheckpointDebug'), 'Settings diagnostics include checkpoint/recovery state');
 
 console.log('\nFolder-save primary regression checks passed.');

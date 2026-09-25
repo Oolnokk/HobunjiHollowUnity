@@ -158,14 +158,13 @@ window.SCRATCHBONES_CONFIG = {
         }
       },
       "staging": {
-        "playerDiagonalOffsets": [
-          { "x": -0.5, "y": 1 },
-          { "x": 0.5, "y": 1 }
-        ],
+        "cameraSideAngleDeg": 15,
         "moveSpeedTilesPerSecond": 4.25,
         "arrivalRadiusTiles": 0.08,
         "faceLerp": 0.28,
-        "npcFacePlayerLerp": 0.28
+        "npcFacePlayerLerp": 0.28,
+        "npcHeadMaxYawDeg": 45,
+        "npcHeadMaxPitchDeg": 45
       }
     },
     "camera": {
@@ -3519,7 +3518,7 @@ window.SCRATCHBONES_CONFIG = {
         // keeps authored special soundtracks such as Just Beyond the Torchlight
         // uninterrupted and leaves room for more opt-outs later.
         "combatBgm": [
-          { "url": "assets/audio/music/bgm/bgm_skirmish.m4a", "loop": true }
+          { "url": "assets/audio/music/bgm/bgm_skirmish.m4a", "loop": true, "gaplessLoop": { "sourceSampleRate": 48000, "encoderDelaySamples": 2048, "paddingSamples": 745, "contentSamples": 1256727 } }
         ],
         "startupBgm": { "url": "assets/audio/music/bgm/bgm_remembrance.m4a", "loop": true },
         "musicFadeMs": 280,

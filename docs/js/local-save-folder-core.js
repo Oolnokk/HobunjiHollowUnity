@@ -341,16 +341,26 @@
 
   async function readEntities(dirName) {
     const entities = [];
+    const corruptFiles = []; // Canonical character/world parse failures must block folder import instead of masquerading as deleted save slots.
+    const seenIds = new Set(); // Duplicate canonical IDs are ambiguous after interrupted rename/cleanup writes and must not be imported silently.
     let dirHandle;
-    try { dirHandle = await _handle.getDirectoryHandle(dirName); } catch { return entities; }
-    for await (const [, entry] of dirHandle.entries()) {
-      if (entry.kind !== 'file') continue;
+    try { dirHandle = await _handle.getDirectoryHandle(dirName); } catch { return { entities, corruptFiles }; }
+    for await (const [name, entry] of dirHandle.entries()) {
+      if (entry.kind !== 'file' || !name.toLowerCase().endsWith('.json')) continue; // OS metadata and user notes are not canonical save entities.
       try {
         const value = JSON.parse(await (await entry.getFile()).text());
-        if (value && typeof value === 'object') entities.push(value);
-      } catch { /* unreadable entries are skipped */ }
+        if (value && typeof value === 'object' && !Array.isArray(value) && typeof value.id === 'string' && value.id) {
+          if (seenIds.has(value.id)) corruptFiles.push(`${dirName}/${name}: duplicate canonical entity id "${value.id}"`);
+          else {
+            seenIds.add(value.id);
+            entities.push(value);
+          }
+        } else corruptFiles.push(`${dirName}/${name}: canonical entity JSON is missing a valid id`);
+      } catch (error) {
+        corruptFiles.push(`${dirName}/${name}: ${String(error?.message || error)}`);
+      }
     }
-    return entities;
+    return { entities, corruptFiles };
   }
 
   function normalizeMetaForCompare(meta) {
@@ -468,8 +478,11 @@
   }
 
   async function readFolderSnapshot() {
-    const characters = await readEntities(CHARACTERS_DIR);
-    const worlds = await readEntities(WORLDS_DIR);
+    const characterRead = await readEntities(CHARACTERS_DIR); // Keeps unreadable canonical files visible to the caller instead of silently dropping them.
+    const worldRead = await readEntities(WORLDS_DIR); // Same corruption tracking for worlds; missing a world can otherwise erase save selection.
+    const characters = characterRead.entities;
+    const worlds = worldRead.entities;
+    const corruptEntityFiles = [...characterRead.corruptFiles, ...worldRead.corruptFiles]; // Used to block destructive folder-to-browser reconciliation.
     const farm = await readFolderFarmLayouts();
     let manifest = null;
     let manifestExists = false;
@@ -484,12 +497,24 @@
       }
     }
 
+    if (manifestExists) {
+      const declaredCharacterCount = Number(manifest?.characterCount); // Manifest counts let interrupted/missing canonical files fail closed instead of looking like intentional deletions.
+      const declaredWorldCount = Number(manifest?.worldCount); // Same protection for world files, including a file that vanished rather than merely becoming malformed.
+      if (Number.isInteger(declaredCharacterCount) && declaredCharacterCount >= 0 && declaredCharacterCount !== characters.length) {
+        corruptEntityFiles.push(`manifest.json: expected ${declaredCharacterCount} character file(s), found ${characters.length}`);
+      }
+      if (Number.isInteger(declaredWorldCount) && declaredWorldCount >= 0 && declaredWorldCount !== worlds.length) {
+        corruptEntityFiles.push(`manifest.json: expected ${declaredWorldCount} world file(s), found ${worlds.length}`);
+      }
+    }
+
     const portableVersion = Number(manifest?.portableSaveVersion) || 1;
     const hasPortableFarmLayouts = portableVersion >= PORTABLE_SAVE_VERSION || Object.keys(farm.layouts).length > 0;
     return {
-      exists: manifestExists || characters.length > 0 || worlds.length > 0,
+      exists: manifestExists || characters.length > 0 || worlds.length > 0 || corruptEntityFiles.length > 0,
       savedAt: Number(manifest?.savedAt) || 0,
       hasPortableFarmLayouts,
+      corruptEntityFiles,
       corruptFarmLayoutFiles: farm.corruptFiles,
       meta: {
         version: manifest?.version ?? 1,
@@ -500,10 +525,18 @@
     };
   }
 
+  function canonicalCorruptionMessage(folder) {
+    const files = folder?.corruptEntityFiles || []; // Canonical entity corruption is more severe than an optional farm-layout parse failure.
+    if (!files.length) return '';
+    return `Primary Save Folder contains unreadable character/world file(s): ${files.join('; ')}. The folder was not loaded so the browser save remains untouched; use Recovery before overwriting it.`;
+  }
+
   async function readPrimarySnapshot() {
     if (_state !== 'ready' || !_handle) return null;
     const folder = await readFolderSnapshot(); // Current canonical folder state shown in recovery UI and preserved before restores.
     if (!folder.exists) return null;
+    const corruption = canonicalCorruptionMessage(folder); // Prevent recovery baselines from treating a silently-skipped world/character as legitimate deletion.
+    if (corruption) throw new Error(corruption);
     return {
       savedAt: folder.savedAt || 0,
       snapshot: {
@@ -518,13 +551,14 @@
     if (_state !== 'ready' || !_handle) return null;
     const folder = await readFolderSnapshot();
     const validWorldIds = new Set((folder.meta.worlds || []).map(world => String(world?.id || '')).filter(Boolean));
-    _folderSupportsFarmLayouts = folder.hasPortableFarmLayouts && folder.corruptFarmLayoutFiles.length === 0;
+    const canonicalCorruption = canonicalCorruptionMessage(folder); // Shown in diagnostics/settings while keeping the folder connected for deliberate recovery.
+    _folderSupportsFarmLayouts = !canonicalCorruption && folder.hasPortableFarmLayouts && folder.corruptFarmLayoutFiles.length === 0;
     _farmLayoutCount = Object.keys(folder.farmLayouts || {}).filter(worldId => validWorldIds.has(worldId)).length;
     _lastSyncedAt = folder.savedAt || 0;
-    _lastError = folder.corruptFarmLayoutFiles.length
+    _lastError = canonicalCorruption || (folder.corruptFarmLayoutFiles.length
       ? `Skipped corrupt farm layout file(s): ${folder.corruptFarmLayoutFiles.join(', ')}.`
-      : '';
-    if (folder.exists) _lastKnownFolderMeta = folder.meta;
+      : '');
+    _lastKnownFolderMeta = folder.exists && !canonicalCorruption ? folder.meta : null;
     return folder;
   }
 
@@ -662,6 +696,22 @@
           action: _lastAction,
           changed: false,
           message: status.lastError ? status.lastError : 'Initialized the empty folder from this browser save.',
+        };
+      }
+
+      const canonicalCorruption = canonicalCorruptionMessage(folder); // Never convert a parse failure into an apparent deleted character/world during import.
+      if (canonicalCorruption) {
+        stopAutoSync();
+        _lastKnownFolderMeta = null;
+        _lastError = canonicalCorruption;
+        _lastAction = 'load-blocked-corrupt-canonical';
+        notify();
+        return {
+          ok: false,
+          action: _lastAction,
+          changed: false,
+          message: canonicalCorruption,
+          corruptEntityFiles: [...folder.corruptEntityFiles],
         };
       }
 

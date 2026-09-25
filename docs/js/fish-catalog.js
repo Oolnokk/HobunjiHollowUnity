@@ -94,7 +94,7 @@
 
   function buildFishingDefs(opts = {}) {
     const allowAmphibious = opts.allowAmphibious !== false; // Used to strip Gurumahi from the live roll pool while fishing from shore.
-    const zones = { farm:[], town:[], northernCliffs:[], cloudForest:[] };
+    const zones = { farm:[], town:[], northernCliffs:[], cloudForest:[], westernSlope:[] };
     for (const f of FISH) {
       if (f.amphibious && !allowAmphibious) continue;
       const d = {
@@ -106,6 +106,8 @@
       };
       for (const zone of f.zones) zones[zone]?.push(d);
     }
+    // Western Slope has no dedicated authored fish set yet; this shared cold/highland pool keeps the open zone fishable without duplicating fish definitions.
+    zones.westernSlope.push(...zones.northernCliffs);
     return zones;
   }
 

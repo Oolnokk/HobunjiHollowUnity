@@ -20,6 +20,7 @@
   const SETTINGS_SECTION_ORDER = Object.freeze([
     'Primary Save Folder',
     'Cloud Save',
+    'Painterly',
     'Combat',
     'World',
     'Camera',

@@ -651,6 +651,13 @@
   }
 
   function idleBodyYawSnapshot(target = {}) {
+    const heldMode = deps?.getHeldMode?.(); // EquipmentPanel/game inject this so holstered tools cannot leave an invisible weapon stance rotating the body.
+    if (heldMode != null && heldMode !== 'tool') {
+      target.active = false;
+      target.yawDeg = 0;
+      target.reason = 'held-equipment-put-away';
+      return target;
+    }
     const activeSlot = deps?.getActiveTool?.() || null;
     if (activeSlot !== 'weapon') {
       target.active = false;

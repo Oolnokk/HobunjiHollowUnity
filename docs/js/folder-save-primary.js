@@ -111,6 +111,7 @@
           <div class="folder-save-primary-gate-status" data-folder-primary-status></div>
           <div class="folder-save-primary-gate-actions">
             <button type="button" class="folder-save-primary-gate-fallback" data-folder-primary-browser>Use browser fallback</button>
+            <button type="button" class="folder-save-primary-gate-fallback" data-folder-primary-recovery>Save Recovery</button>
             <button type="button" class="folder-save-primary-gate-main" data-folder-primary-reconnect>Reconnect Save Folder</button>
           </div>
         </div>`;
@@ -118,7 +119,16 @@
 
       const statusEl = gate.querySelector('[data-folder-primary-status]'); // Updated while reconnect/read work is in progress.
       const browserBtn = gate.querySelector('[data-folder-primary-browser]'); // Secondary escape hatch that deliberately leaves folder autosync unarmed.
+      const recoveryBtn = gate.querySelector('[data-folder-primary-recovery]'); // Corruption escape hatch opens folder recovery before onboarding exists.
       const reconnectBtn = gate.querySelector('[data-folder-primary-reconnect]'); // Primary action that restores permission and immediately loads the folder.
+      const initialError = lastUiError || status.lastError || ''; // Auto-load corruption is visible immediately instead of presenting a blank reconnect gate.
+      if (statusEl && initialError) statusEl.textContent = initialError;
+      if (reconnectBtn && status.state === 'ready') reconnectBtn.textContent = 'Retry Folder Load';
+      if (recoveryBtn) recoveryBtn.style.display = status.state === 'ready' && window.HobunjiSaveCheckpoints?.openRecoveryModal ? '' : 'none';
+
+      recoveryBtn?.addEventListener('click', () => {
+        window.HobunjiSaveCheckpoints?.openRecoveryModal?.();
+      });
 
       browserBtn?.addEventListener('click', () => {
         startupMode = 'browser-fallback';
@@ -131,20 +141,29 @@
         if (statusEl) statusEl.textContent = 'Reconnecting…';
         if (reconnectBtn) reconnectBtn.disabled = true;
         if (browserBtn) browserBtn.disabled = true;
+        if (recoveryBtn) recoveryBtn.disabled = true;
         try {
           const reconnected = await localSave.reconnect();
           if (reconnected.state !== 'ready') {
             if (statusEl) statusEl.textContent = 'Folder permission was not granted. Nothing was overwritten.';
             if (reconnectBtn) reconnectBtn.disabled = false;
             if (browserBtn) browserBtn.disabled = false;
+            if (recoveryBtn) recoveryBtn.disabled = false;
             return;
           }
           if (statusEl) statusEl.textContent = 'Loading folder save…';
           const result = await localSave.loadFromFolder();
           if (!folderActionSucceeded(result)) {
             if (statusEl) statusEl.textContent = result?.message || localSave.getStatus().lastError || 'Could not load this folder.';
-            if (reconnectBtn) reconnectBtn.disabled = false;
+            if (reconnectBtn) {
+              reconnectBtn.disabled = false;
+              reconnectBtn.textContent = 'Retry Folder Load';
+            }
             if (browserBtn) browserBtn.disabled = false;
+            if (recoveryBtn) {
+              recoveryBtn.disabled = false;
+              recoveryBtn.style.display = window.HobunjiSaveCheckpoints?.openRecoveryModal ? '' : 'none';
+            }
             return;
           }
           startupMode = 'folder';
@@ -156,6 +175,7 @@
           if (statusEl) statusEl.textContent = lastUiError;
           if (reconnectBtn) reconnectBtn.disabled = false;
           if (browserBtn) browserBtn.disabled = false;
+          if (recoveryBtn) recoveryBtn.disabled = false;
         }
       });
     });

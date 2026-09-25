@@ -22,6 +22,8 @@ const vm = require('node:vm');
   assert.match(folderCoreSource, /writeRecoveryCheckpoint/, 'folder core exposes whitelisted recovery-file persistence');
   assert.match(folderCoreSource, /readPrimarySnapshot/, 'folder core exposes canonical state for baseline/recovery');
   assert.match(folderCoreSource, /syncSnapshot/, 'folder core can commit one exact captured snapshot');
+  assert.match(folderCoreSource, /corruptEntityFiles/, 'folder core tracks unreadable canonical character/world files');
+  assert.match(folderCoreSource, /load-blocked-corrupt-canonical/, 'folder import blocks canonical entity corruption instead of treating it as deletion');
   assert.match(source, /automatic folder save is paused/, 'folder autosync is blocked while gameplay state is hydrating');
   assert.match(source, /folder-baseline/, 'old folders seed recovery from canonical state before future writes');
   assert.match(source, /rollbackRestore/, 'failed restores attempt a canonical folder rollback');
@@ -60,6 +62,7 @@ const vm = require('node:vm');
   let reloads = 0; // Successful recovery reload count.
   let folderSyncs = 0; // Successful/partially-successful canonical write attempts.
   let failNextFolderSyncAfterWrite = false; // Simulates I/O failure after canonical files already changed.
+  let failPrimarySnapshotRead = false; // Simulates a malformed canonical world that recovery must repair instead of requiring a successful primary read.
   const folderListeners = []; // Captures LocalSaveFolder status listeners.
   const documentListeners = new Map(); // Captures lifecycle listeners without a browser DOM.
 
@@ -72,6 +75,7 @@ const vm = require('node:vm');
 
   const folderStatus = {
     state: 'ready',
+    folderName: 'Test Primary Save',
     autoSyncArmed: false,
     lastError: null,
     lastAction: 'ready',
@@ -92,6 +96,7 @@ const vm = require('node:vm');
       return record;
     },
     async readPrimarySnapshot() {
+      if (failPrimarySnapshotRead) throw new Error('Primary Save Folder contains unreadable character/world file(s): worlds/broken.json');
       return { savedAt: now - 5000, snapshot: structuredClone(folderPrimarySnapshot) };
     },
     async syncSnapshot(snapshot, options = {}) {
@@ -200,6 +205,16 @@ const vm = require('node:vm');
   const firstAutoRaw = store.get('hobunjiSaveCheckpoint.auto.v1');
   assert.ok(firstAutoRaw, 'first post-grace browser autosave is written');
 
+  const legacyMeshRecord = JSON.parse(firstAutoRaw); // Simulates a recovery checkpoint written before treasure meshes were excluded from save data.
+  legacyMeshRecord.snapshot.meta.worlds[0].members.char_a.zoneTreasureState = {
+    zone_test: { week: 0, placements: [{ col: 1, row: 1, found: false, loot: {}, _mesh: { payload: 'x'.repeat(20_000) } }] },
+  };
+  legacyMeshRecord.stats.bytes = JSON.stringify(legacyMeshRecord.snapshot).length; // Old builds persisted this inflated byte count in checkpoint stats.
+  store.set('hobunjiSaveCheckpoint.auto.v1', JSON.stringify(legacyMeshRecord));
+  const meshCleanupGuard = api.evaluateSnapshotForFolderWrite(structuredClone(originalSnapshot), { recoveryKind: 'auto' }); // Clean candidate is materially smaller only because runtime mesh junk disappeared.
+  assert.equal(meshCleanupGuard.ok, true, 'legacy treasure mesh bloat does not trigger the 40% save-shrink corruption guard');
+  store.set('hobunjiSaveCheckpoint.auto.v1', firstAutoRaw);
+
   currentSnapshot.meta.worlds[0].members.char_a.nonGearInventory = {};
   currentSnapshot.meta.worlds[0].storage = {};
   currentSnapshot.meta.worlds[0].livestock = [];
@@ -298,17 +313,44 @@ const vm = require('node:vm');
   assert.equal(store.get('hobunjiSaveCheckpoint.manual.v1'), goodManualBrowserRaw, 'rejected manual save preserves browser manual mirror');
 
   // Successful restore preserves the current canonical state first, then installs manual.
-  const manualCheckpoint = structuredClone(folderRecovery.get('manual'));
+  const legacyManualCheckpoint = JSON.parse(goodManualBrowserRaw); // Used to model a pre-fix checkpoint whose treasure placement still carries a runtime-only mesh payload.
+  legacyManualCheckpoint.snapshot.meta.worlds[0].members.char_a.zoneTreasureState = {
+    zone_test: { week: 0, placements: [{ col: 1, row: 1, found: false, loot: {}, _mesh: { legacy: true } }] },
+  };
+  store.set('hobunjiSaveCheckpoint.manual.v1', JSON.stringify(legacyManualCheckpoint));
+  const expectedRestoredSnapshot = structuredClone(legacyManualCheckpoint.snapshot); // Used to verify the restore preserves gameplay data while sanitizing only the runtime mesh.
+  delete expectedRestoredSnapshot.meta.worlds[0].members.char_a.zoneTreasureState.zone_test.placements[0]._mesh;
   currentSnapshot = structuredClone(folderPrimarySnapshot);
   currentSnapshot.meta.worlds[0].members.char_a.nonGearInventory.turnip = 1;
   folderPrimarySnapshot = structuredClone(currentSnapshot);
+  const olderTrustedFolderPreRestore = {
+    checkpointVersion: 1,
+    kind: 'pre-restore',
+    savedAt: now - 120_000,
+    reason: 'older-trusted-folder-copy',
+    active: { characterId: 'char_a', worldId: 'world_a' },
+    summary: window.HobunjiSaveSnapshot.summary(originalSnapshot),
+    stats: { memberInventoryUnits: 15 },
+    snapshot: structuredClone(originalSnapshot),
+  }; // Existing folder recovery history must survive when the current canonical folder is unreadable.
+  folderRecovery.set('preRestore', structuredClone(olderTrustedFolderPreRestore));
+  folderRecovery.set('manual', structuredClone(legacyManualCheckpoint));
+  store.delete('hobunjiSaveCheckpoint.manual.v1');
+  folderStatus.autoSyncArmed = false; // Corruption deliberately stops autosync, but the connected folder must remain recoverable.
+  failPrimarySnapshotRead = true;
+  await api.syncRecoveryMirrorsFromFolder();
+  assert.ok(store.has('hobunjiSaveCheckpoint.manual.v1'), 'disarmed corrupt folders still mirror their folder recovery checkpoints on demand');
   now += 60_000;
   let restoreResult = await api.restoreManual();
-  assert.equal(restoreResult.ok, true);
+  failPrimarySnapshotRead = false;
+  folderStatus.autoSyncArmed = true;
+  assert.equal(restoreResult.ok, true, 'recovery can repair an unreadable canonical folder even while normal autosync is disarmed');
   assert.equal(appliedSnapshot.meta.worlds[0].members.char_a.nonGearInventory.turnip, 5);
-  assert.ok(folderRecovery.has('preRestore'), 'restore creates pre-restore recovery before canonical replacement');
-  assert.equal(folderRecovery.get('preRestore').snapshot.meta.worlds[0].members.char_a.nonGearInventory.turnip, 1);
-  assert.deepEqual(folderPrimarySnapshot, manualCheckpoint.snapshot, 'chosen recovery becomes canonical folder state');
+  assert.equal(Object.prototype.hasOwnProperty.call(appliedSnapshot.meta.worlds[0].members.char_a.zoneTreasureState.zone_test.placements[0], '_mesh'), false, 'recovery restore strips legacy runtime treasure meshes before applying browser state');
+  assert.equal(api.getStatus().preRestore.reason, 'before-recovery-browser-fallback', 'corrupt canonical reads keep an emergency browser-side safety copy for this transaction');
+  assert.equal(api.getStatus().preRestore.snapshot.meta.worlds[0].members.char_a.nonGearInventory.turnip, 1);
+  assert.equal(folderRecovery.get('preRestore').reason, 'older-trusted-folder-copy', 'corrupt canonical recovery does not overwrite an older trusted folder pre-restore checkpoint with browser fallback state');
+  assert.deepEqual(folderPrimarySnapshot, expectedRestoredSnapshot, 'chosen recovery becomes canonical folder state without legacy treasure meshes');
   assert.equal(reloads, 1, 'successful recovery reloads once');
 
   // Simulate the next restore failing after the canonical folder has already changed. The

@@ -5,6 +5,7 @@
   // fullscreen outline composite, so HUD/menus and the separately redrawn
   // world-space dialogue/chat text remain crisp and outside the effect.
   const STORAGE_KEY = 'hobunjiPainterlyPostprocessMode';
+  const DEFAULT_MODE = 'medium'; // Used by loadMode() when no painterly preference has been saved yet.
   const MODE_TO_VALUE = Object.freeze({ off: 0, low: 1, medium: 2, high: 3 });
   const MODE_SAMPLE_COUNT = Object.freeze({ off: 0, low: 68, medium: 72, high: 76 });
 
@@ -35,8 +36,10 @@
   }
 
   function loadMode() {
-    try { return normalizeMode(localStorage.getItem(STORAGE_KEY) || 'off'); }
-    catch (_) { return 'off'; }
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      return stored == null ? DEFAULT_MODE : normalizeMode(stored);
+    } catch (_) { return DEFAULT_MODE; }
   }
 
   function persistMode() {

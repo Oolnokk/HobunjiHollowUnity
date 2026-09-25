@@ -111,6 +111,11 @@
     return total;
   }
 
+  function checkpointPayloadBytes(snapshot) {
+    const serialized = JSON.stringify(snapshot || null, (key, value) => key === '_mesh' ? undefined : value); // Legacy treasure saves accidentally embedded runtime Three.js meshes; exclude that non-canonical bloat from integrity-size comparisons.
+    return serialized.length;
+  }
+
   function checkpointStats(snapshot) {
     const meta = snapshot?.meta || {};
     const ids = activeIds();
@@ -120,7 +125,7 @@
     const memberInventory = member?.nonGearInventory || {};
     const worldStorage = world?.storage || {};
     return {
-      bytes: JSON.stringify(snapshot || null).length,
+      bytes: checkpointPayloadBytes(snapshot),
       characterCount: (meta.characters || []).length,
       worldCount: (meta.worlds || []).length,
       memberInventoryKeys: Object.keys(memberInventory).length,
@@ -134,7 +139,8 @@
 
   function integrityRisk(previousRecord, nextSnapshot) {
     if (!previousRecord?.snapshot) return '';
-    const before = previousRecord.stats || checkpointStats(previousRecord.snapshot);
+    const previousStats = previousRecord.stats || checkpointStats(previousRecord.snapshot); // Legacy checkpoint records may carry byte counts inflated by accidentally serialized treasure meshes.
+    const before = { ...previousStats, bytes: checkpointPayloadBytes(previousRecord.snapshot) }; // Recompute canonical bytes from the snapshot so stale persisted stats cannot keep false shrink warnings alive.
     const after = checkpointStats(nextSnapshot);
     const nextActive = activeIds(); // Current farmer/world prevents unrelated save slots from sharing farm-specific reset heuristics.
     const previousActive = previousRecord.active || {};
@@ -159,6 +165,11 @@
   function folderIsPrimary() {
     const status = folderApi()?.getStatus?.();
     return status?.state === 'ready' && status?.autoSyncArmed === true;
+  }
+
+  function folderRecoveryAvailable() {
+    const status = folderApi()?.getStatus?.(); // Recovery remains available while autosync is intentionally disarmed because canonical files are corrupt.
+    return status?.state === 'ready' && Boolean(status?.folderName);
   }
 
   function markHydrated() {
@@ -282,7 +293,7 @@
   }
 
   async function syncRecoveryMirrorsFromFolder() {
-    if (!folderIsPrimary()) return false;
+    if (!folderRecoveryAvailable()) return false;
     if (recoveryMirrorPromise) {
       const result = await recoveryMirrorPromise;
       await ensureFolderBaseline(); // Handles player-ready racing an earlier pre-player mirror pass.
@@ -438,18 +449,39 @@
   async function preservePreRestore() {
     let snapshot = null;
     let savedAt = Date.now();
-    if (folderIsPrimary() && typeof folderApi()?.readPrimarySnapshot === 'function') {
-      const primary = await folderApi().readPrimarySnapshot();
-      if (primary?.snapshot) {
-        snapshot = primary.snapshot;
-        savedAt = primary.savedAt || savedAt;
+    let primaryReadError = ''; // Used to distinguish a trusted canonical safety copy from an emergency browser fallback while repairing folder corruption.
+    if (folderRecoveryAvailable() && typeof folderApi()?.readPrimarySnapshot === 'function') {
+      try {
+        const primary = await folderApi().readPrimarySnapshot();
+        if (primary?.snapshot) {
+          snapshot = primary.snapshot;
+          savedAt = primary.savedAt || savedAt;
+        }
+      } catch (error) {
+        primaryReadError = String(error?.message || error);
       }
     }
-    if (!snapshot) snapshot = snapshotApi()?.capture?.({ strict: true });
+
+    if (!snapshot) {
+      try { snapshot = snapshotApi()?.capture?.({ strict: true }) || null; }
+      catch (error) {
+        if (!primaryReadError) throw error;
+      }
+    }
+
+    // If the canonical folder is unreadable and the browser is also unusable, recovery is still
+    // allowed to proceed from the known-good checkpoint. There is simply no trustworthy current
+    // state to preserve or roll back to.
+    if (!snapshot && primaryReadError) return null;
     if (!snapshot) throw new Error('Could not capture the current save before recovery.');
-    const record = createRecord('pre-restore', snapshot, 'before-recovery', savedAt);
+
+    const reason = primaryReadError ? 'before-recovery-browser-fallback' : 'before-recovery'; // Diagnostics distinguish an ordinary safety copy from corruption recovery.
+    const record = createRecord('pre-restore', snapshot, reason, savedAt);
     writeSlot('preRestore', record);
-    if (folderIsPrimary()) await writeFolderSlot('preRestore', record);
+
+    // Never replace the folder's existing Before Last Restore checkpoint with a browser fallback
+    // when the canonical folder itself is corrupt; that older folder checkpoint is more trustworthy.
+    if (folderRecoveryAvailable() && !primaryReadError) await folderApi()?.writeRecoveryCheckpoint?.('preRestore', record);
     return record;
   }
 
@@ -469,24 +501,44 @@
     throw new Error(`${restoreError} The original primary-folder save was restored from “Before Last Restore.”`);
   }
 
+  function sanitizeRecoverySnapshot(snapshot) {
+    const clean = JSON.parse(JSON.stringify(snapshot)); // Recovery checkpoints are JSON save data; clone before migration so history remains an immutable record of what was captured.
+    for (const world of (clean?.meta?.worlds || [])) {
+      for (const member of Object.values(world?.members || {})) {
+        for (const zone of Object.values(member?.zoneTreasureState || {})) {
+          for (const placement of (zone?.placements || [])) delete placement._mesh; // Pre-fix checkpoints may contain runtime Three.js chest meshes; never write them back into canonical save files.
+        }
+      }
+    }
+    return clean;
+  }
+
   async function applyRecord(record) {
     let preRestore = null;
     try {
       if (!record?.snapshot) throw new Error('That recovery checkpoint is unavailable.');
       preRestore = await preservePreRestore();
-      snapshotApi().apply(record.snapshot);
+      const restoredSnapshot = sanitizeRecoverySnapshot(record.snapshot); // Used for both browser apply and folder write so legacy runtime-only mesh payloads cannot re-enter persistence.
 
-      if (folderIsPrimary()) {
+      if (folderRecoveryAvailable()) {
         let restoreWriteError = '';
         try {
-          const status = await folderApi().syncSnapshot(record.snapshot, { force: true, automatic: false, recoveryKind: 'restore' });
+          const status = await folderApi().syncSnapshot(restoredSnapshot, { force: true, automatic: false, recoveryKind: 'restore' });
           if (status?.lastError) restoreWriteError = status.lastError;
         } catch (error) {
           restoreWriteError = String(error?.message || error);
         }
-        if (restoreWriteError) await rollbackRestore(preRestore, `The recovery checkpoint could not be fully written to the primary folder: ${restoreWriteError}`);
+        if (restoreWriteError) {
+          if (preRestore?.reason === 'before-recovery') {
+            await rollbackRestore(preRestore, `The recovery checkpoint could not be fully written to the primary folder: ${restoreWriteError}`);
+          }
+          throw new Error(`The recovery checkpoint could not be fully written to the already-unreadable primary folder: ${restoreWriteError}. No untrusted browser fallback was written back over the folder; the recovery checkpoint remains available.`);
+        }
       }
 
+      // Apply browser state only after the primary-folder replacement succeeds. This avoids
+      // turning a failed folder recovery into a second, unrelated browser-state rollback problem.
+      snapshotApi().apply(restoredSnapshot);
       restoresApplied++;
       lastAction = `restored-${record.kind || 'checkpoint'}`;
       lastError = '';
@@ -517,9 +569,9 @@
   }
 
   async function recoveryChoices() {
-    if (folderIsPrimary()) await syncRecoveryMirrorsFromFolder();
+    if (folderRecoveryAvailable()) await syncRecoveryMirrorsFromFolder();
     let currentFolder = null;
-    if (folderIsPrimary() && typeof folderApi()?.readPrimarySnapshot === 'function') {
+    if (folderRecoveryAvailable() && typeof folderApi()?.readPrimarySnapshot === 'function') {
       try {
         const primary = await folderApi().readPrimarySnapshot();
         if (primary?.snapshot) currentFolder = createRecord('current-folder', primary.snapshot, 'current-primary-folder', primary.savedAt || Date.now());
@@ -564,7 +616,7 @@
     panel.querySelector('[data-recovery-loading]')?.remove();
     for (const choice of choices) {
       const record = choice.record;
-      if (choice.current && !record && !folderIsPrimary()) continue;
+      if (choice.current && !record && !folderRecoveryAvailable()) continue;
       const row = document.createElement('div');
       Object.assign(row.style, { border: '1px solid rgba(255,255,255,.13)', borderRadius: '9px', padding: '11px', marginBottom: '9px' });
       const title = document.createElement('div');

@@ -64,8 +64,10 @@
 
   function gameplayReticleSuppressed() {
     const combatDeps = window.Combat?.deps; // Used below to read the game's authoritative dialogue-open state.
+    const dialogueEl = document.getElementById('npcDialogue'); // Visible-dialogue fallback keeps the reticle hidden even if a late module reload temporarily misses Combat deps.
     const sitInteraction = window.__hobunjiFurnitureDebug?.sitInteraction; // Used below to suppress the sight throughout the seated transition and active seat state.
     return !!combatDeps?.isDialogueOpen?.()
+      || !!dialogueEl?.classList.contains('open')
       || !!window.HOBUNJI_CHARACTER_VIEW_STATUS?.enabled
       || (!!sitInteraction && sitInteraction.phase !== 'out');
   }
