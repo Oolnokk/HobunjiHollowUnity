@@ -660,6 +660,7 @@
       clearedDay:Number(deps.calendar?.day) || 0,
     }; // Stored before the player exits so a reload cannot forget that this Den-Mother was killed.
     denTurnoverByKey.set(key, record);
+    denCheckTimer = 0; // Used so the very first exterior frame after leaving processes the pending collapse instead of leaving a brief re-entry window.
     persistDenTurnover();
     if (nestRemaining > 0) deps.showToast('The Den-Mother is dead. Collect the eggs or babies before you leave — the burrow will collapse.', true);
     else deps.showToast('The Den-Mother is dead. The burrow will collapse after you leave.', true);
