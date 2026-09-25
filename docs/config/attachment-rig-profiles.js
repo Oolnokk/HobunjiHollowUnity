@@ -679,7 +679,6 @@
       pet, // Internal identity only; removed from the public debug snapshot below.
       creatureKey: pet.creatureKey || pet.kind || 'unknown',
       facingInward,
-      moving: details.moving === true,
       inwardChance: Number(details.inwardChance),
       holdSeconds: Number(details.holdSeconds),
       applied: false,
@@ -701,11 +700,9 @@
       const pose = d.lastPose
         ? `${d.lastPose.creatureKey}:${d.lastPose.facingInward ? 'inward/front-180deg' : 'outward/behind-0deg'}`
         : 'none';
-      const bias = d.lastPose
-        ? `${d.lastPose.moving ? 'moving' : 'idle'}@${Math.round((Number(d.lastPose.inwardChance) || 0) * 100)}%inward`
-        : 'none';
+      const chance = d.lastPose ? `${Math.round((Number(d.lastPose.inwardChance) || 0) * 100)}%inward` : 'none';
       const hold = Number.isFinite(d.lastPose?.holdSeconds) ? d.lastPose.holdSeconds.toFixed(1) + 's' : '-';
-      return `Shoulder pet sustained pose: rolls=${d.poseRollCount} last=${pose} bias=${bias} hold=${hold}`;
+      return `Shoulder pet sustained pose: rolls=${d.poseRollCount} last=${pose} chance=${chance} hold=${hold}`;
     },
   });
 
