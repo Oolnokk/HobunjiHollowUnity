@@ -260,6 +260,70 @@ assert.deepEqual(diamondBasis, { u: { x: 50, y: 40 }, v: { x: 50, y: -40 } });
 assert(gear.knownClothingBlueprints.some(bp => bp.baseCosmeticId === 'tankan_tunic'), 'obtaining cloth permanently learns its loom blueprint');
 assert.equal(api.hasWovenPattern(lightTunic), true, 'woven item exposes its precomposited-icon status to EquipmentPanel');
 
+const compatibilityRuntimeRegression = (async () => {
+  const originalFetch = context.fetch; // Restored after the isolated portrait compatibility probe so later tests keep their original network stub.
+  context.fetch = async url => {
+    const value = String(url || '');
+    if (value.includes('config/cosmetics/index.json')) {
+      return { ok: true, json: async () => ({ entries: [{ id: 'runtime_probe_cloth', path: './runtime_probe_cloth.json' }] }) };
+    }
+    if (value.includes('runtime_probe_cloth.json')) {
+      return {
+        ok: true,
+        json: async () => ({
+          slot: 'torso',
+          parts: { torso: { layers: { back: { image: { url: './assets/cosmetics/runtime_probe_cloth.png' } } } } },
+        }),
+      };
+    }
+    return { ok: false, status: 404, json: async () => ({}) };
+  };
+
+  const probeProfile = {
+    bodyColors: {
+      __hobunjiWovenClothing: [{
+        uid: 'runtime-probe',
+        slot: 'torso',
+        baseCosmeticId: 'runtime_probe_cloth',
+        weaving: { pattern: {} }, // Empty renderable payload is intentional: it exercises tint routing without needing DOM canvas/image decoding in Node.
+        colorA: { hex: '#556677' },
+        colorC: { hex: '#ddeeff' },
+      }],
+    },
+  };
+  const fakeImage = { naturalWidth: 1, naturalHeight: 1, width: 1, height: 1 }; // Minimal authored-image shape accepted by the tint/cache-key path.
+  let activeLegacyRenderers = 0; // Proves two concurrent woven requests never own the global compatibility map at the same time.
+  let maxActiveLegacyRenderers = 0;
+  let legacyTintCalls = 0;
+  const rendererIgnoringRenderOptions = async () => {
+    activeLegacyRenderers++;
+    maxActiveLegacyRenderers = Math.max(maxActiveLegacyRenderers, activeLegacyRenderers);
+    await Promise.resolve(); // Forces overlap if the woven compatibility lane is not actually serialized.
+    windowStub._imageForTint(fakeImage, 'cosmetics/runtime_probe_cloth.png', { mode: 'none' }); // Deliberately ignores renderOptions.imageForTint, reproducing the pre-#817-only rendering path.
+    legacyTintCalls++;
+    activeLegacyRenderers--;
+    return true;
+  };
+
+  const before = api.debugSnapshot().portraitPatterns;
+  try {
+    await Promise.all([
+      api.renderProfileWithWovenPatterns(rendererIgnoringRenderOptions, {}, probeProfile, {}),
+      api.renderProfileWithWovenPatterns(rendererIgnoringRenderOptions, {}, probeProfile, {}),
+    ]);
+  } finally {
+    context.fetch = originalFetch;
+  }
+  const after = api.debugSnapshot().portraitPatterns;
+  assert.equal(maxActiveLegacyRenderers, 1, 'concurrent woven portraits serialize only while owning the legacy global tint compatibility map');
+  assert(legacyTintCalls >= 2, 'legacy renderer that ignores renderOptions still executes for both woven portrait requests');
+  assert(after.compatibilityTintCalls > before.compatibilityTintCalls, 'restored global tint interception is exercised by a renderer that ignores renderOptions.imageForTint');
+  assert(after.patternedTintCalls > before.patternedTintCalls, 'global compatibility interception resolves the live clothing layer back to its woven descriptor');
+})().catch(error => {
+  console.error('woven runtime compatibility regression failed:', error);
+  process.exitCode = 1;
+});
+
 windowStub.ResourceSystem.applyDamage(player, 100, {});
 assert(Math.abs(damageSeen - 95.5) < 1e-9, '1.8 units reduce damage by 4.5%');
 windowStub.ResourceSystem.spendFooting(player, 100, 'test');
@@ -481,7 +545,9 @@ const gameSource = fs.readFileSync('docs/game.js', 'utf8');
 assert.match(gameSource, /if \(o\.key === 'loom'\) return makeLoomInteractable\(\)/, 'player-placed house loom is a normal interior furniture interactable');
 assert.match(gameSource, /loomFurniture: \(\) => makeLoomInteractable\(\)/, 'map-authored loom uses the same core interactable factory');
 assert.match(gameSource, /function makeLoomInteractable\(\)/, 'loom interaction is owned by the core furniture system');
-console.log('clothing weaving system tests passed');
+compatibilityRuntimeRegression.then(() => {
+  if (!process.exitCode) console.log('clothing weaving system tests passed');
+});
 
 assert.match(creatureRendererSource, /'gar-wolf':[\s\S]*?baseShadeReferenceHex: '#565047'/,
   'Gar-wolf base recolor uses its authored #565047 full-strength coat anchor');
