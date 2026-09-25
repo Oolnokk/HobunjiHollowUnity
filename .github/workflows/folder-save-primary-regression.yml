@@ -6,6 +6,8 @@ on:
       - 'docs/js/local-save-folder*.js'
       - 'docs/js/folder-save-*.js'
       - 'docs/js/save-checkpoint-manager.js'
+      - 'docs/js/wild-treasure.js'
+      - 'docs/js/wilderness-campfire.js'
       - 'docs/folder-save-primary.css'
       - 'docs/onboarding.js'
       - 'docs/onboarding-core.js'
@@ -13,16 +15,22 @@ on:
       - 'docs/js/session-persistence-startup-guard.js'
       - 'scripts/test-folder-save-*.js'
       - 'scripts/test-save-checkpoint-manager.js'
+      - 'scripts/test-wild-treasure-road-spawns.js'
+      - 'scripts/test-persistent-mine-campfires.js'
       - '.github/workflows/folder-save-primary-regression.yml'
   push:
     paths:
       - 'docs/js/local-save-folder*.js'
       - 'docs/js/folder-save-*.js'
       - 'docs/js/save-checkpoint-manager.js'
+      - 'docs/js/wild-treasure.js'
+      - 'docs/js/wilderness-campfire.js'
       - 'docs/folder-save-primary.css'
       - 'docs/onboarding.js'
       - 'scripts/test-folder-save-*.js'
       - 'scripts/test-save-checkpoint-manager.js'
+      - 'scripts/test-wild-treasure-road-spawns.js'
+      - 'scripts/test-persistent-mine-campfires.js'
       - '.github/workflows/folder-save-primary-regression.yml'
 
 permissions:
@@ -46,8 +54,12 @@ jobs:
           node --check docs/js/folder-save-quit-guard.js
           node --check docs/js/folder-save-debug-ui.js
           node --check docs/js/save-checkpoint-manager.js
+          node --check docs/js/wild-treasure.js
+          node --check docs/js/wilderness-campfire.js
       - name: Run folder save regression
         run: |
           node scripts/test-folder-save-primary.js
           node scripts/test-folder-save-runtime-integrity.js
           node scripts/test-save-checkpoint-manager.js
+          node scripts/test-wild-treasure-road-spawns.js
+          node scripts/test-persistent-mine-campfires.js
