@@ -206,6 +206,8 @@
       residentTarget,
       rng: seededRng(`${generationYear()}:${zoneState.zoneId}:${seedLabel}:residents`),
       hunters: [],
+      huntingParty: null, // One small surface hunting group per camp; it follows a shared random den-to-den patrol route.
+      huntingPartySeq: 0,
       propMeshes: new Map(),
       benchStationsRegistered: false,
       provokedUntilMs: 0,
@@ -325,6 +327,7 @@
     const instance = window.TemporaryLocales.stamp(zoneState.view, smallLocaleDef, {
       rng: seededRng(`${generationYear()}:${zoneId}:porakaneki-small-site:${minimumFallback ? 'minimum' : campIndex}`),
       clearableTypes: new Set(),
+      minimumCampRequired: minimumFallback,
       clearanceTiles: minimumFallback ? 0 : (smallLocaleDef.placement?.clearanceTiles ?? 2),
       requiresFlatGround: minimumFallback ? false : (smallLocaleDef.placement?.requiresFlatGround !== false),
       minDistanceFromEntry: minimumFallback ? 0 : (smallLocaleDef.placement?.minDistanceFromEntry ?? 10),
@@ -1012,8 +1015,148 @@
     }
   }
 
+  function campDens(camp) {
+    return Array.isArray(camp?.zoneState?.layoutRef?.dens) ? camp.zoneState.layoutRef.dens.filter(den => den && den.id != null) : [];
+  }
+  function denExteriorPoint(camp, den) {
+    if (!camp || !den) return null;
+    const candidates = [];
+    if (den.mouthAnchor && Number.isFinite(Number(den.mouthAnchor.x)) && Number.isFinite(Number(den.mouthAnchor.y))) {
+      candidates.push({ col: Number(den.mouthAnchor.x) + 0.5, row: Number(den.mouthAnchor.y) + 0.5 });
+    }
+    const x = num(den.x, NaN), y = num(den.y, NaN), w = Math.max(1, num(den.w, 1)), h = Math.max(1, num(den.h, 1));
+    if (Number.isFinite(x) && Number.isFinite(y)) {
+      const cx = x + w * 0.5, cy = y + h * 0.5;
+      candidates.push(
+        { col: x - 1.25, row: cy },
+        { col: x + w + 1.25, row: cy },
+        { col: cx, row: y - 1.25 },
+        { col: cx, row: y + h + 1.25 },
+      );
+    }
+    for (const candidate of candidates) {
+      const open = nearestOpenPoint(camp.zoneState, candidate.col, candidate.row);
+      if (pointIsOpen(camp.zoneState, open.col, open.row)) return open;
+    }
+    return null;
+  } // Targets only exterior walkable tiles; hunters never invoke den transitions or enter cavern maps.
+
+  function huntingPartyMembers(camp) {
+    const ids = camp?.huntingParty?.memberIds;
+    if (!ids?.size) return [];
+    return camp.hunters.filter(hunter => ids.has(hunter.id) && !hunter.killCounted && (!hunter.entity || hunter.entity.health > 0));
+  }
+  function huntingPartyFor(hunter) {
+    const party = hunter?.camp?.huntingParty;
+    return party?.memberIds?.has?.(hunter.id) ? party : null;
+  }
+  function clearHuntingParty(camp) {
+    if (!camp?.huntingParty) return;
+    for (const hunter of camp.hunters) {
+      if (!camp.huntingParty.memberIds.has(hunter.id)) continue;
+      hunter.huntPartyId = null;
+      hunter.huntDenId = null;
+      hunter.huntRouteStep = -1;
+      if (hunter.activity === 'hunt-den') { hunter.activity = 'camp'; hunter.target = null; hunter.decisionT = 0; }
+    }
+    camp.huntingParty = null;
+  }
+  function chooseNextPartyDen(camp) {
+    const party = camp?.huntingParty;
+    const dens = campDens(camp);
+    if (!party || !dens.length) return false;
+    const choices = dens.length > 1 ? dens.filter(den => String(den.id) !== String(party.denId)) : dens;
+    const shuffled = [...choices];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(camp.rng() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    let den = null, target = null;
+    for (const candidate of shuffled) {
+      const exterior = denExteriorPoint(camp, candidate);
+      if (!exterior) continue;
+      den = candidate; target = exterior; break;
+    }
+    if (!den || !target) return false;
+    party.denId = String(den.id);
+    party.target = target;
+    party.routeStep += 1;
+    party.dwellT = 0;
+    const members = huntingPartyMembers(camp);
+    const radius = Math.max(0.6, num(cfg?.behavior?.denHuntFormationRadiusTiles, 1.15));
+    members.forEach((hunter, index) => {
+      const angle = ((index / Math.max(1, members.length)) * Math.PI * 2) + party.routeStep * 0.73;
+      hunter.huntPartyId = party.id;
+      hunter.huntDenId = party.denId;
+      hunter.huntRouteStep = party.routeStep;
+      hunter.activity = 'hunt-den';
+      hunter.target = nearestOpenPoint(camp.zoneState, target.col + Math.cos(angle) * radius, target.row + Math.sin(angle) * radius);
+      hunter.decisionT = Math.max(hunter.decisionT, num(cfg?.behavior?.decisionMaxSeconds, 11));
+    });
+    state.lastReason = `den-hunt-route:${camp.zoneId}:${camp.id}:${party.denId}`;
+    return true;
+  }
+  function ensureHuntingParty(camp) {
+    if (!camp || isSleepingHour() || camp.huntingParty || campDens(camp).length === 0) return camp?.huntingParty || null;
+    const eligible = camp.hunters.filter(hunter => !hunter.killCounted && (!hunter.entity || hunter.entity.health > 0));
+    const minSize = Math.max(2, Math.floor(num(cfg?.behavior?.denHuntGroupMin, 2)));
+    const maxSize = Math.max(minSize, Math.floor(num(cfg?.behavior?.denHuntGroupMax, 3)));
+    if (eligible.length < minSize) return null;
+    const shuffled = [...eligible];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(camp.rng() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    const size = Math.min(eligible.length, minSize + Math.floor(camp.rng() * (maxSize - minSize + 1)));
+    const members = shuffled.slice(0, size);
+    camp.huntingParty = {
+      id: `${camp.id}:hunt-party:${gameDay()}:${camp.huntingPartySeq++}`,
+      memberIds: new Set(members.map(hunter => hunter.id)),
+      denId: null,
+      target: null,
+      routeStep: 0,
+      dwellT: 0,
+    };
+    if (!chooseNextPartyDen(camp)) { clearHuntingParty(camp); return null; }
+    return camp.huntingParty;
+  }
+  function updateHuntingParty(camp, dt) {
+    const party = camp?.huntingParty;
+    if (!party) return;
+    const members = huntingPartyMembers(camp);
+    const minSize = Math.max(2, Math.floor(num(cfg?.behavior?.denHuntGroupMin, 2)));
+    if (members.length < minSize) { clearHuntingParty(camp); return; }
+    if (!party.target) { if (!chooseNextPartyDen(camp)) clearHuntingParty(camp); return; }
+    const arrivalRadius = Math.max(1, num(cfg?.behavior?.denHuntArrivalRadiusTiles, 2.5));
+    const allArrived = members.every(hunter => Math.hypot(hunter.x - party.target.col, hunter.y - party.target.row) <= arrivalRadius);
+    if (!allArrived) { party.dwellT = 0; return; }
+    if (!(party.dwellT > 0)) {
+      const min = Math.max(0, num(cfg?.behavior?.denHuntDwellMinSeconds, 4));
+      const max = Math.max(min, num(cfg?.behavior?.denHuntDwellMaxSeconds, 8));
+      party.dwellT = min + camp.rng() * (max - min);
+      return;
+    }
+    party.dwellT -= Math.max(0, num(dt, 0));
+    if (party.dwellT <= 0 && !chooseNextPartyDen(camp)) clearHuntingParty(camp);
+  }
+
   function chooseHunterActivity(hunter) {
     const camp = hunter.camp;
+    const party = huntingPartyFor(hunter);
+    if (party?.target) {
+      hunter.activity = 'hunt-den';
+      hunter.huntPartyId = party.id;
+      hunter.huntDenId = party.denId;
+      if (hunter.huntRouteStep !== party.routeStep || !hunter.target) {
+        const members = huntingPartyMembers(camp);
+        const index = Math.max(0, members.indexOf(hunter));
+        const radius = Math.max(0.6, num(cfg?.behavior?.denHuntFormationRadiusTiles, 1.15));
+        const angle = ((index / Math.max(1, members.length)) * Math.PI * 2) + party.routeStep * 0.73;
+        hunter.target = nearestOpenPoint(camp.zoneState, party.target.col + Math.cos(angle) * radius, party.target.row + Math.sin(angle) * radius);
+        hunter.huntRouteStep = party.routeStep;
+      }
+      return;
+    }
     const stimulusRadius = num(cfg?.behavior?.stimulusInterestRadiusTiles, 12);
     const found = window.NpcSocialStimuli?.strongestNear?.(camp.zoneId, hunter.x, hunter.y);
     if (found?.stimulus) {
@@ -1027,11 +1170,10 @@
 
     const weights = cfg?.behavior?.activityWeights || {};
     const entries = [
-      ['hunt', Math.max(0, num(weights.hunt, 0.52))],
       ['wander', Math.max(0, num(weights.wander, 0.24))],
       ['socialize', Math.max(0, num(weights.socialize, 0.16))],
       ['camp', Math.max(0, num(weights.camp, 0.08))],
-    ];
+    ]; // Den hunting is now group-owned above; non-party residents keep ordinary camp/wander/social behavior.
     const total = entries.reduce((sum, [, weight]) => sum + weight, 0) || 1;
     let roll = rand() * total, activity = 'wander';
     for (const [name, weight] of entries) { roll -= weight; if (roll <= 0) { activity = name; break; } }
@@ -1048,8 +1190,7 @@
     }
 
     hunter.activity = activity;
-    if (activity === 'hunt') hunter.target = randomPointAround(camp, camp.center, num(cfg?.behavior?.huntRadiusMinTiles, 7), num(cfg?.behavior?.huntRadiusMaxTiles, 22));
-    else if (activity === 'camp') hunter.target = randomCampPoint(camp);
+    if (activity === 'camp') hunter.target = randomCampPoint(camp);
     else hunter.target = randomPointAround(camp, { col: hunter.x, row: hunter.y }, 2, num(cfg?.behavior?.localWanderRadiusTiles, 7));
   }
 
@@ -1313,6 +1454,11 @@
     updateViolence(camp);
     const generation = buildGeneration;
     const sleeping = isSleepingHour();
+    if (sleeping) clearHuntingParty(camp);
+    else {
+      ensureHuntingParty(camp);
+      updateHuntingParty(camp, coarseDt > 0 ? coarseDt : dt);
+    }
     for (const hunter of camp.hunters) {
       try { updateCampHunterTick(hunter, dt, coarseDt, sleeping, generation); }
       catch (error) { window.__farmLog?.(`[porakaneki] hunter tick failed (${hunter.id}): ${error?.message || error}`, 'warn'); }
@@ -1429,6 +1575,13 @@
       benchLogs: camp.props.filter(prop => prop.key === BENCHLOG_KEY).length,
       benchSeats: camp.props.filter(prop => prop.key === BENCHLOG_KEY).length * 2,
       benchMeshesReady: [...camp.propMeshes.values()].filter(entry => entry?.sharedFoliage && entry?.mesh).length,
+      huntingParty: camp.huntingParty ? {
+        id: camp.huntingParty.id,
+        denId: camp.huntingParty.denId,
+        routeStep: camp.huntingParty.routeStep,
+        memberCount: huntingPartyMembers(camp).length,
+        target: camp.huntingParty.target ? { col: Number(camp.huntingParty.target.col.toFixed(1)), row: Number(camp.huntingParty.target.row.toFixed(1)) } : null,
+      } : null,
       hunters: camp.hunters.map(hunter => {
         const entity = hunter.entity;
         const group = entity?.avatarRef?.group;
@@ -1442,6 +1595,9 @@
           index: hunter.index,
           weapon: hunter.weaponShape,
           activity: hunter.activity,
+          huntPartyId: hunter.huntPartyId || null,
+          huntDenId: hunter.huntDenId || null,
+          huntRouteStep: Number.isFinite(hunter.huntRouteStep) ? hunter.huntRouteStep : null,
           x: Number(hunter.x.toFixed(1)), y: Number(hunter.y.toFixed(1)),
           chunk: chunkOf(hunter.x, hunter.y),
           distanceToPlayer: distance == null ? null : Number(distance.toFixed(2)),
@@ -1477,7 +1633,7 @@
       };
     }
     return {
-      version: 6,
+      version: 7,
       configReady: !!cfg,
       localesReady: !!smallLocaleDef && !!chiefLocaleDef,
       combatDepsReady: !!combatDeps,
@@ -1521,9 +1677,9 @@
     formatDebug: () => {
       const d = debugSnapshot();
       const zoneBits = Object.entries(d.zones).map(([zoneId, z]) => `${zoneId}:${z.smallCampCount}${z.chiefActive ? '+CHIEF' : ''}`).join(' ');
-      return `Porakaneki camps: v6 season=${d.season} chief=${d.chiefZoneId || '-'} area=${d.currentArea || '-'} small=${d.totalSmallCamps} active=${d.totalActiveCamps} residents=${d.totalGeneratedResidents} favor=${d.favor ?? '-'} AOS=${d.attackOnSight} lod=${d.fullSimulationRadiusTiles}/${d.fullSimulationReleaseRadiusTiles} player=${d.playerTile ? `${d.playerTile.col},${d.playerTile.row}` : '-'} ecology=${d.ecology.chunk || '-'}:${d.ecology.porakaneki}/${d.ecology.bandits}/${d.ecology.predators}/${d.ecology.prey} targets=${d.ecology.humanoidTargets}/${d.ecology.predatorTargets} mats=${d.materializations} coarse=${d.coarseTicks} greet=${d.greetings} kills=${d.kills} zones=[${zoneBits}] reason=${d.lastReason}`;
+      return `Porakaneki camps: v7 season=${d.season} chief=${d.chiefZoneId || '-'} area=${d.currentArea || '-'} small=${d.totalSmallCamps} active=${d.totalActiveCamps} residents=${d.totalGeneratedResidents} favor=${d.favor ?? '-'} AOS=${d.attackOnSight} lod=${d.fullSimulationRadiusTiles}/${d.fullSimulationReleaseRadiusTiles} player=${d.playerTile ? `${d.playerTile.col},${d.playerTile.row}` : '-'} ecology=${d.ecology.chunk || '-'}:${d.ecology.porakaneki}/${d.ecology.bandits}/${d.ecology.predators}/${d.ecology.prey} targets=${d.ecology.humanoidTargets}/${d.ecology.predatorTargets} mats=${d.materializations} coarse=${d.coarseTicks} greet=${d.greetings} kills=${d.kills} zones=[${zoneBits}] reason=${d.lastReason}`;
     },
-    __test: Object.freeze({ MIN_HUNTING_CAMPS_PER_ZONE, isSleepingHour, chunkOf, streamChunkSizeTiles, streamChunkKeysForSite, streamChunkOfTile, ecologyRole, nearestEcologyTarget, activePlayerChunkEcology, updateChunkEcology, fullSimulationRadiusTiles, fullSimulationReleaseRadiusTiles, simulationDistanceToPlayer, weaponRoll, currentSeasonName, desiredChiefZone, smallCampCountForZone, smallResidentCount, speakOverheadFromHunter, speakOverheadFromWalker }),
+    __test: Object.freeze({ MIN_HUNTING_CAMPS_PER_ZONE, isSleepingHour, chunkOf, streamChunkSizeTiles, streamChunkKeysForSite, streamChunkOfTile, ecologyRole, nearestEcologyTarget, activePlayerChunkEcology, updateChunkEcology, fullSimulationRadiusTiles, fullSimulationReleaseRadiusTiles, simulationDistanceToPlayer, weaponRoll, currentSeasonName, desiredChiefZone, smallCampCountForZone, smallResidentCount, denExteriorPoint, chooseNextPartyDen, ensureHuntingParty, updateHuntingParty, speakOverheadFromHunter, speakOverheadFromWalker }),
   });
 
   watchNamespace('BanditCombat', installBanditCombat);
