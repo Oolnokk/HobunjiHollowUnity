@@ -8,11 +8,13 @@
   if (window.HobunjiSaveCheckpoints) return;
 
   const MANUAL_KEY = 'hobunjiSaveCheckpoint.manual.v1';
+  const CAMPFIRE_KEY = 'hobunjiSaveCheckpoint.campfire.v1';
   const AUTO_KEY = 'hobunjiSaveCheckpoint.auto.v1';
   const AUTO_PREVIOUS_KEY = 'hobunjiSaveCheckpoint.autoPrevious.v1';
   const PRE_RESTORE_KEY = 'hobunjiSaveCheckpoint.preRestore.v1';
   const SLOT_KEYS = Object.freeze({
     manual: MANUAL_KEY,
+    campfire: CAMPFIRE_KEY,
     auto: AUTO_KEY,
     autoPrevious: AUTO_PREVIOUS_KEY,
     preRestore: PRE_RESTORE_KEY,
@@ -32,7 +34,8 @@
   let recoveryMirrorPromise = null; // Serializes folder->browser recovery reconciliation.
   let autosavesWritten = 0; // Mobile-visible count of recovery autosaves created.
   let autosavesSkipped = 0; // Mobile-visible count of intentionally skipped autosaves.
-  let manualSavesWritten = 0; // Mobile-visible count of explicit manual checkpoints.
+  let manualSavesWritten = 0; // Mobile-visible count of explicit pause-menu manual checkpoints.
+  let campfireSavesWritten = 0; // Mobile-visible count of explicit campfire checkpoints, kept separate from pause-menu manual saves.
   let restoresApplied = 0; // Mobile-visible count of completed recoveries.
   let folderRecoveryReads = 0; // Mobile-visible count of folder recovery slot reads.
   let folderRecoveryWrites = 0; // Mobile-visible count of folder recovery slot writes.
@@ -208,7 +211,7 @@
   }
 
   function baselineRecord() {
-    return readSlot('auto') || readSlot('manual');
+    return readSlot('auto') || readSlot('manual') || readSlot('campfire');
   }
 
   function evaluateSnapshotForFolderWrite(snapshot, { recoveryKind = 'auto', force = false, automatic = false } = {}) {
@@ -270,6 +273,15 @@
       manualSavesWritten++;
       await writeFolderSlot('manual', record);
       lastAction = 'manual-saved-folder';
+      lastError = '';
+      return record;
+    }
+    if (recoveryKind === 'campfire') {
+      const record = createRecord('campfire', snapshot, 'campfire-folder-save', savedAt);
+      writeSlot('campfire', record); // Campfire saves advance only their own recovery point, never the pause-menu manual slot.
+      campfireSavesWritten++;
+      await writeFolderSlot('campfire', record);
+      lastAction = 'campfire-saved-folder';
       lastError = '';
       return record;
     }
@@ -407,6 +419,54 @@
     } catch (error) {
       lastError = String(error?.message || error);
       lastAction = 'manual-save-error';
+      return { ok: false, error: lastError };
+    }
+  }
+
+
+  async function saveCampfire({ reason = 'campfire-save', force = false } = {}) {
+    try {
+      if (!isHydrated()) throw new Error('Campfire save is unavailable until the farmer and farm finish loading.');
+      flushLiveState('campfire-checkpoint');
+      const snapshot = snapshotApi()?.capture?.({ strict: true });
+      if (!snapshot) throw new Error('Save snapshot system is unavailable.');
+
+      const risk = force ? '' : integrityRisk(baselineRecord(), snapshot);
+      if (risk) {
+        lastIntegrityWarning = risk;
+        lastAction = 'campfire-save-blocked-integrity';
+        return { ok: false, skipped: true, reason: 'integrity', warning: risk, needsConfirmation: true };
+      }
+
+      if (folderIsPrimary()) {
+        const status = await folderApi().syncSnapshot(snapshot, { automatic: false, recoveryKind: 'campfire', force });
+        if (status?.lastError && !canonicalSucceededWithRecoveryWarning(status)) {
+          lastError = status.lastError;
+          lastAction = 'campfire-folder-save-error';
+          const guardBlocked = String(status.lastAction || '').includes('save-blocked-');
+          return {
+            ok: false,
+            error: status.lastError,
+            warning: status.dataLossRisk || status.lastError,
+            needsConfirmation: guardBlocked && !force,
+          };
+        }
+        const record = readSlot('campfire') || createRecord('campfire', snapshot, reason);
+        lastError = status?.lastError || '';
+        lastAction = status?.lastError ? 'campfire-primary-saved-recovery-warning' : 'campfire-saved-folder';
+        return { ok: true, record, folder: true, warning: status?.lastError || null };
+      }
+
+      const record = createRecord('campfire', snapshot, reason);
+      writeSlot('campfire', record);
+      campfireSavesWritten++;
+      lastAction = 'campfire-saved-browser';
+      lastError = '';
+      lastIntegrityWarning = '';
+      return { ok: true, record, folder: false };
+    } catch (error) {
+      lastError = String(error?.message || error);
+      lastAction = 'campfire-save-error';
       return { ok: false, error: lastError };
     }
   }
@@ -614,7 +674,8 @@
     return {
       choices: [
         { record: currentFolder, title: 'Current Folder Save', note: 'The canonical save currently used by the folder-first workflow.', current: true },
-        { record: readSlot('manual'), title: 'Manual Save', note: 'Only changes when you explicitly press the manual save button.' },
+        { record: readSlot('manual'), title: 'Manual Save', note: 'Only changes when you explicitly press the pause-menu manual save button.' },
+        { record: readSlot('campfire'), title: 'Campfire Save', note: 'Only changes when you explicitly save at a campfire.' },
         { record: readSlot('auto'), title: 'Latest Autosave', note: 'Latest good rolling checkpoint accepted by the integrity guard.' },
         { record: readSlot('autoPrevious'), title: 'Earlier Autosave', note: 'Older rolling checkpoint retained separately from the latest autosave.' },
         { record: readSlot('preRestore'), title: 'Before Last Restore', note: 'Safety copy of the canonical save immediately before the most recent recovery.' },
@@ -777,17 +838,20 @@
 
   window.HobunjiSaveCheckpoints = {
     saveManual,
+    saveCampfire,
     saveAuto,
     openRecoveryModal,
     evaluateSnapshotForFolderWrite,
     onFolderSnapshotWritten,
     syncRecoveryMirrorsFromFolder,
     restoreManual: () => applyRecord(readSlot('manual')),
+    restoreCampfire: () => applyRecord(readSlot('campfire')),
     restoreLatestAuto: () => applyRecord(readSlot('auto')),
     restorePreviousAuto: () => applyRecord(readSlot('autoPrevious')),
     restorePreRestore: () => applyRecord(readSlot('preRestore')),
     getStatus: () => ({
       manual: readSlot('manual'),
+      campfire: readSlot('campfire'),
       auto: readSlot('auto'),
       autoPrevious: readSlot('autoPrevious'),
       preRestore: readSlot('preRestore'),
@@ -808,12 +872,14 @@
       autosavesWritten,
       autosavesSkipped,
       manualSavesWritten,
+      campfireSavesWritten,
       restoresApplied,
       folderRecoveryReads,
       folderRecoveryWrites,
       folderBaselineSeeds,
       restoreRollbacks,
       hasManual: !!readSlot('manual'),
+      hasCampfire: !!readSlot('campfire'),
       hasAuto: !!readSlot('auto'),
       hasAutoPrevious: !!readSlot('autoPrevious'),
       hasPreRestore: !!readSlot('preRestore'),
