@@ -76,16 +76,22 @@ const westHorizon = Core.resolveConfig({ id:'map_western_slope', cols:80, rows:8
 const northHorizon = Core.resolveConfig({ id:'map_northern_cliffs', cols:80, rows:80 }).horizonTerrain;
 assert.equal(westHorizon.preset, 'westernMountainChain');
 assert.equal(westHorizon.side, 'west');
-assert.equal(westHorizon.heightWorld, 72);
+assert.equal(westHorizon.heightWorld, 82);
+assert.equal(westHorizon.heightStartWorld, 68, 'West Slope chain should expose an independent north/start height');
+assert.equal(westHorizon.heightEndWorld, 82, 'West Slope chain should expose an independent south/end height');
 assert.equal(westHorizon.overallScale, 1);
 assert.equal(westHorizon.segments, 8);
-assert.equal(westHorizon.mountainLayers, 48, 'West Slope mountains should allow high-resolution regular plateau tiering');
+assert.equal(westHorizon.mountainGranularity, 54);
+assert.equal(westHorizon.mountainLayers, 48, 'legacy tier-cap field stays readable even though granularity now owns runtime tier density');
 assert.equal(westHorizon.mountainSeed, 1337);
+assert.equal(westHorizon.lockSpaceCols, 36);
+assert.equal(westHorizon.lockSpaceRows, 72);
 assert.deepStrictEqual(westHorizon.lockedTiles, {});
 assert.equal(northHorizon.preset, 'northernPlateau');
 assert.equal(northHorizon.side, 'north');
 assert.equal(northHorizon.heightWorld, 64);
-assert(northHorizon.heightWorld < westHorizon.heightWorld && northHorizon.heightWorld > westHorizon.heightWorld * 0.85, 'Northern Cliffs plateau should be only slightly shorter than the West Slope chain');
+const westAverageEndpointHeight = (westHorizon.heightStartWorld + westHorizon.heightEndWorld) * 0.5;
+assert(northHorizon.heightWorld < westAverageEndpointHeight && northHorizon.heightWorld > westAverageEndpointHeight * 0.85, 'Northern Cliffs plateau should remain only slightly shorter than the West Slope chain baseline');
 assert.equal(Core.resolveConfig({ id:'map_eastern_mire', cols:80, rows:80 }).horizonTerrain.enabled, false, 'unrelated wilderness maps must not gain a colossal horizon landmark');
 const riverAutoA = Core.buildContinuationPolyline(byId('river:stream:start'), cfg, {});
 const riverAutoB = Core.buildContinuationPolyline(byId('river:stream:start'), cfg, {});
@@ -176,9 +182,44 @@ assert.equal(baseField.rows, 72);
 assert.equal(baseField.frontPeakCount, 8);
 assert.equal(baseField.backPeakCount, 7);
 assert.equal(baseField.peakCount, 15);
-assert(baseField.maxTier >= 25, 'default 72u range should use many ordinary 2.5u plateau tiers');
-assert(baseField.maxTier <= westHorizon.mountainLayers);
+assert.equal(baseField.granularity, 54);
+assert(baseField.maxTier >= 30, 'default endpoint heights should use many ordinary plateau transitions');
+assert(baseField.maxTier <= Core.mountainGranularitySettings(westHorizon.mountainGranularity).tierCap);
 assert.equal(baseField.mesas.length, baseField.maxTier, 'shared synthetic map should emit one regular plateau transition mask per active elevation tier');
+
+const rowMaxima = field => {
+  const out=[];
+  for(let r=0;r<field.rows;r++){
+    let max=0;
+    for(let c=0;c<field.cols;c++) max=Math.max(max,field.tiers[r*field.cols+c]);
+    out.push(max);
+  }
+  return out;
+};
+const averageSlice = (values,a,b) => {
+  let total=0,count=0;
+  for(let i=Math.floor(values.length*a);i<Math.ceil(values.length*b);i++){ total+=values[i]; count++; }
+  return total/Math.max(1,count);
+};
+const strongHeightLerp = Core.normalizeHorizonTerrain({
+  ...westHorizon,
+  heightStartWorld:40,
+  heightEndWorld:120,
+}, 'map_western_slope');
+const strongHeightField = Core.buildMountainPlateauField(80,80,'map_western_slope',strongHeightLerp);
+const strongRows = rowMaxima(strongHeightField);
+assert(averageSlice(strongRows,.68,.88) > averageSlice(strongRows,.12,.32) * 1.45, 'south/end height setting must materially raise the shared range after mountains merge');
+assert(new Set(rowMaxima(baseField)).size >= 8, 'seeded neighboring mountain amplitudes must keep the skyline jagged instead of becoming one smooth height ramp');
+
+const coarseQuality = Core.mountainGranularitySettings(0);
+const fineQuality = Core.mountainGranularitySettings(100);
+assert.deepStrictEqual({cols:coarseQuality.cols,rows:coarseQuality.rows,tierCap:coarseQuality.tierCap},{cols:8,rows:16,tierCap:6}, 'granularity 0 must be deliberately coarse/cheap');
+assert.deepStrictEqual({cols:fineQuality.cols,rows:fineQuality.rows,tierCap:fineQuality.tierCap},{cols:60,rows:120,tierCap:64}, 'granularity 100 must expose the maximum synthetic-map density');
+const coarseField = Core.buildMountainPlateauField(80,80,'map_western_slope',Core.normalizeHorizonTerrain({...westHorizon,mountainGranularity:0},'map_western_slope'));
+const fineField = Core.buildMountainPlateauField(80,80,'map_western_slope',Core.normalizeHorizonTerrain({...westHorizon,mountainGranularity:100},'map_western_slope'));
+const estimateTriangles = field => field.tierStats.reduce((sum,tier)=>sum+tier.tiles*8,0);
+assert(estimateTriangles(coarseField) < 6000, 'granularity 0 should be genuinely cheap enough to look bad on purpose');
+assert(estimateTriangles(fineField) > estimateTriangles(coarseField) * 100, 'granularity should provide a very wide useful poly-count range');
 
 function countComponents(field, minTier = 1) {
   const seen = new Set(); let components = 0;
@@ -220,8 +261,23 @@ const lockedConfig = Core.normalizeHorizonTerrain({
   lockedTiles: { [lockedKey]: baseField.tiers[changedCell] },
 }, 'map_western_slope');
 const lockedField = Core.buildMountainPlateauField(80, 80, 'map_western_slope', lockedConfig);
-assert.equal(lockedField.tiers[changedCell], baseField.tiers[changedCell], 'locked 2D brush tile must preserve its exact plateau tier across randomization');
+assert.equal(lockedField.tiers[changedCell], baseField.tiers[changedCell], 'legacy numeric locked tile must preserve its exact plateau tier across randomization');
 assert.equal(lockedField.lockedCount, 1);
+
+const canonicalLock = Core.mountainFieldLockCellForFieldCell(baseField, lockedC, lockedR);
+const canonicalKey = `${canonicalLock.c},${canonicalLock.r}`;
+const normalizedHeight = baseField.maxTier ? baseField.tiers[changedCell] / baseField.maxTier : 0;
+const coarseLockedConfig = Core.normalizeHorizonTerrain({
+  ...westHorizon,
+  mountainGranularity:0,
+  mountainSeed:westHorizon.mountainSeed+3,
+  lockedTiles:{ [canonicalKey]:{height01:normalizedHeight} },
+}, 'map_western_slope');
+const coarseLockedField = Core.buildMountainPlateauField(80,80,'map_western_slope',coarseLockedConfig);
+const coarseLockedCell = Core.mountainFieldCellForLockCell(coarseLockedField,canonicalLock.c,canonicalLock.r);
+const coarseLockedTier = coarseLockedField.tiers[coarseLockedCell.r*coarseLockedField.cols+coarseLockedCell.c];
+assert(Math.abs(coarseLockedTier/Math.max(1,coarseLockedField.maxTier)-normalizedHeight) <= 1/Math.max(1,coarseLockedField.maxTier)+1e-6, 'normalized canonical lock must retain its relative height when granularity changes resolution');
+assert.equal(coarseLockedField.lockedCount,1);
 
 const westHorizonScene = new Group();
 const westBudget = Border.buildColossalHorizonTerrain(westHorizonScene, 80, 80, 'map_western_slope', 0, null, westHorizon);
@@ -233,6 +289,9 @@ assert.equal(westBudget.sharedSyntheticPlateauMap, true);
 assert.equal(westBudget.regularPlateauBuilder, true, 'mountain chain must route through ZonePlateauMesa rather than a bespoke mountain mesh generator');
 assert.equal(westBudget.fieldCols, 36);
 assert.equal(westBudget.fieldRows, 72);
+assert.equal(westBudget.mountainGranularity,54);
+assert.equal(westBudget.heightStartWorld,68);
+assert.equal(westBudget.heightEndWorld,82);
 assert.equal(westBudget.mountainLayers, baseField.maxTier);
 assert.equal(westBudget.meshes, baseField.mesas.length, 'one shared regular plateau mesh per tier should replace per-mountain meshes');
 assert(westBudget.vertices > 100000, 'new version should be substantially higher-poly than the discarded 1,440-vertex custom mesh');
@@ -254,12 +313,12 @@ const hugeWest = Core.normalizeHorizonTerrain({
   overallScale:3,
   spanScale:4,
   depthWorld:140,
-  mountainLayers:48,
+  mountainGranularity:westHorizon.mountainGranularity,
   mountainSeed:westHorizon.mountainSeed,
 }, 'map_western_slope');
 const hugeWestScene = new Group();
 const hugeWestBudget = Border.buildColossalHorizonTerrain(hugeWestScene, 80, 80, 'map_western_slope', 0, null, hugeWest);
-assert.equal(hugeWestBudget.effectiveHeightWorld, 216);
+assert.equal(hugeWestBudget.effectiveHeightWorld, 246);
 assert.equal(hugeWestBudget.effectiveDepthWorld, 420);
 assert.equal(hugeWestBudget.spanWorld, 960);
 let minNorthSouth = Infinity, maxNorthSouth = -Infinity;
