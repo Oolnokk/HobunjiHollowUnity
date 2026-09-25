@@ -167,6 +167,11 @@
     return status?.state === 'ready' && status?.autoSyncArmed === true;
   }
 
+  function folderRecoveryAvailable() {
+    const status = folderApi()?.getStatus?.(); // Recovery remains available while autosync is intentionally disarmed because canonical files are corrupt.
+    return status?.state === 'ready' && Boolean(status?.folderName);
+  }
+
   function markHydrated() {
     if (!hydratedAt && isHydrated()) hydratedAt = Date.now();
   }
@@ -288,7 +293,7 @@
   }
 
   async function syncRecoveryMirrorsFromFolder() {
-    if (!folderIsPrimary()) return false;
+    if (!folderRecoveryAvailable()) return false;
     if (recoveryMirrorPromise) {
       const result = await recoveryMirrorPromise;
       await ensureFolderBaseline(); // Handles player-ready racing an earlier pre-player mirror pass.
@@ -445,7 +450,7 @@
     let snapshot = null;
     let savedAt = Date.now();
     let primaryReadError = ''; // Used to distinguish a trusted canonical safety copy from an emergency browser fallback while repairing folder corruption.
-    if (folderIsPrimary() && typeof folderApi()?.readPrimarySnapshot === 'function') {
+    if (folderRecoveryAvailable() && typeof folderApi()?.readPrimarySnapshot === 'function') {
       try {
         const primary = await folderApi().readPrimarySnapshot();
         if (primary?.snapshot) {
@@ -476,7 +481,7 @@
 
     // Never replace the folder's existing Before Last Restore checkpoint with a browser fallback
     // when the canonical folder itself is corrupt; that older folder checkpoint is more trustworthy.
-    if (folderIsPrimary() && !primaryReadError) await writeFolderSlot('preRestore', record);
+    if (folderRecoveryAvailable() && !primaryReadError) await folderApi()?.writeRecoveryCheckpoint?.('preRestore', record);
     return record;
   }
 
@@ -515,7 +520,7 @@
       preRestore = await preservePreRestore();
       const restoredSnapshot = sanitizeRecoverySnapshot(record.snapshot); // Used for both browser apply and folder write so legacy runtime-only mesh payloads cannot re-enter persistence.
 
-      if (folderIsPrimary()) {
+      if (folderRecoveryAvailable()) {
         let restoreWriteError = '';
         try {
           const status = await folderApi().syncSnapshot(restoredSnapshot, { force: true, automatic: false, recoveryKind: 'restore' });
@@ -564,9 +569,9 @@
   }
 
   async function recoveryChoices() {
-    if (folderIsPrimary()) await syncRecoveryMirrorsFromFolder();
+    if (folderRecoveryAvailable()) await syncRecoveryMirrorsFromFolder();
     let currentFolder = null;
-    if (folderIsPrimary() && typeof folderApi()?.readPrimarySnapshot === 'function') {
+    if (folderRecoveryAvailable() && typeof folderApi()?.readPrimarySnapshot === 'function') {
       try {
         const primary = await folderApi().readPrimarySnapshot();
         if (primary?.snapshot) currentFolder = createRecord('current-folder', primary.snapshot, 'current-primary-folder', primary.savedAt || Date.now());
@@ -611,7 +616,7 @@
     panel.querySelector('[data-recovery-loading]')?.remove();
     for (const choice of choices) {
       const record = choice.record;
-      if (choice.current && !record && !folderIsPrimary()) continue;
+      if (choice.current && !record && !folderRecoveryAvailable()) continue;
       const row = document.createElement('div');
       Object.assign(row.style, { border: '1px solid rgba(255,255,255,.13)', borderRadius: '9px', padding: '11px', marginBottom: '9px' });
       const title = document.createElement('div');
