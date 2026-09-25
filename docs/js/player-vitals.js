@@ -51,10 +51,10 @@
       staminaRegenPerSec: deps.PLAYER_STAMINA_REGEN * window.CookingSystem.getStaminaRegenMultiplier(),
       healthRegenPerSec: deps.PLAYER_HEALTH_REGEN,
     });
-    // Direct hits check death in game.js's damagePlayer(). Ordinary Health-
-    // affliction ticks are deliberately nonlethal, but keep this zero-health
-    // handoff as defensive authority for ResourceSystem extensions or hazards
-    // that may resolve during tick() before AI observes the player.
+    // Direct hits check death in game.js's damagePlayer(), while already-
+    // applied Bleeding/Burning/Poison buildup can deal lethal damage inside
+    // ResourceSystem.tick(). Route those deaths through the same respawn
+    // authority before AI observes a zero-health player.
     if (deps.player.health <= 0) {
       if (!deathHandled) {
         deathHandled = true;
