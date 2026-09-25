@@ -11285,6 +11285,25 @@
         }
       }
 
+      function applyNpcDialogueFacingExact(walker, rawRot, lerp) {
+        if (!walker?.root || !Number.isFinite(rawRot)) return;
+        walker.desiredRot = rawRot;
+        if (walker.animalDef && walker.animalAvatarRef) {
+          const animalDt = Number.isFinite(walker._lastUpdateDt) ? walker._lastUpdateDt : 1 / 60; // Uses the same frame-time source as normal named-animal facing, but without its camera-relative billboard deadzone.
+          const animalTurnLerp = Math.min(1, animalDt * 10); // Used only to keep named-animal dialogue turns smooth while preserving exact target-facing.
+          walker.rot += angleDiff(rawRot, walker.rot) * animalTurnLerp;
+          walker.root.rotation.y = walker.rot;
+          walker.animalPngRot = walker.rot;
+          if (walker.animalAvatarRef.frontPlane) walker.animalAvatarRef.frontPlane.rotation.y = Math.PI / 2;
+          if (walker.animalAvatarRef.backPlane) walker.animalAvatarRef.backPlane.rotation.y = -Math.PI / 2;
+          return;
+        }
+        const turnLerp = Math.max(0, Math.min(1, Number(lerp) || 0.28)); // Used only for smooth exact humanoid dialogue body turning.
+        walker.rot += angleDiff(rawRot, walker.rot) * turnLerp;
+        walker.root.rotation.y = walker.rot;
+        if (walker.legs?.group) walker.legs.group.rotation.y = rawRot - walker.root.rotation.y;
+      }
+
       function faceNpcDialogueParticipants() {
         if (cutscenePreviewActive) return; // see beginNpcDialogueStaging
         const walker = npcDialogueStaging?.walker || _dialogueWalker;
@@ -11299,7 +11318,7 @@
         player.angle = facingAngle;
         const npcTargetAngle = Math.atan2(playerWorldZ - npcZ, playerWorldX - npcX);
         const npcTargetRot = -npcTargetAngle + Math.PI / 2;
-        if (walker.rec?.id !== 'banubu') walker.applyFacingDeadzone(npcTargetRot, cfg.npcFacePlayerLerp ?? 0.28); // Sleeping Banubu keeps his authored quest pose.
+        if (walker.rec?.id !== 'banubu') applyNpcDialogueFacingExact(walker, npcTargetRot, cfg.npcFacePlayerLerp ?? 0.28); // Dialogue bypasses camera-facing deadzones; sleeping Banubu keeps his authored quest pose.
 
         // Dialogue eye contact is continuous and height-aware. Both necks aim
         // at the OTHER participant's resolved live face point, so short/tall
