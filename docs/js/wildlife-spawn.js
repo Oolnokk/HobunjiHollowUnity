@@ -598,12 +598,25 @@
     deps.buildingScenes.delete(cavernMapId);
   }
 
+  function purgeClearedDenCavernResidents(cavernMapId, denKey) {
+    let removed = 0; // Reported in the mobile-readable wildlife log so stale interior populations are diagnosable without devtools.
+    for (const creature of [...deps.hostileObjects]) {
+      if (!creature || creature.isDenMother || creature.areaId !== cavernMapId) continue;
+      deps.hostileObjects.delete(creature);
+      creature.avatarRef?.group?.parent?.remove?.(creature.avatarRef.group);
+      removed++;
+    }
+    if (removed) window.__farmLog?.(`[den-turnover] purged ${removed} stale cavern resident(s) for ${denKey} before discarding the cleared interior.`, 'wildlife');
+    return removed;
+  }
+
   function collapseClearedDen(record) {
     const layout = deps.zoneLayouts.get(record.zoneId);
     const den = layout?.dens?.find(candidate => String(candidate.id) === String(record.denId));
     if (!layout || !den || record.stage !== 'cleared') return false;
     den.collapsed = true;
     den.turnoverStage = 'collapsed';
+    den._collapsePresentationPending = true; // Consumed by ZoneDenTotemFeatures to delay/lerp the visible cave-in after the exterior has loaded.
     const cavernMapId = denCavernMapId(record.zoneId, den.id);
     record.transition = takeDenTransition(layout, cavernMapId, den.id) || record.transition || null;
     record.stage = 'collapsed';
@@ -612,6 +625,7 @@
     record.w = Math.max(1, Number(den.w)||1); record.h = Math.max(1, Number(den.h)||1);
     record.mouthAnchor = den.mouthAnchor ? { ...den.mouthAnchor } : null;
     window.BanditCamps?.forgetDenPerception?.(record.denKey); // Removes a companion-discovered map marker/waypoint at the abandoned physical entrance.
+    purgeClearedDenCavernResidents(cavernMapId, record.denKey);
     resetDenPopulationCaches(record.zoneId, den.id, cavernMapId);
     syncDenVisual(record.zoneId, den);
     persistDenTurnover();
@@ -696,29 +710,62 @@
         setDenFootprintOverlay(layout, den, true);
       }
       const cavernMapId = denCavernMapId(zoneId, den.id);
-      const collapsed = record.stage === 'collapsed' || record.stage === 'ready';
+      const collapsed = record.stage === 'cleared' || record.stage === 'collapsed' || record.stage === 'ready';
       den.collapsed = collapsed;
       den.turnoverStage = record.stage;
+      if (record.stage === 'cleared') den._collapsePresentationPending = true; // Reloading after the mother dies still gets the delayed exterior cave-in instead of reopening the entrance.
       if (collapsed) record.transition = takeDenTransition(layout, cavernMapId, den.id) || record.transition || null;
       else ensureDenTransition(layout, den, cavernMapId, record.transition);
     }
   }
 
   function markDenSurvivorsAsPrey(cavernMapId, denKey, mother) {
-    let changed = 0;
-    for (const survivor of deps.hostileObjects) {
+    let changed = 0; // Count of valid residents converted into ordinary passive wildlife.
+    let discardedInvalid = 0; // Count of malformed stale entities removed instead of allowing an "undefined" creature into exterior AI.
+    for (const survivor of [...deps.hostileObjects]) {
       if (!survivor || survivor === mother || survivor.health <= 0 || survivor.isDenMother) continue;
       if (survivor.areaId !== cavernMapId && survivor.denKey !== denKey) continue;
+      const baseDef = deps.CREATURE_DB?.[survivor.creatureKey]; // Canonical species definition used to repair incomplete per-instance overlays before displacement.
+      if (!survivor.creatureKey || !baseDef) {
+        deps.hostileObjects.delete(survivor);
+        survivor.avatarRef?.group?.parent?.remove?.(survivor.avatarRef.group);
+        discardedInvalid++;
+        continue;
+      }
+      const liveDef = survivor.def && typeof survivor.def === 'object' ? survivor.def : {}; // Preserves legitimate per-instance tuning while restoring any missing canonical fields.
+      survivor.def = {
+        ...baseDef,
+        ...liveDef,
+        label: liveDef.label || baseDef.label || survivor.creatureKey,
+        hostile:false,
+        diet:'herbivore',
+        behaviorType:'passive',
+      };
+      const genotypeFamily = denGenotypeFamily(survivor.creatureKey); // Used to guarantee displaced residents retain a drawable family genotype.
+      if (!survivor.genotype && genotypeFamily) survivor.genotype = getOrMakeDenGenotype(cavernMapId, genotypeFamily);
+      survivor.denTurnoverOriginKey = denKey;
       survivor.denKey = null;
+      survivor.denEntranceX = null;
+      survivor.denEntranceY = null;
       survivor.wildlifeRole = 'prey';
       survivor.denDisplacedPrey = true;
-      survivor.def = { ...survivor.def, hostile:false, diet:'herbivore' };
-      survivor.state = 'fleeing-low-health';
+      survivor.state = 'idle';
+      survivor.homeX = Number.isFinite(Number(survivor.x)) ? Number(survivor.x) : 0;
+      survivor.homeY = Number.isFinite(Number(survivor.y)) ? Number(survivor.y) : 0;
+      survivor.wanderTarget = null;
+      survivor.patrolPoints = null;
+      survivor.patrolIndex = 0;
       survivor.targetCreature = null;
       survivor.targetPlayer = null;
+      survivor._territorialBehavior = null;
+      survivor._animalSleeping = false;
+      survivor._denHidden = false;
+      survivor.scaleY = 1;
+      if (survivor.avatarRef?.group) survivor.avatarRef.group.visible = true;
       survivor._fleeCooldownUntil = Infinity;
       changed++;
     }
+    if (discardedInvalid) window.__farmLog?.(`[den-turnover] discarded ${discardedInvalid} malformed survivor(s) for ${denKey}; invalid creature identity cannot enter displaced-prey AI.`, 'wildlife');
     return changed;
   }
 
@@ -746,8 +793,13 @@
     denTurnoverByKey.set(key, record);
     denCheckTimer = 0; // Used so the very first exterior frame after leaving processes the pending collapse instead of leaving a brief re-entry window.
     persistDenTurnover();
-    if (nestRemaining > 0) deps.showToast('The Den-Mother is dead. Collect the eggs or babies before you leave — the burrow will collapse.', true);
-    else deps.showToast('The Den-Mother is dead. The burrow will collapse after you leave.', true);
+    if (nestRemaining > 0) {
+      deps.showZoneBanner?.('DEN CLEARED — Collect any eggs or babies you want before leaving.');
+      deps.showToast('The Den-Mother is dead. Collect the eggs or babies before you leave — the burrow will collapse.', true);
+    } else {
+      deps.showZoneBanner?.('DEN CLEARED');
+      deps.showToast('The Den-Mother is dead. The burrow will collapse after you leave.', true);
+    }
     window.__farmLog?.(`[den-turnover] cleared ${key}; clutchRemaining=${nestRemaining} displacedSurvivors=${displaced}. Collapse waits until the player leaves.`, 'wildlife');
     return true;
   }
@@ -1470,10 +1522,12 @@
     }
   }
 
-  // Called from game.js's enterZone — fires the den-check on the very
-  // next frame instead of waiting up to DEN_CHECK_INTERVAL_S, so wildlife
-  // populates promptly on arrival and the log reflects it.
+  // Called from game.js's enterZone. Turnover is processed synchronously so
+  // a just-cleared den loses its exterior transition before the player can
+  // interact with the newly loaded zone; ordinary population checks still
+  // run on the next frame.
   function onZoneEntered(mapId) {
+    if (deps._isZoneArea(mapId)) processDenTurnoverForZone(mapId);
     denCheckTimer = 0;
     _zoneEntryAnimalLogPending = mapId;
   }

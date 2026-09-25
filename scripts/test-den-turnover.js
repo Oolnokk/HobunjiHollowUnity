@@ -8,8 +8,9 @@ const vm = require('node:vm');
 
 const ROOT = process.env.HOBUNJI_TEST_ROOT || process.cwd(); // Used by CI/local runs to resolve this checked-out branch.
 const wildlifeSource = fs.readFileSync(path.join(ROOT, 'docs/js/wildlife-spawn.js'), 'utf8'); // Runtime under behavioral test below.
+const gameSource = fs.readFileSync(path.join(ROOT, 'docs/game.js'), 'utf8'); // Guards combat-state filtering for den-hidden/displaced residents.
 const cavernSource = fs.readFileSync(path.join(ROOT, 'docs/js/cavern-generator.js'), 'utf8'); // Guards cold-load suppression after the Den-Mother has already been killed.
-const denVisualSource = fs.readFileSync(path.join(ROOT, 'docs/js/zone-den-totem-features.js'), 'utf8'); // Guards the requested one-third collapsed cave presentation.
+const denVisualSource = fs.readFileSync(path.join(ROOT, 'docs/js/zone-den-totem-features.js'), 'utf8'); // Guards delayed smooth collapse height/footprint/audio presentation.
 const gridSource = fs.readFileSync(path.join(ROOT, 'docs/js/grid-tile-accessors.js'), 'utf8'); // Guards removal of the usable collapsed doorway.
 const porakanekiSource = fs.readFileSync(path.join(ROOT, 'docs/js/porakaneki-camps-runtime.js'), 'utf8'); // Guards den-hunting AI against stale/moved sites.
 const banditSource = fs.readFileSync(path.join(ROOT, 'docs/js/bandit-camps.js'), 'utf8'); // Guards companion-discovered den markers when the physical den disappears.
@@ -17,8 +18,12 @@ const debugSource = fs.readFileSync(path.join(ROOT, 'docs/js/wildlife-debug-pane
 
 assert.match(cavernSource, /denTurnoverStateForCavern/, 'cavern synthesis must consult persisted den turnover before spawning a new objective');
 assert.match(cavernSource, /nestCol: denCleared \? null : nestCol/, 'a cleared den must not reconstruct its mother/nest objective on reload');
-assert.match(denVisualSource, /den\.collapsed \? scaleY \/ 3 : scaleY/, 'collapsed cave facade must render at one-third normal Y scale');
+assert.match(denVisualSource, /DEN_COLLAPSED_HEIGHT_MULTIPLIER = 0\.6/, 'collapsed cave facade must retain 60% of its normal height');
+assert.match(denVisualSource, /DEN_COLLAPSED_FOOTPRINT_MULTIPLIER = 1\.18/, 'collapsed cave facade must widen its X\/Z footprint');
+assert.match(denVisualSource, /DEN_COLLAPSE_DELAY_MS = 2000[\s\S]*?DEN_COLLAPSE_LERP_MS = 900/, 'fresh collapse waits two seconds then uses a real timed lerp');
+assert.match(denVisualSource, /playObjectSfxKey\?\.\('breakRock', DEN_COLLAPSE_SFX_VOLUME_SCALE, DEN_COLLAPSE_SFX_PITCH\)/, 'collapse reuses the mined-rock break cue with authored louder\/lower tuning');
 assert.match(denVisualSource, /function syncAnimalDenVisual\(/, 'den facade/furniture must have a runtime relocation synchronizer');
+assert.match(gameSource, /function isPlayerInCombat\(\)[\s\S]{0,240}!c\._denHidden[\s\S]{0,120}!c\.denDisplacedPrey/, 'hidden den residents and displaced prey cannot keep combat BGM active');
 assert.match(gridSource, /if \(den\.collapsed\)[\s\S]*?return true/, 'collapsed den footprint must close its former doorway gap');
 assert.match(porakanekiSource, /filter\(den => den && den\.id != null && !den\.collapsed\)/, 'Porakaneki hunting routes must exclude collapsed dens');
 assert.match(porakanekiSource, /const liveTarget = denExteriorPoint\(camp, liveDen\)/, 'Porakaneki active parties must refresh a relocated den target');
@@ -49,6 +54,7 @@ let forceRelocationFallback = false; // Forces the 700 random placement samples 
 const rnd = () => forceRelocationFallback ? 0 : ((rngState = (Math.imul(rngState,1664525)+1013904223)>>>0) / 0x100000000);
 const storage = new Map([['hobunjiSaveMeta', JSON.stringify({ worlds:[{ id:'world-den-test' }] })]]); // Portable world metadata stand-in used to verify same-year/cloud-save-compatible den persistence.
 const toasts = [];
+const banners = []; // Captures the large cinematic title-card message requested on Den-Mother clear.
 const logs = [];
 const visualSync = [];
 const rebuiltChunks = [];
@@ -94,7 +100,7 @@ const windowStub = {
   },
   ZoneDenTotemFeatures:{
     syncAnimalDenVisual(scene, grid, liveDen, mapId){
-      visualSync.push({ mapId, collapsed:!!liveDen.collapsed, x:liveDen.x, y:liveDen.y });
+      visualSync.push({ mapId, collapsed:!!liveDen.collapsed, pending:!!liveDen._collapsePresentationPending, x:liveDen.x, y:liveDen.y });
       return true;
     },
   },
@@ -134,6 +140,7 @@ const deps = {
   _isZoneArea:id=>id===zoneId,
   buildZoneScene:id=>id===zoneId,
   showToast(message,danger){ toasts.push({message,danger}); },
+  showZoneBanner(message){ banners.push(message); },
   player:{ x:30*32, y:30*32 },
   calendar:{ day:14 },
 };
@@ -157,9 +164,10 @@ assert.equal(genotypeRoll,1,'generation-zero restoration does not reroll the fam
 denNests.set(cavernMapId,{ remaining:2 });
 
 const mother = { id:'mother', isDenMother:true, areaId:cavernMapId, health:0, def:{hostile:true,diet:'carnivore'} };
-const cavernAdd = { id:'inside-add', isDenMother:false, areaId:cavernMapId, health:20, def:{hostile:true,diet:'carnivore'}, denKey:windowStub.WildlifeSpawn.denKeyFor(zoneId,den), state:'chase' };
-const exteriorAdd = { id:'outside-add', isDenMother:false, areaId:zoneId, health:20, def:{hostile:true,diet:'carnivore'}, denKey:windowStub.WildlifeSpawn.denKeyFor(zoneId,den), state:'chase' };
-hostiles.add(cavernAdd); hostiles.add(exteriorAdd);
+const cavernAdd = { id:'inside-add', creatureKey:'gar-wolf', isDenMother:false, areaId:cavernMapId, x:210, y:220, health:20, def:{hostile:true,diet:'carnivore'}, denKey:windowStub.WildlifeSpawn.denKeyFor(zoneId,den), state:'chase' };
+const exteriorAdd = { id:'outside-add', creatureKey:'gar-wolf', isDenMother:false, areaId:zoneId, x:260, y:250, health:20, def:{hostile:true,diet:'carnivore'}, denKey:windowStub.WildlifeSpawn.denKeyFor(zoneId,den), state:'chase', _denHidden:true };
+const malformedAdd = { id:'broken-add', isDenMother:false, areaId:zoneId, x:280, y:250, health:20, def:{}, denKey:windowStub.WildlifeSpawn.denKeyFor(zoneId,den), state:'chase' }; // Reproduces the identity-less survivor that previously surfaced as "undefined".
+hostiles.add(cavernAdd); hostiles.add(exteriorAdd); hostiles.add(malformedAdd);
 
 windowStub.CreatureDeath.begin(mother);
 assert.equal(creatureDeathCalls.length,1,'ordinary CreatureDeath.begin still executes');
@@ -169,25 +177,33 @@ assert.equal(debug[0].stage,'cleared','Den-Mother death starts cleared stage wit
 assert.equal(windowStub.WildlifeSpawn.denTurnoverStateForCavern(cavernMapId).stage,'cleared','cold-load cavern synthesis can recover cleared state directly from persisted cavern identity');
 assert.equal(debug[0].clutchLostOnExit,2,'debug state exposes uncollected clutch before exit');
 assert.match(toasts.at(-1).message,/Collect the eggs or babies before you leave/i,'player gets explicit clutch warning');
+assert.match(banners.at(-1),/^DEN CLEARED.*Collect any eggs or babies/i,'Den-Mother death also gets a large on-screen clear\/clutch warning');
 for(const survivor of [cavernAdd,exteriorAdd]){
   assert.equal(survivor.wildlifeRole,'prey');
   assert.equal(survivor.denDisplacedPrey,true);
   assert.equal(survivor.def.hostile,false);
   assert.equal(survivor.def.diet,'herbivore');
   assert.equal(survivor.denKey,null,'displaced survivors no longer count as the replacement den population');
-  assert.equal(survivor.state,'fleeing-low-health');
+  assert.equal(survivor.denTurnoverOriginKey,windowStub.WildlifeSpawn.denKeyFor(zoneId,den));
+  assert.equal(survivor.state,'idle','displaced prey cannot inherit a hostile chase\/search state');
+  assert.equal(survivor._denHidden,false,'a resident displaced from an asleep den is made visible again');
+  assert.equal(survivor.def.label,'Gar-wolf','canonical creature identity survives the displacement overlay');
+  assert(survivor.genotype,'displaced resident keeps\/repairs a drawable family genotype');
 }
+assert.equal(hostiles.has(malformedAdd),false,'identity-less stale resident is discarded instead of becoming an undefined attacker');
 
 currentArea=zoneId;
-windowStub.WildlifeSpawn.updateHostileSpawning(3);
+windowStub.WildlifeSpawn.onZoneEntered(zoneId);
 debug=windowStub.WildlifeSpawn.denTurnoverDebug(zoneId);
-assert.equal(debug[0].stage,'collapsed','first exterior wildlife tick collapses a cleared den');
+assert.equal(debug[0].stage,'collapsed','entering the exterior collapses a cleared den synchronously, before a re-entry interaction can occur');
 assert.equal(debug[0].daysRemaining,2);
 assert.equal(den.collapsed,true);
 assert.equal(layout.transitions.some(t=>t.targetMapId===cavernMapId),false,'collapsed den removes its entrance transition');
 assert.equal(denNests.has(cavernMapId),false,'uncollected clutch is discarded once collapse executes');
 assert.deepEqual(forgottenDenMarkers,[windowStub.WildlifeSpawn.denKeyFor(zoneId,den)],'collapse clears the companion-discovered map marker for the abandoned entrance');
-assert(visualSync.some(call=>call.collapsed),'collapse updates the existing cave visual');
+assert(visualSync.some(call=>call.collapsed && call.pending),'collapse queues the delayed facade presentation while closing the den logically immediately');
+assert.equal(hostiles.has(cavernAdd),false,'collapse purges stale residents from the discarded cavern scene');
+assert.equal(hostiles.has(exteriorAdd),true,'valid displaced exterior prey survives as a normal identified animal');
 assert.equal(genotypeRoll,1,'collapse itself does not invent another bloodline');
 
 windowStub.WildlifeSpawn.clearPendingDenRespawn();

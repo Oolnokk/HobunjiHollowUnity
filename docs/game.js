@@ -5209,7 +5209,7 @@
 
       function isPlayerInCombat() {
         for (const c of hostileObjects) {
-          if (c.health > 0 && c.areaId === currentArea && (c.state === 'chase' || c.state === 'searching')) return true;
+          if (c.health > 0 && c.areaId === currentArea && !c._denHidden && !c.denDisplacedPrey && (c.state === 'chase' || c.state === 'searching')) return true;
         }
         return false;
       }
@@ -28498,6 +28498,7 @@
         makeCreatureEntity,
         CREATURE_DB,
         showToast,
+        showZoneBanner,
         buildingScenes: _buildingScenes,
         denNests: _denNests,
         getCutscenePreviewActive: () => cutscenePreviewActive,
@@ -28573,6 +28574,7 @@
       window.ZoneDenTotemFeatures?.init({
         NORMAL_TOP, PLATEAU_UNIT,
         markOutline: _markOutline,
+        getCurrentArea: () => currentArea,
       });
       {
         const root = window.TownMine?.farmRootTotem?.(COLS, ROWS);
