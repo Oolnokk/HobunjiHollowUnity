@@ -56,6 +56,7 @@ assert.equal(cfg.behavior.denHuntDwellMinSeconds, 4);
 assert.equal(cfg.behavior.denHuntDwellMaxSeconds, 8);
 assert.equal(cfg.behavior.huntRadiusMinTiles, undefined, 'legacy solo random-radius hunting is removed in favor of den patrol parties');
 assert.equal(cfg.behavior.huntRadiusMaxTiles, undefined, 'legacy solo random-radius hunting is removed in favor of den patrol parties');
+assert.equal(cfg.behavior.activityWeights.hunt, undefined, 'legacy solo hunt activity weight is removed because den hunting is party-owned');
 assert.equal(cfg.reputation.initialFavor, -3);
 assert.equal(cfg.reputation.minimumFavor, -5);
 assert.equal(cfg.reputation.killPenalty, 0, 'legacy blanket kill penalty stays disabled in favor of context-specific penalties');
