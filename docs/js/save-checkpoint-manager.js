@@ -444,7 +444,7 @@
   async function preservePreRestore() {
     let snapshot = null;
     let savedAt = Date.now();
-    let primaryReadError = ''; // Used to fall back to the browser snapshot when the canonical folder is exactly what recovery is trying to repair.
+    let primaryReadError = ''; // Used to distinguish a trusted canonical safety copy from an emergency browser fallback while repairing folder corruption.
     if (folderIsPrimary() && typeof folderApi()?.readPrimarySnapshot === 'function') {
       try {
         const primary = await folderApi().readPrimarySnapshot();
@@ -456,15 +456,27 @@
         primaryReadError = String(error?.message || error);
       }
     }
-    if (!snapshot) snapshot = snapshotApi()?.capture?.({ strict: true });
+
     if (!snapshot) {
-      const suffix = primaryReadError ? ` Primary folder read also failed: ${primaryReadError}` : '';
-      throw new Error('Could not capture the current save before recovery.' + suffix);
+      try { snapshot = snapshotApi()?.capture?.({ strict: true }) || null; }
+      catch (error) {
+        if (!primaryReadError) throw error;
+      }
     }
+
+    // If the canonical folder is unreadable and the browser is also unusable, recovery is still
+    // allowed to proceed from the known-good checkpoint. There is simply no trustworthy current
+    // state to preserve or roll back to.
+    if (!snapshot && primaryReadError) return null;
+    if (!snapshot) throw new Error('Could not capture the current save before recovery.');
+
     const reason = primaryReadError ? 'before-recovery-browser-fallback' : 'before-recovery'; // Diagnostics distinguish an ordinary safety copy from corruption recovery.
     const record = createRecord('pre-restore', snapshot, reason, savedAt);
     writeSlot('preRestore', record);
-    if (folderIsPrimary()) await writeFolderSlot('preRestore', record);
+
+    // Never replace the folder's existing Before Last Restore checkpoint with a browser fallback
+    // when the canonical folder itself is corrupt; that older folder checkpoint is more trustworthy.
+    if (folderIsPrimary() && !primaryReadError) await writeFolderSlot('preRestore', record);
     return record;
   }
 
@@ -502,7 +514,6 @@
       if (!record?.snapshot) throw new Error('That recovery checkpoint is unavailable.');
       preRestore = await preservePreRestore();
       const restoredSnapshot = sanitizeRecoverySnapshot(record.snapshot); // Used for both browser apply and folder write so legacy runtime-only mesh payloads cannot re-enter persistence.
-      snapshotApi().apply(restoredSnapshot);
 
       if (folderIsPrimary()) {
         let restoreWriteError = '';
@@ -512,9 +523,17 @@
         } catch (error) {
           restoreWriteError = String(error?.message || error);
         }
-        if (restoreWriteError) await rollbackRestore(preRestore, `The recovery checkpoint could not be fully written to the primary folder: ${restoreWriteError}`);
+        if (restoreWriteError) {
+          if (preRestore?.reason === 'before-recovery') {
+            await rollbackRestore(preRestore, `The recovery checkpoint could not be fully written to the primary folder: ${restoreWriteError}`);
+          }
+          throw new Error(`The recovery checkpoint could not be fully written to the already-unreadable primary folder: ${restoreWriteError}. No untrusted browser fallback was written back over the folder; the recovery checkpoint remains available.`);
+        }
       }
 
+      // Apply browser state only after the primary-folder replacement succeeds. This avoids
+      // turning a failed folder recovery into a second, unrelated browser-state rollback problem.
+      snapshotApi().apply(restoredSnapshot);
       restoresApplied++;
       lastAction = `restored-${record.kind || 'checkpoint'}`;
       lastError = '';
