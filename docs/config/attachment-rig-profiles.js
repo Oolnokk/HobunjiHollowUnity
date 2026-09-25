@@ -641,38 +641,6 @@
     }
     return state;
   };
-  const solveShoulderObservationPlaneAtPivot = (plane, worldPivot, flipped) => {
-    const state = canonicalShoulderObservationPlaneState(plane); // Supplies the unmirrored transform used as the mathematical source state.
-    if (!state || !worldPivot || !plane?.parent) return null;
-    plane.matrixAutoUpdate = true;
-    plane.position.set(state.basePosition[0], state.basePosition[1], state.basePosition[2]);
-    plane.scale.x = state.baseScaleX;
-    plane.updateMatrix?.();
-    plane.parent.updateMatrixWorld?.(true);
-    plane.updateMatrixWorld?.(true);
-
-    const desiredWorld = plane.position.clone().set(worldPivot.x, worldPivot.y, worldPivot.z); // Exact current shoulderPerch point supplied by game.js's authoritative attachment solve.
-    const pivotLocal = plane.worldToLocal(desiredWorld.clone()); // Grip expressed in the canonical unmirrored card's own local frame before any flip is applied.
-    const sign = flipped ? -1 : 1; // Logical observation direction determines only the X scale parity.
-    const nextScaleX = state.baseScaleX * sign; // New face scale used in the closed-form pivot-preserving transform below.
-    plane.scale.x = nextScaleX;
-    if (flipped) {
-      const localTranslation = plane.position.clone().set(
-        (state.baseScaleX - nextScaleX) * pivotLocal.x,
-        0,
-        0,
-      ); // For q=t+RSp, t'=t+R(S-S')p keeps the grip point q invariant while X scale changes sign.
-      localTranslation.applyQuaternion(plane.quaternion);
-      plane.position.add(localTranslation); // Direct pivot transform: no center-flip is ever rendered and no world-space correction pass is needed.
-    }
-    plane.updateMatrix?.();
-    plane.parent.updateMatrixWorld?.(true);
-    plane.updateMatrixWorld?.(true);
-
-    const solvedWorld = plane.localToWorld(pivotLocal.clone()); // Diagnostic-only verification of the direct local transform; never feeds back into placement.
-    state.lastError = solvedWorld.distanceTo(desiredWorld);
-    return state.lastError;
-  };
   const restoreShoulderObservationPlane = plane => {
     const state = canonicalShoulderObservationPlaneState(plane); // Used when a pet leaves shoulder mode so no mirrored transform leaks into ordinary companion rendering.
     if (!state) return false;
@@ -683,28 +651,25 @@
     plane.matrixWorldNeedsUpdate = true;
     return true;
   };
-  const applyShoulderPetObservationAtPinnedPerch = (pet, worldPivot, mirrored = null) => {
+  const applyShoulderPetObservationAtPinnedPerch = (pet, worldPivot) => {
     const avatar = pet?.avatarRef;
     if (!avatar?.group || !worldPivot) return false;
-    const flipped = typeof mirrored === 'boolean' ? mirrored : !!pet.__hobunjiShoulderObservationFlipped; // Uses game.js's resolved inward/outward visual parity; legacy fallback keeps direct debug callers working.
-    const errors = shoulderObservationMeshes(avatar)
-      .map(plane => solveShoulderObservationPlaneAtPivot(plane, worldPivot, flipped))
-      .filter(Number.isFinite);
-    const maxError = errors.length ? Math.max(...errors) : null; // Direct-solve residual should stay at floating-point noise without any corrective translation.
+    const meshes = shoulderObservationMeshes(avatar); // Used below to guarantee every shoulder card is restored to its canonical unmirrored transform.
+    const restoredCount = meshes.reduce((count, plane) => count + (restoreShoulderObservationPlane(plane) ? 1 : 0), 0);
     avatar.__hobunjiShoulderObservationPivotDebug = {
-      mode: 'direct-local-grip-pivot',
-      mirrored: flipped,
-      meshCount: errors.length,
+      mode: 'canonical-no-sprite-mirror',
+      mirrored: false,
+      meshCount: restoredCount,
       worldPivot: [Number(worldPivot.x) || 0, Number(worldPivot.y) || 0, Number(worldPivot.z) || 0],
-      maxError,
+      maxError: null,
     };
     if (shoulderPetObservationFlipRuntime.lastFlip
         && shoulderPetObservationFlipRuntime.lastFlip.pet === pet) {
-      shoulderPetObservationFlipRuntime.lastFlip.applied = errors.length > 0;
-      shoulderPetObservationFlipRuntime.lastFlip.pivotMode = 'direct-local-grip-pivot';
-      shoulderPetObservationFlipRuntime.lastFlip.pivotError = Number.isFinite(maxError) ? maxError : null;
+      shoulderPetObservationFlipRuntime.lastFlip.applied = restoredCount > 0;
+      shoulderPetObservationFlipRuntime.lastFlip.pivotMode = 'canonical-no-sprite-mirror';
+      shoulderPetObservationFlipRuntime.lastFlip.pivotError = null;
     }
-    return errors.length > 0;
+    return restoredCount > 0;
   };
   const instrumentShoulderPetObservationState = pet => {
     const state = pet?.shoulderCuriosity;
@@ -767,10 +732,9 @@
     },
     formatDebug: () => {
       const d = window.ShoulderPetObservationFlip.getDebug();
-      const last = d.lastFlip ? `${d.lastFlip.creatureKey}:${d.lastFlip.facingInward ? 'inward/front' : 'outward/behind'}` : 'none'; // Compact semantic facing summary for mobile-visible debugging.
-      const pivot = d.lastFlip?.pivotMode || 'none'; // Shows whether the authored shoulderGrip pivot, rather than center-origin scaling, owned the last flip.
-      const error = Number.isFinite(d.lastFlip?.pivotError) ? d.lastFlip.pivotError.toExponential(2) : 'n/a'; // Residual world-space grip/perch mismatch after the direct local pivot solve.
-      return `Shoulder pet observation flip: active=${d.activePetCount} instrumented=${d.instrumentedCount} flips=${d.flipCount} last=${last} pivot=${pivot} gripError=${error}`;
+      const last = d.lastFlip ? `${d.lastFlip.creatureKey}:${d.lastFlip.facingInward ? 'inward/front-180deg' : 'outward/behind-0deg'}` : 'none'; // Compact semantic transform summary for mobile-visible debugging.
+      const mode = d.lastFlip?.pivotMode || 'none'; // Reports that the sprite stayed canonical while the root transform handled the facing change.
+      return `Shoulder pet facing turn: active=${d.activePetCount} instrumented=${d.instrumentedCount} turns=${d.flipCount} last=${last} spriteMode=${mode}`;
     },
     scanNow: scanShoulderPetsForObservationFlip,
   });
