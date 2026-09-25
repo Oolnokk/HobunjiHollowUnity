@@ -284,15 +284,167 @@
     return material;
   }
 
+  function makeFlatColossalMaterial(color,tag,fogIndependent){
+    const material=new THREE.MeshBasicMaterial({
+      color,
+      side:THREE.DoubleSide,
+      fog:!fogIndependent,
+      transparent:false,
+      opacity:1,
+      depthTest:true,
+      depthWrite:true,
+    });
+    material.name=`ColossalHorizon_${tag}`;
+    material.userData={...(material.userData||{}),colossalHorizonTerrain:true,horizonMaterial:tag,flatFaceted:true};
+    return material;
+  }
+
+  function buildToothedMountainRows(scene,zcols,zrows,mapId,zoneBaseElev,zGrid,config){
+    const horizontal=config.side==='north'||config.side==='south'; // Used to choose the horizon's long axis for any authored edge.
+    const axisLength=Math.max(1,horizontal?zcols:zrows); // Used to spread both shark-tooth rows across the selected edge.
+    const span=axisLength*config.spanScale; // Used so the chain overscans both map corners instead of ending in-frame.
+    const axisStart=(axisLength-span)*0.5; // Used as the first front-row peak center reference.
+    const frontCount=Math.max(3,config.segments); // Used as the literal number of large foreground teeth.
+    const backCount=Math.max(2,frontCount-1); // Used for the staggered second row peeking through the foreground gaps.
+    const step=span/frontCount; // Used for front-row peak spacing and the half-step back-row stagger.
+    const baseY=horizonEdgeBaseY(zcols,zrows,zoneBaseElev,zGrid,config.side); // Used as the common foot elevation for both rows.
+    const positions=[],uvs=[]; // Shared combined-geometry attributes; one always-visible draw call for the whole chain.
+    const byMaterial=[[],[],[],[],[]]; // Rock light, rock dark, black snowline band, snow white, snow shade.
+    let peakCount=0;
+
+    const pushPeak=(axisCenter,outCenter,rowIndex,ordinal)=>{
+      const seedAxis=axisCenter+rowIndex*113.7+ordinal*17.3; // Used only for deterministic silhouette variation.
+      const width=step*(rowIndex===0?1.08:0.88)*(0.88+bgSceneryHash01(seedAxis,outCenter,8101)*0.24); // Used to overlap neighboring silhouettes slightly without merging their geometry.
+      const depth=Math.max(4,config.depthWorld*(rowIndex===0?0.18:0.15)); // Used to give each tooth enough 3D body for oblique camera angles.
+      const rowHeight=config.heightWorld*(rowIndex===0?0.78+bgSceneryHash01(seedAxis,outCenter,8201)*0.22:0.68+bgSceneryHash01(seedAxis,outCenter,8301)*0.18); // Back teeth remain tall enough to read through front-row gaps.
+      const baseLift=config.heightWorld*(rowIndex===0?0.01:0.055); // Used to keep the rear row from disappearing into the foreground bases.
+      const summitAxisJitter=(bgSceneryHash01(seedAxis,outCenter,8401)-0.5)*width*0.18; // Used to avoid identical equilateral-pyramid silhouettes.
+      const summitOutJitter=(bgSceneryHash01(seedAxis,outCenter,8501)-0.5)*depth*0.16; // Used to create a visibly faceted, hand-cut 3D peak.
+      const baseIndex=positions.length/3; // Used to offset this peak's local indices inside the one combined chain mesh.
+      const ringScales=[1,0.43,0.34]; // Base, lower black-band edge, upper snow edge; creates the reference's broad white cap.
+      const ringYRatios=[
+        [0,0,0,0],
+        [0.555,0.585,0.54,0.575],
+        [0.635,0.665,0.615,0.65],
+      ]; // Used to make the snowline visibly jagged rather than one perfect horizontal cut.
+      const corners=[[-1,-1],[1,-1],[1,1],[-1,1]]; // Axis/out footprint order used consistently for all three rings.
+
+      for(let ring=0;ring<ringScales.length;ring++){
+        const scale=ringScales[ring];
+        for(let corner=0;corner<4;corner++){
+          const [sa,so]=corners[corner];
+          const axis=axisCenter+sa*width*0.5*scale;
+          const out=outCenter+so*depth*0.5*scale;
+          const y=baseY+baseLift+rowHeight*ringYRatios[ring][corner];
+          const [x,z]=horizonPoint(config.side,axis,out,zcols,zrows);
+          positions.push(x,y,z);
+          uvs.push(axis/Math.max(1,span),y/Math.max(1,config.heightWorld));
+        }
+      }
+
+      const summitAxis=axisCenter+summitAxisJitter;
+      const summitOut=outCenter+summitOutJitter;
+      const [summitX,summitZ]=horizonPoint(config.side,summitAxis,summitOut,zcols,zrows);
+      positions.push(summitX,baseY+baseLift+rowHeight,summitZ);
+      uvs.push(summitAxis/Math.max(1,span),1);
+      const baseRing=[0,1,2,3].map(i=>baseIndex+i);
+      const inkRing=[0,1,2,3].map(i=>baseIndex+4+i);
+      const snowRing=[0,1,2,3].map(i=>baseIndex+8+i);
+      const apex=baseIndex+12;
+
+      for(let face=0;face<4;face++){
+        const next=(face+1)&3;
+        const rockBucket=((face+ordinal+rowIndex)&1); // Alternating flat gray side facets reproduce the reference's simple planar shading.
+        byMaterial[rockBucket].push(
+          baseRing[face],inkRing[face],inkRing[next],
+          baseRing[face],inkRing[next],baseRing[next]
+        );
+        byMaterial[2].push(
+          inkRing[face],snowRing[face],snowRing[next],
+          inkRing[face],snowRing[next],inkRing[next]
+        );
+        const snowBucket=((face+ordinal)&1)?3:4; // Alternating white/light-gray cap facets keep the cap readable without lighting.
+        byMaterial[snowBucket].push(apex,snowRing[face],snowRing[next]);
+      }
+      peakCount++;
+    };
+
+    const frontOut=config.distanceWorld+config.depthWorld*0.20; // Near shark-tooth row.
+    const backOut=config.distanceWorld+config.depthWorld*0.64; // Rear row is physically separate, not a painted duplicate.
+    for(let i=0;i<frontCount;i++)pushPeak(axisStart+step*(i+0.5),frontOut,0,i);
+    for(let i=0;i<backCount;i++)pushPeak(axisStart+step*(i+1),backOut,1,i); // Half-step offset centers rear peaks in front-row gaps.
+
+    const indices=[]; // Material-bucket concatenation lets one indexed mesh keep crisp flat color facets.
+    const groups=[];
+    for(let materialIndex=0;materialIndex<byMaterial.length;materialIndex++){
+      const bucket=byMaterial[materialIndex];
+      if(!bucket.length)continue;
+      const start=indices.length;
+      indices.push(...bucket);
+      groups.push({start,count:bucket.length,materialIndex});
+    }
+
+    const geometry=new THREE.BufferGeometry();
+    geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
+    geometry.setAttribute('uv',new THREE.Float32BufferAttribute(uvs,2));
+    geometry.setIndex(new THREE.BufferAttribute(positions.length/3>65535?new Uint32Array(indices):new Uint16Array(indices),1));
+    geometry.computeVertexNormals();
+    geometry.computeBoundingSphere?.();
+    if(geometry.addGroup)for(const group of groups)geometry.addGroup(group.start,group.count,group.materialIndex);
+
+    const materials=[
+      makeFlatColossalMaterial(0x67676b,'mountain-rock-light',config.fogIndependent),
+      makeFlatColossalMaterial(0x47474c,'mountain-rock-dark',config.fogIndependent),
+      makeFlatColossalMaterial(0x0d0d0f,'mountain-snowline',config.fogIndependent),
+      makeFlatColossalMaterial(0xf3f7f8,'mountain-snow-white',config.fogIndependent),
+      makeFlatColossalMaterial(0xcfd6d9,'mountain-snow-shade',config.fogIndependent),
+    ];
+    const mesh=new THREE.Mesh(geometry,materials);
+    mesh.name='ColossalWesternMountainChain';
+    mesh.castShadow=false;
+    mesh.receiveShadow=false;
+    mesh.frustumCulled=!config.alwaysVisible;
+    mesh.userData={
+      backgroundScenery:true,
+      colossalHorizonTerrain:true,
+      alwaysVisibleBoundaryTerrain:config.alwaysVisible,
+      skipOcclusionFade:true,
+      preset:config.preset,
+      kind:config.kind,
+      side:config.side,
+      mountainRows:2,
+      frontPeakCount:frontCount,
+      backPeakCount:backCount,
+      peakCount,
+      sharkTeethStaggered:true,
+    };
+    scene.add(mesh);
+    return{
+      enabled:true,preset:config.preset,kind:config.kind,side:config.side,
+      heightWorld:config.heightWorld,distanceWorld:config.distanceWorld,depthWorld:config.depthWorld,
+      spanScale:config.spanScale,segments:config.segments,
+      vertices:positions.length/3,triangles:indices.length/3,meshes:1,
+      rows:2,peakCount,frontPeakCount:frontCount,backPeakCount:backCount,
+      alwaysVisible:config.alwaysVisible,fogIndependent:config.fogIndependent,
+    };
+  }
+
   function buildColossalHorizonTerrain(scene,zcols,zrows,mapId,zoneBaseElev=0,zGrid=null,rawConfig=null){
     const config=normalizeHorizonTerrain(rawConfig,mapId);
     if(!scene||!config.enabled)return{enabled:false,preset:config.preset||'none',vertices:0,triangles:0,meshes:0};
+    if(config.kind==='mountainChain'){
+      const stats=buildToothedMountainRows(scene,zcols,zrows,mapId,zoneBaseElev,zGrid,config);
+      scene.userData=scene.userData||{};
+      scene.userData.colossalHorizonTerrain=stats;
+      return stats;
+    }
+
     const horizontal=config.side==='north'||config.side==='south';
     const axisLength=Math.max(1,horizontal?zcols:zrows);
     const span=axisLength*config.spanScale;
     const axisStart=(axisLength-span)*0.5;
     const sampleCount=config.segments+1;
-    const rowCount=config.kind==='plateau'?4:3;
+    const rowCount=4;
     const baseY=horizonEdgeBaseY(zcols,zrows,zoneBaseElev,zGrid,config.side);
     const positions=[],uvs=[],indices=[],groups=[];
 
@@ -301,33 +453,19 @@
       const h0=bgSceneryHash01(axis,config.heightWorld,5101);
       const h1=bgSceneryHash01(axis,config.depthWorld,6101);
       const h2=bgSceneryHash01(axis,config.distanceWorld,7101);
-      let outs,ys;
-      if(config.kind==='plateau'){
-        const topJitter=(h0-0.5)*config.heightWorld*0.035;
-        outs=[
-          config.distanceWorld,
-          config.distanceWorld+config.depthWorld*0.16,
-          config.distanceWorld+config.depthWorld*0.78,
-          config.distanceWorld+config.depthWorld,
-        ];
-        ys=[
-          baseY+config.heightWorld*(0.02+0.035*h1),
-          baseY+config.heightWorld*0.965+topJitter,
-          baseY+config.heightWorld*0.935+topJitter*0.65,
-          baseY+config.heightWorld*(0.08+0.08*h2),
-        ];
-      }else{
-        outs=[
-          config.distanceWorld,
-          config.distanceWorld+config.depthWorld*(0.36+(h1-0.5)*0.12),
-          config.distanceWorld+config.depthWorld,
-        ];
-        ys=[
-          baseY+config.heightWorld*(0.02+0.035*h2),
-          baseY+config.heightWorld*(0.72+0.28*h0),
-          baseY+config.heightWorld*(0.08+0.12*h1),
-        ];
-      }
+      const topJitter=(h0-0.5)*config.heightWorld*0.035;
+      const outs=[
+        config.distanceWorld,
+        config.distanceWorld+config.depthWorld*0.16,
+        config.distanceWorld+config.depthWorld*0.78,
+        config.distanceWorld+config.depthWorld,
+      ];
+      const ys=[
+        baseY+config.heightWorld*(0.02+0.035*h1),
+        baseY+config.heightWorld*0.965+topJitter,
+        baseY+config.heightWorld*0.935+topJitter*0.65,
+        baseY+config.heightWorld*(0.08+0.08*h2),
+      ];
       for(let row=0;row<rowCount;row++){
         const [x,z]=horizonPoint(config.side,axis,outs[row],zcols,zrows);
         positions.push(x,ys[row],z);
@@ -341,7 +479,7 @@
         const a=i*rowCount+strip,b=(i+1)*rowCount+strip,c=a+1,d=b+1;
         indices.push(a,c,d,a,d,b);
       }
-      groups.push({start:groupStart,count:indices.length-groupStart,materialIndex:config.kind==='plateau'&&strip===1?1:0});
+      groups.push({start:groupStart,count:indices.length-groupStart,materialIndex:strip===1?1:0});
     }
 
     const geometry=new THREE.BufferGeometry();
@@ -350,15 +488,14 @@
     geometry.setIndex(new THREE.BufferAttribute(new Uint16Array(indices),1));
     geometry.computeVertexNormals();
     geometry.computeBoundingSphere?.();
-    if(config.kind==='plateau'&&geometry.addGroup)for(const group of groups)geometry.addGroup(group.start,group.count,group.materialIndex);
+    if(geometry.addGroup)for(const group of groups)geometry.addGroup(group.start,group.count,group.materialIndex);
 
     const cliffSource=deps.resolveCliffMat(mapId);
     const grassSource=deps.resolveTileMat(mapId,deps.TileType.GRASS);
     const cliffMat=makeColossalHorizonMaterial(cliffSource,0x676563,'cliff',config.fogIndependent);
     const grassMat=makeColossalHorizonMaterial(grassSource,0x315f2b,'top',config.fogIndependent);
-    const material=config.kind==='plateau'?[cliffMat,grassMat]:cliffMat;
-    const mesh=new THREE.Mesh(geometry,material);
-    mesh.name=config.kind==='plateau'?'ColossalNorthernPlateau':'ColossalWesternMountainChain';
+    const mesh=new THREE.Mesh(geometry,[cliffMat,grassMat]);
+    mesh.name='ColossalNorthernPlateau';
     mesh.castShadow=false;
     mesh.receiveShadow=false;
     mesh.frustumCulled=!config.alwaysVisible;
@@ -374,20 +511,11 @@
     scene.add(mesh);
 
     const stats={
-      enabled:true,
-      preset:config.preset,
-      kind:config.kind,
-      side:config.side,
-      heightWorld:config.heightWorld,
-      distanceWorld:config.distanceWorld,
-      depthWorld:config.depthWorld,
-      spanScale:config.spanScale,
-      segments:config.segments,
-      vertices:positions.length/3,
-      triangles:indices.length/3,
-      meshes:1,
-      alwaysVisible:config.alwaysVisible,
-      fogIndependent:config.fogIndependent,
+      enabled:true,preset:config.preset,kind:config.kind,side:config.side,
+      heightWorld:config.heightWorld,distanceWorld:config.distanceWorld,depthWorld:config.depthWorld,
+      spanScale:config.spanScale,segments:config.segments,
+      vertices:positions.length/3,triangles:indices.length/3,meshes:1,
+      alwaysVisible:config.alwaysVisible,fogIndependent:config.fogIndependent,
     };
     scene.userData=scene.userData||{};
     scene.userData.colossalHorizonTerrain=stats;
