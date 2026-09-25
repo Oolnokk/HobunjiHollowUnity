@@ -98,7 +98,7 @@
     bleedingHealth: {
       name: "Bleeding Health", resource: "health", extend: "currentBack", priority: 70, recovers: false,
       family: "damage", tags: ["physical", "blood"],
-      desc: "Ticks as Health loss during combat; while quiet/rested, the same tick heals instead."
+      desc: "Ticks as Health loss during combat without reducing a living target below 1 Health; while quiet/rested, the same tick heals instead."
     },
     congealedHealth: {
       name: "Congealed Health", resource: "health", extend: "zero", priority: 50, recovers: false,
@@ -128,12 +128,12 @@
     poisonedHealth: {
       name: "Poisoned Health", resource: "health", extend: "currentBack", priority: 80, recovers: false,
       family: "damage", tags: ["toxin"],
-      desc: "Ticks as Health damage over time; does not recover on its own."
+      desc: "Ticks as nonlethal Health damage over time that stops at 1 Health; does not recover on its own."
     },
     burningHealth: {
       name: "Burning Health", resource: "health", extend: "currentBack", priority: 90, recovers: false,
       family: "damage", tags: ["fire", "physical"],
-      desc: "Rapidly ticks itself away as Health damage. Roll dodges cool part of it; entering water extinguishes it completely."
+      desc: "Rapidly ticks itself away as nonlethal Health damage that stops at 1 Health. Roll dodges cool part of it; entering water extinguishes it completely."
     }
   };
   const RECOVERING_AFFLICTIONS = Object.entries(AFFLICTIONS)
