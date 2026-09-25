@@ -199,12 +199,12 @@
   const HORIZON_TERRAIN_PRESETS=Object.freeze({
     westernMountainChain:Object.freeze({
       preset:'westernMountainChain',kind:'mountainChain',side:'west',
-      heightWorld:72,distanceWorld:14,depthWorld:52,spanScale:1.35,overallScale:1,segments:8,
+      heightWorld:72,distanceWorld:14,depthWorld:52,spanScale:1.35,overallScale:1,segments:8,mountainLayers:12,
       alwaysVisible:true,fogIndependent:true,
     }),
     northernPlateau:Object.freeze({
       preset:'northernPlateau',kind:'plateau',side:'north',
-      heightWorld:64,distanceWorld:13,depthWorld:48,spanScale:1.25,overallScale:1,segments:6,
+      heightWorld:64,distanceWorld:13,depthWorld:48,spanScale:1.25,overallScale:1,segments:6,mountainLayers:12,
       alwaysVisible:true,fogIndependent:true,
     }),
   });
@@ -218,7 +218,7 @@
     const explicit=String(src.preset||'');
     const fallback=HORIZON_TERRAIN_DEFAULT_BY_MAP[String(mapId||'')]||'';
     const presetName=explicit==='none'?'':(HORIZON_TERRAIN_PRESETS[explicit]?explicit:fallback);
-    if(!presetName)return{enabled:false,preset:'none',kind:'none',side:'north',heightWorld:0,distanceWorld:0,depthWorld:0,spanScale:1,overallScale:1,segments:3,alwaysVisible:false,fogIndependent:false};
+    if(!presetName)return{enabled:false,preset:'none',kind:'none',side:'north',heightWorld:0,distanceWorld:0,depthWorld:0,spanScale:1,overallScale:1,segments:3,mountainLayers:12,alwaysVisible:false,fogIndependent:false};
     const base=HORIZON_TERRAIN_PRESETS[presetName];
     const side=['north','east','south','west'].includes(String(src.side))?String(src.side):base.side;
     const finite=(value,fallbackValue,min,max)=>{const n=Number(value);return Math.max(min,Math.min(max,Number.isFinite(n)?n:fallbackValue));};
@@ -233,6 +233,7 @@
       spanScale:finite(src.spanScale,base.spanScale,0.25,8),
       overallScale:finite(src.overallScale,base.overallScale,0.25,6),
       segments:Math.round(finite(src.segments,base.segments,3,16)),
+      mountainLayers:Math.round(finite(src.mountainLayers,base.mountainLayers,4,24)),
       alwaysVisible:src.alwaysVisible!==false,
       fogIndependent:src.fogIndependent!==false,
     };
@@ -304,81 +305,89 @@
     const horizontal=config.side==='north'||config.side==='south'; // Used to choose the horizon's long axis for any authored edge.
     const axisLength=Math.max(1,horizontal?zcols:zrows); // Used to spread both shark-tooth rows across the selected edge.
     const overallScale=Math.max(0.25,Number(config.overallScale)||1); // Used to scale the entire two-row mountain mass as one authored object.
-    const effectiveHeight=config.heightWorld*overallScale; // Used for every peak height so whole-chain scaling stays uniform.
+    const effectiveHeight=config.heightWorld*overallScale; // Used for every stacked plateau tier so whole-chain scaling stays uniform.
     const effectiveDepth=config.depthWorld*overallScale; // Used for mountain body depth and row separation under whole-chain scaling.
     const span=axisLength*config.spanScale*overallScale; // Used so one scale control can push the chain far beyond both ends of the map.
-    const axisStart=(axisLength-span)*0.5; // Used as the first front-row peak center reference, keeping overscan symmetric around the map.
-    const frontCount=Math.max(3,config.segments); // Used as the literal number of large foreground teeth.
-    const backCount=Math.max(2,frontCount-1); // Used for the staggered second row peeking through the foreground gaps.
-    const step=span/frontCount; // Used for front-row peak spacing and the half-step back-row stagger.
+    const axisStart=(axisLength-span)*0.5; // Used as the first front-row mountain center, keeping overscan symmetric around the map.
+    const frontCount=Math.max(3,config.segments); // Used as the literal number of foreground mountains.
+    const backCount=Math.max(2,frontCount-1); // Used for the staggered second row peeking through foreground gaps.
+    const layerCount=Math.max(4,Math.min(24,Math.round(Number(config.mountainLayers)||12))); // Used as the many progressively smaller plateau tiers in every mountain.
+    const step=span/frontCount; // Used for front-row spacing and the half-step rear-row stagger.
     const baseY=horizonEdgeBaseY(zcols,zrows,zoneBaseElev,zGrid,config.side); // Used as the common foot elevation for both rows.
-    const positions=[],uvs=[]; // Shared combined-geometry attributes; one always-visible draw call for the whole chain.
-    const byMaterial=[[],[],[],[],[]]; // Rock light, rock dark, black snowline band, snow white, snow shade.
+    const positions=[],uvs=[]; // Shared combined-geometry attributes; one always-visible draw call for the entire chain.
+    const byMaterial=[[],[],[],[],[]]; // Cliff light, cliff dark, exposed terrace top, snow top light, snow top shade.
     let peakCount=0;
 
-    const pushPeak=(axisCenter,outCenter,rowIndex,ordinal)=>{
-      const seedAxis=axisCenter+rowIndex*113.7+ordinal*17.3; // Used only for deterministic silhouette variation.
-      const rowHeight=effectiveHeight*(rowIndex===0?0.78+bgSceneryHash01(seedAxis,outCenter,8201)*0.22:0.68+bgSceneryHash01(seedAxis,outCenter,8301)*0.18); // Used before width so the silhouette can stay broad instead of needle-thin.
-      const width=Math.max(step*(rowIndex===0?1.35:1.20),rowHeight*(rowIndex===0?0.82:0.74))*(0.94+bgSceneryHash01(seedAxis,outCenter,8101)*0.12); // Used to make each tooth a broad triangular mountain mass rather than a tall spike, while retaining slight deterministic variation.
-      const depth=Math.max(6*overallScale,effectiveDepth*(rowIndex===0?0.34:0.30),rowHeight*(rowIndex===0?0.42:0.38)); // Used to keep each low-poly peak visibly chunky in 3D instead of collapsing into a thin wedge at oblique camera angles.
-      const baseLift=effectiveHeight*(rowIndex===0?0.01:0.055); // Used to keep the rear row from disappearing into the foreground bases.
-      const summitAxisJitter=(bgSceneryHash01(seedAxis,outCenter,8401)-0.5)*width*0.18; // Used to avoid identical equilateral-pyramid silhouettes.
-      const summitOutJitter=(bgSceneryHash01(seedAxis,outCenter,8501)-0.5)*depth*0.16; // Used to create a visibly faceted, hand-cut 3D peak.
-      const baseIndex=positions.length/3; // Used to offset this peak's local indices inside the one combined chain mesh.
-      const ringScales=[1,0.43,0.34]; // Base, lower black-band edge, upper snow edge; creates the reference's broad white cap.
-      const ringYRatios=[
-        [0,0,0,0],
-        [0.555,0.585,0.54,0.575],
-        [0.635,0.665,0.615,0.65],
-      ]; // Used to make the snowline visibly jagged rather than one perfect horizontal cut.
-      const corners=[[-1,-1],[1,-1],[1,1],[-1,1]]; // Axis/out footprint order used consistently for all three rings.
+    const pushLayer=(axisCenter,outCenter,width,depth,y0,y1,leanAxis,leanOut,layer,ordinal,rowIndex,snowStart)=>{
+      const t=(layer+0.5)/layerCount; // Used to move each successive plateau slightly toward the peak's authored lean.
+      const topScale=0.16+bgSceneryHash01(axisCenter,outCenter,8601)*0.08; // Used as the final summit-plateau width; still a plateau, never a needle point.
+      const footprintScale=1-(1-topScale)*(layer/Math.max(1,layerCount-1)); // Used to make every tier only slightly smaller than the one below.
+      const cx=axisCenter+leanAxis*t; // Used so the stack can lean gently instead of becoming a perfectly centered ziggurat.
+      const co=outCenter+leanOut*t; // Used for the same gentle lean along the outward axis.
+      const halfAxis=width*footprintScale*0.5,halfOut=depth*footprintScale*0.5; // Used as this tier's simple rectangular plateau footprint.
+      const corners=[[-1,-1],[1,-1],[1,1],[-1,1]]; // Used by all four one-plane cliff sides in winding order.
+      const baseIndex=positions.length/3; // Used to offset this tier's eight vertices inside the combined chain mesh.
 
-      for(let ring=0;ring<ringScales.length;ring++){
-        const scale=ringScales[ring];
-        for(let corner=0;corner<4;corner++){
-          const [sa,so]=corners[corner];
-          const axis=axisCenter+sa*width*0.5*scale;
-          const out=outCenter+so*depth*0.5*scale;
-          const y=baseY+baseLift+rowHeight*ringYRatios[ring][corner];
+      for(const y of [y0,y1]){
+        for(const [sa,so] of corners){
+          const axis=cx+sa*halfAxis,out=co+so*halfOut;
           const [x,z]=horizonPoint(config.side,axis,out,zcols,zrows);
           positions.push(x,y,z);
           uvs.push(axis/Math.max(1,span),y/Math.max(1,effectiveHeight));
         }
       }
 
-      const summitAxis=axisCenter+summitAxisJitter;
-      const summitOut=outCenter+summitOutJitter;
-      const [summitX,summitZ]=horizonPoint(config.side,summitAxis,summitOut,zcols,zrows);
-      positions.push(summitX,baseY+baseLift+rowHeight,summitZ);
-      uvs.push(summitAxis/Math.max(1,span),1);
-      const baseRing=[0,1,2,3].map(i=>baseIndex+i);
-      const inkRing=[0,1,2,3].map(i=>baseIndex+4+i);
-      const snowRing=[0,1,2,3].map(i=>baseIndex+8+i);
-      const apex=baseIndex+12;
-
+      // Exactly one quad (two triangles, one plane) per cliff side. There is
+      // intentionally no horizontal subdivision like the playable plateau
+      // heightfields use; the visual detail comes from stacking many tiers.
       for(let face=0;face<4;face++){
         const next=(face+1)&3;
-        const rockBucket=((face+ordinal+rowIndex)&1); // Alternating flat gray side facets reproduce the reference's simple planar shading.
-        byMaterial[rockBucket].push(
-          baseRing[face],inkRing[face],inkRing[next],
-          baseRing[face],inkRing[next],baseRing[next]
+        const materialIndex=((face+ordinal+rowIndex+layer)&1); // Alternating flat side tones keep each huge plane readable without extra geometry.
+        byMaterial[materialIndex].push(
+          baseIndex+face,baseIndex+4+face,baseIndex+4+next,
+          baseIndex+face,baseIndex+4+next,baseIndex+next
         );
-        byMaterial[2].push(
-          inkRing[face],snowRing[face],snowRing[next],
-          inkRing[face],snowRing[next],inkRing[next]
+      }
+
+      // One un-subdivided plateau lid per layer. The next, slightly smaller
+      // tier simply stands on top of it, leaving the exposed perimeter visible
+      // as the terrace just like an in-game plateau stack.
+      const topT=(layer+1)/layerCount;
+      if(topT>=snowStart){
+        byMaterial[3].push(baseIndex+4,baseIndex+6,baseIndex+5);
+        byMaterial[4].push(baseIndex+4,baseIndex+7,baseIndex+6);
+      }else{
+        byMaterial[2].push(baseIndex+4,baseIndex+6,baseIndex+5,baseIndex+4,baseIndex+7,baseIndex+6);
+      }
+    };
+
+    const pushPeak=(axisCenter,outCenter,rowIndex,ordinal)=>{
+      const seedAxis=axisCenter+rowIndex*113.7+ordinal*17.3; // Used only for deterministic mountain-to-mountain variation.
+      const rowHeight=effectiveHeight*(rowIndex===0?0.78+bgSceneryHash01(seedAxis,outCenter,8201)*0.22:0.68+bgSceneryHash01(seedAxis,outCenter,8301)*0.18); // Used as this mountain stack's total elevation.
+      const width=Math.max(step*(rowIndex===0?1.35:1.20),rowHeight*(rowIndex===0?0.82:0.74))*(0.94+bgSceneryHash01(seedAxis,outCenter,8101)*0.12); // Used to keep the stepped mountains broad rather than spike-like.
+      const depth=Math.max(6*overallScale,effectiveDepth*(rowIndex===0?0.34:0.30),rowHeight*(rowIndex===0?0.42:0.38)); // Used to give each stacked mesa a chunky 3D footprint.
+      const baseLift=effectiveHeight*(rowIndex===0?0.01:0.055); // Used to keep the rear row readable behind the foreground stack.
+      const leanAxis=(bgSceneryHash01(seedAxis,outCenter,8401)-0.5)*width*0.12; // Used as the full-stack sideways lean; each tier receives only its proportional share.
+      const leanOut=(bgSceneryHash01(seedAxis,outCenter,8501)-0.5)*depth*0.12; // Used as the full-stack outward lean.
+      const snowStart=0.62+bgSceneryHash01(seedAxis,outCenter,8701)*0.08; // Used to keep the earlier snowy-reference read on only the upper plateau terraces.
+      const layerHeight=rowHeight/layerCount; // Used so many small equal rises replace the former long triangular faces.
+      const yBase=baseY+baseLift; // Used as the bottom of this discrete mountain stack.
+      for(let layer=0;layer<layerCount;layer++){
+        pushLayer(
+          axisCenter,outCenter,width,depth,
+          yBase+layerHeight*layer,yBase+layerHeight*(layer+1),
+          leanAxis,leanOut,layer,ordinal,rowIndex,snowStart
         );
-        const snowBucket=((face+ordinal)&1)?3:4; // Alternating white/light-gray cap facets keep the cap readable without lighting.
-        byMaterial[snowBucket].push(apex,snowRing[face],snowRing[next]);
       }
       peakCount++;
     };
 
-    const frontOut=config.distanceWorld+effectiveDepth*0.20; // Near shark-tooth row; clearance itself stays authored while the body scales behind it.
-    const backOut=config.distanceWorld+effectiveDepth*0.64; // Rear row scales away from the front row as part of the one grouped mountain mass.
+    const frontOut=config.distanceWorld+effectiveDepth*0.20; // Near row of stacked plateau mountains.
+    const backOut=config.distanceWorld+effectiveDepth*0.64; // Rear row remains physically separate and staggered.
     for(let i=0;i<frontCount;i++)pushPeak(axisStart+step*(i+0.5),frontOut,0,i);
-    for(let i=0;i<backCount;i++)pushPeak(axisStart+step*(i+1),backOut,1,i); // Half-step offset centers rear peaks in front-row gaps.
+    for(let i=0;i<backCount;i++)pushPeak(axisStart+step*(i+1),backOut,1,i); // Half-step offset centers rear mountains in foreground gaps.
 
-    const indices=[]; // Material-bucket concatenation lets one indexed mesh keep crisp flat color facets.
+    const indices=[]; // Material-bucket concatenation keeps all layers and both rows in one indexed draw mesh.
     const groups=[];
     for(let materialIndex=0;materialIndex<byMaterial.length;materialIndex++){
       const bucket=byMaterial[materialIndex];
@@ -397,11 +406,11 @@
     if(geometry.addGroup)for(const group of groups)geometry.addGroup(group.start,group.count,group.materialIndex);
 
     const materials=[
-      makeFlatColossalMaterial(0x67676b,'mountain-rock-light',config.fogIndependent),
-      makeFlatColossalMaterial(0x47474c,'mountain-rock-dark',config.fogIndependent),
-      makeFlatColossalMaterial(0x0d0d0f,'mountain-snowline',config.fogIndependent),
-      makeFlatColossalMaterial(0xf3f7f8,'mountain-snow-white',config.fogIndependent),
-      makeFlatColossalMaterial(0xcfd6d9,'mountain-snow-shade',config.fogIndependent),
+      makeFlatColossalMaterial(0x66676a,'mountain-cliff-light',config.fogIndependent),
+      makeFlatColossalMaterial(0x4b4c50,'mountain-cliff-dark',config.fogIndependent),
+      makeFlatColossalMaterial(0x747579,'mountain-plateau-top',config.fogIndependent),
+      makeFlatColossalMaterial(0xf1f4f5,'mountain-snow-top-light',config.fogIndependent),
+      makeFlatColossalMaterial(0xcbd2d5,'mountain-snow-top-shade',config.fogIndependent),
     ];
     const mesh=new THREE.Mesh(geometry,materials);
     mesh.name='ColossalWesternMountainChain';
@@ -417,18 +426,23 @@
       kind:config.kind,
       side:config.side,
       mountainRows:2,
+      mountainLayers:layerCount,
+      cliffSideQuadsPerLayer:4,
+      topTrianglesPerLayer:2,
       frontPeakCount:frontCount,
       backPeakCount:backCount,
       peakCount,
       sharkTeethStaggered:true,
+      steppedPlateauMountains:true,
     };
     scene.add(mesh);
     return{
       enabled:true,preset:config.preset,kind:config.kind,side:config.side,
       heightWorld:config.heightWorld,effectiveHeightWorld:effectiveHeight,distanceWorld:config.distanceWorld,depthWorld:config.depthWorld,effectiveDepthWorld:effectiveDepth,
-      spanScale:config.spanScale,overallScale,spanWorld:span,segments:config.segments,
+      spanScale:config.spanScale,overallScale,spanWorld:span,segments:config.segments,mountainLayers:layerCount,
       vertices:positions.length/3,triangles:indices.length/3,meshes:1,
       rows:2,peakCount,frontPeakCount:frontCount,backPeakCount:backCount,
+      cliffSideQuadsPerLayer:4,topTrianglesPerLayer:2,
       alwaysVisible:config.alwaysVisible,fogIndependent:config.fogIndependent,
     };
   }
