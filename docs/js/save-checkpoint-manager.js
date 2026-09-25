@@ -182,8 +182,11 @@
   }
 
   function folderRecoveryAvailable() {
-    const status = folderApi()?.getStatus?.(); // Recovery remains available while autosync is intentionally disarmed because canonical files are corrupt.
-    return status?.state === 'ready' && Boolean(status?.folderName);
+    const status = folderApi()?.getStatus?.(); // Recovery history is independent of canonical health: a retained folder handle may still expose recovery files while canonical inspection reports an error.
+    return Boolean(status?.folderName)
+      && status?.state !== 'not-configured'
+      && status?.state !== 'unsupported'
+      && typeof folderApi()?.readRecoveryCheckpoint === 'function';
   }
 
   function markHydrated() {
@@ -343,9 +346,9 @@
         }));
         for (const { slot, folderRaw, error } of slotReads) {
           if (error) {
-            warnings.push(`${slot}: ${error}`);
-            removeSlot(slot); // Timed-out/unreadable folder slots are never replaced by an unproven stale browser mirror.
-            continue;
+            const browserFallback = readSlot(slot); // A folder I/O failure is not evidence that the independently mirrored browser checkpoint is invalid.
+            warnings.push(`${slot}: ${error}${browserFallback ? ' — showing browser fallback copy' : ''}`);
+            continue; // Preserve any validated browser fallback; never erase recovery evidence merely because the folder read failed.
           }
           const folderRecord = safeValidateRecord(folderRaw);
           if (folderRecord) {
