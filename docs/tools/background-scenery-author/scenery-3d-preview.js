@@ -413,7 +413,7 @@ parityPanelMute.textContent = '#hobunjiTerrainParityPanel{display:none!important
     const textures = textureSummary(grassTexture, cliffTexture, grassPath, cliffPath);
     const baker = window.TerrainJigsawUV?.bakeMesh ? 'baker OK' : 'BAKER MISSING';
     const horizonSummary = horizonStats?.enabled
-      ? ` · HORIZON ${horizonStats.kind} ${horizonStats.vertices}v/${horizonStats.triangles}t ${(horizonStats.effectiveHeightWorld ?? horizonStats.heightWorld)}u high ${horizonStats.side}${horizonStats.rows ? ` · shared ${horizonStats.fieldCols ?? '?'}×${horizonStats.fieldRows ?? '?'} plateau map / ${horizonStats.mountainLayers ?? 0} merged tiers / ${horizonStats.lockedTiles ?? 0} locks` : ''} · ${(horizonStats.overallScale ?? 1)}× whole / ${(horizonStats.spanScale ?? 1)}× span`
+      ? ` · HORIZON ${horizonStats.kind} ${horizonStats.vertices}v/${horizonStats.triangles}t ${(horizonStats.effectiveHeightWorld ?? horizonStats.heightWorld)}u high ${horizonStats.side}${horizonStats.rows ? ` · G${horizonStats.mountainGranularity ?? '?'} shared ${horizonStats.fieldCols ?? '?'}×${horizonStats.fieldRows ?? '?'} plateau map / ${horizonStats.mountainLayers ?? 0} merged tiers / ${horizonStats.lockedTiles ?? 0} locks · ${(horizonStats.effectiveHeightStartWorld ?? horizonStats.heightStartWorld ?? '?')}→${(horizonStats.effectiveHeightEndWorld ?? horizonStats.heightEndWorld ?? '?')}u` : ''} · ${(horizonStats.overallScale ?? 1)}× whole / ${(horizonStats.spanScale ?? 1)}× span`
       : ' · HORIZON off'; // Visible mobile diagnostic proves the authored landmark and its real runtime geometry budget reached the preview.
     if (!jigsawEnabled()) {
       setStatus(`JIGSAW DISABLED · ${candidates} terrain candidate${candidates===1?'':'s'} · ${textures} · ${settingsSummary()} · ${baker}${horizonSummary} · author rev ${lastAuthorRevision}`);
@@ -452,7 +452,7 @@ parityPanelMute.textContent = '#hobunjiTerrainParityPanel{display:none!important
     const horizonSpan = horizon?.enabled ? axisLength * Math.max(0.25, Number(horizon.spanScale) || 1) * overallScale : axisLength; // Used to fit multi-map-length horizon spans.
     const width = horizontal ? Math.max(activeMap.cols, horizonSpan) : activeMap.cols + horizonReach; // Used as the fitted world width.
     const length = horizontal ? activeMap.rows + horizonReach : Math.max(activeMap.rows, horizonSpan); // Used as the fitted world length.
-    const effectiveHeight = horizon?.enabled ? Math.max(0, Number(horizon.heightWorld)||0) * overallScale : 0; // Used so very tall grouped scaling does not clip the preview vertically.
+    const effectiveHeight = horizon?.enabled ? Math.max(0, Number(horizon.heightWorld)||0, Number(horizon.heightStartWorld)||0, Number(horizon.heightEndWorld)||0) * overallScale : 0; // Uses the tallest endpoint so a jagged start/end mountain profile cannot clip the preview.
     const center = new THREE.Vector3(activeMap.cols/2,Math.max(1.35,effectiveHeight*.22),activeMap.rows/2);
     const radius = Math.max(activeMap.cols+depth*2,activeMap.rows+depth*2,width+depth*2,length+depth*2,effectiveHeight*1.35)*.62;
     camera.position.set(center.x+radius*.72,center.y+radius*.55,center.z+radius*.88);
