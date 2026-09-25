@@ -17,6 +17,12 @@ const config = source('docs/config/scratchbones-config.js');
 const index = source('docs/index.html');
 const nightbugsPath = path.join(__dirname, '../docs/assets/audio/sfx/bgs/bgs_nightbugs1.mp3'); // Points the asset-presence check at the normalized runtime recording.
 const skirmishPath = path.join(__dirname, '../docs/assets/audio/music/bgm/bgm_skirmish.m4a'); // Confirms the authored combat loop exists at the configured runtime path.
+const skirmishBinary = fs.readFileSync(skirmishPath).toString('latin1'); // Reads container metadata so the authored trim values cannot drift away from the actual M4A.
+const skirmishSmpb = skirmishBinary.match(/iTunSMPB[\s\S]{0,96}?([0-9A-Fa-f]{8}) ([0-9A-Fa-f]{8}) ([0-9A-Fa-f]{8}) ([0-9A-Fa-f]{16})/); // Captures flags, encoder delay, end padding and real content-sample count.
+const skirmishMp4aIndex = skirmishBinary.indexOf('mp4a'); // MP4 audio sample-entry marker used to verify the source sample rate authored in gaplessLoop metadata.
+const skirmishSourceSampleRate = skirmishMp4aIndex >= 0 ? fs.readFileSync(skirmishPath).readUInt32BE(skirmishMp4aIndex + 28) / 65536 : 0; // mp4a sample-rate field is 16.16 fixed-point, 28 bytes after the box type.
+const gaplessBoundsSource = music.slice(music.indexOf('  function gaplessLoopSampleBounds'), music.indexOf('\n  function preloadConfiguredGaplessLoops')); // Extracts the pure helper so CI executes its real branch code rather than only regex-checking its shape.
+const gaplessLoopSampleBounds = Function(gaplessBoundsSource + '\nreturn gaplessLoopSampleBounds;')();
 const remembrancePath = path.join(__dirname, '../docs/assets/audio/music/bgm/bgm_remembrance.m4a'); // Confirms the opening/title/onboarding soundtrack exists.
 const quietHopePath = path.join(__dirname, '../docs/assets/audio/music/bgm/bgm_quiet_hope.m4a'); // Confirms the farm/town morning candidate exists.
 const gentleTwilightPath = path.join(__dirname, '../docs/assets/audio/music/bgm/bgm_gentle_twilight.m4a'); // Confirms the farm/town 02:00-nightfall candidate exists.
@@ -53,8 +59,8 @@ assert.match(title, /claimStartupBgmAudio,[\s\S]*?cancelStartupBgmAudio/,
   'the title runtime exposes one-way startup-audio handoff/cancellation APIs');
 assert.match(music, /function startStartupBgm\(\)[\s\S]*?audioCfg\.startupBgm[\s\S]*?claimStartupBgmAudio\?\.\(track\.url\)[\s\S]*?existingAudio: earlyTitleAudio[\s\S]*?requestGameAudioPlay\(snd\)/,
   'Music adopts the title runtime\'s existing Remembrance element/playhead and keeps the shared playback gate');
-assert.match(music, /function playMusicTrack\([\s\S]*?existingAudio = null[\s\S]*?const snd = existingAudio \|\| makeGameAudio/,
-  'the shared music player can adopt an already-playing title soundtrack without creating a duplicate element');
+assert.match(music, /function playMusicTrack\([\s\S]*?existingAudio = null[\s\S]*?gaplessLoopSpec = null[\s\S]*?const snd = existingAudio \|\| gaplessSnd \|\| makeGameAudio/,
+  'the shared music player can adopt an already-playing title soundtrack while allowing explicitly-authored gapless loops to use the decoded transport');
 assert.doesNotMatch(music, /__hobunjiGameStarted === true \|\| window\.__hobunjiPlayerProfile/,
   'loading/selecting a profile no longer falsely ends the title/save/onboarding soundtrack');
 assert.match(music, /window\.addEventListener\('hobunji-title-starting',[\s\S]*?unlockGameAudio\('title start'\)/,
@@ -97,8 +103,33 @@ assert.match(music, /exclusiveSoundtrack === true/,
   'combat suppression reuses the existing exclusiveSoundtrack metadata instead of inventing a second exemption flag');
 assert.doesNotMatch(music, /combatBgmExempt/,
   'music scheduler does not carry a duplicate combat-specific soundtrack exemption concept');
-assert.match(music, /const repeatWhileCombat = track\.loop !== false;[\s\S]*?playMusicTrack\(track\.url, baseVol \* trackVolMul,[\s\S]*?\{ loop: repeatWhileCombat \}\)/,
-  'combat BGM uses native media looping by default until combat ends');
+assert.match(music, /const repeatWhileCombat = track\.loop !== false;[\s\S]*?const gaplessLoopSpec = repeatWhileCombat \? track\.gaplessLoop : null;[\s\S]*?playMusicTrack\(track\.url, baseVol \* trackVolMul,[\s\S]*?\{ loop: repeatWhileCombat, gaplessLoopSpec \}\)/,
+  'combat BGM routes explicitly-authored gapless loops through the shared music transport');
+assert.match(music, /function makeGaplessLoopAudio\([\s\S]*?ctx\.createBufferSource\(\)[\s\S]*?source\.loop = true;[\s\S]*?source\.loopStart = state\.loopStartSec;[\s\S]*?source\.loopEnd = state\.loopEndSec;/,
+  'gapless combat playback uses AudioBufferSourceNode loop boundaries rather than waiting for a media-element ended event');
+assert.match(music, /function gaplessLoopSampleBounds\([\s\S]*?sourceSampleRate[\s\S]*?resampleRatio[\s\S]*?decoder-trimmed-both[\s\S]*?encoded-padding-present[\s\S]*?untrimmed-metadata-mismatch/,
+  'gapless loop trimming adapts to decoder padding behavior and AudioContext resampling');
+const gaplessSpec = { sourceSampleRate: 48000, encoderDelaySamples: 2048, paddingSamples: 745, contentSamples: 1256727 };
+for (const decodedRate of [44100, 48000, 96000]) {
+  const ratio = decodedRate / gaplessSpec.sourceSampleRate;
+  const delay = Math.round(gaplessSpec.encoderDelaySamples * ratio);
+  const padding = Math.round(gaplessSpec.paddingSamples * ratio);
+  const contentSamples = Math.round(gaplessSpec.contentSamples * ratio);
+  const fullyPadded = gaplessLoopSampleBounds({ length: delay + contentSamples + padding, sampleRate: decodedRate }, gaplessSpec);
+  assert.equal(fullyPadded.mode, 'encoded-padding-present',
+    'fully padded Skirmish decode is recognized at ' + decodedRate + ' Hz');
+  assert.equal(fullyPadded.startSample, delay,
+    'Skirmish encoder delay is trimmed in decoded-sample space at ' + decodedRate + ' Hz');
+  assert.equal(fullyPadded.endSample, delay + contentSamples,
+    'Skirmish end padding is trimmed in decoded-sample space at ' + decodedRate + ' Hz');
+  const decoderTrimmed = gaplessLoopSampleBounds({ length: contentSamples, sampleRate: decodedRate }, gaplessSpec);
+  assert.equal(decoderTrimmed.mode, 'decoder-trimmed-both',
+    'already-trimmed Skirmish decode remains untrimmed at ' + decodedRate + ' Hz');
+}
+assert.match(music, /transport=' \+ \(activeSnd\?\._gaplessLoopAudio \? \(activeSnd\._gaplessNativeFallback \? 'html-fallback' : 'buffer-loop'\) : 'html'\)/,
+  'mobile audio diagnostics expose the active music transport');
+assert.match(music, /const mediaElement = snd\?\._gaplessNativeFallback \? snd\._gaplessNativeAudio : snd;[\s\S]*?createMediaElementSource\(mediaElement\)/,
+  'native fallback playback can still use the existing GainNode path for user track boosts above 100%');
 assert.match(music, /finishCombatBgm = \(\{ repeatIfStillInCombat = true \} = \{\}\) => \{[\s\S]*?deps\.isPlayerInCombat\(\)[\s\S]*?snd\.currentTime = 0;[\s\S]*?requestGameAudioPlay\(snd\)[\s\S]*?return;[\s\S]*?retireMusicTrack\(snd\)/,
   'if a looping combat M4A still emits ended, the same element restarts immediately while combat remains active instead of entering the scheduler/fade-in path');
 assert.match(music, /snd\.addEventListener\('ended', finishCombatBgm\);/,
@@ -116,8 +147,17 @@ assert.match(game, /getTimeOfDay: \(\) => window\.Fishing\?\.timeOfDay\?\.\(\),[
   'music condition evaluation receives the shared calendar condition values');
 assert.match(config, /"bgsFadeMs": 1600/,
   'background-loop fading remains authored in audio config');
-assert.match(config, /"combatBgm": \[[\s\S]*?"url": "assets\/audio\/music\/bgm\/bgm_skirmish\.m4a", "loop": true/,
-  'Skirmish is the configured looping combat soundtrack');
+assert.match(config, /"combatBgm": \[[\s\S]*?"url": "assets\/audio\/music\/bgm\/bgm_skirmish\.m4a", "loop": true, "gaplessLoop": \{ "sourceSampleRate": 48000, "encoderDelaySamples": 2048, "paddingSamples": 745, "contentSamples": 1256727 \}/,
+  'Skirmish carries the AAC source-rate and priming/padding metadata needed for sample-accurate looping');
+assert.ok(skirmishSmpb, 'Skirmish M4A must retain iTunSMPB gapless metadata');
+assert.equal(skirmishSourceSampleRate, 48000,
+  'configured Skirmish source sample rate matches the M4A mp4a sample entry');
+assert.equal(parseInt(skirmishSmpb[2], 16), 2048,
+  'configured Skirmish encoder delay matches the M4A iTunSMPB metadata');
+assert.equal(parseInt(skirmishSmpb[3], 16), 745,
+  'configured Skirmish end padding matches the M4A iTunSMPB metadata');
+assert.equal(parseInt(skirmishSmpb[4], 16), 1256727,
+  'configured Skirmish content length matches the M4A iTunSMPB metadata');
 assert.match(config, /"startupBgm": \{ "url": "assets\/audio\/music\/bgm\/bgm_remembrance\.m4a", "loop": true \}/,
   'Remembrance loops throughout the opening/title/save/onboarding sequence');
 assert.equal((config.match(/"url": "assets\/audio\/music\/bgm\/bgm_quiet_hope\.m4a", "startHour": 6, "endHour": 12/g) || []).length, 2,
@@ -136,8 +176,8 @@ assert.match(index, /scratchbones-config\.js\?v=20260924enghswatch1/,
   'the browser cache key loads the expanded authored BGM playlists');
 assert.match(formatUtils, /title-screen-runtime\.js\?v=20260921preworldsky2/,
   'the parser-synchronous title loader cache-busts the earliest Remembrance bootstrap');
-assert.match(index, /music-system\.js\?v=20260921skirmishrepeat1/,
-  'the browser cache key loads startup-title audio adoption plus per-song gain behavior');
+assert.match(index, /music-system\.js\?v=20260925skirmishgapless3/,
+  'the browser cache key loads the sample-accurate Skirmish loop transport');
 assert.match(index, /audio-track-gain-settings\.js\?v=20260920trackgain2/,
   'the browser loads the per-song gain Settings controller before game startup');
 assert.match(index, /town-mine\.js\?v=20260919combatbgm2/,
