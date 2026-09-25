@@ -22,8 +22,8 @@ assert.match(source, /Mirror Shoulder Pet with Portrait/,
   'the setting label describes the full shoulder-pet presentation rather than only the anchor');
 assert.match(source, /SHOULDER_PERCH_MIRROR_STORAGE_KEY/,
   'the mirror choice persists independently from the portrait flip setting');
-assert.match(rigSource, /const portraitMirrored = window\.HobunjiPortraitOutlineParity\?\.isShoulderPetPortraitMirrorActive\?\.\(\) === true[\s\S]{0,260}const flipped = portraitMirrored !== observationMirrored/,
-  'the portrait mirror reverses the pet resting/default facing while preserving observation flips relative to that mirrored rest');
+assert.match(rigSource, /const portraitMirrored = window\.HobunjiPortraitOutlineParity\?\.isShoulderPetPortraitMirrorActive\?\.\(\) === true[\s\S]{0,700}const flipped = portraitMirrored !== observationMirrored/,
+  'the portrait/perch side defines outward resting parity while the brief observation flip remains relative to that rest');
 assert.match(gameSource, /const shoulderMirrorSign = window\.HobunjiPortraitOutlineParity\?\.isShoulderPetPortraitMirrorActive\?\.\(\) === true \? -1 : 1/,
   'perch-relative horizontal curiosity motion consumes the same portrait mirror state');
 assert.match(gameSource, /state\.currentYawDeg \* shoulderMirrorSign/,
