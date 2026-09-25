@@ -686,9 +686,9 @@
   const applyShoulderPetObservationAtPinnedPerch = (pet, worldPivot) => {
     const avatar = pet?.avatarRef;
     if (!avatar?.group || !worldPivot) return false;
-    const portraitMirrored = window.HobunjiPortraitOutlineParity?.isShoulderPetPortraitMirrorActive?.() === true; // Presentation mirror supplies the resting/default facing parity on the opposite shoulder.
-    const observationMirrored = !!pet.__hobunjiShoulderObservationFlipped; // Curiosity still toggles relative facing independently of portrait presentation.
-    const flipped = portraitMirrored !== observationMirrored; // XOR mirrors the entire observation sequence: mirrored rest, then the same relative flip cadence from that rest state.
+    const portraitMirrored = window.HobunjiPortraitOutlineParity?.isShoulderPetPortraitMirrorActive?.() === true; // The authored perch swaps shoulders with portrait parity; this supplies the outward-facing resting parity for that active shoulder.
+    const observationMirrored = !!pet.__hobunjiShoulderObservationFlipped; // True only during the brief inward curiosity glance.
+    const flipped = portraitMirrored !== observationMirrored; // Rest always faces away from the character center; the short observation glance temporarily reverses that outward parity.
     const errors = shoulderObservationMeshes(avatar)
       .map(plane => solveShoulderObservationPlaneAtPivot(plane, worldPivot, flipped))
       .filter(Number.isFinite);
@@ -718,8 +718,10 @@
     Object.defineProperty(state, 'phase', {
       configurable: true, enumerable: true, get: () => phase,
       set: nextPhase => {
-        if (phase === 'wait' && nextPhase === 'look') {
-          const flipped = !pet.__hobunjiShoulderObservationFlipped; // Logical direction changes here; the visual transform is solved later in the same game frame by updateShoulderPetMeshPin().
+        const enteringInwardLook = phase === 'wait' && nextPhase === 'look';
+        const leavingInwardLook = phase === 'look' && nextPhase !== 'look';
+        if (enteringInwardLook || leavingInwardLook) {
+          const flipped = enteringInwardLook; // Wait/settle are always outward; only the short look phase reverses direction toward the character.
           pet.__hobunjiShoulderObservationFlipped = flipped;
           shoulderPetObservationFlipRuntime.flipCount += 1;
           shoulderPetObservationFlipRuntime.lastFlip = {
@@ -735,6 +737,7 @@
         phase = nextPhase;
       },
     });
+    pet.__hobunjiShoulderObservationFlipped = phase === 'look'; // Mid-session instrumentation adopts the current phase instead of inheriting a stale direction.
     shoulderPetObservationFlipRuntime.instrumentedStates.add(state);
     shoulderPetObservationFlipRuntime.instrumentedCount += 1;
     return true;
@@ -771,7 +774,7 @@
       const last = d.lastFlip ? `${d.lastFlip.creatureKey}:${d.lastFlip.flipped ? 'mirrored' : 'normal'}` : 'none'; // Existing compact flip summary.
       const pivot = d.lastFlip?.pivotMode || 'none'; // Reports the active grip/perch pivot mode used for the last parity change.
       const error = Number.isFinite(d.lastFlip?.pivotError) ? d.lastFlip.pivotError.toExponential(2) : 'n/a'; // Residual world-space separation after mirroring around the planted grip.
-      return `Shoulder pet observation flip: active=${d.activePetCount} instrumented=${d.instrumentedCount} flips=${d.flipCount} last=${last} mode=${pivot} gripPerchError=${error}`;
+      return `Shoulder pet observation flip: active=${d.activePetCount} instrumented=${d.instrumentedCount} flips=${d.flipCount} rest=outward glance=inward-only last=${last} mode=${pivot} gripPerchError=${error}`;
     },
     scanNow: scanShoulderPetsForObservationFlip,
   });
