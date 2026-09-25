@@ -34,6 +34,7 @@ assert.ok(game.includes('includeGlobalPath: false'));
 assert.ok(game.includes('mesh.isMesh && mesh.userData?.wildernessChunkOwnsGeometry'));
 assert.ok(game.includes('window.TerrainJigsawUV?.bakeMesh?.(mesh)'));
 assert.ok(game.includes('window.WildernessChunks?.destroyZone(mapId);'));
+assert.ok(game.includes('backgroundScenery: window.MapLivePreview.clone(layout.backgroundScenery || null)'), 'generated-map export must round-trip authored horizon settings back into the editor');
 assert.ok(game.includes('backgroundScenery: window.MapLivePreview.clone(map.backgroundScenery || previous.backgroundScenery || null)'));
 assert.ok(game.includes('backgroundScenery: window.MapLivePreview.clone(zm.backgroundScenery || null)'));
 assert.ok(game.includes('zGrid, zoneData?.backgroundScenery || null);'), 'zone boundary build must consume authored backgroundScenery so author sliders affect live wilderness');
