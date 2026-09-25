@@ -56,6 +56,23 @@
     </div>`;
   }
 
+  function renderDenTurnoverCensus() {
+    const zoneId = deps.getCurrentArea?.();
+    if (!zoneId || !deps._isZoneArea?.(zoneId)) return '';
+    const records = window.WildlifeSpawn.denTurnoverDebug?.(zoneId) || [];
+    if (!records.length) return '';
+    const rows = records.map(record => {
+      const days = record.stage === 'collapsed' ? ` · relocates in <b>${record.daysRemaining}</b> day(s)` : '';
+      const clutch = record.stage === 'cleared' && record.clutchLostOnExit > 0 ? ` · <b>${record.clutchLostOnExit}</b> clutch item(s) still inside` : '';
+      const site = Number.isFinite(Number(record.x)) && Number.isFinite(Number(record.y)) ? `(${record.x},${record.y})` : '(generated site)';
+      return `<div><b>${deps.esc(record.denId)}</b>: ${deps.esc(record.stage)} · generation ${record.generation} · site ${deps.esc(site)}${days}${clutch}</div>`;
+    }).join('');
+    return `<div style="padding:8px 10px;margin-bottom:8px;background:rgba(196,151,84,.08);border:1px solid rgba(196,151,84,.3);border-radius:6px;font-size:12px">
+      <div style="font-weight:600;color:#e5e7eb;margin-bottom:2px">Den Turnover — ${deps.esc(zoneId)}</div>
+      ${rows}
+    </div>`;
+  }
+
   function renderRoamingHerdCensus() {
     const zoneId = deps.getCurrentArea?.();
     if (!zoneId || !deps._isZoneArea?.(zoneId)) return '';
@@ -75,7 +92,7 @@
     syncWildlifeTabVisibility();
     const container = document.getElementById('wildlifeDenList');
     if (!container) return;
-    const censusHtml = renderDenNestCensus() + renderRoamingHerdCensus();
+    const censusHtml = renderDenNestCensus() + renderDenTurnoverCensus() + renderRoamingHerdCensus();
     if (!window.WildlifeSpawn.getDenGenotypes().size) {
       container.innerHTML = censusHtml + '<div style="opacity:.6;padding:8px 0">No den-family genotypes generated yet this session. Roaming herds are reported separately above because they do not belong to caverns.</div>';
       return;
