@@ -114,8 +114,33 @@
     // just for an arbitrary caller-supplied set of points instead of one
     // fixed one.
     const avoidPoints = Array.isArray(opts.avoidPoints) ? opts.avoidPoints : [];
+    // Hard chunk exclusions are separate from avoidPoints so callers may relax
+    // a cosmetic distance buffer without ever relaxing "these camps cannot
+    // share a streamed wilderness chunk." Each entry is either "cx,cz" or
+    // { cx, cz }; used only by the candidate filter below.
+    const avoidChunks = new Set((Array.isArray(opts.avoidChunks) ? opts.avoidChunks : []).map(entry => {
+      if (typeof entry === 'string') return entry;
+      const cx = Number(entry?.cx), cz = Number(entry?.cz);
+      return Number.isFinite(cx) && Number.isFinite(cz) ? `${Math.floor(cx)},${Math.floor(cz)}` : '';
+    }).filter(Boolean));
+    // Uses WildernessChunks' real 16-tile stream size when available; callers
+    // may inject the same value explicitly for tests or parser-time placement.
+    const chunkSizeTiles = Math.max(1, Math.floor(Number(opts.chunkSizeTiles)
+      || Number(root.WildernessChunks?.constants?.CHUNK_TILES) || 16));
     const w = bbox.w + clearance * 2, h = bbox.h + clearance * 2;
     if (w > zone.cols || h > zone.rows) return null;
+
+    const touchesAvoidedChunk = (x, y) => {
+      if (!avoidChunks.size) return false;
+      const minCx = Math.floor(x / chunkSizeTiles);
+      const maxCx = Math.floor((x + w - 1) / chunkSizeTiles);
+      const minCz = Math.floor(y / chunkSizeTiles);
+      const maxCz = Math.floor((y + h - 1) / chunkSizeTiles);
+      for (let cz = minCz; cz <= maxCz; cz++) {
+        for (let cx = minCx; cx <= maxCx; cx++) if (avoidChunks.has(`${cx},${cz}`)) return true;
+      }
+      return false;
+    }; // Used for every shuffled candidate before the more expensive tile-by-tile fit scan.
 
     const rng = opts.rng || Math.random;
     const candidates = [];
@@ -127,6 +152,7 @@
       const tmp = candidates[i]; candidates[i] = candidates[j]; candidates[j] = tmp;
     }
     for (const c of candidates) {
+      if (touchesAvoidedChunk(c.x, c.y)) continue;
       if (minDistFromEntry > 0 && zone.entry) {
         const dist = Math.hypot((c.x + w / 2) - zone.entry.x, (c.y + h / 2) - zone.entry.y);
         if (dist < minDistFromEntry) continue;
