@@ -6,7 +6,7 @@ const fs = require('node:fs');
 
 const game = fs.readFileSync('docs/game.js', 'utf8'); // Verifies live dialogue staging, camera framing, and eye-contact ownership.
 const config = fs.readFileSync('docs/config/scratchbones-config.js', 'utf8'); // Verifies the authored ordinary-dialogue camera side angle.
-const weaponIdleYaw = fs.readFileSync('docs/js/weapon-idle-body-yaw-runtime.js', 'utf8'); // Verifies held weapon stance cannot add body yaw over dialogue facing.
+const weaponStances = fs.readFileSync('docs/js/weapon-tool-stances.js', 'utf8'); // Verifies holstered weapons stop contributing idle body yaw through the normal held-mode contract.
 
 assert.match(
   game,
@@ -75,12 +75,37 @@ assert.match(
 console.log('Dialogue presentation checks passed.');
 
 assert.match(
-  weaponIdleYaw,
-  /const dialogueOpen = !!global\.Combat\?\.deps\?\.isDialogueOpen\?\.\(\);[\s\S]{0,400}if \(!dialogueOpen && resolved\.active/,
-  'weapon idle body-yaw channel must be suppressed while dialogue owns exact body facing',
+  game,
+  /function holsterToolForDialogue\(\)[\s\S]{0,600}heldMode === 'tool'[\s\S]{0,500}putAwayHeldEquipment\(\{ silent: true \}\)/,
+  'dialogue must silently holster whichever tool or weapon is currently drawn',
+);
+assert.match(
+  game,
+  /function restoreToolAfterDialogue\(\)[\s\S]{0,900}setActiveTool\(snapshot\.tool, \{ silent: true \}\)[\s\S]{0,500}activeAction = snapshot\.action/,
+  'dialogue close must restore the exact previously drawn tool/weapon and selected action',
+);
+assert.match(
+  game,
+  /dialogueEntryCameraAzimuthDeg = THREE\.MathUtils\.radToDeg\(activeCameraAzimuthRad\(\)\);[\s\S]{0,250}holsterToolForDialogue\(\);[\s\S]{0,250}dialogueOpen\s*=\s*true;/,
+  'dialogue must holster before entering dialogue presentation state',
+);
+assert.match(
+  game,
+  /_npcDialogueEl\.setAttribute\('aria-hidden', 'true'\);[\s\S]{0,250}restoreToolAfterDialogue\(\);/,
+  'dialogue close must redraw the prior tool/weapon automatically',
+);
+assert.match(
+  game,
+  /getActiveTool: \(\) => activeTool,[\s\S]{0,180}getHeldMode: \(\) => heldMode/,
+  'WeaponToolStances must receive the shared held-mode state',
+);
+assert.match(
+  weaponStances,
+  /const heldMode = deps\?\.getHeldMode\?\.\(\);[\s\S]{0,500}heldMode !== 'tool'[\s\S]{0,500}reason = 'held-equipment-put-away'/,
+  'holstering through heldMode must naturally remove weapon idle body yaw without a dialogue-specific yaw override',
 );
 
-console.log('Dialogue weapon-yaw suppression check passed.');
+console.log('Dialogue tool holster/restore checks passed.');
 
 assert.match(
   game,
