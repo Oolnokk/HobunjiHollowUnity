@@ -834,6 +834,39 @@
 
   const changeFolder = chooseFolder;
 
+  async function chooseRecoveryFolder() {
+    if (!isSupported()) return getStatus();
+    const previousHandle = _handle; // Retained if the picker is cancelled so recovery never loses the remembered folder by accident.
+    const previousState = _state; // Restored on cancel for the same reason.
+    try {
+      const pickerOptions = { mode: 'readwrite', id: 'hobunji-primary-save-recovery' }; // Dedicated picker id lets Chromium remember the recovery-folder location independently.
+      if (_handle) pickerOptions.startIn = _handle; // Opens at the remembered folder when the browser supports handle-based startIn.
+      const handle = await window.showDirectoryPicker(pickerOptions); // User gesture obtains a fresh live handle when the persisted IndexedDB handle has gone stale.
+      _handle = handle;
+      await idbSet(HANDLE_KEY, handle);
+      _state = 'ready';
+      _lastError = '';
+      _lastDataLossRisk = null;
+      _lastKnownFolderMeta = null; // Recovery re-selection intentionally does not trust/inspect canonical files before reading recovery history.
+      stopAutoSync();
+      _lastAction = 'recovery-folder-reselected';
+      notify();
+    } catch (error) {
+      if (error?.name === 'AbortError') {
+        _handle = previousHandle;
+        _state = previousState;
+        _lastAction = 'recovery-folder-reselect-cancelled';
+      } else {
+        _handle = previousHandle;
+        _state = previousState;
+        _lastError = String(error?.message || error);
+        _lastAction = 'recovery-folder-reselect-error';
+        notify();
+      }
+    }
+    return getStatus();
+  }
+
   // Reconnect is deliberately NON-DESTRUCTIVE. It only restores permission and
   // inspects the folder. It does not import, export, start autosync, or reload.
   // This keeps the current in-browser farm intact until the player chooses
@@ -900,6 +933,7 @@
     onChange,
     chooseFolder,
     changeFolder,
+    chooseRecoveryFolder,
     reconnect,
     forget,
     syncNow,
