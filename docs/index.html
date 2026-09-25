@@ -230,10 +230,10 @@
   <!-- Optional local-folder save mirror (window.LocalSaveFolder) — self-contained,
        only reads/writes the same hobunjiSaveMeta localStorage key onboarding.js/
        game.js already use. See docs/js/local-save-folder.js. -->
-  <script src="js/local-save-folder.js?v=20260920startup4"></script>
+  <script src="js/local-save-folder.js?v=20260925savecorrupt3"></script>
   <!-- Onboarding overlay -->
   <link rel="stylesheet" href="onboarding.css?v=20260921preworldsky1">
-  <script src="onboarding.js?v=20260924perf1"></script>
+  <script src="onboarding.js?v=20260925savecorrupt3"></script>
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
   <script src="js/combat/resource-system.js?v=20260924combatheal1"></script>
   <script src="js/combat/knockback-collision-impact.js?v=20260923ledge1"></script>
@@ -332,7 +332,7 @@
        load order relative to the other systems above doesn't matter;
        must load before game.js, which calls window.WildTreasure.init(...)
        during its own setup. -->
-  <script src="js/wild-treasure.js?v=20260910manuals1"></script>
+  <script src="js/wild-treasure.js?v=20260925savecorrupt3"></script>
   <!-- Farm livestock: barn AI, animal factories, harvest interaction,
        breeding (window.FarmAnimals) — self-contained aside from deps
        injected via init(), and reads window.DewVats at call time (already
@@ -549,7 +549,7 @@
        Mine floors, where player death destroys an underground camp.
        Self-contained aside from deps injected via init(); must load before game.js, which calls
        window.WildernessCampfire.init(...) during its own setup. -->
-  <script src="js/wilderness-campfire.js?v=20260828a"></script>
+  <script src="js/wilderness-campfire.js?v=20260925savecorrupt3"></script>
   <!-- Per-tile grid water simulation (rain/absorption/flow/siltation) and
        the merged dynamic-water mesh renderer (window.WaterSystem). Must
        load before game.js — unusually early among these, in fact: game.js
