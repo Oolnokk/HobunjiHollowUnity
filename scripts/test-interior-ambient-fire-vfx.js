@@ -46,10 +46,14 @@ function buildContext() {
     CATALOG: {},
     buildFurnitureGroup(key, color) { return { key, color, parent: null, userData: {} }; },
   };
+  const authoredData = {
+    campfire: { key: 'campfire', particleEmitters: [{ id: 'flame', enabled: true }] },
+    hearth: { key: 'hearth', particleEmitters: [{ id: 'hearth_fire', enabled: true, attachedPartId: 'hearth_ash' }] },
+  };
   context.AuthoredFurniture = {
-    load: key => Promise.resolve(null),
+    load: key => Promise.resolve(authoredData[key] || null),
     buildGroup: () => null,
-    peek: key => (key === 'campfire' ? { particleEmitters: [{ id: 'flame', enabled: true }] } : null),
+    peek: key => authoredData[key] || null,
     createEmitterVisual: (group, emitter) => makeVisual(),
   };
 
@@ -71,6 +75,26 @@ assert.equal(entry.options.owner, 'InteriorFireFloorRuntime');
 const group = context.ProceduralFurniture.buildFurnitureGroup('campfire', 0x6d3e20);
 assert.equal(entry.options.enabled, true, 'attaching the first ambient emitter enables the subscriber');
 assert.equal(visuals.length, 1, 'one particle visual was created for the campfire flame emitter');
+
+
+// A farmstead/interior hearth commonly starts as a procedural fallback while
+// its authored JSON resolves. A part-bound flame must NOT be parented to that
+// temporary root, because its hearth_ash mesh does not exist yet.
+const hearthGroup = context.ProceduralFurniture.buildFurnitureGroup('hearth', 0x5a4a3a);
+assert.equal(visuals.length, 1, 'part-bound hearth flame waits instead of attaching to the procedural fallback root');
+assert.equal(hearthGroup.userData.hobunjiAmbientFurnitureVfxPendingKey, 'hearth', 'deferred hearth records the ambient key for diagnostics');
+
+// FurnitureVesselRuntime installs meshById, then calls onAuthoredFurnitureReady.
+// The retry must now attach exactly once to the finished authored furniture.
+hearthGroup.userData.meshById = new Map([['hearth_ash', {}]]);
+context.InteriorFireFloorRuntime.onAuthoredFurnitureReady(
+  hearthGroup,
+  { key: 'hearth', particleEmitters: [{ id: 'hearth_fire', enabled: true, attachedPartId: 'hearth_ash' }] },
+  'hearth',
+);
+assert.equal(visuals.length, 2, 'authored-upgrade notification attaches the deferred hearth flame exactly once');
+assert.equal(hearthGroup.userData.hobunjiAmbientFurnitureVfxPendingKey, undefined, 'successful authored attachment clears the pending marker');
+assert.equal(hearthGroup.userData.hobunjiAmbientFurnitureVfxKey, 'hearth', 'hearth group records its live ambient VFX key');
 
 // Simulate the furniture actually being placed into a scene (has a parent).
 group.parent = {};
