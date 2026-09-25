@@ -355,15 +355,20 @@ parityPanelMute.textContent = '#hobunjiTerrainParityPanel{display:none!important
     const pathMat = new THREE.MeshStandardMaterial({ color:0x9f8357, roughness:1, metalness:0, side:THREE.DoubleSide });
     pathMat.userData.previewOwned = true;
 
+    const previewTileType={ GRASS:'grass', ROCK:'rock', PATH:'path', RAMP:'ramp', RIVER:'river', STREAM:'stream', WATERFALL:'waterfall', TRENCH:'trench', RAISED:'raised' }; // Shared with the real plateau builder used by the colossal mountain preview.
     const deps = {
       NORMAL_TOP:0,
-      PLATEAU_UNIT:1,
-      TileType:{ GRASS:'grass', PATH:'path' },
+      PLATEAU_UNIT:2.5,
+      TileType:previewTileType,
+      CARVED_TILE_TYPES:new Set([previewTileType.RIVER,previewTileType.STREAM,previewTileType.WATERFALL,previewTileType.TRENCH,previewTileType.RAISED]),
       clamp,
       getTownScene:()=>scene,
       getTownZone:()=>activeMap,
-      resolveTileMat:(_mapId,type)=>type==='grass' ? grassOrd : pathMat,
+      resolveTileMat:(_mapId,type)=>type==='grass' ? grassOrd : type==='rock' ? cliffOrd : pathMat,
       resolveCliffMat:()=>cliffOrd,
+      displaceZoneGeometry:geometry=>geometry,
+      ROCK_MOUND_CELLS_PER_TILE:6,
+      _zoneScenes:new Map(),_zoneLayouts:new Map(),_zoneMesaMeshGroups:new Map(),
       getGrassBillboardMat:()=>null,
       getGrassEnabled:()=>false,
       grassBladeGeo:null,
@@ -374,6 +379,7 @@ parityPanelMute.textContent = '#hobunjiTerrainParityPanel{display:none!important
     let horizonStats = null; // Used below to expose the exact low-poly landmark budget in the preview status line.
     try {
       BorderTerrain.init(deps);
+      window.ZonePlateauMesa?.init(deps);
       BorderTerrain.buildTownBorderTerrain();
       horizonStats = BorderTerrain.buildColossalHorizonTerrain?.(
         scene,
@@ -407,7 +413,7 @@ parityPanelMute.textContent = '#hobunjiTerrainParityPanel{display:none!important
     const textures = textureSummary(grassTexture, cliffTexture, grassPath, cliffPath);
     const baker = window.TerrainJigsawUV?.bakeMesh ? 'baker OK' : 'BAKER MISSING';
     const horizonSummary = horizonStats?.enabled
-      ? ` · HORIZON ${horizonStats.kind} ${horizonStats.vertices}v/${horizonStats.triangles}t ${(horizonStats.effectiveHeightWorld ?? horizonStats.heightWorld)}u high ${horizonStats.side}${horizonStats.rows ? ` · ${horizonStats.rows} rows / ${horizonStats.peakCount} mountains / ${horizonStats.mountainLayers ?? 0} layers each` : ''} · ${(horizonStats.overallScale ?? 1)}× whole / ${(horizonStats.spanScale ?? 1)}× span`
+      ? ` · HORIZON ${horizonStats.kind} ${horizonStats.vertices}v/${horizonStats.triangles}t ${(horizonStats.effectiveHeightWorld ?? horizonStats.heightWorld)}u high ${horizonStats.side}${horizonStats.rows ? ` · shared ${horizonStats.fieldCols ?? '?'}×${horizonStats.fieldRows ?? '?'} plateau map / ${horizonStats.mountainLayers ?? 0} merged tiers / ${horizonStats.lockedTiles ?? 0} locks` : ''} · ${(horizonStats.overallScale ?? 1)}× whole / ${(horizonStats.spanScale ?? 1)}× span`
       : ' · HORIZON off'; // Visible mobile diagnostic proves the authored landmark and its real runtime geometry budget reached the preview.
     if (!jigsawEnabled()) {
       setStatus(`JIGSAW DISABLED · ${candidates} terrain candidate${candidates===1?'':'s'} · ${textures} · ${settingsSummary()} · ${baker}${horizonSummary} · author rev ${lastAuthorRevision}`);
