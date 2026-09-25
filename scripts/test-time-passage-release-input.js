@@ -37,10 +37,8 @@ assert.match(
   /function cancelInterceptedDesktopHolds\(\)[\s\S]*?_seatedWaitPointerId = null;/,
   'losing window focus must disarm seated Wait',
 );
-assert.match(
-  index,
-  /calendar-system\.js\?v=20260830release1/,
-  'the corrected calendar input module must be cache-invalidated',
-);
+// calendar-system.js is re-bumped by later work (#717 onward); any key at or after the release-input fix still ships it.
+const calendarKey = index.match(/calendar-system\.js\?v=(\d{8}[a-z0-9-]*)/i)?.[1] || '';
+assert(calendarKey >= '20260830release1', `the corrected calendar input module must be cache-invalidated (found ${calendarKey || 'none'})`);
 
 console.log('time-passage release-input contracts: 7 checks passed');

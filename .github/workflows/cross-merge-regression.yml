@@ -26,6 +26,8 @@ on:
       - 'scripts/test-controller-input-authority.js'
       - 'scripts/test-npc-social-rapport-wardrobes.js'
       - 'scripts/test-procedural-impact-tabs.js'
+      - 'scripts/test-onboarding-character-creation-redesign.js'
+      - 'scripts/test-time-passage-release-input.js'
       - '.github/workflows/cross-merge-regression.yml'
   workflow_dispatch:
 
@@ -63,7 +65,9 @@ jobs:
             attack-animation-editor-history-grips \
             controller-input-authority \
             npc-social-rapport-wardrobes \
-            procedural-impact-tabs; do
+            procedural-impact-tabs \
+            onboarding-character-creation-redesign \
+            time-passage-release-input; do
             echo "::group::$t"
             node "scripts/test-$t.js"
             echo "::endgroup::"
