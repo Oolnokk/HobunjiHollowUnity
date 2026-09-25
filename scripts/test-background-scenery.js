@@ -2,22 +2,38 @@
 const assert = require('assert');
 
 class BufferGeometry {
-  constructor() { this.attributes = {}; this.groups = []; }
+  constructor() { this.attributes = {}; this.groups = []; this.index = null; }
   setAttribute(name, value) { this.attributes[name] = value; return this; }
+  getAttribute(name) { return this.attributes[name]; }
   setIndex(value) { this.index = value; return this; }
   addGroup(start, count, materialIndex) { this.groups.push({ start, count, materialIndex }); }
   computeVertexNormals() {}
   computeBoundingSphere() {}
+  computeBoundingBox() {}
 }
-class BufferAttribute { constructor(array, itemSize) { this.array = array; this.itemSize = itemSize; } }
-class Mesh { constructor(geometry, material) { this.geometry = geometry; this.material = material; this.userData = {}; } }
-class MeshStandardMaterial { constructor(opts) { Object.assign(this, opts); } }
-class MeshBasicMaterial { constructor(opts) { Object.assign(this, opts); this.userData = {}; } }
+class BufferAttribute {
+  constructor(array, itemSize) { this.array = array; this.itemSize = itemSize; this.count = array.length / itemSize; this.needsUpdate = false; }
+}
+class Material {
+  constructor(opts = {}) { Object.assign(this, opts); this.userData = { ...(opts.userData || {}) }; this.fog = opts.fog !== false; }
+  clone() { const copy = new this.constructor({ ...this }); copy.userData = { ...this.userData }; return copy; }
+}
+class Mesh {
+  constructor(geometry, material) { this.geometry = geometry; this.material = material; this.userData = {}; this.isMesh = true; this.frustumCulled = true; this.castShadow = false; this.receiveShadow = false; this.name = ''; this.parent = null; }
+}
+class Group {
+  constructor() { this.children = []; this.userData = {}; this.parent = null; }
+  add(obj) { if (obj.parent?.remove) obj.parent.remove(obj); obj.parent = this; this.children.push(obj); }
+  remove(obj) { this.children = this.children.filter(child => child !== obj); if (obj.parent === this) obj.parent = null; }
+}
+class MeshStandardMaterial extends Material {}
+class MeshBasicMaterial extends Material {}
 global.THREE = {
   BufferGeometry,
   BufferAttribute,
   Float32BufferAttribute: BufferAttribute,
   Mesh,
+  Group,
   MeshStandardMaterial,
   MeshBasicMaterial,
   DoubleSide: 2,
@@ -25,6 +41,7 @@ global.THREE = {
   Object3D: class {},
 };
 global.window = {};
+require('../docs/js/zone-plateau-mesa.js');
 require('../docs/js/border-terrain.js');
 const Core = window.BackgroundScenery;
 assert(Core, 'BackgroundScenery export missing');
@@ -62,7 +79,9 @@ assert.equal(westHorizon.side, 'west');
 assert.equal(westHorizon.heightWorld, 72);
 assert.equal(westHorizon.overallScale, 1);
 assert.equal(westHorizon.segments, 8);
-assert.equal(westHorizon.mountainLayers, 12, 'West Slope mountains should default to many small plateau layers');
+assert.equal(westHorizon.mountainLayers, 48, 'West Slope mountains should allow high-resolution regular plateau tiering');
+assert.equal(westHorizon.mountainSeed, 1337);
+assert.deepStrictEqual(westHorizon.lockedTiles, {});
 assert.equal(northHorizon.preset, 'northernPlateau');
 assert.equal(northHorizon.side, 'north');
 assert.equal(northHorizon.heightWorld, 64);
@@ -126,13 +145,20 @@ assert.equal(normalizedRoot.tiles['1,0'].type, 'path', 'the actual generated ent
 assert(normalizedRoot.generatedFrom.northBoundaryCliffsRemoved >= 2);
 
 const scene = { items: [], add(obj) { this.items.push(obj); }, remove() {} };
-window.BorderTerrain.init({
+const tileType = { GRASS:'grass', ROCK:'rock', PATH:'path', RAMP:'ramp', RIVER:'river', STREAM:'stream', WATERFALL:'waterfall', TRENCH:'trench', RAISED:'raised' };
+const grassMat = new MeshStandardMaterial({ color: 0x315f2b, fog: true });
+const rockMat = new MeshStandardMaterial({ color: 0x676563, fog: true });
+const deps = {
   getTownScene: () => scene,
   getTownZone: () => town,
   NORMAL_TOP: 0,
-  TileType: { GRASS: 'grass', PATH: 'path' },
-  resolveTileMat: () => ({}),
-  resolveCliffMat: () => ({}),
+  TileType: tileType,
+  CARVED_TILE_TYPES: new Set([tileType.RIVER,tileType.STREAM,tileType.WATERFALL,tileType.TRENCH,tileType.RAISED]),
+  resolveTileMat: (_mapId,type) => type === tileType.ROCK ? rockMat : grassMat,
+  resolveCliffMat: () => rockMat,
+  displaceZoneGeometry: geometry => geometry,
+  ROCK_MOUND_CELLS_PER_TILE: 6,
+  _zoneScenes: new Map(), _zoneLayouts: new Map(), _zoneMesaMeshGroups: new Map(),
   getGrassBillboardMat: () => null,
   mbRng: seed => { let x = seed >>> 0; return () => ((x = (Math.imul(x, 1664525) + 1013904223) >>> 0) / 4294967296); },
   getGrassEnabled: () => true,
@@ -140,97 +166,103 @@ window.BorderTerrain.init({
   markOutline() {},
   clamp: (v, a, b) => Math.max(a, Math.min(b, v)),
   PLATEAU_UNIT: 2.5,
-});
+};
+window.BorderTerrain.init(deps);
+window.ZonePlateauMesa.init(deps);
 
-const westHorizonScene = { items: [], userData: {}, add(obj) { this.items.push(obj); } };
-const westBudget = Border.buildColossalHorizonTerrain(westHorizonScene, 80, 80, 'map_western_slope', 0, null, westHorizon);
-assert.equal(westBudget.rows, 2, 'West Slope mountain chain must render as two visible shark-tooth rows');
-assert.equal(westBudget.frontPeakCount, 8, 'front row should use the authored segment count as discrete mountains');
-assert.equal(westBudget.backPeakCount, 7, 'rear row should stay staggered between foreground mountains');
-assert.equal(westBudget.peakCount, 15);
-assert.equal(westBudget.mountainLayers, 12, 'each mountain should be a many-tier plateau stack');
-assert.equal(westBudget.cliffSideQuadsPerLayer, 4, 'each plateau tier must have exactly one plane per cliff side');
-assert.equal(westBudget.topTrianglesPerLayer, 2, 'each plateau tier must have one un-subdivided flat top');
-assert.equal(westBudget.vertices, 1440, '15 mountains × 12 layers × 8 vertices should stay deterministic');
-assert.equal(westBudget.triangles, 1800, 'each layer should cost only 8 cliff triangles + 2 top triangles');
-assert.equal(westHorizonScene.items.length, 1, 'all mountain stacks should remain one combined draw mesh');
-assert.equal(westHorizonScene.items[0].frustumCulled, false, 'always-visible mountain chain must bypass Three.js frustum culling');
-assert.equal(westHorizonScene.items[0].castShadow, false, 'colossal landmarks must not pay permanent shadow-map cost');
-assert(Array.isArray(westHorizonScene.items[0].material) && westHorizonScene.items[0].material.every(m => m.fog === false), 'every flat mountain material must remain visible through scene fog');
-assert.equal(westHorizonScene.items[0].geometry.groups.length, 5, 'mountain mesh should preserve two cliff tones, exposed plateau tops, and two snow-top facets');
-assert.equal(westHorizonScene.items[0].userData.mountainRows, 2);
-assert.equal(westHorizonScene.items[0].userData.mountainLayers, 12);
-assert.equal(westHorizonScene.items[0].userData.cliffSideQuadsPerLayer, 4);
-assert.equal(westHorizonScene.items[0].userData.topTrianglesPerLayer, 2);
-assert.equal(westHorizonScene.items[0].userData.steppedPlateauMountains, true);
-assert.equal(westHorizonScene.items[0].userData.sharkTeethStaggered, true);
-assert.equal(westHorizonScene.items[0].userData.alwaysVisibleBoundaryTerrain, true);
+const baseField = Core.buildMountainPlateauField(80, 80, 'map_western_slope', westHorizon);
+assert.equal(baseField.cols, 48);
+assert.equal(baseField.rows, 96);
+assert.equal(baseField.frontPeakCount, 8);
+assert.equal(baseField.backPeakCount, 7);
+assert.equal(baseField.peakCount, 15);
+assert(baseField.maxTier >= 25, 'default 72u range should use many ordinary 2.5u plateau tiers');
+assert(baseField.maxTier <= westHorizon.mountainLayers);
+assert.equal(baseField.mesas.length, baseField.maxTier, 'shared synthetic map should emit one regular plateau transition mask per active elevation tier');
 
-const westPos = westHorizonScene.items[0].geometry.attributes.position.array;
-const layersPerPeak = westBudget.mountainLayers;
-const verticesPerLayer = 8;
-const firstPeakVertexCount = layersPerPeak * verticesPerLayer;
-let firstPeakMinZ = Infinity, firstPeakMaxZ = -Infinity, firstPeakMinY = Infinity, firstPeakMaxY = -Infinity;
-for (let v = 0; v < firstPeakVertexCount; v++) {
-  const i = v * 3;
-  firstPeakMinZ = Math.min(firstPeakMinZ, westPos[i + 2]);
-  firstPeakMaxZ = Math.max(firstPeakMaxZ, westPos[i + 2]);
-  firstPeakMinY = Math.min(firstPeakMinY, westPos[i + 1]);
-  firstPeakMaxY = Math.max(firstPeakMaxY, westPos[i + 1]);
+function countComponents(field, minTier = 1) {
+  const seen = new Set(); let components = 0;
+  const key = (c,r) => r * field.cols + c;
+  for (let r=0;r<field.rows;r++) for (let c=0;c<field.cols;c++) {
+    if (field.tiers[key(c,r)] < minTier || seen.has(key(c,r))) continue;
+    components++; const queue=[[c,r]]; seen.add(key(c,r));
+    for(let qi=0;qi<queue.length;qi++){
+      const [x,y]=queue[qi];
+      for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+        const nx=x+dx,ny=y+dy,k=key(nx,ny);
+        if(nx<0||ny<0||nx>=field.cols||ny>=field.rows||seen.has(k)||field.tiers[k]<minTier) continue;
+        seen.add(k);queue.push([nx,ny]);
+      }
+    }
+  }
+  return components;
 }
-const firstPeakWidth = firstPeakMaxZ - firstPeakMinZ;
-const firstPeakHeight = firstPeakMaxY - firstPeakMinY;
-assert(firstPeakWidth / firstPeakHeight > 0.70, `stacked mountains should remain broad rather than spike-like; first peak ratio was ${(firstPeakWidth / firstPeakHeight).toFixed(3)}`);
+assert.equal(countComponents(baseField, 1), 1, 'low-tier front/rear mountain stamps should merge into one continuous shared plateau landmass');
 
-const layerWidth = layer => {
-  const startVertex = layer * verticesPerLayer;
-  let min = Infinity, max = -Infinity;
-  for (let v = 0; v < verticesPerLayer; v++) {
-    const z = westPos[(startVertex + v) * 3 + 2];
-    min = Math.min(min, z); max = Math.max(max, z);
-  }
-  return max - min;
-};
-const ringWidth = (layer, ringOffset) => {
-  const startVertex = layer * verticesPerLayer + ringOffset;
-  let min = Infinity, max = -Infinity;
-  for (let v = 0; v < 4; v++) {
-    const z = westPos[(startVertex + v) * 3 + 2];
-    min = Math.min(min, z); max = Math.max(max, z);
-  }
-  return max - min;
-};
-const firstLayerWidth = layerWidth(0), secondLayerWidth = layerWidth(1), summitLayerWidth = layerWidth(layersPerPeak - 1);
-const firstLayerBottomWidth = ringWidth(0, 0), firstLayerTopWidth = ringWidth(0, 4), secondLayerBottomWidth = ringWidth(1, 0);
-assert(firstLayerTopWidth < firstLayerBottomWidth && firstLayerTopWidth > firstLayerBottomWidth * 0.90, 'each plateau cliff side should be one broad sloped plane, not a vertical wall or a heavily subdivided slope');
-assert(secondLayerBottomWidth < firstLayerTopWidth && secondLayerBottomWidth > firstLayerTopWidth * 0.94, 'a narrow flat terrace should remain between one sloped cliff tier and the next');
-assert(secondLayerWidth < firstLayerWidth && secondLayerWidth > firstLayerWidth * 0.88, 'each plateau layer should be only slightly smaller than the one below');
-assert(summitLayerWidth < firstLayerWidth * 0.30 && summitLayerWidth > firstLayerWidth * 0.12, 'many slight reductions should accumulate into a small flat summit plateau');
+const randomized = Core.normalizeHorizonTerrain({ ...westHorizon, mountainSeed: westHorizon.mountainSeed + 1 }, 'map_western_slope');
+const randomField = Core.buildMountainPlateauField(80, 80, 'map_western_slope', randomized);
+let changedCell = -1, changedCount = 0;
+for (let i=0;i<baseField.tiers.length;i++) if (baseField.tiers[i] !== randomField.tiers[i]) { changedCount++; if(changedCell<0) changedCell=i; }
+assert(changedCount > 100, 'Randomize seed should materially regenerate the shared mountain plateau map');
+assert(changedCell >= 0);
+const lockedC = changedCell % baseField.cols, lockedR = Math.floor(changedCell / baseField.cols);
+const lockedKey = `${lockedC},${lockedR}`;
+const lockedConfig = Core.normalizeHorizonTerrain({
+  ...randomized,
+  lockedTiles: { [lockedKey]: baseField.tiers[changedCell] },
+}, 'map_western_slope');
+const lockedField = Core.buildMountainPlateauField(80, 80, 'map_western_slope', lockedConfig);
+assert.equal(lockedField.tiers[changedCell], baseField.tiers[changedCell], 'locked 2D brush tile must preserve its exact plateau tier across randomization');
+assert.equal(lockedField.lockedCount, 1);
+
+const westHorizonScene = new Group();
+const westBudget = Border.buildColossalHorizonTerrain(westHorizonScene, 80, 80, 'map_western_slope', 0, null, westHorizon);
+assert.equal(westBudget.rows, 2);
+assert.equal(westBudget.frontPeakCount, 8);
+assert.equal(westBudget.backPeakCount, 7);
+assert.equal(westBudget.peakCount, 15);
+assert.equal(westBudget.sharedSyntheticPlateauMap, true);
+assert.equal(westBudget.regularPlateauBuilder, true, 'mountain chain must route through ZonePlateauMesa rather than a bespoke mountain mesh generator');
+assert.equal(westBudget.fieldCols, 48);
+assert.equal(westBudget.fieldRows, 96);
+assert.equal(westBudget.mountainLayers, baseField.maxTier);
+assert.equal(westBudget.meshes, baseField.mesas.length, 'one shared regular plateau mesh per tier should replace per-mountain meshes');
+assert(westBudget.vertices > 100000, 'new version should be substantially higher-poly than the discarded 1,440-vertex custom mesh');
+assert(westBudget.triangles > 100000, 'regular plateau half-tile surfaces should provide the requested higher-poly terrain');
+assert.equal(westHorizonScene.children.length, westBudget.meshes);
+for (const mesh of westHorizonScene.children) {
+  assert.equal(mesh.frustumCulled, false, 'every regular plateau tier must remain always visible');
+  assert.equal(mesh.castShadow, false, 'horizon plateau tiers must not enter the permanent shadow map');
+  assert.equal(mesh.receiveShadow, false);
+  assert.equal(mesh.userData.sharedSyntheticPlateauMap, true);
+  assert.equal(mesh.userData.cameraObstacle, false, 'distant horizon tiers must not enter normal player-camera occlusion lists');
+  const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+  assert(mats.every(m => m !== grassMat && m !== rockMat), 'horizon materials must clone regular materials instead of mutating shared gameplay materials');
+  assert(mats.every(m => m.fog === false), 'always-visible cloned plateau materials must bypass scene fog');
+}
 
 const hugeWest = Core.normalizeHorizonTerrain({
   preset:'westernMountainChain',
   overallScale:3,
   spanScale:4,
   depthWorld:140,
-  mountainLayers:12,
+  mountainLayers:48,
+  mountainSeed:westHorizon.mountainSeed,
 }, 'map_western_slope');
-assert.equal(hugeWest.overallScale, 3);
-assert.equal(hugeWest.spanScale, 4);
-assert.equal(hugeWest.depthWorld, 140, 'author must be able to exceed the old 120u depth clamp');
-assert.equal(hugeWest.mountainLayers, 12);
-const hugeWestScene = { items: [], userData: {}, add(obj) { this.items.push(obj); } };
+const hugeWestScene = new Group();
 const hugeWestBudget = Border.buildColossalHorizonTerrain(hugeWestScene, 80, 80, 'map_western_slope', 0, null, hugeWest);
-assert.equal(hugeWestBudget.effectiveHeightWorld, 216, 'whole-chain scale must multiply mountain height');
-assert.equal(hugeWestBudget.effectiveDepthWorld, 420, 'whole-chain scale must multiply mountain depth');
-assert.equal(hugeWestBudget.spanWorld, 960, 'whole-chain scale and span scale must combine on the north/south axis');
-assert.equal(hugeWestBudget.vertices, 1440, 'scaling must not add geometry subdivisions');
-assert.equal(hugeWestBudget.triangles, 1800, 'scaling must not add geometry subdivisions');
-const hugePos = hugeWestScene.items[0].geometry.attributes.position.array;
+assert.equal(hugeWestBudget.effectiveHeightWorld, 216);
+assert.equal(hugeWestBudget.effectiveDepthWorld, 420);
+assert.equal(hugeWestBudget.spanWorld, 960);
 let minNorthSouth = Infinity, maxNorthSouth = -Infinity;
-for (let i = 2; i < hugePos.length; i += 3) { minNorthSouth = Math.min(minNorthSouth, hugePos[i]); maxNorthSouth = Math.max(maxNorthSouth, hugePos[i]); }
-assert(minNorthSouth < -400, `scaled west chain should extend far north of the map; min z=${minNorthSouth}`);
-assert(maxNorthSouth > 480, `scaled west chain should extend far south of the map; max z=${maxNorthSouth}`);
-assert.equal(hugeWestScene.items.length, 1, 'whole-chain scaling must not split the mountains into more draw meshes');
+for (const mesh of hugeWestScene.children) {
+  const p = mesh.geometry.attributes.position.array;
+  for (let i=2;i<p.length;i+=3) { minNorthSouth=Math.min(minNorthSouth,p[i]); maxNorthSouth=Math.max(maxNorthSouth,p[i]); }
+}
+assert(minNorthSouth < -400, `scaled west range should extend far north of the map; min z=${minNorthSouth}`);
+assert(maxNorthSouth > 480, `scaled west range should extend far south of the map; max z=${maxNorthSouth}`);
+assert.equal(hugeWestBudget.fieldCols, westBudget.fieldCols, 'physical scaling must keep the synthetic shared-map tile topology stable for brush locks');
+assert.equal(hugeWestBudget.fieldRows, westBudget.fieldRows);
 
 const northHorizonScene = { items: [], userData: {}, add(obj) { this.items.push(obj); } };
 const northBudget = Border.buildColossalHorizonTerrain(northHorizonScene, 80, 80, 'map_northern_cliffs', 0, null, northHorizon);
