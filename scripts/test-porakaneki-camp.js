@@ -137,7 +137,7 @@ assert(!banditRuntimeSource.includes('buildBanditTentCanvasGeometry'), 'old proc
 assert.deepEqual(cfg.equipment.weaponShapes, ['fishingspear', 'hatchet', 'dagger'], 'Porakaneki must use the true dagger shape, never daggerSword');
 assert(localeIndex.locales.some(entry => entry.id === 'locale_porakaneki_camp_small'));
 assert(localeIndex.locales.some(entry => entry.id === 'locale_porakaneki_camp_chief' && entry.singleton === true));
-assert(houseLoader.includes('porakaneki-camps-runtime.js?v=20260924chunkecology1'));
+assert(houseLoader.includes('porakaneki-camps-runtime.js?v=20260924chunkecology2'));
 assert(runtimeSource.includes("bodyColorsOverride: window.HobunjiPorakanekiSpecies?.bodyColorsForSeed?.(hunter.id, 'male') || null"), 'camp residents must choose an authored Mashtzarr swatch only when materializing their avatar');
 const bodyColorWriteIndex = combatBanditSource.indexOf('roster.appearance.bodyColors = opts.bodyColorsOverride'); // Used with avatar-build ordering below to ensure explicit finite colors reach the portrait before raster work begins.
 const banditAvatarBuildIndex = combatBanditSource.indexOf('const avatarRef = await buildBanditAvatar(roster);'); // Must occur after the explicit body-color assignment.
@@ -183,6 +183,9 @@ function makeLayout() {
 const zoneLayouts = new Map(ZONES.map(zoneId => [zoneId, makeLayout()]));
 
 function fakeStamp(view, localeDef, opts) {
+  const instanceId = String(opts.instanceId || '');
+  const forceMinimumRecovery = instanceId.startsWith('porakaneki_small_map_northern_cliffs_') && !instanceId.endsWith('_minimum'); // Simulates a zone where every ordinary hunting-camp placement attempt fails.
+  if (forceMinimumRecovery) return null;
   view.__stampSeq = (view.__stampSeq || 0) + 1;
   const seq = view.__stampSeq;
   const isChief = localeDef.id === 'locale_porakaneki_camp_chief';
@@ -315,7 +318,7 @@ function hunterDebug(api, zoneId, campId, index) {
 (async () => {
   await flush();
   const api = contextWindow.PorakanekiCamps;
-  assert.equal(api.version, 5);
+  assert.equal(api.version, 6);
   assert.equal(api.__test.isSleepingHour(2), true);
   assert.equal(api.__test.isSleepingHour(12), false);
   assert.equal(api.__test.desiredChiefZone('Stormtide'), 'map_southern_cloud_forest');
@@ -328,16 +331,22 @@ function hunterDebug(api, zoneId, campId, index) {
 
   contextWindow.BanditCamps.updateCampBanners(0.21);
   let debug = api.debugSnapshot();
-  assert.equal(debug.version, 5);
+  assert.equal(debug.version, 6);
   assert.equal(debug.fullSimulationRadiusTiles, 12);
   assert.equal(debug.fullSimulationReleaseRadiusTiles, 16);
   assert.equal(Object.keys(debug.zones).length, 4);
-  assert(debug.totalSmallCamps >= 8 && debug.totalSmallCamps <= 16, '2-4 small camps on each of four wilderness maps means 8-16 little camps total');
+  assert(debug.totalSmallCamps >= 7 && debug.totalSmallCamps <= 13, 'three ordinary 2-4 camp zones plus the forced minimum-recovery zone produce 7-13 little camps total');
   for (const zoneId of ZONES) {
-    assert(debug.zones[zoneId].smallCampCount >= 2 && debug.zones[zoneId].smallCampCount <= 4, `${zoneId} must have 2-4 little camps`);
+    if (zoneId === 'map_northern_cliffs') {
+      assert.equal(debug.zones[zoneId].smallCampCount, 1, `${zoneId} recovers to exactly the hard one-camp minimum after all ordinary placements fail`);
+      assert(debug.zones[zoneId].camps.some(camp => camp.id === 'porakaneki_small_map_northern_cliffs_minimum'), 'minimum recovery creates the dedicated fallback camp instance');
+    } else {
+      assert(debug.zones[zoneId].smallCampCount >= 2 && debug.zones[zoneId].smallCampCount <= 4, `${zoneId} keeps its normal 2-4 little camps`);
+    }
     assert.equal(debug.zones[zoneId].chiefReserved, true, `${zoneId} reserves a valid future chief-camp site`);
     for (const camp of debug.zones[zoneId].camps.filter(camp => camp.kind === 'small')) assert(camp.residents >= 2 && camp.residents <= 4);
   }
+  assert.equal(api.__test.MIN_HUNTING_CAMPS_PER_ZONE, 1, 'runtime exposes the hard hunting-camp floor used by generation and bandit conflict resolution');
   assert.equal(debug.chiefZoneId, 'map_southern_cloud_forest');
   assert.equal(ZONES.filter(zoneId => debug.zones[zoneId].chiefActive).length, 1, 'exactly one large chief camp is active');
   const firstChiefDebug = debug.zones.map_southern_cloud_forest.camps.find(camp => camp.kind === 'chief'); // Used below to verify redesigned chief-camp structural diagnostics.
@@ -504,9 +513,13 @@ function hunterDebug(api, zoneId, campId, index) {
 
   const easternBefore = api.debugSnapshot().zones.map_eastern_mire.smallCampCount;
   const removedCampId = api.reduceHuntingCampsForBandit('map_eastern_mire');
-  assert(removedCampId, 'bandit placement may sacrifice one Porakaneki hunting camp when chunk space is constrained');
-  const easternAfter = api.debugSnapshot().zones.map_eastern_mire;
+  assert(removedCampId, 'bandit placement may sacrifice one surplus Porakaneki hunting camp when chunk space is constrained');
+  let easternAfter = api.debugSnapshot().zones.map_eastern_mire;
   assert.equal(easternAfter.smallCampCount, easternBefore - 1, 'only the hunting-camp count is reduced');
+  while (api.reduceHuntingCampsForBandit('map_eastern_mire')) {}
+  easternAfter = api.debugSnapshot().zones.map_eastern_mire;
+  assert.equal(easternAfter.smallCampCount, 1, 'repeated bandit pressure bottoms out at one Porakaneki hunting camp in the zone');
+  assert.equal(api.reduceHuntingCampsForBandit('map_eastern_mire'), null, 'the protected last hunting camp cannot be sacrificed');
   assert.equal(easternAfter.chiefReserved, true, 'future chief-camp reservation is never sacrificed for bandit placement');
 
   console.log('Porakaneki distributed seasonal camp regression checks passed.');
