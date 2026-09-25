@@ -249,7 +249,7 @@
     "function": "scheduleUiRefresh",
     "reason": "Debounces a settings/onboarding DOM refresh to the next paint via a single guarded RAF; not a loop.",
     "migrationStage": "not-planned",
-    "line": 563
+    "line": 580
   },
   {
     "file": "docs/js/hand-tool-grips.js",
