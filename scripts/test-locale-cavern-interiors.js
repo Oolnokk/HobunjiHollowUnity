@@ -131,6 +131,63 @@ assert(legacyResolverSource.includes('warmMissingNpcStationArea(missingArea)'),
 assert(!legacyResolverSource.includes('deps.loadBuildingScene(missingArea)'),
   'missing station resolution must not directly generate a building/cavern scene on the startup call stack');
 
+{
+  let heavySceneLoads = 0; // Proves the actual scheduler path can resolve Banubu's cave anchor without touching expensive scene synthesis.
+  const schedulerContext = {
+    console,
+    window: null,
+    CalendarSystem: {
+      getHour: () => 12,
+      currentWeekdayName: () => 'Anan',
+    },
+    CavernGenerator: {
+      loadLocaleCavernNpcStations: async area => area === 'map_i_den_banubu'
+        ? [{ id: 'station_banubu_cave_sleep', label: "Banubu's Sleeping Spot", col: 6, row: 5, pose: 'lie' }]
+        : null,
+    },
+  };
+  schedulerContext.window = schedulerContext;
+  vm.createContext(schedulerContext);
+  vm.runInContext(npcSchedulingSource, schedulerContext, { filename: 'npc-scheduling.js' });
+  schedulerContext.NpcScheduling.init({
+    npcWalkers: [],
+    normalizeNpcArea: area => area || 'town',
+    isBuildingArea: area => String(area || '').startsWith('map_i_'),
+    buildingScenes: new Map(),
+    loadBuildingScene: () => { heavySceneLoads++; },
+    getSharedSchedules: () => [],
+    getWorldNpcPaths: () => [],
+    getDecorativeFurnitureKeyByItemKey: () => '',
+    decorativeFurnitureDefs: {},
+  });
+  const banubuScheduleRecord = {
+    id: 'banubu',
+    scheduleHooks: {
+      defaultMapId: 'map_i_den_banubu',
+      defaultStationId: 'station_banubu_cave_sleep',
+      rules: [{
+        id: 'banubu_sleep_forever',
+        from: '00:00',
+        to: '24:00',
+        mapId: 'map_i_den_banubu',
+        stationId: 'station_banubu_cave_sleep',
+        activity: 'sleeping in his cave',
+      }],
+    },
+  };
+  const firstTarget = schedulerContext.NpcScheduling.resolveLegacyNpcScheduleTarget(banubuScheduleRecord); // First miss should only start the lightweight locale metadata request.
+  assert.strictEqual(firstTarget, null, 'first Banubu schedule lookup waits for lightweight locale station metadata');
+  assert.strictEqual(heavySceneLoads, 0, 'first Banubu schedule lookup must not generate the cave scene before onboarding');
+
+  setImmediate(() => {
+    const secondTarget = schedulerContext.NpcScheduling.resolveLegacyNpcScheduleTarget(banubuScheduleRecord); // Retry should now resolve directly from the registered locale anchor.
+    assert.strictEqual(heavySceneLoads, 0, 'Banubu station registration must still avoid full cave generation after the locale promise settles');
+    assert.strictEqual(secondTarget?.stationId, 'station_banubu_cave_sleep', 'second Banubu schedule lookup resolves the authored sleep station');
+    assert.strictEqual(secondTarget?.area, 'map_i_den_banubu', 'lightweight station registration preserves the cave area');
+    assert.strictEqual(secondTarget?.pose, 'lie', 'lightweight station registration preserves Banubu sleeping pose');
+  });
+}
+
 assert(!gameIndexSource.includes('id="npcPortraitCanvas"') && !gameIndexSource.includes('id="npcPortraitWrap"'), 'legacy screen-space NPC portrait canvas must be removed from gameplay HTML');
 assert(!dialogueStyleSource.includes('#npcPortraitCanvas') && !dialogueStyleSource.includes('#npcPortraitWrap'), 'legacy screen-space NPC portrait CSS must be removed');
 assert(!gameSource.includes('_npcPortraitCanvas'), 'game runtime must not retain a viewport portrait canvas handle');
