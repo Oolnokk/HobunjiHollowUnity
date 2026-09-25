@@ -37,8 +37,13 @@ assert.match(pixelProbe, /Render surface recovery:/, 'Pixel Probe must expose co
 assert.match(pixelProbe, /rendererBuffer=/, 'Pixel Probe must distinguish the WebGL canvas backing size from Three.js internal drawing-buffer size');
 assert.match(pixelProbe, /overlayExpected=/, 'Pixel Probe must report the expected DPR-sized 2D backing dimensions');
 
-for (const file of ['weather-fx', 'cloud-forest-fog', 'pixel-probe']) {
-  assert.match(index, new RegExp(`js/${file}\\.js\\?v=${file === 'cloud-forest-fog' ? '20260924renderrecovery2' : '20260924texture-restore1'}`), `${file}.js cache-bust must ship the repair`);
+const recoveryCacheKeys = {
+  'weather-fx': '20260924texture-restore1',
+  'cloud-forest-fog': '20260924renderrecovery2',
+  'pixel-probe': '20260925mountheading1',
+}; // Used below to ensure every recovery/debug module ships with its current browser cache key.
+for (const [file, cacheKey] of Object.entries(recoveryCacheKeys)) {
+  assert.match(index, new RegExp(`js/${file}\\.js\\?v=${cacheKey}`), `${file}.js cache-bust must ship the repair`);
 }
 
 console.log('Render surface/context recovery preflight checks passed.');

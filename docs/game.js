@@ -9431,7 +9431,8 @@
           // Shoulder movement is camera-relative: local up (-Y) is forward.
           return (-iy / length) > 0.35 && Math.abs(ix / length) < 0.85;
         }
-        const facing = player.angle;
+        const mountHeading = window.Mounts?.rideState === 'mounted' ? Number(window.Mounts?.heading) : NaN; // Used below so a mounted forward-dodge follows the carrier rather than independent rider look.
+        const facing = Number.isFinite(mountHeading) ? mountHeading : player.angle; // Used by the forward/side dodge tests below.
         const forward = (ix * Math.cos(facing) + iy * Math.sin(facing)) / length;
         const side = Math.abs(-ix * Math.sin(facing) + iy * Math.cos(facing)) / length;
         return forward > 0.35 && side < 0.85;
@@ -14807,6 +14808,7 @@
           buildings: window.MapLivePreview.clone(layout.buildings || []),
           decor: window.MapLivePreview.clone(layout.decor || []),
           furniture: window.MapLivePreview.clone(layout.furniture || []),
+          backgroundScenery: window.MapLivePreview.clone(layout.backgroundScenery || null),
           routes: [], rivers: [], npcStations: [], layouts: [], entryPoints: [],
           liveGeneratedInstance: true,
         };
@@ -26222,16 +26224,19 @@
           }
         }
         if (potionAction3Press.held) {
-          input.x = 0; input.y = 0; // Potion Select borrows the movement stick while held, so browsing cannot also move the player.
-          controllerCameraX = 0; controllerCameraY = 0; rightStickOwner = 'potion selection';
-          const potionStick = move.rawMagnitude >= look.rawMagnitude
-            ? { x: ax, y: ay, rawMagnitude: move.rawMagnitude }
-            : { x: rx, y: ry, rawMagnitude: look.rawMagnitude }; // Used so left-stick access is added without removing the selector's existing right-stick path.
-          if (potionStick.rawMagnitude >= INPUT_DEFAULTS.axisPressThreshold) {
-            const now = performance.now();
-            if (now - potionAction3Press.lastScrollAt >= 220) {
-              potionAction3Press.lastScrollAt = now;
-              window._desktopSelectionArc?.scrollEntries((Math.abs(potionStick.x) >= Math.abs(potionStick.y) ? potionStick.x : potionStick.y) >= 0 ? 1 : -1);
+          const bandageTapWindowOpen = window.ContextualPotionSelector?.isTapBandageWindowOpen?.() === true; // Used here so a pre-existing movement/look stick cannot turn a quick Potion Select tap into menu navigation.
+          if (!bandageTapWindowOpen) {
+            input.x = 0; input.y = 0; // Once the tap-to-bandage window expires, Potion Select borrows movement for deliberate browsing.
+            controllerCameraX = 0; controllerCameraY = 0; rightStickOwner = 'potion selection';
+            const potionStick = move.rawMagnitude >= look.rawMagnitude
+              ? { x: ax, y: ay, rawMagnitude: move.rawMagnitude }
+              : { x: rx, y: ry, rawMagnitude: look.rawMagnitude }; // Used so left-stick access is added without removing the selector's existing right-stick path.
+            if (potionStick.rawMagnitude >= INPUT_DEFAULTS.axisPressThreshold) {
+              const now = performance.now();
+              if (now - potionAction3Press.lastScrollAt >= 220) {
+                potionAction3Press.lastScrollAt = now;
+                window._desktopSelectionArc?.scrollEntries((Math.abs(potionStick.x) >= Math.abs(potionStick.y) ? potionStick.x : potionStick.y) >= 0 ? 1 : -1);
+              }
             }
           }
         }

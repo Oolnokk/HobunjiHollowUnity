@@ -307,7 +307,7 @@
   <!-- Banubu's Tea Grinder delegates trait legality/targeting to AlchemySystem
        but outputs cooking Tea Blends, so it must load after both systems. -->
   <script src="js/tea-grinder.js?v=20260919tea1"></script>
-  <script src="js/alchemy-flasks.js?v=20260830shoulderaim1"></script>
+  <script src="js/alchemy-flasks.js?v=20260925bandagemove1"></script>
   <!-- Dye catalog/ownership (window.DyeSystem) — character creation, the
        redye panel, General Store clothing stock, and treasure loot all
        draw from it. Self-contained aside from deps injected via init(), so
@@ -443,7 +443,7 @@
        aside from deps injected via init(), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.ClimbSystem.init(...) during its own setup. -->
-  <script src="js/climb-system.js?v=20260911mountleap1"></script>
+  <script src="js/climb-system.js?v=20260925mountheading1"></script>
   <!-- Wilderness fog-of-war, discovered-locale tracking, and map rendering
        (window.WildernessMap) — reads window.BanditCamps/window.BountyBoard
        at draw time (already global by then), so load order relative to the
@@ -2331,7 +2331,7 @@
   <script src="js/tool-metal-recolor.js?v=20260924overpassgap1"></script>
   <!-- Mount ride system (window.Mounts) — must load before game.js, which
        calls window.Mounts.init(...) during its own setup. -->
-  <script src="js/mount-system.js?v=20260911mountleap1"></script>
+  <script src="js/mount-system.js?v=20260925mountheading1"></script>
   <!-- Footstep/one-shot SFX (window.AudioSystem) — must load before game.js,
        which calls window.AudioSystem.init(...) during its own setup. -->
   <script src="js/audio-system.js?v=20260830flaskcues1"></script>
@@ -2353,7 +2353,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20260924texture-restore1"></script>
+  <script src="js/pixel-probe.js?v=20260925mountheading1"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -2487,7 +2487,7 @@
        quality mode, and owns no requestAnimationFrame loop. -->
   <script src="js/painterly-postprocess.js?v=20260925defaultmedium1"></script>
   <script src="js/banubu-cave-clouds.js?v=20260923cloudring3"></script>
-  <script src="game.js?v=20260925dialogue5"></script>
+  <script src="game.js?v=20260925mountheading1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
   <script src="js/banubu-snore.js?v=20260924snorepitch1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
