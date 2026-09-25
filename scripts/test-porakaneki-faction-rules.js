@@ -14,6 +14,7 @@ const relationMap = new Map([
 ]);
 const popups = [];
 let attackOnSight = false;
+let sharedEnemyNearby = false; // Drives the new active-chunk crossfire forgiveness hook.
 let afflictionCalls = 0;
 const hostileObjects = new Set();
 const player = { id: 'player', x: 10, y: 20, isPlayer: true };
@@ -58,7 +59,7 @@ const window = {
     animalAttacks,
     meleeHit() { return true; },
   },
-  PorakanekiCamps: { debugSnapshot() { return { attackOnSight }; } },
+  PorakanekiCamps: { debugSnapshot() { return { attackOnSight }; }, hasSharedEnemyNearby() { return sharedEnemyNearby; } },
   BanditCamps: { updateCampBanners() { if (typeof window._duringTick === 'function') window._duringTick(); } },
 };
 const sandbox = {
@@ -89,6 +90,7 @@ vm.createContext(sandbox);
 vm.runInContext(fs.readFileSync(path.join(__dirname, '../docs/js/scene-ready-poller.js'), 'utf8'), sandbox, { filename: 'scene-ready-poller.js' });
 vm.runInContext(src, sandbox, { filename: 'porakaneki-faction-rules.js' });
 const rules = window.PorakanekiFactionRules;
+if (rules.version !== 3) throw new Error(`Porakaneki faction rules version ${rules.version}, expected 3`);
 function assert(cond, msg) { if (!cond) throw new Error(msg); }
 
 // Canonical data rewrite.
@@ -159,6 +161,19 @@ window._duringTick = () => { window.Combat.deps.damageCreature(e, 10, player.x, 
 window.BanditCamps.updateCampBanners();
 assert(relationMap.get('porakaneki_chief').favor === -3, `murder favor ${relationMap.get('porakaneki_chief').favor}`);
 assert(relationMap.get('omgurku_chief').favor === 1, `murder rival favor ${relationMap.get('omgurku_chief').favor}`);
+
+// Shared-enemy crossfire: a player hit/kill while a bandit or predator is in
+// the same observed chunk is forgiven rather than becoming murder/self-defense.
+const crossfire = hunter('crossfire', 'camp_crossfire');
+hostileObjects.add(crossfire);
+resetFavor();
+rules.syncNow();
+sharedEnemyNearby = true;
+window._duringTick = () => { window.Combat.deps.damageCreature(crossfire, 10, player.x, player.y, 0, { tag: 'sharp' }); };
+window.BanditCamps.updateCampBanners();
+sharedEnemyNearby = false;
+assert(relationMap.get('porakaneki_chief').favor === 0, `crossfire Porakaneki favor ${relationMap.get('porakaneki_chief').favor}`);
+assert(relationMap.get('omgurku_chief').favor === 0, `crossfire rival favor ${relationMap.get('omgurku_chief').favor}`);
 
 // Self-defense: AOS Porakaneki initiates hostility on one tick, then the player's kill stays on the smaller penalty.
 const e2 = hunter('e2', 'camp2');

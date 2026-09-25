@@ -4,6 +4,8 @@ const vm = require('node:vm');
 
 const temporaryLocalesSource = fs.readFileSync('docs/js/temporary-locales.js', 'utf8'); // Real generic locale placement engine exercised below.
 const policySource = fs.readFileSync('docs/js/porakaneki-camp-placement-policy.js', 'utf8'); // Real Porakaneki clutter/fallback adapter under test.
+const porakanekiRuntimeSource = fs.readFileSync('docs/js/porakaneki-camps-runtime.js', 'utf8'); // Guards chief reservation + hunting-camp sacrifice rules.
+const banditCampSource = fs.readFileSync('docs/js/bandit-camps.js', 'utf8'); // Guards every bandit fallback retaining the hard chunk exclusion.
 const loaderSource = fs.readFileSync('docs/js/house-pieces.js', 'utf8'); // Production parser-time ordering contract.
 
 function makeDenseZone(cols = 30, rows = 30) {
@@ -95,10 +97,30 @@ const context = vm.createContext({
 vm.runInContext(temporaryLocalesSource, context, { filename: 'temporary-locales.js' });
 vm.runInContext(policySource, context, { filename: 'porakaneki-camp-placement-policy.js' });
 
-assert.equal(contextWindow.PorakanekiCampPlacementPolicy.version, 1);
-assert(loaderSource.indexOf("['PorakanekiCampPlacementPolicy', 'porakaneki-camp-placement-policy.js?v=20260912a']") >= 0, 'placement policy is parser-loaded');
+assert.equal(contextWindow.PorakanekiCampPlacementPolicy.version, 3);
+assert(loaderSource.indexOf("['PorakanekiCampPlacementPolicy', 'porakaneki-camp-placement-policy.js?v=20260924chunkecology2']") >= 0, 'placement policy is parser-loaded');
 assert(loaderSource.indexOf("['PorakanekiCampPlacementPolicy'") < loaderSource.indexOf("['PorakanekiCamps'"), 'placement policy loads before camp generation');
 assert(loaderSource.indexOf("['PorakanekiCamps'") < loaderSource.indexOf("['PorakanekiMapMarkers'"), 'camp state still updates before map proxies');
+assert(porakanekiRuntimeSource.includes('if (zoneState.chiefReservation) for (const key of streamChunkKeysForSite(zoneState.chiefReservation.site))'),
+  'the inactive/active chief reservation must remain part of hard camp chunk exclusion');
+assert(porakanekiRuntimeSource.includes('function reduceHuntingCampsForBandit(zoneId)') && porakanekiRuntimeSource.includes('zoneState.smallCamps.pop()'),
+  'bandit-space recovery may remove only Porakaneki hunting camps');
+assert(porakanekiRuntimeSource.includes('zoneState.smallCamps.length <= MIN_HUNTING_CAMPS_PER_ZONE'),
+  'bandit-space recovery must stop at the protected one-hunting-camp floor');
+assert(porakanekiRuntimeSource.includes('if (zoneState.smallCamps.length < MIN_HUNTING_CAMPS_PER_ZONE)') && porakanekiRuntimeSource.includes('stampHuntingCamp(zoneState, zoneId, targetCount, true)'),
+  'initial generation must run the minimum-camp fallback if ordinary hunting-camp placement produces zero sites');
+assert(porakanekiRuntimeSource.includes('minimumCampRequired: minimumFallback'),
+  'the runtime must explicitly arm the placement policy compact/tent minimum fallback only for the protected final camp');
+assert(policySource.includes('function minimumCampFallbackLocales(locale)') && policySource.includes('opts.minimumCampRequired'),
+  'placement policy must provide compact and tent-only surface fallbacks for the hard one-camp invariant');
+assert(!porakanekiRuntimeSource.includes('zoneState.chiefReservation = null'),
+  'bandit-space recovery must never discard the chief reservation');
+assert(banditCampSource.includes('avoidChunks = porakanekiAvoidChunks(zoneId)'),
+  'bandit placement must derive hard chunk exclusions from the Porakaneki reservation API');
+assert(banditCampSource.includes('while (!instance && window.PorakanekiCamps?.reduceHuntingCampsForBandit?.(zoneId))'),
+  'bandit placement must reduce hunting camps before accepting fewer bandit camps');
+assert(!banditCampSource.includes('avoidChunks: []'),
+  'no bandit placement fallback may explicitly drop the hard chunk exclusion');
 
 // This is the production failure shape: every otherwise-valid tile has an
 // ordinary procedural shrub/rock occupancy record. Before the policy, the
@@ -200,6 +222,23 @@ function makeSmallLocale(id = 'locale_test_small') {
 }
 
 {
+  const zone = makeFlatZone(32, 16);
+  const locale = makeSmallLocale('chunk_exclusion_test');
+  const instance = contextWindow.TemporaryLocales.stamp(zone, locale, {
+    instanceId: 'chunk_exclusion_direct',
+    clearableTypes: new Set(),
+    clearanceTiles: 0,
+    requiresFlatGround: true,
+    minDistanceFromEntry: 0,
+    avoidChunks: ['0,0'],
+    chunkSizeTiles: 16,
+    rng: () => 0.999,
+  });
+  assert(instance, 'a legal site remains in the unreserved half of the zone');
+  assert(instance.site.x >= 16, 'hard avoidChunks keeps the entire temporary locale out of reserved chunk 0,0');
+}
+
+{
   // A zone small enough that the ONLY fitting site is inside the avoided
   // radius: campStampAttempts' last-resort attempt must still place the
   // camp (better than not placing one at all) by dropping avoidPoints,
@@ -228,6 +267,19 @@ function makeSmallLocale(id = 'locale_test_small') {
     rng: () => 0.5,
   });
   assert(viaPolicy, 'the porakaneki-prefixed instanceId lets the placement policy fall back to dropping avoidPoints rather than placing nothing');
+
+  const hardChunk = contextWindow.TemporaryLocales.stamp(makeFlatZone(4, 4), locale, {
+    instanceId: 'porakaneki_tiny_hard_chunk',
+    clearableTypes: new Set(),
+    clearanceTiles: 0,
+    requiresFlatGround: true,
+    minDistanceFromEntry: 0,
+    avoidPoints,
+    avoidChunks: ['0,0'],
+    chunkSizeTiles: 16,
+    rng: () => 0.5,
+  });
+  assert.equal(hardChunk, null, 'Porakaneki fallback may drop soft avoidPoints but must never drop the hard same-chunk exclusion');
 }
 
 console.log('Porakaneki dense-wilderness camp placement policy regression passed.');

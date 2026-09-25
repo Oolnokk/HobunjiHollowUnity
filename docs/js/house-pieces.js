@@ -42,11 +42,11 @@
     // Chunk-only offscreen Harlyao army state; materializes ~20 real humanoid combatants only while the player shares its nightly route chunk.
     ['HarlyaoNightMarch', 'harlyao-night-march-runtime.js?v=20260911a'],
     // Porakaneki temporary locales can clear ordinary procedural shrub/rock clutter and relax only their own placement margins when dense wilderness would otherwise prevent any camp from existing.
-    ['PorakanekiCampPlacementPolicy', 'porakaneki-camp-placement-policy.js?v=20260912a'],
-    // Porakaneki camp network: distance/hysteresis LOD, planner-owned destinations, shared hostile-loop locomotion/rendering, and seasonal chief migration.
-    ['PorakanekiCamps', 'porakaneki-camps-runtime.js?v=20260924poracolor2'],
+    ['PorakanekiCampPlacementPolicy', 'porakaneki-camp-placement-policy.js?v=20260924chunkecology2'],
+    // Porakaneki camp network: distance/hysteresis LOD, shared den-to-den hunting parties, planner-owned destinations, shared hostile-loop locomotion/rendering, and seasonal chief migration.
+    ['PorakanekiCamps', 'porakaneki-camps-runtime.js?v=20260924chunkecology4'],
     // Keeps neutral Porakaneki off companion target lists, classifies self-defense vs initiated kills, applies Omgurku rivalry favor, and composes the faction rename into NPC database loads.
-    ['PorakanekiFactionRules', 'porakaneki-faction-rules.js?v=20260917b'],
+    ['PorakanekiFactionRules', 'porakaneki-faction-rules.js?v=20260924chunkecology1'],
     // Map-only locale proxies: chief camp is always known; each little camp gets its own independent discovery identity through the existing wilderness-map fog/discovery system.
     ['PorakanekiMapMarkers', 'porakaneki-map-markers.js?v=20260912a'],
     // Draws one all-distance serpentine spectral locator at the army chunk; once soldiers are visible it follows their actual formation centroid.

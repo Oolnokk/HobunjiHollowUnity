@@ -30,28 +30,35 @@
     "wakeHour": 6
   },
   "equipment": {
-    "weaponShapes": ["fishingspear", "hatchet", "dagger"],
+    "weaponShapes": [
+      "fishingspear",
+      "hatchet",
+      "dagger"
+    ],
     "weaponMetalKey": "nativeCopper"
   },
   "behavior": {
     "fullSimulationChunkTiles": 10,
-    "fullSimulationRadiusTiles": 12,
-    "fullSimulationReleaseRadiusTiles": 16,
+    "fullSimulationRadiusTiles": 18,
+    "fullSimulationReleaseRadiusTiles": 24,
     "offChunkTickSeconds": 4,
     "decisionMinSeconds": 4,
     "decisionMaxSeconds": 11,
     "travelSpeedTilesPerSecond": 1.05,
-    "huntRadiusMinTiles": 7,
-    "huntRadiusMaxTiles": 22,
     "localWanderRadiusTiles": 7,
     "campSocialRadiusTiles": 8,
     "stimulusInterestRadiusTiles": 12,
     "activityWeights": {
-      "hunt": 0.52,
       "wander": 0.24,
       "socialize": 0.16,
       "camp": 0.08
-    }
+    },
+    "denHuntGroupMin": 2,
+    "denHuntGroupMax": 3,
+    "denHuntFormationRadiusTiles": 1.15,
+    "denHuntArrivalRadiusTiles": 2.5,
+    "denHuntDwellMinSeconds": 4,
+    "denHuntDwellMaxSeconds": 8
   },
   "reputation": {
     "npcId": "porakaneki_chief",

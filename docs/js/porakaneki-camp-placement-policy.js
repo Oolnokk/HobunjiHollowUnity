@@ -56,10 +56,10 @@
     // but permits a camp's individual tents to sit on neighboring elevation
     // tiers instead of deleting the camp entirely on cliff-heavy generations.
     attempts.push({ clearanceTiles: 0, minDistanceFromEntry: Math.min(authoredDistance, 6), requiresFlatGround: false });
-    // Absolute last resort: gives up the bandit-camp keep-away buffer (see
-    // opts.avoidPoints) too. A generation dense enough to fail every attempt
-    // above is rare, but placing a camp too close to a bandit camp is still
-    // better than silently placing fewer camps than the config calls for.
+    // Absolute last resort may give up only the SOFT center-distance buffer
+    // (opts.avoidPoints). opts.avoidChunks is inherited from the caller through
+    // the spread in wrappedStamp below, so the hard same-stream-chunk exclusion
+    // can never be relaxed by this fallback.
     if (opts.avoidPoints?.length) attempts.push({ clearanceTiles: 0, minDistanceFromEntry: Math.min(authoredDistance, 6), requiresFlatGround: false, avoidPoints: [] });
     return attempts.filter((attempt, index, all) => all.findIndex(other =>
       other.clearanceTiles === attempt.clearanceTiles &&
@@ -67,6 +67,44 @@
       other.requiresFlatGround === attempt.requiresFlatGround &&
       JSON.stringify(other.avoidPoints || null) === JSON.stringify(attempt.avoidPoints || null)
     ) === index);
+  }
+
+  function rectangleTiles(cols, rows) {
+    const tiles = {};
+    for (let row = 0; row < rows; row++) for (let col = 0; col < cols; col++) tiles[`${col},${row}`] = { type: 'grass' };
+    return tiles;
+  } // Builds only the temporary placement footprint; the live wilderness terrain remains the source of elevation.
+
+  function minimumCampFallbackLocales(locale) {
+    const sourceObjects = Array.isArray(locale?.objects) ? locale.objects : [];
+    const sourceTent = sourceObjects.find(object => object?.kind === 'tent');
+    if (!sourceTent) return [];
+    const sourceFire = sourceObjects.find(object => object?.key === 'bonfire');
+    const sourceBench = sourceObjects.find(object => object?.key === 'benchlog');
+    const compactObjects = [
+      { ...sourceTent, id: 'minimum_tent', col: 0, row: 1, rot: 90 },
+      ...(sourceFire ? [{ ...sourceFire, id: 'minimum_bonfire', col: 3, row: 1, rot: 0 }] : []),
+      ...(sourceBench ? [{ ...sourceBench, id: 'minimum_bench', col: 2, row: 4, rot: 180 }] : []),
+    ]; // 6x5 keeps a recognizable tent/fire/rest outpost while fitting terrain the normal 13x13 camp cannot.
+    const compact = {
+      ...locale,
+      id: `${locale.id}_minimum_compact`,
+      cols: 6,
+      rows: 5,
+      tiles: rectangleTiles(6, 5),
+      objects: compactObjects,
+      placement: { ...(locale.placement || {}), clearanceTiles: 0, requiresFlatGround: false, minDistanceFromEntry: 0 },
+    };
+    const tentOnly = {
+      ...locale,
+      id: `${locale.id}_minimum_tent`,
+      cols: 2,
+      rows: 2,
+      tiles: rectangleTiles(2, 2),
+      objects: [{ ...sourceTent, id: 'minimum_tent', col: 0, row: 0, rot: sourceTent.rot || 0 }],
+      placement: { ...(locale.placement || {}), clearanceTiles: 0, requiresFlatGround: false, minDistanceFromEntry: 0 },
+    }; // Final production floor: a visible 2x2 hunting tent still counts as a camp and preserves the resident group.
+    return [compact, tentOnly];
   }
 
   function registerPlacement(instance) {
@@ -92,6 +130,19 @@
       for (const attempt of campStampAttempts(locale, opts)) {
         instance = originalStamp(zone, locale, { ...opts, ...attempt, clearableTypes });
         if (instance) break;
+      }
+      if (!instance && opts.minimumCampRequired) {
+        for (const fallbackLocale of minimumCampFallbackLocales(locale)) {
+          instance = originalStamp(zone, fallbackLocale, {
+            ...opts,
+            clearanceTiles: 0,
+            minDistanceFromEntry: 0,
+            requiresFlatGround: false,
+            avoidPoints: [],
+            clearableTypes,
+          }); // Hard avoidChunks remains inherited, so compact recovery never creates a Porakaneki/bandit same-chunk collision.
+          if (instance) break;
+        }
       }
       if (instance) registerPlacement(instance);
       return instance;
@@ -189,13 +240,13 @@
   }
 
   window.PorakanekiCampPlacementPolicy = Object.freeze({
-    version: 1,
+    version: 3,
     syncCurrentZoneClutter,
     debugSnapshot: () => ({
       placements: [...placements].map(([id, entry]) => ({ id, zoneId: entry.zoneId, clearedTiles: entry.snapshots.length })),
       appliedByZone: Object.fromEntries([...appliedByZone].map(([zoneId, ids]) => [zoneId, [...ids]])),
     }),
-    __test: Object.freeze({ isPorakanekiInstance, zoneIdFromInstanceId, prepareClutter, campStampAttempts }),
+    __test: Object.freeze({ isPorakanekiInstance, zoneIdFromInstanceId, prepareClutter, campStampAttempts, minimumCampFallbackLocales }),
   });
 
   installTemporaryLocales();

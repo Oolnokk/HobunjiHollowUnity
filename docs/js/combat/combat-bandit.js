@@ -640,6 +640,33 @@
     return { damage: def.attackDamage, rangePx: def.attackRangePx, knockbackPxS: deps.HOSTILE_BITE_KNOCKBACK_PX_S };
   }
 
+  function resolvedBanditCombatTarget(c, fallbackTarget) {
+    const target = c?._chunkCombatTarget; // Set only by PorakanekiCamps' active-player-chunk ecology pass.
+    if (!target) return fallbackTarget;
+    const alive = Number(target.health) > 0;
+    const sameArea = !target.areaId || !c?.areaId || target.areaId === c.areaId;
+    if (alive && sameArea) return target;
+    c._chunkCombatTarget = null;
+    return fallbackTarget;
+  } // Keeps ordinary player combat unchanged whenever no local faction target is assigned.
+  function damageBanditCombatTarget(c, target, amount, fromX, fromY, knockbackPxS, opts = {}) {
+    const actorTarget = target && (
+      target.isBandit === true
+      || target.isPorakanekiHunter === true
+      || target.banditCompanion === true
+      || typeof target.creatureKey === 'string'
+    ); // Staged swings keep the actor classification even if the 5 Hz ecology pass changes c._chunkCombatTarget before impact.
+    if (actorTarget && typeof deps.damageCreature === 'function') {
+      return deps.damageCreature(target, amount, fromX, fromY, knockbackPxS, {
+        ...opts,
+        friendlyFire: true,
+        factionCombat: true,
+        attacker: c,
+      });
+    }
+    return deps.damagePlayer(amount, fromX, fromY, knockbackPxS, opts);
+  } // Bandit ability code is shared by bandit-vs-player and chunk-local actor-vs-actor fights.
+
   // Mirrors combat-quickattacks.js's getConditions(), but for a bandit
   // attacking the player instead of the player attacking a creature --
   // "behind" is recomputed from the player's own facing (player.angle)
@@ -650,7 +677,8 @@
   function banditQuickAttackConditions(c, targetPlayer) {
     const dxBP = c.x - targetPlayer.x, dyBP = c.y - targetPlayer.y;
     const distBP = Math.max(0.001, Math.hypot(dxBP, dyBP));
-    const forwardX = Math.cos(targetPlayer.angle || 0), forwardY = Math.sin(targetPlayer.angle || 0);
+    const targetFacing = Number.isFinite(Number(targetPlayer.angle)) ? Number(targetPlayer.angle) : (Number(targetPlayer.facing) || 0); // Creatures use facing; the player uses angle.
+    const forwardX = Math.cos(targetFacing), forwardY = Math.sin(targetFacing);
     const behindDot = forwardX * (dxBP / distBP) + forwardY * (dyBP / distBP);
     return {
       enemyStriking: false,
@@ -877,7 +905,7 @@
           // player's own combat-combo.js fix, which no longer tags a
           // swing by combo family (sweep=blunt/thrust=sharp) regardless
           // of the equipped weapon's real material.
-          deps.damagePlayer(damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
+          damageBanditCombatTarget(c, targetPlayer, damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
           window.AudioSystem?.playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId, sfxPitch, ['small', 'medium', 'large'][comboStep]);
         }
       },
@@ -935,7 +963,7 @@
         // 'sharp' regardless of the equipped weapon either.
         if (window.Combat?.meleeHit?.(c, targetPlayer, { rangePx, halfConeRad, yaw: c.facing, pitch: c._banditAimPitch || 0 })) {
           techHit = true;
-          deps.damagePlayer(damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
+          damageBanditCombatTarget(c, targetPlayer, damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
           window.AudioSystem?.playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId, undefined, tech.sourceText === 'no condition bonus' ? 'small' : 'huge');
         }
       },
@@ -995,7 +1023,7 @@
           rangePx, halfConeRad, yaw: c.facing, pitch: c._banditAimPitch || 0,
         })) {
           techHit = true;
-          deps.damagePlayer(damage, c.x, c.y, knockbackPxS, {
+          damageBanditCombatTarget(c, targetPlayer, damage, c.x, c.y, knockbackPxS, {
             tag: def.attackTag,
             heavy: true,
             afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag),
@@ -1051,7 +1079,7 @@
         // hardcodes 'sharp' regardless of weapon).
         spawnBanditTrailArc(c, rangePx, halfConeRad, aimAngle, aimPitch);
         if (window.Combat?.meleeHit?.(c, targetPlayer, { rangePx, halfConeRad, yaw: aimAngle, pitch: aimPitch })) {
-          deps.damagePlayer(damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
+          damageBanditCombatTarget(c, targetPlayer, damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
           window.AudioSystem?.playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId, undefined, 'large');
         }
       },
@@ -1406,6 +1434,9 @@
   }
 
   function updateBanditCombatAI(c, dt, targetPlayer, distToPlayer) {
+    targetPlayer = resolvedBanditCombatTarget(c, targetPlayer);
+    if (!targetPlayer || Number(targetPlayer.health) <= 0) return { aimAngle: c.facing || 0, moving: false };
+    distToPlayer = Math.hypot(targetPlayer.x - c.x, targetPlayer.y - c.y);
     const def = c.def, loadout = def.banditAbilityLoadout;
     _updateBanditLookAtTarget(c, dt, targetPlayer);
     const towardAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);

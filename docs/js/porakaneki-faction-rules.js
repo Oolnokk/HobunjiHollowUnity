@@ -168,9 +168,16 @@
     return entity?.isPorakanekiHunter === true && entity?._porakanekiPlannerControlled === true;
   }
 
+  function sharedEnemyNearby(entity) {
+    return window.PorakanekiCamps?.hasSharedEnemyNearby?.(entity) === true;
+  } // Same exact active-stream-chunk scope as the faction ecology runtime.
   function markPlayerAggression(entity, source = 'player hit') {
     if (!isNeutralPorakaneki(entity)) return false;
     const campId = campIdFor(entity);
+    if (sharedEnemyNearby(entity)) {
+      record(`${campId}: ignored player contact during shared-enemy crossfire (${source})`);
+      return false;
+    }
     if (!campAggressionOrigin.has(campId)) {
       campAggressionOrigin.set(campId, 'player');
       record(`${campId}: player initiated combat (${source})`);
@@ -338,6 +345,10 @@
       if (!previous || previous.health <= 0 || Number(entity.health) > 0 || countedDeaths.has(entity)) continue;
       countedDeaths.add(entity);
       const campId = campIdFor(entity);
+      if (sharedEnemyNearby(entity)) {
+        record(`${campId}: ignored Porakaneki death during shared-enemy crossfire`);
+        continue;
+      }
       const origin = campAggressionOrigin.get(campId);
       if (origin !== 'player' && origin !== 'porakaneki') {
         record(`${campId}: ignored Porakaneki death with no player/Porakaneki combat origin`);
@@ -433,7 +444,7 @@
   loadTuning();
 
   window.PorakanekiFactionRules = Object.freeze({
-    version: 2,
+    version: 3,
     canonicalizeNpcDatabaseInPlace,
     migrateLegacyRelationshipState: mergeLegacyRelationshipState,
     syncNow: () => refreshEntityState(porakanekiEntities()),
