@@ -112,6 +112,8 @@ const freshHarness = createHarness(freshContext); // Used to capture fresh place
 freshContext.window.WildTreasure.ensureZone(freshHarness.mapId);
 const freshState = freshContext.window.WildTreasure.serializeState()[freshHarness.mapId]; // Used to inspect the generated treasure coordinate.
 assert.equal(freshState.placements.length, 1, 'fresh scatter still creates the expected buried chest');
+assert.ok(freshHarness.treasurePersist.get(freshHarness.mapId).placements[0]._mesh, 'live treasure placement still keeps its runtime mesh for interaction');
+assert.equal(Object.prototype.hasOwnProperty.call(freshState.placements[0], '_mesh'), false, 'serialized treasure state strips runtime Three.js meshes');
 assert.deepEqual(
   { col: freshState.placements[0].col, row: freshState.placements[0].row },
   { col: 1, row: 0 },
