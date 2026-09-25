@@ -9430,7 +9430,8 @@
           // Shoulder movement is camera-relative: local up (-Y) is forward.
           return (-iy / length) > 0.35 && Math.abs(ix / length) < 0.85;
         }
-        const facing = player.angle;
+        const mountHeading = window.Mounts?.rideState === 'mounted' ? Number(window.Mounts?.heading) : NaN; // Used below so a mounted forward-dodge follows the carrier rather than independent rider look.
+        const facing = Number.isFinite(mountHeading) ? mountHeading : player.angle; // Used by the forward/side dodge tests below.
         const forward = (ix * Math.cos(facing) + iy * Math.sin(facing)) / length;
         const side = Math.abs(-ix * Math.sin(facing) + iy * Math.cos(facing)) / length;
         return forward > 0.35 && side < 0.85;

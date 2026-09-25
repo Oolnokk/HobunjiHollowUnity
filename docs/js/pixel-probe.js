@@ -1083,7 +1083,7 @@
     }
     const climbSafety = window.ClimbSystem?.debug; // Used to diagnose mounted-climb rejection without desktop developer tools.
     if (climbSafety) {
-      lines.push(`Climb safety: active=${climbSafety.playerClimbing} mount=${climbSafety.mountRideState} lastBlock=${climbSafety.lastBlockReason || 'none'}${climbSafety.lastBlockReason ? `/${climbSafety.lastBlockRideState}` : ''}`);
+      lines.push(`Climb safety: active=${climbSafety.playerClimbing} mount=${climbSafety.mountRideState} lastBlock=${climbSafety.lastBlockReason || 'none'}${climbSafety.lastBlockReason ? `/${climbSafety.lastBlockRideState}` : ''}${Number.isFinite(climbSafety.lastWallFacingAngle) ? ` wallFacing=${climbSafety.lastWallFacingSource || 'unknown'}:${(climbSafety.lastWallFacingAngle * 180 / Math.PI).toFixed(1)}°/${climbSafety.lastWallFacingCardinal || '?'}` : ''}`);
     }
     const creatureDeathDebug = window.CreatureDeath?.getDebug?.(); // Used to make interrupted lethal-hit recovery visible in copyable mobile probe reports.
     if (creatureDeathDebug?.lastRecovery) {

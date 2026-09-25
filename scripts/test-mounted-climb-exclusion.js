@@ -23,12 +23,19 @@ let mountRideState = 'mounted'; // Swapped to none below to prove normal on-foot
 let toast = null; // Captures mobile-visible rejection feedback.
 let startClimbLeapCalledWith = null;
 let startClimbLeapResult = true; // Flipped false below to exercise the dismount-required fallback when a leap can't actually start.
-context.window.Mounts = { startClimbLeap: (climbArg) => { startClimbLeapCalledWith = climbArg; return startClimbLeapResult; } };
+let mountHeading = 0; // Used by the regression below to keep the mount facing east while the rider looks elsewhere.
+context.window.Mounts = {
+  get rideState() { return mountRideState; },
+  get heading() { return mountHeading; },
+  startClimbLeap: (climbArg) => { startClimbLeapCalledWith = climbArg; return startClimbLeapResult; },
+};
 context.window.ClimbSystem.init({
   _isZoneArea: () => true,
   getCurrentArea: () => 'map_northern_cliffs',
   player,
-  facingCardinal: () => ({ x: 1, y: 0, name: 'east' }),
+  facingCardinal: angle => Math.abs(Math.cos(angle)) >= Math.abs(Math.sin(angle))
+    ? (Math.cos(angle) >= 0 ? { x: 1, y: 0, name: 'east' } : { x: -1, y: 0, name: 'west' })
+    : (Math.sin(angle) >= 0 ? { x: 0, y: 1, name: 'south' } : { x: 0, y: -1, name: 'north' }),
   getActiveGrid: () => grid,
   getActiveCols: () => 3,
   getActiveRows: () => 1,
@@ -43,8 +50,11 @@ context.window.ClimbSystem.init({
   setLastMoveAngle() {},
 });
 
+player.angle = Math.PI / 2; // Rider looks south; the mounted body still faces the east-hand cliff.
 const climb = context.window.ClimbSystem.getClimbTarget();
-assert(climb, 'the cliff geometry remains detectable while mounted so UI can explain why climbing is unavailable');
+assert(climb, 'mounted cliff detection follows mount heading even when independent rider look points elsewhere');
+assert.equal(context.window.ClimbSystem.debug.lastWallFacingSource, 'mount', 'debug reports that the mount heading owned the wall scan');
+assert.equal(context.window.ClimbSystem.debug.lastWallFacingCardinal, 'east', 'the mounted wall scan resolves the carrier-facing cardinal');
 assert.equal(climb.type, 'wall', 'this is the cliff/wall climb type, not a tree branch');
 
 // A wall (cliff) climb while steadily mounted becomes a scripted mount leap
@@ -85,6 +95,13 @@ assert.match(gameSource,
 assert.match(gameSource,
   /getMountRideState: \(\) => window\.Mounts\?\.rideState \?\? 'none'/,
   'ClimbSystem receives the live mount state used by its runtime safety gate');
+assert.match(mountSource, /get heading\(\) \{ return mountAngle; \}/,
+  'Mounts exposes its authoritative body heading for climb and dodge direction checks');
+assert.match(gameSource,
+  /function dodgeInputIsForward\(\)[\s\S]{0,1400}window\.Mounts\?\.rideState === 'mounted'[\s\S]{0,300}window\.Mounts\?\.heading[\s\S]{0,300}Number\.isFinite\(mountHeading\) \? mountHeading : player\.angle/,
+  'forward-dodge climb gating follows mount heading instead of independent rider look while mounted');
+assert.match(pixelProbeSource, /wallFacing=/,
+  'Pixel Probe exposes which facing authority and cardinal the wall scan used');
 assert.match(pixelProbeSource, /Climb safety: active=/,
   'Pixel Probe exposes climb/mount exclusion state on mobile');
 
