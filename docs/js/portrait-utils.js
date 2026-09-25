@@ -430,7 +430,7 @@ function _resolveTargetHueSat(color, referenceHex) {
   const cacheKey = ref.hex + '|' + filter;
   if (_TARGET_HUESAT_CACHE.has(cacheKey)) return _TARGET_HUESAT_CACHE.get(cacheKey);
   if (!_filterSimCanvas) _filterSimCanvas = Object.assign(document.createElement('canvas'), { width: 1, height: 1 });
-  const ctx = _filterSimCanvas.getContext('2d');
+  const ctx = _filterSimCanvas.getContext('2d', { willReadFrequently: true }); // Reused swatch probe is read back for every uncached tint, so request a CPU-readable context on first acquisition.
   ctx.clearRect(0, 0, 1, 1);
   ctx.filter = filter;
   ctx.fillStyle = `rgb(${ref.r},${ref.g},${ref.b})`;
@@ -467,7 +467,7 @@ function _resolveTargetRgbColor(color, referenceHex) {
   const cacheKey = ref.hex + '|' + filter;
   if (_TARGET_RGB_CACHE.has(cacheKey)) return _TARGET_RGB_CACHE.get(cacheKey);
   if (!_filterSimCanvas) _filterSimCanvas = Object.assign(document.createElement('canvas'), { width: 1, height: 1 });
-  const ctx = _filterSimCanvas.getContext('2d');
+  const ctx = _filterSimCanvas.getContext('2d', { willReadFrequently: true }); // Reused swatch probe is read back for every uncached tint, so request a CPU-readable context on first acquisition.
   ctx.clearRect(0, 0, 1, 1);
   ctx.filter = filter;
   ctx.fillStyle = `rgb(${ref.r},${ref.g},${ref.b})`;
@@ -532,7 +532,7 @@ function getHueSatFillCanvas(img, sourceKey, tint) {
     width: img.naturalWidth || img.width,
     height: img.naturalHeight || img.height,
   });
-  const offCtx = canvas.getContext('2d');
+  const offCtx = canvas.getContext('2d', { willReadFrequently: true }); // This one-shot tint canvas is immediately read back before being cached.
   offCtx.drawImage(img, 0, 0);
   const imageData = offCtx.getImageData(0, 0, canvas.width, canvas.height);
   const data = imageData.data;
@@ -570,7 +570,7 @@ function getShadeFillCanvas(img, sourceKey, tint) {
     width: img.naturalWidth || img.width,
     height: img.naturalHeight || img.height,
   });
-  const offCtx = canvas.getContext('2d');
+  const offCtx = canvas.getContext('2d', { willReadFrequently: true }); // This one-shot tint canvas is immediately read back before being cached.
   offCtx.drawImage(img, 0, 0);
   const imageData = offCtx.getImageData(0, 0, canvas.width, canvas.height);
   const data = imageData.data;
@@ -1234,7 +1234,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     const blinkUrl = blinkUrlFor(layer); // Optional closed-eye variant for this anatomical overlay; null means the layer stays unchanged during blinks.
     if (blinkUrl) blinkOverlayUrlsByBase.set(layer.url, blinkUrl);
   }
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d', { willReadFrequently: true }); // PNGPlaneAvatar repeatedly scans completed portrait canvases for alpha bounds/skinning, so the very first context acquisition must opt into readback.
   // Scale the context when the canvas pixel dimensions differ from the logical render
   // size (e.g. 220×220 cinematic canvases vs the 200×200 logical coordinate space).
   // This keeps all drawing helpers working in the same PORTRAIT_CW×PORTRAIT_CH space
