@@ -67,6 +67,17 @@
     return [viewYawWorld + Math.PI / 2, viewYawWorld - Math.PI / 2];
   }
 
+  function cameraRelativeCreaturePerpsAtWorldPosition(worldPosition, cameraPosition) {
+    const worldX = Number(worldPosition?.x), worldZ = Number(worldPosition?.z);
+    const cameraX = Number(cameraPosition?.x), cameraZ = Number(cameraPosition?.z);
+    if (![worldX, worldZ, cameraX, cameraZ].every(Number.isFinite)) return null;
+    const dx = cameraX - worldX;
+    const dz = cameraZ - worldZ;
+    if (Math.hypot(dx, dz) < 1e-8) return null;
+    const viewYawWorld = Math.atan2(dx, dz);
+    return [viewYawWorld, viewYawWorld + Math.PI];
+  }
+
   function liveCameraPosition() {
     const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
     if (cameraSample && now - cameraSampleAtMs < 4) return cameraSample;
@@ -139,13 +150,18 @@
     const cameraPosition = entry ? liveCameraPosition() : null;
     const worldPosition = entry ? worldPositionForSubject(entry.subject) : null;
     if (!entry || !cameraPosition || !worldPosition) return fallbackPerps;
-    const resolved = cameraRelativePerpsAtWorldPosition(worldPosition, cameraPosition);
+    const creaturePlaneConvention = entry.kind !== 'npc'
+      || !!(entry.subject?.animalDef && entry.subject?.animalAvatarRef); // Used below so side-view animal cards keep their own edge-on axis even when represented by an NPC walker.
+    const resolved = creaturePlaneConvention
+      ? cameraRelativeCreaturePerpsAtWorldPosition(worldPosition, cameraPosition)
+      : cameraRelativePerpsAtWorldPosition(worldPosition, cameraPosition);
     if (!resolved) return fallbackPerps;
 
     const mode = entry.kind === 'npc' ? 'npc-world-camera-bearing' : `${entry.kind}-world-camera-bearing`;
     state.screenViewPerspectiveDebug = {
       mode,
       subjectKind: entry.kind,
+      planeConvention: creaturePlaneConvention ? 'creature-side-view' : 'portrait-front-view',
       cameraPosition: { x: cameraPosition.x, y: cameraPosition.y, z: cameraPosition.z },
       subjectWorldPosition: { x: Number(worldPosition.x), y: Number(worldPosition.y) || 0, z: Number(worldPosition.z) },
       cameraPerpsRad: resolved.slice(),
@@ -385,6 +401,7 @@
     perpClamp,
     clampedRotation,
     cameraRelativePerpsAtWorldPosition,
+    cameraRelativeCreaturePerpsAtWorldPosition,
     perspectivePerpsForState,
     creatureDeadzoneTarget,
     creatureSnapSwayTarget,

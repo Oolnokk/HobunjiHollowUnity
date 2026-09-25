@@ -75,7 +75,14 @@ const edgeCreature = {
   avatarRef: { group: { position: { x: 10, y: 0, z: 0 } } },
 };
 context.Combat = { deps: { hostileObjects: [edgeCreature], companionObjects: [] } };
-const creatureFacing = Math.PI / 4;
+const creaturePerspectivePerps = context.PerpRotation.cameraRelativeCreaturePerpsAtWorldPosition(
+  edgeCreature.avatarRef.group.position,
+  context.__climbDebug.getCameraDebug().camPos,
+); // Used below to verify the side-view animal convention independently of the live resolver.
+assert.ok(creaturePerspectivePerps, 'world-position creature perps resolve for a valid animal/camera pair');
+assert.ok(Math.abs(angleDiff(creaturePerspectivePerps[0], -Math.PI / 4)) < 1e-9,
+  'side-view animal edge-on angle follows the direct creature-to-camera bearing instead of the portrait quarter-turn');
+const creatureFacing = -Math.PI / 4; // Used below as the animal card's true edge-on direction for this perspective camera position.
 const creatureSnap = context.PerpRotation.creatureSnapSwayTarget(
   creatureState,
   creatureFacing,
@@ -89,9 +96,29 @@ assert.ok(Number.isFinite(creatureSnap.target),
 assert.ok(creatureState.snapSide === 1 || creatureState.snapSide === -1,
   'a fresh stationary creature state initializes snapSide to a real boundary side');
 assert.ok(Math.abs(angleDiff(creatureSnap.target, creatureFacing)) >= context.PerpRotation.CREATURE_PERP_DEAD_RAD - 1e-9,
-  'edge-of-screen creature snap mode clamps around the creature-to-camera bearing');
+  'edge-of-screen creature snap mode clamps around the side-view animal edge-on bearing');
 assert.equal(creatureState.screenViewPerspectiveDebug?.subjectKind, 'creature',
   'creature screen-view diagnostics identify the resolved live creature');
+assert.equal(creatureState.screenViewPerspectiveDebug?.planeConvention, 'creature-side-view',
+  'creature diagnostics record the side-view plane convention used by the perspective solver');
+
+const safeCreatureState = {}; // Used below to catch the old 90-degree regression, where a broadside animal was incorrectly treated as edge-on.
+const safeCreature = {
+  perpState: safeCreatureState,
+  avatarRef: { group: { position: { x: 10, y: 0, z: 0 } } },
+}; // Registered below so the shared resolver can recover this creature's perspective position.
+context.Combat.deps.hostileObjects = [safeCreature];
+const creatureBroadsideFacing = Math.PI / 4; // Used below as the orientation that should remain fully visible from this camera bearing.
+const creatureBroadside = context.PerpRotation.creatureSnapSwayTarget(
+  safeCreatureState,
+  creatureBroadsideFacing,
+  defaultCameraPerps,
+  context.PerpRotation.CREATURE_PERP_DEAD_RAD,
+  0,
+  false,
+);
+assert.ok(Math.abs(angleDiff(creatureBroadside.target, creatureBroadsideFacing)) < 1e-9,
+  'a broadside animal is not pushed away by the portrait/front-facing deadzone axis');
 
 // A fresh moving state is also uninitialized. It should choose its first side
 // without falsely reporting that initial choice as an already-established flip.
@@ -119,7 +146,7 @@ const edgeFarmAnimal = {
   avatarRef: { group: { position: { x: -10, y: 0, z: 0 } } },
 };
 context.FarmAnimals.init({ animalObjects: new Set([edgeFarmAnimal]), worldObjects: new Map() });
-const farmFacing = Math.PI * 3 / 4;
+const farmFacing = Math.PI / 4; // Used below as this farm animal card's direct edge-on bearing to the camera.
 const farmClamp = context.PerpRotation.perpClamp(
   farmState,
   farmFacing,
@@ -130,6 +157,29 @@ assert.ok(Math.abs(angleDiff(farmClamp.effectiveTarget, farmFacing)) >= context.
   'edge-of-screen farm livestock clamps around its own camera bearing');
 assert.equal(farmState.pixelProbeDebug?.subjectKind, 'farm-animal',
   'farm livestock keeps its screen-view subject kind in the existing pixel-probe debug record');
+assert.equal(farmState.screenViewPerspectiveDebug?.planeConvention, 'creature-side-view',
+  'farm livestock uses the same side-view perspective convention as free wildlife');
+
+const animalNpcState = {}; // Used below to ensure animal NPC walkers do not inherit the ordinary humanoid NPC quarter-turn.
+const animalNpcWalker = {
+  perpState: animalNpcState,
+  root: { position: { x: 10, y: 0, z: 0 } },
+  animalDef: {},
+  animalAvatarRef: {},
+}; // Registered below through the same NPC walker list used by schedule-driven animal actors.
+context._npcWalkers = [animalNpcWalker];
+context.Combat.deps.hostileObjects = [];
+const animalNpcFacing = -Math.PI / 4; // Used below as the side-view card's actual edge-on bearing.
+const animalNpcClamp = context.PerpRotation.perpClamp(
+  animalNpcState,
+  animalNpcFacing,
+  defaultCameraPerps,
+  context.PerpRotation.CREATURE_PERP_DEAD_RAD,
+);
+assert.ok(Math.abs(angleDiff(animalNpcClamp.effectiveTarget, animalNpcFacing)) >= context.PerpRotation.CREATURE_PERP_DEAD_RAD - 1e-9,
+  'animal NPC walkers keep the creature side-view deadzone despite living in the NPC registry');
+assert.equal(animalNpcState.screenViewPerspectiveDebug?.planeConvention, 'creature-side-view',
+  'animal NPC diagnostics report the creature side-view convention');
 
 const gameSource = fs.readFileSync('docs/game.js', 'utf8');
 assert.match(gameSource, /target\.rotY\)\) this\.applyFacingDeadzone/, 'stationary schedule facings use the shared clamp');
