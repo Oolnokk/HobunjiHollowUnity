@@ -432,7 +432,7 @@ const vm = require('node:vm');
     { name: 'autosave-latest.json', text: async () => JSON.stringify(importedAuto) },
   ]);
   assert.equal(importResult.ok, true, 'picker-free recovery import accepts checkpoint JSON files');
-  assert.deepEqual(importResult.imported.sort(), ['auto', 'manual'], 'picker-free recovery import maps canonical recovery filenames to the correct slots');
+  assert.equal(Array.from(importResult.imported).sort().join(','), 'auto,manual', 'picker-free recovery import maps canonical recovery filenames to the correct slots');
   assert.equal(JSON.parse(store.get('hobunjiSaveCheckpoint.manual.v1')).reason, 'drag-import-manual', 'imported Manual Save becomes available in browser recovery history');
   assert.equal(JSON.parse(store.get('hobunjiSaveCheckpoint.auto.v1')).reason, 'drag-import-auto', 'imported Latest Autosave becomes available in browser recovery history');
   assert.equal(window.__hobunjiSaveCheckpointDebug.snapshot().emergencyRecoveryImportActive, true, 'diagnostics expose picker-free emergency recovery mode');
