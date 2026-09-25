@@ -205,7 +205,7 @@
   <!-- Generic post-generation locale placement (window.TemporaryLocales) —
        scans an already-generated wilderness zone for a site instead of
        reserving one before generation; used by bandit camps. -->
-  <script src="js/temporary-locales.js?v=20260725a"></script>
+  <script src="js/temporary-locales.js?v=20260924chunkecology1"></script>
   <!-- Local database overrides (window.LocalDBOverrides) — lets docs/tools/
   <!-- Banubu's quest dialogue defaults load before LocalDBOverrides so the
        editor/runtime database composition can replace his generic chatter. -->
@@ -272,14 +272,14 @@
        (at fight time, not load time), so exact ordering against those two
        doesn't matter as long as both exist by the time bandits actually
        spawn. -->
-  <script src="js/combat/combat-bandit.js?v=20260924poracolor2"></script>
+  <script src="js/combat/combat-bandit.js?v=20260924chunkecology1"></script>
   <script src="js/combat/combat-enemy-dodge.js?v=20260918collision2"></script>
   <!-- Bandit camps (zone adapter, tent props, camp lifecycle, companion
        perception, corpse loot) — window.BanditCamps. Calls
        window.BanditCombat.makeEntity/loadGangConfig/loadCampLocaleDefs, so
        must load after combat-bandit.js above, and before game.js, which
        calls window.BanditCamps.init(...) during its own setup. -->
-  <script src="js/bandit-camps.js?v=20260924authoredtent2"></script>
+  <script src="js/bandit-camps.js?v=20260924chunkecology1"></script>
   <!-- Bounty board (hunt a named bandit captain, destroy his camp) —
        window.BountyBoard. Reads window.BanditCamps/window.BanditCombat
        directly, so must load after both above, and before game.js, which
@@ -512,7 +512,7 @@
        at call time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.WildlifeSpawn.init(...) during its own setup. -->
-  <script src="js/wildlife-spawn.js?v=20260923review1"></script>
+  <script src="js/wildlife-spawn.js?v=20260924chunkecology1"></script>
   <!-- Town/zone building mesh spawning + decorative furniture/prop spawning
        (window.TownZoneBuildings) — reads globally-loaded HousePieceGen/
        WallBuilder/BuildingDoor/window.ProceduralFurniture/window.Music at
