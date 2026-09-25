@@ -92,6 +92,32 @@ assert.equal(clearingEntity.stamina, 0, 'regular Stamina is empty when black Sta
 ResourceSystem.tick(clearingEntity, 0.25);
 assert.ok(clearingEntity.stamina > 0 && clearingEntity.stamina < clearingEntity.maxStamina, 'ordinary Stamina starts regenerating from zero on the following tick');
 
+const nonlethalHealthAfflictionEntity = {
+  health: 100, maxHealth: 100, stamina: 100, maxStamina: 100,
+  footing: 100, maxFooting: 100, exhaustion: { active: false, blackStamina: 100 },
+  afflictions: Object.fromEntries(Object.keys(ResourceSystem.AFFLICTIONS).map(id => [id, 0])),
+  lastAttackReceivedAt: 0,
+}; // Used to prove simultaneous Health-draining afflictions can consume the whole visible bar without becoming a kill source.
+ResourceSystem.initEntity(nonlethalHealthAfflictionEntity);
+for (const id of ['bleedingHealth', 'burningHealth', 'poisonedHealth']) {
+  ResourceSystem.addAffliction(nonlethalHealthAfflictionEntity, id, 100);
+}
+ResourceSystem.tick(nonlethalHealthAfflictionEntity, 100, { healthRegenPerSec: 0 });
+assert.equal(nonlethalHealthAfflictionEntity.health, 1, 'Health-draining afflictions stop at 1 HP even when their combined buildup covers the entire Health bar');
+
+const congealedCapEntity = {
+  health: 100, maxHealth: 100, stamina: 100, maxStamina: 100,
+  footing: 100, maxFooting: 100, exhaustion: { active: false, blackStamina: 100 },
+  afflictions: Object.fromEntries(Object.keys(ResourceSystem.AFFLICTIONS).map(id => [id, 0])),
+}; // Used to pin the separate rule that max-Health afflictions may reduce capacity to 1 but never 0.
+ResourceSystem.initEntity(congealedCapEntity);
+ResourceSystem.addAffliction(congealedCapEntity, 'congealedHealth', 100);
+assert.equal(ResourceSystem.getEffectiveMax(congealedCapEntity, 'health'), 1, 'Congealed Health cannot reduce effective maximum Health below 1');
+ResourceSystem.enforceCaps(congealedCapEntity);
+assert.equal(congealedCapEntity.health, 1, 'cap enforcement cannot turn a full Congealed Health bar into an outright death');
+assert.equal(ResourceSystem.applyDamage(congealedCapEntity, 1, { reason: 'direct-hit-regression' }), 1, 'ordinary direct damage remains lethal at the affliction floor');
+assert.equal(congealedCapEntity.health, 0, 'the 1 HP floor belongs to afflictions, not to direct damage');
+
 const afflictedEntity = {
   health: 100, maxHealth: 100, stamina: 47, maxStamina: 100,
   footing: 100, maxFooting: 100, exhaustion: { active: true, blackStamina: 60 },
