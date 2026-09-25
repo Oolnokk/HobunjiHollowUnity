@@ -54,6 +54,9 @@ assert(reloadHandoffIndex > bridgeIndex, 'folder/onboarding bridge is installed 
 
 assert(primary.includes('prepareBeforeOnboarding'), 'primary layer exposes pre-onboarding folder reconciliation');
 assert(primary.includes("lastUiAction = 'startup-auto-load-folder'"), 'remembered ready folders automatically load before save selection');
+assert(primary.includes('data-folder-primary-recovery'), 'startup gate exposes Save Recovery when a remembered folder cannot be loaded safely');
+assert(primary.includes('openRecoveryModal'), 'startup recovery action opens the checkpoint recovery UI before onboarding');
+assert(primary.includes('const initialError = lastUiError || status.lastError'), 'startup gate shows the folder-load failure immediately instead of a blank reconnect screen');
 assert(bridge.includes('prepareBeforeOnboarding'), 'onboarding init waits for primary folder reconciliation');
 assert(bridge.includes('refreshFromStorage'), 'folder restore can rebuild save selection in place');
 assert(!bridge.includes('location.reload'), 'in-place onboarding restore bridge never reloads the site');
