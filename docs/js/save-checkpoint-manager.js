@@ -19,6 +19,14 @@
     autoPrevious: AUTO_PREVIOUS_KEY,
     preRestore: PRE_RESTORE_KEY,
   });
+  const RECOVERY_IMPORT_FILES = Object.freeze({ // Filenames accepted from an exported recovery folder/ZIP without using File System Access.
+    'manual.json': 'manual',
+    'campfire.json': 'campfire',
+    'autosave-latest.json': 'auto',
+    'autosave-previous.json': 'autoPrevious',
+    'pre-restore.json': 'preRestore',
+  });
+  const EMERGENCY_IMPORT_SESSION_KEY = 'hobunjiEmergencyRecoveryImported.v1';
   const CHECKPOINT_VERSION = 1;
   const AUTO_INTERVAL_MS = 30000;
   const AUTO_GRACE_MS = 45000;
@@ -45,6 +53,10 @@
   let lastError = ''; // Latest checkpoint/recovery failure shown in diagnostics.
   let lastIntegrityWarning = ''; // Latest suspicious-state reason shown in diagnostics.
   let lastRecoveryReadErrors = {}; // Per-slot folder-read failures distinguish "could not read" from a genuinely absent checkpoint.
+  let emergencyRecoveryImportActive = (() => { // Survives a same-tab reload long enough to keep recovery away from a wedged folder handle.
+    try { return window.sessionStorage?.getItem?.(EMERGENCY_IMPORT_SESSION_KEY) === '1'; } catch { return false; }
+  })();
+  let emergencyRecoveryImportSummary = emergencyRecoveryImportActive ? 'Imported recovery history is active.' : '';
 
   function snapshotApi() {
     return window.HobunjiSaveSnapshot || null;
@@ -76,6 +88,100 @@
 
   function safeValidateRecord(record) {
     try { return validateRecord(record); } catch { return null; }
+  }
+
+  function basename(value) {
+    return String(value || '').replace(/\\/g, '/').split('/').filter(Boolean).pop()?.toLowerCase() || '';
+  }
+
+  async function inflateZipEntry(bytes, method) {
+    if (method === 0) return bytes; // Stored ZIP entry.
+    if (method !== 8) throw new Error(`Unsupported ZIP compression method ${method}.`);
+    if (typeof DecompressionStream !== 'function') throw new Error('This browser cannot decompress ZIP recovery files. Extract the ZIP and drop the JSON files instead.');
+    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+    return new Uint8Array(await new Response(stream).arrayBuffer());
+  }
+
+  async function recoveryFilesFromZip(file) {
+    const buffer = await file.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    const view = new DataView(buffer);
+    const minOffset = Math.max(0, bytes.length - 65557); // ZIP EOCD may be followed by a comment up to 65535 bytes.
+    let eocd = -1;
+    for (let offset = bytes.length - 22; offset >= minOffset; offset--) {
+      if (view.getUint32(offset, true) === 0x06054b50) { eocd = offset; break; }
+    }
+    if (eocd < 0) throw new Error('Could not find the ZIP directory.');
+    const entryCount = view.getUint16(eocd + 10, true);
+    let centralOffset = view.getUint32(eocd + 16, true);
+    const decoder = new TextDecoder();
+    const entries = [];
+
+    for (let index = 0; index < entryCount; index++) {
+      if (view.getUint32(centralOffset, true) !== 0x02014b50) throw new Error('Recovery ZIP directory is malformed.');
+      const flags = view.getUint16(centralOffset + 8, true);
+      const method = view.getUint16(centralOffset + 10, true);
+      const compressedSize = view.getUint32(centralOffset + 20, true);
+      const filenameLength = view.getUint16(centralOffset + 28, true);
+      const extraLength = view.getUint16(centralOffset + 30, true);
+      const commentLength = view.getUint16(centralOffset + 32, true);
+      const localOffset = view.getUint32(centralOffset + 42, true);
+      const filename = decoder.decode(bytes.slice(centralOffset + 46, centralOffset + 46 + filenameLength));
+      centralOffset += 46 + filenameLength + extraLength + commentLength;
+      if (filename.endsWith('/') || !RECOVERY_IMPORT_FILES[basename(filename)]) continue;
+      if (flags & 0x1) throw new Error('Encrypted recovery ZIP files are not supported.');
+      if (view.getUint32(localOffset, true) !== 0x04034b50) throw new Error(`Recovery ZIP entry "${filename}" is malformed.`);
+      const localNameLength = view.getUint16(localOffset + 26, true);
+      const localExtraLength = view.getUint16(localOffset + 28, true);
+      const dataOffset = localOffset + 30 + localNameLength + localExtraLength;
+      const raw = bytes.slice(dataOffset, dataOffset + compressedSize);
+      const inflated = await inflateZipEntry(raw, method);
+      const text = decoder.decode(inflated);
+      entries.push({ name: filename, text: async () => text });
+    }
+    return entries;
+  }
+
+  async function importRecoveryFiles(files) {
+    const sources = [];
+    for (const file of Array.from(files || [])) {
+      if (!file) continue;
+      if (basename(file.name).endsWith('.zip')) {
+        sources.push(...await recoveryFilesFromZip(file));
+      } else {
+        sources.push(file);
+      }
+    }
+
+    const imported = [];
+    const errors = [];
+    for (const file of sources) {
+      const filename = basename(file.webkitRelativePath || file.name);
+      const slot = RECOVERY_IMPORT_FILES[filename];
+      if (!slot) continue;
+      try {
+        const parsed = JSON.parse(await file.text());
+        const record = safeValidateRecord(parsed);
+        if (!record) throw new Error('not a valid Hobunji recovery checkpoint');
+        writeSlot(slot, record);
+        imported.push(slot);
+      } catch (error) {
+        errors.push(`${filename}: ${String(error?.message || error)}`);
+      }
+    }
+    if (!imported.length) {
+      throw new Error(errors.length
+        ? `No usable checkpoints were imported. ${errors.join(' | ')}`
+        : 'No recognized recovery checkpoints were found. Drop the recovery ZIP or the JSON files inside its recovery folder.');
+    }
+
+    emergencyRecoveryImportActive = true;
+    emergencyRecoveryImportSummary = `Imported ${[...new Set(imported)].length} recovery checkpoint(s) without using the stuck folder handle.`;
+    lastRecoveryReadErrors = {};
+    lastAction = 'recovery-files-imported';
+    lastError = errors.join('; ');
+    try { window.sessionStorage?.setItem?.(EMERGENCY_IMPORT_SESSION_KEY, '1'); } catch {}
+    return { ok: true, imported: [...new Set(imported)], errors };
   }
 
   function readRecord(key) {
@@ -607,8 +713,24 @@
     let preRestore = null;
     try {
       if (!record?.snapshot) throw new Error('That recovery checkpoint is unavailable.');
-      preRestore = await preservePreRestore();
       const restoredSnapshot = sanitizeRecoverySnapshot(record.snapshot); // Used for both browser apply and folder write so legacy runtime-only mesh payloads cannot re-enter persistence.
+
+      if (emergencyRecoveryImportActive) {
+        try {
+          const browserBefore = snapshotApi()?.capture?.({ strict: true }) || null;
+          if (browserBefore) writeSlot('preRestore', createRecord('pre-restore', browserBefore, 'before-emergency-import-browser', Date.now()));
+        } catch {} // A broken browser fallback must not block a known-good imported checkpoint.
+        snapshotApi().apply(restoredSnapshot);
+        try { await folderApi()?.forget?.(); } catch {} // Disconnect only the browser's wedged handle; never modify the selected disk folder.
+        try { window.sessionStorage?.setItem?.('hobunjiFolderPrimarySkipOnce', 'emergency-recovery-import'); } catch {}
+        restoresApplied++;
+        lastAction = `restored-imported-${record.kind || 'checkpoint'}`;
+        lastError = '';
+        setTimeout(() => location.reload(), 0);
+        return { ok: true, browserOnly: true };
+      }
+
+      preRestore = await preservePreRestore();
 
       if (folderRecoveryAvailable()) {
         let restoreWriteError = '';
@@ -659,6 +781,20 @@
   }
 
   async function recoveryChoices() {
+    if (emergencyRecoveryImportActive) {
+      return {
+        choices: [
+          { record: readSlot('manual'), title: 'Manual Save', note: 'Imported recovery checkpoint; the stuck primary folder is not being read.', readError: '' },
+          { record: readSlot('campfire'), title: 'Campfire Save', note: 'Imported recovery checkpoint; the stuck primary folder is not being read.', readError: '' },
+          { record: readSlot('auto'), title: 'Latest Autosave', note: 'Imported recovery checkpoint; the stuck primary folder is not being read.', readError: '' },
+          { record: readSlot('autoPrevious'), title: 'Earlier Autosave', note: 'Imported recovery checkpoint; the stuck primary folder is not being read.', readError: '' },
+          { record: readSlot('preRestore'), title: 'Before Last Restore', note: 'Imported recovery checkpoint; the stuck primary folder is not being read.', readError: '' },
+        ],
+        warnings: [emergencyRecoveryImportSummary || 'Imported recovery history is active. The primary folder has not been touched.'],
+        imported: true,
+      };
+    }
+
     let currentFolder = null;
     let currentReadError = '';
     const warnings = [];
@@ -693,11 +829,61 @@
   }
 
   function recoveryHandleNeedsReselect() {
+    if (emergencyRecoveryImportActive) return false;
     const status = folderApi()?.getStatus?.();
-    if (!status?.folderName || status?.recoveryHandleFresh) return false;
-    return status.state === 'error'
-      || String(status.lastAction || '').includes('corrupt')
-      || Boolean(status.lastError); // Do not launch uncancellable File System Access reads against a remembered handle already known to be unhealthy.
+    return Boolean(status?.folderName && !status?.recoveryHandleFresh); // Recovery never probes a directory handle resurrected from IndexedDB; the user must freshly select it in this page session first.
+  }
+
+  function appendEmergencyImportControls(panel, statusTarget) {
+    const box = document.createElement('div'); // Drag/drop bypasses Opera's wedged showDirectoryPicker state entirely.
+    box.setAttribute('data-recovery-file-import', '');
+    Object.assign(box.style, {
+      border: '1px dashed #7fa2b5', borderRadius: '9px', padding: '12px', margin: '8px 0 12px',
+      background: 'rgba(66,100,118,.15)', color: '#dbeaf2', fontSize: '12px', lineHeight: '1.45',
+    });
+    box.innerHTML = '<strong>Emergency import (no folder picker)</strong><br>Drag your recovery ZIP here, or drag the JSON files from its <code>recovery</code> folder. This does not read or modify the stuck Primary Save Folder.';
+
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.multiple = true;
+    input.accept = '.zip,.json,application/zip,application/json';
+    input.setAttribute('data-recovery-file-input', '');
+    input.style.display = 'none';
+
+    const chooseFiles = document.createElement('button');
+    chooseFiles.type = 'button';
+    chooseFiles.textContent = 'Choose Recovery ZIP / JSON';
+    Object.assign(chooseFiles.style, { marginTop: '9px', padding: '7px 10px', borderRadius: '7px', border: '1px solid #708c9b', background: '#20333d', color: '#edf7fb', cursor: 'pointer' });
+    chooseFiles.addEventListener('click', () => {
+      try { input.click(); }
+      catch (error) { if (statusTarget) statusTarget.textContent = `File chooser could not open: ${String(error?.message || error)}. Drag the ZIP onto this box instead.`; }
+    });
+
+    const handleFiles = async files => {
+      box.style.opacity = '0.7';
+      if (statusTarget) statusTarget.textContent = 'Importing recovery checkpoints…';
+      try {
+        const result = await importRecoveryFiles(files);
+        if (statusTarget) statusTarget.textContent = `${emergencyRecoveryImportSummary}${result.errors.length ? ' Some files were skipped: ' + result.errors.join(' | ') : ''}`;
+        openRecoveryModal();
+      } catch (error) {
+        box.style.opacity = '1';
+        if (statusTarget) statusTarget.textContent = `Could not import recovery files: ${String(error?.message || error)}`;
+      }
+    };
+
+    input.addEventListener('change', () => { if (input.files?.length) handleFiles(input.files); });
+    box.addEventListener('dragenter', event => { event.preventDefault(); box.style.borderStyle = 'solid'; });
+    box.addEventListener('dragover', event => { event.preventDefault(); if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'; });
+    box.addEventListener('dragleave', event => { event.preventDefault(); box.style.borderStyle = 'dashed'; });
+    box.addEventListener('drop', event => {
+      event.preventDefault();
+      box.style.borderStyle = 'dashed';
+      if (event.dataTransfer?.files?.length) handleFiles(event.dataTransfer.files);
+    });
+    box.append(chooseFiles, input);
+    panel.appendChild(box);
+    return box;
   }
 
   async function openRecoveryModal() {
@@ -722,7 +908,7 @@
       const loading = panel.querySelector('[data-recovery-loading]');
       const status = folderApi()?.getStatus?.() || {};
       if (loading) {
-        loading.textContent = 'The remembered save-folder handle is already in an error state. Recovery will not read it again because a hung filesystem request cannot be cancelled.';
+        loading.textContent = 'Recovery will not read the remembered folder handle from a previous page session. Select the folder again, or use Emergency Import below if Opera says a file picker is already active.';
         Object.assign(loading.style, { color: '#ffd39a', whiteSpace: 'pre-wrap', lineHeight: '1.45' });
       }
       const detail = document.createElement('div');
@@ -759,6 +945,7 @@
         }
       });
       panel.appendChild(choose);
+      appendEmergencyImportControls(panel, detail);
 
       const close = document.createElement('button');
       close.type = 'button';
@@ -784,7 +971,8 @@
       Object.assign(warning.style, { fontSize: '11px', lineHeight: '1.45', color: '#ffd39a', marginBottom: '10px', whiteSpace: 'pre-wrap' });
       panel.appendChild(warning);
 
-      if (typeof folderApi()?.chooseRecoveryFolder === 'function') {
+      appendEmergencyImportControls(panel, warning);
+      if (!recovery.imported && typeof folderApi()?.chooseRecoveryFolder === 'function') {
         const retry = document.createElement('button');
         retry.type = 'button';
         retry.setAttribute('data-recovery-reselect-folder', '');
@@ -824,18 +1012,21 @@
       Object.assign(note.style, { fontSize: '11px', color: '#81939e', marginTop: '3px' });
       const button = document.createElement('button');
       button.type = 'button';
-      button.textContent = choice.current ? 'Current' : (record ? 'Restore' : (choice.readError ? 'Read failed' : 'Unavailable'));
+      button.textContent = choice.current ? 'Current' : (record ? (recovery.imported ? 'Restore to Browser' : 'Restore') : (choice.readError ? 'Read failed' : 'Unavailable'));
       button.disabled = choice.current || !record;
       Object.assign(button.style, { marginTop: '8px', padding: '7px 11px', borderRadius: '7px', border: '1px solid #7f9e88', background: '#294b32', color: '#effff2', cursor: button.disabled ? 'default' : 'pointer' });
       button.addEventListener('click', async () => {
         if (!record || choice.current) return;
-        if (!confirm(`Restore ${choice.title} from ${fmtTime(record)}? The current save will first be preserved as “Before Last Restore.”`)) return;
+        const restorePrompt = recovery.imported
+          ? `Restore ${choice.title} from ${fmtTime(record)} to the browser save? The stuck Primary Save Folder will be disconnected in this browser and its disk files will be left untouched.`
+          : `Restore ${choice.title} from ${fmtTime(record)}? The current save will first be preserved as “Before Last Restore.”`;
+        if (!confirm(restorePrompt)) return;
         button.disabled = true;
         button.textContent = 'Restoring…';
         const result = await applyRecord(record);
         if (!result.ok) {
           button.disabled = false;
-          button.textContent = 'Restore';
+          button.textContent = recovery.imported ? 'Restore to Browser' : 'Restore';
           alert(`Could not restore checkpoint:\n${result.error}`);
         }
       });
@@ -935,6 +1126,7 @@
     evaluateSnapshotForFolderWrite,
     onFolderSnapshotWritten,
     syncRecoveryMirrorsFromFolder,
+    importRecoveryFiles,
     restoreManual: () => applyRecord(readSlot('manual')),
     restoreCampfire: () => applyRecord(readSlot('campfire')),
     restoreLatestAuto: () => applyRecord(readSlot('auto')),
@@ -953,6 +1145,8 @@
       lastError: lastError || null,
       lastIntegrityWarning: lastIntegrityWarning || null,
       recoveryReadErrors: { ...lastRecoveryReadErrors },
+      emergencyRecoveryImportActive,
+      emergencyRecoveryImportSummary: emergencyRecoveryImportSummary || null,
     }),
   };
 
@@ -979,6 +1173,8 @@
       lastError: lastError || null,
       lastIntegrityWarning: lastIntegrityWarning || null,
       recoveryReadErrors: { ...lastRecoveryReadErrors },
+      emergencyRecoveryImportActive,
+      emergencyRecoveryImportSummary: emergencyRecoveryImportSummary || null,
     }),
   };
 })();
