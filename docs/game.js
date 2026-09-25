@@ -27270,6 +27270,18 @@
         hostileObjects,
         companionObjects,
         getCurrentArea: () => currentArea,
+        // Not used by Combat itself: window.Combat.deps doubles as the shared
+        // world-state seam for modules that load after game.js. BanubuSnore
+        // needs the live zone layout (Banubu's shifted cave entrance) and
+        // surface heights for the exterior night snore, and it plus the HUD
+        // reticles pause/hide on isDialogueOpen. Without these the exterior
+        // snore sat at "waiting for live zone layout" forever.
+        isDialogueOpen: () => dialogueOpen,
+        zoneLayouts: _zoneLayouts,
+        zoneScenes: _zoneScenes,
+        getActiveGrid: window.GridTileAccessors.getActiveGrid,
+        tileSurfaceYInArea,
+        activeSurfaceYAtWorld,
         // Named animal projectiles use the same live Three.js elevation as
         // the player/creature renderers so Drenkirra's vertical spit aim is
         // based on actual target height, not a flattened ground plane.

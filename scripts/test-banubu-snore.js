@@ -190,4 +190,14 @@ assert.match(indexSource, /js\/banubu-snore\.js\?v=[^"']+/, 'game index must loa
 assert(pixelProbeSource.includes('Banubu snore:'), 'Pixel Probe must expose Banubu snore diagnostics on mobile');
 assert(logs.length > 0, 'runtime status changes should also reach the existing in-game audio log');
 
+// The fixtures above hand the runtime a fake window.Combat.deps. In the real
+// game those deps come from game.js's Combat.init call, which for 2+ days
+// (#746 → this fix) never included zoneLayouts, so the exterior snore sat at
+// "waiting for live zone layout" and was never audible outdoors.
+const gameSource = fs.readFileSync('docs/game.js', 'utf8'); // Real deps wiring the runtime reads through window.Combat.deps.
+const combatInit = gameSource.slice(gameSource.indexOf('window.Combat?.init({'), gameSource.indexOf('window.Combat?.init({') + 4000);
+for (const dep of ['isDialogueOpen', 'zoneLayouts', 'zoneScenes', 'getActiveGrid', 'tileSurfaceYInArea', 'activeSurfaceYAtWorld']) {
+  assert.match(combatInit, new RegExp(`\\b${dep}\\b`), `game.js Combat.init deps must provide ${dep} for BanubuSnore`);
+}
+
 console.log('Banubu night snore regression checks passed.');
