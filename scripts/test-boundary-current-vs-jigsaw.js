@@ -21,6 +21,11 @@ for (const expected of [
   'id="horizonNorthPreset"',
   'id="horizonOverallScale"',
   'id="horizonMountainLayers"',
+  'id="horizonRandomize"',
+  'id="horizonBrushMode"',
+  'id="horizonBrushRadius"',
+  'id="horizonClearLocks"',
+  '../../js/zone-plateau-mesa.js',
 ]) {
   if (!index.includes(expected)) throw new Error(`Boundary author missing authored-preview dependency/label: ${expected}`);
 }
@@ -50,6 +55,7 @@ for (const expected of [
   'api.bakeMesh(temp,{...settings,force:true,disposeSource:true})',
   'scene.userData.terrainJigsawDisableAuto = true',
   'BorderTerrain.buildColossalHorizonTerrain?.(',
+  'window.ZonePlateauMesa?.init(deps)',
   'HORIZON ${horizonStats.kind}',
 ]) {
   if (!preview.includes(expected)) throw new Error(`Boundary authored-vs-Jigsaw preview contract missing: ${expected}`);
