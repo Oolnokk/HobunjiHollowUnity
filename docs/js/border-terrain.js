@@ -199,12 +199,12 @@
   const HORIZON_TERRAIN_PRESETS=Object.freeze({
     westernMountainChain:Object.freeze({
       preset:'westernMountainChain',kind:'mountainChain',side:'west',
-      heightWorld:72,distanceWorld:14,depthWorld:52,spanScale:1.35,overallScale:1,segments:8,mountainLayers:48,mountainSeed:1337,lockedTiles:Object.freeze({}),
+      heightWorld:82,heightStartWorld:68,heightEndWorld:82,distanceWorld:14,depthWorld:52,spanScale:1.35,overallScale:1,segments:8,mountainGranularity:54,mountainLayers:48,mountainSeed:1337,lockSpaceCols:36,lockSpaceRows:72,lockedTiles:Object.freeze({}),
       alwaysVisible:true,fogIndependent:true,
     }),
     northernPlateau:Object.freeze({
       preset:'northernPlateau',kind:'plateau',side:'north',
-      heightWorld:64,distanceWorld:13,depthWorld:48,spanScale:1.25,overallScale:1,segments:6,mountainLayers:48,mountainSeed:1337,lockedTiles:Object.freeze({}),
+      heightWorld:64,heightStartWorld:64,heightEndWorld:64,distanceWorld:13,depthWorld:48,spanScale:1.25,overallScale:1,segments:6,mountainGranularity:54,mountainLayers:48,mountainSeed:1337,lockSpaceCols:36,lockSpaceRows:72,lockedTiles:Object.freeze({}),
       alwaysVisible:true,fogIndependent:true,
     }),
   });
@@ -218,7 +218,7 @@
     const explicit=String(src.preset||'');
     const fallback=HORIZON_TERRAIN_DEFAULT_BY_MAP[String(mapId||'')]||'';
     const presetName=explicit==='none'?'':(HORIZON_TERRAIN_PRESETS[explicit]?explicit:fallback);
-    if(!presetName)return{enabled:false,preset:'none',kind:'none',side:'north',heightWorld:0,distanceWorld:0,depthWorld:0,spanScale:1,overallScale:1,segments:3,mountainLayers:48,mountainSeed:1337,lockedTiles:{},alwaysVisible:false,fogIndependent:false};
+    if(!presetName)return{enabled:false,preset:'none',kind:'none',side:'north',heightWorld:0,heightStartWorld:0,heightEndWorld:0,distanceWorld:0,depthWorld:0,spanScale:1,overallScale:1,segments:3,mountainGranularity:54,mountainLayers:48,mountainSeed:1337,lockSpaceCols:36,lockSpaceRows:72,lockedTiles:{},alwaysVisible:false,fogIndependent:false};
     const base=HORIZON_TERRAIN_PRESETS[presetName];
     const side=['north','east','south','west'].includes(String(src.side))?String(src.side):base.side;
     const finite=(value,fallbackValue,min,max)=>{const n=Number(value);return Math.max(min,Math.min(max,Number.isFinite(n)?n:fallbackValue));};
@@ -228,19 +228,29 @@
       kind:base.kind,
       side,
       heightWorld:finite(src.heightWorld,base.heightWorld,8,140),
+      heightStartWorld:finite(src.heightStartWorld,Number.isFinite(Number(src.heightWorld))?Number(src.heightWorld):base.heightStartWorld,8,180),
+      heightEndWorld:finite(src.heightEndWorld,Number.isFinite(Number(src.heightWorld))?Number(src.heightWorld):base.heightEndWorld,8,180),
       distanceWorld:finite(src.distanceWorld,base.distanceWorld,0,80),
       depthWorld:finite(src.depthWorld,base.depthWorld,8,300),
       spanScale:finite(src.spanScale,base.spanScale,0.25,8),
       overallScale:finite(src.overallScale,base.overallScale,0.25,6),
       segments:Math.round(finite(src.segments,base.segments,3,16)),
+      mountainGranularity:Math.round(finite(src.mountainGranularity,base.mountainGranularity,0,100)),
       mountainLayers:Math.round(finite(src.mountainLayers,base.mountainLayers,8,64)),
       mountainSeed:Math.round(finite(src.mountainSeed,base.mountainSeed,0,2147483647)),
+      lockSpaceCols:Math.round(finite(src.lockSpaceCols,base.lockSpaceCols,8,256)),
+      lockSpaceRows:Math.round(finite(src.lockSpaceRows,base.lockSpaceRows,16,512)),
       lockedTiles:(()=>{
         const raw=src.lockedTiles&&typeof src.lockedTiles==='object'?src.lockedTiles:{};
         const out={};
         let count=0;
         for(const [key,value] of Object.entries(raw)){
           if(count>=10000||!/^\d+,\d+$/.test(key))continue;
+          if(value&&typeof value==='object'){
+            const h=Number(value.height01);
+            if(!Number.isFinite(h))continue;
+            out[key]={height01:bgClamp(h,0,1)};count++;continue;
+          }
           const tier=Math.round(Number(value));
           if(!Number.isFinite(tier)||tier<0||tier>255)continue;
           out[key]=tier;count++;
@@ -299,8 +309,21 @@
     return material;
   }
 
-  const MOUNTAIN_FIELD_LONG_CELLS=72;
-  const MOUNTAIN_FIELD_DEPTH_CELLS=36;
+  const MOUNTAIN_LOCK_DEPTH_CELLS=36;
+  const MOUNTAIN_LOCK_LONG_CELLS=72;
+
+  function mountainGranularitySettings(rawValue){
+    const granularity=Math.max(0,Math.min(100,Math.round(Number(rawValue)||0))); // 0 is intentionally ugly/fast; 100 is intentionally expensive.
+    const q=granularity/100;
+    const even=n=>Math.max(2,Math.round(n/2)*2);
+    return{
+      granularity,
+      quality:q,
+      cols:even(8+52*q), // 8..60 depth cells; horizontal plateau density dominates triangle cost.
+      rows:even(16+104*q), // 16..120 long-axis cells.
+      tierCap:Math.max(6,Math.round(6+58*q)), // 6..64 vertical plateau transitions; low quality visibly stair-steps.
+    };
+  }
 
   function mountainFieldLayout(zcols,zrows,config){
     const horizontal=config.side==='north'||config.side==='south'; // Long axis follows the selected map edge.
@@ -308,16 +331,25 @@
     const overallScale=Math.max(0.25,Number(config.overallScale)||1); // Whole-object author scale.
     const spanWorld=axisLength*config.spanScale*overallScale; // Full long-axis world span, including extreme overscan.
     const depthWorld=config.depthWorld*overallScale; // Full outward depth occupied by the shared synthetic plateau map.
+    const quality=mountainGranularitySettings(config.mountainGranularity);
+    const effectiveHeightStartWorld=config.heightStartWorld*overallScale;
+    const effectiveHeightEndWorld=config.heightEndWorld*overallScale;
     return{
       side:config.side,
-      cols:MOUNTAIN_FIELD_DEPTH_CELLS,
-      rows:MOUNTAIN_FIELD_LONG_CELLS,
+      cols:quality.cols,
+      rows:quality.rows,
+      granularity:quality.granularity,
+      tierCap:quality.tierCap,
       spanWorld,
       depthWorld,
       axisStart:(axisLength-spanWorld)*0.5,
       nearWorld:config.distanceWorld,
-      effectiveHeightWorld:config.heightWorld*overallScale,
+      effectiveHeightStartWorld,
+      effectiveHeightEndWorld,
+      effectiveHeightWorld:Math.max(effectiveHeightStartWorld,effectiveHeightEndWorld),
       overallScale,
+      lockSpaceCols:Math.max(1,config.lockSpaceCols||MOUNTAIN_LOCK_DEPTH_CELLS),
+      lockSpaceRows:Math.max(1,config.lockSpaceRows||MOUNTAIN_LOCK_LONG_CELLS),
       zcols,zrows,
     };
   }
@@ -348,6 +380,23 @@
     };
   }
 
+  function mountainFieldLockCellForFieldCell(field,c,r){
+    return{
+      c:Math.max(0,Math.min(field.lockSpaceCols-1,Math.floor(((c+0.5)/field.cols)*field.lockSpaceCols))),
+      r:Math.max(0,Math.min(field.lockSpaceRows-1,Math.floor(((r+0.5)/field.rows)*field.lockSpaceRows))),
+    };
+  }
+
+  function mountainFieldWorldToLockCell(field,worldX,worldZ){
+    const cell=mountainFieldWorldToCell(field,worldX,worldZ);
+    return cell?mountainFieldLockCellForFieldCell(field,cell.c,cell.r):null;
+  }
+
+  function mountainFieldLockKeyForCell(field,c,r){
+    const lock=mountainFieldLockCellForFieldCell(field,c,r);
+    return `${lock.c},${lock.r}`;
+  }
+
   function mountainFieldCellWorldQuad(field,c,r){
     const a=mountainFieldWorldPoint(field,c,r);
     const b=mountainFieldWorldPoint(field,c+1,r);
@@ -366,7 +415,7 @@
     const field=mountainFieldLayout(zcols,zrows,config);
     const frontCount=Math.max(3,config.segments);
     const backCount=Math.max(2,frontCount-1);
-    const requestedTiers=Math.max(8,config.mountainLayers);
+    const requestedTiers=Math.max(6,field.tierCap);
     const plateauUnit=Math.max(0.01,Number(deps?.PLATEAU_UNIT)||2.5); // Uses the live game's ordinary plateau unit when initialized; 2.5 is the authoring fallback before the 3D preview injects deps.
     const naturalTiers=Math.max(4,Math.round(field.effectiveHeightWorld/plateauUnit));
     const maxTier=Math.max(4,Math.min(requestedTiers,naturalTiers));
@@ -383,7 +432,9 @@
         depth:bgClamp(depthCenter+depthJitter,0.12,0.88),
         longRadius:baseLongRadius*(0.88+mountainSeedRand(config.mountainSeed,n,9301)*0.34),
         depthRadius:(row===0?0.27:0.25)*(0.90+mountainSeedRand(config.mountainSeed,n,9401)*0.20),
-        peak:(row===0?0.86:0.72)+(row===0?0.14:0.18)*mountainSeedRand(config.mountainSeed,n,9501),
+        heightWorld:((field.effectiveHeightStartWorld*(1-longCenter)+field.effectiveHeightEndWorld*longCenter)
+          *(0.84+mountainSeedRand(config.mountainSeed,n,9501)*0.32)
+          *(row===0?1:0.88)), // Lerp the authored endpoint heights along the chain, then deliberately jag each mountain around that baseline.
         skew:(mountainSeedRand(config.mountainSeed,n,9601)-0.5)*0.13,
       });
     };
@@ -391,7 +442,7 @@
     for(let i=0;i<backCount;i++)pushPeak(1,i,(i+1)/frontCount,0.37); // Rear row remains centered in the foreground gaps; both rows stay well inside the synthetic depth field so neither side is clipped.
 
     const tiers=new Uint8Array(field.cols*field.rows);
-    let activeTiles=0,lockedCount=0,maxSeen=0;
+    let activeTiles=0,lockedCount=Object.keys(config.lockedTiles||{}).length,maxSeen=0;
     for(let r=0;r<field.rows;r++){
       const long=(r+0.5)/field.rows;
       for(let c=0;c<field.cols;c++){
@@ -402,7 +453,7 @@
           const dv=(depth-peak.depth)/Math.max(1e-5,peak.depthRadius);
           const d2=du*du+dv*dv;
           if(d2>=1)continue;
-          const contribution=peak.peak*Math.pow(1-d2,0.58);
+          const contribution=(peak.heightWorld/Math.max(1e-6,field.effectiveHeightWorld))*Math.pow(1-d2,0.58);
           if(contribution>best){second=best;best=contribution;}
           else if(contribution>second)second=contribution;
         }
@@ -417,19 +468,21 @@
         // sheer cut. A smooth, wider zero-height apron makes high tiers retreat
         // progressively on both the near/map side and the far side before the
         // shared masks are handed to ZonePlateauMesa.
-        const depthEdge=Math.min(c+0.5,field.cols-c-0.5);
-        const longEdge=Math.min(r+0.5,field.rows-r-0.5);
-        const smoothEdge=(distance,fadeCells)=>{
-          const t=bgClamp((distance-0.5)/Math.max(0.5,fadeCells-0.5),0,1);
+        const depthEdge=Math.min(depth,1-depth);
+        const longEdge=Math.min(long,1-long);
+        const smoothEdge=(distance,fadeFraction)=>{
+          const t=bgClamp(distance/Math.max(1e-6,fadeFraction),0,1);
           return t*t*(3-2*t);
         };
-        height*=smoothEdge(depthEdge,7.5)*smoothEdge(longEdge,4.5);
-        const rough=(mountainSeedRand(config.mountainSeed,r*field.cols+c,9701)-0.5)*0.055;
+        height*=smoothEdge(depthEdge,0.205)*smoothEdge(longEdge,0.065);
+        const rough=(mountainSeedRand(config.mountainSeed,r*field.cols+c,9701)-0.5)*(0.035+0.055*(1-field.granularity/100));
         let tier=height>0.045?Math.max(1,Math.round(bgClamp(height+rough,0,1)*maxTier)):0;
-        const key=`${c},${r}`;
+        const key=mountainFieldLockKeyForCell(field,c,r);
         if(Object.prototype.hasOwnProperty.call(config.lockedTiles,key)){
-          tier=Math.max(0,Math.min(maxTier,Math.round(Number(config.lockedTiles[key])||0)));
-          lockedCount++;
+          const lock=config.lockedTiles[key];
+          tier=lock&&typeof lock==='object'
+            ?Math.max(0,Math.min(maxTier,Math.round(bgClamp(Number(lock.height01)||0,0,1)*maxTier)))
+            :Math.max(0,Math.min(maxTier,Math.round(Number(lock)||0)));
         }
         tiers[r*field.cols+c]=tier;
         if(tier>0)activeTiles++;
@@ -548,9 +601,11 @@
     const stats={
       enabled:true,preset:config.preset,kind:config.kind,side:config.side,
       heightWorld:config.heightWorld,effectiveHeightWorld:field.effectiveHeightWorld,
+      heightStartWorld:config.heightStartWorld,heightEndWorld:config.heightEndWorld,
+      effectiveHeightStartWorld:field.effectiveHeightStartWorld,effectiveHeightEndWorld:field.effectiveHeightEndWorld,
       distanceWorld:config.distanceWorld,depthWorld:config.depthWorld,effectiveDepthWorld:field.depthWorld,
       spanScale:config.spanScale,overallScale:field.overallScale,spanWorld:field.spanWorld,
-      segments:config.segments,mountainLayers:field.maxTier,mountainTierCap:field.requestedTierCap,
+      segments:config.segments,mountainGranularity:field.granularity,mountainLayers:field.maxTier,mountainTierCap:field.requestedTierCap,
       mountainSeed:config.mountainSeed,lockedTiles:field.lockedCount,
       fieldCols:field.cols,fieldRows:field.rows,activeTiles:field.activeTiles,
       vertices,triangles,meshes:meshes.length,
@@ -809,7 +864,7 @@
   function bgDistToPolyline(px,pz,pts){let best=Infinity;for(let i=0;i<pts.length-1;i++)best=Math.min(best,bgDistToSegment(px,pz,pts[i],pts[i+1]));return best;}
   function bgDensify(pts,step=0.5){if(pts.length<2)return pts.slice();const out=[pts[0].slice()];for(let i=0;i<pts.length-1;i++){const a=pts[i],b=pts[i+1],dx=b[0]-a[0],dz=b[1]-a[1],n=Math.max(1,Math.ceil(Math.hypot(dx,dz)/step));for(let j=1;j<=n;j++){const t=j/n;out.push([a[0]+dx*t,a[1]+dz*t]);}}return out;}
   function bgOutwardDistance(c,p){const n=bgEdgeNormal(c.settings.edge),s=c.points[0];return Math.max(0,(p[0]-s[0])*n[0]+(p[1]-s[1])*n[1]);}
-  window.BackgroundScenery={DEFAULTS:BG_DEFAULTS,PATH_DEFAULTS:BG_PATH_DEFAULTS,WILDERNESS_PROFILES:WILDERNESS_SCENERY_PROFILES,HORIZON_PRESETS:HORIZON_TERRAIN_PRESETS,HORIZON_DEFAULT_BY_MAP:HORIZON_TERRAIN_DEFAULT_BY_MAP,normalizeHorizonTerrain,buildMountainPlateauField,mountainFieldWorldPoint,mountainFieldWorldToCell,mountainFieldCellWorldQuad,edgeNormal:bgEdgeNormal,collectBoundaryAttachments,resolveConfig:resolveBackgroundSceneryConfig,resolveAttachmentSettings,buildContinuationPolyline,inferWaterAttachments:bgInferWaterAttachments,findEdgePathRun:bgFindEdgePathRun};
+  window.BackgroundScenery={DEFAULTS:BG_DEFAULTS,PATH_DEFAULTS:BG_PATH_DEFAULTS,WILDERNESS_PROFILES:WILDERNESS_SCENERY_PROFILES,HORIZON_PRESETS:HORIZON_TERRAIN_PRESETS,HORIZON_DEFAULT_BY_MAP:HORIZON_TERRAIN_DEFAULT_BY_MAP,normalizeHorizonTerrain,mountainGranularitySettings,buildMountainPlateauField,mountainFieldWorldPoint,mountainFieldWorldToCell,mountainFieldWorldToLockCell,mountainFieldLockKeyForCell,mountainFieldCellWorldQuad,edgeNormal:bgEdgeNormal,collectBoundaryAttachments,resolveConfig:resolveBackgroundSceneryConfig,resolveAttachmentSettings,buildContinuationPolyline,inferWaterAttachments:bgInferWaterAttachments,findEdgePathRun:bgFindEdgePathRun};
 
   // Scenery paths use the same WallBuilder paving recipe/tint/brick transform
   // settings as the normal path-brick renderer in game.js. The attachment hook
