@@ -199,12 +199,12 @@
   const HORIZON_TERRAIN_PRESETS=Object.freeze({
     westernMountainChain:Object.freeze({
       preset:'westernMountainChain',kind:'mountainChain',side:'west',
-      heightWorld:72,distanceWorld:14,depthWorld:52,spanScale:1.35,overallScale:1,segments:8,mountainLayers:12,
+      heightWorld:72,distanceWorld:14,depthWorld:52,spanScale:1.35,overallScale:1,segments:8,mountainLayers:48,mountainSeed:1337,lockedTiles:Object.freeze({}),
       alwaysVisible:true,fogIndependent:true,
     }),
     northernPlateau:Object.freeze({
       preset:'northernPlateau',kind:'plateau',side:'north',
-      heightWorld:64,distanceWorld:13,depthWorld:48,spanScale:1.25,overallScale:1,segments:6,mountainLayers:12,
+      heightWorld:64,distanceWorld:13,depthWorld:48,spanScale:1.25,overallScale:1,segments:6,mountainLayers:48,mountainSeed:1337,lockedTiles:Object.freeze({}),
       alwaysVisible:true,fogIndependent:true,
     }),
   });
@@ -218,7 +218,7 @@
     const explicit=String(src.preset||'');
     const fallback=HORIZON_TERRAIN_DEFAULT_BY_MAP[String(mapId||'')]||'';
     const presetName=explicit==='none'?'':(HORIZON_TERRAIN_PRESETS[explicit]?explicit:fallback);
-    if(!presetName)return{enabled:false,preset:'none',kind:'none',side:'north',heightWorld:0,distanceWorld:0,depthWorld:0,spanScale:1,overallScale:1,segments:3,mountainLayers:12,alwaysVisible:false,fogIndependent:false};
+    if(!presetName)return{enabled:false,preset:'none',kind:'none',side:'north',heightWorld:0,distanceWorld:0,depthWorld:0,spanScale:1,overallScale:1,segments:3,mountainLayers:48,mountainSeed:1337,lockedTiles:{},alwaysVisible:false,fogIndependent:false};
     const base=HORIZON_TERRAIN_PRESETS[presetName];
     const side=['north','east','south','west'].includes(String(src.side))?String(src.side):base.side;
     const finite=(value,fallbackValue,min,max)=>{const n=Number(value);return Math.max(min,Math.min(max,Number.isFinite(n)?n:fallbackValue));};
@@ -233,7 +233,20 @@
       spanScale:finite(src.spanScale,base.spanScale,0.25,8),
       overallScale:finite(src.overallScale,base.overallScale,0.25,6),
       segments:Math.round(finite(src.segments,base.segments,3,16)),
-      mountainLayers:Math.round(finite(src.mountainLayers,base.mountainLayers,4,24)),
+      mountainLayers:Math.round(finite(src.mountainLayers,base.mountainLayers,8,64)),
+      mountainSeed:Math.round(finite(src.mountainSeed,base.mountainSeed,0,2147483647)),
+      lockedTiles:(()=>{
+        const raw=src.lockedTiles&&typeof src.lockedTiles==='object'?src.lockedTiles:{};
+        const out={};
+        let count=0;
+        for(const [key,value] of Object.entries(raw)){
+          if(count>=10000||!/^\d+,\d+$/.test(key))continue;
+          const tier=Math.round(Number(value));
+          if(!Number.isFinite(tier)||tier<0||tier>255)continue;
+          out[key]=tier;count++;
+        }
+        return out;
+      })(),
       alwaysVisible:src.alwaysVisible!==false,
       fogIndependent:src.fogIndependent!==false,
     };
@@ -286,180 +299,262 @@
     return material;
   }
 
-  function makeFlatColossalMaterial(color,tag,fogIndependent){
-    const material=new THREE.MeshBasicMaterial({
-      color,
-      side:THREE.DoubleSide,
-      fog:!fogIndependent,
-      transparent:false,
-      opacity:1,
-      depthTest:true,
-      depthWrite:true,
-    });
-    material.name=`ColossalHorizon_${tag}`;
-    material.userData={...(material.userData||{}),colossalHorizonTerrain:true,horizonMaterial:tag,flatFaceted:true};
-    return material;
+  const MOUNTAIN_FIELD_LONG_CELLS=96;
+  const MOUNTAIN_FIELD_DEPTH_CELLS=48;
+
+  function mountainFieldLayout(zcols,zrows,config){
+    const horizontal=config.side==='north'||config.side==='south'; // Long axis follows the selected map edge.
+    const axisLength=Math.max(1,horizontal?zcols:zrows); // Used to map the synthetic plateau map back onto the real zone edge.
+    const overallScale=Math.max(0.25,Number(config.overallScale)||1); // Whole-object author scale.
+    const spanWorld=axisLength*config.spanScale*overallScale; // Full long-axis world span, including extreme overscan.
+    const depthWorld=config.depthWorld*overallScale; // Full outward depth occupied by the shared synthetic plateau map.
+    return{
+      side:config.side,
+      cols:MOUNTAIN_FIELD_DEPTH_CELLS,
+      rows:MOUNTAIN_FIELD_LONG_CELLS,
+      spanWorld,
+      depthWorld,
+      axisStart:(axisLength-spanWorld)*0.5,
+      nearWorld:config.distanceWorld,
+      effectiveHeightWorld:config.heightWorld*overallScale,
+      overallScale,
+      zcols,zrows,
+    };
   }
 
-  function buildToothedMountainRows(scene,zcols,zrows,mapId,zoneBaseElev,zGrid,config){
-    const horizontal=config.side==='north'||config.side==='south'; // Used to choose the horizon's long axis for any authored edge.
-    const axisLength=Math.max(1,horizontal?zcols:zrows); // Used to spread both shark-tooth rows across the selected edge.
-    const overallScale=Math.max(0.25,Number(config.overallScale)||1); // Used to scale the entire two-row mountain mass as one authored object.
-    const effectiveHeight=config.heightWorld*overallScale; // Used for every stacked plateau tier so whole-chain scaling stays uniform.
-    const effectiveDepth=config.depthWorld*overallScale; // Used for mountain body depth and row separation under whole-chain scaling.
-    const span=axisLength*config.spanScale*overallScale; // Used so one scale control can push the chain far beyond both ends of the map.
-    const axisStart=(axisLength-span)*0.5; // Used as the first front-row mountain center, keeping overscan symmetric around the map.
-    const frontCount=Math.max(3,config.segments); // Used as the literal number of foreground mountains.
-    const backCount=Math.max(2,frontCount-1); // Used for the staggered second row peeking through foreground gaps.
-    const layerCount=Math.max(4,Math.min(24,Math.round(Number(config.mountainLayers)||12))); // Used as the many progressively smaller plateau tiers in every mountain.
-    const step=span/frontCount; // Used for front-row spacing and the half-step rear-row stagger.
-    const baseY=horizonEdgeBaseY(zcols,zrows,zoneBaseElev,zGrid,config.side); // Used as the common foot elevation for both rows.
-    const positions=[],uvs=[]; // Shared combined-geometry attributes; one always-visible draw call for the entire chain.
-    const byMaterial=[[],[],[],[],[]]; // Cliff light, cliff dark, exposed terrace top, snow top light, snow top shade.
-    let peakCount=0;
+  function mountainFieldWorldPoint(field,localX,localZ){
+    const depthT=bgClamp(localX/Math.max(1,field.cols),0,1); // 0=far edge, 1=nearest edge.
+    const longT=bgClamp(localZ/Math.max(1,field.rows),0,1); // 0..1 along the selected boundary.
+    const out=field.nearWorld+field.depthWorld*(1-depthT);
+    const axis=field.axisStart+field.spanWorld*longT;
+    if(field.side==='west')return[-out,axis];
+    if(field.side==='east')return[field.zcols+out,axis];
+    if(field.side==='north')return[axis,-out];
+    return[axis,field.zrows+out];
+  }
 
-    const pushLayer=(axisCenter,outCenter,width,depth,y0,y1,leanAxis,leanOut,layer,ordinal,rowIndex,snowStart)=>{
-      const summitScale=0.16+bgSceneryHash01(axisCenter,outCenter,8601)*0.08; // Used as the final summit-plateau footprint; still a real flat plateau, never a point.
-      const bottomProgress=layer/layerCount; // Used to derive this tier's lower plateau footprint.
-      const topProgress=layer===layerCount-1?1:(layer+0.72)/layerCount; // Used to inset the top enough for one sloped cliff plane while reserving a smaller terrace step before the next tier.
-      const bottomScale=1-(1-summitScale)*bottomProgress; // Used as the broad lower edge of this tier's four cliff planes.
-      const topScale=1-(1-summitScale)*topProgress; // Used as the slightly smaller flat plateau top.
-      const bottomCx=axisCenter+leanAxis*bottomProgress,topCx=axisCenter+leanAxis*topProgress; // Used so the complete stack can lean gently while each cliff side remains one plane.
-      const bottomCo=outCenter+leanOut*bottomProgress,topCo=outCenter+leanOut*topProgress; // Used for the same lean along the outward axis.
-      const bottomHalfAxis=width*bottomScale*0.5,bottomHalfOut=depth*bottomScale*0.5; // Used by the lower edge of each low-poly plateau cliff.
-      const topHalfAxis=width*topScale*0.5,topHalfOut=depth*topScale*0.5; // Used by the inset upper edge and flat terrace top.
-      const corners=[[-1,-1],[1,-1],[1,1],[-1,1]]; // Used by all four one-plane cliff sides in winding order.
-      const baseIndex=positions.length/3; // Used to offset this tier's eight vertices inside the combined chain mesh.
-
-      for(const [sa,so] of corners){
-        const axis=bottomCx+sa*bottomHalfAxis,out=bottomCo+so*bottomHalfOut;
-        const [x,z]=horizonPoint(config.side,axis,out,zcols,zrows);
-        positions.push(x,y0,z);
-        uvs.push(axis/Math.max(1,span),y0/Math.max(1,effectiveHeight));
-      }
-      for(const [sa,so] of corners){
-        const axis=topCx+sa*topHalfAxis,out=topCo+so*topHalfOut;
-        const [x,z]=horizonPoint(config.side,axis,out,zcols,zrows);
-        positions.push(x,y1,z);
-        uvs.push(axis/Math.max(1,span),y1/Math.max(1,effectiveHeight));
-      }
-
-      // Exactly one SLOPED quad (two triangles, one plane) per cliff side,
-      // mirroring the playable plateau's raised-top / blended-cliff idea
-      // without its half-tile heightfield subdivision. The many stacked tiers
-      // supply the silhouette detail instead.
-      for(let face=0;face<4;face++){
-        const next=(face+1)&3;
-        const materialIndex=((face+ordinal+rowIndex+layer)&1); // Alternating flat side tones keep each huge plane readable without extra geometry.
-        byMaterial[materialIndex].push(
-          baseIndex+face,baseIndex+4+face,baseIndex+4+next,
-          baseIndex+face,baseIndex+4+next,baseIndex+next
-        );
-      }
-
-      // One un-subdivided plateau lid per layer. The next tier's lower
-      // footprint is slightly smaller than this lid, so a narrow flat terrace
-      // remains exposed between successive one-plane cliff slopes.
-      const topT=(layer+1)/layerCount;
-      if(topT>=snowStart){
-        byMaterial[3].push(baseIndex+4,baseIndex+6,baseIndex+5);
-        byMaterial[4].push(baseIndex+4,baseIndex+7,baseIndex+6);
-      }else{
-        byMaterial[2].push(baseIndex+4,baseIndex+6,baseIndex+5,baseIndex+4,baseIndex+7,baseIndex+6);
-      }
+  function mountainFieldWorldToCell(field,worldX,worldZ){
+    let axis,out;
+    if(field.side==='west'){axis=worldZ;out=-worldX;}
+    else if(field.side==='east'){axis=worldZ;out=worldX-field.zcols;}
+    else if(field.side==='north'){axis=worldX;out=-worldZ;}
+    else{axis=worldX;out=worldZ-field.zrows;}
+    const longT=(axis-field.axisStart)/Math.max(1e-6,field.spanWorld);
+    const depthT=1-(out-field.nearWorld)/Math.max(1e-6,field.depthWorld);
+    if(longT<0||longT>1||depthT<0||depthT>1)return null;
+    return{
+      c:Math.max(0,Math.min(field.cols-1,Math.floor(depthT*field.cols))),
+      r:Math.max(0,Math.min(field.rows-1,Math.floor(longT*field.rows))),
     };
+  }
 
-    const pushPeak=(axisCenter,outCenter,rowIndex,ordinal)=>{
-      const seedAxis=axisCenter+rowIndex*113.7+ordinal*17.3; // Used only for deterministic mountain-to-mountain variation.
-      const rowHeight=effectiveHeight*(rowIndex===0?0.78+bgSceneryHash01(seedAxis,outCenter,8201)*0.22:0.68+bgSceneryHash01(seedAxis,outCenter,8301)*0.18); // Used as this mountain stack's total elevation.
-      const width=Math.max(step*(rowIndex===0?1.35:1.20),rowHeight*(rowIndex===0?0.82:0.74))*(0.94+bgSceneryHash01(seedAxis,outCenter,8101)*0.12); // Used to keep the stepped mountains broad rather than spike-like.
-      const depth=Math.max(6*overallScale,effectiveDepth*(rowIndex===0?0.34:0.30),rowHeight*(rowIndex===0?0.42:0.38)); // Used to give each stacked mesa a chunky 3D footprint.
-      const baseLift=effectiveHeight*(rowIndex===0?0.01:0.055); // Used to keep the rear row readable behind the foreground stack.
-      const leanAxis=(bgSceneryHash01(seedAxis,outCenter,8401)-0.5)*width*0.12; // Used as the full-stack sideways lean; each tier receives only its proportional share.
-      const leanOut=(bgSceneryHash01(seedAxis,outCenter,8501)-0.5)*depth*0.12; // Used as the full-stack outward lean.
-      const snowStart=0.62+bgSceneryHash01(seedAxis,outCenter,8701)*0.08; // Used to keep the earlier snowy-reference read on only the upper plateau terraces.
-      const layerHeight=rowHeight/layerCount; // Used so many small equal rises replace the former long triangular faces.
-      const yBase=baseY+baseLift; // Used as the bottom of this discrete mountain stack.
-      for(let layer=0;layer<layerCount;layer++){
-        pushLayer(
-          axisCenter,outCenter,width,depth,
-          yBase+layerHeight*layer,yBase+layerHeight*(layer+1),
-          leanAxis,leanOut,layer,ordinal,rowIndex,snowStart
-        );
-      }
-      peakCount++;
+  function mountainFieldCellWorldQuad(field,c,r){
+    const a=mountainFieldWorldPoint(field,c,r);
+    const b=mountainFieldWorldPoint(field,c+1,r);
+    const d=mountainFieldWorldPoint(field,c,r+1);
+    const e=mountainFieldWorldPoint(field,c+1,r+1);
+    return[a,b,e,d];
+  }
+
+  function mountainSeedRand(seed,index,salt){
+    return bgSceneryHash01(Number(seed)||0,index+0.371,salt);
+  }
+
+  function buildMountainPlateauField(zcols,zrows,mapId,rawConfig=null){
+    const config=normalizeHorizonTerrain(rawConfig,mapId);
+    if(!config.enabled||config.kind!=='mountainChain')return null;
+    const field=mountainFieldLayout(zcols,zrows,config);
+    const frontCount=Math.max(3,config.segments);
+    const backCount=Math.max(2,frontCount-1);
+    const requestedTiers=Math.max(8,config.mountainLayers);
+    const naturalTiers=Math.max(4,Math.round(field.effectiveHeightWorld/Math.max(0.01,deps.PLATEAU_UNIT)));
+    const maxTier=Math.max(4,Math.min(requestedTiers,naturalTiers));
+    const peaks=[];
+
+    const pushPeak=(row,index,longCenter,depthCenter)=>{
+      const n=peaks.length;
+      const longJitter=(mountainSeedRand(config.mountainSeed,n,9101)-0.5)*(1/frontCount)*0.34;
+      const depthJitter=(mountainSeedRand(config.mountainSeed,n,9201)-0.5)*0.10;
+      const baseLongRadius=(1/frontCount)*(row===0?1.25:1.12);
+      peaks.push({
+        row,index,
+        long:bgClamp(longCenter+longJitter,0.02,0.98),
+        depth:bgClamp(depthCenter+depthJitter,0.08,0.92),
+        longRadius:baseLongRadius*(0.88+mountainSeedRand(config.mountainSeed,n,9301)*0.34),
+        depthRadius:(row===0?0.40:0.36)*(0.88+mountainSeedRand(config.mountainSeed,n,9401)*0.28),
+        peak:(row===0?0.86:0.72)+(row===0?0.14:0.18)*mountainSeedRand(config.mountainSeed,n,9501),
+        skew:(mountainSeedRand(config.mountainSeed,n,9601)-0.5)*0.13,
+      });
     };
+    for(let i=0;i<frontCount;i++)pushPeak(0,i,(i+0.5)/frontCount,0.73);
+    for(let i=0;i<backCount;i++)pushPeak(1,i,(i+1)/frontCount,0.42); // Rear row remains centered in the foreground gaps.
 
-    const frontOut=config.distanceWorld+effectiveDepth*0.20; // Near row of stacked plateau mountains.
-    const backOut=config.distanceWorld+effectiveDepth*0.64; // Rear row remains physically separate and staggered.
-    for(let i=0;i<frontCount;i++)pushPeak(axisStart+step*(i+0.5),frontOut,0,i);
-    for(let i=0;i<backCount;i++)pushPeak(axisStart+step*(i+1),backOut,1,i); // Half-step offset centers rear mountains in foreground gaps.
-
-    const indices=[]; // Material-bucket concatenation keeps all layers and both rows in one indexed draw mesh.
-    const groups=[];
-    for(let materialIndex=0;materialIndex<byMaterial.length;materialIndex++){
-      const bucket=byMaterial[materialIndex];
-      if(!bucket.length)continue;
-      const start=indices.length;
-      indices.push(...bucket);
-      groups.push({start,count:bucket.length,materialIndex});
+    const tiers=new Uint8Array(field.cols*field.rows);
+    let activeTiles=0,lockedCount=0,maxSeen=0;
+    for(let r=0;r<field.rows;r++){
+      const long=(r+0.5)/field.rows;
+      for(let c=0;c<field.cols;c++){
+        const depth=(c+0.5)/field.cols;
+        let best=0,second=0;
+        for(const peak of peaks){
+          const du=(long-peak.long-peak.skew*(depth-peak.depth))/Math.max(1e-5,peak.longRadius);
+          const dv=(depth-peak.depth)/Math.max(1e-5,peak.depthRadius);
+          const d2=du*du+dv*dv;
+          if(d2>=1)continue;
+          const contribution=peak.peak*Math.pow(1-d2,0.58);
+          if(contribution>best){second=best;best=contribution;}
+          else if(contribution>second)second=contribution;
+        }
+        // A small second-peak contribution raises saddles where mountains
+        // overlap. This is what turns the two rows into one shared mountain
+        // system instead of a pile of isolated radial stamps.
+        let height=bgClamp(best+second*0.24,0,1);
+        const edge=Math.min(c+0.5,field.cols-c-0.5,r+0.5,field.rows-r-0.5);
+        height*=bgClamp(edge/2.5,0,1);
+        const rough=(mountainSeedRand(config.mountainSeed,r*field.cols+c,9701)-0.5)*0.055;
+        let tier=height>0.045?Math.max(1,Math.round(bgClamp(height+rough,0,1)*maxTier)):0;
+        const key=`${c},${r}`;
+        if(Object.prototype.hasOwnProperty.call(config.lockedTiles,key)){
+          tier=Math.max(0,Math.min(maxTier,Math.round(Number(config.lockedTiles[key])||0)));
+          lockedCount++;
+        }
+        tiers[r*field.cols+c]=tier;
+        if(tier>0)activeTiles++;
+        if(tier>maxSeen)maxSeen=tier;
+      }
     }
 
-    const geometry=new THREE.BufferGeometry();
-    geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
-    geometry.setAttribute('uv',new THREE.Float32BufferAttribute(uvs,2));
-    geometry.setIndex(new THREE.BufferAttribute(positions.length/3>65535?new Uint32Array(indices):new Uint16Array(indices),1));
-    geometry.computeVertexNormals();
-    geometry.computeBoundingSphere?.();
-    if(geometry.addGroup)for(const group of groups)geometry.addGroup(group.start,group.count,group.materialIndex);
+    const zGrid=Array.from({length:field.rows},(_,r)=>
+      Array.from({length:field.cols},(_,c)=>{
+        const elevTier=tiers[r*field.cols+c];
+        return{type:deps.TileType.GRASS,elevTier,skipFloor:elevTier>0,incline:false,rampElevation:0};
+      })
+    );
 
-    const materials=[
-      makeFlatColossalMaterial(0x66676a,'mountain-cliff-light',config.fogIndependent),
-      makeFlatColossalMaterial(0x4b4c50,'mountain-cliff-dark',config.fogIndependent),
-      makeFlatColossalMaterial(0x747579,'mountain-plateau-top',config.fogIndependent),
-      makeFlatColossalMaterial(0xf1f4f5,'mountain-snow-top-light',config.fogIndependent),
-      makeFlatColossalMaterial(0xcbd2d5,'mountain-snow-top-shade',config.fogIndependent),
-    ];
-    const mesh=new THREE.Mesh(geometry,materials);
-    mesh.name='ColossalWesternMountainChain';
+    // One level-set mask per elevation transition. All generated mountains
+    // contribute to the SAME mask at a given tier, exactly like many painted
+    // areas of one regular plateau group on one map. Overlaps union before
+    // ZonePlateauMesa ever sees them, so cliffs and tops react to neighboring
+    // mountains through the ordinary inMask/zGrid plateau rules.
+    const mesas=[];
+    const tierStats=[];
+    for(let tier=1;tier<=maxSeen;tier++){
+      const maskWorldKeys=new Set();
+      let minC=Infinity,maxC=-Infinity,minR=Infinity,maxR=-Infinity;
+      for(let r=0;r<field.rows;r++)for(let c=0;c<field.cols;c++){
+        if(tiers[r*field.cols+c]<tier)continue;
+        maskWorldKeys.add(`${c},${r}`);
+        if(c<minC)minC=c;if(c>maxC)maxC=c;if(r<minR)minR=r;if(r>maxR)maxR=r;
+      }
+      if(!maskWorldKeys.size)continue;
+      mesas.push({minC,maxC,minR,maxR,fromTier:tier-1,toTier:tier,maskWorldKeys,groupId:`horizon_tier_${tier}`});
+      tierStats.push({tier,tiles:maskWorldKeys.size,minC,maxC,minR,maxR});
+    }
+
+    return{
+      ...field,config,tiers,zGrid,mesas,tierStats,peaks,
+      maxTier:maxSeen,requestedTierCap:requestedTiers,naturalTierCount:naturalTiers,
+      frontPeakCount:frontCount,backPeakCount:backCount,peakCount:peaks.length,
+      activeTiles,lockedCount,
+    };
+  }
+
+  function cloneHorizonPlateauMaterial(material,fogIndependent){
+    if(!material)return material;
+    if(!material.clone)return material;
+    const copy=material.clone();
+    copy.fog=!fogIndependent;
+    copy.needsUpdate=true;
+    copy.userData={...(copy.userData||{}),colossalHorizonTerrain:true,regularPlateauMaterialClone:true};
+    return copy;
+  }
+
+  function transformMountainPlateauMesh(mesh,field,baseY,heightScale,fogIndependent){
+    const position=mesh.geometry?.getAttribute?.('position')||mesh.geometry?.attributes?.position;
+    const uv=mesh.geometry?.getAttribute?.('uv')||mesh.geometry?.attributes?.uv;
+    const posArray=position?.array,uvArray=uv?.array;
+    if(posArray){
+      for(let i=0;i<posArray.length;i+=3){
+        const localX=posArray[i],localY=posArray[i+1],localZ=posArray[i+2];
+        const [worldX,worldZ]=mountainFieldWorldPoint(field,localX,localZ);
+        posArray[i]=worldX;
+        posArray[i+1]=baseY+(localY-deps.NORMAL_TOP)*heightScale;
+        posArray[i+2]=worldZ;
+        if(uvArray){
+          const ui=(i/3)*2;
+          uvArray[ui]=worldX;
+          uvArray[ui+1]=worldZ;
+        }
+      }
+      position.needsUpdate=true;
+      if(uv)uv.needsUpdate=true;
+      mesh.geometry.computeVertexNormals?.();
+      mesh.geometry.computeBoundingSphere?.();
+      mesh.geometry.computeBoundingBox?.();
+    }
+    const originals=Array.isArray(mesh.material)?mesh.material:[mesh.material];
+    const clones=originals.map(mat=>cloneHorizonPlateauMaterial(mat,fogIndependent));
+    mesh.material=Array.isArray(mesh.material)?clones:clones[0];
     mesh.castShadow=false;
     mesh.receiveShadow=false;
-    mesh.frustumCulled=!config.alwaysVisible;
+    mesh.frustumCulled=false;
+    mesh.name=`ColossalWesternMountainChain_${mesh.name||'plateau'}`;
     mesh.userData={
+      ...(mesh.userData||{}),
+      cameraObstacle:false,
       backgroundScenery:true,
       colossalHorizonTerrain:true,
-      alwaysVisibleBoundaryTerrain:config.alwaysVisible,
+      alwaysVisibleBoundaryTerrain:true,
       skipOcclusionFade:true,
-      preset:config.preset,
-      kind:config.kind,
-      side:config.side,
-      mountainRows:2,
-      mountainLayers:layerCount,
-      cliffSideQuadsPerLayer:4,
-      topTrianglesPerLayer:2,
-      frontPeakCount:frontCount,
-      backPeakCount:backCount,
-      peakCount,
-      sharkTeethStaggered:true,
-      steppedPlateauMountains:true,
+      sharedSyntheticPlateauMap:true,
     };
-    scene.add(mesh);
-    return{
+  }
+
+  function buildMergedPlateauMountainRange(scene,zcols,zrows,mapId,zoneBaseElev,zGrid,config){
+    const plateauApi=window.ZonePlateauMesa;
+    if(!plateauApi?.buildZoneMesaMeshes)throw new Error('ZonePlateauMesa is required for colossal mountain terrain');
+    const field=buildMountainPlateauField(zcols,zrows,mapId,config);
+    if(!field)return{enabled:false,preset:config.preset,vertices:0,triangles:0,meshes:0};
+    const localRoot=new THREE.Group();
+    const meshes=plateauApi.buildZoneMesaMeshes(localRoot,mapId,field.mesas,field.zGrid,{skipDisplacement:true,silent:true})||[];
+    const baseY=horizonEdgeBaseY(zcols,zrows,zoneBaseElev,zGrid,config.side);
+    const rawHeight=Math.max(0.001,field.maxTier*deps.PLATEAU_UNIT);
+    const heightScale=field.effectiveHeightWorld/rawHeight;
+    let vertices=0,triangles=0;
+    for(const mesh of meshes){
+      transformMountainPlateauMesh(mesh,field,baseY,heightScale,config.fogIndependent);
+      const pos=mesh.geometry?.getAttribute?.('position')||mesh.geometry?.attributes?.position;
+      const index=mesh.geometry?.index;
+      vertices+=Number(pos?.count)||(pos?.array?.length||0)/3;
+      triangles+=(index?.count||(index?.array?.length||0))/3;
+    }
+    // Move the real regular-plateau meshes themselves into the zone scene;
+    // localRoot exists only so the unmodified plateau builder can use its
+    // normal add() contract while constructing the synthetic shared map.
+    for(const mesh of [...localRoot.children]){localRoot.remove(mesh);scene.add(mesh);}
+    const stats={
       enabled:true,preset:config.preset,kind:config.kind,side:config.side,
-      heightWorld:config.heightWorld,effectiveHeightWorld:effectiveHeight,distanceWorld:config.distanceWorld,depthWorld:config.depthWorld,effectiveDepthWorld:effectiveDepth,
-      spanScale:config.spanScale,overallScale,spanWorld:span,segments:config.segments,mountainLayers:layerCount,
-      vertices:positions.length/3,triangles:indices.length/3,meshes:1,
-      rows:2,peakCount,frontPeakCount:frontCount,backPeakCount:backCount,
-      cliffSideQuadsPerLayer:4,topTrianglesPerLayer:2,
+      heightWorld:config.heightWorld,effectiveHeightWorld:field.effectiveHeightWorld,
+      distanceWorld:config.distanceWorld,depthWorld:config.depthWorld,effectiveDepthWorld:field.depthWorld,
+      spanScale:config.spanScale,overallScale:field.overallScale,spanWorld:field.spanWorld,
+      segments:config.segments,mountainLayers:field.maxTier,mountainTierCap:field.requestedTierCap,
+      mountainSeed:config.mountainSeed,lockedTiles:field.lockedCount,
+      fieldCols:field.cols,fieldRows:field.rows,activeTiles:field.activeTiles,
+      vertices,triangles,meshes:meshes.length,
+      rows:2,peakCount:field.peakCount,frontPeakCount:field.frontPeakCount,backPeakCount:field.backPeakCount,
+      sharedSyntheticPlateauMap:true,regularPlateauBuilder:true,
       alwaysVisible:config.alwaysVisible,fogIndependent:config.fogIndependent,
     };
+    scene.userData=scene.userData||{};
+    scene.userData.colossalHorizonField=field;
+    return stats;
   }
 
   function buildColossalHorizonTerrain(scene,zcols,zrows,mapId,zoneBaseElev=0,zGrid=null,rawConfig=null){
     const config=normalizeHorizonTerrain(rawConfig,mapId);
     if(!scene||!config.enabled)return{enabled:false,preset:config.preset||'none',vertices:0,triangles:0,meshes:0};
     if(config.kind==='mountainChain'){
-      const stats=buildToothedMountainRows(scene,zcols,zrows,mapId,zoneBaseElev,zGrid,config);
+      const stats=buildMergedPlateauMountainRange(scene,zcols,zrows,mapId,zoneBaseElev,zGrid,config);
       scene.userData=scene.userData||{};
       scene.userData.colossalHorizonTerrain=stats;
       return stats;
@@ -700,7 +795,7 @@
   function bgDistToPolyline(px,pz,pts){let best=Infinity;for(let i=0;i<pts.length-1;i++)best=Math.min(best,bgDistToSegment(px,pz,pts[i],pts[i+1]));return best;}
   function bgDensify(pts,step=0.5){if(pts.length<2)return pts.slice();const out=[pts[0].slice()];for(let i=0;i<pts.length-1;i++){const a=pts[i],b=pts[i+1],dx=b[0]-a[0],dz=b[1]-a[1],n=Math.max(1,Math.ceil(Math.hypot(dx,dz)/step));for(let j=1;j<=n;j++){const t=j/n;out.push([a[0]+dx*t,a[1]+dz*t]);}}return out;}
   function bgOutwardDistance(c,p){const n=bgEdgeNormal(c.settings.edge),s=c.points[0];return Math.max(0,(p[0]-s[0])*n[0]+(p[1]-s[1])*n[1]);}
-  window.BackgroundScenery={DEFAULTS:BG_DEFAULTS,PATH_DEFAULTS:BG_PATH_DEFAULTS,WILDERNESS_PROFILES:WILDERNESS_SCENERY_PROFILES,HORIZON_PRESETS:HORIZON_TERRAIN_PRESETS,HORIZON_DEFAULT_BY_MAP:HORIZON_TERRAIN_DEFAULT_BY_MAP,normalizeHorizonTerrain,edgeNormal:bgEdgeNormal,collectBoundaryAttachments,resolveConfig:resolveBackgroundSceneryConfig,resolveAttachmentSettings,buildContinuationPolyline,inferWaterAttachments:bgInferWaterAttachments,findEdgePathRun:bgFindEdgePathRun};
+  window.BackgroundScenery={DEFAULTS:BG_DEFAULTS,PATH_DEFAULTS:BG_PATH_DEFAULTS,WILDERNESS_PROFILES:WILDERNESS_SCENERY_PROFILES,HORIZON_PRESETS:HORIZON_TERRAIN_PRESETS,HORIZON_DEFAULT_BY_MAP:HORIZON_TERRAIN_DEFAULT_BY_MAP,normalizeHorizonTerrain,buildMountainPlateauField,mountainFieldWorldPoint,mountainFieldWorldToCell,mountainFieldCellWorldQuad,edgeNormal:bgEdgeNormal,collectBoundaryAttachments,resolveConfig:resolveBackgroundSceneryConfig,resolveAttachmentSettings,buildContinuationPolyline,inferWaterAttachments:bgInferWaterAttachments,findEdgePathRun:bgFindEdgePathRun};
 
   // Scenery paths use the same WallBuilder paving recipe/tint/brick transform
   // settings as the normal path-brick renderer in game.js. The attachment hook
