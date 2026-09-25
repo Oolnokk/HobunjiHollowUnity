@@ -26220,16 +26220,19 @@
           }
         }
         if (potionAction3Press.held) {
-          input.x = 0; input.y = 0; // Potion Select borrows the movement stick while held, so browsing cannot also move the player.
-          controllerCameraX = 0; controllerCameraY = 0; rightStickOwner = 'potion selection';
-          const potionStick = move.rawMagnitude >= look.rawMagnitude
-            ? { x: ax, y: ay, rawMagnitude: move.rawMagnitude }
-            : { x: rx, y: ry, rawMagnitude: look.rawMagnitude }; // Used so left-stick access is added without removing the selector's existing right-stick path.
-          if (potionStick.rawMagnitude >= INPUT_DEFAULTS.axisPressThreshold) {
-            const now = performance.now();
-            if (now - potionAction3Press.lastScrollAt >= 220) {
-              potionAction3Press.lastScrollAt = now;
-              window._desktopSelectionArc?.scrollEntries((Math.abs(potionStick.x) >= Math.abs(potionStick.y) ? potionStick.x : potionStick.y) >= 0 ? 1 : -1);
+          const bandageTapWindowOpen = window.ContextualPotionSelector?.isTapBandageWindowOpen?.() === true; // Used here so a pre-existing movement/look stick cannot turn a quick Potion Select tap into menu navigation.
+          if (!bandageTapWindowOpen) {
+            input.x = 0; input.y = 0; // Once the tap-to-bandage window expires, Potion Select borrows movement for deliberate browsing.
+            controllerCameraX = 0; controllerCameraY = 0; rightStickOwner = 'potion selection';
+            const potionStick = move.rawMagnitude >= look.rawMagnitude
+              ? { x: ax, y: ay, rawMagnitude: move.rawMagnitude }
+              : { x: rx, y: ry, rawMagnitude: look.rawMagnitude }; // Used so left-stick access is added without removing the selector's existing right-stick path.
+            if (potionStick.rawMagnitude >= INPUT_DEFAULTS.axisPressThreshold) {
+              const now = performance.now();
+              if (now - potionAction3Press.lastScrollAt >= 220) {
+                potionAction3Press.lastScrollAt = now;
+                window._desktopSelectionArc?.scrollEntries((Math.abs(potionStick.x) >= Math.abs(potionStick.y) ? potionStick.x : potionStick.y) >= 0 ? 1 : -1);
+              }
             }
           }
         }

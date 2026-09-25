@@ -4,6 +4,10 @@ on:
   pull_request:
     paths:
       - 'docs/index.html'
+      - 'docs/game.js'
+      - 'docs/js/alchemy-flasks.js'
+      - 'docs/js/mobile-potion-category-drag.js'
+      - 'docs/js/bandage-system.js'
       - 'docs/onboarding-core.js'
       - 'docs/js/runtime-frame-scheduler.js'
       - 'docs/js/controller-input.js'
@@ -25,11 +29,18 @@ on:
       - 'scripts/test-controller-modern-flow-bridge.js'
       - 'scripts/test-controller-shipping-box.js'
       - 'scripts/test-controller-input-authority.js'
+      - 'scripts/test-controller-experience.js'
+      - 'scripts/test-contextual-potion-selector.js'
+      - 'scripts/test-bandage-system.js'
       - '.github/workflows/controller-modern-flow-regression.yml'
   push:
     branches: [main]
     paths:
       - 'docs/index.html'
+      - 'docs/game.js'
+      - 'docs/js/alchemy-flasks.js'
+      - 'docs/js/mobile-potion-category-drag.js'
+      - 'docs/js/bandage-system.js'
       - 'docs/onboarding-core.js'
       - 'docs/js/runtime-frame-scheduler.js'
       - 'docs/js/controller-input.js'
@@ -51,6 +62,9 @@ on:
       - 'scripts/test-controller-modern-flow-bridge.js'
       - 'scripts/test-controller-shipping-box.js'
       - 'scripts/test-controller-input-authority.js'
+      - 'scripts/test-controller-experience.js'
+      - 'scripts/test-contextual-potion-selector.js'
+      - 'scripts/test-bandage-system.js'
       - '.github/workflows/controller-modern-flow-regression.yml'
 
 jobs:
@@ -64,5 +78,7 @@ jobs:
       - run: node scripts/test-runtime-frame-scheduler.js
       - run: node scripts/test-controller-modern-flow-bridge.js
       - run: node scripts/test-controller-shipping-box.js
-      - run: node scripts/test-controller-input-authority.js
       - run: node scripts/test-controller-experience.js
+      - run: node scripts/test-contextual-potion-selector.js
+      - run: node scripts/test-bandage-system.js
+      - run: node scripts/test-controller-input-authority.js

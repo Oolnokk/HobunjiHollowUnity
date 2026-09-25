@@ -375,7 +375,7 @@
   window.AlchemyFlasks = { init, beginAim, setTarget, setTargetFromVector, cancelAim, confirmThrow, primaryAction, heldActions, update, diagnostics, SFX_CUES, get aiming() { return !!aimState; }, MAX_THROW_RADIUS_TILES };
 })();
 
-// The shared selector presentation and mobile tap-only potion navigator both
+// The shared selector presentation and contextual Potion Select adapter both
 // load after game.js has created window._desktopSelectionArc.
 addEventListener('load', () => {
   if (!document.querySelector('script[data-quick-potion-arc-ui]')) {
@@ -386,8 +386,8 @@ addEventListener('load', () => {
     document.head.appendChild(presentation);
   }
   if (!document.querySelector('script[data-mobile-potion-category-drag]')) {
-    const mobileTap = document.createElement('script'); // Mobile potion hierarchy uses actual circle taps; desktop/controller retain the original selector input.
-    mobileTap.src = 'js/mobile-potion-category-drag.js?v=20260822d';
+    const mobileTap = document.createElement('script'); // Loads the shared contextual Potion Select adapter once the base action arc exists.
+    mobileTap.src = 'js/mobile-potion-category-drag.js?v=20260925bandagemove1';
     mobileTap.dataset.mobilePotionCategoryDrag = '1';
     mobileTap.async = false;
     document.head.appendChild(mobileTap);
