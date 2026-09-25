@@ -645,6 +645,15 @@
             ? Number(attachmentDebug.gripPerchError)
             : Math.hypot(perchWorld[0] - gripWorld[0], perchWorld[1] - gripWorld[1], perchWorld[2] - gripWorld[2]);
           lines.push(`Attachment points world: PERCH=(${perchWorld.slice(0, 3).map(value => Number(value).toFixed(5)).join(', ')}) GRIP=(${gripWorld.slice(0, 3).map(value => Number(value).toFixed(5)).join(', ')}) error=${pointError.toFixed(6)}u`);
+          const sourceAttachment = window.__hitboxDebug?.shoulderPetAttachment;
+          if (sourceAttachment?.sourceWorld) {
+            const source = sourceAttachment.sourceWorld;
+            const sourcePixel = sourceAttachment.sourcePixel;
+            const renderedPixel = sourceAttachment.renderedPixel;
+            lines.push(`Rendered source pixel world: SOURCE=(${[source.x, source.y, source.z].map(value => Number(value).toFixed(5)).join(', ')}) source→perch=${Number(sourceAttachment.sourcePerchError || 0).toFixed(6)}u sourcePixel=(${Number(sourcePixel?.x).toFixed(2)}, ${Number(sourcePixel?.y).toFixed(2)}) renderedPixel=(${Number(renderedPixel?.x).toFixed(2)}, ${Number(renderedPixel?.y).toFixed(2)}) cell=${sourceAttachment.sourceCell?.column ?? '-'},${sourceAttachment.sourceCell?.row ?? '-'} tri=${sourceAttachment.sourceTriangle ?? '-'}`);
+          } else {
+            lines.push('Rendered source pixel world: awaiting one visible SkinnedMesh draw');
+          }
         } else {
           lines.push('Attachment points world: awaiting final perch/grip solve');
         }
