@@ -297,7 +297,7 @@
       ? effectiveMaxResolver(entity, "health")
       : getEffectiveMax(entity, "health")) || 0);
     const healthFloor = Math.min(before, Math.min(1, effectiveMax)); // Used so Health afflictions can never kill or accidentally heal a target already below 1 HP.
-    entity.health = round1(clamp(before - amount, healthFloor, effectiveMax));
+    entity.health = clamp(round1(clamp(before - amount, healthFloor, effectiveMax)), healthFloor, effectiveMax);
     return round1(before - entity.health);
   }
 
