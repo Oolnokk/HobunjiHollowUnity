@@ -104,23 +104,37 @@ let alignmentRequests = 0; // Counts calls into the real game-owned transient ta
 let legacyActions = 0; // Counts attacks that actually begin so both disabled and enabled paths prove they still fire.
 let holdStarts = 0; // Counts held combat actions that start while the fixture reports the player is swimming.
 let holdUpdates = 0; // Counts live held-action updates after the swimming hold crosses its input threshold.
-let holdEnds = 0; // Counts held combat actions that release normally while swimming.
+let holdEnds = 0; // Counts held combat actions that release normally while swimming or clean up when prone interrupts them.
+let pendingHoldStarts = 0; // Counts offensive holds that actually start after their transient alignment handoff resolves.
+let deferInputAlignment = false; // Used to leave an offensive hold pending long enough to knock the player prone before its windup starts.
+let pendingInputAlignment = null; // Stores the deferred alignment callback so the test can prove a late completion cannot resurrect canceled prone input.
+let inputAlignmentCancels = 0; // Counts pending alignment requests canceled when prone disarms their physical combat press.
 let inputNowMs = 1000; // Mutable clock used to cross the real combat-input hold threshold deterministically.
 const inputRuntime = { // Minimal DOM/browser shell used to execute combat-input.js and verify the default-off behavior.
   window: {
     Combat: {
-      loadout: { getSlot: slotId => slotId === 'hold1' ? 'swimHold' : null },
+      loadout: { getSlot: slotId => slotId === 'hold1' ? 'swimHold' : slotId === 'hold2' ? 'pendingHold' : null },
       abilities: { get: abilityId => abilityId === 'swimHold' ? {
         category: 'defensiveHold',
         onHoldStart: () => { holdStarts++; },
         onHoldUpdate: () => { holdUpdates++; },
         onHoldEnd: () => { holdEnds++; },
+      } : abilityId === 'pendingHold' ? {
+        category: 'offensiveHold',
+        onHoldStart: () => { pendingHoldStarts++; },
+        onHoldUpdate: () => {},
+        onHoldEnd: () => {},
       } : null },
       deps: {
         player: {},
         fireLegacyWeaponAction: () => { legacyActions++; },
         isPlayerSwimming: () => true,
-        requestMeleeAttackAlignment: callback => { alignmentRequests++; callback(); return null; },
+        requestMeleeAttackAlignment: callback => {
+          alignmentRequests++;
+          if (!deferInputAlignment) { callback(); return null; }
+          pendingInputAlignment = callback;
+          return { runAttack: () => callback(), cancel: () => { inputAlignmentCancels++; } };
+        },
       },
       isStaggered: () => false,
       update: () => {},
@@ -163,6 +177,33 @@ inputRuntime.window.Combat.update(0.016);
 assert.equal(holdUpdates, 1, 'a swimming held combat action continues updating after startup');
 inputRuntime.window.Combat.input.pressEnd(1);
 assert.equal(holdEnds, 1, 'releasing a swimming held combat action reaches its normal hold-end hook');
+
+inputRuntime.window.Combat.input.pressStart(1);
+inputNowMs += 200;
+inputRuntime.window.Combat.update(0.2);
+assert.equal(holdStarts, 2, 'a second hold starts normally before the prone interruption');
+inputRuntime.window.Combat.deps.player.prone = true;
+inputRuntime.window.Combat.update(0.016);
+assert.equal(holdUpdates, 1, 'becoming prone ends an existing held action before another hold update can run');
+assert.equal(holdEnds, 2, 'becoming prone runs the held ability cleanup hook exactly once');
+inputRuntime.window.Combat.input.pressEnd(1);
+assert.equal(holdEnds, 2, 'releasing the still-held physical input after prone interruption does not double-end the ability');
+inputRuntime.window.Combat.deps.player.prone = false;
+
+deferInputAlignment = true;
+inputRuntime.window.Combat.input.pressStart(2);
+inputNowMs += 200;
+inputRuntime.window.Combat.update(0.2);
+assert.equal(pendingHoldStarts, 0, 'offensive hold remains pending while transient alignment has not released it');
+assert.equal(inputRuntime.window.Combat.input.getState(2).holding, true, 'pending offensive hold still owns its physical press before knockdown');
+inputRuntime.window.Combat.deps.player.prone = true;
+inputRuntime.window.Combat.update(0.016);
+assert.equal(inputAlignmentCancels, 1, 'prone cancels a pending offensive-hold alignment request');
+assert.equal(inputRuntime.window.Combat.input.getState(2).down, false, 'prone disarms the pending physical combat press');
+pendingInputAlignment?.();
+assert.equal(pendingHoldStarts, 0, 'a late alignment completion cannot resurrect a combat hold canceled by prone');
+inputRuntime.window.Combat.deps.player.prone = false;
+deferInputAlignment = false;
 
 assert.match(bandit, /attackAlignmentStep\?\.\(c, targetPlayer, dt/, 'bandits align before attack windup');
 assert.doesNotMatch(bandit, /readyToStrike[\s\S]{0,260}isCreatureSwimming/, 'hostile strike readiness is not disabled by swimming');

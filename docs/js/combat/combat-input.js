@@ -315,6 +315,10 @@
     for (const slotIndex of [1, 2]) {
       const s = slots[slotIndex];
       if (!s.down) continue;
+      if (window.Combat.deps?.player?.prone) {
+        abortPress(slotIndex);
+        continue;
+      }
       if (!s.holding) {
         if (now() - s.downAt >= HOLD_THRESHOLD_S) {
           s.holding = true;
