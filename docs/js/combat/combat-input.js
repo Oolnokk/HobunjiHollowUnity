@@ -227,6 +227,10 @@
   function updateHold(slotIndex, dt) {
     const s = slots[slotIndex];
     if (!s?.holdStarted) return;
+    if (window.Combat.deps?.player?.prone) {
+      endHold(slotIndex);
+      return;
+    }
     const slotId = 'hold' + slotIndex;
     s.holdAbility?.onHoldUpdate?.({ slotIndex, slotId }, dt);
   }
