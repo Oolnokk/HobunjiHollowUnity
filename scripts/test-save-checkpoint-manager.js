@@ -91,7 +91,7 @@ const vm = require('node:vm');
       return folderRecovery.has(slot) ? structuredClone(folderRecovery.get(slot)) : null;
     },
     async readRecoveryCheckpoints() {
-      return Object.fromEntries(['manual', 'auto', 'autoPrevious', 'preRestore'].map(slot => [slot, folderRecovery.get(slot) || null]));
+      return Object.fromEntries(['manual', 'campfire', 'auto', 'autoPrevious', 'preRestore'].map(slot => [slot, folderRecovery.get(slot) || null]));
     },
     async writeRecoveryCheckpoint(slot, record) {
       folderRecovery.set(slot, structuredClone(record));
@@ -302,6 +302,19 @@ const vm = require('node:vm');
   assert.deepEqual(folderRecovery.get('manual').snapshot, folderPrimarySnapshot, 'folder manual checkpoint equals canonical manual snapshot');
   const goodManualFolderRaw = JSON.stringify(folderRecovery.get('manual'));
   const goodManualBrowserRaw = store.get('hobunjiSaveCheckpoint.manual.v1');
+
+  // Campfire Save owns an independent checkpoint. It may advance the canonical save, but it
+  // must never replace the pause-menu Manual Save recovery point.
+  currentSnapshot.meta.worlds[0].members.char_a.nonGearInventory.turnip = 4;
+  now += 30_000;
+  const campfireResult = await api.saveCampfire();
+  assert.equal(campfireResult.ok, true, 'campfire save commits through the guarded folder-first path');
+  assert.equal(campfireResult.folder, true);
+  assert.equal(JSON.stringify(folderRecovery.get('manual')), goodManualFolderRaw, 'campfire save leaves the folder manual checkpoint untouched');
+  assert.equal(store.get('hobunjiSaveCheckpoint.manual.v1'), goodManualBrowserRaw, 'campfire save leaves the browser manual checkpoint mirror untouched');
+  assert.equal(folderRecovery.get('campfire').snapshot.meta.worlds[0].members.char_a.nonGearInventory.turnip, 4, 'campfire save advances its own folder checkpoint');
+  assert.ok(store.has('hobunjiSaveCheckpoint.campfire.v1'), 'campfire save has its own browser mirror key');
+  assert.equal(api.getStatus().campfire.kind, 'campfire', 'public checkpoint status exposes campfire history separately');
 
   // A suspicious manual attempt must not destroy the previous good manual checkpoint before
   // the folder guard approves it. UI can explicitly force this only after confirmation.
