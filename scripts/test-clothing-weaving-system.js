@@ -418,7 +418,9 @@ const metalPatternSource = fs.readFileSync('docs/js/tool-metal-recolor.js', 'utf
 const equipmentPanelSource = fs.readFileSync('docs/js/equipment-panel.js', 'utf8'); // Guards the inventory icon handoff so woven composites are not tinted a second time.
 const inventoryUiSource = fs.readFileSync('docs/js/inventory-ui.js', 'utf8'); // Guards the one-shot async Pack icon refresh path; no per-frame pattern compositing.
 assert.match(source, /let activePortraitPatternMap = null/, 'global compatibility map exists only as an explicitly owned woven-render fallback');
-assert.match(source, /let wovenPortraitRenderChain = Promise\.resolve\(\)/, 'woven portraits use a dedicated serialized lane so compatibility state cannot bleed between concurrent NPC/player renders');
+assert.match(source, /let portraitGateReaders = 0/, 'ordinary portrait readers are tracked separately from woven exclusive ownership');
+assert.match(source, /let portraitGateWriterActive = false/, 'woven compatibility ownership has an explicit exclusive-writer state');
+assert.match(source, /portraitGateWaitingWriters/, 'waiting woven portraits block new ordinary readers so the compatibility writer cannot starve');
 assert.match(source, /const compatibilityTint = function clothingPatternImageForTint/, 'the pre-817 global tint compatibility entry point is restored for portrait code that bypasses renderOptions.imageForTint');
 assert.match(source, /if \(!map\) return portraitBaseTintResolver\(img, sourceKey, tint\)/, 'global tint behavior stays canonical outside an actively owned woven portrait render');
 assert.match(source, /const patternMap = Array\.isArray\(descriptors\)[\s\S]*?buildPortraitPatternMap\(descriptors\)/, 'each woven portrait render builds its own descriptor map');
