@@ -20,7 +20,7 @@ const idleParity = read('docs/js/attack-editor-idle-hand-parity.js');
 const npcHeld = read('docs/js/npc-held-equipment-v4.js');
 const onboarding = read('docs/js/onboarding-character-creation-weapon-view-fix.js');
 const held = read('docs/js/held-action-animations.js');
-const panelUi = read('docs/js/panel-ui.js');
+const panelUi = read('docs/js/panel-ui-core.js'); // Tool loaders live in panel-ui-core.js since #595 split PanelUI; panel-ui.js only bootstraps it.
 
 // Global history owns the whole editor, not one panel.
 assert.match(editor, /id="editorUndoBtn"/, 'Undo button must be visible in the core editor');

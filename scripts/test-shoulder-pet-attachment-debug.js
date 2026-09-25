@@ -7,6 +7,7 @@ const fs = require('node:fs');
 const game = fs.readFileSync('docs/game.js', 'utf8'); // Guards persistence and dependency wiring for the in-game marker mode.
 const index = fs.readFileSync('docs/index.html', 'utf8'); // Guards the mobile-accessible Settings toggle.
 const debug = fs.readFileSync('docs/js/debug-hitboxes.js', 'utf8'); // Guards the world-space perch/grip renderer and copyable snapshot.
+const pixelProbe = fs.readFileSync('docs/js/pixel-probe.js', 'utf8'); // Guards copyable world/local shoulder attachment coordinates.
 
 assert.match(index, /Show Shoulder-Pet Perch \/ Grip/);
 assert.match(index, /id="settingShowShoulderPetAttachmentPoints"/);
@@ -40,9 +41,8 @@ assert.match(debug, /petRootWorld/);
 assert.match(pixelProbe, /PET_ROOT=/);
 assert.match(pixelProbe, /petRootCapture=/);
 assert.match(game, /playerAttachmentAnchor,/);
-assert.match(debug, /error \$\{state\.error\.toFixed\(5\)\}u/);
+assert.match(debug, /grip \$\{state\.error\.toFixed\(5\)\}u/);
 assert.match(debug, /get shoulderPetAttachment\(\)/);
-const pixelProbe = fs.readFileSync('docs/js/pixel-probe.js', 'utf8'); // Guards copyable world/local shoulder attachment coordinates.
 assert.match(pixelProbe, /Attachment points world: PERCH=/);
 assert.match(pixelProbe, /GRIP=/);
 assert.match(pixelProbe, /Authored shoulderPerch local:/);

@@ -69,7 +69,7 @@ assert.doesNotMatch(
 );
 assert.match(
   avatarPreview,
-  /await window\.renderPortraitProfile\(canvas, profile, renderOptions\);\s*return true;/,
+  /renderProfileWithWovenPatterns\(renderer, canvas, profile, renderOptions\);[\s\S]{0,80}await renderer\(canvas, profile, renderOptions\);\s*\}\s*return true;/,
   'shared avatar preview renders the authored portrait directly'
 );
 

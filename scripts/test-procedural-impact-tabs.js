@@ -2,7 +2,7 @@ const assert = require('assert');
 const fs = require('fs');
 
 const editor = fs.readFileSync('docs/tools/procedural-animation-editor/index.html', 'utf8'); // Confirms the original large editor remains structurally intact.
-const panelUi = fs.readFileSync('docs/js/panel-ui.js', 'utf8'); // Confirms the adapter loads only for the intended tool path.
+const panelUi = fs.readFileSync('docs/js/panel-ui-core.js', 'utf8'); // Confirms the adapter loads only for the intended tool path.
 const adapter = fs.readFileSync('docs/js/procedural-impact-tabs.js', 'utf8'); // Verifies the tab and modal integration contract.
 
 assert(editor.includes('<summary><b>Baked impact blend space</b>'), 'source blendspace section is missing');
