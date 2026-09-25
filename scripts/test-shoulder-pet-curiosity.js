@@ -126,9 +126,26 @@ assert.match(source,
   'shoulder pets bypass the generic center-pivot creature PNG deadzone before the authored perch/grip solve');
 assert.match(probeSource, /Shoulder plane deadzone:/,
   'Pixel Probe reports whether the shoulder-pet deadzone bypass is active');
-assert.match(rigSource,
-  /pet\.__hobunjiShoulderFacingInward = phase === 'look';[\s\S]{0,700}const enteringInwardLook = phase === 'wait' && nextPhase === 'look';[\s\S]{0,500}const leavingInwardLook = phase === 'look' && nextPhase === 'settle';[\s\S]{0,500}pet\.__hobunjiShoulderFacingInward = facingInward/,
-  'curiosity explicitly uses inward/front only during the brief look and restores outward/behind on settle');
+assert.match(source, /const SHOULDER_PET_POSE_HOLD_MIN_S = 3\.4;[\s\S]{0,120}const SHOULDER_PET_POSE_HOLD_MAX_S = 7\.2;/,
+  'both local facing poses use the same sustained multi-second hold range');
+assert.match(source, /const SHOULDER_PET_IDLE_INWARD_CHANCE = 0\.75;[\s\S]{0,180}const SHOULDER_PET_MOVING_INWARD_CHANCE = 0\.25;/,
+  'idle favors inward 75/25 while movement favors outward 75/25');
+assert.match(source,
+  /const moving = \(masterVx \* masterVx \+ masterVy \* masterVy\) > SHOULDER_PET_MOVING_SPEED_SQ[\s\S]{0,120}playerAutoWalk/,
+  'movement bias reuses existing velocity/autowalk state with a squared-speed comparison instead of expensive spatial work');
+assert.match(source,
+  /if \(state\.timer <= 0\) \{[\s\S]{0,220}const facingInward = rnd\(\) < inwardChance;[\s\S]{0,420}state\.timer = SHOULDER_PET_POSE_HOLD_MIN_S/,
+  'a single weighted pose roll occurs only when the sustained hold expires');
+const sustainedTickSource = source.slice(source.indexOf('function _tickShoulderPetCuriosity'), source.indexOf('function _applyShoulderPetCuriosity'));
+assert.doesNotMatch(sustainedTickSource, /phase === 'wait'|phase === 'look'|phase === 'settle'|SHOULDER_PET_CURIOUS_LOOK_|SHOULDER_PET_CURIOUS_WAIT_/,
+  'the old momentary wait/look/settle cycle is completely removed');
+assert.match(source,
+  /c\.__hobunjiShoulderFacingInward = facingInward;[\s\S]{0,900}ShoulderPetObservationFlip\?\.recordPose\?\./,
+  'gameplay owns the persistent facing state directly and only records debug data at pose-roll boundaries');
+assert.doesNotMatch(rigSource, /Object\.defineProperty\(state, 'phase'|scanShoulderPetsForObservationFlip|setInterval\(scanShoulderPetsForObservationFlip/,
+  'shoulder facing has no property hook and no 250ms polling scan');
+assert.match(rigSource, /recordPose: recordShoulderPetPose/,
+  'the debug helper is event-driven by infrequent sustained-pose selections');
 assert.doesNotMatch(rigSource, /solveShoulderObservationPlaneAtPivot|nextScaleX|localTranslation\.applyQuaternion/,
   'the shoulder runtime contains no sprite-mirroring or pivot-translation solver');
 assert.match(rigSource,
@@ -136,39 +153,24 @@ assert.match(rigSource,
   'the compatibility hook only restores canonical unmirrored plane transforms');
 assert.match(rigSource, /mode: 'canonical-no-sprite-mirror'/,
   'debug state explicitly reports that shoulder sprites are never mirrored');
-assert.match(rigSource,
-  /applyAtPinnedPerch: applyShoulderPetObservationAtPinnedPerch/,
-  'the direct pivot solver is exposed only as the final-pin integration surface');
 assert.match(source,
-  /function _applyShoulderPetFinalTransform\(c, finalTransform\)[\s\S]{0,5200}applyAtPinnedPerch\?\.\(c, finalTransform\.perchWorldPosition\)[\s\S]{0,400}observationPivotApplied/,
-  'game.js applies observation parity inside the same final authoritative shoulder attachment solve before rendering');
-const observationScanSource = rigSource.slice(rigSource.indexOf('const scanShoulderPetsForObservationFlip'), rigSource.indexOf('window.ShoulderPetObservationFlip ='));
-assert.doesNotMatch(observationScanSource, /applyAtPinnedPerch/,
-  'the 250ms instrumentation scan never performs active visual flips');
-assert.match(rigSource,
-  /mode: 'direct-local-grip-pivot'/,
-  'final-pin diagnostics report the direct local grip-pivot solver');
-assert.match(rigSource,
-  /pivotMode: 'pending-final-shoulder-pin'/,
-  'logical flip diagnostics remain pending until the final shoulder pin consumes the new parity');
+  /hobunjiShoulderSpriteCanonicalized === true[\s\S]{0,420}applyAtPinnedPerch\?\.\(c, finalTransform\.perchWorldPosition\)[\s\S]{0,300}hobunjiShoulderSpriteCanonicalized = true/,
+  'canonical sprite restoration is a one-time avatar cleanup rather than a per-frame hierarchy traversal');
 assert.match(source,
-  /_applyShoulderPetCuriosity\(c, dt\);[\s\S]{0,180}if \(perch && grip\)/,
-  'the curiosity pose is applied inside the shoulder-pet branch before attachment pinning');
+  /_applyShoulderPetCuriosity\(c, master, dt\);[\s\S]{0,180}if \(perch && grip\)/,
+  'the sustained pose update remains inside the shoulder-pet branch before attachment pinning');
 assert.match(source,
   /_updateCompanionHeadRotation\(c, _companionHeadRestDeg\(c\) \+ state\.currentPitchDeg, dt\)/,
-  'shoulder-pet glances add a small pitch when the authored head rig is available');
+  'sustained holds preserve the subtle authored head variation');
 assert.match(source,
   /const SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG = 14/,
-  'shoulder-pet glances give the head its own visible turn instead of only rotating the body planes');
+  'shoulder poses retain their independent head turn rather than rotating the body planes');
 assert.match(source,
   /const SHOULDER_PET_CURIOUS_BODY_LEAN_MAX_DEG = 7/,
-  'the whole-body curiosity lean stays subtle and scale-stable');
+  'the whole-body lean stays subtle and scale-stable');
 assert.match(source,
   /state\.targetYawDeg = side \* \(SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG/,
-  'curiosity applies the separate head turn in the same direction as its body glance');
-assert.match(source,
-  /const SHOULDER_PET_CURIOUS_WAIT_MIN_S = 3\.4/,
-  'shoulder-pet glances have a cooldown so the 250ms instrumentation scan always installs before the first observation');
+  'each new sustained hold can choose a natural head/lean variation');
 assert.match(rigSource,
   /\['drenkirra'[\s\S]{0,180}\[0\.01,-0\.11914729549653388,-0\.001096892109713506\]/,
   'Drenkirra uses the supplied shoulderGrip');
@@ -182,7 +184,7 @@ assert.match(rigSource,
   /characterTransformAliases = Object\.freeze\(\{ rakakoan: 'kenkari'[\s\S]{0,60}\}\)[\s\S]{0,17000}characters\[aliasKey\] = characters\[sourceKey\]/,
   'Rakakoan still shares Kenkari transform objects instead of owning independent perch transforms');
 assert.match(probeSource,
-  /Size class:[\s\S]{0,260}expected group scale=[\s\S]{0,500}Curiosity: phase=/,
-  'the mobile pixel probe distinguishes a real genotype-scale overwrite from a curiosity pose');
+  /Size class:[\s\S]{0,260}expected group scale=[\s\S]{0,650}Shoulder pose:[\s\S]{0,180}inwardChance=/,
+  'the mobile pixel probe reports sustained pose, hold time, and active idle/moving bias alongside genotype scale');
 
 console.log('Shoulder-pet curiosity regression checks passed.');
