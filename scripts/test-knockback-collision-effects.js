@@ -82,7 +82,7 @@ assert(indexSource.indexOf('js/combat/burning-affliction-vfx.js') > indexSource.
 assert.match(resourceSource, /burningHealth:\s*\{[\s\S]{0,300}resource:\s*"health"[\s\S]{0,300}tags:\s*\["fire", "physical"\]/,
   'Burning Health is a first-class Health affliction tagged as fire damage');
 assert.match(resourceSource, /function resolveBurningTick[\s\S]{0,450}removeAffliction\(entity, "burningHealth", amount\)[\s\S]{0,220}applyHealthAfflictionDamage\(entity, amount\)/,
-  'Burning consumes its own buildup through the shared nonlethal Health-affliction DoT path');
+  'Burning consumes its own already-applied buildup through the shared lethal Health-affliction damage path');
 assert.match(playerVitalsSource, /isPlayerInWater\?\.\(\)[\s\S]{0,120}extinguishInWater/,
   'player vitals clears Burning immediately when the player enters water');
 assert.match(gameSource, /function isWaterSurfaceAt[\s\S]{0,650}WATERWAY_TYPES\.has\(tile\.type\)[\s\S]{0,220}Number\(tile\.water\)[\s\S]{0,120}>= 0\.003/,
