@@ -328,10 +328,7 @@
   }
   function pollController(block) {
     const bind = window.InputBindings?.getCurrentBindings?.()?.controller?.interact;
-    const index = String(bind||'').startsWith('Button') ? Number(String(bind).slice(6)) : NaN;
-    let down = false;
-    if (Number.isInteger(index)) for (const pad of navigator.getGamepads?.() || [])
-      if (pad?.buttons?.[index]?.pressed) down = true;
+    const down = !!bind && !!window.ControllerInput?.frame?.()?.isDown?.(bind); // Shared per-frame snapshot; ControllerInput is the only gamepad polling authority.
     if (down && !controllerInteractDown) pushElevatorBlock(block);
     controllerInteractDown = down;
   }

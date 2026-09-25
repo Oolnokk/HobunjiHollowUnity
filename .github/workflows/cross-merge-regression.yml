@@ -1,0 +1,78 @@
+name: Cross-merge regressions
+
+# Source-level checks that broke silently when later merges changed shared
+# files (game.js, index.html cache keys, music-system.js, shoulder-pet
+# layering) because no path-filtered workflow ran them. Deliberately broad
+# paths so a change anywhere under docs/ re-checks them.
+on:
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'scripts/test-cloud-forest-fog-depth.js'
+      - 'scripts/test-combat-reticle-visibility.js'
+      - 'scripts/test-force-tothal-shift-regeneration.js'
+      - 'scripts/test-front-headwear-facing.js'
+      - 'scripts/test-hat-xray-facing.js'
+      - 'scripts/test-music-system.js'
+      - 'scripts/test-music-track-gain-settings.js'
+      - 'scripts/test-npc-facing-deadzone.js'
+      - 'scripts/test-player-body-transform-composer.js'
+      - 'scripts/test-render-surface-recovery.js'
+      - 'scripts/test-shoulder-pet-attachment-debug.js'
+      - 'scripts/test-shoulder-pet-curiosity.js'
+      - 'scripts/test-shoulder-cam-mandatory.js'
+      - 'scripts/test-dialogue-syllable-cadence.js'
+      - 'scripts/test-attack-animation-editor-history-grips.js'
+      - 'scripts/test-controller-input-authority.js'
+      - 'scripts/test-npc-social-rapport-wardrobes.js'
+      - 'scripts/test-procedural-impact-tabs.js'
+      - 'scripts/test-onboarding-character-creation-redesign.js'
+      - 'scripts/test-time-passage-release-input.js'
+      - 'scripts/test-combat-deps-shared-seam.js'
+      - 'scripts/test-banubu-snore.js'
+      - '.github/workflows/cross-merge-regression.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cross-merge-regressions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Syntax check game runtime
+        run: node --check docs/game.js
+      - name: Cross-merge regression checks
+        run: |
+          set -e
+          for t in \
+            cloud-forest-fog-depth \
+            combat-reticle-visibility \
+            force-tothal-shift-regeneration \
+            front-headwear-facing \
+            hat-xray-facing \
+            music-system \
+            music-track-gain-settings \
+            npc-facing-deadzone \
+            player-body-transform-composer \
+            render-surface-recovery \
+            shoulder-pet-attachment-debug \
+            shoulder-pet-curiosity \
+            shoulder-cam-mandatory \
+            dialogue-syllable-cadence \
+            attack-animation-editor-history-grips \
+            controller-input-authority \
+            npc-social-rapport-wardrobes \
+            procedural-impact-tabs \
+            onboarding-character-creation-redesign \
+            time-passage-release-input \
+            combat-deps-shared-seam \
+            banubu-snore; do
+            echo "::group::$t"
+            node "scripts/test-$t.js"
+            echo "::endgroup::"
+          done

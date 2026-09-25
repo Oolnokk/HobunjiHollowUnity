@@ -26,7 +26,7 @@
   }
 
   function resetToDefaults() {
-    const toggle = document.getElementById('settingShoulderSurf'); // Re-enabled below so the reset always lands in Shoulder Cam rather than silently editing an inactive preset.
+    const toggle = document.getElementById('settingShoulderSurf'); // Legacy on/off toggle; absent now that Shoulder Cam is mandatory, kept null-safe for older cached pages.
     const horizontal = document.getElementById('settingShoulderSurfOffsetH'); // Existing game.js listener owns the real private stance value; dispatching its native input path avoids duplicating camera state.
     const vertical = document.getElementById('settingShoulderSurfOffsetV'); // Existing game.js listener owns the real private stance value; dispatching its native input path avoids duplicating camera state.
     if (!horizontal || !vertical) return false;
@@ -63,7 +63,7 @@
 
     const row = document.createElement('div'); // Added once to the existing Settings list; uses the same row/button classes as the game's other reset controls.
     row.className = 'settings-row';
-    row.innerHTML = '<div class="settings-label"><div class="settings-name">Shoulder Cam Defaults</div><div class="settings-desc">Re-enables Shoulder Cam, recenters it, restores the currently active Default/Combat shoulder offsets, and reapplies species-relative neck/height framing.</div></div><button type="button" class="settings-small-btn" id="resetShoulderCamBtn">Set to Default</button>';
+    row.innerHTML = '<div class="settings-label"><div class="settings-name">Shoulder Cam Defaults</div><div class="settings-desc">Recenters Shoulder Cam, restores the currently active Default/Combat shoulder offsets, and reapplies species-relative neck/height framing.</div></div><button type="button" class="settings-small-btn" id="resetShoulderCamBtn">Set to Default</button>';
     anchorRow.parentNode.insertBefore(row, anchorRow.nextSibling);
     row.querySelector(`#${RESET_BUTTON_ID}`)?.addEventListener('click', resetToDefaults);
     return true;

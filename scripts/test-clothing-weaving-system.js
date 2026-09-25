@@ -680,8 +680,9 @@ assert.match(debugCopySource, /\.\.\.String\(weavingDiagnostics\)\.split\('\\n'\
   'copied report emits every weaving diagnostic line before the raw log');
 assert.match(indexSource, /debug\.js\?v=20260925weavesessiondebug4/,
   'index cache-busts the debug bootstrap that renders and exports the weaving session snapshot');
-assert.match(indexSource, /game\.js\?v=20260925weavecommit2/,
-  'index cache-busts game.js so player-avatar commit diagnostics match the weaving runtime under test');
+// game.js is re-bumped by nearly every merge; any key at or after #829's weavecommit2 still ships its diagnostics.
+const gameCacheKey = indexSource.match(/"game\.js\?v=(\d{8}[a-z0-9-]*)/i)?.[1] || '';
+assert(gameCacheKey >= '20260925', `index cache-busts game.js so player-avatar commit diagnostics match the weaving runtime under test (found ${gameCacheKey || 'none'})`);
 assert.match(source, /PatternLibrary\.listAvailable/, 'loom reuses shared pattern library');
 assert.match(source, /PatternAuthoring\?\.openEditor/, 'loom reuses shared pattern authoring workflow');
 assert.match(source, /HOOD_C/);

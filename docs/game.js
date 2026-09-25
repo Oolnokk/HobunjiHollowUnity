@@ -541,12 +541,8 @@
           // temporary catch-up sprint for an NPC who was already in transit.
           _dialogueWalker = null;
         }
-        enterDefaultCameraMode();
+        enterDefaultCameraMode(); // Always Shoulder Cam now; snapShoulderSurfAzimuth() re-centers behind the player.
         activeCameraTarget = null;
-        if (activeCameraMode !== SHOULDER_SURF_MODE) {
-          cameraAzimuthOffsetDeg = 0;
-          cameraAngleOffsetDeg = 0;
-        }
         _snapCameraTarget(); // Re-centers the restored gameplay camera after dialogue/cinematic framing.
         dialogueZoomPointers.clear();
         dialoguePinchDistance = null;
@@ -9629,7 +9625,10 @@
       // so this substitutes for the normal follow camera without needing any
       // special-casing in the other camera modes (seated/fishing/music/etc.
       // all restore whatever mode they captured on entry, unaffected).
-      let s_shoulderSurf = true;
+      // Shoulder Cam is mandatory: the top-down gameplay camera is retired. The
+      // config's "default" mode stays only as an internal fallback (unknown-mode
+      // lookups, Cutscene Preview's actor framing); gameplay never returns to it.
+      const s_shoulderSurf = true;
       // Shoulder-surf's over-the-shoulder framing offsets (Settings →
       // Camera), in tiles, applied relative to the camera's own right/up
       // axes — see updateCameraPosition. Positive H = shift camera/framing
@@ -10941,7 +10940,7 @@
         return modes[mode] || modes[cameraConfig().defaultMode] || modes.default || {};
       }
       function defaultCameraModeKey() {
-        return s_shoulderSurf ? SHOULDER_SURF_MODE : (cameraConfig().defaultMode || 'default');
+        return SHOULDER_SURF_MODE; // Top-down is retired; every "back to gameplay camera" path lands in Shoulder Cam.
       }
       // Same "weapon tool actually equipped AND selected" gate as
       // updateMovement's own weaponEngaged/findAutoTarget's meleeActive —
@@ -23867,50 +23866,22 @@
       document.getElementById('settingZoom').addEventListener('change', e => {
         setCameraZoomScale(parseFloat(e.target.value) || 1.5);
       });
-      // Shoulder-surf's mouse-look wants genuine FPS-style relative look —
-      // the OS cursor itself must never move (a free-roaming cursor runs out
-      // of screen/desk space and pins at the display edge, capping how far
-      // you can turn) — so it Pointer-Locks the canvas instead of just
-      // reading movementX/Y off a visible cursor. Locked or not, the
-      // mousemove handler below always reads movementX/Y the same way;
-      // locking only stops the OS cursor from moving/being visible at all,
-      // so those deltas keep coming no matter how far or how many times the
-      // physical mouse moves in one direction.
-      function cursorlessMouseAimRequested() {
-        return characterViewMode.enabled
-          || (s_shoulderSurf && activeCameraMode === SHOULDER_SURF_MODE);
-      }
-      
-      function shoulderSurfPointerLockActive() {
-        return document.pointerLockElement === threeContainer;
-      }
-      function requestShoulderSurfPointerLock() {
-        if (!cursorlessMouseAimRequested() || !isDesktop || shoulderSurfPointerLockActive()) return;
-        // Can reject (no transient user activation, or the browser's own
-        // rate-limit on repeated requests) — that's fine, the click-to-relock
-        // handler below gives the player another chance.
-        try { threeContainer.requestPointerLock()?.catch?.(() => {}); } catch (err) {}
-      }
-      function releaseShoulderSurfPointerLock() {
-        if (shoulderSurfPointerLockActive()) { try { document.exitPointerLock(); } catch (err) {} }
-      }
-      document.getElementById('settingShoulderSurf')?.addEventListener('change', e => {
-        s_shoulderSurf = e.target.checked;
-        // Only live-swap while in one of the two plain gameplay camera
-        // states — mid-dialogue/fishing/seated/cutscene, leave the active
-        // mode alone and let its own existing restore path (now routed
-        // through defaultCameraModeKey()/enterDefaultCameraMode()) pick up
-        // the new toggle state next time it resolves back to gameplay.
-        if (activeCameraMode === (cameraConfig().defaultMode || 'default') || activeCameraMode === SHOULDER_SURF_MODE) {
-          activeCameraMode = defaultCameraModeKey();
-          if (activeCameraMode === SHOULDER_SURF_MODE) snapShoulderSurfAzimuth();
-          else { cameraAzimuthOffsetDeg = 0; cameraAngleOffsetDeg = 0; }
-        }
-        if (s_shoulderSurf) {
-          requestShoulderSurfPointerLock();
-          if (isDesktop) showToast('Shoulder Cam: click the game if mouse-look doesn\'t engage', true);
-        } else releaseShoulderSurfPointerLock();
+      // Shoulder Cam / Character View Pointer Lock now lives in js/shoulder-cam-pointer-lock.js
+      // (window.ShoulderCamPointerLock). These thin wrappers keep every existing call site
+      // (openMenu/closeMenu above run before this line, but only from user events after boot).
+      window.ShoulderCamPointerLock.init({
+        threeContainer,
+        isDesktop,
+        isCharacterViewEnabled: () => characterViewMode.enabled,
+        isShoulderSurfEnabled: () => s_shoulderSurf,
+        getActiveCameraMode: () => activeCameraMode,
+        shoulderSurfMode: SHOULDER_SURF_MODE,
       });
+      function cursorlessMouseAimRequested() { return window.ShoulderCamPointerLock.cursorlessMouseAimRequested(); }
+      function requestShoulderSurfPointerLock() { window.ShoulderCamPointerLock.request(); }
+      function releaseShoulderSurfPointerLock() { window.ShoulderCamPointerLock.release(); }
+      // The Settings "Shoulder Cam" on/off toggle was removed with the top-down camera;
+      // Shoulder Cam is always on (see s_shoulderSurf / defaultCameraModeKey()).
       // Re-engage after the browser's own Escape-releases-lock behavior, or
       // after the settings menu (below) let go of it — a plain click on the
       // game world is the same click-to-resume-look convention most desktop
@@ -27320,6 +27291,38 @@
         hostileObjects,
         companionObjects,
         getCurrentArea: () => currentArea,
+        // Not used by Combat itself: window.Combat.deps doubles as the shared
+        // world-state seam for modules that load after game.js. BanubuSnore
+        // needs the live zone layout (Banubu's shifted cave entrance) and
+        // surface heights for the exterior night snore, and it plus the HUD
+        // reticles pause/hide on isDialogueOpen. Without these the exterior
+        // snore sat at "waiting for live zone layout" forever.
+        isDialogueOpen: () => dialogueOpen,
+        zoneLayouts: _zoneLayouts,
+        zoneScenes: _zoneScenes,
+        getActiveGrid: window.GridTileAccessors.getActiveGrid,
+        tileSurfaceYInArea,
+        activeSurfaceYAtWorld,
+        // HobunjiAmbientBgs (js/ambient-biome-audio.js) reads the area grid,
+        // tile types and rain state here; without them the river loop never
+        // found water and birds/nightbugs ignored rain.
+        calendar,
+        getHour: window.CalendarSystem.getHour,
+        TileType,
+        WATERWAY_TYPES,
+        npcGridForArea,
+        _isZoneArea,
+        // InventoryUI's tool detail card (metal tier, effect multiplier,
+        // verdigris %, mastery thresholds) and RangedWeaponArchetypes' ammo
+        // loadout sanitizer/action-bar refresh read these here as well.
+        METAL_DEFS,
+        MASTERY_XP_THRESHOLDS,
+        toolEffectiveMetalKey,
+        toolMetalMultiplier,
+        toolVerdigrisFraction,
+        getGearInventory: () => gearInventory,
+        saveGearInventory,
+        refreshActionBar,
         // Named animal projectiles use the same live Three.js elevation as
         // the player/creature renderers so Drenkirra's vertical spit aim is
         // based on actual target height, not a flattened ground plane.
@@ -27625,7 +27628,7 @@
         setActiveTool: (v) => { activeTool = v; },
         setLastActionMessage: (v) => { lastActionMessage = v; },
         getCameraMode: () => activeCameraMode,
-        setCameraMode: (v) => { activeCameraMode = v; },
+        setCameraMode: (v) => { if (v == null || v === (cameraConfig().defaultMode || 'default')) enterDefaultCameraMode(); else activeCameraMode = v; }, // Top-down is retired; restores that fall back to it land in Shoulder Cam.
         getCameraTarget: () => activeCameraTarget,
         setCameraTarget: (v) => { activeCameraTarget = v; },
         getCameraOrientationOffsets: () => ({ azimuthDeg: cameraAzimuthOffsetDeg, angleDeg: cameraAngleOffsetDeg }),
@@ -28957,7 +28960,7 @@
         getFacingAngle: () => facingAngle,
         setFacingAngle: (v) => { facingAngle = v; },
         getCameraMode: () => activeCameraMode,
-        setCameraMode: (v) => { activeCameraMode = v; },
+        setCameraMode: (v) => { if (v == null || v === (cameraConfig().defaultMode || 'default')) enterDefaultCameraMode(); else activeCameraMode = v; }, // Top-down is retired; restores that fall back to it land in Shoulder Cam.
         getCameraTarget: () => activeCameraTarget,
         setCameraTarget: (v) => { activeCameraTarget = v; },
         setWorldLivestockFrameCache: (v) => { _worldLivestockFrameCache = v; },
