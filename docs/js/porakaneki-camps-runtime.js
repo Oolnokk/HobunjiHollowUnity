@@ -27,6 +27,7 @@
   const TICK_INTERVAL_S = 0.20; // Neutral planner/LOD cadence; actual entity movement/render/combat stays in the normal hostile loop.
   const PROVOKE_SECONDS = 45; // Temporary same-camp self-defense window after an assault without permanent Favor loss.
   const DORMANT_ENTITY_RELEASE_S = 3; // Grace period before a hidden off-radius/sleeping hunter's real entity is torn down.
+  const MIN_HUNTING_CAMPS_PER_ZONE = 1; // Hard ecology floor: every wilderness zone keeps at least one ordinary Porakaneki hunting camp.
 
   let combatDeps = null; // Captured from BanditCombat.init; movement/scenes/terrain/tools/hostileObjects.
   let schedulingDeps = null; // Captured from NpcScheduling.init; live named-chief walker.
@@ -259,7 +260,7 @@
   function smallCampCountForZone(zoneId) {
     const small = cfg?.smallCamps || {};
     const rng = seededRng(`${generationYear()}:${zoneId}:porakaneki-small-count`);
-    return integerRoll(rng, num(small.minPerZone, 2), num(small.maxPerZone, 4));
+    return Math.max(MIN_HUNTING_CAMPS_PER_ZONE, integerRoll(rng, num(small.minPerZone, 2), num(small.maxPerZone, 4)));
   }
   function smallResidentCount(zoneId, campIndex) {
     const small = cfg?.smallCamps || {};
@@ -298,8 +299,8 @@
   } // Includes the inactive chief reservation so a later seasonal migration can never land in a bandit chunk.
   function reduceHuntingCampsForBandit(zoneId) {
     const zoneState = state.zones.get(zoneId);
-    if (!zoneState?.smallCamps?.length) return null;
-    const camp = zoneState.smallCamps.pop(); // Deterministic sacrifice: newest hunting-camp slot goes first when bandit placement needs room.
+    if (!zoneState?.smallCamps || zoneState.smallCamps.length <= MIN_HUNTING_CAMPS_PER_ZONE) return null;
+    const camp = zoneState.smallCamps.pop(); // Deterministic sacrifice: newest surplus hunting-camp slot goes first when bandit placement needs room.
     teardownCamp(camp);
     window.TemporaryLocales?.release?.(zoneState.view, camp.instance);
     state.lastReason = `hunting-camp-reduced-for-bandits:${zoneId}:${camp.id}`;
@@ -316,6 +317,28 @@
       return site ? { col: site.x + site.w * 0.5, row: site.y + site.h * 0.5, minDistance } : null;
     }).filter(Boolean);
   }
+  function stampHuntingCamp(zoneState, zoneId, campIndex, minimumFallback = false) {
+    if (!zoneState?.view || !smallLocaleDef) return null;
+    const instanceId = minimumFallback
+      ? `porakaneki_small_${zoneId}_minimum`
+      : `porakaneki_small_${zoneId}_${campIndex}`; // Distinct fallback id makes the one-camp guarantee visible in diagnostics/tests.
+    const instance = window.TemporaryLocales.stamp(zoneState.view, smallLocaleDef, {
+      rng: seededRng(`${generationYear()}:${zoneId}:porakaneki-small-site:${minimumFallback ? 'minimum' : campIndex}`),
+      clearableTypes: new Set(),
+      clearanceTiles: minimumFallback ? 0 : (smallLocaleDef.placement?.clearanceTiles ?? 2),
+      requiresFlatGround: minimumFallback ? false : (smallLocaleDef.placement?.requiresFlatGround !== false),
+      minDistanceFromEntry: minimumFallback ? 0 : (smallLocaleDef.placement?.minDistanceFromEntry ?? 10),
+      avoidPoints: minimumFallback ? [] : banditCampAvoidPoints(zoneId, smallLocaleDef.placement?.minDistanceFromBanditCamp ?? 12),
+      avoidChunks: banditCampAvoidChunks(zoneId),
+      chunkSizeTiles: streamChunkSizeTiles(),
+      instanceId,
+    });
+    if (!instance) return null;
+    const camp = makeCamp(zoneState, instance, 'small', smallResidentCount(zoneId, campIndex), `small-${minimumFallback ? 'minimum' : campIndex}`);
+    zoneState.smallCamps.push(camp);
+    state.stamps += 1;
+    return camp;
+  } // Minimum fallback relaxes only soft terrain/spacing rules; bandit stream chunks remain hard exclusions.
 
   function buildZoneCamps(zoneId, layout) {
     const view = buildZoneView(zoneId, layout);
@@ -343,21 +366,13 @@
     if (zoneState.chiefReservation) state.stamps += 1;
 
     const targetCount = smallCampCountForZone(zoneId);
-    for (let i = 0; i < targetCount; i++) {
-      const instance = window.TemporaryLocales.stamp(view, smallLocaleDef, {
-        rng: seededRng(`${generationYear()}:${zoneId}:porakaneki-small-site:${i}`),
-        clearableTypes: new Set(),
-        clearanceTiles: smallLocaleDef.placement?.clearanceTiles ?? 2,
-        requiresFlatGround: smallLocaleDef.placement?.requiresFlatGround !== false,
-        minDistanceFromEntry: smallLocaleDef.placement?.minDistanceFromEntry ?? 10,
-        avoidPoints: banditCampAvoidPoints(zoneId, smallLocaleDef.placement?.minDistanceFromBanditCamp ?? 12),
-        avoidChunks: banditCampAvoidChunks(zoneId),
-        chunkSizeTiles: streamChunkSizeTiles(),
-        instanceId: `porakaneki_small_${zoneId}_${i}`,
-      });
-      if (!instance) continue;
-      zoneState.smallCamps.push(makeCamp(zoneState, instance, 'small', smallResidentCount(zoneId, i), `small-${i}`));
-      state.stamps += 1;
+    for (let i = 0; i < targetCount; i++) stampHuntingCamp(zoneState, zoneId, i, false);
+    if (zoneState.smallCamps.length < MIN_HUNTING_CAMPS_PER_ZONE) {
+      stampHuntingCamp(zoneState, zoneId, targetCount, true); // Exhaustive zero-clearance/non-flat fallback prevents an unlucky zone from ending up camp-less.
+    }
+    if (zoneState.smallCamps.length < MIN_HUNTING_CAMPS_PER_ZONE) {
+      state.lastReason = `hunting-camp-minimum-placement-failed:${zoneId}`;
+      window.__farmLog?.(`[porakaneki] ERROR: zone "${zoneId}" has no legal hunting-camp site even after the minimum fallback.`, 'warn');
     }
     state.zones.set(zoneId, zoneState);
     return zoneState;
@@ -1462,7 +1477,7 @@
       };
     }
     return {
-      version: 5,
+      version: 6,
       configReady: !!cfg,
       localesReady: !!smallLocaleDef && !!chiefLocaleDef,
       combatDepsReady: !!combatDeps,
@@ -1493,7 +1508,7 @@
   }
 
   window.PorakanekiCamps = Object.freeze({
-    version: 5,
+    version: 6,
     update,
     ensureWorldCamps,
     ensureCampStamp: ensureWorldCamps,
@@ -1506,9 +1521,9 @@
     formatDebug: () => {
       const d = debugSnapshot();
       const zoneBits = Object.entries(d.zones).map(([zoneId, z]) => `${zoneId}:${z.smallCampCount}${z.chiefActive ? '+CHIEF' : ''}`).join(' ');
-      return `Porakaneki camps: v5 season=${d.season} chief=${d.chiefZoneId || '-'} area=${d.currentArea || '-'} small=${d.totalSmallCamps} active=${d.totalActiveCamps} residents=${d.totalGeneratedResidents} favor=${d.favor ?? '-'} AOS=${d.attackOnSight} lod=${d.fullSimulationRadiusTiles}/${d.fullSimulationReleaseRadiusTiles} player=${d.playerTile ? `${d.playerTile.col},${d.playerTile.row}` : '-'} ecology=${d.ecology.chunk || '-'}:${d.ecology.porakaneki}/${d.ecology.bandits}/${d.ecology.predators}/${d.ecology.prey} targets=${d.ecology.humanoidTargets}/${d.ecology.predatorTargets} mats=${d.materializations} coarse=${d.coarseTicks} greet=${d.greetings} kills=${d.kills} zones=[${zoneBits}] reason=${d.lastReason}`;
+      return `Porakaneki camps: v6 season=${d.season} chief=${d.chiefZoneId || '-'} area=${d.currentArea || '-'} small=${d.totalSmallCamps} active=${d.totalActiveCamps} residents=${d.totalGeneratedResidents} favor=${d.favor ?? '-'} AOS=${d.attackOnSight} lod=${d.fullSimulationRadiusTiles}/${d.fullSimulationReleaseRadiusTiles} player=${d.playerTile ? `${d.playerTile.col},${d.playerTile.row}` : '-'} ecology=${d.ecology.chunk || '-'}:${d.ecology.porakaneki}/${d.ecology.bandits}/${d.ecology.predators}/${d.ecology.prey} targets=${d.ecology.humanoidTargets}/${d.ecology.predatorTargets} mats=${d.materializations} coarse=${d.coarseTicks} greet=${d.greetings} kills=${d.kills} zones=[${zoneBits}] reason=${d.lastReason}`;
     },
-    __test: Object.freeze({ isSleepingHour, chunkOf, streamChunkSizeTiles, streamChunkKeysForSite, streamChunkOfTile, ecologyRole, nearestEcologyTarget, activePlayerChunkEcology, updateChunkEcology, fullSimulationRadiusTiles, fullSimulationReleaseRadiusTiles, simulationDistanceToPlayer, weaponRoll, currentSeasonName, desiredChiefZone, smallCampCountForZone, smallResidentCount, speakOverheadFromHunter, speakOverheadFromWalker }),
+    __test: Object.freeze({ MIN_HUNTING_CAMPS_PER_ZONE, isSleepingHour, chunkOf, streamChunkSizeTiles, streamChunkKeysForSite, streamChunkOfTile, ecologyRole, nearestEcologyTarget, activePlayerChunkEcology, updateChunkEcology, fullSimulationRadiusTiles, fullSimulationReleaseRadiusTiles, simulationDistanceToPlayer, weaponRoll, currentSeasonName, desiredChiefZone, smallCampCountForZone, smallResidentCount, speakOverheadFromHunter, speakOverheadFromWalker }),
   });
 
   watchNamespace('BanditCombat', installBanditCombat);
