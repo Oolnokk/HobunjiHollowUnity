@@ -299,8 +299,8 @@
     return material;
   }
 
-  const MOUNTAIN_FIELD_LONG_CELLS=96;
-  const MOUNTAIN_FIELD_DEPTH_CELLS=48;
+  const MOUNTAIN_FIELD_LONG_CELLS=72;
+  const MOUNTAIN_FIELD_DEPTH_CELLS=36;
 
   function mountainFieldLayout(zcols,zrows,config){
     const horizontal=config.side==='north'||config.side==='south'; // Long axis follows the selected map edge.
