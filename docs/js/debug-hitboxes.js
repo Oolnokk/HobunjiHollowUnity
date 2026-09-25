@@ -23,6 +23,7 @@
   const DEBUG_RANGED_ATTACK_COLOR = '#ff6b35'; // Muzzle-to-perspective-point convergence guide.
   const DEBUG_SHOULDER_PERCH_COLOR = '#5cf2ff'; // Cyan = player-authored live shoulder perch.
   const DEBUG_SHOULDER_GRIP_COLOR = '#ff5cf4'; // Magenta = pet-authored live shoulder grip after root attachment.
+  const DEBUG_SHOULDER_SOURCE_PIXEL_COLOR = '#fff566'; // Yellow = independently reconstructed live SkinnedMesh position of the authored shoulder source pixel.
 
   function playerModelWidthTiles() {
     return window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.worldModelWidth ?? 0.9;
@@ -150,6 +151,100 @@
     octx.restore();
   }
 
+  function _skinVertexWorld(skinnedPlane, vertexIndex, target = new THREE.Vector3()) {
+    const geometry = skinnedPlane?.geometry;
+    const skeleton = skinnedPlane?.skeleton;
+    const position = geometry?.getAttribute?.('position');
+    const skinIndex = geometry?.getAttribute?.('skinIndex');
+    const skinWeight = geometry?.getAttribute?.('skinWeight');
+    if (!position || !skinIndex || !skinWeight || !skeleton?.bones?.length) return null;
+
+    skinnedPlane.updateMatrixWorld?.(true);
+    skeleton.update?.();
+    const bindPoint = new THREE.Vector3(position.getX(vertexIndex), position.getY(vertexIndex), position.getZ(vertexIndex)).applyMatrix4(skinnedPlane.bindMatrix);
+    target.set(0, 0, 0);
+    const boneMatrix = new THREE.Matrix4();
+    const weightedPoint = new THREE.Vector3();
+    for (let slot = 0; slot < 4; slot++) {
+      const weight = Number(skinWeight.getComponent
+        ? skinWeight.getComponent(vertexIndex, slot)
+        : slot === 0 ? skinWeight.getX(vertexIndex)
+          : slot === 1 ? skinWeight.getY(vertexIndex)
+            : slot === 2 ? skinWeight.getZ(vertexIndex)
+              : skinWeight.getW(vertexIndex)) || 0;
+      if (!weight) continue;
+      const boneIndex = Number(skinIndex.getComponent
+        ? skinIndex.getComponent(vertexIndex, slot)
+        : slot === 0 ? skinIndex.getX(vertexIndex)
+          : slot === 1 ? skinIndex.getY(vertexIndex)
+            : slot === 2 ? skinIndex.getZ(vertexIndex)
+              : skinIndex.getW(vertexIndex)) || 0;
+      if (skeleton.boneMatrices?.length >= (boneIndex + 1) * 16) {
+        boneMatrix.fromArray(skeleton.boneMatrices, boneIndex * 16);
+      } else {
+        const bone = skeleton.bones[boneIndex];
+        const inverse = skeleton.boneInverses?.[boneIndex];
+        if (!bone || !inverse) continue;
+        bone.updateWorldMatrix?.(true, false);
+        boneMatrix.multiplyMatrices(bone.matrixWorld, inverse);
+      }
+      weightedPoint.copy(bindPoint).applyMatrix4(boneMatrix);
+      target.addScaledVector(weightedPoint, weight);
+    }
+    target.applyMatrix4(skinnedPlane.bindMatrixInverse);
+    return skinnedPlane.localToWorld(target);
+  }
+
+  function _liveShoulderSourcePixelWorld() {
+    const perch = deps.playerAttachmentAnchor?.('shoulderPerch');
+    const sourcePixel = perch?.sourcePixel;
+    const portraitRoot = window.PNGPlaneAvatar?.resolveSkinnedPortraitRoot?.(deps.playerMesh) || deps.playerMesh;
+    const skinnedPlane = portraitRoot?.userData?.neckRig?.skinnedPlane;
+    const geometry = skinnedPlane?.geometry;
+    const sourceCanvas = portraitRoot?.userData?.sourceCanvas;
+    const pixelWidth = Number(sourceCanvas?.naturalWidth || sourceCanvas?.width);
+    const pixelHeight = Number(sourceCanvas?.naturalHeight || sourceCanvas?.height);
+    const segmentsX = Number(geometry?.userData?.segmentsX);
+    const segmentsY = Number(geometry?.userData?.segmentsY);
+    if (!skinnedPlane?.isSkinnedMesh || !sourcePixel
+      || ![pixelWidth, pixelHeight, segmentsX, segmentsY, sourcePixel.x, sourcePixel.y].every(Number.isFinite)
+      || pixelWidth <= 0 || pixelHeight <= 0 || segmentsX <= 0 || segmentsY <= 0) return null;
+
+    const sourceX = window.PNGPlaneAvatar?.getPortraitsFlipped?.()
+      ? pixelWidth - Number(sourcePixel.x)
+      : Number(sourcePixel.x); // Follows where the authored source texel actually appears on the horizontally flipped portrait.
+    const sourceY = Number(sourcePixel.y);
+    const safeX = Math.min(pixelWidth - 1e-6, Math.max(0, sourceX));
+    const safeY = Math.min(pixelHeight - 1e-6, Math.max(0, sourceY));
+    const cellX = safeX / pixelWidth * segmentsX;
+    const cellY = safeY / pixelHeight * segmentsY;
+    const column = Math.min(segmentsX - 1, Math.max(0, Math.floor(cellX)));
+    const row = Math.min(segmentsY - 1, Math.max(0, Math.floor(cellY)));
+    const fx = cellX - column;
+    const fy = cellY - row;
+    const base = (row * segmentsX + column) * 6; // Front-face vertices are emitted six at a time per cell before the duplicated back face.
+    let indices;
+    let weights;
+    if (fy >= fx) {
+      indices = [base, base + 1, base + 2];
+      weights = [fy - fx, fx, 1 - fy]; // Triangle: (0,1), (1,1), (0,0).
+    } else {
+      indices = [base + 3, base + 4, base + 5];
+      weights = [fy, fx - fy, 1 - fx]; // Triangle: (1,1), (1,0), (0,0).
+    }
+    const vertices = indices.map(index => _skinVertexWorld(skinnedPlane, index, new THREE.Vector3()));
+    if (vertices.some(vertex => !vertex)) return null;
+    const world = new THREE.Vector3();
+    for (let i = 0; i < 3; i++) world.addScaledVector(vertices[i], weights[i]);
+    return {
+      world,
+      sourcePixel: { x: Number(sourcePixel.x), y: Number(sourcePixel.y) },
+      renderedPixel: { x: safeX, y: safeY },
+      cell: { column, row },
+      triangle: fy >= fx ? 0 : 1,
+    };
+  }
+
   function _activeShoulderPetAttachmentSnapshot() {
     const pet = Array.from(deps?.companionObjects || []).find(c =>
       c?.stableRole === 'shoulderPet'
@@ -165,10 +260,20 @@
     const perch = { x: Number(perchArray[0]), y: Number(perchArray[1]), z: Number(perchArray[2]) };
     const grip = { x: Number(gripArray[0]), y: Number(gripArray[1]), z: Number(gripArray[2]) };
     if (![perch.x, perch.y, perch.z, grip.x, grip.y, grip.z].every(Number.isFinite)) return null;
+    const sourcePixel = _liveShoulderSourcePixelWorld();
+    const sourceWorld = sourcePixel?.world
+      ? { x: sourcePixel.world.x, y: sourcePixel.world.y, z: sourcePixel.world.z }
+      : null;
     return {
       creatureKey: pet.creatureKey || pet.id || 'shoulderPet',
       perch,
       grip,
+      sourceWorld,
+      sourcePixel: sourcePixel?.sourcePixel || null,
+      renderedPixel: sourcePixel?.renderedPixel || null,
+      sourceCell: sourcePixel?.cell || null,
+      sourceTriangle: sourcePixel?.triangle ?? null,
+      sourcePerchError: sourceWorld ? Math.hypot(sourceWorld.x - perch.x, sourceWorld.y - perch.y, sourceWorld.z - perch.z) : null,
       error: Math.hypot(perch.x - grip.x, perch.y - grip.y, perch.z - grip.z),
       rotationSource: raw.rotationSource || null,
       observationPivotApplied: raw.observationPivotApplied === true,
@@ -179,7 +284,9 @@
     if (!deps.getShowShoulderPetAttachmentPoints?.()) return;
     const state = _activeShoulderPetAttachmentSnapshot();
     if (!state) return;
+    if (state.sourceWorld) _drawDebugSegment3D(state.sourceWorld, state.perch, DEBUG_SHOULDER_SOURCE_PIXEL_COLOR, true, 2.5, 0.95);
     _drawDebugSegment3D(state.perch, state.grip, '#ffffff', false, 2.5, 0.95);
+    if (state.sourceWorld) _drawDebugPoint3D(state.sourceWorld, DEBUG_SHOULDER_SOURCE_PIXEL_COLOR, 'SOURCE PIXEL', 7, -24);
     _drawDebugPoint3D(state.perch, DEBUG_SHOULDER_PERCH_COLOR, 'PERCH', 9, -7); // Larger cyan ring stays visible even when the grip is perfectly coincident.
     _drawDebugPoint3D(state.grip, DEBUG_SHOULDER_GRIP_COLOR, 'GRIP', 5, 10); // Smaller magenta ring nests inside the perch marker instead of hiding it.
     const midpoint = {
@@ -187,7 +294,7 @@
       y: (state.perch.y + state.grip.y) * 0.5,
       z: (state.perch.z + state.grip.z) * 0.5,
     };
-    _drawDebugPoint3D(midpoint, '#ffffff', `error ${state.error.toFixed(5)}u`, 2, 27);
+    _drawDebugPoint3D(midpoint, '#ffffff', `grip ${state.error.toFixed(5)}u${Number.isFinite(state.sourcePerchError) ? ` · source ${state.sourcePerchError.toFixed(5)}u` : ''}`, 2, 27);
   }
 
   // Projects all twelve Box3 edges through the live camera. This is the
