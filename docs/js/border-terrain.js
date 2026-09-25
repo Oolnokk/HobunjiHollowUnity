@@ -63,7 +63,7 @@
     elevStoneSkin(0,BV,0,GW-1); elevStoneSkin(GH-1-BV,GH-1,0,GW-1); elevStoneSkin(BV,GH-1-BV,0,BV); elevStoneSkin(BV,GH-1-BV,GW-1-BV,GW-1);
   }
 
-  function buildZoneBorderTerrain(zScene, zcols, zrows, mapId, zoneBaseElev = 0, zGrid = null) {
+  function buildZoneBorderTerrain(zScene, zcols, zrows, mapId, zoneBaseElev = 0, zGrid = null, backgroundScenery = null) {
     const BASE = deps.NORMAL_TOP + zoneBaseElev, BORDER_W = 18;
     const SEED = (mapId.split('').reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 0)) || 1, BLEND_STEPS = 8;
     const BV=BORDER_W*2, PVW=zcols*2, PVH=zrows*2, GW=PVW+2*BV+1, GH=PVH+2*BV+1, CW=GW-1, CH=GH-1;
@@ -88,6 +88,12 @@
 
     const authoredProfile=WILDERNESS_SCENERY_PROFILES[mapId];
     if(authoredProfile) buildAuthoredWildernessScenery(zScene,zcols,zrows,mapId,zoneBaseElev,zGrid,authoredProfile);
+
+    // Colossal horizon terrain is a separate ultra-low-poly pass. The West
+    // Slope and Northern Cliffs get canonical defaults even when their
+    // procedural root map has no authored backgroundScenery payload.
+    const horizon=normalizeHorizonTerrain(backgroundScenery?.horizonTerrain,mapId);
+    if(horizon.enabled) buildColossalHorizonTerrain(zScene,zcols,zrows,mapId,zoneBaseElev,zGrid,horizon);
   }
 
   // ── Authored scenery profiles for procedural wilderness maps ─────────────
@@ -184,6 +190,208 @@
       let materialOrdinal=0;
       for(const[material,b]of buckets){if(!b.positions.length)continue;const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(b.positions,3));g.setAttribute('normal',new THREE.Float32BufferAttribute(b.normals,3));if(b.hasUv)g.setAttribute('uv',new THREE.Float32BufferAttribute(b.uvs,2));const vCount=b.positions.length/3;g.setIndex(new THREE.BufferAttribute(vCount>65535?new Uint32Array(b.indices):new Uint16Array(b.indices),1));g.computeBoundingSphere();const mesh=new THREE.Mesh(g,material);mesh.name=`AuthoredCloudForestShadewoodWall_${chunkOrdinal}_${materialOrdinal++}`;mesh.castShadow=false;mesh.receiveShadow=true;mesh.frustumCulled=true;mesh.userData.backgroundScenery=true;mesh.userData.bakedForestWall=true;scene.add(mesh);}chunkOrdinal++;
     }
+  }
+
+  // ── Colossal horizon terrain ─────────────────────────────────────────────
+  // These landmarks deliberately trade local geometric detail for silhouette:
+  // a few dozen vertices can stay submitted at all distances without turning
+  // the permanent horizon into a meaningful CPU/GPU geometry cost.
+  const HORIZON_TERRAIN_PRESETS=Object.freeze({
+    westernMountainChain:Object.freeze({
+      preset:'westernMountainChain',kind:'mountainChain',side:'west',
+      heightWorld:72,distanceWorld:14,depthWorld:52,spanScale:1.35,segments:8,
+      alwaysVisible:true,fogIndependent:true,
+    }),
+    northernPlateau:Object.freeze({
+      preset:'northernPlateau',kind:'plateau',side:'north',
+      heightWorld:64,distanceWorld:13,depthWorld:48,spanScale:1.25,segments:6,
+      alwaysVisible:true,fogIndependent:true,
+    }),
+  });
+  const HORIZON_TERRAIN_DEFAULT_BY_MAP=Object.freeze({
+    map_western_slope:'westernMountainChain',
+    map_northern_cliffs:'northernPlateau',
+  });
+
+  function normalizeHorizonTerrain(raw,mapId=''){
+    const src=raw&&typeof raw==='object'?raw:{};
+    const explicit=String(src.preset||'');
+    const fallback=HORIZON_TERRAIN_DEFAULT_BY_MAP[String(mapId||'')]||'';
+    const presetName=explicit==='none'?'':(HORIZON_TERRAIN_PRESETS[explicit]?explicit:fallback);
+    if(!presetName)return{enabled:false,preset:'none',kind:'none',side:'north',heightWorld:0,distanceWorld:0,depthWorld:0,spanScale:1,segments:3,alwaysVisible:false,fogIndependent:false};
+    const base=HORIZON_TERRAIN_PRESETS[presetName];
+    const side=['north','east','south','west'].includes(String(src.side))?String(src.side):base.side;
+    const finite=(value,fallbackValue,min,max)=>{const n=Number(value);return Math.max(min,Math.min(max,Number.isFinite(n)?n:fallbackValue));};
+    return{
+      enabled:src.enabled!==false,
+      preset:presetName,
+      kind:base.kind,
+      side,
+      heightWorld:finite(src.heightWorld,base.heightWorld,8,140),
+      distanceWorld:finite(src.distanceWorld,base.distanceWorld,0,80),
+      depthWorld:finite(src.depthWorld,base.depthWorld,8,120),
+      spanScale:finite(src.spanScale,base.spanScale,0.75,2),
+      segments:Math.round(finite(src.segments,base.segments,3,16)),
+      alwaysVisible:src.alwaysVisible!==false,
+      fogIndependent:src.fogIndependent!==false,
+    };
+  }
+
+  function horizonEdgeBaseY(zcols,zrows,zoneBaseElev,zGrid,side){
+    const fallback=deps.NORMAL_TOP+zoneBaseElev;
+    if(!zGrid)return fallback;
+    const horizontal=side==='north'||side==='south';
+    const count=horizontal?zcols:zrows;
+    const fixed=side==='north'?0:side==='south'?zrows-1:side==='west'?0:zcols-1;
+    const stride=Math.max(1,Math.floor(count/24));
+    let total=0,samples=0;
+    for(let axis=0;axis<count;axis+=stride){
+      const c=horizontal?axis:fixed,r=horizontal?fixed:axis,tier=Number(zGrid?.[r]?.[c]?.elevTier);
+      if(!Number.isFinite(tier))continue;
+      total+=deps.NORMAL_TOP+tier*deps.PLATEAU_UNIT;samples++;
+    }
+    return samples?total/samples:fallback;
+  }
+
+  function horizonPoint(side,axis,out,zcols,zrows){
+    if(side==='north')return[axis,-out];
+    if(side==='south')return[axis,zrows+out];
+    if(side==='west')return[-out,axis];
+    return[zcols+out,axis];
+  }
+
+  function makeColossalHorizonMaterial(source,fallbackColor,tag,fogIndependent){
+    const color=source?.color?.clone?.()||source?.color||fallbackColor;
+    let material=null;
+    if(typeof THREE.MeshBasicMaterial==='function'){
+      material=new THREE.MeshBasicMaterial({
+        map:source?.map||null,
+        color,
+        side:source?.side??THREE.DoubleSide,
+        fog:!fogIndependent,
+        transparent:false,
+        opacity:1,
+        depthTest:true,
+        depthWrite:true,
+      });
+      if(Number(source?.alphaTest)>0)material.alphaTest=Number(source.alphaTest);
+    }else if(source?.clone){
+      material=source.clone();
+      material.fog=!fogIndependent;
+    }else material=source||new THREE.MeshStandardMaterial({color:fallbackColor,roughness:1,metalness:0});
+    material.name=`ColossalHorizon_${tag}`;
+    material.userData={...(material.userData||{}),colossalHorizonTerrain:true,horizonMaterial:tag};
+    return material;
+  }
+
+  function buildColossalHorizonTerrain(scene,zcols,zrows,mapId,zoneBaseElev=0,zGrid=null,rawConfig=null){
+    const config=normalizeHorizonTerrain(rawConfig,mapId);
+    if(!scene||!config.enabled)return{enabled:false,preset:config.preset||'none',vertices:0,triangles:0,meshes:0};
+    const horizontal=config.side==='north'||config.side==='south';
+    const axisLength=Math.max(1,horizontal?zcols:zrows);
+    const span=axisLength*config.spanScale;
+    const axisStart=(axisLength-span)*0.5;
+    const sampleCount=config.segments+1;
+    const rowCount=config.kind==='plateau'?4:3;
+    const baseY=horizonEdgeBaseY(zcols,zrows,zoneBaseElev,zGrid,config.side);
+    const positions=[],uvs=[],indices=[],groups=[];
+
+    for(let i=0;i<sampleCount;i++){
+      const t=i/config.segments,axis=axisStart+span*t;
+      const h0=bgSceneryHash01(axis,config.heightWorld,5101);
+      const h1=bgSceneryHash01(axis,config.depthWorld,6101);
+      const h2=bgSceneryHash01(axis,config.distanceWorld,7101);
+      let outs,ys;
+      if(config.kind==='plateau'){
+        const topJitter=(h0-0.5)*config.heightWorld*0.035;
+        outs=[
+          config.distanceWorld,
+          config.distanceWorld+config.depthWorld*0.16,
+          config.distanceWorld+config.depthWorld*0.78,
+          config.distanceWorld+config.depthWorld,
+        ];
+        ys=[
+          baseY+config.heightWorld*(0.02+0.035*h1),
+          baseY+config.heightWorld*0.965+topJitter,
+          baseY+config.heightWorld*0.935+topJitter*0.65,
+          baseY+config.heightWorld*(0.08+0.08*h2),
+        ];
+      }else{
+        outs=[
+          config.distanceWorld,
+          config.distanceWorld+config.depthWorld*(0.36+(h1-0.5)*0.12),
+          config.distanceWorld+config.depthWorld,
+        ];
+        ys=[
+          baseY+config.heightWorld*(0.02+0.035*h2),
+          baseY+config.heightWorld*(0.72+0.28*h0),
+          baseY+config.heightWorld*(0.08+0.12*h1),
+        ];
+      }
+      for(let row=0;row<rowCount;row++){
+        const [x,z]=horizonPoint(config.side,axis,outs[row],zcols,zrows);
+        positions.push(x,ys[row],z);
+        uvs.push(x,z);
+      }
+    }
+
+    for(let strip=0;strip<rowCount-1;strip++){
+      const groupStart=indices.length;
+      for(let i=0;i<sampleCount-1;i++){
+        const a=i*rowCount+strip,b=(i+1)*rowCount+strip,c=a+1,d=b+1;
+        indices.push(a,c,d,a,d,b);
+      }
+      groups.push({start:groupStart,count:indices.length-groupStart,materialIndex:config.kind==='plateau'&&strip===1?1:0});
+    }
+
+    const geometry=new THREE.BufferGeometry();
+    geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
+    geometry.setAttribute('uv',new THREE.Float32BufferAttribute(uvs,2));
+    geometry.setIndex(new THREE.BufferAttribute(new Uint16Array(indices),1));
+    geometry.computeVertexNormals();
+    geometry.computeBoundingSphere?.();
+    if(config.kind==='plateau'&&geometry.addGroup)for(const group of groups)geometry.addGroup(group.start,group.count,group.materialIndex);
+
+    const cliffSource=deps.resolveCliffMat(mapId);
+    const grassSource=deps.resolveTileMat(mapId,deps.TileType.GRASS);
+    const cliffMat=makeColossalHorizonMaterial(cliffSource,0x676563,'cliff',config.fogIndependent);
+    const grassMat=makeColossalHorizonMaterial(grassSource,0x315f2b,'top',config.fogIndependent);
+    const material=config.kind==='plateau'?[cliffMat,grassMat]:cliffMat;
+    const mesh=new THREE.Mesh(geometry,material);
+    mesh.name=config.kind==='plateau'?'ColossalNorthernPlateau':'ColossalWesternMountainChain';
+    mesh.castShadow=false;
+    mesh.receiveShadow=false;
+    mesh.frustumCulled=!config.alwaysVisible;
+    mesh.userData={
+      backgroundScenery:true,
+      colossalHorizonTerrain:true,
+      alwaysVisibleBoundaryTerrain:config.alwaysVisible,
+      skipOcclusionFade:true,
+      preset:config.preset,
+      kind:config.kind,
+      side:config.side,
+    };
+    scene.add(mesh);
+
+    const stats={
+      enabled:true,
+      preset:config.preset,
+      kind:config.kind,
+      side:config.side,
+      heightWorld:config.heightWorld,
+      distanceWorld:config.distanceWorld,
+      depthWorld:config.depthWorld,
+      spanScale:config.spanScale,
+      segments:config.segments,
+      vertices:positions.length/3,
+      triangles:indices.length/3,
+      meshes:1,
+      alwaysVisible:config.alwaysVisible,
+      fogIndependent:config.fogIndependent,
+    };
+    scene.userData=scene.userData||{};
+    scene.userData.colossalHorizonTerrain=stats;
+    return stats;
   }
 
   // ── Shared background-scenery attachment contract ────────────────────────
@@ -327,7 +535,7 @@
     if (!out.some(a => a.kind === 'river')) out.push(...bgInferWaterAttachments(map));
     return out;
   }
-  function resolveBackgroundSceneryConfig(map){const raw=map?.backgroundScenery&&typeof map.backgroundScenery==='object'?map.backgroundScenery:{};return{schema:'hobunji_background_scenery.v1',ridgeClearanceTiles:bgClamp(Number.isFinite(Number(raw.ridgeClearanceTiles))?Number(raw.ridgeClearanceTiles):BG_DEFAULTS.ridgeClearanceTiles,0,8),borderDepthTiles:bgClamp(Number.isFinite(Number(raw.borderDepthTiles))?Number(raw.borderDepthTiles):BG_DEFAULTS.borderDepthTiles,6,30),defaultExtensionLengthTiles:bgClamp(Number.isFinite(Number(raw.defaultExtensionLengthTiles))?Number(raw.defaultExtensionLengthTiles):BG_DEFAULTS.defaultExtensionLengthTiles,1,40),routeShoulderTiles:bgClamp(Number.isFinite(Number(raw.routeShoulderTiles))?Number(raw.routeShoulderTiles):BG_DEFAULTS.routeShoulderTiles,0,8),riverBankTiles:bgClamp(Number.isFinite(Number(raw.riverBankTiles))?Number(raw.riverBankTiles):BG_DEFAULTS.riverBankTiles,0,8),riverChannelDepth:bgClamp(Number.isFinite(Number(raw.riverChannelDepth))?Number(raw.riverChannelDepth):BG_DEFAULTS.riverChannelDepth,0,2),waterfallThreshold:bgClamp(Number.isFinite(Number(raw.waterfallThreshold))?Number(raw.waterfallThreshold):BG_DEFAULTS.waterfallThreshold,0.1,5),attachments:raw.attachments&&typeof raw.attachments==='object'?JSON.parse(JSON.stringify(raw.attachments)): {}};}
+  function resolveBackgroundSceneryConfig(map){const raw=map?.backgroundScenery&&typeof map.backgroundScenery==='object'?map.backgroundScenery:{};return{schema:'hobunji_background_scenery.v1',ridgeClearanceTiles:bgClamp(Number.isFinite(Number(raw.ridgeClearanceTiles))?Number(raw.ridgeClearanceTiles):BG_DEFAULTS.ridgeClearanceTiles,0,8),borderDepthTiles:bgClamp(Number.isFinite(Number(raw.borderDepthTiles))?Number(raw.borderDepthTiles):BG_DEFAULTS.borderDepthTiles,6,30),defaultExtensionLengthTiles:bgClamp(Number.isFinite(Number(raw.defaultExtensionLengthTiles))?Number(raw.defaultExtensionLengthTiles):BG_DEFAULTS.defaultExtensionLengthTiles,1,40),routeShoulderTiles:bgClamp(Number.isFinite(Number(raw.routeShoulderTiles))?Number(raw.routeShoulderTiles):BG_DEFAULTS.routeShoulderTiles,0,8),riverBankTiles:bgClamp(Number.isFinite(Number(raw.riverBankTiles))?Number(raw.riverBankTiles):BG_DEFAULTS.riverBankTiles,0,8),riverChannelDepth:bgClamp(Number.isFinite(Number(raw.riverChannelDepth))?Number(raw.riverChannelDepth):BG_DEFAULTS.riverChannelDepth,0,2),waterfallThreshold:bgClamp(Number.isFinite(Number(raw.waterfallThreshold))?Number(raw.waterfallThreshold):BG_DEFAULTS.waterfallThreshold,0.1,5),horizonTerrain:normalizeHorizonTerrain(raw.horizonTerrain,map?.id||map?.mapId||''),attachments:raw.attachments&&typeof raw.attachments==='object'?JSON.parse(JSON.stringify(raw.attachments)): {}};}
   function resolveAttachmentSettings(a,s,o={}){return{enabled:o.enabled!==false,edge:a.candidateEdges.includes(o.edge)?o.edge:a.edge,lengthTiles:bgClamp(Number.isFinite(Number(o.lengthTiles))?Number(o.lengthTiles):s.defaultExtensionLengthTiles,1,40),widthScale:bgClamp(Number.isFinite(Number(o.widthScale))?Number(o.widthScale):1,0.25,4),shoulderTiles:bgClamp(Number.isFinite(Number(o.shoulderTiles))?Number(o.shoulderTiles):s.routeShoulderTiles,0,8),bankTiles:bgClamp(Number.isFinite(Number(o.bankTiles))?Number(o.bankTiles):s.riverBankTiles,0,8),channelDepth:bgClamp(Number.isFinite(Number(o.channelDepth))?Number(o.channelDepth):s.riverChannelDepth,0,2),waterfallThreshold:bgClamp(Number.isFinite(Number(o.waterfallThreshold))?Number(o.waterfallThreshold):s.waterfallThreshold,0.1,5)};}
   function bgHash01(seed,salt){let h=((seed>>>0)^Math.imul((salt+1)>>>0,0x9e3779b1))>>>0;h=Math.imul(h^(h>>>16),0x21f0aaad)>>>0;h=Math.imul(h^(h>>>15),0x735a2d97)>>>0;return((h^(h>>>15))>>>0)/4294967296;}
   function buildContinuationPolyline(a,s,o={}){const e=resolveAttachmentSettings(a,s,o),start=bgAttachPosition(a.node,e.edge,{cols:a.mapCols,rows:a.mapRows}),cp=Array.isArray(o.controlPoints)?o.controlPoints.filter(p=>Array.isArray(p)&&Number.isFinite(Number(p[0]))&&Number.isFinite(Number(p[1]))).map(p=>[Number(p[0]),Number(p[1])]):[];if(cp.length)return[start,...cp];const d=bgDirectionFromRaw(a.rawDirection,e.edge);if(a.kind==='river'){const perp=[-d[1],d[0]],amp=(a.sourceType==='stream'?0.7:1.25)*Math.min(1,e.lengthTiles/8),pts=[start];for(let i=1;i<=4;i++){const t=i/4,wobble=(bgHash01(a.seed,a.nodeIndex*17+i)*2-1)*amp*Math.sin(Math.PI*t);pts.push([start[0]+d[0]*e.lengthTiles*t+perp[0]*wobble,start[1]+d[1]*e.lengthTiles*t+perp[1]*wobble]);}return pts;}return[start,[start[0]+d[0]*e.lengthTiles,start[1]+d[1]*e.lengthTiles]];}
@@ -335,7 +543,7 @@
   function bgDistToPolyline(px,pz,pts){let best=Infinity;for(let i=0;i<pts.length-1;i++)best=Math.min(best,bgDistToSegment(px,pz,pts[i],pts[i+1]));return best;}
   function bgDensify(pts,step=0.5){if(pts.length<2)return pts.slice();const out=[pts[0].slice()];for(let i=0;i<pts.length-1;i++){const a=pts[i],b=pts[i+1],dx=b[0]-a[0],dz=b[1]-a[1],n=Math.max(1,Math.ceil(Math.hypot(dx,dz)/step));for(let j=1;j<=n;j++){const t=j/n;out.push([a[0]+dx*t,a[1]+dz*t]);}}return out;}
   function bgOutwardDistance(c,p){const n=bgEdgeNormal(c.settings.edge),s=c.points[0];return Math.max(0,(p[0]-s[0])*n[0]+(p[1]-s[1])*n[1]);}
-  window.BackgroundScenery={DEFAULTS:BG_DEFAULTS,PATH_DEFAULTS:BG_PATH_DEFAULTS,WILDERNESS_PROFILES:WILDERNESS_SCENERY_PROFILES,edgeNormal:bgEdgeNormal,collectBoundaryAttachments,resolveConfig:resolveBackgroundSceneryConfig,resolveAttachmentSettings,buildContinuationPolyline,inferWaterAttachments:bgInferWaterAttachments,findEdgePathRun:bgFindEdgePathRun};
+  window.BackgroundScenery={DEFAULTS:BG_DEFAULTS,PATH_DEFAULTS:BG_PATH_DEFAULTS,WILDERNESS_PROFILES:WILDERNESS_SCENERY_PROFILES,HORIZON_PRESETS:HORIZON_TERRAIN_PRESETS,HORIZON_DEFAULT_BY_MAP:HORIZON_TERRAIN_DEFAULT_BY_MAP,normalizeHorizonTerrain,edgeNormal:bgEdgeNormal,collectBoundaryAttachments,resolveConfig:resolveBackgroundSceneryConfig,resolveAttachmentSettings,buildContinuationPolyline,inferWaterAttachments:bgInferWaterAttachments,findEdgePathRun:bgFindEdgePathRun};
 
   // Scenery paths use the same WallBuilder paving recipe/tint/brick transform
   // settings as the normal path-brick renderer in game.js. The attachment hook
@@ -483,7 +691,7 @@
   }
 
   function setGrassVisible(enabled){if(townBorderGrassBillMesh)townBorderGrassBillMesh.visible=enabled;}
-  window.BorderTerrain={init,buildBorderTerrain,buildZoneBorderTerrain,buildTownBorderTerrain,buildTownBorderGrassBillboards:_buildTownBorderGrassBillboards,setGrassVisible};
+  window.BorderTerrain={init,buildBorderTerrain,buildZoneBorderTerrain,buildColossalHorizonTerrain,buildTownBorderTerrain,buildTownBorderGrassBillboards:_buildTownBorderGrassBillboards,setGrassVisible};
 })();
 
 // Cloud Forest north-edge authored scenery v2. Kept as a wrapper around the
