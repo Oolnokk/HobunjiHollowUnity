@@ -209,7 +209,7 @@
   <!-- Local database overrides (window.LocalDBOverrides) — lets docs/tools/
   <!-- Banubu's quest dialogue defaults load before LocalDBOverrides so the
        editor/runtime database composition can replace his generic chatter. -->
-  <script src="js/banubu-quest-content.js?v=20260924animaleyes1"></script>
+  <script src="js/banubu-quest-content.js?v=20260925banubukeycam1"></script>
        editors save edited repo-tracked JSON into localStorage and have the
        game load that instead of the repo file when Local source is selected. -->
   <script src="js/local-db-overrides.js?v=20260923banubuscale2"></script>
@@ -362,7 +362,7 @@
        time, not at load time, so script order relative to them doesn't
        matter; must load before game.js, which calls
        window.HousePieces.init(...) during its own setup. -->
-  <script src="js/house-pieces.js?v=20260925denturnover2"></script>
+  <script src="js/house-pieces.js?v=20260925denturnover2&surfaceUv=20260924edgepreserve2"></script>
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -525,7 +525,7 @@
   <!-- Same-origin live Map Editor transport + runtime bridge. Loaded before
        game.js so its private scene state can be injected during setup. -->
   <script src="js/map-live-preview.js?v=20260909a"></script>
-  <script src="js/map-live-preview-runtime.js?v=20260923mapeditdiff1"></script>
+  <script src="js/map-live-preview-runtime.js?v=20260925banubukeycam1"></script>
   <!-- Dev Tools: Testing Arena teleport + creature/bandit/foliage spawner
        panel (window.DevSpawner) — reads window.CreatureGenetics/
        window.CreatureGeneticsRender/window.BanditCombat/
@@ -2346,7 +2346,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20260925mountheading1"></script>
+  <script src="js/pixel-probe.js?v=20260925banubukeycam1"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -2354,7 +2354,7 @@
        openNpcDialogue/closeNpcDialogue (camera/staging/save) stay in
        game.js and call into this module. -->
   <!-- Authored world-space dialogue/cutscene cameras. Must load before DialogueContent/game.js. -->
-  <script src="js/cinematic-camera-runtime.js?v=20260923stageopt1"></script>
+  <script src="js/cinematic-camera-runtime.js?v=20260925banubukeycam1"></script>
   <script src="js/dialogue-content.js?v=20260924banubupose2"></script>
   <script src="js/banubu-questline.js?v=20260924banubupose3"></script>
   <!-- World-space Float+ combat text and centered five-row reward lists. -->

@@ -53,13 +53,18 @@
     return { id, type: 'text', text, next, pos: { x: 80, y: 80 }, expression: /zzz/i.test(text) ? 'eyes_closed' : 'neutral', expressionHold: 2, revealSpeed: 'normal' };
   }
 
-  function choiceNode(id, text, choices) {
-    return { id, type: 'choice', text, choices, pos: { x: 80, y: 80 }, expression: /zzz/i.test(text) ? 'eyes_closed' : 'neutral', expressionHold: 2, revealSpeed: 'normal' };
+  function choiceNode(id, text, choices, extra = {}) {
+    return { id, type: 'choice', text, choices, pos: { x: 80, y: 80 }, expression: /zzz/i.test(text) ? 'eyes_closed' : 'neutral', expressionHold: 2, revealSpeed: 'normal', ...(extra || {}) };
   }
 
   function presentedTextNode(id, text, next, presentation) {
     const node = textNode(id, text, next); // Used to attach Banubu-only world-presentation cues without teaching generic dialogue content their semantics.
-    node.banubuPresentation = { ...(presentation || {}) };
+    const cue = { ...(presentation || {}) }; // Split into generic node camera metadata plus Banubu-only body/neck/VFX cues below.
+    if (cue.cameraId) {
+      node.cameraId = String(cue.cameraId); // Consumed by CinematicCameraRuntime before BanubuQuestline applies the remaining presentation cues.
+      delete cue.cameraId;
+    }
+    node.banubuPresentation = cue;
     return node;
   }
 
@@ -173,11 +178,11 @@
       ]),
       textNode('banubu_q1_ready_2', 'Mmmm, mmm. So good.', 'banubu_q1_ready_3'),
       textNode('banubu_q1_ready_3', 'I think I can do it. Let me try to get up.', 'banubu_q1_ready_4'),
-      presentedTextNode('banubu_q1_ready_4', 'Ah, yep. There we go. I’m up.', 'banubu_q1_ready_5', { body: 'awake', sparkles: 'start' }),
-      presentedTextNode('banubu_q1_ready_5', 'Ha! Look at that—the Color Pools Key. I was wondering where that went. I was worried someone snatched it while I was asleep.', 'banubu_q1_ready_6', { neck: 'max_down' }),
-      presentedTextNode('banubu_q1_ready_6', 'Worst part is, they wouldn’t have even known what the key was for. I’d have been happy to let them go in there and beautify their most beloved creatures.', 'banubu_q1_ready_7', { neck: 'release' }),
-      presentedTextNode('banubu_q1_ready_7', 'You know what? You should have it, as a thank-you. Especially since I’m still not quite ready to help you with your problem.', 'banubu_q1_ready_8', { sparkles: 'stop' }),
-      textNode('banubu_q1_ready_8', 'That pie was the perfect breakfast. Just what I needed.', 'banubu_q1_ready_9'),
+      presentedTextNode('banubu_q1_ready_4', 'Ah, yep. There we go. I’m up.', 'banubu_q1_ready_5', { body: 'awake', sparkles: 'start', cameraId: 'banubu_dialogue_awake' }),
+      presentedTextNode('banubu_q1_ready_5', 'Ha! Look at that—the Color Pools Key. I was wondering where that went. I was worried someone snatched it while I was asleep.', 'banubu_q1_ready_6', { neck: 'max_down', cameraId: 'banubu_key_ground' }),
+      presentedTextNode('banubu_q1_ready_6', 'Worst part is, they wouldn’t have even known what the key was for. I’d have been happy to let them go in there and beautify their most beloved creatures.', 'banubu_q1_ready_7', { neck: 'release', cameraId: 'banubu_key_ground' }),
+      presentedTextNode('banubu_q1_ready_7', 'You know what? You should have it, as a thank-you. Especially since I’m still not quite ready to help you with your problem.', 'banubu_q1_ready_8', { cameraId: 'banubu_key_ground' }),
+      presentedTextNode('banubu_q1_ready_8', 'That pie was the perfect breakfast. Just what I needed.', 'banubu_q1_ready_9', { sparkles: 'stop', cameraId: 'banubu_dialogue_awake' }),
       textNode('banubu_q1_ready_9', 'But after a hearty meal like that, I tend to get real tired and need to take a short nap. Short by my standards, though. Not yours, as a little mortal.', 'banubu_q1_ready_10'),
       choiceNode('banubu_q1_ready_10', '…', [
         { label: '“What?”', next: 'banubu_q1_ready_11', actions: [] },

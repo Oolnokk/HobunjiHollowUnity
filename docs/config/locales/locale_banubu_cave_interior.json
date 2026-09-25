@@ -355,6 +355,32 @@
       "targetNpcId": "banubu",
       "targetAnchorId": "station_banubu_cave_sleep",
       "stagePlayer": false
+    },
+    {
+      "id": "banubu_key_ground",
+      "label": "Banubu dialogue — Color Pools Key",
+      "position": {
+        "x": 6.9,
+        "y": 0.12,
+        "z": 7.3
+      },
+      "target": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "fovDeg": 34,
+      "blendSeconds": 0.35,
+      "dialogueNpcId": "",
+      "fadePets": false,
+      "playerStage": {
+        "x": 6.5,
+        "z": 10.5
+      },
+      "targetNpcId": "banubu",
+      "targetNpcPoint": "root",
+      "targetAnchorId": "station_banubu_cave_awake",
+      "stagePlayer": false
     }
   ],
   "terrainAnchors": {},
@@ -392,6 +418,6 @@
   },
   "meta": {
     "createdAt": "2026-09-19T00:00:00.000Z",
-    "updatedAt": "2026-09-21T17:25:00.000Z"
+    "updatedAt": "2026-09-25T21:20:00.000Z"
   }
 }

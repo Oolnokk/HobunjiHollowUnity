@@ -963,7 +963,8 @@
     if (dialogueCameraDebug?.activeCameraId) {
       const cp = dialogueCameraDebug.cameraPosition || {};
       const tp = dialogueCameraDebug.resolvedTarget || {};
-      lines.push(`Dialogue camera: id=${dialogueCameraDebug.activeCameraId} reason=${dialogueCameraDebug.activeReason || '-'} npc=${dialogueCameraDebug.targetNpcId || '-'} camera=(${Number(cp.x).toFixed(2)},${Number(cp.y).toFixed(2)},${Number(cp.z).toFixed(2)}) face=(${Number(tp.x).toFixed(2)},${Number(tp.y).toFixed(2)},${Number(tp.z).toFixed(2)}) latest="${dialogueCameraDebug.latestChange || '-'}"`);
+      const targetPoint = dialogueCameraDebug.targetNpcPoint || (dialogueCameraDebug.targetNpcId ? 'face' : 'world'); // Mobile-readable anchor type for checking root-targeted VFX shots without devtools.
+      lines.push(`Dialogue camera: id=${dialogueCameraDebug.activeCameraId} reason=${dialogueCameraDebug.activeReason || '-'} npc=${dialogueCameraDebug.targetNpcId || '-'} camera=(${Number(cp.x).toFixed(2)},${Number(cp.y).toFixed(2)},${Number(cp.z).toFixed(2)}) target=${targetPoint}:(${Number(tp.x).toFixed(2)},${Number(tp.y).toFixed(2)},${Number(tp.z).toFixed(2)}) latest="${dialogueCameraDebug.latestChange || '-'}"`);
     }
     const banubuSnoreDebug = window.BanubuSnore?.debugSnapshot?.(); // Exposes entrance-origin, chunk gate, and elevation attenuation for phone testing without devtools.
     if (banubuSnoreDebug) {

@@ -36,7 +36,8 @@
     const id = String(camera.id || `camera_${index + 1}`);
     const position = normalizePoint(camera.position, 0.35);
     const targetNpcId = String(camera.targetNpcId || '');
-    const target = normalizePoint(camera.target, targetNpcId ? 0 : 0.8); // When targetNpcId is set this is a face-relative offset; otherwise it remains an absolute authored point.
+    const targetNpcPoint = camera.targetNpcPoint === 'root' ? 'root' : 'face'; // Selects the live NPC anchor that authored target offsets follow; face remains the backwards-compatible default.
+    const target = normalizePoint(camera.target, targetNpcId ? 0 : 0.8); // When targetNpcId is set this is an NPC-anchor-relative offset; otherwise it remains an absolute authored point.
     const stageRaw = camera.playerStage && typeof camera.playerStage === 'object' ? camera.playerStage : null;
     return {
       ...camera,
@@ -45,6 +46,7 @@
       position,
       target,
       targetNpcId,
+      targetNpcPoint,
       targetAnchorId: String(camera.targetAnchorId || ''),
       fovDeg: Math.max(10, Math.min(120, finite(camera.fovDeg, 42))),
       blendSeconds: Math.max(0, finite(camera.blendSeconds, 0.45)),
@@ -135,18 +137,32 @@
     return deps?.getNpcWalker?.(npcId, record?.areaId || deps?.getCurrentArea?.()) || null;
   }
 
+  function npcRootWorldPoint(walker) {
+    const root = walker?.root; // Live NPC transform whose origin is used by root-targeted cinematic cameras and attached presentation emitters.
+    if (!root) return null;
+    const ThreeVector3 = window.THREE?.Vector3; // Optional runtime vector type used only when the NPC root is parented under another transform.
+    if (root.getWorldPosition && ThreeVector3) {
+      const point = root.getWorldPosition(new ThreeVector3()); // Temporary world point prevents a local root position from drifting away from attached VFX in nested scenes.
+      return { x: point.x, y: point.y, z: point.z };
+    }
+    const point = root.position; // Lightweight fallback used by tests and ordinary scene-root NPC walkers.
+    return point ? { x: point.x, y: point.y, z: point.z } : null;
+  }
+
   function resolvedTargetFor(camera, record = active) {
     if (!camera) return null;
     if (!camera.targetNpcId) return { ...camera.target };
     const walker = targetWalkerFor(camera, record);
-    const face = walker ? deps?.getNpcFacePosition?.(walker) : null;
-    if (!face || !Number.isFinite(Number(face.x)) || !Number.isFinite(Number(face.y)) || !Number.isFinite(Number(face.z))) {
+    const anchor = camera.targetNpcPoint === 'root'
+      ? npcRootWorldPoint(walker)
+      : (walker ? deps?.getNpcFacePosition?.(walker) : null); // Resolves either the NPC origin or face every frame so moving/animating targets stay authoritative.
+    if (!anchor || !Number.isFinite(Number(anchor.x)) || !Number.isFinite(Number(anchor.y)) || !Number.isFinite(Number(anchor.z))) {
       return record?.lastResolvedTarget ? { ...record.lastResolvedTarget } : null;
     }
     const resolved = {
-      x: Number(face.x) + finite(camera.target?.x, 0),
-      y: Number(face.y) + finite(camera.target?.y, 0),
-      z: Number(face.z) + finite(camera.target?.z, 0),
+      x: Number(anchor.x) + finite(camera.target?.x, 0),
+      y: Number(anchor.y) + finite(camera.target?.y, 0),
+      z: Number(anchor.z) + finite(camera.target?.z, 0),
     };
     if (record) record.lastResolvedTarget = resolved;
     return { ...resolved };
@@ -182,7 +198,7 @@
     let best = candidates[0];
     let bestDistance = Infinity;
     for (const camera of candidates) {
-      // NPC-targeted cameras store target as a face-relative offset, so it cannot identify which authored shot is spatially nearest.
+      // NPC-targeted cameras store target as an anchor-relative offset, so it cannot identify which authored shot is spatially nearest.
       // Use the camera position as the fallback discriminator; legacy absolute-target cameras keep their old target-based behavior.
       const px = camera.targetNpcId ? finite(camera.position?.x, 0) : finite(camera.target?.x, 0);
       const pz = camera.targetNpcId ? finite(camera.position?.z, 0) : finite(camera.target?.z, 0);
@@ -333,7 +349,7 @@
   }
 
   function debugSnapshot() {
-    const target = resolvedTarget(); // Used by Pixel Probe to verify the live face point on mobile without devtools.
+    const target = resolvedTarget(); // Used by Pixel Probe to verify the live face/root target point on mobile without devtools.
     const camera = active?.camera || null; // Used by Pixel Probe to verify authored camera height/position.
     return {
       activeArea: active?.areaId || null,
@@ -342,9 +358,10 @@
       cameraPosition: camera ? { ...camera.position } : null,
       resolvedTarget: target ? { ...target } : null,
       targetNpcId: camera?.targetNpcId || null,
+      targetNpcPoint: camera?.targetNpcPoint || null,
       petFade,
       registeredAreas: camerasByArea.size,
-      latestChange: 'World-space dialogue framing; live scaled face targeting; cinematic player staging opt-in; in-game Map Edit camera transform authoring',
+      latestChange: 'World-space dialogue framing; live face/root targeting; cinematic player staging opt-in; in-game Map Edit camera transform authoring',
     };
   }
 

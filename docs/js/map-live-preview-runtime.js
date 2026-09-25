@@ -475,7 +475,8 @@
       const camera = window.CinematicCameraRuntime?.cameraForId?.(areaId, selectedPlacement.ref.id);
       if (!camera) { output.textContent = 'Camera transform unavailable.'; return; }
       const p = roundedPoint(camera.position), t = roundedPoint(camera.target);
-      output.textContent = `Position ${p.x}, ${p.y}, ${p.z} • ${camera.targetNpcId ? 'Face offset' : 'Target'} ${t.x}, ${t.y}, ${t.z}`;
+      const npcAnchorLabel = camera.targetNpcPoint === 'root' ? 'Root offset' : 'Face offset'; // Tells mobile Map Edit users which moving NPC point this camera aims relative to.
+      output.textContent = `Position ${p.x}, ${p.y}, ${p.z} • ${camera.targetNpcId ? npcAnchorLabel : 'Target'} ${t.x}, ${t.y}, ${t.z}`;
       return;
     }
     const { node, basePosition } = selectedPlacement;
