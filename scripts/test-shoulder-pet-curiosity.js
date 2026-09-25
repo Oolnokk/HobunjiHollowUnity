@@ -8,6 +8,8 @@ const vm = require('node:vm'); // Executes the real attachment config so grip sc
 const source = fs.readFileSync('docs/game.js', 'utf8'); // Guards the attached-pet look-around path embedded in the main game closure.
 const rigSource = fs.readFileSync('docs/config/attachment-rig-profiles.js', 'utf8'); // Guards the instantaneous horizontal mirror bridge and refreshed shoulder anchors.
 const probeSource = fs.readFileSync('docs/js/pixel-probe.js', 'utf8'); // Guards the mobile-visible size/curiosity diagnostic added for shoulder pets.
+const debugHitboxesSource = fs.readFileSync('docs/js/debug-hitboxes.js', 'utf8'); // Guards the live perch/grip world-point overlay.
+const indexSource = fs.readFileSync('docs/index.html', 'utf8'); // Guards the Dev Tools toggle for the overlay.
 
 const storage = { getItem() { return null; }, setItem() {}, removeItem() {} }; // Minimal browser storage stub required by the attachment master bootstrap.
 const portraitMirrorState = { active: false }; // Lets the fixture exercise mirrored rest parity without loading the portrait module.
@@ -104,16 +106,16 @@ const fakePet = {
 };
 rigSandbox.window.__climbDebug = { companionObjects: new Set([fakePet]) };
 
-assert.equal(rigSandbox.window.ShoulderPetObservationFlip.applyAtPinnedPerch(fakePet, shoulderPerchWorld), true, 'final shoulder pin prepares the canonical center-fixed mirror state before the first observation flip');
+assert.equal(rigSandbox.window.ShoulderPetObservationFlip.applyAtPinnedPerch(fakePet, shoulderPerchWorld), true, 'final shoulder pin prepares the active grip/perch pivot before the first observation flip');
 assert.equal(plane.scale.x, 1.5, 'canonical shoulder placement remains unmirrored before observation parity changes');
 assert(Math.abs(plane.position.x - 0.2) < 1e-12 && Math.abs(plane.position.z - 0.4) < 1e-12, 'canonical preparation does not move the plane');
 
 fakePet.__hobunjiShoulderObservationFlipped = true;
 assert.equal(rigSandbox.window.ShoulderPetObservationFlip.applyAtPinnedPerch(fakePet, shoulderPerchWorld), true, 'final shoulder pin applies the mirrored observation parity');
 const mirroredPivotWorld = plane.localToWorld(authoredGripLocal.clone());
-assert(plane.scale.x < 0, 'center-fixed mirror reverses the shoulder-pet plane');
-assert(Math.abs(plane.position.x - 0.2) < 1e-12 && Math.abs(plane.position.z - 0.4) < 1e-12, 'mirroring cannot translate the visible pet plane in parent space');
-assert(mirroredPivotWorld.distanceTo(shoulderPerchWorld) > 1e-6, 'an off-center authored grip pixel is allowed to move inside the mirrored artwork instead of dragging the whole pet sideways');
+assert(plane.scale.x < 0, 'active-pivot mirror reverses the shoulder-pet plane');
+assert(Math.abs(plane.position.z - 0.4) > 1e-12, 'off-center grip mirroring may move the sprite center because the shoulder contact point, not the center, is planted');
+assert(mirroredPivotWorld.distanceTo(shoulderPerchWorld) < 1e-12, 'mirroring leaves the authored grip exactly on the active shoulder perch');
 
 fakePet.__hobunjiShoulderObservationFlipped = false;
 rigSandbox.window.ShoulderPetObservationFlip.applyAtPinnedPerch(fakePet, shoulderPerchWorld);
@@ -125,13 +127,13 @@ assert(restoredPivotWorld.distanceTo(shoulderPerchWorld) < 1e-12, 'unflipping re
 portraitMirrorState.active = true;
 fakePet.__hobunjiShoulderObservationFlipped = false;
 rigSandbox.window.ShoulderPetObservationFlip.applyAtPinnedPerch(fakePet, shoulderPerchWorld);
-assert(plane.scale.x < 0, 'portrait mirroring reverses the default/resting shoulder-pet facing in place');
-assert(Math.abs(plane.position.x - 0.2) < 1e-12 && Math.abs(plane.position.z - 0.4) < 1e-12, 'mirrored default orientation does not translate the pet plane');
+assert(plane.scale.x < 0, 'portrait mirroring reverses the default/resting shoulder-pet facing around the planted grip');
+assert(plane.localToWorld(authoredGripLocal.clone()).distanceTo(shoulderPerchWorld) < 1e-12, 'mirrored default orientation keeps the grip planted on the perch');
 
 fakePet.__hobunjiShoulderObservationFlipped = true;
 rigSandbox.window.ShoulderPetObservationFlip.applyAtPinnedPerch(fakePet, shoulderPerchWorld);
 assert(plane.scale.x > 0, 'observation flip is relative to the mirrored resting orientation instead of applying the same absolute parity');
-assert(Math.abs(plane.position.x - 0.2) < 1e-12 && Math.abs(plane.position.z - 0.4) < 1e-12, 'relative observation flip restores parity without moving the pet plane');
+assert(plane.localToWorld(authoredGripLocal.clone()).distanceTo(shoulderPerchWorld) < 1e-12, 'relative observation flip keeps the grip planted on the perch');
 portraitMirrorState.active = false;
 
 // Change parent scale to mimic live size/breath transforms, then solve a new flip.
@@ -139,7 +141,7 @@ root.scale.set(2.4, 2.7, 3.6);
 const movedPerchWorld = plane.localToWorld(authoredGripLocal.clone());
 fakePet.__hobunjiShoulderObservationFlipped = true;
 rigSandbox.window.ShoulderPetObservationFlip.applyAtPinnedPerch(fakePet, movedPerchWorld);
-assert(Math.abs(plane.position.x - 0.2) < 1e-12 && Math.abs(plane.position.z - 0.4) < 1e-12, 'center-fixed mirroring remains translation-free under nonuniform parent scale');
+assert(plane.localToWorld(authoredGripLocal.clone()).distanceTo(movedPerchWorld) < 1e-12, 'active grip/perch pivot remains exact under nonuniform parent scale');
 
 fakePet.stableRole = 'companion';
 rigSandbox.window.ShoulderPetObservationFlip.scanNow();
@@ -162,26 +164,23 @@ assert.match(rigSource,
   'the curiosity transition changes only logical observation parity; it does not mutate the visual plane before the final shoulder pin');
 const observationMirrorSolverSource = rigSource.slice(rigSource.indexOf('const solveShoulderObservationPlaneAtPivot'), rigSource.indexOf('const restoreShoulderObservationPlane'));
 assert.match(observationMirrorSolverSource,
-  /plane\.scale\.x = state\.baseScaleX \* sign[\s\S]{0,260}plane\.position\.set\(state\.basePosition\[0\], state\.basePosition\[1\], state\.basePosition\[2\]\)/,
-  'mirror parity changes scale while explicitly restoring the authored local plane position');
-assert.doesNotMatch(observationMirrorSolverSource,
-  /plane\.position\.add|localTranslation|desiredParent\.sub\(currentParent\)/,
-  'shoulder-pet mirroring cannot translate the child plane to preserve an off-center grip pixel');
+  /const localTranslation = plane\.position\.clone\(\)\.set\([\s\S]{0,320}\(state\.baseScaleX - nextScaleX\) \* pivotLocal\.x[\s\S]{0,360}localTranslation\.applyQuaternion\(plane\.quaternion\)[\s\S]{0,240}plane\.position\.add\(localTranslation\)/,
+  'observation mirroring applies the closed-form local translation required to rotate the artwork around the planted grip/perch pivot');
 assert.match(observationMirrorSolverSource,
-  /const pivotLocal = plane\.worldToLocal\(desiredWorld\.clone\(\)\)[\s\S]{0,700}mirroredGripWorld/,
-  'the authored grip is retained only as a diagnostic drift measurement after the center-fixed mirror');
+  /const solvedWorld = plane\.localToWorld\(pivotLocal\.clone\(\)\)[\s\S]{0,180}distanceTo\(desiredWorld\)/,
+  'the solver measures the final mirrored grip against the exact active perch');
 assert.match(rigSource,
   /applyAtPinnedPerch: applyShoulderPetObservationAtPinnedPerch/,
-  'the center-fixed mirror is exposed only as the final-pin integration surface');
+  'the active grip/perch mirror is exposed only as the final-pin integration surface');
 assert.match(source,
   /function _applyShoulderPetFinalTransform\(c, finalTransform\)[\s\S]{0,5200}applyAtPinnedPerch\?\.\(c, finalTransform\.perchWorldPosition\)[\s\S]{0,400}observationPivotApplied/,
-  'game.js applies center-fixed observation parity inside the same final authoritative shoulder attachment solve before rendering');
+  'game.js applies grip/perch-pivot observation parity inside the same final authoritative shoulder attachment solve before rendering');
 const observationScanSource = rigSource.slice(rigSource.indexOf('const scanShoulderPetsForObservationFlip'), rigSource.indexOf('window.ShoulderPetObservationFlip ='));
 assert.doesNotMatch(observationScanSource, /applyAtPinnedPerch/,
   'the 250ms instrumentation scan never performs active visual flips');
 assert.match(rigSource,
-  /mode: 'center-fixed-scale-mirror'/,
-  'final-pin diagnostics report the translation-free center mirror');
+  /mode: 'active-grip-perch-pivot'/,
+  'final-pin diagnostics report the active grip/perch pivot mirror');
 assert.match(rigSource,
   /pivotMode: 'pending-final-shoulder-pin'/,
   'logical flip diagnostics remain pending until the final shoulder pin consumes the new parity');
@@ -221,5 +220,16 @@ assert.match(rigSource,
 assert.match(probeSource,
   /Size class:[\s\S]{0,260}expected group scale=[\s\S]{0,500}Curiosity: phase=/,
   'the mobile pixel probe distinguishes a real genotype-scale overwrite from a curiosity pose');
+assert.match(indexSource, /id="settingShowShoulderPetAttachmentPoints"/,
+  'Dev Tools exposes a dedicated shoulder perch/grip overlay toggle');
+assert.match(debugHitboxesSource,
+  /DEBUG_SHOULDER_PERCH_COLOR[\s\S]{0,9000}_drawShoulderPetAttachmentPoints\(\)[\s\S]{0,1800}PERCH[\s\S]{0,1200}GRIP/,
+  'the overlay labels both active attachment points in distinct colors');
+assert.match(debugHitboxesSource,
+  /authoredPerchWorldPosition[\s\S]{0,400}alignedGripWorldPosition/,
+  'the overlay consumes the exact final-pin perch and grip diagnostics rather than reconstructing approximate points');
+assert.match(debugHitboxesSource,
+  /shoulderPetAttachment: _activeShoulderPetAttachmentSnapshot\(\)/,
+  'the same live point pair is exposed in the debug snapshot for copied diagnostics');
 
 console.log('Shoulder-pet curiosity regression checks passed.');
