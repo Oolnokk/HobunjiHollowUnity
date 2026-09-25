@@ -176,13 +176,15 @@
 
   function renderDenTemplateFurniture(group, den, zGrid, locale, mapId) {
     if (!window.AuthoredFurniture?.buildGroup || !locale) return;
-    const transform = denTemplateTransform(den, locale); // Maps authored locale coordinates onto this generated den's footprint.
-    if (!transform) return;
+    const initialTransform = denTemplateTransform(den, locale); // Used only to identify the cave object before asynchronous furniture data resolves.
+    if (!initialTransform) return;
     for (const object of (locale.objects || [])) {
-      if (object === transform.cave) continue;
+      if (object === initialTransform.cave) continue;
       if (!['furniture','decor','bench','processor','prop'].includes(object.kind)) continue;
       loadDenFurnitureData(object.key).then(data => {
         if (!data) return;
+        const transform = denTemplateTransform(den, locale); // Recomputed after async load so a den that relocated while its furniture asset loaded uses the new site.
+        if (!transform) return;
         const localCenterX = (Number(object.col) || 0) - (Number(transform.cave.col) || 0) + Math.max(.1, Number(object.w) || 1) / 2; // Authored center relative to cave.
         const localCenterY = (Number(object.row) || 0) - (Number(transform.cave.row) || 0) + Math.max(.1, Number(object.h) || 1) / 2; // Authored Z center relative to cave.
         const worldX = transform.originX + localCenterX * transform.scaleX; // Final den-local furniture X in wilderness tiles.
@@ -198,6 +200,9 @@
         model.userData.denEntranceLocaleId = ANIMAL_DEN_ENTRANCE_LOCALE_ID;
         model.userData.denEntranceLocaleObjectId = object.id || null;
         model.userData.denId = den.id || null;
+        model.userData.denFurnitureRoot = true;
+        model.userData.denOffsetX = worldX - Number(den.x); // Used by syncAnimalDenVisual when the same den slot migrates to a new exterior site.
+        model.userData.denOffsetZ = worldZ - Number(den.y); // Used with denOffsetX to move authored entrance props without rebuilding them.
         model.traverse(node => {
           if (!node?.isMesh) return;
           node.castShadow = true;
@@ -344,11 +349,12 @@
         const sink = Number.isFinite(Number(visual.sink)) ? Number(visual.sink) : DEN_SINK;
         const mesh = template.clone();
         mesh.material = caveMaterialFor(variant);
-        mesh.scale.set(scaleX, scaleY, scaleZ);
+        const renderedScaleY = den.collapsed ? scaleY / 3 : scaleY; // Cleared dens visibly cave in to one-third height until their population relocates.
+        mesh.scale.set(scaleX, renderedScaleY, scaleZ);
         mesh.rotation.y = caveFacingRotation(visual.facing, Number.isFinite(Number(denEntranceObject?.rot)) ? denEntranceObject.rot : null);
         mesh.position.set(
           centerCol + (Number(visual.offsetX) || 0),
-          groundY + (Number(visual.offsetY) || 0) - sink - box.min.y * scaleY,
+          groundY + (Number(visual.offsetY) || 0) - sink - box.min.y * renderedScaleY,
           centerRow + (Number(visual.offsetZ) || 0)
         );
         mesh.castShadow = true;
@@ -356,6 +362,13 @@
         mesh.userData.cameraObstacle = true;
         mesh.userData.denEntranceLocaleId = ANIMAL_DEN_ENTRANCE_LOCALE_ID;
         mesh.userData.denEntranceLocaleObjectId = denEntranceObject?.id || null;
+        mesh.userData.denId = den.id || null;
+        mesh.userData.denCaveEntrance = true;
+        mesh.userData.denBaseScaleY = scaleY; // Used by syncAnimalDenVisual to restore full height after relocation.
+        mesh.userData.denBoxMinY = box.min.y; // Used to keep the cave base grounded while its Y scale changes.
+        mesh.userData.denGroundOffsetY = (Number(visual.offsetY) || 0) - sink; // Used to recompute grounded Y at a relocated elevation.
+        mesh.userData.denOffsetX = Number(visual.offsetX) || 0; // Used to move this exact cave mesh with the den record.
+        mesh.userData.denOffsetZ = Number(visual.offsetZ) || 0; // Used with denOffsetX when the exterior site changes.
         deps.markOutline(mesh);
         group.add(mesh);
         renderDenTemplateFurniture(group, den, zGrid, denEntranceLocale, mapId);
@@ -395,6 +408,45 @@
       zScene.add(group);
       console.log(`%c[zone:${mapId}] cave entrances built: ${denList.length} animal dens + ${localeCaves.length} locale caves`, 'color:#22c55e;font-weight:bold');
     });
+  }
+
+  function syncAnimalDenVisual(zScene, zGrid, den, mapId) {
+    if (!zScene || !den) return false;
+    const group = zScene.getObjectByName?.('animalDenEntrances');
+    if (!group) return false;
+    const w = Math.max(1, Number(den.w) || 1); // Used to recenter the cave mesh after relocation.
+    const h = Math.max(1, Number(den.h) || 1); // Used with w to sample the relocated footprint's elevation.
+    const centerCol = Number(den.x) + w / 2;
+    const centerRow = Number(den.y) + h / 2;
+    const centerTier = zGrid?.[Math.floor(centerRow)]?.[Math.floor(centerCol)]?.elevTier || 0; // Relocated ground tier under the cave itself.
+    const caveGroundY = deps.NORMAL_TOP + centerTier * deps.PLATEAU_UNIT;
+    let changed = false;
+    for (const child of group.children || []) {
+      if (String(child?.userData?.denId ?? '') !== String(den.id ?? '')) continue;
+      if (child.userData.denCaveEntrance) {
+        const baseScaleY = Math.max(1e-5, Number(child.userData.denBaseScaleY) || Number(child.scale?.y) || 1); // Canonical uncollapsed Y scale retained on the mesh.
+        const nextScaleY = den.collapsed ? baseScaleY / 3 : baseScaleY;
+        child.scale.y = nextScaleY;
+        child.position.x = centerCol + (Number(child.userData.denOffsetX) || 0);
+        child.position.z = centerRow + (Number(child.userData.denOffsetZ) || 0);
+        child.position.y = caveGroundY + (Number(child.userData.denGroundOffsetY) || 0) - (Number(child.userData.denBoxMinY) || 0) * nextScaleY;
+        changed = true;
+        continue;
+      }
+      if (child.userData.denFurnitureRoot) {
+        const worldX = Number(den.x) + (Number(child.userData.denOffsetX) || 0); // Preserves each authored entrance prop's den-local X offset.
+        const worldZ = Number(den.y) + (Number(child.userData.denOffsetZ) || 0); // Preserves each authored entrance prop's den-local Z offset.
+        const row = Math.max(0, Math.min((zGrid?.length || 1) - 1, Math.floor(worldZ)));
+        const col = Math.max(0, Math.min((zGrid?.[row]?.length || 1) - 1, Math.floor(worldX)));
+        const tier = zGrid?.[row]?.[col]?.elevTier || 0;
+        child.position.x = worldX;
+        child.position.z = worldZ;
+        child.position.y = deps.NORMAL_TOP + tier * deps.PLATEAU_UNIT;
+        changed = true;
+      }
+    }
+    if (changed) window.__farmLog?.(`[zone:${mapId}] synced den ${den.id} visual state collapsed=${den.collapsed ? 1 : 0} site=(${den.x},${den.y})`, 'wildlife');
+    return changed;
   }
 
   function buildRootTotemMeshes(zScene, zGrid, totems, mapId) {
@@ -440,7 +492,7 @@
     return group;
   }
 
-  const api = { init, canonicalRootTotemRecipe, denCaveVariantFor, denEntranceCollisionFor, denEntranceCollisionState, loadAnimalDenEntranceLocale, loadAnimalDenEntranceLocaleObject, buildAnimalDenMeshes, buildRootTotemMeshes };
+  const api = { init, canonicalRootTotemRecipe, denCaveVariantFor, denEntranceCollisionFor, denEntranceCollisionState, loadAnimalDenEntranceLocale, loadAnimalDenEntranceLocaleObject, buildAnimalDenMeshes, syncAnimalDenVisual, buildRootTotemMeshes };
   Object.defineProperty(api, 'CANONICAL_ROOT_TOTEM_RECIPE', { enumerable: true, get: canonicalRootTotemRecipe });
   window.ZoneDenTotemFeatures = api;
 })();
