@@ -72,6 +72,10 @@ const context = {
 context.window = context;
 vm.createContext(context);
 vm.runInContext(read('docs/js/cavern-generator.js'), context, { filename: 'cavern-generator.js' });
+const lightweightStations = context.CavernGenerator.localeCavernNpcStations(banubu); // Scheduler-facing metadata must be available without invoking the expensive cavern carve.
+assert.strictEqual(carveCall, null, 'reading locale cavern NPC stations must not carve/generate the cavern');
+assert(lightweightStations.some(station => station.id === 'station_banubu_cave_sleep' && station.pose === 'lie' && station.col === 6 && station.row === 5),
+  'lightweight locale station extraction preserves Banubu sleep station metadata');
 const built = context.CavernGenerator.synthesizeLocaleCavernMapData(banubu);
 assert.strictEqual(built.id, 'map_i_den_banubu');
 assert.strictEqual(built.wallStyle, 'cavern');
@@ -102,6 +106,7 @@ const editorSource = read('docs/tools/locale-editor/index.html');
 const interiorBuilderSource = read('docs/js/interior-scene-builder.js');
 const interiorEnvironmentSource = read('docs/js/interior-environment-runtime.js'); // Used to prove synthesized locale caverns bypass static map environment fetches.
 const interiorFloorSource = read('docs/js/interior-fire-floor-runtime.js'); // Used to prove synthesized locale caverns bypass static map floor-style fetches.
+const npcSchedulingSource = read('docs/js/npc-scheduling.js'); // Used to prove missing cave stations warm from locale metadata instead of forcing scene generation during boot.
 assert(sculptorSource.includes('function carveFootprintCavern(') && sculptorSource.includes('carveMazeCavern, carveFootprintCavern'), 'shared cavern sculptor must expose footprint-driven generation');
 assert(generatorSource.includes('loadLocaleCavernDefinition') && generatorSource.includes('synthesizeLocaleCavernMapData'), 'runtime must resolve cave interiors through locale files');
 assert(!generatorSource.includes("seedText === 'map_i_den_banubu'"), 'generic generator must not special-case Banubu by seed/map id');
@@ -115,6 +120,16 @@ for (const [runtimeLabel, runtimeSource] of [['environment', interiorEnvironment
 }
 assert.strictEqual(fs.existsSync(path.join(root, 'docs/config/maps/map_i_den_banubu.json')), false,
   'Banubu must remain locale-generated; suppress its static-map 404 at the caller rather than adding a duplicate map file');
+assert(generatorSource.includes('function loadLocaleCavernNpcStations(mapId)') && generatorSource.includes('function localeCavernNpcStations(locale)'),
+  'cavern generator must expose lightweight authored NPC station metadata without scene synthesis');
+const legacyResolverSource = npcSchedulingSource.slice(
+  npcSchedulingSource.indexOf('function resolveLegacyNpcScheduleTarget(rec)'),
+  npcSchedulingSource.indexOf('const c = rule.c ?? rule.position?.c;')
+); // Narrow resolver slice ensures the active missing-station branch no longer calls the heavy building loader directly.
+assert(legacyResolverSource.includes('warmMissingNpcStationArea(missingArea)'),
+  'legacy schedule resolution must delegate missing building stations to the lightweight warmup');
+assert(!legacyResolverSource.includes('deps.loadBuildingScene(missingArea)'),
+  'missing station resolution must not directly generate a building/cavern scene on the startup call stack');
 
 assert(!gameIndexSource.includes('id="npcPortraitCanvas"') && !gameIndexSource.includes('id="npcPortraitWrap"'), 'legacy screen-space NPC portrait canvas must be removed from gameplay HTML');
 assert(!dialogueStyleSource.includes('#npcPortraitCanvas') && !dialogueStyleSource.includes('#npcPortraitWrap'), 'legacy screen-space NPC portrait CSS must be removed');
