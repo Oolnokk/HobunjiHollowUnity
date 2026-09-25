@@ -1835,16 +1835,17 @@
               <option value="0.5">50%</option>
             </select>
           </label>
+          <div class="settings-section-title" style="margin-top:10px">Painterly</div>
           <label class="settings-row">
             <div class="settings-label">
               <div class="settings-name">Paint Filter <span style="font-size:10px;opacity:.7">(Experimental)</span></div>
               <div class="settings-desc">Live Paint Stack filter at full world resolution. All active tiers share the radius-10 / 3-bin / .27 oil treatment and tone/finish; only watercolor radius/mix changes by tier. Palette correction now separates vivid yellow-green accents from muted tan/ochre so blue suppression no longer mustard-shifts tan surfaces. HUD, menus, reticle UI, and dialogue overlays stay crisp. Currently uses the outline composite, so Outlines must remain enabled.</div>
-              <div class="settings-desc" id="painterlyPostprocessStatus" role="status" aria-live="polite">Off — no extra texture samples are executed.</div>
+              <div class="settings-desc" id="painterlyPostprocessStatus" role="status" aria-live="polite">Medium selected — waiting for the gameplay renderer.</div>
             </div>
             <select id="settingPainterlyPostprocess" style="font-size:12px;padding:5px 8px;background:rgba(255,255,255,.06);border:1px solid var(--border-bright);border-radius:6px;color:var(--text);align-self:center">
               <option value="off">Off</option>
               <option value="low">Low</option>
-              <option value="medium">Medium</option>
+              <option value="medium" selected>Medium</option>
               <option value="high">High</option>
             </select>
           </label>
@@ -2484,7 +2485,7 @@
   <!-- Optional world-only painterly postprocess. It patches the existing
        fullscreen world composite after renderer creation, persists only its
        quality mode, and owns no requestAnimationFrame loop. -->
-  <script src="js/painterly-postprocess.js?v=20260923paintrebase1"></script>
+  <script src="js/painterly-postprocess.js?v=20260925defaultmedium1"></script>
   <script src="js/banubu-cave-clouds.js?v=20260923cloudring3"></script>
   <script src="game.js?v=20260924shouldersource1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
