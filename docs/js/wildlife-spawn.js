@@ -341,10 +341,16 @@
   }
 
   function turnoverRecordForCavern(cavernMapId) {
-    const denKey = denKeyForCavern(cavernMapId);
-    if (!denKey) return null;
     ensureDenTurnoverLoaded();
-    return denTurnoverByKey.get(denKey) || null;
+    const direct = [...denTurnoverByKey.values()].find(record => String(record?.cavernMapId || '') === String(cavernMapId || '')); // Survives cold-load ordering before denCavernMapId has repopulated its side tables.
+    if (direct) return direct;
+    const denKey = denKeyForCavern(cavernMapId);
+    return denKey ? (denTurnoverByKey.get(denKey) || null) : null;
+  }
+
+  function denTurnoverStateForCavern(cavernMapId) {
+    const record = turnoverRecordForCavern(cavernMapId);
+    return record ? { stage:record.stage, daysRemaining:record.daysRemaining, generation:Number(record.generation)||0 } : null;
   }
 
   function layoutTileMap(layout) {
@@ -1452,6 +1458,7 @@
     getOrMakeDenGenotype,
     getDenGenotypes: () => _denGenotypes,
     denTurnoverDebug,
+    denTurnoverStateForCavern,
     onDenMotherDeath,
     forgetZoneDenState,
     isDenPackAlive,
