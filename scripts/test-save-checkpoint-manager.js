@@ -63,6 +63,7 @@ const vm = require('node:vm');
   let folderSyncs = 0; // Successful/partially-successful canonical write attempts.
   let failNextFolderSyncAfterWrite = false; // Simulates I/O failure after canonical files already changed.
   let failPrimarySnapshotRead = false; // Simulates a malformed canonical world that recovery must repair instead of requiring a successful primary read.
+  let hungRecoverySlot = ''; // Simulates a File System Access read that never settles so the recovery UI timeout path is exercised.
   const folderListeners = []; // Captures LocalSaveFolder status listeners.
   const documentListeners = new Map(); // Captures lifecycle listeners without a browser DOM.
 
@@ -86,6 +87,7 @@ const vm = require('node:vm');
     getStatus: () => ({ ...folderStatus }),
     onChange(listener) { folderListeners.push(listener); return () => {}; },
     async readRecoveryCheckpoint(slot) {
+      if (slot === hungRecoverySlot) return new Promise(() => {}); // Intentional never-settling I/O used to prove recovery history fails soft.
       return folderRecovery.has(slot) ? structuredClone(folderRecovery.get(slot)) : null;
     },
     async readRecoveryCheckpoints() {
@@ -170,7 +172,8 @@ const vm = require('node:vm');
     alert: () => {},
     location: { reload: () => { reloads += 1; } },
     setInterval: () => 1,
-    setTimeout: (fn) => { fn(); return 1; },
+    setTimeout: (fn, delay = 0) => Number(delay) > 0 ? global.setTimeout(fn, delay) : (fn(), 1),
+    clearTimeout: timer => { if (timer && timer !== 1) global.clearTimeout(timer); },
     clearInterval: () => {},
     Object,
     JSON,
@@ -370,6 +373,22 @@ const vm = require('node:vm');
   assert.ok(api.getStatus().preRestore, 'pre-restore checkpoint remains available after rollback');
   assert.equal(window.__hobunjiSaveCheckpointDebug.snapshot().restoreRollbacks, 1, 'diagnostics record automatic folder rollback');
   assert.ok(folderSyncs >= 4, 'fixture exercised canonical autosave, manual save, restore, and rollback writes');
+
+  // A never-settling recovery file must not keep "Reading recovery history…" alive forever.
+  // Healthy slots from the same folder still mirror successfully while the bad slot times out.
+  folderRecovery.set('auto', structuredClone(legacyManualCheckpoint));
+  folderRecovery.set('manual', structuredClone(legacyManualCheckpoint));
+  store.delete('hobunjiSaveCheckpoint.auto.v1');
+  store.delete('hobunjiSaveCheckpoint.manual.v1');
+  hungRecoverySlot = 'manual';
+  const timeoutStartedAt = Date.now();
+  await api.syncRecoveryMirrorsFromFolder();
+  const timeoutElapsed = Date.now() - timeoutStartedAt;
+  hungRecoverySlot = '';
+  assert.ok(timeoutElapsed >= 2500 && timeoutElapsed < 5000, 'hung recovery read is bounded to the configured ~3 second fail-soft window');
+  assert.ok(store.has('hobunjiSaveCheckpoint.auto.v1'), 'healthy recovery slot remains usable when a sibling recovery read hangs');
+  assert.equal(store.has('hobunjiSaveCheckpoint.manual.v1'), false, 'timed-out recovery slot is not replaced with stale browser history');
+  assert.match(window.__hobunjiSaveCheckpointDebug.snapshot().lastError || '', /manual: Recovery "manual" read timed out after 3s/, 'diagnostics expose the timed-out recovery slot');
 
   console.log('save checkpoint manager folder-first regression: ok');
 })().catch(error => {
