@@ -32,9 +32,8 @@
     const resolved = stances.idleBodyYawSnapshot(idleState);
     const playerMesh = composer.getPlayerMesh?.() || null;
     const composerChanged = composer !== lastComposer || playerMesh !== lastPlayerMesh;
-    const dialogueOpen = !!global.Combat?.deps?.isDialogueOpen?.(); // Used below so an equipped weapon stance cannot add render-time body yaw over dialogue's exact face-to-face orientation.
     const resolvedYawDeg = finite(resolved.yawDeg);
-    if (!dialogueOpen && resolved.active && Math.abs(resolvedYawDeg) > 1e-6) {
+    if (resolved.active && Math.abs(resolvedYawDeg) > 1e-6) {
       if (composerChanged || lastYawDeg !== resolvedYawDeg) composer.setChannel(CHANNEL, {
         priority: 5,
         mode: 'additive',
@@ -47,7 +46,7 @@
     }
     lastComposer = composer;
     lastPlayerMesh = playerMesh;
-    lastReason = dialogueOpen ? 'dialogue' : resolved.reason;
+    lastReason = resolved.reason;
   }
 
   global.WeaponIdleBodyYawRuntime = {
