@@ -448,6 +448,35 @@
       && a.y - margin < b.y + b.h && a.y + a.h + margin > b.y;
   }
 
+  function largestWalkableDenComponent(layout, tileMap) {
+    const walkable = new Set(); // Runtime movement-equivalent terrain used to reject isolated relocation pockets without rebuilding generator navigation.
+    for (const [key, tile] of tileMap) {
+      const type = String(tile?.type || '').toLowerCase();
+      if (type === 'rock' || type === 'shrub' || tile?.incline || tile?._banditTentCollisionId) continue;
+      walkable.add(key);
+    }
+    let largest = new Set();
+    const unvisited = new Set(walkable);
+    while (unvisited.size) {
+      const first = unvisited.values().next().value;
+      const component = new Set([first]);
+      const queue = [first];
+      unvisited.delete(first);
+      for (let index = 0; index < queue.length; index++) {
+        const [col, row] = queue[index].split(',').map(Number);
+        for (const [dc, dr] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+          const next = `${col + dc},${row + dr}`;
+          if (!unvisited.has(next)) continue;
+          unvisited.delete(next);
+          component.add(next);
+          queue.push(next);
+        }
+      }
+      if (component.size > largest.size) largest = component;
+    }
+    return largest;
+  }
+
   function runtimeDenRelocationBlockers(zoneId) {
     const blockers = []; // Runtime-only footprints are absent from the generator-owned layout arrays used by ordinary relocation validation.
     const add = (site, margin = 3) => {
@@ -463,13 +492,14 @@
     return blockers;
   }
 
-  function denCandidateIsSafe(zoneId, layout, tileMap, runtimeBlockers, den, x, y, oldDen, activeZone) {
+  function denCandidateIsSafe(zoneId, layout, tileMap, reachableTiles, runtimeBlockers, den, x, y, oldDen, activeZone) {
     const w = Math.max(1, Number(den.w) || 1);
     const h = Math.max(1, Number(den.h) || 1);
     const cols = Math.max(1, Number(layout?.cols) || 1);
     const rows = Math.max(1, Number(layout?.rows) || 1);
     const mouth = { x: x + Math.floor(w / 2), y: y + h };
     if (x < 2 || y < 2 || x + w >= cols - 2 || mouth.y >= rows - 2) return false;
+    if (reachableTiles?.size && !reachableTiles.has(`${mouth.x},${mouth.y}`)) return false; // Replacement mouths must stay on the zone's main traversable terrain network.
     if (Math.hypot(x - Number(oldDen.x), y - Number(oldDen.y)) < DEN_RELOCATION_MIN_DISTANCE_TILES) return false;
     if (activeZone && deps.player && Math.hypot((x + w * .5) - deps.player.x / deps.TILE, (y + h * .5) - deps.player.y / deps.TILE) < DEN_RELOCATION_PLAYER_CLEARANCE_TILES) return false;
 
@@ -525,11 +555,12 @@
     const maxY = Math.max(2, Number(layout.rows) - h - 4);
     const activeZone = deps.getCurrentArea() === zoneId ? zoneId : null;
     const tileMap = layoutTileMap(layout); // Shared by random sampling and fallback scanning for this single relocation attempt.
+    const reachableTiles = largestWalkableDenComponent(layout, tileMap); // Computed once; prevents a locally-flat but cliff-isolated grass pocket from becoming a new den site.
     const runtimeBlockers = runtimeDenRelocationBlockers(zoneId); // Snapshots active camps/campfire once so candidate tests stay cheap and internally consistent.
     for (let attempt = 0; attempt < 700; attempt++) {
       const x = 2 + Math.floor(deps.rnd() * Math.max(1, maxX - 1));
       const y = 2 + Math.floor(deps.rnd() * Math.max(1, maxY - 1));
-      if (denCandidateIsSafe(zoneId, layout, tileMap, runtimeBlockers, den, x, y, oldDen, activeZone)) return { x, y, mouthAnchor:{ x:x + Math.floor(w / 2), y:y + h } };
+      if (denCandidateIsSafe(zoneId, layout, tileMap, reachableTiles, runtimeBlockers, den, x, y, oldDen, activeZone)) return { x, y, mouthAnchor:{ x:x + Math.floor(w / 2), y:y + h } };
     }
     const start = Math.floor(deps.rnd() * Math.max(1, (maxX - 1) * (maxY - 1))); // Used to vary the deterministic fallback scan instead of always biasing the northwest.
     const width = Math.max(1, maxX - 1);
@@ -538,7 +569,7 @@
       const linear = (start + offset) % total;
       const x = 2 + (linear % width);
       const y = 2 + Math.floor(linear / width);
-      if (denCandidateIsSafe(zoneId, layout, tileMap, runtimeBlockers, den, x, y, oldDen, activeZone)) return { x, y, mouthAnchor:{ x:x + Math.floor(w / 2), y:y + h } };
+      if (denCandidateIsSafe(zoneId, layout, tileMap, reachableTiles, runtimeBlockers, den, x, y, oldDen, activeZone)) return { x, y, mouthAnchor:{ x:x + Math.floor(w / 2), y:y + h } };
     }
     return null;
   }
