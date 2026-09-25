@@ -145,7 +145,7 @@ assert(!banditRuntimeSource.includes('buildBanditTentCanvasGeometry'), 'old proc
 assert.deepEqual(cfg.equipment.weaponShapes, ['fishingspear', 'hatchet', 'dagger'], 'Porakaneki must use the true dagger shape, never daggerSword');
 assert(localeIndex.locales.some(entry => entry.id === 'locale_porakaneki_camp_small'));
 assert(localeIndex.locales.some(entry => entry.id === 'locale_porakaneki_camp_chief' && entry.singleton === true));
-assert(houseLoader.includes('porakaneki-camps-runtime.js?v=20260924chunkecology3'));
+assert(houseLoader.includes('porakaneki-camps-runtime.js?v=20260924chunkecology4'));
 assert(runtimeSource.includes("bodyColorsOverride: window.HobunjiPorakanekiSpecies?.bodyColorsForSeed?.(hunter.id, 'male') || null"), 'camp residents must choose an authored Mashtzarr swatch only when materializing their avatar');
 const bodyColorWriteIndex = combatBanditSource.indexOf('roster.appearance.bodyColors = opts.bodyColorsOverride'); // Used with avatar-build ordering below to ensure explicit finite colors reach the portrait before raster work begins.
 const banditAvatarBuildIndex = combatBanditSource.indexOf('const avatarRef = await buildBanditAvatar(roster);'); // Must occur after the explicit body-color assignment.
@@ -161,6 +161,10 @@ assert(runtimeSource.includes('Targets only exterior walkable tiles; hunters nev
 assert(!runtimeSource.includes("if (activity === 'hunt') hunter.target = randomPointAround"), 'legacy solo random-radius hunting target must stay removed');
 assert(runtimeSource.includes('for (const zoneId of (cfg.wildernessZones || []))'), 'runtime must build camps across every configured wilderness zone');
 assert(runtimeSource.includes("entity.state = 'return'"), 'neutral Porakaneki must delegate actual travel/rendering to the shared hostile return/home path');
+assert(runtimeSource.includes("const SCHEDULER_ID = 'porakaneki-camps-runtime'"), 'Porakaneki planner exposes a stable shared-frame scheduler id');
+assert(runtimeSource.includes('window.RuntimeFrameScheduler.register(SCHEDULER_ID') && runtimeSource.includes("phase: 'pre-game'"), 'production Porakaneki planner runs from the shared pre-game scheduler before hostile AI');
+assert(runtimeSource.includes("if (!installRuntimeTick())") && runtimeSource.includes("state.tickOwner = 'BanditCamps-fallback'"), 'isolated contexts without RuntimeFrameScheduler retain the legacy BanditCamps wrapper fallback');
+assert(runtimeSource.includes('state.updateTicks += 1'), 'planner cadence increments a mobile-visible tick counter whenever a real planner step executes');
 assert(!runtimeSource.includes('combatDeps.moveCreatureToward?.(entity'), 'Porakaneki planner must not independently move the same live entity the hostile loop is rendering');
 assert(runtimeSource.indexOf('updateAllHunters(step, coarseStep);') < runtimeSource.indexOf('updateTerritoryWarnings();'), 'nearby hunters must begin materializing before territory dialogue attempts to choose a speaker');
 assert(runtimeSource.includes('allowToastFallback: false'), 'territory warnings must wait for Ambient Dialogue instead of being consumed as a toast');
@@ -336,7 +340,7 @@ function hunterDebug(api, zoneId, campId, index) {
 (async () => {
   await flush();
   const api = contextWindow.PorakanekiCamps;
-  assert.equal(api.version, 7);
+  assert.equal(api.version, 8);
   assert.equal(api.__test.isSleepingHour(2), true);
   assert.equal(api.__test.isSleepingHour(12), false);
   assert.equal(api.__test.desiredChiefZone('Stormtide'), 'map_southern_cloud_forest');
@@ -349,7 +353,7 @@ function hunterDebug(api, zoneId, campId, index) {
 
   contextWindow.BanditCamps.updateCampBanners(0.21);
   let debug = api.debugSnapshot();
-  assert.equal(debug.version, 7);
+  assert.equal(debug.version, 8);
   assert.equal(debug.fullSimulationRadiusTiles, 12);
   assert.equal(debug.fullSimulationReleaseRadiusTiles, 16);
   assert.equal(Object.keys(debug.zones).length, 4);
