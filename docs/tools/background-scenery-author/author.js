@@ -190,9 +190,16 @@ function drawHorizonTerrain2d(){
     ctx.save();
     // Draw the exact shared synthetic map that feeds ZonePlateauMesa. Tiles
     // get darker with elevation; cyan outlines are the user's persistent locks.
+    const lockedFieldCells=new Set();
+    for(const key of Object.keys(cfg.lockedTiles||{})){
+      const [lc,lr]=key.split(',').map(Number);
+      if(!Number.isFinite(lc)||!Number.isFinite(lr))continue;
+      const projected=Core.mountainFieldCellForLockCell(field,lc,lr);
+      lockedFieldCells.add(`${projected.c},${projected.r}`);
+    }
     for(let r=0;r<field.rows;r++)for(let c=0;c<field.cols;c++){
       const tier=field.tiers[r*field.cols+c];
-      const locked=Object.prototype.hasOwnProperty.call(cfg.lockedTiles||{},Core.mountainFieldLockKeyForCell(field,c,r));
+      const locked=lockedFieldCells.has(`${c},${r}`);
       if(!tier&&!locked)continue;
       const quad=Core.mountainFieldCellWorldQuad(field,c,r);
       const screen=quad.map(p=>w2s(p[0],p[1]));
