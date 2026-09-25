@@ -59,10 +59,14 @@
   const wovenIconDataUrlPromises = new Map(); // Caches fully dyed + patterned inventory sprites by their visual state; rebuilt only when dyes/weaving/species/gender change.
   const pendingPatternCanvasPromises = new Map(); // Cache key -> in-flight compositor promise; lets overlapping portrait renders wait on the same build instead of each committing a plain fallback frame.
   const portraitPatternStats = { renderScopes: 0, patternedTintCalls: 0, compatibilityTintCalls: 0, serializedRenders: 0, cacheHits: 0, cacheMisses: 0, retryRenders: 0 }; // Exposed by debugSnapshot so woven portrait ownership/cache behavior is diagnosable without a console.
-  let activePortraitPatternMap = null; // Compatibility-only URL -> woven descriptor map; non-null only while one serialized woven portrait owns the legacy global tint path.
+  let activePortraitPatternMap = null; // Compatibility-only URL -> woven descriptor map; non-null only while one exclusive woven portrait owns the legacy global tint path.
   let activePortraitPendingBuilds = null; // Compatibility-only pending set paired with activePortraitPatternMap so global tint fallbacks still participate in the owning render's cache-warm redraw.
   let portraitBaseTintResolver = null; // Canonical non-weaving tint resolver captured before installing the compatibility wrapper.
-  let wovenPortraitRenderChain = Promise.resolve(); // Serializes only portraits that actually carry woven clothing, preventing compatibility-map bleed between concurrent NPC/player renders.
+  let portraitGateReaders = 0; // Number of ordinary portrait renders currently sharing the global tint environment.
+  let portraitGateWriterActive = false; // True only while one woven portrait exclusively owns the compatibility pattern map.
+  let portraitGateWaitingWriters = 0; // Blocks new ordinary readers once a woven portrait is waiting, preventing writer starvation.
+  const portraitGateReaderWaiters = []; // Deferred ordinary portrait renders released together when no woven writer is active/waiting.
+  const portraitGateWriterWaiters = []; // Deferred woven portrait renders released one at a time after all ordinary readers finish.
 
   const clamp = (value, lo, hi) => Math.max(lo, Math.min(hi, Number(value) || 0));
   const clone = value => value == null ? value : JSON.parse(JSON.stringify(value));
@@ -2225,47 +2229,97 @@
     return tinted;
   }
 
+  function flushPortraitRenderGate() {
+    if (portraitGateWriterActive) return;
+    if (portraitGateWaitingWriters > 0) {
+      if (portraitGateReaders !== 0 || !portraitGateWriterWaiters.length) return;
+      const resolveWriter = portraitGateWriterWaiters.shift(); // Oldest woven render gets exclusive ownership first.
+      portraitGateWaitingWriters--;
+      portraitGateWriterActive = true;
+      resolveWriter();
+      return;
+    }
+    while (portraitGateReaderWaiters.length) {
+      portraitGateReaders++;
+      portraitGateReaderWaiters.shift()(); // With no writer pending, ordinary portraits resume concurrently rather than serializing frame refreshes.
+    }
+  }
+
+  async function acquirePortraitReadGate() {
+    if (!portraitGateWriterActive && portraitGateWaitingWriters === 0) {
+      portraitGateReaders++;
+    } else {
+      await new Promise(resolve => portraitGateReaderWaiters.push(resolve)); // Wait only while a woven portrait owns or is queued for the global compatibility map.
+    }
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      portraitGateReaders = Math.max(0, portraitGateReaders - 1);
+      flushPortraitRenderGate();
+    };
+  }
+
+  async function acquirePortraitWriteGate() {
+    portraitGateWaitingWriters++;
+    await new Promise(resolve => {
+      portraitGateWriterWaiters.push(resolve);
+      flushPortraitRenderGate();
+    });
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      portraitGateWriterActive = false;
+      flushPortraitRenderGate();
+    };
+  }
+
   async function renderProfileWithWovenPatterns(renderer, canvas, profile, options = {}) {
     if (typeof renderer !== 'function') return false;
-    if (options?.imageForTint?.__clothingWeavingPattern) return renderer(canvas, profile, options); // An inherited render-local resolver already owns this woven pass; delegate without nesting another composite.
+    if (options?.imageForTint?.__clothingWeavingPattern) return renderer(canvas, profile, options); // Nested work inside an already-exclusive woven render inherits the owning resolver and must not reacquire the gate.
     if (renderer.__clothingWeavingPattern) return renderer(canvas, profile, options); // The installed renderer wrapper will re-enter this helper with its unwrapped downstream renderer.
 
     const descriptors = profile?.bodyColors?.[CLOTHING_MARKER_KEY]; // Woven garment descriptors embedded into this portrait's transient bodyColors payload.
-    const patternMap = Array.isArray(descriptors) && descriptors.length ? await buildPortraitPatternMap(descriptors) : null; // Built before the serialized lane; config/image lookup can still overlap across portraits.
-    if (!patternMap?.size) return renderer(canvas, profile, options);
+    const patternMap = Array.isArray(descriptors) && descriptors.length ? await buildPortraitPatternMap(descriptors) : null; // Config/image lookup can overlap freely before any global compatibility ownership is needed.
+    if (!patternMap?.size) {
+      const releaseRead = await acquirePortraitReadGate(); // Ordinary portraits remain concurrent with each other, but never overlap a woven global-compatibility writer.
+      try { return await renderer(canvas, profile, options); }
+      finally { releaseRead(); }
+    }
 
     const baseTintResolver = typeof options?.imageForTint === 'function'
       ? options.imageForTint
       : portraitBaseTintResolver; // Never use the compatibility-wrapped global as the local base or it would recurse back into weaving.
-    if (typeof baseTintResolver !== 'function') return renderer(canvas, profile, options);
+    if (typeof baseTintResolver !== 'function') {
+      const releaseRead = await acquirePortraitReadGate();
+      try { return await renderer(canvas, profile, options); }
+      finally { releaseRead(); }
+    }
 
-    const run = async () => {
-      const previousMap = activePortraitPatternMap; // Normally null; saved defensively so a nested non-woven helper cannot corrupt ownership.
-      const previousPending = activePortraitPendingBuilds; // Paired with previousMap for the same ownership restore.
-      const pendingBuilds = new Set(); // Tracks this portrait's async pattern composites for both the render-local and compatibility-global tint paths.
-      const imageForTint = (img, sourceKey, tint) => patternImageForTint(patternMap, baseTintResolver, pending => pendingBuilds.add(pending), img, sourceKey, tint); // Preferred #817 render-local path.
-      imageForTint.__clothingWeavingPattern = true; // Later/nested portrait wrappers can see that this invocation already owns weaving.
-      const renderOptions = { ...(options || {}), imageForTint }; // Caller options stay immutable.
-      activePortraitPatternMap = patternMap; // Legacy compatibility path for any portrait code that still reaches the global _imageForTint instead of renderOptions.imageForTint.
-      activePortraitPendingBuilds = pendingBuilds; // Ensures compatibility-path cache misses delay the same owning canvas before it is uploaded.
-      portraitPatternStats.renderScopes++;
-      portraitPatternStats.serializedRenders++;
-      try {
-        const firstResult = await renderer(canvas, profile, renderOptions); // May use local resolver, global compatibility resolver, or both; both point at this render's map.
-        if (!pendingBuilds.size) return firstResult;
-        const settled = await Promise.allSettled([...pendingBuilds]); // Wait until every cache miss observed by either tint path finishes.
-        if (!settled.some(result => result.status === 'fulfilled')) return firstResult;
-        portraitPatternStats.retryRenders++;
-        return renderer(canvas, profile, renderOptions); // Cache is warm; redraw before WorldPortraitLife/NpcAvatarPreview uploads the canvas.
-      } finally {
-        activePortraitPatternMap = previousMap;
-        activePortraitPendingBuilds = previousPending;
-      }
-    };
-
-    const job = wovenPortraitRenderChain.catch(() => {}).then(run); // Only woven portraits queue; ordinary portraits never wait on this lane.
-    wovenPortraitRenderChain = job.then(() => undefined, () => undefined); // Keep the lane alive after a failed render without swallowing the caller's own rejection.
-    return job;
+    const releaseWrite = await acquirePortraitWriteGate(); // Exclusive only across the actual renderer/cache-warm phase; pattern-map preparation above stays parallel.
+    const previousMap = activePortraitPatternMap; // Normally null; saved defensively for nested render integrations.
+    const previousPending = activePortraitPendingBuilds; // Paired with previousMap for the same ownership restore.
+    const pendingBuilds = new Set(); // Tracks this portrait's async pattern composites for both render-local and compatibility-global tint paths.
+    const imageForTint = (img, sourceKey, tint) => patternImageForTint(patternMap, baseTintResolver, pending => pendingBuilds.add(pending), img, sourceKey, tint); // Preferred #817 render-local path.
+    imageForTint.__clothingWeavingPattern = true; // Later/nested portrait wrappers can see that this invocation already owns weaving.
+    const renderOptions = { ...(options || {}), imageForTint }; // Caller options stay immutable.
+    activePortraitPatternMap = patternMap; // Legacy compatibility path for portrait code that still reaches global _imageForTint.
+    activePortraitPendingBuilds = pendingBuilds; // Compatibility-path cache misses delay this same canvas before upload.
+    portraitPatternStats.renderScopes++;
+    portraitPatternStats.serializedRenders++;
+    try {
+      const firstResult = await renderer(canvas, profile, renderOptions); // Local and legacy-global tint paths now refer to this one exclusively-owned map.
+      if (!pendingBuilds.size) return firstResult;
+      const settled = await Promise.allSettled([...pendingBuilds]); // Wait until every cache miss observed by either tint path finishes.
+      if (!settled.some(result => result.status === 'fulfilled')) return firstResult;
+      portraitPatternStats.retryRenders++;
+      return renderer(canvas, profile, renderOptions); // Cache is warm; redraw before WorldPortraitLife/NpcAvatarPreview uploads the canvas.
+    } finally {
+      activePortraitPatternMap = previousMap;
+      activePortraitPendingBuilds = previousPending;
+      releaseWrite();
+    }
   }
 
   function installPortraitHooks() {
@@ -2328,7 +2382,7 @@
       equipped: equippedClothItems().map(item => ({ uid: item.uid, article: articleLabel(item), slot: item.slot, material: item.weaveMaterial || 'standard', weightUnits: itemWeightUnits(item), woven: weavingHasAnyPattern(item.weaving) })),
       blueprints: currentBlueprints().map(bp => ({ id: bp.baseCosmeticId, slot: bp.slot, label: bp.label })),
       wool: { light: Number(equipmentDeps?.inventory?.[LIGHT_WOOL_KEY]) || 0, heavy: Number(equipmentDeps?.inventory?.[HEAVY_WOOL_KEY]) || 0 },
-      portraitPatterns: { ...portraitPatternStats, cacheSize: patternedCanvasCache.size, pending: pendingPatternCanvasPromises.size }, // Mobile-visible counters make render races/cache churn diagnosable through __clothingWeavingDebug().
+      portraitPatterns: { ...portraitPatternStats, cacheSize: patternedCanvasCache.size, pending: pendingPatternCanvasPromises.size, gateReaders: portraitGateReaders, gateWriterActive: portraitGateWriterActive, gateWaitingWriters: portraitGateWaitingWriters }, // Mobile-visible counters expose cache behavior plus ordinary-vs-woven gate ownership without a console.
       lastError,
     };
   }
