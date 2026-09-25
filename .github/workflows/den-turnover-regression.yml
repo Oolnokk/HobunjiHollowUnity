@@ -1,0 +1,30 @@
+name: Den turnover regression
+
+on:
+  pull_request:
+    paths:
+      - 'docs/js/wildlife-spawn.js'
+      - 'docs/js/cavern-generator.js'
+      - 'docs/js/bandit-camps.js'
+      - 'docs/js/zone-den-totem-features.js'
+      - 'docs/js/grid-tile-accessors.js'
+      - 'docs/js/porakaneki-camps-runtime.js'
+      - 'docs/js/wildlife-debug-panel.js'
+      - 'docs/js/house-pieces.js'
+      - 'docs/index.html'
+      - 'scripts/test-den-turnover.js'
+      - '.github/workflows/den-turnover-regression.yml'
+  workflow_dispatch:
+
+jobs:
+  den-turnover:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Den turnover lifecycle
+        run: node scripts/test-den-turnover.js
+      - name: Porakaneki den-route regression
+        run: node scripts/test-porakaneki-camp.js
