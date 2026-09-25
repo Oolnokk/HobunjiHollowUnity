@@ -6733,12 +6733,14 @@
         const inverseGripQuaternion = rotationQuaternion(grip.rotationDeg).invert(); // Authored inverse shoulderGrip rotational correction.
         const worldQuaternion = selectedRotationQuaternion.clone();
         if (!s_cancelShoulderPetRotationalOffset) worldQuaternion.multiply(perchQuaternion).multiply(inverseGripQuaternion); // Optional offset cancellation keeps only the selected frame while placement still aligns the authored grip position.
-        const gripWorldOffset = new THREE.Vector3(grip.x || 0, grip.y || 0, grip.z || 0).applyQuaternion(worldQuaternion); // Aligns the pet grip to the resolved perch point.
+        const gripLocalPosition = new THREE.Vector3(grip.x || 0, grip.y || 0, grip.z || 0); // Exact authored/scaled shoulderGrip coordinate used both by placement and live diagnostics.
+        const gripWorldOffset = gripLocalPosition.clone().applyQuaternion(worldQuaternion); // Aligns the pet grip to the resolved perch point.
         return {
           worldPosition: perchWorldPosition.clone().sub(gripWorldOffset),
           worldQuaternion,
           perchWorldPosition: perchWorldPosition.clone(),
           gripWorldOffset: gripWorldOffset.clone(),
+          gripLocalPosition: gripLocalPosition.clone(),
           rotationFrameWorldQuaternion: selectedRotationQuaternion,
           perchPositionSource: perchFrame ? 'player-authored-skinned-pixel' : 'player-body-local-fallback',
           rotationSource: resolvedRotationSource,
@@ -7920,10 +7922,13 @@
         };
         setCanonicalPlaneRotation(c.avatarRef.frontPlane, Math.PI / 2);
         setCanonicalPlaneRotation(c.avatarRef.backPlane, -Math.PI / 2);
-        const alignedGripWorldPosition = finalTransform.worldPosition.clone().add(finalTransform.gripWorldOffset || new THREE.Vector3()); // Reconstructs the authored grip point from the exact transform used to place the pet.
+        group.updateWorldMatrix?.(true, false);
+        const alignedGripWorldPosition = finalTransform.gripLocalPosition && group.localToWorld
+          ? group.localToWorld(finalTransform.gripLocalPosition.clone())
+          : finalTransform.worldPosition.clone().add(finalTransform.gripWorldOffset || new THREE.Vector3()); // Prefer the live transformed shoulderGrip; fallback retains diagnostics for legacy/fallback roots.
         const gripPerchError = finalTransform.perchWorldPosition
           ? alignedGripWorldPosition.distanceTo(finalTransform.perchWorldPosition)
-          : null; // Exposed in Pixel Probe so mobile testing can verify the invariant without a console.
+          : null; // Exposed in Pixel Probe/debug overlay so scale/parent-transform drift cannot be hidden by reusing the expected solver point.
         group.userData.hobunjiShoulderPetAttachment = { // Mobile-visible Pixel Probe diagnostics for this final authoritative pin.
           recentChange: 'Portrait mirroring now carries the shoulder perch, resting pet facing, and horizontal perch-relative motion together.',
           portraitMirrorActive: window.HobunjiPortraitOutlineParity?.isShoulderPetPortraitMirrorActive?.() === true,
