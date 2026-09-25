@@ -433,6 +433,14 @@
   }
   function currentZoneState() { return state.zones.get(currentArea()) || null; }
 
+  function occupiedSites(zoneId) {
+    const zoneState = state.zones.get(zoneId);
+    return activeCamps(zoneState).map(camp => {
+      const site = camp?.instance?.site;
+      return site ? { x:num(site.x, 0), y:num(site.y, 0), w:Math.max(1, num(site.w, 1)), h:Math.max(1, num(site.h, 1)) } : null;
+    }).filter(Boolean);
+  } // Exact live temporary-locale footprints used by other ecology systems that must not spawn through a Porakaneki camp.
+
   function tentCanvasTexture() {
     if (tentCanvasTextureCache) return tentCanvasTextureCache;
     tentCanvasTextureCache = new THREE.TextureLoader().load(
@@ -1710,6 +1718,7 @@
     favor,
     reservedCampChunks,
     reduceHuntingCampsForBandit,
+    occupiedSites,
     hasSharedEnemyNearby,
     debugSnapshot,
     formatDebug: () => {
