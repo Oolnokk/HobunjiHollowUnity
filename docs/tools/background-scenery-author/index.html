@@ -82,9 +82,10 @@
         </div>
         <div class="g2">
           <div class="field"><label>Whole landmark scale</label><input id="horizonOverallScale" type="number" min="0.25" max="6" step="0.05"></div>
-          <div class="field"><label>Low-poly segments / front peaks</label><input id="horizonSegments" type="number" min="3" max="16" step="1"></div>
+          <div class="field"><label>Front-row mountains</label><input id="horizonSegments" type="number" min="3" max="16" step="1"></div>
         </div>
-        <p class="muted" style="margin-top:6px">Whole landmark scale enlarges the complete object around the map-edge center: height, depth, peak width/spacing, and long-axis span all grow together. Edge span remains an additional long-axis multiplier, so the western chain can extend several map lengths north and south.</p>
+        <div class="field" id="horizonMountainLayersField"><label>Plateau layers per mountain</label><input id="horizonMountainLayers" type="number" min="4" max="24" step="1"></div>
+        <p class="muted" style="margin-top:6px">Mountains are built as many stacked, slightly smaller plateau slabs. Each layer has exactly four un-subdivided cliff-side planes and one flat top. Whole landmark scale enlarges the complete object around the map-edge center; Edge span remains an additional long-axis multiplier so the western chain can extend several map lengths north and south.</p>
         <div class="row" style="margin-top:6px;flex-wrap:wrap">
           <button class="sec" id="horizonWestPreset">🏔 West Slope mountains</button>
           <button class="sec" id="horizonNorthPreset">▰ Northern Cliffs plateau</button>
