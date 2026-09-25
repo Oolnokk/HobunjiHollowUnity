@@ -7,6 +7,8 @@ on:
       - 'docs/config/attachment-rig-profiles.js'
       - 'docs/js/player-body-transform-composer.js'
       - 'docs/js/portrait-plane-outline-parity.js'
+      - 'docs/js/debug-hitboxes.js'
+      - 'docs/index.html'
       - 'docs/js/social-rhythm-runtime.js'
       - 'docs/js/character-action-locks.js'
       - 'scripts/test-shoulder-perch-mirror-toggle.js'
@@ -35,6 +37,7 @@ jobs:
           node --check docs/config/attachment-rig-profiles.js
           node --check docs/js/player-body-transform-composer.js
           node --check docs/js/portrait-plane-outline-parity.js
+          node --check docs/js/debug-hitboxes.js
           node --check docs/js/social-rhythm-runtime.js
           node --check docs/js/character-action-locks.js
       - name: Shoulder pet portrait mirror regression
