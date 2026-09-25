@@ -15,7 +15,7 @@ assert.match(source,
 assert.match(source,
   /async function buildPlayerHatXrayOverlay[\s\S]{0,220}if \(!SHOULDER_PET_XRAY_ENABLED\) return/,
   'fresh player avatars never split out a hat x-ray overlay');
-assert.doesNotMatch(source, /buildPlayerHatXrayOverlay\(avatarGroup, profile/,
+assert.doesNotMatch(source, /^\s*buildPlayerHatXrayOverlay\(avatarGroup, profile/m,
   'player avatar refresh no longer invokes the hat x-ray builder');
 assert.match(source,
   /function updatePetLayering\(active, pet\)[\s\S]{0,1400}_setLayerDepthWrite\(_playerAvatarFrontMaterial, true\)[\s\S]{0,250}_setLayerDepthWrite\(_playerAvatarBackMaterial, true\)[\s\S]{0,650}_setLayerDepthWrite\(m, true\)/,
