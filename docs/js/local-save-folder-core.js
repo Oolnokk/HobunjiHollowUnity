@@ -342,14 +342,20 @@
   async function readEntities(dirName) {
     const entities = [];
     const corruptFiles = []; // Canonical character/world parse failures must block folder import instead of masquerading as deleted save slots.
+    const seenIds = new Set(); // Duplicate canonical IDs are ambiguous after interrupted rename/cleanup writes and must not be imported silently.
     let dirHandle;
     try { dirHandle = await _handle.getDirectoryHandle(dirName); } catch { return { entities, corruptFiles }; }
     for await (const [name, entry] of dirHandle.entries()) {
       if (entry.kind !== 'file' || !name.toLowerCase().endsWith('.json')) continue; // OS metadata and user notes are not canonical save entities.
       try {
         const value = JSON.parse(await (await entry.getFile()).text());
-        if (value && typeof value === 'object' && !Array.isArray(value) && typeof value.id === 'string' && value.id) entities.push(value);
-        else corruptFiles.push(`${dirName}/${name}: canonical entity JSON is missing a valid id`);
+        if (value && typeof value === 'object' && !Array.isArray(value) && typeof value.id === 'string' && value.id) {
+          if (seenIds.has(value.id)) corruptFiles.push(`${dirName}/${name}: duplicate canonical entity id "${value.id}"`);
+          else {
+            seenIds.add(value.id);
+            entities.push(value);
+          }
+        } else corruptFiles.push(`${dirName}/${name}: canonical entity JSON is missing a valid id`);
       } catch (error) {
         corruptFiles.push(`${dirName}/${name}: ${String(error?.message || error)}`);
       }
@@ -488,6 +494,17 @@
     } catch (error) {
       if (error?.name !== 'NotFoundError') {
         throw new Error('Could not read manifest.json: ' + String(error?.message || error));
+      }
+    }
+
+    if (manifestExists) {
+      const declaredCharacterCount = Number(manifest?.characterCount); // Manifest counts let interrupted/missing canonical files fail closed instead of looking like intentional deletions.
+      const declaredWorldCount = Number(manifest?.worldCount); // Same protection for world files, including a file that vanished rather than merely becoming malformed.
+      if (Number.isInteger(declaredCharacterCount) && declaredCharacterCount >= 0 && declaredCharacterCount !== characters.length) {
+        corruptEntityFiles.push(`manifest.json: expected ${declaredCharacterCount} character file(s), found ${characters.length}`);
+      }
+      if (Number.isInteger(declaredWorldCount) && declaredWorldCount >= 0 && declaredWorldCount !== worlds.length) {
+        corruptEntityFiles.push(`manifest.json: expected ${declaredWorldCount} world file(s), found ${worlds.length}`);
       }
     }
 
