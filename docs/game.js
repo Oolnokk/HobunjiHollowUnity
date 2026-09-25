@@ -7530,8 +7530,9 @@
           return;
         }
 
-        const inwardFrontPose = pet.__hobunjiShoulderFacingInward === true; // 180° local-Y state from _shoulderPetSurfaceTransform; this pose belongs visually in front of the player.
-        const playerDrawsOnTop = !inwardFrontPose; // Outward/0° stays behind the player; inward/180° draws in front.
+        const inwardFrontPose = pet.__hobunjiShoulderFacingInward === true; // 180° local-Y state from _shoulderPetSurfaceTransform.
+        const viewerSeesPlayerFront = _cameraSeesPlayerFrontFace(); // The same local shoulder side projects to the opposite screen-depth side when the player is viewed from behind.
+        const playerDrawsOnTop = viewerSeesPlayerFront ? !inwardFrontPose : inwardFrontPose; // Front view keeps the proven mapping; back view reverses it exactly.
         _setLayerDepthWrite(_playerAvatarFrontMaterial, false);
         _setLayerDepthWrite(_playerAvatarBackMaterial, false);
         _setPlayerBodyRenderOrder(
@@ -7547,10 +7548,11 @@
             xrayEnabled: false,
             depthMode: 'whole-sprite-no-depth-write',
             inwardFrontPose,
+            viewerSeesPlayerFront,
             playerDrawsOnTop,
             petRenderOrder: SHOULDER_PET_PLANE_RENDER_ORDER,
             playerRenderOrder: playerDrawsOnTop ? PLAYER_OVER_SHOULDER_PET_RENDER_ORDER : PLAYER_BACK_PLANE_RENDER_ORDER,
-            recentChange: 'Shoulder pet and player keep depth testing against the world but do not depth-write into each other; 0°/180° pose state alone chooses whole-sprite order.',
+            recentChange: 'Shoulder pet and player keep depth testing against the world but do not depth-write into each other; pose chooses the local side and front/back camera view reverses its screen-depth order.',
           };
         }
       }
