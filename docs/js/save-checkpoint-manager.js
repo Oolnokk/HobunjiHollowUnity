@@ -475,17 +475,30 @@
     throw new Error(`${restoreError} The original primary-folder save was restored from “Before Last Restore.”`);
   }
 
+  function sanitizeRecoverySnapshot(snapshot) {
+    const clean = JSON.parse(JSON.stringify(snapshot)); // Recovery checkpoints are JSON save data; clone before migration so history remains an immutable record of what was captured.
+    for (const world of (clean?.meta?.worlds || [])) {
+      for (const member of Object.values(world?.members || {})) {
+        for (const zone of Object.values(member?.zoneTreasureState || {})) {
+          for (const placement of (zone?.placements || [])) delete placement._mesh; // Pre-fix checkpoints may contain runtime Three.js chest meshes; never write them back into canonical save files.
+        }
+      }
+    }
+    return clean;
+  }
+
   async function applyRecord(record) {
     let preRestore = null;
     try {
       if (!record?.snapshot) throw new Error('That recovery checkpoint is unavailable.');
       preRestore = await preservePreRestore();
-      snapshotApi().apply(record.snapshot);
+      const restoredSnapshot = sanitizeRecoverySnapshot(record.snapshot); // Used for both browser apply and folder write so legacy runtime-only mesh payloads cannot re-enter persistence.
+      snapshotApi().apply(restoredSnapshot);
 
       if (folderIsPrimary()) {
         let restoreWriteError = '';
         try {
-          const status = await folderApi().syncSnapshot(record.snapshot, { force: true, automatic: false, recoveryKind: 'restore' });
+          const status = await folderApi().syncSnapshot(restoredSnapshot, { force: true, automatic: false, recoveryKind: 'restore' });
           if (status?.lastError) restoreWriteError = status.lastError;
         } catch (error) {
           restoreWriteError = String(error?.message || error);
