@@ -10,7 +10,7 @@ const ROOT = process.env.HOBUNJI_TEST_ROOT || process.cwd(); // Used by CI/local
 const wildlifeSource = fs.readFileSync(path.join(ROOT, 'docs/js/wildlife-spawn.js'), 'utf8'); // Runtime under behavioral test below.
 const gameSource = fs.readFileSync(path.join(ROOT, 'docs/game.js'), 'utf8'); // Guards combat-state filtering for den-hidden/displaced residents.
 const cavernSource = fs.readFileSync(path.join(ROOT, 'docs/js/cavern-generator.js'), 'utf8'); // Guards cold-load suppression after the Den-Mother has already been killed.
-const denVisualSource = fs.readFileSync(path.join(ROOT, 'docs/js/zone-den-totem-features.js'), 'utf8'); // Guards delayed smooth collapse height/footprint/audio presentation.
+const denVisualSource = fs.readFileSync(path.join(ROOT, 'docs/js/zone-den-totem-features.js'), 'utf8'); // Guards delayed smooth collapse height/audio presentation without horizontal footprint distortion.
 const gridSource = fs.readFileSync(path.join(ROOT, 'docs/js/grid-tile-accessors.js'), 'utf8'); // Guards removal of the usable collapsed doorway.
 const porakanekiSource = fs.readFileSync(path.join(ROOT, 'docs/js/porakaneki-camps-runtime.js'), 'utf8'); // Guards den-hunting AI against stale/moved sites.
 const banditSource = fs.readFileSync(path.join(ROOT, 'docs/js/bandit-camps.js'), 'utf8'); // Guards companion-discovered den markers when the physical den disappears.
@@ -18,8 +18,9 @@ const debugSource = fs.readFileSync(path.join(ROOT, 'docs/js/wildlife-debug-pane
 
 assert.match(cavernSource, /denTurnoverStateForCavern/, 'cavern synthesis must consult persisted den turnover before spawning a new objective');
 assert.match(cavernSource, /nestCol: denCleared \? null : nestCol/, 'a cleared den must not reconstruct its mother/nest objective on reload');
-assert.match(denVisualSource, /DEN_COLLAPSED_HEIGHT_MULTIPLIER = 0\.6/, 'collapsed cave facade must retain 60% of its normal height');
-assert.match(denVisualSource, /DEN_COLLAPSED_FOOTPRINT_MULTIPLIER = 1\.18/, 'collapsed cave facade must widen its X\/Z footprint');
+assert.match(denVisualSource, /DEN_COLLAPSED_HEIGHT_MULTIPLIER = 0\.4/, 'collapsed cave facade must retain 40% of its normal height');
+assert.doesNotMatch(denVisualSource, /DEN_COLLAPSED_FOOTPRINT_MULTIPLIER/, 'collapsed cave facade must not alter its X/Z footprint');
+assert.match(denVisualSource, /mesh\.scale\.set\(baseScaleX, nextScaleY, baseScaleZ\)/, 'collapse lerp must modify only Y scale');
 assert.match(denVisualSource, /DEN_COLLAPSE_DELAY_MS = 2000[\s\S]*?DEN_COLLAPSE_LERP_MS = 900/, 'fresh collapse waits two seconds then uses a real timed lerp');
 assert.match(denVisualSource, /playObjectSfxKey\?\.\('breakRock', DEN_COLLAPSE_SFX_VOLUME_SCALE, DEN_COLLAPSE_SFX_PITCH\)/, 'collapse reuses the mined-rock break cue with authored louder\/lower tuning');
 assert.match(denVisualSource, /function syncAnimalDenVisual\(/, 'den facade/furniture must have a runtime relocation synchronizer');

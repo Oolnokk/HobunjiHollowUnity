@@ -219,8 +219,7 @@
   // authored footprint while still using the exact den-rendering geometry path.
   const DEN_SIZE_SCALE = 0.5;
   const DEN_SINK = 0.35; // Settles the model's base slightly below ground level so it doesn't look like it's floating on top of the terrain.
-  const DEN_COLLAPSED_HEIGHT_MULTIPLIER = 0.6; // Final Y scale: the collapsed cave keeps 60% of its normal height instead of the old one-third height.
-  const DEN_COLLAPSED_FOOTPRINT_MULTIPLIER = 1.18; // Final X/Z scale used to spread the cave outward as its roof slumps.
+  const DEN_COLLAPSED_HEIGHT_MULTIPLIER = 0.4; // Final Y scale: increasing the prior 40% height loss by 50% leaves the collapsed cave at 40% of normal height.
   const DEN_COLLAPSE_DELAY_MS = 2000; // Delay after the exterior facade exists before the collapse visibly begins.
   const DEN_COLLAPSE_LERP_MS = 900; // Duration of the smooth scale interpolation once collapse starts.
   const DEN_COLLAPSE_SFX_VOLUME_SCALE = 1.5; // Amplifies the existing fully-mined-rock cue for a whole-den collapse.
@@ -243,10 +242,9 @@
     const baseScaleX = Math.max(1e-5, Number(mesh.userData.denBaseScaleX) || Number(mesh.scale?.x) || 1); // Canonical uncollapsed X scale retained for reversible relocation.
     const baseScaleY = Math.max(1e-5, Number(mesh.userData.denBaseScaleY) || Number(mesh.scale?.y) || 1); // Canonical uncollapsed Y scale retained for grounded collapse.
     const baseScaleZ = Math.max(1e-5, Number(mesh.userData.denBaseScaleZ) || Number(mesh.scale?.z) || 1); // Canonical uncollapsed Z scale retained for reversible relocation.
-    const footprintMultiplier = 1 + (DEN_COLLAPSED_FOOTPRINT_MULTIPLIER - 1) * eased; // Used to widen the footprint symmetrically while height drops.
     const heightMultiplier = 1 + (DEN_COLLAPSED_HEIGHT_MULTIPLIER - 1) * eased; // Used to reduce the roof height to the authored collapsed target.
     const nextScaleY = baseScaleY * heightMultiplier; // Used below to keep the model's bottom planted while its origin-scale changes.
-    mesh.scale.set(baseScaleX * footprintMultiplier, nextScaleY, baseScaleZ * footprintMultiplier);
+    mesh.scale.set(baseScaleX, nextScaleY, baseScaleZ); // Collapse affects height only; X/Z stay at the authored den footprint throughout the lerp.
     mesh.position.y = caveGroundY + (Number(mesh.userData.denGroundOffsetY) || 0) - (Number(mesh.userData.denBoxMinY) || 0) * nextScaleY;
   }
 
@@ -426,9 +424,9 @@
         const mesh = template.clone();
         mesh.material = caveMaterialFor(variant);
         const collapsePending = !!den.collapsed && !!den._collapsePresentationPending; // Used to leave the freshly-cleared facade full-size until its delayed cave-in begins.
-        const renderedScaleX = den.collapsed && !collapsePending ? scaleX * DEN_COLLAPSED_FOOTPRINT_MULTIPLIER : scaleX; // Persisted collapsed dens load directly at their widened final footprint.
+        const renderedScaleX = scaleX; // Collapse never changes the authored den footprint width.
         const renderedScaleY = den.collapsed && !collapsePending ? scaleY * DEN_COLLAPSED_HEIGHT_MULTIPLIER : scaleY; // Fresh collapses animate from full height; old collapses load at their final height.
-        const renderedScaleZ = den.collapsed && !collapsePending ? scaleZ * DEN_COLLAPSED_FOOTPRINT_MULTIPLIER : scaleZ; // Matches renderedScaleX so the footprint spreads in both horizontal axes.
+        const renderedScaleZ = scaleZ; // Collapse never changes the authored den footprint depth.
         mesh.scale.set(renderedScaleX, renderedScaleY, renderedScaleZ);
         mesh.rotation.y = caveFacingRotation(visual.facing, Number.isFinite(Number(denEntranceObject?.rot)) ? denEntranceObject.rot : null);
         mesh.position.set(
