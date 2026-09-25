@@ -219,6 +219,7 @@
   function loadEnvironmentForMap(mapId) {
     const key = String(mapId || '').trim();
     if (!/^map_i_[A-Za-z0-9_-]+$/.test(key)) return Promise.resolve(null);
+    if (window.CavernGenerator?.isLocaleCavernMapId?.(key)) return Promise.resolve(null); // Locale caverns are synthesized from config/locales, so no config/maps JSON exists to probe.
     if (configCache.has(key)) return configCache.get(key);
     const promise = fetch(`config/maps/${encodeURIComponent(key)}.json`, { cache: 'no-store' })
       .then(response => response.ok ? response.json() : null)
