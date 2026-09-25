@@ -7,7 +7,7 @@ const house = fs.readFileSync(path.join(root, 'docs/js/house-pieces.js'), 'utf8'
 const index = fs.readFileSync(path.join(root, 'docs/index.html'), 'utf8'); // Used to verify the parent house-pieces loader is itself cache-busted.
 const post = fs.readFileSync(path.join(root, 'docs/js/natural-surface-stretch-post-jigsaw.js'), 'utf8'); // Used to verify mobile-visible diagnostics expose the loaded generation.
 
-const parentMatch = index.match(/js\/house-pieces\.js\?v=([^&"'\\s<]+)&surfaceUv=([^"'\\s<]+)/); // Captures the bootstrap cache key separately from the tightly-coupled UV stack generation.
+const parentMatch = index.match(/js\/house-pieces\.js\?v=([^&"'\s<]+)&surfaceUv=([^"'\s<]+)/); // Captures the bootstrap cache key separately from the tightly-coupled UV stack generation.
 assert(parentMatch, 'docs/index.html must load house-pieces.js with independent bootstrap and surface cache generations');
 const parentVersion = parentMatch[1]; // Used to prove unrelated HousePieces edits can refresh the bootstrap itself.
 const surfaceVersion = parentMatch[2]; // Used to prove the established natural-surface mapper generation remains pinned.
