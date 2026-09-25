@@ -692,6 +692,14 @@
     };
   }
 
+  function recoveryHandleNeedsReselect() {
+    const status = folderApi()?.getStatus?.();
+    if (!status?.folderName || status?.recoveryHandleFresh) return false;
+    return status.state === 'error'
+      || String(status.lastAction || '').includes('corrupt')
+      || Boolean(status.lastError); // Do not launch uncancellable File System Access reads against a remembered handle already known to be unhealthy.
+  }
+
   async function openRecoveryModal() {
     closeRecoveryModal();
     const overlay = document.createElement('div');
@@ -709,6 +717,57 @@
     overlay.appendChild(panel);
     overlay.addEventListener('click', event => { if (event.target === overlay) closeRecoveryModal(); });
     document.body.appendChild(overlay);
+
+    if (recoveryHandleNeedsReselect()) {
+      const loading = panel.querySelector('[data-recovery-loading]');
+      const status = folderApi()?.getStatus?.() || {};
+      if (loading) {
+        loading.textContent = 'The remembered save-folder handle is already in an error state. Recovery will not read it again because a hung filesystem request cannot be cancelled.';
+        Object.assign(loading.style, { color: '#ffd39a', whiteSpace: 'pre-wrap', lineHeight: '1.45' });
+      }
+      const detail = document.createElement('div');
+      detail.setAttribute('data-recovery-fresh-handle-required', '');
+      detail.textContent = status.lastError ? `Last folder error: ${status.lastError}` : 'Choose the same Primary Save Folder again to obtain a fresh browser handle.';
+      Object.assign(detail.style, { fontSize: '11px', color: '#aebbc3', marginTop: '8px', marginBottom: '10px', whiteSpace: 'pre-wrap' });
+      panel.appendChild(detail);
+
+      const choose = document.createElement('button');
+      choose.type = 'button';
+      choose.setAttribute('data-recovery-choose-fresh-folder', '');
+      choose.textContent = 'Choose Save Folder';
+      Object.assign(choose.style, { marginBottom: '12px', padding: '8px 11px', borderRadius: '7px', border: '1px solid #8fa7b5', background: '#263b46', color: '#eef7fb', cursor: 'pointer' });
+      choose.addEventListener('click', async () => {
+        choose.disabled = true;
+        choose.textContent = 'Opening folder picker…';
+        try {
+          const selected = await folderApi()?.chooseRecoveryFolder?.();
+          if (selected?.lastAction === 'recovery-folder-reselected' && selected?.recoveryHandleFresh) {
+            openRecoveryModal();
+            return;
+          }
+          choose.disabled = false;
+          choose.textContent = 'Choose Save Folder';
+          detail.textContent = selected?.lastError
+            ? `Could not choose save folder: ${selected.lastError}`
+            : (selected?.lastAction === 'recovery-folder-reselect-cancelled'
+              ? 'Folder selection was cancelled. Nothing was changed.'
+              : `Folder picker did not complete. State: ${selected?.lastAction || 'unknown'}`);
+        } catch (error) {
+          choose.disabled = false;
+          choose.textContent = 'Choose Save Folder';
+          detail.textContent = `Could not choose save folder: ${String(error?.message || error)}`;
+        }
+      });
+      panel.appendChild(choose);
+
+      const close = document.createElement('button');
+      close.type = 'button';
+      close.textContent = 'Close';
+      Object.assign(close.style, { marginLeft: '8px', padding: '8px 11px', borderRadius: '7px', border: '1px solid #64737b', background: '#273138', color: '#e5ecef' });
+      close.addEventListener('click', closeRecoveryModal);
+      panel.appendChild(close);
+      return;
+    }
 
     let recovery;
     try {
