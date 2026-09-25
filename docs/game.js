@@ -5606,7 +5606,22 @@
         // change independently of this call site, so don't infer the active
         // behavior from this comment — read that constant.
         c.pngRot ??= c.groupRot;
-        if (window.PerpRotation.CREATURE_PLANE_ROT_MODE === 'snap') {
+        const shoulderPetBypassesPlaneDeadzone = c.stableRole === 'shoulderPet';
+        if (shoulderPetBypassesPlaneDeadzone) {
+          // A perched animal already gets its final orientation from the authored
+          // shoulderPerch/shoulderGrip solve below. Running the generic creature
+          // billboard deadzone here rotates a flat card around its own center —
+          // appropriate for free-standing animals, but visually equivalent to
+          // translating a perched pet around its grip. Keep the interior card
+          // canonical instead; observation/curiosity still run later around the
+          // authored shoulder pivot.
+          c.pngRot = c.groupRot;
+          if (grp.userData) grp.userData.hobunjiShoulderPlaneDeadzone = {
+            bypassed: true,
+            mode: window.PerpRotation.CREATURE_PLANE_ROT_MODE,
+            reason: 'perched-attachment-owns-orientation',
+          };
+        } else if (window.PerpRotation.CREATURE_PLANE_ROT_MODE === 'snap') {
           const creatureIsMoving = Math.hypot(c.vx || 0, c.vy || 0) > 5;
           const { target: pngTarget, snap } = window.PerpRotation.creatureSnapSwayTarget(c.perpState, rawTargetRotY, cameraRelativeCreaturePerps(), window.PerpRotation.CREATURE_PERP_DEAD_RAD, dt, creatureIsMoving);
           if (snap) c.pngRot = pngTarget;
