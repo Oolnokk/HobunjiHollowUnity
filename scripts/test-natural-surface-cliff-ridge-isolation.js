@@ -73,6 +73,10 @@ const unrelated = { isMesh:true, name:'furniture', geometry:new BufferGeometry(p
 const isolated = windowMock.NaturalSurfaceCliffRidgeIsolation.isolateRidge(unrelated, 'furniture');
 if (isolated || unrelated.geometry.groups.length) throw new Error('non-natural mesh was ridge-split');
 
+const cavern = { isMesh:true, name:'interior_cavern', geometry:new BufferGeometry(positions), material:{name:'plain'}, userData:{ interiorCavernShell:true, naturalSurface:'cliffs' } }; // Closed cave fixture must bypass the outdoor plateau-ridge splitter.
+const cavernIsolated = windowMock.NaturalSurfaceCliffRidgeIsolation.isolateRidge(cavern, 'cliffs');
+if (cavernIsolated || cavern.geometry.groups.length || cavern.userData.naturalSurfaceCliffSlot != null) throw new Error('closed cavern shell was incorrectly split as outdoor terrain');
+
 const snapshot = windowMock.NaturalSurfaceCliffRidgeIsolation.snapshot();
-if (snapshot.isolated !== 1 || snapshot.topTriangles !== 2 || snapshot.sideTriangles !== 2 || snapshot.remaps !== 1) throw new Error(`unexpected stats ${JSON.stringify(snapshot)}`);
+if (snapshot.isolated !== 1 || snapshot.skippedInteriorCaverns !== 1 || snapshot.topTriangles !== 2 || snapshot.sideTriangles !== 2 || snapshot.remaps !== 1) throw new Error(`unexpected stats ${JSON.stringify(snapshot)}`);
 console.log(JSON.stringify({groups: cliff.geometry.groups, mapCalls: mapCalls.length, snapshot}, null, 2));
