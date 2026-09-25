@@ -71,6 +71,10 @@ assert(primary.includes("document.addEventListener('visibilitychange'"), 'mobile
 assert(primary.includes("window.addEventListener('pagehide'"), 'pagehide requests a best-effort folder flush');
 assert(startupGuard.includes('stopImmediatePropagation'), 'existing startup persistence guard still blocks unsafe transient exit saves');
 assert(core.includes('describeDataLossRisk'), 'existing core data-loss guard remains installed');
+assert(core.includes("!name.toLowerCase().endsWith('.json')"), 'canonical reader ignores harmless non-JSON files in character/world folders');
+assert(core.includes('canonical entity JSON is missing a valid id'), 'canonical reader rejects syntactically valid but structurally invalid entity JSON');
+assert(core.includes('duplicate canonical entity id'), 'canonical reader rejects ambiguous duplicate character/world ids');
+assert(core.includes('manifest.json: expected'), 'manifest entity counts detect missing canonical character/world files');
 assert(core.includes('_syncPromise'), 'existing core still serializes folder writes within a tab');
 assert(core.includes("const PATTERNS_DIR = 'patterns'"), 'primary folder save reserves a portable patterns directory');
 assert(core.includes('async function mirrorPatternFile'), 'folder core can write custom motif PNG bytes');
