@@ -18,11 +18,17 @@ assert.match(source,
 assert.doesNotMatch(source, /^\s*buildPlayerHatXrayOverlay\(avatarGroup, profile/m,
   'player avatar refresh no longer invokes the hat x-ray builder');
 assert.match(source,
-  /function updatePetLayering\(active, pet\)[\s\S]{0,1400}_setLayerDepthWrite\(_playerAvatarFrontMaterial, true\)[\s\S]{0,250}_setLayerDepthWrite\(_playerAvatarBackMaterial, true\)[\s\S]{0,650}_setLayerDepthWrite\(m, true\)/,
-  'player and pet keep ordinary depth writes while shoulder-attached');
+  /function updatePetLayering\(active, pet\)[\s\S]{0,1800}const inwardFrontPose = pet\.__hobunjiShoulderFacingInward === true;[\s\S]{0,500}_setLayerDepthWrite\(_playerAvatarFrontMaterial, false\)[\s\S]{0,220}_setLayerDepthWrite\(_playerAvatarBackMaterial, false\)[\s\S]{0,650}_setLayerDepthWrite\(m, false\)/,
+  'attached player and pet keep depth testing but stop writing depth into their intersecting masked cards');
 assert.match(source,
-  /depthMode: 'ordinary-depth'[\s\S]{0,180}xrayEnabled: false|xrayEnabled: false[\s\S]{0,180}depthMode: 'ordinary-depth'/,
-  'runtime diagnostics identify the ordinary-depth shoulder presentation');
+  /const playerDrawsOnTop = !inwardFrontPose;[\s\S]{0,600}playerDrawsOnTop \? PLAYER_OVER_SHOULDER_PET_RENDER_ORDER : PLAYER_BACK_PLANE_RENDER_ORDER/,
+  '0-degree outward/behind and 180-degree inward/front poses choose deterministic whole-sprite ordering');
+assert.match(source,
+  /HobunjiShoulderSplitLayerParity\?\.syncAvatar\?\.\(pet\.avatarRef\)/,
+  'split shoulder overlays immediately inherit the base pet depth/render state');
+assert.match(source,
+  /depthMode: 'whole-sprite-no-depth-write'[\s\S]{0,220}xrayEnabled: false|xrayEnabled: false[\s\S]{0,220}depthMode: 'whole-sprite-no-depth-write'/,
+  'runtime diagnostics distinguish stable whole-sprite layering from retired x-rays');
 for (const id of [
   'settingDisableHatXray',
   'settingShoulderPetRotationSource',
@@ -35,4 +41,4 @@ for (const id of [
 ]) {
   assert.doesNotMatch(indexSource, new RegExp(`id="${id}"`), `${id} is hidden/removed from Settings`);
 }
-console.log('Shoulder-pet ordinary-depth layering checks passed.');
+console.log('Shoulder-pet whole-sprite layering checks passed.');
