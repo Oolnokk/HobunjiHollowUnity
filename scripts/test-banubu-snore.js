@@ -107,7 +107,7 @@ assert.equal(first.sourceEntity.y, (entrance.row + 0.5) * TILE, 'sound Y must or
 assert.notEqual(first.sourceEntity.x, (layout.localeInstances[0].x + 0.5) * TILE, 'locale anchor must never be used as the snore origin');
 assert.equal(first.options.tempo, 1 / 9, 'Banubu snore must request three times the previous one-third-tempo duration');
 assert.deepEqual(first.options.allowedClips, ['sfx_grunt-rattle.ogg'], 'snore must use the authored Grehlr passive chatter clip');
-assert.equal(first.options.pitchSemitones, -21, 'the long snore is one octave lower than the authored Grehlr chatter');
+assert.equal(first.options.pitchSemitones, -9, 'the long snore retains the authored Grehlr chatter pitch');
 assert.equal(first.options.meaning, 'chatter', 'snore remains ambient chatter for the shared voice concurrency policy');
 
 const horizontalPx = Math.hypot(first.sourceEntity.x - player.x, first.sourceEntity.y - player.y);
@@ -128,7 +128,7 @@ now = 11501;
 scheduled({ timestamp: now });
 assert.equal(calls.length, 2, 'the short snore begins immediately after the long one');
 assert.equal(calls[1].options.tempo, 2 / 3, 'the second snore is 50% longer than the original utterance duration');
-assert.equal(calls[1].options.pitchSemitones, -19, 'the octave-lowered short snore remains two semitones above the long one');
+assert.equal(calls[1].options.pitchSemitones, -7, 'the short snore remains two semitones above the long one');
 calls[1].options.onStarted();
 now = 14501;
 calls[1].options.onFinished();
@@ -180,6 +180,7 @@ assert.match(windowObject.BanubuSnore.debugSnapshot().status, /outside two-chunk
 assert(audioSource.includes('function animalVoiceAcousticDistancePx(c, opts = {})'), 'AudioSystem must accept an acoustic-distance override');
 assert(audioSource.includes('const distance = animalVoiceAcousticDistancePx(c, opts);'), 'animal voice volume falloff must consume acoustic distance');
 assert(playbackSource.includes('const MIN_TEMPO = 1 / 9;'), 'independent animal playback must permit exact one-ninth tempo');
+assert(playbackSource.includes('const MAX_SHIFT_SEMITONES = 12;'), 'shared animal playback returns to the pre-snore-pitch clamp');
 assert(playbackSource.includes('0.25, 9);'), 'WSOLA must retain the full tripled duration after pitch compensation');
 assert(playbackSource.includes('creatureAudioSpatial?.(c, opts)'), 'processed animal playback must forward acoustic distance to spatial reverb');
 assert(playbackSource.includes('let completed = false;'), 'animal voice adapter must guard terminal callbacks so renderer cleanup cannot double-complete a snore');

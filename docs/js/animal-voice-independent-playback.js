@@ -7,7 +7,7 @@
   // contours, splice-tempo or behavior-specific modulation remain.
   const MIN_TEMPO = 1 / 9; // Allows Banubu's Grehlr snore to run three times longer than its prior one-third tempo.
   const MAX_TEMPO = 2;
-  const MAX_SHIFT_SEMITONES = 24; // Allows Banubu's octave-lowered chatter through the shared pitch clamp.
+  const MAX_SHIFT_SEMITONES = 12;
   const WSOLA_FRAME_S = 0.056;
   const WSOLA_OVERLAP_RATIO = 0.62;
   const WSOLA_SEARCH_S = 0.018;
@@ -196,7 +196,7 @@
       lastStretchCoverage = 1;
       return channels.map(() => new Float32Array(1));
     }
-    const safeStretch = clamp(finite(stretch, 1), 0.25, 9); // Accommodates the snore's one-ninth tempo even after its negative pitch shift.
+    const safeStretch = clamp(finite(stretch, 1), 0.25, 9); // Accommodates the snore's one-ninth tempo at neutral pitch.
     const targetLength = Math.max(1, Math.round(sourceLength * safeStretch));
     lastStretchSourceSamples = sourceLength;
     lastStretchTargetSamples = targetLength;
