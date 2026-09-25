@@ -2,20 +2,24 @@
 const assert = require('assert');
 
 class BufferGeometry {
-  constructor() { this.attributes = {}; }
+  constructor() { this.attributes = {}; this.groups = []; }
   setAttribute(name, value) { this.attributes[name] = value; return this; }
   setIndex(value) { this.index = value; return this; }
+  addGroup(start, count, materialIndex) { this.groups.push({ start, count, materialIndex }); }
   computeVertexNormals() {}
+  computeBoundingSphere() {}
 }
 class BufferAttribute { constructor(array, itemSize) { this.array = array; this.itemSize = itemSize; } }
 class Mesh { constructor(geometry, material) { this.geometry = geometry; this.material = material; this.userData = {}; } }
 class MeshStandardMaterial { constructor(opts) { Object.assign(this, opts); } }
+class MeshBasicMaterial { constructor(opts) { Object.assign(this, opts); this.userData = {}; } }
 global.THREE = {
   BufferGeometry,
   BufferAttribute,
   Float32BufferAttribute: BufferAttribute,
   Mesh,
   MeshStandardMaterial,
+  MeshBasicMaterial,
   DoubleSide: 2,
   InstancedMesh: class {},
   Object3D: class {},
@@ -50,6 +54,18 @@ assert.equal(byId('river:stream:start').seed, 336742);
 const cfg = Core.resolveConfig(town);
 assert.equal(cfg.ridgeClearanceTiles, 0);
 assert.equal(cfg.borderDepthTiles, 18);
+
+const westHorizon = Core.resolveConfig({ id:'map_western_slope', cols:80, rows:80 }).horizonTerrain;
+const northHorizon = Core.resolveConfig({ id:'map_northern_cliffs', cols:80, rows:80 }).horizonTerrain;
+assert.equal(westHorizon.preset, 'westernMountainChain');
+assert.equal(westHorizon.side, 'west');
+assert.equal(westHorizon.heightWorld, 72);
+assert.equal(westHorizon.segments, 8);
+assert.equal(northHorizon.preset, 'northernPlateau');
+assert.equal(northHorizon.side, 'north');
+assert.equal(northHorizon.heightWorld, 64);
+assert(northHorizon.heightWorld < westHorizon.heightWorld && northHorizon.heightWorld > westHorizon.heightWorld * 0.85, 'Northern Cliffs plateau should be only slightly shorter than the West Slope chain');
+assert.equal(Core.resolveConfig({ id:'map_eastern_mire', cols:80, rows:80 }).horizonTerrain.enabled, false, 'unrelated wilderness maps must not gain a colossal horizon landmark');
 const riverAutoA = Core.buildContinuationPolyline(byId('river:stream:start'), cfg, {});
 const riverAutoB = Core.buildContinuationPolyline(byId('river:stream:start'), cfg, {});
 assert.deepStrictEqual(riverAutoA, riverAutoB, 'seeded river continuation must be deterministic');
@@ -123,6 +139,24 @@ window.BorderTerrain.init({
   clamp: (v, a, b) => Math.max(a, Math.min(b, v)),
   PLATEAU_UNIT: 2.5,
 });
+
+const westHorizonScene = { items: [], userData: {}, add(obj) { this.items.push(obj); } };
+const westBudget = Border.buildColossalHorizonTerrain(westHorizonScene, 80, 80, 'map_western_slope', 0, null, westHorizon);
+assert.equal(westBudget.vertices, 27, 'West Slope horizon chain must stay extremely low poly');
+assert.equal(westBudget.triangles, 32, 'West Slope horizon chain triangle budget regressed');
+assert.equal(westHorizonScene.items.length, 1);
+assert.equal(westHorizonScene.items[0].frustumCulled, false, 'always-visible mountain chain must bypass Three.js frustum culling');
+assert.equal(westHorizonScene.items[0].castShadow, false, 'colossal landmarks must not pay permanent shadow-map cost');
+assert.equal(westHorizonScene.items[0].material.fog, false, 'always-visible mountain chain must remain visible through scene fog');
+assert.equal(westHorizonScene.items[0].userData.alwaysVisibleBoundaryTerrain, true);
+
+const northHorizonScene = { items: [], userData: {}, add(obj) { this.items.push(obj); } };
+const northBudget = Border.buildColossalHorizonTerrain(northHorizonScene, 80, 80, 'map_northern_cliffs', 0, null, northHorizon);
+assert.equal(northBudget.vertices, 28, 'Northern Cliffs plateau must stay extremely low poly');
+assert.equal(northBudget.triangles, 36, 'Northern Cliffs plateau triangle budget regressed');
+assert.equal(northHorizonScene.items[0].frustumCulled, false);
+assert.equal(northHorizonScene.items[0].geometry.groups.length, 3, 'plateau strips must preserve cliff/top/cliff material grouping');
+
 window.BorderTerrain.buildTownBorderTerrain();
 assert(scene.items.length >= 8, `expected terrain, cliff, route and water meshes; got ${scene.items.length}`);
 console.log(`PASS background scenery: ${attachments.length} attachments; ${scene.items.length} generated town meshes; cloud entrance ${cloudEntrance.widthCells} tiles at ${cloudEntrance.center}; dense layout ${denseLayout.length} trees.`);
