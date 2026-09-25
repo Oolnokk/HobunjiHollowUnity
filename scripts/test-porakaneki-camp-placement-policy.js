@@ -105,6 +105,10 @@ assert(porakanekiRuntimeSource.includes('if (zoneState.chiefReservation) for (co
   'the inactive/active chief reservation must remain part of hard camp chunk exclusion');
 assert(porakanekiRuntimeSource.includes('function reduceHuntingCampsForBandit(zoneId)') && porakanekiRuntimeSource.includes('zoneState.smallCamps.pop()'),
   'bandit-space recovery may remove only Porakaneki hunting camps');
+assert(porakanekiRuntimeSource.includes('zoneState.smallCamps.length <= MIN_HUNTING_CAMPS_PER_ZONE'),
+  'bandit-space recovery must stop at the protected one-hunting-camp floor');
+assert(porakanekiRuntimeSource.includes('if (zoneState.smallCamps.length < MIN_HUNTING_CAMPS_PER_ZONE)') && porakanekiRuntimeSource.includes('stampHuntingCamp(zoneState, zoneId, targetCount, true)'),
+  'initial generation must run the minimum-camp fallback if ordinary hunting-camp placement produces zero sites');
 assert(!porakanekiRuntimeSource.includes('zoneState.chiefReservation = null'),
   'bandit-space recovery must never discard the chief reservation');
 assert(banditCampSource.includes('avoidChunks = porakanekiAvoidChunks(zoneId)'),
