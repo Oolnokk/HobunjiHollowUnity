@@ -416,7 +416,7 @@
       && a.y - margin < b.y + b.h && a.y + a.h + margin > b.y;
   }
 
-  function denCandidateIsSafe(zoneId, layout, den, x, y, oldDen, activeZone) {
+  function denCandidateIsSafe(zoneId, layout, tileMap, den, x, y, oldDen, activeZone) {
     const w = Math.max(1, Number(den.w) || 1);
     const h = Math.max(1, Number(den.h) || 1);
     const cols = Math.max(1, Number(layout?.cols) || 1);
@@ -426,7 +426,7 @@
     if (Math.hypot(x - Number(oldDen.x), y - Number(oldDen.y)) < DEN_RELOCATION_MIN_DISTANCE_TILES) return false;
     if (activeZone && deps.player && Math.hypot((x + w * .5) - deps.player.x / deps.TILE, (y + h * .5) - deps.player.y / deps.TILE) < DEN_RELOCATION_PLAYER_CLEARANCE_TILES) return false;
 
-    const tiles = layoutTileMap(layout); // Used to require ordinary unoccupied grass for every replacement footprint/mouth tile.
+    const tiles = tileMap; // Reused for every candidate in one relocation search; rebuilding the full-zone lookup hundreds of times caused avoidable hitches.
     let minElev = Infinity, maxElev = -Infinity;
     const cells = [];
     for (let row = y; row < y + h; row++) for (let col = x; col < x + w; col++) cells.push({ col, row });
@@ -474,10 +474,11 @@
     const maxX = Math.max(2, Number(layout.cols) - w - 3);
     const maxY = Math.max(2, Number(layout.rows) - h - 4);
     const activeZone = deps.getCurrentArea() === zoneId ? zoneId : null;
+    const tileMap = layoutTileMap(layout); // Shared by random sampling and fallback scanning for this single relocation attempt.
     for (let attempt = 0; attempt < 700; attempt++) {
       const x = 2 + Math.floor(deps.rnd() * Math.max(1, maxX - 1));
       const y = 2 + Math.floor(deps.rnd() * Math.max(1, maxY - 1));
-      if (denCandidateIsSafe(zoneId, layout, den, x, y, oldDen, activeZone)) return { x, y, mouthAnchor:{ x:x + Math.floor(w / 2), y:y + h } };
+      if (denCandidateIsSafe(zoneId, layout, tileMap, den, x, y, oldDen, activeZone)) return { x, y, mouthAnchor:{ x:x + Math.floor(w / 2), y:y + h } };
     }
     const start = Math.floor(deps.rnd() * Math.max(1, (maxX - 1) * (maxY - 1))); // Used to vary the deterministic fallback scan instead of always biasing the northwest.
     const width = Math.max(1, maxX - 1);
@@ -486,7 +487,7 @@
       const linear = (start + offset) % total;
       const x = 2 + (linear % width);
       const y = 2 + Math.floor(linear / width);
-      if (denCandidateIsSafe(layout, den, x, y, oldDen, activeZone)) return { x, y, mouthAnchor:{ x:x + Math.floor(w / 2), y:y + h } };
+      if (denCandidateIsSafe(zoneId, layout, tileMap, den, x, y, oldDen, activeZone)) return { x, y, mouthAnchor:{ x:x + Math.floor(w / 2), y:y + h } };
     }
     return null;
   }
