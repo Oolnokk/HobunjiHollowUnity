@@ -20,6 +20,7 @@ const folderLoader = read('docs/js/local-save-folder.js');
 const onboardingLoader = read('docs/onboarding.js');
 const css = read('docs/folder-save-primary.css');
 const core = read('docs/js/local-save-folder-core.js');
+const checkpoint = read('docs/js/save-checkpoint-manager.js');
 const motifStore = read('docs/js/motif-store.js');
 const startupGuard = read('docs/js/session-persistence-startup-guard.js');
 const quitGuard = read('docs/js/folder-save-quit-guard.js');
