@@ -2330,7 +2330,7 @@
     if (!currentTint.__clothingWeavingPattern) {
       portraitBaseTintResolver = currentTint; // Capture the canonical tint function before installing the compatibility interception.
       const compatibilityTint = function clothingPatternImageForTint(img, sourceKey, tint) {
-        const map = activePortraitPatternMap; // Non-null only while the serialized woven lane owns this global compatibility path.
+        const map = activePortraitPatternMap; // Non-null only while the exclusive woven writer owns this global compatibility path.
         if (!map) return portraitBaseTintResolver(img, sourceKey, tint);
         portraitPatternStats.compatibilityTintCalls++;
         return patternImageForTint(
