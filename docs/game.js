@@ -6690,7 +6690,7 @@
       // This lets a perched animal turn and nod with the face without making
       // the shoulder coordinate itself orbit around the neck pivot.
       const SHOULDER_PET_BODY_NECK_BLEND = 0.5; // Equal quaternion midpoint between the player body and neck follow frames.
-      function _shoulderPetSurfaceTransform(perch, grip) {
+      function _shoulderPetSurfaceTransform(perch, grip, pet) {
         const rotationQuaternion = rotationDeg => { // Converts authored YXZ pitch/yaw/roll for the perch and grip composition below.
           const degrees = rotationDeg || {};
           return new THREE.Quaternion().setFromEuler(new THREE.Euler(
@@ -6704,6 +6704,23 @@
         const perchFrame = window.PNGPlaneAvatar?.resolveSkinnedPixelWorldFrame?.(playerMesh, perch.sourcePixel);
         const perchWorldPosition = perchFrame?.position
           || playerMesh.localToWorld(new THREE.Vector3(perch.x || 0, perch.y || 0, perch.z || 0)); // Position always prefers the authored live-skinned pixel, independent of the rotation dropdown.
+        // Determine whether the currently mirrored animal art is looking inward
+        // toward the player's center or outward away from it. Animal source art
+        // is side-view; its authored head-rig pivot tells us which half of the
+        // source image contains the head, while observation mirroring flips that
+        // horizontal facing. Resolve the shoulder side from the LIVE world perch
+        // back into player-local space so portrait mirroring is naturally included.
+        const perchLocalToPlayer = playerMesh.worldToLocal(perchWorldPosition.clone());
+        const shoulderSideSign = Math.sign(perchLocalToPlayer.x || Number(perch.x) || -1) || -1;
+        const headRig = window.CreatureGeneticsRender?.headRigForKind?.(pet?.creatureKey || pet?.kind);
+        const headPivotX = Number(headRig?.pivot?.x);
+        const canonicalFacingSign = Number.isFinite(headPivotX) && Math.abs(headPivotX - 0.5) > 1e-4
+          ? Math.sign(headPivotX - 0.5)
+          : -1; // Existing side-view animal art defaults to head-left when no authored rig can answer.
+        const observationMirrorSign = pet?.__hobunjiShoulderObservationFlipped ? -1 : 1;
+        const visualFacingSign = canonicalFacingSign * observationMirrorSign;
+        const towardCenterSign = -shoulderSideSign;
+        const facingTowardPlayerCenter = visualFacingSign === towardCenterSign;
         let selectedRotationQuaternion = null; // Receives the world-space frame chosen by the Settings dropdown below.
         let resolvedRotationSource = s_shoulderPetRotationSource;
         switch (s_shoulderPetRotationSource) {
@@ -6746,8 +6763,11 @@
         if (s_invertShoulderPetRotationSource) selectedRotationQuaternion.invert();
         const perchQuaternion = rotationQuaternion(perch.rotationDeg); // Authored shoulderPerch rotational correction.
         const inverseGripQuaternion = rotationQuaternion(grip.rotationDeg).invert(); // Authored inverse shoulderGrip rotational correction.
+        const authoredRotationOffset = perchQuaternion.clone().multiply(inverseGripQuaternion);
+        const authoredRotationSign = facingTowardPlayerCenter ? 1 : -1;
+        if (authoredRotationSign < 0) authoredRotationOffset.invert(); // Looking away uses the exact opposite authored tilt, naturally placing the pet behind the character instead of relying on x-ray draw order.
         const worldQuaternion = selectedRotationQuaternion.clone();
-        if (!s_cancelShoulderPetRotationalOffset) worldQuaternion.multiply(perchQuaternion).multiply(inverseGripQuaternion); // Optional offset cancellation keeps only the selected frame while placement still aligns the authored grip position.
+        if (!s_cancelShoulderPetRotationalOffset) worldQuaternion.multiply(authoredRotationOffset);
         const gripWorldOffset = new THREE.Vector3(grip.x || 0, grip.y || 0, grip.z || 0).applyQuaternion(worldQuaternion); // Aligns the pet grip to the resolved perch point.
         return {
           worldPosition: perchWorldPosition.clone().sub(gripWorldOffset),
@@ -6760,6 +6780,11 @@
           requestedRotationSource: s_shoulderPetRotationSource,
           rotationSourceInverted: s_invertShoulderPetRotationSource,
           rotationalOffsetCancelled: s_cancelShoulderPetRotationalOffset,
+          facingTowardPlayerCenter,
+          authoredRotationSign,
+          shoulderSideSign,
+          canonicalFacingSign,
+          observationMirrored: observationMirrorSign < 0,
         };
       }
       // Guessed fallbacks (species-agnostic percent-of-own-height) for the
@@ -7502,55 +7527,30 @@
         }
       }
       function updatePetLayering(active, pet) {
-        const nextPet = active ? pet : null; // Used here to reset face-side hysteresis whenever the active shoulder attachment changes.
-        if (_petLayeringPet !== nextPet) {
-          _shoulderPetLayerFrontVisible = null;
-          _shoulderPetLayerDecision = null;
-        }
-        // Restore a detached/swapped pet before assigning the active pair.
-        if (_petLayeringPet && _petLayeringPet !== pet) {
+        const nextPet = active ? pet : null;
+        if (_petLayeringPet && _petLayeringPet !== nextPet) {
           if (_petLayeringPet.avatarRef?.group?.userData) delete _petLayeringPet.avatarRef.group.userData.hobunjiShoulderPetLayering;
-          for (const m of [_petLayeringPet.avatarRef?.frontPlane?.material, _petLayeringPet.avatarRef?.backPlane?.material]) {
-            _setLayerDepthWrite(m, true);
-          }
-          for (const mesh of [_petLayeringPet.avatarRef?.frontPlane, _petLayeringPet.avatarRef?.backPlane]) {
-            if (mesh) mesh.renderOrder = PLAYER_FRONT_PLANE_RENDER_ORDER;
-          }
+          for (const m of [_petLayeringPet.avatarRef?.frontPlane?.material, _petLayeringPet.avatarRef?.backPlane?.material]) _setLayerDepthWrite(m, true);
+          for (const mesh of [_petLayeringPet.avatarRef?.frontPlane, _petLayeringPet.avatarRef?.backPlane]) if (mesh) mesh.renderOrder = PLAYER_FRONT_PLANE_RENDER_ORDER;
         }
 
         _petLayeringActive = active;
         _petLayeringPet = nextPet;
-        _setLayerDepthWrite(_playerAvatarFrontMaterial, !active);
-        _setLayerDepthWrite(_playerAvatarBackMaterial, !active);
+        _setLayerDepthWrite(_playerAvatarFrontMaterial, true);
+        _setLayerDepthWrite(_playerAvatarBackMaterial, true);
+        _restorePlayerBodyRenderOrder();
+        setPlayerHatXray(false);
 
-        if (!active || !pet) {
-          _restorePlayerBodyRenderOrder();
-          return;
-        }
+        if (!active || !pet) return;
 
-        const frontVisible = _cameraSeesPlayerFrontFace();
-        const playerDrawsOnTop = frontVisible
-          ? (s_disableShoulderFrontXray || s_frontSpriteXrayThroughShoulderPet)
-          : (s_disableShoulderBackXray || s_backSpriteXrayThroughShoulderPet);
-        _setPlayerBodyRenderOrder(
-          playerDrawsOnTop ? PLAYER_OVER_SHOULDER_PET_RENDER_ORDER : PLAYER_BACK_PLANE_RENDER_ORDER,
-        );
+        for (const m of [pet.avatarRef?.frontPlane?.material, pet.avatarRef?.backPlane?.material]) _setLayerDepthWrite(m, true);
+        for (const mesh of [pet.avatarRef?.frontPlane, pet.avatarRef?.backPlane]) if (mesh) mesh.renderOrder = PLAYER_FRONT_PLANE_RENDER_ORDER;
         if (pet.avatarRef?.group?.userData) {
           pet.avatarRef.group.userData.hobunjiShoulderPetLayering = {
-            ...(_shoulderPetLayerDecision || {}),
-            frontVisible,
-            playerDrawsOnTop,
-            frontXrayDisabled: s_disableShoulderFrontXray,
-            backXrayDisabled: s_disableShoulderBackXray,
-            recentChange: 'Layer face follows unclamped logical player facing, not the portrait deadzone snap while turning.',
+            xrayEnabled: false,
+            depthMode: 'ordinary-depth',
+            recentChange: 'Shoulder-pet x-rays retired; authored inward/outward rotation now determines natural front/behind occlusion.',
           };
-        }
-
-        for (const m of [pet.avatarRef?.frontPlane?.material, pet.avatarRef?.backPlane?.material]) {
-          _setLayerDepthWrite(m, false);
-        }
-        for (const mesh of [pet.avatarRef?.frontPlane, pet.avatarRef?.backPlane]) {
-          if (mesh) mesh.renderOrder = SHOULDER_PET_PLANE_RENDER_ORDER;
         }
       }
 
@@ -7567,7 +7567,7 @@
           if (c.stableRole === 'shoulderPet') { hasActiveShoulderPetForPlayer = true; activeShoulderPetCompanion = c; }
           else if (c.stableRole === 'companion') hasActiveCompanionForPlayer = true;
         }
-        setPlayerHatXray(hasActiveShoulderPetForPlayer && !s_disableHatXray);
+        setPlayerHatXray(false);
         updatePetLayering(hasActiveShoulderPetForPlayer, hasActiveShoulderPetForPlayer ? activeShoulderPetCompanion : null);
         if (!hasActiveCompanionForPlayer) updateAvatarDepthPriority(false);
         for (const c of companionObjects) {
@@ -7952,6 +7952,11 @@
           rotationalOffsetCancelled: finalTransform.rotationalOffsetCancelled,
           rotationFrameWorldQuaternion: finalTransform.rotationFrameWorldQuaternion?.toArray?.() || null,
           finalWorldQuaternion: finalTransform.worldQuaternion.toArray(),
+          facingTowardPlayerCenter: finalTransform.facingTowardPlayerCenter === true,
+          authoredRotationSign: finalTransform.authoredRotationSign || 1,
+          shoulderSideSign: finalTransform.shoulderSideSign || 0,
+          canonicalFacingSign: finalTransform.canonicalFacingSign || 0,
+          observationMirrored: finalTransform.observationMirrored === true,
         };
         const observationPivotApplied = finalTransform.perchWorldPosition
           ? window.ShoulderPetObservationFlip?.applyAtPinnedPerch?.(c, finalTransform.perchWorldPosition) === true
@@ -7965,7 +7970,7 @@
           const perch = playerAttachmentAnchor('shoulderPerch');
           const grip = creatureAttachmentAnchor(c.creatureKey, 'shoulderGrip', c.genotype);
           if (perch && grip) {
-            const finalTransform = _shoulderPetSurfaceTransform(perch, grip); // Composes the selected live frame × authored perch × inverse authored grip.
+            const finalTransform = _shoulderPetSurfaceTransform(perch, grip, c); // Composes the selected live frame with direction-signed authored perch/grip rotation.
             _applyShoulderPetFinalTransform(c, finalTransform);
           } else {
             // Backward local offset expressed through the avatar's final
@@ -9561,8 +9566,9 @@
       // Shoulder-pet hat xray (ported from the animation-author tool's
       // setShoulderPetHatXrayV1521/buildLazyHatOverlayV1521) — see
       // buildPlayerHatXrayOverlay/setPlayerHatXray near refreshPlayerAvatar.
-      let _playerHatXrayOverlay = null; // { materials, meshes, skinningMode } once built for the current hat, else null.
-      let _playerHatXrayEnabled = false; // Last-applied state, so setPlayerHatXray only touches materials on a real change.
+      const SHOULDER_PET_XRAY_ENABLED = false; // Authored front/behind shoulder pose owns occlusion; no shoulder-specific depth-through presentation remains.
+      let _playerHatXrayOverlay = null; // Legacy overlay handle retained for safe disposal of old-session objects; new builds never create one.
+      let _playerHatXrayEnabled = false; // Always false while SHOULDER_PET_XRAY_ENABLED is false.
       // Direct references to the player's own front/back plane materials —
       // set in refreshPlayerAvatar. Used by updatePetLayering (near
       // updateCompanions) to make both portrait faces transparent to the
@@ -16298,7 +16304,7 @@
       // sprite wins the depth test against the hat specifically, so the pet
       // stays visible instead of vanishing behind a tall hat).
       function setPlayerHatXray(enabled) {
-        enabled = !!enabled;
+        enabled = SHOULDER_PET_XRAY_ENABLED && !!enabled;
         if (enabled === _playerHatXrayEnabled) return;
         _playerHatXrayEnabled = enabled;
         for (const m of _playerHatXrayOverlay?.materials || []) { m.depthWrite = !enabled; m.needsUpdate = true; }
@@ -16338,6 +16344,7 @@
       // and without ever affecting the body layer's own normal occlusion (so
       // this never makes the player see-through, only the hat).
       async function buildPlayerHatXrayOverlay(avatarGroup, profile, frontCanvas, backCanvas, modelWidth, modelHeight, anchorZ, alphaTest, refreshGeneration, staticRenderOptions) {
+        if (!SHOULDER_PET_XRAY_ENABLED) return; // Keep the hat baked into the ordinary portrait; no separate depth-through layer is authored anymore.
         try {
           const hat = profile?.hat;
           const hasHat = !!(hat && hat.id && hat.id !== 'none' && (hat.layers?.length || hat.url));
@@ -16569,7 +16576,7 @@
         playerAvatarGroup = avatarGroup;
         playerAvatarFrontCanvas = frontCanvas;
         playerAvatarProfile = profile;
-        buildPlayerHatXrayOverlay(avatarGroup, profile, frontCanvas, backCanvas, avatarWidth, avatarHeight, 0, avatarCfg.worldAlphaTest ?? 0.01, refreshGeneration, staticRenderOptions);
+        // Shoulder-pet x-ray presentation is retired: hats remain baked into the ordinary portrait and occlude naturally.
         // Procedural feet attach directly under playerMesh (floor-anchored,
         // Y=0) as a sibling of avatarGroup (offset up by avatarHeight/2), not
         // as its child — see docs/js/procedural-leg-animation.js. Rebuilt
@@ -23359,14 +23366,9 @@
       // plane keeps its normal depthWrite and occludes exactly like any
       // other opaque sprite. Isolates whether that specific mechanism is
       // contributing to the reported translucency.
-      let s_disableHatXray = false;
-      let s_disableShoulderFrontXray = false; // Settings toggle: restores front-plane depth writes while a shoulder pet is attached.
-      let s_disableShoulderBackXray = false; // Settings toggle: restores back-plane depth writes while a shoulder pet is attached.
-      let s_shoulderPetRotationSource = 'head'; // Settings dropdown: selects the live frame used to orient attached shoulder pets; fresh sessions follow the head/neck by default.
-      let s_invertShoulderPetRotationSource = false; // Settings toggle: inverses the selected rotation frame before authored perch/grip composition.
-      let s_cancelShoulderPetRotationalOffset = false; // Settings toggle: omits authored perch/grip rotation corrections while retaining the selected frame.
-      let s_frontSpriteXrayThroughShoulderPet = false; // Settings toggle: draws a front-face-only player overlay after the pet.
-      let s_backSpriteXrayThroughShoulderPet = false; // Settings toggle: draws a back-face-only player overlay after the pet.
+      const s_shoulderPetRotationSource = 'head'; // Authored runtime default; presentation controls are intentionally hidden.
+      const s_invertShoulderPetRotationSource = false;
+      const s_cancelShoulderPetRotationalOffset = false;
 
       let _pathBrickCullAccum = 0;
 
@@ -23433,35 +23435,6 @@
       // ── Settings tab checkbox wiring ──────────────────────────────
       document.getElementById('settingOutlines').addEventListener('change', e => {
         s_outlines = e.target.checked;
-      });
-      document.getElementById('settingDisableHatXray')?.addEventListener('change', e => {
-        s_disableHatXray = e.target.checked;
-      });
-      document.getElementById('settingDisableShoulderFrontXray')?.addEventListener('change', e => {
-        s_disableShoulderFrontXray = e.target.checked;
-        updatePetLayering(_petLayeringActive, _petLayeringPet);
-      });
-      document.getElementById('settingDisableShoulderBackXray')?.addEventListener('change', e => {
-        s_disableShoulderBackXray = e.target.checked;
-        updatePetLayering(_petLayeringActive, _petLayeringPet);
-      });
-      document.getElementById('settingShoulderPetRotationSource')?.addEventListener('change', e => {
-        const requestedSource = String(e.target.value || 'head'); // Used here to reject stale or manually-edited DOM values.
-        s_shoulderPetRotationSource = ['pixel', 'body', 'bodyNeckMidpoint', 'head', 'world'].includes(requestedSource) ? requestedSource : 'head';
-      });
-      document.getElementById('settingInvertShoulderPetRotationSource')?.addEventListener('change', e => {
-        s_invertShoulderPetRotationSource = e.target.checked;
-      });
-      document.getElementById('settingCancelShoulderPetRotationalOffset')?.addEventListener('change', e => {
-        s_cancelShoulderPetRotationalOffset = e.target.checked;
-      });
-      document.getElementById('settingFrontSpriteXrayThroughShoulderPet')?.addEventListener('change', e => {
-        s_frontSpriteXrayThroughShoulderPet = e.target.checked;
-        updatePetLayering(_petLayeringActive, _petLayeringPet);
-      });
-      document.getElementById('settingBackSpriteXrayThroughShoulderPet')?.addEventListener('change', e => {
-        s_backSpriteXrayThroughShoulderPet = e.target.checked;
-        updatePetLayering(_petLayeringActive, _petLayeringPet);
       });
       // Shared by the checkbox below and setGrassVisible (window.__climbDebug)
       // so a headless/console toggle doesn't need to click through Settings —
