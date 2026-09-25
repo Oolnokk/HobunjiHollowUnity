@@ -332,6 +332,8 @@
       renderedPixel: sourcePixel?.renderedPixel || null,
       sourceCell: sourcePixel?.cell || null,
       sourceTriangle: sourcePixel?.triangle ?? null,
+      sourceCaptureMode: sourcePixel?.captureMode || null,
+      sourceCapturedAt: Number(sourcePixel?.capturedAt) || null,
       sourcePerchError: sourceWorld ? Math.hypot(sourceWorld.x - perch.x, sourceWorld.y - perch.y, sourceWorld.z - perch.z) : null,
       error: Math.hypot(perch.x - grip.x, perch.y - grip.y, perch.z - grip.z),
       rotationSource: raw.rotationSource || null,
