@@ -23,13 +23,16 @@ for (const locale of [banubu, colorPools]) {
 assert.strictEqual(banubu.cavern.creatureKind, 'grehlr', 'Banubu cavern must use the Grehlr cave-surface family');
 
 const banubuDialogueCameras = banubu.cinematicCameras || [];
-assert.strictEqual(banubuDialogueCameras.length, 2, 'Banubu cavern must author awake and sleeping world-space dialogue shots');
+assert.strictEqual(banubuDialogueCameras.length, 3, 'Banubu cavern must author awake, sleeping, and Color Pools Key world-space dialogue shots');
 assert(banubuDialogueCameras.every(camera => camera.stagePlayer === false), 'Banubu cinematic cameras leave the player at the interaction position instead of backing up');
 assert(banubuDialogueCameras.every(camera => camera.fadePets === false), 'Banubu cinematic cameras do not request the pet-fade presentation that can read as a dark screen layer');
 const awakeCamera = banubuDialogueCameras.find(camera => camera.id === 'banubu_dialogue_awake');
 const sleepCamera = banubuDialogueCameras.find(camera => camera.id === 'banubu_dialogue_sleep');
+const keyCamera = banubuDialogueCameras.find(camera => camera.id === 'banubu_key_ground'); // Ground-level shot used while Banubu calls attention to the root-attached key sparkle emitter.
 assert.deepStrictEqual(awakeCamera?.position, { x: 7.2, y: 0, z: 9.4 }, 'Banubu awake camera keeps its authored world-space position');
 assert.deepStrictEqual(sleepCamera?.position, { x: 7.024, y: 0.142, z: 8.3 }, 'Banubu sleeping camera preserves the latest in-game Map Edit authoring diff');
+assert.deepStrictEqual(keyCamera?.position, { x: 6.9, y: 0.12, z: 7.3 }, 'Banubu key camera stays down at ground level near the sparkle emitter');
+assert.strictEqual(keyCamera?.targetNpcPoint, 'root', 'Banubu key camera must aim at the NPC root shared by the sparkle emitter rather than his face');
 assert(banubuDialogueCameras.every(camera => camera.targetNpcId === 'banubu'), 'Banubu shots must target Banubu by live NPC id instead of a fixed viewport portrait');
 const secret = banubu.connectors.find(c => c.id === 'color_pools_door');
 assert(secret, 'Banubu cave must author its hidden rear connector');
@@ -115,10 +118,11 @@ assert(gameSource.includes('function _namedAnimalFaceWorldPosition(walker)') && 
 assert(gameSource.includes('resolveSkinnedPixelWorldPosition(walker.avatarGroup, centroid)'), 'humanoid dialogue targeting must resolve the live skinned head centroid');
 assert(gameSource.includes("setPlayerFacingInstant(-Math.PI / 2, { clearLook: true, syncCamera: true })"), 'Banubu async cave entry must reassert north across the complete facing authority');
 assert(gameSource.includes('mouseLookAngle = nextFacing;') && gameSource.includes('controllerLookAngle = nextFacing;') && gameSource.includes('lastMoveAngle = nextFacing;'), 'instant entry facing must synchronize mouse, controller, and movement-facing authorities');
-assert(cinematicCameraSource.includes('getNpcFacePosition') && cinematicCameraSource.includes('Number(face.y) + finite(camera.target?.y, 0)'), 'NPC-targeted authored cameras must resolve their target from the live face point each frame');
+assert(cinematicCameraSource.includes('getNpcFacePosition') && cinematicCameraSource.includes("camera.targetNpcPoint === 'root'") && cinematicCameraSource.includes('npcRootWorldPoint'), 'NPC-targeted authored cameras must support both live face and root-point targeting');
 assert(cinematicCameraSource.includes('stagePlayer: camera.stagePlayer === true'), 'cinematic camera player staging is opt-in and therefore off by default');
 assert(cinematicCameraSource.includes('function shouldStagePlayer()'), 'cinematic runtime exposes its staging policy to ordinary dialogue opening');
 assert(banubuQuestContentSource.includes("{ cameraId: 'banubu_dialogue_awake' }"), 'Banubu wake-up dialogue must switch to the authored awake world camera');
+assert(banubuQuestContentSource.includes("cameraId: 'banubu_key_ground'"), 'Banubu Color Pools Key dialogue must switch to the authored ground-level key shot');
 assert(gameSource.includes('loadLocaleCavernDefinition?.(mapId)') && gameSource.includes("loadSource = 'locale-cavern'"), 'building loader must prefer cave-interior locales');
 assert(gameSource.includes('(!x.requiresKeyItem || !!window.KeyItemSystem?.has?.(x.requiresKeyItem))'), 'key-gated cave connectors must be mechanically inaccessible without their key');
 assert(gameSource.includes("targetSpotId: exit.targetSpotId || ''") && gameSource.includes("_pendingEntrySpotId"), 'cave-to-cave travel must preserve named connector destinations across async generation');
@@ -131,6 +135,7 @@ assert(!gameSource.includes('_isBuildingArea(area) ? 0 : npcSurfaceY(area, spawn
 assert(gameSource.includes('InteriorSceneBuilder.buildCavernFloorMesh?.('), 'game cavern scenes must add the explicit textured walkable floor mesh');
 assert(gameSource.includes('mapData.denMotherKind || mapData.cavernCreatureKind'), 'authored caverns must select texture family from their authored creature habitat');
 assert(editorSource.includes('value="cave_interior"') && editorSource.includes('cavernSeed') && editorSource.includes('raw.cavern'), 'Locale Editor must author and preserve cave-interior generator metadata');
+assert(editorSource.includes('cinematicCameras: Array.isArray(raw.cinematicCameras)') && editorSource.includes('cinematicCameras: Array.isArray(m.cinematicCameras)'), 'Locale Editor must preserve authored cinematic camera records through load/export');
 assert.strictEqual(fs.existsSync(path.join(root, 'docs/config/maps/map_i_color_pools.json')), false, 'Color Pools must not retain a competing static rectangular map definition');
 
 // Exercise real triangle sampling, including sub-tile tessellation and missing coverage.
@@ -180,6 +185,12 @@ assert(meshReads <= samplingMesh.indices.length * 3, 'sampling must not reread e
     target: { x: 0.25, y: 0.5, z: -0.25 },
     dialogueNpcId: 'banubu',
     targetNpcId: 'banubu',
+  }, {
+    id: 'test_root',
+    position: { x: 6.9, y: 0.12, z: 7.3 },
+    target: { x: 0, y: 0, z: 0 },
+    targetNpcId: 'banubu',
+    targetNpcPoint: 'root',
   }]);
   cameraContext.CinematicCameraRuntime.beginDialogue({ areaId: 'map_i_den_banubu', npcId: 'banubu', walker });
   assert.deepStrictEqual(
@@ -207,6 +218,13 @@ assert(meshReads <= samplingMesh.indices.length * 3, 'sampling must not reread e
     { x: 7, y: 4.5, z: 5 },
     'editing a face-relative target immediately changes the active world-space aim point'
   );
+  cameraContext.CinematicCameraRuntime.activate('map_i_den_banubu', 'test_root', { targetWalker: walker });
+  assert.deepStrictEqual(
+    JSON.parse(JSON.stringify(cameraContext.CinematicCameraRuntime.resolvedTarget())),
+    { x: 6.5, y: 0, z: 5.5 },
+    'root-targeted cinematic cameras follow the live NPC root shared by attached presentation emitters'
+  );
+  assert.strictEqual(cameraContext.CinematicCameraRuntime.debugSnapshot().targetNpcPoint, 'root', 'camera diagnostics expose whether the active NPC anchor is face or root');
 }
 
 console.log('Locale-authored cavern footprint, fixed-seed synthesis, keyed connector, and editor integration checks passed');

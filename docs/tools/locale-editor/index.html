@@ -337,6 +337,7 @@ function makeLocale(id, name, category) {
     objects: [],       // { id, kind, key, label, col, row, w, h, rot }
     npcAnchors: [],    // { id, npcId, name, col, row, facing }
     connectors: [],    // { id, col, row, side, label }
+    cinematicCameras: [], // Authored world-space dialogue/cutscene shots; adjusted in-game through Map Edit.
     terrainAnchors: {}, // Runtime terrain probes; mirrored into placement for editor persistence.
     embeddedTiles: {},  // Runtime embedded-host cells; mirrored into placement for editor persistence.
     cavern: null,        // cave_interior only: map id, fixed seed, primary connector, and shared cavern-generation options.
@@ -358,6 +359,7 @@ function sanitizeLoaded(raw) {
     cols: clamp(Math.round(Number(raw.cols) || 16), 4, 120),
     rows: clamp(Math.round(Number(raw.rows) || 16), 4, 120),
     tiles: {}, objects: [], npcAnchors: [], connectors: [], puzzleWiring: [],
+    cinematicCameras: Array.isArray(raw.cinematicCameras) ? JSON.parse(JSON.stringify(raw.cinematicCameras)) : [],
     cavern: raw.cavern && typeof raw.cavern === "object" ? JSON.parse(JSON.stringify(raw.cavern)) : null,
     placement: Object.assign({ mode: 'fixed', maxInstances: 1, allowedZones: [], clearanceTiles: 2, requiresFlatGround: true, floorMode: 'footprint', minDistanceFromEntry: 0, sameSectorAsEntry: false, alwaysVisibleOnMap: false, groundOnly: false, notes: '' }, raw.placement || {}),
     meta: Object.assign({ createdAt: nowIso(), updatedAt: nowIso() }, raw.meta || {})
@@ -1265,6 +1267,7 @@ function buildExport(m) {
     id: m.id, name: m.name, category: m.category, singleton: m.singleton,
     description: m.description, tags: m.tags, cols: m.cols, rows: m.rows,
     tiles: m.tiles, objects: m.objects, npcAnchors: m.npcAnchors, connectors: m.connectors,
+    cinematicCameras: Array.isArray(m.cinematicCameras) ? m.cinematicCameras : [],
     terrainAnchors: m.terrainAnchors || {}, embeddedTiles: m.embeddedTiles || {},
     placement: m.placement, meta: m.meta
   };

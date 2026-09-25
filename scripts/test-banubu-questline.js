@@ -221,10 +221,19 @@ assert(banubu.dialogueTrees.some(tree => tree.banubuQuest?.phase === 'blocked' &
 
 const q1ReadyPresentationTree = content.dialogueTrees.find(tree => tree.id === 'banubu_q1_ready'); // Used to verify the exact authored line-to-presentation timing requested for the Color Pools Key scene.
 const q1ReadyPresentationNodes = Object.fromEntries(q1ReadyPresentationTree.nodes.map(node => [node.id, node]));
+const introTree = content.dialogueTrees.find(tree => tree.id === 'banubu_intro'); // Verifies the existing awake-camera metadata on Banubu's choice node is no longer discarded by the helper.
+const introNodes = Object.fromEntries(introTree.nodes.map(node => [node.id, node])); // Used immediately below to assert the intro choice preserves its generic cameraId metadata.
+assert.strictEqual(introNodes.banubu_intro_3.cameraId, 'banubu_dialogue_awake', 'Banubu intro choice must retain its authored awake-camera swap');
 assert.deepStrictEqual(JSON.parse(JSON.stringify(q1ReadyPresentationNodes.banubu_q1_ready_4.banubuPresentation)), { body: 'awake', sparkles: 'start' }, '“I’m up” must switch Banubu to regular idle and start sparkles');
+assert.strictEqual(q1ReadyPresentationNodes.banubu_q1_ready_4.cameraId, 'banubu_dialogue_awake', 'standing up must establish the ordinary awake shot before the key close-up');
 assert.deepStrictEqual(JSON.parse(JSON.stringify(q1ReadyPresentationNodes.banubu_q1_ready_5.banubuPresentation)), { neck: 'max_down' }, 'noticing the Color Pools Key must use the canonical maximum downward neck pose');
+assert.strictEqual(q1ReadyPresentationNodes.banubu_q1_ready_5.cameraId, 'banubu_key_ground', 'the first explicit key-reference line must cut to the ground-level sparkle shot');
 assert.deepStrictEqual(JSON.parse(JSON.stringify(q1ReadyPresentationNodes.banubu_q1_ready_6.banubuPresentation)), { neck: 'release' }, 'the key-noticing neck pose must release on the following line instead of sticking');
-assert.deepStrictEqual(JSON.parse(JSON.stringify(q1ReadyPresentationNodes.banubu_q1_ready_7.banubuPresentation)), { sparkles: 'stop' }, 'the sparkles must disappear on the line where Banubu says the player can have the key');
+assert.strictEqual(q1ReadyPresentationNodes.banubu_q1_ready_6.cameraId, 'banubu_key_ground', 'the explanation of what the key opens must remain on the sparkle shot');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(q1ReadyPresentationNodes.banubu_q1_ready_7.banubuPresentation)), {}, 'the key handoff line keeps no Banubu-specific pose/VFX mutation');
+assert.strictEqual(q1ReadyPresentationNodes.banubu_q1_ready_7.cameraId, 'banubu_key_ground', 'the key handoff line must remain on the sparkle shot');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(q1ReadyPresentationNodes.banubu_q1_ready_8.banubuPresentation)), { sparkles: 'stop' }, 'sparkles must stop only after Banubu stops referring to the key');
+assert.strictEqual(q1ReadyPresentationNodes.banubu_q1_ready_8.cameraId, 'banubu_dialogue_awake', 'post-key dialogue must return to Banubu’s ordinary awake shot');
 assert.deepStrictEqual(JSON.parse(JSON.stringify(q1ReadyPresentationNodes.banubu_q1_ready_15.banubuPresentation)), { body: 'sleep', neck: 'release' }, 'the line after the yawn must restore Banubu’s sleeping body pose');
 
 const presentationHandler = registeredNodeEnterHandlers.get('banubu'); // Used to exercise the presentation state machine without a WebGL scene.
@@ -241,9 +250,12 @@ assert.strictEqual(presentationWalker._animalHeadPoseOverride, 'max_down');
 presentationHandler(q1ReadyPresentationNodes.banubu_q1_ready_6, { npc: banubu, walker: presentationWalker });
 assert.strictEqual(presentationWalker._animalHeadPoseOverride, undefined);
 presentationHandler(q1ReadyPresentationNodes.banubu_q1_ready_7, { npc: banubu, walker: presentationWalker });
+assert.strictEqual(sparkleDisposes, 0, 'sparkles stay visible while Banubu offers the key so the ground shot still has a subject');
+assert.strictEqual(questline.debugSnapshot().presentation.sparklesActive, true);
+presentationHandler(q1ReadyPresentationNodes.banubu_q1_ready_8, { npc: banubu, walker: presentationWalker });
 assert.strictEqual(sparkleDisposes, 1);
 assert.strictEqual(questline.debugSnapshot().presentation.sparklesActive, false);
-assert.strictEqual(schedulerEnabled.get('banubu-dialogue-presentation'), false, 'the “you can have it” line must stop per-frame sparkle work as well as dispose the visual');
+assert.strictEqual(schedulerEnabled.get('banubu-dialogue-presentation'), false, 'the first post-key line must stop per-frame sparkle work as well as dispose the visual');
 presentationHandler(q1ReadyPresentationNodes.banubu_q1_ready_15, { npc: banubu, walker: presentationWalker });
 assert.strictEqual(presentationWalker._animalSleepPresentationOverride, 'sleep');
 presentationHandler(null, { npc: banubu, walker: presentationWalker, ended: true });
