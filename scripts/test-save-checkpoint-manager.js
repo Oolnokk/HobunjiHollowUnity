@@ -62,6 +62,7 @@ const vm = require('node:vm');
   let reloads = 0; // Successful recovery reload count.
   let folderSyncs = 0; // Successful/partially-successful canonical write attempts.
   let failNextFolderSyncAfterWrite = false; // Simulates I/O failure after canonical files already changed.
+  let failPrimarySnapshotRead = false; // Simulates a malformed canonical world that recovery must repair instead of requiring a successful primary read.
   const folderListeners = []; // Captures LocalSaveFolder status listeners.
   const documentListeners = new Map(); // Captures lifecycle listeners without a browser DOM.
 
@@ -94,6 +95,7 @@ const vm = require('node:vm');
       return record;
     },
     async readPrimarySnapshot() {
+      if (failPrimarySnapshotRead) throw new Error('Primary Save Folder contains unreadable character/world file(s): worlds/broken.json');
       return { savedAt: now - 5000, snapshot: structuredClone(folderPrimarySnapshot) };
     },
     async syncSnapshot(snapshot, options = {}) {
@@ -320,12 +322,15 @@ const vm = require('node:vm');
   currentSnapshot = structuredClone(folderPrimarySnapshot);
   currentSnapshot.meta.worlds[0].members.char_a.nonGearInventory.turnip = 1;
   folderPrimarySnapshot = structuredClone(currentSnapshot);
+  failPrimarySnapshotRead = true;
   now += 60_000;
   let restoreResult = await api.restoreManual();
-  assert.equal(restoreResult.ok, true);
+  failPrimarySnapshotRead = false;
+  assert.equal(restoreResult.ok, true, 'recovery can repair an unreadable canonical folder by preserving the browser snapshot instead');
   assert.equal(appliedSnapshot.meta.worlds[0].members.char_a.nonGearInventory.turnip, 5);
   assert.equal(Object.prototype.hasOwnProperty.call(appliedSnapshot.meta.worlds[0].members.char_a.zoneTreasureState.zone_test.placements[0], '_mesh'), false, 'recovery restore strips legacy runtime treasure meshes before applying browser state');
   assert.ok(folderRecovery.has('preRestore'), 'restore creates pre-restore recovery before canonical replacement');
+  assert.equal(folderRecovery.get('preRestore').reason, 'before-recovery-browser-fallback', 'corrupt canonical reads are diagnosed as browser-fallback safety copies');
   assert.equal(folderRecovery.get('preRestore').snapshot.meta.worlds[0].members.char_a.nonGearInventory.turnip, 1);
   assert.deepEqual(folderPrimarySnapshot, expectedRestoredSnapshot, 'chosen recovery becomes canonical folder state without legacy treasure meshes');
   assert.equal(reloads, 1, 'successful recovery reloads once');
