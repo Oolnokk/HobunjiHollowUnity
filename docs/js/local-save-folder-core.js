@@ -19,6 +19,7 @@
   const RECOVERY_DIR = 'recovery'; // Folder-first recovery history lives beside, but never replaces, the canonical save directories.
   const RECOVERY_FILES = Object.freeze({ // Stable recovery slot filenames used by the checkpoint manager and recovery UI.
     manual: 'manual.json',
+    campfire: 'campfire.json',
     auto: 'autosave-latest.json',
     autoPrevious: 'autosave-previous.json',
     preRestore: 'pre-restore.json',
