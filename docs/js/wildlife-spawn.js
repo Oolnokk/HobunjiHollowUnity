@@ -357,7 +357,7 @@
     return record ? { stage:record.stage, daysRemaining:record.daysRemaining, generation:Number(record.generation)||0 } : null;
   }
 
-  function ensureActiveDenTurnoverRecord(cavernMapId) {
+  function ensureActiveDenTurnoverRecord(cavernMapId, { persist = true } = {}) {
     const existing = turnoverRecordForCavern(cavernMapId);
     if (existing) return existing;
     const zoneId = _denCavernZoneOf.get(cavernMapId);
@@ -375,7 +375,7 @@
       mouthAnchor:den.mouthAnchor ? { ...den.mouthAnchor } : null,
     }; // Stored immediately so an untouched den cannot silently change bloodline on a page reload.
     denTurnoverByKey.set(key, record);
-    persistDenTurnover();
+    if (persist) persistDenTurnover();
     return record;
   }
 
@@ -903,7 +903,7 @@
   function getOrMakeDenGenotype(cavernMapId, family) {
     const key = `${cavernMapId}|${family}`;
     if (!_denGenotypes.has(key)) {
-      const turnover = turnoverRecordForCavern(cavernMapId) || ensureActiveDenTurnoverRecord(cavernMapId); // Generation zero and every relocated generation persist the same way across reloads.
+      const turnover = turnoverRecordForCavern(cavernMapId) || ensureActiveDenTurnoverRecord(cavernMapId, { persist: false }); // Generation zero and every relocated generation persist the same way across reloads; the single write below covers a newly created record.
       const persisted = turnover?.genotypes?.[family] || null;
       const genotype = persisted ? JSON.parse(JSON.stringify(persisted)) : window.CreatureGenetics.makeDefaultGenotype(family);
       _denGenotypes.set(key, genotype);
