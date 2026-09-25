@@ -39,12 +39,12 @@ assert.match(
 
 assert.match(
   game,
-  /_setLayerDepthWrite\(_playerAvatarFrontMaterial, !active\);[\s\S]{0,100}_setLayerDepthWrite\(_playerAvatarBackMaterial, !active\);/,
+  /if \(!active \|\| !pet\) \{\s*_setLayerDepthWrite\(_playerAvatarFrontMaterial, true\);\s*_setLayerDepthWrite\(_playerAvatarBackMaterial, true\);[\s\S]{0,700}_setLayerDepthWrite\(_playerAvatarFrontMaterial, false\);\s*_setLayerDepthWrite\(_playerAvatarBackMaterial, false\);/,
   'shoulder-pet mode intentionally disables the visible player portrait depth writes',
 );
 assert.match(
   game,
-  /for \(const m of \[pet\.avatarRef\?\.frontPlane\?\.material, pet\.avatarRef\?\.backPlane\?\.material\]\) \{[\s\S]{0,100}_setLayerDepthWrite\(m, false\);/,
+  /for \(const m of \[pet\.avatarRef\?\.frontPlane\?\.material, pet\.avatarRef\?\.backPlane\?\.material\]\)\s*\{?\s*_setLayerDepthWrite\(m, false\);/,
   'shoulder-pet mode intentionally disables the attached pet portrait depth writes too',
 );
 

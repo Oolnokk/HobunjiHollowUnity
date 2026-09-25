@@ -10,11 +10,16 @@ const index = fs.readFileSync('docs/index.html', 'utf8'); // Used to verify both
 const inputSettings = fs.readFileSync('docs/js/input-settings-panel.js', 'utf8'); // Used to ensure Settings cannot reload a stale unversioned ranged reticle over the parser-loaded module.
 
 for (const [label, source] of [['melee', melee], ['ranged', ranged]]) {
-  assert.match(
-    source,
-    /function gameplayReticleSuppressed\(\) \{[\s\S]{0,900}isDialogueOpen\?\.\(\)[\s\S]{0,900}npcDialogue[\s\S]{0,900}classList\.contains\('open'\)[\s\S]{0,900}HOBUNJI_CHARACTER_VIEW_STATUS\?\.enabled[\s\S]{0,900}sitInteraction\.phase !== 'out'/,
-    `${label} reticle must suppress itself during dialogue, Character View, and seated states`,
-  );
+  const predicate = source.match(/function gameplayReticleSuppressed\(\) \{[\s\S]*?\n  \}/)?.[0] || ''; // Checked term-by-term so declaration order inside the predicate does not matter.
+  assert.ok(predicate, `${label} reticle must define gameplayReticleSuppressed()`);
+  for (const [pattern, what] of [
+    [/isDialogueOpen\?\.\(\)/, 'authoritative dialogue-open state'],
+    [/getElementById\('npcDialogue'\)[\s\S]*classList\.contains\('open'\)/, 'visible dialogue fallback'],
+    [/HOBUNJI_CHARACTER_VIEW_STATUS\?\.enabled/, 'Character View'],
+    [/sitInteraction\.phase !== 'out'/, 'seated state'],
+  ]) {
+    assert.match(predicate, pattern, `${label} reticle must suppress itself for ${what}`);
+  }
 }
 
 assert.match(

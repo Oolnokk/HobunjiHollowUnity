@@ -20,7 +20,7 @@ assert.match(indexSource, /audio-track-gain-settings\.js\?v=20260920trackgain2/,
   'the per-song gain settings runtime is loaded by the game page');
 assert.match(musicSource, /window\._footstepAudioCtx = _musicAudioCtx/,
   'music reuses the proven shared boosted-audio context rather than an isolated destination');
-assert.match(musicSource, /createMediaElementSource\(snd\)[\s\S]*?source\.connect\(gain\)\.connect\(ctx\.destination\)/,
+assert.match(musicSource, /createMediaElementSource\(mediaElement\)[\s\S]*?source\.connect\(gain\)\.connect\(ctx\.destination\)/,
   'music uses a real Web Audio GainNode so values above 100% can exceed HTMLMediaElement.volume');
 assert.match(musicSource, /if \(ctx\.state !== 'running'\)[\s\S]*?ctx\.resume\(\)\.then\([\s\S]*?snd\._refreshMusicTarget\?\.\(120\)[\s\S]*?return null;/,
   'a live track is never captured into a non-running AudioContext; it stays on audible plain volume until resume succeeds');
