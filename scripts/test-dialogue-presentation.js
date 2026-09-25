@@ -81,3 +81,14 @@ assert.match(
 );
 
 console.log('Dialogue weapon-yaw suppression check passed.');
+
+assert.match(
+  game,
+  /function applyNpcDialogueFacingExact\(walker, rawRot, lerp\)[\s\S]{0,1800}walker\.root\.rotation\.y = walker\.rot;/,
+  'NPC dialogue body facing must bypass the camera-relative billboard deadzone',
+);
+assert.match(
+  game,
+  /if \(walker\.rec\?\.id !== 'banubu'\) applyNpcDialogueFacingExact\(walker, npcTargetRot/,
+  'ordinary NPC dialogue must use exact face-to-player body yaw while Banubu keeps authored posing',
+);
