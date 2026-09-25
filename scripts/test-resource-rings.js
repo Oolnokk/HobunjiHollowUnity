@@ -101,6 +101,7 @@ const fullBarDotEntity = {
 ResourceSystem.initEntity(fullBarDotEntity);
 ResourceSystem.addAffliction(fullBarDotEntity, 'burningHealth', 100);
 assert.equal(ResourceSystem.getAffliction(fullBarDotEntity, 'burningHealth'), 100, 'Burning buildup may convert the full Health bar');
+assert.deepEqual(ResourceSystem.getSegmentBox(fullBarDotEntity, 'health', 'burningHealth'), { leftPoints: 0, widthPoints: 100, max: 100 }, 'full Burning buildup visibly spans the entire Health ring');
 assert.equal(fullBarDotEntity.health, 100, 'applying a full Health-bar DoT does not itself deal damage');
 ResourceSystem.tick(fullBarDotEntity, 100, { healthRegenPerSec: 0 });
 assert.equal(fullBarDotEntity.health, 0, 'an already-applied DoT remains lethal when its damage actually ticks');
@@ -140,6 +141,7 @@ ResourceSystem.addAffliction(woundedStaminaTriggerEntity, 'woundedStamina', 100)
 assert.equal(woundedStaminaTriggerEntity.health, 5, 'Wounded Stamina application does not deal Health damage');
 assert.equal(woundedStaminaTriggerEntity.stamina, 100, 'Wounded Stamina application does not spend Stamina');
 assert.equal(ResourceSystem.getAffliction(woundedStaminaTriggerEntity, 'woundedStamina'), 100, 'Wounded Stamina may convert the full Stamina bar');
+assert.deepEqual(ResourceSystem.getSegmentBox(woundedStaminaTriggerEntity, 'stamina', 'woundedStamina'), { leftPoints: 0, widthPoints: 100, max: 100 }, 'full Wounded Stamina visibly spans the entire Stamina ring');
 ResourceSystem.spendStamina(woundedStaminaTriggerEntity, 100, 'full wounded stamina trigger regression');
 assert.equal(woundedStaminaTriggerEntity.health, 0, 'spending already-applied Wounded Stamina may deal lethal Health damage');
 
