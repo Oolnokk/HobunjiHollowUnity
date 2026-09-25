@@ -93,7 +93,7 @@
     woundedStamina: {
       name: "Wounded Stamina", resource: "stamina", extend: "zero", priority: 55, recovers: true, punishedAction: "staminaSpend",
       family: "damage", tags: ["physical", "breath"],
-      desc: "Spent afflicted Stamina deals itself as Health damage; avoiding Stamina spend makes it recover much faster."
+      desc: "Application only converts Stamina into Wounded buildup; spending through that afflicted Stamina later deals lethal Health damage. Avoiding Stamina spend makes it recover much faster."
     },
     bleedingHealth: {
       name: "Bleeding Health", resource: "health", extend: "currentBack", priority: 70, recovers: false,
@@ -108,7 +108,7 @@
     infectedStamina: {
       name: "Infected Stamina", resource: "stamina", extend: "zero", priority: 65, recovers: true, punishedAction: "staminaSpend",
       family: "damage", tags: ["toxin", "infection"],
-      desc: "Spent like Wounded Stamina. Avoiding Stamina spend makes it recover much faster; it can also cause vomiting, adding Winded Stamina and Poisoned Health."
+      desc: "Application only converts Stamina into Infected buildup; spending through it later deals lethal Health damage. Avoiding Stamina spend makes it recover much faster; it can also cause vomiting, adding Winded Stamina and Poisoned Health."
     },
     windedStamina: {
       name: "Winded Stamina", resource: "stamina", extend: "zero", priority: 95, recovers: true,
@@ -123,7 +123,7 @@
     shatteredStamina: {
       name: "Shattered Stamina", resource: "stamina", extend: "zero", priority: 62, recovers: true, punishedAction: "staminaSpend",
       family: "damage", tags: ["physical"],
-      desc: "Spent afflicted Stamina applies Bleeding Health instead of direct Health damage; avoiding Stamina spend makes it recover much faster."
+      desc: "Application only converts Stamina into Shattered buildup; spending through it later applies Bleeding Health rather than immediate Health damage. Avoiding Stamina spend makes it recover much faster."
     },
     poisonedHealth: {
       name: "Poisoned Health", resource: "health", extend: "currentBack", priority: 80, recovers: false,
