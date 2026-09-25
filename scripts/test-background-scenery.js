@@ -198,6 +198,14 @@ function countComponents(field, minTier = 1) {
   return components;
 }
 assert.equal(countComponents(baseField, 1), 1, 'low-tier front/rear mountain stamps should merge into one continuous shared plateau landmass');
+const lowTierBounds = baseField.tierStats[0];
+const topTierBounds = baseField.tierStats[baseField.tierStats.length - 1];
+assert(lowTierBounds.minC >= 2 && lowTierBounds.maxC <= baseField.cols - 3, 'lowest mountain tier must leave real zero-height terrain before both synthetic depth boundaries');
+const farSideRetreat = topTierBounds.minC - lowTierBounds.minC;
+const mapSideRetreat = lowTierBounds.maxC - topTierBounds.maxC;
+assert(farSideRetreat >= 4, `far-side mountain contours must retreat through several regular plateau cells; got ${farSideRetreat}`);
+assert(mapSideRetreat >= 4, `map-side mountain contours must retreat through several regular plateau cells instead of ending in a sheer cut; got ${mapSideRetreat}`);
+assert(Math.abs(farSideRetreat - mapSideRetreat) <= 3, `near/far plateau falloff should be comparably mountain-like; retreats were ${mapSideRetreat}/${farSideRetreat}`);
 
 const randomized = Core.normalizeHorizonTerrain({ ...westHorizon, mountainSeed: westHorizon.mountainSeed + 1 }, 'map_western_slope');
 const randomField = Core.buildMountainPlateauField(80, 80, 'map_western_slope', randomized);
