@@ -121,6 +121,7 @@
   let _lastKnownFolderMeta = null; // Last meta.json content known to actually be on disk; the data-loss guard's baseline.
   let _lastDataLossRisk = null; // Set when a push was skipped because it looked like it would destroy folder data.
   let _lastPatternMirror = null; // Most recent custom-motif portability result, surfaced through save diagnostics.
+  let _recoveryHandleFresh = false; // True only after a current-session user gesture supplies a new directory handle specifically safe to probe for recovery.
   const _listeners = new Set();
 
   function getStatus() {
@@ -138,6 +139,7 @@
       dataLossRisk: _lastDataLossRisk,
       patternMirror: _lastPatternMirror,
       recoverySaveVersion: RECOVERY_SAVE_VERSION,
+      recoveryHandleFresh: _recoveryHandleFresh,
     };
   }
 
@@ -787,6 +789,7 @@
       }
 
       _handle = saved;
+      _recoveryHandleFresh = false;
       _state = (await ensurePermission(_handle, false)) ? 'ready' : 'needs-permission';
       if (_state === 'ready') {
         await inspectConnectedFolder();
@@ -815,6 +818,7 @@
       _lastError = '';
       _lastDataLossRisk = null;
       _lastKnownFolderMeta = null; // a newly picked folder has no relation to any previous baseline
+      _recoveryHandleFresh = true;
       stopAutoSync();
       await inspectConnectedFolder();
       _lastAction = 'folder-chosen-awaiting-choice';
@@ -837,14 +841,14 @@
     const previousHandle = _handle; // Retained if the picker is cancelled so recovery never loses the remembered folder by accident.
     const previousState = _state; // Restored on cancel for the same reason.
     try {
-      const pickerOptions = { mode: 'readwrite', id: 'hobunji-primary-save-recovery' }; // Dedicated picker id lets Chromium remember the recovery-folder location without dereferencing the possibly stale saved handle.
-      const handle = await window.showDirectoryPicker(pickerOptions); // User gesture obtains a fresh live handle when the persisted IndexedDB handle has gone stale.
+      const handle = await window.showDirectoryPicker({ mode: 'readwrite' }); // Use the same minimal picker invocation as the proven normal folder chooser; no stale-handle-derived options or recovery-specific picker state.
       _handle = handle;
       await idbSet(HANDLE_KEY, handle);
       _state = 'ready';
       _lastError = '';
       _lastDataLossRisk = null;
       _lastKnownFolderMeta = null; // Recovery re-selection intentionally does not trust/inspect canonical files before reading recovery history.
+      _recoveryHandleFresh = true;
       stopAutoSync();
       _lastAction = 'recovery-folder-reselected';
       notify();
@@ -852,10 +856,12 @@
       if (error?.name === 'AbortError') {
         _handle = previousHandle;
         _state = previousState;
+        _recoveryHandleFresh = false;
         _lastAction = 'recovery-folder-reselect-cancelled';
       } else {
         _handle = previousHandle;
         _state = previousState;
+        _recoveryHandleFresh = false;
         _lastError = String(error?.message || error);
         _lastAction = 'recovery-folder-reselect-error';
         notify();
@@ -903,6 +909,7 @@
     _lastKnownFolderMeta = null;
     _lastDataLossRisk = null;
     _lastPatternMirror = null;
+    _recoveryHandleFresh = false;
     try { await idbDelete(HANDLE_KEY); } catch {}
     notify();
     return getStatus();
