@@ -260,6 +260,142 @@ assert.deepEqual(diamondBasis, { u: { x: 50, y: 40 }, v: { x: 50, y: -40 } });
 assert(gear.knownClothingBlueprints.some(bp => bp.baseCosmeticId === 'tankan_tunic'), 'obtaining cloth permanently learns its loom blueprint');
 assert.equal(api.hasWovenPattern(lightTunic), true, 'woven item exposes its precomposited-icon status to EquipmentPanel');
 
+const compatibilityRuntimeRegression = (async () => {
+  const originalFetch = context.fetch; // Restored after the isolated portrait compatibility probe so later tests keep their original network stub.
+  context.fetch = async url => {
+    const value = String(url || '');
+    if (value.includes('config/cosmetics/index.json')) {
+      return { ok: true, json: async () => ({ entries: [{ id: 'runtime_probe_cloth', path: './runtime_probe_cloth.json' }] }) };
+    }
+    if (value.includes('runtime_probe_cloth.json')) {
+      return {
+        ok: true,
+        json: async () => ({
+          slot: 'torso',
+          parts: { torso: { layers: { back: { image: { url: './assets/cosmetics/runtime_probe_cloth.png' } } } } },
+        }),
+      };
+    }
+    return { ok: false, status: 404, json: async () => ({}) };
+  };
+
+  const probeProfile = {
+    bodyColors: {
+      __hobunjiWovenClothing: [{
+        uid: 'runtime-probe',
+        slot: 'torso',
+        baseCosmeticId: 'runtime_probe_cloth',
+        weaving: { pattern: {} }, // Empty renderable payload exercises tint routing without needing DOM canvas/image decoding in Node.
+        colorA: { hex: '#556677' },
+        colorC: { hex: '#ddeeff' },
+      }],
+    },
+  };
+  const plainProfile = { bodyColors: {} }; // Ordinary portrait fixture used to prove non-woven refreshes still run concurrently with each other.
+  const fakeImage = { naturalWidth: 1, naturalHeight: 1, width: 1, height: 1 }; // Minimal authored-image shape accepted by the tint/cache-key path.
+  let activeOrdinary = 0;
+  let maxActiveOrdinary = 0;
+  let releaseOrdinary;
+  const ordinaryHold = new Promise(resolve => { releaseOrdinary = resolve; });
+  const ordinaryRenderer = async () => {
+    activeOrdinary++;
+    maxActiveOrdinary = Math.max(maxActiveOrdinary, activeOrdinary);
+    await ordinaryHold;
+    activeOrdinary--;
+    return true;
+  };
+  const ordinaryA = api.renderProfileWithWovenPatterns(ordinaryRenderer, {}, plainProfile, {});
+  const ordinaryB = api.renderProfileWithWovenPatterns(ordinaryRenderer, {}, plainProfile, {});
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(maxActiveOrdinary, 2, 'ordinary portraits retain concurrent rendering when no woven compatibility writer is active');
+  releaseOrdinary();
+  await Promise.all([ordinaryA, ordinaryB]);
+
+  let activeLegacyRenderers = 0; // Proves two woven requests never own the global compatibility map at the same time.
+  let maxActiveLegacyRenderers = 0;
+  let legacyTintCalls = 0;
+  const rendererIgnoringRenderOptions = async () => {
+    activeLegacyRenderers++;
+    maxActiveLegacyRenderers = Math.max(maxActiveLegacyRenderers, activeLegacyRenderers);
+    await Promise.resolve(); // Forces overlap if woven compatibility ownership is not exclusive.
+    windowStub._imageForTint(fakeImage, 'cosmetics/runtime_probe_cloth.png', { mode: 'none' }); // Deliberately ignores renderOptions.imageForTint, reproducing the pre-#817-only rendering path.
+    legacyTintCalls++;
+    activeLegacyRenderers--;
+    return true;
+  };
+
+  const before = api.debugSnapshot().portraitPatterns;
+  await Promise.all([
+    api.renderProfileWithWovenPatterns(rendererIgnoringRenderOptions, {}, probeProfile, {}),
+    api.renderProfileWithWovenPatterns(rendererIgnoringRenderOptions, {}, probeProfile, {}),
+  ]);
+  const after = api.debugSnapshot().portraitPatterns;
+  assert.equal(maxActiveLegacyRenderers, 1, 'concurrent woven portraits receive exclusive global tint ownership one at a time');
+  assert(legacyTintCalls >= 2, 'legacy renderer that ignores renderOptions still executes for both woven portrait requests');
+  assert(after.compatibilityTintCalls > before.compatibilityTintCalls, 'restored global tint interception is exercised by a renderer that ignores renderOptions.imageForTint');
+  assert(after.patternedTintCalls > before.patternedTintCalls, 'global compatibility interception resolves the live clothing layer back to its woven descriptor');
+
+  let wovenEnteredResolve;
+  const wovenEntered = new Promise(resolve => { wovenEnteredResolve = resolve; });
+  let releaseWoven;
+  const wovenHold = new Promise(resolve => { releaseWoven = resolve; });
+  let ordinaryEnteredDuringWoven = false;
+  const heldWovenRenderer = async () => {
+    wovenEnteredResolve();
+    await wovenHold;
+    windowStub._imageForTint(fakeImage, 'cosmetics/runtime_probe_cloth.png', { mode: 'none' });
+    return true;
+  };
+  const blockedOrdinaryRenderer = async () => {
+    ordinaryEnteredDuringWoven = true;
+    return true;
+  };
+  const wovenJob = api.renderProfileWithWovenPatterns(heldWovenRenderer, {}, probeProfile, {});
+  await wovenEntered;
+  const ordinaryJob = api.renderProfileWithWovenPatterns(blockedOrdinaryRenderer, {}, plainProfile, {});
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(ordinaryEnteredDuringWoven, false, 'ordinary portrait cannot observe the global compatibility map while a woven portrait owns it');
+  releaseWoven();
+  await Promise.all([wovenJob, ordinaryJob]);
+  assert.equal(ordinaryEnteredDuringWoven, true, 'blocked ordinary portrait resumes immediately after woven compatibility ownership is released');
+
+  let releaseFirstWriter;
+  const firstWriterHold = new Promise(resolve => { releaseFirstWriter = resolve; });
+  let firstWriterEnteredResolve;
+  const firstWriterEntered = new Promise(resolve => { firstWriterEnteredResolve = resolve; });
+  const fairnessOrder = [];
+  const firstWriter = api.renderProfileWithWovenPatterns(async () => {
+    fairnessOrder.push('woven1');
+    firstWriterEnteredResolve();
+    await firstWriterHold;
+    return true;
+  }, {}, probeProfile, {});
+  await firstWriterEntered;
+  const secondWriter = api.renderProfileWithWovenPatterns(async () => {
+    fairnessOrder.push('woven2');
+    return true;
+  }, {}, probeProfile, {});
+  const queuedReader = api.renderProfileWithWovenPatterns(async () => {
+    fairnessOrder.push('ordinary');
+    return true;
+  }, {}, plainProfile, {});
+  await Promise.resolve();
+  releaseFirstWriter();
+  await Promise.all([firstWriter, secondWriter, queuedReader]);
+  assert(fairnessOrder.indexOf('ordinary') < fairnessOrder.indexOf('woven2'), 'an ordinary batch waiting behind one woven writer runs before the next queued woven writer, preventing patterned-NPC writer convoys');
+  const gateAfter = api.debugSnapshot().portraitPatterns;
+  assert.equal(gateAfter.gateReaders, 0, 'portrait gate releases every ordinary reader after the regression probe');
+  assert.equal(gateAfter.gateWriterActive, false, 'portrait gate releases woven exclusive ownership after the regression probe');
+
+  context.fetch = originalFetch;
+})().catch(error => {
+  context.fetch = async () => ({ ok: false, json: async () => ({}) });
+  console.error('woven runtime compatibility regression failed:', error);
+  process.exitCode = 1;
+});
+
 windowStub.ResourceSystem.applyDamage(player, 100, {});
 assert(Math.abs(damageSeen - 95.5) < 1e-9, '1.8 units reduce damage by 4.5%');
 windowStub.ResourceSystem.spendFooting(player, 100, 'test');
@@ -295,6 +431,9 @@ assert.equal(windowStub.Combat.getMovementSpeedMul(), 1, 'movement weight has no
 
 const source = fs.readFileSync('docs/js/clothing-weaving-system.js', 'utf8');
 const portraitSource = fs.readFileSync('docs/js/portrait-utils.js', 'utf8'); // Verifies woven portrait state is injected per render rather than shared across WorldPortraitLife's overlapping async NPC refreshes.
+const avatarPreviewSource = fs.readFileSync('docs/js/npc-avatar-preview-utils.js', 'utf8'); // Guards the live world-avatar adapter that survives later portrait-renderer replacement.
+const indexSource = fs.readFileSync('docs/index.html', 'utf8'); // Guards the outer cache key so a commit-pinned build cannot reuse an older combat loader that points at stale weaving code.
+const combatLoaderSource = fs.readFileSync('docs/js/combat/combat-config-loader.js', 'utf8'); // Guards the inner cache key for the weaving runtime itself.
 const colorFillSource = fs.readFileSync('docs/js/color-fill.js', 'utf8'); // Canonical source-art shading/value-fill math shared across rendered game assets.
 const spriteRecolorSource = fs.readFileSync('docs/js/sprite-recolor.js', 'utf8'); // Compatibility wrapper used by authored item sprites and existing callers.
 const creatureRendererSource = fs.readFileSync('docs/js/creature-genetics-render.js', 'utf8'); // Verifies animal tinting uses the same canonical fill owner.
@@ -303,12 +442,28 @@ const patternAuthorSource = fs.readFileSync('docs/js/pattern-authoring.js', 'utf
 const metalPatternSource = fs.readFileSync('docs/js/tool-metal-recolor.js', 'utf8'); // Used below to prevent weaving-only scale normalization from shrinking existing verdigris patterns.
 const equipmentPanelSource = fs.readFileSync('docs/js/equipment-panel.js', 'utf8'); // Guards the inventory icon handoff so woven composites are not tinted a second time.
 const inventoryUiSource = fs.readFileSync('docs/js/inventory-ui.js', 'utf8'); // Guards the one-shot async Pack icon refresh path; no per-frame pattern compositing.
-assert.doesNotMatch(source, /activePortraitPatternMap/, 'woven portraits no longer share one mutable descriptor map across overlapping async renders');
-assert.doesNotMatch(source, /window\._imageForTint\s*=\s*function\s+clothingPatternImageForTint/, 'weaving no longer replaces the global tint resolver with render-scoped mutable state');
+assert.match(source, /let activePortraitPatternMap = null/, 'global compatibility map exists only as an explicitly owned woven-render fallback');
+assert.match(source, /let portraitGateReaders = 0/, 'ordinary portrait readers are tracked separately from woven exclusive ownership');
+assert.match(source, /let portraitGateWriterActive = false/, 'woven compatibility ownership has an explicit exclusive-writer state');
+assert.match(source, /portraitGateWaitingWriters/, 'waiting woven portraits block new ordinary readers so the compatibility writer cannot starve');
+assert.match(source, /portraitGatePreferReaders = portraitGateReaderWaiters\.length > 0/, 'each woven writer yields to already-waiting ordinary portraits before another woven writer starts');
+assert.match(source, /const compatibilityTint = function clothingPatternImageForTint/, 'the pre-817 global tint compatibility entry point is restored for portrait code that bypasses renderOptions.imageForTint');
+assert.match(source, /if \(!map\) return portraitBaseTintResolver\(img, sourceKey, tint\)/, 'global tint behavior stays canonical outside an actively owned woven portrait render');
 assert.match(source, /const patternMap = Array\.isArray\(descriptors\)[\s\S]*?buildPortraitPatternMap\(descriptors\)/, 'each woven portrait render builds its own descriptor map');
 assert.match(source, /patternImageForTint\(patternMap, baseTintResolver, pending => pendingBuilds\.add\(pending\), img, sourceKey, tint\)/, 'the woven tint resolver closes over that render-local descriptor map and reports this render\'s cache misses');
 assert.match(source, /await Promise\.allSettled\(\[\.\.\.pendingBuilds\]\)/, 'woven portrait renders wait for missing pattern composites before returning their canvas');
-assert.match(source, /return current\(canvas, profile, renderOptions\); \/\/ Cache is now warm/, 'a cache-miss portrait redraws the same canvas with the warmed pattern cache before callers can upload the fallback');
+assert.match(source, /if \(!patternMap\?\.size\)[\s\S]*?acquirePortraitReadGate\(\)/, 'ordinary portraits acquire the shared side of the portrait gate');
+assert.match(source, /const releaseWrite = await acquirePortraitWriteGate\(\)/, 'woven portraits acquire exclusive ownership before exposing the compatibility map');
+assert.match(source, /activePortraitPatternMap = patternMap[\s\S]*?activePortraitPatternMap = previousMap[\s\S]*?releaseWrite\(\)/, 'woven render restores compatibility state before releasing exclusive ownership');
+assert.match(source, /return renderer\(canvas, profile, renderOptions\); \/\/ Cache is warm/, 'a cache-miss portrait redraws the same canvas with the warmed pattern cache before callers can upload it');
+assert.match(source, /activePortraitPendingBuilds\?\.add\(pending\)/, 'global compatibility tint cache misses join the owning render\'s pending set instead of scheduling a later unsynchronized refresh');
+assert.match(source, /options\?\.imageForTint\?\.__clothingWeavingPattern/, 'nested portrait wrappers detect an inherited render-local weaving pass instead of compositing it twice');
+assert.match(source, /imageForTint\.__clothingWeavingPattern = true/, 'the render-local tint resolver carries a weaving ownership marker through later wrapper chains');
+assert.match(source, /renderProfileWithWovenPatterns, \/\/ Stable adapter used by NpcAvatarPreview/, 'the render-local weaving helper is exported for the stable world-avatar adapter');
+assert.match(avatarPreviewSource, /ClothingWeavingSystem[\s\S]*?renderProfileWithWovenPatterns\(renderer, canvas, profile, renderOptions\)/, 'NpcAvatarPreview reapplies weaving around the current live portrait renderer instead of trusting a one-time global wrapper');
+assert.match(avatarPreviewSource, /await renderer\(canvas, profile, renderOptions\);/, 'NpcAvatarPreview still renders normally before the weaving system is available');
+assert.match(indexSource, /combat-config-loader\.js\?v=20260924weaveworld2/, 'index cache-busts the loader that owns the weaving module URL');
+assert.match(combatLoaderSource, /clothing-weaving-system\.js\?v=20260924weaveworld2/, 'combat loader cache-busts the repaired weaving runtime itself');
 assert.match(portraitSource, /renderOptions\?\.imageForTint[\s\S]*?: _imageForTint/, 'portrait rendering accepts a per-render tint resolver with the canonical tint path as fallback');
 assert.match(portraitSource, /drawPortraitLayerWarped\(ctx, img, resolveXform\(layer\)[\s\S]*?layer\.url, imageForTint\)/, 'breathing overwear layers use the same render-local tint resolver during WorldPortraitLife refreshes');
 
@@ -470,7 +625,9 @@ const gameSource = fs.readFileSync('docs/game.js', 'utf8');
 assert.match(gameSource, /if \(o\.key === 'loom'\) return makeLoomInteractable\(\)/, 'player-placed house loom is a normal interior furniture interactable');
 assert.match(gameSource, /loomFurniture: \(\) => makeLoomInteractable\(\)/, 'map-authored loom uses the same core interactable factory');
 assert.match(gameSource, /function makeLoomInteractable\(\)/, 'loom interaction is owned by the core furniture system');
-console.log('clothing weaving system tests passed');
+compatibilityRuntimeRegression.then(() => {
+  if (!process.exitCode) console.log('clothing weaving system tests passed');
+});
 
 assert.match(creatureRendererSource, /'gar-wolf':[\s\S]*?baseShadeReferenceHex: '#565047'/,
   'Gar-wolf base recolor uses its authored #565047 full-strength coat anchor');
