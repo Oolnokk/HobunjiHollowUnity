@@ -56,10 +56,10 @@
     // but permits a camp's individual tents to sit on neighboring elevation
     // tiers instead of deleting the camp entirely on cliff-heavy generations.
     attempts.push({ clearanceTiles: 0, minDistanceFromEntry: Math.min(authoredDistance, 6), requiresFlatGround: false });
-    // Absolute last resort: gives up the bandit-camp keep-away buffer (see
-    // opts.avoidPoints) too. A generation dense enough to fail every attempt
-    // above is rare, but placing a camp too close to a bandit camp is still
-    // better than silently placing fewer camps than the config calls for.
+    // Absolute last resort may give up only the SOFT center-distance buffer
+    // (opts.avoidPoints). opts.avoidChunks is inherited from the caller through
+    // the spread in wrappedStamp below, so the hard same-stream-chunk exclusion
+    // can never be relaxed by this fallback.
     if (opts.avoidPoints?.length) attempts.push({ clearanceTiles: 0, minDistanceFromEntry: Math.min(authoredDistance, 6), requiresFlatGround: false, avoidPoints: [] });
     return attempts.filter((attempt, index, all) => all.findIndex(other =>
       other.clearanceTiles === attempt.clearanceTiles &&
@@ -189,7 +189,7 @@
   }
 
   window.PorakanekiCampPlacementPolicy = Object.freeze({
-    version: 1,
+    version: 2,
     syncCurrentZoneClutter,
     debugSnapshot: () => ({
       placements: [...placements].map(([id, entry]) => ({ id, zoneId: entry.zoneId, clearedTiles: entry.snapshots.length })),
