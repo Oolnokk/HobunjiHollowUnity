@@ -9,7 +9,7 @@
   // zone-plateau-mesa.js classifies a quad as cliff stone when horizontal slope² > 0.194.
   // The equivalent normalized upward-normal cutoff is 1/sqrt(1 + 0.194).
   const TOP_NORMAL_Y_MIN = 1 / Math.sqrt(1 + 0.194); // Used to stop a smooth 24° furniture flood-fill from walking over a rounded cliff ridge.
-  const stats = { inspected: 0, isolated: 0, topTriangles: 0, sideTriangles: 0, remaps: 0 }; // Used by snapshot() and mobile-visible diagnostics.
+  const stats = { inspected: 0, isolated: 0, skippedInteriorCaverns: 0, topTriangles: 0, sideTriangles: 0, remaps: 0 }; // Used by snapshot() and mobile-visible diagnostics.
 
   function debugLog(message, level = 'info') {
     const text = `[surface-ridge] ${message}`; // Used as the shared mobile/console diagnostic prefix.
@@ -94,6 +94,7 @@
 
   function isolateRidge(mesh, requestedSurface = null) {
     if (!mesh?.isMesh || !mesh.geometry || !isNaturalRockOrCliff(mesh, requestedSurface)) return false;
+    if (mesh.userData?.interiorCavernShell) { stats.skippedInteriorCaverns++; return false; } // Closed cave floors/walls/ceilings are one authored shell, not an outdoor top+cliff ridge that should be split into terrain material slots.
     if (mesh.userData?.naturalSurfaceCliffSlot != null || mesh.geometry.userData?.naturalSurfaceRidgeIsolated) return false;
     stats.inspected++;
 
