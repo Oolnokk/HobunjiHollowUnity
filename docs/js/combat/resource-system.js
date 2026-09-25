@@ -98,7 +98,7 @@
     bleedingHealth: {
       name: "Bleeding Health", resource: "health", extend: "currentBack", priority: 70, recovers: false,
       family: "damage", tags: ["physical", "blood"],
-      desc: "Ticks as Health loss during combat without reducing a living target below 1 Health; while quiet/rested, the same tick heals instead."
+      desc: "Converts Health into Bleeding buildup without damaging on application; during combat, ticks consume that buildup as lethal Health damage, while quiet/rested ticks heal instead."
     },
     congealedHealth: {
       name: "Congealed Health", resource: "health", extend: "zero", priority: 50, recovers: false,
@@ -128,12 +128,12 @@
     poisonedHealth: {
       name: "Poisoned Health", resource: "health", extend: "currentBack", priority: 80, recovers: false,
       family: "damage", tags: ["toxin"],
-      desc: "Ticks as nonlethal Health damage over time that stops at 1 Health; does not recover on its own."
+      desc: "Converts Health into Poisoned buildup without damaging on application; ticks consume that buildup as lethal Health damage over time."
     },
     burningHealth: {
       name: "Burning Health", resource: "health", extend: "currentBack", priority: 90, recovers: false,
       family: "damage", tags: ["fire", "physical"],
-      desc: "Rapidly ticks itself away as nonlethal Health damage that stops at 1 Health. Roll dodges cool part of it; entering water extinguishes it completely."
+      desc: "Converts Health into Burning buildup without damaging on application; ticks consume that buildup as lethal Health damage. Roll dodges cool part of it; entering water extinguishes it completely."
     }
   };
   const RECOVERING_AFFLICTIONS = Object.entries(AFFLICTIONS)
@@ -308,10 +308,9 @@
 
   function applyHealthAfflictionDamage(entity, amount) {
     if (!(amount > 0) || !(entity?.health > 0)) return 0;
-    const before = Number(entity.health) || 0; // Used to report actual affliction-caused Health loss while preserving an already-sub-1 living value.
-    const effectiveMax = getLiveEffectiveHealthMax(entity); // Used to respect every installed max-Health affliction while calculating the nonlethal floor.
-    const healthFloor = Math.min(before, Math.min(1, effectiveMax)); // Used so Health afflictions can never kill or accidentally heal a target already below 1 HP.
-    entity.health = clamp(round1(clamp(before - amount, healthFloor, effectiveMax)), healthFloor, effectiveMax);
+    const before = Number(entity.health) || 0; // Used to report actual Health lost when an already-applied DoT buildup ticks.
+    const effectiveMax = getLiveEffectiveHealthMax(entity); // Used only as the current upper cap; DoT damage itself remains fully lethal down to zero.
+    entity.health = round1(clamp(before - amount, 0, effectiveMax));
     return round1(before - entity.health);
   }
 
