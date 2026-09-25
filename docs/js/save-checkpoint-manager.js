@@ -44,6 +44,7 @@
   let lastAction = 'initialized'; // Latest checkpoint operation shown in diagnostics.
   let lastError = ''; // Latest checkpoint/recovery failure shown in diagnostics.
   let lastIntegrityWarning = ''; // Latest suspicious-state reason shown in diagnostics.
+  let lastRecoveryReadErrors = {}; // Per-slot folder-read failures distinguish "could not read" from a genuinely absent checkpoint.
 
   function snapshotApi() {
     return window.HobunjiSaveSnapshot || null;
@@ -334,6 +335,7 @@
     if (typeof localSave?.readRecoveryCheckpoint !== 'function' || typeof localSave?.readPrimarySnapshot !== 'function') return false;
     recoveryMirrorPromise = (async () => {
       const warnings = [];
+      lastRecoveryReadErrors = {};
       try {
         folderRecoveryReads++;
         const slotReads = await Promise.all(Object.keys(SLOT_KEYS).map(async slot => {
@@ -347,6 +349,7 @@
         for (const { slot, folderRaw, error } of slotReads) {
           if (error) {
             const browserFallback = readSlot(slot); // A folder I/O failure is not evidence that the independently mirrored browser checkpoint is invalid.
+            lastRecoveryReadErrors[slot] = error;
             warnings.push(`${slot}: ${error}${browserFallback ? ' — showing browser fallback copy' : ''}`);
             continue; // Preserve any validated browser fallback; never erase recovery evidence merely because the folder read failed.
           }
@@ -657,6 +660,7 @@
 
   async function recoveryChoices() {
     let currentFolder = null;
+    let currentReadError = '';
     const warnings = [];
     const mirrorPromise = folderRecoveryAvailable()
       ? syncRecoveryMirrorsFromFolder().then(() => {
@@ -669,19 +673,20 @@
             if (primary?.snapshot) currentFolder = createRecord('current-folder', primary.snapshot, 'current-primary-folder', primary.savedAt || Date.now());
           })
           .catch(error => {
-            warnings.push(String(error?.message || error));
+            currentReadError = String(error?.message || error);
+            warnings.push(currentReadError);
           })
       : Promise.resolve();
 
     await Promise.all([mirrorPromise, currentPromise]); // Recovery history and the broken-current-save probe have the same bounded wait instead of blocking one another.
     return {
       choices: [
-        { record: currentFolder, title: 'Current Folder Save', note: 'The canonical save currently used by the folder-first workflow.', current: true },
-        { record: readSlot('manual'), title: 'Manual Save', note: 'Only changes when you explicitly press the pause-menu manual save button.' },
-        { record: readSlot('campfire'), title: 'Campfire Save', note: 'Only changes when you explicitly save at a campfire.' },
-        { record: readSlot('auto'), title: 'Latest Autosave', note: 'Latest good rolling checkpoint accepted by the integrity guard.' },
-        { record: readSlot('autoPrevious'), title: 'Earlier Autosave', note: 'Older rolling checkpoint retained separately from the latest autosave.' },
-        { record: readSlot('preRestore'), title: 'Before Last Restore', note: 'Safety copy of the canonical save immediately before the most recent recovery.' },
+        { record: currentFolder, title: 'Current Folder Save', note: 'The canonical save currently used by the folder-first workflow.', current: true, readError: currentReadError },
+        { record: readSlot('manual'), title: 'Manual Save', note: 'Only changes when you explicitly press the pause-menu manual save button.', readError: lastRecoveryReadErrors.manual || '' },
+        { record: readSlot('campfire'), title: 'Campfire Save', note: 'Only changes when you explicitly save at a campfire.', readError: lastRecoveryReadErrors.campfire || '' },
+        { record: readSlot('auto'), title: 'Latest Autosave', note: 'Latest good rolling checkpoint accepted by the integrity guard.', readError: lastRecoveryReadErrors.auto || '' },
+        { record: readSlot('autoPrevious'), title: 'Earlier Autosave', note: 'Older rolling checkpoint retained separately from the latest autosave.', readError: lastRecoveryReadErrors.autoPrevious || '' },
+        { record: readSlot('preRestore'), title: 'Before Last Restore', note: 'Safety copy of the canonical save immediately before the most recent recovery.', readError: lastRecoveryReadErrors.preRestore || '' },
       ],
       warnings: [...new Set(warnings.filter(Boolean))],
     };
@@ -719,6 +724,28 @@
       warning.textContent = `Some save files could not be read: ${recovery.warnings.join(' | ')}`;
       Object.assign(warning.style, { fontSize: '11px', lineHeight: '1.45', color: '#ffd39a', marginBottom: '10px', whiteSpace: 'pre-wrap' });
       panel.appendChild(warning);
+
+      if (typeof folderApi()?.chooseRecoveryFolder === 'function') {
+        const retry = document.createElement('button');
+        retry.type = 'button';
+        retry.setAttribute('data-recovery-reselect-folder', '');
+        retry.textContent = 'Re-select Save Folder & Retry';
+        Object.assign(retry.style, { marginBottom: '12px', padding: '8px 11px', borderRadius: '7px', border: '1px solid #8fa7b5', background: '#263b46', color: '#eef7fb', cursor: 'pointer' });
+        retry.addEventListener('click', async () => {
+          retry.disabled = true;
+          retry.textContent = 'Choose Save Folder…';
+          const before = folderApi()?.getStatus?.();
+          const selected = await folderApi().chooseRecoveryFolder(); // Fresh user-selected handle bypasses a stale IndexedDB FileSystemDirectoryHandle without touching canonical save contents.
+          if (selected?.lastAction === 'recovery-folder-reselected') {
+            openRecoveryModal();
+            return;
+          }
+          retry.disabled = false;
+          retry.textContent = 'Re-select Save Folder & Retry';
+          if (selected?.lastError && selected.lastError !== before?.lastError) warning.textContent = `Could not re-select save folder: ${selected.lastError}`;
+        });
+        panel.appendChild(retry);
+      }
     }
     for (const choice of recovery.choices) {
       const record = choice.record;
@@ -729,14 +756,16 @@
       title.textContent = choice.title;
       title.style.fontWeight = '700';
       const detail = document.createElement('div');
-      detail.textContent = recordDetail(record);
+      detail.textContent = choice.readError && !record
+        ? `Could not read this checkpoint: ${choice.readError}`
+        : recordDetail(record);
       Object.assign(detail.style, { fontSize: '12px', color: '#c2cdd3', marginTop: '3px' });
       const note = document.createElement('div');
       note.textContent = choice.note;
       Object.assign(note.style, { fontSize: '11px', color: '#81939e', marginTop: '3px' });
       const button = document.createElement('button');
       button.type = 'button';
-      button.textContent = choice.current ? 'Current' : (record ? 'Restore' : 'Unavailable');
+      button.textContent = choice.current ? 'Current' : (record ? 'Restore' : (choice.readError ? 'Read failed' : 'Unavailable'));
       button.disabled = choice.current || !record;
       Object.assign(button.style, { marginTop: '8px', padding: '7px 11px', borderRadius: '7px', border: '1px solid #7f9e88', background: '#294b32', color: '#effff2', cursor: button.disabled ? 'default' : 'pointer' });
       button.addEventListener('click', async () => {
@@ -864,6 +893,7 @@
       lastAction,
       lastError: lastError || null,
       lastIntegrityWarning: lastIntegrityWarning || null,
+      recoveryReadErrors: { ...lastRecoveryReadErrors },
     }),
   };
 
