@@ -642,7 +642,7 @@
     return state;
   };
   const solveShoulderObservationPlaneAtPivot = (plane, worldPivot, flipped) => {
-    const state = canonicalShoulderObservationPlaneState(plane); // Supplies the authored center placement that must stay invariant across facing flips.
+    const state = canonicalShoulderObservationPlaneState(plane); // Supplies the unmirrored transform used as the mathematical source state.
     if (!state || !worldPivot || !plane?.parent) return null;
     plane.matrixAutoUpdate = true;
     plane.position.set(state.basePosition[0], state.basePosition[1], state.basePosition[2]);
@@ -651,17 +651,26 @@
     plane.parent.updateMatrixWorld?.(true);
     plane.updateMatrixWorld?.(true);
 
-    const desiredWorld = plane.position.clone().set(worldPivot.x, worldPivot.y, worldPivot.z); // Current shoulderPerch point, used only to measure how far the authored grip pixel moves after an in-place visual mirror.
-    const pivotLocal = plane.worldToLocal(desiredWorld.clone()); // Canonical grip coordinate before parity changes; diagnostics only.
-    const sign = flipped ? -1 : 1;
-    plane.scale.x = state.baseScaleX * sign; // Mirror the artwork in place around its own center. Never translate the plane to chase the off-center grip pixel.
-    plane.position.set(state.basePosition[0], state.basePosition[1], state.basePosition[2]); // Explicit invariant: observation/portrait parity cannot move the rendered pet sideways.
+    const desiredWorld = plane.position.clone().set(worldPivot.x, worldPivot.y, worldPivot.z); // Exact current shoulderPerch point supplied by game.js's authoritative attachment solve.
+    const pivotLocal = plane.worldToLocal(desiredWorld.clone()); // Grip expressed in the canonical unmirrored card's own local frame before any flip is applied.
+    const sign = flipped ? -1 : 1; // Logical observation direction determines only the X scale parity.
+    const nextScaleX = state.baseScaleX * sign;
+    plane.scale.x = nextScaleX;
+    if (flipped) {
+      const localTranslation = plane.position.clone().set(
+        (state.baseScaleX - nextScaleX) * pivotLocal.x,
+        0,
+        0,
+      ); // t'=t+R(S-S')p: mirror around the active shoulder grip/perch instead of around the pet sprite center.
+      localTranslation.applyQuaternion(plane.quaternion);
+      plane.position.add(localTranslation);
+    }
     plane.updateMatrix?.();
     plane.parent.updateMatrixWorld?.(true);
     plane.updateMatrixWorld?.(true);
 
-    const mirroredGripWorld = plane.localToWorld(pivotLocal.clone()); // Diagnostic-only: the grip pixel may move inside the mirrored artwork, but the visible pet center does not.
-    state.lastError = mirroredGripWorld.distanceTo(desiredWorld);
+    const solvedWorld = plane.localToWorld(pivotLocal.clone()); // Verifies the mirrored artwork still plants the same authored grip point on the active shoulder perch.
+    state.lastError = solvedWorld.distanceTo(desiredWorld);
     return state.lastError;
   };
   const restoreShoulderObservationPlane = plane => {
@@ -683,21 +692,21 @@
     const errors = shoulderObservationMeshes(avatar)
       .map(plane => solveShoulderObservationPlaneAtPivot(plane, worldPivot, flipped))
       .filter(Number.isFinite);
-    const maxError = errors.length ? Math.max(...errors) : null; // This is now intentional grip-pixel drift from center mirroring, not a placement error.
+    const maxError = errors.length ? Math.max(...errors) : null; // Should remain floating-point noise because the active grip is the mirror pivot.
     avatar.__hobunjiShoulderObservationPivotDebug = {
-      mode: 'center-fixed-scale-mirror',
+      mode: 'active-grip-perch-pivot',
       mirrored: flipped,
       portraitMirrored,
       observationMirrored,
       meshCount: errors.length,
       worldPivot: [Number(worldPivot.x) || 0, Number(worldPivot.y) || 0, Number(worldPivot.z) || 0],
       maxError,
-      planeTranslationSuppressed: true,
+      pivotTranslationApplied: flipped,
     };
     if (shoulderPetObservationFlipRuntime.lastFlip
         && shoulderPetObservationFlipRuntime.lastFlip.pet === pet) {
       shoulderPetObservationFlipRuntime.lastFlip.applied = errors.length > 0;
-      shoulderPetObservationFlipRuntime.lastFlip.pivotMode = 'center-fixed-scale-mirror';
+      shoulderPetObservationFlipRuntime.lastFlip.pivotMode = 'active-grip-perch-pivot';
       shoulderPetObservationFlipRuntime.lastFlip.pivotError = Number.isFinite(maxError) ? maxError : null;
     }
     return errors.length > 0;
@@ -751,7 +760,7 @@
     shoulderPetObservationFlipRuntime.activePetCount = activePetCount;
   };
   window.ShoulderPetObservationFlip = Object.freeze({
-    applyAtPinnedPerch: applyShoulderPetObservationAtPinnedPerch, // Called by game.js after the authoritative root pin and before render; mirrors face parity in place without translating the pet planes.
+    applyAtPinnedPerch: applyShoulderPetObservationAtPinnedPerch, // Called by game.js after the authoritative root pin and before render; mirrors face parity around the active grip/perch pivot.
     getDebug: () => {
       const lastFlip = shoulderPetObservationFlipRuntime.lastFlip ? { ...shoulderPetObservationFlipRuntime.lastFlip } : null;
       if (lastFlip) delete lastFlip.pet;
@@ -760,9 +769,9 @@
     formatDebug: () => {
       const d = window.ShoulderPetObservationFlip.getDebug();
       const last = d.lastFlip ? `${d.lastFlip.creatureKey}:${d.lastFlip.flipped ? 'mirrored' : 'normal'}` : 'none'; // Existing compact flip summary.
-      const pivot = d.lastFlip?.pivotMode || 'none'; // Reports the center-fixed mirror mode used for the last parity change.
-      const drift = Number.isFinite(d.lastFlip?.pivotError) ? d.lastFlip.pivotError.toExponential(2) : 'n/a'; // Expected grip-pixel drift when an off-center authored grip is mirrored without moving the visible pet center.
-      return `Shoulder pet observation flip: active=${d.activePetCount} instrumented=${d.instrumentedCount} flips=${d.flipCount} last=${last} mode=${pivot} centerShift=0 gripPixelDrift=${drift}`;
+      const pivot = d.lastFlip?.pivotMode || 'none'; // Reports the active grip/perch pivot mode used for the last parity change.
+      const error = Number.isFinite(d.lastFlip?.pivotError) ? d.lastFlip.pivotError.toExponential(2) : 'n/a'; // Residual world-space separation after mirroring around the planted grip.
+      return `Shoulder pet observation flip: active=${d.activePetCount} instrumented=${d.instrumentedCount} flips=${d.flipCount} last=${last} mode=${pivot} gripPerchError=${error}`;
     },
     scanNow: scanShoulderPetsForObservationFlip,
   });
