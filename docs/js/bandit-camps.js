@@ -421,6 +421,14 @@
   const PERCEPTION_TILES_MULTIPLIER = 4;
   const _perceivedThreats = new Map();
 
+  function forgetDenPerception(denKey) {
+    if (!denKey) return false;
+    const key = 'den:' + denKey; // Same discovery key updateCompanionPerception uses when a companion first marks this den.
+    const removed = _perceivedThreats.delete(key);
+    window.WildernessMap?.forgetDiscoveredThreat?.(key); // Also clears any saved waypoint that still points at the den's old physical site.
+    return removed;
+  }
+
   function _companionPerceptionRangePx(c) {
     return (c.def?.perceptionTiles ?? DEFAULT_PERCEPTION_TILES) * PERCEPTION_TILES_MULTIPLIER * deps.TILE;
   }
@@ -1285,6 +1293,7 @@
     updateCampBanners: updateBanditCampBanners,
     companionPerceptionRangePx: _companionPerceptionRangePx,
     updateCompanionPerception,
+    forgetDenPerception,
     updateRandomEncounters,
     forgetZoneState: forgetZoneBanditState,
     ensureCurrentZoneCamps: ensureCurrentZoneBanditCamps,

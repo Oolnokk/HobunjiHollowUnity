@@ -7,14 +7,16 @@ const house = fs.readFileSync(path.join(root, 'docs/js/house-pieces.js'), 'utf8'
 const index = fs.readFileSync(path.join(root, 'docs/index.html'), 'utf8'); // Used to verify the parent house-pieces loader is itself cache-busted.
 const post = fs.readFileSync(path.join(root, 'docs/js/natural-surface-stretch-post-jigsaw.js'), 'utf8'); // Used to verify mobile-visible diagnostics expose the loaded generation.
 
-const parentMatch = index.match(/js\/house-pieces\.js\?v=([^\"'\s<]+)/); // Used to capture the version that should propagate into the natural-surface child stack.
-assert(parentMatch, 'docs/index.html must load house-pieces.js with an explicit cache generation');
-const parentVersion = parentMatch[1]; // Used to compare the shipped parent generation against the regression target.
-assert.strictEqual(parentVersion, '20260924edgepreserve2', 'house-pieces loader must bust the stale natural-surface UV generation');
+const parentMatch = index.match(/js\/house-pieces\.js\?v=([^&"'\s<]+)&surfaceUv=([^"'\s<]+)/); // Captures the bootstrap cache key separately from the tightly-coupled UV stack generation.
+assert(parentMatch, 'docs/index.html must load house-pieces.js with independent bootstrap and surface cache generations');
+const parentVersion = parentMatch[1]; // Used to prove unrelated HousePieces edits can refresh the bootstrap itself.
+const surfaceVersion = parentMatch[2]; // Used to prove the established natural-surface mapper generation remains pinned.
+assert.strictEqual(parentVersion, '20260925denturnover2', 'house-pieces bootstrap must cache-bust the den-aware child loader');
+assert.strictEqual(surfaceVersion, '20260924edgepreserve2', 'den turnover must not invalidate the established natural-surface UV generation');
 
 assert(
-  house.includes("const naturalSurfaceUvVersion = current?.src ? (new URL(current.src).searchParams.get('v') || '20260924edgepreserve2') : '20260924edgepreserve2'"),
-  'house-pieces must derive the natural-surface child generation from its own script URL'
+  house.includes("const naturalSurfaceUvVersion = current?.src ? (new URL(current.src).searchParams.get('surfaceUv') || '20260924edgepreserve2') : '20260924edgepreserve2'"),
+  'house-pieces must derive the natural-surface child generation from its dedicated surfaceUv query key'
 );
 assert(
   house.includes('window.HobunjiNaturalSurfaceUvLoaderVersion = naturalSurfaceUvVersion'),

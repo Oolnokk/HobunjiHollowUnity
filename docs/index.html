@@ -90,7 +90,7 @@
        window.*.init(...) calls — dozens of already-extracted modules also
        read getActiveGrid/getActiveScene/etc. from their own init() calls
        throughout game.js. -->
-  <script src="js/grid-tile-accessors.js?v=20260924localecollider1"></script>
+  <script src="js/grid-tile-accessors.js?v=20260925denturnover1"></script>
   <!-- Small self-registering lookup for furniture/lantern-mask point lights
        (game.js's makeFurniturePointLight and a few inline PointLight sites
        in bandit-camps.js/porakaneki-camps-runtime.js/deadzone-billboard.js).
@@ -279,7 +279,7 @@
        window.BanditCombat.makeEntity/loadGangConfig/loadCampLocaleDefs, so
        must load after combat-bandit.js above, and before game.js, which
        calls window.BanditCamps.init(...) during its own setup. -->
-  <script src="js/bandit-camps.js?v=20260924chunkecology1"></script>
+  <script src="js/bandit-camps.js?v=20260925denturnover1"></script>
   <!-- Bounty board (hunt a named bandit captain, destroy his camp) —
        window.BountyBoard. Reads window.BanditCamps/window.BanditCombat
        directly, so must load after both above, and before game.js, which
@@ -362,7 +362,7 @@
        time, not at load time, so script order relative to them doesn't
        matter; must load before game.js, which calls
        window.HousePieces.init(...) during its own setup. -->
-  <script src="js/house-pieces.js?v=20260924edgepreserve2"></script>
+  <script src="js/house-pieces.js?v=20260925denturnover2"></script>
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -512,7 +512,7 @@
        at call time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.WildlifeSpawn.init(...) during its own setup. -->
-  <script src="js/wildlife-spawn.js?v=20260924chunkecology1"></script>
+  <script src="js/wildlife-spawn.js?v=20260925denturnover2"></script>
   <!-- Town/zone building mesh spawning + decorative furniture/prop spawning
        (window.TownZoneBuildings) — reads globally-loaded HousePieceGen/
        WallBuilder/BuildingDoor/window.ProceduralFurniture/window.Music at
@@ -606,7 +606,7 @@
   <script src="js/tasks-panel.js?v=20260807a"></script>
   <script src="js/supply-page.js?v=20260807a"></script>
   <script src="js/whistle-equip.js?v=20260807a"></script>
-  <script src="js/wildlife-debug-panel.js?v=20260921voorgherd1"></script>
+  <script src="js/wildlife-debug-panel.js?v=20260925denturnover1"></script>
   <script src="js/wildlife-behavior-map.js?v=20260829a"></script>
   <!-- Shipping tab (player bag <-> shipping-box transfer UI, window.
        ShippingPanel) — pure DOM/state, no other window.* system reads;
@@ -671,7 +671,7 @@
        Framework-agnostic pure data/math — must load before cavern-generator.js,
        whose generateCavernFloor calls window.CavernSculptor.carveMazeCavern(...). -->
   <script src="js/cavern-sculptor.js?v=20260923banubuwalls1"></script>
-  <script src="js/cavern-generator.js?v=20260923farmcave1"></script>
+  <script src="js/cavern-generator.js?v=20260925denturnover1"></script>
   <script src="js/town-mine.js?v=20260919combatbgm2"></script>
   <!-- A wilderness zone's in-bounds elevated plateau/mesa terrain
        (window.ZonePlateauMesa) — pure scene-graph generation, no other
@@ -699,7 +699,7 @@
        and its build*(...) functions lazily, from buildZoneScene, never
        synchronously during initial boot. -->
   <script src="js/locale-cave-runtime.js?v=20260923caveregistry1"></script>
-  <script src="js/zone-den-totem-features.js?v=20260924denlocale1"></script>
+  <script src="js/zone-den-totem-features.js?v=20260925denturnover2"></script>
   <!-- Wilderness-zone grass and rich-foliage-patch billboards
        (window.ZoneGrassBillboards) — pure scene-graph generation, no
        other window.* system reads; must load before game.js, which calls
@@ -2376,7 +2376,7 @@
   <!-- Spearfishing minigame + fishing FX particles (window.Fishing) — must
        load before game.js, which injects the shared thrown-weapon pose seams
        used by fishing's held Windup → Strike presentation. -->
-  <script src="js/fishing-minigame.js?v=20260924shoulderocclusion1"></script>
+  <script src="js/fishing-minigame.js?v=20260925denfollowup1"></script>
   <!-- Kurraya hold-assembly + reactive-twitch visuals (window.KurrayaInstrument)
        — must load before game.js, which calls window.KurrayaInstrument.init(...)
        during its own setup, mirroring window.Fishing above. -->

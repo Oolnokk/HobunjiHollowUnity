@@ -433,6 +433,14 @@
   }
   function currentZoneState() { return state.zones.get(currentArea()) || null; }
 
+  function occupiedSites(zoneId) {
+    const zoneState = state.zones.get(zoneId);
+    return activeCamps(zoneState).map(camp => {
+      const site = camp?.instance?.site;
+      return site ? { x:num(site.x, 0), y:num(site.y, 0), w:Math.max(1, num(site.w, 1)), h:Math.max(1, num(site.h, 1)) } : null;
+    }).filter(Boolean);
+  } // Exact live temporary-locale footprints used by other ecology systems that must not spawn through a Porakaneki camp.
+
   function tentCanvasTexture() {
     if (tentCanvasTextureCache) return tentCanvasTextureCache;
     tentCanvasTextureCache = new THREE.TextureLoader().load(
@@ -1019,7 +1027,9 @@
   }
 
   function campDens(camp) {
-    return Array.isArray(camp?.zoneState?.layoutRef?.dens) ? camp.zoneState.layoutRef.dens.filter(den => den && den.id != null) : [];
+    return Array.isArray(camp?.zoneState?.layoutRef?.dens)
+      ? camp.zoneState.layoutRef.dens.filter(den => den && den.id != null && !den.collapsed)
+      : [];
   }
   function denExteriorPoint(camp, den) {
     if (!camp || !den) return null;
@@ -1129,6 +1139,24 @@
     const members = huntingPartyMembers(camp);
     const minSize = Math.max(2, Math.floor(num(cfg?.behavior?.denHuntGroupMin, 2)));
     if (members.length < minSize) { clearHuntingParty(camp); return; }
+    const liveDen = party.denId != null ? campDens(camp).find(den => String(den.id) === String(party.denId)) : null; // Used to abandon a collapsed den or follow the same den slot after it relocates.
+    if (party.denId != null && !liveDen) { if (!chooseNextPartyDen(camp)) clearHuntingParty(camp); return; }
+    if (liveDen && party.target) {
+      const liveTarget = denExteriorPoint(camp, liveDen); // Re-resolves coordinates because den IDs remain stable while their physical site can migrate.
+      if (liveTarget && Math.hypot(liveTarget.col - party.target.col, liveTarget.row - party.target.row) > 1.5) {
+        party.target = liveTarget;
+        party.routeStep += 1;
+        party.dwellT = 0;
+        const radius = Math.max(0.6, num(cfg?.behavior?.denHuntFormationRadiusTiles, 1.15)); // Same formation radius chooseNextPartyDen uses for an ordinary route step.
+        members.forEach((hunter, index) => {
+          const angle = ((index / Math.max(1, members.length)) * Math.PI * 2) + party.routeStep * 0.73;
+          hunter.huntRouteStep = party.routeStep;
+          hunter.huntDenId = party.denId;
+          hunter.activity = 'hunt-den';
+          hunter.target = nearestOpenPoint(camp.zoneState, liveTarget.col + Math.cos(angle) * radius, liveTarget.row + Math.sin(angle) * radius);
+        });
+      }
+    }
     if (!party.target) { if (!chooseNextPartyDen(camp)) clearHuntingParty(camp); return; }
     const arrivalRadius = Math.max(1, num(cfg?.behavior?.denHuntArrivalRadiusTiles, 2.5));
     const allArrived = members.every(hunter => Math.hypot(hunter.x - party.target.col, hunter.y - party.target.row) <= arrivalRadius);
@@ -1690,6 +1718,7 @@
     favor,
     reservedCampChunks,
     reduceHuntingCampsForBandit,
+    occupiedSites,
     hasSharedEnemyNearby,
     debugSnapshot,
     formatDebug: () => {
