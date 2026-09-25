@@ -416,7 +416,22 @@
       && a.y - margin < b.y + b.h && a.y + a.h + margin > b.y;
   }
 
-  function denCandidateIsSafe(zoneId, layout, tileMap, den, x, y, oldDen, activeZone) {
+  function runtimeDenRelocationBlockers(zoneId) {
+    const blockers = []; // Runtime-only footprints are absent from the generator-owned layout arrays used by ordinary relocation validation.
+    const add = (site, margin = 3) => {
+      if (!site) return;
+      const x = Number(site.x), y = Number(site.y);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+      blockers.push({ x, y, w:Math.max(1, Number(site.w)||1), h:Math.max(1, Number(site.h)||1), margin });
+    };
+    for (const rec of (window.BanditCamps?.campInstances?.get?.(zoneId) || [])) add(rec?.instance?.site, 3);
+    for (const site of (window.PorakanekiCamps?.occupiedSites?.(zoneId) || [])) add(site, 3);
+    const campfire = window.WildernessCampfire?.serialize?.();
+    if (campfire?.mapId === zoneId) add({ x:Math.floor(Number(campfire.x)), y:Math.floor(Number(campfire.z)), w:1, h:1 }, 4);
+    return blockers;
+  }
+
+  function denCandidateIsSafe(zoneId, layout, tileMap, runtimeBlockers, den, x, y, oldDen, activeZone) {
     const w = Math.max(1, Number(den.w) || 1);
     const h = Math.max(1, Number(den.h) || 1);
     const cols = Math.max(1, Number(layout?.cols) || 1);
@@ -463,6 +478,9 @@
       const tx = Number(transition?.col), ty = Number(transition?.row);
       if (Number.isFinite(tx) && Number.isFinite(ty) && tx >= x - 2 && tx <= x + w + 2 && ty >= y - 2 && ty <= mouth.y + 2) return false;
     }
+    for (const blocker of (runtimeBlockers || [])) {
+      if (rectsOverlap(candidate, blocker, Math.max(0, Number(blocker.margin)||0))) return false;
+    }
     return true;
   }
 
@@ -475,10 +493,11 @@
     const maxY = Math.max(2, Number(layout.rows) - h - 4);
     const activeZone = deps.getCurrentArea() === zoneId ? zoneId : null;
     const tileMap = layoutTileMap(layout); // Shared by random sampling and fallback scanning for this single relocation attempt.
+    const runtimeBlockers = runtimeDenRelocationBlockers(zoneId); // Snapshots active camps/campfire once so candidate tests stay cheap and internally consistent.
     for (let attempt = 0; attempt < 700; attempt++) {
       const x = 2 + Math.floor(deps.rnd() * Math.max(1, maxX - 1));
       const y = 2 + Math.floor(deps.rnd() * Math.max(1, maxY - 1));
-      if (denCandidateIsSafe(zoneId, layout, tileMap, den, x, y, oldDen, activeZone)) return { x, y, mouthAnchor:{ x:x + Math.floor(w / 2), y:y + h } };
+      if (denCandidateIsSafe(zoneId, layout, tileMap, runtimeBlockers, den, x, y, oldDen, activeZone)) return { x, y, mouthAnchor:{ x:x + Math.floor(w / 2), y:y + h } };
     }
     const start = Math.floor(deps.rnd() * Math.max(1, (maxX - 1) * (maxY - 1))); // Used to vary the deterministic fallback scan instead of always biasing the northwest.
     const width = Math.max(1, maxX - 1);
@@ -487,7 +506,7 @@
       const linear = (start + offset) % total;
       const x = 2 + (linear % width);
       const y = 2 + Math.floor(linear / width);
-      if (denCandidateIsSafe(zoneId, layout, tileMap, den, x, y, oldDen, activeZone)) return { x, y, mouthAnchor:{ x:x + Math.floor(w / 2), y:y + h } };
+      if (denCandidateIsSafe(zoneId, layout, tileMap, runtimeBlockers, den, x, y, oldDen, activeZone)) return { x, y, mouthAnchor:{ x:x + Math.floor(w / 2), y:y + h } };
     }
     return null;
   }
@@ -529,6 +548,7 @@
     record.x = Number(den.x); record.y = Number(den.y);
     record.w = Math.max(1, Number(den.w)||1); record.h = Math.max(1, Number(den.h)||1);
     record.mouthAnchor = den.mouthAnchor ? { ...den.mouthAnchor } : null;
+    window.BanditCamps?.forgetDenPerception?.(record.denKey); // Removes a companion-discovered map marker/waypoint at the abandoned physical entrance.
     resetDenPopulationCaches(record.zoneId, den.id, cavernMapId);
     syncDenVisual(record.zoneId, den);
     persistDenTurnover();
