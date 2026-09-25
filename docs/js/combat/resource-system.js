@@ -103,7 +103,7 @@
     congealedHealth: {
       name: "Congealed Health", resource: "health", extend: "zero", priority: 50, recovers: false,
       family: "damage", tags: ["physical", "blood"],
-      desc: "Temporarily lowers effective Health max, then recovers its own points every tick."
+      desc: "Temporarily lowers effective Health max without reducing it below 1, then recovers its own points every tick."
     },
     infectedStamina: {
       name: "Infected Stamina", resource: "stamina", extend: "zero", priority: 65, recovers: true, punishedAction: "staminaSpend",
@@ -280,9 +280,22 @@
     const healthMul = isPlayer ? 1 + (window.PerkSystem?.rank('combat', 'increaseHealth') || 0) * 0.08 : 1; // Increase Health perk.
     const footingMul = isPlayer ? window.AlchemySystem?.getMaxFootingMultiplier?.() || 1 : 1; // Used by Poise.
     if (key === "stamina") return clamp((entity.maxStamina || 0) * staminaMul - getAffliction(entity, "windedStamina"), 0, (entity.maxStamina || 0) * staminaMul);
-    if (key === "health") return clamp((entity.maxHealth || 0) * healthMul - getAffliction(entity, "congealedHealth"), 0, (entity.maxHealth || 0) * healthMul);
+    if (key === "health") {
+      const fullHealthMax = Math.max(0, (entity.maxHealth || 0) * healthMul); // Used to keep capacity afflictions nonlethal without inventing Health on entities whose authored maximum is zero.
+      const afflictedHealthMax = clamp(fullHealthMax - getAffliction(entity, "congealedHealth"), 0, fullHealthMax); // Used as the raw Congealed-Health-reduced capacity before the living-target floor.
+      return fullHealthMax > 0 ? Math.max(Math.min(1, fullHealthMax), afflictedHealthMax) : 0;
+    }
     if (key === "footing") return (entity.maxFooting || 0) * footingMul;
     return 0;
+  }
+
+  function applyHealthAfflictionDamage(entity, amount) {
+    if (!(amount > 0) || !(entity?.health > 0)) return 0;
+    const before = Number(entity.health) || 0; // Used to report actual affliction-caused Health loss while preserving an already-sub-1 living value.
+    const effectiveMax = getEffectiveMax(entity, "health"); // Used to respect active max-Health afflictions while calculating the nonlethal floor.
+    const healthFloor = Math.min(before, Math.min(1, Math.max(0, effectiveMax))); // Used so Health afflictions can never kill or accidentally heal a target already below 1 HP.
+    entity.health = round1(clamp(before - amount, healthFloor, effectiveMax));
+    return round1(before - entity.health);
   }
 
   function enforceCaps(entity) {
@@ -570,7 +583,7 @@
     const amount = Math.min(bleed, cfg.bleedTickPerSec * dt);
     removeAffliction(entity, "bleedingHealth", amount);
     if (rest.rested && !healthRecoveryBlocked) entity.health = round1(clamp(entity.health + amount, 0, getEffectiveMax(entity, "health")));
-    else entity.health = round1(clamp(entity.health - amount, 0, getEffectiveMax(entity, "health")));
+    else applyHealthAfflictionDamage(entity, amount);
   }
 
   function resolveBurningTick(entity, dt, cfg) {
@@ -578,7 +591,7 @@
     if (burning <= 0) return;
     const amount = Math.min(burning, cfg.burnTickPerSec * dt);
     removeAffliction(entity, "burningHealth", amount);
-    entity.health = round1(clamp(entity.health - amount, 0, getEffectiveMax(entity, "health")));
+    applyHealthAfflictionDamage(entity, amount);
   }
 
   function resolvePoisonTick(entity, dt, cfg) {
@@ -586,7 +599,7 @@
     if (poison <= 0) return;
     const amount = Math.min(poison, cfg.poisonTickPerSec * dt);
     removeAffliction(entity, "poisonedHealth", amount);
-    entity.health = round1(clamp(entity.health - amount, 0, getEffectiveMax(entity, "health")));
+    applyHealthAfflictionDamage(entity, amount);
   }
 
   function resolveCongealedTick(entity, dt, rest, cfg, healthRecoveryBlocked = false) {
@@ -675,6 +688,7 @@
     removeAfflictionsByFamily,
     removeAfflictionsByTag,
     getEffectiveMax,
+    applyHealthAfflictionDamage,
     getExhaustionSpeed,
     getAfflictionRecoveryMultiplier,
     getPunishedActionElapsedMs,
