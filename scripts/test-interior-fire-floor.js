@@ -10,6 +10,7 @@ const read = p => fs.readFileSync(path.join(root, p), 'utf8');
 const json = p => JSON.parse(read(p));
 
 const core = read('docs/js/interior-fire-floor-runtime.js');
+const game = read('docs/game.js'); // Guards the live Inn/building furniture path so cached authored hearths cannot bypass ambient VFX wrappers.
 const integration = read('docs/js/interior-fire-floor-integration.js');
 const sceneBuilder = read('docs/js/interior-scene-builder.js'); // Guards one-full-canvas-per-inner-wall UVs.
 const housePieceGen = read('docs/js/HousePieceGen.js'); // Guards one-full-canvas-per-authored exterior tent face.
@@ -21,6 +22,7 @@ const hunundiRoom = json('docs/config/maps/map_i_temple_basement_hunundi.json');
 const researchersTent = json('docs/config/maps/map_i_researchers_tent.json'); // Guards the authored one-PNG floor-surface mode.
 const hearth = json('docs/config/furniture-authored/hearth.json'); // Guards the layered stone-hearth asset and its flame emitter.
 const candleTable = json('docs/config/furniture-authored/candleTable.json'); // Guards the tiny authored candle flame.
+const inn = json('docs/config/maps/map_i_inn.json'); // Reproduces the first reported cached-authored hearth path.
 
 assert.doesNotThrow(() => new vm.Script(core, { filename: 'interior-fire-floor-runtime.js' }));
 assert.doesNotThrow(() => new vm.Script(integration, { filename: 'interior-fire-floor-integration.js' }));
@@ -39,6 +41,14 @@ assert(core.includes('data.footprint = { w: 2, d: 2 }'),
 assert(core.includes('const scale = 2'), 'bonfire must derive from the campfire at exactly double visual scale');
 assert(core.includes("id: 'candle_table_fire'"), 'candle tables must retain the runtime idempotent flame augmentation path');
 assert(core.includes("'candleTable', 'hearth'"), 'hearth must participate in the shared always-on ambient furniture VFX scheduler');
+assert(inn.furniture.some(piece => piece.itemKey === 'hearthFurniture'),
+  'Inn regression fixture must contain its authored hearthFurniture instance');
+assert.match(game,
+  /function buildFurnitureVisual\(furnitureKey, color\) \{\s*return window\.ProceduralFurniture\.buildFurnitureGroup\(furnitureKey, color\);\s*\}/,
+  'live building furniture must always enter through the wrapped ProceduralFurniture builder, even when authored JSON is already cached');
+assert.doesNotMatch(game,
+  /function buildFurnitureVisual\(furnitureKey, color\)[\s\S]{0,400}?AuthoredFurniture\.buildGroup/,
+  'cached authored furniture must not bypass ambient/runtime wrappers via a direct AuthoredFurniture.buildGroup fast path');
 assert(hearth.parts.length >= 8, 'hearth must use a layered open-front fireplace silhouette rather than three placeholder boxes');
 assert(hearth.parts.filter(part => part.materialRole === 'stone' && part.materialTexture === 'carved_smooth.png').length >= 8,
   'hearth masonry must reuse the altar/pillar carved-smooth stone material language');
