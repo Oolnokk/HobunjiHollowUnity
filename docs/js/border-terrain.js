@@ -199,12 +199,12 @@
   const HORIZON_TERRAIN_PRESETS=Object.freeze({
     westernMountainChain:Object.freeze({
       preset:'westernMountainChain',kind:'mountainChain',side:'west',
-      heightWorld:72,distanceWorld:14,depthWorld:52,spanScale:1.35,segments:8,
+      heightWorld:72,distanceWorld:14,depthWorld:52,spanScale:1.35,overallScale:1,segments:8,
       alwaysVisible:true,fogIndependent:true,
     }),
     northernPlateau:Object.freeze({
       preset:'northernPlateau',kind:'plateau',side:'north',
-      heightWorld:64,distanceWorld:13,depthWorld:48,spanScale:1.25,segments:6,
+      heightWorld:64,distanceWorld:13,depthWorld:48,spanScale:1.25,overallScale:1,segments:6,
       alwaysVisible:true,fogIndependent:true,
     }),
   });
@@ -218,7 +218,7 @@
     const explicit=String(src.preset||'');
     const fallback=HORIZON_TERRAIN_DEFAULT_BY_MAP[String(mapId||'')]||'';
     const presetName=explicit==='none'?'':(HORIZON_TERRAIN_PRESETS[explicit]?explicit:fallback);
-    if(!presetName)return{enabled:false,preset:'none',kind:'none',side:'north',heightWorld:0,distanceWorld:0,depthWorld:0,spanScale:1,segments:3,alwaysVisible:false,fogIndependent:false};
+    if(!presetName)return{enabled:false,preset:'none',kind:'none',side:'north',heightWorld:0,distanceWorld:0,depthWorld:0,spanScale:1,overallScale:1,segments:3,alwaysVisible:false,fogIndependent:false};
     const base=HORIZON_TERRAIN_PRESETS[presetName];
     const side=['north','east','south','west'].includes(String(src.side))?String(src.side):base.side;
     const finite=(value,fallbackValue,min,max)=>{const n=Number(value);return Math.max(min,Math.min(max,Number.isFinite(n)?n:fallbackValue));};
@@ -230,7 +230,8 @@
       heightWorld:finite(src.heightWorld,base.heightWorld,8,140),
       distanceWorld:finite(src.distanceWorld,base.distanceWorld,0,80),
       depthWorld:finite(src.depthWorld,base.depthWorld,8,120),
-      spanScale:finite(src.spanScale,base.spanScale,0.75,2),
+      spanScale:finite(src.spanScale,base.spanScale,0.25,8),
+      overallScale:finite(src.overallScale,base.overallScale,0.25,6),
       segments:Math.round(finite(src.segments,base.segments,3,16)),
       alwaysVisible:src.alwaysVisible!==false,
       fogIndependent:src.fogIndependent!==false,
@@ -302,8 +303,11 @@
   function buildToothedMountainRows(scene,zcols,zrows,mapId,zoneBaseElev,zGrid,config){
     const horizontal=config.side==='north'||config.side==='south'; // Used to choose the horizon's long axis for any authored edge.
     const axisLength=Math.max(1,horizontal?zcols:zrows); // Used to spread both shark-tooth rows across the selected edge.
-    const span=axisLength*config.spanScale; // Used so the chain overscans both map corners instead of ending in-frame.
-    const axisStart=(axisLength-span)*0.5; // Used as the first front-row peak center reference.
+    const overallScale=Math.max(0.25,Number(config.overallScale)||1); // Used to scale the entire two-row mountain mass as one authored object.
+    const effectiveHeight=config.heightWorld*overallScale; // Used for every peak height so whole-chain scaling stays uniform.
+    const effectiveDepth=config.depthWorld*overallScale; // Used for mountain body depth and row separation under whole-chain scaling.
+    const span=axisLength*config.spanScale*overallScale; // Used so one scale control can push the chain far beyond both ends of the map.
+    const axisStart=(axisLength-span)*0.5; // Used as the first front-row peak center reference, keeping overscan symmetric around the map.
     const frontCount=Math.max(3,config.segments); // Used as the literal number of large foreground teeth.
     const backCount=Math.max(2,frontCount-1); // Used for the staggered second row peeking through the foreground gaps.
     const step=span/frontCount; // Used for front-row peak spacing and the half-step back-row stagger.
@@ -314,10 +318,10 @@
 
     const pushPeak=(axisCenter,outCenter,rowIndex,ordinal)=>{
       const seedAxis=axisCenter+rowIndex*113.7+ordinal*17.3; // Used only for deterministic silhouette variation.
-      const width=step*(rowIndex===0?1.08:0.88)*(0.88+bgSceneryHash01(seedAxis,outCenter,8101)*0.24); // Used to overlap neighboring silhouettes slightly without merging their geometry.
-      const depth=Math.max(4,config.depthWorld*(rowIndex===0?0.18:0.15)); // Used to give each tooth enough 3D body for oblique camera angles.
-      const rowHeight=config.heightWorld*(rowIndex===0?0.78+bgSceneryHash01(seedAxis,outCenter,8201)*0.22:0.68+bgSceneryHash01(seedAxis,outCenter,8301)*0.18); // Back teeth remain tall enough to read through front-row gaps.
-      const baseLift=config.heightWorld*(rowIndex===0?0.01:0.055); // Used to keep the rear row from disappearing into the foreground bases.
+      const rowHeight=effectiveHeight*(rowIndex===0?0.78+bgSceneryHash01(seedAxis,outCenter,8201)*0.22:0.68+bgSceneryHash01(seedAxis,outCenter,8301)*0.18); // Used before width so the silhouette can stay broad instead of needle-thin.
+      const width=Math.max(step*(rowIndex===0?1.22:1.08),rowHeight*(rowIndex===0?0.56:0.50))*(0.92+bgSceneryHash01(seedAxis,outCenter,8101)*0.16); // Used to make each tooth a broad mountain mass like the reference while retaining small deterministic variation.
+      const depth=Math.max(6*overallScale,effectiveDepth*(rowIndex===0?0.26:0.22)); // Used to give every tooth a chunky 3D footprint at oblique camera angles.
+      const baseLift=effectiveHeight*(rowIndex===0?0.01:0.055); // Used to keep the rear row from disappearing into the foreground bases.
       const summitAxisJitter=(bgSceneryHash01(seedAxis,outCenter,8401)-0.5)*width*0.18; // Used to avoid identical equilateral-pyramid silhouettes.
       const summitOutJitter=(bgSceneryHash01(seedAxis,outCenter,8501)-0.5)*depth*0.16; // Used to create a visibly faceted, hand-cut 3D peak.
       const baseIndex=positions.length/3; // Used to offset this peak's local indices inside the one combined chain mesh.
@@ -338,7 +342,7 @@
           const y=baseY+baseLift+rowHeight*ringYRatios[ring][corner];
           const [x,z]=horizonPoint(config.side,axis,out,zcols,zrows);
           positions.push(x,y,z);
-          uvs.push(axis/Math.max(1,span),y/Math.max(1,config.heightWorld));
+          uvs.push(axis/Math.max(1,span),y/Math.max(1,effectiveHeight));
         }
       }
 
@@ -369,8 +373,8 @@
       peakCount++;
     };
 
-    const frontOut=config.distanceWorld+config.depthWorld*0.20; // Near shark-tooth row.
-    const backOut=config.distanceWorld+config.depthWorld*0.64; // Rear row is physically separate, not a painted duplicate.
+    const frontOut=config.distanceWorld+effectiveDepth*0.20; // Near shark-tooth row; clearance itself stays authored while the body scales behind it.
+    const backOut=config.distanceWorld+effectiveDepth*0.64; // Rear row scales away from the front row as part of the one grouped mountain mass.
     for(let i=0;i<frontCount;i++)pushPeak(axisStart+step*(i+0.5),frontOut,0,i);
     for(let i=0;i<backCount;i++)pushPeak(axisStart+step*(i+1),backOut,1,i); // Half-step offset centers rear peaks in front-row gaps.
 
@@ -421,8 +425,8 @@
     scene.add(mesh);
     return{
       enabled:true,preset:config.preset,kind:config.kind,side:config.side,
-      heightWorld:config.heightWorld,distanceWorld:config.distanceWorld,depthWorld:config.depthWorld,
-      spanScale:config.spanScale,segments:config.segments,
+      heightWorld:config.heightWorld,effectiveHeightWorld:effectiveHeight,distanceWorld:config.distanceWorld,depthWorld:config.depthWorld,effectiveDepthWorld:effectiveDepth,
+      spanScale:config.spanScale,overallScale,spanWorld:span,segments:config.segments,
       vertices:positions.length/3,triangles:indices.length/3,meshes:1,
       rows:2,peakCount,frontPeakCount:frontCount,backPeakCount:backCount,
       alwaysVisible:config.alwaysVisible,fogIndependent:config.fogIndependent,
@@ -441,7 +445,10 @@
 
     const horizontal=config.side==='north'||config.side==='south';
     const axisLength=Math.max(1,horizontal?zcols:zrows);
-    const span=axisLength*config.spanScale;
+    const overallScale=Math.max(0.25,Number(config.overallScale)||1); // Used to make the generic whole-landmark scale control truthful for plateau presets too.
+    const effectiveHeight=config.heightWorld*overallScale; // Used by every plateau height sample.
+    const effectiveDepth=config.depthWorld*overallScale; // Used by every plateau outward-distance sample.
+    const span=axisLength*config.spanScale*overallScale; // Used to scale the plateau's long axis around the map center.
     const axisStart=(axisLength-span)*0.5;
     const sampleCount=config.segments+1;
     const rowCount=4;
@@ -453,18 +460,18 @@
       const h0=bgSceneryHash01(axis,config.heightWorld,5101);
       const h1=bgSceneryHash01(axis,config.depthWorld,6101);
       const h2=bgSceneryHash01(axis,config.distanceWorld,7101);
-      const topJitter=(h0-0.5)*config.heightWorld*0.035;
+      const topJitter=(h0-0.5)*effectiveHeight*0.035;
       const outs=[
         config.distanceWorld,
-        config.distanceWorld+config.depthWorld*0.16,
-        config.distanceWorld+config.depthWorld*0.78,
-        config.distanceWorld+config.depthWorld,
+        config.distanceWorld+effectiveDepth*0.16,
+        config.distanceWorld+effectiveDepth*0.78,
+        config.distanceWorld+effectiveDepth,
       ];
       const ys=[
-        baseY+config.heightWorld*(0.02+0.035*h1),
-        baseY+config.heightWorld*0.965+topJitter,
-        baseY+config.heightWorld*0.935+topJitter*0.65,
-        baseY+config.heightWorld*(0.08+0.08*h2),
+        baseY+effectiveHeight*(0.02+0.035*h1),
+        baseY+effectiveHeight*0.965+topJitter,
+        baseY+effectiveHeight*0.935+topJitter*0.65,
+        baseY+effectiveHeight*(0.08+0.08*h2),
       ];
       for(let row=0;row<rowCount;row++){
         const [x,z]=horizonPoint(config.side,axis,outs[row],zcols,zrows);
@@ -512,8 +519,8 @@
 
     const stats={
       enabled:true,preset:config.preset,kind:config.kind,side:config.side,
-      heightWorld:config.heightWorld,distanceWorld:config.distanceWorld,depthWorld:config.depthWorld,
-      spanScale:config.spanScale,segments:config.segments,
+      heightWorld:config.heightWorld,effectiveHeightWorld:effectiveHeight,distanceWorld:config.distanceWorld,depthWorld:config.depthWorld,effectiveDepthWorld:effectiveDepth,
+      spanScale:config.spanScale,overallScale,spanWorld:span,segments:config.segments,
       vertices:positions.length/3,triangles:indices.length/3,meshes:1,
       alwaysVisible:config.alwaysVisible,fogIndependent:config.fogIndependent,
     };
