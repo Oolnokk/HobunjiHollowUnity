@@ -128,6 +128,8 @@ for (const decodedRate of [44100, 48000, 96000]) {
 }
 assert.match(music, /transport=' \+ \(activeSnd\?\._gaplessLoopAudio \? \(activeSnd\._gaplessNativeFallback \? 'html-fallback' : 'buffer-loop'\) : 'html'\)/,
   'mobile audio diagnostics expose the active music transport');
+assert.match(music, /const mediaElement = snd\?\._gaplessNativeFallback \? snd\._gaplessNativeAudio : snd;[\s\S]*?createMediaElementSource\(mediaElement\)/,
+  'native fallback playback can still use the existing GainNode path for user track boosts above 100%');
 assert.match(music, /finishCombatBgm = \(\{ repeatIfStillInCombat = true \} = \{\}\) => \{[\s\S]*?deps\.isPlayerInCombat\(\)[\s\S]*?snd\.currentTime = 0;[\s\S]*?requestGameAudioPlay\(snd\)[\s\S]*?return;[\s\S]*?retireMusicTrack\(snd\)/,
   'if a looping combat M4A still emits ended, the same element restarts immediately while combat remains active instead of entering the scheduler/fade-in path');
 assert.match(music, /snd\.addEventListener\('ended', finishCombatBgm\);/,
@@ -174,7 +176,7 @@ assert.match(index, /scratchbones-config\.js\?v=20260924enghswatch1/,
   'the browser cache key loads the expanded authored BGM playlists');
 assert.match(formatUtils, /title-screen-runtime\.js\?v=20260921preworldsky2/,
   'the parser-synchronous title loader cache-busts the earliest Remembrance bootstrap');
-assert.match(index, /music-system\.js\?v=20260925skirmishgapless2/,
+assert.match(index, /music-system\.js\?v=20260925skirmishgapless3/,
   'the browser cache key loads the sample-accurate Skirmish loop transport');
 assert.match(index, /audio-track-gain-settings\.js\?v=20260920trackgain2/,
   'the browser loads the per-song gain Settings controller before game startup');
