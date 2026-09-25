@@ -21,6 +21,7 @@
   const AUTO_INTERVAL_MS = 30000;
   const AUTO_GRACE_MS = 45000;
   const AUTO_PREVIOUS_MIN_AGE_MS = 5 * 60 * 1000;
+  const RECOVERY_READ_TIMEOUT_MS = 3000; // Folder/File-System-Access reads may never settle after an I/O/browser failure; recovery must remain usable instead of hanging forever.
   const MODAL_ID = 'hobunjiSaveRecoveryModal';
   const MANUAL_BUTTON_ID = 'menuManualSaveBtn';
   const RECOVERY_BUTTON_ID = 'menuRecoveryBtn';
@@ -51,6 +52,16 @@
 
   function folderApi() {
     return window.LocalSaveFolder || null;
+  }
+
+  function withRecoveryReadTimeout(promise, label) {
+    let timer = null; // Cleared on every settled read so successful folder access does not leave delayed timeout work behind.
+    const timeout = new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`${label} timed out after ${RECOVERY_READ_TIMEOUT_MS / 1000}s`)), RECOVERY_READ_TIMEOUT_MS);
+    });
+    return Promise.race([Promise.resolve(promise), timeout]).finally(() => {
+      if (timer !== null) clearTimeout(timer);
+    });
   }
 
   function validateRecord(record) {
@@ -275,7 +286,7 @@
     if (!ids.characterId || !ids.worldId) return false; // Wait until player-ready so farm-specific stats bind to the correct save slot.
     const localSave = folderApi();
     if (typeof localSave?.readPrimarySnapshot !== 'function') return false;
-    const primary = await localSave.readPrimarySnapshot();
+    const primary = await withRecoveryReadTimeout(localSave.readPrimarySnapshot(), 'Primary folder baseline read');
     if (!primary?.snapshot) return false;
     const characters = primary.snapshot.meta?.characters || []; // Confirms the selected farmer actually belongs to this canonical folder before binding a baseline.
     const worlds = primary.snapshot.meta?.worlds || []; // Confirms the selected world actually belongs to this canonical folder before binding a baseline.
@@ -306,13 +317,18 @@
       const warnings = [];
       try {
         folderRecoveryReads++;
-        for (const slot of Object.keys(SLOT_KEYS)) {
-          let folderRaw = null;
+        const slotReads = await Promise.all(Object.keys(SLOT_KEYS).map(async slot => {
           try {
-            folderRaw = await localSave.readRecoveryCheckpoint(slot); // Slots are independent so one corrupt recovery file cannot hide the others.
+            const folderRaw = await withRecoveryReadTimeout(localSave.readRecoveryCheckpoint(slot), `Recovery "${slot}" read`); // Reads run concurrently so one stuck file cannot serially delay every recovery slot.
+            return { slot, folderRaw, error: '' };
           } catch (error) {
-            warnings.push(`${slot}: ${String(error?.message || error)}`);
-            removeSlot(slot); // Never present an unproven browser checkpoint as folder-authoritative history.
+            return { slot, folderRaw: null, error: String(error?.message || error) };
+          }
+        }));
+        for (const { slot, folderRaw, error } of slotReads) {
+          if (error) {
+            warnings.push(`${slot}: ${error}`);
+            removeSlot(slot); // Timed-out/unreadable folder slots are never replaced by an unproven stale browser mirror.
             continue;
           }
           const folderRecord = safeValidateRecord(folderRaw);
@@ -323,7 +339,11 @@
             removeSlot(slot); // Missing/invalid folder slots do not import browser history from another folder or fallback session.
           }
         }
-        await ensureFolderBaseline(); // Old folders get a guard baseline from their own canonical save, never from browser history.
+        try {
+          await ensureFolderBaseline(); // Old folders get a guard baseline from their own canonical save, never from browser history.
+        } catch (error) {
+          warnings.push(`baseline: ${String(error?.message || error)}`); // A stuck/invalid canonical world must not prevent already-readable checkpoints from being shown.
+        }
         const latest = readSlot('auto');
         lastAutosaveFingerprint = latest?.snapshot ? (snapshotApi()?.fingerprint?.(latest.snapshot) || '') : '';
         lastAction = warnings.length ? 'folder-recovery-mirrored-with-warnings' : 'folder-recovery-mirrored';
@@ -569,23 +589,34 @@
   }
 
   async function recoveryChoices() {
-    if (folderRecoveryAvailable()) await syncRecoveryMirrorsFromFolder();
     let currentFolder = null;
-    if (folderRecoveryAvailable() && typeof folderApi()?.readPrimarySnapshot === 'function') {
-      try {
-        const primary = await folderApi().readPrimarySnapshot();
-        if (primary?.snapshot) currentFolder = createRecord('current-folder', primary.snapshot, 'current-primary-folder', primary.savedAt || Date.now());
-      } catch (error) {
-        lastError = String(error?.message || error);
-      }
-    }
-    return [
-      { record: currentFolder, title: 'Current Folder Save', note: 'The canonical save currently used by the folder-first workflow.', current: true },
-      { record: readSlot('manual'), title: 'Manual Save', note: 'Only changes when you explicitly press the manual save button.' },
-      { record: readSlot('auto'), title: 'Latest Autosave', note: 'Latest good rolling checkpoint accepted by the integrity guard.' },
-      { record: readSlot('autoPrevious'), title: 'Earlier Autosave', note: 'Older rolling checkpoint retained separately from the latest autosave.' },
-      { record: readSlot('preRestore'), title: 'Before Last Restore', note: 'Safety copy of the canonical save immediately before the most recent recovery.' },
-    ];
+    const warnings = [];
+    const mirrorPromise = folderRecoveryAvailable()
+      ? syncRecoveryMirrorsFromFolder().then(() => {
+          if (lastError) warnings.push(lastError); // Slot-level timeouts/read failures stay visible while healthy checkpoints remain usable.
+        })
+      : Promise.resolve();
+    const currentPromise = folderRecoveryAvailable() && typeof folderApi()?.readPrimarySnapshot === 'function'
+      ? withRecoveryReadTimeout(folderApi().readPrimarySnapshot(), 'Current primary folder read')
+          .then(primary => {
+            if (primary?.snapshot) currentFolder = createRecord('current-folder', primary.snapshot, 'current-primary-folder', primary.savedAt || Date.now());
+          })
+          .catch(error => {
+            warnings.push(String(error?.message || error));
+          })
+      : Promise.resolve();
+
+    await Promise.all([mirrorPromise, currentPromise]); // Recovery history and the broken-current-save probe have the same bounded wait instead of blocking one another.
+    return {
+      choices: [
+        { record: currentFolder, title: 'Current Folder Save', note: 'The canonical save currently used by the folder-first workflow.', current: true },
+        { record: readSlot('manual'), title: 'Manual Save', note: 'Only changes when you explicitly press the manual save button.' },
+        { record: readSlot('auto'), title: 'Latest Autosave', note: 'Latest good rolling checkpoint accepted by the integrity guard.' },
+        { record: readSlot('autoPrevious'), title: 'Earlier Autosave', note: 'Older rolling checkpoint retained separately from the latest autosave.' },
+        { record: readSlot('preRestore'), title: 'Before Last Restore', note: 'Safety copy of the canonical save immediately before the most recent recovery.' },
+      ],
+      warnings: [...new Set(warnings.filter(Boolean))],
+    };
   }
 
   async function openRecoveryModal() {
@@ -606,15 +637,22 @@
     overlay.addEventListener('click', event => { if (event.target === overlay) closeRecoveryModal(); });
     document.body.appendChild(overlay);
 
-    let choices;
+    let recovery;
     try {
-      choices = await recoveryChoices();
+      recovery = await recoveryChoices();
     } catch (error) {
       panel.querySelector('[data-recovery-loading]').textContent = `Could not read recovery history: ${String(error?.message || error)}`;
       return;
     }
     panel.querySelector('[data-recovery-loading]')?.remove();
-    for (const choice of choices) {
+    if (recovery.warnings.length) {
+      const warning = document.createElement('div'); // Visible fail-soft status explains timed-out slots instead of leaving "Reading recovery history…" on screen forever.
+      warning.setAttribute('data-recovery-warning', '');
+      warning.textContent = `Some save files could not be read: ${recovery.warnings.join(' | ')}`;
+      Object.assign(warning.style, { fontSize: '11px', lineHeight: '1.45', color: '#ffd39a', marginBottom: '10px', whiteSpace: 'pre-wrap' });
+      panel.appendChild(warning);
+    }
+    for (const choice of recovery.choices) {
       const record = choice.record;
       if (choice.current && !record && !folderRecoveryAvailable()) continue;
       const row = document.createElement('div');
