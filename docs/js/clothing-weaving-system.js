@@ -67,6 +67,7 @@
   let portraitGateWaitingWriters = 0; // Blocks new ordinary readers once a woven portrait is waiting, preventing writer starvation.
   const portraitGateReaderWaiters = []; // Deferred ordinary portrait renders released together when no woven writer is active/waiting.
   const portraitGateWriterWaiters = []; // Deferred woven portrait renders released one at a time after all ordinary readers finish.
+  let portraitGatePreferReaders = false; // After each woven writer, gives the already-waiting ordinary batch one turn before another woven writer can start.
 
   const clamp = (value, lo, hi) => Math.max(lo, Math.min(hi, Number(value) || 0));
   const clone = value => value == null ? value : JSON.parse(JSON.stringify(value));
@@ -2230,18 +2231,26 @@
   }
 
   function flushPortraitRenderGate() {
-    if (portraitGateWriterActive) return;
-    if (portraitGateWaitingWriters > 0) {
-      if (portraitGateReaders !== 0 || !portraitGateWriterWaiters.length) return;
-      const resolveWriter = portraitGateWriterWaiters.shift(); // Oldest woven render gets exclusive ownership first.
+    if (portraitGateWriterActive || portraitGateReaders > 0) return;
+    if (portraitGatePreferReaders && portraitGateReaderWaiters.length) {
+      portraitGatePreferReaders = false;
+      const readers = portraitGateReaderWaiters.splice(0); // Batch only readers that were already waiting after the previous woven writer.
+      portraitGateReaders += readers.length;
+      readers.forEach(resolve => resolve()); // Ordinary portrait work resumes concurrently before the next queued woven writer.
+      return;
+    }
+    portraitGatePreferReaders = false;
+    if (portraitGateWaitingWriters > 0 && portraitGateWriterWaiters.length) {
+      const resolveWriter = portraitGateWriterWaiters.shift(); // Oldest woven render gets exclusive ownership next.
       portraitGateWaitingWriters--;
       portraitGateWriterActive = true;
       resolveWriter();
       return;
     }
-    while (portraitGateReaderWaiters.length) {
-      portraitGateReaders++;
-      portraitGateReaderWaiters.shift()(); // With no writer pending, ordinary portraits resume concurrently rather than serializing frame refreshes.
+    if (portraitGateReaderWaiters.length) {
+      const readers = portraitGateReaderWaiters.splice(0);
+      portraitGateReaders += readers.length;
+      readers.forEach(resolve => resolve());
     }
   }
 
@@ -2271,6 +2280,7 @@
       if (released) return;
       released = true;
       portraitGateWriterActive = false;
+      portraitGatePreferReaders = portraitGateReaderWaiters.length > 0; // Prevent a convoy of woven NPC refreshes from starving ordinary/player portrait updates.
       flushPortraitRenderGate();
     };
   }
@@ -2382,7 +2392,7 @@
       equipped: equippedClothItems().map(item => ({ uid: item.uid, article: articleLabel(item), slot: item.slot, material: item.weaveMaterial || 'standard', weightUnits: itemWeightUnits(item), woven: weavingHasAnyPattern(item.weaving) })),
       blueprints: currentBlueprints().map(bp => ({ id: bp.baseCosmeticId, slot: bp.slot, label: bp.label })),
       wool: { light: Number(equipmentDeps?.inventory?.[LIGHT_WOOL_KEY]) || 0, heavy: Number(equipmentDeps?.inventory?.[HEAVY_WOOL_KEY]) || 0 },
-      portraitPatterns: { ...portraitPatternStats, cacheSize: patternedCanvasCache.size, pending: pendingPatternCanvasPromises.size, gateReaders: portraitGateReaders, gateWriterActive: portraitGateWriterActive, gateWaitingWriters: portraitGateWaitingWriters }, // Mobile-visible counters expose cache behavior plus ordinary-vs-woven gate ownership without a console.
+      portraitPatterns: { ...portraitPatternStats, cacheSize: patternedCanvasCache.size, pending: pendingPatternCanvasPromises.size, gateReaders: portraitGateReaders, gateWriterActive: portraitGateWriterActive, gateWaitingWriters: portraitGateWaitingWriters, gatePreferReaders: portraitGatePreferReaders }, // Mobile-visible counters expose cache behavior plus ordinary-vs-woven gate ownership without a console.
       lastError,
     };
   }
