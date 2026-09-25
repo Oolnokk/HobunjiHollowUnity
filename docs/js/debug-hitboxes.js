@@ -159,8 +159,6 @@
     const skinWeight = geometry?.getAttribute?.('skinWeight');
     if (!position || !skinIndex || !skinWeight || !skeleton?.bones?.length) return null;
 
-    skinnedPlane.updateMatrixWorld?.(true);
-    skeleton.update?.();
     const bindPoint = new THREE.Vector3(position.getX(vertexIndex), position.getY(vertexIndex), position.getZ(vertexIndex)).applyMatrix4(skinnedPlane.bindMatrix);
     target.set(0, 0, 0);
     const boneMatrix = new THREE.Matrix4();
@@ -195,11 +193,7 @@
     return skinnedPlane.localToWorld(target);
   }
 
-  function _liveShoulderSourcePixelWorld() {
-    const perch = deps.playerAttachmentAnchor?.('shoulderPerch');
-    const sourcePixel = perch?.sourcePixel;
-    const portraitRoot = window.PNGPlaneAvatar?.resolveSkinnedPortraitRoot?.(deps.playerMesh) || deps.playerMesh;
-    const skinnedPlane = portraitRoot?.userData?.neckRig?.skinnedPlane;
+  function _sourcePixelSampleSpec(skinnedPlane, portraitRoot, sourcePixel) {
     const geometry = skinnedPlane?.geometry;
     const sourceCanvas = portraitRoot?.userData?.sourceCanvas;
     const pixelWidth = Number(sourceCanvas?.naturalWidth || sourceCanvas?.width);
@@ -212,7 +206,7 @@
 
     const sourceX = window.PNGPlaneAvatar?.getPortraitsFlipped?.()
       ? pixelWidth - Number(sourcePixel.x)
-      : Number(sourcePixel.x); // Follows where the authored source texel actually appears on the horizontally flipped portrait.
+      : Number(sourcePixel.x); // Maps the authored source texel to the geometry position where the currently flipped/unflipped texture actually displays it.
     const sourceY = Number(sourcePixel.y);
     const safeX = Math.min(pixelWidth - 1e-6, Math.max(0, sourceX));
     const safeY = Math.min(pixelHeight - 1e-6, Math.max(0, sourceY));
@@ -222,26 +216,91 @@
     const row = Math.min(segmentsY - 1, Math.max(0, Math.floor(cellY)));
     const fx = cellX - column;
     const fy = cellY - row;
-    const base = (row * segmentsX + column) * 6; // Front-face vertices are emitted six at a time per cell before the duplicated back face.
-    let indices;
-    let weights;
+    const base = (row * segmentsX + column) * 6; // Front-face geometry emits exactly six vertices per PNG-grid cell.
     if (fy >= fx) {
-      indices = [base, base + 1, base + 2];
-      weights = [fy - fx, fx, 1 - fy]; // Triangle: (0,1), (1,1), (0,0).
-    } else {
-      indices = [base + 3, base + 4, base + 5];
-      weights = [fy, fx - fy, 1 - fx]; // Triangle: (1,1), (1,0), (0,0).
+      return {
+        indices: [base, base + 1, base + 2],
+        weights: [fy - fx, fx, 1 - fy],
+        sourcePixel: { x: Number(sourcePixel.x), y: Number(sourcePixel.y) },
+        renderedPixel: { x: safeX, y: safeY },
+        cell: { column, row },
+        triangle: 0,
+      };
     }
-    const vertices = indices.map(index => _skinVertexWorld(skinnedPlane, index, new THREE.Vector3()));
-    if (vertices.some(vertex => !vertex)) return null;
-    const world = new THREE.Vector3();
-    for (let i = 0; i < 3; i++) world.addScaledVector(vertices[i], weights[i]);
     return {
-      world,
+      indices: [base + 3, base + 4, base + 5],
+      weights: [fy, fx - fy, 1 - fx],
       sourcePixel: { x: Number(sourcePixel.x), y: Number(sourcePixel.y) },
       renderedPixel: { x: safeX, y: safeY },
       cell: { column, row },
-      triangle: fy >= fx ? 0 : 1,
+      triangle: 1,
+    };
+  }
+
+  function _sampleSkinnedSourcePixelWorld(skinnedPlane, portraitRoot, sourcePixel) {
+    const spec = _sourcePixelSampleSpec(skinnedPlane, portraitRoot, sourcePixel);
+    if (!spec) return null;
+    skinnedPlane.updateMatrixWorld?.(true);
+    skinnedPlane.skeleton?.update?.(); // Refreshes the exact live bone matrices consumed by the SkinnedMesh shader.
+    const vertices = spec.indices.map(index => _skinVertexWorld(skinnedPlane, index, new THREE.Vector3()));
+    if (vertices.some(vertex => !vertex)) return null;
+    const world = new THREE.Vector3();
+    for (let i = 0; i < 3; i++) world.addScaledVector(vertices[i], spec.weights[i]); // Same triangle interpolation that maps the source UV across the rendered surface.
+    return { ...spec, world };
+  }
+
+  function _ensureShoulderSourcePixelRenderCapture(skinnedPlane, portraitRoot, sourcePixel) {
+    if (!skinnedPlane?.isSkinnedMesh) return null;
+    skinnedPlane.userData = skinnedPlane.userData || {};
+    let state = skinnedPlane.userData.hobunjiShoulderSourcePixelRenderCapture;
+    if (!state) {
+      state = {
+        sourcePixel: null,
+        portraitRoot: null,
+        lastVisibleSample: null,
+        previousBefore: typeof skinnedPlane.onBeforeRender === 'function' ? skinnedPlane.onBeforeRender : null,
+      };
+      skinnedPlane.userData.hobunjiShoulderSourcePixelRenderCapture = state;
+      skinnedPlane.onBeforeRender = function shoulderSourcePixelCaptureBefore(...args) {
+        state.previousBefore?.apply(this, args);
+        const scene = args[1];
+        const material = args[4];
+        if (scene?.overrideMaterial || material?.colorWrite === false || !state.sourcePixel || !state.portraitRoot) return;
+        const sample = _sampleSkinnedSourcePixelWorld(this, state.portraitRoot, state.sourcePixel);
+        if (!sample?.world) return;
+        state.lastVisibleSample = {
+          world: { x: sample.world.x, y: sample.world.y, z: sample.world.z },
+          sourcePixel: sample.sourcePixel,
+          renderedPixel: sample.renderedPixel,
+          cell: sample.cell,
+          triangle: sample.triangle,
+          capturedAt: performance.now(),
+          matrixWorld: Array.from(this.matrixWorld.elements),
+        };
+      };
+    }
+    state.sourcePixel = { x: Number(sourcePixel?.x), y: Number(sourcePixel?.y) };
+    state.portraitRoot = portraitRoot;
+    return state;
+  }
+
+  function _liveShoulderSourcePixelWorld() {
+    const perch = deps.playerAttachmentAnchor?.('shoulderPerch');
+    const sourcePixel = perch?.sourcePixel;
+    const portraitRoot = window.PNGPlaneAvatar?.resolveSkinnedPortraitRoot?.(deps.playerMesh) || deps.playerMesh;
+    const skinnedPlane = portraitRoot?.userData?.neckRig?.skinnedPlane;
+    if (!skinnedPlane?.isSkinnedMesh || !sourcePixel) return null;
+    const state = _ensureShoulderSourcePixelRenderCapture(skinnedPlane, portraitRoot, sourcePixel);
+    const sample = state?.lastVisibleSample;
+    if (!sample || performance.now() - Number(sample.capturedAt || 0) > 250) return null; // Never substitute a resting-state solve for the point actually used by a recent visible draw.
+    return {
+      world: new THREE.Vector3(sample.world.x, sample.world.y, sample.world.z),
+      sourcePixel: sample.sourcePixel,
+      renderedPixel: sample.renderedPixel,
+      cell: sample.cell,
+      triangle: sample.triangle,
+      capturedAt: sample.capturedAt,
+      captureMode: 'visible-skinnedmesh-onBeforeRender',
     };
   }
 
