@@ -295,6 +295,7 @@ assert.equal(windowStub.Combat.getMovementSpeedMul(), 1, 'movement weight has no
 
 const source = fs.readFileSync('docs/js/clothing-weaving-system.js', 'utf8');
 const portraitSource = fs.readFileSync('docs/js/portrait-utils.js', 'utf8'); // Verifies woven portrait state is injected per render rather than shared across WorldPortraitLife's overlapping async NPC refreshes.
+const avatarPreviewSource = fs.readFileSync('docs/js/npc-avatar-preview-utils.js', 'utf8'); // Guards the live world-avatar adapter that survives later portrait-renderer replacement.
 const colorFillSource = fs.readFileSync('docs/js/color-fill.js', 'utf8'); // Canonical source-art shading/value-fill math shared across rendered game assets.
 const spriteRecolorSource = fs.readFileSync('docs/js/sprite-recolor.js', 'utf8'); // Compatibility wrapper used by authored item sprites and existing callers.
 const creatureRendererSource = fs.readFileSync('docs/js/creature-genetics-render.js', 'utf8'); // Verifies animal tinting uses the same canonical fill owner.
@@ -308,7 +309,10 @@ assert.doesNotMatch(source, /window\._imageForTint\s*=\s*function\s+clothingPatt
 assert.match(source, /const patternMap = Array\.isArray\(descriptors\)[\s\S]*?buildPortraitPatternMap\(descriptors\)/, 'each woven portrait render builds its own descriptor map');
 assert.match(source, /patternImageForTint\(patternMap, baseTintResolver, pending => pendingBuilds\.add\(pending\), img, sourceKey, tint\)/, 'the woven tint resolver closes over that render-local descriptor map and reports this render\'s cache misses');
 assert.match(source, /await Promise\.allSettled\(\[\.\.\.pendingBuilds\]\)/, 'woven portrait renders wait for missing pattern composites before returning their canvas');
-assert.match(source, /return current\(canvas, profile, renderOptions\); \/\/ Cache is now warm/, 'a cache-miss portrait redraws the same canvas with the warmed pattern cache before callers can upload the fallback');
+assert.match(source, /renderProfileWithWovenPatterns[\s\S]*?return renderer\(canvas, profile, renderOptions\); \/\/ Cache is now warm/, 'the reusable render-local helper redraws the same canvas with the warmed pattern cache before callers can upload the fallback');
+assert.match(source, /renderProfileWithWovenPatterns, \/\/ Stable adapter used by NpcAvatarPreview/, 'the render-local weaving helper is exported for the stable world-avatar adapter');
+assert.match(avatarPreviewSource, /ClothingWeavingSystem[\s\S]*?renderProfileWithWovenPatterns\(renderer, canvas, profile, renderOptions\)/, 'NpcAvatarPreview reapplies weaving around the current live portrait renderer instead of trusting a one-time global wrapper');
+assert.match(avatarPreviewSource, /await renderer\(canvas, profile, renderOptions\);/, 'NpcAvatarPreview still renders normally before the weaving system is available');
 assert.match(portraitSource, /renderOptions\?\.imageForTint[\s\S]*?: _imageForTint/, 'portrait rendering accepts a per-render tint resolver with the canonical tint path as fallback');
 assert.match(portraitSource, /drawPortraitLayerWarped\(ctx, img, resolveXform\(layer\)[\s\S]*?layer\.url, imageForTint\)/, 'breathing overwear layers use the same render-local tint resolver during WorldPortraitLife refreshes');
 
