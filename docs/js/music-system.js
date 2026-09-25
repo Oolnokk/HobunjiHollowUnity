@@ -48,6 +48,8 @@
   const _musicGainNodes = new Map();       // music <audio> element -> { ctx, gain, target }
   const _musicLoudnessGain = new Map();    // resolved track url -> measured normalization multiplier
   const _musicLoudnessPending = new Map(); // resolved track url -> in-flight analysis promise
+  const _gaplessMusicBuffers = new Map(); // Decoded AudioBuffer promises reused by sample-accurate authored loops such as Skirmish.
+  let _gaplessMusicPreloaded = false; // Guards the one-time combat-loop preload kicked off by the first trusted audio-unlock gesture.
   const MUSIC_TARGET_RMS = 0.16;
   const MUSIC_LOUDNESS_GAIN_MIN = 0.5;
   const MUSIC_LOUDNESS_GAIN_MAX = 2.2;
@@ -147,6 +149,284 @@
     return _musicAudioCtx;
   }
 
+  function loadGaplessMusicBuffer(url) {
+    const resolved = resolveAudioUrl(url);
+    const ctx = getMusicAudioCtx();
+    if (!resolved || !ctx?.decodeAudioData) return Promise.reject(new Error('Web Audio decoding unavailable'));
+    if (_gaplessMusicBuffers.has(resolved)) return _gaplessMusicBuffers.get(resolved);
+    const promise = fetch(resolved)
+      .then(response => {
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return response.arrayBuffer();
+      })
+      .then(arrayBuffer => ctx.decodeAudioData(arrayBuffer))
+      .catch(error => {
+        _gaplessMusicBuffers.delete(resolved);
+        throw error;
+      });
+    _gaplessMusicBuffers.set(resolved, promise);
+    return promise;
+  }
+
+  // AAC/M4A files can decode in four legitimate shapes depending on whether a
+  // browser honors encoder-delay and end-padding metadata. Match the decoded
+  // sample count against all four possibilities, then expose only the authored
+  // content range to AudioBufferSourceNode.loopStart/loopEnd. If the file is
+  // replaced and the metadata no longer matches, leave the whole buffer intact
+  // rather than trimming an unknown recording.
+  function gaplessLoopSampleBounds(buffer, spec) {
+    const length = Math.max(0, Math.floor(Number(buffer?.length) || 0));
+    const sampleRate = Math.max(1, Number(buffer?.sampleRate) || 1);
+    const encoderDelay = Math.max(0, Math.floor(Number(spec?.encoderDelaySamples) || 0));
+    const padding = Math.max(0, Math.floor(Number(spec?.paddingSamples) || 0));
+    const content = Math.max(0, Math.floor(Number(spec?.contentSamples) || 0));
+    if (!length || !content) {
+      return { startSample: 0, endSample: length, startSec: 0, endSec: length / sampleRate, mode: 'untrimmed-no-metadata' };
+    }
+    const candidates = [
+      { expectedLength: content, startSample: 0, endSample: content, mode: 'decoder-trimmed-both' },
+      { expectedLength: content + padding, startSample: 0, endSample: content, mode: 'decoder-trimmed-delay' },
+      { expectedLength: encoderDelay + content, startSample: encoderDelay, endSample: encoderDelay + content, mode: 'decoder-trimmed-padding' },
+      { expectedLength: encoderDelay + content + padding, startSample: encoderDelay, endSample: encoderDelay + content, mode: 'encoded-padding-present' },
+    ];
+    let best = candidates[0];
+    let bestDiff = Math.abs(length - best.expectedLength);
+    for (let i = 1; i < candidates.length; i++) {
+      const diff = Math.abs(length - candidates[i].expectedLength);
+      if (diff < bestDiff) {
+        best = candidates[i];
+        bestDiff = diff;
+      }
+    }
+    const toleranceSamples = Math.max(8, Math.round(sampleRate * 0.002));
+    if (bestDiff > toleranceSamples) {
+      return { startSample: 0, endSample: length, startSec: 0, endSec: length / sampleRate, mode: 'untrimmed-metadata-mismatch' };
+    }
+    const startSample = Math.max(0, Math.min(length - 1, best.startSample));
+    const endSample = Math.max(startSample + 1, Math.min(length, best.endSample));
+    return {
+      startSample,
+      endSample,
+      startSec: startSample / sampleRate,
+      endSec: endSample / sampleRate,
+      mode: best.mode,
+    };
+  }
+
+  function preloadConfiguredGaplessLoops() {
+    if (_gaplessMusicPreloaded) return;
+    const tracks = window.AudioSystem?.gameAudioConfig?.()?.combatBgm || [];
+    const authored = tracks.filter(track => track?.url && track.loop !== false && track.gaplessLoop);
+    if (!authored.length) return;
+    _gaplessMusicPreloaded = true;
+    for (const track of authored) {
+      loadGaplessMusicBuffer(track.url).catch(error => {
+        audioDebug('gapless music preload failed ' + track.url + ': ' + (error?.message || error), 'gapless-preload-' + track.url, 0, 'bgm');
+      });
+    }
+  }
+
+  // A tiny media-like facade keeps the existing Music scheduler, fades,
+  // ducking, pause/resume and diagnostics intact while AudioBufferSourceNode
+  // owns the actual sample-accurate loop. If Web Audio decoding fails, this
+  // facade falls back to the previous native <audio loop> behavior.
+  function makeGaplessLoopAudio(url, spec) {
+    const ctx = getMusicAudioCtx();
+    if (!ctx?.createBufferSource || !ctx?.createGain) return null;
+    const resolved = resolveAudioUrl(url);
+    const listeners = new Map(); // Event handlers are forwarded only if the native HTML fallback has to take over.
+    const state = {
+      buffer: null,
+      bufferPromise: null,
+      source: null,
+      nativeFallback: null,
+      offsetSec: 0,
+      startedAtCtx: 0,
+      loopStartSec: 0,
+      loopEndSec: 0,
+      displayVolume: 1,
+    };
+    let snd = null;
+
+    const emit = (type, event) => {
+      const entries = listeners.get(type);
+      if (!entries?.length) return;
+      for (const entry of [...entries]) {
+        try { entry.handler.call(snd, event || { type, target: snd }); } catch {}
+        if (entry.once) {
+          const current = listeners.get(type) || [];
+          listeners.set(type, current.filter(candidate => candidate !== entry));
+        }
+      }
+    };
+
+    const normalizedOffset = value => {
+      const numeric = Math.max(0, Number(value) || 0);
+      const span = state.loopEndSec - state.loopStartSec;
+      if (!state.buffer || !(span > 0)) return numeric;
+      if (numeric >= state.loopStartSec && numeric < state.loopEndSec) return numeric;
+      return state.loopStartSec + ((((numeric - state.loopStartSec) % span) + span) % span);
+    };
+
+    const currentDecodedTime = () => {
+      if (!state.source) return normalizedOffset(state.offsetSec);
+      return normalizedOffset(state.offsetSec + Math.max(0, ctx.currentTime - state.startedAtCtx));
+    };
+
+    const stopDecodedSource = (preserveOffset = true) => {
+      if (!state.source) return;
+      const source = state.source;
+      const nextOffset = preserveOffset ? currentDecodedTime() : state.loopStartSec;
+      state.source = null;
+      state.offsetSec = nextOffset;
+      state.startedAtCtx = 0;
+      try { source.onended = null; } catch {}
+      try { source.stop(); } catch {}
+      try { source.disconnect(); } catch {}
+    };
+
+    const startDecodedSource = () => {
+      if (!state.buffer || state.source) return;
+      const source = ctx.createBufferSource();
+      source.buffer = state.buffer;
+      source.loop = true;
+      source.loopStart = state.loopStartSec;
+      source.loopEnd = state.loopEndSec;
+      const node = _musicGainNodes.get(snd);
+      source.connect(node?.gain || ctx.destination);
+      state.offsetSec = normalizedOffset(state.offsetSec || state.loopStartSec);
+      state.startedAtCtx = ctx.currentTime;
+      state.source = source;
+      source.start(0, state.offsetSec);
+    };
+
+    const activateNativeFallback = error => {
+      if (state.nativeFallback) return state.nativeFallback;
+      stopDecodedSource(false);
+      releaseMusicGain(snd);
+      snd._gaplessNativeFallback = true;
+      const fallback = new Audio(resolved); // Used only when decodeAudioData cannot service this authored loop.
+      fallback.loop = true;
+      fallback.preload = 'auto';
+      fallback.volume = Math.max(0, Math.min(1, Number(snd._musicTarget) || state.displayVolume || 0));
+      fallback.addEventListener('ended', event => emit('ended', event));
+      fallback.addEventListener('error', event => emit('error', event));
+      state.nativeFallback = fallback;
+      state.displayVolume = fallback.volume;
+      try { fallback.load(); } catch {}
+      audioDebug('gapless buffer loop unavailable; using native html loop url=' + resolved + ' reason=' + (error?.message || error), 'gapless-native-fallback-' + resolved, 0, 'bgm');
+      return fallback;
+    };
+
+    snd = {
+      src: resolved,
+      currentSrc: resolved,
+      loop: true,
+      preload: 'auto',
+      muted: false,
+      _gaplessLoopAudio: true,
+      _gaplessNativeFallback: false,
+      _musicRetired: false,
+      get paused() {
+        if (state.nativeFallback) return state.nativeFallback.paused;
+        return !state.source;
+      },
+      get ended() {
+        if (state.nativeFallback) return state.nativeFallback.ended;
+        return !!snd._musicRetired;
+      },
+      get readyState() {
+        if (state.nativeFallback) return state.nativeFallback.readyState;
+        return state.buffer ? 4 : 1;
+      },
+      get error() {
+        return state.nativeFallback?.error || null;
+      },
+      get duration() {
+        return state.nativeFallback?.duration || state.buffer?.duration || 0;
+      },
+      get currentTime() {
+        if (state.nativeFallback) return state.nativeFallback.currentTime;
+        return currentDecodedTime();
+      },
+      set currentTime(value) {
+        if (state.nativeFallback) {
+          try { state.nativeFallback.currentTime = Math.max(0, Number(value) || 0); } catch {}
+          return;
+        }
+        const wasPlaying = !!state.source;
+        if (wasPlaying) stopDecodedSource(false);
+        state.offsetSec = normalizedOffset(value);
+        if (wasPlaying) startDecodedSource();
+      },
+      get volume() {
+        return state.displayVolume;
+      },
+      set volume(value) {
+        state.displayVolume = Math.max(0, Math.min(1, Number(value) || 0));
+        if (state.nativeFallback) state.nativeFallback.volume = state.displayVolume;
+      },
+      addEventListener(type, handler, options = {}) {
+        if (typeof handler !== 'function') return;
+        const entries = listeners.get(type) || [];
+        entries.push({ handler, once: !!(options && typeof options === 'object' && options.once) });
+        listeners.set(type, entries);
+      },
+      removeEventListener(type, handler) {
+        const entries = listeners.get(type) || [];
+        listeners.set(type, entries.filter(entry => entry.handler !== handler));
+      },
+      load() {},
+      async play() {
+        if (state.nativeFallback) return state.nativeFallback.play();
+        if (state.source) return;
+        try {
+          const buffer = state.buffer || await state.bufferPromise;
+          if (snd._musicRetired) return;
+          if (!state.buffer) {
+            state.buffer = buffer;
+            const bounds = gaplessLoopSampleBounds(buffer, spec);
+            state.loopStartSec = bounds.startSec;
+            state.loopEndSec = bounds.endSec;
+            state.offsetSec = bounds.startSec;
+            snd._gaplessLoopBounds = bounds;
+            audioDebug(
+              'gapless buffer ready url=' + resolved +
+              ' mode=' + bounds.mode +
+              ' samples=' + bounds.startSample + '..' + bounds.endSample + '/' + buffer.length,
+              'gapless-buffer-ready-' + resolved,
+              0,
+              'bgm'
+            );
+          }
+          if (ctx.state === 'suspended') await ctx.resume();
+          if (snd._musicRetired) return;
+          startDecodedSource();
+        } catch (error) {
+          if (error?.name === 'NotAllowedError') throw error;
+          if (snd._musicRetired) return;
+          return activateNativeFallback(error).play();
+        }
+      },
+      pause() {
+        if (state.nativeFallback) {
+          state.nativeFallback.pause();
+          return;
+        }
+        stopDecodedSource(true);
+      },
+    };
+
+    const gain = ctx.createGain();
+    gain.gain.value = 0;
+    gain.connect(ctx.destination);
+    _musicGainNodes.set(snd, { ctx, source: null, gain, target: 0, gaplessBuffer: true });
+    _gameAudioElements.add(snd);
+    state.bufferPromise = loadGaplessMusicBuffer(url);
+    state.bufferPromise.catch(() => {}); // play() performs the actual fallback; this only prevents a pre-play unhandled rejection.
+    return snd;
+  }
+
   // Routes a music <audio> element through the same GainNode path already
   // proven by AudioSystem's boosted object SFX. This is required for authored
   // per-song gains above the HTMLMediaElement.volume ceiling of 1.0.
@@ -157,6 +437,7 @@
   // reduction twice on ordinary BGM. Keep the media element itself at unity
   // and let exactly one GainNode own music loudness/fades instead.
   function attachMusicGain(snd) {
+    if (snd?._gaplessLoopAudio && snd?._gaplessNativeFallback) return null; // A decode-failure fallback is already playing directly through its native media element.
     const ctx = getMusicAudioCtx();
     if (!ctx) return null;
     if (_musicGainNodes.has(snd)) return _musicGainNodes.get(snd);
@@ -337,11 +618,12 @@
   // the shared pre-track-gain target from config. Returns the <audio> element, with
   // a `_stopMusic(fadeMs)` helper attached for fading out an interruption
   // (e.g. switching areas) instead of cutting the track off mid-note.
-  function playMusicTrack(url, baseVolume, fadeInMs, fadeOutMs, { loop = false, existingAudio = null } = {}) {
+  function playMusicTrack(url, baseVolume, fadeInMs, fadeOutMs, { loop = false, existingAudio = null, gaplessLoopSpec = null } = {}) {
     // Startup Remembrance can already be playing before this module is fully
     // initialized. Adopt that exact element so title -> onboarding keeps one
     // uninterrupted playhead instead of restarting/overlapping the track.
-    const snd = existingAudio || makeGameAudio(url, { loop });
+    const gaplessSnd = !existingAudio && loop && gaplessLoopSpec ? makeGaplessLoopAudio(url, gaplessLoopSpec) : null; // Used only by explicitly-authored sample-accurate loops; all ordinary music keeps the existing media-element path.
+    const snd = existingAudio || gaplessSnd || makeGameAudio(url, { loop });
     if (existingAudio) {
       snd.loop = !!loop;
       snd.preload = 'auto';
@@ -548,6 +830,7 @@
     // outside user activation, then route itself into a suspended/silent graph.
     const musicCtx = getMusicAudioCtx();
     if (musicCtx?.state === 'suspended') musicCtx.resume().catch(err => audioDebug('music audio resume failed: ' + (err?.name || err), 'music-resume-fail', 0));
+    preloadConfiguredGaplessLoops(); // Uses the first trusted input/loading window to decode authored combat loops before they are urgently needed.
     if (!_gameAudioUnlocked) {
       _gameAudioUnlocked = true;
       audioDebug('audio unlock from ' + reason, 'audio-unlock', 0);
@@ -936,16 +1219,17 @@
         const baseVol = Math.max(0, Math.min(1, Number(audioCfg.bgmVolume) || 0.48));
         const trackVolMulRaw = Number(track.volumeMultiplier); // Optional authored per-track gain; Ghoul mine music uses 2x while existing tracks remain 1x.
         const trackVolMul = Number.isFinite(trackVolMulRaw) ? Math.max(0, trackVolMulRaw) : 1;
-        const repeatWhileCombat = track.loop !== false; // Used by native media looping and the same-element ended fallback below.
-        const snd = playMusicTrack(track.url, baseVol * trackVolMul, fade.songFadeInMs, fade.songFadeOutMs, { loop: repeatWhileCombat });
+        const repeatWhileCombat = track.loop !== false; // Used by sample-accurate/native looping and the same-transport ended fallback below.
+        const gaplessLoopSpec = repeatWhileCombat ? track.gaplessLoop : null; // Authored AAC priming/padding metadata selects the decoded sample-accurate transport for Skirmish.
+        const snd = playMusicTrack(track.url, baseVol * trackVolMul, fade.songFadeInMs, fade.songFadeOutMs, { loop: repeatWhileCombat, gaplessLoopSpec });
         snd._musicEntry = track;
         const finishCombatBgm = ({ repeatIfStillInCombat = true } = {}) => {
           const ownsSlot = _ambientCueState.currentCombatBgm === snd; // Prevents an old ended/error callback from touching a newer combat track.
           const liveArea = deps.getCurrentArea(); // Re-checks the track against the player's current area before an ended fallback restarts it.
-          // Native HTML media looping is the gapless primary path. Some mobile
-          // media stacks can still surface an ended event for an M4A loop; when
-          // that happens, restart this exact element immediately instead of
-          // retiring it and creating a fresh copy with the normal song fade-in.
+          // Authored gapless tracks use a decoded AudioBufferSourceNode loop,
+          // with native HTML media retained as the compatibility fallback. If a
+          // native/mobile fallback still surfaces ended, restart this exact
+          // transport instead of entering the scheduler/song-fade path.
           if (repeatIfStillInCombat
               && repeatWhileCombat
               && ownsSlot
@@ -1315,6 +1599,7 @@
       ' conditions=' + [world.maps, world.weather, world.timesOfDay, world.seasons, world.weekdays].join('/') +
       ' rainActive=' + deps.calendar.isRaining +
       ' ctxState=' + (_musicAudioCtx?.state || 'none') +
+      ' transport=' + (activeSnd?._gaplessLoopAudio ? (activeSnd._gaplessNativeFallback ? 'html-fallback' : 'buffer-loop') : 'html') +
       ' liveGain=' + (gainNode ? gainNode.gain.gain.value.toFixed(3) : 'n/a') +
       ' targetGain=' + (gainNode ? gainNode.target.toFixed(3) : 'n/a') +
       ' sndVolume=' + (activeSnd ? activeSnd.volume.toFixed(3) : 'n/a') +
