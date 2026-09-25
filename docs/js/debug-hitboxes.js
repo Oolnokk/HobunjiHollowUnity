@@ -24,6 +24,7 @@
   const DEBUG_SHOULDER_PERCH_COLOR = '#5cf2ff'; // Cyan = player-authored live shoulder perch.
   const DEBUG_SHOULDER_GRIP_COLOR = '#ff5cf4'; // Magenta = pet-authored live shoulder grip after root attachment.
   const DEBUG_SHOULDER_SOURCE_PIXEL_COLOR = '#fff566'; // Yellow = independently reconstructed live SkinnedMesh position of the authored shoulder source pixel.
+  const DEBUG_SHOULDER_PET_ROOT_COLOR = '#ff9a3c'; // Orange = actual shoulder-pet root captured during its own visible draw.
 
   function playerModelWidthTiles() {
     return window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.worldModelWidth ?? 0.9;
@@ -304,6 +305,38 @@
     };
   }
 
+  function _ensureShoulderPetRootRenderCapture(pet) {
+    const group = pet?.avatarRef?.group;
+    const planes = [pet?.avatarRef?.frontPlane, pet?.avatarRef?.backPlane].filter(Boolean);
+    if (!group || !planes.length) return null;
+    group.userData = group.userData || {};
+    let state = group.userData.hobunjiShoulderPetRootRenderCapture;
+    if (!state) {
+      state = { lastVisibleSample: null, hookedPlanes: new WeakSet() };
+      group.userData.hobunjiShoulderPetRootRenderCapture = state;
+    }
+    for (const plane of planes) {
+      if (state.hookedPlanes.has(plane)) continue;
+      const previousBefore = typeof plane.onBeforeRender === 'function' ? plane.onBeforeRender : null;
+      plane.onBeforeRender = function shoulderPetRootCaptureBefore(...args) {
+        previousBefore?.apply(this, args);
+        const scene = args[1];
+        const material = args[4];
+        if (scene?.overrideMaterial || material?.colorWrite === false) return;
+        group.updateWorldMatrix?.(true, false);
+        const world = group.getWorldPosition?.(new THREE.Vector3());
+        if (!world) return;
+        state.lastVisibleSample = {
+          world: { x: world.x, y: world.y, z: world.z },
+          capturedAt: performance.now(),
+          captureMode: 'visible-shoulder-pet-plane-onBeforeRender',
+        };
+      };
+      state.hookedPlanes.add(plane);
+    }
+    return state;
+  }
+
   function _activeShoulderPetAttachmentSnapshot() {
     const pet = Array.from(deps?.companionObjects || []).find(c =>
       c?.stableRole === 'shoulderPet'
@@ -323,6 +356,10 @@
     const sourceWorld = sourcePixel?.world
       ? { x: sourcePixel.world.x, y: sourcePixel.world.y, z: sourcePixel.world.z }
       : null;
+    const petRootCapture = _ensureShoulderPetRootRenderCapture(pet);
+    const petRootSample = petRootCapture?.lastVisibleSample;
+    const petRootFresh = petRootSample && performance.now() - Number(petRootSample.capturedAt || 0) <= 250;
+    const petRootWorld = petRootFresh ? { ...petRootSample.world } : null;
     return {
       creatureKey: pet.creatureKey || pet.id || 'shoulderPet',
       perch,
@@ -334,6 +371,10 @@
       sourceTriangle: sourcePixel?.triangle ?? null,
       sourceCaptureMode: sourcePixel?.captureMode || null,
       sourceCapturedAt: Number(sourcePixel?.capturedAt) || null,
+      petRootWorld,
+      petRootCaptureMode: petRootFresh ? petRootSample.captureMode : null,
+      petRootCapturedAt: petRootFresh ? Number(petRootSample.capturedAt) : null,
+      petRootGripDistance: petRootWorld ? Math.hypot(petRootWorld.x - grip.x, petRootWorld.y - grip.y, petRootWorld.z - grip.z) : null,
       sourcePerchError: sourceWorld ? Math.hypot(sourceWorld.x - perch.x, sourceWorld.y - perch.y, sourceWorld.z - perch.z) : null,
       error: Math.hypot(perch.x - grip.x, perch.y - grip.y, perch.z - grip.z),
       rotationSource: raw.rotationSource || null,
@@ -347,15 +388,17 @@
     if (!state) return;
     if (state.sourceWorld) _drawDebugSegment3D(state.sourceWorld, state.perch, DEBUG_SHOULDER_SOURCE_PIXEL_COLOR, true, 2.5, 0.95);
     _drawDebugSegment3D(state.perch, state.grip, '#ffffff', false, 2.5, 0.95);
+    if (state.petRootWorld) _drawDebugSegment3D(state.petRootWorld, state.grip, DEBUG_SHOULDER_PET_ROOT_COLOR, true, 2, 0.9);
     if (state.sourceWorld) _drawDebugPoint3D(state.sourceWorld, DEBUG_SHOULDER_SOURCE_PIXEL_COLOR, 'SOURCE PIXEL', 7, -24);
     _drawDebugPoint3D(state.perch, DEBUG_SHOULDER_PERCH_COLOR, 'PERCH', 9, -7); // Larger cyan ring stays visible even when the grip is perfectly coincident.
     _drawDebugPoint3D(state.grip, DEBUG_SHOULDER_GRIP_COLOR, 'GRIP', 5, 10); // Smaller magenta ring nests inside the perch marker instead of hiding it.
+    if (state.petRootWorld) _drawDebugPoint3D(state.petRootWorld, DEBUG_SHOULDER_PET_ROOT_COLOR, 'PET ROOT', 6, 25);
     const midpoint = {
       x: (state.perch.x + state.grip.x) * 0.5,
       y: (state.perch.y + state.grip.y) * 0.5,
       z: (state.perch.z + state.grip.z) * 0.5,
     };
-    _drawDebugPoint3D(midpoint, '#ffffff', `grip ${state.error.toFixed(5)}u${Number.isFinite(state.sourcePerchError) ? ` · source ${state.sourcePerchError.toFixed(5)}u` : ''}`, 2, 27);
+    _drawDebugPoint3D(midpoint, '#ffffff', `grip ${state.error.toFixed(5)}u${Number.isFinite(state.sourcePerchError) ? ` · source ${state.sourcePerchError.toFixed(5)}u` : ''}${Number.isFinite(state.petRootGripDistance) ? ` · root→grip ${state.petRootGripDistance.toFixed(5)}u` : ''}`, 2, 42);
   }
 
   // Projects all twelve Box3 edges through the live camera. This is the
