@@ -13,17 +13,17 @@ assert.match(gameSource, /const s_shoulderPetRotationSource = 'head';/,
 assert.doesNotMatch(indexSource, /Shoulder-Pet Rotation Source|Invert Selected Shoulder Rotation|Cancel Shoulder-Pet Rotational Offset/,
   'shoulder presentation tuning controls are no longer exposed in Settings');
 assert.match(gameSource,
-  /function _shoulderPetSurfaceTransform\(perch, grip, pet\)[\s\S]{0,2600}const shoulderSideSign = Math\.sign\(perchLocalToPlayer\.x[\s\S]{0,1500}const canonicalFacingSign = [\s\S]{0,900}const facingTowardPlayerCenter = visualFacingSign === towardCenterSign/,
-  'shoulder side plus mirrored animal-art facing determines inward versus outward');
+  /const facingTowardPlayerCenter = pet\?\.__hobunjiShoulderFacingInward === true;[\s\S]{0,500}const desiredVisualFacingSign = facingTowardPlayerCenter \? -shoulderSideSign : shoulderSideSign;[\s\S]{0,350}const observationMirrored = desiredVisualFacingSign !== canonicalFacingSign;/,
+  'semantic inward/outward state resolves the correct mirrored visual facing for the active shoulder');
 assert.match(gameSource,
   /const authoredRotationSign = facingTowardPlayerCenter \? 1 : -1;[\s\S]{0,240}authoredRotationOffset\.invert\(\)/,
-  'outward-facing shoulder pets use the exact opposite authored rotation offset');
+  'inward/front uses the authored rotation while outward/behind uses its exact opposite');
 assert.match(gameSource,
   /if \(!s_cancelShoulderPetRotationalOffset\) worldQuaternion\.multiply\(authoredRotationOffset\)/,
   'the direction-signed authored offset is the final shoulder correction');
 assert.match(gameSource,
-  /facingTowardPlayerCenter: finalTransform\.facingTowardPlayerCenter === true[\s\S]{0,240}authoredRotationSign:/,
-  'final attachment diagnostics record inward/outward signed rotation');
+  /facingTowardPlayerCenter: finalTransform\.facingTowardPlayerCenter === true[\s\S]{0,300}observationMirrored:/,
+  'final attachment diagnostics record semantic facing and resolved mirror parity');
 assert.match(gameSource,
   /worldPosition: perchWorldPosition\.clone\(\)\.sub\(gripWorldOffset\)/,
   'signed rotation still offsets the pet root so its authored grip remains on the perch');
