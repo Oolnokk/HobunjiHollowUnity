@@ -75,6 +75,7 @@ const vm = require('node:vm');
 
   const folderStatus = {
     state: 'ready',
+    folderName: 'Test Primary Save',
     autoSyncArmed: false,
     lastError: null,
     lastAction: 'ready',
@@ -333,11 +334,17 @@ const vm = require('node:vm');
     snapshot: structuredClone(originalSnapshot),
   }; // Existing folder recovery history must survive when the current canonical folder is unreadable.
   folderRecovery.set('preRestore', structuredClone(olderTrustedFolderPreRestore));
+  folderRecovery.set('manual', structuredClone(legacyManualCheckpoint));
+  store.delete('hobunjiSaveCheckpoint.manual.v1');
+  folderStatus.autoSyncArmed = false; // Corruption deliberately stops autosync, but the connected folder must remain recoverable.
   failPrimarySnapshotRead = true;
+  await api.syncRecoveryMirrorsFromFolder();
+  assert.ok(store.has('hobunjiSaveCheckpoint.manual.v1'), 'disarmed corrupt folders still mirror their folder recovery checkpoints on demand');
   now += 60_000;
   let restoreResult = await api.restoreManual();
   failPrimarySnapshotRead = false;
-  assert.equal(restoreResult.ok, true, 'recovery can repair an unreadable canonical folder by preserving the browser snapshot instead');
+  folderStatus.autoSyncArmed = true;
+  assert.equal(restoreResult.ok, true, 'recovery can repair an unreadable canonical folder even while normal autosync is disarmed');
   assert.equal(appliedSnapshot.meta.worlds[0].members.char_a.nonGearInventory.turnip, 5);
   assert.equal(Object.prototype.hasOwnProperty.call(appliedSnapshot.meta.worlds[0].members.char_a.zoneTreasureState.zone_test.placements[0], '_mesh'), false, 'recovery restore strips legacy runtime treasure meshes before applying browser state');
   assert.equal(api.getStatus().preRestore.reason, 'before-recovery-browser-fallback', 'corrupt canonical reads keep an emergency browser-side safety copy for this transaction');
