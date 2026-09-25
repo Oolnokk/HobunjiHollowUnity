@@ -53,6 +53,7 @@ context.ResourceSystem = {
   applyDamage: (entity, amount) => { resourceApplyDamageCalls++; entity.health = (entity.health || 0) - amount; },
   tick: (entity, dt) => ({ entity, dt }),
   getEffectiveMax: (entity, key) => 100,
+  getAffliction: (entity, id) => Number(entity.afflictions?.[id]) || 0,
   enforceCaps: () => {},
 };
 assert.equal(AmphibiousFishing.getDebug().resourceRulesInstalled, true, 'assigning window.ResourceSystem installs the wounded/scent rules immediately, with no polling needed');
@@ -64,6 +65,15 @@ assert.equal(AmphibiousFishing.getDebug().resourceRulesInstalled, true, 'assigni
 assert.equal(typeof context.ResourceSystem, 'object', 'window.ResourceSystem must remain the real object after hooking, not the boolean success flag');
 assert(context.ResourceSystem.AFFLICTIONS.woundedHealth, 'wounded health affliction registered');
 assert(context.ResourceSystem.AFFLICTIONS.scentMarkedHealth, 'scent-marked health affliction registered');
+
+const woundedHealthFloorEntity = {
+  health: 100,
+  maxHealth: 100,
+  afflictions: { woundedHealth: 100 },
+}; // Used to verify the amphibious max-Health extension preserves the shared 1 HP nonlethal floor.
+assert.equal(context.ResourceSystem.getEffectiveMax(woundedHealthFloorEntity, 'health'), 1, 'Wounded Health cannot reduce effective maximum Health below 1');
+context.ResourceSystem.enforceCaps(woundedHealthFloorEntity);
+assert.equal(woundedHealthFloorEntity.health, 1, 'Wounded Health cap enforcement cannot kill the target outright');
 
 let registeredAttack = null;
 context.Combat = { animalAttacks: { register: (id, def) => { registeredAttack = { id, def }; } } };
