@@ -15,7 +15,7 @@
     return;
   }
 
-  const AMBIENT_FIRE_KEYS = new Set(['campfire', 'bonfire', 'candleTable']); // Used to limit always-on VFX to intentional flame-bearing furniture.
+  const AMBIENT_FIRE_KEYS = new Set(['campfire', 'bonfire', 'candleTable', 'hearth']); // Used to limit always-on VFX to intentional flame-bearing furniture.
   const AMBIENT_UNATTACHED_TTL_MS = 5000; // Used to discard preview groups that were built but never added to a scene.
   const FIRE_FURNITURE_DEFS = Object.freeze({ // Used to register real placeable decorative furniture definitions before game init.
     campfireFurniture: Object.freeze({
