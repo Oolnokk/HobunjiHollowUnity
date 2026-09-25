@@ -367,7 +367,8 @@
     const frontCount=Math.max(3,config.segments);
     const backCount=Math.max(2,frontCount-1);
     const requestedTiers=Math.max(8,config.mountainLayers);
-    const naturalTiers=Math.max(4,Math.round(field.effectiveHeightWorld/Math.max(0.01,deps.PLATEAU_UNIT)));
+    const plateauUnit=Math.max(0.01,Number(deps?.PLATEAU_UNIT)||2.5); // Uses the live game's ordinary plateau unit when initialized; 2.5 is the authoring fallback before the 3D preview injects deps.
+    const naturalTiers=Math.max(4,Math.round(field.effectiveHeightWorld/plateauUnit));
     const maxTier=Math.max(4,Math.min(requestedTiers,naturalTiers));
     const peaks=[];
 
@@ -427,7 +428,7 @@
     const zGrid=Array.from({length:field.rows},(_,r)=>
       Array.from({length:field.cols},(_,c)=>{
         const elevTier=tiers[r*field.cols+c];
-        return{type:deps.TileType.GRASS,elevTier,skipFloor:elevTier>0,incline:false,rampElevation:0};
+        return{type:deps?.TileType?.GRASS||'grass',elevTier,skipFloor:elevTier>0,incline:false,rampElevation:0};
       })
     );
 
@@ -478,7 +479,7 @@
         const localX=posArray[i],localY=posArray[i+1],localZ=posArray[i+2];
         const [worldX,worldZ]=mountainFieldWorldPoint(field,localX,localZ);
         posArray[i]=worldX;
-        posArray[i+1]=baseY+(localY-deps.NORMAL_TOP)*heightScale;
+        posArray[i+1]=baseY+(localY-(Number(deps?.NORMAL_TOP)||0))*heightScale;
         posArray[i+2]=worldZ;
         if(uvArray){
           const ui=(i/3)*2;
@@ -518,7 +519,7 @@
     const localRoot=new THREE.Group();
     const meshes=plateauApi.buildZoneMesaMeshes(localRoot,mapId,field.mesas,field.zGrid,{skipDisplacement:true,silent:true})||[];
     const baseY=horizonEdgeBaseY(zcols,zrows,zoneBaseElev,zGrid,config.side);
-    const rawHeight=Math.max(0.001,field.maxTier*deps.PLATEAU_UNIT);
+    const rawHeight=Math.max(0.001,field.maxTier*(Number(deps?.PLATEAU_UNIT)||2.5));
     const heightScale=field.effectiveHeightWorld/rawHeight;
     let vertices=0,triangles=0;
     for(const mesh of meshes){
