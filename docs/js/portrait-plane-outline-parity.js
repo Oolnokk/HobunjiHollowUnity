@@ -251,9 +251,8 @@
   }
 
   global.HobunjiPortraitOutlineParity = Object.freeze({
-    SHOULDER_PERCH_MIRROR_STORAGE_KEY,
-    getMirrorShoulderPerchWithPortrait: () => mirrorShoulderPerchWithPortrait,
-    setMirrorShoulderPerchWithPortrait,
+    getMirrorShoulderPerchWithPortrait: () => true,
+    setMirrorShoulderPerchWithPortrait: () => true, // Compatibility no-op: portrait-aware perch mirroring is now fixed on and has no Settings surface.
     getDebug() {
       return {
         activeRoots: activeRoots.size,
@@ -262,8 +261,8 @@
         missedDepthSnapshots,
         maxSnapshotAgeMs: MAX_SNAPSHOT_AGE_MS,
         skinnedPixelCpuParity: !!avatarApi.__hobunjiSkinnedPixelCpuParityInstalled,
-        mirrorShoulderPerchWithPortrait,
-        frontShoulderPetXrayDisabledByDefault: true,
+        mirrorShoulderPerchWithPortrait: true,
+        shoulderPetXrayEnabled: false,
       };
     },
   });
