@@ -12,21 +12,24 @@ assert.match(gameSource, /const s_shoulderPetRotationSource = 'head';/,
   'head/neck remains the fixed authored shoulder rotation frame');
 assert.doesNotMatch(indexSource, /Shoulder-Pet Rotation Source|Invert Selected Shoulder Rotation|Cancel Shoulder-Pet Rotational Offset/,
   'shoulder presentation tuning controls are no longer exposed in Settings');
+assert.match(gameSource, /const SHOULDER_PET_HALF_TURN_QUATERNION = new THREE\.Quaternion\(\)\.setFromAxisAngle\(new THREE\.Vector3\(0, 1, 0\), Math\.PI\);/,
+  'shoulder facing swap is authored as an exact 180-degree local-Y quaternion');
 assert.match(gameSource,
-  /const facingTowardPlayerCenter = pet\?\.__hobunjiShoulderFacingInward === true;[\s\S]{0,500}const desiredVisualFacingSign = facingTowardPlayerCenter \? -shoulderSideSign : shoulderSideSign;[\s\S]{0,350}const observationMirrored = desiredVisualFacingSign !== canonicalFacingSign;/,
-  'semantic inward/outward state resolves the correct mirrored visual facing for the active shoulder');
+  /const facingTowardPlayerCenter = pet\?\.__hobunjiShoulderFacingInward === true;[\s\S]{0,3200}const shoulderFacingTurnDeg = facingTowardPlayerCenter \? 180 : 0;/,
+  'brief inward/front state selects the 180-degree local transform while outward/behind stays at zero extra turn');
 assert.match(gameSource,
-  /const authoredRotationSign = facingTowardPlayerCenter \? 1 : -1;[\s\S]{0,240}authoredRotationOffset\.invert\(\)/,
-  'inward/front uses the authored rotation while outward/behind uses its exact opposite');
+  /worldQuaternion\.multiply\(authoredRotationOffset\);[\s\S]{0,180}worldQuaternion\.multiply\(SHOULDER_PET_HALF_TURN_QUATERNION\)/,
+  'the half-turn is applied after the authored perch/grip correction in pet-local space');
+assert.doesNotMatch(gameSource, /authoredRotationOffset\.invert\(\)/,
+  'opposite shoulder facing never inverts the authored quaternion');
+assert.doesNotMatch(gameSource, /desiredVisualFacingSign|observationMirrored|canonicalFacingSign/,
+  'shoulder facing no longer computes or requests sprite mirror parity');
 assert.match(gameSource,
-  /if \(!s_cancelShoulderPetRotationalOffset\) worldQuaternion\.multiply\(authoredRotationOffset\)/,
-  'the direction-signed authored offset is the final shoulder correction');
-assert.match(gameSource,
-  /facingTowardPlayerCenter: finalTransform\.facingTowardPlayerCenter === true[\s\S]{0,300}observationMirrored:/,
-  'final attachment diagnostics record semantic facing and resolved mirror parity');
+  /facingTowardPlayerCenter: finalTransform\.facingTowardPlayerCenter === true[\s\S]{0,180}shoulderFacingTurnDeg:[\s\S]{0,120}spriteMirrored: false/,
+  'final diagnostics record 0/180 local turn and guarantee no sprite mirror');
 assert.match(gameSource,
   /worldPosition: perchWorldPosition\.clone\(\)\.sub\(gripWorldOffset\)/,
-  'signed rotation still offsets the pet root so its authored grip remains on the perch');
+  'the pet root is re-solved after rotation so shoulderGrip remains pinned to shoulderPerch');
 assert.match(gameSource, /authoritativeRootTransform: true/,
   'final attachment remains authoritative');
 console.log('shoulder pet direction-signed rotation tests passed');
