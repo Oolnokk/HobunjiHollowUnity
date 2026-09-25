@@ -345,11 +345,11 @@
     let dirHandle;
     try { dirHandle = await _handle.getDirectoryHandle(dirName); } catch { return { entities, corruptFiles }; }
     for await (const [name, entry] of dirHandle.entries()) {
-      if (entry.kind !== 'file') continue;
+      if (entry.kind !== 'file' || !name.toLowerCase().endsWith('.json')) continue; // OS metadata and user notes are not canonical save entities.
       try {
         const value = JSON.parse(await (await entry.getFile()).text());
-        if (value && typeof value === 'object') entities.push(value);
-        else corruptFiles.push(`${dirName}/${name}: JSON root is not an object`);
+        if (value && typeof value === 'object' && !Array.isArray(value) && typeof value.id === 'string' && value.id) entities.push(value);
+        else corruptFiles.push(`${dirName}/${name}: canonical entity JSON is missing a valid id`);
       } catch (error) {
         corruptFiles.push(`${dirName}/${name}: ${String(error?.message || error)}`);
       }
