@@ -416,7 +416,7 @@
       && a.y - margin < b.y + b.h && a.y + a.h + margin > b.y;
   }
 
-  function denCandidateIsSafe(layout, den, x, y, oldDen, activeZone) {
+  function denCandidateIsSafe(zoneId, layout, den, x, y, oldDen, activeZone) {
     const w = Math.max(1, Number(den.w) || 1);
     const h = Math.max(1, Number(den.h) || 1);
     const cols = Math.max(1, Number(layout?.cols) || 1);
@@ -459,7 +459,7 @@
       if (rectsOverlap(candidate, { x:bx, y:by, w:Math.max(1,Number(building.footprintW ?? building.w)||1), h:Math.max(1,Number(building.footprintD ?? building.h)||1) }, 3)) return false;
     }
     for (const transition of (layout.transitions || [])) {
-      if (transition?.targetMapId === denCavernMapId(activeZone || '', den.id)) continue;
+      if (transition?.targetMapId === denCavernMapId(zoneId, den.id)) continue;
       const tx = Number(transition?.col), ty = Number(transition?.row);
       if (Number.isFinite(tx) && Number.isFinite(ty) && tx >= x - 2 && tx <= x + w + 2 && ty >= y - 2 && ty <= mouth.y + 2) return false;
     }
@@ -477,7 +477,7 @@
     for (let attempt = 0; attempt < 700; attempt++) {
       const x = 2 + Math.floor(deps.rnd() * Math.max(1, maxX - 1));
       const y = 2 + Math.floor(deps.rnd() * Math.max(1, maxY - 1));
-      if (denCandidateIsSafe(layout, den, x, y, oldDen, activeZone)) return { x, y, mouthAnchor:{ x:x + Math.floor(w / 2), y:y + h } };
+      if (denCandidateIsSafe(zoneId, layout, den, x, y, oldDen, activeZone)) return { x, y, mouthAnchor:{ x:x + Math.floor(w / 2), y:y + h } };
     }
     const start = Math.floor(deps.rnd() * Math.max(1, (maxX - 1) * (maxY - 1))); // Used to vary the deterministic fallback scan instead of always biasing the northwest.
     const width = Math.max(1, maxX - 1);
