@@ -353,6 +353,28 @@
     return record ? { stage:record.stage, daysRemaining:record.daysRemaining, generation:Number(record.generation)||0 } : null;
   }
 
+  function ensureActiveDenTurnoverRecord(cavernMapId) {
+    const existing = turnoverRecordForCavern(cavernMapId);
+    if (existing) return existing;
+    const zoneId = _denCavernZoneOf.get(cavernMapId);
+    const denId = _denCavernDenIdOf.get(cavernMapId);
+    const den = zoneId != null && denId != null
+      ? deps.zoneLayouts.get(zoneId)?.dens?.find(candidate => String(candidate.id) === String(denId))
+      : null; // Generation-zero persistence needs the live den identity/site; ordinary cavern setup populates both side tables before genotype resolution.
+    if (!den) return null;
+    const key = denKeyFor(zoneId, den);
+    const record = {
+      denKey:key, zoneId, denId:String(den.id), cavernMapId,
+      stage:'active', daysRemaining:null, generation:0, genotypes:{},
+      x:Number(den.x), y:Number(den.y),
+      w:Math.max(1, Number(den.w)||1), h:Math.max(1, Number(den.h)||1),
+      mouthAnchor:den.mouthAnchor ? { ...den.mouthAnchor } : null,
+    }; // Stored immediately so an untouched den cannot silently change bloodline on a page reload.
+    denTurnoverByKey.set(key, record);
+    persistDenTurnover();
+    return record;
+  }
+
   function layoutTileMap(layout) {
     const byKey = new Map(); // Used by collapse/relocation terrain edits without rebuilding a 2D grid for every tile lookup.
     for (const tile of (layout?.tiles || [])) byKey.set(`${tile.c},${tile.r}`, tile);
@@ -794,7 +816,7 @@
   function getOrMakeDenGenotype(cavernMapId, family) {
     const key = `${cavernMapId}|${family}`;
     if (!_denGenotypes.has(key)) {
-      const turnover = turnoverRecordForCavern(cavernMapId); // Relocated bloodlines persist across reloads instead of silently rerolling at the same new site.
+      const turnover = turnoverRecordForCavern(cavernMapId) || ensureActiveDenTurnoverRecord(cavernMapId); // Generation zero and every relocated generation persist the same way across reloads.
       const persisted = turnover?.genotypes?.[family] || null;
       const genotype = persisted ? JSON.parse(JSON.stringify(persisted)) : window.CreatureGenetics.makeDefaultGenotype(family);
       _denGenotypes.set(key, genotype);
