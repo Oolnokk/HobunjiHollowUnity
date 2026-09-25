@@ -919,6 +919,7 @@
       lastAction,
       lastError: lastError || null,
       lastIntegrityWarning: lastIntegrityWarning || null,
+      recoveryReadErrors: { ...lastRecoveryReadErrors },
     }),
   };
 })();
