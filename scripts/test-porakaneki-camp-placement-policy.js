@@ -97,8 +97,8 @@ const context = vm.createContext({
 vm.runInContext(temporaryLocalesSource, context, { filename: 'temporary-locales.js' });
 vm.runInContext(policySource, context, { filename: 'porakaneki-camp-placement-policy.js' });
 
-assert.equal(contextWindow.PorakanekiCampPlacementPolicy.version, 2);
-assert(loaderSource.indexOf("['PorakanekiCampPlacementPolicy', 'porakaneki-camp-placement-policy.js?v=20260924chunkecology1']") >= 0, 'placement policy is parser-loaded');
+assert.equal(contextWindow.PorakanekiCampPlacementPolicy.version, 3);
+assert(loaderSource.indexOf("['PorakanekiCampPlacementPolicy', 'porakaneki-camp-placement-policy.js?v=20260924chunkecology2']") >= 0, 'placement policy is parser-loaded');
 assert(loaderSource.indexOf("['PorakanekiCampPlacementPolicy'") < loaderSource.indexOf("['PorakanekiCamps'"), 'placement policy loads before camp generation');
 assert(loaderSource.indexOf("['PorakanekiCamps'") < loaderSource.indexOf("['PorakanekiMapMarkers'"), 'camp state still updates before map proxies');
 assert(porakanekiRuntimeSource.includes('if (zoneState.chiefReservation) for (const key of streamChunkKeysForSite(zoneState.chiefReservation.site))'),
@@ -109,6 +109,10 @@ assert(porakanekiRuntimeSource.includes('zoneState.smallCamps.length <= MIN_HUNT
   'bandit-space recovery must stop at the protected one-hunting-camp floor');
 assert(porakanekiRuntimeSource.includes('if (zoneState.smallCamps.length < MIN_HUNTING_CAMPS_PER_ZONE)') && porakanekiRuntimeSource.includes('stampHuntingCamp(zoneState, zoneId, targetCount, true)'),
   'initial generation must run the minimum-camp fallback if ordinary hunting-camp placement produces zero sites');
+assert(porakanekiRuntimeSource.includes('minimumCampRequired: minimumFallback'),
+  'the runtime must explicitly arm the placement policy compact/tent minimum fallback only for the protected final camp');
+assert(policySource.includes('function minimumCampFallbackLocales(locale)') && policySource.includes('opts.minimumCampRequired'),
+  'placement policy must provide compact and tent-only surface fallbacks for the hard one-camp invariant');
 assert(!porakanekiRuntimeSource.includes('zoneState.chiefReservation = null'),
   'bandit-space recovery must never discard the chief reservation');
 assert(banditCampSource.includes('avoidChunks = porakanekiAvoidChunks(zoneId)'),
