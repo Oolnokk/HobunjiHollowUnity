@@ -163,6 +163,20 @@
   // 'fleeing-low-health' once it's hurt enough, even if it was already
   // below threshold before this hit.
   function applyWildlifeSkirmishDamage(attacker, target, amount) {
+    const factionTarget = target?.isBandit === true || target?.isPorakanekiHunter === true || target?.banditCompanion === true;
+    if (factionTarget) {
+      // Predator-vs-humanoid encounters are real observed combat, not the
+      // abstract non-lethal wildlife sparring model. They can kill either
+      // faction, but remain tagged actor-vs-actor so Porakaneki reputation
+      // never mistakes a predator hit for player aggression.
+      deps.damageCreature(target, Math.max(0, amount), attacker.x, attacker.y, deps.HOSTILE_BITE_KNOCKBACK_PX_S, {
+        tag: attacker.def?.attackTag || 'sharp',
+        friendlyFire: true,
+        factionCombat: true,
+        attacker,
+      });
+      return;
+    }
     const floor = target.maxHealth * WILDLIFE_HP_FLOOR_FRACTION;
     const clamped = Math.max(0, Math.min(amount, target.health - floor));
     if (clamped > 0) deps.damageCreature(target, clamped, attacker.x, attacker.y, deps.HOSTILE_BITE_KNOCKBACK_PX_S, { tag: attacker.def?.attackTag || 'sharp' });
@@ -484,6 +498,7 @@
         homeX: anchor.x + Math.cos(formationAngle) * homeOffset,
         homeY: anchor.y + Math.sin(formationAngle) * homeOffset,
         state: 'idle',
+        wildlifeRole: 'prey', // Used by chunk-local faction ecology; roaming herds are valid Porakaneki hunting targets.
         herdKey,
         herdHomeX: anchor.x,
         herdHomeY: anchor.y,
@@ -613,7 +628,7 @@
         memberHomeX = homeX + Math.cos(spreadAngle) * spreadDist;
         memberHomeY = homeY + Math.sin(spreadAngle) * spreadDist;
       }
-      const opts = { homeX: memberHomeX, homeY: memberHomeY, denEntranceX, denEntranceY, state: 'idle', denKey, genotype: denGenotype };
+      const opts = { homeX: memberHomeX, homeY: memberHomeY, denEntranceX, denEntranceY, state: 'idle', denKey, genotype: denGenotype, wildlifeRole: speciesIsHerbivore ? 'prey' : 'predator' }; // Explicit ecology role avoids guessing from hostility/diet overlays later.
       assignWildlifeStation(opts, zoneData, memberHomeX, memberHomeY, speciesIsHerbivore);
       const creature = deps.makeCreatureEntity(speciesKey, x, y, opts);
       if (creature) { deps.hostileObjects.add(creature); spawned++; }
@@ -831,6 +846,7 @@
     const mother = deps.makeCreatureEntity(motherKey, midX, midY, {
       homeX: midX, homeY: midY, state: 'idle', isDenMother: true, nestTreeKey: key,
       genotype: nestGenotype,
+      wildlifeRole: 'prey', // Drenkirra Nestmothers remain prey ecology even though they defend their nest.
     });
     if (!mother) {
       window.__farmLog?.(`[wildlife] ${key}: makeCreatureEntity("${motherKey}") returned null — nest tree left empty.`, 'wildlife');
@@ -856,7 +872,7 @@
       // Same nestGenotype the Nestmother above got — guards should carry
       // her colors/patterns, not spawn plain (makeCreatureEntity only
       // recolors a creature when opts.genotype is present).
-      const opts = { homeX: branch.baseX, homeY: branch.baseY, state: 'idle', nestTreeKey: key, genotype: nestGenotype };
+      const opts = { homeX: branch.baseX, homeY: branch.baseY, state: 'idle', nestTreeKey: key, genotype: nestGenotype, wildlifeRole: 'prey' };
       assignWildlifeStation(opts, zoneData, branch.baseX, branch.baseY, true);
       const creature = deps.makeCreatureEntity('drenkirra', x, y, opts);
       if (creature) { deps.hostileObjects.add(creature); spawned++; }
