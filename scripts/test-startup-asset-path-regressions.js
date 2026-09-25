@@ -24,6 +24,11 @@ assert.doesNotMatch(portrait, /Promise\.any\(uniqueCandidates/,
 assert.match(portrait, /chain\.catch\(\(\) => tryLoadUrl\(url\)\)/,
   'portrait fallback should only be attempted after the primary URL fails');
 
+assert((portrait.match(/getContext\('2d', \{ willReadFrequently: true \}\)/g) || []).length >= 5,
+  'portrait tint probes, tint canvases, and final avatar canvases must request readback-optimized 2D contexts before getImageData scanning');
+assert.match(portrait, /const ctx = canvas\.getContext\('2d', \{ willReadFrequently: true \}\); \/\/ PNGPlaneAvatar repeatedly scans completed portrait canvases/,
+  'renderProfile must create the shared avatar canvas in readback mode before PNGPlaneAvatar alpha scans it');
+
 assert.match(portrait, /if \(headOverlay\.blink === false\) return null;/,
   'portrait blink lookup must allow anatomical overlays to opt out instead of probing a guessed *_blink asset');
 assert((portrait.match(/blinkUrlFor\(layer\)/g) || []).length >= 2,
@@ -49,6 +54,6 @@ assert(!resolvedBase.includes('/docs/docs/assets/'));
 assert(!fallbackBase.includes('/docs/docs/assets/'));
 
 assert.match(index, /js\/HousePieceGen\.js\?v=20260924facetag1/);
-assert.match(index, /js\/portrait-utils\.js\?v=20260924assetroot1/);
+assert.match(index, /js\/portrait-utils\.js\?v=20260925readback1/);
 
-console.log('HousePieceGen face-tag and portrait asset-root startup regressions passed.');
+console.log('HousePieceGen face-tag, portrait asset-root, optional sprite, and canvas readback startup regressions passed.');
