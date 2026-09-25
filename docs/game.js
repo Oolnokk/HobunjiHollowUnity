@@ -5213,7 +5213,10 @@
 
       function isPlayerInCombat() {
         for (const c of hostileObjects) {
-          if (c.health > 0 && c.areaId === currentArea && (c.state === 'chase' || c.state === 'searching')) return true;
+          if (!c || c.health <= 0 || c.areaId !== currentArea) continue;
+          if (c._denHidden || c._animalSleeping || c._cfDrenkirra?.mode === 'sleeping') continue; // Invisible/visibly sleeping wildlife is not an active combatant and cannot own combat music.
+          if (c.denDisplacedPrey || c.def?.hostile === false) continue; // Cleared-den survivors and ordinary non-hostile wildlife must not keep the combat state latched.
+          if (c.state === 'chase' || c.state === 'searching') return true;
         }
         return false;
       }
@@ -13677,7 +13680,8 @@
           // A den's cavern (mapData.wallStyle === 'cavern') guards a 2x2 nest
           // with a Den-Mother mini-boss that never leaves — see synthesizeCavernMapData
           // / generateCavernFloor for nestCol/nestRow/denMotherKind.
-          if (mapData.wallStyle === 'cavern' && Number.isFinite(mapData.nestCol) && Number.isFinite(mapData.nestRow)) {
+          if (mapData.wallStyle === 'cavern' && Number.isFinite(mapData.nestCol) && Number.isFinite(mapData.nestRow)
+              && !window.WildlifeSpawn?.isDenEntryBlockedCavern?.(mapId)) {
             const nestCol = mapData.nestCol, nestRow = mapData.nestRow;
             const motherKey = mapData.denMotherKind;
             const motherDef = CREATURE_DB[motherKey];
@@ -14080,6 +14084,11 @@
       }
 
       function enterBuilding(mapId, defaultCol, defaultRow, targetSpotId = '') {
+        if (window.WildlifeSpawn?.isDenEntryBlockedCavern?.(mapId)) {
+          showToast('The den entrance has collapsed.', false, true);
+          window.__farmLog?.(`[den-turnover] blocked entry into cleared cavern ${mapId}`, 'wildlife');
+          return false;
+        }
         if (window.TownMine?.floorFromMapId?.(mapId) && _buildingScenes.get(mapId)) discardGeneratedMineFloor(mapId);
         // A room visited earlier this session and still cached may no longer
         // match its own `layouts` schedule (e.g. the temple's spirit
@@ -28478,6 +28487,8 @@
         makeCreatureEntity,
         CREATURE_DB,
         showToast,
+        showZoneBanner,
+        discardBuildingScene,
         buildingScenes: _buildingScenes,
         denNests: _denNests,
         getCutscenePreviewActive: () => cutscenePreviewActive,
@@ -28553,6 +28564,7 @@
       window.ZoneDenTotemFeatures?.init({
         NORMAL_TOP, PLATEAU_UNIT,
         markOutline: _markOutline,
+        getCurrentArea: () => currentArea,
       });
       {
         const root = window.TownMine?.farmRootTotem?.(COLS, ROWS);
