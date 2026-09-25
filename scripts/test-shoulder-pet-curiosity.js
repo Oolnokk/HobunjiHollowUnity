@@ -102,12 +102,12 @@ const fakePet = {
 };
 rigSandbox.window.__climbDebug = { companionObjects: new Set([fakePet]) };
 
-assert.equal(rigSandbox.window.ShoulderPetObservationFlip.applyAtPinnedPerch(fakePet, shoulderPerchWorld), true, 'final shoulder pin prepares the canonical grip pivot before the first observation flip');
+assert.equal(rigSandbox.window.ShoulderPetObservationFlip.applyAtPinnedPerch(fakePet, shoulderPerchWorld, false), true, 'final shoulder pin prepares the canonical grip pivot for an unmirrored resolved facing state');
 assert.equal(plane.scale.x, 1.5, 'canonical shoulder placement remains unmirrored before observation parity changes');
 assert(Math.abs(plane.position.x - 0.2) < 1e-12 && Math.abs(plane.position.z - 0.4) < 1e-12, 'canonical preparation does not move the plane');
 
-fakePet.__hobunjiShoulderObservationFlipped = true;
-assert.equal(rigSandbox.window.ShoulderPetObservationFlip.applyAtPinnedPerch(fakePet, shoulderPerchWorld), true, 'final shoulder pin applies the mirrored observation parity');
+fakePet.__hobunjiShoulderFacingInward = true;
+assert.equal(rigSandbox.window.ShoulderPetObservationFlip.applyAtPinnedPerch(fakePet, shoulderPerchWorld, true), true, 'final shoulder pin applies the mirror parity resolved for the inward/front state');
 const mirroredPivotWorld = plane.localToWorld(authoredGripLocal.clone());
 assert(plane.scale.x < 0, 'direct pivot solve mirrors the shoulder-pet plane');
 assert(Math.abs(plane.position.z - 0.4) > 1e-12, '90° face rotation turns the required pivot translation onto parent Z, proving the solve uses the mesh rotation rather than a hard-coded axis');
@@ -155,8 +155,8 @@ assert.match(source,
 assert.match(probeSource, /Shoulder plane deadzone:/,
   'Pixel Probe reports whether the shoulder-pet deadzone bypass is active');
 assert.match(rigSource,
-  /if \(phase === 'wait' && nextPhase === 'look'\)[\s\S]{0,500}pet\.__hobunjiShoulderObservationFlipped = flipped[\s\S]{0,900}phase = nextPhase/,
-  'the curiosity transition changes only logical observation parity; it does not mutate the visual plane before the final shoulder pin');
+  /pet\.__hobunjiShoulderFacingInward = phase === 'look';[\s\S]{0,700}const enteringInwardLook = phase === 'wait' && nextPhase === 'look';[\s\S]{0,500}const leavingInwardLook = phase === 'look' && nextPhase === 'settle';[\s\S]{0,500}pet\.__hobunjiShoulderFacingInward = facingInward/,
+  'curiosity explicitly uses inward/front only during the brief look and restores outward/behind on settle');
 assert.match(rigSource,
   /const localTranslation = plane\.position\.clone\(\)\.set\([\s\S]{0,300}\(state\.baseScaleX - nextScaleX\) \* pivotLocal\.x[\s\S]{0,350}localTranslation\.applyQuaternion\(plane\.quaternion\)[\s\S]{0,220}plane\.position\.add\(localTranslation\)/,
   'the mirror uses the closed-form t\'=t+R(S-S\')p pivot equation in the plane parent space');
