@@ -380,15 +380,15 @@
       peaks.push({
         row,index,
         long:bgClamp(longCenter+longJitter,0.02,0.98),
-        depth:bgClamp(depthCenter+depthJitter,0.08,0.92),
+        depth:bgClamp(depthCenter+depthJitter,0.12,0.88),
         longRadius:baseLongRadius*(0.88+mountainSeedRand(config.mountainSeed,n,9301)*0.34),
-        depthRadius:(row===0?0.40:0.36)*(0.88+mountainSeedRand(config.mountainSeed,n,9401)*0.28),
+        depthRadius:(row===0?0.27:0.25)*(0.90+mountainSeedRand(config.mountainSeed,n,9401)*0.20),
         peak:(row===0?0.86:0.72)+(row===0?0.14:0.18)*mountainSeedRand(config.mountainSeed,n,9501),
         skew:(mountainSeedRand(config.mountainSeed,n,9601)-0.5)*0.13,
       });
     };
-    for(let i=0;i<frontCount;i++)pushPeak(0,i,(i+0.5)/frontCount,0.73);
-    for(let i=0;i<backCount;i++)pushPeak(1,i,(i+1)/frontCount,0.42); // Rear row remains centered in the foreground gaps.
+    for(let i=0;i<frontCount;i++)pushPeak(0,i,(i+0.5)/frontCount,0.66);
+    for(let i=0;i<backCount;i++)pushPeak(1,i,(i+1)/frontCount,0.37); // Rear row remains centered in the foreground gaps; both rows stay well inside the synthetic depth field so neither side is clipped.
 
     const tiers=new Uint8Array(field.cols*field.rows);
     let activeTiles=0,lockedCount=0,maxSeen=0;
@@ -410,8 +410,20 @@
         // overlap. This is what turns the two rows into one shared mountain
         // system instead of a pile of isolated radial stamps.
         let height=bgClamp(best+second*0.24,0,1);
-        const edge=Math.min(c+0.5,field.cols-c-0.5,r+0.5,field.rows-r-0.5);
-        height*=bgClamp(edge/2.5,0,1);
+        // Give the regular plateau renderer genuine lower terrain on EVERY
+        // side of the generated range. The previous 2.5-cell clamp still left
+        // raised tiers touching the map-side synthetic boundary, so the nested
+        // level-set masks all terminated at nearly the same X and read as one
+        // sheer cut. A smooth, wider zero-height apron makes high tiers retreat
+        // progressively on both the near/map side and the far side before the
+        // shared masks are handed to ZonePlateauMesa.
+        const depthEdge=Math.min(c+0.5,field.cols-c-0.5);
+        const longEdge=Math.min(r+0.5,field.rows-r-0.5);
+        const smoothEdge=(distance,fadeCells)=>{
+          const t=bgClamp((distance-0.5)/Math.max(0.5,fadeCells-0.5),0,1);
+          return t*t*(3-2*t);
+        };
+        height*=smoothEdge(depthEdge,7.5)*smoothEdge(longEdge,4.5);
         const rough=(mountainSeedRand(config.mountainSeed,r*field.cols+c,9701)-0.5)*0.055;
         let tier=height>0.045?Math.max(1,Math.round(bgClamp(height+rough,0,1)*maxTier)):0;
         const key=`${c},${r}`;
