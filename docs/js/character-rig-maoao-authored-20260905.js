@@ -58,6 +58,11 @@
   // overrides on a short bootstrap interval. Register after it and mirror that
   // window so its stale Mao-ao shoulder tuple can never win the final tick.
   applyToLibrary();
+  // Lightweight repository previews request a one-shot authored snapshot, so
+  // there is no older 600-tick reapply loop to outlast in that environment.
+  // Gameplay/Animation Author leave this flag unset and retain the historical
+  // retry behavior unchanged.
+  if (window.HOBUNJI_ATTACHMENT_RIG_LATEST_SINGLE_APPLY === true) return;
   let attempts = 0; // Runs slightly longer than the older snapshot's 600-tick retry window.
   const timer = setInterval(() => {
     applyToLibrary();

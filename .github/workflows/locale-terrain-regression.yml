@@ -50,6 +50,11 @@ on:
       - 'docs/tools/dialogue-editor/**'
       - 'docs/tools/wilderness-generation-lab/**'
       - 'docs/tools/locale-editor/**'
+      - 'docs/tools/procedural-animation-editor/**'
+      - 'docs/js/attachment-rig-latest-authored-snapshot-core.js'
+      - 'docs/js/character-rig-maoao-authored-20260905.js'
+      - 'docs/config/character-rig-scale-defaults.js'
+      - 'scripts/test-procedural-editor-portrait-placement.js'
       - 'scripts/test-locale-terrain-placement.js'
       - 'scripts/test-natural-surface-loader-cache.js'
       - 'scripts/test-natural-surface-post-jigsaw-order.js'
@@ -163,3 +168,5 @@ jobs:
         run: node scripts/test-dev-arena-nest-spawner-hook-chain.js
       - name: Test held-hand ownership remains intact
         run: node scripts/test-procedural-hand-fallback.js
+      - name: Test procedural editor gameplay portrait placement parity
+        run: node scripts/test-procedural-editor-portrait-placement.js
