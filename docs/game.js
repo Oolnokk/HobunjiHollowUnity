@@ -6690,6 +6690,7 @@
       // This lets a perched animal turn and nod with the face without making
       // the shoulder coordinate itself orbit around the neck pivot.
       const SHOULDER_PET_BODY_NECK_BLEND = 0.5; // Equal quaternion midpoint between the player body and neck follow frames.
+      const SHOULDER_PET_HALF_TURN_QUATERNION = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI); // Used to swap the perched animal between its two local facing transforms without mirroring the sprite.
       function _shoulderPetSurfaceTransform(perch, grip, pet) {
         const rotationQuaternion = rotationDeg => { // Converts authored YXZ pitch/yaw/roll for the perch and grip composition below.
           const degrees = rotationDeg || {};
@@ -6704,19 +6705,7 @@
         const perchFrame = window.PNGPlaneAvatar?.resolveSkinnedPixelWorldFrame?.(playerMesh, perch.sourcePixel);
         const perchWorldPosition = perchFrame?.position
           || playerMesh.localToWorld(new THREE.Vector3(perch.x || 0, perch.y || 0, perch.z || 0)); // Position always prefers the authored live-skinned pixel, independent of the rotation dropdown.
-        // Shoulder curiosity owns the semantic front/back state directly:
-        // the brief inward look uses the front-of-character authored tilt, while
-        // the long-lived outward look uses the behind-character authored tilt.
-        const perchLocalToPlayer = playerMesh.worldToLocal(perchWorldPosition.clone()); // Used below to resolve which shoulder is currently visible after portrait mirroring.
-        const shoulderSideSign = Math.sign(perchLocalToPlayer.x || Number(perch.x) || -1) || -1; // Used below to convert inward/outward semantics into a concrete visual left/right facing sign.
-        const headRig = window.CreatureGeneticsRender?.headRigForKind?.(pet?.creatureKey || pet?.kind); // Used below to identify the animal art's canonical head side.
-        const headPivotX = Number(headRig?.pivot?.x); // Used below to infer the unmirrored sprite's canonical facing direction.
-        const canonicalFacingSign = Number.isFinite(headPivotX) && Math.abs(headPivotX - 0.5) > 1e-4
-          ? Math.sign(headPivotX - 0.5)
-          : -1; // Used below as the unmirrored visual-facing baseline; existing side-view animal art defaults head-left.
-        const facingTowardPlayerCenter = pet?.__hobunjiShoulderFacingInward === true; // Used below to pair the brief inward state with the front authored tilt.
-        const desiredVisualFacingSign = facingTowardPlayerCenter ? -shoulderSideSign : shoulderSideSign; // Used below to make inward point toward the player and outward point away.
-        const observationMirrored = desiredVisualFacingSign !== canonicalFacingSign; // Passed to the pivot-preserving sprite mirror so visual head direction matches the semantic state.
+        const facingTowardPlayerCenter = pet?.__hobunjiShoulderFacingInward === true; // Brief curiosity state: true selects the same authored attachment transform turned exactly 180° around local Y.
         let selectedRotationQuaternion = null; // Receives the world-space frame chosen by the Settings dropdown below.
         let resolvedRotationSource = s_shoulderPetRotationSource;
         switch (s_shoulderPetRotationSource) {
@@ -6760,11 +6749,13 @@
         const perchQuaternion = rotationQuaternion(perch.rotationDeg); // Authored shoulderPerch rotational correction.
         const inverseGripQuaternion = rotationQuaternion(grip.rotationDeg).invert(); // Authored inverse shoulderGrip rotational correction.
         const authoredRotationOffset = perchQuaternion.clone().multiply(inverseGripQuaternion);
-        const authoredRotationSign = facingTowardPlayerCenter ? 1 : -1;
-        if (authoredRotationSign < 0) authoredRotationOffset.invert(); // Looking away uses the exact opposite authored tilt, naturally placing the pet behind the character instead of relying on x-ray draw order.
+        const shoulderFacingTurnDeg = facingTowardPlayerCenter ? 180 : 0; // Inward/front is the outward authored local transform plus one exact half-turn, never a quaternion inversion or sprite mirror.
         const worldQuaternion = selectedRotationQuaternion.clone();
-        if (!s_cancelShoulderPetRotationalOffset) worldQuaternion.multiply(authoredRotationOffset);
-        const gripWorldOffset = new THREE.Vector3(grip.x || 0, grip.y || 0, grip.z || 0).applyQuaternion(worldQuaternion); // Aligns the pet grip to the resolved perch point.
+        if (!s_cancelShoulderPetRotationalOffset) {
+          worldQuaternion.multiply(authoredRotationOffset);
+          if (shoulderFacingTurnDeg) worldQuaternion.multiply(SHOULDER_PET_HALF_TURN_QUATERNION); // Right-multiply so the half-turn is in the pet attachment's local Y frame.
+        }
+        const gripWorldOffset = new THREE.Vector3(grip.x || 0, grip.y || 0, grip.z || 0).applyQuaternion(worldQuaternion); // Re-solving this offset after the half-turn keeps shoulderGrip exactly pinned to shoulderPerch.
         return {
           worldPosition: perchWorldPosition.clone().sub(gripWorldOffset),
           worldQuaternion,
@@ -6777,10 +6768,7 @@
           rotationSourceInverted: s_invertShoulderPetRotationSource,
           rotationalOffsetCancelled: s_cancelShoulderPetRotationalOffset,
           facingTowardPlayerCenter,
-          authoredRotationSign,
-          shoulderSideSign,
-          canonicalFacingSign,
-          observationMirrored,
+          shoulderFacingTurnDeg,
         };
       }
       // Guessed fallbacks (species-agnostic percent-of-own-height) for the
@@ -7949,15 +7937,13 @@
           rotationFrameWorldQuaternion: finalTransform.rotationFrameWorldQuaternion?.toArray?.() || null,
           finalWorldQuaternion: finalTransform.worldQuaternion.toArray(),
           facingTowardPlayerCenter: finalTransform.facingTowardPlayerCenter === true,
-          authoredRotationSign: finalTransform.authoredRotationSign || 1,
-          shoulderSideSign: finalTransform.shoulderSideSign || 0,
-          canonicalFacingSign: finalTransform.canonicalFacingSign || 0,
-          observationMirrored: finalTransform.observationMirrored === true,
+          shoulderFacingTurnDeg: Number(finalTransform.shoulderFacingTurnDeg) || 0,
+          spriteMirrored: false,
         };
-        const observationPivotApplied = finalTransform.perchWorldPosition
-          ? window.ShoulderPetObservationFlip?.applyAtPinnedPerch?.(c, finalTransform.perchWorldPosition, finalTransform.observationMirrored) === true
-          : false; // Applies observation parity as part of this same final attachment solve, before render, using the grip as the native local mirror pivot.
-        group.userData.hobunjiShoulderPetAttachment.observationPivotApplied = observationPivotApplied;
+        const canonicalPlaneRestored = finalTransform.perchWorldPosition
+          ? window.ShoulderPetObservationFlip?.applyAtPinnedPerch?.(c, finalTransform.perchWorldPosition, false) === true
+          : false; // Shoulder sprites never mirror now; this compatibility hook only restores any stale mirrored plane state from an older hot-reloaded build.
+        group.userData.hobunjiShoulderPetAttachment.canonicalPlaneRestored = canonicalPlaneRestored;
       }
       function updateShoulderPetMeshPin() {
         for (const c of companionObjects) {
