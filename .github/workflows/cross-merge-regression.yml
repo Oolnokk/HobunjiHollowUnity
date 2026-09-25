@@ -22,6 +22,10 @@ on:
       - 'scripts/test-shoulder-pet-curiosity.js'
       - 'scripts/test-shoulder-cam-mandatory.js'
       - 'scripts/test-dialogue-syllable-cadence.js'
+      - 'scripts/test-attack-animation-editor-history-grips.js'
+      - 'scripts/test-controller-input-authority.js'
+      - 'scripts/test-npc-social-rapport-wardrobes.js'
+      - 'scripts/test-procedural-impact-tabs.js'
       - '.github/workflows/cross-merge-regression.yml'
   workflow_dispatch:
 
@@ -55,7 +59,11 @@ jobs:
             shoulder-pet-attachment-debug \
             shoulder-pet-curiosity \
             shoulder-cam-mandatory \
-            dialogue-syllable-cadence; do
+            dialogue-syllable-cadence \
+            attack-animation-editor-history-grips \
+            controller-input-authority \
+            npc-social-rapport-wardrobes \
+            procedural-impact-tabs; do
             echo "::group::$t"
             node "scripts/test-$t.js"
             echo "::endgroup::"
