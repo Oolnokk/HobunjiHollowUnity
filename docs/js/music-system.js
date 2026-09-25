@@ -318,8 +318,10 @@
       fallback.addEventListener('ended', event => emit('ended', event));
       fallback.addEventListener('error', event => emit('error', event));
       state.nativeFallback = fallback;
+      snd._gaplessNativeAudio = fallback; // Used by attachMusicGain if a user-authored track boost later requires >100% gain on the compatibility path.
       state.displayVolume = fallback.volume;
       try { fallback.load(); } catch {}
+      if (Math.max(0, Number(snd._musicTarget) || 0) > 1.0001) setMusicVolumeNow(snd, snd._musicTarget); // Preserve the existing >100% per-track gain behavior even when decoding had to fall back.
       audioDebug('gapless buffer loop unavailable; using native html loop url=' + resolved + ' reason=' + (error?.message || error), 'gapless-native-fallback-' + resolved, 0, 'bgm');
       return fallback;
     };
@@ -443,7 +445,8 @@
   // reduction twice on ordinary BGM. Keep the media element itself at unity
   // and let exactly one GainNode own music loudness/fades instead.
   function attachMusicGain(snd) {
-    if (snd?._gaplessLoopAudio && snd?._gaplessNativeFallback) return null; // A decode-failure fallback is already playing directly through its native media element.
+    const mediaElement = snd?._gaplessNativeFallback ? snd._gaplessNativeAudio : snd; // A decoded-loop fallback still routes its real HTMLAudioElement through the same optional >100% gain path.
+    if (!mediaElement) return null;
     const ctx = getMusicAudioCtx();
     if (!ctx) return null;
     if (_musicGainNodes.has(snd)) return _musicGainNodes.get(snd);
@@ -457,7 +460,7 @@
       return null;
     }
     try {
-      const source = ctx.createMediaElementSource(snd);
+      const source = ctx.createMediaElementSource(mediaElement);
       const gain = ctx.createGain();
       // Preserve the level actually coming out of the HTML audio element at
       // the instant routing changes. Using the requested final target here
