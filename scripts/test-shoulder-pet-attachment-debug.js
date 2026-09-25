@@ -19,6 +19,13 @@ assert.match(debug, /raw\.alignedGripWorldPosition/);
 assert.match(debug, /_drawDebugSegment3D\(state\.perch, state\.grip/);
 assert.match(debug, /'PERCH', 9/);
 assert.match(debug, /'GRIP', 5/);
+assert.match(debug, /DEBUG_SHOULDER_SOURCE_PIXEL_COLOR/);
+assert.match(debug, /function _liveShoulderSourcePixelWorld\(\)/);
+assert.match(debug, /getAttribute\?\.\('skinIndex'\)/);
+assert.match(debug, /getAttribute\?\.\('skinWeight'\)/);
+assert.match(debug, /SOURCE PIXEL/);
+assert.match(debug, /sourcePerchError/);
+assert.match(game, /playerAttachmentAnchor,/);
 assert.match(debug, /error \$\{state\.error\.toFixed\(5\)\}u/);
 assert.match(debug, /get shoulderPetAttachment\(\)/);
 const pixelProbe = fs.readFileSync('docs/js/pixel-probe.js', 'utf8'); // Guards copyable world/local shoulder attachment coordinates.
