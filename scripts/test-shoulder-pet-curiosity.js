@@ -126,16 +126,15 @@ assert.match(source,
   'shoulder pets bypass the generic center-pivot creature PNG deadzone before the authored perch/grip solve');
 assert.match(probeSource, /Shoulder plane deadzone:/,
   'Pixel Probe reports whether the shoulder-pet deadzone bypass is active');
-assert.match(source, /const SHOULDER_PET_POSE_HOLD_MIN_S = 3\.4;[\s\S]{0,120}const SHOULDER_PET_POSE_HOLD_MAX_S = 7\.2;/,
-  'both local facing poses use the same sustained multi-second hold range');
-assert.match(source, /const SHOULDER_PET_IDLE_INWARD_CHANCE = 0\.75;[\s\S]{0,180}const SHOULDER_PET_MOVING_INWARD_CHANCE = 0\.25;/,
-  'idle favors inward 75/25 while movement favors outward 75/25');
+assert.match(source, /const SHOULDER_PET_POSE_HOLD_MIN_S = 1\.5;[\s\S]{0,120}const SHOULDER_PET_POSE_HOLD_MAX_S = 3\.0;/,
+  'both local facing poses use the same short sustained hold range');
+assert.match(source, /const SHOULDER_PET_INWARD_CHANCE = 0\.5;/,
+  'shoulder pose selection is an unbiased 50/50 roll');
+assert.doesNotMatch(source, /SHOULDER_PET_IDLE_INWARD_CHANCE|SHOULDER_PET_MOVING_INWARD_CHANCE|SHOULDER_PET_MOVING_SPEED_SQ/,
+  'shoulder pose selection has no idle/moving bias machinery');
 assert.match(source,
-  /const moving = \(masterVx \* masterVx \+ masterVy \* masterVy\) > SHOULDER_PET_MOVING_SPEED_SQ[\s\S]{0,120}playerAutoWalk/,
-  'movement bias reuses existing velocity/autowalk state with a squared-speed comparison instead of expensive spatial work');
-assert.match(source,
-  /if \(state\.timer <= 0\) \{[\s\S]{0,220}const facingInward = rnd\(\) < inwardChance;[\s\S]{0,420}state\.timer = SHOULDER_PET_POSE_HOLD_MIN_S/,
-  'a single weighted pose roll occurs only when the sustained hold expires');
+  /if \(state\.timer <= 0\) \{[\s\S]{0,180}const facingInward = rnd\(\) < SHOULDER_PET_INWARD_CHANCE;[\s\S]{0,520}state\.timer = SHOULDER_PET_POSE_HOLD_MIN_S/,
+  'a single 50/50 pose roll occurs only when the sustained hold expires');
 const sustainedTickSource = source.slice(source.indexOf('function _tickShoulderPetCuriosity'), source.indexOf('function _applyShoulderPetCuriosity'));
 assert.doesNotMatch(sustainedTickSource, /phase === 'wait'|phase === 'look'|phase === 'settle'|SHOULDER_PET_CURIOUS_LOOK_|SHOULDER_PET_CURIOUS_WAIT_/,
   'the old momentary wait/look/settle cycle is completely removed');
@@ -168,9 +167,14 @@ assert.match(source,
 assert.match(source,
   /const SHOULDER_PET_CURIOUS_BODY_LEAN_MAX_DEG = 7/,
   'the whole-body lean stays subtle and scale-stable');
+assert.match(source, /const SHOULDER_PET_AWAY_HEAD_YAW_SIGN = 1;/,
+  'shoulder head yaw uses one fixed pet-local-left sign in both body poses');
 assert.match(source,
-  /state\.targetYawDeg = side \* \(SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG/,
-  'each new sustained hold can choose a natural head/lean variation');
+  /state\.targetYawDeg = SHOULDER_PET_AWAY_HEAD_YAW_SIGN \* \(SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG/,
+  'each sustained hold turns the head only in the fixed away-from-character direction');
+assert.doesNotMatch(source,
+  /state\.targetYawDeg = (?:side|leanSide) \*/,
+  'body-lean randomness can never choose the shoulder pet head-yaw direction');
 assert.match(rigSource,
   /\['drenkirra'[\s\S]{0,180}\[0\.01,-0\.11914729549653388,-0\.001096892109713506\]/,
   'Drenkirra uses the supplied shoulderGrip');
@@ -185,6 +189,6 @@ assert.match(rigSource,
   'Rakakoan still shares Kenkari transform objects instead of owning independent perch transforms');
 assert.match(probeSource,
   /Size class:[\s\S]{0,260}expected group scale=[\s\S]{0,650}Shoulder pose:[\s\S]{0,180}inwardChance=/,
-  'the mobile pixel probe reports sustained pose, hold time, and active idle/moving bias alongside genotype scale');
+  'the mobile pixel probe reports sustained pose, hold time, and unbiased inward chance alongside genotype scale');
 
 console.log('Shoulder-pet curiosity regression checks passed.');
