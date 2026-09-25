@@ -145,6 +145,11 @@ assert.doesNotMatch(applyCuriositySource, /frontPlane\.rotation\.y|backPlane\.ro
 assert.doesNotMatch(source, /SHOULDER_PET_REVERSE_SPEED_DEG|currentFacingYawDeg|targetFacingYawDeg|behaviorYawOffset/,
   'main keeps the rejected interpolated 180-degree shoulder-pet reverse/yaw experiment out');
 assert.match(source,
+  /function _shoulderPetSurfaceTransform\(perch, grip, pet\)[\s\S]{0,4200}const authoredRotationSign = facingTowardPlayerCenter \? 1 : -1[\s\S]{0,260}authoredRotationOffset\.invert\(\)/,
+  'the shoulder-pet authored tilt flips to its exact opposite whenever the mirrored animal faces away from the player center');
+assert.match(probeSource, /Authored shoulder tilt: facing=/,
+  'Pixel Probe exposes inward/outward authored rotation sign');
+assert.match(source,
   /const shoulderPetBypassesPlaneDeadzone = c\.stableRole === 'shoulderPet';[\s\S]{0,900}c\.pngRot = c\.groupRot;/,
   'shoulder pets bypass the generic center-pivot creature PNG deadzone before the authored perch/grip solve');
 assert.match(probeSource, /Shoulder plane deadzone:/,
