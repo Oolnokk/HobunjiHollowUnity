@@ -683,10 +683,10 @@
     plane.matrixWorldNeedsUpdate = true;
     return true;
   };
-  const applyShoulderPetObservationAtPinnedPerch = (pet, worldPivot) => {
+  const applyShoulderPetObservationAtPinnedPerch = (pet, worldPivot, mirrored = null) => {
     const avatar = pet?.avatarRef;
     if (!avatar?.group || !worldPivot) return false;
-    const flipped = !!pet.__hobunjiShoulderObservationFlipped; // Current logical observation parity is consumed only inside the final shoulder-pin solve.
+    const flipped = typeof mirrored === 'boolean' ? mirrored : !!pet.__hobunjiShoulderObservationFlipped; // Uses game.js's resolved inward/outward visual parity; legacy fallback keeps direct debug callers working.
     const errors = shoulderObservationMeshes(avatar)
       .map(plane => solveShoulderObservationPlaneAtPivot(plane, worldPivot, flipped))
       .filter(Number.isFinite);
@@ -710,17 +710,20 @@
     const state = pet?.shoulderCuriosity;
     if (!state || shoulderPetObservationFlipRuntime.instrumentedStates.has(state)) return false;
     let phase = state.phase;
+    pet.__hobunjiShoulderFacingInward = phase === 'look'; // Semantic shoulder-facing state consumed by game.js; waiting/settling defaults outward while the brief look faces inward.
     Object.defineProperty(state, 'phase', {
       configurable: true, enumerable: true, get: () => phase,
       set: nextPhase => {
-        if (phase === 'wait' && nextPhase === 'look') {
-          const flipped = !pet.__hobunjiShoulderObservationFlipped; // Logical direction changes here; the visual transform is solved later in the same game frame by updateShoulderPetMeshPin().
-          pet.__hobunjiShoulderObservationFlipped = flipped;
+        const enteringInwardLook = phase === 'wait' && nextPhase === 'look'; // Used below to switch the brief observation pose to inward/front.
+        const leavingInwardLook = phase === 'look' && nextPhase === 'settle'; // Used below to restore the normal outward/behind pose immediately after the glance.
+        if (enteringInwardLook || leavingInwardLook) {
+          const facingInward = enteringInwardLook; // Stored below as the semantic state; visual mirror parity is resolved later from shoulder side.
+          pet.__hobunjiShoulderFacingInward = facingInward;
           shoulderPetObservationFlipRuntime.flipCount += 1;
           shoulderPetObservationFlipRuntime.lastFlip = {
-            pet, // Internal identity used only so the final pin can attach its measured pivot residual to this exact flip event.
+            pet, // Internal identity used only so the final pin can attach its measured pivot residual to this exact facing change.
             creatureKey: pet.creatureKey || pet.kind || 'unknown',
-            flipped,
+            facingInward,
             applied: false,
             pivotMode: 'pending-final-shoulder-pin',
             pivotError: null,
@@ -742,7 +745,8 @@
       if (!pet) continue;
       if (pet.stableRole !== 'shoulderPet') {
         if (pet.__hobunjiShoulderObservationTrackingActive) {
-          pet.__hobunjiShoulderObservationFlipped = false;
+          pet.__hobunjiShoulderFacingInward = false;
+          pet.__hobunjiShoulderObservationFlipped = false; // Legacy hot-reload cleanup; semantic facing now lives in __hobunjiShoulderFacingInward.
           shoulderObservationMeshes(pet.avatarRef).forEach(restoreShoulderObservationPlane); // Role cleanup only; active flips are owned by game.js's final pin math.
           pet.__hobunjiShoulderObservationTrackingActive = false;
         }
@@ -763,7 +767,7 @@
     },
     formatDebug: () => {
       const d = window.ShoulderPetObservationFlip.getDebug();
-      const last = d.lastFlip ? `${d.lastFlip.creatureKey}:${d.lastFlip.flipped ? 'mirrored' : 'normal'}` : 'none'; // Existing compact flip summary.
+      const last = d.lastFlip ? `${d.lastFlip.creatureKey}:${d.lastFlip.facingInward ? 'inward/front' : 'outward/behind'}` : 'none'; // Compact semantic facing summary for mobile-visible debugging.
       const pivot = d.lastFlip?.pivotMode || 'none'; // Shows whether the authored shoulderGrip pivot, rather than center-origin scaling, owned the last flip.
       const error = Number.isFinite(d.lastFlip?.pivotError) ? d.lastFlip.pivotError.toExponential(2) : 'n/a'; // Residual world-space grip/perch mismatch after the direct local pivot solve.
       return `Shoulder pet observation flip: active=${d.activePetCount} instrumented=${d.instrumentedCount} flips=${d.flipCount} last=${last} pivot=${pivot} gripError=${error}`;
