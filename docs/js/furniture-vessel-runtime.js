@@ -305,6 +305,7 @@
       pendingAuthoredFurnitureKey: null,
     });
     target.updateMatrixWorld?.(true);
+    window.InteriorFireFloorRuntime?.onAuthoredFurnitureReady?.(target, data, data.key || target.userData?.authoredFurnitureKey); // Reattaches part-bound ambient VFX only after the real authored mesh map exists.
     return true;
   }
 
@@ -317,6 +318,7 @@
         ready.userData.authoredFurnitureUpgraded = true;
         ready.userData.authoredFurnitureUpgradeSource = 'ready-at-build';
       }
+      window.InteriorFireFloorRuntime?.onAuthoredFurnitureReady?.(ready, cached, cached.key || key); // Keeps cached authored furniture on the same ambient-VFX readiness path as async upgrades.
       return ready;
     }
 
