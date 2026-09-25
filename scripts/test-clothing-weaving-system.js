@@ -310,6 +310,8 @@ assert.match(source, /const patternMap = Array\.isArray\(descriptors\)[\s\S]*?bu
 assert.match(source, /patternImageForTint\(patternMap, baseTintResolver, pending => pendingBuilds\.add\(pending\), img, sourceKey, tint\)/, 'the woven tint resolver closes over that render-local descriptor map and reports this render\'s cache misses');
 assert.match(source, /await Promise\.allSettled\(\[\.\.\.pendingBuilds\]\)/, 'woven portrait renders wait for missing pattern composites before returning their canvas');
 assert.match(source, /renderProfileWithWovenPatterns[\s\S]*?return renderer\(canvas, profile, renderOptions\); \/\/ Cache is now warm/, 'the reusable render-local helper redraws the same canvas with the warmed pattern cache before callers can upload the fallback');
+assert.match(source, /options\?\.imageForTint\?\.__clothingWeavingPattern/, 'nested portrait wrappers detect an inherited render-local weaving pass instead of compositing it twice');
+assert.match(source, /imageForTint\.__clothingWeavingPattern = true/, 'the render-local tint resolver carries a weaving ownership marker through later wrapper chains');
 assert.match(source, /renderProfileWithWovenPatterns, \/\/ Stable adapter used by NpcAvatarPreview/, 'the render-local weaving helper is exported for the stable world-avatar adapter');
 assert.match(avatarPreviewSource, /ClothingWeavingSystem[\s\S]*?renderProfileWithWovenPatterns\(renderer, canvas, profile, renderOptions\)/, 'NpcAvatarPreview reapplies weaving around the current live portrait renderer instead of trusting a one-time global wrapper');
 assert.match(avatarPreviewSource, /await renderer\(canvas, profile, renderOptions\);/, 'NpcAvatarPreview still renders normally before the weaving system is available');
