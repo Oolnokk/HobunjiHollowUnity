@@ -289,13 +289,27 @@
     return 0;
   }
 
+  function getLiveEffectiveHealthMax(entity) {
+    const effectiveMaxResolver = window.ResourceSystem?.getEffectiveMax; // Used to include later-installed max-Health reducers such as Wounded Health instead of bypassing their wrapper.
+    return Math.max(0, Number(typeof effectiveMaxResolver === "function"
+      ? effectiveMaxResolver(entity, "health")
+      : getEffectiveMax(entity, "health")) || 0);
+  }
+
+  function applyHealthRecovery(entity, amount) {
+    if (!(entity?.health > 0)) return 0;
+    const before = Number(entity.health) || 0; // Used to keep resource-tick recovery from resurrecting dead actors or rounding tiny living Health to zero.
+    const effectiveMax = getLiveEffectiveHealthMax(entity); // Used so recovery and cap maintenance honor every installed maximum-Health reducer.
+    const livingFloor = Math.min(before, effectiveMax); // Used to allow a lowered max-Health cap to reduce current Health while never reducing it further merely because recovery is rounded to tenths.
+    const target = clamp(before + Math.max(0, Number(amount) || 0), 0, effectiveMax); // Used as the unrounded recovery target before the living floor is reapplied.
+    entity.health = clamp(round1(target), livingFloor, effectiveMax);
+    return round1(entity.health - before);
+  }
+
   function applyHealthAfflictionDamage(entity, amount) {
     if (!(amount > 0) || !(entity?.health > 0)) return 0;
     const before = Number(entity.health) || 0; // Used to report actual affliction-caused Health loss while preserving an already-sub-1 living value.
-    const effectiveMaxResolver = window.ResourceSystem?.getEffectiveMax; // Used to include later-installed max-Health reducers such as Wounded Health instead of bypassing their wrapper.
-    const effectiveMax = Math.max(0, Number(typeof effectiveMaxResolver === "function"
-      ? effectiveMaxResolver(entity, "health")
-      : getEffectiveMax(entity, "health")) || 0);
+    const effectiveMax = getLiveEffectiveHealthMax(entity); // Used to respect every installed max-Health affliction while calculating the nonlethal floor.
     const healthFloor = Math.min(before, Math.min(1, effectiveMax)); // Used so Health afflictions can never kill or accidentally heal a target already below 1 HP.
     entity.health = clamp(round1(clamp(before - amount, healthFloor, effectiveMax)), healthFloor, effectiveMax);
     return round1(before - entity.health);
@@ -558,7 +572,7 @@
       entity.stamina = round1(clamp(entity.stamina + staminaRate * mul * dt, 0, getEffectiveMax(entity, "stamina")));
     }
 
-    if (entity.health > 0) entity.health = round1(clamp(entity.health + healthRate * mul * dt, 0, getEffectiveMax(entity, "health")));
+    if (entity.health > 0) applyHealthRecovery(entity, healthRate * mul * dt);
 
     entity.proneT = entity.prone ? (entity.proneT || 0) + dt : 0;
     const footingRegenGated = entity.prone && entity.proneT < cfg.proneRecoveryDelayS;
@@ -585,7 +599,7 @@
     if (bleed <= 0) return;
     const amount = Math.min(bleed, cfg.bleedTickPerSec * dt);
     removeAffliction(entity, "bleedingHealth", amount);
-    if (rest.rested && !healthRecoveryBlocked) entity.health = round1(clamp(entity.health + amount, 0, getEffectiveMax(entity, "health")));
+    if (rest.rested && !healthRecoveryBlocked) applyHealthRecovery(entity, amount);
     else applyHealthAfflictionDamage(entity, amount);
   }
 
@@ -610,7 +624,7 @@
     if (congealed <= 0) return;
     const amount = Math.min(congealed, cfg.afflictionRecoveryPerSec * (rest.rested ? 2 : 1) * dt);
     removeAffliction(entity, "congealedHealth", amount);
-    if (!healthRecoveryBlocked) entity.health = round1(clamp(entity.health + amount, 0, getEffectiveMax(entity, "health")));
+    if (!healthRecoveryBlocked) applyHealthRecovery(entity, amount);
   }
 
   function getAfflictionRecoveryMultiplier(entity, id, rested = false) {
