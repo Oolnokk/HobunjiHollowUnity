@@ -191,7 +191,19 @@ const layerWidth = layer => {
   }
   return max - min;
 };
+const ringWidth = (layer, ringOffset) => {
+  const startVertex = layer * verticesPerLayer + ringOffset;
+  let min = Infinity, max = -Infinity;
+  for (let v = 0; v < 4; v++) {
+    const z = westPos[(startVertex + v) * 3 + 2];
+    min = Math.min(min, z); max = Math.max(max, z);
+  }
+  return max - min;
+};
 const firstLayerWidth = layerWidth(0), secondLayerWidth = layerWidth(1), summitLayerWidth = layerWidth(layersPerPeak - 1);
+const firstLayerBottomWidth = ringWidth(0, 0), firstLayerTopWidth = ringWidth(0, 4), secondLayerBottomWidth = ringWidth(1, 0);
+assert(firstLayerTopWidth < firstLayerBottomWidth && firstLayerTopWidth > firstLayerBottomWidth * 0.90, 'each plateau cliff side should be one broad sloped plane, not a vertical wall or a heavily subdivided slope');
+assert(secondLayerBottomWidth < firstLayerTopWidth && secondLayerBottomWidth > firstLayerTopWidth * 0.94, 'a narrow flat terrace should remain between one sloped cliff tier and the next');
 assert(secondLayerWidth < firstLayerWidth && secondLayerWidth > firstLayerWidth * 0.88, 'each plateau layer should be only slightly smaller than the one below');
 assert(summitLayerWidth < firstLayerWidth * 0.30 && summitLayerWidth > firstLayerWidth * 0.12, 'many slight reductions should accumulate into a small flat summit plateau');
 
