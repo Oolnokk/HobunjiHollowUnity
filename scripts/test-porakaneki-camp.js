@@ -48,6 +48,14 @@ assert.equal(cfg.behavior.fullSimulationRadiusTiles, 12);
 assert.equal(cfg.behavior.fullSimulationReleaseRadiusTiles, 16);
 assert(cfg.behavior.fullSimulationReleaseRadiusTiles > cfg.behavior.fullSimulationRadiusTiles, 'LOD hysteresis must have a wider release radius than enter radius');
 assert.equal(cfg.behavior.offChunkTickSeconds, 4);
+assert.equal(cfg.behavior.denHuntGroupMin, 2);
+assert.equal(cfg.behavior.denHuntGroupMax, 3);
+assert.equal(cfg.behavior.denHuntFormationRadiusTiles, 1.15);
+assert.equal(cfg.behavior.denHuntArrivalRadiusTiles, 2.5);
+assert.equal(cfg.behavior.denHuntDwellMinSeconds, 4);
+assert.equal(cfg.behavior.denHuntDwellMaxSeconds, 8);
+assert.equal(cfg.behavior.huntRadiusMinTiles, undefined, 'legacy solo random-radius hunting is removed in favor of den patrol parties');
+assert.equal(cfg.behavior.huntRadiusMaxTiles, undefined, 'legacy solo random-radius hunting is removed in favor of den patrol parties');
 assert.equal(cfg.reputation.initialFavor, -3);
 assert.equal(cfg.reputation.minimumFavor, -5);
 assert.equal(cfg.reputation.killPenalty, 0, 'legacy blanket kill penalty stays disabled in favor of context-specific penalties');
@@ -137,7 +145,7 @@ assert(!banditRuntimeSource.includes('buildBanditTentCanvasGeometry'), 'old proc
 assert.deepEqual(cfg.equipment.weaponShapes, ['fishingspear', 'hatchet', 'dagger'], 'Porakaneki must use the true dagger shape, never daggerSword');
 assert(localeIndex.locales.some(entry => entry.id === 'locale_porakaneki_camp_small'));
 assert(localeIndex.locales.some(entry => entry.id === 'locale_porakaneki_camp_chief' && entry.singleton === true));
-assert(houseLoader.includes('porakaneki-camps-runtime.js?v=20260924chunkecology2'));
+assert(houseLoader.includes('porakaneki-camps-runtime.js?v=20260924chunkecology3'));
 assert(runtimeSource.includes("bodyColorsOverride: window.HobunjiPorakanekiSpecies?.bodyColorsForSeed?.(hunter.id, 'male') || null"), 'camp residents must choose an authored Mashtzarr swatch only when materializing their avatar');
 const bodyColorWriteIndex = combatBanditSource.indexOf('roster.appearance.bodyColors = opts.bodyColorsOverride'); // Used with avatar-build ordering below to ensure explicit finite colors reach the portrait before raster work begins.
 const banditAvatarBuildIndex = combatBanditSource.indexOf('const avatarRef = await buildBanditAvatar(roster);'); // Must occur after the explicit body-color assignment.
@@ -147,6 +155,10 @@ assert(devSpawnerSource.includes('bodyColorsOverride: window.HobunjiPorakanekiSp
 assert(socialSource.includes('canGiftToday'), 'chief gifting must retain the ordinary once-per-day NPC gate');
 assert(socialSource.includes('window.NpcRapport'), 'chief must retain the ordinary Rapport bridge');
 assert(runtimeSource.includes("activity: 'break'"), 'chief daytime behavior must remain free-time planner driven');
+assert(runtimeSource.includes('function ensureHuntingParty(camp)') && runtimeSource.includes("hunter.activity = 'hunt-den'"), 'camp residents must form explicit den-hunting parties rather than solo random hunt targets');
+assert(runtimeSource.includes("dens.length > 1 ? dens.filter(den => String(den.id) !== String(party.denId)) : dens"), 'den patrols must pick a different specific den when more than one den exists');
+assert(runtimeSource.includes('Targets only exterior walkable tiles; hunters never invoke den transitions or enter cavern maps.'), 'den patrol destinations must remain outside den interiors');
+assert(!runtimeSource.includes("if (activity === 'hunt') hunter.target = randomPointAround"), 'legacy solo random-radius hunting target must stay removed');
 assert(runtimeSource.includes('for (const zoneId of (cfg.wildernessZones || []))'), 'runtime must build camps across every configured wilderness zone');
 assert(runtimeSource.includes("entity.state = 'return'"), 'neutral Porakaneki must delegate actual travel/rendering to the shared hostile return/home path');
 assert(!runtimeSource.includes('combatDeps.moveCreatureToward?.(entity'), 'Porakaneki planner must not independently move the same live entity the hostile loop is rendering');
@@ -176,7 +188,13 @@ function makeLayout() {
     cols: 96,
     rows: 96,
     tiles: Array.from({ length: 96 * 96 }, (_, i) => ({ c: i % 96, r: Math.floor(i / 96), type: 'grass', elevTier: 0 })),
-    buildings: [], dens: [], decor: [], furniture: [], transitions: [], rootTotems: [], localeInstances: [],
+    buildings: [],
+    dens: [
+      { id: 'animalDen_0', x: 8, y: 70, w: 4, h: 4, mouthAnchor: { x: 10, y: 75 } },
+      { id: 'animalDen_1', x: 70, y: 8, w: 4, h: 4, mouthAnchor: { x: 74, y: 10 } },
+      { id: 'animalDen_2', x: 70, y: 70, w: 4, h: 4, mouthAnchor: { x: 72, y: 75 } },
+    ],
+    decor: [], furniture: [], transitions: [], rootTotems: [], localeInstances: [],
     toTownExit: { col: 2, row: 2 },
   };
 }
@@ -318,7 +336,7 @@ function hunterDebug(api, zoneId, campId, index) {
 (async () => {
   await flush();
   const api = contextWindow.PorakanekiCamps;
-  assert.equal(api.version, 6);
+  assert.equal(api.version, 7);
   assert.equal(api.__test.isSleepingHour(2), true);
   assert.equal(api.__test.isSleepingHour(12), false);
   assert.equal(api.__test.desiredChiefZone('Stormtide'), 'map_southern_cloud_forest');
@@ -331,7 +349,7 @@ function hunterDebug(api, zoneId, campId, index) {
 
   contextWindow.BanditCamps.updateCampBanners(0.21);
   let debug = api.debugSnapshot();
-  assert.equal(debug.version, 6);
+  assert.equal(debug.version, 7);
   assert.equal(debug.fullSimulationRadiusTiles, 12);
   assert.equal(debug.fullSimulationReleaseRadiusTiles, 16);
   assert.equal(Object.keys(debug.zones).length, 4);
@@ -344,7 +362,19 @@ function hunterDebug(api, zoneId, campId, index) {
       assert(debug.zones[zoneId].smallCampCount >= 2 && debug.zones[zoneId].smallCampCount <= 4, `${zoneId} keeps its normal 2-4 little camps`);
     }
     assert.equal(debug.zones[zoneId].chiefReserved, true, `${zoneId} reserves a valid future chief-camp site`);
-    for (const camp of debug.zones[zoneId].camps.filter(camp => camp.kind === 'small')) assert(camp.residents >= 2 && camp.residents <= 4);
+    for (const camp of debug.zones[zoneId].camps.filter(camp => camp.kind === 'small')) {
+      assert(camp.residents >= 2 && camp.residents <= 4);
+      assert(camp.huntingParty, `${zoneId} small camp forms an awake den-hunting party`);
+      assert(camp.huntingParty.memberCount >= 2 && camp.huntingParty.memberCount <= 3, 'den hunting party uses the configured small group size');
+      const den = zoneLayouts.get(zoneId).dens.find(entry => String(entry.id) === String(camp.huntingParty.denId));
+      assert(den, 'hunting party owns one specific authored den assignment');
+      const t = camp.huntingParty.target;
+      const insideDen = t.col >= den.x && t.col < den.x + den.w && t.row >= den.y && t.row < den.y + den.h;
+      assert.equal(insideDen, false, 'hunting party target remains outside the den footprint');
+      const assigned = camp.hunters.filter(hunter => hunter.huntPartyId === camp.huntingParty.id);
+      assert.equal(assigned.length, camp.huntingParty.memberCount, 'all party members share one party identity');
+      assert(assigned.every(hunter => hunter.activity === 'hunt-den' && hunter.huntDenId === camp.huntingParty.denId), 'party members share the same specific den target');
+    }
   }
   assert.equal(api.__test.MIN_HUNTING_CAMPS_PER_ZONE, 1, 'runtime exposes the hard hunting-camp floor used by generation and bandit conflict resolution');
   assert.equal(debug.chiefZoneId, 'map_southern_cloud_forest');
