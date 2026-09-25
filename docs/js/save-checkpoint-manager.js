@@ -340,7 +340,7 @@
           }
         }
         try {
-          await ensureFolderBaseline(); // Old folders get a guard baseline from their own canonical save, never from browser history.
+          await withRecoveryReadTimeout(ensureFolderBaseline(), 'Recovery baseline preparation'); // Baseline seeding can include a folder write; bound it too so the recovery modal can never wait forever behind upgrade work.
         } catch (error) {
           warnings.push(`baseline: ${String(error?.message || error)}`); // A stuck/invalid canonical world must not prevent already-readable checkpoints from being shown.
         }
