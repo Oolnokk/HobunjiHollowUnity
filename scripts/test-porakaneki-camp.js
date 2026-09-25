@@ -354,8 +354,8 @@ function hunterDebug(api, zoneId, campId, index) {
   contextWindow.BanditCamps.updateCampBanners(0.21);
   let debug = api.debugSnapshot();
   assert.equal(debug.version, 8);
-  assert.equal(debug.fullSimulationRadiusTiles, 12);
-  assert.equal(debug.fullSimulationReleaseRadiusTiles, 16);
+  assert.equal(debug.fullSimulationRadiusTiles, 18);
+  assert.equal(debug.fullSimulationReleaseRadiusTiles, 24);
   assert.equal(Object.keys(debug.zones).length, 4);
   assert(debug.totalSmallCamps >= 7 && debug.totalSmallCamps <= 13, 'three ordinary 2-4 camp zones plus the forced minimum-recovery zone produce 7-13 little camps total');
   for (const zoneId of ZONES) {
