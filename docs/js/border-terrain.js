@@ -447,7 +447,8 @@
     for(let i=0;i<backCount;i++)pushPeak(1,i,(i+1)/frontCount,0.37); // Rear row remains centered in the foreground gaps; both rows stay well inside the synthetic depth field so neither side is clipped.
 
     const tiers=new Uint8Array(field.cols*field.rows);
-    let activeTiles=0,lockedCount=Object.keys(config.lockedTiles||{}).length,maxSeen=0;
+    const lockedCount=Object.keys(config.lockedTiles||{}).length; // Authored canonical locks, independent of current granularity resolution.
+    let activeTiles=0,maxSeen=0;
     for(let r=0;r<field.rows;r++){
       const long=(r+0.5)/field.rows;
       for(let c=0;c<field.cols;c++){
@@ -485,18 +486,32 @@
         height*=smoothEdge(depthEdge,0.205)*smoothEdge(longEdge,0.065);
         const rough=(mountainSeedRand(config.mountainSeed,r*field.cols+c,9701)-0.5)*(0.035+0.055*(1-field.granularity/100));
         let tier=height>0.045?Math.max(1,Math.round(bgClamp(height+rough,0,1)*maxTier)):0;
-        const key=mountainFieldLockKeyForCell(field,c,r);
-        if(Object.prototype.hasOwnProperty.call(config.lockedTiles,key)){
-          const lock=config.lockedTiles[key];
-          tier=lock&&typeof lock==='object'
-            ?Math.max(0,Math.min(maxTier,Math.round(bgClamp(Number(lock.height01)||0,0,1)*maxTier)))
-            :Math.max(0,Math.min(maxTier,Math.round(Number(lock)||0)));
-        }
         tiers[r*field.cols+c]=tier;
-        if(tier>0)activeTiles++;
-        if(tier>maxSeen)maxSeen=tier;
       }
     }
+
+    // Apply canonical lock-space edits AFTER procedural generation. Projecting
+    // locks into the current field here means locks survive granularity changes
+    // even when several fine lock cells collapse into one deliberately ugly
+    // coarse synthetic tile. Collisions average their normalized heights.
+    const projectedLocks=new Map();
+    for(const [key,lock] of Object.entries(config.lockedTiles||{})){
+      const [lc,lr]=key.split(',').map(Number);
+      if(!Number.isFinite(lc)||!Number.isFinite(lr))continue;
+      const cell=mountainFieldCellForLockCell(field,lc,lr);
+      const fieldKey=`${cell.c},${cell.r}`;
+      const height01=lock&&typeof lock==='object'
+        ?bgClamp(Number(lock.height01)||0,0,1)
+        :bgClamp((Number(lock)||0)/Math.max(1,maxTier),0,1);
+      const bucket=projectedLocks.get(fieldKey)||{c:cell.c,r:cell.r,total:0,count:0};
+      bucket.total+=height01;bucket.count++;
+      projectedLocks.set(fieldKey,bucket);
+    }
+    for(const bucket of projectedLocks.values()){
+      tiers[bucket.r*field.cols+bucket.c]=Math.max(0,Math.min(maxTier,Math.round((bucket.total/bucket.count)*maxTier)));
+    }
+    activeTiles=0;maxSeen=0;
+    for(const tier of tiers){if(tier>0)activeTiles++;if(tier>maxSeen)maxSeen=tier;}
 
     const zGrid=Array.from({length:field.rows},(_,r)=>
       Array.from({length:field.cols},(_,c)=>{
