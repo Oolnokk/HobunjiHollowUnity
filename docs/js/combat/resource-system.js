@@ -633,8 +633,9 @@
     let multiplier = rested ? 2 : 1; // Used by diagnostics/tests and the real recovery loop so displayed tuning cannot drift from gameplay.
     if (def.resource === "stamina") multiplier *= STAMINA_RECOVERY_MULTIPLIER;
     if (def.punishedAction) {
-      const elapsedSinceActionMs = getPunishedActionElapsedMs(entity, def.punishedAction); // Used to reward refraining from whichever action this affliction explicitly punishes.
-      if (elapsedSinceActionMs >= ACTION_PUNISHMENT_RECOVERY_GRACE_MS) multiplier *= ACTION_PUNISHMENT_RECOVERY_MULTIPLIER;
+      const forcedAvoidanceRecovery = entity?.prone === true; // Used so prone actors recover action-punishing afflictions quickly even when ineffectual held/input paths keep attempting the punished action.
+      const elapsedSinceActionMs = getPunishedActionElapsedMs(entity, def.punishedAction); // Used after prone ends to reward refraining from whichever action this affliction explicitly punishes.
+      if (forcedAvoidanceRecovery || elapsedSinceActionMs >= ACTION_PUNISHMENT_RECOVERY_GRACE_MS) multiplier *= ACTION_PUNISHMENT_RECOVERY_MULTIPLIER;
     }
     return multiplier;
   }
