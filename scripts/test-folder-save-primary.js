@@ -82,6 +82,7 @@ assert(core.includes("!name.toLowerCase().endsWith('.json')"), 'canonical reader
 assert(core.includes('canonical entity JSON is missing a valid id'), 'canonical reader rejects syntactically valid but structurally invalid entity JSON');
 assert(core.includes('duplicate canonical entity id'), 'canonical reader rejects ambiguous duplicate character/world ids');
 assert(core.includes('manifest.json: expected'), 'manifest entity counts detect missing canonical character/world files');
+assert(core.includes("campfire: 'campfire.json'"), 'folder recovery whitelist keeps Campfire Save separate from Manual Save');
 assert(core.includes('_syncPromise'), 'existing core still serializes folder writes within a tab');
 assert(core.includes("const PATTERNS_DIR = 'patterns'"), 'primary folder save reserves a portable patterns directory');
 assert(core.includes('async function mirrorPatternFile'), 'folder core can write custom motif PNG bytes');
