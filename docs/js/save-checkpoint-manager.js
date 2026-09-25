@@ -139,7 +139,8 @@
 
   function integrityRisk(previousRecord, nextSnapshot) {
     if (!previousRecord?.snapshot) return '';
-    const before = previousRecord.stats || checkpointStats(previousRecord.snapshot);
+    const previousStats = previousRecord.stats || checkpointStats(previousRecord.snapshot); // Legacy checkpoint records may carry byte counts inflated by accidentally serialized treasure meshes.
+    const before = { ...previousStats, bytes: checkpointPayloadBytes(previousRecord.snapshot) }; // Recompute canonical bytes from the snapshot so stale persisted stats cannot keep false shrink warnings alive.
     const after = checkpointStats(nextSnapshot);
     const nextActive = activeIds(); // Current farmer/world prevents unrelated save slots from sharing farm-specific reset heuristics.
     const previousActive = previousRecord.active || {};
