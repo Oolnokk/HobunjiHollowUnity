@@ -61,6 +61,7 @@ on:
       - 'scripts/test-outdoor-livestock-presence.js'
       - 'scripts/test-farm-menu-layout.js'
       - 'scripts/test-fishing-silhouette-hitbox.js'
+      - 'scripts/test-western-slope-fishing.js'
       - '.github/workflows/animal-growth-regression.yml'
   pull_request:
     paths:
@@ -122,6 +123,7 @@ on:
       - 'scripts/test-outdoor-livestock-presence.js'
       - 'scripts/test-farm-menu-layout.js'
       - 'scripts/test-fishing-silhouette-hitbox.js'
+      - 'scripts/test-western-slope-fishing.js'
       - '.github/workflows/animal-growth-regression.yml'
 
 permissions:
@@ -199,6 +201,8 @@ jobs:
         run: node scripts/test-economy-progression.js
       - name: Test fishing silhouette hitboxes
         run: node scripts/test-fishing-silhouette-hitbox.js
+      - name: Test Western Slope fishing zone
+        run: node scripts/test-western-slope-fishing.js
       - name: Test livestock menu row identity
         run: node scripts/test-livestock-menu-regressions.js
       - name: Test livestock Nursery integration
