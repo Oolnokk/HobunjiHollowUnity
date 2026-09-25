@@ -360,6 +360,31 @@ const compatibilityRuntimeRegression = (async () => {
   releaseWoven();
   await Promise.all([wovenJob, ordinaryJob]);
   assert.equal(ordinaryEnteredDuringWoven, true, 'blocked ordinary portrait resumes immediately after woven compatibility ownership is released');
+
+  let releaseFirstWriter;
+  const firstWriterHold = new Promise(resolve => { releaseFirstWriter = resolve; });
+  let firstWriterEnteredResolve;
+  const firstWriterEntered = new Promise(resolve => { firstWriterEnteredResolve = resolve; });
+  const fairnessOrder = [];
+  const firstWriter = api.renderProfileWithWovenPatterns(async () => {
+    fairnessOrder.push('woven1');
+    firstWriterEnteredResolve();
+    await firstWriterHold;
+    return true;
+  }, {}, probeProfile, {});
+  await firstWriterEntered;
+  const secondWriter = api.renderProfileWithWovenPatterns(async () => {
+    fairnessOrder.push('woven2');
+    return true;
+  }, {}, probeProfile, {});
+  const queuedReader = api.renderProfileWithWovenPatterns(async () => {
+    fairnessOrder.push('ordinary');
+    return true;
+  }, {}, plainProfile, {});
+  await Promise.resolve();
+  releaseFirstWriter();
+  await Promise.all([firstWriter, secondWriter, queuedReader]);
+  assert(fairnessOrder.indexOf('ordinary') < fairnessOrder.indexOf('woven2'), 'an ordinary batch waiting behind one woven writer runs before the next queued woven writer, preventing patterned-NPC writer convoys');
   const gateAfter = api.debugSnapshot().portraitPatterns;
   assert.equal(gateAfter.gateReaders, 0, 'portrait gate releases every ordinary reader after the regression probe');
   assert.equal(gateAfter.gateWriterActive, false, 'portrait gate releases woven exclusive ownership after the regression probe');
@@ -421,6 +446,7 @@ assert.match(source, /let activePortraitPatternMap = null/, 'global compatibilit
 assert.match(source, /let portraitGateReaders = 0/, 'ordinary portrait readers are tracked separately from woven exclusive ownership');
 assert.match(source, /let portraitGateWriterActive = false/, 'woven compatibility ownership has an explicit exclusive-writer state');
 assert.match(source, /portraitGateWaitingWriters/, 'waiting woven portraits block new ordinary readers so the compatibility writer cannot starve');
+assert.match(source, /portraitGatePreferReaders = portraitGateReaderWaiters\.length > 0/, 'each woven writer yields to already-waiting ordinary portraits before another woven writer starts');
 assert.match(source, /const compatibilityTint = function clothingPatternImageForTint/, 'the pre-817 global tint compatibility entry point is restored for portrait code that bypasses renderOptions.imageForTint');
 assert.match(source, /if \(!map\) return portraitBaseTintResolver\(img, sourceKey, tint\)/, 'global tint behavior stays canonical outside an actively owned woven portrait render');
 assert.match(source, /const patternMap = Array\.isArray\(descriptors\)[\s\S]*?buildPortraitPatternMap\(descriptors\)/, 'each woven portrait render builds its own descriptor map');
