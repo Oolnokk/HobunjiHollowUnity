@@ -310,7 +310,13 @@ const vm = require('node:vm');
   assert.equal(store.get('hobunjiSaveCheckpoint.manual.v1'), goodManualBrowserRaw, 'rejected manual save preserves browser manual mirror');
 
   // Successful restore preserves the current canonical state first, then installs manual.
-  const manualCheckpoint = structuredClone(folderRecovery.get('manual'));
+  const legacyManualCheckpoint = JSON.parse(goodManualBrowserRaw); // Used to model a pre-fix checkpoint whose treasure placement still carries a runtime-only mesh payload.
+  legacyManualCheckpoint.snapshot.meta.worlds[0].members.char_a.zoneTreasureState = {
+    zone_test: { week: 0, placements: [{ col: 1, row: 1, found: false, loot: {}, _mesh: { legacy: true } }] },
+  };
+  store.set('hobunjiSaveCheckpoint.manual.v1', JSON.stringify(legacyManualCheckpoint));
+  const expectedRestoredSnapshot = structuredClone(legacyManualCheckpoint.snapshot); // Used to verify the restore preserves gameplay data while sanitizing only the runtime mesh.
+  delete expectedRestoredSnapshot.meta.worlds[0].members.char_a.zoneTreasureState.zone_test.placements[0]._mesh;
   currentSnapshot = structuredClone(folderPrimarySnapshot);
   currentSnapshot.meta.worlds[0].members.char_a.nonGearInventory.turnip = 1;
   folderPrimarySnapshot = structuredClone(currentSnapshot);
@@ -318,9 +324,10 @@ const vm = require('node:vm');
   let restoreResult = await api.restoreManual();
   assert.equal(restoreResult.ok, true);
   assert.equal(appliedSnapshot.meta.worlds[0].members.char_a.nonGearInventory.turnip, 5);
+  assert.equal(Object.prototype.hasOwnProperty.call(appliedSnapshot.meta.worlds[0].members.char_a.zoneTreasureState.zone_test.placements[0], '_mesh'), false, 'recovery restore strips legacy runtime treasure meshes before applying browser state');
   assert.ok(folderRecovery.has('preRestore'), 'restore creates pre-restore recovery before canonical replacement');
   assert.equal(folderRecovery.get('preRestore').snapshot.meta.worlds[0].members.char_a.nonGearInventory.turnip, 1);
-  assert.deepEqual(folderPrimarySnapshot, manualCheckpoint.snapshot, 'chosen recovery becomes canonical folder state');
+  assert.deepEqual(folderPrimarySnapshot, expectedRestoredSnapshot, 'chosen recovery becomes canonical folder state without legacy treasure meshes');
   assert.equal(reloads, 1, 'successful recovery reloads once');
 
   // Simulate the next restore failing after the canonical folder has already changed. The
