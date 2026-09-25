@@ -66,6 +66,10 @@ assert(vessel.includes("authoredFurnitureUpgradeSource: 'async-fallback-upgrade'
 assert(vessel.includes('furniture.buildFurnitureGroup = buildFurnitureGroup'));
 assert(vessel.includes('material.dispose?.()'));
 assert(vessel.includes('disposing material.map here would invalidate other furniture'));
+assert(vessel.includes('InteriorFireFloorRuntime?.onAuthoredFurnitureReady?.(target, data'),
+  'async authored upgrades must notify ambient VFX after meshById is installed');
+assert(vessel.includes('InteriorFireFloorRuntime?.onAuthoredFurnitureReady?.(ready, cached'),
+  'already-cached authored furniture must use the same ambient VFX readiness hook');
 
 assert(zone.includes("ensureCompanionScript('FurnitureVesselRuntime', 'furniture-vessel-runtime.js')"),
   'normal game boot must install the shared vessel correction');

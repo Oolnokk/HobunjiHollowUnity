@@ -334,7 +334,34 @@
     }
   ],
   "seatAnchors": [],
-  "particleEmitters": [],
+  "particleEmitters": [
+    {
+      "id": "candle_table_fire",
+      "name": "Candle Flame",
+      "type": "fire",
+      "enabled": true,
+      "attachedPartId": "part_msc118d7_7u8jl",
+      "position": {
+        "x": 0,
+        "y": 0.14,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "radius": 0.018,
+      "size": 0.055,
+      "rate": 16,
+      "lifetime": 0.45,
+      "speed": 0.22,
+      "spread": 0.055,
+      "gravity": -0.02,
+      "colorA": "#ffd45a",
+      "colorB": "#ff3d12"
+    }
+  ],
   "processingWarps": [],
   "processTimelines": [],
   "stompAttachPoints": []
