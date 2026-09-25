@@ -84,14 +84,14 @@ assert.strictEqual(built.isLocaleCavern, true);
 assert.strictEqual(built.denMotherKind, null, 'story cave locales must not inherit den encounter content');
 assert.strictEqual(built.cavernCreatureKind, 'grehlr', 'locale synthesis must carry the authored creature habitat into runtime material selection');
 assert.strictEqual(built.mesh.surfaceMaterial, 'farm-cliff', 'Banubu carved shell carries its authored farm-cliff material preset into the shared renderer');
-const builtColorPools = context.CavernGenerator.synthesizeLocaleCavernMapData(colorPools); // Regression guard: the hidden room must reach the same textured carved-shell path as Banubu's main cave.
-assert.strictEqual(builtColorPools.mesh.surfaceMaterial, 'farm-cliff', 'Color Pools carved shell carries farm-cliff material metadata into the shared renderer');
 assert.deepStrictEqual(JSON.parse(JSON.stringify(built.cinematicCameras)), JSON.parse(JSON.stringify(banubu.cinematicCameras)), 'locale cavern synthesis must preserve authored cinematic cameras');
 assert.strictEqual(Object.keys(built.floorSurfaceByTile || {}).length, built.floor.length, 'every cavern floor tile must get a rendered-surface Y sample');
 assert(Number.isFinite(built.floorSurfaceY), 'cavern synthesis must expose a finite fallback floor surface Y');
 assert.strictEqual(built.floor.length, Object.keys(banubu.tiles).length);
 assert.strictEqual(carveCall.floor.length, built.floor.length, 'the exact painted locale footprint must be handed to the cavern sculptor');
 assert.deepStrictEqual(carveCall.options.entrance, { col: 6, row: 10, side: 'south' });
+const builtColorPools = context.CavernGenerator.synthesizeLocaleCavernMapData(colorPools); // Regression guard: the hidden room must reach the same textured carved-shell path as Banubu's main cave.
+assert.strictEqual(builtColorPools.mesh.surfaceMaterial, 'farm-cliff', 'Color Pools carved shell carries farm-cliff material metadata into the shared renderer');
 assert.strictEqual(built.keyGatedDoors[0].requiresKeyItem, 'color_pools_key');
 assert.deepStrictEqual(JSON.parse(JSON.stringify(built.entrySpots.color_pools_door)), { col: 6, row: 1, side: 'north' });
 assert(built.npcStations.some(station => station.id === 'station_banubu_cave_sleep' && station.pose === 'lie'));
