@@ -718,7 +718,7 @@
       if (emergencyRecoveryImportActive) {
         try {
           const browserBefore = snapshotApi()?.capture?.({ strict: true }) || null;
-          if (browserBefore) writeSlot('preRestore', createRecord('pre-restore', browserBefore, 'before-emergency-import-browser', Date.now()));
+          if (browserBefore && !readSlot('preRestore')) writeSlot('preRestore', createRecord('pre-restore', browserBefore, 'before-emergency-import-browser', Date.now())); // Never replace a trusted imported pre-restore checkpoint with a possibly damaged browser fallback.
         } catch {} // A broken browser fallback must not block a known-good imported checkpoint.
         snapshotApi().apply(restoredSnapshot);
         try { await folderApi()?.forget?.(); } catch {} // Disconnect only the browser's wedged handle; never modify the selected disk folder.
