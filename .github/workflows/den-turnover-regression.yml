@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - 'docs/js/wildlife-spawn.js'
+      - 'docs/js/cavern-generator.js'
+      - 'docs/js/bandit-camps.js'
       - 'docs/js/zone-den-totem-features.js'
       - 'docs/js/grid-tile-accessors.js'
       - 'docs/js/porakaneki-camps-runtime.js'
