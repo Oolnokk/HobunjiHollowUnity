@@ -111,6 +111,11 @@
     return total;
   }
 
+  function checkpointPayloadBytes(snapshot) {
+    const serialized = JSON.stringify(snapshot || null, (key, value) => key === '_mesh' ? undefined : value); // Legacy treasure saves accidentally embedded runtime Three.js meshes; exclude that non-canonical bloat from integrity-size comparisons.
+    return serialized.length;
+  }
+
   function checkpointStats(snapshot) {
     const meta = snapshot?.meta || {};
     const ids = activeIds();
@@ -120,7 +125,7 @@
     const memberInventory = member?.nonGearInventory || {};
     const worldStorage = world?.storage || {};
     return {
-      bytes: JSON.stringify(snapshot || null).length,
+      bytes: checkpointPayloadBytes(snapshot),
       characterCount: (meta.characters || []).length,
       worldCount: (meta.worlds || []).length,
       memberInventoryKeys: Object.keys(memberInventory).length,
