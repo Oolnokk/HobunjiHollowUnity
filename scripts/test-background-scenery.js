@@ -142,12 +142,19 @@ window.BorderTerrain.init({
 
 const westHorizonScene = { items: [], userData: {}, add(obj) { this.items.push(obj); } };
 const westBudget = Border.buildColossalHorizonTerrain(westHorizonScene, 80, 80, 'map_western_slope', 0, null, westHorizon);
-assert.equal(westBudget.vertices, 27, 'West Slope horizon chain must stay extremely low poly');
-assert.equal(westBudget.triangles, 32, 'West Slope horizon chain triangle budget regressed');
-assert.equal(westHorizonScene.items.length, 1);
+assert.equal(westBudget.rows, 2, 'West Slope mountain chain must render as two visible shark-tooth rows');
+assert.equal(westBudget.frontPeakCount, 8, 'front row should use the authored segment count as discrete mountain teeth');
+assert.equal(westBudget.backPeakCount, 7, 'rear row should stay staggered between foreground peaks');
+assert.equal(westBudget.peakCount, 15);
+assert.equal(westBudget.vertices, 195, 'two-row West Slope chain should remain tiny despite using discrete 3D peaks');
+assert.equal(westBudget.triangles, 300, 'two-row West Slope chain triangle budget regressed');
+assert.equal(westHorizonScene.items.length, 1, 'all mountain teeth should remain one combined draw mesh');
 assert.equal(westHorizonScene.items[0].frustumCulled, false, 'always-visible mountain chain must bypass Three.js frustum culling');
 assert.equal(westHorizonScene.items[0].castShadow, false, 'colossal landmarks must not pay permanent shadow-map cost');
-assert.equal(westHorizonScene.items[0].material.fog, false, 'always-visible mountain chain must remain visible through scene fog');
+assert(Array.isArray(westHorizonScene.items[0].material) && westHorizonScene.items[0].material.every(m => m.fog === false), 'every flat mountain material must remain visible through scene fog');
+assert.equal(westHorizonScene.items[0].geometry.groups.length, 5, 'mountain mesh should preserve rock-light, rock-dark, black snowline, white-snow, and shaded-snow facets');
+assert.equal(westHorizonScene.items[0].userData.mountainRows, 2);
+assert.equal(westHorizonScene.items[0].userData.sharkTeethStaggered, true);
 assert.equal(westHorizonScene.items[0].userData.alwaysVisibleBoundaryTerrain, true);
 
 const northHorizonScene = { items: [], userData: {}, add(obj) { this.items.push(obj); } };
