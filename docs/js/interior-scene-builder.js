@@ -249,7 +249,7 @@
     // Dual-contour winding faces the carved air volume, so FrontSide shows
     // the playable tunnel shell while culling reverse faces seen from solid
     // inter-tunnel pockets. DoubleSide made those pockets look like rooms.
-    const materialOptions = { color: options.color ?? 0x5f5a56, map: texture, flatShading: !texture, side: THREE.FrontSide };
+    const materialOptions = { color: options.color ?? 0x5f5a56, map: texture, side: THREE.FrontSide }; // MeshBasicMaterial is unlit and has no flatShading option; geometry normals remain available for the natural-surface replacement material.
     const fallbackMat = new THREE.MeshBasicMaterial(materialOptions);
     const mesh = new THREE.Mesh(geo, fallbackMat);
     applyTownCliffMaterial(THREE, mesh, fallbackMat, options.surfaceMaterial || meshData.surfaceMaterial || 'town-cliffs');

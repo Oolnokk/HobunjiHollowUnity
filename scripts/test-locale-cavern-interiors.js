@@ -72,6 +72,10 @@ const context = {
 context.window = context;
 vm.createContext(context);
 vm.runInContext(read('docs/js/cavern-generator.js'), context, { filename: 'cavern-generator.js' });
+const lightweightStations = context.CavernGenerator.localeCavernNpcStations(banubu); // Scheduler-facing metadata must be available without invoking the expensive cavern carve.
+assert.strictEqual(carveCall, null, 'reading locale cavern NPC stations must not carve/generate the cavern');
+assert(lightweightStations.some(station => station.id === 'station_banubu_cave_sleep' && station.pose === 'lie' && station.col === 6 && station.row === 5),
+  'lightweight locale station extraction preserves Banubu sleep station metadata');
 const built = context.CavernGenerator.synthesizeLocaleCavernMapData(banubu);
 assert.strictEqual(built.id, 'map_i_den_banubu');
 assert.strictEqual(built.wallStyle, 'cavern');
@@ -100,10 +104,89 @@ const cinematicCameraSource = read('docs/js/cinematic-camera-runtime.js');
 const banubuQuestContentSource = read('docs/js/banubu-quest-content.js');
 const editorSource = read('docs/tools/locale-editor/index.html');
 const interiorBuilderSource = read('docs/js/interior-scene-builder.js');
+const interiorEnvironmentSource = read('docs/js/interior-environment-runtime.js'); // Used to prove synthesized locale caverns bypass static map environment fetches.
+const interiorFloorSource = read('docs/js/interior-fire-floor-runtime.js'); // Used to prove synthesized locale caverns bypass static map floor-style fetches.
+const npcSchedulingSource = read('docs/js/npc-scheduling.js'); // Used to prove missing cave stations warm from locale metadata instead of forcing scene generation during boot.
 assert(sculptorSource.includes('function carveFootprintCavern(') && sculptorSource.includes('carveMazeCavern, carveFootprintCavern'), 'shared cavern sculptor must expose footprint-driven generation');
 assert(generatorSource.includes('loadLocaleCavernDefinition') && generatorSource.includes('synthesizeLocaleCavernMapData'), 'runtime must resolve cave interiors through locale files');
 assert(!generatorSource.includes("seedText === 'map_i_den_banubu'"), 'generic generator must not special-case Banubu by seed/map id');
 assert(!generatorSource.includes('isBanubuHome'), 'Banubu-specific interior synthesis must be removed');
+
+for (const [runtimeLabel, runtimeSource] of [['environment', interiorEnvironmentSource], ['floor-style', interiorFloorSource]]) {
+  const localeGuardIndex = runtimeSource.indexOf('CavernGenerator?.isLocaleCavernMapId?.(key)'); // Used to prove the synthesized-cavern guard executes before the legacy static-map fetch.
+  const staticMapFetchIndex = runtimeSource.indexOf("fetch(`config/maps/${encodeURIComponent(key)}.json`"); // Used to locate the legacy authored-map fetch that must remain unreachable for locale caverns.
+  assert(localeGuardIndex >= 0 && staticMapFetchIndex >= 0 && localeGuardIndex < staticMapFetchIndex,
+    `${runtimeLabel} runtime must skip locale cavern ids before probing config/maps/*.json`);
+}
+assert.strictEqual(fs.existsSync(path.join(root, 'docs/config/maps/map_i_den_banubu.json')), false,
+  'Banubu must remain locale-generated; suppress its static-map 404 at the caller rather than adding a duplicate map file');
+assert(generatorSource.includes('function loadLocaleCavernNpcStations(mapId)') && generatorSource.includes('function localeCavernNpcStations(locale)'),
+  'cavern generator must expose lightweight authored NPC station metadata without scene synthesis');
+const legacyResolverSource = npcSchedulingSource.slice(
+  npcSchedulingSource.indexOf('function resolveLegacyNpcScheduleTarget(rec)'),
+  npcSchedulingSource.indexOf('const c = rule.c ?? rule.position?.c;')
+); // Narrow resolver slice ensures the active missing-station branch no longer calls the heavy building loader directly.
+assert(legacyResolverSource.includes('warmMissingNpcStationArea(missingArea)'),
+  'legacy schedule resolution must delegate missing building stations to the lightweight warmup');
+assert(!legacyResolverSource.includes('deps.loadBuildingScene(missingArea)'),
+  'missing station resolution must not directly generate a building/cavern scene on the startup call stack');
+
+{
+  let heavySceneLoads = 0; // Proves the actual scheduler path can resolve Banubu's cave anchor without touching expensive scene synthesis.
+  const schedulerContext = {
+    console,
+    window: null,
+    CalendarSystem: {
+      getHour: () => 12,
+      currentWeekdayName: () => 'Anan',
+    },
+    CavernGenerator: {
+      loadLocaleCavernNpcStations: async area => area === 'map_i_den_banubu'
+        ? [{ id: 'station_banubu_cave_sleep', label: "Banubu's Sleeping Spot", col: 6, row: 5, pose: 'lie' }]
+        : null,
+    },
+  };
+  schedulerContext.window = schedulerContext;
+  vm.createContext(schedulerContext);
+  vm.runInContext(npcSchedulingSource, schedulerContext, { filename: 'npc-scheduling.js' });
+  schedulerContext.NpcScheduling.init({
+    npcWalkers: [],
+    normalizeNpcArea: area => area || 'town',
+    isBuildingArea: area => String(area || '').startsWith('map_i_'),
+    buildingScenes: new Map(),
+    loadBuildingScene: () => { heavySceneLoads++; },
+    getSharedSchedules: () => [],
+    getWorldNpcPaths: () => [],
+    getDecorativeFurnitureKeyByItemKey: () => '',
+    decorativeFurnitureDefs: {},
+  });
+  const banubuScheduleRecord = {
+    id: 'banubu',
+    scheduleHooks: {
+      defaultMapId: 'map_i_den_banubu',
+      defaultStationId: 'station_banubu_cave_sleep',
+      rules: [{
+        id: 'banubu_sleep_forever',
+        from: '00:00',
+        to: '24:00',
+        mapId: 'map_i_den_banubu',
+        stationId: 'station_banubu_cave_sleep',
+        activity: 'sleeping in his cave',
+      }],
+    },
+  };
+  const firstTarget = schedulerContext.NpcScheduling.resolveLegacyNpcScheduleTarget(banubuScheduleRecord); // First miss should only start the lightweight locale metadata request.
+  assert.strictEqual(firstTarget, null, 'first Banubu schedule lookup waits for lightweight locale station metadata');
+  assert.strictEqual(heavySceneLoads, 0, 'first Banubu schedule lookup must not generate the cave scene before onboarding');
+
+  setImmediate(() => {
+    const secondTarget = schedulerContext.NpcScheduling.resolveLegacyNpcScheduleTarget(banubuScheduleRecord); // Retry should now resolve directly from the registered locale anchor.
+    assert.strictEqual(heavySceneLoads, 0, 'Banubu station registration must still avoid full cave generation after the locale promise settles');
+    assert.strictEqual(secondTarget?.stationId, 'station_banubu_cave_sleep', 'second Banubu schedule lookup resolves the authored sleep station');
+    assert.strictEqual(secondTarget?.area, 'map_i_den_banubu', 'lightweight station registration preserves the cave area');
+    assert.strictEqual(secondTarget?.pose, 'lie', 'lightweight station registration preserves Banubu sleeping pose');
+  });
+}
 
 assert(!gameIndexSource.includes('id="npcPortraitCanvas"') && !gameIndexSource.includes('id="npcPortraitWrap"'), 'legacy screen-space NPC portrait canvas must be removed from gameplay HTML');
 assert(!dialogueStyleSource.includes('#npcPortraitCanvas') && !dialogueStyleSource.includes('#npcPortraitWrap'), 'legacy screen-space NPC portrait CSS must be removed');
@@ -125,6 +208,12 @@ assert(gameSource.includes("targetSpotId: exit.targetSpotId || ''") && gameSourc
 assert(gameSource.includes('entranceLightTileSet'), 'secret exits must not affect the primary cave-mouth daylight');
 assert(generatorSource.includes('function sampleMeshSurfaceAt(') && generatorSource.includes('floorSurfaceByTile: floorSurface.byTile'), 'cavern generation must sample the rendered shell and export per-tile ground Y');
 assert(interiorBuilderSource.includes('function buildCavernFloorMesh(') && interiorBuilderSource.includes('cavernWalkableFloor'), 'caverns must render an explicit merged textured walkable floor');
+assert(!interiorBuilderSource.includes('map: texture, flatShading: !texture'),
+  'carved cavern MeshBasicMaterial fallback must not pass unsupported flatShading into Three.js');
+assert(interiorBuilderSource.includes('const materialOptions = { color: options.color ?? 0x5f5a56, map: texture, side: THREE.FrontSide };'),
+  'carved cavern fallback keeps the intended color/texture/front-face options after removing flatShading');
+assert(gameIndexSource.includes('js/interior-scene-builder.js?v=20260925cavernmat1'),
+  'game bootstrap must cache-bust the carved-cavern material warning fix');
 assert(gameSource.includes('const exactSurfaceY = Number(tile?.surfaceY)') && gameSource.includes('bGrid[r][c].surfaceY = Number.isFinite(sampledSurfaceY)') && gameSource.includes('Number.isFinite(fallbackSurfaceY) ? fallbackSurfaceY : 0'), 'player tile grounding must preserve exact cavern floor samples while pinning ordinary interior floors to Y=0 before collider mutation');
 assert(gameSource.includes(': (_isZoneArea(area) ? surfaceYAtWorld(area, c + 0.5, r + 0.5) : tileSurfaceYInArea(tile, area))'), 'NPC building grounding must share the exact tile surface resolver with the player');
 assert(!gameSource.includes('_isBuildingArea(area) ? 0 : npcSurfaceY(area, spawnPos.c, spawnPos.r)'), 'NPC building transfers must never force Y=0');

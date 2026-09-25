@@ -192,6 +192,37 @@
     return station ? { ...station, stationId: station.id } : null;
   }
 
+  const localeCavernStationWarmups = new Map(); // Dedupe lightweight cave-station fetches so repeated pre-spawn retries never rebuild or refetch the same authored cave metadata.
+
+  function warmMissingNpcStationArea(area) {
+    const normalizedArea = deps.normalizeNpcArea(area || ''); // Canonical area key used by both the station registry and building-scene cache.
+    if (!deps.isBuildingArea(normalizedArea) || deps.buildingScenes.has(normalizedArea)) return;
+
+    const cavernStationLoader = window.CavernGenerator?.loadLocaleCavernNpcStations; // Lightweight cave locale path that deliberately avoids SDF carving/THREE scene creation during startup.
+    if (typeof cavernStationLoader !== 'function') {
+      deps.loadBuildingScene(normalizedArea);
+      return;
+    }
+    if (localeCavernStationWarmups.has(normalizedArea)) return;
+
+    const warmup = Promise.resolve(cavernStationLoader(normalizedArea))
+      .then(stations => {
+        if (Array.isArray(stations)) {
+          registerNpcStations(stations, normalizedArea);
+          return;
+        }
+        if (!deps.buildingScenes.has(normalizedArea)) deps.loadBuildingScene(normalizedArea);
+      })
+      .catch(error => {
+        window.__farmLog?.('[schedule] lightweight station warmup failed for ' + normalizedArea + ': ' + (error?.message || error), 'warn');
+        if (!deps.buildingScenes.has(normalizedArea)) deps.loadBuildingScene(normalizedArea);
+      })
+      .finally(() => {
+        localeCavernStationWarmups.delete(normalizedArea);
+      });
+    localeCavernStationWarmups.set(normalizedArea, warmup);
+  }
+
   // Every registered station advertising `role`, optionally narrowed to one
   // area — the semantic counterpart to resolveNpcStationTarget's exact-id
   // lookup, used by npc-activities.js's goToRole so an agenda beat can say
@@ -447,7 +478,7 @@
         // warm it up so the lookup succeeds on a later tick, and throttle the
         // warning instead of spamming it every tick until that load completes.
         const missingArea = deps.normalizeNpcArea(rule.area ?? rule.mapId ?? hooks.defaultMapId ?? 'town');
-        if (deps.isBuildingArea(missingArea) && !deps.buildingScenes.has(missingArea)) deps.loadBuildingScene(missingArea);
+        warmMissingNpcStationArea(missingArea);
         const warnKey = `${rec?.id || 'npc'}|${rule.stationId}`;
         if (!_scheduleFallbackLogKeys.has(warnKey)) {
           _scheduleFallbackLogKeys.add(warnKey);

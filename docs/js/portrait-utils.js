@@ -184,7 +184,12 @@ function getBlinkConfig() {
   };
 }
 
-function blinkUrlFor(headOverlayUrl) {
+function blinkUrlFor(headOverlay) {
+  const headOverlayUrl = typeof headOverlay === 'string' ? headOverlay : headOverlay?.url; // Canonical overlay path used for the default *_blink.png lookup.
+  if (headOverlay && typeof headOverlay === 'object') {
+    if (headOverlay.blink === false) return null;
+    if (typeof headOverlay.blinkUrl === 'string' && headOverlay.blinkUrl) return headOverlay.blinkUrl;
+  }
   if (typeof headOverlayUrl !== 'string' || !headOverlayUrl.endsWith('.png')) return null;
   return headOverlayUrl.replace(/\.png$/i, '_blink.png');
 }
@@ -425,7 +430,7 @@ function _resolveTargetHueSat(color, referenceHex) {
   const cacheKey = ref.hex + '|' + filter;
   if (_TARGET_HUESAT_CACHE.has(cacheKey)) return _TARGET_HUESAT_CACHE.get(cacheKey);
   if (!_filterSimCanvas) _filterSimCanvas = Object.assign(document.createElement('canvas'), { width: 1, height: 1 });
-  const ctx = _filterSimCanvas.getContext('2d');
+  const ctx = _filterSimCanvas.getContext('2d', { willReadFrequently: true }); // Reused swatch probe is read back for every uncached tint, so request a CPU-readable context on first acquisition.
   ctx.clearRect(0, 0, 1, 1);
   ctx.filter = filter;
   ctx.fillStyle = `rgb(${ref.r},${ref.g},${ref.b})`;
@@ -462,7 +467,7 @@ function _resolveTargetRgbColor(color, referenceHex) {
   const cacheKey = ref.hex + '|' + filter;
   if (_TARGET_RGB_CACHE.has(cacheKey)) return _TARGET_RGB_CACHE.get(cacheKey);
   if (!_filterSimCanvas) _filterSimCanvas = Object.assign(document.createElement('canvas'), { width: 1, height: 1 });
-  const ctx = _filterSimCanvas.getContext('2d');
+  const ctx = _filterSimCanvas.getContext('2d', { willReadFrequently: true }); // Reused swatch probe is read back for every uncached tint, so request a CPU-readable context on first acquisition.
   ctx.clearRect(0, 0, 1, 1);
   ctx.filter = filter;
   ctx.fillStyle = `rgb(${ref.r},${ref.g},${ref.b})`;
@@ -527,7 +532,7 @@ function getHueSatFillCanvas(img, sourceKey, tint) {
     width: img.naturalWidth || img.width,
     height: img.naturalHeight || img.height,
   });
-  const offCtx = canvas.getContext('2d');
+  const offCtx = canvas.getContext('2d', { willReadFrequently: true }); // This one-shot tint canvas is immediately read back before being cached.
   offCtx.drawImage(img, 0, 0);
   const imageData = offCtx.getImageData(0, 0, canvas.width, canvas.height);
   const data = imageData.data;
@@ -565,7 +570,7 @@ function getShadeFillCanvas(img, sourceKey, tint) {
     width: img.naturalWidth || img.width,
     height: img.naturalHeight || img.height,
   });
-  const offCtx = canvas.getContext('2d');
+  const offCtx = canvas.getContext('2d', { willReadFrequently: true }); // This one-shot tint canvas is immediately read back before being cached.
   offCtx.drawImage(img, 0, 0);
   const imageData = offCtx.getImageData(0, 0, canvas.width, canvas.height);
   const data = imageData.data;
@@ -1064,7 +1069,7 @@ const _MOUTH_SPECIES_MAP = {
   'tletingan':{ sprite: 'tletingan',gendered: true,   masked: false },
   'kenkari':   { sprite: 'kenkari',   gendered: false, masked: true  },
   'rakakoan':  { sprite: 'kenkari',   gendered: false, masked: true  },
-  'mashtzarr': { sprite: 'mashtz',    gendered: true,  masked: true  },
+  'mashtzarr': { sprite: 'mashtz',    gendered: true,  masked: true, sharedGenderSuffix: 'm' },
 };
 
 const _BEARD_BELOW_HEAD_SPECIES = new Set(['mashtzarr']);
@@ -1080,9 +1085,11 @@ function _getMouthSpriteUrl(expression, speciesId, gender) {
   const mapping = _MOUTH_SPECIES_MAP[sid] || _MOUTH_SPECIES_MAP[String(speciesId || '').toLowerCase()];
   if (!mapping) return null;
   const expr = String(expression || 'neutral');
-  const suffix = mapping.gendered
-    ? '_' + (String(gender || '').toLowerCase() === 'female' ? 'f' : 'm')
-    : '';
+  const suffix = mapping.sharedGenderSuffix
+    ? '_' + mapping.sharedGenderSuffix
+    : mapping.gendered
+      ? '_' + (String(gender || '').toLowerCase() === 'female' ? 'f' : 'm')
+      : '';
   return `portraitsprites/expressions/mouth/${expr}_${mapping.sprite}${suffix}.png`;
 }
 
@@ -1224,10 +1231,10 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const urLayerSource = renderHeadSprite ? (resolvedFighter?.urLayers || fighter?.urLayers || []) : [];
   const blinkOverlayUrlsByBase = new Map();
   for (const layer of urLayerSource) {
-    const blinkUrl = blinkUrlFor(layer?.url);
+    const blinkUrl = blinkUrlFor(layer); // Optional closed-eye variant for this anatomical overlay; null means the layer stays unchanged during blinks.
     if (blinkUrl) blinkOverlayUrlsByBase.set(layer.url, blinkUrl);
   }
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d', { willReadFrequently: true }); // PNGPlaneAvatar repeatedly scans completed portrait canvases for alpha bounds/skinning, so the very first context acquisition must opt into readback.
   // Scale the context when the canvas pixel dimensions differ from the logical render
   // size (e.g. 220×220 cinematic canvases vs the 200×200 logical coordinate space).
   // This keeps all drawing helpers working in the same PORTRAIT_CW×PORTRAIT_CH space
@@ -2159,7 +2166,7 @@ async function loadPortraitCosmetics(configBase) {
               label: `${sourceData.label || entry.label} (${genderKey === 'male' ? 'M' : 'F'})`,
               headUrl: genderData.headSprite,
               bodyLayers: genderData.portraitBodyLayers.map(l => ({ ...normalizePortraitLayerXform(l), xformPreset: 'B' })),
-              urLayers: (genderData.headUrLayers || []).map(l => ({ url: l.url, renderOrder: l.renderOrder })),
+              urLayers: (genderData.headUrLayers || []).map(l => ({ ...l, url: l.url, renderOrder: l.renderOrder })),
               headXform: genderData.headXform ? normalizePortraitLayerXform(genderData.headXform) : null,
               opacityMaskLayer: genderData.portraitOpacityMaskLayer ? normalizePortraitMaskLayer(genderData.portraitOpacityMaskLayer) : null,
             });
@@ -2822,7 +2829,8 @@ async function preloadAllPortraitSprites(cosmeticsData) {
     for (const layer of fighter.urLayers || []) {
       if (layer.url) {
         relPaths.add(layer.url);
-        relPaths.add(layer.url.replace(/\.png$/i, '_blink.png'));
+        const blinkUrl = blinkUrlFor(layer); // Optional closed-eye variant prewarmed only when this anatomical overlay actually supports blinking.
+        if (blinkUrl) relPaths.add(blinkUrl);
       }
     }
     // Mouth expression sprites are dynamically computed, not in optionCache

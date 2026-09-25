@@ -345,6 +345,28 @@
     return { byTile, median };
   }
 
+  function localeCavernNpcStations(locale) {
+    const mapId = String(locale?.cavern?.mapId || ''); // Used only to reject malformed non-cavern locale data before exposing scheduler stations.
+    if (!mapId) return [];
+    return (locale.npcAnchors || []).map(anchor => ({
+      id: anchor.id,
+      label: anchor.name || anchor.id,
+      npcId: anchor.npcId || '',
+      col: Number(anchor.col),
+      row: Number(anchor.row),
+      rotY: facingRotation(anchor.facing),
+      pose: anchor.pose || 'stand',
+      toolKey: anchor.toolKey || '',
+      toolIntervalSec: Number(anchor.toolIntervalSec) || 0,
+      toolAnimStyle: anchor.toolAnimStyle || '',
+    }));
+  }
+
+  async function loadLocaleCavernNpcStations(mapId) {
+    const locale = await loadLocaleCavernDefinition(mapId); // Lightweight authored locale fetch used by NPC scheduling without carving/building the cavern scene.
+    return locale ? localeCavernNpcStations(locale) : null;
+  }
+
   function synthesizeLocaleCavernMapData(locale) {
     const cavern = locale?.cavern || {};
     const mapId = String(cavern.mapId || '');
@@ -394,18 +416,7 @@
       hiddenUntilKeyItem: connector.hiddenUntilKeyItem === true,
       furnitureKey: String(connector.doorFurnitureKey || 'door'),
     }));
-    const npcStations = (locale.npcAnchors || []).map(anchor => ({
-      id: anchor.id,
-      label: anchor.name || anchor.id,
-      npcId: anchor.npcId || '',
-      col: Number(anchor.col),
-      row: Number(anchor.row),
-      rotY: facingRotation(anchor.facing),
-      pose: anchor.pose || 'stand',
-      toolKey: anchor.toolKey || '',
-      toolIntervalSec: Number(anchor.toolIntervalSec) || 0,
-      toolAnimStyle: anchor.toolAnimStyle || '',
-    }));
+    const npcStations = localeCavernNpcStations(locale); // Shared with the scheduler's lightweight pre-registration path so authored station metadata cannot drift from the full scene.
     const furniture = (locale.objects || []).filter(object => object.itemKey).map(object => ({
       id: object.id,
       itemKey: object.itemKey,
@@ -487,6 +498,8 @@
     pickDenMotherKind,
     synthesizeCavernMapData,
     loadLocaleCavernDefinition,
+    loadLocaleCavernNpcStations,
+    localeCavernNpcStations,
     synthesizeLocaleCavernMapData,
     isLocaleCavernMapId,
   };

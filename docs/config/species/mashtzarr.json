@@ -10,7 +10,8 @@
       },
       {
         "url": "fightersprites/mashtzarr-m/untinted_regions/ur-head_tusks.png",
-        "renderOrder": "aboveHoodBelowHat"
+        "renderOrder": "aboveHoodBelowHat",
+        "blink": false
       }
     ],
     "headXform": {
@@ -187,7 +188,8 @@
       },
       {
         "url": "fightersprites/mashtzarr-f/untinted_regions/ur-head_tusks.png",
-        "renderOrder": "aboveHoodBelowHat"
+        "renderOrder": "aboveHoodBelowHat",
+        "blink": false
       }
     ],
     "headXform": {

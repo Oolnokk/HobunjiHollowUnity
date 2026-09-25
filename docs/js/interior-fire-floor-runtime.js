@@ -346,6 +346,7 @@
   function loadFloorStyleForMap(mapId) {
     const key = String(mapId || '').trim(); // Used as the canonical map filename/cache key.
     if (!/^map_i_[A-Za-z0-9_-]+$/.test(key)) return Promise.resolve(null);
+    if (window.CavernGenerator?.isLocaleCavernMapId?.(key)) return Promise.resolve(null); // Locale caverns are synthesized from config/locales, so no config/maps JSON exists to probe.
     if (floorConfigCache.has(key)) return floorConfigCache.get(key);
     const promise = fetch(`config/maps/${encodeURIComponent(key)}.json`, { cache: 'no-store' }) // Used only after a building scene is created, so it cannot delay scene loading.
       .then(response => response.ok ? response.json() : null)
