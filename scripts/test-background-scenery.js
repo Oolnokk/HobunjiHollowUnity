@@ -162,7 +162,7 @@ const westPos = westHorizonScene.items[0].geometry.attributes.position.array;
 const firstPeakBaseZ = [westPos[2], westPos[5], westPos[8], westPos[11]];
 const firstPeakWidth = Math.max(...firstPeakBaseZ) - Math.min(...firstPeakBaseZ);
 const firstPeakHeight = westPos[12 * 3 + 1] - Math.min(westPos[1], westPos[4], westPos[7], westPos[10]);
-assert(firstPeakWidth / firstPeakHeight > 0.45, `mountain teeth should be broad masses rather than thin spikes; first peak ratio was ${(firstPeakWidth / firstPeakHeight).toFixed(3)}`);
+assert(firstPeakWidth / firstPeakHeight > 0.70, `mountain teeth should be broad masses rather than thin spikes; first peak ratio was ${(firstPeakWidth / firstPeakHeight).toFixed(3)}`);
 
 const hugeWest = Core.normalizeHorizonTerrain({
   preset:'westernMountainChain',
