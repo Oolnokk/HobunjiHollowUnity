@@ -100,10 +100,21 @@ const cinematicCameraSource = read('docs/js/cinematic-camera-runtime.js');
 const banubuQuestContentSource = read('docs/js/banubu-quest-content.js');
 const editorSource = read('docs/tools/locale-editor/index.html');
 const interiorBuilderSource = read('docs/js/interior-scene-builder.js');
+const interiorEnvironmentSource = read('docs/js/interior-environment-runtime.js'); // Used to prove synthesized locale caverns bypass static map environment fetches.
+const interiorFloorSource = read('docs/js/interior-fire-floor-runtime.js'); // Used to prove synthesized locale caverns bypass static map floor-style fetches.
 assert(sculptorSource.includes('function carveFootprintCavern(') && sculptorSource.includes('carveMazeCavern, carveFootprintCavern'), 'shared cavern sculptor must expose footprint-driven generation');
 assert(generatorSource.includes('loadLocaleCavernDefinition') && generatorSource.includes('synthesizeLocaleCavernMapData'), 'runtime must resolve cave interiors through locale files');
 assert(!generatorSource.includes("seedText === 'map_i_den_banubu'"), 'generic generator must not special-case Banubu by seed/map id');
 assert(!generatorSource.includes('isBanubuHome'), 'Banubu-specific interior synthesis must be removed');
+
+for (const [runtimeLabel, runtimeSource] of [['environment', interiorEnvironmentSource], ['floor-style', interiorFloorSource]]) {
+  const localeGuardIndex = runtimeSource.indexOf('CavernGenerator?.isLocaleCavernMapId?.(key)'); // Used to prove the synthesized-cavern guard executes before the legacy static-map fetch.
+  const staticMapFetchIndex = runtimeSource.indexOf("fetch(`config/maps/${encodeURIComponent(key)}.json`"); // Used to locate the legacy authored-map fetch that must remain unreachable for locale caverns.
+  assert(localeGuardIndex >= 0 && staticMapFetchIndex >= 0 && localeGuardIndex < staticMapFetchIndex,
+    `${runtimeLabel} runtime must skip locale cavern ids before probing config/maps/*.json`);
+}
+assert.strictEqual(fs.existsSync(path.join(root, 'docs/config/maps/map_i_den_banubu.json')), false,
+  'Banubu must remain locale-generated; suppress its static-map 404 at the caller rather than adding a duplicate map file');
 
 assert(!gameIndexSource.includes('id="npcPortraitCanvas"') && !gameIndexSource.includes('id="npcPortraitWrap"'), 'legacy screen-space NPC portrait canvas must be removed from gameplay HTML');
 assert(!dialogueStyleSource.includes('#npcPortraitCanvas') && !dialogueStyleSource.includes('#npcPortraitWrap'), 'legacy screen-space NPC portrait CSS must be removed');
