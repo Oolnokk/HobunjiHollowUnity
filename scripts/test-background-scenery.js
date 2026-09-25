@@ -60,6 +60,7 @@ const northHorizon = Core.resolveConfig({ id:'map_northern_cliffs', cols:80, row
 assert.equal(westHorizon.preset, 'westernMountainChain');
 assert.equal(westHorizon.side, 'west');
 assert.equal(westHorizon.heightWorld, 72);
+assert.equal(westHorizon.overallScale, 1);
 assert.equal(westHorizon.segments, 8);
 assert.equal(northHorizon.preset, 'northernPlateau');
 assert.equal(northHorizon.side, 'north');
@@ -156,6 +157,33 @@ assert.equal(westHorizonScene.items[0].geometry.groups.length, 5, 'mountain mesh
 assert.equal(westHorizonScene.items[0].userData.mountainRows, 2);
 assert.equal(westHorizonScene.items[0].userData.sharkTeethStaggered, true);
 assert.equal(westHorizonScene.items[0].userData.alwaysVisibleBoundaryTerrain, true);
+
+const westPos = westHorizonScene.items[0].geometry.attributes.position.array;
+const firstPeakBaseZ = [westPos[2], westPos[5], westPos[8], westPos[11]];
+const firstPeakWidth = Math.max(...firstPeakBaseZ) - Math.min(...firstPeakBaseZ);
+const firstPeakHeight = westPos[12 * 3 + 1] - Math.min(westPos[1], westPos[4], westPos[7], westPos[10]);
+assert(firstPeakWidth / firstPeakHeight > 0.45, `mountain teeth should be broad masses rather than thin spikes; first peak ratio was ${(firstPeakWidth / firstPeakHeight).toFixed(3)}`);
+
+const hugeWest = Core.normalizeHorizonTerrain({
+  preset:'westernMountainChain',
+  overallScale:3,
+  spanScale:4,
+  depthWorld:140,
+}, 'map_western_slope');
+assert.equal(hugeWest.overallScale, 3);
+assert.equal(hugeWest.spanScale, 4);
+assert.equal(hugeWest.depthWorld, 140, 'author must be able to exceed the old 120u depth clamp');
+const hugeWestScene = { items: [], userData: {}, add(obj) { this.items.push(obj); } };
+const hugeWestBudget = Border.buildColossalHorizonTerrain(hugeWestScene, 80, 80, 'map_western_slope', 0, null, hugeWest);
+assert.equal(hugeWestBudget.effectiveHeightWorld, 216, 'whole-chain scale must multiply mountain height');
+assert.equal(hugeWestBudget.effectiveDepthWorld, 420, 'whole-chain scale must multiply mountain depth');
+assert.equal(hugeWestBudget.spanWorld, 960, 'whole-chain scale and span scale must combine on the north/south axis');
+const hugePos = hugeWestScene.items[0].geometry.attributes.position.array;
+let minNorthSouth = Infinity, maxNorthSouth = -Infinity;
+for (let i = 2; i < hugePos.length; i += 3) { minNorthSouth = Math.min(minNorthSouth, hugePos[i]); maxNorthSouth = Math.max(maxNorthSouth, hugePos[i]); }
+assert(minNorthSouth < -400, `scaled west chain should extend far north of the map; min z=${minNorthSouth}`);
+assert(maxNorthSouth > 480, `scaled west chain should extend far south of the map; max z=${maxNorthSouth}`);
+assert.equal(hugeWestScene.items.length, 1, 'whole-chain scaling must not split the mountains into more draw meshes');
 
 const northHorizonScene = { items: [], userData: {}, add(obj) { this.items.push(obj); } };
 const northBudget = Border.buildColossalHorizonTerrain(northHorizonScene, 80, 80, 'map_northern_cliffs', 0, null, northHorizon);
