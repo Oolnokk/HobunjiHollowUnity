@@ -49,7 +49,6 @@
     "campSocialRadiusTiles": 8,
     "stimulusInterestRadiusTiles": 12,
     "activityWeights": {
-      "hunt": 0.52,
       "wander": 0.24,
       "socialize": 0.16,
       "camp": 0.08
