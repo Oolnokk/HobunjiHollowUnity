@@ -389,7 +389,13 @@
 
   function serializeState() {
     const out = {};
-    deps._zoneTreasurePersist.forEach((v, mapId) => { out[mapId] = { week: v.week, placements: v.placements }; });
+    deps._zoneTreasurePersist.forEach((v, mapId) => {
+      const placements = (v.placements || []).map(placement => {
+        const { _mesh, ...savedPlacement } = placement || {}; // Runtime Three.js chest mesh is used only for live interaction/rendering and must never enter save JSON.
+        return savedPlacement;
+      });
+      out[mapId] = { week: v.week, placements };
+    });
     return out;
   }
   function restoreState(saved) {
