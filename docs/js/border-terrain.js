@@ -439,9 +439,7 @@
         depth:bgClamp(depthCenter+depthJitter,0.12,0.88),
         longRadius:baseLongRadius*(0.88+mountainSeedRand(config.mountainSeed,n,9301)*0.34),
         depthRadius:(row===0?0.27:0.25)*(0.90+mountainSeedRand(config.mountainSeed,n,9401)*0.20),
-        heightWorld:((field.effectiveHeightStartWorld*(1-longCenter)+field.effectiveHeightEndWorld*longCenter)
-          *(0.84+mountainSeedRand(config.mountainSeed,n,9501)*0.32)
-          *(row===0?1:0.88)), // Lerp the authored endpoint heights along the chain, then deliberately jag each mountain around that baseline.
+        amplitude:(row===0?0.88:0.78)+mountainSeedRand(config.mountainSeed,n,9501)*(row===0?0.28:0.24), // Per-mountain amplitude keeps neighboring peaks visibly jagged around the shared endpoint-height trend.
         skew:(mountainSeedRand(config.mountainSeed,n,9601)-0.5)*0.13,
       });
     };
@@ -460,14 +458,17 @@
           const dv=(depth-peak.depth)/Math.max(1e-5,peak.depthRadius);
           const d2=du*du+dv*dv;
           if(d2>=1)continue;
-          const contribution=(peak.heightWorld/Math.max(1e-6,field.effectiveHeightWorld))*Math.pow(1-d2,0.58);
+          const contribution=peak.amplitude*Math.pow(1-d2,0.58);
           if(contribution>best){second=best;best=contribution;}
           else if(contribution>second)second=contribution;
         }
         // A small second-peak contribution raises saddles where mountains
         // overlap. This is what turns the two rows into one shared mountain
         // system instead of a pile of isolated radial stamps.
-        let height=bgClamp(best+second*0.24,0,1);
+        let height=Math.max(0,best+second*0.24);
+        const baselineHeightWorld=field.effectiveHeightStartWorld*(1-long)+field.effectiveHeightEndWorld*long; // Exact authored linear height trend along the range.
+        height*=baselineHeightWorld/Math.max(1e-6,field.effectiveHeightWorld); // Apply the trend after mountains merge, so overlap cannot erase the two endpoint settings.
+        height=bgClamp(height,0,1);
         // Give the regular plateau renderer genuine lower terrain on EVERY
         // side of the generated range. The previous 2.5-cell clamp still left
         // raised tiers touching the map-side synthetic boundary, so the nested
