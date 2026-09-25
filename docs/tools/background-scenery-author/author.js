@@ -2,7 +2,7 @@
 const $ = id => document.getElementById(id);
 const Core = window.BackgroundScenery;
 const canvas = $('canvas'), ctx = canvas.getContext('2d');
-const state = { map:null, liveMapRef:null, liveMapWindow:null, scenery:null, attachments:[], selectedId:null, selectedPoint:-1, cam:{x:0,y:0,zoom:10}, drag:null, pointers:new Map(), pinch:null };
+const state = { map:null, liveMapRef:null, liveMapWindow:null, scenery:null, attachments:[], selectedId:null, selectedPoint:-1, cam:{x:0,y:0,zoom:10}, drag:null, pointers:new Map(), pinch:null, horizonFieldCache:null, horizonBrushDirty:false };
 const logLines=[];
 function log(msg){const line=`[${new Date().toLocaleTimeString()}] ${msg}`;logLines.unshift(line);logLines.splice(80);$('debug').textContent=logLines.join('\n');}
 function clone(v){return JSON.parse(JSON.stringify(v));}
@@ -14,7 +14,7 @@ function normalizeMap(raw){
 }
 function sourceConfig(){return state.map?.backgroundScenery||{};}
 function loadMap(raw,{liveRef=null,liveWindow=null,label='map'}={}){
-  state.map=normalizeMap(raw);state.liveMapRef=liveRef;state.liveMapWindow=liveWindow;
+  state.map=normalizeMap(raw);state.liveMapRef=liveRef;state.liveMapWindow=liveWindow;state.horizonFieldCache=null;state.horizonBrushDirty=false;
   state.scenery=Core.resolveConfig(state.map);state.map.backgroundScenery=state.scenery;syncAttachments();fillGlobals();fit();
   $('mapPill').textContent=`${state.map.name||state.map.id||label} · ${state.map.cols}×${state.map.rows}`;
   log(`Loaded ${label}: ${state.attachments.length} live edge attachment(s).`);draw();
@@ -51,27 +51,38 @@ function horizonTerrain(){
   const cfg=state.scenery?.horizonTerrain; // Used by all horizon controls and the 2D author overlay.
   return cfg||Core?.normalizeHorizonTerrain?.({preset:'none'},state.map?.id||'')||{enabled:false,preset:'none'};
 }
+function invalidateHorizonField(){state.horizonFieldCache=null;}
+function currentMountainField(){
+  const cfg=horizonTerrain();
+  if(!state.map||!cfg.enabled||cfg.kind!=='mountainChain'||!Core?.buildMountainPlateauField)return null;
+  if(!state.horizonFieldCache)state.horizonFieldCache=Core.buildMountainPlateauField(state.map.cols,state.map.rows,state.map.id||'',cfg);
+  return state.horizonFieldCache;
+}
 function horizonBudget(cfg){
-  const segments=Math.max(3,Math.round(Number(cfg?.segments)||3)); // Used to mirror the runtime topology for the visible budget readout.
+  const segments=Math.max(3,Math.round(Number(cfg?.segments)||3));
   if(cfg?.kind==='mountainChain'){
-    const frontPeakCount=segments; // Used as the foreground shark-tooth row count.
-    const backPeakCount=Math.max(2,segments-1); // Used as the staggered rear-row count.
-    const peakCount=frontPeakCount+backPeakCount; // Used to report how many discrete 3D mountains stay permanently visible.
-    const mountainLayers=Math.max(4,Math.min(24,Math.round(Number(cfg?.mountainLayers)||12))); // Used to mirror the runtime stacked-plateau tier count.
+    const field=currentMountainField();
+    if(!field)return{vertices:0,triangles:0,rows:2,peakCount:segments*2-1,mountainLayers:0,activeTiles:0,lockedCount:0};
+    let vertices=0,triangles=0;
+    for(const tier of field.tierStats){
+      const w=tier.maxC-tier.minC+1,h=tier.maxR-tier.minR+1;
+      vertices+=(w*2+1)*(h*2+1); // Exact BufferGeometry position count allocated by regular buildPlateauMesa for this tier bbox.
+      triangles+=tier.tiles*8; // Every ordinary synthetic plateau tile contributes four half-tile quads = eight triangles.
+    }
     return{
-      vertices:peakCount*mountainLayers*8,
-      triangles:peakCount*mountainLayers*10,
-      rows:2,peakCount,frontPeakCount,backPeakCount,mountainLayers,
-      cliffSideQuadsPerLayer:4,topTrianglesPerLayer:2,
+      vertices,triangles,rows:2,peakCount:field.peakCount,
+      frontPeakCount:field.frontPeakCount,backPeakCount:field.backPeakCount,
+      mountainLayers:field.maxTier,activeTiles:field.activeTiles,lockedCount:field.lockedCount,
+      fieldCols:field.cols,fieldRows:field.rows,meshCount:field.mesas.length,
     };
   }
-  const rows=4; // Northern plateau keeps the original four cross-horizon profile rows.
-  return{vertices:(segments+1)*rows,triangles:segments*2*(rows-1),rows:1,peakCount:0,mountainLayers:0};
+  const rows=4;
+  return{vertices:(segments+1)*rows,triangles:segments*2*(rows-1),rows:1,peakCount:0,mountainLayers:0,activeTiles:0,lockedCount:0};
 }
 function fillHorizonControls(){
   if(!$('horizonPreset'))return;
-  const cfg=horizonTerrain(); // Used to synchronize the sidebar with the resolved map/default landmark.
-  const budget=horizonBudget(cfg); // Used only by the mobile-visible horizonStats diagnostic.
+  const cfg=horizonTerrain();
+  const budget=horizonBudget(cfg);
   $('horizonEnabled').checked=!!cfg.enabled;
   $('horizonPreset').value=cfg.preset||'none';
   $('horizonSide').value=cfg.side||'north';
@@ -81,10 +92,16 @@ function fillHorizonControls(){
   $('horizonSpan').value=Number(cfg.spanScale)||1;
   $('horizonOverallScale').value=Number(cfg.overallScale)||1;
   $('horizonSegments').value=Math.round(Number(cfg.segments)||3);
-  $('horizonMountainLayers').value=Math.round(Number(cfg.mountainLayers)||12);
-  $('horizonMountainLayersField').style.display=cfg.kind==='mountainChain'?'':'none';
+  $('horizonMountainLayers').value=Math.round(Number(cfg.mountainLayers)||48);
+  const isMountain=cfg.kind==='mountainChain';
+  $('horizonMountainLayersField').style.display=isMountain?'':'none';
+  $('horizonLockTools').style.display=isMountain?'':'none';
+  $('horizonRandomize').style.display=isMountain?'':'none';
+  $('horizonLockCount').textContent=`${budget.lockedCount||0} locked tile${budget.lockedCount===1?'':'s'}`;
   $('horizonStats').textContent=cfg.enabled
-    ? `${cfg.kind==='plateau'?'Plateau':`Mountain chain · ${budget.rows} staggered rows / ${budget.peakCount} mountains · ${budget.mountainLayers} plateau layers each · 4 cliff planes/layer`} · ${budget.vertices} vertices / ${budget.triangles} triangles · ${(cfg.heightWorld*(Number(cfg.overallScale)||1)).toFixed(1)}u effective height · ${(Number(cfg.spanScale)||1).toFixed(2)}× span · ${(Number(cfg.overallScale)||1).toFixed(2)}× whole scale · ${cfg.alwaysVisible?'always submitted':'frustum culled'} · ${cfg.fogIndependent?'fog independent':'uses scene fog'}`
+    ? `${cfg.kind==='plateau'
+      ? 'Plateau'
+      : `Shared plateau mountain map · ${budget.fieldCols}×${budget.fieldRows} synthetic tiles · ${budget.peakCount} generating masses → ${budget.meshCount} merged tier mesh${budget.meshCount===1?'':'es'} · ${budget.mountainLayers} active plateau tiers · seed ${cfg.mountainSeed}`} · ~${Math.round(budget.vertices).toLocaleString()} vertices / ${Math.round(budget.triangles).toLocaleString()} triangles · ${(cfg.heightWorld*(Number(cfg.overallScale)||1)).toFixed(1)}u effective height · ${(Number(cfg.spanScale)||1).toFixed(2)}× span · ${(Number(cfg.overallScale)||1).toFixed(2)}× whole scale · ${cfg.alwaysVisible?'always submitted':'frustum culled'} · ${cfg.fogIndependent?'fog independent':'uses scene fog'}`
     : 'No colossal horizon terrain.';
 }
 function announceHorizonChange(reason){
@@ -97,7 +114,7 @@ function replaceHorizonPreset(preset,reason='horizon-preset'){
   const fallback=Core?.HORIZON_DEFAULT_BY_MAP?.[state.map.id]||'westernMountainChain'; // Used when enabling a map that has no canonical horizon preset.
   const requested=preset==='none'?'none':(preset||fallback); // Used to keep the explicit Clear state from falling back to a zone default.
   state.scenery.horizonTerrain=Core.normalizeHorizonTerrain({preset:requested,enabled:requested!=='none'},state.map.id);
-  fillHorizonControls();draw();announceHorizonChange(reason);
+  invalidateHorizonField();fillHorizonControls();draw();announceHorizonChange(reason);
 }
 function updateHorizon(mutator,reason='horizon-setting'){
   if(!state.scenery||!state.map)return;
@@ -106,7 +123,7 @@ function updateHorizon(mutator,reason='horizon-setting'){
   const draft=current.preset&&current.preset!=='none'?{...current}:{...Core.normalizeHorizonTerrain({preset:fallback},state.map.id)}; // Used as the normalized edit target.
   mutator(draft);
   state.scenery.horizonTerrain=Core.normalizeHorizonTerrain(draft,state.map.id);
-  fillHorizonControls();draw();announceHorizonChange(reason);
+  invalidateHorizonField();fillHorizonControls();draw();announceHorizonChange(reason);
 }
 function fillSelected(){
   const a=selected();$('editSection').style.display=a?'':'none';if(!a)return;
@@ -151,35 +168,95 @@ function resize(){const r=canvas.getBoundingClientRect(),dpr=Math.min(2,devicePi
 function w2s(x,y){return{x:state.cam.x+x*state.cam.zoom,y:state.cam.y+y*state.cam.zoom};}function s2w(x,y){return{x:(x-state.cam.x)/state.cam.zoom,y:(y-state.cam.y)/state.cam.zoom};}
 function tileEntries(){if(!state.map)return[];const t=state.map.tiles||{};if(Array.isArray(t))return t.map(v=>[`${v.c},${v.r}`,v]);return Object.entries(t);}
 function drawHorizonTerrain2d(){
-  const cfg=horizonTerrain(); // Used to draw the authored landmark footprint outside the playable map.
+  const cfg=horizonTerrain();
   if(!cfg.enabled||!state.map)return;
-  const m=state.map; // Used to convert the selected edge into map-relative world coordinates.
-  const horizontal=cfg.side==='north'||cfg.side==='south'; // Used to choose whether the long span follows columns or rows.
-  const axisLength=horizontal?m.cols:m.rows; // Used to scale the landmark span against the selected map edge.
-  const overallScale=Math.max(0.25,Number(cfg.overallScale)||1); // Used to make the 2D footprint match whole-object scaling from the runtime builder.
-  const span=axisLength*Math.max(0.25,Number(cfg.spanScale)||1)*overallScale; // Used to show even several-map-length overscan north/south or east/west.
-  const start=(axisLength-span)*0.5,end=start+span; // Used as the two long-axis endpoints of the footprint.
-  const near=Math.max(0,Number(cfg.distanceWorld)||0),far=near+Math.max(1,Number(cfg.depthWorld)||1)*overallScale; // Used as the near/far extents beyond the playable edge while keeping clearance independently authored.
-  const worldPoint=(axis,out)=>{ // Used to project generic edge coordinates back into map X/Z space.
+  const m=state.map;
+  if(cfg.kind==='mountainChain'){
+    const field=currentMountainField();
+    if(!field)return;
+    const maxTier=Math.max(1,field.maxTier);
+    ctx.save();
+    // Draw the exact shared synthetic map that feeds ZonePlateauMesa. Tiles
+    // get darker with elevation; cyan outlines are the user's persistent locks.
+    for(let r=0;r<field.rows;r++)for(let c=0;c<field.cols;c++){
+      const tier=field.tiers[r*field.cols+c];
+      const locked=Object.prototype.hasOwnProperty.call(cfg.lockedTiles||{},`${c},${r}`);
+      if(!tier&&!locked)continue;
+      const quad=Core.mountainFieldCellWorldQuad(field,c,r);
+      const screen=quad.map(p=>w2s(p[0],p[1]));
+      const xs=screen.map(p=>p.x),ys=screen.map(p=>p.y);
+      const x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys),y1=Math.max(...ys);
+      if(tier){
+        const light=Math.round(28+42*(tier/maxTier));
+        ctx.fillStyle=`hsl(210 7% ${light}%)`;
+        ctx.fillRect(x0,y0,Math.max(.5,x1-x0+.25),Math.max(.5,y1-y0+.25));
+      }
+      if(locked){
+        ctx.strokeStyle='#67e8f9';
+        ctx.lineWidth=Math.max(1,Math.min(3,state.cam.zoom*.08));
+        ctx.strokeRect(x0+.5,y0+.5,Math.max(1,x1-x0-1),Math.max(1,y1-y0-1));
+      }
+    }
+    const p0=Core.mountainFieldWorldPoint(field,0,0),p1=Core.mountainFieldWorldPoint(field,field.cols,field.rows);
+    const s0=w2s(p0[0],p0[1]),s1=w2s(p1[0],p1[1]);
+    ctx.strokeStyle='rgba(226,232,240,.85)';ctx.lineWidth=2;ctx.setLineDash([7,5]);
+    ctx.strokeRect(Math.min(s0.x,s1.x),Math.min(s0.y,s1.y),Math.abs(s1.x-s0.x),Math.abs(s1.y-s0.y));ctx.setLineDash([]);
+    const mid=Core.mountainFieldWorldPoint(field,field.cols/2,field.rows/2),ms=w2s(mid[0],mid[1]);
+    ctx.fillStyle='#eef5ff';ctx.font='700 11px system-ui';ctx.textAlign='center';
+    ctx.fillText(`SHARED PLATEAU MOUNTAIN MAP · ${field.maxTier} TIERS`,ms.x,ms.y);
+    ctx.restore();
+    return;
+  }
+
+  const horizontal=cfg.side==='north'||cfg.side==='south';
+  const axisLength=horizontal?m.cols:m.rows;
+  const overallScale=Math.max(0.25,Number(cfg.overallScale)||1);
+  const span=axisLength*Math.max(0.25,Number(cfg.spanScale)||1)*overallScale;
+  const start=(axisLength-span)*0.5,end=start+span;
+  const near=Math.max(0,Number(cfg.distanceWorld)||0),far=near+Math.max(1,Number(cfg.depthWorld)||1)*overallScale;
+  const worldPoint=(axis,out)=>{
     if(cfg.side==='north')return[axis,-out];
     if(cfg.side==='south')return[axis,m.rows+out];
     if(cfg.side==='west')return[-out,axis];
     return[m.cols+out,axis];
   };
-  const corners=[worldPoint(start,near),worldPoint(end,near),worldPoint(end,far),worldPoint(start,far)]; // Used for the translucent 2D footprint polygon.
-  ctx.save();
-  ctx.beginPath();
+  const corners=[worldPoint(start,near),worldPoint(end,near),worldPoint(end,far),worldPoint(start,far)];
+  ctx.save();ctx.beginPath();
   corners.forEach((p,i)=>{const s=w2s(p[0],p[1]);i?ctx.lineTo(s.x,s.y):ctx.moveTo(s.x,s.y);});
-  ctx.closePath();
-  ctx.fillStyle=cfg.kind==='plateau'?'rgba(167,139,250,.20)':'rgba(148,163,184,.22)';
-  ctx.strokeStyle=cfg.kind==='plateau'?'rgba(196,181,253,.82)':'rgba(226,232,240,.82)';
-  ctx.lineWidth=2;
-  ctx.fill();ctx.stroke();
-  const mid=worldPoint((start+end)*0.5,(near+far)*0.5); // Used to place a readable landmark label in the footprint.
-  const ms=w2s(mid[0],mid[1]); // Used only for the label's screen-space position.
-  ctx.fillStyle='#eef5ff';ctx.font='700 11px system-ui';ctx.textAlign='center';
-  ctx.fillText(cfg.kind==='plateau'?'HUMONGOUS PLATEAU':'HUMONGOUS MOUNTAIN CHAIN',ms.x,ms.y);
-  ctx.restore();
+  ctx.closePath();ctx.fillStyle='rgba(167,139,250,.20)';ctx.strokeStyle='rgba(196,181,253,.82)';ctx.lineWidth=2;ctx.fill();ctx.stroke();
+  const mid=worldPoint((start+end)*0.5,(near+far)*0.5),ms=w2s(mid[0],mid[1]);
+  ctx.fillStyle='#eef5ff';ctx.font='700 11px system-ui';ctx.textAlign='center';ctx.fillText('HUMONGOUS PLATEAU',ms.x,ms.y);ctx.restore();
+}
+
+function paintHorizonLockAtWorld(worldX,worldZ){
+  const mode=$('horizonBrushMode')?.value||'pan';
+  if(mode!=='lock'&&mode!=='unlock')return false;
+  const field=currentMountainField();
+  const cell=field&&Core.mountainFieldWorldToCell(field,worldX,worldZ);
+  if(!field||!cell)return false;
+  const radius=Math.max(1,Math.min(8,Math.round(Number($('horizonBrushRadius')?.value)||1)));
+  const cfg=horizonTerrain();
+  const locked={...(cfg.lockedTiles||{})};
+  let changed=false;
+  for(let dr=-radius+1;dr<=radius-1;dr++)for(let dc=-radius+1;dc<=radius-1;dc++){
+    if(dc*dc+dr*dr>(radius-.35)*(radius-.35))continue;
+    const c=cell.c+dc,r=cell.r+dr;
+    if(c<0||r<0||c>=field.cols||r>=field.rows)continue;
+    const key=`${c},${r}`;
+    if(mode==='lock'){
+      const tier=field.tiers[r*field.cols+c];
+      if(locked[key]!==tier){locked[key]=tier;changed=true;}
+    }else if(Object.prototype.hasOwnProperty.call(locked,key)){delete locked[key];changed=true;}
+  }
+  if(!changed)return true;
+  state.scenery.horizonTerrain=Core.normalizeHorizonTerrain({...cfg,lockedTiles:locked},state.map.id);
+  state.map.backgroundScenery=state.scenery;
+  invalidateHorizonField();
+  state.horizonBrushDirty=true;
+  const count=Object.keys(state.scenery.horizonTerrain.lockedTiles||{}).length;
+  $('horizonLockCount').textContent=`${count} locked tile${count===1?'':'s'}`;
+  draw();
+  return true;
 }
 function draw(){resize();const r=canvas.getBoundingClientRect();ctx.clearRect(0,0,r.width,r.height);if(!state.map)return;const z=state.cam.zoom,m=state.map,d=Number(state.scenery.borderDepthTiles||18);
   const bg0=w2s(-d,-d),bg1=w2s(m.cols+d,m.rows+d);ctx.fillStyle='#18251f';ctx.fillRect(bg0.x,bg0.y,bg1.x-bg0.x,bg1.y-bg0.y);
@@ -195,9 +272,46 @@ function draw(){resize();const r=canvas.getBoundingClientRect();ctx.clearRect(0,
 }
 function hitControl(sx,sy){const a=selected();if(!a||a.orphan)return null;const o=overrideFor(a.id,false);const full=pointsFor(a),cp=o?.controlPoints?.length?o.controlPoints:full.slice(1);for(let i=cp.length-1;i>=0;i--){const s=w2s(cp[i][0],cp[i][1]);if(Math.hypot(sx-s.x,sy-s.y)<=12)return i;}return null;}
 function pt(e){const r=canvas.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top};}
-canvas.addEventListener('pointerdown',e=>{canvas.setPointerCapture(e.pointerId);const p=pt(e);state.pointers.set(e.pointerId,p);if(state.pointers.size===2){const ar=[...state.pointers.values()],mid={x:(ar[0].x+ar[1].x)/2,y:(ar[0].y+ar[1].y)/2};state.pinch={dist:Math.hypot(ar[0].x-ar[1].x,ar[0].y-ar[1].y),zoom:state.cam.zoom,x:state.cam.x,y:state.cam.y,mid};return;}const h=hitControl(p.x,p.y);if(h!==null){const a=selected();materializePoints(a);state.selectedPoint=h;state.drag={type:'point',index:h};draw();}else state.drag={type:'pan',p,x:state.cam.x,y:state.cam.y};});
-canvas.addEventListener('pointermove',e=>{const p=pt(e);state.pointers.set(e.pointerId,p);const w=s2w(p.x,p.y);$('cursor').textContent=`${w.x.toFixed(1)}, ${w.y.toFixed(1)}`;if(state.pointers.size===2&&state.pinch){const ar=[...state.pointers.values()],dist=Math.hypot(ar[0].x-ar[1].x,ar[0].y-ar[1].y),mid={x:(ar[0].x+ar[1].x)/2,y:(ar[0].y+ar[1].y)/2};const old=state.cam.zoom,nz=clamp(state.pinch.zoom*dist/Math.max(1,state.pinch.dist),2,80);const wx=(state.pinch.mid.x-state.pinch.x)/state.pinch.zoom,wy=(state.pinch.mid.y-state.pinch.y)/state.pinch.zoom;state.cam.zoom=nz;state.cam.x=mid.x-wx*nz;state.cam.y=mid.y-wy*nz;draw();return;}if(!state.drag)return;if(state.drag.type==='pan'){state.cam.x=state.drag.x+p.x-state.drag.p.x;state.cam.y=state.drag.y+p.y-state.drag.p.y;draw();}else{const a=selected(),o=overrideFor(a.id),ww=s2w(p.x,p.y);o.controlPoints[state.drag.index]=constrainPoint([Math.round(ww.x*4)/4,Math.round(ww.y*4)/4],effective(a).edge);draw();}});
-function end(e){state.pointers.delete(e.pointerId);if(state.pointers.size<2)state.pinch=null;state.drag=null;}canvas.addEventListener('pointerup',end);canvas.addEventListener('pointercancel',end);canvas.addEventListener('wheel',e=>{e.preventDefault();const p=pt(e),old=state.cam.zoom,nz=clamp(old*(e.deltaY<0?1.12:.89),2,80),w=s2w(p.x,p.y);state.cam.zoom=nz;state.cam.x=p.x-w.x*nz;state.cam.y=p.y-w.y*nz;draw();},{passive:false});
+canvas.addEventListener('pointerdown',e=>{
+  canvas.setPointerCapture(e.pointerId);
+  const p=pt(e);state.pointers.set(e.pointerId,p);
+  if(state.pointers.size===2){
+    const ar=[...state.pointers.values()],mid={x:(ar[0].x+ar[1].x)/2,y:(ar[0].y+ar[1].y)/2};
+    state.pinch={dist:Math.hypot(ar[0].x-ar[1].x,ar[0].y-ar[1].y),zoom:state.cam.zoom,x:state.cam.x,y:state.cam.y,mid};return;
+  }
+  const w=s2w(p.x,p.y);
+  if(paintHorizonLockAtWorld(w.x,w.y)){state.drag={type:'horizon-brush'};return;}
+  const h=hitControl(p.x,p.y);
+  if(h!==null){const a=selected();materializePoints(a);state.selectedPoint=h;state.drag={type:'point',index:h};draw();}
+  else state.drag={type:'pan',p,x:state.cam.x,y:state.cam.y};
+});
+canvas.addEventListener('pointermove',e=>{
+  const p=pt(e);state.pointers.set(e.pointerId,p);const w=s2w(p.x,p.y);
+  const field=currentMountainField(),cell=field&&Core.mountainFieldWorldToCell(field,w.x,w.y);
+  $('cursor').textContent=cell?`${w.x.toFixed(1)}, ${w.y.toFixed(1)} · mountain tile ${cell.c},${cell.r} · tier ${field.tiers[cell.r*field.cols+cell.c]}`:`${w.x.toFixed(1)}, ${w.y.toFixed(1)}`;
+  if(state.pointers.size===2&&state.pinch){
+    const ar=[...state.pointers.values()],dist=Math.hypot(ar[0].x-ar[1].x,ar[0].y-ar[1].y),mid={x:(ar[0].x+ar[1].x)/2,y:(ar[0].y+ar[1].y)/2};
+    const nz=clamp(state.pinch.zoom*dist/Math.max(1,state.pinch.dist),2,80),wx=(state.pinch.mid.x-state.pinch.x)/state.pinch.zoom,wy=(state.pinch.mid.y-state.pinch.y)/state.pinch.zoom;
+    state.cam.zoom=nz;state.cam.x=mid.x-wx*nz;state.cam.y=mid.y-wy*nz;draw();return;
+  }
+  if(!state.drag)return;
+  if(state.drag.type==='horizon-brush'){paintHorizonLockAtWorld(w.x,w.y);return;}
+  if(state.drag.type==='pan'){state.cam.x=state.drag.x+p.x-state.drag.p.x;state.cam.y=state.drag.y+p.y-state.drag.p.y;draw();return;}
+  const a=selected(),o=overrideFor(a.id),ww=s2w(p.x,p.y);o.controlPoints[state.drag.index]=constrainPoint([Math.round(ww.x*4)/4,Math.round(ww.y*4)/4],effective(a).edge);draw();
+});
+function end(e){
+  state.pointers.delete(e.pointerId);
+  if(state.pointers.size<2)state.pinch=null;
+  const wasBrush=state.drag?.type==='horizon-brush';
+  state.drag=null;
+  if(wasBrush&&state.horizonBrushDirty){
+    state.horizonBrushDirty=false;
+    fillHorizonControls();
+    announceHorizonChange('horizon-lock-brush');
+  }
+}
+canvas.addEventListener('pointerup',end);canvas.addEventListener('pointercancel',end);
+canvas.addEventListener('wheel',e=>{e.preventDefault();const p=pt(e),old=state.cam.zoom,nz=clamp(old*(e.deltaY<0?1.12:.89),2,80),w=s2w(p.x,p.y);state.cam.zoom=nz;state.cam.x=p.x-w.x*nz;state.cam.y=p.y-w.y*nz;draw();},{passive:false});
 window.addEventListener('resize',draw);
 for(const [id,key] of [['ridgeClearance','ridgeClearanceTiles'],['borderDepth','borderDepthTiles'],['defaultLength','defaultExtensionLengthTiles']])$(id).addEventListener('input',()=>{if(!state.scenery)return;state.scenery[key]=Number($(id).value);$(id+'Out').textContent=Number($(id).value).toFixed(id==='ridgeClearance'?2:0)+'t';draw();});
 for(const [id,key] of [['routeShoulder','routeShoulderTiles'],['riverBank','riverBankTiles'],['riverDepth','riverChannelDepth'],['waterfallThreshold','waterfallThreshold']])$(id).addEventListener('change',()=>{if(!state.scenery)return;state.scenery[key]=Number($(id).value);draw();fillSelected();});
@@ -211,6 +325,15 @@ $('horizonSpan').onchange=()=>updateHorizon(o=>o.spanScale=Number($('horizonSpan
 $('horizonOverallScale').onchange=()=>updateHorizon(o=>o.overallScale=Number($('horizonOverallScale').value),'horizon-overall-scale');
 $('horizonSegments').onchange=()=>updateHorizon(o=>o.segments=Number($('horizonSegments').value),'horizon-segments');
 $('horizonMountainLayers').onchange=()=>updateHorizon(o=>o.mountainLayers=Number($('horizonMountainLayers').value),'horizon-mountain-layers');
+$('horizonRandomize').onclick=()=>{
+  const current=horizonTerrain();
+  let seed=(Math.round(Number(current.mountainSeed)||0)+1)&0x7fffffff;
+  try{const a=new Uint32Array(1);crypto.getRandomValues(a);seed=a[0]&0x7fffffff;}catch(_){}
+  updateHorizon(o=>{o.mountainSeed=seed;},'horizon-randomize');
+  log(`Randomized shared mountain plateau map with seed ${seed}; preserved ${Object.keys(horizonTerrain().lockedTiles||{}).length} locked tile(s).`);
+};
+$('horizonClearLocks').onclick=()=>updateHorizon(o=>{o.lockedTiles={};},'horizon-clear-locks');
+$('horizonBrushMode').onchange=()=>{state.drag=null;draw();};
 $('horizonWestPreset').onclick=()=>replaceHorizonPreset('westernMountainChain','horizon-west-preset');
 $('horizonNorthPreset').onclick=()=>replaceHorizonPreset('northernPlateau','horizon-north-preset');
 $('horizonClear').onclick=()=>replaceHorizonPreset('none','horizon-clear');
