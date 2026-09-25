@@ -25,7 +25,7 @@
   let deps = null;
   function init(injectedDeps) { deps = injectedDeps; }
 
-  function buildPlateauMesa(zScene, mapId, groupId, bb, elevOffset, zoneBaseElev = 0, zGrid = null) {
+  function buildPlateauMesa(zScene, mapId, groupId, bb, elevOffset, zoneBaseElev = 0, zGrid = null, options = null) {
     const MARGIN_TILES = 1;
     const BASE = deps.NORMAL_TOP + zoneBaseElev;
     const W = bb.maxC - bb.minC + 1, D = bb.maxR - bb.minR + 1;
@@ -242,7 +242,7 @@
     geo.setIndex(new THREE.BufferAttribute(idx.length > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
     if (grassIdx.length) geo.addGroup(0, grassIdx.length, 0);
     if (stoneIdx.length) geo.addGroup(grassIdx.length, stoneIdx.length, 1);
-    deps.displaceZoneGeometry(geo, mapId);
+    if (!options?.skipDisplacement) deps.displaceZoneGeometry(geo, mapId);
     geo.computeVertexNormals();
     const mesh = new THREE.Mesh(geo, [deps.resolveTileMat(mapId, deps.TileType.GRASS), deps.resolveTileMat(mapId, deps.TileType.ROCK)]);
     mesh.receiveShadow = true;
@@ -258,7 +258,7 @@
     // for the occlusion raycast.
     mesh.userData.cameraObstacle = true;
 
-    console.log(`%c[zone:${mapId}] plateau mesa built for group ${groupId}: ${W}x${D} tiles, top=${(BASE+elevOffset).toFixed(2)}, margin=${MARGIN_TILES} tile(s), stone faces=${stoneIdx.length / 6}`, 'color:#22c55e;font-weight:bold');
+    if (!options?.silent) console.log(`%c[zone:${mapId}] plateau mesa built for group ${groupId}: ${W}x${D} tiles, top=${(BASE+elevOffset).toFixed(2)}, margin=${MARGIN_TILES} tile(s), stone faces=${stoneIdx.length / 6}`, 'color:#22c55e;font-weight:bold');
     return mesh;
   }
 
@@ -275,7 +275,7 @@
   // the caller can track and later remove/rebuild them (see
   // rebuildZoneMesaMeshes) — used both by buildZoneScene's initial build
   // and by a runtime tile change on a plateau's flat top.
-  function buildZoneMesaMeshes(zScene, mapId, plateauMesas, zGrid) {
+  function buildZoneMesaMeshes(zScene, mapId, plateauMesas, zGrid, options = null) {
     const meshes = [];
     // Rebuilds discard the previous geometry-derived ownership tags before
     // the current mesa faces mark their exact steep tiles below.
@@ -283,7 +283,7 @@
     plateauMesas.forEach((mesa, i) => {
       const elevOffset = (mesa.toTier - mesa.fromTier) * deps.PLATEAU_UNIT;
       if (elevOffset <= 0) return;
-      const mesh = buildPlateauMesa(zScene, mapId, `tier${i}`, mesa, elevOffset, mesa.fromTier * deps.PLATEAU_UNIT, zGrid);
+      const mesh = buildPlateauMesa(zScene, mapId, `tier${i}`, mesa, elevOffset, mesa.fromTier * deps.PLATEAU_UNIT, zGrid, options);
       if (mesh) meshes.push(mesh);
     });
     return meshes;

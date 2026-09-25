@@ -10,6 +10,9 @@ const grass = fs.readFileSync('docs/js/zone-grass-billboards.js', 'utf8');
 const features = fs.readFileSync('docs/js/zone-terrain-features.js', 'utf8');
 const climb = fs.readFileSync('docs/js/climb-system.js', 'utf8');
 const zoneRegrowth = fs.readFileSync('docs/js/zone-regrowth.js', 'utf8'); // Runtime chunk-rebuild call site now lives here rather than inline in game.js.
+const borderTerrain = fs.readFileSync('docs/js/border-terrain.js', 'utf8'); // Guards authored horizon-scene data through the wilderness boundary wrapper stack.
+const cloudRuntime = fs.readFileSync('docs/js/cloud-forest-runtime.js', 'utf8'); // Guards the cloud-forest runtime wrapper from dropping later boundary arguments.
+const cloudOptions = fs.readFileSync('docs/js/cloud-forest-scenery-options.js', 'utf8'); // Guards the cloud-forest options wrapper from dropping later boundary arguments.
 
 assert.match(index, /js\/wilderness-chunks\.js\?v=[^"']+/);
 assert.ok(index.indexOf('js/wilderness-chunks.js') < index.indexOf('src="game.js?v='));
@@ -31,9 +34,18 @@ assert.ok(game.includes('includeGlobalPath: false'));
 assert.ok(game.includes('mesh.isMesh && mesh.userData?.wildernessChunkOwnsGeometry'));
 assert.ok(game.includes('window.TerrainJigsawUV?.bakeMesh?.(mesh)'));
 assert.ok(game.includes('window.WildernessChunks?.destroyZone(mapId);'));
+assert.ok(game.includes('backgroundScenery: window.MapLivePreview.clone(layout.backgroundScenery || null)'), 'generated-map export must round-trip authored horizon settings back into the editor');
+assert.ok(game.includes('backgroundScenery: window.MapLivePreview.clone(map.backgroundScenery || previous.backgroundScenery || null)'));
+assert.ok(game.includes('backgroundScenery: window.MapLivePreview.clone(zm.backgroundScenery || null)'));
+assert.ok(game.includes('zGrid, zoneData?.backgroundScenery || null);'), 'zone boundary build must consume authored backgroundScenery so author sliders affect live wilderness');
 assert.ok(game.includes('removeBranchesInBounds(mapId, bounds)'));
 assert.ok(game.includes('vegCullRadiusTiles: 30'));
 assert.ok(game.includes("document.getElementById('settingCloudForestResetDefaults')"));
+
+for (const source of [borderTerrain, cloudRuntime, cloudOptions]) {
+  assert.ok(source.includes('zGrid = null, backgroundScenery = null)'), 'boundary wrapper must accept the authored scenery argument');
+  assert.ok(source.includes('zoneBaseElev, zGrid, backgroundScenery)'), 'boundary wrapper must forward authored scenery without truncating later arguments');
+}
 
 assert.ok(grass.includes('function buildZoneGrassBillboards(zScene, zGrid, zcols, zrows, zoneBaseElev = 0, bounds = null)'));
 assert.ok(grass.includes('for (let row = range.rowStart; row < range.rowEnd; row++)'));

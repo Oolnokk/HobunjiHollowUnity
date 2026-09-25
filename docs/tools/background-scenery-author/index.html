@@ -19,6 +19,7 @@
 </script>
 <script src="../../js/terrain-render-chunks.js?v=20260914boundary-visualrestore1"></script>
 <script src="../../js/border-terrain.js"></script>
+<script src="../../js/zone-plateau-mesa.js"></script>
 <style>
 #preview3d{position:absolute;inset:0;display:none;background:#08111a;overflow:hidden}
 #preview3dCanvas{display:block;width:100%;height:100%;touch-action:none}
@@ -64,6 +65,57 @@
           <div class="field"><label>River channel depth</label><input id="riverDepth" type="number" min="0" max="2" step="0.05"></div>
           <div class="field"><label>Waterfall threshold</label><input id="waterfallThreshold" type="number" min="0.1" max="5" step="0.05"></div>
         </div>
+      </div>
+      <div class="section">
+        <div class="row" style="justify-content:space-between;align-items:center"><h2 style="margin:0">Colossal horizon terrain</h2><label class="pill" style="display:flex;gap:5px;align-items:center"><input id="horizonEnabled" type="checkbox"> enabled</label></div>
+        <p class="muted" style="margin:6px 0">Permanent distant boundary terrain. Mountain chains use the same plateau/mesa geometry logic as playable terrain, but their synthetic map resolution is author-controlled so you can trade visual quality against always-visible geometry cost.</p>
+        <div class="g2">
+          <div class="field"><label>Landform preset</label><select id="horizonPreset"><option value="none">None</option><option value="westernMountainChain">Humongous mountain chain</option><option value="northernPlateau">Humongous plateau</option></select></div>
+          <div class="field"><label>Edge</label><select id="horizonSide"><option value="north">North</option><option value="east">East</option><option value="south">South</option><option value="west">West</option></select></div>
+        </div>
+        <div class="g2">
+          <div class="field" id="horizonHeightField"><label>Height (world)</label><input id="horizonHeight" type="number" min="8" max="140" step="1"></div>
+          <div class="field"><label>Clearance from edge (world)</label><input id="horizonDistance" type="number" min="0" max="80" step="1"></div>
+        </div>
+        <div class="g2" id="horizonMountainHeightFields">
+          <div class="field"><label id="horizonHeightStartLabel">North / start height</label><input id="horizonHeightStart" type="number" min="8" max="180" step="1"></div>
+          <div class="field"><label id="horizonHeightEndLabel">South / end height</label><input id="horizonHeightEnd" type="number" min="8" max="180" step="1"></div>
+        </div>
+        <div class="g2">
+          <div class="field"><label>Landform depth (world)</label><input id="horizonDepth" type="number" min="8" max="300" step="1"></div>
+          <div class="field"><label>Edge span scale</label><input id="horizonSpan" type="number" min="0.25" max="8" step="0.05"></div>
+        </div>
+        <div class="g2">
+          <div class="field"><label>Whole landmark scale</label><input id="horizonOverallScale" type="number" min="0.25" max="6" step="0.05"></div>
+          <div class="field"><label>Front-row mountains</label><input id="horizonSegments" type="number" min="3" max="16" step="1"></div>
+        </div>
+        <div class="field" id="horizonGranularityField">
+          <label>Mountain granularity <span class="pill" id="horizonGranularityOut">54 / 100</span></label>
+          <input id="horizonGranularity" type="range" min="0" max="100" step="1" value="54" style="width:100%">
+          <div class="g2" style="margin-top:5px">
+            <div class="field"><label>Exact value</label><input id="horizonGranularityNumber" type="number" min="0" max="100" step="1" value="54"></div>
+            <div class="muted" id="horizonGranularityHint" style="align-self:end;padding-bottom:8px">Balanced</div>
+          </div>
+        </div>
+        <p class="muted" style="margin-top:6px">Granularity changes both the synthetic plateau-map tile density and its vertical tier cap. 0 is deliberately ugly and blocky but cheap; 100 is the maximum-detail, maximum-poly version. Mountain height lerps from the first endpoint to the second along the range, while seeded per-mountain variation keeps the skyline jagged.</p>
+        <div class="row" style="margin-top:6px;flex-wrap:wrap">
+          <button class="sec" id="horizonRandomize">🎲 Randomize mountains</button>
+          <button class="sec" id="horizonWestPreset">🏔 West Slope mountains</button>
+          <button class="sec" id="horizonNorthPreset">▰ Northern Cliffs plateau</button>
+          <button class="bad" id="horizonClear">Clear</button>
+        </div>
+        <div id="horizonLockTools" style="margin-top:9px">
+          <div class="g2">
+            <div class="field"><label>2D mountain brush</label><select id="horizonBrushMode"><option value="pan">Pan / edit paths</option><option value="lock">🔒 Lock generated tiles</option><option value="unlock">🔓 Unlock tiles</option></select></div>
+            <div class="field"><label>Brush radius (synthetic tiles)</label><input id="horizonBrushRadius" type="number" min="1" max="8" step="1" value="2"></div>
+          </div>
+          <div class="row" style="align-items:center;flex-wrap:wrap">
+            <button class="bad" id="horizonClearLocks">Clear tile locks</button>
+            <span class="pill" id="horizonLockCount">0 locked tiles</span>
+          </div>
+          <p class="muted" style="margin:6px 0 0">Paint over the colored 2D mountain field. A locked tile keeps its current plateau tier when Randomize changes the rest of the shared map; Unlock frees it again.</p>
+        </div>
+        <div id="horizonStats" class="muted" style="margin-top:6px;line-height:1.35">No colossal horizon terrain.</div>
       </div>
       <div class="section">
         <div class="row" style="justify-content:space-between;align-items:center"><h2 style="margin:0">Protected texture stretch</h2><label class="pill" style="display:flex;gap:5px;align-items:center"><input id="stretchEnabled" type="checkbox"> authored</label></div>
