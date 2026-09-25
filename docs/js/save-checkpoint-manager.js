@@ -444,16 +444,25 @@
   async function preservePreRestore() {
     let snapshot = null;
     let savedAt = Date.now();
+    let primaryReadError = ''; // Used to fall back to the browser snapshot when the canonical folder is exactly what recovery is trying to repair.
     if (folderIsPrimary() && typeof folderApi()?.readPrimarySnapshot === 'function') {
-      const primary = await folderApi().readPrimarySnapshot();
-      if (primary?.snapshot) {
-        snapshot = primary.snapshot;
-        savedAt = primary.savedAt || savedAt;
+      try {
+        const primary = await folderApi().readPrimarySnapshot();
+        if (primary?.snapshot) {
+          snapshot = primary.snapshot;
+          savedAt = primary.savedAt || savedAt;
+        }
+      } catch (error) {
+        primaryReadError = String(error?.message || error);
       }
     }
     if (!snapshot) snapshot = snapshotApi()?.capture?.({ strict: true });
-    if (!snapshot) throw new Error('Could not capture the current save before recovery.');
-    const record = createRecord('pre-restore', snapshot, 'before-recovery', savedAt);
+    if (!snapshot) {
+      const suffix = primaryReadError ? ` Primary folder read also failed: ${primaryReadError}` : '';
+      throw new Error('Could not capture the current save before recovery.' + suffix);
+    }
+    const reason = primaryReadError ? 'before-recovery-browser-fallback' : 'before-recovery'; // Diagnostics distinguish an ordinary safety copy from corruption recovery.
+    const record = createRecord('pre-restore', snapshot, reason, savedAt);
     writeSlot('preRestore', record);
     if (folderIsPrimary()) await writeFolderSlot('preRestore', record);
     return record;
