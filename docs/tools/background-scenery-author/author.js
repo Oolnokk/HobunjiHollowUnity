@@ -52,9 +52,15 @@ function horizonTerrain(){
   return cfg||Core?.normalizeHorizonTerrain?.({preset:'none'},state.map?.id||'')||{enabled:false,preset:'none'};
 }
 function horizonBudget(cfg){
-  const rows=cfg?.kind==='plateau'?4:3; // Used to mirror the runtime strip topology in the visible budget readout.
-  const segments=Math.max(3,Math.round(Number(cfg?.segments)||3)); // Used to estimate the exact runtime vertex/triangle counts.
-  return{vertices:(segments+1)*rows,triangles:segments*2*(rows-1)};
+  const segments=Math.max(3,Math.round(Number(cfg?.segments)||3)); // Used to mirror the runtime topology for the visible budget readout.
+  if(cfg?.kind==='mountainChain'){
+    const frontPeakCount=segments; // Used as the foreground shark-tooth row count.
+    const backPeakCount=Math.max(2,segments-1); // Used as the staggered rear-row count.
+    const peakCount=frontPeakCount+backPeakCount; // Used to report how many discrete 3D teeth stay permanently visible.
+    return{vertices:peakCount*13,triangles:peakCount*20,rows:2,peakCount,frontPeakCount,backPeakCount};
+  }
+  const rows=4; // Northern plateau keeps the original four cross-horizon profile rows.
+  return{vertices:(segments+1)*rows,triangles:segments*2*(rows-1),rows:1,peakCount:0};
 }
 function fillHorizonControls(){
   if(!$('horizonPreset'))return;
@@ -69,7 +75,7 @@ function fillHorizonControls(){
   $('horizonSpan').value=Number(cfg.spanScale)||1;
   $('horizonSegments').value=Math.round(Number(cfg.segments)||3);
   $('horizonStats').textContent=cfg.enabled
-    ? `${cfg.kind==='plateau'?'Plateau':'Mountain chain'} · ${budget.vertices} vertices / ${budget.triangles} triangles · ${cfg.heightWorld}u high · ${cfg.alwaysVisible?'always submitted':'frustum culled'} · ${cfg.fogIndependent?'fog independent':'uses scene fog'}`
+    ? `${cfg.kind==='plateau'?'Plateau':`Mountain chain · ${budget.rows} staggered rows / ${budget.peakCount} peaks`} · ${budget.vertices} vertices / ${budget.triangles} triangles · ${cfg.heightWorld}u high · ${cfg.alwaysVisible?'always submitted':'frustum culled'} · ${cfg.fogIndependent?'fog independent':'uses scene fog'}`
     : 'No colossal horizon terrain.';
 }
 function announceHorizonChange(reason){
