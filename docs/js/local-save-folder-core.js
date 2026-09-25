@@ -308,7 +308,9 @@
   }
 
   async function readRecoveryCheckpoint(slot) {
-    if (_state !== 'ready' || !_handle) return null;
+    if (!_handle) return null; // Recovery history is independent of canonical-save health; an error state must not hide a still-readable recovery directory.
+    const permission = await _handle.queryPermission?.({ mode: 'readwrite' });
+    if (permission && permission !== 'granted') throw new Error('Primary Save Folder permission is required to read recovery history.');
     let dirHandle;
     try { dirHandle = await _handle.getDirectoryHandle(RECOVERY_DIR); }
     catch (error) {
