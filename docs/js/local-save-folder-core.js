@@ -309,8 +309,6 @@
 
   async function readRecoveryCheckpoint(slot) {
     if (!_handle) return null; // Recovery history is independent of canonical-save health; an error state must not hide a still-readable recovery directory.
-    const permission = await _handle.queryPermission?.({ mode: 'readwrite' });
-    if (permission && permission !== 'granted') throw new Error('Primary Save Folder permission is required to read recovery history.');
     let dirHandle;
     try { dirHandle = await _handle.getDirectoryHandle(RECOVERY_DIR); }
     catch (error) {
@@ -839,8 +837,7 @@
     const previousHandle = _handle; // Retained if the picker is cancelled so recovery never loses the remembered folder by accident.
     const previousState = _state; // Restored on cancel for the same reason.
     try {
-      const pickerOptions = { mode: 'readwrite', id: 'hobunji-primary-save-recovery' }; // Dedicated picker id lets Chromium remember the recovery-folder location independently.
-      if (_handle) pickerOptions.startIn = _handle; // Opens at the remembered folder when the browser supports handle-based startIn.
+      const pickerOptions = { mode: 'readwrite', id: 'hobunji-primary-save-recovery' }; // Dedicated picker id lets Chromium remember the recovery-folder location without dereferencing the possibly stale saved handle.
       const handle = await window.showDirectoryPicker(pickerOptions); // User gesture obtains a fresh live handle when the persisted IndexedDB handle has gone stale.
       _handle = handle;
       await idbSet(HANDLE_KEY, handle);
