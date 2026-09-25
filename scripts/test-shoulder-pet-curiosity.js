@@ -144,6 +144,11 @@ assert.doesNotMatch(applyCuriositySource, /frontPlane\.rotation\.y|backPlane\.ro
   'curiosity never yaws a flat animal plane and therefore cannot imitate a size-class change');
 assert.doesNotMatch(source, /SHOULDER_PET_REVERSE_SPEED_DEG|currentFacingYawDeg|targetFacingYawDeg|behaviorYawOffset/,
   'main keeps the rejected interpolated 180-degree shoulder-pet reverse/yaw experiment out');
+assert.match(source,
+  /const shoulderPetBypassesPlaneDeadzone = c\.stableRole === 'shoulderPet';[\s\S]{0,900}c\.pngRot = c\.groupRot;/,
+  'shoulder pets bypass the generic center-pivot creature PNG deadzone before the authored perch/grip solve');
+assert.match(probeSource, /Shoulder plane deadzone:/,
+  'Pixel Probe reports whether the shoulder-pet deadzone bypass is active');
 assert.match(rigSource,
   /if \(phase === 'wait' && nextPhase === 'look'\)[\s\S]{0,500}pet\.__hobunjiShoulderObservationFlipped = flipped[\s\S]{0,900}phase = nextPhase/,
   'the curiosity transition changes only logical observation parity; it does not mutate the visual plane before the final shoulder pin');
