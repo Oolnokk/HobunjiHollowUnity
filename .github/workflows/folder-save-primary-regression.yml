@@ -15,6 +15,7 @@ on:
       - 'docs/js/session-persistence-startup-guard.js'
       - 'scripts/test-folder-save-*.js'
       - 'scripts/test-save-checkpoint-manager.js'
+      - 'scripts/test-save-startup-failure-surface.js'
       - 'scripts/test-wild-treasure-road-spawns.js'
       - 'scripts/test-persistent-mine-campfires.js'
       - '.github/workflows/folder-save-primary-regression.yml'
@@ -29,6 +30,7 @@ on:
       - 'docs/onboarding.js'
       - 'scripts/test-folder-save-*.js'
       - 'scripts/test-save-checkpoint-manager.js'
+      - 'scripts/test-save-startup-failure-surface.js'
       - 'scripts/test-wild-treasure-road-spawns.js'
       - 'scripts/test-persistent-mine-campfires.js'
       - '.github/workflows/folder-save-primary-regression.yml'
@@ -61,5 +63,6 @@ jobs:
           node scripts/test-folder-save-primary.js
           node scripts/test-folder-save-runtime-integrity.js
           node scripts/test-save-checkpoint-manager.js
+          node scripts/test-save-startup-failure-surface.js
           node scripts/test-wild-treasure-road-spawns.js
           node scripts/test-persistent-mine-campfires.js

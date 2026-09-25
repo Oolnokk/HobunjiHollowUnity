@@ -63,6 +63,7 @@ const vm = require('node:vm');
   let folderSyncs = 0; // Successful/partially-successful canonical write attempts.
   let failNextFolderSyncAfterWrite = false; // Simulates I/O failure after canonical files already changed.
   let failPrimarySnapshotRead = false; // Simulates a malformed canonical world that recovery must repair instead of requiring a successful primary read.
+  let hungRecoverySlot = ''; // Simulates a File System Access read that never settles so the recovery UI timeout path is exercised.
   const folderListeners = []; // Captures LocalSaveFolder status listeners.
   const documentListeners = new Map(); // Captures lifecycle listeners without a browser DOM.
 
@@ -86,10 +87,11 @@ const vm = require('node:vm');
     getStatus: () => ({ ...folderStatus }),
     onChange(listener) { folderListeners.push(listener); return () => {}; },
     async readRecoveryCheckpoint(slot) {
+      if (slot === hungRecoverySlot) return new Promise(() => {}); // Intentional never-settling I/O used to prove recovery history fails soft.
       return folderRecovery.has(slot) ? structuredClone(folderRecovery.get(slot)) : null;
     },
     async readRecoveryCheckpoints() {
-      return Object.fromEntries(['manual', 'auto', 'autoPrevious', 'preRestore'].map(slot => [slot, folderRecovery.get(slot) || null]));
+      return Object.fromEntries(['manual', 'campfire', 'auto', 'autoPrevious', 'preRestore'].map(slot => [slot, folderRecovery.get(slot) || null]));
     },
     async writeRecoveryCheckpoint(slot, record) {
       folderRecovery.set(slot, structuredClone(record));
@@ -170,7 +172,8 @@ const vm = require('node:vm');
     alert: () => {},
     location: { reload: () => { reloads += 1; } },
     setInterval: () => 1,
-    setTimeout: (fn) => { fn(); return 1; },
+    setTimeout: (fn, delay = 0) => Number(delay) > 0 ? global.setTimeout(fn, delay) : (fn(), 1),
+    clearTimeout: timer => { if (timer && timer !== 1) global.clearTimeout(timer); },
     clearInterval: () => {},
     Object,
     JSON,
@@ -272,6 +275,19 @@ const vm = require('node:vm');
   assert.deepEqual(folderRecovery.get('auto').snapshot, folderPrimarySnapshot, 'baseline exactly matches canonical primary folder');
   assert.equal(window.__hobunjiSaveCheckpointDebug.snapshot().folderBaselineSeeds, 1);
 
+  // Canonical inspection can put the folder into an error state while recovery files remain
+  // perfectly readable. Recovery discovery must use the retained folder handle/history anyway.
+  const errorStateRecovery = structuredClone(folderRecovery.get('auto'));
+  errorStateRecovery.reason = 'error-state-recovery-visible';
+  folderRecovery.set('manual', errorStateRecovery);
+  store.delete('hobunjiSaveCheckpoint.manual.v1');
+  folderStatus.state = 'error';
+  folderStatus.lastError = 'simulated canonical inspection error';
+  await api.syncRecoveryMirrorsFromFolder();
+  assert.equal(JSON.parse(store.get('hobunjiSaveCheckpoint.manual.v1')).reason, 'error-state-recovery-visible', 'folder recovery remains discoverable when canonical folder state is error');
+  folderStatus.state = 'ready';
+  folderStatus.lastError = null;
+
   currentSnapshot.meta.worlds[0].members.char_a.nonGearInventory = {};
   currentSnapshot.meta.worlds[0].storage = {};
   currentSnapshot.meta.worlds[0].livestock = [];
@@ -299,6 +315,19 @@ const vm = require('node:vm');
   assert.deepEqual(folderRecovery.get('manual').snapshot, folderPrimarySnapshot, 'folder manual checkpoint equals canonical manual snapshot');
   const goodManualFolderRaw = JSON.stringify(folderRecovery.get('manual'));
   const goodManualBrowserRaw = store.get('hobunjiSaveCheckpoint.manual.v1');
+
+  // Campfire Save owns an independent checkpoint. It may advance the canonical save, but it
+  // must never replace the pause-menu Manual Save recovery point.
+  currentSnapshot.meta.worlds[0].members.char_a.nonGearInventory.turnip = 4;
+  now += 30_000;
+  const campfireResult = await api.saveCampfire();
+  assert.equal(campfireResult.ok, true, 'campfire save commits through the guarded folder-first path');
+  assert.equal(campfireResult.folder, true);
+  assert.equal(JSON.stringify(folderRecovery.get('manual')), goodManualFolderRaw, 'campfire save leaves the folder manual checkpoint untouched');
+  assert.equal(store.get('hobunjiSaveCheckpoint.manual.v1'), goodManualBrowserRaw, 'campfire save leaves the browser manual checkpoint mirror untouched');
+  assert.equal(folderRecovery.get('campfire').snapshot.meta.worlds[0].members.char_a.nonGearInventory.turnip, 4, 'campfire save advances its own folder checkpoint');
+  assert.ok(store.has('hobunjiSaveCheckpoint.campfire.v1'), 'campfire save has its own browser mirror key');
+  assert.equal(api.getStatus().campfire.kind, 'campfire', 'public checkpoint status exposes campfire history separately');
 
   // A suspicious manual attempt must not destroy the previous good manual checkpoint before
   // the folder guard approves it. UI can explicitly force this only after confirmation.
@@ -370,6 +399,43 @@ const vm = require('node:vm');
   assert.ok(api.getStatus().preRestore, 'pre-restore checkpoint remains available after rollback');
   assert.equal(window.__hobunjiSaveCheckpointDebug.snapshot().restoreRollbacks, 1, 'diagnostics record automatic folder rollback');
   assert.ok(folderSyncs >= 4, 'fixture exercised canonical autosave, manual save, restore, and rollback writes');
+
+  // A never-settling recovery file must not keep "Reading recovery history…" alive forever.
+  // Healthy slots from the same folder still mirror successfully while the bad slot times out.
+  folderRecovery.set('auto', structuredClone(legacyManualCheckpoint));
+  folderRecovery.set('manual', structuredClone(legacyManualCheckpoint));
+  store.delete('hobunjiSaveCheckpoint.auto.v1');
+  const emergencyBrowserManual = structuredClone(legacyManualCheckpoint);
+  emergencyBrowserManual.reason = 'browser-emergency-copy';
+  store.set('hobunjiSaveCheckpoint.manual.v1', JSON.stringify(emergencyBrowserManual));
+  hungRecoverySlot = 'manual';
+  const timeoutStartedAt = Date.now();
+  await api.syncRecoveryMirrorsFromFolder();
+  const timeoutElapsed = Date.now() - timeoutStartedAt;
+  hungRecoverySlot = '';
+  assert.ok(timeoutElapsed >= 2500 && timeoutElapsed < 5000, 'hung recovery read is bounded to the configured ~3 second fail-soft window');
+  assert.ok(store.has('hobunjiSaveCheckpoint.auto.v1'), 'healthy recovery slot remains usable when a sibling recovery read hangs');
+  assert.equal(JSON.parse(store.get('hobunjiSaveCheckpoint.manual.v1')).reason, 'browser-emergency-copy', 'timed-out folder read preserves a validated browser recovery copy instead of erasing it');
+  assert.match(window.__hobunjiSaveCheckpointDebug.snapshot().lastError || '', /manual: Recovery "manual" read timed out after 3s.*showing browser fallback copy/, 'diagnostics expose the timeout and browser fallback provenance');
+  assert.match(window.__hobunjiSaveCheckpointDebug.snapshot().recoveryReadErrors.manual || '', /timed out after 3s/, 'per-slot diagnostics distinguish unreadable history from an absent checkpoint');
+
+  // Emergency recovery import bypasses File System Access entirely. This is the Opera fallback
+  // when showDirectoryPicker is wedged in an already-active state.
+  const importedManual = structuredClone(legacyManualCheckpoint);
+  importedManual.reason = 'drag-import-manual';
+  const importedAuto = structuredClone(legacyManualCheckpoint);
+  importedAuto.reason = 'drag-import-auto';
+  store.delete('hobunjiSaveCheckpoint.manual.v1');
+  store.delete('hobunjiSaveCheckpoint.auto.v1');
+  const importResult = await api.importRecoveryFiles([
+    { name: 'manual.json', text: async () => JSON.stringify(importedManual) },
+    { name: 'autosave-latest.json', text: async () => JSON.stringify(importedAuto) },
+  ]);
+  assert.equal(importResult.ok, true, 'picker-free recovery import accepts checkpoint JSON files');
+  assert.equal(Array.from(importResult.imported).sort().join(','), 'auto,manual', 'picker-free recovery import maps canonical recovery filenames to the correct slots');
+  assert.equal(JSON.parse(store.get('hobunjiSaveCheckpoint.manual.v1')).reason, 'drag-import-manual', 'imported Manual Save becomes available in browser recovery history');
+  assert.equal(JSON.parse(store.get('hobunjiSaveCheckpoint.auto.v1')).reason, 'drag-import-auto', 'imported Latest Autosave becomes available in browser recovery history');
+  assert.equal(window.__hobunjiSaveCheckpointDebug.snapshot().emergencyRecoveryImportActive, true, 'diagnostics expose picker-free emergency recovery mode');
 
   console.log('save checkpoint manager folder-first regression: ok');
 })().catch(error => {
