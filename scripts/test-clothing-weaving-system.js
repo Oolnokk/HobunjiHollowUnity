@@ -144,10 +144,12 @@ assert.equal(api.__test.resolvedPatternMeshScale({ meshScale: 0.4 }), 0.1, 'norm
 assert.equal(api.__test.resolvedPatternMeshScale({ meshScale: 3.2 }), 0.8, 'normalized upper bound 3.20 renders at the former 0.80 maximum');
 assert.equal(api.__test.resolvedPatternMeshScale({ meshScale: 0.1 }), 0.1, 'saved values below the normalized range clamp to the physical 0.10 minimum without migration');
 assert.equal(api.__test.resolvedPatternMeshScale({ meshScale: 6 }), 0.8, 'saved values above the normalized range clamp to the physical 0.80 maximum without migration');
-assert.equal(api.__test.scaledOutlineWidth(1, { motifScale: 0.1, frameScale: 0.1, meshScale: 0.4, usageScaleMultiplier: 0.1 }, 'woven-motif'), 1, 'scaled-down clothing motifs keep the same 1px woven outline');
-assert.equal(api.__test.scaledOutlineWidth(1, { motifScale: 3, frameScale: 6, meshScale: 3.2, usageScaleMultiplier: 14 }, 'woven-motif'), 1, 'large usage scaling alone does not thicken clothing outlines');
-assert.equal(api.__test.scaledOutlineWidth(1, { motifScale: 0.1, frameScale: 0.1, meshScale: 0.4, usageScaleMultiplier: 7 }, 'animal-surface-pattern'), 6, 'animal surface patterns use a fixed 6-unit outline even when motif geometry is scaled down');
-assert.equal(api.__test.scaledOutlineWidth(1, { motifScale: 3, frameScale: 6, meshScale: 3.2, usageScaleMultiplier: 14 }, 'animal-surface-pattern'), 6, 'animal surface patterns keep the same fixed 6-unit outline when motif geometry is scaled up');
+assert.equal(api.__test.scaledOutlineWidth(1, { motifScale: 0.1, frameScale: 0.1, meshScale: 0.4, usageScaleMultiplier: 0.1 }, 'woven-motif', 831, 523), 1, 'scaled-down clothing motifs keep the same 1px woven outline regardless of source image dimensions');
+assert.equal(api.__test.scaledOutlineWidth(1, { motifScale: 3, frameScale: 6, meshScale: 3.2, usageScaleMultiplier: 14 }, 'woven-motif', 3000, 2250), 1, 'large usage scaling alone does not thicken clothing outlines');
+assert.equal(api.__test.scaledOutlineWidth(1, { motifScale: 0.1, frameScale: 0.1, meshScale: 0.4, usageScaleMultiplier: 7 }, 'animal-surface-pattern', 3000, 2250), 6, 'Grehlr-sized animal art preserves the current 6-unit Color Pools outline');
+const drenkirraOutlineWidth = api.__test.scaledOutlineWidth(1, { motifScale: 3, frameScale: 6, meshScale: 3.2, usageScaleMultiplier: 14 }, 'animal-surface-pattern', 831, 523); // Used to verify Drenkirra inherits Grehlr's visual line-weight ratio instead of Grehlr's raw pixel width.
+assert.ok(Math.abs(drenkirraOutlineWidth - (6 * 523 / 2250)) < 1e-12, 'Drenkirra animal outline scales from its 523px short side instead of staying fixed at 6 units');
+assert.equal(api.__test.scaledOutlineWidth(1, {}, 'animal-surface-pattern'), 6, 'animal surface paint keeps the existing 6-unit fallback when a caller cannot provide source dimensions');
 const outlineProbeSize = 96; // Used to verify the final raster dilation, not just the width selector.
 const outlineProbeGarment = new Uint8Array(outlineProbeSize * outlineProbeSize).fill(1); // Used as an unrestricted patterned surface for the outline geometry probe.
 const outlineProbeMotif = new Uint8Array(outlineProbeSize * outlineProbeSize); // Used as a large square motif whose straight edge makes inward/outward thickness measurable.
@@ -495,6 +497,8 @@ now = 10000;
 assert.equal(windowStub.Combat.getMovementSpeedMul(), 1, 'movement weight has no out-of-combat slowdown');
 
 const source = fs.readFileSync('docs/js/clothing-weaving-system.js', 'utf8');
+assert.match(source, /scaledOutlineWidth\(PATTERN_OUTLINE_WIDTH, active\[1\]\?\.pattern, debugLabel, width, height\)/, 'overpass clearance uses the same image-relative animal outline width');
+assert.match(source, /scaledOutlineWidth\(PATTERN_OUTLINE_WIDTH, active\[0\]\?\.pattern, debugLabel, width, height\)/, 'visible animal pattern outline receives the actual source image dimensions');
 const portraitSource = fs.readFileSync('docs/js/portrait-utils.js', 'utf8'); // Verifies woven portrait state is injected per render rather than shared across WorldPortraitLife's overlapping async NPC refreshes.
 const avatarPreviewSource = fs.readFileSync('docs/js/npc-avatar-preview-utils.js', 'utf8'); // Guards the live world-avatar adapter that survives later portrait-renderer replacement.
 const indexSource = fs.readFileSync('docs/index.html', 'utf8'); // Guards the outer cache key so a commit-pinned build cannot reuse an older combat loader that points at stale weaving code.
@@ -535,8 +539,8 @@ assert.match(avatarPreviewSource, /await renderer\(canvas, profile, renderOption
 assert.match(source, /document\.addEventListener\('hobunjiPlayerReady'[\s\S]*?requestSessionReadyPlayerAvatarRefresh\(hintedGear\)/, 'woven player-ready lifecycle schedules an automatic post-load avatar rebuild instead of relying on a manual gear toggle');
 assert.match(source, /window\.setTimeout\(attempt, 0\)/, 'session rebuild is deferred until every player-ready listener has installed the live save state');
 assert.match(source, /const startupFinished = window\.__hobunjiGameStarted === true[\s\S]*?liveWoven && initialPortraitPrepared && startupFinished[\s\S]*?equipmentDeps\.refreshPlayerAvatar\(\)/, 'post-load rebuild waits for live woven Gear, the initial gear-to-profile pass, and fully completed game startup before refreshing');
-assert.match(indexSource, /combat-config-loader\.js\?v=20260925weavesession5/, 'index cache-busts the loader that owns the weaving module URL');
-assert.match(combatLoaderSource, /clothing-weaving-system\.js\?v=20260925weavesession5/, 'combat loader cache-busts the repaired weaving runtime itself');
+assert.match(indexSource, /combat-config-loader\.js\?v=20260925animaloutline1/, 'index cache-busts the loader that owns the image-relative weaving module URL');
+assert.match(combatLoaderSource, /clothing-weaving-system\.js\?v=20260925animaloutline1/, 'combat loader cache-busts the image-relative animal outline runtime itself');
 assert.match(portraitSource, /renderOptions\?\.imageForTint[\s\S]*?: _imageForTint/, 'portrait rendering accepts a per-render tint resolver with the canonical tint path as fallback');
 assert.match(portraitSource, /drawPortraitLayerWarped\(ctx, img, resolveXform\(layer\)[\s\S]*?layer\.url, imageForTint\)/, 'breathing overwear layers use the same render-local tint resolver during WorldPortraitLife refreshes');
 
