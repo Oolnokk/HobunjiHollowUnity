@@ -96,8 +96,9 @@ assert.equal(visuals.length, 2, 'authored-upgrade notification attaches the defe
 assert.equal(hearthGroup.userData.hobunjiAmbientFurnitureVfxPendingKey, undefined, 'successful authored attachment clears the pending marker');
 assert.equal(hearthGroup.userData.hobunjiAmbientFurnitureVfxKey, 'hearth', 'hearth group records its live ambient VFX key');
 
-// Simulate the furniture actually being placed into a scene (has a parent).
+// Simulate both furniture groups actually being placed into a scene (have parents).
 group.parent = {};
+hearthGroup.parent = {};
 
 const tick = entry.fn;
 tick({ timestamp: 16 });
@@ -109,6 +110,7 @@ assert.equal(entry.options.enabled, true, 'the subscriber stays enabled while a 
 // observe that must eventually dispose the record and disable the
 // subscriber, matching "zero work when no fires exist".
 group.parent = null;
+hearthGroup.parent = null;
 tick({ timestamp: 32 }); // wasAttached is now true, so losing the parent disposes immediately (no TTL wait needed once it was ever attached).
 assert.equal(visuals[0].disposed, true, 'losing its scene parent after having been attached disposes the emitter record');
 assert.equal(entry.options.enabled, false, 'the subscriber disables itself once no ambient records remain');
