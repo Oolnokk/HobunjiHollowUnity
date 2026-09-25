@@ -59,6 +59,10 @@ assert(primary.includes('openRecoveryModal'), 'startup recovery action opens the
 assert(primary.includes('const initialError = lastUiError || status.lastError'), 'startup gate shows the folder-load failure immediately instead of a blank reconnect screen');
 assert(bridge.includes('prepareBeforeOnboarding'), 'onboarding init waits for primary folder reconciliation');
 assert(bridge.includes('refreshFromStorage'), 'folder restore can rebuild save selection in place');
+assert(bridge.includes('hobunjiSaveStartupFailure'), 'onboarding bridge has an emergency visible startup-failure surface');
+assert(bridge.includes('safeOriginalInit'), 'onboarding bridge catches failures thrown by the onboarding renderer itself');
+assert(bridge.includes('STARTUP_WATCHDOG_MS'), 'onboarding bridge has a watchdog for a preparation promise that never renders any UI');
+assert(bridge.includes('openRecoveryModal'), 'emergency onboarding failure surface exposes Save Recovery before normal onboarding exists');
 assert(!bridge.includes('location.reload'), 'in-place onboarding restore bridge never reloads the site');
 
 assert(emptyBootstrap.includes('empty-folder-connected-awaiting-first-save'), 'a new empty folder is a valid first-run save destination');
