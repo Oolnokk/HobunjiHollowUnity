@@ -148,6 +148,12 @@ windowStub.WildlifeSpawn.init(deps);
 const cavernMapId = windowStub.WildlifeSpawn.denCavernMapId(zoneId,den.id);
 assert.equal(cavernMapId,'map_i_den_map_northern_cliffs_animalDen_0');
 layout.transitions[0].targetMapId=cavernMapId;
+const initialGenotype = windowStub.WildlifeSpawn.getOrMakeDenGenotype(cavernMapId,'gar-wolf');
+assert.equal(genotypeRoll,1,'first generation rolls one family genotype');
+windowStub.WildlifeSpawn.forgetZoneDenState(zoneId);
+const restoredInitialGenotype = windowStub.WildlifeSpawn.getOrMakeDenGenotype(cavernMapId,'gar-wolf');
+assert.deepEqual(restoredInitialGenotype,initialGenotype,'an untouched generation-zero den keeps the same bloodline across cache invalidation/reload-style reconstruction');
+assert.equal(genotypeRoll,1,'generation-zero restoration does not reroll the family');
 denNests.set(cavernMapId,{ remaining:2 });
 
 const mother = { id:'mother', isDenMother:true, areaId:cavernMapId, health:0, def:{hostile:true,diet:'carnivore'} };
@@ -182,7 +188,7 @@ assert.equal(layout.transitions.some(t=>t.targetMapId===cavernMapId),false,'coll
 assert.equal(denNests.has(cavernMapId),false,'uncollected clutch is discarded once collapse executes');
 assert.deepEqual(forgottenDenMarkers,[windowStub.WildlifeSpawn.denKeyFor(zoneId,den)],'collapse clears the companion-discovered map marker for the abandoned entrance');
 assert(visualSync.some(call=>call.collapsed),'collapse updates the existing cave visual');
-assert.equal(genotypeRoll,0,'collapse itself does not invent a replacement bloodline');
+assert.equal(genotypeRoll,1,'collapse itself does not invent another bloodline');
 
 windowStub.WildlifeSpawn.clearPendingDenRespawn();
 debug=windowStub.WildlifeSpawn.denTurnoverDebug(zoneId);
@@ -209,11 +215,12 @@ assert(visualSync.some(call=>!call.collapsed && call.x===den.x && call.y===den.y
 assert(rebuiltChunks.length>=2,'old and new streamed terrain regions are rebuilt after relocation');
 
 const firstGenotype = windowStub.WildlifeSpawn.getOrMakeDenGenotype(cavernMapId,'gar-wolf');
-assert.equal(genotypeRoll,1,'newly relocated population rolls one fresh family genotype');
+assert.equal(genotypeRoll,2,'newly relocated population rolls exactly one fresh family genotype');
+assert.notDeepEqual(firstGenotype,initialGenotype,'relocation is the event that changes the den bloodline');
 windowStub.WildlifeSpawn.forgetZoneDenState(zoneId);
 const restoredGenotype = windowStub.WildlifeSpawn.getOrMakeDenGenotype(cavernMapId,'gar-wolf');
 assert.deepEqual(restoredGenotype,firstGenotype,'relocated family genotype persists through cache invalidation/reload-style restoration');
-assert.equal(genotypeRoll,1,'restoring relocated family does not reroll it');
+assert.equal(genotypeRoll,2,'restoring relocated family does not reroll it');
 
 assert(storage.size>0,'den turnover state is persisted per world');
 assert(logs.some(entry=>/\[den-turnover\] collapsed/.test(entry.message)));
