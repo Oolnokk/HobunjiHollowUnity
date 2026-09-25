@@ -115,6 +115,7 @@
     ensurePuktukRuntimeRegistration(injectedDeps);
     ensureVoorgAssRuntimeRegistration(injectedDeps);
     deps = injectedDeps;
+    installDenTurnoverDeathHook();
   }
 
   // Once a den's whole pack/herd is wiped, it stays empty — no ambient
@@ -279,11 +280,423 @@
   // next day (game.js's advanceDay/sleepInBed clear these) rather than
   // instantly refilling.
   const pendingDenRespawn = new Set();
+  const DEN_RELOCATION_DELAY_DAYS = 2; // Used by the Den-Mother turnover lifecycle before a cleared den may reappear at a new site.
+  const DEN_RELOCATION_MIN_DISTANCE_TILES = 12; // Used by relocation candidate filtering so a replacement den visibly moves instead of shifting a few tiles.
+  const DEN_RELOCATION_PLAYER_CLEARANCE_TILES = 18; // Used while the player is in the same zone so a replacement cave never pops into view nearby.
+  const DEN_TURNOVER_STORAGE_PREFIX = 'hobunjiDenTurnoverV1:'; // Used to keep collapsed/relocated dens stable across reloads within the same Tothal year.
+  const denTurnoverByKey = new Map(); // denKey -> persistent Den-Mother clear/collapse/relocation state.
+  const processedDenMotherDeaths = new WeakSet(); // Used by the CreatureDeath wrapper to make begin/recover handoffs idempotent.
+  let denTurnoverIdentity = null; // Used to detect world/year changes before reading or writing persisted den turnover state.
+  let creatureDeathHookInstalled = false; // Used to avoid stacking CreatureDeath wrappers if WildlifeSpawn.init runs more than once.
   const roamingHerdEverSpawned = new Set(); // Used to avoid refilling a partially/wiped herd immediately during the same day.
   const roamingHerdLastKnownAlive = new Map(); // Herd-key -> prior alive state, mirroring denLastKnownAlive.
   const pendingRoamingHerdRespawn = new Set(); // Cleared with the other wildlife respawn gates when a new day begins.
 
   function denKeyFor(zoneId, den) { return `${zoneId}:${den.id}`; }
+
+  function currentDenTurnoverIdentity() {
+    const worldId = String(window.__hobunjiPlayerProfile?.worldId || window.__hobunjiPlayerProfile?.playerId || 'session'); // Used to isolate den ecology state between worlds/preview sessions.
+    const year = Number(window.CalendarSystem?.yearNumber?.() || 1); // Used so a new Tothal generation naturally discards last year's relocated den coordinates.
+    return { worldId, year, key: `${worldId}|${year}` };
+  }
+
+  function denTurnoverStorageKey(identity = currentDenTurnoverIdentity()) {
+    return DEN_TURNOVER_STORAGE_PREFIX + identity.worldId;
+  }
+
+  function ensureDenTurnoverLoaded() {
+    const identity = currentDenTurnoverIdentity();
+    if (denTurnoverIdentity === identity.key) return;
+    denTurnoverIdentity = identity.key;
+    denTurnoverByKey.clear();
+    try {
+      const raw = localStorage.getItem(denTurnoverStorageKey(identity));
+      const parsed = raw ? JSON.parse(raw) : null;
+      if (!parsed || Number(parsed.year) !== identity.year || !Array.isArray(parsed.records)) {
+        if (raw) localStorage.removeItem(denTurnoverStorageKey(identity));
+        return;
+      }
+      for (const record of parsed.records) {
+        if (!record?.denKey || !record?.zoneId || record.denId == null) continue;
+        denTurnoverByKey.set(String(record.denKey), record);
+      }
+    } catch (error) {
+      window.__farmLog?.(`[den-turnover] failed to load persisted state: ${error.message}`, 'warn');
+    }
+  }
+
+  function persistDenTurnover() {
+    ensureDenTurnoverLoaded();
+    const identity = currentDenTurnoverIdentity();
+    if (identity.worldId === 'session') return;
+    try {
+      localStorage.setItem(denTurnoverStorageKey(identity), JSON.stringify({
+        version: 1,
+        year: identity.year,
+        records: [...denTurnoverByKey.values()],
+      }));
+    } catch (error) {
+      window.__farmLog?.(`[den-turnover] failed to persist state: ${error.message}`, 'warn');
+    }
+  }
+
+  function turnoverRecordForCavern(cavernMapId) {
+    const denKey = denKeyForCavern(cavernMapId);
+    if (!denKey) return null;
+    ensureDenTurnoverLoaded();
+    return denTurnoverByKey.get(denKey) || null;
+  }
+
+  function layoutTileMap(layout) {
+    const byKey = new Map(); // Used by collapse/relocation terrain edits without rebuilding a 2D grid for every tile lookup.
+    for (const tile of (layout?.tiles || [])) byKey.set(`${tile.c},${tile.r}`, tile);
+    return byKey;
+  }
+
+  function layoutGrid(layout) {
+    const rows = Math.max(0, Number(layout?.rows) || 0); // Used by the den visual synchronizer to resample elevation at a relocated site.
+    const cols = Math.max(0, Number(layout?.cols) || 0); // Used with rows to preserve ZoneDenTotemFeatures' ordinary zGrid contract.
+    const grid = Array.from({ length: rows }, () => Array(cols));
+    for (const tile of (layout?.tiles || [])) if (grid[tile.r]) grid[tile.r][tile.c] = tile;
+    return grid;
+  }
+
+  function denTransitionId(denId) { return `den_${denId}_enter`; }
+
+  function takeDenTransition(layout, cavernMapId, denId) {
+    if (!Array.isArray(layout?.transitions)) return null;
+    const index = layout.transitions.findIndex(t => t?.targetMapId === cavernMapId || t?.id === denTransitionId(denId));
+    if (index < 0) return null;
+    return layout.transitions.splice(index, 1)[0] || null;
+  }
+
+  function ensureDenTransition(layout, den, cavernMapId, saved = null) {
+    if (!layout || !den?.mouthAnchor) return null;
+    if (!Array.isArray(layout.transitions)) layout.transitions = [];
+    let transition = layout.transitions.find(t => t?.targetMapId === cavernMapId || t?.id === denTransitionId(den.id));
+    if (!transition) {
+      transition = {
+        ...(saved || {}),
+        id: denTransitionId(den.id),
+        label: saved?.label || 'A dark burrow',
+        target: 'building',
+        targetMapId: cavernMapId,
+      };
+      layout.transitions.push(transition);
+    }
+    transition.col = den.mouthAnchor.x;
+    transition.row = den.mouthAnchor.y;
+    return transition;
+  }
+
+  function setDenFootprintOverlay(layout, den, present) {
+    if (!layout || !den) return;
+    const tiles = layoutTileMap(layout); // Used to restore the old generated rock overlay or stamp it at the relocated site.
+    const w = Math.max(1, Number(den.w) || 1);
+    const h = Math.max(1, Number(den.h) || 1);
+    for (let row = Number(den.y); row < Number(den.y) + h; row++) {
+      for (let col = Number(den.x); col < Number(den.x) + w; col++) {
+        const tile = tiles.get(`${col},${row}`);
+        if (!tile) continue;
+        if (present) {
+          tile.type = 'rock';
+          tile.generatedObjectId = den.id;
+          tile.generatedObjectType = 'animalDen';
+        } else if (tile.generatedObjectType === 'animalDen' && (!tile.generatedObjectId || String(tile.generatedObjectId) === String(den.id))) {
+          tile.type = 'grass';
+          delete tile.generatedObjectId;
+          delete tile.generatedObjectType;
+        }
+      }
+    }
+  }
+
+  function rectsOverlap(a, b, margin = 0) {
+    return a.x - margin < b.x + b.w && a.x + a.w + margin > b.x
+      && a.y - margin < b.y + b.h && a.y + a.h + margin > b.y;
+  }
+
+  function denCandidateIsSafe(layout, den, x, y, oldDen, activeZone) {
+    const w = Math.max(1, Number(den.w) || 1);
+    const h = Math.max(1, Number(den.h) || 1);
+    const cols = Math.max(1, Number(layout?.cols) || 1);
+    const rows = Math.max(1, Number(layout?.rows) || 1);
+    const mouth = { x: x + Math.floor(w / 2), y: y + h };
+    if (x < 2 || y < 2 || x + w >= cols - 2 || mouth.y >= rows - 2) return false;
+    if (Math.hypot(x - Number(oldDen.x), y - Number(oldDen.y)) < DEN_RELOCATION_MIN_DISTANCE_TILES) return false;
+    if (activeZone && deps.player && Math.hypot((x + w * .5) - deps.player.x / deps.TILE, (y + h * .5) - deps.player.y / deps.TILE) < DEN_RELOCATION_PLAYER_CLEARANCE_TILES) return false;
+
+    const tiles = layoutTileMap(layout); // Used to require ordinary unoccupied grass for every replacement footprint/mouth tile.
+    let minElev = Infinity, maxElev = -Infinity;
+    const cells = [];
+    for (let row = y; row < y + h; row++) for (let col = x; col < x + w; col++) cells.push({ col, row });
+    cells.push({ col: mouth.x, row: mouth.y });
+    for (const cell of cells) {
+      const tile = tiles.get(`${cell.col},${cell.row}`);
+      if (!tile || String(tile.type || '').toLowerCase() !== 'grass') return false;
+      if (tile.generatedObjectId || tile.generatedObjectType || tile.water || tile.waterfall || tile.incline || tile.ramp || tile.path || tile.invisiblePath || tile.bridge || tile.navBridge) return false;
+      const elev = Number(tile.elevTier ?? tile.elevation ?? tile.height ?? 0);
+      minElev = Math.min(minElev, elev);
+      maxElev = Math.max(maxElev, elev);
+    }
+    if (maxElev - minElev > 1) return false;
+
+    const candidate = { x, y, w, h: h + 1 };
+    for (const other of (layout.dens || [])) {
+      if (!other || String(other.id) === String(den.id)) continue;
+      if (rectsOverlap(candidate, { x:Number(other.x), y:Number(other.y), w:Math.max(1,Number(other.w)||1), h:Math.max(1,Number(other.h)||1)+1 }, 4)) return false;
+    }
+    for (const totem of (layout.rootTotems || [])) {
+      if (Math.hypot((x + w * .5) - Number(totem.x), (y + h * .5) - Number(totem.y)) < 12) return false;
+    }
+    for (const locale of (layout.localeInstances || [])) {
+      if (rectsOverlap(candidate, { x:Number(locale.x)||0, y:Number(locale.y)||0, w:Math.max(1,Number(locale.w)||1), h:Math.max(1,Number(locale.h)||1) }, 3)) return false;
+    }
+    for (const building of (layout.buildings || [])) {
+      const bx = Number(building.gridX ?? building.col ?? building.x);
+      const by = Number(building.gridZ ?? building.row ?? building.y);
+      if (!Number.isFinite(bx) || !Number.isFinite(by)) continue;
+      if (rectsOverlap(candidate, { x:bx, y:by, w:Math.max(1,Number(building.footprintW ?? building.w)||1), h:Math.max(1,Number(building.footprintD ?? building.h)||1) }, 3)) return false;
+    }
+    for (const transition of (layout.transitions || [])) {
+      if (transition?.targetMapId === denCavernMapId(activeZone || '', den.id)) continue;
+      const tx = Number(transition?.col), ty = Number(transition?.row);
+      if (Number.isFinite(tx) && Number.isFinite(ty) && tx >= x - 2 && tx <= x + w + 2 && ty >= y - 2 && ty <= mouth.y + 2) return false;
+    }
+    return true;
+  }
+
+  function findDenRelocationSite(zoneId, den, oldDen) {
+    const layout = deps.zoneLayouts.get(zoneId);
+    if (!layout) return null;
+    const w = Math.max(1, Number(den.w) || 1);
+    const h = Math.max(1, Number(den.h) || 1);
+    const maxX = Math.max(2, Number(layout.cols) - w - 3);
+    const maxY = Math.max(2, Number(layout.rows) - h - 4);
+    const activeZone = deps.getCurrentArea() === zoneId ? zoneId : null;
+    for (let attempt = 0; attempt < 700; attempt++) {
+      const x = 2 + Math.floor(deps.rnd() * Math.max(1, maxX - 1));
+      const y = 2 + Math.floor(deps.rnd() * Math.max(1, maxY - 1));
+      if (denCandidateIsSafe(layout, den, x, y, oldDen, activeZone)) return { x, y, mouthAnchor:{ x:x + Math.floor(w / 2), y:y + h } };
+    }
+    const start = Math.floor(deps.rnd() * Math.max(1, (maxX - 1) * (maxY - 1))); // Used to vary the deterministic fallback scan instead of always biasing the northwest.
+    const width = Math.max(1, maxX - 1);
+    const total = width * Math.max(1, maxY - 1);
+    for (let offset = 0; offset < total; offset++) {
+      const linear = (start + offset) % total;
+      const x = 2 + (linear % width);
+      const y = 2 + Math.floor(linear / width);
+      if (denCandidateIsSafe(layout, den, x, y, oldDen, activeZone)) return { x, y, mouthAnchor:{ x:x + Math.floor(w / 2), y:y + h } };
+    }
+    return null;
+  }
+
+  function syncDenVisual(zoneId, den) {
+    const scene = deps.zoneScenes?.get(zoneId)?.scene;
+    const layout = deps.zoneLayouts.get(zoneId);
+    if (!scene || !layout) return false;
+    return !!window.ZoneDenTotemFeatures?.syncAnimalDenVisual?.(scene, layoutGrid(layout), den, zoneId);
+  }
+
+  function rebuildDenTerrainChunks(zoneId, oldDen, den) {
+    const rebuild = window.WildernessChunks?.rebuildZone;
+    if (typeof rebuild !== 'function') return;
+    if (oldDen) rebuild(zoneId, Number(oldDen.x) + (Number(oldDen.w)||1) * .5, Number(oldDen.y) + (Number(oldDen.h)||1) * .5);
+    if (den) rebuild(zoneId, Number(den.x) + (Number(den.w)||1) * .5, Number(den.y) + (Number(den.h)||1) * .5);
+  }
+
+  function resetDenPopulationCaches(zoneId, denId, cavernMapId) {
+    const key = denKeyFor(zoneId, { id: denId });
+    denEverSpawned.delete(key);
+    pendingDenRespawn.delete(key);
+    denLastKnownAlive.delete(key);
+    for (const genotypeKey of [..._denGenotypes.keys()]) if (genotypeKey.startsWith(cavernMapId + '|')) _denGenotypes.delete(genotypeKey);
+    deps.denNests.delete(cavernMapId);
+    deps.buildingScenes.delete(cavernMapId);
+  }
+
+  function collapseClearedDen(record) {
+    const layout = deps.zoneLayouts.get(record.zoneId);
+    const den = layout?.dens?.find(candidate => String(candidate.id) === String(record.denId));
+    if (!layout || !den || record.stage !== 'cleared') return false;
+    den.collapsed = true;
+    den.turnoverStage = 'collapsed';
+    const cavernMapId = denCavernMapId(record.zoneId, den.id);
+    record.transition = takeDenTransition(layout, cavernMapId, den.id) || record.transition || null;
+    record.stage = 'collapsed';
+    record.daysRemaining = DEN_RELOCATION_DELAY_DAYS;
+    record.x = Number(den.x); record.y = Number(den.y);
+    record.w = Math.max(1, Number(den.w)||1); record.h = Math.max(1, Number(den.h)||1);
+    record.mouthAnchor = den.mouthAnchor ? { ...den.mouthAnchor } : null;
+    resetDenPopulationCaches(record.zoneId, den.id, cavernMapId);
+    syncDenVisual(record.zoneId, den);
+    persistDenTurnover();
+    window.__farmLog?.(`[den-turnover] collapsed ${record.denKey} at (${den.x},${den.y}); relocation in ${record.daysRemaining} day(s).`, 'wildlife');
+    return true;
+  }
+
+  function relocateDenRecord(record) {
+    if (!record || record.stage !== 'ready') return false;
+    const layout = deps.zoneLayouts.get(record.zoneId);
+    const den = layout?.dens?.find(candidate => String(candidate.id) === String(record.denId));
+    if (!layout || !den) return false;
+    const oldDen = {
+      id:den.id, x:Number(den.x), y:Number(den.y),
+      w:Math.max(1,Number(den.w)||1), h:Math.max(1,Number(den.h)||1),
+      mouthAnchor: den.mouthAnchor ? { ...den.mouthAnchor } : null,
+    }; // Used to restore the old rock overlay and selectively rebuild the old streamed terrain chunk.
+    const site = findDenRelocationSite(record.zoneId, den, oldDen);
+    if (!site) {
+      window.__farmLog?.(`[den-turnover] no safe relocation site found for ${record.denKey}; will retry when ecology ticks again.`, 'warn');
+      return false;
+    }
+    setDenFootprintOverlay(layout, oldDen, false);
+    den.x = site.x; den.y = site.y; den.mouthAnchor = site.mouthAnchor;
+    den.collapsed = false; den.turnoverStage = 'active';
+    setDenFootprintOverlay(layout, den, true);
+    const cavernMapId = denCavernMapId(record.zoneId, den.id);
+    ensureDenTransition(layout, den, cavernMapId, record.transition);
+    resetDenPopulationCaches(record.zoneId, den.id, cavernMapId);
+    record.stage = 'active';
+    record.daysRemaining = null;
+    record.generation = Math.max(0, Number(record.generation)||0) + 1;
+    record.genotypes = {};
+    record.x = Number(den.x); record.y = Number(den.y);
+    record.mouthAnchor = { ...den.mouthAnchor };
+    syncDenVisual(record.zoneId, den);
+    rebuildDenTerrainChunks(record.zoneId, oldDen, den);
+    persistDenTurnover();
+    window.__farmLog?.(`[den-turnover] relocated ${record.denKey} generation=${record.generation} from (${oldDen.x},${oldDen.y}) to (${den.x},${den.y}).`, 'wildlife');
+    return true;
+  }
+
+  function advanceDenTurnoverDay() {
+    ensureDenTurnoverLoaded();
+    let changed = false;
+    for (const record of denTurnoverByKey.values()) {
+      if (record.stage !== 'collapsed') continue;
+      record.daysRemaining = Math.max(0, Number(record.daysRemaining) - 1);
+      if (record.daysRemaining <= 0) record.stage = 'ready';
+      changed = true;
+    }
+    if (changed) persistDenTurnover();
+    const active = deps.getCurrentArea();
+    for (const record of denTurnoverByKey.values()) {
+      if (record.stage !== 'ready' || record.zoneId === active) continue;
+      relocateDenRecord(record); // Inactive zones can safely move immediately on the day tick because nothing there is visible to the player.
+    }
+  }
+
+  function processDenTurnoverForZone(zoneId) {
+    ensureDenTurnoverLoaded();
+    for (const record of denTurnoverByKey.values()) {
+      if (record.zoneId !== zoneId) continue;
+      if (record.stage === 'cleared') collapseClearedDen(record);
+      else if (record.stage === 'ready') relocateDenRecord(record);
+    }
+  }
+
+  function reapplyPersistedDenTurnover(zoneId) {
+    ensureDenTurnoverLoaded();
+    const layout = deps.zoneLayouts.get(zoneId);
+    if (!layout?.dens?.length) return;
+    for (const record of denTurnoverByKey.values()) {
+      if (record.zoneId !== zoneId) continue;
+      const den = layout.dens.find(candidate => String(candidate.id) === String(record.denId));
+      if (!den) continue;
+      const generatedDen = { id:den.id, x:Number(den.x), y:Number(den.y), w:Math.max(1,Number(den.w)||1), h:Math.max(1,Number(den.h)||1), mouthAnchor:den.mouthAnchor ? {...den.mouthAnchor}:null }; // Used to remove the same-year generator's original den overlay before restoring saved relocation coordinates.
+      if (Number.isFinite(Number(record.x)) && Number.isFinite(Number(record.y)) && (Number(record.x) !== generatedDen.x || Number(record.y) !== generatedDen.y)) {
+        setDenFootprintOverlay(layout, generatedDen, false);
+        den.x = Number(record.x); den.y = Number(record.y);
+        den.mouthAnchor = record.mouthAnchor ? { ...record.mouthAnchor } : { x:den.x + Math.floor((Number(den.w)||1)/2), y:den.y + (Number(den.h)||1) };
+        setDenFootprintOverlay(layout, den, true);
+      }
+      const cavernMapId = denCavernMapId(zoneId, den.id);
+      const collapsed = record.stage === 'collapsed' || record.stage === 'ready';
+      den.collapsed = collapsed;
+      den.turnoverStage = record.stage;
+      if (collapsed) record.transition = takeDenTransition(layout, cavernMapId, den.id) || record.transition || null;
+      else ensureDenTransition(layout, den, cavernMapId, record.transition);
+    }
+  }
+
+  function markDenSurvivorsAsPrey(cavernMapId, denKey, mother) {
+    let changed = 0;
+    for (const survivor of deps.hostileObjects) {
+      if (!survivor || survivor === mother || survivor.health <= 0 || survivor.isDenMother) continue;
+      if (survivor.areaId !== cavernMapId && survivor.denKey !== denKey) continue;
+      survivor.denKey = null;
+      survivor.wildlifeRole = 'prey';
+      survivor.denDisplacedPrey = true;
+      survivor.def = { ...survivor.def, hostile:false, diet:'herbivore' };
+      survivor.state = 'fleeing-low-health';
+      survivor.targetCreature = null;
+      survivor.targetPlayer = null;
+      survivor._fleeCooldownUntil = Infinity;
+      changed++;
+    }
+    return changed;
+  }
+
+  function onDenMotherDeath(mother) {
+    if (!mother?.isDenMother || processedDenMotherDeaths.has(mother)) return false;
+    const cavernMapId = String(mother.areaId || '');
+    const zoneId = _denCavernZoneOf.get(cavernMapId);
+    const denId = _denCavernDenIdOf.get(cavernMapId);
+    if (!zoneId || denId == null) return false; // Nestmothers/story-cave bosses are not ordinary relocatable dens.
+    processedDenMotherDeaths.add(mother);
+    ensureDenTurnoverLoaded();
+    const key = denKeyFor(zoneId, { id: denId });
+    const existing = denTurnoverByKey.get(key);
+    const nestRemaining = Math.max(0, Number(deps.denNests.get(cavernMapId)?.remaining) || 0);
+    const displaced = markDenSurvivorsAsPrey(cavernMapId, key, mother);
+    const record = {
+      ...(existing || {}),
+      denKey:key, zoneId, denId:String(denId), cavernMapId,
+      stage:'cleared',
+      daysRemaining:DEN_RELOCATION_DELAY_DAYS,
+      generation:Math.max(0, Number(existing?.generation)||0),
+      genotypes: existing?.genotypes || {},
+      clearedDay:Number(deps.calendar?.day) || 0,
+    }; // Stored before the player exits so a reload cannot forget that this Den-Mother was killed.
+    denTurnoverByKey.set(key, record);
+    persistDenTurnover();
+    if (nestRemaining > 0) deps.showToast('The Den-Mother is dead. Collect the eggs or babies before you leave — the burrow will collapse.', true);
+    else deps.showToast('The Den-Mother is dead. The burrow will collapse after you leave.', true);
+    window.__farmLog?.(`[den-turnover] cleared ${key}; clutchRemaining=${nestRemaining} displacedSurvivors=${displaced}. Collapse waits until the player leaves.`, 'wildlife');
+    return true;
+  }
+
+  function installDenTurnoverDeathHook() {
+    if (creatureDeathHookInstalled || !window.CreatureDeath?.begin) return;
+    creatureDeathHookInstalled = true;
+    const originalBegin = window.CreatureDeath.begin.bind(window.CreatureDeath); // Used so ordinary corpse/death handling remains authoritative before turnover side effects run.
+    window.CreatureDeath.begin = function denTurnoverDeathBegin(creature, ...args) {
+      const result = originalBegin(creature, ...args);
+      if (creature?.isDenMother) onDenMotherDeath(creature);
+      return result;
+    };
+    if (typeof window.CreatureDeath.recover === 'function') {
+      const originalRecover = window.CreatureDeath.recover.bind(window.CreatureDeath); // Used to catch direct death recovery paths without double-processing normal begin calls.
+      window.CreatureDeath.recover = function denTurnoverDeathRecover(creature, ...args) {
+        const result = originalRecover(creature, ...args);
+        if (creature?.isDenMother) onDenMotherDeath(creature);
+        return result;
+      };
+    }
+  }
+
+  function denTurnoverDebug(zoneId = null) {
+    ensureDenTurnoverLoaded();
+    return [...denTurnoverByKey.values()]
+      .filter(record => !zoneId || record.zoneId === zoneId)
+      .map(record => ({
+        denKey:record.denKey, zoneId:record.zoneId, denId:record.denId,
+        stage:record.stage, daysRemaining:record.daysRemaining,
+        generation:Number(record.generation)||0, x:record.x, y:record.y,
+        clutchLostOnExit: record.stage === 'cleared' ? Math.max(0, Number(deps.denNests.get(record.cavernMapId)?.remaining)||0) : 0,
+      }));
+  }
   function roamingHerdKeyFor(zoneId, index) { return `${zoneId}:roaming-herd:${index}`; } // Stable per-zone slot, independent of cave/den ids.
   // cavernMapId -> the zone it belongs to — zoneId/denId can't be
   // reliably parsed back out of "map_i_den_<zoneId>_<denId>" (both
@@ -353,8 +766,16 @@
   function getOrMakeDenGenotype(cavernMapId, family) {
     const key = `${cavernMapId}|${family}`;
     if (!_denGenotypes.has(key)) {
-      _denGenotypes.set(key, window.CreatureGenetics.makeDefaultGenotype(family));
-      window.__farmLog?.(`[genotype] rolled new ${family} family genotype for den ${cavernMapId} (cache size now ${_denGenotypes.size})`, 'wildlife');
+      const turnover = turnoverRecordForCavern(cavernMapId); // Relocated bloodlines persist across reloads instead of silently rerolling at the same new site.
+      const persisted = turnover?.genotypes?.[family] || null;
+      const genotype = persisted ? JSON.parse(JSON.stringify(persisted)) : window.CreatureGenetics.makeDefaultGenotype(family);
+      _denGenotypes.set(key, genotype);
+      if (turnover && !persisted) {
+        turnover.genotypes = turnover.genotypes || {};
+        turnover.genotypes[family] = JSON.parse(JSON.stringify(genotype));
+        persistDenTurnover();
+      }
+      window.__farmLog?.(`[genotype] ${persisted ? 'restored' : 'rolled new'} ${family} family genotype for den ${cavernMapId} (cache size now ${_denGenotypes.size})`, 'wildlife');
     } else {
       window.__farmLog?.(`[genotype] reused cached ${family} family genotype for den ${cavernMapId}`, 'wildlife');
     }
@@ -395,6 +816,7 @@
     for (const key of [..._denGenotypes.keys()]) if (key.startsWith(cavernPrefix)) _denGenotypes.delete(key);
     for (const key of [...deps.denNests.keys()]) if (key.startsWith(cavernPrefix)) deps.denNests.delete(key);
     for (const key of [...deps.buildingScenes.keys()]) if (key.startsWith(cavernPrefix)) deps.buildingScenes.delete(key);
+    reapplyPersistedDenTurnover(zoneId);
   }
 
   function isDenPackAlive(denKey) {
@@ -669,6 +1091,11 @@
     }
     for (const den of dens) {
       const key = denKeyFor(currentArea, den);
+      if (den.collapsed || den.turnoverStage === 'collapsed' || den.turnoverStage === 'ready' || den.turnoverStage === 'cleared') {
+        denLastKnownAlive.set(key, false);
+        pendingDenRespawn.delete(key);
+        continue;
+      }
       const alive = isDenPackAlive(key);
 
       if (alive) { denLastKnownAlive.set(key, true); continue; }
@@ -945,6 +1372,7 @@
     if (denCheckTimer > 0) return;
     denCheckTimer = DEN_CHECK_INTERVAL_S;
     if (!deps.buildZoneScene(currentArea)) return;
+    processDenTurnoverForZone(currentArea);
     ensureCurrentZoneDenPacks();
     ensureCurrentZoneRoamingHerds();
     ensureCurrentZoneNestTrees();
@@ -1001,6 +1429,8 @@
     denGenotypeFamily,
     getOrMakeDenGenotype,
     getDenGenotypes: () => _denGenotypes,
+    denTurnoverDebug,
+    onDenMotherDeath,
     forgetZoneDenState,
     isDenPackAlive,
     updateHostileSpawning,
@@ -1031,6 +1461,11 @@
     // next day exactly like a wiped den (see ensureCurrentZoneNestTrees),
     // so it rides the same day-advance call sites as den respawn instead of
     // needing its own.
-    clearPendingDenRespawn: () => { pendingDenRespawn.clear(); pendingNestTreeRespawn.clear(); pendingRoamingHerdRespawn.clear(); },
+    clearPendingDenRespawn: () => {
+      pendingDenRespawn.clear();
+      pendingNestTreeRespawn.clear();
+      pendingRoamingHerdRespawn.clear();
+      advanceDenTurnoverDay();
+    },
   };
 })();
