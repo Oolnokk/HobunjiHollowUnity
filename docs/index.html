@@ -122,7 +122,7 @@
   <script src="debug.js?v=20260916perf1"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20260918collision2"></script>
-  <script src="config/scratchbones-config.js?v=20260924enghswatch1"></script>
+  <script src="config/scratchbones-config.js?v=20260925dialogue1"></script>
   <!-- Canonical source-art color fill math shared by portraits, creatures, weaving, tools, terrain, and item sprites. -->
   <script src="js/color-fill.js?v=20260923colorfill7"></script>
   <script src="config/colors/config.js?v=20260924enghpalette2"></script>
@@ -263,8 +263,8 @@
        projectiles. Loads before bandits so their dual loadouts can call it. -->
   <script src="js/nearby-volume-collision.js?v=20260827treecover2"></script>
   <script src="js/combat/ranged-weapons.js?v=20260920orbit1-projectileport1-rangecameraorbit2-arcembed2-toolz2-align2-mastery2"></script>
-  <script src="js/combat/ranged-hud-reticle.js?v=20260924visibility1"></script>
-  <script src="js/combat/melee-hud-reticle.js?v=20260924visibility1"></script>
+  <script src="js/combat/ranged-hud-reticle.js?v=20260925dialogue2"></script>
+  <script src="js/combat/melee-hud-reticle.js?v=20260925dialogue2"></script>
   <!-- Bandit gang combat AI + weapon visuals (window.BanditCombat) — must
        load before game.js, which calls window.BanditCombat.init(...)
        during its own setup. Reads window.Combat's comboData/quickAttackData/
@@ -621,7 +621,7 @@
        render() during its own boot sequence (unlike its sibling panels,
        this one renders once at boot rather than lazily on first tab
        open). -->
-  <script src="js/input-settings-panel.js?v=20260909controller2"></script>
+  <script src="js/input-settings-panel.js?v=20260925reticle1"></script>
   <!-- Crafting tab (Inventory panel's Crafting sub-tab, window.CraftingPanel)
        — furniture blueprints plus discovered ore-to-bar recipes; pure DOM/state,
        must load before game.js, which injects inventory and metallurgy data. -->
@@ -2486,7 +2486,7 @@
        quality mode, and owns no requestAnimationFrame loop. -->
   <script src="js/painterly-postprocess.js?v=20260923paintrebase1"></script>
   <script src="js/banubu-cave-clouds.js?v=20260923cloudring3"></script>
-  <script src="game.js?v=20260924shouldersource1"></script>
+  <script src="game.js?v=20260925dialogue1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
   <script src="js/banubu-snore.js?v=20260924snorepitch1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
