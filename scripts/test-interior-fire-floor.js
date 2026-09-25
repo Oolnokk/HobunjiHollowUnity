@@ -19,6 +19,8 @@ const mapLayoutSystem = read('docs/js/map-layout-system.js');
 const temple = json('docs/config/maps/map_i_temple.json');
 const hunundiRoom = json('docs/config/maps/map_i_temple_basement_hunundi.json');
 const researchersTent = json('docs/config/maps/map_i_researchers_tent.json'); // Guards the authored one-PNG floor-surface mode.
+const hearth = json('docs/config/furniture-authored/hearth.json'); // Guards the layered stone-hearth asset and its flame emitter.
+const candleTable = json('docs/config/furniture-authored/candleTable.json'); // Guards the tiny authored candle flame.
 
 assert.doesNotThrow(() => new vm.Script(core, { filename: 'interior-fire-floor-runtime.js' }));
 assert.doesNotThrow(() => new vm.Script(integration, { filename: 'interior-fire-floor-integration.js' }));
@@ -35,7 +37,20 @@ assert(core.includes("name: 'Bonfire', icon: '🔥', fw: 2, fd: 2, procKey: 'bon
 assert(core.includes('data.footprint = { w: 2, d: 2 }'),
   'derived authored bonfire data must retain the same 2x2 footprint');
 assert(core.includes('const scale = 2'), 'bonfire must derive from the campfire at exactly double visual scale');
-assert(core.includes("id: 'candle_table_fire'"), 'candle tables must receive the small authored fire emitter');
+assert(core.includes("id: 'candle_table_fire'"), 'candle tables must retain the runtime idempotent flame augmentation path');
+assert(core.includes("'candleTable', 'hearth'"), 'hearth must participate in the shared always-on ambient furniture VFX scheduler');
+assert(hearth.parts.length >= 8, 'hearth must use a layered open-front fireplace silhouette rather than three placeholder boxes');
+assert(hearth.parts.filter(part => part.materialRole === 'stone' && part.materialTexture === 'carved_smooth.png').length >= 8,
+  'hearth masonry must reuse the altar/pillar carved-smooth stone material language');
+assert(hearth.parts.some(part => /jamb/i.test(part.name || '')) && hearth.parts.some(part => /lintel/i.test(part.name || '')) && hearth.parts.some(part => /mantel/i.test(part.name || '')),
+  'hearth silhouette must expose jamb, lintel, and mantel masonry around the firebox');
+assert(hearth.particleEmitters.some(emitter => emitter.id === 'hearth_fire' && emitter.type === 'fire' && emitter.enabled !== false),
+  'hearth must author an always-on fire emitter');
+const candleFlame = candleTable.particleEmitters.find(emitter => emitter.id === 'candle_table_fire');
+assert(candleFlame && candleFlame.type === 'fire' && candleFlame.enabled !== false,
+  'candle table must author its own flame emitter');
+assert(candleFlame.radius <= 0.02 && candleFlame.size <= 0.06,
+  'candle table flame must remain tiny relative to campfire/hearth flames');
 assert(core.includes('floorStyle'), 'runtime must support per-map floorStyle data');
 assert(core.includes('tilesPerTile'), 'floor style must expose texture density in textures per tile');
 assert(core.includes('applyFloorStyleToScene'), 'loaded building scenes must receive authored floor style');
