@@ -381,6 +381,7 @@
     if (currentArea === 'town') return 'town';
     if (currentArea === 'map_northern_cliffs') return 'northernCliffs';
     if (currentArea === 'map_southern_cloud_forest') return 'cloudForest';
+    if (currentArea === 'map_western_slope') return 'westernSlope';
     return null;
   }
 
@@ -693,7 +694,14 @@
   // in updateMovement).
   function beginFishingCast() {
     const picked = pickFishForCurrentZone();
-    if (!picked) { deps.showToast('No fish here.', false); return; }
+    if (!picked) {
+      const area = deps.getCurrentArea(); // Included in the mobile-visible fishing diagnostic when a zone/pool mapping is missing.
+      const zoneKey = currentFishZoneKey(); // Included in the same diagnostic so area mapping and catalog population can be distinguished.
+      const poolSize = zoneKey ? (deps.FISH_DEFS?.[zoneKey]?.length || 0) : 0; // Included in the same diagnostic to expose an empty authored/fallback pool.
+      window.__farmLog?.(`fishing unavailable: area=${area} zone=${zoneKey || 'none'} pool=${poolSize}`, 'warn');
+      deps.showToast('No fish here.', false);
+      return;
+    }
     const { fish, zoneKey } = picked;
     // Anchor the floating ring over the actual river tile being fished, so it
     // tracks the live 3D scene's camera angle instead of sitting in a fixed
