@@ -8,12 +8,15 @@ const vm = require('node:vm');
 
 const ROOT = process.env.HOBUNJI_TEST_ROOT || process.cwd(); // Used by CI/local runs to resolve this checked-out branch.
 const wildlifeSource = fs.readFileSync(path.join(ROOT, 'docs/js/wildlife-spawn.js'), 'utf8'); // Runtime under behavioral test below.
+const cavernSource = fs.readFileSync(path.join(ROOT, 'docs/js/cavern-generator.js'), 'utf8'); // Guards cold-load suppression after the Den-Mother has already been killed.
 const denVisualSource = fs.readFileSync(path.join(ROOT, 'docs/js/zone-den-totem-features.js'), 'utf8'); // Guards the requested one-third collapsed cave presentation.
 const gridSource = fs.readFileSync(path.join(ROOT, 'docs/js/grid-tile-accessors.js'), 'utf8'); // Guards removal of the usable collapsed doorway.
 const porakanekiSource = fs.readFileSync(path.join(ROOT, 'docs/js/porakaneki-camps-runtime.js'), 'utf8'); // Guards den-hunting AI against stale/moved sites.
 const banditSource = fs.readFileSync(path.join(ROOT, 'docs/js/bandit-camps.js'), 'utf8'); // Guards companion-discovered den markers when the physical den disappears.
 const debugSource = fs.readFileSync(path.join(ROOT, 'docs/js/wildlife-debug-panel.js'), 'utf8'); // Mobile-visible lifecycle diagnostics.
 
+assert.match(cavernSource, /denTurnoverStateForCavern/, 'cavern synthesis must consult persisted den turnover before spawning a new objective');
+assert.match(cavernSource, /nestCol: denCleared \? null : nestCol/, 'a cleared den must not reconstruct its mother/nest objective on reload');
 assert.match(denVisualSource, /den\.collapsed \? scaleY \/ 3 : scaleY/, 'collapsed cave facade must render at one-third normal Y scale');
 assert.match(denVisualSource, /function syncAnimalDenVisual\(/, 'den facade/furniture must have a runtime relocation synchronizer');
 assert.match(gridSource, /if \(den\.collapsed\)[\s\S]*?return true/, 'collapsed den footprint must close its former doorway gap');
@@ -157,6 +160,7 @@ assert.equal(creatureDeathCalls.length,1,'ordinary CreatureDeath.begin still exe
 let debug = windowStub.WildlifeSpawn.denTurnoverDebug(zoneId);
 assert.equal(debug.length,1);
 assert.equal(debug[0].stage,'cleared','Den-Mother death starts cleared stage without collapsing while player is inside');
+assert.equal(windowStub.WildlifeSpawn.denTurnoverStateForCavern(cavernMapId).stage,'cleared','cold-load cavern synthesis can recover cleared state directly from persisted cavern identity');
 assert.equal(debug[0].clutchLostOnExit,2,'debug state exposes uncollected clutch before exit');
 assert.match(toasts.at(-1).message,/Collect the eggs or babies before you leave/i,'player gets explicit clutch warning');
 for(const survivor of [cavernAdd,exteriorAdd]){
