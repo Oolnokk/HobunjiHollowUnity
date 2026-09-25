@@ -10,7 +10,6 @@
   const SNORE_TEMPO = 1 / 9; // Used to triple the existing one-third-speed Grehlr snore's audible duration.
   const SHORT_SNORE_TEMPO = 2 / 3; // Used by the short follow-up so its authored utterance lasts 50% longer while keeping the separate +2-semitone pitch.
   const SHORT_SNORE_PITCH_OFFSET = 2; // Raises only the short follow-up by a couple of semitones.
-  const SNORE_PITCH_OFFSET = -12; // Lowers both snore calls by one octave while preserving the short call's relative pitch.
   const ACOUSTIC_EARSHOT_CHUNKS = 5; // Used only for smooth distance/elevation attenuation after the stricter two-chunk gate passes.
   const SCHEDULER_ID = 'banubu-night-snore'; // Used to keep development reloads from registering duplicate frame subscribers.
 
@@ -304,7 +303,7 @@
       reason: 'banubu-snore',
       tempo: phase === 'long' ? SNORE_TEMPO : SHORT_SNORE_TEMPO,
       signal: activeSnoreController.signal,
-      pitchSemitones: authored.pitchSemitones + SNORE_PITCH_OFFSET + (phase === 'short' ? SHORT_SNORE_PITCH_OFFSET : 0),
+      pitchSemitones: authored.pitchSemitones + (phase === 'short' ? SHORT_SNORE_PITCH_OFFSET : 0),
       sizePitchSemitones: authored.sizePitchSemitones,
       allowedClips: [...authored.chatter.allowedClips],
       clipTuning: authored.profile.clipTuning,
