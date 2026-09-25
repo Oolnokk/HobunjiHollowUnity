@@ -37,8 +37,12 @@ assert.match(pixelProbe, /Render surface recovery:/, 'Pixel Probe must expose co
 assert.match(pixelProbe, /rendererBuffer=/, 'Pixel Probe must distinguish the WebGL canvas backing size from Three.js internal drawing-buffer size');
 assert.match(pixelProbe, /overlayExpected=/, 'Pixel Probe must report the expected DPR-sized 2D backing dimensions');
 
-for (const file of ['weather-fx', 'cloud-forest-fog']) {
-  assert.match(index, new RegExp(`js/${file}\\.js\\?v=${file === 'cloud-forest-fog' ? '20260924renderrecovery2' : '20260924texture-restore1'}`), `${file}.js cache-bust must ship the repair`);
+const recoveryCacheKeys = {
+  'weather-fx': '20260924texture-restore1',
+  'cloud-forest-fog': '20260924renderrecovery2',
+}; // Used below to ensure every recovery module ships with its current browser cache key.
+for (const [file, cacheKey] of Object.entries(recoveryCacheKeys)) {
+  assert.match(index, new RegExp(`js/${file}\\.js\\?v=${cacheKey}`), `${file}.js cache-bust must ship the repair`);
 }
 // pixel-probe.js is re-bumped by later changes (e.g. #821's shoulder debug output), so require any key newer than
 // the texture-restore repair instead of pinning one value — pinning forced #827 to revert the key to a stale one.

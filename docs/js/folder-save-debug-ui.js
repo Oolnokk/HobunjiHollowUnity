@@ -5,7 +5,7 @@
 
   const BUTTON_ID = 'localSaveFolderDebugBtn'; // Settings button used to open the current save diagnostics snapshot.
   const SUMMARY_ID = 'localSaveFolderChangeSummary'; // Small Settings note describing the most recent folder-save UX change.
-  const CHANGE_SUMMARY = 'Latest: folder recovery is authoritative, autosync pauses during player hydration, suspicious farm resets are blocked before canonical writes, and failed restores roll the folder back from a pre-restore copy.'; // Human-readable current-change summary requested for mobile testing.
+  const CHANGE_SUMMARY = 'Latest: wilderness treasure meshes are excluded from save JSON, legacy mesh bloat no longer causes false shrink warnings, campfire saves have their own guarded recovery slot separate from pause-menu Manual Save, and unreadable character/world files block folder import instead of disappearing.'; // Human-readable current-change summary requested for mobile testing.
   let scheduled = false; // Coalesces Settings DOM mutations so diagnostics controls are installed only once per frame.
 
   function safeSnapshot(fn) {

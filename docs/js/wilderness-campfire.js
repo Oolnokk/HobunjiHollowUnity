@@ -256,10 +256,25 @@
     ];
   }
 
-  function doSave() {
-    recordDebug('manual-save');
+  async function doSave() {
+    recordDebug('campfire-save');
+    const checkpoints = window.HobunjiSaveCheckpoints; // Campfire saves share the integrity guard/canonical write path but own a distinct recovery checkpoint from pause-menu Manual Save.
+    const saveCheckpoint = checkpoints?.saveCampfire || checkpoints?.saveManual; // Compatibility fallback only matters if an old cached checkpoint module is somehow paired with this campfire module.
+    if (typeof saveCheckpoint === 'function') {
+      let result = await saveCheckpoint.call(checkpoints, { reason: 'campfire-save' });
+      if (!result.ok && result.needsConfirmation) {
+        const warning = result.warning || result.error || 'This save looks destructive.';
+        if (confirm(`This campfire save was blocked because ${warning}. Save it anyway?`)) {
+          result = await saveCheckpoint.call(checkpoints, { reason: 'campfire-save-confirmed', force: true });
+        }
+      }
+      if (result.ok) deps.showToast('💾 Game saved.', true);
+      else deps.showToast('Save blocked: ' + (result.error || result.warning || 'unknown save error'), false);
+      return result;
+    }
     deps.persist?.();
     deps.showToast('💾 Game saved.', true);
+    return { ok: true, legacyFallback: true };
   }
 
   function doCook() {

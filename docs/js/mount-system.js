@@ -717,6 +717,7 @@
     startClimbLeap,
     get rideState() { return mountRideState; },
     get rideEntity() { return mountRideEntity; },
+    get heading() { return mountAngle; },
     get renderSync() { return { ...mountRenderSync }; },
     get footstepDebug() { return { ...mountFootstepDebug }; },
   };

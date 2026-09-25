@@ -20,6 +20,7 @@ const folderLoader = read('docs/js/local-save-folder.js');
 const onboardingLoader = read('docs/onboarding.js');
 const css = read('docs/folder-save-primary.css');
 const core = read('docs/js/local-save-folder-core.js');
+const checkpoint = read('docs/js/save-checkpoint-manager.js');
 const motifStore = read('docs/js/motif-store.js');
 const startupGuard = read('docs/js/session-persistence-startup-guard.js');
 const quitGuard = read('docs/js/folder-save-quit-guard.js');
@@ -54,8 +55,17 @@ assert(reloadHandoffIndex > bridgeIndex, 'folder/onboarding bridge is installed 
 
 assert(primary.includes('prepareBeforeOnboarding'), 'primary layer exposes pre-onboarding folder reconciliation');
 assert(primary.includes("lastUiAction = 'startup-auto-load-folder'"), 'remembered ready folders automatically load before save selection');
+assert(primary.includes('data-folder-primary-recovery'), 'startup gate exposes Save Recovery when a remembered folder cannot be loaded safely');
+assert(primary.includes('openRecoveryModal'), 'startup recovery action opens the checkpoint recovery UI before onboarding');
+assert(primary.includes('const initialError = lastUiError || status.lastError'), 'startup gate shows the folder-load failure immediately instead of a blank reconnect screen');
 assert(bridge.includes('prepareBeforeOnboarding'), 'onboarding init waits for primary folder reconciliation');
 assert(bridge.includes('refreshFromStorage'), 'folder restore can rebuild save selection in place');
+assert(bridge.includes('hobunjiSaveStartupFailure'), 'onboarding bridge has an emergency visible startup-failure surface');
+assert(bridge.includes('safeOriginalInit'), 'onboarding bridge catches failures thrown by the onboarding renderer itself');
+assert(bridge.includes('STARTUP_WATCHDOG_MS'), 'onboarding bridge has a watchdog for a preparation promise that never renders any UI');
+assert(bridge.includes('openRecoveryModal'), 'emergency onboarding failure surface exposes Save Recovery before normal onboarding exists');
+assert(read('docs/js/save-checkpoint-manager.js').includes('data-recovery-reselect-folder'), 'recovery modal exposes a fresh-folder retry when filesystem reads fail');
+assert(read('docs/js/save-checkpoint-manager.js').includes('Could not read this checkpoint'), 'recovery UI distinguishes read failure from a genuinely missing checkpoint');
 assert(!bridge.includes('location.reload'), 'in-place onboarding restore bridge never reloads the site');
 
 assert(emptyBootstrap.includes('empty-folder-connected-awaiting-first-save'), 'a new empty folder is a valid first-run save destination');
@@ -71,6 +81,24 @@ assert(primary.includes("document.addEventListener('visibilitychange'"), 'mobile
 assert(primary.includes("window.addEventListener('pagehide'"), 'pagehide requests a best-effort folder flush');
 assert(startupGuard.includes('stopImmediatePropagation'), 'existing startup persistence guard still blocks unsafe transient exit saves');
 assert(core.includes('describeDataLossRisk'), 'existing core data-loss guard remains installed');
+assert(core.includes("!name.toLowerCase().endsWith('.json')"), 'canonical reader ignores harmless non-JSON files in character/world folders');
+assert(core.includes('canonical entity JSON is missing a valid id'), 'canonical reader rejects syntactically valid but structurally invalid entity JSON');
+assert(core.includes('duplicate canonical entity id'), 'canonical reader rejects ambiguous duplicate character/world ids');
+assert(core.includes('manifest.json: expected'), 'manifest entity counts detect missing canonical character/world files');
+assert(core.includes("campfire: 'campfire.json'"), 'folder recovery whitelist keeps Campfire Save separate from Manual Save');
+assert(core.includes("if (!_handle) return null; // Recovery history is independent of canonical-save health"), 'recovery reads remain available even when canonical folder inspection is in an error state');
+assert(!/async function readRecoveryCheckpoint\(slot\)[\s\S]{0,160}_state !== 'ready'/.test(core), 'recovery checkpoint reads are not gated on canonical folder ready state');
+assert(core.includes('async function chooseRecoveryFolder()'), 'folder core exposes a recovery-only fresh folder picker');
+assert(core.includes("window.showDirectoryPicker({ mode: 'readwrite' })"), 'recovery picker uses the same minimal directory-picker invocation as the normal folder chooser');
+assert(!/async function chooseRecoveryFolder\(\)[\s\S]{0,900}inspectConnectedFolder\(/.test(core), 'recovery-only folder selection does not inspect broken canonical files before recovery');
+assert(!/async function chooseRecoveryFolder\(\)[\s\S]{0,700}startIn\s*=\s*_handle/.test(core), 'recovery picker never dereferences the stale remembered handle as startIn');
+assert(checkpoint.includes('function recoveryHandleNeedsReselect()'), 'recovery modal identifies unhealthy remembered handles before reading them');
+assert(checkpoint.indexOf('if (recoveryHandleNeedsReselect())') < checkpoint.indexOf('recovery = await recoveryChoices()'), 'recovery modal asks for a fresh handle before starting uncancellable filesystem reads');
+assert(checkpoint.includes('data-recovery-choose-fresh-folder'), 'recovery modal exposes a fresh-handle chooser before any stale-handle reads');
+assert(checkpoint.includes('data-recovery-file-import'), 'recovery modal exposes picker-free drag/drop recovery import');
+assert(checkpoint.includes('recoveryFilesFromZip'), 'picker-free emergency import can read the exported recovery ZIP directly');
+assert(checkpoint.includes("new DecompressionStream('deflate-raw')"), 'recovery ZIP import supports normal deflated ZIP entries without an external dependency');
+assert(checkpoint.includes("return Boolean(status?.folderName && !status?.recoveryHandleFresh)"), 'recovery refuses every remembered cross-page folder handle until the user freshly reselects it');
 assert(core.includes('_syncPromise'), 'existing core still serializes folder writes within a tab');
 assert(core.includes("const PATTERNS_DIR = 'patterns'"), 'primary folder save reserves a portable patterns directory');
 assert(core.includes('async function mirrorPatternFile'), 'folder core can write custom motif PNG bytes');
@@ -260,7 +288,7 @@ assert(emptyBootstrap.includes('__hobunjiFolderSaveEmptyBootstrapDebug'), 'first
 assert(bridge.includes('__hobunjiFolderSaveOnboardingDebug'), 'onboarding reconciliation exposes diagnostics data');
 assert(debugUi.includes("button.textContent = 'Save Diagnostics'"), 'Settings exposes a mobile-visible Save Diagnostics button');
 assert(debugUi.includes('SAVE DIAGNOSTICS'), 'mobile diagnostics render without requiring DevTools');
-assert(debugUi.includes('folder recovery is authoritative'), 'Settings includes the current audited save-protection summary');
+assert(debugUi.includes('wilderness treasure meshes are excluded from save JSON') && debugUi.includes('unreadable character/world files block folder import'), 'Settings includes the current audited save-corruption protection summary');
 assert(debugUi.includes('__hobunjiSaveCheckpointDebug'), 'Settings diagnostics include checkpoint/recovery state');
 
 console.log('\nFolder-save primary regression checks passed.');

@@ -2,6 +2,7 @@
 'use strict';
 
 const assert = require('assert');
+const fs = require('fs'); // Reads shipped Potion Select loader sources for cache-buster regression coverage.
 const path = require('path');
 
 class FakeClassList {
@@ -205,15 +206,23 @@ window.AlchemySystem = {
 require(path.join(__dirname, '..', 'docs/js/mobile-potion-category-drag.js'));
 const selector = window._desktopSelectionArc;
 const debug = () => window.ContextualPotionSelector.diagnostics();
+const tapBandageWindowOpen = () => window.ContextualPotionSelector.isTapBandageWindowOpen(); // Verifies the public grace-window seam consumed by controller gameplay.
+const alchemyFlasksSource = fs.readFileSync(path.join(__dirname, '..', 'docs/js/alchemy-flasks.js'), 'utf8'); // Guards the nested contextual-selector cache-buster.
+const indexSource = fs.readFileSync(path.join(__dirname, '..', 'docs/index.html'), 'utf8'); // Guards the outer AlchemyFlasks cache-buster that must deliver the nested loader change.
+
+assert.match(alchemyFlasksSource, /mobile-potion-category-drag\.js\?v=20260925bandagemove1/, 'AlchemyFlasks must cache-bust the moving-bandage selector adapter');
+assert.match(indexSource, /alchemy-flasks\.js\?v=20260925bandagemove1/, 'index must cache-bust AlchemyFlasks so the nested selector loader update reaches existing browsers');
 
 // An untouched quick tap is now the free bandage gesture; it must close the
 // root without changing held equipment or entering the potion hierarchy.
 selector.openPotions();
 const combatSlotBeforeBandage = activeCombatSlot;
+assert.strictEqual(tapBandageWindowOpen(), true, 'newly opened untouched Potion Select exposes the quick-bandage grace window');
 selector.releaseSelection();
 assert.strictEqual(bandageStarts, 1, 'quick untouched Potion Select release must start bandaging');
 assert.strictEqual(activeCombatSlot, combatSlotBeforeBandage, 'bandaging must preserve the current combat stance');
 assert.strictEqual(debug().lastTapBandage.started, true, 'tap-to-bandage routing must be visible in diagnostics');
+assert.strictEqual(tapBandageWindowOpen(), false, 'closing the selector clears the quick-bandage grace window');
 
 // Reproduce the reported bug: HUD text claims Strength while the underlying
 // ordinary item index is Control Remedy. Exact-key routing must ignore it.
