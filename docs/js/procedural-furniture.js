@@ -391,10 +391,19 @@
 
   CATALOG.dresser = cabinetRecipe(2, 1, .85, 2);
 
+  // Stone-hearth loading fallback: mirrors the authored open-front masonry silhouette
+  // so slow JSON/texture loads never flash the old three-brown-box placeholder.
   CATALOG.hearth = [
-    box(0, .9, -.32, 1.7, 1.8, .3, .55),
-    box(0, .22, 0, 1.7, .44, .85, .7),
-    box(0, .42, .1, .9, .16, .55, 1.4, { color: 0xb35a2a }),
+    box(0, .06, 0, 1.82, .12, .88, 1, { color: 0x625c52, topScaleX: .98, topScaleZ: .98, materialTexture: 'carved_smooth.png' }),
+    box(0, .15, .08, 1.62, .10, .72, 1, { color: 0x7b7466, topScaleX: .96, topScaleZ: .96, materialTexture: 'carved_smooth.png' }),
+    box(0, .78, -.34, 1.48, 1.16, .18, 1, { color: 0x625c52, materialTexture: 'carved_smooth.png' }),
+    box(-.64, .69, -.06, .30, 1.04, .48, 1, { color: 0x7b7466, topScaleX: .92, topScaleZ: .95, bottomScaleX: 1.04, bottomScaleZ: 1.02, materialTexture: 'carved_smooth.png' }),
+    box(.64, .69, -.06, .30, 1.04, .48, 1, { color: 0x7b7466, topScaleX: .92, topScaleZ: .95, bottomScaleX: 1.04, bottomScaleZ: 1.02, materialTexture: 'carved_smooth.png' }),
+    box(0, 1.20, -.06, 1.50, .20, .48, 1, { color: 0x928a78, topScaleX: .97, topScaleZ: .97, materialTexture: 'carved_smooth.png' }),
+    box(0, 1.36, -.10, 1.78, .12, .56, 1, { color: 0x928a78, topScaleX: .96, topScaleZ: .96, materialTexture: 'carved_smooth.png' }),
+    disc(0, .225, .10, .92, .05, .44, 1, { color: 0x2d2928, segments: 20, materialTexture: 'carved_smooth.png' }),
+    box(0, .30, .10, .74, .11, .12, 1, { color: 0x5b321b, ry: 32, materialTexture: 'boards.png', materialRotationDeg: 90 }),
+    box(0, .31, .10, .74, .11, .12, 1, { color: 0x6f3c1f, ry: -32, materialTexture: 'boards.png', materialRotationDeg: 90 }),
   ];
 
 function campfireRecipe() {
