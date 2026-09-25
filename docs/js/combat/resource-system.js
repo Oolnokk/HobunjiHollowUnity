@@ -292,8 +292,11 @@
   function applyHealthAfflictionDamage(entity, amount) {
     if (!(amount > 0) || !(entity?.health > 0)) return 0;
     const before = Number(entity.health) || 0; // Used to report actual affliction-caused Health loss while preserving an already-sub-1 living value.
-    const effectiveMax = getEffectiveMax(entity, "health"); // Used to respect active max-Health afflictions while calculating the nonlethal floor.
-    const healthFloor = Math.min(before, Math.min(1, Math.max(0, effectiveMax))); // Used so Health afflictions can never kill or accidentally heal a target already below 1 HP.
+    const effectiveMaxResolver = window.ResourceSystem?.getEffectiveMax; // Used to include later-installed max-Health reducers such as Wounded Health instead of bypassing their wrapper.
+    const effectiveMax = Math.max(0, Number(typeof effectiveMaxResolver === "function"
+      ? effectiveMaxResolver(entity, "health")
+      : getEffectiveMax(entity, "health")) || 0);
+    const healthFloor = Math.min(before, Math.min(1, effectiveMax)); // Used so Health afflictions can never kill or accidentally heal a target already below 1 HP.
     entity.health = round1(clamp(before - amount, healthFloor, effectiveMax));
     return round1(before - entity.health);
   }
