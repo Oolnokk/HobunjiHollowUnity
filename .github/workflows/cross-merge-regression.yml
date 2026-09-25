@@ -21,6 +21,7 @@ on:
       - 'scripts/test-shoulder-pet-attachment-debug.js'
       - 'scripts/test-shoulder-pet-curiosity.js'
       - 'scripts/test-shoulder-cam-mandatory.js'
+      - 'scripts/test-dialogue-syllable-cadence.js'
       - '.github/workflows/cross-merge-regression.yml'
   workflow_dispatch:
 
@@ -53,7 +54,8 @@ jobs:
             render-surface-recovery \
             shoulder-pet-attachment-debug \
             shoulder-pet-curiosity \
-            shoulder-cam-mandatory; do
+            shoulder-cam-mandatory \
+            dialogue-syllable-cadence; do
             echo "::group::$t"
             node "scripts/test-$t.js"
             echo "::endgroup::"
