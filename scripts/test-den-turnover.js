@@ -11,6 +11,7 @@ const wildlifeSource = fs.readFileSync(path.join(ROOT, 'docs/js/wildlife-spawn.j
 const denVisualSource = fs.readFileSync(path.join(ROOT, 'docs/js/zone-den-totem-features.js'), 'utf8'); // Guards the requested one-third collapsed cave presentation.
 const gridSource = fs.readFileSync(path.join(ROOT, 'docs/js/grid-tile-accessors.js'), 'utf8'); // Guards removal of the usable collapsed doorway.
 const porakanekiSource = fs.readFileSync(path.join(ROOT, 'docs/js/porakaneki-camps-runtime.js'), 'utf8'); // Guards den-hunting AI against stale/moved sites.
+const banditSource = fs.readFileSync(path.join(ROOT, 'docs/js/bandit-camps.js'), 'utf8'); // Guards companion-discovered den markers when the physical den disappears.
 const debugSource = fs.readFileSync(path.join(ROOT, 'docs/js/wildlife-debug-panel.js'), 'utf8'); // Mobile-visible lifecycle diagnostics.
 
 assert.match(denVisualSource, /den\.collapsed \? scaleY \/ 3 : scaleY/, 'collapsed cave facade must render at one-third normal Y scale');
@@ -18,6 +19,9 @@ assert.match(denVisualSource, /function syncAnimalDenVisual\(/, 'den facade/furn
 assert.match(gridSource, /if \(den\.collapsed\)[\s\S]*?return true/, 'collapsed den footprint must close its former doorway gap');
 assert.match(porakanekiSource, /filter\(den => den && den\.id != null && !den\.collapsed\)/, 'Porakaneki hunting routes must exclude collapsed dens');
 assert.match(porakanekiSource, /const liveTarget = denExteriorPoint\(camp, liveDen\)/, 'Porakaneki active parties must refresh a relocated den target');
+assert.match(porakanekiSource, /function occupiedSites\(zoneId\)/, 'Porakaneki must expose exact active camp footprints to den relocation');
+assert.match(banditSource, /function forgetDenPerception\(denKey\)/, 'collapsed dens must be removable from companion-discovered map markers');
+assert.match(wildlifeSource, /const tileMap = layoutTileMap\(layout\)/, 'one relocation search must reuse a single tile lookup instead of rebuilding it per candidate');
 assert.match(debugSource, /Den Turnover/, 'Wildlife debug panel must expose den turnover on mobile');
 
 const zoneId = 'map_northern_cliffs';
@@ -38,7 +42,8 @@ const layout = {
 let currentArea = 'map_i_den_map_northern_cliffs_animalDen_0'; // Starts inside the den so collapse must wait for exit.
 let genotypeRoll = 0; // Used to prove a relocated bloodline survives cache invalidation/reload-style restoration.
 let rngState = 0x12345678; // Deterministic relocation sampling gives this regression stable behavior.
-const rnd = () => ((rngState = (Math.imul(rngState,1664525)+1013904223)>>>0) / 0x100000000);
+let forceRelocationFallback = false; // Forces the 700 random placement samples to fail so the exhaustive fallback scan is behaviorally covered.
+const rnd = () => forceRelocationFallback ? 0 : ((rngState = (Math.imul(rngState,1664525)+1013904223)>>>0) / 0x100000000);
 const storage = new Map(); // Browser localStorage stand-in used to verify same-year den persistence.
 const toasts = [];
 const logs = [];
@@ -48,6 +53,7 @@ const hostiles = new Set();
 const denNests = new Map();
 const buildingScenes = new Map();
 const creatureDeathCalls = [];
+const forgottenDenMarkers = []; // Captures the exact stable den key invalidated when the old physical entrance collapses.
 
 const localStorage = {
   getItem(key){ return storage.has(key) ? storage.get(key) : null; },
@@ -92,7 +98,13 @@ const windowStub = {
   WildernessChunks:{
     rebuildZone(mapId,col,row){ rebuiltChunks.push({mapId,col,row}); },
   },
-  BanditCamps:{ ensureCurrentZoneCamps(){} },
+  BanditCamps:{
+    ensureCurrentZoneCamps(){},
+    forgetDenPerception(denKey){ forgottenDenMarkers.push(denKey); return true; },
+    campInstances:new Map([[zoneId,[{ instance:{ site:{ x:20, y:20, w:7, h:7 } } }]]]),
+  },
+  PorakanekiCamps:{ occupiedSites(id){ return id === zoneId ? [{ x:31, y:18, w:7, h:7 }] : []; } },
+  WildernessCampfire:{ serialize(){ return { mapId:zoneId, x:42.5, z:24.5 }; } },
   ClimbSystem:{ debugBranchesFor(){ return []; } },
   __farmLog(message,channel){ logs.push({message,channel}); },
 };
@@ -164,6 +176,7 @@ assert.equal(debug[0].daysRemaining,2);
 assert.equal(den.collapsed,true);
 assert.equal(layout.transitions.some(t=>t.targetMapId===cavernMapId),false,'collapsed den removes its entrance transition');
 assert.equal(denNests.has(cavernMapId),false,'uncollected clutch is discarded once collapse executes');
+assert.deepEqual(forgottenDenMarkers,[windowStub.WildlifeSpawn.denKeyFor(zoneId,den)],'collapse clears the companion-discovered map marker for the abandoned entrance');
 assert(visualSync.some(call=>call.collapsed),'collapse updates the existing cave visual');
 assert.equal(genotypeRoll,0,'collapse itself does not invent a replacement bloodline');
 
@@ -173,12 +186,18 @@ assert.equal(debug[0].daysRemaining,1,'first new day advances collapse countdown
 assert.equal(den.collapsed,true);
 
 currentArea='map_hobunji_town';
+forceRelocationFallback=true;
 windowStub.WildlifeSpawn.clearPendingDenRespawn();
 debug=windowStub.WildlifeSpawn.denTurnoverDebug(zoneId);
 assert.equal(debug[0].stage,'active','second new day relocates the den while its zone is safely inactive');
 assert.equal(debug[0].generation,1);
 assert.equal(den.collapsed,false);
 assert(Math.hypot(den.x-5,den.y-5)>=12,'replacement den visibly relocates away from the cleared site');
+const relocatedRect = { x:den.x, y:den.y, w:den.w, h:den.h + 1 }; // Includes the new mouth row when checking live runtime occupancy clearance.
+const overlaps = (a,b,margin=0) => a.x-margin < b.x+b.w && a.x+a.w+margin > b.x && a.y-margin < b.y+b.h && a.y+a.h+margin > b.y;
+assert.equal(overlaps(relocatedRect,{x:20,y:20,w:7,h:7},3),false,'fallback relocation avoids a live bandit camp footprint');
+assert.equal(overlaps(relocatedRect,{x:31,y:18,w:7,h:7},3),false,'fallback relocation avoids a live Porakaneki camp footprint');
+assert.equal(overlaps(relocatedRect,{x:42,y:24,w:1,h:1},4),false,'fallback relocation avoids the persistent wilderness campfire');
 assert.equal(tileAt(5,5).type,'grass','old den rock overlay is restored to ordinary terrain');
 assert.equal(tileAt(den.x,den.y).generatedObjectType,'animalDen','new den site receives the normal generated den overlay');
 assert(layout.transitions.some(t=>t.targetMapId===cavernMapId && t.col===den.mouthAnchor.x && t.row===den.mouthAnchor.y),'relocated den restores its cavern transition at the new mouth');
