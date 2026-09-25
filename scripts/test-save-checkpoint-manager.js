@@ -275,6 +275,19 @@ const vm = require('node:vm');
   assert.deepEqual(folderRecovery.get('auto').snapshot, folderPrimarySnapshot, 'baseline exactly matches canonical primary folder');
   assert.equal(window.__hobunjiSaveCheckpointDebug.snapshot().folderBaselineSeeds, 1);
 
+  // Canonical inspection can put the folder into an error state while recovery files remain
+  // perfectly readable. Recovery discovery must use the retained folder handle/history anyway.
+  const errorStateRecovery = structuredClone(folderRecovery.get('auto'));
+  errorStateRecovery.reason = 'error-state-recovery-visible';
+  folderRecovery.set('manual', errorStateRecovery);
+  store.delete('hobunjiSaveCheckpoint.manual.v1');
+  folderStatus.state = 'error';
+  folderStatus.lastError = 'simulated canonical inspection error';
+  await api.syncRecoveryMirrorsFromFolder();
+  assert.equal(JSON.parse(store.get('hobunjiSaveCheckpoint.manual.v1')).reason, 'error-state-recovery-visible', 'folder recovery remains discoverable when canonical folder state is error');
+  folderStatus.state = 'ready';
+  folderStatus.lastError = null;
+
   currentSnapshot.meta.worlds[0].members.char_a.nonGearInventory = {};
   currentSnapshot.meta.worlds[0].storage = {};
   currentSnapshot.meta.worlds[0].livestock = [];
@@ -392,7 +405,9 @@ const vm = require('node:vm');
   folderRecovery.set('auto', structuredClone(legacyManualCheckpoint));
   folderRecovery.set('manual', structuredClone(legacyManualCheckpoint));
   store.delete('hobunjiSaveCheckpoint.auto.v1');
-  store.delete('hobunjiSaveCheckpoint.manual.v1');
+  const emergencyBrowserManual = structuredClone(legacyManualCheckpoint);
+  emergencyBrowserManual.reason = 'browser-emergency-copy';
+  store.set('hobunjiSaveCheckpoint.manual.v1', JSON.stringify(emergencyBrowserManual));
   hungRecoverySlot = 'manual';
   const timeoutStartedAt = Date.now();
   await api.syncRecoveryMirrorsFromFolder();
@@ -400,8 +415,8 @@ const vm = require('node:vm');
   hungRecoverySlot = '';
   assert.ok(timeoutElapsed >= 2500 && timeoutElapsed < 5000, 'hung recovery read is bounded to the configured ~3 second fail-soft window');
   assert.ok(store.has('hobunjiSaveCheckpoint.auto.v1'), 'healthy recovery slot remains usable when a sibling recovery read hangs');
-  assert.equal(store.has('hobunjiSaveCheckpoint.manual.v1'), false, 'timed-out recovery slot is not replaced with stale browser history');
-  assert.match(window.__hobunjiSaveCheckpointDebug.snapshot().lastError || '', /manual: Recovery "manual" read timed out after 3s/, 'diagnostics expose the timed-out recovery slot');
+  assert.equal(JSON.parse(store.get('hobunjiSaveCheckpoint.manual.v1')).reason, 'browser-emergency-copy', 'timed-out folder read preserves a validated browser recovery copy instead of erasing it');
+  assert.match(window.__hobunjiSaveCheckpointDebug.snapshot().lastError || '', /manual: Recovery "manual" read timed out after 3s.*showing browser fallback copy/, 'diagnostics expose the timeout and browser fallback provenance');
 
   console.log('save checkpoint manager folder-first regression: ok');
 })().catch(error => {
