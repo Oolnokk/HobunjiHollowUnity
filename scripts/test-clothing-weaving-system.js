@@ -13,7 +13,7 @@ const player = {
   dodgeT: 0,
   invulnUntil: 0,
 };
-const gear = {
+let gear = {
   clothing: { hat: null, hood: null, torso: null, overwear: null },
   clothingItems: [],
   dyeCollection: ['starter-red'],
@@ -29,12 +29,19 @@ const shopCatalog = [
 ];
 
 const classList = () => ({ add() {}, remove() {}, toggle() {}, contains() { return false; } });
+const documentListeners = new Map();
 const documentStub = {
   currentScript: { src: 'https://raw.githack.com/Oolnokk/HobunjiHollowUnity/testsha/docs/js/clothing-weaving-system.js?v=test' },
   documentElement: { dataset: {} },
   body: { appendChild() {}, dataset: {} },
   head: { appendChild() {} },
-  addEventListener() {},
+  addEventListener(type, listener) {
+    if (!documentListeners.has(type)) documentListeners.set(type, []);
+    documentListeners.get(type).push(listener);
+  },
+  dispatchEvent(event) {
+    for (const listener of documentListeners.get(event?.type) || []) listener(event);
+  },
   querySelectorAll() { return []; },
   getElementById() { return null; },
   createElement(tag) {
@@ -56,6 +63,18 @@ const EquipmentPanel = {
     }
     return { ...data, equippedCosmetics: [...ids], appearance: { ...(data.appearance || {}), bodyColors } };
   },
+  ensureGearClothingCollection() {
+    gear.clothingItems ||= [];
+    for (const slot of ['hat', 'hood', 'torso', 'overwear']) {
+      const worn = gear.clothing?.[slot];
+      if (!worn) continue;
+      const canonical = gear.clothingItems.find(item =>
+        item && ((worn.uid && item.uid === worn.uid) || (!worn.uid && worn.cosmeticId && item.cosmeticId === worn.cosmeticId))
+      );
+      if (canonical) gear.clothing[slot] = canonical;
+    }
+    return gear.clothingItems;
+  },
   buildEquipmentSlots() {},
   clothingSpriteForCosmetic(id) { return `assets/${id}.png`; },
 };
@@ -69,6 +88,7 @@ const Combat = {
   update() {},
 };
 const windowStub = {
+  __hobunjiGameStarted: false,
   SCRATCHBONES_CONFIG: { game: { account: { shopCatalog }, input: { targeting: { orbitRadiusTiles: 0.62 } } } },
   EquipmentPanel,
   ResourceSystem,
@@ -94,6 +114,13 @@ const windowStub = {
   renderProfile: async () => {},
   renderPortraitProfile: async () => {},
 };
+const timeoutQueue = [];
+windowStub.setTimeout = (fn, ms) => { timeoutQueue.push({ fn, ms }); return timeoutQueue.length; };
+function flushOneTimeout() {
+  const next = timeoutQueue.shift();
+  if (next) next.fn();
+  return !!next;
+}
 const context = vm.createContext({
   window: windowStub,
   document: documentStub,
@@ -166,12 +193,13 @@ assert(Math.abs(ten.footingTakenMul - 0.65) < 1e-12);
 assert(Math.abs(ten.dodgeEfficacy - 0.75) < 1e-12);
 assert(Math.abs(ten.combatMoveMul - 0.82) < 1e-12);
 
+let playerAvatarRefreshCalls = 0;
 const equipmentDeps = {
   getGearInventory: () => gear,
   getPackClothing: () => packClothing,
   saveGearInventory() {},
   inventory: { lightWool: 10, puktukWool: 10 },
-  refreshPlayerAvatar() {},
+  refreshPlayerAvatar() { playerAvatarRefreshCalls++; },
   buildInventoryGrid() {},
   saveMemberWorldData() {},
   clampInventoryStack() {},
@@ -192,21 +220,53 @@ const lightTunic = {
   weaving: {
     layers: {
       __default: {
-        pattern: { motifDataUrl: 'data:image/png;base64,AA==' },
+        patternLibraryId: 'startup-pattern',
         patternLabel: 'Custom',
       },
     },
   },
 };
-gear.clothingItems.push(lightTunic);
-gear.clothing.torso = lightTunic;
-windowStub.EquipmentPanel.buildEquipmentSlots();
-const applied = windowStub.EquipmentPanel.applyGearClothingToPlayerData({ equippedCosmetics: [], appearance: { bodyColors: {} } });
+const loadedGear = JSON.parse(JSON.stringify(gear));
+loadedGear.clothingItems.push(lightTunic);
+loadedGear.clothing.torso = JSON.parse(JSON.stringify(lightTunic)); // Real JSON save round-trip: worn and owned records are equal data but no longer the same object reference.
+// Returning-session regression: EquipmentPanel.init captured a getter while Gear
+// still pointed at its placeholder object. The player-ready event carries the
+// selected save, game.js swaps the live Gear object synchronously, then its first
+// real gear->profile pass can still be delayed by async portrait-cosmetic setup.
+// The corrective rebuild must wait for that initial pass instead of merely one task.
+windowStub.PatternLibrary.getById = id => id === 'startup-pattern'
+  ? { motifDataUrl: 'data:image/png;base64,AA==' }
+  : null;
+const sessionBefore = api.debugSnapshot().portraitPatterns;
+documentStub.dispatchEvent({ type: 'hobunjiPlayerReady', detail: { gearInventory: loadedGear } });
+assert.equal(api.debugSnapshot().portraitPatterns.sessionReadyEvents, sessionBefore.sessionReadyEvents + 1, 'returning woven save is detected at the actual player-ready lifecycle boundary');
+assert.equal(timeoutQueue.length, 1, 'woven returning save schedules the first post-player-ready readiness probe');
+gear = loadedGear; // Models spawnPlayerAvatar replacing the placeholder Gear object before its first await.
+assert(flushOneTimeout(), 'first post-player-ready readiness probe runs');
+assert.equal(playerAvatarRefreshCalls, 0, 'corrective refresh does not run before the initial player portrait has consumed loaded Gear');
+assert.equal(timeoutQueue.length, 1, 'early probe retries while the initial gear->profile pass is still pending');
+const prepareBefore = api.debugSnapshot().portraitPatterns.gearPreparePasses;
+const applied = windowStub.EquipmentPanel.applyGearClothingToPlayerData({ equippedCosmetics: [], appearance: { bodyColors: {} } }); // Models the delayed initial player portrait pass.
+assert.equal(playerAvatarRefreshCalls, 0, 'initial portrait-data preparation itself does not trigger the extra corrective rebuild');
+assert(flushOneTimeout(), 'retry probes again after the initial portrait-data pass');
+assert.equal(playerAvatarRefreshCalls, 0, 'corrective rebuild still waits while spawnPlayerAvatar startup is unfinished');
+assert.equal(timeoutQueue.length, 1, 'unfinished game startup keeps exactly one bounded retry queued');
+windowStub.__hobunjiGameStarted = true;
+assert(flushOneTimeout(), 'post-startup retry runs once the game has actually started');
+assert.equal(playerAvatarRefreshCalls, 1, 'returning woven save performs exactly one rebuild after startup, matching manual re-equip timing');
+assert.equal(timeoutQueue.length, 0, 'successful post-startup rebuild leaves no stale retry queued');
+assert.equal(api.debugSnapshot().portraitPatterns.sessionRefreshes, sessionBefore.sessionRefreshes + 1, 'mobile-visible debug records the automatic returning-session rebuild');
+assert.equal(api.debugSnapshot().portraitPatterns.gearPreparePasses, prepareBefore + 1, 'first returning-save portrait request prepares the newly loaded Gear object');
+assert.strictEqual(gear.clothing.torso, lightTunic, 'cold-load portrait preparation reconnects the equipped slot to the canonical owned garment just like manual re-equip');
+assert.equal(lightTunic.weaving.layers.__default.pattern.motifDataUrl, 'data:image/png;base64,AA==', 'owned returning-save record materializes a library-backed weave before rendering');
+assert.equal(gear.clothing.torso.weaving.layers.__default.pattern.motifDataUrl, 'data:image/png;base64,AA==', 'detached worn save record is also hydrated before the first portrait render');
 assert(applied.equippedCosmetics.includes('tankan_tunic'), 'crafted cosmetic translates back to authored base for rendering');
 assert(!applied.equippedCosmetics.includes(lightTunic.cosmeticId), 'unique crafted id never leaks into portrait cosmetic lookup');
 assert.equal(applied.appearance.bodyColors.TORSO_C.dyeId, 'starter-red', 'woven color uses the third torso dye slot');
 assert.equal(applied.appearance.bodyColors.__hobunjiWovenClothing[0].baseCosmeticId, 'tankan_tunic', 'pattern descriptor follows avatar render data only');
 assert.equal(api.__test.weavingPatternForRole(lightTunic.weaving, null).motifDataUrl, 'data:image/png;base64,AA==', 'modern per-layer weaving resolves the default layer');
+windowStub.EquipmentPanel.buildEquipmentSlots(); // UI may build afterward, but it is no longer a prerequisite for the first woven portrait.
+windowStub.PatternLibrary.getById = () => null;
 const legacyPattern = { motifDataUrl: 'data:image/png;base64,LEGACY==' }; // Keeps pre-layer-save compatibility covered while the main fixture exercises the modern format.
 assert.equal(api.__test.weavingPatternForRole({ pattern: legacyPattern }, 'anything'), legacyPattern, 'legacy single-pattern saves still resolve across every layer');
 const overpassPattern = { motifDataUrl: 'data:image/png;base64,OVERPASS==' }; // Second-slot fixture verifies the new stack shape without changing legacy primary resolution.
@@ -261,6 +321,11 @@ assert(gear.knownClothingBlueprints.some(bp => bp.baseCosmeticId === 'tankan_tun
 assert.equal(api.hasWovenPattern(lightTunic), true, 'woven item exposes its precomposited-icon status to EquipmentPanel');
 
 const compatibilityRuntimeRegression = (async () => {
+  const repairBefore = api.debugSnapshot().portraitPatterns.hookRepairs;
+  windowStub.renderPortraitProfile = async () => true; // Simulates a later runtime wrapper replacing the initially woven global between load and first avatar bake.
+  await api.renderProfileWithWovenPatterns(windowStub.renderPortraitProfile, {}, { bodyColors: {} }, {});
+  assert(api.debugSnapshot().portraitPatterns.hookRepairs > repairBefore, 'stable portrait adapter repairs a replaced global hook on first use instead of waiting for an equipment action');
+
   const originalFetch = context.fetch; // Restored after the isolated portrait compatibility probe so later tests keep their original network stub.
   context.fetch = async url => {
     const value = String(url || '');
@@ -438,6 +503,8 @@ const colorFillSource = fs.readFileSync('docs/js/color-fill.js', 'utf8'); // Can
 const spriteRecolorSource = fs.readFileSync('docs/js/sprite-recolor.js', 'utf8'); // Compatibility wrapper used by authored item sprites and existing callers.
 const creatureRendererSource = fs.readFileSync('docs/js/creature-genetics-render.js', 'utf8'); // Verifies animal tinting uses the same canonical fill owner.
 const pixelProbeSource = fs.readFileSync('docs/js/pixel-probe.js', 'utf8'); // Keeps mobile-visible diagnostics wired to the shared fill module.
+const debugSource = fs.readFileSync('docs/debug.js', 'utf8'); // Keeps weaving session diagnostics visible in the mobile Debug > Rendering surface.
+const debugCopySource = fs.readFileSync('docs/game.js', 'utf8'); // Copy button owns the full mobile report header/raw-log export and player-avatar commit diagnostics.
 const patternAuthorSource = fs.readFileSync('docs/js/pattern-authoring.js', 'utf8'); // Used below to lock the normalized shared Pattern scale authoring range.
 const metalPatternSource = fs.readFileSync('docs/js/tool-metal-recolor.js', 'utf8'); // Used below to prevent weaving-only scale normalization from shrinking existing verdigris patterns.
 const equipmentPanelSource = fs.readFileSync('docs/js/equipment-panel.js', 'utf8'); // Guards the inventory icon handoff so woven composites are not tinted a second time.
@@ -460,10 +527,16 @@ assert.match(source, /activePortraitPendingBuilds\?\.add\(pending\)/, 'global co
 assert.match(source, /options\?\.imageForTint\?\.__clothingWeavingPattern/, 'nested portrait wrappers detect an inherited render-local weaving pass instead of compositing it twice');
 assert.match(source, /imageForTint\.__clothingWeavingPattern = true/, 'the render-local tint resolver carries a weaving ownership marker through later wrapper chains');
 assert.match(source, /renderProfileWithWovenPatterns, \/\/ Stable adapter used by NpcAvatarPreview/, 'the render-local weaving helper is exported for the stable world-avatar adapter');
+assert.match(source, /clothingWeavingApplyGear[\s\S]*?ensureGearClothingCollection\?\.\(\)[\s\S]*?learnOwnedBlueprints\(\)[\s\S]*?installPortraitHooks\(\)/, 'every player portrait-data build canonicalizes loaded clothing, hydrates weave snapshots, and repairs hooks without relying on Equipment UI');
+assert.match(source, /renderProfileWithWovenPatterns[\s\S]*?installPortraitHooks\(\)/, 'stable portrait rendering rechecks weaving hooks at the render boundary');
+assert.match(source, /const liveBaseTint = liveTint\?\.__clothingWeavingPattern/, 'cold-start rendering can recover the canonical tint resolver even when the initial hook capture was not ready');
 assert.match(avatarPreviewSource, /ClothingWeavingSystem[\s\S]*?renderProfileWithWovenPatterns\(renderer, canvas, profile, renderOptions\)/, 'NpcAvatarPreview reapplies weaving around the current live portrait renderer instead of trusting a one-time global wrapper');
 assert.match(avatarPreviewSource, /await renderer\(canvas, profile, renderOptions\);/, 'NpcAvatarPreview still renders normally before the weaving system is available');
-assert.match(indexSource, /combat-config-loader\.js\?v=20260924weaveworld2/, 'index cache-busts the loader that owns the weaving module URL');
-assert.match(combatLoaderSource, /clothing-weaving-system\.js\?v=20260924weaveworld2/, 'combat loader cache-busts the repaired weaving runtime itself');
+assert.match(source, /document\.addEventListener\('hobunjiPlayerReady'[\s\S]*?requestSessionReadyPlayerAvatarRefresh\(hintedGear\)/, 'woven player-ready lifecycle schedules an automatic post-load avatar rebuild instead of relying on a manual gear toggle');
+assert.match(source, /window\.setTimeout\(attempt, 0\)/, 'session rebuild is deferred until every player-ready listener has installed the live save state');
+assert.match(source, /const startupFinished = window\.__hobunjiGameStarted === true[\s\S]*?liveWoven && initialPortraitPrepared && startupFinished[\s\S]*?equipmentDeps\.refreshPlayerAvatar\(\)/, 'post-load rebuild waits for live woven Gear, the initial gear-to-profile pass, and fully completed game startup before refreshing');
+assert.match(indexSource, /combat-config-loader\.js\?v=20260925weavesession5/, 'index cache-busts the loader that owns the weaving module URL');
+assert.match(combatLoaderSource, /clothing-weaving-system\.js\?v=20260925weavesession5/, 'combat loader cache-busts the repaired weaving runtime itself');
 assert.match(portraitSource, /renderOptions\?\.imageForTint[\s\S]*?: _imageForTint/, 'portrait rendering accepts a per-render tint resolver with the canonical tint path as fallback');
 assert.match(portraitSource, /drawPortraitLayerWarped\(ctx, img, resolveXform\(layer\)[\s\S]*?layer\.url, imageForTint\)/, 'breathing overwear layers use the same render-local tint resolver during WorldPortraitLife refreshes');
 
@@ -589,6 +662,26 @@ assert.match(metalPatternSource, /normalizeAuthoredPatterns/,
   'verdigris accepts a legacy authoredPattern or a future two-slot authoredPatterns array through one normalization seam');
 assert.match(pixelProbeSource, /Color fill: \$\{shadeText\}; \$\{hsvText\}/,
   'Pixel Probe exposes shared color-fill source/sample diagnostics on mobile');
+assert.match(debugSource, /window\.__clothingWeavingDebug\?\.\(\)/,
+  'Debug panel reads the live clothing-weaving snapshot without requiring desktop devtools');
+assert.match(debugSource, /filter === 'all' \|\| filter === 'cat:render'/,
+  'weaving session diagnostics appear in All and the Rendering debug category');
+assert.match(debugSource, /session: readyEvents=/,
+  'mobile rendering diagnostics expose the returning-session refresh counters');
+assert.match(debugSource, /window\.__weavingRenderDiagnosticsText = \(\) => _weavingRenderDiagnosticsLines\(\)\.join/,
+  'debug bootstrap exposes the same plain-text weaving snapshot used by the visible Rendering panel');
+assert.match(debugCopySource, /window\.__weavingRenderDiagnosticsText\?\.\(\)/,
+  'Copy includes the synthetic weaving Rendering snapshot instead of exporting only raw log entries');
+assert.match(debugCopySource, /window\.__playerAvatarRefreshDebug = \(\) =>/,
+  'game exposes which woven refresh actually committed to the live player avatar');
+assert.match(debugSource, /playerCommit: started=/,
+  'Rendering debug includes player-specific commit/generation/patterned-tint diagnostics');
+assert.match(debugCopySource, /\.\.\.String\(weavingDiagnostics\)\.split\('\\n'\)/,
+  'copied report emits every weaving diagnostic line before the raw log');
+assert.match(indexSource, /debug\.js\?v=20260925weavesessiondebug4/,
+  'index cache-busts the debug bootstrap that renders and exports the weaving session snapshot');
+assert.match(indexSource, /game\.js\?v=20260925weavecommit2/,
+  'index cache-busts game.js so player-avatar commit diagnostics match the weaving runtime under test');
 assert.match(source, /PatternLibrary\.listAvailable/, 'loom reuses shared pattern library');
 assert.match(source, /PatternAuthoring\?\.openEditor/, 'loom reuses shared pattern authoring workflow');
 assert.match(source, /HOOD_C/);

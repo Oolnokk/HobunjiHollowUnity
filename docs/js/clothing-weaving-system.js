@@ -58,7 +58,7 @@
   const patternedCanvasCache = new Map(); // Reuses expensive pattern composites across repeated portrait renders.
   const wovenIconDataUrlPromises = new Map(); // Caches fully dyed + patterned inventory sprites by their visual state; rebuilt only when dyes/weaving/species/gender change.
   const pendingPatternCanvasPromises = new Map(); // Cache key -> in-flight compositor promise; lets overlapping portrait renders wait on the same build instead of each committing a plain fallback frame.
-  const portraitPatternStats = { renderScopes: 0, patternedTintCalls: 0, compatibilityTintCalls: 0, serializedRenders: 0, cacheHits: 0, cacheMisses: 0, retryRenders: 0 }; // Exposed by debugSnapshot so woven portrait ownership/cache behavior is diagnosable without a console.
+  const portraitPatternStats = { renderScopes: 0, patternedTintCalls: 0, compatibilityTintCalls: 0, serializedRenders: 0, cacheHits: 0, cacheMisses: 0, retryRenders: 0, hookRepairAttempts: 0, hookRepairs: 0, gearPreparePasses: 0, sessionReadyEvents: 0, sessionRefreshAttempts: 0, sessionRefreshes: 0 }; // Exposed by debugSnapshot so woven portrait ownership/cache behavior is diagnosable without a console.
   let activePortraitPatternMap = null; // Compatibility-only URL -> woven descriptor map; non-null only while one exclusive woven portrait owns the legacy global tint path.
   let activePortraitPendingBuilds = null; // Compatibility-only pending set paired with activePortraitPatternMap so global tint fallbacks still participate in the owning render's cache-warm redraw.
   let portraitBaseTintResolver = null; // Canonical non-weaving tint resolver captured before installing the compatibility wrapper.
@@ -176,6 +176,88 @@
       changed = true;
     }
     return changed;
+  }
+
+  function weavingCarriesSavedPattern(weaving) {
+    if (!weaving) return false;
+    if (weavingHasAnyPattern(weaving)) return true;
+    if (weaving.pattern || (Array.isArray(weaving.patterns) && weaving.patterns.length) || weaving.patternLibraryId || weaving.forcedOverpassPattern) return true;
+    if (!weaving.layers || typeof weaving.layers !== 'object') return false;
+    return Object.values(weaving.layers).some(entry => !!(
+      entry?.pattern
+      || entry?.patternLibraryId
+      || (Array.isArray(entry?.patterns) && entry.patterns.length)
+    )); // Raw references count even before PatternLibrary.ensureCollection(), which runs later in the same player-ready handoff.
+  }
+
+  function gearHasEquippedWovenClothing(gear) {
+    if (!gear?.clothing || typeof gear.clothing !== 'object') return false;
+    const owned = Array.isArray(gear.clothingItems) ? gear.clothingItems : [];
+    return CLOTHING_SLOTS.some(slot => {
+      const worn = gear.clothing[slot];
+      if (!worn) return false;
+      if (weavingCarriesSavedPattern(worn.weaving)) return true;
+      const canonical = owned.find(item =>
+        item && (
+          (worn.uid && item.uid === worn.uid)
+          || (!worn.uid && worn.cosmeticId && item.cosmeticId === worn.cosmeticId)
+        )
+      );
+      return weavingCarriesSavedPattern(canonical?.weaving); // Covers old saves where worn/owned JSON records drifted before EquipmentPanel canonicalizes them.
+    });
+  }
+
+  const SESSION_REFRESH_RETRY_MS = 200;
+  const SESSION_REFRESH_RETRY_LIMIT = 100; // Twenty-second cap: only returning saves with woven clothing poll, and slow startup must finish before the repair refresh.
+  let sessionRefreshToken = 0;
+
+  function requestSessionReadyPlayerAvatarRefresh(expectedGear = null) {
+    const token = ++sessionRefreshToken; // A newer player-ready event supersedes an older pending save selection.
+    const preparePassAtRequest = portraitPatternStats.gearPreparePasses; // The corrective bake must happen after, not alongside, the initial player portrait's gear->profile pass.
+    const expectedWoven = gearHasEquippedWovenClothing(expectedGear); // Keeps the retry alive while game.js is still swapping its placeholder Gear object for the selected save.
+    let attempts = 0;
+    const attempt = () => {
+      if (token !== sessionRefreshToken) return;
+      attempts++;
+      portraitPatternStats.sessionRefreshAttempts++;
+      const liveGear = gearInventory();
+      const liveWoven = gearHasEquippedWovenClothing(liveGear);
+      const initialPortraitPrepared = portraitPatternStats.gearPreparePasses > preparePassAtRequest;
+      const startupFinished = window.__hobunjiGameStarted === true; // Manual re-equip happens after spawnPlayerAvatar finishes; do not race/supersede that original async build.
+      const refreshReady = !!equipmentDeps?.refreshPlayerAvatar && liveWoven && initialPortraitPrepared && startupFinished;
+      if (refreshReady) {
+        portraitPatternStats.sessionRefreshes++;
+        try {
+          const refresh = equipmentDeps.refreshPlayerAvatar(); // One authoritative post-load bake, equivalent to the gear-change refresh that users were having to force manually.
+          Promise.resolve(refresh).catch(error => { lastError = String(error?.message || error); });
+        } catch (error) {
+          lastError = String(error?.message || error);
+        }
+        return;
+      }
+      if (!expectedWoven && !liveWoven) return; // Nothing woven was loaded and nothing woven is live, so there is no session correction to wait for.
+      if (attempts >= SESSION_REFRESH_RETRY_LIMIT) return;
+      window.setTimeout(attempt, SESSION_REFRESH_RETRY_MS);
+    };
+    // A zero-delay task is only the first probe. The selected Gear object is
+    // installed synchronously by spawnPlayerAvatar, but the original avatar
+    // build and the rest of startup are async. Wait for __hobunjiGameStarted,
+    // then rebuild once. This deliberately matches the user's successful
+    // manual re-equip timing instead of superseding the startup avatar build.
+    window.setTimeout(attempt, 0);
+  }
+
+  function installSessionReadyRefreshHook() {
+    if (typeof document === 'undefined') return;
+    const root = document.documentElement;
+    if (root?.dataset?.clothingWeavingSessionReadyHook === '1') return;
+    if (root?.dataset) root.dataset.clothingWeavingSessionReadyHook = '1';
+    document.addEventListener('hobunjiPlayerReady', event => {
+      const hintedGear = event?.detail?.gearInventory || null;
+      if (!gearHasEquippedWovenClothing(hintedGear)) return; // Plain-clothing sessions keep the existing single startup bake.
+      portraitPatternStats.sessionReadyEvents++;
+      requestSessionReadyPlayerAvatarRefresh(hintedGear);
+    });
   }
 
   // Human-readable summary of a weaving's pattern(s) — "Custom" for a plain
@@ -341,9 +423,9 @@
     const wovenDescriptors = [];
     for (const item of (items || []).filter(Boolean)) {
       const baseId = baseCosmeticId(item);
-      if (item?.baseCosmeticId && item.cosmeticId) {
+      if (item?.cosmeticId && baseId && item.cosmeticId !== baseId) {
         ids.delete(item.cosmeticId);
-        if (baseId) ids.add(baseId);
+        ids.add(baseId);
       }
       const colorC = portraitClothingColor(item?.colorC);
       const cKey = thirdTintKey(item?.slot);
@@ -387,6 +469,15 @@
     if (typeof api.applyGearClothingToPlayerData === 'function') {
       const originalApply = api.applyGearClothingToPlayerData.bind(api); // Existing cosmetic + A/B dye mapping remains the base behavior.
       api.applyGearClothingToPlayerData = function clothingWeavingApplyGear(playerData) {
+        // Rendering must not depend on the Gear tab having been opened/built first.
+        // Returning saves replace the placeholder gear object after EquipmentPanel.init,
+        // so hydrate any legacy library-backed weave snapshots at the exact portrait-data
+        // boundary that consumes them, and repair portrait hooks if a later wrapper replaced
+        // one since this module first loaded.
+        api.ensureGearClothingCollection?.(); // Cold-loaded saves deserialize worn slots and owned clothing as separate objects; reconnect them exactly as the Gear UI does before the portrait consumes them.
+        learnOwnedBlueprints();
+        portraitPatternStats.gearPreparePasses++;
+        installPortraitHooks();
         const out = originalApply(playerData);
         const gear = gearInventory();
         const equipped = CLOTHING_SLOTS.map(slot => gear?.clothing?.[slot]).filter(Boolean);
@@ -2287,6 +2378,12 @@
 
   async function renderProfileWithWovenPatterns(renderer, canvas, profile, options = {}) {
     if (typeof renderer !== 'function') return false;
+    // Cold-start/self-healing seam: this helper is also the stable NpcAvatarPreview
+    // adapter, so it may be the first woven call after returning-save gear is hydrated
+    // or after another runtime module replaced one of the globals we originally wrapped.
+    // Re-checking here is cheap and avoids relying on an equip/de-equip UI action to
+    // accidentally repair the portrait pipeline later in the session.
+    installPortraitHooks();
     if (options?.imageForTint?.__clothingWeavingPattern) return renderer(canvas, profile, options); // Nested work inside an already-exclusive woven render inherits the owning resolver and must not reacquire the gate.
     if (renderer.__clothingWeavingPattern) return renderer(canvas, profile, options); // The installed renderer wrapper will re-enter this helper with its unwrapped downstream renderer.
 
@@ -2298,9 +2395,11 @@
       finally { releaseRead(); }
     }
 
+    const liveTint = window._imageForTint; // Used only as a cold-start fallback if the one-time hook capture was not ready yet.
+    const liveBaseTint = liveTint?.__clothingWeavingPattern ? liveTint.__clothingWeavingOriginal : liveTint; // Never recurse through our compatibility wrapper.
     const baseTintResolver = typeof options?.imageForTint === 'function'
       ? options.imageForTint
-      : portraitBaseTintResolver; // Never use the compatibility-wrapped global as the local base or it would recurse back into weaving.
+      : (typeof portraitBaseTintResolver === 'function' ? portraitBaseTintResolver : liveBaseTint); // Stable first render even if hook installation had to be repaired lazily.
     if (typeof baseTintResolver !== 'function') {
       const releaseRead = await acquirePortraitReadGate();
       try { return await renderer(canvas, profile, options); }
@@ -2333,9 +2432,18 @@
   }
 
   function installPortraitHooks() {
-    if (portraitHooksInstalled) return true;
     const currentTint = window._imageForTint;
-    if (typeof currentTint !== 'function' || typeof window.renderProfile !== 'function') return false;
+    const currentProfile = window.renderProfile;
+    const currentPortrait = window.renderPortraitProfile;
+    const hooksStillLive = !!(
+      currentTint?.__clothingWeavingPattern
+      && currentProfile?.__clothingWeavingPattern
+      && (typeof currentPortrait !== 'function' || currentPortrait?.__clothingWeavingPattern)
+    );
+    if (portraitHooksInstalled && hooksStillLive) return true;
+    portraitPatternStats.hookRepairAttempts++;
+    if (typeof currentTint !== 'function' || typeof currentProfile !== 'function') return false;
+    const wasInstalled = portraitHooksInstalled;
 
     if (!currentTint.__clothingWeavingPattern) {
       portraitBaseTintResolver = currentTint; // Capture the canonical tint function before installing the compatibility interception.
@@ -2374,6 +2482,7 @@
     const profileInstalled = wrapRenderer('renderProfile'); // Direct portrait entry point used by legacy/editor callers.
     const portraitInstalled = wrapRenderer('renderPortraitProfile'); // Alias used by NpcAvatarPreview and live world-avatar refreshes.
     portraitHooksInstalled = profileInstalled && portraitInstalled;
+    if (portraitHooksInstalled && wasInstalled) portraitPatternStats.hookRepairs++;
     return portraitHooksInstalled;
   }
 
@@ -2421,12 +2530,13 @@
     hasWovenPattern: item => weavingHasAnyPattern(item?.weaving),
     reweaveMaterialCost,
     debugSnapshot,
-    __test: Object.freeze({ baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask, applyPatternToTintedImage, applyPatternStackToTintedImage, labelPatternCells, behindViewUrlsFor, behindViewResultFor, buildPortraitPatternMap, collectPatternImageUrls, cosmeticConfig, summarizeWeavingLabel, weavingPatternForRole, weavingPatternsForRole, normalizePatternStack, forcedOverpassPatternForWeaving, withForcedOverpass, weavingSwapsPatternColorsForRole, weavingHasAnyPattern, decorateAvatarDataWithWovenItems, materializeWeavingLibrarySnapshots, docsRelativeUrl, standaloneAssetUrl, frameShapeFor, wovenIconVisualKey, reweaveMaterialCost, resolvedPatternMeshScale, buildMotifClusterSeparatorMask, adjustMaskThickness, buildPatternOutlineMask, scaledOutlineWidth, overpassClearanceMultiplier }),
+    __test: Object.freeze({ baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask, applyPatternToTintedImage, applyPatternStackToTintedImage, labelPatternCells, behindViewUrlsFor, behindViewResultFor, buildPortraitPatternMap, collectPatternImageUrls, cosmeticConfig, summarizeWeavingLabel, weavingPatternForRole, weavingPatternsForRole, normalizePatternStack, forcedOverpassPatternForWeaving, withForcedOverpass, weavingSwapsPatternColorsForRole, weavingHasAnyPattern, weavingCarriesSavedPattern, gearHasEquippedWovenClothing, requestSessionReadyPlayerAvatarRefresh, decorateAvatarDataWithWovenItems, materializeWeavingLibrarySnapshots, docsRelativeUrl, standaloneAssetUrl, frameShapeFor, wovenIconVisualKey, reweaveMaterialCost, resolvedPatternMeshScale, buildMotifClusterSeparatorMask, adjustMaskThickness, buildPatternOutlineMask, scaledOutlineWidth, overpassClearanceMultiplier }),
   });
   window.__clothingWeavingDebug = debugSnapshot;
 
   futureGlobal('EquipmentPanel', patchEquipmentPanel);
   installClothingDetailTracking();
+  installSessionReadyRefreshHook();
   installArmorHooks();
   installPortraitHooks();
 })();
