@@ -21,6 +21,10 @@ assert.match(debug, /'PERCH', 9/);
 assert.match(debug, /'GRIP', 5/);
 assert.match(debug, /error \$\{state\.error\.toFixed\(5\)\}u/);
 assert.match(debug, /get shoulderPetAttachment\(\)/);
+const pixelProbe = fs.readFileSync('docs/js/pixel-probe.js', 'utf8'); // Guards copyable world/local shoulder attachment coordinates.
+assert.match(pixelProbe, /Attachment points world: PERCH=/);
+assert.match(pixelProbe, /GRIP=/);
+assert.match(pixelProbe, /Authored shoulderPerch local:/);
 assert.doesNotMatch(debug, /requestAnimationFrame\s*\(|setInterval\s*\(/,
   'attachment marker reuses the existing overlay draw pass without another frame loop');
 
