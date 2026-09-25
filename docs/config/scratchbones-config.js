@@ -520,7 +520,7 @@ window.SCRATCHBONES_CONFIG = {
         "engh-sho": {
           "label": "Engh-sho",
           "genders": ["male", "female"],
-          "swatchBase": "#c7d2d5",
+          "swatchBase": "#7dc89a",
           "male": {
             "slots": [
               { "slot": "hairFront", "label": "Front Hair", "options": [
@@ -5298,7 +5298,7 @@ window.SCRATCHBONES_CONFIG.game.layout.fitter = window.SCRATCHBONES_CONFIG.game.
     'mao-ao': { label: 'Mao-ao', swatchBase: '#7dc89a' },
     tletingan: { label: 'Tletingan', swatchBase: '#7dc89a' },
     kenkari: { label: 'Kenkari', swatchBase: '#7dc89a' },
-    'engh-sho': { label: 'Engh-sho', swatchBase: '#c7d2d5' },
+    'engh-sho': { label: 'Engh-sho', swatchBase: '#7dc89a' },
     mashtzarr: { label: 'Mashtzarr', swatchBase: '#7dc89a' },
     rakakoan: { label: "Rakako'an", swatchBase: '#7dc89a', parentSpecies: 'kenkari' }
   };
