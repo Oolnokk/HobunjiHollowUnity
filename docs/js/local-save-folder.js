@@ -9,7 +9,7 @@ document.write('<script src="js/folder-save-primary.js?v=20260925savecorrupt3"><
 document.write('<script src="js/folder-save-empty-bootstrap.js?v=20260914a"><\/script>');
 document.write('<script src="js/folder-save-device-provenance.js?v=20260914a"><\/script>');
 document.write('<script src="js/folder-save-runtime-flush.js?v=20260914a"><\/script>');
-document.write('<script src="js/save-checkpoint-manager.js?v=20260925savecorrupt8"><\/script>');
+document.write('<script src="js/save-checkpoint-manager.js?v=20260925savecorrupt9"><\/script>');
 document.write('<script src="js/folder-save-quit-guard.js?v=20260916menu3"><\/script>');
 document.write('<script src="js/folder-save-debug-ui.js?v=20260925savecorrupt5"><\/script>');
 document.write('<script src="js/netlify-cloud-save.js?v=20260920startup4"><\/script>');
