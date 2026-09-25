@@ -22,6 +22,8 @@ const vm = require('node:vm');
   assert.match(folderCoreSource, /writeRecoveryCheckpoint/, 'folder core exposes whitelisted recovery-file persistence');
   assert.match(folderCoreSource, /readPrimarySnapshot/, 'folder core exposes canonical state for baseline/recovery');
   assert.match(folderCoreSource, /syncSnapshot/, 'folder core can commit one exact captured snapshot');
+  assert.match(folderCoreSource, /corruptEntityFiles/, 'folder core tracks unreadable canonical character/world files');
+  assert.match(folderCoreSource, /load-blocked-corrupt-canonical/, 'folder import blocks canonical entity corruption instead of treating it as deletion');
   assert.match(source, /automatic folder save is paused/, 'folder autosync is blocked while gameplay state is hydrating');
   assert.match(source, /folder-baseline/, 'old folders seed recovery from canonical state before future writes');
   assert.match(source, /rollbackRestore/, 'failed restores attempt a canonical folder rollback');
@@ -199,6 +201,16 @@ const vm = require('node:vm');
   assert.equal(autoResult.ok, true);
   const firstAutoRaw = store.get('hobunjiSaveCheckpoint.auto.v1');
   assert.ok(firstAutoRaw, 'first post-grace browser autosave is written');
+
+  const legacyMeshRecord = JSON.parse(firstAutoRaw); // Simulates a recovery checkpoint written before treasure meshes were excluded from save data.
+  legacyMeshRecord.snapshot.meta.worlds[0].members.char_a.zoneTreasureState = {
+    zone_test: { week: 0, placements: [{ col: 1, row: 1, found: false, loot: {}, _mesh: { payload: 'x'.repeat(20_000) } }] },
+  };
+  legacyMeshRecord.stats.bytes = JSON.stringify(legacyMeshRecord.snapshot).length; // Old builds persisted this inflated byte count in checkpoint stats.
+  store.set('hobunjiSaveCheckpoint.auto.v1', JSON.stringify(legacyMeshRecord));
+  const meshCleanupGuard = api.evaluateSnapshotForFolderWrite(structuredClone(originalSnapshot), { recoveryKind: 'auto' }); // Clean candidate is materially smaller only because runtime mesh junk disappeared.
+  assert.equal(meshCleanupGuard.ok, true, 'legacy treasure mesh bloat does not trigger the 40% save-shrink corruption guard');
+  store.set('hobunjiSaveCheckpoint.auto.v1', firstAutoRaw);
 
   currentSnapshot.meta.worlds[0].members.char_a.nonGearInventory = {};
   currentSnapshot.meta.worlds[0].storage = {};
