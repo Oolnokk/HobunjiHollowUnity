@@ -229,7 +229,7 @@
       side,
       heightWorld:finite(src.heightWorld,base.heightWorld,8,140),
       distanceWorld:finite(src.distanceWorld,base.distanceWorld,0,80),
-      depthWorld:finite(src.depthWorld,base.depthWorld,8,120),
+      depthWorld:finite(src.depthWorld,base.depthWorld,8,300),
       spanScale:finite(src.spanScale,base.spanScale,0.25,8),
       overallScale:finite(src.overallScale,base.overallScale,0.25,6),
       segments:Math.round(finite(src.segments,base.segments,3,16)),
