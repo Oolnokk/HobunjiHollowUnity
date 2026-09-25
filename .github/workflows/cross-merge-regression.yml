@@ -20,6 +20,7 @@ on:
       - 'scripts/test-render-surface-recovery.js'
       - 'scripts/test-shoulder-pet-attachment-debug.js'
       - 'scripts/test-shoulder-pet-curiosity.js'
+      - 'scripts/test-shoulder-cam-mandatory.js'
       - '.github/workflows/cross-merge-regression.yml'
   workflow_dispatch:
 
@@ -51,7 +52,8 @@ jobs:
             player-body-transform-composer \
             render-surface-recovery \
             shoulder-pet-attachment-debug \
-            shoulder-pet-curiosity; do
+            shoulder-pet-curiosity \
+            shoulder-cam-mandatory; do
             echo "::group::$t"
             node "scripts/test-$t.js"
             echo "::endgroup::"
