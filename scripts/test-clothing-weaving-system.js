@@ -293,6 +293,12 @@ player.lastAttackReceivedAt = -1e9;
 now = 10000;
 assert.equal(windowStub.Combat.getMovementSpeedMul(), 1, 'movement weight has no out-of-combat slowdown');
 
+const gameDiagnosticSource = fs.readFileSync('docs/game.js', 'utf8');
+for (const diagnosticNeedle of ['async function refreshPlayerAvatar', 'EquipmentPanel.init', 'applyGearClothingToPlayerData']) {
+  const diagnosticIndex = gameDiagnosticSource.indexOf(diagnosticNeedle);
+  console.log('\n[WEAVING_DIAGNOSTIC ' + diagnosticNeedle + ' @ ' + diagnosticIndex + ']\n' +
+    (diagnosticIndex >= 0 ? gameDiagnosticSource.slice(Math.max(0, diagnosticIndex - 2200), diagnosticIndex + 9000) : 'NOT FOUND'));
+}
 const source = fs.readFileSync('docs/js/clothing-weaving-system.js', 'utf8');
 const portraitSource = fs.readFileSync('docs/js/portrait-utils.js', 'utf8'); // Verifies woven portrait state is injected per render rather than shared across WorldPortraitLife's overlapping async NPC refreshes.
 const avatarPreviewSource = fs.readFileSync('docs/js/npc-avatar-preview-utils.js', 'utf8'); // Guards the live world-avatar adapter that survives later portrait-renderer replacement.
