@@ -126,3 +126,11 @@ assert(pieceAnimation.includes('if (rope.material.map.image) rope.material.map.n
   'animated rope repeat updates cannot mark an image-less texture dirty');
 assert(!pieceAnimation.includes('texture.needsUpdate=true;\n    const material'),
   'animated furniture no longer marks a just-cloned image-less texture dirty');
+
+
+assert(procedural.includes("if (entry.loaded && entry.base.image) {"),
+  'furniture texture clones upload only after the shared source has a decoded image');
+assert(procedural.includes('else {\n      entry.pendingClones.add(tex);'),
+  'image-less furniture texture clones wait in the pending set instead of uploading empty data');
+assert(!/const tex = entry\.base\.clone\(\);\s*tex\.needsUpdate = true/.test(procedural),
+  'furniture must not mark an image-less texture clone dirty before TextureLoader completes');
