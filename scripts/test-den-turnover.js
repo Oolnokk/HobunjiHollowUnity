@@ -155,6 +155,13 @@ windowStub.WildlifeSpawn.init(deps);
 const cavernMapId = windowStub.WildlifeSpawn.denCavernMapId(zoneId,den.id);
 assert.equal(cavernMapId,'map_i_den_map_northern_cliffs_animalDen_0');
 layout.transitions[0].targetMapId=cavernMapId;
+// Mirror buildZoneScene: the cached scene owns a COPIED transitions array
+// (the pool checkTransitionSpots reads) plus a gold ring marker per spot.
+const zoneSceneInfo = deps.zoneScenes.get(zoneId);
+const denRing = { visible:true, position:{ set(x,y,z){ Object.assign(this,{x,y,z}); } }, userData:{ mapEditorRef:{ mapId:zoneId, kind:'spot', id:layout.transitions[0].id, col:6, row:8 } } };
+zoneSceneInfo.transitions = [{ id:zoneId+'_exit', col:1, row:1, target:'town' }, ...layout.transitions];
+zoneSceneInfo.scene.children = [denRing];
+zoneSceneInfo.grid = [];
 const initialGenotype = windowStub.WildlifeSpawn.getOrMakeDenGenotype(cavernMapId,'gar-wolf');
 assert.equal(genotypeRoll,1,'first generation rolls one family genotype');
 windowStub.WildlifeSpawn.forgetZoneDenState(zoneId);
@@ -199,6 +206,9 @@ assert.equal(debug[0].stage,'collapsed','entering the exterior collapses a clear
 assert.equal(debug[0].daysRemaining,2);
 assert.equal(den.collapsed,true);
 assert.equal(layout.transitions.some(t=>t.targetMapId===cavernMapId),false,'collapsed den removes its entrance transition');
+assert.equal(zoneSceneInfo.transitions.some(t=>t.targetMapId===cavernMapId),false,'collapse also removes the entrance from the already-built zone scene pool the player actually walks into');
+assert.equal(zoneSceneInfo.transitions.some(t=>t.id===zoneId+'_exit'),true,'unrelated zone exits stay in the live scene pool');
+assert.equal(denRing.visible,false,'collapsed den hides its entrance ring marker');
 assert.equal(denNests.has(cavernMapId),false,'uncollected clutch is discarded once collapse executes');
 assert.deepEqual(forgottenDenMarkers,[windowStub.WildlifeSpawn.denKeyFor(zoneId,den)],'collapse clears the companion-discovered map marker for the abandoned entrance');
 assert(visualSync.some(call=>call.collapsed && call.pending),'collapse queues the delayed facade presentation while closing the den logically immediately');
@@ -227,6 +237,9 @@ assert.equal(overlaps(relocatedRect,{x:42,y:24,w:1,h:1},4),false,'fallback reloc
 assert.equal(tileAt(5,5).type,'grass','old den rock overlay is restored to ordinary terrain');
 assert.equal(tileAt(den.x,den.y).generatedObjectType,'animalDen','new den site receives the normal generated den overlay');
 assert(layout.transitions.some(t=>t.targetMapId===cavernMapId && t.col===den.mouthAnchor.x && t.row===den.mouthAnchor.y),'relocated den restores its cavern transition at the new mouth');
+assert.equal(zoneSceneInfo.transitions.filter(t=>t.targetMapId===cavernMapId && t.col===den.mouthAnchor.x && t.row===den.mouthAnchor.y).length,1,'relocated entrance is live in the cached zone scene pool exactly once');
+assert.equal(denRing.visible,true,'relocated den shows its entrance ring again');
+assert.equal(denRing.position.x,den.mouthAnchor.x+0.5,'entrance ring moves to the relocated mouth');
 assert(visualSync.some(call=>!call.collapsed && call.x===den.x && call.y===den.y),'relocation restores full-height cave visual at the new site');
 assert(rebuiltChunks.length>=2,'old and new streamed terrain regions are rebuilt after relocation');
 

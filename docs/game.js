@@ -28506,6 +28506,7 @@
         DEN_MOTHER_DEFS,
         DEN_MOTHER_ITEM_KEYS,
         zoneScenes: _zoneScenes,
+        tileSurfaceYInArea, // Used to seat a relocated den's entrance ring marker on the terrain.
         makeDecorativeFurnitureMesh,
         // Used by js/wildlife-cloud-forest-behavior.js for its gar-wolf
         // shift/LOD player-distance checks and its game-hour-scheduled
