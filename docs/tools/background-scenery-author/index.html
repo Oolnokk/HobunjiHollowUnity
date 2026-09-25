@@ -77,10 +77,14 @@
           <div class="field"><label>Clearance from edge (world)</label><input id="horizonDistance" type="number" min="0" max="80" step="1"></div>
         </div>
         <div class="g2">
-          <div class="field"><label>Landform depth (world)</label><input id="horizonDepth" type="number" min="8" max="120" step="1"></div>
-          <div class="field"><label>Edge span scale</label><input id="horizonSpan" type="number" min="0.75" max="2" step="0.05"></div>
+          <div class="field"><label>Landform depth (world)</label><input id="horizonDepth" type="number" min="8" max="300" step="1"></div>
+          <div class="field"><label>Edge span scale</label><input id="horizonSpan" type="number" min="0.25" max="8" step="0.05"></div>
         </div>
-        <div class="field"><label>Low-poly segments along horizon</label><input id="horizonSegments" type="number" min="3" max="16" step="1"></div>
+        <div class="g2">
+          <div class="field"><label>Whole landmark scale</label><input id="horizonOverallScale" type="number" min="0.25" max="6" step="0.05"></div>
+          <div class="field"><label>Low-poly segments / front peaks</label><input id="horizonSegments" type="number" min="3" max="16" step="1"></div>
+        </div>
+        <p class="muted" style="margin-top:6px">Whole landmark scale enlarges the complete object around the map-edge center: height, depth, peak width/spacing, and long-axis span all grow together. Edge span remains an additional long-axis multiplier, so the western chain can extend several map lengths north and south.</p>
         <div class="row" style="margin-top:6px;flex-wrap:wrap">
           <button class="sec" id="horizonWestPreset">🏔 West Slope mountains</button>
           <button class="sec" id="horizonNorthPreset">▰ Northern Cliffs plateau</button>
