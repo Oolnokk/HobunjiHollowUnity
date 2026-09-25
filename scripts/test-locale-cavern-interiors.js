@@ -29,7 +29,8 @@ assert(banubuDialogueCameras.every(camera => camera.fadePets === false), 'Banubu
 const awakeCamera = banubuDialogueCameras.find(camera => camera.id === 'banubu_dialogue_awake');
 const sleepCamera = banubuDialogueCameras.find(camera => camera.id === 'banubu_dialogue_sleep');
 const keyCamera = banubuDialogueCameras.find(camera => camera.id === 'banubu_key_ground'); // Ground-level shot used while Banubu calls attention to the root-attached key sparkle emitter.
-assert.deepStrictEqual(awakeCamera?.position, { x: 7.2, y: 0, z: 9.4 }, 'Banubu awake camera keeps its authored world-space position');
+assert.deepStrictEqual(awakeCamera?.position, { x: 7.2, y: 0.75, z: 9.4 }, 'Banubu awake camera stays clearly above the cavern floor during the stand-up transition');
+assert.strictEqual(awakeCamera?.fovDeg, 42, 'Banubu awake camera uses a normal dialogue field of view instead of the overly tight telephoto framing');
 assert.deepStrictEqual(sleepCamera?.position, { x: 7.024, y: 0.142, z: 8.3 }, 'Banubu sleeping camera preserves the latest in-game Map Edit authoring diff');
 assert.deepStrictEqual(keyCamera?.position, { x: 6.9, y: 0.12, z: 7.3 }, 'Banubu key camera stays down at ground level near the sparkle emitter');
 assert.strictEqual(keyCamera?.targetNpcPoint, 'root', 'Banubu key camera must aim at the NPC root shared by the sparkle emitter rather than his face');
