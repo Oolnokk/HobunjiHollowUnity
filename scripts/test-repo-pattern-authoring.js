@@ -78,12 +78,12 @@ assert.match(renderer, /pattern\.repoPatternId \|\| \(patterns\.length === 0 \? 
 assert.match(renderer, /paint\.patternScale/, 'animal surface paint scale participates in the creature render signature');
 assert.match(renderer, /usageScaleMultiplier: animalPatternScale/, 'animal renderer applies its normalized pattern scale as a transient usage multiplier');
 assert.match(renderer, /Math\.max\(7, Math\.min\(14, Number\(paint\.patternScale\) \|\| 7\)\)/, 'animal pattern usage scale is clamped to the purpose-specific 7×–14× range');
-assert.match(weaving, /const ANIMAL_PATTERN_OUTLINE_WIDTH = 6;[\s\S]*debugLabel === 'animal-surface-pattern' \? ANIMAL_PATTERN_OUTLINE_WIDTH : baseWidth;/, 'the explicitly labeled animal surface pass uses a fixed 6px outline while clothing retains its ordinary raster-space outline width');
+assert.match(weaving, /const ANIMAL_PATTERN_OUTLINE_REFERENCE_WIDTH = 6;[\s\S]*const ANIMAL_PATTERN_OUTLINE_REFERENCE_SHORT_SIDE = 2250;[\s\S]*shortSidePx \* ANIMAL_PATTERN_OUTLINE_PER_SHORT_SIDE_PX/, 'animal surface paint preserves Grehlr as the visual baseline while scaling outline width from each source image short side');
 assert.match(weaving, /const outlineDiskOffsetCache = new Map\(\)/, 'large pattern outlines reuse cached disk neighborhoods');
 assert.match(weaving, /for \(const boundaryPixel of boundaryPixels\)/, 'outline dilation expands from motif boundaries instead of searching around every garment pixel');
 assert.match(weaving, /patternDef\?\.usageScaleMultiplier/, 'shared pattern compositor supports a purpose-specific normalized scale multiplier after authored pattern scale resolution');
-assert.match(weaving, /scaledOutlineWidth\(PATTERN_OUTLINE_WIDTH, active\[0\]\?\.pattern, debugLabel\)/, 'the final stack outline pass receives the compositor label so animal thickness is selected by render purpose rather than inferred from scale');
-assert.match(weaving, /scaledOutlineWidth\(PATTERN_OUTLINE_WIDTH, active\[1\]\?\.pattern, debugLabel\)/, 'the optional overpass clearance measures the same render-purpose outline width before multiplying it by three');
+assert.match(weaving, /scaledOutlineWidth\(PATTERN_OUTLINE_WIDTH, active\[0\]\?\.pattern, debugLabel, width, height\)/, 'the final stack outline pass receives the source raster dimensions so animal line weight is resolution-relative');
+assert.match(weaving, /scaledOutlineWidth\(PATTERN_OUTLINE_WIDTH, active\[1\]\?\.pattern, debugLabel, width, height\)/, 'the optional overpass clearance uses the same resolution-relative animal outline width before applying its multiplier');
 assert.match(weaving, /isAbsoluteOrBlob = \/\^\(\?:https\?:\|blob:\|data:\|\\\/\\\/\)\/i/, 'absolute/CDN repo motif URLs bypass game-relative loadImg normalization');
 assert.match(renderer, /getLastPatternPaintDebug/, 'creature compositor exposes per-region pattern paint diagnostics to Character Studio');
 assert.match(renderer, /compositor returned the unpatterned source/, 'creature compositor reports a visibly unapplied pattern instead of failing silently');
