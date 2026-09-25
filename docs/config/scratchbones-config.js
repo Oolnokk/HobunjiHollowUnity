@@ -158,7 +158,7 @@ window.SCRATCHBONES_CONFIG = {
         }
       },
       "staging": {
-        "sideStepTiles": 0.28,
+        "cameraSideAngleDeg": 15,
         "moveSpeedTilesPerSecond": 4.25,
         "arrivalRadiusTiles": 0.08,
         "faceLerp": 0.28,
