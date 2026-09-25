@@ -23,61 +23,8 @@
   const avatarApi = global.PNGPlaneAvatar;
   if (!THREE || !avatarApi?.buildSinglePlaneAvatarModel || avatarApi.buildSinglePlaneAvatarModel.__hobunjiPortraitOutlineParityWrapped) return;
 
-  const SHOULDER_PERCH_MIRROR_STORAGE_KEY = 'hobunjiMirrorShoulderPerchWithPortrait'; // Persists whether authored shoulder pixels follow the presentation-only horizontal portrait flip.
-  let mirrorShoulderPerchWithPortrait = true; // Current behavior stays the default; disabling restores the pre-fix unmirrored authored pixel X.
-  try {
-    const saved = global.localStorage?.getItem?.(SHOULDER_PERCH_MIRROR_STORAGE_KEY);
-    if (saved !== null && saved !== undefined) mirrorShoulderPerchWithPortrait = saved !== '0';
-  } catch (_) {}
+  const mirrorShoulderPerchWithPortrait = true; // Fixed runtime behavior: authored shoulder pixels follow the flipped portrait; no shoulder presentation settings are exposed.
 
-  function setMirrorShoulderPerchWithPortrait(enabled, options = {}) {
-    mirrorShoulderPerchWithPortrait = !!enabled;
-    if (options.persist !== false) {
-      try { global.localStorage?.setItem?.(SHOULDER_PERCH_MIRROR_STORAGE_KEY, mirrorShoulderPerchWithPortrait ? '1' : '0'); } catch (_) {}
-    }
-    const checkbox = global.document?.getElementById?.('settingMirrorShoulderPerchWithPortrait');
-    if (checkbox && checkbox.checked !== mirrorShoulderPerchWithPortrait) checkbox.checked = mirrorShoulderPerchWithPortrait;
-    return mirrorShoulderPerchWithPortrait;
-  }
-
-  function installShoulderPerchMirrorSetting() {
-    const doc = global.document;
-    if (!doc || doc.getElementById('settingMirrorShoulderPerchWithPortrait')) return;
-    const rotationSelect = doc.getElementById('settingShoulderPetRotationSource');
-    const rotationRow = rotationSelect?.closest?.('.settings-row');
-    if (!rotationRow?.parentNode) return;
-
-    const row = doc.createElement('label');
-    row.className = 'settings-row';
-    row.innerHTML = `
-      <div class="settings-label">
-        <div class="settings-name">Mirror Shoulder-Pet Perch with Portrait</div>
-        <div class="settings-desc">When PNG portraits are horizontally flipped, mirror the authored shoulder-perch pixel to the matching visible shoulder. Turn this off to keep the original authored pixel X.</div>
-      </div>
-      <span class="settings-toggle"><input type="checkbox" id="settingMirrorShoulderPerchWithPortrait"><span class="toggle-slider"></span></span>`;
-    rotationRow.parentNode.insertBefore(row, rotationRow);
-    const checkbox = row.querySelector('#settingMirrorShoulderPerchWithPortrait');
-    checkbox.checked = mirrorShoulderPerchWithPortrait;
-    checkbox.addEventListener('change', event => setMirrorShoulderPerchWithPortrait(event.target.checked));
-  }
-
-  function applyDefaultShoulderPetFrontXray() {
-    const checkbox = global.document?.getElementById?.('settingDisableShoulderFrontXray');
-    if (!checkbox || checkbox.dataset.hobunjiDefaultApplied === '1') return;
-    checkbox.dataset.hobunjiDefaultApplied = '1';
-    checkbox.checked = true; // Default presentation: the front character sprite occludes the shoulder pet instead of allowing the pet to X-ray through it.
-    checkbox.dispatchEvent(new global.Event('change', { bubbles: true })); // game.js owns the actual shoulder-pet layering state; drive its existing listener rather than duplicating that state here.
-  }
-
-  function installShoulderPetPresentationDefaults() {
-    installShoulderPerchMirrorSetting();
-    applyDefaultShoulderPetFrontXray();
-  }
-
-  if (global.document) {
-    if (global.document.readyState === 'loading') global.document.addEventListener('DOMContentLoaded', installShoulderPetPresentationDefaults, { once: true });
-    else installShoulderPetPresentationDefaults();
-  }
 
   // The shared source-pixel resolver in png-plane-avatar.js is also a render-parity
   // path: it must reproduce the SkinnedMesh shader's deformation on the CPU before
