@@ -417,6 +417,7 @@ const vm = require('node:vm');
   assert.ok(store.has('hobunjiSaveCheckpoint.auto.v1'), 'healthy recovery slot remains usable when a sibling recovery read hangs');
   assert.equal(JSON.parse(store.get('hobunjiSaveCheckpoint.manual.v1')).reason, 'browser-emergency-copy', 'timed-out folder read preserves a validated browser recovery copy instead of erasing it');
   assert.match(window.__hobunjiSaveCheckpointDebug.snapshot().lastError || '', /manual: Recovery "manual" read timed out after 3s.*showing browser fallback copy/, 'diagnostics expose the timeout and browser fallback provenance');
+  assert.match(window.__hobunjiSaveCheckpointDebug.snapshot().recoveryReadErrors.manual || '', /timed out after 3s/, 'per-slot diagnostics distinguish unreadable history from an absent checkpoint');
 
   console.log('save checkpoint manager folder-first regression: ok');
 })().catch(error => {
