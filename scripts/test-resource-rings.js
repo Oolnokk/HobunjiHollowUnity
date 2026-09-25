@@ -105,6 +105,17 @@ for (const id of ['bleedingHealth', 'burningHealth', 'poisonedHealth']) {
 ResourceSystem.tick(nonlethalHealthAfflictionEntity, 100, { healthRegenPerSec: 0 });
 assert.equal(nonlethalHealthAfflictionEntity.health, 1, 'Health-draining afflictions stop at 1 HP even when their combined buildup covers the entire Health bar');
 
+const fractionalHealthAfflictionEntity = {
+  health: 0.1, maxHealth: 100, stamina: 100, maxStamina: 100,
+  footing: 100, maxFooting: 100, exhaustion: { active: false, blackStamina: 100 },
+  afflictions: Object.fromEntries(Object.keys(ResourceSystem.AFFLICTIONS).map(id => [id, 0])),
+  lastAttackReceivedAt: 0,
+}; // Guards the round-to-tenths boundary: an already-sub-1 living target must not be rounded down to death by an affliction tick.
+ResourceSystem.initEntity(fractionalHealthAfflictionEntity);
+ResourceSystem.addAffliction(fractionalHealthAfflictionEntity, 'burningHealth', 100);
+ResourceSystem.tick(fractionalHealthAfflictionEntity, 1, { healthRegenPerSec: 0 });
+assert.equal(fractionalHealthAfflictionEntity.health, 0.1, 'Health afflictions preserve an already-sub-1 living value instead of rounding it to zero');
+
 const congealedCapEntity = {
   health: 100, maxHealth: 100, stamina: 100, maxStamina: 100,
   footing: 100, maxFooting: 100, exhaustion: { active: false, blackStamina: 100 },
