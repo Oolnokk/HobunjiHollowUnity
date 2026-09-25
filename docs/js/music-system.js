@@ -169,17 +169,23 @@
   }
 
   // AAC/M4A files can decode in four legitimate shapes depending on whether a
-  // browser honors encoder-delay and end-padding metadata. Match the decoded
-  // sample count against all four possibilities, then expose only the authored
-  // content range to AudioBufferSourceNode.loopStart/loopEnd. If the file is
-  // replaced and the metadata no longer matches, leave the whole buffer intact
-  // rather than trimming an unknown recording.
+  // browser honors encoder-delay and end-padding metadata. decodeAudioData also
+  // resamples into the AudioContext's device rate, so authored source-file sample
+  // counts are converted into the decoded buffer's sample domain before matching.
+  // Expose only the authored content range to AudioBufferSourceNode.loopStart/
+  // loopEnd. If the file is replaced and metadata no longer matches, leave the
+  // whole buffer intact rather than trimming an unknown recording.
   function gaplessLoopSampleBounds(buffer, spec) {
     const length = Math.max(0, Math.floor(Number(buffer?.length) || 0));
     const sampleRate = Math.max(1, Number(buffer?.sampleRate) || 1);
-    const encoderDelay = Math.max(0, Math.floor(Number(spec?.encoderDelaySamples) || 0));
-    const padding = Math.max(0, Math.floor(Number(spec?.paddingSamples) || 0));
-    const content = Math.max(0, Math.floor(Number(spec?.contentSamples) || 0));
+    const sourceSampleRate = Math.max(1, Number(spec?.sourceSampleRate) || sampleRate); // AAC metadata is expressed in source-file samples; decodeAudioData may resample to the device AudioContext rate.
+    const resampleRatio = sampleRate / sourceSampleRate; // Converts authored source-sample counts into this decoded AudioBuffer's sample domain.
+    const sourceEncoderDelay = Math.max(0, Number(spec?.encoderDelaySamples) || 0);
+    const sourcePadding = Math.max(0, Number(spec?.paddingSamples) || 0);
+    const sourceContent = Math.max(0, Number(spec?.contentSamples) || 0);
+    const encoderDelay = Math.max(0, Math.round(sourceEncoderDelay * resampleRatio));
+    const padding = Math.max(0, Math.round(sourcePadding * resampleRatio));
+    const content = Math.max(0, Math.round(sourceContent * resampleRatio));
     if (!length || !content) {
       return { startSample: 0, endSample: length, startSec: 0, endSec: length / sampleRate, mode: 'untrimmed-no-metadata' };
     }
