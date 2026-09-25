@@ -28601,6 +28601,8 @@
         getShowHitboxes: () => s_showHitboxes,
         getShowInteractionRaycast: () => s_showInteractionRaycast,
         getShowShoulderPetAttachmentPoints: () => s_showShoulderPetAttachmentPoints,
+        playerMesh,
+        playerAttachmentAnchor,
         getPlayerAimRay: currentPlayerAimRay,
         getPlayerInteractionRay: currentPlayerInteractionRay,
         getPlayerMovementAlignmentDebug: currentPlayerMovementAlignmentDebug,
