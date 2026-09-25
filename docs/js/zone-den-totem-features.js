@@ -54,6 +54,10 @@
     catch (_) { return path; }
   }
   const CAVE_SMALL_GLB_PATH = zoneFeatureAssetUrl('assets/models/cave_small.glb');
+  const DEN_COLLAPSED_HEIGHT_SCALE = 0.60; // Cleared cave target height used by initial load, sync, and the delayed collapse lerp.
+  const DEN_COLLAPSED_FOOTPRINT_SCALE = 1.20; // Cleared cave X/Z spread so the slump reads wider instead of only squashed downward.
+  const DEN_COLLAPSE_DELAY_MS = 2000; // Lets the exterior finish loading before the visible cave-in begins.
+  const DEN_COLLAPSE_DURATION_MS = 950; // Smoothstep duration for the actual collapse motion.
   const ANIMAL_DEN_ENTRANCE_LOCALE_ID = 'locale_animal_den_entrance'; // Shared Locale Editor document cloned by every procedural den.
   const ANIMAL_DEN_ENTRANCE_LOCALE_URL = zoneFeatureAssetUrl('config/locales/locale_animal_den_entrance.json');
   let _animalDenEntranceLocalePromise = null; // Repo-backed template request shared across all zone builds.
@@ -349,8 +353,10 @@
         const sink = Number.isFinite(Number(visual.sink)) ? Number(visual.sink) : DEN_SINK;
         const mesh = template.clone();
         mesh.material = caveMaterialFor(variant);
-        const renderedScaleY = den.collapsed ? scaleY / 3 : scaleY; // Cleared dens visibly cave in to one-third height until their population relocates.
-        mesh.scale.set(scaleX, renderedScaleY, scaleZ);
+        const renderedScaleX = den.collapsed ? scaleX * DEN_COLLAPSED_FOOTPRINT_SCALE : scaleX; // Persisted collapsed dens load directly at the same target the live lerp ends on.
+        const renderedScaleY = den.collapsed ? scaleY * DEN_COLLAPSED_HEIGHT_SCALE : scaleY;
+        const renderedScaleZ = den.collapsed ? scaleZ * DEN_COLLAPSED_FOOTPRINT_SCALE : scaleZ;
+        mesh.scale.set(renderedScaleX, renderedScaleY, renderedScaleZ);
         mesh.rotation.y = caveFacingRotation(visual.facing, Number.isFinite(Number(denEntranceObject?.rot)) ? denEntranceObject.rot : null);
         mesh.position.set(
           centerCol + (Number(visual.offsetX) || 0),
@@ -364,7 +370,9 @@
         mesh.userData.denEntranceLocaleObjectId = denEntranceObject?.id || null;
         mesh.userData.denId = den.id || null;
         mesh.userData.denCaveEntrance = true;
+        mesh.userData.denBaseScaleX = scaleX; // Used by collapse/sync so widening never compounds across repeated turnover generations.
         mesh.userData.denBaseScaleY = scaleY; // Used by syncAnimalDenVisual to restore full height after relocation.
+        mesh.userData.denBaseScaleZ = scaleZ; // Paired with denBaseScaleX for the collapsed footprint spread.
         mesh.userData.denBoxMinY = box.min.y; // Used to keep the cave base grounded while its Y scale changes.
         mesh.userData.denGroundOffsetY = (Number(visual.offsetY) || 0) - sink; // Used to recompute grounded Y at a relocated elevation.
         mesh.userData.denOffsetX = Number(visual.offsetX) || 0; // Used to move this exact cave mesh with the den record.
@@ -410,26 +418,40 @@
     });
   }
 
+  function denCaveGrounding(zGrid, den) {
+    const w = Math.max(1, Number(den.w) || 1); // Used to recenter a den cave at either its generated or relocated site.
+    const h = Math.max(1, Number(den.h) || 1);
+    const centerCol = Number(den.x) + w / 2;
+    const centerRow = Number(den.y) + h / 2;
+    const centerTier = zGrid?.[Math.floor(centerRow)]?.[Math.floor(centerCol)]?.elevTier || 0;
+    return { centerCol, centerRow, caveGroundY: deps.NORMAL_TOP + centerTier * deps.PLATEAU_UNIT };
+  }
+
+  function applyDenCaveScale(child, den, grounding, collapseT) {
+    const baseScaleX = Math.max(1e-5, Number(child.userData.denBaseScaleX) || Number(child.scale?.x) || 1); // Canonical uncollapsed width retained on the mesh.
+    const baseScaleY = Math.max(1e-5, Number(child.userData.denBaseScaleY) || Number(child.scale?.y) || 1); // Canonical uncollapsed height retained on the mesh.
+    const baseScaleZ = Math.max(1e-5, Number(child.userData.denBaseScaleZ) || Number(child.scale?.z) || 1); // Canonical uncollapsed depth retained on the mesh.
+    const t = Math.max(0, Math.min(1, Number(collapseT) || 0));
+    const footprintMul = 1 + (DEN_COLLAPSED_FOOTPRINT_SCALE - 1) * t;
+    const heightMul = 1 + (DEN_COLLAPSED_HEIGHT_SCALE - 1) * t;
+    child.scale.set(baseScaleX * footprintMul, baseScaleY * heightMul, baseScaleZ * footprintMul);
+    child.position.x = grounding.centerCol + (Number(child.userData.denOffsetX) || 0);
+    child.position.z = grounding.centerRow + (Number(child.userData.denOffsetZ) || 0);
+    child.position.y = grounding.caveGroundY + (Number(child.userData.denGroundOffsetY) || 0)
+      - (Number(child.userData.denBoxMinY) || 0) * child.scale.y;
+  }
+
   function syncAnimalDenVisual(zScene, zGrid, den, mapId) {
     if (!zScene || !den) return false;
     const group = zScene.getObjectByName?.('animalDenEntrances');
     if (!group) return false;
-    const w = Math.max(1, Number(den.w) || 1); // Used to recenter the cave mesh after relocation.
-    const h = Math.max(1, Number(den.h) || 1); // Used with w to sample the relocated footprint's elevation.
-    const centerCol = Number(den.x) + w / 2;
-    const centerRow = Number(den.y) + h / 2;
-    const centerTier = zGrid?.[Math.floor(centerRow)]?.[Math.floor(centerCol)]?.elevTier || 0; // Relocated ground tier under the cave itself.
-    const caveGroundY = deps.NORMAL_TOP + centerTier * deps.PLATEAU_UNIT;
+    const grounding = denCaveGrounding(zGrid, den); // Shared target transform for cave + authored entrance furniture.
     let changed = false;
     for (const child of group.children || []) {
       if (String(child?.userData?.denId ?? '') !== String(den.id ?? '')) continue;
       if (child.userData.denCaveEntrance) {
-        const baseScaleY = Math.max(1e-5, Number(child.userData.denBaseScaleY) || Number(child.scale?.y) || 1); // Canonical uncollapsed Y scale retained on the mesh.
-        const nextScaleY = den.collapsed ? baseScaleY / 3 : baseScaleY;
-        child.scale.y = nextScaleY;
-        child.position.x = centerCol + (Number(child.userData.denOffsetX) || 0);
-        child.position.z = centerRow + (Number(child.userData.denOffsetZ) || 0);
-        child.position.y = caveGroundY + (Number(child.userData.denGroundOffsetY) || 0) - (Number(child.userData.denBoxMinY) || 0) * nextScaleY;
+        child.userData.denCollapseAnimationToken = (Number(child.userData.denCollapseAnimationToken) || 0) + 1; // Cancels any delayed/live collapse animation before a relocation or reload sync writes an authoritative target.
+        applyDenCaveScale(child, den, grounding, den.collapsed ? 1 : 0);
         changed = true;
         continue;
       }
@@ -447,6 +469,51 @@
     }
     if (changed) window.__farmLog?.(`[zone:${mapId}] synced den ${den.id} visual state collapsed=${den.collapsed ? 1 : 0} site=(${den.x},${den.y})`, 'wildlife');
     return changed;
+  }
+
+  function animateAnimalDenCollapse(zScene, zGrid, den, mapId, options = {}) {
+    if (!zScene || !den?.collapsed) return false;
+    const group = zScene.getObjectByName?.('animalDenEntrances');
+    if (!group) return false;
+    const caves = (group.children || []).filter(child =>
+      child?.userData?.denCaveEntrance && String(child.userData.denId ?? '') === String(den.id ?? '')
+    );
+    if (!caves.length) return false;
+    const grounding = denCaveGrounding(zGrid, den);
+    const delayMs = Math.max(0, Number(options.delayMs) || DEN_COLLAPSE_DELAY_MS); // Override exists for deterministic preview/tests while gameplay uses the authored two-second beat.
+    const durationMs = Math.max(1, Number(options.durationMs) || DEN_COLLAPSE_DURATION_MS);
+    const tokens = caves.map(child => {
+      const token = (Number(child.userData.denCollapseAnimationToken) || 0) + 1;
+      child.userData.denCollapseAnimationToken = token;
+      applyDenCaveScale(child, den, grounding, 0); // Logical collapse is already active; visual slump deliberately starts from the intact facade.
+      return token;
+    });
+    setTimeout(() => {
+      if (!den.collapsed || (deps.getCurrentArea && deps.getCurrentArea() !== mapId)) {
+        syncAnimalDenVisual(zScene, zGrid, den, mapId);
+        return;
+      }
+      for (let i = 0; i < caves.length; i++) if (caves[i].userData.denCollapseAnimationToken !== tokens[i]) return;
+      window.AudioSystem?.playObjectSfx?.(window.AudioSystem?.objectSfxConfig?.().breakRock, 1.7, 0.65);
+      const raf = window.requestAnimationFrame || globalThis.requestAnimationFrame;
+      if (typeof raf !== 'function') {
+        syncAnimalDenVisual(zScene, zGrid, den, mapId);
+        return;
+      }
+      let start = null;
+      const frame = now => {
+        if (!den.collapsed) return;
+        for (let i = 0; i < caves.length; i++) if (!caves[i].parent || caves[i].userData.denCollapseAnimationToken !== tokens[i]) return;
+        if (start == null) start = now;
+        const raw = Math.max(0, Math.min(1, (now - start) / durationMs));
+        const eased = raw * raw * (3 - 2 * raw);
+        for (const cave of caves) applyDenCaveScale(cave, den, grounding, eased);
+        if (raw < 1) raf(frame);
+        else window.__farmLog?.(`[zone:${mapId}] den ${den.id} collapse animation complete (height=60%, footprint=120%).`, 'wildlife');
+      };
+      raf(frame);
+    }, delayMs);
+    return true;
   }
 
   function buildRootTotemMeshes(zScene, zGrid, totems, mapId) {
@@ -492,7 +559,7 @@
     return group;
   }
 
-  const api = { init, canonicalRootTotemRecipe, denCaveVariantFor, denEntranceCollisionFor, denEntranceCollisionState, loadAnimalDenEntranceLocale, loadAnimalDenEntranceLocaleObject, buildAnimalDenMeshes, syncAnimalDenVisual, buildRootTotemMeshes };
+  const api = { init, canonicalRootTotemRecipe, denCaveVariantFor, denEntranceCollisionFor, denEntranceCollisionState, loadAnimalDenEntranceLocale, loadAnimalDenEntranceLocaleObject, buildAnimalDenMeshes, syncAnimalDenVisual, animateAnimalDenCollapse, buildRootTotemMeshes };
   Object.defineProperty(api, 'CANONICAL_ROOT_TOTEM_RECIPE', { enumerable: true, get: canonicalRootTotemRecipe });
   window.ZoneDenTotemFeatures = api;
 })();
