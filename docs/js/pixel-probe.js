@@ -588,6 +588,8 @@
       if (Math.abs(actualScale.x - 1) > 0.001 || Math.abs(actualScale.y - expectedScaleY) > 0.001 || Math.abs(actualScale.z - expectedScaleZ) > 0.001) {
         lines.push('>>> MISMATCH — the live shoulder-pet group scale no longer matches its genotype-derived scale.');
       }
+      const planeDeadzone = liveActivePet.avatarRef.group.userData?.hobunjiShoulderPlaneDeadzone;
+      lines.push(`Shoulder plane deadzone: ${planeDeadzone?.bypassed ? 'BYPASSED' : 'active'} mode=${planeDeadzone?.mode || window.PerpRotation?.CREATURE_PLANE_ROT_MODE || '-'} reason=${planeDeadzone?.reason || '-'}`);
       const billboardYaw = Number.isFinite(liveActivePet.pngRot) ? liveActivePet.pngRot : liveActivePet.groupRot; // Used below to verify final bodyYaw did not leak into the flat pet planes.
       const groupYaw = liveActivePet.avatarRef.group.rotation.y; // Used below to reconstruct each plane's final world yaw from its local transform.
       const frontWorldYaw = groupYaw + (liveActivePet.avatarRef.frontPlane?.rotation.y || 0); // Used below to compare the front card against the billboard yaw selected by updateCreatureMesh.
