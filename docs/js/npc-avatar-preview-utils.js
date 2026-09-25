@@ -195,8 +195,14 @@
   }
 
   async function renderProfileToCanvas(canvas, profile, renderOptions = {}) {
-    if (!canvas || !profile || !window.renderPortraitProfile) return false;
-    await window.renderPortraitProfile(canvas, profile, renderOptions);
+    const renderer = window.renderPortraitProfile; // Current live portrait renderer; later runtime wrappers are allowed to replace the original global function.
+    if (!canvas || !profile || typeof renderer !== 'function') return false;
+    const weaving = window.ClothingWeavingSystem; // Optional runtime bridge that reapplies woven rendering when a later wrapper replaced the initially woven global renderer.
+    if (typeof weaving?.renderProfileWithWovenPatterns === 'function') {
+      await weaving.renderProfileWithWovenPatterns(renderer, canvas, profile, renderOptions);
+    } else {
+      await renderer(canvas, profile, renderOptions);
+    }
     return true;
   }
 
