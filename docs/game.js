@@ -519,7 +519,11 @@
         }
         enterDefaultCameraMode();
         activeCameraTarget = null;
-        _snapCameraTarget(); // Dialogue may have staged the player away from the old NPC follow point.
+        if (activeCameraMode !== SHOULDER_SURF_MODE) {
+          cameraAzimuthOffsetDeg = 0;
+          cameraAngleOffsetDeg = 0;
+        }
+        _snapCameraTarget(); // Re-centers the restored gameplay camera after dialogue/cinematic framing.
         dialogueZoomPointers.clear();
         dialoguePinchDistance = null;
         if (dialogueZoomConfig().resetOnDialogueClose) resetDialogueCameraZoom();
@@ -11058,17 +11062,18 @@
       // site here keeps working unchanged.
 
       function beginNpcDialogueStaging(walker) {
-        // Cutscene Preview drives every participant's position/facing itself
-        // (see "Cutscene Preview Mode" below), so ordinary dialogue staging
-        // must not interfere with director-authored blocking.
+        // Cutscene Preview and authored cinematic dialogue cameras own their
+        // own blocking. In particular, Banubu's huge-body cave shots are
+        // explicitly authored and must not inherit ordinary dialogue camera
+        // offsets or legacy player repositioning.
         if (cutscenePreviewActive) return;
         const npcX = walker?.root?.position?.x;
         const npcZ = walker?.root?.position?.z;
         if (!Number.isFinite(npcX) || !Number.isFinite(npcZ)) { npcDialogueStaging = null; return; }
-        const playerWorldX = player.x / TILE;
-        const playerWorldZ = player.y / TILE;
-        if (window.CinematicCameraRuntime?.isActive?.() && window.CinematicCameraRuntime?.shouldStagePlayer?.() === false) {
-          npcDialogueStaging = null; // Cinematic cameras can explicitly opt out of all automatic player movement.
+
+        const cinematicActive = !!window.CinematicCameraRuntime?.isActive?.(); // Gates the ordinary 15-degree camera-side adjustment below so authored shots remain exact.
+        if (cinematicActive && window.CinematicCameraRuntime?.shouldStagePlayer?.() === false) {
+          npcDialogueStaging = null;
           player.vx = 0;
           player.vy = 0;
           return;
@@ -11081,28 +11086,19 @@
           return;
         }
 
-        // Ordinary dialogue no longer drags the player to the old fixed
-        // top-down diagonal around the NPC. It only takes one small lateral
-        // step from the player's CURRENT position so the player portrait
-        // does not sit directly in front of the NPC in the dialogue shot.
-        const cfg = npcDialogueStagingConfig();
-        const sideStepTiles = Math.max(0, Number(cfg.sideStepTiles) || 0.28); // Used only for this minimal collision-aware dialogue sidestep.
-        const towardX = npcX - playerWorldX;
-        const towardZ = npcZ - playerWorldZ;
-        const towardLen = Math.hypot(towardX, towardZ);
-        const unitTowardX = towardLen > 1e-4 ? towardX / towardLen : Math.cos(facingAngle);
-        const unitTowardZ = towardLen > 1e-4 ? towardZ / towardLen : Math.sin(facingAngle);
-        const sideX = -unitTowardZ;
-        const sideZ = unitTowardX;
-        const candidates = sideStepTiles > 0 ? [
-          { x: playerWorldX + sideX * sideStepTiles, z: playerWorldZ + sideZ * sideStepTiles },
-          { x: playerWorldX - sideX * sideStepTiles, z: playerWorldZ - sideZ * sideStepTiles },
-        ] : [];
-        const target = candidates.find(pos => canPlayerOccupy(pos.x * TILE, pos.z * TILE))
-          || { x: playerWorldX, z: playerWorldZ };
-        npcDialogueStaging = { walker, targetX: target.x, targetZ: target.z, kind: 'side-step' };
+        // Ordinary third-person dialogue no longer walks the player to the
+        // old top-down diagonal staging point. Leave both participants where
+        // the interaction began and move the CAMERA slightly to the side
+        // instead, which clears the player's portrait from directly covering
+        // the NPC without making the character shuffle before every line.
+        npcDialogueStaging = null;
         player.vx = 0;
         player.vy = 0;
+        if (!cinematicActive && walker?.rec?.id !== 'banubu') {
+          const cameraSideAngleDeg = Number(npcDialogueStagingConfig().cameraSideAngleDeg) || 15; // Used only to offset the ordinary dialogue camera around its NPC target.
+          cameraAzimuthOffsetDeg = cameraSideAngleDeg;
+          cameraAngleOffsetDeg = 0;
+        }
       }
 
       // Continuous "eye contact" aim, ported from the Multi-Avatar Animation
