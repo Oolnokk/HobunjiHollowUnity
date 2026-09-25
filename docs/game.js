@@ -6791,14 +6791,13 @@
       const COMPANION_WATCH_IDLE_MAX_S = 6.4; // Maximum duration of the stationary player-facing idle.
       const SHOULDER_PET_CURIOUS_BODY_LEAN_MIN_DEG = 3; // Used by _tickShoulderPetCuriosity for a readable lean that does not foreshorten the flat sprite.
       const SHOULDER_PET_CURIOUS_BODY_LEAN_MAX_DEG = 7; // Caps the in-plane body lean so the pet stays settled on its authored shoulder grip.
-      const SHOULDER_PET_POSE_HOLD_MIN_S = 3.4; // Both shoulder-facing poses are sustained for the same duration range so weighted selection also controls time share.
-      const SHOULDER_PET_POSE_HOLD_MAX_S = 7.2;
-      const SHOULDER_PET_IDLE_INWARD_CHANCE = 0.75; // While the master is idle, the formerly rarer inward/180° pose owns about three quarters of pose holds.
-      const SHOULDER_PET_MOVING_INWARD_CHANCE = 0.25; // While moving, the existing outward/0° pose remains dominant about three quarters of the time.
-      const SHOULDER_PET_MOVING_SPEED_SQ = 25; // 5 px/s squared; avoids a per-frame sqrt while matching the existing genuine-idle movement threshold.
+      const SHOULDER_PET_POSE_HOLD_MIN_S = 1.5; // Both local facing poses are sustained, but switch often enough to keep the perched animal lively.
+      const SHOULDER_PET_POSE_HOLD_MAX_S = 3.0;
+      const SHOULDER_PET_INWARD_CHANCE = 0.5; // No idle/moving bias: each sustained pose selection is an even 50/50 roll.
       const SHOULDER_PET_CURIOUS_PITCH_DEG = 5; // Slight up/down curiosity layered onto the authored head rig where available.
       const SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG = 14; // A separate, clearly visible head turn keeps the body glance from reading as a whole-body pivot.
       const SHOULDER_PET_CURIOUS_HEAD_TURN_MAX_DEG = 24;
+      const SHOULDER_PET_AWAY_HEAD_YAW_SIGN = 1; // Fixed pet-local left turn; both 0° and 180° body poses use this same head-yaw direction away from the character.
       const SHOULDER_PET_CURIOUS_TURN_SPEED_DEG = 180;
 
       function _companionHeadRestDeg(c) {
@@ -6979,13 +6978,12 @@
         }
       }
 
-      function _tickShoulderPetCuriosity(c, master, dt) {
+      function _tickShoulderPetCuriosity(c, dt) {
         const state = c.shoulderCuriosity || (c.shoulderCuriosity = {
           phase: 'unselected',
-          timer: 0, // First frame selects a normal sustained pose immediately instead of entering a momentary wait/look cycle.
+          timer: 0, // First frame selects one of the two sustained local poses immediately.
           facingInward: false,
-          moving: false,
-          inwardChance: SHOULDER_PET_IDLE_INWARD_CHANCE,
+          inwardChance: SHOULDER_PET_INWARD_CHANCE,
           currentLeanDeg: 0,
           targetLeanDeg: 0,
           currentPitchDeg: 0,
@@ -6995,33 +6993,26 @@
           baseFrontRoll: null,
           baseBackRoll: null,
         });
-        const masterVx = Number(master?.vx) || 0;
-        const masterVy = Number(master?.vy) || 0;
-        const moving = (masterVx * masterVx + masterVy * masterVy) > SHOULDER_PET_MOVING_SPEED_SQ
-          || (master === player && playerAutoWalk); // Existing velocity/autowalk state only; no raycasts, transforms, polling, or sqrt are needed for the idle/moving bias.
-        const inwardChance = moving ? SHOULDER_PET_MOVING_INWARD_CHANCE : SHOULDER_PET_IDLE_INWARD_CHANCE;
-        state.moving = moving;
-        state.inwardChance = inwardChance;
         state.timer -= dt;
         if (state.timer <= 0) {
-          const facingInward = rnd() < inwardChance; // One weighted random roll only when a multi-second pose hold expires.
-          const side = rnd() < 0.5 ? -1 : 1;
+          const facingInward = rnd() < SHOULDER_PET_INWARD_CHANCE; // One 50/50 pose roll only when the current multi-second hold expires.
+          const leanSide = rnd() < 0.5 ? -1 : 1; // Body lean can vary independently; head yaw below always turns away from the character.
           state.facingInward = facingInward;
+          state.inwardChance = SHOULDER_PET_INWARD_CHANCE;
           state.phase = facingInward ? 'inward' : 'outward';
           state.timer = SHOULDER_PET_POSE_HOLD_MIN_S
             + rnd() * (SHOULDER_PET_POSE_HOLD_MAX_S - SHOULDER_PET_POSE_HOLD_MIN_S);
           c.__hobunjiShoulderFacingInward = facingInward; // The root attachment solve consumes this persistent state as 180° inward vs 0° outward.
-          state.targetLeanDeg = side * (SHOULDER_PET_CURIOUS_BODY_LEAN_MIN_DEG
+          state.targetLeanDeg = leanSide * (SHOULDER_PET_CURIOUS_BODY_LEAN_MIN_DEG
             + rnd() * (SHOULDER_PET_CURIOUS_BODY_LEAN_MAX_DEG - SHOULDER_PET_CURIOUS_BODY_LEAN_MIN_DEG));
-          state.targetYawDeg = side * (SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG
-            + rnd() * (SHOULDER_PET_CURIOUS_HEAD_TURN_MAX_DEG - SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG));
+          state.targetYawDeg = SHOULDER_PET_AWAY_HEAD_YAW_SIGN * (SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG
+            + rnd() * (SHOULDER_PET_CURIOUS_HEAD_TURN_MAX_DEG - SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG)); // Same pet-local left/away turn in both body poses.
           state.targetPitchDeg = (rnd() * 2 - 1) * SHOULDER_PET_CURIOUS_PITCH_DEG;
           window.ShoulderPetObservationFlip?.recordPose?.(c, {
             facingInward,
-            moving,
-            inwardChance,
+            inwardChance: SHOULDER_PET_INWARD_CHANCE,
             holdSeconds: state.timer,
-          }); // Debug/event bookkeeping happens only at the same infrequent pose-roll boundary.
+          }); // Debug/event bookkeeping happens only at the infrequent pose-roll boundary.
         } else if (c.__hobunjiShoulderFacingInward !== state.facingInward) {
           c.__hobunjiShoulderFacingInward = state.facingInward; // Cheap hot-reload/state repair; no random work or transform traversal.
         }
@@ -7032,8 +7023,8 @@
         return state;
       }
 
-      function _applyShoulderPetCuriosity(c, master, dt) {
-        const state = _tickShoulderPetCuriosity(c, master, dt);
+      function _applyShoulderPetCuriosity(c, dt) {
+        const state = _tickShoulderPetCuriosity(c, dt);
         const leanRadians = state.currentLeanDeg * Math.PI / 180; // Used below to lean in the sprite plane without changing its projected width.
         if (state.baseFrontRoll === null) state.baseFrontRoll = c.avatarRef.frontPlane?.rotation.z || 0;
         if (state.baseBackRoll === null) state.baseBackRoll = c.avatarRef.backPlane?.rotation.z || 0;
@@ -7668,7 +7659,7 @@
             }
             updateCreatureMesh(c, dt, c.facing);
             updateCreatureAnimFrame(c, dt, false);
-            _applyShoulderPetCuriosity(c, master, dt);
+            _applyShoulderPetCuriosity(c, dt);
             if (perch && grip) {
               // perch.y/grip.y are floor-relative — the same total
               // height-above-playerMesh convention playerToolBaseY already
