@@ -102,53 +102,25 @@ const fakePet = {
 };
 rigSandbox.window.__climbDebug = { companionObjects: new Set([fakePet]) };
 
-assert.equal(rigSandbox.window.ShoulderPetObservationFlip.applyAtPinnedPerch(fakePet, shoulderPerchWorld, false), true, 'final shoulder pin prepares the canonical grip pivot for an unmirrored resolved facing state');
-assert.equal(plane.scale.x, 1.5, 'canonical shoulder placement remains unmirrored before observation parity changes');
-assert(Math.abs(plane.position.x - 0.2) < 1e-12 && Math.abs(plane.position.z - 0.4) < 1e-12, 'canonical preparation does not move the plane');
+assert.equal(rigSandbox.window.ShoulderPetObservationFlip.applyAtPinnedPerch(fakePet, shoulderPerchWorld), true, 'final shoulder pin restores the canonical unmirrored shoulder cards');
+assert.equal(plane.scale.x, 1.5, 'canonical shoulder placement keeps positive X scale');
+plane.scale.x = -1.5; // Simulates a stale mirrored shoulder card left behind by an older hot-reloaded build.
+assert.equal(rigSandbox.window.ShoulderPetObservationFlip.applyAtPinnedPerch(fakePet, shoulderPerchWorld, true), true, 'legacy extra arguments cannot request a new sprite mirror');
+assert.equal(plane.scale.x, 1.5, 'canonical restore removes stale X mirroring instead of applying it');
+assert(Math.abs(plane.position.x - 0.2) < 1e-12 && Math.abs(plane.position.z - 0.4) < 1e-12, 'canonical restore returns the original plane position without pivot-translation tricks');
 
-fakePet.__hobunjiShoulderFacingInward = true;
-assert.equal(rigSandbox.window.ShoulderPetObservationFlip.applyAtPinnedPerch(fakePet, shoulderPerchWorld, true), true, 'final shoulder pin applies the mirror parity resolved for the inward/front state');
-const mirroredPivotWorld = plane.localToWorld(authoredGripLocal.clone());
-assert(plane.scale.x < 0, 'direct pivot solve mirrors the shoulder-pet plane');
-assert(Math.abs(plane.position.z - 0.4) > 1e-12, '90° face rotation turns the required pivot translation onto parent Z, proving the solve uses the mesh rotation rather than a hard-coded axis');
-assert(mirroredPivotWorld.distanceTo(shoulderPerchWorld) < 1e-12, 'direct local mirror math leaves the grip exactly on the shoulder-perch world point');
-
-fakePet.__hobunjiShoulderObservationFlipped = false;
-rigSandbox.window.ShoulderPetObservationFlip.applyAtPinnedPerch(fakePet, shoulderPerchWorld);
-const restoredPivotWorld = plane.localToWorld(authoredGripLocal.clone());
-assert(plane.scale.x > 0, 'unflipping restores positive canonical face scale');
-assert(Math.abs(plane.position.x - 0.2) < 1e-12 && Math.abs(plane.position.z - 0.4) < 1e-12, 'unflipping restores canonical plane position without accumulated correction drift');
-assert(restoredPivotWorld.distanceTo(shoulderPerchWorld) < 1e-12, 'unflipping keeps the same grip/perch pivot fixed');
-
-// Change parent scale to mimic live size/breath transforms, then solve a new flip
-// from the canonical state before rendering. The direct equation must still hold.
-root.scale.set(2.4, 2.7, 3.6);
-const movedPerchWorld = plane.localToWorld(authoredGripLocal.clone());
-fakePet.__hobunjiShoulderObservationFlipped = true;
-rigSandbox.window.ShoulderPetObservationFlip.applyAtPinnedPerch(fakePet, movedPerchWorld);
-assert(plane.localToWorld(authoredGripLocal.clone()).distanceTo(movedPerchWorld) < 1e-12, 'direct pivot math remains exact when the parent scale changes before the final shoulder pin');
-
-fakePet.stableRole = 'companion';
-rigSandbox.window.ShoulderPetObservationFlip.scanNow();
-assert(plane.scale.x > 0, 'leaving shoulder-pet mode restores the canonical face scale');
-assert(Math.abs(plane.position.x - 0.2) < 1e-12 && Math.abs(plane.position.z - 0.4) < 1e-12, 'role cleanup restores the canonical plane position');
-
-assert.match(source,
-  /function _tickShoulderPetCuriosity\(c, dt\)[\s\S]{0,1800}state\.phase = 'look'[\s\S]{0,700}targetLeanDeg/,
-  'shoulder pets own a randomized look phase instead of turning every frame');
-assert.match(source,
-  /function _applyShoulderPetCuriosity\(c, dt\)[\s\S]{0,1200}frontPlane\.rotation\.z = state\.baseFrontRoll \+ leanRadians[\s\S]{0,260}backPlane\.rotation\.z = state\.baseBackRoll - leanRadians/,
-  'curiosity leans within the visible pet planes without perspective foreshortening');
 const applyCuriositySource = source.slice(source.indexOf('function _applyShoulderPetCuriosity'), source.indexOf('function _isPlayerGenuinelyIdle')); // Used below to forbid perspective-changing Y rotation in this one pose function.
 assert.doesNotMatch(applyCuriositySource, /frontPlane\.rotation\.y|backPlane\.rotation\.y/,
   'curiosity never yaws a flat animal plane and therefore cannot imitate a size-class change');
 assert.doesNotMatch(source, /SHOULDER_PET_REVERSE_SPEED_DEG|currentFacingYawDeg|targetFacingYawDeg|behaviorYawOffset/,
   'main keeps the rejected interpolated 180-degree shoulder-pet reverse/yaw experiment out');
 assert.match(source,
-  /function _shoulderPetSurfaceTransform\(perch, grip, pet\)[\s\S]{0,4200}const authoredRotationSign = facingTowardPlayerCenter \? 1 : -1[\s\S]{0,260}authoredRotationOffset\.invert\(\)/,
-  'the shoulder-pet authored tilt flips to its exact opposite whenever the mirrored animal faces away from the player center');
-assert.match(probeSource, /Authored shoulder tilt: facing=/,
-  'Pixel Probe exposes inward/outward authored rotation sign');
+  /const shoulderFacingTurnDeg = facingTowardPlayerCenter \? 180 : 0;[\s\S]{0,420}worldQuaternion\.multiply\(SHOULDER_PET_HALF_TURN_QUATERNION\)/,
+  'shoulder curiosity swaps between the two local facing transforms with one exact 180-degree Y turn');
+assert.doesNotMatch(source, /authoredRotationOffset\.invert\(\)|desiredVisualFacingSign|observationMirrored/,
+  'shoulder facing never uses quaternion inversion or sprite-mirror parity');
+assert.match(probeSource, /Shoulder local facing transform: facing=/,
+  'Pixel Probe exposes the 0/180-degree local facing transform');
 assert.match(source,
   /const shoulderPetBypassesPlaneDeadzone = c\.stableRole === 'shoulderPet';[\s\S]{0,900}c\.pngRot = c\.groupRot;/,
   'shoulder pets bypass the generic center-pivot creature PNG deadzone before the authored perch/grip solve');
@@ -157,15 +129,13 @@ assert.match(probeSource, /Shoulder plane deadzone:/,
 assert.match(rigSource,
   /pet\.__hobunjiShoulderFacingInward = phase === 'look';[\s\S]{0,700}const enteringInwardLook = phase === 'wait' && nextPhase === 'look';[\s\S]{0,500}const leavingInwardLook = phase === 'look' && nextPhase === 'settle';[\s\S]{0,500}pet\.__hobunjiShoulderFacingInward = facingInward/,
   'curiosity explicitly uses inward/front only during the brief look and restores outward/behind on settle');
+assert.doesNotMatch(rigSource, /solveShoulderObservationPlaneAtPivot|nextScaleX|localTranslation\.applyQuaternion/,
+  'the shoulder runtime contains no sprite-mirroring or pivot-translation solver');
 assert.match(rigSource,
-  /const localTranslation = plane\.position\.clone\(\)\.set\([\s\S]{0,300}\(state\.baseScaleX - nextScaleX\) \* pivotLocal\.x[\s\S]{0,350}localTranslation\.applyQuaternion\(plane\.quaternion\)[\s\S]{0,220}plane\.position\.add\(localTranslation\)/,
-  'the mirror uses the closed-form t\'=t+R(S-S\')p pivot equation in the plane parent space');
-assert.doesNotMatch(rigSource,
-  /desiredParent\.sub\(currentParent\)|mirroredPivotWorld/,
-  'the old flip-first/world-correction math is completely removed');
-assert.match(rigSource,
-  /const pivotLocal = plane\.worldToLocal\(desiredWorld\.clone\(\)\)[\s\S]{0,700}const nextScaleX = state\.baseScaleX \* sign/,
-  'each final pin resolves the current grip into canonical local space before selecting mirror parity');
+  /const restoredCount = meshes\.reduce\([\s\S]{0,260}restoreShoulderObservationPlane\(plane\)/,
+  'the compatibility hook only restores canonical unmirrored plane transforms');
+assert.match(rigSource, /mode: 'canonical-no-sprite-mirror'/,
+  'debug state explicitly reports that shoulder sprites are never mirrored');
 assert.match(rigSource,
   /applyAtPinnedPerch: applyShoulderPetObservationAtPinnedPerch/,
   'the direct pivot solver is exposed only as the final-pin integration surface');
