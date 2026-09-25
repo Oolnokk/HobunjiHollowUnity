@@ -95,6 +95,10 @@ assert(!/async function chooseRecoveryFolder\(\)[\s\S]{0,700}startIn\s*=\s*_hand
 assert(checkpoint.includes('function recoveryHandleNeedsReselect()'), 'recovery modal identifies unhealthy remembered handles before reading them');
 assert(checkpoint.indexOf('if (recoveryHandleNeedsReselect())') < checkpoint.indexOf('recovery = await recoveryChoices()'), 'recovery modal asks for a fresh handle before starting uncancellable filesystem reads');
 assert(checkpoint.includes('data-recovery-choose-fresh-folder'), 'recovery modal exposes a fresh-handle chooser before any stale-handle reads');
+assert(checkpoint.includes('data-recovery-file-import'), 'recovery modal exposes picker-free drag/drop recovery import');
+assert(checkpoint.includes('recoveryFilesFromZip'), 'picker-free emergency import can read the exported recovery ZIP directly');
+assert(checkpoint.includes("new DecompressionStream('deflate-raw')"), 'recovery ZIP import supports normal deflated ZIP entries without an external dependency');
+assert(checkpoint.includes("return Boolean(status?.folderName && !status?.recoveryHandleFresh)"), 'recovery refuses every remembered cross-page folder handle until the user freshly reselects it');
 assert(core.includes('_syncPromise'), 'existing core still serializes folder writes within a tab');
 assert(core.includes("const PATTERNS_DIR = 'patterns'"), 'primary folder save reserves a portable patterns directory');
 assert(core.includes('async function mirrorPatternFile'), 'folder core can write custom motif PNG bytes');
