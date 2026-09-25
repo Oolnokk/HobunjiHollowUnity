@@ -820,12 +820,13 @@
     if (!camps?.length) return [];
     return camps.filter(camp => camp?.center).map(camp => ({ col: camp.center.col, row: camp.center.row, minDistance }));
   }
-
-  async function spawnBanditCamp(zoneId, localeDef, cfg) {
-    const view = _banditZoneView(zoneId);
-    if (!view) return null;
-    const placement = localeDef.placement || {};
-    const avoidPoints = porakanekiAvoidPoints(zoneId, placement.minDistanceFromPorakanekiCamp ?? 12);
+  function porakanekiAvoidChunks(zoneId) {
+    return window.PorakanekiCamps?.reservedCampChunks?.(zoneId) || [];
+  } // Hard 16x16 stream-chunk reservation; includes the future chief-camp site.
+  function wildernessChunkSizeTiles() {
+    return Math.max(1, Math.floor(Number(window.WildernessChunks?.constants?.CHUNK_TILES) || 16));
+  } // Canonical chunk size shared with the streamed wilderness renderer.
+  function tryStampBanditCamp(view, localeDef, placement, avoidPoints, avoidChunks) {
     let instance = null;
     for (const clearance of [placement.clearanceTiles ?? 2, 1, 0]) {
       instance = window.TemporaryLocales.stamp(view, localeDef, {
@@ -835,23 +836,36 @@
         clearableTypes: _BANDIT_CLEARABLE_TYPES,
         rng: deps.rnd,
         avoidPoints,
+        avoidChunks,
+        chunkSizeTiles: wildernessChunkSizeTiles(),
       });
       if (instance) break;
     }
-    // Last resort: give up the Porakaneki buffer rather than silently
-    // placing fewer bandit camps than the zone calls for on a generation
-    // dense enough that nowhere else fits.
-    if (!instance && avoidPoints.length) {
-      for (const clearance of [placement.clearanceTiles ?? 2, 1, 0]) {
-        instance = window.TemporaryLocales.stamp(view, localeDef, {
-          clearanceTiles: clearance,
-          requiresFlatGround: placement.requiresFlatGround !== false,
-          minDistanceFromEntry: placement.minDistanceFromEntry,
-          clearableTypes: _BANDIT_CLEARABLE_TYPES,
-          rng: deps.rnd,
-        });
-        if (instance) break;
-      }
+    return instance;
+  } // Centralizes all retries so the hard chunk exclusion can never be omitted by a fallback.
+
+  async function spawnBanditCamp(zoneId, localeDef, cfg) {
+    const view = _banditZoneView(zoneId);
+    if (!view) return null;
+    const placement = localeDef.placement || {};
+    let avoidPoints = porakanekiAvoidPoints(zoneId, placement.minDistanceFromPorakanekiCamp ?? 12);
+    let avoidChunks = porakanekiAvoidChunks(zoneId);
+    let instance = tryStampBanditCamp(view, localeDef, placement, avoidPoints, avoidChunks);
+
+    // The authored distance buffer is cosmetic spacing. It may relax, but the
+    // same-chunk rule never does: every retry still carries avoidChunks.
+    if (!instance && avoidPoints.length) instance = tryStampBanditCamp(view, localeDef, placement, [], avoidChunks);
+
+    // Bandit counts take precedence over Porakaneki HUNTING-camp counts. If
+    // every otherwise-valid bandit site is chunk-blocked, remove one hunting
+    // camp at a time and retry. The seasonal chief reservation is never
+    // sacrificed, so an exceptionally constrained seed may still place fewer
+    // bandit camps rather than violate the hard chunk rule.
+    while (!instance && window.PorakanekiCamps?.reduceHuntingCampsForBandit?.(zoneId)) {
+      avoidPoints = porakanekiAvoidPoints(zoneId, placement.minDistanceFromPorakanekiCamp ?? 12);
+      avoidChunks = porakanekiAvoidChunks(zoneId);
+      instance = tryStampBanditCamp(view, localeDef, placement, avoidPoints, avoidChunks)
+        || tryStampBanditCamp(view, localeDef, placement, [], avoidChunks);
     }
     if (!instance) {
       window.__farmLog?.(`[bandits] zone "${zoneId}": no site fits ${localeDef.id} (fallback: no camp placed here).`, 'wildlife');
