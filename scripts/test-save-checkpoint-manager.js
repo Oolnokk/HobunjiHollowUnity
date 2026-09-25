@@ -322,6 +322,17 @@ const vm = require('node:vm');
   currentSnapshot = structuredClone(folderPrimarySnapshot);
   currentSnapshot.meta.worlds[0].members.char_a.nonGearInventory.turnip = 1;
   folderPrimarySnapshot = structuredClone(currentSnapshot);
+  const olderTrustedFolderPreRestore = {
+    checkpointVersion: 1,
+    kind: 'pre-restore',
+    savedAt: now - 120_000,
+    reason: 'older-trusted-folder-copy',
+    active: { characterId: 'char_a', worldId: 'world_a' },
+    summary: window.HobunjiSaveSnapshot.summary(originalSnapshot),
+    stats: { memberInventoryUnits: 15 },
+    snapshot: structuredClone(originalSnapshot),
+  }; // Existing folder recovery history must survive when the current canonical folder is unreadable.
+  folderRecovery.set('preRestore', structuredClone(olderTrustedFolderPreRestore));
   failPrimarySnapshotRead = true;
   now += 60_000;
   let restoreResult = await api.restoreManual();
@@ -329,9 +340,9 @@ const vm = require('node:vm');
   assert.equal(restoreResult.ok, true, 'recovery can repair an unreadable canonical folder by preserving the browser snapshot instead');
   assert.equal(appliedSnapshot.meta.worlds[0].members.char_a.nonGearInventory.turnip, 5);
   assert.equal(Object.prototype.hasOwnProperty.call(appliedSnapshot.meta.worlds[0].members.char_a.zoneTreasureState.zone_test.placements[0], '_mesh'), false, 'recovery restore strips legacy runtime treasure meshes before applying browser state');
-  assert.ok(folderRecovery.has('preRestore'), 'restore creates pre-restore recovery before canonical replacement');
-  assert.equal(folderRecovery.get('preRestore').reason, 'before-recovery-browser-fallback', 'corrupt canonical reads are diagnosed as browser-fallback safety copies');
-  assert.equal(folderRecovery.get('preRestore').snapshot.meta.worlds[0].members.char_a.nonGearInventory.turnip, 1);
+  assert.equal(api.getStatus().preRestore.reason, 'before-recovery-browser-fallback', 'corrupt canonical reads keep an emergency browser-side safety copy for this transaction');
+  assert.equal(api.getStatus().preRestore.snapshot.meta.worlds[0].members.char_a.nonGearInventory.turnip, 1);
+  assert.equal(folderRecovery.get('preRestore').reason, 'older-trusted-folder-copy', 'corrupt canonical recovery does not overwrite an older trusted folder pre-restore checkpoint with browser fallback state');
   assert.deepEqual(folderPrimarySnapshot, expectedRestoredSnapshot, 'chosen recovery becomes canonical folder state without legacy treasure meshes');
   assert.equal(reloads, 1, 'successful recovery reloads once');
 
