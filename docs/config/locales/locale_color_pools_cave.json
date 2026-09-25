@@ -350,7 +350,6 @@
   "cavern": {
     "mapId": "map_i_color_pools",
     "seed": "color-pools-v1",
-    "surfaceMaterial": "farm-cliff",
     "primaryEntranceConnectorId": "conn_banubu",
     "generation": {
       "tileSize": 1,
