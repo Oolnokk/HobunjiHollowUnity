@@ -21,8 +21,11 @@ assert.match(source,
   /function updatePetLayering\(active, pet\)[\s\S]{0,1800}const inwardFrontPose = pet\.__hobunjiShoulderFacingInward === true;[\s\S]{0,500}_setLayerDepthWrite\(_playerAvatarFrontMaterial, false\)[\s\S]{0,220}_setLayerDepthWrite\(_playerAvatarBackMaterial, false\)[\s\S]{0,650}_setLayerDepthWrite\(m, false\)/,
   'attached player and pet keep depth testing but stop writing depth into their intersecting masked cards');
 assert.match(source,
-  /const playerDrawsOnTop = !inwardFrontPose;[\s\S]{0,600}playerDrawsOnTop \? PLAYER_OVER_SHOULDER_PET_RENDER_ORDER : PLAYER_BACK_PLANE_RENDER_ORDER/,
-  '0-degree outward/behind and 180-degree inward/front poses choose deterministic whole-sprite ordering');
+  /const viewerSeesPlayerFront = _cameraSeesPlayerFrontFace\(\);[\s\S]{0,240}const playerDrawsOnTop = viewerSeesPlayerFront \? !inwardFrontPose : inwardFrontPose;/,
+  'front view keeps the established pose ordering while rear view uses its exact inverse');
+assert.match(source,
+  /playerDrawsOnTop \? PLAYER_OVER_SHOULDER_PET_RENDER_ORDER : PLAYER_BACK_PLANE_RENDER_ORDER/,
+  'the resolved front/back-view ordering still drives one deterministic whole-sprite render layer');
 assert.match(source,
   /HobunjiShoulderSplitLayerParity\?\.syncAvatar\?\.\(pet\.avatarRef\)/,
   'split shoulder overlays immediately inherit the base pet depth/render state');
