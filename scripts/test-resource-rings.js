@@ -92,29 +92,30 @@ assert.equal(clearingEntity.stamina, 0, 'regular Stamina is empty when black Sta
 ResourceSystem.tick(clearingEntity, 0.25);
 assert.ok(clearingEntity.stamina > 0 && clearingEntity.stamina < clearingEntity.maxStamina, 'ordinary Stamina starts regenerating from zero on the following tick');
 
-const nonlethalHealthAfflictionEntity = {
+const fullBarDotEntity = {
   health: 100, maxHealth: 100, stamina: 100, maxStamina: 100,
   footing: 100, maxFooting: 100, exhaustion: { active: false, blackStamina: 100 },
   afflictions: Object.fromEntries(Object.keys(ResourceSystem.AFFLICTIONS).map(id => [id, 0])),
   lastAttackReceivedAt: 0,
-}; // Used to prove simultaneous Health-draining afflictions can consume the whole visible bar without becoming a kill source.
-ResourceSystem.initEntity(nonlethalHealthAfflictionEntity);
-for (const id of ['bleedingHealth', 'burningHealth', 'poisonedHealth']) {
-  ResourceSystem.addAffliction(nonlethalHealthAfflictionEntity, id, 100);
-}
-ResourceSystem.tick(nonlethalHealthAfflictionEntity, 100, { healthRegenPerSec: 0 });
-assert.equal(nonlethalHealthAfflictionEntity.health, 1, 'Health-draining afflictions stop at 1 HP even when their combined buildup covers the entire Health bar');
+}; // Proves a DoT may convert the entire Health bar without application itself dealing damage.
+ResourceSystem.initEntity(fullBarDotEntity);
+ResourceSystem.addAffliction(fullBarDotEntity, 'burningHealth', 100);
+assert.equal(ResourceSystem.getAffliction(fullBarDotEntity, 'burningHealth'), 100, 'Burning buildup may convert the full Health bar');
+assert.equal(fullBarDotEntity.health, 100, 'applying a full Health-bar DoT does not itself deal damage');
+ResourceSystem.tick(fullBarDotEntity, 100, { healthRegenPerSec: 0 });
+assert.equal(fullBarDotEntity.health, 0, 'an already-applied DoT remains lethal when its damage actually ticks');
 
 const fractionalHealthAfflictionEntity = {
   health: 0.04, maxHealth: 100, stamina: 100, maxStamina: 100,
   footing: 100, maxFooting: 100, exhaustion: { active: false, blackStamina: 100 },
   afflictions: Object.fromEntries(Object.keys(ResourceSystem.AFFLICTIONS).map(id => [id, 0])),
   lastAttackReceivedAt: 0,
-}; // Guards the round-to-tenths boundary: an already-sub-1 living target must not be rounded down to death by an affliction tick.
+}; // Separates harmless affliction application from the later lethal trigger even below the normal tenth-point display precision.
 ResourceSystem.initEntity(fractionalHealthAfflictionEntity);
 ResourceSystem.addAffliction(fractionalHealthAfflictionEntity, 'burningHealth', 100);
+assert.equal(fractionalHealthAfflictionEntity.health, 0.04, 'DoT application preserves an already-sub-tenth living Health value');
 ResourceSystem.tick(fractionalHealthAfflictionEntity, 1, { healthRegenPerSec: 0 });
-assert.equal(fractionalHealthAfflictionEntity.health, 0.04, 'Health afflictions preserve an already-sub-tenth living value instead of rounding it to zero');
+assert.equal(fractionalHealthAfflictionEntity.health, 0, 'the later Burning tick may kill the already-afflicted target');
 
 const congealedCapEntity = {
   health: 100, maxHealth: 100, stamina: 100, maxStamina: 100,
@@ -128,6 +129,42 @@ ResourceSystem.enforceCaps(congealedCapEntity);
 assert.equal(congealedCapEntity.health, 1, 'cap enforcement cannot turn a full Congealed Health bar into an outright death');
 assert.equal(ResourceSystem.applyDamage(congealedCapEntity, 1, { reason: 'direct-hit-regression' }), 1, 'ordinary direct damage remains lethal at the affliction floor');
 assert.equal(congealedCapEntity.health, 0, 'the 1 HP floor belongs to afflictions, not to direct damage');
+
+const woundedStaminaTriggerEntity = {
+  health: 5, maxHealth: 100, stamina: 100, maxStamina: 100,
+  footing: 100, maxFooting: 100, exhaustion: { active: false, blackStamina: 100 },
+  afflictions: Object.fromEntries(Object.keys(ResourceSystem.AFFLICTIONS).map(id => [id, 0])),
+}; // Verifies Stamina-affliction application is harmless while spending through the converted segment may still deal lethal damage.
+ResourceSystem.initEntity(woundedStaminaTriggerEntity);
+ResourceSystem.addAffliction(woundedStaminaTriggerEntity, 'woundedStamina', 100);
+assert.equal(woundedStaminaTriggerEntity.health, 5, 'Wounded Stamina application does not deal Health damage');
+assert.equal(woundedStaminaTriggerEntity.stamina, 100, 'Wounded Stamina application does not spend Stamina');
+assert.equal(ResourceSystem.getAffliction(woundedStaminaTriggerEntity, 'woundedStamina'), 100, 'Wounded Stamina may convert the full Stamina bar');
+ResourceSystem.spendStamina(woundedStaminaTriggerEntity, 100, 'full wounded stamina trigger regression');
+assert.equal(woundedStaminaTriggerEntity.health, 0, 'spending already-applied Wounded Stamina may deal lethal Health damage');
+
+const infectedStaminaTriggerEntity = {
+  health: 5, maxHealth: 100, stamina: 100, maxStamina: 100,
+  footing: 100, maxFooting: 100, exhaustion: { active: false, blackStamina: 100 },
+  afflictions: Object.fromEntries(Object.keys(ResourceSystem.AFFLICTIONS).map(id => [id, 0])),
+}; // Mirrors Wounded Stamina's application/trigger contract for Infected Stamina.
+ResourceSystem.initEntity(infectedStaminaTriggerEntity);
+ResourceSystem.addAffliction(infectedStaminaTriggerEntity, 'infectedStamina', 100);
+assert.equal(infectedStaminaTriggerEntity.health, 5, 'Infected Stamina application does not deal Health damage');
+ResourceSystem.spendStamina(infectedStaminaTriggerEntity, 100, 'full infected stamina trigger regression');
+assert.equal(infectedStaminaTriggerEntity.health, 0, 'spending already-applied Infected Stamina may deal lethal Health damage');
+
+const shatteredStaminaTriggerEntity = {
+  health: 100, maxHealth: 100, stamina: 100, maxStamina: 100,
+  footing: 100, maxFooting: 100, exhaustion: { active: false, blackStamina: 100 },
+  afflictions: Object.fromEntries(Object.keys(ResourceSystem.AFFLICTIONS).map(id => [id, 0])),
+}; // Shattered Stamina triggers a second affliction rather than direct damage; neither application step should deal Health damage.
+ResourceSystem.initEntity(shatteredStaminaTriggerEntity);
+ResourceSystem.addAffliction(shatteredStaminaTriggerEntity, 'shatteredStamina', 100);
+assert.equal(shatteredStaminaTriggerEntity.health, 100, 'Shattered Stamina application does not deal Health damage');
+ResourceSystem.spendStamina(shatteredStaminaTriggerEntity, 100, 'full shattered stamina trigger regression');
+assert.equal(shatteredStaminaTriggerEntity.health, 100, 'spending Shattered Stamina converts its consequence into Bleeding without immediate Health damage');
+assert.equal(ResourceSystem.getAffliction(shatteredStaminaTriggerEntity, 'bleedingHealth'), 100, 'Shattered Stamina may convert the resulting Bleeding up to the full Health bar');
 
 const afflictedEntity = {
   health: 100, maxHealth: 100, stamina: 47, maxStamina: 100,
