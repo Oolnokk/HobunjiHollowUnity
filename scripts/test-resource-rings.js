@@ -286,6 +286,13 @@ assert.ok(woundedAvoidanceRecovery >= windedNormalRecovery * 3.5, 'avoiding Stam
 testNowMs = 1100;
 ResourceSystem.spendStamina(actionPunishmentEntity, 1, 'reset action-punishment recovery');
 assert.equal(ResourceSystem.getAfflictionRecoveryMultiplier(actionPunishmentEntity, 'woundedStamina', false), 1.25, 'spending Stamina immediately resets the accelerated Wounded-Stamina recovery');
+actionPunishmentEntity.prone = true;
+testNowMs = 1150;
+ResourceSystem.spendStamina(actionPunishmentEntity, 1, 'ineffectual prone input regression');
+assert.equal(ResourceSystem.getPunishedActionElapsedMs(actionPunishmentEntity, 'staminaSpend'), 0, 'prone input may still reach a Stamina-spend path without changing the recovery policy');
+assert.equal(ResourceSystem.getAfflictionRecoveryMultiplier(actionPunishmentEntity, 'woundedStamina', false), 5, 'prone forces accelerated action-punishment recovery even when input just refreshed the punished-action clock');
+actionPunishmentEntity.prone = false;
+assert.equal(ResourceSystem.getAfflictionRecoveryMultiplier(actionPunishmentEntity, 'woundedStamina', false), 1.25, 'leaving prone restores the normal post-spend grace window');
 testNowMs = 0;
 
 for (const id of Object.keys(ResourceSystem.AFFLICTIONS)) {
