@@ -108,6 +108,7 @@ assert.equal(camp.placeFromKit(4, 4).ok, true, 'placing a new camp replaces the 
 assert.equal(camp.serialize().mapId, 'map_i_town_mine_f_012');
 assert.ok(persistCount >= 4, 'placement/death changes are persisted immediately');
 
+assert.match(source, /HobunjiSaveCheckpoints[\s\S]{0,240}saveManual/, 'campfire Save Game routes through the guarded manual checkpoint API');
 assert.match(game, /member\.wildernessCampfireState = window\.WildernessCampfire\?\.serialize/, 'game saves campfire world state');
 assert.match(game, /WildernessCampfire\?\.restore\(playerData\.wildernessCampfireState\)/, 'game restores campfire world state');
 assert.match(game, /clearMineCampfireOnDeath/, 'mine player death clears underground camp');
