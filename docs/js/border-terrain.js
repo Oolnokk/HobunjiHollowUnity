@@ -319,8 +319,8 @@
     const pushPeak=(axisCenter,outCenter,rowIndex,ordinal)=>{
       const seedAxis=axisCenter+rowIndex*113.7+ordinal*17.3; // Used only for deterministic silhouette variation.
       const rowHeight=effectiveHeight*(rowIndex===0?0.78+bgSceneryHash01(seedAxis,outCenter,8201)*0.22:0.68+bgSceneryHash01(seedAxis,outCenter,8301)*0.18); // Used before width so the silhouette can stay broad instead of needle-thin.
-      const width=Math.max(step*(rowIndex===0?1.22:1.08),rowHeight*(rowIndex===0?0.56:0.50))*(0.92+bgSceneryHash01(seedAxis,outCenter,8101)*0.16); // Used to make each tooth a broad mountain mass like the reference while retaining small deterministic variation.
-      const depth=Math.max(6*overallScale,effectiveDepth*(rowIndex===0?0.26:0.22)); // Used to give every tooth a chunky 3D footprint at oblique camera angles.
+      const width=Math.max(step*(rowIndex===0?1.35:1.20),rowHeight*(rowIndex===0?0.82:0.74))*(0.94+bgSceneryHash01(seedAxis,outCenter,8101)*0.12); // Used to make each tooth a broad triangular mountain mass rather than a tall spike, while retaining slight deterministic variation.
+      const depth=Math.max(6*overallScale,effectiveDepth*(rowIndex===0?0.34:0.30),rowHeight*(rowIndex===0?0.42:0.38)); // Used to keep each low-poly peak visibly chunky in 3D instead of collapsing into a thin wedge at oblique camera angles.
       const baseLift=effectiveHeight*(rowIndex===0?0.01:0.055); // Used to keep the rear row from disappearing into the foreground bases.
       const summitAxisJitter=(bgSceneryHash01(seedAxis,outCenter,8401)-0.5)*width*0.18; // Used to avoid identical equilateral-pyramid silhouettes.
       const summitOutJitter=(bgSceneryHash01(seedAxis,outCenter,8501)-0.5)*depth*0.16; // Used to create a visibly faceted, hand-cut 3D peak.
