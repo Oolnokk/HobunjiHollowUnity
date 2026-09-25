@@ -546,8 +546,9 @@
       sharedSyntheticPlateauMap:true,regularPlateauBuilder:true,
       alwaysVisible:config.alwaysVisible,fogIndependent:config.fogIndependent,
     };
-    scene.userData=scene.userData||{};
-    scene.userData.colossalHorizonField=field;
+    // Do not retain the synthetic zGrid/mask Sets on the live scene after
+    // geometry has been built; they are authoring/build intermediates and can
+    // be garbage-collected immediately.
     return stats;
   }
 
