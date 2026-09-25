@@ -856,11 +856,11 @@
     // same-chunk rule never does: every retry still carries avoidChunks.
     if (!instance && avoidPoints.length) instance = tryStampBanditCamp(view, localeDef, placement, [], avoidChunks);
 
-    // Bandit counts take precedence over Porakaneki HUNTING-camp counts. If
-    // every otherwise-valid bandit site is chunk-blocked, remove one hunting
-    // camp at a time and retry. The seasonal chief reservation is never
-    // sacrificed, so an exceptionally constrained seed may still place fewer
-    // bandit camps rather than violate the hard chunk rule.
+    // Bandit placement may consume surplus Porakaneki hunting camps when
+    // chunk space is constrained, but PorakanekiCamps enforces a hard one-camp
+    // floor per wilderness zone. The seasonal chief reservation is also never
+    // sacrificed, so a constrained seed places fewer bandit camps rather than
+    // erasing Porakaneki from the zone or violating the hard chunk rule.
     while (!instance && window.PorakanekiCamps?.reduceHuntingCampsForBandit?.(zoneId)) {
       avoidPoints = porakanekiAvoidPoints(zoneId, placement.minDistanceFromPorakanekiCamp ?? 12);
       avoidChunks = porakanekiAvoidChunks(zoneId);
