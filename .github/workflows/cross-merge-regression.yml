@@ -28,6 +28,8 @@ on:
       - 'scripts/test-procedural-impact-tabs.js'
       - 'scripts/test-onboarding-character-creation-redesign.js'
       - 'scripts/test-time-passage-release-input.js'
+      - 'scripts/test-combat-deps-shared-seam.js'
+      - 'scripts/test-banubu-snore.js'
       - '.github/workflows/cross-merge-regression.yml'
   workflow_dispatch:
 
@@ -67,7 +69,9 @@ jobs:
             npc-social-rapport-wardrobes \
             procedural-impact-tabs \
             onboarding-character-creation-redesign \
-            time-passage-release-input; do
+            time-passage-release-input \
+            combat-deps-shared-seam \
+            banubu-snore; do
             echo "::group::$t"
             node "scripts/test-$t.js"
             echo "::endgroup::"

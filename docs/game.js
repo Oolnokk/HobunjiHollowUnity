@@ -27282,6 +27282,26 @@
         getActiveGrid: window.GridTileAccessors.getActiveGrid,
         tileSurfaceYInArea,
         activeSurfaceYAtWorld,
+        // HobunjiAmbientBgs (js/ambient-biome-audio.js) reads the area grid,
+        // tile types and rain state here; without them the river loop never
+        // found water and birds/nightbugs ignored rain.
+        calendar,
+        getHour: window.CalendarSystem.getHour,
+        TileType,
+        WATERWAY_TYPES,
+        npcGridForArea,
+        _isZoneArea,
+        // InventoryUI's tool detail card (metal tier, effect multiplier,
+        // verdigris %, mastery thresholds) and RangedWeaponArchetypes' ammo
+        // loadout sanitizer/action-bar refresh read these here as well.
+        METAL_DEFS,
+        MASTERY_XP_THRESHOLDS,
+        toolEffectiveMetalKey,
+        toolMetalMultiplier,
+        toolVerdigrisFraction,
+        getGearInventory: () => gearInventory,
+        saveGearInventory,
+        refreshActionBar,
         // Named animal projectiles use the same live Three.js elevation as
         // the player/creature renderers so Drenkirra's vertical spit aim is
         // based on actual target height, not a flattened ground plane.
