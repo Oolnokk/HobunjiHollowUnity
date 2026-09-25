@@ -137,7 +137,7 @@ assert(!banditRuntimeSource.includes('buildBanditTentCanvasGeometry'), 'old proc
 assert.deepEqual(cfg.equipment.weaponShapes, ['fishingspear', 'hatchet', 'dagger'], 'Porakaneki must use the true dagger shape, never daggerSword');
 assert(localeIndex.locales.some(entry => entry.id === 'locale_porakaneki_camp_small'));
 assert(localeIndex.locales.some(entry => entry.id === 'locale_porakaneki_camp_chief' && entry.singleton === true));
-assert(houseLoader.includes('porakaneki-camps-runtime.js?v=20260924poracolor2'));
+assert(houseLoader.includes('porakaneki-camps-runtime.js?v=20260924chunkecology1'));
 assert(runtimeSource.includes("bodyColorsOverride: window.HobunjiPorakanekiSpecies?.bodyColorsForSeed?.(hunter.id, 'male') || null"), 'camp residents must choose an authored Mashtzarr swatch only when materializing their avatar');
 const bodyColorWriteIndex = combatBanditSource.indexOf('roster.appearance.bodyColors = opts.bodyColorsOverride'); // Used with avatar-build ordering below to ensure explicit finite colors reach the portrait before raster work begins.
 const banditAvatarBuildIndex = combatBanditSource.indexOf('const avatarRef = await buildBanditAvatar(roster);'); // Must occur after the explicit body-color assignment.
@@ -315,7 +315,7 @@ function hunterDebug(api, zoneId, campId, index) {
 (async () => {
   await flush();
   const api = contextWindow.PorakanekiCamps;
-  assert.equal(api.version, 4);
+  assert.equal(api.version, 5);
   assert.equal(api.__test.isSleepingHour(2), true);
   assert.equal(api.__test.isSleepingHour(12), false);
   assert.equal(api.__test.desiredChiefZone('Stormtide'), 'map_southern_cloud_forest');
@@ -328,7 +328,7 @@ function hunterDebug(api, zoneId, campId, index) {
 
   contextWindow.BanditCamps.updateCampBanners(0.21);
   let debug = api.debugSnapshot();
-  assert.equal(debug.version, 4);
+  assert.equal(debug.version, 5);
   assert.equal(debug.fullSimulationRadiusTiles, 12);
   assert.equal(debug.fullSimulationReleaseRadiusTiles, 16);
   assert.equal(Object.keys(debug.zones).length, 4);
@@ -462,6 +462,52 @@ function hunterDebug(api, zoneId, campId, index) {
   assert.equal(ok, false);
   assert.equal(toastLog.length, warningToastCount + 1, 'non-territory callers retain the old safe toast fallback');
   assert.deepEqual(toastLog[toastLog.length - 1], { text: 'Ordinary fallback test.', positive: false });
+
+  // Chunk-local ecology: only actors inside the player's real 16x16 streamed
+  // chunk receive faction targets. Humanoids use _chunkCombatTarget while
+  // predators reuse patrol-chase/targetCreature.
+  hostileObjects.clear();
+  combatDeps.player.x = 32 * combatDeps.TILE;
+  combatDeps.player.y = 32 * combatDeps.TILE;
+  const pora = { id: 'eco_pora', x: 32 * combatDeps.TILE, y: 32 * combatDeps.TILE, health: 20, maxHealth: 20, areaId: currentArea, isBandit: true, isPorakanekiHunter: true, _porakanekiPlannerControlled: true, def: { aggroRangePx: 0 } };
+  const bandit = { id: 'eco_bandit', x: 33 * combatDeps.TILE, y: 32 * combatDeps.TILE, health: 20, maxHealth: 20, areaId: currentArea, isBandit: true, def: {} };
+  const predator = { id: 'eco_predator', creatureKey: 'test-predator', wildlifeRole: 'predator', x: 34 * combatDeps.TILE, y: 32 * combatDeps.TILE, health: 20, maxHealth: 20, areaId: currentArea, state: 'idle', def: {} };
+  const prey = { id: 'eco_prey', creatureKey: 'test-prey', wildlifeRole: 'prey', x: 35 * combatDeps.TILE, y: 32 * combatDeps.TILE, health: 20, maxHealth: 20, areaId: currentArea, state: 'idle', def: {} };
+  for (const entity of [pora, bandit, predator, prey]) hostileObjects.add(entity);
+  api.__test.updateChunkEcology();
+  assert.equal(pora._chunkCombatTarget, bandit, 'Porakaneki prioritize a bandit/shared threat over prey');
+  assert.equal(bandit._chunkCombatTarget, pora, 'bandits target Porakaneki in the observed chunk');
+  assert.equal(predator.targetCreature, bandit, 'predator targets the nearest bandit/Porakaneki actor');
+  assert.equal(predator.state, 'patrol-chase');
+  assert.equal(pora._porakanekiPlannerControlled, true, 'ecology combat does not make Porakaneki hostile to the player');
+  let ecologyDebug = api.debugSnapshot().ecology;
+  assert.deepEqual(JSON.parse(JSON.stringify(ecologyDebug)), {
+    chunk: '2,2', porakaneki: 1, bandits: 1, predators: 1, prey: 1, humanoidTargets: 2, predatorTargets: 1,
+  }, 'debug snapshot exposes the active 16x16 ecology chunk and assignment counts for mobile verification');
+  assert.equal(api.hasSharedEnemyNearby(pora), true, 'bandit/predator in the player chunk activates crossfire forgiveness');
+
+  hostileObjects.delete(bandit);
+  hostileObjects.delete(predator);
+  api.__test.updateChunkEcology();
+  assert.equal(pora._chunkCombatTarget, prey, 'Porakaneki hunt prey when no bandit/predator threat is present');
+  assert.equal(api.hasSharedEnemyNearby(pora), true, 'recent shared-enemy combat retains the short simultaneous-death grace');
+  fakeNowMs += 1600;
+  assert.equal(api.hasSharedEnemyNearby(pora), false, 'crossfire grace expires when no shared enemy remains');
+
+  hostileObjects.delete(prey);
+  const outsideBandit = { id: 'eco_outside_bandit', x: 48 * combatDeps.TILE, y: 32 * combatDeps.TILE, health: 20, maxHealth: 20, areaId: currentArea, isBandit: true, def: {} };
+  hostileObjects.add(outsideBandit);
+  api.__test.updateChunkEcology();
+  assert.equal(pora._chunkCombatTarget, null, 'an actor across the 16-tile chunk boundary is not simulated as a faction target');
+  assert.deepEqual(JSON.parse(JSON.stringify(api.__test.streamChunkOfTile(15.99, 0))), { x: 0, y: 0 });
+  assert.deepEqual(JSON.parse(JSON.stringify(api.__test.streamChunkOfTile(16, 0))), { x: 1, y: 0 });
+
+  const easternBefore = api.debugSnapshot().zones.map_eastern_mire.smallCampCount;
+  const removedCampId = api.reduceHuntingCampsForBandit('map_eastern_mire');
+  assert(removedCampId, 'bandit placement may sacrifice one Porakaneki hunting camp when chunk space is constrained');
+  const easternAfter = api.debugSnapshot().zones.map_eastern_mire;
+  assert.equal(easternAfter.smallCampCount, easternBefore - 1, 'only the hunting-camp count is reduced');
+  assert.equal(easternAfter.chiefReserved, true, 'future chief-camp reservation is never sacrificed for bandit placement');
 
   console.log('Porakaneki distributed seasonal camp regression checks passed.');
 })().catch(error => {
