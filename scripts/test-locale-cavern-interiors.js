@@ -136,6 +136,10 @@ assert(gameSource.includes("targetSpotId: exit.targetSpotId || ''") && gameSourc
 assert(gameSource.includes('entranceLightTileSet'), 'secret exits must not affect the primary cave-mouth daylight');
 assert(generatorSource.includes('function sampleMeshSurfaceAt(') && generatorSource.includes('floorSurfaceByTile: floorSurface.byTile'), 'cavern generation must sample the rendered shell and export per-tile ground Y');
 assert(interiorBuilderSource.includes('function buildCavernFloorMesh(') && interiorBuilderSource.includes('cavernWalkableFloor'), 'caverns must render an explicit merged textured walkable floor');
+assert(!/new THREE\.MeshBasicMaterial\([^\n]*flatShading/.test(interiorBuilderSource) && !/materialOptions\s*=\s*\{[^\n]*flatShading/.test(interiorBuilderSource),
+  'carved cavern MeshBasicMaterial fallback must not pass unsupported flatShading into Three.js');
+assert(gameIndexSource.includes('js/interior-scene-builder.js?v=20260925cavernmat1'),
+  'game bootstrap must cache-bust the carved-cavern material warning fix');
 assert(gameSource.includes('const exactSurfaceY = Number(tile?.surfaceY)') && gameSource.includes('bGrid[r][c].surfaceY = Number.isFinite(sampledSurfaceY)') && gameSource.includes('Number.isFinite(fallbackSurfaceY) ? fallbackSurfaceY : 0'), 'player tile grounding must preserve exact cavern floor samples while pinning ordinary interior floors to Y=0 before collider mutation');
 assert(gameSource.includes(': (_isZoneArea(area) ? surfaceYAtWorld(area, c + 0.5, r + 0.5) : tileSurfaceYInArea(tile, area))'), 'NPC building grounding must share the exact tile surface resolver with the player');
 assert(!gameSource.includes('_isBuildingArea(area) ? 0 : npcSurfaceY(area, spawnPos.c, spawnPos.r)'), 'NPC building transfers must never force Y=0');
