@@ -293,12 +293,6 @@ player.lastAttackReceivedAt = -1e9;
 now = 10000;
 assert.equal(windowStub.Combat.getMovementSpeedMul(), 1, 'movement weight has no out-of-combat slowdown');
 
-const gameDiagnosticSource = fs.readFileSync('docs/game.js', 'utf8');
-for (const diagnosticNeedle of ['async function refreshPlayerAvatar', 'EquipmentPanel.init', 'applyGearClothingToPlayerData']) {
-  const diagnosticIndex = gameDiagnosticSource.indexOf(diagnosticNeedle);
-  console.log('\n[WEAVING_DIAGNOSTIC ' + diagnosticNeedle + ' @ ' + diagnosticIndex + ']\n' +
-    (diagnosticIndex >= 0 ? gameDiagnosticSource.slice(Math.max(0, diagnosticIndex - 2200), diagnosticIndex + 9000) : 'NOT FOUND'));
-}
 const source = fs.readFileSync('docs/js/clothing-weaving-system.js', 'utf8');
 const portraitSource = fs.readFileSync('docs/js/portrait-utils.js', 'utf8'); // Verifies woven portrait state is injected per render rather than shared across WorldPortraitLife's overlapping async NPC refreshes.
 const avatarPreviewSource = fs.readFileSync('docs/js/npc-avatar-preview-utils.js', 'utf8'); // Guards the live world-avatar adapter that survives later portrait-renderer replacement.
@@ -310,12 +304,17 @@ const patternAuthorSource = fs.readFileSync('docs/js/pattern-authoring.js', 'utf
 const metalPatternSource = fs.readFileSync('docs/js/tool-metal-recolor.js', 'utf8'); // Used below to prevent weaving-only scale normalization from shrinking existing verdigris patterns.
 const equipmentPanelSource = fs.readFileSync('docs/js/equipment-panel.js', 'utf8'); // Guards the inventory icon handoff so woven composites are not tinted a second time.
 const inventoryUiSource = fs.readFileSync('docs/js/inventory-ui.js', 'utf8'); // Guards the one-shot async Pack icon refresh path; no per-frame pattern compositing.
-assert.doesNotMatch(source, /activePortraitPatternMap/, 'woven portraits no longer share one mutable descriptor map across overlapping async renders');
-assert.doesNotMatch(source, /window\._imageForTint\s*=\s*function\s+clothingPatternImageForTint/, 'weaving no longer replaces the global tint resolver with render-scoped mutable state');
+assert.match(source, /let activePortraitPatternMap = null/, 'global compatibility map exists only as an explicitly owned woven-render fallback');
+assert.match(source, /let wovenPortraitRenderChain = Promise\.resolve\(\)/, 'woven portraits use a dedicated serialized lane so compatibility state cannot bleed between concurrent NPC/player renders');
+assert.match(source, /const compatibilityTint = function clothingPatternImageForTint/, 'the pre-817 global tint compatibility entry point is restored for portrait code that bypasses renderOptions.imageForTint');
+assert.match(source, /if \(!map\) return portraitBaseTintResolver\(img, sourceKey, tint\)/, 'global tint behavior stays canonical outside an actively owned woven portrait render');
 assert.match(source, /const patternMap = Array\.isArray\(descriptors\)[\s\S]*?buildPortraitPatternMap\(descriptors\)/, 'each woven portrait render builds its own descriptor map');
 assert.match(source, /patternImageForTint\(patternMap, baseTintResolver, pending => pendingBuilds\.add\(pending\), img, sourceKey, tint\)/, 'the woven tint resolver closes over that render-local descriptor map and reports this render\'s cache misses');
 assert.match(source, /await Promise\.allSettled\(\[\.\.\.pendingBuilds\]\)/, 'woven portrait renders wait for missing pattern composites before returning their canvas');
-assert.match(source, /renderProfileWithWovenPatterns[\s\S]*?return renderer\(canvas, profile, renderOptions\); \/\/ Cache is now warm/, 'the reusable render-local helper redraws the same canvas with the warmed pattern cache before callers can upload the fallback');
+assert.match(source, /renderProfileWithWovenPatterns[\s\S]*?wovenPortraitRenderChain\.catch\(\(\) => \{\}\)\.then\(run\)/, 'only woven portrait renders serialize around the compatibility map');
+assert.match(source, /activePortraitPatternMap = patternMap[\s\S]*?activePortraitPatternMap = previousMap/, 'the serialized woven lane owns and restores compatibility pattern state around exactly one renderer invocation');
+assert.match(source, /return renderer\(canvas, profile, renderOptions\); \/\/ Cache is warm/, 'a cache-miss portrait redraws the same canvas with the warmed pattern cache before callers can upload it');
+assert.match(source, /activePortraitPendingBuilds\?\.add\(pending\)/, 'global compatibility tint cache misses join the owning render\'s pending set instead of scheduling a later unsynchronized refresh');
 assert.match(source, /options\?\.imageForTint\?\.__clothingWeavingPattern/, 'nested portrait wrappers detect an inherited render-local weaving pass instead of compositing it twice');
 assert.match(source, /imageForTint\.__clothingWeavingPattern = true/, 'the render-local tint resolver carries a weaving ownership marker through later wrapper chains');
 assert.match(source, /renderProfileWithWovenPatterns, \/\/ Stable adapter used by NpcAvatarPreview/, 'the render-local weaving helper is exported for the stable world-avatar adapter');
