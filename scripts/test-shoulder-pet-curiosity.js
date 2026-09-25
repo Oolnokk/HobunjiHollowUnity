@@ -160,8 +160,11 @@ assert.doesNotMatch(applyCuriositySource, /frontPlane\.rotation\.y|backPlane\.ro
 assert.doesNotMatch(source, /SHOULDER_PET_REVERSE_SPEED_DEG|currentFacingYawDeg|targetFacingYawDeg|behaviorYawOffset/,
   'main keeps the rejected interpolated 180-degree shoulder-pet reverse/yaw experiment out');
 assert.match(rigSource,
-  /if \(phase === 'wait' && nextPhase === 'look'\)[\s\S]{0,500}pet\.__hobunjiShoulderObservationFlipped = flipped[\s\S]{0,900}phase = nextPhase/,
-  'the curiosity transition changes only logical observation parity; it does not mutate the visual plane before the final shoulder pin');
+  /const enteringInwardLook = phase === 'wait' && nextPhase === 'look'[\s\S]{0,220}const leavingInwardLook = phase === 'look' && nextPhase !== 'look'[\s\S]{0,420}const flipped = enteringInwardLook[\s\S]{0,220}pet\.__hobunjiShoulderObservationFlipped = flipped/,
+  'the pet faces inward only for the brief look phase and explicitly returns to outward parity as soon as that glance ends');
+assert.match(rigSource,
+  /pet\.__hobunjiShoulderObservationFlipped = phase === 'look'/,
+  'instrumentation adopts outward rest versus inward look deterministically instead of inheriting a stale toggled direction');
 const observationMirrorSolverSource = rigSource.slice(rigSource.indexOf('const solveShoulderObservationPlaneAtPivot'), rigSource.indexOf('const restoreShoulderObservationPlane'));
 assert.match(observationMirrorSolverSource,
   /const localTranslation = plane\.position\.clone\(\)\.set\([\s\S]{0,320}\(state\.baseScaleX - nextScaleX\) \* pivotLocal\.x[\s\S]{0,360}localTranslation\.applyQuaternion\(plane\.quaternion\)[\s\S]{0,240}plane\.position\.add\(localTranslation\)/,
@@ -203,8 +206,8 @@ assert.match(source,
   /state\.targetYawDeg = side \* \(SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG/,
   'curiosity applies the separate head turn in the same direction as its body glance');
 assert.match(source,
-  /const SHOULDER_PET_CURIOUS_WAIT_MIN_S = 3\.4/,
-  'shoulder-pet glances have a cooldown so the 250ms instrumentation scan always installs before the first observation');
+  /const SHOULDER_PET_CURIOUS_WAIT_MIN_S = 3\.4[\s\S]{0,120}const SHOULDER_PET_CURIOUS_WAIT_MAX_S = 7\.2/,
+  'the outward-facing cooldown is several times longer than the brief inward observation hold');
 assert.match(rigSource,
   /\['drenkirra'[\s\S]{0,180}\[0\.01,-0\.11914729549653388,-0\.001096892109713506\]/,
   'Drenkirra uses the supplied shoulderGrip');
