@@ -407,7 +407,7 @@ parityPanelMute.textContent = '#hobunjiTerrainParityPanel{display:none!important
     const textures = textureSummary(grassTexture, cliffTexture, grassPath, cliffPath);
     const baker = window.TerrainJigsawUV?.bakeMesh ? 'baker OK' : 'BAKER MISSING';
     const horizonSummary = horizonStats?.enabled
-      ? ` · HORIZON ${horizonStats.kind} ${horizonStats.vertices}v/${horizonStats.triangles}t ${horizonStats.heightWorld}u high ${horizonStats.side}`
+      ? ` · HORIZON ${horizonStats.kind} ${horizonStats.vertices}v/${horizonStats.triangles}t ${horizonStats.heightWorld}u high ${horizonStats.side}${horizonStats.rows ? ` · ${horizonStats.rows} rows / ${horizonStats.peakCount} peaks` : ''}`
       : ' · HORIZON off'; // Visible mobile diagnostic proves the authored landmark and its real runtime geometry budget reached the preview.
     if (!jigsawEnabled()) {
       setStatus(`JIGSAW DISABLED · ${candidates} terrain candidate${candidates===1?'':'s'} · ${textures} · ${settingsSummary()} · ${baker}${horizonSummary} · author rev ${lastAuthorRevision}`);
