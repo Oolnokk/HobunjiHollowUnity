@@ -260,7 +260,7 @@ assert(emptyBootstrap.includes('__hobunjiFolderSaveEmptyBootstrapDebug'), 'first
 assert(bridge.includes('__hobunjiFolderSaveOnboardingDebug'), 'onboarding reconciliation exposes diagnostics data');
 assert(debugUi.includes("button.textContent = 'Save Diagnostics'"), 'Settings exposes a mobile-visible Save Diagnostics button');
 assert(debugUi.includes('SAVE DIAGNOSTICS'), 'mobile diagnostics render without requiring DevTools');
-assert(debugUi.includes('folder recovery is authoritative'), 'Settings includes the current audited save-protection summary');
+assert(debugUi.includes('wilderness treasure meshes are excluded from save JSON') && debugUi.includes('unreadable character/world files block folder import'), 'Settings includes the current audited save-corruption protection summary');
 assert(debugUi.includes('__hobunjiSaveCheckpointDebug'), 'Settings diagnostics include checkpoint/recovery state');
 
 console.log('\nFolder-save primary regression checks passed.');
