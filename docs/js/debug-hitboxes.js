@@ -21,6 +21,8 @@
   const DEBUG_BODY_AIM_COLOR = '#54a7ff'; // Body/movement/melee/lunge convergence guide.
   const DEBUG_MELEE_AIM_COLOR = '#ff5cf4'; // Melee/lunge label color at the shared body-origin guide.
   const DEBUG_RANGED_ATTACK_COLOR = '#ff6b35'; // Muzzle-to-perspective-point convergence guide.
+  const DEBUG_SHOULDER_PERCH_COLOR = '#5cf2ff'; // Cyan = player-authored live shoulder perch.
+  const DEBUG_SHOULDER_GRIP_COLOR = '#ff5cf4'; // Magenta = pet-authored live shoulder grip after root attachment.
 
   function playerModelWidthTiles() {
     return window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.worldModelWidth ?? 0.9;
@@ -118,6 +120,74 @@
     octx.fillStyle = color;
     octx.fillText(label, projected.x + 8, projected.y);
     octx.restore();
+  }
+
+  function _drawDebugPoint3D(point, color, label, radius = 6, labelOffsetY = 0) {
+    if (!point) return;
+    const projected = deps.worldToOverlay(point.x, point.y, point.z);
+    if (!projected.visible || ![projected.x, projected.y].every(Number.isFinite)) return;
+    const octx = deps.octx;
+    octx.save();
+    octx.strokeStyle = color;
+    octx.fillStyle = color;
+    octx.lineWidth = 2;
+    octx.beginPath();
+    octx.arc(projected.x, projected.y, radius, 0, Math.PI * 2);
+    octx.moveTo(projected.x - radius - 4, projected.y);
+    octx.lineTo(projected.x + radius + 4, projected.y);
+    octx.moveTo(projected.x, projected.y - radius - 4);
+    octx.lineTo(projected.x, projected.y + radius + 4);
+    octx.stroke();
+    octx.font = '11px monospace';
+    octx.textBaseline = 'bottom';
+    const width = octx.measureText(label).width;
+    octx.globalAlpha = 0.82;
+    octx.fillStyle = '#070b12';
+    octx.fillRect(projected.x + 8, projected.y - 18 + labelOffsetY, width + 6, 15);
+    octx.globalAlpha = 1;
+    octx.fillStyle = color;
+    octx.fillText(label, projected.x + 11, projected.y - 5 + labelOffsetY);
+    octx.restore();
+  }
+
+  function _activeShoulderPetAttachmentSnapshot() {
+    const pet = Array.from(deps?.companionObjects || []).find(c =>
+      c?.stableRole === 'shoulderPet'
+      && c.health > 0
+      && c.areaId === deps.getCurrentArea()
+      && c.avatarRef?.group?.userData?.hobunjiShoulderPetAttachment
+    );
+    const raw = pet?.avatarRef?.group?.userData?.hobunjiShoulderPetAttachment;
+    if (!pet || !raw) return null;
+    const perchArray = raw.authoredPerchWorldPosition;
+    const gripArray = raw.alignedGripWorldPosition;
+    if (!Array.isArray(perchArray) || !Array.isArray(gripArray)) return null;
+    const perch = { x: Number(perchArray[0]), y: Number(perchArray[1]), z: Number(perchArray[2]) };
+    const grip = { x: Number(gripArray[0]), y: Number(gripArray[1]), z: Number(gripArray[2]) };
+    if (![perch.x, perch.y, perch.z, grip.x, grip.y, grip.z].every(Number.isFinite)) return null;
+    return {
+      creatureKey: pet.creatureKey || pet.id || 'shoulderPet',
+      perch,
+      grip,
+      error: Math.hypot(perch.x - grip.x, perch.y - grip.y, perch.z - grip.z),
+      rotationSource: raw.rotationSource || null,
+      observationPivotApplied: raw.observationPivotApplied === true,
+    };
+  }
+
+  function _drawShoulderPetAttachmentPoints() {
+    if (!deps.getShowShoulderPetAttachmentPoints?.()) return;
+    const state = _activeShoulderPetAttachmentSnapshot();
+    if (!state) return;
+    _drawDebugSegment3D(state.perch, state.grip, '#ffffff', false, 2.5, 0.95);
+    _drawDebugPoint3D(state.perch, DEBUG_SHOULDER_PERCH_COLOR, 'PERCH', 9, -7); // Larger cyan ring stays visible even when the grip is perfectly coincident.
+    _drawDebugPoint3D(state.grip, DEBUG_SHOULDER_GRIP_COLOR, 'GRIP', 5, 10); // Smaller magenta ring nests inside the perch marker instead of hiding it.
+    const midpoint = {
+      x: (state.perch.x + state.grip.x) * 0.5,
+      y: (state.perch.y + state.grip.y) * 0.5,
+      z: (state.perch.z + state.grip.z) * 0.5,
+    };
+    _drawDebugPoint3D(midpoint, '#ffffff', `error ${state.error.toFixed(5)}u`, 2, 27);
   }
 
   // Projects all twelve Box3 edges through the live camera. This is the
@@ -348,6 +418,7 @@
     _drawInteractionRaycast();
     _drawPlayerMovementAlignmentRays();
     _drawHeadLookRaycasts();
+    _drawShoulderPetAttachmentPoints();
   }
 
   function debugSnapshot() {
@@ -376,6 +447,7 @@
   window.__hitboxDebug = {
     get actors() { return debugSnapshot(); },
     get interactionRay() { return _interactionRaySnapshot(); },
+    get shoulderPetAttachment() { return _activeShoulderPetAttachmentSnapshot(); },
     snapshot: () => ({
       latestChange: 'Shoulder body/root stays idle-free inside the 60° independent neck range, then catches up without restricting the camera; movement and attacks still converge immediately.',
       actors: debugSnapshot(),
@@ -387,6 +459,7 @@
       })),
       interactionRay: _interactionRaySnapshot(),
       movementAlignment: _movementAlignmentSnapshot(),
+      shoulderPetAttachment: _activeShoulderPetAttachmentSnapshot(),
     }),
   };
 })();

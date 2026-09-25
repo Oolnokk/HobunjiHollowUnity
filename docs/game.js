@@ -23328,6 +23328,9 @@
       const INTERACTION_RAY_DEBUG_STORAGE_KEY = 'hobunjiDebugInteractionRay'; // Persists the separate ray visualization toggle.
       let s_showInteractionRaycast = false; // Read by DebugHitboxes.draw() independently of Show Hitboxes.
       try { s_showInteractionRaycast = localStorage.getItem(INTERACTION_RAY_DEBUG_STORAGE_KEY) === '1'; } catch {}
+      const SHOULDER_ATTACHMENT_DEBUG_STORAGE_KEY = 'hobunjiDebugShoulderPetAttachmentPoints'; // Persists the active shoulder perch/grip overlay independently of the other debug guides.
+      let s_showShoulderPetAttachmentPoints = false; // Read by DebugHitboxes.draw() without changing shoulder-pet placement.
+      try { s_showShoulderPetAttachmentPoints = localStorage.getItem(SHOULDER_ATTACHMENT_DEBUG_STORAGE_KEY) === '1'; } catch {}
       // Global dev-mode flag — same "flip on once, stays on" persistence as
       // s_showHitboxes above. Currently only gates the +1 Mastery button in
       // each tool's item-info panel (see selectGearTool/selectEquipSlot),
@@ -23676,6 +23679,12 @@
       settingShowInteractionRaycastEl.addEventListener('change', e => {
         s_showInteractionRaycast = e.target.checked;
         try { localStorage.setItem(INTERACTION_RAY_DEBUG_STORAGE_KEY, s_showInteractionRaycast ? '1' : '0'); } catch {}
+      });
+      const settingShowShoulderPetAttachmentPointsEl = document.getElementById('settingShowShoulderPetAttachmentPoints');
+      settingShowShoulderPetAttachmentPointsEl.checked = s_showShoulderPetAttachmentPoints;
+      settingShowShoulderPetAttachmentPointsEl.addEventListener('change', e => {
+        s_showShoulderPetAttachmentPoints = e.target.checked;
+        try { localStorage.setItem(SHOULDER_ATTACHMENT_DEBUG_STORAGE_KEY, s_showShoulderPetAttachmentPoints ? '1' : '0'); } catch {}
       });
       const settingDevModeEl = document.getElementById('settingDevMode');
       const settingFlipPngPortraitsRow = document.getElementById('settingFlipPngPortraitsRow'); // Dev-only home for comparing the legacy portrait orientation.
@@ -28591,6 +28600,7 @@
         getCurrentArea: () => currentArea,
         getShowHitboxes: () => s_showHitboxes,
         getShowInteractionRaycast: () => s_showInteractionRaycast,
+        getShowShoulderPetAttachmentPoints: () => s_showShoulderPetAttachmentPoints,
         getPlayerAimRay: currentPlayerAimRay,
         getPlayerInteractionRay: currentPlayerInteractionRay,
         getPlayerMovementAlignmentDebug: currentPlayerMovementAlignmentDebug,
