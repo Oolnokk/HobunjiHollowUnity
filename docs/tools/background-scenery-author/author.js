@@ -45,7 +45,54 @@ function renderAttachmentList(){
   const orphan=selected()?.orphan;$('removeOrphan').style.display=orphan?'':'none';
 }
 function escapeHtml(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-function fillGlobals(){const s=state.scenery;if(!s)return;for(const [id,key] of [['ridgeClearance','ridgeClearanceTiles'],['borderDepth','borderDepthTiles'],['defaultLength','defaultExtensionLengthTiles']]){$(id).value=s[key];$(id+'Out').textContent=Number(s[key]).toFixed(id==='ridgeClearance'?2:0)+'t';}$('routeShoulder').value=s.routeShoulderTiles;$('riverBank').value=s.riverBankTiles;$('riverDepth').value=s.riverChannelDepth;$('waterfallThreshold').value=s.waterfallThreshold;}
+function fillGlobals(){const s=state.scenery;if(!s)return;for(const [id,key] of [['ridgeClearance','ridgeClearanceTiles'],['borderDepth','borderDepthTiles'],['defaultLength','defaultExtensionLengthTiles']]){$(id).value=s[key];$(id+'Out').textContent=Number(s[key]).toFixed(id==='ridgeClearance'?2:0)+'t';}$('routeShoulder').value=s.routeShoulderTiles;$('riverBank').value=s.riverBankTiles;$('riverDepth').value=s.riverChannelDepth;$('waterfallThreshold').value=s.waterfallThreshold;fillHorizonControls();}
+
+function horizonTerrain(){
+  const cfg=state.scenery?.horizonTerrain; // Used by all horizon controls and the 2D author overlay.
+  return cfg||Core?.normalizeHorizonTerrain?.({preset:'none'},state.map?.id||'')||{enabled:false,preset:'none'};
+}
+function horizonBudget(cfg){
+  const rows=cfg?.kind==='plateau'?4:3; // Used to mirror the runtime strip topology in the visible budget readout.
+  const segments=Math.max(3,Math.round(Number(cfg?.segments)||3)); // Used to estimate the exact runtime vertex/triangle counts.
+  return{vertices:(segments+1)*rows,triangles:segments*2*(rows-1)};
+}
+function fillHorizonControls(){
+  if(!$('horizonPreset'))return;
+  const cfg=horizonTerrain(); // Used to synchronize the sidebar with the resolved map/default landmark.
+  const budget=horizonBudget(cfg); // Used only by the mobile-visible horizonStats diagnostic.
+  $('horizonEnabled').checked=!!cfg.enabled;
+  $('horizonPreset').value=cfg.preset||'none';
+  $('horizonSide').value=cfg.side||'north';
+  $('horizonHeight').value=Number(cfg.heightWorld)||0;
+  $('horizonDistance').value=Number(cfg.distanceWorld)||0;
+  $('horizonDepth').value=Number(cfg.depthWorld)||0;
+  $('horizonSpan').value=Number(cfg.spanScale)||1;
+  $('horizonSegments').value=Math.round(Number(cfg.segments)||3);
+  $('horizonStats').textContent=cfg.enabled
+    ? `${cfg.kind==='plateau'?'Plateau':'Mountain chain'} · ${budget.vertices} vertices / ${budget.triangles} triangles · ${cfg.heightWorld}u high · ${cfg.alwaysVisible?'always submitted':'frustum culled'} · ${cfg.fogIndependent?'fog independent':'uses scene fog'}`
+    : 'No colossal horizon terrain.';
+}
+function announceHorizonChange(reason){
+  state.map.backgroundScenery=state.scenery;
+  const detail={reason,horizonTerrain:clone(horizonTerrain())}; // Used by the 3D preview to rebuild from the same authored config.
+  window.dispatchEvent(new CustomEvent('hobunji-background-scenery-author-change',{detail}));
+}
+function replaceHorizonPreset(preset,reason='horizon-preset'){
+  if(!state.scenery||!state.map)return;
+  const fallback=Core?.HORIZON_DEFAULT_BY_MAP?.[state.map.id]||'westernMountainChain'; // Used when enabling a map that has no canonical horizon preset.
+  const requested=preset==='none'?'none':(preset||fallback); // Used to keep the explicit Clear state from falling back to a zone default.
+  state.scenery.horizonTerrain=Core.normalizeHorizonTerrain({preset:requested,enabled:requested!=='none'},state.map.id);
+  fillHorizonControls();draw();announceHorizonChange(reason);
+}
+function updateHorizon(mutator,reason='horizon-setting'){
+  if(!state.scenery||!state.map)return;
+  const current=horizonTerrain(); // Used as the immutable source for one sidebar edit.
+  const fallback=Core?.HORIZON_DEFAULT_BY_MAP?.[state.map.id]||'westernMountainChain'; // Used if a disabled/empty config is edited directly.
+  const draft=current.preset&&current.preset!=='none'?{...current}:{...Core.normalizeHorizonTerrain({preset:fallback},state.map.id)}; // Used as the normalized edit target.
+  mutator(draft);
+  state.scenery.horizonTerrain=Core.normalizeHorizonTerrain(draft,state.map.id);
+  fillHorizonControls();draw();announceHorizonChange(reason);
+}
 function fillSelected(){
   const a=selected();$('editSection').style.display=a?'':'none';if(!a)return;
   const o=overrideFor(a.id,false)||{};
@@ -67,8 +114,39 @@ function fit(){if(!state.map)return;resize();const d=Number(state.scenery?.borde
 function resize(){const r=canvas.getBoundingClientRect(),dpr=Math.min(2,devicePixelRatio||1),w=Math.max(1,Math.round(r.width*dpr)),h=Math.max(1,Math.round(r.height*dpr));if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;}ctx.setTransform(dpr,0,0,dpr,0,0);}
 function w2s(x,y){return{x:state.cam.x+x*state.cam.zoom,y:state.cam.y+y*state.cam.zoom};}function s2w(x,y){return{x:(x-state.cam.x)/state.cam.zoom,y:(y-state.cam.y)/state.cam.zoom};}
 function tileEntries(){if(!state.map)return[];const t=state.map.tiles||{};if(Array.isArray(t))return t.map(v=>[`${v.c},${v.r}`,v]);return Object.entries(t);}
+function drawHorizonTerrain2d(){
+  const cfg=horizonTerrain(); // Used to draw the authored landmark footprint outside the playable map.
+  if(!cfg.enabled||!state.map)return;
+  const m=state.map; // Used to convert the selected edge into map-relative world coordinates.
+  const horizontal=cfg.side==='north'||cfg.side==='south'; // Used to choose whether the long span follows columns or rows.
+  const axisLength=horizontal?m.cols:m.rows; // Used to scale the landmark span against the selected map edge.
+  const span=axisLength*Math.max(0.75,Number(cfg.spanScale)||1); // Used to overscan the map corners so the horizon continues out of view.
+  const start=(axisLength-span)*0.5,end=start+span; // Used as the two long-axis endpoints of the footprint.
+  const near=Math.max(0,Number(cfg.distanceWorld)||0),far=near+Math.max(1,Number(cfg.depthWorld)||1); // Used as the near/far extents beyond the playable edge.
+  const worldPoint=(axis,out)=>{ // Used to project generic edge coordinates back into map X/Z space.
+    if(cfg.side==='north')return[axis,-out];
+    if(cfg.side==='south')return[axis,m.rows+out];
+    if(cfg.side==='west')return[-out,axis];
+    return[m.cols+out,axis];
+  };
+  const corners=[worldPoint(start,near),worldPoint(end,near),worldPoint(end,far),worldPoint(start,far)]; // Used for the translucent 2D footprint polygon.
+  ctx.save();
+  ctx.beginPath();
+  corners.forEach((p,i)=>{const s=w2s(p[0],p[1]);i?ctx.lineTo(s.x,s.y):ctx.moveTo(s.x,s.y);});
+  ctx.closePath();
+  ctx.fillStyle=cfg.kind==='plateau'?'rgba(167,139,250,.20)':'rgba(148,163,184,.22)';
+  ctx.strokeStyle=cfg.kind==='plateau'?'rgba(196,181,253,.82)':'rgba(226,232,240,.82)';
+  ctx.lineWidth=2;
+  ctx.fill();ctx.stroke();
+  const mid=worldPoint((start+end)*0.5,(near+far)*0.5); // Used to place a readable landmark label in the footprint.
+  const ms=w2s(mid[0],mid[1]); // Used only for the label's screen-space position.
+  ctx.fillStyle='#eef5ff';ctx.font='700 11px system-ui';ctx.textAlign='center';
+  ctx.fillText(cfg.kind==='plateau'?'HUMONGOUS PLATEAU':'HUMONGOUS MOUNTAIN CHAIN',ms.x,ms.y);
+  ctx.restore();
+}
 function draw(){resize();const r=canvas.getBoundingClientRect();ctx.clearRect(0,0,r.width,r.height);if(!state.map)return;const z=state.cam.zoom,m=state.map,d=Number(state.scenery.borderDepthTiles||18);
   const bg0=w2s(-d,-d),bg1=w2s(m.cols+d,m.rows+d);ctx.fillStyle='#18251f';ctx.fillRect(bg0.x,bg0.y,bg1.x-bg0.x,bg1.y-bg0.y);
+  drawHorizonTerrain2d();
   const clear=Number(state.scenery.ridgeClearanceTiles||0);ctx.save();ctx.strokeStyle='rgba(180,190,198,.46)';ctx.lineWidth=Math.max(1,Math.min(10,(d-clear)*z));const inset=(clear+(d-clear)/2);const p0=w2s(-inset,-inset),p1=w2s(m.cols+inset,m.rows+inset);ctx.strokeRect(p0.x,p0.y,p1.x-p0.x,p1.y-p0.y);ctx.restore();
   const a=w2s(0,0),b=w2s(m.cols,m.rows);ctx.fillStyle='#254524';ctx.fillRect(a.x,a.y,b.x-a.x,b.y-a.y);
   if(z>3){for(const [key,t] of tileEntries()){let c,r0;if(Array.isArray(t)&&Number.isFinite(t.c)){c=t.c;r0=t.r;}else [c,r0]=key.split(',').map(Number);if(!Number.isFinite(c)||!Number.isFinite(r0))continue;const type=t.type||'grass';if(type!=='path'&&type!=='river'&&type!=='stream'&&type!=='waterfall')continue;const p=w2s(c,r0);ctx.fillStyle=type==='path'?'#9f8357':'#397f98';ctx.fillRect(p.x,p.y,z+0.5,z+0.5);}}
@@ -86,6 +164,17 @@ function end(e){state.pointers.delete(e.pointerId);if(state.pointers.size<2)stat
 window.addEventListener('resize',draw);
 for(const [id,key] of [['ridgeClearance','ridgeClearanceTiles'],['borderDepth','borderDepthTiles'],['defaultLength','defaultExtensionLengthTiles']])$(id).addEventListener('input',()=>{if(!state.scenery)return;state.scenery[key]=Number($(id).value);$(id+'Out').textContent=Number($(id).value).toFixed(id==='ridgeClearance'?2:0)+'t';draw();});
 for(const [id,key] of [['routeShoulder','routeShoulderTiles'],['riverBank','riverBankTiles'],['riverDepth','riverChannelDepth'],['waterfallThreshold','waterfallThreshold']])$(id).addEventListener('change',()=>{if(!state.scenery)return;state.scenery[key]=Number($(id).value);draw();fillSelected();});
+$('horizonEnabled').onchange=()=>{if($('horizonEnabled').checked){const preset=horizonTerrain().preset==='none'?(Core?.HORIZON_DEFAULT_BY_MAP?.[state.map?.id]||'westernMountainChain'):horizonTerrain().preset;replaceHorizonPreset(preset,'horizon-enabled');}else updateHorizon(o=>o.enabled=false,'horizon-enabled');};
+$('horizonPreset').onchange=()=>replaceHorizonPreset($('horizonPreset').value,'horizon-preset');
+$('horizonSide').onchange=()=>updateHorizon(o=>o.side=$('horizonSide').value,'horizon-side');
+$('horizonHeight').onchange=()=>updateHorizon(o=>o.heightWorld=Number($('horizonHeight').value),'horizon-height');
+$('horizonDistance').onchange=()=>updateHorizon(o=>o.distanceWorld=Number($('horizonDistance').value),'horizon-distance');
+$('horizonDepth').onchange=()=>updateHorizon(o=>o.depthWorld=Number($('horizonDepth').value),'horizon-depth');
+$('horizonSpan').onchange=()=>updateHorizon(o=>o.spanScale=Number($('horizonSpan').value),'horizon-span');
+$('horizonSegments').onchange=()=>updateHorizon(o=>o.segments=Number($('horizonSegments').value),'horizon-segments');
+$('horizonWestPreset').onclick=()=>replaceHorizonPreset('westernMountainChain','horizon-west-preset');
+$('horizonNorthPreset').onclick=()=>replaceHorizonPreset('northernPlateau','horizon-north-preset');
+$('horizonClear').onclick=()=>replaceHorizonPreset('none','horizon-clear');
 $('enabled').onchange=()=>updateOverride(o=>o.enabled=$('enabled').checked);$('edge').onchange=()=>updateOverride(o=>{o.edge=$('edge').value;delete o.controlPoints;});$('length').onchange=()=>updateOverride(o=>o.lengthTiles=Number($('length').value));$('widthScale').onchange=()=>updateOverride(o=>o.widthScale=Number($('widthScale').value));$('specialValue').onchange=()=>updateOverride((o,a)=>{if(a.kind==='river')o.bankTiles=Number($('specialValue').value);else o.shoulderTiles=Number($('specialValue').value);});$('attachRiverDepth').onchange=()=>updateOverride(o=>{const v=Number($('attachRiverDepth').value);if($('attachRiverDepth').value===''||!Number.isFinite(v))delete o.channelDepth;else o.channelDepth=v;});
 $('removeOrphan').onclick=()=>{const a=selected();if(!a?.orphan)return;delete state.scenery.attachments[a.id];state.selectedId=null;syncAttachments();draw();log(`Removed stale override ${a.id}.`);};$('addPoint').onclick=addPoint;$('deletePoint').onclick=deletePoint;$('resetPoints').onclick=resetPoints;$('fitBtn').onclick=fit;$('loadLive').onclick=loadLive;$('loadTown').onclick=loadTown;$('applyBtn').onclick=applyLive;$('exportMapBtn').onclick=()=>state.map&&download(`${state.map.id||'map'}.map.json`,{...state.map,backgroundScenery:state.scenery});$('exportSceneryBtn').onclick=()=>state.scenery&&download(`${state.map?.id||'map'}.background-scenery.json`,state.scenery);$('importBtn').onclick=()=>$('importFile').click();$('importFile').onchange=async e=>{const f=e.target.files?.[0];if(!f)return;try{loadMap(JSON.parse(await f.text()),{label:f.name});}catch(err){log(`Import failed: ${err.message}`);}e.target.value='';};$('sideToggle').onclick=()=>$('side').classList.toggle('collapsed');
 if(!Core){log('BackgroundScenery core unavailable: border-terrain.js did not load.');}else{const live=mapEditorAccess();if(live)loadLive();else loadTown();}
