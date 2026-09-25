@@ -14,6 +14,7 @@ const musicSource = fs.readFileSync('docs/js/music-minigame.js', 'utf8'); // Use
 const socialSource = fs.readFileSync('docs/js/social-action-wheel.js', 'utf8'); // Used to ensure non-ButtonN bindings work for the social wheel too.
 const bindingsSource = fs.readFileSync('docs/js/input-bindings.js', 'utf8'); // Used to pin selector-action migration, mount preservation, and per-device defaults behavior.
 const selectorSource = fs.readFileSync('docs/js/controller-selection-ui.js', 'utf8'); // Used to guard automatic both-stick controller ownership for wheels/arches.
+const contextualPotionSource = fs.readFileSync('docs/js/mobile-potion-category-drag.js', 'utf8'); // Used to guard the quick-bandage grace window against pre-existing movement/look stick input.
 const resetUiSource = fs.readFileSync('docs/js/input-default-reset-ui.js', 'utf8'); // Used to guarantee separate keyboard/controller reset buttons stay attached to their own Settings sections.
 const actionLocksSource = fs.readFileSync('docs/js/character-action-locks.js', 'utf8'); // Used to verify controller helpers are parser-loaded before gameplay polling can consume the same inputs.
 const loadoutUiSource = fs.readFileSync('docs/js/combat/combat-loadout-ui.js', 'utf8'); // Used to guard controller-confirmable attack swapping and focus continuity in the dynamic loadout pane.
@@ -187,7 +188,8 @@ assert.match(selectorSource, /utilityMenu:[\s\S]{0,120}open: 'openUtilities'[\s\
 assert.match(selectorSource, /socialWheel:[\s\S]{0,80}kind: 'social'/, 'Social Actions is routed through the same automatic selector ownership layer');
 assert.match(selectorSource, /const leftX = axis\(pad, 0\)[\s\S]{0,180}const rightX = axis\(pad, 2\)/, 'both left and right sticks provide horizontal arch navigation');
 assert.match(selectorSource, /const left = \{ x: axis\(pad, 0\), y: axis\(pad, 1\)[\s\S]{0,220}const right = \{ x: axis\(pad, 2\), y: axis\(pad, 3\)/, 'both left and right sticks provide full radial social-wheel navigation');
-assert.match(gameSource, /if \(potionAction3Press\.held\) \{[\s\S]{0,240}input\.x = 0; input\.y = 0;[\s\S]{0,520}move\.rawMagnitude >= look\.rawMagnitude[\s\S]{0,520}x: ax, y: ay[\s\S]{0,520}x: rx, y: ry[\s\S]{0,700}scrollEntries/, 'held Potion Select pauses movement and accepts left-stick navigation without removing right-stick navigation');
+assert.match(contextualPotionSource, /isTapBandageWindowOpen[\s\S]{0,220}rootOpenedAt[\s\S]{0,220}!rootNavigated[\s\S]{0,220}TAP_BANDAGE_MAX_MS/, 'Potion Select exposes the untouched quick-bandage window without duplicating its timing constant in gameplay code');
+assert.match(gameSource, /if \(potionAction3Press\.held\) \{[\s\S]{0,320}isTapBandageWindowOpen\?\.\(\) === true[\s\S]{0,260}if \(!bandageTapWindowOpen\) \{[\s\S]{0,260}input\.x = 0; input\.y = 0;[\s\S]{0,760}move\.rawMagnitude >= look\.rawMagnitude[\s\S]{0,900}scrollEntries/, 'quick Potion Select taps preserve existing controller movement/look, while deliberate holds still borrow both sticks for potion navigation');
 assert.match(selectorSource, /!isDown\(frame, state\.openerCode\)[\s\S]{0,120}finishSelection\(true, 'opener released'\)/, 'releasing a selector opener commits the current choice');
 assert.match(selectorSource, /arch\?\.releaseSelection\?\.\(\)/, 'arch commits reuse the existing release-selection path');
 assert.match(selectorSource, /SocialActionWheel\?\.close\?\.\(commit\)/, 'social-wheel commits reuse the existing wheel close/commit path');

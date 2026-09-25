@@ -443,7 +443,9 @@
       lastTapBandage:lastTapBandage && { ...lastTapBandage },
       lastError,
     });
-    window.ContextualPotionSelector = Object.freeze({ diagnostics, open:openRoot, restorePreviousEquipment });
+    const isTapBandageWindowOpen = () => stage === 'root' && rootOpenedAt > 0 && !rootNavigated
+      && Math.max(0, performance.now() - rootOpenedAt) <= TAP_BANDAGE_MAX_MS; // Lets controller gameplay preserve pre-existing movement/look until a Potion Select gesture becomes a deliberate hold.
+    window.ContextualPotionSelector = Object.freeze({ diagnostics, open:openRoot, restorePreviousEquipment, isTapBandageWindowOpen });
     window.MobilePotionTapNavigation = window.ContextualPotionSelector; // Compatibility alias for existing mobile debug probes.
     window.MobilePotionCategoryDrag = window.ContextualPotionSelector; // Compatibility alias for the legacy script name.
     return true;
