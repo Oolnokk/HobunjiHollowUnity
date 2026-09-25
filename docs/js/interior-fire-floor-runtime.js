@@ -172,22 +172,38 @@
     enabled: false,
   });
 
+  function ambientEmitterTargetsReady(group, emitters) {
+    const meshById = group?.userData?.meshById; // Authored part map is installed only after FurnitureVesselRuntime finishes replacing a procedural fallback.
+    return emitters.every(emitter => !emitter?.attachedPartId || !!meshById?.get?.(emitter.attachedPartId));
+  }
+
   function attachAmbientEmitters(group, data, key) {
     if (!group || !AMBIENT_FIRE_KEYS.has(key) || !Array.isArray(data?.particleEmitters) || !authored.createEmitterVisual) return group;
     if (ambientRecordByGroup.has(group)) return group;
     const emitters = data.particleEmitters.filter(emitter => emitter?.enabled !== false); // Used to create only authored emitters that are meant to run continuously.
     if (!emitters.length) return group;
+    group.userData = group.userData || {};
+    if (!ambientEmitterTargetsReady(group, emitters)) {
+      group.userData.hobunjiAmbientFurnitureVfxPendingKey = key; // Used by the authored-upgrade callback to retry only after attachedPartId meshes exist.
+      return group;
+    }
     const visuals = emitters.map(emitter => authored.createEmitterVisual(group, emitter)).filter(Boolean); // Used by the shared ambient RAF below.
     if (!visuals.length) return group;
     const record = { group, visuals, key, createdAt: performance.now(), wasAttached: false }; // Stored until the furniture is removed from its scene.
     ambientRecords.add(record);
     ambientRecordByGroup.set(group, record);
-    group.userData = group.userData || {};
+    delete group.userData.hobunjiAmbientFurnitureVfxPendingKey;
     group.userData.hobunjiAmbientFurnitureVfx = true;
     group.userData.hobunjiAmbientFurnitureVfxKey = key;
     lastAmbientKey = key;
     ensureAmbientLoop();
     return group;
+  }
+
+  function onAuthoredFurnitureReady(group, data, key) {
+    const normalizedKey = String(key || data?.key || '').trim(); // FurnitureVesselRuntime calls this only after replacement meshById has been installed on the live group.
+    if (!normalizedKey || !AMBIENT_FIRE_KEYS.has(normalizedKey)) return group;
+    return attachAmbientEmitters(group, data, normalizedKey);
   }
 
   function buildFurnitureWithAmbientVfx(key, baseColor) {
@@ -463,6 +479,7 @@
     installed: true,
     makeBonfireData,
     ensureCandleFlame,
+    onAuthoredFurnitureReady,
     registerFireFurnitureDefinitions,
     normalizeFloorStyle,
     defaultFloorStyleForWallStyle,
