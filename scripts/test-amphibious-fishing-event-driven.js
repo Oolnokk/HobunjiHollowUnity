@@ -52,9 +52,12 @@ context.ResourceSystem = {
   AFFLICTIONS: {},
   applyDamage: (entity, amount) => { resourceApplyDamageCalls++; entity.health = (entity.health || 0) - amount; },
   tick: (entity, dt) => ({ entity, dt }),
-  getEffectiveMax: (entity, key) => 100,
+  getEffectiveMax: (entity, key) => key === 'health' ? Number(entity.baseEffectiveHealthMax ?? 100) : 100,
   getAffliction: (entity, id) => Number(entity.afflictions?.[id]) || 0,
-  enforceCaps: () => {},
+  enforceCaps: entity => {
+    const cap = Number(entity.baseEffectiveHealthMax ?? 100); // Mimics an earlier max-Health reducer such as Congealed Health before Wounded Health wraps the shared API.
+    if (entity.health > cap) entity.health = cap;
+  },
 };
 assert.equal(AmphibiousFishing.getDebug().resourceRulesInstalled, true, 'assigning window.ResourceSystem installs the wounded/scent rules immediately, with no polling needed');
 // Regression: hookWindowApi's accessor replaces window[name] with whatever
@@ -74,6 +77,16 @@ const woundedHealthFloorEntity = {
 assert.equal(context.ResourceSystem.getEffectiveMax(woundedHealthFloorEntity, 'health'), 1, 'Wounded Health cannot reduce effective maximum Health below 1');
 context.ResourceSystem.enforceCaps(woundedHealthFloorEntity);
 assert.equal(woundedHealthFloorEntity.health, 1, 'Wounded Health cap enforcement cannot kill the target outright');
+
+const stackedMaxHealthAfflictionEntity = {
+  health: 100,
+  maxHealth: 100,
+  baseEffectiveHealthMax: 40,
+  afflictions: { woundedHealth: 40 },
+}; // Mimics Congealed Health (or another earlier max reducer) leaving 40 capacity before Wounded Health removes the remaining 40.
+assert.equal(context.ResourceSystem.getEffectiveMax(stackedMaxHealthAfflictionEntity, 'health'), 1, 'stacked max-Health afflictions still report a final 1 HP floor');
+context.ResourceSystem.enforceCaps(stackedMaxHealthAfflictionEntity);
+assert.equal(stackedMaxHealthAfflictionEntity.health, 1, 'Wounded Health enforcement uses the composed effective max instead of raw maxHealth');
 
 let registeredAttack = null;
 context.Combat = { animalAttacks: { register: (id, def) => { registeredAttack = { id, def }; } } };
