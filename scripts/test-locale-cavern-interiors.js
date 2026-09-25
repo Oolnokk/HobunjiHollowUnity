@@ -21,6 +21,8 @@ for (const locale of [banubu, colorPools]) {
 }
 
 assert.strictEqual(banubu.cavern.creatureKind, 'grehlr', 'Banubu cavern must use the Grehlr cave-surface family');
+assert.strictEqual(banubu.cavern.surfaceMaterial, 'farm-cliff', 'Banubu main cavern must retain farm-cliff surface parity');
+assert.strictEqual(colorPools.cavern.surfaceMaterial, 'farm-cliff', 'Color Pools cavern walls must use the same textured farm-cliff surface path as Banubu\'s main cave');
 
 const banubuDialogueCameras = banubu.cinematicCameras || [];
 assert.strictEqual(banubuDialogueCameras.length, 3, 'Banubu cavern must author awake, sleeping, and Color Pools Key world-space dialogue shots');
@@ -82,6 +84,8 @@ assert.strictEqual(built.isLocaleCavern, true);
 assert.strictEqual(built.denMotherKind, null, 'story cave locales must not inherit den encounter content');
 assert.strictEqual(built.cavernCreatureKind, 'grehlr', 'locale synthesis must carry the authored creature habitat into runtime material selection');
 assert.strictEqual(built.mesh.surfaceMaterial, 'farm-cliff', 'Banubu carved shell carries its authored farm-cliff material preset into the shared renderer');
+const builtColorPools = context.CavernGenerator.synthesizeLocaleCavernMapData(colorPools); // Regression guard: the hidden room must reach the same textured carved-shell path as Banubu's main cave.
+assert.strictEqual(builtColorPools.mesh.surfaceMaterial, 'farm-cliff', 'Color Pools carved shell carries farm-cliff material metadata into the shared renderer');
 assert.deepStrictEqual(JSON.parse(JSON.stringify(built.cinematicCameras)), JSON.parse(JSON.stringify(banubu.cinematicCameras)), 'locale cavern synthesis must preserve authored cinematic cameras');
 assert.strictEqual(Object.keys(built.floorSurfaceByTile || {}).length, built.floor.length, 'every cavern floor tile must get a rendered-surface Y sample');
 assert(Number.isFinite(built.floorSurfaceY), 'cavern synthesis must expose a finite fallback floor surface Y');
