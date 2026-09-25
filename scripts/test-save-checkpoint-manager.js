@@ -419,6 +419,24 @@ const vm = require('node:vm');
   assert.match(window.__hobunjiSaveCheckpointDebug.snapshot().lastError || '', /manual: Recovery "manual" read timed out after 3s.*showing browser fallback copy/, 'diagnostics expose the timeout and browser fallback provenance');
   assert.match(window.__hobunjiSaveCheckpointDebug.snapshot().recoveryReadErrors.manual || '', /timed out after 3s/, 'per-slot diagnostics distinguish unreadable history from an absent checkpoint');
 
+  // Emergency recovery import bypasses File System Access entirely. This is the Opera fallback
+  // when showDirectoryPicker is wedged in an already-active state.
+  const importedManual = structuredClone(legacyManualCheckpoint);
+  importedManual.reason = 'drag-import-manual';
+  const importedAuto = structuredClone(legacyManualCheckpoint);
+  importedAuto.reason = 'drag-import-auto';
+  store.delete('hobunjiSaveCheckpoint.manual.v1');
+  store.delete('hobunjiSaveCheckpoint.auto.v1');
+  const importResult = await api.importRecoveryFiles([
+    { name: 'manual.json', text: async () => JSON.stringify(importedManual) },
+    { name: 'autosave-latest.json', text: async () => JSON.stringify(importedAuto) },
+  ]);
+  assert.equal(importResult.ok, true, 'picker-free recovery import accepts checkpoint JSON files');
+  assert.deepEqual(importResult.imported.sort(), ['auto', 'manual'], 'picker-free recovery import maps canonical recovery filenames to the correct slots');
+  assert.equal(JSON.parse(store.get('hobunjiSaveCheckpoint.manual.v1')).reason, 'drag-import-manual', 'imported Manual Save becomes available in browser recovery history');
+  assert.equal(JSON.parse(store.get('hobunjiSaveCheckpoint.auto.v1')).reason, 'drag-import-auto', 'imported Latest Autosave becomes available in browser recovery history');
+  assert.equal(window.__hobunjiSaveCheckpointDebug.snapshot().emergencyRecoveryImportActive, true, 'diagnostics expose picker-free emergency recovery mode');
+
   console.log('save checkpoint manager folder-first regression: ok');
 })().catch(error => {
   console.error(error);
