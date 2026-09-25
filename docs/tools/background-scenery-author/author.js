@@ -56,11 +56,17 @@ function horizonBudget(cfg){
   if(cfg?.kind==='mountainChain'){
     const frontPeakCount=segments; // Used as the foreground shark-tooth row count.
     const backPeakCount=Math.max(2,segments-1); // Used as the staggered rear-row count.
-    const peakCount=frontPeakCount+backPeakCount; // Used to report how many discrete 3D teeth stay permanently visible.
-    return{vertices:peakCount*13,triangles:peakCount*20,rows:2,peakCount,frontPeakCount,backPeakCount};
+    const peakCount=frontPeakCount+backPeakCount; // Used to report how many discrete 3D mountains stay permanently visible.
+    const mountainLayers=Math.max(4,Math.min(24,Math.round(Number(cfg?.mountainLayers)||12))); // Used to mirror the runtime stacked-plateau tier count.
+    return{
+      vertices:peakCount*mountainLayers*8,
+      triangles:peakCount*mountainLayers*10,
+      rows:2,peakCount,frontPeakCount,backPeakCount,mountainLayers,
+      cliffSideQuadsPerLayer:4,topTrianglesPerLayer:2,
+    };
   }
   const rows=4; // Northern plateau keeps the original four cross-horizon profile rows.
-  return{vertices:(segments+1)*rows,triangles:segments*2*(rows-1),rows:1,peakCount:0};
+  return{vertices:(segments+1)*rows,triangles:segments*2*(rows-1),rows:1,peakCount:0,mountainLayers:0};
 }
 function fillHorizonControls(){
   if(!$('horizonPreset'))return;
@@ -75,8 +81,10 @@ function fillHorizonControls(){
   $('horizonSpan').value=Number(cfg.spanScale)||1;
   $('horizonOverallScale').value=Number(cfg.overallScale)||1;
   $('horizonSegments').value=Math.round(Number(cfg.segments)||3);
+  $('horizonMountainLayers').value=Math.round(Number(cfg.mountainLayers)||12);
+  $('horizonMountainLayersField').style.display=cfg.kind==='mountainChain'?'':'none';
   $('horizonStats').textContent=cfg.enabled
-    ? `${cfg.kind==='plateau'?'Plateau':`Mountain chain · ${budget.rows} staggered rows / ${budget.peakCount} peaks`} · ${budget.vertices} vertices / ${budget.triangles} triangles · ${(cfg.heightWorld*(Number(cfg.overallScale)||1)).toFixed(1)}u effective height · ${(Number(cfg.spanScale)||1).toFixed(2)}× span · ${(Number(cfg.overallScale)||1).toFixed(2)}× whole scale · ${cfg.alwaysVisible?'always submitted':'frustum culled'} · ${cfg.fogIndependent?'fog independent':'uses scene fog'}`
+    ? `${cfg.kind==='plateau'?'Plateau':`Mountain chain · ${budget.rows} staggered rows / ${budget.peakCount} mountains · ${budget.mountainLayers} plateau layers each · 4 cliff planes/layer`} · ${budget.vertices} vertices / ${budget.triangles} triangles · ${(cfg.heightWorld*(Number(cfg.overallScale)||1)).toFixed(1)}u effective height · ${(Number(cfg.spanScale)||1).toFixed(2)}× span · ${(Number(cfg.overallScale)||1).toFixed(2)}× whole scale · ${cfg.alwaysVisible?'always submitted':'frustum culled'} · ${cfg.fogIndependent?'fog independent':'uses scene fog'}`
     : 'No colossal horizon terrain.';
 }
 function announceHorizonChange(reason){
@@ -202,6 +210,7 @@ $('horizonDepth').onchange=()=>updateHorizon(o=>o.depthWorld=Number($('horizonDe
 $('horizonSpan').onchange=()=>updateHorizon(o=>o.spanScale=Number($('horizonSpan').value),'horizon-span');
 $('horizonOverallScale').onchange=()=>updateHorizon(o=>o.overallScale=Number($('horizonOverallScale').value),'horizon-overall-scale');
 $('horizonSegments').onchange=()=>updateHorizon(o=>o.segments=Number($('horizonSegments').value),'horizon-segments');
+$('horizonMountainLayers').onchange=()=>updateHorizon(o=>o.mountainLayers=Number($('horizonMountainLayers').value),'horizon-mountain-layers');
 $('horizonWestPreset').onclick=()=>replaceHorizonPreset('westernMountainChain','horizon-west-preset');
 $('horizonNorthPreset').onclick=()=>replaceHorizonPreset('northernPlateau','horizon-north-preset');
 $('horizonClear').onclick=()=>replaceHorizonPreset('none','horizon-clear');
