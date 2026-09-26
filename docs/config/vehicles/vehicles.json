@@ -1,0 +1,81 @@
+{
+  "version": 1,
+  "presets": [
+    {
+      "id": "kenkari_rivership",
+      "label": "Kenkari Canvas Rivership",
+      "category": "boat",
+      "modelUrl": "assets/models/vehicles/kenkari-rivership.glb",
+      "materialTextures": {
+        "Canvas (canvas.png)": "assets/textures/carved_smooth.png",
+        "Planks (Planks.png)": "assets/textures/carved_smooth.png"
+      },
+      "materialColors": {
+        "Canvas (canvas.png)": "#8b6540",
+        "Planks (Planks.png)": "#8b6540"
+      },
+      "tileSize": {
+        "width": 2.6,
+        "length": 5.1
+      },
+      "waterline": {
+        "heightAboveWater": 0.42
+      },
+      "modelYawOffsetDeg": 0,
+      "surfaceDetection": {
+        "mode": "furniture_edge_adjacency",
+        "splitAngleDeg": 24,
+        "walkableTriangleIds": [
+          426,
+          427,
+          438,
+          439,
+          450,
+          451,
+          462,
+          463,
+          474,
+          475,
+          486,
+          487,
+          498,
+          499,
+          510,
+          511,
+          582,
+          583
+        ]
+      },
+      "steerTrigger": {
+        "center": [
+          -0.031,
+          0.509,
+          0.455
+        ],
+        "size": [
+          0.92,
+          1.55,
+          1.05
+        ]
+      },
+      "handling": {
+        "maxForwardTilesPerSecond": 2.25,
+        "maxReverseTilesPerSecond": 0.65,
+        "accelerationTilesPerSecond2": 0.72,
+        "decelerationTilesPerSecond2": 0.24,
+        "reverseAccelerationTilesPerSecond2": 0.6,
+        "turnRateDegPerSecond": 38,
+        "highSpeedTurnMultiplier": 0.48,
+        "shoreBounceSpeedTilesPerSecond": 0.78,
+        "shoreBounceCooldownSeconds": 0.32,
+        "collisionInsetTiles": 0.16
+      }
+    }
+  ],
+  "future": {
+    "wagonsAndChariots": {
+      "status": "placeholder",
+      "note": "Reserved for future land vehicles. Intentionally has no runtime behavior yet."
+    }
+  }
+}

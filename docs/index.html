@@ -61,7 +61,7 @@
        window.HudUpdate.refreshItemScroll, so must load after it and before
        game.js, which calls window.ActionArcUI.init(...) (binds its own
        toolBtn/itemBtn/btnUtilityMenu listeners) during its own setup. -->
-  <script src="js/action-arc-ui.js?v=20260918utilityplacement1"></script>
+  <script src="js/action-arc-ui.js?v=20260926vehicle2"></script>
   <!-- Farm editor + farm layout save/load persistence, extracted out of
        game.js. Must load before game.js, which calls
        window.FarmEditor.init(...) very early (right after
@@ -551,6 +551,9 @@
        Self-contained aside from deps injected via init(); must load before game.js, which calls
        window.WildernessCampfire.init(...) during its own setup. -->
   <script src="js/wilderness-campfire.js?v=20260925savecorrupt5"></script>
+  <!-- Persistent wilderness vehicle runtime (window.WildernessBoat). Loads as
+       a peer world system; game.js injects save/travel/player deps directly. -->
+  <script src="js/wilderness-boat.js?v=20260926vehicle5"></script>
   <!-- Per-tile grid water simulation (rain/absorption/flow/siltation) and
        the merged dynamic-water mesh renderer (window.WaterSystem). Must
        load before game.js — unusually early among these, in fact: game.js

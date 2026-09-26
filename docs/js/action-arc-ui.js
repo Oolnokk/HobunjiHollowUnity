@@ -66,6 +66,7 @@
   let _arcEls = [], _arcBd = null, _arcOpen = null, _arcSlots = [], _arcActive = -1;
   let _heldEntrySelectorKind = null; // Shared by keyboard/controller/pointer adapters so wheel input knows which held selector owns it.
   let _fadingEls = [];
+  const _utilityEntryProviders = new Map(); // Independent systems register Utilities entries here so touch/keyboard/controller share one menu builder.
 
   function _clearArc(keepBackdrop = false) {
     if (_arcBd && !keepBackdrop) { _arcBd.remove(); _arcBd = null; }
@@ -125,6 +126,19 @@
     }))); // Special ammo uses the same ordinary-radius arch primitive.
   }
 
+  function _extensionUtilityEntries() {
+    const entries = []; // Collected provider entries are inserted after the two general character/furniture actions.
+    for (const [providerId, provider] of _utilityEntryProviders) {
+      try {
+        const supplied = provider(); // Provider output is evaluated when the wheel opens so labels/disabled state stay live.
+        if (Array.isArray(supplied)) entries.push(...supplied.filter(Boolean));
+      } catch (error) {
+        console.warn(`[ActionArcUI] utility provider "${providerId}" failed`, error);
+      }
+    }
+    return entries;
+  }
+
   // Utilities wheel — opened by holding 'c' (see desktopHoldKeys/
   // openDesktopHoldArc below), for quick actions that don't belong on the
   // per-tile action bar: opening furniture placement, warping back to a
@@ -139,7 +153,7 @@
     const campfire = window.WildernessCampfire?.serialize?.();
     const kitCount = deps.inventory.campfireKitFurniture || 0;
     const furniturePlacementAvailable = window.FurniturePlacer?.canOpen?.() === true; // Used to disable the utility entry anywhere normal furniture placement is not permitted.
-    _openEntries('utilities', [
+    const entries = [
       {
         id: 'character-view', icon: '👁️', label: deps.characterViewMode.enabled ? 'Character View: On' : 'Character View: Off',
         active: deps.characterViewMode.enabled,
@@ -187,7 +201,9 @@
         disabled: deps.getCurrentArea() === 'farm',
         onSelect: () => deps.startSceneTransition(() => deps.performTravel({ target: 'farm', targetCol: 17, targetRow: 0 })),
       },
-    ]);
+    ];
+    entries.splice(2, 0, ..._extensionUtilityEntries()); // Vehicle/other extensions appear after Character View + Furniture Placement on every input path.
+    _openEntries('utilities', entries);
   }
 
   function _openEntries(mode, entries, radius = _outerR()) {
@@ -631,5 +647,13 @@
 
   window.ActionArcUI = {
     init: (injectedDeps) => { init(injectedDeps); _bindListeners(); },
+    registerUtilityEntries(id, provider) {
+      if (!id || typeof provider !== 'function') return false;
+      _utilityEntryProviders.set(String(id), provider);
+      return true;
+    },
+    unregisterUtilityEntries(id) {
+      return _utilityEntryProviders.delete(String(id));
+    },
   };
 })();

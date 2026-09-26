@@ -8496,6 +8496,7 @@
           member.zoneTreasureState = window.WildTreasure.serializeState();
           member.wildernessChunkState = serializeWildernessChunkState();
           member.wildernessCampfireState = window.WildernessCampfire?.serialize?.() || null;
+          member.wildernessBoatState = window.WildernessBoat?.serialize?.() || null; // Vehicle state shares the canonical world-member save payload.
           member.felledTreeState = serializeZoneFelledTreeState();
           member.minedRockState = serializeZoneMinedRockState();
           member.townMineState = window.TownMine?.serialize?.() || null;
@@ -24022,6 +24023,7 @@
           window.PerfProfiler?.end(wildernessChunkPerf);
           const worldSystemsPerf = window.PerfProfiler?.begin('world systems'); // Campfire/fog/vitals/alchemy/cooking/bounty updates that run every frame regardless of area.
           window.WildernessCampfire?.updateVfx(dt);
+          window.WildernessBoat?.update?.(dt); // Vehicle motion/deck/helm runtime is a peer world system, not a campfire side effect.
           window.WildernessMap.updateFogAroundPlayer();
           window.PlayerVitals.updatePlayerVitals(dt);
           window.AlchemySystem.update();
@@ -28486,6 +28488,21 @@
         refreshItemScroll: window.HudUpdate.refreshItemScroll,
       });
 
+      window.WildernessBoat?.init({
+        getCurrentArea: () => currentArea,
+        isZoneArea: _isZoneArea,
+        getActiveScene: window.GridTileAccessors.getActiveScene,
+        getPlayer: () => player,
+        getFacingAngle: () => facingAngle,
+        surfaceYAt: activeSurfaceYAtWorld,
+        TILE,
+        persist: saveMemberWorldData,
+        showToast,
+        refreshActionBar,
+        startSceneTransition,
+        enterZone,
+      });
+
       window.TownZoneBuildings?.init({
         getTownZone: () => _townZone,
         debugLog,
@@ -29374,6 +29391,7 @@
         window.WildTreasure.restoreState(playerData.zoneTreasureState);
         restoreWildernessChunkState(playerData.wildernessChunkState);
         window.WildernessCampfire?.restore(playerData.wildernessCampfireState);
+        window.WildernessBoat?.restore?.(playerData.wildernessBoatState); // Restore only the active world/member's owned vehicle.
         restoreZoneFelledTreeState(playerData.felledTreeState);
         restoreZoneMinedRockState(playerData.minedRockState);
         window.TownMine?.restore?.(playerData.townMineState);
