@@ -897,7 +897,7 @@
     if(!state)return;
     const badge=document.getElementById('devRandomRuinBadge');
     if(!badge)return;
-    const base=badge.textContent.replace(/ · simple G\d+ R\d+ T\d+ CP \d+\/\d+$/,'');
+    const base=badge.textContent.replace(/ · simple G\d+ R\d+ T\d+ CP \d+\/\d+/g,''); // Other ruin diagnostics rewrite the same badge; strip any prior simple suffix wherever it landed before appending one canonical copy.
     const cp=state.checkpoints;
     badge.textContent=base+' · simple G'+state.safeGrids.length+' R'+state.ropes.length+' T'+state.trapHallways.length+' CP '+cp.triggered.size+'/'+(cp.doorwayCount+1);
   }
