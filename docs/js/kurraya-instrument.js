@@ -24,7 +24,8 @@
   }
 
   const KURRAYA_TOP_ASSET = { path: 'assets/toolsprites/kurraya_top.png', width: 318, height: 247 };
-  const KURRAYA_AUDIO_ASSET = { path: 'assets/audio/music/instruments/sfx_kurraya_pluck.m4a', filename: 'sfx_kurraya_pluck.m4a' }; // Bundled pluck fed into every hosted Kurraya sampler before it can sound notes.
+  const KURRAYA_AUDIO_ASSET = { path: 'assets/audio/music/instruments/sfx_kurraya_pluck.m4a', filename: 'sfx_kurraya_pluck.m4a' }; // Bundled pluck fed into hosted Kurraya samplers unless the user explicitly chose a custom Kurraya source in Music Lab.
+  const KURRAYA_CUSTOM_SAMPLE_KEY = 'hobunji.kurrayaCustomSample.v1'; // Read by hosted-sample startup so an explicitly imported Music Lab Kurraya SFX survives into gameplay.
   const KURRAYA_MUSIC_FRAME_SRC = 'assets/minigames/lyre-performance.html'; // Identifies both the player's visible performance iframe and ambient NPC performance iframes.
   const KURRAYA_MINIMAL_PERFORMANCE_UI = true; // Temporary presentation flag used to leave only notes, Auto Pick/arpeggio selection, and scale selection visible during player performances.
   const KURRAYA_MINIMAL_UI_HIDDEN_SELECTORS = [ // Host-side music chrome suppressed while the temporary minimal presentation is active.
@@ -39,7 +40,8 @@
     '#rightMusicControls .concertinaGroupHead',
     '#rightMusicControls .concertinaStrumWrap',
   ];
-  const KURRAYA_SAMPLE_RESTORE_WAIT_MS = 350; // Gives the minigame's IndexedDB restore a short chance to reuse an already-analyzed bundled sample.
+  const KURRAYA_SAMPLE_RESTORE_WAIT_MS = 350; // Gives the minigame's ordinary bundled-sample IndexedDB restore a short chance before fetching the guaranteed repo asset.
+  const KURRAYA_CUSTOM_SAMPLE_RESTORE_WAIT_MS = 1200; // Gives user-imported Music Lab PCM extra IndexedDB/decode time on slower phones before treating its preference as stale.
   const KURRAYA_SAMPLE_IMPORT_TIMEOUT_MS = 5000; // Prevents a failed browser decoder from blocking Kurraya controls indefinitely.
   const KURRAYA_SAMPLE_ANALYSIS_WAIT_MS = 1400; // Lets the existing root-note analyzer finish before the first pitched performance begins.
   const KURRAYA_SAMPLE_GATED_BRIDGE_METHODS = [ // Sound-producing/control methods queued behind sample readiness so no fallback-pluck note leaks through first.
@@ -195,17 +197,24 @@
     if (!frameDocument || !frameWindow || !bridge || !readout || !input) throw new Error('hosted sampler controls were not available');
 
     try { await bridge.wakeAudio?.(); } catch {}
-    const restored = await waitForAnalysisText( // Reuses normalized IndexedDB PCM on later frames instead of decoding the M4A repeatedly.
+    let customSample = null; // Holds the Music Lab's explicit replacement preference; unrelated sampler imports do not opt into gameplay.
+    try { customSample = JSON.parse(localStorage.getItem(KURRAYA_CUSTOM_SAMPLE_KEY) || 'null'); } catch {}
+    const preferredName = String(customSample?.name || KURRAYA_AUDIO_ASSET.filename); // Used to accept either the explicitly chosen custom source or the normal bundled source from IndexedDB.
+    const restored = await waitForAnalysisText(
       readout,
-      text => text.includes(`Restored ${KURRAYA_AUDIO_ASSET.filename}`),
-      KURRAYA_SAMPLE_RESTORE_WAIT_MS
+      text => text.includes(`Restored ${preferredName}`),
+      customSample ? KURRAYA_CUSTOM_SAMPLE_RESTORE_WAIT_MS : KURRAYA_SAMPLE_RESTORE_WAIT_MS
     );
     if (restored) {
-      sampleLog(`restored ${KURRAYA_AUDIO_ASSET.filename} from sampler cache`);
+      sampleLog(`restored ${preferredName} from sampler cache`);
       return;
     }
+    if (customSample) {
+      try { localStorage.removeItem(KURRAYA_CUSTOM_SAMPLE_KEY); } catch {} // Stale preference must not permanently block the guaranteed bundled fallback.
+      sampleLog(`custom Kurraya sample ${preferredName} was not restorable; reverting to bundled source`, 'warn');
+    }
 
-    const response = await fetch(KURRAYA_AUDIO_ASSET.path); // Loads the repo-authored source once when this frame does not already have the bundled sample restored.
+    const response = await fetch(KURRAYA_AUDIO_ASSET.path); // Loads the repo-authored source once when neither the preferred custom sample nor bundled sample was restored.
     if (!response.ok) throw new Error(`sample fetch returned HTTP ${response.status}`);
     const blob = await response.blob(); // Preserves the M4A bytes while allowing the existing file-import handler to decode them normally.
     const file = new frameWindow.File([blob], KURRAYA_AUDIO_ASSET.filename, { type: blob.type || 'audio/mp4' }); // Makes the repo asset indistinguishable from a user-selected sample to the existing sampler pipeline.
