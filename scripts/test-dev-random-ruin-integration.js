@@ -82,6 +82,8 @@ assert(interior.includes("hobunji.devRandomRuinPuzzleOptions.v2"), 'simple-mode 
 assert(interior.includes("pressurePlate:false") && interior.includes("brazier:false") && interior.includes("stackedObelisk:false") && interior.includes("linkedCubePillars:false") && interior.includes("nestedRoom:false"), 'fragile V50 puzzle families must default off in the simple first pass');
 assert(interior.includes("glyphObelisk:true") && interior.includes("safePath:true") && interior.includes("ropeSwing:true") && interior.includes("hallwayTraps:true"), 'simple first pass must keep projectile targets and enable safe-path, rope, and hallway hazards');
 assert(interior.includes("getRuntimeContext"), 'parent-runtime simple puzzles need the generated scene/metadata context without reaching into V50 internals');
+assert(interior.includes('getPuzzleGenerationOptions') && interior.includes('setPuzzleGenerationOptions'), 'simple-mode Settings state must be directly inspectable/persistable for deterministic runtime tests');
+assert(interior.includes("checkbox.addEventListener('change'"), 'each simple puzzle checkbox must commit directly instead of depending on delegated Settings events');
 assert(interior.includes("DevRandomRuinSimplePuzzles?.ownsPlayerMotion?.()"), 'rope swing / ballistic release must temporarily own player motion without floor reconciliation fighting it');
 assert(interior.includes('devRandomRuinPuzzleOptions'), 'Random Test Ruin Settings must expose the collapsed puzzle-generation panel');
 assert(interior.includes('data-ruin-puzzle-option'), 'puzzle-generation panel must render per-family checkboxes');
