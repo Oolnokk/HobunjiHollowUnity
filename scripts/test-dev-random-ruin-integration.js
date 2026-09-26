@@ -104,7 +104,7 @@ assert(interactions.includes('control.promptRoot || control.object'), 'shared ru
 assert(interactions.includes('horizontalDistanceToOwner'), 'tower interaction range must be measured from the physical object footprint rather than only its origin');
 assert(interactions.includes("['simple', window.DevRandomRuinSimplePuzzles]"), 'simple runtime controls must join the same WorldPopupText interaction provider list');
 assert(interactions.includes("typeof control.onHoldStart") && interactions.includes("onHoldEnd"), 'ruin input bridge must support held rope brake/adjust controls');
-assert(interactions.includes("document.addEventListener('keyup'"), 'keyboard rope braking must receive an actual release event rather than becoming a toggle');
+assert(interactions.includes("window.addEventListener('keyup'"), 'keyboard rope braking must receive an actual release event rather than becoming a toggle');
 assert(interactions.includes("controller hold release failed"), 'controller rope braking must release on the falling edge');
 assert(interactions.includes("pointercancel"), 'touch-held rope controls must release cleanly even when a gesture is cancelled');
 assert(simplePuzzles.includes("'burningHealth',GRID_BURNING"), 'unsafe path plates must apply the existing Burning Health affliction');
