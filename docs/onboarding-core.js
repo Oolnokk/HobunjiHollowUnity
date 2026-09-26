@@ -770,7 +770,7 @@
       profile.bodyColors = {
         ...(profile.bodyColors || {}),
         HAT: clothDyeColor(clothDyeA), HOOD: clothDyeColor(clothDyeA),
-        TORSO: clothDyeColor(clothDyeA), CLOTH: clothDyeColor(clothDyeA),
+        PAULDRON: clothDyeColor(clothDyeA), TORSO: clothDyeColor(clothDyeA), CLOTH: clothDyeColor(clothDyeA),
       };
     }
     if (clothDyeB) {
