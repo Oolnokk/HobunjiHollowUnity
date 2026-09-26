@@ -30,6 +30,17 @@ const quietHopePath = path.join(__dirname, '../docs/assets/audio/music/bgm/bgm_q
 const gentleTwilightPath = path.join(__dirname, '../docs/assets/audio/music/bgm/bgm_gentle_twilight.m4a'); // Confirms the farm/town 02:00-nightfall candidate exists.
 const snowAndDarknessPath = path.join(__dirname, '../docs/assets/audio/music/bgm/bgm_snow_and_darkness.m4a'); // Confirms the Western Slope night song exists at the configured runtime path.
 const pureFocusPath = path.join(__dirname, '../docs/assets/audio/music/bgm/bgm_pure_focus.m4a'); // Confirms the alternate combat recording exists at the configured runtime path.
+const pureFocusBinary = fs.readFileSync(pureFocusPath).toString('latin1'); // Temporary metadata probe used to verify whether Pure Focus needs the same sample-accurate AAC loop transport as Skirmish.
+const pureFocusSmpb = pureFocusBinary.match(/iTunSMPB[\s\S]{0,96}?([0-9A-Fa-f]{8}) ([0-9A-Fa-f]{8}) ([0-9A-Fa-f]{8}) ([0-9A-Fa-f]{16})/);
+const pureFocusMp4aIndex = pureFocusBinary.indexOf('mp4a');
+const pureFocusSourceSampleRate = pureFocusMp4aIndex >= 0 ? fs.readFileSync(pureFocusPath).readUInt32BE(pureFocusMp4aIndex + 28) / 65536 : 0;
+console.log('PURE_FOCUS_GAPLESS_META=' + JSON.stringify({
+  flags: pureFocusSmpb?.[1] || null,
+  encoderDelaySamples: pureFocusSmpb ? parseInt(pureFocusSmpb[2], 16) : null,
+  paddingSamples: pureFocusSmpb ? parseInt(pureFocusSmpb[3], 16) : null,
+  contentSamples: pureFocusSmpb ? parseInt(pureFocusSmpb[4], 16) : null,
+  sourceSampleRate: pureFocusSourceSampleRate || null,
+}));
 const undergrowthPath = path.join(__dirname, '../docs/assets/audio/music/bgm/bgm_The_Undergrowth.ogg'); // Confirms the Cloud Forest night recording exists with its case-sensitive filename.
 const fishCaughtCuePath = path.join(__dirname, '../docs/assets/audio/music/cues/gameplaycues/gpq_fish_caught.m4a'); // Confirms the catch-success sting is present.
 const progressDeeperCuePath = path.join(__dirname, '../docs/assets/audio/music/cues/gameplaycues/gpq_progress_deeper.m4a'); // Confirms the mine-descent sting is present.
