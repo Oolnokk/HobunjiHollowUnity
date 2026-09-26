@@ -128,14 +128,10 @@
 
   function cloneMaterial(source) {
     const color = source?.color?.getHex?.() ?? 0x545039;
-    const material = new THREE.MeshStandardMaterial({
+    const map = cloneTexture(source?.map);
+    const common = {
       color,
-      map: cloneTexture(source?.map),
-      emissive: source?.emissive?.getHex?.() ?? 0x000000,
-      emissiveMap: cloneTexture(source?.emissiveMap),
-      emissiveIntensity: Number.isFinite(Number(source?.emissiveIntensity)) ? Number(source.emissiveIntensity) : 1,
-      roughness: Number.isFinite(Number(source?.roughness)) ? Number(source.roughness) : .92,
-      metalness: Number.isFinite(Number(source?.metalness)) ? Number(source.metalness) : .02,
+      map,
       side: source?.side ?? THREE.DoubleSide,
       transparent: source?.transparent === true,
       opacity: Number.isFinite(Number(source?.opacity)) ? Number(source.opacity) : 1,
@@ -143,7 +139,25 @@
       depthTest: source?.depthTest !== false,
       depthWrite: source?.depthWrite !== false,
       vertexColors: source?.vertexColors === true,
-    });
+    };
+    const sourceUnlit = source?.isMeshBasicMaterial || source?.lights === false || source?.userData?.naturalSurfaceUnlit || source?.userData?.devRandomRuinUnlitMaterial; // Never promote cliff-style/unlit source art back into a physically lit material at the iframe→game boundary.
+    let material;
+    if(sourceUnlit){
+      const spritePngSurface=window.HobunjiSpritePngSurface||window.HobunjiPngPlaneUnlit; // Same material factory used by cliffs.
+      material=typeof spritePngSurface?.makeMaterial==='function'
+        ? spritePngSurface.makeMaterial(THREE,map,`${source?.name||'v50_ruin'}_game_realm_unlit`,common)
+        : new THREE.MeshBasicMaterial(common);
+      material.userData=Object.assign({},source?.userData,material.userData,{devRandomRuinUnlitMaterial:true,naturalSurfaceLightModel:'character-png-unlit'});
+    }else{
+      material = new THREE.MeshStandardMaterial({
+        ...common,
+        emissive: source?.emissive?.getHex?.() ?? 0x000000,
+        emissiveMap: cloneTexture(source?.emissiveMap),
+        emissiveIntensity: Number.isFinite(Number(source?.emissiveIntensity)) ? Number(source.emissiveIntensity) : 1,
+        roughness: Number.isFinite(Number(source?.roughness)) ? Number(source.roughness) : .92,
+        metalness: Number.isFinite(Number(source?.metalness)) ? Number(source.metalness) : .02,
+      });
+    }
     material.name = `${source?.name || 'v50_ruin'}_game_realm`;
     material.needsUpdate = true;
     return material;
@@ -237,6 +251,16 @@
       return null;
     }
     const proxy = new THREE.Mesh(geometry, material);
+    if(sourceObject.userData?.devRandomRuinDenMaterial){
+      const natural=window.NaturalSurfaceMaterials; // Re-enters den-tagged V50 stone through the parent realm's exact ordinary-den material factory.
+      if(typeof natural?.naturalizeMesh==='function'){
+        const clonedMaterial=proxy.material; // Disposed after naturalizeMesh replaces the temporary parent-realm clone.
+        const clonedMaterials=Array.isArray(clonedMaterial)?clonedMaterial:[clonedMaterial];
+        natural.naturalizeMesh(proxy,'cliffs');
+        if(proxy.material!==clonedMaterial)for(const old of clonedMaterials){old?.map?.dispose?.();old?.dispose?.();}
+        proxy.userData=Object.assign({},proxy.userData,{devRandomRuinDenMaterial:true});
+      }
+    }
     proxy.name = `${sourceObject.name || `ruin_${kind}_${sourceObject.id}`}_runtime_render`;
     proxy.userData.devRuinRenderProxy = true;
     proxy.userData.devRuinRenderKind = kind;
@@ -493,6 +517,7 @@
         const materials = Array.isArray(proxy.material) ? proxy.material : [proxy.material];
         return materials.length > 0 && materials.every(material => material instanceof THREE.Material);
       }).length,
+      litProxyMaterials: allLive.reduce((sum,proxy)=>sum+(Array.isArray(proxy.material)?proxy.material:[proxy.material]).filter(material=>material?.lights===true||material?.isMeshLambertMaterial||material?.isMeshPhongMaterial||material?.isMeshToonMaterial||material?.isMeshStandardMaterial||material?.isMeshPhysicalMaterial).length,0), // Mobile/browser proof that the visible proxy layer stayed unlit after crossing realms.
       blockerCount: DS.debugSnapshot?.().blockers?.filter(record => String(record.id || '').startsWith('devruin-wall-')).length || 0,
     };
   }
