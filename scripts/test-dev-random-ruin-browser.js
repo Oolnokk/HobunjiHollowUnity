@@ -85,7 +85,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
   // Exercise the stripped-down generator before the normal smoke seeds:
   // only the proven projectile glyph family, with every parent-runtime simple
   // family disabled. Old V50 mechanism families must remain hard-off.
-  await page.evaluate(() => {
+  const projectileOnlySettings = await page.evaluate(() => {
     const details = document.getElementById('devRandomRuinPuzzleOptions');
     for (const checkbox of details.querySelectorAll('[data-ruin-puzzle-option]')) {
       checkbox.checked = checkbox.dataset.ruinPuzzleOption === 'glyphObelisk';
@@ -94,7 +94,12 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     const maxInput = details.querySelector('#devRandomRuinMaxPuzzlesPerRoom');
     maxInput.value = '1';
     maxInput.dispatchEvent(new Event('input', { bubbles:true }));
+    return window.DevRandomRuin.getPuzzleGenerationOptions();
   });
+  assert.deepEqual(projectileOnlySettings, {
+    pressurePlate:false,brazier:false,glyphObelisk:true,stackedObelisk:false,linkedCubePillars:false,nestedRoom:false,
+    safePath:false,ropeSwing:false,hallwayTraps:false,maxPerRoom:1,
+  }, JSON.stringify(projectileOnlySettings));
   const constrainedSeed = 0x51a7cafe;
   assert.equal(await page.evaluate(async seed => window.DevRandomRuin.generate(seed), constrainedSeed), true);
   await page.waitForFunction(() => window.GridTileAccessors.getCurrentArea() === 'map_i_dev_random_ruin', null, { timeout:30000 });
@@ -160,7 +165,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
   await page.waitForFunction(() => window.GridTileAccessors.getCurrentArea() !== 'map_i_dev_random_ruin', null, { timeout:10000 });
 
   // Restore the simple-mode defaults before running broad fixed-seed coverage.
-  await page.evaluate(() => {
+  const restoredSimpleSettings = await page.evaluate(() => {
     const details = document.getElementById('devRandomRuinPuzzleOptions');
     for (const checkbox of details.querySelectorAll('[data-ruin-puzzle-option]')) {
       checkbox.checked = true;
@@ -169,7 +174,12 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     const maxInput = details.querySelector('#devRandomRuinMaxPuzzlesPerRoom');
     maxInput.value = '0';
     maxInput.dispatchEvent(new Event('input', { bubbles:true }));
+    return window.DevRandomRuin.getPuzzleGenerationOptions();
   });
+  assert.equal(restoredSimpleSettings.safePath,true,JSON.stringify(restoredSimpleSettings));
+  assert.equal(restoredSimpleSettings.ropeSwing,true,JSON.stringify(restoredSimpleSettings));
+  assert.equal(restoredSimpleSettings.hallwayTraps,true,JSON.stringify(restoredSimpleSettings));
+  for(const key of ['pressurePlate','brazier','stackedObelisk','linkedCubePillars','nestedRoom']) assert.equal(restoredSimpleSettings[key],false,JSON.stringify(restoredSimpleSettings));
 
   async function failureDiagnostics(seed) {
     return page.evaluate(value => {
