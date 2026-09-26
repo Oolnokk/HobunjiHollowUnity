@@ -237,13 +237,13 @@ assert.match(
 
 assert.match(
   source,
-  /scaleAuditionState\(\)[\s\S]*?arrangement:kurrayaSongArrangementState\(\)[\s\S]*?setAuditionScale\(scaleName\)[\s\S]*?setAuditionTonic\(tonicMidi\)[\s\S]*?setKurrayaSongArrangement\(arrangement = \{\}\)[\s\S]*?resetKurrayaSongArrangement\(\)[\s\S]*?startSongAudition\(scaleName = state\.scaleName, tonicMidi = state\.tonicMidi\)[\s\S]*?stopSongAudition\(\)/,
-  'the shared music bridge must expose scale audition plus session-local chord-section authoring'
+  /scaleAuditionState\(\)[\s\S]*?scaleSemitones:scalePitchClasses\(\)\.slice\(\)[\s\S]*?arrangement:kurrayaSongArrangementState\(\)[\s\S]*?setAuditionScale\(scaleName\)[\s\S]*?setAuditionTonic\(tonicMidi\)[\s\S]*?setKurrayaSongArrangement\(arrangement = \{\}\)[\s\S]*?setKurrayaSongMelody\(notes = \[\]\)[\s\S]*?resetKurrayaSongMelody\(\)[\s\S]*?resetKurrayaSongArrangement\(\)[\s\S]*?startSongAudition\(scaleName = state\.scaleName, tonicMidi = state\.tonicMidi\)[\s\S]*?stopSongAudition\(\)/,
+  'the shared music bridge must expose scale, chord-section, and session-local melody authoring'
 );
 
 assert.match(
   hostSource,
-  /MUSIC_MINIGAME_SRC = 'assets\/minigames\/lyre-performance\.html\?v=20260925mixedmeter4'/,
+  /MUSIC_MINIGAME_SRC = 'assets\/minigames\/lyre-performance\.html\?v=20260925mixedmeter5'/,
   'gameplay must cache-bust the fixed-harmony minigame revision'
 );
 
@@ -261,6 +261,12 @@ assert.match(
   source,
   /function kurrayaSongArrangementState\(\)[\s\S]*?melodyStartQuarterBeat:KURRAYA_INTRO_QUARTER_BEATS[\s\S]*?melodyNotes/,
   'the bridge must expose the real melody after the four-bar intro for timeline authoring'
+);
+
+assert.match(
+  source,
+  /KURRAYA_DEFAULT_MELODY_NOTES = Object\.freeze\([\s\S]*?kurrayaSongMelodyNotes:KURRAYA_DEFAULT_MELODY_NOTES\.map[\s\S]*?function getSongDefinition\(type\)[\s\S]*?state\.kurrayaSongMelodyNotes[\s\S]*?function normalizeKurrayaMelodyNotes\(notes, fallback = KURRAYA_DEFAULT_MELODY_NOTES\)[\s\S]*?48 quarter-beats/,
+  'random melody authoring must remain session-local, validate the 48-quarter-beat song body, and preserve an immutable reset melody'
 );
 
 assert.match(
@@ -285,6 +291,24 @@ assert.match(
   musicLab,
   /ARRANGEMENT_STORAGE_KEY[\s\S]*?paintArrangementBar\(barIndex\)[\s\S]*?setKurrayaSongArrangement\(\{introSteps,bodySteps\}\)[\s\S]*?arrangementSectionText/,
   'the chord editor must persist its draft locally and drive the live engine arrangement'
+);
+
+assert.match(
+  musicLab,
+  /id="randomMelodyBtn"[\s\S]*?id="melodyResetBtn"[\s\S]*?MELODY_STORAGE_KEY[\s\S]*?composeRandomMelody\(snapshot = arrangementSnapshot\)[\s\S]*?setKurrayaSongMelody\(melody\)/,
+  'the Music Lab must expose random melody generation, reset, persistence, and live-engine application'
+);
+
+assert.match(
+  musicLab,
+  /RANDOM_MELODY_RHYTHMS[\s\S]*?RANDOM_MELODY_CADENCE_RHYTHMS[\s\S]*?function makeMelodicContour[\s\S]*?Math\.abs\(previousInterval\) >= 3[\s\S]*?function chooseMelodyDegree[\s\S]*?chordDistance === 0[\s\S]*?downbeat \? 6\.2[\s\S]*?function chooseCadenceDegree[\s\S]*?phraseCenters = \[4\.2,5\.5,6\.7,5\.0\]/,
+  'the melody generator must use reusable rhythmic motifs, stepwise/leap-recovery contour, structural-beat chord tones, cadences, and phrase-level contour'
+);
+
+assert.match(
+  musicLab,
+  /Copy song draft[\s\S]*?melodyNotes = arrangement\.melodyNotes\.map[\s\S]*?JSON\.stringify\(\{introSteps:arrangement\.introSteps,bodySteps:arrangement\.bodySteps,melodyNotes\}\)/,
+  'copied song drafts must include the generated melody as well as chord bars'
 );
 
 assert.doesNotMatch(source, /1–5–6–4/, 'legacy selectable harmony ids must not survive the fixed-progression migration');
@@ -333,7 +357,7 @@ assert.match(
 
 assert.match(
   toolsHub,
-  /data-target="kurraya-music-lab"[\s\S]*?kurraya-music-lab\/index\.html\?v=20260925lab9/,
+  /data-target="kurraya-music-lab"[\s\S]*?kurraya-music-lab\/index\.html\?v=20260925lab10/,
   'the combined Kurraya Music Lab must be the single Kurraya entry in the tools hub'
 );
 assert.doesNotMatch(
