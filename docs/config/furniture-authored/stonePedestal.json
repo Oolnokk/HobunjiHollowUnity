@@ -25,7 +25,10 @@
       "color": "#625c52",
       "wonkiness": 0.008,
       "materialRole": "stone",
-      "materialTexture": "carved_smooth.png"
+      "materialTexture": "carved_smooth.png",
+      "materialLighting": "unlit",
+      "materialUvMapping": "connected-surface-stretch",
+      "materialUvMaxPatchWorldSize": 6
     },
     {
       "id": "pedestal_base1",
@@ -47,7 +50,10 @@
       "topScaleZ": 0.94,
       "wonkiness": 0.008,
       "materialRole": "stone",
-      "materialTexture": "carved_smooth.png"
+      "materialTexture": "carved_smooth.png",
+      "materialLighting": "unlit",
+      "materialUvMapping": "connected-surface-stretch",
+      "materialUvMaxPatchWorldSize": 6
     },
     {
       "id": "pedestal_body",
@@ -71,7 +77,10 @@
       "bottomScaleZ": 1.04,
       "wonkiness": 0.013,
       "materialRole": "stone",
-      "materialTexture": "carved_smooth.png"
+      "materialTexture": "carved_smooth.png",
+      "materialLighting": "unlit",
+      "materialUvMapping": "connected-surface-stretch",
+      "materialUvMaxPatchWorldSize": 6
     },
     {
       "id": "pedestal_neck",
@@ -91,7 +100,10 @@
       "color": "#928a78",
       "wonkiness": 0.008,
       "materialRole": "stone",
-      "materialTexture": "carved_smooth.png"
+      "materialTexture": "carved_smooth.png",
+      "materialLighting": "unlit",
+      "materialUvMapping": "connected-surface-stretch",
+      "materialUvMaxPatchWorldSize": 6
     },
     {
       "id": "pedestal_top",
@@ -113,7 +125,10 @@
       "topScaleZ": 0.96,
       "wonkiness": 0.008,
       "materialRole": "stone",
-      "materialTexture": "carved_smooth.png"
+      "materialTexture": "carved_smooth.png",
+      "materialLighting": "unlit",
+      "materialUvMapping": "connected-surface-stretch",
+      "materialUvMaxPatchWorldSize": 6
     }
   ],
   "seatAnchors": [],
