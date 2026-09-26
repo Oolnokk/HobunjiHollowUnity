@@ -1,0 +1,67 @@
+#!/usr/bin/env node
+'use strict';
+
+const assert = require('node:assert/strict');
+const WildernessMapGenerator = require('../docs/js/wilderness-map-generator.js');
+
+const WATER_TYPES = new Set(['river', 'stream', 'waterfall']);
+const SEEDS = [
+  'eastern_mire_archipelago_regression_a',
+  'eastern_mire_archipelago_regression_b',
+];
+
+function rootTile(workspace, col, row) {
+  const root = (workspace.maps || []).find(map => map && !map.isSubmap);
+  return root?.tiles?.[`${col},${row}`] || null;
+}
+
+for (const seed of SEEDS) {
+  const workspace = WildernessMapGenerator.generateZoneWorkspace('map_eastern_mire', seed);
+  const root = (workspace.maps || []).find(map => map && !map.isSubmap);
+  assert(root, `Eastern Mire must export a root map for ${seed}`);
+  assert.equal(root.cols, 200, 'Eastern Mire must retain the normal 2x exported wilderness width');
+  assert.equal(root.rows, 200, 'Eastern Mire must retain the normal 2x exported wilderness height');
+
+  const archipelago = workspace.archipelago;
+  assert(archipelago?.enabled, 'Eastern Mire workspace must expose archipelago diagnostics');
+  assert.equal(archipelago.intendedIslandCount, 12, 'Eastern Mire should generate a 4x3 field of twelve primary islands');
+  assert(archipelago.seaRatio > 0.50 && archipelago.seaRatio < 0.80,
+    `open-water coverage should read as an archipelago, got ${archipelago.seaRatio}`);
+  assert(archipelago.boatSeparatedTiles > 0, 'some walkable land must be intentionally separated from the entry island by boat water');
+  assert(archipelago.movementComponentCount >= 6,
+    `the final mire should retain multiple on-foot components, got ${archipelago.movementComponentCount}`);
+
+  const tiles = Object.values(root.tiles || {});
+  const seaTiles = tiles.filter(tile => tile.archipelagoSea);
+  assert(seaTiles.length > root.cols * root.rows * 0.50, 'more than half the exported mire should be open inter-island water');
+  assert(seaTiles.every(tile => WATER_TYPES.has(tile.type)),
+    'archipelagoSea tiles must remain water in the editor/game export; reachability repair may not turn them into paths');
+  assert.equal(seaTiles.filter(tile => tile.type === 'path').length, 0,
+    'archipelago sea must never be converted into automatic bridge/path tiles');
+
+  const islandIds = new Set(
+    tiles
+      .filter(tile => !tile.archipelagoSea && tile.archipelagoIslandId)
+      .map(tile => tile.archipelagoIslandId)
+  );
+  for (let row = 1; row <= 3; row++) {
+    for (let col = 1; col <= 4; col++) {
+      assert(islandIds.has(`island_${row}_${col}`), `primary island_${row}_${col} must survive the final export`);
+    }
+  }
+
+  const houseTile = rootTile(workspace, 34, 29);
+  assert(houseTile, 'Leaf & Pahu fixed map coordinate must exist');
+  assert(!houseTile.archipelagoSea && !WATER_TYPES.has(houseTile.type),
+    'Leaf & Pahu fixed coordinate (34,29) must remain dry land across Tothal rerolls');
+
+  const entryTile = rootTile(workspace, workspace.entry.col, workspace.entry.row);
+  assert(entryTile, 'generated Eastern Mire entry tile must exist');
+  assert(!entryTile.archipelagoSea && !WATER_TYPES.has(entryTile.type),
+    'west entry gate must land on the entry island rather than spawning the player in open water');
+}
+
+const westernSlope = WildernessMapGenerator.generateZoneWorkspace('map_western_slope', 'archipelago_non_mire_control');
+assert.equal(westernSlope.archipelago, null, 'archipelago terrain must remain opt-in and must not affect other wilderness zones');
+
+console.log('Eastern Mire archipelago regression passed.');
