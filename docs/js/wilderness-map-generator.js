@@ -8464,18 +8464,25 @@
   }
 
   function archipelagoIslandAt(x, y, plan) {
-    const configuredShoreNoise = Number(settings.archipelagoShoreNoise); // Used to scale coarse and fine shoreline breakup below.
-    const shoreNoise = clamp(Number.isFinite(configuredShoreNoise) ? configuredShoreNoise : 1, 0, 1.5); // Used to keep shoreline distortion bounded so neighboring islands cannot touch.
+    const configuredShoreNoise = Number(settings.archipelagoShoreNoise); // Used to scale the seeded radial shoreline breakup below.
+    const shoreNoise = clamp(Number.isFinite(configuredShoreNoise) ? configuredShoreNoise : 1, 0, 1.5); // Used to keep headlands bounded well inside the inter-island channel spacing.
     let bestIsland = null; // Used to label land tiles with the closest matching island for path/debug grouping.
     let bestScore = Infinity; // Used to resolve rare overlaps toward the more central island.
     for (const island of plan.islands) {
       const dx = (x - island.centerX) / Math.max(1, island.radiusX); // Used in the island's normalized elliptical distance.
       const dy = (y - island.centerY) / Math.max(1, island.radiusY); // Used in the island's normalized elliptical distance.
-      const normalizedDistance = dx * dx + dy * dy; // Used as the smooth base coastline before seeded breakup.
-      const coarseNoise = (noise2(Math.floor(x / 4), Math.floor(y / 4), island.shoreSalt) - 0.5) * 0.28 * shoreNoise; // Used to create broad coves and headlands.
-      const fineNoise = (noise2(x, y, island.shoreSalt + 43) - 0.5) * 0.10 * shoreNoise; // Used to keep individual shore tiles from forming perfect ellipses.
-      const shoreThreshold = clamp(1 + coarseNoise + fineNoise, 0.72, 1.20); // Used to bound coastline noise below the inter-island channel spacing.
-      const score = normalizedDistance / shoreThreshold; // Used to compare this tile against the noisy island boundary.
+      const radialDistance = Math.hypot(dx, dy); // Used so every coastline perturbation remains star-shaped and therefore connected back to the island core.
+      const angle = Math.atan2(dy, dx); // Used to place deterministic coves/headlands around this island rather than noisy detached edge pixels.
+      const phaseA = noise2(island.col, island.row, island.shoreSalt) * Math.PI * 2; // Used by the broad three-lobed shoreline harmonic.
+      const phaseB = noise2(island.col, island.row, island.shoreSalt + 43) * Math.PI * 2; // Used by the finer five-lobed shoreline harmonic.
+      const phaseC = noise2(island.col, island.row, island.shoreSalt + 89) * Math.PI * 2; // Used by the subtle seven-lobed shoreline harmonic.
+      const shorelineWave = (
+        Math.sin(angle * 3 + phaseA) * 0.075
+        + Math.sin(angle * 5 + phaseB) * 0.045
+        + Math.sin(angle * 7 + phaseC) * 0.022
+      ) * shoreNoise; // Used to create irregular but contiguous coastlines.
+      const shoreThreshold = clamp(1 + shorelineWave, 0.84, 1.16); // Used to prevent any headland from closing the guaranteed boat-width channels.
+      const score = radialDistance / shoreThreshold; // Used to compare this tile against the seeded radial coastline.
       if (score <= 1 && score < bestScore) {
         bestIsland = island;
         bestScore = score;
