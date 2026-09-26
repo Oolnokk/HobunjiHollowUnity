@@ -43,6 +43,12 @@ assert.doesNotMatch(
 
 assert.match(
   source,
+  /function createRootPadVoice\(midi, whenMs = null\)[\s\S]*?rootOscillator\.type = 'triangle'[\s\S]*?now \+ 0\.18/,
+  'the single low synth root must expose audible harmonics and reach preview level promptly on small speakers'
+);
+
+assert.match(
+  source,
   /function analyzeAuxiliaryRoot\(buffer\)[\s\S]*?estimatePitch\([\s\S]*?rootPadSampleRootMidi = detected\.midi/,
   'imported pad SFX must auto-detect their actual recorded fundamental before transposition'
 );
