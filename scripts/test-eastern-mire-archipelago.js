@@ -54,16 +54,16 @@ for (const seed of SEEDS) {
 
   const archipelago = workspace.archipelago;
   assert(archipelago?.enabled, 'Eastern Mire workspace must expose archipelago diagnostics');
-  assert.equal(archipelago.intendedIslandCount, 12, 'Eastern Mire should generate a 4x3 field of twelve primary islands');
-  assert(archipelago.seaRatio > 0.50 && archipelago.seaRatio < 0.80,
-    `open-water coverage should read as an archipelago, got ${archipelago.seaRatio}`);
+  assert.equal(archipelago.intendedIslandCount, 12, 'Eastern Mire should generate twelve freely scattered primary islands');
+  assert(archipelago.seaRatio > 0.74 && archipelago.seaRatio < 0.88,
+    `open-water coverage should dominate the mire without starving the islands, got ${archipelago.seaRatio}`);
   assert(archipelago.boatSeparatedTiles > 0, 'some walkable land must be intentionally separated from the entry island by boat water');
   assert(archipelago.movementComponentCount >= 6,
     `the final mire should retain multiple on-foot components, got ${archipelago.movementComponentCount}`);
 
   const tiles = Object.values(root.tiles || {});
   const seaTiles = tiles.filter(tile => tile.archipelagoSea);
-  assert(seaTiles.length > root.cols * root.rows * 0.50, 'more than half the exported mire should be open inter-island water');
+  assert(seaTiles.length > root.cols * root.rows * 0.74, 'roughly three quarters or more of the exported mire should be open inter-island water');
   assert(seaTiles.every(tile => WATER_TYPES.has(tile.type)),
     'archipelagoSea tiles must remain water in the editor/game export; reachability repair may not turn them into paths');
   assert.equal(seaTiles.filter(tile => tile.type === 'path').length, 0,
@@ -75,13 +75,19 @@ for (const seed of SEEDS) {
       .map(tile => tile.archipelagoIslandId)
   );
   const componentCounts = countTopologicalComponentsByIsland(root); // Verifies shoreline irregularity never fragments a named primary island.
-  for (let row = 1; row <= 3; row++) {
-    for (let col = 1; col <= 4; col++) {
-      const islandId = `island_${row}_${col}`;
-      assert(islandIds.has(islandId), `primary ${islandId} must survive the final export`);
-      assert.equal(componentCounts.get(islandId), 1, `${islandId} must remain one contiguous island footprint`);
-    }
+  for (let index = 1; index <= 12; index++) {
+    const islandId = `island_${String(index).padStart(2, '0')}`;
+    assert(islandIds.has(islandId), `primary ${islandId} must survive the final export`);
+    assert.equal(componentCounts.get(islandId), 1, `${islandId} must remain one contiguous island footprint`);
   }
+
+  const sourceIslands = archipelago.sourceIslands || [];
+  const xBands = new Set(sourceIslands.map(island => Math.round(island.centerX / 6))); // Coarse center bands expose accidental return to neat columns.
+  const yBands = new Set(sourceIslands.map(island => Math.round(island.centerY / 6))); // Coarse center bands expose accidental return to neat rows.
+  assert(xBands.size >= 7 && yBands.size >= 7,
+    `island centers should be freely scattered rather than a visible grid (x bands ${xBands.size}, y bands ${yBands.size})`);
+  assert(sourceIslands.every(island => island.armCount >= 2 && island.lobeCount > island.armCount),
+    'every primary island should be built from a multi-lobed continent silhouette rather than one regular ellipse');
 
   const houseTile = rootTile(workspace, 34, 29);
   assert(houseTile, 'Leaf & Pahu fixed map coordinate must exist');
