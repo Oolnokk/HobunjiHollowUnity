@@ -1961,7 +1961,7 @@
       : performanceBeatFloat; // During the authored song, harmony advances through the four 6/8 intro bars while melody performance time remains parked at zero.
     const harmonyQuarterBeatFloat = fixedKurraya && state.game.active
       ? Math.min(rawHarmonyQuarterBeatFloat,FIXED_HARMONY_CYCLE_QUARTER_BEATS - 1e-6)
-      : rawHarmonyQuarterBeatFloat; // Holds the final A through the song's short post-melody tail instead of wrapping back to F before playback actually stops.
+      : rawHarmonyQuarterBeatFloat; // Holds the final authored root through the song's short post-melody tail instead of wrapping before playback actually stops.
     const mixedPhase = fixedKurraya ? fixedKurrayaMixedMeterPhase(harmonyQuarterBeatFloat) : null;
     const meter = fixedKurraya ? mixedPhase.meter : activeSongMeter(performanceBeatFloat);
     const beatMs = quarterBeatMs * meter.quarterUnitsPerBeat;
@@ -2610,6 +2610,57 @@
 
   function padProgressionRootMidis(tonicMidi = state.tonicMidi) {
     return FIXED_HARMONY_STEPS.map(step => Number(tonicMidi) + step.rootSemitones + PAD_ROOT_REGISTER_OFFSET); // Exposes the exact pad-root register for diagnostics/tests independent of the current transport step.
+  }
+
+  function kurrayaSongArrangementState() {
+    const definition = SONGBOOK['when-the-kininjis-bloom']; // Supplies the actual authored melody so the standalone Music Lab can draw chord sections directly beneath it.
+    const arrangement = activeKurrayaSongArrangement();
+    const tonicPitchClass = ((state.tonicMidi % 12) + 12) % 12;
+    let melodyBeat = 0;
+    const melodyNotes = (definition?.notes || []).map(([degree,duration],index) => {
+      const noteDuration = Math.max(0.03125,Number(duration) || 0.25);
+      const note = {
+        index,
+        degree:Number(degree) || 0,
+        midi:state.tonicMidi + scaleDegreeOffset(Number(degree) || 0),
+        noteName:midiName(state.tonicMidi + scaleDegreeOffset(Number(degree) || 0)),
+        startQuarterBeat:KURRAYA_INTRO_QUARTER_BEATS + melodyBeat,
+        melodyQuarterBeat:melodyBeat,
+        durationQuarterBeats:noteDuration
+      };
+      melodyBeat += noteDuration;
+      return note;
+    });
+    const labelStep = (stepIndex) => {
+      const step = FIXED_HARMONY_STEPS[stepIndex] || FIXED_HARMONY_STEPS[0];
+      const roman = (step.quality === 'minor' ? ROMAN_DEGREES[step.degree]?.toLowerCase() : ROMAN_DEGREES[step.degree]) || String(step.degree + 1);
+      return {
+        stepIndex,
+        degree:step.degree + 1,
+        roman,
+        quality:step.quality,
+        rootSemitones:step.rootSemitones,
+        chordName:`${NOTE_NAMES[(tonicPitchClass + step.rootSemitones) % 12]} ${step.quality}`,
+        rootName:NOTE_NAMES[(tonicPitchClass + step.rootSemitones) % 12]
+      };
+    };
+    return {
+      totalBars:FIXED_HARMONY_CYCLE_CHORDS,
+      introBars:FIXED_HARMONY_SIX_EIGHT_CHORDS,
+      bodyBars:FIXED_HARMONY_THREE_FOUR_CHORDS,
+      quarterBeatsPerBar:FIXED_HARMONY_CHORD_QUARTER_BEATS,
+      totalQuarterBeats:FIXED_HARMONY_CYCLE_QUARTER_BEATS,
+      melodyStartQuarterBeat:KURRAYA_INTRO_QUARTER_BEATS,
+      melodyQuarterBeats:melodyBeat,
+      introSteps:arrangement.introSteps.slice(),
+      bodySteps:arrangement.bodySteps.slice(),
+      segments:[
+        ...arrangement.introSegments.map(segment => ({...segment,absoluteStartBar:segment.startBar,label:labelStep(segment.step)})),
+        ...arrangement.bodySegments.map(segment => ({...segment,absoluteStartBar:FIXED_HARMONY_SIX_EIGHT_CHORDS + segment.startBar,label:labelStep(segment.step)}))
+      ],
+      chordOptions:FIXED_HARMONY_STEPS.map((step,index) => labelStep(index)),
+      melodyNotes
+    };
   }
 
   function rootPadSynthGain() {
@@ -7184,6 +7235,7 @@
         beatGrouping:KURRAYA_BEAT_GROUPING.slice(),
         currentTimeSignature:sharedTransportData().meter.label,
         harmonyCadence:{cycleChords:FIXED_HARMONY_CYCLE_CHORDS,sixEightChords:FIXED_HARMONY_SIX_EIGHT_CHORDS,threeFourChords:FIXED_HARMONY_THREE_FOUR_CHORDS,chordQuarterBeats:FIXED_HARMONY_CHORD_QUARTER_BEATS,introQuarterBeats:KURRAYA_INTRO_QUARTER_BEATS,finalShortStepIndices:FIXED_HARMONY_FINAL_SHORT_STEPS.slice(),meterSequence:['6/8','3/4']},
+        arrangement:kurrayaSongArrangementState(),
         progression:FIXED_HARMONY_STEPS.map(step => ({
           degree:step.degree + 1,
           roman:(step.quality === 'minor' ? ROMAN_DEGREES[step.degree]?.toLowerCase() : ROMAN_DEGREES[step.degree]) || String(step.degree + 1),
@@ -7202,6 +7254,24 @@
     },
     setAuditionTonic(tonicMidi) {
       applyPerformanceTonic(tonicMidi,{persist:false});
+      return this.scaleAuditionState();
+    },
+    setKurrayaSongArrangement(arrangement = {}) {
+      state.kurrayaSongIntroSteps = normalizeKurrayaArrangementSteps(arrangement.introSteps,FIXED_HARMONY_SIX_EIGHT_CHORDS,KURRAYA_DEFAULT_INTRO_STEPS); // Applies Music Lab paint edits without mutating the songbook definition or saved gameplay settings.
+      state.kurrayaSongBodySteps = normalizeKurrayaArrangementSteps(arrangement.bodySteps,FIXED_HARMONY_THREE_FOUR_CHORDS,KURRAYA_DEFAULT_BODY_STEPS); // Adjacent equal bars are grouped into sustained long sections by fixedKurrayaHarmonyCadence().
+      state.lastHarmonyStep = -1;
+      state.scheduledHarmonyStep = null;
+      updateHarmonyVisual(true,true);
+      if (state.rootPadEnabled) syncRootPad(true);
+      return this.scaleAuditionState();
+    },
+    resetKurrayaSongArrangement() {
+      state.kurrayaSongIntroSteps = KURRAYA_DEFAULT_INTRO_STEPS.slice();
+      state.kurrayaSongBodySteps = KURRAYA_DEFAULT_BODY_STEPS.slice();
+      state.lastHarmonyStep = -1;
+      state.scheduledHarmonyStep = null;
+      updateHarmonyVisual(true,true);
+      if (state.rootPadEnabled) syncRootPad(true);
       return this.scaleAuditionState();
     },
     async startSongAudition(scaleName = state.scaleName, tonicMidi = state.tonicMidi) {
