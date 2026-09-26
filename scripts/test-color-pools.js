@@ -49,6 +49,11 @@ assert.deepEqual(
 assert.equal(pedestal.schema, 'hobunji_furniture_authored_runtime.v1');
 assert.equal(pedestal.key, 'stonePedestal');
 assert.equal(pedestal.parts.length, 5, 'Color Pools altar uses the existing five-part stone pedestal asset');
+assert.equal(colorLocale.cavern?.surfaceMaterial, 'farm-cliff', 'Color Pools cavern uses Banubu\'s proven farm-cliff surface pipeline');
+assert(pedestal.parts.every(part => part.materialTexture === 'carved_smooth.png'), 'every altar stage uses the canonical carved-smooth PNG');
+assert(pedestal.parts.every(part => part.materialLighting === 'unlit'), 'every altar stage keeps the canonical PNG unlit instead of Lambert-wrapping it');
+assert(pedestal.parts.every(part => part.materialUvMapping === 'connected-surface-stretch'), 'every altar stage opts into the same connected-surface UV treatment that fixed Banubu\'s cave');
+assert(pedestal.parts.every(part => part.materialUvMaxPatchWorldSize === 6), 'altar surface mapping uses Banubu\'s farm-scale six-world-unit patch cap');
 
 const pools = colorLocale.cavern?.features?.colorPools || [];
 assert.equal(pools.length, 3);
@@ -75,7 +80,11 @@ assert(renderer.includes('applyPatternStackToTintedImage'), 'Color Pools routes 
 assert(renderer.includes('patterns.length > 1 ? { clearanceMultiplier: Math.max(3, Math.min(12'), 'animal paint diagnostics expose the actual authored/clamped knot-style overpass gap');
 assert(stableSource.includes('stableEntries, // Shared live Stable collection'), 'Stable progression exposes its existing live collection instead of a duplicate store');
 assert(stableSource.includes('saveStable,'), 'Color Pools persists through the Stable owner');
-assert(furniture.includes('CATALOG.stonePedestal'), 'stone pedestal has a loading-race fallback matching the authored asset');
+assert(furniture.includes('CATALOG.stonePedestal'), 'stone pedestal has a fallback matching the authored asset');
+const pedestalFallback = furniture.slice(furniture.indexOf('CATALOG.stonePedestal = ['), furniture.indexOf('CATALOG.statue = [')); // Isolates only the Color Pools fallback recipe.
+assert.equal((pedestalFallback.match(/materialTexture: 'carved_smooth\.png'/g) || []).length, 5, 'all five fallback altar stages keep the stone PNG');
+assert.equal((pedestalFallback.match(/materialLighting: 'unlit'/g) || []).length, 5, 'all five fallback altar stages preserve the historical Banubu unlit-material fix');
+assert.equal((pedestalFallback.match(/materialUvMapping: 'connected-surface-stretch'/g) || []).length, 5, 'all five fallback altar stages preserve connected-surface mapping');
 assert(game.includes("stonePedestal: { itemKey: 'colorPoolsAltarFurniture'"), 'Color Pools altar is a non-shop fixture');
 assert(game.includes("colorPoolsAltarFurniture: () => window.ColorPoolsSystem?.makeAltarInteractable"), 'the authored altar opens the Color Pools workflow');
 const buildingButtons = game.slice(game.indexOf('// Building interior: spot transitions require explicit input'), game.indexOf('// Procedural mine floors are building interiors'));
