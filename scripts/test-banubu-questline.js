@@ -251,11 +251,32 @@ assert.strictEqual(migratedReadyNodes.banubu_q1_ready_1.choices[0].actions[0].op
 assert.strictEqual(migratedReadyNodes.banubu_q1_ready_18.next, 'banubu_q1_ready_commit', 'stale edited final lines must regain the transactional commit edge');
 assert.deepStrictEqual(JSON.parse(JSON.stringify(migratedReadyNodes.banubu_q1_ready_commit.banubuPresentation)), { commitTurnIn: 1 }, 'stale ready trees must regain the final commit node');
 
+// Older edited intro/offer trees also regain their final commit boundary while keeping their authored dialogue.
+const staleIntro = JSON.parse(JSON.stringify(content.dialogueTrees.find(tree => tree.id === 'banubu_intro')));
+staleIntro.nodes.find(node => node.id === 'banubu_intro_11').next = null;
+staleIntro.nodes = staleIntro.nodes.filter(node => node.id !== 'banubu_intro_commit');
+const staleOffer = JSON.parse(JSON.stringify(content.dialogueTrees.find(tree => tree.id === 'banubu_q1_offer')));
+staleOffer.nodes.find(node => node.id === 'banubu_q1_offer_2').next = null;
+staleOffer.nodes = staleOffer.nodes.filter(node => node.id !== 'banubu_q1_offer_commit');
+const staleProgressDb = { npcs: [{ id: 'banubu', dialogueTrees: [staleIntro, staleOffer], phrasePools: [], events: [] }] };
+content.mergeDialogueTreesIntoDatabase(staleProgressDb);
+const migratedIntroNodes = Object.fromEntries(staleProgressDb.npcs[0].dialogueTrees.find(tree => tree.id === 'banubu_intro').nodes.map(node => [node.id, node]));
+const migratedOfferNodes = Object.fromEntries(staleProgressDb.npcs[0].dialogueTrees.find(tree => tree.id === 'banubu_q1_offer').nodes.map(node => [node.id, node]));
+assert.strictEqual(migratedIntroNodes.banubu_intro_11.next, 'banubu_intro_commit');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(migratedIntroNodes.banubu_intro_commit.banubuPresentation)), { commitIntroAttempt: 3, commitQuestAction: { operation: 'unlockRecipe', stage: 0 } });
+assert.strictEqual(migratedOfferNodes.banubu_q1_offer_2.next, 'banubu_q1_offer_commit');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(migratedOfferNodes.banubu_q1_offer_commit.banubuPresentation)), { commitQuestAction: { operation: 'accept', stage: 1 } });
+
 const q1ReadyPresentationTree = content.dialogueTrees.find(tree => tree.id === 'banubu_q1_ready'); // Used to verify the exact authored line-to-presentation timing requested for the Color Pools Key scene.
 const q1ReadyPresentationNodes = Object.fromEntries(q1ReadyPresentationTree.nodes.map(node => [node.id, node]));
 const introTree = content.dialogueTrees.find(tree => tree.id === 'banubu_intro'); // Verifies the existing awake-camera metadata on Banubu's choice node is no longer discarded by the helper.
 const introNodes = Object.fromEntries(introTree.nodes.map(node => [node.id, node])); // Used immediately below to assert the intro choice preserves its generic cameraId metadata.
 assert.strictEqual(introNodes.banubu_intro_3.cameraId, 'banubu_dialogue_awake', 'Banubu intro choice must retain its authored awake-camera swap');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(introNodes.banubu_intro_commit.banubuPresentation)), { commitIntroAttempt: 3, commitQuestAction: { operation: 'unlockRecipe', stage: 0 } }, 'the long intro must commit its wake-up attempt and recipe transition only after the last line');
+const q1OfferPresentationNodes = Object.fromEntries(content.dialogueTrees.find(tree => tree.id === 'banubu_q1_offer').nodes.map(node => [node.id, node]));
+const q2OfferPresentationNodes = Object.fromEntries(content.dialogueTrees.find(tree => tree.id === 'banubu_q2_offer').nodes.map(node => [node.id, node]));
+assert.deepStrictEqual(JSON.parse(JSON.stringify(q1OfferPresentationNodes.banubu_q1_offer_commit.banubuPresentation)), { commitQuestAction: { operation: 'accept', stage: 1 } });
+assert.deepStrictEqual(JSON.parse(JSON.stringify(q2OfferPresentationNodes.banubu_q2_offer_commit.banubuPresentation)), { commitQuestAction: { operation: 'accept', stage: 2 } });
 assert.deepStrictEqual(JSON.parse(JSON.stringify(q1ReadyPresentationNodes.banubu_q1_ready_4.banubuPresentation)), { body: 'awake', sparkles: 'start', move: { x: 0, z: -0.85, duration: 0.7 } }, '“I’m up” must switch Banubu to regular idle, start sparkles, and ease him backward from the reveal spot');
 assert.strictEqual(q1ReadyPresentationNodes.banubu_q1_ready_4.cameraId, 'banubu_dialogue_awake', 'standing up must establish the ordinary awake shot before the key close-up');
 assert.deepStrictEqual(JSON.parse(JSON.stringify(q1ReadyPresentationNodes.banubu_q1_ready_5.banubuPresentation)), { neck: 'max_down' }, 'noticing the Color Pools Key must use the canonical maximum downward neck pose');
@@ -641,6 +662,9 @@ assert.match(dialogueContentSource, /_notifyDialogueNodeEnter\(node\)/);
 assert.match(dialogueContentSource, /_notifyDialogueNodeEnter\(null, true\)/);
 const banubuQuestlineSource = read('docs/js/banubu-questline.js'); // Verifies the sparkle effect obeys the repository's single-frame-owner architecture.
 assert.doesNotMatch(banubuQuestlineSource, /function ensureNextTarget\(/, 'no helper may persist Quest 2 preview state before the final dialogue commit');
+assert.doesNotMatch(banubuQuestlineSource, /function ensureIntroTarget\(|function ensureTarget\(/, 'opening Banubu dialogue must not persist a newly rolled quest target');
+assert.match(banubuQuestlineSource, /operation === 'unlockRecipe'\) result = prepareQuestAction/, 'recipe unlock actions must remain provisional until the final dialogue end node');
+assert.match(banubuQuestlineSource, /operation === 'accept'\) result = prepareQuestAction/, 'quest accept actions must remain provisional until the final dialogue end node');
 assert.match(banubuQuestlineSource, /operation === 'turnIn'\) result = prepareTurnIn/, 'legacy turnIn actions must be fail-safe prepare-only');
 assert.doesNotMatch(banubuQuestlineSource, /requestAnimationFrame\(/);
 assert.match(banubuQuestlineSource, /scheduler\.register\(PRESENTATION_SCHEDULER_ID, updatePresentationFrame/);
