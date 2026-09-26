@@ -35,6 +35,11 @@
   const SCREEN_SKY_UV_GLSL = `
     uniform vec2 uSkyResolution;
     uniform vec2 uSkyProjectionScale;
+    uniform float uSkyCenterU;
+
+    float hobunjiWrapSigned(float value) {
+      return mod(value + 0.5, 1.0) - 0.5;
+    }
 
     vec2 hobunjiSkyUvFromScreen() {
       vec2 safeResolution = max(uSkyResolution, vec2(1.0));
@@ -50,7 +55,11 @@
         viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2]
       );
       vec3 worldDir = normalize(cameraRotation * viewDir);
-      float u = fract(atan(worldDir.z, -worldDir.x) / 6.28318530718 + 1.0);
+      float rawU = atan(worldDir.z, -worldDir.x) / 6.28318530718;
+      // Keep the longitude continuous around the current camera heading. This
+      // prevents the equirectangular 0/1 wrap from ever becoming a screen-space
+      // discontinuity while it is inside the viewport.
+      float u = uSkyCenterU + hobunjiWrapSigned(rawU - uSkyCenterU);
       float v = asin(clamp(worldDir.y, -1.0, 1.0)) / 3.14159265359 + 0.5;
       return vec2(u, clamp(v, 0.0, 1.0));
     }
@@ -256,6 +265,7 @@
     return {
       uSkyResolution: { value: new THREE.Vector2(1, 1) },
       uSkyProjectionScale: { value: new THREE.Vector2(1, 1) },
+      uSkyCenterU: { value: 0 }, // Used to unwrap longitude around the current view so the texture seam stays outside the viewport.
     };
   }
 
@@ -276,7 +286,7 @@
         precision highp float; uniform vec3 uTop; uniform vec3 uMid; uniform vec3 uBottom; uniform float uNight; uniform float uStars;
         ${SCREEN_SKY_UV_GLSL}
         float hash12(vec2 p){ vec3 p3=fract(vec3(p.xyx)*.1031); p3+=dot(p3,p3.yzx+33.33); return fract((p3.x+p3.y)*p3.z); }
-        vec3 starField(vec2 uv){ vec2 cell=uv*vec2(190.0,108.0); vec2 id=floor(cell); vec2 gv=fract(cell)-.5; float rnd=hash12(id); float mask=step(.9785,rnd); vec2 jitter=(vec2(hash12(id+13.1),hash12(id+37.4))-.5)*.34; float d=length(gv+jitter); float core=smoothstep(.042,0.0,d); float halo=smoothstep(.17,0.0,d)*.38; float twinkle=.82+.18*sin((uv.x+uv.y+rnd)*420.0); vec3 tint=mix(vec3(.92,.96,1.0),vec3(1.0,.96,.90),hash12(id+17.2)); return tint*mask*(core+halo)*twinkle*smoothstep(.18,.34,uv.y); }
+        vec3 starField(vec2 uv){ vec2 cell=vec2(uv.x*190.0,uv.y*108.0); vec2 id=floor(cell); vec2 gv=fract(cell)-.5; id.x=mod(mod(id.x,190.0)+190.0,190.0); float rnd=hash12(id); float mask=step(.9785,rnd); vec2 jitter=(vec2(hash12(id+13.1),hash12(id+37.4))-.5)*.34; float d=length(gv+jitter); float core=smoothstep(.042,0.0,d); float halo=smoothstep(.17,0.0,d)*.38; float periodicX=fract(uv.x); float twinkle=.82+.18*sin((periodicX*67.0+uv.y+rnd)*6.28318530718); vec3 tint=mix(vec3(.92,.96,1.0),vec3(1.0,.96,.90),hash12(id+17.2)); return tint*mask*(core+halo)*twinkle*smoothstep(.18,.34,uv.y); }
         void main(){ vec2 skyUv=hobunjiSkyUvFromScreen(); float upper=smoothstep(.48,.92,skyUv.y); float lower=1.0-smoothstep(.16,.53,skyUv.y); vec3 day=mix(uMid,uTop,upper); day=mix(day,uBottom,lower*.62); vec3 night=mix(vec3(.018,.025,.075),vec3(.035,.055,.13),smoothstep(.20,.85,skyUv.y)); vec3 rgb=mix(day,night,uNight); rgb+=starField(skyUv)*uStars; gl_FragColor=vec4(rgb,1.0); }`,
     });
   }
@@ -296,8 +306,8 @@
       fragmentShader: `
         precision highp float; uniform sampler2D uMap; uniform vec2 uOffset; uniform float uBrightness; uniform float uOpacity; uniform vec2 uSunUV; uniform float uSunLight; uniform vec2 uMoonUV; uniform float uMoonLight;
         ${SCREEN_SKY_UV_GLSL}
-        float dxWrap(float a,float b){ float d=abs(a-b); return min(d,1.0-d); } float skyDist(vec2 a,vec2 b){ float dx=dxWrap(a.x,b.x); float lat=abs(a.y-.5)*3.14159265; dx*=max(.22,cos(lat)); float dy=a.y-b.y; return sqrt(dx*dx+dy*dy); }
-        void main(){ vec2 skyUv=hobunjiSkyUvFromScreen(); vec2 sampleUv=vec2(fract(skyUv.x+uOffset.x),clamp(skyUv.y+uOffset.y,0.0,1.0)); vec4 tex=texture2D(uMap,sampleUv); if(tex.a<.004)discard; float sun=1.0-smoothstep(.018,.16,skyDist(skyUv,uSunUV)); float moon=1.0-smoothstep(.015,.13,skyDist(skyUv,uMoonUV)); vec3 rgb=tex.rgb*uBrightness; rgb+=vec3(1.0,.78,.43)*sun*uSunLight*max(tex.a,.34); rgb+=vec3(.58,.72,1.0)*moon*uMoonLight*max(tex.a,.30); gl_FragColor=vec4(rgb,tex.a*uOpacity); }`,
+        float dxWrap(float a,float b){ return abs(hobunjiWrapSigned(a-b)); } float skyDist(vec2 a,vec2 b){ float dx=dxWrap(a.x,b.x); float lat=abs(a.y-.5)*3.14159265; dx*=max(.22,cos(lat)); float dy=a.y-b.y; return sqrt(dx*dx+dy*dy); }
+        void main(){ vec2 skyUv=hobunjiSkyUvFromScreen(); vec2 sampleUv=vec2(skyUv.x+uOffset.x,clamp(skyUv.y+uOffset.y,0.0,1.0)); vec4 tex=texture2D(uMap,sampleUv); if(tex.a<.004)discard; float sun=1.0-smoothstep(.018,.16,skyDist(skyUv,uSunUV)); float moon=1.0-smoothstep(.015,.13,skyDist(skyUv,uMoonUV)); vec3 rgb=tex.rgb*uBrightness; rgb+=vec3(1.0,.78,.43)*sun*uSunLight*max(tex.a,.34); rgb+=vec3(.58,.72,1.0)*moon*uMoonLight*max(tex.a,.30); gl_FragColor=vec4(rgb,tex.a*uOpacity); }`,
     });
   }
 
@@ -363,7 +373,7 @@
       fragmentShader: `
         precision highp float; uniform sampler2D uMap; uniform vec2 uOffset; uniform vec2 uTexel; uniform float uErodePx; uniform float uCutoff;
         ${SCREEN_SKY_UV_GLSL}
-        vec2 cloudUv(vec2 baseUv,vec2 delta){ return vec2(fract(baseUv.x+uOffset.x+delta.x),clamp(baseUv.y+uOffset.y+delta.y,0.0,1.0)); }
+        vec2 cloudUv(vec2 baseUv,vec2 delta){ return vec2(baseUv.x+uOffset.x+delta.x,clamp(baseUv.y+uOffset.y+delta.y,0.0,1.0)); }
         void main(){
           vec2 baseUv=hobunjiSkyUvFromScreen();
           vec2 d=uTexel*uErodePx;
@@ -462,7 +472,7 @@
       band.depthMaterial.dispose();
     }
     cloudBands = CLOUD_RADII.map((radius, index) => {
-      const texture = new deps.THREE.CanvasTexture(createCloudAtlas(images, index)); texture.wrapS = deps.THREE.RepeatWrapping; texture.wrapT = deps.THREE.ClampToEdgeWrapping; texture.needsUpdate = true;
+      const texture = new deps.THREE.CanvasTexture(createCloudAtlas(images, index)); texture.wrapS = deps.THREE.RepeatWrapping; texture.wrapT = deps.THREE.ClampToEdgeWrapping; texture.minFilter = deps.THREE.LinearFilter; texture.magFilter = deps.THREE.LinearFilter; texture.generateMipmaps = false; texture.needsUpdate = true; // Avoid derivative-driven mip selection at the longitude wrap becoming a one-pixel cloud seam.
       const geometry = new deps.THREE.SphereGeometry(radius, 64, 36); // Shared by this band's invisible depth mask and visible cloud shell.
       const depthMaterial = makeCloudDepthMaskMaterial(texture);
       const depthMesh = new deps.THREE.Mesh(geometry, depthMaterial);
@@ -515,11 +525,17 @@
       Math.max(0.000001, Math.abs(Number(projection?.[0]) || 1)),
       Math.max(0.000001, Math.abs(Number(projection?.[5]) || 1))
     );
+    const matrixWorld = deps?.camera?.matrixWorld?.elements; // Used to derive the camera's current world-forward longitude without allocating a Vector3 every frame.
+    const forwardX = -(Number(matrixWorld?.[8]) || 0);
+    const forwardZ = -(Number(matrixWorld?.[10]) || -1);
+    uniforms.uSkyCenterU.value = Math.atan2(forwardZ, -forwardX) / (Math.PI * 2);
     cloudBands.forEach(band => {
       band.material?.uniforms?.uSkyResolution?.value?.copy(resolution);
       band.material?.uniforms?.uSkyProjectionScale?.value?.copy(uniforms.uSkyProjectionScale.value);
+      if (band.material?.uniforms?.uSkyCenterU) band.material.uniforms.uSkyCenterU.value = uniforms.uSkyCenterU.value;
       band.depthMaterial?.uniforms?.uSkyResolution?.value?.copy(resolution);
       band.depthMaterial?.uniforms?.uSkyProjectionScale?.value?.copy(uniforms.uSkyProjectionScale.value);
+      if (band.depthMaterial?.uniforms?.uSkyCenterU) band.depthMaterial.uniforms.uSkyCenterU.value = uniforms.uSkyCenterU.value;
     });
   }
 
@@ -644,7 +660,7 @@
 
   function getDebugState() {
     const lighting = fullDayLightingState();
-    return { initialized: !!deps, assetsReady, activeScene: activeScene?.name || activeScene?.uuid || null, hour: getHour(), rawDay: deps?.calendar?.day ?? null, dayOfMonth: lunarDay(), moonPhase: lunarPhaseName(), moonIllumination: lunarIllumination(), stars: starVisibility(), cloudCover: currentCloudCover(), cloudBucket: currentCloudBucket(), overcastTarget: rawOvercastLevel(), overcast: currentOvercastLevel(), overcastDarkness: lighting.overcastDarkness, ambientOverlayAlpha: lighting.a, lanternActivationStrength: lighting.lanternActivation, lanternActive: lighting.a >= LANTERN_ACTIVATION_ALPHA, lanternActivationAlpha: LANTERN_ACTIVATION_ALPHA, lanternFullAlpha: LANTERN_FULL_ALPHA, effectiveDaySeconds: CLOCK_FULL_DAY_TARGET_SECONDS, dayRolloverHour: DAY_ROLLOVER_HOUR, clockHookReady: !!clockDeps, cloudOverlapMasking: true, skyFaceIndependentScreenMapping: true, skyResolution: skyMaterial?.uniforms?.uSkyResolution?.value ? `${Math.round(skyMaterial.uniforms.uSkyResolution.value.x)}x${Math.round(skyMaterial.uniforms.uSkyResolution.value.y)}` : null, cloudMaskInsetPx: CLOUD_OCCLUSION_INSET_PX, cloudDepthErosionPx: CLOUD_DEPTH_EROSION_PX, cloudDepthMaskCount: cloudBands.filter(band => !!band.depthMesh).length, skyRadius: SKY_RADIUS, celestialRadius: CELESTIAL_RADIUS, cameraFar: deps?.camera?.far ?? null, oversizedCelestialGlowDisabled: false, celestialNoOutline: true, celestialAzimuthOffsetU: CELESTIAL_AZIMUTH_OFFSET_U, sunUv: sunUvForHour(), moonUv: moonUvForHour() };
+    return { initialized: !!deps, assetsReady, activeScene: activeScene?.name || activeScene?.uuid || null, hour: getHour(), rawDay: deps?.calendar?.day ?? null, dayOfMonth: lunarDay(), moonPhase: lunarPhaseName(), moonIllumination: lunarIllumination(), stars: starVisibility(), cloudCover: currentCloudCover(), cloudBucket: currentCloudBucket(), overcastTarget: rawOvercastLevel(), overcast: currentOvercastLevel(), overcastDarkness: lighting.overcastDarkness, ambientOverlayAlpha: lighting.a, lanternActivationStrength: lighting.lanternActivation, lanternActive: lighting.a >= LANTERN_ACTIVATION_ALPHA, lanternActivationAlpha: LANTERN_ACTIVATION_ALPHA, lanternFullAlpha: LANTERN_FULL_ALPHA, effectiveDaySeconds: CLOCK_FULL_DAY_TARGET_SECONDS, dayRolloverHour: DAY_ROLLOVER_HOUR, clockHookReady: !!clockDeps, cloudOverlapMasking: true, skyFaceIndependentScreenMapping: true, skyLongitudeSeamUnwrapped: true, cloudMipSeamSuppressed: true, skyResolution: skyMaterial?.uniforms?.uSkyResolution?.value ? `${Math.round(skyMaterial.uniforms.uSkyResolution.value.x)}x${Math.round(skyMaterial.uniforms.uSkyResolution.value.y)}` : null, cloudMaskInsetPx: CLOUD_OCCLUSION_INSET_PX, cloudDepthErosionPx: CLOUD_DEPTH_EROSION_PX, cloudDepthMaskCount: cloudBands.filter(band => !!band.depthMesh).length, skyRadius: SKY_RADIUS, celestialRadius: CELESTIAL_RADIUS, cameraFar: deps?.camera?.far ?? null, oversizedCelestialGlowDisabled: false, celestialNoOutline: true, celestialAzimuthOffsetU: CELESTIAL_AZIMUTH_OFFSET_U, sunUv: sunUvForHour(), moonUv: moonUvForHour() };
   }
 
   installClockHook(); installWeatherHook(); installRainHook();
