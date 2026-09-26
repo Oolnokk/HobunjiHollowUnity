@@ -2014,6 +2014,7 @@
     groundShadow.position.set(x / deps.TILE, surfY + deps.characterGroundShadowSurfaceOffset(), y / deps.TILE);
     targetScene.add(groundShadow);
 
+    const enemyClass = opts.enemyClass || opts.extra?.enemyClass || (opts.extra?.isPorakanekiHunter ? 'porakaneki-hunter' : 'bandit'); // Semantic hostile category layered over the shared humanoid combat implementation.
     const c = {
       id: 'bandit_' + rank + '_' + (performance.now() | 0) + '_' + Math.floor(deps.rnd() * 100000),
       creatureKey: 'bandit-' + rank, def, avatarRef, groundShadow,
@@ -2032,7 +2033,7 @@
       wanderTarget: null, wanderT: 0,
       homeX: x, homeY: y,
       scene: targetScene, areaGrid: targetGrid, areaCols: gridCols, areaRows: gridRows, areaId: deps.getCurrentArea(),
-      isBandit: true, banditRank: rank, banditTier: tier, banditMastery: mastery,
+      isBandit: true, enemyClass, banditRank: rank, banditTier: tier, banditMastery: mastery,
       banditWeaponMeshAttached: !!banditToolHolder,
       _banditToolHolder: banditToolHolder,
       _banditRangedToolHolder: banditRangedToolHolder,
