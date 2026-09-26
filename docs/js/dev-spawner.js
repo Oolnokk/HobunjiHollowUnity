@@ -202,6 +202,7 @@
   const DEV_SPAWN_FOLIAGE_TYPES = {
     crownedPine: { label: 'Crowned Pine', build: (seed) => window.FoliageGenerator.buildCrownedPineMesh(seed, 0) },
     shadewood: { label: 'Shadewood', build: (seed) => window.FoliageGenerator.buildShadewoodMesh(seed, 0) },
+    mirewood: { label: 'Mirewood', build: (seed) => window.FoliageGenerator.buildMirewoodMesh(seed, 0) }, // Visible dev-spawner option for checking the half-height Shadewood-derived mire tree in-game.
     stump: { label: 'Old Stump', build: (seed) => window.FoliageGenerator.buildStumpMesh(seed, 0) },
     bush: { label: 'Wilderness Bush', build: (seed) => window.FoliageGenerator.buildWildernessBushMesh(seed, 0), skipOcclusionFade: true },
     shrub: { label: 'Generic Shrub', build: (seed) => window.FoliageGenerator.buildShrubMesh(seed, 0), skipOcclusionFade: true, scale2x: true },
