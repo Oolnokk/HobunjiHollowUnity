@@ -227,7 +227,7 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
           Non-colliding
         </label>
         <div id="gridFurnSummary" class="hint" style="margin-top:5px">Grid footprint —</div>
-        <div class="hint" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--line)">Fine 3D transform. These values are residual offsets/scale on top of the grid placement.</div>
+        <div class="hint" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--line)">Fine transform + collision. These values are residual offsets/scale on top of the snapped placement; the red 2D collision rectangle follows X/Z translation, Y rotation, and X/Z scale and may extend outside the snapped grid.</div>
         <div class="grid3" style="margin-top:6px">
           <div class="field"><label>Fine Rot Y°</label><input id="pRotY" type="number" step="15" value="0"></div>
           <div class="field"><label>Offset X</label><input id="pX" type="number" step="0.05" value="0"></div>
@@ -348,7 +348,7 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
 <script src="../../js/terrain-preview.js"></script>
 <script src="../../js/interior-scene-builder.js"></script>
 <script src="../../js/procedural-furniture.js"></script>
-<script src="../../js/interior-furniture-grid.js?v=20260917grid1"></script>
+<script src="../../js/interior-furniture-grid.js?v=20260926postcollision1"></script>
 
 <script>
 (function () {
@@ -644,6 +644,19 @@ function drawGrid(){
     gx.globalAlpha=1;
     gx.strokeStyle=sel?'#fff':'rgba(255,255,255,.4)'; gx.lineWidth=sel?2:1;
     gx.strokeRect(f.col*cw+2,f.row*ch+2,info.gridW*cw-4,info.gridD*ch-4);
+    var collisionBounds=window.InteriorFurnitureGrid&&window.InteriorFurnitureGrid.collisionBoundsForFurniture?window.InteriorFurnitureGrid.collisionBoundsForFurniture([f])[0]:null; // Used to draw the runtime 2D blocker independently of the snapped placement rectangle.
+    var collisionCorners=collisionBounds&&window.InteriorFurnitureGrid.boundsCorners?window.InteriorFurnitureGrid.boundsCorners(collisionBounds):[]; // Used in perimeter order for the freeform collision polygon.
+    if(collisionCorners.length===4){
+      gx.save();
+      gx.beginPath();
+      collisionCorners.forEach(function(p,i){ if(i===0) gx.moveTo(p.x*cw,p.z*ch); else gx.lineTo(p.x*cw,p.z*ch); });
+      gx.closePath();
+      gx.fillStyle=sel?'rgba(255,80,80,.22)':'rgba(255,70,70,.14)';
+      gx.strokeStyle=sel?'#ff6b6b':'rgba(255,90,90,.8)';
+      gx.lineWidth=sel?2:1.5;
+      gx.fill(); gx.stroke();
+      gx.restore();
+    }
     var fs=Math.max(7,Math.min(11,cw*0.3));
     gx.font='bold '+fs+'px system-ui'; gx.textAlign='center'; gx.textBaseline='middle';
     gx.fillStyle='#fff'; gx.globalAlpha=sel?1:0.8;
@@ -662,8 +675,9 @@ function drawGrid(){
   for(var r=0;r<=rows;r++){ gx.beginPath(); gx.moveTo(0,r*ch); gx.lineTo(W,r*ch); gx.stroke(); }
 
   var nColl=(state.interior.colliders||[]).length, nEZ=(state.interior.exits||[]).length, nVZ=(state.interior.vendorZones||[]).length;
+  var furnitureBoundsCount=window.InteriorFurnitureGrid&&window.InteriorFurnitureGrid.collisionBoundsForFurniture?window.InteriorFurnitureGrid.collisionBoundsForFurniture(activeFurniture()).length:0; // Used to keep the editor status readout explicit about freeform furniture blockers.
   var lay=currentLayoutObj();
-  $('viewStats').textContent=(lay?('✎ '+(lay.name||lay.id)+' | '):'')+state.floorSet.size+' tiles | '+activeFurniture().length+' furn | '+cols+'x'+rows+(nColl?' | '+nColl+' coll':'')+(nEZ?' | '+nEZ+' exits':'')+(nVZ?' | '+nVZ+' vendors':'');
+  $('viewStats').textContent=(lay?('✎ '+(lay.name||lay.id)+' | '):'')+state.floorSet.size+' tiles | '+activeFurniture().length+' furn | '+cols+'x'+rows+(nColl?' | '+nColl+' manual coll':'')+(furnitureBoundsCount?' | '+furnitureBoundsCount+' furniture bounds':'')+(nEZ?' | '+nEZ+' exits':'')+(nVZ?' | '+nVZ+' vendors':'');
   renderPlacedFurnitureList();
 }
 
@@ -914,7 +928,10 @@ function selectFurn(id){
     $('gridFurnW').value=info.gridW; $('gridFurnD').value=info.gridD;
     $('nonCollidingFurniture').checked=!!f.nonColliding||!!f.walkableElevation;
     $('nonCollidingFurniture').disabled=!!f.walkableElevation;
-    $('gridFurnSummary').textContent=info.gridW+'×'+info.gridD+' tiles · grid rotation '+info.gridRot+'°'+(f.walkableElevation?' · walkable elevation forces non-colliding':(f.nonColliding?' · non-colliding':' · collision on occupied tiles'));
+    var collisionApi=window.InteriorFurnitureGrid; // Used to summarize the same transformed 2D rectangle gameplay queries.
+    var collisionBounds=collisionApi&&collisionApi.collisionBoundsForFurniture?collisionApi.collisionBoundsForFurniture([f])[0]:null; // Used to expose freeform size/center/rotation for the selected furniture.
+    var collisionSuffix=f.walkableElevation?' · walkable elevation forces non-colliding':(f.nonColliding?' · non-colliding':(collisionBounds?' · collision '+collisionBounds.width.toFixed(2)+'×'+collisionBounds.depth.toFixed(2)+' @ '+collisionBounds.rotationDeg.toFixed(1)+'° center '+collisionBounds.centerX.toFixed(2)+','+collisionBounds.centerZ.toFixed(2)+(collisionApi.boundsOutsideSnappedGrid(f,collisionBounds)?' · extends outside snapped grid':''):' · dynamic mechanism collision'));
+    $('gridFurnSummary').textContent=info.gridW+'×'+info.gridD+' snapped tiles · grid rotation '+info.gridRot+'°'+collisionSuffix;
     var defS=f.postScale!=null?f.postScale:1;
     $('pRotY').value=f.rotY||0; $('pX').value=f.postX||0; $('pY').value=f.postY||0; $('pZ').value=f.postZ||0;
     $('pSX').value=f.postSX!=null?f.postSX:defS; $('pSY').value=f.postSY!=null?f.postSY:defS; $('pSZ').value=f.postSZ!=null?f.postSZ:defS;
@@ -963,7 +980,7 @@ $('applyPTBtn').addEventListener('click',function(){
   f.rotY=+$('pRotY').value||0; f.postX=+$('pX').value||0; f.postY=+$('pY').value||0; f.postZ=+$('pZ').value||0;
   f.postSX=Math.max(0.05,+$('pSX').value||1); f.postSY=Math.max(0.05,+$('pSY').value||1); f.postSZ=Math.max(0.05,+$('pSZ').value||1);
   delete f.postScale;
-  rebuild3D();
+  drawGrid(); rebuild3D(); selectFurn(f.id);
 });
 $('resetPTBtn').addEventListener('click',function(){
   var f=activeFurniture().filter(function(x){return x.id===state.selectedId;})[0]; if(!f) return;
@@ -1389,6 +1406,18 @@ function rebuild3D(){
     m.position.set(p[0]+0.5,0.15,p[1]+0.5); previewGroup.add(m);
   });
 
+  // Post-transformed furniture collision bounds — low simple 2D boxes, independent of the snapped placement grid.
+  var furnitureColliderMat3=new THREE.MeshLambertMaterial({color:0xff4f4f,transparent:true,opacity:0.28,depthWrite:false}); // Used only by the editor preview so freeform collision is visible without becoming render geometry in-game.
+  furniture.forEach(function(f){
+    var bounds=window.InteriorFurnitureGrid&&window.InteriorFurnitureGrid.collisionBoundsForFurniture?window.InteriorFurnitureGrid.collisionBoundsForFurniture([f])[0]:null; // Used to mirror the exact runtime OBB generated from post transforms.
+    if(!bounds) return;
+    var m=new THREE.Mesh(new THREE.BoxGeometry(bounds.width,0.1,bounds.depth),furnitureColliderMat3);
+    m.position.set(bounds.centerX,0.06,bounds.centerZ);
+    m.rotation.y=bounds.rotationDeg*Math.PI/180;
+    m.userData.furnitureCollisionPreview=true;
+    previewGroup.add(m);
+  });
+
   // Entry point markers (editor-only) — see the 2D grid's own "S1" pucks.
   var entryMat3=new THREE.MeshLambertMaterial({color:0x5adc8c,transparent:true,opacity:0.75});
   (interior.entryPoints||[]).forEach(function(ep){
@@ -1455,6 +1484,7 @@ function initTC(){
       $('pX').value=f.postX; $('pY').value=f.postY; $('pZ').value=f.postZ; $('pRotY').value=f.rotY;
       $('pSX').value=f.postSX; $('pSY').value=f.postSY; $('pSZ').value=f.postSZ;
       commitUndo();
+      drawGrid(); rebuild3D(); selectFurn(f.id);
     }
   });
   scene3.add(tc);
