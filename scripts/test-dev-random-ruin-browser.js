@@ -439,12 +439,18 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
             place({x:door.x,z:door.z+.9,y:0});await sleep(3);
           }
           checkpointAfterCross=window.DevRandomRuinSimplePuzzles.snapshot().checkpoints;
-          deps.player.health=1;
+          const respawnsBefore=checkpointAfterCross.respawnCount;
           place({x:checkpointAfterCross.activePoint.x+2,z:checkpointAfterCross.activePoint.z+2,y:checkpointAfterCross.activePoint.y});
-          const handled=window.DevRandomRuinSimplePuzzles.respawnAtCheckpoint('browser-test');
+          const existingBurn=Number(rs.getAffliction?.(deps.player,'burningHealth'))||0;
+          if(existingBurn>0)rs.removeAffliction?.(deps.player,'burningHealth',existingBurn+1);
+          deps.player.health=1;
+          rs.addAffliction?.(deps.player,'burningHealth',Number(deps.player.maxHealth)||100);
+          window.PlayerVitals.updatePlayerVitals(1);
+          await sleep(3);
           const cp=window.DevRandomRuinSimplePuzzles.snapshot().checkpoints;
           respawn={
-            handled,
+            handled:cp.respawnCount>respawnsBefore,
+            reason:cp.lastReason,
             area:window.GridTileAccessors.getCurrentArea(),
             x:deps.player.x/deps.TILE,z:deps.player.y/deps.TILE,
             health:deps.player.health,maxHealth:deps.player.maxHealth,
@@ -486,6 +492,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
       assert.ok(simpleRuntime.revealMs>0,'safe-path button must temporarily reveal the safe plates: '+JSON.stringify(simpleRuntime));
       assert.match(simpleRuntime.checkpointAfterCross?.activeId||'',/^doorway-/,'crossing a doorway must advance the checkpoint: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.respawn?.handled,true,'ruin checkpoint recovery must handle death locally: '+JSON.stringify(simpleRuntime));
+      assert.equal(simpleRuntime.respawn?.reason,'resource-tick','Burning Health death must route through the real PlayerVitals checkpoint seam: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.respawn?.area,'map_i_dev_random_ruin','checkpoint death recovery must stay inside the generated ruin: '+JSON.stringify(simpleRuntime));
       assert.ok(Math.abs(simpleRuntime.respawn.x-simpleRuntime.respawn.activePoint.x)<.02&&Math.abs(simpleRuntime.respawn.z-simpleRuntime.respawn.activePoint.z)<.02,'checkpoint respawn must land at the last crossed doorway: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.respawn.health,Math.max(1,Math.round(simpleRuntime.respawn.maxHealth*.5)),'checkpoint respawn should match the game half-Health recovery convention: '+JSON.stringify(simpleRuntime));
