@@ -2509,8 +2509,6 @@
     return FIXED_HARMONY_STEPS.map(step => Number(tonicMidi) + step.rootSemitones + PAD_ROOT_REGISTER_OFFSET); // Exposes the exact pad-root register for diagnostics/tests independent of the current transport step.
   }
 
-  const PAD_ROOT_LAYER_GAIN = 0.5; // Root contribution used by both synth and imported fifth pads; deliberately leaves the P5 as the more audible layer.
-  const PAD_FIFTH_LAYER_GAIN = 0.75; // Perfect-fifth contribution; stronger than root so the power-chord interval remains unmistakable on small speakers.
   function rootPadSynthGain() {
     if (state.rootPadLevel <= 0 || state.padMixLevel <= 0) return 0;
     return clamp(0.024 + state.rootPadLevel * 2.6, 0.024, 0.24) * state.padMixLevel; // Keeps the authored synth-pad response while exposing one independent pad mix multiplier.
@@ -2546,36 +2544,25 @@
     const context = state.audioContext;
     if (!context || context.state !== 'running' || !state.master) return null;
     const now = audioStartTimeFor(context, whenMs);
-    const [rootMidi,fifthMidi] = [midi,midi + 7]; // Used to voice the synth pad as a neutral power chord that matches both major and minor harmony steps.
-    const rootOscillator = context.createOscillator(); // Carries the foundation note of the current scheduled chord.
-    const fifthOscillator = context.createOscillator(); // Carries the perfect fifth instead of the old root octave.
-    const rootLayer = context.createGain();
-    const fifthLayer = context.createGain();
+    const rootMidi = midi; // The pad now carries only the authored progression root; no fifth or other harmony layer is synthesized.
+    const rootOscillator = context.createOscillator();
     const filter = context.createBiquadFilter();
     const gain = context.createGain();
     rootOscillator.type = 'sine';
-    fifthOscillator.type = 'triangle';
     rootOscillator.frequency.setValueAtTime(midiFrequency(rootMidi), now);
-    fifthOscillator.frequency.setValueAtTime(midiFrequency(fifthMidi), now);
-    rootOscillator.detune.setValueAtTime(-2, now);
-    fifthOscillator.detune.setValueAtTime(2, now);
-    rootLayer.gain.setValueAtTime(PAD_ROOT_LAYER_GAIN, now);
-    fifthLayer.gain.setValueAtTime(PAD_FIFTH_LAYER_GAIN, now); // Makes the P5 clearly audible instead of letting the lower root perceptually mask it.
+    rootOscillator.detune.setValueAtTime(0, now);
     filter.type = 'lowpass';
     filter.frequency.setValueAtTime(880, now);
     filter.Q.setValueAtTime(0.35, now);
-    const synthPadGain = rootPadSynthGain(); // Resolves the authored pad response and Music Lab pad mix once for this root+P5 voice.
+    const synthPadGain = rootPadSynthGain(); // Resolves the authored root-pad response and Music Lab pad mix for this single sustained note.
     if (synthPadGain <= 0) gain.gain.setValueAtTime(0, now);
     else {
       gain.gain.setValueAtTime(0.0001, now);
       gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, synthPadGain), now + 0.55);
     }
-    rootOscillator.connect(rootLayer).connect(filter);
-    fifthOscillator.connect(fifthLayer).connect(filter);
-    filter.connect(gain).connect(state.master);
+    rootOscillator.connect(filter).connect(gain).connect(state.master);
     rootOscillator.start(now);
-    fifthOscillator.start(now);
-    const voice = {midi, chordMidis:[rootMidi,fifthMidi], oscillators:[rootOscillator, fifthOscillator], filter, gain, stopping:false, active:true, kind:'synth'};
+    const voice = {midi, chordMidis:[rootMidi], oscillators:[rootOscillator], filter, gain, stopping:false, active:true, kind:'synth'};
     rootOscillator.onended = () => { voice.active = false; };
     state.rootPadVoices.push(voice);
     return voice;
@@ -2586,28 +2573,19 @@
     const buffer = state.rootPadSampleBuffer;
     if (!context || context.state !== 'running' || !state.master || !buffer) return null;
     const now = audioStartTimeFor(context, whenMs);
-    const [rootMidi,fifthMidi] = [midi,midi + 7]; // Used to give imported sustained-pad samples the same root+P5 voicing as the synth fallback.
-    const rootSource = context.createBufferSource(); // Loops the imported pad at the current harmony root.
-    const fifthSource = context.createBufferSource(); // Loops a second copy repitched exactly seven semitones above the root.
-    const rootLayer = context.createGain();
-    const fifthLayer = context.createGain();
+    const rootMidi = midi; // Imported pad SFX are transposed only to the current progression root; no duplicated +7 semitone layer is created.
+    const rootSource = context.createBufferSource();
     const filter = context.createBiquadFilter();
     const gain = context.createGain();
     rootSource.buffer = buffer;
-    fifthSource.buffer = buffer;
     rootSource.playbackRate.setValueAtTime(Math.pow(2, (rootMidi - state.rootPadSampleRootMidi) / 12), now);
-    fifthSource.playbackRate.setValueAtTime(Math.pow(2, (fifthMidi - state.rootPadSampleRootMidi) / 12), now);
     if (buffer.duration > 0.12) {
-      const loopStart = Math.min(0.025, buffer.duration * 0.08); // Shared loop start keeps the two pitch layers phase-aligned in envelope timing.
-      const loopEnd = Math.max(loopStart + 0.05, buffer.duration - Math.min(0.025, buffer.duration * 0.08)); // Shared loop end prevents one layer from retriggering earlier than the other.
-      [rootSource,fifthSource].forEach(source => {
-        source.loop = true;
-        source.loopStart = loopStart;
-        source.loopEnd = loopEnd;
-      });
+      const loopStart = Math.min(0.025, buffer.duration * 0.08);
+      const loopEnd = Math.max(loopStart + 0.05, buffer.duration - Math.min(0.025, buffer.duration * 0.08));
+      rootSource.loop = true;
+      rootSource.loopStart = loopStart;
+      rootSource.loopEnd = loopEnd;
     }
-    rootLayer.gain.setValueAtTime(PAD_ROOT_LAYER_GAIN, now);
-    fifthLayer.gain.setValueAtTime(PAD_FIFTH_LAYER_GAIN, now); // Mirrors the synth balance so imported pads retain the same clearly audible power-chord fifth.
     filter.type = 'lowpass';
     filter.frequency.setValueAtTime(1200, now);
     filter.Q.setValueAtTime(0.25, now);
@@ -2617,12 +2595,9 @@
       gain.gain.setValueAtTime(0.0001, now);
       gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, samplePadGain), now + 0.35);
     }
-    rootSource.connect(rootLayer).connect(filter);
-    fifthSource.connect(fifthLayer).connect(filter);
-    filter.connect(gain).connect(state.master);
+    rootSource.connect(filter).connect(gain).connect(state.master);
     rootSource.start(now);
-    fifthSource.start(now);
-    const voice = {midi, chordMidis:[rootMidi,fifthMidi], oscillators:[rootSource,fifthSource], filter, gain, stopping:false, active:true, kind:'sample'};
+    const voice = {midi, chordMidis:[rootMidi], oscillators:[rootSource], filter, gain, stopping:false, active:true, kind:'sample'};
     rootSource.onended = () => { voice.active = false; };
     state.rootPadVoices.push(voice);
     return voice;
@@ -2655,7 +2630,7 @@
       state.rootPadRootMidi = null; // Lets the next frame self-heal instead of thinking a dead pad is already running.
       return;
     }
-    log('Harmony fifth pad changed', `root ${midiName(targetMidi)} · fifth ${midiName(targetMidi + 7)} · ${desiredKind} · ${desiredKind === 'sample' ? Math.round(state.rootPadSampleLevel * 100) : Math.round(state.rootPadLevel * 100)}%`);
+    log('Harmony root pad changed', `root ${midiName(targetMidi)} · ${desiredKind} · ${desiredKind === 'sample' ? Math.round(state.rootPadSampleLevel * 100) : Math.round(state.rootPadLevel * 100)}%`);
   }
 
   function bankFooterMarkup(mode) {
@@ -6969,15 +6944,15 @@
       pad:state.padMixLevel,
       kurrayaSampleName:state.sampleName || 'Fallback pluck',
       kurrayaSampleImported:!!state.sampleImported,
-      padSampleName:state.rootPadSampleBuffer || state.pendingRootPadSampleRecord ? (state.rootPadSampleName || state.pendingRootPadSampleRecord?.name || 'Imported pad') : 'Synth fifth pad',
+      padSampleName:state.rootPadSampleBuffer || state.pendingRootPadSampleRecord ? (state.rootPadSampleName || state.pendingRootPadSampleRecord?.name || 'Imported pad') : 'Synth root pad',
       padSampleImported:!!(state.rootPadSampleBuffer || state.pendingRootPadSampleRecord),
       padSampleRootMidi:state.rootPadSampleRootMidi,
       padDetectedMidi:state.rootPadDetectedMidi,
       padDetectedFrequency:state.rootPadDetectedFrequency,
       padDetectedConfidence:state.rootPadDetectedConfidence,
       padRootSource:state.rootPadRootSource,
-      padChordMidis:[rootPadTargetMidi(),rootPadTargetMidi()+7],
-      padChordNames:[midiName(rootPadTargetMidi()),midiName(rootPadTargetMidi()+7)],
+      padChordMidis:[rootPadTargetMidi()],
+      padChordNames:[midiName(rootPadTargetMidi())],
       padProgressionRootMidis:padProgressionRootMidis(),
       padProgressionRootNames:padProgressionRootMidis().map(midiName),
       metronomeSource:state.labMetronomeBuffers.length ? 'game-footsteps' : state.ambientMetronomeBuffer ? 'ambient-footstep' : state.metronomeSampleBuffer ? 'imported-sample' : 'synth-click',
