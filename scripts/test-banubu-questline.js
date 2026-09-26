@@ -462,6 +462,9 @@ const editorState = read('docs/tools/dialogue-editor/dialogue-editor-state.js');
 const editorInspector = read('docs/tools/dialogue-editor/dialogue-editor-inspector.js');
 const editorCutscene = read('docs/tools/dialogue-editor/dialogue-editor-cutscene-authoring.js'); // Used to verify camera/VFX/body/neck cutscene fields are actually reproducible from the Dialogue Editor UI.
 const editorIndex = read('docs/tools/dialogue-editor/index.html'); // Used to verify the cutscene authoring extension loads before editor boot.
+const editorAuthoringCore = read('docs/tools/dialogue-editor/dialogue-editor-authoring-core.js');
+const editorGraph = read('docs/tools/dialogue-editor/dialogue-editor-graph.js');
+const editorBoot = read('docs/tools/dialogue-editor/dialogue-editor-boot.js');
 assert.match(editorState, /BanubuQuestContent\?\.mergeDialogueTreesIntoDatabase\?\.\(db\)/, 'manual Dialogue Editor imports must compose Banubu quest defaults just like normal editor boot');
 for (const token of ['{{banubuRequestedBuffs}}','{{banubuNextRequestedBuffs}}','{{banubuRequiredStrength}}','{{banubuNextRequiredStrength}}']) {
   assert(editorState.includes(token), `Dialogue Editor must expose ${token}`);
@@ -484,6 +487,13 @@ assert.match(editorCutscene, /cue\.commitQuestAction=\{operation,stage\}/, 'Dial
 assert.match(editorCutscene, /cue\.commitTurnIn=stage/, 'Dialogue Editor must author the final transactional turn-in commit cue');
 assert.match(editorCutscene, /anchor:\$\('editBanubuSparkleAnchor'\)\.value\|\|'root'/, 'Dialogue Editor must persist root-vs-fixed sparkle attachment instead of hard-coding root');
 assert.match(editorInspector, /prepareTurnIn/, 'Banubu quest choice actions must expose prepareTurnIn so the final end node can own the commit');
+assert.match(editorState, /node\.type==='visual'/, 'Dialogue Editor must normalize authored silent visual nodes');
+assert.match(editorInspector, /editVisualDuration/, 'Visual nodes must expose an editable silent duration');
+assert.match(editorInspector, /wireVisualNodeEditor/, 'Visual nodes must expose their outgoing connection and duration wiring');
+assert.match(editorIndex, /id="addVisualBtn"/, 'Dialogue Editor must offer + Visual in the author bar');
+assert.match(editorAuthoringCore, /if\(type==='visual'\)Object\.assign\(node,\{next:null,durationSec:1\}\)/, 'new Visual nodes must start with a one-second silent beat');
+assert.match(editorBoot, /addVisualBtn'\)\.onclick=\(\)=>addNode\('visual'\)/, '+ Visual must create the runtime-compatible visual node type');
+assert.match(editorGraph, /no dialogue UI/, 'Visual nodes must be recognizable in the graph instead of looking like empty text nodes');
 
 // Sleeping Grehlr behavior remains permanent and talkability uses the existing animal-NPC bridge.
 const schedule = require('../docs/config/npcs/schedule-overrides.json');
