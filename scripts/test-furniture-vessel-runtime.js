@@ -126,3 +126,11 @@ assert(pieceAnimation.includes('if (rope.material.map.image) rope.material.map.n
   'animated rope repeat updates cannot mark an image-less texture dirty');
 assert(!pieceAnimation.includes('texture.needsUpdate=true;\n    const material'),
   'animated furniture no longer marks a just-cloned image-less texture dirty');
+
+
+assert(procedural.includes("if (entry.loaded && entry.base.image) {"),
+  'furniture texture clones upload only after the shared source has decoded');
+assert(procedural.includes('entry.pendingClones.add(tex); // The global carved-surface loader may still be showing its 1x1 placeholder'),
+  'first-build furniture clones wait for the decoded carved surface instead of uploading the placeholder');
+assert(!/const tex = entry\.base\.clone\(\);\s*tex\.needsUpdate = true/.test(procedural),
+  'furniture must not mark a placeholder clone dirty before TextureLoader completes');
