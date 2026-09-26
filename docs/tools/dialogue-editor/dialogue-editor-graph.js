@@ -115,6 +115,7 @@ function renderNode(n,p,tree,colorIndex=0,isRelated=false,allColorIndexes=new Ma
     const shop=shopRegistryEntry(accessShopPool(n)); // Used to show the selected wares pool instead of the macro node's fallback choice internals.
     body=`<div class="dNodeText accessShopSummary">Open <b>${esc(shop?.label||accessShopPool(n))}</b></div>`;
   }else if(n.type==='choice')body=(n.choices||[]).map((c,i)=>`<div class="dChoice" data-choice-row="${i}" style="--split-color:${targetColor(c.next)}"><span class="dChoiceLabel">${esc(c.label||'Empty choice')}</span><span class="dChoiceTarget">${esc(c.next||'END')}</span></div>`).join('')||'<div class="dNodeText empty">No choices</div>';
+  else if(n.type==='visual')body=`<div class="dNodeText">⏱ ${Math.max(.05,Number(n.durationSec)||1).toFixed(2)}s · no dialogue UI</div>`;
   else if(n.type==='sequence')body=`<div class="dSeq">${(n.slots||[]).slice(0,6).map((s,i)=>`<div class="dSeqRow" style="--split-color:${targetColor(s.nodeId)}"><b>${i+1}.</b><span>${esc(s.nodeId||'unset')} · depth ${s.depth??0}</span></div>`).join('')||'<span class="dNodeText empty">No slots</span>'}</div>`;
   else if(n.type==='end')body='<div class="dNodeText empty">— end of conversation —</div>';
   else body=`<div class="dNodeText${n.text?'':' empty'}">${esc(n.text||'No text')}</div>`;
