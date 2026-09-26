@@ -1046,6 +1046,7 @@
       deps.setLastActionMessage(fm.message);
       deps.awardToolUseMasteryXp('harpoon');
       window.AudioSystem?.playWeaponSlashSfx();
+      window.Music?.playGameplayCue?.('fishCaught'); // Plays the authored success sting exactly once when the catch is committed to inventory.
       beginFishCatchView(fm, stars);
       return;
     }

@@ -67,6 +67,7 @@
     debugVisible: false,
     activeTip: '',
     activeTipTitle: '', // Used by the loading-screen header and diagnostics to preserve the selected Compendium feature context.
+    contextText: '', // Optional transition-specific heading such as the destination mine floor, rendered above the ordinary Compendium tip.
     reason: 'idle',
     tipPoolGeneration: 0, // Generation the cached tip pool/semantic rules below were built for; a mismatch forces one rebuild per loading session instead of one every ten-second tick.
     tipPoolCache: null,
@@ -186,6 +187,7 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
 .hlsVerticalWord + .hlsVerticalWord{margin-left:var(--script-column-spacing)}
 .hlsVerticalWord{display:flex;flex-direction:column;align-items:center;justify-content:flex-start;font-family:"TankanScript",sans-serif;line-height:.56;color:#fff;white-space:nowrap}
 .hlsVerticalGlyph{display:block;width:1em;height:.56em;line-height:.56em;text-align:center}
+#hlsContext{display:none;position:absolute;left:50%;top:max(5.5vh,28px);transform:translateX(-50%);max-width:min(84vw,920px);color:#fff;font-family:"KhymeryyanRoman",serif;font-size:clamp(28px,5vw,58px);font-weight:700;letter-spacing:.08em;text-align:center;text-transform:uppercase;text-shadow:0 2px 10px rgba(0,0,0,.95);text-wrap:balance}
 #hlsLoreBlock{position:absolute;left:50%;bottom:max(5.5vh,28px);transform:translateX(-50%);width:min(78vw,980px);text-align:center;color:#fff;font-family:"KhymeryyanRoman",serif;text-shadow:0 2px 8px rgba(0,0,0,.9)}
 #hlsLoreHeader{margin:0 0 .42em;font-size:15px;line-height:1.05;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#8fd0ff;text-wrap:balance}
 #hlsLore{line-height:1.24;text-wrap:balance}
@@ -214,6 +216,7 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
     root.innerHTML = `
 <img id="hlsImage" alt="" />
 <div id="hlsScriptViewport"><div id="hlsScriptFloat"><div id="hlsScriptWords"></div></div></div>
+<div id="hlsContext"></div>
 <div id="hlsLoreBlock"><div id="hlsLoreHeader"></div><div id="hlsLore"></div></div>
 <div id="hlsPercent"></div>
 <div id="hlsDebug"></div>
@@ -227,6 +230,7 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
       scriptViewport: root.querySelector('#hlsScriptViewport'),
       scriptFloat: root.querySelector('#hlsScriptFloat'),
       scriptWords: root.querySelector('#hlsScriptWords'),
+      context: root.querySelector('#hlsContext'), // Displays transition-specific progress context without replacing the rotating Compendium guidance.
       loreBlock: root.querySelector('#hlsLoreBlock'),
       loreHeader: root.querySelector('#hlsLoreHeader'),
       lore: root.querySelector('#hlsLore'),
@@ -258,6 +262,7 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
     return [
       `visible=${state.visible} generation=${state.generation}`,
       `reason=${state.reason} area=${area ?? 'unknown'}`,
+      `context=${state.contextText || '(none)'}`,
       `progress=${Math.round(state.progress)} source=${state.progressSource}`,
       `requests=${state.requestCompleted}/${state.requestStarted}`,
       `tankanFont=${state.tankanFontSettled ? 'settled' : 'waiting'}`,
@@ -604,7 +609,7 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
     syncOnboardingForeground();
   }
 
-  function showImmediate(reason = 'map-change') {
+  function showImmediate(reason = 'map-change', contextText = '') {
     const previousGeneration = state.generation; // Used to settle any delayed hide promises superseded by a newer loading screen.
     if (state.hideTimer && typeof clearTimeout === 'function') clearTimeout(state.hideTimer);
     state.hideTimer = null;
@@ -618,10 +623,13 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
     state.requestStarted = 0;
     state.requestCompleted = 0;
     state.reason = reason;
+    state.contextText = String(contextText || '').trim(); // Carries a caller-authored destination label only for this loading generation.
     state.activeTip = '';
     state.activeTipTitle = '';
     const els = buildDom();
     els.root.classList.add('visible');
+    els.context.textContent = state.contextText;
+    els.context.style.display = state.contextText ? 'block' : 'none';
     syncOnboardingForeground();
     renderScript(els, DEFAULT_SETTINGS, 'HOBUNJI HOLLOW');
     els.scriptViewport.style.left = '25%';
@@ -642,7 +650,8 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
   // world-map callback runs at the black midpoint.
   async function show(options = {}) {
     const reason = typeof options === 'string' ? options : (options?.reason || 'map-change');
-    const myGeneration = showImmediate(reason);
+    const contextText = typeof options === 'string' ? '' : (options?.contextText || ''); // Used by mine-floor loads to identify the destination without replacing the normal loading tip.
+    const myGeneration = showImmediate(reason, contextText);
     setProgress(4, 'overlay-visible');
     await Promise.all([ensureFontsLoaded(), ensureConfigLoaded(), ensureCompendiumLoaded()]);
     if (state.generation !== myGeneration || state.finalHiddenGeneration === myGeneration) return;
@@ -828,6 +837,7 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
       requestCompleted: state.requestCompleted,
       tankanFontSettled: state.tankanFontSettled,
       area: safeCurrentArea(),
+      contextText: state.contextText,
       activeTipTitle: state.activeTipTitle,
       activeTip: state.activeTip,
       tipRotationMs: TIP_ROTATE_MS,

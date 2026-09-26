@@ -10861,7 +10861,12 @@
           exitBuilding();
         } else if (t.target === 'building') {
           const proceduralMineTarget = !!window.TownMine?.floorFromMapId?.(t.targetMapId); // Used to let the generated floor choose its guaranteed-walkable entrance instead of stale 0,0 coordinates.
-          enterBuilding(t.targetMapId, proceduralMineTarget ? undefined : t.targetCol, proceduralMineTarget ? undefined : t.targetRow, t.targetSpotId || '');
+          const mineDescentFloor = t.mineDynamicDescent && proceduralMineTarget ? window.TownMine.floorFromMapId(t.targetMapId) : null; // Used only for the discovered-hole loading cue/heading, never ladder or camp travel.
+          enterBuilding(t.targetMapId, proceduralMineTarget ? undefined : t.targetCol, proceduralMineTarget ? undefined : t.targetRow, t.targetSpotId || '', mineDescentFloor ? `Floor ${mineDescentFloor}` : '');
+          if (mineDescentFloor) {
+            window.Music?.playGameplayCue?.('progressDeeper'); // The authored descent sting belongs only to a discovered hole, never ladder shortcuts or ordinary building entry.
+            window.__farmLog?.('[mine] descending through hole to floor ' + mineDescentFloor, 'mine');
+          }
         } else if (t.target === 'interior') {
           if (currentArea !== 'interior') enterInterior();
           const c = window.FormatUtils.clamp(t.targetCol, 0, INTERIOR_COLS - 1);
@@ -14080,7 +14085,7 @@
         window.__farmLog?.(`[map] ${label}: currentMap=${area} name="${mapDebugName(area)}" source=${source} fallback=${fallback}${loading ? ' loading=true' : ''}${target} heldObjects=${heldObjectAttachment}`, fallback ? 'warn' : 'info');
       }
 
-      function enterBuilding(mapId, defaultCol, defaultRow, targetSpotId = '') {
+      function enterBuilding(mapId, defaultCol, defaultRow, targetSpotId = '', loadingContextText = '') {
         if (window.TownMine?.floorFromMapId?.(mapId) && _buildingScenes.get(mapId)) discardGeneratedMineFloor(mapId);
         // A room visited earlier this session and still cached may no longer
         // match its own `layouts` schedule (e.g. the temple's spirit
@@ -14106,7 +14111,10 @@
         // cavern can take real time to generate) -- covers that instead of
         // a blank/frozen interior. Hidden from loadBuildingScene itself
         // once the scene it's building for THIS mapId actually lands.
-        if (!bi) window.LoadingScreenRuntime?.show();
+        if (!bi) {
+          const loadingMineFloor = window.TownMine?.floorFromMapId?.(mapId); // Used only to label this as a mine load in diagnostics; the visible floor heading remains hole-descent-specific.
+          window.LoadingScreenRuntime?.show(loadingContextText ? { reason: loadingMineFloor ? 'mine-floor-load' : 'map-change', contextText: loadingContextText } : undefined);
+        }
         const bCols = bi?.cols || 20, bRows = bi?.rows || 20;
         // Default entry is one tile north of the building's exit. Explicit
         // inter-floor spawn coordinates still win when an exit supplies them.
