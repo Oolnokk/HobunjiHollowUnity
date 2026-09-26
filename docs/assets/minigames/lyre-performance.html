@@ -1150,7 +1150,7 @@
     <div class="modal-head"><h2>Patterns and Songbook</h2><div class="top-spacer"></div><button class="mini-btn" data-close-modal>Close</button></div>
     <div class="modal-body">
       <div class="song-grid" id="songGrid">
-        <article class="song-card songbook-entry selected" data-song="when-the-kininjis-bloom" data-default-bpm="100"><h3>When the Kininjis Bloom</h3><p>Foroji's own theme — a gentle 3/4 folk melody in the Major scale.</p></article>
+        <article class="song-card songbook-entry selected" data-song="when-the-kininjis-bloom" data-default-bpm="100"><h3>When the Kininjis Bloom</h3><p>Foroji's own theme — a gentle 6/8 folk melody in the Major scale, grouped 3+3.</p></article>
         <article class="song-card" data-song="scale"><h3>Full Note Run</h3><p>Walks upward and downward through all five four-note banks in the locked Auto Pick layout.</p></article>
         <article class="song-card" data-song="harmony"><h3>Rotation Arpeggio</h3><p>Rotate the left stick into each indicated slot to play it immediately. The right stick sweeps the full current chord while the progression changes.</p></article>
         <article class="song-card" data-song="octaves"><h3>Bank Control Drill</h3><p>Practices Open, LT, LB, RT, and RB before playing X, A, B, and Y.</p></article>
@@ -1318,11 +1318,14 @@
     [FIXED_HARMONY_PATTERN_ID]:FIXED_HARMONY_DEGREES
   };
   const HARMONY_PATTERN_NAMES = Object.keys(HARMONY_PATTERNS);
-  const KURRAYA_TIME_SIGNATURE = Object.freeze([3,4]); // Shared free-play/authored-song meter for the current Kurraya implementation.
-  const KURRAYA_BEAT_GROUPING = Object.freeze([3]); // Keeps the original three-quarter-note measure intact while the 24-measure harmony cadence runs independently.
+  const KURRAYA_TIME_SIGNATURE = Object.freeze([6,8]); // Kurraya's authored meter: six eighth-note beats grouped as two compound pulses.
+  const KURRAYA_BEAT_GROUPING = Object.freeze([3,3]); // Accents the 6/8 bar as 3+3 while still exposing all six denominator beats to the metronome/cadence clock.
   const FIXED_HARMONY_CYCLE_MEASURES = 24; // Full accompaniment phrase: 8 fast measures + 16 slow measures before repeating.
-  const FIXED_HARMONY_FAST_MEASURES = 8; // First section advances IV–V–iii–vi once per measure.
-  const FIXED_HARMONY_SLOW_MEASURES = 16; // Second section advances the same progression once every two measures.
+  const FIXED_HARMONY_FAST_MEASURES = 8; // First section advances F → G → E → A once per 6-beat measure.
+  const FIXED_HARMONY_SLOW_MEASURES = 16; // Second section holds each root for two 6/8 measures.
+  const FIXED_HARMONY_FAST_BEATS = 6; // Literal 6/8 metronome beats per root in the first eight measures.
+  const FIXED_HARMONY_SLOW_BEATS = 12; // Literal 6/8 metronome beats per root in the following sixteen measures.
+  const FIXED_HARMONY_CYCLE_BEATS = FIXED_HARMONY_FAST_MEASURES * FIXED_HARMONY_FAST_BEATS + FIXED_HARMONY_SLOW_MEASURES * 6; // 144 eighth-note beats per full 24-measure loop.
   const HARMONY_PATTERN_ADJECTIVES = {
     [FIXED_HARMONY_PATTERN_ID]:'IV–V–iii–vi · fixed M/M/m/m'
   };
@@ -1405,14 +1408,13 @@
   // Hobunji's own authored songbook — replaces the earlier public-domain
   // placeholder tunes with the one real song, transcribed from Foroji's
   // theme MIDI (When the Kirrinji Bloom) at 100 quarter-BPM, C major with
-  // tonic C3 and its original 3/4 meter. The fixed IV–V–iii–vi harmony is
-  // shared with improvisation through the 24-measure cadence below: one chord
-  // per measure for 8 measures, then one chord per two measures for 16
-  // measures, then loop. Chord qualities remain major/major/minor/minor
-  // through tonic transposition and scale auditions.
+  // tonic C3 in 6/8. The fixed IV–V–iii–vi root progression is shared with
+  // improvisation through the 24-measure cadence below: each root lasts six
+  // eighth-note beats for 8 measures, then twelve eighth-note beats for 16
+  // measures, then the cycle loops. The sustained pad itself is root-only.
   const SONGBOOK = {
     'when-the-kininjis-bloom':{
-      title:'When the Kininjis Bloom', defaultBpm:100, scaleName:'Major', timeSignature:[3,4], beatGrouping:[3],
+      title:'When the Kininjis Bloom', defaultBpm:100, scaleName:'Major', timeSignature:[6,8], beatGrouping:[3,3],
       chords:null, // This authored song deliberately uses the same variable 24-measure fixed-harmony cadence as improvisation instead of a separate per-bar timeline.
       notes:[[5,.5],[6,.5],[7,1],[3,1],[3,1],[4,1],[5,1],[4,.5],[6,.5],[7,1],[4,1],[4,3],
         [5,.5],[6,.5],[7,1],[3,1],[3,1],[4,1],[5,1],[4,.5],[3,.5],[2,1],[2,.25],[3,.25],
@@ -1855,7 +1857,7 @@
   }
 
   function activeSongMeter() {
-    if (!state.game.active) return timeSignatureData(KURRAYA_TIME_SIGNATURE,KURRAYA_BEAT_GROUPING); // Free-play improvisation uses the same 3/4 measure grid as the authored Kurraya song.
+    if (!state.game.active) return timeSignatureData(KURRAYA_TIME_SIGNATURE,KURRAYA_BEAT_GROUPING); // Free-play improvisation shares the authored 6/8 denominator-beat grid.
     const melody=getSongDefinition(state.game.songType || state.selectedSong);
     return timeSignatureData(state.game.timeSignature || melody?.timeSignature || [4,4],state.game.beatGrouping || melody?.beatGrouping);
   }
@@ -1923,30 +1925,38 @@
   }
 
   function fixedKurrayaHarmonyCadence(clock = sharedTransportData()) {
-    const measureQuarterBeats = Math.max(0.25,Number(clock.meter?.measureQuarterBeats) || 3);
-    const absoluteMeasure = Math.max(0,Math.floor(clock.performanceBeatFloat / measureQuarterBeats));
-    const cycleIndex = Math.floor(absoluteMeasure / FIXED_HARMONY_CYCLE_MEASURES);
-    const cycleMeasure = modulo(absoluteMeasure,FIXED_HARMONY_CYCLE_MEASURES);
-    const fast = cycleMeasure < FIXED_HARMONY_FAST_MEASURES;
-    const eventWithinCycle = fast
-      ? cycleMeasure
-      : FIXED_HARMONY_FAST_MEASURES + Math.floor((cycleMeasure - FIXED_HARMONY_FAST_MEASURES) / 2);
+    const meterBeats = Math.max(0,Number(clock.performanceMeterBeatFloat) || 0); // Counts literal denominator beats: in Kurraya 6/8, one unit here is one eighth-note metronome beat.
+    const beatsPerMeasure = 6; // Kurraya harmony intentionally keys off six audible beats per 6/8 measure rather than quarter-note MIDI units.
+    const cycleIndex = Math.floor(meterBeats / FIXED_HARMONY_CYCLE_BEATS);
+    const cycleBeat = modulo(meterBeats,FIXED_HARMONY_CYCLE_BEATS);
+    const fastSectionBeats = FIXED_HARMONY_FAST_MEASURES * FIXED_HARMONY_FAST_BEATS;
+    const fast = cycleBeat < fastSectionBeats;
+    const fastEvent = Math.floor(cycleBeat / FIXED_HARMONY_FAST_BEATS);
+    const slowBeat = Math.max(0,cycleBeat - fastSectionBeats);
+    const slowEvent = Math.floor(slowBeat / FIXED_HARMONY_SLOW_BEATS);
+    const eventWithinCycle = fast ? fastEvent : FIXED_HARMONY_FAST_MEASURES + slowEvent;
     const progressionStep = eventWithinCycle % FIXED_HARMONY_STEPS.length;
-    const spanMeasures = fast ? 1 : 2;
-    const eventStartCycleMeasure = fast
-      ? cycleMeasure
-      : FIXED_HARMONY_FAST_MEASURES + Math.floor((cycleMeasure - FIXED_HARMONY_FAST_MEASURES) / 2) * 2;
-    const absoluteStartMeasure = cycleIndex * FIXED_HARMONY_CYCLE_MEASURES + eventStartCycleMeasure;
+    const spanBeats = fast ? FIXED_HARMONY_FAST_BEATS : FIXED_HARMONY_SLOW_BEATS;
+    const eventStartCycleBeat = fast
+      ? fastEvent * FIXED_HARMONY_FAST_BEATS
+      : fastSectionBeats + slowEvent * FIXED_HARMONY_SLOW_BEATS;
+    const absoluteStartBeat = cycleIndex * FIXED_HARMONY_CYCLE_BEATS + eventStartCycleBeat;
+    const absoluteMeasure = Math.floor(meterBeats / beatsPerMeasure);
+    const cycleMeasure = Math.floor(cycleBeat / beatsPerMeasure);
+    const spanMeasures = spanBeats / beatsPerMeasure;
+    const absoluteStartMeasure = Math.floor(absoluteStartBeat / beatsPerMeasure);
     const eventsPerCycle = FIXED_HARMONY_FAST_MEASURES + Math.floor(FIXED_HARMONY_SLOW_MEASURES / 2);
     return {
-      eventSerial:cycleIndex * eventsPerCycle + eventWithinCycle, // Monotonic chord-change token used by scheduling/crossfades even when the four-step progression wraps.
+      eventSerial:cycleIndex * eventsPerCycle + eventWithinCycle, // Monotonic change token: 8 six-beat roots + 8 twelve-beat roots per cycle.
       progressionStep,
       absoluteMeasure,
       cycleMeasure,
       cycleIndex,
       spanMeasures,
+      spanBeats,
       absoluteStartMeasure,
-      spanQuarterBeats:spanMeasures * measureQuarterBeats
+      absoluteStartBeat,
+      spanQuarterBeats:spanBeats * (Number(clock.meter?.quarterUnitsPerBeat) || 0.5)
     };
   }
 
@@ -2277,7 +2287,7 @@
   function nextSharedBeatAt(referenceAt = nowMs()) {
     const sampledAt = nowMs();
     const clock = sharedTransportData();
-    const beatMs = Math.max(1,clock.beatMs); // Auto-pick release timing follows the currently active shared beat; in 3/4 this is one quarter note.
+    const beatMs = Math.max(1,clock.quarterBeatMs); // Preserve the existing Auto Pick note-value grid while the Kurraya metronome itself counts six eighth-note beats per measure.
     const elapsedAtReference = clock.performanceElapsedMs - (sampledAt - referenceAt); // Projects an input timestamp onto the exact clock used by the audible metronome.
     const remainder = ((elapsedAtReference % beatMs) + beatMs) % beatMs;
     const delay = remainder < 2 ? beatMs : beatMs - remainder;
@@ -6297,7 +6307,7 @@
     const mode = state.game.demoMode;
     const definition = FRETTED_PLUCK_MODES[mode];
     if (!definition || event.inputType === 'strum') return;
-    const beatMs = Math.max(1,state.game.beatMs); // Successful-preview arpeggios follow the authored song's shared 3/4 beat grid.
+    const beatMs = Math.max(1,state.game.quarterBeatMs || state.game.beatMs); // Keep preview arpeggio note values unchanged under the 6/8 eighth-note metronome.
     const interval = beatMs / Math.max(1,definition.division);
     const performanceAt = Math.max(0,event.time - state.game.countInMs);
     const beatAnchor = Math.round(performanceAt / beatMs) * beatMs;
@@ -7073,7 +7083,7 @@
         tonicName:midiName(state.tonicMidi),
         timeSignature:KURRAYA_TIME_SIGNATURE.slice(),
         beatGrouping:KURRAYA_BEAT_GROUPING.slice(),
-        harmonyCadence:{cycleMeasures:FIXED_HARMONY_CYCLE_MEASURES,fastMeasures:FIXED_HARMONY_FAST_MEASURES,slowMeasures:FIXED_HARMONY_SLOW_MEASURES,fastSpanMeasures:1,slowSpanMeasures:2},
+        harmonyCadence:{cycleMeasures:FIXED_HARMONY_CYCLE_MEASURES,fastMeasures:FIXED_HARMONY_FAST_MEASURES,slowMeasures:FIXED_HARMONY_SLOW_MEASURES,fastSpanMeasures:1,slowSpanMeasures:2,fastBeats:FIXED_HARMONY_FAST_BEATS,slowBeats:FIXED_HARMONY_SLOW_BEATS,cycleBeats:FIXED_HARMONY_CYCLE_BEATS},
         progression:FIXED_HARMONY_STEPS.map(step => ({
           degree:step.degree + 1,
           roman:(step.quality === 'minor' ? ROMAN_DEGREES[step.degree]?.toLowerCase() : ROMAN_DEGREES[step.degree]) || String(step.degree + 1),
