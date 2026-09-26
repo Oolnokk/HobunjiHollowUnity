@@ -108,7 +108,7 @@
   <section id="songPane" class="tool-pane active" aria-label="Song Scale Audition">
     <div>
       <h2 class="pane-heading">When the Kininjis Bloom · Scale Audition</h2>
-      <p class="pane-subtitle">Hear the existing melody remapped through each Kurraya note set while the fixed IV–V–iii–vi harmony stays intact.</p>
+      <p class="pane-subtitle">Hear the existing melody remapped through each Kurraya note set while the authored intro and 3/4 accompaniment timing stay intact.</p>
     </div>
 <section class="panel">
     <div class="controls">
@@ -178,9 +178,9 @@
   </section>
 
   <section class="panel">
-    <strong>Fixed chord progression at this tonic</strong>
+    <strong>Base chord pattern at this tonic</strong>
     <div id="chords" class="chords"></div>
-    <p class="note"><strong>Mixed meter.</strong> Four chords use one 6/8 bar each, then sixteen chords use one 3/4 bar each, then the 20-chord phrase loops.</p>
+    <p class="note"><strong>Mixed meter.</strong> The four 6/8 chords are the accompaniment intro before the melody begins. The 16-bar melody body is entirely 3/4. Its first three short repeats are F → G → E → A; the final short repeat is F → G → A → A.</p>
   </section>
 
   <details class="panel" open>
@@ -188,7 +188,7 @@
     <pre id="diagnostics">engine=loading</pre>
   </details>
 
-  <iframe id="engine" src="../../assets/minigames/lyre-performance.html?v=20260925mixedmeter1" title="Kurraya song audition audio engine" aria-hidden="true"></iframe>
+  <iframe id="engine" src="../../assets/minigames/lyre-performance.html?v=20260925mixedmeter2" title="Kurraya song audition audio engine" aria-hidden="true"></iframe>
 
   </section>
 
@@ -422,8 +422,8 @@
       `scale=${snapshot?.scaleName || selectedScale}`,
       `tonic=${snapshot?.tonicName || midiName(selectedTonic)} (MIDI ${snapshot?.tonicMidi ?? selectedTonic})`,
       `progression=${(snapshot?.progression || []).map(step => step.chordName).join(' → ') || 'waiting'}`,
-      `meter now=${snapshot?.currentTimeSignature || (snapshot?.timeSignature || [6,8]).join('/')} · phrase=6/8×4 → 3/4×16`,
-      `cadence=${snapshot?.harmonyCadence ? `${snapshot.harmonyCadence.sixEightChords} chords × 6/8 → ${snapshot.harmonyCadence.threeFourChords} chords × 3/4 → loop` : 'waiting'}`,
+      `meter now=${snapshot?.currentTimeSignature || (snapshot?.timeSignature || [6,8]).join('/')} · intro=6/8×4 → melody=3/4×16`,
+      `cadence=${snapshot?.harmonyCadence ? `${snapshot.harmonyCadence.sixEightChords} intro chords × 6/8 → ${snapshot.harmonyCadence.threeFourChords} melody chords × 3/4 · final short F→G→A→A` : 'waiting'}`,
       `playing=${live?.gameActive ? 'yes' : 'no'} demo=${live?.gameDemoActive ? 'yes' : 'no'}`,
       `transportStep=${live?.transportHarmonyStep ?? '—'}`,
       `mix K/P/M=${Math.round((snapshot?.mix?.kurraya ?? live?.kurrayaMixLevel ?? 1) * 100)}/${Math.round((snapshot?.mix?.pad ?? live?.padMixLevel ?? 1) * 100)}/${Math.round((snapshot?.mix?.metronome ?? live?.metronomeMixLevel ?? 1) * 100)}%`,
@@ -534,7 +534,7 @@
     renderScaleButtons(snapshot);
     renderChords(snapshot);
     renderDiagnostics(snapshot);
-    setStatus(`Ready. 4 chords in 6/8 → 16 chords in 3/4 → loop. Current tuning ${snapshot.scaleName} · ${snapshot.tonicName}.`, 'good');
+    setStatus(`Ready. 4-bar 6/8 accompaniment intro → 16-bar 3/4 melody; final short pattern F→G→A→A. Current tuning ${snapshot.scaleName} · ${snapshot.tonicName}.`, 'good');
     clearInterval(pollTimer);
     pollTimer = window.setInterval(() => {
       if (!bridge) return;
