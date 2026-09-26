@@ -734,6 +734,30 @@
     return snd;
   }
 
+  function playGameplayCue(key) {
+    const audioCfg = window.AudioSystem?.gameAudioConfig?.() || {}; // Supplies the authored gameplay-cue registry and shared BGM level.
+    const cue = audioCfg.gameplayCues?.[key]; // Resolves the semantic fishing/mine cue without leaking asset paths into gameplay modules.
+    if (audioCfg.enabled === false || !cue?.url || audioUrlFailed(cue.url)) return null;
+    const cueVolume = Math.max(0, Number(cue.volume) || 1); // Scales this sting against the user's existing BGM volume.
+    const baseVolume = Math.max(0, Math.min(1, Number(audioCfg.bgmVolume) || 0.48)) * cueVolume; // Keeps gameplay stings on the music-volume path rather than object-SFX settings.
+    const snd = playMusicTrack(cue.url, baseVolume, 0, 0); // Uses the shared unlock/loudness/ducking transport without claiming an ambient scheduler slot.
+    snd._gameplayCueKey = key; // Exposes the semantic owner to mobile-readable audio diagnostics and ad-hoc inspection.
+    const finishGameplayCue = () => retireMusicTrack(snd); // Releases the one-shot element after playback/error without disturbing area/combat music.
+    snd.addEventListener('ended', finishGameplayCue, { once: true });
+    snd.addEventListener('error', () => {
+      if (isRealMediaError(snd)) markAudioUrlFailed(cue.url, 'gameplay cue media error');
+      finishGameplayCue();
+    }, { once: true });
+    audioDebug('playing gameplay cue key=' + key + ' url=' + snd.src + ' baseVolume=' + baseVolume.toFixed(2), 'gameplay-cue-' + key, 0, 'cue');
+    requestGameAudioPlay(snd).catch(err => {
+      const errName = err?.name || ''; // Keeps autoplay blocks retryable through unlockGameAudio while rejecting real media failures.
+      if (errName === 'NotAllowedError') return;
+      if (errName !== 'AbortError') markAudioUrlFailed(cue.url, errName || 'gameplay cue play failed');
+      finishGameplayCue();
+    });
+    return snd;
+  }
+
   function startStartupBgm() {
     if (_startupSequenceComplete || _startupBgm || window.__hobunjiGameStarted === true) return false;
     const audioCfg = window.AudioSystem?.gameAudioConfig?.() || {}; // Supplies the authored Remembrance entry and shared BGM volume.
@@ -1634,6 +1658,7 @@
     isNightTime,
     loadAudioCueIndexes,
     registerMapAudio,
+    playGameplayCue,
     resetAmbientCueTimer,
     updateAmbientCues,
     updateLyreDucking,
