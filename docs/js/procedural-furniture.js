@@ -154,6 +154,43 @@
     return geo;
   }
 
+  function partMaterial(part, baseColor) {
+    const color = resolveColor(part, baseColor); // Preserves the existing authored/fallback color contract for both lit and explicitly-unlit furniture.
+    if (part.materialLighting !== 'unlit') return new THREE.MeshLambertMaterial({ color });
+    const pngSurface = window.HobunjiSpritePngSurface || window.HobunjiPngPlaneUnlit; // Same canonical unlit PNG material factory used by farm-cliff natural surfaces after the old Banubu cave Lambert regression.
+    const overrides = {
+      color,
+      transparent: false,
+      alphaTest: 0,
+      side: THREE.FrontSide,
+      depthTest: true,
+      depthWrite: true,
+      opacity: 1,
+    };
+    const mat = typeof pngSurface?.makeMaterial === 'function'
+      ? pngSurface.makeMaterial(THREE, null, `furniture_${part.name || part.kind}_unlit`, overrides)
+      : new THREE.MeshBasicMaterial(overrides);
+    mat.userData = Object.assign({}, mat.userData, { authoredFurnitureLighting: 'unlit' });
+    return mat;
+  }
+
+  function applyAuthoredSurfaceMapping(mesh, part) {
+    if (part.materialUvMapping !== 'connected-surface-stretch') return false;
+    const mapper = window.HobunjiSurfaceStretchUV; // Reuses the exact connected-surface detector/stretch mapper that fixed Banubu's cave instead of inventing a second furniture UV algorithm.
+    if (typeof mapper?.mapMesh !== 'function') return false;
+    const maxPatchWorldSize = Math.max(0.1, Number(part.materialUvMaxPatchWorldSize) || 6);
+    const report = mapper.mapMesh(mesh, {
+      label: `furniture:${part.name || part.kind}:connected-surface`,
+      maxPatchWorldSize,
+    });
+    if (!report) return false;
+    mesh.userData = Object.assign({}, mesh.userData, {
+      authoredFurnitureSurfaceMapping: 'connected-surface-stretch',
+      authoredFurnitureSurfaceMaxPatchWorldSize: maxPatchWorldSize,
+    });
+    return true;
+  }
+
   function buildPartMesh(part, baseColor) {
     let geo;
     const t = part.transform;
@@ -166,7 +203,7 @@
     } else {
       geo = createTaperedBoxGeometry(part);
     }
-    const mat = new THREE.MeshLambertMaterial({ color: resolveColor(part, baseColor) });
+    const mat = partMaterial(part, baseColor);
     const mesh = new THREE.Mesh(geo, mat);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
@@ -174,6 +211,7 @@
     mesh.rotation.set((t.rx || 0) * DEG, (t.ry || 0) * DEG, (t.rz || 0) * DEG);
     mesh.name = part.name || part.kind;
     if (part.materialTexture) applyPartTexture(mat, part);
+    applyAuthoredSurfaceMapping(mesh, part); // Must run after the final primitive geometry exists; material assignment above remains authoritative.
     if (part.depthWrite === false) mat.depthWrite = false; // Background/firebox planes may stay opaque visually without hiding later transparent VFX.
     return mesh;
   }
@@ -453,11 +491,11 @@ function campfireRecipe() {
   // this exact five-stage silhouette prevents a placeholder cube if authored
   // furniture finishes loading a frame after the cave scene.
   CATALOG.stonePedestal = [
-    box(0, .05, 0, .78, .10, .78, 1, { color: 0x625c52 }),
-    box(0, .14, 0, .64, .08, .64, 1, { color: 0x7b7466, topScaleX: .94, topScaleZ: .94 }),
-    box(0, .43, 0, .46, .50, .46, 1, { color: 0x7b7466, topScaleX: .88, topScaleZ: .88, bottomScaleX: 1.04, bottomScaleZ: 1.04 }),
-    box(0, .71, 0, .56, .08, .56, 1, { color: 0x928a78 }),
-    box(0, .80, 0, .76, .10, .76, 1, { color: 0x928a78, topScaleX: .96, topScaleZ: .96 }),
+    box(0, .05, 0, .78, .10, .78, 1, { color: 0x625c52, materialTexture: 'carved_smooth.png', materialLighting: 'unlit', materialUvMapping: 'connected-surface-stretch', materialUvMaxPatchWorldSize: 6 }),
+    box(0, .14, 0, .64, .08, .64, 1, { color: 0x7b7466, topScaleX: .94, topScaleZ: .94, materialTexture: 'carved_smooth.png', materialLighting: 'unlit', materialUvMapping: 'connected-surface-stretch', materialUvMaxPatchWorldSize: 6 }),
+    box(0, .43, 0, .46, .50, .46, 1, { color: 0x7b7466, topScaleX: .88, topScaleZ: .88, bottomScaleX: 1.04, bottomScaleZ: 1.04, materialTexture: 'carved_smooth.png', materialLighting: 'unlit', materialUvMapping: 'connected-surface-stretch', materialUvMaxPatchWorldSize: 6 }),
+    box(0, .71, 0, .56, .08, .56, 1, { color: 0x928a78, materialTexture: 'carved_smooth.png', materialLighting: 'unlit', materialUvMapping: 'connected-surface-stretch', materialUvMaxPatchWorldSize: 6 }),
+    box(0, .80, 0, .76, .10, .76, 1, { color: 0x928a78, topScaleX: .96, topScaleZ: .96, materialTexture: 'carved_smooth.png', materialLighting: 'unlit', materialUvMapping: 'connected-surface-stretch', materialUvMaxPatchWorldSize: 6 }),
   ];
 
   CATALOG.statue = [
