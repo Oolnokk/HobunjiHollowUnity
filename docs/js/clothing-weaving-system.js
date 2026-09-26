@@ -26,6 +26,7 @@
   const CLOTHING_MARKER_KEY = '__hobunjiWovenClothing'; // Temporary bodyColors metadata passed only through avatar render data.
   const CRAFT_ID_MARKER = '#loom:'; // Makes each crafted article unique to legacy duplicate-collapsing logic.
   const CLOTHING_SLOTS = Object.freeze(['hat', 'hood', 'torso', 'overwear']);
+  const OUTFIT_WEIGHT_SLOTS = Object.freeze(['hat', 'hood', 'pauldron', 'torso', 'overwear']); // Used only for outfit-burden math; the pauldron slot deliberately remains absent from loom craftability.
   const PATTERN_SCALE_REFERENCE = 0.25; // Converts normalized whole-pattern scale to the pre-normalization renderer scale; 1.00 now means the old 0.25.
   const PATTERN_SCALE_MIN = 0.4; // Normalized lower clamp used by woven pattern rendering; equivalent to the old physical 0.10.
   const PATTERN_SCALE_MAX = 3.2; // Normalized upper clamp used by woven pattern rendering; equivalent to the old physical 0.80.
@@ -295,9 +296,10 @@
   }
 
   function itemWeightUnits(item) {
+    const explicit = Number(item?.weightUnits); // Smith-forged armor supplies a physical-mass-derived weight even though it is not loom-craftable cloth.
+    if (Number.isFinite(explicit) && explicit >= 0) return explicit;
     if (!isCraftableCloth(item)) return 0;
-    const explicit = Number(item?.weightUnits);
-    return Number.isFinite(explicit) && explicit >= 0 ? explicit : standardWeightFor(item);
+    return standardWeightFor(item);
   }
 
   function gearInventory() { return equipmentDeps?.getGearInventory?.() || null; }
@@ -305,7 +307,7 @@
 
   function equippedClothItems() {
     const gear = gearInventory();
-    return CLOTHING_SLOTS.map(slot => gear?.clothing?.[slot]).filter(item => isCraftableCloth(item));
+    return OUTFIT_WEIGHT_SLOTS.map(slot => gear?.clothing?.[slot]).filter(item => itemWeightUnits(item) > 0);
   }
 
   function totalEquippedWeight() {

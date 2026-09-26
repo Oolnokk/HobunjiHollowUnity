@@ -153,7 +153,7 @@
   function resolveSavePortraitClothingOption(cosmetics, slot, item, character) {
     const optionCache = cosmetics?.optionCache;
     const none = optionCache?.get('none') || { id: 'none', tintSlot: null, layers: [] };
-    const cosmeticId = item?.cosmeticId;
+    const cosmeticId = item?.baseCosmeticId || item?.cosmeticId;
     if (!cosmeticId || !optionCache) return none;
 
     const catalog = window.SCRATCHBONES_CONFIG?.game?.account?.shopCatalog || [];
@@ -213,6 +213,10 @@
         if (primaryKey) delete bodyColors[primaryKey];
         if (secondaryKey) delete bodyColors[secondaryKey];
 
+        if (slot === 'pauldron' && item && window.PauldronSystem?.isMetalPauldron?.(item)) {
+          bodyColors.PAULDRON = window.PauldronSystem.portraitStateForItem(item);
+          continue;
+        }
         const primary = portraitTintColor(item?.colorA);
         const secondary = portraitTintColor(item?.colorB);
         if (primaryKey && primary) bodyColors[primaryKey] = primary;
