@@ -277,7 +277,12 @@ const q1OfferPresentationNodes = Object.fromEntries(content.dialogueTrees.find(t
 const q2OfferPresentationNodes = Object.fromEntries(content.dialogueTrees.find(tree => tree.id === 'banubu_q2_offer').nodes.map(node => [node.id, node]));
 assert.deepStrictEqual(JSON.parse(JSON.stringify(q1OfferPresentationNodes.banubu_q1_offer_commit.banubuPresentation)), { commitQuestAction: { operation: 'accept', stage: 1 } });
 assert.deepStrictEqual(JSON.parse(JSON.stringify(q2OfferPresentationNodes.banubu_q2_offer_commit.banubuPresentation)), { commitQuestAction: { operation: 'accept', stage: 2 } });
-assert.strictEqual(q1ReadyPresentationNodes.banubu_q1_ready_3.next, 'banubu_q1_ready_stand_visual', 'the spoken setup line must lead into a pure standing visual beat');
+assert.strictEqual(q1ReadyPresentationNodes.banubu_q1_ready_3.next, 'banubu_q1_ready_prestand_visual', 'the spoken setup line must first reveal the awake camera while Banubu is still lying down');
+assert.strictEqual(q1ReadyPresentationNodes.banubu_q1_ready_prestand_visual.type, 'visual');
+assert.strictEqual(q1ReadyPresentationNodes.banubu_q1_ready_prestand_visual.durationSec, 0.8);
+assert.deepStrictEqual(JSON.parse(JSON.stringify(q1ReadyPresentationNodes.banubu_q1_ready_prestand_visual.banubuPresentation)), {}, 'pre-stand visual must change only the camera, not Banubu’s body pose');
+assert.strictEqual(q1ReadyPresentationNodes.banubu_q1_ready_prestand_visual.cameraId, 'banubu_dialogue_awake');
+assert.strictEqual(q1ReadyPresentationNodes.banubu_q1_ready_prestand_visual.next, 'banubu_q1_ready_stand_visual');
 assert.strictEqual(q1ReadyPresentationNodes.banubu_q1_ready_stand_visual.type, 'visual');
 assert.strictEqual(q1ReadyPresentationNodes.banubu_q1_ready_stand_visual.durationSec, 1.6);
 assert.deepStrictEqual(JSON.parse(JSON.stringify(q1ReadyPresentationNodes.banubu_q1_ready_stand_visual.banubuPresentation)), { body: 'awake' }, 'standing up is its own silent presentation beat');
@@ -311,6 +316,8 @@ const presentationRoot = new FakeGroup();
 presentationRoot.position.set(6.5, 0, 5.5);
 presentationScene.add(presentationRoot);
 const presentationWalker = { root: presentationRoot }; // Minimal named-animal walker seam used by BanubuQuestline presentation.
+presentationHandler(q1ReadyPresentationNodes.banubu_q1_ready_prestand_visual, { npc: banubu, walker: presentationWalker });
+assert.strictEqual(presentationWalker._animalSleepPresentationOverride, undefined, 'pre-stand camera beat must show Banubu still lying down before the body cue fires');
 presentationHandler(q1ReadyPresentationNodes.banubu_q1_ready_stand_visual, { npc: banubu, walker: presentationWalker });
 assert.strictEqual(presentationWalker._animalSleepPresentationOverride, 'awake');
 assert.strictEqual(sparkleCreates, 0, 'standing beat must not reveal the key before Banubu starts moving aside');
