@@ -24,6 +24,10 @@ on:
       - 'docs/js/combat/combat-config-loader.js'
       - 'docs/js/combat/combat-bandit.js'
       - 'docs/js/combat/combat-minion.js'
+      - 'docs/js/combat/combat-lich.js'
+      - 'docs/config/cosmetics/ragged_hood.json'
+      - 'docs/assets/cosmetics/clothes/hood/*raggedhood*'
+      - 'scripts/test-harlyao-liches.js'
       - 'docs/js/combat/combat-core.js'
       - 'docs/js/combat/resource-system.js'
       - 'docs/js/dev-spawner.js'
@@ -99,6 +103,8 @@ jobs:
         run: node scripts/test-harlyao-skeleton-species.js
       - name: Minion enemy class regression
         run: node scripts/test-minion-enemies.js
+      - name: Harlyao Lich regression
+        run: node scripts/test-harlyao-liches.js
       - name: Porakaneki species regression
         run: node scripts/test-porakaneki-species.js
       - name: Porakaneki camp regression
