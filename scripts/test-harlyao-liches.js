@@ -176,6 +176,11 @@ assert.equal(player.health, healthBeforeObey, 'obeying Entranced command must no
 assert(player.afflictions.entrancedHealth < entrancedBeforeObey, 'obeying Entranced command must recover buildup');
 
 currentArea = 'farm';
+player.afflictions.entrancedHealth = 8;
+assert(windowObject.Combat.getMovementSpeedMul() < 1, 'goo slow should still be active immediately before leaving the arena runtime tick');
+windowObject.RangedWeapons.update(0.1);
+assert.equal(player.afflictions.entrancedHealth, 0, 'Entranced Health must clear immediately after leaving the Testing Arena');
+assert.equal(windowObject.Combat.getMovementSpeedMul(), 1, 'Kanthic goo slow must clear immediately after leaving the Testing Arena');
 const offArena = await api.makeEntity({ type: 'tothal', x: 10, y: 10 });
 assert.equal(offArena, null, 'lich constructor must refuse non-Testing-Arena areas');
 currentArea = 'map_dev_arena';
