@@ -137,12 +137,14 @@
     return deps?.getNpcWalker?.(npcId, record?.areaId || deps?.getCurrentArea?.()) || null;
   }
 
+  let npcRootScratch = null; // Reused per-frame world-position scratch so root-targeted dialogue framing does not allocate a Vector3 every frame.
   function npcRootWorldPoint(walker) {
     const root = walker?.root; // Live NPC transform whose origin is used by root-targeted cinematic cameras and attached presentation emitters.
     if (!root) return null;
     const ThreeVector3 = window.THREE?.Vector3; // Optional runtime vector type used only when the NPC root is parented under another transform.
     if (root.getWorldPosition && ThreeVector3) {
-      const point = root.getWorldPosition(new ThreeVector3()); // Temporary world point prevents a local root position from drifting away from attached VFX in nested scenes.
+      if (!(npcRootScratch instanceof ThreeVector3)) npcRootScratch = new ThreeVector3();
+      const point = root.getWorldPosition(npcRootScratch); // World point prevents a local root position from drifting away from attached VFX in nested scenes; copied out below.
       return { x: point.x, y: point.y, z: point.z };
     }
     const point = root.position; // Lightweight fallback used by tests and ordinary scene-root NPC walkers.

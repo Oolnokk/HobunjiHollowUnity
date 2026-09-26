@@ -512,7 +512,7 @@
        at call time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.WildlifeSpawn.init(...) during its own setup. -->
-  <script src="js/wildlife-spawn.js?v=20260925denturnover2"></script>
+  <script src="js/wildlife-spawn.js?v=20260925denentrance1"></script>
   <!-- Town/zone building mesh spawning + decorative furniture/prop spawning
        (window.TownZoneBuildings) — reads globally-loaded HousePieceGen/
        WallBuilder/BuildingDoor/window.ProceduralFurniture/window.Music at
@@ -2354,7 +2354,7 @@
        openNpcDialogue/closeNpcDialogue (camera/staging/save) stay in
        game.js and call into this module. -->
   <!-- Authored world-space dialogue/cutscene cameras. Must load before DialogueContent/game.js. -->
-  <script src="js/cinematic-camera-runtime.js?v=20260925banubukeycam1"></script>
+  <script src="js/cinematic-camera-runtime.js?v=20260925reviewfix1"></script>
   <script src="js/dialogue-content.js?v=20260924banubupose2"></script>
   <script src="js/banubu-questline.js?v=20260924banubupose3"></script>
   <!-- World-space Float+ combat text and centered five-row reward lists. -->

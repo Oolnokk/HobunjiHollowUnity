@@ -357,7 +357,7 @@
     return record ? { stage:record.stage, daysRemaining:record.daysRemaining, generation:Number(record.generation)||0 } : null;
   }
 
-  function ensureActiveDenTurnoverRecord(cavernMapId) {
+  function ensureActiveDenTurnoverRecord(cavernMapId, { persist = true } = {}) {
     const existing = turnoverRecordForCavern(cavernMapId);
     if (existing) return existing;
     const zoneId = _denCavernZoneOf.get(cavernMapId);
@@ -375,7 +375,7 @@
       mouthAnchor:den.mouthAnchor ? { ...den.mouthAnchor } : null,
     }; // Stored immediately so an untouched den cannot silently change bloodline on a page reload.
     denTurnoverByKey.set(key, record);
-    persistDenTurnover();
+    if (persist) persistDenTurnover();
     return record;
   }
 
@@ -419,6 +419,39 @@
     transition.col = den.mouthAnchor.x;
     transition.row = den.mouthAnchor.y;
     return transition;
+  }
+
+  // game.js's buildZoneScene copies layout.transitions into its own
+  // zoneScenes.get(zoneId).transitions (the pool checkTransitionSpots reads)
+  // and drops a gold ring marker per spot. Scenes are cached across visits,
+  // so editing only the layout left a collapsed den enterable (and a
+  // relocated one unenterable) until the scene happened to be rebuilt.
+  function syncSceneDenTransition(zoneId, den, cavernMapId, transition) {
+    const info = deps.zoneScenes?.get(zoneId);
+    if (!info || !den) return;
+    const id = denTransitionId(den.id);
+    const matches = t => !!t && (t.targetMapId === cavernMapId || t.id === id);
+    if (Array.isArray(info.transitions)) {
+      for (let i = info.transitions.length - 1; i >= 0; i--) if (matches(info.transitions[i])) info.transitions.splice(i, 1);
+      if (transition) info.transitions.push(transition);
+    }
+    const rings = (info.scene?.children || []).filter(o => o.userData?.mapEditorRef?.kind === 'spot' && o.userData.mapEditorRef.id === id); // Ring markers are direct zScene children.
+    if (!transition) { for (const ring of rings) ring.visible = false; return; }
+    let ring = rings[0];
+    if (!ring && window.THREE && info.scene) {
+      ring = new THREE.Mesh(
+        new THREE.RingGeometry(0.22, 0.36, 24),
+        new THREE.MeshBasicMaterial({ color: 0xfbbf24, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false })
+      ); // Same look as buildZoneScene's markers, for a den whose scene was built while it was collapsed.
+      ring.rotation.x = -Math.PI / 2;
+      info.scene.add(ring);
+    }
+    if (!ring) return;
+    const tile = info.grid?.[transition.row]?.[transition.col];
+    const surfaceY = Number(deps.tileSurfaceYInArea?.(tile, zoneId));
+    ring.position.set(transition.col + 0.5, Number.isFinite(surfaceY) ? surfaceY + 0.02 : ring.position.y, transition.row + 0.5);
+    ring.userData.mapEditorRef = { mapId: zoneId, kind: 'spot', id, col: transition.col, row: transition.row };
+    ring.visible = true;
   }
 
   function setDenFootprintOverlay(layout, den, present) {
@@ -619,6 +652,7 @@
     den._collapsePresentationPending = true; // Consumed by ZoneDenTotemFeatures to delay/lerp the visible cave-in after the exterior has loaded.
     const cavernMapId = denCavernMapId(record.zoneId, den.id);
     record.transition = takeDenTransition(layout, cavernMapId, den.id) || record.transition || null;
+    syncSceneDenTransition(record.zoneId, den, cavernMapId, null);
     record.stage = 'collapsed';
     record.daysRemaining = DEN_RELOCATION_DELAY_DAYS;
     record.x = Number(den.x); record.y = Number(den.y);
@@ -653,7 +687,7 @@
     den.collapsed = false; den.turnoverStage = 'active';
     setDenFootprintOverlay(layout, den, true);
     const cavernMapId = denCavernMapId(record.zoneId, den.id);
-    ensureDenTransition(layout, den, cavernMapId, record.transition);
+    syncSceneDenTransition(record.zoneId, den, cavernMapId, ensureDenTransition(layout, den, cavernMapId, record.transition));
     resetDenPopulationCaches(record.zoneId, den.id, cavernMapId);
     record.stage = 'active';
     record.daysRemaining = null;
@@ -714,8 +748,10 @@
       den.collapsed = collapsed;
       den.turnoverStage = record.stage;
       if (record.stage === 'cleared') den._collapsePresentationPending = true; // Reloading after the mother dies still gets the delayed exterior cave-in instead of reopening the entrance.
-      if (collapsed) record.transition = takeDenTransition(layout, cavernMapId, den.id) || record.transition || null;
-      else ensureDenTransition(layout, den, cavernMapId, record.transition);
+      if (collapsed) {
+        record.transition = takeDenTransition(layout, cavernMapId, den.id) || record.transition || null;
+        syncSceneDenTransition(zoneId, den, cavernMapId, null);
+      } else syncSceneDenTransition(zoneId, den, cavernMapId, ensureDenTransition(layout, den, cavernMapId, record.transition));
     }
   }
 
@@ -903,7 +939,7 @@
   function getOrMakeDenGenotype(cavernMapId, family) {
     const key = `${cavernMapId}|${family}`;
     if (!_denGenotypes.has(key)) {
-      const turnover = turnoverRecordForCavern(cavernMapId) || ensureActiveDenTurnoverRecord(cavernMapId); // Generation zero and every relocated generation persist the same way across reloads.
+      const turnover = turnoverRecordForCavern(cavernMapId) || ensureActiveDenTurnoverRecord(cavernMapId, { persist: false }); // Generation zero and every relocated generation persist the same way across reloads; the single write below covers a newly created record.
       const persisted = turnover?.genotypes?.[family] || null;
       const genotype = persisted ? JSON.parse(JSON.stringify(persisted)) : window.CreatureGenetics.makeDefaultGenotype(family);
       _denGenotypes.set(key, genotype);
