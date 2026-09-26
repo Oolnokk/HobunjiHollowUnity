@@ -5327,6 +5327,7 @@
       const tile = tileAt(x, y);
       if (!tile) return false;
       if (tile.water || tile.river || tile.path || tile.ramp || tile.cliffSkirt || tile.waterfall) return false;
+      if (usesArchipelagoLayout() && (tile.plateauRing || tile.borderEscarpment)) return false; // Mirewood uses the Cloud Forest spacing rule but stays on genuine flat island/plateau tops, never on auto-generated cliff slopes.
       if (tile.occupiedBy) return false;
       if (hasNearbyTreeObject(x, y, clusterKeys)) return false;
       if (nearDenEntrance(x, y)) return false;
@@ -8500,8 +8501,8 @@
       const pointCount = clamp(Math.round(desiredLength / 2.35) + 1, 7, 15); // Used to make each island a many-segment ribbon rather than one oval.
       const baseHeading = noise2(index, 3, seedSalt + 853) * Math.PI * 2; // Used as the island's overall long-axis direction.
       const curveSign = noise2(index, 4, seedSalt + 857) < 0.5 ? -1 : 1; // Used to choose clockwise versus counter-clockwise bowing.
-      const bendAmount = (0.34 + noise2(index, 5, seedSalt + 863) * 0.58) * curveSign; // Used to produce broad Italy/Denmark-like arcs instead of straight bars.
-      const waveAmount = (0.8 + noise2(index, 6, seedSalt + 877) * 1.8) * landScale; // Used for a second, gentler S-bend along the main curve.
+      const bendAmount = (0.58 + noise2(index, 5, seedSalt + 863) * 0.72) * curveSign; // Used to guarantee a visibly bowed Italy/Denmark-like arc instead of allowing nearly straight ribbons.
+      const waveAmount = (1.15 + noise2(index, 6, seedSalt + 877) * 2.25) * landScale; // Used for a second Indonesia-like S-bend layered onto the main arc.
       const wavePhase = noise2(index, 7, seedSalt + 881) * Math.PI * 2; // Used so different islands bend at different points along their length.
       const points = []; // Used both to stamp overlapping lobes and to expose curvature diagnostics.
       let fitScale = 1;
@@ -8512,7 +8513,7 @@
           const t = pointCount <= 1 ? 0.5 : p / (pointCount - 1);
           const u = t * 2 - 1;
           const forward = u * halfLength;
-          const bow = bendAmount * halfLength * 0.34 * (u * u - 0.18); // Used to pull both ends around one side of the midpoint into a long hook/arc.
+          const bow = bendAmount * halfLength * 0.46 * (u * u - 0.18); // Used to pull both ends strongly around one side of the midpoint into a long hooked arc.
           const wave = Math.sin(t * Math.PI * 2 + wavePhase) * waveAmount * Math.sin(Math.PI * t); // Used to add an Indonesia-like second bend without kinking the endpoints.
           const side = bow + wave;
           const cos = Math.cos(baseHeading);
