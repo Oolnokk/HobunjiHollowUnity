@@ -93,7 +93,8 @@
     0,
     'banubu_intro_sleep_1_line',
     [
-      textNode('banubu_intro_sleep_1_line', 'Zzzzz.', null),
+      textNode('banubu_intro_sleep_1_line', 'Zzzzz.', 'banubu_intro_sleep_1_commit'),
+      presentedEndNode('banubu_intro_sleep_1_commit', { commitIntroAttempt: 1 }),
     ],
     { questType: 'threeFishPie', buffCount: 3, minStacks: 1, introAttempt: 1 },
   );
@@ -105,7 +106,8 @@
     0,
     'banubu_intro_sleep_2_line',
     [
-      textNode('banubu_intro_sleep_2_line', 'Let me rest my eyes for just a few more minutes.', null),
+      textNode('banubu_intro_sleep_2_line', 'Let me rest my eyes for just a few more minutes.', 'banubu_intro_sleep_2_commit'),
+      presentedEndNode('banubu_intro_sleep_2_commit', { commitIntroAttempt: 2 }),
     ],
     { questType: 'threeFishPie', buffCount: 3, minStacks: 1, introAttempt: 2 },
   );
@@ -131,7 +133,8 @@
       textNode('banubu_intro_8', 'You know what always revitalizes me? A good Three-Fish Pie. It’s my favorite. I’ll teach you the recipe. If you can make me one, that could give me the boost I need to at least get up and start moving.', 'banubu_intro_9'),
       textNode('banubu_intro_9', 'But if you want me to be any real help, it’s gotta be really nutritious. I’ve been lying here an awfully long time, even by my standards.', 'banubu_intro_10'),
       textNode('banubu_intro_10', 'I need a good Three-Fish Pie that can give me {{banubuRequestedBuffs}}.', 'banubu_intro_11'),
-      textNode('banubu_intro_11', 'Bring me one of those and we can get started.', null),
+      textNode('banubu_intro_11', 'Bring me one of those and we can get started.', 'banubu_intro_commit'),
+      presentedEndNode('banubu_intro_commit', { commitIntroAttempt: 3, commitQuestAction: { operation: 'unlockRecipe', stage: 0 } }),
     ],
     { questType: 'threeFishPie', buffCount: 3, minStacks: 1, introAttempt: 3 },
   );
@@ -147,7 +150,8 @@
         { label: 'I’ll make it.', next: 'banubu_q1_offer_2', actions: [{ type: 'banubuQuest', operation: 'accept', stage: 1 }] },
         { label: 'Not yet.', next: null, actions: [] },
       ]),
-      textNode('banubu_q1_offer_2', 'Good. Bring it here when its ready.', null),
+      textNode('banubu_q1_offer_2', 'Good. Bring it here when its ready.', 'banubu_q1_offer_commit'),
+      presentedEndNode('banubu_q1_offer_commit', { commitQuestAction: { operation: 'accept', stage: 1 } }),
     ],
     {
       questType: 'threeFishPie',
@@ -222,7 +226,8 @@
         { label: 'I’ll make the tea.', next: 'banubu_q2_offer_2', actions: [{ type: 'banubuQuest', operation: 'accept', stage: 2 }] },
         { label: 'Let him sleep.', next: null, actions: [] },
       ]),
-      textNode('banubu_q2_offer_2', 'Good. The Tea Grinder only keeps the beneficial reactions, so finding the right blends should be easier than brewing potions. Relatively speaking.', null),
+      textNode('banubu_q2_offer_2', 'Good. The Tea Grinder only keeps the beneficial reactions, so finding the right blends should be easier than brewing potions. Relatively speaking.', 'banubu_q2_offer_commit'),
+      presentedEndNode('banubu_q2_offer_commit', { commitQuestAction: { operation: 'accept', stage: 2 } }),
     ],
     {
       questType: 'nineLeafTea',
@@ -322,28 +327,45 @@
   }
 
   function upgradeTransactionalTurnInTree(tree) {
-    const clone = deepClone(tree); // Existing Dialogue Editor overrides are kept, then only the transaction-critical turn-in wiring is migrated.
+    const clone = deepClone(tree); // Existing Dialogue Editor overrides are kept, then only transaction-critical wiring is migrated.
+    const phase = String(clone?.banubuQuest?.phase || '');
     const stage = Number(clone?.banubuQuest?.stage || 0);
-    if (clone?.banubuQuest?.phase !== 'ready' || (stage !== 1 && stage !== 2)) return clone;
-    for (const node of clone.nodes || []) {
+    const nodes = clone.nodes || (clone.nodes = []);
+    const byId = id => nodes.find(node => node?.id === id);
+    const ensureCommit = (finalNodeId, commitNodeId, presentation) => {
+      const finalNode = byId(finalNodeId);
+      if (finalNode && finalNode.type !== 'end') finalNode.next = commitNodeId; // Keeps edited line text while moving mutation past the line's final Continue.
+      let commitNode = byId(commitNodeId);
+      if (!commitNode) {
+        commitNode = presentedEndNode(commitNodeId, presentation);
+        nodes.push(commitNode);
+      } else {
+        commitNode.type = 'end';
+        commitNode.banubuPresentation = { ...(commitNode.banubuPresentation || {}), ...deepClone(presentation) };
+      }
+    };
+
+    for (const node of nodes) {
       for (const choice of node.choices || []) {
         for (const action of choice.actions || []) {
-          if (action?.type === 'banubuQuest' && action.operation === 'turnIn') action.operation = 'prepareTurnIn'; // Old local overrides must never bypass the end-of-dialogue transaction.
+          if (action?.type === 'banubuQuest' && action.operation === 'turnIn') action.operation = 'prepareTurnIn'; // Old local overrides must never bypass the final end node.
         }
       }
     }
-    const finalNodeId = stage === 1 ? 'banubu_q1_ready_18' : 'banubu_q2_ready_3';
-    const commitNodeId = stage === 1 ? 'banubu_q1_ready_commit' : 'banubu_q2_ready_commit';
-    const finalNode = (clone.nodes || []).find(node => node?.id === finalNodeId);
-    if (finalNode && finalNode.type !== 'end') finalNode.next = commitNodeId; // Preserves edited line text while restoring the transaction boundary after it.
-    let commitNode = (clone.nodes || []).find(node => node?.id === commitNodeId);
-    if (!commitNode) {
-      commitNode = presentedEndNode(commitNodeId, { commitTurnIn: stage });
-      clone.nodes ||= [];
-      clone.nodes.push(commitNode);
-    } else {
-      commitNode.type = 'end';
-      commitNode.banubuPresentation = { ...(commitNode.banubuPresentation || {}), commitTurnIn: stage };
+
+    if (phase === 'intro') {
+      const attempt = Number(clone?.banubuQuest?.introAttempt || 3);
+      if (attempt === 1) ensureCommit('banubu_intro_sleep_1_line', 'banubu_intro_sleep_1_commit', { commitIntroAttempt: 1 });
+      else if (attempt === 2) ensureCommit('banubu_intro_sleep_2_line', 'banubu_intro_sleep_2_commit', { commitIntroAttempt: 2 });
+      else ensureCommit('banubu_intro_11', 'banubu_intro_commit', { commitIntroAttempt: 3, commitQuestAction: { operation: 'unlockRecipe', stage: 0 } });
+    } else if (phase === 'offer' && stage === 1) {
+      ensureCommit('banubu_q1_offer_2', 'banubu_q1_offer_commit', { commitQuestAction: { operation: 'accept', stage: 1 } });
+    } else if (phase === 'offer' && stage === 2) {
+      ensureCommit('banubu_q2_offer_2', 'banubu_q2_offer_commit', { commitQuestAction: { operation: 'accept', stage: 2 } });
+    } else if (phase === 'ready' && stage === 1) {
+      ensureCommit('banubu_q1_ready_18', 'banubu_q1_ready_commit', { commitTurnIn: 1 });
+    } else if (phase === 'ready' && stage === 2) {
+      ensureCommit('banubu_q2_ready_3', 'banubu_q2_ready_commit', { commitTurnIn: 2 });
     }
     return clone;
   }
