@@ -6,6 +6,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const source = fs.readFileSync(path.join(__dirname, '../docs/assets/minigames/lyre-performance.html'), 'utf8');
+const hostSource = fs.readFileSync(path.join(__dirname, '../docs/js/music-minigame.js'), 'utf8'); // Verifies gameplay loads the newly versioned fixed-harmony minigame rather than a stale cached copy.
+const kurrayaHost = fs.readFileSync(path.join(__dirname, '../docs/js/kurraya-instrument.js'), 'utf8'); // Verifies explicitly imported Music Lab Kurraya samples survive the gameplay host's bundled-sample gate.
+const musicLab = fs.readFileSync(path.join(__dirname, '../docs/tools/kurraya-music-lab/index.html'), 'utf8'); // Verifies the combined Kurraya authoring surface owns scale audition, mix/sample authoring, and SFX transposition.
+const toolsHub = fs.readFileSync(path.join(__dirname, '../docs/tools/index.html'), 'utf8'); // Verifies the combined Kurraya Music Lab remains reachable from the existing developer-tools hub.
 
 assert.match(
   source,
@@ -27,6 +31,100 @@ assert.match(
 
 assert.match(
   source,
+  /function createRootPadVoice\(midi, whenMs = null\)[\s\S]*?fifthMidi\] = \[midi,midi \+ 7\][\s\S]*?fifthOscillator\.frequency\.setValueAtTime\(midiFrequency\(fifthMidi\), now\)/,
+  'the synth harmony pad must voice a perfect-fifth power chord instead of the old root octave'
+);
+
+assert.match(
+  source,
+  /PAD_ROOT_LAYER_GAIN = 0\.5[\s\S]*?PAD_FIFTH_LAYER_GAIN = 0\.75/,
+  'the pad fifth must be mixed above the root so the P5 remains clearly audible on small speakers'
+);
+
+assert.doesNotMatch(
+  source,
+  /fifthLayer\.gain\.setValueAtTime\(0\.36/,
+  'the old subordinate 36% fifth layer must not return'
+);
+
+assert.match(
+  source,
+  /function analyzeAuxiliaryRoot\(buffer\)[\s\S]*?estimatePitch\([\s\S]*?rootPadSampleRootMidi = detected\.midi/,
+  'imported pad SFX must auto-detect their actual recorded fundamental before transposition'
+);
+
+assert.match(
+  source,
+  /function normalizeAuxiliaryDecodedBuffer\(decoded\)[\s\S]*?correlation < 0\.15[\s\S]*?\(left \+ right\) \* 0\.70710678/,
+  'auxiliary pad imports must use phase-safe mono conversion so stereo width cannot cancel the fundamental'
+);
+
+assert.match(
+  source,
+  /async importPadSample\(file, rootMidi = state\.rootPadSampleRootMidi\)[\s\S]*?importAuxiliarySample\(file,'rootPad',\{autoDetectRoot:true\}\)/,
+  'Music Lab pad imports must request automatic root detection rather than trusting the previous Recorded root value'
+);
+
+assert.match(
+  musicLab,
+  /padRootSource === 'detected'[\s\S]*?padDetectedFrequency[\s\S]*?padDetectedConfidence[\s\S]*?padChordNames/,
+  'Music Lab must visibly report detected pad pitch/confidence and the actual two notes currently sounding'
+);
+
+assert.match(
+  source,
+  /function createRootPadSampleVoice\(midi, whenMs = null\)[\s\S]*?fifthMidi\] = \[midi,midi \+ 7\][\s\S]*?fifthSource\.playbackRate\.setValueAtTime\(Math\.pow\(2, \(fifthMidi - state\.rootPadSampleRootMidi\) \/ 12\), now\)/,
+  'imported harmony-pad samples must layer the same root plus perfect fifth as the synth fallback'
+);
+
+assert.match(
+  source,
+  /function rootPadTargetMidi\(clock = sharedTransportData\(\)\)[\s\S]*?currentHarmonyData\(clock\)[\s\S]*?state\.tonicMidi \+ harmony\.rootOffset \+ PAD_ROOT_REGISTER_OFFSET/,
+  'the fifth-chord pad root must remain driven by the exact scheduled live harmony root and authored pad register'
+);
+
+assert.match(
+  source,
+  /kurrayaMixLevel:1[\s\S]*?metronomeMixLevel:1[\s\S]*?padMixLevel:1/,
+  'the sampler must keep independent Kurraya, metronome, and pad layer mix multipliers'
+);
+
+assert.match(
+  source,
+  /gainAmount \* state\.kurrayaMixLevel/,
+  'the Kurraya mix multiplier must reach instrument-note playback'
+);
+assert.match(
+  source,
+  /state\.rootPadSampleLevel \* state\.padMixLevel/,
+  'the pad mix multiplier must reach imported fifth-pad playback'
+);
+assert.match(
+  source,
+  /state\.metronomeSampleLevel \* state\.metronomeMixLevel/,
+  'the metronome mix multiplier must reach metronome audio'
+);
+
+assert.match(
+  source,
+  /mixState\(\)[\s\S]*?setMixLevels\(levels = \{\}[\s\S]*?importKurrayaSample\(file[\s\S]*?importPadSample\(file[\s\S]*?useLabFootstepMetronome\(urls\)/,
+  'the shared bridge must expose the Music Lab mix, Kurraya import, pad import, and game-footstep metronome controls'
+);
+
+assert.match(
+  source,
+  /labMetronomeBuffers[\s\S]*?loadLabMetronomeFootsteps\(urls = \[\]\)[\s\S]*?normalizeAuxiliaryDecodedBuffer/,
+  'the standalone lab metronome must decode real recorded footsteps through the engine audio path'
+);
+
+assert.match(
+  kurrayaHost,
+  /KURRAYA_CUSTOM_SAMPLE_KEY = 'hobunji\.kurrayaCustomSample\.v1'[\s\S]*?preferredName = String\(customSample\?\.name \|\| KURRAYA_AUDIO_ASSET\.filename\)[\s\S]*?Restored \$\{preferredName\}/,
+  'gameplay must restore an explicitly chosen custom Kurraya sample instead of always overwriting it with the bundled pluck'
+);
+
+assert.match(
+  source,
   /function scheduleTransportAudioAhead\(\)[\s\S]*?findUpcomingTransportBoundary\(clock => clock\.transportAbsoluteBeat\)[\s\S]*?playMetronomeClick\(currentHarmonyBeatData\(beatBoundary\.clock\), false, beatBoundary\.atMs\)[\s\S]*?findUpcomingTransportBoundary\(clock => currentHarmonyStep\(clock\)\)[\s\S]*?syncRootPad\(false, chordBoundary\.atMs, chordBoundary\.clock\)/,
   'one shared ahead-of-time scheduler must queue both beat and chord-root audio'
 );
@@ -43,4 +141,139 @@ assert.match(
   'mobile/host diagnostics must expose the transport scheduling state'
 );
 
-console.log('Kurraya transport audio sync regression passed');
+assert.match(
+  source,
+  /const FIXED_HARMONY_STEPS = Object\.freeze\(\[[\s\S]*?degree:3,rootSemitones:5,quality:'major'[\s\S]*?degree:4,rootSemitones:7,quality:'major'[\s\S]*?degree:2,rootSemitones:4,quality:'minor'[\s\S]*?degree:5,rootSemitones:9,quality:'minor'/,
+  'free improvisation must use the transposable F-G-Em-Am / IV-V-iii-vi chord roots and fixed qualities'
+);
+
+assert.match(
+  source,
+  /KURRAYA_TIME_SIGNATURE = Object\.freeze\(\[6,8\]\)[\s\S]*?KURRAYA_BEAT_GROUPING = Object\.freeze\(\[3,3\]\)/,
+  'free play and the authored Kurraya song must use 6/8 with 3+3 grouping'
+);
+
+assert.match(
+  source,
+  /'when-the-kininjis-bloom':\{[\s\S]*?timeSignature:\[6,8\], beatGrouping:\[3,3\][\s\S]*?chords:null/,
+  'When the Kininjis Bloom must use the shared variable Kurraya harmony cadence instead of a separate per-bar chord timeline'
+);
+
+assert.match(
+  source,
+  /FIXED_HARMONY_CYCLE_MEASURES = 24[\s\S]*?FIXED_HARMONY_FAST_MEASURES = 8[\s\S]*?FIXED_HARMONY_SLOW_MEASURES = 16/,
+  'the harmony cycle must be 8 one-measure chords followed by 16 measures of two-measure chords'
+);
+
+assert.match(
+  source,
+  /function fixedKurrayaHarmonyCadence\(clock = sharedTransportData\(\)\)[\s\S]*?cycleMeasure < FIXED_HARMONY_FAST_MEASURES[\s\S]*?eventWithinCycle = fast[\s\S]*?FIXED_HARMONY_FAST_MEASURES \+ Math\.floor\(\(cycleMeasure - FIXED_HARMONY_FAST_MEASURES\) \/ 2\)/,
+  'the measure-based harmony cadence must switch from one-measure events to two-measure events after measure 8'
+);
+assert.match(
+  source,
+  /progressionStep = eventWithinCycle % FIXED_HARMONY_STEPS\.length[\s\S]*?spanMeasures = fast \? 1 : 2/,
+  'the variable cadence must keep cycling the same IV-V-iii-vi progression while changing only chord duration'
+);
+assert.match(
+  source,
+  /id="harmonyChordBeats" disabled[\s\S]*?8× 1 measure → 16× 2 measures/,
+  'the obsolete manual beats-per-chord setting must be disabled and describe the fixed measure cadence instead'
+);
+
+assert.match(
+  source,
+  /function nextSharedBeatAt\([\s\S]*?clock\.quarterBeatMs/,
+  'automatic-pick release timing must keep its prior quarter-note note-value grid when the metronome changes to 6/8 eighth-note beats'
+);
+
+assert.match(
+  source,
+  /function scheduleSuccessfulPreviewContinuation\([\s\S]*?state\.game\.quarterBeatMs \|\| state\.game\.beatMs[\s\S]*?definition\.division/,
+  'successful-preview arpeggios must not double in speed when the song switches from 3/4 to 6/8'
+);
+
+assert.match(
+  source,
+  /const requestedScaleName = options\.scaleOverride[\s\S]*?applyPerformanceScale\(requestedScaleName,\{persist:options\.persistScale !== false\}\)/,
+  'ordinary authored playback must still support its authored scale while the audition path can explicitly override it'
+);
+
+assert.match(
+  source,
+  /scaleAuditionState\(\)[\s\S]*?setAuditionScale\(scaleName\)[\s\S]*?setAuditionTonic\(tonicMidi\)[\s\S]*?startSongAudition\(scaleName = state\.scaleName, tonicMidi = state\.tonicMidi\)[\s\S]*?stopSongAudition\(\)/,
+  'the shared music bridge must expose the full standalone scale-audition workflow'
+);
+
+assert.match(
+  hostSource,
+  /MUSIC_MINIGAME_SRC = 'assets\/minigames\/lyre-performance\.html\?v=20260925sixeight1'/,
+  'gameplay must cache-bust the fixed-harmony minigame revision'
+);
+
+assert.match(musicLab, /HobunjiMusicControlBridge/, 'the standalone tool must use the shared Kurraya bridge');
+assert.match(musicLab, /startSongAudition/, 'the standalone tool must start the real authored-song demo path');
+assert.match(musicLab, /setAuditionScale/, 'the standalone tool must select scales through the shared engine');
+assert.match(musicLab, /Visible diagnostics/, 'the standalone tool must keep mobile-visible diagnostics');
+assert.match(musicLab, /id="kurrayaMix"[\s\S]*?id="padMix"[\s\S]*?id="metronomeMix"/, 'the Music Lab must expose all three playback-mix sliders');
+assert.match(musicLab, /id="kurrayaSampleFile"[\s\S]*?id="padSampleFile"[\s\S]*?Recorded root/, 'the Music Lab must expose Kurraya and pad SFX import controls');
+assert.match(musicLab, /hardstep_1\.mp3[\s\S]*?hardstep_2\.mp3[\s\S]*?hardstep_3\.mp3/, 'the standalone metronome must rotate real recorded game footstep sounds');
+assert.match(musicLab, /6\/8 · 3\+3[\s\S]*?once per measure for 8 measures[\s\S]*?once per 2 measures for 16 measures/, 'the Music Lab must state the authored 6/8 24-measure harmony cadence visibly');
+assert.match(musicLab, /importKurrayaSample[\s\S]*?importPadSample[\s\S]*?useLabFootstepMetronome/, 'the Music Lab must route sample changes and footsteps through the shared engine bridge');
+
+assert.doesNotMatch(source, /1–5–6–4/, 'legacy selectable harmony ids must not survive the fixed-progression migration');
+
+assert.match(
+  musicLab,
+  /data-kurraya-pane="song"[\s\S]*?data-kurraya-pane="sfx"/,
+  'the combined Kurraya Music Lab must expose both workflows as in-page panes'
+);
+
+assert.match(
+  musicLab,
+  /SOURCE_URL = '\.\.\/\.\.\/assets\/audio\/music\/instruments\/sfx_kurraya_pluck\.m4a'/,
+  'the Kurraya transposer must start from the actual bundled runtime pluck'
+);
+
+assert.match(
+  musicLab,
+  /Math\.pow\(2, Number\(offset\) \/ 12\)/,
+  'the Kurraya transposer must use the same semitone playback-rate model as runtime notes'
+);
+
+assert.match(
+  musicLab,
+  /OfflineAudioContext[\s\S]*?frameCount = Math\.max\(1,Math\.ceil\(sourceBuffer\.length \/ Math\.max\(0\.01,rate\)\)\)[\s\S]*?source\.playbackRate\.value = rate/,
+  'the Kurraya transposer must bake runtime-equivalent rate transposition into an offline AudioBuffer'
+);
+
+assert.match(
+  musicLab,
+  /TARGET_PEAK = 0\.92[\s\S]*?stereoCorrelation < 0\.15[\s\S]*?energy-preserving stereo sum/,
+  'the Kurraya transposer must retain the sampler\'s phase-safe mono and normalization behavior'
+);
+
+assert.match(
+  musicLab,
+  /writeText\(0,'RIFF'\)[\s\S]*?writeText\(8,'WAVE'\)[\s\S]*?setUint16\(34,16,true\)/,
+  'the Kurraya transposer must export ordinary mono 16-bit PCM WAV files'
+);
+
+assert.match(
+  musicLab,
+  /Detected \/ source root[\s\S]*?Target note[\s\S]*?Visible diagnostics/,
+  'the Kurraya transposer must expose editable pitch controls and mobile-visible diagnostics'
+);
+
+assert.match(
+  toolsHub,
+  /data-target="kurraya-music-lab"[\s\S]*?kurraya-music-lab\/index\.html\?v=20260925lab5/,
+  'the combined Kurraya Music Lab must be the single Kurraya entry in the tools hub'
+);
+assert.doesNotMatch(
+  toolsHub,
+  /data-target="(?:song-scale-audition|kurraya-sfx-transposer)"/,
+  'the tools hub must not retain separate Kurraya scale-audition or SFX-transposer entries'
+);
+
+console.log('Kurraya transport, fixed harmony, mix/sample controls, and combined Music Lab regression passed');

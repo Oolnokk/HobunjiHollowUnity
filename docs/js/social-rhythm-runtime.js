@@ -585,7 +585,8 @@
 
   function updatePlayerKurrayaMetronome(timeMs) {
     const frame = document.getElementById(PLAYER_FRAME_ID);
-    if (!frame || !isPlayerMusicActive() || !frameBridge(frame)?.getState) {
+    const bridge = frameBridge(frame); // Used for both rhythm presence and the user-authored metronome mix exposed by the Kurraya engine.
+    if (!frame || !isPlayerMusicActive() || !bridge?.getState) {
       state.playerMetronomeBeatIndex = null;
       state.playerMetronomeFrame = null;
       return;
@@ -607,7 +608,13 @@
     }
     if (index === state.playerMetronomeBeatIndex) return;
     state.playerMetronomeBeatIndex = index;
-    if (playCurrentTileFootstep(3, 'kurraya-metronome')) state.kurrayaMetronomeFootsteps++;
+    let metronomeMix = 1; // Falls back to the historical 3× footstep level if an older iframe does not expose the new mix value.
+    try {
+      const bridgeState = bridge.getState();
+      const requestedMix = Number(bridgeState?.metronomeMixLevel);
+      if (Number.isFinite(requestedMix)) metronomeMix = clamp(requestedMix,0,2);
+    } catch {}
+    if (metronomeMix > 0 && playCurrentTileFootstep(3 * metronomeMix, 'kurraya-metronome')) state.kurrayaMetronomeFootsteps++;
   }
 
   function getState() {

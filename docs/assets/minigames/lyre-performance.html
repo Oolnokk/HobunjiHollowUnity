@@ -1108,7 +1108,7 @@
             <div class="field"><label for="scaleSelect">Note Set</label><select id="scaleSelect"></select></div>
             <div class="field"><label for="harmonyProgression">Hidden Progression</label><select id="harmonyProgression"></select></div>
             <div class="field"><label for="harmonyBpm">Harmony Tempo</label><input id="harmonyBpm" type="number" min="40" max="240" value="96"></div>
-            <div class="field"><label for="harmonyChordBeats">Beats per Chord</label><select id="harmonyChordBeats"><option value="2">2 beats</option><option value="4">4 beats</option><option value="8" selected>8 beats</option><option value="16">16 beats</option></select></div>
+            <div class="field"><label for="harmonyChordBeats">Chord Cadence</label><select id="harmonyChordBeats" disabled><option value="8" selected>8× 1 measure → 16× 2 measures</option></select></div>
             <div class="field"><label for="auditoryMetronome">Auditory Metronome</label><select id="auditoryMetronome"><option value="off">Off</option><option value="on" selected>On</option></select></div>
             <div class="field"><label for="rootPadEnabled">Harmony Root Pad</label><select id="rootPadEnabled"><option value="off">Off</option><option value="on" selected>On</option></select></div>
             <div class="field"><label for="playMode">Note Mode</label><select id="playMode"><option value="pedal" selected>Pedal sustain / layer ring-out</option><option value="pluck">Pluck / retrigger</option></select></div>
@@ -1150,7 +1150,7 @@
     <div class="modal-head"><h2>Patterns and Songbook</h2><div class="top-spacer"></div><button class="mini-btn" data-close-modal>Close</button></div>
     <div class="modal-body">
       <div class="song-grid" id="songGrid">
-        <article class="song-card songbook-entry selected" data-song="when-the-kininjis-bloom" data-default-bpm="100"><h3>When the Kininjis Bloom</h3><p>Foroji's own theme — a gentle 3/4 folk melody in the Major scale.</p></article>
+        <article class="song-card songbook-entry selected" data-song="when-the-kininjis-bloom" data-default-bpm="100"><h3>When the Kininjis Bloom</h3><p>Foroji's own theme — a gentle 6/8 folk melody in the Major scale, grouped 3+3.</p></article>
         <article class="song-card" data-song="scale"><h3>Full Note Run</h3><p>Walks upward and downward through all five four-note banks in the locked Auto Pick layout.</p></article>
         <article class="song-card" data-song="harmony"><h3>Rotation Arpeggio</h3><p>Rotate the left stick into each indicated slot to play it immediately. The right stick sweeps the full current chord while the progression changes.</p></article>
         <article class="song-card" data-song="octaves"><h3>Bank Control Drill</h3><p>Practices Open, LT, LB, RT, and RB before playing X, A, B, and Y.</p></article>
@@ -1306,21 +1306,25 @@
     'Yo':[0,2,5,7,9,12,14,17,19,21,24,26]
   };
   const SCALE_NAMES = Object.keys(SCALES);
+  const FIXED_HARMONY_STEPS = Object.freeze([ // Used by free improvisation and When the Kininjis Bloom so the same transposable IV–V–iii–vi harmony is authoritative everywhere.
+    Object.freeze({degree:3,rootSemitones:5,quality:'major'}),
+    Object.freeze({degree:4,rootSemitones:7,quality:'major'}),
+    Object.freeze({degree:2,rootSemitones:4,quality:'minor'}),
+    Object.freeze({degree:5,rootSemitones:9,quality:'minor'})
+  ]);
+  const FIXED_HARMONY_DEGREES = Object.freeze(FIXED_HARMONY_STEPS.map(step => step.degree)); // Used by free-play timing/capo cues while chord voicing keeps the authored major/major/minor/minor qualities above.
+  const FIXED_HARMONY_PATTERN_ID = '4–5–3–6'; // Used as the sole free-play harmony id and as the migration target for older saved selectable progressions.
   const HARMONY_PATTERNS = {
-    '1–5–6–4':[0,4,5,3],
-    '1–6–4–5':[0,5,3,4],
-    '2–5–1–6':[1,4,0,5],
-    '1–4–5–4':[0,3,4,3]
+    [FIXED_HARMONY_PATTERN_ID]:FIXED_HARMONY_DEGREES
   };
   const HARMONY_PATTERN_NAMES = Object.keys(HARMONY_PATTERNS);
-  // Improvise mode picks a chord progression by feel rather than by roman
-  // numerals — a farmhand noodling on a borrowed lyre thinks "something
-  // hopeful", not "I-V-vi-IV".
+  const KURRAYA_TIME_SIGNATURE = Object.freeze([6,8]); // Shared free-play/authored-song meter: six eighth-note beats grouped as two compound pulses.
+  const KURRAYA_BEAT_GROUPING = Object.freeze([3,3]); // Gives 6/8 the intended 3+3 accent pattern without changing quarter-note BPM.
+  const FIXED_HARMONY_CYCLE_MEASURES = 24; // Full accompaniment phrase: 8 fast measures + 16 slow measures before repeating.
+  const FIXED_HARMONY_FAST_MEASURES = 8; // First section advances IV–V–iii–vi once per measure.
+  const FIXED_HARMONY_SLOW_MEASURES = 16; // Second section advances the same progression once every two measures.
   const HARMONY_PATTERN_ADJECTIVES = {
-    '1–5–6–4':'Hopeful',
-    '1–6–4–5':'Nostalgic',
-    '2–5–1–6':'Wistful',
-    '1–4–5–4':'Steady'
+    [FIXED_HARMONY_PATTERN_ID]:'IV–V–iii–vi · fixed M/M/m/m'
   };
   function harmonyPatternLabel(name) { return HARMONY_PATTERN_ADJECTIVES[name] || name; }
   const NOTE_GLYPHS = ['X','A','B','Y'];
@@ -1329,6 +1333,7 @@
   const PULSE_LOOKAHEAD_MS = 90; // Fires automatic pluck-continuation timers this much early so the precise Web Audio start() call (not the jitter-prone JS timer) governs exactly when each pulse actually sounds.
   const TRANSPORT_AUDIO_LOOKAHEAD_MS = PULSE_LOOKAHEAD_MS; // Keeps the metronome/footstep and chord-root pad on the same ahead-of-time audio grid as automatic Kurraya notes.
   const HARMONY_REGISTER_OFFSET = -12; // Keeps left-stick arpeggios and right-stick chord strums one octave below direct notes.
+  const PAD_ROOT_REGISTER_OFFSET = -12; // Anchors the harmony pad one octave below tonic: in C3 this is F2 → G2 → E2 → A2.
   const NOTE_COLORS = ['#7be6d7','#f8b368','#ff95ac','#b49bff'];
   const GROUP_COLORS_BY_OFFSET = {0:'#67e3d3',4:'#ffb86c',8:'#ff92a9',12:'#b39cff',16:'#92efbb'}; // Used by the five color groups so each bank has one consistent hue across the Lyre and hosted controls.
   const NOTE_INPUT_GLYPHS_BY_LAYOUT = { mobile:['1','2','3','4'], keyboard:['1','2','3','4'], controller:['X','A','B','Y'] }; // Used by the falling Lyre prompts so they show direct note inputs rather than shift glyphs. Keyboard shows ordinal numbers, not the literal bound key, since which physical key plays note 1-4 is player-rebindable (see js/music-minigame.js) — a fixed A/S/D/F glyph would go stale the moment a key is remapped.
@@ -1399,20 +1404,18 @@
   const DEFAULT_AUTO_PICK_SLOTS = ['direct','arp-forward-reverse-16','tremolo-16','strum-reggae-8']; // Up, Right, Down, Left defaults for the four-way slottable Auto Pick cross.
   // Hobunji's own authored songbook — replaces the earlier public-domain
   // placeholder tunes with the one real song, transcribed from Foroji's
-  // theme MIDI (When the Kirrinji Bloom) at its native tempo/key: 100 BPM,
-  // 3/4, C major with tonic C3 — which happens to match this engine's
-  // default tonicMidi (48) and scale exactly, so every note below maps to
-  // a plain diatonic scale degree with no transposition. Note durations
-  // are the performed onset-to-onset intervals (not the raw note-off
-  // times), quantized to the nearest eighth — the standard way to turn a
-  // legato/overlapping performance capture into this engine's monophonic
-  // step format. `chords` is a simple I–IV–V diatonic harmonization by ear
-  // (scale-degree roots, same convention as the format's earlier examples)
-  // sized to the melody's actual phrasing, ending on a V–I cadence.
+  // theme MIDI (When the Kirrinji Bloom) at 100 quarter-BPM, C major with
+  // tonic C3. The melody's original three-quarter-note bar length maps
+  // directly into 6/8 because both measures contain three quarter-note
+  // units; only the audible beat grid changes, now grouped 3+3. The fixed
+  // IV–V–iii–vi harmony is shared with improvisation through the 24-measure
+  // cadence below: one chord per measure for 8 measures, then one chord per
+  // two measures for 16 measures, then loop. Chord qualities remain
+  // major/major/minor/minor through tonic transposition and scale auditions.
   const SONGBOOK = {
     'when-the-kininjis-bloom':{
-      title:'When the Kininjis Bloom', defaultBpm:100, scaleName:'Major', timeSignature:[3,4],
-      chords:[[3,6],[4,6],[3,6],[0,3],[4,3],[0,3],[1,3],[4,3],[5,3],[0,3],[4,3],[0,6]],
+      title:'When the Kininjis Bloom', defaultBpm:100, scaleName:'Major', timeSignature:[6,8], beatGrouping:[3,3],
+      chords:null, // This authored song deliberately uses the same variable 24-measure fixed-harmony cadence as improvisation instead of a separate per-bar timeline.
       notes:[[5,.5],[6,.5],[7,1],[3,1],[3,1],[4,1],[5,1],[4,.5],[6,.5],[7,1],[4,1],[4,3],
         [5,.5],[6,.5],[7,1],[3,1],[3,1],[4,1],[5,1],[4,.5],[3,.5],[2,1],[2,.25],[3,.25],
         [2,.5],[1,2],[1,.25],[2,.25],[1,.5],[0,2],[0,.5],[2,.5],[1,2],[2,.5],[3,.5],[4,2],
@@ -1449,6 +1452,9 @@
     attack:0.006,
     release:0.26,
     masterVolume:0.78,
+    kurrayaMixLevel:1, // Relative instrument layer mix used by both Web Audio and compatibility Kurraya note playback.
+    metronomeMixLevel:1, // Relative metronome layer mix; the overworld footstep metronome reads this through the host bridge too.
+    padMixLevel:1, // Relative harmony-pad layer mix applied after either synth-pad or imported-pad source gain.
     strumThreshold:0.52, // Vertical right-stick magnitude required to create a strum stroke.
     arpeggioIndex:0, // Current hidden-chord slot selected by left-stick angle.
     leftArpeggioZone:-1, // Active left-stick sector; -1 means centered and lets the next sector trigger.
@@ -1482,7 +1488,7 @@
     pitchCacheStatus:'idle', // Exposes cache progress without requiring a developer console.
     pitchCacheReadyCount:0, // Number of current playable pitches rendered into temporary RAM buffers.
     pitchCacheTargetCount:0, // Total pitches selected for the current background cache pass.
-    harmonyPattern:'1–5–6–4',
+    harmonyPattern:FIXED_HARMONY_PATTERN_ID,
     harmonyBpm:96,
     harmonyChordBeats:8,
     harmonyStartTime:nowMs(),
@@ -1498,11 +1504,17 @@
     metronomeSampleLevel:0.55, // Independent gain for the imported metronome sample.
     pendingMetronomeSampleRecord:null, // Holds cached stomp PCM until Web Audio has been created.
     ambientMetronomeBuffer:null, // Ambient (no-human-input) NPC performance only — the tile-footstep sample the musician is standing on (see startAmbientLead), overriding metronomeSampleBuffer for as long as this session runs. Never persisted.
+    labMetronomeBuffers:[], // Temporary Music Lab footstep set; rotates real recorded steps without persisting or duplicating the overworld's own surface-footstep metronome.
+    labMetronomeNames:[], // Visible/debug names corresponding to labMetronomeBuffers; cleared when the standalone lab unloads.
     rootPadEnabled:true, // Enabled by default; uses the synth root pad unless an imported pad sample is available.
     rootPadLevel:0.02, // User-facing synth pad mix level; internally remapped so low roots remain audible.
     rootPadSampleBuffer:null, // Optional imported looping pad source used instead of the synth oscillators.
     rootPadSampleName:'', // Display name for the imported root-pad source.
     rootPadSampleRootMidi:48, // Recorded pitch of the imported pad, used to transpose it to the current chord root.
+    rootPadDetectedMidi:null, // Latest automatically detected pad fundamental; null when the source was too noisy/chordal for reliable pitch detection.
+    rootPadDetectedFrequency:0, // Fundamental Hz from the latest pad import, exposed to Music Lab diagnostics.
+    rootPadDetectedConfidence:0, // Autocorrelation confidence from the latest pad import so manual overrides are obvious when detection is weak.
+    rootPadRootSource:'default', // 'detected', 'manual', 'cached', or 'default' explains why rootPadSampleRootMidi currently has its value.
     rootPadSampleLevel:0.34, // Independent gain for the imported root-pad sample.
     pendingRootPadSampleRecord:null, // Holds cached pad PCM until Web Audio has been created.
     rootPadVoices:[], // Holds the currently crossfading oscillator layers used by the harmony root pad.
@@ -1845,7 +1857,7 @@
   }
 
   function activeSongMeter() {
-    if (!state.game.active) return timeSignatureData([4,4],[4]);
+    if (!state.game.active) return timeSignatureData(KURRAYA_TIME_SIGNATURE,KURRAYA_BEAT_GROUPING); // Free-play improvisation uses the same 6/8 grid as the authored Kurraya song.
     const melody=getSongDefinition(state.game.songType || state.selectedSong);
     return timeSignatureData(state.game.timeSignature || melody?.timeSignature || [4,4],state.game.beatGrouping || melody?.beatGrouping);
   }
@@ -1898,36 +1910,82 @@
       const rawBeats = Array.isArray(entry) ? entry[1] : entry?.beats;
       const beats = Math.max(0.03125, Number(rawBeats) || 4);
       if (beatPosition < startBeat + beats || index === timeline.length - 1) {
-        return {index,degree,beats,startBeat,beatPosition};
+        const quality = !Array.isArray(entry) && ['major','minor'].includes(entry?.quality) ? entry.quality : null; // Used by authored song chords to preserve M/M/m/m qualities when the melody scale changes.
+        const rootSemitones = !Array.isArray(entry) && entry?.rootSemitones != null && Number.isFinite(Number(entry.rootSemitones)) ? Number(entry.rootSemitones) : null; // Used to transpose authored chord roots from the active tonic independently of the selected melody scale.
+        return {index,degree,beats,startBeat,beatPosition,quality,rootSemitones};
       }
       startBeat += beats;
     }
     return null;
   }
 
+  function usesFixedKurrayaHarmony() {
+    if (!state.game.active) return true; // Free-play improvisation always uses the authored Kurraya cadence.
+    return (state.game.songType || state.selectedSong) === 'when-the-kininjis-bloom'; // The one authored song shares the exact same cadence instead of maintaining a separate chord timeline.
+  }
+
+  function fixedKurrayaHarmonyCadence(clock = sharedTransportData()) {
+    const measureQuarterBeats = Math.max(0.25,Number(clock.meter?.measureQuarterBeats) || 3);
+    const absoluteMeasure = Math.max(0,Math.floor(clock.performanceBeatFloat / measureQuarterBeats));
+    const cycleIndex = Math.floor(absoluteMeasure / FIXED_HARMONY_CYCLE_MEASURES);
+    const cycleMeasure = modulo(absoluteMeasure,FIXED_HARMONY_CYCLE_MEASURES);
+    const fast = cycleMeasure < FIXED_HARMONY_FAST_MEASURES;
+    const eventWithinCycle = fast
+      ? cycleMeasure
+      : FIXED_HARMONY_FAST_MEASURES + Math.floor((cycleMeasure - FIXED_HARMONY_FAST_MEASURES) / 2);
+    const progressionStep = eventWithinCycle % FIXED_HARMONY_STEPS.length;
+    const spanMeasures = fast ? 1 : 2;
+    const eventStartCycleMeasure = fast
+      ? cycleMeasure
+      : FIXED_HARMONY_FAST_MEASURES + Math.floor((cycleMeasure - FIXED_HARMONY_FAST_MEASURES) / 2) * 2;
+    const absoluteStartMeasure = cycleIndex * FIXED_HARMONY_CYCLE_MEASURES + eventStartCycleMeasure;
+    const eventsPerCycle = FIXED_HARMONY_FAST_MEASURES + Math.floor(FIXED_HARMONY_SLOW_MEASURES / 2);
+    return {
+      eventSerial:cycleIndex * eventsPerCycle + eventWithinCycle, // Monotonic chord-change token used by scheduling/crossfades even when the four-step progression wraps.
+      progressionStep,
+      absoluteMeasure,
+      cycleMeasure,
+      cycleIndex,
+      spanMeasures,
+      absoluteStartMeasure,
+      spanQuarterBeats:spanMeasures * measureQuarterBeats
+    };
+  }
+
   function currentHarmonyStep(clock = sharedTransportData()) {
+    if (usesFixedKurrayaHarmony()) return fixedKurrayaHarmonyCadence(clock).eventSerial;
     const songSegment = currentSongChordSegment(clock);
     if (songSegment) return songSegment.index;
-    const progression = HARMONY_PATTERNS[state.harmonyPattern] || HARMONY_PATTERNS['1–5–6–4'];
+    const progression = HARMONY_PATTERNS[state.harmonyPattern] || HARMONY_PATTERNS[FIXED_HARMONY_PATTERN_ID];
     const stepDuration = (60000 / clock.bpm) * state.harmonyChordBeats;
     return Math.floor(clock.performanceElapsedMs / Math.max(1, stepDuration)) % progression.length;
   }
 
   function currentHarmonyData(clock = sharedTransportData()) {
-    const songSegment = currentSongChordSegment(clock);
-    const progression = HARMONY_PATTERNS[state.harmonyPattern] || HARMONY_PATTERNS['1–5–6–4'];
-    const step = songSegment ? songSegment.index : currentHarmonyStep(clock);
-    const progressionDegree = songSegment ? songSegment.degree : progression[step % progression.length];
+    const fixedCadence = usesFixedKurrayaHarmony() ? fixedKurrayaHarmonyCadence(clock) : null;
+    const songSegment = fixedCadence ? null : currentSongChordSegment(clock);
+    const progression = HARMONY_PATTERNS[state.harmonyPattern] || HARMONY_PATTERNS[FIXED_HARMONY_PATTERN_ID];
+    const step = fixedCadence ? fixedCadence.eventSerial : songSegment ? songSegment.index : currentHarmonyStep(clock);
+    const fixedStep = fixedCadence
+      ? FIXED_HARMONY_STEPS[fixedCadence.progressionStep]
+      : songSegment
+        ? null
+        : FIXED_HARMONY_STEPS[((step % FIXED_HARMONY_STEPS.length) + FIXED_HARMONY_STEPS.length) % FIXED_HARMONY_STEPS.length];
+    const progressionDegree = fixedCadence ? fixedStep.degree : songSegment ? songSegment.degree : progression[step % progression.length];
     const scale = scalePitchClasses();
     const rootDegree = ((progressionDegree % scale.length) + scale.length) % scale.length;
-    const stacked = [0,2,4].map(stack => {
-      const degree = rootDegree + stack;
-      return scale[degree % scale.length] + Math.floor(degree / scale.length) * 12;
-    });
+    const fixedRootSemitones = fixedCadence ? fixedStep.rootSemitones : songSegment?.rootSemitones != null ? songSegment.rootSemitones : fixedStep?.rootSemitones;
+    const fixedQuality = fixedCadence ? fixedStep.quality : songSegment?.quality || fixedStep?.quality || null;
+    const stacked = fixedRootSemitones != null && (fixedQuality === 'major' || fixedQuality === 'minor')
+      ? [Number(fixedRootSemitones), Number(fixedRootSemitones) + (fixedQuality === 'minor' ? 3 : 4), Number(fixedRootSemitones) + 7]
+      : [0,2,4].map(stack => {
+          const degree = rootDegree + stack;
+          return scale[degree % scale.length] + Math.floor(degree / scale.length) * 12;
+        });
     const bankOffsets = [stacked[0]-12, stacked[1]-12, stacked[2]-12, stacked[0], stacked[1], stacked[2], stacked[0]+12, stacked[1]+12];
     const rootPitchClass = (state.tonicMidi + stacked[0]) % 12;
     const third = stacked[1] - stacked[0];
-    const quality = third === 3 ? 'minor' : third === 4 ? 'major' : 'open';
+    const quality = fixedQuality || (third === 3 ? 'minor' : third === 4 ? 'major' : 'open');
     return {
       step,
       degree:progressionDegree,
@@ -1937,15 +1995,16 @@
       chordName:`${NOTE_NAMES[(rootPitchClass + 12) % 12]} ${quality}`,
       degreeNumber:progressionDegree + 1,
       romanNumeral:(quality === 'minor' ? ROMAN_DEGREES[progressionDegree]?.toLowerCase() : ROMAN_DEGREES[progressionDegree]) || String(progressionDegree + 1),
-      quality, // Exposes the detected diatonic quality to the chord-melody fingerpicking voicer.
-      thirdInterval:third, // Lets non-standard note sets choose the nearer simple major or minor triad.
-      source:songSegment ? 'song' : 'free-progression',
-      segmentBeats:songSegment?.beats || state.harmonyChordBeats
+      quality,
+      thirdInterval:third,
+      source:fixedCadence ? 'fixed-kurraya-cadence' : songSegment ? 'song' : 'free-progression',
+      segmentBeats:fixedCadence?.spanQuarterBeats || songSegment?.beats || state.harmonyChordBeats,
+      cadence:fixedCadence
     };
   }
 
   function freePlayChordDegreeAtStep(step) {
-    const progression = HARMONY_PATTERNS[state.harmonyPattern] || HARMONY_PATTERNS['1–5–6–4'];
+    const progression = HARMONY_PATTERNS[state.harmonyPattern] || HARMONY_PATTERNS[FIXED_HARMONY_PATTERN_ID];
     const wrappedStep = ((Math.round(step) % progression.length) + progression.length) % progression.length;
     return Number(progression[wrappedStep]) + 1;
   }
@@ -1990,18 +2049,18 @@
       removeFreePlayCapoCue();
       return;
     }
-    const progression = HARMONY_PATTERNS[state.harmonyPattern] || HARMONY_PATTERNS['1–5–6–4'];
-    const stepDurationMs = Math.max(1,(60000 / activeClockBpm()) * state.harmonyChordBeats);
-    const elapsedMs = Math.max(0,nowMs() - state.harmonyStartTime);
-    const absoluteStep = Math.floor(elapsedMs / stepDurationMs);
-    const phase = clamp((elapsedMs - absoluteStep * stepDurationMs) / stepDurationMs,0,1);
-    const nextStep = (absoluteStep + 1) % progression.length;
+    const clock = sharedTransportData();
+    const cadence = fixedKurrayaHarmonyCadence(clock);
+    const measureFloat = clock.performanceBeatFloat / Math.max(0.25,clock.meter.measureQuarterBeats);
+    const phase = clamp((measureFloat - cadence.absoluteStartMeasure) / cadence.spanMeasures,0,1);
+    const nextEventSerial = cadence.eventSerial + 1;
+    const nextProgressionStep = (cadence.progressionStep + 1) % FIXED_HARMONY_STEPS.length;
     const cue = ensureFreePlayCapoCue();
     if (!cue) return;
-    cue.dataset.targetStep = String(nextStep);
-    state.freePlayCapoTargetStep = nextStep;
+    cue.dataset.targetStep = String(nextEventSerial);
+    state.freePlayCapoTargetStep = nextEventSerial;
     const label = $('.free-play-capo-label',cue);
-    if (label) label.textContent = String(freePlayChordDegreeAtStep(nextStep));
+    if (label) label.textContent = String(FIXED_HARMONY_STEPS[nextProgressionStep].degree + 1);
     const fieldHeight = Math.max(1,refs.lyreField.getBoundingClientRect().height);
     const startOffsetPx = -fieldHeight * 0.805; // Starts with the lower capo arc near the raised nut while keeping its outer edge visible.
     const offsetPx = startOffsetPx * (1 - phase); // Linear travel guarantees the lower curve reaches the bridge exactly at the transport boundary.
@@ -2220,7 +2279,7 @@
   function nextSharedBeatAt(referenceAt = nowMs()) {
     const sampledAt = nowMs();
     const clock = sharedTransportData();
-    const beatMs = Math.max(1,clock.beatMs);
+    const beatMs = Math.max(1,clock.quarterBeatMs); // Auto-pick note values stay eighths/sixteenths relative to quarter-note BPM when the meter switches to 6/8.
     const elapsedAtReference = clock.performanceElapsedMs - (sampledAt - referenceAt); // Projects an input timestamp onto the exact clock used by the audible metronome.
     const remainder = ((elapsedAtReference % beatMs) + beatMs) % beatMs;
     const delay = remainder < 2 ? beatMs : beatMs - remainder;
@@ -2291,6 +2350,14 @@
     if (clock.inCountIn) {
       const beatInChord = modulo(clock.transportAbsoluteBeat,meter.numerator);
       return {absoluteBeat:clock.transportAbsoluteBeat,beatInChord,beatsPerChord:meter.numerator,inCountIn:true,source:'count-in',meter,groupStarts:meter.groupStarts,isMeasureStart:beatInChord===0,isGroupStart:meter.groupStarts.includes(beatInChord)};
+    }
+    const fixedCadence = usesFixedKurrayaHarmony() ? fixedKurrayaHarmonyCadence(clock) : null;
+    if (fixedCadence) {
+      const beatsPerChord = fixedCadence.spanMeasures * meter.numerator;
+      const chordStartMeterBeat = fixedCadence.absoluteStartMeasure * meter.numerator;
+      const beatInChord = clamp(Math.floor(clock.performanceMeterBeatFloat - chordStartMeterBeat),0,beatsPerChord-1);
+      const groupStarts = Array.from({length:beatsPerChord},(_,index)=>index).filter(index=>meter.groupStarts.includes(modulo(index,meter.numerator)));
+      return {absoluteBeat:clock.transportAbsoluteBeat,beatInChord,beatsPerChord,inCountIn:false,source:'fixed-kurraya-cadence',meter,groupStarts,isMeasureStart:measureBeat===0,isGroupStart:groupStarts.includes(beatInChord)};
     }
     const songSegment = currentSongChordSegment(clock);
     if (songSegment) {
@@ -2379,6 +2446,18 @@
     const beatInChord = typeof beatData === 'number' ? beatData : beatData.beatInChord;
     const accented = beatInChord === 0 || !!beatData?.isMeasureStart;
     const groupAccent = !accented && !!beatData?.isGroupStart;
+    const absoluteBeat = typeof beatData === 'number' ? beatData : Number(beatData?.absoluteBeat); // Used to rotate the standalone Music Lab's real footstep recordings deterministically.
+    const labFootstepBuffer = state.labMetronomeBuffers.length ? state.labMetronomeBuffers[Math.abs(Math.floor(Number.isFinite(absoluteBeat) ? absoluteBeat : beatInChord)) % state.labMetronomeBuffers.length] : null; // Uses a different authored step recording on successive beats without persisting into gameplay.
+    if (labFootstepBuffer) {
+      const source = context.createBufferSource(); // Standalone-lab equivalent of the overworld surface-footstep metronome.
+      const gain = context.createGain();
+      source.buffer = labFootstepBuffer;
+      gain.gain.setValueAtTime(clamp(state.metronomeSampleLevel * state.metronomeMixLevel * (accented ? 1 : groupAccent ? 0.86 : 0.72), 0, 1.2), startTime);
+      source.connect(gain).connect(state.master);
+      source.start(startTime);
+      source.onended = () => { try { source.disconnect(); gain.disconnect(); } catch {} };
+      return;
+    }
     if (state.ambientMetronomeBuffer) {
       // Ambient NPC performance: the tile-footstep sample the musician is
       // standing on, at double the normal metronome-sample gain so it reads
@@ -2387,7 +2466,7 @@
       const source = context.createBufferSource();
       const gain = context.createGain();
       source.buffer = state.ambientMetronomeBuffer;
-      gain.gain.setValueAtTime(clamp(2 * state.metronomeSampleLevel * (accented ? 1 : groupAccent ? 0.86 : 0.72), 0, 1.2), startTime);
+      gain.gain.setValueAtTime(clamp(2 * state.metronomeSampleLevel * state.metronomeMixLevel * (accented ? 1 : groupAccent ? 0.86 : 0.72), 0, 1.2), startTime);
       source.connect(gain).connect(state.master);
       source.start(startTime);
       source.onended = () => { try { source.disconnect(); gain.disconnect(); } catch {} };
@@ -2397,7 +2476,7 @@
       const source = context.createBufferSource(); // One-shot stomp/click; every beat gets an independent source.
       const gain = context.createGain();
       source.buffer = state.metronomeSampleBuffer;
-      gain.gain.setValueAtTime(clamp(state.metronomeSampleLevel * (accented ? 1 : groupAccent ? 0.86 : 0.72), 0, 1.2), startTime);
+      gain.gain.setValueAtTime(clamp(state.metronomeSampleLevel * state.metronomeMixLevel * (accented ? 1 : groupAccent ? 0.86 : 0.72), 0, 1.2), startTime);
       source.connect(gain).connect(state.master);
       source.start(startTime);
       source.onended = () => { try { source.disconnect(); gain.disconnect(); } catch {} };
@@ -2407,9 +2486,13 @@
     const clickGain = context.createGain();
     oscillator.type = 'square';
     oscillator.frequency.setValueAtTime(accented ? 1320 : groupAccent ? 1080 : 880, startTime);
-    clickGain.gain.setValueAtTime(0.0001, startTime);
-    clickGain.gain.exponentialRampToValueAtTime(accented ? 0.16 : groupAccent ? 0.13 : 0.105, startTime + 0.002);
-    clickGain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.045);
+    const synthClickGain = (accented ? 0.16 : groupAccent ? 0.13 : 0.105) * state.metronomeMixLevel; // Keeps the legacy synth fallback obeying a literal 0% metronome mix.
+    if (synthClickGain <= 0) clickGain.gain.setValueAtTime(0, startTime);
+    else {
+      clickGain.gain.setValueAtTime(0.0001, startTime);
+      clickGain.gain.exponentialRampToValueAtTime(Math.max(0.0001, synthClickGain), startTime + 0.002);
+      clickGain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.045);
+    }
     oscillator.connect(clickGain).connect(state.master);
     oscillator.start(startTime);
     oscillator.stop(startTime + 0.055);
@@ -2421,12 +2504,18 @@
 
   function rootPadTargetMidi(clock = sharedTransportData()) {
     const harmony = currentHarmonyData(clock);
-    return state.tonicMidi + harmony.rootOffset - 12; // V92 keeps the fallback pad one octave below the tonic register so small speakers can reproduce it while it remains a foundation voice.
+    return state.tonicMidi + harmony.rootOffset + PAD_ROOT_REGISTER_OFFSET; // C3 tonic resolves to F2/G2/E2/A2 for IV–V–iii–vi.
   }
 
+  function padProgressionRootMidis(tonicMidi = state.tonicMidi) {
+    return FIXED_HARMONY_STEPS.map(step => Number(tonicMidi) + step.rootSemitones + PAD_ROOT_REGISTER_OFFSET); // Exposes the exact pad-root register for diagnostics/tests independent of the current transport step.
+  }
+
+  const PAD_ROOT_LAYER_GAIN = 0.5; // Root contribution used by both synth and imported fifth pads; deliberately leaves the P5 as the more audible layer.
+  const PAD_FIFTH_LAYER_GAIN = 0.75; // Perfect-fifth contribution; stronger than root so the power-chord interval remains unmistakable on small speakers.
   function rootPadSynthGain() {
-    if (state.rootPadLevel <= 0) return 0;
-    return clamp(0.024 + state.rootPadLevel * 2.6, 0.024, 0.24); // V92 gives the synth fallback a dependable audible floor while the user-facing level still controls its mix.
+    if (state.rootPadLevel <= 0 || state.padMixLevel <= 0) return 0;
+    return clamp(0.024 + state.rootPadLevel * 2.6, 0.024, 0.24) * state.padMixLevel; // Keeps the authored synth-pad response while exposing one independent pad mix multiplier.
   }
 
   function fadeOutRootPadVoice(voice, fadeSeconds = 0.7, whenMs = null) {
@@ -2459,32 +2548,36 @@
     const context = state.audioContext;
     if (!context || context.state !== 'running' || !state.master) return null;
     const now = audioStartTimeFor(context, whenMs);
-    const frequency = midiFrequency(midi);
-    const rootOscillator = context.createOscillator(); // Carries the fundamental root as a soft sine wave.
-    const upperOscillator = context.createOscillator(); // Adds a barely audible octave for a less sterile pad texture.
+    const [rootMidi,fifthMidi] = [midi,midi + 7]; // Used to voice the synth pad as a neutral power chord that matches both major and minor harmony steps.
+    const rootOscillator = context.createOscillator(); // Carries the foundation note of the current scheduled chord.
+    const fifthOscillator = context.createOscillator(); // Carries the perfect fifth instead of the old root octave.
     const rootLayer = context.createGain();
-    const upperLayer = context.createGain();
+    const fifthLayer = context.createGain();
     const filter = context.createBiquadFilter();
     const gain = context.createGain();
     rootOscillator.type = 'sine';
-    upperOscillator.type = 'triangle';
-    rootOscillator.frequency.setValueAtTime(frequency, now);
-    upperOscillator.frequency.setValueAtTime(frequency * 2, now);
+    fifthOscillator.type = 'triangle';
+    rootOscillator.frequency.setValueAtTime(midiFrequency(rootMidi), now);
+    fifthOscillator.frequency.setValueAtTime(midiFrequency(fifthMidi), now);
     rootOscillator.detune.setValueAtTime(-2, now);
-    upperOscillator.detune.setValueAtTime(2, now);
-    rootLayer.gain.setValueAtTime(0.68, now);
-    upperLayer.gain.setValueAtTime(0.32, now); // V92 adds more octave-root energy so the fallback survives phone/laptop speaker rolloff.
+    fifthOscillator.detune.setValueAtTime(2, now);
+    rootLayer.gain.setValueAtTime(PAD_ROOT_LAYER_GAIN, now);
+    fifthLayer.gain.setValueAtTime(PAD_FIFTH_LAYER_GAIN, now); // Makes the P5 clearly audible instead of letting the lower root perceptually mask it.
     filter.type = 'lowpass';
     filter.frequency.setValueAtTime(880, now);
     filter.Q.setValueAtTime(0.35, now);
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, rootPadSynthGain()), now + 0.55);
+    const synthPadGain = rootPadSynthGain(); // Resolves the authored pad response and Music Lab pad mix once for this root+P5 voice.
+    if (synthPadGain <= 0) gain.gain.setValueAtTime(0, now);
+    else {
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, synthPadGain), now + 0.55);
+    }
     rootOscillator.connect(rootLayer).connect(filter);
-    upperOscillator.connect(upperLayer).connect(filter);
+    fifthOscillator.connect(fifthLayer).connect(filter);
     filter.connect(gain).connect(state.master);
     rootOscillator.start(now);
-    upperOscillator.start(now);
-    const voice = {midi, oscillators:[rootOscillator, upperOscillator], filter, gain, stopping:false, active:true, kind:'synth'};
+    fifthOscillator.start(now);
+    const voice = {midi, chordMidis:[rootMidi,fifthMidi], oscillators:[rootOscillator, fifthOscillator], filter, gain, stopping:false, active:true, kind:'synth'};
     rootOscillator.onended = () => { voice.active = false; };
     state.rootPadVoices.push(voice);
     return voice;
@@ -2495,25 +2588,44 @@
     const buffer = state.rootPadSampleBuffer;
     if (!context || context.state !== 'running' || !state.master || !buffer) return null;
     const now = audioStartTimeFor(context, whenMs);
-    const source = context.createBufferSource(); // Loops the imported sustained pad and repitches it to the current chord root.
+    const [rootMidi,fifthMidi] = [midi,midi + 7]; // Used to give imported sustained-pad samples the same root+P5 voicing as the synth fallback.
+    const rootSource = context.createBufferSource(); // Loops the imported pad at the current harmony root.
+    const fifthSource = context.createBufferSource(); // Loops a second copy repitched exactly seven semitones above the root.
+    const rootLayer = context.createGain();
+    const fifthLayer = context.createGain();
     const filter = context.createBiquadFilter();
     const gain = context.createGain();
-    source.buffer = buffer;
-    source.playbackRate.setValueAtTime(Math.pow(2, (midi - state.rootPadSampleRootMidi) / 12), now);
+    rootSource.buffer = buffer;
+    fifthSource.buffer = buffer;
+    rootSource.playbackRate.setValueAtTime(Math.pow(2, (rootMidi - state.rootPadSampleRootMidi) / 12), now);
+    fifthSource.playbackRate.setValueAtTime(Math.pow(2, (fifthMidi - state.rootPadSampleRootMidi) / 12), now);
     if (buffer.duration > 0.12) {
-      source.loop = true;
-      source.loopStart = Math.min(0.025, buffer.duration * 0.08);
-      source.loopEnd = Math.max(source.loopStart + 0.05, buffer.duration - Math.min(0.025, buffer.duration * 0.08));
+      const loopStart = Math.min(0.025, buffer.duration * 0.08); // Shared loop start keeps the two pitch layers phase-aligned in envelope timing.
+      const loopEnd = Math.max(loopStart + 0.05, buffer.duration - Math.min(0.025, buffer.duration * 0.08)); // Shared loop end prevents one layer from retriggering earlier than the other.
+      [rootSource,fifthSource].forEach(source => {
+        source.loop = true;
+        source.loopStart = loopStart;
+        source.loopEnd = loopEnd;
+      });
     }
+    rootLayer.gain.setValueAtTime(PAD_ROOT_LAYER_GAIN, now);
+    fifthLayer.gain.setValueAtTime(PAD_FIFTH_LAYER_GAIN, now); // Mirrors the synth balance so imported pads retain the same clearly audible power-chord fifth.
     filter.type = 'lowpass';
     filter.frequency.setValueAtTime(1200, now);
     filter.Q.setValueAtTime(0.25, now);
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, state.rootPadSampleLevel), now + 0.35);
-    source.connect(filter).connect(gain).connect(state.master);
-    source.start(now);
-    const voice = {midi, oscillators:[source], filter, gain, stopping:false, active:true, kind:'sample'};
-    source.onended = () => { voice.active = false; };
+    const samplePadGain = state.rootPadSampleLevel * state.padMixLevel; // Applies the shared pad mix after the imported sample's authored base level.
+    if (samplePadGain <= 0) gain.gain.setValueAtTime(0, now);
+    else {
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, samplePadGain), now + 0.35);
+    }
+    rootSource.connect(rootLayer).connect(filter);
+    fifthSource.connect(fifthLayer).connect(filter);
+    filter.connect(gain).connect(state.master);
+    rootSource.start(now);
+    fifthSource.start(now);
+    const voice = {midi, chordMidis:[rootMidi,fifthMidi], oscillators:[rootSource,fifthSource], filter, gain, stopping:false, active:true, kind:'sample'};
+    rootSource.onended = () => { voice.active = false; };
     state.rootPadVoices.push(voice);
     return voice;
   }
@@ -2532,8 +2644,9 @@
       const now = audioStartTimeFor(state.audioContext, whenMs);
       liveVoices.filter(voice => voice.kind === desiredKind).forEach(voice => {
         voice.gain.gain.cancelScheduledValues(now);
-        const targetGain = desiredKind === 'sample' ? state.rootPadSampleLevel : rootPadSynthGain();
-        voice.gain.gain.setTargetAtTime(Math.max(0.0002, targetGain), now, 0.12);
+        const targetGain = desiredKind === 'sample' ? state.rootPadSampleLevel * state.padMixLevel : rootPadSynthGain();
+        if (targetGain <= 0) voice.gain.gain.setValueAtTime(0, now);
+        else voice.gain.gain.setTargetAtTime(Math.max(0.0002, targetGain), now, 0.12);
       });
       return;
     }
@@ -2544,7 +2657,7 @@
       state.rootPadRootMidi = null; // Lets the next frame self-heal instead of thinking a dead pad is already running.
       return;
     }
-    log('Harmony root pad changed', `${midiName(targetMidi)} · ${desiredKind} · ${desiredKind === 'sample' ? Math.round(state.rootPadSampleLevel * 100) : Math.round(state.rootPadLevel * 100)}%`);
+    log('Harmony fifth pad changed', `root ${midiName(targetMidi)} · fifth ${midiName(targetMidi + 7)} · ${desiredKind} · ${desiredKind === 'sample' ? Math.round(state.rootPadSampleLevel * 100) : Math.round(state.rootPadLevel * 100)}%`);
   }
 
   function bankFooterMarkup(mode) {
@@ -2897,8 +3010,12 @@
     if (state.voice === 'Hollow') { filter.type = 'bandpass'; filter.frequency.value = 760; filter.Q.value = 0.75; }
     source.connect(filter).connect(gain).connect(state.master);
     const startTime = Number.isFinite(startAt) ? Math.max(startAt, context.currentTime) : context.currentTime;
-    gain.gain.setValueAtTime(0.0001, startTime);
-    gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, gainAmount), startTime + Math.max(0.001, state.attack));
+    const targetGain = gainAmount * state.kurrayaMixLevel; // Converts the Music Lab's relative Kurraya mix into this note's final pre-master attack level.
+    if (targetGain <= 0) gain.gain.setValueAtTime(0, startTime);
+    else {
+      gain.gain.setValueAtTime(0.0001, startTime);
+      gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, targetGain), startTime + Math.max(0.001, state.attack));
+    }
     return {kind:'webaudio', source, filter, gain, midi, startedAt:startTime, released:false, markers:playback.markers, usedPitchCache:playback.cached};
   }
 
@@ -3012,7 +3129,7 @@
     const token = ++channel.token;
     clearTimeout(channel.muteTimer);
     media.playbackRate = mediaPlaybackRate(midi);
-    media.volume = clamp(gainAmount * state.masterVolume, 0.02, 1);
+    media.volume = clamp(gainAmount * state.kurrayaMixLevel * state.masterVolume, 0, 1);
     try { media.currentTime = markers.trimStart; } catch {}
     const durationMs = Math.max(30, (markers.trimEnd - markers.trimStart) / Math.max(0.125, media.playbackRate) * 1000);
     const voice = {kind:'gesture-media', media, midi, voiceKey, channelKey, token, released:false, stopTimer:null, loopTimer:null, sequence:++state.voiceSequence};
@@ -3035,7 +3152,7 @@
     media.mozPreservesPitch = false;
     media.webkitPreservesPitch = false;
     media.playbackRate = mediaPlaybackRate(midi);
-    media.volume = clamp(gainAmount * state.masterVolume, 0.02, 1);
+    media.volume = clamp(gainAmount * state.kurrayaMixLevel * state.masterVolume, 0, 1);
     try { media.currentTime = markers.trimStart; } catch {}
     const playPromise = media.play(); // Starts synchronously inside the note gesture, even before metadata finishes loading.
     if (playPromise?.catch) playPromise.catch(error => {
@@ -4188,19 +4305,44 @@
     const context = state.audioContext;
     const length = decoded.length;
     const channels = Math.max(1, decoded.numberOfChannels);
-    const output = context.createBuffer(1, length, decoded.sampleRate);
+    const channel0 = decoded.getChannelData(0);
+    const channel1 = channels > 1 ? decoded.getChannelData(1) : null;
+    let mean0 = 0;
+    let mean1 = 0;
+    for (let i = 0; i < length; i++) {
+      mean0 += channel0[i] || 0;
+      if (channel1) mean1 += channel1[i] || 0;
+    }
+    mean0 /= Math.max(1,length);
+    mean1 /= Math.max(1,length);
+    let energy0 = 0;
+    let energy1 = 0;
+    let cross = 0;
+    if (channel1) {
+      for (let i = 0; i < length; i++) {
+        const left = (channel0[i] || 0) - mean0;
+        const right = (channel1[i] || 0) - mean1;
+        energy0 += left * left;
+        energy1 += right * right;
+        cross += left * right;
+      }
+    }
+    const correlation = channel1 && energy0 > 0 && energy1 > 0 ? cross / Math.sqrt(energy0 * energy1) : 1; // Wide/anti-phase pads can lose their fundamental if naively averaged to mono.
+    const usePrimaryOnly = !channel1 || correlation < 0.15 || Math.min(energy0,energy1) < Math.max(energy0,energy1) * 0.04;
+    const useChannelOne = channel1 && usePrimaryOnly && energy1 > energy0;
+    const output = context.createBuffer(1,length,decoded.sampleRate);
     const target = output.getChannelData(0);
     let peak = 0;
     for (let i = 0; i < length; i++) {
-      let sum = 0;
-      for (let ch = 0; ch < channels; ch++) sum += decoded.getChannelData(ch)[i] || 0;
-      const value = sum / channels;
+      const left = (channel0[i] || 0) - mean0;
+      const right = channel1 ? (channel1[i] || 0) - mean1 : 0;
+      const value = usePrimaryOnly ? (useChannelOne ? right : left) : (left + right) * 0.70710678; // Matches the Kurraya sampler's phase-safe, energy-preserving mono strategy.
       target[i] = value;
-      peak = Math.max(peak, Math.abs(value));
+      peak = Math.max(peak,Math.abs(value));
     }
-    if (peak < 1e-5) throw new Error('The selected sample appears silent.');
-    const gain = clamp(0.92 / peak, 0.1, 12);
-    for (let i = 0; i < length; i++) target[i] = clamp(target[i] * gain, -1, 1);
+    if (peak < 1e-5) throw new Error('The selected sample appears silent after channel safety processing.');
+    const gain = clamp(0.92 / peak,0.1,12);
+    for (let i = 0; i < length; i++) target[i] = clamp(target[i] * gain,-1,1);
     return output;
   }
 
@@ -4223,6 +4365,10 @@
         state.rootPadSampleBuffer = buffer;
         state.rootPadSampleName = record.name || 'Root pad sample';
         state.rootPadSampleRootMidi = clamp(Number(record.rootMidi) || state.rootPadSampleRootMidi || 48, 24, 84);
+        state.rootPadDetectedMidi = Number.isFinite(Number(record.detectedMidi)) ? clamp(Number(record.detectedMidi),24,84) : null;
+        state.rootPadDetectedFrequency = Number(record.detectedFrequency) || 0;
+        state.rootPadDetectedConfidence = Number(record.detectedConfidence) || 0;
+        state.rootPadRootSource = record.rootSource || 'cached';
         state.pendingRootPadSampleRecord = null;
       }
       updateAuxiliarySampleUI();
@@ -4614,6 +4760,56 @@
     schedulePersistImportedSample(400);
   }
 
+  async function importMainSampleFile(file, {preview = true, markAsCustomKurraya = false} = {}) {
+    if (!file) throw new Error('Choose an audio file first.');
+    refs.sampleStatus.innerHTML = `<strong>Decoding…</strong> · ${escapeHtml(file.name)}`;
+    refs.analysisReadout.textContent = `Reading ${file.name}…`;
+    try {
+      if (!state.audioContext) await ensureAudio(); // File imports originate from a user gesture in either the built-in picker or Music Lab bridge.
+      const bytes = await file.arrayBuffer();
+      if (!bytes.byteLength) throw new Error('The selected file was empty.');
+      const decoded = await decodeAudioDataCompat(bytes);
+      const normalized = normalizeDecodedBuffer(decoded);
+      state.deferredSampleGeneration += 1;
+      const generation = state.deferredSampleGeneration;
+      state.pendingCachedSample = null; // Prevents a slower startup-cache read from replacing this newly selected file.
+      state.buffer = normalized;
+      state.sampleName = file.name;
+      state.sampleImported = true;
+      state.playMode = 'pedal'; // Every new import defaults to layered piano-pedal ring-out.
+      state.playbackEngine = 'webaudio'; // Marks the source playable before WAV conversion, waveform work, analysis, or pitch preparation.
+      state.markers = {trimStart:0,loopIn:normalized.duration*0.28,loopOut:normalized.duration*0.76,trimEnd:normalized.duration};
+      clearGestureMediaChannels();
+      if (state.sampleObjectUrl) URL.revokeObjectURL(state.sampleObjectUrl);
+      state.sampleObjectUrl = null;
+      state.compatibilityBuildPromise = null;
+      invalidatePitchCache('new sample imported');
+      syncMarkerSlidersFromState();
+      syncControlsFromState();
+      updateSampleUI();
+      log('Audio ready immediately', `${file.name}, ${normalized.duration.toFixed(2)} s, ${state.sourceChannels} source ch → mono (${state.monoStrategy}), normalized ×${state.sampleNormalizationGain.toFixed(2)}`);
+      toast('Sample ready — notes layer and ring out');
+      refs.analysisReadout.textContent = `Ready: ${file.name}. Web Audio can play now with piano-pedal ring-out polyphony. Waveform, root analysis, offline persistence, and the temporary 20-note pitch cache continue without blocking input.`;
+      if (markAsCustomKurraya) {
+        try { localStorage.setItem('hobunji.kurrayaCustomSample.v1', JSON.stringify({name:file.name,savedAt:Date.now()})); } catch {} // Lets the gameplay host distinguish an explicitly chosen Kurraya replacement from unrelated sampler experiments.
+      }
+      saveSettings();
+      scheduleDeferredImportWork(generation);
+      if (!state.game.active && state.paused) {
+        state.paused = false;
+        log('Stale free-play pause cleared', 'audio import returned from the mobile file picker');
+      }
+      if (preview) setTimeout(() => previewImportedRoot(), 80);
+      return {name:file.name,duration:normalized.duration,rootMidi:state.sampleRootMidi};
+    } catch (error) {
+      log('Import failed', `${error.name}: ${error.message}`);
+      refs.analysisReadout.textContent = `Import failed: ${error.message}. Try WAV, MP3, M4A/AAC, or OGG supported by this browser. The fallback sample remains available.`;
+      updateSampleUI();
+      toast(`Import failed: ${error.message}`, 3200);
+      throw error;
+    }
+  }
+
   function setupFileImport() {
     const openPicker = async () => {
       try { await ensureAudio(); } catch {}
@@ -4624,49 +4820,9 @@
     refs.audioFile.addEventListener('change', async event => {
       const file = event.target.files?.[0];
       if (!file) return;
-      refs.sampleStatus.innerHTML = `<strong>Decoding…</strong> · ${escapeHtml(file.name)}`;
-      refs.analysisReadout.textContent = `Reading ${file.name}…`;
-      try {
-        if (!state.audioContext) await ensureAudio(); // The picker was opened from a user gesture; a suspended existing context can still decode safely.
-        const bytes = await file.arrayBuffer();
-        if (!bytes.byteLength) throw new Error('The selected file was empty.');
-        const decoded = await decodeAudioDataCompat(bytes);
-        const normalized = normalizeDecodedBuffer(decoded);
-        state.deferredSampleGeneration += 1;
-        const generation = state.deferredSampleGeneration;
-        state.pendingCachedSample = null; // Prevents a slower startup-cache read from replacing this newly selected file.
-        state.buffer = normalized;
-        state.sampleName = file.name;
-        state.sampleImported = true;
-        state.playMode = 'pedal'; // Every new import defaults to layered piano-pedal ring-out.
-        state.playbackEngine = 'webaudio'; // Marks the source playable before WAV conversion, waveform work, analysis, or pitch preparation.
-        state.markers = {trimStart:0,loopIn:normalized.duration*0.28,loopOut:normalized.duration*0.76,trimEnd:normalized.duration};
-        clearGestureMediaChannels();
-        if (state.sampleObjectUrl) URL.revokeObjectURL(state.sampleObjectUrl);
-        state.sampleObjectUrl = null;
-        state.compatibilityBuildPromise = null;
-        invalidatePitchCache('new sample imported');
-        syncMarkerSlidersFromState();
-        syncControlsFromState();
-        updateSampleUI();
-        log('Audio ready immediately', `${file.name}, ${normalized.duration.toFixed(2)} s, ${state.sourceChannels} source ch → mono (${state.monoStrategy}), normalized ×${state.sampleNormalizationGain.toFixed(2)}`);
-        toast('Sample ready — notes layer and ring out');
-        refs.analysisReadout.textContent = `Ready: ${file.name}. Web Audio can play now with piano-pedal ring-out polyphony. Waveform, root analysis, offline persistence, and the temporary 20-note pitch cache continue without blocking input.`;
-        saveSettings();
-        scheduleDeferredImportWork(generation);
-        if (!state.game.active && state.paused) {
-          state.paused = false;
-          log('Stale free-play pause cleared', 'audio import returned from the mobile file picker');
-        }
-        setTimeout(() => previewImportedRoot(), 80);
-      } catch (error) {
-        log('Import failed', `${error.name}: ${error.message}`);
-        refs.analysisReadout.textContent = `Import failed: ${error.message}. Try WAV, MP3, M4A/AAC, or OGG supported by this browser. The fallback sample remains available.`;
-        updateSampleUI();
-        toast(`Import failed: ${error.message}`, 3200);
-      } finally {
-        refs.audioFile.value = '';
-      }
+      try { await importMainSampleFile(file,{preview:true,markAsCustomKurraya:false}); }
+      catch {}
+      finally { refs.audioFile.value = ''; }
     });
   }
 
@@ -4898,7 +5054,35 @@
     if (refs.rootPadSampleLevelOut) refs.rootPadSampleLevelOut.textContent = `${Math.round(state.rootPadSampleLevel * 100)}%`;
   }
 
-  async function importAuxiliarySample(file, kind) {
+  function analyzeAuxiliaryRoot(buffer) {
+    if (!buffer?.length || !buffer.sampleRate) return null;
+    const data = monoData(buffer,Math.min(4,buffer.duration || 4)); // Uses the same mono extraction as the main Kurraya root analyzer while limiting work for long pad files.
+    if (!data.length) return null;
+    let peak = 0;
+    for (let i = 0; i < data.length; i++) peak = Math.max(peak,Math.abs(data[i]));
+    const threshold = Math.max(0.0025,peak * 0.018); // Matches autoAnalyze() so pad and Kurraya root detection have the same onset tolerance.
+    let first = 0;
+    let last = data.length - 1;
+    while (first < data.length && Math.abs(data[first]) < threshold) first++;
+    while (last > first && Math.abs(data[last]) < threshold) last--;
+    if (last <= first) return null;
+    const frameSize = Math.min(Math.floor(buffer.sampleRate * 0.11),Math.max(1024,last - first));
+    const searchEnd = Math.min(last - frameSize,first + Math.floor(buffer.sampleRate * 1.5));
+    let bestFrameStart = first;
+    let bestRms = 0;
+    for (let start = first; start <= searchEnd; start += Math.max(128,Math.floor(frameSize / 8))) {
+      let sum = 0;
+      for (let i = start; i < start + frameSize && i < data.length; i++) sum += data[i] * data[i];
+      const rms = Math.sqrt(sum / Math.max(1,Math.min(frameSize,data.length-start)));
+      if (rms > bestRms) { bestRms = rms; bestFrameStart = start; }
+    }
+    const pitch = estimatePitch(data.slice(bestFrameStart,Math.min(data.length,bestFrameStart + frameSize)),buffer.sampleRate);
+    if (!pitch) return null;
+    const midi = clamp(Math.round(69 + 12 * Math.log2(pitch.frequency / 440)),24,84);
+    return {midi,frequency:pitch.frequency,confidence:pitch.confidence};
+  }
+
+  async function importAuxiliarySample(file, kind, {autoDetectRoot = kind === 'rootPad'} = {}) {
     if (!file) return;
     await ensureAudio();
     const bytes = await file.arrayBuffer();
@@ -4917,13 +5101,32 @@
       state.rootPadSampleBuffer = normalized;
       state.rootPadSampleName = file.name;
       state.pendingRootPadSampleRecord = null;
-      await writeAuxiliaryCachedSample(auxiliarySampleRecord('rootPad', file.name, normalized, {rootMidi:state.rootPadSampleRootMidi}));
+      const detected = autoDetectRoot ? analyzeAuxiliaryRoot(normalized) : null; // Prevents a newly imported pad from inheriting an unrelated old/default C3 root.
+      if (detected) {
+        state.rootPadSampleRootMidi = detected.midi;
+        state.rootPadDetectedMidi = detected.midi;
+        state.rootPadDetectedFrequency = detected.frequency;
+        state.rootPadDetectedConfidence = detected.confidence;
+        state.rootPadRootSource = 'detected';
+      } else {
+        state.rootPadDetectedMidi = null;
+        state.rootPadDetectedFrequency = 0;
+        state.rootPadDetectedConfidence = 0;
+        state.rootPadRootSource = 'manual'; // Keeps the currently selected fallback root when no reliable single fundamental exists.
+      }
+      await writeAuxiliaryCachedSample(auxiliarySampleRecord('rootPad', file.name, normalized, {
+        rootMidi:state.rootPadSampleRootMidi,
+        detectedMidi:state.rootPadDetectedMidi,
+        detectedFrequency:state.rootPadDetectedFrequency,
+        detectedConfidence:state.rootPadDetectedConfidence,
+        rootSource:state.rootPadRootSource
+      }));
       if (state.rootPadEnabled) syncRootPad(true);
-      toast('Root pad sample ready');
+      toast(detected ? `Root pad sample ready · detected ${midiName(detected.midi)}` : 'Root pad sample ready · set Recorded root manually');
     }
     updateAuxiliarySampleUI();
     saveSettings();
-    log('Auxiliary sample imported', `${kind} · ${file.name} · ${normalized.duration.toFixed(2)}s`);
+    log('Auxiliary sample imported', `${kind} · ${file.name} · ${normalized.duration.toFixed(2)}s${kind === 'rootPad' ? ` · root ${midiName(state.rootPadSampleRootMidi)} (${state.rootPadRootSource})` : ''}`);
   }
 
   function previewRootPadSource() {
@@ -4957,7 +5160,7 @@
       updateAuxiliarySampleUI(); saveSettings(); toast('Synth metronome restored');
     });
     $('#clearRootPadSampleBtn')?.addEventListener('click', async () => {
-      stopRootPad(0.2); state.rootPadSampleBuffer = null; state.rootPadSampleName = ''; state.pendingRootPadSampleRecord = null;
+      stopRootPad(0.2); state.rootPadSampleBuffer = null; state.rootPadSampleName = ''; state.rootPadDetectedMidi = null; state.rootPadDetectedFrequency = 0; state.rootPadDetectedConfidence = 0; state.rootPadRootSource = 'default'; state.pendingRootPadSampleRecord = null;
       try { await deleteAuxiliaryCachedSample('rootPad'); } catch {}
       updateAuxiliarySampleUI(); if (state.rootPadEnabled) syncRootPad(true); saveSettings(); toast('Synth root pad restored');
     });
@@ -4965,12 +5168,50 @@
     refs.rootPadSampleLevel?.addEventListener('input', event => { state.rootPadSampleLevel = clamp(Number(event.target.value) / 100, 0, 1); updateAuxiliarySampleUI(); if (state.rootPadEnabled && state.rootPadSampleBuffer) syncRootPad(); saveSettings(); });
     refs.rootPadSampleRoot?.addEventListener('change', async event => {
       state.rootPadSampleRootMidi = clamp(Number(event.target.value) || 48, 24, 84);
+      state.rootPadRootSource = 'manual'; // A direct Recorded root change intentionally overrides automatic pad detection.
       if (state.rootPadSampleBuffer) {
-        try { await writeAuxiliaryCachedSample(auxiliarySampleRecord('rootPad', state.rootPadSampleName || 'Root pad sample', state.rootPadSampleBuffer, {rootMidi:state.rootPadSampleRootMidi})); } catch {}
+        try { await writeAuxiliaryCachedSample(auxiliarySampleRecord('rootPad', state.rootPadSampleName || 'Root pad sample', state.rootPadSampleBuffer, {
+          rootMidi:state.rootPadSampleRootMidi,
+          detectedMidi:state.rootPadDetectedMidi,
+          detectedFrequency:state.rootPadDetectedFrequency,
+          detectedConfidence:state.rootPadDetectedConfidence,
+          rootSource:state.rootPadRootSource
+        })); } catch {}
         if (state.rootPadEnabled) syncRootPad(true);
       }
       saveSettings(); updateAuxiliarySampleUI();
     });
+  }
+
+  function applyPerformanceTonic(tonicMidi, {persist = true} = {}) {
+    const nextTonicMidi = clamp(Math.round(Number(tonicMidi) || 48),24,60); // Used to transpose melody pitches and the fixed chord roots together from one authoritative tonic.
+    state.tonicMidi = nextTonicMidi;
+    if (refs.tonicSelect) refs.tonicSelect.value = String(nextTonicMidi);
+    invalidatePitchCache('tonic changed');
+    schedulePitchCacheBuild();
+    state.lastHarmonyStep = -1;
+    state.scheduledHarmonyStep = null;
+    updateHUD();
+    updatePitchLabels();
+    syncRootPad(true);
+    if (persist) saveSettings();
+    return nextTonicMidi;
+  }
+
+  function applyPerformanceScale(scaleName, {persist = true} = {}) {
+    const nextScaleName = SCALES[scaleName] ? scaleName : 'Major'; // Used to remap all melody degrees while the fixed IV–V–iii–vi chord voicings remain unchanged.
+    interruptAutoReleaseTail('note set selected in sampler');
+    state.scaleName = nextScaleName;
+    if (refs.scaleSelect) refs.scaleSelect.value = nextScaleName;
+    invalidatePitchCache('note set changed');
+    schedulePitchCacheBuild();
+    state.lastHarmonyStep = -1;
+    state.scheduledHarmonyStep = null;
+    updateHUD();
+    updatePitchLabels();
+    syncRootPad(true);
+    if (persist) saveSettings();
+    return nextScaleName;
   }
 
   function setupSamplerControls() {
@@ -4978,10 +5219,8 @@
     refs.timingPromptBeatsSelect.addEventListener('change', () => setTimingPromptBeats(refs.timingPromptBeatsSelect.value));
     ['trimStart','loopIn','loopOut','trimEnd'].forEach(id => $(`#${id}`).addEventListener('input', () => { readMarkersFromSliders(id); schedulePersistImportedSample(); }));
     refs.sampleRoot.addEventListener('change', () => { state.sampleRootMidi = Number(refs.sampleRoot.value); invalidatePitchCache('sample root changed'); schedulePitchCacheBuild(); schedulePersistImportedSample(); updateSampleUI(); saveSettings(); });
-    refs.tonicSelect.addEventListener('change', () => { state.tonicMidi = Number(refs.tonicSelect.value); invalidatePitchCache('tonic changed'); schedulePitchCacheBuild(); state.lastHarmonyStep = -1;
-      state.scheduledHarmonyStep = null; updateHUD(); updatePitchLabels(); syncRootPad(true); saveSettings(); });
-    refs.scaleSelect.addEventListener('change', () => { interruptAutoReleaseTail('note set selected in sampler'); state.scaleName = refs.scaleSelect.value; invalidatePitchCache('note set changed'); schedulePitchCacheBuild(); state.lastHarmonyStep = -1;
-      state.scheduledHarmonyStep = null; updateHUD(); updatePitchLabels(); syncRootPad(true); saveSettings(); });
+    refs.tonicSelect.addEventListener('change', () => applyPerformanceTonic(refs.tonicSelect.value));
+    refs.scaleSelect.addEventListener('change', () => applyPerformanceScale(refs.scaleSelect.value));
     refs.harmonyProgression.addEventListener('change', () => { state.harmonyPattern = refs.harmonyProgression.value; state.harmonyStartTime = nowMs(); state.lastHarmonyStep = -1;
       state.scheduledHarmonyStep = null; state.lastMetronomeBeat = -1;
       state.scheduledMetronomeBeat = null; updatePitchLabels(); updateHarmonyVisual(true, true); syncRootPad(true); saveSettings(); log('Hidden progression changed', state.harmonyPattern); });
@@ -5101,7 +5340,7 @@
   function saveSettings() {
     const serializable = {
       sampleRootMidi:state.sampleRootMidi, tonicMidi:state.tonicMidi, scaleName:state.scaleName, playMode:state.playMode,
-      voice:state.voice, attack:state.attack, release:state.release, masterVolume:state.masterVolume, strumThreshold:state.strumThreshold,
+      voice:state.voice, attack:state.attack, release:state.release, masterVolume:state.masterVolume, kurrayaMixLevel:state.kurrayaMixLevel, metronomeMixLevel:state.metronomeMixLevel, padMixLevel:state.padMixLevel, strumThreshold:state.strumThreshold,
       playbackEngine:state.playbackEngine, pitchCacheMode:state.pitchCacheMode, harmonyPattern:state.harmonyPattern, harmonyBpm:state.harmonyBpm, harmonyChordBeats:state.harmonyChordBeats,
       auditoryMetronome:state.auditoryMetronome, rootPadEnabled:state.rootPadEnabled, rootPadLevel:state.rootPadLevel,
       layoutPreset:'five-bank-auto', visualPreset:state.visualPreset, timingPromptBeats:state.timingPromptBeats, latchedMiddleOffset:state.latchedMiddleOffset,
@@ -5131,7 +5370,7 @@
         ? clamp(Number(state.tonicMidi) || 48, 24, 60)
         : clamp((Number(saved.tonicMidi) || 60) - 12, 24, 60); // V11 already contains the lowered register; only genuinely older settings migrate down once.
       if (!SCALES[state.scaleName]) state.scaleName = 'Major';
-      if (!HARMONY_PATTERNS[state.harmonyPattern]) state.harmonyPattern = '1–5–6–4';
+      if (!HARMONY_PATTERNS[state.harmonyPattern]) state.harmonyPattern = FIXED_HARMONY_PATTERN_ID;
       state.harmonyBpm = clamp(Number(state.harmonyBpm) || 96, 40, 240);
       if (![2,4,8,16].includes(Number(state.harmonyChordBeats))) state.harmonyChordBeats = 8;
       if (!localStorage.getItem(v68ChordDurationMigrationKey)) {
@@ -5144,6 +5383,9 @@
       if (!currentRaw && !previousRaw) state.playbackEngine = 'webaudio';
       state.strumThreshold = clamp(Number(state.strumThreshold) || 0.52, 0.3, 0.8);
       if (!Number.isFinite(state.masterVolume) || state.masterVolume < 0 || state.masterVolume > 1) state.masterVolume = 0.78;
+      state.kurrayaMixLevel = Number.isFinite(Number(state.kurrayaMixLevel)) ? clamp(Number(state.kurrayaMixLevel), 0, 2) : 1; // Preserves intentional mute while migrating older saves to neutral Kurraya mix.
+      state.metronomeMixLevel = Number.isFinite(Number(state.metronomeMixLevel)) ? clamp(Number(state.metronomeMixLevel), 0, 2) : 1; // Shared by iframe samples/clicks and the overworld footstep metronome via getState().
+      state.padMixLevel = Number.isFinite(Number(state.padMixLevel)) ? clamp(Number(state.padMixLevel), 0, 2) : 1; // Neutral default keeps prior synth/imported pad balance unchanged.
       state.auditoryMetronome = state.auditoryMetronome === true;
       state.rootPadEnabled = state.rootPadEnabled === true;
       if (!localStorage.getItem(v91AuxLayersDefaultOnKey)) {
@@ -6082,7 +6324,7 @@
     const mode = state.game.demoMode;
     const definition = FRETTED_PLUCK_MODES[mode];
     if (!definition || event.inputType === 'strum') return;
-    const beatMs = Math.max(1,state.game.beatMs);
+    const beatMs = Math.max(1,state.game.quarterBeatMs || state.game.beatMs); // Keeps automatic-pick eighth/sixteenth note values unchanged in 6/8 instead of doubling their speed.
     const interval = beatMs / Math.max(1,definition.division);
     const performanceAt = Math.max(0,event.time - state.game.countInMs);
     const beatAnchor = Math.round(performanceAt / beatMs) * beatMs;
@@ -6164,16 +6406,10 @@
     state.selectedSong = type;
     state.gameplaySelection = type; // V86: a started song is now the active selector mode.
     const melody = getSongDefinition(type);
-    if (melody && state.scaleName !== melody.scaleName) {
-      state.scaleName = melody.scaleName; // Public-domain songs use fixed diatonic degrees so their familiar interval pattern stays intact.
-      refs.scaleSelect.value = state.scaleName;
-      state.lastHarmonyStep = -1;
-      state.scheduledHarmonyStep = null;
-      updateHUD();
-      updatePitchLabels();
-      syncRootPad(true);
-      saveSettings();
-      toast(`${melody.title} switched the note set to ${melody.scaleName}`, 2400);
+    const requestedScaleName = options.scaleOverride && SCALES[options.scaleOverride] ? options.scaleOverride : melody?.scaleName; // Used by the scale-audition tool to override the authored Major melody mapping without changing ordinary song starts.
+    if (requestedScaleName && state.scaleName !== requestedScaleName) {
+      applyPerformanceScale(requestedScaleName,{persist:options.persistScale !== false});
+      if (!options.scaleOverride) toast(`${melody.title} switched the note set to ${requestedScaleName}`, 2400);
     }
     state.bpm = clamp(Number($('#bpmInput').value) || melody?.defaultBpm || melody?.bpm || 104, 45, 300);
     state.hitWindow = Number($('#difficultySelect').value) || 170;
@@ -6626,7 +6862,7 @@
     const gamepad = state.gamepadIndex != null ? navigator.getGamepads?.()[state.gamepadIndex] : null;
     const marker = state.markers;
     refs.debugState.textContent = [
-      `Audio: ${state.audioContext?.state || 'not started'} | master ${Math.round(state.masterVolume * 100)}% | WebAudio RMS ${state.outputRms.toFixed(4)} peak ${state.outputPeak.toFixed(4)}`,
+      `Audio: ${state.audioContext?.state || 'not started'} | master ${Math.round(state.masterVolume * 100)}% | mix K/P/M ${Math.round(state.kurrayaMixLevel * 100)}/${Math.round(state.padMixLevel * 100)}/${Math.round(state.metronomeMixLevel * 100)}% | WebAudio RMS ${state.outputRms.toFixed(4)} peak ${state.outputPeak.toFixed(4)}`,
       `Buffer: ${state.buffer ? `${state.buffer.duration.toFixed(3)}s / ${state.buffer.numberOfChannels}ch / ${state.buffer.sampleRate}Hz` : 'none'} | imported output ${state.playbackEngine} | cache ${state.sampleCacheStatus}`,
       `Pitch cache: ${state.pitchCacheStatus} | ${state.pitchCacheReadyCount}/${state.pitchCacheTargetCount} prepared | mode ${state.pitchCacheMode}`,
       `Sample: ${state.sampleName} | ${state.sampleImported ? 'imported' : 'fallback'} | root ${midiName(state.sampleRootMidi)} | mode ${state.playMode}`,
@@ -6728,11 +6964,174 @@
     log('Music System Demo V90 initialized', 'Authored songs use immediate hit/miss/wrong Groove judgments and vertical Lyre spatial hit windows; free play keeps configurable measure Groove.');
   }
 
+  function musicLabMixState() {
+    return {
+      kurraya:state.kurrayaMixLevel,
+      metronome:state.metronomeMixLevel,
+      pad:state.padMixLevel,
+      kurrayaSampleName:state.sampleName || 'Fallback pluck',
+      kurrayaSampleImported:!!state.sampleImported,
+      padSampleName:state.rootPadSampleBuffer || state.pendingRootPadSampleRecord ? (state.rootPadSampleName || state.pendingRootPadSampleRecord?.name || 'Imported pad') : 'Synth fifth pad',
+      padSampleImported:!!(state.rootPadSampleBuffer || state.pendingRootPadSampleRecord),
+      padSampleRootMidi:state.rootPadSampleRootMidi,
+      padDetectedMidi:state.rootPadDetectedMidi,
+      padDetectedFrequency:state.rootPadDetectedFrequency,
+      padDetectedConfidence:state.rootPadDetectedConfidence,
+      padRootSource:state.rootPadRootSource,
+      padChordMidis:[rootPadTargetMidi(),rootPadTargetMidi()+7],
+      padChordNames:[midiName(rootPadTargetMidi()),midiName(rootPadTargetMidi()+7)],
+      padProgressionRootMidis:padProgressionRootMidis(),
+      padProgressionRootNames:padProgressionRootMidis().map(midiName),
+      metronomeSource:state.labMetronomeBuffers.length ? 'game-footsteps' : state.ambientMetronomeBuffer ? 'ambient-footstep' : state.metronomeSampleBuffer ? 'imported-sample' : 'synth-click',
+      labFootsteps:state.labMetronomeNames.slice()
+    };
+  }
+
+  async function loadLabMetronomeFootsteps(urls = []) {
+    await ensureAudio();
+    const requested = [...new Set((Array.isArray(urls) ? urls : [urls]).map(String).filter(Boolean))]; // Used by the standalone Music Lab to mirror gameplay with real recorded footsteps instead of a digital click.
+    const buffers = [];
+    const names = [];
+    for (const url of requested) {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`Footstep fetch failed (${response.status}): ${url}`);
+      const bytes = await response.arrayBuffer();
+      const decoded = await decodeAudioDataCompat(bytes);
+      buffers.push(normalizeAuxiliaryDecodedBuffer(decoded));
+      names.push(url.split('/').pop() || url);
+    }
+    state.labMetronomeBuffers = buffers;
+    state.labMetronomeNames = names;
+    log('Music Lab footstep metronome ready', names.join(', ') || 'none');
+    return musicLabMixState();
+  }
+
   // Same-origin host bridge: external gameplay controls call the real music engine
   // during the user's trusted pointer gesture instead of forwarding synthetic DOM events.
   window.HobunjiMusicControlBridge = {
     wakeAudio() {
       return ensureAudio();
+    },
+    mixState() {
+      return musicLabMixState();
+    },
+    setMixLevels(levels = {}, {persist = true} = {}) {
+      if (Object.prototype.hasOwnProperty.call(levels,'kurraya')) state.kurrayaMixLevel = clamp(Number(levels.kurraya),0,2);
+      if (Object.prototype.hasOwnProperty.call(levels,'metronome')) state.metronomeMixLevel = clamp(Number(levels.metronome),0,2);
+      if (Object.prototype.hasOwnProperty.call(levels,'pad')) state.padMixLevel = clamp(Number(levels.pad),0,2);
+      if (state.rootPadEnabled) syncRootPad();
+      if (persist) saveSettings();
+      return musicLabMixState();
+    },
+    async importKurrayaSample(file, {custom = true, preview = false} = {}) {
+      const result = await importMainSampleFile(file,{preview,markAsCustomKurraya:custom});
+      autoAnalyze(true); // Music Lab imports need their detected root/markers committed before the tool can hand off to gameplay.
+      await persistCurrentSampleToIndexedDB(); // Guarantees a custom Kurraya choice is already restorable if the user launches the game immediately.
+      if (!custom) {
+        try { localStorage.removeItem('hobunji.kurrayaCustomSample.v1'); } catch {}
+      }
+      return {...musicLabMixState(),imported:{...result,rootMidi:state.sampleRootMidi}};
+    },
+    async importPadSample(file, rootMidi = state.rootPadSampleRootMidi) {
+      state.rootPadSampleRootMidi = clamp(Math.round(Number(rootMidi) || 48),24,84); // Kept only as fallback when the new pad has no stable detectable fundamental.
+      await importAuxiliarySample(file,'rootPad',{autoDetectRoot:true});
+      return musicLabMixState();
+    },
+    async setPadSampleRoot(rootMidi) {
+      state.rootPadSampleRootMidi = clamp(Math.round(Number(rootMidi) || 48),24,84);
+      state.rootPadRootSource = 'manual'; // Explicit Music Lab selection overrides any auto-detected root.
+      if (state.rootPadSampleBuffer) {
+        try { await writeAuxiliaryCachedSample(auxiliarySampleRecord('rootPad', state.rootPadSampleName || 'Root pad sample', state.rootPadSampleBuffer, {
+          rootMidi:state.rootPadSampleRootMidi,
+          detectedMidi:state.rootPadDetectedMidi,
+          detectedFrequency:state.rootPadDetectedFrequency,
+          detectedConfidence:state.rootPadDetectedConfidence,
+          rootSource:state.rootPadRootSource
+        })); } catch {}
+        if (state.rootPadEnabled) syncRootPad(true);
+      }
+      saveSettings();
+      updateAuxiliarySampleUI();
+      return musicLabMixState();
+    },
+    async clearPadSample() {
+      stopRootPad(0.2);
+      state.rootPadSampleBuffer = null;
+      state.rootPadSampleName = '';
+      state.rootPadDetectedMidi = null;
+      state.rootPadDetectedFrequency = 0;
+      state.rootPadDetectedConfidence = 0;
+      state.rootPadRootSource = 'default';
+      state.pendingRootPadSampleRecord = null;
+      try { await deleteAuxiliaryCachedSample('rootPad'); } catch {}
+      updateAuxiliarySampleUI();
+      if (state.rootPadEnabled) syncRootPad(true);
+      saveSettings();
+      return musicLabMixState();
+    },
+    async useLabFootstepMetronome(urls) {
+      return loadLabMetronomeFootsteps(urls);
+    },
+    clearLabFootstepMetronome() {
+      state.labMetronomeBuffers = [];
+      state.labMetronomeNames = [];
+      return musicLabMixState();
+    },
+    async previewLabMetronome() {
+      await ensureAudio();
+      playMetronomeClick({beatInChord:0,absoluteBeat:0,isMeasureStart:true},true);
+      return musicLabMixState();
+    },
+    async previewPad() {
+      await ensureAudio();
+      const midi = rootPadTargetMidi();
+      const voice = state.rootPadSampleBuffer ? createRootPadSampleVoice(midi) : createRootPadVoice(midi);
+      if (voice) setTimeout(() => fadeOutRootPadVoice(voice,0.35),1400);
+      return musicLabMixState();
+    },
+    scaleAuditionState() {
+      const tonicPitchClass = ((state.tonicMidi % 12) + 12) % 12; // Used to label the transposed fixed chord roots in the standalone scale-audition tool.
+      return {
+        songId:'when-the-kininjis-bloom',
+        songTitle:SONGBOOK['when-the-kininjis-bloom']?.title || 'When the Kininjis Bloom',
+        scales:SCALE_NAMES.slice(),
+        scaleName:state.scaleName,
+        tonicMidi:state.tonicMidi,
+        tonicName:midiName(state.tonicMidi),
+        timeSignature:KURRAYA_TIME_SIGNATURE.slice(),
+        beatGrouping:KURRAYA_BEAT_GROUPING.slice(),
+        harmonyCadence:{cycleMeasures:FIXED_HARMONY_CYCLE_MEASURES,fastMeasures:FIXED_HARMONY_FAST_MEASURES,slowMeasures:FIXED_HARMONY_SLOW_MEASURES,fastSpanMeasures:1,slowSpanMeasures:2},
+        progression:FIXED_HARMONY_STEPS.map(step => ({
+          degree:step.degree + 1,
+          roman:(step.quality === 'minor' ? ROMAN_DEGREES[step.degree]?.toLowerCase() : ROMAN_DEGREES[step.degree]) || String(step.degree + 1),
+          quality:step.quality,
+          rootSemitones:step.rootSemitones,
+          chordName:`${NOTE_NAMES[(tonicPitchClass + step.rootSemitones) % 12]} ${step.quality}`
+        })),
+        gameActive:!!state.game.active,
+        demoActive:!!state.game.demoActive,
+        mix:musicLabMixState()
+      };
+    },
+    setAuditionScale(scaleName) {
+      applyPerformanceScale(String(scaleName || ''),{persist:false});
+      return this.scaleAuditionState();
+    },
+    setAuditionTonic(tonicMidi) {
+      applyPerformanceTonic(tonicMidi,{persist:false});
+      return this.scaleAuditionState();
+    },
+    async startSongAudition(scaleName = state.scaleName, tonicMidi = state.tonicMidi) {
+      await ensureAudio();
+      applyPerformanceTonic(tonicMidi,{persist:false});
+      const auditionScaleName = applyPerformanceScale(scaleName,{persist:false}); // Used as an explicit startSong override so authored playback cannot silently snap the tool back to Major.
+      state.selectedSong = 'when-the-kininjis-bloom';
+      startSong(state.selectedSong,{demoMode:'direct',scaleOverride:auditionScaleName,persistScale:false});
+      return this.scaleAuditionState();
+    },
+    stopSongAudition() {
+      stopSong('Scale audition stopped.');
+      return this.scaleAuditionState();
     },
     announceInput(control) {
       try {
@@ -6985,6 +7384,9 @@
         heldAutomaticDurationMs: heldAutomaticNote ? Math.max(0, bridgeNow - oldestHeldAt) : 0,
         heldAutomaticNoteCount: heldAutomaticNote ? heldFrets.length : 0,
         pluckInputMode: state.pluckInputMode || 'direct',
+        kurrayaMixLevel:state.kurrayaMixLevel,
+        metronomeMixLevel:state.metronomeMixLevel,
+        padMixLevel:state.padMixLevel,
         pluckShortLabel: automaticPatternDefinition().short,
         leftStickSector: state.leftStickSector,
         leftStickModeIds: leftStickModeIds(),

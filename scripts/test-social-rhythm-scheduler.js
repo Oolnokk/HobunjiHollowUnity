@@ -18,6 +18,11 @@ const vm = require('node:vm');
 const source = fs.readFileSync('docs/js/social-rhythm-runtime.js', 'utf8');
 assert(source.includes("global.RuntimeFrameScheduler.register('social-rhythm-clock', maintainRhythmClock"), 'rhythm-clock maintenance must register with the scheduler');
 assert(!/global\.requestAnimationFrame\(/.test(source), 'this single-context module must have no remaining raw requestAnimationFrame call');
+assert.match(
+  source,
+  /bridgeState = bridge\.getState\(\)[\s\S]*?metronomeMixLevel[\s\S]*?playCurrentTileFootstep\(3 \* metronomeMix, 'kurraya-metronome'\)/,
+  'the gameplay Kurraya metronome must keep using current-surface footsteps while respecting the authored metronome mix'
+);
 
 function buildFixture() {
   const registered = new Map();

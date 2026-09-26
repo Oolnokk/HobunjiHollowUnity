@@ -1,0 +1,1093 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Hobunji Hollow — Kurraya Music Lab</title>
+<style>
+
+  :root{color-scheme:dark;--bg:#0a0f18;--panel:#121a28;--panel2:#182335;--line:#304158;--text:#edf5ff;--muted:#98aabe;--accent:#7bc8ff;--good:#7ce3a3;--warn:#ffd07c}
+  *{box-sizing:border-box}
+  html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font:15px/1.45 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+  body{padding:clamp(12px,2.5vw,28px)}
+  button,select{font:inherit;color:inherit}
+  button,select{min-height:44px;border:1px solid var(--line);border-radius:10px;background:var(--panel2)}
+  button{padding:9px 13px;cursor:pointer;font-weight:750}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  button.primary{background:#1e4c68;border-color:#4a9fd2}
+  button.stop{background:#40252b;border-color:#80505a}
+  button.scale.active{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+  select{width:100%;padding:8px 10px}
+  main{max-width:960px;margin:0 auto;display:grid;gap:14px}
+  header h1{margin:0 0 5px;font-size:clamp(22px,4vw,34px)}
+  header p{margin:0;color:var(--muted)}
+  .panel{border:1px solid var(--line);border-radius:14px;background:var(--panel);padding:14px}
+  .controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+  label{display:grid;gap:5px;color:var(--muted);font-size:12px;font-weight:750}
+  .scale-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:8px;margin-top:12px}
+  .actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:13px}
+  .status{margin-top:10px;min-height:24px;color:var(--muted)}
+  .status.good{color:var(--good)} .status.warn{color:var(--warn)}
+  .chords{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:10px}
+  .chord{border:1px solid var(--line);border-radius:11px;padding:10px;background:#0e1622;min-width:0}
+  .chord strong{display:block;font-size:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .chord small{color:var(--muted)}
+  .note{margin:8px 0 0;color:var(--muted);font-size:12px}
+  details summary{cursor:pointer;font-weight:800}
+  pre{white-space:pre-wrap;word-break:break-word;margin:10px 0 0;padding:10px;border-radius:9px;background:#070b11;border:1px solid #253246;color:#a9bdd0;font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace}
+  #engine{position:absolute;left:-10000px;top:-10000px;width:2px;height:2px;border:0;opacity:0;pointer-events:none}
+  @media(max-width:600px){.controls{grid-template-columns:1fr}.chords{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+
+  :root{color-scheme:dark;--bg:#090e17;--panel:#121a27;--panel2:#182335;--line:#314158;--text:#edf5ff;--muted:#9aabba;--accent:#76cfff;--good:#75dfa4;--warn:#ffd17f}
+  *{box-sizing:border-box}
+  html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font:15px/1.45 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+  body{padding:clamp(12px,2.5vw,28px)}
+  button,select,input{font:inherit;color:inherit}
+  button,select,input[type="number"]{min-height:44px;border:1px solid var(--line);border-radius:10px;background:var(--panel2)}
+  button{padding:9px 13px;cursor:pointer;font-weight:760}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  button.primary{background:#1d4d69;border-color:#4aa2d4}
+  button.good{background:#1e4935;border-color:#4d9872}
+  button.stop{background:#42252c;border-color:#84505c}
+  select,input[type="number"]{width:100%;padding:8px 10px}
+  input[type="range"]{width:100%;accent-color:var(--accent)}
+  main{max-width:980px;margin:0 auto;display:grid;gap:14px}
+  header h1{margin:0 0 5px;font-size:clamp(22px,4vw,34px)}
+  header p{margin:0;color:var(--muted)}
+  .panel{border:1px solid var(--line);border-radius:14px;background:var(--panel);padding:14px}
+  .grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+  label{display:grid;gap:5px;color:var(--muted);font-size:12px;font-weight:760}
+  .range-row{display:grid;grid-template-columns:1fr 110px;gap:10px;align-items:end;margin-top:12px}
+  .actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+  .readout{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:12px}
+  .metric{border:1px solid var(--line);border-radius:10px;background:#0d1520;padding:9px;min-width:0}
+  .metric small{display:block;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.08em}
+  .metric strong{display:block;margin-top:3px;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .status{min-height:24px;margin-top:10px;color:var(--muted)}
+  .status.good{color:var(--good)} .status.warn{color:var(--warn)}
+  .note{margin:8px 0 0;color:var(--muted);font-size:12px}
+  details summary{cursor:pointer;font-weight:800}
+  pre{white-space:pre-wrap;word-break:break-word;margin:10px 0 0;padding:10px;border-radius:9px;background:#070b11;border:1px solid #253246;color:#aac0d3;font:12px/1.42 ui-monospace,SFMono-Regular,Menlo,monospace}
+  @media(max-width:700px){.grid{grid-template-columns:1fr}.readout{grid-template-columns:repeat(2,minmax(0,1fr))}.range-row{grid-template-columns:1fr}}
+
+  .tool-tabs{display:flex;gap:8px;position:sticky;top:0;z-index:20;padding:8px;border:1px solid var(--line);border-radius:14px;background:color-mix(in srgb,var(--bg) 94%,transparent);backdrop-filter:blur(10px)}
+  .tool-tabs button{flex:1 1 0;min-width:0}
+  .tool-tabs button.active{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent);background:#1e4c68}
+  .tool-pane{display:none;gap:14px}
+  .tool-pane.active{display:grid}
+  .pane-heading{margin:0 0 -4px;font-size:18px}
+  .pane-subtitle{margin:0;color:var(--muted);font-size:13px}
+  .mix-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:10px}
+  .mix-control{display:grid;gap:6px;padding:10px;border:1px solid var(--line);border-radius:11px;background:#0d1520}
+  .mix-control .mix-head{display:flex;justify-content:space-between;gap:10px;font-size:12px;font-weight:800;color:var(--muted)}
+  .mix-control input[type="range"]{width:100%;accent-color:var(--accent)}
+  .sample-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px}
+  .sample-card{padding:11px;border:1px solid var(--line);border-radius:11px;background:#0d1520}
+  .sample-card strong{display:block;margin-bottom:4px}
+  .sample-card .sample-status{color:var(--muted);font-size:12px;min-height:34px}
+  .sample-card select{margin-top:8px}
+  .sample-card .actions{margin-top:8px}
+  .metronome-source{margin-top:10px;padding:9px 10px;border:1px solid var(--line);border-radius:10px;background:#0d1520;color:var(--muted);font-size:12px}
+  @media(max-width:700px){.mix-grid,.sample-grid{grid-template-columns:1fr}}
+  @media(max-width:600px){.tool-tabs{position:static}}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Kurraya Music Lab</h1>
+    <p>One workspace for hearing the written Kurraya song in alternate scales and for rendering the real bundled Kurraya pluck at new pitches.</p>
+  </header>
+
+  <nav class="tool-tabs" aria-label="Kurraya Music Lab sections">
+    <button type="button" class="active" data-kurraya-pane="song" aria-selected="true">🎼 Song Scale Audition</button>
+    <button type="button" data-kurraya-pane="sfx" aria-selected="false">🎵 SFX Transposer</button>
+  </nav>
+
+  <section id="songPane" class="tool-pane active" aria-label="Song Scale Audition">
+    <div>
+      <h2 class="pane-heading">When the Kininjis Bloom · Scale Audition</h2>
+      <p class="pane-subtitle">Hear the existing melody remapped through each Kurraya note set while the fixed IV–V–iii–vi harmony stays intact.</p>
+    </div>
+<section class="panel">
+    <div class="controls">
+      <label>Scale / note set
+        <select id="scaleSelect" disabled><option>Loading music engine…</option></select>
+      </label>
+      <label>Tonic
+        <select id="tonicSelect" disabled></select>
+      </label>
+    </div>
+    <div id="scaleButtons" class="scale-grid" aria-label="Scale choices"></div>
+    <div class="actions">
+      <button id="playBtn" class="primary" type="button" disabled>▶ Play from start</button>
+      <button id="stopBtn" class="stop" type="button" disabled>■ Stop</button>
+    </div>
+    <div id="status" class="status" aria-live="polite">Loading the shared Kurraya song engine…</div>
+    <p class="note">Audition choices are temporary: this tool does not overwrite the instrument's saved tonic or scale. The melody changes scale; the requested major/major/minor/minor chord qualities do not.</p>
+  </section>
+
+  <section class="panel">
+    <strong>Playback mix & samples</strong>
+    <div class="mix-grid">
+      <div class="mix-control">
+        <div class="mix-head"><span>Kurraya</span><output id="kurrayaMixOut">100%</output></div>
+        <input id="kurrayaMix" type="range" min="0" max="200" step="1" value="100" disabled>
+      </div>
+      <div class="mix-control">
+        <div class="mix-head"><span>Fifth pad</span><output id="padMixOut">100%</output></div>
+        <input id="padMix" type="range" min="0" max="200" step="1" value="100" disabled>
+      </div>
+      <div class="mix-control">
+        <div class="mix-head"><span>Footstep metronome</span><output id="metronomeMixOut">100%</output></div>
+        <input id="metronomeMix" type="range" min="0" max="200" step="1" value="100" disabled>
+      </div>
+    </div>
+
+    <div class="sample-grid">
+      <div class="sample-card">
+        <strong>Kurraya SFX</strong>
+        <div id="kurrayaSampleStatus" class="sample-status">Engine sample loading…</div>
+        <input id="kurrayaSampleFile" type="file" accept="audio/*" hidden>
+        <div class="actions">
+          <button id="importKurrayaBtn" type="button" disabled>Import Kurraya SFX</button>
+          <button id="bundledKurrayaBtn" type="button" disabled>Use bundled pluck</button>
+        </div>
+      </div>
+      <div class="sample-card">
+        <strong>Fifth-pad SFX</strong>
+        <div id="padSampleStatus" class="sample-status">Synth fifth pad</div>
+        <input id="padSampleFile" type="file" accept="audio/*" hidden>
+        <label>Recorded root
+          <select id="padSampleRoot" disabled></select>
+        </label>
+        <div class="actions">
+          <button id="importPadBtn" type="button" disabled>Import pad SFX</button>
+          <button id="previewPadBtn" type="button" disabled>▶ Preview pad</button>
+          <button id="clearPadBtn" type="button" disabled>Use synth pad</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="metronome-source">
+      <strong>Metronome:</strong> <span id="metronomeSourceStatus">Game-style footstep set loads on first Play/Preview.</span>
+      <button id="previewMetronomeBtn" type="button" disabled style="margin-left:8px">▶ Preview footstep</button>
+    </div>
+    <p class="note">These mix values are saved and used by gameplay. In the standalone lab the metronome rotates three recorded hard-step sounds; in game, that same mix controls the real footstep chosen from the surface under the player.</p>
+  </section>
+
+  <section class="panel">
+    <strong>Fixed chord progression at this tonic</strong>
+    <div id="chords" class="chords"></div>
+    <p class="note"><strong>6/8 · 3+3.</strong> Chords advance once per measure for 8 measures, then once per 2 measures for 16 measures, then the 24-measure cadence loops.</p>
+  </section>
+
+  <details class="panel" open>
+    <summary>Visible diagnostics</summary>
+    <pre id="diagnostics">engine=loading</pre>
+  </details>
+
+  <iframe id="engine" src="../../assets/minigames/lyre-performance.html?v=20260925sixeight1" title="Kurraya song audition audio engine" aria-hidden="true"></iframe>
+
+  </section>
+
+  <section id="sfxPane" class="tool-pane" aria-label="Kurraya SFX Transposer">
+    <div>
+      <h2 class="pane-heading">Kurraya SFX Transposer</h2>
+      <p class="pane-subtitle">Preview and export the real Kurraya pluck with the same playback-rate pitch behavior used by the runtime sampler.</p>
+    </div>
+<section class="panel">
+    <div class="grid">
+      <label>Detected / source root
+        <select id="sfxSourceRoot" disabled></select>
+      </label>
+      <label>Target note
+        <select id="sfxTargetNote" disabled></select>
+      </label>
+      <label>Source asset
+        <input id="sfxSourceName" type="text" value="sfx_kurraya_pluck.m4a" readonly>
+      </label>
+    </div>
+
+    <div class="range-row">
+      <label>Transpose semitones
+        <input id="sfxSemitones" type="range" min="-24" max="24" step="1" value="0" disabled>
+      </label>
+      <label>Exact offset
+        <input id="sfxSemitoneNumber" type="number" min="-24" max="24" step="1" value="0" disabled>
+      </label>
+    </div>
+
+    <div class="readout">
+      <div class="metric"><small>Source root</small><strong id="sfxSourceReadout">—</strong></div>
+      <div class="metric"><small>Target</small><strong id="sfxTargetReadout">—</strong></div>
+      <div class="metric"><small>Playback rate</small><strong id="sfxRateReadout">1.000×</strong></div>
+      <div class="metric"><small>Output duration</small><strong id="sfxDurationReadout">—</strong></div>
+    </div>
+
+    <div class="actions">
+      <button id="sfxPreviewSource" type="button" disabled>▶ Source</button>
+      <button id="sfxPreviewResult" class="primary" type="button" disabled>▶ Transposed</button>
+      <button id="sfxStopPreview" class="stop" type="button" disabled>■ Stop</button>
+      <button id="sfxExportWav" class="good" type="button" disabled>⬇ Export WAV</button>
+      <button id="sfxReloadAsset" type="button">↻ Reload asset</button>
+    </div>
+
+    <div id="sfxStatus" class="status" aria-live="polite">Loading bundled Kurraya pluck…</div>
+    <p class="note">Playback-rate transposition changes duration exactly like the runtime Kurraya sampler. The source is phase-safe downmixed to mono and normalized to the same 0.92 peak target before preview/export. If the automatic root detector catches a harmonic instead of the fundamental, correct the Source root manually.</p>
+  </section>
+
+  <details class="panel" open>
+    <summary>Visible diagnostics</summary>
+    <pre id="sfxDiagnostics">state=loading</pre>
+  </details>
+
+  </section>
+</main>
+
+<script>
+
+(() => {
+  'use strict';
+
+  const engineFrame = document.getElementById('engine'); // Used to reach the same-origin Kurraya control bridge without duplicating its song/audio logic.
+  const scaleSelect = document.getElementById('scaleSelect'); // Used for keyboard-friendly scale selection alongside the quick buttons.
+  const tonicSelect = document.getElementById('tonicSelect'); // Used to transpose the fixed progression and melody together for comparison.
+  const scaleButtons = document.getElementById('scaleButtons'); // Used to render one tap-sized audition shortcut per engine scale.
+  const playBtn = document.getElementById('playBtn'); // Used to start the authored song's automatic successful-playthrough preview.
+  const stopBtn = document.getElementById('stopBtn'); // Used to stop the current audition immediately.
+  const status = document.getElementById('status'); // Used for mobile-visible readiness/playback/errors without a developer console.
+  const chords = document.getElementById('chords'); // Used to show the transposed F–G–Em–Am chord names for the selected tonic.
+  const diagnostics = document.getElementById('diagnostics'); // Used to expose bridge/song/scale state on mobile.
+  const kurrayaMix = document.getElementById('kurrayaMix'); // Controls the persisted relative Kurraya-note layer without altering pad/metronome balance.
+  const padMix = document.getElementById('padMix'); // Controls the persisted relative fifth-pad layer.
+  const metronomeMix = document.getElementById('metronomeMix'); // Controls both lab footstep beats and the overworld current-surface footstep metronome.
+  const kurrayaMixOut = document.getElementById('kurrayaMixOut'); // Shows the authored Kurraya layer percentage on mobile.
+  const padMixOut = document.getElementById('padMixOut'); // Shows the authored fifth-pad layer percentage on mobile.
+  const metronomeMixOut = document.getElementById('metronomeMixOut'); // Shows the authored metronome layer percentage on mobile.
+  const kurrayaSampleStatus = document.getElementById('kurrayaSampleStatus'); // Shows the current sampler source name after custom/bundled imports.
+  const padSampleStatus = document.getElementById('padSampleStatus'); // Shows whether the fifth pad uses synth or an imported sample.
+  const metronomeSourceStatus = document.getElementById('metronomeSourceStatus'); // Shows whether the lab's recorded game-footstep set decoded successfully.
+  const kurrayaSampleFile = document.getElementById('kurrayaSampleFile'); // Hidden picker used to replace the real Kurraya sampler source.
+  const padSampleFile = document.getElementById('padSampleFile'); // Hidden picker used to replace the source layered into root+P5 fifth chords.
+  const padSampleRoot = document.getElementById('padSampleRoot'); // Records the pitch of an imported pad source so both fifth-chord layers transpose correctly.
+  const importKurrayaBtn = document.getElementById('importKurrayaBtn'); // Opens the Kurraya source picker.
+  const bundledKurrayaBtn = document.getElementById('bundledKurrayaBtn'); // Restores the repo-authored Kurraya pluck and clears the persistent custom-source preference.
+  const importPadBtn = document.getElementById('importPadBtn'); // Opens the pad source picker.
+  const previewPadBtn = document.getElementById('previewPadBtn'); // Auditions the current fifth pad through the engine.
+  const clearPadBtn = document.getElementById('clearPadBtn'); // Removes the cached pad sample and returns to the synth fifth pad.
+  const previewMetronomeBtn = document.getElementById('previewMetronomeBtn'); // Auditions the same recorded footstep set used by the lab metronome.
+  const NOTE_NAMES = ['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B']; // Used only to label tonic and imported-pad root choices.
+  const LAB_FOOTSTEP_URLS = [ // Real recorded game footsteps rotated by the standalone lab; gameplay itself still resolves the actual current ground surface.
+    '../../assets/audio/sfx/footsteps/hardstep_1.mp3',
+    '../../assets/audio/sfx/footsteps/hardstep_2.mp3',
+    '../../assets/audio/sfx/footsteps/hardstep_3.mp3'
+  ];
+  const BUNDLED_KURRAYA_URL = '../../assets/audio/music/instruments/sfx_kurraya_pluck.m4a'; // Repo-authored source used by the restore button.
+  let bridge = null; // Set after the iframe exposes HobunjiMusicControlBridge; all controls remain disabled until then.
+  let selectedScale = 'Major'; // Mirrors the temporary engine scale so Play can pass an explicit override.
+  let selectedTonic = 48; // Mirrors the temporary engine tonic; MIDI 48 is C3 in the shared engine's naming convention.
+  let pollTimer = 0; // Used to refresh the visible diagnostics while a song audition is running.
+  let labFootstepsReady = false; // Prevents repeated decode/fetch of the three metronome recordings after first Play/Preview.
+  let labFootstepsPromise = null; // Coalesces concurrent Play/Preview requests while the footstep set is still decoding.
+
+  function midiName(midi) {
+    const rounded = Math.round(Number(midi) || 48); // Used to keep tonic labels stable for numeric select values.
+    return `${NOTE_NAMES[(rounded % 12 + 12) % 12]}${Math.floor(rounded / 12) - 1}`;
+  }
+
+  function setStatus(message, tone = '') {
+    status.textContent = message;
+    status.className = `status ${tone}`.trim();
+  }
+
+  function renderChords(snapshot) {
+    chords.innerHTML = (snapshot?.progression || []).map(step => `
+      <div class="chord">
+        <small>${step.roman} · degree ${step.degree}</small>
+        <strong>${step.chordName}</strong>
+        <small>${step.quality}</small>
+      </div>`).join('');
+  }
+
+  function populatePadRootOptions() {
+    padSampleRoot.innerHTML = '';
+    for (let midi = 24; midi <= 84; midi++) {
+      const option = document.createElement('option'); // Gives imported pad sources the same practical recorded-root range as the engine settings.
+      option.value = String(midi);
+      option.textContent = midiName(midi);
+      padSampleRoot.appendChild(option);
+    }
+  }
+
+  function renderMixState(mix = bridge?.mixState?.()) {
+    if (!mix) return;
+    const values = [
+      [kurrayaMix,kurrayaMixOut,mix.kurraya],
+      [padMix,padMixOut,mix.pad],
+      [metronomeMix,metronomeMixOut,mix.metronome]
+    ];
+    for (const [slider,output,value] of values) {
+      const percent = Math.round((Number(value) || 0) * 100); // Maps engine 0..2 relative gain into the lab's 0..200% controls.
+      slider.value = String(percent);
+      output.textContent = `${percent}%`;
+    }
+    kurrayaSampleStatus.textContent = mix.kurrayaSampleImported ? `Current: ${mix.kurrayaSampleName}` : `Fallback: ${mix.kurrayaSampleName}`;
+    if (mix.padSampleImported) {
+      const confidence = Number(mix.padDetectedConfidence) || 0; // Distinguishes an automatically trusted pad root from a manual/fallback root.
+      const detection = mix.padRootSource === 'detected'
+        ? `auto-detected ${midiName(mix.padSampleRootMidi)} · ${Number(mix.padDetectedFrequency).toFixed(1)} Hz · ${Math.round(confidence * 100)}%`
+        : `${mix.padRootSource || 'manual'} root ${midiName(mix.padSampleRootMidi)}`;
+      padSampleStatus.textContent = `Current: ${mix.padSampleName} · ${detection} · sounding ${(mix.padChordNames || []).join(' + ') || 'root + P5'}`;
+    } else {
+      padSampleStatus.textContent = `Synth fifth pad · sounding ${(mix.padChordNames || []).join(' + ') || 'root + P5'}`;
+    }
+    padSampleRoot.value = String(Number(mix.padSampleRootMidi) || 48);
+    if (mix.labFootsteps?.length) {
+      labFootstepsReady = true;
+      metronomeSourceStatus.textContent = `Game footsteps: ${mix.labFootsteps.join(' · ')}`;
+    }
+  }
+
+  function currentMixPatch() {
+    return {
+      kurraya:Number(kurrayaMix.value) / 100,
+      pad:Number(padMix.value) / 100,
+      metronome:Number(metronomeMix.value) / 100
+    };
+  }
+
+  function applyMix({persist = false} = {}) {
+    if (!bridge?.setMixLevels) return;
+    renderMixState(bridge.setMixLevels(currentMixPatch(),{persist})); // Keeps all three sliders on one authoritative engine mix snapshot.
+  }
+
+  async function ensureLabFootsteps() {
+    if (labFootstepsReady) return bridge.mixState();
+    if (labFootstepsPromise) return labFootstepsPromise;
+    labFootstepsPromise = (async () => {
+      metronomeSourceStatus.textContent = 'Loading recorded game footsteps…';
+      const mix = await bridge.useLabFootstepMetronome(LAB_FOOTSTEP_URLS); // Uses real game recordings while staying temporary to this standalone page.
+      labFootstepsReady = true;
+      renderMixState(mix);
+      return mix;
+    })();
+    try { return await labFootstepsPromise; }
+    catch (error) {
+      metronomeSourceStatus.textContent = `Footstep load failed: ${error.message}`;
+      throw error;
+    } finally { labFootstepsPromise = null; }
+  }
+
+  function engineRealmFile(file) {
+    const FrameFile = engineFrame.contentWindow?.File || File; // Re-wraps parent-realm picker files for stricter Android/WebView cross-frame implementations.
+    return new FrameFile([file],file.name,{type:file.type || 'application/octet-stream',lastModified:file.lastModified || Date.now()});
+  }
+
+  async function bundledKurrayaFile() {
+    const response = await fetch(BUNDLED_KURRAYA_URL,{cache:'no-store'});
+    if (!response.ok) throw new Error(`Bundled Kurraya fetch failed: HTTP ${response.status}`);
+    const blob = await response.blob();
+    const FrameFile = engineFrame.contentWindow?.File || File; // Matches the iframe realm used by the engine import path.
+    return new FrameFile([blob],'sfx_kurraya_pluck.m4a',{type:blob.type || 'audio/mp4'});
+  }
+
+  function renderScaleButtons(snapshot) {
+    scaleButtons.innerHTML = '';
+    for (const scaleName of snapshot.scales || []) {
+      const button = document.createElement('button'); // Used as the touch-first equivalent of the scale dropdown.
+      button.type = 'button';
+      button.className = 'scale';
+      button.dataset.scale = scaleName;
+      button.textContent = scaleName;
+      button.addEventListener('click', () => void chooseScale(scaleName));
+      scaleButtons.appendChild(button);
+    }
+    updateScaleSelection(snapshot.scaleName);
+  }
+
+  function updateScaleSelection(scaleName) {
+    selectedScale = scaleName;
+    if (scaleSelect.value !== scaleName) scaleSelect.value = scaleName;
+    scaleButtons.querySelectorAll('[data-scale]').forEach(button => button.classList.toggle('active', button.dataset.scale === scaleName));
+  }
+
+  function renderDiagnostics(snapshot = null, error = null) {
+    let live = null; // Used to include transport state from the existing bridge when it is available.
+    try { live = bridge?.getState?.() || null; } catch {}
+    diagnostics.textContent = [
+      `engine=${bridge ? 'ready' : 'loading'}`,
+      `song=${snapshot?.songTitle || 'When the Kininjis Bloom'}`,
+      `scale=${snapshot?.scaleName || selectedScale}`,
+      `tonic=${snapshot?.tonicName || midiName(selectedTonic)} (MIDI ${snapshot?.tonicMidi ?? selectedTonic})`,
+      `progression=${(snapshot?.progression || []).map(step => step.chordName).join(' → ') || 'waiting'}`,
+      `meter=${(snapshot?.timeSignature || [6,8]).join('/')} grouping=${(snapshot?.beatGrouping || [3,3]).join('+')}`,
+      `cadence=${snapshot?.harmonyCadence ? `1/measure × ${snapshot.harmonyCadence.fastMeasures} → 1/2 measures × ${snapshot.harmonyCadence.slowMeasures} → loop` : 'waiting'}`,
+      `playing=${live?.gameActive ? 'yes' : 'no'} demo=${live?.gameDemoActive ? 'yes' : 'no'}`,
+      `transportStep=${live?.transportHarmonyStep ?? '—'}`,
+      `mix K/P/M=${Math.round((snapshot?.mix?.kurraya ?? live?.kurrayaMixLevel ?? 1) * 100)}/${Math.round((snapshot?.mix?.pad ?? live?.padMixLevel ?? 1) * 100)}/${Math.round((snapshot?.mix?.metronome ?? live?.metronomeMixLevel ?? 1) * 100)}%`,
+      `Kurraya source=${snapshot?.mix?.kurrayaSampleName || bridge?.mixState?.().kurrayaSampleName || '—'}`,
+      `pad source=${snapshot?.mix?.padSampleName || bridge?.mixState?.().padSampleName || '—'}`,
+      `pad root=${midiName(snapshot?.mix?.padSampleRootMidi ?? bridge?.mixState?.().padSampleRootMidi ?? 48)} source=${snapshot?.mix?.padRootSource || bridge?.mixState?.().padRootSource || '—'} detected=${snapshot?.mix?.padDetectedFrequency ? Number(snapshot.mix.padDetectedFrequency).toFixed(1) + 'Hz/' + Math.round((snapshot.mix.padDetectedConfidence || 0) * 100) + '%' : '—'}`,
+      `pad roots=${(snapshot?.mix?.padProgressionRootNames || bridge?.mixState?.().padProgressionRootNames || []).join(' → ') || '—'}`,
+      `pad sounding=${(snapshot?.mix?.padChordNames || bridge?.mixState?.().padChordNames || []).join(' + ') || '—'}`,
+      `metronome source=${snapshot?.mix?.metronomeSource || bridge?.mixState?.().metronomeSource || '—'}`,
+      error ? `error=${error}` : 'error=none'
+    ].join('\n');
+  }
+
+  async function stopIfPlaying() {
+    if (!bridge) return;
+    const live = bridge.getState?.(); // Used to avoid resetting the transport when the tool is already idle.
+    if (live?.gameActive) bridge.stopSongAudition?.();
+  }
+
+  async function chooseScale(scaleName) {
+    if (!bridge) return;
+    try {
+      await stopIfPlaying();
+      const snapshot = bridge.setAuditionScale(scaleName); // Reuses the engine's scale mapping instead of reproducing pitch math in this tool.
+      updateScaleSelection(snapshot.scaleName);
+      renderChords(snapshot);
+      renderDiagnostics(snapshot);
+      setStatus(`${snapshot.scaleName} selected. Press Play from start to compare it.`, 'good');
+    } catch (error) {
+      setStatus(`Scale change failed: ${error.message}`, 'warn');
+      renderDiagnostics(null,error.message);
+    }
+  }
+
+  async function chooseTonic(value) {
+    if (!bridge) return;
+    try {
+      await stopIfPlaying();
+      const snapshot = bridge.setAuditionTonic(Number(value)); // Transposes both melody and fixed chord roots through the shared engine.
+      selectedTonic = snapshot.tonicMidi;
+      tonicSelect.value = String(selectedTonic);
+      renderChords(snapshot);
+      renderDiagnostics(snapshot);
+      setStatus(`Tonic set to ${snapshot.tonicName}. Press Play from start to compare it.`, 'good');
+    } catch (error) {
+      setStatus(`Tonic change failed: ${error.message}`, 'warn');
+      renderDiagnostics(null,error.message);
+    }
+  }
+
+  async function playAudition() {
+    if (!bridge) return;
+    playBtn.disabled = true;
+    try {
+      await ensureLabFootsteps(); // Standalone audition should sound like gameplay's footstep metronome before the first count-in beat.
+      const snapshot = await bridge.startSongAudition(selectedScale,selectedTonic); // Starts the existing perfect-playthrough path so the user hears the complete written melody automatically.
+      renderChords(snapshot);
+      renderDiagnostics(snapshot);
+      setStatus(`Playing ${snapshot.songTitle} in ${snapshot.scaleName} from ${snapshot.tonicName}.`, 'good');
+      stopBtn.disabled = false;
+    } catch (error) {
+      setStatus(`Could not start audition: ${error.message}`, 'warn');
+      renderDiagnostics(null,error.message);
+    } finally {
+      playBtn.disabled = false;
+    }
+  }
+
+  function stopAudition() {
+    if (!bridge) return;
+    const snapshot = bridge.stopSongAudition(); // Uses the engine's real cleanup path so demo timers/voices do not linger.
+    renderDiagnostics(snapshot);
+    setStatus('Audition stopped.');
+  }
+
+  function populateTonicOptions() {
+    tonicSelect.innerHTML = '';
+    for (let midi = 36; midi <= 60; midi++) {
+      const option = document.createElement('option'); // Used to offer two octaves of practical transposition without free-form invalid MIDI input.
+      option.value = String(midi);
+      option.textContent = midiName(midi);
+      tonicSelect.appendChild(option);
+    }
+  }
+
+  function initializeFromBridge() {
+    try { bridge = engineFrame.contentWindow?.HobunjiMusicControlBridge || null; } catch { bridge = null; }
+    if (!bridge?.scaleAuditionState || !bridge?.mixState || !bridge?.setMixLevels || !bridge?.importKurrayaSample || !bridge?.importPadSample || !bridge?.useLabFootstepMetronome) {
+      setStatus('The music engine loaded, but the Music Lab audio bridge is incomplete.', 'warn');
+      renderDiagnostics(null,'Music Lab bridge methods missing');
+      return;
+    }
+    const snapshot = bridge.scaleAuditionState(); // Supplies the authoritative scale list, saved tonic, and fixed progression labels.
+    selectedScale = snapshot.scaleName;
+    selectedTonic = snapshot.tonicMidi;
+    scaleSelect.innerHTML = snapshot.scales.map(scaleName => `<option value="${scaleName}">${scaleName}</option>`).join('');
+    populateTonicOptions();
+    scaleSelect.value = selectedScale;
+    tonicSelect.value = String(selectedTonic);
+    scaleSelect.disabled = false;
+    tonicSelect.disabled = false;
+    playBtn.disabled = false;
+    stopBtn.disabled = false;
+    [kurrayaMix,padMix,metronomeMix,padSampleRoot,importKurrayaBtn,bundledKurrayaBtn,importPadBtn,previewPadBtn,clearPadBtn,previewMetronomeBtn].forEach(control => control.disabled = false);
+    populatePadRootOptions();
+    renderMixState(bridge.mixState());
+    renderScaleButtons(snapshot);
+    renderChords(snapshot);
+    renderDiagnostics(snapshot);
+    setStatus(`Ready. ${snapshot.timeSignature?.join('/') || '6/8'} · ${snapshot.beatGrouping?.join('+') || '3+3'}; 8 fast measures then 16 slow measures. Current tuning ${snapshot.scaleName} · ${snapshot.tonicName}.`, 'good');
+    clearInterval(pollTimer);
+    pollTimer = window.setInterval(() => {
+      if (!bridge) return;
+      try {
+        const liveSnapshot = bridge.scaleAuditionState();
+        renderMixState(liveSnapshot.mix);
+        renderDiagnostics(liveSnapshot);
+      } catch {}
+    },500);
+  }
+
+  [kurrayaMix,padMix,metronomeMix].forEach(slider => {
+    slider.addEventListener('input',() => applyMix({persist:false}));
+    slider.addEventListener('change',() => applyMix({persist:true}));
+  });
+  importKurrayaBtn.addEventListener('click',() => kurrayaSampleFile.click());
+  bundledKurrayaBtn.addEventListener('click',async () => {
+    try {
+      await bridge.wakeAudio();
+      const file = await bundledKurrayaFile();
+      renderMixState(await bridge.importKurrayaSample(file,{custom:false,preview:true}));
+      setStatus('Bundled Kurraya pluck restored and saved for gameplay.','good');
+    } catch (error) { setStatus(`Bundled Kurraya restore failed: ${error.message}`,'warn'); }
+  });
+  kurrayaSampleFile.addEventListener('change',async event => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      renderMixState(await bridge.importKurrayaSample(engineRealmFile(file),{custom:true,preview:true}));
+      setStatus(`Kurraya source changed to ${file.name} and saved for gameplay.`,'good');
+    } catch (error) { setStatus(`Kurraya import failed: ${error.message}`,'warn'); }
+    finally { event.target.value = ''; }
+  });
+  importPadBtn.addEventListener('click',() => padSampleFile.click());
+  padSampleFile.addEventListener('change',async event => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const mix = await bridge.importPadSample(engineRealmFile(file),Number(padSampleRoot.value));
+      renderMixState(mix);
+      setStatus(mix.padRootSource === 'detected'
+        ? `Pad source changed to ${file.name}; detected ${midiName(mix.padSampleRootMidi)} at ${Math.round((mix.padDetectedConfidence || 0) * 100)}% confidence.`
+        : `Pad source changed to ${file.name}; pitch was uncertain, so verify Recorded root manually.`,'good');
+    } catch (error) { setStatus(`Pad import failed: ${error.message}`,'warn'); }
+    finally { event.target.value = ''; }
+  });
+  padSampleRoot.addEventListener('change',async () => {
+    try { renderMixState(await bridge.setPadSampleRoot(Number(padSampleRoot.value))); }
+    catch (error) { setStatus(`Pad root change failed: ${error.message}`,'warn'); }
+  });
+  previewPadBtn.addEventListener('click',async () => {
+    try { renderMixState(await bridge.previewPad()); }
+    catch (error) { setStatus(`Pad preview failed: ${error.message}`,'warn'); }
+  });
+  clearPadBtn.addEventListener('click',async () => {
+    try {
+      renderMixState(await bridge.clearPadSample());
+      setStatus('Synth fifth pad restored.','good');
+    } catch (error) { setStatus(`Could not restore synth pad: ${error.message}`,'warn'); }
+  });
+  previewMetronomeBtn.addEventListener('click',async () => {
+    try {
+      await ensureLabFootsteps();
+      renderMixState(await bridge.previewLabMetronome());
+    } catch (error) { setStatus(`Footstep preview failed: ${error.message}`,'warn'); }
+  });
+
+    scaleSelect.addEventListener('change', () => void chooseScale(scaleSelect.value));
+  tonicSelect.addEventListener('change', () => void chooseTonic(tonicSelect.value));
+  playBtn.addEventListener('click', () => void playAudition());
+  stopBtn.addEventListener('click', stopAudition);
+  engineFrame.addEventListener('load', initializeFromBridge);
+  window.addEventListener('beforeunload', () => {
+    clearInterval(pollTimer);
+    try {
+      bridge?.stopSongAudition?.();
+      bridge?.clearLabFootstepMetronome?.();
+    } catch {}
+  });
+})();
+
+</script>
+
+<script>
+
+(() => {
+  'use strict';
+
+  const SOURCE_URL = '../../assets/audio/music/instruments/sfx_kurraya_pluck.m4a'; // Used by loadBundledSource() so this tool always starts from the real runtime Kurraya recording.
+  const NOTE_NAMES = ['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B']; // Used by note dropdown labels and detected-root diagnostics.
+  const TARGET_PEAK = 0.92; // Used by normalizeDecodedBuffer() to match the Kurraya sampler's import normalization headroom.
+
+  const sourceRoot = document.getElementById('sfxSourceRoot'); // Used to override the pitch detector's source-root result when a harmonic is misidentified.
+  const targetNote = document.getElementById('sfxTargetNote'); // Used to derive the requested semitone offset from an absolute MIDI target.
+  const semitones = document.getElementById('sfxSemitones'); // Used as the touch-friendly -24..+24 semitone transposition control.
+  const semitoneNumber = document.getElementById('sfxSemitoneNumber'); // Used as the exact numeric counterpart to the semitone slider.
+  const sourceReadout = document.getElementById('sfxSourceReadout'); // Used to display the current editable source-root note.
+  const targetReadout = document.getElementById('sfxTargetReadout'); // Used to display the target pitch after source/offset changes.
+  const rateReadout = document.getElementById('sfxRateReadout'); // Used to show the exact runtime-style playback-rate multiplier.
+  const durationReadout = document.getElementById('sfxDurationReadout'); // Used to show the wall-clock duration of the current transposition.
+  const previewSourceButton = document.getElementById('sfxPreviewSource'); // Used to audition the normalized untransposed pluck.
+  const previewResultButton = document.getElementById('sfxPreviewResult'); // Used to audition the runtime-equivalent transposed pluck.
+  const stopPreviewButton = document.getElementById('sfxStopPreview'); // Used to stop whichever preview voice is currently active.
+  const exportWavButton = document.getElementById('sfxExportWav'); // Used to render and download the currently selected pitch as WAV.
+  const reloadAssetButton = document.getElementById('sfxReloadAsset'); // Used to recover from decode/fetch failures without reloading the page.
+  const status = document.getElementById('sfxStatus'); // Used for mobile-visible loading, playback, render, and export state.
+  const diagnostics = document.getElementById('sfxDiagnostics'); // Used to expose decoder/root/render state without requiring developer tools.
+
+  let audioContext = null; // Created on the first preview/export gesture and reused for browser-authorized playback.
+  let sourceBuffer = null; // Holds the phase-safe normalized mono source consumed by preview and offline rendering.
+  let sourceMidi = 60; // Holds the editable source root; initialized to C4 until automatic analysis finishes.
+  let detectedFrequency = 0; // Holds the pitch detector's best fundamental estimate for visible diagnostics.
+  let detectedConfidence = 0; // Holds the autocorrelation confidence shown beside the detected root.
+  let sourceChannels = 0; // Records the decoded channel count before phase-safe downmixing.
+  let stereoCorrelation = 1; // Records channel correlation so unsafe stereo downmix decisions stay auditable.
+  let monoStrategy = 'unloaded'; // Records whether mono, summed stereo, or one safer channel became the working signal.
+  let normalizationGain = 1; // Records the one-time gain used to reach the runtime sampler's 0.92 peak target.
+  let activeSource = null; // Holds the currently sounding AudioBufferSourceNode so Stop and new previews can cancel it.
+  let renderGeneration = 0; // Invalidates an older export render if the user changes pitch and starts another render first.
+
+  const clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value)); // Used throughout to keep MIDI, audio, and PCM values inside authored bounds.
+
+  function midiName(midi) {
+    const rounded = Math.round(Number(midi) || 60); // Used to make MIDI dropdown/readout labels deterministic.
+    return `${NOTE_NAMES[(rounded % 12 + 12) % 12]}${Math.floor(rounded / 12) - 1}`;
+  }
+
+  function populateNoteSelect(select) {
+    select.innerHTML = ''; // Clears the loading placeholder before adding the complete practical Kurraya pitch range.
+    for (let midi = 24; midi <= 96; midi++) {
+      const option = document.createElement('option'); // One option maps an absolute MIDI target/root into a readable pitch label.
+      option.value = String(midi);
+      option.textContent = `${midiName(midi)} · MIDI ${midi}`;
+      select.appendChild(option);
+    }
+  }
+
+  function setStatus(message, tone = '') {
+    status.textContent = message;
+    status.className = `status ${tone}`.trim();
+  }
+
+  function selectedSemitones() {
+    return clamp(Math.round(Number(semitones.value) || 0), -24, 24);
+  }
+
+  function playbackRateForOffset(offset = selectedSemitones()) {
+    return Math.pow(2, Number(offset) / 12);
+  }
+
+  function updateControlsEnabled(enabled) {
+    sourceRoot.disabled = !enabled;
+    targetNote.disabled = !enabled;
+    semitones.disabled = !enabled;
+    semitoneNumber.disabled = !enabled;
+    previewSourceButton.disabled = !enabled;
+    previewResultButton.disabled = !enabled;
+    stopPreviewButton.disabled = !enabled;
+    exportWavButton.disabled = !enabled;
+  }
+
+  function updatePitchUi({fromTarget = false} = {}) {
+    sourceMidi = clamp(Math.round(Number(sourceRoot.value) || sourceMidi || 60),24,96);
+    let offset = selectedSemitones(); // Used to keep the semitone controls and absolute target selector mathematically synchronized.
+    if (fromTarget) {
+      const requestedTarget = clamp(Math.round(Number(targetNote.value) || sourceMidi),24,96); // Converts the target dropdown back into the nearest supported semitone offset.
+      offset = clamp(requestedTarget - sourceMidi,-24,24);
+      semitones.value = String(offset);
+      semitoneNumber.value = String(offset);
+    } else {
+      semitones.value = String(offset);
+      semitoneNumber.value = String(offset);
+      targetNote.value = String(clamp(sourceMidi + offset,24,96));
+    }
+    const targetMidi = sourceMidi + offset; // Used for the visible pitch label and exported filename even when it sits just outside the dropdown's absolute range.
+    const rate = playbackRateForOffset(offset); // Used to predict output duration using the same pitch ratio as Web Audio playback.
+    const outputDuration = sourceBuffer ? sourceBuffer.duration / rate : 0; // Used to show the exact transposed clip length before rendering.
+    sourceReadout.textContent = midiName(sourceMidi);
+    targetReadout.textContent = `${midiName(targetMidi)} (${offset >= 0 ? '+' : ''}${offset})`;
+    rateReadout.textContent = `${rate.toFixed(4)}×`;
+    durationReadout.textContent = outputDuration ? `${outputDuration.toFixed(3)} s` : '—';
+    renderDiagnostics();
+  }
+
+  function getAudioContext() {
+    if (!audioContext) {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext; // Creates one shared context for decode/allocation without requiring autoplay permission.
+      if (!AudioContextClass) throw new Error('Web Audio is not supported in this browser.');
+      audioContext = new AudioContextClass({latencyHint:'interactive'});
+    }
+    return audioContext;
+  }
+
+  async function ensureAudioContext() {
+    const context = getAudioContext(); // Reuses the decode context and resumes it only from a user-triggered preview/export action.
+    if (context.state !== 'running') await context.resume();
+    return context;
+  }
+
+  function decodeAudioDataCompat(context, bytes) {
+    return new Promise((resolve,reject) => {
+      let settled = false; // Prevents browsers that support both callbacks and promises from resolving the decode twice.
+      const succeed = decoded => { if (!settled) { settled = true; resolve(decoded); } }; // Completes the decode from either Web Audio API shape.
+      const fail = error => { if (!settled) { settled = true; reject(error || new Error('Audio decode failed.')); } }; // Normalizes callback-only decoder failures.
+      try {
+        const result = context.decodeAudioData(bytes.slice(0),succeed,fail); // Copies the buffer because older Web Audio implementations detach decode inputs.
+        if (result?.then) result.then(succeed,fail);
+      } catch (error) { fail(error); }
+    });
+  }
+
+  function normalizeDecodedBuffer(context, decoded) {
+    if (!decoded?.duration || decoded.duration < 0.04) throw new Error('The Kurraya sample decoded as empty or too short.');
+    sourceChannels = Math.max(1,decoded.numberOfChannels);
+    const length = decoded.length; // Used by every channel-analysis and destination-allocation loop below.
+    const channel0 = decoded.getChannelData(0); // Primary source channel and fallback when stereo is unsafe.
+    const channel1 = sourceChannels > 1 ? decoded.getChannelData(1) : null; // Optional stereo partner used for the same correlation safety check as the runtime sampler.
+    let mean0 = 0; // Removes DC from the primary channel before mixing and pitch analysis.
+    let mean1 = 0; // Removes DC from the secondary channel before mixing.
+    for (let index = 0; index < length; index++) {
+      mean0 += channel0[index];
+      if (channel1) mean1 += channel1[index];
+    }
+    mean0 /= Math.max(1,length);
+    mean1 /= Math.max(1,length);
+    let energy0 = 0; // Used to choose the stronger channel if stereo would cancel.
+    let energy1 = 0; // Compared with energy0 during phase-safe downmixing.
+    let cross = 0; // Used to calculate the stereo correlation shown in diagnostics.
+    if (channel1) {
+      for (let index = 0; index < length; index++) {
+        const left = channel0[index] - mean0; // Centered left sample used only for channel-safety analysis.
+        const right = channel1[index] - mean1; // Centered right sample used only for channel-safety analysis.
+        energy0 += left * left;
+        energy1 += right * right;
+        cross += left * right;
+      }
+    }
+    stereoCorrelation = channel1 && energy0 > 0 && energy1 > 0 ? cross / Math.sqrt(energy0 * energy1) : 1;
+    const usePrimaryOnly = !channel1 || stereoCorrelation < 0.15 || Math.min(energy0,energy1) < Math.max(energy0,energy1) * 0.04; // Mirrors the runtime sampler's phone-safe mono rule.
+    const useChannelOne = channel1 && usePrimaryOnly && energy1 > energy0; // Picks the louder safe channel when the stereo pair cannot be summed.
+    const mono = new Float32Array(length); // Receives the phase-safe centered signal before one-time peak normalization.
+    let peak = 0; // Determines the runtime-equivalent import normalization gain.
+    for (let index = 0; index < length; index++) {
+      const left = channel0[index] - mean0; // Centered primary sample used for this output frame.
+      const right = channel1 ? channel1[index] - mean1 : 0; // Centered secondary sample used only when a stereo sum is safe.
+      const value = usePrimaryOnly ? (useChannelOne ? right : left) : (left + right) * 0.70710678; // Matches the runtime's energy-preserving safe mono mix.
+      mono[index] = value;
+      peak = Math.max(peak,Math.abs(value));
+    }
+    if (peak < 1e-5) throw new Error('The Kurraya sample appears silent after channel safety processing.');
+    normalizationGain = clamp(TARGET_PEAK / peak,0.1,16);
+    const output = context.createBuffer(1,length,decoded.sampleRate); // This mono normalized buffer is the sole source for preview and exports.
+    const destination = output.getChannelData(0); // Receives the same 0.92-peak normalized signal the runtime sampler would play.
+    for (let index = 0; index < length; index++) destination[index] = clamp(mono[index] * normalizationGain,-1,1);
+    monoStrategy = !channel1 ? 'original mono' : usePrimaryOnly ? `louder channel ${useChannelOne ? 2 : 1}` : 'energy-preserving stereo sum';
+    return output;
+  }
+
+  function monoData(buffer,maxSeconds = 30) {
+    const length = Math.min(buffer.length,Math.floor(buffer.sampleRate * maxSeconds)); // Caps pitch analysis work while remaining far longer than this short pluck.
+    return buffer.getChannelData(0).slice(0,length);
+  }
+
+  function estimatePitch(frame,sampleRate) {
+    let mean = 0; // Used to remove any remaining local DC from the selected analysis frame.
+    for (let index = 0; index < frame.length; index++) mean += frame[index];
+    mean /= Math.max(1,frame.length);
+    let rms = 0; // Rejects low-energy frames that cannot produce a trustworthy autocorrelation peak.
+    const centered = new Float32Array(frame.length); // Holds the DC-free frame used by the same autocorrelation search as the runtime sampler.
+    for (let index = 0; index < frame.length; index++) {
+      centered[index] = frame[index] - mean;
+      rms += centered[index] * centered[index];
+    }
+    rms = Math.sqrt(rms / Math.max(1,frame.length));
+    if (rms < 0.006) return null;
+    const minimumFrequency = 45; // Lowest fundamental considered by the runtime Kurraya root detector.
+    const maximumFrequency = 1400; // Highest fundamental considered by the runtime Kurraya root detector.
+    const minimumLag = Math.floor(sampleRate / maximumFrequency); // First autocorrelation lag inside the accepted pitch range.
+    const maximumLag = Math.min(Math.floor(sampleRate / minimumFrequency),Math.floor(frame.length / 2)); // Last affordable lag inside the accepted pitch range.
+    let bestLag = -1; // Stores the strongest accepted autocorrelation period.
+    let bestCorrelation = 0; // Stores the confidence score returned to diagnostics.
+    for (let lag = minimumLag; lag <= maximumLag; lag++) {
+      let sum = 0; // Numerator of normalized autocorrelation for this candidate lag.
+      let a = 0; // Energy of the unshifted side used to normalize this candidate.
+      let b = 0; // Energy of the shifted side used to normalize this candidate.
+      for (let index = 0; index < frame.length - lag; index++) {
+        const x = centered[index]; // Current unshifted sample used in the correlation product.
+        const y = centered[index + lag]; // Matching lagged sample used in the correlation product.
+        sum += x * y;
+        a += x * x;
+        b += y * y;
+      }
+      const correlation = sum / Math.sqrt(a * b + 1e-12); // Normalized candidate confidence independent of frame amplitude.
+      if (correlation > bestCorrelation) {
+        bestCorrelation = correlation;
+        bestLag = lag;
+      }
+    }
+    if (bestLag < 0 || bestCorrelation < 0.48) return null;
+    return {frequency:sampleRate / bestLag,confidence:bestCorrelation};
+  }
+
+  function analyzeRoot(buffer) {
+    const data = monoData(buffer); // Uses the already normalized phase-safe mono source so analysis matches what the instrument actually plays.
+    let peak = 0; // Finds the sounding region before choosing the strongest short pitch-analysis frame.
+    for (let index = 0; index < data.length; index++) peak = Math.max(peak,Math.abs(data[index]));
+    const threshold = Math.max(0.0025,peak * 0.018); // Matches the runtime Kurraya sample onset threshold.
+    let first = 0; // Advances to the first meaningfully sounding sample.
+    while (first < data.length && Math.abs(data[first]) < threshold) first++;
+    const frameSize = Math.min(Math.floor(buffer.sampleRate * 0.11),Math.max(1024,data.length - first)); // Matches the runtime's roughly 110 ms analysis window.
+    let bestFrameStart = first; // Stores the highest-energy frame start during the first 1.5 seconds.
+    let bestRms = 0; // Used to favor the strongest stable part of the pluck over its noisy attack.
+    const searchEnd = Math.max(first,Math.min(data.length - frameSize,first + Math.floor(buffer.sampleRate * 1.5))); // Bounds the energy scan to the early pitched body.
+    for (let start = first; start <= searchEnd; start += Math.max(128,Math.floor(frameSize / 8))) {
+      let sum = 0; // Accumulates frame energy for this candidate analysis window.
+      for (let index = start; index < Math.min(data.length,start + frameSize); index++) sum += data[index] * data[index];
+      const rms = Math.sqrt(sum / Math.max(1,Math.min(frameSize,data.length - start))); // Ranks candidate windows by audible energy.
+      if (rms > bestRms) {
+        bestRms = rms;
+        bestFrameStart = start;
+      }
+    }
+    const frame = data.slice(bestFrameStart,Math.min(data.length,bestFrameStart + frameSize)); // Supplies the strongest early frame to the autocorrelation detector.
+    const pitch = estimatePitch(frame,buffer.sampleRate); // Returns the runtime-compatible fundamental estimate and confidence.
+    if (!pitch) return null;
+    const midi = Math.round(69 + 12 * Math.log2(pitch.frequency / 440)); // Converts the detected frequency to the nearest equal-tempered MIDI note.
+    return {midi:clamp(midi,24,96),frequency:pitch.frequency,confidence:pitch.confidence};
+  }
+
+  function stopPreview() {
+    if (!activeSource) return;
+    try { activeSource.stop(); } catch {}
+    try { activeSource.disconnect(); } catch {}
+    activeSource = null;
+    renderDiagnostics();
+  }
+
+  async function preview(offset) {
+    if (!sourceBuffer) return;
+    const context = await ensureAudioContext(); // Ensures preview playback is browser-authorized by the user's button gesture.
+    stopPreview();
+    const source = context.createBufferSource(); // Uses native Web Audio resampling, matching the runtime Kurraya voice path.
+    const gain = context.createGain(); // Keeps the preview signal below the normalized peak while allowing future tool-level volume changes.
+    source.buffer = sourceBuffer;
+    source.playbackRate.value = playbackRateForOffset(offset);
+    gain.gain.value = 0.9;
+    source.connect(gain).connect(context.destination);
+    source.onended = () => {
+      if (activeSource === source) activeSource = null;
+      renderDiagnostics();
+    };
+    activeSource = source;
+    source.start();
+    setStatus(offset === 0 ? 'Playing normalized source pluck.' : `Playing ${offset >= 0 ? '+' : ''}${offset} semitone transposition.`,'good');
+    renderDiagnostics();
+  }
+
+  async function renderTransposedBuffer(offset) {
+    if (!sourceBuffer) throw new Error('Kurraya source is not loaded.');
+    const OfflineContextClass = window.OfflineAudioContext || window.webkitOfflineAudioContext; // Required to bake playback-rate pitch changes into an exportable PCM buffer.
+    if (!OfflineContextClass) throw new Error('OfflineAudioContext is unavailable in this browser.');
+    const rate = playbackRateForOffset(offset); // Uses the exact same semitone-to-rate formula as runtime Kurraya playback.
+    const frameCount = Math.max(1,Math.ceil(sourceBuffer.length / Math.max(0.01,rate))); // Resizes the rendered clip to the shorter/longer runtime-equivalent duration.
+    const offline = new OfflineContextClass(1,frameCount,sourceBuffer.sampleRate); // Renders a mono result because the Kurraya sampler itself consumes phase-safe mono.
+    const source = offline.createBufferSource(); // Supplies the normalized runtime-equivalent source to the offline renderer.
+    source.buffer = sourceBuffer;
+    source.playbackRate.value = rate;
+    source.connect(offline.destination);
+    source.start(0);
+    return offline.startRendering();
+  }
+
+  function audioBufferToWavBlob(buffer) {
+    const channel = buffer.getChannelData(0); // Uses the rendered mono result for broadly compatible PCM WAV output.
+    const sampleRate = buffer.sampleRate; // Written into the RIFF header so external editors play the file at the intended rate.
+    const frameCount = buffer.length; // Determines the data chunk size and final file length.
+    const bytesPerSample = 2; // Exports signed 16-bit PCM for wide editor/game compatibility.
+    const dataSize = frameCount * bytesPerSample; // Stored in the WAV data chunk and RIFF size fields.
+    const wavBytes = new ArrayBuffer(44 + dataSize); // Holds the complete RIFF/WAVE header plus PCM payload.
+    const view = new DataView(wavBytes); // Writes little-endian header fields and individual PCM samples.
+    const writeText = (offset,text) => { // Writes four-character RIFF chunk identifiers into the header.
+      for (let index = 0; index < text.length; index++) view.setUint8(offset + index,text.charCodeAt(index));
+    };
+    writeText(0,'RIFF');
+    view.setUint32(4,36 + dataSize,true);
+    writeText(8,'WAVE');
+    writeText(12,'fmt ');
+    view.setUint32(16,16,true);
+    view.setUint16(20,1,true);
+    view.setUint16(22,1,true);
+    view.setUint32(24,sampleRate,true);
+    view.setUint32(28,sampleRate * bytesPerSample,true);
+    view.setUint16(32,bytesPerSample,true);
+    view.setUint16(34,16,true);
+    writeText(36,'data');
+    view.setUint32(40,dataSize,true);
+    for (let index = 0; index < frameCount; index++) {
+      const sample = clamp(channel[index],-1,1); // Converts normalized float PCM into the signed 16-bit WAV representation.
+      view.setInt16(44 + index * bytesPerSample,sample < 0 ? sample * 32768 : sample * 32767,true);
+    }
+    return new Blob([wavBytes],{type:'audio/wav'});
+  }
+
+  function downloadBlob(blob,filename) {
+    const url = URL.createObjectURL(blob); // Gives the rendered WAV a temporary local download URL without uploading the recording anywhere.
+    const anchor = document.createElement('a'); // Uses the browser's ordinary download flow so the tool works on desktop and supported mobile browsers.
+    anchor.href = url;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    setTimeout(() => URL.revokeObjectURL(url),1200);
+  }
+
+  async function exportCurrentWav() {
+    const generation = ++renderGeneration; // Distinguishes this render from any newer export request started before it completes.
+    exportWavButton.disabled = true;
+    try {
+      const offset = selectedSemitones(); // Captures the requested pitch so UI changes during rendering cannot silently rename the file.
+      const targetMidi = sourceMidi + offset; // Used only for the exported filename and success message.
+      setStatus(`Rendering ${offset >= 0 ? '+' : ''}${offset} semitones…`);
+      const rendered = await renderTransposedBuffer(offset); // Bakes the playback-rate pitch/duration into ordinary PCM audio.
+      if (generation !== renderGeneration) return;
+      const blob = audioBufferToWavBlob(rendered); // Converts the rendered AudioBuffer into a standalone 16-bit WAV file.
+      const signed = offset >= 0 ? `plus${offset}` : `minus${Math.abs(offset)}`; // Keeps filenames shell/filesystem friendly while retaining the exact semitone offset.
+      const filename = `sfx_kurraya_pluck_${midiName(targetMidi).replace('♯','s')}_${signed}.wav`; // Identifies both the absolute target note and source-relative transposition.
+      downloadBlob(blob,filename);
+      setStatus(`Exported ${filename} · ${rendered.duration.toFixed(3)} s.`,'good');
+      renderDiagnostics(rendered);
+    } catch (error) {
+      setStatus(`Export failed: ${error.message}`,'warn');
+      renderDiagnostics(null,error.message);
+    } finally {
+      exportWavButton.disabled = !sourceBuffer;
+    }
+  }
+
+  async function loadBundledSource() {
+    updateControlsEnabled(false);
+    stopPreview();
+    sourceBuffer = null;
+    renderGeneration += 1;
+    setStatus('Loading bundled Kurraya pluck…');
+    renderDiagnostics();
+    try {
+      const context = getAudioContext(); // Decodes and allocates while still suspended, avoiding autoplay permission during page load.
+      const response = await fetch(SOURCE_URL,{cache:'no-store'}); // Loads the exact repo asset rather than asking the user to supply a duplicate local file.
+      if (!response.ok) throw new Error(`HTTP ${response.status} while loading Kurraya pluck.`);
+      const bytes = await response.arrayBuffer(); // Supplies compressed M4A bytes to the browser's native audio decoder.
+      const decoded = await decodeAudioDataCompat(context,bytes); // Accepts both modern promise and older callback decodeAudioData implementations.
+      sourceBuffer = normalizeDecodedBuffer(context,decoded);
+      const analysis = analyzeRoot(sourceBuffer); // Initializes the editable source root from the same autocorrelation model as the runtime sampler.
+      if (analysis) {
+        sourceMidi = analysis.midi;
+        detectedFrequency = analysis.frequency;
+        detectedConfidence = analysis.confidence;
+      } else {
+        sourceMidi = 60;
+        detectedFrequency = 0;
+        detectedConfidence = 0;
+      }
+      sourceRoot.value = String(sourceMidi);
+      targetNote.value = String(sourceMidi);
+      semitones.value = '0';
+      semitoneNumber.value = '0';
+      updateControlsEnabled(true);
+      updatePitchUi();
+      setStatus(analysis
+        ? `Ready. Detected ${analysis.frequency.toFixed(1)} Hz → ${midiName(sourceMidi)} at ${Math.round(analysis.confidence * 100)}% correlation.`
+        : 'Ready. Pitch analysis was uncertain; source root defaults to C4 and can be corrected manually.','good');
+      renderDiagnostics();
+    } catch (error) {
+      setStatus(`Could not load Kurraya pluck: ${error.message}`,'warn');
+      renderDiagnostics(null,error.message);
+    }
+  }
+
+  function renderDiagnostics(renderedBuffer = null,error = '') {
+    const offset = selectedSemitones(); // Used to keep diagnostics tied to the currently visible transpose controls.
+    const rate = playbackRateForOffset(offset); // Reports the exact Web Audio pitch multiplier.
+    diagnostics.textContent = [
+      `state=${sourceBuffer ? (activeSource ? 'previewing' : 'ready') : 'loading'}`,
+      `source=${SOURCE_URL}`,
+      `decodedChannels=${sourceChannels || '—'} monoStrategy=${monoStrategy}`,
+      `stereoCorrelation=${Number(stereoCorrelation).toFixed(3)} normalizationGain=${Number(normalizationGain).toFixed(3)} targetPeak=${TARGET_PEAK}`,
+      `detectedFrequency=${detectedFrequency ? detectedFrequency.toFixed(2) + ' Hz' : 'uncertain'} confidence=${detectedConfidence ? Math.round(detectedConfidence * 100) + '%' : '—'}`,
+      `sourceRoot=${midiName(sourceMidi)} midi=${sourceMidi}`,
+      `semitones=${offset >= 0 ? '+' : ''}${offset} target=${midiName(sourceMidi + offset)} playbackRate=${rate.toFixed(6)}`,
+      `sourceDuration=${sourceBuffer ? sourceBuffer.duration.toFixed(4) + ' s' : '—'} predictedOutput=${sourceBuffer ? (sourceBuffer.duration / rate).toFixed(4) + ' s' : '—'}`,
+      `lastRendered=${renderedBuffer ? renderedBuffer.duration.toFixed(4) + ' s @ ' + renderedBuffer.sampleRate + ' Hz' : '—'}`,
+      `error=${error || 'none'}`
+    ].join('\n');
+  }
+
+  populateNoteSelect(sourceRoot);
+  populateNoteSelect(targetNote);
+  sourceRoot.value = String(sourceMidi);
+  targetNote.value = String(sourceMidi);
+
+  sourceRoot.addEventListener('change',() => {
+    sourceMidi = clamp(Math.round(Number(sourceRoot.value) || sourceMidi),24,96);
+    updatePitchUi();
+    setStatus(`Source root overridden to ${midiName(sourceMidi)}.`,'good');
+  });
+  targetNote.addEventListener('change',() => updatePitchUi({fromTarget:true}));
+  semitones.addEventListener('input',() => {
+    semitoneNumber.value = semitones.value;
+    updatePitchUi();
+  });
+  semitoneNumber.addEventListener('change',() => {
+    semitones.value = String(clamp(Math.round(Number(semitoneNumber.value) || 0),-24,24));
+    updatePitchUi();
+  });
+  previewSourceButton.addEventListener('click',() => void preview(0));
+  previewResultButton.addEventListener('click',() => void preview(selectedSemitones()));
+  stopPreviewButton.addEventListener('click',() => {
+    stopPreview();
+    setStatus('Preview stopped.');
+  });
+  exportWavButton.addEventListener('click',() => void exportCurrentWav());
+  reloadAssetButton.addEventListener('click',() => void loadBundledSource());
+  window.addEventListener('beforeunload',() => stopPreview());
+
+  renderDiagnostics();
+  window.addEventListener('hobunji-kurraya-sfx-open', () => void loadBundledSource(), {once:true}); // Defers M4A decode until the combined lab's SFX tab is actually opened.
+})();
+
+</script>
+
+<script>
+(() => {
+  'use strict';
+  const paneButtons = [...document.querySelectorAll('[data-kurraya-pane]')]; // Used by the combined lab to switch between song audition and SFX authoring without loading another page.
+  const panes = {song:document.getElementById('songPane'),sfx:document.getElementById('sfxPane')}; // Used to keep exactly one Kurraya workflow visible at a time on mobile.
+  let sfxOpened = false; // Used to decode the bundled pluck only when the user first opens the SFX workflow.
+
+  function activatePane(name,{updateHash=true}={}) {
+    const paneName = name === 'sfx' ? 'sfx' : 'song';
+    paneButtons.forEach(button => {
+      const active = button.dataset.kurrayaPane === paneName;
+      button.classList.toggle('active',active);
+      button.setAttribute('aria-selected',active ? 'true' : 'false');
+    });
+    Object.entries(panes).forEach(([key,pane]) => pane?.classList.toggle('active',key === paneName));
+    if (paneName === 'sfx' && !sfxOpened) {
+      sfxOpened = true;
+      window.dispatchEvent(new Event('hobunji-kurraya-sfx-open'));
+    }
+    if (updateHash) history.replaceState(null,'',paneName === 'sfx' ? '#sfx' : '#song');
+  }
+
+  paneButtons.forEach(button => button.addEventListener('click',() => activatePane(button.dataset.kurrayaPane)));
+  activatePane(location.hash === '#sfx' ? 'sfx' : 'song',{updateHash:false});
+})();
+</script>
+</body>
+</html>
