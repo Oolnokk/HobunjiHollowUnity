@@ -33,6 +33,7 @@
       "fine_hood",
       "tankan_tunic",
       "bandolier1",
+      "tankan_bodywrap",
       "rugged_poncho",
       "fine_poncho"
     ],
@@ -59,14 +60,30 @@
       "hat": "none"
     },
     "exclusiveSlotCosmetics": {
-      "eyes": ["none"],
-      "upperFace": ["none"],
-      "facialHair": ["none"],
-      "hairFront": ["none"],
-      "hairBack": ["none"],
-      "hairSide": ["none"],
-      "hairSideL": ["none"],
-      "hat": ["none"]
+      "eyes": [
+        "none"
+      ],
+      "upperFace": [
+        "none"
+      ],
+      "facialHair": [
+        "none"
+      ],
+      "hairFront": [
+        "none"
+      ],
+      "hairBack": [
+        "none"
+      ],
+      "hairSide": [
+        "none"
+      ],
+      "hairSideL": [
+        "none"
+      ],
+      "hat": [
+        "none"
+      ]
     },
     "portraitBodyLayers": [
       {
@@ -74,27 +91,51 @@
         "url": "portraitsprites/arm-L_hskel_m.png",
         "tintSlot": "A",
         "pos": "back",
-        "xform": { "ax": -0.2, "ay": 0, "scaleX": 2.55, "scaleY": 2.55, "rotDeg": 0 }
+        "xform": {
+          "ax": -0.2,
+          "ay": 0,
+          "scaleX": 2.55,
+          "scaleY": 2.55,
+          "rotDeg": 0
+        }
       },
       {
         "id": "torso",
         "url": "portraitsprites/torso_hskel_m.png",
         "tintSlot": "A",
         "pos": "back",
-        "xform": { "ax": -0.2, "ay": 0, "scaleX": 2.55, "scaleY": 2.55, "rotDeg": 0 }
+        "xform": {
+          "ax": -0.2,
+          "ay": 0,
+          "scaleX": 2.55,
+          "scaleY": 2.55,
+          "rotDeg": 0
+        }
       },
       {
         "id": "armR",
         "url": "portraitsprites/arm-R_hskel_m.png",
         "tintSlot": "A",
         "pos": "front",
-        "xform": { "ax": -0.2, "ay": 0, "scaleX": 2.55, "scaleY": 2.55, "rotDeg": 0 }
+        "xform": {
+          "ax": -0.2,
+          "ay": 0,
+          "scaleX": 2.55,
+          "scaleY": 2.55,
+          "rotDeg": 0
+        }
       }
     ],
     "portraitOpacityMaskLayer": {
       "id": "opacityMask",
       "url": "hud/spriteopacitymask_cloud.png",
-      "xform": { "ax": -0.2, "ay": 0, "scaleX": 2.55, "scaleY": 2.55, "rotDeg": 0 }
+      "xform": {
+        "ax": -0.2,
+        "ay": 0,
+        "scaleX": 2.55,
+        "scaleY": 2.55,
+        "rotDeg": 0
+      }
     }
   },
   "female": {
@@ -114,6 +155,7 @@
       "fine_hood",
       "tankan_tunic",
       "bandolier1",
+      "tankan_bodywrap",
       "rugged_poncho",
       "fine_poncho"
     ],
@@ -140,14 +182,30 @@
       "hat": "none"
     },
     "exclusiveSlotCosmetics": {
-      "eyes": ["none"],
-      "upperFace": ["none"],
-      "facialHair": ["none"],
-      "hairFront": ["none"],
-      "hairBack": ["none"],
-      "hairSide": ["none"],
-      "hairSideL": ["none"],
-      "hat": ["none"]
+      "eyes": [
+        "none"
+      ],
+      "upperFace": [
+        "none"
+      ],
+      "facialHair": [
+        "none"
+      ],
+      "hairFront": [
+        "none"
+      ],
+      "hairBack": [
+        "none"
+      ],
+      "hairSide": [
+        "none"
+      ],
+      "hairSideL": [
+        "none"
+      ],
+      "hat": [
+        "none"
+      ]
     },
     "fixedPortraitSlots": {
       "pauldron": [
@@ -170,27 +228,51 @@
         "url": "portraitsprites/arm-L_hskel_f.png",
         "tintSlot": "A",
         "pos": "back",
-        "xform": { "ax": -0.2, "ay": 0, "scaleX": 2.55, "scaleY": 2.55, "rotDeg": 0 }
+        "xform": {
+          "ax": -0.2,
+          "ay": 0,
+          "scaleX": 2.55,
+          "scaleY": 2.55,
+          "rotDeg": 0
+        }
       },
       {
         "id": "torso",
         "url": "portraitsprites/torso_hskel_f.png",
         "tintSlot": "A",
         "pos": "back",
-        "xform": { "ax": -0.2, "ay": 0, "scaleX": 2.55, "scaleY": 2.55, "rotDeg": 0 }
+        "xform": {
+          "ax": -0.2,
+          "ay": 0,
+          "scaleX": 2.55,
+          "scaleY": 2.55,
+          "rotDeg": 0
+        }
       },
       {
         "id": "armR",
         "url": "portraitsprites/arm-R_hskel_f.png",
         "tintSlot": "A",
         "pos": "front",
-        "xform": { "ax": -0.2, "ay": 0, "scaleX": 2.55, "scaleY": 2.55, "rotDeg": 0 }
+        "xform": {
+          "ax": -0.2,
+          "ay": 0,
+          "scaleX": 2.55,
+          "scaleY": 2.55,
+          "rotDeg": 0
+        }
       }
     ],
     "portraitOpacityMaskLayer": {
       "id": "opacityMask",
       "url": "hud/spriteopacitymask_cloud.png",
-      "xform": { "ax": -0.2, "ay": 0, "scaleX": 2.55, "scaleY": 2.55, "rotDeg": 0 }
+      "xform": {
+        "ax": -0.2,
+        "ay": 0,
+        "scaleX": 2.55,
+        "scaleY": 2.55,
+        "rotDeg": 0
+      }
     }
   }
 }
