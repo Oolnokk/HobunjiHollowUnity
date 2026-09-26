@@ -190,8 +190,7 @@
   // real camp today, but reusing the existing rank/tier grid instead of a
   // bespoke single button gets tier variation for free.
   const DEV_SPAWN_PORAKANEKI_KEY = 'porakaneki:hunter';
-  const DEV_SPAWN_HARLYAO_SKELETON_KEY = 'harlyao-skeleton:enemy'; // Used by the species grid and spawn dispatcher to route skeleton enemies through BanditCombat instead of CREATURE_DB.
-  const DEV_SPAWN_HARLYAO_SKELETON_WEAPON_SHAPES = Object.freeze(['daggerSword', 'fishingspear', 'hatchet']); // Used by skeleton arena spawns to restrict melee equipment to dagger-swords, the existing spear shape, and hatchets.
+  const DEV_SPAWN_HARLYAO_SKELETON_KEY = 'harlyao-skeleton:enemy'; // Used by the species grid and spawn dispatcher to route skeleton enemies through the dedicated Minion class instead of CREATURE_DB.
 
   // Same species FoliageGenerator builds for a real wilderness zone's
   // SHRUB tiles (see game.js's _buildZoneFloorMeshes) — spawning them here
@@ -394,35 +393,31 @@
     renderDevSpawnPanel();
   }
 
-  // Harlyao Skeleton arena enemy. Unlike Porakaneki this deliberately keeps
-  // BanditCombat's normal hostile-on-sight behavior, but narrows its equipment
-  // to the same three melee shapes used by Harlyao marchers and explicitly
-  // disables the separate ranged-weapon slot.
+  // Harlyao Skeletons are Minions, not bandits. MinionCombat owns their
+  // clothing/dye/permanent-Footing rules while reusing the shared humanoid
+  // combat executor underneath.
   async function spawnDevArenaHarlyaoSkeleton(tier) {
     if (deps.getCurrentArea() !== DEV_ARENA_ZONE_ID) return;
-    const cfg = await window.BanditCombat.loadGangConfig(); // Base combat/stat/clothing config reused below while species/equipment are narrowed for this test-only spawn.
-    if (!cfg) { deps.showToast('Could not spawn Harlyao Skeleton — bandit-gang-config.json failed to load.', false); return; }
-    if (deps.getCurrentArea() !== DEV_ARENA_ZONE_ID) return; // Player may leave while the async config/portrait path is still resolving.
-    const angle = Math.random() * Math.PI * 2; // Used with dist to place the skeleton near, but not directly on top of, the player.
-    const dist = deps.TILE * (1.5 + Math.random() * 2.5); // Used with angle for the same spawn ring as other arena combatants.
-    const x = deps.player.x + Math.cos(angle) * dist; // World X handed to the shared humanoid enemy builder.
-    const y = deps.player.y + Math.sin(angle) * dist; // World Y/Z-plane coordinate handed to the shared humanoid enemy builder.
-    const skeletonCfg = { // Passed only to this makeEntity call; leaves ordinary bandit weapon/species selection unchanged.
-      ...cfg,
-      speciesWeights: { 'harlyao-skeleton': 1 },
-      weaponShapePool: [...DEV_SPAWN_HARLYAO_SKELETON_WEAPON_SHAPES],
-      weaponMetalKey: 'nativeCopper',
-      rangedWeaponChanceByRank: { grunt: 0, lieutenant: 0, captain: 0 },
-    };
-    const creature = await window.BanditCombat.makeEntity(skeletonCfg, 'grunt', tier, x, y, { // The existing bandit-like enemy path supplies melee AI, held-weapon rendering, death, loot, and hit reactions.
+    if (!window.MinionCombat?.makeEntity) { deps.showToast('Could not spawn Harlyao Skeleton — Minion class is unavailable.', false); return; }
+    const angle = Math.random() * Math.PI * 2; // Used with dist to place the Minion near, but not directly on top of, the player.
+    const dist = deps.TILE * (1.5 + Math.random() * 2.5); // Uses the same arena spawn ring as creatures/bandits.
+    const x = deps.player.x + Math.cos(angle) * dist; // World X passed to the Minion constructor.
+    const y = deps.player.y + Math.sin(angle) * dist; // World Y/Z-plane coordinate passed to the Minion constructor.
+    const creature = await window.MinionCombat.makeEntity({
+      speciesId: 'harlyao-skeleton',
+      name: 'Harlyao Skeleton',
+      tier,
+      x, y,
       zoneId: DEV_ARENA_ZONE_ID,
-      nameOverride: 'Harlyao Skeleton',
-      extra: { homeX: x, homeY: y, state: 'idle', isHarlyaoSkeleton: true },
+      weaponMetalKey: 'nativeCopper',
+      extra: { homeX: x, homeY: y, state: 'idle' },
     });
-    if (!creature) { deps.showToast('Could not spawn Harlyao Skeleton — see Debug log.', false); return; }
+    if (!creature) { deps.showToast('Could not spawn Harlyao Skeleton Minion — see Debug log.', false); return; }
+    if (deps.getCurrentArea() !== DEV_ARENA_ZONE_ID) { creature.avatarRef?.dispose?.(); return; } // Drops a late async spawn if the player left the arena.
     deps.hostileObjects.add(creature);
     _arenaSpawnedCreatures.add(creature);
-    const msg = `[dev-arena] spawned Harlyao Skeleton #${creature.id} (gender=${creature.rosterRecord?.appearance?.gender || '?'}, weapon=${creature.def?.weaponKey || 'none'}, ranged=${creature.def?.rangedWeaponKey || 'none'}, tier=${tier})`; // Visible debug evidence that the melee pool and no-ranged rule resolved as intended.
+    const clothes = creature.rosterRecord?.equippedCosmetics?.join('+') || 'none'; // Copyable proof that the bandit headwear guarantee did not run.
+    const msg = `[dev-arena] spawned Harlyao Skeleton Minion #${creature.id} (class=${creature.enemyClass}, gender=${creature.rosterRecord?.appearance?.gender || '?'}, clothes=${clothes}, weapon=${creature.def?.weaponKey || 'none'}, ranged=${creature.def?.rangedWeaponKey || 'none'}, shambling=${creature.afflictions?.shamblingFooting || 0}/${creature.maxFooting || 0}, footing=${creature.footing || 0})`; // Mobile/debug-readable Minion spawn audit.
     window.__farmLog?.(msg, 'wildlife');
     console.log(msg);
     renderDevSpawnPanel();
