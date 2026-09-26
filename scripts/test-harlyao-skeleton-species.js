@@ -79,7 +79,7 @@ assert(devSpawnerSource.includes('deps.hostileObjects.add(creature);'), 'Arena s
 assert(devSpawnerSource.includes('spawnDevArenaHarlyaoSkeleton(devSpawnBanditTier);'), 'Skeleton arena button must dispatch to the Minion spawn path');
 assert(combatBanditSource.includes('Array.isArray(cfg?.weaponShapePool) ? cfg.weaponShapePool : null'), 'BanditCombat must honor an optional caller-scoped melee weapon pool');
 assert(combatBanditSource.includes('configuredMetalKey || rolledMetalKey'), 'BanditCombat must honor an optional fixed metal without changing ordinary bandit rolls');
-assert(gameIndexSource.includes('js/dev-spawner.js?v=20260926minion1'), 'Game entry point must cache-bust the Harlyao Skeleton Minion arena spawner update');
+assert(gameIndexSource.includes('js/dev-spawner.js?v=20260926lich1'), 'Game entry point must cache-bust the current Testing Arena humanoid enemy spawner update');
 assert(gameIndexSource.includes('js/combat/combat-minion.js?v=20260926shambling70'), 'Game entry point must load the current Minion enemy category before the arena spawner');
 assert(gameIndexSource.includes('js/portrait-utils.js?v=20260926hskelhoodhair1'), 'Game entry point must cache-bust hood-aware female skeleton hair visibility');
 assert(gameIndexSource.includes('js/png-plane-avatar.js?v=20260926hskelhairalign1'), 'Game entry point must cache-bust the removal of the obsolete skeleton neck workaround');
