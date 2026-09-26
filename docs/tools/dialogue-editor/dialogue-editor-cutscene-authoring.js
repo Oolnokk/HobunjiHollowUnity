@@ -85,6 +85,7 @@ function appendCutsceneNodeEditor(tree,node){
   const cameras=cutsceneCameraEntriesForNpc(npc?.id);
   const currentCamera=String(node.cameraId||'');
   const presentation=node.banubuPresentation&&typeof node.banubuPresentation==='object'?node.banubuPresentation:{};
+  const move=presentation.move&&typeof presentation.move==='object'?presentation.move:null; // Relative Banubu movement cue authored on this node; absent means the node leaves his position alone.
   const sparkle=banubuSparkleState(node);
   const emitter=sparkle.emitter;
   const section=document.createElement('div'); // Appended after the normal node controls so cutscene authoring works for text, choice, sequence, and end nodes alike.
@@ -107,10 +108,21 @@ function appendCutsceneNodeEditor(tree,node){
         </div>
       </div>
       <div style="margin-top:9px;padding-top:7px;border-top:1px solid var(--border)">
+        <label>Banubu movement / quest commit</label>
+        <div class="editorNote">Movement is relative to Banubu's position when this dialogue begins. Use X=0, Z=0 to ease him back to that origin. A commit stage belongs on the final end node so cancelling earlier remains transactional.</div>
+        <div class="fieldGrid">
+          <label class="checkRow"><input id="editBanubuMoveEnabled" type="checkbox"${move?' checked':''}><span>Apply movement cue</span></label>
+          <div><label for="editBanubuMoveX">Relative X</label><input id="editBanubuMoveX" type="number" step=".05" value="${Number(move?.x)||0}"></div>
+          <div><label for="editBanubuMoveZ">Relative Z</label><input id="editBanubuMoveZ" type="number" step=".05" value="${Number(move?.z)||0}"></div>
+          <div><label for="editBanubuMoveDuration">Duration sec</label><input id="editBanubuMoveDuration" type="number" min=".05" step=".05" value="${Math.max(.05,Number(move?.duration)||.7)}"></div>
+          <div><label for="editBanubuCommitTurnIn">Commit turn-in stage</label><select id="editBanubuCommitTurnIn"><option value="0"${!Number(presentation.commitTurnIn)?' selected':''}>— none —</option><option value="1"${Number(presentation.commitTurnIn)===1?' selected':''}>Quest 1</option><option value="2"${Number(presentation.commitTurnIn)===2?' selected':''}>Quest 2</option></select></div>
+        </div>
+      </div>
+      <div style="margin-top:9px;padding-top:7px;border-top:1px solid var(--border)">
         <label>Banubu sparkle emitter</label>
         <div class="fieldGrid">
           <div><label for="editBanubuSparkleAction">Action</label><select id="editBanubuSparkleAction"><option value="">— unchanged —</option><option value="start"${sparkle.action==='start'?' selected':''}>start / replace emitter</option><option value="stop"${sparkle.action==='stop'?' selected':''}>stop emitter</option></select></div>
-          <div><label for="editBanubuSparkleAnchor">Attach to</label><select id="editBanubuSparkleAnchor"><option value="root" selected>Banubu root</option></select></div>
+          <div><label for="editBanubuSparkleAnchor">Attach to</label><select id="editBanubuSparkleAnchor"><option value="root"${sparkle.anchor==='root'?' selected':''}>Banubu root</option><option value="world"${sparkle.anchor==='world'?' selected':''}>Fixed reveal spot</option></select></div>
           <div><label for="editBanubuSparkleMax">Max particles</label><input id="editBanubuSparkleMax" type="number" min="1" max="512" step="1" value="${Number(sparkle.maxParticles)||48}"></div>
         </div>
         <div id="banubuSparkleEmitterFields" style="${sparkle.action==='start'?'':'display:none'}">
@@ -167,6 +179,24 @@ function appendCutsceneNodeEditor(tree,node){
   },{render:'graph'}));
 
   const readNumber=(id,fallback=0)=>{const value=Number($(id)?.value);return Number.isFinite(value)?value:fallback}; // Shared numeric reader keeps malformed mobile input from leaking NaN into exported dialogue JSON.
+  function commitMoveCue(label){
+    commitMutation(label,()=>{
+      const cue=ensurePresentation();
+      if(!$('editBanubuMoveEnabled').checked)delete cue.move;
+      else cue.move={x:readNumber('editBanubuMoveX'),z:readNumber('editBanubuMoveZ'),duration:Math.max(.05,readNumber('editBanubuMoveDuration',.7))};
+      cleanPresentation();
+    },{render:'none',coalesceKey:`banubu-move:${node.id}`,log:false});
+  }
+  $('editBanubuMoveEnabled').addEventListener('change',()=>{commitMoveCue('Changed Banubu movement cue');renderGraph()});
+  for(const id of ['editBanubuMoveX','editBanubuMoveZ','editBanubuMoveDuration']){
+    $(id).addEventListener('input',()=>commitMoveCue('Edited Banubu movement cue'));
+    $(id).addEventListener('blur',()=>renderGraph());
+  }
+  $('editBanubuCommitTurnIn').addEventListener('change',event=>commitMutation('Changed Banubu turn-in commit cue',()=>{
+    const cue=ensurePresentation(),stage=Math.max(0,Math.min(2,Number(event.target.value)||0));
+    if(stage)cue.commitTurnIn=stage;else delete cue.commitTurnIn;
+    cleanPresentation();
+  },{render:'graph'})); // Shared numeric reader keeps malformed mobile input from leaking NaN into exported dialogue JSON.
   const authoredEmitter=()=>({
     id:$('editSparkId').value.trim()||'banubu_key_sparkles',
     name:$('editSparkName').value.trim()||'Banubu Key Sparkles',
@@ -191,7 +221,7 @@ function appendCutsceneNodeEditor(tree,node){
       const cue=ensurePresentation();
       if(!action)delete cue.sparkles;
       else if(action==='stop')cue.sparkles='stop';
-      else cue.sparkles={action:'start',anchor:'root',maxParticles:Math.max(1,Math.min(512,Math.round(readNumber('editBanubuSparkleMax',48)))),emitter:authoredEmitter()};
+      else cue.sparkles={action:'start',anchor:$('editBanubuSparkleAnchor').value||'root',maxParticles:Math.max(1,Math.min(512,Math.round(readNumber('editBanubuSparkleMax',48)))),emitter:authoredEmitter()};
       cleanPresentation();
     },{render:'none',coalesceKey:`banubu-vfx:${node.id}`,log:false});
   }
