@@ -258,15 +258,21 @@
   function setDenEscapeOpacity(record, opacity) {
     if (!record?.root) return;
     const alpha = Math.max(0, Math.min(1, Number(opacity) || 0)); // Shared opacity applied to both mirrored animal planes during the final fade.
-    record.root.traverse?.(node => {
-      const materials = node?.material ? (Array.isArray(node.material) ? node.material : [node.material]) : [];
-      for (const material of materials) {
+    if (!record.materials) {
+      record.materials = []; // Collected once; the escape RAF fades every frame and must not re-traverse or recompile.
+      record.root.traverse?.(node => {
+        const materials = node?.material ? (Array.isArray(node.material) ? node.material : [node.material]) : [];
+        for (const material of materials) record.materials.push(material);
+      });
+    }
+    for (const material of record.materials) {
+      if (!material.transparent) {
         material.transparent = true;
-        material.opacity = alpha;
-        if ('depthWrite' in material) material.depthWrite = alpha >= 0.98;
-        material.needsUpdate = true;
+        material.needsUpdate = true; // Only the transparent flip changes the shader program; opacity/depthWrite are plain uniforms/state.
       }
-    });
+      material.opacity = alpha;
+      if ('depthWrite' in material) material.depthWrite = alpha >= 0.98;
+    }
   }
 
   function denEscapeTextureFromCanvas(canvas, mirror = false) {

@@ -4779,6 +4779,15 @@
       function transitionCreatureToDeath(c, fromX = c?.x, fromY = c?.y) {
         if (!c || Number(c.health) > 0 || c._deathTransitionStarted) return false;
         c._deathTransitionStarted = true; // Prevents duplicate rewards/corpse creation when several lethal systems observe zero Health in one frame.
+        // damageCreature's lethal branch returns before its "every hit cancels
+        // the attack" block, and bandit swings/ripostes tick from Combat.update
+        // rather than the hostile loop -- without this a creature killed mid-
+        // windup still landed its strike on the player from the corpse.
+        window.Combat?.telegraph?.cancel?.(c);
+        window.Combat?.animalAttacks?.cancel?.(c);
+        window.Combat?.cancelStagedForAttacker?.(c);
+        window.EnemyDodge?.cancel?.(c);
+        if (c.isBandit) { c._banditAction = null; window.RangedWeapons?.cancelBanditAction?.(c); c._banditLunging = false; }
         hostileObjects.delete(c);
         companionObjects.delete(c);
         const mineDeathArea = window.TownMine?.floorFromMapId?.(c.areaId) ? c.areaId : c.zoneId;
@@ -5970,61 +5979,15 @@
       // lives in js/wildlife-visual-lod.js — see updateWildlifeVisualLod below.
       const FAR_WILDLIFE_AI_TICK_INTERVAL_S = 0.2; // Used to advance calm hidden wildlife at 5 Hz with accumulated time instead of every render frame.
       const PREDATOR_SIGHT_INTERVAL_S = 0.25; // Used to stagger predator prey-acquisition decisions instead of repeating them every frame.
-      const ENEMY_SEARCH_DURATION_S = 3.4; // Time a hostile scans after the player leaves its shared ±45° sight cone.
-      const ENEMY_SEARCH_SWEEP_HALF_RAD = Math.PI * 0.85; // Alternating scan reaches well behind the creature before returning.
-      const ENEMY_SEARCH_TURN_RATE_RAD_S = THREE.MathUtils.degToRad(190); // Base search rotation, also scaled by post-attack recovery.
       const ENEMY_COMBAT_TURN_RATE_RAD_S = THREE.MathUtils.degToRad(300); // Prevents chase facing from teleporting to the player every frame.
       const currentHostilesFrame = []; // Reused rather than allocated for every updateHostiles frame.
       const grazingPreyByPatchFrame = new Map(); // Reuses per-patch prey buckets while the player remains in one area.
       const EMPTY_GRAZING_PREY = Object.freeze([]); // Avoids allocating an empty fallback list for predators without a matching herbivore patch.
       let grazingPreyIndexArea = null; // Clears retained patch buckets when the active area changes.
 
-      function enemyAttackBusy(c) {
-        return !!(c._banditAction || c._banditLunging || c._rangedAction ||
-          window.Combat?.telegraph?.isBusy(c) || window.Combat?.animalAttacks?.isBusy(c));
-      }
-
-      function enemyCanSeeTarget(c, target, maxDistancePx = Infinity) {
-        if (!target || target.health <= 0 || Math.hypot(target.x - c.x, target.y - c.y) > maxDistancePx) return false;
-        return window.Combat?.targetInsideAttackCone?.(c, target, c.facing || 0) ?? true;
-      }
-
-      function beginEnemySearch(c, target) {
-        c.state = 'searching';
-        c.targetPlayer = target;
-        c._enemySearchT = ENEMY_SEARCH_DURATION_S; // Countdown used by updateEnemySearch before the hostile gives up and returns.
-        c._enemySearchCenterFacing = c.facing || 0; // Sweep origin remembers the heading where sight was lost.
-        c._enemySearchOffset = 0; // Signed scan displacement accumulated around the remembered heading.
-        const lostSide = angleDiff(Math.atan2(target.y - c.y, target.x - c.x), c.facing || 0);
-        c._enemySearchDirection = lostSide >= 0 ? 1 : -1; // First scan turns toward the side where the player disappeared.
-      }
-
-      function updateEnemySearch(c, dt, target) {
-        c._enemySearchT = Math.max(0, (c._enemySearchT || 0) - dt);
-        if (enemyCanSeeTarget(c, target, c.def.aggroRangePx)) {
-          c.state = 'chase';
-          c.targetPlayer = target;
-          return c.facing || 0;
-        }
-        const turnMultiplier = window.Combat?.postAttackTurnMultiplier?.(c) ?? 1; // Search honors the same post-attack recovery slowdown.
-        c._enemySearchOffset = (c._enemySearchOffset || 0) + (c._enemySearchDirection || 1) * ENEMY_SEARCH_TURN_RATE_RAD_S * turnMultiplier * dt;
-        if (Math.abs(c._enemySearchOffset) >= ENEMY_SEARCH_SWEEP_HALF_RAD) {
-          c._enemySearchOffset = window.FormatUtils.clamp(c._enemySearchOffset, -ENEMY_SEARCH_SWEEP_HALF_RAD, ENEMY_SEARCH_SWEEP_HALF_RAD);
-          c._enemySearchDirection *= -1;
-        }
-        c.facing = (c._enemySearchCenterFacing || 0) + c._enemySearchOffset;
-        if (c._enemySearchT <= 0) {
-          c.state = 'return';
-          c.targetPlayer = null;
-        }
-        return c.facing;
-      }
-
-      function enemyAttackAlignment(c, target, dt) {
-        return window.Combat?.attackAlignmentStep?.(c, target, dt, {
-          turnMultiplier: window.Combat?.postAttackTurnMultiplier?.(c) ?? 1,
-        }) || { eligible: true, aligned: true, desiredFacing: Math.atan2(target.y - c.y, target.x - c.x), nextFacing: c.facing || 0 };
-      }
+      // Enemy sight-cone checks, lost-sight search sweep and pre-attack
+      // alignment now live in js/combat/enemy-search-ai.js.
+      const { enemyAttackBusy, enemyCanSeeTarget, beginEnemySearch, updateEnemySearch, enemyAttackAlignment } = window.EnemySearchAI;
 
       function tickCreatureResources(c, dt, far = false) {
         if (isWaterSurfaceAt(c.x, c.y, c.areaGrid || window.GridTileAccessors.getActiveGrid())) window.KnockbackCollisionImpact?.extinguishInWater?.(c);
@@ -6216,6 +6179,7 @@
             clearCreatureStage(c);
             if (c.isBandit) {
               c._banditAction?.cancel(); c._banditAction = null; c.telegraphState = null; c._banditComboIndex = 0; c._banditLunging = false;
+              window.EnemyDodge?.cancel?.(c); // Dodge only advances inside chase AI; leaving chase mid-roll otherwise froze the avatar tilted.
               window.BanditCombat?.restNeckLook?.(c, entityDt);
             }
           }

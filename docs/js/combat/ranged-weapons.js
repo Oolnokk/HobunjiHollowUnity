@@ -1207,7 +1207,7 @@
   function nearestHostileHit(start, end, projectileRadius, areaId, exclude = null) {
     let nearest = null;
     for (const c of deps.hostileObjects) {
-      if (c === exclude || c.id === exclude?.id || c.health <= 0 || (c.areaId && c.areaId !== areaId) || c._denHidden) continue;
+      if (c === exclude || (exclude && c.id != null && c.id === exclude.id) || c.health <= 0 || (c.areaId && c.areaId !== areaId) || c._denHidden) continue;
       const interval = segmentHitboxInterval(start, end, actorHitbox(c), projectileRadius);
       if (!interval || (nearest && interval.enter >= nearest.interval.enter)) continue;
       nearest = { creature: c, interval };

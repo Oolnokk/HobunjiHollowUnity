@@ -223,7 +223,7 @@ assert.match(index, /loading-screen-runtime\.js\?v=20260925minefloor1/,
   'the browser cache key loads destination-floor context on mine loading screens');
 assert.match(index, /fishing-minigame\.js\?v=20260925fishcue1/,
   'the browser cache key loads the successful-catch music cue hook');
-assert.match(index, /game\.js\?v=20260926gameplaycues2/,
+assert.match(index, /game\.js\?v=20260926combatreview1/,
   'the browser cache key loads the mine-hole cue and floor-number handoff');
 
 assert.ok(fs.statSync(nightbugsPath).size > 600000,

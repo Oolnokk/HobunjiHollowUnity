@@ -33,7 +33,7 @@ assert.match(
   'ranged reticle visibility must honor the shared suppression predicate',
 );
 assert.match(index, /ranged-hud-reticle\.js\?v=20260925dialogue3/, 'ranged reticle change must be cache-invalidated');
-assert.match(index, /melee-hud-reticle\.js\?v=20260925dialogue3/, 'melee reticle change must be cache-invalidated');
+assert.match(index, /melee-hud-reticle\.js\?v=20260926combatreview1/, 'melee reticle change must be cache-invalidated');
 assert.doesNotMatch(
   inputSettings,
   /RUNTIME_HELPER_SCRIPTS[\s\S]{0,800}['"]js\/combat\/ranged-hud-reticle\.js['"]/,

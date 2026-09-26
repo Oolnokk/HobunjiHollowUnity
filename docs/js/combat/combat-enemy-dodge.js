@@ -152,6 +152,14 @@
     if (entity.avatarRef?.group?.rotation) entity.avatarRef.group.rotation.z = 0;
   }
 
+  // Drops an in-flight or pending dodge when the bandit leaves chase or dies,
+  // since updateActiveDodge only runs from inside the chase AI.
+  function cancel(entity) {
+    if (!entity) return;
+    entity._enemyDodgePending = null;
+    if (entity._enemyDodge) finishDodge(entity);
+  }
+
   function updateActiveDodge(entity, dt, targetPlayer) {
     const state = entity._enemyDodge;
     if (!state) return null;
@@ -242,6 +250,6 @@
     return { version: VERSION, ready: !!deps, tuning: { ...tuning, chanceByRank: { ...tuning.chanceByRank } }, dodgeCount, lastEvent, enemies };
   }
 
-  window.EnemyDodge = Object.freeze({ version: VERSION, applyConfig, profileOutfit, armorStats, combatMoveMultiplier, threatStatus, debugSnapshot });
+  window.EnemyDodge = Object.freeze({ version: VERSION, applyConfig, profileOutfit, armorStats, combatMoveMultiplier, threatStatus, cancel, debugSnapshot });
   window.__enemyDodgeDebug = debugSnapshot;
 })();

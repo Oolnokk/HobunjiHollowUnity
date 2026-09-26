@@ -77,6 +77,7 @@
       const hostiles = deps?.hostileObjects;
       if (
         visualApi?.update &&
+        !visualApi.acceptsIterableHostiles &&
         deps?.player &&
         hostiles &&
         !Array.isArray(hostiles) &&
