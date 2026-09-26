@@ -68,6 +68,17 @@
     return node;
   }
 
+  function presentedVisualNode(id, next, durationSec, presentation) {
+    const node = { id, type: 'visual', next, durationSec: Math.max(0.05, Number(durationSec) || 1), pos: { x: 80, y: 80 } }; // Silent authored beat: dialogue remains open while the generic dialogue runtime hides its UI and auto-advances.
+    const cue = { ...(presentation || {}) };
+    if (cue.cameraId) {
+      node.cameraId = String(cue.cameraId);
+      delete cue.cameraId;
+    }
+    node.banubuPresentation = cue;
+    return node;
+  }
+
   function presentedEndNode(id, presentation) {
     return { id, type: 'end', pos: { x: 80, y: 80 }, banubuPresentation: { ...(presentation || {}) } }; // Used to commit Banubu quest turn-ins only after the final spoken node is advanced past.
   }
@@ -185,8 +196,10 @@
         { label: 'Not yet.', next: null, actions: [] },
       ]),
       textNode('banubu_q1_ready_2', 'Mmmm, mmm. So good.', 'banubu_q1_ready_3'),
-      textNode('banubu_q1_ready_3', 'I think I can do it. Let me try to get up.', 'banubu_q1_ready_4'),
-      presentedTextNode('banubu_q1_ready_4', 'Ah, yep. There we go. I’m up.', 'banubu_q1_ready_5', { body: 'awake', sparkles: 'start', move: { x: 0, z: -0.85, duration: 0.7 }, cameraId: 'banubu_dialogue_awake' }),
+      textNode('banubu_q1_ready_3', 'I think I can do it. Let me try to get up.', 'banubu_q1_ready_stand_visual'),
+      presentedVisualNode('banubu_q1_ready_stand_visual', 'banubu_q1_ready_move_visual', 1.6, { body: 'awake', cameraId: 'banubu_dialogue_awake' }),
+      presentedVisualNode('banubu_q1_ready_move_visual', 'banubu_q1_ready_4', 1.8, { sparkles: 'start', move: { x: 0, z: -0.85, duration: 1.6 }, cameraId: 'banubu_dialogue_awake' }),
+      presentedTextNode('banubu_q1_ready_4', 'Ah, yep. There we go. I’m up.', 'banubu_q1_ready_5', { cameraId: 'banubu_dialogue_awake' }),
       presentedTextNode('banubu_q1_ready_5', 'Ha! Look at that—the Color Pools Key. I was wondering where that went. I was worried someone snatched it while I was asleep.', 'banubu_q1_ready_6', { neck: 'max_down', cameraId: 'banubu_key_ground' }),
       presentedTextNode('banubu_q1_ready_6', 'Worst part is, they wouldn’t have even known what the key was for. I’d have been happy to let them go in there and beautify their most beloved creatures.', 'banubu_q1_ready_7', { neck: 'release', cameraId: 'banubu_key_ground' }),
       presentedTextNode('banubu_q1_ready_7', 'You know what? You should have it, as a thank-you. Especially since I’m still not quite ready to help you with your problem.', 'banubu_q1_ready_8', { cameraId: 'banubu_key_ground' }),
