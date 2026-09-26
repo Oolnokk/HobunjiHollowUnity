@@ -4008,6 +4008,37 @@
 
   function generatePaths() {
     const targets = buildPathTargets();
+    if (usesArchipelagoLayout()) {
+      const entryStart = nearestFreeWalkableNeighbor(map.entry.x, map.entry.y); // Used as the first visible-path cursor only for the west entry island.
+      const entryIslandId = tileAt(entryStart.x, entryStart.y)?.archipelagoIslandId || map.archipelago?.entryIslandId || null; // Used to keep the entry island's paths connected to the actual arrival point.
+      const islandCursors = new Map(); // Used to build an independent local trail network on each island instead of one impossible cross-sea route chain.
+      if (entryIslandId) islandCursors.set(entryIslandId, { x: entryStart.x, y: entryStart.y });
+      let made = 0;
+      let skipped = 0;
+      for (const target of targets) {
+        const safeTarget = nearestFreeWalkableNeighbor(target.x, target.y); // Used to identify the target's island even when its authored anchor sits beside a blocking object.
+        const targetIslandId = tileAt(safeTarget.x, safeTarget.y)?.archipelagoIslandId || null; // Used as the local route-network key.
+        if (!targetIslandId) {
+          skipped++;
+          logDebug(`archipelago visible path skipped at ${target.x},${target.y}; target has no island id`);
+          continue;
+        }
+        const start = islandCursors.get(targetIslandId) || { x: safeTarget.x, y: safeTarget.y }; // Used to seed non-entry islands at their first destination rather than drawing a bridge from the west entry.
+        const path = findPath(start, target, { allowWater: true }) || findPath(start, safeTarget, { allowWater: true });
+        if (!path) {
+          skipped++;
+          logDebug(`archipelago visible path skipped within ${targetIslandId} from ${start.x},${start.y} to ${target.x},${target.y}`);
+          continue;
+        }
+        markVisiblePath(path);
+        map.paths.push({ id: `path_${map.paths.length + 1}`, from: { ...start }, to: { x: target.x, y: target.y, reason: target.reason, targetId: target.targetId || null }, points: path });
+        islandCursors.set(targetIslandId, { x: target.x, y: target.y });
+        made++;
+      }
+      logDebug(`archipelago visible paths made: ${made}, skipped ${skipped}, destinations attempted: ${targets.length}, island networks ${islandCursors.size}`);
+      return;
+    }
+
     let start = { x: map.entry.x, y: map.entry.y };
     let made = 0;
     for (const target of targets) {
@@ -4190,10 +4221,24 @@
 
   function generateInvisibleNavigation() {
     const targets = buildInvisiblePathTargets();
-    const start = nearestFreeWalkableNeighbor(map.entry.x, map.entry.y);
+    const entryStart = nearestFreeWalkableNeighbor(map.entry.x, map.entry.y); // Used as the legacy/global start and as the archipelago entry-island anchor.
+    const islandStarts = new Map(); // Used only by archipelago mode so each island repairs navigation internally without crossing open sea.
+    if (usesArchipelagoLayout()) {
+      for (const tile of allTiles()) {
+        if (!isWalkableTile(tile) || !tile.archipelagoIslandId || islandStarts.has(tile.archipelagoIslandId)) continue;
+        islandStarts.set(tile.archipelagoIslandId, { x: tile.x, y: tile.y });
+      }
+      const entryIslandId = tileAt(entryStart.x, entryStart.y)?.archipelagoIslandId || map.archipelago?.entryIslandId || null; // Used to prefer the authored entry gate over the first scan-order tile on its island.
+      if (entryIslandId) islandStarts.set(entryIslandId, { x: entryStart.x, y: entryStart.y });
+    }
+
     let made = 0;
     for (const target of targets) {
       const safeTarget = nearestFreeWalkableNeighbor(target.x, target.y);
+      const targetTile = tileAt(safeTarget.x, safeTarget.y); // Used to select the correct local island start in archipelago mode.
+      const start = usesArchipelagoLayout()
+        ? (islandStarts.get(targetTile?.archipelagoIslandId) || safeTarget)
+        : entryStart;
       const path = findGridPath(start, safeTarget, { allowWater: false })
         || findGridPath(start, safeTarget, { allowWater: true })
         || findGridPath(start, safeTarget, { allowWater: true, allowCliffSkirt: true, allowHeight: true });
@@ -4205,7 +4250,7 @@
       markInvisiblePath(path, target.reason, target.targetId || null);
       made++;
     }
-    logDebug(`invisible connectivity corridors made: ${made}, destinations attempted: ${targets.length}`);
+    logDebug(`${usesArchipelagoLayout() ? 'archipelago ' : ''}invisible connectivity corridors made: ${made}, destinations attempted: ${targets.length}${usesArchipelagoLayout() ? `, island starts ${islandStarts.size}` : ''}`);
   }
 
   function normalizeConnectivityPath(path) {
@@ -8461,7 +8506,11 @@
       if (island || preserved) {
         landFootprintTiles++;
         tile.archipelagoSea = false;
-        tile.archipelagoIslandId = island?.id || `preserved_${String(preserved?.label || 'land').replace(/\s+/g, '_')}`;
+        const preservedIsland = preserved && !island ? plan.islands.reduce((best, candidate) => {
+          const candidateDistance = Math.hypot(tile.x - candidate.centerX, tile.y - candidate.centerY); // Used to attach fixed-land shoreline extensions to their nearest primary island.
+          return !best || candidateDistance < best.distance ? { island: candidate, distance: candidateDistance } : best;
+        }, null)?.island : null; // Used so a fixed landmark can widen a coastline without becoming a fake thirteenth island in diagnostics/path grouping.
+        tile.archipelagoIslandId = island?.id || preservedIsland?.id || `preserved_${String(preserved?.label || 'land').replace(/\s+/g, '_')}`;
         if (preserved) {
           preservedTiles++;
           if (tile.water) {
