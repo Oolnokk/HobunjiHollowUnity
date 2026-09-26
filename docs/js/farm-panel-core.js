@@ -20,7 +20,58 @@
   // `let`s reassigned elsewhere in game.js (world load, companion sync,
   // shop-stock config load).
   let deps = null;
-  function init(injectedDeps) { deps = injectedDeps; }
+  function init(injectedDeps) {
+    deps = injectedDeps;
+    registerStarterWindowItemDefs();
+  }
+
+  const STARTER_WINDOW_STORAGE_SENTINEL = '__starterWindowsGrantedV1'; // Persisted inside world storage so each world receives the free farmhouse window set exactly once.
+  const WINDOW_PERSISTENCE_REPAIR_SENTINEL = '__windowPersistenceRepairGrantV1'; // Existing worlds receive one replacement batch for windows consumed while wall-link persistence was broken.
+  const WINDOW_PERSISTENCE_REPAIR_COUNT = 6; // One-time compensation per window type; new worlds keep the normal starter quantity.
+  const STARTER_WINDOW_ITEMS = Object.freeze({
+    simpleWindowFurniture: Object.freeze({ count: 2, icon: '🪟', label: 'Simple Window', desc: 'A simple framed farmhouse window.' }),
+    wideWindowFurniture: Object.freeze({ count: 2, icon: '🪟', label: 'Wide Window', desc: 'A broad framed farmhouse window.' }),
+  }); // Crossbar Window remains an authored/dev fixture but is no longer a player furniture item or starter/replacement grant.
+
+  function registerStarterWindowItemDefs() {
+    if (!deps?.ITEM_DEFS) return;
+    for (const [key, entry] of Object.entries(STARTER_WINDOW_ITEMS)) {
+      if (deps.ITEM_DEFS[key]) continue;
+      deps.ITEM_DEFS[key] = {
+        icon: entry.icon,
+        label: entry.label,
+        cat: 'furniture',
+        sellPrice: 0,
+        desc: entry.desc,
+      };
+    }
+  }
+
+  function ensureStarterWindowsInFarmStorage() {
+    const store = deps._loadWorldStorage() || {};
+    const hadStarterGrant = !!store[STARTER_WINDOW_STORAGE_SENTINEL]; // Existing worlds are the only ones that need repair compensation.
+    let changed = false;
+    if (Object.prototype.hasOwnProperty.call(store, 'crossbarWindowFurniture')) { delete store.crossbarWindowFurniture; changed = true; } // Disabled player item: clear stale Farm Storage stock while leaving already-placed Crossbar fixtures intact.
+    if (!hadStarterGrant) {
+      for (const [key, entry] of Object.entries(STARTER_WINDOW_ITEMS)) {
+        store[key] = Math.max(0, Number(store[key]) || 0) + entry.count;
+      }
+      store[STARTER_WINDOW_STORAGE_SENTINEL] = 1;
+      changed = true;
+    }
+    if (hadStarterGrant && !store[WINDOW_PERSISTENCE_REPAIR_SENTINEL]) {
+      for (const key of Object.keys(STARTER_WINDOW_ITEMS)) {
+        store[key] = Math.max(0, Number(store[key]) || 0) + WINDOW_PERSISTENCE_REPAIR_COUNT;
+      }
+      store[WINDOW_PERSISTENCE_REPAIR_SENTINEL] = 1;
+      changed = true;
+    } else if (!hadStarterGrant && !store[WINDOW_PERSISTENCE_REPAIR_SENTINEL]) {
+      store[WINDOW_PERSISTENCE_REPAIR_SENTINEL] = 1; // Fresh worlds should not receive a later compensation batch just for opening storage twice.
+      changed = true;
+    }
+    if (changed) deps._saveWorldStorage(store);
+    return store;
+  }
 
   // Keyed by `${source}:${id}` so a world-livestock id and a stable id
   // never collide. Values are the ref objects setBreedingPair() expects.
@@ -1355,7 +1406,7 @@
     if (body) body.hidden = !canAccess;
     if (!canAccess) return;
 
-    const store = deps._loadWorldStorage();
+    const store = ensureStarterWindowsInFarmStorage();
     const bagList = document.getElementById('farmStorageBagList');
     if (bagList) {
       const keys = Object.keys(deps.inventory).filter(k => k !== 'gold' && deps.ITEM_DEFS[k] && (deps.inventory[k] || 0) > 0);
@@ -1371,7 +1422,7 @@
     }
     const boxList = document.getElementById('farmStorageBoxList');
     if (boxList) {
-      const keys = Object.keys(store).filter(k => (store[k] || 0) > 0);
+      const keys = Object.keys(store).filter(k => k !== STARTER_WINDOW_STORAGE_SENTINEL && (store[k] || 0) > 0);
       boxList.innerHTML = keys.length ? '' : '<div class="farm-note">Storage is empty.</div>';
       keys.forEach(k => {
         const def = deps.ITEM_DEFS[k] || { icon: '📦', label: k };

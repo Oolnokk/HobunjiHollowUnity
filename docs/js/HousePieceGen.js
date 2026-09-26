@@ -276,6 +276,76 @@
     return out.map(function (f, idx2) { return Object.assign({}, f, { id: idx2 + 1 }); });
   }
 
+  // Subtracts any number of normalized rectangular apertures from the four
+  // generated Highland body walls in one pass. Door portals and linked
+  // windows share this path so several openings can coexist on the same side
+  // without the old "first split wins" limitation.
+  function _cutFacesForOpenings(faces, openings) {
+    if (!Array.isArray(openings) || !openings.length) return faces;
+    var classified = _classifyBodyWalls(faces);
+    var changed = false, out = [];
+
+    function subtractRect(rect, cut) {
+      var u0 = Math.max(rect.u0, cut.u0), u1 = Math.min(rect.u1, cut.u1);
+      var v0 = Math.max(rect.v0, cut.v0), v1 = Math.min(rect.v1, cut.v1);
+      if (u1 - u0 <= 1e-5 || v1 - v0 <= 1e-5) return [rect];
+      var result = [];
+      if (u0 - rect.u0 > 1e-5) result.push({ u0: rect.u0, u1: u0, v0: rect.v0, v1: rect.v1 });
+      if (rect.u1 - u1 > 1e-5) result.push({ u0: u1, u1: rect.u1, v0: rect.v0, v1: rect.v1 });
+      if (v0 - rect.v0 > 1e-5) result.push({ u0: u0, u1: u1, v0: rect.v0, v1: v0 });
+      if (rect.v1 - v1 > 1e-5) result.push({ u0: u0, u1: u1, v0: v1, v1: rect.v1 });
+      return result;
+    }
+
+    for (var i = 0; i < faces.length; i++) {
+      var f = faces[i], side = classified.sideOf.get(f);
+      if (!side) { out.push(f); continue; }
+      var sideCuts = openings.filter(function (opening) { return opening && opening.side === side; });
+      if (!sideCuts.length) { out.push(f); continue; }
+
+      var varyingIsX = side === 'north' || side === 'south';
+      var minRef = varyingIsX ? classified.bbox.minX : classified.bbox.minZ;
+      var v0Coord = varyingIsX ? f.v[0][0] : f.v[0][2];
+      var v3Coord = varyingIsX ? f.v[3][0] : f.v[3][2];
+      var startIsMin = Math.abs(v0Coord - minRef) < Math.abs(v3Coord - minRef);
+      var cuts = [];
+      sideCuts.forEach(function (opening) {
+        var center = Number(opening.uCenter), width = Math.abs(Number(opening.uWidth));
+        var vCenter = Number(opening.vCenter), vHeight = Math.abs(Number(opening.vHeight));
+        if (!Number.isFinite(center) || !Number.isFinite(width) || !Number.isFinite(vCenter) || !Number.isFinite(vHeight) || width <= 0 || vHeight <= 0) return;
+        var lo = Math.max(0, Math.min(1, center - width * 0.5));
+        var hi = Math.max(0, Math.min(1, center + width * 0.5));
+        var vlo = Math.max(0, Math.min(1, vCenter - vHeight * 0.5));
+        var vhi = Math.max(0, Math.min(1, vCenter + vHeight * 0.5));
+        if (!startIsMin) { var flippedLo = 1 - hi, flippedHi = 1 - lo; lo = flippedLo; hi = flippedHi; }
+        if (hi - lo > 1e-5 && vhi - vlo > 1e-5) cuts.push({ u0: lo, u1: hi, v0: vlo, v1: vhi });
+      });
+      if (!cuts.length) { out.push(f); continue; }
+
+      var rects = [{ u0: 0, u1: 1, v0: 0, v1: 1 }];
+      cuts.forEach(function (cut) {
+        var next = [];
+        rects.forEach(function (rect) { next = next.concat(subtractRect(rect, cut)); });
+        rects = next;
+      });
+      if (rects.length === 1 && rects[0].u0 === 0 && rects[0].u1 === 1 && rects[0].v0 === 0 && rects[0].v1 === 1) { out.push(f); continue; }
+
+      changed = true;
+      var b0 = f.v[0], t0 = f.v[1], t1 = f.v[2], b1 = f.v[3];
+      var bottom = function (u) { return _lerp3(b0, b1, u); };
+      var top = function (u) { return _lerp3(t0, t1, u); };
+      var point = function (u, v) { return _lerp3(bottom(u), top(u), v); };
+      rects.forEach(function (rect, rectIndex) {
+        out.push(Object.assign({}, f, {
+          id: String(f.id || i) + ':opening:' + rectIndex,
+          v: [point(rect.u0, rect.v0), point(rect.u0, rect.v1), point(rect.u1, rect.v1), point(rect.u1, rect.v0)],
+          wallOpeningCut: true,
+        }));
+      });
+    }
+    return changed ? out : faces;
+  }
+
   // Returns a new piece object (the input is never mutated — a cached piece
   // JSON can be shared across multiple placements that resolve their door to
   // different sides) with the door's own side wall split into a real
@@ -471,6 +541,7 @@
    *   wallBuilder     - WallBuilder instance; if set, adds brick geometry on body walls
    *   wbUsePlaceholder- passed to wallBuilder.build as usePlaceholder (default true)
    *   wbOpts          - extra opts forwarded to wallBuilder.build
+   *   windowCuts       - normalized {side,uCenter,uWidth,vCenter,vHeight} wall apertures
    *   matWall / matRoof / matFloor / matTube  - override materials
    */
   function buildGroup(THREE, minC, maxC, minR, maxR, opts) {
@@ -496,25 +567,19 @@
     _addFrustumBody(faces, bottomRect, eaveRect, y0, yEave);
     _addGableRoof(faces, eaveRect, bottomRect, yEave, baseH, roofH, axis, tile);
 
-    // doorSide/doorIdx/doorLen cut a real portal into that side's wall
-    // instead of leaving a solid one — the walkable door tile would
-    // otherwise have nothing visually open where a player can enter.
-    // opts.doorCuts (array of {side,idx,len}) supports more than one
-    // entrance on the same piece (see house-pieces.js's architectural
-    // features, which can place several manual entrances) — doorSide/Idx/Len
-    // is still accepted directly as the single-cut shorthand every other
-    // caller (barns, the automatic south-biased door) already uses. Cuts
-    // are applied in sequence; a second cut on the SAME side as an earlier
-    // one may find nothing left to split (the first cut already fragmented
-    // that side's whole-face) and is silently skipped rather than erroring
-    // — an accepted limit for the rare case of two entrances on one wall.
-    var doorCut = false;
+    // Doors and linked windows are both rectangular omissions from the same
+    // four generated body-wall faces. Resolve them together before any wall
+    // mesh or WallBuilder brick exists so overlapping/multiple openings on a
+    // side cannot leave a hidden solid plane or stray bricks behind.
     var doorCuts = opts.doorCuts || (opts.doorSide ? [{ side: opts.doorSide, idx: opts.doorIdx, len: opts.doorLen }] : []);
-    doorCuts.forEach(function (dc) {
-      var cutFaces = _cutFacesForDoor(faces, dc.side, dc.idx, dc.len);
-      if (cutFaces !== faces) doorCut = true;
-      faces = cutFaces;
+    var wallOpenings = doorCuts.map(function (dc) {
+      var len = Math.max(1, Number(dc.len) || 1), idx = Number(dc.idx) || 0;
+      return { side: dc.side, uCenter: (idx + 0.5) / len, uWidth: 1 / len, vCenter: 0.46, vHeight: 0.92, kind: 'door' };
     });
+    if (Array.isArray(opts.windowCuts)) wallOpenings = wallOpenings.concat(opts.windowCuts);
+    var cutFaces = _cutFacesForOpenings(faces, wallOpenings);
+    var wallCut = cutFaces !== faces;
+    faces = cutFaces;
 
     var group = new THREE.Group();
     _buildFaceMeshes(group, faces, opts);
@@ -524,13 +589,10 @@
 
     // WallBuilder bricks on frustum body walls + gable end triangles
     if (opts.wallBuilder) {
-      // A door cut split one whole-side panel into several — build bricks
-      // per actual face instead of the old fixed one-panel-per-side spec so
-      // each segment (including the portal cut) gets its own panel. Plain,
-      // uncut pieces (doorCut false — every current buildGroup caller other
-      // than a house piece with a door, e.g. barns) keep the exact original
-      // whole-side panels, unchanged.
-      var bodyPanels = doorCut
+      // Any opening split one or more whole-side panels into surviving
+      // rectangles — build bricks only on those actual faces. Completely
+      // uncut pieces keep the exact original whole-side panel path.
+      var bodyPanels = wallCut
         ? faces.filter(function (f) { return f.tag === 'wall' && !f.gableEnd; }).map(_faceToPanel)
         : _wallPanels(minC, maxC, minR, maxR, y0, baseH, tile);
       var gablePanels = _gablePanels(faces);
@@ -723,6 +785,7 @@
 
     for (var i = 0; i < faces.length; i++) {
       var f   = faces[i];
+      var tag = f.tag; // Used for Highland face metadata and material selection below.
       // Wall faces are covered by WallBuilder bricks — skip the base mesh planes.
       if (hideWalls && f.tag === 'wall') continue;
       var mat = f.tag === 'roof' ? matRoof : matFloor;
@@ -743,6 +806,7 @@
         mesh.renderOrder = -1;
       }
       mesh.castShadow = mesh.receiveShadow = true;
+      if (f.tag === 'wall') mesh.userData.housePieceWallSurface = true;
       group.add(mesh);
     }
   }

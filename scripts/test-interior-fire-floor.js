@@ -74,8 +74,8 @@ assert(core.includes('applyFloorStyleToScene'), 'loaded building scenes must rec
 assert(core.includes('stretchFloorMeshesToSharedBounds'), 'floor runtime must support one shared UV field across a complete authored floor');
 assert(core.includes('stretchToSurface ? THREE.ClampToEdgeWrapping : THREE.RepeatWrapping'),
   'surface-stretched floors must clamp one PNG instead of repeating it');
-assert(sceneBuilder.includes("uv.push(0, 0, 1, 0, 1, 1, 0, 1)"),
-  'each canvas interior wall panel must receive an independent full 0..1 canvas.png UV island');
+assert.match(sceneBuilder, /for \(const panel of wallPanels\)[\s\S]*?new THREE\.Mesh\(new THREE\.PlaneGeometry\(width, height\), mat\)/,
+  'each canvas interior wall panel must own an independent PlaneGeometry whose native UVs span the full 0..1 canvas.png image');
 assert(sceneBuilder.includes("canvasSurfaceStretch = 'one-png-per-wall-panel'"),
   'canvas wall debug metadata must expose the per-panel stretch policy');
 assert(housePieceGen.includes("var stretchCanvasFace = tag === 'canvas'"),

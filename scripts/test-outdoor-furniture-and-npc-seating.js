@@ -29,8 +29,11 @@ assert.match(dewVatSource,
   /function retargetAssignments[\s\S]{0,500}rec\.assignedVatId = newVatId[\s\S]{0,300}saveWorldLivestock/,
   'moving or removing a squeezing vat updates persistent livestock assignments');
 assert.match(farmEditorSource,
-  /layout\.furniture\.push\(\{ key: obj\.furnitureKey, col: obj\.col, row: obj\.row, rotYDeg:[\s\S]{0,8000}makeProcessingFurniture\(col, row, key, job, rotYDeg \|\| 0\)/,
-  'processor rotation round-trips through farm saves');
+  /layout\.furniture\.push\(\{ key: obj\.furnitureKey, col: obj\.col, row: obj\.row, rotYDeg: obj\.rotYDeg \|\| 0/,
+  'processor rotation is serialized into farm saves');
+assert.match(farmEditorSource,
+  /\(layout\.furniture \|\| \[\]\)\.forEach\(\(\{ key, col, row, job, rotYDeg \}\)[\s\S]{0,700}makeProcessingFurniture\(col, row, key, job, rotYDeg \|\| 0\)/,
+  'processor rotation is restored from farm saves');
 
 const stools = inn.furniture.filter(item => item.itemKey === 'stoolFurniture'); // All eight downstairs inn seats surround the two tables.
 assert.equal(stools.length, 8, 'the inn still contains all eight stools');

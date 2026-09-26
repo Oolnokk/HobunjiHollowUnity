@@ -1,0 +1,89 @@
+name: Daylight window regression
+
+on:
+  push:
+    paths:
+      - 'docs/js/daylight-window-runtime.js'
+      - 'docs/js/daylight-window-overlay-scheduler.js'
+      - 'docs/js/building-interior-wall-ornament-editor.js'
+      - 'docs/js/interior-scene-builder.js'
+      - 'docs/js/house-window-linkage.js'
+      - 'docs/js/wall-ornament-placement.js'
+      - 'docs/js/HousePieceGen.js'
+      - 'docs/js/house-pieces-core.js'
+      - 'docs/js/house-pieces.js'
+      - 'docs/js/farm-editor.js'
+      - 'docs/game.js'
+      - 'docs/js/map-live-preview.js'
+      - 'docs/index.html'
+      - 'docs/style.css'
+      - 'docs/tools/building-interior-author/index.html'
+      - 'docs/tools/furniture-avatar-author/foliage-furniture-mode.js'
+      - 'docs/tools/furniture-avatar-author/furniture-daylight-windows.js'
+      - 'docs/config/furniture-authored/*Window.json'
+      - 'scripts/test-daylight-windows.js'
+      - '.github/workflows/daylight-window-regression.yml'
+  pull_request:
+    paths:
+      - 'docs/js/daylight-window-runtime.js'
+      - 'docs/js/daylight-window-overlay-scheduler.js'
+      - 'docs/js/building-interior-wall-ornament-editor.js'
+      - 'docs/js/interior-scene-builder.js'
+      - 'docs/js/house-window-linkage.js'
+      - 'docs/js/wall-ornament-placement.js'
+      - 'docs/js/HousePieceGen.js'
+      - 'docs/js/house-pieces-core.js'
+      - 'docs/js/house-pieces.js'
+      - 'docs/js/farm-editor.js'
+      - 'docs/game.js'
+      - 'docs/js/map-live-preview.js'
+      - 'docs/index.html'
+      - 'docs/style.css'
+      - 'docs/tools/building-interior-author/index.html'
+      - 'docs/tools/furniture-avatar-author/foliage-furniture-mode.js'
+      - 'docs/tools/furniture-avatar-author/furniture-daylight-windows.js'
+      - 'docs/config/furniture-authored/*Window.json'
+      - 'scripts/test-daylight-windows.js'
+      - '.github/workflows/daylight-window-regression.yml'
+
+jobs:
+  daylight-window-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax check runtime modules
+        run: |
+          node --check docs/js/daylight-window-runtime.js
+          node --check docs/js/daylight-window-overlay-scheduler.js
+          node --check docs/js/building-interior-wall-ornament-editor.js
+          node --check docs/js/interior-scene-builder.js
+          node --check docs/js/house-window-linkage.js
+          node --check docs/js/wall-ornament-placement.js
+          node --check docs/js/HousePieceGen.js
+          node --check docs/js/house-pieces-core.js
+          node --check docs/js/house-pieces.js
+          node --check docs/js/farm-editor.js
+          node --check docs/game.js
+          node --check docs/tools/furniture-avatar-author/furniture-daylight-windows.js
+          node --check docs/js/map-live-preview.js
+      - name: Daylight window regression checks
+        run: node scripts/test-daylight-windows.js
+      - name: Parent wall branch map-live baseline
+        continue-on-error: true
+        run: |
+          git fetch --depth=1 origin feature/wall-ornament-attachments
+          git worktree add /tmp/wall-parent FETCH_HEAD
+          (cd /tmp/wall-parent && node scripts/test-map-live-preview.js)
+      - name: Existing map live-preview regression
+        continue-on-error: true
+        run: node scripts/test-map-live-preview.js
+      - name: Existing furniture placement regression
+        continue-on-error: true
+        run: node scripts/test-furniture-placer-processing.js
+      - name: Existing town sign furniture regression
+        continue-on-error: true
+        run: node scripts/test-town-sign-furniture.js

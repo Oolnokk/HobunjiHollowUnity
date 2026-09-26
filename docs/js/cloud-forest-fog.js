@@ -412,6 +412,8 @@
   let lightingDeps = null;
   let lastUnifiedLightingDraw = 0;
   const lightCamRight = new window.THREE.Vector3();
+  const ambientWindowScratch = new window.THREE.Vector3(); // Reused when sampling window distance so the room-atmosphere pass allocates nothing per source.
+  let enclosedAtmosphereSmoothed = { r: 0, g: 0, b: 0, illumination: 0, contributors: 0, windows: 0, furniture: 0, lanterns: 0 }; // Temporal smoothing prevents color snaps while crossing source falloff boundaries.
 
   function lightScreenRadius(x, z, y, tiles) {
     lightCamRight.setFromMatrixColumn(lightingDeps.camera.matrixWorld, 0);
@@ -584,6 +586,124 @@
     }
   }
 
+  function ordinaryBuildingInterior(area) {
+    return area === 'interior' || !!lightingDeps?._isBuildingArea?.(area); // Mines/dens deliberately keep their existing local lantern masks.
+  }
+
+  function sourceProximityWeight(px, pz, sx, sz, radius) {
+    const safeRadius = Math.max(0.25, finiteOr(radius, 0.25));
+    const distance = Math.hypot(finiteOr(sx, px) - px, finiteOr(sz, pz) - pz);
+    const inward = 1 - clamp01(distance / safeRadius);
+    return smoothstep01(inward); // Smooth derivative at both ends avoids visible atmosphere steps as the player walks.
+  }
+
+  function sampleEnclosedAtmosphere() {
+    const scene = lightingDeps.getActiveScene?.();
+    const px = finiteOr(lightingDeps.player?.x, 0) / Math.max(0.000001, finiteOr(lightingDeps.TILE, 1));
+    const pz = finiteOr(lightingDeps.player?.y, 0) / Math.max(0.000001, finiteOr(lightingDeps.TILE, 1));
+    let weightSum = 0, energySum = 0, rSum = 0, gSum = 0, bSum = 0;
+    let windows = 0, furniture = 0, lanterns = 0;
+
+    const carriedLantern = scene?.getObjectByName?.('mine_player_torch'); // The previous ordinary-interior compositor always gave the player a carried lantern mask; preserve that illumination as a blend contributor rather than dropping it.
+    const carriedColor = carriedLantern?.color;
+    const carriedWeight = 0.62;
+    const carriedR = carriedColor?.isColor ? carriedColor.r * 255 : 255;
+    const carriedG = carriedColor?.isColor ? carriedColor.g * 255 : 174;
+    const carriedB = carriedColor?.isColor ? carriedColor.b * 255 : 92;
+    rSum += carriedR * carriedWeight;
+    gSum += carriedG * carriedWeight;
+    bSum += carriedB * carriedWeight;
+    weightSum += carriedWeight;
+    energySum += carriedWeight * 0.72;
+    lanterns += 1;
+
+    const currentArea = lightingDeps.getCurrentArea?.();
+    for (const walker of (lightingDeps.npcWalkers || [])) {
+      if (walker?.area !== currentArea || !walker.rec?.tags?.includes('watch')) continue;
+      const wx = finiteOr(walker.root?.position?.x, px);
+      const wz = finiteOr(walker.root?.position?.z, pz);
+      const proximity = sourceProximityWeight(px, pz, wx, wz, Math.max(3.5, tuning.lantern.radiusTiles * 1.8));
+      const weight = proximity * 0.48;
+      if (!(weight > 0)) continue;
+      rSum += carriedR * weight;
+      gSum += carriedG * weight;
+      bSum += carriedB * weight;
+      weightSum += weight;
+      energySum += weight * 0.62;
+      lanterns += 1;
+    }
+
+    const windowRuntime = window.DaylightWindowRuntime;
+    const outdoor = windowRuntime?.currentOutdoorLighting?.() || getFullDayLighting(); // Windows contribute the actual outdoor sky/weather color.
+    windowRuntime?.updatePaneTint?.(outdoor);
+    for (const source of (windowRuntime?.getActiveSources?.(scene) || [])) {
+      source.mesh?.getWorldPosition?.(ambientWindowScratch);
+      const radius = Math.max(4.5, finiteOr(source.radiusTiles, 2.8) * 2.2); // Windows affect room ambience broadly, but only the player's nearby subset dominates color.
+      const proximity = sourceProximityWeight(px, pz, ambientWindowScratch.x, ambientWindowScratch.z, radius);
+      const weight = proximity * clamp01(source.strength) * 0.32; // Deliberately restrained versus actual lamps.
+      if (!(weight > 0)) continue;
+      rSum += Math.max(0, Math.min(255, finiteOr(outdoor.r, 255))) * weight;
+      gSum += Math.max(0, Math.min(255, finiteOr(outdoor.g, 255))) * weight;
+      bSum += Math.max(0, Math.min(255, finiteOr(outdoor.b, 255))) * weight;
+      weightSum += weight;
+      energySum += weight * 0.42;
+      windows += 1;
+    }
+
+    for (const light of (lightingDeps.getFurnitureLightSources?.() || [])) {
+      const radius = Math.max(0.5, finiteOr(light.distance, 2.5));
+      const proximity = sourceProximityWeight(px, pz, light.x, light.z, radius);
+      const intensity = Math.max(0, finiteOr(light.intensity, 1));
+      const weight = proximity * Math.min(1.35, 0.30 + intensity * 0.48);
+      if (!(weight > 0)) continue;
+      const color = light.color || {};
+      rSum += Math.max(0, Math.min(255, finiteOr(color.r, 255))) * weight;
+      gSum += Math.max(0, Math.min(255, finiteOr(color.g, 190))) * weight;
+      bSum += Math.max(0, Math.min(255, finiteOr(color.b, 120))) * weight;
+      weightSum += weight;
+      energySum += weight * 0.85;
+      furniture += 1;
+    }
+
+    const target = weightSum > 0
+      ? {
+          r: rSum / weightSum,
+          g: gSum / weightSum,
+          b: bSum / weightSum,
+          illumination: Math.min(0.82, 1 - Math.exp(-energySum * 0.72)),
+          contributors: windows + furniture + lanterns,
+          windows,
+          furniture,
+          lanterns,
+        }
+      : { r: 0, g: 0, b: 0, illumination: 0, contributors: 0, windows: 0, furniture: 0, lanterns: 0 };
+
+    const blend = 0.22; // ~100ms compositor cadence => visible atmosphere eases rather than snapping as influence weights move.
+    enclosedAtmosphereSmoothed.r += (target.r - enclosedAtmosphereSmoothed.r) * blend;
+    enclosedAtmosphereSmoothed.g += (target.g - enclosedAtmosphereSmoothed.g) * blend;
+    enclosedAtmosphereSmoothed.b += (target.b - enclosedAtmosphereSmoothed.b) * blend;
+    enclosedAtmosphereSmoothed.illumination += (target.illumination - enclosedAtmosphereSmoothed.illumination) * blend;
+    enclosedAtmosphereSmoothed.contributors = target.contributors;
+    enclosedAtmosphereSmoothed.windows = target.windows;
+    enclosedAtmosphereSmoothed.furniture = target.furniture;
+    enclosedAtmosphereSmoothed.lanterns = target.lanterns;
+    return enclosedAtmosphereSmoothed;
+  }
+
+  function drawBlendedInteriorAtmosphere(baseDarknessAlpha, rect) {
+    const atmosphere = sampleEnclosedAtmosphere();
+    const illumination = clamp01(atmosphere.illumination);
+    const alpha = clamp01(baseDarknessAlpha * (1 - illumination * 0.62)); // Nearby light reduces darkness globally without punching spatial holes in the overlay.
+    const tintScale = 0.06 + illumination * 0.16; // Source hue lives inside the same single atmosphere fill; it never becomes a separate glow layer.
+    const r = Math.round(Math.max(0, Math.min(255, atmosphere.r * tintScale)));
+    const g = Math.round(Math.max(0, Math.min(255, atmosphere.g * tintScale)));
+    const b = Math.round(Math.max(0, Math.min(255, atmosphere.b * tintScale)));
+    const ctx = lightingDeps.lctx;
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = `rgba(${r},${g},${b},${alpha})`;
+    ctx.fillRect(0, 0, rect.width, rect.height); // Exactly one atmosphere layer for darkness + blended source color.
+  }
+
   function drawUnifiedLightingOverlay() {
     if (!lightingDeps?.lctx) return;
     const now = performance.now();
@@ -602,14 +722,18 @@
       || (isNoSkyArea(currentArea) && currentArea !== 'map_southern_cloud_forest');
 
     if (enclosed) {
-      const darknessAlpha = enclosedDarknessOverlayAlpha(currentArea); // Used to darken unlit cave materials through the same screen overlay that nighttime already uses, instead of reintroducing Three.js lighting.
-      ctx.globalCompositeOperation = 'source-over';
-      ctx.fillStyle = `rgba(0,0,0,${darknessAlpha})`;
-      ctx.fillRect(0, 0, rect.width, rect.height);
-      // Enclosed areas still need the carried lantern fully active regardless of outdoor weather/daylight.
-      drawLanternMasksCompat(1);
-      drawFurnitureLightMasksCompat();
+      const darknessAlpha = enclosedDarknessOverlayAlpha(currentArea); // Same baseline darkness authority as before.
+      if (ordinaryBuildingInterior(currentArea)) {
+        drawBlendedInteriorAtmosphere(darknessAlpha, rect); // Rooms use one color/brightness atmosphere blended from nearby windows and furniture lights.
+      } else {
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.fillStyle = `rgba(0,0,0,${darknessAlpha})`;
+        ctx.fillRect(0, 0, rect.width, rect.height);
+        drawLanternMasksCompat(1); // Underground spaces retain their existing positional lantern gameplay/readability.
+        drawFurnitureLightMasksCompat();
+      }
       if (sceneTransAlpha > 0) {
+        ctx.globalCompositeOperation = 'source-over';
         ctx.fillStyle = `rgba(0,0,0,${sceneTransAlpha})`;
         ctx.fillRect(0, 0, rect.width, rect.height);
       }
@@ -645,6 +769,7 @@
     };
     window.WeatherFX.drawLightingOverlay = drawUnifiedLightingOverlay;
     window.WeatherFX.__singleFullDayLightingAuthority = true;
+    window.WeatherFX.__daylightWindowAtmosphereHook = true; // Diagnostics flag: the unified pass owns window composition before local light masks.
   }
 
   // Settings-tab sliders (game.js) call these directly, by layer index
@@ -688,6 +813,7 @@
         moonIllumination: currentMoonIllumination(),
         lunarDarknessAddition: currentLunarDarknessAddition(),
         globalDarknessDelta: GLOBAL_DARKNESS_DELTA,
+        enclosedAtmosphere: { ...enclosedAtmosphereSmoothed }, // Shows the one blended room color/illumination and live contributor counts for mobile QA.
         configPath: ATMOSPHERE_CONFIG_PATH,
         tuning: {
           cloudForest: { ...tuning.cloudForest },

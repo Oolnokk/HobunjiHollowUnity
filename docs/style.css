@@ -442,6 +442,15 @@
     #furniturePlacerBtn.fp-shifted { left: calc(var(--play-right) - 15 * var(--col)); }
     #furniturePlacerBtn:hover { background: rgba(255,255,255,0.12); }
     #furniturePlacerBtn.fed-open { background: rgba(100,220,130,0.22); border-color: rgba(100,220,130,0.5); }
+    #furniturePlacerPanel { color: var(--text) !important; }
+    #furniturePlacerPanel .farm-row,
+    #furniturePlacerPanel .farm-row-name,
+    #furniturePlacerPanel .house-layout-section-title,
+    #furniturePlacerPanel button { color: var(--text) !important; }
+    #furniturePlacerPanel .farm-note,
+    #furniturePlacerHint { color: var(--muted) !important; }
+    #furniturePlacerPanel button { background: rgba(255,255,255,.07); border-color: var(--border-bright); }
+
 
     /* ── Farm editor panel ───────────────────────────────── */
     #farmEditorPanel, #mapEditPanel, #devSpawnPanel, #furniturePlacerPanel {
@@ -2727,7 +2736,8 @@
     /* ── Farm pane: identity/progression hub tied to the world save ──── */
     .farm-pane {
       padding: clamp(6px, 1.2vmin, 16px) clamp(8px, 1.8vmin, 22px);
-      max-width: 520px; display: flex; flex-direction: column; gap: 14px;
+      width: 100%; max-width: 520px; min-width: 0; box-sizing: border-box;
+      display: flex; flex-direction: column; gap: 14px;
     }
     .farm-header { border-bottom: 1px solid var(--border); padding-bottom: 10px; }
     .farm-name-row { display: flex; align-items: center; gap: 8px; }
@@ -2739,7 +2749,7 @@
     .farm-name-input:not(:disabled) { border-color: var(--border-bright); background: rgba(255,255,255,0.05); cursor: text; }
     .farm-owner-row { font-size: 11px; color: var(--muted); margin-top: 3px; }
     .farm-owner-row span { color: var(--accent); }
-    .farm-section { display: flex; flex-direction: column; gap: 6px; }
+    .farm-section { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
     .farm-note { font-size: 10px; color: var(--muted); opacity: 0.75; }
     .farm-toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 
@@ -2755,7 +2765,7 @@
     .farm-grid-legend span { display: inline-flex; align-items: center; gap: 3px; }
     .farm-grid-legend i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
 
-    .farm-list { display: flex; flex-direction: column; gap: 5px; max-height: 320px; overflow-y: auto; }
+    .farm-list { display: flex; flex-direction: column; gap: 5px; max-height: 320px; min-width: 0; overflow-y: auto; overflow-x: hidden; }
     .farm-row {
       display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
       padding: 6px 8px; border-radius: 8px;
@@ -2822,13 +2832,29 @@
     .farm-processor-tile .fp-loc { font-size: 9px; color: var(--muted); opacity: 0.7; }
     .farm-processor-tile button { font-size: 9px; padding: 3px 5px; margin-top: 2px; }
 
-    .farm-storage { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    /* Storage columns respond to the Farm pane's real available width instead
+       of the viewport width. This matters on mobile landscape, where the menu
+       occupies only part of a wide screen and two forced columns can clip the
+       per-item Store/Take action off the right edge. */
+    .farm-storage {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr));
+      gap: 10px; min-width: 0;
+    }
+    .farm-storage-col { min-width: 0; }
     .farm-storage-col-title { font-size: 10px; color: var(--muted); margin-bottom: 4px; }
-    .farm-storage-row { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 6px; background: rgba(255,255,255,0.025); border: 1px solid var(--border); }
+    .farm-storage-row {
+      display: flex; align-items: center; gap: 6px; min-width: 0;
+      padding: 4px 6px; border-radius: 6px;
+      background: rgba(255,255,255,0.025); border: 1px solid var(--border);
+    }
     .farm-storage-row .iib-icon, .farm-storage-row .farm-row-icon { font-size: 13px; }
     .farm-companion-btn { flex-shrink: 0; padding: 3px 7px; }
     .farm-companion-btn.active { color: var(--accent); border-color: var(--accent); background: rgba(249,226,138,0.14); }
-    .farm-storage-row .farm-row-value { flex: 1; }
+    .farm-storage-row .farm-row-value {
+      flex: 1 1 auto; min-width: 0; white-space: normal; overflow-wrap: anywhere;
+    }
+    .farm-storage-row .settings-small-btn { flex: 0 0 auto; max-width: 100%; }
     @media(max-width: 480px) {
       .farm-storage { grid-template-columns: 1fr; }
       .farm-list { max-height: 46vh; }
