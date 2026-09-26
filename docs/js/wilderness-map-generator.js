@@ -3955,6 +3955,7 @@
     const allowCliffSkirt = !!options.allowCliffSkirt;
     const allowPlateauRing = !!options.allowPlateauRing;
     const allowHeight = !!options.allowHeight;
+    const archipelagoIslandId = options.archipelagoIslandId || null; // Used by Mire reachability repair to guarantee a hidden local path can never borrow another island's land.
     const startTile = tileAt(start.x, start.y);
     const goalTile = tileAt(goal.x, goal.y);
     if (!startTile || !goalTile) return null;
@@ -3995,6 +3996,7 @@
         if (parent[nk] !== PARENT_UNSEEN) continue;
         const nextTile = tileAt(nx, ny);
         if (nextTile.archipelagoSea) continue;
+        if (archipelagoIslandId && nextTile.archipelagoIslandId !== archipelagoIslandId) continue;
         if (nextTile.borderEscarpment && !nextTile.ramp && !nextTile.navRamp) continue;
         if (nextTile.cliffSkirt && !nextTile.ramp && !nextTile.navRamp && !allowCliffSkirt) continue;
         if (nextTile.water && !nextTile.bridge && !nextTile.navBridge && !allowWater) continue;
@@ -4682,7 +4684,83 @@
     return { sealed, skipped: Math.max(0, unreachable.length - sealed) };
   }
 
+  function repairArchipelagoIslandConnectivity() {
+    if (!usesArchipelagoLayout()) return { repairedPaths:0, clearedObjects:0, hiddenRampTiles:0 };
+    const islandIds = [...new Set(allTiles().map(tile => tile?.archipelagoIslandId).filter(Boolean))]; // Used to repair each physical island independently with no cross-sea or cross-island route.
+    let repairedPaths = 0;
+    let clearedObjects = 0;
+    let hiddenRampTiles = 0;
+
+    const componentsFor = islandId => {
+      const candidates = allWalkableTiles().filter(tile => tile.archipelagoIslandId === islandId);
+      const candidateKeys = new Set(candidates.map(tile => keyXY(tile.x, tile.y)));
+      const visited = new Set();
+      const components = [];
+      for (const start of candidates) {
+        const startKey = keyXY(start.x, start.y);
+        if (visited.has(startKey)) continue;
+        const component = [];
+        const queue = [start];
+        visited.add(startKey);
+        for (let head = 0; head < queue.length; head++) {
+          const tile = queue[head];
+          component.push(tile);
+          for (const next of movementNeighbors(tile)) {
+            const key = keyXY(next.x, next.y);
+            if (!candidateKeys.has(key) || visited.has(key) || next.archipelagoIslandId !== islandId) continue;
+            visited.add(key);
+            queue.push(next);
+          }
+        }
+        components.push(component);
+      }
+      return components.sort((a,b) => b.length - a.length);
+    };
+
+    for (const islandId of islandIds) {
+      for (let guard = 0; guard < 48; guard++) {
+        const components = componentsFor(islandId);
+        if (components.length <= 1) break;
+        const anchorComponent = components[0];
+        const targetComponent = components[1];
+        let best = null;
+        // Find the closest pair of walkable component tiles so the hidden repair is as short/local as possible.
+        for (const a of anchorComponent) {
+          for (const b of targetComponent) {
+            const distance = Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+            if (!best || distance < best.distance) best = { a, b, distance };
+          }
+        }
+        if (!best) break;
+        const path = findGridPath(best.a, best.b, {
+          allowWater:false,
+          allowOccupied:true,
+          allowCliffSkirt:true,
+          allowHeight:true,
+          archipelagoIslandId:islandId,
+        });
+        if (!path) break;
+        const beforeReached = anchorComponent.length;
+        clearedObjects += clearBlockingObjectsOnPath(path);
+        hiddenRampTiles += normalizeConnectivityPath(path);
+        markInvisiblePath(path, 'archipelagoIslandConnectivity', islandId);
+        repairedPaths++;
+        const afterComponents = componentsFor(islandId);
+        if (afterComponents.length >= components.length && afterComponents[0]?.length <= beforeReached) break; // Prevents looping if a protected blocker makes this exact repair ineffective.
+      }
+    }
+
+    if (map.archipelago) {
+      map.archipelago.localConnectivityRepairs = repairedPaths;
+      map.archipelago.localConnectivityClearedObjects = clearedObjects;
+      map.archipelago.localConnectivityHiddenRampTiles = hiddenRampTiles;
+    }
+    logDebug(`archipelago local connectivity: ${repairedPaths} hidden paths, ${hiddenRampTiles} hidden ramp tiles, ${clearedObjects} removable blockers cleared; sea remains forbidden`);
+    return { repairedPaths, clearedObjects, hiddenRampTiles };
+  }
+
   function validateArchipelagoReachability() {
+    repairArchipelagoIslandConnectivity(); // Connect plateau levels/tree-separated pockets inside each island only; findGridPath's island/sea guards forbid inter-island bridges.
     const start = nearestFreeWalkableNeighbor(map.entry.x, map.entry.y); // Used to measure the entry island without claiming boat-separated islands are broken.
     const entryReachable = reachableFrom(start); // Used only for the on-foot component that contains the west entry.
     const walkable = allWalkableTiles(); // Used for whole-archipelago diagnostics and tile-density scaling.
