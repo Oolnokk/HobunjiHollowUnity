@@ -249,13 +249,31 @@
     catch { return null; }
   }
 
+  function ambientSongSnapshotForNpc(npcId) {
+    const frame = ambientFrames.get(npcId); // Captures the exact procedural song Foroji is currently leading before his hidden iframe is torn down for player backup mode.
+    const snapshot = bridgeOf(frame)?.scaleAuditionState?.();
+    const arrangement = snapshot?.arrangement;
+    if (!arrangement) return null;
+    const melodyNotes = (arrangement.melodyNotes || []).map(note => [Number(note.degree) || 0, Number(note.durationQuarterBeats) || 0]);
+    if (!melodyNotes.length) return null;
+    return {
+      introSteps:Array.isArray(arrangement.introSteps) ? arrangement.introSteps.slice() : null,
+      bodySteps:Array.isArray(arrangement.bodySteps) ? arrangement.bodySteps.slice() : null,
+      melodyNotes,
+    };
+  }
+
   // ── Player session (the visible overlay) ────────────────────────────
   function onPlayerFrameLoaded() {
     if (!playerSession) return;
     const bridge = bridgeOf(frameEl);
     if (!bridge) { window.__farmLog?.('music minigame: control bridge missing after load', 'warn'); return; }
-    if (playerSession.mode === 'backup') bridge.startBackupPreviewSong?.(playerSession.songId);
-    else bridge.enterJamMode?.(); // Regular/improvise mode — the compact song picker (see buildEdgeControls) handles picking a real song from here.
+    if (playerSession.mode === 'backup') {
+      const snapshot = playerSession.songSnapshot; // Rehydrates the exact generated Foroji song that was audible a moment ago instead of silently reverting to the authored practice melody.
+      if (snapshot?.introSteps && snapshot?.bodySteps) bridge.setKurrayaSongArrangement?.({introSteps:snapshot.introSteps,bodySteps:snapshot.bodySteps});
+      if (snapshot?.melodyNotes?.length) bridge.setKurrayaSongMelody?.(snapshot.melodyNotes);
+      bridge.startBackupPreviewSong?.(playerSession.songId);
+    } else bridge.enterJamMode?.(); // Regular/improvise mode — the compact song picker (see buildEdgeControls) handles picking a real song from here.
     buildEdgeControls(frameEl);
     // The iframe's own keydown listeners (ASDF notes, arrow-key banks, ...)
     // only fire while it actually has focus — without this, whichever
@@ -269,11 +287,12 @@
     const area = deps.getCurrentArea();
     const nearbyPerformer = deps.listInstrumentPerformers().find(p => p.area === area);
     if (nearbyPerformer) {
-      // Someone's already leading here — stop their standalone ambient
-      // audio (the player's own overlay becomes the sole audio source for
-      // this performance) and join in on their song as backup.
+      // Someone's already leading here — capture the live procedural composition before stopping
+      // their standalone ambient iframe. The player's visible iframe then restarts that SAME
+      // generated song as backup accompaniment instead of reverting to the static authored melody.
+      const songSnapshot = ambientSongSnapshotForNpc(nearbyPerformer.npcId);
       stopAmbientForNpc(nearbyPerformer.npcId);
-      playerSession = { active: true, mode: 'backup', area, npcId: nearbyPerformer.npcId, songId: nearbyPerformer.songId };
+      playerSession = { active: true, mode: 'backup', area, npcId: nearbyPerformer.npcId, songId: nearbyPerformer.songId, songSnapshot };
       deps.showToast?.(`Playing along with ${nearbyPerformer.name}.`, true);
     } else {
       leaderByArea.set(area, { type: 'player', id: 'player', startedAt: Date.now() });
