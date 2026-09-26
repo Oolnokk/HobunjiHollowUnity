@@ -481,8 +481,14 @@
       depthMesh.name = `hobunji_cloud_depth_mask_${index}`;
       depthMesh.frustumCulled = false;
       depthMesh.renderOrder = -850 + index;
+      depthMesh.layers.set(0);
+      depthMesh.userData.hobunjiNoOutline = true;
+      depthMesh.userData.noOutline = true; // Used by any generic outline traversal to keep this invisible occlusion shell out of auxiliary edge passes.
       mesh.frustumCulled = false;
       mesh.renderOrder = -800 + index;
+      mesh.layers.set(0);
+      mesh.userData.hobunjiNoOutline = true;
+      mesh.userData.noOutline = true; // Visible cloud art owns its authored PNG edges; sphere topology must never become an outline source.
       cloudGroup.add(depthMesh, mesh);
       return { depthMesh, depthMaterial, mesh, material, speed: CLOUD_SPEEDS[index], offset: index * 0.173 };
     });
@@ -492,7 +498,7 @@
   function buildRoot() {
     const THREE = deps.THREE; root = new THREE.Group(); root.name = 'hobunji_dynamic_skydome'; skyMaterial = makeSkyMaterial();
     const skyMesh = new THREE.Mesh(new THREE.SphereGeometry(SKY_RADIUS, 64, 36), skyMaterial); skyMesh.frustumCulled = false; skyMesh.renderOrder = -1000;
-    skyMesh.layers.set(0); skyMesh.userData.hobunjiNoOutline = true; // Keeps the background shell explicitly out of every geometry-outline auxiliary layer.
+    skyMesh.layers.set(0); skyMesh.userData.hobunjiNoOutline = true; skyMesh.userData.noOutline = true; // Keeps the background shell explicitly out of every geometry-outline auxiliary layer.
     cloudGroup = new THREE.Group(); cloudGroup.name = 'hobunji_cloud_domes'; celestialGroup = new THREE.Group(); celestialGroup.name = 'hobunji_celestial_sprites'; root.add(skyMesh, celestialGroup, cloudGroup);
   }
 
@@ -526,8 +532,10 @@
       Math.max(0.000001, Math.abs(Number(projection?.[5]) || 1))
     );
     const matrixWorld = deps?.camera?.matrixWorld?.elements; // Used to derive the camera's current world-forward longitude without allocating a Vector3 every frame.
-    const forwardX = -(Number(matrixWorld?.[8]) || 0);
-    const forwardZ = -(Number(matrixWorld?.[10]) || -1);
+    const matrixX = Number(matrixWorld?.[8]);
+    const matrixZ = Number(matrixWorld?.[10]);
+    const forwardX = Number.isFinite(matrixX) ? -matrixX : 0;
+    const forwardZ = Number.isFinite(matrixZ) ? -matrixZ : -1;
     uniforms.uSkyCenterU.value = Math.atan2(forwardZ, -forwardX) / (Math.PI * 2);
     cloudBands.forEach(band => {
       band.material?.uniforms?.uSkyResolution?.value?.copy(resolution);
