@@ -70,6 +70,12 @@ assert(portraitSource.includes("bodyColorRanges?.fixedHex"), 'Portrait randomiza
 assert(portraitSource.includes('baseBodyTintEnabled'), 'Portrait renderer must support authored-color base sprites without recoloring them');
 assert(portraitSource.includes('fixedPortraitSlots?.pauldron'), 'Portrait renderer must inject the female structural hair in the pauldron render slot');
 assert(portraitSource.includes("fixedLayer?.hideWhenHood === true && hoodIsWorn"), 'fixed structural portrait layers must support hiding beneath an equipped hood');
+assert(portraitSource.includes('const hoodBackLayers = []'), 'portrait renderer must keep authored hood rear art in its own behind-head bucket');
+assert.match(
+  portraitSource,
+  /drawBreathingLayers\(overwearLayers\);\s*drawBreathingLayers\(hoodBackLayers\);[\s\S]{0,700}if \(headUrl\)[\s\S]{0,2600}drawBreathingLayers\(hoodLayers\);/,
+  'front portraits must draw rear hood cloth before the skull and front hood cloth after the skull'
+);
 assert(pixelProbeSource.includes('window.HobunjiHarlyaoSkeletonSpecies?.formatDebug?.()'), 'Pixel Probe must expose Harlyao Skeleton bridge diagnostics on mobile');
 assert(devSpawnerSource.includes("const DEV_SPAWN_HARLYAO_SKELETON_KEY = 'harlyao-skeleton:enemy'"), 'Testing Arena must expose a dedicated Harlyao Skeleton spawn key');
 assert(devSpawnerSource.includes('window.MinionCombat.makeEntity({'), 'Arena skeleton spawn must use the dedicated Minion category rather than the bandit roster path');
@@ -81,11 +87,11 @@ assert(combatBanditSource.includes('Array.isArray(cfg?.weaponShapePool) ? cfg.we
 assert(combatBanditSource.includes('configuredMetalKey || rolledMetalKey'), 'BanditCombat must honor an optional fixed metal without changing ordinary bandit rolls');
 assert(gameIndexSource.includes('js/dev-spawner.js?v=20260926lich1'), 'Game entry point must cache-bust the current Testing Arena humanoid enemy spawner update');
 assert(gameIndexSource.includes('js/combat/combat-minion.js?v=20260926shambling70'), 'Game entry point must load the current Minion enemy category before the arena spawner');
-assert(gameIndexSource.includes('js/portrait-utils.js?v=20260926hskelhoodhair1'), 'Game entry point must cache-bust hood-aware female skeleton hair visibility');
+assert(gameIndexSource.includes('js/portrait-utils.js?v=20260926hoodback1'), 'Game entry point must cache-bust hood-aware female skeleton hair visibility');
 assert(gameIndexSource.includes('js/png-plane-avatar.js?v=20260926hskelhairalign1'), 'Game entry point must cache-bust the removal of the obsolete skeleton neck workaround');
 assert(gameIndexSource.includes('js/combat/combat-bandit.js?v=20260926hskelhairalign1'), 'Game entry point must cache-bust the restored ordinary humanoid neck path');
-assert(characterStudioSource.includes('../../js/harlyao-skeleton-species-runtime.js?v=20260926studio1'), 'Character Studio must load the NPC-only Harlyao Skeleton runtime bridge before snapshotting its species table');
-assert(characterStudioSource.includes('../../js/portrait-utils.js?v=20260926hskelhoodhair1'), 'Character Studio must load hood-aware structural-hair visibility');
+assert(characterStudioSource.includes('../../js/harlyao-skeleton-species-runtime.js?v=20260926lichhood1'), 'Character Studio must load the NPC-only Harlyao Skeleton runtime bridge before snapshotting its species table');
+assert(characterStudioSource.includes('../../js/portrait-utils.js?v=20260926hoodback1'), 'Character Studio must load hood-aware structural-hair visibility');
 assert(characterStudioSource.includes("SPECIES_DATA[ap.speciesId]?.playerSelectable === false"), 'NPC-only preview species must be blocked from Set as my player');
 assert(characterStudioSource.includes("speciesMeta.bodyColorCustomization === false"), 'Fixed-color skeletons must not expose editable body-color controls');
 
@@ -206,7 +212,7 @@ assert.equal(enghExportProfile.bodyColors.A.hex, '#123456');
     assert.equal(skeletonScale.head, harlyaoScale.head);
   }
 
-  const runtimeBootstrapIndex = bootstrapSource.indexOf("harlyao-skeleton-species-runtime.js?v=20260926hskel1");
+  const runtimeBootstrapIndex = bootstrapSource.indexOf("harlyao-skeleton-species-runtime.js?v=20260926lichhood1");
   const scaleBootstrapIndex = bootstrapSource.indexOf("character-rig-scale.js?v=20260904i");
   assert(runtimeBootstrapIndex >= 0 && scaleBootstrapIndex > runtimeBootstrapIndex,
     'Harlyao Skeleton rig inheritance must load before whole-rig scale installs profile defaults');
