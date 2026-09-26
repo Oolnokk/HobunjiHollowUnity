@@ -154,6 +154,24 @@ assert.match(
 
 assert.match(
   source,
+  /KURRAYA_AUTHORING_STEPS = Object\.freeze\(\[[\s\S]*?\.\.\.FIXED_HARMONY_STEPS[\s\S]*?degree:0,rootSemitones:0,quality:'major'/,
+  'song authoring must add tonic C/I major without changing the four-root free-play progression'
+);
+
+assert.match(
+  source,
+  /normalizeKurrayaArrangementSteps\([\s\S]*?KURRAYA_AUTHORING_STEPS\.length - 1[\s\S]*?chordOptions:KURRAYA_AUTHORING_STEPS\.map/,
+  'the arrangement bridge must accept and expose all five F/G/E/A/C authoring choices'
+);
+
+assert.match(
+  source,
+  /const fixedStep = fixedCadence[\s\S]*?KURRAYA_AUTHORING_STEPS\[fixedCadence\.progressionStep\][\s\S]*?FIXED_HARMONY_STEPS\[fixedCadence\.progressionStep\]/,
+  'authored-song playback must resolve C from the five-choice song palette while free play stays on the four fixed roots'
+);
+
+assert.match(
+  source,
   /KURRAYA_TIME_SIGNATURE = Object\.freeze\(\[6,8\]\)[\s\S]*?KURRAYA_BEAT_GROUPING = Object\.freeze\(\[3,3\]\)[\s\S]*?KURRAYA_THREE_FOUR_TIME_SIGNATURE = Object\.freeze\(\[3,4\]\)[\s\S]*?KURRAYA_THREE_FOUR_BEAT_GROUPING = Object\.freeze\(\[3\]\)/,
   'the mixed Kurraya phrase must start in 6/8 and switch to 3/4'
 );
@@ -172,8 +190,8 @@ assert.match(
 
 assert.match(
   source,
-  /FIXED_HARMONY_SIX_EIGHT_CHORDS = 4[\s\S]*?FIXED_HARMONY_THREE_FOUR_CHORDS = 16[\s\S]*?FIXED_HARMONY_CYCLE_CHORDS = FIXED_HARMONY_SIX_EIGHT_CHORDS \+ FIXED_HARMONY_THREE_FOUR_CHORDS[\s\S]*?FIXED_HARMONY_CHORD_QUARTER_BEATS = 3[\s\S]*?KURRAYA_INTRO_QUARTER_BEATS = FIXED_HARMONY_SIX_EIGHT_CHORDS \* FIXED_HARMONY_CHORD_QUARTER_BEATS[\s\S]*?FIXED_HARMONY_FINAL_SHORT_STEPS = Object\.freeze\(\[0,1,0,0\]\)[\s\S]*?KURRAYA_DEFAULT_BODY_STEPS = Object\.freeze\(\[0,1,2,3, 0,1,2,3, 0,1,2,3, \.\.\.FIXED_HARMONY_FINAL_SHORT_STEPS\]\)/,
-  'the harmony cycle must reserve four 6/8 intro chords before sixteen 3/4 melody bars and author F-G-F-F for the final short repeat'
+  /FIXED_HARMONY_SIX_EIGHT_CHORDS = 4[\s\S]*?FIXED_HARMONY_THREE_FOUR_CHORDS = 16[\s\S]*?FIXED_HARMONY_CYCLE_CHORDS = FIXED_HARMONY_SIX_EIGHT_CHORDS \+ FIXED_HARMONY_THREE_FOUR_CHORDS[\s\S]*?FIXED_HARMONY_CHORD_QUARTER_BEATS = 3[\s\S]*?KURRAYA_INTRO_QUARTER_BEATS = FIXED_HARMONY_SIX_EIGHT_CHORDS \* FIXED_HARMONY_CHORD_QUARTER_BEATS[\s\S]*?FIXED_HARMONY_FINAL_SHORT_STEPS = Object\.freeze\(\[0,1,4,4\]\)[\s\S]*?KURRAYA_DEFAULT_BODY_STEPS = Object\.freeze\(\[0,1,2,3, 0,1,2,3, 0,1,2,3, \.\.\.FIXED_HARMONY_FINAL_SHORT_STEPS\]\)/,
+  'the harmony cycle must reserve four 6/8 intro chords before sixteen 3/4 melody bars and author F-G-C-C for the final short repeat'
 );
 
 assert.match(
@@ -225,7 +243,7 @@ assert.match(
 
 assert.match(
   hostSource,
-  /MUSIC_MINIGAME_SRC = 'assets\/minigames\/lyre-performance\.html\?v=20260925mixedmeter3'/,
+  /MUSIC_MINIGAME_SRC = 'assets\/minigames\/lyre-performance\.html\?v=20260925mixedmeter4'/,
   'gameplay must cache-bust the fixed-harmony minigame revision'
 );
 
@@ -236,7 +254,7 @@ assert.match(musicLab, /Visible diagnostics/, 'the standalone tool must keep mob
 assert.match(musicLab, /id="kurrayaMix"[\s\S]*?id="padMix"[\s\S]*?id="metronomeMix"/, 'the Music Lab must expose all three playback-mix sliders');
 assert.match(musicLab, /id="kurrayaSampleFile"[\s\S]*?id="padSampleFile"[\s\S]*?Recorded root/, 'the Music Lab must expose Kurraya and pad SFX import controls');
 assert.match(musicLab, /hardstep_1\.mp3[\s\S]*?hardstep_2\.mp3[\s\S]*?hardstep_3\.mp3/, 'the standalone metronome must rotate real recorded game footstep sounds');
-assert.match(musicLab, /Bars 1–4 are the 6\/8 accompaniment intro before the melody[\s\S]*?Bars 5–20 are the 16-bar 3\/4 melody body[\s\S]*?corrected default ending is F → G → F → F/i, 'the Music Lab must state the four-chord 6/8 then sixteen-chord 3/4 phrase visibly');
+assert.match(musicLab, /Bars 1–4 are the 6\/8 accompaniment intro before the melody[\s\S]*?Bars 5–20 are the 16-bar 3\/4 melody body[\s\S]*?default ending is F → G → C → C/i, 'the Music Lab must state the four-chord 6/8 then sixteen-chord 3/4 phrase visibly');
 assert.match(musicLab, /importKurrayaSample[\s\S]*?importPadSample[\s\S]*?useLabFootstepMetronome/, 'the Music Lab must route sample changes and footsteps through the shared engine bridge');
 
 assert.match(
@@ -255,6 +273,12 @@ assert.match(
   musicLab,
   /Adjacent bars painted with the same root become one sustained long chord[\s\S]*?id="arrangementPalette"[\s\S]*?id="arrangementTimeline"/,
   'the Music Lab must show the melody and provide a bar-painting chord-section editor'
+);
+
+assert.match(
+  musicLab,
+  /Pick F\/G\/E\/A\/C[\s\S]*?Math\.min\(4,Math\.round\(Number\(stepIndex\)/,
+  'the Music Lab must expose C as a fifth paintable chord choice'
 );
 
 assert.match(
@@ -309,7 +333,7 @@ assert.match(
 
 assert.match(
   toolsHub,
-  /data-target="kurraya-music-lab"[\s\S]*?kurraya-music-lab\/index\.html\?v=20260925lab8/,
+  /data-target="kurraya-music-lab"[\s\S]*?kurraya-music-lab\/index\.html\?v=20260925lab9/,
   'the combined Kurraya Music Lab must be the single Kurraya entry in the tools hub'
 );
 assert.doesNotMatch(
