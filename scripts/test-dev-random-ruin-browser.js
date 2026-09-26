@@ -89,6 +89,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     const details = document.getElementById('devRandomRuinPuzzleOptions');
     for (const checkbox of details.querySelectorAll('[data-ruin-puzzle-option]')) {
       checkbox.checked = checkbox.dataset.ruinPuzzleOption === 'glyphObelisk';
+      checkbox.dispatchEvent(new Event('change', { bubbles:true }));
     }
     const maxInput = details.querySelector('#devRandomRuinMaxPuzzlesPerRoom');
     maxInput.value = '1';
@@ -161,7 +162,10 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
   // Restore the simple-mode defaults before running broad fixed-seed coverage.
   await page.evaluate(() => {
     const details = document.getElementById('devRandomRuinPuzzleOptions');
-    for (const checkbox of details.querySelectorAll('[data-ruin-puzzle-option]')) checkbox.checked = true;
+    for (const checkbox of details.querySelectorAll('[data-ruin-puzzle-option]')) {
+      checkbox.checked = true;
+      checkbox.dispatchEvent(new Event('change', { bubbles:true }));
+    }
     const maxInput = details.querySelector('#devRandomRuinMaxPuzzlesPerRoom');
     maxInput.value = '0';
     maxInput.dispatchEvent(new Event('input', { bubbles:true }));
