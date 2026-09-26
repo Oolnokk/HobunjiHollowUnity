@@ -23,17 +23,15 @@
   const FALL_MS = 650;
   const TRANSITION_FALLBACK_MS = 1600; // Dev-only escape hatch when the normal fade lifecycle is unavailable (e.g. title/dev harness state).
   const MAX_SOLVABILITY_ATTEMPTS = 6; // Rejects impossible candidates before entry while keeping generation bounded.
-  const PUZZLE_OPTIONS_STORAGE_KEY = 'hobunji.devRandomRuinPuzzleOptions.v1'; // Used to persist Random Test Ruin puzzle-generation choices across reloads.
+  const PUZZLE_OPTIONS_STORAGE_KEY = 'hobunji.devRandomRuinPuzzleOptions.v2'; // v2 intentionally drops the fragile first-pass mechanisms from the shipped simple-puzzle defaults.
   const DARKNESS_SETTINGS_STORAGE_KEY = 'hobunji.devRandomRuinDarkness.v1'; // Used to persist the test-only darkness toggle and severity without changing real den lighting.
   const DEFAULT_DARKNESS_SETTINGS = Object.freeze({ enabled:false, severity:1 }); // Tests are bright by default; 1.0 restores the full authored den darkness when enabled.
-  const DEFAULT_PUZZLE_OPTIONS = Object.freeze({ pressurePlate:true, brazier:true, glyphObelisk:true, stackedObelisk:true, linkedCubePillars:true, nestedRoom:true, maxPerRoom:0 }); // Used when no saved puzzle-generation preference exists; maxPerRoom=0 preserves the old unlimited behavior.
-  const PUZZLE_OPTION_ROWS = Object.freeze([ // Used to render the collapsed Settings checklist without duplicating option keys in event wiring.
-    ['pressurePlate','Push-block pressure plates'],
-    ['brazier','Torch-run braziers'],
+  const DEFAULT_PUZZLE_OPTIONS = Object.freeze({ pressurePlate:false, brazier:false, glyphObelisk:true, stackedObelisk:false, linkedCubePillars:false, nestedRoom:false, safePath:true, ropeSwing:true, hallwayTraps:true, maxPerRoom:0 }); // First playable pass keeps only the proven projectile activator from V50; the three parent-runtime families below are intentionally simple and non-locking.
+  const PUZZLE_OPTION_ROWS = Object.freeze([ // Only the simple-mode families are user-facing; disabled V50 families remain false in the normalized payload.
     ['glyphObelisk','Projectile glyph targets'],
-    ['stackedObelisk','Simple rotating obelisks'],
-    ['linkedCubePillars','Linked cube pillars'],
-    ['nestedRoom','Nested room chains'],
+    ['safePath','Safe-path pressure grids'],
+    ['ropeSwing','Rope swing traversal'],
+    ['hallwayTraps','Alternating hallway fire / poison traps'],
   ]);
 
   let deps = null;
@@ -527,7 +525,7 @@
         const meta=generated.locale?.meta?.interiorShell; if(!meta) throw new Error('V50 generated no interiorShell metadata.');
         api.snapMechanismState(0); api.pausePreviewLoop(); const roots=api.takePreviewRoots();
         const rec=makeMapRecord(candidateSeed,generated,roots,meta); buildingScenes.set(MAP_ID,rec);
-        ruin={seed:candidateSeed,requestedSeed,sourceSeed:generated.seed,api,locale:generated.locale,meta,puzzleOptions:generated.puzzleOptions,puzzleGeneration:generated.puzzleGeneration,...rec,mechanisms:new Map(),controls:[],activators:[],pushBlocks:[],supportId:null,supportY:0,falling:null,generationAttempt:attempt+1};
+        ruin={seed:candidateSeed,requestedSeed,sourceSeed:generated.seed,api,locale:generated.locale,meta,puzzleOptions:{...puzzleOptions},puzzleGeneration:generated.puzzleGeneration,...rec,mechanisms:new Map(),controls:[],activators:[],pushBlocks:[],supportId:null,supportY:0,falling:null,generationAttempt:attempt+1}; // Keep parent-runtime safe-path/rope/trap flags that the V50 API correctly ignores.
         registerFloor(meta); discoverRuntimeObjects();
 
         const solvability=Solvability.audit(ruin,{scope:SCOPE,pad:PAD,tileScale:RUIN_TILE_SCALE,controlRange:CONTROL_RANGE,playerRadius:PLAYER_RADIUS,maxStepHeight:MAX_STEP_HEIGHT}); // Runs before entry against the same collision/support runtime the player will use.
@@ -596,7 +594,7 @@
   }
 
   function positionInfo(px,py){const x=px/deps.TILE,z=py/deps.TILE;return{x,z,blocker:DS.blockerAt(x,z,{radius:PLAYER_RADIUS,actorHeight:1.25}),pit:DS.pointInPit(x,z,PLAYER_RADIUS*.25),support:DS.sampleSupport(x,z,{minY:-4,maxY:5,pad:.02})};}
-  function reconcilePlayer(now){if(ruin.falling){const f=ruin.falling,t=clamp((now-f.startedAt)/FALL_MS,0,1);deps.player.x=f.x;deps.player.y=f.y;if(deps.playerMesh?.position)deps.playerMesh.position.y=ruin.supportY-1.8*t;if(t>=1){deps.player.x=f.safe.x;deps.player.y=f.safe.y;ruin.falling=null;}return;}
+  function reconcilePlayer(now){if(window.DevRandomRuinSimplePuzzles?.ownsPlayerMotion?.())return;if(ruin.falling){const f=ruin.falling,t=clamp((now-f.startedAt)/FALL_MS,0,1);deps.player.x=f.x;deps.player.y=f.y;if(deps.playerMesh?.position)deps.playerMesh.position.y=ruin.supportY-1.8*t;if(t>=1){deps.player.x=f.safe.x;deps.player.y=f.safe.y;ruin.falling=null;}return;}
     let info=positionInfo(deps.player.x,deps.player.y);if(info.blocker){deps.player.x=ruin.lastAcceptedPx.x;deps.player.y=ruin.lastAcceptedPx.y;info=positionInfo(deps.player.x,deps.player.y);} if(info.pit&&!info.support){ruin.falling={startedAt:now,x:deps.player.x,y:deps.player.y,safe:{...ruin.lastSafePx}};window.ResourceSystem?.spendFooting?.(deps.player,35,'test ruin fall');return;}
     const ny=info.support?.y??0,same=info.support?.id===ruin.supportId;if(!same&&ny-ruin.supportY>MAX_STEP_HEIGHT){deps.player.x=ruin.lastAcceptedPx.x;deps.player.y=ruin.lastAcceptedPx.y;return;} ruin.lastAcceptedPx={x:deps.player.x,y:deps.player.y};if(!info.pit||info.support)ruin.lastSafePx={...ruin.lastAcceptedPx};ruin.supportId=info.support?.id||null;ruin.supportY=ny;if(info.support&&deps.playerMesh?.position)deps.playerMesh.position.y=ny;}
 
@@ -631,7 +629,7 @@
     optionsRow.className='settings-row';
     optionsRow.style.display='block';
     const optionMarkup=PUZZLE_OPTION_ROWS.map(([key,label])=>`<label style="display:flex;align-items:center;gap:7px;min-height:28px"><input type="checkbox" data-ruin-puzzle-option="${key}"><span>${label}</span></label>`).join(''); // Used to keep the checkbox list data-driven and mobile-wrappable.
-    optionsRow.innerHTML=`<details id="devRandomRuinPuzzleOptions" style="width:100%"><summary class="settings-name" style="cursor:pointer;user-select:none">Puzzle Generation</summary><div class="settings-desc" style="margin-top:4px">Choose which puzzle families may generate. Nested chains are compound puzzles and can contain multiple internal stages.</div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:4px 12px;margin-top:8px">${optionMarkup}</div><label style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:8px"><span>Max puzzles per room <small style="opacity:.72">(0 = unlimited)</small></span><input id="devRandomRuinMaxPuzzlesPerRoom" type="number" min="0" max="12" step="1" inputmode="numeric" style="width:74px"></label></details>`;
+    optionsRow.innerHTML=`<details id="devRandomRuinPuzzleOptions" style="width:100%"><summary class="settings-name" style="cursor:pointer;user-select:none">Puzzle Generation</summary><div class="settings-desc" style="margin-top:4px">Simple-mode puzzle families. Projectile targets use V50's proven hit runtime; the other three are independent hazards/traversal and never lock the room graph.</div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:4px 12px;margin-top:8px">${optionMarkup}</div><label style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:8px"><span>Max puzzles per room <small style="opacity:.72">(0 = unlimited)</small></span><input id="devRandomRuinMaxPuzzlesPerRoom" type="number" min="0" max="12" step="1" inputmode="numeric" style="width:74px"></label></details>`;
     row.insertAdjacentElement('afterend',optionsRow);
     bindPuzzleOptionsPanel(optionsRow.querySelector('#devRandomRuinPuzzleOptions'));
 
@@ -643,5 +641,5 @@
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',installSettingsButton,{once:true});else installSettingsButton();
 
-  window.DevRandomRuin=Object.freeze({generate,reroll:()=>generate(randomSeed()),clear:()=>{if(deps?.getCurrentArea?.()===MAP_ID)leaveRuin();else clearRuntime(true);},leave:leaveRuin,getInteractionControls:()=>ruin?ruin.controls.map(control=>({...control,range:Number.isFinite(Number(control.range))?Number(control.range):CONTROL_RANGE})):[],getOccupancySnapshot:()=>ruin?.occupancy?.snapshot?.()||null,getLastSolvabilityAudit:()=>lastGenerationAudit?JSON.parse(JSON.stringify(lastGenerationAudit)):null,getDarknessSettings,getState:()=>ruin?{mapId:MAP_ID,seed:ruin.seed,requestedSeed:ruin.requestedSeed,sourceSeed:ruin.sourceSeed,tileScale:RUIN_TILE_SCALE,wallStyle:ruin.wallStyle||null,darkness:getDarknessSettings(),materialStats:{cliffMeshes:ruin.denMaterialMeshCount||0,converted:ruin.unlitConvertedMaterialCount||0,remainingLit:ruin.remainingLitMaterialCount||0,legacyStone:ruin.legacyStoneMaterialCount||0,totalMeshes:ruin.totalRuinMeshCount||0},rooms:ruin.meta.rooms?.length||0,controls:ruin.controls.length,mechanisms:[...ruin.mechanisms.values()].map(m=>({id:m.id,type:m.type,progress:m.progress,target:m.target})),puzzleOptions:ruin.puzzleOptions,puzzleGeneration:ruin.puzzleGeneration,solvability:ruin.solvability,generationAttempt:ruin.generationAttempt,occupancy:ruin.occupancy?.snapshot?.(),dynamic:DS.debugSnapshot()}:null});
+  window.DevRandomRuin=Object.freeze({generate,reroll:()=>generate(randomSeed()),clear:()=>{if(deps?.getCurrentArea?.()===MAP_ID)leaveRuin();else clearRuntime(true);},leave:leaveRuin,getInteractionControls:()=>ruin?ruin.controls.map(control=>({...control,range:Number.isFinite(Number(control.range))?Number(control.range):CONTROL_RANGE})):[],getRuntimeContext:()=>ruin?{scene:ruin.scene,root:ruin.localeRoot,meta:ruin.meta,spawn:{...ruin.spawn},cols:ruin.cols,rows:ruin.rows,seed:ruin.seed,puzzleOptions:{...ruin.puzzleOptions}}:null,getOccupancySnapshot:()=>ruin?.occupancy?.snapshot?.()||null,getLastSolvabilityAudit:()=>lastGenerationAudit?JSON.parse(JSON.stringify(lastGenerationAudit)):null,getDarknessSettings,getState:()=>ruin?{mapId:MAP_ID,seed:ruin.seed,requestedSeed:ruin.requestedSeed,sourceSeed:ruin.sourceSeed,tileScale:RUIN_TILE_SCALE,wallStyle:ruin.wallStyle||null,darkness:getDarknessSettings(),materialStats:{cliffMeshes:ruin.denMaterialMeshCount||0,converted:ruin.unlitConvertedMaterialCount||0,remainingLit:ruin.remainingLitMaterialCount||0,legacyStone:ruin.legacyStoneMaterialCount||0,totalMeshes:ruin.totalRuinMeshCount||0},rooms:ruin.meta.rooms?.length||0,controls:ruin.controls.length,mechanisms:[...ruin.mechanisms.values()].map(m=>({id:m.id,type:m.type,progress:m.progress,target:m.target})),puzzleOptions:ruin.puzzleOptions,puzzleGeneration:ruin.puzzleGeneration,solvability:ruin.solvability,generationAttempt:ruin.generationAttempt,occupancy:ruin.occupancy?.snapshot?.(),dynamic:DS.debugSnapshot()}:null});
 })();
