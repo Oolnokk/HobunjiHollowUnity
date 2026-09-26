@@ -3137,7 +3137,15 @@
         return Math.abs(localX) < (def.fw || 1) * 0.5 && Math.abs(localZ) < (def.fd || 1) * 0.5;
       }
 
-      function furnitureBlocksMovementAt(area, x, z) {
+      function furnitureBlocksMovementAt(area, x, z, radiusTiles = 0) {
+        const buildingFurnitureBounds = _buildingScenes.get(area)?.furnitureCollisionBounds; // Used by authored interiors so fine post transforms stay continuous instead of being re-snapped to ROCK tiles.
+        if (buildingFurnitureBounds?.length) {
+          const collisionApi = window.InteriorFurnitureGrid; // Used for the shared oriented-rectangle math authored and previewed by the Interior Editor.
+          const overlapsBuildingFurniture = buildingFurnitureBounds.some(bounds => radiusTiles > 0
+            ? collisionApi?.boundsOverlapAabb?.(bounds, x, z, radiusTiles, radiusTiles)
+            : collisionApi?.boundsContainsPoint?.(bounds, x, z));
+          if (overlapsBuildingFurniture) return true;
+        }
         if (_isZoneArea(area) && window.FoliageFurnitureRuntime?.blocksPoint(area, x, z)) return true;
         if (interiorFurnitureObjects.some(obj => obj.area === area && decorativeFurnitureBlocksPoint(obj, x, z))) return true;
         if (area === 'interior' && _derivedHearthMeshes.some(h => {
@@ -3169,6 +3177,10 @@
 
         const placed = interiorFurnitureObjects.find(obj => obj.area === currentArea && decorativeFurnitureBlocksPoint(obj, x, z));
         if (placed) return knockbackFurnitureDescriptor(placed.key, DECORATIVE_FURNITURE_DEFS[placed.key]?.name);
+
+        const buildingFurnitureBounds = _buildingScenes.get(currentArea)?.furnitureCollisionBounds || []; // Used to classify impacts on freeform authored-interior bounds after those bounds stop masquerading as ROCK tiles.
+        const buildingFurniture = buildingFurnitureBounds.find(bounds => window.InteriorFurnitureGrid?.boundsContainsPoint?.(bounds, x, z)); // Used only after a knockback collision, so a linear scan stays off ordinary movement frames.
+        if (buildingFurniture) return knockbackFurnitureDescriptor(buildingFurniture.furnitureKey || buildingFurniture.itemKey, DECORATIVE_FURNITURE_DEFS[buildingFurniture.furnitureKey]?.name);
 
         if (currentArea === 'interior') {
           const hearth = _derivedHearthMeshes.find(h => {
@@ -13952,9 +13964,10 @@
           // whole scene graph every frame in occlusionSafeCameraPosition.
           const occlusionMeshes = [];
           bScene.traverse(o => { if (o.userData?.cameraObstacle) occlusionMeshes.push(o); });
+          const furnitureCollisionBounds = Array.isArray(mapData._interiorFurnitureCollisionBounds) ? mapData._interiorFurnitureCollisionBounds : []; // Cached per loaded room so movement checks never rebuild post-transformed 2D rectangles per frame.
           window.BanubuCaveClouds?.validateCaveMaterials?.({ THREE, scene: bScene, mapData }); // Repairs malformed cave texture UV transforms once before Three.js renders the scene.
           window.CinematicCameraRuntime?.registerArea?.(mapId, mapData.cinematicCameras || []); // Cave/building cameras share this scene's local tile coordinate space.
-          const info = { scene: bScene, grid: bGrid, cols, rows, transitions, vendorZones: mapData.vendorZones || [], routes: buildingRoutes, loadSource, fallback: loadSource !== 'config', name: mapData.name || mapId, wallStyle: mapData.wallStyle || '', entrySpots: mapData.entrySpots || {}, keyDoorGroups, mineFloor: mapData.mineFloor || null, minePlacementSafeTileCount: mapData.minePlacementSafeTileCount ?? null, disconnectedFloorTilesRemoved: mapData.disconnectedFloorTilesRemoved ?? 0, occlusionMeshes };
+          const info = { scene: bScene, grid: bGrid, cols, rows, transitions, vendorZones: mapData.vendorZones || [], routes: buildingRoutes, loadSource, fallback: loadSource !== 'config', name: mapData.name || mapId, wallStyle: mapData.wallStyle || '', entrySpots: mapData.entrySpots || {}, keyDoorGroups, mineFloor: mapData.mineFloor || null, minePlacementSafeTileCount: mapData.minePlacementSafeTileCount ?? null, disconnectedFloorTilesRemoved: mapData.disconnectedFloorTilesRemoved ?? 0, occlusionMeshes, furnitureCollisionBounds };
           _buildingScenes.set(mapId, info);
           if (info.disconnectedFloorTilesRemoved > 0) window.__farmLog?.(`[cavern] ${mapId}: sealed ${info.disconnectedFloorTilesRemoved} unreachable floor tiles`, 'warn', mapData.wallStyle === 'mine' ? 'mine' : undefined);
           for (const w of npcWalkers) {
@@ -17545,6 +17558,8 @@
       function canOccupyAt(wx, wy, radius) {
         const aC = window.GridTileAccessors.getActiveCols(), aR = window.GridTileAccessors.getActiveRows();
         if (wx - radius < 0 || wy - radius < 0 || wx + radius >= aC * TILE || wy + radius >= aR * TILE) return false;
+        const furnitureRadiusTiles = Math.max(0, radius / TILE); // Used to test the actor's existing square footprint against post-transformed furniture OBBs without mesh collision.
+        if (furnitureBlocksMovementAt(currentArea, wx / TILE, wy / TILE, furnitureRadiusTiles)) return false;
         return tileSpeedAt(wx - radius, wy - radius) !== null
             && tileSpeedAt(wx + radius, wy - radius) !== null
             && tileSpeedAt(wx - radius, wy + radius) !== null
