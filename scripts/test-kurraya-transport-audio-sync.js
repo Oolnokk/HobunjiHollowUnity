@@ -189,8 +189,8 @@ assert.match(
 
 assert.match(
   source,
-  /function nextSharedBeatAt\([\s\S]*?clock\.beatMs/,
-  'automatic-pick release timing must continue reading the active shared beat grid'
+  /function nextSharedBeatAt\([\s\S]*?clock\.quarterBeatMs/,
+  'automatic-pick release timing must preserve its quarter-BPM note-value grid while the metronome changes meter'
 );
 
 assert.match(
