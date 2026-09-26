@@ -1306,11 +1306,15 @@
     'Yo':[0,2,5,7,9,12,14,17,19,21,24,26]
   };
   const SCALE_NAMES = Object.keys(SCALES);
-  const FIXED_HARMONY_STEPS = Object.freeze([ // Used by free improvisation and When the Kininjis Bloom so the same transposable IV–V–iii–vi harmony is authoritative everywhere.
+  const FIXED_HARMONY_STEPS = Object.freeze([ // Free improvisation keeps this four-root IV–V–iii–vi progression unchanged.
     Object.freeze({degree:3,rootSemitones:5,quality:'major'}),
     Object.freeze({degree:4,rootSemitones:7,quality:'major'}),
     Object.freeze({degree:2,rootSemitones:4,quality:'minor'}),
     Object.freeze({degree:5,rootSemitones:9,quality:'minor'})
+  ]);
+  const KURRAYA_AUTHORING_STEPS = Object.freeze([ // Song-only chord brushes: the original F/G/E/A choices plus tonic C/I major for authored sections.
+    ...FIXED_HARMONY_STEPS,
+    Object.freeze({degree:0,rootSemitones:0,quality:'major'})
   ]);
   const FIXED_HARMONY_DEGREES = Object.freeze(FIXED_HARMONY_STEPS.map(step => step.degree)); // Used by free-play timing/capo cues while chord voicing keeps the authored major/major/minor/minor qualities above.
   const FIXED_HARMONY_PATTERN_ID = '4–5–3–6'; // Used as the sole free-play harmony id and as the migration target for older saved selectable progressions.
@@ -1327,7 +1331,7 @@
   const FIXED_HARMONY_CYCLE_CHORDS = FIXED_HARMONY_SIX_EIGHT_CHORDS + FIXED_HARMONY_THREE_FOUR_CHORDS; // Twenty chord events per mixed-meter phrase.
   const FIXED_HARMONY_CHORD_QUARTER_BEATS = 3; // Both 6/8 and 3/4 bars occupy three quarter-note units, preserving melody phase through the meter switch.
   const KURRAYA_INTRO_QUARTER_BEATS = FIXED_HARMONY_SIX_EIGHT_CHORDS * FIXED_HARMONY_CHORD_QUARTER_BEATS; // Twelve quarter-note units: the four 6/8 accompaniment bars finish before the 16-bar melody body begins.
-  const FIXED_HARMONY_FINAL_SHORT_STEPS = Object.freeze([0,1,0,0]); // Final 3/4 short repeat is F → G → F → F; the last two bars therefore sustain as one two-bar F section.
+  const FIXED_HARMONY_FINAL_SHORT_STEPS = Object.freeze([0,1,4,4]); // Final 3/4 short repeat is F → G → C → C; the last two bars sustain as one two-bar tonic-C section.
   const KURRAYA_DEFAULT_INTRO_STEPS = Object.freeze([0,1,2,3]); // Default four-bar 6/8 intro; the Music Lab can temporarily repaint these bars for auditioning.
   const KURRAYA_DEFAULT_BODY_STEPS = Object.freeze([0,1,2,3, 0,1,2,3, 0,1,2,3, ...FIXED_HARMONY_FINAL_SHORT_STEPS]); // Sixteen 3/4 melody bars; adjacent identical roots become one sustained authored section.
   const FIXED_HARMONY_CYCLE_QUARTER_BEATS = FIXED_HARMONY_CYCLE_CHORDS * FIXED_HARMONY_CHORD_QUARTER_BEATS; // Sixty quarter-note units per full phrase.
@@ -1899,8 +1903,8 @@
   }
 
   function normalizeKurrayaArrangementSteps(steps, expectedLength, fallback) {
-    const source = Array.isArray(steps) ? steps : fallback; // Accepts only the four authored F/G/E/A root-step slots so tool edits cannot create invalid harmony data.
-    return Array.from({length:expectedLength},(_,index) => clamp(Math.round(Number(source[index] ?? fallback[index] ?? 0)),0,FIXED_HARMONY_STEPS.length - 1));
+    const source = Array.isArray(steps) ? steps : fallback; // Accepts only the five authored F/G/E/A/C root-step slots so tool edits cannot create invalid harmony data.
+    return Array.from({length:expectedLength},(_,index) => clamp(Math.round(Number(source[index] ?? fallback[index] ?? 0)),0,KURRAYA_AUTHORING_STEPS.length - 1));
   }
 
   function kurrayaHarmonySegments(steps, meterLabel, startChord = 0) {
@@ -2068,7 +2072,9 @@
     const progression = HARMONY_PATTERNS[state.harmonyPattern] || HARMONY_PATTERNS[FIXED_HARMONY_PATTERN_ID];
     const step = fixedCadence ? fixedCadence.eventSerial : songSegment ? songSegment.index : currentHarmonyStep(clock);
     const fixedStep = fixedCadence
-      ? FIXED_HARMONY_STEPS[fixedCadence.progressionStep]
+      ? (state.game.active && (state.game.songType || state.selectedSong) === 'when-the-kininjis-bloom'
+          ? KURRAYA_AUTHORING_STEPS[fixedCadence.progressionStep]
+          : FIXED_HARMONY_STEPS[fixedCadence.progressionStep])
       : songSegment
         ? null
         : FIXED_HARMONY_STEPS[((step % FIXED_HARMONY_STEPS.length) + FIXED_HARMONY_STEPS.length) % FIXED_HARMONY_STEPS.length];
@@ -2632,7 +2638,7 @@
       return note;
     });
     const labelStep = (stepIndex) => {
-      const step = FIXED_HARMONY_STEPS[stepIndex] || FIXED_HARMONY_STEPS[0];
+      const step = KURRAYA_AUTHORING_STEPS[stepIndex] || KURRAYA_AUTHORING_STEPS[0];
       const roman = (step.quality === 'minor' ? ROMAN_DEGREES[step.degree]?.toLowerCase() : ROMAN_DEGREES[step.degree]) || String(step.degree + 1);
       return {
         stepIndex,
@@ -2658,7 +2664,7 @@
         ...arrangement.introSegments.map(segment => ({...segment,absoluteStartBar:segment.startBar,label:labelStep(segment.step)})),
         ...arrangement.bodySegments.map(segment => ({...segment,absoluteStartBar:FIXED_HARMONY_SIX_EIGHT_CHORDS + segment.startBar,label:labelStep(segment.step)}))
       ],
-      chordOptions:FIXED_HARMONY_STEPS.map((step,index) => labelStep(index)),
+      chordOptions:KURRAYA_AUTHORING_STEPS.map((step,index) => labelStep(index)),
       melodyNotes
     };
   }
