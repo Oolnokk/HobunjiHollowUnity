@@ -1912,6 +1912,7 @@
         if (!itemKey || !TOOL_ITEM_DEFS[itemKey] || !(amount > 0) || !gearInventory) return;
         if (!gearInventory.toolMastery[itemKey]) gearInventory.toolMastery[itemKey] = { xp: 0 };
         gearInventory.toolMastery[itemKey].xp += amount;
+        window.MetalArmorSystem?.awardExperience?.(amount, 'tool/weapon Mastery XP', { save: false }); // "All experience" includes tool/weapon Mastery; every equipped metal armor article receives the same event, and the shared save below persists all gains atomically.
         window.WorldPopupText?.queueReward('masteryXp', `+${amount} ${TOOL_ITEM_DEFS[itemKey].label} Mastery`);
         saveGearInventory();
       }
@@ -28647,6 +28648,8 @@
         esc: window.FormatUtils.esc,
         getGearInventory: () => gearInventory,
         saveGearInventory,
+        getPlayerData: () => _playerData,
+        refreshPlayerAvatar,
         metalBarItemKey,
         craftedToolItemKey,
         toolPlating,

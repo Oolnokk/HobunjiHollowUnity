@@ -159,6 +159,7 @@
     };
     applyEquip('hat', 'hat', hatOptions?.[0]);
     applyEquip('hood', 'hood', hoodOptions?.[0]);
+    applyEquip('pauldron', 'pauldron', { id: 'none', label: 'No Pauldrons', tintSlot: null, layers: [] });
     applyEquip('torso', 'torsoCosmetic', torsoPortraitOptions?.[0]);
     applyEquip('overwear', 'armCosmetic', armPortraitOptions?.[0]);
 

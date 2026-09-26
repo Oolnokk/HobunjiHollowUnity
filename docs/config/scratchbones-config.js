@@ -115,6 +115,7 @@ window.SCRATCHBONES_CONFIG = {
     "inventory": {
       "clothingSprites": {
         "rugged_poncho": "assets/cosmetics/clothes/overwear/portrait/poncho1_mao_m.png",
+        "rounded_pauldron": "assets/cosmetics/clothes/pauldrons/rounded_pauldron_m.png",
         "fine_poncho": "assets/cosmetics/clothes/overwear/portrait/poncho1_mao_m.png",
         "fine_hood": "assets/cosmetics/clothes/hood/finehood-base_m.png",
         "facewrap": "assets/cosmetics/clothes/hood/facewrap_m.png",
@@ -951,6 +952,7 @@ window.SCRATCHBONES_CONFIG = {
         { "id": "bandolier1",       "label": "Bandolier",         "price": 40, "category": "torso",    "description": "A rugged leather bandolier.", "material": "leather" },
         { "id": "tankan_bodywrap",  "label": "Tankan Body Wrap",  "price": 60, "category": "overwear", "description": "A wrapped ceremonial bodywrap." },
         { "id": "rugged_poncho", "label": "Rugged Poncho", "price": 70, "category": "overwear", "description": "A reinforced poncho layered with a rugged body wrap.", "material": "cloth" },
+        { "id": "rounded_pauldron", "label": "Rounded Pauldrons", "price": 0, "category": "pauldron", "description": "Smith-forged shoulder armor whose color and patina come from its metal.", "material": "metal", "smithOnly": true, "dyeable": false },
         { "id": "fine_poncho", "label": "Fine Poncho", "price": 80, "category": "overwear", "description": "A finely trimmed cloth poncho.", "material": "cloth" },
         { "id": "fine_hood",        "label": "Fine Hood",         "price": 60, "category": "hood",     "description": "A finely crafted hood with trim." }
       ]

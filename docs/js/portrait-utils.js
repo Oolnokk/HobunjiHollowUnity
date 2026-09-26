@@ -246,6 +246,22 @@ function setPortraitAssetBase(base) {
   IMG_CACHE.clear();
 }
 
+function resolvePortraitAssetUrl(relPath) {
+  if (!relPath) return relPath;
+  const raw = String(relPath);
+  if (/^(?:data:|blob:|https?:|file:)/i.test(raw)) return raw; // Already self-contained/absolute: used by metal recolor data URLs and external authoring previews.
+  const ensureTrailingSlash = (base) => String(base || './assets/').replace(/\/?$/, '/');
+  const baseHref = (typeof document !== 'undefined' && document.baseURI)
+    || (typeof location !== 'undefined' && location.href)
+    || '';
+  const configuredBase = ensureTrailingSlash(_puAssetBase);
+  try {
+    return baseHref ? new URL(configuredBase + raw, baseHref).href : configuredBase + raw;
+  } catch (_) {
+    return configuredBase + raw;
+  }
+}
+
 function loadImg(relPath) {
   const cached = IMG_CACHE.get(relPath);
   // Fast path: image already resolved — return a pre-resolved promise so callers
@@ -274,7 +290,8 @@ function loadImg(relPath) {
     fallbackBase = localBase.replace('/assets/', '/docs/assets/');
   }
 
-  const candidateUrls = [
+  const directUrl = /^(?:data:|blob:|https?:|file:)/i.test(String(relPath || '')) ? String(relPath) : null; // Recolored metal layers arrive as data URLs and must never be prefixed with the portrait asset base.
+  const candidateUrls = directUrl ? [directUrl] : [
     localBase + relPath,
     fallbackBase ? fallbackBase + relPath : null,
   ];
@@ -1218,6 +1235,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const renderHeadSprite = !omitHeadSpriteAndCosmetics;
   const renderHeadCosmetics = !omitHeadSpriteAndCosmetics;
   const resolvedFighter = resolvePortraitFighter(fighter) || fighter;
+  const metalStateForGroup = (group) => window.MetalArmorSystem?.portraitStateForGroup?.(group, bodyColors) || null; // Material state is resolved from the literal equipped article/base cosmetic, never from the clothing slot.
   const opacityMaskLayer = resolvedFighter?.opacityMaskLayer || fighter?.opacityMaskLayer || null;
   let headUrl = renderHeadSprite ? (resolvedFighter?.headUrl || fighter?.headUrl) : null;
   const bodyLayerSource = resolvedFighter?.bodyLayers || fighter?.bodyLayers || [];
@@ -1276,7 +1294,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       const target = group?.slot === 'torso' ? torsoClothingLayers : overwearLayers;
       const key = layer.paletteColorKey;
       const layerTintSlot = resolveLayerTintSlot(key, group.tintSlot);
-      target.push({ layer, tint: tintFor(layerTintSlot || 'A') });
+      target.push({ layer, tint: tintFor(layerTintSlot || 'A'), group, metalState: metalStateForGroup(group) });
     }
   }
 
@@ -1307,11 +1325,13 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const pushToTarget = (group, target) => {
     if (!group || hiddenCosmeticGroups?.has(group)) return;
     const groupLayers = resolveOptionLayers(group, resolvedFighter);
+    const metalState = metalStateForGroup(group); // Resolved once so diagnostics can report a zero-layer metal cosmetic instead of silently disappearing.
+    window.MetalArmorSystem?.reportResolvedPortraitGroup?.(group, metalState, groupLayers.length);
     if (!groupLayers.length) return;
     for (const layer of groupLayers) {
       const key = layer.paletteColorKey;
       const layerTintSlot = resolveLayerTintSlot(key, group.tintSlot);
-      target.push({ layer, tint: tintFor(layerTintSlot), group });
+      target.push({ layer, tint: tintFor(layerTintSlot), group, metalState });
     }
   };
 
@@ -1324,7 +1344,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
         if (layer.pos === 'back') {
           const key = layer.paletteColorKey;
           const layerTintSlot = resolveLayerTintSlot(key, group.tintSlot);
-          preBackLayers.push({ layer, tint: tintFor(layerTintSlot), group });
+          preBackLayers.push({ layer, tint: tintFor(layerTintSlot), group, metalState: metalStateForGroup(group) });
         }
       }
     }
@@ -1340,7 +1360,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
         if (layer.pos !== 'back') {
           const key = layer.paletteColorKey;
           const layerTintSlot = resolveLayerTintSlot(key, hat.tintSlot);
-          (hatIsUnderHood ? hatUnderLayers : hatOverLayers).push({ layer, tint: tintFor(layerTintSlot), group: hat });
+          (hatIsUnderHood ? hatUnderLayers : hatOverLayers).push({ layer, tint: tintFor(layerTintSlot), group: hat, metalState: metalStateForGroup(hat) });
         }
       }
     }
@@ -1356,7 +1376,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       for (const layer of groupLayers) {
         const key = layer.paletteColorKey;
         const layerTintSlot = resolveLayerTintSlot(key, group.tintSlot);
-        (layer.pos === 'back' ? preBackLayers : frontHairLayers).push({ layer, tint: tintFor(layerTintSlot), group });
+        (layer.pos === 'back' ? preBackLayers : frontHairLayers).push({ layer, tint: tintFor(layerTintSlot), group, metalState: metalStateForGroup(group) });
       }
     }
   }
@@ -1390,6 +1410,29 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       for (const entry of layerList) entry.layer = _behindFlippedLayer(entry.layer);
     };
     [baseLeftArmLayers, baseTorsoLayers, baseRightArmLayers].forEach(flipBehindLayers);
+  }
+
+  // Apply metal material pixels only after behind-view URL substitution, so a
+  // future metal garment with dedicated rear art is treated correctly too.
+  if (typeof window.MetalArmorSystem?.preparePortraitLayers === 'function') {
+    const cosmeticLayerLists = [
+      preBackLayers, torsoClothingLayers, overwearLayers, sideLeftLayers,
+      rightSideHairLayers, facialHairLayers, frontHairLayers, eyesLayers,
+      elevatedEyeAccessoryLayers, upperFaceLayers, hoodLayers, pauldronLayers,
+      hatUnderLayers, hatOverLayers,
+    ];
+    for (const layerList of cosmeticLayerLists) {
+      for (const entry of layerList) {
+        if (!entry?.metalState || !entry?.layer?.url) continue;
+        try {
+          const prepared = await window.MetalArmorSystem.preparePortraitLayers([entry.layer], entry.metalState);
+          if (prepared?.[0]) entry.layer = prepared[0];
+          entry.tint = { mode: 'none' }; // ToolMetalRecolor already baked alloy color, patina, plating, and authored removal into the pixels.
+        } catch (error) {
+          console.warn('[portrait] metal armor preparation failed; using ordinary cosmetic tint fallback', error);
+        }
+      }
+    }
   }
   const isSnowgogglesLayer = ({ group }) => _textMatchesAny([group?.id, group?.originalId].filter(Boolean).join(' '), ['snowgoggles']);
   const behindSnowgogglesLayers = renderBehindView
@@ -1702,7 +1745,7 @@ function portraitCategoryForEntry(entry) {
  * Extract portrait layer descriptors from a cosmetic JSON `parts` block.
  * paletteLayerMap (optional): maps layerRole names to palette color keys.
  */
-function _extractLayersFromParts(partsJson, paletteLayerMap) {
+function _extractLayersFromParts(partsJson, paletteLayerMap, allowNonPortraitAssets = false) {
   if (!partsJson || typeof partsJson !== 'object') return [];
   const layers = [];
   const head = partsJson.head;
@@ -1751,7 +1794,7 @@ function _extractLayersFromParts(partsJson, paletteLayerMap) {
       if (!partLayers || typeof partLayers !== 'object') continue;
       for (const [layerName, layer] of Object.entries(partLayers)) {
         const imgUrl = layer?.image?.url;
-        if (!imgUrl || !String(imgUrl).toLowerCase().includes('/portrait/')) continue;
+        if (!imgUrl || (!allowNonPortraitAssets && !String(imgUrl).toLowerCase().includes('/portrait/'))) continue; // Most clothing keeps portrait art in /portrait/; explicit portraitAssets configs may intentionally use another authored folder.
         const xf =
           layer?.spriteStyle?.base?.xform?.[partName] ||
           layer?.spriteStyle?.base?.xform?.head ||
@@ -1855,7 +1898,7 @@ function portraitVariantKeysForFighter(fighter, option) {
   const gender = String(fighter?.gender || '').trim().toLowerCase();
   if (!speciesId || !gender) return [];
   const otherGender = gender === 'male' ? 'female' : 'male';
-  const kind = (option?.slot === 'torso' || option?.slot === 'overwear') ? 'body' : 'head';
+  const kind = (option?.slot === 'torso' || option?.slot === 'overwear' || option?.slot === 'pauldron') ? 'body' : 'head';
   const candidates = [];
   const seenSpeciesGender = new Set();
   const pushCandidate = (candidateSpecies, candidateGender) => {
@@ -1907,14 +1950,15 @@ function portraitOptionFromJson(entry, json) {
   const paletteLayerMap = (json.palette && json.palette.layers) ? json.palette.layers : null;
 
   // Extract default layers from the top-level parts block.
-  const layers = _extractLayersFromParts(json.parts, paletteLayerMap);
+  const allowNonPortraitAssets = json.portraitAssets === true; // Explicit opt-in for cosmetics whose authored portrait PNGs live outside a literal /portrait/ folder.
+  const layers = _extractLayersFromParts(json.parts, paletteLayerMap, allowNonPortraitAssets);
 
   // Extract per-species-gender variant layers from the speciesVariants block.
   // Keys are "{speciesId}_{genderKey}" (e.g. "mao-ao_male", "kenkari_female").
   const variantLayers = {};
   if (json.speciesVariants && typeof json.speciesVariants === 'object') {
     for (const [variantKey, variantData] of Object.entries(json.speciesVariants)) {
-      const vLayers = _extractLayersFromParts(variantData && variantData.parts, paletteLayerMap);
+      const vLayers = _extractLayersFromParts(variantData && variantData.parts, paletteLayerMap, allowNonPortraitAssets);
       if (vLayers.length) variantLayers[variantKey] = vLayers;
     }
   }
@@ -2847,6 +2891,7 @@ async function preloadAllPortraitSprites(cosmeticsData) {
 }
 
 window.setPortraitConfig = setPortraitConfig;
+window.resolvePortraitAssetUrl = resolvePortraitAssetUrl; // Shared by material processors that must resolve source art through the same asset root as portrait rendering.
 window.getPortraitFighters = () => FIGHTERS;
 window.preloadAllPortraitSprites = preloadAllPortraitSprites;
 window.getPortraitXformPreset = getPortraitXformPreset;

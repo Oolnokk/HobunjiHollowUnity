@@ -22,10 +22,11 @@
     minFootingTakenMul: 0.35,
     minDodgeEfficacy: 0.50,
     minCombatMoveMul: 0.65,
-  }); // Central armor-weight tuning; all four tradeoffs derive only from total cloth weight.
+  }); // Central outfit-weight tuning; all four tradeoffs derive from total equipped clothing/armor weight, regardless of material.
   const CLOTHING_MARKER_KEY = '__hobunjiWovenClothing'; // Temporary bodyColors metadata passed only through avatar render data.
   const CRAFT_ID_MARKER = '#loom:'; // Makes each crafted article unique to legacy duplicate-collapsing logic.
   const CLOTHING_SLOTS = Object.freeze(['hat', 'hood', 'torso', 'overwear']);
+  const OUTFIT_WEIGHT_SLOTS = Object.freeze(['hat', 'hood', 'pauldron', 'torso', 'overwear']); // All clothing slots contribute to outfit burden when an article supplies a weight; material type is not inferred from slot.
   const PATTERN_SCALE_REFERENCE = 0.25; // Converts normalized whole-pattern scale to the pre-normalization renderer scale; 1.00 now means the old 0.25.
   const PATTERN_SCALE_MIN = 0.4; // Normalized lower clamp used by woven pattern rendering; equivalent to the old physical 0.10.
   const PATTERN_SCALE_MAX = 3.2; // Normalized upper clamp used by woven pattern rendering; equivalent to the old physical 0.80.
@@ -285,6 +286,9 @@
     const slot = String(itemOrBlueprint?.slot || '');
     const id = String(baseCosmeticId(itemOrBlueprint) || itemOrBlueprint?.baseCosmeticId || itemOrBlueprint?.cosmeticId || '');
     if (!CLOTHING_SLOTS.includes(slot) || !id) return false;
+    if (window.MetalArmorSystem?.isMetalArmor?.(itemOrBlueprint)) return false; // A forged torso/hat/overwear piece must never become a loom blueprint merely because its slot is usually cloth.
+    const catalogItem = (window.SCRATCHBONES_CONFIG?.game?.account?.shopCatalog || []).find(entry => entry?.id === id); // Used to reject smith-only base blueprints before a literal crafted instance exists.
+    if (catalogItem?.smithOnly || catalogItem?.material === 'metal') return false;
     if (id === 'bandolier1') return false;
     if (slot === 'hat') return /(?:^|::)basic_headband$/.test(id); // Every current hat is excluded except the non-leather basic headband.
     return true;
@@ -295,21 +299,22 @@
   }
 
   function itemWeightUnits(item) {
+    const explicit = Number(item?.weightUnits); // Smith-forged armor supplies a physical-mass-derived weight even though it is not loom-craftable cloth.
+    if (Number.isFinite(explicit) && explicit >= 0) return explicit;
     if (!isCraftableCloth(item)) return 0;
-    const explicit = Number(item?.weightUnits);
-    return Number.isFinite(explicit) && explicit >= 0 ? explicit : standardWeightFor(item);
+    return standardWeightFor(item);
   }
 
   function gearInventory() { return equipmentDeps?.getGearInventory?.() || null; }
   function packClothing() { return equipmentDeps?.getPackClothing?.() || []; }
 
-  function equippedClothItems() {
+  function equippedOutfitItems() {
     const gear = gearInventory();
-    return CLOTHING_SLOTS.map(slot => gear?.clothing?.[slot]).filter(item => isCraftableCloth(item));
+    return OUTFIT_WEIGHT_SLOTS.map(slot => gear?.clothing?.[slot]).filter(item => itemWeightUnits(item) > 0);
   }
 
   function totalEquippedWeight() {
-    return equippedClothItems().reduce((sum, item) => sum + itemWeightUnits(item), 0);
+    return equippedOutfitItems().reduce((sum, item) => sum + itemWeightUnits(item), 0);
   }
 
   function outfitItemsFromRoster(roster) {
@@ -444,11 +449,14 @@
     }
     if (wovenDescriptors.length) colors[CLOTHING_MARKER_KEY] = wovenDescriptors;
     else delete colors[CLOTHING_MARKER_KEY];
-    return {
+    const decorated = {
       ...out,
       equippedCosmetics: [...ids],
       appearance: { ...(out?.appearance || {}), bodyColors: colors },
     };
+    return window.MetalArmorSystem?.decorateAvatarDataWithMetalArmor
+      ? window.MetalArmorSystem.decorateAvatarDataWithMetalArmor(decorated, items)
+      : decorated; // NPC/default wardrobes and player gear share the same item-specific metal marker path.
   }
 
   function uniqueCraftCosmeticId(baseId, uid) { return `${baseId}${CRAFT_ID_MARKER}${uid}`; }
@@ -2507,7 +2515,7 @@
       mounted: mounted(),
       equippedWeight: stats.weightUnits,
       stats,
-      equipped: equippedClothItems().map(item => ({ uid: item.uid, article: articleLabel(item), slot: item.slot, material: item.weaveMaterial || 'standard', weightUnits: itemWeightUnits(item), woven: weavingHasAnyPattern(item.weaving) })),
+      equipped: equippedOutfitItems().map(item => ({ uid: item.uid, article: articleLabel(item), slot: item.slot, material: item.weaveMaterial || 'standard', weightUnits: itemWeightUnits(item), woven: weavingHasAnyPattern(item.weaving) })),
       blueprints: currentBlueprints().map(bp => ({ id: bp.baseCosmeticId, slot: bp.slot, label: bp.label })),
       wool: { light: Number(equipmentDeps?.inventory?.[LIGHT_WOOL_KEY]) || 0, heavy: Number(equipmentDeps?.inventory?.[HEAVY_WOOL_KEY]) || 0 },
       portraitPatterns: { ...portraitPatternStats, cacheSize: patternedCanvasCache.size, pending: pendingPatternCanvasPromises.size, gateReaders: portraitGateReaders, gateWriterActive: portraitGateWriterActive, gateWaitingWriters: portraitGateWaitingWriters, gatePreferReaders: portraitGatePreferReaders }, // Mobile-visible counters expose cache behavior plus ordinary-vs-woven gate ownership without a console.
