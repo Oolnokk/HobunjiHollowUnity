@@ -237,6 +237,20 @@ assert.strictEqual(banubu.events.length, 0);
 assert(!banubu.dialogueTrees.some(tree => Number(tree.banubuQuest?.stage) > 2 && tree.banubuQuest?.phase === 'offer'), 'quests 3–5 must have no offer trees');
 assert(banubu.dialogueTrees.some(tree => tree.banubuQuest?.phase === 'blocked' && tree.banubuQuest?.stage === 3), 'stage 3 must be an explicit authoring block');
 
+// Stale Dialogue Editor overrides from before transactional turn-ins must be upgraded in place rather than bypassing the final dialogue boundary.
+const staleReadyTree = JSON.parse(JSON.stringify(content.dialogueTrees.find(tree => tree.id === 'banubu_q1_ready')));
+const staleReadyNodes = Object.fromEntries(staleReadyTree.nodes.map(node => [node.id, node]));
+staleReadyNodes.banubu_q1_ready_1.choices[0].actions[0].operation = 'turnIn';
+staleReadyNodes.banubu_q1_ready_18.next = null;
+staleReadyTree.nodes = staleReadyTree.nodes.filter(node => node.id !== 'banubu_q1_ready_commit');
+const staleDb = { npcs: [{ id: 'banubu', dialogueTrees: [staleReadyTree], phrasePools: [], events: [] }] };
+content.mergeDialogueTreesIntoDatabase(staleDb);
+const migratedReadyTree = staleDb.npcs[0].dialogueTrees.find(tree => tree.id === 'banubu_q1_ready');
+const migratedReadyNodes = Object.fromEntries(migratedReadyTree.nodes.map(node => [node.id, node]));
+assert.strictEqual(migratedReadyNodes.banubu_q1_ready_1.choices[0].actions[0].operation, 'prepareTurnIn', 'stale local turnIn actions must be migrated to prepare-only');
+assert.strictEqual(migratedReadyNodes.banubu_q1_ready_18.next, 'banubu_q1_ready_commit', 'stale edited final lines must regain the transactional commit edge');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(migratedReadyNodes.banubu_q1_ready_commit.banubuPresentation)), { commitTurnIn: 1 }, 'stale ready trees must regain the final commit node');
+
 const q1ReadyPresentationTree = content.dialogueTrees.find(tree => tree.id === 'banubu_q1_ready'); // Used to verify the exact authored line-to-presentation timing requested for the Color Pools Key scene.
 const q1ReadyPresentationNodes = Object.fromEntries(q1ReadyPresentationTree.nodes.map(node => [node.id, node]));
 const introTree = content.dialogueTrees.find(tree => tree.id === 'banubu_intro'); // Verifies the existing awake-camera metadata on Banubu's choice node is no longer discarded by the helper.
@@ -395,6 +409,13 @@ presentationHandler(null, { npc: banubu, walker: presentationWalker, ended: true
 assert.strictEqual(state.status, 'active', 'cancelling Quest 1 dialogue must leave the quest exactly active');
 assert.strictEqual(cookedInventory[0].count, 1, 'cancelling Quest 1 dialogue must leave the pie untouched');
 assert.strictEqual(questline.debugSnapshot().presentation.pendingTurnInStage, null, 'cancelling must discard the transient turn-in transaction');
+
+// Even if a stale tree somehow reaches runtime without composition migration, legacy turnIn actions are fail-safe prepare-only.
+const legacyImmediateAction = { type: 'banubuQuest', operation: 'turnIn', stage: 1 };
+assert.strictEqual(registeredActions.get('banubuQuest')(legacyImmediateAction, { npc: banubu, tree: readyForCancel, node: readyForCancelNodes.banubu_q1_ready_1 }).ok, true);
+assert.strictEqual(state.status, 'active', 'legacy turnIn actions must not advance the quest immediately');
+assert.strictEqual(cookedInventory[0].count, 1, 'legacy turnIn actions must not consume the pie before the final commit node');
+presentationHandler(null, { npc: banubu, walker: presentationWalker, ended: true });
 
 const readyForCommit = questline.selectTree(banubu);
 const readyForCommitNodes = Object.fromEntries(readyForCommit.nodes.map(node => [node.id, node]));
@@ -562,6 +583,8 @@ assert.match(dialogueContentSource, /function registerNodeEnterHandler\(npcId, h
 assert.match(dialogueContentSource, /_notifyDialogueNodeEnter\(node\)/);
 assert.match(dialogueContentSource, /_notifyDialogueNodeEnter\(null, true\)/);
 const banubuQuestlineSource = read('docs/js/banubu-questline.js'); // Verifies the sparkle effect obeys the repository's single-frame-owner architecture.
+assert.doesNotMatch(banubuQuestlineSource, /function ensureNextTarget\(/, 'no helper may persist Quest 2 preview state before the final dialogue commit');
+assert.match(banubuQuestlineSource, /operation === 'turnIn'\) result = prepareTurnIn/, 'legacy turnIn actions must be fail-safe prepare-only');
 assert.doesNotMatch(banubuQuestlineSource, /requestAnimationFrame\(/);
 assert.match(banubuQuestlineSource, /scheduler\.register\(PRESENTATION_SCHEDULER_ID, updatePresentationFrame/);
 assert.match(banubuQuestlineSource, /RuntimeFrameScheduler\.setEnabled|RuntimeFrameScheduler\?\.setEnabled/);
