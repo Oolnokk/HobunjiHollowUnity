@@ -137,6 +137,11 @@ assert(banubuQuestContentSource.includes("{ cameraId: 'banubu_dialogue_awake' }"
 assert(banubuQuestContentSource.includes("cameraId: 'banubu_key_ground'"), 'Banubu Color Pools Key dialogue must switch to the authored ground-level key shot');
 assert(gameSource.includes('loadLocaleCavernDefinition?.(mapId)') && gameSource.includes("loadSource = 'locale-cavern'"), 'building loader must prefer cave-interior locales');
 assert(gameSource.includes('(!x.requiresKeyItem || !!window.KeyItemSystem?.has?.(x.requiresKeyItem))'), 'key-gated cave connectors must be mechanically inaccessible without their key');
+assert(gameSource.includes('for (const door of (mapData.keyGatedDoors || []))'), 'key-gated cavern connectors must instantiate their authored door furniture in the live cave scene');
+assert(gameSource.includes('window.AuthoredFurniture.buildGroup(doorData, 0x8b6540)'), 'key-gated cavern doors must render through the authored furniture asset');
+assert(gameSource.includes("group.name = 'key_gated_cavern_door_'"), 'spawned cavern door furniture must carry a stable runtime identity');
+assert(gameSource.includes("window.addEventListener('hobunji:key-item-granted'"), 'already-loaded secret cave doors must react immediately when the world key is granted');
+assert(gameSource.includes('record.group.visible = true'), 'granting the matching key must reveal the existing door without requiring a cave reload');
 assert(gameSource.includes("targetSpotId: exit.targetSpotId || ''") && gameSource.includes("_pendingEntrySpotId"), 'cave-to-cave travel must preserve named connector destinations across async generation');
 assert(gameSource.includes('entranceLightTileSet'), 'secret exits must not affect the primary cave-mouth daylight');
 assert(generatorSource.includes('function sampleMeshSurfaceAt(') && generatorSource.includes('floorSurfaceByTile: floorSurface.byTile'), 'cavern generation must sample the rendered shell and export per-tile ground Y');
