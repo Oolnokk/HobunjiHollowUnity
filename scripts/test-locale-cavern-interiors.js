@@ -31,7 +31,7 @@ const sleepCamera = banubuDialogueCameras.find(camera => camera.id === 'banubu_d
 const keyCamera = banubuDialogueCameras.find(camera => camera.id === 'banubu_key_ground'); // Ground-level shot used while Banubu calls attention to the root-attached key sparkle emitter.
 assert.deepStrictEqual(awakeCamera?.position, { x: 7.024, y: 0.75, z: 8.3 }, 'Banubu awake camera keeps its authored cavern-side position rather than adopting the discarded runtime-only awake-camera edit');
 assert.strictEqual(awakeCamera?.fovDeg, 34, 'Banubu awake camera stays only slightly wider than the sleeping camera');
-assert.deepStrictEqual(awakeCamera?.target, { x: 6.5, y: 0.65, z: 5.5 }, 'Banubu awake camera must frame the middle of the cavern instead of tracking Banubu’s head');
+assert.deepStrictEqual(awakeCamera?.target, { x: 6.5, y: 0.65, z: 6 }, 'Banubu awake camera must frame the authored cavern-floor centroid instead of tracking Banubu’s head');
 assert.strictEqual(awakeCamera?.targetNpcId, '', 'Banubu awake camera must use an absolute cavern-centered target');
 assert.deepStrictEqual(sleepCamera?.position, { x: 7.024, y: 0.142, z: 8.3 }, 'Banubu sleeping camera ignores the discarded runtime-only sleep-camera edit');
 assert.strictEqual(sleepCamera?.targetNpcId, 'banubu', 'sleeping dialogue may continue following Banubu’s live face');
