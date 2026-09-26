@@ -115,6 +115,9 @@ function appendCutsceneNodeEditor(tree,node){
           <div><label for="editBanubuMoveX">Relative X</label><input id="editBanubuMoveX" type="number" step=".05" value="${Number(move?.x)||0}"></div>
           <div><label for="editBanubuMoveZ">Relative Z</label><input id="editBanubuMoveZ" type="number" step=".05" value="${Number(move?.z)||0}"></div>
           <div><label for="editBanubuMoveDuration">Duration sec</label><input id="editBanubuMoveDuration" type="number" min=".05" step=".05" value="${Math.max(.05,Number(move?.duration)||.7)}"></div>
+          <div><label for="editBanubuCommitIntroAttempt">Commit wake-up attempt</label><select id="editBanubuCommitIntroAttempt"><option value="0"${!Number(presentation.commitIntroAttempt)?' selected':''}>— none —</option><option value="1"${Number(presentation.commitIntroAttempt)===1?' selected':''}>Attempt 1</option><option value="2"${Number(presentation.commitIntroAttempt)===2?' selected':''}>Attempt 2</option><option value="3"${Number(presentation.commitIntroAttempt)===3?' selected':''}>Attempt 3</option></select></div>
+          <div><label for="editBanubuCommitQuestAction">Commit prepared quest action</label><select id="editBanubuCommitQuestAction"><option value=""${!presentation.commitQuestAction?.operation?' selected':''}>— none —</option><option value="unlockRecipe"${presentation.commitQuestAction?.operation==='unlockRecipe'?' selected':''}>unlock recipe / begin chain</option><option value="accept"${presentation.commitQuestAction?.operation==='accept'?' selected':''}>accept stage</option></select></div>
+          <div><label for="editBanubuCommitQuestStage">Quest-action stage</label><input id="editBanubuCommitQuestStage" type="number" min="0" max="5" step="1" value="${Math.max(0,Math.min(5,Number(presentation.commitQuestAction?.stage)||0))}"></div>
           <div><label for="editBanubuCommitTurnIn">Commit turn-in stage</label><select id="editBanubuCommitTurnIn"><option value="0"${!Number(presentation.commitTurnIn)?' selected':''}>— none —</option><option value="1"${Number(presentation.commitTurnIn)===1?' selected':''}>Quest 1</option><option value="2"${Number(presentation.commitTurnIn)===2?' selected':''}>Quest 2</option></select></div>
         </div>
       </div>
@@ -192,11 +195,26 @@ function appendCutsceneNodeEditor(tree,node){
     $(id).addEventListener('input',()=>commitMoveCue('Edited Banubu movement cue'));
     $(id).addEventListener('blur',()=>renderGraph());
   }
+  $('editBanubuCommitIntroAttempt').addEventListener('change',event=>commitMutation('Changed Banubu wake-up commit cue',()=>{
+    const cue=ensurePresentation(),attempt=Math.max(0,Math.min(3,Number(event.target.value)||0));
+    if(attempt)cue.commitIntroAttempt=attempt;else delete cue.commitIntroAttempt;
+    cleanPresentation();
+  },{render:'graph'}));
+  function commitQuestActionCue(label){
+    commitMutation(label,()=>{
+      const cue=ensurePresentation(),operation=$('editBanubuCommitQuestAction').value;
+      const stage=Math.max(0,Math.min(5,Math.trunc(readNumber('editBanubuCommitQuestStage',0))));
+      if(operation)cue.commitQuestAction={operation,stage};else delete cue.commitQuestAction;
+      cleanPresentation();
+    },{render:'graph'});
+  }
+  $('editBanubuCommitQuestAction').addEventListener('change',()=>commitQuestActionCue('Changed Banubu prepared quest commit'));
+  $('editBanubuCommitQuestStage').addEventListener('change',()=>commitQuestActionCue('Changed Banubu prepared quest stage'));
   $('editBanubuCommitTurnIn').addEventListener('change',event=>commitMutation('Changed Banubu turn-in commit cue',()=>{
     const cue=ensurePresentation(),stage=Math.max(0,Math.min(2,Number(event.target.value)||0));
     if(stage)cue.commitTurnIn=stage;else delete cue.commitTurnIn;
     cleanPresentation();
-  },{render:'graph'})); // Shared numeric reader keeps malformed mobile input from leaking NaN into exported dialogue JSON.
+  },{render:'graph'}));
   const authoredEmitter=()=>({
     id:$('editSparkId').value.trim()||'banubu_key_sparkles',
     name:$('editSparkName').value.trim()||'Banubu Key Sparkles',
