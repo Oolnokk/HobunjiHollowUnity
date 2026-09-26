@@ -222,12 +222,6 @@
     return target.questType === expectedType ? target : null;
   }
 
-  function transientTarget(record, state, stage) {
-    return validTargetForStage(state, stage)
-      || (presentationState.previewTarget && Number(presentationState.previewTargetStage) === Number(stage) ? presentationState.previewTarget : null)
-      || rollTarget(record, stage); // Used for dialogue wording/validation without writing a target into the save until the conversation commits.
-  }
-
   function sameEffectSet(left, right) {
     const a = [...new Set(left || [])].sort(); // Used by Nine Leaf Tea to preserve its authored exact-effect requirement.
     const b = [...new Set(right || [])].sort();
@@ -360,20 +354,17 @@
     presentationState.pendingTurnIn = null;
     presentationState.pendingQuestAction = null;
     presentationState.pendingIntroAttempt = null;
-    presentationState.previewTarget = null;
-    presentationState.previewTargetStage = null; // Fresh conversation routing always starts from committed quest state only.
+    presentationState.previewTarget = null; // Fresh conversation routing always starts from committed quest state only.
     let phase = state.status || 'intro';
     let introAttempt = 3;
     if (phase === 'intro') {
       introAttempt = Math.min(3, Math.max(1, (Number(state.introTalkAttempts) || 0) + 1));
       presentationState.pendingIntroAttempt = introAttempt; // Becomes persistent only on the authored final end node.
       presentationState.previewTarget = validTargetForStage(state, 1) || rollTarget(record, 1);
-      presentationState.previewTargetStage = 1;
     } else if (phase === 'active' && matchingMeal(state)) {
       phase = 'ready';
     } else if (phase === 'offer' || phase === 'active') {
       presentationState.previewTarget = validTargetForStage(state, state.stage) || rollTarget(record, state.stage);
-      presentationState.previewTargetStage = Number(state.stage);
     }
     if (phase === 'blocked') state.stage = 3;
     if (record) record._animalDialogueEyesOpen = phase !== 'intro' || introAttempt >= 3; // Third wake-up preview may open Banubu's eyes without committing that attempt.
@@ -742,8 +733,7 @@
     presentationState.pendingTurnIn = null;
     presentationState.pendingQuestAction = null;
     presentationState.pendingIntroAttempt = null;
-    presentationState.previewTarget = null;
-    presentationState.previewTargetStage = null; // Every uncommitted quest preview is discarded when dialogue closes early or normally.
+    presentationState.previewTarget = null; // Every uncommitted quest preview is discarded when dialogue closes early or normally.
     presentationState.walker = null;
     syncPresentationScheduler();
   }
