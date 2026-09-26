@@ -8503,9 +8503,40 @@
       acceptedSites.push(accepted || { x:best.x, y:best.y, isEntryIsland:false, fixedKind:'spacingFallback' });
     }
 
+    const pointToSegmentDistance = (px, py, ax, ay, bx, by) => {
+      const dx = bx - ax; // Used to project a neighboring site onto a candidate island axis while choosing its heading.
+      const dy = by - ay; // Used with dx above for the candidate-axis projection.
+      const denom = dx * dx + dy * dy;
+      const t = denom > 1e-9 ? clamp(((px - ax) * dx + (py - ay) * dy) / denom, 0, 1) : 0;
+      return Math.hypot(px - (ax + dx * t), py - (ay + dy * t));
+    };
+
     const makeSpinePoints = (site, index, desiredLength, desiredWidth) => {
       const pointCount = clamp(Math.round(desiredLength / 2.35) + 1, 7, 15); // Used to make each island a many-segment ribbon rather than one oval.
-      const baseHeading = noise2(index, 3, seedSalt + 853) * Math.PI * 2; // Used as the island's overall long-axis direction.
+      const headingPhase = noise2(index, 3, seedSalt + 853) * Math.PI; // Used as the deterministic starting phase for evaluating equivalent long-axis orientations.
+      let baseHeading = headingPhase; // Used as the chosen island long-axis after scoring headings against neighboring island sites.
+      let bestHeadingScore = -Infinity;
+      for (let candidateIndex = 0; candidateIndex < 12; candidateIndex++) {
+        const heading = headingPhase + candidateIndex * Math.PI / 12;
+        const half = desiredLength * 0.5;
+        const endAX = site.x + Math.cos(heading) * half;
+        const endAY = site.y + Math.sin(heading) * half;
+        const endBX = site.x - Math.cos(heading) * half;
+        const endBY = site.y - Math.sin(heading) * half;
+        const edgeClearance = Math.min(endAX, endAY, settings.width - 1 - endAX, settings.height - 1 - endAY, endBX, endBY, settings.width - 1 - endBX, settings.height - 1 - endBY); // Used to penalize headings that would immediately clip the long ribbon against the world boundary.
+        let neighborClearance = Infinity;
+        for (let otherIndex = 0; otherIndex < acceptedSites.length; otherIndex++) {
+          if (otherIndex === index) continue;
+          const other = acceptedSites[otherIndex];
+          const segmentDistance = pointToSegmentDistance(other.x, other.y, endAX, endAY, endBX, endBY); // Used to favor headings whose long centerline threads through open sea between other island sites.
+          neighborClearance = Math.min(neighborClearance, segmentDistance);
+        }
+        const score = Math.min(neighborClearance, edgeClearance * 1.35);
+        if (score > bestHeadingScore) {
+          bestHeadingScore = score;
+          baseHeading = heading;
+        }
+      }
       const curveSign = noise2(index, 4, seedSalt + 857) < 0.5 ? -1 : 1; // Used to choose clockwise versus counter-clockwise bowing.
       const bendAmount = (0.58 + noise2(index, 5, seedSalt + 863) * 0.72) * curveSign; // Used to guarantee a visibly bowed Italy/Denmark-like arc instead of allowing nearly straight ribbons.
       const waveAmount = (1.15 + noise2(index, 6, seedSalt + 877) * 2.25) * landScale; // Used for a second Indonesia-like S-bend layered onto the main arc.
@@ -8667,12 +8698,20 @@
         if (!inside && archipelagoPointInsideLobe(x, y, lobe, irregularity, island.shoreSalt + lobeIndex * 157)) inside = true;
       }
       if (!inside) continue;
-      let nearestOtherLobe = Infinity; // Used to carve a guaranteed sea channel wherever two curving ribbons approach one another.
+      let nearestOtherShore = Infinity; // Used to carve a gap only when this tile actually approaches another island's shoreline, not merely its distant center.
       for (const other of plan.islands) {
         if (other === island) continue;
-        for (const lobe of other.lobes) nearestOtherLobe = Math.min(nearestOtherLobe, Math.hypot(x - lobe.x, y - lobe.y));
+        for (const lobe of other.lobes) {
+          const cos = Math.cos(-(lobe.rotation || 0));
+          const sin = Math.sin(-(lobe.rotation || 0));
+          const localX = (x - lobe.x) * cos - (y - lobe.y) * sin;
+          const localY = (x - lobe.x) * sin + (y - lobe.y) * cos;
+          const normalized = Math.hypot(localX / Math.max(1, lobe.radiusX), localY / Math.max(1, lobe.radiusY));
+          const shoreDistance = (normalized - 1) * Math.min(lobe.radiusX, lobe.radiusY); // Negative means the tile is already inside the competing lobe.
+          nearestOtherShore = Math.min(nearestOtherShore, shoreDistance);
+        }
       }
-      if (nearestOwnLobe + plan.waterGap >= nearestOtherLobe) continue;
+      if (nearestOtherShore < plan.waterGap) continue;
       if (nearestOwnLobe < bestLobeDistance) {
         bestIsland = island;
         bestLobeDistance = nearestOwnLobe;
@@ -8815,15 +8854,15 @@
     for (const island of plan.islands) {
       const points = island.spinePoints || [];
       if (!points.length) continue;
-      const count = 2 + Math.floor(noise2(island.index, 23, plan.seedSalt + 1201) * 3); // Used to give each long island two to four broad elevated districts.
+      const count = 1 + (noise2(island.index, 23, plan.seedSalt + 1201) > 0.34 ? 1 : 0); // Used to give each long island one or two very broad elevated districts instead of many fragmented bumps.
       const defs = [];
       for (let i = 0; i < count; i++) {
         const evenT = (i + 1) / (count + 1);
         const offset = (noise2(island.index, i, plan.seedSalt + 1213) - 0.5) * 0.22;
         const centerT = clamp(evenT + offset, 0.12, 0.88); // Used to spread terraces along the curved island rather than clustering them at one end.
         const centerIndex = centerT * Math.max(1, points.length - 1);
-        const spanPoints = Math.max(1.8, points.length * (0.16 + noise2(island.index, i, plan.seedSalt + 1229) * 0.13)); // Used to make each level wide/long along the island spine.
-        const crossRadius = Math.max(2.4, island.meanWidth * (0.48 + noise2(i, island.index, plan.seedSalt + 1237) * 0.20)); // Used to let shelves span most of the narrow island while leaving an uneven low shoreline.
+        const spanPoints = Math.max(2.4, points.length * (0.26 + noise2(island.index, i, plan.seedSalt + 1229) * 0.15)); // Used to make each shelf long and broad along the curved island spine.
+        const crossRadius = Math.max(2.1, island.meanWidth * (0.32 + noise2(i, island.index, plan.seedSalt + 1237) * 0.13)); // Used to keep a low walkable/forested shoreline around the broad central terrace.
         const stackTier = clamp(2 + (noise2(island.index, i, plan.seedSalt + 1249) > 0.48 ? 1 : 0), 1, maxTier); // Used to vary whether this district tops out at tier 2 or tier 3.
         defs.push({ centerIndex, spanPoints, crossRadius, stackTier });
         terraceCount++;
