@@ -200,6 +200,9 @@
       for (const clone of entry.pendingClones) {
         clone.image = entry.base.image;
         clone.format = entry.base.format;
+        clone.type = entry.base.type;
+        if ('colorSpace' in clone && 'colorSpace' in entry.base) clone.colorSpace = entry.base.colorSpace;
+        else if ('encoding' in clone && 'encoding' in entry.base) clone.encoding = entry.base.encoding;
         clone.needsUpdate = true;
       }
       entry.pendingClones.clear();
@@ -212,9 +215,13 @@
   function applyPartTexture(mat, part) {
     const entry = texEntry(part.materialTexture);
     const tex = entry.base.clone();
-    tex.needsUpdate = true;
     tex.rotation = (part.materialRotationDeg || 0) * DEG;
-    if (!entry.loaded) entry.pendingClones.add(tex);
+    if (entry.loaded && entry.base.image) {
+      tex.image = entry.base.image;
+      tex.needsUpdate = true;
+    } else {
+      entry.pendingClones.add(tex); // Image-less clones stay clean until texEntry's onLoad patches the decoded image; marking them dirty early can strand a flat/empty GPU upload.
+    }
     mat.map = tex;
     mat.color.set(0xffffff);
     mat.transparent = !!part.textureTransparent;
@@ -453,11 +460,11 @@ function campfireRecipe() {
   // this exact five-stage silhouette prevents a placeholder cube if authored
   // furniture finishes loading a frame after the cave scene.
   CATALOG.stonePedestal = [
-    box(0, .05, 0, .78, .10, .78, 1, { color: 0x625c52 }),
-    box(0, .14, 0, .64, .08, .64, 1, { color: 0x7b7466, topScaleX: .94, topScaleZ: .94 }),
-    box(0, .43, 0, .46, .50, .46, 1, { color: 0x7b7466, topScaleX: .88, topScaleZ: .88, bottomScaleX: 1.04, bottomScaleZ: 1.04 }),
-    box(0, .71, 0, .56, .08, .56, 1, { color: 0x928a78 }),
-    box(0, .80, 0, .76, .10, .76, 1, { color: 0x928a78, topScaleX: .96, topScaleZ: .96 }),
+    box(0, .05, 0, .78, .10, .78, 1, { color: 0x625c52, materialTexture: 'carved_smooth.png' }),
+    box(0, .14, 0, .64, .08, .64, 1, { color: 0x7b7466, topScaleX: .94, topScaleZ: .94, materialTexture: 'carved_smooth.png' }),
+    box(0, .43, 0, .46, .50, .46, 1, { color: 0x7b7466, topScaleX: .88, topScaleZ: .88, bottomScaleX: 1.04, bottomScaleZ: 1.04, materialTexture: 'carved_smooth.png' }),
+    box(0, .71, 0, .56, .08, .56, 1, { color: 0x928a78, materialTexture: 'carved_smooth.png' }),
+    box(0, .80, 0, .76, .10, .76, 1, { color: 0x928a78, topScaleX: .96, topScaleZ: .96, materialTexture: 'carved_smooth.png' }),
   ];
 
   CATALOG.statue = [
@@ -598,5 +605,6 @@ function campfireRecipe() {
     buildPartMesh,
     shade,
     CATALOG,
+    textureDebugSnapshot: () => Array.from(_texCache.entries()).map(([filename, entry]) => ({ filename, loaded: !!entry.loaded, pendingClones: entry.pendingClones.size, imageWidth: Number(entry.base?.image?.naturalWidth || entry.base?.image?.width || 0), imageHeight: Number(entry.base?.image?.naturalHeight || entry.base?.image?.height || 0) })), // Used by the mobile Pixel Probe to verify authored furniture textures actually reached decoded images.
   };
 })();
