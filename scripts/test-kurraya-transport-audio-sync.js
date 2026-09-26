@@ -253,7 +253,7 @@ assert.match(
 
 assert.match(
   musicLab,
-  /id="arrangementTimeline"[\s\S]*?id="arrangementPalette"[\s\S]*?Adjacent bars painted with the same root become one sustained long chord/,
+  /id="arrangementPalette"[\s\S]*?id="arrangementTimeline"[\s\S]*?Adjacent bars painted with the same root become one sustained long chord/,
   'the Music Lab must show the melody and provide a bar-painting chord-section editor'
 );
 
