@@ -7,6 +7,7 @@ const vm = require('node:vm');
 const read = path => fs.readFileSync(path, 'utf8');
 const game = read('docs/game.js');
 const core = read('docs/js/combat/combat-core.js');
+const enemySearch = read('docs/js/combat/enemy-search-ai.js'); // Enemy sight/search AI extracted from game.js.
 const loader = read('docs/js/combat/combat-config-loader.js');
 const input = read('docs/js/combat/combat-input.js');
 const bandit = read('docs/js/combat/combat-bandit.js');
@@ -68,11 +69,11 @@ assert.match(game, /if \(initialStep\?\.aligned\)[\s\S]{0,180}commitMeleeAttackF
 assert.match(game, /meleeAttackAlignment = null;/, 'game retains one explicit transient-lock release point');
 assert.match(game, /appliedFacing: startFacing/, 'transient alignment owns the heading it actually applies');
 assert.match(game, /attackAlignmentStep\?\.\(player, target, 0, \{ facing: alignment\.appliedFacing \}\)/, 'alignment does not reread competing controller or mouse look authority each frame');
-assert.match(game, /function enemyCanSeeTarget\([\s\S]{0,260}targetInsideAttackCone/, 'enemy sight uses the same shared cone');
-assert.match(game, /state = 'searching'/, 'enemies search after losing sight');
-assert.match(game, /function updateEnemySearch\(/, 'enemy scanning can reacquire the player');
+assert.match(enemySearch, /function enemyCanSeeTarget\([\s\S]{0,260}targetInsideAttackCone/, 'enemy sight uses the same shared cone');
+assert.match(enemySearch, /state = 'searching'/, 'enemies search after losing sight');
+assert.match(enemySearch, /function updateEnemySearch\(/, 'enemy scanning can reacquire the player');
 assert.match(game, /postAttackTurnMultiplier\?\.\(player\)/, 'player look inputs are rate-scaled after attacks');
-assert.match(game, /postAttackTurnMultiplier\?\.\(c\)/, 'enemy turning is rate-scaled after attacks');
+assert.match(enemySearch, /postAttackTurnMultiplier\?\.\(c\)/, 'enemy turning is rate-scaled after attacks');
 assert.doesNotMatch(game, /meleeAutoTargetOn|cycleMeleeAutoTarget|tryAutoEngageMeleeTarget/, 'persistent melee lock code is gone');
 
 const runtime = { window: {}, performance: { now: () => 1000 } }; // Minimal browser surface used to prove targeting overrides change runtime behavior.

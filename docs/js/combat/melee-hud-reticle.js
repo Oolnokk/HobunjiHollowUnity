@@ -13,6 +13,7 @@
   const RETICLE_HEIGHT_PX = 71 * RETICLE_SCALE;
   const FILTER_WHITE = 'brightness(0) invert(1)';
   const READY_SCALE = 1.16;
+  const OUT_OF_REACH_MARGIN_WORLD = 0.5; // Slack for the attacker hitbox origin differing from player.x/y before skipping a candidate's collider tests.
   const SCHEDULER_ID = 'melee-hud-reticle'; // Used for shared frame ownership, disposal, tests, and Pixel Probe diagnostics.
   const SCALE_TRANSITION = 'transform 140ms ease-out'; // Used by each cropped quadrant wrapper when its attack enters or leaves range.
   const COLOR_TRANSITION = 'opacity 140ms ease-out'; // Used by the neutral/color layers for the readiness color lerp.
@@ -232,6 +233,9 @@
       deps.player.y / deps.TILE,
     );
     const aim = new THREE.Vector3(Number(direction.x) || 1, Number(direction.y) || 0, Number(direction.z) || 0).normalize();
+    let maxReachPx = 0;
+    for (const profile of slotProfiles) if (profile.attackId && profile.reachPx > maxReachPx) maxReachPx = profile.reachPx;
+    const maxReachWorld = maxReachPx / deps.TILE + OUT_OF_REACH_MARGIN_WORLD;
     let selected = null;
     for (const candidate of candidates) {
       const target = candidate.entity;
@@ -239,8 +243,12 @@
       const closest = hitbox?.box?.clampPoint?.(origin, new THREE.Vector3())
         || new THREE.Vector3(target.x / deps.TILE, origin.y, target.y / deps.TILE);
       const distanceWorld = closest.distanceTo(origin);
+      // meleeHit can only succeed when some part of the target lies within
+      // reach horizontally, so every hostile in the area no longer pays a
+      // full 3D collider test per slot per frame.
+      const outOfReach = Math.hypot(closest.x - origin.x, closest.z - origin.z) > maxReachWorld;
       const ready = slotProfiles.map(profile => {
-        if (!profile.attackId || profile.reachPx <= 0) return false;
+        if (outOfReach || !profile.attackId || profile.reachPx <= 0) return false;
         try {
           const result = window.Combat?.meleeHit?.(deps.player, target, {
             rangePx: profile.reachPx,

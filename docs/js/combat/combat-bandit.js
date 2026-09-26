@@ -800,6 +800,7 @@
       halfConeRad: hitTest.halfConeRad,
       yaw: c.facing,
       pitch: c._banditLungeAimPitch || c._banditAimPitch || 0,
+      debug: false, // Per-frame halt probe; recording it would overwrite this bandit's real strike collider in Show Hitboxes.
     }) || false;
   }
 

@@ -67,6 +67,7 @@
   const missingHolderWarnings = new WeakSet(); // Prevents repeated mobile debug-log spam while an avatar/weapon is mounting.
   let cachedDefensiveIcon = '🛡️'; // Last arch-derived defensive-heavy glyph used to texture Counter Shield projections.
   let cachedDefensiveIconTexture = null; // Shared canvas texture regenerated only when the arch glyph changes.
+  const liveActorsScratch = new Set(); // Reused every presentation frame instead of allocating a fresh Set.
   let lastExternalWeaponGlowActive = null; // Edge-triggered bridge: avoids calling the weapon-glow renderer every idle frame.
 
   function makeSoftParticleTexture() {
@@ -483,10 +484,14 @@
 
   function updateHeavyAttackPresentation(_dt) {
     const deps = window.Combat.deps; // Supplies the live player, hostile list, current area, and tool-holder bridge.
-    if (!deps?.player || !Array.isArray(deps.hostileObjects)) return;
+    // game.js's hostileObjects is a Set; any iterable is accepted directly so
+    // no per-frame Array.from copy is needed.
+    if (!deps?.player || typeof deps.hostileObjects?.[Symbol.iterator] !== 'function') return;
     const timeS = performance.now() / 1000; // Drives purely cosmetic flame/glow/pulse animation.
     const nowMs = timeS * 1000; // Matches bandit `_banditGuardUntil`, which is stored in performance.now milliseconds.
-    const liveActors = new Set([deps.player]); // Used to dispose visuals for enemies that despawn, die, or leave the current area.
+    const liveActors = liveActorsScratch; // Used to dispose visuals for enemies that despawn, die, or leave the current area.
+    liveActors.clear();
+    liveActors.add(deps.player);
     const currentArea = deps.getCurrentArea?.(); // Filters the scan to the scene actually being rendered.
 
     const playerDefensive = isPlayerCounterShieldHeld(deps.player);
@@ -528,6 +533,7 @@
 
   window.Combat.heavyTelegraphVisuals = {
     update: updateHeavyAttackPresentation,
+    acceptsIterableHostiles: true, // Tells combat-counter-shield.js its Set->Array compatibility re-run is unnecessary.
     snapshot,
     // Lets combat-counter-shield.js's weapon-glow-only presentation find the
     // actors it needs (holder, fieldGroup, weaponGlowGroup, defensive flag)

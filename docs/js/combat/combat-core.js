@@ -674,6 +674,16 @@
     }
   }
 
+  // Staged actions tick from Combat.update, independent of the hostile list,
+  // so a creature removed on death would otherwise still land a windup that
+  // was already in flight (a corpse striking the player).
+  function cancelStagedForAttacker(actor) {
+    if (!actor || activeStaged.size === 0) return;
+    for (const action of Array.from(activeStaged)) {
+      if (action.data?.attacker === actor) action.cancel();
+    }
+  }
+
   function init(injectedDeps) {
     deps = injectedDeps;
   }
@@ -707,6 +717,7 @@
     playerMeleeThreat,
     currentPlayerMeleeThreat,
     cancelAllStaged,
+    cancelStagedForAttacker,
     meleeAimSolution,
     targetInsideAttackCone,
     attackAlignmentStep,
