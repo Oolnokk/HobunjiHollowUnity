@@ -24,7 +24,10 @@ assert.strictEqual(banubu.cavern.creatureKind, 'grehlr', 'Banubu cavern must use
 
 const banubuDialogueCameras = banubu.cinematicCameras || [];
 assert.strictEqual(banubuDialogueCameras.length, 3, 'Banubu cavern must author awake, sleeping, and Color Pools Key world-space dialogue shots');
-assert(banubuDialogueCameras.every(camera => camera.stagePlayer === false), 'Banubu cinematic cameras leave the player at the interaction position instead of backing up');
+assert.strictEqual(awakeCamera?.stagePlayer, true, 'Banubu awake camera must opt into authored player staging');
+assert.deepStrictEqual(awakeCamera?.playerStage, { x: 6.5, z: 8 }, 'awake-camera player staging must place the player halfway between Banubu and the south cave entrance');
+assert.strictEqual(sleepCamera?.stagePlayer, false, 'sleeping Banubu dialogue must leave the player at the interaction position');
+assert.strictEqual(keyCamera?.stagePlayer, false, 'key camera must preserve the position established by the awake shot instead of re-staging the player');
 assert(banubuDialogueCameras.every(camera => camera.fadePets === false), 'Banubu cinematic cameras do not request the pet-fade presentation that can read as a dark screen layer');
 const awakeCamera = banubuDialogueCameras.find(camera => camera.id === 'banubu_dialogue_awake');
 const sleepCamera = banubuDialogueCameras.find(camera => camera.id === 'banubu_dialogue_sleep');
