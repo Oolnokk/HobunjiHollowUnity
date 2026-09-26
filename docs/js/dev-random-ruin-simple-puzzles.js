@@ -236,19 +236,18 @@
 
       const safe = safePathCells(size, rng);
       const cells = [];
+      let invalidPatch = false; // Any uneven/missing floor sample rejects the whole grid instead of leaving a partial puzzle.
       const originX = patch.centerX - (size - 1) * spacing * .5;
       const originZ = patch.centerZ - (size - 1) * spacing * .5;
-      for (let row = 0; row < size; row++) {
+      for (let row = 0; row < size && !invalidPatch; row++) {
         for (let col = 0; col < size; col++) {
           const key = col + ',' + row;
           const x = originX + col * spacing;
           const z = originZ + row * spacing;
           const support = sampleSupport(x,z,patch.y+.4);
           if (!support || Math.abs(Number(support.y)-patch.y) > .16) {
-            disposeObject(root);
-            state.group.add(root);
-            root.clear?.();
-            continue;
+            invalidPatch = true;
+            break;
           }
           const material = makeBasic(0x57534a);
           const mesh = new THREE.Mesh(new THREE.BoxGeometry(.7,.055,.7), material);
@@ -260,7 +259,7 @@
           cells.push({ key, col, row, x, z, y:Number(support.y), safe:safe.has(key), mesh, material, lastTriggeredAt:-Infinity });
         }
       }
-      if (cells.length !== size * size) {
+      if (invalidPatch || cells.length !== size * size) {
         disposeObject(root);
         continue;
       }
