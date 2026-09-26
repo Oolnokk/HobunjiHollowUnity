@@ -21,6 +21,8 @@ for (const locale of [banubu, colorPools]) {
 }
 
 assert.strictEqual(banubu.cavern.creatureKind, 'grehlr', 'Banubu cavern must use the Grehlr cave-surface family');
+assert.strictEqual(banubu.cavern.surfaceMaterial, 'farm-cliff', 'Banubu main cavern keeps its proven farm-cliff surface path');
+assert.strictEqual(colorPools.cavern.surfaceMaterial, 'farm-cliff', 'Color Pools uses the same proven farm-cliff surface path as Banubu');
 
 const banubuDialogueCameras = banubu.cinematicCameras || [];
 assert.strictEqual(banubuDialogueCameras.length, 3, 'Banubu cavern must author awake, sleeping, and Color Pools Key world-space dialogue shots');
@@ -96,6 +98,8 @@ assert(Number.isFinite(built.floorSurfaceY), 'cavern synthesis must expose a fin
 assert.strictEqual(built.floor.length, Object.keys(banubu.tiles).length);
 assert.strictEqual(carveCall.floor.length, built.floor.length, 'the exact painted locale footprint must be handed to the cavern sculptor');
 assert.deepStrictEqual(carveCall.options.entrance, { col: 6, row: 10, side: 'south' });
+const builtColorPools = context.CavernGenerator.synthesizeLocaleCavernMapData(colorPools); // Run only after Banubu carve-call assertions so the second synthesis cannot overwrite that fixture.
+assert.strictEqual(builtColorPools.mesh.surfaceMaterial, 'farm-cliff', 'Color Pools synthesized shell carries Banubu-compatible farm-cliff metadata into the shared renderer');
 assert.strictEqual(built.keyGatedDoors[0].requiresKeyItem, 'color_pools_key');
 assert.deepStrictEqual(JSON.parse(JSON.stringify(built.entrySpots.color_pools_door)), { col: 6, row: 1, side: 'north' });
 assert(built.npcStations.some(station => station.id === 'station_banubu_cave_sleep' && station.pose === 'lie'));
@@ -137,6 +141,11 @@ assert(gameSource.includes("targetSpotId: exit.targetSpotId || ''") && gameSourc
 assert(gameSource.includes('entranceLightTileSet'), 'secret exits must not affect the primary cave-mouth daylight');
 assert(generatorSource.includes('function sampleMeshSurfaceAt(') && generatorSource.includes('floorSurfaceByTile: floorSurface.byTile'), 'cavern generation must sample the rendered shell and export per-tile ground Y');
 assert(interiorBuilderSource.includes('function buildCavernFloorMesh(') && interiorBuilderSource.includes('cavernWalkableFloor'), 'caverns must render an explicit merged textured walkable floor');
+assert(interiorBuilderSource.includes("root.HobunjiSurfaceStretchUV") && interiorBuilderSource.includes("interior-cavern-floor:current-surface"), 'all mine/den/cavern walkable floors must use the current connected-surface mapper instead of leaving world-tiled UVs');
+assert(interiorBuilderSource.includes("map.wrapS = map.wrapT = THREE.ClampToEdgeWrapping") && interiorBuilderSource.includes("map.repeat?.set?.(1, 1)"), 'mapped cavern floors must consume one full PNG domain instead of retaining RepeatWrapping/textureRepeat tiling');
+assert(interiorBuilderSource.includes("terrainJigsawIgnore: true") && interiorBuilderSource.includes("naturalSurfaceUvOwner: 'HobunjiSurfaceStretchUV'"), 'mapped cavern floors must remain owned by the current mapper and stay out of Terrain Jigsaw');
+assert(interiorBuilderSource.includes("farmCliffParity") && interiorBuilderSource.includes("natural.naturalizeMesh(mesh, 'rocks', 'planar-stretch')"), 'Banubu/Color Pools floors must additionally use the farm-cliff unlit rock material path');
+assert(gameSource.includes("surfaceMaterial: mapData.mesh?.surfaceMaterial || ''"), 'runtime must pass each cavern shell surface preset into the explicit floor overlay');
 assert(gameSource.includes('const exactSurfaceY = Number(tile?.surfaceY)') && gameSource.includes('bGrid[r][c].surfaceY = Number.isFinite(sampledSurfaceY)') && gameSource.includes('Number.isFinite(fallbackSurfaceY) ? fallbackSurfaceY : 0'), 'player tile grounding must preserve exact cavern floor samples while pinning ordinary interior floors to Y=0 before collider mutation');
 assert(gameSource.includes(': (_isZoneArea(area) ? surfaceYAtWorld(area, c + 0.5, r + 0.5) : tileSurfaceYInArea(tile, area))'), 'NPC building grounding must share the exact tile surface resolver with the player');
 assert(!gameSource.includes('_isBuildingArea(area) ? 0 : npcSurfaceY(area, spawnPos.c, spawnPos.r)'), 'NPC building transfers must never force Y=0');
