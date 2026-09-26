@@ -1896,9 +1896,7 @@
   }
 
   function fixedKurrayaProgressionStepForChord(chordWithinCycle = 0) {
-    const wrappedChord = modulo(Math.floor(Number(chordWithinCycle) || 0), FIXED_HARMONY_CYCLE_CHORDS); // Keeps free-play looping deterministic while authored-song playback can clamp at the final bar.
-    const finalShortStart = FIXED_HARMONY_CYCLE_CHORDS - FIXED_HARMONY_FINAL_SHORT_STEPS.length; // Starts the closing four-bar 3/4 pattern at chord 17 of 20.
-    if (wrappedChord >= finalShortStart) return FIXED_HARMONY_FINAL_SHORT_STEPS[wrappedChord - finalShortStart];
+    const wrappedChord = modulo(Math.floor(Number(chordWithinCycle) || 0), FIXED_HARMONY_CYCLE_CHORDS); // Free play loops only the original four F/G/E/A roots; song-only C lives in the authored arrangement path below.
     return wrappedChord % FIXED_HARMONY_STEPS.length;
   }
 
