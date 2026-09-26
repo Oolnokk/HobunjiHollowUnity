@@ -3518,8 +3518,16 @@ window.SCRATCHBONES_CONFIG = {
         // keeps authored special soundtracks such as Just Beyond the Torchlight
         // uninterrupted and leaves room for more opt-outs later.
         "combatBgm": [
-          { "url": "assets/audio/music/bgm/bgm_skirmish.m4a", "loop": true, "gaplessLoop": { "sourceSampleRate": 48000, "encoderDelaySamples": 2048, "paddingSamples": 745, "contentSamples": 1256727 } }
+          { "url": "assets/audio/music/bgm/bgm_skirmish.m4a", "loop": true, "gaplessLoop": { "sourceSampleRate": 48000, "encoderDelaySamples": 2048, "paddingSamples": 745, "contentSamples": 1256727 } },
+          { "url": "assets/audio/music/bgm/bgm_pure_focus.m4a", "loop": true }
         ],
+        // Short musical stings fired by explicit gameplay milestones through
+        // Music.playGameplayCue(); they use the BGM volume path without taking
+        // ownership away from the currently scheduled area/combat soundtrack.
+        "gameplayCues": {
+          "fishCaught": { "url": "assets/audio/music/cues/gameplaycues/gpq_fish_caught.m4a", "volume": 1 },
+          "progressDeeper": { "url": "assets/audio/music/cues/gameplaycues/gpq_progress_deeper.m4a", "volume": 1 }
+        },
         "startupBgm": { "url": "assets/audio/music/bgm/bgm_remembrance.m4a", "loop": true },
         "musicFadeMs": 280,
         "songFadeInMs": 2200,
@@ -3547,6 +3555,7 @@ window.SCRATCHBONES_CONFIG = {
             { "url": "assets/audio/music/bgm/bgm_still_waking_up.mp3", "sunriseOnly": true, "oncePerDay": true, "sunriseHour": 6, "sunriseWindowHours": 1 }
           ],
           "map_southern_cloud_forest": [
+            { "url": "assets/audio/music/bgm/bgm_The_Undergrowth.ogg", "nightOnly": true, "exclusiveSoundtrack": true },
             { "url": "assets/audio/music/bgm/bgm_still_waking_up.mp3", "sunriseOnly": true, "oncePerDay": true, "sunriseHour": 6, "sunriseWindowHours": 1 }
           ],
           "map_western_slope": [
