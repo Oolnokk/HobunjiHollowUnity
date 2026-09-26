@@ -868,8 +868,10 @@
       return;
     }
     let snapshot = bridge.scaleAuditionState(); // Supplies the authoritative scale list, tonic, melody geometry, and current chord-section arrangement.
-    const savedArrangement = loadArrangementDraft(); // Restores the user's unfinished browser-local authoring pass without changing repo-authored defaults.
+    const savedArrangement = loadArrangementDraft(); // Restores the user's unfinished browser-local chord authoring pass without changing repo-authored defaults.
     if (savedArrangement) snapshot = bridge.setKurrayaSongArrangement(savedArrangement);
+    const savedMelody = loadMelodyDraft(); // Restores the last generated melody draft after the chord state so the timeline immediately reflects both layers.
+    if (savedMelody) snapshot = bridge.setKurrayaSongMelody(savedMelody);
     arrangementSnapshot = snapshot;
     selectedScale = snapshot.scaleName;
     selectedTonic = snapshot.tonicMidi;
@@ -983,6 +985,30 @@
   },{passive:true});
   window.addEventListener('pointerup',() => { arrangementPainting = false; arrangementLastPaintedBar = -1; });
   window.addEventListener('pointercancel',() => { arrangementPainting = false; arrangementLastPaintedBar = -1; });
+  randomMelodyBtn.addEventListener('click',async () => {
+    if (!bridge?.setKurrayaSongMelody) return;
+    try {
+      await stopIfPlaying();
+      const melody = composeRandomMelody(arrangementSnapshot); // Uses the currently painted chord bars, current scale, reusable motifs, strong-beat chord tones, stepwise bias, leap recovery, and phrase cadences.
+      arrangementSnapshot = bridge.setKurrayaSongMelody(melody);
+      saveMelodyDraft(melody);
+      renderArrangement(arrangementSnapshot);
+      renderDiagnostics(arrangementSnapshot);
+      setStatus('New melody composed from the current chord bars. It uses repeated rhythmic/interval motifs, mostly stepwise motion, chord tones on structural beats, and cadential phrase endings. Press Play to audition it.','good');
+    } catch (error) {
+      setStatus(`Random melody failed: ${error.message}`,'warn');
+      renderDiagnostics(arrangementSnapshot,error.message);
+    }
+  });
+  melodyResetBtn.addEventListener('click',() => {
+    if (!bridge?.resetKurrayaSongMelody) return;
+    try { localStorage.removeItem(MELODY_STORAGE_KEY); } catch {}
+    arrangementSnapshot = bridge.resetKurrayaSongMelody();
+    renderArrangement(arrangementSnapshot);
+    renderDiagnostics(arrangementSnapshot);
+    setStatus('Original authored melody restored; your chord bars are unchanged.','good');
+  });
+
   arrangementResetBtn.addEventListener('click',() => {
     if (!bridge?.resetKurrayaSongArrangement) return;
     try { localStorage.removeItem(ARRANGEMENT_STORAGE_KEY); } catch {}
