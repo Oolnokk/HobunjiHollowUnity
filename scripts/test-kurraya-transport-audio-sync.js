@@ -31,20 +31,14 @@ assert.match(
 
 assert.match(
   source,
-  /function createRootPadVoice\(midi, whenMs = null\)[\s\S]*?fifthMidi\] = \[midi,midi \+ 7\][\s\S]*?fifthOscillator\.frequency\.setValueAtTime\(midiFrequency\(fifthMidi\), now\)/,
-  'the synth harmony pad must voice a perfect-fifth power chord instead of the old root octave'
-);
-
-assert.match(
-  source,
-  /PAD_ROOT_LAYER_GAIN = 0\.5[\s\S]*?PAD_FIFTH_LAYER_GAIN = 0\.75/,
-  'the pad fifth must be mixed above the root so the P5 remains clearly audible on small speakers'
+  /function createRootPadVoice\(midi, whenMs = null\)[\s\S]*?const rootMidi = midi[\s\S]*?rootOscillator\.frequency\.setValueAtTime\(midiFrequency\(rootMidi\), now\)[\s\S]*?chordMidis:\[rootMidi\]/,
+  'the synth harmony pad must contain only the current progression root'
 );
 
 assert.doesNotMatch(
   source,
-  /fifthLayer\.gain\.setValueAtTime\(0\.36/,
-  'the old subordinate 36% fifth layer must not return'
+  /function createRootPadVoice\(midi, whenMs = null\)[\s\S]*?fifthOscillator/,
+  'the synth root pad must not create a hidden fifth oscillator'
 );
 
 assert.match(
@@ -68,19 +62,24 @@ assert.match(
 assert.match(
   musicLab,
   /padRootSource === 'detected'[\s\S]*?padDetectedFrequency[\s\S]*?padDetectedConfidence[\s\S]*?padChordNames/,
-  'Music Lab must visibly report detected pad pitch/confidence and the actual two notes currently sounding'
+  'Music Lab must visibly report detected pad pitch/confidence and the actual root currently sounding'
 );
 
 assert.match(
   source,
-  /function createRootPadSampleVoice\(midi, whenMs = null\)[\s\S]*?fifthMidi\] = \[midi,midi \+ 7\][\s\S]*?fifthSource\.playbackRate\.setValueAtTime\(Math\.pow\(2, \(fifthMidi - state\.rootPadSampleRootMidi\) \/ 12\), now\)/,
-  'imported harmony-pad samples must layer the same root plus perfect fifth as the synth fallback'
+  /function createRootPadSampleVoice\(midi, whenMs = null\)[\s\S]*?const rootMidi = midi[\s\S]*?rootSource\.playbackRate\.setValueAtTime\(Math\.pow\(2, \(rootMidi - state\.rootPadSampleRootMidi\) \/ 12\), now\)[\s\S]*?chordMidis:\[rootMidi\]/,
+  'imported harmony-pad samples must transpose only one source to the current progression root'
+);
+assert.doesNotMatch(
+  source,
+  /function createRootPadSampleVoice\(midi, whenMs = null\)[\s\S]*?fifthSource/,
+  'imported root pads must not duplicate the source at a fifth'
 );
 
 assert.match(
   source,
   /function rootPadTargetMidi\(clock = sharedTransportData\(\)\)[\s\S]*?currentHarmonyData\(clock\)[\s\S]*?state\.tonicMidi \+ harmony\.rootOffset \+ PAD_ROOT_REGISTER_OFFSET/,
-  'the fifth-chord pad root must remain driven by the exact scheduled live harmony root and authored pad register'
+  'the root pad must remain driven by the exact scheduled live harmony root and authored pad register'
 );
 
 assert.match(
@@ -97,7 +96,7 @@ assert.match(
 assert.match(
   source,
   /state\.rootPadSampleLevel \* state\.padMixLevel/,
-  'the pad mix multiplier must reach imported fifth-pad playback'
+  'the pad mix multiplier must reach imported root-pad playback'
 );
 assert.match(
   source,
@@ -149,48 +148,55 @@ assert.match(
 
 assert.match(
   source,
-  /KURRAYA_TIME_SIGNATURE = Object\.freeze\(\[3,4\]\)[\s\S]*?KURRAYA_BEAT_GROUPING = Object\.freeze\(\[3\]\)/,
-  'free play and the authored Kurraya song must remain in 3/4 while the harmony cadence is measure-based'
+  /KURRAYA_TIME_SIGNATURE = Object\.freeze\(\[6,8\]\)[\s\S]*?KURRAYA_BEAT_GROUPING = Object\.freeze\(\[3,3\]\)[\s\S]*?KURRAYA_THREE_FOUR_TIME_SIGNATURE = Object\.freeze\(\[3,4\]\)[\s\S]*?KURRAYA_THREE_FOUR_BEAT_GROUPING = Object\.freeze\(\[3\]\)/,
+  'the mixed Kurraya phrase must start in 6/8 and switch to 3/4'
 );
 
 assert.match(
   source,
-  /'when-the-kininjis-bloom':\{[\s\S]*?timeSignature:\[3,4\], beatGrouping:\[3\][\s\S]*?chords:null/,
-  'When the Kininjis Bloom must stay in 3/4 while using the shared variable Kurraya harmony cadence instead of a separate per-bar chord timeline'
+  /'when-the-kininjis-bloom':\{[\s\S]*?timeSignature:\[6,8\], beatGrouping:\[3,3\][\s\S]*?chords:null/,
+  'When the Kininjis Bloom must start in 6/8 and use the shared mixed-meter harmony phrase'
 );
 
 assert.match(
   source,
-  /FIXED_HARMONY_CYCLE_MEASURES = 24[\s\S]*?FIXED_HARMONY_FAST_MEASURES = 8[\s\S]*?FIXED_HARMONY_SLOW_MEASURES = 16/,
-  'the harmony cycle must be 8 one-measure chords followed by 16 measures of two-measure chords'
+  /FIXED_HARMONY_SIX_EIGHT_CHORDS = 4[\s\S]*?FIXED_HARMONY_THREE_FOUR_CHORDS = 16[\s\S]*?FIXED_HARMONY_CYCLE_CHORDS = FIXED_HARMONY_SIX_EIGHT_CHORDS \+ FIXED_HARMONY_THREE_FOUR_CHORDS[\s\S]*?FIXED_HARMONY_CHORD_QUARTER_BEATS = 3/,
+  'the harmony cycle must be exactly four 6/8 chords followed by sixteen 3/4 chords'
 );
 
 assert.match(
   source,
-  /function fixedKurrayaHarmonyCadence\(clock = sharedTransportData\(\)\)[\s\S]*?cycleMeasure < FIXED_HARMONY_FAST_MEASURES[\s\S]*?eventWithinCycle = fast[\s\S]*?FIXED_HARMONY_FAST_MEASURES \+ Math\.floor\(\(cycleMeasure - FIXED_HARMONY_FAST_MEASURES\) \/ 2\)/,
-  'the measure-based harmony cadence must switch from one-measure events to two-measure events after measure 8'
+  /function fixedKurrayaMixedMeterPhase\(performanceQuarterBeatFloat = 0\)[\s\S]*?chordWithinCycle < FIXED_HARMONY_SIX_EIGHT_CHORDS[\s\S]*?KURRAYA_TIME_SIGNATURE[\s\S]*?KURRAYA_THREE_FOUR_TIME_SIGNATURE[\s\S]*?performanceMeterBeatFloat:absoluteStartMeterBeat \+ meterBeatIntoChord/,
+  'the mixed-meter phase must choose meter by chord section while keeping a continuous denominator-beat clock'
+);
+
+assert.match(
+  source,
+  /function sharedTransportData\([\s\S]*?mixedPhase = fixedKurraya \? fixedKurrayaMixedMeterPhase\(performanceBeatFloat\)[\s\S]*?transportMeterBeatFloat[\s\S]*?transportAbsoluteBeat = Math\.floor\(transportMeterBeatFloat\)/,
+  'the transport beat index must stay monotonic across the 6/8 to 3/4 boundary'
+);
+
+assert.match(
+  source,
+  /function fixedKurrayaHarmonyCadence\(clock = sharedTransportData\(\)\)[\s\S]*?eventSerial:phase\.absoluteChord[\s\S]*?progressionStep:phase\.chordWithinCycle % FIXED_HARMONY_STEPS\.length[\s\S]*?spanBeats:phase\.meter\.numerator/,
+  'every mixed-meter bar must advance exactly one F-G-E-A root event'
 );
 assert.match(
   source,
-  /progressionStep = eventWithinCycle % FIXED_HARMONY_STEPS\.length[\s\S]*?spanMeasures = fast \? 1 : 2/,
-  'the variable cadence must keep cycling the same IV-V-iii-vi progression while changing only chord duration'
-);
-assert.match(
-  source,
-  /id="harmonyChordBeats" disabled[\s\S]*?8× 1 measure → 16× 2 measures/,
-  'the obsolete manual beats-per-chord setting must be disabled and describe the fixed measure cadence instead'
+  /id="harmonyChordBeats" disabled[\s\S]*?4 chords in 6\/8 → 16 chords in 3\/4/,
+  'the disabled cadence control must describe the fixed mixed-meter phrase'
 );
 
 assert.match(
   source,
   /function nextSharedBeatAt\([\s\S]*?clock\.beatMs/,
-  'automatic-pick release timing must follow the restored shared 3/4 beat grid'
+  'automatic-pick release timing must continue reading the active shared beat grid'
 );
 
 assert.match(
   source,
-  /function scheduleSuccessfulPreviewContinuation\([\s\S]*?state\.game\.beatMs[\s\S]*?definition\.division/,
-  'successful-preview arpeggios must use the restored shared 3/4 beat grid'
+  /function scheduleSuccessfulPreviewContinuation\([\s\S]*?state\.game\.quarterBeatMs \|\| state\.game\.beatMs[\s\S]*?definition\.division/,
+  'successful-preview arpeggio note values must remain quarter-BPM based while the metronome changes meter'
 );
 
 assert.match(
@@ -207,7 +213,7 @@ assert.match(
 
 assert.match(
   hostSource,
-  /MUSIC_MINIGAME_SRC = 'assets\/minigames\/lyre-performance\.html\?v=20260925cadence1'/,
+  /MUSIC_MINIGAME_SRC = 'assets\/minigames\/lyre-performance\.html\?v=20260925mixedmeter1'/,
   'gameplay must cache-bust the fixed-harmony minigame revision'
 );
 
@@ -218,7 +224,7 @@ assert.match(musicLab, /Visible diagnostics/, 'the standalone tool must keep mob
 assert.match(musicLab, /id="kurrayaMix"[\s\S]*?id="padMix"[\s\S]*?id="metronomeMix"/, 'the Music Lab must expose all three playback-mix sliders');
 assert.match(musicLab, /id="kurrayaSampleFile"[\s\S]*?id="padSampleFile"[\s\S]*?Recorded root/, 'the Music Lab must expose Kurraya and pad SFX import controls');
 assert.match(musicLab, /hardstep_1\.mp3[\s\S]*?hardstep_2\.mp3[\s\S]*?hardstep_3\.mp3/, 'the standalone metronome must rotate real recorded game footstep sounds');
-assert.match(musicLab, /3\/4\.[\s\S]*?once per measure for 8 measures[\s\S]*?once per 2 measures for 16 measures/, 'the Music Lab must state the restored 3/4 meter and 24-measure harmony cadence visibly');
+assert.match(musicLab, /Four chords use one 6\/8 bar each[\s\S]*?sixteen chords use one 3\/4 bar each[\s\S]*?20-chord phrase loops/, 'the Music Lab must state the four-chord 6/8 then sixteen-chord 3/4 phrase visibly');
 assert.match(musicLab, /importKurrayaSample[\s\S]*?importPadSample[\s\S]*?useLabFootstepMetronome/, 'the Music Lab must route sample changes and footsteps through the shared engine bridge');
 
 assert.doesNotMatch(source, /1–5–6–4/, 'legacy selectable harmony ids must not survive the fixed-progression migration');
@@ -267,7 +273,7 @@ assert.match(
 
 assert.match(
   toolsHub,
-  /data-target="kurraya-music-lab"[\s\S]*?kurraya-music-lab\/index\.html\?v=20260925lab6/,
+  /data-target="kurraya-music-lab"[\s\S]*?kurraya-music-lab\/index\.html\?v=20260925lab7/,
   'the combined Kurraya Music Lab must be the single Kurraya entry in the tools hub'
 );
 assert.doesNotMatch(
@@ -276,4 +282,4 @@ assert.doesNotMatch(
   'the tools hub must not retain separate Kurraya scale-audition or SFX-transposer entries'
 );
 
-console.log('Kurraya transport, fixed harmony, mix/sample controls, and combined Music Lab regression passed');
+console.log('Kurraya mixed-meter transport, root pad, mix/sample controls, and Music Lab regression passed');
