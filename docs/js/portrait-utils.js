@@ -1348,9 +1348,6 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     }
     pushToTarget(hood, hoodLayers);
     pushToTarget(pauldron, pauldronLayers);
-    for (const fixedLayer of (fixedPortraitSlots?.pauldron || [])) { // Structural pauldron-slot layers append after equipped pauldron art so authored overlays stay on top.
-      pauldronLayers.push({ layer: normalizePortraitLayerXform(fixedLayer), tint: { mode: 'none' }, group: null });
-    }
   } else if (renderHeadCosmetics) {
     // Legacy single-slot hair
     const legacyGroups = [hair, eyes, facialHair, hat];
@@ -1363,6 +1360,11 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
         const layerTintSlot = resolveLayerTintSlot(key, group.tintSlot);
         (layer.pos === 'back' ? preBackLayers : frontHairLayers).push({ layer, tint: tintFor(layerTintSlot), group });
       }
+    }
+  }
+  if (renderHeadCosmetics) {
+    for (const fixedLayer of (fixedPortraitSlots?.pauldron || [])) { // Structural pauldron-slot layers append after equipped pauldron art and also work for legacy/no-hair profile shapes.
+      pauldronLayers.push({ layer: normalizePortraitLayerXform(fixedLayer), tint: { mode: 'none' }, group: null });
     }
   }
 

@@ -36,6 +36,7 @@ on:
       - 'docs/js/porakaneki-camps-runtime.js'
       - 'docs/js/porakaneki-map-markers.js'
       - 'docs/js/porakaneki-species-runtime.js'
+      - 'docs/js/portrait-utils.js'
       - 'docs/js/harlyao-terror.js'
       - 'docs/js/house-pieces.js'
       - 'docs/js/maoao-arm-tint-runtime.js'
