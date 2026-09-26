@@ -25,7 +25,13 @@
     },
     liveEasternMire: {
       label: 'LIVE — Eastern Mire exact',
-      settings: { entrySide:'west', preset:'greatBasin', boundaryMode:'followMapHeight', boundaryCliffBoost:2 },
+      settings: {
+        entrySide:'west', preset:'custom', boundaryMode:'followMapHeight', boundaryCliffBoost:0,
+        archipelago:true, archipelagoColumns:4, archipelagoRows:3, archipelagoLandScale:1, archipelagoShoreNoise:1,
+        archipelagoPreservedLand:[{ x:17, y:14.5, radius:5, label:'Leaf & Pahu house' }],
+        plateaus:32, plateauAreaMul:1.4, lowProfilePlateaus:true, maxTier:3, wideRamps:true, ramps:14,
+        ponds:6, plateauPonds:8, plateauStreams:12, rivers:0, pathWindiness:3, entryGateWidthMul:0.45,
+      },
     },
   });
 
