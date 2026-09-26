@@ -26,11 +26,11 @@ assert.match(coreSource, /baseFootingMax = Math\.max\(0, Number\(original\.getEf
 assert.match(trustSource, /entity\?\.enemyClass === 'minion'/);
 assert.match(gameConfigSource, /shamblingFooting:\s*'#[0-9a-fA-F]{6}'/);
 assert.match(devSource, /window\.MinionCombat\.makeEntity\(/);
-assert(indexSource.indexOf('combat-bandit.js?v=20260926hskelhairrig1') < indexSource.indexOf('combat-minion.js?v=20260926shambling70'));
-assert(indexSource.indexOf('combat-minion.js?v=20260926shambling70') < indexSource.indexOf('dev-spawner.js?v=20260926minion1'));
-assert(indexSource.includes('resource-system.js?v=20260926shambling70'));
+assert(indexSource.indexOf('combat-bandit.js?v=20260926hskelhairalign1') < indexSource.indexOf('combat-minion.js?v=20260926shambling70'));
+assert(indexSource.indexOf('combat-minion.js?v=20260926shambling70') < indexSource.indexOf('dev-spawner.js?v=20260926lich1'));
+assert(indexSource.includes('resource-system.js?v=20260926lich1'));
 assert(indexSource.includes('combat-config-loader.js?v=20260926shambling70'));
-assert(indexSource.includes('game.js?v=20260926hskelrebase1'));
+assert(indexSource.includes('game.js?v=20260925fishcue1'));
 
 const authoredDyes = [
   'dye:CLOTH:muted_red_orange', 'dye:CLOTH:dusty_red_orange', 'dye:CLOTH:dark_muted_red_orange',
