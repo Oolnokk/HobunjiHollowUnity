@@ -30,17 +30,10 @@ const quietHopePath = path.join(__dirname, '../docs/assets/audio/music/bgm/bgm_q
 const gentleTwilightPath = path.join(__dirname, '../docs/assets/audio/music/bgm/bgm_gentle_twilight.m4a'); // Confirms the farm/town 02:00-nightfall candidate exists.
 const snowAndDarknessPath = path.join(__dirname, '../docs/assets/audio/music/bgm/bgm_snow_and_darkness.m4a'); // Confirms the Western Slope night song exists at the configured runtime path.
 const pureFocusPath = path.join(__dirname, '../docs/assets/audio/music/bgm/bgm_pure_focus.m4a'); // Confirms the alternate combat recording exists at the configured runtime path.
-const pureFocusBinary = fs.readFileSync(pureFocusPath).toString('latin1'); // Temporary metadata probe used to verify whether Pure Focus needs the same sample-accurate AAC loop transport as Skirmish.
-const pureFocusSmpb = pureFocusBinary.match(/iTunSMPB[\s\S]{0,96}?([0-9A-Fa-f]{8}) ([0-9A-Fa-f]{8}) ([0-9A-Fa-f]{8}) ([0-9A-Fa-f]{16})/);
-const pureFocusMp4aIndex = pureFocusBinary.indexOf('mp4a');
-const pureFocusSourceSampleRate = pureFocusMp4aIndex >= 0 ? fs.readFileSync(pureFocusPath).readUInt32BE(pureFocusMp4aIndex + 28) / 65536 : 0;
-console.log('PURE_FOCUS_GAPLESS_META=' + JSON.stringify({
-  flags: pureFocusSmpb?.[1] || null,
-  encoderDelaySamples: pureFocusSmpb ? parseInt(pureFocusSmpb[2], 16) : null,
-  paddingSamples: pureFocusSmpb ? parseInt(pureFocusSmpb[3], 16) : null,
-  contentSamples: pureFocusSmpb ? parseInt(pureFocusSmpb[4], 16) : null,
-  sourceSampleRate: pureFocusSourceSampleRate || null,
-}));
+const pureFocusBinary = fs.readFileSync(pureFocusPath).toString('latin1'); // Reads Pure Focus container metadata so its authored sample-accurate loop trim cannot drift from the real M4A.
+const pureFocusSmpb = pureFocusBinary.match(/iTunSMPB[\s\S]{0,96}?([0-9A-Fa-f]{8}) ([0-9A-Fa-f]{8}) ([0-9A-Fa-f]{8}) ([0-9A-Fa-f]{16})/); // Captures flags, encoder delay, end padding and content-sample count.
+const pureFocusMp4aIndex = pureFocusBinary.indexOf('mp4a'); // MP4 audio sample-entry marker used to verify the configured source sample rate.
+const pureFocusSourceSampleRate = pureFocusMp4aIndex >= 0 ? fs.readFileSync(pureFocusPath).readUInt32BE(pureFocusMp4aIndex + 28) / 65536 : 0; // mp4a sample-rate field is 16.16 fixed-point.
 const undergrowthPath = path.join(__dirname, '../docs/assets/audio/music/bgm/bgm_The_Undergrowth.ogg'); // Confirms the Cloud Forest night recording exists with its case-sensitive filename.
 const fishCaughtCuePath = path.join(__dirname, '../docs/assets/audio/music/cues/gameplaycues/gpq_fish_caught.m4a'); // Confirms the catch-success sting is present.
 const progressDeeperCuePath = path.join(__dirname, '../docs/assets/audio/music/cues/gameplaycues/gpq_progress_deeper.m4a'); // Confirms the mine-descent sting is present.
@@ -170,8 +163,8 @@ assert.match(config, /"bgsFadeMs": 1600/,
   'background-loop fading remains authored in audio config');
 assert.match(config, /"combatBgm": \[[\s\S]*?"url": "assets\/audio\/music\/bgm\/bgm_skirmish\.m4a", "loop": true, "gaplessLoop": \{ "sourceSampleRate": 48000, "encoderDelaySamples": 2048, "paddingSamples": 745, "contentSamples": 1256727 \}/,
   'Skirmish carries the AAC source-rate and priming/padding metadata needed for sample-accurate looping');
-assert.match(config, /"combatBgm": \[[\s\S]*?"url": "assets\/audio\/music\/bgm\/bgm_pure_focus\.m4a", "loop": true/,
-  'Pure Focus is a second configured combat track for the existing random selector');
+assert.match(config, /"combatBgm": \[[\s\S]*?"url": "assets\/audio\/music\/bgm\/bgm_pure_focus\.m4a", "loop": true, "gaplessLoop": \{ "sourceSampleRate": 44100, "encoderDelaySamples": 2048, "paddingSamples": 631, "contentSamples": 5667209 \}/,
+  'Pure Focus is a second combat track and carries its own AAC priming/padding metadata for sample-accurate looping');
 assert.match(config, /"gameplayCues": \{[\s\S]*?"fishCaught": \{ "url": "assets\/audio\/music\/cues\/gameplaycues\/gpq_fish_caught\.m4a", "volume": 1 \}[\s\S]*?"progressDeeper": \{ "url": "assets\/audio\/music\/cues\/gameplaycues\/gpq_progress_deeper\.m4a", "volume": 1 \}/,
   'semantic catch and mine-progress cues resolve to the authored gameplay-cue files');
 assert.ok(skirmishSmpb, 'Skirmish M4A must retain iTunSMPB gapless metadata');
@@ -183,6 +176,15 @@ assert.equal(parseInt(skirmishSmpb[3], 16), 745,
   'configured Skirmish end padding matches the M4A iTunSMPB metadata');
 assert.equal(parseInt(skirmishSmpb[4], 16), 1256727,
   'configured Skirmish content length matches the M4A iTunSMPB metadata');
+assert.ok(pureFocusSmpb, 'Pure Focus M4A must retain iTunSMPB gapless metadata');
+assert.equal(pureFocusSourceSampleRate, 44100,
+  'configured Pure Focus source sample rate matches the M4A mp4a sample entry');
+assert.equal(parseInt(pureFocusSmpb[2], 16), 2048,
+  'configured Pure Focus encoder delay matches the M4A iTunSMPB metadata');
+assert.equal(parseInt(pureFocusSmpb[3], 16), 631,
+  'configured Pure Focus end padding matches the M4A iTunSMPB metadata');
+assert.equal(parseInt(pureFocusSmpb[4], 16), 5667209,
+  'configured Pure Focus content length matches the M4A iTunSMPB metadata');
 assert.match(config, /"startupBgm": \{ "url": "assets\/audio\/music\/bgm\/bgm_remembrance\.m4a", "loop": true \}/,
   'Remembrance loops throughout the opening/title/save/onboarding sequence');
 assert.equal((config.match(/"url": "assets\/audio\/music\/bgm\/bgm_quiet_hope\.m4a", "startHour": 6, "endHour": 12/g) || []).length, 2,
@@ -207,7 +209,7 @@ assert.match(config, /"nightbugs": "assets\/audio\/sfx\/bgs\/bgs_nightbugs1\.mp3
   'runtime config uses the normalized nightbugs recording');
 assert.equal((config.match(/"url": "assets\/audio\/music\/bgm\/bgm_farm1\.m4a", "fallback": true, "rainingOnly": true/g) || []).length, 2,
   'the shared farm/town theme is authored as rain-only in both playlists');
-assert.match(index, /scratchbones-config\.js\?v=20260925gameplaymusic1/,
+assert.match(index, /scratchbones-config\.js\?v=20260925gameplaymusic2/,
   'the browser cache key loads the authored BGM playlists and Skirmish gaplessLoop metadata');
 assert.match(formatUtils, /title-screen-runtime\.js\?v=20260921preworldsky2/,
   'the parser-synchronous title loader cache-busts the earliest Remembrance bootstrap');
@@ -236,8 +238,8 @@ assert.ok(fs.statSync(gentleTwilightPath).size > 1000000,
   'Gentle Twilight must be present and nontrivial');
 assert.ok(fs.statSync(snowAndDarknessPath).size > 1000000,
   'Snow and Darkness must be present as the real recording, not a placeholder');
-assert.ok(fs.statSync(pureFocusPath).size > 1000,
-  'Pure Focus combat music must be present and nonempty');
+assert.ok(fs.statSync(pureFocusPath).size > 100000,
+  'Pure Focus combat music must be present as a nontrivial recording');
 assert.ok(fs.statSync(undergrowthPath).size > 1000,
   'The Undergrowth Cloud Forest night music must be present and nonempty');
 assert.ok(fs.statSync(fishCaughtCuePath).size > 1000,
