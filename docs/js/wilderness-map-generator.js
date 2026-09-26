@@ -8422,16 +8422,17 @@
   }
 
   function buildArchipelagoIslandPlan() {
-    const columns = clamp(Math.round(Number(settings.archipelagoColumns) || 4), 2, 6); // Used to give each primary island a broad territory while still reserving guaranteed inter-island channels.
-    const rows = clamp(Math.round(Number(settings.archipelagoRows) || 3), 2, 5); // Used with columns to distribute the primary landmasses across the whole mire.
-    const cellWidth = settings.width / columns; // Used to bound each continent-like island so neighboring landmasses cannot accidentally touch.
-    const cellHeight = settings.height / rows; // Used to bound each continent-like island so north/south channels stay open.
+    const configuredColumns = clamp(Math.round(Number(settings.archipelagoColumns) || 4), 2, 6); // Used only to preserve the existing tuning surface; columns*rows now means target island count, not a placement grid.
+    const configuredRows = clamp(Math.round(Number(settings.archipelagoRows) || 3), 2, 5); // Used with configuredColumns to derive the number of primary landmasses without forcing them into rows.
+    const islandCount = configuredColumns * configuredRows; // Used as the primary landmass count while positions are chosen freely across the mire.
     const configuredLandScale = Number(settings.archipelagoLandScale); // Used to tune total dry-land coverage without changing the irregularity algorithm.
     const landScale = clamp(Number.isFinite(configuredLandScale) ? configuredLandScale : 0.82, 0.55, 1.1); // Used by core and peninsula lobe radii; lower values deliberately produce more open water.
-    const seedSalt = hashSeed(`${settings.seed}|archipelago`) % 1000000; // Used by all island-shape choices so every Tothal seed gets a deterministic but substantially different coastline.
-    const entryRow = Math.floor(rows / 2); // Used to guarantee one western landmass reaches the west-side zone entrance.
+    const seedSalt = hashSeed(`${settings.seed}|archipelago`) % 1000000; // Used by all site/shape choices so every Tothal seed gets a deterministic but substantially different archipelago.
+    const preservedAnchors = Array.isArray(settings.archipelagoPreservedLand) ? settings.archipelagoPreservedLand : []; // Used to reserve primary island sites around fixed authored landmarks.
     const islands = []; // Used by applyArchipelagoLayout() to classify every source tile as island or open water.
-    const preservedAnchors = Array.isArray(settings.archipelagoPreservedLand) ? settings.archipelagoPreservedLand : []; // Used to physically grow the relevant island around fixed authored landmarks instead of creating detached preservation blobs.
+    const edgeMargin = Math.max(7, Math.min(settings.width, settings.height) * 0.075); // Used to keep ordinary random islands off the world edge so open water surrounds them.
+    const baseMinSpacing = Math.max(13, Math.min(settings.width, settings.height) * 0.145); // Used by the seeded rejection sampler to avoid a visible grid while still leaving boating channels.
+    const waterGap = Math.max(2.6, Math.min(settings.width, settings.height) * 0.032); // Used later by archipelagoIslandAt() as a Voronoi-like no-land band between neighboring continental silhouettes.
 
     const addConnectedLobe = (island, fromX, fromY, towardX, towardY, radiusX, radiusY, rotation, kind) => {
       const distance = Math.hypot(towardX - fromX, towardY - fromY); // Used to determine whether one or more overlapping lobes are needed to keep a peninsula connected.
@@ -8454,94 +8455,120 @@
       return last;
     };
 
-    for (let row = 0; row < rows; row++) {
-      for (let col = 0; col < columns; col++) {
-        const index = row * columns + col;
-        const isEntryIsland = col === 0 && row === entryRow;
-        const centerJitterX = (noise2(col, row, seedSalt + 1103) - 0.5) * cellWidth * 0.34; // Used to break the visible grid alignment much more strongly than the old ellipse layout.
-        const centerJitterY = (noise2(col, row, seedSalt + 1907) - 0.5) * cellHeight * 0.34; // Used so island rows no longer line up like beads.
-        let centerX = (col + 0.5) * cellWidth + centerJitterX; // Used as the irregular landmass's initial core center.
-        let centerY = (row + 0.5) * cellHeight + centerJitterY; // Used as the irregular landmass's initial core center.
-        const safeInsetX = Math.max(2.4, cellWidth * 0.10); // Used to reserve a permanent east/west water channel between neighboring island territories.
-        const safeInsetY = Math.max(2.8, cellHeight * 0.09); // Used to reserve a permanent north/south water channel between neighboring island territories.
-        centerX = clamp(centerX, col * cellWidth + safeInsetX + 3, (col + 1) * cellWidth - safeInsetX - 3);
-        centerY = clamp(centerY, row * cellHeight + safeInsetY + 3, (row + 1) * cellHeight - safeInsetY - 3);
-
-        const coreRadiusX = cellWidth * (0.19 + noise2(col, row, seedSalt + 2801) * 0.055) * landScale; // Used as the first overlapping mass, deliberately much smaller than the old near-cell-sized ellipse.
-        const coreRadiusY = cellHeight * (0.16 + noise2(col, row, seedSalt + 3709) * 0.055) * landScale; // Used with an independent aspect ratio so some islands are tall, squat, or oblique.
-        const coreRotation = (noise2(col, row, seedSalt + 4109) - 0.5) * Math.PI * 0.85; // Used to rotate the core ellipse so even the central mass is not axis-aligned.
-        const armCount = 2 + Math.floor(noise2(col, row, seedSalt + 4523) * 4); // Used to give each landmass two to five major peninsulas/bays instead of a repeated radial wave.
-        const island = {
-          id: `island_${row + 1}_${col + 1}`,
-          index,
-          row,
-          col,
-          centerX,
-          centerY,
-          coreRadiusX,
-          coreRadiusY,
-          coreRotation,
-          armCount,
-          isEntryIsland,
-          shoreSalt: seedSalt + index * 97 + 5003,
-          lobes: [],
-        };
-        island.lobes.push({ x:centerX, y:centerY, radiusX:coreRadiusX, radiusY:coreRadiusY, rotation:coreRotation, kind:'core' });
-
-        const territoryMinX = col * cellWidth + safeInsetX; // Used to keep generated peninsula lobes inside this island's water-separated territory.
-        const territoryMaxX = (col + 1) * cellWidth - safeInsetX; // Used to keep generated peninsula lobes inside this island's water-separated territory.
-        const territoryMinY = row * cellHeight + safeInsetY; // Used to keep generated peninsula lobes inside this island's water-separated territory.
-        const territoryMaxY = (row + 1) * cellHeight - safeInsetY; // Used to keep generated peninsula lobes inside this island's water-separated territory.
-
-        for (let arm = 0; arm < armCount; arm++) {
-          const armAngleBase = coreRotation + ((arm + noise2(col * 13 + arm, row, island.shoreSalt + 11) * 0.72) / armCount) * Math.PI * 2; // Used to spread major peninsulas unevenly rather than symmetrically.
-          const bend = (noise2(col, row * 17 + arm, island.shoreSalt + 23) - 0.5) * 1.25; // Used to curve a peninsula chain left or right as it extends.
-          const segmentCount = 1 + Math.floor(noise2(col * 29 + arm, row, island.shoreSalt + 37) * 3); // Used to vary peninsula length from a blunt shoulder to a long continental spur.
-          let fromX = centerX;
-          let fromY = centerY;
-          let previousRadius = Math.min(coreRadiusX, coreRadiusY);
-          for (let segment = 0; segment < segmentCount; segment++) {
-            const progress = (segment + 1) / segmentCount;
-            const angle = armAngleBase + bend * progress;
-            const segmentScale = (0.58 + noise2(arm * 31 + segment, index, island.shoreSalt + 53) * 0.46) * (1 - progress * 0.15); // Used to make successive cape lobes vary instead of shrinking uniformly.
-            const radiusX = Math.max(1.8, coreRadiusX * segmentScale);
-            const radiusY = Math.max(1.8, coreRadiusY * (0.52 + noise2(segment, arm, island.shoreSalt + 67) * 0.50));
-            const travel = previousRadius * (0.72 + noise2(segment, arm + 19, island.shoreSalt + 79) * 0.42); // Used to overlap each new lobe with the previous one while still producing deep bays between separate arms.
-            const maxRadius = Math.max(radiusX, radiusY);
-            const targetX = clamp(fromX + Math.cos(angle) * travel, territoryMinX + maxRadius, territoryMaxX - maxRadius);
-            const targetY = clamp(fromY + Math.sin(angle) * travel, territoryMinY + maxRadius, territoryMaxY - maxRadius);
-            const rotation = angle + (noise2(arm, segment, island.shoreSalt + 101) - 0.5) * 1.35;
-            const last = addConnectedLobe(island, fromX, fromY, targetX, targetY, radiusX, radiusY, rotation, segment === segmentCount - 1 ? 'cape' : 'peninsula');
-            if (last) {
-              fromX = last.x;
-              fromY = last.y;
-              previousRadius = Math.min(last.radiusX, last.radiusY);
-            }
-          }
-        }
-
-        const anchors = preservedAnchors.filter(anchor => {
-          if (!Number.isFinite(anchor?.x) || !Number.isFinite(anchor?.y)) return false;
-          return anchor.x >= col * cellWidth && anchor.x < (col + 1) * cellWidth
-            && anchor.y >= row * cellHeight && anchor.y < (row + 1) * cellHeight;
-        }); // Used to attach fixed authored landmarks to the landmass that owns their territory.
-        for (const anchor of anchors) {
-          const preserveRadius = Math.max(0, Number(anchor.radius) || 0);
-          const anchorRadius = Math.max(2.2, preserveRadius + 1.35);
-          addConnectedLobe(island, centerX, centerY, anchor.x, anchor.y, anchorRadius, anchorRadius * 0.82, Math.atan2(anchor.y - centerY, anchor.x - centerX), 'landmarkSpur');
-        }
-
-        if (isEntryIsland) {
-          const entryY = clamp(centerY + (noise2(col, row, island.shoreSalt + 131) - 0.5) * cellHeight * 0.18, territoryMinY + 3, territoryMaxY - 3); // Used to vary where the western shoreline reaches the world edge.
-          const shoreRadiusX = Math.max(3.4, coreRadiusX * 0.82); // Used to create a broad enough arrival coast that the entry gate remains robust across seeds.
-          const shoreRadiusY = Math.max(3.1, coreRadiusY * 0.68); // Used to keep the entry coast irregular but not razor-thin.
-          addConnectedLobe(island, centerX, centerY, 0.4, entryY, shoreRadiusX, shoreRadiusY, (noise2(col, row, island.shoreSalt + 149) - 0.5) * 0.7, 'entrySpur');
-        }
-
-        islands.push(island);
-      }
+    const siteCandidates = []; // Used to seed the entry coast and fixed landmarks before filling the remaining map with irregularly spaced sites.
+    siteCandidates.push({
+      x: Math.max(5.5, settings.width * (0.055 + noise2(1, 0, seedSalt + 701) * 0.025)),
+      y: settings.height * (0.42 + noise2(2, 0, seedSalt + 709) * 0.16),
+      isEntryIsland: true,
+      fixedKind: 'entry',
+    }); // The west-entry island is intentionally the only primary landmass allowed to reach the world edge.
+    for (const anchor of preservedAnchors) {
+      if (!Number.isFinite(anchor?.x) || !Number.isFinite(anchor?.y)) continue;
+      siteCandidates.push({
+        x: clamp(anchor.x + (noise2(Math.round(anchor.x), Math.round(anchor.y), seedSalt + 733) - 0.5) * 3.5, edgeMargin, settings.width - edgeMargin),
+        y: clamp(anchor.y + (noise2(Math.round(anchor.y), Math.round(anchor.x), seedSalt + 739) - 0.5) * 3.5, edgeMargin, settings.height - edgeMargin),
+        isEntryIsland: false,
+        fixedKind: 'landmark',
+        anchor,
+      });
     }
-    return { columns, rows, seedSalt, entryRow, islands };
+
+    const acceptedSites = []; // Used by the rejection sampler to produce blue-noise-like random placement rather than rows/columns.
+    for (const site of siteCandidates.slice(0, islandCount)) acceptedSites.push(site);
+
+    for (let siteIndex = acceptedSites.length; siteIndex < islandCount; siteIndex++) {
+      const spacingVariation = (noise2(siteIndex, siteIndex * 7, seedSalt + 761) - 0.5) * 3.5; // Used so some island pairs sit relatively close while other sea reaches are much wider.
+      const requiredSpacing = baseMinSpacing + spacingVariation;
+      let accepted = null;
+      let best = null;
+      for (let attempt = 0; attempt < 240; attempt++) {
+        const x = edgeMargin + noise2(attempt, siteIndex * 17 + 3, seedSalt + 773) * (settings.width - edgeMargin * 2); // Used as a deterministic pseudo-random x candidate.
+        const y = edgeMargin + noise2(attempt * 3 + 5, siteIndex * 29 + 7, seedSalt + 787) * (settings.height - edgeMargin * 2); // Used as an independently scrambled deterministic y candidate.
+        const minDistance = acceptedSites.reduce((distance, other) => Math.min(distance, Math.hypot(x - other.x, y - other.y)), Infinity); // Used to enforce broad navigable water between primary island cores.
+        const score = minDistance + noise2(attempt, siteIndex, seedSalt + 809) * 1.2; // Used only as a fallback quality score if this crowded seed cannot meet the requested spacing.
+        if (!best || score > best.score) best = { x, y, minDistance, score };
+        if (minDistance >= requiredSpacing) {
+          accepted = { x, y, isEntryIsland:false, fixedKind:null };
+          break;
+        }
+      }
+      const chosen = accepted || { x:best.x, y:best.y, isEntryIsland:false, fixedKind:'spacingFallback' }; // Used to guarantee the target island count even on an unusually crowded random sequence.
+      acceptedSites.push(chosen);
+    }
+
+    for (let index = 0; index < acceptedSites.length; index++) {
+      const site = acceptedSites[index];
+      const centerX = site.x;
+      const centerY = site.y;
+      const coreRadiusX = settings.width * (0.034 + noise2(index, 1, seedSalt + 827) * 0.018) * landScale; // Used as one axis of the compact continent core; major size variation comes from both this range and peninsula length.
+      const coreRadiusY = settings.height * (0.037 + noise2(index, 2, seedSalt + 839) * 0.020) * landScale; // Used independently so some primary masses are tall while others are wide.
+      const coreRotation = (noise2(index, 3, seedSalt + 853) - 0.5) * Math.PI * 0.95; // Used to keep core orientation unrelated to map axes.
+      const armCount = 2 + Math.floor(noise2(index, 4, seedSalt + 877) * 4); // Used to give each landmass two to five major peninsulas/bays.
+      const island = {
+        id: `island_${String(index + 1).padStart(2, '0')}`,
+        index,
+        centerX,
+        centerY,
+        coreRadiusX,
+        coreRadiusY,
+        coreRotation,
+        armCount,
+        isEntryIsland: !!site.isEntryIsland,
+        fixedKind: site.fixedKind || null,
+        shoreSalt: seedSalt + index * 97 + 5003,
+        lobes: [],
+      };
+      island.lobes.push({ x:centerX, y:centerY, radiusX:coreRadiusX, radiusY:coreRadiusY, rotation:coreRotation, kind:'core' });
+
+      const nearestCoreDistance = acceptedSites.reduce((distance, other, otherIndex) => otherIndex === index ? distance : Math.min(distance, Math.hypot(centerX - other.x, centerY - other.y)), Infinity); // Used to cap peninsula reach according to actual local island spacing.
+      const reachBudget = clamp(nearestCoreDistance * 0.34, 4.8, 9.5) * landScale; // Used so isolated continents can grow long capes while crowded neighbors remain compact with wide channels.
+
+      for (let arm = 0; arm < armCount; arm++) {
+        const armAngleBase = coreRotation + noise2(index, arm, island.shoreSalt + 11) * Math.PI * 2; // Used to choose truly independent peninsula headings rather than evenly spaced radial spokes.
+        const bend = (noise2(index + arm * 13, arm, island.shoreSalt + 23) - 0.5) * 1.55; // Used to curve a peninsula chain left or right as it extends.
+        const segmentCount = 1 + Math.floor(noise2(index * 29 + arm, arm + 7, island.shoreSalt + 37) * 3); // Used to vary peninsula length from a blunt shoulder to a long continental spur.
+        let fromX = centerX;
+        let fromY = centerY;
+        let traveled = 0;
+        let previousRadius = Math.min(coreRadiusX, coreRadiusY);
+        for (let segment = 0; segment < segmentCount; segment++) {
+          const progress = (segment + 1) / segmentCount;
+          const angle = armAngleBase + bend * progress;
+          const segmentScale = (0.58 + noise2(arm * 31 + segment, index, island.shoreSalt + 53) * 0.54) * (1 - progress * 0.12); // Used to vary cape width aggressively from arm to arm.
+          const radiusX = Math.max(1.55, coreRadiusX * segmentScale);
+          const radiusY = Math.max(1.55, coreRadiusY * (0.48 + noise2(segment, arm, island.shoreSalt + 67) * 0.58));
+          const requestedTravel = previousRadius * (0.72 + noise2(segment, arm + 19, island.shoreSalt + 79) * 0.52); // Used to overlap each new lobe with the previous one while still producing deep bays between separate arms.
+          const travel = Math.min(requestedTravel, Math.max(0.9, reachBudget - traveled));
+          const targetX = clamp(fromX + Math.cos(angle) * travel, 1.5, settings.width - 2.5);
+          const targetY = clamp(fromY + Math.sin(angle) * travel, 1.5, settings.height - 2.5);
+          const rotation = angle + (noise2(arm, segment, island.shoreSalt + 101) - 0.5) * 1.55;
+          const last = addConnectedLobe(island, fromX, fromY, targetX, targetY, radiusX, radiusY, rotation, segment === segmentCount - 1 ? 'cape' : 'peninsula');
+          if (last) {
+            fromX = last.x;
+            fromY = last.y;
+            previousRadius = Math.min(last.radiusX, last.radiusY);
+            traveled += travel;
+          }
+          if (traveled >= reachBudget - 0.5) break;
+        }
+      }
+
+      if (site.anchor) {
+        const preserveRadius = Math.max(0, Number(site.anchor.radius) || 0);
+        const anchorRadius = Math.max(2.2, preserveRadius + 1.35);
+        addConnectedLobe(island, centerX, centerY, site.anchor.x, site.anchor.y, anchorRadius, anchorRadius * 0.82, Math.atan2(site.anchor.y - centerY, site.anchor.x - centerX), 'landmarkSpur');
+      }
+
+      if (island.isEntryIsland) {
+        const entryY = clamp(centerY + (noise2(index, 0, island.shoreSalt + 131) - 0.5) * settings.height * 0.08, 5, settings.height - 5); // Used to vary where the western shoreline reaches the world edge.
+        const shoreRadiusX = Math.max(3.2, coreRadiusX * 0.92); // Used to create a broad enough arrival coast that the entry gate remains robust across seeds.
+        const shoreRadiusY = Math.max(3.0, coreRadiusY * 0.78); // Used to keep the entry coast irregular but not razor-thin.
+        addConnectedLobe(island, centerX, centerY, 0.35, entryY, shoreRadiusX, shoreRadiusY, (noise2(index, 0, island.shoreSalt + 149) - 0.5) * 0.8, 'entrySpur');
+      }
+
+      islands.push(island);
+    }
+    return { columns:configuredColumns, rows:configuredRows, islandCount, seedSalt, waterGap, islands };
   }
 
   function archipelagoPointInsideLobe(x, y, lobe, irregularity, salt) {
@@ -8561,8 +8588,8 @@
   function archipelagoIslandAt(x, y, plan) {
     const configuredIrregularity = Number(settings.archipelagoShoreNoise); // Used to tune the small-scale roughness on top of the much larger lobe-built continent silhouette.
     const irregularity = clamp(Number.isFinite(configuredIrregularity) ? configuredIrregularity : 1, 0, 1.5); // Used to keep fine edge noise bounded so it cannot generate detached pixels.
-    let bestIsland = null; // Used to resolve the extremely rare case where two lobes from different territories both include a boundary tile.
-    let bestDistance = Infinity; // Used to assign that overlap to whichever island core is actually closer.
+    let bestIsland = null; // Used to resolve the rare case where two freely placed continental lobe networks overlap.
+    let bestDistance = Infinity; // Used to assign such an overlap to whichever island core is actually closer.
     for (const island of plan.islands) {
       let inside = false;
       for (let lobeIndex = 0; lobeIndex < island.lobes.length; lobeIndex++) {
@@ -8573,6 +8600,12 @@
       }
       if (!inside) continue;
       const distance = Math.hypot(x - island.centerX, y - island.centerY);
+      let nearestOtherDistance = Infinity; // Used with plan.waterGap to carve a guaranteed irregular sea corridor along the natural bisector between neighboring island cores.
+      for (const other of plan.islands) {
+        if (other === island) continue;
+        nearestOtherDistance = Math.min(nearestOtherDistance, Math.hypot(x - other.centerX, y - other.centerY));
+      }
+      if (distance + plan.waterGap >= nearestOtherDistance) continue; // A no-land band between competing cores prevents long peninsulas from reconnecting the archipelago.
       if (distance < bestDistance) {
         bestIsland = island;
         bestDistance = distance;
@@ -8682,8 +8715,8 @@
       entryIslandId: entryIsland?.id || null,
       sourceIslands: plan.islands.map(island => ({
         id: island.id,
-        row: island.row,
-        col: island.col,
+        siteIndex: island.index,
+        fixedKind: island.fixedKind,
         centerX: Number(island.centerX.toFixed(2)),
         centerY: Number(island.centerY.toFixed(2)),
         coreRadiusX: Number(island.coreRadiusX.toFixed(2)),
