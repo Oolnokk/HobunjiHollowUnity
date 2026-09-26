@@ -56,15 +56,15 @@ assert(portraitSource.includes('baseBodyTintEnabled'), 'Portrait renderer must s
 assert(portraitSource.includes('fixedPortraitSlots?.pauldron'), 'Portrait renderer must inject the female structural hair in the pauldron render slot');
 assert(pixelProbeSource.includes('window.HobunjiHarlyaoSkeletonSpecies?.formatDebug?.()'), 'Pixel Probe must expose Harlyao Skeleton bridge diagnostics on mobile');
 assert(devSpawnerSource.includes("const DEV_SPAWN_HARLYAO_SKELETON_KEY = 'harlyao-skeleton:enemy'"), 'Testing Arena must expose a dedicated Harlyao Skeleton spawn key');
-assert(devSpawnerSource.includes("Object.freeze(['daggerSword', 'fishingspear', 'hatchet'])"), 'Harlyao Skeleton arena melee pool must be dagger-sword, spear, and hatchet only');
-assert(devSpawnerSource.includes("speciesWeights: { 'harlyao-skeleton': 1 }"), 'Arena skeleton spawn must force the Harlyao Skeleton species');
+assert(devSpawnerSource.includes('window.MinionCombat.makeEntity({'), 'Arena skeleton spawn must use the dedicated Minion category rather than the bandit roster path');
+assert(devSpawnerSource.includes("speciesId: 'harlyao-skeleton'"), 'Arena Minion spawn must force the Harlyao Skeleton species');
 assert(devSpawnerSource.includes("weaponMetalKey: 'nativeCopper'"), 'Arena skeleton melee weapons must use the canonical Harlyao native-copper material');
-assert(devSpawnerSource.includes('rangedWeaponChanceByRank: { grunt: 0, lieutenant: 0, captain: 0 }'), 'Arena skeletons must never receive a separate ranged weapon');
-assert(devSpawnerSource.includes('deps.hostileObjects.add(creature);'), 'Arena skeletons must enter the normal hostile enemy update set');
-assert(devSpawnerSource.includes('spawnDevArenaHarlyaoSkeleton(devSpawnBanditTier);'), 'Skeleton arena button must dispatch to the hostile humanoid spawn path');
+assert(devSpawnerSource.includes('deps.hostileObjects.add(creature);'), 'Arena skeleton Minions must enter the normal hostile enemy update set');
+assert(devSpawnerSource.includes('spawnDevArenaHarlyaoSkeleton(devSpawnBanditTier);'), 'Skeleton arena button must dispatch to the Minion spawn path');
 assert(combatBanditSource.includes('Array.isArray(cfg?.weaponShapePool) ? cfg.weaponShapePool : null'), 'BanditCombat must honor an optional caller-scoped melee weapon pool');
 assert(combatBanditSource.includes('configuredMetalKey || rolledMetalKey'), 'BanditCombat must honor an optional fixed metal without changing ordinary bandit rolls');
-assert(gameIndexSource.includes('js/dev-spawner.js?v=20260926hskelenemy1'), 'Game entry point must cache-bust the Harlyao Skeleton arena spawner update');
+assert(gameIndexSource.includes('js/dev-spawner.js?v=20260926minion1'), 'Game entry point must cache-bust the Harlyao Skeleton Minion arena spawner update');
+assert(gameIndexSource.includes('js/combat/combat-minion.js?v=20260926minion1'), 'Game entry point must load the Minion enemy category before the arena spawner');
 
 const fighters = [
   { id: 'harlyao-skeleton_male', speciesId: 'harlyao-skeleton', gender: 'male' },
@@ -165,7 +165,7 @@ assert.equal(enghExportProfile.bodyColors.A.hex, '#123456');
   const loaded = await windowObject.loadPortraitCosmetics();
   for (const fighterId of ['harlyao-skeleton_male', 'harlyao-skeleton_female']) {
     assert.equal(loaded.bodyColorRangesByGender[fighterId].fixedHex, '#D4D6C9'); // Field-level equality avoids VM-realm prototype differences while still proving the fixed extremity descriptor.
-    assert.deepEqual(Array.from(loaded.allowedCosmeticsByFighter[fighterId].set).sort(), ['bandolier1', 'fine_hood', 'fine_poncho', 'rugged_poncho', 'tankan_tunic'].sort());
+    assert.deepEqual(Array.from(loaded.allowedCosmeticsByFighter[fighterId].set).sort(), ['bandolier1', 'fine_hood', 'fine_poncho', 'rugged_poncho', 'tankan_bodywrap', 'tankan_tunic'].sort());
     for (const slot of ['eyes', 'upperFace', 'facialHair', 'hairFront', 'hairBack', 'hairSide', 'hairSideL', 'hat']) {
       assert.equal(loaded.forcedCosmeticsByFighter[fighterId][slot], 'none');
     }
