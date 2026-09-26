@@ -1326,6 +1326,8 @@
   const FIXED_HARMONY_THREE_FOUR_CHORDS = 16; // Then sixteen progression events are one 3/4 bar each before looping.
   const FIXED_HARMONY_CYCLE_CHORDS = FIXED_HARMONY_SIX_EIGHT_CHORDS + FIXED_HARMONY_THREE_FOUR_CHORDS; // Twenty chord events per mixed-meter phrase.
   const FIXED_HARMONY_CHORD_QUARTER_BEATS = 3; // Both 6/8 and 3/4 bars occupy three quarter-note units, preserving melody phase through the meter switch.
+  const KURRAYA_INTRO_QUARTER_BEATS = FIXED_HARMONY_SIX_EIGHT_CHORDS * FIXED_HARMONY_CHORD_QUARTER_BEATS; // Twelve quarter-note units: the four 6/8 accompaniment bars finish before the 16-bar melody body begins.
+  const FIXED_HARMONY_FINAL_SHORT_STEPS = Object.freeze([0,1,3,3]); // Final 3/4 short repeat is F → G → A → A, intentionally skipping E and holding A for both closing bars.
   const FIXED_HARMONY_CYCLE_QUARTER_BEATS = FIXED_HARMONY_CYCLE_CHORDS * FIXED_HARMONY_CHORD_QUARTER_BEATS; // Sixty quarter-note units per full phrase.
   const FIXED_HARMONY_METER_BEATS_PER_CYCLE = FIXED_HARMONY_SIX_EIGHT_CHORDS * 6 + FIXED_HARMONY_THREE_FOUR_CHORDS * 3; // 24 eighth-note beats + 48 quarter-note beats = 72 continuous scheduler beats.
   const HARMONY_PATTERN_ADJECTIVES = {
@@ -1410,11 +1412,12 @@
   // Hobunji's own authored songbook — replaces the earlier public-domain
   // placeholder tunes with the one real song, transcribed from Foroji's
   // theme MIDI (When the Kirrinji Bloom) at 100 quarter-BPM, C major with
-  // tonic C3. The accompaniment is a 20-chord mixed-meter phrase: F → G → E
-  // → A each get one 6/8 bar, then F → G → E → A repeats across sixteen
-  // one-bar 3/4 chord events, then the phrase loops. Each bar is three
-  // quarter-note units long, so melody event timing stays continuous. The
-  // sustained pad itself is root-only.
+  // tonic C3. The accompaniment is a 20-chord mixed-meter phrase: four
+  // 6/8 intro bars (F → G → E → A) play before the melody body, then the
+  // 16-bar melody runs entirely in 3/4. Its first three short repeats use
+  // F → G → E → A; the final short repeat uses F → G → A → A. Each bar is
+  // three quarter-note units long, so the 6/8 intro hands off to the 3/4
+  // melody without changing quarter-BPM timing. The sustained pad is root-only.
   const SONGBOOK = {
     'when-the-kininjis-bloom':{
       title:'When the Kininjis Bloom', defaultBpm:100, scaleName:'Major', timeSignature:[6,8], beatGrouping:[3,3],
@@ -1884,6 +1887,13 @@
     };
   }
 
+  function fixedKurrayaProgressionStepForChord(chordWithinCycle = 0) {
+    const wrappedChord = modulo(Math.floor(Number(chordWithinCycle) || 0), FIXED_HARMONY_CYCLE_CHORDS); // Keeps free-play looping deterministic while authored-song playback can clamp at the final bar.
+    const finalShortStart = FIXED_HARMONY_CYCLE_CHORDS - FIXED_HARMONY_FINAL_SHORT_STEPS.length; // Starts the closing four-bar 3/4 pattern at chord 17 of 20.
+    if (wrappedChord >= finalShortStart) return FIXED_HARMONY_FINAL_SHORT_STEPS[wrappedChord - finalShortStart];
+    return wrappedChord % FIXED_HARMONY_STEPS.length;
+  }
+
   function activeSongMeter(performanceQuarterBeatFloat = 0) {
     if (usesFixedKurrayaHarmony()) return fixedKurrayaMixedMeterPhase(performanceQuarterBeatFloat).meter;
     const melody=getSongDefinition(state.game.songType || state.selectedSong);
@@ -1914,16 +1924,24 @@
     const inCountIn = state.game.active && transportElapsedMs < countInMs;
     const performanceElapsedMs = state.game.active ? Math.max(0,transportElapsedMs - countInMs) : transportElapsedMs;
     const performanceBeatFloat = performanceElapsedMs / Math.max(1,quarterBeatMs);
-    const mixedPhase = fixedKurraya ? fixedKurrayaMixedMeterPhase(performanceBeatFloat) : null;
-    const meter = fixedKurraya ? (inCountIn ? initialMeter : mixedPhase.meter) : activeSongMeter(performanceBeatFloat);
+    const rawHarmonyQuarterBeatFloat = fixedKurraya && state.game.active
+      ? transportElapsedMs / Math.max(1,quarterBeatMs)
+      : performanceBeatFloat; // During the authored song, harmony advances through the four 6/8 intro bars while melody performance time remains parked at zero.
+    const harmonyQuarterBeatFloat = fixedKurraya && state.game.active
+      ? Math.min(rawHarmonyQuarterBeatFloat,FIXED_HARMONY_CYCLE_QUARTER_BEATS - 1e-6)
+      : rawHarmonyQuarterBeatFloat; // Holds the final A through the song's short post-melody tail instead of wrapping back to F before playback actually stops.
+    const mixedPhase = fixedKurraya ? fixedKurrayaMixedMeterPhase(harmonyQuarterBeatFloat) : null;
+    const meter = fixedKurraya ? mixedPhase.meter : activeSongMeter(performanceBeatFloat);
     const beatMs = quarterBeatMs * meter.quarterUnitsPerBeat;
     const performanceMeterBeatFloat = mixedPhase ? mixedPhase.performanceMeterBeatFloat : performanceElapsedMs / Math.max(1,beatMs);
-    const transportMeterBeatFloat = state.game.active && inCountIn
-      ? transportElapsedMs / Math.max(1,initialBeatMs)
-      : (state.game.active ? countInBeats : 0) + performanceMeterBeatFloat;
+    const transportMeterBeatFloat = fixedKurraya
+      ? mixedPhase.performanceMeterBeatFloat
+      : state.game.active && inCountIn
+        ? transportElapsedMs / Math.max(1,initialBeatMs)
+        : (state.game.active ? countInBeats : 0) + performanceMeterBeatFloat;
     const transportAbsoluteBeat = Math.floor(transportMeterBeatFloat);
     const performanceAbsoluteBeat = Math.floor(performanceMeterBeatFloat);
-    return {bpm,beatMs,quarterBeatMs,meter,transportElapsedMs,countInBeats,countInMs,inCountIn,performanceElapsedMs,transportAbsoluteBeat,transportMeterBeatFloat,performanceBeatFloat,performanceMeterBeatFloat,performanceAbsoluteBeat,mixedPhase};
+    return {bpm,beatMs,quarterBeatMs,meter,transportElapsedMs,countInBeats,countInMs,inCountIn,performanceElapsedMs,transportAbsoluteBeat,transportMeterBeatFloat,performanceBeatFloat,performanceMeterBeatFloat,performanceAbsoluteBeat,harmonyQuarterBeatFloat,mixedPhase};
   }
 
   function harmonyElapsedMs() {
@@ -1965,7 +1983,7 @@
     const phase = clock.mixedPhase || fixedKurrayaMixedMeterPhase(clock.performanceBeatFloat);
     return {
       eventSerial:phase.absoluteChord,
-      progressionStep:phase.chordWithinCycle % FIXED_HARMONY_STEPS.length,
+      progressionStep:fixedKurrayaProgressionStepForChord(phase.chordWithinCycle),
       absoluteMeasure:phase.absoluteChord,
       cycleMeasure:phase.chordWithinCycle,
       cycleIndex:phase.cycleIndex,
@@ -6255,7 +6273,9 @@
     const meter = timeSignatureData(melodyDefinition?.timeSignature || [4,4],melodyDefinition?.beatGrouping);
     const quarterBeatMs = 60000 / bpm; // MIDI note positions and saved chord lengths remain quarter-note based.
     const beatMs = quarterBeatMs * meter.quarterUnitsPerBeat; // Metronome, count-in, prompt horizon, and Auto Pick follow the selected denominator beat.
-    const countInBeats = meter.numerator;
+    const countInBeats = type === 'when-the-kininjis-bloom'
+      ? FIXED_HARMONY_SIX_EIGHT_CHORDS * KURRAYA_TIME_SIGNATURE[0]
+      : meter.numerator; // Kininjis reserves four full 6/8 accompaniment bars before its 16-bar 3/4 melody body; other songs keep the ordinary one-measure count-in.
     const countInMs = beatMs * countInBeats;
     const events = [];
     let time = countInMs;
@@ -6425,7 +6445,8 @@
     state.paused = false;
     updateHUD();
     closeAllModals();
-    refs.transportStatus.innerHTML = `<strong>${demoMode ? 'Successful preview' : songTitle(type)}</strong> · ${songTitle(type)} · ${state.bpm} quarter-BPM · ${song.timeSignature[0]}/${song.timeSignature[1]} · ${song.countInBeats}-beat shared count-in${song.beatGrouping.length>1 ? ` · accents ${song.beatGrouping.join('+')}` : ''}${demoMode ? ` · ${automaticPluckLabel(demoMode)} selected` : ''}${melody?.chords ? ' · silent song chords active' : ''}`;
+    const introStatus = type === 'when-the-kininjis-bloom' ? '4-bar 6/8 accompaniment intro → 16-bar 3/4 melody' : `${song.countInBeats}-beat shared count-in`; // Makes the authored pre-melody harmony offset visible without requiring Mobile Debug.
+    refs.transportStatus.innerHTML = `<strong>${demoMode ? 'Successful preview' : songTitle(type)}</strong> · ${songTitle(type)} · ${state.bpm} quarter-BPM · ${song.timeSignature[0]}/${song.timeSignature[1]} · ${introStatus}${song.beatGrouping.length>1 ? ` · accents ${song.beatGrouping.join('+')}` : ''}${demoMode ? ` · ${automaticPluckLabel(demoMode)} selected` : ''}${melody?.chords ? ' · silent song chords active' : ''}`;
     log(demoMode ? 'Successful preview started' : 'Song started', `${songTitle(type)}, ${state.bpm} quarter-BPM, ${song.timeSignature[0]}/${song.timeSignature[1]}, ±${state.hitWindow} ms${demoMode ? `, ${automaticPluckLabel(demoMode)}` : ''}`);
   }
 
@@ -6869,7 +6890,7 @@
       `Import: ${state.sourceChannels} source ch → ${state.monoStrategy} | corr ${state.stereoCorrelation.toFixed(2)} | gain ×${state.sampleNormalizationGain.toFixed(2)} | peak ${state.samplePeakDb.toFixed(1)} dBFS`,
       `Markers: ${marker.trimStart.toFixed(3)} > ${marker.loopIn.toFixed(3)} ⇄ ${marker.loopOut.toFixed(3)} > ${marker.trimEnd.toFixed(3)}`,
       `Note set: ${state.scaleName} ${midiName(state.tonicMidi)} | locked layout ${state.layoutPreset} | visual ${state.visualPreset}${state.visualPreset === 'timing-rings' ? ` (${state.timingPromptBeats} beats ahead)` : ''} | melody bank ${modeLabelFromOffset(currentModeOffset())} (notes ${currentModeOffset() + 1}–${currentModeOffset() + 4})${usesAutomaticPluckInput() && currentFretData() ? ` | held melody ${midiName(noteMidi(currentFretData().noteIndex,currentFretData().modeOffset))}` : ''}${state.autoReleaseTail ? ` | beat fill until boundary ${midiName(noteMidi(state.autoReleaseTail.fret.noteIndex,state.autoReleaseTail.fret.modeOffset))}` : ''}`,
-      `Harmony: ${currentHarmonyData().source === 'song' ? `${songTitle(state.game.songType)} silent chords` : state.harmonyPattern} | step ${currentHarmonyStep() + 1}${activeSongChordTimeline() ? `/${activeSongChordTimeline().length}` : `/${(HARMONY_PATTERNS[state.harmonyPattern] || []).length}`} degree ${currentHarmonyData().degreeNumber} (${currentHarmonyData().romanNumeral}) · ${currentHarmonyData().chordName} | ${currentHarmonyBeatData().inCountIn ? 'count-in ' : 'beat '}${currentHarmonyBeatData().beatInChord + 1}/${currentHarmonyBeatData().beatsPerChord} | shared ${activeClockBpm()} quarter-BPM ${activeSongMeter().label} clock${activeSongMeter().grouping.length>1 ? ` (${activeSongMeter().grouping.join('+')})` : ''} | click ${state.auditoryMetronome ? (state.metronomeSampleBuffer ? 'sample' : 'synth') : 'off'} | root pad ${state.rootPadEnabled ? `${midiName(rootPadTargetMidi())} ${state.rootPadSampleBuffer ? 'sample' : 'synth'} @ ${Math.round((state.rootPadSampleBuffer ? state.rootPadSampleLevel : state.rootPadLevel) * 100)}%` : 'off'}`,
+      `Harmony: ${currentHarmonyData().source === 'song' ? `${songTitle(state.game.songType)} silent chords` : state.harmonyPattern} | step ${currentHarmonyStep() + 1}${activeSongChordTimeline() ? `/${activeSongChordTimeline().length}` : `/${(HARMONY_PATTERNS[state.harmonyPattern] || []).length}`} degree ${currentHarmonyData().degreeNumber} (${currentHarmonyData().romanNumeral}) · ${currentHarmonyData().chordName} | ${currentHarmonyBeatData().inCountIn ? 'intro ' : 'beat '}${currentHarmonyBeatData().beatInChord + 1}/${currentHarmonyBeatData().beatsPerChord} | shared ${activeClockBpm()} quarter-BPM ${sharedTransportData().meter.label} clock${sharedTransportData().meter.grouping.length>1 ? ` (${sharedTransportData().meter.grouping.join('+')})` : ''} | click ${state.auditoryMetronome ? (state.metronomeSampleBuffer ? 'sample' : 'synth') : 'off'} | root pad ${state.rootPadEnabled ? `${midiName(rootPadTargetMidi())} ${state.rootPadSampleBuffer ? 'sample' : 'synth'} @ ${Math.round((state.rootPadSampleBuffer ? state.rootPadSampleLevel : state.rootPadLevel) * 100)}%` : 'off'}`,
       `Arpeggio: ${isDualArpLayout() ? `L ${DUAL_ARP_LABELS.left[state.arpeggioIndex]} ${midiName(dualArpeggioMidi('left',state.arpeggioIndex))} | R ${DUAL_ARP_LABELS.right[state.rightArpeggioIndex]} ${midiName(dualArpeggioMidi('right',state.rightArpeggioIndex))}` : usesAutomaticPluckInput() ? `${automaticPluckLabel()} | step ${state.pluckStep}${currentFretData() ? ` | ${automaticPatternSteps(noteMidi(currentFretData().noteIndex,currentFretData().modeOffset),currentFretData(),state.pluckInputMode).label} | ${automaticPatternDefinition().kind}` : ''}` : `slot ${state.arpeggioIndex + 1} → ${midiName(arpeggioMidi())} | fixed register −1 oct`} | LS ${state.leftStick.map(value => value.toFixed(2)).join(', ')} | RS ${state.rightStick.map(value => value.toFixed(2)).join(', ')} | gesture channels ${state.gestureMediaChannels.size}`,
       `Four-way LS: selected ${['UP','RIGHT','DOWN','LEFT'][state.leftStickSector] || 'UP'} ${automaticPatternDefinition().short} | slots ${normalizeAutoPickSlots().map((id,index) => `${['U','R','D','L'][index]}:${automaticPatternDefinition(id).short}`).join(' · ')}`,
       `Held notes/automatic melodies: ${state.noteSources.map((set,index) => set.size ? index+1 : null).filter(Boolean).join(', ') || 'none'} | auto-pick sources ${state.frettedSources.size} | mode sources ${state.modeSources.size} | ordered shifts ${state.fourGroupShiftSources.size} | trigger gestures ${state.triggerGestures.size} | active voice groups ${state.voices.size} / voices ${activeVoiceCount()}`,
