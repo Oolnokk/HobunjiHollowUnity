@@ -122,7 +122,7 @@
   <script src="debug.js?v=20260925weavesessiondebug4"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20260918collision2"></script>
-  <script src="config/scratchbones-config.js?v=20260925gameplaymusic2"></script>
+  <script src="config/scratchbones-config.js?v=20260926dlgcam1"></script>
   <!-- Canonical source-art color fill math shared by portraits, creatures, weaving, tools, terrain, and item sprites. -->
   <script src="js/color-fill.js?v=20260923colorfill7"></script>
   <script src="config/colors/config.js?v=20260924enghpalette2"></script>
@@ -457,7 +457,7 @@
        injected via init(), so load order relative to the other systems
        above doesn't matter; must load before game.js, which calls
        window.PerpRotation.init(...) during its own setup. -->
-  <script src="js/perp-rotation.js?v=20260809a"></script>
+  <script src="js/perp-rotation.js?v=20260926a"></script>
   <!-- Funji & Son's General Store (window.GeneralStore) — self-contained
        aside from deps injected via init(), and reads window.DyeSystem/
        window.ConditionRegistry at render time (already global by then), so
@@ -700,7 +700,7 @@
        and its build*(...) functions lazily, from buildZoneScene, never
        synchronously during initial boot. -->
   <script src="js/locale-cave-runtime.js?v=20260923caveregistry1"></script>
-  <script src="js/zone-den-totem-features.js?v=20260926combatreview1"></script>
+  <script src="js/zone-den-totem-features.js?v=20260926dz1"></script>
   <!-- Wilderness-zone grass and rich-foliage-patch billboards
        (window.ZoneGrassBillboards) — pure scene-graph generation, no
        other window.* system reads; must load before game.js, which calls
@@ -2356,6 +2356,7 @@
        game.js and call into this module. -->
   <!-- Authored world-space dialogue/cutscene cameras. Must load before DialogueContent/game.js. -->
   <script src="js/cinematic-camera-runtime.js?v=20260925reviewfix1"></script>
+  <script src="js/dialogue-camera-framing.js?v=20260926a"></script>
   <script src="js/dialogue-content.js?v=20260926staging1"></script>
   <script src="js/banubu-questline.js?v=20260925banubutransaction4"></script>
   <!-- World-space Float+ combat text and centered five-row reward lists. -->
@@ -2483,7 +2484,7 @@
   <script src="js/banubu-cave-clouds.js?v=20260923cloudring3"></script>
   <!-- Shoulder Cam / Character View Pointer Lock (window.ShoulderCamPointerLock); game.js calls init(...) during setup. -->
   <script src="js/shoulder-cam-pointer-lock.js?v=20260925shouldercamonly1"></script>
-  <script src="game.js?v=20260926combatreview1"></script>
+  <script src="game.js?v=20260926dlgcam1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
   <script src="js/banubu-snore.js?v=20260925snorepitchrevert1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>

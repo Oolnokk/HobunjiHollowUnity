@@ -24,7 +24,7 @@
   ensureCompanionScript('FurnitureVesselRuntime', 'furniture-vessel-runtime.js');
   ensureCompanionScript('FurnitureDecalRuntime', 'furniture-decal-runtime.js');
   ensureCompanionScript('StructuralWrap', 'structural-wrap.js');
-  ensureCompanionScript('DeadzoneBillboard', 'deadzone-billboard.js?v=20260923texready1');
+  ensureCompanionScript('DeadzoneBillboard', 'deadzone-billboard.js?v=20260926a');
   ensureCompanionScript('LocaleCaveRuntime', 'locale-cave-runtime.js');
   // Generic rigid piece animation reuses the Root Totem wind helpers and
   // patches AuthoredFurniture.buildGroup before any live furniture is built.

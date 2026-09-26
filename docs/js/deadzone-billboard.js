@@ -27,7 +27,7 @@
   function updateFacing(marker,camera){
     if(!marker||!camera||!window.PerpRotation?.perpClamp)return;
     ensurePerpRotationReady();
-    const perps=localCameraPerps(marker,camera),state=marker.userData.perpState||(marker.userData.perpState={});
+    const perps=localCameraPerps(marker,camera),state=marker.userData.perpState||(marker.userData.perpState={localPerpsOnly:true});
     const rawTarget=nearestAngleAmong(marker.rotation.y,perps),settings=marker.userData.deadzoneBillboard||{};
     const deadRad=Number.isFinite(Number(settings.deadRad))?Number(settings.deadRad):window.PerpRotation.PERP_DEAD_RAD;
     const lerp=Number.isFinite(Number(settings.rotationLerp))?Math.max(0,Number(settings.rotationLerp)):1;
@@ -50,7 +50,7 @@
     const scale=Math.max(.01,Number(options.scale)),yScale=Math.max(.01,Number(options.yScale));
     const targetHeight=baseHeight*scale,alphaTest=Math.max(0,Number(options.alphaTest)||0);
     const marker=new THREE.Group();marker.name=options.name||'deadzoneBillboard';
-    marker.userData.noOutline=options.noOutline!==false;marker.userData.perpState={};
+    marker.userData.noOutline=options.noOutline!==false;marker.userData.perpState={localPerpsOnly:true}; // Parent-local perps; PerpRotation must not swap in world-bearing perps.
     marker.userData.deadzoneBillboard={
       spritePath,tintHex,baseHeight,scale,yScale,targetHeight,renderedHeight:targetHeight*yScale,
       attachmentPoint:'held-item-plane-centered-origin',
