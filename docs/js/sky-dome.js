@@ -32,6 +32,29 @@
   const LANTERN_FULL_ALPHA = 0.34;
   const OVERCAST_AMBIENT_RGB = Object.freeze([104, 110, 116]);
   const OVERCAST_SKY_COLORS = Object.freeze({ top: 0xc5cbcc, mid: 0xd6d9d8, bottom: 0xe2e1dc });
+  const SCREEN_SKY_UV_GLSL = `
+    uniform vec2 uSkyResolution;
+    uniform vec2 uSkyProjectionScale;
+
+    vec2 hobunjiSkyUvFromScreen() {
+      vec2 safeResolution = max(uSkyResolution, vec2(1.0));
+      vec2 ndc = (gl_FragCoord.xy / safeResolution) * 2.0 - 1.0;
+      vec2 projectionScale = max(abs(uSkyProjectionScale), vec2(0.000001));
+      vec3 viewDir = normalize(vec3(ndc.x / projectionScale.x, ndc.y / projectionScale.y, -1.0));
+
+      // viewMatrix contains the camera's world->view rotation. Its transpose is
+      // the inverse rotation, written explicitly for WebGL1/GLSL ES 1.00.
+      mat3 cameraRotation = mat3(
+        viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0],
+        viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1],
+        viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2]
+      );
+      vec3 worldDir = normalize(cameraRotation * viewDir);
+      float u = fract(atan(worldDir.z, -worldDir.x) / 6.28318530718 + 1.0);
+      float v = asin(clamp(worldDir.y, -1.0, 1.0)) / 3.14159265359 + 0.5;
+      return vec2(u, clamp(v, 0.0, 1.0));
+    }
+  `; // Shared by the base sky plus both cloud-shell shaders so screen color/alpha never depends on sphere triangle interpolation.
 
   let deps = null;
   let weatherDeps = null;
@@ -228,17 +251,33 @@
     });
   }
 
+  function makeScreenSkyUniforms() {
+    const THREE = deps.THREE; // Used here to allocate per-material resolution/projection vectors consumed by the screen-space sky mapping.
+    return {
+      uSkyResolution: { value: new THREE.Vector2(1, 1) },
+      uSkyProjectionScale: { value: new THREE.Vector2(1, 1) },
+    };
+  }
+
   function makeSkyMaterial() {
     const THREE = deps.THREE;
     return new THREE.ShaderMaterial({
       side: THREE.BackSide, depthTest: false, depthWrite: false, transparent: false, fog: false,
-      uniforms: { uTop: { value: new THREE.Color(0x203b67) }, uMid: { value: new THREE.Color(0x5f8fb8) }, uBottom: { value: new THREE.Color(0x8b776b) }, uNight: { value: 0 }, uStars: { value: 0 } },
-      vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+      uniforms: {
+        ...makeScreenSkyUniforms(),
+        uTop: { value: new THREE.Color(0x203b67) },
+        uMid: { value: new THREE.Color(0x5f8fb8) },
+        uBottom: { value: new THREE.Color(0x8b776b) },
+        uNight: { value: 0 },
+        uStars: { value: 0 },
+      },
+      vertexShader: `void main(){ gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
       fragmentShader: `
-        precision highp float; uniform vec3 uTop; uniform vec3 uMid; uniform vec3 uBottom; uniform float uNight; uniform float uStars; varying vec2 vUv;
+        precision highp float; uniform vec3 uTop; uniform vec3 uMid; uniform vec3 uBottom; uniform float uNight; uniform float uStars;
+        ${SCREEN_SKY_UV_GLSL}
         float hash12(vec2 p){ vec3 p3=fract(vec3(p.xyx)*.1031); p3+=dot(p3,p3.yzx+33.33); return fract((p3.x+p3.y)*p3.z); }
         vec3 starField(vec2 uv){ vec2 cell=uv*vec2(190.0,108.0); vec2 id=floor(cell); vec2 gv=fract(cell)-.5; float rnd=hash12(id); float mask=step(.9785,rnd); vec2 jitter=(vec2(hash12(id+13.1),hash12(id+37.4))-.5)*.34; float d=length(gv+jitter); float core=smoothstep(.042,0.0,d); float halo=smoothstep(.17,0.0,d)*.38; float twinkle=.82+.18*sin((uv.x+uv.y+rnd)*420.0); vec3 tint=mix(vec3(.92,.96,1.0),vec3(1.0,.96,.90),hash12(id+17.2)); return tint*mask*(core+halo)*twinkle*smoothstep(.18,.34,uv.y); }
-        void main(){ float upper=smoothstep(.48,.92,vUv.y); float lower=1.0-smoothstep(.16,.53,vUv.y); vec3 day=mix(uMid,uTop,upper); day=mix(day,uBottom,lower*.62); vec3 night=mix(vec3(.018,.025,.075),vec3(.035,.055,.13),smoothstep(.20,.85,vUv.y)); vec3 rgb=mix(day,night,uNight); rgb+=starField(vUv)*uStars; gl_FragColor=vec4(rgb,1.0); }`,
+        void main(){ vec2 skyUv=hobunjiSkyUvFromScreen(); float upper=smoothstep(.48,.92,skyUv.y); float lower=1.0-smoothstep(.16,.53,skyUv.y); vec3 day=mix(uMid,uTop,upper); day=mix(day,uBottom,lower*.62); vec3 night=mix(vec3(.018,.025,.075),vec3(.035,.055,.13),smoothstep(.20,.85,skyUv.y)); vec3 rgb=mix(day,night,uNight); rgb+=starField(skyUv)*uStars; gl_FragColor=vec4(rgb,1.0); }`,
     });
   }
 
@@ -252,12 +291,13 @@
       // shells painted straight over the ground at any pixel their geometry
       // covers, regardless of which was actually nearer to the camera.
       side: THREE.BackSide, transparent: true, depthTest: true, depthWrite: false, fog: false,
-      uniforms: { uMap: { value: texture }, uOffset: { value: new THREE.Vector2() }, uBrightness: { value: 1 }, uOpacity: { value: 1 }, uSunUV: { value: new THREE.Vector2() }, uSunLight: { value: 0 }, uMoonUV: { value: new THREE.Vector2() }, uMoonLight: { value: 0 } },
-      vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+      uniforms: { ...makeScreenSkyUniforms(), uMap: { value: texture }, uOffset: { value: new THREE.Vector2() }, uBrightness: { value: 1 }, uOpacity: { value: 1 }, uSunUV: { value: new THREE.Vector2() }, uSunLight: { value: 0 }, uMoonUV: { value: new THREE.Vector2() }, uMoonLight: { value: 0 } },
+      vertexShader: `void main(){ gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
       fragmentShader: `
-        precision highp float; uniform sampler2D uMap; uniform vec2 uOffset; uniform float uBrightness; uniform float uOpacity; uniform vec2 uSunUV; uniform float uSunLight; uniform vec2 uMoonUV; uniform float uMoonLight; varying vec2 vUv;
+        precision highp float; uniform sampler2D uMap; uniform vec2 uOffset; uniform float uBrightness; uniform float uOpacity; uniform vec2 uSunUV; uniform float uSunLight; uniform vec2 uMoonUV; uniform float uMoonLight;
+        ${SCREEN_SKY_UV_GLSL}
         float dxWrap(float a,float b){ float d=abs(a-b); return min(d,1.0-d); } float skyDist(vec2 a,vec2 b){ float dx=dxWrap(a.x,b.x); float lat=abs(a.y-.5)*3.14159265; dx*=max(.22,cos(lat)); float dy=a.y-b.y; return sqrt(dx*dx+dy*dy); }
-        void main(){ vec2 sampleUv=vec2(fract(vUv.x+uOffset.x),clamp(vUv.y+uOffset.y,0.0,1.0)); vec4 tex=texture2D(uMap,sampleUv); if(tex.a<.004)discard; float sun=1.0-smoothstep(.018,.16,skyDist(vUv,uSunUV)); float moon=1.0-smoothstep(.015,.13,skyDist(vUv,uMoonUV)); vec3 rgb=tex.rgb*uBrightness; rgb+=vec3(1.0,.78,.43)*sun*uSunLight*max(tex.a,.34); rgb+=vec3(.58,.72,1.0)*moon*uMoonLight*max(tex.a,.30); gl_FragColor=vec4(rgb,tex.a*uOpacity); }`,
+        void main(){ vec2 skyUv=hobunjiSkyUvFromScreen(); vec2 sampleUv=vec2(fract(skyUv.x+uOffset.x),clamp(skyUv.y+uOffset.y,0.0,1.0)); vec4 tex=texture2D(uMap,sampleUv); if(tex.a<.004)discard; float sun=1.0-smoothstep(.018,.16,skyDist(skyUv,uSunUV)); float moon=1.0-smoothstep(.015,.13,skyDist(skyUv,uMoonUV)); vec3 rgb=tex.rgb*uBrightness; rgb+=vec3(1.0,.78,.43)*sun*uSunLight*max(tex.a,.34); rgb+=vec3(.58,.72,1.0)*moon*uMoonLight*max(tex.a,.30); gl_FragColor=vec4(rgb,tex.a*uOpacity); }`,
     });
   }
 
@@ -312,27 +352,30 @@
       fog: false,
       blending: THREE.NoBlending,
       uniforms: {
+        ...makeScreenSkyUniforms(),
         uMap: { value: texture },
         uOffset: { value: new THREE.Vector2() },
         uTexel: { value: new THREE.Vector2(1 / width, 1 / height) },
         uErodePx: { value: CLOUD_DEPTH_EROSION_PX },
         uCutoff: { value: CLOUD_DEPTH_ALPHA_CUTOFF },
       },
-      vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+      vertexShader: `void main(){ gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
       fragmentShader: `
-        precision highp float; uniform sampler2D uMap; uniform vec2 uOffset; uniform vec2 uTexel; uniform float uErodePx; uniform float uCutoff; varying vec2 vUv;
-        vec2 cloudUv(vec2 delta){ return vec2(fract(vUv.x+uOffset.x+delta.x),clamp(vUv.y+uOffset.y+delta.y,0.0,1.0)); }
+        precision highp float; uniform sampler2D uMap; uniform vec2 uOffset; uniform vec2 uTexel; uniform float uErodePx; uniform float uCutoff;
+        ${SCREEN_SKY_UV_GLSL}
+        vec2 cloudUv(vec2 baseUv,vec2 delta){ return vec2(fract(baseUv.x+uOffset.x+delta.x),clamp(baseUv.y+uOffset.y+delta.y,0.0,1.0)); }
         void main(){
+          vec2 baseUv=hobunjiSkyUvFromScreen();
           vec2 d=uTexel*uErodePx;
-          float a=texture2D(uMap,cloudUv(vec2(0.0))).a;
-          a=min(a,texture2D(uMap,cloudUv(vec2( d.x,0.0))).a);
-          a=min(a,texture2D(uMap,cloudUv(vec2(-d.x,0.0))).a);
-          a=min(a,texture2D(uMap,cloudUv(vec2(0.0, d.y))).a);
-          a=min(a,texture2D(uMap,cloudUv(vec2(0.0,-d.y))).a);
-          a=min(a,texture2D(uMap,cloudUv(vec2( d.x, d.y))).a);
-          a=min(a,texture2D(uMap,cloudUv(vec2(-d.x, d.y))).a);
-          a=min(a,texture2D(uMap,cloudUv(vec2( d.x,-d.y))).a);
-          a=min(a,texture2D(uMap,cloudUv(vec2(-d.x,-d.y))).a);
+          float a=texture2D(uMap,cloudUv(baseUv,vec2(0.0))).a;
+          a=min(a,texture2D(uMap,cloudUv(baseUv,vec2( d.x,0.0))).a);
+          a=min(a,texture2D(uMap,cloudUv(baseUv,vec2(-d.x,0.0))).a);
+          a=min(a,texture2D(uMap,cloudUv(baseUv,vec2(0.0, d.y))).a);
+          a=min(a,texture2D(uMap,cloudUv(baseUv,vec2(0.0,-d.y))).a);
+          a=min(a,texture2D(uMap,cloudUv(baseUv,vec2( d.x, d.y))).a);
+          a=min(a,texture2D(uMap,cloudUv(baseUv,vec2(-d.x, d.y))).a);
+          a=min(a,texture2D(uMap,cloudUv(baseUv,vec2( d.x,-d.y))).a);
+          a=min(a,texture2D(uMap,cloudUv(baseUv,vec2(-d.x,-d.y))).a);
           if(a<uCutoff) discard;
           gl_FragColor=vec4(0.0);
         }`,
@@ -439,6 +482,7 @@
   function buildRoot() {
     const THREE = deps.THREE; root = new THREE.Group(); root.name = 'hobunji_dynamic_skydome'; skyMaterial = makeSkyMaterial();
     const skyMesh = new THREE.Mesh(new THREE.SphereGeometry(SKY_RADIUS, 64, 36), skyMaterial); skyMesh.frustumCulled = false; skyMesh.renderOrder = -1000;
+    skyMesh.layers.set(0); skyMesh.userData.hobunjiNoOutline = true; // Keeps the background shell explicitly out of every geometry-outline auxiliary layer.
     cloudGroup = new THREE.Group(); cloudGroup.name = 'hobunji_cloud_domes'; celestialGroup = new THREE.Group(); celestialGroup.name = 'hobunji_celestial_sprites'; root.add(skyMesh, celestialGroup, cloudGroup);
   }
 
@@ -454,6 +498,29 @@
 
   function attachToScene() {
     const scene = deps?.getActiveScene?.(); if (!scene || scene === activeScene) return; activeScene?.remove(root); scene.add(root); activeScene = scene;
+  }
+
+  function syncScreenSkyUniforms() {
+    const uniforms = skyMaterial?.uniforms; // Acts as the authoritative per-frame camera/viewport state copied to all cloud-shell materials.
+    if (!uniforms?.uSkyResolution || !uniforms?.uSkyProjectionScale) return;
+    const renderer = deps?.renderer || window.__hobunjiGameRenderer; // Supplies the actual drawing-buffer dimensions so gl_FragCoord maps correctly at any DPR.
+    const resolution = uniforms.uSkyResolution.value; // Reused Vector2 avoids allocating a size object every sky update.
+    if (renderer?.getDrawingBufferSize) renderer.getDrawingBufferSize(resolution);
+    else resolution.set(
+      Math.max(1, Number(renderer?.domElement?.width) || Number(window.innerWidth) || 1),
+      Math.max(1, Number(renderer?.domElement?.height) || Number(window.innerHeight) || 1)
+    );
+    const projection = deps?.camera?.projectionMatrix?.elements; // Provides the current perspective X/Y scale used to reconstruct each pixel's view ray.
+    uniforms.uSkyProjectionScale.value.set(
+      Math.max(0.000001, Math.abs(Number(projection?.[0]) || 1)),
+      Math.max(0.000001, Math.abs(Number(projection?.[5]) || 1))
+    );
+    cloudBands.forEach(band => {
+      band.material?.uniforms?.uSkyResolution?.value?.copy(resolution);
+      band.material?.uniforms?.uSkyProjectionScale?.value?.copy(uniforms.uSkyProjectionScale.value);
+      band.depthMaterial?.uniforms?.uSkyResolution?.value?.copy(resolution);
+      band.depthMaterial?.uniforms?.uSkyProjectionScale?.value?.copy(uniforms.uSkyProjectionScale.value);
+    });
   }
 
   function updateSkyColors() {
@@ -516,7 +583,7 @@
     if (!deps || !root) return;
     const safeDt = Math.max(0, Number(dt) || 0);
     advanceOvercast(safeDt);
-    attachToScene(); root.position.copy(deps.camera.position); updateSkyColors();
+    attachToScene(); root.position.copy(deps.camera.position); syncScreenSkyUniforms(); updateSkyColors();
     const hour = getHour(), sunUv = sunUvForHour(hour), moonUv = moonUvForHour(hour), sunOpacity = celestialOpacity('sun', hour), moonOpacity = celestialOpacity('moon', hour), moonIllumination = lunarIllumination();
     updateCelestialPack(sunPack, 'sun', sunUv, sunOpacity, 1); updateCelestialPack(moonPack, 'moon', moonUv, moonOpacity, moonIllumination); updateClouds(safeDt, sunUv, moonUv, sunOpacity, moonOpacity, moonIllumination);
     if (assetsReady && currentCloudBucket() !== lastCloudBucket) rebuildClouds(root.userData.cloudImages || []); if (assetsReady && lunarDay() !== lastMoonDay) rebuildMoon();
@@ -577,7 +644,7 @@
 
   function getDebugState() {
     const lighting = fullDayLightingState();
-    return { initialized: !!deps, assetsReady, activeScene: activeScene?.name || activeScene?.uuid || null, hour: getHour(), rawDay: deps?.calendar?.day ?? null, dayOfMonth: lunarDay(), moonPhase: lunarPhaseName(), moonIllumination: lunarIllumination(), stars: starVisibility(), cloudCover: currentCloudCover(), cloudBucket: currentCloudBucket(), overcastTarget: rawOvercastLevel(), overcast: currentOvercastLevel(), overcastDarkness: lighting.overcastDarkness, ambientOverlayAlpha: lighting.a, lanternActivationStrength: lighting.lanternActivation, lanternActive: lighting.a >= LANTERN_ACTIVATION_ALPHA, lanternActivationAlpha: LANTERN_ACTIVATION_ALPHA, lanternFullAlpha: LANTERN_FULL_ALPHA, effectiveDaySeconds: CLOCK_FULL_DAY_TARGET_SECONDS, dayRolloverHour: DAY_ROLLOVER_HOUR, clockHookReady: !!clockDeps, cloudOverlapMasking: true, cloudMaskInsetPx: CLOUD_OCCLUSION_INSET_PX, cloudDepthErosionPx: CLOUD_DEPTH_EROSION_PX, cloudDepthMaskCount: cloudBands.filter(band => !!band.depthMesh).length, skyRadius: SKY_RADIUS, celestialRadius: CELESTIAL_RADIUS, cameraFar: deps?.camera?.far ?? null, oversizedCelestialGlowDisabled: false, celestialNoOutline: true, celestialAzimuthOffsetU: CELESTIAL_AZIMUTH_OFFSET_U, sunUv: sunUvForHour(), moonUv: moonUvForHour() };
+    return { initialized: !!deps, assetsReady, activeScene: activeScene?.name || activeScene?.uuid || null, hour: getHour(), rawDay: deps?.calendar?.day ?? null, dayOfMonth: lunarDay(), moonPhase: lunarPhaseName(), moonIllumination: lunarIllumination(), stars: starVisibility(), cloudCover: currentCloudCover(), cloudBucket: currentCloudBucket(), overcastTarget: rawOvercastLevel(), overcast: currentOvercastLevel(), overcastDarkness: lighting.overcastDarkness, ambientOverlayAlpha: lighting.a, lanternActivationStrength: lighting.lanternActivation, lanternActive: lighting.a >= LANTERN_ACTIVATION_ALPHA, lanternActivationAlpha: LANTERN_ACTIVATION_ALPHA, lanternFullAlpha: LANTERN_FULL_ALPHA, effectiveDaySeconds: CLOCK_FULL_DAY_TARGET_SECONDS, dayRolloverHour: DAY_ROLLOVER_HOUR, clockHookReady: !!clockDeps, cloudOverlapMasking: true, skyFaceIndependentScreenMapping: true, skyResolution: skyMaterial?.uniforms?.uSkyResolution?.value ? `${Math.round(skyMaterial.uniforms.uSkyResolution.value.x)}x${Math.round(skyMaterial.uniforms.uSkyResolution.value.y)}` : null, cloudMaskInsetPx: CLOUD_OCCLUSION_INSET_PX, cloudDepthErosionPx: CLOUD_DEPTH_EROSION_PX, cloudDepthMaskCount: cloudBands.filter(band => !!band.depthMesh).length, skyRadius: SKY_RADIUS, celestialRadius: CELESTIAL_RADIUS, cameraFar: deps?.camera?.far ?? null, oversizedCelestialGlowDisabled: false, celestialNoOutline: true, celestialAzimuthOffsetU: CELESTIAL_AZIMUTH_OFFSET_U, sunUv: sunUvForHour(), moonUv: moonUvForHour() };
   }
 
   installClockHook(); installWeatherHook(); installRainHook();
