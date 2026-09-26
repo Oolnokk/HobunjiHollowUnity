@@ -472,12 +472,16 @@ for (const control of ['editBanubuPhase','editBanubuStage','editBanubuQuestType'
 assert(editorInspector.includes("'blocked'"), 'Dialogue Editor must author the blocked phase');
 assert.match(editorInspector, /'cameraId','banubuPresentation'/, 'changing a node type must preserve authored cutscene metadata');
 assert.match(editorIndex, /dialogue-editor-cutscene-authoring\.js\?v=20260925cutscene1/, 'Dialogue Editor must load the cutscene authoring extension');
-for (const control of ['editCutsceneCamera','editBanubuBodyCue','editBanubuNeckCue','editBanubuSparkleAction','editBanubuSparkleAnchor','editBanubuSparkleMax','editSparkRadius','editSparkSize','editSparkRate','editSparkLifetime','editSparkSpeed','editSparkSpread','editSparkGravity','editSparkColorA','editSparkColorB']) {
+for (const control of ['editCutsceneCamera','editBanubuBodyCue','editBanubuNeckCue','editBanubuMoveEnabled','editBanubuMoveX','editBanubuMoveZ','editBanubuMoveDuration','editBanubuCommitTurnIn','editBanubuSparkleAction','editBanubuSparkleAnchor','editBanubuSparkleMax','editSparkRadius','editSparkSize','editSparkRate','editSparkLifetime','editSparkSpeed','editSparkSpread','editSparkGravity','editSparkColorA','editSparkColorB']) {
   assert(editorCutscene.includes(control), `Dialogue Editor cutscene panel must expose ${control}`);
 }
 assert.match(editorCutscene, /LocalDBOverrides\?\.getOverride\?\.\('locales'\)/, 'Dialogue Editor must consume Locale Editor local camera authoring without requiring a repo commit first');
 assert.match(editorCutscene, /fetch\('\.\.\/\.\.\/config\/locales\/index\.json'\)/, 'Dialogue Editor must fall back to repository locale cameras');
 assert.match(editorCutscene, /node\.cameraId=value/, 'Dialogue Editor must write the selected locale camera id onto the dialogue node');
+assert.match(editorCutscene, /cue\.move=\{x:readNumber\('editBanubuMoveX'\),z:readNumber\('editBanubuMoveZ'\),duration:/, 'Dialogue Editor must serialize Banubu relative movement and duration onto the node');
+assert.match(editorCutscene, /cue\.commitTurnIn=stage/, 'Dialogue Editor must author the final transactional quest commit cue');
+assert.match(editorCutscene, /anchor:\$\('editBanubuSparkleAnchor'\)\.value\|\|'root'/, 'Dialogue Editor must persist root-vs-fixed sparkle attachment instead of hard-coding root');
+assert.match(editorInspector, /prepareTurnIn/, 'Banubu quest choice actions must expose prepareTurnIn so the final end node can own the commit');
 
 // Sleeping Grehlr behavior remains permanent and talkability uses the existing animal-NPC bridge.
 const schedule = require('../docs/config/npcs/schedule-overrides.json');
