@@ -35,6 +35,7 @@
   const tuning = { ...DEFAULTS }; // Used by every attack phase and refreshed from authored combat configuration.
   let dirtGeometry = null; // Shared by all dirt clods so particles do not allocate geometry individually.
   let dirtMaterial = null; // Shared by all dirt clods so particles do not allocate material individually.
+  let dirtTextureLoadStarted = false; // Used to load the shared trench-dirt PNG only once for every Grehlr clod.
 
   function clamp01(value) {
     return Math.max(0, Math.min(1, value));
@@ -86,16 +87,62 @@
     return { valid: true, reason: 'creature' };
   }
 
+  function buildDirtGeometry(THREE) {
+    let geometry = new THREE.TetrahedronGeometry(0.11, 0); // Used as the four-triangle low-poly body shared by every dirt clod.
+    if (geometry.index) geometry = geometry.toNonIndexed(); // Used so each triangle owns three UV vertices and can independently stretch the whole dirt image.
+    const position = geometry.getAttribute?.('position'); // Used to size one UV pair for every non-indexed tetrahedron vertex.
+    if (!position || position.count % 3 !== 0 || !THREE.BufferAttribute) return geometry;
+
+    const uv = new Float32Array(position.count * 2); // Used to map the complete PNG onto every individual triangle face.
+    for (let vertex = 0; vertex < position.count; vertex += 3) {
+      uv[(vertex + 0) * 2 + 0] = 0;
+      uv[(vertex + 0) * 2 + 1] = 0;
+      uv[(vertex + 1) * 2 + 0] = 1;
+      uv[(vertex + 1) * 2 + 1] = 0;
+      uv[(vertex + 2) * 2 + 0] = 0.5;
+      uv[(vertex + 2) * 2 + 1] = 1;
+    }
+    geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    return geometry;
+  }
+
+  function loadDirtTexture(THREE) {
+    if (dirtTextureLoadStarted || !dirtMaterial || !THREE.TextureLoader) return;
+    dirtTextureLoadStarted = true;
+    const texturePath = 'assets/textures/canvas.png'; // Used to reuse the exact PNG backing the game's tilled/trench dirt material.
+    new THREE.TextureLoader().load(texturePath, loaded => {
+      let finalTexture = loaded; // Used as the clod map, replaced by the terrain-equivalent shade-filled version when tint helpers are available.
+      const rgb = window.parseHexColor?.('#423d35'); // Used to match the authored trench-dirt shade fill from terrain-materials.json.
+      if (rgb && window.getShadeFillCanvas && window.getPortraitTintingConfig && THREE.CanvasTexture) {
+        const canvas = window.getShadeFillCanvas(loaded.image, texturePath + '|#423d35', {
+          mode: 'shadeFill',
+          rgb: [rgb.r, rgb.g, rgb.b],
+          options: window.getPortraitTintingConfig(),
+        }); // Used to preserve the dirt PNG's grain while matching the same brown used by terrain dirt.
+        finalTexture = new THREE.CanvasTexture(canvas);
+        dirtMaterial.color.set(0xffffff);
+      } else {
+        dirtMaterial.color.set(0x423d35);
+      }
+      if (THREE.ClampToEdgeWrapping != null) {
+        finalTexture.wrapS = THREE.ClampToEdgeWrapping;
+        finalTexture.wrapT = THREE.ClampToEdgeWrapping;
+      }
+      finalTexture.needsUpdate = true;
+      dirtMaterial.map = finalTexture;
+      dirtMaterial.needsUpdate = true;
+    }, undefined, () => {});
+  }
+
   function ensureDirtAssets() {
     const THREE = window.THREE; // Used to lazily build low-poly dirt particle rendering assets.
     if (!THREE) return null;
     // A tetrahedron is the minimum closed 3D polyhedron: exactly four
-    // triangles. The previous detail-0 icosahedron used 20 triangles per
-    // clod, five times as many faces with no useful silhouette gain at this
-    // particle size. Random scale/rotation in spawnDirt keeps four-face clods
-    // from looking cloned.
-    if (!dirtGeometry) dirtGeometry = new THREE.TetrahedronGeometry(0.11, 0);
+    // triangles. Each face gets independent UVs so the whole dirt PNG is
+    // stretched to fit each triangle rather than wrapped around the clod.
+    if (!dirtGeometry) dirtGeometry = buildDirtGeometry(THREE);
     if (!dirtMaterial) dirtMaterial = new THREE.MeshStandardMaterial({ color: 0x654127, roughness: 1, metalness: 0, flatShading: true });
+    loadDirtTexture(THREE);
     return THREE;
   }
 
@@ -141,12 +188,23 @@
     mesh.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
     parent.add(mesh);
 
+    const ringTrack = options.trackTelegraphRing && Number.isFinite(state.centerX) && Number.isFinite(state.centerY)
+      ? {
+          centerX: state.centerX / deps.TILE,
+          centerZ: state.centerY / deps.TILE,
+          angle,
+          radialScale: options.ringRadialScale ?? 1,
+          tileSize: deps.TILE,
+        }
+      : null; // Used to pull telegraph-ring clods inward with the live warning radius instead of leaving stale outer rings behind.
+
     state.dirtParticles.push({
       mesh,
       vx: Math.cos(angle) * horizontalSpeed,
       vy: upSpeed,
       vz: Math.sin(angle) * horizontalSpeed,
       life,
+      ringTrack,
     });
   }
 
@@ -156,9 +214,15 @@
       const particle = state.dirtParticles[index]; // Used to integrate and retire one active dirt clod.
       particle.life -= dt;
       particle.vy -= gravity * dt;
-      particle.mesh.position.x += particle.vx * dt;
+      if (particle.ringTrack && Number.isFinite(state.telegraphVisualRadiusPx)) {
+        const ringRadiusTiles = Math.max(0, state.telegraphVisualRadiusPx) / particle.ringTrack.tileSize * particle.ringTrack.radialScale; // Used to collapse every still-live warning clod onto the same shrinking perimeter.
+        particle.mesh.position.x = particle.ringTrack.centerX + Math.cos(particle.ringTrack.angle) * ringRadiusTiles;
+        particle.mesh.position.z = particle.ringTrack.centerZ + Math.sin(particle.ringTrack.angle) * ringRadiusTiles;
+      } else {
+        particle.mesh.position.x += particle.vx * dt;
+        particle.mesh.position.z += particle.vz * dt;
+      }
       particle.mesh.position.y += particle.vy * dt;
-      particle.mesh.position.z += particle.vz * dt;
       particle.mesh.rotation.x += dt * 4;
       particle.mesh.rotation.z += dt * 3;
       if (particle.life <= 0) {
@@ -208,10 +272,13 @@
 
   function emitTelegraphPop(creature, state, deps, angle) {
     const radialScale = 0.9 + Math.random() * 0.18; // Used to make the warning perimeter thick enough to read as a circle.
-    const xPx = state.centerX + Math.cos(angle) * state.telegraphRadiusPx * radialScale; // Used as this perimeter eruption's world-pixel X origin.
-    const yPx = state.centerY + Math.sin(angle) * state.telegraphRadiusPx * radialScale; // Used as this perimeter eruption's world-pixel Y origin.
+    const visualRadiusPx = Number.isFinite(state.telegraphVisualRadiusPx) ? state.telegraphVisualRadiusPx : state.telegraphRadiusPx; // Used as the live countdown radius for both new and already-active ring particles.
+    const xPx = state.centerX + Math.cos(angle) * visualRadiusPx * radialScale; // Used as this perimeter eruption's world-pixel X origin.
+    const yPx = state.centerY + Math.sin(angle) * visualRadiusPx * radialScale; // Used as this perimeter eruption's world-pixel Y origin.
     spawnDirt(creature, state, deps, xPx, yPx, {
       angle,
+      trackTelegraphRing: true,
+      ringRadialScale: radialScale,
       radiusTiles: 0.035,
       radiusJitterTiles: 0.045,
       scaleMin: 1.1,
@@ -263,6 +330,13 @@
     }
   }
 
+  function updateTelegraphVisualRadius(state) {
+    const durationS = Math.max(0, Number(tuning.TELEGRAPH_S) || 0); // Used to map the authored warning duration onto one radius countdown.
+    const progress = durationS > 0 ? clamp01(state.t / durationS) : 1; // Used to make zero-duration telegraphs collapse and emerge immediately.
+    state.telegraphVisualRadiusPx = Math.max(0, state.telegraphRadiusPx * (1 - progress));
+    return state.telegraphVisualRadiusPx;
+  }
+
   function beginTelegraph(creature, state, deps) {
     const target = state.target; // Used to lock the dirt warning circle where the target is when the random burrow interval ends.
     const status = targetStatus(creature, state); // Used to fall back to the Grehlr's current location only when the original target is genuinely unusable.
@@ -272,6 +346,7 @@
     state.stage = 'telegraph';
     state.t = 0;
     state.telegraphEmitCarry = 0;
+    state.telegraphVisualRadiusPx = state.telegraphRadiusPx; // Used as the visible warning countdown that reaches zero on the emergence frame.
     creature.x = state.centerX;
     creature.y = state.centerY;
 
@@ -351,11 +426,12 @@
     const distancePx = status.valid && Number.isFinite(state.centerX) && Number.isFinite(state.centerY)
       ? Math.hypot(state.target.x - state.centerX, state.target.y - state.centerY)
       : Infinity; // Used to show whether the target is physically inside the fixed warning circle right now.
-    const radiusPx = state.telegraphRadiusPx || 0; // Used as the debug comparison radius for the eruption circle.
-    const inside = status.valid && radiusPx > 0 && distancePx <= radiusPx; // Used as the live mobile-visible hit eligibility indicator.
-    const distanceText = Number.isFinite(distancePx) ? `${Math.round(distancePx)}/${Math.round(radiusPx)}px` : `--/${Math.round(radiusPx)}px`; // Used as compact circle-distance diagnostics.
+    const hitRadiusPx = state.telegraphRadiusPx || 0; // Used as the fixed gameplay hit radius even while the warning visuals contract.
+    const visualRadiusPx = Number.isFinite(state.telegraphVisualRadiusPx) ? state.telegraphVisualRadiusPx : hitRadiusPx; // Used to expose the visible countdown radius separately from hit eligibility.
+    const inside = status.valid && hitRadiusPx > 0 && distancePx <= hitRadiusPx; // Used as the live mobile-visible hit eligibility indicator.
+    const distanceText = Number.isFinite(distancePx) ? `${Math.round(distancePx)}/${Math.round(hitRadiusPx)}px` : `--/${Math.round(hitRadiusPx)}px`; // Used as compact circle-distance diagnostics.
     const result = state.exhaustionApplied ? ` | ${state.hit ? 'HIT' : 'MISS'}${state.damageAttempted ? ' DAMAGE SENT' : ''}` : ''; // Used to preserve the last resolution result during emergence.
-    element.textContent = `Grehlr Burrow: ${state.stage}\nremaining ${remaining.toFixed(2)}s | particles ${state.dirtParticles.length}\ntarget ${state.targetKind || '?'} ${status.valid ? 'valid' : status.reason} | ${inside ? 'INSIDE' : 'OUTSIDE'} ${distanceText}\nfooting ${Math.round(creature.footing ?? 0)}/${Math.round(creature.maxFooting ?? 0)} | stamina ${Math.round(creature.stamina ?? 0)}/${Math.round(creature.maxStamina ?? 0)}${result}`;
+    element.textContent = `Grehlr Burrow: ${state.stage}\nremaining ${remaining.toFixed(2)}s | ring ${Math.round(visualRadiusPx)}px | particles ${state.dirtParticles.length}\ntarget ${state.targetKind || '?'} ${status.valid ? 'valid' : status.reason} | ${inside ? 'INSIDE' : 'OUTSIDE'} ${distanceText}\nfooting ${Math.round(creature.footing ?? 0)}/${Math.round(creature.maxFooting ?? 0)} | stamina ${Math.round(creature.stamina ?? 0)}/${Math.round(creature.maxStamina ?? 0)}${result}`;
   }
 
   function start(creature, state, context, deps) {
@@ -370,6 +446,7 @@
     state.burrowDurationS = tuning.BURROW_MIN_S + gameplayRandom() * randomSpan;
     state.collideRadiusPx = deps.TILE * 0.32;
     state.telegraphRadiusPx = radiusTiles * deps.TILE;
+    state.telegraphVisualRadiusPx = state.telegraphRadiusPx; // Used by the telegraph particle ring as its live contraction radius.
     state.dirtParticles = [];
     state.trailEmitCarry = 0;
     state.telegraphEmitCarry = 0;
@@ -388,6 +465,7 @@
 
   function update(creature, state, dt, deps) {
     state.t += dt;
+    if (state.stage === 'telegraph') updateTelegraphVisualRadius(state);
     updateDirt(state, dt);
 
     if (state.stage === 'dive') {
@@ -436,7 +514,8 @@
         state.telegraphEmitCarry -= 1;
         emitTelegraphPop(creature, state, deps, Math.random() * Math.PI * 2);
       }
-      if (state.t >= tuning.TELEGRAPH_S) {
+      if (state.telegraphVisualRadiusPx <= 0) {
+        state.telegraphVisualRadiusPx = 0;
         resolveBite(creature, state, deps);
         state.stage = 'emerge';
         state.t = 0;
