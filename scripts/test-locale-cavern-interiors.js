@@ -29,7 +29,7 @@ const awakeCamera = banubuDialogueCameras.find(camera => camera.id === 'banubu_d
 const sleepCamera = banubuDialogueCameras.find(camera => camera.id === 'banubu_dialogue_sleep');
 const keyCamera = banubuDialogueCameras.find(camera => camera.id === 'banubu_key_ground');
 assert.strictEqual(awakeCamera?.stagePlayer, true, 'Banubu awake camera must opt into authored player staging');
-assert.deepStrictEqual(awakeCamera?.playerStage, { x: 6.5, z: 8 }, 'awake-camera player staging must place the player halfway between Banubu and the south cave entrance');
+assert.deepStrictEqual(awakeCamera?.playerStage, { x: 6.5, z: 6.5 }, 'awake-camera player staging must place the player one tile directly in front of Banubu and between him and the cameras');
 assert.strictEqual(sleepCamera?.stagePlayer, false, 'sleeping Banubu dialogue must leave the player at the interaction position');
 assert.strictEqual(keyCamera?.stagePlayer, false, 'key camera must preserve the position established by the awake shot instead of re-staging the player'); // Ground-level shot used while Banubu calls attention to the root-attached key sparkle emitter.
 assert.deepStrictEqual(awakeCamera?.position, { x: 7.024, y: 0.75, z: 8.3 }, 'Banubu awake camera keeps its authored cavern-side position rather than adopting the discarded runtime-only awake-camera edit');
