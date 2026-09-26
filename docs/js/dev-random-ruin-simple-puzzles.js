@@ -979,6 +979,7 @@
         activePoint:clonePoint(state.checkpoints.active?.point),
         triggered:[...state.checkpoints.triggered],
         doorwayCount:state.checkpoints.doorwayCount,
+        doorways:state.checkpoints.doorways.map(door=>({id:door.id,axis:door.axis,x:+door.x.toFixed(3),z:+door.z.toFixed(3),width:+door.width.toFixed(3)})),
         activationCount:state.checkpoints.activationCount,
         respawnCount:state.checkpoints.respawnCount,
         lastReason:state.checkpoints.lastReason,
