@@ -180,7 +180,7 @@
   <section class="panel">
     <strong>Fixed chord progression at this tonic</strong>
     <div id="chords" class="chords"></div>
-    <p class="note"><strong>3/4.</strong> Chords advance once per measure for 8 measures, then once per 2 measures for 16 measures, then the 24-measure cadence loops.</p>
+    <p class="note"><strong>Mixed meter.</strong> Four chords use one 6/8 bar each, then sixteen chords use one 3/4 bar each, then the 20-chord phrase loops.</p>
   </section>
 
   <details class="panel" open>
@@ -188,7 +188,7 @@
     <pre id="diagnostics">engine=loading</pre>
   </details>
 
-  <iframe id="engine" src="../../assets/minigames/lyre-performance.html?v=20260925rootpad1" title="Kurraya song audition audio engine" aria-hidden="true"></iframe>
+  <iframe id="engine" src="../../assets/minigames/lyre-performance.html?v=20260925mixedmeter1" title="Kurraya song audition audio engine" aria-hidden="true"></iframe>
 
   </section>
 
@@ -422,8 +422,8 @@
       `scale=${snapshot?.scaleName || selectedScale}`,
       `tonic=${snapshot?.tonicName || midiName(selectedTonic)} (MIDI ${snapshot?.tonicMidi ?? selectedTonic})`,
       `progression=${(snapshot?.progression || []).map(step => step.chordName).join(' → ') || 'waiting'}`,
-      `meter=${(snapshot?.timeSignature || [6,8]).join('/')} grouping=${(snapshot?.beatGrouping || [3,3]).join('+')}`,
-      `cadence=${snapshot?.harmonyCadence ? `1/measure × ${snapshot.harmonyCadence.fastMeasures} → 1/2 measures × ${snapshot.harmonyCadence.slowMeasures} → loop` : 'waiting'}`,
+      `meter now=${snapshot?.currentTimeSignature || (snapshot?.timeSignature || [6,8]).join('/')} · phrase=6/8×4 → 3/4×16`,
+      `cadence=${snapshot?.harmonyCadence ? `${snapshot.harmonyCadence.sixEightChords} chords × 6/8 → ${snapshot.harmonyCadence.threeFourChords} chords × 3/4 → loop` : 'waiting'}`,
       `playing=${live?.gameActive ? 'yes' : 'no'} demo=${live?.gameDemoActive ? 'yes' : 'no'}`,
       `transportStep=${live?.transportHarmonyStep ?? '—'}`,
       `mix K/P/M=${Math.round((snapshot?.mix?.kurraya ?? live?.kurrayaMixLevel ?? 1) * 100)}/${Math.round((snapshot?.mix?.pad ?? live?.padMixLevel ?? 1) * 100)}/${Math.round((snapshot?.mix?.metronome ?? live?.metronomeMixLevel ?? 1) * 100)}%`,
@@ -431,7 +431,7 @@
       `pad source=${snapshot?.mix?.padSampleName || bridge?.mixState?.().padSampleName || '—'}`,
       `pad root=${midiName(snapshot?.mix?.padSampleRootMidi ?? bridge?.mixState?.().padSampleRootMidi ?? 48)} source=${snapshot?.mix?.padRootSource || bridge?.mixState?.().padRootSource || '—'} detected=${snapshot?.mix?.padDetectedFrequency ? Number(snapshot.mix.padDetectedFrequency).toFixed(1) + 'Hz/' + Math.round((snapshot.mix.padDetectedConfidence || 0) * 100) + '%' : '—'}`,
       `pad roots=${(snapshot?.mix?.padProgressionRootNames || bridge?.mixState?.().padProgressionRootNames || []).join(' → ') || '—'}`,
-      `pad sounding=${(snapshot?.mix?.padChordNames || bridge?.mixState?.().padChordNames || []).join(' + ') || '—'}`,
+      `pad sounding=${(snapshot?.mix?.padChordNames || bridge?.mixState?.().padChordNames || [])[0] || '—'}`,
       `metronome source=${snapshot?.mix?.metronomeSource || bridge?.mixState?.().metronomeSource || '—'}`,
       error ? `error=${error}` : 'error=none'
     ].join('\n');
@@ -533,7 +533,7 @@
     renderScaleButtons(snapshot);
     renderChords(snapshot);
     renderDiagnostics(snapshot);
-    setStatus(`Ready. ${snapshot.timeSignature?.join('/') || '3/4'}; 8 fast measures then 16 slow measures. Current tuning ${snapshot.scaleName} · ${snapshot.tonicName}.`, 'good');
+    setStatus(`Ready. 4 chords in 6/8 → 16 chords in 3/4 → loop. Current tuning ${snapshot.scaleName} · ${snapshot.tonicName}.`, 'good');
     clearInterval(pollTimer);
     pollTimer = window.setInterval(() => {
       if (!bridge) return;
