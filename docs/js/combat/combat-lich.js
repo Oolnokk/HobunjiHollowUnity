@@ -425,6 +425,23 @@
     delete target._kanthicGooSlow;
   }
 
+  function clearGooSlowNow(target) {
+    const state = target?._kanthicGooSlow; // Immediate arena-exit cleanup restores enemy authored speeds instead of waiting for the duration clock.
+    if (!state) return;
+    if (target !== deps?.player && target.def && Number.isFinite(state.baseMoveSpeed)) {
+      target.def.moveSpeed = state.baseMoveSpeed;
+      target.def.chaseSpeed = state.baseChaseSpeed;
+    }
+    delete target._kanthicGooSlow;
+  }
+
+  function clearEntrancedNow(target) {
+    if (!target) return;
+    const amount = window.ResourceSystem?.getAffliction?.(target, 'entrancedHealth') || 0; // Current arena-only buildup cleared when its referential lich can no longer be in the active area.
+    if (amount > 0) window.ResourceSystem?.removeAffliction?.(target, 'entrancedHealth', amount);
+    delete target._entrancedCommandState;
+  }
+
   function updateEntrancedTarget(target, dt) {
     const RS = window.ResourceSystem; // Central source for current buildup, removal, and damage conversion.
     const amount = RS?.getAffliction?.(target, 'entrancedHealth') || 0;
@@ -648,6 +665,20 @@
 
   function updateRuntime(dt) {
     if (!(dt > 0)) return;
+    if (!isArena()) {
+      for (const projectile of [...projectiles]) disposeProjectile(projectile); // Custom spell objects never survive a Testing Arena transition.
+      for (const puddle of [...puddles]) { puddles.delete(puddle); disposeObject3D(puddle.group); } // Gasoline hazards are arena-local scene state.
+      if (deps?.player) {
+        clearGooSlowNow(deps.player);
+        clearEntrancedNow(deps.player);
+      }
+      for (const actor of deps?.hostileObjects || []) {
+        clearGooSlowNow(actor);
+        clearEntrancedNow(actor);
+      }
+      updateCommandBanner();
+      return;
+    }
     updateProjectiles(dt);
     updatePuddles(dt);
     if (deps?.player) {
@@ -659,10 +690,6 @@
       updateEntrancedTarget(actor, dt);
     }
     updateCommandBanner();
-    if (!isArena()) {
-      for (const projectile of [...projectiles]) disposeProjectile(projectile);
-      for (const puddle of [...puddles]) { puddles.delete(puddle); disposeObject3D(puddle.group); }
-    }
   }
 
   function installWrappers() {
