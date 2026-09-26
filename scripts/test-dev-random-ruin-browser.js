@@ -375,6 +375,123 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     // Wall planes are structural and their old visual toggle is now a no-op.
     // Applying it must not recreate any object-wide wall blockers.
     if (seed === FIXED_SEEDS[0]) {
+      const simpleRuntime = await page.evaluate(async () => {
+        const deps=window.Combat?.deps;
+        const rs=window.ResourceSystem;
+        const sleep=frames=>new Promise(resolve=>{
+          let left=frames;
+          const step=()=>{ if(--left<=0)resolve(); else requestAnimationFrame(step); };
+          requestAnimationFrame(step);
+        });
+        const place=(point)=>{
+          deps.player.x=point.x*deps.TILE;
+          deps.player.y=point.z*deps.TILE;
+          deps.player.vx=0;deps.player.vy=0;
+          if(deps.playerMesh?.position){
+            deps.playerMesh.position.x=point.x;
+            deps.playerMesh.position.z=point.z;
+            if(Number.isFinite(Number(point.y)))deps.playerMesh.position.y=Number(point.y);
+          }
+        };
+
+        const initial=window.DevRandomRuinSimplePuzzles.snapshot();
+        const grid=initial.safeGrids[0];
+        const unsafe=grid?.unsafe?.[0]||null;
+        let burningAfter=null,revealRow=null,revealMs=0;
+        if(unsafe){
+          const prior=Number(rs.getAffliction?.(deps.player,'burningHealth'))||0;
+          if(prior>0)rs.removeAffliction?.(deps.player,'burningHealth',prior+1);
+          place({x:unsafe.x,z:unsafe.z,y:deps.playerMesh?.position?.y||0});
+          await sleep(3);
+          burningAfter=Number(rs.getAffliction?.(deps.player,'burningHealth'))||0;
+
+          const scene=window.GridTileAccessors.getActiveScene();
+          const button=scene?.getObjectByName?.('dev_ruin_safe_path_button_'+grid.roomId);
+          if(button){
+            button.updateWorldMatrix?.(true,true);
+            const box=new THREE.Box3().setFromObject(button);
+            const center=box.getCenter(new THREE.Vector3());
+            place({x:box.max.x+.45,z:center.z,y:center.y});
+            window.DevRandomRuinInteractions.refresh();
+            await sleep(3);
+            const interaction=window.DevRandomRuinInteractions.snapshot();
+            const index=interaction.rows.findIndex(row=>row.kind==='safepathreveal');
+            revealRow=index>=0?interaction.rows[index]:null;
+            if(index>=0)window.DevRandomRuinInteractions.invoke(index);
+            await sleep(2);
+            revealMs=window.DevRandomRuinSimplePuzzles.snapshot().safeGrids[0]?.revealMs||0;
+          }
+        }
+
+        let checkpointAfterCross=null,respawn=null;
+        const checkpointBefore=window.DevRandomRuinSimplePuzzles.snapshot().checkpoints;
+        const door=checkpointBefore.doorways?.[0]||null;
+        if(door){
+          if(door.axis==='x'){
+            place({x:door.x-.9,z:door.z,y:0});await sleep(2);
+            place({x:door.x+.9,z:door.z,y:0});await sleep(3);
+          }else{
+            place({x:door.x,z:door.z-.9,y:0});await sleep(2);
+            place({x:door.x,z:door.z+.9,y:0});await sleep(3);
+          }
+          checkpointAfterCross=window.DevRandomRuinSimplePuzzles.snapshot().checkpoints;
+          deps.player.health=1;
+          place({x:checkpointAfterCross.activePoint.x+2,z:checkpointAfterCross.activePoint.z+2,y:checkpointAfterCross.activePoint.y});
+          const handled=window.DevRandomRuinSimplePuzzles.respawnAtCheckpoint('browser-test');
+          const cp=window.DevRandomRuinSimplePuzzles.snapshot().checkpoints;
+          respawn={
+            handled,
+            area:window.GridTileAccessors.getCurrentArea(),
+            x:deps.player.x/deps.TILE,z:deps.player.y/deps.TILE,
+            health:deps.player.health,maxHealth:deps.player.maxHealth,
+            activePoint:cp.activePoint,
+            respawnCount:cp.respawnCount,
+          };
+        }
+
+        let ropeAttach=null;
+        const rope=window.DevRandomRuinSimplePuzzles.snapshot().ropes?.[0]||null;
+        if(rope){
+          place(rope.grabPoint);
+          await sleep(4);
+          window.DevRandomRuinInteractions.refresh();
+          await sleep(2);
+          const beforeRelease=window.DevRandomRuinSimplePuzzles.snapshot();
+          const interaction=window.DevRandomRuinInteractions.snapshot();
+          const releaseIndex=interaction.rows.findIndex(row=>row.kind==='roperelease');
+          const brakeIndex=interaction.rows.findIndex(row=>row.kind==='ropebrake');
+          if(releaseIndex>=0)window.DevRandomRuinInteractions.invoke(releaseIndex);
+          await sleep(2);
+          const afterRelease=window.DevRandomRuinSimplePuzzles.snapshot();
+          ropeAttach={
+            attached:beforeRelease.ropes[0]?.attached===true,
+            releaseRow:releaseIndex>=0?interaction.rows[releaseIndex]:null,
+            brakeRow:brakeIndex>=0?interaction.rows[brakeIndex]:null,
+            worldPopupVisible:interaction.worldPopupVisible,
+            released:afterRelease.ropes[0]?.attached===false,
+          };
+        }
+
+        await new Promise(resolve=>setTimeout(resolve,1100));
+        await sleep(2);
+        const final=window.DevRandomRuinSimplePuzzles.snapshot();
+        return {initial,burningAfter,revealRow,revealMs,checkpointBefore,checkpointAfterCross,respawn,ropeAttach,final};
+      });
+      assert.ok(simpleRuntime.burningAfter>=20,'unsafe pressure plate must apply Burning Health: '+JSON.stringify(simpleRuntime));
+      assert.equal(simpleRuntime.revealRow?.label,'Reveal Safe Path','safe-path button must enter the ordinary world input list: '+JSON.stringify(simpleRuntime));
+      assert.ok(simpleRuntime.revealMs>0,'safe-path button must temporarily reveal the safe plates: '+JSON.stringify(simpleRuntime));
+      assert.match(simpleRuntime.checkpointAfterCross?.activeId||'',/^doorway-/,'crossing a doorway must advance the checkpoint: '+JSON.stringify(simpleRuntime));
+      assert.equal(simpleRuntime.respawn?.handled,true,'ruin checkpoint recovery must handle death locally: '+JSON.stringify(simpleRuntime));
+      assert.equal(simpleRuntime.respawn?.area,'map_i_dev_random_ruin','checkpoint death recovery must stay inside the generated ruin: '+JSON.stringify(simpleRuntime));
+      assert.ok(Math.abs(simpleRuntime.respawn.x-simpleRuntime.respawn.activePoint.x)<.02&&Math.abs(simpleRuntime.respawn.z-simpleRuntime.respawn.activePoint.z)<.02,'checkpoint respawn must land at the last crossed doorway: '+JSON.stringify(simpleRuntime));
+      assert.equal(simpleRuntime.respawn.health,Math.max(1,Math.round(simpleRuntime.respawn.maxHealth*.5)),'checkpoint respawn should match the game half-Health recovery convention: '+JSON.stringify(simpleRuntime));
+      assert.equal(simpleRuntime.ropeAttach?.attached,true,'approaching the traversal rope must auto-catch it: '+JSON.stringify(simpleRuntime));
+      assert.equal(simpleRuntime.ropeAttach?.releaseRow?.label,'Release Rope','attached rope must expose its release input: '+JSON.stringify(simpleRuntime));
+      assert.equal(simpleRuntime.ropeAttach?.brakeRow?.label,'Hold to Stop / Adjust Rope','attached rope must expose its held brake/adjust input: '+JSON.stringify(simpleRuntime));
+      assert.equal(simpleRuntime.ropeAttach?.worldPopupVisible,true,'rope controls must render through WorldPopupText: '+JSON.stringify(simpleRuntime));
+      assert.equal(simpleRuntime.ropeAttach?.released,true,'release action must transfer the player into rope ballistic flight: '+JSON.stringify(simpleRuntime));
+      assert.ok(simpleRuntime.final.liveProjectiles>0,'alternating hallway traps must be actively emitting projectiles: '+JSON.stringify(simpleRuntime.final));
+
       const towerInteraction = await page.evaluate(async () => {
         const scene=window.GridTileAccessors.getActiveScene();
         let tower=null;
