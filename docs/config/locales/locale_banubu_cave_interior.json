@@ -325,11 +325,11 @@
       "fadePets": false,
       "playerStage": {
         "x": 6.5,
-        "z": 10.5
+        "z": 8
       },
       "targetNpcId": "",
       "targetAnchorId": "",
-      "stagePlayer": false
+      "stagePlayer": true
     },
     {
       "id": "banubu_dialogue_sleep",
@@ -417,6 +417,6 @@
   },
   "meta": {
     "createdAt": "2026-09-19T00:00:00.000Z",
-    "updatedAt": "2026-09-26T00:58:00.000Z"
+    "updatedAt": "2026-09-26T01:05:00.000Z"
   }
 }
