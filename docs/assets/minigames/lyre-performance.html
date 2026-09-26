@@ -1881,6 +1881,12 @@
     return {numerator,denominator,grouping,groupStarts,quarterUnitsPerBeat:4/denominator,measureQuarterBeats:numerator*4/denominator,label:`${numerator}/${denominator}`};
   }
 
+  let kurrayaSixEightMeterCache = null; // Built once: the fixed Kurraya meters are constant but are read ~30×/frame by the look-ahead boundary search.
+  let kurrayaThreeFourMeterCache = null;
+  function kurrayaSixEightMeter() {
+    return kurrayaSixEightMeterCache || (kurrayaSixEightMeterCache = timeSignatureData(KURRAYA_TIME_SIGNATURE,KURRAYA_BEAT_GROUPING));
+  }
+
   function fixedKurrayaMixedMeterPhase(performanceQuarterBeatFloat = 0) {
     const quarterBeat = Math.max(0,Number(performanceQuarterBeatFloat) || 0);
     const cycleIndex = Math.floor(quarterBeat / FIXED_HARMONY_CYCLE_QUARTER_BEATS);
@@ -1888,8 +1894,8 @@
     const chordWithinCycle = Math.min(FIXED_HARMONY_CYCLE_CHORDS - 1,Math.floor(cycleQuarterBeat / FIXED_HARMONY_CHORD_QUARTER_BEATS));
     const sixEight = chordWithinCycle < FIXED_HARMONY_SIX_EIGHT_CHORDS;
     const meter = sixEight
-      ? timeSignatureData(KURRAYA_TIME_SIGNATURE,KURRAYA_BEAT_GROUPING)
-      : timeSignatureData(KURRAYA_THREE_FOUR_TIME_SIGNATURE,KURRAYA_THREE_FOUR_BEAT_GROUPING);
+      ? kurrayaSixEightMeterCache || (kurrayaSixEightMeterCache = timeSignatureData(KURRAYA_TIME_SIGNATURE,KURRAYA_BEAT_GROUPING))
+      : kurrayaThreeFourMeterCache || (kurrayaThreeFourMeterCache = timeSignatureData(KURRAYA_THREE_FOUR_TIME_SIGNATURE,KURRAYA_THREE_FOUR_BEAT_GROUPING));
     const chordStartQuarterBeat = chordWithinCycle * FIXED_HARMONY_CHORD_QUARTER_BEATS;
     const quarterBeatIntoChord = Math.max(0,cycleQuarterBeat - chordStartQuarterBeat);
     const meterBeatsBeforeChord = sixEight
@@ -2101,15 +2107,20 @@
     return segments;
   }
 
+  let kurrayaArrangementCache = null; // Keyed on the step-array identities: every writer replaces these arrays rather than mutating them, and the per-frame chord-boundary search reads this ~17×/frame.
   function activeKurrayaSongArrangement() {
+    const cache = kurrayaArrangementCache;
+    if (cache && cache.introSource === state.kurrayaSongIntroSteps && cache.bodySource === state.kurrayaSongBodySteps) return cache.value;
     const introSteps = normalizeKurrayaArrangementSteps(state.kurrayaSongIntroSteps,FIXED_HARMONY_SIX_EIGHT_CHORDS,KURRAYA_DEFAULT_INTRO_STEPS); // Four editable 6/8 bars before the melody.
     const bodySteps = normalizeKurrayaArrangementSteps(state.kurrayaSongBodySteps,FIXED_HARMONY_THREE_FOUR_CHORDS,KURRAYA_DEFAULT_BODY_STEPS); // Sixteen editable 3/4 bars underneath the melody.
-    return {
+    const value = {
       introSteps,
       bodySteps,
       introSegments:kurrayaHarmonySegments(introSteps,'6/8',0),
       bodySegments:kurrayaHarmonySegments(bodySteps,'3/4',FIXED_HARMONY_SIX_EIGHT_CHORDS)
     };
+    kurrayaArrangementCache = {introSource:state.kurrayaSongIntroSteps,bodySource:state.kurrayaSongBodySteps,value};
+    return value;
   }
 
   function activeSongMeter(performanceQuarterBeatFloat = 0) {
@@ -2132,9 +2143,7 @@
     const bpm = activeClockBpm();
     const quarterBeatMs = 60000 / bpm;
     const fixedKurraya = usesFixedKurrayaHarmony();
-    const initialMeter = fixedKurraya
-      ? timeSignatureData(KURRAYA_TIME_SIGNATURE,KURRAYA_BEAT_GROUPING)
-      : activeSongMeter(0);
+    const initialMeter = fixedKurraya ? kurrayaSixEightMeter() : activeSongMeter(0);
     const transportElapsedMs = state.game.active ? gameClockElapsedMs(referenceNowMs) : Math.max(0, referenceNowMs - state.harmonyStartTime);
     const initialBeatMs = quarterBeatMs * initialMeter.quarterUnitsPerBeat;
     const countInBeats = state.game.active ? Math.max(0,Math.round(state.game.countInBeats || initialMeter.numerator)) : 0;
