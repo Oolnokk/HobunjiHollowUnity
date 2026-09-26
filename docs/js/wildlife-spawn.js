@@ -357,6 +357,17 @@
     return record ? { stage:record.stage, daysRemaining:record.daysRemaining, generation:Number(record.generation)||0 } : null;
   }
 
+  function updateClearedDenClutchVisual(cavernMapId, nest) {
+    const record = turnoverRecordForCavern(cavernMapId); // Cleared turnover record whose reload fallback must follow post-kill clutch collection.
+    if (!record || record.stage !== 'cleared') return false;
+    const count = Math.max(0, Math.floor(Number(nest?.remaining) || 0)); // Current uncollected clutch count written after each successful nest take.
+    const itemKey = String(nest?.itemKey || record.collapseEscapeVisual?.itemKey || ''); // Species-bearing item id retained even when the count reaches zero.
+    const genotype = nest?.genotype || record.collapseEscapeVisual?.genotype || null; // Family appearance reused only if a later collapse needs cosmetic babies.
+    record.collapseEscapeVisual = count > 0 && itemKey ? { count, itemKey, genotype } : null;
+    persistDenTurnover();
+    return true;
+  }
+
   function ensureActiveDenTurnoverRecord(cavernMapId, { persist = true } = {}) {
     const existing = turnoverRecordForCavern(cavernMapId);
     if (existing) return existing;
@@ -651,6 +662,19 @@
     den.turnoverStage = 'collapsed';
     den._collapsePresentationPending = true; // Consumed by ZoneDenTotemFeatures to delay/lerp the visible cave-in after the exterior has loaded.
     const cavernMapId = denCavernMapId(record.zoneId, den.id);
+    const liveNest = deps.denNests.get(cavernMapId) || null; // Final clutch state at exit; reflects any eggs/babies the player collected after killing the Den-Mother.
+    const fallbackEscape = record.collapseEscapeVisual || null; // Reload fallback retained from Den-Mother death if the cleared cavern was reconstructed without its transient nest object.
+    const escapeCount = liveNest
+      ? Math.max(0, Math.floor(Number(liveNest.remaining) || 0))
+      : Math.max(0, Math.floor(Number(fallbackEscape?.count) || 0));
+    const escapeItemKey = String(liveNest?.itemKey || fallbackEscape?.itemKey || '');
+    const escapeGenotype = liveNest?.genotype || fallbackEscape?.genotype || null;
+    den._collapseEscapeVisual = escapeCount > 0 && escapeItemKey ? {
+      count:escapeCount,
+      itemKey:escapeItemKey,
+      genotype:escapeGenotype,
+    } : null; // Session-facing copy consumed by the cave renderer so only the actually-uncollected clutch can visibly escape.
+    record.collapseEscapeVisual = den._collapseEscapeVisual ? { ...den._collapseEscapeVisual } : null; // Persists the resolved final presentation snapshot without creating gameplay entities.
     record.transition = takeDenTransition(layout, cavernMapId, den.id) || record.transition || null;
     syncSceneDenTransition(record.zoneId, den, cavernMapId, null);
     record.stage = 'collapsed';
@@ -685,6 +709,7 @@
     setDenFootprintOverlay(layout, oldDen, false);
     den.x = site.x; den.y = site.y; den.mouthAnchor = site.mouthAnchor;
     den.collapsed = false; den.turnoverStage = 'active';
+    den._collapseEscapeVisual = null; // A relocated live den must never inherit the prior generation's presentation-only escape clutch.
     setDenFootprintOverlay(layout, den, true);
     const cavernMapId = denCavernMapId(record.zoneId, den.id);
     syncSceneDenTransition(record.zoneId, den, cavernMapId, ensureDenTransition(layout, den, cavernMapId, record.transition));
@@ -693,6 +718,7 @@
     record.daysRemaining = null;
     record.generation = Math.max(0, Number(record.generation)||0) + 1;
     record.genotypes = {};
+    record.collapseEscapeVisual = null; // Clears stale presentation metadata once the new den generation becomes active.
     record.x = Number(den.x); record.y = Number(den.y);
     record.mouthAnchor = { ...den.mouthAnchor };
     syncDenVisual(record.zoneId, den);
@@ -747,7 +773,14 @@
       const collapsed = record.stage === 'cleared' || record.stage === 'collapsed' || record.stage === 'ready';
       den.collapsed = collapsed;
       den.turnoverStage = record.stage;
-      if (record.stage === 'cleared') den._collapsePresentationPending = true; // Reloading after the mother dies still gets the delayed exterior cave-in instead of reopening the entrance.
+      if (record.stage === 'cleared') {
+        den._collapsePresentationPending = true; // Reloading after the mother dies still gets the delayed exterior cave-in instead of reopening the entrance.
+        den._collapseEscapeVisual = record.collapseEscapeVisual?.count > 0 ? {
+          count:Math.max(0, Math.floor(Number(record.collapseEscapeVisual.count) || 0)),
+          itemKey:String(record.collapseEscapeVisual.itemKey || ''),
+          genotype:record.collapseEscapeVisual.genotype || null,
+        } : null; // Restores the purely visual escape snapshot if the game reloads before the player exits the cleared cavern.
+      }
       if (collapsed) {
         record.transition = takeDenTransition(layout, cavernMapId, den.id) || record.transition || null;
         syncSceneDenTransition(zoneId, den, cavernMapId, null);
@@ -815,7 +848,8 @@
     ensureDenTurnoverLoaded();
     const key = denKeyFor(zoneId, { id: denId });
     const existing = denTurnoverByKey.get(key);
-    const nestRemaining = Math.max(0, Number(deps.denNests.get(cavernMapId)?.remaining) || 0);
+    const nest = deps.denNests.get(cavernMapId) || null; // Captures the clutch before the cleared cavern is later discarded; collapse presentation uses this only to spawn temporary escape visuals.
+    const nestRemaining = Math.max(0, Number(nest?.remaining) || 0);
     const displaced = markDenSurvivorsAsPrey(cavernMapId, key, mother);
     const record = {
       ...(existing || {}),
@@ -825,6 +859,11 @@
       generation:Math.max(0, Number(existing?.generation)||0),
       genotypes: existing?.genotypes || {},
       clearedDay:Number(deps.calendar?.day) || 0,
+      collapseEscapeVisual: nestRemaining > 0 && nest?.itemKey ? {
+        count:nestRemaining,
+        itemKey:String(nest.itemKey),
+        genotype:nest.genotype || null,
+      } : null, // Presentation-only snapshot: eggs are intentionally rendered as hatched babies during the exterior cave-in; no inventory/ecology state is changed.
     }; // Stored before the player exits so a reload cannot forget that this Den-Mother was killed.
     denTurnoverByKey.set(key, record);
     denCheckTimer = 0; // Used so the very first exterior frame after leaving processes the pending collapse instead of leaving a brief re-entry window.
@@ -1606,6 +1645,7 @@
     getDenGenotypes: () => _denGenotypes,
     denTurnoverDebug,
     denTurnoverStateForCavern,
+    updateClearedDenClutchVisual,
     onDenMotherDeath,
     forgetZoneDenState,
     isDenPackAlive,

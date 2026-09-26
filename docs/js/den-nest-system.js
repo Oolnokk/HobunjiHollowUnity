@@ -794,6 +794,7 @@
       const state = focused.state;
       _removeContentRecord(state, content);
       nest.remaining = Math.max(0, Number(nest.remaining) - 1);
+      window.WildlifeSpawn?.updateClearedDenClutchVisual?.(deps.getCurrentArea(), nest); // Keeps the cleared-den collapse's reload fallback aligned with post-kill egg/baby collection.
       deps.inventory[nest.itemKey] = Math.min(99, (deps.inventory[nest.itemKey] || 0) + 1);
       window.FarmAnimals.queueItemGenotype(nest.itemKey, nest.genotype);
       deps.clampInventoryStack(nest.itemKey);

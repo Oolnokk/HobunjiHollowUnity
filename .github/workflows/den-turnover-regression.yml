@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'docs/js/wildlife-spawn.js'
+      - 'docs/js/den-nest-system.js'
       - 'docs/js/cavern-generator.js'
       - 'docs/js/bandit-camps.js'
       - 'docs/js/zone-den-totem-features.js'

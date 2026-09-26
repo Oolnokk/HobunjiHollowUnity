@@ -224,10 +224,240 @@
   const DEN_COLLAPSE_LERP_MS = 900; // Duration of the smooth scale interpolation once collapse starts.
   const DEN_COLLAPSE_SFX_VOLUME_SCALE = 1.5; // Amplifies the existing fully-mined-rock cue for a whole-den collapse.
   const DEN_COLLAPSE_SFX_PITCH = 0.65; // Lowers that same rock-break cue so the collapse reads as heavier.
+  const DEN_ESCAPE_RUN_MS = 2600; // Presentation-only lifetime for babies scattering away from a collapsing den before they fade/despawn.
+  const DEN_ESCAPE_FADE_START = 0.52; // Fraction of the escape run after which opacity begins falling to zero.
+  const DEN_ESCAPE_MAX_VISUALS = 12; // Safety cap for temporary avatars; authored den clutches are normally far smaller.
+  const _denCollapseEscapeDebug = { status:'idle', mapId:null, denId:null, requested:0, spawned:0, kind:null, lastError:null }; // Mobile-readable snapshot exposed through the public renderer API.
 
-  function cancelDenCollapseAnimation(mesh) {
+  function denCollapseEscapeKind(spec) {
+    const itemKey = String(spec?.itemKey || ''); // Clutch item id used to resolve the same canonical livestock species mapping as DenNestSystem.
+    const configured = window.SCRATCHBONES_CONFIG?.game?.livestock?.itemKinds?.[itemKey];
+    if (configured) return configured;
+    const compactItemKey = itemKey.toLowerCase().replace(/[^a-z0-9]/g, ''); // Fallback only for newly-authored clutch items missing itemKinds data.
+    return Object.keys(window.CreatureGeneticsRender?.SPECIES || {}).find(kind => {
+      const compactKind = String(kind).toLowerCase().replace(/[^a-z0-9]/g, '');
+      return compactKind.length >= 4 && compactItemKey.includes(compactKind);
+    }) || null;
+  }
+
+  function denEscapeNoise(denId, index, salt) {
+    const text = String(denId || 'den') + ':' + index + ':' + salt; // Stable visual seed keeps repeated test runs and replays from producing arbitrary scatter directions.
+    let hash = 2166136261;
+    for (let i = 0; i < text.length; i++) hash = Math.imul(hash ^ text.charCodeAt(i), 16777619);
+    hash += hash << 13; hash ^= hash >>> 7; hash += hash << 3; hash ^= hash >>> 17; hash += hash << 5;
+    return (hash >>> 0) / 0x100000000;
+  }
+
+  function denEscapeGroundY(zGrid, x, z, fallbackY) {
+    const row = Math.max(0, Math.min((zGrid?.length || 1) - 1, Math.floor(z)));
+    const col = Math.max(0, Math.min((zGrid?.[row]?.length || 1) - 1, Math.floor(x)));
+    const tier = zGrid?.[row]?.[col]?.elevTier;
+    return Number.isFinite(Number(tier)) ? deps.NORMAL_TOP + Number(tier) * deps.PLATEAU_UNIT : fallbackY;
+  }
+
+  function setDenEscapeOpacity(record, opacity) {
+    if (!record?.root) return;
+    const alpha = Math.max(0, Math.min(1, Number(opacity) || 0)); // Shared opacity applied to both mirrored animal planes during the final fade.
+    record.root.traverse?.(node => {
+      const materials = node?.material ? (Array.isArray(node.material) ? node.material : [node.material]) : [];
+      for (const material of materials) {
+        material.transparent = true;
+        material.opacity = alpha;
+        if ('depthWrite' in material) material.depthWrite = alpha >= 0.98;
+        material.needsUpdate = true;
+      }
+    });
+  }
+
+  function denEscapeTextureFromCanvas(canvas, mirror = false) {
+    let sourceCanvas = canvas; // Front texture can use the genotype compositor's canvas directly.
+    if (mirror && typeof document !== 'undefined') {
+      const mirrored = document.createElement('canvas'); // Rear texture is mirrored in pixel space so this den renderer never opts into repeating UV wrapping.
+      mirrored.width = Math.max(1, Number(canvas.width) || 1);
+      mirrored.height = Math.max(1, Number(canvas.height) || 1);
+      const ctx = mirrored.getContext('2d');
+      if (ctx) {
+        ctx.translate(mirrored.width, 0);
+        ctx.scale(-1, 1);
+        ctx.drawImage(canvas, 0, 0, mirrored.width, mirrored.height);
+        sourceCanvas = mirrored;
+      }
+    }
+    const texture = new THREE.CanvasTexture(sourceCanvas);
+    if ('colorSpace' in texture && THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
+    texture.needsUpdate = true;
+    return texture;
+  }
+
+  function applyDenEscapeCanvas(record, canvas) {
+    if (!record?.avatarRef || !canvas) return;
+    const front = denEscapeTextureFromCanvas(canvas, false); // Genotype-composited run frame replaces the raw sprite on the front-facing card.
+    const back = denEscapeTextureFromCanvas(canvas, true); // Pixel-mirrored rear card preserves side-on creature direction without changing cave UV wrapping rules.
+    record.extraTextures.push(front, back);
+    if (record.avatarRef.frontPlane?.material) {
+      record.avatarRef.frontPlane.material.map = front;
+      record.avatarRef.frontPlane.material.needsUpdate = true;
+    }
+    if (record.avatarRef.backPlane?.material) {
+      record.avatarRef.backPlane.material.map = back;
+      record.avatarRef.backPlane.material.needsUpdate = true;
+    }
+  }
+
+  function disposeDenCollapseEscape(state) {
+    if (!state || state.disposed) return;
+    state.disposed = true;
+    if (state.raf != null) window.cancelAnimationFrame?.(state.raf);
+    state.raf = null;
+    for (const record of state.records || []) {
+      record.root?.parent?.remove?.(record.root);
+      for (const texture of record.extraTextures || []) texture?.dispose?.();
+      try { record.avatarRef?.dispose?.(); } catch (_) {}
+    }
+    state.records = [];
+  }
+
+  function prepareDenCollapseEscape(mesh, den, mapId, caveGroundY, zGrid) {
+    const spec = den?._collapseEscapeVisual;
+    const requested = Math.max(0, Math.floor(Number(spec?.count) || 0)); // Number of uncollected clutch members converted to temporary baby visuals.
+    if (!mesh?.parent || requested <= 0) return null;
+    const kind = denCollapseEscapeKind(spec);
+    const renderer = window.CreatureGeneticsRender;
+    const avatarApi = window.PNGPlaneAvatar;
+    const species = renderer?.SPECIES?.[kind];
+    const runUrl = species?.base?.run1 || species?.base?.idle;
+    _denCollapseEscapeDebug.status = 'preparing';
+    _denCollapseEscapeDebug.mapId = mapId;
+    _denCollapseEscapeDebug.denId = den.id ?? null;
+    _denCollapseEscapeDebug.requested = requested;
+    _denCollapseEscapeDebug.spawned = 0;
+    _denCollapseEscapeDebug.kind = kind;
+    _denCollapseEscapeDebug.lastError = null;
+    if (!kind || !runUrl || !avatarApi?.buildAnimalPlaneAvatarModel) {
+      _denCollapseEscapeDebug.status = 'skipped';
+      _denCollapseEscapeDebug.lastError = `Missing baby renderer metadata for item ${spec?.itemKey || 'unknown'} (kind=${kind || 'unresolved'}).`;
+      window.__farmLog?.(`[den-collapse] ${_denCollapseEscapeDebug.lastError}`, 'warn');
+      return null;
+    }
+
+    const count = Math.min(requested, DEN_ESCAPE_MAX_VISUALS); // Temporary rendering cap only; it never alters the real clutch count/state.
+    const babyScale = Number(window.LivestockNursery?.constants?.BABY_SCALE)
+      || Number(window.BARN_INCUBATOR_CONFIG?.visuals?.babyScale) || 0.3125;
+    const speciesDef = window.CREATURE_DB?.[kind] || {};
+    const configuredWidths = window.SCRATCHBONES_CONFIG?.game?.livestock?.animalWidths || {};
+    const adultWidth = kind === 'uumkaoii' ? 1.275 : (Number(configuredWidths[kind]) || 1.7);
+    const spriteAspect = Number(speciesDef.spriteAspect) || (600 / 1375);
+    const sizeScale = window.CreatureGenetics?.creatureSizeScale?.(kind, spec.genotype) || { x:1, y:1 };
+    const modelWidth = adultWidth * babyScale;
+    const modelHeight = adultWidth * spriteAspect * babyScale;
+    const authoredGroundOffset = window.CreatureGenetics?.creatureGroundOffset?.(kind, spec.genotype);
+    const groundLift = Number.isFinite(authoredGroundOffset)
+      ? Math.max(0.03, authoredGroundOffset * babyScale)
+      : Math.max(0.03, modelHeight * (Number(sizeScale.y) || 1) / 2);
+    const denCenterX = Number(den.x) + Math.max(1, Number(den.w) || 1) * 0.5;
+    const denCenterZ = Number(den.y) + Math.max(1, Number(den.h) || 1) * 0.5;
+    const mouthX = Number.isFinite(Number(den.mouthAnchor?.x)) ? Number(den.mouthAnchor.x) + 0.5 : mesh.position.x;
+    const mouthZ = Number.isFinite(Number(den.mouthAnchor?.y)) ? Number(den.mouthAnchor.y) + 0.5 : mesh.position.z;
+    let outwardX = mouthX - denCenterX, outwardZ = mouthZ - denCenterZ;
+    if (Math.hypot(outwardX, outwardZ) < 0.05) {
+      outwardX = Math.sin(mesh.rotation.y || 0);
+      outwardZ = Math.cos(mesh.rotation.y || 0);
+    }
+    const outwardLength = Math.max(0.001, Math.hypot(outwardX, outwardZ));
+    outwardX /= outwardLength; outwardZ /= outwardLength;
+    const state = { records:[], raf:null, disposed:false, mapId, denId:den.id ?? null, caveGroundY, zGrid, ownerMesh:mesh }; // Owns all temporary avatar resources until the fade completes or the collapse is cancelled.
+
+    for (let index = 0; index < count; index++) {
+      try {
+        const avatarRef = avatarApi.buildAnimalPlaneAvatarModel(THREE, runUrl, {
+          modelWidth, modelHeight, name:`den_escape_${den.id || 'den'}_${index}`, creatureId:kind,
+          headRig: renderer.headRigForKind?.(kind) || undefined,
+        });
+        if (!avatarRef?.group) continue;
+        window.CreatureGenetics?.applyCreatureBillboardScale?.(avatarRef.group, sizeScale);
+        const spreadAngle = (denEscapeNoise(den.id, index, 'angle') - 0.5) * 1.55;
+        const cos = Math.cos(spreadAngle), sin = Math.sin(spreadAngle);
+        const dirX = outwardX * cos - outwardZ * sin;
+        const dirZ = outwardX * sin + outwardZ * cos;
+        const lateral = (denEscapeNoise(den.id, index, 'lateral') - 0.5) * 0.42;
+        const perpendicularX = -outwardZ, perpendicularZ = outwardX;
+        const distance = 2.6 + denEscapeNoise(den.id, index, 'distance') * 2.0;
+        const startX = mouthX - outwardX * 0.22 + perpendicularX * lateral;
+        const startZ = mouthZ - outwardZ * 0.22 + perpendicularZ * lateral;
+        const endX = mouthX + dirX * distance + perpendicularX * lateral * 0.35;
+        const endZ = mouthZ + dirZ * distance + perpendicularZ * lateral * 0.35;
+        const root = avatarRef.group; // Temporary visual root moved directly in zone tile-space; it is never inserted into hostileObjects or any save state.
+        root.visible = false;
+        root.rotation.y = Math.atan2(dirX, dirZ);
+        root.position.set(startX, denEscapeGroundY(zGrid, startX, startZ, caveGroundY) + groundLift, startZ);
+        mesh.parent.add(root);
+        const record = { avatarRef, root, extraTextures:[], startX, startZ, endX, endZ, dirX, dirZ, groundLift, phase:denEscapeNoise(den.id, index, 'phase') * Math.PI * 2 }; // Per-baby path/animation state consumed only by the escape RAF.
+        state.records.push(record);
+        Promise.resolve(renderer.composeFrame?.(kind, 'run1', spec.genotype, false)).then(canvas => {
+          if (!state.disposed && canvas) applyDenEscapeCanvas(record, canvas);
+        }).catch(error => {
+          _denCollapseEscapeDebug.lastError = String(error?.message || error);
+          window.__farmLog?.(`[den-collapse] baby genotype compose failed for ${kind}; raw run sprite retained: ${_denCollapseEscapeDebug.lastError}`, 'warn');
+        });
+      } catch (error) {
+        _denCollapseEscapeDebug.lastError = String(error?.message || error);
+        window.__farmLog?.(`[den-collapse] temporary baby visual failed: ${_denCollapseEscapeDebug.lastError}`, 'warn');
+      }
+    }
+    _denCollapseEscapeDebug.spawned = state.records.length;
+    _denCollapseEscapeDebug.status = state.records.length ? 'ready' : 'skipped';
+    return state.records.length ? state : null;
+  }
+
+  function startDenCollapseEscape(state) {
+    if (!state || state.disposed || !state.records.length) return;
+    if (typeof deps.getCurrentArea === 'function' && deps.getCurrentArea() !== state.mapId) {
+      disposeDenCollapseEscape(state);
+      return;
+    }
+    const requestFrame = window.requestAnimationFrame?.bind(window);
+    if (!requestFrame) {
+      disposeDenCollapseEscape(state);
+      return;
+    }
+    const startedAt = window.performance?.now?.() ?? Date.now(); // Shared clock keeps every baby in the same short escape beat while preserving individual paths.
+    for (const record of state.records) {
+      record.root.visible = true;
+      setDenEscapeOpacity(record, 1);
+    }
+    _denCollapseEscapeDebug.status = 'running';
+    window.__farmLog?.(`[den-collapse] visual clutch escape started for ${state.mapId}/${state.denId}: ${state.records.length} baby visual(s).`, 'wildlife');
+    const step = now => {
+      if (state.disposed) return;
+      const progress = Math.min(1, Math.max(0, (Number(now) - startedAt) / DEN_ESCAPE_RUN_MS));
+      const moveT = 1 - Math.pow(1 - progress, 1.35);
+      const fade = progress <= DEN_ESCAPE_FADE_START ? 1 : 1 - (progress - DEN_ESCAPE_FADE_START) / (1 - DEN_ESCAPE_FADE_START);
+      for (const record of state.records) {
+        const x = record.startX + (record.endX - record.startX) * moveT;
+        const z = record.startZ + (record.endZ - record.startZ) * moveT;
+        const groundY = denEscapeGroundY(state.zGrid, x, z, state.caveGroundY);
+        const bob = Math.abs(Math.sin((Number(now) - startedAt) * 0.022 + record.phase)) * 0.055 * (1 - progress);
+        record.root.position.set(x, groundY + record.groundLift + bob, z);
+        record.root.rotation.y = Math.atan2(record.dirX, record.dirZ);
+        setDenEscapeOpacity(record, fade);
+      }
+      if (progress < 1) state.raf = requestFrame(step);
+      else {
+        _denCollapseEscapeDebug.status = 'finished';
+        disposeDenCollapseEscape(state);
+        if (state.ownerMesh?.userData?.denCollapseEscapeState === state) state.ownerMesh.userData.denCollapseEscapeState = null;
+      }
+    };
+    state.raf = requestFrame(step);
+  }
+
+  function cancelDenCollapseAnimation(mesh, preserveRunningEscape = false) {
     if (mesh?.userData?.denCollapseTimer != null) clearTimeout(mesh.userData.denCollapseTimer);
     if (mesh?.userData?.denCollapseRaf != null) window.cancelAnimationFrame?.(mesh.userData.denCollapseRaf);
+    if (mesh?.userData && !preserveRunningEscape) {
+      disposeDenCollapseEscape(mesh.userData.denCollapseEscapeState);
+      mesh.userData.denCollapseEscapeState = null;
+    }
     if (mesh?.userData) {
       mesh.userData.denCollapseTimer = null;
       mesh.userData.denCollapseRaf = null;
@@ -248,35 +478,46 @@
     mesh.position.y = caveGroundY + (Number(mesh.userData.denGroundOffsetY) || 0) - (Number(mesh.userData.denBoxMinY) || 0) * nextScaleY;
   }
 
-  function queueDenCollapseAnimation(mesh, den, mapId, caveGroundY) {
+  function queueDenCollapseAnimation(mesh, den, mapId, caveGroundY, zGrid) {
     if (!mesh || !den?.collapsed || mesh.userData?.denCollapseAnimationQueued) return false;
     cancelDenCollapseAnimation(mesh);
     applyDenCollapsePose(mesh, 0, caveGroundY);
     mesh.userData.denCollapseAnimationQueued = true;
+    mesh.userData.denCollapseEscapeState = prepareDenCollapseEscape(mesh, den, mapId, caveGroundY, zGrid); // Prebuilds hidden baby cards during the existing two-second cave-in delay so they can emerge on cue.
     den._collapsePresentationPending = false; // One facade owns the pending presentation; prevents duplicate timers if sync runs again before the delay expires.
     mesh.userData.denCollapseTimer = setTimeout(() => {
       mesh.userData.denCollapseTimer = null;
       if (!den.collapsed) {
         applyDenCollapsePose(mesh, 0, caveGroundY);
+        disposeDenCollapseEscape(mesh.userData.denCollapseEscapeState);
+        mesh.userData.denCollapseEscapeState = null;
         mesh.userData.denCollapseAnimationQueued = false;
         return;
       }
       if (typeof deps.getCurrentArea === 'function' && deps.getCurrentArea() !== mapId) {
         applyDenCollapsePose(mesh, 1, caveGroundY);
+        disposeDenCollapseEscape(mesh.userData.denCollapseEscapeState);
+        mesh.userData.denCollapseEscapeState = null;
         mesh.userData.denCollapseAnimationQueued = false;
         return;
       }
       window.AudioSystem?.playObjectSfxKey?.('breakRock', DEN_COLLAPSE_SFX_VOLUME_SCALE, DEN_COLLAPSE_SFX_PITCH);
+      startDenCollapseEscape(mesh.userData.denCollapseEscapeState); // Visual-only clutch escape begins with the audible/visible cave-in; eggs use the same baby renderer as live-birth clutches.
+      den._collapseEscapeVisual = null; // Consumed once; prevents a later visual resync from replaying the same cosmetic escape.
       const startedAt = window.performance?.now?.() ?? Date.now(); // Animation clock used to derive frame-independent normalized progress.
       const requestFrame = window.requestAnimationFrame?.bind(window); // Browser RAF keeps the cave-in tied to rendering rather than a fixed interval.
       if (!requestFrame) {
         applyDenCollapsePose(mesh, 1, caveGroundY);
+        disposeDenCollapseEscape(mesh.userData.denCollapseEscapeState);
+        mesh.userData.denCollapseEscapeState = null;
         mesh.userData.denCollapseAnimationQueued = false;
         return;
       }
       const step = now => {
         if (!den.collapsed) {
           applyDenCollapsePose(mesh, 0, caveGroundY);
+          disposeDenCollapseEscape(mesh.userData.denCollapseEscapeState);
+          mesh.userData.denCollapseEscapeState = null;
           mesh.userData.denCollapseAnimationQueued = false;
           mesh.userData.denCollapseRaf = null;
           return;
@@ -450,7 +691,7 @@
         mesh.userData.denOffsetZ = Number(visual.offsetZ) || 0; // Used with denOffsetX when the exterior site changes.
         deps.markOutline(mesh);
         group.add(mesh);
-        if (collapsePending) queueDenCollapseAnimation(mesh, den, mapId, groundY);
+        if (collapsePending) queueDenCollapseAnimation(mesh, den, mapId, groundY, zGrid);
         renderDenTemplateFurniture(group, den, zGrid, denEntranceLocale, mapId);
       }
       for (const cave of localeCaves) {
@@ -507,9 +748,9 @@
         child.position.x = centerCol + (Number(child.userData.denOffsetX) || 0);
         child.position.z = centerRow + (Number(child.userData.denOffsetZ) || 0);
         if (den.collapsed && den._collapsePresentationPending) {
-          queueDenCollapseAnimation(child, den, mapId, caveGroundY);
+          queueDenCollapseAnimation(child, den, mapId, caveGroundY, zGrid);
         } else {
-          cancelDenCollapseAnimation(child);
+          cancelDenCollapseAnimation(child, !!den.collapsed); // Static collapsed resyncs preserve an in-progress baby fade; reopening/relocation cancels it.
           applyDenCollapsePose(child, den.collapsed ? 1 : 0, caveGroundY);
         }
         changed = true;
@@ -574,7 +815,7 @@
     return group;
   }
 
-  const api = { init, canonicalRootTotemRecipe, denCaveVariantFor, denEntranceCollisionFor, denEntranceCollisionState, loadAnimalDenEntranceLocale, loadAnimalDenEntranceLocaleObject, buildAnimalDenMeshes, syncAnimalDenVisual, buildRootTotemMeshes };
+  const api = { init, canonicalRootTotemRecipe, denCaveVariantFor, denEntranceCollisionFor, denEntranceCollisionState, loadAnimalDenEntranceLocale, loadAnimalDenEntranceLocaleObject, buildAnimalDenMeshes, syncAnimalDenVisual, buildRootTotemMeshes, denCollapseEscapeDebug: () => ({ ..._denCollapseEscapeDebug }) };
   Object.defineProperty(api, 'CANONICAL_ROOT_TOTEM_RECIPE', { enumerable: true, get: canonicalRootTotemRecipe });
   window.ZoneDenTotemFeatures = api;
 })();
