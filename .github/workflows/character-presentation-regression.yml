@@ -54,6 +54,9 @@ on:
       - 'scripts/test-harlyao-night-march-beacon.js'
       - 'scripts/test-harlyao-night-march-spawn-placement.js'
       - 'scripts/test-harlyao-species.js'
+      - 'scripts/test-harlyao-skeleton-species.js'
+      - 'docs/config/species/harlyao-skeleton.json'
+      - 'docs/js/harlyao-skeleton-species-runtime.js'
       - 'scripts/test-harlyao-terror.js'
       - 'scripts/test-maoao-arm-tint-runtime.js'
       - 'scripts/test-maoao-foot-scale-tuning.js'
@@ -78,6 +81,8 @@ jobs:
         run: node scripts/test-character-rig-pixel-probe-runtime.js
       - name: Harlyao species regression
         run: node scripts/test-harlyao-species.js
+      - name: Harlyao Skeleton species regression
+        run: node scripts/test-harlyao-skeleton-species.js
       - name: Porakaneki species regression
         run: node scripts/test-porakaneki-species.js
       - name: Porakaneki camp regression

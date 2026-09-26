@@ -16,6 +16,11 @@
       "path": "./harlyao.json"
     },
     {
+      "speciesId": "harlyao-skeleton",
+      "label": "Harlyao Skeleton",
+      "path": "./harlyao-skeleton.json"
+    },
+    {
       "speciesId": "porakaneki",
       "label": "Porakaneki",
       "path": "./porakaneki.json"
