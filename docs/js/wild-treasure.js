@@ -182,14 +182,27 @@
     return blocked.length;
   }
 
+  const TREASURE_CHEST_TEXTURE_PATH = 'assets/textures/crate_side.png'; // Used by every visible surface of buried/diggable treasure chests.
+  let treasureChestTexture = null; // Shared by treasure-chest body/lid materials so each chest does not load another copy.
+
+  function _treasureChestMaterial(color) {
+    const material = new THREE.MeshLambertMaterial({ color });
+    if (typeof THREE.TextureLoader !== 'function') return material;
+    if (!treasureChestTexture) treasureChestTexture = new THREE.TextureLoader().load(TREASURE_CHEST_TEXTURE_PATH);
+    material.map = treasureChestTexture;
+    material.needsUpdate = true;
+    return material;
+  }
+
   // Simple wood-and-band chest silhouette — same box+lid shape as
-  // game.js's makeSellCrate/makeSupplyBox, just its own wood/gold coloring.
+  // game.js's makeSellCrate/makeSupplyBox, now using the shared crate-side
+  // surface art while preserving its existing wood/gold tint distinction.
   function _buildTreasureChestMesh() {
     const group = new THREE.Group();
-    const body = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.42, 0.44), new THREE.MeshLambertMaterial({ color: 0x6b4a2b }));
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.42, 0.44), _treasureChestMaterial(0x6b4a2b));
     body.position.y = 0.21;
     body.castShadow = true;
-    const lid = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.07, 0.46), new THREE.MeshLambertMaterial({ color: 0xcaa233 }));
+    const lid = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.07, 0.46), _treasureChestMaterial(0xcaa233));
     lid.position.y = 0.445;
     lid.castShadow = true;
     group.add(body, lid);
