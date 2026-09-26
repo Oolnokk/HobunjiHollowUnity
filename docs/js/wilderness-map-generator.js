@@ -168,6 +168,13 @@
       plateauPonds: 8,
       plateauStreams: 10,
       rivers: 2,
+      // Archipelago controls are consumed by applyArchipelagoLayout(); zones that leave archipelago=false keep the legacy continuous-land generator.
+      archipelago: false,
+      archipelagoColumns: 4,
+      archipelagoRows: 3,
+      archipelagoLandScale: 1,
+      archipelagoShoreNoise: 1,
+      archipelagoPreservedLand: [],
       pathAnchors: 4,
       // See findPath's randomBias term — multiplier on how strongly the A*
       // path search prefers meandering over a straight line to its target.
@@ -1799,6 +1806,10 @@
         if (!borderEscarpmentWidthAt(x, y)) continue;
         const tile = tileAt(x, y);
         if (!tile || tile.ramp || tile.navRamp) continue;
+        if (tile.archipelagoSea) {
+          resetBoundaryLandscapeFlags(tile);
+          continue;
+        }
         const edgeDist = Math.min(x, y, settings.width - 1 - x, settings.height - 1 - y);
         const inward = inwardDirectionForBorderTile(x, y);
         const localWidth = borderEscarpmentLocalWidthAt(x, y);
@@ -3039,6 +3050,8 @@
         if (!tile) continue;
         if (clearBorderEscarpmentTile(tile, replacementHeight, 'borderEntryGate')) cleared++;
         tile.water = false;
+        tile.archipelagoSea = false;
+        if (usesArchipelagoLayout()) tile.archipelagoIslandId = map.archipelago?.entryIslandId || tile.archipelagoIslandId || 'island_entry';
         tile.terrain = replacementHeight > 0 ? 'plateau' : 'grass';
         tile.elevation = Math.round(replacementHeight);
         tile.height = replacementHeight;
@@ -3900,6 +3913,7 @@
       for (const next of neighbors) {
         if (!inBounds(next.x, next.y)) continue;
         const nextTile = tileAt(next.x, next.y);
+        if (nextTile.archipelagoSea) continue;
         if (nextTile.borderEscarpment && !nextTile.ramp && !nextTile.navRamp) continue;
         if (nextTile.cliffSkirt && !nextTile.ramp && !nextTile.waterfall && !allowCliffSkirt) continue;
         const blockingObject = nextTile.occupiedBy ? getObjectById(nextTile.occupiedBy) : null;
@@ -3976,6 +3990,7 @@
         const nk = tileIdXY(nx, ny);
         if (parent[nk] !== PARENT_UNSEEN) continue;
         const nextTile = tileAt(nx, ny);
+        if (nextTile.archipelagoSea) continue;
         if (nextTile.borderEscarpment && !nextTile.ramp && !nextTile.navRamp) continue;
         if (nextTile.cliffSkirt && !nextTile.ramp && !nextTile.navRamp && !allowCliffSkirt) continue;
         if (nextTile.water && !nextTile.bridge && !nextTile.navBridge && !allowWater) continue;
@@ -4618,7 +4633,79 @@
     return { sealed, skipped: Math.max(0, unreachable.length - sealed) };
   }
 
+  function validateArchipelagoReachability() {
+    const start = nearestFreeWalkableNeighbor(map.entry.x, map.entry.y); // Used to measure the entry island without claiming boat-separated islands are broken.
+    const entryReachable = reachableFrom(start); // Used only for the on-foot component that contains the west entry.
+    const walkable = allWalkableTiles(); // Used for whole-archipelago diagnostics and tile-density scaling.
+    const visited = new Uint8Array(settings.width * settings.height); // Used to count intentional on-foot movement components without string-key churn.
+    const componentSizes = []; // Used by the mobile/copyable generator diagnostics to expose how fragmented the islands really are.
+
+    for (const origin of walkable) {
+      const originIndex = origin.y * settings.width + origin.x;
+      if (visited[originIndex]) continue;
+      let size = 0;
+      const queue = [origin];
+      visited[originIndex] = 1;
+      for (let head = 0; head < queue.length; head++) {
+        const tile = queue[head];
+        size++;
+        for (const next of movementNeighbors(tile)) {
+          const index = next.y * settings.width + next.x;
+          if (visited[index]) continue;
+          visited[index] = 1;
+          queue.push(next);
+        }
+      }
+      componentSizes.push(size);
+    }
+
+    const walkableByIsland = {}; // Used to verify that generated gameplay space survives on multiple islands rather than only the entry island.
+    for (const tile of walkable) {
+      const islandId = tile.archipelagoIslandId || 'unassigned';
+      walkableByIsland[islandId] = (walkableByIsland[islandId] || 0) + 1;
+    }
+    const boatSeparatedTiles = Math.max(0, walkable.length - entryReachable.size); // Used to report deliberate water-gated exploration instead of false unreachable errors.
+    if (map.archipelago) {
+      map.archipelago.movementComponentCount = componentSizes.length;
+      map.archipelago.movementComponentSizes = componentSizes.slice().sort((a, b) => b - a);
+      map.archipelago.walkableByIsland = walkableByIsland;
+      map.archipelago.entryReachableTiles = entryReachable.size;
+      map.archipelago.boatSeparatedTiles = boatSeparatedTiles;
+    }
+    map.connectivity = {
+      start,
+      archipelago: true,
+      walkableTiles: walkable.length,
+      reachableTiles: entryReachable.size,
+      entryReachableTiles: entryReachable.size,
+      boatSeparatedTiles,
+      movementComponentCount: componentSizes.length,
+      movementComponentSizes: componentSizes.slice().sort((a, b) => b - a),
+      walkableByIsland,
+      unreachableTiles: 0,
+      unreachableSamples: [],
+      repairs: 0,
+      componentRepairConnectors: 0,
+      componentRepairHiddenTiles: 0,
+      componentRepairRemainingComponents: 0,
+      hiddenLedgeStitches: 0,
+      hiddenLedgeStitchTiles: 0,
+      hiddenSweepPaths: 0,
+      hiddenSweepTiles: 0,
+      hiddenSweepBridgeTiles: 0,
+      sealedResidualUnreachableTiles: 0,
+      clearedBlockingObjects: 0,
+      invisiblePathCount: map.invisiblePaths.length,
+      rule: 'Eastern Mire archipelago: sea channels are intentional traversal boundaries. Reachability is evaluated per land component; generator repair may not create bridges/nav bridges across archipelagoSea or seal boat-separated islands as unreachable pockets.'
+    };
+    logDebug(`archipelago reachability: ${componentSizes.length} on-foot components, entry component ${entryReachable.size}/${walkable.length} walkable tiles, ${boatSeparatedTiles} tiles intentionally boat-separated; no cross-sea repair bridges`);
+  }
+
   function validateAndRepairReachability() {
+    if (usesArchipelagoLayout()) {
+      validateArchipelagoReachability();
+      return;
+    }
     const start = nearestFreeWalkableNeighbor(map.entry.x, map.entry.y);
     // new variable: dramaticRepairBudget caps the last-resort hidden repair passes that became too expensive when Cliffs introduced extreme height fragmentation.
     const dramaticRepairBudget = usesDramaticPlateauPreset();
@@ -6571,7 +6658,13 @@
       pathWindiness: 8, entryGateWidthMul: 0.2,
     },
     map_western_slope: { entrySide: 'east', preset: 'cliffs', boundaryMode: 'entrySideDistantLandscape', boundaryCliffBoost: 0 },
-    map_eastern_mire: { entrySide: 'west', preset: 'greatBasin', boundaryMode: 'followMapHeight', boundaryCliffBoost: 2 },
+    map_eastern_mire: {
+      entrySide: 'west', preset: 'custom', boundaryMode: 'followMapHeight', boundaryCliffBoost: 0,
+      archipelago: true, archipelagoColumns: 4, archipelagoRows: 3, archipelagoLandScale: 1, archipelagoShoreNoise: 1,
+      archipelagoPreservedLand: [{ x: 17, y: 14.5, radius: 5, label: 'Leaf & Pahu house' }],
+      plateaus: 32, plateauAreaMul: 1.4, lowProfilePlateaus: true, maxTier: 3, wideRamps: true, ramps: 14,
+      ponds: 6, plateauPonds: 8, plateauStreams: 12, rivers: 0, pathWindiness: 3, entryGateWidthMul: 0.45,
+    },
   };
 
   // ---------------------------------------------------------------------
@@ -6770,6 +6863,19 @@
   }
 
   function refreshConnectivityAfterTileScale(previousConnectivity, originalWalkableTiles, scale) {
+    if (usesArchipelagoLayout()) {
+      validateArchipelagoReachability();
+      map.connectivity = {
+        ...map.connectivity,
+        originalWalkableTilesBeforeDensityScale: originalWalkableTiles,
+        expectedWalkableTilesAfterDensityScale: originalWalkableTiles * scale * scale,
+        actualWalkableTilesAfterDensityScale: map.connectivity.walkableTiles,
+        walkableTileScaleRatio: originalWalkableTiles ? Number((map.connectivity.walkableTiles / originalWalkableTiles).toFixed(3)) : null,
+        generationScale: scale,
+        rule: `${map.connectivity.rule} Density expansion duplicates each source tile into a ${scale}x${scale} block without joining sea-separated components.`
+      };
+      return;
+    }
     const start = nearestFreeWalkableNeighbor(map.entry.x, map.entry.y);
     const reached = reachableFrom(start);
     const walkable = allWalkableTiles();
@@ -8264,6 +8370,188 @@
     return !!activePresetConfig().highEntryCauseway;
   }
 
+  function usesArchipelagoLayout() {
+    return !!settings.archipelago;
+  }
+
+  function buildArchipelagoIslandPlan() {
+    const columns = clamp(Math.round(Number(settings.archipelagoColumns) || 4), 2, 6); // Used to divide the mire into stable east-west island cells.
+    const rows = clamp(Math.round(Number(settings.archipelagoRows) || 3), 2, 5); // Used to divide the mire into stable north-south island cells.
+    const cellWidth = settings.width / columns; // Used to size and space each island without accidental land bridges.
+    const cellHeight = settings.height / rows; // Used to size and space each island without accidental land bridges.
+    const configuredLandScale = Number(settings.archipelagoLandScale); // Used to tune total dry-land coverage from the zone config.
+    const landScale = clamp(Number.isFinite(configuredLandScale) ? configuredLandScale : 1, 0.65, 1.2); // Used by island radii below.
+    const seedSalt = hashSeed(`${settings.seed}|archipelago`) % 1000000; // Used by shoreline/center noise so every Tothal seed gets a deterministic new archipelago.
+    const entryRow = Math.floor(rows / 2); // Used to guarantee one western island reaches the west-side zone entrance.
+    const islands = []; // Used by applyArchipelagoLayout() to classify every source tile as island or open water.
+
+    for (let row = 0; row < rows; row++) {
+      for (let col = 0; col < columns; col++) {
+        const index = row * columns + col;
+        const centerJitterX = (noise2(col, row, seedSalt + 1103) - 0.5) * cellWidth * 0.15; // Used to stop the archipelago from reading as a rigid grid.
+        const centerJitterY = (noise2(col, row, seedSalt + 1907) - 0.5) * cellHeight * 0.15; // Used to stop rows of islands from lining up mechanically.
+        let centerX = (col + 0.5) * cellWidth + centerJitterX; // Used as this island's ellipse center.
+        const centerY = (row + 0.5) * cellHeight + centerJitterY; // Used as this island's ellipse center.
+        let radiusX = cellWidth * (0.30 + noise2(col, row, seedSalt + 2801) * 0.075) * landScale; // Used for east-west island extent while preserving boat-width channels.
+        const radiusY = cellHeight * (0.27 + noise2(col, row, seedSalt + 3709) * 0.075) * landScale; // Used for north-south island extent while preserving boat-width channels.
+        const isEntryIsland = col === 0 && row === entryRow;
+        if (isEntryIsland) {
+          centerX = Math.max(5, cellWidth * 0.29); // Used to pull the middle-west island onto the map edge so the authored west entry remains land-accessible.
+          radiusX = Math.max(radiusX, centerX + 1.5); // Used to make that entry island actually touch the west boundary across multiple tiles.
+        }
+        islands.push({
+          id: `island_${row + 1}_${col + 1}`,
+          index,
+          row,
+          col,
+          centerX,
+          centerY,
+          radiusX,
+          radiusY,
+          isEntryIsland,
+          shoreSalt: seedSalt + index * 97 + 5003,
+        });
+      }
+    }
+    return { columns, rows, seedSalt, entryRow, islands };
+  }
+
+  function archipelagoIslandAt(x, y, plan) {
+    const configuredShoreNoise = Number(settings.archipelagoShoreNoise); // Used to scale coarse and fine shoreline breakup below.
+    const shoreNoise = clamp(Number.isFinite(configuredShoreNoise) ? configuredShoreNoise : 1, 0, 1.5); // Used to keep shoreline distortion bounded so neighboring islands cannot touch.
+    let bestIsland = null; // Used to label land tiles with the closest matching island for path/debug grouping.
+    let bestScore = Infinity; // Used to resolve rare overlaps toward the more central island.
+    for (const island of plan.islands) {
+      const dx = (x - island.centerX) / Math.max(1, island.radiusX); // Used in the island's normalized elliptical distance.
+      const dy = (y - island.centerY) / Math.max(1, island.radiusY); // Used in the island's normalized elliptical distance.
+      const normalizedDistance = dx * dx + dy * dy; // Used as the smooth base coastline before seeded breakup.
+      const coarseNoise = (noise2(Math.floor(x / 4), Math.floor(y / 4), island.shoreSalt) - 0.5) * 0.28 * shoreNoise; // Used to create broad coves and headlands.
+      const fineNoise = (noise2(x, y, island.shoreSalt + 43) - 0.5) * 0.10 * shoreNoise; // Used to keep individual shore tiles from forming perfect ellipses.
+      const shoreThreshold = clamp(1 + coarseNoise + fineNoise, 0.72, 1.20); // Used to bound coastline noise below the inter-island channel spacing.
+      const score = normalizedDistance / shoreThreshold; // Used to compare this tile against the noisy island boundary.
+      if (score <= 1 && score < bestScore) {
+        bestIsland = island;
+        bestScore = score;
+      }
+    }
+    return bestIsland;
+  }
+
+  function preservedArchipelagoLandAt(x, y) {
+    const anchors = Array.isArray(settings.archipelagoPreservedLand) ? settings.archipelagoPreservedLand : []; // Used to keep fixed authored landmarks from being submerged by a reroll.
+    return anchors.find(anchor => {
+      const radius = Math.max(0, Number(anchor?.radius) || 0); // Used as the source-tile safety radius around this fixed landmark.
+      return Number.isFinite(anchor?.x) && Number.isFinite(anchor?.y) && Math.hypot(x - anchor.x, y - anchor.y) <= radius;
+    }) || null;
+  }
+
+  function applyArchipelagoLayout() {
+    if (!usesArchipelagoLayout()) return { applied: false, islands: 0, seaTiles: 0 };
+    const plan = buildArchipelagoIslandPlan(); // Used for every tile classification in this pass and later debug metadata.
+    let seaTiles = 0; // Counts open-channel water painted by this pass for diagnostics/tests.
+    let landFootprintTiles = 0; // Counts tiles inside intended island footprints, including inland ponds/streams.
+    let inlandWaterTiles = 0; // Counts pre-existing hydrology retained inside island footprints.
+    let preservedTiles = 0; // Counts forced-land tiles around fixed authored landmarks.
+
+    for (const tile of allTiles()) {
+      const island = archipelagoIslandAt(tile.x, tile.y, plan); // Used to decide whether the generated terrain survives as an island here.
+      const preserved = preservedArchipelagoLandAt(tile.x, tile.y); // Used to override water only around explicitly fixed authored landmarks.
+      if (island || preserved) {
+        landFootprintTiles++;
+        tile.archipelagoSea = false;
+        tile.archipelagoIslandId = island?.id || `preserved_${String(preserved?.label || 'land').replace(/\s+/g, '_')}`;
+        if (preserved) {
+          preservedTiles++;
+          if (tile.water) {
+            tile.water = false;
+            tile.waterfall = false;
+            tile.canyonRiver = false;
+            tile.latePaintedRiver = false;
+            tile.plateauHydrology = false;
+            tile.plateauPond = false;
+            tile.plateauStream = false;
+            tile.terrain = tile.elevation > 0 ? 'plateau' : 'grass';
+          }
+        } else if (tile.water) {
+          inlandWaterTiles++;
+        }
+        continue;
+      }
+
+      seaTiles++;
+      tile.archipelagoSea = true;
+      tile.archipelagoIslandId = null;
+      tile.water = true;
+      tile.waterfall = false;
+      tile.terrain = 'stream';
+      tile.elevation = 0;
+      tile.height = 0;
+      tile.canyonRiver = false;
+      tile.canyonOriginalElevation = null;
+      tile.latePaintedRiver = false;
+      tile.plateauHydrology = false;
+      tile.plateauPond = false;
+      tile.plateauStream = false;
+      tile.generatedPlateauBlobId = null;
+      tile.plateauGroupId = null;
+      tile.plateauRing = false;
+      tile.plateauInterior = false;
+      tile.ramp = false;
+      tile.rampId = null;
+      tile.rampProgress = null;
+      tile.rampFromTier = null;
+      tile.rampToTier = null;
+      tile.rampDirection = null;
+      tile.rampKind = null;
+      tile.rampNormal = null;
+      tile.rampLandingContact = null;
+      tile.rampSharesPlateau = false;
+      tile.rampSharedPlateauGroupId = null;
+      tile.navRamp = false;
+      tile.navRampId = null;
+      tile.navRampProgress = null;
+      tile.path = false;
+      tile.invisiblePath = false;
+      tile.invisiblePathId = null;
+      tile.denRoute = false;
+      tile.bridge = false;
+      tile.navBridge = false;
+      tile.cliffSkirt = false;
+      tile.cliffSkirtKind = null;
+      tile.cliffFromTier = null;
+      tile.cliffToTier = null;
+      tile.cliffFacing = null;
+      tile.borderEscarpment = false;
+      tile.distantBoundaryLandscape = false;
+    }
+
+    const entryIsland = plan.islands.find(island => island.isEntryIsland); // Used when chooseEntry() opens the west-side road mouth through shoreline water.
+    map.archipelago = {
+      enabled: true,
+      columns: plan.columns,
+      rows: plan.rows,
+      intendedIslandCount: plan.islands.length,
+      entryIslandId: entryIsland?.id || null,
+      sourceIslands: plan.islands.map(island => ({
+        id: island.id,
+        row: island.row,
+        col: island.col,
+        centerX: Number(island.centerX.toFixed(2)),
+        centerY: Number(island.centerY.toFixed(2)),
+        radiusX: Number(island.radiusX.toFixed(2)),
+        radiusY: Number(island.radiusY.toFixed(2)),
+        isEntryIsland: island.isEntryIsland,
+      })),
+      seaTiles,
+      landFootprintTiles,
+      inlandWaterTiles,
+      preservedTiles,
+      seaRatio: Number((seaTiles / Math.max(1, settings.width * settings.height)).toFixed(3)),
+    };
+    logDebug(`archipelago: ${plan.islands.length} intended islands, ${landFootprintTiles} island-footprint tiles, ${seaTiles} open-water tiles (${(map.archipelago.seaRatio * 100).toFixed(1)}%), ${inlandWaterTiles} inland-water tiles, ${preservedTiles} fixed-land tiles`);
+    return { applied: true, islands: plan.islands.length, seaTiles, landFootprintTiles, inlandWaterTiles, preservedTiles };
+  }
+
   function usesGreatInclineStepCurve() {
     return activeStepCurveConfig().id === 'greatIncline';
   }
@@ -8316,6 +8604,9 @@
     applyGreatInclineMountainsideProfile();
     applyGreatBasinHorseshoeProfile(); // Great Basin linear height lerp
     syncTileHeights();
+    applyArchipelagoLayout(); // Eastern Mire only: flood the gaps between deterministic island footprints before world-edge/entry generation.
+    applyManualPlateauPaintingRules(); // Refresh plateau ownership after archipelago sea removes portions of generated shelves.
+    syncTileHeights();
     map.preselectedEntrySide = resolveGenerationEntrySide();
     generateBorderEscarpments();
     generateRamps();
@@ -8347,6 +8638,14 @@
     const workspace = buildHobunjiMapExport();
     workspace.entry = map.entry ? { col: map.entry.x, row: map.entry.y, side: map.entry.side } : null;
     workspace.warnings = map.warnings.slice();
+    workspace.archipelago = map.archipelago ? {
+      ...clonePlain(map.archipelago),
+      sourceWidth: map.sourceWidth || map.width,
+      sourceHeight: map.sourceHeight || map.height,
+      finalWidth: map.width,
+      finalHeight: map.height,
+      generationScale: map.generationScale || 1,
+    } : null;
     // Stumps/logs are generated in the normal object pass but rendered at
     // runtime from authored furniture definitions. Export their exact final
     // placements directly so the game never has to infer them from generic
