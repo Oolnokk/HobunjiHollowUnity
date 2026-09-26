@@ -7,6 +7,7 @@ const game = fs.readFileSync('docs/game.js', 'utf8'); // Confirms the preflight 
 const interiorBuilder = fs.readFileSync('docs/js/interior-scene-builder.js', 'utf8'); // Guards Banubu's opt-in farm-cliff material + surface-stretch path.
 const cavernGenerator = fs.readFileSync('docs/js/cavern-generator.js', 'utf8'); // Guards propagation of locale-authored surface material metadata.
 const banubuLocale = JSON.parse(fs.readFileSync('docs/config/locales/locale_banubu_cave_interior.json', 'utf8')); // Authoritative cave material selection.
+const colorPoolsLocale = JSON.parse(fs.readFileSync('docs/config/locales/locale_color_pools_cave.json', 'utf8')); // Hidden room intentionally reuses Banubu's historically proven surface pipeline.
 const npcSpeciesOverrides = JSON.parse(fs.readFileSync('docs/config/npcs/species-overrides.json', 'utf8')); // Authoritative Banubu colored-stripe hex used to lock cave-cloud fill parity.
 const logs = []; // Captures the existing in-game render diagnostic for a malformed map.
 const windowObject = { __farmLog: message => logs.push(message) };
@@ -31,7 +32,8 @@ assert.equal(material.needsUpdate, true, 'material recompiles when an invalid ma
 assert.equal(logs.length, 2, 'each repair is recorded once through the existing render log');
 assert.equal(windowObject.BanubuCaveClouds.validateCaveMaterials({ THREE, scene: cave, mapData: { id: 'map_i_den_banubu' } }), 0);
 assert(game.includes('BanubuCaveClouds?.validateCaveMaterials?.({ THREE, scene: bScene, mapData })'));
-assert.equal(banubuLocale.cavern.surfaceMaterial, 'farm-cliff', 'Banubu alone opts the carved shell into farm-cliff parity');
+assert.equal(banubuLocale.cavern.surfaceMaterial, 'farm-cliff', 'Banubu main cave opts the carved shell into farm-cliff parity');
+assert.equal(colorPoolsLocale.cavern.surfaceMaterial, 'farm-cliff', 'Color Pools opts into the same farm-cliff path that fixed Banubu\'s earlier flat/Lambert-looking cave');
 assert.match(cavernGenerator, /generated\.mesh\.surfaceMaterial = surfaceMaterial/, 'locale cavern synthesis carries the authored surface preset into the renderer');
 assert.match(interiorBuilder, /natural\.naturalizeMesh\(mesh, 'rocks', 'planar-stretch'\)/, 'farm-cliff cave surfaces use the same canonical rock material factory as farm cliffs');
 assert.doesNotMatch(game, /mapData\.id === 'map_i_den_banubu'[\s\S]{0,500}MeshLambertMaterial/, 'Banubu must not replace the canonical unlit farm-cliff material with a Lambert material after the shared surface pass');
