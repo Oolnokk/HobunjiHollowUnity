@@ -24,6 +24,7 @@ const dynamicSurfaces = read('docs/js/dynamic-surfaces.js');
 const hooks = read('docs/js/dev-random-ruin-prototype-hooks.js');
 const renderProxy = read('docs/js/dev-random-ruin-wall-render-proxy.js');
 const interactions = read('docs/js/dev-random-ruin-interactions.js');
+const simplePuzzles = read('docs/js/dev-random-ruin-simple-puzzles.js');
 const cloudFog = read('docs/js/cloud-forest-fog.js');
 const gameIndex = read('docs/index.html');
 const game = read('docs/game.js');
@@ -36,10 +37,12 @@ const loadOrder = [
   'dev-random-ruin-solvability.js',
   'dev-random-ruin-interior-map.js',
   'dev-random-ruin-motion-runtime.js',
+  'dev-random-ruin-simple-puzzles.js',
+  'dev-random-ruin-interactions.js',
   'dev-random-ruin-runtime-coverage.js',
 ].map(name => camera.indexOf(name));
 assert(/localStorage\.getItem\('hobunjiDevMode'\) === '1'/.test(camera) && /if \(!devMode/.test(camera), 'ruin runtime must only be injected in Dev Mode');
-assert(camera.includes('dev-random-ruin-interactions.js?v=20260926towerinput1'), 'tower interaction adapter must be cache-busted in the dev bootstrap');
+assert(camera.includes('dev-random-ruin-interactions.js?v=20260926simplehold1'), 'tower interaction adapter must be cache-busted in the dev bootstrap');
 assert(loadOrder.every(index => index >= 0), 'ruin bootstrap must load every Random Test Ruin runtime module');
 for (let i = 1; i < loadOrder.length; i++) {
   assert(loadOrder[i] > loadOrder[i - 1], 'Random Test Ruin runtime modules must preserve dependency order');
@@ -62,7 +65,7 @@ assert(interior.includes('spritePngSurface.makeMaterial(THREE,source.map||null')
 assert(interior.includes('remainingLitMaterials'), 'material diagnostics must explicitly count any lit material that escapes normalization');
 assert((cloudFog.match(/map_i_dev_random_ruin/g)||[]).length>=2, 'Random Test Ruin must opt into the shared den no-sky and den darkness/lantern classifications');
 assert(gameIndex.includes('js/cloud-forest-fog.js?v=20260926devruindark2'), 'test-ruin darkness override must be cache-busted in the game page');
-assert(camera.includes('dev-random-ruin-interior-map.js?v=20260926towerinput1'), 'test-ruin darkness controls must be cache-busted in the dev bootstrap');
+assert(camera.includes('dev-random-ruin-interior-map.js?v=20260926simple1'), 'test-ruin darkness controls must be cache-busted in the dev bootstrap');
 assert(interior.includes('Solvability.audit'), 'candidate ruins must run the pre-entry solvability audit');
 assert(interior.includes('MAX_SOLVABILITY_ATTEMPTS = 6'), 'unsolvable candidates must have a bounded deterministic retry budget');
 assert(interior.includes('getLastSolvabilityAudit'), 'rejected seed diagnostics must remain inspectable without devtools');
@@ -75,6 +78,11 @@ assert(solvability.includes('canSolveGlyphGroup'), 'solvability audit must valid
 assert(solvability.includes("bridge ON/OFF sequence reachable in order"), 'solvability audit must validate ordered bridge controls');
 assert(solvability.includes('unsolvedMechanisms'), 'solvability audit must reject candidates with puzzle mechanisms that cannot be solved');
 assert(dynamicSurfaces.includes("const scope = options.scope == null ? null : String(options.scope)"), 'support sampling must support an exact scope filter for pre-entry audits');
+assert(interior.includes("hobunji.devRandomRuinPuzzleOptions.v2"), 'simple-mode defaults must use a fresh storage version so old all-on puzzle settings cannot leak forward');
+assert(interior.includes("pressurePlate:false") && interior.includes("brazier:false") && interior.includes("stackedObelisk:false") && interior.includes("linkedCubePillars:false") && interior.includes("nestedRoom:false"), 'fragile V50 puzzle families must default off in the simple first pass');
+assert(interior.includes("glyphObelisk:true") && interior.includes("safePath:true") && interior.includes("ropeSwing:true") && interior.includes("hallwayTraps:true"), 'simple first pass must keep projectile targets and enable safe-path, rope, and hallway hazards');
+assert(interior.includes("getRuntimeContext"), 'parent-runtime simple puzzles need the generated scene/metadata context without reaching into V50 internals');
+assert(interior.includes("DevRandomRuinSimplePuzzles?.ownsPlayerMotion?.()"), 'rope swing / ballistic release must temporarily own player motion without floor reconciliation fighting it');
 assert(interior.includes('devRandomRuinPuzzleOptions'), 'Random Test Ruin Settings must expose the collapsed puzzle-generation panel');
 assert(interior.includes('data-ruin-puzzle-option'), 'puzzle-generation panel must render per-family checkboxes');
 assert(interior.includes('devRandomRuinMaxPuzzlesPerRoom'), 'puzzle-generation panel must expose a per-room puzzle cap');
@@ -94,6 +102,22 @@ assert(interior.includes("promptRoot:topSegment||a"), 'stacked rotating obelisks
 assert(interior.includes('range:Number.isFinite(Number(control.range))'), 'per-control interaction range must survive the base provider export');
 assert(interactions.includes('control.promptRoot || control.object'), 'shared ruin interactions must honor explicit tower prompt anchors');
 assert(interactions.includes('horizontalDistanceToOwner'), 'tower interaction range must be measured from the physical object footprint rather than only its origin');
+assert(interactions.includes("['simple', window.DevRandomRuinSimplePuzzles]"), 'simple runtime controls must join the same WorldPopupText interaction provider list');
+assert(interactions.includes("typeof control.onHoldStart") && interactions.includes("onHoldEnd"), 'ruin input bridge must support held rope brake/adjust controls');
+assert(interactions.includes("document.addEventListener('keyup'"), 'keyboard rope braking must receive an actual release event rather than becoming a toggle');
+assert(interactions.includes("controller hold release failed"), 'controller rope braking must release on the falling edge');
+assert(interactions.includes("pointercancel"), 'touch-held rope controls must release cleanly even when a gesture is cancelled');
+assert(simplePuzzles.includes("'burningHealth',GRID_BURNING"), 'unsafe path plates must apply the existing Burning Health affliction');
+assert(simplePuzzles.includes("'burningHealth',HALL_FIRE_BURNING") && simplePuzzles.includes("'poisonedHealth',HALL_POISON"), 'hallway emitters must alternate existing fire and poison afflictions');
+assert(simplePuzzles.includes('safePathCells') && simplePuzzles.includes('GRID_REVEAL_MS'), 'safe-path grids must generate one continuous route and reveal it only temporarily');
+assert(simplePuzzles.includes('updateAttachedRope') && simplePuzzles.includes('ROPE_GRAVITY') && simplePuzzles.includes('rope.omega'), 'rope traversal must use a real pendulum state rather than teleporting between platforms');
+assert(simplePuzzles.includes("label:'Release Rope'") && simplePuzzles.includes("label:'Hold to Stop / Adjust Rope'"), 'rope controls must expose Wind-Waker-style release and held brake/adjust actions');
+assert(simplePuzzles.includes('rope.yaw+=intent.side') && simplePuzzles.includes('rope.length=Math.max'), 'held rope braking must allow reorientation and rope-length adjustment');
+assert(simplePuzzles.includes('doorwayCrossing') && simplePuzzles.includes("activateCheckpoint('ruin-entry'"), 'ruin entry and every doorway must feed session checkpoint tracking');
+assert(simplePuzzles.includes('PlayerVitals.init') && simplePuzzles.includes('Combat.init'), 'checkpoint recovery must intercept both DoT/resource deaths and direct-hit deaths through existing init seams');
+assert(simplePuzzles.includes("removeAffliction(player,id") && simplePuzzles.includes("player.health=Math.max(1,Math.round"), 'checkpoint respawn must clear lethal buildup and restore half Health');
+assert(simplePuzzles.includes('HALL_SHOT_PERIOD') && simplePuzzles.includes('station.side *= -1'), 'hallway traps must fire in a steady alternating repeating pattern');
+assert(simplePuzzles.includes('DS.addBeforeRenderClient(update)'), 'simple puzzles must share the game frame authority instead of starting their own RAF loop');
 assert(interior.includes('TileOccupancy.create'), 'ruin must create the shared tile occupancy snapshot');
 assert(interior.includes('getOccupancySnapshot'), 'ruin must expose the exact gameplay snapshot to diagnostics');
 assert(occupancy.includes("const BLOCKER_ID = 'devruin-tile-occupancy'"), 'tile occupancy must own one aggregate gameplay blocker');
@@ -200,6 +224,8 @@ assert(debrisSource.includes('hallWidth=randomIntInclusive(rng,3,4),hallLen=10+r
 new vm.Script(debrisBootstrap, { filename:'debrisifier-01.js' });
 new vm.Script(debrisSource, { filename:'debrisifier-v50-source.js' });
 new vm.Script(api, { filename:'debrisifier-v50-api.js' });
+new vm.Script(simplePuzzles, { filename:'dev-random-ruin-simple-puzzles.js' });
+new vm.Script(interactions, { filename:'dev-random-ruin-interactions.js' });
 
 const furnitureRoots = ['docs/config/furniture-authored/', 'docs/assets/models/furniture/data/'];
 const ruinRe = /(pillar|stone|obelisk|ruin|statue|buttress|arch|pedestal|support)/i;
