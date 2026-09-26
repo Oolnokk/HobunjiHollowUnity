@@ -235,16 +235,6 @@
     return target;
   }
 
-  function ensureNextTarget(record, state) {
-    if (!state || Number(state.stage) !== 1) return null;
-    if (state.nextTarget?.questType === 'nineLeafTea' && state.nextTarget.requiredEffects?.length) return state.nextTarget;
-    const target = rollTarget(record, 2); // Used while Quest 1's ready tree is rendered so its later Tea dialogue can name Quest 2 buffs before the turn-in action fires.
-    if (!target) return null;
-    state.nextTarget = target;
-    persistMemberState();
-    return target;
-  }
-
   function sameEffectSet(left, right) {
     const a = [...new Set(left || [])].sort(); // Used by Nine Leaf Tea to preserve its authored exact-effect requirement.
     const b = [...new Set(right || [])].sort();
@@ -561,7 +551,7 @@
     if (operation === 'unlockRecipe') result = unlockRecipe(record);
     else if (operation === 'accept') result = acceptQuest(record, stage);
     else if (operation === 'prepareTurnIn') result = prepareTurnIn(record, stage);
-    else if (operation === 'turnIn') result = turnInQuest(record, stage); // Compatibility for older authored/local override data.
+    else if (operation === 'turnIn') result = prepareTurnIn(record, stage); // Fail-safe migration path: stale authored/local data may prepare, but it can never bypass the final commit node.
     else result = { ok: false, message: `Unknown Banubu quest operation: ${operation || '(blank)'}` };
     if (!result?.ok) debugState.lastError = result?.message || 'Banubu quest action failed.';
     return { ...result, skipNav: !result?.ok };
