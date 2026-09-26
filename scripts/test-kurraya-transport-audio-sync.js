@@ -44,8 +44,14 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /function createRootPadVoice\(midi, whenMs = null\)[\s\S]*?rootOscillator\.type = 'triangle'[\s\S]*?now \+ 0\.18/,
-  'the single low synth root must expose audible harmonics and reach preview level promptly on small speakers'
+  /function rootPadSynthGain\(\)[\s\S]*?0\.018 \+ state\.rootPadLevel \* 1\.5[\s\S]*?0\.12[\s\S]*?state\.padMixLevel/,
+  'the synth-only base gain must be reduced without attenuating imported pad samples'
+);
+
+assert.match(
+  source,
+  /PAD_SYNTH_FILTER_HZ = 600[\s\S]*?PAD_SYNTH_ATTACK_S = 0\.32[\s\S]*?PAD_SYNTH_CROSSFADE_S = 0\.8[\s\S]*?PAD_SYNTH_HARMONICS = Object\.freeze\(\[0,1,0\.10,0\.025,0\.008\]\)[\s\S]*?function createRootPadVoice\(midi, whenMs = null\)[\s\S]*?createPeriodicWave\(real,imag\)[\s\S]*?filter\.frequency\.setValueAtTime\(PAD_SYNTH_FILTER_HZ, now\)[\s\S]*?now \+ PAD_SYNTH_ATTACK_S/,
+  'the synth root pad must use the mostly-sine subtle waveform, 600 Hz low-pass, soft attack, and slow crossfade tuning'
 );
 
 assert.match(
@@ -70,6 +76,12 @@ assert.match(
   musicLab,
   /padRootSource === 'detected'[\s\S]*?padDetectedFrequency[\s\S]*?padDetectedConfidence[\s\S]*?padChordNames/,
   'Music Lab must visibly report detected pad pitch/confidence and the actual root currently sounding'
+);
+
+assert.match(
+  musicLab,
+  /pad synth=[\s\S]*?padSynthTimbre[\s\S]*?padSynthFilterHz[\s\S]*?padSynthAttackMs[\s\S]*?padSynthCrossfadeMs/,
+  'Music Lab diagnostics must expose the active subtle-pad timbre and envelope'
 );
 
 assert.match(
@@ -244,7 +256,7 @@ assert.match(
 
 assert.match(
   hostSource,
-  /MUSIC_MINIGAME_SRC = 'assets\/minigames\/lyre-performance\.html\?v=20260925mixedmeter6'/,
+  /MUSIC_MINIGAME_SRC = 'assets\/minigames\/lyre-performance\.html\?v=20260925mixedmeter7'/,
   'gameplay must cache-bust the fixed-harmony minigame revision'
 );
 
@@ -392,7 +404,7 @@ assert.match(
 
 assert.match(
   toolsHub,
-  /data-target="kurraya-music-lab"[\s\S]*?kurraya-music-lab\/index\.html\?v=20260925lab11/,
+  /data-target="kurraya-music-lab"[\s\S]*?kurraya-music-lab\/index\.html\?v=20260925lab12/,
   'the combined Kurraya Music Lab must be the single Kurraya entry in the tools hub'
 );
 assert.doesNotMatch(
