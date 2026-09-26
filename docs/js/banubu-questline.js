@@ -15,7 +15,7 @@
   let installTimer = null; // Used to stop dependency polling after success/timeout.
   let installStartedAt = 0; // Used to bound dependency polling on editor/partial pages.
   const debugState = { lastAction: null, lastTarget: null, lastTurnIn: null, lastPresentation: null, lastError: null }; // Used by mobile diagnostics/tests.
-  const presentationState = { walker: null, sparkleVisual: null, schedulerRegistered: false }; // Used to own Banubu's temporary dialogue pose overrides and persistent sparkle emitter.
+  const presentationState = { walker: null, sparkleVisual: null, sparkleAnchor: null, schedulerRegistered: false, actorOrigin: null, actorMove: null, pendingTurnIn: null, pendingQuestAction: null, pendingIntroAttempt: null, previewTarget: null }; // Used to own Banubu's temporary presentation state plus every uncommitted dialogue-driven quest mutation.
   const PRESENTATION_SCHEDULER_ID = 'banubu-dialogue-presentation'; // Stable shared-frame subscriber used only while Banubu's sparkle emitter is active.
   const SPARKLE_EMITTER_TEMPLATE = Object.freeze({
     id: 'banubu_key_sparkles',
@@ -215,34 +215,11 @@
     return target;
   }
 
-  function ensureTarget(record, state) {
-    if (state?.target?.requiredEffects?.length) return state.target;
-    if (!state || Number(state.stage) < 1 || Number(state.stage) > 2) return null;
-    const target = rollTarget(record, state.stage);
-    if (!target) return null;
-    state.target = target;
-    persistMemberState();
-    return target;
-  }
-
-  function ensureIntroTarget(record, state) {
-    if (!state || state.status !== 'intro') return null;
-    if (state.target?.questType === 'threeFishPie' && state.target.requiredEffects?.length) return state.target;
-    const target = rollTarget(record, 1); // Used before the intro tree is rendered so its dynamic buff names are already concrete.
-    if (!target) return null;
-    state.target = target;
-    persistMemberState();
-    return target;
-  }
-
-  function ensureNextTarget(record, state) {
-    if (!state || Number(state.stage) !== 1) return null;
-    if (state.nextTarget?.questType === 'nineLeafTea' && state.nextTarget.requiredEffects?.length) return state.nextTarget;
-    const target = rollTarget(record, 2); // Used while Quest 1's ready tree is rendered so its later Tea dialogue can name Quest 2 buffs before the turn-in action fires.
-    if (!target) return null;
-    state.nextTarget = target;
-    persistMemberState();
-    return target;
+  function validTargetForStage(state, stage) {
+    const target = state?.target;
+    if (!target?.requiredEffects?.length) return null;
+    const expectedType = Number(stage) === 2 ? 'nineLeafTea' : 'threeFishPie';
+    return target.questType === expectedType ? target : null;
   }
 
   function sameEffectSet(left, right) {
@@ -338,8 +315,11 @@
   }
 
   function tokenValues(record, state) {
-    const currentTarget = state?.status === 'intro' ? ensureIntroTarget(record, state) : (state?.stage ? ensureTarget(record, state) : null);
-    const nextTarget = Number(state?.stage) === 1 ? ensureNextTarget(record, state) : null;
+    const currentStage = state?.status === 'intro' ? 1 : Number(state?.stage || 0);
+    const currentTarget = currentStage ? (validTargetForStage(state, currentStage) || presentationState.previewTarget || null) : null; // Dialogue tokens read the transient target selected for this conversation without persisting it.
+    const nextTarget = Number(state?.stage) === 1
+      ? (presentationState.pendingTurnIn?.previewNextTarget || state?.nextTarget || null)
+      : null; // Ready-dialogue preview stays transient until its final end node commits the turn-in.
     const definition = state?.stage ? stageDefinition(record, state.stage) : stageDefinition(record, 1);
     return {
       '{{banubuRequestedBuffs}}': joinedEffectLabels(currentTarget),
@@ -371,43 +351,62 @@
     const state = ensureQuestState();
     if (!state) return null;
     const trees = treesForBanubu(record);
+    presentationState.pendingTurnIn = null;
+    presentationState.pendingQuestAction = null;
+    presentationState.pendingIntroAttempt = null;
+    presentationState.previewTarget = null; // Fresh conversation routing always starts from committed quest state only.
     let phase = state.status || 'intro';
     let introAttempt = 3;
     if (phase === 'intro') {
-      ensureIntroTarget(record, state);
-      introAttempt = Math.min(3, Math.max(1, (Number(state.introTalkAttempts) || 0) + 1)); // Exactly one wake-up step is consumed per distinct conversation attempt.
-      if (introAttempt !== state.introTalkAttempts) {
-        state.introTalkAttempts = introAttempt;
-        persistMemberState();
-      }
-    } else if (phase === 'active' && matchingMeal(state)) phase = 'ready';
-    else if (phase === 'offer' || phase === 'active') ensureTarget(record, state);
+      introAttempt = Math.min(3, Math.max(1, (Number(state.introTalkAttempts) || 0) + 1));
+      presentationState.pendingIntroAttempt = introAttempt; // Becomes persistent only on the authored final end node.
+      presentationState.previewTarget = validTargetForStage(state, 1) || rollTarget(record, 1);
+    } else if (phase === 'active' && matchingMeal(state)) {
+      phase = 'ready';
+    } else if (phase === 'offer' || phase === 'active') {
+      presentationState.previewTarget = validTargetForStage(state, state.stage) || rollTarget(record, state.stage);
+    }
     if (phase === 'blocked') state.stage = 3;
-    if (record) record._animalDialogueEyesOpen = phase !== 'intro' || introAttempt >= 3; // Shared named-animal sleep presenter reads this only while dialogue is actually open; outside dialogue Banubu's eyes remain shut.
+    if (record) record._animalDialogueEyesOpen = phase !== 'intro' || introAttempt >= 3; // Third wake-up preview may open Banubu's eyes without committing that attempt.
     const selected = trees.find(tree => tree?.banubuQuest?.phase === phase
       && (phase === 'intro'
         ? Number(tree?.banubuQuest?.introAttempt || 3) === introAttempt
         : Number(tree?.banubuQuest?.stage) === Number(state.stage)));
+    if (selected && phase === 'ready') {
+      const meal = matchingMeal(state);
+      const previewNextTarget = Number(state.stage) === 1
+        ? (state.nextTarget?.questType === 'nineLeafTea' ? JSON.parse(JSON.stringify(state.nextTarget)) : rollTarget(record, 2))
+        : null; // Kept only in memory so cancelling the conversation cannot advance or rewrite quest state.
+      presentationState.pendingTurnIn = {
+        recordId: String(record?.id || ''),
+        stage: Number(state.stage),
+        mealKey: meal?.key || null,
+        prepared: false,
+        previewNextTarget,
+      };
+    }
     return selected ? resolveQuestTokens(selected, record, state) : null;
   }
 
   function dialogueEyesOpen() {
     const state = ensureQuestState();
-    return !!state && (state.status !== 'intro' || Number(state.introTalkAttempts) >= 3);
+    return !!state && (state.status !== 'intro' || Math.max(Number(state.introTalkAttempts) || 0, Number(presentationState.pendingIntroAttempt) || 0) >= 3);
   }
 
-  function unlockRecipe(record = null) {
+  function unlockRecipe(record = null, options = {}) {
     const state = ensureQuestState();
     if (!state) return { ok: false, message: 'No active save.' };
+    const introTarget = validTargetForStage(state, 1)
+      || (options.preparedTarget ? JSON.parse(JSON.stringify(options.preparedTarget)) : null)
+      || rollTarget(record, 1);
+    if (state.status === 'intro' && !introTarget) return { ok: false, message: 'The current fish catalog cannot produce a Three-Fish Pie with three distinct buffs.' };
     CONTENT()?.ensureCookingRecipes?.();
-    const unlock = global.CookingSystem?.unlockRecipe?.(CONTENT()?.THREE_FISH_PIE_RECIPE_ID); // Used to keep quest state from advancing if the authored cooking recipe is unavailable.
+    const unlock = global.CookingSystem?.unlockRecipe?.(CONTENT()?.THREE_FISH_PIE_RECIPE_ID); // Recipe ownership changes only when the final dialogue end node commits this prepared action.
     if (!unlock?.ok) return unlock || { ok: false, message: 'Three-Fish Pie could not be learned.' };
     if (state.status === 'intro') {
-      const introTarget = state.target?.questType === 'threeFishPie' ? state.target : rollTarget(record, 1);
-      if (!introTarget) return { ok: false, message: 'The current fish catalog cannot produce a Three-Fish Pie with three distinct buffs.' };
       state.status = 'offer';
       state.stage = 1;
-      state.target = introTarget;
+      state.target = JSON.parse(JSON.stringify(introTarget));
       state.nextTarget = null;
     }
     syncTaskDescriptor(state);
@@ -416,10 +415,14 @@
     return { ok: true, message: 'Three-Fish Pie learned.' };
   }
 
-  function acceptQuest(record, stage) {
+  function acceptQuest(record, stage, options = {}) {
     const state = ensureQuestState();
     if (!state || state.status !== 'offer' || Number(state.stage) !== Number(stage) || Number(stage) > 2) return { ok: false, message: 'That Banubu request is not currently available.' };
-    if (!ensureTarget(record, state)) return { ok: false, message: Number(stage) === 2 ? 'No feasible Nine Leaf Tea buff pair exists in the current Tea Grinder reaction set.' : 'No feasible three-buff Three-Fish Pie exists in the current fish catalog.' };
+    const target = validTargetForStage(state, stage)
+      || (options.preparedTarget ? JSON.parse(JSON.stringify(options.preparedTarget)) : null)
+      || rollTarget(record, stage);
+    if (!target) return { ok: false, message: Number(stage) === 2 ? 'No feasible Nine Leaf Tea buff pair exists in the current Tea Grinder reaction set.' : 'No feasible three-buff Three-Fish Pie exists in the current fish catalog.' };
+    state.target = JSON.parse(JSON.stringify(target)); // Missing legacy targets become persistent only at the same final-node commit that accepts the stage.
     state.status = 'active';
     syncTaskDescriptor(state);
     persistMemberState();
@@ -442,7 +445,7 @@
     return station?.ok ? { ok: true, station } : (station || { ok: false, message: 'Could not give you Banubu’s Tea Grinder.' });
   }
 
-  function turnInQuest(record, stage) {
+  function turnInQuest(record, stage, options = {}) {
     const state = ensureQuestState();
     if (!state || state.status !== 'active' || Number(state.stage) !== Number(stage) || Number(stage) > 2) return { ok: false, message: 'That Banubu request is not active.' };
     const meal = matchingMeal(state);
@@ -451,8 +454,10 @@
     const definition = stageDefinition(record, stage);
     const completedTarget = state.target ? JSON.parse(JSON.stringify(state.target)) : null;
     const preparedNextTarget = Number(stage) === 1
-      ? (state.nextTarget?.questType === 'nineLeafTea' ? JSON.parse(JSON.stringify(state.nextTarget)) : rollTarget(record, 2))
-      : null; // Used to prove Quest 2 remains craftable before any Quest 1 turn-in rewards or food consumption occur.
+      ? (options.preparedNextTarget
+        ? JSON.parse(JSON.stringify(options.preparedNextTarget))
+        : (state.nextTarget?.questType === 'nineLeafTea' ? JSON.parse(JSON.stringify(state.nextTarget)) : rollTarget(record, 2)))
+      : null; // A completed dialogue may supply the exact transient Quest 2 target whose wording the player just heard.
     if (Number(stage) === 1 && !preparedNextTarget) return { ok: false, message: 'Quest 2 could not find a craftable Tea Blend buff pair.' };
 
     const rewardResult = grantStageReward(definition);
@@ -496,65 +501,225 @@
     return { ok: true, message: messages.join(' ') || 'Banubu accepted it.' };
   }
 
+  function prepareQuestAction(record, operation, stage = 0) {
+    const state = ensureQuestState();
+    const op = String(operation || '');
+    const numericStage = Number(stage) || 0;
+    if (op === 'unlockRecipe') {
+      if (!state || state.status !== 'intro') return { ok: false, message: 'Banubu is not ready to begin that request.' };
+      const preparedTarget = validTargetForStage(state, 1) || presentationState.previewTarget || rollTarget(record, 1);
+      if (!preparedTarget) return { ok: false, message: 'The current fish catalog cannot produce a Three-Fish Pie with three distinct buffs.' };
+      presentationState.pendingQuestAction = { recordId: String(record?.id || ''), operation: op, stage: 0, preparedTarget: JSON.parse(JSON.stringify(preparedTarget)) };
+    } else if (op === 'accept') {
+      if (!state || state.status !== 'offer' || Number(state.stage) !== numericStage || numericStage < 1 || numericStage > 2) return { ok: false, message: 'That Banubu request is not currently available.' };
+      const preparedTarget = validTargetForStage(state, numericStage) || presentationState.previewTarget || rollTarget(record, numericStage);
+      if (!preparedTarget) return { ok: false, message: numericStage === 2 ? 'No feasible Nine Leaf Tea buff pair exists in the current Tea Grinder reaction set.' : 'No feasible three-buff Three-Fish Pie exists in the current fish catalog.' };
+      presentationState.pendingQuestAction = { recordId: String(record?.id || ''), operation: op, stage: numericStage, preparedTarget: JSON.parse(JSON.stringify(preparedTarget)) };
+    } else {
+      return { ok: false, message: `Unknown Banubu prepared operation: ${op || '(blank)'}` };
+    }
+    debugState.lastAction = `prepare:${op}:${numericStage}`;
+    return { ok: true };
+  }
+
+  function commitPreparedQuestAction(record, authoredAction = {}) {
+    const pending = presentationState.pendingQuestAction;
+    const operation = String(authoredAction?.operation || '');
+    const stage = Number(authoredAction?.stage) || 0;
+    if (!pending || pending.operation !== operation || Number(pending.stage) !== stage || String(pending.recordId || '') !== String(record?.id || '')) {
+      return { ok: false, message: 'Banubu quest action was not prepared.' };
+    }
+    const result = operation === 'unlockRecipe'
+      ? unlockRecipe(record, { preparedTarget: pending.preparedTarget })
+      : operation === 'accept'
+        ? acceptQuest(record, stage, { preparedTarget: pending.preparedTarget })
+        : { ok: false, message: `Unknown Banubu commit operation: ${operation || '(blank)'}` };
+    presentationState.pendingQuestAction = null;
+    if (!result?.ok) debugState.lastError = result?.message || 'Banubu quest action commit failed.';
+    return result;
+  }
+
+  function commitIntroAttempt(attempt) {
+    const state = ensureQuestState();
+    const committed = Math.max(0, Math.min(3, Math.trunc(Number(attempt) || 0)));
+    if (!state || committed <= 0) return { ok: false, message: 'Invalid Banubu wake-up attempt.' };
+    state.introTalkAttempts = Math.max(Number(state.introTalkAttempts) || 0, committed); // Even attempt 3 may commit after unlockRecipe has atomically moved status from intro to offer.
+    persistMemberState();
+    debugState.lastAction = `introAttempt:${committed}`;
+    return { ok: true };
+  }
+
+  function prepareTurnIn(record, stage) {
+    const state = ensureQuestState();
+    const pending = presentationState.pendingTurnIn;
+    if (!state || state.status !== 'active' || Number(state.stage) !== Number(stage) || Number(stage) > 2) {
+      return { ok: false, message: 'That Banubu request is not active.' };
+    }
+    const meal = matchingMeal(state);
+    if (!meal) return { ok: false, message: Number(stage) === 2 ? 'You no longer have the requested Nine Leaf Tea.' : 'You no longer have the requested Three-Fish Pie.' };
+    if (!pending || Number(pending.stage) !== Number(stage) || String(pending.recordId || '') !== String(record?.id || '')) {
+      const previewNextTarget = Number(stage) === 1
+        ? (state.nextTarget?.questType === 'nineLeafTea' ? JSON.parse(JSON.stringify(state.nextTarget)) : rollTarget(record, 2))
+        : null;
+      presentationState.pendingTurnIn = {
+        recordId: String(record?.id || ''),
+        stage: Number(stage),
+        mealKey: meal.key,
+        prepared: true,
+        previewNextTarget,
+      };
+    } else {
+      pending.mealKey = meal.key;
+      pending.prepared = true;
+    }
+    debugState.lastAction = `prepareTurnIn:${stage}`;
+    return { ok: true };
+  }
+
+  function commitPreparedTurnIn(record, stage) {
+    const pending = presentationState.pendingTurnIn;
+    if (!pending?.prepared || Number(pending.stage) !== Number(stage) || String(pending.recordId || '') !== String(record?.id || '')) {
+      return { ok: false, message: 'Banubu turn-in was not prepared.' };
+    }
+    const result = turnInQuest(record, stage, { preparedNextTarget: pending.previewNextTarget || null });
+    presentationState.pendingTurnIn = null;
+    if (!result?.ok) debugState.lastError = result?.message || 'Banubu turn-in commit failed.';
+    return result;
+  }
+
   function actionHandler(action, context = {}) {
     const operation = String(action?.operation || '');
     const stage = Number(action?.stage ?? context?.tree?.banubuQuest?.stage ?? 0);
     const record = context.npc;
     let result = null;
-    if (operation === 'unlockRecipe') result = unlockRecipe(record);
-    else if (operation === 'accept') result = acceptQuest(record, stage);
-    else if (operation === 'turnIn') result = turnInQuest(record, stage);
+    if (operation === 'unlockRecipe') result = prepareQuestAction(record, operation, stage);
+    else if (operation === 'accept') result = prepareQuestAction(record, operation, stage);
+    else if (operation === 'prepareTurnIn') result = prepareTurnIn(record, stage);
+    else if (operation === 'turnIn') result = prepareTurnIn(record, stage); // Fail-safe migration path: stale authored/local data may prepare, but it can never bypass the final commit node.
     else result = { ok: false, message: `Unknown Banubu quest operation: ${operation || '(blank)'}` };
     if (!result?.ok) debugState.lastError = result?.message || 'Banubu quest action failed.';
     return { ...result, skipNav: !result?.ok };
   }
 
+  function presentationDeltaSeconds(frameContext = {}) {
+    const deltaMs = Number(frameContext.deltaMs); // Shared frame delta keeps movement and VFX on the same scheduler cadence.
+    return Math.max(1 / 240, Math.min(0.05, Number.isFinite(deltaMs) && deltaMs > 0 ? deltaMs / 1000 : 1 / 60));
+  }
+
+  function syncPresentationScheduler() {
+    global.RuntimeFrameScheduler?.setEnabled?.(PRESENTATION_SCHEDULER_ID, !!presentationState.sparkleVisual || !!presentationState.actorMove);
+  }
+
   function updatePresentationFrame(frameContext = {}) {
-    const visual = presentationState.sparkleVisual;
-    if (!visual) {
-      global.RuntimeFrameScheduler?.setEnabled?.(PRESENTATION_SCHEDULER_ID, false);
-      return;
+    const dt = presentationDeltaSeconds(frameContext);
+    presentationState.sparkleVisual?.update?.(dt, true);
+    const move = presentationState.actorMove;
+    const root = presentationState.walker?.root;
+    if (move && root?.position) {
+      move.elapsed += dt;
+      const rawT = Math.max(0, Math.min(1, move.elapsed / move.duration));
+      const t = rawT * rawT * (3 - 2 * rawT); // Smoothstep makes Banubu ease away from and back toward the key rather than sliding linearly.
+      root.position.x = move.fromX + (move.toX - move.fromX) * t;
+      root.position.z = move.fromZ + (move.toZ - move.fromZ) * t;
+      if (rawT >= 1) presentationState.actorMove = null;
     }
-    const deltaMs = Number(frameContext.deltaMs); // Used to advance the shared emitter at the browser frame cadence without owning another RAF loop.
-    const dt = Math.max(1 / 240, Math.min(0.05, Number.isFinite(deltaMs) && deltaMs > 0 ? deltaMs / 1000 : 1 / 60));
-    visual.update?.(dt, true);
+    syncPresentationScheduler();
   }
 
   function ensurePresentationScheduler() {
     if (presentationState.schedulerRegistered) return true;
-    const scheduler = global.RuntimeFrameScheduler; // Used to share the game's single frame cadence with Banubu's transient dialogue VFX.
+    const scheduler = global.RuntimeFrameScheduler; // Used to share the game's single frame cadence with Banubu's transient dialogue VFX and movement.
     if (!scheduler?.register || !scheduler?.setEnabled) return false;
     scheduler.register(PRESENTATION_SCHEDULER_ID, updatePresentationFrame, {
       phase: 'post-game',
       owner: 'BanubuQuestline',
-      description: 'Updates Lord Banubu’s temporary Color Pools Key dialogue sparkles.',
+      description: 'Updates Lord Banubu’s temporary Color Pools Key dialogue sparkles and authored movement.',
       enabled: false,
     });
     presentationState.schedulerRegistered = true;
     return true;
   }
 
+  function beginActorMove(walker, cue) {
+    if (!walker?.root?.position || !cue || !ensurePresentationScheduler()) return false;
+    presentationState.walker = walker;
+    if (!presentationState.actorOrigin) {
+      presentationState.actorOrigin = {
+        x: Number(walker.root.position.x) || 0,
+        z: Number(walker.root.position.z) || 0,
+      }; // Original station position is restored on cancellation and is the origin for all authored relative movement.
+    }
+    const origin = presentationState.actorOrigin;
+    const fromX = Number(walker.root.position.x) || origin.x;
+    const fromZ = Number(walker.root.position.z) || origin.z;
+    presentationState.actorMove = {
+      fromX,
+      fromZ,
+      toX: origin.x + (Number(cue.x) || 0),
+      toZ: origin.z + (Number(cue.z) || 0),
+      duration: Math.max(0.05, Number(cue.duration) || 0.7),
+      elapsed: 0,
+    };
+    syncPresentationScheduler();
+    return true;
+  }
+
+  function restoreActorPosition(walker = presentationState.walker) {
+    if (walker?.root?.position && presentationState.actorOrigin) {
+      walker.root.position.x = presentationState.actorOrigin.x;
+      walker.root.position.z = presentationState.actorOrigin.z;
+    }
+    presentationState.actorMove = null;
+    presentationState.actorOrigin = null;
+  }
+
   function stopSparkles() {
     try { presentationState.sparkleVisual?.dispose?.(); } catch (_) {}
     presentationState.sparkleVisual = null;
-    global.RuntimeFrameScheduler?.setEnabled?.(PRESENTATION_SCHEDULER_ID, false);
+    const anchor = presentationState.sparkleAnchor;
+    if (anchor?.parent?.remove) anchor.parent.remove(anchor);
+    presentationState.sparkleAnchor = null;
+    syncPresentationScheduler();
   }
 
-  function startSparkles(walker) {
+  function sparkleAnchorFor(walker) {
+    const root = walker?.root;
+    const Group = global.THREE?.Group;
+    if (!root?.parent || !root.position || typeof Group !== 'function') return root || null;
+    const anchor = new Group(); // Detached scene sibling keeps the key sparkles at the reveal spot while Banubu eases backward.
+    anchor.name = 'banubu_key_sparkle_anchor';
+    anchor.userData ||= {};
+    if (anchor.position?.set) anchor.position.set(Number(root.position.x) || 0, Number(root.position.y) || 0, Number(root.position.z) || 0);
+    else anchor.position = { x: Number(root.position.x) || 0, y: Number(root.position.y) || 0, z: Number(root.position.z) || 0 };
+    root.parent.add(anchor);
+    presentationState.sparkleAnchor = anchor;
+    return anchor;
+  }
+
+  function startSparkles(walker, authoredEmitter = null, maxParticles = 48, anchorMode = 'world') {
     if (!walker?.root || !global.AuthoredFurniture?.createEmitterVisual || !ensurePresentationScheduler()) return false;
     if (presentationState.sparkleVisual && presentationState.walker === walker) return true;
     stopSparkles();
-    walker.root.userData ||= {};
+    const anchor = anchorMode === 'root' ? walker.root : sparkleAnchorFor(walker); // Legacy string cues default to the fixed reveal spot; editor-authored cues may explicitly attach back to Banubu.
+    if (!anchor) return false;
+    anchor.userData ||= {};
+    const source = authoredEmitter && typeof authoredEmitter === 'object' ? authoredEmitter : SPARKLE_EMITTER_TEMPLATE; // Dialogue Editor may own the complete emitter recipe; the template remains backwards-compatible fallback data.
     const emitter = {
       ...SPARKLE_EMITTER_TEMPLATE,
-      position: { ...SPARKLE_EMITTER_TEMPLATE.position },
-      rotation: { ...SPARKLE_EMITTER_TEMPLATE.rotation },
-    }; // Used as a fresh mutable record because the emitter renderer may read live overrides over its lifetime.
-    const visual = global.AuthoredFurniture.createEmitterVisual(walker.root, emitter, 48); // Attached at local y=0, so its world origin shares Banubu's current root Y.
-    if (!visual) return false;
+      ...source,
+      position: { ...SPARKLE_EMITTER_TEMPLATE.position, ...(source.position || {}) },
+      rotation: { ...SPARKLE_EMITTER_TEMPLATE.rotation, ...(source.rotation || {}) },
+    }; // Fresh mutable record protects authored dialogue data from renderer mutation.
+    const particleBudget = Math.max(1, Math.min(512, Math.round(Number(maxParticles) || 48))); // Editor-authored budget remains bounded against accidental extreme values.
+    const visual = global.AuthoredFurniture.createEmitterVisual(anchor, emitter, particleBudget);
+    if (!visual) {
+      if (presentationState.sparkleAnchor?.parent?.remove) presentationState.sparkleAnchor.parent.remove(presentationState.sparkleAnchor);
+      presentationState.sparkleAnchor = null;
+      return false;
+    }
     presentationState.walker = walker;
     presentationState.sparkleVisual = visual;
-    global.RuntimeFrameScheduler.setEnabled(PRESENTATION_SCHEDULER_ID, true);
+    syncPresentationScheduler();
     return true;
   }
 
@@ -563,8 +728,14 @@
       delete walker._animalSleepPresentationOverride;
       delete walker._animalHeadPoseOverride;
     }
+    restoreActorPosition(walker); // Cancelling at any point puts Banubu exactly back where this conversation found him.
     stopSparkles();
+    presentationState.pendingTurnIn = null;
+    presentationState.pendingQuestAction = null;
+    presentationState.pendingIntroAttempt = null;
+    presentationState.previewTarget = null; // Every uncommitted quest preview is discarded when dialogue closes early or normally.
     presentationState.walker = null;
+    syncPresentationScheduler();
   }
 
   function onDialogueNode(node, context = {}) {
@@ -582,13 +753,33 @@
     else if (cue.body === 'sleep') walker._animalSleepPresentationOverride = 'sleep';
     if (cue.neck === 'max_down') walker._animalHeadPoseOverride = 'max_down';
     else if (cue.neck === 'release') delete walker._animalHeadPoseOverride;
-    if (cue.sparkles === 'start' && !startSparkles(walker)) debugState.lastError = 'Banubu sparkle emitter could not be created.';
-    else if (cue.sparkles === 'stop') stopSparkles();
+    const sparkleAction = typeof cue.sparkles === 'string' ? cue.sparkles : cue.sparkles?.action; // Accepts legacy string cues and complete Dialogue Editor-authored VFX records.
+    const sparkleEmitter = typeof cue.sparkles === 'object' ? cue.sparkles?.emitter : null; // Full particle recipe from the Dialogue Editor when present.
+    const sparkleMaxParticles = typeof cue.sparkles === 'object' ? cue.sparkles?.maxParticles : 48; // Authored particle budget is consumed rather than hidden in runtime.
+    const sparkleAnchorMode = typeof cue.sparkles === 'object' ? cue.sparkles?.anchor || 'world' : 'world'; // Fixed reveal spot is the current cutscene default; root remains explicitly authorable.
+    if (sparkleAction === 'start' && !startSparkles(walker, sparkleEmitter, sparkleMaxParticles, sparkleAnchorMode)) debugState.lastError = 'Banubu sparkle emitter could not be created.';
+    else if (sparkleAction === 'stop') stopSparkles();
+    if (cue.move) beginActorMove(walker, cue.move);
+    let questCommit = null;
+    if (cue.commitQuestAction) {
+      questCommit = commitPreparedQuestAction(context.npc, cue.commitQuestAction);
+      if (!questCommit?.ok) debugState.lastError = questCommit?.message || 'Banubu quest action commit failed.';
+    }
+    if (Number(cue.commitIntroAttempt) > 0 && (!cue.commitQuestAction || questCommit?.ok)) {
+      const introCommit = commitIntroAttempt(Number(cue.commitIntroAttempt));
+      if (!introCommit?.ok) debugState.lastError = introCommit?.message || 'Banubu wake-up attempt commit failed.';
+    }
+    if (Number(cue.commitTurnIn) > 0) {
+      const committed = commitPreparedTurnIn(context.npc, Number(cue.commitTurnIn));
+      if (!committed?.ok) debugState.lastError = committed?.message || 'Banubu turn-in commit failed.';
+    }
     debugState.lastPresentation = {
       nodeId: node.id || null,
       body: cue.body || null,
       neck: cue.neck || null,
       sparkles: !!presentationState.sparkleVisual,
+      moving: !!presentationState.actorMove,
+      pendingTurnInStage: presentationState.pendingTurnIn?.stage || null,
     };
     return true;
   }
@@ -611,7 +802,7 @@
       `  matchingMeal=${matching?.key || 'none'}`,
       `  nextTarget=${state?.nextTarget ? joinedEffectLabels(state.nextTarget) : 'none'}`,
       `  lastAction=${debugState.lastAction || 'none'}`,
-      `  presentation=${debugState.lastPresentation?.nodeId || 'none'} sparkles=${!!presentationState.sparkleVisual} bodyOverride=${presentationState.walker?._animalSleepPresentationOverride || 'none'} headOverride=${presentationState.walker?._animalHeadPoseOverride || 'none'}`,
+      `  presentation=${debugState.lastPresentation?.nodeId || 'none'} sparkles=${!!presentationState.sparkleVisual} moving=${!!presentationState.actorMove} pendingIntro=${presentationState.pendingIntroAttempt || 'none'} pendingAction=${presentationState.pendingQuestAction?.operation || 'none'} pendingTurnIn=${presentationState.pendingTurnIn?.stage || 'none'} bodyOverride=${presentationState.walker?._animalSleepPresentationOverride || 'none'} headOverride=${presentationState.walker?._animalHeadPoseOverride || 'none'}`,
       `  lastError=${debugState.lastError || 'none'}`,
     ].join('\n');
   }
@@ -673,6 +864,10 @@
       ...JSON.parse(JSON.stringify(debugState)),
       presentation: {
         sparklesActive: !!presentationState.sparkleVisual,
+        moving: !!presentationState.actorMove,
+        pendingIntroAttempt: presentationState.pendingIntroAttempt || null,
+        pendingQuestAction: presentationState.pendingQuestAction ? { operation: presentationState.pendingQuestAction.operation, stage: presentationState.pendingQuestAction.stage } : null,
+        pendingTurnInStage: presentationState.pendingTurnIn?.stage || null,
         bodyOverride: presentationState.walker?._animalSleepPresentationOverride || null,
         headOverride: presentationState.walker?._animalHeadPoseOverride || null,
       },

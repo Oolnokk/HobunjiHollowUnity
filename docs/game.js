@@ -27210,6 +27210,7 @@
         showToast,
         openMenu,
         closeNpcDialogue,
+        refreshDialogueStaging: () => { if (_dialogueWalker) beginNpcDialogueStaging(_dialogueWalker); }, // Re-runs authored blocking when a later dialogue node swaps to a stagePlayer camera.
         getCutscenePreviewActive: () => cutscenePreviewActive,
         getCutscenePreviewAdvance: () => cutscenePreviewAdvance,
       });

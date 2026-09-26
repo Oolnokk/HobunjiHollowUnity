@@ -310,26 +310,26 @@
       "id": "banubu_dialogue_awake",
       "label": "Banubu dialogue — awake",
       "position": {
-        "x": 7.2,
-        "y": 0,
-        "z": 9.4
+        "x": 7.024,
+        "y": 0.75,
+        "z": 8.3
       },
       "target": {
-        "x": 0,
-        "y": 0,
-        "z": 0
+        "x": 6.5,
+        "y": 0.65,
+        "z": 6
       },
-      "fovDeg": 25,
+      "fovDeg": 34,
       "blendSeconds": 0.5,
       "dialogueNpcId": "",
       "fadePets": false,
       "playerStage": {
         "x": 6.5,
-        "z": 10.5
+        "z": 6.5
       },
-      "targetNpcId": "banubu",
-      "targetAnchorId": "station_banubu_cave_sleep",
-      "stagePlayer": false
+      "targetNpcId": "",
+      "targetAnchorId": "",
+      "stagePlayer": true
     },
     {
       "id": "banubu_dialogue_sleep",
@@ -350,24 +350,24 @@
       "fadePets": false,
       "playerStage": {
         "x": 6.5,
-        "z": 10.5
+        "z": 6.5
       },
       "targetNpcId": "banubu",
       "targetAnchorId": "station_banubu_cave_sleep",
-      "stagePlayer": false
+      "stagePlayer": true
     },
     {
       "id": "banubu_key_ground",
       "label": "Banubu dialogue — Color Pools Key",
       "position": {
-        "x": 6.9,
-        "y": 0.12,
+        "x": 7.392,
+        "y": 0.507,
         "z": 7.3
       },
       "target": {
-        "x": 0,
+        "x": 6.5,
         "y": 0,
-        "z": 0
+        "z": 5.5
       },
       "fovDeg": 34,
       "blendSeconds": 0.35,
@@ -377,8 +377,7 @@
         "x": 6.5,
         "z": 10.5
       },
-      "targetNpcId": "banubu",
-      "targetNpcPoint": "root",
+      "targetNpcId": "",
       "targetAnchorId": "station_banubu_cave_awake",
       "stagePlayer": false
     }
@@ -418,6 +417,6 @@
   },
   "meta": {
     "createdAt": "2026-09-19T00:00:00.000Z",
-    "updatedAt": "2026-09-25T21:20:00.000Z"
+    "updatedAt": "2026-09-26T01:12:00.000Z"
   }
 }
