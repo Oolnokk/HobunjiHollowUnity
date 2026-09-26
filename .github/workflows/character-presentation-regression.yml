@@ -23,7 +23,13 @@ on:
       - 'docs/assets/portraitsprites/torso_porakaneki_m.png'
       - 'docs/js/combat/combat-config-loader.js'
       - 'docs/js/combat/combat-bandit.js'
+      - 'docs/js/combat/combat-minion.js'
+      - 'docs/js/combat/combat-core.js'
+      - 'docs/js/combat/resource-system.js'
       - 'docs/js/dev-spawner.js'
+      - 'docs/js/weapon-trust-bandit-loadouts.js'
+      - 'docs/config/config.js'
+      - 'docs/js/condition-registry.js'
       - 'docs/js/drunk-prone-composition-bridge.js'
       - 'docs/js/ghostify.js'
       - 'docs/js/harlyao-night-march-atmosphere.js'
@@ -58,6 +64,7 @@ on:
       - 'scripts/test-harlyao-night-march-spawn-placement.js'
       - 'scripts/test-harlyao-species.js'
       - 'scripts/test-harlyao-skeleton-species.js'
+      - 'scripts/test-minion-enemies.js'
       - 'docs/config/species/harlyao-skeleton.json'
       - 'docs/js/harlyao-skeleton-species-runtime.js'
       - 'scripts/test-harlyao-terror.js'
@@ -86,6 +93,8 @@ jobs:
         run: node scripts/test-harlyao-species.js
       - name: Harlyao Skeleton species regression
         run: node scripts/test-harlyao-skeleton-species.js
+      - name: Minion enemy class regression
+        run: node scripts/test-minion-enemies.js
       - name: Porakaneki species regression
         run: node scripts/test-porakaneki-species.js
       - name: Porakaneki camp regression
