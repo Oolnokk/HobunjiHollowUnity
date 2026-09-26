@@ -66,8 +66,11 @@ let pendingBanditEntity = null;
 let baseBanditAiCalls = 0;
 
 const ResourceSystem = {
+  getProneRecoveryFootingTarget(entity) {
+    return Math.max(0, (entity?.maxFooting || 0) - (entity?.afflictions?.shamblingFooting || 0)); // Production keeps permanent Shambling in the prone recovery target.
+  },
   getEffectiveMax(entity, key) {
-    if (key === 'footing') return (entity.maxFooting || 0) - (entity.afflictions?.drunkenFooting || 0);
+    if (key === 'footing') return Math.max(0, this.getProneRecoveryFootingTarget(entity) - (entity.afflictions?.drunkenFooting || 0));
     return 0;
   },
 };
@@ -165,12 +168,27 @@ vm.runInContext(source, context, { filename: modulePath });
   // Drunken Footing still caps standing entities.
   assert.strictEqual(ResourceSystem.getEffectiveMax(player, 'footing'), 70);
 
-  // Prone temporarily exposes the literal maximum so recovery can reach the
-  // threshold shared by player and hostile get-up logic.
+  // Ordinary drunken actors still recover to literal full Footing while prone
+  // because they have no permanent Shambling reservation.
   player.prone = true;
   assert.strictEqual(ResourceSystem.getEffectiveMax(player, 'footing'), 100);
   player.prone = false;
   assert.strictEqual(ResourceSystem.getEffectiveMax(player, 'footing'), 70);
+
+  // Shambling is intentionally beneficial while prone: only the unshambled
+  // remainder must refill, while temporary Drunken Footing is ignored.
+  const shamblingMinion = {
+    prone: false,
+    footing: 10,
+    maxFooting: 100,
+    afflictions: { drunkenFooting: 20, shamblingFooting: 70 },
+  };
+  assert.strictEqual(ResourceSystem.getProneRecoveryFootingTarget(shamblingMinion), 30);
+  assert.strictEqual(ResourceSystem.getEffectiveMax(shamblingMinion, 'footing'), 10);
+  shamblingMinion.prone = true;
+  assert.strictEqual(ResourceSystem.getEffectiveMax(shamblingMinion, 'footing'), 30);
+  shamblingMinion.prone = false;
+  assert.strictEqual(ResourceSystem.getEffectiveMax(shamblingMinion, 'footing'), 10);
 
   // Player leg updates inherit the prone state as suppression without changing
   // callers that already suppress for mounts/harvests.

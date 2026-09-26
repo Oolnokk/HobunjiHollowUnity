@@ -1080,16 +1080,21 @@
       const FORCED_SOMERSAULT_RETREAT_S = 0.6;
       const SOMERSAULT_STAMINA_COST = 30;
 
+      function proneRecoveryFootingTarget(entity) {
+        const authoredTarget = window.ResourceSystem?.getProneRecoveryFootingTarget?.(entity); // Shambling Footing's positive side: prone recovery stops at the entity's unshambled capacity.
+        const resolved = Number(authoredTarget);
+        return Number.isFinite(resolved) ? Math.max(0, resolved) : Math.max(0, Number(entity?.maxFooting) || 0); // Legacy/no-ResourceSystem actors still use literal max Footing.
+      }
+
       // Zero-Footing transition — called only once applyHitStagger's own
       // spendFooting has already driven entity.footing to 0. Both the player
       // and any creature/bandit go fully prone here (immune to further
       // Footing loss — see resource-system.js's spendFooting), matching each
       // other exactly; they differ only in how they LEAVE prone: the player
-      // needs a dodge input once Footing is back to full (see performDodge's
-      // somersault-recovery hook below), while a creature/bandit's own AI
-      // does it automatically the instant its Footing reaches full — see
-      // updateHostiles' own `if (c.prone)` branch, which calls
-      // beginCreatureSomersaultRecovery below once c.footing >= c.maxFooting.
+      // needs a dodge input once Footing reaches its full unshambled recovery
+      // target, while a creature/bandit's own AI does it automatically at that
+      // same target — see updateHostiles' `if (c.prone)` branch and
+      // proneRecoveryFootingTarget below.
       // Creature planes use the same authored clips through
       // ImpactRagdollPlayback's quarter-turned body-only adapter; humanoid leg
       // channels remain player-only. Both kinds use a dedicated prone-throw
@@ -1110,8 +1115,8 @@
         window.ImpactRagdollPlayback?.trigger('breakThrow', direction, { durationMultiplier: 1 });
       }
 
-      // Called from updateHostiles once a prone creature's Footing is back
-      // to full — forces it back into 'chase' (so updateBanditCombatAI's/
+      // Called from updateHostiles once a prone creature's Footing reaches
+      // its unshambled recovery target — forces it back into 'chase' (so updateBanditCombatAI's/
       // the plain-wildlife retreatT branch's existing jump-back movement
       // actually picks it up next frame) and spends stamina first, so an
       // already-gassed creature can overspend straight into Exhausted (see
@@ -6196,7 +6201,7 @@
             // as ordinary knockback. ImpactRagdollPlayback simultaneously
             // drives the quarter-turned animal/bandit breakThrow pose.
             advanceCreatureProneThrow(c, entityDt);
-            if (c.footing >= c.maxFooting && !(c.proneThrowT > 0) && !c._knockbackLedgeFall) beginCreatureSomersaultRecovery(c, targetPlayer);
+            if (c.footing >= proneRecoveryFootingTarget(c) && !(c.proneThrowT > 0) && !c._knockbackLedgeFall) beginCreatureSomersaultRecovery(c, targetPlayer);
           } else if (c.knockbackT > 0) {
             // Reeling from a hit; let the impulse play out before resuming AI.
             // Per-axis canOccupyAt check (same primitive/radius convention as
@@ -7759,7 +7764,7 @@
             _clearCompanionTreasureCue(c, dt, 'prone');
             _clearCompanionWatchIdle(c, 'prone');
             advanceCreatureProneThrow(c, dt);
-            if (c.footing >= c.maxFooting && !(c.proneThrowT > 0) && !c._knockbackLedgeFall) {
+            if (c.footing >= proneRecoveryFootingTarget(c) && !(c.proneThrowT > 0) && !c._knockbackLedgeFall) {
               c.prone = false;
               window.ResourceSystem?.spendStamina(c, SOMERSAULT_STAMINA_COST, 'somersault recovery');
               c.retreatT = Math.max(c.retreatT || 0, FORCED_SOMERSAULT_RETREAT_S);
@@ -9311,8 +9316,9 @@
       // performDodge's own guard below): rolls the player back onto their
       // feet via a procedurally coded arc (docs/js/combat/impact-ragdoll-
       // playback.js's beginRecoveryArc — no authored blend exists for this
-      // transition). Requires Footing to be back to full, same eligibility a
-      // prone creature's own AI waits on before it auto-recovers (see
+      // transition). Requires Footing to refill to the actor's full
+      // unshambled recovery target, same eligibility a prone creature's own AI
+      // waits on before it auto-recovers (see
       // updateHostiles' `if (c.prone)` branch/beginCreatureSomersaultRecovery)
       // — the player's own recovery is just input-gated instead of automatic.
       // Returns false if not actually prone, already mid-roll, or not yet
@@ -9320,7 +9326,7 @@
       const SOMERSAULT_RECOVERY_DUR_S = 0.5;
       function beginSomersaultRecovery() {
         if (!player.prone || player.somersaultRecovering) return false;
-        if (player.footing < player.maxFooting) {
+        if (player.footing < proneRecoveryFootingTarget(player)) {
           showToast("Footing hasn't recovered enough yet.", false);
           return false;
         }
