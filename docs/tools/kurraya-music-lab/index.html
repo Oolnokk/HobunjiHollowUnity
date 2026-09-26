@@ -325,15 +325,15 @@
   const previewMetronomeBtn = document.getElementById('previewMetronomeBtn'); // Auditions the same recorded footstep set used by the lab metronome.
   const NOTE_NAMES = ['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B']; // Used only to label tonic and imported-pad root choices.
   const LAB_FOOTSTEP_URLS = [ // Real recorded game footsteps rotated by the standalone lab; gameplay itself still resolves the actual current ground surface.
+    '../../assets/audio/sfx/footsteps/hardstep_1.mp3',
+    '../../assets/audio/sfx/footsteps/hardstep_2.mp3',
+    '../../assets/audio/sfx/footsteps/hardstep_3.mp3'
+  ];
   const ARRANGEMENT_STORAGE_KEY = 'hobunji.kurrayaMusicLabArrangement.v1'; // Persists the user's audition draft locally without changing authored gameplay data until they choose to commit it.
   let arrangementSnapshot = null; // Latest bridge snapshot used to redraw note/chord geometry after paint, scale, or tonic changes.
   let arrangementBrushStep = 0; // Selected F/G/E/A root-step index used by tap/drag painting.
   let arrangementPainting = false; // Keeps pointer-drag authoring active across individual bar hit targets.
   let arrangementLastPaintedBar = -1; // Prevents repeated bridge updates while a pointer remains inside the same bar.
-    '../../assets/audio/sfx/footsteps/hardstep_1.mp3',
-    '../../assets/audio/sfx/footsteps/hardstep_2.mp3',
-    '../../assets/audio/sfx/footsteps/hardstep_3.mp3'
-  ];
   const BUNDLED_KURRAYA_URL = '../../assets/audio/music/instruments/sfx_kurraya_pluck.m4a'; // Repo-authored source used by the restore button.
   let bridge = null; // Set after the iframe exposes HobunjiMusicControlBridge; all controls remain disabled until then.
   let selectedScale = 'Major'; // Mirrors the temporary engine scale so Play can pass an explicit override.
