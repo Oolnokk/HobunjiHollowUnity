@@ -1757,6 +1757,18 @@ window.FoliageGenerator = (() => {
       const seedU32 = xfnv1a(`sw_${col}_${row}`);
       return buildTreeInstance('shadewood', TREE_PRESETS.shadewood, seedU32, opts);
     },
+    buildMirewoodMesh(col, row) {
+      const seedU32 = xfnv1a(`mw_${col}_${row}`); // Used to select the same cached Shadewood geometry family with deterministic Mire-specific per-tree transforms.
+      const tree = buildTreeInstance('shadewood', TREE_PRESETS.shadewood, seedU32);
+      tree.scale.y *= 0.5; // Mirewood is intentionally Shadewood at half vertical height while retaining the broad canopy/root footprint.
+      delete tree.userData.climbBranchLocal; // Mirewood is a distinct low mire tree, not a Drenkirra nest/climbing-branch source.
+      const climbBranch = tree.getObjectByName?.('climbBranch'); // Used to hide the shared Shadewood branch mesh if this cached shape rolled one.
+      if (climbBranch) climbBranch.visible = false;
+      tree.userData.treeSpecies = 'mirewood';
+      tree.userData.sourceTreeSpecies = 'shadewood';
+      tree.userData.mirewoodHeightScale = 0.5;
+      return tree;
+    },
     buildWildernessBushMesh(col, row) {
       const seedU32 = xfnv1a(`wb_${col}_${row}`);
       return buildTreeInstance('bush', TREE_PRESETS.bush, seedU32);

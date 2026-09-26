@@ -10177,7 +10177,8 @@
           // digging a trench on a plateau's flat top set tile.type correctly
           // but never rendered anything, since skipFloor never turns back
           // off just because the tile's now been carved into.
-          if (tile.skipFloor && !CARVED_TILE_TYPES.has(tile.type)) continue;
+          const plateauSurfaceVegetation = tile.skipFloor && !tile.incline && tile.type === TileType.SHRUB; // Used so a tree marker can render on the mesa top even though the mesa itself owns the ground lid.
+          if (tile.skipFloor && !CARVED_TILE_TYPES.has(tile.type) && !plateauSurfaceVegetation) continue;
           if (tile.type === TileType.RAMP) continue; // covered by the ramp slope mesh below
 
           if (tile.type === TileType.ROCK) {
@@ -10230,7 +10231,7 @@
             continue; // covered by the path network mesh above
           }
           if (tile.type === TileType.SHRUB) {
-            _addToBucket(TileType.GRASS, window.TerrainGeometry.makeFloorGeo(c, r), cx, tileYCenter(TileType.GRASS) + tierY, cz);
+            if (!tile.skipFloor) _addToBucket(TileType.GRASS, window.TerrainGeometry.makeFloorGeo(c, r), cx, tileYCenter(TileType.GRASS) + tierY, cz); // Plateau tops already get their ground from the mesa lid; only the vegetation mesh is added here.
             if (window.FoliageGenerator) {
               // Which generated object this SHRUB tile came from (see
               // terrain-preview.js's floraKind) decides its mesh: a real
@@ -10244,15 +10245,17 @@
               const isTreeZone = mapId === 'map_northern_cliffs' || mapId === 'map_southern_cloud_forest';
               const isCrownedPine = isTreeZone && mapId === 'map_northern_cliffs' && (tile.floraKind === 'copse' || !tile.floraKind);
               const isShadewood   = isTreeZone && mapId === 'map_southern_cloud_forest' && (tile.floraKind === 'copse' || !tile.floraKind);
+              const isMirewood    = mapId === 'map_eastern_mire' && tile.floraKind === 'copse'; // Used only for generated Mire copse markers, so ordinary authored shrub tiles stay low ground cover.
               const isBush   = tile.floraKind === 'bush';
               const isStump  = tile.floraKind === 'beehive';
               const vegGroup = isCrownedPine ? window.FoliageGenerator.buildCrownedPineMesh(c, r)
                              : isShadewood   ? window.FoliageGenerator.buildShadewoodMesh(c, r)
+                             : isMirewood    ? window.FoliageGenerator.buildMirewoodMesh(c, r)
                              : isBush        ? window.FoliageGenerator.buildWildernessBushMesh(c, r)
                              : isStump       ? window.FoliageGenerator.buildStumpMesh(c, r)
                              : window.FoliageGenerator.buildShrubMesh(c, r);
-              const isNativeBuild = isCrownedPine || isShadewood || isBush || isStump;
-              if (isCrownedPine || isShadewood) {
+              const isNativeBuild = isCrownedPine || isShadewood || isMirewood || isBush || isStump;
+              if (isCrownedPine || isShadewood || isMirewood) {
                 // Their visible trunk base is centered on this solid SHRUB
                 // tile. Projectile cover can therefore use the existing tile
                 // collision instead of raycasting the full procedural tree.

@@ -168,6 +168,15 @@
       plateauPonds: 8,
       plateauStreams: 10,
       rivers: 2,
+      // Archipelago controls are consumed by applyArchipelagoLayout(); zones that leave archipelago=false keep the legacy continuous-land generator.
+      archipelago: false,
+      archipelagoColumns: 4,
+      archipelagoRows: 3,
+      archipelagoLandScale: 1,
+      archipelagoShoreNoise: 1,
+      archipelagoPreservedLand: [],
+      archipelagoTerraces: false, // Used by Eastern Mire to build low stacked shelves that follow each curved island instead of global plateau blobs.
+      archipelagoTerraceMaxTier: 3, // Used as the short per-island terrace stack ceiling.
       pathAnchors: 4,
       // See findPath's randomBias term — multiplier on how strongly the A*
       // path search prefers meandering over a straight line to its target.
@@ -1799,6 +1808,10 @@
         if (!borderEscarpmentWidthAt(x, y)) continue;
         const tile = tileAt(x, y);
         if (!tile || tile.ramp || tile.navRamp) continue;
+        if (tile.archipelagoSea) {
+          resetBoundaryLandscapeFlags(tile);
+          continue;
+        }
         const edgeDist = Math.min(x, y, settings.width - 1 - x, settings.height - 1 - y);
         const inward = inwardDirectionForBorderTile(x, y);
         const localWidth = borderEscarpmentLocalWidthAt(x, y);
@@ -2008,7 +2021,7 @@
             });
           }
 
-          const allowStraightFallback = false; // curved wrap ramps are preferred; emergency connectivity can still repair traversal later.
+          const allowStraightFallback = usesArchipelagoLayout(); // Curved wrap ramps stay preferred elsewhere; Mire terraces also allow short direct cuts because their narrow shelves do not provide 14+ tiles of ledge run.
           if (allowStraightFallback) {
             const directRunLimit = Math.max(12, minimumRampRun + 7);
             const highRun = measureSameTierRun(high.x, high.y, -normal.x, -normal.y, high.elevation, directRunLimit);
@@ -3039,6 +3052,8 @@
         if (!tile) continue;
         if (clearBorderEscarpmentTile(tile, replacementHeight, 'borderEntryGate')) cleared++;
         tile.water = false;
+        tile.archipelagoSea = false;
+        if (usesArchipelagoLayout()) tile.archipelagoIslandId = map.archipelago?.entryIslandId || tile.archipelagoIslandId || 'island_entry';
         tile.terrain = replacementHeight > 0 ? 'plateau' : 'grass';
         tile.elevation = Math.round(replacementHeight);
         tile.height = replacementHeight;
@@ -3077,6 +3092,8 @@
     const scored = candidates.map(candidate => {
       const axis = requested === 'north' || requested === 'south' ? candidate.x : candidate.y;
       const centerPenalty = Math.abs(axis - center) / Math.max(1, center);
+      const candidateTile = tileAt(candidate.x, candidate.y); // Used to keep an archipelago entry gate on the actual authored entry ribbon instead of carving a second detached coast opening.
+      const entryIslandPenalty = usesArchipelagoLayout() && candidateTile?.archipelagoIslandId !== map.archipelago?.entryIslandId ? 1000 : 0;
       const waterPenalty = entryGateWaterCount(candidate, gateHalfWidth, gateDepth);
       const inward = inwardDirectionForBorderTile(candidate.x, candidate.y);
       const inner = tileAt(
@@ -3084,7 +3101,7 @@
         clamp(candidate.y + inward.dir.y * (gateDepth + 2), 0, settings.height - 1)
       );
       const heightPenalty = inner ? Math.max(0, tileHeight(inner) - 2) * 0.08 : 1;
-      return { candidate, score: -waterPenalty * 9 - centerPenalty * 4 - heightPenalty + noise2(candidate.x, candidate.y, 74231) * 0.25 };
+      return { candidate, score: -entryIslandPenalty - waterPenalty * 9 - centerPenalty * 4 - heightPenalty + noise2(candidate.x, candidate.y, 74231) * 0.25 };
     }).sort((a, b) => b.score - a.score);
     let chosen = scored.length ? scored[0].candidate : null;
     if (!chosen) chosen = { x: 0, y: Math.floor(settings.height / 2), side: 'west' };
@@ -3900,6 +3917,7 @@
       for (const next of neighbors) {
         if (!inBounds(next.x, next.y)) continue;
         const nextTile = tileAt(next.x, next.y);
+        if (nextTile.archipelagoSea) continue;
         if (nextTile.borderEscarpment && !nextTile.ramp && !nextTile.navRamp) continue;
         if (nextTile.cliffSkirt && !nextTile.ramp && !nextTile.waterfall && !allowCliffSkirt) continue;
         const blockingObject = nextTile.occupiedBy ? getObjectById(nextTile.occupiedBy) : null;
@@ -3937,6 +3955,7 @@
     const allowCliffSkirt = !!options.allowCliffSkirt;
     const allowPlateauRing = !!options.allowPlateauRing;
     const allowHeight = !!options.allowHeight;
+    const archipelagoIslandId = options.archipelagoIslandId || null; // Used by Mire reachability repair to guarantee a hidden local path can never borrow another island's land.
     const startTile = tileAt(start.x, start.y);
     const goalTile = tileAt(goal.x, goal.y);
     if (!startTile || !goalTile) return null;
@@ -3976,6 +3995,8 @@
         const nk = tileIdXY(nx, ny);
         if (parent[nk] !== PARENT_UNSEEN) continue;
         const nextTile = tileAt(nx, ny);
+        if (nextTile.archipelagoSea) continue;
+        if (archipelagoIslandId && nextTile.archipelagoIslandId !== archipelagoIslandId) continue;
         if (nextTile.borderEscarpment && !nextTile.ramp && !nextTile.navRamp) continue;
         if (nextTile.cliffSkirt && !nextTile.ramp && !nextTile.navRamp && !allowCliffSkirt) continue;
         if (nextTile.water && !nextTile.bridge && !nextTile.navBridge && !allowWater) continue;
@@ -3993,6 +4014,37 @@
 
   function generatePaths() {
     const targets = buildPathTargets();
+    if (usesArchipelagoLayout()) {
+      const entryStart = nearestFreeWalkableNeighbor(map.entry.x, map.entry.y); // Used as the first visible-path cursor only for the west entry island.
+      const entryIslandId = tileAt(entryStart.x, entryStart.y)?.archipelagoIslandId || map.archipelago?.entryIslandId || null; // Used to keep the entry island's paths connected to the actual arrival point.
+      const islandCursors = new Map(); // Used to build an independent local trail network on each island instead of one impossible cross-sea route chain.
+      if (entryIslandId) islandCursors.set(entryIslandId, { x: entryStart.x, y: entryStart.y });
+      let made = 0;
+      let skipped = 0;
+      for (const target of targets) {
+        const safeTarget = nearestFreeWalkableNeighbor(target.x, target.y); // Used to identify the target's island even when its authored anchor sits beside a blocking object.
+        const targetIslandId = tileAt(safeTarget.x, safeTarget.y)?.archipelagoIslandId || null; // Used as the local route-network key.
+        if (!targetIslandId) {
+          skipped++;
+          logDebug(`archipelago visible path skipped at ${target.x},${target.y}; target has no island id`);
+          continue;
+        }
+        const start = islandCursors.get(targetIslandId) || { x: safeTarget.x, y: safeTarget.y }; // Used to seed non-entry islands at their first destination rather than drawing a bridge from the west entry.
+        const path = findPath(start, target, { allowWater: true }) || findPath(start, safeTarget, { allowWater: true });
+        if (!path) {
+          skipped++;
+          logDebug(`archipelago visible path skipped within ${targetIslandId} from ${start.x},${start.y} to ${target.x},${target.y}`);
+          continue;
+        }
+        markVisiblePath(path);
+        map.paths.push({ id: `path_${map.paths.length + 1}`, from: { ...start }, to: { x: target.x, y: target.y, reason: target.reason, targetId: target.targetId || null }, points: path });
+        islandCursors.set(targetIslandId, { x: target.x, y: target.y });
+        made++;
+      }
+      logDebug(`archipelago visible paths made: ${made}, skipped ${skipped}, destinations attempted: ${targets.length}, island networks ${islandCursors.size}`);
+      return;
+    }
+
     let start = { x: map.entry.x, y: map.entry.y };
     let made = 0;
     for (const target of targets) {
@@ -4175,10 +4227,24 @@
 
   function generateInvisibleNavigation() {
     const targets = buildInvisiblePathTargets();
-    const start = nearestFreeWalkableNeighbor(map.entry.x, map.entry.y);
+    const entryStart = nearestFreeWalkableNeighbor(map.entry.x, map.entry.y); // Used as the legacy/global start and as the archipelago entry-island anchor.
+    const islandStarts = new Map(); // Used only by archipelago mode so each island repairs navigation internally without crossing open sea.
+    if (usesArchipelagoLayout()) {
+      for (const tile of allTiles()) {
+        if (!isWalkableTile(tile) || !tile.archipelagoIslandId || islandStarts.has(tile.archipelagoIslandId)) continue;
+        islandStarts.set(tile.archipelagoIslandId, { x: tile.x, y: tile.y });
+      }
+      const entryIslandId = tileAt(entryStart.x, entryStart.y)?.archipelagoIslandId || map.archipelago?.entryIslandId || null; // Used to prefer the authored entry gate over the first scan-order tile on its island.
+      if (entryIslandId) islandStarts.set(entryIslandId, { x: entryStart.x, y: entryStart.y });
+    }
+
     let made = 0;
     for (const target of targets) {
       const safeTarget = nearestFreeWalkableNeighbor(target.x, target.y);
+      const targetTile = tileAt(safeTarget.x, safeTarget.y); // Used to select the correct local island start in archipelago mode.
+      const start = usesArchipelagoLayout()
+        ? (islandStarts.get(targetTile?.archipelagoIslandId) || safeTarget)
+        : entryStart;
       const path = findGridPath(start, safeTarget, { allowWater: false })
         || findGridPath(start, safeTarget, { allowWater: true })
         || findGridPath(start, safeTarget, { allowWater: true, allowCliffSkirt: true, allowHeight: true });
@@ -4190,7 +4256,7 @@
       markInvisiblePath(path, target.reason, target.targetId || null);
       made++;
     }
-    logDebug(`invisible connectivity corridors made: ${made}, destinations attempted: ${targets.length}`);
+    logDebug(`${usesArchipelagoLayout() ? 'archipelago ' : ''}invisible connectivity corridors made: ${made}, destinations attempted: ${targets.length}${usesArchipelagoLayout() ? `, island starts ${islandStarts.size}` : ''}`);
   }
 
   function normalizeConnectivityPath(path) {
@@ -4618,7 +4684,155 @@
     return { sealed, skipped: Math.max(0, unreachable.length - sealed) };
   }
 
+  function repairArchipelagoIslandConnectivity() {
+    if (!usesArchipelagoLayout()) return { repairedPaths:0, clearedObjects:0, hiddenRampTiles:0 };
+    const islandIds = [...new Set(allTiles().map(tile => tile?.archipelagoIslandId).filter(Boolean))]; // Used to repair each physical island independently with no cross-sea or cross-island route.
+    let repairedPaths = 0;
+    let clearedObjects = 0;
+    let hiddenRampTiles = 0;
+
+    const componentsFor = islandId => {
+      const candidates = allWalkableTiles().filter(tile => tile.archipelagoIslandId === islandId);
+      const candidateKeys = new Set(candidates.map(tile => keyXY(tile.x, tile.y)));
+      const visited = new Set();
+      const components = [];
+      for (const start of candidates) {
+        const startKey = keyXY(start.x, start.y);
+        if (visited.has(startKey)) continue;
+        const component = [];
+        const queue = [start];
+        visited.add(startKey);
+        for (let head = 0; head < queue.length; head++) {
+          const tile = queue[head];
+          component.push(tile);
+          for (const next of movementNeighbors(tile)) {
+            const key = keyXY(next.x, next.y);
+            if (!candidateKeys.has(key) || visited.has(key) || next.archipelagoIslandId !== islandId) continue;
+            visited.add(key);
+            queue.push(next);
+          }
+        }
+        components.push(component);
+      }
+      return components.sort((a,b) => b.length - a.length);
+    };
+
+    for (const islandId of islandIds) {
+      for (let guard = 0; guard < 48; guard++) {
+        const components = componentsFor(islandId);
+        if (components.length <= 1) break;
+        const anchorComponent = components[0];
+        const targetComponent = components[1];
+        let best = null;
+        // Find the closest pair of walkable component tiles so the hidden repair is as short/local as possible.
+        for (const a of anchorComponent) {
+          for (const b of targetComponent) {
+            const distance = Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+            if (!best || distance < best.distance) best = { a, b, distance };
+          }
+        }
+        if (!best) break;
+        const path = findGridPath(best.a, best.b, {
+          allowWater:false,
+          allowOccupied:true,
+          allowCliffSkirt:true,
+          allowHeight:true,
+          archipelagoIslandId:islandId,
+        });
+        if (!path) break;
+        const beforeReached = anchorComponent.length;
+        clearedObjects += clearBlockingObjectsOnPath(path);
+        hiddenRampTiles += normalizeConnectivityPath(path);
+        markInvisiblePath(path, 'archipelagoIslandConnectivity', islandId);
+        repairedPaths++;
+        const afterComponents = componentsFor(islandId);
+        if (afterComponents.length >= components.length && afterComponents[0]?.length <= beforeReached) break; // Prevents looping if a protected blocker makes this exact repair ineffective.
+      }
+    }
+
+    if (map.archipelago) {
+      map.archipelago.localConnectivityRepairs = repairedPaths;
+      map.archipelago.localConnectivityClearedObjects = clearedObjects;
+      map.archipelago.localConnectivityHiddenRampTiles = hiddenRampTiles;
+    }
+    logDebug(`archipelago local connectivity: ${repairedPaths} hidden paths, ${hiddenRampTiles} hidden ramp tiles, ${clearedObjects} removable blockers cleared; sea remains forbidden`);
+    return { repairedPaths, clearedObjects, hiddenRampTiles };
+  }
+
+  function validateArchipelagoReachability() {
+    repairArchipelagoIslandConnectivity(); // Connect plateau levels/tree-separated pockets inside each island only; findGridPath's island/sea guards forbid inter-island bridges.
+    const start = nearestFreeWalkableNeighbor(map.entry.x, map.entry.y); // Used to measure the entry island without claiming boat-separated islands are broken.
+    const entryReachable = reachableFrom(start); // Used only for the on-foot component that contains the west entry.
+    const walkable = allWalkableTiles(); // Used for whole-archipelago diagnostics and tile-density scaling.
+    const visited = new Uint8Array(settings.width * settings.height); // Used to count intentional on-foot movement components without string-key churn.
+    const componentSizes = []; // Used by the mobile/copyable generator diagnostics to expose how fragmented the islands really are.
+
+    for (const origin of walkable) {
+      const originIndex = origin.y * settings.width + origin.x;
+      if (visited[originIndex]) continue;
+      let size = 0;
+      const queue = [origin];
+      visited[originIndex] = 1;
+      for (let head = 0; head < queue.length; head++) {
+        const tile = queue[head];
+        size++;
+        for (const next of movementNeighbors(tile)) {
+          const index = next.y * settings.width + next.x;
+          if (visited[index]) continue;
+          visited[index] = 1;
+          queue.push(next);
+        }
+      }
+      componentSizes.push(size);
+    }
+
+    const walkableByIsland = {}; // Used to verify that generated gameplay space survives on multiple islands rather than only the entry island.
+    for (const tile of walkable) {
+      const islandId = tile.archipelagoIslandId || 'unassigned';
+      walkableByIsland[islandId] = (walkableByIsland[islandId] || 0) + 1;
+    }
+    const boatSeparatedTiles = Math.max(0, walkable.length - entryReachable.size); // Used to report deliberate water-gated exploration instead of false unreachable errors.
+    if (map.archipelago) {
+      map.archipelago.movementComponentCount = componentSizes.length;
+      map.archipelago.movementComponentSizes = componentSizes.slice().sort((a, b) => b - a);
+      map.archipelago.walkableByIsland = walkableByIsland;
+      map.archipelago.entryReachableTiles = entryReachable.size;
+      map.archipelago.boatSeparatedTiles = boatSeparatedTiles;
+    }
+    map.connectivity = {
+      start,
+      archipelago: true,
+      walkableTiles: walkable.length,
+      reachableTiles: entryReachable.size,
+      entryReachableTiles: entryReachable.size,
+      boatSeparatedTiles,
+      movementComponentCount: componentSizes.length,
+      movementComponentSizes: componentSizes.slice().sort((a, b) => b - a),
+      walkableByIsland,
+      unreachableTiles: 0,
+      unreachableSamples: [],
+      repairs: 0,
+      componentRepairConnectors: 0,
+      componentRepairHiddenTiles: 0,
+      componentRepairRemainingComponents: 0,
+      hiddenLedgeStitches: 0,
+      hiddenLedgeStitchTiles: 0,
+      hiddenSweepPaths: 0,
+      hiddenSweepTiles: 0,
+      hiddenSweepBridgeTiles: 0,
+      sealedResidualUnreachableTiles: 0,
+      clearedBlockingObjects: 0,
+      invisiblePathCount: map.invisiblePaths.length,
+      rule: 'Eastern Mire archipelago: sea channels are intentional traversal boundaries. Reachability is evaluated per land component; generator repair may not create bridges/nav bridges across archipelagoSea or seal boat-separated islands as unreachable pockets.'
+    };
+    logDebug(`archipelago reachability: ${componentSizes.length} on-foot components, entry component ${entryReachable.size}/${walkable.length} walkable tiles, ${boatSeparatedTiles} tiles intentionally boat-separated; no cross-sea repair bridges`);
+  }
+
   function validateAndRepairReachability() {
+    if (usesArchipelagoLayout()) {
+      validateArchipelagoReachability();
+      return;
+    }
     const start = nearestFreeWalkableNeighbor(map.entry.x, map.entry.y);
     // new variable: dramaticRepairBudget caps the last-resort hidden repair passes that became too expensive when Cliffs introduced extreme height fragmentation.
     const dramaticRepairBudget = usesDramaticPlateauPreset();
@@ -5195,6 +5409,11 @@
       const tile = tileAt(x, y);
       if (!tile) return false;
       if (tile.water || tile.river || tile.path || tile.ramp || tile.cliffSkirt || tile.waterfall) return false;
+      if (usesArchipelagoLayout() && tile.borderEscarpment) return false; // Mirewood stays off the generated world-edge escarpment.
+      if (usesArchipelagoLayout() && tile.plateauRing) {
+        const dropsAtEdge = cardinalNeighbors(tile.x, tile.y).some(neighbor => !neighbor || neighbor.elevation < tile.elevation); // Used to reject only real terrace cliff faces while keeping same-height edge cells forestable.
+        if (dropsAtEdge) return false;
+      }
       if (tile.occupiedBy) return false;
       if (hasNearbyTreeObject(x, y, clusterKeys)) return false;
       if (nearDenEntrance(x, y)) return false;
@@ -5952,6 +6171,8 @@
     // impassable. Flag it so the merge can force it to the group's real
     // (interior, non-incline) tier instead of computing ring-ness for it.
     if (tile.designRole === 'borderEntryGate') output.borderEntryGate = true;
+    if (tile.archipelagoSea) output.archipelagoSea = true;
+    if (tile.archipelagoIslandId) output.archipelagoIslandId = tile.archipelagoIslandId;
     if (tile.borderEscarpment) {
       output.borderEscarpment = true;
       output.generatedBorderEscarpment = true;
@@ -6571,7 +6792,16 @@
       pathWindiness: 8, entryGateWidthMul: 0.2,
     },
     map_western_slope: { entrySide: 'east', preset: 'cliffs', boundaryMode: 'entrySideDistantLandscape', boundaryCliffBoost: 0 },
-    map_eastern_mire: { entrySide: 'west', preset: 'greatBasin', boundaryMode: 'followMapHeight', boundaryCliffBoost: 2 },
+    map_eastern_mire: {
+      entrySide: 'west', preset: 'custom', boundaryMode: 'followMapHeight', boundaryCliffBoost: 0,
+      archipelago: true, archipelagoColumns: 4, archipelagoRows: 3, archipelagoLandScale: 1.1, archipelagoShoreNoise: 1.15,
+      archipelagoPreservedLand: [{ x: 17, y: 14.5, radius: 5, label: 'Leaf & Pahu house' }],
+      plateaus: 0, maxTier: 3, archipelagoTerraces: true, archipelagoTerraceMaxTier: 3,
+      wideRamps: false, ramps: 40, rampMaxAngle: 50, caves: 0,
+      ponds: 8, plateauPonds: 0, plateauStreams: 0, rivers: 0,
+      trees: 4000, treesFillGaps: true, treeThinning: 0.2, treeVarietyFraction: 0, denEntranceTreeClearance: 3,
+      bushes: 90, pathWindiness: 3, entryGateWidthMul: 0.45,
+    },
   };
 
   // ---------------------------------------------------------------------
@@ -6770,6 +7000,19 @@
   }
 
   function refreshConnectivityAfterTileScale(previousConnectivity, originalWalkableTiles, scale) {
+    if (usesArchipelagoLayout()) {
+      validateArchipelagoReachability();
+      map.connectivity = {
+        ...map.connectivity,
+        originalWalkableTilesBeforeDensityScale: originalWalkableTiles,
+        expectedWalkableTilesAfterDensityScale: originalWalkableTiles * scale * scale,
+        actualWalkableTilesAfterDensityScale: map.connectivity.walkableTiles,
+        walkableTileScaleRatio: originalWalkableTiles ? Number((map.connectivity.walkableTiles / originalWalkableTiles).toFixed(3)) : null,
+        generationScale: scale,
+        rule: `${map.connectivity.rule} Density expansion duplicates each source tile into a ${scale}x${scale} block without joining sea-separated components.`
+      };
+      return;
+    }
     const start = nearestFreeWalkableNeighbor(map.entry.x, map.entry.y);
     const reached = reachableFrom(start);
     const walkable = allWalkableTiles();
@@ -8264,6 +8507,575 @@
     return !!activePresetConfig().highEntryCauseway;
   }
 
+  function usesArchipelagoLayout() {
+    return !!settings.archipelago;
+  }
+
+  function buildArchipelagoIslandPlan() {
+    const configuredColumns = clamp(Math.round(Number(settings.archipelagoColumns) || 4), 2, 6); // Used only to preserve the existing authoring control; columns*rows is the target island count, not a placement grid.
+    const configuredRows = clamp(Math.round(Number(settings.archipelagoRows) || 3), 2, 5); // Used with configuredColumns to derive the target island count.
+    const islandCount = configuredColumns * configuredRows; // Used as the primary landmass count while positions and headings remain freely scattered.
+    const configuredLandScale = Number(settings.archipelagoLandScale); // Used to tune the overall length/width of the long island ribbons.
+    const landScale = clamp(Number.isFinite(configuredLandScale) ? configuredLandScale : 1.1, 0.65, 1.35); // Used by spine length and width below while keeping channels navigable.
+    const seedSalt = hashSeed(`${settings.seed}|archipelago`) % 1000000; // Used by all site/spine choices so each Tothal reroll produces a deterministic new island chain.
+    const preservedAnchors = Array.isArray(settings.archipelagoPreservedLand) ? settings.archipelagoPreservedLand : []; // Used to bend/connect a primary island to fixed authored landmarks.
+    const islands = []; // Used by applyArchipelagoLayout() to classify every source tile as land or sea.
+    const edgeMargin = Math.max(9, Math.min(settings.width, settings.height) * 0.09); // Used to keep ordinary islands surrounded by open water rather than clipping against the world edge.
+    const baseMinSpacing = Math.max(15.5, Math.min(settings.width, settings.height) * 0.155); // Used by the seeded rejection sampler so long islands have room to curve without becoming a regular grid.
+    const waterGap = Math.max(2.7, Math.min(settings.width, settings.height) * 0.03); // Used later as a guaranteed sea band wherever two long island ribbons approach one another.
+
+    const addConnectedLobe = (island, fromX, fromY, towardX, towardY, radiusLong, radiusCross, rotation, kind) => {
+      const distance = Math.hypot(towardX - fromX, towardY - fromY); // Used to split a spur into overlapping pieces so it remains part of the same island.
+      const connectionStep = Math.max(1.3, Math.min(radiusLong, radiusCross) * 0.72); // Used to guarantee overlap between consecutive spur lobes.
+      const steps = Math.max(1, Math.ceil(distance / connectionStep)); // Used to avoid disconnected landmark/entry extensions.
+      let last = null;
+      for (let step = 1; step <= steps; step++) {
+        const t = step / steps;
+        const taper = 1 - t * 0.18; // Used to narrow the outer end of a spur into a cape.
+        last = {
+          x: fromX + (towardX - fromX) * t,
+          y: fromY + (towardY - fromY) * t,
+          radiusX: radiusLong * taper,
+          radiusY: radiusCross * taper,
+          rotation,
+          kind,
+        };
+        island.lobes.push(last);
+      }
+      return last;
+    };
+
+    const siteCandidates = []; // Used to reserve the entrance coast and authored fixed landmark before filling the rest with blue-noise-like sites.
+    siteCandidates.push({
+      x: Math.max(7.5, settings.width * (0.07 + noise2(1, 0, seedSalt + 701) * 0.025)),
+      y: settings.height * (0.39 + noise2(2, 0, seedSalt + 709) * 0.20),
+      isEntryIsland: true,
+      fixedKind: 'entry',
+    }); // The west-entry island is the one primary ribbon deliberately extended to the west world edge.
+    for (const anchor of preservedAnchors) {
+      if (!Number.isFinite(anchor?.x) || !Number.isFinite(anchor?.y)) continue;
+      siteCandidates.push({
+        x: clamp(anchor.x + (noise2(Math.round(anchor.x), Math.round(anchor.y), seedSalt + 733) - 0.5) * 4, edgeMargin, settings.width - edgeMargin),
+        y: clamp(anchor.y + (noise2(Math.round(anchor.y), Math.round(anchor.x), seedSalt + 739) - 0.5) * 4, edgeMargin, settings.height - edgeMargin),
+        isEntryIsland: false,
+        fixedKind: 'landmark',
+        anchor,
+      });
+    }
+
+    const acceptedSites = siteCandidates.slice(0, islandCount); // Used by the rejection sampler to avoid any implicit row/column placement.
+    for (let siteIndex = acceptedSites.length; siteIndex < islandCount; siteIndex++) {
+      const spacingVariation = (noise2(siteIndex, siteIndex * 7, seedSalt + 761) - 0.5) * 4; // Used so sea reaches vary noticeably in width.
+      const requiredSpacing = baseMinSpacing + spacingVariation;
+      let accepted = null;
+      let best = null;
+      for (let attempt = 0; attempt < 300; attempt++) {
+        const x = edgeMargin + noise2(attempt, siteIndex * 17 + 3, seedSalt + 773) * (settings.width - edgeMargin * 2); // Used as a deterministic pseudo-random x candidate.
+        const y = edgeMargin + noise2(attempt * 3 + 5, siteIndex * 29 + 7, seedSalt + 787) * (settings.height - edgeMargin * 2); // Used as an independently scrambled y candidate.
+        const minDistance = acceptedSites.reduce((distance, other) => Math.min(distance, Math.hypot(x - other.x, y - other.y)), Infinity); // Used to preserve broad boating channels between ribbon centers.
+        const score = minDistance + noise2(attempt, siteIndex, seedSalt + 809) * 1.4; // Used only to choose the least-crowded fallback if no attempt reaches target spacing.
+        if (!best || score > best.score) best = { x, y, minDistance, score };
+        if (minDistance >= requiredSpacing) {
+          accepted = { x, y, isEntryIsland:false, fixedKind:null };
+          break;
+        }
+      }
+      acceptedSites.push(accepted || { x:best.x, y:best.y, isEntryIsland:false, fixedKind:'spacingFallback' });
+    }
+
+    const pointToSegmentDistance = (px, py, ax, ay, bx, by) => {
+      const dx = bx - ax; // Used to project a neighboring site onto a candidate island axis while choosing its heading.
+      const dy = by - ay; // Used with dx above for the candidate-axis projection.
+      const denom = dx * dx + dy * dy;
+      const t = denom > 1e-9 ? clamp(((px - ax) * dx + (py - ay) * dy) / denom, 0, 1) : 0;
+      return Math.hypot(px - (ax + dx * t), py - (ay + dy * t));
+    };
+
+    const makeSpinePoints = (site, index, desiredLength, desiredWidth) => {
+      const pointCount = clamp(Math.round(desiredLength / 2.35) + 1, 7, 15); // Used to make each island a many-segment ribbon rather than one oval.
+      const headingPhase = noise2(index, 3, seedSalt + 853) * Math.PI; // Used as the deterministic starting phase for evaluating equivalent long-axis orientations.
+      let baseHeading = headingPhase; // Used as the chosen island long-axis after scoring headings against neighboring island sites.
+      let bestHeadingScore = -Infinity;
+      for (let candidateIndex = 0; candidateIndex < 12; candidateIndex++) {
+        const heading = headingPhase + candidateIndex * Math.PI / 12;
+        const half = desiredLength * 0.5;
+        const endAX = site.x + Math.cos(heading) * half;
+        const endAY = site.y + Math.sin(heading) * half;
+        const endBX = site.x - Math.cos(heading) * half;
+        const endBY = site.y - Math.sin(heading) * half;
+        const edgeClearance = Math.min(endAX, endAY, settings.width - 1 - endAX, settings.height - 1 - endAY, endBX, endBY, settings.width - 1 - endBX, settings.height - 1 - endBY); // Used to penalize headings that would immediately clip the long ribbon against the world boundary.
+        let neighborClearance = Infinity;
+        for (let otherIndex = 0; otherIndex < acceptedSites.length; otherIndex++) {
+          if (otherIndex === index) continue;
+          const other = acceptedSites[otherIndex];
+          const segmentDistance = pointToSegmentDistance(other.x, other.y, endAX, endAY, endBX, endBY); // Used to favor headings whose long centerline threads through open sea between other island sites.
+          neighborClearance = Math.min(neighborClearance, segmentDistance);
+        }
+        const score = Math.min(neighborClearance, edgeClearance * 1.35);
+        if (score > bestHeadingScore) {
+          bestHeadingScore = score;
+          baseHeading = heading;
+        }
+      }
+      const curveSign = noise2(index, 4, seedSalt + 857) < 0.5 ? -1 : 1; // Used to choose clockwise versus counter-clockwise bowing.
+      const bendAmount = (0.58 + noise2(index, 5, seedSalt + 863) * 0.72) * curveSign; // Used to guarantee a visibly bowed Italy/Denmark-like arc instead of allowing nearly straight ribbons.
+      const waveAmount = (1.15 + noise2(index, 6, seedSalt + 877) * 2.25) * landScale; // Used for a second Indonesia-like S-bend layered onto the main arc.
+      const wavePhase = noise2(index, 7, seedSalt + 881) * Math.PI * 2; // Used so different islands bend at different points along their length.
+      const points = []; // Used both to stamp overlapping lobes and to expose curvature diagnostics.
+      let fitScale = 1;
+      const buildAtScale = scale => {
+        const candidate = [];
+        const halfLength = desiredLength * scale * 0.5;
+        for (let p = 0; p < pointCount; p++) {
+          const t = pointCount <= 1 ? 0.5 : p / (pointCount - 1);
+          const u = t * 2 - 1;
+          const forward = u * halfLength;
+          const bow = bendAmount * halfLength * 0.46 * (u * u - 0.18); // Used to pull both ends strongly around one side of the midpoint into a long hooked arc.
+          const wave = Math.sin(t * Math.PI * 2 + wavePhase) * waveAmount * Math.sin(Math.PI * t); // Used to add an Indonesia-like second bend without kinking the endpoints.
+          const side = bow + wave;
+          const cos = Math.cos(baseHeading);
+          const sin = Math.sin(baseHeading);
+          candidate.push({
+            x: site.x + cos * forward - sin * side,
+            y: site.y + sin * forward + cos * side,
+          });
+        }
+        return candidate;
+      };
+      for (let tries = 0; tries < 8; tries++) {
+        const candidate = buildAtScale(fitScale);
+        const inset = site.isEntryIsland ? 1.5 : Math.max(3.2, desiredWidth * 0.72);
+        const fits = candidate.every(point =>
+          point.x >= inset && point.y >= inset
+          && point.x <= settings.width - 1 - inset
+          && point.y <= settings.height - 1 - inset
+        );
+        if (fits) {
+          points.push(...candidate);
+          break;
+        }
+        fitScale *= 0.88; // Used to shorten edge-near ribbons rather than flattening/clamping their curves against the map boundary.
+      }
+      if (!points.length) points.push(...buildAtScale(fitScale));
+      return { points, baseHeading, bendAmount, waveAmount, fitScale };
+    };
+
+    for (let index = 0; index < acceptedSites.length; index++) {
+      const site = acceptedSites[index];
+      const desiredLength = (18 + noise2(index, 11, seedSalt + 827) * 17) * landScale; // Used to vary long-axis length from modest hooked islands to very long Denmark/Indonesia-like ribbons.
+      const desiredWidth = (2.15 + noise2(index, 13, seedSalt + 839) * 1.75) * Math.sqrt(landScale); // Used to keep islands narrow relative to length while still supporting paths/plateaus/trees.
+      const spine = makeSpinePoints(site, index, desiredLength, desiredWidth); // Used as the contiguous curved backbone of this island.
+      const island = {
+        id: `island_${String(index + 1).padStart(2, '0')}`,
+        index,
+        centerX: site.x,
+        centerY: site.y,
+        isEntryIsland: !!site.isEntryIsland,
+        fixedKind: site.fixedKind || null,
+        shoreSalt: seedSalt + index * 97 + 5003,
+        lobes: [],
+        spinePoints: spine.points,
+        hookCount: 0,
+      };
+
+      for (let p = 0; p < spine.points.length; p++) {
+        const point = spine.points[p];
+        const prev = spine.points[Math.max(0, p - 1)];
+        const next = spine.points[Math.min(spine.points.length - 1, p + 1)];
+        const tangent = Math.atan2(next.y - prev.y, next.x - prev.x); // Used to rotate each overlapping ellipse along the local curve direction.
+        const endTaper = 0.72 + Math.sin(Math.PI * (p / Math.max(1, spine.points.length - 1))) * 0.28; // Used to narrow both ends into capes while keeping a wider middle.
+        const widthJitter = 0.82 + noise2(index * 31 + p, p, island.shoreSalt + 53) * 0.38; // Used to make bays and shoulders vary along one island.
+        island.lobes.push({
+          x: point.x,
+          y: point.y,
+          radiusX: Math.max(2.4, desiredWidth * 1.12 * endTaper), // Used along the tangent so adjacent spine lobes overlap generously and the ribbon cannot break.
+          radiusY: Math.max(1.65, desiredWidth * 0.72 * endTaper * widthJitter), // Used across the tangent to keep the landform distinctly long/narrow.
+          rotation: tangent,
+          kind: 'spine',
+        });
+      }
+
+      const optionalHooks = noise2(index, 17, seedSalt + 911) > 0.42 ? 1 + (noise2(index, 19, seedSalt + 919) > 0.78 ? 1 : 0) : 0; // Used to give some ribbons Denmark/Indonesia-like side hooks without reverting to radial blobs.
+      for (let hook = 0; hook < optionalHooks; hook++) {
+        const minIndex = 2;
+        const maxIndex = Math.max(minIndex, spine.points.length - 3);
+        const attachIndex = minIndex + Math.floor(noise2(index, hook, island.shoreSalt + 173) * Math.max(1, maxIndex - minIndex + 1));
+        const attach = spine.points[Math.min(spine.points.length - 1, attachIndex)];
+        const prev = spine.points[Math.max(0, attachIndex - 1)];
+        const next = spine.points[Math.min(spine.points.length - 1, attachIndex + 1)];
+        const tangent = Math.atan2(next.y - prev.y, next.x - prev.x);
+        const side = noise2(index, hook, island.shoreSalt + 181) < 0.5 ? -1 : 1;
+        const hookAngle = tangent + side * (0.78 + noise2(index, hook, island.shoreSalt + 191) * 0.72);
+        const hookLength = desiredWidth * (1.8 + noise2(hook, index, island.shoreSalt + 199) * 1.7);
+        const targetX = clamp(attach.x + Math.cos(hookAngle) * hookLength, 2.5, settings.width - 3.5);
+        const targetY = clamp(attach.y + Math.sin(hookAngle) * hookLength, 2.5, settings.height - 3.5);
+        addConnectedLobe(island, attach.x, attach.y, targetX, targetY, desiredWidth * 0.9, desiredWidth * 0.58, hookAngle, 'sideHook');
+        island.hookCount++;
+      }
+
+      if (site.anchor) {
+        let nearest = spine.points[0]; // Used to attach the fixed Leaf & Pahu land reserve to the closest point on the island's actual curved backbone.
+        let nearestDistance = Infinity;
+        for (const point of spine.points) {
+          const distance = Math.hypot(site.anchor.x - point.x, site.anchor.y - point.y);
+          if (distance < nearestDistance) {
+            nearest = point;
+            nearestDistance = distance;
+          }
+        }
+        const preserveRadius = Math.max(0, Number(site.anchor.radius) || 0);
+        const spurWidth = Math.max(2.5, preserveRadius * 0.62);
+        addConnectedLobe(island, nearest.x, nearest.y, site.anchor.x, site.anchor.y, spurWidth * 1.25, spurWidth, Math.atan2(site.anchor.y - nearest.y, site.anchor.x - nearest.x), 'landmarkSpur');
+      }
+
+      if (island.isEntryIsland) {
+        let western = spine.points.reduce((best, point) => point.x < best.x ? point : best, spine.points[0]); // Used to extend the naturally westernmost part of the curved island to the map entrance.
+        const entryY = clamp(western.y + (noise2(index, 0, island.shoreSalt + 131) - 0.5) * 5, 5, settings.height - 5);
+        addConnectedLobe(island, western.x, western.y, 0.35, entryY, Math.max(3.2, desiredWidth * 1.15), Math.max(2.4, desiredWidth * 0.78), Math.atan2(entryY - western.y, 0.35 - western.x), 'entrySpur');
+      }
+
+      let spineLength = 0; // Used in diagnostics/tests to prove each generated island is genuinely elongated and curved.
+      for (let p = 1; p < spine.points.length; p++) spineLength += Math.hypot(spine.points[p].x - spine.points[p - 1].x, spine.points[p].y - spine.points[p - 1].y);
+      const firstPoint = spine.points[0];
+      const lastPoint = spine.points[spine.points.length - 1];
+      const spineChord = Math.max(0.001, Math.hypot(lastPoint.x - firstPoint.x, lastPoint.y - firstPoint.y)); // Used as the straight-line baseline for curvature ratio.
+      island.spineLength = spineLength;
+      island.spineChord = spineChord;
+      island.curvatureRatio = spineLength / spineChord;
+      island.meanWidth = desiredWidth * 1.44; // Used as an approximate full cross-island width for long-axis aspect diagnostics.
+      island.lengthWidthRatio = spineLength / Math.max(0.001, island.meanWidth);
+
+      islands.push(island);
+    }
+    return { columns:configuredColumns, rows:configuredRows, islandCount, seedSalt, waterGap, islands };
+  }
+
+  function archipelagoPointInsideLobe(x, y, lobe, irregularity, salt) {
+    const cos = Math.cos(-(lobe.rotation || 0)); // Used to rotate the tile into this lobe's local ellipse coordinates.
+    const sin = Math.sin(-(lobe.rotation || 0)); // Used with cos above so each overlapping land lobe can point in a different direction.
+    const localX = (x - lobe.x) * cos - (y - lobe.y) * sin;
+    const localY = (x - lobe.x) * sin + (y - lobe.y) * cos;
+    const angle = Math.atan2(localY / Math.max(1, lobe.radiusY), localX / Math.max(1, lobe.radiusX)); // Used to add a small non-uniform edge wobble without disconnecting the lobe.
+    const phaseA = noise2(Math.floor(lobe.x * 3), Math.floor(lobe.y * 3), salt + 17) * Math.PI * 2; // Used by the lobe's low-frequency edge wobble.
+    const phaseB = noise2(Math.floor(lobe.y * 5), Math.floor(lobe.x * 5), salt + 41) * Math.PI * 2; // Used by a second harmonic so individual lobes do not read as clean ellipses.
+    const edgeWave = 1 + irregularity * (Math.sin(angle * 3 + phaseA) * 0.055 + Math.sin(angle * 5 + phaseB) * 0.028); // Used only for fine coastline roughness; the large-scale irregularity comes from the overlapping lobe network.
+    const dx = localX / Math.max(1, lobe.radiusX * edgeWave);
+    const dy = localY / Math.max(1, lobe.radiusY * edgeWave);
+    return dx * dx + dy * dy <= 1;
+  }
+
+  function archipelagoIslandAt(x, y, plan) {
+    const configuredIrregularity = Number(settings.archipelagoShoreNoise); // Used to tune small-scale coast roughness on top of the curved ribbon silhouette.
+    const irregularity = clamp(Number.isFinite(configuredIrregularity) ? configuredIrregularity : 1, 0, 1.5); // Used to keep edge wobble bounded so it cannot detach shoreline pixels.
+    let bestIsland = null; // Used to resolve rare overlap between two long lobe networks.
+    let bestLobeDistance = Infinity; // Used as a local Voronoi measure that follows each curved island rather than measuring only from its midpoint.
+    for (const island of plan.islands) {
+      let inside = false;
+      let nearestOwnLobe = Infinity;
+      for (let lobeIndex = 0; lobeIndex < island.lobes.length; lobeIndex++) {
+        const lobe = island.lobes[lobeIndex];
+        nearestOwnLobe = Math.min(nearestOwnLobe, Math.hypot(x - lobe.x, y - lobe.y));
+        if (!inside && archipelagoPointInsideLobe(x, y, lobe, irregularity, island.shoreSalt + lobeIndex * 157)) inside = true;
+      }
+      if (!inside) continue;
+      let nearestOtherShore = Infinity; // Used to carve a gap only when this tile actually approaches another island's shoreline, not merely its distant center.
+      for (const other of plan.islands) {
+        if (other === island) continue;
+        for (const lobe of other.lobes) {
+          const cos = Math.cos(-(lobe.rotation || 0));
+          const sin = Math.sin(-(lobe.rotation || 0));
+          const localX = (x - lobe.x) * cos - (y - lobe.y) * sin;
+          const localY = (x - lobe.x) * sin + (y - lobe.y) * cos;
+          const normalized = Math.hypot(localX / Math.max(1, lobe.radiusX), localY / Math.max(1, lobe.radiusY));
+          const shoreDistance = (normalized - 1) * Math.min(lobe.radiusX, lobe.radiusY); // Negative means the tile is already inside the competing lobe.
+          nearestOtherShore = Math.min(nearestOtherShore, shoreDistance);
+        }
+      }
+      if (nearestOtherShore < plan.waterGap) continue;
+      if (nearestOwnLobe < bestLobeDistance) {
+        bestIsland = island;
+        bestLobeDistance = nearestOwnLobe;
+      }
+    }
+    return bestIsland;
+  }
+
+  function preservedArchipelagoLandAt(x, y) {
+    const anchors = Array.isArray(settings.archipelagoPreservedLand) ? settings.archipelagoPreservedLand : []; // Used to keep fixed authored landmarks from being submerged by a reroll.
+    return anchors.find(anchor => {
+      const radius = Math.max(0, Number(anchor?.radius) || 0); // Used as the source-tile safety radius around this fixed landmark.
+      return Number.isFinite(anchor?.x) && Number.isFinite(anchor?.y) && Math.hypot(x - anchor.x, y - anchor.y) <= radius;
+    }) || null;
+  }
+
+  function applyArchipelagoLayout() {
+    if (!usesArchipelagoLayout()) return { applied: false, islands: 0, seaTiles: 0 };
+    const plan = buildArchipelagoIslandPlan(); // Used for every tile classification in this pass and later debug metadata.
+    let seaTiles = 0; // Counts open-channel water painted by this pass for diagnostics/tests.
+    let landFootprintTiles = 0; // Counts tiles inside intended island footprints, including inland ponds/streams.
+    let inlandWaterTiles = 0; // Counts pre-existing hydrology retained inside island footprints.
+    let preservedTiles = 0; // Counts forced-land tiles around fixed authored landmarks.
+
+    for (const tile of allTiles()) {
+      const island = archipelagoIslandAt(tile.x, tile.y, plan); // Used to decide whether the generated terrain survives as an island here.
+      const preserved = preservedArchipelagoLandAt(tile.x, tile.y); // Used to override water only around explicitly fixed authored landmarks.
+      if (island || preserved) {
+        landFootprintTiles++;
+        tile.archipelagoSea = false;
+        const preservedIsland = preserved && !island ? plan.islands.reduce((best, candidate) => {
+          const candidateDistance = Math.hypot(tile.x - candidate.centerX, tile.y - candidate.centerY); // Used to attach fixed-land shoreline extensions to their nearest primary island.
+          return !best || candidateDistance < best.distance ? { island: candidate, distance: candidateDistance } : best;
+        }, null)?.island : null; // Used so a fixed landmark can widen a coastline without becoming a fake thirteenth island in diagnostics/path grouping.
+        tile.archipelagoIslandId = island?.id || preservedIsland?.id || `preserved_${String(preserved?.label || 'land').replace(/\s+/g, '_')}`;
+        if (preserved) {
+          preservedTiles++;
+          if (tile.water) {
+            tile.water = false;
+            tile.waterfall = false;
+            tile.canyonRiver = false;
+            tile.latePaintedRiver = false;
+            tile.plateauHydrology = false;
+            tile.plateauPond = false;
+            tile.plateauStream = false;
+            tile.terrain = tile.elevation > 0 ? 'plateau' : 'grass';
+          }
+        } else if (tile.water) {
+          inlandWaterTiles++;
+        }
+        continue;
+      }
+
+      seaTiles++;
+      tile.archipelagoSea = true;
+      tile.archipelagoIslandId = null;
+      tile.water = true;
+      tile.waterfall = false;
+      tile.terrain = 'stream';
+      tile.elevation = 0;
+      tile.height = 0;
+      tile.canyonRiver = false;
+      tile.canyonOriginalElevation = null;
+      tile.latePaintedRiver = false;
+      tile.plateauHydrology = false;
+      tile.plateauPond = false;
+      tile.plateauStream = false;
+      tile.generatedPlateauBlobId = null;
+      tile.plateauGroupId = null;
+      tile.plateauRing = false;
+      tile.plateauInterior = false;
+      tile.ramp = false;
+      tile.rampId = null;
+      tile.rampProgress = null;
+      tile.rampFromTier = null;
+      tile.rampToTier = null;
+      tile.rampDirection = null;
+      tile.rampKind = null;
+      tile.rampNormal = null;
+      tile.rampLandingContact = null;
+      tile.rampSharesPlateau = false;
+      tile.rampSharedPlateauGroupId = null;
+      tile.navRamp = false;
+      tile.navRampId = null;
+      tile.navRampProgress = null;
+      tile.path = false;
+      tile.invisiblePath = false;
+      tile.invisiblePathId = null;
+      tile.denRoute = false;
+      tile.bridge = false;
+      tile.navBridge = false;
+      tile.cliffSkirt = false;
+      tile.cliffSkirtKind = null;
+      tile.cliffFromTier = null;
+      tile.cliffToTier = null;
+      tile.cliffFacing = null;
+      tile.borderEscarpment = false;
+      tile.distantBoundaryLandscape = false;
+    }
+
+    const entryIsland = plan.islands.find(island => island.isEntryIsland); // Used when chooseEntry() opens the west-side road mouth through shoreline water.
+    map.archipelago = {
+      enabled: true,
+      columns: plan.columns,
+      rows: plan.rows,
+      intendedIslandCount: plan.islands.length,
+      entryIslandId: entryIsland?.id || null,
+      sourceIslands: plan.islands.map(island => ({
+        id: island.id,
+        siteIndex: island.index,
+        fixedKind: island.fixedKind,
+        centerX: Number(island.centerX.toFixed(2)),
+        centerY: Number(island.centerY.toFixed(2)),
+        spinePointCount: island.spinePoints.length,
+        spineLength: Number(island.spineLength.toFixed(2)),
+        spineChord: Number(island.spineChord.toFixed(2)),
+        curvatureRatio: Number(island.curvatureRatio.toFixed(3)),
+        meanWidth: Number(island.meanWidth.toFixed(2)),
+        lengthWidthRatio: Number(island.lengthWidthRatio.toFixed(2)),
+        hookCount: island.hookCount,
+        lobeCount: island.lobes.length,
+        isEntryIsland: island.isEntryIsland,
+      })),
+      seaTiles,
+      landFootprintTiles,
+      inlandWaterTiles,
+      preservedTiles,
+      seaRatio: Number((seaTiles / Math.max(1, settings.width * settings.height)).toFixed(3)),
+    };
+    logDebug(`archipelago: ${plan.islands.length} intended islands, ${landFootprintTiles} island-footprint tiles, ${seaTiles} open-water tiles (${(map.archipelago.seaRatio * 100).toFixed(1)}%), ${inlandWaterTiles} inland-water tiles, ${preservedTiles} fixed-land tiles`);
+    return { applied: true, islands: plan.islands.length, seaTiles, landFootprintTiles, inlandWaterTiles, preservedTiles, plan };
+  }
+
+  function pruneDisconnectedArchipelagoLand(plan) {
+    if (!usesArchipelagoLayout() || !plan?.islands?.length) return { removed:0, splitIslands:0 };
+    let removed = 0;
+    let splitIslands = 0;
+    const preserved = Array.isArray(settings.archipelagoPreservedLand) ? settings.archipelagoPreservedLand : []; // Used to prefer the component containing a fixed authored landmark when an overlap clipped its island.
+
+    for (const island of plan.islands) {
+      const candidates = allTiles().filter(tile => tile && !tile.archipelagoSea && tile.archipelagoIslandId === island.id);
+      if (!candidates.length) continue;
+      const candidateKeys = new Set(candidates.map(tile => tileKey(tile.x, tile.y)));
+      const visited = new Set();
+      const components = [];
+      for (const start of candidates) {
+        const startKey = tileKey(start.x, start.y);
+        if (visited.has(startKey)) continue;
+        const component = [];
+        const stack = [start];
+        visited.add(startKey);
+        while (stack.length) {
+          const tile = stack.pop();
+          component.push(tile);
+          for (const neighbor of cardinalNeighbors(tile.x, tile.y)) {
+            if (!neighbor) continue;
+            const key = tileKey(neighbor.x, neighbor.y);
+            if (!candidateKeys.has(key) || visited.has(key)) continue;
+            visited.add(key);
+            stack.push(neighbor);
+          }
+        }
+        components.push(component);
+      }
+      if (components.length <= 1) continue;
+      splitIslands++;
+
+      const anchor = preserved.find(item => Number.isFinite(item?.x) && Number.isFinite(item?.y)
+        && Math.hypot(item.x - island.centerX, item.y - island.centerY) < Math.max(18, island.spineLength * 0.75)); // Used to associate a fixed landmark with the island whose planned ribbon actually passes nearby.
+      let keep = components.slice().sort((a,b) => b.length - a.length)[0];
+      if (anchor) {
+        const anchored = components.find(component => component.some(tile => Math.hypot(tile.x - anchor.x, tile.y - anchor.y) <= Math.max(1.5, Number(anchor.radius) || 0)));
+        if (anchored && anchored.length >= keep.length * 0.35) keep = anchored; // Preserve the authored landmark without sacrificing a vastly larger primary ribbon to a tiny accidental fragment.
+      }
+      const keepSet = new Set(keep.map(tile => tileKey(tile.x, tile.y)));
+      for (const tile of candidates) {
+        if (keepSet.has(tileKey(tile.x, tile.y))) continue;
+        removed++;
+        tile.archipelagoSea = true;
+        tile.archipelagoIslandId = null;
+        tile.water = true;
+        tile.waterfall = false;
+        tile.terrain = 'stream';
+        tile.elevation = 0;
+        tile.height = 0;
+        tile.generatedPlateauBlobId = null;
+        tile.plateauGroupId = null;
+        tile.plateauRing = false;
+        tile.plateauInterior = false;
+        tile.ramp = false;
+        tile.navRamp = false;
+        tile.path = false;
+        tile.invisiblePath = false;
+        tile.bridge = false;
+        tile.navBridge = false;
+      }
+    }
+
+    if (map.archipelago) {
+      map.archipelago.prunedDetachedTiles = removed;
+      map.archipelago.prunedSplitIslands = splitIslands;
+    }
+    logDebug(`archipelago connectivity prune: removed ${removed} detached land tiles across ${splitIslands} split island(s)`);
+    return { removed, splitIslands };
+  }
+
+  function applyArchipelagoTerraces(plan) {
+    if (!usesArchipelagoLayout() || !settings.archipelagoTerraces || !plan?.islands?.length) return { applied:false, terraceCount:0, tierCounts:{} };
+    const maxTier = clamp(Math.round(Number(settings.archipelagoTerraceMaxTier) || 3), 1, 3); // Used to keep individual Mire shelves short even when several levels stack.
+    const terraceDefs = new Map(); // Used to cache each island's broad longitudinal shelf centers before classifying land tiles.
+    let terraceCount = 0;
+
+    for (const island of plan.islands) {
+      const points = island.spinePoints || [];
+      if (!points.length) continue;
+      const count = 1 + (noise2(island.index, 23, plan.seedSalt + 1201) > 0.34 ? 1 : 0); // Used to give each long island one or two very broad elevated districts instead of many fragmented bumps.
+      const defs = [];
+      for (let i = 0; i < count; i++) {
+        const evenT = (i + 1) / (count + 1);
+        const offset = (noise2(island.index, i, plan.seedSalt + 1213) - 0.5) * 0.22;
+        const centerT = clamp(evenT + offset, 0.12, 0.88); // Used to spread terraces along the curved island rather than clustering them at one end.
+        const centerIndex = centerT * Math.max(1, points.length - 1);
+        const spanPoints = Math.max(2.4, points.length * (0.26 + noise2(island.index, i, plan.seedSalt + 1229) * 0.15)); // Used to make each shelf long and broad along the curved island spine.
+        const crossRadius = Math.max(2.1, island.meanWidth * (0.32 + noise2(i, island.index, plan.seedSalt + 1237) * 0.13)); // Used to keep a low walkable/forested shoreline around the broad central terrace.
+        const stackTier = clamp(2 + (noise2(island.index, i, plan.seedSalt + 1249) > 0.48 ? 1 : 0), 1, maxTier); // Used to vary whether this district tops out at tier 2 or tier 3.
+        defs.push({ centerIndex, spanPoints, crossRadius, stackTier });
+        terraceCount++;
+      }
+      terraceDefs.set(island.id, defs);
+    }
+
+    const tierCounts = {}; // Used by visible generator diagnostics/regressions to report how much island land ended at each short stacked level.
+    let changed = 0;
+    for (const tile of allTiles()) {
+      if (!tile || tile.archipelagoSea || tile.water || !tile.archipelagoIslandId) continue;
+      const island = plan.islands.find(item => item.id === tile.archipelagoIslandId);
+      const defs = terraceDefs.get(tile.archipelagoIslandId);
+      if (!island || !defs?.length || !island.spinePoints?.length) continue;
+
+      let nearestIndex = 0; // Used to project this tile onto the island's curved centerline for longitudinal terrace shaping.
+      let nearestDistance = Infinity;
+      for (let i = 0; i < island.spinePoints.length; i++) {
+        const point = island.spinePoints[i];
+        const distance = Math.hypot(tile.x - point.x, tile.y - point.y);
+        if (distance < nearestDistance) {
+          nearestDistance = distance;
+          nearestIndex = i;
+        }
+      }
+
+      let tier = 0;
+      for (const def of defs) {
+        const longitudinal = Math.abs(nearestIndex - def.centerIndex) / def.spanPoints;
+        const cross = nearestDistance / def.crossRadius;
+        const metric = longitudinal * longitudinal + cross * cross;
+        if (metric > 1) continue;
+        let localTier = 1;
+        if (def.stackTier >= 2 && metric <= 0.58) localTier = 2; // Broad second shelf nested inside the first.
+        if (def.stackTier >= 3 && metric <= 0.25) localTier = 3; // Smaller third shelf creates visible stacking without tall isolated spikes.
+        tier = Math.max(tier, localTier);
+      }
+
+      tile.elevation = tier;
+      tile.height = tier;
+      tile.terrain = tier > 0 ? 'plateau' : 'grass';
+      tile.generatedPlateauBlobId = tier > 0 ? `archipelago_terrace_${tile.archipelagoIslandId}_tier_${tier}` : null;
+      tile.archipelagoTerraceTier = tier;
+      tierCounts[tier] = (tierCounts[tier] || 0) + 1;
+      if (tier > 0) changed++;
+    }
+
+    if (map.archipelago) {
+      map.archipelago.terraces = {
+        enabled:true,
+        terraceCount,
+        maxTier,
+        raisedTiles:changed,
+        tierCounts:{ ...tierCounts },
+      };
+    }
+    logDebug(`archipelago terraces: ${terraceCount} broad shelves, ${changed} raised island tiles, tiers ${Object.entries(tierCounts).map(([tier,count]) => `${tier}:${count}`).join(', ')}`);
+    return { applied:true, terraceCount, tierCounts };
+  }
+
   function usesGreatInclineStepCurve() {
     return activeStepCurveConfig().id === 'greatIncline';
   }
@@ -8316,6 +9128,11 @@
     applyGreatInclineMountainsideProfile();
     applyGreatBasinHorseshoeProfile(); // Great Basin linear height lerp
     syncTileHeights();
+    const archipelagoLayout = applyArchipelagoLayout(); // Eastern Mire only: flood the gaps between deterministic long island ribbons before world-edge/entry generation.
+    pruneDisconnectedArchipelagoLand(archipelagoLayout.plan); // Remove only clipped satellite tips so every named primary ribbon remains one physical island.
+    applyArchipelagoTerraces(archipelagoLayout.plan); // Mire-only broad low shelves follow those curved ribbons and stack to at most tier 3.
+    applyManualPlateauPaintingRules(); // Refresh plateau ownership after archipelago sea/terrace shaping.
+    syncTileHeights();
     map.preselectedEntrySide = resolveGenerationEntrySide();
     generateBorderEscarpments();
     generateRamps();
@@ -8347,6 +9164,14 @@
     const workspace = buildHobunjiMapExport();
     workspace.entry = map.entry ? { col: map.entry.x, row: map.entry.y, side: map.entry.side } : null;
     workspace.warnings = map.warnings.slice();
+    workspace.archipelago = map.archipelago ? {
+      ...clonePlain(map.archipelago),
+      sourceWidth: map.sourceWidth || map.width,
+      sourceHeight: map.sourceHeight || map.height,
+      finalWidth: map.width,
+      finalHeight: map.height,
+      generationScale: map.generationScale || 1,
+    } : null;
     // Stumps/logs are generated in the normal object pass but rendered at
     // runtime from authored furniture definitions. Export their exact final
     // placements directly so the game never has to infer them from generic
