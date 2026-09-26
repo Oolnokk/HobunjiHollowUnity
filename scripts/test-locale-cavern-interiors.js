@@ -142,6 +142,10 @@ assert(gameSource.includes('window.AuthoredFurniture.buildGroup(doorData, 0x8b65
 assert(gameSource.includes("group.name = 'key_gated_cavern_door_'"), 'spawned cavern door furniture must carry a stable runtime identity');
 assert(gameSource.includes("window.addEventListener('hobunji:key-item-granted'"), 'already-loaded secret cave doors must react immediately when the world key is granted');
 assert(gameSource.includes('record.group.visible = true'), 'granting the matching key must reveal the existing door without requiring a cave reload');
+assert(gameSource.includes("window.EntryTunnelDoorFurniture.attach("), 'ordinary keyed cave doors must reuse the canonical authored-door placement runtime');
+assert(gameSource.includes("group.position.set(doorCol + 0.5, doorSurfaceY, doorRow + 0.5)"), 'keyed cave furniture fallback must stay centered on the walkable connector tile instead of being buried at the carved boundary');
+assert(gameSource.includes("({ south: 0, west: 90, north: 180, east: 270 })[side]"), 'keyed cave door fallback must use the established authored-door facing convention');
+assert(!gameSource.includes("if (side === 'north') z = Number(door.row) + 0.03"), 'keyed cave doors must not be pushed into the north wall shell');
 assert(gameSource.includes("targetSpotId: exit.targetSpotId || ''") && gameSource.includes("_pendingEntrySpotId"), 'cave-to-cave travel must preserve named connector destinations across async generation');
 assert(gameSource.includes('entranceLightTileSet'), 'secret exits must not affect the primary cave-mouth daylight');
 assert(generatorSource.includes('function sampleMeshSurfaceAt(') && generatorSource.includes('floorSurfaceByTile: floorSurface.byTile'), 'cavern generation must sample the rendered shell and export per-tile ground Y');
