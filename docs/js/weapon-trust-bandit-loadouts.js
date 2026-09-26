@@ -175,7 +175,7 @@
   }
 
   function applyCulturalLoadout(entity, gangCfg, rank, opts) {
-    if (!entity?.isBandit || !entity?.def) return entity;
+    if (!entity?.isBandit || !entity?.def || entity?.enemyClass === 'minion') return entity; // Minions own their melee/no-ranged loadout and skip bandit cultural substitutions.
     const speciesId = entity.rosterRecord?.appearance?.speciesId || null;
     const metalKey = metalKeyFromWeaponKey(entity.def.weaponKey);
     const melee = applyMeleeRoll(entity, speciesId, metalKey, opts);

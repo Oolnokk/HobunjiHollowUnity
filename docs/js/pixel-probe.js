@@ -956,6 +956,8 @@
     lines.push('Performance cleanup v1: unchanged frame cadence/targeting; reticle writes deduplicated; hand diagnostics on demand.');
     const metalArmorDiagnostics = window.MetalArmorSystem?.diagnosticsText?.(); // Copyable on-phone proof of every equipped metal article's slot, alloy, Temper, verdigris, weight, and XP-hook readiness.
     if (metalArmorDiagnostics) lines.push(metalArmorDiagnostics);
+    const harlyaoSkeletonDebugLine = window.HobunjiHarlyaoSkeletonSpecies?.formatDebug?.(); // Keeps the NPC-only skeleton bridge's rig/extremity/cosmetic status copyable from the mobile Pixel Probe without DevTools.
+    if (harlyaoSkeletonDebugLine) lines.push(harlyaoSkeletonDebugLine);
     const painterlyDebug = window.PainterlyPostprocess?.snapshot?.(); // Makes the live painterly stage/tier state copyable from mobile without a console.
     if (painterlyDebug) lines.push(`Paint filter: mode=${painterlyDebug.mode} effectiveSamples≈${painterlyDebug.sampleCount} internal=${painterlyDebug.internalSize || 'waiting'} pipeline=${painterlyDebug.pipelineMode || 'off'}/${painterlyDebug.pipelineFrames || 0}f renderer=${painterlyDebug.rendererAttached ? 'attached' : 'MISSING'} composite=${painterlyDebug.compositePatched ? 'patched' : 'waiting'} outlines=${painterlyDebug.outlinesEnabled == null ? '?' : (painterlyDebug.outlinesEnabled ? 'on' : 'OFF')} error=${painterlyDebug.lastError || 'none'} latest="${painterlyDebug.latestChange || 'n/a'}"`);
     lines.push(`Livestock caller stack tracing: ${window.PerfProfiler?.traceLivestockCallers === true ? 'ON (expensive)' : 'off'}`);

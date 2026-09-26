@@ -190,6 +190,7 @@
   // real camp today, but reusing the existing rank/tier grid instead of a
   // bespoke single button gets tier variation for free.
   const DEV_SPAWN_PORAKANEKI_KEY = 'porakaneki:hunter';
+  const DEV_SPAWN_HARLYAO_SKELETON_KEY = 'harlyao-skeleton:enemy'; // Used by the species grid and spawn dispatcher to route skeleton enemies through the dedicated Minion class instead of CREATURE_DB.
 
   // Same species FoliageGenerator builds for a real wilderness zone's
   // SHRUB tiles (see game.js's _buildZoneFloorMeshes) — spawning them here
@@ -230,7 +231,9 @@
       });
       const porakanekiActive = DEV_SPAWN_PORAKANEKI_KEY === devSpawnSelectedKey ? ' fed-active' : '';
       const porakanekiBtn = `<button type="button" class="fed-btn${porakanekiActive}" data-species="${deps.esc(DEV_SPAWN_PORAKANEKI_KEY)}">🏹 Porakaneki Hunter</button>`;
-      grid.innerHTML = creatureBtns.concat(banditBtns).concat([porakanekiBtn]).join('');
+      const harlyaoSkeletonActive = DEV_SPAWN_HARLYAO_SKELETON_KEY === devSpawnSelectedKey ? ' fed-active' : ''; // Used to keep the skeleton button's selected state consistent with every other arena spawn option.
+      const harlyaoSkeletonBtn = `<button type="button" class="fed-btn${harlyaoSkeletonActive}" data-species="${deps.esc(DEV_SPAWN_HARLYAO_SKELETON_KEY)}">☠️ Harlyao Skeleton</button>`; // Added to the same species grid so it works on mobile/controller through the existing panel.
+      grid.innerHTML = creatureBtns.concat(banditBtns).concat([porakanekiBtn, harlyaoSkeletonBtn]).join('');
     }
     const tierGrid = document.getElementById('devSpawnBanditTierGrid');
     if (tierGrid) {
@@ -390,6 +393,36 @@
     renderDevSpawnPanel();
   }
 
+  // Harlyao Skeletons are Minions, not bandits. MinionCombat owns their
+  // clothing/dye/permanent-Footing rules while reusing the shared humanoid
+  // combat executor underneath.
+  async function spawnDevArenaHarlyaoSkeleton(tier) {
+    if (deps.getCurrentArea() !== DEV_ARENA_ZONE_ID) return;
+    if (!window.MinionCombat?.makeEntity) { deps.showToast('Could not spawn Harlyao Skeleton — Minion class is unavailable.', false); return; }
+    const angle = Math.random() * Math.PI * 2; // Used with dist to place the Minion near, but not directly on top of, the player.
+    const dist = deps.TILE * (1.5 + Math.random() * 2.5); // Uses the same arena spawn ring as creatures/bandits.
+    const x = deps.player.x + Math.cos(angle) * dist; // World X passed to the Minion constructor.
+    const y = deps.player.y + Math.sin(angle) * dist; // World Y/Z-plane coordinate passed to the Minion constructor.
+    const creature = await window.MinionCombat.makeEntity({
+      speciesId: 'harlyao-skeleton',
+      name: 'Harlyao Skeleton',
+      tier,
+      x, y,
+      zoneId: DEV_ARENA_ZONE_ID,
+      weaponMetalKey: 'nativeCopper',
+      extra: { homeX: x, homeY: y, state: 'idle' },
+    });
+    if (!creature) { deps.showToast('Could not spawn Harlyao Skeleton Minion — see Debug log.', false); return; }
+    if (deps.getCurrentArea() !== DEV_ARENA_ZONE_ID) { creature.avatarRef?.dispose?.(); return; } // Drops a late async spawn if the player left the arena.
+    deps.hostileObjects.add(creature);
+    _arenaSpawnedCreatures.add(creature);
+    const clothes = creature.rosterRecord?.equippedCosmetics?.join('+') || 'none'; // Copyable proof that the bandit headwear guarantee did not run.
+    const msg = `[dev-arena] spawned Harlyao Skeleton Minion #${creature.id} (class=${creature.enemyClass}, gender=${creature.rosterRecord?.appearance?.gender || '?'}, clothes=${clothes}, weapon=${creature.def?.weaponKey || 'none'}, ranged=${creature.def?.rangedWeaponKey || 'none'}, shambling=${creature.afflictions?.shamblingFooting || 0}/${creature.maxFooting || 0}, footing=${creature.footing || 0})`; // Mobile/debug-readable Minion spawn audit.
+    window.__farmLog?.(msg, 'wildlife');
+    console.log(msg);
+    renderDevSpawnPanel();
+  }
+
   function devArenaAutoKillAll() {
     const toKill = [..._arenaSpawnedCreatures];
     for (const c of toKill) {
@@ -535,6 +568,8 @@
         spawnDevArenaBandit(devSpawnSelectedKey.slice('bandit:'.length), devSpawnBanditTier);
       } else if (devSpawnSelectedKey === DEV_SPAWN_PORAKANEKI_KEY) {
         spawnDevArenaPorakaneki(devSpawnBanditTier);
+      } else if (devSpawnSelectedKey === DEV_SPAWN_HARLYAO_SKELETON_KEY) {
+        spawnDevArenaHarlyaoSkeleton(devSpawnBanditTier);
       } else {
         spawnDevArenaCreature(devSpawnSelectedKey);
       }

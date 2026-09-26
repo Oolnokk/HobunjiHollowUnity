@@ -1237,6 +1237,8 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const resolvedFighter = resolvePortraitFighter(fighter) || fighter;
   const metalStateForGroup = (group) => window.MetalArmorSystem?.portraitStateForGroup?.(group, bodyColors) || null; // Material state is resolved from the literal equipped article/base cosmetic, never from the clothing slot.
   const opacityMaskLayer = resolvedFighter?.opacityMaskLayer || fighter?.opacityMaskLayer || null;
+  const fixedPortraitSlots = resolvedFighter?.fixedPortraitSlots || fighter?.fixedPortraitSlots || null; // Always-on structural art such as Harlyao Skeleton female hair, rendered in an existing slot without becoming a selectable cosmetic.
+  const baseBodyTintEnabled = resolvedFighter?.baseBodyTint !== false && fighter?.baseBodyTint !== false; // Species with authored final-color body art can still supply bodyColors solely to procedural hands/feet.
   let headUrl = renderHeadSprite ? (resolvedFighter?.headUrl || fighter?.headUrl) : null;
   const bodyLayerSource = resolvedFighter?.bodyLayers || fighter?.bodyLayers || [];
   const urLayerSource = renderHeadSprite ? (resolvedFighter?.urLayers || fighter?.urLayers || []) : [];
@@ -1264,7 +1266,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     const referenceHex = _dyeReferenceHexForSlot(slot, _tintSpeciesId);
     return shadeFillTintForBodyColor(bodyColors[slot], referenceHex);
   };
-  const tintA = tintFor('A');
+  const tintA = baseBodyTintEnabled ? tintFor('A') : { mode: 'none' };
 
   const baseLeftArmLayers = [];
   const baseTorsoLayers = [];
@@ -1277,7 +1279,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       : normalizedId.includes('armr') ? baseRightArmLayers
       : normalizedId.includes('torso') ? baseTorsoLayers
       : baseTorsoLayers;
-    const layerTint = tintFor(layer.tintSlot || 'A'); // Tint descriptor customized below only for base-torso grayscale preservation.
+    const layerTint = baseBodyTintEnabled ? tintFor(layer.tintSlot || 'A') : { mode: 'none' }; // Authored-color species bypass base-body recoloring while clothing and procedural extremities retain their normal tint paths.
     if (target === baseTorsoLayers && layerTint?.mode !== 'none') {
       layerTint.options = {
         ...(layerTint.options || getPortraitTintingConfig()),
@@ -1319,7 +1321,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const hatUnderLayers   = [];  // hat front when configured to render under hoods
   const elevatedEyeAccessoryLayers = []; // tagged eye accessories that render above under-hood hats
   const hoodLayers    = [];  // hood — receives breathing warp
-  const pauldronLayers = []; // pauldron — static
+  const pauldronLayers = []; // pauldron — static draw order
   const hatOverLayers    = [];  // hat front when hoodLayering=over (default)
 
   const pushToTarget = (group, target) => {
@@ -1378,6 +1380,13 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
         const layerTintSlot = resolveLayerTintSlot(key, group.tintSlot);
         (layer.pos === 'back' ? preBackLayers : frontHairLayers).push({ layer, tint: tintFor(layerTintSlot), group, metalState: metalStateForGroup(group) });
       }
+    }
+  }
+  if (renderHeadCosmetics) {
+    const hoodIsWorn = !!hood && String(hood.id || '').toLowerCase() !== 'none'; // A selected hood/facewrap counts as occupied even if the structural layer itself is not a selectable hairstyle.
+    for (const fixedLayer of (fixedPortraitSlots?.pauldron || [])) { // Structural pauldron-slot layers append after equipped pauldron art unless their own visibility rule suppresses them.
+      if (fixedLayer?.hideWhenHood === true && hoodIsWorn) continue; // Generic fixed-layer rule used by Harlyao Skeleton female default hair so it never clips through a hood.
+      pauldronLayers.push({ layer: normalizePortraitLayerXform(fixedLayer), tint: { mode: 'none' }, group: null });
     }
   }
 
@@ -2206,6 +2215,8 @@ async function loadPortraitCosmetics(configBase) {
               urLayers: (genderData.headUrLayers || []).map(l => ({ url: l.url, renderOrder: l.renderOrder })),
               headXform: genderData.headXform ? normalizePortraitLayerXform(genderData.headXform) : null,
               opacityMaskLayer: genderData.portraitOpacityMaskLayer ? normalizePortraitMaskLayer(genderData.portraitOpacityMaskLayer) : null,
+              baseBodyTint: genderData.baseBodyTint,
+              fixedPortraitSlots: genderData.fixedPortraitSlots || null,
             });
             FIGHTERS.push(fighter);
           }
@@ -2225,7 +2236,11 @@ async function loadPortraitCosmetics(configBase) {
               } : {}),
               ...(genderData.portraitOpacityMaskLayer ? {
                 opacityMaskLayer: normalizePortraitMaskLayer(genderData.portraitOpacityMaskLayer)
-              } : {})
+              } : {}),
+              ...(genderData.baseBodyTint != null ? { baseBodyTint: genderData.baseBodyTint !== false } : {}),
+              ...(genderData.fixedPortraitSlots && typeof genderData.fixedPortraitSlots === 'object'
+                ? { fixedPortraitSlots: genderData.fixedPortraitSlots }
+                : {})
             };
             if (genderData.allowedCosmetics) {
               allowedCosmeticsByFighter[fighter.id] = {
@@ -2284,7 +2299,9 @@ async function loadPortraitCosmetics(configBase) {
         ...(override.armLength != null ? { armLength: override.armLength } : {}),
         ...(override.headXform ? { headXform: override.headXform } : {}),
         ...(override.bodyLayers ? { bodyLayers: override.bodyLayers } : {}),
-        ...(override.opacityMaskLayer ? { opacityMaskLayer: override.opacityMaskLayer } : {})
+        ...(override.opacityMaskLayer ? { opacityMaskLayer: override.opacityMaskLayer } : {}),
+        ...(override.baseBodyTint != null ? { baseBodyTint: override.baseBodyTint } : {}),
+        ...(override.fixedPortraitSlots ? { fixedPortraitSlots: override.fixedPortraitSlots } : {})
       });
     });
   }
@@ -2336,6 +2353,10 @@ function randomColorFromRangeSeeded(range, rng) {
  * bodyColorRanges is optional (from species data); falls back to BODYCOLOR_LIMITS.
  */
 function randomBodyColorsSeeded(rng, bodyColorRanges) {
+  const fixedHex = typeof bodyColorRanges?.fixedHex === 'string' ? bodyColorRanges.fixedHex.trim() : ''; // Fixed species colors feed procedural extremities without exposing a randomized body palette.
+  if (/^#[0-9a-f]{6}$/i.test(fixedHex)) {
+    return { A: { hex: fixedHex }, B: { hex: fixedHex }, C: { hex: fixedHex } };
+  }
   const rh = (lo, hi) => lo + rng() * (hi - lo);
   function fallback(slot) {
     const lim = BODYCOLOR_LIMITS[slot];

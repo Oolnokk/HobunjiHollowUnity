@@ -288,17 +288,18 @@
     return { entity: null, avatarRoot, visualRoot, driverRoot, handle: null };
   }
 
-  // Drunken Footing normally lowers the effective Footing ceiling. Prone
-  // recovery is the exception: player and hostile get-up logic both wait for
-  // entity.footing >= entity.maxFooting, so a reduced effective maximum makes
-  // a drunken prone entity permanently ineligible to stand. Preserve the
-  // stored drunken affliction, but ignore its cap while prone. The moment
-  // prone clears, the existing drunken cap automatically applies again.
+  // Temporary Drunken Footing must not make a prone actor permanently unable
+  // to refill enough Footing to stand. Permanent Shambling Footing is different:
+  // its unshambled remainder IS the recovery target, so a 70%-Shambling Minion
+  // only needs to refill the remaining 30%. Once prone clears, ordinary
+  // Drunken + Shambling standing caps compose again.
   if (!RS.__proneIgnoresDrunkenFootingCapInstalled) {
     const previousGetEffectiveMax = RS.getEffectiveMax.bind(RS);
     RS.getEffectiveMax = function proneAwareEffectiveMax(entity, key) {
       if (key === 'footing' && entity?.prone) {
-        return Math.max(0, Number(entity.maxFooting) || 0);
+        const target = RS.getProneRecoveryFootingTarget?.(entity); // Central target preserves Shambling while intentionally ignoring transient Drunken Footing.
+        if (Number.isFinite(Number(target))) return Math.max(0, Number(target));
+        return Math.max(0, Number(entity.maxFooting) || 0); // Compatibility fallback for old resource registries.
       }
       return previousGetEffectiveMax(entity, key);
     };

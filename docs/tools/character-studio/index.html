@@ -380,10 +380,11 @@ label{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}
 <script src="../../js/tool-metal-recolor.js?v=20260926metalarmor1"></script>
 <script src="../../js/metal-armor-system.js?v=20260926metalarmor3"></script>
 <script src="../../js/repo-picker.js?v=20260924overpassgap1"></script>
-<script src="../../js/portrait-utils.js?v=20260926metalarmor4"></script>
+<script src="../../js/portrait-utils.js?v=20260926hskelhoodhair1"></script>
 <script src="../../js/portrait-breathing.js"></script>
 <script src="../../js/npc-avatar-preview-utils.js"></script>
-<script src="../../js/png-plane-avatar.js"></script>
+<script src="../../js/harlyao-skeleton-species-runtime.js?v=20260926studio1"></script>
+<script src="../../js/png-plane-avatar.js?v=20260926hskelhairalign1"></script>
 <script src="../../js/avatar-preview-scene.js"></script>
 <script>
 (() => {
@@ -787,17 +788,23 @@ function avatarGenderFor(gender) {
   const g = String(gender || '').toLowerCase();
   return g.includes('female') || g.includes('woman') || g.includes('girl') || g === 'f' ? 'female' : 'male';
 }
+function defaultBodyColorsFor(speciesId, gender) {
+  const spec = SPECIES_DATA[speciesId] || SPECIES_DATA['mao-ao']; // Shared species metadata also marks fixed-color NPC-only variants such as Harlyao Skeleton.
+  const fixedHex = spec?.bodyColorCustomization === false ? spec?.fixedBodyColorHex : null;
+  if (fixedHex) return { A: { hex: fixedHex }, B: { hex: fixedHex }, C: { hex: fixedHex } }; // Skeleton body itself stays untinted; these fixed descriptors feed procedural extremities and exports.
+  const opts = spec?.[gender]?.colorOptions || [];
+  const base = opts[0] || { h: 0, s: -0.70, v: -0.30 };
+  return { A: { h: base.h, s: base.s, v: base.v }, B: { h: base.h, s: base.s, v: base.v }, C: deriveCFromA(base) };
+}
 function defaultAppearanceFor(src = {}) {
   const speciesId = avatarSpeciesFor(src.species || src.speciesId);
   const gender = avatarGenderFor(src.gender || src.ageBand);
   const spec = SPECIES_DATA[speciesId] || SPECIES_DATA['mao-ao'];
   const g = spec.genders.includes(gender) ? gender : spec.genders[0];
-  const opts = spec[g]?.colorOptions || [];
-  const base = opts[0] || { h: 0, s: -0.70, v: -0.30 };
   return {
     speciesId, gender: g,
     cosmetics: { ...defaultCosmeticsFor(speciesId, g) },
-    bodyColors: { A: { h: base.h, s: base.s, v: base.v }, B: { h: base.h, s: base.s, v: base.v }, C: deriveCFromA(base) },
+    bodyColors: defaultBodyColorsFor(speciesId, g),
     chatColor: { h: 210, s: 75, l: 68 },
   };
 }
@@ -937,6 +944,9 @@ function buildPreviewProfile(appearance) {
     if (savedCosmetics.facialHair !== undefined && !forcedSlots.has('facialHair') && isAllowedSavedCosmetic('facialHair', savedCosmetics.facialHair)) profile.facialHair = lookup(savedCosmetics.facialHair);
   }
   if (bodyColors) profile.bodyColors = { ...(profile.bodyColors || {}), ...bodyColors };
+  if (SPECIES_DATA[speciesId]?.bodyColorCustomization === false) {
+    profile.bodyColors = defaultBodyColorsFor(speciesId, gender); // NPC-only fixed-color species cannot inherit stale editable body colors from whichever species was selected previously.
+  }
   if (Array.isArray(appearance.bodyDeform) && appearance.bodyDeform.length > 0) {
     profile.bodyDeform = appearance.bodyDeform;
   }
@@ -1108,6 +1118,12 @@ const _dyeScrollPositions = new Map();
 
 function updateTargetPill() {
   const pill = $('targetPill');
+  const playerSelectable = SPECIES_DATA[work.appearance.speciesId]?.playerSelectable !== false; // NPC-only variants remain fully previewable/exportable but cannot overwrite the real player profile.
+  const setPlayerBtn = $('setPlayerBtn');
+  if (setPlayerBtn) {
+    setPlayerBtn.disabled = !playerSelectable;
+    setPlayerBtn.title = playerSelectable ? '' : 'NPC-only species: use Apply to NPC or Export JSON.';
+  }
   if (target.kind === 'npc') {
     const n = db.npcs.find(x => x.id === target.id);
     pill.textContent = `Editing NPC: ${n?.name || target.id}`;
@@ -1175,13 +1191,7 @@ function renderSpeciesControls() {
       work.appearance.speciesId = sid;
       if (spec && !spec.genders.includes(work.appearance.gender)) work.appearance.gender = spec.genders[0];
       work.appearance.cosmetics = defaultCosmeticsFor(sid, work.appearance.gender);
-      const gData = spec && spec[work.appearance.gender];
-      const opts = gData ? gData.colorOptions : [];
-      if (opts[0]) {
-        work.appearance.bodyColors.A = { h: opts[0].h, s: opts[0].s, v: opts[0].v };
-        work.appearance.bodyColors.B = { h: opts[0].h, s: opts[0].s, v: opts[0].v };
-        work.appearance.bodyColors.C = deriveCFromA(opts[0]);
-      }
+      work.appearance.bodyColors = defaultBodyColorsFor(sid, work.appearance.gender);
       refreshAppearanceUI();
     });
   });
@@ -1200,6 +1210,7 @@ function renderSpeciesControls() {
       }
       work.appearance.speciesId = newSpeciesId;
       work.appearance.cosmetics = newCosmetics;
+      work.appearance.bodyColors = defaultBodyColorsFor(newSpeciesId, work.appearance.gender); // Variant switches must not carry editable parent colors into fixed-color NPC variants.
       refreshAppearanceUI();
     });
   });
@@ -1207,13 +1218,7 @@ function renderSpeciesControls() {
     btn.addEventListener('click', () => {
       work.appearance.gender = btn.dataset.gender;
       work.appearance.cosmetics = defaultCosmeticsFor(work.appearance.speciesId, work.appearance.gender);
-      const gData = SPECIES_DATA[work.appearance.speciesId]?.[work.appearance.gender];
-      const opts = gData ? gData.colorOptions : [];
-      if (opts[0]) {
-        work.appearance.bodyColors.A = { h: opts[0].h, s: opts[0].s, v: opts[0].v };
-        work.appearance.bodyColors.B = { h: opts[0].h, s: opts[0].s, v: opts[0].v };
-        work.appearance.bodyColors.C = deriveCFromA(opts[0]);
-      }
+      work.appearance.bodyColors = defaultBodyColorsFor(work.appearance.speciesId, work.appearance.gender);
       refreshAppearanceUI();
     });
   });
@@ -1384,6 +1389,15 @@ async function refreshColorPicker() {
     const ranges = await _ensureColorRanges();
     const speciesId = work.appearance.speciesId;
     const gender = work.appearance.gender;
+    const speciesMeta = SPECIES_DATA[speciesId] || {};
+    const fixedHex = speciesMeta.bodyColorCustomization === false ? speciesMeta.fixedBodyColorHex : null;
+    if (fixedHex) {
+      work.appearance.bodyColors = defaultBodyColorsFor(speciesId, gender); // Keep exported editor state aligned with the runtime's fixed extremity descriptor.
+      lbl.textContent = `${speciesId} · ${gender} · fixed`;
+      const sec = $('colorPickerSection');
+      if (sec) sec.innerHTML = `<div class="help">Body colors are not customizable for this species. Procedural hands/feet use <b>${esc(fixedHex)}</b>.</div><div style="margin-top:8px;width:46px;height:46px;border-radius:10px;border:2px solid rgba(255,255,255,.5);background:${esc(fixedHex)}"></div>`;
+      return;
+    }
     const fighters = window.getPortraitFighters?.() || [];
     const match = fighters.find(f => f.speciesId && f.gender && _normalizeSpecies(f.speciesId) === _normalizeSpecies(speciesId) && String(f.gender).toLowerCase() === String(gender).toLowerCase());
     const fid = match?.id || `${speciesId}_${gender}`;
@@ -1612,6 +1626,10 @@ function setAsPlayer() {
   const typed = $('nickname').value.trim();
   const nickname = typed || existing?.nickname || 'Farmer';
   const ap = work.appearance;
+  if (SPECIES_DATA[ap.speciesId]?.playerSelectable === false) {
+    setStatus(`${SPECIES_DATA[ap.speciesId]?.label || ap.speciesId} is NPC-only; preview/export it or apply it to an NPC instead.`);
+    return;
+  }
   const playerData = {
     nickname,
     appearance: {
