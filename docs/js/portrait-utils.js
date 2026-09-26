@@ -1855,7 +1855,7 @@ function portraitVariantKeysForFighter(fighter, option) {
   const gender = String(fighter?.gender || '').trim().toLowerCase();
   if (!speciesId || !gender) return [];
   const otherGender = gender === 'male' ? 'female' : 'male';
-  const kind = (option?.slot === 'torso' || option?.slot === 'overwear') ? 'body' : 'head';
+  const kind = (option?.slot === 'torso' || option?.slot === 'overwear' || option?.slot === 'pauldron') ? 'body' : 'head';
   const candidates = [];
   const seenSpeciesGender = new Set();
   const pushCandidate = (candidateSpecies, candidateGender) => {

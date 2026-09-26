@@ -14,7 +14,7 @@
   let inventoryUiLoadStarted = false;
   // This guard keeps the capture-phase selection reset from being registered twice.
   let inventorySelectionBridgeInstalled = false;
-  const CLOTHING_SLOTS = ['hat', 'hood', 'torso', 'overwear']; // Used anywhere gear clothing must be normalized or rendered by slot.
+  const CLOTHING_SLOTS = ['hat', 'hood', 'pauldron', 'torso', 'overwear']; // Used anywhere gear clothing must be normalized or rendered by slot; pauldrons persist independently from torso/overwear.
   const clothingIconTintUrlCache = new Map(); // Used to reuse SpriteRecolor output instead of re-encoding the same dyed icon every panel rebuild.
 
   function init(injectedDeps) {
@@ -299,6 +299,7 @@
   function clothingTintKeysForSlot(slot) {
     if (slot === 'hat') return ['HAT'];
     if (slot === 'hood') return ['HOOD', 'HOOD_B'];
+    if (slot === 'pauldron') return ['PAULDRON'];
     if (slot === 'torso') return ['TORSO'];
     if (slot === 'overwear') return ['CLOTH', 'CLOTH_B'];
     return [];
@@ -440,7 +441,7 @@
     if (!gearInventory) return false;
     let changed = false; // Used to make legacy clothing migration save itself exactly when needed.
     if (!gearInventory.clothing) {
-      gearInventory.clothing = { hat: null, hood: null, torso: null, overwear: null };
+      gearInventory.clothing = { hat: null, hood: null, pauldron: null, torso: null, overwear: null };
       changed = true;
     }
     if (!Array.isArray(gearInventory.clothingItems)) {

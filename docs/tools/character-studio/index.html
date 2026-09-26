@@ -971,6 +971,7 @@ function buildPreviewProfile(appearance) {
   };
   applyEquip('hat', 'hat', hatOptions[0]);
   applyEquip('hood', 'hood', hoodOptions[0]);
+  applyEquip('pauldron', 'pauldron', none);
   applyEquip('torso', 'torsoCosmetic', torsoPortraitOptions[0]);
   applyEquip('overwear', 'armCosmetic', armPortraitOptions[0]);
 
@@ -1401,6 +1402,7 @@ function renderCollections() {
   const CLOTHING_SLOTS = [
     { key: 'hat',      label: 'Hat',      category: 'hat',      tintKeys: ['HAT',   'HAT_B',   'HAT_C'] },
     { key: 'hood',     label: 'Hood',     category: 'hood',     tintKeys: ['HOOD',  'HOOD_B',  'HOOD_C'] },
+    { key: 'pauldron', label: 'Pauldrons', category: 'pauldron', tintKeys: ['PAULDRON'] },
     { key: 'torso',    label: 'Torso',    category: 'torso',    tintKeys: ['TORSO', 'TORSO_B', 'TORSO_C'] },
     { key: 'overwear', label: 'Overwear', category: 'overwear', tintKeys: ['CLOTH', 'CLOTH_B', 'CLOTH_C'] },
   ];
@@ -1456,7 +1458,7 @@ function renderCollections() {
     }
   }
 
-  // Clothing slots (hat, hood, torso, overwear) — all items unlocked
+  // Clothing slots (hat, hood, pauldrons, torso, overwear) — all items unlocked
   for (const slot of CLOTHING_SLOTS) {
     const equippedId = acc.getEquippedForCategory(slot.category);
     const ownedByCategory = fullCatalog.filter(item => item.category === slot.category);

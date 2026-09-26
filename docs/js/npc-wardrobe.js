@@ -49,6 +49,7 @@
   const TINT_KEYS_BY_SLOT = Object.freeze({
     hat: ['HAT'],
     hood: ['HOOD', 'HOOD_B'],
+    pauldron: ['PAULDRON'],
     torso: ['TORSO'],
     overwear: ['CLOTH', 'CLOTH_B'],
   }); // Maps wardrobe clothing slots to the NPC portrait tint channels used by authored appliedDyes.
@@ -226,6 +227,7 @@
     const id = String(cosmeticId || '').toLowerCase();
     if (/hat|kasa|helmet|headband/.test(id)) return 'hat';
     if (/hood/.test(id)) return 'hood';
+    if (/pauldron|shoulder.?armor/.test(id)) return 'pauldron';
     if (/poncho|cloak|wrap|overwear/.test(id)) return 'overwear';
     return 'torso';
   }

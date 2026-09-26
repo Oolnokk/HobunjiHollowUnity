@@ -272,6 +272,7 @@
   const CLOTHING_SLOTS = [
     { key: 'hat',      label: '🎩 Hat',      category: 'hat' },
     { key: 'hood',     label: '🧣 Hood',     category: 'hood' },
+    { key: 'pauldron', label: '🛡 Pauldrons', category: 'pauldron' },
     { key: 'torso',    label: '👘 Torso',    category: 'torso' },
     { key: 'overwear', label: '🧥 Overwear', category: 'overwear' },
   ];
@@ -441,7 +442,7 @@
       // old unscaled legacy keys, which fought at a flat, mid-hierarchy 1.0x
       // multiplier with no room to grow into.
       tools:    { hoe_nativeCopper: true, hatchet_nativeCopper: true, fishingmace_nativeCopper: true, fishingspear_nativeCopper: true, pickshovel_nativeCopper: true },
-      clothing: { hat: null, hood: null, torso: null, overwear: null },
+      clothing: { hat: null, hood: null, pauldron: null, torso: null, overwear: null },
       charms: [], whistles: [],
       keyItems: [], // Character-scoped progression keys (for example Banubu's War-Paint Kit) travel with this gear save between worlds.
       // Redye system: every dye the character has ever unlocked (see
@@ -730,6 +731,7 @@
     };
     applyEquip('hat',      'hat',           hatOptions?.[0]);
     applyEquip('hood',     'hood',          hoodOptions?.[0]);
+    applyEquip('pauldron', 'pauldron',      none);
     applyEquip('torso',    'torsoCosmetic', torsoPortraitOptions?.[0]);
     applyEquip('overwear', 'armCosmetic',   armPortraitOptions?.[0]);
 
@@ -1511,7 +1513,7 @@
         <div class="ob-swatches">${dyeSwatchRow(dyeA, 'data-ob-cloth-dye-a')}</div>
         <div class="ob-section-label" style="margin-top:8px;">Secondary Dye</div>
         <div class="ob-swatches">${dyeSwatchRow(dyeB, 'data-ob-cloth-dye-b')}</div>
-        <div class="ob-muted" style="font-size:10px;margin-top:6px;">Rugged Poncho, Fine Poncho &amp; Fine Hood use both dyes. Every hue's Dusty shade is free to pick — brighter/darker variants unlock later.</div>
+        <div class="ob-muted" style="font-size:10px;margin-top:6px;">Rugged Poncho, Fine Poncho &amp; Fine Hood use both dyes; Rounded Pauldrons use the primary dye. Every hue's Dusty shade is free to pick — brighter/darker variants unlock later.</div>
       </div>`;
   }
 
@@ -1687,7 +1689,7 @@
           const dyeB   = selectedClothDye('B');
           const colorA = dyeA ? { ...dyeA.color, hex: dyeA.hex, dyeId: dyeA.id, label: dyeA.label } : { h: 0, s: -0.70, v: -0.30, label: 'Default' };
           const colorB = dyeB ? { ...dyeB.color, hex: dyeB.hex, dyeId: dyeB.id, label: dyeB.label } : colorA;
-          for (const slot of ['hat', 'hood', 'torso', 'overwear']) {
+          for (const slot of ['hat', 'hood', 'pauldron', 'torso', 'overwear']) {
             const catItem = catalog.find(i => i.category === slot && playerData.equippedCosmetics.includes(i.id));
             if (catItem) gear.clothing[slot] = makeClothingItem(catItem, colorA, colorB);
           }

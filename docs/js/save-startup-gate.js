@@ -119,6 +119,7 @@
   function clothingTintKeysForSlot(slot) {
     if (slot === 'hat') return ['HAT'];
     if (slot === 'hood') return ['HOOD', 'HOOD_B'];
+    if (slot === 'pauldron') return ['PAULDRON'];
     if (slot === 'torso') return ['TORSO'];
     if (slot === 'overwear') return ['CLOTH', 'CLOTH_B'];
     return [];
@@ -199,6 +200,7 @@
       const profileKeyBySlot = {
         hat: 'hat',
         hood: 'hood',
+        pauldron: 'pauldron',
         torso: 'torsoCosmetic',
         overwear: 'armCosmetic',
       };
