@@ -166,8 +166,14 @@ assert.match(
 
 assert.match(
   source,
-  /FIXED_HARMONY_SIX_EIGHT_CHORDS = 4[\s\S]*?FIXED_HARMONY_THREE_FOUR_CHORDS = 16[\s\S]*?FIXED_HARMONY_CYCLE_CHORDS = FIXED_HARMONY_SIX_EIGHT_CHORDS \+ FIXED_HARMONY_THREE_FOUR_CHORDS[\s\S]*?FIXED_HARMONY_CHORD_QUARTER_BEATS = 3/,
-  'the harmony cycle must be exactly four 6/8 chords followed by sixteen 3/4 chords'
+  /function generateSong\(type, bpm\)[\s\S]*?countInBeats = type === 'when-the-kininjis-bloom'[\s\S]*?FIXED_HARMONY_SIX_EIGHT_CHORDS \* KURRAYA_TIME_SIGNATURE\[0\][\s\S]*?countInMs = beatMs \* countInBeats/,
+  'the four 6/8 accompaniment bars must live before the 16-bar melody body instead of consuming its first four bars'
+);
+
+assert.match(
+  source,
+  /FIXED_HARMONY_SIX_EIGHT_CHORDS = 4[\s\S]*?FIXED_HARMONY_THREE_FOUR_CHORDS = 16[\s\S]*?FIXED_HARMONY_CYCLE_CHORDS = FIXED_HARMONY_SIX_EIGHT_CHORDS \+ FIXED_HARMONY_THREE_FOUR_CHORDS[\s\S]*?FIXED_HARMONY_CHORD_QUARTER_BEATS = 3[\s\S]*?KURRAYA_INTRO_QUARTER_BEATS = FIXED_HARMONY_SIX_EIGHT_CHORDS \* FIXED_HARMONY_CHORD_QUARTER_BEATS[\s\S]*?FIXED_HARMONY_FINAL_SHORT_STEPS = Object\.freeze\(\[0,1,3,3\]\)/,
+  'the harmony cycle must reserve four 6/8 intro chords before sixteen 3/4 melody chords and author F-G-A-A for the final short repeat'
 );
 
 assert.match(
@@ -178,14 +184,14 @@ assert.match(
 
 assert.match(
   source,
-  /function sharedTransportData\([\s\S]*?mixedPhase = fixedKurraya \? fixedKurrayaMixedMeterPhase\(performanceBeatFloat\)[\s\S]*?transportMeterBeatFloat[\s\S]*?transportAbsoluteBeat = Math\.floor\(transportMeterBeatFloat\)/,
-  'the transport beat index must stay monotonic across the 6/8 to 3/4 boundary'
+  /function sharedTransportData\([\s\S]*?rawHarmonyQuarterBeatFloat = fixedKurraya && state\.game\.active[\s\S]*?transportElapsedMs \/ Math\.max\(1,quarterBeatMs\)[\s\S]*?harmonyQuarterBeatFloat[\s\S]*?FIXED_HARMONY_CYCLE_QUARTER_BEATS - 1e-6[\s\S]*?mixedPhase = fixedKurraya \? fixedKurrayaMixedMeterPhase\(harmonyQuarterBeatFloat\)[\s\S]*?transportMeterBeatFloat = fixedKurraya[\s\S]*?transportAbsoluteBeat = Math\.floor\(transportMeterBeatFloat\)/,
+  'the authored-song harmony clock must advance through the four 6/8 intro bars, then stay monotonic through the 3/4 melody and hold the final A through the playback tail'
 );
 
 assert.match(
   source,
-  /function fixedKurrayaHarmonyCadence\(clock = sharedTransportData\(\)\)[\s\S]*?eventSerial:phase\.absoluteChord[\s\S]*?progressionStep:phase\.chordWithinCycle % FIXED_HARMONY_STEPS\.length[\s\S]*?spanBeats:phase\.meter\.numerator/,
-  'every mixed-meter bar must advance exactly one F-G-E-A root event'
+  /function fixedKurrayaProgressionStepForChord\(chordWithinCycle = 0\)[\s\S]*?FIXED_HARMONY_FINAL_SHORT_STEPS\[wrappedChord - finalShortStart\][\s\S]*?function fixedKurrayaHarmonyCadence\(clock = sharedTransportData\(\)\)[\s\S]*?eventSerial:phase\.absoluteChord[\s\S]*?progressionStep:fixedKurrayaProgressionStepForChord\(phase\.chordWithinCycle\)[\s\S]*?spanBeats:phase\.meter\.numerator/,
+  'every mixed-meter bar must advance one authored root event, with the final 3/4 short repeat resolving F-G-A-A'
 );
 assert.match(
   source,
@@ -219,7 +225,7 @@ assert.match(
 
 assert.match(
   hostSource,
-  /MUSIC_MINIGAME_SRC = 'assets\/minigames\/lyre-performance\.html\?v=20260925mixedmeter1'/,
+  /MUSIC_MINIGAME_SRC = 'assets\/minigames\/lyre-performance\.html\?v=20260925mixedmeter2'/,
   'gameplay must cache-bust the fixed-harmony minigame revision'
 );
 
@@ -230,7 +236,7 @@ assert.match(musicLab, /Visible diagnostics/, 'the standalone tool must keep mob
 assert.match(musicLab, /id="kurrayaMix"[\s\S]*?id="padMix"[\s\S]*?id="metronomeMix"/, 'the Music Lab must expose all three playback-mix sliders');
 assert.match(musicLab, /id="kurrayaSampleFile"[\s\S]*?id="padSampleFile"[\s\S]*?Recorded root/, 'the Music Lab must expose Kurraya and pad SFX import controls');
 assert.match(musicLab, /hardstep_1\.mp3[\s\S]*?hardstep_2\.mp3[\s\S]*?hardstep_3\.mp3/, 'the standalone metronome must rotate real recorded game footstep sounds');
-assert.match(musicLab, /Four chords use one 6\/8 bar each[\s\S]*?sixteen chords use one 3\/4 bar each[\s\S]*?20-chord phrase loops/, 'the Music Lab must state the four-chord 6/8 then sixteen-chord 3/4 phrase visibly');
+assert.match(musicLab, /four 6\/8 chords are the accompaniment intro before the melody begins[\s\S]*?16-bar melody body is entirely 3\/4[\s\S]*?final short repeat is F → G → A → A/i, 'the Music Lab must state the four-chord 6/8 then sixteen-chord 3/4 phrase visibly');
 assert.match(musicLab, /importKurrayaSample[\s\S]*?importPadSample[\s\S]*?useLabFootstepMetronome/, 'the Music Lab must route sample changes and footsteps through the shared engine bridge');
 
 assert.doesNotMatch(source, /1–5–6–4/, 'legacy selectable harmony ids must not survive the fixed-progression migration');
