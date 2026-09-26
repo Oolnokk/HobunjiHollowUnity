@@ -49,6 +49,7 @@ assert.deepEqual(
 assert.equal(pedestal.schema, 'hobunji_furniture_authored_runtime.v1');
 assert.equal(pedestal.key, 'stonePedestal');
 assert.equal(pedestal.parts.length, 5, 'Color Pools altar uses the existing five-part stone pedestal asset');
+assert.equal(colorLocale.cavern?.surfaceMaterial, 'farm-cliff', 'Color Pools cavern uses the same authored farm-cliff surface preset as Banubu\'s main cave');
 
 const pools = colorLocale.cavern?.features?.colorPools || [];
 assert.equal(pools.length, 3);
@@ -76,6 +77,8 @@ assert(renderer.includes('patterns.length > 1 ? { clearanceMultiplier: Math.max(
 assert(stableSource.includes('stableEntries, // Shared live Stable collection'), 'Stable progression exposes its existing live collection instead of a duplicate store');
 assert(stableSource.includes('saveStable,'), 'Color Pools persists through the Stable owner');
 assert(furniture.includes('CATALOG.stonePedestal'), 'stone pedestal has a loading-race fallback matching the authored asset');
+const pedestalFallback = furniture.slice(furniture.indexOf('CATALOG.stonePedestal = ['), furniture.indexOf('CATALOG.statue = [')); // Isolates only the Color Pools fallback recipe.
+assert.equal((pedestalFallback.match(/materialTexture: 'carved_smooth\.png'/g) || []).length, 5, 'every fallback altar stage carries the same stone texture as the authored pedestal');
 assert(game.includes("stonePedestal: { itemKey: 'colorPoolsAltarFurniture'"), 'Color Pools altar is a non-shop fixture');
 assert(game.includes("colorPoolsAltarFurniture: () => window.ColorPoolsSystem?.makeAltarInteractable"), 'the authored altar opens the Color Pools workflow');
 const buildingButtons = game.slice(game.indexOf('// Building interior: spot transitions require explicit input'), game.indexOf('// Procedural mine floors are building interiors'));
