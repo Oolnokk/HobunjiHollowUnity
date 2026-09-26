@@ -177,7 +177,7 @@
       const sameStableId = String(actor.stableId || actor.stabledId || actor.stableEntryId || '') === String(entry.id || '');
       if (!sameGenotype && !sameStableId) continue;
       actor._genotypeReadyFrames = null;
-      actor._genotypeLogged = false;
+      actor._genotypeLogged = new Set(); // game.js calls .has()/.add() on this per-frame genotype diagnostic cache after repaint.
       actor.currentFrameUrl = null;
       actor._blinkAppliedShut = null;
     }
