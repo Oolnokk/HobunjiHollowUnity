@@ -320,42 +320,86 @@ assert.strictEqual(lastSparkleEmitter.size, 0.11);
 assert.strictEqual(lastSparkleEmitter.colorA, '#112233');
 presentationHandler({ id: 'authored_vfx_stop', banubuPresentation: { sparkles: 'stop' } }, { npc: banubu, walker: presentationWalker });
 
-// Quest 1 target is generated before intro text resolves, so its three buff names are real and stable.
+// Every Banubu quest conversation is transactional: opening, choosing, or partially advancing it cannot mutate quest state.
 let state = questline.ensureQuestState();
 assert.strictEqual(state.status, 'intro');
 assert.strictEqual(state.introTalkAttempts, 0);
+
 const introSleep1 = questline.selectTree(banubu);
+const introSleep1Nodes = Object.fromEntries(introSleep1.nodes.map(node => [node.id, node]));
 assert.strictEqual(introSleep1.id, 'banubu_intro_sleep_1');
-assert.strictEqual(introSleep1.nodes.length, 1);
-assert.strictEqual(introSleep1.nodes[0].text, 'Zzzzz.');
-assert.strictEqual(introSleep1.nodes[0].next, null);
-assert.strictEqual(state.introTalkAttempts, 1);
+assert.strictEqual(introSleep1Nodes.banubu_intro_sleep_1_line.text, 'Zzzzz.');
+assert.strictEqual(introSleep1Nodes.banubu_intro_sleep_1_line.next, 'banubu_intro_sleep_1_commit');
+assert.strictEqual(state.introTalkAttempts, 0, 'opening the first wake-up dialogue must not count as completing it');
 assert.strictEqual(banubu._animalDialogueEyesOpen, false);
+presentationHandler(introSleep1Nodes.banubu_intro_sleep_1_commit, { npc: banubu, walker: presentationWalker });
+presentationHandler(null, { npc: banubu, walker: presentationWalker, ended: true });
+assert.strictEqual(state.introTalkAttempts, 1, 'the first wake-up attempt commits only after its final Continue');
+
+const introSleep2Cancel = questline.selectTree(banubu);
+const introSleep2CancelNodes = Object.fromEntries(introSleep2Cancel.nodes.map(node => [node.id, node]));
+assert.strictEqual(introSleep2Cancel.id, 'banubu_intro_sleep_2');
+assert.strictEqual(introSleep2CancelNodes.banubu_intro_sleep_2_line.text, 'Let me rest my eyes for just a few more minutes.');
+assert.strictEqual(state.introTalkAttempts, 1, 'opening the second wake-up dialogue must not count it early');
+presentationHandler(null, { npc: banubu, walker: presentationWalker, ended: true });
+assert.strictEqual(state.introTalkAttempts, 1, 'cancelling the second wake-up dialogue must replay it next time');
+
 const introSleep2 = questline.selectTree(banubu);
-assert.strictEqual(introSleep2.id, 'banubu_intro_sleep_2');
-assert.strictEqual(introSleep2.nodes.length, 1);
-assert.strictEqual(introSleep2.nodes[0].text, 'Let me rest my eyes for just a few more minutes.');
-assert.strictEqual(introSleep2.nodes[0].next, null);
+const introSleep2Nodes = Object.fromEntries(introSleep2.nodes.map(node => [node.id, node]));
+presentationHandler(introSleep2Nodes.banubu_intro_sleep_2_commit, { npc: banubu, walker: presentationWalker });
+presentationHandler(null, { npc: banubu, walker: presentationWalker, ended: true });
 assert.strictEqual(state.introTalkAttempts, 2);
 assert.strictEqual(banubu._animalDialogueEyesOpen, false);
-const intro = questline.selectTree(banubu);
-assert.strictEqual(intro.id, 'banubu_intro');
-assert.strictEqual(intro.banubuQuest.phase, 'intro');
-assert.strictEqual(intro.entryNode, 'banubu_intro_3');
-assert.strictEqual(state.introTalkAttempts, 3);
+
+const introCancel = questline.selectTree(banubu);
+const introCancelNodes = Object.fromEntries(introCancel.nodes.map(node => [node.id, node]));
+assert.strictEqual(introCancel.id, 'banubu_intro');
+assert.strictEqual(introCancel.banubuQuest.phase, 'intro');
+assert.strictEqual(introCancel.entryNode, 'banubu_intro_3');
+assert.strictEqual(state.introTalkAttempts, 2, 'third wake-up attempt remains uncommitted while its dialogue is open');
 assert.strictEqual(banubu._animalDialogueEyesOpen, true);
-assert.strictEqual(questline.dialogueEyesOpen(), true);
-assert.strictEqual(questline.selectTree(banubu).id, 'banubu_intro', 'later pre-quest talks must not replay the two sleep-only attempts');
+assert.strictEqual(questline.dialogueEyesOpen(), true, 'third-attempt presentation may open Banubu’s eyes without saving the attempt');
+const introStartAction = introCancelNodes.banubu_intro_3.choices[0].actions[0];
+assert.strictEqual(introStartAction.operation, 'unlockRecipe');
+assert.strictEqual(registeredActions.get('banubuQuest')(introStartAction, { npc: banubu, tree: introCancel, node: introCancelNodes.banubu_intro_3 }).ok, true);
+assert.strictEqual(state.status, 'intro', 'Ask for help must only prepare the recipe/quest transition');
+assert.strictEqual(state.target, null, 'intro target preview must remain out of the save until dialogue finishes');
+assert.strictEqual(unlockedRecipeIds.has(content.THREE_FISH_PIE_RECIPE_ID), false, 'Three-Fish Pie must not unlock before the final dialogue line');
+presentationHandler(null, { npc: banubu, walker: presentationWalker, ended: true });
+assert.strictEqual(state.introTalkAttempts, 2, 'cancelling the long intro must make it behave as if the conversation never started');
+assert.strictEqual(state.status, 'intro');
+assert.strictEqual(state.target, null);
+assert.strictEqual(unlockedRecipeIds.has(content.THREE_FISH_PIE_RECIPE_ID), false);
+
+const intro = questline.selectTree(banubu);
+const introNodesCommitted = Object.fromEntries(intro.nodes.map(node => [node.id, node]));
+const introRetryAction = introNodesCommitted.banubu_intro_3.choices[0].actions[0];
+assert.strictEqual(registeredActions.get('banubuQuest')(introRetryAction, { npc: banubu, tree: intro, node: introNodesCommitted.banubu_intro_3 }).ok, true);
+presentationHandler(introNodesCommitted.banubu_intro_commit, { npc: banubu, walker: presentationWalker });
+presentationHandler(null, { npc: banubu, walker: presentationWalker, ended: true });
 assert.strictEqual(state.introTalkAttempts, 3);
+assert(unlockedRecipeIds.has(content.THREE_FISH_PIE_RECIPE_ID));
+assert.strictEqual(state.status, 'offer');
+assert.strictEqual(state.stage, 1);
 assert.strictEqual(state.target.questType, 'threeFishPie');
 assert.strictEqual(state.target.requiredEffects.length, 3);
 assert.strictEqual(state.target.solutionFishKeys.length, 3);
 assert.strictEqual(context.CookingSystem.effectStrengthLabel(3), 'Concentrated');
-assert.strictEqual(questline.unlockRecipe(banubu).ok, true);
-assert(unlockedRecipeIds.has(content.THREE_FISH_PIE_RECIPE_ID));
-assert.strictEqual(state.status, 'offer');
-assert.strictEqual(state.stage, 1);
-assert.strictEqual(questline.acceptQuest(banubu, 1).ok, true);
+
+const q1OfferCancel = questline.selectTree(banubu);
+const q1OfferCancelNodes = Object.fromEntries(q1OfferCancel.nodes.map(node => [node.id, node]));
+const q1AcceptAction = q1OfferCancelNodes.banubu_q1_offer_1.choices[0].actions[0];
+assert.strictEqual(q1AcceptAction.operation, 'accept');
+assert.strictEqual(registeredActions.get('banubuQuest')(q1AcceptAction, { npc: banubu, tree: q1OfferCancel, node: q1OfferCancelNodes.banubu_q1_offer_1 }).ok, true);
+assert.strictEqual(state.status, 'offer', 'accepting Quest 1 must remain provisional while its dialogue is open');
+presentationHandler(null, { npc: banubu, walker: presentationWalker, ended: true });
+assert.strictEqual(state.status, 'offer', 'cancelling Quest 1 acceptance must leave it unaccepted');
+
+const q1Offer = questline.selectTree(banubu);
+const q1OfferNodes = Object.fromEntries(q1Offer.nodes.map(node => [node.id, node]));
+assert.strictEqual(registeredActions.get('banubuQuest')(q1OfferNodes.banubu_q1_offer_1.choices[0].actions[0], { npc: banubu, tree: q1Offer, node: q1OfferNodes.banubu_q1_offer_1 }).ok, true);
+presentationHandler(q1OfferNodes.banubu_q1_offer_commit, { npc: banubu, walker: presentationWalker });
+presentationHandler(null, { npc: banubu, walker: presentationWalker, ended: true });
 assert.strictEqual(state.status, 'active');
 assert.strictEqual(state.progress.kind, 'story');
 assert.strictEqual(state.progress.provider, 'banubu');
@@ -439,8 +483,21 @@ assert.strictEqual(state.target.solutionBlendEffects.length, 3);
 assert.strictEqual(state.target.solutionReagentTrios.length, 3);
 assert(state.target.solutionReagentTrios.every(trio => trio.length === 3), 'every Tea Blend proof must be an actual three-herb selection');
 
-// Quest 2 rejects under-strength tea even when the effect names are correct.
-assert.strictEqual(questline.acceptQuest(banubu, 2).ok, true);
+// Quest 2 acceptance is transactional too; backing out of Banubu's response leaves the offer untouched.
+const q2OfferCancel = questline.selectTree(banubu);
+const q2OfferCancelNodes = Object.fromEntries(q2OfferCancel.nodes.map(node => [node.id, node]));
+const q2AcceptAction = q2OfferCancelNodes.banubu_q2_offer_1.choices[0].actions[0];
+assert.strictEqual(registeredActions.get('banubuQuest')(q2AcceptAction, { npc: banubu, tree: q2OfferCancel, node: q2OfferCancelNodes.banubu_q2_offer_1 }).ok, true);
+assert.strictEqual(state.status, 'offer');
+presentationHandler(null, { npc: banubu, walker: presentationWalker, ended: true });
+assert.strictEqual(state.status, 'offer', 'cancelling Quest 2 acceptance must leave the offer untouched');
+
+const q2Offer = questline.selectTree(banubu);
+const q2OfferNodes = Object.fromEntries(q2Offer.nodes.map(node => [node.id, node]));
+assert.strictEqual(registeredActions.get('banubuQuest')(q2OfferNodes.banubu_q2_offer_1.choices[0].actions[0], { npc: banubu, tree: q2Offer, node: q2OfferNodes.banubu_q2_offer_1 }).ok, true);
+presentationHandler(q2OfferNodes.banubu_q2_offer_commit, { npc: banubu, walker: presentationWalker });
+presentationHandler(null, { npc: banubu, walker: presentationWalker, ended: true });
+assert.strictEqual(state.status, 'active');
 assert.strictEqual(state.progress.kind, 'story');
 assert.strictEqual(state.progress.stage, 2);
 assert.match(state.progress.title, /Nine Leaf Tea/);
