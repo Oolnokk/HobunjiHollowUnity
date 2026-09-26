@@ -20,6 +20,16 @@ const rootTotemConfigSource = read('docs/config/root-totem-config.js');
 
 assert(procedural.includes("part.kind === 'cup' || part.kind === 'liquidSurface'"),
   'pre-existing generic primitive path must remain detectable by this regression');
+assert(procedural.includes("if (part.materialLighting !== 'unlit') return new THREE.MeshLambertMaterial"),
+  'ordinary unflagged furniture must retain its established Lambert material path');
+assert(procedural.includes('window.HobunjiSpritePngSurface || window.HobunjiPngPlaneUnlit'),
+  'explicitly unlit furniture must reuse the canonical authored-PNG material factory');
+assert(procedural.includes("part.materialUvMapping !== 'connected-surface-stretch'"),
+  'connected-surface furniture remapping must remain explicitly opt-in');
+assert(procedural.includes('window.HobunjiSurfaceStretchUV'),
+  'opted-in furniture must reuse the canonical connected-surface mapper');
+assert(procedural.includes('mapper.mapMesh(mesh, {'),
+  'opted-in furniture must run the shared mapper on its final primitive geometry');
 
 // Shared part interception must delegate to the original builder first, then
 // alter geometry only for the two vessel-specific kinds. Ordinary furniture

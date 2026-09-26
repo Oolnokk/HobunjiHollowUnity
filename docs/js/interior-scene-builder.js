@@ -289,7 +289,7 @@
         col + 1, y, row + 1,
         col,     y, row + 1,
       );
-      uvs.push(col, row, col + 1, row, col + 1, row + 1, col, row + 1); // World-space UVs keep adjacent tiles visually continuous.
+      uvs.push(col, row, col + 1, row, col + 1, row + 1, col, row + 1); // Standalone fallback only; the gameplay mapper below replaces these world-tiled UVs with one 0..1 domain per connected floor surface.
       indices.push(vertex, vertex + 2, vertex + 1, vertex, vertex + 3, vertex + 2);
       vertex += 4;
     }
@@ -298,16 +298,51 @@
     geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
     geometry.setIndex(indices);
     geometry.computeVertexNormals();
-    const texture = options.textureUrl ? cavernFloorTexture(THREE, options.textureUrl, Number(options.textureRepeat) || 0.35) : null; // Explicit fallback texture guarantees a visible floor even if the natural-surface wrapper is absent.
-    const material = new THREE.MeshLambertMaterial({
-      color: options.color ?? 0x5f5a56,
-      map: texture,
-      side: THREE.DoubleSide,
-    });
-    const mesh = new THREE.Mesh(geometry, material);
+
+    const texture = options.textureUrl ? cavernFloorTexture(THREE, options.textureUrl, Number(options.textureRepeat) || 0.35) : null; // Standalone fallback retains the old repeated texture until the gameplay surface mapper successfully owns these UVs.
+    const farmCliffParity = (options.surfaceMaterial || '') === 'farm-cliff'; // Banubu + Color Pools also use the farm's canonical unlit rock material; mines/dens retain their authored material family.
+    const fallbackMaterial = farmCliffParity
+      ? new THREE.MeshBasicMaterial({ color: options.color ?? 0x5f5a56, map: texture, side: THREE.DoubleSide })
+      : new THREE.MeshLambertMaterial({ color: options.color ?? 0x5f5a56, map: texture, side: THREE.DoubleSide });
+    const mesh = new THREE.Mesh(geometry, fallbackMaterial);
     mesh.name = options.name || 'cavern_walkable_floor';
+
+    if (farmCliffParity) {
+      const natural = root.NaturalSurfaceMaterials;
+      if (typeof natural?.naturalizeMesh === 'function') natural.naturalizeMesh(mesh, 'rocks', 'planar-stretch');
+      root.FacetedNaturalSurfaceShellReduction?.suppressMesh?.(mesh, 'rocks');
+    }
+
+    const mapper = root.HobunjiSurfaceStretchUV; // Shared current 32%-edge mapper used by farm/town natural surfaces; this replaces the floor's old tiled world UVs for mines, dens, Banubu, and Color Pools alike.
+    if (typeof mapper?.mapMesh === 'function') {
+      clearSurfaceStretchCache(mesh.geometry);
+      const report = mapper.mapMesh(mesh, {
+        label: farmCliffParity ? 'interior-cavern-floor:farm-cliff' : 'interior-cavern-floor:current-surface',
+        maxPatchWorldSize: 6,
+      });
+      if (report) {
+        const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]; // Mapper owns geometry only; normalize every floor texture to one full source-PNG domain so old RepeatWrapping cannot reintroduce tiling.
+        for (const material of materials) {
+          const map = material?.map;
+          if (!map) continue;
+          map.wrapS = map.wrapT = THREE.ClampToEdgeWrapping;
+          map.repeat?.set?.(1, 1);
+          map.offset?.set?.(0, 0);
+          map.center?.set?.(0, 0);
+          map.rotation = 0;
+          map.matrixAutoUpdate = true;
+          map.needsUpdate = true;
+        }
+        mesh.userData = Object.assign({}, mesh.userData, {
+          terrainJigsawIgnore: true,
+          naturalSurfaceUvOwner: 'HobunjiSurfaceStretchUV',
+          interiorCavernFloorSurfaceMapping: farmCliffParity ? 'farm-connected-surface-stretch' : 'current-connected-surface-stretch',
+        });
+      }
+    }
+
     mesh.receiveShadow = true;
-    mesh.userData.cavernWalkableFloor = true;
+    mesh.userData = Object.assign({}, mesh.userData, { cavernWalkableFloor: true });
     return mesh;
   }
 
