@@ -29,12 +29,13 @@ assert(banubuDialogueCameras.every(camera => camera.fadePets === false), 'Banubu
 const awakeCamera = banubuDialogueCameras.find(camera => camera.id === 'banubu_dialogue_awake');
 const sleepCamera = banubuDialogueCameras.find(camera => camera.id === 'banubu_dialogue_sleep');
 const keyCamera = banubuDialogueCameras.find(camera => camera.id === 'banubu_key_ground'); // Ground-level shot used while Banubu calls attention to the root-attached key sparkle emitter.
-assert.deepStrictEqual(awakeCamera?.position, { x: 7.2, y: 0.75, z: 9.4 }, 'Banubu awake camera stays clearly above the cavern floor during the stand-up transition');
-assert.strictEqual(awakeCamera?.fovDeg, 42, 'Banubu awake camera uses a normal dialogue field of view instead of the overly tight telephoto framing');
+assert.deepStrictEqual(awakeCamera?.position, { x: 7.024, y: 0.75, z: 8.3 }, 'Banubu awake camera must reuse the sleeping shot X/Z while staying higher above the cavern floor');
+assert.strictEqual(awakeCamera?.fovDeg, 34, 'Banubu awake camera must be only slightly wider than the sleeping camera');
 assert.deepStrictEqual(sleepCamera?.position, { x: 7.024, y: 0.142, z: 8.3 }, 'Banubu sleeping camera preserves the latest in-game Map Edit authoring diff');
 assert.deepStrictEqual(keyCamera?.position, { x: 6.9, y: 0.12, z: 7.3 }, 'Banubu key camera stays down at ground level near the sparkle emitter');
-assert.strictEqual(keyCamera?.targetNpcPoint, 'root', 'Banubu key camera must aim at the NPC root shared by the sparkle emitter rather than his face');
-assert(banubuDialogueCameras.every(camera => camera.targetNpcId === 'banubu'), 'Banubu shots must target Banubu by live NPC id instead of a fixed viewport portrait');
+assert.deepStrictEqual(keyCamera?.target, { x: 6.5, y: 0, z: 5.5 }, 'Banubu key camera must aim at the fixed sparkle reveal spot while Banubu moves backward');
+assert.strictEqual(keyCamera?.targetNpcId, '', 'Banubu key camera must not follow Banubu away from the stationary key sparkle');
+assert([awakeCamera, sleepCamera].every(camera => camera.targetNpcId === 'banubu'), 'ordinary Banubu dialogue shots must continue targeting his live face');
 const secret = banubu.connectors.find(c => c.id === 'color_pools_door');
 assert(secret, 'Banubu cave must author its hidden rear connector');
 assert.strictEqual(secret.targetMap, 'map_i_color_pools');
