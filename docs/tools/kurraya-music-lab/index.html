@@ -335,8 +335,6 @@
   ];
   const ARRANGEMENT_STORAGE_KEY = 'hobunji.kurrayaMusicLabArrangement.v2'; // Versioned so the new C-capable default is not shadowed by an older four-choice draft saved before C existed.
   const MELODY_STORAGE_KEY = 'hobunji.kurrayaMusicLabMelody.v1'; // Keeps a generated melody draft through reloads without changing the repo-authored song until the user explicitly commits it.
-  const RANDOM_MELODY_RHYTHMS = Object.freeze([[1,1,1],[.5,.5,1,1],[1,.5,.5,1],[.5,1,.5,1],[.5,.5,.5,.5,1],[1.5,.5,1],[.5,1,1.5],[1,.5,1.5]]); // Three-quarter bar rhythms drawn from a small reusable vocabulary so generation produces motifs instead of rhythmic noise.
-  const RANDOM_MELODY_CADENCE_RHYTHMS = Object.freeze([[1,2],[.5,.5,2],[1,.5,1.5],[.5,1,1.5]]); // Phrase-ending rhythms reserve a longer final tone for audible cadential arrival.
   let arrangementSnapshot = null; // Latest bridge snapshot used to redraw note/chord geometry after paint, scale, or tonic changes.
   let arrangementBrushStep = 0; // Selected F/G/E/A/C root-step index used by tap/drag painting.
   let arrangementPainting = false; // Keeps pointer-drag authoring active across individual bar hit targets.
@@ -507,164 +505,6 @@
       return Math.abs(total - 48) <= .001 ? normalized : null;
     } catch {}
     return null;
-  }
-
-  function randomChoice(values) {
-    return values[Math.floor(Math.random() * values.length)]; // Used only for bounded authoring choices; every generated melody remains constrained by the tonal scoring below.
-  }
-
-  function weightedChoice(entries) {
-    const usable = entries.filter(entry => Number(entry.weight) > 0);
-    const total = usable.reduce((sum,entry) => sum + entry.weight,0);
-    if (!usable.length || total <= 0) return entries[0]?.value ?? 0;
-    let cursor = Math.random() * total;
-    for (const entry of usable) {
-      cursor -= entry.weight;
-      if (cursor <= 0) return entry.value;
-    }
-    return usable[usable.length - 1].value;
-  }
-
-  function melodicPitchClassForDegree(degree, scaleSemitones) {
-    const scale = Array.isArray(scaleSemitones) && scaleSemitones.length ? scaleSemitones : [0,2,4,5,7,9,11];
-    const wrapped = ((degree % scale.length) + scale.length) % scale.length;
-    return ((Number(scale[wrapped]) % 12) + 12) % 12;
-  }
-
-  function pitchClassDistance(first,second) {
-    const distance = Math.abs((((first % 12) + 12) % 12) - (((second % 12) + 12) % 12));
-    return Math.min(distance,12 - distance);
-  }
-
-  function chordPitchClasses(option) {
-    const root = ((Number(option?.rootSemitones) % 12) + 12) % 12;
-    const third = root + (option?.quality === 'minor' ? 3 : 4);
-    return [root,third % 12,(root + 7) % 12];
-  }
-
-  function makeMelodicContour(noteCount) {
-    const contour = [];
-    let previousInterval = 0;
-    for (let index = 1; index < noteCount; index++) {
-      let interval;
-      if (Math.abs(previousInterval) >= 3) {
-        const recovery = Math.random() < .82 ? 1 : 2; // Larger leaps normally recover by step in the opposite direction rather than chaining more disjunct motion.
-        interval = -Math.sign(previousInterval) * recovery;
-      } else {
-        interval = weightedChoice([
-          {value:-1,weight:3.2},{value:1,weight:3.2},{value:0,weight:1.4},
-          {value:-2,weight:1.45},{value:2,weight:1.45},
-          {value:-3,weight:.28},{value:3,weight:.28}
-        ]);
-      }
-      contour.push(interval);
-      previousInterval = interval;
-    }
-    return contour;
-  }
-
-  function variedContour(contour) {
-    return contour.map(interval => Math.random() < .18
-      ? weightedChoice([{value:interval,weight:3},{value:Math.max(-3,interval - 1),weight:1},{value:Math.min(3,interval + 1),weight:1}])
-      : interval); // Repeats recognizable interval shapes while allowing a small amount of phrase-to-phrase variation.
-  }
-
-  function chooseMelodyDegree({candidates,desired,previous,center,chord,strong,downbeat,previousLeap,scaleSemitones}) {
-    const triad = chordPitchClasses(chord);
-    const entries = candidates.map(degree => {
-      const pitchClass = melodicPitchClassForDegree(degree,scaleSemitones);
-      const chordDistance = Math.min(...triad.map(chordPc => pitchClassDistance(pitchClass,chordPc)));
-      const motion = previous == null ? Math.abs(degree - center) : Math.abs(degree - previous);
-      const desiredDistance = Math.abs(degree - desired);
-      let weight = 1 / (1 + desiredDistance * 1.55);
-      weight *= 1 / (1 + Math.abs(degree - center) * .22);
-      if (chordDistance === 0) weight *= downbeat ? 6.2 : strong ? 3.6 : 1.25; // Structural beats strongly prefer chord tones; weak subdivisions may decorate them with passing/neighbor tones.
-      else if (downbeat) weight *= .18;
-      else if (strong) weight *= chordDistance === 1 ? .72 : .42;
-      else weight *= chordDistance <= 2 ? 1 : .7;
-      if (motion > 4) weight *= .05;
-      else if (motion === 4) weight *= .22;
-      else if (motion === 3) weight *= .52;
-      if (previous != null && degree === previous) weight *= .62;
-      if (Math.abs(previousLeap) >= 3 && previous != null) {
-        const recoveryDirection = -Math.sign(previousLeap);
-        const direction = Math.sign(degree - previous);
-        if (direction === recoveryDirection && motion <= 2) weight *= 2.8;
-        else if (motion > 1) weight *= .22;
-      }
-      return {value:degree,weight};
-    });
-    return weightedChoice(entries);
-  }
-
-  function chooseCadenceDegree({candidates,previous,center,chord,scaleSemitones,finalPhrase}) {
-    const triad = chordPitchClasses(chord);
-    const tonicAvailable = triad.some(pc => pc === 0);
-    const targetPitchClass = finalPhrase && tonicAvailable ? 0 : triad[0]; // The last phrase prefers tonic when the current harmony actually contains it; otherwise cadence to the chord root.
-    return weightedChoice(candidates.map(degree => {
-      const pitchClass = melodicPitchClassForDegree(degree,scaleSemitones);
-      const pcDistance = pitchClassDistance(pitchClass,targetPitchClass);
-      const motion = previous == null ? 0 : Math.abs(degree - previous);
-      let weight = pcDistance === 0 ? 12 : pcDistance === 1 ? 1.1 : .08;
-      weight *= 1 / (1 + Math.abs(degree - center) * .18);
-      if (motion > 4) weight *= .05;
-      else if (motion === 4) weight *= .2;
-      else if (motion === 3) weight *= .55;
-      return {value:degree,weight};
-    }));
-  }
-
-  function composeRandomMelody(snapshot = arrangementSnapshot) {
-    const arrangement = snapshot?.arrangement;
-    const scaleSemitones = snapshot?.scaleSemitones;
-    if (!arrangement || !Array.isArray(arrangement.bodySteps) || arrangement.bodySteps.length !== 16) throw new Error('Chord arrangement is not ready.');
-    if (!Array.isArray(scaleSemitones) || scaleSemitones.length < 4) throw new Error('Current scale data is not ready.');
-    const chordByStep = new Map((arrangement.chordOptions || []).map(option => [Number(option.stepIndex),option]));
-    const candidates = Array.from({length:Math.min(14,scaleSemitones.length * 2)},(_,degree) => degree); // Keeps the line within roughly two scale octaves while staying inside the Kurraya's playable 0–19 degree range.
-    const rhythmA = randomChoice(RANDOM_MELODY_RHYTHMS);
-    let rhythmB = randomChoice(RANDOM_MELODY_RHYTHMS);
-    if (RANDOM_MELODY_RHYTHMS.length > 1) while (rhythmB === rhythmA) rhythmB = randomChoice(RANDOM_MELODY_RHYTHMS);
-    const contourA = makeMelodicContour(rhythmA.length);
-    const contourB = makeMelodicContour(rhythmB.length);
-    const phraseCenters = [4.2,5.5,6.7,5.0]; // Creates a modest four-phrase rise, peak, and return rather than a flat random walk.
-    const generated = [];
-    let previousDegree = null;
-    let previousLeap = 0;
-
-    for (let bar = 0; bar < 16; bar++) {
-      const phrase = Math.floor(bar / 4);
-      const barInPhrase = bar % 4;
-      const cadenceBar = barInPhrase === 3;
-      const rhythm = cadenceBar
-        ? randomChoice(RANDOM_MELODY_CADENCE_RHYTHMS)
-        : (barInPhrase % 2 === 0 ? rhythmA : rhythmB);
-      const baseContour = barInPhrase % 2 === 0 ? contourA : contourB;
-      const contour = phrase === 0 ? baseContour : variedContour(baseContour);
-      const chord = chordByStep.get(Number(arrangement.bodySteps[bar])) || arrangement.chordOptions?.[0];
-      const center = phraseCenters[phrase] + (Math.random() - .5) * .7;
-      let beatInBar = 0;
-
-      for (let noteIndex = 0; noteIndex < rhythm.length; noteIndex++) {
-        const duration = rhythm[noteIndex];
-        const finalNote = noteIndex === rhythm.length - 1;
-        const strong = Math.abs(beatInBar - Math.round(beatInBar)) < .001;
-        const downbeat = beatInBar < .001;
-        let degree;
-        if (cadenceBar && finalNote) {
-          degree = chooseCadenceDegree({candidates,previous:previousDegree,center,chord,scaleSemitones,finalPhrase:phrase === 3});
-        } else {
-          const interval = noteIndex === 0 ? weightedChoice([{value:-1,weight:1},{value:0,weight:2.4},{value:1,weight:1}]) : (contour[noteIndex - 1] ?? 0);
-          let desired = previousDegree == null ? center : previousDegree + interval;
-          if (Math.abs(previousLeap) >= 3 && previousDegree != null && noteIndex > 0) desired = previousDegree - Math.sign(previousLeap) * (Math.random() < .75 ? 1 : 2);
-          degree = chooseMelodyDegree({candidates,desired,previous:previousDegree,center,chord,strong,downbeat,previousLeap,scaleSemitones});
-        }
-        if (previousDegree != null) previousLeap = degree - previousDegree;
-        previousDegree = degree;
-        generated.push([degree,duration]);
-        beatInBar += duration;
-      }
-    }
-    return generated;
   }
 
   function renderArrangement(snapshot = arrangementSnapshot) {
@@ -862,7 +702,7 @@
 
   function initializeFromBridge() {
     try { bridge = engineFrame.contentWindow?.HobunjiMusicControlBridge || null; } catch { bridge = null; }
-    if (!bridge?.scaleAuditionState || !bridge?.setKurrayaSongArrangement || !bridge?.resetKurrayaSongArrangement || !bridge?.setKurrayaSongMelody || !bridge?.resetKurrayaSongMelody || !bridge?.mixState || !bridge?.setMixLevels || !bridge?.importKurrayaSample || !bridge?.importPadSample || !bridge?.useLabFootstepMetronome) {
+    if (!bridge?.scaleAuditionState || !bridge?.setKurrayaSongArrangement || !bridge?.resetKurrayaSongArrangement || !bridge?.setKurrayaSongMelody || !bridge?.randomizeKurrayaSongMelody || !bridge?.resetKurrayaSongMelody || !bridge?.mixState || !bridge?.setMixLevels || !bridge?.importKurrayaSample || !bridge?.importPadSample || !bridge?.useLabFootstepMetronome) {
       setStatus('The music engine loaded, but the Music Lab audio bridge is incomplete.', 'warn');
       renderDiagnostics(null,'Music Lab bridge methods missing');
       return;
@@ -986,15 +826,15 @@
   window.addEventListener('pointerup',() => { arrangementPainting = false; arrangementLastPaintedBar = -1; });
   window.addEventListener('pointercancel',() => { arrangementPainting = false; arrangementLastPaintedBar = -1; });
   randomMelodyBtn.addEventListener('click',async () => {
-    if (!bridge?.setKurrayaSongMelody) return;
+    if (!bridge?.randomizeKurrayaSongMelody) return;
     try {
       await stopIfPlaying();
-      const melody = composeRandomMelody(arrangementSnapshot); // Uses the currently painted chord bars, current scale, reusable motifs, strong-beat chord tones, stepwise bias, leap recovery, and phrase cadences.
-      arrangementSnapshot = bridge.setKurrayaSongMelody(melody);
+      arrangementSnapshot = bridge.randomizeKurrayaSongMelody(); // Calls the shared engine composer used by Foroji, so tool previews and ambient NPC performances follow identical melody rules.
+      const melody = (arrangementSnapshot?.arrangement?.melodyNotes || []).map(note => [note.degree,note.durationQuarterBeats]);
       saveMelodyDraft(melody);
       renderArrangement(arrangementSnapshot);
       renderDiagnostics(arrangementSnapshot);
-      setStatus('New melody composed from the current chord bars. It uses repeated rhythmic/interval motifs, mostly stepwise motion, chord tones on structural beats, and cadential phrase endings. Press Play to audition it.','good');
+      setStatus('New melody composed by the same shared generator Foroji uses. Press Play to audition it.','good');
     } catch (error) {
       setStatus(`Random melody failed: ${error.message}`,'warn');
       renderDiagnostics(arrangementSnapshot,error.message);
