@@ -68,6 +68,8 @@ const index = read('docs/index.html');
 const colorPoolsSource = read('docs/js/color-pools-system.js'); // Checks the picker surface against the game's page-wide absolute canvas styling.
 assert.match(read('docs/style.css'), /canvas\s*\{\s*position:\s*absolute/, 'game canvas styling applies globally to the Color Pools canvas');
 assert.match(colorPoolsSource, /\.cp-preview canvas\{position:static;inset:auto;[^}]*pointer-events:none/, 'the preview stays in its own panel and cannot intercept animal-picker input');
+assert(colorPoolsSource.includes('actor._genotypeLogged = new Set();'), 'repainting a live Stable animal resets the genotype log cache as a Set so companion animation can keep calling .has()/.add()');
+assert(!colorPoolsSource.includes('actor._genotypeLogged = false;'), 'Color Pools must never replace the live companion genotype log Set with a boolean');
 
 assert(renderer.includes('function applyColorPoolPaint('), 'genetic renderer owns the region-aware Color Pools paint seam');
 assert(renderer.includes("applyColorPoolPaint(baseSource, genotype, 'base'"), 'base paint is applied through its dedicated region path');
