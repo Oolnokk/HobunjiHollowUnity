@@ -191,6 +191,11 @@
   // bespoke single button gets tier variation for free.
   const DEV_SPAWN_PORAKANEKI_KEY = 'porakaneki:hunter';
   const DEV_SPAWN_HARLYAO_SKELETON_KEY = 'harlyao-skeleton:enemy'; // Used by the species grid and spawn dispatcher to route skeleton enemies through the dedicated Minion class instead of CREATURE_DB.
+  const DEV_SPAWN_HARLYAO_LICH_KEYS = Object.freeze({ // Testing Arena-only spellcaster buttons routed through HarlyaoLichCombat rather than CREATURE_DB.
+    tothal: 'harlyao-lich:tothal',
+    hronal: 'harlyao-lich:hronal',
+    kanthic: 'harlyao-lich:kanthic',
+  });
 
   // Same species FoliageGenerator builds for a real wilderness zone's
   // SHRUB tiles (see game.js's _buildZoneFloorMeshes) — spawning them here
@@ -233,7 +238,12 @@
       const porakanekiBtn = `<button type="button" class="fed-btn${porakanekiActive}" data-species="${deps.esc(DEV_SPAWN_PORAKANEKI_KEY)}">🏹 Porakaneki Hunter</button>`;
       const harlyaoSkeletonActive = DEV_SPAWN_HARLYAO_SKELETON_KEY === devSpawnSelectedKey ? ' fed-active' : ''; // Used to keep the skeleton button's selected state consistent with every other arena spawn option.
       const harlyaoSkeletonBtn = `<button type="button" class="fed-btn${harlyaoSkeletonActive}" data-species="${deps.esc(DEV_SPAWN_HARLYAO_SKELETON_KEY)}">☠️ Harlyao Skeleton</button>`; // Added to the same species grid so it works on mobile/controller through the existing panel.
-      grid.innerHTML = creatureBtns.concat(banditBtns).concat([porakanekiBtn, harlyaoSkeletonBtn]).join('');
+      const lichBtns = Object.entries(DEV_SPAWN_HARLYAO_LICH_KEYS).map(([type, key]) => { // Three explicit arena buttons make each spell kit independently testable on mobile.
+        const active = key === devSpawnSelectedKey ? ' fed-active' : ''; // Selected styling uses the existing species-grid convention.
+        const label = type.charAt(0).toUpperCase() + type.slice(1); // Human-readable lich tradition shown on the button.
+        return `<button type="button" class="fed-btn${active}" data-species="${deps.esc(key)}">🜏 ${deps.esc(label)} Lich</button>`;
+      });
+      grid.innerHTML = creatureBtns.concat(banditBtns).concat([porakanekiBtn, harlyaoSkeletonBtn], lichBtns).join('');
     }
     const tierGrid = document.getElementById('devSpawnBanditTierGrid');
     if (tierGrid) {
@@ -423,6 +433,24 @@
     renderDevSpawnPanel();
   }
 
+  async function spawnDevArenaHarlyaoLich(type, tier) {
+    if (deps.getCurrentArea() !== DEV_ARENA_ZONE_ID) return;
+    if (!window.HarlyaoLichCombat?.makeEntity) { deps.showToast('Could not spawn Harlyao Lich — lich combat class is unavailable.', false); return; }
+    const angle = Math.random() * Math.PI * 2; // Used with dist to place the lich on the standard arena spawn ring.
+    const dist = deps.TILE * (2.5 + Math.random() * 2); // Slightly farther than melee Minions so the ranged spell is immediately visible.
+    const x = deps.player.x + Math.cos(angle) * dist; // World X supplied to the lich constructor.
+    const y = deps.player.y + Math.sin(angle) * dist; // World Z-plane coordinate supplied to the lich constructor.
+    const creature = await window.HarlyaoLichCombat.makeEntity({ type, tier, x, y }); // Dedicated class owns roster, dyes, spells, commands, puddles, and summoning.
+    if (!creature) { deps.showToast(`Could not spawn ${type} Harlyao Lich — see Debug log.`, false); return; }
+    if (deps.getCurrentArea() !== DEV_ARENA_ZONE_ID) { creature.avatarRef?.dispose?.(); return; } // Drops a late async spawn if the player left while its portrait rendered.
+    deps.hostileObjects.add(creature);
+    _arenaSpawnedCreatures.add(creature);
+    const msg = `[dev-arena] spawned ${type} Harlyao Lich #${creature.id} (class=${creature.enemyClass}, dye=${creature.lichDyeId}, command=${creature._lichCommand}, hood=ragged_hood, overwear=tankan_bodywrap)`; // Mobile-copyable proof of type, class, matching dye, and forced outfit.
+    window.__farmLog?.(msg, 'wildlife');
+    console.log(msg);
+    renderDevSpawnPanel();
+  }
+
   function devArenaAutoKillAll() {
     const toKill = [..._arenaSpawnedCreatures];
     for (const c of toKill) {
@@ -570,6 +598,8 @@
         spawnDevArenaPorakaneki(devSpawnBanditTier);
       } else if (devSpawnSelectedKey === DEV_SPAWN_HARLYAO_SKELETON_KEY) {
         spawnDevArenaHarlyaoSkeleton(devSpawnBanditTier);
+      } else if (devSpawnSelectedKey?.startsWith('harlyao-lich:')) {
+        spawnDevArenaHarlyaoLich(devSpawnSelectedKey.slice('harlyao-lich:'.length), devSpawnBanditTier);
       } else {
         spawnDevArenaCreature(devSpawnSelectedKey);
       }
