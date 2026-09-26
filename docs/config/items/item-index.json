@@ -713,6 +713,12 @@
     "icon": "👕",
     "cat": "clothing"
   },
+  "cosmetic:rounded_pauldron": {
+    "key": "cosmetic:rounded_pauldron",
+    "label": "Rounded Pauldrons",
+    "icon": "👕",
+    "cat": "clothing"
+  },
   "cosmetic:simple_poncho": {
     "key": "cosmetic:simple_poncho",
     "label": "Simple Poncho",

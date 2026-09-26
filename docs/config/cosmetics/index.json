@@ -47,6 +47,10 @@
       "path": "./clothes/overwear/fine_poncho.json"
     },
     {
+      "id": "rounded_pauldron",
+      "path": "./clothes/pauldrons/rounded_pauldron.json"
+    },
+    {
       "id": "anuri_hood",
       "path": "./anuri_hood.json"
     },

@@ -272,6 +272,7 @@
   const CLOTHING_SLOTS = [
     { key: 'hat',      label: '🎩 Hat',      category: 'hat' },
     { key: 'hood',     label: '🧣 Hood',     category: 'hood' },
+    { key: 'pauldron', label: '🛡 Pauldrons', category: 'pauldron' },
     { key: 'torso',    label: '👘 Torso',    category: 'torso' },
     { key: 'overwear', label: '🧥 Overwear', category: 'overwear' },
   ];
@@ -441,7 +442,7 @@
       // old unscaled legacy keys, which fought at a flat, mid-hierarchy 1.0x
       // multiplier with no room to grow into.
       tools:    { hoe_nativeCopper: true, hatchet_nativeCopper: true, fishingmace_nativeCopper: true, fishingspear_nativeCopper: true, pickshovel_nativeCopper: true },
-      clothing: { hat: null, hood: null, torso: null, overwear: null },
+      clothing: { hat: null, hood: null, pauldron: null, torso: null, overwear: null },
       charms: [], whistles: [],
       keyItems: [], // Character-scoped progression keys (for example Banubu's War-Paint Kit) travel with this gear save between worlds.
       // Redye system: every dye the character has ever unlocked (see
@@ -724,12 +725,13 @@
       return [eqId, ...cands.map(i => i.id)].find(id => optionCache?.has(id)) ?? eqId;
     };
     const applyEquip = (cat, key, fallback) => {
-      const eqId = catalog.find(i => i.category === cat && equipped.includes(i.id))?.id ?? null;
+      const eqId = catalog.find(i => i.category === cat && !i.smithOnly && equipped.includes(i.id))?.id ?? null;
       const rid  = resolveVar(cat, eqId);
       profile[key] = (rid && optionCache?.has(rid)) ? optionCache.get(rid) : (fallback ?? none);
     };
     applyEquip('hat',      'hat',           hatOptions?.[0]);
     applyEquip('hood',     'hood',          hoodOptions?.[0]);
+    applyEquip('pauldron', 'pauldron',      none);
     applyEquip('torso',    'torsoCosmetic', torsoPortraitOptions?.[0]);
     applyEquip('overwear', 'armCosmetic',   armPortraitOptions?.[0]);
 
@@ -768,7 +770,7 @@
       profile.bodyColors = {
         ...(profile.bodyColors || {}),
         HAT: clothDyeColor(clothDyeA), HOOD: clothDyeColor(clothDyeA),
-        TORSO: clothDyeColor(clothDyeA), CLOTH: clothDyeColor(clothDyeA),
+        PAULDRON: clothDyeColor(clothDyeA), TORSO: clothDyeColor(clothDyeA), CLOTH: clothDyeColor(clothDyeA),
       };
     }
     if (clothDyeB) {
@@ -1468,8 +1470,8 @@
 
     let slotsHtml = '';
     for (const slot of CLOTHING_SLOTS) {
-      const byCategory  = catalog.filter(i => i.category === slot.category);
-      const equippedId  = catalog.find(i => i.category === slot.category && equipped.includes(i.id))?.id ?? null;
+      const byCategory  = catalog.filter(i => i.category === slot.category && !i.smithOnly);
+      const equippedId  = catalog.find(i => i.category === slot.category && !i.smithOnly && equipped.includes(i.id))?.id ?? null;
       // Deduplicate by label+material, prefer species/gender match
       const deduped = new Map();
       for (const item of byCategory) {
@@ -1687,8 +1689,8 @@
           const dyeB   = selectedClothDye('B');
           const colorA = dyeA ? { ...dyeA.color, hex: dyeA.hex, dyeId: dyeA.id, label: dyeA.label } : { h: 0, s: -0.70, v: -0.30, label: 'Default' };
           const colorB = dyeB ? { ...dyeB.color, hex: dyeB.hex, dyeId: dyeB.id, label: dyeB.label } : colorA;
-          for (const slot of ['hat', 'hood', 'torso', 'overwear']) {
-            const catItem = catalog.find(i => i.category === slot && playerData.equippedCosmetics.includes(i.id));
+          for (const slot of ['hat', 'hood', 'pauldron', 'torso', 'overwear']) {
+            const catItem = catalog.find(i => i.category === slot && !i.smithOnly && playerData.equippedCosmetics.includes(i.id));
             if (catItem) gear.clothing[slot] = makeClothingItem(catItem, colorA, colorB);
           }
           return gear;
