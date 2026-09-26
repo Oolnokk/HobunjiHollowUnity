@@ -6039,6 +6039,8 @@
     // impassable. Flag it so the merge can force it to the group's real
     // (interior, non-incline) tier instead of computing ring-ness for it.
     if (tile.designRole === 'borderEntryGate') output.borderEntryGate = true;
+    if (tile.archipelagoSea) output.archipelagoSea = true;
+    if (tile.archipelagoIslandId) output.archipelagoIslandId = tile.archipelagoIslandId;
     if (tile.borderEscarpment) {
       output.borderEscarpment = true;
       output.generatedBorderEscarpment = true;
