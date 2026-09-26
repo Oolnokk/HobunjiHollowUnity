@@ -175,6 +175,8 @@
       archipelagoLandScale: 1,
       archipelagoShoreNoise: 1,
       archipelagoPreservedLand: [],
+      archipelagoTerraces: false, // Used by Eastern Mire to build low stacked shelves that follow each curved island instead of global plateau blobs.
+      archipelagoTerraceMaxTier: 3, // Used as the short per-island terrace stack ceiling.
       pathAnchors: 4,
       // See findPath's randomBias term — multiplier on how strongly the A*
       // path search prefers meandering over a straight line to its target.
@@ -5327,7 +5329,11 @@
       const tile = tileAt(x, y);
       if (!tile) return false;
       if (tile.water || tile.river || tile.path || tile.ramp || tile.cliffSkirt || tile.waterfall) return false;
-      if (usesArchipelagoLayout() && (tile.plateauRing || tile.borderEscarpment)) return false; // Mirewood uses the Cloud Forest spacing rule but stays on genuine flat island/plateau tops, never on auto-generated cliff slopes.
+      if (usesArchipelagoLayout() && tile.borderEscarpment) return false; // Mirewood stays off the generated world-edge escarpment.
+      if (usesArchipelagoLayout() && tile.plateauRing) {
+        const dropsAtEdge = cardinalNeighbors(tile.x, tile.y).some(neighbor => !neighbor || neighbor.elevation < tile.elevation); // Used to reject only real terrace cliff faces while keeping same-height edge cells forestable.
+        if (dropsAtEdge) return false;
+      }
       if (tile.occupiedBy) return false;
       if (hasNearbyTreeObject(x, y, clusterKeys)) return false;
       if (nearDenEntrance(x, y)) return false;
@@ -6710,9 +6716,9 @@
       entrySide: 'west', preset: 'custom', boundaryMode: 'followMapHeight', boundaryCliffBoost: 0,
       archipelago: true, archipelagoColumns: 4, archipelagoRows: 3, archipelagoLandScale: 1.1, archipelagoShoreNoise: 1.15,
       archipelagoPreservedLand: [{ x: 17, y: 14.5, radius: 5, label: 'Leaf & Pahu house' }],
-      plateaus: 30, plateauAreaMul: 1.8, lowProfilePlateaus: true, maxTier: 3,
-      wideRamps: true, ramps: 24, caves: 0,
-      ponds: 8, plateauPonds: 6, plateauStreams: 8, rivers: 0,
+      plateaus: 0, maxTier: 3, archipelagoTerraces: true, archipelagoTerraceMaxTier: 3,
+      wideRamps: false, ramps: 40, rampMaxAngle: 50, caves: 0,
+      ponds: 8, plateauPonds: 0, plateauStreams: 0, rivers: 0,
       trees: 4000, treesFillGaps: true, treeThinning: 0.2, treeVarietyFraction: 0, denEntranceTreeClearance: 3,
       bushes: 90, pathWindiness: 3, entryGateWidthMul: 0.45,
     },
@@ -8797,7 +8803,85 @@
       seaRatio: Number((seaTiles / Math.max(1, settings.width * settings.height)).toFixed(3)),
     };
     logDebug(`archipelago: ${plan.islands.length} intended islands, ${landFootprintTiles} island-footprint tiles, ${seaTiles} open-water tiles (${(map.archipelago.seaRatio * 100).toFixed(1)}%), ${inlandWaterTiles} inland-water tiles, ${preservedTiles} fixed-land tiles`);
-    return { applied: true, islands: plan.islands.length, seaTiles, landFootprintTiles, inlandWaterTiles, preservedTiles };
+    return { applied: true, islands: plan.islands.length, seaTiles, landFootprintTiles, inlandWaterTiles, preservedTiles, plan };
+  }
+
+  function applyArchipelagoTerraces(plan) {
+    if (!usesArchipelagoLayout() || !settings.archipelagoTerraces || !plan?.islands?.length) return { applied:false, terraceCount:0, tierCounts:{} };
+    const maxTier = clamp(Math.round(Number(settings.archipelagoTerraceMaxTier) || 3), 1, 3); // Used to keep individual Mire shelves short even when several levels stack.
+    const terraceDefs = new Map(); // Used to cache each island's broad longitudinal shelf centers before classifying land tiles.
+    let terraceCount = 0;
+
+    for (const island of plan.islands) {
+      const points = island.spinePoints || [];
+      if (!points.length) continue;
+      const count = 2 + Math.floor(noise2(island.index, 23, plan.seedSalt + 1201) * 3); // Used to give each long island two to four broad elevated districts.
+      const defs = [];
+      for (let i = 0; i < count; i++) {
+        const evenT = (i + 1) / (count + 1);
+        const offset = (noise2(island.index, i, plan.seedSalt + 1213) - 0.5) * 0.22;
+        const centerT = clamp(evenT + offset, 0.12, 0.88); // Used to spread terraces along the curved island rather than clustering them at one end.
+        const centerIndex = centerT * Math.max(1, points.length - 1);
+        const spanPoints = Math.max(1.8, points.length * (0.16 + noise2(island.index, i, plan.seedSalt + 1229) * 0.13)); // Used to make each level wide/long along the island spine.
+        const crossRadius = Math.max(2.4, island.meanWidth * (0.48 + noise2(i, island.index, plan.seedSalt + 1237) * 0.20)); // Used to let shelves span most of the narrow island while leaving an uneven low shoreline.
+        const stackTier = clamp(2 + (noise2(island.index, i, plan.seedSalt + 1249) > 0.48 ? 1 : 0), 1, maxTier); // Used to vary whether this district tops out at tier 2 or tier 3.
+        defs.push({ centerIndex, spanPoints, crossRadius, stackTier });
+        terraceCount++;
+      }
+      terraceDefs.set(island.id, defs);
+    }
+
+    const tierCounts = {}; // Used by visible generator diagnostics/regressions to report how much island land ended at each short stacked level.
+    let changed = 0;
+    for (const tile of allTiles()) {
+      if (!tile || tile.archipelagoSea || tile.water || !tile.archipelagoIslandId) continue;
+      const island = plan.islands.find(item => item.id === tile.archipelagoIslandId);
+      const defs = terraceDefs.get(tile.archipelagoIslandId);
+      if (!island || !defs?.length || !island.spinePoints?.length) continue;
+
+      let nearestIndex = 0; // Used to project this tile onto the island's curved centerline for longitudinal terrace shaping.
+      let nearestDistance = Infinity;
+      for (let i = 0; i < island.spinePoints.length; i++) {
+        const point = island.spinePoints[i];
+        const distance = Math.hypot(tile.x - point.x, tile.y - point.y);
+        if (distance < nearestDistance) {
+          nearestDistance = distance;
+          nearestIndex = i;
+        }
+      }
+
+      let tier = 0;
+      for (const def of defs) {
+        const longitudinal = Math.abs(nearestIndex - def.centerIndex) / def.spanPoints;
+        const cross = nearestDistance / def.crossRadius;
+        const metric = longitudinal * longitudinal + cross * cross;
+        if (metric > 1) continue;
+        let localTier = 1;
+        if (def.stackTier >= 2 && metric <= 0.58) localTier = 2; // Broad second shelf nested inside the first.
+        if (def.stackTier >= 3 && metric <= 0.25) localTier = 3; // Smaller third shelf creates visible stacking without tall isolated spikes.
+        tier = Math.max(tier, localTier);
+      }
+
+      tile.elevation = tier;
+      tile.height = tier;
+      tile.terrain = tier > 0 ? 'plateau' : 'grass';
+      tile.generatedPlateauBlobId = tier > 0 ? `archipelago_terrace_${tile.archipelagoIslandId}_tier_${tier}` : null;
+      tile.archipelagoTerraceTier = tier;
+      tierCounts[tier] = (tierCounts[tier] || 0) + 1;
+      if (tier > 0) changed++;
+    }
+
+    if (map.archipelago) {
+      map.archipelago.terraces = {
+        enabled:true,
+        terraceCount,
+        maxTier,
+        raisedTiles:changed,
+        tierCounts:{ ...tierCounts },
+      };
+    }
+    logDebug(`archipelago terraces: ${terraceCount} broad shelves, ${changed} raised island tiles, tiers ${Object.entries(tierCounts).map(([tier,count]) => `${tier}:${count}`).join(', ')}`);
+    return { applied:true, terraceCount, tierCounts };
   }
 
   function usesGreatInclineStepCurve() {
@@ -8852,8 +8936,9 @@
     applyGreatInclineMountainsideProfile();
     applyGreatBasinHorseshoeProfile(); // Great Basin linear height lerp
     syncTileHeights();
-    applyArchipelagoLayout(); // Eastern Mire only: flood the gaps between deterministic island footprints before world-edge/entry generation.
-    applyManualPlateauPaintingRules(); // Refresh plateau ownership after archipelago sea removes portions of generated shelves.
+    const archipelagoLayout = applyArchipelagoLayout(); // Eastern Mire only: flood the gaps between deterministic long island ribbons before world-edge/entry generation.
+    applyArchipelagoTerraces(archipelagoLayout.plan); // Mire-only broad low shelves follow those curved ribbons and stack to at most tier 3.
+    applyManualPlateauPaintingRules(); // Refresh plateau ownership after archipelago sea/terrace shaping.
     syncTileHeights();
     map.preselectedEntrySide = resolveGenerationEntrySide();
     generateBorderEscarpments();
