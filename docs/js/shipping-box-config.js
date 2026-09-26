@@ -7,7 +7,7 @@
   // Geometry/per-part authored colors remain in config/furniture-authored/
   // shippingBox.json because that file is the furniture database itself.
   window.ShippingBoxConfig = {
-    version: '2026-09-02.4',
+    version: '2026-09-26.1',
 
     object: {
       id: 'sell_crate',
@@ -45,7 +45,7 @@
     material: {
       // Every authored Shipping Box surface is forced onto this PNG after the
       // async load completes, then multiplied by its authored part color.
-      texture: 'carved_smooth.png',
+      texture: 'crate_side.png',
       textureBasePath: 'assets/textures/',
       forceTextureOnEveryPart: true,
       multiplyAuthoredColor: true,
