@@ -2021,7 +2021,7 @@
             });
           }
 
-          const allowStraightFallback = false; // curved wrap ramps are preferred; emergency connectivity can still repair traversal later.
+          const allowStraightFallback = usesArchipelagoLayout(); // Curved wrap ramps stay preferred elsewhere; Mire terraces also allow short direct cuts because their narrow shelves do not provide 14+ tiles of ledge run.
           if (allowStraightFallback) {
             const directRunLimit = Math.max(12, minimumRampRun + 7);
             const highRun = measureSameTierRun(high.x, high.y, -normal.x, -normal.y, high.elevation, directRunLimit);
@@ -3092,6 +3092,8 @@
     const scored = candidates.map(candidate => {
       const axis = requested === 'north' || requested === 'south' ? candidate.x : candidate.y;
       const centerPenalty = Math.abs(axis - center) / Math.max(1, center);
+      const candidateTile = tileAt(candidate.x, candidate.y); // Used to keep an archipelago entry gate on the actual authored entry ribbon instead of carving a second detached coast opening.
+      const entryIslandPenalty = usesArchipelagoLayout() && candidateTile?.archipelagoIslandId !== map.archipelago?.entryIslandId ? 1000 : 0;
       const waterPenalty = entryGateWaterCount(candidate, gateHalfWidth, gateDepth);
       const inward = inwardDirectionForBorderTile(candidate.x, candidate.y);
       const inner = tileAt(
@@ -3099,7 +3101,7 @@
         clamp(candidate.y + inward.dir.y * (gateDepth + 2), 0, settings.height - 1)
       );
       const heightPenalty = inner ? Math.max(0, tileHeight(inner) - 2) * 0.08 : 1;
-      return { candidate, score: -waterPenalty * 9 - centerPenalty * 4 - heightPenalty + noise2(candidate.x, candidate.y, 74231) * 0.25 };
+      return { candidate, score: -entryIslandPenalty - waterPenalty * 9 - centerPenalty * 4 - heightPenalty + noise2(candidate.x, candidate.y, 74231) * 0.25 };
     }).sort((a, b) => b.score - a.score);
     let chosen = scored.length ? scored[0].candidate : null;
     if (!chosen) chosen = { x: 0, y: Math.floor(settings.height / 2), side: 'west' };
@@ -8845,6 +8847,79 @@
     return { applied: true, islands: plan.islands.length, seaTiles, landFootprintTiles, inlandWaterTiles, preservedTiles, plan };
   }
 
+  function pruneDisconnectedArchipelagoLand(plan) {
+    if (!usesArchipelagoLayout() || !plan?.islands?.length) return { removed:0, splitIslands:0 };
+    let removed = 0;
+    let splitIslands = 0;
+    const preserved = Array.isArray(settings.archipelagoPreservedLand) ? settings.archipelagoPreservedLand : []; // Used to prefer the component containing a fixed authored landmark when an overlap clipped its island.
+
+    for (const island of plan.islands) {
+      const candidates = allTiles().filter(tile => tile && !tile.archipelagoSea && tile.archipelagoIslandId === island.id);
+      if (!candidates.length) continue;
+      const candidateKeys = new Set(candidates.map(tile => tileKey(tile.x, tile.y)));
+      const visited = new Set();
+      const components = [];
+      for (const start of candidates) {
+        const startKey = tileKey(start.x, start.y);
+        if (visited.has(startKey)) continue;
+        const component = [];
+        const stack = [start];
+        visited.add(startKey);
+        while (stack.length) {
+          const tile = stack.pop();
+          component.push(tile);
+          for (const neighbor of cardinalNeighbors(tile.x, tile.y)) {
+            if (!neighbor) continue;
+            const key = tileKey(neighbor.x, neighbor.y);
+            if (!candidateKeys.has(key) || visited.has(key)) continue;
+            visited.add(key);
+            stack.push(neighbor);
+          }
+        }
+        components.push(component);
+      }
+      if (components.length <= 1) continue;
+      splitIslands++;
+
+      const anchor = preserved.find(item => Number.isFinite(item?.x) && Number.isFinite(item?.y)
+        && Math.hypot(item.x - island.centerX, item.y - island.centerY) < Math.max(18, island.spineLength * 0.75)); // Used to associate a fixed landmark with the island whose planned ribbon actually passes nearby.
+      let keep = components.slice().sort((a,b) => b.length - a.length)[0];
+      if (anchor) {
+        const anchored = components.find(component => component.some(tile => Math.hypot(tile.x - anchor.x, tile.y - anchor.y) <= Math.max(1.5, Number(anchor.radius) || 0)));
+        if (anchored && anchored.length >= keep.length * 0.35) keep = anchored; // Preserve the authored landmark without sacrificing a vastly larger primary ribbon to a tiny accidental fragment.
+      }
+      const keepSet = new Set(keep.map(tile => tileKey(tile.x, tile.y)));
+      for (const tile of candidates) {
+        if (keepSet.has(tileKey(tile.x, tile.y))) continue;
+        removed++;
+        tile.archipelagoSea = true;
+        tile.archipelagoIslandId = null;
+        tile.water = true;
+        tile.waterfall = false;
+        tile.terrain = 'stream';
+        tile.elevation = 0;
+        tile.height = 0;
+        tile.generatedPlateauBlobId = null;
+        tile.plateauGroupId = null;
+        tile.plateauRing = false;
+        tile.plateauInterior = false;
+        tile.ramp = false;
+        tile.navRamp = false;
+        tile.path = false;
+        tile.invisiblePath = false;
+        tile.bridge = false;
+        tile.navBridge = false;
+      }
+    }
+
+    if (map.archipelago) {
+      map.archipelago.prunedDetachedTiles = removed;
+      map.archipelago.prunedSplitIslands = splitIslands;
+    }
+    logDebug(`archipelago connectivity prune: removed ${removed} detached land tiles across ${splitIslands} split island(s)`);
+    return { removed, splitIslands };
+  }
+
   function applyArchipelagoTerraces(plan) {
     if (!usesArchipelagoLayout() || !settings.archipelagoTerraces || !plan?.islands?.length) return { applied:false, terraceCount:0, tierCounts:{} };
     const maxTier = clamp(Math.round(Number(settings.archipelagoTerraceMaxTier) || 3), 1, 3); // Used to keep individual Mire shelves short even when several levels stack.
@@ -8976,6 +9051,7 @@
     applyGreatBasinHorseshoeProfile(); // Great Basin linear height lerp
     syncTileHeights();
     const archipelagoLayout = applyArchipelagoLayout(); // Eastern Mire only: flood the gaps between deterministic long island ribbons before world-edge/entry generation.
+    pruneDisconnectedArchipelagoLand(archipelagoLayout.plan); // Remove only clipped satellite tips so every named primary ribbon remains one physical island.
     applyArchipelagoTerraces(archipelagoLayout.plan); // Mire-only broad low shelves follow those curved ribbons and stack to at most tier 3.
     applyManualPlateauPaintingRules(); // Refresh plateau ownership after archipelago sea/terrace shaping.
     syncTileHeights();
