@@ -60,6 +60,12 @@
 
   const num = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
   const clamp = (value, lo, hi) => Math.max(lo, Math.min(hi, value));
+  function markOutline(root) {
+    root?.traverse?.(child => {
+      if (!child?.isMesh || child.userData?.noOutline === true) return;
+      child.layers?.enable?.(1);
+    });
+  }
   const nowMs = () => typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
   const rand = () => {
     const value = combatDeps?.rnd?.();
