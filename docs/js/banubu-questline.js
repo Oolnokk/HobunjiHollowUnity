@@ -662,19 +662,22 @@
     return anchor;
   }
 
-  function startSparkles(walker) {
+  function startSparkles(walker, authoredEmitter = null, maxParticles = 48, anchorMode = 'world') {
     if (!walker?.root || !global.AuthoredFurniture?.createEmitterVisual || !ensurePresentationScheduler()) return false;
     if (presentationState.sparkleVisual && presentationState.walker === walker) return true;
     stopSparkles();
-    const anchor = sparkleAnchorFor(walker);
+    const anchor = anchorMode === 'root' ? walker.root : sparkleAnchorFor(walker); // Legacy string cues default to the fixed reveal spot; editor-authored cues may explicitly attach back to Banubu.
     if (!anchor) return false;
     anchor.userData ||= {};
+    const source = authoredEmitter && typeof authoredEmitter === 'object' ? authoredEmitter : SPARKLE_EMITTER_TEMPLATE; // Dialogue Editor may own the complete emitter recipe; the template remains backwards-compatible fallback data.
     const emitter = {
       ...SPARKLE_EMITTER_TEMPLATE,
-      position: { ...SPARKLE_EMITTER_TEMPLATE.position },
-      rotation: { ...SPARKLE_EMITTER_TEMPLATE.rotation },
-    }; // Used as a fresh mutable record because the emitter renderer may read live overrides over its lifetime.
-    const visual = global.AuthoredFurniture.createEmitterVisual(anchor, emitter, 48);
+      ...source,
+      position: { ...SPARKLE_EMITTER_TEMPLATE.position, ...(source.position || {}) },
+      rotation: { ...SPARKLE_EMITTER_TEMPLATE.rotation, ...(source.rotation || {}) },
+    }; // Fresh mutable record protects authored dialogue data from renderer mutation.
+    const particleBudget = Math.max(1, Math.min(512, Math.round(Number(maxParticles) || 48))); // Editor-authored budget remains bounded against accidental extreme values.
+    const visual = global.AuthoredFurniture.createEmitterVisual(anchor, emitter, particleBudget);
     if (!visual) {
       if (presentationState.sparkleAnchor?.parent?.remove) presentationState.sparkleAnchor.parent.remove(presentationState.sparkleAnchor);
       presentationState.sparkleAnchor = null;
@@ -713,8 +716,12 @@
     else if (cue.body === 'sleep') walker._animalSleepPresentationOverride = 'sleep';
     if (cue.neck === 'max_down') walker._animalHeadPoseOverride = 'max_down';
     else if (cue.neck === 'release') delete walker._animalHeadPoseOverride;
-    if (cue.sparkles === 'start' && !startSparkles(walker)) debugState.lastError = 'Banubu sparkle emitter could not be created.';
-    else if (cue.sparkles === 'stop') stopSparkles();
+    const sparkleAction = typeof cue.sparkles === 'string' ? cue.sparkles : cue.sparkles?.action; // Accepts legacy string cues and complete Dialogue Editor-authored VFX records.
+    const sparkleEmitter = typeof cue.sparkles === 'object' ? cue.sparkles?.emitter : null; // Full particle recipe from the Dialogue Editor when present.
+    const sparkleMaxParticles = typeof cue.sparkles === 'object' ? cue.sparkles?.maxParticles : 48; // Authored particle budget is consumed rather than hidden in runtime.
+    const sparkleAnchorMode = typeof cue.sparkles === 'object' ? cue.sparkles?.anchor || 'world' : 'world'; // Fixed reveal spot is the current cutscene default; root remains explicitly authorable.
+    if (sparkleAction === 'start' && !startSparkles(walker, sparkleEmitter, sparkleMaxParticles, sparkleAnchorMode)) debugState.lastError = 'Banubu sparkle emitter could not be created.';
+    else if (sparkleAction === 'stop') stopSparkles();
     if (cue.move) beginActorMove(walker, cue.move);
     if (Number(cue.commitTurnIn) > 0) {
       const committed = commitPreparedTurnIn(context.npc, Number(cue.commitTurnIn));
