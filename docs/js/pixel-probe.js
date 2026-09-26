@@ -1215,6 +1215,11 @@
       if (animalSurface) lines.push(`Color fill animal pattern: shade#${animalSurface.sequence || '-'} sample=${animalSurface.sampledCount} apply=${animalSurface.appliedCount} peak=${animalSurface.peak} splitMask=${animalSurface.separateSampleMask ? 'yes' : 'no'} source=${animalSurface.externalSource ? 'original' : 'current'}`);
     }
     lines.push(pxBuf ? `Raw color under cursor: rgba(${pxBuf[0]},${pxBuf[1]},${pxBuf[2]},${pxBuf[3]})` : 'Raw color under cursor: (readback failed)');
+    const interiorFurnitureCollision = window.InteriorFurnitureGrid?.debugSnapshot?.(); // Used to expose freeform interior collision on mobile without requiring a console.
+    if (interiorFurnitureCollision?.lastMapId || interiorFurnitureCollision?.lastFurnitureCount) {
+      const collisionSamples = (interiorFurnitureCollision.lastCollisionBoundsSample || []).map(sample => `${sample.id || '?'} center=${sample.centerX},${sample.centerZ} size=${sample.width}x${sample.depth} rot=${sample.rotationDeg}°`); // Used as a compact copyable proof that collision follows post transforms.
+      lines.push(`Interior furniture collision: map=${interiorFurnitureCollision.lastMapId || '-'} furniture=${interiorFurnitureCollision.lastFurnitureCount || 0} bounds=${interiorFurnitureCollision.lastCollisionBounds || 0} outsideGrid=${interiorFurnitureCollision.lastCollisionBoundsOutsideGrid || 0} tileDerived=${interiorFurnitureCollision.lastCollisionTilesAdded || 0}${collisionSamples.length ? ' | ' + collisionSamples.join(' | ') : ''}`);
+    }
     const furniturePuzzles = window.FurniturePuzzleRuntime?.debug?.() || []; // Mobile-visible OFF/ON transform and dynamic-collision diagnostics.
     if (furniturePuzzles.length) {
       const puzzleSummary = furniturePuzzles.map(map => `${map.mapId}:${map.nodes.map(node => `${node.id}[${node.role}/${node.behavior} ${Math.round(node.progress * 100)}% ${node.blocked ? 'blocked' : 'open'}]`).join(',') || 'none'} wires=${map.wires}`).join(' | ');
