@@ -203,7 +203,7 @@
     new URL('config/weapon-discovery-rewards.js?v=20260902a', docsBase).href,
     new URL('js/weapon-discovery-rewards.js?v=20260902a', docsBase).href,
     new URL('js/weapon-trust-visits.js?v=20260917trust1', docsBase).href,
-    new URL('js/weapon-trust-bandit-loadouts.js?v=20260906a', docsBase).href,
+    new URL('js/weapon-trust-bandit-loadouts.js?v=20260926minion1', docsBase).href,
   ];
   for (const src of scripts) {
     if ([...document.scripts].some(script => script.src === src)) continue;
