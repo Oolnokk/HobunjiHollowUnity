@@ -467,6 +467,7 @@
     makeAltarInteractable,
     decorateScene,
     debugSnapshot,
+    __test: Object.freeze({ invalidateLiveAnimal }),
   });
 
   window.ColorPoolsSystem = api;
