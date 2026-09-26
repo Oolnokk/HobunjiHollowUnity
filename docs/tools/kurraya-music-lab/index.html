@@ -206,12 +206,12 @@
   <section class="panel">
     <strong>Available chord roots at this tonic</strong>
     <div id="chords" class="chords"></div>
-    <p class="note"><strong>Mixed meter.</strong> Bars 1–4 are the 6/8 accompaniment intro before the melody. Bars 5–20 are the 16-bar 3/4 melody body. The corrected default ending is F → G → F → F.</p>
+    <p class="note"><strong>Mixed meter.</strong> Bars 1–4 are the 6/8 accompaniment intro before the melody. Bars 5–20 are the 16-bar 3/4 melody body. The default ending is F → G → C → C.</p>
   </section>
 
   <section class="panel">
     <strong>Melody + chord-section authoring</strong>
-    <p class="note">Pick F/G/E/A, then tap or drag across the chord lane. Adjacent bars painted with the same root become one sustained long chord. The melody is drawn above at its real timing, beginning only after the four-bar 6/8 intro.</p>
+    <p class="note">Pick F/G/E/A/C, then tap or drag across the chord lane. Adjacent bars painted with the same root become one sustained long chord. The melody is drawn above at its real timing, beginning only after the four-bar 6/8 intro.</p>
     <div class="arrangement-toolbar">
       <div id="arrangementPalette" class="arrangement-palette" aria-label="Chord brush"></div>
       <button id="arrangementResetBtn" type="button" disabled>↺ Reset authored default</button>
@@ -228,7 +228,7 @@
     <pre id="diagnostics">engine=loading</pre>
   </details>
 
-  <iframe id="engine" src="../../assets/minigames/lyre-performance.html?v=20260925mixedmeter3" title="Kurraya song audition audio engine" aria-hidden="true"></iframe>
+  <iframe id="engine" src="../../assets/minigames/lyre-performance.html?v=20260925mixedmeter4" title="Kurraya song audition audio engine" aria-hidden="true"></iframe>
 
   </section>
 
@@ -329,9 +329,9 @@
     '../../assets/audio/sfx/footsteps/hardstep_2.mp3',
     '../../assets/audio/sfx/footsteps/hardstep_3.mp3'
   ];
-  const ARRANGEMENT_STORAGE_KEY = 'hobunji.kurrayaMusicLabArrangement.v1'; // Persists the user's audition draft locally without changing authored gameplay data until they choose to commit it.
+  const ARRANGEMENT_STORAGE_KEY = 'hobunji.kurrayaMusicLabArrangement.v2'; // Versioned so the new C-capable default is not shadowed by an older four-choice draft saved before C existed.
   let arrangementSnapshot = null; // Latest bridge snapshot used to redraw note/chord geometry after paint, scale, or tonic changes.
-  let arrangementBrushStep = 0; // Selected F/G/E/A root-step index used by tap/drag painting.
+  let arrangementBrushStep = 0; // Selected F/G/E/A/C root-step index used by tap/drag painting.
   let arrangementPainting = false; // Keeps pointer-drag authoring active across individual bar hit targets.
   let arrangementLastPaintedBar = -1; // Prevents repeated bridge updates while a pointer remains inside the same bar.
   const BUNDLED_KURRAYA_URL = '../../assets/audio/music/instruments/sfx_kurraya_pluck.m4a'; // Repo-authored source used by the restore button.
@@ -353,7 +353,8 @@
   }
 
   function renderChords(snapshot) {
-    chords.innerHTML = (snapshot?.progression || []).map(step => `
+    const choices = snapshot?.arrangement?.chordOptions || snapshot?.progression || []; // Shows the song-authoring set, including tonic C/I, while free-play still owns only the four fixed progression roots.
+    chords.innerHTML = choices.map(step => `
       <div class="chord">
         <small>${step.roman} · degree ${step.degree}</small>
         <strong>${step.chordName}</strong>
@@ -530,11 +531,11 @@
         ${chordBars}
         <div class="arrangement-hit-grid">${hits}</div>
       </div>`;
-    arrangementReadout.textContent = `Sections: ${arrangementSectionText(arrangement)} · body default ending F → G → F → F`;
+    arrangementReadout.textContent = `Sections: ${arrangementSectionText(arrangement)} · body default ending F → G → C → C`;
   }
 
   function selectArrangementBrush(stepIndex) {
-    arrangementBrushStep = Math.max(0,Math.min(3,Math.round(Number(stepIndex) || 0)));
+    arrangementBrushStep = Math.max(0,Math.min(4,Math.round(Number(stepIndex) || 0)));
     arrangementPalette.querySelectorAll('[data-arr-step]').forEach(button => button.classList.toggle('active',Number(button.dataset.arrStep) === arrangementBrushStep));
   }
 
@@ -581,7 +582,7 @@
       `tonic=${snapshot?.tonicName || midiName(selectedTonic)} (MIDI ${snapshot?.tonicMidi ?? selectedTonic})`,
       `progression=${(snapshot?.progression || []).map(step => step.chordName).join(' → ') || 'waiting'}`,
       `meter now=${snapshot?.currentTimeSignature || (snapshot?.timeSignature || [6,8]).join('/')} · intro=6/8×4 → melody=3/4×16`,
-      `cadence=${snapshot?.harmonyCadence ? `${snapshot.harmonyCadence.sixEightChords} intro bars × 6/8 → ${snapshot.harmonyCadence.threeFourChords} melody bars × 3/4 · default ending F→G→F→F` : 'waiting'}`,
+      `cadence=${snapshot?.harmonyCadence ? `${snapshot.harmonyCadence.sixEightChords} intro bars × 6/8 → ${snapshot.harmonyCadence.threeFourChords} melody bars × 3/4 · default ending F→G→C→C` : 'waiting'}`,
       `sections=${arrangementSectionText(snapshot?.arrangement || arrangementSnapshot?.arrangement)}`,
       `playing=${live?.gameActive ? 'yes' : 'no'} demo=${live?.gameDemoActive ? 'yes' : 'no'}`,
       `transportStep=${live?.transportHarmonyStep ?? '—'}`,
@@ -701,7 +702,7 @@
     renderChords(snapshot);
     renderArrangement(snapshot);
     renderDiagnostics(snapshot);
-    setStatus(`Ready. Paint the chord lane against the visible melody; matching neighboring bars sustain as one long section. Default ending F→G→F→F. Current tuning ${snapshot.scaleName} · ${snapshot.tonicName}.`, 'good');
+    setStatus(`Ready. Paint the chord lane against the visible melody; matching neighboring bars sustain as one long section. C/I is now available and the default ending is F→G→C→C. Current tuning ${snapshot.scaleName} · ${snapshot.tonicName}.`, 'good');
     clearInterval(pollTimer);
     pollTimer = window.setInterval(() => {
       if (!bridge) return;
@@ -802,7 +803,7 @@
     arrangementSnapshot = bridge.resetKurrayaSongArrangement();
     renderArrangement(arrangementSnapshot);
     renderDiagnostics(arrangementSnapshot);
-    setStatus('Chord sections reset to the authored default, including F → G → F → F at the end.','good');
+    setStatus('Chord sections reset to the authored default, including F → G → C → C at the end.','good');
   });
   arrangementCopyBtn.addEventListener('click',() => void copyArrangement());
 
