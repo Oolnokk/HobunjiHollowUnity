@@ -37,7 +37,19 @@ let sparkleCreates = 0; // Used to prove the “I’m up” beat starts exactly 
 let sparkleDisposes = 0; // Used to prove the key-gift beat removes the persistent emitter immediately.
 let sparkleUpdates = 0; // Used to prove the active emitter advances through RuntimeFrameScheduler rather than a private RAF loop.
 const schedulerCallbacks = new Map(); // Used to capture Banubu's shared-frame subscriber for direct regression driving.
-const schedulerEnabled = new Map(); // Used to verify the transient subscriber sleeps whenever the sparkle effect is inactive.
+const schedulerEnabled = new Map(); // Used to verify the transient subscriber sleeps whenever Banubu has no temporary VFX or movement.
+let lastSparkleGroup = null; // Used to prove the key sparkle is detached from Banubu before his reveal-step movement begins.
+
+class FakeGroup {
+  constructor() {
+    this.userData = {};
+    this.parent = null;
+    this.children = [];
+    this.position = { x: 0, y: 0, z: 0, set(x, y, z) { this.x = x; this.y = y; this.z = z; } };
+  }
+  add(child) { if (!child) return; child.parent?.remove?.(child); this.children.push(child); child.parent = this; }
+  remove(child) { this.children = this.children.filter(entry => entry !== child); if (child?.parent === this) child.parent = null; }
+}
 
 const fishDefinitions = [
   { key: 'fish_strength', definition: { label: 'Strength Fish', cookingCategories: ['fish'], cookingPrimaryEffect: 'strength' } },
@@ -71,6 +83,7 @@ const context = {
   HobunjiCookingData: { recipes: [], categoryLabels: {}, effectLabels: { strength: 'Strength', speed: 'Speed', vigor: 'Vigor', fortitude: 'Fortitude', perception: 'Perception' } },
   GameRandom: { random: () => 0 },
   SkillSystem: { level: () => 10 },
+  THREE: { Group: FakeGroup },
   DialogueContent: {
     registerTreeProvider(id, fn) { registeredProviders.set(id, fn); },
     registerActionHandler(id, fn) { registeredActions.set(id, fn); },
@@ -91,6 +104,7 @@ const context = {
   AuthoredFurniture: {
     createEmitterVisual(group, emitter, maxParticles) {
       sparkleCreates++;
+      lastSparkleGroup = group;
       return {
         group,
         emitter,
@@ -224,7 +238,7 @@ const q1ReadyPresentationNodes = Object.fromEntries(q1ReadyPresentationTree.node
 const introTree = content.dialogueTrees.find(tree => tree.id === 'banubu_intro'); // Verifies the existing awake-camera metadata on Banubu's choice node is no longer discarded by the helper.
 const introNodes = Object.fromEntries(introTree.nodes.map(node => [node.id, node])); // Used immediately below to assert the intro choice preserves its generic cameraId metadata.
 assert.strictEqual(introNodes.banubu_intro_3.cameraId, 'banubu_dialogue_awake', 'Banubu intro choice must retain its authored awake-camera swap');
-assert.deepStrictEqual(JSON.parse(JSON.stringify(q1ReadyPresentationNodes.banubu_q1_ready_4.banubuPresentation)), { body: 'awake', sparkles: 'start' }, '“I’m up” must switch Banubu to regular idle and start sparkles');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(q1ReadyPresentationNodes.banubu_q1_ready_4.banubuPresentation)), { body: 'awake', sparkles: 'start', move: { x: 0, z: -0.85, duration: 0.7 } }, '“I’m up” must switch Banubu to regular idle, start sparkles, and ease him backward from the reveal spot');
 assert.strictEqual(q1ReadyPresentationNodes.banubu_q1_ready_4.cameraId, 'banubu_dialogue_awake', 'standing up must establish the ordinary awake shot before the key close-up');
 assert.deepStrictEqual(JSON.parse(JSON.stringify(q1ReadyPresentationNodes.banubu_q1_ready_5.banubuPresentation)), { neck: 'max_down' }, 'noticing the Color Pools Key must use the canonical maximum downward neck pose');
 assert.strictEqual(q1ReadyPresentationNodes.banubu_q1_ready_5.cameraId, 'banubu_key_ground', 'the first explicit key-reference line must cut to the ground-level sparkle shot');
@@ -232,19 +246,34 @@ assert.deepStrictEqual(JSON.parse(JSON.stringify(q1ReadyPresentationNodes.banubu
 assert.strictEqual(q1ReadyPresentationNodes.banubu_q1_ready_6.cameraId, 'banubu_key_ground', 'the explanation of what the key opens must remain on the sparkle shot');
 assert.deepStrictEqual(JSON.parse(JSON.stringify(q1ReadyPresentationNodes.banubu_q1_ready_7.banubuPresentation)), {}, 'the key handoff line keeps no Banubu-specific pose/VFX mutation');
 assert.strictEqual(q1ReadyPresentationNodes.banubu_q1_ready_7.cameraId, 'banubu_key_ground', 'the key handoff line must remain on the sparkle shot');
-assert.deepStrictEqual(JSON.parse(JSON.stringify(q1ReadyPresentationNodes.banubu_q1_ready_8.banubuPresentation)), { sparkles: 'stop' }, 'sparkles must stop only after Banubu stops referring to the key');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(q1ReadyPresentationNodes.banubu_q1_ready_8.banubuPresentation)), { sparkles: 'stop', move: { x: 0, z: 0, duration: 0.7 } }, 'post-key dialogue must stop sparkles and ease Banubu back to his authored station');
 assert.strictEqual(q1ReadyPresentationNodes.banubu_q1_ready_8.cameraId, 'banubu_dialogue_awake', 'post-key dialogue must return to Banubu’s ordinary awake shot');
+assert.strictEqual(q1ReadyPresentationNodes.banubu_q1_ready_18.next, 'banubu_q1_ready_commit', 'Quest 1 final spoken line must advance to a commit-only end node');
+assert.strictEqual(q1ReadyPresentationNodes.banubu_q1_ready_commit.type, 'end');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(q1ReadyPresentationNodes.banubu_q1_ready_commit.banubuPresentation)), { commitTurnIn: 1 }, 'Quest 1 turn-in must commit only after the last spoken line is finished');
 assert.deepStrictEqual(JSON.parse(JSON.stringify(q1ReadyPresentationNodes.banubu_q1_ready_15.banubuPresentation)), { body: 'sleep', neck: 'release' }, 'the line after the yawn must restore Banubu’s sleeping body pose');
+const q2ReadyPresentationTree = content.dialogueTrees.find(tree => tree.id === 'banubu_q2_ready');
+const q2ReadyPresentationNodes = Object.fromEntries(q2ReadyPresentationTree.nodes.map(node => [node.id, node]));
+assert.strictEqual(q2ReadyPresentationNodes.banubu_q2_ready_3.next, 'banubu_q2_ready_commit', 'Quest 2 final spoken line must also defer progression to its end node');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(q2ReadyPresentationNodes.banubu_q2_ready_commit.banubuPresentation)), { commitTurnIn: 2 });
 
 const presentationHandler = registeredNodeEnterHandlers.get('banubu'); // Used to exercise the presentation state machine without a WebGL scene.
-const presentationWalker = { root: { userData: {} } }; // Minimal named-animal walker seam used by BanubuQuestline presentation.
+const presentationScene = new FakeGroup(); // Parent scene lets the runtime detach the key sparkle from Banubu while preserving its reveal location.
+const presentationRoot = new FakeGroup();
+presentationRoot.position.set(6.5, 0, 5.5);
+presentationScene.add(presentationRoot);
+const presentationWalker = { root: presentationRoot }; // Minimal named-animal walker seam used by BanubuQuestline presentation.
 presentationHandler(q1ReadyPresentationNodes.banubu_q1_ready_4, { npc: banubu, walker: presentationWalker });
 assert.strictEqual(presentationWalker._animalSleepPresentationOverride, 'awake');
 assert.strictEqual(sparkleCreates, 1);
 assert.strictEqual(questline.debugSnapshot().presentation.sparklesActive, true);
-assert.strictEqual(schedulerEnabled.get('banubu-dialogue-presentation'), true, 'starting sparkles must enable Banubu’s shared-frame subscriber');
+assert.strictEqual(schedulerEnabled.get('banubu-dialogue-presentation'), true, 'starting sparkles or movement must enable Banubu’s shared-frame subscriber');
+assert.notStrictEqual(lastSparkleGroup, presentationRoot, 'the key sparkle must be detached from Banubu before he moves');
+assert.strictEqual(lastSparkleGroup.position.z, 5.5, 'the detached key sparkle starts at Banubu’s original reveal spot');
 schedulerCallbacks.get('banubu-dialogue-presentation').fn({ deltaMs: 16.67 });
 assert.strictEqual(sparkleUpdates, 1, 'the scheduler must advance the live sparkle emitter');
+assert(presentationRoot.position.z < 5.5, 'Banubu must ease north/backward while the key sparkle remains at the reveal spot');
+assert.strictEqual(lastSparkleGroup.position.z, 5.5, 'Banubu movement must not drag the key sparkle with him');
 presentationHandler(q1ReadyPresentationNodes.banubu_q1_ready_5, { npc: banubu, walker: presentationWalker });
 assert.strictEqual(presentationWalker._animalHeadPoseOverride, 'max_down');
 presentationHandler(q1ReadyPresentationNodes.banubu_q1_ready_6, { npc: banubu, walker: presentationWalker });
@@ -255,12 +284,15 @@ assert.strictEqual(questline.debugSnapshot().presentation.sparklesActive, true);
 presentationHandler(q1ReadyPresentationNodes.banubu_q1_ready_8, { npc: banubu, walker: presentationWalker });
 assert.strictEqual(sparkleDisposes, 1);
 assert.strictEqual(questline.debugSnapshot().presentation.sparklesActive, false);
-assert.strictEqual(schedulerEnabled.get('banubu-dialogue-presentation'), false, 'the first post-key line must stop per-frame sparkle work as well as dispose the visual');
+for (let i = 0; i < 60; i++) schedulerCallbacks.get('banubu-dialogue-presentation').fn({ deltaMs: 16.67 });
+assert(Math.abs(presentationRoot.position.z - 5.5) < 1e-6, 'Banubu must finish easing back to his original station before sleeping');
+assert.strictEqual(schedulerEnabled.get('banubu-dialogue-presentation'), false, 'the shared-frame subscriber must sleep once both sparkles and return movement finish');
 presentationHandler(q1ReadyPresentationNodes.banubu_q1_ready_15, { npc: banubu, walker: presentationWalker });
 assert.strictEqual(presentationWalker._animalSleepPresentationOverride, 'sleep');
 presentationHandler(null, { npc: banubu, walker: presentationWalker, ended: true });
 assert.strictEqual(presentationWalker._animalSleepPresentationOverride, undefined, 'dialogue cleanup must release the temporary body override back to Banubu’s authored schedule');
 assert.strictEqual(presentationWalker._animalHeadPoseOverride, undefined, 'dialogue cleanup must release any temporary neck override');
+assert.strictEqual(presentationRoot.position.z, 5.5, 'dialogue cleanup must restore Banubu’s exact pre-conversation position');
 
 // Quest 1 target is generated before intro text resolves, so its three buff names are real and stable.
 let state = questline.ensureQuestState();
@@ -339,7 +371,24 @@ assert.strictEqual(cookedInventory[0].count, 1, 'failed world reward persistence
 assert.strictEqual(context.KeyItemSystem.has('color_pools_key'), false, 'failed persistence must not leak the Color Pools Key');
 context.__hobunjiPlayerProfile.worldId = 'world_test';
 
-assert.strictEqual(questline.turnInQuest(banubu, 1).ok, true);
+const readyForCancel = questline.selectTree(banubu);
+const readyForCancelNodes = Object.fromEntries(readyForCancel.nodes.map(node => [node.id, node]));
+const q1PrepareAction = readyForCancelNodes.banubu_q1_ready_1.choices[0].actions[0];
+assert.strictEqual(q1PrepareAction.operation, 'prepareTurnIn');
+assert.strictEqual(registeredActions.get('banubuQuest')(q1PrepareAction, { npc: banubu, tree: readyForCancel, node: readyForCancelNodes.banubu_q1_ready_1 }).ok, true);
+assert.strictEqual(state.status, 'active', 'selecting Give the pie must not advance the quest before dialogue finishes');
+assert.strictEqual(cookedInventory[0].count, 1, 'prepared Quest 1 turn-in must not consume the pie');
+assert.strictEqual(context.KeyItemSystem.has('color_pools_key'), false, 'prepared Quest 1 turn-in must not grant the key early');
+presentationHandler(null, { npc: banubu, walker: presentationWalker, ended: true });
+assert.strictEqual(state.status, 'active', 'cancelling Quest 1 dialogue must leave the quest exactly active');
+assert.strictEqual(cookedInventory[0].count, 1, 'cancelling Quest 1 dialogue must leave the pie untouched');
+assert.strictEqual(questline.debugSnapshot().presentation.pendingTurnInStage, null, 'cancelling must discard the transient turn-in transaction');
+
+const readyForCommit = questline.selectTree(banubu);
+const readyForCommitNodes = Object.fromEntries(readyForCommit.nodes.map(node => [node.id, node]));
+const q1RetryAction = readyForCommitNodes.banubu_q1_ready_1.choices[0].actions[0];
+assert.strictEqual(registeredActions.get('banubuQuest')(q1RetryAction, { npc: banubu, tree: readyForCommit, node: readyForCommitNodes.banubu_q1_ready_1 }).ok, true);
+presentationHandler(readyForCommitNodes.banubu_q1_ready_commit, { npc: banubu, walker: presentationWalker });
 assert.strictEqual(consumedKeys.length, 1);
 assert.strictEqual(context.KeyItemSystem.has('color_pools_key'), true, 'Quest 1 must grant the world-scoped Color Pools Key');
 assert.strictEqual(context.KeyItemSystem.has('war_paint_kit'), false, 'War-Paint Kit stays reserved for later content and is not this quest reward');
@@ -390,7 +439,20 @@ cookedInventory = [{
   },
 }];
 assert(questline.matchingMeal(state), 'Concentrated (+3) on both requested buffs must satisfy Quest 2');
-assert.strictEqual(questline.turnInQuest(banubu, 2).ok, true);
+const q2ReadyForCancel = questline.selectTree(banubu);
+const q2ReadyForCancelNodes = Object.fromEntries(q2ReadyForCancel.nodes.map(node => [node.id, node]));
+const q2PrepareAction = q2ReadyForCancelNodes.banubu_q2_ready_1.choices[0].actions[0];
+assert.strictEqual(q2PrepareAction.operation, 'prepareTurnIn');
+assert.strictEqual(registeredActions.get('banubuQuest')(q2PrepareAction, { npc: banubu, tree: q2ReadyForCancel, node: q2ReadyForCancelNodes.banubu_q2_ready_1 }).ok, true);
+assert.strictEqual(state.status, 'active', 'Quest 2 must remain active until its final dialogue node completes');
+presentationHandler(null, { npc: banubu, walker: presentationWalker, ended: true });
+assert.strictEqual(state.status, 'active', 'cancelling Quest 2 dialogue must reset its prepared turn-in');
+
+const q2ReadyForCommit = questline.selectTree(banubu);
+const q2ReadyForCommitNodes = Object.fromEntries(q2ReadyForCommit.nodes.map(node => [node.id, node]));
+const q2RetryAction = q2ReadyForCommitNodes.banubu_q2_ready_1.choices[0].actions[0];
+assert.strictEqual(registeredActions.get('banubuQuest')(q2RetryAction, { npc: banubu, tree: q2ReadyForCommit, node: q2ReadyForCommitNodes.banubu_q2_ready_1 }).ok, true);
+presentationHandler(q2ReadyForCommitNodes.banubu_q2_ready_commit, { npc: banubu, walker: presentationWalker });
 assert.strictEqual(state.status, 'blocked');
 assert.strictEqual(state.stage, 3);
 assert.strictEqual(questline.selectTree(banubu).banubuQuest.phase, 'blocked');
