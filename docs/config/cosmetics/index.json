@@ -359,6 +359,10 @@
       "path": "./fine_hood.json"
     },
     {
+      "id": "ragged_hood",
+      "path": "./ragged_hood.json"
+    },
+    {
       "id": "facewrap",
       "path": "./facewrap.json"
     },
