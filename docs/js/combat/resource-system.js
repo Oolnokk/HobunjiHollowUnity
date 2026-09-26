@@ -119,6 +119,16 @@
       family: "control", tags: ["breath"],
       desc: "Lowers effective maximum Stamina and makes Exhausted easier to enter."
     },
+    frostbittenFooting: {
+      name: "Frostbitten Footing", resource: "footing", extend: "currentBack", priority: 92, recovers: true,
+      family: "control", tags: ["cold", "frost"],
+      desc: "Cold-stiffened balance. It does not directly remove Footing, but the buildup suppresses Footing regeneration until the frost recovers."
+    },
+    entrancedHealth: {
+      name: "Entranced Health", resource: "health", extend: "currentBack", priority: 88, recovers: false,
+      family: "control", tags: ["mind", "entrancement"],
+      desc: "A referential command affliction. Moving against the latest entrancer's Approach/Flee command converts buildup into Health damage; obeying or standing still clears it quickly."
+    },
     bruisedHealth: {
       name: "Bruised Health", resource: "health", extend: "currentBack", priority: 60, recovers: true,
       family: "offensiveDebuff", tags: ["physical"],
@@ -624,7 +634,10 @@
     const footingRegenGated = entity.prone && entity.proneT < cfg.proneRecoveryDelayS;
     if (!footingRegenGated && Number.isFinite(entity.footing)) {
       const footingRate = opts.footingRegenPerSec ?? cfg.footingRegenPerSec;
-      entity.footing = round1(clamp(entity.footing + footingRate * mul * dt, 0, getEffectiveMax(entity, "footing")));
+      const frostbittenFooting = getAffliction(entity, "frostbittenFooting"); // Used only here to make Tothal frost prolong a balance break without duplicating direct Footing damage.
+      const frostbittenFraction = entity.maxFooting > 0 ? clamp(frostbittenFooting / entity.maxFooting, 0, 1) : 0; // Converts buildup into a stable 0..1 regeneration penalty.
+      const frostbittenRegenMul = 1 - frostbittenFraction * 0.8; // Even a fully frostbitten target retains 20% Footing recovery so the affliction cannot hard-lock prone recovery.
+      entity.footing = round1(clamp(entity.footing + footingRate * frostbittenRegenMul * mul * dt, 0, getEffectiveMax(entity, "footing")));
     }
 
     resolveBleedingTick(entity, dt, rest, cfg, healthRecoveryBlocked);
