@@ -173,16 +173,16 @@
     const cos = Math.cos(angle), sin = Math.sin(angle);
     const halfWidth = Math.max(0, finiteNumber(bounds.halfWidth, finiteNumber(bounds.width, 0) * 0.5)); // Used to enumerate the four local X extents.
     const halfDepth = Math.max(0, finiteNumber(bounds.halfDepth, finiteNumber(bounds.depth, 0) * 0.5)); // Used to enumerate the four local Z extents.
-    const corners = []; // Used by the 2D editor overlay and snapped-grid overflow diagnostics.
-    for (const localX of [-halfWidth, halfWidth]) {
-      for (const localZ of [-halfDepth, halfDepth]) {
-        corners.push({
-          x: finiteNumber(bounds.centerX, 0) + localX * cos + localZ * sin,
-          z: finiteNumber(bounds.centerZ, 0) - localX * sin + localZ * cos,
-        });
-      }
-    }
-    return corners;
+    const localCorners = [ // Used in perimeter order so editor/debug callers can draw the rectangle directly without re-sorting points.
+      [-halfWidth, -halfDepth],
+      [halfWidth, -halfDepth],
+      [halfWidth, halfDepth],
+      [-halfWidth, halfDepth],
+    ];
+    return localCorners.map(([localX, localZ]) => ({
+      x: finiteNumber(bounds.centerX, 0) + localX * cos + localZ * sin,
+      z: finiteNumber(bounds.centerZ, 0) - localX * sin + localZ * cos,
+    }));
   }
 
   function boundsContainsPoint(bounds, x, z, padding = 0) {
