@@ -208,6 +208,13 @@
       `Central mapper: geometries=${surface.mappedGeometries || 0} meshes=${surface.mappedMeshes || 0} surfaces=${surface.patches || 0} fallbacks=${surface.fallbacks || 0}`,
       `Cross-mesh plateau adapter: batches=${crossMeshStats.batches} meshes=${crossMeshStats.meshes} UVvertices=${crossMeshStats.uvVertices} failures=${crossMeshStats.failures}`,
     ]; // Used as a compact self-contained readout that can be pasted back without DevTools.
+    const ridge = window.NaturalSurfaceCliffRidgeIsolation?.snapshot?.(); // Used to confirm closed cavern shells are rejected by the outdoor ridge splitter.
+    if (ridge) lines.push(`Ridge isolation: isolated=${ridge.isolated || 0} skippedInteriorCaverns=${ridge.skippedInteriorCaverns || 0} tops=${ridge.topTriangles || 0} sides=${ridge.sideTriangles || 0} remaps=${ridge.remaps || 0}`);
+    const textureRepair = window.NaturalSurfaceStretchRuntime?.snapshot?.(); // Used to show whether a flat natural-surface placeholder survived or self-healed.
+    if (textureRepair) lines.push(`Natural texture repair: placeholders=${textureRepair.placeholderTexturesFound || 0} started=${textureRepair.textureRepairsStarted || 0} completed=${textureRepair.textureRepairsCompleted || 0} failed=${textureRepair.textureRepairsFailed || 0}`);
+    const furnitureTextures = window.ProceduralFurniture?.textureDebugSnapshot?.(); // Used to expose first-load authored furniture texture readiness on mobile.
+    const carvedFurniture = Array.isArray(furnitureTextures) ? furnitureTextures.find(entry => entry.filename === 'carved_smooth.png') : null; // Used as the shared stone texture entry consumed by the Color Pools altar.
+    if (carvedFurniture) lines.push(`Furniture carved_smooth: loaded=${carvedFurniture.loaded ? 1 : 0} pendingClones=${carvedFurniture.pendingClones || 0} image=${carvedFurniture.imageWidth || 0}x${carvedFurniture.imageHeight || 0}`);
     const recent = Array.isArray(surface.recent) ? surface.recent.slice(-6) : []; // Used to show which natural surfaces most recently passed through the central mapper.
     if (!recent.length) {
       lines.push('Recent mapped surfaces: none yet — this scene has not sent a rock/cliff surface through the central mapper since load.');
