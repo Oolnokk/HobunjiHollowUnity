@@ -49,6 +49,7 @@ assert(saveGate.includes("if (slot === 'pauldron') return ['PAULDRON'];"));
 const onboarding = read('docs/onboarding-core.js');
 assert(onboarding.includes("category: 'pauldron'"));
 assert(onboarding.includes("applyEquip('pauldron', 'pauldron',"));
+assert(onboarding.includes("PAULDRON: clothDyeColor(clothDyeA)"));
 assert(onboarding.includes("['hat', 'hood', 'pauldron', 'torso', 'overwear']"));
 assert(read('docs/js/npc-avatar-preview-utils.js').includes("applyEquip('pauldron', 'pauldron',"));
 const studio = read('docs/tools/character-studio/index.html');
