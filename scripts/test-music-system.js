@@ -184,10 +184,10 @@ assert.match(config, /"map_southern_cloud_forest": \[[\s\S]*?"url": "assets\/aud
   'The Undergrowth mirrors the Western Slope night-only exclusive-soundtrack pattern in the Cloud Forest');
 assert.match(fishing, /playGameplayCue\?\.\('fishCaught'\)/,
   'a committed successful catch fires the authored catch gameplay cue');
-assert.match(game, /t\.mineDynamicDescent && proceduralMineTarget[\s\S]*?playGameplayCue\?\.\('progressDeeper'\)/,
-  'only a discovered mine-hole transition fires the progress-deeper gameplay cue');
-assert.ok(game.includes("contextText: `Floor ${loadingMineFloor}`"),
-  'generated mine floor loading supplies its destination floor number to the shared loading screen');
+assert.match(game, /const mineDescentFloor = t\.mineDynamicDescent && proceduralMineTarget[\s\S]*?enterBuilding\([^\n]*mineDescentFloor \? `Floor \${mineDescentFloor}` : ''\)[\s\S]*?if \(mineDescentFloor\)[\s\S]*?playGameplayCue\?\.\('progressDeeper'\)/,
+  'only a discovered mine-hole transition supplies the destination floor heading and fires the progress-deeper gameplay cue');
+assert.match(game, /function enterBuilding\(mapId, defaultCol, defaultRow, targetSpotId = '', loadingContextText = ''\)[\s\S]*?LoadingScreenRuntime\?\.show\(loadingContextText \? \{ reason: loadingMineFloor \? 'mine-floor-load' : 'map-change', contextText: loadingContextText \} : undefined\)/,
+  'ordinary mine loads keep the lore loading screen but cannot invent a Floor N heading without hole-descent context');
 assert.match(loadingScreen, /id="hlsContext"[\s\S]*?contextText = typeof options === 'string' \? '' : \(options\?\.contextText \|\| ''\)/,
   'the loading screen renders caller-supplied destination context separately from rotating Compendium tips');
 assert.match(config, /"nightbugsVolume": 0\.34/,
@@ -210,7 +210,7 @@ assert.match(index, /loading-screen-runtime\.js\?v=20260925minefloor1/,
   'the browser cache key loads destination-floor context on mine loading screens');
 assert.match(index, /fishing-minigame\.js\?v=20260925fishcue1/,
   'the browser cache key loads the successful-catch music cue hook');
-assert.match(index, /game\.js\?v=20260926gameplaycues1/,
+assert.match(index, /game\.js\?v=20260926gameplaycues2/,
   'the browser cache key loads the mine-hole cue and floor-number handoff');
 
 assert.ok(fs.statSync(nightbugsPath).size > 600000,
