@@ -252,6 +252,7 @@
     const materialOptions = { color: options.color ?? 0x5f5a56, map: texture, flatShading: !texture, side: THREE.FrontSide };
     const fallbackMat = new THREE.MeshBasicMaterial(materialOptions);
     const mesh = new THREE.Mesh(geo, fallbackMat);
+    mesh.userData = Object.assign({}, mesh.userData, { interiorCavernShell: true }); // Used by natural-surface ridge isolation to distinguish closed cave shells from outdoor plateau/cliff terrain.
     applyTownCliffMaterial(THREE, mesh, fallbackMat, options.surfaceMaterial || meshData.surfaceMaterial || 'town-cliffs');
     mesh.receiveShadow = true;
     mesh.userData.cameraObstacle = true;
