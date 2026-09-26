@@ -214,8 +214,10 @@
     <p class="note">Pick F/G/E/A/C, then tap or drag across the chord lane. Adjacent bars painted with the same root become one sustained long chord. The melody is drawn above at its real timing, beginning only after the four-bar 6/8 intro.</p>
     <div class="arrangement-toolbar">
       <div id="arrangementPalette" class="arrangement-palette" aria-label="Chord brush"></div>
-      <button id="arrangementResetBtn" type="button" disabled>↺ Reset authored default</button>
-      <button id="arrangementCopyBtn" type="button" disabled>Copy arrangement</button>
+      <button id="randomMelodyBtn" class="good" type="button" disabled>🎲 Random melody</button>
+      <button id="melodyResetBtn" type="button" disabled>↺ Original melody</button>
+      <button id="arrangementResetBtn" type="button" disabled>↺ Reset chords</button>
+      <button id="arrangementCopyBtn" type="button" disabled>Copy song draft</button>
     </div>
     <div class="arrangement-scroll">
       <div id="arrangementTimeline" class="arrangement-timeline" aria-label="Kurraya melody and chord arrangement"></div>
@@ -302,8 +304,10 @@
   const arrangementPalette = document.getElementById('arrangementPalette'); // Holds the F/G/E/A paint brushes for direct chord-section authoring.
   const arrangementTimeline = document.getElementById('arrangementTimeline'); // Draws the fixed intro, real melody timing, sustained chord bars, and twenty paint targets.
   const arrangementReadout = document.getElementById('arrangementReadout'); // Exposes the current grouped sections as compact text that is easy to verify on mobile.
+  const randomMelodyBtn = document.getElementById('randomMelodyBtn'); // Composes a new chord-aware melody over the current 16-bar body using constrained tonal and motivic rules.
+  const melodyResetBtn = document.getElementById('melodyResetBtn'); // Restores the repo-authored melody without changing the user's chord painting.
   const arrangementResetBtn = document.getElementById('arrangementResetBtn'); // Restores the repo-authored default arrangement without disturbing audio/sample settings.
-  const arrangementCopyBtn = document.getElementById('arrangementCopyBtn'); // Copies the exact twenty-bar authoring payload for easy handoff back into the repo.
+  const arrangementCopyBtn = document.getElementById('arrangementCopyBtn'); // Copies chords plus the current melody for easy handoff back into the repo.
   const diagnostics = document.getElementById('diagnostics'); // Used to expose bridge/song/scale state on mobile.
   const kurrayaMix = document.getElementById('kurrayaMix'); // Controls the persisted relative Kurraya-note layer without altering pad/metronome balance.
   const padMix = document.getElementById('padMix'); // Controls the persisted relative root-pad layer.
@@ -330,6 +334,9 @@
     '../../assets/audio/sfx/footsteps/hardstep_3.mp3'
   ];
   const ARRANGEMENT_STORAGE_KEY = 'hobunji.kurrayaMusicLabArrangement.v2'; // Versioned so the new C-capable default is not shadowed by an older four-choice draft saved before C existed.
+  const MELODY_STORAGE_KEY = 'hobunji.kurrayaMusicLabMelody.v1'; // Keeps a generated melody draft through reloads without changing the repo-authored song until the user explicitly commits it.
+  const RANDOM_MELODY_RHYTHMS = Object.freeze([[1,1,1],[.5,.5,1,1],[1,.5,.5,1],[.5,1,.5,1],[.5,.5,.5,.5,1],[1.5,.5,1],[.5,1,1.5],[1,.5,1.5]]); // Three-quarter bar rhythms drawn from a small reusable vocabulary so generation produces motifs instead of rhythmic noise.
+  const RANDOM_MELODY_CADENCE_RHYTHMS = Object.freeze([[1,2],[.5,.5,2],[1,.5,1.5],[.5,1,1.5]]); // Phrase-ending rhythms reserve a longer final tone for audible cadential arrival.
   let arrangementSnapshot = null; // Latest bridge snapshot used to redraw note/chord geometry after paint, scale, or tonic changes.
   let arrangementBrushStep = 0; // Selected F/G/E/A/C root-step index used by tap/drag painting.
   let arrangementPainting = false; // Keeps pointer-drag authoring active across individual bar hit targets.
@@ -676,7 +683,7 @@
 
   function initializeFromBridge() {
     try { bridge = engineFrame.contentWindow?.HobunjiMusicControlBridge || null; } catch { bridge = null; }
-    if (!bridge?.scaleAuditionState || !bridge?.setKurrayaSongArrangement || !bridge?.resetKurrayaSongArrangement || !bridge?.mixState || !bridge?.setMixLevels || !bridge?.importKurrayaSample || !bridge?.importPadSample || !bridge?.useLabFootstepMetronome) {
+    if (!bridge?.scaleAuditionState || !bridge?.setKurrayaSongArrangement || !bridge?.resetKurrayaSongArrangement || !bridge?.setKurrayaSongMelody || !bridge?.resetKurrayaSongMelody || !bridge?.mixState || !bridge?.setMixLevels || !bridge?.importKurrayaSample || !bridge?.importPadSample || !bridge?.useLabFootstepMetronome) {
       setStatus('The music engine loaded, but the Music Lab audio bridge is incomplete.', 'warn');
       renderDiagnostics(null,'Music Lab bridge methods missing');
       return;
@@ -695,7 +702,7 @@
     tonicSelect.disabled = false;
     playBtn.disabled = false;
     stopBtn.disabled = false;
-    [kurrayaMix,padMix,metronomeMix,padSampleRoot,importKurrayaBtn,bundledKurrayaBtn,importPadBtn,previewPadBtn,clearPadBtn,previewMetronomeBtn,arrangementResetBtn,arrangementCopyBtn].forEach(control => control.disabled = false);
+    [kurrayaMix,padMix,metronomeMix,padSampleRoot,importKurrayaBtn,bundledKurrayaBtn,importPadBtn,previewPadBtn,clearPadBtn,previewMetronomeBtn,randomMelodyBtn,melodyResetBtn,arrangementResetBtn,arrangementCopyBtn].forEach(control => control.disabled = false);
     populatePadRootOptions();
     renderMixState(bridge.mixState());
     renderScaleButtons(snapshot);
