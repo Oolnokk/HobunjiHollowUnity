@@ -9701,6 +9701,18 @@
       // opposite convention from the front-facing player/NPC sprite: they go edge-on
       // when facing straight toward/away from the camera (group rotation 0/PI), not
       // when broadside to it. So their dead zones center on those angles instead.
+      // Player portrait perps. The ordinary follow cameras look at the player,
+      // so the camera azimuth IS the camera→player bearing. The dialogue
+      // camera instead orbits the NPC (js/dialogue-camera-framing.js) with
+      // the player well off-axis, so there the real camera→player bearing is
+      // used or the dead zone would guard the wrong angles.
+      function playerCameraPerps() {
+        if (dialogueOpen && activeCameraMode === npcDialogueCameraMode() && playerMesh) {
+          const perps = window.PerpRotation.cameraRelativePerpsAtWorldPosition(playerMesh.position, camera.position);
+          if (perps) return perps;
+        }
+        return cameraRelativePerps();
+      }
       function cameraRelativeCreaturePerps() {
         const az = activeCameraAzimuthRad();
         return [0 + az, Math.PI + az];
@@ -11357,12 +11369,21 @@
           );
         }
         if (playerNeckJoint && npcFaceWorld) {
+          // The player's body is held out of the camera dead zone during
+          // staging (see the perpClamp in updatePlayerMesh), up to the zone
+          // radius + exit hysteresis away from facing the NPC. The neck must
+          // be able to cover that whole residual or eye contact breaks.
+          const playerMaxYawDeg = Math.max(
+            maxYawDeg,
+            cfg.playerHeadMaxYawDeg ?? 0,
+            THREE.MathUtils.radToDeg(window.PerpRotation.PERP_DEAD_RAD + window.PerpRotation.PERP_DEAD_HYSTERESIS_RAD) + 2,
+          );
           _aimNeckAtWorldPoint(
             playerNeckJoint,
             playerMesh.position,
             playerAvatarModelHeight,
             npcFaceWorld,
-            maxYawDeg,
+            playerMaxYawDeg,
             maxPitchDeg,
             player,
             playerFaceWorld,
@@ -23168,18 +23189,6 @@
           playerFacing = characterViewMode.lockedPlayerFacing;
           playerMesh.rotation.y = playerFacing;
           if (playerLegs?.group) playerLegs.group.rotation.y = 0;
-        } else if (dialogueOpen && _dialogueWalker?.root) {
-          // Dialogue eye contact is a semantic facing requirement, not an
-          // ordinary locomotion pose. The normal camera-relative perpClamp
-          // may deliberately snap a flat portrait by ~90 degrees to keep it
-          // from rendering edge-on; during conversation that made the
-          // visible player look perpendicular to the NPC even though
-          // facingAngle/player.angle were logically correct. Render the true
-          // unclamped body yaw here. faceNpcDialogueParticipants() then owns
-          // the neck's yaw + pitch residual toward the NPC's actual face.
-          playerFacing = -facingAngle + Math.PI / 2;
-          playerMesh.rotation.y = playerFacing;
-          if (playerLegs?.group) playerLegs.group.rotation.y = 0;
         } else if (sitInteraction && sitInteraction.phase !== 'out') {
           // Seated: the body stays pinned to the chair's own facing — no
           // perpClamp/dead-zone tracking of the camera at all (unlike the
@@ -23206,9 +23215,14 @@
           playerMesh.rotation.y = playerFacing;
           if (playerLegs?.group) playerLegs.group.rotation.y = 0;
         } else {
+          // Dialogue staging runs through this same dead zone: the player's
+          // flat portrait must never render edge-on to the dialogue camera
+          // either. faceNpcDialogueParticipants() still aims the neck at the
+          // NPC's real face in the neck's parent space, so eye contact holds
+          // across whatever body yaw the clamp leaves.
           if (!player.perpState) player.perpState = {};
           const rawTargetRotY = -facingAngle + Math.PI / 2;
-          const { effectiveTarget: pEffTarget, snapTo: pSnapTo } = window.PerpRotation.perpClamp(player.perpState, rawTargetRotY, cameraRelativePerps());
+          const { effectiveTarget: pEffTarget, snapTo: pSnapTo } = window.PerpRotation.perpClamp(player.perpState, rawTargetRotY, playerCameraPerps());
           if (pSnapTo !== null) playerFacing = pEffTarget;
           else playerFacing += angleDiff(pEffTarget, playerFacing) * 0.18;
           playerMesh.rotation.y = playerFacing;  // default; sweep branch in updateToolMesh may override
