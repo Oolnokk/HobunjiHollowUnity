@@ -31,6 +31,7 @@
       "appearance::hat::basic_headband",
       "appearance::hat::leather_headband",
       "fine_hood",
+      "ragged_hood",
       "tankan_tunic",
       "bandolier1",
       "fine_poncho"
@@ -527,6 +528,7 @@
       "appearance::hat::basic_headband",
       "appearance::hat::leather_headband",
       "fine_hood",
+      "ragged_hood",
       "tankan_tunic",
       "bandolier1",
       "tankan_bodywrap",
