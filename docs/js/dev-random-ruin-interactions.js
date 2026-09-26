@@ -273,6 +273,7 @@
     const providers = [
       ['interior', window.DevRandomRuin],
       ['prototype', window.DevRandomRuinPrototypeHooks],
+      ['simple', window.DevRandomRuinSimplePuzzles],
     ];
     const rows = [];
     const seen = new Set();
@@ -280,7 +281,7 @@
       const controls = provider?.getInteractionControls?.() || [];
       for (let index = 0; index < controls.length; index++) {
         const control = controls[index];
-        if (!control || typeof control.onPress !== 'function') continue;
+        if (!control || (typeof control.onPress !== 'function' && typeof control.onHoldStart !== 'function')) continue;
         const kind = String(control.kind || 'interactive').toLowerCase();
         // Glyphs and ignition props are intentionally hit-driven. Never leak
         // the generator's DEV toggle into the ordinary interaction list.
@@ -304,7 +305,10 @@
           touchIcon:control.touchIcon || '✋',
           owner,
           distance,
+          priority:Number(control.priority)||0,
           onPress:control.onPress,
+          onHoldStart:control.onHoldStart,
+          onHoldEnd:control.onHoldEnd,
           seenAt:now,
           source,
         });
@@ -359,7 +363,7 @@
       });
     }
     return rows
-      .sort((a, b) => a.distance - b.distance || b.seenAt - a.seenAt)
+      .sort((a, b) => b.priority - a.priority || a.distance - b.distance || b.seenAt - a.seenAt)
       .slice(0, SLOT_ACTIONS.length)
       .map((entry, index) => ({ ...entry, inputAction:SLOT_ACTIONS[index], action:`dev_ruin_world_${index}`, touchButtonId:TOUCH_BUTTON_IDS[index] }));
   }
@@ -479,7 +483,21 @@
     if (!row) return;
     event.preventDefault();
     event.stopImmediatePropagation();
-    try { row.onPress?.(); } catch (error) { console.warn('[Random Test Ruin interactions] action failed', error); }
+    try {
+      if (typeof row.onHoldStart === 'function') {
+        if (event.repeat) return;
+        row.onHoldStart();
+      } else row.onPress?.();
+    } catch (error) { console.warn('[Random Test Ruin interactions] action failed', error); }
+  }, true);
+
+  window.addEventListener('keyup', event => {
+    if (!inRuin() || !lastRows.length) return;
+    const row = lastRows.find(entry => typeof entry.onHoldEnd === 'function' && keyboardMatches(bindingFor(entry.inputAction, 'desktop'), event));
+    if (!row) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    try { row.onHoldEnd?.(); } catch (error) { console.warn('[Random Test Ruin interactions] hold release failed', error); }
   }, true);
 
   function controllerBindingDown(binding) {
@@ -494,7 +512,12 @@
       const down = controllerBindingDown(binding);
       const wasDown = controllerDown.get(row.inputAction) === true;
       if (down && !wasDown) {
-        try { row.onPress?.(); } catch (error) { console.warn('[Random Test Ruin interactions] controller action failed', error); }
+        try {
+          if (typeof row.onHoldStart === 'function') row.onHoldStart();
+          else row.onPress?.();
+        } catch (error) { console.warn('[Random Test Ruin interactions] controller action failed', error); }
+      } else if (!down && wasDown && typeof row.onHoldEnd === 'function') {
+        try { row.onHoldEnd(); } catch (error) { console.warn('[Random Test Ruin interactions] controller hold release failed', error); }
       }
       controllerDown.set(row.inputAction, down);
     }
@@ -503,19 +526,29 @@
   document.addEventListener('pointerdown', event => {
     const button = event.target?.closest?.('[data-dev-ruin-owned="1"]');
     if (!button || !inRuin()) return;
+    const index = Number(button.dataset.devRuinRow);
+    const row = Number.isInteger(index) ? lastRows[index] : null;
     event.preventDefault();
     event.stopImmediatePropagation();
+    if (typeof row?.onHoldStart === 'function') {
+      try { row.onHoldStart(); } catch (error) { console.warn('[Random Test Ruin interactions] touch hold failed', error); }
+    }
   }, true);
 
-  document.addEventListener('pointerup', event => {
+  function finishTouchRow(event) {
     const button = event.target?.closest?.('[data-dev-ruin-owned="1"]');
     if (!button || !inRuin()) return;
     const index = Number(button.dataset.devRuinRow);
     const row = Number.isInteger(index) ? lastRows[index] : null;
     event.preventDefault();
     event.stopImmediatePropagation();
-    try { row?.onPress?.(); } catch (error) { console.warn('[Random Test Ruin interactions] touch action failed', error); }
-  }, true);
+    try {
+      if (typeof row?.onHoldEnd === 'function') row.onHoldEnd();
+      else row?.onPress?.();
+    } catch (error) { console.warn('[Random Test Ruin interactions] touch action failed', error); }
+  }
+  document.addEventListener('pointerup', finishTouchRow, true);
+  document.addEventListener('pointercancel', finishTouchRow, true);
 
   DS.addBeforeRenderClient(() => {
     renderWorldList();
@@ -536,7 +569,7 @@
         active:inRuin(),
         nativeProviderMode:true,
         customPromptBridgeInstalled:false,
-        providerCount:[window.DevRandomRuin, window.DevRandomRuinPrototypeHooks].filter(provider => typeof provider?.getInteractionControls === 'function').length,
+        providerCount:[window.DevRandomRuin, window.DevRandomRuinPrototypeHooks, window.DevRandomRuinSimplePuzzles].filter(provider => typeof provider?.getInteractionControls === 'function').length,
         ladderCount:ladders.length,
         rows:lastRows.map(row => ({ label:row.label, kind:row.kind, action:row.action, inputAction:row.inputAction, inputActionId:row.inputAction, input:bindingLabel(row.inputAction, currentDevice(), row.touchIcon), distance:Number.isFinite(row.distance) ? +row.distance.toFixed(3) : null, owner:row.owner?.name||row.owner?.id||null })),
         ownerName:lastAnchor?.name || null,
