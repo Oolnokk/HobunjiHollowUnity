@@ -48,6 +48,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     localStorage.setItem('hobunjiDevMode', '1');
     localStorage.removeItem('hobunjiDevRandomRuinWallPlanes');
     localStorage.removeItem('hobunji.devRandomRuinDarkness.v1');
+    localStorage.removeItem('hobunji.devRandomRuinPuzzleOptions.v2');
   });
   await page.goto(TEST_URL, { waitUntil:'domcontentloaded', timeout:30000 });
   await page.waitForFunction(() =>
@@ -57,6 +58,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     !!window.DevRandomRuinTileOccupancy &&
     !!window.DevRandomRuinWallPlanes &&
     !!window.DevRandomRuinMotionRuntime &&
+    !!window.DevRandomRuinSimplePuzzles &&
     !!window.DevRandomRuinRuntimeCoverage,
   null, { timeout:30000 });
   await page.evaluate(() => window.HobunjiTitleScreen?.start?.());
@@ -75,17 +77,18 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
   });
   assert.equal(puzzlePanel.present, true, JSON.stringify(puzzlePanel));
   assert.equal(puzzlePanel.open, false, JSON.stringify(puzzlePanel));
-  assert.equal(puzzlePanel.checkboxCount, 6, JSON.stringify(puzzlePanel));
+  assert.equal(puzzlePanel.checkboxCount, 4, JSON.stringify(puzzlePanel));
   assert.equal(puzzlePanel.maxPresent, true, JSON.stringify(puzzlePanel));
   assert.equal(puzzlePanel.darknessEnabled, false, JSON.stringify(puzzlePanel));
   assert.equal(puzzlePanel.darknessSeverity, 100, JSON.stringify(puzzlePanel));
 
-  // Exercise the generator with a restrictive configuration before the normal
-  // smoke seeds: only pressure-plate puzzles, at most one top-level puzzle per room.
+  // Exercise the stripped-down generator before the normal smoke seeds:
+  // only the proven projectile glyph family, with every parent-runtime simple
+  // family disabled. Old V50 mechanism families must remain hard-off.
   await page.evaluate(() => {
     const details = document.getElementById('devRandomRuinPuzzleOptions');
     for (const checkbox of details.querySelectorAll('[data-ruin-puzzle-option]')) {
-      checkbox.checked = checkbox.dataset.ruinPuzzleOption === 'pressurePlate';
+      checkbox.checked = checkbox.dataset.ruinPuzzleOption === 'glyphObelisk';
     }
     const maxInput = details.querySelector('#devRandomRuinMaxPuzzlesPerRoom');
     maxInput.value = '1';
@@ -115,13 +118,13 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
       darknessDebug:window.CloudForestFog?.getDebugState?.() || null,
     };
   });
-  assert.equal(constrained.puzzleOptions?.pressurePlate, true, JSON.stringify(constrained));
-  for (const key of ['brazier','glyphObelisk','stackedObelisk','linkedCubePillars','nestedRoom']) {
+  assert.equal(constrained.puzzleOptions?.glyphObelisk, true, JSON.stringify(constrained));
+  for (const key of ['pressurePlate','brazier','stackedObelisk','linkedCubePillars','nestedRoom','safePath','ropeSwing','hallwayTraps']) {
     assert.equal(constrained.puzzleOptions?.[key], false, JSON.stringify(constrained));
   }
   assert.equal(constrained.puzzleOptions?.maxPerRoom, 1, JSON.stringify(constrained));
   assert.ok(constrained.counts.every(count => count <= 1), JSON.stringify(constrained));
-  assert.ok(constrained.activatorTypes.every(type => type === 'pressurePlate' || type === 'alwaysLitTorch'), JSON.stringify(constrained));
+  assert.ok(constrained.activatorTypes.every(type => type === 'glyphObelisk' || type === 'alwaysLitTorch'), JSON.stringify(constrained));
   assert.equal(constrained.solvability?.ok, true, JSON.stringify(constrained));
   assert.equal(constrained.solvability?.unsolvedMechanisms?.length, 0, JSON.stringify(constrained.solvability));
   assert.ok(constrained.solvability?.rooms?.every(room => room.reachable), JSON.stringify(constrained.solvability));
@@ -155,7 +158,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
   await page.evaluate(async () => window.DevRandomRuin.leave());
   await page.waitForFunction(() => window.GridTileAccessors.getCurrentArea() !== 'map_i_dev_random_ruin', null, { timeout:10000 });
 
-  // Restore legacy/default generation before running broad fixed-seed coverage.
+  // Restore the simple-mode defaults before running broad fixed-seed coverage.
   await page.evaluate(() => {
     const details = document.getElementById('devRandomRuinPuzzleOptions');
     for (const checkbox of details.querySelectorAll('[data-ruin-puzzle-option]')) checkbox.checked = true;
@@ -212,6 +215,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
       window.DevRandomRuinPrototypeHooks.snapshot().active &&
       window.DevRandomRuinHitPuzzles.snapshot().active &&
       window.DevRandomRuinMotionRuntime.snapshot().active &&
+      window.DevRandomRuinSimplePuzzles.snapshot().active &&
       window.DevRandomRuinRuntimeCoverage.snapshot().active,
     null, { timeout:10000 });
 
@@ -221,6 +225,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
       const hooks = window.DevRandomRuinPrototypeHooks.snapshot();
       const hit = window.DevRandomRuinHitPuzzles.snapshot();
       const motion = window.DevRandomRuinMotionRuntime.snapshot();
+      const simple = window.DevRandomRuinSimplePuzzles.snapshot();
       const coverage = window.DevRandomRuinRuntimeCoverage.snapshot();
       const wallPlaneControl = window.DevRandomRuinWallPlanes.snapshot();
       const wallRender = window.DevRandomRuinWallRenderProxy.snapshot();
@@ -275,6 +280,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
         hooks,
         hit,
         motion,
+        simple,
         coverage,
         wallPlaneControl,
         wallRender,
@@ -309,6 +315,12 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     assert.ok(active.generationAttempt >= 1 && active.generationAttempt <= 6, JSON.stringify(active));
     assert.equal(active.hit.active, true, JSON.stringify(active.hit));
     assert.equal(active.motion.active, true, JSON.stringify(active.motion));
+    assert.equal(active.simple.active, true, JSON.stringify(active.simple));
+    assert.equal(active.simple.safeGrids.length, 1, 'simple mode should place one safe-path pressure grid: '+JSON.stringify(active.simple));
+    assert.equal(active.simple.ropes.length, 1, 'simple mode should place one rope traversal: '+JSON.stringify(active.simple));
+    assert.ok(active.simple.trapHallways.length >= 1, 'simple mode should trap at least one narrow hallway: '+JSON.stringify(active.simple));
+    assert.ok(active.simple.checkpoints.doorwayCount > 0, 'generated ruin should expose doorway checkpoints: '+JSON.stringify(active.simple.checkpoints));
+    assert.equal(active.simple.checkpoints.triggered.includes('ruin-entry'), true, 'entering the ruin must immediately establish the first checkpoint');
     assert.equal(active.coverage.effectiveUnhandled.length, 0, JSON.stringify(active.coverage));
     assert.ok(active.coverage.torchSourceCoverage.complete, JSON.stringify(active.coverage.torchSourceCoverage));
     assert.equal(active.transport?.active, true, JSON.stringify(active.transport));
