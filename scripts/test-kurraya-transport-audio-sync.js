@@ -11,6 +11,8 @@ const kurrayaHost = fs.readFileSync(path.join(__dirname, '../docs/js/kurraya-ins
 const musicLab = fs.readFileSync(path.join(__dirname, '../docs/tools/kurraya-music-lab/index.html'), 'utf8'); // Verifies the combined Kurraya authoring surface owns scale audition, mix/sample authoring, and SFX transposition.
 const toolsHub = fs.readFileSync(path.join(__dirname, '../docs/tools/index.html'), 'utf8'); // Verifies the combined Kurraya Music Lab remains reachable from the existing developer-tools hub.
 const npcScheduling = fs.readFileSync(path.join(__dirname, '../docs/js/npc-scheduling.js'), 'utf8'); // Verifies Foroji's authored station entries still select the Kurraya song id that now resolves procedurally in the shared engine.
+const gameIndex = fs.readFileSync(path.join(__dirname, '../docs/index.html'), 'utf8'); // Verifies the shipped game page cache-busts and loads the integrated music host before game.js.
+const gameSource = fs.readFileSync(path.join(__dirname, '../docs/game.js'), 'utf8'); // Verifies the real game boot injects performer scheduling into MusicMinigame and ticks it every frame.
 
 assert.match(
   source,
@@ -258,6 +260,36 @@ assert.match(
   hostSource,
   /MUSIC_MINIGAME_SRC = 'assets\/minigames\/lyre-performance\.html\?v=20260925mixedmeter7'/,
   'gameplay must cache-bust the fixed-harmony minigame revision'
+);
+
+assert.match(
+  gameIndex,
+  /<script src="js\/music-minigame\.js\?v=20260926forojijoin1"><\/script>[\s\S]*?<script src="game\.js\?v=/,
+  'the shipped game page must load the cache-busted music host before game.js'
+);
+
+assert.match(
+  gameSource,
+  /window\.NpcScheduling\.init\(\{[\s\S]*?const \{[\s\S]*?listInstrumentPerformers[\s\S]*?\} = window\.NpcScheduling[\s\S]*?window\.MusicMinigame\?\.init\(\{[\s\S]*?listInstrumentPerformers[\s\S]*?getNpcFootstepSampleUrl: npcFootstepSampleUrl/,
+  'game.js must wire NpcScheduling performers and NPC surface-footstep audio into the actual MusicMinigame host'
+);
+
+assert.match(
+  gameSource,
+  /window\.MusicMinigame\?\.tick\(dt\)/,
+  'the actual game loop must tick MusicMinigame so Foroji ambient performances can start, stop, and regenerate'
+);
+
+assert.match(
+  hostSource,
+  /function startAmbientForNpc\(npcId, songId\)[\s\S]*?bridgeOf\(frame\)\?\.startAmbientLead\?\.\(songId, footstepSampleUrl\)[\s\S]*?frame\.src = MUSIC_MINIGAME_SRC/,
+  'the gameplay host must launch ambient NPC music through the same versioned minigame engine'
+);
+
+assert.match(
+  hostSource,
+  /function beginPlayerSession\(\)[\s\S]*?const songSnapshot = ambientSongSnapshotForNpc\(nearbyPerformer\.npcId\)[\s\S]*?songSnapshot[\s\S]*?function onPlayerFrameLoaded\(\)[\s\S]*?setKurrayaSongArrangement[\s\S]*?setKurrayaSongMelody[\s\S]*?startBackupPreviewSong/,
+  'joining Foroji in the actual game must carry his current procedural composition into the visible backup session'
 );
 
 assert.match(musicLab, /HobunjiMusicControlBridge/, 'the standalone tool must use the shared Kurraya bridge');
