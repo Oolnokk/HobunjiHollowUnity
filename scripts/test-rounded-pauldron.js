@@ -48,12 +48,14 @@ assert.equal(ps.__test.temperLevelForXp(40), 1);
 assert.equal(ps.__test.temperLevelForXp(299), 4);
 assert.equal(ps.__test.temperLevelForXp(300), 5);
 assert.equal(ps.KG_PER_WEIGHT_UNIT, 0.4, '4 ordinary-wool overwear units calibrate to ~1.6 kg');
+assert.equal(ps.PAULDRON_SOURCE_HEX, '#7DC89A', 'pauldron metal recoloring uses the authored cosmetic-green source key rather than weapon teal');
 const copperWeight = ps.weightForMetal('nativeCopper');
 const highTinWeight = ps.weightForMetal('highTinBronze');
 assert(copperWeight.massKg > 1.3 && copperWeight.massKg < 1.4, 'single copper pauldron mass stays near the density-scaled historical reference');
 assert(copperWeight.weightUnits > 3.3 && copperWeight.weightUnits < 3.5, 'copper pauldron lands a little above standard torso weight');
 assert(highTinWeight.weightUnits < copperWeight.weightUnits, 'alloy density changes the physical outfit weight');
 assert.equal(ps.visualOptions({ metalKey:'nativeCopper', temperXp:150, smithTreatment:null }).oxidationAmount, 0.5, 'Temper drives the same continuous verdigris fraction');
+assert.equal(ps.visualOptions({ metalKey:'nativeCopper', temperXp:150, smithTreatment:null }).sourceHex, '#7DC89A', 'metal recolor options carry the pauldron source palette into ToolMetalRecolor');
 assert.equal(ps.visualOptions({ metalKey:'nativeCopper', temperXp:300, smithTreatment:{ mode:'resistant', metalKey:'nativeCopper' } }).oxidationAmount, 0, 'resistant smith treatment suppresses verdigris');
 assert.equal(ps.visualOptions({ metalKey:'nativeCopper', temperXp:300, smithTreatment:{ mode:'cosmetic', metalKey:'gold' } }).targetHex, '#D8AA2E', 'cosmetic plating switches to the treatment metal');
 
