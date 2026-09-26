@@ -91,6 +91,32 @@
   .metronome-source{margin-top:10px;padding:9px 10px;border:1px solid var(--line);border-radius:10px;background:#0d1520;color:var(--muted);font-size:12px}
   @media(max-width:700px){.mix-grid,.sample-grid{grid-template-columns:1fr}}
   @media(max-width:600px){.tool-tabs{position:static}}
+
+  .arrangement-toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:12px 0}
+  .arrangement-palette{display:flex;flex-wrap:wrap;gap:7px}
+  .arrangement-palette button{min-width:72px}
+  .arrangement-palette button.active{outline:2px solid currentColor;outline-offset:2px}
+  .arrangement-scroll{overflow-x:auto;padding:8px 0 12px;overscroll-behavior-x:contain}
+  .arrangement-timeline{position:relative;min-width:1200px;border:1px solid #394257;border-radius:10px;overflow:hidden;background:#111722}
+  .arrangement-bars{display:grid;grid-template-columns:repeat(20,1fr);height:34px;border-bottom:1px solid #394257}
+  .arrangement-bar-label{display:flex;align-items:center;justify-content:center;font-size:11px;border-right:1px solid #2f3748;color:#aeb9ce}
+  .arrangement-bar-label.intro{background:rgba(180,155,255,.10)}
+  .arrangement-bar-label.body{background:rgba(103,227,211,.05)}
+  .arrangement-melody{position:relative;height:170px;background:linear-gradient(to right,rgba(180,155,255,.08) 0 20%,rgba(103,227,211,.035) 20% 100%)}
+  .arrangement-grid{position:absolute;inset:0;display:grid;grid-template-columns:repeat(20,1fr);pointer-events:none}
+  .arrangement-grid span{border-right:1px solid rgba(120,135,160,.18)}
+  .arrangement-section-divider{position:absolute;top:0;bottom:0;left:20%;width:2px;background:#84a8ff;opacity:.7;pointer-events:none}
+  .arrangement-intro-label{position:absolute;left:6px;top:6px;font-size:11px;color:#c8b9ff;pointer-events:none}
+  .arrangement-note{position:absolute;height:16px;min-width:4px;border-radius:5px;background:#67e3d3;border:1px solid rgba(255,255,255,.25);overflow:hidden;font-size:9px;line-height:14px;text-align:center;color:#071311;white-space:nowrap}
+  .arrangement-chords{position:relative;height:72px;border-top:1px solid #394257;background:#0e131c}
+  .arrangement-chord-bar{position:absolute;top:8px;height:54px;border:1px solid rgba(255,255,255,.28);border-radius:8px;background:#252f42;display:flex;align-items:center;justify-content:center;gap:5px;font-weight:700;pointer-events:none;overflow:hidden;white-space:nowrap}
+  .arrangement-chord-bar.intro{box-shadow:inset 0 0 0 1px rgba(180,155,255,.22)}
+  .arrangement-chord-bar.body{box-shadow:inset 0 0 0 1px rgba(103,227,211,.18)}
+  .arrangement-hit-grid{position:absolute;inset:0;display:grid;grid-template-columns:repeat(20,1fr);z-index:3;touch-action:none}
+  .arrangement-hit-grid button{border:0;border-right:1px solid rgba(120,135,160,.12);background:transparent;min-width:0;padding:0;cursor:crosshair}
+  .arrangement-hit-grid button:active{background:rgba(255,255,255,.08)}
+  .arrangement-readout{font:12px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:normal;color:#bfc9dc;margin-top:8px}
+
 </style>
 </head>
 <body>
@@ -178,9 +204,23 @@
   </section>
 
   <section class="panel">
-    <strong>Base chord pattern at this tonic</strong>
+    <strong>Available chord roots at this tonic</strong>
     <div id="chords" class="chords"></div>
-    <p class="note"><strong>Mixed meter.</strong> The four 6/8 chords are the accompaniment intro before the melody begins. The 16-bar melody body is entirely 3/4. Its first three short repeats are F → G → E → A; the final short repeat is F → G → A → A.</p>
+    <p class="note"><strong>Mixed meter.</strong> Bars 1–4 are the 6/8 accompaniment intro before the melody. Bars 5–20 are the 16-bar 3/4 melody body. The corrected default ending is F → G → F → F.</p>
+  </section>
+
+  <section class="panel">
+    <strong>Melody + chord-section authoring</strong>
+    <p class="note">Pick F/G/E/A, then tap or drag across the chord lane. Adjacent bars painted with the same root become one sustained long chord. The melody is drawn above at its real timing, beginning only after the four-bar 6/8 intro.</p>
+    <div class="arrangement-toolbar">
+      <div id="arrangementPalette" class="arrangement-palette" aria-label="Chord brush"></div>
+      <button id="arrangementResetBtn" type="button" disabled>↺ Reset authored default</button>
+      <button id="arrangementCopyBtn" type="button" disabled>Copy arrangement</button>
+    </div>
+    <div class="arrangement-scroll">
+      <div id="arrangementTimeline" class="arrangement-timeline" aria-label="Kurraya melody and chord arrangement"></div>
+    </div>
+    <div id="arrangementReadout" class="arrangement-readout">Arrangement loading…</div>
   </section>
 
   <details class="panel" open>
@@ -188,7 +228,7 @@
     <pre id="diagnostics">engine=loading</pre>
   </details>
 
-  <iframe id="engine" src="../../assets/minigames/lyre-performance.html?v=20260925mixedmeter2" title="Kurraya song audition audio engine" aria-hidden="true"></iframe>
+  <iframe id="engine" src="../../assets/minigames/lyre-performance.html?v=20260925mixedmeter3" title="Kurraya song audition audio engine" aria-hidden="true"></iframe>
 
   </section>
 
@@ -258,7 +298,12 @@
   const playBtn = document.getElementById('playBtn'); // Used to start the authored song's automatic successful-playthrough preview.
   const stopBtn = document.getElementById('stopBtn'); // Used to stop the current audition immediately.
   const status = document.getElementById('status'); // Used for mobile-visible readiness/playback/errors without a developer console.
-  const chords = document.getElementById('chords'); // Used to show the transposed F–G–Em–Am chord names for the selected tonic.
+  const chords = document.getElementById('chords'); // Used to show the four available authored root choices at the selected tonic.
+  const arrangementPalette = document.getElementById('arrangementPalette'); // Holds the F/G/E/A paint brushes for direct chord-section authoring.
+  const arrangementTimeline = document.getElementById('arrangementTimeline'); // Draws the fixed intro, real melody timing, sustained chord bars, and twenty paint targets.
+  const arrangementReadout = document.getElementById('arrangementReadout'); // Exposes the current grouped sections as compact text that is easy to verify on mobile.
+  const arrangementResetBtn = document.getElementById('arrangementResetBtn'); // Restores the repo-authored default arrangement without disturbing audio/sample settings.
+  const arrangementCopyBtn = document.getElementById('arrangementCopyBtn'); // Copies the exact twenty-bar authoring payload for easy handoff back into the repo.
   const diagnostics = document.getElementById('diagnostics'); // Used to expose bridge/song/scale state on mobile.
   const kurrayaMix = document.getElementById('kurrayaMix'); // Controls the persisted relative Kurraya-note layer without altering pad/metronome balance.
   const padMix = document.getElementById('padMix'); // Controls the persisted relative root-pad layer.
@@ -280,6 +325,11 @@
   const previewMetronomeBtn = document.getElementById('previewMetronomeBtn'); // Auditions the same recorded footstep set used by the lab metronome.
   const NOTE_NAMES = ['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B']; // Used only to label tonic and imported-pad root choices.
   const LAB_FOOTSTEP_URLS = [ // Real recorded game footsteps rotated by the standalone lab; gameplay itself still resolves the actual current ground surface.
+  const ARRANGEMENT_STORAGE_KEY = 'hobunji.kurrayaMusicLabArrangement.v1'; // Persists the user's audition draft locally without changing authored gameplay data until they choose to commit it.
+  let arrangementSnapshot = null; // Latest bridge snapshot used to redraw note/chord geometry after paint, scale, or tonic changes.
+  let arrangementBrushStep = 0; // Selected F/G/E/A root-step index used by tap/drag painting.
+  let arrangementPainting = false; // Keeps pointer-drag authoring active across individual bar hit targets.
+  let arrangementLastPaintedBar = -1; // Prevents repeated bridge updates while a pointer remains inside the same bar.
     '../../assets/audio/sfx/footsteps/hardstep_1.mp3',
     '../../assets/audio/sfx/footsteps/hardstep_2.mp3',
     '../../assets/audio/sfx/footsteps/hardstep_3.mp3'
@@ -413,6 +463,114 @@
     scaleButtons.querySelectorAll('[data-scale]').forEach(button => button.classList.toggle('active', button.dataset.scale === scaleName));
   }
 
+  function arrangementSectionText(arrangement) {
+    if (!arrangement?.segments?.length) return 'waiting';
+    return arrangement.segments.map(segment => {
+      const bars = segment.lengthBars > 1 ? `×${segment.lengthBars}` : '';
+      return `${segment.label?.rootName || '?'}${bars}`;
+    }).join(' → ');
+  }
+
+  function saveArrangementDraft(arrangement) {
+    try {
+      localStorage.setItem(ARRANGEMENT_STORAGE_KEY,JSON.stringify({introSteps:arrangement.introSteps,bodySteps:arrangement.bodySteps}));
+    } catch {}
+  }
+
+  function loadArrangementDraft() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(ARRANGEMENT_STORAGE_KEY) || 'null');
+      if (Array.isArray(parsed?.introSteps) && parsed.introSteps.length === 4 && Array.isArray(parsed?.bodySteps) && parsed.bodySteps.length === 16) return parsed;
+    } catch {}
+    return null;
+  }
+
+  function renderArrangement(snapshot = arrangementSnapshot) {
+    arrangementSnapshot = snapshot || arrangementSnapshot;
+    const arrangement = arrangementSnapshot?.arrangement;
+    if (!arrangement) {
+      arrangementTimeline.innerHTML = '';
+      arrangementReadout.textContent = 'Arrangement unavailable.';
+      return;
+    }
+    arrangementPalette.innerHTML = arrangement.chordOptions.map(option =>
+      `<button type="button" data-arr-step="${option.stepIndex}" class="${option.stepIndex === arrangementBrushStep ? 'active' : ''}">${option.rootName} <small>${option.roman}</small></button>`
+    ).join('');
+    const barLabels = Array.from({length:arrangement.totalBars},(_,bar) => {
+      const intro = bar < arrangement.introBars;
+      return `<div class="arrangement-bar-label ${intro ? 'intro' : 'body'}">${bar + 1} · ${intro ? '6/8' : '3/4'}</div>`;
+    }).join('');
+    const gridLines = Array.from({length:arrangement.totalBars},() => '<span></span>').join('');
+    const melodyNotes = arrangement.melodyNotes.map(note => {
+      const left = note.startQuarterBeat / arrangement.totalQuarterBeats * 100;
+      const width = Math.max(0.35,note.durationQuarterBeats / arrangement.totalQuarterBeats * 100);
+      const degree = Math.max(0,Math.min(7,Number(note.degree) || 0));
+      const top = 8 + (7 - degree) * 18.5;
+      return `<div class="arrangement-note" style="left:${left.toFixed(4)}%;width:${width.toFixed(4)}%;top:${top.toFixed(1)}px" title="${note.noteName} · melody beat ${note.melodyQuarterBeat}">${note.noteName}</div>`;
+    }).join('');
+    const chordBars = arrangement.segments.map(segment => {
+      const left = segment.absoluteStartBar / arrangement.totalBars * 100;
+      const width = segment.lengthBars / arrangement.totalBars * 100;
+      const section = segment.absoluteStartBar < arrangement.introBars ? 'intro' : 'body';
+      const span = segment.lengthBars > 1 ? ` · ${segment.lengthBars} bars` : '';
+      return `<div class="arrangement-chord-bar ${section}" style="left:calc(${left.toFixed(4)}% + 3px);width:calc(${width.toFixed(4)}% - 6px)">${segment.label.rootName}${span}</div>`;
+    }).join('');
+    const hits = Array.from({length:arrangement.totalBars},(_,bar) => `<button type="button" data-arr-bar="${bar}" aria-label="Paint bar ${bar + 1}"></button>`).join('');
+    arrangementTimeline.innerHTML = `
+      <div class="arrangement-bars">${barLabels}</div>
+      <div class="arrangement-melody">
+        <div class="arrangement-grid">${gridLines}</div>
+        <div class="arrangement-section-divider"></div>
+        <div class="arrangement-intro-label">6/8 intro · melody starts at bar 5</div>
+        ${melodyNotes}
+      </div>
+      <div class="arrangement-chords">
+        <div class="arrangement-grid">${gridLines}</div>
+        <div class="arrangement-section-divider"></div>
+        ${chordBars}
+        <div class="arrangement-hit-grid">${hits}</div>
+      </div>`;
+    arrangementReadout.textContent = `Sections: ${arrangementSectionText(arrangement)} · body default ending F → G → F → F`;
+  }
+
+  function selectArrangementBrush(stepIndex) {
+    arrangementBrushStep = Math.max(0,Math.min(3,Math.round(Number(stepIndex) || 0)));
+    arrangementPalette.querySelectorAll('[data-arr-step]').forEach(button => button.classList.toggle('active',Number(button.dataset.arrStep) === arrangementBrushStep));
+  }
+
+  function paintArrangementBar(barIndex) {
+    const arrangement = arrangementSnapshot?.arrangement;
+    if (!bridge?.setKurrayaSongArrangement || !arrangement) return;
+    const bar = Math.max(0,Math.min(arrangement.totalBars - 1,Math.round(Number(barIndex) || 0)));
+    if (bar === arrangementLastPaintedBar) return;
+    arrangementLastPaintedBar = bar;
+    const introSteps = arrangement.introSteps.slice();
+    const bodySteps = arrangement.bodySteps.slice();
+    if (bar < arrangement.introBars) introSteps[bar] = arrangementBrushStep;
+    else bodySteps[bar - arrangement.introBars] = arrangementBrushStep;
+    arrangementSnapshot = bridge.setKurrayaSongArrangement({introSteps,bodySteps});
+    saveArrangementDraft(arrangementSnapshot.arrangement);
+    renderArrangement(arrangementSnapshot);
+    renderDiagnostics(arrangementSnapshot);
+  }
+
+  function arrangementBarFromPoint(clientX,clientY) {
+    const target = document.elementFromPoint(clientX,clientY)?.closest?.('[data-arr-bar]');
+    return target && arrangementTimeline.contains(target) ? Number(target.dataset.arrBar) : null;
+  }
+
+  async function copyArrangement() {
+    const arrangement = arrangementSnapshot?.arrangement;
+    if (!arrangement) return;
+    const payload = JSON.stringify({introSteps:arrangement.introSteps,bodySteps:arrangement.bodySteps});
+    try {
+      await navigator.clipboard.writeText(payload);
+      setStatus('Arrangement copied. Paste that payload back here when you want it committed as the authored song arrangement.','good');
+    } catch {
+      arrangementReadout.textContent = `Copy unavailable; arrangement payload: ${payload}`;
+    }
+  }
+
   function renderDiagnostics(snapshot = null, error = null) {
     let live = null; // Used to include transport state from the existing bridge when it is available.
     try { live = bridge?.getState?.() || null; } catch {}
@@ -423,7 +581,8 @@
       `tonic=${snapshot?.tonicName || midiName(selectedTonic)} (MIDI ${snapshot?.tonicMidi ?? selectedTonic})`,
       `progression=${(snapshot?.progression || []).map(step => step.chordName).join(' → ') || 'waiting'}`,
       `meter now=${snapshot?.currentTimeSignature || (snapshot?.timeSignature || [6,8]).join('/')} · intro=6/8×4 → melody=3/4×16`,
-      `cadence=${snapshot?.harmonyCadence ? `${snapshot.harmonyCadence.sixEightChords} intro chords × 6/8 → ${snapshot.harmonyCadence.threeFourChords} melody chords × 3/4 · final short F→G→A→A` : 'waiting'}`,
+      `cadence=${snapshot?.harmonyCadence ? `${snapshot.harmonyCadence.sixEightChords} intro bars × 6/8 → ${snapshot.harmonyCadence.threeFourChords} melody bars × 3/4 · default ending F→G→F→F` : 'waiting'}`,
+      `sections=${arrangementSectionText(snapshot?.arrangement || arrangementSnapshot?.arrangement)}`,
       `playing=${live?.gameActive ? 'yes' : 'no'} demo=${live?.gameDemoActive ? 'yes' : 'no'}`,
       `transportStep=${live?.transportHarmonyStep ?? '—'}`,
       `mix K/P/M=${Math.round((snapshot?.mix?.kurraya ?? live?.kurrayaMixLevel ?? 1) * 100)}/${Math.round((snapshot?.mix?.pad ?? live?.padMixLevel ?? 1) * 100)}/${Math.round((snapshot?.mix?.metronome ?? live?.metronomeMixLevel ?? 1) * 100)}%`,
@@ -451,6 +610,7 @@
       const snapshot = bridge.setAuditionScale(scaleName); // Reuses the engine's scale mapping instead of reproducing pitch math in this tool.
       updateScaleSelection(snapshot.scaleName);
       renderChords(snapshot);
+      renderArrangement(snapshot);
       renderDiagnostics(snapshot);
       setStatus(`${snapshot.scaleName} selected. Press Play from start to compare it.`, 'good');
     } catch (error) {
@@ -467,6 +627,7 @@
       selectedTonic = snapshot.tonicMidi;
       tonicSelect.value = String(selectedTonic);
       renderChords(snapshot);
+      renderArrangement(snapshot);
       renderDiagnostics(snapshot);
       setStatus(`Tonic set to ${snapshot.tonicName}. Press Play from start to compare it.`, 'good');
     } catch (error) {
@@ -482,6 +643,7 @@
       await ensureLabFootsteps(); // Standalone audition should sound like gameplay's footstep metronome before the first count-in beat.
       const snapshot = await bridge.startSongAudition(selectedScale,selectedTonic); // Starts the existing perfect-playthrough path so the user hears the complete written melody automatically.
       renderChords(snapshot);
+      renderArrangement(snapshot);
       renderDiagnostics(snapshot);
       setStatus(`Playing ${snapshot.songTitle} in ${snapshot.scaleName} from ${snapshot.tonicName}.`, 'good');
       stopBtn.disabled = false;
@@ -496,6 +658,7 @@
   function stopAudition() {
     if (!bridge) return;
     const snapshot = bridge.stopSongAudition(); // Uses the engine's real cleanup path so demo timers/voices do not linger.
+    renderArrangement(snapshot);
     renderDiagnostics(snapshot);
     setStatus('Audition stopped.');
   }
@@ -512,12 +675,15 @@
 
   function initializeFromBridge() {
     try { bridge = engineFrame.contentWindow?.HobunjiMusicControlBridge || null; } catch { bridge = null; }
-    if (!bridge?.scaleAuditionState || !bridge?.mixState || !bridge?.setMixLevels || !bridge?.importKurrayaSample || !bridge?.importPadSample || !bridge?.useLabFootstepMetronome) {
+    if (!bridge?.scaleAuditionState || !bridge?.setKurrayaSongArrangement || !bridge?.resetKurrayaSongArrangement || !bridge?.mixState || !bridge?.setMixLevels || !bridge?.importKurrayaSample || !bridge?.importPadSample || !bridge?.useLabFootstepMetronome) {
       setStatus('The music engine loaded, but the Music Lab audio bridge is incomplete.', 'warn');
       renderDiagnostics(null,'Music Lab bridge methods missing');
       return;
     }
-    const snapshot = bridge.scaleAuditionState(); // Supplies the authoritative scale list, saved tonic, and fixed progression labels.
+    let snapshot = bridge.scaleAuditionState(); // Supplies the authoritative scale list, tonic, melody geometry, and current chord-section arrangement.
+    const savedArrangement = loadArrangementDraft(); // Restores the user's unfinished browser-local authoring pass without changing repo-authored defaults.
+    if (savedArrangement) snapshot = bridge.setKurrayaSongArrangement(savedArrangement);
+    arrangementSnapshot = snapshot;
     selectedScale = snapshot.scaleName;
     selectedTonic = snapshot.tonicMidi;
     scaleSelect.innerHTML = snapshot.scales.map(scaleName => `<option value="${scaleName}">${scaleName}</option>`).join('');
@@ -528,13 +694,14 @@
     tonicSelect.disabled = false;
     playBtn.disabled = false;
     stopBtn.disabled = false;
-    [kurrayaMix,padMix,metronomeMix,padSampleRoot,importKurrayaBtn,bundledKurrayaBtn,importPadBtn,previewPadBtn,clearPadBtn,previewMetronomeBtn].forEach(control => control.disabled = false);
+    [kurrayaMix,padMix,metronomeMix,padSampleRoot,importKurrayaBtn,bundledKurrayaBtn,importPadBtn,previewPadBtn,clearPadBtn,previewMetronomeBtn,arrangementResetBtn,arrangementCopyBtn].forEach(control => control.disabled = false);
     populatePadRootOptions();
     renderMixState(bridge.mixState());
     renderScaleButtons(snapshot);
     renderChords(snapshot);
+    renderArrangement(snapshot);
     renderDiagnostics(snapshot);
-    setStatus(`Ready. 4-bar 6/8 accompaniment intro → 16-bar 3/4 melody; final short pattern F→G→A→A. Current tuning ${snapshot.scaleName} · ${snapshot.tonicName}.`, 'good');
+    setStatus(`Ready. Paint the chord lane against the visible melody; matching neighboring bars sustain as one long section. Default ending F→G→F→F. Current tuning ${snapshot.scaleName} · ${snapshot.tonicName}.`, 'good');
     clearInterval(pollTimer);
     pollTimer = window.setInterval(() => {
       if (!bridge) return;
@@ -609,6 +776,36 @@
 
     scaleSelect.addEventListener('change', () => void chooseScale(scaleSelect.value));
   tonicSelect.addEventListener('change', () => void chooseTonic(tonicSelect.value));
+  arrangementPalette.addEventListener('click',event => {
+    const button = event.target.closest('[data-arr-step]');
+    if (button) selectArrangementBrush(button.dataset.arrStep);
+  });
+  arrangementTimeline.addEventListener('pointerdown',event => {
+    const bar = event.target.closest('[data-arr-bar]');
+    if (!bar) return;
+    arrangementPainting = true;
+    arrangementLastPaintedBar = -1;
+    selectArrangementBrush(arrangementBrushStep);
+    paintArrangementBar(Number(bar.dataset.arrBar));
+    event.preventDefault();
+  });
+  window.addEventListener('pointermove',event => {
+    if (!arrangementPainting) return;
+    const bar = arrangementBarFromPoint(event.clientX,event.clientY);
+    if (bar != null) paintArrangementBar(bar);
+  },{passive:true});
+  window.addEventListener('pointerup',() => { arrangementPainting = false; arrangementLastPaintedBar = -1; });
+  window.addEventListener('pointercancel',() => { arrangementPainting = false; arrangementLastPaintedBar = -1; });
+  arrangementResetBtn.addEventListener('click',() => {
+    if (!bridge?.resetKurrayaSongArrangement) return;
+    try { localStorage.removeItem(ARRANGEMENT_STORAGE_KEY); } catch {}
+    arrangementSnapshot = bridge.resetKurrayaSongArrangement();
+    renderArrangement(arrangementSnapshot);
+    renderDiagnostics(arrangementSnapshot);
+    setStatus('Chord sections reset to the authored default, including F → G → F → F at the end.','good');
+  });
+  arrangementCopyBtn.addEventListener('click',() => void copyArrangement());
+
   playBtn.addEventListener('click', () => void playAudition());
   stopBtn.addEventListener('click', stopAudition);
   engineFrame.addEventListener('load', initializeFromBridge);
