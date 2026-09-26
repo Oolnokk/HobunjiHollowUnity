@@ -113,6 +113,11 @@ const windowObject = {
   resolveOptionLayers: (_option, fighter) => fighter.speciesId,
   getPortraitFighters: () => fighters,
   loadPortraitCosmetics: async () => cosmetics,
+  NpcAvatarPreview: {
+    buildProfileFromNpcExport(npc) {
+      return { fighter: { speciesId: npc?.appearance?.speciesId }, bodyColors: { ...(npc?.appearance?.bodyColors || {}) } };
+    },
+  },
 }; // Minimal browser-shaped host used to exercise the bridge without loading the full game.
 windowObject.window = windowObject;
 const context = vm.createContext(windowObject);
@@ -134,6 +139,12 @@ assert.equal(windowObject.resolveOptionLayers({}, fighters[0]), 'engh-sho', 'Ske
 assert.equal(windowObject.resolveOptionLayers({}, fighters[2]), 'engh-sho', 'Non-skeleton wardrobe resolution must remain unchanged');
 assert.equal(windowObject.SCRATCHBONES_CONFIG.game.portrait.armOnlyOpacityMask.profiles['harlyao-skeleton:male'].maskYScaleMultiplier, 1.04);
 assert.equal(windowObject.SCRATCHBONES_CONFIG.game.portrait.armOnlyOpacityMask.profiles['harlyao-skeleton:female'].maskYScaleMultiplier, 1.15);
+const skeletonExportProfile = windowObject.NpcAvatarPreview.buildProfileFromNpcExport({ appearance: { speciesId: 'harlyao-skeleton', bodyColors: { A: { hex: '#000000' } } } }); // Explicitly wrong imported color must be ignored for a colorless skeleton species.
+assert.equal(skeletonExportProfile.bodyColors.A.hex, '#D4D6C9');
+assert.equal(skeletonExportProfile.bodyColors.B.hex, '#D4D6C9');
+assert.equal(skeletonExportProfile.bodyColors.C.hex, '#D4D6C9');
+const enghExportProfile = windowObject.NpcAvatarPreview.buildProfileFromNpcExport({ appearance: { speciesId: 'engh-sho', bodyColors: { A: { hex: '#123456' } } } }); // Non-skeleton NPC exports must remain untouched by the guard.
+assert.equal(enghExportProfile.bodyColors.A.hex, '#123456');
 
 (async () => {
   const loaded = await windowObject.loadPortraitCosmetics();
@@ -166,6 +177,8 @@ assert.equal(windowObject.SCRATCHBONES_CONFIG.game.portrait.armOnlyOpacityMask.p
   assert.equal(debug.behindHeadsInstalled, 2);
   assert.equal(debug.cosmeticRestrictionsApplied, 2);
   assert.equal(debug.fixedColorProfilesApplied, 2);
+  assert.equal(debug.profileColorGuardInstalled, true);
+  assert.equal(debug.profileColorCorrections, 1);
   assert.equal(debug.extremityColor, '#D4D6C9');
 
   console.log('Harlyao Skeleton species regression checks passed.');

@@ -52,6 +52,8 @@
     cosmeticRestrictionsInstalled: false,
     cosmeticRestrictionsApplied: 0,
     fixedColorProfilesApplied: 0,
+    profileColorGuardInstalled: false,
+    profileColorCorrections: 0,
     armMaskProfilesInstalled: 0,
   };
 
@@ -195,6 +197,36 @@
     return applied;
   }
 
+  function fixedBodyColors() {
+    return {
+      A: { hex: EXTREMITY_COLOR },
+      B: { hex: EXTREMITY_COLOR },
+      C: { hex: EXTREMITY_COLOR },
+    };
+  }
+
+  function installProfileColorGuard(api = window.NpcAvatarPreview) {
+    const baseBuildProfile = api?.buildProfileFromNpcExport; // Shared authored-NPC profile path can otherwise reapply arbitrary exported body colors after species defaults resolve.
+    if (typeof baseBuildProfile !== 'function') return false;
+    if (baseBuildProfile.__hobunjiHarlyaoSkeletonColorGuard) {
+      status.profileColorGuardInstalled = true;
+      return true;
+    }
+    const wrapped = function buildProfileWithHarlyaoSkeletonFixedColor(exportData) {
+      const profile = baseBuildProfile.apply(this, arguments); // Preserve the canonical profile builder and only clamp its final body descriptor for this species.
+      if (profile && normalizeSpecies(exportData?.appearance?.speciesId) === SPECIES_ID) {
+        profile.bodyColors = fixedBodyColors();
+        status.profileColorCorrections += 1;
+      }
+      return profile;
+    };
+    wrapped.__hobunjiHarlyaoSkeletonColorGuard = true;
+    wrapped.__hobunjiHarlyaoSkeletonColorGuardOriginal = baseBuildProfile;
+    api.buildProfileFromNpcExport = wrapped;
+    status.profileColorGuardInstalled = true;
+    return true;
+  }
+
   function installCosmeticRestrictions() {
     const baseLoad = window.loadPortraitCosmetics; // Shared async cosmetics/species loader; wrapping once applies restrictions after parent-species merging finishes.
     if (typeof baseLoad !== 'function') return false;
@@ -235,6 +267,7 @@
     installRigProfiles();
     installWardrobeResolver();
     installCosmeticRestrictions();
+    installProfileColorGuard();
     installArmMaskProfiles();
     return debugSnapshot();
   }
@@ -257,13 +290,18 @@
     extremityColor: EXTREMITY_COLOR,
     expectedAssets: EXPECTED_ASSETS,
     install,
+    fixedBodyColors,
     applyCosmeticRestrictions,
+    installProfileColorGuard,
     debugSnapshot,
     formatDebug: () => {
       const d = debugSnapshot(); // Compact copyable status line intended for the existing mobile-visible debug surfaces.
-      return `Harlyao Skeleton: npcOnly=${d.npcOnly} rig=${d.rigProfilesInstalled}/2 hands=${d.handModelKey || 'missing'} feet=${d.footModelInherited} rearHeads=${d.behindHeadsInstalled}/2 restrictions=${d.cosmeticRestrictionsApplied}/2 fixedColor=${d.fixedColorProfilesApplied}/2 hex=${d.extremityColor}`;
+      return `Harlyao Skeleton: npcOnly=${d.npcOnly} rig=${d.rigProfilesInstalled}/2 hands=${d.handModelKey || 'missing'} feet=${d.footModelInherited} rearHeads=${d.behindHeadsInstalled}/2 restrictions=${d.cosmeticRestrictionsApplied}/2 fixedColor=${d.fixedColorProfilesApplied}/2 profileColorGuard=${d.profileColorGuardInstalled} profileColorCorrections=${d.profileColorCorrections} hex=${d.extremityColor}`;
     },
   });
 
   install();
+  if (!status.profileColorGuardInstalled && typeof window.addEventListener === 'function') {
+    window.addEventListener('load', () => installProfileColorGuard(), { once: true }); // NpcAvatarPreview may initialize after the attachment-rig bootstrap; retry once at page load without polling.
+  }
 })();
