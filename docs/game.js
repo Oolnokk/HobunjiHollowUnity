@@ -13559,6 +13559,7 @@
           for (const door of (mapData.keyGatedDoors || [])) {
             const furnitureKey = door.furnitureKey || 'door';
             const side = String(door.side || 'south').toLowerCase();
+            const inwardDoorSide = ({ north: 'south', south: 'north', east: 'west', west: 'east' })[side] || 'south'; // Connector side points out of the cavern; authored door fronts face back into the room.
             const doorCol = Number(door.col), doorRow = Number(door.row);
             const doorSurfaceY = tileSurfaceYInArea(bGrid?.[doorRow]?.[doorCol], mapId); // Connector tiles are already guaranteed walkable; sample their center instead of sampling against the carved boundary shell.
             let group = null;
@@ -13569,7 +13570,7 @@
               // tile edge, where the newly-correct opaque farm-cliff shell could completely depth-occlude it.
               try {
                 group = await Promise.resolve(window.EntryTunnelDoorFurniture.attach(
-                  bScene, doorCol, doorRow, side, { elevationY: doorSurfaceY },
+                  bScene, doorCol, doorRow, inwardDoorSide, { elevationY: doorSurfaceY },
                 ));
               } catch (error) {
                 console.warn('[cavern door] canonical door attachment failed; falling back to direct authored furniture:', error);
@@ -13583,7 +13584,7 @@
               if (!doorData || !window.AuthoredFurniture?.buildGroup) continue;
               group = window.AuthoredFurniture.buildGroup(doorData, 0x8b6540);
               group.position.set(doorCol + 0.5, doorSurfaceY, doorRow + 0.5); // Boundary connectors render furniture on the walkable tile center, in front of the carved wall instead of inside it.
-              const doorSideRotationDeg = ({ south: 0, west: 90, north: 180, east: 270 })[side] ?? 0; // Same convention as EntryTunnelDoorFurniture.
+              const doorSideRotationDeg = ({ south: 0, west: 90, north: 180, east: 270 })[inwardDoorSide] ?? 0; // Connector side is outward; furniture front uses the opposite/inward side.
               group.rotation.y = -THREE.MathUtils.degToRad(doorSideRotationDeg);
               bScene.add(group);
             }
@@ -13593,6 +13594,7 @@
               keyGatedCavernDoor: true,
               keyGatedCavernDoorId: String(door.id || ''),
               keyGatedCavernDoorSide: side,
+              keyGatedCavernDoorFacingSide: inwardDoorSide,
               keyGatedCavernDoorTile: { col: doorCol, row: doorRow },
               keyGatedCavernDoorKeyId: String(door.requiresKeyItem || ''),
             });
