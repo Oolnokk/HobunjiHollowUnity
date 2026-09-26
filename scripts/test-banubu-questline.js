@@ -471,7 +471,7 @@ for (const control of ['editBanubuPhase','editBanubuStage','editBanubuQuestType'
 }
 assert(editorInspector.includes("'blocked'"), 'Dialogue Editor must author the blocked phase');
 assert.match(editorInspector, /'cameraId','banubuPresentation'/, 'changing a node type must preserve authored cutscene metadata');
-assert.match(editorIndex, /dialogue-editor-cutscene-authoring\.js\?v=20260925cutscene1/, 'Dialogue Editor must load the cutscene authoring extension');
+assert.match(editorIndex, /dialogue-editor-cutscene-authoring\.js\?v=20260925cutscene2/, 'Dialogue Editor must load the cutscene authoring extension');
 for (const control of ['editCutsceneCamera','editBanubuBodyCue','editBanubuNeckCue','editBanubuMoveEnabled','editBanubuMoveX','editBanubuMoveZ','editBanubuMoveDuration','editBanubuCommitTurnIn','editBanubuSparkleAction','editBanubuSparkleAnchor','editBanubuSparkleMax','editSparkRadius','editSparkSize','editSparkRate','editSparkLifetime','editSparkSpeed','editSparkSpread','editSparkGravity','editSparkColorA','editSparkColorB']) {
   assert(editorCutscene.includes(control), `Dialogue Editor cutscene panel must expose ${control}`);
 }
