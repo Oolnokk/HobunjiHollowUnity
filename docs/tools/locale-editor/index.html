@@ -443,6 +443,8 @@ let paletteNpc = null; // { npcId, name } or null = custom
 let painting = false;
 let paintErase = false;
 let markerDrag = null; // Active direct-manipulation drag for an object/NPC/connector; committed once on pointerup.
+const localeEditorSubscribers = new Set(); // Event-driven extension hooks rerender tool panels when the active locale or its authored scene data changes.
+function notifyLocaleEditorSubscribers() { for (const fn of localeEditorSubscribers) { try { fn(); } catch (error) { console.warn('[LocaleEditor extension]', error); } } }
 
 // ── View / canvas ─────────────────────────────────────────────────────────────
 const canvas = $('canvas2d');
@@ -752,7 +754,7 @@ function updateMarkerDrag(c, r) {
 function finishEdit() {
   const m = activeLocale();
   if (m) m.meta.updatedAt = nowIso();
-  saveWorkspace(); renderInspector(); renderJson(); renderValidation(); updateHud(); draw();
+  saveWorkspace(); renderInspector(); renderJson(); renderValidation(); updateHud(); draw(); notifyLocaleEditorSubscribers();
 }
 
 canvas.addEventListener('pointerdown', e => {
@@ -1352,7 +1354,7 @@ function updateHud() {
 
 function updateAll() {
   renderLocaleList(); renderSettings(); renderPalette(); renderInspector();
-  renderValidation(); renderJson(); updateHud(); draw();
+  renderValidation(); renderJson(); updateHud(); draw(); notifyLocaleEditorSubscribers();
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
@@ -1372,6 +1374,36 @@ setMode('pan');
 // Expose a tiny bridge so the dev-tools hub (docs/tools/index.html) can hook in later.
 window._localeEditorBridge = {
   getWorkspace: () => JSON.parse(JSON.stringify(ws)),
+  getActiveLocale: () => JSON.parse(JSON.stringify(activeLocale())),
+  getCinematicCameras: () => JSON.parse(JSON.stringify(activeLocale()?.cinematicCameras || [])),
+  getNpcAnchors: () => JSON.parse(JSON.stringify(activeLocale()?.npcAnchors || [])),
+  subscribe: fn => { if (typeof fn !== 'function') return () => {}; localeEditorSubscribers.add(fn); return () => localeEditorSubscribers.delete(fn); },
+  addCinematicCamera: camera => {
+    const m = activeLocale(); // Active locale receives the newly authored world-space camera.
+    if (!m || !camera?.id || (m.cinematicCameras || []).some(existing => existing.id === camera.id)) return false;
+    m.cinematicCameras ||= [];
+    m.cinematicCameras.push(JSON.parse(JSON.stringify(camera)));
+    finishEdit();
+    return true;
+  },
+  updateCinematicCamera: (cameraId, camera) => {
+    const m = activeLocale(); // Existing camera record is replaced atomically so Dialogue Editor references retain a stable id unless explicitly renamed.
+    const index = m?.cinematicCameras?.findIndex(existing => existing.id === cameraId) ?? -1;
+    if (!m || index < 0 || !camera?.id) return false;
+    if (camera.id !== cameraId && m.cinematicCameras.some((existing, i) => i !== index && existing.id === camera.id)) return false;
+    m.cinematicCameras[index] = JSON.parse(JSON.stringify(camera));
+    finishEdit();
+    return true;
+  },
+  deleteCinematicCamera: cameraId => {
+    const m = activeLocale(); // Removes only the authored camera; dialogue nodes referencing its id are deliberately left visible for validation/fixup.
+    if (!m) return false;
+    const before = m.cinematicCameras?.length || 0;
+    m.cinematicCameras = (m.cinematicCameras || []).filter(camera => camera.id !== cameraId);
+    if (m.cinematicCameras.length === before) return false;
+    finishEdit();
+    return true;
+  },
   setTerrainRules: (localeId, rules) => {
     const m = ws.locales.find(locale => locale.id === localeId);
     if (!m) return false;
@@ -1404,6 +1436,7 @@ window.PuzzleWiringEditorAdapter = {
 };
 })();
 </script>
+<script src="cinematic-camera-authoring.js?v=20260925cutscene1"></script>
 <script src="../../js/puzzle-wiring-editor.js?v=20260922ruinpuzzle1"></script>
 <script>
 PanelUI.makeResizableEdge(document.getElementById('sidebar'), {

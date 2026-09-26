@@ -34,6 +34,8 @@ const registeredActions = new Map(); // Used to verify DialogueContent receives 
 const registeredProviders = new Map(); // Used to verify DialogueContent receives the Banubu tree provider.
 const registeredNodeEnterHandlers = new Map(); // Used to verify Banubu owns its dialogue-node presentation through the generic dialogue hook.
 let sparkleCreates = 0; // Used to prove the “I’m up” beat starts exactly one persistent emitter.
+let lastSparkleEmitter = null; // Used to prove the runtime consumes the complete Dialogue Editor-authored emitter recipe.
+let lastSparkleMaxParticles = null; // Used to prove the authored particle budget reaches the shared emitter renderer.
 let sparkleDisposes = 0; // Used to prove the key-gift beat removes the persistent emitter immediately.
 let sparkleUpdates = 0; // Used to prove the active emitter advances through RuntimeFrameScheduler rather than a private RAF loop.
 const schedulerCallbacks = new Map(); // Used to capture Banubu's shared-frame subscriber for direct regression driving.
@@ -91,6 +93,8 @@ const context = {
   AuthoredFurniture: {
     createEmitterVisual(group, emitter, maxParticles) {
       sparkleCreates++;
+      lastSparkleEmitter = JSON.parse(JSON.stringify(emitter));
+      lastSparkleMaxParticles = maxParticles;
       return {
         group,
         emitter,
@@ -224,7 +228,13 @@ const q1ReadyPresentationNodes = Object.fromEntries(q1ReadyPresentationTree.node
 const introTree = content.dialogueTrees.find(tree => tree.id === 'banubu_intro'); // Verifies the existing awake-camera metadata on Banubu's choice node is no longer discarded by the helper.
 const introNodes = Object.fromEntries(introTree.nodes.map(node => [node.id, node])); // Used immediately below to assert the intro choice preserves its generic cameraId metadata.
 assert.strictEqual(introNodes.banubu_intro_3.cameraId, 'banubu_dialogue_awake', 'Banubu intro choice must retain its authored awake-camera swap');
-assert.deepStrictEqual(JSON.parse(JSON.stringify(q1ReadyPresentationNodes.banubu_q1_ready_4.banubuPresentation)), { body: 'awake', sparkles: 'start' }, '“I’m up” must switch Banubu to regular idle and start sparkles');
+assert.strictEqual(q1ReadyPresentationNodes.banubu_q1_ready_4.banubuPresentation.body, 'awake', '“I’m up” must switch Banubu to regular idle');
+assert.strictEqual(q1ReadyPresentationNodes.banubu_q1_ready_4.banubuPresentation.sparkles.action, 'start', '“I’m up” must start the authored sparkle emitter');
+assert.strictEqual(q1ReadyPresentationNodes.banubu_q1_ready_4.banubuPresentation.sparkles.anchor, 'root', 'sparkle attachment point must be explicit dialogue data');
+assert.strictEqual(q1ReadyPresentationNodes.banubu_q1_ready_4.banubuPresentation.sparkles.maxParticles, 48, 'sparkle particle budget must be dialogue-authored');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(q1ReadyPresentationNodes.banubu_q1_ready_4.banubuPresentation.sparkles.emitter.position)), { x: 0, y: 0, z: 0 }, 'sparkle root offset must be dialogue-authored');
+assert.strictEqual(q1ReadyPresentationNodes.banubu_q1_ready_4.banubuPresentation.sparkles.emitter.radius, 0.62, 'sparkle radius must be dialogue-authored');
+assert.strictEqual(q1ReadyPresentationNodes.banubu_q1_ready_4.banubuPresentation.sparkles.emitter.colorA, '#fff7c2', 'sparkle primary color must be dialogue-authored');
 assert.strictEqual(q1ReadyPresentationNodes.banubu_q1_ready_4.cameraId, 'banubu_dialogue_awake', 'standing up must establish the ordinary awake shot before the key close-up');
 assert.deepStrictEqual(JSON.parse(JSON.stringify(q1ReadyPresentationNodes.banubu_q1_ready_5.banubuPresentation)), { neck: 'max_down' }, 'noticing the Color Pools Key must use the canonical maximum downward neck pose');
 assert.strictEqual(q1ReadyPresentationNodes.banubu_q1_ready_5.cameraId, 'banubu_key_ground', 'the first explicit key-reference line must cut to the ground-level sparkle shot');
@@ -241,6 +251,10 @@ const presentationWalker = { root: { userData: {} } }; // Minimal named-animal w
 presentationHandler(q1ReadyPresentationNodes.banubu_q1_ready_4, { npc: banubu, walker: presentationWalker });
 assert.strictEqual(presentationWalker._animalSleepPresentationOverride, 'awake');
 assert.strictEqual(sparkleCreates, 1);
+assert.strictEqual(lastSparkleMaxParticles, 48, 'runtime must forward the authored particle budget');
+assert.strictEqual(lastSparkleEmitter.radius, 0.62, 'runtime must forward the authored sparkle radius');
+assert.strictEqual(lastSparkleEmitter.size, 0.075, 'runtime must forward the authored sparkle particle size');
+assert.strictEqual(lastSparkleEmitter.colorB, '#bfe9ff', 'runtime must forward the authored secondary sparkle color');
 assert.strictEqual(questline.debugSnapshot().presentation.sparklesActive, true);
 assert.strictEqual(schedulerEnabled.get('banubu-dialogue-presentation'), true, 'starting sparkles must enable Banubu’s shared-frame subscriber');
 schedulerCallbacks.get('banubu-dialogue-presentation').fn({ deltaMs: 16.67 });
@@ -446,6 +460,11 @@ assert(indexHtml.indexOf('banubu-quest-content.js') < indexHtml.indexOf('local-d
 
 const editorState = read('docs/tools/dialogue-editor/dialogue-editor-state.js');
 const editorInspector = read('docs/tools/dialogue-editor/dialogue-editor-inspector.js');
+const editorCutscene = read('docs/tools/dialogue-editor/dialogue-editor-cutscene-authoring.js'); // Used to verify camera/VFX/body/neck cutscene fields are actually reproducible from the Dialogue Editor UI.
+const editorIndex = read('docs/tools/dialogue-editor/index.html'); // Used to verify the cutscene authoring extension loads before editor boot.
+const editorAuthoringCore = read('docs/tools/dialogue-editor/dialogue-editor-authoring-core.js');
+const editorGraph = read('docs/tools/dialogue-editor/dialogue-editor-graph.js');
+const editorBoot = read('docs/tools/dialogue-editor/dialogue-editor-boot.js');
 assert.match(editorState, /BanubuQuestContent\?\.mergeDialogueTreesIntoDatabase\?\.\(db\)/, 'manual Dialogue Editor imports must compose Banubu quest defaults just like normal editor boot');
 for (const token of ['{{banubuRequestedBuffs}}','{{banubuNextRequestedBuffs}}','{{banubuRequiredStrength}}','{{banubuNextRequiredStrength}}']) {
   assert(editorState.includes(token), `Dialogue Editor must expose ${token}`);
@@ -454,6 +473,27 @@ for (const control of ['editBanubuPhase','editBanubuStage','editBanubuQuestType'
   assert(editorInspector.includes(control), `Dialogue Editor must expose ${control}`);
 }
 assert(editorInspector.includes("'blocked'"), 'Dialogue Editor must author the blocked phase');
+assert.match(editorInspector, /'cameraId','banubuPresentation'/, 'changing a node type must preserve authored cutscene metadata');
+assert.match(editorIndex, /dialogue-editor-cutscene-authoring\.js\?v=20260925cutscene3/, 'Dialogue Editor must load the cutscene authoring extension');
+for (const control of ['editCutsceneCamera','editBanubuBodyCue','editBanubuNeckCue','editBanubuMoveEnabled','editBanubuMoveX','editBanubuMoveZ','editBanubuMoveDuration','editBanubuCommitIntroAttempt','editBanubuCommitQuestAction','editBanubuCommitQuestStage','editBanubuCommitTurnIn','editBanubuSparkleAction','editBanubuSparkleAnchor','editBanubuSparkleMax','editSparkRadius','editSparkSize','editSparkRate','editSparkLifetime','editSparkSpeed','editSparkSpread','editSparkGravity','editSparkColorA','editSparkColorB']) {
+  assert(editorCutscene.includes(control), `Dialogue Editor cutscene panel must expose ${control}`);
+}
+assert.match(editorCutscene, /LocalDBOverrides\?\.getOverride\?\.\('locales'\)/, 'Dialogue Editor must consume Locale Editor local camera authoring without requiring a repo commit first');
+assert.match(editorCutscene, /fetch\('\.\.\/\.\.\/config\/locales\/index\.json'\)/, 'Dialogue Editor must fall back to repository locale cameras');
+assert.match(editorCutscene, /node\.cameraId=value/, 'Dialogue Editor must write the selected locale camera id onto the dialogue node');
+assert.match(editorCutscene, /cue\.move=\{x:readNumber\('editBanubuMoveX'\),z:readNumber\('editBanubuMoveZ'\),duration:/, 'Dialogue Editor must serialize Banubu relative movement and duration onto the node');
+assert.match(editorCutscene, /cue\.commitIntroAttempt=attempt/, 'Dialogue Editor must author wake-up-attempt commits on final nodes');
+assert.match(editorCutscene, /cue\.commitQuestAction=\{operation,stage\}/, 'Dialogue Editor must author prepared recipe/accept commits on final nodes');
+assert.match(editorCutscene, /cue\.commitTurnIn=stage/, 'Dialogue Editor must author the final transactional turn-in commit cue');
+assert.match(editorCutscene, /anchor:\$\('editBanubuSparkleAnchor'\)\.value\|\|'root'/, 'Dialogue Editor must persist root-vs-fixed sparkle attachment instead of hard-coding root');
+assert.match(editorInspector, /prepareTurnIn/, 'Banubu quest choice actions must expose prepareTurnIn so the final end node can own the commit');
+assert.match(editorState, /node\.type==='visual'/, 'Dialogue Editor must normalize authored silent visual nodes');
+assert.match(editorInspector, /editVisualDuration/, 'Visual nodes must expose an editable silent duration');
+assert.match(editorInspector, /wireVisualNodeEditor/, 'Visual nodes must expose their outgoing connection and duration wiring');
+assert.match(editorIndex, /id="addVisualBtn"/, 'Dialogue Editor must offer + Visual in the author bar');
+assert.match(editorAuthoringCore, /if\(type==='visual'\)Object\.assign\(node,\{next:null,durationSec:1\}\)/, 'new Visual nodes must start with a one-second silent beat');
+assert.match(editorBoot, /addVisualBtn'\)\.onclick=\(\)=>addNode\('visual'\)/, '+ Visual must create the runtime-compatible visual node type');
+assert.match(editorGraph, /no dialogue UI/, 'Visual nodes must be recognizable in the graph instead of looking like empty text nodes');
 
 // Sleeping Grehlr behavior remains permanent and talkability uses the existing animal-NPC bridge.
 const schedule = require('../docs/config/npcs/schedule-overrides.json');

@@ -102,6 +102,7 @@ const dialogueStyleSource = read('docs/style.css');
 const cinematicCameraSource = read('docs/js/cinematic-camera-runtime.js');
 const banubuQuestContentSource = read('docs/js/banubu-quest-content.js');
 const editorSource = read('docs/tools/locale-editor/index.html');
+const cinematicEditorSource = read('docs/tools/locale-editor/cinematic-camera-authoring.js'); // Used to verify every runtime camera field has a Locale Editor authoring control.
 const interiorBuilderSource = read('docs/js/interior-scene-builder.js');
 assert(sculptorSource.includes('function carveFootprintCavern(') && sculptorSource.includes('carveMazeCavern, carveFootprintCavern'), 'shared cavern sculptor must expose footprint-driven generation');
 assert(generatorSource.includes('loadLocaleCavernDefinition') && generatorSource.includes('synthesizeLocaleCavernMapData'), 'runtime must resolve cave interiors through locale files');
@@ -136,6 +137,15 @@ assert(gameSource.includes('InteriorSceneBuilder.buildCavernFloorMesh?.('), 'gam
 assert(gameSource.includes('mapData.denMotherKind || mapData.cavernCreatureKind'), 'authored caverns must select texture family from their authored creature habitat');
 assert(editorSource.includes('value="cave_interior"') && editorSource.includes('cavernSeed') && editorSource.includes('raw.cavern'), 'Locale Editor must author and preserve cave-interior generator metadata');
 assert(editorSource.includes('cinematicCameras: Array.isArray(raw.cinematicCameras)') && editorSource.includes('cinematicCameras: Array.isArray(m.cinematicCameras)'), 'Locale Editor must preserve authored cinematic camera records through load/export');
+assert.match(editorSource, /cinematic-camera-authoring\.js\?v=20260925cutscene1/, 'Locale Editor must load the dedicated cinematic camera authoring extension');
+for (const bridgeMethod of ['getCinematicCameras','getNpcAnchors','addCinematicCamera','updateCinematicCamera','deleteCinematicCamera','subscribe']) {
+  assert(editorSource.includes(bridgeMethod), `Locale Editor bridge must expose ${bridgeMethod} for event-driven camera authoring`);
+}
+for (const field of ['cinPX','cinPY','cinPZ','cinTargetMode','cinTargetNpc','cinTX','cinTY','cinTZ','cinDialogueNpc','cinTargetAnchor','cinUseForDialogue','cinFov','cinBlend','cinFadePets','cinStagePlayer','cinStageX','cinStageZ']) {
+  assert(cinematicEditorSource.includes(field), `Locale Editor cinematic camera tool must expose ${field}`);
+}
+assert.match(cinematicEditorSource, /targetNpcPoint/, 'Locale Editor camera tool must author face-vs-root targeting');
+assert.match(cinematicEditorSource, /bridge\.updateCinematicCamera/, 'Locale Editor camera tool must write edits back through the canonical locale model rather than maintain a detached copy');
 assert.strictEqual(fs.existsSync(path.join(root, 'docs/config/maps/map_i_color_pools.json')), false, 'Color Pools must not retain a competing static rectangular map definition');
 
 // Exercise real triangle sampling, including sub-tile tessellation and missing coverage.
