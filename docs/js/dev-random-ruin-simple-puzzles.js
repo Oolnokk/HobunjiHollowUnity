@@ -203,8 +203,7 @@
     ].map(([x,z]) => sampleSupport(x,z));
     if (points.some(point => !point || !Number.isFinite(Number(point.y)))) return null;
     const ys = points.map(point => Number(point.y));
-    if (Math.max(...ys) - Math.min(...ys) > .14) return null;
-    return { centerX, centerZ, y:ys.reduce((sum,value) => sum + value, 0) / ys.length, bounds };
+    return { centerX, centerZ, y:ys.reduce((sum,value) => sum + value, 0) / ys.length, bounds }; // Plates/platforms ground to their own support; authored plateau steps are valid, not a generation failure.
   }
 
   function safePathCells(size, rng) {
@@ -244,8 +243,8 @@
           const key = col + ',' + row;
           const x = originX + col * spacing;
           const z = originZ + row * spacing;
-          const support = sampleSupport(x,z,patch.y+.4);
-          if (!support || Math.abs(Number(support.y)-patch.y) > .16) {
+          const support = sampleSupport(x,z,patch.y+1.2);
+          if (!support) {
             invalidPatch = true;
             break;
           }
@@ -395,7 +394,7 @@
       const a = { x:cx-dir.x*separation*.5, z:cz-dir.z*separation*.5 };
       const b = { x:cx+dir.x*separation*.5, z:cz+dir.z*separation*.5 };
       const sa=sampleSupport(a.x,a.z), sb=sampleSupport(b.x,b.z), sm=sampleSupport(cx,cz);
-      if (!sa || !sb || !sm || Math.abs(Number(sa.y)-Number(sb.y))>.35) continue;
+      if (!sa || !sb || !sm) continue; // Different authored plateau tiers are fine; each launch/landing platform uses its own support height.
 
       const platformW = axis === 'x' ? 2.1 : 2.5;
       const platformD = axis === 'x' ? 2.5 : 2.1;
