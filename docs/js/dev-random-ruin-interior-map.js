@@ -143,13 +143,16 @@
     if (!panel || panel.dataset.bound === '1') return;
     panel.dataset.bound = '1';
     const current = readPuzzleGenerationOptions(); // Used to initialize every generated checkbox and the numeric cap.
-    for (const checkbox of panel.querySelectorAll('[data-ruin-puzzle-option]')) checkbox.checked = current[checkbox.dataset.ruinPuzzleOption] !== false;
+    for (const checkbox of panel.querySelectorAll('[data-ruin-puzzle-option]')) {
+      checkbox.checked = current[checkbox.dataset.ruinPuzzleOption] !== false;
+      checkbox.addEventListener('change', () => puzzleOptionsFromPanel(panel)); // Direct binding avoids unrelated Settings capture/delegation from swallowing dev-only programmatic or touch changes.
+    }
     const maxInput = panel.querySelector('#devRandomRuinMaxPuzzlesPerRoom'); // Used to show the persisted room cap without requiring devtools.
-    if (maxInput) maxInput.value = String(current.maxPerRoom);
-    panel.addEventListener('change', () => puzzleOptionsFromPanel(panel));
-    panel.addEventListener('input', event => {
-      if (event.target?.id === 'devRandomRuinMaxPuzzlesPerRoom') puzzleOptionsFromPanel(panel);
-    });
+    if (maxInput) {
+      maxInput.value = String(current.maxPerRoom);
+      maxInput.addEventListener('input', () => puzzleOptionsFromPanel(panel));
+      maxInput.addEventListener('change', () => puzzleOptionsFromPanel(panel));
+    }
   }
 
   function captureBuildingScenes(injectedDeps) {
@@ -641,5 +644,5 @@
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',installSettingsButton,{once:true});else installSettingsButton();
 
-  window.DevRandomRuin=Object.freeze({generate,reroll:()=>generate(randomSeed()),clear:()=>{if(deps?.getCurrentArea?.()===MAP_ID)leaveRuin();else clearRuntime(true);},leave:leaveRuin,getInteractionControls:()=>ruin?ruin.controls.map(control=>({...control,range:Number.isFinite(Number(control.range))?Number(control.range):CONTROL_RANGE})):[],getRuntimeContext:()=>ruin?{scene:ruin.scene,root:ruin.localeRoot,meta:ruin.meta,spawn:{...ruin.spawn},cols:ruin.cols,rows:ruin.rows,seed:ruin.seed,puzzleOptions:{...ruin.puzzleOptions}}:null,getOccupancySnapshot:()=>ruin?.occupancy?.snapshot?.()||null,getLastSolvabilityAudit:()=>lastGenerationAudit?JSON.parse(JSON.stringify(lastGenerationAudit)):null,getDarknessSettings,getState:()=>ruin?{mapId:MAP_ID,seed:ruin.seed,requestedSeed:ruin.requestedSeed,sourceSeed:ruin.sourceSeed,tileScale:RUIN_TILE_SCALE,wallStyle:ruin.wallStyle||null,darkness:getDarknessSettings(),materialStats:{cliffMeshes:ruin.denMaterialMeshCount||0,converted:ruin.unlitConvertedMaterialCount||0,remainingLit:ruin.remainingLitMaterialCount||0,legacyStone:ruin.legacyStoneMaterialCount||0,totalMeshes:ruin.totalRuinMeshCount||0},rooms:ruin.meta.rooms?.length||0,controls:ruin.controls.length,mechanisms:[...ruin.mechanisms.values()].map(m=>({id:m.id,type:m.type,progress:m.progress,target:m.target})),puzzleOptions:ruin.puzzleOptions,puzzleGeneration:ruin.puzzleGeneration,solvability:ruin.solvability,generationAttempt:ruin.generationAttempt,occupancy:ruin.occupancy?.snapshot?.(),dynamic:DS.debugSnapshot()}:null});
+  window.DevRandomRuin=Object.freeze({generate,reroll:()=>generate(randomSeed()),clear:()=>{if(deps?.getCurrentArea?.()===MAP_ID)leaveRuin();else clearRuntime(true);},leave:leaveRuin,getInteractionControls:()=>ruin?ruin.controls.map(control=>({...control,range:Number.isFinite(Number(control.range))?Number(control.range):CONTROL_RANGE})):[],getRuntimeContext:()=>ruin?{scene:ruin.scene,root:ruin.localeRoot,meta:ruin.meta,spawn:{...ruin.spawn},cols:ruin.cols,rows:ruin.rows,seed:ruin.seed,puzzleOptions:{...ruin.puzzleOptions}}:null,getPuzzleGenerationOptions:()=>readPuzzleGenerationOptions(),setPuzzleGenerationOptions:options=>savePuzzleGenerationOptions(options),getOccupancySnapshot:()=>ruin?.occupancy?.snapshot?.()||null,getLastSolvabilityAudit:()=>lastGenerationAudit?JSON.parse(JSON.stringify(lastGenerationAudit)):null,getDarknessSettings,getState:()=>ruin?{mapId:MAP_ID,seed:ruin.seed,requestedSeed:ruin.requestedSeed,sourceSeed:ruin.sourceSeed,tileScale:RUIN_TILE_SCALE,wallStyle:ruin.wallStyle||null,darkness:getDarknessSettings(),materialStats:{cliffMeshes:ruin.denMaterialMeshCount||0,converted:ruin.unlitConvertedMaterialCount||0,remainingLit:ruin.remainingLitMaterialCount||0,legacyStone:ruin.legacyStoneMaterialCount||0,totalMeshes:ruin.totalRuinMeshCount||0},rooms:ruin.meta.rooms?.length||0,controls:ruin.controls.length,mechanisms:[...ruin.mechanisms.values()].map(m=>({id:m.id,type:m.type,progress:m.progress,target:m.target})),puzzleOptions:ruin.puzzleOptions,puzzleGeneration:ruin.puzzleGeneration,solvability:ruin.solvability,generationAttempt:ruin.generationAttempt,occupancy:ruin.occupancy?.snapshot?.(),dynamic:DS.debugSnapshot()}:null});
 })();
