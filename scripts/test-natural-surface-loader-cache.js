@@ -10,12 +10,12 @@ const post = fs.readFileSync(path.join(root, 'docs/js/natural-surface-stretch-po
 const parentMatch = index.match(/js\/house-pieces\.js\?v=([^&"'\s<]+)&surfaceUv=([^"'\s<]+)/); // Captures the bootstrap cache key separately from the tightly-coupled UV stack generation.
 assert(parentMatch, 'docs/index.html must load house-pieces.js with independent bootstrap and surface cache generations');
 const parentVersion = parentMatch[1]; // Used to prove unrelated HousePieces edits can refresh the bootstrap itself.
-const surfaceVersion = parentMatch[2]; // Used to prove the established natural-surface mapper generation remains pinned.
+const surfaceVersion = parentMatch[2]; // Used to prove the tightly-coupled natural-surface mapper generation advances coherently when one member changes.
 assert.strictEqual(parentVersion, '20260925denturnover2', 'house-pieces bootstrap must cache-bust the den-aware child loader');
-assert.strictEqual(surfaceVersion, '20260924edgepreserve2', 'den turnover must not invalidate the established natural-surface UV generation');
+assert.strictEqual(surfaceVersion, '20260925cavernshell1', 'cavern-shell ridge exclusion must advance the coherent natural-surface UV generation');
 
 assert(
-  house.includes("const naturalSurfaceUvVersion = current?.src ? (new URL(current.src).searchParams.get('surfaceUv') || '20260924edgepreserve2') : '20260924edgepreserve2'"),
+  house.includes("const naturalSurfaceUvVersion = current?.src ? (new URL(current.src).searchParams.get('surfaceUv') || '20260925cavernshell1') : '20260925cavernshell1'"),
   'house-pieces must derive the natural-surface child generation from its dedicated surfaceUv query key'
 );
 assert(
