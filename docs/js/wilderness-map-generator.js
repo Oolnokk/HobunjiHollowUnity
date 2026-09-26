@@ -6707,7 +6707,7 @@
     map_western_slope: { entrySide: 'east', preset: 'cliffs', boundaryMode: 'entrySideDistantLandscape', boundaryCliffBoost: 0 },
     map_eastern_mire: {
       entrySide: 'west', preset: 'custom', boundaryMode: 'followMapHeight', boundaryCliffBoost: 0,
-      archipelago: true, archipelagoColumns: 4, archipelagoRows: 3, archipelagoLandScale: 0.82, archipelagoShoreNoise: 1.15,
+      archipelago: true, archipelagoColumns: 4, archipelagoRows: 3, archipelagoLandScale: 1.1, archipelagoShoreNoise: 1.15,
       archipelagoPreservedLand: [{ x: 17, y: 14.5, radius: 5, label: 'Leaf & Pahu house' }],
       plateaus: 0, maxTier: 1, ramps: 0, caves: 0,
       ponds: 8, plateauPonds: 0, plateauStreams: 0, rivers: 0, pathWindiness: 3, entryGateWidthMul: 0.45,
