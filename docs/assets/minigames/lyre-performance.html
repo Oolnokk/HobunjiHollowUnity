@@ -1327,7 +1327,9 @@
   const FIXED_HARMONY_CYCLE_CHORDS = FIXED_HARMONY_SIX_EIGHT_CHORDS + FIXED_HARMONY_THREE_FOUR_CHORDS; // Twenty chord events per mixed-meter phrase.
   const FIXED_HARMONY_CHORD_QUARTER_BEATS = 3; // Both 6/8 and 3/4 bars occupy three quarter-note units, preserving melody phase through the meter switch.
   const KURRAYA_INTRO_QUARTER_BEATS = FIXED_HARMONY_SIX_EIGHT_CHORDS * FIXED_HARMONY_CHORD_QUARTER_BEATS; // Twelve quarter-note units: the four 6/8 accompaniment bars finish before the 16-bar melody body begins.
-  const FIXED_HARMONY_FINAL_SHORT_STEPS = Object.freeze([0,1,3,3]); // Final 3/4 short repeat is F → G → A → A, intentionally skipping E and holding A for both closing bars.
+  const FIXED_HARMONY_FINAL_SHORT_STEPS = Object.freeze([0,1,0,0]); // Final 3/4 short repeat is F → G → F → F; the last two bars therefore sustain as one two-bar F section.
+  const KURRAYA_DEFAULT_INTRO_STEPS = Object.freeze([0,1,2,3]); // Default four-bar 6/8 intro; the Music Lab can temporarily repaint these bars for auditioning.
+  const KURRAYA_DEFAULT_BODY_STEPS = Object.freeze([0,1,2,3, 0,1,2,3, 0,1,2,3, ...FIXED_HARMONY_FINAL_SHORT_STEPS]); // Sixteen 3/4 melody bars; adjacent identical roots become one sustained authored section.
   const FIXED_HARMONY_CYCLE_QUARTER_BEATS = FIXED_HARMONY_CYCLE_CHORDS * FIXED_HARMONY_CHORD_QUARTER_BEATS; // Sixty quarter-note units per full phrase.
   const FIXED_HARMONY_METER_BEATS_PER_CYCLE = FIXED_HARMONY_SIX_EIGHT_CHORDS * 6 + FIXED_HARMONY_THREE_FOUR_CHORDS * 3; // 24 eighth-note beats + 48 quarter-note beats = 72 continuous scheduler beats.
   const HARMONY_PATTERN_ADJECTIVES = {
@@ -1415,7 +1417,7 @@
   // tonic C3. The accompaniment is a 20-chord mixed-meter phrase: four
   // 6/8 intro bars (F → G → E → A) play before the melody body, then the
   // 16-bar melody runs entirely in 3/4. Its first three short repeats use
-  // F → G → E → A; the final short repeat uses F → G → A → A. Each bar is
+  // F → G → E → A; the final short repeat uses F → G → F → F. Each bar is
   // three quarter-note units long, so the 6/8 intro hands off to the 3/4
   // melody without changing quarter-BPM timing. The sustained pad is root-only.
   const SONGBOOK = {
@@ -1495,6 +1497,8 @@
     pitchCacheReadyCount:0, // Number of current playable pitches rendered into temporary RAM buffers.
     pitchCacheTargetCount:0, // Total pitches selected for the current background cache pass.
     harmonyPattern:FIXED_HARMONY_PATTERN_ID,
+    kurrayaSongIntroSteps:KURRAYA_DEFAULT_INTRO_STEPS.slice(), // Music Lab authoring lane: one root-step index per 6/8 intro bar; kept session-local unless later committed as the authored default.
+    kurrayaSongBodySteps:KURRAYA_DEFAULT_BODY_STEPS.slice(), // Music Lab authoring lane: one root-step index per 3/4 melody bar; neighboring equal values are sustained as one long chord section.
     harmonyBpm:96,
     harmonyChordBeats:8,
     harmonyStartTime:nowMs(),
@@ -1894,6 +1898,34 @@
     return wrappedChord % FIXED_HARMONY_STEPS.length;
   }
 
+  function normalizeKurrayaArrangementSteps(steps, expectedLength, fallback) {
+    const source = Array.isArray(steps) ? steps : fallback; // Accepts only the four authored F/G/E/A root-step slots so tool edits cannot create invalid harmony data.
+    return Array.from({length:expectedLength},(_,index) => clamp(Math.round(Number(source[index] ?? fallback[index] ?? 0)),0,FIXED_HARMONY_STEPS.length - 1));
+  }
+
+  function kurrayaHarmonySegments(steps, meterLabel, startChord = 0) {
+    const normalized = Array.isArray(steps) ? steps : []; // Groups neighboring equal bar roots into sustained long sections used by both playback and the Music Lab visual editor.
+    const segments = [];
+    for (let bar = 0; bar < normalized.length; bar++) {
+      const step = normalized[bar];
+      const previous = segments[segments.length - 1];
+      if (previous && previous.step === step) previous.lengthBars += 1;
+      else segments.push({startBar:bar,lengthBars:1,step,startChord:startChord + bar,meter:meterLabel});
+    }
+    return segments;
+  }
+
+  function activeKurrayaSongArrangement() {
+    const introSteps = normalizeKurrayaArrangementSteps(state.kurrayaSongIntroSteps,FIXED_HARMONY_SIX_EIGHT_CHORDS,KURRAYA_DEFAULT_INTRO_STEPS); // Four editable 6/8 bars before the melody.
+    const bodySteps = normalizeKurrayaArrangementSteps(state.kurrayaSongBodySteps,FIXED_HARMONY_THREE_FOUR_CHORDS,KURRAYA_DEFAULT_BODY_STEPS); // Sixteen editable 3/4 bars underneath the melody.
+    return {
+      introSteps,
+      bodySteps,
+      introSegments:kurrayaHarmonySegments(introSteps,'6/8',0),
+      bodySegments:kurrayaHarmonySegments(bodySteps,'3/4',FIXED_HARMONY_SIX_EIGHT_CHORDS)
+    };
+  }
+
   function activeSongMeter(performanceQuarterBeatFloat = 0) {
     if (usesFixedKurrayaHarmony()) return fixedKurrayaMixedMeterPhase(performanceQuarterBeatFloat).meter;
     const melody=getSongDefinition(state.game.songType || state.selectedSong);
@@ -1981,6 +2013,31 @@
 
   function fixedKurrayaHarmonyCadence(clock = sharedTransportData()) {
     const phase = clock.mixedPhase || fixedKurrayaMixedMeterPhase(clock.performanceBeatFloat);
+    const authoredSongActive = state.game.active && (state.game.songType || state.selectedSong) === 'when-the-kininjis-bloom'; // Only authored-song playback follows the Music Lab arrangement; free play keeps the fixed repeating progression.
+    if (authoredSongActive) {
+      const arrangement = activeKurrayaSongArrangement();
+      const inIntro = phase.chordWithinCycle < FIXED_HARMONY_SIX_EIGHT_CHORDS;
+      const sectionBar = inIntro ? phase.chordWithinCycle : phase.chordWithinCycle - FIXED_HARMONY_SIX_EIGHT_CHORDS;
+      const segments = inIntro ? arrangement.introSegments : arrangement.bodySegments;
+      const segment = segments.find(candidate => sectionBar >= candidate.startBar && sectionBar < candidate.startBar + candidate.lengthBars) || segments[segments.length - 1];
+      const sectionMeterBeatOffset = inIntro ? 0 : FIXED_HARMONY_SIX_EIGHT_CHORDS * KURRAYA_TIME_SIGNATURE[0]; // Body meter-beat positions begin after the 24 eighth-note intro clicks.
+      const meterNumerator = inIntro ? KURRAYA_TIME_SIGNATURE[0] : KURRAYA_THREE_FOUR_TIME_SIGNATURE[0];
+      const absoluteStartMeterBeat = phase.cycleIndex * FIXED_HARMONY_METER_BEATS_PER_CYCLE + sectionMeterBeatOffset + segment.startBar * meterNumerator;
+      return {
+        eventSerial:phase.cycleIndex * FIXED_HARMONY_CYCLE_CHORDS + segment.startChord, // Stays unchanged across every bar covered by one long section so the pad is not retriggered mid-sustain.
+        progressionStep:segment.step,
+        absoluteMeasure:phase.absoluteChord,
+        cycleMeasure:phase.chordWithinCycle,
+        cycleIndex:phase.cycleIndex,
+        spanMeasures:segment.lengthBars,
+        spanBeats:segment.lengthBars * meterNumerator,
+        absoluteStartMeasure:segment.startChord,
+        absoluteStartMeterBeat,
+        spanQuarterBeats:segment.lengthBars * FIXED_HARMONY_CHORD_QUARTER_BEATS,
+        meter:phase.meter,
+        arrangementSegment:{...segment}
+      };
+    }
     return {
       eventSerial:phase.absoluteChord,
       progressionStep:fixedKurrayaProgressionStepForChord(phase.chordWithinCycle),
@@ -2399,8 +2456,9 @@
     if (fixedCadence) {
       const beatsPerChord = fixedCadence.spanBeats;
       const beatInChord = clamp(Math.floor(clock.performanceMeterBeatFloat - fixedCadence.absoluteStartMeterBeat),0,beatsPerChord-1);
-      const groupStarts = meter.groupStarts.slice();
-      return {absoluteBeat:clock.transportAbsoluteBeat,beatInChord,beatsPerChord,inCountIn:false,source:'fixed-kurraya-cadence',meter,groupStarts,isMeasureStart:beatInChord===0,isGroupStart:groupStarts.includes(beatInChord)};
+      const beatInMeasure = modulo(beatInChord,meter.numerator); // Long chord sections may span several measures, but metronome accents still restart at every measure boundary.
+      const groupStarts = Array.from({length:beatsPerChord},(_,index) => index).filter(index => meter.groupStarts.includes(modulo(index,meter.numerator)));
+      return {absoluteBeat:clock.transportAbsoluteBeat,beatInChord,beatsPerChord,inCountIn:false,source:'fixed-kurraya-cadence',meter,groupStarts,isMeasureStart:beatInMeasure===0,isGroupStart:meter.groupStarts.includes(beatInMeasure)};
     }
     const songSegment = currentSongChordSegment(clock);
     if (songSegment) {
