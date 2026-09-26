@@ -251,6 +251,22 @@
     return owner ? worldPosition(owner) : null;
   }
 
+  function horizontalDistanceToOwner(owner, player, fallbackPoint = null) {
+    if (owner && player) {
+      try {
+        owner.updateWorldMatrix?.(true, true);
+        owner.updateMatrixWorld?.(true);
+        const box = new THREE.Box3().setFromObject(owner); // Range is measured from the visible tower/cube surface, matching how its collision feels.
+        if (!box.isEmpty()) {
+          const nearestX = Math.max(box.min.x, Math.min(player.x, box.max.x));
+          const nearestZ = Math.max(box.min.z, Math.min(player.z, box.max.z));
+          return Math.hypot(nearestX - player.x, nearestZ - player.z);
+        }
+      } catch (_) {}
+    }
+    return fallbackPoint && player ? Math.hypot(fallbackPoint.x - player.x, fallbackPoint.z - player.z) : Infinity;
+  }
+
   function providerRows(now = performance.now()) {
     const player = playerWorldPosition();
     if (!player) return [];
@@ -269,9 +285,11 @@
         // Glyphs and ignition props are intentionally hit-driven. Never leak
         // the generator's DEV toggle into the ordinary interaction list.
         if (kind.includes('glyph') || kind === 'brazier' || kind === 'torch') continue;
-        const owner = control.object || (control.point ? ruinRoot() : nearestOwnerForKind(kind));
+        const owner = control.promptRoot || control.object || (control.point ? ruinRoot() : nearestOwnerForKind(kind)); // Towers can explicitly anchor prompts to the cube/top segment players are looking at.
         const point = controlWorldPoint(control, owner);
-        const distance = point ? Math.hypot(point.x - player.x, point.z - player.z) : Infinity;
+        const distance = control.point
+          ? (point ? Math.hypot(point.x - player.x, point.z - player.z) : Infinity)
+          : horizontalDistanceToOwner(owner, player, point);
         const range = Math.max(.1, Number(control.range) || LADDER_RANGE);
         if (distance > range) continue;
         const labelValue = typeof control.label === 'function' ? control.label() : control.label;
@@ -520,7 +538,7 @@
         customPromptBridgeInstalled:false,
         providerCount:[window.DevRandomRuin, window.DevRandomRuinPrototypeHooks].filter(provider => typeof provider?.getInteractionControls === 'function').length,
         ladderCount:ladders.length,
-        rows:lastRows.map(row => ({ label:row.label, kind:row.kind, inputAction:row.inputAction, input:bindingLabel(row.inputAction, currentDevice(), row.touchIcon), distance:Number.isFinite(row.distance) ? +row.distance.toFixed(3) : null })),
+        rows:lastRows.map(row => ({ label:row.label, kind:row.kind, action:row.action, inputAction:row.inputAction, inputActionId:row.inputAction, input:bindingLabel(row.inputAction, currentDevice(), row.touchIcon), distance:Number.isFinite(row.distance) ? +row.distance.toFixed(3) : null, owner:row.owner?.name||row.owner?.id||null })),
         ownerName:lastAnchor?.name || null,
         ownerKind:semanticKind(lastAnchor),
         worldPopupVisible:ownsWorldList,

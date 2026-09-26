@@ -22,11 +22,12 @@
   document.write('<script src="js/dev-random-ruin-hit-puzzles-loader.js?v=20260914v50wallsinputs1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-prototype-hooks.js?v=20260917v50doorsinputs1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-tile-occupancy.js?v=20260917v50doorsinputs1"></scr' + 'ipt>');
-  document.write('<script src="js/dev-random-ruin-interior-map.js?v=20260917v50doorsinputs1"></scr' + 'ipt>');
+  document.write('<script src="js/dev-random-ruin-solvability.js?v=20260926lighting1"></scr' + 'ipt>');
+  document.write('<script src="js/dev-random-ruin-interior-map.js?v=20260926towerinput1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-wall-planes.js?v=20260923review1"></scr' + 'ipt>');
-  document.write('<script src="js/dev-random-ruin-wall-render-proxy.js?v=20260917v50doorsinputs1"></scr' + 'ipt>');
+  document.write('<script src="js/dev-random-ruin-wall-render-proxy.js?v=20260926unlit1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-collision-precision.js?v=20260917v50doorsinputs1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-motion-runtime.js?v=20260925controllerauthority1"></scr' + 'ipt>');
-  document.write('<script src="js/dev-random-ruin-interactions.js?v=20260925controllerauthority1"></scr' + 'ipt>');
+  document.write('<script src="js/dev-random-ruin-interactions.js?v=20260926towerinput1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-runtime-coverage.js?v=20260923review1"></scr' + 'ipt>');
 })();

@@ -19,20 +19,27 @@ const debrisSource = read('docs/tools/debris-ifier/debrisifier-v50-source.js');
 const embeddedTree = JSON.parse(read('docs/tools/debris-ifier/debrisifier-v50-embedded-tree.json'));
 const interior = read('docs/js/dev-random-ruin-interior-map.js');
 const occupancy = read('docs/js/dev-random-ruin-tile-occupancy.js');
+const solvability = read('docs/js/dev-random-ruin-solvability.js');
+const dynamicSurfaces = read('docs/js/dynamic-surfaces.js');
 const hooks = read('docs/js/dev-random-ruin-prototype-hooks.js');
 const renderProxy = read('docs/js/dev-random-ruin-wall-render-proxy.js');
 const interactions = read('docs/js/dev-random-ruin-interactions.js');
+const cloudFog = read('docs/js/cloud-forest-fog.js');
+const gameIndex = read('docs/index.html');
+const game = read('docs/game.js');
 
 const loadOrder = [
   'dynamic-surfaces.js',
   'dev-random-ruin-hit-puzzles-loader.js',
   'dev-random-ruin-prototype-hooks.js',
   'dev-random-ruin-tile-occupancy.js',
+  'dev-random-ruin-solvability.js',
   'dev-random-ruin-interior-map.js',
   'dev-random-ruin-motion-runtime.js',
   'dev-random-ruin-runtime-coverage.js',
 ].map(name => camera.indexOf(name));
 assert(/localStorage\.getItem\('hobunjiDevMode'\) === '1'/.test(camera) && /if \(!devMode/.test(camera), 'ruin runtime must only be injected in Dev Mode');
+assert(camera.includes('dev-random-ruin-interactions.js?v=20260926towerinput1'), 'tower interaction adapter must be cache-busted in the dev bootstrap');
 assert(loadOrder.every(index => index >= 0), 'ruin bootstrap must load every Random Test Ruin runtime module');
 for (let i = 1; i < loadOrder.length; i++) {
   assert(loadOrder[i] > loadOrder[i - 1], 'Random Test Ruin runtime modules must preserve dependency order');
@@ -40,8 +47,53 @@ for (let i = 1; i < loadOrder.length; i++) {
 
 assert(interior.includes("const RUIN_TILE_SCALE = 2"), 'generated ruin must retain 2x horizontal cells');
 assert(interior.includes("map_i_dev_random_ruin"), 'generated ruin must remain a real session-only interior map');
+assert(interior.includes("wallStyle:'cavern'"), 'Random Test Ruin must opt into the existing cavern combat-interior classification');
+assert(game.includes("_buildingScenes.get(area)?.wallStyle === 'cavern'"), 'game cavern classification must recognize a session building record with cavern wallStyle');
+assert(game.includes("_isCavernBuildingArea(currentArea) && heldMode === 'tool'"), 'cavern interiors must expose normal tool/ranged action-arch buttons on mobile');
+assert(interior.includes("natural.naturalizeMesh(object,'cliffs')"), 'generated ruin stone must use the exact ordinary-den NaturalSurfaceMaterials cliffs path');
+assert(interior.includes('new THREE.Color(0x2a1a0a)'), 'generated ruin may retain the den-colored empty background while geometry stays unlit');
+assert(!/new THREE\.(?:AmbientLight|DirectionalLight|PointLight|SpotLight|HemisphereLight)\(/.test(interior), 'Random Test Ruin must not create real Three.js lights');
+assert(interior.includes('function applyUnlitRuinMaterials'), 'Random Test Ruin must normalize all generated materials at the runtime boundary');
+assert(interior.includes("natural.naturalizeMesh(object,'cliffs')"), 'shared ruin stone must still use the exact cliff material path');
+assert(interior.includes("materialTextureIdentity(material).includes('carved_smooth')"), 'V50 carved_smooth stone clones must be recognized even when they no longer share the wall material object');
+assert(interior.includes("material.color.getHex?.()===0x545039"), 'V50 RUIN_STONE_FILL fallback must be recognized as legacy stone');
+assert(interior.includes('legacyStoneMaterials'), 'material diagnostics must prove no old dark V50 stone texture remains after cliff conversion');
+assert(interior.includes('spritePngSurface.makeMaterial(THREE,source.map||null'), 'non-stone lit V50 materials must use the same canonical unlit PNG material factory as cliffs');
+assert(interior.includes('remainingLitMaterials'), 'material diagnostics must explicitly count any lit material that escapes normalization');
+assert((cloudFog.match(/map_i_dev_random_ruin/g)||[]).length>=2, 'Random Test Ruin must opt into the shared den no-sky and den darkness/lantern classifications');
+assert(gameIndex.includes('js/cloud-forest-fog.js?v=20260926devruindark2'), 'test-ruin darkness override must be cache-busted in the game page');
+assert(camera.includes('dev-random-ruin-interior-map.js?v=20260926towerinput1'), 'test-ruin darkness controls must be cache-busted in the dev bootstrap');
+assert(interior.includes('Solvability.audit'), 'candidate ruins must run the pre-entry solvability audit');
+assert(interior.includes('MAX_SOLVABILITY_ATTEMPTS = 6'), 'unsolvable candidates must have a bounded deterministic retry budget');
+assert(interior.includes('getLastSolvabilityAudit'), 'rejected seed diagnostics must remain inspectable without devtools');
+assert(solvability.includes('function flood('), 'solvability audit must flood-fill actual runtime floor/support reachability');
+assert(solvability.includes('canSolvePressurePlate'), 'solvability audit must validate push-block pressure-plate routes');
+assert(solvability.includes('const reachable = flood(playerPoint);'), 'sequential push solvability must continue from the player\'s post-push region instead of restarting at the ruin entrance');
+assert(solvability.includes('playerPoint = pushSide;'), 'sequential push solvability must carry the chosen interaction side into the next push step');
+assert(solvability.includes('canSolveBrazier'), 'solvability audit must validate torch source/carry routes');
+assert(solvability.includes('canSolveGlyphGroup'), 'solvability audit must validate required projectile targets');
+assert(solvability.includes("bridge ON/OFF sequence reachable in order"), 'solvability audit must validate ordered bridge controls');
+assert(solvability.includes('unsolvedMechanisms'), 'solvability audit must reject candidates with puzzle mechanisms that cannot be solved');
+assert(dynamicSurfaces.includes("const scope = options.scope == null ? null : String(options.scope)"), 'support sampling must support an exact scope filter for pre-entry audits');
+assert(interior.includes('devRandomRuinPuzzleOptions'), 'Random Test Ruin Settings must expose the collapsed puzzle-generation panel');
+assert(interior.includes('data-ruin-puzzle-option'), 'puzzle-generation panel must render per-family checkboxes');
+assert(interior.includes('devRandomRuinMaxPuzzlesPerRoom'), 'puzzle-generation panel must expose a per-room puzzle cap');
+assert(interior.includes("DEFAULT_DARKNESS_SETTINGS = Object.freeze({ enabled:false, severity:1 })"), 'Random Test Ruin darkness must default off while retaining full authored severity');
+assert(interior.includes('devRandomRuinDarknessEnabled') && interior.includes('devRandomRuinDarknessSeverity'), 'Random Test Ruin Settings must expose a darkness toggle and severity slider');
+assert(interior.includes('getDarknessSettings'), 'Random Test Ruin must expose its live darkness settings to the shared lighting authority');
+assert(cloudFog.includes("window.DevRandomRuin?.getDarknessSettings?.()"), 'shared enclosed lighting must consult the Random Test Ruin override');
+assert(cloudFog.includes("testSettings?.enabled === true ? DEN_DARKNESS_OVERLAY_ALPHA * severity : 0"), 'test darkness must be zero by default and scale the authored den alpha when enabled');
+assert(cloudFog.includes('refreshLightingOverlay'), 'test lighting controls must be able to redraw the existing lighting overlay immediately');
+assert(interior.includes('puzzles:puzzleOptions'), 'Random Test Ruin generation must pass the captured puzzle options into every solvability retry');
 assert(!interior.includes('devruin-wall-${object.id}'), 'wall meshes must not register object-wide blockers');
 assert(!interior.includes('devruin-solid-${o.id}'), 'solid furniture must not register object-wide blockers');
+assert(interior.includes("d.activatorType === 'stackedObelisk' || d.activatorType === 'linkedCubePillars'"), 'rotating cube towers must join the authoritative solid-object occupancy set');
+assert(interior.includes("object.userData.blockerPurpose = 'puzzle_tower_' + d.activatorType"), 'tower collision sources must remain identifiable in Pixel Probe occupancy diagnostics');
+assert(interior.includes("promptRoot:e.segment") && interior.includes("touchIcon:'↻'"), 'linked cube controls must expose explicit cube-level world prompt anchors and touch input');
+assert(interior.includes("promptRoot:topSegment||a"), 'stacked rotating obelisks must anchor their world prompt above the cube tower');
+assert(interior.includes('range:Number.isFinite(Number(control.range))'), 'per-control interaction range must survive the base provider export');
+assert(interactions.includes('control.promptRoot || control.object'), 'shared ruin interactions must honor explicit tower prompt anchors');
+assert(interactions.includes('horizontalDistanceToOwner'), 'tower interaction range must be measured from the physical object footprint rather than only its origin');
 assert(interior.includes('TileOccupancy.create'), 'ruin must create the shared tile occupancy snapshot');
 assert(interior.includes('getOccupancySnapshot'), 'ruin must expose the exact gameplay snapshot to diagnostics');
 assert(occupancy.includes("const BLOCKER_ID = 'devruin-tile-occupancy'"), 'tile occupancy must own one aggregate gameplay blocker');
@@ -62,6 +114,10 @@ assert(renderProxy.includes("add(mesh, 'activator', object)"), 'parent-realm ren
 assert(renderProxy.includes('copySourceWorldTransform(sourceObject, proxy, scene)'), 'door and activator proxies must follow live V50 transforms');
 assert(renderProxy.includes('visibleDoorProxies'), 'mobile diagnostics must expose visible door proxy coverage');
 assert(renderProxy.includes('visibleActivatorProxies'), 'mobile diagnostics must expose visible activator proxy coverage');
+assert(renderProxy.includes("natural.naturalizeMesh(proxy,'cliffs')"), 'visible parent-realm ruin proxies must retain the exact den cliffs material pipeline');
+assert(renderProxy.includes('sourceUnlit = source?.isMeshBasicMaterial'), 'render proxy cloning must preserve unlit source materials instead of always creating MeshStandardMaterial');
+assert(renderProxy.includes('spritePngSurface.makeMaterial(THREE,map'), 'unlit render proxies must use the same canonical PNG material factory as cliffs');
+assert(renderProxy.includes('litProxyMaterials:'), 'render proxy diagnostics must expose any accidentally relit visible materials');
 assert(interior.includes('tools/debris-ifier/index.html?devRuntime=1'), 'hidden generator must request embedded V50 runtime mode');
 assert(interior.includes('await enterRuin(); updateBadge();'), 'generate must await the actual ruin transition midpoint before reporting success');
 assert(interior.includes('const entering=ruin;'), 'ruin entry transition must capture the generated instance it is entering');
@@ -76,6 +132,8 @@ assert(!hooks.includes('registerBlocker(`devruin-elevator-'), 'elevator objects 
 assert(interactions.includes("matchMedia?.('(pointer: coarse)')"), 'mobile ruin actions must recognize coarse-pointer desktop-view devices');
 assert(interactions.includes("source:'semantic-glyph'"), 'mobile glyph targets must expose ranged guidance/action');
 new vm.Script(interior, { filename:'dev-random-ruin-interior-map.js' });
+new vm.Script(solvability, { filename:'dev-random-ruin-solvability.js' });
+new vm.Script(dynamicSurfaces, { filename:'dynamic-surfaces.js' });
 new vm.Script(occupancy, { filename:'dev-random-ruin-tile-occupancy.js' });
 new vm.Script(renderProxy, { filename:'dev-random-ruin-wall-render-proxy.js' });
 new vm.Script(interactions, { filename:'dev-random-ruin-interactions.js' });
@@ -87,6 +145,9 @@ assert(api.includes('prepareRuntimeWallPlanes'), 'V50 bridge must explicitly pre
 assert(api.includes('runtimeWallPlaneRendered'), 'prototype wall planes must be tagged after runtime render preparation');
 assert(api.includes('THREE.DoubleSide'), 'prototype wall planes must render from either game-camera side');
 assert(api.includes('runtimeHallwayState'), 'V50 bridge must expose generated hallway clearance metadata');
+assert(api.includes('window.__devRuinPuzzleOptions = puzzleOptions'), 'V50 bridge must publish normalized puzzle options to the embedded source');
+assert(api.includes('window.__devRuinPuzzleCounts = new Map()'), 'each generated ruin must start with a fresh per-room puzzle counter');
+assert(api.includes('window.__devRuinPuzzleClaimedMechanisms = new Set()'), 'fallback activators must not double-count one mechanism against the room cap');
 assert(api.includes('minCrossCells < 5'), 'embedded runtime must reject hallway width regressions below five prototype cells');
 assert(motion.includes('runtimeRecoveryEgress'), 'motion runtime must mark injected recovery ladders');
 assert(motion.includes('exactLevelComponents'), 'motion runtime must audit each negative elevation tier');
@@ -117,6 +178,22 @@ assert(debrisBootstrap.includes("new URL('../../'+fromDocsRoot,location.href).hr
 assert(debrisBootstrap.includes('refusing an unverified embedded patch'), 'embedded runtime patching must fail closed if exact V50 bindings drift');
 assert(debrisBootstrap.includes("source.src = 'debrisifier-v50-source.js'"), 'direct Debris-ifier mode must keep loading the exact readable source file');
 assert(debrisBootstrap.includes('patchedBindings: patches.length'), 'embedded runtime must report the verified patch count');
+assert(debrisBootstrap.includes('runtimePuzzleFamilyEnabled'), 'embedded runtime must filter puzzle families without modifying V50 source');
+assert(debrisBootstrap.includes('runtimePuzzleRoomAvailable'), 'embedded runtime must enforce the configured room puzzle cap');
+assert(debrisBootstrap.includes('runtimePuzzleBypass'), 'capped/disabled puzzle mechanisms must be put in a solved bypass state');
+assert(debrisBootstrap.includes('runtimeChoosePressureFallbackType'), 'pressure plates without a valid push route must fall back to another enabled puzzle family');
+assert(debrisBootstrap.includes('invalid pressure-plate fallback'), 'embedded V50 patch set must include the pressure-route fallback seam');
+assert(debrisBootstrap.includes('pressure-puzzle prior reserved space'), 'new pressure puzzles must avoid earlier reserved puzzle space');
+assert(debrisBootstrap.includes('doorway flank push-route avoidance'), 'doorway flank pillars must not occupy reserved push corridors');
+assert(debrisBootstrap.includes('wall display push-route avoidance'), 'wall displays must not occupy reserved push corridors');
+assert(debrisBootstrap.includes('pressure prior-obstacle clearance'), 'pressure routes must honor full clearance reserved by earlier puzzle geometry');
+assert(debrisBootstrap.includes('push reserved point footprint clearance'), 'push route point reservations must cover full block/socket footprint clearance');
+assert(debrisBootstrap.includes('push reserved segment footprint clearance'), 'continuous push corridors must retain the same full footprint clearance');
+assert(debrisBootstrap.includes('elevator socket authored exit'), 'nested elevator sockets must have a physical opening for the raised block');
+assert(debrisBootstrap.includes('elevator socket first-push direction'), 'the socket opening must follow the generated first push direction');
+assert(debrisBootstrap.includes("runtimePuzzleFamilyEnabled('nestedRoom')"), 'nested room chains must have an independent generation toggle');
+assert(debrisBootstrap.includes("type==='linkedCubePillars'"), 'linked cube pillars must be selectable independently from simple rotating obelisks');
+assert(debrisBootstrap.includes("bridgeSequence'){const p=activation"), 'bridge sequences must consume linked activation so solved/bypassed state reaches the bridge');
 assert.equal((debrisSource.match(/REPO_RAW_ROOT/g) || []).length, 4, 'V50 source gained an unaudited direct raw-repo transport use');
 assert(debrisSource.includes('const width=randomIntInclusive(rng,3,4),length=randomIntInclusive(rng,5,8);'), 'source-of-truth V50 hallway sizing unexpectedly changed');
 assert(debrisSource.includes('hallWidth=randomIntInclusive(rng,3,4),hallLen=10+rooms.length*3;'), 'source-of-truth V50 fallback hallway sizing unexpectedly changed');

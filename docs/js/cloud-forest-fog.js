@@ -351,6 +351,7 @@
     const id = String(area || '').toLowerCase();
     return id === 'map_southern_cloud_forest'
       || id === 'interior'
+      || id === 'map_i_dev_random_ruin'
       || id.includes('map_i_den_')
       || id.includes('den')
       || id.includes('cavern')
@@ -363,10 +364,17 @@
   }
 
   function isDenArea(area) {
-    return String(area || '').toLowerCase().startsWith('map_i_den_');
+    const id = String(area || '').toLowerCase(); // Random Test Ruin opts into the exact den darkness/lantern policy without pretending to be a persistent animal-den map.
+    return id.startsWith('map_i_den_') || id === 'map_i_dev_random_ruin';
   }
 
   function enclosedDarknessOverlayAlpha(area) {
+    if (String(area || '').toLowerCase() === 'map_i_dev_random_ruin') {
+      const testSettings = window.DevRandomRuin?.getDarknessSettings?.(); // Random Test Ruin defaults bright for inspection while retaining an explicit den-darkness preview control.
+      const rawSeverity = Number(testSettings?.severity);
+      const severity = Number.isFinite(rawSeverity) ? clamp01(rawSeverity) : 1;
+      return testSettings?.enabled === true ? DEN_DARKNESS_OVERLAY_ALPHA * severity : 0;
+    }
     if (isMineArea(area)) return MINE_DARKNESS_OVERLAY_ALPHA;
     if (isDenArea(area)) return DEN_DARKNESS_OVERLAY_ALPHA;
     return INTERIOR_DARKNESS_OVERLAY_ALPHA;
@@ -662,6 +670,7 @@
     update,
     setLayerRadius,
     setLayerOpacity,
+    refreshLightingOverlay: () => { lastUnifiedLightingDraw = -Infinity; window.WeatherFX?.drawLightingOverlay?.(); }, // Lets dev-only lighting controls redraw immediately without owning a second lighting path.
     // Called by the Settings tab's Cloud Forest Fog toggle. update() itself
     // is simply not called at all while disabled (see game.js's per-frame
     // call site), which freezes the mist mid-animation rather than hiding

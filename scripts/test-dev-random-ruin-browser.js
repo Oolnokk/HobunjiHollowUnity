@@ -47,6 +47,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
   await page.addInitScript(() => {
     localStorage.setItem('hobunjiDevMode', '1');
     localStorage.removeItem('hobunjiDevRandomRuinWallPlanes');
+    localStorage.removeItem('hobunji.devRandomRuinDarkness.v1');
   });
   await page.goto(TEST_URL, { waitUntil:'domcontentloaded', timeout:30000 });
   await page.waitForFunction(() =>
@@ -60,6 +61,108 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
   null, { timeout:30000 });
   await page.evaluate(() => window.HobunjiTitleScreen?.start?.());
   await page.waitForFunction(() => !window.HobunjiTitleScreen?.isActive?.(), null, { timeout:5000 });
+
+  const puzzlePanel = await page.evaluate(() => {
+    const details = document.getElementById('devRandomRuinPuzzleOptions');
+    return {
+      present:!!details,
+      open:!!details?.open,
+      checkboxCount:details?.querySelectorAll?.('[data-ruin-puzzle-option]')?.length || 0,
+      maxPresent:!!details?.querySelector?.('#devRandomRuinMaxPuzzlesPerRoom'),
+      darknessEnabled:document.getElementById('devRandomRuinDarknessEnabled')?.checked ?? null,
+      darknessSeverity:Number(document.getElementById('devRandomRuinDarknessSeverity')?.value),
+    };
+  });
+  assert.equal(puzzlePanel.present, true, JSON.stringify(puzzlePanel));
+  assert.equal(puzzlePanel.open, false, JSON.stringify(puzzlePanel));
+  assert.equal(puzzlePanel.checkboxCount, 6, JSON.stringify(puzzlePanel));
+  assert.equal(puzzlePanel.maxPresent, true, JSON.stringify(puzzlePanel));
+  assert.equal(puzzlePanel.darknessEnabled, false, JSON.stringify(puzzlePanel));
+  assert.equal(puzzlePanel.darknessSeverity, 100, JSON.stringify(puzzlePanel));
+
+  // Exercise the generator with a restrictive configuration before the normal
+  // smoke seeds: only pressure-plate puzzles, at most one top-level puzzle per room.
+  await page.evaluate(() => {
+    const details = document.getElementById('devRandomRuinPuzzleOptions');
+    for (const checkbox of details.querySelectorAll('[data-ruin-puzzle-option]')) {
+      checkbox.checked = checkbox.dataset.ruinPuzzleOption === 'pressurePlate';
+    }
+    const maxInput = details.querySelector('#devRandomRuinMaxPuzzlesPerRoom');
+    maxInput.value = '1';
+    maxInput.dispatchEvent(new Event('input', { bubbles:true }));
+  });
+  const constrainedSeed = 0x51a7cafe;
+  assert.equal(await page.evaluate(async seed => window.DevRandomRuin.generate(seed), constrainedSeed), true);
+  await page.waitForFunction(() => window.GridTileAccessors.getCurrentArea() === 'map_i_dev_random_ruin', null, { timeout:30000 });
+  const constrained = await page.evaluate(() => {
+    const state = window.DevRandomRuin.getState();
+    const scene = window.GridTileAccessors.getActiveScene();
+    const activatorTypes = new Set();
+    let bypassed = 0;
+    scene?.traverse?.(object => {
+      if (object.userData?.activatorType) activatorTypes.add(object.userData.activatorType);
+      if (object.userData?.runtimePuzzleBypass) bypassed++;
+    });
+    return {
+      puzzleOptions:state?.puzzleOptions || null,
+      counts:Object.values(state?.puzzleGeneration?.countsByRoom || {}).map(Number),
+      activatorTypes:[...activatorTypes].sort(),
+      bypassed,
+      solvability:state?.solvability || null,
+      generationAttempt:state?.generationAttempt || 0,
+      badge:document.getElementById('devRandomRuinBadge')?.textContent || '',
+      darkness:window.DevRandomRuin.getDarknessSettings?.() || null,
+      darknessDebug:window.CloudForestFog?.getDebugState?.() || null,
+    };
+  });
+  assert.equal(constrained.puzzleOptions?.pressurePlate, true, JSON.stringify(constrained));
+  for (const key of ['brazier','glyphObelisk','stackedObelisk','linkedCubePillars','nestedRoom']) {
+    assert.equal(constrained.puzzleOptions?.[key], false, JSON.stringify(constrained));
+  }
+  assert.equal(constrained.puzzleOptions?.maxPerRoom, 1, JSON.stringify(constrained));
+  assert.ok(constrained.counts.every(count => count <= 1), JSON.stringify(constrained));
+  assert.ok(constrained.activatorTypes.every(type => type === 'pressurePlate' || type === 'alwaysLitTorch'), JSON.stringify(constrained));
+  assert.equal(constrained.solvability?.ok, true, JSON.stringify(constrained));
+  assert.equal(constrained.solvability?.unsolvedMechanisms?.length, 0, JSON.stringify(constrained.solvability));
+  assert.ok(constrained.solvability?.rooms?.every(room => room.reachable), JSON.stringify(constrained.solvability));
+  assert.match(constrained.badge, /solvable ✓/, constrained.badge);
+  assert.match(constrained.badge, /puzzles \d+\/1 max-room/, constrained.badge);
+  assert.deepEqual(constrained.darkness, { enabled:false, severity:1 }, JSON.stringify(constrained));
+  assert.equal(constrained.darknessDebug?.undergroundDarknessOverlayAlpha, 0, JSON.stringify(constrained.darknessDebug));
+  assert.match(constrained.badge, /dark off/, constrained.badge);
+
+  const darknessCycle = await page.evaluate(async () => {
+    const enabled=document.getElementById('devRandomRuinDarknessEnabled');
+    const severity=document.getElementById('devRandomRuinDarknessSeverity');
+    severity.value='50';
+    severity.dispatchEvent(new Event('input',{bubbles:true}));
+    enabled.checked=true;
+    enabled.dispatchEvent(new Event('change',{bubbles:true}));
+    await new Promise(resolve=>setTimeout(resolve,30));
+    const on={settings:window.DevRandomRuin.getDarknessSettings(),debug:window.CloudForestFog.getDebugState(),label:document.getElementById('devRandomRuinDarknessSeverityValue')?.textContent||''};
+    enabled.checked=false;
+    enabled.dispatchEvent(new Event('change',{bubbles:true}));
+    await new Promise(resolve=>setTimeout(resolve,30));
+    const off={settings:window.DevRandomRuin.getDarknessSettings(),debug:window.CloudForestFog.getDebugState()};
+    return {on,off};
+  });
+  assert.equal(darknessCycle.on.settings.enabled,true,JSON.stringify(darknessCycle));
+  assert.equal(darknessCycle.on.settings.severity,0.5,JSON.stringify(darknessCycle));
+  assert.equal(darknessCycle.on.label,'50%',JSON.stringify(darknessCycle));
+  assert.ok(darknessCycle.on.debug.undergroundDarknessOverlayAlpha > 0.4 && darknessCycle.on.debug.undergroundDarknessOverlayAlpha < 0.5,JSON.stringify(darknessCycle));
+  assert.equal(darknessCycle.off.settings.enabled,false,JSON.stringify(darknessCycle));
+  assert.equal(darknessCycle.off.debug.undergroundDarknessOverlayAlpha,0,JSON.stringify(darknessCycle));
+  await page.evaluate(async () => window.DevRandomRuin.leave());
+  await page.waitForFunction(() => window.GridTileAccessors.getCurrentArea() !== 'map_i_dev_random_ruin', null, { timeout:10000 });
+
+  // Restore legacy/default generation before running broad fixed-seed coverage.
+  await page.evaluate(() => {
+    const details = document.getElementById('devRandomRuinPuzzleOptions');
+    for (const checkbox of details.querySelectorAll('[data-ruin-puzzle-option]')) checkbox.checked = true;
+    const maxInput = details.querySelector('#devRandomRuinMaxPuzzlesPerRoom');
+    maxInput.value = '0';
+    maxInput.dispatchEvent(new Event('input', { bubbles:true }));
+  });
 
   async function failureDiagnostics(seed) {
     return page.evaluate(value => {
@@ -81,6 +184,9 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
         generatedEnvironment:state?.locale?.meta?.environment || null,
         runtimeWallPlanes:state?.runtimeWallPlanes || null,
         runtimeHallways:state?.runtimeHallways || null,
+        solvability:window.DevRandomRuin?.getLastSolvabilityAudit?.() || null,
+        puzzleOptions:state?.puzzleOptions || null,
+        puzzleGeneration:state?.puzzleGeneration || null,
       };
     }, seed);
   }
@@ -128,8 +234,15 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
       const furnitureStatus = frame?.contentDocument?.getElementById('furnitureRepoStatus')?.textContent || '';
       const levels = Object.values(shell?.plateauModel?.levelByCell || {}).map(Number);
       let ladders = 0;
+      const puzzleTowers = [];
       scene?.traverse?.(object => {
         if (object.userData?.generatedAccessType === 'stoneLadder') ladders++;
+        if (object.userData?.activatorType === 'stackedObelisk' || object.userData?.activatorType === 'linkedCubePillars') {
+          const position = new THREE.Vector3();
+          object.updateWorldMatrix?.(true, false);
+          object.getWorldPosition?.(position);
+          puzzleTowers.push({ id:object.id, type:object.userData.activatorType, x:position.x, z:position.z, blockerPurpose:object.userData.blockerPurpose||null, interactive3D:object.userData.interactive3D===true });
+        }
       });
 
       // Sample the actual game collision registry along the center of every
@@ -165,15 +278,21 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
         coverage,
         wallPlaneControl,
         wallRender,
+        materialStats:window.DevRandomRuin.getState()?.materialStats || null,
         occupancy,
         occupancyBlockers:dynamic.blockers.filter(record => record.id === 'devruin-tile-occupancy').length,
         legacyRuinBlockers:dynamic.blockers.filter(record => /^devruin-(wall|solid|door|push)-/.test(record.id)).length,
         transport,
         furnitureStatus,
         ladders,
+        puzzleTowers,
         negativeLevels:levels.filter(level => level < 0).length,
         runtimeWallPlanes:generatorState?.runtimeWallPlanes || null,
         runtimeHallways:generatorState?.runtimeHallways || null,
+        solvability:window.DevRandomRuin.getState()?.solvability || null,
+        generationAttempt:window.DevRandomRuin.getState()?.generationAttempt || 0,
+        acceptedSeed:window.DevRandomRuin.getState()?.seed ?? null,
+        wallStyle:window.DevRandomRuin.getState()?.wallStyle || null,
         hallwayCollision,
       };
     });
@@ -182,6 +301,12 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     assert.equal(active.building, true, JSON.stringify(active));
     assert.equal(active.sceneName, 'map_i_dev_random_ruin', JSON.stringify(active));
     assert.equal(active.hasRoot, true, JSON.stringify(active));
+    assert.equal(active.wallStyle, 'cavern', 'Random Test Ruin must use the game\'s combat-interior classification');
+    assert.equal(active.solvability?.ok, true, JSON.stringify(active.solvability));
+    assert.equal(active.solvability?.unsolvedMechanisms?.length, 0, JSON.stringify(active.solvability));
+    assert.ok(active.solvability?.rooms?.length > 0, JSON.stringify(active.solvability));
+    assert.ok(active.solvability.rooms.every(room => room.reachable), JSON.stringify(active.solvability));
+    assert.ok(active.generationAttempt >= 1 && active.generationAttempt <= 6, JSON.stringify(active));
     assert.equal(active.hit.active, true, JSON.stringify(active.hit));
     assert.equal(active.motion.active, true, JSON.stringify(active.motion));
     assert.equal(active.coverage.effectiveUnhandled.length, 0, JSON.stringify(active.coverage));
@@ -189,7 +314,8 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     assert.equal(active.transport?.active, true, JSON.stringify(active.transport));
     assert.equal(active.transport?.sameOrigin, true, JSON.stringify(active.transport));
     assert.equal(active.transport?.expectedFurniturePaths, 11, JSON.stringify(active.transport));
-    assert.equal(active.transport?.patchedBindings, 8, JSON.stringify(active.transport));
+    assert.equal(active.transport?.patchedBindings, 23, JSON.stringify(active.transport));
+    assert.equal(active.transport?.runtimePuzzleGenerationOptions, true, JSON.stringify(active.transport));
     assert.deepEqual(active.transport?.runtimeHallwayWidthCells, [5,6], JSON.stringify(active.transport));
     assert.equal(active.transport?.runtimeDoorwayUsesAuthoredWidth, true, JSON.stringify(active.transport));
     assert.match(
@@ -219,16 +345,73 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     assert.equal(active.wallRender.allTransformSyncedProxies, active.wallRender.totalProxyCount, JSON.stringify(active.wallRender));
     assert.equal(active.wallRender.allInteractionRaycastDisabled, active.wallRender.totalProxyCount, JSON.stringify(active.wallRender));
     assert.equal(active.wallRender.allMainRealmMaterials, active.wallRender.totalProxyCount, JSON.stringify(active.wallRender));
+    assert.equal(active.materialStats?.remainingLit, 0, 'generated ruin root must contain zero lit materials: '+JSON.stringify(active.materialStats));
+    assert.equal(active.materialStats?.legacyStone, 0, 'generated ruin root must contain zero old dark V50 stone materials: '+JSON.stringify(active.materialStats));
+    assert.ok((active.materialStats?.cliffMeshes||0) > 0, 'generated ruin must rebuild V50 stone through the real cliff material path: '+JSON.stringify(active.materialStats));
+    assert.equal(active.wallRender.litProxyMaterials, 0, 'visible game-realm ruin proxies must contain zero lit materials: '+JSON.stringify(active.wallRender));
     assert.ok(active.runtimeHallways?.count > 0, JSON.stringify(active.runtimeHallways));
     assert.ok(active.runtimeHallways.minCrossCells >= 5, JSON.stringify(active.runtimeHallways));
     for (const hall of active.hallwayCollision) {
       assert.ok(hall.samples > 0, `hallway ${hall.id} produced no center-lane samples`);
       assert.equal(hall.blocked.length, 0, `hallway ${hall.id} center lane is blocked: ${JSON.stringify(hall)}`);
     }
+    for (const tower of active.puzzleTowers) {
+      assert.equal(tower.interactive3D, true, 'puzzle tower must be tagged as a world interactable: '+JSON.stringify(tower));
+      assert.match(tower.blockerPurpose||'', /^puzzle_tower_(?:stackedObelisk|linkedCubePillars)$/, 'puzzle tower must feed the authoritative occupancy blocker set: '+JSON.stringify(tower));
+    }
 
     // Wall planes are structural and their old visual toggle is now a no-op.
     // Applying it must not recreate any object-wide wall blockers.
     if (seed === FIXED_SEEDS[0]) {
+      const towerInteraction = await page.evaluate(async () => {
+        const scene=window.GridTileAccessors.getActiveScene();
+        let tower=null;
+        scene?.traverse?.(object=>{ if(!tower && (object.userData?.activatorType==='stackedObelisk'||object.userData?.activatorType==='linkedCubePillars')) tower=object; });
+        if(!tower)return {present:false};
+        tower.updateWorldMatrix?.(true,true);
+        const box=new THREE.Box3().setFromObject(tower);
+        const center=box.getCenter(new THREE.Vector3());
+        const probeX=box.max.x+.34, probeZ=center.z;
+        const deps=window.Combat?.deps;
+        if(deps?.player && deps?.TILE){
+          deps.player.x=probeX*deps.TILE; deps.player.y=probeZ*deps.TILE;
+          if(deps.playerMesh?.position){deps.playerMesh.position.x=probeX;deps.playerMesh.position.z=probeZ;}
+        }
+        window.DevRandomRuinInteractions?.refresh?.();
+        await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+        const interactions=window.DevRandomRuinInteractions?.snapshot?.()||null;
+        const occupancy=window.DevRandomRuin.getOccupancySnapshot();
+        const towerSources=Object.entries(occupancy?.sources||{}).filter(([,sources])=>sources.some(id=>String(id).includes('puzzle_tower_')));
+        const buttons=[...document.querySelectorAll('#btnAction1,#btnAction2,#btnAction3,#btnItemAction1,#btnItemAction2')].map(button=>({action:button.dataset.action||null,hidden:button.classList.contains('abt-hidden'),label:button.getAttribute('aria-label')||button.textContent||''}));
+        return {present:true,type:tower.userData.activatorType,interactions,towerSources,buttons};
+      });
+      if(towerInteraction.present){
+        assert.ok(towerInteraction.towerSources.length>0,'puzzle tower must own blocked occupancy tiles: '+JSON.stringify(towerInteraction));
+        assert.ok(towerInteraction.interactions?.rows?.some(row=>row.kind==='stackedobelisk'||row.kind==='linkedcube'),'puzzle tower must expose a nearby semantic input row: '+JSON.stringify(towerInteraction));
+        assert.equal(towerInteraction.interactions?.worldPopupVisible,true,'puzzle tower interaction must use WorldPopupText: '+JSON.stringify(towerInteraction));
+        assert.ok(towerInteraction.buttons.some(button=>/^dev_ruin_world_/.test(button.action||'')&&!button.hidden),'puzzle tower must expose a visible mobile action button: '+JSON.stringify(towerInteraction));
+      }
+
+      const rangedMobile = await page.evaluate(async () => {
+        const switchButton=document.getElementById('btnWeaponSwitch'); // Uses the same mobile combat-toggle control a touch player uses.
+        for(let i=0;i<3 && window.Combat?.deps?.getActiveTool?.()!=='ranged';i++){
+          switchButton?.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,cancelable:true,pointerId:700+i,pointerType:'touch',clientX:8,clientY:8}));
+          await new Promise(resolve=>requestAnimationFrame(resolve));
+        }
+        window.Combat?.deps?.refreshActionBar?.();
+        await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+        const buttons=[...document.querySelectorAll('#btnAction1,#btnAction2,#btnAction3')].map(button=>({
+          id:button.id,
+          action:button.dataset.action||null,
+          hidden:button.classList.contains('abt-hidden'),
+          label:button.querySelector('.abt-label')?.textContent||button.getAttribute('aria-label')||'',
+        }));
+        return {activeTool:window.Combat?.deps?.getActiveTool?.()||null,buttons};
+      });
+      assert.equal(rangedMobile.activeTool,'ranged',JSON.stringify(rangedMobile));
+      assert.ok(rangedMobile.buttons.some(button=>button.action==='shoot'&&!button.hidden),'mobile ranged stance must expose a visible Shoot action: '+JSON.stringify(rangedMobile));
+      assert.ok(rangedMobile.buttons.some(button=>button.action==='ammo_select'&&!button.hidden),'mobile ranged stance must expose a visible Ammo action: '+JSON.stringify(rangedMobile));
+
       const toggle = await page.evaluate(() => {
         window.DevRandomRuinWallPlanes.setVisible(false);
         const off = window.DevRandomRuinWallPlanes.snapshot();
@@ -249,6 +432,8 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     }
     activeRuns.push({
       seed,
+      acceptedSeed:active.acceptedSeed,
+      generationAttempt:active.generationAttempt,
       ladders:active.ladders,
       negativeLevels:active.negativeLevels,
       walls:active.runtimeWallPlanes.count,
