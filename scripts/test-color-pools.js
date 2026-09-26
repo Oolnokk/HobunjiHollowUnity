@@ -31,6 +31,10 @@ const context = {
   StableAnimalProgression: { maxLevel: 10, stableEntries: () => stable, saveStable() {} },
   CreatureGenetics: { SPECIES_ALIAS: { 'gar-wolf-alpha': 'gar-wolf' } },
   CreatureGeneticsRender: { SPECIES: { 'gar-wolf': { patterns: ['colorpoint', 'foxtail', 'mitts'] } } },
+  Combat: { deps: { companionObjects: [] } },
+  Mounts: { rideEntity: null },
+  CustomEvent: class CustomEvent { constructor(type, options) { this.type = type; this.detail = options?.detail; } },
+  dispatchEvent() {},
 };
 context.window = context;
 vm.createContext(context);
@@ -68,6 +72,21 @@ const index = read('docs/index.html');
 const colorPoolsSource = read('docs/js/color-pools-system.js'); // Checks the picker surface against the game's page-wide absolute canvas styling.
 assert.match(read('docs/style.css'), /canvas\s*\{\s*position:\s*absolute/, 'game canvas styling applies globally to the Color Pools canvas');
 assert.match(colorPoolsSource, /\.cp-preview canvas\{position:static;inset:auto;[^}]*pointer-events:none/, 'the preview stays in its own panel and cannot intercept animal-picker input');
+const liveCompanion = { // Matching live companion used to exercise the exact Color Pools repaint invalidation path.
+  genotype: stable[0].genotype,
+  _genotypeReadyFrames: { stale: true },
+  _genotypeLogged: new Set(['idle:old']),
+  currentFrameUrl: 'old-frame.png',
+  _blinkAppliedShut: true,
+};
+context.Combat.deps.companionObjects.push(liveCompanion);
+api.__test.invalidateLiveAnimal(stable[0]);
+assert.equal(typeof liveCompanion._genotypeLogged?.has, 'function', 'repaint invalidation preserves the Set-like genotype log contract used by the animation loop');
+assert.equal(liveCompanion._genotypeLogged.size, 0, 'repaint invalidation clears stale genotype log entries');
+assert.equal(liveCompanion._genotypeReadyFrames, null, 'repaint invalidation forces genotype frame recomposition');
+assert.equal(liveCompanion.currentFrameUrl, null, 'repaint invalidation drops the stale live frame URL');
+assert.equal(liveCompanion._blinkAppliedShut, null, 'repaint invalidation clears stale blink composition state');
+assert(!colorPoolsSource.includes('actor._genotypeLogged = false;'), 'Color Pools must never replace the live companion genotype log Set with a boolean');
 
 assert(renderer.includes('function applyColorPoolPaint('), 'genetic renderer owns the region-aware Color Pools paint seam');
 assert(renderer.includes("applyColorPoolPaint(baseSource, genotype, 'base'"), 'base paint is applied through its dedicated region path');

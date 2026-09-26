@@ -22,7 +22,6 @@ const housePieceGenSource = fs.readFileSync('docs/js/HousePieceGen.js', 'utf8');
 const gameIndexSource = fs.readFileSync('docs/index.html', 'utf8'); // Guards cache-busted runtime loading of the shared HousePiece renderer.
 const combatBanditSource = fs.readFileSync('docs/js/combat/combat-bandit.js', 'utf8'); // Guards the shared bandit-like avatar builder's explicit body-color override handoff.
 const devSpawnerSource = fs.readFileSync('docs/js/dev-spawner.js', 'utf8'); // Guards Testing Arena Porakaneki selecting from the same finite authored body swatches.
-
 const ZONES = [
   'map_northern_cliffs',
   'map_southern_cloud_forest',
@@ -343,6 +342,13 @@ function hunterDebug(api, zoneId, campId, index) {
   await flush();
   const api = contextWindow.PorakanekiCamps;
   assert.equal(api.version, 8);
+  let outlinedLayer = null; // Captures the render layer enabled by the camp outline helper under test.
+  api.__test.markOutline({
+    traverse(visitor) {
+      visitor({ isMesh: true, userData: {}, layers: { enable(layer) { outlinedLayer = layer; } } });
+    },
+  });
+  assert.equal(outlinedLayer, 1, 'camp prop outline helper enables the shared outline render layer without relying on an undefined outer-scope function');
   assert.equal(api.__test.isSleepingHour(2), true);
   assert.equal(api.__test.isSleepingHour(12), false);
   assert.equal(api.__test.desiredChiefZone('Stormtide'), 'map_southern_cloud_forest');
