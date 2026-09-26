@@ -41,9 +41,13 @@
     { kind: 'over', tier: 3, scale: 1.052, opacity: 0.12 },
     { kind: 'over', tier: 3, scale: 1.066, opacity: 0.10 },
   ];
-  const TRAIL_LIFETIME_S = 0.16; // Short weapon-shaped afterimages live only during an active offensive swing.
-  const TRAIL_MIN_ANGULAR_SPEED = 3.4; // rad/s; rejects Charged Breaker's slow windup but catches actual swings.
+  const TRAIL_LIFETIME_S = 0.16; // Short weapon-shaped afterimages persist briefly after every offensive melee swing.
+  const TRAIL_MIN_ANGULAR_SPEED = 3.4; // rad/s; rejects slow windups but catches the actual swing.
   const TRAIL_MIN_LINEAR_SPEED = 1.1; // world units/s; catches fast translational weapon movement as a fallback.
+  const TRAIL_MAX_SAMPLE_GAP_S = 0.08; // Used to reject stale idle-to-attack transforms so a new swing cannot create a giant first-frame ghost.
+  const TRAIL_MAX_GHOSTS = 24; // Used to hard-cap live afterimage meshes even during fast Flurry/multi-mesh weapons.
+  const MELEE_AFTERIMAGE_MAX_COLORS = 4; // Used to cap stacked affliction-colored silhouettes to the same readable lane count as other combat trails.
+  const MELEE_AFTERIMAGE_NEUTRAL_COLOR = 0xffffff; // Used only when an attack carries no authored affliction color.
 
   function now() { return performance.now() / 1000; }
 
@@ -97,8 +101,8 @@
 
   const silhouetteByHolder = new Map();
   const offensiveGlowByOwner = new Map(); // Used by held offensive techniques to reuse Counter Shield's weapon-silhouette language without particle emitters.
-  const trailGhosts = []; // Active weapon-shape afterimages; never updated while no offensive glow request is active.
-  const trailSampleBySource = new WeakMap(); // Last sampled world transform per real weapon mesh while an offensive attack is active.
+  const trailGhosts = []; // Active weapon-shape afterimages; aged only while a melee/glow trail is active or ghosts remain to fade.
+  const trailSampleBySource = new WeakMap(); // Last sampled world transform per real weapon mesh; stale samples are rejected across idle gaps.
   let externalWeaponGlowActive = false; // Set by enemy heavy presentation only while a bandit heavy/Counter Shield is actually active.
   let cleanupVisualsNextTick = false; // Runs one final disposal pass immediately after an effect ends, then returns to the idle O(1) gate.
   const OFFENSIVE_CHARGE_COLOR = 0xffc85a; // Used by bandit Charged Breaker so its shared silhouette glow matches the player's authored charge color.
@@ -286,13 +290,33 @@
     return node?.isScene ? node : window.Combat.deps?.getActiveScene?.();
   }
 
+  function playerMeleeAfterimageRuntimeState() {
+    return window.WeaponToolStances?.getRuntimeState?.() || null; // Borrowed no-allocation view; callers consume it immediately because WeaponToolStances reuses one object.
+  }
+
+  function playerMeleeAfterimageEligible(state = playerMeleeAfterimageRuntimeState()) {
+    return !!(state?.activeSlot === 'weapon' && state.combatMeleeAfterimageEligible);
+  }
+
+  function playerMeleeAfterimageState(state = playerMeleeAfterimageRuntimeState()) {
+    return state?.activeSlot === 'weapon' && state.combatMeleeAfterimage ? state : null;
+  }
+
+  function meleeAfterimageColors(afflictionIds) {
+    const colors = [];
+    for (const id of Array.isArray(afflictionIds) ? afflictionIds : []) {
+      const raw = window.ResourceRings?.AFFLICTION_COLORS?.[id]; // Reuses the exact resource-ring palette instead of maintaining a second combat color table.
+      if (raw == null) continue;
+      const neon = window.ResourceRings?.neonizeColor?.(raw) ?? raw; // Matches existing melee/ranged trail saturation treatment.
+      if (!colors.includes(neon)) colors.push(neon);
+      if (colors.length >= MELEE_AFTERIMAGE_MAX_COLORS) break;
+    }
+    return colors.length ? colors : [MELEE_AFTERIMAGE_NEUTRAL_COLOR];
+  }
+
   function removeTrailGhost(ghost) {
     ghost?.mesh?.parent?.remove(ghost.mesh);
     ghost?.mesh?.material?.dispose?.();
-  }
-
-  function clearTrailGhosts() {
-    while (trailGhosts.length) removeTrailGhost(trailGhosts.pop());
   }
 
   function updateTrailGhosts(timeS) {
@@ -311,43 +335,73 @@
     }
   }
 
-  function maybeSpawnMotionTrail(source, style, timeS, color) {
+  function clearTrailGhostKind(kind) {
+    for (let i = trailGhosts.length - 1; i >= 0; i--) {
+      if (trailGhosts[i]?.kind !== kind) continue;
+      removeTrailGhost(trailGhosts[i]);
+      trailGhosts.splice(i, 1);
+    }
+  }
+
+  function maybeSpawnMotionTrail(source, style, timeS, colors) {
     if (!style.motionTrail || !source?.parent) return;
-    source.updateWorldMatrix?.(true, false);
+    if (!style.worldMatricesReady) source.updateWorldMatrix?.(true, false); // Enemy/legacy trails still compute normally; player melee passes the already-baked rendered stance matrix instead.
     const position = new THREE.Vector3();
     const quaternion = new THREE.Quaternion();
     const scale = new THREE.Vector3();
     source.matrixWorld.decompose(position, quaternion, scale);
 
+    const sampleKey = style.sampleKey || style.label || 'motion-trail'; // Used to prevent a prior attack/charge trail sample from seeding a new melee afterimage.
     const previous = trailSampleBySource.get(source);
     trailSampleBySource.set(source, {
       position: position.clone(),
       quaternion: quaternion.clone(),
       sampledAt: timeS,
+      sampleKey,
     });
-    if (!previous) return;
-    const dt = Math.max(1 / 240, timeS - previous.sampledAt);
+    const sampleGapS = previous ? timeS - previous.sampledAt : Infinity; // Used to suppress stale idle→attack jumps without resetting the WeakMap manually.
+    if (!previous || previous.sampleKey !== sampleKey || sampleGapS > TRAIL_MAX_SAMPLE_GAP_S) return;
+    const dt = Math.max(1 / 240, sampleGapS);
     const angularSpeed = previous.quaternion.angleTo(quaternion) / dt;
     const linearSpeed = previous.position.distanceTo(position) / dt;
     if (angularSpeed < TRAIL_MIN_ANGULAR_SPEED && linearSpeed < TRAIL_MIN_LINEAR_SPEED) return;
 
     const scene = rootSceneForSource(source);
     if (!scene?.add) return;
-    const material = makeSilhouetteMaterial(sourceTexture(source), 0.20);
-    if (material.uniforms?.glowColor) material.uniforms.glowColor.value.setHex(color);
-    if (material.uniforms?.flowStrength) material.uniforms.flowStrength.value = clamp01(style.flowStrength ?? 0);
-    if (material.uniforms?.flowSpeed) material.uniforms.flowSpeed.value = Math.max(0, Number(style.flowSpeed) || 0);
-    if (material.uniforms?.flowTime) material.uniforms.flowTime.value = timeS;
-    if (material.color) material.color.setHex?.(color);
-    const mesh = new THREE.Mesh(source.geometry, material);
-    mesh.name = 'weapon-charge-motion-trail';
-    mesh.userData.weaponChargeMotionTrail = true;
-    mesh.position.copy(position);
-    mesh.quaternion.copy(quaternion);
-    mesh.scale.copy(scale).multiplyScalar(1.02 + clamp01(style.intensity) * 0.025);
-    mesh.renderOrder = Number(source.renderOrder || 0) + 1;
-    scene.add(mesh);
-    trailGhosts.push({ mesh, bornAt: timeS, baseOpacity: 0.20 + clamp01(style.intensity) * 0.16 });
+    const layerColors = Array.isArray(colors) && colors.length
+      ? colors.slice(0, MELEE_AFTERIMAGE_MAX_COLORS)
+      : [Number.isFinite(Number(colors)) ? Number(colors) : MELEE_AFTERIMAGE_NEUTRAL_COLOR];
+    const layerOpacity = (0.20 + clamp01(style.intensity) * 0.16) / Math.sqrt(layerColors.length); // Keeps multi-affliction stacks vivid without multiplying total brightness linearly.
+    const texture = sourceTexture(source);
+    layerColors.forEach((color, colorIndex) => {
+      const material = makeSilhouetteMaterial(texture, layerOpacity);
+      if (material.uniforms?.glowColor) material.uniforms.glowColor.value.setHex(color);
+      if (material.uniforms?.flowStrength) material.uniforms.flowStrength.value = clamp01(style.flowStrength ?? 0);
+      if (material.uniforms?.flowSpeed) material.uniforms.flowSpeed.value = Math.max(0, Number(style.flowSpeed) || 0);
+      if (material.uniforms?.flowTime) material.uniforms.flowTime.value = timeS;
+      if (material.color) material.color.setHex?.(color);
+      const mesh = new THREE.Mesh(source.geometry, material);
+      mesh.name = 'weapon-charge-motion-trail';
+      mesh.userData.weaponChargeMotionTrail = true;
+      mesh.userData.meleeAfterimageColor = color;
+      mesh.position.copy(position);
+      mesh.quaternion.copy(quaternion);
+      mesh.scale.copy(scale).multiplyScalar(1.02 + clamp01(style.intensity) * 0.025 + colorIndex * 0.012);
+      mesh.renderOrder = Number(source.renderOrder || 0) + 1 + colorIndex;
+      scene.add(mesh);
+      trailGhosts.push({
+        mesh,
+        bornAt: timeS,
+        baseOpacity: layerOpacity,
+        kind: style.ghostKind || 'charge-motion-trail',
+      });
+    });
+    while (trailGhosts.length > TRAIL_MAX_GHOSTS) removeTrailGhost(trailGhosts.shift());
+  }
+
+  function syncWeaponMotionTrail(holder, timeS, style = {}) {
+    const colors = meleeAfterimageColors(style.afflictionIds); // One stacked silhouette per real affliction hue; plain attacks receive one neutral layer.
+    for (const source of toolPlaneSources(holder)) maybeSpawnMotionTrail(source, style, timeS, colors);
   }
 
   function overlayOpacityScale(mesh, style) {
@@ -363,7 +417,7 @@
     return 0;
   }
 
-  function syncWeaponSilhouette(holder, timeS, style = {}) {
+  function syncWeaponSilhouette(holder, timeS, style = {}, allowMotionTrail = true) {
     const sources = toolPlaneSources(holder);
     let entry = silhouetteByHolder.get(holder);
     if (!entry || !sameSources(entry.sources, sources)) entry = rebuildWeaponSilhouette(holder, sources);
@@ -375,7 +429,9 @@
     const expansionScale = isOffensive ? expansion : 1;
     const flare = clamp01(style.flare ?? 0);
 
-    for (const source of entry.sources) maybeSpawnMotionTrail(source, style, timeS, color);
+    if (allowMotionTrail) {
+      for (const source of entry.sources) maybeSpawnMotionTrail(source, style, timeS, [color]);
+    }
 
     for (const layer of entry.layers) {
       const { source, mesh } = layer;
@@ -441,13 +497,28 @@
   }
 
   function syncAuthoredCounterShieldVisuals() {
-    // This is the only per-frame gate while idle. No holder/source discovery,
-    // scene traversal, shader updates, or trail sampling happens until one of
-    // the relevant heavy effects is actually active.
-    if (!offensiveGlowByOwner.size && !externalWeaponGlowActive && !cleanupVisualsNextTick) return;
+    // This is the only per-frame gate while idle. During an eligible melee
+    // animation we stay awake through windup/recovery too so the exact
+    // Windup→Strike boundary can be detected on the current frame.
+    let meleeRuntimeState = playerMeleeAfterimageRuntimeState();
+    const meleeEligible = playerMeleeAfterimageEligible(meleeRuntimeState);
+    if (!offensiveGlowByOwner.size && !externalWeaponGlowActive && !cleanupVisualsNextTick && !meleeEligible && !trailGhosts.length) return;
 
     const timeS = performance.now() / 1000;
     const liveHolders = new Set();
+    const playerHolder = (offensiveGlowByOwner.size || meleeEligible) ? window.Combat.deps?.toolHolder?.() || null : null;
+
+    if (meleeEligible && playerHolder?.updateMatrixWorld) {
+      // updateToolMesh() has already written this frame's weapon locals before
+      // Combat.update(). Force the wrapped holder matrix hook now: it advances
+      // WeaponToolStances to the current clock, applies the temporary rendered
+      // stance, and recursively bakes the exact source.matrixWorld that the
+      // renderer will use. Do NOT call source.updateWorldMatrix() afterward,
+      // because that would rebuild from the restored un-stanced holder locals.
+      playerHolder.updateMatrixWorld(true);
+      meleeRuntimeState = playerMeleeAfterimageRuntimeState();
+    }
+    const meleeAfterimageState = playerMeleeAfterimageState(meleeRuntimeState);
 
     if (externalWeaponGlowActive) {
       const activeVisuals = window.Combat.heavyTelegraphVisuals?.activeVisuals?.();
@@ -493,10 +564,24 @@
     }
 
     const offensiveGlow = strongestOffensiveGlow();
-    const playerHolder = offensiveGlow ? window.Combat.deps?.toolHolder?.() || null : null;
     if (offensiveGlow && playerHolder && !liveHolders.has(playerHolder)) {
       liveHolders.add(playerHolder);
-      syncWeaponSilhouette(playerHolder, timeS, offensiveGlow);
+      syncWeaponSilhouette(playerHolder, timeS, offensiveGlow, false); // Player charge/glow stays visible, but its old gold motion trail is replaced by the phase-gated affliction afterimage below.
+    }
+    if (meleeAfterimageState && playerHolder) {
+      syncWeaponMotionTrail(playerHolder, timeS, {
+        motionTrail: true,
+        intensity: 0.55,
+        afflictionIds: meleeAfterimageState.combatMeleeAfterimageAfflictionIds,
+        flowStrength: 0,
+        flowSpeed: 0,
+        label: 'Melee Attack',
+        ghostKind: 'melee-afterimage',
+        sampleKey: `melee-afterimage:${meleeAfterimageState.combatSerial ?? 'unknown'}`,
+        worldMatricesReady: true, // source.matrixWorld already contains this frame's temporary rendered stance from playerHolder.updateMatrixWorld(true).
+      });
+    } else {
+      clearTrailGhostKind('melee-afterimage'); // Strict phase rule: no melee afterimage remains visible before Windup→Strike or after Strike begins recovery.
     }
 
     updateTrailGhosts(timeS);
@@ -507,7 +592,8 @@
       silhouetteByHolder.delete(holder);
     }
 
-    if (!offensiveGlowByOwner.size && !externalWeaponGlowActive) clearTrailGhosts();
+    // Melee ghosts are cleared immediately on phase exit above; only other
+    // authored motion trails are allowed to finish their ordinary short fade.
     cleanupVisualsNextTick = false;
   }
 
@@ -531,7 +617,11 @@
       glowLayersPerWeaponMesh: GLOW_LAYERS.length,
       glowLayering: 'weapon-child under+over layers',
       activeMotionTrailGhosts: trailGhosts.length,
-      runtimeActive: !!offensiveGlowByOwner.size || externalWeaponGlowActive,
+      meleeAfterimageActive: !!playerMeleeAfterimageState(),
+      meleeAfterimageColors: meleeAfterimageColors(playerMeleeAfterimageState()?.combatMeleeAfterimageAfflictionIds).map(color => `#${color.toString(16).padStart(6, '0')}`),
+      trailLifetimeS: TRAIL_LIFETIME_S,
+      trailMaxGhosts: TRAIL_MAX_GHOSTS,
+      runtimeActive: !!offensiveGlowByOwner.size || externalWeaponGlowActive || !!playerMeleeAfterimageState() || trailGhosts.length > 0,
       offensiveGlowRequests: [...offensiveGlowByOwner.values()].map(glow => ({ ...glow })),
     };
   }
@@ -540,7 +630,7 @@
     const previousCombatUpdate = window.Combat.update;
     window.Combat.update = function counterShieldAuthoredPresentationUpdate(dt) {
       const result = previousCombatUpdate(dt);
-      if (offensiveGlowByOwner.size || externalWeaponGlowActive || cleanupVisualsNextTick) {
+      if (offensiveGlowByOwner.size || externalWeaponGlowActive || cleanupVisualsNextTick || playerMeleeAfterimageEligible() || trailGhosts.length) {
         syncAuthoredCounterShieldVisuals();
       }
       return result;

@@ -56,10 +56,48 @@ assert.match(counterSource, /vUv\.y \* 15\.0 - flowTime \* flowSpeed/,
   'offensive glow flows from weapon base toward tip instead of pulsing outward');
 assert.match(counterSource, /kind: 'over', tier: 1[\s\S]{0,600}kind: 'over', tier: 3/,
   'shared glow owns six above-weapon layers grouped into three Charged Breaker milestone tiers');
-assert.match(counterSource, /TRAIL_MIN_ANGULAR_SPEED[\s\S]{0,1800}weapon-charge-motion-trail/,
+assert.match(counterSource, /TRAIL_MIN_ANGULAR_SPEED[\s\S]{0,5000}weapon-charge-motion-trail/,
   'weapon-shaped motion trails are spawned only after real swing-speed thresholds are exceeded');
-assert.match(counterSource, /if \(offensiveGlowByOwner\.size \|\| externalWeaponGlowActive \|\| cleanupVisualsNextTick\)/,
-  'expensive glow/trail work is gated off during idle gameplay');
+assert.match(stanceSource, /const meleeAfterimage = activeState\(\)\.activeSlot === 'weapon'[\s\S]{0,220}opts\?\.meleeSpacing !== false[\s\S]{0,120}opts\?\.anim !== 'ranged'/,
+  'shared stance playback marks real weapon melee attacks while excluding defensive and ranged playback');
+assert.match(stanceSource, /function meleeAfterimagePhaseActive\(state\)[\s\S]{0,300}progress > state\.wf && progress <= state\.sf/,
+  'afterimages are active only during the authored Windup-to-Strike interpolation');
+assert.match(stanceSource, /runtimeState\.combatMeleeAfterimage = meleeAfterimagePhaseActive\(visual\)/,
+  'hot runtime state exposes only the live Windup-to-Strike afterimage phase');
+assert.match(stanceSource, /runtimeState\.combatMeleeAfterimageAfflictionIds = visual\?\.meleeAfterimageAfflictionIds \|\| \[\]/,
+  'the shared runtime carries each attack\'s real affliction ids into the afterimage renderer');
+assert.match(counterSource, /function playerMeleeAfterimageState\(state = playerMeleeAfterimageRuntimeState\(\)\)[\s\S]{0,300}combatMeleeAfterimage/,
+  'the existing weapon ghost renderer consumes the shared melee animation state');
+assert.match(counterSource, /const meleeEligible = playerMeleeAfterimageEligible\(meleeRuntimeState\)[\s\S]{0,900}playerHolder\.updateMatrixWorld\(true\)[\s\S]{0,300}meleeRuntimeState = playerMeleeAfterimageRuntimeState\(\)/,
+  'the renderer advances the stance hook on the current frame before deciding whether Windup-to-Strike is active');
+assert.match(counterSource, /if \(!style\.worldMatricesReady\) source\.updateWorldMatrix\?\.\(true, false\)/,
+  'player afterimages can consume the already-baked rendered matrix without recomputing the restored un-stanced holder');
+assert.match(counterSource, /worldMatricesReady: true,[^\n]*source\.matrixWorld already contains this frame's temporary rendered stance/,
+  'player melee trail sampling explicitly marks the rendered source matrices as authoritative');
+assert.match(counterSource, /sampleGapS[\s\S]{0,260}TRAIL_MAX_SAMPLE_GAP_S/,
+  'stale idle transforms cannot create a bogus first-frame afterimage when a new melee attack starts');
+assert.match(counterSource, /const TRAIL_MAX_GHOSTS = 24/,
+  'melee afterimages keep the intended hard live-mesh cap');
+assert.match(counterSource, /while \(trailGhosts\.length > TRAIL_MAX_GHOSTS\) removeTrailGhost\(trailGhosts\.shift\(\)\)/,
+  'melee afterimage spawning enforces the shared live-mesh cap');
+assert.match(counterSource, /function meleeAfterimageColors\(afflictionIds\)[\s\S]{0,900}ResourceRings\?\.AFFLICTION_COLORS[\s\S]{0,500}neonizeColor/,
+  'melee afterimage layers reuse the exact Resource Ring affliction palette and neon treatment');
+assert.match(counterSource, /MELEE_AFTERIMAGE_MAX_COLORS = 4/,
+  'multi-affliction afterimages are capped at four stacked color layers');
+assert.match(counterSource, /layerColors\.forEach\(\(color, colorIndex\)[\s\S]{0,1300}colorIndex \* 0\.012/,
+  'each affliction color becomes its own slightly separated weapon-silhouette layer');
+assert.match(counterSource, /function syncWeaponMotionTrail\(holder, timeS, style = \{\}\)[\s\S]{0,700}meleeAfterimageColors\(style\.afflictionIds\)[\s\S]{0,400}maybeSpawnMotionTrail/,
+  'ordinary melee uses affliction-colored trail-only rendering instead of constructing the ten-layer charge glow');
+assert.match(counterSource, /syncWeaponSilhouette\(playerHolder, timeS, offensiveGlow, false\)/,
+  'player charge glow no longer emits a duplicate gold afterimage beside the affliction-colored melee trail');
+assert.match(counterSource, /clearTrailGhostKind\('melee-afterimage'\)/,
+  'remaining melee ghosts are removed immediately outside the Windup-to-Strike phase');
+assert.match(counterSource, /playerMeleeAfterimageEligible\(\) \|\| trailGhosts\.length/,
+  'the per-frame ghost renderer stays active for the whole eligible melee animation so exact phase entry and exit are observed');
+assert.match(counterSource, /!meleeEligible && !trailGhosts\.length\) return/,
+  'expensive glow/trail work remains gated off during idle gameplay');
+assert.match(counterSource, /meleeSpacing: false,[^\n]*Defensive raised-block stance/,
+  'Counter Shield defensive hold stays explicitly excluded from universal melee afterimages');
 assert.match(counterSource, /visual\.defensive[\s\S]{0,900}visual\.offensive[\s\S]{0,1200}OFFENSIVE_CHARGE_COLOR/,
   'the authored silhouette adapter also covers bandit Charged Breaker');
 assert.match(enemyTelegraphSource, /if \(visual\.fireGroup\) visual\.fireGroup\.visible = false/,
@@ -69,13 +107,13 @@ assert.match(flurrySource, /weaponChargeGlow\?\.set\?\.\('acceleratingFlurry'/,
 assert.match(flurrySource, /heldSeconds \/ GLOW_FULL_S/,
   'Accelerating Flurry glow growth remains linear in hold duration');
 assert.match(flurrySource, /overlayMode: 'linear'[\s\S]{0,180}overlayProgress: intensity[\s\S]{0,180}motionTrail: true/,
-  'Accelerating Flurry continuously raises transparent over-layers and enables swing trails');
+  'Accelerating Flurry keeps its glow request trail-capable while the shared renderer phase-gates the actual afterimage');
 assert.match(breakerSource, /thresholds = \[MIN_READY_POSE, 0\.50, 0\.999\]/,
   'Charged Breaker flare milestones occur at readiness, 50%, and full pose charge');
 assert.match(breakerSource, /glowFlareQueue\.push\(i \+ 1\)/,
   'close Charged Breaker milestones are queued so the readiness and 50% flares cannot collapse into one flash');
 assert.match(breakerSource, /overlayMode: 'stepped'[\s\S]{0,220}overlayLevel: milestone\.overlayLevel[\s\S]{0,220}motionTrail: true/,
-  'Charged Breaker turns on two over-layers per milestone in visible steps and enables swing trails');
+  'Charged Breaker keeps its glow request trail-capable while the shared renderer phase-gates the actual afterimage');
 assert.match(enemyTelegraphSource, /anyWeaponGlowActive !== lastExternalWeaponGlowActive/,
   'enemy heavy presentation signals the glow renderer only on active/inactive transitions');
 assert.match(stanceSource, /combatVisualState\.poseScale = requestedPoseScale/,
