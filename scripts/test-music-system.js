@@ -161,10 +161,11 @@ assert.match(game, /getTimeOfDay: \(\) => window\.Fishing\?\.timeOfDay\?\.\(\),[
   'music condition evaluation receives the shared calendar condition values');
 assert.match(config, /"bgsFadeMs": 1600/,
   'background-loop fading remains authored in audio config');
-assert.match(config, /"combatBgm": \[[\s\S]*?"url": "assets\/audio\/music\/bgm\/bgm_skirmish\.m4a", "loop": true, "gaplessLoop": \{ "sourceSampleRate": 48000, "encoderDelaySamples": 2048, "paddingSamples": 745, "contentSamples": 1256727 \}/,
-  'Skirmish carries the AAC source-rate and priming/padding metadata needed for sample-accurate looping');
-assert.match(config, /"combatBgm": \[[\s\S]*?"url": "assets\/audio\/music\/bgm\/bgm_pure_focus\.m4a", "loop": true, "gaplessLoop": \{ "sourceSampleRate": 44100, "encoderDelaySamples": 2048, "paddingSamples": 631, "contentSamples": 5667209 \}/,
-  'Pure Focus is a second combat track and carries its own AAC priming/padding metadata for sample-accurate looping');
+assert.match(config, /"combatBgm": \[\s*\{ "url": "assets\/audio\/music\/bgm\/bgm_pure_focus\.m4a", "loop": true, "gaplessLoop": \{ "sourceSampleRate": 44100, "encoderDelaySamples": 2048, "paddingSamples": 631, "contentSamples": 5667209 \} \}\s*\]/,
+  'Pure Focus is the sole combat track and carries its AAC priming/padding metadata for sample-accurate looping');
+assert.doesNotMatch(config, /"combatBgm": \[[\s\S]*?bgm_skirmish\.m4a[\s\S]*?\n        \],/,
+  'Skirmish is not eligible for combat playback');
+
 assert.match(config, /"gameplayCues": \{[\s\S]*?"fishCaught": \{ "url": "assets\/audio\/music\/cues\/gameplaycues\/gpq_fish_caught\.m4a", "volume": 1 \}[\s\S]*?"progressDeeper": \{ "url": "assets\/audio\/music\/cues\/gameplaycues\/gpq_progress_deeper\.m4a", "volume": 1 \}/,
   'semantic catch and mine-progress cues resolve to the authored gameplay-cue files');
 assert.ok(skirmishSmpb, 'Skirmish M4A must retain iTunSMPB gapless metadata');
@@ -209,8 +210,8 @@ assert.match(config, /"nightbugs": "assets\/audio\/sfx\/bgs\/bgs_nightbugs1\.mp3
   'runtime config uses the normalized nightbugs recording');
 assert.equal((config.match(/"url": "assets\/audio\/music\/bgm\/bgm_farm1\.m4a", "fallback": true, "rainingOnly": true/g) || []).length, 2,
   'the shared farm/town theme is authored as rain-only in both playlists');
-assert.match(index, /scratchbones-config\.js\?v=20260925gameplaymusic2/,
-  'the browser cache key loads the authored BGM playlists and Skirmish gaplessLoop metadata');
+assert.match(index, /scratchbones-config\.js\?v=20260926purefocus1/,
+  'the browser cache key loads the Pure Focus-only combat playlist');
 assert.match(formatUtils, /title-screen-runtime\.js\?v=20260921preworldsky2/,
   'the parser-synchronous title loader cache-busts the earliest Remembrance bootstrap');
 assert.match(index, /music-system\.js\?v=20260925gameplaycues1/,
