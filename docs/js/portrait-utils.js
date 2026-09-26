@@ -1218,6 +1218,18 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const renderHeadSprite = !omitHeadSpriteAndCosmetics;
   const renderHeadCosmetics = !omitHeadSpriteAndCosmetics;
   const resolvedFighter = resolvePortraitFighter(fighter) || fighter;
+  const rawPauldronLayers = pauldron ? resolveOptionLayers(pauldron, resolvedFighter) : []; // Current species/gender layer selection is resolved here so the metal bridge never has to duplicate portrait fallback rules.
+  let resolvedPauldronLayers = rawPauldronLayers;
+  let pauldronPixelsAreFinal = false; // True only after ToolMetalRecolor has already baked metal/verdigris/plating into the layer pixels.
+  if (rawPauldronLayers.length && typeof window.PauldronSystem?.preparePortraitLayers === 'function') {
+    try {
+      const pauldronState = bodyColors.PAULDRON || window.PauldronSystem.defaultPortraitState?.();
+      resolvedPauldronLayers = await window.PauldronSystem.preparePortraitLayers(rawPauldronLayers, pauldronState);
+      pauldronPixelsAreFinal = true;
+    } catch (error) {
+      console.warn('[portrait] metal pauldron preparation failed; using ordinary tint fallback', error);
+    }
+  }
   const opacityMaskLayer = resolvedFighter?.opacityMaskLayer || fighter?.opacityMaskLayer || null;
   let headUrl = renderHeadSprite ? (resolvedFighter?.headUrl || fighter?.headUrl) : null;
   const bodyLayerSource = resolvedFighter?.bodyLayers || fighter?.bodyLayers || [];
@@ -1345,7 +1357,17 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       }
     }
     pushToTarget(hood, hoodLayers);
-    pushToTarget(pauldron, pauldronLayers);
+    if (pauldron && resolvedPauldronLayers.length) {
+      for (const layer of resolvedPauldronLayers) {
+        const key = layer.paletteColorKey;
+        const layerTintSlot = resolveLayerTintSlot(key, pauldron.tintSlot);
+        pauldronLayers.push({
+          layer,
+          tint: pauldronPixelsAreFinal ? { mode: 'none' } : tintFor(layerTintSlot),
+          group: pauldron,
+        });
+      }
+    }
   } else if (renderHeadCosmetics) {
     // Legacy single-slot hair
     const legacyGroups = [hair, eyes, facialHair, hat];
@@ -1855,7 +1877,7 @@ function portraitVariantKeysForFighter(fighter, option) {
   const gender = String(fighter?.gender || '').trim().toLowerCase();
   if (!speciesId || !gender) return [];
   const otherGender = gender === 'male' ? 'female' : 'male';
-  const kind = (option?.slot === 'torso' || option?.slot === 'overwear') ? 'body' : 'head';
+  const kind = (option?.slot === 'torso' || option?.slot === 'overwear' || option?.slot === 'pauldron') ? 'body' : 'head';
   const candidates = [];
   const seenSpeciesGender = new Set();
   const pushCandidate = (candidateSpecies, candidateGender) => {

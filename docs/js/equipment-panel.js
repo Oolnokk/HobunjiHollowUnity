@@ -14,7 +14,7 @@
   let inventoryUiLoadStarted = false;
   // This guard keeps the capture-phase selection reset from being registered twice.
   let inventorySelectionBridgeInstalled = false;
-  const CLOTHING_SLOTS = ['hat', 'hood', 'torso', 'overwear']; // Used anywhere gear clothing must be normalized or rendered by slot.
+  const CLOTHING_SLOTS = ['hat', 'hood', 'pauldron', 'torso', 'overwear']; // Used anywhere gear clothing must be normalized or rendered by slot; pauldrons persist independently from torso/overwear.
   const clothingIconTintUrlCache = new Map(); // Used to reuse SpriteRecolor output instead of re-encoding the same dyed icon every panel rebuild.
 
   function init(injectedDeps) {
@@ -189,7 +189,15 @@
       weightUnits: Number.isFinite(Number(item.weightUnits)) ? Number(item.weightUnits) : null,
       weaving: item.weaving || null,
       craftedAt: item.craftedAt || null,
+      // Smith-crafted metal clothing carries its own material/use-history state;
+      // unlike cloth dyes these fields belong to the literal article.
+      metalKey: item.metalKey || null,
+      temperXp: Number.isFinite(Number(item.temperXp)) ? Number(item.temperXp) : 0,
+      smithTreatment: item.smithTreatment || null,
+      physicalMassKg: Number.isFinite(Number(item.physicalMassKg)) ? Number(item.physicalMassKg) : null,
+      dyeable: item.dyeable === false ? false : undefined,
     };
+    window.PauldronSystem?.normalizeItem?.(entry);
     ensureArticleDyeIds(entry);
     return entry;
   }
@@ -240,6 +248,7 @@
     const wornUidByCosmeticId = new Map(); // Used to preserve whichever dyed copy is currently visible during migration.
 
     for (const item of sourceItems) {
+      if (window.PauldronSystem?.normalizeItem?.(item)) changed = true;
       const articleLabel = clothingArticleLabel(item); // Used to clean stale dye prefixes from legacy baseLabel fields while migrating.
       if (articleLabel && item.baseLabel !== articleLabel) {
         item.baseLabel = articleLabel;
@@ -299,6 +308,7 @@
   function clothingTintKeysForSlot(slot) {
     if (slot === 'hat') return ['HAT'];
     if (slot === 'hood') return ['HOOD', 'HOOD_B'];
+    if (slot === 'pauldron') return ['PAULDRON'];
     if (slot === 'torso') return ['TORSO'];
     if (slot === 'overwear') return ['CLOTH', 'CLOTH_B'];
     return [];
@@ -321,8 +331,14 @@
         if (catItem.category === slot) equippedCosmetics.delete(catItem.id);
       }
       const item = gearInventory?.clothing?.[slot];
+      if (slot === 'pauldron') delete bodyColors.PAULDRON; // Prevent a previously worn smith state from tinting a later/unequipped portrait.
       if (!item) continue;
-      if (item.cosmeticId) equippedCosmetics.add(item.cosmeticId);
+      const portraitCosmeticId = item.baseCosmeticId || item.cosmeticId; // Loom/smith instances have unique ids; portrait config is keyed by their authored base id.
+      if (portraitCosmeticId) equippedCosmetics.add(portraitCosmeticId);
+      if (slot === 'pauldron' && window.PauldronSystem?.isMetalPauldron?.(item)) {
+        bodyColors.PAULDRON = window.PauldronSystem.portraitStateForItem(item);
+        continue;
+      }
       const [primaryTintKey, secondaryTintKey] = clothingTintKeysForSlot(slot);
       if (primaryTintKey && item.colorA) bodyColors[primaryTintKey] = { ...item.colorA };
       if (secondaryTintKey && item.colorB) bodyColors[secondaryTintKey] = { ...item.colorB };
@@ -348,6 +364,7 @@
   }
 
   function tintClothingIcon(img, sprite, item) {
+    if (window.PauldronSystem?.applyImageVisual?.(img, sprite, item)) return; // Metal pauldrons use the shared tool verdigris/plating renderer, never cloth dye recoloring.
     const tintValue = clothingIconTintValue(item);
     const recolor = window.SpriteRecolor?.getRecoloredCanvas;
     if (!img || !sprite || tintValue == null || typeof recolor !== 'function') return;
@@ -440,7 +457,7 @@
     if (!gearInventory) return false;
     let changed = false; // Used to make legacy clothing migration save itself exactly when needed.
     if (!gearInventory.clothing) {
-      gearInventory.clothing = { hat: null, hood: null, torso: null, overwear: null };
+      gearInventory.clothing = { hat: null, hood: null, pauldron: null, torso: null, overwear: null };
       changed = true;
     }
     if (!Array.isArray(gearInventory.clothingItems)) {
@@ -460,6 +477,7 @@
           worn.baseLabel = articleLabel;
           changed = true;
         }
+        if (window.PauldronSystem?.normalizeItem?.(worn)) changed = true;
         if (ensureArticleDyeIds(worn)) changed = true;
       }
       const storedWorn = gearInventory.clothing[slot]; // Used to seed the owned collection from older saves that only stored equipped clothing.
@@ -670,7 +688,8 @@
     set('iiTags',  '');
     const gearInventory = deps.getGearInventory();
     const isWorn = gearInventory?.clothing?.[slot]?.uid === item.uid;
-    set('iiDesc',  [item.description, isWorn ? 'Currently worn. Select another collected piece below to swap.' : 'Collected clothing in gear. Equip it to wear it.'].filter(Boolean).join(' '));
+    const metalPauldronDetail = window.PauldronSystem?.detailText?.(item) || ''; // Mobile-visible material/Temper/weight diagnostics for smith-crafted shoulder armor.
+    set('iiDesc',  [item.description, metalPauldronDetail, isWorn ? 'Currently worn. Select another collected piece below to swap.' : 'Collected clothing in gear. Equip it to wear it.'].filter(Boolean).join(' '));
     const actEl = document.getElementById('iiActions');
     if (actEl) {
       actEl.innerHTML = '';
@@ -693,11 +712,14 @@
         };
         actEl.appendChild(btn);
       }
-      const redyeBtn = document.createElement('button');
-      redyeBtn.className = 'ii-btn redye';
-      redyeBtn.textContent = '🎨 Redye';
-      redyeBtn.onclick = () => openRedyePanel(slot, item);
-      actEl.appendChild(redyeBtn);
+      const canRedye = item?.dyeable !== false && !window.PauldronSystem?.isMetalPauldron?.(item); // Smith metal color is material-driven and cannot enter the cloth dye picker.
+      if (canRedye) {
+        const redyeBtn = document.createElement('button');
+        redyeBtn.className = 'ii-btn redye';
+        redyeBtn.textContent = '🎨 Redye';
+        redyeBtn.onclick = () => openRedyePanel(slot, item);
+        actEl.appendChild(redyeBtn);
+      }
 
       // Clothing never enters the item wheel (see getHeldGiftItem in
       // game.js), so this is the only way to hold a piece of it out for an
@@ -730,6 +752,10 @@
   }
 
   function openRedyePanel(slot, item) {
+    if (item?.dyeable === false || window.PauldronSystem?.isMetalPauldron?.(item)) {
+      deps.showToast?.('Smith-forged metal clothing takes the color of its metal and cannot be dyed.', false);
+      return;
+    }
     window.DyeSystem.ensureCollection();
     ensureArticleDyeIds(item);
     const panel = document.getElementById('dyePanel');

@@ -22,6 +22,7 @@
     // the page. Reset the observed key so the new runtime gets one immediate
     // texture refresh even if it happens to load at the same clock hour.
     lastObservedClockKey = null;
+    window.PauldronSystem?.init?.({ ...injectedDeps, rerenderSmith: renderMetalCraftShopPage }); // Reuses the smith's inventory/save/avatar adapters without growing another game.js dependency bundle.
     installHourlyMetalRefresh();
   }
 
@@ -300,11 +301,13 @@
       list.appendChild(row);
     });
 
+    window.PauldronSystem?.renderSmithySection?.(list); // New metal-clothing subsection: craft by alloy, inspect Temper/weight, and unlock cosmetic treatments at Temper 5.
+
     const ownedCrafted = Object.keys(gearInventory?.tools || {}).filter(key => deps.TOOL_ITEM_DEFS[key]?.metalKey);
     if (ownedCrafted.length) {
       const plateHdr = document.createElement('div');
       plateHdr.className = 'shop-section-label';
-      plateHdr.textContent = '✨ Plate, Clear, or Reinforce';
+      plateHdr.textContent = '✨ Tool Treatments — Plate, Clear, or Reinforce';
       list.appendChild(plateHdr);
 
       ownedCrafted.forEach(itemKey => {

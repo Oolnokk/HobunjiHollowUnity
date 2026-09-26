@@ -119,6 +119,7 @@
   function clothingTintKeysForSlot(slot) {
     if (slot === 'hat') return ['HAT'];
     if (slot === 'hood') return ['HOOD', 'HOOD_B'];
+    if (slot === 'pauldron') return ['PAULDRON'];
     if (slot === 'torso') return ['TORSO'];
     if (slot === 'overwear') return ['CLOTH', 'CLOTH_B'];
     return [];
@@ -152,7 +153,7 @@
   function resolveSavePortraitClothingOption(cosmetics, slot, item, character) {
     const optionCache = cosmetics?.optionCache;
     const none = optionCache?.get('none') || { id: 'none', tintSlot: null, layers: [] };
-    const cosmeticId = item?.cosmeticId;
+    const cosmeticId = item?.baseCosmeticId || item?.cosmeticId;
     if (!cosmeticId || !optionCache) return none;
 
     const catalog = window.SCRATCHBONES_CONFIG?.game?.account?.shopCatalog || [];
@@ -199,6 +200,7 @@
       const profileKeyBySlot = {
         hat: 'hat',
         hood: 'hood',
+        pauldron: 'pauldron',
         torso: 'torsoCosmetic',
         overwear: 'armCosmetic',
       };
@@ -211,6 +213,10 @@
         if (primaryKey) delete bodyColors[primaryKey];
         if (secondaryKey) delete bodyColors[secondaryKey];
 
+        if (slot === 'pauldron' && item && window.PauldronSystem?.isMetalPauldron?.(item)) {
+          bodyColors.PAULDRON = window.PauldronSystem.portraitStateForItem(item);
+          continue;
+        }
         const primary = portraitTintColor(item?.colorA);
         const secondary = portraitTintColor(item?.colorB);
         if (primaryKey && primary) bodyColors[primaryKey] = primary;
