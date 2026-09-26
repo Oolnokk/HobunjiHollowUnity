@@ -1,4 +1,4 @@
-const assert = require('assert');
+(async () => {\nconst assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -201,3 +201,4 @@ assert(indexSource.includes('js/combat/combat-lich.js?v=20260926lich1'));
 assert(indexSource.includes('js/combat/resource-system.js?v=20260926lich1'));
 
 console.log('Harlyao Lich regression checks passed.');
+\n})().catch(error => { console.error(error); process.exitCode = 1; });\n
