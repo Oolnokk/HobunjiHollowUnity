@@ -1347,6 +1347,11 @@
   const TRANSPORT_AUDIO_LOOKAHEAD_MS = PULSE_LOOKAHEAD_MS; // Keeps the metronome/footstep and chord-root pad on the same ahead-of-time audio grid as automatic Kurraya notes.
   const HARMONY_REGISTER_OFFSET = -12; // Keeps left-stick arpeggios and right-stick chord strums one octave below direct notes.
   const PAD_ROOT_REGISTER_OFFSET = -12; // Anchors the harmony pad one octave below tonic: in C3 this is F2 → G2 → E2 → A2.
+  const PAD_SYNTH_FILTER_HZ = 600; // Keeps the root pad behind the Kurraya instead of reading as a bright second instrument.
+  const PAD_SYNTH_FILTER_Q = 0.22; // Gentle resonance avoids a noticeable resonant peak around the low-pass cutoff.
+  const PAD_SYNTH_ATTACK_S = 0.32; // Slow enough to bloom under the pluck while still becoming audible within a short chord.
+  const PAD_SYNTH_CROSSFADE_S = 0.8; // Lets adjacent roots melt into each other instead of making the pad announce every chord change.
+  const PAD_SYNTH_HARMONICS = Object.freeze([0,1,0.10,0.025,0.008]); // Mostly sine: tiny upper harmonics preserve audibility on small speakers without adding a separate octave/fifth voice.
   const NOTE_COLORS = ['#7be6d7','#f8b368','#ff95ac','#b49bff'];
   const GROUP_COLORS_BY_OFFSET = {0:'#67e3d3',4:'#ffb86c',8:'#ff92a9',12:'#b39cff',16:'#92efbb'}; // Used by the five color groups so each bank has one consistent hue across the Lyre and hosted controls.
   const NOTE_INPUT_GLYPHS_BY_LAYOUT = { mobile:['1','2','3','4'], keyboard:['1','2','3','4'], controller:['X','A','B','Y'] }; // Used by the falling Lyre prompts so they show direct note inputs rather than shift glyphs. Keyboard shows ordinal numbers, not the literal bound key, since which physical key plays note 1-4 is player-rebindable (see js/music-minigame.js) — a fixed A/S/D/F glyph would go stale the moment a key is remapped.
@@ -2848,10 +2853,10 @@
 
   function rootPadSynthGain() {
     if (state.rootPadLevel <= 0 || state.padMixLevel <= 0) return 0;
-    return clamp(0.024 + state.rootPadLevel * 2.6, 0.024, 0.24) * state.padMixLevel; // Keeps the authored synth-pad response while exposing one independent pad mix multiplier.
+    return clamp(0.018 + state.rootPadLevel * 1.5, 0.018, 0.12) * state.padMixLevel; // Bakes the subtle ~20%-of-lead feel into only the synth pad, leaving imported-pad mix behavior untouched.
   }
 
-  function fadeOutRootPadVoice(voice, fadeSeconds = 0.7, whenMs = null) {
+  function fadeOutRootPadVoice(voice, fadeSeconds = PAD_SYNTH_CROSSFADE_S, whenMs = null) {
     if (!voice || voice.stopping || !state.audioContext) return;
     voice.stopping = true;
     voice.active = false;
@@ -2881,21 +2886,23 @@
     const context = state.audioContext;
     if (!context || context.state !== 'running' || !state.master) return null;
     const now = audioStartTimeFor(context, whenMs);
-    const rootMidi = midi; // The pad now carries only the authored progression root; no fifth or other harmony layer is synthesized.
+    const rootMidi = midi; // The pad carries only the authored progression root; harmonic partials below shape timbre rather than adding separate chord voices.
     const rootOscillator = context.createOscillator();
     const filter = context.createBiquadFilter();
     const gain = context.createGain();
-    rootOscillator.type = 'triangle'; // Keeps one root pitch while adding odd harmonics so the low F2–A2 pad remains audible on phone and small speakers.
+    const real = new Float32Array(PAD_SYNTH_HARMONICS.length); // Zero cosine coefficients keep the custom waveform phase-equivalent to a sine-family oscillator.
+    const imag = new Float32Array(PAD_SYNTH_HARMONICS); // Fundamental dominates; tiny 2nd/3rd/4th harmonics keep low roots audible on phone speakers.
+    rootOscillator.setPeriodicWave(context.createPeriodicWave(real,imag));
     rootOscillator.frequency.setValueAtTime(midiFrequency(rootMidi), now);
     rootOscillator.detune.setValueAtTime(0, now);
     filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(880, now);
-    filter.Q.setValueAtTime(0.35, now);
-    const synthPadGain = rootPadSynthGain(); // Resolves the authored root-pad response and Music Lab pad mix for this single sustained note.
+    filter.frequency.setValueAtTime(PAD_SYNTH_FILTER_HZ, now);
+    filter.Q.setValueAtTime(PAD_SYNTH_FILTER_Q, now);
+    const synthPadGain = rootPadSynthGain(); // Resolves the subtle synth-only base level and the user's independent Music Lab pad multiplier.
     if (synthPadGain <= 0) gain.gain.setValueAtTime(0, now);
     else {
       gain.gain.setValueAtTime(0.0001, now);
-      gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, synthPadGain), now + 0.18); // Reaches an audible level quickly enough for the short Music Lab preview while remaining a soft pad attack.
+      gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, synthPadGain), now + PAD_SYNTH_ATTACK_S); // Blooms behind the pluck instead of presenting as an obvious synth attack.
     }
     rootOscillator.connect(filter).connect(gain).connect(state.master);
     rootOscillator.start(now);
@@ -2960,7 +2967,7 @@
       });
       return;
     }
-    state.rootPadVoices.slice().forEach(voice => fadeOutRootPadVoice(voice, 0.5, whenMs));
+    state.rootPadVoices.slice().forEach(voice => fadeOutRootPadVoice(voice, PAD_SYNTH_CROSSFADE_S, whenMs));
     state.rootPadRootMidi = targetMidi;
     const voice = desiredKind === 'sample' ? createRootPadSampleVoice(targetMidi, whenMs) : createRootPadVoice(targetMidi, whenMs);
     if (!voice) {
@@ -7292,6 +7299,10 @@
       audioContextState:state.audioContext?.state || 'uninitialized', // Exposed to the Music Lab diagnostics so mobile audio-wake failures are visible without devtools.
       padSynthGain:rootPadSynthGain(), // Exposed to verify that a nonzero authored synth-pad gain reaches the preview/runtime path.
       padSynthFrequency:midiFrequency(rootPadTargetMidi()), // Exposed to show the exact low-root frequency being synthesized for the current progression step.
+      padSynthTimbre:'mostly-sine', // Visible Music Lab confirmation that the subtle harmonic custom wave, not the old triangle, is active.
+      padSynthFilterHz:PAD_SYNTH_FILTER_HZ,
+      padSynthAttackMs:Math.round(PAD_SYNTH_ATTACK_S * 1000),
+      padSynthCrossfadeMs:Math.round(PAD_SYNTH_CROSSFADE_S * 1000),
       kurrayaSampleName:state.sampleName || 'Fallback pluck',
       kurrayaSampleImported:!!state.sampleImported,
       padSampleName:state.rootPadSampleBuffer || state.pendingRootPadSampleRecord ? (state.rootPadSampleName || state.pendingRootPadSampleRecord?.name || 'Imported pad') : 'Synth root pad',
@@ -7409,7 +7420,7 @@
       await ensureAudio();
       const midi = rootPadTargetMidi();
       const voice = state.rootPadSampleBuffer ? createRootPadSampleVoice(midi) : createRootPadVoice(midi);
-      if (voice) setTimeout(() => fadeOutRootPadVoice(voice,0.35),1400);
+      if (voice) setTimeout(() => fadeOutRootPadVoice(voice,PAD_SYNTH_CROSSFADE_S),1400);
       return musicLabMixState();
     },
     scaleAuditionState() {
