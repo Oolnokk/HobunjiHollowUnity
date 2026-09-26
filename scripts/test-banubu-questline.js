@@ -39,6 +39,8 @@ let sparkleUpdates = 0; // Used to prove the active emitter advances through Run
 const schedulerCallbacks = new Map(); // Used to capture Banubu's shared-frame subscriber for direct regression driving.
 const schedulerEnabled = new Map(); // Used to verify the transient subscriber sleeps whenever Banubu has no temporary VFX or movement.
 let lastSparkleGroup = null; // Used to prove the key sparkle is detached from Banubu before his reveal-step movement begins.
+let lastSparkleEmitter = null; // Used to verify complete Dialogue Editor-authored emitter records reach the shared renderer unchanged.
+let lastSparkleMaxParticles = null; // Used to verify the editor-authored particle budget reaches the renderer.
 
 class FakeGroup {
   constructor() {
@@ -105,6 +107,8 @@ const context = {
     createEmitterVisual(group, emitter, maxParticles) {
       sparkleCreates++;
       lastSparkleGroup = group;
+      lastSparkleEmitter = emitter;
+      lastSparkleMaxParticles = maxParticles;
       return {
         group,
         emitter,
@@ -293,6 +297,14 @@ presentationHandler(null, { npc: banubu, walker: presentationWalker, ended: true
 assert.strictEqual(presentationWalker._animalSleepPresentationOverride, undefined, 'dialogue cleanup must release the temporary body override back to Banubu’s authored schedule');
 assert.strictEqual(presentationWalker._animalHeadPoseOverride, undefined, 'dialogue cleanup must release any temporary neck override');
 assert.strictEqual(presentationRoot.position.z, 5.5, 'dialogue cleanup must restore Banubu’s exact pre-conversation position');
+
+presentationHandler({ id: 'authored_vfx_probe', banubuPresentation: { sparkles: { action: 'start', anchor: 'root', maxParticles: 77, emitter: { radius: 1.25, size: 0.11, colorA: '#112233', colorB: '#445566' } } } }, { npc: banubu, walker: presentationWalker });
+assert.strictEqual(lastSparkleGroup, presentationRoot, 'Dialogue Editor-authored root attachment must remain available even though the key reveal defaults to a fixed world anchor');
+assert.strictEqual(lastSparkleMaxParticles, 77, 'Dialogue Editor-authored particle budget must reach the shared renderer');
+assert.strictEqual(lastSparkleEmitter.radius, 1.25);
+assert.strictEqual(lastSparkleEmitter.size, 0.11);
+assert.strictEqual(lastSparkleEmitter.colorA, '#112233');
+presentationHandler({ id: 'authored_vfx_stop', banubuPresentation: { sparkles: 'stop' } }, { npc: banubu, walker: presentationWalker });
 
 // Quest 1 target is generated before intro text resolves, so its three buff names are real and stable.
 let state = questline.ensureQuestState();
