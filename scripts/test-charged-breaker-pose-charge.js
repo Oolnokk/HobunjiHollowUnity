@@ -76,8 +76,10 @@ assert.match(counterSource, /worldMatricesReady: true,[^\n]*source\.matrixWorld 
   'player melee trail sampling explicitly marks the rendered source matrices as authoritative');
 assert.match(counterSource, /sampleGapS[\s\S]{0,260}TRAIL_MAX_SAMPLE_GAP_S/,
   'stale idle transforms cannot create a bogus first-frame afterimage when a new melee attack starts');
-assert.match(counterSource, /TRAIL_MAX_GHOSTS[\s\S]{0,15000}while \(trailGhosts\.length > TRAIL_MAX_GHOSTS\)/,
-  'melee afterimages have a hard live-mesh cap');
+assert.match(counterSource, /const TRAIL_MAX_GHOSTS = 24/,
+  'melee afterimages keep the intended hard live-mesh cap');
+assert.match(counterSource, /while \(trailGhosts\.length > TRAIL_MAX_GHOSTS\) removeTrailGhost\(trailGhosts\.shift\(\)\)/,
+  'melee afterimage spawning enforces the shared live-mesh cap');
 assert.match(counterSource, /function meleeAfterimageColors\(afflictionIds\)[\s\S]{0,900}ResourceRings\?\.AFFLICTION_COLORS[\s\S]{0,500}neonizeColor/,
   'melee afterimage layers reuse the exact Resource Ring affliction palette and neon treatment');
 assert.match(counterSource, /MELEE_AFTERIMAGE_MAX_COLORS = 4/,
