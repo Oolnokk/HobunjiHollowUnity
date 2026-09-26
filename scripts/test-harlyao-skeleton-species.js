@@ -8,6 +8,7 @@ const runtimeSource = fs.readFileSync('docs/js/harlyao-skeleton-species-runtime.
 const portraitSource = fs.readFileSync('docs/js/portrait-utils.js', 'utf8'); // Guards the generic fixed-color/base-tint/structural-slot support required by skeleton portraits.
 const scaleSource = fs.readFileSync('docs/config/character-rig-scale-defaults.js', 'utf8'); // Verifies the skeleton shares regular Harlyao's authored 1.2x scale.
 const bootstrapSource = fs.readFileSync('docs/js/attachment-rig-latest-authored-snapshot.js', 'utf8'); // Guards load order before shared whole-rig scale installation.
+const pixelProbeSource = fs.readFileSync('docs/js/pixel-probe.js', 'utf8'); // Guards the mobile-visible no-console diagnostic line for the new species bridge.
 
 assert.equal(skeleton.speciesId, 'harlyao-skeleton');
 assert.equal(skeleton.parentSpecies, 'engh-sho');
@@ -50,6 +51,7 @@ for (const asset of expectedAssets) assert(fs.existsSync(asset), `Missing Harlya
 assert(portraitSource.includes("bodyColorRanges?.fixedHex"), 'Portrait randomization must understand fixed hex body descriptors for procedural extremities');
 assert(portraitSource.includes('baseBodyTintEnabled'), 'Portrait renderer must support authored-color base sprites without recoloring them');
 assert(portraitSource.includes('fixedPortraitSlots?.pauldron'), 'Portrait renderer must inject the female structural hair in the pauldron render slot');
+assert(pixelProbeSource.includes('window.HobunjiHarlyaoSkeletonSpecies?.formatDebug?.()'), 'Pixel Probe must expose Harlyao Skeleton bridge diagnostics on mobile');
 
 const fighters = [
   { id: 'harlyao-skeleton_male', speciesId: 'harlyao-skeleton', gender: 'male' },
