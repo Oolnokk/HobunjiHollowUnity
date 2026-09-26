@@ -1003,10 +1003,11 @@ function getProfileSpriteXforms(profile) {
   const records = [];
   const hatIsUnderHood = hatLayersUnderHood(hat);
   const eyesLayerAboveUnderHoodHat = eyeAccessoryLayersAboveUnderHoodHat(eyes, hat);
-  const pushGroupRecords = (group) => {
+  const pushGroupRecords = (group, layerFilter = null) => {
     if (!group) return;
     const groupLayers = resolveOptionLayers(group, resolvedFighter);
     for (const layer of groupLayers) {
+      if (layerFilter && !layerFilter(layer)) continue;
       records.push(toRecord('cosmetic', layer, { group: group.id || null, hairSlot: group.hairSlot || null, pos: layer.pos || 'front' }));
     }
   };
@@ -1031,8 +1032,9 @@ function getProfileSpriteXforms(profile) {
     }
   }
   if (hairFront !== undefined) {
-    // Left side hairstyle before head
+    // Left-side hair and authored hood-back pieces belong behind the skull.
     pushGroupRecords(hairSideL);
+    pushGroupRecords(hood, layer => layer.pos === 'back');
     // Head
     if (headUrl) records.push({ part: 'head', url: headUrl, xform: getPortraitXformPreset('B') });
     // Facial hair and standard eyes after head, before ur-head. Tagged eye accessories
@@ -1049,7 +1051,7 @@ function getProfileSpriteXforms(profile) {
     // Hat (under hood), hood, pauldron, hat (over hood)
     if (hatIsUnderHood) pushGroupRecords(hat);
     if (eyesLayerAboveUnderHoodHat) pushGroupRecords(eyes);
-    pushGroupRecords(hood);
+    pushGroupRecords(hood, layer => layer.pos !== 'back');
     pushGroupRecords(pauldron);
     if (!hatIsUnderHood) pushGroupRecords(hat);
   } else {
@@ -1320,7 +1322,8 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const rightSideHairLayers = [];  // right-side hairstyle, drawn between head and facial hair
   const hatUnderLayers   = [];  // hat front when configured to render under hoods
   const elevatedEyeAccessoryLayers = []; // tagged eye accessories that render above under-hood hats
-  const hoodLayers    = [];  // hood — receives breathing warp
+  const hoodBackLayers = []; // authored hood rear pieces — breathing-warped behind the skull instead of repainting over it.
+  const hoodLayers    = [];  // hood front/opening pieces — breathing-warped above the skull.
   const pauldronLayers = []; // pauldron — static draw order
   const hatOverLayers    = [];  // hat front when hoodLayering=over (default)
 
@@ -1366,7 +1369,16 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
         }
       }
     }
-    pushToTarget(hood, hoodLayers);
+    if (hood) {
+      const groupLayers = resolveOptionLayers(hood, resolvedFighter); // Split authored back/front hood art so rear cloth cannot cover the face opening.
+      const metalState = metalStateForGroup(hood); // Shared material state retained for both halves of the same hood.
+      window.MetalArmorSystem?.reportResolvedPortraitGroup?.(hood, metalState, groupLayers.length);
+      for (const layer of groupLayers) {
+        const key = layer.paletteColorKey;
+        const layerTintSlot = resolveLayerTintSlot(key, hood.tintSlot);
+        (layer.pos === 'back' ? hoodBackLayers : hoodLayers).push({ layer, tint: tintFor(layerTintSlot), group: hood, metalState });
+      }
+    }
     pushToTarget(pauldron, pauldronLayers);
   } else if (renderHeadCosmetics) {
     // Legacy single-slot hair
@@ -1409,7 +1421,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     [
       preBackLayers, torsoClothingLayers, overwearLayers, sideLeftLayers,
       rightSideHairLayers, facialHairLayers, frontHairLayers, eyesLayers,
-      elevatedEyeAccessoryLayers, hoodLayers, pauldronLayers, hatUnderLayers,
+      elevatedEyeAccessoryLayers, hoodBackLayers, hoodLayers, pauldronLayers, hatUnderLayers,
       hatOverLayers,
     ].forEach(useBehindLayers);
     // The base body (arms/torso) needs the same pre-flip as every cosmetic
@@ -1427,7 +1439,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     const cosmeticLayerLists = [
       preBackLayers, torsoClothingLayers, overwearLayers, sideLeftLayers,
       rightSideHairLayers, facialHairLayers, frontHairLayers, eyesLayers,
-      elevatedEyeAccessoryLayers, upperFaceLayers, hoodLayers, pauldronLayers,
+      elevatedEyeAccessoryLayers, upperFaceLayers, hoodBackLayers, hoodLayers, pauldronLayers,
       hatUnderLayers, hatOverLayers,
     ];
     for (const layerList of cosmeticLayerLists) {
@@ -1465,6 +1477,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     ...frontHairLayers.map(({ layer }) => layer.url),
     ...hatUnderLayers.map(({ layer }) => layer.url),
     ...(renderBehindView ? [] : elevatedEyeAccessoryLayers.map(({ layer }) => layer.url)),
+    ...hoodBackLayers.map(({ layer }) => layer.url),
     ...hoodLayers.map(({ layer }) => layer.url),
     ...pauldronLayers.map(({ layer }) => layer.url),
     ...hatOverLayers.map(({ layer }) => layer.url),
@@ -1623,7 +1636,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       torsoClothing: () => drawBreathingLayers(torsoClothingLayers),
       overwear:      () => drawBreathingLayers(overwearLayers),
       hatUnder:      () => drawEmoteLayers(hatUnderLayers),
-      hood:          () => drawBreathingLayers(hoodLayers),
+      hood:          () => { drawBreathingLayers(hoodBackLayers); drawBreathingLayers(hoodLayers); },
       pauldron:      () => drawEmoteLayers(pauldronLayers),
       hatOver:       () => drawEmoteLayers(hatOverLayers),
       snowgoggles:   () => drawEmoteLayers(behindSnowgogglesLayers),
@@ -1652,6 +1665,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   drawBreathingLayers(baseRightArmLayers);
   drawBreathingLayers(torsoClothingLayers);
   drawBreathingLayers(overwearLayers);
+  drawBreathingLayers(hoodBackLayers); // Rear hood cloth must sit behind the skull/head; front opening is drawn later with ordinary hood layers.
   const _beardBelowHead = _BEARD_BELOW_HEAD_SPECIES.has(String(speciesId || '').toLowerCase().replace(/_/g, '-'));
   drawEmoteLayers(sideLeftLayers);
   if (_beardBelowHead) drawEmoteLayers(facialHairLayers);
