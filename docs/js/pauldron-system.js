@@ -21,6 +21,9 @@
   const STANDARD_WOOL_OVERWEAR_UNITS = 4;
   const KG_PER_WEIGHT_UNIT = STANDARD_WOOL_OVERWEAR_KG / STANDARD_WOOL_OVERWEAR_UNITS;
   const OXIDATION_CACHE_STEP = 0.10; // Matches the tool/weapon metal cache granularity, so Temper uses the same visible verdigris progression cadence.
+  const PAULDRON_SOURCE_HEX = '#7DC89A'; // Authored pauldron art uses the portrait/cosmetic green source palette rather than weapon art's #5A8480 key.
+  const PAULDRON_HUE_TOLERANCE_DEG = 55; // Broad enough to include shaded green metal pixels while still excluding the black outline/transparent field.
+  const PAULDRON_SATURATION_TOLERANCE = 0.55; // Keeps pale highlights inside the metal mask without making grayscale/black outlines eligible.
 
   // Approximate room-temperature densities. The bronze values intentionally stay
   // within ordinary bronze's broad real-world range; exact historical recipes vary.
@@ -245,16 +248,22 @@
     const metalKey = String(state.metalKey || 'nativeCopper');
     const baseMetal = metalDef(metalKey);
     const active = treatment(state);
+    const sourceOptions = {
+      sourceHex: PAULDRON_SOURCE_HEX,
+      hueToleranceDeg: PAULDRON_HUE_TOLERANCE_DEG,
+      saturationTolerance: PAULDRON_SATURATION_TOLERANCE,
+    }; // Shared by clean metal, live verdigris, plating, and authored removal-pattern rendering.
     if (active?.mode === 'cosmetic') {
       const platedMetal = metalDef(active.metalKey);
-      return { targetHex: platedMetal.hex, verdigrisHex: null, oxidationAmount: 0 };
+      return { ...sourceOptions, targetHex: platedMetal.hex, verdigrisHex: null, oxidationAmount: 0 };
     }
     if (active?.mode === 'resistant') {
-      return { targetHex: baseMetal.hex, verdigrisHex: null, oxidationAmount: 0 };
+      return { ...sourceOptions, targetHex: baseMetal.hex, verdigrisHex: null, oxidationAmount: 0 };
     }
     if (active?.mode === 'pattern') {
       const authoredPattern = active.pattern || window.PatternLibrary?.getById?.(active.patternLibraryId) || null;
       if (authoredPattern) return {
+        ...sourceOptions,
         targetHex: baseMetal.hex,
         verdigrisHex: baseMetal.verdigrisHex,
         oxidationAmount: 1,
@@ -262,6 +271,7 @@
       };
     }
     return {
+      ...sourceOptions,
       targetHex: baseMetal.hex,
       verdigrisHex: baseMetal.verdigrisHex,
       oxidationAmount: quantizedVerdigrisFraction(state),
@@ -511,8 +521,7 @@
         remove: id => window.PatternLibrary.removeSaved(id),
       } : null,
       renderPreview: patternData => window.ToolMetalRecolor.getRecoloredCanvas(currentPlayerSprite(), {
-        targetHex: baseMetal.hex,
-        verdigrisHex: baseMetal.verdigrisHex,
+        ...visualOptions({ metalKey: item.metalKey, temperXp: MAX_TEMPER_XP, smithTreatment: null }),
         oxidationAmount: 1,
         authoredPattern: patternData,
       }),
@@ -678,6 +687,7 @@
     MAX_TEMPER_XP,
     DENSITY_G_CM3,
     KG_PER_WEIGHT_UNIT,
+    PAULDRON_SOURCE_HEX,
     init,
     isMetalPauldron,
     normalizeItem,
