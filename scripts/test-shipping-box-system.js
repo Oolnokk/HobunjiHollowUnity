@@ -19,6 +19,24 @@ const config = configContext.window.ShippingBoxConfig;
 const plain = value => JSON.parse(JSON.stringify(value));
 assert.ok(config, 'ShippingBoxConfig loads as a standalone tuning module');
 
+const caseFurnitureFiles = [ // Used below to keep every rectangular crate/case furniture surface on crate_side.png.
+  'chest.json',
+  'crateStack.json',
+  'dresser.json',
+  'nightstand.json',
+  'wardrobe.json',
+  'bookshelf.json',
+  'counter.json',
+  'shippingBox.json',
+];
+assert.ok(fs.existsSync(path.join(root, 'docs/assets/textures/crate_side.png')), 'crate_side.png asset exists');
+for (const file of caseFurnitureFiles) {
+  const authored = JSON.parse(read('docs/config/furniture-authored/' + file));
+  assert.ok(authored.parts.length > 0, file + ' has authored parts');
+  assert.ok(authored.parts.every(part => part.materialTexture === 'crate_side.png'), file + ' uses crate_side.png on every authored surface');
+  assert.ok(authored.parts.every(part => part.materialTexture !== 'carved_smooth.png'), file + ' no longer uses carved_smooth.png');
+}
+
 // All new Shipping Box modules consume the shared config rather than owning
 // independent copies of Shipping-specific tuning values.
 for (const [name, source] of [['ShippingPanel', shipping], ['FarmCrates', crates], ['GeneralStore', store], ['ShippingBoxWorld', world]]) {
@@ -44,7 +62,7 @@ assert.deepStrictEqual(plain(config.lifecycle.resolveOnTimePassageKinds), ['wait
 assert.deepStrictEqual(plain(config.lifecycle.farmContextAreas), ['farm', 'interior']);
 assert.strictEqual(config.inventory.permissions.withdraw, 'storage');
 assert.strictEqual(config.inventory.permissions.alterFarm, 'alterFarm');
-assert.strictEqual(config.material.texture, 'carved_smooth.png');
+assert.strictEqual(config.material.texture, 'crate_side.png');
 assert.strictEqual(config.material.forceTextureOnEveryPart, true);
 assert.strictEqual(config.material.copperVerdigris.toUpperCase(), '#3FAF9F');
 assert.ok(config.panel.fontStack.includes('KhymeryyanRomanLetters+Numbers'));
