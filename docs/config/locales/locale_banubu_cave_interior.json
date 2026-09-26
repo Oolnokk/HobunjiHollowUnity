@@ -350,11 +350,11 @@
       "fadePets": false,
       "playerStage": {
         "x": 6.5,
-        "z": 10.5
+        "z": 6.5
       },
       "targetNpcId": "banubu",
       "targetAnchorId": "station_banubu_cave_sleep",
-      "stagePlayer": false
+      "stagePlayer": true
     },
     {
       "id": "banubu_key_ground",
@@ -417,6 +417,6 @@
   },
   "meta": {
     "createdAt": "2026-09-19T00:00:00.000Z",
-    "updatedAt": "2026-09-26T01:08:00.000Z"
+    "updatedAt": "2026-09-26T01:12:00.000Z"
   }
 }
