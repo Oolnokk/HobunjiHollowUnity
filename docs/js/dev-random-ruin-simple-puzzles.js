@@ -162,17 +162,15 @@
 
   function disposeObject(root) {
     if (!root) return;
-    const geometries = new Set(), materials = new Set(), textures = new Set();
+    const geometries = new Set(), materials = new Set();
     root.traverse?.(object => {
       if (object.geometry) geometries.add(object.geometry);
       const list = Array.isArray(object.material) ? object.material : object.material ? [object.material] : [];
-      for (const material of list) {
-        materials.add(material);
-        if (material?.map) textures.add(material.map);
-      }
+      for (const material of list) materials.add(material);
     });
     root.parent?.remove?.(root);
-    for (const texture of textures) texture.dispose?.();
+    // NaturalSurfaceMaterials can reuse cached carved_smooth textures across the
+    // ruin. Dispose our material wrappers/geometry only; never dispose shared maps.
     for (const material of materials) material.dispose?.();
     for (const geometry of geometries) geometry.dispose?.();
   }
