@@ -13558,25 +13558,45 @@
           // appears on that boundary and the separately-gated transition becomes usable.
           for (const door of (mapData.keyGatedDoors || [])) {
             const furnitureKey = door.furnitureKey || 'door';
-            let doorData = window.AuthoredFurniture?.peek?.(furnitureKey) || null;
-            if (!doorData && window.AuthoredFurniture?.load) {
-              try { doorData = await window.AuthoredFurniture.load(furnitureKey); } catch (_) {}
-            }
-            if (!doorData || !window.AuthoredFurniture?.buildGroup) continue;
-            const group = window.AuthoredFurniture.buildGroup(doorData, 0x8b6540);
             const side = String(door.side || 'south').toLowerCase();
-            let x = Number(door.col) + 0.5, z = Number(door.row) + 0.5;
-            if (side === 'north') z = Number(door.row) + 0.03;
-            else if (side === 'south') z = Number(door.row) + 0.97;
-            else if (side === 'east') x = Number(door.col) + 0.97;
-            else if (side === 'west') x = Number(door.col) + 0.03;
-            const doorSurfaceY = tileSurfaceYInArea(bGrid?.[Math.floor(z)]?.[Math.floor(x)], mapId); // Keeps keyed cave doors seated on the same sampled floor as actors.
-            group.position.set(x, doorSurfaceY, z);
-            group.rotation.y = THREE.MathUtils.degToRad(Number(door.rotY) || 0);
+            const doorCol = Number(door.col), doorRow = Number(door.row);
+            const doorSurfaceY = tileSurfaceYInArea(bGrid?.[doorRow]?.[doorCol], mapId); // Connector tiles are already guaranteed walkable; sample their center instead of sampling against the carved boundary shell.
+            let group = null;
+            if (furnitureKey === 'door' && window.EntryTunnelDoorFurniture?.attach) {
+              // Reuse the canonical authored-door runtime instead of hand-positioning the same asset here.
+              // It centers the 1x1 door in the connector tile (clear of the opaque cavern shell), uses the established door-facing convention,
+              // and handles both cached and async AuthoredFurniture loading. The previous cave-only code pushed the root to 0.03/0.97 on the
+              // tile edge, where the newly-correct opaque farm-cliff shell could completely depth-occlude it.
+              try {
+                group = await Promise.resolve(window.EntryTunnelDoorFurniture.attach(
+                  bScene, doorCol, doorRow, side, { elevationY: doorSurfaceY },
+                ));
+              } catch (error) {
+                console.warn('[cavern door] canonical door attachment failed; falling back to direct authored furniture:', error);
+              }
+            }
+            if (!group) {
+              let doorData = window.AuthoredFurniture?.peek?.(furnitureKey) || null;
+              if (!doorData && window.AuthoredFurniture?.load) {
+                try { doorData = await window.AuthoredFurniture.load(furnitureKey); } catch (_) {}
+              }
+              if (!doorData || !window.AuthoredFurniture?.buildGroup) continue;
+              group = window.AuthoredFurniture.buildGroup(doorData, 0x8b6540);
+              group.position.set(doorCol + 0.5, doorSurfaceY, doorRow + 0.5); // Boundary connectors render furniture on the walkable tile center, in front of the carved wall instead of inside it.
+              const doorSideRotationDeg = ({ south: 0, west: 90, north: 180, east: 270 })[side] ?? 0; // Same convention as EntryTunnelDoorFurniture.
+              group.rotation.y = -THREE.MathUtils.degToRad(doorSideRotationDeg);
+              bScene.add(group);
+            }
             group.visible = !door.hiddenUntilKeyItem || !door.requiresKeyItem || !!window.KeyItemSystem?.has?.(door.requiresKeyItem);
             group.name = 'key_gated_cavern_door_' + (door.id || door.requiresKeyItem || furnitureKey);
+            group.userData = Object.assign({}, group.userData, {
+              keyGatedCavernDoor: true,
+              keyGatedCavernDoorId: String(door.id || ''),
+              keyGatedCavernDoorSide: side,
+              keyGatedCavernDoorTile: { col: doorCol, row: doorRow },
+              keyGatedCavernDoorKeyId: String(door.requiresKeyItem || ''),
+            });
             _markOutline(group);
-            bScene.add(group);
             keyDoorGroups.push({ group, keyId: String(door.requiresKeyItem || '') });
           }
 
