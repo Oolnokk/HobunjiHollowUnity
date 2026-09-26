@@ -13,6 +13,15 @@ assert.match(
   /const cinematicActive = !!window\.CinematicCameraRuntime\?\.isActive\?\.\(\);[\s\S]{0,1600}currentPlayerStage\?\.\(\)[\s\S]{0,1600}kind: 'authored'/,
   'authored cinematic player staging must retain priority over ordinary dialogue presentation',
 );
+const dialogueContent = fs.readFileSync('docs/js/dialogue-content.js', 'utf8'); // Verifies camera-node swaps can refresh authored player blocking.
+assert(
+  game.includes("refreshDialogueStaging: () => { if (_dialogueWalker) beginNpcDialogueStaging(_dialogueWalker); }"),
+  'mid-dialogue authored camera swaps must be able to refresh player blocking',
+);
+assert(
+  dialogueContent.includes("if (node.cameraId && appliedDialogueCamera) deps?.refreshDialogueStaging?.();"),
+  'dialogue node camera changes must immediately re-evaluate authored player staging',
+);
 assert.match(
   game,
   /npcDialogueStaging = null;[\s\S]{0,500}if \(!cinematicActive && walker\?\.rec\?\.id !== 'banubu'\)[\s\S]{0,900}interactionAzimuthDeg \+ cameraSideAngleDeg - dialogueBaseAzimuthDeg/,
