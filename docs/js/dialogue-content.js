@@ -37,6 +37,7 @@
   let _dialogueLines     = [];
   let _dialogueLineIdx   = 0;
   let _npcDialogueTypeTimers = [];
+  let _dialogueVisualTimer = null; // Owns one authored no-UI visual beat; resetDialogueState cancels it so closing dialogue cannot auto-advance afterward.
   let _npcDialogueSequenceId = 0;
   let _npcDialogueTypeText  = '';
   let _npcDialogueTypeIndex = 0;
@@ -721,7 +722,21 @@
       });
   }
 
+  function _clearDialogueVisualTimer() {
+    if (_dialogueVisualTimer !== null) {
+      globalThis.clearTimeout(_dialogueVisualTimer);
+      _dialogueVisualTimer = null;
+    }
+  }
+
+  function _setDialogueShellVisible(visible) {
+    if (!_npcDialogueEl) return;
+    _npcDialogueEl.classList.toggle('open', !!visible);
+    _npcDialogueEl.setAttribute('aria-hidden', visible ? 'false' : 'true'); // Visual beats keep dialogue/camera state alive while removing the text/actions shell entirely.
+  }
+
   function renderDlgNode(node) {
+    _clearDialogueVisualTimer();
     if (!node) { deps.closeNpcDialogue(); return; }
     window.CinematicCameraRuntime?.applyDialogueNodeCamera?.(node); // Optional node.cameraId swaps authored world shots without reintroducing a portrait overlay.
     _dlgNode = node;
@@ -731,6 +746,22 @@
 
     if (node.type === 'sequence') { _handleSequenceNode(node); return; }
 
+    if (node.type === 'visual') {
+      stopNpcDialogueTypewriter(false);
+      hideChoiceButtons();
+      _setDialogueShellVisible(false);
+      const rawDurationMs = Number(node.durationMs ?? (Number(node.durationSec) * 1000));
+      const durationMs = Number.isFinite(rawDurationMs) ? Math.max(50, Math.min(10000, rawDurationMs)) : 1000; // Authored silent beats are bounded so malformed content cannot strand a conversation.
+      const visualNode = node;
+      _dialogueVisualTimer = globalThis.setTimeout(() => {
+        _dialogueVisualTimer = null;
+        if (!deps.getDialogueOpen() || _dlgNode !== visualNode) return;
+        _advanceDlgNode();
+      }, durationMs);
+      return;
+    }
+
+    _setDialogueShellVisible(true);
     const text = _resolveTokens(node.text || '', _dlgNpcRec);
     _setNpcDialogueText(text, node);
     updateNpcDialoguePortrait(0);
@@ -817,6 +848,7 @@
   }
 
   function advanceNpcDialogue() {
+    if (_dlgNode?.type === 'visual') return; // Silent visual beats advance only on their authored timer, never from hidden Continue input.
     if (_npcDialogueTypeText) { stopNpcDialogueTypewriter(true); return; }
     // Cutscene Preview drives its own talk/choice stage sequence instead
     // of an authored dialogueTree — see game.js's "Cutscene Preview Mode".
@@ -846,6 +878,7 @@
   // closeNpcDialogue (which owns ending a conversation, including the
   // camera/staging teardown this module doesn't touch).
   function resetDialogueState() {
+    _clearDialogueVisualTimer(); // Cancels pending auto-advance before feature cleanup so Escape/Leave during a visual beat is final.
     _notifyDialogueNodeEnter(null, true); // Gives feature-owned presentation a deterministic cleanup point when dialogue closes early or normally.
     _dialogueLines = [];
     _dialogueLineIdx = 0;
