@@ -156,6 +156,7 @@ function normalizeDatabase(raw){
       tree.nodes.forEach((node,di)=>{
         node.id??=`node_${ni}_${ti}_${di}`;node.type??='text';
         if(node.type==='text'){node.text??='';node.next??=null;node.expression??='neutral';node.expressionHold??=2;node.revealSpeed??='normal'}
+        if(node.type==='visual'){node.next??=null;node.durationSec=Math.max(.05,Number(node.durationSec)||1)}
         if(node.type==='choice'&&!Array.isArray(node.choices))node.choices=[];
         if(node.type==='sequence'){if(!Array.isArray(node.slots))node.slots=[];node.next??=null;node.exhaustedNext??=null}
         if(!Array.isArray(node.tags))node.tags=[];
