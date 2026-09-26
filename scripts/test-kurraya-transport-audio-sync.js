@@ -10,6 +10,7 @@ const hostSource = fs.readFileSync(path.join(__dirname, '../docs/js/music-miniga
 const kurrayaHost = fs.readFileSync(path.join(__dirname, '../docs/js/kurraya-instrument.js'), 'utf8'); // Verifies explicitly imported Music Lab Kurraya samples survive the gameplay host's bundled-sample gate.
 const musicLab = fs.readFileSync(path.join(__dirname, '../docs/tools/kurraya-music-lab/index.html'), 'utf8'); // Verifies the combined Kurraya authoring surface owns scale audition, mix/sample authoring, and SFX transposition.
 const toolsHub = fs.readFileSync(path.join(__dirname, '../docs/tools/index.html'), 'utf8'); // Verifies the combined Kurraya Music Lab remains reachable from the existing developer-tools hub.
+const npcScheduling = fs.readFileSync(path.join(__dirname, '../docs/js/npc-scheduling.js'), 'utf8'); // Verifies Foroji's authored station entries still select the Kurraya song id that now resolves procedurally in the shared engine.
 
 assert.match(
   source,
@@ -237,13 +238,13 @@ assert.match(
 
 assert.match(
   source,
-  /scaleAuditionState\(\)[\s\S]*?scaleSemitones:scalePitchClasses\(\)\.slice\(\)[\s\S]*?arrangement:kurrayaSongArrangementState\(\)[\s\S]*?setAuditionScale\(scaleName\)[\s\S]*?setAuditionTonic\(tonicMidi\)[\s\S]*?setKurrayaSongArrangement\(arrangement = \{\}\)[\s\S]*?setKurrayaSongMelody\(notes = \[\]\)[\s\S]*?resetKurrayaSongMelody\(\)[\s\S]*?resetKurrayaSongArrangement\(\)[\s\S]*?startSongAudition\(scaleName = state\.scaleName, tonicMidi = state\.tonicMidi\)[\s\S]*?stopSongAudition\(\)/,
+  /scaleAuditionState\(\)[\s\S]*?scaleSemitones:scalePitchClasses\(\)\.slice\(\)[\s\S]*?arrangement:kurrayaSongArrangementState\(\)[\s\S]*?setAuditionScale\(scaleName\)[\s\S]*?setAuditionTonic\(tonicMidi\)[\s\S]*?setKurrayaSongArrangement\(arrangement = \{\}\)[\s\S]*?setKurrayaSongMelody\(notes = \[\]\)[\s\S]*?randomizeKurrayaSongMelody\(\)[\s\S]*?resetKurrayaSongMelody\(\)[\s\S]*?resetKurrayaSongArrangement\(\)[\s\S]*?startSongAudition\(scaleName = state\.scaleName, tonicMidi = state\.tonicMidi\)[\s\S]*?stopSongAudition\(\)/,
   'the shared music bridge must expose scale, chord-section, and session-local melody authoring'
 );
 
 assert.match(
   hostSource,
-  /MUSIC_MINIGAME_SRC = 'assets\/minigames\/lyre-performance\.html\?v=20260925mixedmeter5'/,
+  /MUSIC_MINIGAME_SRC = 'assets\/minigames\/lyre-performance\.html\?v=20260925mixedmeter6'/,
   'gameplay must cache-bust the fixed-harmony minigame revision'
 );
 
@@ -305,20 +306,44 @@ assert.match(
 
 assert.match(
   musicLab,
-  /id="randomMelodyBtn"[\s\S]*?id="melodyResetBtn"[\s\S]*?MELODY_STORAGE_KEY[\s\S]*?composeRandomMelody\(snapshot = arrangementSnapshot\)[\s\S]*?setKurrayaSongMelody\(melody\)/,
-  'the Music Lab must expose random melody generation, reset, persistence, and live-engine application'
+  /id="randomMelodyBtn"[\s\S]*?id="melodyResetBtn"[\s\S]*?MELODY_STORAGE_KEY[\s\S]*?bridge\.randomizeKurrayaSongMelody\(\)[\s\S]*?saveMelodyDraft/,
+  'the Music Lab random button must use the shared engine composer, persist the resulting draft, and retain reset controls'
+);
+
+assert.doesNotMatch(
+  musicLab,
+  /function composeRandomMelody|RANDOM_MELODY_RHYTHMS|function chooseMelodyDegree/,
+  'the Music Lab must not keep a divergent second copy of the procedural composer'
 );
 
 assert.match(
-  musicLab,
-  /RANDOM_MELODY_RHYTHMS[\s\S]*?RANDOM_MELODY_CADENCE_RHYTHMS[\s\S]*?function makeMelodicContour[\s\S]*?Math\.abs\(previousInterval\) >= 3[\s\S]*?function chooseMelodyDegree[\s\S]*?chordDistance === 0[\s\S]*?downbeat \? 6\.2[\s\S]*?function chooseCadenceDegree[\s\S]*?phraseCenters = \[4\.2,5\.5,6\.7,5\.0\]/,
-  'the melody generator must use reusable rhythmic motifs, stepwise/leap-recovery contour, structural-beat chord tones, cadences, and phrase-level contour'
+  source,
+  /RANDOM_KURRAYA_MELODY_RHYTHMS[\s\S]*?RANDOM_KURRAYA_CADENCE_RHYTHMS[\s\S]*?function makeKurrayaMelodicContour[\s\S]*?Math\.abs\(previousInterval\) >= 3[\s\S]*?function chooseKurrayaMelodyDegree[\s\S]*?chordDistance === 0[\s\S]*?downbeat \? 6\.2[\s\S]*?function chooseKurrayaCadenceDegree[\s\S]*?phraseCenters = \[4\.2,5\.5,6\.7,5\.0\]/,
+  'the shared engine composer must use reusable rhythmic motifs, stepwise/leap recovery, strong-beat chord tones, cadences, and four-phrase contour'
 );
 
 assert.match(
   musicLab,
   /Copy song draft[\s\S]*?melodyNotes = arrangement\.melodyNotes\.map[\s\S]*?JSON\.stringify\(\{introSteps:arrangement\.introSteps,bodySteps:arrangement\.bodySteps,melodyNotes\}\)/,
   'copied song drafts must include the generated melody as well as chord bars'
+);
+
+assert.match(
+  npcScheduling,
+  /npcId: 'foroji_funji'[\s\S]*?songId: 'when-the-kininjis-bloom'[\s\S]*?npcId: 'foroji_funji'[\s\S]*?songId: 'when-the-kininjis-bloom'/,
+  'both Foroji performance stations must still route into the shared Kurraya song id'
+);
+
+assert.match(
+  source,
+  /async startAmbientLead\(songId, footstepSampleUrl\)[\s\S]*?state\.selectedSong === 'when-the-kininjis-bloom'\) randomizeKurrayaSongMelody\(\)[\s\S]*?proceduralAmbient:state\.selectedSong === 'when-the-kininjis-bloom'/,
+  'Foroji must generate a new Kurraya melody before an ambient performance begins'
+);
+
+assert.match(
+  source,
+  /if \(state\.game\.loopDemo\)[\s\S]*?proceduralAmbient = !!state\.game\.proceduralAmbient[\s\S]*?randomizeKurrayaSongMelody\(\)[\s\S]*?startSong\(state\.selectedSong, \{demoMode:state\.game\.demoMode, loopDemo:true, proceduralAmbient\}\)/,
+  'procedural ambient performance must compose another melody at every song-loop boundary instead of repeating one random result forever'
 );
 
 assert.doesNotMatch(source, /1–5–6–4/, 'legacy selectable harmony ids must not survive the fixed-progression migration');
@@ -367,7 +392,7 @@ assert.match(
 
 assert.match(
   toolsHub,
-  /data-target="kurraya-music-lab"[\s\S]*?kurraya-music-lab\/index\.html\?v=20260925lab10/,
+  /data-target="kurraya-music-lab"[\s\S]*?kurraya-music-lab\/index\.html\?v=20260925lab11/,
   'the combined Kurraya Music Lab must be the single Kurraya entry in the tools hub'
 );
 assert.doesNotMatch(
