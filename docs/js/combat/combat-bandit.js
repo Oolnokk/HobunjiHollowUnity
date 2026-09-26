@@ -489,19 +489,26 @@
   // -- hoe is 'hoe' slot only, no dmgType at all) can be rolled here.
   // Recomputed fresh each call rather than cached at module load so a
   // shape added to deps.HELD_SHAPE_DEFS later is picked up automatically.
-  function banditWeaponShapeKeys() {
-    return Object.keys(deps.HELD_SHAPE_DEFS).filter(k => deps.HELD_SHAPE_DEFS[k].slots?.includes('weapon'));
+  function banditWeaponShapeKeys(cfg) {
+    const allWeaponShapes = Object.keys(deps.HELD_SHAPE_DEFS).filter(k => deps.HELD_SHAPE_DEFS[k].slots?.includes('weapon')); // Canonical fallback pool used by ordinary bandits exactly as before.
+    const configuredPool = Array.isArray(cfg?.weaponShapePool) ? cfg.weaponShapePool : null; // Optional caller-scoped subset used by special humanoid enemies such as arena Harlyao Skeletons.
+    if (!configuredPool?.length) return allWeaponShapes;
+    const allowed = new Set(configuredPool); // Used only for this selection pass so invalid/non-weapon shape ids are ignored safely.
+    const filtered = allWeaponShapes.filter(shapeKey => allowed.has(shapeKey)); // Final validated melee pool consumed by banditWeaponFor().
+    return filtered.length ? filtered : allWeaponShapes;
   }
   function banditWeaponFor(cfg, rank, tier) {
-    const shapeKeys = banditWeaponShapeKeys();
-    const shapeKey = shapeKeys[Math.floor(deps.rnd() * shapeKeys.length)];
-    const shape = deps.HELD_SHAPE_DEFS[shapeKey];
+    const shapeKeys = banditWeaponShapeKeys(cfg); // Caller-specific pool when supplied; otherwise the unchanged full weapon-slot pool.
+    const shapeKey = shapeKeys[Math.floor(deps.rnd() * shapeKeys.length)]; // Selected melee shape used for held rendering, attacks, and ability style.
+    const shape = deps.HELD_SHAPE_DEFS[shapeKey]; // Canonical shape metadata supplies damage type and animation semantics.
+    const configuredMetalKey = typeof cfg?.weaponMetalKey === 'string' && deps.METAL_DEFS[cfg.weaponMetalKey] ? cfg.weaponMetalKey : null; // Optional fixed material used by special callers; null preserves rank/tier metal rolling.
     const [minT, maxT] = cfg?.weaponMetalTierRangeByRank?.[rank] || [1, 2];
     const bonusT = tier;
     const maxMetalTier = Math.max(...deps.VERDIGRIS_METAL_KEYS.map(k => deps.METAL_DEFS[k].tier));
     const loT = deps.clamp(Math.round(minT), 1, maxMetalTier), hiT = deps.clamp(Math.round(maxT) + bonusT, loT, maxMetalTier);
     const tierPool = deps.VERDIGRIS_METAL_KEYS.filter(k => deps.METAL_DEFS[k].tier >= loT && deps.METAL_DEFS[k].tier <= hiT);
-    const metalKey = (tierPool.length ? tierPool : deps.VERDIGRIS_METAL_KEYS)[Math.floor(deps.rnd() * (tierPool.length || deps.VERDIGRIS_METAL_KEYS.length))];
+    const rolledMetalKey = (tierPool.length ? tierPool : deps.VERDIGRIS_METAL_KEYS)[Math.floor(deps.rnd() * (tierPool.length || deps.VERDIGRIS_METAL_KEYS.length))]; // Existing rank/tier material roll retained for ordinary bandits.
+    const metalKey = configuredMetalKey || rolledMetalKey; // Final material passed to item-key generation and damage scaling.
     const weaponKey = deps.craftedToolItemKey(shapeKey, metalKey);
     return { weaponKey, shapeKey, metalKey, dmgType: shape.dmgType || 'sharp', dmgMultiplier: deps.metalDmgMultiplier(metalKey) };
   }

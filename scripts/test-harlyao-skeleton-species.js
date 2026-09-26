@@ -9,6 +9,9 @@ const portraitSource = fs.readFileSync('docs/js/portrait-utils.js', 'utf8'); // 
 const scaleSource = fs.readFileSync('docs/config/character-rig-scale-defaults.js', 'utf8'); // Verifies the skeleton shares regular Harlyao's authored 1.2x scale.
 const bootstrapSource = fs.readFileSync('docs/js/attachment-rig-latest-authored-snapshot.js', 'utf8'); // Guards load order before shared whole-rig scale installation.
 const pixelProbeSource = fs.readFileSync('docs/js/pixel-probe.js', 'utf8'); // Guards the mobile-visible no-console diagnostic line for the new species bridge.
+const devSpawnerSource = fs.readFileSync('docs/js/dev-spawner.js', 'utf8'); // Guards Test Arena discoverability, hostile registration, and skeleton-only equipment restrictions.
+const combatBanditSource = fs.readFileSync('docs/js/combat/combat-bandit.js', 'utf8'); // Guards the shared enemy builder's optional validated melee-pool/fixed-metal support.
+const gameIndexSource = fs.readFileSync('docs/index.html', 'utf8'); // Guards the dev-spawner cache key so mobile testing receives the new arena button immediately.
 
 assert.equal(skeleton.speciesId, 'harlyao-skeleton');
 assert.equal(skeleton.parentSpecies, 'engh-sho');
@@ -52,6 +55,16 @@ assert(portraitSource.includes("bodyColorRanges?.fixedHex"), 'Portrait randomiza
 assert(portraitSource.includes('baseBodyTintEnabled'), 'Portrait renderer must support authored-color base sprites without recoloring them');
 assert(portraitSource.includes('fixedPortraitSlots?.pauldron'), 'Portrait renderer must inject the female structural hair in the pauldron render slot');
 assert(pixelProbeSource.includes('window.HobunjiHarlyaoSkeletonSpecies?.formatDebug?.()'), 'Pixel Probe must expose Harlyao Skeleton bridge diagnostics on mobile');
+assert(devSpawnerSource.includes("const DEV_SPAWN_HARLYAO_SKELETON_KEY = 'harlyao-skeleton:enemy'"), 'Testing Arena must expose a dedicated Harlyao Skeleton spawn key');
+assert(devSpawnerSource.includes("Object.freeze(['daggerSword', 'fishingspear', 'hatchet'])"), 'Harlyao Skeleton arena melee pool must be dagger-sword, spear, and hatchet only');
+assert(devSpawnerSource.includes("speciesWeights: { 'harlyao-skeleton': 1 }"), 'Arena skeleton spawn must force the Harlyao Skeleton species');
+assert(devSpawnerSource.includes("weaponMetalKey: 'nativeCopper'"), 'Arena skeleton melee weapons must use the canonical Harlyao native-copper material');
+assert(devSpawnerSource.includes('rangedWeaponChanceByRank: { grunt: 0, lieutenant: 0, captain: 0 }'), 'Arena skeletons must never receive a separate ranged weapon');
+assert(devSpawnerSource.includes('deps.hostileObjects.add(creature);'), 'Arena skeletons must enter the normal hostile enemy update set');
+assert(devSpawnerSource.includes('spawnDevArenaHarlyaoSkeleton(devSpawnBanditTier);'), 'Skeleton arena button must dispatch to the hostile humanoid spawn path');
+assert(combatBanditSource.includes('Array.isArray(cfg?.weaponShapePool) ? cfg.weaponShapePool : null'), 'BanditCombat must honor an optional caller-scoped melee weapon pool');
+assert(combatBanditSource.includes('configuredMetalKey || rolledMetalKey'), 'BanditCombat must honor an optional fixed metal without changing ordinary bandit rolls');
+assert(gameIndexSource.includes('js/dev-spawner.js?v=20260926hskelenemy1'), 'Game entry point must cache-bust the Harlyao Skeleton arena spawner update');
 
 const fighters = [
   { id: 'harlyao-skeleton_male', speciesId: 'harlyao-skeleton', gender: 'male' },

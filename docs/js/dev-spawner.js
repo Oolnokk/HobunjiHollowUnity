@@ -190,6 +190,8 @@
   // real camp today, but reusing the existing rank/tier grid instead of a
   // bespoke single button gets tier variation for free.
   const DEV_SPAWN_PORAKANEKI_KEY = 'porakaneki:hunter';
+  const DEV_SPAWN_HARLYAO_SKELETON_KEY = 'harlyao-skeleton:enemy'; // Used by the species grid and spawn dispatcher to route skeleton enemies through BanditCombat instead of CREATURE_DB.
+  const DEV_SPAWN_HARLYAO_SKELETON_WEAPON_SHAPES = Object.freeze(['daggerSword', 'fishingspear', 'hatchet']); // Used by skeleton arena spawns to restrict melee equipment to dagger-swords, the existing spear shape, and hatchets.
 
   // Same species FoliageGenerator builds for a real wilderness zone's
   // SHRUB tiles (see game.js's _buildZoneFloorMeshes) — spawning them here
@@ -230,7 +232,9 @@
       });
       const porakanekiActive = DEV_SPAWN_PORAKANEKI_KEY === devSpawnSelectedKey ? ' fed-active' : '';
       const porakanekiBtn = `<button type="button" class="fed-btn${porakanekiActive}" data-species="${deps.esc(DEV_SPAWN_PORAKANEKI_KEY)}">🏹 Porakaneki Hunter</button>`;
-      grid.innerHTML = creatureBtns.concat(banditBtns).concat([porakanekiBtn]).join('');
+      const harlyaoSkeletonActive = DEV_SPAWN_HARLYAO_SKELETON_KEY === devSpawnSelectedKey ? ' fed-active' : ''; // Used to keep the skeleton button's selected state consistent with every other arena spawn option.
+      const harlyaoSkeletonBtn = `<button type="button" class="fed-btn${harlyaoSkeletonActive}" data-species="${deps.esc(DEV_SPAWN_HARLYAO_SKELETON_KEY)}">☠️ Harlyao Skeleton</button>`; // Added to the same species grid so it works on mobile/controller through the existing panel.
+      grid.innerHTML = creatureBtns.concat(banditBtns).concat([porakanekiBtn, harlyaoSkeletonBtn]).join('');
     }
     const tierGrid = document.getElementById('devSpawnBanditTierGrid');
     if (tierGrid) {
@@ -390,6 +394,40 @@
     renderDevSpawnPanel();
   }
 
+  // Harlyao Skeleton arena enemy. Unlike Porakaneki this deliberately keeps
+  // BanditCombat's normal hostile-on-sight behavior, but narrows its equipment
+  // to the same three melee shapes used by Harlyao marchers and explicitly
+  // disables the separate ranged-weapon slot.
+  async function spawnDevArenaHarlyaoSkeleton(tier) {
+    if (deps.getCurrentArea() !== DEV_ARENA_ZONE_ID) return;
+    const cfg = await window.BanditCombat.loadGangConfig(); // Base combat/stat/clothing config reused below while species/equipment are narrowed for this test-only spawn.
+    if (!cfg) { deps.showToast('Could not spawn Harlyao Skeleton — bandit-gang-config.json failed to load.', false); return; }
+    if (deps.getCurrentArea() !== DEV_ARENA_ZONE_ID) return; // Player may leave while the async config/portrait path is still resolving.
+    const angle = Math.random() * Math.PI * 2; // Used with dist to place the skeleton near, but not directly on top of, the player.
+    const dist = deps.TILE * (1.5 + Math.random() * 2.5); // Used with angle for the same spawn ring as other arena combatants.
+    const x = deps.player.x + Math.cos(angle) * dist; // World X handed to the shared humanoid enemy builder.
+    const y = deps.player.y + Math.sin(angle) * dist; // World Y/Z-plane coordinate handed to the shared humanoid enemy builder.
+    const skeletonCfg = { // Passed only to this makeEntity call; leaves ordinary bandit weapon/species selection unchanged.
+      ...cfg,
+      speciesWeights: { 'harlyao-skeleton': 1 },
+      weaponShapePool: [...DEV_SPAWN_HARLYAO_SKELETON_WEAPON_SHAPES],
+      weaponMetalKey: 'nativeCopper',
+      rangedWeaponChanceByRank: { grunt: 0, lieutenant: 0, captain: 0 },
+    };
+    const creature = await window.BanditCombat.makeEntity(skeletonCfg, 'grunt', tier, x, y, { // The existing bandit-like enemy path supplies melee AI, held-weapon rendering, death, loot, and hit reactions.
+      zoneId: DEV_ARENA_ZONE_ID,
+      nameOverride: 'Harlyao Skeleton',
+      extra: { homeX: x, homeY: y, state: 'idle', isHarlyaoSkeleton: true },
+    });
+    if (!creature) { deps.showToast('Could not spawn Harlyao Skeleton — see Debug log.', false); return; }
+    deps.hostileObjects.add(creature);
+    _arenaSpawnedCreatures.add(creature);
+    const msg = `[dev-arena] spawned Harlyao Skeleton #${creature.id} (gender=${creature.rosterRecord?.appearance?.gender || '?'}, weapon=${creature.def?.weaponKey || 'none'}, ranged=${creature.def?.rangedWeaponKey || 'none'}, tier=${tier})`; // Visible debug evidence that the melee pool and no-ranged rule resolved as intended.
+    window.__farmLog?.(msg, 'wildlife');
+    console.log(msg);
+    renderDevSpawnPanel();
+  }
+
   function devArenaAutoKillAll() {
     const toKill = [..._arenaSpawnedCreatures];
     for (const c of toKill) {
@@ -535,6 +573,8 @@
         spawnDevArenaBandit(devSpawnSelectedKey.slice('bandit:'.length), devSpawnBanditTier);
       } else if (devSpawnSelectedKey === DEV_SPAWN_PORAKANEKI_KEY) {
         spawnDevArenaPorakaneki(devSpawnBanditTier);
+      } else if (devSpawnSelectedKey === DEV_SPAWN_HARLYAO_SKELETON_KEY) {
+        spawnDevArenaHarlyaoSkeleton(devSpawnBanditTier);
       } else {
         spawnDevArenaCreature(devSpawnSelectedKey);
       }
