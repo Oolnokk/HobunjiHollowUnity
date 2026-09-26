@@ -137,9 +137,12 @@
           if (supportTier < toTier) ringTier = ringTier === null ? supportTier : Math.min(ringTier, supportTier);
         }
         const onRing = ringTier !== null;
+        const sourceTile = m.tiles?.[k]; // Used to preserve a generated tree marker while the plateau mask replaces only its ground surface.
+        const sourceCopse = sourceTile?.type === 'shrub' && sourceTile.generatedObjectType === 'copse'; // Used by dense Cloud Forest/Mirewood foliage so plateau-top trees survive the fold.
         outTiles.set(`${c},${r}`, {
-          c, r, type: 'grass', elevTier: onRing ? ringTier : toTier,
+          c, r, type: sourceCopse ? 'shrub' : 'grass', elevTier: onRing ? ringTier : toTier,
           skipFloor: true, rampElevation: 0, incline: onRing,
+          floraKind: sourceCopse ? 'copse' : undefined,
         });
       }
       children.push({ child, childOffsetC: worldMinC + 1, childOffsetR: worldMinR + 1, toTier });
