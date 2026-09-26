@@ -288,8 +288,20 @@ assert.match(
 
 assert.match(
   hostSource,
-  /function beginPlayerSession\(\)[\s\S]*?const songSnapshot = ambientSongSnapshotForNpc\(nearbyPerformer\.npcId\)[\s\S]*?songSnapshot[\s\S]*?function onPlayerFrameLoaded\(\)[\s\S]*?setKurrayaSongArrangement[\s\S]*?setKurrayaSongMelody[\s\S]*?startBackupPreviewSong/,
-  'joining Foroji in the actual game must carry his current procedural composition into the visible backup session'
+  /function ambientSongSnapshotForNpc\(npcId\)[\s\S]*?scaleAuditionState[\s\S]*?melodyNotes/,
+  'the gameplay host must snapshot Foroji\'s currently generated melody before replacing his ambient iframe'
+);
+
+assert.match(
+  hostSource,
+  /function onPlayerFrameLoaded\(\)[\s\S]*?playerSession\.songSnapshot[\s\S]*?setKurrayaSongArrangement[\s\S]*?setKurrayaSongMelody[\s\S]*?startBackupPreviewSong/,
+  'the visible backup iframe must rehydrate Foroji\'s procedural chords and melody before playback starts'
+);
+
+assert.match(
+  hostSource,
+  /function beginPlayerSession\(\)[\s\S]*?const songSnapshot = ambientSongSnapshotForNpc\(nearbyPerformer\.npcId\)[\s\S]*?playerSession = \{ active: true, mode: 'backup'[\s\S]*?songSnapshot \}/,
+  'joining Foroji in the actual game must carry the captured procedural composition into the backup session state'
 );
 
 assert.match(musicLab, /HobunjiMusicControlBridge/, 'the standalone tool must use the shared Kurraya bridge');
