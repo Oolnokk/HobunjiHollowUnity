@@ -1162,7 +1162,7 @@
     box.appendChild(lagStatus);
     updateLagSnapshotStatusUI();
 
-    const baked = readStorage(TREE_MODE_KEY, 'baked') !== 'procedural';
+    const baked = readStorage(TREE_MODE_KEY, 'procedural') === 'baked';
     const tree = makeCheckboxRow('settingBakedTrees', 'Baked GLB Trees', baked,
       'On: use docs/assets/models/trees/*.glb. Off: use runtime procedural tree geometry. Changing this reloads the game for a clean comparison.');
     const treeStatus = document.createElement('span');

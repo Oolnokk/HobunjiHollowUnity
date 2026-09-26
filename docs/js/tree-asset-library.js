@@ -55,9 +55,9 @@
 
   function readMode() {
     try {
-      const stored = String(root?.localStorage?.getItem(MODE_KEY) || 'baked').toLowerCase();
-      return stored === 'procedural' ? 'procedural' : 'baked';
-    } catch (_) { return 'baked'; }
+      const stored = String(root?.localStorage?.getItem(MODE_KEY) || 'procedural').toLowerCase();
+      return stored === 'baked' ? 'baked' : 'procedural';
+    } catch (_) { return 'procedural'; }
   }
 
   function getMode() { return mode; }

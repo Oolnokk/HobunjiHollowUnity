@@ -6,6 +6,7 @@ assert.equal(Trees.SCHEMA, 'hobunji_tree_assets.v1');
 assert.equal(Trees.BASE_PATH, 'assets/models/trees/');
 assert.equal(Trees.MODE_KEY, 'hobunji_tree_asset_mode_v1');
 assert.deepStrictEqual(Trees.MODES, ['baked', 'procedural']);
+assert.equal(Trees.getMode(), 'procedural', 'baked GLB trees must be off on a fresh boot without a saved preference');
 assert.equal(Trees.LOD_SWITCH_DISTANCE, 3);
 assert.equal(Trees.ASSETS.length, 6, 'exactly six base full-size tree variants are expected');
 
