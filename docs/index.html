@@ -551,9 +551,11 @@
        Self-contained aside from deps injected via init(); must load before game.js, which calls
        window.WildernessCampfire.init(...) during its own setup. -->
   <script src="js/wilderness-campfire.js?v=20260925savecorrupt5"></script>
-  <!-- Persistent wilderness vehicle runtime (window.WildernessBoat). Loads as
-       a peer world system; game.js injects save/travel/player deps directly. -->
-  <script src="js/wilderness-boat.js?v=20260926vehicle5"></script>
+  <!-- Persistent wilderness vehicle runtime (window.WildernessBoat). Reuses the
+       exact connected-surface stretch mapper used by cliffs; load it explicitly
+       here so vehicle UV ownership cannot race HousePieces' async child loader. -->
+  <script src="js/surface-stretch-uv-furniture.js?v=20260924edgepreserve2"></script>
+  <script src="js/wilderness-boat.js?v=20260926vehicle6"></script>
   <!-- Per-tile grid water simulation (rain/absorption/flow/siltation) and
        the merged dynamic-water mesh renderer (window.WaterSystem). Must
        load before game.js — unusually early among these, in fact: game.js

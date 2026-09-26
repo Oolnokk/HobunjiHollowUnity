@@ -44,6 +44,7 @@ assert.ok(preset, 'Kenkari rivership preset exists');
 assert.deepEqual(preset.surfaceDetection.walkableTriangleIds, [426, 427, 438, 439, 450, 451, 462, 463, 474, 475, 486, 487, 498, 499, 510, 511, 582, 583], 'preset keeps the editor-authored walkable deck faces');
 assert.equal(preset.surfaceDetection.splitAngleDeg, 24, 'preset shares the 24-degree furniture surface rule');
 assert.deepEqual(preset.steerTrigger.center, [-0.031, 0.509, 0.455], 'preset keeps the editor-authored helm trigger center');
+assert.equal(preset.modelYOffset, 0, 'preset carries an independent model Y offset authored relative to the waterline origin');
 assert.equal(config.future.wagonsAndChariots.status, 'placeholder', 'wagon/chariot category remains placeholder-only');
 assert.equal(glbTriangleCount(glb), 600, 'published rivership GLB remains exactly 600 triangles');
 assert.equal((glbDoc.images || []).length, 0, 'published rivership GLB has no embedded texture images, so preset mappings remain required');
@@ -61,7 +62,14 @@ assert.match(editor, /No seed-normal or growing-average veto/i, 'editor does not
 assert.match(editor, /Wagons \/ Chariots — placeholder only/i, 'editor exposes land vehicles as placeholder-only');
 assert.match(editor, /applyMaterialTextures\(modelRoot\)/, 'editor applies configured material textures to the loaded GLB preview');
 assert.match(editor, /material textures=\$\{materialTextureStats\.matched\}\/\$\{materialTextureStats\.configured\}/, 'editor diagnostics expose material mapping success');
+assert.match(editor, /id="waterLevelBadge">Water level Y = 0\.00/, 'editor makes the preview water level explicit');
+assert.match(editor, /id="modelYOffset"/, 'editor exposes independent model Y offset authoring');
+assert.match(editor, /surface-stretch-uv-furniture\.js\?v=20260924edgepreserve2/, 'editor loads the same surface mapper used by cliffs');
+assert.match(editor, /mapper\.mapMesh\(mesh,[\s\S]{0,320}edgeReferenceWorldSize:SURFACE_REFERENCE_WORLD_SIZE \/ scale/, 'editor maps each detected hull surface with cliff-parity physical scaling');
 assert.match(source, /applyMaterialTextures\(root, record\)/, 'runtime applies the same configured material textures as the editor');
+assert.match(source, /applySurfaceStretch\(root, record, fit\.scale\)/, 'runtime applies connected-surface stretch-to-fit after fitting the imported hull');
+assert.match(source, /edgeReferenceWorldSize:SURFACE_REFERENCE_WORLD_SIZE \/ scale/, 'runtime compensates cliff UV physical scale for the imported GLB scale');
+assert.match(source, /finite\(record\?\.modelYOffset, 0\)/, 'runtime applies the authored model Y offset independently of waterline placement');
 assert.match(source, /texture\.flipY = false/, 'runtime preserves glTF UV orientation for repo-loaded replacement textures');
 assert.match(editor, /material\.color\?\.set\?\.\(record\?\.materialColors/, 'editor applies the authored vehicle material tint');
 assert.match(source, /material\.color\?\.set\?\.\(record\?\.materialColors/, 'runtime applies the same authored vehicle material tint');
@@ -155,7 +163,7 @@ assert.equal(boat.__test.isPermanentWaterTile({ type: 'pond' }), false, 'only ex
   assert.match(actionArc, /registerUtilityEntries\(id, provider\)/, 'ActionArcUI exposes one shared Utilities extension API');
   assert.match(actionArc, /entries\.splice\(2, 0, \.\.\._extensionUtilityEntries\(\)\)/, 'extension entries use the normal Utilities builder for every input path');
   assert.match(onboarding, /wildernessBoatState: memberState\.wildernessBoatState \|\| null/, 'returning member vehicle state reaches playerData');
-  assert.match(index, /wilderness-boat\.js\?v=20260926vehicle5/, 'boat runtime is loaded directly rather than through the campfire module');
+  assert.match(index, /surface-stretch-uv-furniture\.js\?v=20260924edgepreserve2[\s\S]{0,260}wilderness-boat\.js\?v=20260926vehicle6/, 'shared cliff mapper is guaranteed before the boat runtime loads');
 
   player.x = 7.5 * 16;
   player.y = 7.5 * 16;

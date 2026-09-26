@@ -7,6 +7,7 @@
   const WATER_TYPES = new Set(['river', 'stream', 'waterfall']); // Permanent navigable water shared by wilderness waterways and Hobunji's town river.
   const DEBUG_HISTORY_LIMIT = 32; // Used to keep mobile-visible diagnostics bounded.
   const WALK_SUPPORT_ID = 'wilderness_boat_walkable_deck'; // Used to replace the same moving deck support each frame.
+  const SURFACE_REFERENCE_WORLD_SIZE = 6; // Matches the shared cliff mapper's native one-PNG physical span.
 
   let deps = null; // Campfire-compatible dependency bag used for area, player, scenes, transition, toast, and save access.
   let configPromise = null; // Shared fetch so editor-authored vehicle JSON is loaded only once per page.
@@ -18,6 +19,7 @@
   let modelSourcePromise = null; // Cached pristine GLTF scene for the current preset model URL.
   const materialTextureCache = new Map(); // Shared loaded vehicle textures keyed by docs-relative URL.
   let materialTextureStats = { configured:0, matched:0, missing:[] }; // Exposed through mobile-visible boat diagnostics.
+  let surfaceStretchStats = { meshes:0, surfaces:0, fallbacks:0 }; // Exposed so mobile debug can verify cliff-parity UV segmentation.
   let visualArea = null; // Map id whose scene currently owns group.
   let walkableDeckLocal = null; // Local authored deck AABB derived only from selected walkable triangle ids.
   let steering = false; // True while player input owns boat throttle/turn and the player is pinned at the helm.
@@ -170,6 +172,35 @@
     return materialTextureStats;
   }
 
+  function applySurfaceStretch(root, record, modelScale) {
+    const mapper = window.HobunjiSurfaceStretchUV; // Exact connected-surface mapper used by farm/town/wilderness cliffs.
+    const stats = { meshes:0, surfaces:0, fallbacks:0 };
+    if (typeof mapper?.mapMesh !== 'function') { surfaceStretchStats = stats; debugLog('surface stretch mapper unavailable', 'warn'); return stats; }
+    const scale = Math.max(1e-6, finite(modelScale, 1)); // Converts six rendered world units into the imported GLB's local geometry scale.
+    root?.traverse?.(mesh => {
+      if (!mesh?.isMesh || !mesh.geometry?.getAttribute?.('position')) return;
+      const report = mapper.mapMesh(mesh, {
+        label:`vehicle:${record?.id || 'vehicle'}:${mesh.name || 'mesh'}`,
+        angleToleranceDeg:finite(record?.surfaceDetection?.splitAngleDeg, 24),
+        edgeReferenceWorldSize:SURFACE_REFERENCE_WORLD_SIZE / scale,
+      });
+      if (!report) return;
+      stats.meshes++;
+      stats.surfaces += finite(report.patchCount);
+      stats.fallbacks += finite(report.fallbackCount);
+      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      materials.forEach(material => {
+        const map = material?.map;
+        if (!map) return;
+        map.wrapS = map.wrapT = THREE.ClampToEdgeWrapping;
+        map.repeat?.set?.(1,1); map.offset?.set?.(0,0); map.needsUpdate = true;
+      });
+    });
+    surfaceStretchStats = stats;
+    debugLog(`surface stretch mapped ${stats.surfaces} detected surface(s) across ${stats.meshes} mesh(es); fallbacks=${stats.fallbacks}`);
+    return stats;
+  }
+
   function loadModelSource(record) {
     const url = String(record?.modelUrl || ''); // Used as the editor-authored GLB path.
     if (!url) return Promise.reject(new Error('Boat preset has no modelUrl.'));
@@ -216,7 +247,7 @@
     const sz = rawSize.z > 1e-6 ? length / rawSize.z : 1;
     const scale = Math.min(sx, sz); // Uniform scaling avoids distorting the authored hull merely to fill both footprint axes exactly.
     const center = rawBox.getCenter(new THREE.Vector3()); // Used to make state.x/z the vehicle pivot rather than the GLB's imported origin.
-    root.position.set(-center.x * scale, 0, -center.z * scale);
+    root.position.set(-center.x * scale, finite(record?.modelYOffset, 0), -center.z * scale);
     root.scale.setScalar(scale);
     root.updateMatrixWorld(true);
     return { scale, rawBox, center };
@@ -245,14 +276,15 @@
     if (!state || state.mapId !== deps?.getCurrentArea?.()) return;
     const root = cloneMaterials(source.clone(true)); // Per-boat clone so editor/running instance materials/transforms stay isolated.
     applyMaterialTextures(root, record);
-    const fit = fitModel(root, record); // Used before walkable bounds so selected face coordinates match the scaled visible hull.
+    const fit = fitModel(root, record); // Used before UV mapping/walkable bounds so both share the exact rendered scale.
+    applySurfaceStretch(root, record, fit.scale);
     const selected = new Set((record?.surfaceDetection?.walkableTriangleIds || []).map(Number)); // Used to derive the actual authored deck support.
     const rawDeck = triangleLocalBounds(root, selected);
     if (rawDeck) {
       // triangleLocalBounds sees root's fitted child transforms but not root.scale/position itself; convert its raw local coordinates now.
       walkableDeckLocal = new THREE.Box3(
-        rawDeck.min.clone().multiplyScalar(fit.scale).add(new THREE.Vector3(-fit.center.x * fit.scale, 0, -fit.center.z * fit.scale)),
-        rawDeck.max.clone().multiplyScalar(fit.scale).add(new THREE.Vector3(-fit.center.x * fit.scale, 0, -fit.center.z * fit.scale)),
+        rawDeck.min.clone().multiplyScalar(fit.scale).add(new THREE.Vector3(-fit.center.x * fit.scale, finite(record?.modelYOffset, 0), -fit.center.z * fit.scale)),
+        rawDeck.max.clone().multiplyScalar(fit.scale).add(new THREE.Vector3(-fit.center.x * fit.scale, finite(record?.modelYOffset, 0), -fit.center.z * fit.scale)),
       );
     }
     const boat = new THREE.Group(); // Runtime pivot used for persisted x/z/yaw and shoreline motion.
@@ -686,6 +718,7 @@
       walkableDeckLocal: walkableDeckLocal ? { min: walkableDeckLocal.min.toArray(), max: walkableDeckLocal.max.toArray() } : null,
       utilityProviderInstalled,
       materialTextures: { configured:materialTextureStats.configured, matched:materialTextureStats.matched, missing:materialTextureStats.missing.slice() },
+      surfaceStretch: { meshes:surfaceStretchStats.meshes, surfaces:surfaceStretchStats.surfaces, fallbacks:surfaceStretchStats.fallbacks },
       history: debugHistory.slice(),
     };
     return lastDebug;

@@ -22,6 +22,7 @@
         "heightAboveWater": 0.42
       },
       "modelYawOffsetDeg": 0,
+      "modelYOffset": 0,
       "surfaceDetection": {
         "mode": "furniture_edge_adjacency",
         "splitAngleDeg": 24,
