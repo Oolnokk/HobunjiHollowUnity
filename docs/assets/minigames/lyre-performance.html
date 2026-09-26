@@ -1431,6 +1431,8 @@
     [7,.375],[6,.625],[5,2],[5,.5],[7,.5],[4,1],[3,1],[2,.25],[3,.125],[2,.5],[1,2],
     [0,.5],[1,.5],[0,6.125]
   ].map(note => Object.freeze(note.slice()))); // Immutable repo-authored melody used by reset and as the fallback whenever the Music Lab has no session draft.
+  const RANDOM_KURRAYA_MELODY_RHYTHMS = Object.freeze([[1,1,1],[.5,.5,1,1],[1,.5,.5,1],[.5,1,.5,1],[.5,.5,.5,.5,1],[1.5,.5,1],[.5,1,1.5],[1,.5,1.5]]); // Three-quarter bar rhythm vocabulary reused by the shared procedural composer so Foroji and the Music Lab generate the same style of phrases.
+  const RANDOM_KURRAYA_CADENCE_RHYTHMS = Object.freeze([[1,2],[.5,.5,2],[1,.5,1.5],[.5,1,1.5]]); // Phrase endings reserve a longer arrival tone instead of producing uninterrupted random-note streams.
   const SONGBOOK = {
     'when-the-kininjis-bloom':{
       title:'When the Kininjis Bloom', defaultBpm:100, scaleName:'Major', timeSignature:[6,8], beatGrouping:[3,3],
@@ -1922,6 +1924,164 @@
       throw new Error(`Kurraya melody must span exactly 48 quarter-beats; received ${totalQuarterBeats.toFixed(3)}.`);
     }
     return normalized;
+  }
+
+  function randomKurrayaChoice(values) {
+    return values[Math.floor(Math.random() * values.length)]; // Bounded helper for rhythm/motif choices; pitch selection below remains harmony-scored.
+  }
+
+  function weightedKurrayaChoice(entries) {
+    const usable = entries.filter(entry => Number(entry.weight) > 0);
+    const total = usable.reduce((sum,entry) => sum + entry.weight,0);
+    if (!usable.length || total <= 0) return entries[0]?.value ?? 0;
+    let cursor = Math.random() * total;
+    for (const entry of usable) {
+      cursor -= entry.weight;
+      if (cursor <= 0) return entry.value;
+    }
+    return usable[usable.length - 1].value;
+  }
+
+  function kurrayaMelodicPitchClass(degree, scaleSemitones = scalePitchClasses()) {
+    const scale = Array.isArray(scaleSemitones) && scaleSemitones.length ? scaleSemitones : [0,2,4,5,7,9,11];
+    const wrapped = ((degree % scale.length) + scale.length) % scale.length;
+    return ((Number(scale[wrapped]) % 12) + 12) % 12;
+  }
+
+  function kurrayaPitchClassDistance(first,second) {
+    const distance = Math.abs((((first % 12) + 12) % 12) - (((second % 12) + 12) % 12));
+    return Math.min(distance,12 - distance);
+  }
+
+  function kurrayaChordPitchClasses(option) {
+    const root = ((Number(option?.rootSemitones) % 12) + 12) % 12;
+    const third = root + (option?.quality === 'minor' ? 3 : 4);
+    return [root,third % 12,(root + 7) % 12];
+  }
+
+  function makeKurrayaMelodicContour(noteCount) {
+    const contour = [];
+    let previousInterval = 0;
+    for (let index = 1; index < noteCount; index++) {
+      let interval;
+      if (Math.abs(previousInterval) >= 3) {
+        interval = -Math.sign(previousInterval) * (Math.random() < .82 ? 1 : 2); // Large leaps normally recover by step in the opposite direction.
+      } else {
+        interval = weightedKurrayaChoice([
+          {value:-1,weight:3.2},{value:1,weight:3.2},{value:0,weight:1.4},
+          {value:-2,weight:1.45},{value:2,weight:1.45},
+          {value:-3,weight:.28},{value:3,weight:.28}
+        ]);
+      }
+      contour.push(interval);
+      previousInterval = interval;
+    }
+    return contour;
+  }
+
+  function varyKurrayaContour(contour) {
+    return contour.map(interval => Math.random() < .18
+      ? weightedKurrayaChoice([{value:interval,weight:3},{value:Math.max(-3,interval - 1),weight:1},{value:Math.min(3,interval + 1),weight:1}])
+      : interval); // Keeps motifs recognizable across phrases while avoiding verbatim repetition.
+  }
+
+  function chooseKurrayaMelodyDegree({candidates,desired,previous,center,chord,strong,downbeat,previousLeap,scaleSemitones}) {
+    const triad = kurrayaChordPitchClasses(chord);
+    return weightedKurrayaChoice(candidates.map(degree => {
+      const pitchClass = kurrayaMelodicPitchClass(degree,scaleSemitones);
+      const chordDistance = Math.min(...triad.map(chordPc => kurrayaPitchClassDistance(pitchClass,chordPc)));
+      const motion = previous == null ? Math.abs(degree - center) : Math.abs(degree - previous);
+      let weight = 1 / (1 + Math.abs(degree - desired) * 1.55);
+      weight *= 1 / (1 + Math.abs(degree - center) * .22);
+      if (chordDistance === 0) weight *= downbeat ? 6.2 : strong ? 3.6 : 1.25;
+      else if (downbeat) weight *= .18;
+      else if (strong) weight *= chordDistance === 1 ? .72 : .42;
+      else weight *= chordDistance <= 2 ? 1 : .7;
+      if (motion > 4) weight *= .05;
+      else if (motion === 4) weight *= .22;
+      else if (motion === 3) weight *= .52;
+      if (previous != null && degree === previous) weight *= .62;
+      if (Math.abs(previousLeap) >= 3 && previous != null) {
+        const recoveryDirection = -Math.sign(previousLeap);
+        const direction = Math.sign(degree - previous);
+        if (direction === recoveryDirection && motion <= 2) weight *= 2.8;
+        else if (motion > 1) weight *= .22;
+      }
+      return {value:degree,weight};
+    }));
+  }
+
+  function chooseKurrayaCadenceDegree({candidates,previous,center,chord,scaleSemitones,finalPhrase}) {
+    const triad = kurrayaChordPitchClasses(chord);
+    const tonicAvailable = triad.some(pc => pc === 0);
+    const targetPitchClass = finalPhrase && tonicAvailable ? 0 : triad[0]; // Final phrase prefers tonic when the C/I section is actually under it.
+    return weightedKurrayaChoice(candidates.map(degree => {
+      const pitchClass = kurrayaMelodicPitchClass(degree,scaleSemitones);
+      const pcDistance = kurrayaPitchClassDistance(pitchClass,targetPitchClass);
+      const motion = previous == null ? 0 : Math.abs(degree - previous);
+      let weight = pcDistance === 0 ? 12 : pcDistance === 1 ? 1.1 : .08;
+      weight *= 1 / (1 + Math.abs(degree - center) * .18);
+      if (motion > 4) weight *= .05;
+      else if (motion === 4) weight *= .2;
+      else if (motion === 3) weight *= .55;
+      return {value:degree,weight};
+    }));
+  }
+
+  function composeRandomKurrayaMelody() {
+    const arrangement = activeKurrayaSongArrangement(); // Uses the same F/G/E/A/C bar painting as playback, so structural melody tones respond to the actual current harmony.
+    const scaleSemitones = scalePitchClasses().slice();
+    const candidates = Array.from({length:Math.min(14,scaleSemitones.length * 2)},(_,degree) => degree);
+    const chordByStep = new Map(KURRAYA_AUTHORING_STEPS.map((step,stepIndex) => [stepIndex,{...step,stepIndex}]));
+    const rhythmA = randomKurrayaChoice(RANDOM_KURRAYA_MELODY_RHYTHMS);
+    let rhythmB = randomKurrayaChoice(RANDOM_KURRAYA_MELODY_RHYTHMS);
+    if (RANDOM_KURRAYA_MELODY_RHYTHMS.length > 1) while (rhythmB === rhythmA) rhythmB = randomKurrayaChoice(RANDOM_KURRAYA_MELODY_RHYTHMS);
+    const contourA = makeKurrayaMelodicContour(rhythmA.length);
+    const contourB = makeKurrayaMelodicContour(rhythmB.length);
+    const phraseCenters = [4.2,5.5,6.7,5.0]; // Four-bar phrases rise, peak, then return instead of wandering around one register.
+    const generated = [];
+    let previousDegree = null;
+    let previousLeap = 0;
+
+    for (let bar = 0; bar < FIXED_HARMONY_THREE_FOUR_CHORDS; bar++) {
+      const phrase = Math.floor(bar / 4);
+      const barInPhrase = bar % 4;
+      const cadenceBar = barInPhrase === 3;
+      const rhythm = cadenceBar
+        ? randomKurrayaChoice(RANDOM_KURRAYA_CADENCE_RHYTHMS)
+        : (barInPhrase % 2 === 0 ? rhythmA : rhythmB);
+      const baseContour = barInPhrase % 2 === 0 ? contourA : contourB;
+      const contour = phrase === 0 ? baseContour : varyKurrayaContour(baseContour);
+      const chord = chordByStep.get(Number(arrangement.bodySteps[bar])) || chordByStep.get(0);
+      const center = phraseCenters[phrase] + (Math.random() - .5) * .7;
+      let beatInBar = 0;
+
+      for (let noteIndex = 0; noteIndex < rhythm.length; noteIndex++) {
+        const duration = rhythm[noteIndex];
+        const finalNote = noteIndex === rhythm.length - 1;
+        const strong = Math.abs(beatInBar - Math.round(beatInBar)) < .001;
+        const downbeat = beatInBar < .001;
+        let degree;
+        if (cadenceBar && finalNote) {
+          degree = chooseKurrayaCadenceDegree({candidates,previous:previousDegree,center,chord,scaleSemitones,finalPhrase:phrase === 3});
+        } else {
+          const interval = noteIndex === 0 ? weightedKurrayaChoice([{value:-1,weight:1},{value:0,weight:2.4},{value:1,weight:1}]) : (contour[noteIndex - 1] ?? 0);
+          let desired = previousDegree == null ? center : previousDegree + interval;
+          if (Math.abs(previousLeap) >= 3 && previousDegree != null && noteIndex > 0) desired = previousDegree - Math.sign(previousLeap) * (Math.random() < .75 ? 1 : 2);
+          degree = chooseKurrayaMelodyDegree({candidates,desired,previous:previousDegree,center,chord,strong,downbeat,previousLeap,scaleSemitones});
+        }
+        if (previousDegree != null) previousLeap = degree - previousDegree;
+        previousDegree = degree;
+        generated.push([degree,duration]);
+        beatInBar += duration;
+      }
+    }
+    return normalizeKurrayaMelodyNotes(generated); // Enforces exactly 48 quarter-beats before either Foroji or the Music Lab is allowed to play it.
+  }
+
+  function randomizeKurrayaSongMelody() {
+    state.kurrayaSongMelodyNotes = composeRandomKurrayaMelody(); // Shared authoring/runtime entry point: one generator feeds the standalone lab and Foroji's ambient performance.
+    return state.kurrayaSongMelodyNotes.map(note => note.slice());
   }
 
   function kurrayaHarmonySegments(steps, meterLabel, startChord = 0) {
@@ -6572,7 +6732,7 @@
     state.hitWindow = Number($('#difficultySelect').value) || 170;
     const song = generateSong(type, state.bpm);
     clearNoteElements();
-    state.game = {active:true,startTime:nowMs(),pausedAt:0,pauseAccum:0,events:song.events,score:0,combo:0,hits:0,attempts:0,total:song.events.length,travelMs:3000,endAt:song.endAt,songType:type,beatMs:song.beatMs,quarterBeatMs:song.quarterBeatMs,timeSignature:song.timeSignature,beatGrouping:song.beatGrouping,countInBeats:song.countInBeats,countInMs:song.countInMs,totalSongBeats:song.totalSongBeats,demoActive:!!demoMode,demoMode,demoNextSlowArpDirection:'forward',backupAccompaniment:!!options.backupAccompaniment,loopDemo:!!options.loopDemo};
+    state.game = {active:true,startTime:nowMs(),pausedAt:0,pauseAccum:0,events:song.events,score:0,combo:0,hits:0,attempts:0,total:song.events.length,travelMs:3000,endAt:song.endAt,songType:type,beatMs:song.beatMs,quarterBeatMs:song.quarterBeatMs,timeSignature:song.timeSignature,beatGrouping:song.beatGrouping,countInBeats:song.countInBeats,countInMs:song.countInMs,totalSongBeats:song.totalSongBeats,demoActive:!!demoMode,demoMode,demoNextSlowArpDirection:'forward',backupAccompaniment:!!options.backupAccompaniment,loopDemo:!!options.loopDemo,proceduralAmbient:!!options.proceduralAmbient};
     document.body.classList.toggle('backup-accompaniment',!!state.game.backupAccompaniment);
     state.visibilityPauseStarted = 0;
     state.lastHarmonyStep = -1;
@@ -6930,7 +7090,9 @@
         // instead of stopping or posting a result card, for as long as the
         // host keeps it selected.
         if (state.game.loopDemo) {
-          startSong(state.selectedSong, {demoMode:state.game.demoMode, loopDemo:true});
+          const proceduralAmbient = !!state.game.proceduralAmbient; // Ambient Foroji performances request a fresh composition each cycle; ordinary successful-preview loops can still repeat deterministically.
+          if (proceduralAmbient && state.selectedSong === 'when-the-kininjis-bloom') randomizeKurrayaSongMelody();
+          startSong(state.selectedSong, {demoMode:state.game.demoMode, loopDemo:true, proceduralAmbient});
           updateDebugState();
           requestAnimationFrame(updateGameFrame);
           return;
@@ -7299,6 +7461,11 @@
       state.kurrayaSongMelodyNotes = normalizeKurrayaMelodyNotes(notes);
       return this.scaleAuditionState();
     },
+    randomizeKurrayaSongMelody() {
+      if (state.game.active) stopSong('Random melody generated.');
+      randomizeKurrayaSongMelody(); // Uses the exact same shared composer as Foroji's ambient loops.
+      return this.scaleAuditionState();
+    },
     resetKurrayaSongMelody() {
       if (state.game.active) stopSong('Original melody restored.');
       state.kurrayaSongMelodyNotes = KURRAYA_DEFAULT_MELODY_NOTES.map(note => note.slice());
@@ -7534,8 +7701,9 @@
         } catch (error) { log('Ambient footstep metronome sample failed to load', error?.message || error); }
       }
       const mode = AUTO_PICK_PATTERN_LIBRARY[state.pluckInputMode] ? state.pluckInputMode : 'direct';
-      startSong(state.selectedSong,{demoMode:mode,loopDemo:true});
-      return { started:!!state.game.active, title:songTitle(state.selectedSong) };
+      if (state.selectedSong === 'when-the-kininjis-bloom') randomizeKurrayaSongMelody(); // Foroji begins with a new composition instead of the authored practice melody.
+      startSong(state.selectedSong,{demoMode:mode,loopDemo:true,proceduralAmbient:state.selectedSong === 'when-the-kininjis-bloom'});
+      return { started:!!state.game.active, title:songTitle(state.selectedSong), proceduralAmbient:!!state.game.proceduralAmbient };
     },
     setBackupPlayerEquipped(equipped) {
       state.backupPlayerEquipped = !!equipped;
