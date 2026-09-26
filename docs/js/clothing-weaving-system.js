@@ -2128,14 +2128,23 @@
     return thickened;
   }
 
-  const ANIMAL_PATTERN_OUTLINE_WIDTH = 6; // Used by the explicit animal surface-paint pass so animal motifs read more strongly than 1px clothing patterns without tying line weight to motif scale.
+  const ANIMAL_PATTERN_OUTLINE_REFERENCE_WIDTH = 6; // Grehlr's current authored line weight; used below as the visual baseline for animal surface paint.
+  const ANIMAL_PATTERN_OUTLINE_REFERENCE_SHORT_SIDE = 2250; // Grehlr's 3000x2250 source-art short side; used to convert the baseline into a resolution-relative width.
+  const ANIMAL_PATTERN_OUTLINE_PER_SHORT_SIDE_PX = ANIMAL_PATTERN_OUTLINE_REFERENCE_WIDTH / ANIMAL_PATTERN_OUTLINE_REFERENCE_SHORT_SIDE; // Shared ratio used by every animal sprite resolution.
 
   // Pattern transforms alter motif geometry only. Clothing keeps its caller-
-  // supplied raster-space width, while the explicitly labeled animal surface
-  // pass gets a fixed 6px outline. Neither width changes with motif scaling.
-  function scaledOutlineWidth(defaultWidth, _rawPattern, debugLabel = 'woven-motif') {
-    const baseWidth = Math.max(1, finite(defaultWidth, 1));
-    return debugLabel === 'animal-surface-pattern' ? ANIMAL_PATTERN_OUTLINE_WIDTH : baseWidth;
+  // supplied raster-space width, while animal surface paint scales its black
+  // outline from the source image's short side so differently sized species
+  // retain the same apparent line weight. Motif scaling does not affect it.
+  function scaledOutlineWidth(defaultWidth, _rawPattern, debugLabel = 'woven-motif', sourceWidth = 0, sourceHeight = 0) {
+    const baseWidth = Math.max(1, finite(defaultWidth, 1)); // Used unchanged by clothing and as the non-animal fallback.
+    if (debugLabel !== 'animal-surface-pattern') return baseWidth;
+    const widthPx = Math.max(0, finite(sourceWidth, 0)); // Used with sourceHeight to resolve the source raster's short side.
+    const heightPx = Math.max(0, finite(sourceHeight, 0)); // Used with sourceWidth to resolve the source raster's short side.
+    const shortSidePx = widthPx > 0 && heightPx > 0 ? Math.min(widthPx, heightPx) : 0; // Drives animal line weight independently of motif scale.
+    return shortSidePx > 0
+      ? shortSidePx * ANIMAL_PATTERN_OUTLINE_PER_SHORT_SIDE_PX
+      : ANIMAL_PATTERN_OUTLINE_REFERENCE_WIDTH;
   }
 
   // A per-item "Custom" pattern's motif may live in MotifStore instead of
@@ -2219,7 +2228,7 @@
     let combinedSeparator = sampledSeparators[0] ? new Uint8Array(sampledSeparators[0]) : null;
     if (sampledMasks[1]) {
       const overpassMask = sampledMasks[1]; // Slot 2 is always the visually-over strand.
-      const overpassOutlineWidth = scaledOutlineWidth(PATTERN_OUTLINE_WIDTH, active[1]?.pattern, debugLabel);
+      const overpassOutlineWidth = scaledOutlineWidth(PATTERN_OUTLINE_WIDTH, active[1]?.pattern, debugLabel, width, height);
       const clearanceMultiplier = overpassClearanceMultiplier(active[1]?.pattern); // Player/dev-authored slot-2 gap, clamped to 3×..12× normal outline width.
       const clearanceMask = buildPatternOutlineMask(
         overpassMask,
@@ -2255,7 +2264,7 @@
       },
     });
 
-    const outlineWidth = scaledOutlineWidth(PATTERN_OUTLINE_WIDTH, active[0]?.pattern, debugLabel);
+    const outlineWidth = scaledOutlineWidth(PATTERN_OUTLINE_WIDTH, active[0]?.pattern, debugLabel, width, height);
     const outlineMask = buildPatternOutlineMask(combinedMask, garmentMask, width, height, outlineWidth, combinedSeparator);
     for (let p = 0, i = 0; i < base.data.length; i += 4, p++) {
       if (!outlineMask[p]) continue;

@@ -213,6 +213,7 @@ const vm = require('node:vm');
     zone_test: { week: 0, placements: [{ col: 1, row: 1, found: false, loot: {}, _mesh: { payload: 'x'.repeat(20_000) } }] },
   };
   legacyMeshRecord.stats.bytes = JSON.stringify(legacyMeshRecord.snapshot).length; // Old builds persisted this inflated byte count in checkpoint stats.
+  delete legacyMeshRecord.stats.canonicalBytes; // Old builds never marked their byte counts as mesh-free, so the guard must recompute them.
   store.set('hobunjiSaveCheckpoint.auto.v1', JSON.stringify(legacyMeshRecord));
   const meshCleanupGuard = api.evaluateSnapshotForFolderWrite(structuredClone(originalSnapshot), { recoveryKind: 'auto' }); // Clean candidate is materially smaller only because runtime mesh junk disappeared.
   assert.equal(meshCleanupGuard.ok, true, 'legacy treasure mesh bloat does not trigger the 40% save-shrink corruption guard');
@@ -436,6 +437,10 @@ const vm = require('node:vm');
   assert.equal(JSON.parse(store.get('hobunjiSaveCheckpoint.manual.v1')).reason, 'drag-import-manual', 'imported Manual Save becomes available in browser recovery history');
   assert.equal(JSON.parse(store.get('hobunjiSaveCheckpoint.auto.v1')).reason, 'drag-import-auto', 'imported Latest Autosave becomes available in browser recovery history');
   assert.equal(window.__hobunjiSaveCheckpointDebug.snapshot().emergencyRecoveryImportActive, true, 'diagnostics expose picker-free emergency recovery mode');
+  const emergencyRestore = await api.restoreManual(); // Browser-only restore from imported history forgets the wedged handle and reloads.
+  assert.equal(emergencyRestore.ok, true, 'imported checkpoint restores to the browser');
+  assert.equal(emergencyRestore.browserOnly, true, 'imported restore never writes through the stuck folder');
+  assert.equal(window.__hobunjiSaveCheckpointDebug.snapshot().emergencyRecoveryImportActive, false, 'emergency import mode ends once its restore has forgotten the wedged handle, so a later folder is not bypassed/forgotten');
 
   console.log('save checkpoint manager folder-first regression: ok');
 })().catch(error => {

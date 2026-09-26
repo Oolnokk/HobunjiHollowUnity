@@ -247,6 +247,7 @@
     const worldStorage = world?.storage || {};
     return {
       bytes: checkpointPayloadBytes(snapshot),
+      canonicalBytes: true, // Marks bytes as already excluding runtime-only _mesh payloads so integrityRisk can trust it instead of re-serializing the baseline every autosave.
       characterCount: (meta.characters || []).length,
       worldCount: (meta.worlds || []).length,
       memberInventoryKeys: Object.keys(memberInventory).length,
@@ -261,7 +262,9 @@
   function integrityRisk(previousRecord, nextSnapshot) {
     if (!previousRecord?.snapshot) return '';
     const previousStats = previousRecord.stats || checkpointStats(previousRecord.snapshot); // Legacy checkpoint records may carry byte counts inflated by accidentally serialized treasure meshes.
-    const before = { ...previousStats, bytes: checkpointPayloadBytes(previousRecord.snapshot) }; // Recompute canonical bytes from the snapshot so stale persisted stats cannot keep false shrink warnings alive.
+    const before = previousStats.canonicalBytes === true
+      ? previousStats
+      : { ...previousStats, bytes: checkpointPayloadBytes(previousRecord.snapshot) }; // Only legacy stats are recomputed; re-serializing the whole baseline on every 30s autosave/folder write was a main-thread hitch.
     const after = checkpointStats(nextSnapshot);
     const nextActive = activeIds(); // Current farmer/world prevents unrelated save slots from sharing farm-specific reset heuristics.
     const previousActive = previousRecord.active || {};
@@ -723,6 +726,8 @@
         snapshotApi().apply(restoredSnapshot);
         try { await folderApi()?.forget?.(); } catch {} // Disconnect only the browser's wedged handle; never modify the selected disk folder.
         try { window.sessionStorage?.setItem?.('hobunjiFolderPrimarySkipOnce', 'emergency-recovery-import'); } catch {}
+        try { window.sessionStorage?.removeItem?.(EMERGENCY_IMPORT_SESSION_KEY); } catch {} // The wedged handle is now forgotten; leaving this set would make later recoveries in this tab bypass (and forget) a newly chosen folder.
+        emergencyRecoveryImportActive = false;
         restoresApplied++;
         lastAction = `restored-imported-${record.kind || 'checkpoint'}`;
         lastError = '';
