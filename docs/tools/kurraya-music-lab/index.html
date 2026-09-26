@@ -136,7 +136,7 @@
         <input id="kurrayaMix" type="range" min="0" max="200" step="1" value="100" disabled>
       </div>
       <div class="mix-control">
-        <div class="mix-head"><span>Fifth pad</span><output id="padMixOut">100%</output></div>
+        <div class="mix-head"><span>Root pad</span><output id="padMixOut">100%</output></div>
         <input id="padMix" type="range" min="0" max="200" step="1" value="100" disabled>
       </div>
       <div class="mix-control">
@@ -156,8 +156,8 @@
         </div>
       </div>
       <div class="sample-card">
-        <strong>Fifth-pad SFX</strong>
-        <div id="padSampleStatus" class="sample-status">Synth fifth pad</div>
+        <strong>Root-pad SFX</strong>
+        <div id="padSampleStatus" class="sample-status">Synth root pad</div>
         <input id="padSampleFile" type="file" accept="audio/*" hidden>
         <label>Recorded root
           <select id="padSampleRoot" disabled></select>
@@ -188,7 +188,7 @@
     <pre id="diagnostics">engine=loading</pre>
   </details>
 
-  <iframe id="engine" src="../../assets/minigames/lyre-performance.html?v=20260925cadence1" title="Kurraya song audition audio engine" aria-hidden="true"></iframe>
+  <iframe id="engine" src="../../assets/minigames/lyre-performance.html?v=20260925rootpad1" title="Kurraya song audition audio engine" aria-hidden="true"></iframe>
 
   </section>
 
@@ -261,22 +261,22 @@
   const chords = document.getElementById('chords'); // Used to show the transposed F–G–Em–Am chord names for the selected tonic.
   const diagnostics = document.getElementById('diagnostics'); // Used to expose bridge/song/scale state on mobile.
   const kurrayaMix = document.getElementById('kurrayaMix'); // Controls the persisted relative Kurraya-note layer without altering pad/metronome balance.
-  const padMix = document.getElementById('padMix'); // Controls the persisted relative fifth-pad layer.
+  const padMix = document.getElementById('padMix'); // Controls the persisted relative root-pad layer.
   const metronomeMix = document.getElementById('metronomeMix'); // Controls both lab footstep beats and the overworld current-surface footstep metronome.
   const kurrayaMixOut = document.getElementById('kurrayaMixOut'); // Shows the authored Kurraya layer percentage on mobile.
-  const padMixOut = document.getElementById('padMixOut'); // Shows the authored fifth-pad layer percentage on mobile.
+  const padMixOut = document.getElementById('padMixOut'); // Shows the authored root-pad layer percentage on mobile.
   const metronomeMixOut = document.getElementById('metronomeMixOut'); // Shows the authored metronome layer percentage on mobile.
   const kurrayaSampleStatus = document.getElementById('kurrayaSampleStatus'); // Shows the current sampler source name after custom/bundled imports.
-  const padSampleStatus = document.getElementById('padSampleStatus'); // Shows whether the fifth pad uses synth or an imported sample.
+  const padSampleStatus = document.getElementById('padSampleStatus'); // Shows whether the root pad uses synth or an imported sample.
   const metronomeSourceStatus = document.getElementById('metronomeSourceStatus'); // Shows whether the lab's recorded game-footstep set decoded successfully.
   const kurrayaSampleFile = document.getElementById('kurrayaSampleFile'); // Hidden picker used to replace the real Kurraya sampler source.
-  const padSampleFile = document.getElementById('padSampleFile'); // Hidden picker used to replace the source layered into root+P5 fifth chords.
-  const padSampleRoot = document.getElementById('padSampleRoot'); // Records the pitch of an imported pad source so both fifth-chord layers transpose correctly.
+  const padSampleFile = document.getElementById('padSampleFile'); // Hidden picker used to replace the single sustained root-pad source.
+  const padSampleRoot = document.getElementById('padSampleRoot'); // Records the pitch of an imported pad source so its single root note transposes correctly.
   const importKurrayaBtn = document.getElementById('importKurrayaBtn'); // Opens the Kurraya source picker.
   const bundledKurrayaBtn = document.getElementById('bundledKurrayaBtn'); // Restores the repo-authored Kurraya pluck and clears the persistent custom-source preference.
   const importPadBtn = document.getElementById('importPadBtn'); // Opens the pad source picker.
-  const previewPadBtn = document.getElementById('previewPadBtn'); // Auditions the current fifth pad through the engine.
-  const clearPadBtn = document.getElementById('clearPadBtn'); // Removes the cached pad sample and returns to the synth fifth pad.
+  const previewPadBtn = document.getElementById('previewPadBtn'); // Auditions the current root pad through the engine.
+  const clearPadBtn = document.getElementById('clearPadBtn'); // Removes the cached pad sample and returns to the synth root pad.
   const previewMetronomeBtn = document.getElementById('previewMetronomeBtn'); // Auditions the same recorded footstep set used by the lab metronome.
   const NOTE_NAMES = ['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B']; // Used only to label tonic and imported-pad root choices.
   const LAB_FOOTSTEP_URLS = [ // Real recorded game footsteps rotated by the standalone lab; gameplay itself still resolves the actual current ground surface.
@@ -339,9 +339,9 @@
       const detection = mix.padRootSource === 'detected'
         ? `auto-detected ${midiName(mix.padSampleRootMidi)} · ${Number(mix.padDetectedFrequency).toFixed(1)} Hz · ${Math.round(confidence * 100)}%`
         : `${mix.padRootSource || 'manual'} root ${midiName(mix.padSampleRootMidi)}`;
-      padSampleStatus.textContent = `Current: ${mix.padSampleName} · ${detection} · sounding ${(mix.padChordNames || []).join(' + ') || 'root + P5'}`;
+      padSampleStatus.textContent = `Current: ${mix.padSampleName} · ${detection} · sounding ${(mix.padChordNames || []).join(' + ') || 'root'}`;
     } else {
-      padSampleStatus.textContent = `Synth fifth pad · sounding ${(mix.padChordNames || []).join(' + ') || 'root + P5'}`;
+      padSampleStatus.textContent = `Synth root pad · sounding ${(mix.padChordNames || []).join(' + ') || 'root'}`;
     }
     padSampleRoot.value = String(Number(mix.padSampleRootMidi) || 48);
     if (mix.labFootsteps?.length) {
@@ -591,7 +591,7 @@
   clearPadBtn.addEventListener('click',async () => {
     try {
       renderMixState(await bridge.clearPadSample());
-      setStatus('Synth fifth pad restored.','good');
+      setStatus('Synth root pad restored.','good');
     } catch (error) { setStatus(`Could not restore synth pad: ${error.message}`,'warn'); }
   });
   previewMetronomeBtn.addEventListener('click',async () => {
