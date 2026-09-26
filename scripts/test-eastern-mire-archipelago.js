@@ -15,6 +15,36 @@ function rootTile(workspace, col, row) {
   return root?.tiles?.[`${col},${row}`] || null;
 }
 
+function countTopologicalComponentsByIsland(root) {
+  const visited = new Set(); // Used to prove each primary island footprint is one cardinally connected landmass rather than detached shoreline speckles.
+  const counts = new Map(); // Used to count separate footprint components for each exported archipelagoIslandId.
+  for (let row = 0; row < root.rows; row++) {
+    for (let col = 0; col < root.cols; col++) {
+      const key = `${col},${row}`;
+      const tile = root.tiles?.[key];
+      if (visited.has(key) || !tile?.archipelagoIslandId || tile.archipelagoSea) continue;
+      const islandId = tile.archipelagoIslandId;
+      counts.set(islandId, (counts.get(islandId) || 0) + 1);
+      const queue = [[col, row]];
+      visited.add(key);
+      for (let head = 0; head < queue.length; head++) {
+        const [x, y] = queue[head];
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nx = x + dx;
+          const ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= root.cols || ny >= root.rows) continue;
+          const nextKey = `${nx},${ny}`;
+          const nextTile = root.tiles?.[nextKey];
+          if (visited.has(nextKey) || nextTile?.archipelagoIslandId !== islandId || nextTile.archipelagoSea) continue;
+          visited.add(nextKey);
+          queue.push([nx, ny]);
+        }
+      }
+    }
+  }
+  return counts;
+}
+
 for (const seed of SEEDS) {
   const workspace = WildernessMapGenerator.generateZoneWorkspace('map_eastern_mire', seed);
   const root = (workspace.maps || []).find(map => map && !map.isSubmap);
@@ -44,9 +74,12 @@ for (const seed of SEEDS) {
       .filter(tile => !tile.archipelagoSea && tile.archipelagoIslandId)
       .map(tile => tile.archipelagoIslandId)
   );
+  const componentCounts = countTopologicalComponentsByIsland(root); // Verifies shoreline irregularity never fragments a named primary island.
   for (let row = 1; row <= 3; row++) {
     for (let col = 1; col <= 4; col++) {
-      assert(islandIds.has(`island_${row}_${col}`), `primary island_${row}_${col} must survive the final export`);
+      const islandId = `island_${row}_${col}`;
+      assert(islandIds.has(islandId), `primary ${islandId} must survive the final export`);
+      assert.equal(componentCounts.get(islandId), 1, `${islandId} must remain one contiguous island footprint`);
     }
   }
 
