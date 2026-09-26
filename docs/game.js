@@ -10862,6 +10862,10 @@
         } else if (t.target === 'building') {
           const proceduralMineTarget = !!window.TownMine?.floorFromMapId?.(t.targetMapId); // Used to let the generated floor choose its guaranteed-walkable entrance instead of stale 0,0 coordinates.
           enterBuilding(t.targetMapId, proceduralMineTarget ? undefined : t.targetCol, proceduralMineTarget ? undefined : t.targetRow, t.targetSpotId || '');
+          if (t.mineDynamicDescent && proceduralMineTarget) {
+            window.Music?.playGameplayCue?.('progressDeeper'); // The authored descent sting belongs only to a discovered hole, never ladder shortcuts or ordinary building entry.
+            window.__farmLog?.('[mine] descending through hole to floor ' + window.TownMine.floorFromMapId(t.targetMapId), 'mine');
+          }
         } else if (t.target === 'interior') {
           if (currentArea !== 'interior') enterInterior();
           const c = window.FormatUtils.clamp(t.targetCol, 0, INTERIOR_COLS - 1);
@@ -14106,7 +14110,10 @@
         // cavern can take real time to generate) -- covers that instead of
         // a blank/frozen interior. Hidden from loadBuildingScene itself
         // once the scene it's building for THIS mapId actually lands.
-        if (!bi) window.LoadingScreenRuntime?.show();
+        if (!bi) {
+          const loadingMineFloor = window.TownMine?.floorFromMapId?.(mapId); // Used to identify generated mine destinations on the shared lore loading screen.
+          window.LoadingScreenRuntime?.show(loadingMineFloor ? { reason: 'mine-floor-load', contextText: `Floor ${loadingMineFloor}` } : undefined);
+        }
         const bCols = bi?.cols || 20, bRows = bi?.rows || 20;
         // Default entry is one tile north of the building's exit. Explicit
         // inter-floor spawn coordinates still win when an exit supplies them.
