@@ -1,0 +1,47 @@
+name: Wilderness vehicle regression
+
+on:
+  pull_request:
+    paths:
+      - 'docs/assets/models/vehicles/**'
+      - 'docs/config/vehicles/**'
+      - 'docs/game.js'
+      - 'docs/index.html'
+      - 'docs/js/action-arc-ui.js'
+      - 'docs/js/wilderness-boat.js'
+      - 'docs/onboarding-core.js'
+      - 'docs/tools/vehicle-editor/**'
+      - 'scripts/test-wilderness-boat.js'
+      - '.github/workflows/vehicle-regression.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'docs/assets/models/vehicles/**'
+      - 'docs/config/vehicles/**'
+      - 'docs/game.js'
+      - 'docs/index.html'
+      - 'docs/js/action-arc-ui.js'
+      - 'docs/js/wilderness-boat.js'
+      - 'docs/onboarding-core.js'
+      - 'docs/tools/vehicle-editor/**'
+      - 'scripts/test-wilderness-boat.js'
+      - '.github/workflows/vehicle-regression.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Syntax check vehicle runtime
+        run: |
+          node --check docs/js/wilderness-boat.js
+          node --check docs/js/action-arc-ui.js
+      - name: Vehicle/editor regression
+        run: node scripts/test-wilderness-boat.js

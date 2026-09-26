@@ -1386,6 +1386,7 @@
       felledTreeState:   { ...(memberState.felledTreeState || {}) },
       minedRockState:    { ...(memberState.minedRockState || {}) },
       wildernessCampfireState: memberState.wildernessCampfireState || null,
+      wildernessBoatState: memberState.wildernessBoatState || null, // Carried into game.js so only this world/member's vehicle restores.
       townMineState:     memberState.townMineState || null,
       lastPosition:      memberState.lastPosition || null,
       isNewWorld,
@@ -1750,6 +1751,7 @@
       playerData.felledTreeState = { ...(memberState.felledTreeState || {}) };
       playerData.minedRockState = { ...(memberState.minedRockState || {}) };
       playerData.wildernessCampfireState = memberState.wildernessCampfireState || null;
+      playerData.wildernessBoatState = memberState.wildernessBoatState || null; // Keep the new-world/session shape aligned with returning members.
       playerData.townMineState = memberState.townMineState || null;
       playerData.lastPosition = memberState.lastPosition || null;
       playerData.isNewWorld     = true;

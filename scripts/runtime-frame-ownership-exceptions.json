@@ -15,7 +15,7 @@
     "function": "loadBuildingScene",
     "reason": "A chained double requestAnimationFrame forces the Den/cavern loading label to actually paint before a long synchronous carve starts; it resolves once and never reschedules.",
     "migrationStage": "not-planned",
-    "line": 13264
+    "line": 13312
   },
   {
     "file": "docs/game.js",
@@ -24,7 +24,7 @@
     "function": "runMove",
     "reason": "Steps a previewed cutscene actor toward its move target every frame and stops rescheduling once advanceActorToward reports arrival or the preview's running flag clears.",
     "migrationStage": "not-planned",
-    "line": 30007
+    "line": 30075
   },
   {
     "file": "docs/game.js",
@@ -33,7 +33,7 @@
     "function": "runFade",
     "reason": "Defers writing the fade element's target opacity to the next paint so the CSS transition actually animates instead of jumping instantly; runs once per fade stage.",
     "migrationStage": "not-planned",
-    "line": 30158
+    "line": 30226
   },
   {
     "file": "docs/game.js",
@@ -42,7 +42,7 @@
     "function": "runZoom",
     "reason": "Eases the preview camera's zoom toward a target percentage over the stage's authored duration and stops once t reaches 1.",
     "migrationStage": "not-planned",
-    "line": 30154
+    "line": 30245
   },
   {
     "file": "docs/game.js",
@@ -60,7 +60,7 @@
     "function": "_buildItemSlots (new arc-slot fade-in)",
     "reason": "A single non-recursive RAF defers setting the newly-inserted slot element's opacity to 1 so its CSS opacity transition animates in on the next paint; it never reschedules itself.",
     "migrationStage": "not-planned",
-    "line": 312
+    "line": 336
   },
   {
     "file": "docs/js/action-arch-icons-fixes.js",
@@ -411,7 +411,7 @@
     "function": "positionCompactSongPicker (install callsite)",
     "reason": "Single non-recursive requestAnimationFrame call used to (re)position the compact song picker after it is built, paired with a setTimeout(120) fallback; it never reschedules itself.",
     "migrationStage": "not-planned",
-    "line": 549
+    "line": 568
   },
   {
     "file": "docs/js/music-system.js",
