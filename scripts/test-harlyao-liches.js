@@ -1,4 +1,5 @@
-(async () => {\nconst assert = require('assert');
+(async () => {
+const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -8,6 +9,7 @@ const lichSource = fs.readFileSync(path.join(root, 'docs/js/combat/combat-lich.j
 const resourceSource = fs.readFileSync(path.join(root, 'docs/js/combat/resource-system.js'), 'utf8');
 const devSpawnerSource = fs.readFileSync(path.join(root, 'docs/js/dev-spawner.js'), 'utf8');
 const indexSource = fs.readFileSync(path.join(root, 'docs/index.html'), 'utf8');
+const pixelProbeSource = fs.readFileSync(path.join(root, 'docs/js/pixel-probe.js'), 'utf8');
 const skeletonSpecies = JSON.parse(fs.readFileSync(path.join(root, 'docs/config/species/harlyao-skeleton.json'), 'utf8'));
 const cosmeticsIndex = JSON.parse(fs.readFileSync(path.join(root, 'docs/config/cosmetics/index.json'), 'utf8'));
 const itemIndex = JSON.parse(fs.readFileSync(path.join(root, 'docs/config/items/item-index.json'), 'utf8'));
@@ -199,6 +201,9 @@ for (const key of ['tothal', 'hronal', 'kanthic']) {
 assert.match(devSpawnerSource, /startsWith\('harlyao-lich:'\)/);
 assert(indexSource.includes('js/combat/combat-lich.js?v=20260926lich1'));
 assert(indexSource.includes('js/combat/resource-system.js?v=20260926lich1'));
+assert(indexSource.includes('js/pixel-probe.js?v=20260926lich1'));
+assert(pixelProbeSource.includes('window.HarlyaoLichCombat?.formatDebug?.()'), 'Pixel Probe must expose live lich diagnostics on mobile');
 
 console.log('Harlyao Lich regression checks passed.');
-\n})().catch(error => { console.error(error); process.exitCode = 1; });\n
+
+})().catch(error => { console.error(error); process.exitCode = 1; });
