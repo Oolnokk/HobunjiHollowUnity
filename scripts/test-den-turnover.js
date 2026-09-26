@@ -11,6 +11,7 @@ const wildlifeSource = fs.readFileSync(path.join(ROOT, 'docs/js/wildlife-spawn.j
 const gameSource = fs.readFileSync(path.join(ROOT, 'docs/game.js'), 'utf8'); // Guards combat-state filtering for den-hidden/displaced residents.
 const cavernSource = fs.readFileSync(path.join(ROOT, 'docs/js/cavern-generator.js'), 'utf8'); // Guards cold-load suppression after the Den-Mother has already been killed.
 const denVisualSource = fs.readFileSync(path.join(ROOT, 'docs/js/zone-den-totem-features.js'), 'utf8'); // Guards delayed smooth collapse height/audio presentation without horizontal footprint distortion.
+const denNestSource = fs.readFileSync(path.join(ROOT, 'docs/js/den-nest-system.js'), 'utf8'); // Guards post-kill clutch collection updating the collapse presentation reload fallback.
 const gridSource = fs.readFileSync(path.join(ROOT, 'docs/js/grid-tile-accessors.js'), 'utf8'); // Guards removal of the usable collapsed doorway.
 const porakanekiSource = fs.readFileSync(path.join(ROOT, 'docs/js/porakaneki-camps-runtime.js'), 'utf8'); // Guards den-hunting AI against stale/moved sites.
 const banditSource = fs.readFileSync(path.join(ROOT, 'docs/js/bandit-camps.js'), 'utf8'); // Guards companion-discovered den markers when the physical den disappears.
@@ -23,6 +24,13 @@ assert.doesNotMatch(denVisualSource, /DEN_COLLAPSED_FOOTPRINT_MULTIPLIER/, 'coll
 assert.match(denVisualSource, /mesh\.scale\.set\(baseScaleX, nextScaleY, baseScaleZ\)/, 'collapse lerp must modify only Y scale');
 assert.match(denVisualSource, /DEN_COLLAPSE_DELAY_MS = 2000[\s\S]*?DEN_COLLAPSE_LERP_MS = 900/, 'fresh collapse waits two seconds then uses a real timed lerp');
 assert.match(denVisualSource, /playObjectSfxKey\?\.\('breakRock', DEN_COLLAPSE_SFX_VOLUME_SCALE, DEN_COLLAPSE_SFX_PITCH\)/, 'collapse reuses the mined-rock break cue with authored louder\/lower tuning');
+assert.match(denVisualSource, /const runUrl = species\?\.base\?\.run1 \|\| species\?\.base\?\.idle/, 'collapse escape resolves the real species run art with an idle fallback');
+assert.match(denVisualSource, /function prepareDenCollapseEscape\([\s\S]*?buildAnimalPlaneAvatarModel/, 'collapse prebuilds temporary baby avatars before the cave-in starts');
+assert.match(denVisualSource, /startDenCollapseEscape\(mesh\.userData\.denCollapseEscapeState\)/, 'baby scatter starts on the same beat as the visible\/audible cave-in');
+assert.match(denVisualSource, /DEN_ESCAPE_FADE_START[\s\S]*?setDenEscapeOpacity\(record, fade\)/, 'escaped babies fade out instead of becoming persistent world creatures');
+assert.match(denVisualSource, /denCollapseEscapeDebug/, 'collapse escape exposes a mobile-readable debug snapshot');
+assert.doesNotMatch(denVisualSource, /THREE\.RepeatWrapping/, 'den renderer must preserve the cave UV no-repeat invariant; baby rear art is mirrored in canvas pixels instead');
+assert.match(denNestSource, /updateClearedDenClutchVisual\?\.\(deps\.getCurrentArea\(\), nest\)/, 'taking a clutch member after Den-Mother death must update the persisted cosmetic escape fallback');
 assert.match(denVisualSource, /function syncAnimalDenVisual\(/, 'den facade/furniture must have a runtime relocation synchronizer');
 assert.match(gameSource, /function isPlayerInCombat\(\)[\s\S]{0,240}!c\._denHidden[\s\S]{0,120}!c\.denDisplacedPrey/, 'hidden den residents and displaced prey cannot keep combat BGM active');
 assert.match(gridSource, /if \(den\.collapsed\)[\s\S]*?return true/, 'collapsed den footprint must close its former doorway gap');
@@ -169,7 +177,7 @@ windowStub.WildlifeSpawn.forgetZoneDenState(zoneId);
 const restoredInitialGenotype = windowStub.WildlifeSpawn.getOrMakeDenGenotype(cavernMapId,'gar-wolf');
 assert.deepEqual(restoredInitialGenotype,initialGenotype,'an untouched generation-zero den keeps the same bloodline across cache invalidation/reload-style reconstruction');
 assert.equal(genotypeRoll,1,'generation-zero restoration does not reroll the family');
-denNests.set(cavernMapId,{ remaining:2 });
+denNests.set(cavernMapId,{ remaining:2, itemKey:'garWolfBaby', liveBirth:false, genotype:initialGenotype }); // Eggs remain real nest items until collapse; the exterior presentation intentionally shows their hatched baby forms.
 
 const mother = { id:'mother', isDenMother:true, areaId:cavernMapId, health:0, def:{hostile:true,diet:'carnivore'} };
 const cavernAdd = { id:'inside-add', creatureKey:'gar-wolf', isDenMother:false, areaId:cavernMapId, x:210, y:220, health:20, def:{hostile:true,diet:'carnivore'}, denKey:windowStub.WildlifeSpawn.denKeyFor(zoneId,den), state:'chase' };
@@ -200,6 +208,9 @@ for(const survivor of [cavernAdd,exteriorAdd]){
 }
 assert.equal(hostiles.has(malformedAdd),false,'identity-less stale resident is discarded instead of becoming an undefined attacker');
 
+denNests.get(cavernMapId).remaining = 1; // Simulates taking one clutch member after the Den-Mother dies but before leaving the cavern.
+assert.equal(windowStub.WildlifeSpawn.updateClearedDenClutchVisual(cavernMapId, denNests.get(cavernMapId)),true,'post-kill clutch collection updates the persisted presentation fallback');
+denNests.delete(cavernMapId); // Simulates a save/reload that reconstructs the cleared cavern without its transient nest object.
 currentArea=zoneId;
 windowStub.WildlifeSpawn.onZoneEntered(zoneId);
 debug=windowStub.WildlifeSpawn.denTurnoverDebug(zoneId);
@@ -211,6 +222,9 @@ assert.equal(zoneSceneInfo.transitions.some(t=>t.targetMapId===cavernMapId),fals
 assert.equal(zoneSceneInfo.transitions.some(t=>t.id===zoneId+'_exit'),true,'unrelated zone exits stay in the live scene pool');
 assert.equal(denRing.visible,false,'collapsed den hides its entrance ring marker');
 assert.equal(denNests.has(cavernMapId),false,'uncollected clutch is discarded once collapse executes');
+assert.equal(den._collapseEscapeVisual?.count,1,'collapse resolves the clutch at exit so a baby/egg collected after Den-Mother death is not duplicated by the cosmetic escape');
+assert.equal(den._collapseEscapeVisual?.itemKey,'garWolfBaby','egg and live-birth clutches preserve their species item identity for cosmetic baby rendering');
+assert.deepEqual(den._collapseEscapeVisual?.genotype,initialGenotype,'temporary escape babies keep the den family appearance without becoming real entities');
 assert.deepEqual(forgottenDenMarkers,[windowStub.WildlifeSpawn.denKeyFor(zoneId,den)],'collapse clears the companion-discovered map marker for the abandoned entrance');
 assert(visualSync.some(call=>call.collapsed && call.pending),'collapse queues the delayed facade presentation while closing the den logically immediately');
 assert.equal(hostiles.has(cavernAdd),false,'collapse purges stale residents from the discarded cavern scene');
