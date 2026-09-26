@@ -2474,7 +2474,7 @@
       dot.classList.toggle('passed', index < beat.beatInChord);
       dot.classList.toggle('group-start', beat.groupStarts?.includes(index));
     });
-    refs.metronomeLabel.textContent = beat.inCountIn ? `Count-in ${beat.beatInChord + 1} / ${beat.beatsPerChord} · ${beat.meter.label}` : `${beat.source === 'song' ? 'Song chord · ' : ''}Beat ${beat.beatInChord + 1} / ${beat.beatsPerChord} · ${beat.meter.label}`;
+    refs.metronomeLabel.textContent = beat.inCountIn ? `${usesFixedKurrayaHarmony() ? 'Intro' : 'Count-in'} ${beat.beatInChord + 1} / ${beat.beatsPerChord} · ${beat.meter.label}` : `${beat.source === 'song' ? 'Song chord · ' : ''}Beat ${beat.beatInChord + 1} / ${beat.beatsPerChord} · ${beat.meter.label}`;
   }
 
   function playMetronomeClick(beatData = 0, force = false, whenMs = null) {
@@ -7125,7 +7125,7 @@
         timeSignature:KURRAYA_TIME_SIGNATURE.slice(),
         beatGrouping:KURRAYA_BEAT_GROUPING.slice(),
         currentTimeSignature:sharedTransportData().meter.label,
-        harmonyCadence:{cycleChords:FIXED_HARMONY_CYCLE_CHORDS,sixEightChords:FIXED_HARMONY_SIX_EIGHT_CHORDS,threeFourChords:FIXED_HARMONY_THREE_FOUR_CHORDS,chordQuarterBeats:FIXED_HARMONY_CHORD_QUARTER_BEATS,meterSequence:['6/8','3/4']},
+        harmonyCadence:{cycleChords:FIXED_HARMONY_CYCLE_CHORDS,sixEightChords:FIXED_HARMONY_SIX_EIGHT_CHORDS,threeFourChords:FIXED_HARMONY_THREE_FOUR_CHORDS,chordQuarterBeats:FIXED_HARMONY_CHORD_QUARTER_BEATS,introQuarterBeats:KURRAYA_INTRO_QUARTER_BEATS,finalShortStepIndices:FIXED_HARMONY_FINAL_SHORT_STEPS.slice(),meterSequence:['6/8','3/4']},
         progression:FIXED_HARMONY_STEPS.map(step => ({
           degree:step.degree + 1,
           roman:(step.quality === 'minor' ? ROMAN_DEGREES[step.degree]?.toLowerCase() : ROMAN_DEGREES[step.degree]) || String(step.degree + 1),
