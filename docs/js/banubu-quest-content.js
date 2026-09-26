@@ -321,12 +321,39 @@
     return added;
   }
 
+  function upgradeTransactionalTurnInTree(tree) {
+    const clone = deepClone(tree); // Existing Dialogue Editor overrides are kept, then only the transaction-critical turn-in wiring is migrated.
+    const stage = Number(clone?.banubuQuest?.stage || 0);
+    if (clone?.banubuQuest?.phase !== 'ready' || (stage !== 1 && stage !== 2)) return clone;
+    for (const node of clone.nodes || []) {
+      for (const choice of node.choices || []) {
+        for (const action of choice.actions || []) {
+          if (action?.type === 'banubuQuest' && action.operation === 'turnIn') action.operation = 'prepareTurnIn'; // Old local overrides must never bypass the end-of-dialogue transaction.
+        }
+      }
+    }
+    const finalNodeId = stage === 1 ? 'banubu_q1_ready_18' : 'banubu_q2_ready_3';
+    const commitNodeId = stage === 1 ? 'banubu_q1_ready_commit' : 'banubu_q2_ready_commit';
+    const finalNode = (clone.nodes || []).find(node => node?.id === finalNodeId);
+    if (finalNode && finalNode.type !== 'end') finalNode.next = commitNodeId; // Preserves edited line text while restoring the transaction boundary after it.
+    let commitNode = (clone.nodes || []).find(node => node?.id === commitNodeId);
+    if (!commitNode) {
+      commitNode = presentedEndNode(commitNodeId, { commitTurnIn: stage });
+      clone.nodes ||= [];
+      clone.nodes.push(commitNode);
+    } else {
+      commitNode.type = 'end';
+      commitNode.banubuPresentation = { ...(commitNode.banubuPresentation || {}), commitTurnIn: stage };
+    }
+    return clone;
+  }
+
   function mergeDialogueTreesIntoDatabase(database) {
     if (!database || !Array.isArray(database.npcs)) return database;
     const npc = database.npcs.find(entry => entry?.id === NPC_ID);
     if (!npc) return database;
     const existingQuestTrees = new Map((npc.dialogueTrees || []).filter(entry => entry?.banubuQuest).map(entry => [entry.id, entry])); // Used to retain deliberate Dialogue Editor edits while deleting generic/daily Banubu chatter.
-    npc.dialogueTrees = DEFAULT_DIALOGUE_TREES.map(defaultTree => deepClone(existingQuestTrees.get(defaultTree.id) || defaultTree));
+    npc.dialogueTrees = DEFAULT_DIALOGUE_TREES.map(defaultTree => upgradeTransactionalTurnInTree(existingQuestTrees.get(defaultTree.id) || defaultTree));
     npc.phrasePools = []; // Banubu is not a daily-greeting NPC; all authored lines live in the routed quest trees above.
     npc.events = []; // Prevents generic situational dialogue events from being reintroduced by stale starter-database content.
     return database;
