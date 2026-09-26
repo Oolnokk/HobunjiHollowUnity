@@ -265,8 +265,18 @@ assert.match(
 
 assert.match(
   source,
-  /KURRAYA_DEFAULT_MELODY_NOTES = Object\.freeze\([\s\S]*?kurrayaSongMelodyNotes:KURRAYA_DEFAULT_MELODY_NOTES\.map[\s\S]*?function getSongDefinition\(type\)[\s\S]*?state\.kurrayaSongMelodyNotes[\s\S]*?function normalizeKurrayaMelodyNotes\(notes, fallback = KURRAYA_DEFAULT_MELODY_NOTES\)[\s\S]*?48 quarter-beats/,
-  'random melody authoring must remain session-local, validate the 48-quarter-beat song body, and preserve an immutable reset melody'
+  /KURRAYA_DEFAULT_MELODY_NOTES = Object\.freeze\([\s\S]*?notes:KURRAYA_DEFAULT_MELODY_NOTES\.map/,
+  'the original Kurraya melody must remain an immutable reset source'
+);
+assert.match(
+  source,
+  /kurrayaSongMelodyNotes:KURRAYA_DEFAULT_MELODY_NOTES\.map[\s\S]*?function getSongDefinition\(type\)[\s\S]*?state\.kurrayaSongMelodyNotes/,
+  'generated Kurraya melodies must remain session-local instead of mutating the repo-authored songbook'
+);
+assert.match(
+  source,
+  /function normalizeKurrayaMelodyNotes\(notes, fallback = KURRAYA_DEFAULT_MELODY_NOTES\)[\s\S]*?totalQuarterBeats[\s\S]*?Kurraya melody must span exactly 48 quarter-beats/,
+  'generated Kurraya melodies must validate the exact 48-quarter-beat 3/4 body'
 );
 
 assert.match(
