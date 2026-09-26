@@ -149,14 +149,14 @@ assert.match(
 
 assert.match(
   source,
-  /KURRAYA_TIME_SIGNATURE = Object\.freeze\(\[6,8\]\)[\s\S]*?KURRAYA_BEAT_GROUPING = Object\.freeze\(\[3,3\]\)/,
-  'free play and the authored Kurraya song must use 6/8 with 3+3 grouping'
+  /KURRAYA_TIME_SIGNATURE = Object\.freeze\(\[3,4\]\)[\s\S]*?KURRAYA_BEAT_GROUPING = Object\.freeze\(\[3\]\)/,
+  'free play and the authored Kurraya song must remain in 3/4 while the harmony cadence is measure-based'
 );
 
 assert.match(
   source,
-  /'when-the-kininjis-bloom':\{[\s\S]*?timeSignature:\[6,8\], beatGrouping:\[3,3\][\s\S]*?chords:null/,
-  'When the Kininjis Bloom must use the shared variable Kurraya harmony cadence instead of a separate per-bar chord timeline'
+  /'when-the-kininjis-bloom':\{[\s\S]*?timeSignature:\[3,4\], beatGrouping:\[3\][\s\S]*?chords:null/,
+  'When the Kininjis Bloom must stay in 3/4 while using the shared variable Kurraya harmony cadence instead of a separate per-bar chord timeline'
 );
 
 assert.match(
@@ -183,14 +183,14 @@ assert.match(
 
 assert.match(
   source,
-  /function nextSharedBeatAt\([\s\S]*?clock\.quarterBeatMs/,
-  'automatic-pick release timing must keep its prior quarter-note note-value grid when the metronome changes to 6/8 eighth-note beats'
+  /function nextSharedBeatAt\([\s\S]*?clock\.beatMs/,
+  'automatic-pick release timing must follow the restored shared 3/4 beat grid'
 );
 
 assert.match(
   source,
-  /function scheduleSuccessfulPreviewContinuation\([\s\S]*?state\.game\.quarterBeatMs \|\| state\.game\.beatMs[\s\S]*?definition\.division/,
-  'successful-preview arpeggios must not double in speed when the song switches from 3/4 to 6/8'
+  /function scheduleSuccessfulPreviewContinuation\([\s\S]*?state\.game\.beatMs[\s\S]*?definition\.division/,
+  'successful-preview arpeggios must use the restored shared 3/4 beat grid'
 );
 
 assert.match(
@@ -207,7 +207,7 @@ assert.match(
 
 assert.match(
   hostSource,
-  /MUSIC_MINIGAME_SRC = 'assets\/minigames\/lyre-performance\.html\?v=20260925sixeight1'/,
+  /MUSIC_MINIGAME_SRC = 'assets\/minigames\/lyre-performance\.html\?v=20260925cadence1'/,
   'gameplay must cache-bust the fixed-harmony minigame revision'
 );
 
@@ -218,7 +218,7 @@ assert.match(musicLab, /Visible diagnostics/, 'the standalone tool must keep mob
 assert.match(musicLab, /id="kurrayaMix"[\s\S]*?id="padMix"[\s\S]*?id="metronomeMix"/, 'the Music Lab must expose all three playback-mix sliders');
 assert.match(musicLab, /id="kurrayaSampleFile"[\s\S]*?id="padSampleFile"[\s\S]*?Recorded root/, 'the Music Lab must expose Kurraya and pad SFX import controls');
 assert.match(musicLab, /hardstep_1\.mp3[\s\S]*?hardstep_2\.mp3[\s\S]*?hardstep_3\.mp3/, 'the standalone metronome must rotate real recorded game footstep sounds');
-assert.match(musicLab, /6\/8 · 3\+3[\s\S]*?once per measure for 8 measures[\s\S]*?once per 2 measures for 16 measures/, 'the Music Lab must state the authored 6/8 24-measure harmony cadence visibly');
+assert.match(musicLab, /3\/4\.[\s\S]*?once per measure for 8 measures[\s\S]*?once per 2 measures for 16 measures/, 'the Music Lab must state the restored 3/4 meter and 24-measure harmony cadence visibly');
 assert.match(musicLab, /importKurrayaSample[\s\S]*?importPadSample[\s\S]*?useLabFootstepMetronome/, 'the Music Lab must route sample changes and footsteps through the shared engine bridge');
 
 assert.doesNotMatch(source, /1–5–6–4/, 'legacy selectable harmony ids must not survive the fixed-progression migration');
@@ -267,7 +267,7 @@ assert.match(
 
 assert.match(
   toolsHub,
-  /data-target="kurraya-music-lab"[\s\S]*?kurraya-music-lab\/index\.html\?v=20260925lab5/,
+  /data-target="kurraya-music-lab"[\s\S]*?kurraya-music-lab\/index\.html\?v=20260925lab6/,
   'the combined Kurraya Music Lab must be the single Kurraya entry in the tools hub'
 );
 assert.doesNotMatch(
