@@ -432,6 +432,7 @@
       `pad root=${midiName(snapshot?.mix?.padSampleRootMidi ?? bridge?.mixState?.().padSampleRootMidi ?? 48)} source=${snapshot?.mix?.padRootSource || bridge?.mixState?.().padRootSource || '—'} detected=${snapshot?.mix?.padDetectedFrequency ? Number(snapshot.mix.padDetectedFrequency).toFixed(1) + 'Hz/' + Math.round((snapshot.mix.padDetectedConfidence || 0) * 100) + '%' : '—'}`,
       `pad roots=${(snapshot?.mix?.padProgressionRootNames || bridge?.mixState?.().padProgressionRootNames || []).join(' → ') || '—'}`,
       `pad sounding=${(snapshot?.mix?.padChordNames || bridge?.mixState?.().padChordNames || [])[0] || '—'}`,
+      `pad synth=${Number(snapshot?.mix?.padSynthFrequency ?? bridge?.mixState?.().padSynthFrequency ?? 0).toFixed(1)} Hz · gain=${Number(snapshot?.mix?.padSynthGain ?? bridge?.mixState?.().padSynthGain ?? 0).toFixed(3)} · audio=${snapshot?.mix?.audioContextState || bridge?.mixState?.().audioContextState || '—'}`,
       `metronome source=${snapshot?.mix?.metronomeSource || bridge?.mixState?.().metronomeSource || '—'}`,
       error ? `error=${error}` : 'error=none'
     ].join('\n');
@@ -585,8 +586,13 @@
     catch (error) { setStatus(`Pad root change failed: ${error.message}`,'warn'); }
   });
   previewPadBtn.addEventListener('click',async () => {
-    try { renderMixState(await bridge.previewPad()); }
-    catch (error) { setStatus(`Pad preview failed: ${error.message}`,'warn'); }
+    try {
+      const mix = await bridge.previewPad(); // Captures the exact synth/sample frequency, gain, and audio-context state for visible mobile confirmation.
+      renderMixState(mix);
+      setStatus(`Pad preview: ${(mix.padChordNames || ['root'])[0]} · ${Number(mix.padSynthFrequency || 0).toFixed(1)} Hz · audio ${mix.audioContextState || 'unknown'}.`,'good');
+      renderDiagnostics({mix});
+    }
+    catch (error) { setStatus(`Pad preview failed: ${error.message}`,'warn'); renderDiagnostics(null,error.message); }
   });
   clearPadBtn.addEventListener('click',async () => {
     try {
