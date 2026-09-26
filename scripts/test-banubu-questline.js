@@ -277,8 +277,17 @@ const q1OfferPresentationNodes = Object.fromEntries(content.dialogueTrees.find(t
 const q2OfferPresentationNodes = Object.fromEntries(content.dialogueTrees.find(tree => tree.id === 'banubu_q2_offer').nodes.map(node => [node.id, node]));
 assert.deepStrictEqual(JSON.parse(JSON.stringify(q1OfferPresentationNodes.banubu_q1_offer_commit.banubuPresentation)), { commitQuestAction: { operation: 'accept', stage: 1 } });
 assert.deepStrictEqual(JSON.parse(JSON.stringify(q2OfferPresentationNodes.banubu_q2_offer_commit.banubuPresentation)), { commitQuestAction: { operation: 'accept', stage: 2 } });
-assert.deepStrictEqual(JSON.parse(JSON.stringify(q1ReadyPresentationNodes.banubu_q1_ready_4.banubuPresentation)), { body: 'awake', sparkles: 'start', move: { x: 0, z: -0.85, duration: 0.7 } }, '“I’m up” must switch Banubu to regular idle, start sparkles, and ease him backward from the reveal spot');
-assert.strictEqual(q1ReadyPresentationNodes.banubu_q1_ready_4.cameraId, 'banubu_dialogue_awake', 'standing up must establish the ordinary awake shot before the key close-up');
+assert.strictEqual(q1ReadyPresentationNodes.banubu_q1_ready_3.next, 'banubu_q1_ready_stand_visual', 'the spoken setup line must lead into a pure standing visual beat');
+assert.strictEqual(q1ReadyPresentationNodes.banubu_q1_ready_stand_visual.type, 'visual');
+assert.strictEqual(q1ReadyPresentationNodes.banubu_q1_ready_stand_visual.durationSec, 1.6);
+assert.deepStrictEqual(JSON.parse(JSON.stringify(q1ReadyPresentationNodes.banubu_q1_ready_stand_visual.banubuPresentation)), { body: 'awake' }, 'standing up is its own silent presentation beat');
+assert.strictEqual(q1ReadyPresentationNodes.banubu_q1_ready_stand_visual.cameraId, 'banubu_dialogue_awake');
+assert.strictEqual(q1ReadyPresentationNodes.banubu_q1_ready_move_visual.type, 'visual');
+assert.strictEqual(q1ReadyPresentationNodes.banubu_q1_ready_move_visual.durationSec, 1.8);
+assert.deepStrictEqual(JSON.parse(JSON.stringify(q1ReadyPresentationNodes.banubu_q1_ready_move_visual.banubuPresentation)), { sparkles: 'start', move: { x: 0, z: -0.85, duration: 1.6 } }, 'easing aside must be its own slower silent beat while the key sparkle stays fixed');
+assert.strictEqual(q1ReadyPresentationNodes.banubu_q1_ready_move_visual.cameraId, 'banubu_dialogue_awake');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(q1ReadyPresentationNodes.banubu_q1_ready_4.banubuPresentation)), {}, '“I’m up” resumes normal dialogue only after both visual beats finish');
+assert.strictEqual(q1ReadyPresentationNodes.banubu_q1_ready_4.cameraId, 'banubu_dialogue_awake', 'post-move dialogue remains on the cavern-centered awake shot before the key close-up');
 assert.deepStrictEqual(JSON.parse(JSON.stringify(q1ReadyPresentationNodes.banubu_q1_ready_5.banubuPresentation)), { neck: 'max_down' }, 'noticing the Color Pools Key must use the canonical maximum downward neck pose');
 assert.strictEqual(q1ReadyPresentationNodes.banubu_q1_ready_5.cameraId, 'banubu_key_ground', 'the first explicit key-reference line must cut to the ground-level sparkle shot');
 assert.deepStrictEqual(JSON.parse(JSON.stringify(q1ReadyPresentationNodes.banubu_q1_ready_6.banubuPresentation)), { neck: 'release' }, 'the key-noticing neck pose must release on the following line instead of sticking');
@@ -302,8 +311,10 @@ const presentationRoot = new FakeGroup();
 presentationRoot.position.set(6.5, 0, 5.5);
 presentationScene.add(presentationRoot);
 const presentationWalker = { root: presentationRoot }; // Minimal named-animal walker seam used by BanubuQuestline presentation.
-presentationHandler(q1ReadyPresentationNodes.banubu_q1_ready_4, { npc: banubu, walker: presentationWalker });
+presentationHandler(q1ReadyPresentationNodes.banubu_q1_ready_stand_visual, { npc: banubu, walker: presentationWalker });
 assert.strictEqual(presentationWalker._animalSleepPresentationOverride, 'awake');
+assert.strictEqual(sparkleCreates, 0, 'standing beat must not reveal the key before Banubu starts moving aside');
+presentationHandler(q1ReadyPresentationNodes.banubu_q1_ready_move_visual, { npc: banubu, walker: presentationWalker });
 assert.strictEqual(sparkleCreates, 1);
 assert.strictEqual(questline.debugSnapshot().presentation.sparklesActive, true);
 assert.strictEqual(schedulerEnabled.get('banubu-dialogue-presentation'), true, 'starting sparkles or movement must enable Banubu’s shared-frame subscriber');
@@ -660,6 +671,10 @@ const dialogueContentSource = read('docs/js/dialogue-content.js'); // Verifies t
 assert.match(dialogueContentSource, /function registerNodeEnterHandler\(npcId, handler\)/);
 assert.match(dialogueContentSource, /_notifyDialogueNodeEnter\(node\)/);
 assert.match(dialogueContentSource, /_notifyDialogueNodeEnter\(null, true\)/);
+assert.match(dialogueContentSource, /node\.type === 'visual'/, 'dialogue runtime must support authored no-UI visual beats');
+assert.match(dialogueContentSource, /_setDialogueShellVisible\(false\)/, 'visual beats must hide the dialogue shell without closing the conversation');
+assert.match(dialogueContentSource, /_dlgNode\?\.type === 'visual'\) return/, 'hidden Continue input must not skip a timed visual beat');
+assert.match(dialogueContentSource, /_clearDialogueVisualTimer\(\)/, 'closing dialogue must cancel any pending visual auto-advance timer');
 const banubuQuestlineSource = read('docs/js/banubu-questline.js'); // Verifies the sparkle effect obeys the repository's single-frame-owner architecture.
 assert.doesNotMatch(banubuQuestlineSource, /function ensureNextTarget\(/, 'no helper may persist Quest 2 preview state before the final dialogue commit');
 assert.doesNotMatch(banubuQuestlineSource, /function ensureIntroTarget\(|function ensureTarget\(/, 'opening Banubu dialogue must not persist a newly rolled quest target');
