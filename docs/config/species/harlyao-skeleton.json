@@ -1,0 +1,278 @@
+{
+  "speciesId": "harlyao-skeleton",
+  "label": "Harlyao Skeleton",
+  "parentSpecies": "engh-sho",
+  "npcOnly": true,
+  "playerSelectable": false,
+  "genders": [
+    "male",
+    "female"
+  ],
+  "inheritanceNotes": {
+    "transformSpecies": "engh-sho",
+    "wardrobeSpecies": "engh-sho",
+    "appearanceCosmetics": false,
+    "bodyColorCustomization": false,
+    "extremityColor": "#D4D6C9",
+    "rigScaleMultiplier": 1.2
+  },
+  "male": {
+    "headSprite": "fightersprites/engh-sho-m/head_hskel_m.png",
+    "headUrLayers": [],
+    "headXform": {
+      "ax": 0,
+      "ay": -0.1,
+      "sx": 0.95,
+      "sy": 1.14
+    },
+    "baseBodyTint": false,
+    "bodyColorRanges": {
+      "fixedHex": "#D4D6C9"
+    },
+    "allowedCosmetics": [
+      "fine_hood",
+      "tankan_tunic",
+      "bandolier1",
+      "tankan_bodywrap",
+      "rugged_poncho",
+      "fine_poncho"
+    ],
+    "cosmeticWeights": {
+      "hood": {
+        "none": 35,
+        "fine_hood": 65,
+        "facewrap": 40
+      },
+      "overwear": {
+        "none": 0,
+        "rugged_poncho": 65,
+        "fine_poncho": 35
+      }
+    },
+    "forcedCosmetics": {
+      "eyes": "none",
+      "upperFace": "none",
+      "facialHair": "none",
+      "hairFront": "none",
+      "hairBack": "none",
+      "hairSide": "none",
+      "hairSideL": "none",
+      "hat": "none"
+    },
+    "exclusiveSlotCosmetics": {
+      "eyes": [
+        "none"
+      ],
+      "upperFace": [
+        "none"
+      ],
+      "facialHair": [
+        "none"
+      ],
+      "hairFront": [
+        "none"
+      ],
+      "hairBack": [
+        "none"
+      ],
+      "hairSide": [
+        "none"
+      ],
+      "hairSideL": [
+        "none"
+      ],
+      "hat": [
+        "none"
+      ]
+    },
+    "portraitBodyLayers": [
+      {
+        "id": "armL",
+        "url": "portraitsprites/arm-L_hskel_m.png",
+        "tintSlot": "A",
+        "pos": "back",
+        "xform": {
+          "ax": -0.2,
+          "ay": 0,
+          "scaleX": 2.55,
+          "scaleY": 2.55,
+          "rotDeg": 0
+        }
+      },
+      {
+        "id": "torso",
+        "url": "portraitsprites/torso_hskel_m.png",
+        "tintSlot": "A",
+        "pos": "back",
+        "xform": {
+          "ax": -0.2,
+          "ay": 0,
+          "scaleX": 2.55,
+          "scaleY": 2.55,
+          "rotDeg": 0
+        }
+      },
+      {
+        "id": "armR",
+        "url": "portraitsprites/arm-R_hskel_m.png",
+        "tintSlot": "A",
+        "pos": "front",
+        "xform": {
+          "ax": -0.2,
+          "ay": 0,
+          "scaleX": 2.55,
+          "scaleY": 2.55,
+          "rotDeg": 0
+        }
+      }
+    ],
+    "portraitOpacityMaskLayer": {
+      "id": "opacityMask",
+      "url": "hud/spriteopacitymask_cloud.png",
+      "xform": {
+        "ax": -0.2,
+        "ay": 0,
+        "scaleX": 2.55,
+        "scaleY": 2.55,
+        "rotDeg": 0
+      }
+    }
+  },
+  "female": {
+    "headSprite": "fightersprites/engh-sho-f/head_hskel_f.png",
+    "headUrLayers": [],
+    "headXform": {
+      "ax": 0,
+      "ay": -0.1,
+      "sx": 0.95,
+      "sy": 1.14
+    },
+    "baseBodyTint": false,
+    "bodyColorRanges": {
+      "fixedHex": "#D4D6C9"
+    },
+    "allowedCosmetics": [
+      "fine_hood",
+      "tankan_tunic",
+      "bandolier1",
+      "tankan_bodywrap",
+      "rugged_poncho",
+      "fine_poncho"
+    ],
+    "cosmeticWeights": {
+      "hood": {
+        "none": 35,
+        "fine_hood": 65,
+        "facewrap": 40
+      },
+      "overwear": {
+        "none": 0,
+        "rugged_poncho": 65,
+        "fine_poncho": 35
+      }
+    },
+    "forcedCosmetics": {
+      "eyes": "none",
+      "upperFace": "none",
+      "facialHair": "none",
+      "hairFront": "none",
+      "hairBack": "none",
+      "hairSide": "none",
+      "hairSideL": "none",
+      "hat": "none"
+    },
+    "exclusiveSlotCosmetics": {
+      "eyes": [
+        "none"
+      ],
+      "upperFace": [
+        "none"
+      ],
+      "facialHair": [
+        "none"
+      ],
+      "hairFront": [
+        "none"
+      ],
+      "hairBack": [
+        "none"
+      ],
+      "hairSide": [
+        "none"
+      ],
+      "hairSideL": [
+        "none"
+      ],
+      "hat": [
+        "none"
+      ]
+    },
+    "fixedPortraitSlots": {
+      "pauldron": [
+        {
+          "id": "harlyaoSkeletonFemaleDefaultRightHair",
+          "url": "cosmetics/appearance/harlyao_skeleton/hairdefault-right_hskel_f.png",
+          "pos": "front",
+          "paletteColorKey": "NONE",
+          "ax": -0.2,
+          "ay": 0,
+          "sx": 2.55,
+          "sy": 2.55,
+          "rotDeg": 0
+        }
+      ]
+    },
+    "portraitBodyLayers": [
+      {
+        "id": "armL",
+        "url": "portraitsprites/arm-L_hskel_f.png",
+        "tintSlot": "A",
+        "pos": "back",
+        "xform": {
+          "ax": -0.2,
+          "ay": 0,
+          "scaleX": 2.55,
+          "scaleY": 2.55,
+          "rotDeg": 0
+        }
+      },
+      {
+        "id": "torso",
+        "url": "portraitsprites/torso_hskel_f.png",
+        "tintSlot": "A",
+        "pos": "back",
+        "xform": {
+          "ax": -0.2,
+          "ay": 0,
+          "scaleX": 2.55,
+          "scaleY": 2.55,
+          "rotDeg": 0
+        }
+      },
+      {
+        "id": "armR",
+        "url": "portraitsprites/arm-R_hskel_f.png",
+        "tintSlot": "A",
+        "pos": "front",
+        "xform": {
+          "ax": -0.2,
+          "ay": 0,
+          "scaleX": 2.55,
+          "scaleY": 2.55,
+          "rotDeg": 0
+        }
+      }
+    ],
+    "portraitOpacityMaskLayer": {
+      "id": "opacityMask",
+      "url": "hud/spriteopacitymask_cloud.png",
+      "xform": {
+        "ax": -0.2,
+        "ay": 0,
+        "scaleX": 2.55,
+        "scaleY": 2.55,
+        "rotDeg": 0
+      }
+    }
+  }
+}

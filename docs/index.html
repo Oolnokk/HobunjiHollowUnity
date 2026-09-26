@@ -121,7 +121,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="debug.js?v=20260925weavesessiondebug4"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
-  <script src="config/config.js?v=20260918collision2"></script>
+  <script src="config/config.js?v=20260926minion1"></script>
   <script src="config/scratchbones-config.js?v=20260926dlgcam1"></script>
   <!-- Canonical source-art color fill math shared by portraits, creatures, weaving, tools, terrain, and item sprites. -->
   <script src="js/color-fill.js?v=20260923colorfill7"></script>
@@ -235,12 +235,12 @@
   <link rel="stylesheet" href="onboarding.css?v=20260921preworldsky1">
   <script src="onboarding.js?v=20260925savecorrupt3"></script>
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
-  <script src="js/combat/resource-system.js?v=20260924combatheal1"></script>
+  <script src="js/combat/resource-system.js?v=20260926minion1"></script>
   <script src="js/combat/knockback-collision-impact.js?v=20260923ledge1"></script>
   <!-- Burning Health presentation: reuses the authored campfire fire emitter on afflicted player/enemy avatar roots. -->
   <script src="js/combat/burning-affliction-vfx.js?v=20260923burn1"></script>
   <script src="js/combat/resource-rings.js?v=20260809a"></script>
-  <script src="js/combat/combat-core.js?v=20260926combatreview1"></script>
+  <script src="js/combat/combat-core.js?v=20260926minion1"></script>
   <script src="js/combat/enemy-search-ai.js?v=20260926combatreview1"></script>
   <!-- Stagger/Footing: authored 4-directional ragdoll blend clips + runtime
        playback onto the player's procedural rig and quarter-turned body-only
@@ -273,7 +273,9 @@
        (at fight time, not load time), so exact ordering against those two
        doesn't matter as long as both exist by the time bandits actually
        spawn. -->
-  <script src="js/combat/combat-bandit.js?v=20260926combatreview1"></script>
+  <script src="js/combat/combat-bandit.js?v=20260926minion1"></script>
+  <!-- Distinct Minion humanoid category: independent roster/dye/Shambling Footing rules over the shared BanditCombat executor. -->
+  <script src="js/combat/combat-minion.js?v=20260926minion1"></script>
   <script src="js/combat/combat-enemy-dodge.js?v=20260926combatreview1"></script>
   <!-- Bandit camps (zone adapter, tent props, camp lifecycle, companion
        perception, corpse loot) — window.BanditCamps. Calls
@@ -536,7 +538,7 @@
        its own setup, and reads window.DevSpawner.DEV_ARENA_ZONE_ID/
        .getArenaSpawnedCreatures() as deps for window.BanditCombatLog and
        window.BanditCamps at that same call-time point. -->
-  <script src="js/dev-spawner.js?v=20260924poracolor2"></script>
+  <script src="js/dev-spawner.js?v=20260926minion1"></script>
   <!-- Furniture Placer panel (window.FurniturePlacer) — the discoverable,
        inventory-scoped furniture selector. Choosing Place arms the shared
        reticle-targeted gameplay placement mode and closes this panel so
@@ -2347,7 +2349,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20260925banubukeycam1"></script>
+  <script src="js/pixel-probe.js?v=20260926hskel1"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls

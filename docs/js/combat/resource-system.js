@@ -85,11 +85,15 @@
   };
 
   // Footing (balance) lives as its own flat entity.footing/maxFooting pair,
-  // set up in initEntity/tick alongside health/stamina below — it has no
-  // afflictions of its own (see getRingFillFraction/spendFooting instead of
-  // this AFFLICTIONS map). woundedStamina/infectedStamina/shatteredStamina/
-  // windedStamina live on 'stamina'; the rest on 'health'.
+  // set up in initEntity/tick alongside health/stamina below. Most afflictions
+  // still target Health/Stamina; Shambling Footing is the permanent Footing
+  // reservation used by Minion-class undead.
   const AFFLICTIONS = {
+    shamblingFooting: {
+      name: "Shambling Footing", resource: "footing", extend: "maxBack", priority: 105, recovers: false, immutable: true,
+      family: "control", tags: ["undead", "shambling"],
+      desc: "Permanent reserved Footing carried by Minions; it cannot be added to, cleansed, reduced, or recovered."
+    },
     woundedStamina: {
       name: "Wounded Stamina", resource: "stamina", extend: "zero", priority: 55, recovers: true, punishedAction: "staminaSpend",
       family: "damage", tags: ["physical", "breath"],
@@ -211,14 +215,49 @@
   }
 
   function getAffliction(entity, id) {
-    return entity.afflictions?.[id] ?? 0;
+    const locked = entity?._immutableAfflictions?.[id]; // Permanent afflictions stay gameplay-fixed even if outside code writes their display field.
+    return Number.isFinite(locked) ? locked : (entity.afflictions?.[id] ?? 0);
+  }
+
+  function maxAfflictionAmount(entity, def) {
+    if (def?.resource === "health") return entity?.maxHealth || 0; // Health afflictions clamp against Health.
+    if (def?.resource === "footing") return entity?.maxFooting || 0; // Footing afflictions clamp against Footing.
+    return entity?.maxStamina || 0; // Existing non-Health afflictions default to Stamina.
   }
 
   function setAffliction(entity, id, amount) {
     const def = AFFLICTIONS[id];
     if (!def) return;
-    const maxAmount = def.resource === "health" ? entity.maxHealth : entity.maxStamina;
-    entity.afflictions[id] = round1(clamp(amount, 0, maxAmount || 0));
+    const locked = entity?._immutableAfflictions?.[id]; // Makes ordinary add/remove/cleanse calls no-ops after an immutable amount is installed.
+    if (Number.isFinite(locked)) {
+      entity.afflictions ||= {};
+      entity.afflictions[id] = locked;
+      return;
+    }
+    entity.afflictions[id] = round1(clamp(amount, 0, maxAfflictionAmount(entity, def)));
+  }
+
+  function setImmutableAffliction(entity, id, amount) {
+    const def = AFFLICTIONS[id]; // Only explicitly immutable definitions may use this permanent-lock path.
+    if (!entity || !def?.immutable) return 0;
+    const locked = round1(clamp(amount, 0, maxAfflictionAmount(entity, def)));
+    entity.afflictions ||= {};
+    entity._immutableAfflictions ||= {}; // Runtime lock table used by get/set/add/remove and cap enforcement.
+    entity._immutableAfflictions[id] = locked;
+    entity.afflictions[id] = locked;
+    return locked;
+  }
+
+  function reassertImmutableAfflictions(entity) {
+    if (!entity?._immutableAfflictions) return;
+    entity.afflictions ||= {};
+    for (const [id, amount] of Object.entries(entity._immutableAfflictions)) {
+      const def = AFFLICTIONS[id];
+      if (!def?.immutable) continue;
+      const locked = round1(clamp(amount, 0, maxAfflictionAmount(entity, def)));
+      entity._immutableAfflictions[id] = locked;
+      entity.afflictions[id] = locked;
+    }
   }
 
   function addAffliction(entity, id, amount) {
@@ -285,7 +324,10 @@
       const afflictedHealthMax = clamp(fullHealthMax - getAffliction(entity, "congealedHealth"), 0, fullHealthMax); // Used as the raw Congealed-Health-reduced capacity before the living-target floor.
       return fullHealthMax > 0 ? Math.max(Math.min(1, fullHealthMax), afflictedHealthMax) : 0;
     }
-    if (key === "footing") return (entity.maxFooting || 0) * footingMul;
+    if (key === "footing") {
+      const fullFootingMax = Math.max(0, (entity.maxFooting || 0) * footingMul); // Base capacity before permanent reservations.
+      return clamp(fullFootingMax - getAffliction(entity, "shamblingFooting"), 0, fullFootingMax); // Shambling Footing permanently reserves the unavailable tail.
+    }
     return 0;
   }
 
@@ -315,6 +357,7 @@
   }
 
   function enforceCaps(entity) {
+    reassertImmutableAfflictions(entity); // Keeps permanent-affliction storage identical to its locked gameplay amount.
     if (entity.health > 0) applyHealthRecovery(entity, 0);
     else entity.health = round1(clamp(Number(entity.health) || 0, 0, getLiveEffectiveHealthMax(entity)));
     entity.stamina = entity.exhaustion.active
@@ -676,12 +719,15 @@
   function getSegmentBox(entity, resourceKey, id) {
     const def = AFFLICTIONS[id];
     const max = maxFieldFor(entity, resourceKey);
-    const current = resourceKey === "health" ? entity.health : entity.stamina;
+    const current = resourceKey === "health" ? entity.health : resourceKey === "footing" ? entity.footing : entity.stamina;
     const amount = clamp(getAffliction(entity, id), 0, max || 0);
     let leftPoints = 0;
     let widthPoints = amount;
 
-    if (def.extend === "currentBack") {
+    if (def.extend === "maxBack") {
+      leftPoints = clamp((max || 0) - amount, 0, max || 0); // Footing reservations occupy the unavailable end of the ring.
+      widthPoints = clamp(amount, 0, max || 0);
+    } else if (def.extend === "currentBack") {
       const right = clamp(current, 0, max || 0);
       leftPoints = clamp(right - amount, 0, max || 0);
       widthPoints = clamp(right - leftPoints, 0, max || 0);
@@ -698,6 +744,7 @@
     getAffliction,
     addAffliction,
     removeAffliction,
+    setImmutableAffliction,
     afflictionHasTag,
     afflictionIdsByFamily,
     afflictionIdsByTag,

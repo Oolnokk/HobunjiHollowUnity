@@ -14,7 +14,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 12; // Raises the current Mao-ao male whole-character tuple by another 10% while preserving its proportions and prior foot tuning.
+  const VERSION = 13; // Adds Harlyao Skeleton as a transform-equivalent Harlyao scale alias while preserving all previously authored tuples.
   const VALUES = Object.freeze({
     'tletingan::male': Object.freeze({ x: 0.85, y: 0.85, head: 0.8823529411764706, offsetY: 0 }),
     'tletingan::female': Object.freeze({ x: 0.915, y: 0.89, head: 0.8823529411764706, offsetY: 0 }),
@@ -29,7 +29,7 @@
     'mashtzarr::male': Object.freeze({ x: 0.955, y: 1.255, head: 0.9856, offsetY: -0.095 }),
     'mashtzarr::female': Object.freeze({ x: 1.01, y: 0.99, head: 0.8475, offsetY: -0.02 }),
   });
-  const ALIASES = Object.freeze({ rakakoan: 'kenkari', ghoul: 'mao-ao' }); // Transform-equivalent NPC-only species inherit the same full-rig defaults; Harlyao stays explicit because it is 20% larger than Engh-sho.
+  const ALIASES = Object.freeze({ rakakoan: 'kenkari', ghoul: 'mao-ao', 'harlyao-skeleton': 'harlyao' }); // Transform-equivalent NPC-only species inherit shared full-rig defaults; Harlyao Skeleton deliberately shares Harlyao's 1.2x Engh-sho scale.
   const MAOAO_FOOT_SCALE = Object.freeze({ male: 1.3125, female: 1.28125 }); // +25% over the canonical authored Mao-ao foot scales (1.05 male / 1.025 female).
 
   const normalizeSpecies = value => {
