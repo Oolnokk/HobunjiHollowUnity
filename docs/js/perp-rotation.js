@@ -33,6 +33,12 @@
   const PERP_CENTER_HYSTERESIS_RAD = THREE.MathUtils.degToRad(3);
 
   const subjectByPerpState = new WeakMap(); // Caches persistent clamp state -> live subject so screen-view lookup is O(1) after the first frame.
+  // Negative cache: perp states that matched no registry (deadzone
+  // billboards, dew vats, a creature not registered yet...) used to rescan
+  // every NPC/creature/animal collection on every clamp call, i.e. every
+  // frame per object. Misses are now retried at most this often instead.
+  const subjectMissRetryMs = 1000;
+  const subjectMissAtByPerpState = new WeakMap();
   let farmAnimalObjects = null; // Captured from FarmAnimals.init; used to resolve farm livestock that do not live in Combat's creature registries.
   let farmWorldObjects = null; // Fallback farm/world object registry; used when an animal is temporarily absent from animalObjects during a transition.
   let cameraSample = null; // Reused across clamps in the same frame-sized window so camera debug access does not allocate per subject.
@@ -102,10 +108,16 @@
     return null;
   }
 
+  function nowMs() {
+    return typeof performance !== 'undefined' ? performance.now() : Date.now();
+  }
+
   function subjectForPerpState(state) {
     if (!state || typeof state !== 'object') return null;
     const cached = subjectByPerpState.get(state);
     if (cached?.subject?.perpState === state) return cached;
+    const missAt = subjectMissAtByPerpState.get(state);
+    if (missAt !== undefined && nowMs() - missAt < subjectMissRetryMs) return null;
 
     const combatDeps = window.Combat?.deps;
     const sources = [
@@ -121,8 +133,10 @@
       const found = findSubjectInCollection(collection, state, kind);
       if (!found) continue;
       subjectByPerpState.set(state, found);
+      subjectMissAtByPerpState.delete(state);
       return found;
     }
+    subjectMissAtByPerpState.set(state, nowMs());
     return null;
   }
 
@@ -146,6 +160,10 @@
   }
 
   function perspectivePerpsForState(state, fallbackPerps) {
+    // Callers whose perps are already in a parent-local frame (see
+    // DeadzoneBillboard.localCameraPerps) must never be swapped for world
+    // perps, even if a registry ever happened to share their state object.
+    if (state?.localPerpsOnly) return fallbackPerps;
     const entry = subjectForPerpState(state);
     const cameraPosition = entry ? liveCameraPosition() : null;
     const worldPosition = entry ? worldPositionForSubject(entry.subject) : null;
@@ -233,13 +251,26 @@
     const newSide = previousSide !== null && Math.abs(nearestDT) < PERP_CENTER_HYSTERESIS_RAD
       ? previousSide
       : candidateSide;
+    // Only a side change observed against the SAME perp as the previous call
+    // is a real crossing through that dead zone. perpSides[i] is left behind
+    // whenever rawTarget wanders over to the other perp, so when it later
+    // comes back around to perp i from its opposite side (e.g. a full camera
+    // orbit, or an NPC walking a loop) the stale entry used to report a
+    // bogus crossing ~90° away from the zone and hard-snap the plane instead
+    // of letting it ease.
+    const continuousWithPrevious = state.lastNearestPerpIndex === nearestI;
     let snapTo = null;
-    if (previousSide !== null && previousSide !== newSide) {
+    if (continuousWithPrevious && previousSide !== null && previousSide !== newSide) {
       snapTo = P + newSide * deadRad;
     }
     state.perpSides[nearestI] = newSide;
     const effectiveTarget = isLocked ? P + state.perpSides[nearestI] * deadRad : rawTarget;
+    // Likewise a lock left on the other perp (rawTarget jumped straight from
+    // inside one zone to the other, e.g. a 180° turn) must not survive to
+    // widen that zone's exit radius the next time it becomes nearest.
+    for (let i = 0; i < state.locked.length; i++) if (i !== nearestI) state.locked[i] = false;
     state.locked[nearestI] = isLocked;
+    state.lastNearestPerpIndex = nearestI;
     state.pixelProbeDebug = {
       timestampMs: typeof performance !== 'undefined' ? performance.now() : Date.now(), // Lets the probe identify stale clamp state.
       rawTargetRotY: rawTarget,

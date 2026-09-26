@@ -380,6 +380,7 @@
         activeCameraMode   = npcDialogueCameraMode();
         activeCameraTarget = walker.root;
         const authoredDialogueCameraId = String(rec?.dialogueCameraId || walker.profile?.appearance?.dialogueCameraId || ''); // Optional explicit camera beats the area's NPC-tagged default.
+        window.DialogueCameraFraming?.end?.(); // Drop any session a non-closeNpcDialogue exit left behind so this conversation frames from its own Talk-time view.
         window.CinematicCameraRuntime?.beginDialogue?.({
           areaId: currentArea,
           npcId: rec?.id || '',
@@ -526,6 +527,7 @@
       function closeNpcDialogue() {
         dialogueOpen = false;
         window.CinematicCameraRuntime?.endDialogue?.();
+        window.DialogueCameraFraming?.end?.();
         window.DialogueContent?.resetDialogueState();
         window.DialogueContent?.stopNpcDialogueTypewriter(false);
         window.DialogueContent?.hideChoiceButtons();
@@ -11091,15 +11093,38 @@
         npcDialogueStaging = null;
         player.vx = 0;
         player.vy = 0;
-        if (!cinematicActive && walker?.rec?.id !== 'banubu') {
-          const cameraSideAngleDeg = Number(npcDialogueStagingConfig().cameraSideAngleDeg) || 15; // Relative turn from the camera azimuth captured when Talk was pressed.
-          const dialogueBaseAzimuthDeg = Number(cameraModeConfig(npcDialogueCameraMode()).azimuthDeg) || 0; // Converted out below so the final world azimuth stays interaction-relative.
+        // The side swing itself is derived every frame from the live
+        // player/NPC layout (see updateDialogueCameraFraming) so the camera
+        // always faces the NPC and the player never covers their face,
+        // whatever the camera's angle was when Talk was pressed. Re-entry via
+        // refreshDialogueStaging keeps the running session instead of
+        // restarting its ease from the interaction-time view.
+        if (!cinematicActive && walker?.rec?.id !== 'banubu' && !window.DialogueCameraFraming?.isActive?.()) {
           const interactionAzimuthDeg = Number.isFinite(dialogueEntryCameraAzimuthDeg)
             ? dialogueEntryCameraAzimuthDeg
             : THREE.MathUtils.radToDeg(activeCameraAzimuthRad());
-          cameraAzimuthOffsetDeg = wrapAzimuthDeg(interactionAzimuthDeg + cameraSideAngleDeg - dialogueBaseAzimuthDeg);
+          window.DialogueCameraFraming?.begin?.(THREE.MathUtils.degToRad(interactionAzimuthDeg));
+          const dialogueBaseAzimuthDeg = Number(cameraModeConfig(npcDialogueCameraMode()).azimuthDeg) || 0;
+          cameraAzimuthOffsetDeg = wrapAzimuthDeg(interactionAzimuthDeg - dialogueBaseAzimuthDeg); // Ease starts from the exact interaction-time view.
           cameraAngleOffsetDeg = 0;
         }
+      }
+
+      // Per-frame ordinary-dialogue camera orbit — the geometry lives in
+      // js/dialogue-camera-framing.js (window.DialogueCameraFraming). Skipped
+      // while an authored cinematic shot or Cutscene Preview owns the camera.
+      function updateDialogueCameraFraming(dt) {
+        const framing = window.DialogueCameraFraming;
+        if (!framing?.isActive?.()) return null;
+        if (!dialogueOpen || !_dialogueWalker?.root || activeCameraMode !== npcDialogueCameraMode()) return null;
+        if (cutscenePreviewActive || window.CinematicCameraRuntime?.isActive?.()) return null;
+        const npcPos = _dialogueWalker.root.position;
+        const azimuthRad = framing.update(dt, { x: npcPos.x, z: npcPos.z }, { x: player.x / TILE, z: player.y / TILE });
+        if (!Number.isFinite(azimuthRad)) return null;
+        const dialogueBaseAzimuthDeg = Number(cameraModeConfig(npcDialogueCameraMode()).azimuthDeg) || 0;
+        cameraAzimuthOffsetDeg = wrapAzimuthDeg(THREE.MathUtils.radToDeg(azimuthRad) - dialogueBaseAzimuthDeg);
+        cameraAngleOffsetDeg = 0; // Dialogue framing owns pitch through the portrait-center aim, not look-around input.
+        return framing.followAlpha(); // Real-time follow lerp toward the NPC; null falls back to the mode's per-frame followLerp.
       }
 
       // Continuous "eye contact" aim, ported from the Multi-Avatar Animation
@@ -20311,6 +20336,12 @@
       const _cinematicDesiredPosition = new THREE.Vector3(); // Reused every frame while a cinematic shot is active to avoid per-frame allocation.
       const _cinematicDesiredTarget = new THREE.Vector3();
       const _cinematicLookTarget = new THREE.Vector3();
+      // Where the camera was ACTUALLY looking last frame. Cinematic blends
+      // start from this rather than camTargetX/Y/Z: camTargetY is ground
+      // height (the portrait/targetYOffset look height is added later), so
+      // blending from it dipped the view toward the floor before rising back
+      // up to the NPC's face on every authored dialogue shot.
+      const _lastCameraLookPoint = new THREE.Vector3(camTargetX, camTargetY, camTargetZ);
       function applyAuthoredCinematicCamera() {
         const record = window.CinematicCameraRuntime?.activeRecord?.();
         const shot = record?.camera;
@@ -20321,7 +20352,7 @@
             key: blendKey,
             startedAt: performance.now(),
             startPosition: camera.position.clone(),
-            startTarget: new THREE.Vector3(camTargetX, camTargetY, camTargetZ),
+            startTarget: _lastCameraLookPoint.clone(),
             startFov: camera.fov,
           };
         }
@@ -20344,6 +20375,7 @@
         camera.position.lerpVectors(_cinematicCameraBlend.startPosition, desiredPosition, t);
         const lookTarget = _cinematicLookTarget.copy(_cinematicCameraBlend.startTarget).lerp(desiredTarget, t);
         camera.lookAt(lookTarget);
+        _lastCameraLookPoint.copy(lookTarget);
         camera.fov = THREE.MathUtils.lerp(_cinematicCameraBlend.startFov, Number(shot.fovDeg) || 42, t);
         camera.aspect = cameraContainerAspect();
         camera.updateProjectionMatrix();
@@ -20427,6 +20459,7 @@
         if (!window.__mapEditorOrbitActive) {
           camera.position.set(safe.x, safe.y, safe.z);
           camera.lookAt(lookAtX, lookY, lookAtZ);
+          _lastCameraLookPoint.set(lookAtX, lookY, lookAtZ);
         }
         camera.fov = modeCfg.fovDeg ?? 42;
         camera.aspect = cameraContainerAspect();
@@ -24073,7 +24106,8 @@
         // water carries straight through to the camera for free.
         const wy = targetPosition ? targetPosition.y
           : (activeCameraMode === SHOULDER_SURF_MODE ? playerMesh.position.y : _playerGroundY());
-        const camLerp = cameraModeConfig(activeCameraMode).followLerp ?? 0.08;
+        const dialogueFollowAlpha = updateDialogueCameraFraming(dt); // Orbits the dialogue camera onto the NPC's face side before this frame's updateCameraPosition().
+        const camLerp = dialogueFollowAlpha ?? cameraModeConfig(activeCameraMode).followLerp ?? 0.08;
         camTargetX += (wx - camTargetX) * camLerp;
         camTargetZ += (wz - camTargetZ) * camLerp;
         camTargetY += (wy - camTargetY) * camLerp;
@@ -27185,6 +27219,8 @@
           return _finiteNpcFacePoint(face) ? { x: face.x, y: face.y, z: face.z } : null;
         },
       });
+
+      window.DialogueCameraFraming?.init?.({ getStagingConfig: npcDialogueStagingConfig }); // Ordinary dialogue camera orbit: js/dialogue-camera-framing.js.
 
       window.DialogueContent?.init({
         calendar,

@@ -159,6 +159,10 @@ window.SCRATCHBONES_CONFIG = {
       },
       "staging": {
         "cameraSideAngleDeg": 15,
+        "maxCameraSideAngleDeg": 60,
+        "playerClearanceTiles": 0.55,
+        "cameraOrbitEaseRate": 7,
+        "cameraFollowRate": 12,
         "moveSpeedTilesPerSecond": 4.25,
         "arrivalRadiusTiles": 0.08,
         "faceLerp": 0.28,
