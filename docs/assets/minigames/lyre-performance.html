@@ -2575,7 +2575,7 @@
     const rootOscillator = context.createOscillator();
     const filter = context.createBiquadFilter();
     const gain = context.createGain();
-    rootOscillator.type = 'sine';
+    rootOscillator.type = 'triangle'; // Keeps one root pitch while adding odd harmonics so the low F2–A2 pad remains audible on phone and small speakers.
     rootOscillator.frequency.setValueAtTime(midiFrequency(rootMidi), now);
     rootOscillator.detune.setValueAtTime(0, now);
     filter.type = 'lowpass';
@@ -2585,7 +2585,7 @@
     if (synthPadGain <= 0) gain.gain.setValueAtTime(0, now);
     else {
       gain.gain.setValueAtTime(0.0001, now);
-      gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, synthPadGain), now + 0.55);
+      gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, synthPadGain), now + 0.18); // Reaches an audible level quickly enough for the short Music Lab preview while remaining a soft pad attack.
     }
     rootOscillator.connect(filter).connect(gain).connect(state.master);
     rootOscillator.start(now);
@@ -6969,6 +6969,9 @@
       kurraya:state.kurrayaMixLevel,
       metronome:state.metronomeMixLevel,
       pad:state.padMixLevel,
+      audioContextState:state.audioContext?.state || 'uninitialized', // Exposed to the Music Lab diagnostics so mobile audio-wake failures are visible without devtools.
+      padSynthGain:rootPadSynthGain(), // Exposed to verify that a nonzero authored synth-pad gain reaches the preview/runtime path.
+      padSynthFrequency:midiFrequency(rootPadTargetMidi()), // Exposed to show the exact low-root frequency being synthesized for the current progression step.
       kurrayaSampleName:state.sampleName || 'Fallback pluck',
       kurrayaSampleImported:!!state.sampleImported,
       padSampleName:state.rootPadSampleBuffer || state.pendingRootPadSampleRecord ? (state.rootPadSampleName || state.pendingRootPadSampleRecord?.name || 'Imported pad') : 'Synth root pad',
