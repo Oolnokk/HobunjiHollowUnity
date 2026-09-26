@@ -191,7 +191,7 @@ assert.equal(enghExportProfile.bodyColors.A.hex, '#123456');
   const loaded = await windowObject.loadPortraitCosmetics();
   for (const fighterId of ['harlyao-skeleton_male', 'harlyao-skeleton_female']) {
     assert.equal(loaded.bodyColorRangesByGender[fighterId].fixedHex, '#D4D6C9'); // Field-level equality avoids VM-realm prototype differences while still proving the fixed extremity descriptor.
-    assert.deepEqual(Array.from(loaded.allowedCosmeticsByFighter[fighterId].set).sort(), ['bandolier1', 'fine_hood', 'fine_poncho', 'rugged_poncho', 'tankan_bodywrap', 'tankan_tunic'].sort());
+    assert.deepEqual(Array.from(loaded.allowedCosmeticsByFighter[fighterId].set).sort(), ['bandolier1', 'fine_hood', 'ragged_hood', 'fine_poncho', 'rugged_poncho', 'tankan_bodywrap', 'tankan_tunic'].sort());
     for (const slot of ['eyes', 'upperFace', 'facialHair', 'hairFront', 'hairBack', 'hairSide', 'hairSideL', 'hat']) {
       assert.equal(loaded.forcedCosmeticsByFighter[fighterId][slot], 'none');
     }
