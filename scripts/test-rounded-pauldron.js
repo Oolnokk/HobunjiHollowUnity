@@ -1,6 +1,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 
 const root = path.resolve(__dirname, '..');
 const read = rel => fs.readFileSync(path.join(root, rel), 'utf8');
@@ -31,37 +32,73 @@ for (const [variant, filename] of Object.entries(expected)) {
   assert(fs.existsSync(path.join(root, 'docs/assets/cosmetics/clothes/pauldrons', filename)), filename + ' exists');
 }
 
-const cosmeticsIndex = json('docs/config/cosmetics/index.json');
-assert(cosmeticsIndex.entries.some(entry => entry.id === 'rounded_pauldron' && entry.path === './clothes/pauldrons/rounded_pauldron.json'));
-const shopPiece = json('docs/config/shops/shop-stock.json').shops.generalStoreWares.clothingRotation.pieces.find(piece => piece.id === 'rounded_pauldron');
-assert(shopPiece && shopPiece.category === 'pauldron' && shopPiece.usesB === false);
+const windowStub = {};
+vm.runInNewContext(read('docs/js/pauldron-system.js'), {
+  window: windowStub,
+  document: {},
+  console,
+  setTimeout,
+  clearTimeout,
+}, { filename: 'pauldron-system.js' });
+const ps = windowStub.PauldronSystem;
+assert(ps, 'PauldronSystem exports');
+assert.deepEqual(Array.from(ps.TEMPER_XP_THRESHOLDS), [40, 90, 150, 220, 300], 'Temper uses Mastery-like five-rank pacing');
+assert.equal(ps.__test.temperLevelForXp(39), 0);
+assert.equal(ps.__test.temperLevelForXp(40), 1);
+assert.equal(ps.__test.temperLevelForXp(299), 4);
+assert.equal(ps.__test.temperLevelForXp(300), 5);
+assert.equal(ps.KG_PER_WEIGHT_UNIT, 0.4, '4 ordinary-wool overwear units calibrate to ~1.6 kg');
+const copperWeight = ps.weightForMetal('nativeCopper');
+const highTinWeight = ps.weightForMetal('highTinBronze');
+assert(copperWeight.massKg > 1.3 && copperWeight.massKg < 1.4, 'single copper pauldron mass stays near the density-scaled historical reference');
+assert(copperWeight.weightUnits > 3.3 && copperWeight.weightUnits < 3.5, 'copper pauldron lands a little above standard torso weight');
+assert(highTinWeight.weightUnits < copperWeight.weightUnits, 'alloy density changes the physical outfit weight');
+assert.equal(ps.visualOptions({ metalKey:'nativeCopper', temperXp:150, smithTreatment:null }).oxidationAmount, 0.5, 'Temper drives the same continuous verdigris fraction');
+assert.equal(ps.visualOptions({ metalKey:'nativeCopper', temperXp:300, smithTreatment:{ mode:'resistant', metalKey:'nativeCopper' } }).oxidationAmount, 0, 'resistant smith treatment suppresses verdigris');
+assert.equal(ps.visualOptions({ metalKey:'nativeCopper', temperXp:300, smithTreatment:{ mode:'cosmetic', metalKey:'gold' } }).targetHex, '#D8AA2E', 'cosmetic plating switches to the treatment metal');
 
 const scratchbones = read('docs/config/scratchbones-config.js');
-assert(scratchbones.includes('"rounded_pauldron": "assets/cosmetics/clothes/pauldrons/rounded_pauldron_m.png"'));
-assert(scratchbones.includes('"id": "rounded_pauldron", "label": "Rounded Pauldrons", "price": 70, "category": "pauldron"'));
+assert.match(scratchbones, /"id": "rounded_pauldron"[^\n]*"smithOnly": true[^\n]*"dyeable": false/, 'catalog marks pauldrons smith-only and non-dyeable');
+const shopPieces = json('docs/config/shops/shop-stock.json').shops.generalStoreWares.clothingRotation.pieces;
+assert(!shopPieces.some(piece => piece.id === 'rounded_pauldron'), 'General Store no longer sells pauldrons');
+
+const onboarding = read('docs/onboarding-core.js');
+assert(!onboarding.includes("{ key: 'pauldron', label: '🛡 Pauldrons'"), 'character creation does not offer smith-only pauldrons');
+assert(!onboarding.includes('PAULDRON: clothDyeColor(clothDyeA)'), 'character creation never cloth-dyes pauldrons');
+assert(onboarding.includes('clothing: { hat: null, hood: null, pauldron: null, torso: null, overwear: null }'), 'gear schema still owns a dedicated pauldron slot');
 
 const equipment = read('docs/js/equipment-panel.js');
-assert(equipment.includes("['hat', 'hood', 'pauldron', 'torso', 'overwear']"));
-assert(equipment.includes("if (slot === 'pauldron') return ['PAULDRON'];"));
-const saveGate = read('docs/js/save-startup-gate.js');
-assert(saveGate.includes("pauldron: 'pauldron'"));
-assert(saveGate.includes("if (slot === 'pauldron') return ['PAULDRON'];"));
-const onboarding = read('docs/onboarding-core.js');
-assert(onboarding.includes("category: 'pauldron'"));
-assert(onboarding.includes("applyEquip('pauldron', 'pauldron',"));
-assert(onboarding.includes("PAULDRON: clothDyeColor(clothDyeA)"));
-assert(onboarding.includes("['hat', 'hood', 'pauldron', 'torso', 'overwear']"));
-assert(read('docs/js/npc-avatar-preview-utils.js').includes("applyEquip('pauldron', 'pauldron',"));
-const studio = read('docs/tools/character-studio/index.html');
-assert(studio.includes("category: 'pauldron', tintKeys: ['PAULDRON']"));
-assert(studio.includes("applyEquip('pauldron', 'pauldron',"));
-const portrait = read('docs/js/portrait-utils.js');
-assert(portrait.includes("option?.slot === 'pauldron') ? 'body' : 'head'"));
-assert(portrait.includes("pauldron:      () => drawEmoteLayers(pauldronLayers)"));
-const wardrobe = read('docs/js/npc-wardrobe.js');
-assert(wardrobe.includes("pauldron: ['PAULDRON']"));
-assert(wardrobe.includes("return 'pauldron';"));
-assert(read('docs/js/item-traits.js').includes("['hat', 'hood', 'pauldron', 'torso', 'overwear']"));
-assert.equal(json('docs/config/items/item-index.json')['cosmetic:rounded_pauldron']?.label, 'Rounded Pauldrons');
+assert(equipment.includes('PauldronSystem?.applyImageVisual'), 'gear icons use the shared metal/verdigris renderer');
+assert(equipment.includes("item.baseCosmeticId || item.cosmeticId"), 'unique smith instance IDs resolve through the authored base cosmetic');
+assert(equipment.includes("item?.dyeable !== false"), 'non-dyeable smith clothing suppresses Redye');
 
-console.log('OK: rounded pauldron assets are wired through cosmetic loading, gear, portraits, authoring, shop stock, NPC wardrobe, and item indexing.');
+const portrait = read('docs/js/portrait-utils.js');
+assert(portrait.includes('PauldronSystem.preparePortraitLayers'), 'portrait pixels run through the metal renderer');
+assert(portrait.includes("pauldronPixelsAreFinal ? { mode: 'none' }"), 'finished metal pixels are not recolored again as cloth');
+
+const weaving = read('docs/js/clothing-weaving-system.js');
+assert(weaving.includes("OUTFIT_WEIGHT_SLOTS = Object.freeze(['hat', 'hood', 'pauldron', 'torso', 'overwear'])"), 'pauldron weight contributes to outfit burden');
+assert(weaving.includes("CLOTHING_SLOTS = Object.freeze(['hat', 'hood', 'torso', 'overwear'])"), 'pauldrons remain excluded from loom craftability');
+assert.match(weaving, /const explicit = Number\(item\?\.weightUnits\);[\s\S]*if \(Number\.isFinite\(explicit\)/, 'explicit smith weight is honored before cloth-only fallback');
+
+const smith = read('docs/js/metal-craft-shop.js');
+assert(smith.includes('PauldronSystem?.renderSmithySection?.(list)'), 'smithy renders the new metal-clothing section');
+assert(smith.includes('PauldronSystem?.init?.'), 'smithy injects existing inventory/save/avatar adapters into the pauldron module');
+
+const game = read('docs/game.js');
+assert(game.includes("PauldronSystem?.awardExperience?.(amount, 'tool/weapon Mastery XP', { save: false })"), 'tool/weapon Mastery XP contributes to worn pauldron Temper');
+const pauldronSource = read('docs/js/pauldron-system.js');
+assert(pauldronSource.includes('skillSystem.award = wrapped'), 'ordinary SkillSystem XP contributes to worn pauldron Temper');
+assert(!pauldronSource.includes('setToolReinforcement'), 'Temper unlocks cosmetic smith treatments, not stat-changing reinforcement');
+
+const studio = read('docs/tools/character-studio/index.html');
+assert(studio.includes("category: 'pauldron', tintKeys: []"), 'Character Studio exposes the slot without cloth dyes');
+
+const index = read('docs/index.html');
+assert(index.indexOf('js/tool-metal-recolor.js?v=20260926pauldron1') < index.indexOf('js/pauldron-system.js?v=20260926pauldron1'));
+assert(index.indexOf('js/pauldron-system.js?v=20260926pauldron1') < index.indexOf('onboarding.js?v=20260926pauldron1'), 'metal pauldron renderer loads before save/creator portraits');
+
+const pixelProbe = read('docs/js/pixel-probe.js');
+assert(pixelProbe.includes('PauldronSystem?.diagnosticsText?.()'), 'Pixel Probe exposes phone-copyable Temper/material/weight diagnostics');
+
+console.log('OK: Rounded Pauldrons are smith-crafted non-dyeable metal clothing with cosmetic Temper, shared verdigris treatments, and density-derived outfit weight.');

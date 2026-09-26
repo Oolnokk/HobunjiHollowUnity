@@ -146,14 +146,6 @@
             "conditions": {}
           },
           {
-            "id": "rounded_pauldron",
-            "label": "Rounded Pauldrons",
-            "category": "pauldron",
-            "usesB": false,
-            "price": 70,
-            "conditions": {}
-          },
-          {
             "id": "fine_poncho",
             "label": "Fine Poncho",
             "category": "overwear",
