@@ -738,7 +738,8 @@
   function renderDlgNode(node) {
     _clearDialogueVisualTimer();
     if (!node) { deps.closeNpcDialogue(); return; }
-    window.CinematicCameraRuntime?.applyDialogueNodeCamera?.(node); // Optional node.cameraId swaps authored world shots without reintroducing a portrait overlay.
+    const appliedDialogueCamera = window.CinematicCameraRuntime?.applyDialogueNodeCamera?.(node); // Optional node.cameraId swaps authored world shots without reintroducing a portrait overlay.
+    if (node.cameraId && appliedDialogueCamera) deps?.refreshDialogueStaging?.(); // Mid-conversation authored camera swaps can introduce or remove player staging; re-evaluate blocking immediately.
     _dlgNode = node;
     _notifyDialogueNodeEnter(node); // Feature-owned world presentation tracks the same node transition the player actually sees.
 
