@@ -351,9 +351,13 @@
 
   function attachRope(rope) {
     if (!rope || state.flight || rope.attached) return false;
+    const intent=ropeIntent(rope); // Preserve the approach impulse, like Wind Waker's jump-into-rope auto-grab, without requiring a separate jump state.
+    rope.angle=rope.launchAngle;
+    rope.omega=Math.max(.28,intent.forward*.9);
     rope.attached = true;
     rope.braking = false;
     state.activeRope = rope;
+    updateRopeVisual(rope);
     deps?.showToast?.('Caught the rope — move to pump; release when you have the arc.', true);
     return true;
   }
@@ -436,6 +440,7 @@
         length,
         maxLength:length+.55,
         angle:-startAngle,
+        launchAngle:-startAngle,
         omega:0,
         attached:false,
         braking:false,
