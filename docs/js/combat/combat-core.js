@@ -881,7 +881,8 @@
 
   RS.getEffectiveMax = function drunkenAwareEffectiveMax(entity, key) {
     if (key === "footing") {
-      return clamp((Number(entity?.maxFooting) || 0) - getDrunk(entity, DRUNK_FOOTING_ID), 0, Number(entity?.maxFooting) || 0);
+      const baseFootingMax = Math.max(0, Number(original.getEffectiveMax(entity, key)) || 0); // Includes ResourceSystem reservations such as permanent Shambling Footing.
+      return clamp(baseFootingMax - getDrunk(entity, DRUNK_FOOTING_ID), 0, baseFootingMax); // Drunken Footing stacks on top instead of replacing the Minion cap.
     }
     return original.getEffectiveMax(entity, key);
   };
