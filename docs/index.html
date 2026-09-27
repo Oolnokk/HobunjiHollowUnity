@@ -31,6 +31,8 @@
        load before game.js, which calls window.InputBindings.init(...) and
        window.InputBindings.loadInputBindings() during its own setup. -->
   <script src="js/input-bindings.js?v=20260914transienttarget1"></script>
+  <!-- Shared contextual input-ownership registry. World interactions may explicitly claim Action 1/2/etc.; game.js consults it before combat/tool dispatch so one physical input has exactly one owner. -->
+  <script src="js/world-action-input-claims.js?v=20260927inputclaim1"></script>
   <!-- Bottom-of-screen contextual action prompt extracted out of game.js;
        uses window.InputBindings.buttonLabel, so must load after it and
        before game.js, which calls window.ActionPromptUI.init(...). -->
@@ -2474,7 +2476,7 @@
   <!-- Directional camera pitch policy is isolated from controller bindings/gameplay dispatch. -->
   <script src="js/camera-look-clamp.js?v=20260923review2"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
-  <script src="js/dev-random-ruin-bootstrap.js?v=20260927doorunlock1"></script>
+  <script src="js/dev-random-ruin-bootstrap.js?v=20260927inputclaim1"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their
@@ -2489,7 +2491,7 @@
   <script src="js/banubu-cave-clouds.js?v=20260923cloudring3"></script>
   <!-- Shoulder Cam / Character View Pointer Lock (window.ShoulderCamPointerLock); game.js calls init(...) during setup. -->
   <script src="js/shoulder-cam-pointer-lock.js?v=20260925shouldercamonly1"></script>
-  <script src="game.js?v=20260927aerialchain1"></script>
+  <script src="game.js?v=20260927inputclaim1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
   <script src="js/banubu-snore.js?v=20260925snorepitchrevert1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
