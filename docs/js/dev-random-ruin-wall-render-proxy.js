@@ -392,6 +392,7 @@
       if (Number.isFinite(Number(source.opacity))) target.opacity = Number(source.opacity);
       if (Number.isFinite(Number(source.alphaTest))) target.alphaTest = Number(source.alphaTest);
       if (source.blending != null && target.blending !== source.blending) { target.blending = source.blending; target.needsUpdate = true; } // Active glyph decals switch Normal→Additive without scene lights.
+      target.userData.devRuinGlyphGlow = source.userData?.devRuinGlyphGlow === true;
       target.polygonOffset = source.polygonOffset === true;
       target.polygonOffsetFactor = Number(source.polygonOffsetFactor) || 0;
       target.polygonOffsetUnits = Number(source.polygonOffsetUnits) || 0;
