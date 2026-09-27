@@ -12,6 +12,8 @@ const indexSource = fs.readFileSync(path.join(root, 'docs/index.html'), 'utf8');
 const pixelProbeSource = fs.readFileSync(path.join(root, 'docs/js/pixel-probe.js'), 'utf8');
 const portraitSource = fs.readFileSync(path.join(root, 'docs/js/portrait-utils.js'), 'utf8');
 const styleSource = fs.readFileSync(path.join(root, 'docs/style.css'), 'utf8');
+const combatBanditSource = fs.readFileSync(path.join(root, 'docs/js/combat/combat-bandit.js'), 'utf8');
+const gameSource = fs.readFileSync(path.join(root, 'docs/game.js'), 'utf8');
 const proceduralLegSource = fs.readFileSync(path.join(root, 'docs/js/procedural-leg-animation.js'), 'utf8');
 const drunkProneSource = fs.readFileSync(path.join(root, 'docs/js/drunk-prone-composition-bridge.js'), 'utf8');
 const skeletonSpecies = JSON.parse(fs.readFileSync(path.join(root, 'docs/config/species/harlyao-skeleton.json'), 'utf8'));
@@ -251,7 +253,10 @@ for (const key of ['tothal', 'hronal', 'kanthic']) {
   assert(devSpawnerSource.includes(`harlyao-lich:${key}`), `Testing Arena must expose ${key} lich button`);
 }
 assert.match(devSpawnerSource, /startsWith\('harlyao-lich:'\)/);
-assert(indexSource.includes('js/combat/combat-lich.js?v=20260926lich6'));
+assert(indexSource.includes('js/combat/combat-lich.js?v=20260927lichvisual1'));
+assert(indexSource.includes('js/combat/combat-bandit.js?v=20260927hostilevisual1'));
+assert(indexSource.includes('js/dev-spawner.js?v=20260927hostilevisual1'));
+assert(indexSource.includes('game.js?v=20260927arenarespawn1'));
 assert(indexSource.includes('js/combat/resource-system.js?v=20260926lich1'));
 assert(indexSource.includes('js/pixel-probe.js?v=20260926lich1'));
 assert(indexSource.includes('js/portrait-utils.js?v=20260926hoodback2'));
@@ -285,6 +290,10 @@ assert.match(lichSource, /socket\.name = 'lich_empty_light_weapon'/, 'visible re
 assert.match(lichSource, /window\.Combat\?\.comboData\?\.\[LICH_CAST_COMBO_ID\]/, 'lich casts must read the existing player attack animation steps rather than a bespoke pose');
 assert.match(lichSource, /window\.Combat\?\.beginStagedAction/, 'lich abilities must use the existing staged Neutral→Windup→Strike attack timing');
 assert.match(lichSource, /rig\.placeHandWorld\('right', handPosition, handQuaternion\)/, 'lich procedural right hand must attach to the animated empty weapon object');
+assert.match(combatBanditSource, /portrait\.userData\.proceduralHandParent = handsPivot[\s\S]*group\.add\(portrait\)/, 'shared hostile builder must keep the PNGPlaneAvatar hand-driver root parented in the visible entity hierarchy');
+assert.match(combatBanditSource, /handRigAvatarRoot: portrait/, 'lich avatarRef must expose the registered procedural hand root');
+assert.match(lichSource, /const registeredRoot = entity\?\.avatarRef\?\.handRigAvatarRoot/, 'lich cast-hand lookup must prefer the retained registered hand root');
+assert.match(combatBanditSource, /const resolvedRosterDyes = applyRosterDyesToProfile\(profile, roster\)/, 'lich visible portrait must explicitly reconcile its hood/bodywrap dye before rasterization');
 assert.match(lichSource, /if \(ability === 'summon'\) summonMinion\(lich\);[\s\S]*else firePrimary\(lich, target\);/, 'both summon and primary spell abilities must fire from the reused attack strike phase');
 assert.match(proceduralLegSource, /function applyHoverPose\(side, dt\)/, 'procedural leg system must own a real two-bone hover pose rather than post-rotating feet');
 assert.match(proceduralLegSource, /bendDegX = -31[\s\S]*solveTwoBoneLeg/, 'hover pose must keep visibly flexed dangling knees through the shared leg solver');
@@ -296,6 +305,14 @@ assert.match(drunkProneSource, /const hoverMode = !!handle\.isHoverMode\?\.\(\)[
 assert.match(lichSource, /HOVER_HEIGHT_MODEL_FRACTION = 0\.58/, 'lich hover height must scale from rendered model height');
 assert.match(lichSource, /lich\.groundLift = baseGroundLift \+ lich\._lichHoverOffsetWorld/, 'hover must use existing render baseline without changing ground-plane AI coordinates');
 assert.match(lichSource, /!lich\.prone/, 'active hover must drop while a lich is prone');
+const arenaRespawnStart = gameSource.indexOf("if (currentArea === 'map_dev_arena')", gameSource.indexOf('function respawnPlayer()'));
+const arenaRespawnEnd = gameSource.indexOf('const totem = _isZoneArea', arenaRespawnStart);
+assert(arenaRespawnStart >= 0 && arenaRespawnEnd > arenaRespawnStart, 'Testing Arena needs a dedicated respawn branch before ordinary Root Totem/farm fallback');
+const arenaRespawnBlock = gameSource.slice(arenaRespawnStart, arenaRespawnEnd);
+assert.match(arenaRespawnBlock, /EXTERIOR_ZONES\.map_dev_arena[\s\S]*entryCol[\s\S]*entryRow/, 'arena death must respawn at the authored Testing Arena entry');
+assert.doesNotMatch(arenaRespawnBlock, /_returnToFarmMeshes\(/, 'arena death must never invoke the farm scene fallback');
+assert.match(arenaRespawnBlock, /player\.health = player\.maxHealth[\s\S]*player\.stamina = player\.maxStamina/, 'arena respawn must restore combat resources');
+assert.match(arenaRespawnBlock, /Object\.keys\(window\.ResourceSystem\?\.AFFLICTIONS \|\| \{\}\)/, 'arena respawn must clear stale affliction buildup that could instantly re-kill the test player');
 
 console.log('Harlyao Lich regression checks passed.');
 
