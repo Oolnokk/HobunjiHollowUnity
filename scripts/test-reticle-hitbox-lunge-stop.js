@@ -8,6 +8,10 @@ const vm = require('node:vm');
 const source = fs.readFileSync('docs/js/combat/combat-camera-alignment-bridge.js', 'utf8');
 const coreSource = fs.readFileSync('docs/js/combat/combat-core.js', 'utf8');
 const gameSource = fs.readFileSync('docs/game.js', 'utf8'); // Native player lunge/render path must actually apply ordinary hop height, not merely compute it.
+const comboSource = fs.readFileSync('docs/js/combat/combat-combo.js', 'utf8'); // Player combo hit-confirm must arm aerial chaining only after a real strike hit.
+const quickSource = fs.readFileSync('docs/js/combat/combat-quickattacks.js', 'utf8'); // Quick attacks use the same real-hit aerial chain seam.
+const breakerSource = fs.readFileSync('docs/js/combat/combat-charged-breaker.js', 'utf8'); // Charged Breaker uses the same real-hit aerial chain seam.
+const indexSource = fs.readFileSync('docs/index.html', 'utf8'); // Changed lunge/attack runtimes must be cache-busted together.
 assert.doesNotMatch(source, /requestAnimationFrame\s*\(|setInterval\s*\(/,
   'reticle/lunge correction must piggyback existing combat ticks instead of adding another loop');
 assert.match(source, /rayBoxInterval\(ray, box\)/,
@@ -26,6 +30,28 @@ assert(gameSource.includes('const ordinaryLungeHopY = player.lunging && !Number.
   'ordinary lunge hop must be promoted from simulation into the player render path');
 assert(gameSource.includes(': groundedTargetY + ordinaryLungeHopY;'),
   'ordinary lunge hop must raise the real player mesh/hitbox instead of existing only as simulated lungeHopCurrent');
+assert.match(gameSource, /MIDAIR_LUNGE_HIT_WINDOW_MS = 1000/,
+  'confirmed melee hits must grant exactly one second of aerial lunge opportunity');
+assert.match(gameSource, /MIDAIR_LUNGE_SLOW_FALL_GRAVITY = 1\.6[\s\S]{0,160}MIDAIR_LUNGE_SLOW_FALL_SPEED_CAP = 0\.45/,
+  'the hit-confirm second must use deliberately super-slow fall acceleration and a low fall-speed cap');
+assert.match(gameSource, /airborneBetweenLunges = !!player\.lungeLandingPending && Number\.isFinite\(player\.lungeFlightWorldY\)[\s\S]{0,320}midairLungeWindowUntilMs[\s\S]{0,180}return false/,
+  'a post-lunge airborne player cannot start another movement lunge without an active hit-confirm window');
+assert.match(gameSource, /player\.midairLungeWindowUntilMs = 0; \/\/ One confirmed hit buys one aerial follow-up/,
+  'starting the aerial follow-up must consume the permission immediately');
+assert.match(gameSource, /confirmEnemyHit:[\s\S]{0,650}_lungeHitConfirmEligibleUntilMs[\s\S]{0,600}midairLungeWindowUntilMs = nowMs \+ MIDAIR_LUNGE_HIT_WINDOW_MS/,
+  'only a strike associated with a real prior lunge may arm the one-second window');
+assert.match(gameSource, /midairChainWindowActive[\s\S]{0,300}MIDAIR_LUNGE_SLOW_FALL_GRAVITY[\s\S]{0,400}MIDAIR_LUNGE_SLOW_FALL_SPEED_CAP/,
+  'post-lunge gravity must switch to super-slow fall only while the hit window remains active');
+assert.match(gameSource, /lungeFlightWorldY = null;[\s\S]{0,180}midairLungeWindowUntilMs = 0[\s\S]{0,220}lungeLandingPending = false/,
+  'landing must clear unused aerial-chain permission');
+for (const [name, sourceText] of [['combo', comboSource], ['quick', quickSource], ['breaker', breakerSource]]) {
+  assert.match(sourceText, /if \(hits > 0\) \{[\s\S]{0,180}PlayerLunge\?\.confirmEnemyHit\?\.\(\)/,
+    `${name} must grant aerial chaining only after its real strike reports at least one enemy hit`);
+}
+assert(indexSource.includes('js/combat/combat-combo.js?v=20260927aerialchain1'));
+assert(indexSource.includes('js/combat/combat-quickattacks.js?v=20260927aerialchain1'));
+assert(indexSource.includes('js/combat/combat-charged-breaker.js?v=20260927aerialchain1'));
+assert(indexSource.includes('game.js?v=20260927aerialchain1'));
 
 const player = {
   x: 0, y: 0, health: 100, facing: 0,
