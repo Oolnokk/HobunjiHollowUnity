@@ -45,7 +45,7 @@ const loadOrder = [
 ].map(name => camera.indexOf(name));
 assert(/localStorage\.getItem\('hobunjiDevMode'\) === '1'/.test(camera) && /if \(!devMode/.test(camera), 'ruin runtime must only be injected in Dev Mode');
 assert(camera.includes('dev-random-ruin-interactions.js?v=20260926ropedodge1'), 'ruin interaction adapter must be cache-busted in the dev bootstrap');
-assert(camera.includes('dev-random-ruin-simple-puzzles.js?v=20260927modules2'), 'simple puzzle runtime must be cache-busted in the dev bootstrap');
+assert(camera.includes('dev-random-ruin-simple-puzzles.js?v=20260927modules3'), 'simple puzzle runtime must be cache-busted in the dev bootstrap');
 assert(camera.includes('dev-random-ruin-wall-render-proxy.js?v=20260926glyphdecal1'), 'glyph decal proxy fix must be cache-busted in the dev bootstrap');
 assert(gameIndex.includes('js/dev-random-ruin-bootstrap.js?v=20260927plateclear1'), 'game page must load the updated ruin bootstrap');
 assert(gameIndex.includes('game.js?v=20260926ropedodge1'), 'game page must cache-bust the native Dodge rope release seam');
@@ -72,7 +72,7 @@ assert(interior.includes('spritePngSurface.makeMaterial(THREE,source.map||null')
 assert(interior.includes('remainingLitMaterials'), 'material diagnostics must explicitly count any lit material that escapes normalization');
 assert((cloudFog.match(/map_i_dev_random_ruin/g)||[]).length>=2, 'Random Test Ruin must opt into the shared den no-sky and den darkness/lantern classifications');
 assert(gameIndex.includes('js/cloud-forest-fog.js?v=20260926devruindark2'), 'test-ruin darkness override must be cache-busted in the game page');
-assert(camera.includes('dev-random-ruin-interior-map.js?v=20260926animperf2'), 'test-ruin mechanism animation changes must be cache-busted in the dev bootstrap');
+assert(camera.includes('dev-random-ruin-interior-map.js?v=20260927modulesignal1'), 'test-ruin mechanism animation changes must be cache-busted in the dev bootstrap');
 assert(interior.includes('Solvability.audit'), 'candidate ruins must run the pre-entry solvability audit');
 assert(interior.includes('MAX_SOLVABILITY_ATTEMPTS = 6'), 'unsolvable candidates must have a bounded deterministic retry budget');
 assert(interior.includes('getLastSolvabilityAudit'), 'rejected seed diagnostics must remain inspectable without devtools');
