@@ -260,6 +260,29 @@
     return avatarRef;
   }
 
+  function applyRosterDyesToProfile(profile, roster) {
+    if (!profile || !roster) return {}; // Shared hostile portrait guard; callers still retain the untinted profile if no roster exists.
+    const catalog = window.ScratchbonesAccount?.getDyeCatalog?.()
+      || window.SCRATCHBONES_CONFIG?.game?.dyes?.catalog
+      || []; // Same authored dye catalog the inventory/loot presentation uses.
+    const byId = new Map(catalog.map(dye => [dye?.id, dye])); // One lookup table avoids rescanning the full catalog for every clothing slot.
+    const bodyColors = { ...(profile.bodyColors || {}) }; // Clone so randomProfile's palette object is never mutated behind another consumer's back.
+    const resolved = {}; // Mobile/debug-readable proof of the exact dye id/hex baked into this hostile's world portrait.
+    for (const [tintSlot, dyeId] of Object.entries(roster.appliedDyes || {})) {
+      const dye = byId.get(dyeId);
+      if (!dye) continue;
+      const tint = { ...(dye.color || {}) }; // Preserve fitted legacy HSV/filter metadata for compatibility with existing portrait tint consumers.
+      if (dye.hex) {
+        tint.hex = dye.hex; // Absolute catalog color makes hostile rendering deterministic and identical to the inventory swatch.
+        tint.tintMode = 'hexShadeFill';
+      }
+      bodyColors[tintSlot] = tint;
+      resolved[tintSlot] = { dyeId, hex: dye.hex || null };
+    }
+    profile.bodyColors = bodyColors;
+    return resolved;
+  }
+
   async function buildBanditAvatar(roster) {
     if (!window.NpcAvatarPreview || !window.PNGPlaneAvatar) return null;
     await window.NpcAvatarPreview.ensurePortraitCosmetics({ assetBase: './assets/', configBase: './config/' });
@@ -270,6 +293,7 @@
       appliedDyes: roster.appliedDyes,
     });
     if (!profile) return null;
+    const resolvedRosterDyes = applyRosterDyesToProfile(profile, roster); // Final world-avatar authority: visible pixels must use the same appliedDyes record that loot preserves.
     const avatarCfg = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar || {};
     const MODEL_W = avatarCfg.worldModelWidth ?? 0.9;
     const PORTRAIT_SIZE = avatarCfg.previewPortraitCanvasSize ?? 200;
@@ -385,6 +409,13 @@
     legsPivot.name = 'bandit_legs_pivot';
     legsPivot.position.y = -(modelHeight / 2);
     group.add(legsPivot);
+    const handsPivot = new THREE.Group(); // Floor-relative parent for procedural hands, matching the leg rig's center-anchored-hostile correction.
+    handsPivot.name = 'bandit_hands_pivot';
+    handsPivot.position.y = -(modelHeight / 2);
+    group.add(handsPivot);
+    portrait.position.set(0, -(modelHeight / 2), 0); // The original PNGPlaneAvatar root is now a metadata/hand-driver sentinel at the hostile's true floor origin.
+    portrait.userData.proceduralHandParent = handsPivot; // ProceduralHandFrameDriver attaches rendered hands to this visible hostile hierarchy instead of the discarded portrait assembly.
+    group.add(portrait); // Its front/back meshes were already extracted above, so parenting it enables hand discovery without double-rendering the portrait.
     // legsPivot's rotation.y is kept in sync with the same pngRot-derived
     // planeDelta the front/back planes use (see updateCreatureMesh), not
     // group's own free-tracking groupRot -- so the legs share whichever
@@ -400,6 +431,7 @@
 
     return {
       group, frontPlane: frontPivot, backPlane: backPivot, legsPivot, legs,
+      handsPivot, handRigAvatarRoot: portrait, resolvedRosterDyes,
       modelWidth, modelHeight,
       speciesId: portrait.userData?.speciesId || roster.appearance.speciesId,
       gender: portrait.userData?.gender || roster.appearance.gender,
@@ -426,14 +458,9 @@
         backNeckSkin?.weightedGeometry?.dispose();
         frontNeckSkin?.skeleton?.dispose?.();
         backNeckSkin?.skeleton?.dispose?.();
-        // `group` is a freshly built THREE.Group standing in as the avatar's
-        // rendered geometry (see the frontMesh/backMesh convention comment
-        // above), not the `portrait` object buildSinglePlaneAvatarModel
-        // returned. procedural-hand-frame-driver.js's hand rig (and anything
-        // chained onto ProceduralHandAttachments.attach) is registered
-        // against that original `portrait` avatarRoot, so disposing only
-        // `group` disposes the visible geometry but leaves the hand rig
-        // (and its sentinels/records) orphaned on every bandit death.
+        // The original portrait root is intentionally retained as the procedural-hand driver's registered avatarRoot.
+        // Dispose it explicitly first so its hand rig/sentinel are released before the converted visible hostile group.
+        portrait.parent?.remove?.(portrait);
         window.PNGPlaneAvatar.disposeAvatarModel?.(portrait);
         window.PNGPlaneAvatar.disposeAvatarModel?.(group);
       },
@@ -2085,6 +2112,7 @@
     loadGangConfig: loadBanditGangConfig,
     loadCampLocaleDefs: loadBanditCampLocaleDefs,
     makeEntity: makeBanditEntity,
+    applyRosterDyesToProfile, // Shared/testable world-avatar dye reconciliation used by Bandits, Minions, and Liches.
     // Rolls a name the same way a fresh gang member's roster does (see
     // rollBanditRoster) — used standalone by game.js's generateBountyTask
     // when no live camp exists yet to adopt a captain's real identity from.
