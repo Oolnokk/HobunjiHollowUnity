@@ -215,6 +215,7 @@ jobs:
               assert.equal(state.persistedToggle, null, 'persisted wall-off preference must be cleared');
 
               assert.equal(state.interactions.nativeProviderMode, true, 'ruin interactions should use direct runtime providers');
+              assert.equal(state.interactions.normalActionBarProvider, true, 'ruin interactions must feed the ordinary building-interior action bar');
               assert.equal(state.interactions.customPromptBridgeInstalled, false, 'ruin interactions must not wrap the custom ActionPromptUI');
               assert.ok(state.interactions.providerCount >= 2, 'base and prototype ruin controls should both feed the shared input list');
               assert.ok(state.interactions.rows.length > 0, 'spawn should expose at least the normal Leave Test Ruin interaction');
