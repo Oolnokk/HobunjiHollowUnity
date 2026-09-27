@@ -21,6 +21,12 @@
   const PUDDLE_TICK_S = 0.35; // Entranced buildup cadence while an actor remains inside gasoline.
   const PUDDLE_ENTRANCED_PER_TICK = 3.4; // Repeated buildup per puddle tick; latest puddle owner becomes the referential lich.
   const SUMMON_CAP = 3; // Per-lich live Minion cap prevents an unattended arena test from growing forever.
+  const LUNGE_RING_REFERENCE_OUTER_RADIUS = 0.22; // Reference size of the familiar lunge-trail ground circle; used only so the Entranced owner marker can be authored explicitly at 2× diameter.
+  const LUNGE_RING_REFERENCE_THICKNESS = 0.035; // Reference lunge-trail line width; Entranced doubles this independently from diameter.
+  const ENTRANCER_RING_OUTER_RADIUS = LUNGE_RING_REFERENCE_OUTER_RADIUS * 2; // Twice the lunge circle diameter/radius scale requested for the controlling lich marker.
+  const ENTRANCER_RING_THICKNESS = LUNGE_RING_REFERENCE_THICKNESS * 2; // Twice the lunge-circle line thickness requested for the controlling lich marker.
+  const ENTRANCER_RING_PULSE_MS = 1000; // One explosive outward pulse per second while this lich remains the player's referential Entranced source.
+  const ENTRANCER_RING_BURST_FRACTION = 0.24; // First quarter-second of each cycle carries the rapid expansion/fade; the rest stays as a faint ownership ring.
   const TYPE_ORDER = Object.freeze(['tothal', 'hronal', 'kanthic']); // Stable order used by the dev-spawner buttons and diagnostics.
   const HUE_VARIANTS = Object.freeze(['pure', 'muted', 'dusty', 'dark_muted']); // Existing authored dye variants combined with each tradition's hue families.
 
@@ -64,6 +70,8 @@
   let lastEvent = 'idle'; // Mobile-copyable diagnostic summary exposed through __lichDebug.
   let totalSummons = 0; // Session counter used only by diagnostics.
   let totalPuddles = 0; // Session counter used only by diagnostics.
+  let entrancerMarker = null; // Single reusable world-space ring pair that follows whichever Kanthic lich most recently applied the player's Entranced Health.
+  let entrancerMarkerSource = null; // Current referential lich owning the visible marker; changes immediately when a newer applicant takes control.
   let wrappersInstalled = false; // Prevents duplicate API wrapping if scripts/tools reinstall this feature.
 
   function random() {
@@ -483,11 +491,18 @@
 
   function ensureCommandBanner() {
     if (typeof document === 'undefined') return null;
-    let el = document.getElementById('entrancedCommandBanner'); // Reused singleton HUD element created lazily on first Entranced application.
+    let el = document.getElementById('entrancedCommandBanner'); // Reused singleton HUD element styled by the shared game stylesheet rather than module-local debug CSS.
     if (el) return el;
     el = document.createElement('div');
     el.id = 'entrancedCommandBanner';
-    el.style.cssText = 'position:fixed;left:50%;top:18%;transform:translateX(-50%);z-index:9500;display:none;padding:8px 14px;border:2px solid rgba(0,0,0,.8);border-radius:8px;background:rgba(30,4,40,.82);color:#f5c8ff;font:700 18px/1.1 system-ui,sans-serif;letter-spacing:.08em;text-align:center;pointer-events:none;text-shadow:0 2px 2px #000;';
+    el.setAttribute('role', 'status');
+    el.setAttribute('aria-live', 'polite');
+    const label = document.createElement('span'); // Small persistent condition label matching the game's ordinary HUD typography.
+    label.className = 'entranced-command-label';
+    label.textContent = 'ENTRANCED';
+    const command = document.createElement('span'); // Large action phrase updated live when the controlling lich swaps Approach/Flee.
+    command.className = 'entranced-command-action';
+    el.append(label, command);
     document.body.appendChild(el);
     return el;
   }
@@ -498,12 +513,89 @@
     const amount = window.ResourceSystem?.getAffliction?.(deps.player, 'entrancedHealth') || 0; // Health-ring buildup determines visibility.
     const state = deps.player._entrancedCommandState; // Latest lich reference supplies name/current command.
     if (!(amount > 0) || !state?.source || !isLiveActor(state.source)) {
-      el.style.display = 'none';
+      el.classList.remove('visible', 'approach', 'flee');
       return;
     }
     const command = state.source._lichCommand || state.command || 'approach'; // Live command may swap tactically while the same affliction remains.
-    el.textContent = command === 'flee' ? `ENTRANCED — FLEE FROM ${state.source.name || 'THE LICH'}` : `ENTRANCED — APPROACH ${state.source.name || 'THE LICH'}`;
-    el.style.display = 'block';
+    const action = el.querySelector('.entranced-command-action'); // Dedicated child lets condition label and command use the same two-level typography as other game HUD elements.
+    if (action) action.textContent = command === 'flee' ? `FLEE FROM ${state.source.name || 'THE LICH'}` : `APPROACH ${state.source.name || 'THE LICH'}`;
+    el.classList.toggle('approach', command === 'approach');
+    el.classList.toggle('flee', command === 'flee');
+    el.classList.add('visible');
+  }
+
+  function entrancedMarkerColor() {
+    const raw = window.ResourceRings?.AFFLICTION_COLORS?.entrancedHealth ?? 0xb746d9; // Exact resource-ring palette entry keeps the owner marker visually tied to Entranced Health.
+    return window.ResourceRings?.neonizeColor?.(raw) ?? raw; // Same vivid color treatment used by affliction-colored lunge/projectile trails.
+  }
+
+  function buildEntrancerMarker(scene) {
+    if (!scene || typeof THREE === 'undefined') return null;
+    const outer = ENTRANCER_RING_OUTER_RADIUS; // Permanent ownership ring outer radius at exactly 2× the lunge reference.
+    const inner = Math.max(0.01, outer - ENTRANCER_RING_THICKNESS); // Doubled line width without changing the requested outer size.
+    const color = entrancedMarkerColor(); // Shared Entranced palette color used by both steady and burst rings.
+    const baseMaterial = new THREE.MeshBasicMaterial({
+      color, transparent: true, opacity: 0.48, depthWrite: false, depthTest: true, side: THREE.DoubleSide,
+    }); // Faint always-on circle identifies the controller between one-second bursts.
+    const pulseMaterial = new THREE.MeshBasicMaterial({
+      color, transparent: true, opacity: 0.95, depthWrite: false, depthTest: true, side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+    }); // Additive burst gives the once-per-second pulse the same bright combat-VFX language as lunge trails.
+    const base = new THREE.Mesh(new THREE.RingGeometry(inner, outer, 48), baseMaterial); // Stable doubled ring around the controlling lich.
+    const pulse = new THREE.Mesh(new THREE.RingGeometry(inner, outer, 48), pulseMaterial); // Same geometry expands/fades explosively once per second.
+    for (const mesh of [base, pulse]) {
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.renderOrder = 6;
+    }
+    pulse.position.y = 0.003; // Tiny separation avoids z-fighting between the steady ring and burst at pulse start.
+    const group = new THREE.Group();
+    group.name = 'entranced_controller_ring';
+    group.add(base, pulse);
+    group.userData.baseRing = base; // Used by the update path to keep a faint steady ownership indicator.
+    group.userData.pulseRing = pulse; // Used by the one-second expansion/fade animation.
+    scene.add(group);
+    return group;
+  }
+
+  function disposeEntrancerMarker() {
+    if (entrancerMarker) disposeObject3D(entrancerMarker);
+    entrancerMarker = null;
+    entrancerMarkerSource = null;
+  }
+
+  function updateEntrancerMarker() {
+    const player = deps?.player; // Only the lich currently controlling the player receives this world-space owner marker.
+    const amount = player ? (window.ResourceSystem?.getAffliction?.(player, 'entrancedHealth') || 0) : 0; // Ring exists only while Entranced buildup is actually present.
+    const source = player?._entrancedCommandState?.source || null; // Latest applicant is the referential owner and therefore the only marked lich.
+    if (!(amount > 0) || !isArena() || !isLiveActor(source) || source.lichType !== 'kanthic') {
+      disposeEntrancerMarker();
+      return;
+    }
+    if (!entrancerMarker || entrancerMarkerSource !== source || entrancerMarker.parent !== source.scene) {
+      disposeEntrancerMarker();
+      entrancerMarker = buildEntrancerMarker(source.scene);
+      entrancerMarkerSource = entrancerMarker ? source : null;
+    }
+    if (!entrancerMarker) return;
+    const groundY = groundYAt(source, source.x, source.y); // Marker follows the controller across arena ramps/slabs rather than assuming flat world zero.
+    entrancerMarker.position.set(source.x / deps.TILE, groundY + 0.035, source.y / deps.TILE);
+    const phase = (performance.now() % ENTRANCER_RING_PULSE_MS) / ENTRANCER_RING_PULSE_MS; // Stable one-second clock; no accumulated timer drift.
+    const burst = Math.min(1, phase / ENTRANCER_RING_BURST_FRACTION); // 0→1 only during the short explosive portion of each cycle.
+    const pulseActive = phase < ENTRANCER_RING_BURST_FRACTION; // Remaining cycle leaves only the faint ownership ring visible.
+    const eased = 1 - Math.pow(1 - burst, 3); // Fast initial acceleration gives the requested explosive rather than breathing/sine-like pulse.
+    const pulse = entrancerMarker.userData.pulseRing; // Expanding high-opacity ring layered just above the steady marker.
+    const base = entrancerMarker.userData.baseRing; // Continuous ring gets a tiny kick on burst onset so the whole marker feels reactive.
+    if (pulse?.material) {
+      const scale = 1 + eased * 1.15;
+      pulse.scale.setScalar(scale);
+      pulse.material.opacity = pulseActive ? Math.max(0, 0.95 * (1 - eased)) : 0;
+      pulse.visible = pulseActive;
+    }
+    if (base?.material) {
+      const kick = pulseActive ? (1 - eased) * 0.16 : 0;
+      base.scale.setScalar(1 + kick);
+      base.material.opacity = 0.42 + (pulseActive ? (1 - eased) * 0.28 : 0);
+    }
   }
 
   function updatePuddles(dt) {
@@ -677,6 +769,7 @@
         clearEntrancedNow(actor);
       }
       updateCommandBanner();
+      updateEntrancerMarker();
       return;
     }
     updateProjectiles(dt);
@@ -690,6 +783,7 @@
       updateEntrancedTarget(actor, dt);
     }
     updateCommandBanner();
+    updateEntrancerMarker();
   }
 
   function installWrappers() {
@@ -739,6 +833,8 @@
       activeLiches: liches.map(lich => ({ id: lich.id, type: lich.lichType, dye: lich.lichDyeId, command: lich._lichCommand, primaryCd: lich._lichPrimaryCooldownS, summonCd: lich._lichSummonCooldownS, summons: [...(lich._lichSummons || [])].filter(isLiveActor).length })),
       projectiles: projectiles.size, puddles: puddles.size, totalPuddles, totalSummons,
       playerEntranced, playerCommand: deps?.player?._entrancedCommandState?.source?._lichCommand || null,
+      playerEntrancerId: deps?.player?._entrancedCommandState?.source?.id || null,
+      entrancerMarker: entrancerMarkerSource ? { sourceId: entrancerMarkerSource.id || null, visible: !!entrancerMarker?.visible } : null,
       playerGooSlow: deps?.player?._kanthicGooSlow ? { stacks: deps.player._kanthicGooSlow.stacks, remainingMs: Math.max(0, deps.player._kanthicGooSlow.until - performance.now()) } : null,
       lastEvent,
     };
@@ -751,7 +847,7 @@
     debugSnapshot,
     formatDebug() {
       const d = debugSnapshot(); // Compact status line intended for Pixel Probe/mobile-copyable diagnostics.
-      return `Harlyao Liches: live=${d.activeLiches.length} projectiles=${d.projectiles} puddles=${d.puddles} summons=${d.totalSummons} entranced=${d.playerEntranced.toFixed?.(1) || d.playerEntranced} command=${d.playerCommand || '-'} goo=${d.playerGooSlow?.stacks || 0} last=${d.lastEvent}`;
+      return `Harlyao Liches: live=${d.activeLiches.length} projectiles=${d.projectiles} puddles=${d.puddles} summons=${d.totalSummons} entranced=${d.playerEntranced.toFixed?.(1) || d.playerEntranced} command=${d.playerCommand || '-'} controller=${d.playerEntrancerId || '-'} marker=${d.entrancerMarker?.visible ? 'on' : 'off'} goo=${d.playerGooSlow?.stacks || 0} last=${d.lastEvent}`;
     },
   };
   window.__lichDebug = { snapshot: debugSnapshot }; // Console-independent API also consumed by the existing mobile debug surfaces/tests.
