@@ -11,6 +11,7 @@ const devSpawnerSource = fs.readFileSync(path.join(root, 'docs/js/dev-spawner.js
 const indexSource = fs.readFileSync(path.join(root, 'docs/index.html'), 'utf8');
 const pixelProbeSource = fs.readFileSync(path.join(root, 'docs/js/pixel-probe.js'), 'utf8');
 const portraitSource = fs.readFileSync(path.join(root, 'docs/js/portrait-utils.js'), 'utf8');
+const styleSource = fs.readFileSync(path.join(root, 'docs/style.css'), 'utf8');
 const skeletonSpecies = JSON.parse(fs.readFileSync(path.join(root, 'docs/config/species/harlyao-skeleton.json'), 'utf8'));
 const cosmeticsIndex = JSON.parse(fs.readFileSync(path.join(root, 'docs/config/cosmetics/index.json'), 'utf8'));
 const itemIndex = JSON.parse(fs.readFileSync(path.join(root, 'docs/config/items/item-index.json'), 'utf8'));
@@ -205,13 +206,21 @@ for (const key of ['tothal', 'hronal', 'kanthic']) {
   assert(devSpawnerSource.includes(`harlyao-lich:${key}`), `Testing Arena must expose ${key} lich button`);
 }
 assert.match(devSpawnerSource, /startsWith\('harlyao-lich:'\)/);
-assert(indexSource.includes('js/combat/combat-lich.js?v=20260926lich1'));
+assert(indexSource.includes('js/combat/combat-lich.js?v=20260926lich2'));
 assert(indexSource.includes('js/combat/resource-system.js?v=20260926lich1'));
 assert(indexSource.includes('js/pixel-probe.js?v=20260926lich1'));
 assert(indexSource.includes('js/portrait-utils.js?v=20260926hoodback1'));
 assert(pixelProbeSource.includes('window.HarlyaoLichCombat?.formatDebug?.()'), 'Pixel Probe must expose live lich diagnostics on mobile');
 assert(portraitSource.includes('const hoodBackLayers = []'), 'ragged hood rear layer must use the generic behind-head hood bucket');
 assert.match(portraitSource, /\(layer\.pos === 'back' \? hoodBackLayers : hoodLayers\)\.push/, 'hood compositor must route authored back layers separately from front layers');
+assert(indexSource.includes('style.css?v=20260926entranced1'));
+assert(styleSource.includes('#entrancedCommandBanner.visible'), 'Entranced command must use the shared stylesheet instead of module-local system-font debug styling');
+assert(styleSource.includes("font-family: 'KhymeryyanRomanLetters+Numbers'"), 'Entranced command must use the game HUD font');
+assert.match(lichSource, /ENTRANCER_RING_OUTER_RADIUS = LUNGE_RING_REFERENCE_OUTER_RADIUS \* 2/, 'controller marker must be twice the lunge-ring diameter scale');
+assert.match(lichSource, /ENTRANCER_RING_THICKNESS = LUNGE_RING_REFERENCE_THICKNESS \* 2/, 'controller marker must be twice the lunge-ring line thickness');
+assert.match(lichSource, /ENTRANCER_RING_PULSE_MS = 1000/, 'controller marker must pulse once per second');
+assert.match(lichSource, /player\?_entrancedCommandState|_entrancedCommandState\?\.source/, 'controller marker must resolve from the latest referential Entranced source');
+assert.match(lichSource, /source\.lichType !== 'kanthic'/, 'only the controlling Kanthic lich receives the Entranced owner marker');
 
 console.log('Harlyao Lich regression checks passed.');
 
