@@ -874,7 +874,7 @@
     mesh.renderOrder = 3;
     group.add(mesh);
     const groundY = groundYAt(owner, xPx, yPx); // The shallow cap is rooted on the actual arena surface just like Western Slope snow roots on authored terrain height.
-    group.position.set(xPx / deps.TILE, groundY + 0.003, yPx / deps.TILE);
+    group.position.set(xPx / deps.TILE, groundY, yPx / deps.TILE); // Polygon offset handles z-fighting, so the cap's actual top stays exactly PETROLEUM_SURFACE_DEPTH above ground.
     owner.scene.add(group);
     const puddle = {
       owner, x: xPx, y: yPx, group, mesh,
