@@ -119,10 +119,10 @@
       family: "control", tags: ["breath"],
       desc: "Lowers effective maximum Stamina and makes Exhausted easier to enter."
     },
-    frostbittenFooting: {
-      name: "Frostbitten Footing", resource: "footing", extend: "currentBack", priority: 92, recovers: true,
+    frostbittenStamina: {
+      name: "Frostbitten Stamina", resource: "stamina", extend: "zero", priority: 92, recovers: true, punishedAction: "staminaSpend",
       family: "control", tags: ["cold", "frost"],
-      desc: "Cold-stiffened balance. It does not directly remove Footing, but the buildup suppresses Footing regeneration until the frost recovers."
+      desc: "Cold-stiffened Stamina. Application only converts Stamina into Frostbitten buildup; spending through that frosted Stamina later deals the same amount as Footing damage."
     },
     entrancedHealth: {
       name: "Entranced Health", resource: "health", extend: "currentBack", priority: 88, recovers: false,
@@ -533,6 +533,9 @@
 
     const shatteredOverlap = consumeZeroBasedSpend(entity, "shatteredStamina", spendEnd, spendStart);
     if (shatteredOverlap > 0) addAffliction(entity, "bleedingHealth", shatteredOverlap * 1.6);
+
+    const frostbittenOverlap = consumeZeroBasedSpend(entity, "frostbittenStamina", spendEnd, spendStart); // Frostbitten Stamina converts only the spent overlap into equal Footing damage.
+    if (frostbittenOverlap > 0) spendFooting(entity, frostbittenOverlap, "spent Frostbitten Stamina");
   }
 
   function consumeZeroBasedSpend(entity, id, spendEnd, spendStart) {
@@ -634,10 +637,7 @@
     const footingRegenGated = entity.prone && entity.proneT < cfg.proneRecoveryDelayS;
     if (!footingRegenGated && Number.isFinite(entity.footing)) {
       const footingRate = opts.footingRegenPerSec ?? cfg.footingRegenPerSec;
-      const frostbittenFooting = getAffliction(entity, "frostbittenFooting"); // Used only here to make Tothal frost prolong a balance break without duplicating direct Footing damage.
-      const frostbittenFraction = entity.maxFooting > 0 ? clamp(frostbittenFooting / entity.maxFooting, 0, 1) : 0; // Converts buildup into a stable 0..1 regeneration penalty.
-      const frostbittenRegenMul = 1 - frostbittenFraction * 0.8; // Even a fully frostbitten target retains 20% Footing recovery so the affliction cannot hard-lock prone recovery.
-      entity.footing = round1(clamp(entity.footing + footingRate * frostbittenRegenMul * mul * dt, 0, getEffectiveMax(entity, "footing")));
+      entity.footing = round1(clamp(entity.footing + footingRate * mul * dt, 0, getEffectiveMax(entity, "footing")));
     }
 
     resolveBleedingTick(entity, dt, rest, cfg, healthRecoveryBlocked);
