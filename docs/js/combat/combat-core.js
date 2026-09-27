@@ -434,14 +434,18 @@
   // pitchDistanceResistance is an attack-specific 0..1 stat: 0 preserves the
   // ordinary gravity/aim-angle loss, while 1 removes only that loss without
   // erasing the attacker's authored vertical leap-height recovery.
-  function meleeLungeProfile(baseDistancePx, aimPitch = 0, baseHopUnits = 0, lungeHeightUnits = 1, pitchDistanceResistance = 0, directFlightStrength = 0) {
+  function meleeLungeProfile(baseDistancePx, aimPitch = 0, baseHopUnits = 0, lungeHeightUnits = 1, pitchDistanceResistance = 0, directFlightStrength = 0, inRangeAirAssist = false) {
     const pitch = THREE.MathUtils.clamp(Number(aimPitch) || 0, -MAX_MELEE_AIM_PITCH_RAD, MAX_MELEE_AIM_PITCH_RAD);
     const absPitch = Math.abs(pitch);
     const distanceScaleAtAngle = THREE.MathUtils.clamp(1 - absPitch / (Math.PI / 2), 0, 1);
-    const leapT = THREE.MathUtils.clamp(
+    const naturalLeapT = THREE.MathUtils.clamp(
       (pitch - MELEE_LEAP_START_PITCH_RAD) / Math.max(1e-6, MAX_MELEE_AIM_PITCH_RAD - MELEE_LEAP_START_PITCH_RAD),
       0, 1,
     );
+    const assistedLeapT = pitch > 0
+      ? THREE.MathUtils.clamp(Math.sin(pitch) / Math.max(1e-6, Math.sin(MAX_MELEE_AIM_PITCH_RAD)), 0, 1)
+      : 0; // In-range elevated targets should produce useful lift from even modest upward aim instead of waiting for the normal 12° leap threshold.
+    const leapT = inRangeAirAssist ? Math.max(naturalLeapT, assistedLeapT) : naturalLeapT;
     const baseDistanceWorld = Math.max(0, Number(baseDistancePx) || 0) / (deps?.TILE || 64);
     const heightUnits = Math.max(0, Number(lungeHeightUnits) || 0);
     const heightToDistance = baseDistanceWorld > 1e-4 ? heightUnits / baseDistanceWorld : 0;
@@ -465,6 +469,7 @@
       distanceScale,
       pitchDistanceResistance: resistance,
       appliedPitchDistanceResistance: appliedResistance,
+      inRangeAirAssist: !!inRangeAirAssist,
       directFlightStrength: direct,
       lungeHeightUnits: heightUnits,
       distancePx: Math.max(0, Number(baseDistancePx) || 0) * distanceScale,
