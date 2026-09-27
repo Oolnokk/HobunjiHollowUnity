@@ -543,6 +543,220 @@
     disposeObject3D(projectile.mesh);
   }
 
+  function buildHronalStoneGeometry() {
+    if (hronalStoneGeometry || typeof THREE === 'undefined') return hronalStoneGeometry;
+    let geometry = new THREE.TetrahedronGeometry(0.105, 0); // Same minimum four-face low-poly clod vocabulary as the Grehlr eruption particles.
+    if (geometry.index) geometry = geometry.toNonIndexed(); // Independent triangle vertices let the whole cliff PNG stretch across every face.
+    const position = geometry.getAttribute?.('position');
+    if (position && position.count % 3 === 0 && THREE.BufferAttribute) {
+      const uv = new Float32Array(position.count * 2); // Repeats the complete carved-stone texture on each triangular face.
+      for (let vertex = 0; vertex < position.count; vertex += 3) {
+        uv[(vertex + 0) * 2 + 0] = 0; uv[(vertex + 0) * 2 + 1] = 0;
+        uv[(vertex + 1) * 2 + 0] = 1; uv[(vertex + 1) * 2 + 1] = 0;
+        uv[(vertex + 2) * 2 + 0] = 0.5; uv[(vertex + 2) * 2 + 1] = 1;
+      }
+      geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    }
+    hronalStoneGeometry = geometry;
+    return hronalStoneGeometry;
+  }
+
+  function loadHronalStoneTexture() {
+    if (hronalStoneTextureLoadStarted || !hronalStoneMaterial || !THREE?.TextureLoader) return;
+    hronalStoneTextureLoadStarted = true;
+    const texturePath = 'assets/textures/carved_smooth.png'; // Exact cliff texture used by the town terrain material.
+    new THREE.TextureLoader().load(texturePath, loaded => {
+      let finalTexture = loaded;
+      const rgb = window.parseHexColor?.('#6a6460'); // Exact town cliff fill from terrain-materials.json.
+      if (rgb && window.getShadeFillCanvas && window.getPortraitTintingConfig && THREE.CanvasTexture) {
+        const canvas = window.getShadeFillCanvas(loaded.image, texturePath + '|#6a6460', {
+          mode: 'shadeFill',
+          rgb: [rgb.r, rgb.g, rgb.b],
+          options: window.getPortraitTintingConfig(),
+        });
+        finalTexture = new THREE.CanvasTexture(canvas);
+        hronalStoneMaterial.color.set(0xffffff);
+      } else {
+        hronalStoneMaterial.color.set(0x6a6460);
+      }
+      if (THREE.ClampToEdgeWrapping != null) {
+        finalTexture.wrapS = THREE.ClampToEdgeWrapping;
+        finalTexture.wrapT = THREE.ClampToEdgeWrapping;
+      }
+      finalTexture.needsUpdate = true;
+      hronalStoneMaterial.map = finalTexture;
+      hronalStoneMaterial.needsUpdate = true;
+    }, undefined, () => {});
+  }
+
+  function ensureHronalStoneAssets() {
+    if (typeof THREE === 'undefined') return false;
+    buildHronalStoneGeometry();
+    if (!hronalStoneMaterial) hronalStoneMaterial = new THREE.MeshStandardMaterial({
+      color: 0x6a6460, roughness: 1, metalness: 0, flatShading: true,
+    }); // Shared fallback already matches the town cliff fill while its PNG loads.
+    loadHronalStoneTexture();
+    return !!hronalStoneGeometry && !!hronalStoneMaterial;
+  }
+
+  function spawnHronalStone(erupt, angle, radiusWorld, trackRing = true, burst = false) {
+    if (!ensureHronalStoneAssets() || !erupt?.root) return;
+    const radialScale = 0.82 + random() * 0.34; // Thick irregular perimeter instead of a mechanically perfect particle circle.
+    const mesh = new THREE.Mesh(hronalStoneGeometry, hronalStoneMaterial); // Geometry/material are intentionally shared across every overlapping warning.
+    const scale = burst ? 1.55 + random() * 1.65 : 1.0 + random() * 1.25;
+    mesh.scale.setScalar(scale);
+    mesh.position.set(Math.cos(angle) * radiusWorld * radialScale, 0.025, Math.sin(angle) * radiusWorld * radialScale);
+    mesh.rotation.set(random() * Math.PI, random() * Math.PI, random() * Math.PI);
+    mesh.renderOrder = 4;
+    erupt.root.add(mesh);
+    const horizontal = burst ? 0.8 + random() * 1.55 : 0.12 + random() * 0.55;
+    erupt.particles.push({
+      mesh, angle, radialScale, trackRing,
+      vx: Math.cos(angle) * horizontal,
+      vz: Math.sin(angle) * horizontal,
+      vy: burst ? 1.7 + random() * 2.3 : 0.95 + random() * 1.8,
+      life: burst ? 0.72 + random() * 0.7 : 0.5 + random() * 0.7,
+    }); // Mirrors Grehlr clod integration but is owned by this independent Hronal warning.
+  }
+
+  function disposeHronalEruption(erupt) {
+    if (!eruptions.delete(erupt)) return;
+    for (const particle of erupt.particles || []) particle.mesh?.parent?.remove?.(particle.mesh); // Shared stone geometry/material survive for other simultaneous eruptions.
+    erupt.particles = [];
+    for (const visual of [erupt.ring, erupt.lava, erupt.lavaCore]) {
+      if (!visual) continue;
+      visual.parent?.remove?.(visual);
+      visual.geometry?.dispose?.();
+      visual.material?.dispose?.();
+    }
+    erupt.root?.parent?.remove?.(erupt.root);
+  }
+
+  function makeEruptingEarth(owner, target, telegraphS) {
+    if (!isArena() || !isLiveActor(owner) || !isLiveActor(target) || !owner.scene || typeof THREE === 'undefined') return null;
+    const radiusTiles = typeDef('hronal').projectile.eruptionRadiusTiles || HRONAL_ERUPTION_RADIUS_TILES;
+    const radiusWorld = radiusTiles; // World horizontal units are tile units throughout this arena render path.
+    const x = Number(target.x) || 0; // Target position is locked at cast Strike; later movement must escape the warning.
+    const y = Number(target.y) || 0;
+    const root = new THREE.Group(); // Independent root permits any number of overlapping Erupting Earth warnings.
+    root.name = 'hronal_erupting_earth';
+    root.position.set(x / (deps.TILE || 64), groundYAt(owner, x, y) + 0.02, y / (deps.TILE || 64));
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(radiusWorld * 0.79, radiusWorld, 24),
+      new THREE.MeshBasicMaterial({ color: 0xc64d20, transparent: true, opacity: 0.62, depthWrite: false, side: THREE.DoubleSide })
+    ); // Small fixed-AOE warning uses the same flat ring language as other arena telegraphs.
+    ring.rotation.x = -Math.PI / 2;
+    ring.renderOrder = 3;
+    root.add(ring);
+    owner.scene.add(root);
+    const erupt = {
+      owner, root, ring, lava: null, lavaCore: null,
+      x, y, radiusPx: radiusTiles * (deps.TILE || 64), radiusWorld,
+      ageS: 0, telegraphS: Math.max(0.12, Number(telegraphS) || 0.12),
+      erupted: false, eruptionAgeS: 0, emitCarry: 0, particles: [],
+      payload: typeDef('hronal').projectile,
+    }; // Warning lifetime is independent of the lich's next-cast cooldown.
+    eruptions.add(erupt);
+    for (let i = 0; i < 18; i++) spawnHronalStone(erupt, i / 18 * Math.PI * 2, radiusWorld, true, false); // Immediate readable perimeter before continuous violent pops.
+    lastEvent = `earth-warning:${owner.id || owner.name}:telegraph=${erupt.telegraphS.toFixed(2)}`;
+    return erupt;
+  }
+
+  function actorsForHronalEruption(owner) {
+    const actors = [];
+    if (isLiveActor(deps?.player) && deps.player !== owner) actors.push(deps.player);
+    for (const actor of deps?.hostileObjects || []) {
+      if (actor === owner || !isLiveActor(actor)) continue;
+      actors.push(actor);
+    }
+    return actors;
+  }
+
+  function resolveHronalEruption(erupt) {
+    if (!erupt || erupt.erupted) return;
+    erupt.erupted = true;
+    erupt.eruptionAgeS = 0;
+    if (erupt.ring) erupt.ring.visible = false;
+    for (const particle of erupt.particles) particle.trackRing = false; // Existing warning stones explode outward instead of continuing to collapse toward the center.
+    for (let i = 0; i < 30; i++) spawnHronalStone(erupt, random() * Math.PI * 2, erupt.radiusWorld * (0.15 + random() * 0.85), false, true);
+    const lavaMaterial = new THREE.MeshBasicMaterial({
+      color: 0xff4a12, transparent: true, opacity: 0.88, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
+    });
+    erupt.lava = new THREE.Mesh(new THREE.CircleGeometry(erupt.radiusWorld, 28), lavaMaterial);
+    erupt.lava.rotation.x = -Math.PI / 2;
+    erupt.lava.position.y = 0.012;
+    erupt.lava.renderOrder = 5;
+    erupt.root.add(erupt.lava);
+    erupt.lavaCore = new THREE.Mesh(
+      new THREE.CircleGeometry(erupt.radiusWorld * 0.55, 24),
+      new THREE.MeshBasicMaterial({ color: 0xffc02f, transparent: true, opacity: 0.82, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending })
+    );
+    erupt.lavaCore.rotation.x = -Math.PI / 2;
+    erupt.lavaCore.position.y = 0.018;
+    erupt.lavaCore.renderOrder = 6;
+    erupt.root.add(erupt.lavaCore);
+    for (const actor of actorsForHronalEruption(erupt.owner)) {
+      const dist = Math.hypot((Number(actor.x) || 0) - erupt.x, (Number(actor.y) || 0) - erupt.y);
+      if (dist > erupt.radiusPx) continue;
+      window.ResourceSystem?.addAffliction?.(actor, 'burningHealth', erupt.payload.burningHealth); // Lava is the attack: warning stones themselves cause no damage or affliction.
+      lastEvent = `earth-erupt-hit:${actor.id || actor.name || 'player'}`;
+    }
+    if (!lastEvent.startsWith('earth-erupt-hit:')) lastEvent = `earth-erupt:${erupt.owner.id || erupt.owner.name}`;
+  }
+
+  function updateHronalParticles(erupt, dt, visualRadiusWorld) {
+    const gravity = 4.25; // Slightly harsher than Grehlr dirt so chunks violently pop and fall back rather than float.
+    for (let i = erupt.particles.length - 1; i >= 0; i--) {
+      const particle = erupt.particles[i];
+      particle.life -= dt;
+      particle.vy -= gravity * dt;
+      if (particle.trackRing && !erupt.erupted) {
+        particle.mesh.position.x = Math.cos(particle.angle) * visualRadiusWorld * particle.radialScale;
+        particle.mesh.position.z = Math.sin(particle.angle) * visualRadiusWorld * particle.radialScale;
+      } else {
+        particle.mesh.position.x += particle.vx * dt;
+        particle.mesh.position.z += particle.vz * dt;
+      }
+      particle.mesh.position.y += particle.vy * dt;
+      particle.mesh.rotation.x += dt * 5.5;
+      particle.mesh.rotation.z += dt * 4.2;
+      if (particle.life <= 0) {
+        particle.mesh.parent?.remove?.(particle.mesh);
+        erupt.particles.splice(i, 1);
+      }
+    }
+  }
+
+  function updateEruptions(dt) {
+    for (const erupt of [...eruptions]) {
+      if (!isArena() || !isLiveActor(erupt.owner)) { disposeHronalEruption(erupt); continue; }
+      if (!erupt.erupted) {
+        erupt.ageS += dt;
+        const progress = Math.max(0, Math.min(1, erupt.ageS / erupt.telegraphS));
+        const visualRadiusWorld = erupt.radiusWorld * (1 - progress); // Grehlr-style warning perimeter contracts all the way to zero at eruption.
+        erupt.ring.scale.setScalar(Math.max(0.001, 1 - progress));
+        erupt.ring.material.opacity = 0.38 + progress * 0.34;
+        erupt.emitCarry += HRONAL_STONE_PARTICLES_PER_S * dt;
+        while (erupt.emitCarry >= 1) {
+          erupt.emitCarry -= 1;
+          spawnHronalStone(erupt, random() * Math.PI * 2, visualRadiusWorld, true, false);
+        }
+        updateHronalParticles(erupt, dt, visualRadiusWorld);
+        if (progress >= 1) resolveHronalEruption(erupt);
+        continue;
+      }
+      erupt.eruptionAgeS += dt;
+      updateHronalParticles(erupt, dt, 0);
+      const lifeT = Math.max(0, Math.min(1, erupt.eruptionAgeS / HRONAL_LAVA_VISUAL_S));
+      if (erupt.lava?.material) erupt.lava.material.opacity = 0.88 * (1 - lifeT);
+      if (erupt.lavaCore?.material) erupt.lavaCore.material.opacity = 0.82 * (1 - lifeT);
+      const pulse = 1 + Math.sin(lifeT * Math.PI) * 0.2;
+      erupt.lava?.scale?.setScalar?.(pulse);
+      erupt.lavaCore?.scale?.setScalar?.(pulse * 0.92);
+      if (erupt.eruptionAgeS >= HRONAL_LAVA_VISUAL_S && erupt.particles.length === 0) disposeHronalEruption(erupt);
+    }
+  }
+
   function makeGasolinePuddle(owner, xPx, yPx) {
     if (!isArena() || !owner?.scene) return null;
     const group = new THREE.Group(); // Root sits at the exact miss point while overlapping ellipses create an irregular petroleum footprint.
