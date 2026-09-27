@@ -220,7 +220,7 @@ assert(!hooks.includes('registerBlocker(`devruin-transit-door-'), 'transit doors
 assert(!hooks.includes('registerBlocker(`devruin-elevator-'), 'elevator objects must not retain object-wide blockers outside the Map snapshot');
 assert(interactions.includes("matchMedia?.('(pointer: coarse)')"), 'mobile ruin actions must recognize coarse-pointer desktop-view devices');
 assert(interactions.includes("source:'semantic-glyph'"), 'mobile glyph targets must expose ranged guidance/action');
-assert(interior.includes('function getPlayerSupportY()') && interior.includes('getPlayerSupportY,syncPlayerPresentationHeight'), 'multi-level ruin presentation must expose one authoritative support height to the normal player renderer');
+assert(interior.includes('function getPlayerSupportY()') && interior.includes('getPlayerSupportY') && interior.includes('syncPlayerPresentationHeight:syncRuinPresentationHeight'), 'multi-level ruin presentation must expose one authoritative support height to the normal player renderer');
 assert(game.includes('window.DevRandomRuin?.getPlayerSupportY?.()') && game.includes('Number.isFinite(ruinStandY) ? ruinStandY'), 'game.js must consume ruin support before positioning body, shadow, resources, held equipment, and shoulder pets');
 assert(interior.includes('ruin.supportY=climbY') && interior.includes('ruin.lastAcceptedPx={x:deps.player.x,y:deps.player.y}'), 'ladder motion must advance the ruin step baseline so the landing cannot be rejected as an oversized step');
 assert(!interior.includes('RUIN_ELEVATION_CHANNEL'), 'ruin elevation must not post-correct attachments through a second composer channel');
