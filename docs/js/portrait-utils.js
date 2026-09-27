@@ -235,7 +235,7 @@ const DEFAULT_BEHIND_LAYER_ORDER = [
   'sideLeft', 'rightSideHair',
   'baseLeftArm', 'baseTorso', 'baseRightArm',
   'head', 'frontHair',
-  'torsoClothing', 'overwear', 'hatUnder', 'hood', 'pauldron', 'hatOver',
+  'torsoClothing', 'hatUnder', 'hood', 'overwear', 'pauldron', 'hatOver',
   'snowgoggles',
   'hairBack',
 ];
