@@ -5572,8 +5572,10 @@
         // climbSurfaceY exists: it's mid-crossing through impassable incline
         // tiles, so a raw tile lookup would pop between the cliff base and
         // landing the instant the crossing tile flips underneath it.
+        const dynamicSurfaceY = Number(c.surfaceYOverride?.()); // Optional per-entity world-height authority for generated/moving interiors whose 2D gameplay grid intentionally has no elevation tiers.
         const ordinarySurfY = c.onBranch ? c.branchSurfaceY
           : c._climbLeap ? c._climbLeap.surfaceY
+          : Number.isFinite(dynamicSurfaceY) ? dynamicSurfaceY
           : (g[row]?.[col] ? tileSurfaceYInArea(g[row][col], c.areaId) : 0);
         const surfY = knockbackVisualSurfaceY(c, ordinarySurfY);
         const grp = c.avatarRef.group;
