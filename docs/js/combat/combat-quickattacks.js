@@ -35,14 +35,15 @@
     const forwardX = Math.cos(target.facing || 0);
     const forwardY = Math.sin(target.facing || 0);
     const behindDot = forwardX * (toPlayerX / dist) + forwardY * (toPlayerY / dist);
-    const staminaForCondition = window.ResourceSystem?.getDepletionEquivalentCurrent?.(target, 'stamina') ?? target.stamina; // Used by Exhaust Cutter so ordinary afflicted Stamina is not mistaken for genuinely depleted Stamina.
-    const healthForCondition = window.ResourceSystem?.getDepletionEquivalentCurrent?.(target, 'health') ?? target.health; // Used by Mercy Spike so ordinary afflicted Health is not mistaken for genuinely depleted Health.
+    const staminaForCondition = window.ResourceSystem?.getDepletionEquivalentCurrent?.(target, 'stamina') ?? target.stamina; // Used by Exhaust Cutter: the visible Stamina bar, including any affliction band extending past current.
+    const healthForCondition = window.ResourceSystem?.getDepletionEquivalentCurrent?.(target, 'health') ?? target.health; // Used by Mercy Spike: the visible Health bar (affliction bands inside current are never double-counted).
     const conditions = {
       enemyStriking: enemyIsStriking(target),
       // True Exhausted (see resource-system.js's spendStamina) always
-      // qualifies. Ordinary affliction-colored resource is added back by
-      // ResourceSystem; explicit max reducers stay real depletion because
-      // that helper caps the adjusted value at the live effective maximum.
+      // qualifies. ResourceSystem reads the visible bar length (affliction
+      // bands sit inside current, so they are not added on top); explicit max
+      // reducers stay real depletion because that helper caps at the live
+      // effective maximum.
       exhausted: !!target.exhaustion?.active || staminaForCondition <= target.maxStamina * 0.20,
       behind: behindDot < -0.35,
       lowHealth: target.health > 0 && healthForCondition <= target.maxHealth * 0.30,

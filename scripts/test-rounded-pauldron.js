@@ -106,6 +106,40 @@ assert.equal(wornPauldron.temperXp, 20, 'a real SkillSystem award advances equip
 assert.equal(ps.visualOptions(wornPauldron).oxidationAmount, 0.1, '20 Temper XP is already enough to render the first visible verdigris step');
 assert(gearSaveCount >= 2, 'normalization and the XP award both persist the metal-armor state');
 
+// Smithing costs: inventory keys are deleted at 0, so a missing bar key must
+// read as zero bars rather than NaN (NaN < cost is false and used to pass).
+const smithInventory = { gold: 100 };
+const smithGear = { clothingItems: [], clothing: {} };
+const smithToasts = [];
+ps.init({
+  getGearInventory: () => smithGear,
+  saveGearInventory: () => {},
+  getPlayerData: () => ({ appearance: { speciesId: 'mao-ao', gender: 'male' } }),
+  inventory: smithInventory,
+  VERDIGRIS_METAL_KEYS: ['nativeCopper'],
+  metalBarItemKey: metalKey => 'bar_' + metalKey,
+  clampInventoryStack: key => { if (key !== 'gold' && smithInventory[key] <= 0) delete smithInventory[key]; },
+  showToast: text => smithToasts.push(text),
+});
+assert.equal(ps.__test.craft('rounded_pauldron', 'nativeCopper'), false, 'smithing with no bar stack at all is refused');
+assert.equal(smithInventory.gold, 100, 'a refused craft charges no gold');
+assert.equal('bar_nativeCopper' in smithInventory, false, 'a refused craft never writes NaN into the bar stack');
+assert.equal(smithGear.clothingItems.length, 0, 'a refused craft creates no armor');
+smithInventory.bar_nativeCopper = ps.ARMOR_BLUEPRINTS.rounded_pauldron.craftBarCost || 3;
+assert.equal(ps.__test.craft('rounded_pauldron', 'nativeCopper'), true, 'an affordable craft succeeds');
+assert.equal('bar_nativeCopper' in smithInventory, false, 'spending the exact bar cost clears the stack');
+const smithed = smithGear.clothingItems[0];
+smithed.temperXp = ps.MAX_TEMPER_XP;
+assert.equal(ps.__test.applyTreatment(smithed, 'resistant'), false, 'a treatment with no bar stack is refused');
+assert.equal(smithed.smithTreatment ?? null, null, 'a refused treatment applies nothing');
+smithInventory.bar_nativeCopper = 1;
+assert.equal(ps.__test.applyTreatment(smithed, 'resistant'), true, 'an affordable resistant coat applies');
+assert.equal('bar_nativeCopper' in smithInventory, false, 'the resistant coat spends its copper bar');
+smithInventory.bar_gold = 1;
+assert.equal(ps.__test.applyTreatment(smithed, 'cosmetic:gold'), true, 'a cosmetic plating can replace the coat');
+assert.equal(smithInventory.bar_nativeCopper, 1, 'replacing a treatment refunds the replaced treatment bar, like clearing does');
+assert.equal('bar_gold' in smithInventory, false, 'the new plating spends its own bar');
+
 const scratchbones = read('docs/config/scratchbones-config.js');
 assert.match(scratchbones, /"id": "rounded_pauldron"[^\n]*"smithOnly": true[^\n]*"dyeable": false/, 'catalog marks pauldrons smith-only and non-dyeable');
 const shopPieces = json('docs/config/shops/shop-stock.json').shops.generalStoreWares.clothingRotation.pieces;
@@ -156,8 +190,8 @@ const studio = read('docs/tools/character-studio/index.html');
 assert(studio.includes("category: 'pauldron', tintKeys: ['PAULDRON']"), 'Character Studio keeps the pauldron dye channel for future non-metal pauldrons');
 
 const index = read('docs/index.html');
-assert(index.indexOf('js/tool-metal-recolor.js?v=20260926metalarmor1') < index.indexOf('js/metal-armor-system.js?v=20260927temperxp1'), 'shared tool metal renderer loads before generic armor material bridge');
-assert(index.indexOf('js/metal-armor-system.js?v=20260927temperxp1') < index.indexOf('onboarding.js?v=20260926metalarmor1'), 'generic metal-armor renderer loads before save/creator portraits');
+assert(index.indexOf('js/tool-metal-recolor.js?v=20260926metalarmor1') < index.indexOf('js/metal-armor-system.js?v=20260927reviewfix1'), 'shared tool metal renderer loads before generic armor material bridge');
+assert(index.indexOf('js/metal-armor-system.js?v=20260927reviewfix1') < index.indexOf('onboarding.js?v=20260926metalarmor1'), 'generic metal-armor renderer loads before save/creator portraits');
 
 const pixelProbe = read('docs/js/pixel-probe.js');
 assert(pixelProbe.includes('MetalArmorSystem?.diagnosticsText?.()'), 'Pixel Probe exposes phone-copyable Temper/material/weight diagnostics');

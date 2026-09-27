@@ -39,11 +39,13 @@ assert(!game.includes('NearbyVolumeCollision?.canPlayerOccupy'), 'player movemen
 assert(game.includes('tryPlayerTileSidestep'), 'blocked tile movement can sidestep around obstacles');
 assert(game.includes('vegGroup.userData.projectileCoverUsesTile = true'), 'native tree trunks use their centered solid tile for projectile cover');
 assert(game.includes('const sideOrder = [_playerTileSidestepSide, -_playerTileSidestepSide]'), 'sidestep direction remains stable across frames');
-assert(game.includes('function tryEnemyCollisionReposition'), 'pinned combat enemies have a dedicated local collision-reposition helper');
-assert(game.includes("(c.state !== 'chase' && c.state !== 'patrol-chase')"), 'collision repositioning stays scoped to active enemy pursuit rather than passive creature travel');
-assert(game.includes("mode: 'sidestep'") && game.includes("mode: 'backoff'"), 'enemy collision recovery tries a lateral escape before a backoff escape');
+const reposition = read('docs/js/enemy-collision-reposition.js');
+assert(reposition.includes('function tryEnemyCollisionReposition'), 'pinned combat enemies have a dedicated local collision-reposition helper');
+assert(game.includes('window.EnemyCollisionReposition.init({ creatureCanEnterTile })'), 'game.js wires the extracted collision-reposition helper to its passability test');
+assert(reposition.includes("(c.state !== 'chase' && c.state !== 'patrol-chase')"), 'collision repositioning stays scoped to active enemy pursuit rather than passive creature travel');
+assert(reposition.includes("mode: 'sidestep'") && reposition.includes("mode: 'backoff'"), 'enemy collision recovery tries a lateral escape before a backoff escape');
 assert(game.includes('remainingStep = Math.max(0, step - moved)'), 'collision repositioning cannot add a second full movement step after partial wall sliding');
-assert(game.includes('c._collisionRepositionDebug = {'), 'collision escape attempts expose per-enemy mobile-readable debug state');
+assert(reposition.includes('c._collisionRepositionDebug = {'), 'collision escape attempts expose per-enemy mobile-readable debug state');
 assert(foliage.includes('amp * originBlend'), 'procedural trunk/spine bases stay centered on their authored tile origin');
 assert(!volume.includes('moveCreatureToward'), 'AI movement is not routed through cover collision');
 

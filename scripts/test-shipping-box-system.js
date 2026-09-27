@@ -43,7 +43,7 @@ for (const file of excludedCaseFurnitureFiles) {
   const authored = JSON.parse(read('docs/config/furniture-authored/' + file));
   assert.ok(authored.parts.every(part => part.materialTexture !== 'crate_side.png'), file + ' stays outside the crate-side texture scope');
 }
-assert.match(wildTreasure, /TREASURE_CHEST_TEXTURE_PATH = 'assets\\/textures\\/crate_side\\.png'/, 'diggable treasure chest uses crate_side.png');
+assert.match(wildTreasure, /TREASURE_CHEST_TEXTURE_PATH = 'assets\/textures\/crate_side\.png'/, 'diggable treasure chest uses crate_side.png');
 assert.match(wildTreasure, /BoxGeometry\(0\.6, 0\.42, 0\.44\), _treasureChestMaterial\(0x6b4a2b\)/, 'diggable chest body uses crate-side material helper');
 assert.match(wildTreasure, /BoxGeometry\(0\.62, 0\.07, 0\.46\), _treasureChestMaterial\(0xcaa233\)/, 'diggable chest lid uses crate-side material helper');
 

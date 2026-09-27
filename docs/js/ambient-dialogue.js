@@ -534,7 +534,15 @@
     return Math.atan2(Math.sin(delta), Math.cos(delta));
   }
 
+  // Dialogue staging and an authored station lookAt (game.js's
+  // _applyNpcAmbientLook) both own the NPC's neck while active; a greeting
+  // glance must never fight them for it, nor zero it when it ends.
+  function greetingMayOwnNeck(walker) {
+    return !state.deps?.isDialogueOpen?.() && !walker?._ambientLookActive;
+  }
+
   function applyGreetingHeadTurn(walker, targetPosition) {
+    if (!greetingMayOwnNeck(walker)) return false;
     const neckJoint = walker?.neckJoint; // Existing NPC neck bone is the only transform ambient player greetings are allowed to steer.
     if (!neckJoint?.rotation || !walker?.root?.position || !targetPosition) return false;
     const dx = Number(targetPosition.x) - Number(walker.root.position.x); // Horizontal target delta drives the same +Z-forward yaw convention as normal NPC facing.
@@ -560,7 +568,7 @@
   }
 
   function releaseGreetingHeadTurn(event) {
-    const neckJoint = event?.faceMode === 'head' ? event.faceWalker?.neckJoint : null; // Only head-owned ambient greetings may clear the neck channel they authored.
+    const neckJoint = event?.faceMode === 'head' && event.ownsNeck ? event.faceWalker?.neckJoint : null; // Only a greeting that still owns the neck may clear the channel it authored.
     if (neckJoint?.rotation) neckJoint.rotation.y = 0;
   }
 
@@ -664,6 +672,7 @@
       faceWalker: options.faceWalker || null,
       faceTarget: options.faceTarget || null,
       faceMode: options.faceMode === 'head' ? 'head' : 'body', // Ambient greetings can opt into neck-only tracking while non-greeting reactions retain body-facing behavior.
+      ownsNeck: options.faceMode === 'head' && greetingMayOwnNeck(options.faceWalker), // True only while this greeting is the neck's current writer.
       speakerId: options.speakerId || null,
       greeting: options.greeting === true,
       directedAtPlayer: options.directedAtPlayer === true,
@@ -752,7 +761,7 @@
       if (event.faceWalker && event.faceTarget) {
         const targetPosition = event.faceTarget.root?.position || event.faceTarget; // Live target position keeps the greeting glance tracking a moving player.
         if (event.faceMode === 'head') {
-          applyGreetingHeadTurn(event.faceWalker, targetPosition);
+          event.ownsNeck = applyGreetingHeadTurn(event.faceWalker, targetPosition); // Hands the neck back the moment dialogue or a station lookAt takes it.
         } else {
           const angle = -Math.atan2(targetPosition.z - event.faceWalker.root.position.z, targetPosition.x - event.faceWalker.root.position.x) + Math.PI / 2; // Legacy whole-body facing remains for NPC-to-NPC and non-greeting ambient reactions.
           event.faceWalker.applyFacingDeadzone?.(angle, 0.34);

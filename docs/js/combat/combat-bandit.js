@@ -2005,6 +2005,19 @@
     };
   }
 
+  // Removes everything makeBanditEntity added to the scene for an entity
+  // that never made it into hostileObjects (e.g. an async spawn that
+  // resolved after the player left the area). Disposing avatarRef alone
+  // left the ground shadow and weapon holders parked in the zone scene.
+  function discardBanditEntity(entity) {
+    if (!entity) return;
+    entity.avatarRef?.group?.parent?.remove?.(entity.avatarRef.group);
+    entity.groundShadow?.parent?.remove?.(entity.groundShadow);
+    entity._banditToolHolder?.parent?.remove?.(entity._banditToolHolder);
+    entity._banditRangedToolHolder?.parent?.remove?.(entity._banditRangedToolHolder);
+    entity.avatarRef?.dispose?.();
+  }
+
   async function makeBanditEntity(cfg, rank, tier, x, y, opts = {}) {
     const roster = opts.rosterOverride || await rollBanditRoster(cfg, rank, opts.nameOverride);
     if (opts.bodyColorsOverride && roster?.appearance) {
@@ -2127,6 +2140,7 @@
     loadGangConfig: loadBanditGangConfig,
     loadCampLocaleDefs: loadBanditCampLocaleDefs,
     makeEntity: makeBanditEntity,
+    discardEntity: discardBanditEntity, // Scene teardown for a built-but-never-registered entity (late async spawns).
     applyRosterDyesToProfile, // Shared/testable world-avatar dye reconciliation used by Bandits, Minions, and Liches.
     // Rolls a name the same way a fresh gang member's roster does (see
     // rollBanditRoster) — used standalone by game.js's generateBountyTask
