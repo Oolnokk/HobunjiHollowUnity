@@ -546,9 +546,14 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
           await sleep(2);
           const beforeAttachEquipment=window.DevRandomRuinSimplePuzzles.snapshot().ropeEquipment;
           place(rope.grabPoint);
-          await sleep(4);
+          await sleep(3);
           window.DevRandomRuinInteractions.refresh();
           await sleep(2);
+          const grabInteraction=window.DevRandomRuinInteractions.snapshot();
+          const grabIndex=grabInteraction.rows.findIndex(row=>row.kind==='ropegrab');
+          const grabRow=grabIndex>=0?grabInteraction.rows[grabIndex]:null;
+          if(grabIndex>=0)window.DevRandomRuinInteractions.invoke(grabIndex); // Rope acquisition must go through the same visible interaction row used by ordinary world objects instead of invisible auto-catch proximity.
+          await sleep(3);
           const beforePump=window.DevRandomRuinSimplePuzzles.snapshot();
           const liveRope=beforePump.ropes[0];
           const dx=Math.abs(liveRope.grabPoint.x-liveRope.anchor.x);
@@ -566,6 +571,8 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
           await sleep(2);
           const afterRelease=window.DevRandomRuinSimplePuzzles.snapshot();
           ropeAttach={
+            grabRow,
+            grabPopupVisible:grabInteraction.worldPopupVisible,
             attached:beforePump.ropes[0]?.attached===true,
             ceilingMounted:beforePump.ropes[0]?.ceilingMounted===true,
             ceilingY:beforePump.ropes[0]?.ceilingY??null,
@@ -599,7 +606,10 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
       assert.equal(simpleRuntime.respawn?.directHit?.reason,'death','canonical direct-hit checkpoint recovery must identify the normal death path: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.respawn?.directHit?.area,'map_i_dev_random_ruin','direct-hit checkpoint recovery must not send the player to a Root Totem/farm: '+JSON.stringify(simpleRuntime));
       assert.ok(Math.abs(simpleRuntime.respawn.directHit.x-simpleRuntime.respawn.directHit.activePoint.x)<.02&&Math.abs(simpleRuntime.respawn.directHit.z-simpleRuntime.respawn.directHit.activePoint.z)<.02,'direct-hit respawn must land on the active doorway checkpoint: '+JSON.stringify(simpleRuntime));
-      assert.equal(simpleRuntime.ropeAttach?.attached,true,'approaching the traversal rope must auto-catch it: '+JSON.stringify(simpleRuntime));
+      assert.equal(simpleRuntime.ropeAttach?.grabRow?.label,'Grab Rope','approaching the traversal rope must expose the ordinary floating input prompt before attachment: '+JSON.stringify(simpleRuntime));
+      assert.equal(simpleRuntime.ropeAttach?.grabPopupVisible,true,'idle rope grab must render through WorldPopupText: '+JSON.stringify(simpleRuntime));
+      assert.ok(['item_action_1','item_action_2'].includes(simpleRuntime.ropeAttach?.grabRow?.inputAction),'ranged/tool combat must keep Action 1–3 while rope grab uses an item-action slot: '+JSON.stringify(simpleRuntime));
+      assert.equal(simpleRuntime.ropeAttach?.attached,true,'invoking the visible Grab Rope interaction must attach the traversal rope: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.ropeAttach?.pumpChangedOmega,true,'published movement input must pump the live rope pendulum: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.ropeAttach?.releaseRow?.label,'Jump Off Rope','attached rope must expose its jump-off input: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.ropeAttach?.releaseRow?.inputAction,'dodge','rope jump-off prompt must advertise the native Dodge input: '+JSON.stringify(simpleRuntime));
@@ -614,6 +624,35 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
       assert.equal(simpleRuntime.ropeAttach?.weaponRestored,true,'jumping off the rope must restore the exact previously drawn tool/weapon snapshot: '+JSON.stringify(simpleRuntime));
       if(simpleRuntime.final.trapHallways.length>0) assert.ok(simpleRuntime.final.liveProjectiles>0,'a selected projectile-hallway module must actively emit projectiles: '+JSON.stringify(simpleRuntime.final));
       else assert.ok(simpleRuntime.final.chordPlateSets.some(set=>set.slotKind==='hallway'),'a non-trap hallway slot must contain its selected reusable module: '+JSON.stringify(simpleRuntime.final));
+
+      const transitDoorRuntime = await page.evaluate(async () => {
+        const sleep=frames=>new Promise(resolve=>{let left=frames;const step=()=>{if(--left<=0)resolve();else requestAnimationFrame(step);};requestAnimationFrame(step);});
+        const door=window.DevRandomRuin.getState()?.transitDoors?.[0]||null;
+        if(!door?.center)return null;
+        const x=door.center.x+(door.axis==='x'?1.05:0),z=door.center.z+(door.axis==='z'?1.05:0);
+        window.DevRandomRuin.setPlayerWorldPoint?.({x,z},{snapCamera:false,grounded:true});
+        await sleep(4);
+        window.DevRandomRuinInteractions.refresh();
+        await sleep(2);
+        const interaction=window.DevRandomRuinInteractions.snapshot();
+        const rowIndex=interaction.rows.findIndex(row=>row.kind==='transitdoor');
+        const row=rowIndex>=0?interaction.rows[rowIndex]:null;
+        const beforeOcc=window.DevRandomRuin.getOccupancySnapshot?.();
+        const sourceId='transit-door:'+door.id;
+        const hasSource=snapshot=>Object.values(snapshot?.sources||{}).some(list=>Array.isArray(list)&&list.includes(sourceId));
+        const beforeBlocked=hasSource(beforeOcc);
+        if(rowIndex>=0)window.DevRandomRuinInteractions.invoke(rowIndex);
+        await sleep(28);
+        const afterDoor=window.DevRandomRuin.getState()?.transitDoors?.find(entry=>entry.id===door.id)||null;
+        const afterBlocked=hasSource(window.DevRandomRuin.getOccupancySnapshot?.());
+        return {door,row,worldPopupVisible:interaction.worldPopupVisible,beforeBlocked,afterDoor,afterBlocked};
+      });
+      assert.ok(transitDoorRuntime,'generated hallway must expose at least one plain transit-exit door: '+JSON.stringify(active));
+      assert.equal(transitDoorRuntime.row?.label,'Open Hallway Door','closed hallway transit door must expose the standard floating open-door prompt: '+JSON.stringify(transitDoorRuntime));
+      assert.equal(transitDoorRuntime.worldPopupVisible,true,'hallway door prompt must be rendered by WorldPopupText: '+JSON.stringify(transitDoorRuntime));
+      assert.equal(transitDoorRuntime.beforeBlocked,true,'visibly closed hallway door must contribute authoritative collision: '+JSON.stringify(transitDoorRuntime));
+      assert.ok((transitDoorRuntime.afterDoor?.open||0)>.78,'using the hallway door prompt must visibly retract the door: '+JSON.stringify(transitDoorRuntime));
+      assert.equal(transitDoorRuntime.afterBlocked,false,'opened hallway door must release its occupancy blocker: '+JSON.stringify(transitDoorRuntime));
 
       const towerInteraction = await page.evaluate(async () => {
         const scene=window.GridTileAccessors.getActiveScene();
