@@ -1946,7 +1946,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   drawBreathingLayers(baseRightArmLayers);
   drawBreathingLayers(torsoClothingLayers);
   drawBreathingLayers(overwearLayers);
-  drawBreathingLayers(hoodBackLayers); // Rear hood cloth sits behind the skull; front opening is drawn later.
+  drawBreathingLayers(hoodBackLayers); // Rear hood cloth must sit behind the skull/head; front opening is drawn later with ordinary hood layers.
   const _beardBelowHead = _BEARD_BELOW_HEAD_SPECIES.has(String(speciesId || '').toLowerCase().replace(/_/g, '-'));
   drawEmoteLayers(sideLeftLayers);
   if (_beardBelowHead) drawEmoteLayers(facialHairLayers);
