@@ -33,7 +33,7 @@ assert.match(devSource, /resolvedRosterDyes[\s\S]*hands=\$\{handRig\}/, 'Testing
 assert(indexSource.indexOf('combat-bandit.js?v=20260927hostilevisual1') < indexSource.indexOf('combat-minion.js?v=20260926shambling70'));
 assert(indexSource.indexOf('combat-minion.js?v=20260926shambling70') < indexSource.indexOf('dev-spawner.js?v=20260927hostilevisual1'));
 assert(indexSource.includes('resource-system.js?v=20260926lich1'));
-assert(indexSource.includes('combat-config-loader.js?v=20260926hover1'));
+assert(indexSource.includes('combat-config-loader.js?v=20260927inrangeno-gravity1'));
 assert(indexSource.includes('game.js?v=20260927arenarespawn1'));
 
 const authoredDyes = [
