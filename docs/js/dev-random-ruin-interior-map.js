@@ -600,6 +600,40 @@
     return {stoneMeshes,convertedMaterials,remainingLitMaterials,legacyStoneMaterials,totalMeshes};
   }
 
+  function buildTexturedCeiling(meta) {
+    const cells=Array.isArray(meta?.floorCells)?meta.floorCells:[]; // Uses the authored walkable ruin footprint so ceiling coverage follows rooms/hallways instead of becoming one giant rectangle.
+    if(!cells.length)return null;
+    const cs=worldCellSize(meta); // Converts V50's half-cell layout into the same 2x game-world scale used by the floor and walls.
+    const ceilingY=(Number(meta.floorSurfaceY)||0)+(Number(meta.wallHeight)||3); // Shared wall-top datum; sunken rooms keep the same structural ceiling height and longer support pillars.
+    const positions=[]; // Downward-wound cell quads make the ceiling visible from inside but invisible from the overhead camera.
+    const indices=[];
+    for(const [c0,r0] of cells){
+      const col=Number(c0),row=Number(r0),base=positions.length/3;
+      const minX=PAD+col*cs,maxX=minX+cs,minZ=PAD+row*cs,maxZ=minZ+cs;
+      positions.push(minX,ceilingY,minZ, maxX,ceilingY,minZ, maxX,ceilingY,maxZ, minX,ceilingY,maxZ);
+      indices.push(base,base+1,base+2, base,base+2,base+3);
+    }
+    const geometry=new THREE.BufferGeometry(); // One mesh keeps hundreds of ceiling cells inexpensive while NaturalSurfaceMaterials supplies the connected stone UV treatment.
+    geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+    const fallback=new THREE.MeshBasicMaterial({color:0x808080,side:THREE.FrontSide}); // Remains unlit even if the optional natural-surface stack is unavailable.
+    const mesh=new THREE.Mesh(geometry,fallback);
+    mesh.name='dev_random_ruin_textured_ceiling';
+    mesh.userData.devRandomRuinCeiling=true;
+    mesh.userData.devRandomRuinCeilingCells=cells.length;
+    mesh.userData.devRandomRuinCeilingY=ceilingY;
+    window.NaturalSurfaceMaterials?.naturalizeMesh?.(mesh,'cliffs'); // Reuses carved_smooth.png + the canonical #808080 cliff tint/mapping instead of inventing a ruin-only texture path.
+    for(const material of (Array.isArray(mesh.material)?mesh.material:[mesh.material])){
+      if(!material)continue;
+      material.side=THREE.FrontSide; // The geometry normals face downward, so the roof does not occlude the third-person camera when viewed from above.
+      material.needsUpdate=true;
+    }
+    mesh.castShadow=false;
+    mesh.receiveShadow=false;
+    return mesh;
+  }
+
   function makeMapRecord(seed, generated, roots, meta) {
     const projected=floorProjection(meta), scene=new THREE.Scene();
     // Like cliffs and other authored PNG surfaces, Random Test Ruin geometry is
@@ -611,6 +645,8 @@
     roots.localeRoot.position.set(PAD+scaledWorldWidth(meta)/2,0,PAD+scaledWorldDepth(meta)/2);
     const materialStats=applyUnlitRuinMaterials(roots.localeRoot); // Stone uses NaturalSurfaceMaterials('cliffs'); any remaining V50 lit material is demoted through the same character-PNG unlit factory.
     roots.localeRoot.name=`dev_v50_ruin_${seed}`; scene.add(roots.localeRoot);
+    const ceilingMesh=buildTexturedCeiling(meta); // Gives the rope mounts and support pillars a real visible stone ceiling at the exact wall-top datum they already target.
+    if(ceilingMesh)scene.add(ceilingMesh);
     roots.particleRoot.position.set(0,0,0); scene.add(roots.particleRoot);
 
     const spawn=spawnInsideEntrance(meta);
@@ -619,7 +655,7 @@
       floor:projected.floor,colliders:[],furniture:[],vendorZones:[],exits:[{id:'exit_dev_random_ruin',label:'Leave Test Ruin',tiles:[exitTile],targetMap:'',spawnCol:0,spawnRow:0}],
       wallStyle:'cavern', // Opts the session ruin into the game's existing combat-interior path so mobile receives Fire/Ammo/Potions and combat/reticle updates exactly like a den.
       devSessionOnly:true,devSeed:seed,devRuinTileScale:RUIN_TILE_SCALE,sourceGenerator:'HobunjiDebrisifierV50'};
-    return {scene,grid:projected.grid,cols:projected.cols,rows:projected.rows,mapData,wallStyle:'cavern',floorSet:projected.walkable,exits:mapData.exits,spawn,localeRoot:roots.localeRoot,particleRoot:roots.particleRoot,denMaterialMeshCount:materialStats.stoneMeshes,unlitConvertedMaterialCount:materialStats.convertedMaterials,remainingLitMaterialCount:materialStats.remainingLitMaterials,legacyStoneMaterialCount:materialStats.legacyStoneMaterials,totalRuinMeshCount:materialStats.totalMeshes};
+    return {scene,grid:projected.grid,cols:projected.cols,rows:projected.rows,mapData,wallStyle:'cavern',floorSet:projected.walkable,exits:mapData.exits,spawn,localeRoot:roots.localeRoot,particleRoot:roots.particleRoot,ceilingMesh,ceilingCellCount:Number(ceilingMesh?.userData?.devRandomRuinCeilingCells)||0,ceilingY:Number(ceilingMesh?.userData?.devRandomRuinCeilingY)||null,denMaterialMeshCount:materialStats.stoneMeshes,unlitConvertedMaterialCount:materialStats.convertedMaterials,remainingLitMaterialCount:materialStats.remainingLitMaterials,legacyStoneMaterialCount:materialStats.legacyStoneMaterials,totalRuinMeshCount:materialStats.totalMeshes};
   }
 
   async function generate(seed=randomSeed()) {
@@ -701,7 +737,7 @@
   function clearRuntime(removeMap=true) {
     ruin?.occupancy?.destroy?.();
     DS.clearScope(SCOPE);
-    if(ruin){detach(ruin.localeRoot);detach(ruin.particleRoot);} if(removeMap) buildingScenes?.delete(MAP_ID);
+    if(ruin){detach(ruin.localeRoot);detach(ruin.particleRoot);detach(ruin.ceilingMesh);ruin.ceilingMesh?.geometry?.dispose?.();} if(removeMap) buildingScenes?.delete(MAP_ID);
     ruin=null;
     clearRuinPresentationHeight();
     // A reroll deliberately keeps the hidden V50 realm alive. Its API's
@@ -827,5 +863,5 @@
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',installSettingsButton,{once:true});else installSettingsButton();
 
-  window.DevRandomRuin=Object.freeze({generate,reroll:()=>generate(randomSeed()),clear:()=>{if(deps?.getCurrentArea?.()===MAP_ID)leaveRuin();else clearRuntime(true);},leave:leaveRuin,getInteractionControls:()=>ruin?ruin.controls.map(control=>({...control,range:Number.isFinite(Number(control.range))?Number(control.range):CONTROL_RANGE})):[],getRuntimeContext:()=>ruin?{scene:ruin.scene,root:ruin.localeRoot,meta:ruin.meta,spawn:{...ruin.spawn},cols:ruin.cols,rows:ruin.rows,seed:ruin.seed,puzzleOptions:{...ruin.puzzleOptions}}:null,getPuzzleGenerationOptions:()=>readPuzzleGenerationOptions(),setPuzzleGenerationOptions:options=>savePuzzleGenerationOptions(options),getOccupancySnapshot:()=>ruin?.occupancy?.snapshot?.()||null,getLastSolvabilityAudit:()=>lastGenerationAudit?JSON.parse(JSON.stringify(lastGenerationAudit)):null,getDarknessSettings,setPlayerWorldPoint,getPlayerSupportY,syncPlayerPresentationHeight:syncRuinPresentationHeight,getState:()=>ruin?{mapId:MAP_ID,seed:ruin.seed,requestedSeed:ruin.requestedSeed,sourceSeed:ruin.sourceSeed,tileScale:RUIN_TILE_SCALE,wallStyle:ruin.wallStyle||null,darkness:getDarknessSettings(),materialStats:{cliffMeshes:ruin.denMaterialMeshCount||0,converted:ruin.unlitConvertedMaterialCount||0,remainingLit:ruin.remainingLitMaterialCount||0,legacyStone:ruin.legacyStoneMaterialCount||0,totalMeshes:ruin.totalRuinMeshCount||0},rooms:ruin.meta.rooms?.length||0,controls:ruin.controls.length,mechanisms:[...ruin.mechanisms.values()].map(m=>({id:m.id,type:m.type,progress:m.progress,target:m.target})),puzzleOptions:ruin.puzzleOptions,puzzleGeneration:ruin.puzzleGeneration,solvability:ruin.solvability,generationAttempt:ruin.generationAttempt,presentation:presentationSnapshot(),occupancy:ruin.occupancy?.snapshot?.(),dynamic:DS.debugSnapshot()}:null});
+  window.DevRandomRuin=Object.freeze({generate,reroll:()=>generate(randomSeed()),clear:()=>{if(deps?.getCurrentArea?.()===MAP_ID)leaveRuin();else clearRuntime(true);},leave:leaveRuin,getInteractionControls:()=>ruin?ruin.controls.map(control=>({...control,range:Number.isFinite(Number(control.range))?Number(control.range):CONTROL_RANGE})):[],getRuntimeContext:()=>ruin?{scene:ruin.scene,root:ruin.localeRoot,meta:ruin.meta,spawn:{...ruin.spawn},cols:ruin.cols,rows:ruin.rows,seed:ruin.seed,puzzleOptions:{...ruin.puzzleOptions}}:null,getPuzzleGenerationOptions:()=>readPuzzleGenerationOptions(),setPuzzleGenerationOptions:options=>savePuzzleGenerationOptions(options),getOccupancySnapshot:()=>ruin?.occupancy?.snapshot?.()||null,getLastSolvabilityAudit:()=>lastGenerationAudit?JSON.parse(JSON.stringify(lastGenerationAudit)):null,getDarknessSettings,setPlayerWorldPoint,getPlayerSupportY,syncPlayerPresentationHeight:syncRuinPresentationHeight,getState:()=>ruin?{mapId:MAP_ID,seed:ruin.seed,requestedSeed:ruin.requestedSeed,sourceSeed:ruin.sourceSeed,tileScale:RUIN_TILE_SCALE,wallStyle:ruin.wallStyle||null,darkness:getDarknessSettings(),materialStats:{cliffMeshes:ruin.denMaterialMeshCount||0,converted:ruin.unlitConvertedMaterialCount||0,remainingLit:ruin.remainingLitMaterialCount||0,legacyStone:ruin.legacyStoneMaterialCount||0,totalMeshes:ruin.totalRuinMeshCount||0,ceilingCells:ruin.ceilingCellCount||0,ceilingY:ruin.ceilingY??null,ceilingTextured:!!(Array.isArray(ruin.ceilingMesh?.material)?ruin.ceilingMesh.material:ruin.ceilingMesh?.material)?.map,ceilingNaturalSurface:(Array.isArray(ruin.ceilingMesh?.material)?ruin.ceilingMesh.material[0]:ruin.ceilingMesh?.material)?.userData?.naturalSurface||null},rooms:ruin.meta.rooms?.length||0,controls:ruin.controls.length,mechanisms:[...ruin.mechanisms.values()].map(m=>({id:m.id,type:m.type,progress:m.progress,target:m.target})),puzzleOptions:ruin.puzzleOptions,puzzleGeneration:ruin.puzzleGeneration,solvability:ruin.solvability,generationAttempt:ruin.generationAttempt,presentation:presentationSnapshot(),occupancy:ruin.occupancy?.snapshot?.(),dynamic:DS.debugSnapshot()}:null});
 })();
