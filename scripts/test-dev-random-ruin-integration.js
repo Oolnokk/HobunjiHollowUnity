@@ -46,9 +46,9 @@ const loadOrder = [
 ].map(name => camera.indexOf(name));
 assert(/localStorage\.getItem\('hobunjiDevMode'\) === '1'/.test(camera) && /if \(!devMode/.test(camera), 'ruin runtime must only be injected in Dev Mode');
 assert(camera.includes('dev-random-ruin-interactions.js?v=20260926ropedodge1'), 'ruin interaction adapter must be cache-busted in the dev bootstrap');
-assert(camera.includes('dev-random-ruin-simple-puzzles.js?v=20260927chordlock1'), 'simple puzzle runtime must be cache-busted in the dev bootstrap');
+assert(camera.includes('dev-random-ruin-simple-puzzles.js?v=20260927chordcue1'), 'simple puzzle runtime must be cache-busted in the dev bootstrap');
 assert(camera.includes('dev-random-ruin-wall-render-proxy.js?v=20260926glyphdecal1'), 'glyph decal proxy fix must be cache-busted in the dev bootstrap');
-assert(gameIndex.includes('js/dev-random-ruin-bootstrap.js?v=20260927generatorlocal1'), 'game page must load the updated ruin bootstrap');
+assert(gameIndex.includes('js/dev-random-ruin-bootstrap.js?v=20260927doorunlock1'), 'game page must load the updated ruin bootstrap');
 assert(gameIndex.includes('game.js?v=20260927ruinsurface1'), 'game page must cache-bust the native Dodge rope release seam');
 assert(gameIndex.includes('js/climb-system.js?v=20260926ruinladder2'), 'game page must cache-bust the shared climb animation used by authored ruin ladders');
 assert(loadOrder.every(index => index >= 0), 'ruin bootstrap must load every Random Test Ruin runtime module');
@@ -73,7 +73,7 @@ assert(interior.includes('spritePngSurface.makeMaterial(THREE,source.map||null')
 assert(interior.includes('remainingLitMaterials'), 'material diagnostics must explicitly count any lit material that escapes normalization');
 assert((cloudFog.match(/map_i_dev_random_ruin/g)||[]).length>=2, 'Random Test Ruin must opt into the shared den no-sky and den darkness/lantern classifications');
 assert(gameIndex.includes('js/cloud-forest-fog.js?v=20260926devruindark2'), 'test-ruin darkness override must be cache-busted in the game page');
-assert(camera.includes('dev-random-ruin-interior-map.js?v=20260927generatorlocal1'), 'test-ruin generator/runtime changes must be cache-busted in the dev bootstrap');
+assert(camera.includes('dev-random-ruin-interior-map.js?v=20260927doorunlock1'), 'test-ruin generator/runtime changes must be cache-busted in the dev bootstrap');
 assert(interior.includes('Solvability.audit'), 'candidate ruins must run the pre-entry solvability audit');
 assert(interior.includes('MAX_SOLVABILITY_ATTEMPTS = 6'), 'unsolvable candidates must have a bounded deterministic retry budget');
 assert(interior.includes('getLastSolvabilityAudit'), 'rejected seed diagnostics must remain inspectable without devtools');
@@ -133,6 +133,8 @@ assert(simplePuzzles.includes('ROPE_DESTINATION_RISE = .78') && simplePuzzles.in
 assert(simplePuzzles.includes('topRise:COMPOUND_ELEVATOR_TOP_RISE'), 'compound rope/elevator landing must start above ordinary step height so the rope has an obvious traversal purpose');
 assert(simplePuzzles.includes('generatedMechanismId=nearestGeneratedStoneDoorMechanism(context,doorway)') && simplePuzzles.includes('reusesGeneratedDoor:!!generatedMechanismId'), 'ossuary/chord locks must reuse the generated doorway mechanism instead of stacking a second blocking door over it');
 assert(simplePuzzles.includes("window.DevRandomRuin?.setMechanismTarget?.(module.generatedMechanismId,module.targetOpen?1:0)"), 'ossuary completion must open the same generated stone door that visually seals the room');
+assert(interior.includes('mechanism.externalTarget=normalized') && interior.includes('if(hasExternalTarget)'), 'explicit modular door unlocks must override stale V50 puzzle signals and drive visible mechanism progress');
+assert(simplePuzzles.includes("playObjectSfxKey?.('breakRock',1.45,.58)") && simplePuzzles.includes('playStoneUnlockKchunk();'), 'four-note completion must play an unmistakable low stone unlock cue');
 assert(simplePuzzles.includes('CHORD_PITCHES = Object.freeze([1, 1.259921, 1.498307, 1.887749])'), 'the four chord pressure plates must retain four distinct authored pitch ratios');
 assert(!simplePuzzles.includes("dev_ruin_rope_hazard_"), 'rope fall/burn zones must remain logical hazards and never render as red debug slabs near the ceiling');
 assert(simplePuzzles.includes("recordModulePlacement('projectileHallwayTrap'"), 'hallway traps must be represented as reusable module placements');
