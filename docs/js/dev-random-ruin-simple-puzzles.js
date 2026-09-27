@@ -1690,6 +1690,7 @@
         point:candidate.grabPoint, // Interaction range is measured from the authored launch-side grab point while the floating popup remains visually anchored to the live swinging rope bob.
         range:1.25,
         priority:32,
+        claimAction1:true, // Nearby rope grab intentionally replaces weapon Action 1; WorldActionInputClaims suppresses the attack until this interaction leaves range.
         touchIcon:'🪢',
         label:'Grab Rope',
         onPress:()=>attachRope(candidate),
