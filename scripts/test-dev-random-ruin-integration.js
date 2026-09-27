@@ -45,9 +45,9 @@ const loadOrder = [
 ].map(name => camera.indexOf(name));
 assert(/localStorage\.getItem\('hobunjiDevMode'\) === '1'/.test(camera) && /if \(!devMode/.test(camera), 'ruin runtime must only be injected in Dev Mode');
 assert(camera.includes('dev-random-ruin-interactions.js?v=20260926ropedodge1'), 'ruin interaction adapter must be cache-busted in the dev bootstrap');
-assert(camera.includes('dev-random-ruin-simple-puzzles.js?v=20260927ropeprompt1'), 'simple puzzle runtime must be cache-busted in the dev bootstrap');
+assert(camera.includes('dev-random-ruin-simple-puzzles.js?v=20260927ropereadability1'), 'simple puzzle runtime must be cache-busted in the dev bootstrap');
 assert(camera.includes('dev-random-ruin-wall-render-proxy.js?v=20260926glyphdecal1'), 'glyph decal proxy fix must be cache-busted in the dev bootstrap');
-assert(gameIndex.includes('js/dev-random-ruin-bootstrap.js?v=20260927transitdoor1'), 'game page must load the updated ruin bootstrap');
+assert(gameIndex.includes('js/dev-random-ruin-bootstrap.js?v=20260927ropereadability1'), 'game page must load the updated ruin bootstrap');
 assert(gameIndex.includes('game.js?v=20260927ruinsurface1'), 'game page must cache-bust the native Dodge rope release seam');
 assert(gameIndex.includes('js/climb-system.js?v=20260926ruinladder2'), 'game page must cache-bust the shared climb animation used by authored ruin ladders');
 assert(loadOrder.every(index => index >= 0), 'ruin bootstrap must load every Random Test Ruin runtime module');
@@ -127,6 +127,9 @@ assert(simplePuzzles.includes("anchorY=ceilingBase+wallHeight-.035"), 'rope anch
 assert(simplePuzzles.includes("dev_ruin_swing_rope_ceiling_mount_"), 'rope traversal must render an explicit ceiling attachment');
 assert(simplePuzzles.includes("inputAction:'dodge'") && simplePuzzles.includes("nativeInput:true"), 'rope jump-off prompt must advertise the canonical Dodge input without stealing an action slot');
 assert(simplePuzzles.includes("label:'Grab Rope'") && simplePuzzles.includes("point:candidate.grabPoint"), 'idle ropes must expose the normal floating WorldPopupText interaction instead of relying on invisible auto-grab proximity');
+assert(simplePuzzles.includes("String(door?.to)===String(hall.id)") && simplePuzzles.includes('approachAtMin'), 'safe-path reveal pedestal must derive the player-approach side from the actual room-to-hall doorway rather than always using the low-coordinate end');
+assert(simplePuzzles.includes('ROPE_DESTINATION_RISE = .78') && simplePuzzles.includes('ROPE_GRAB_ABOVE_LAUNCH = .86'), 'rope traversal must visibly separate the unreachable destination height from the reachable launch-side grip height');
+assert(simplePuzzles.includes('topRise:COMPOUND_ELEVATOR_TOP_RISE'), 'compound rope/elevator landing must start above ordinary step height so the rope has an obvious traversal purpose');
 assert(!simplePuzzles.includes("dev_ruin_rope_hazard_"), 'rope fall/burn zones must remain logical hazards and never render as red debug slabs near the ceiling');
 assert(simplePuzzles.includes("recordModulePlacement('projectileHallwayTrap'"), 'hallway traps must be represented as reusable module placements');
 assert(simplePuzzles.includes("recordModulePlacement('chordPressurePlates'"), 'musical pressure plates must be reusable in hallway or room slots');
