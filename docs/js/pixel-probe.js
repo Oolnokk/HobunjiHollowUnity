@@ -1046,6 +1046,12 @@
         ? `Controller: #${controllerDebug.index} ${controllerDebug.id} mapping=${controllerDebug.mapping} owner=${controllerDebug.owner} LS=${axis(controllerDebug.move)} RS=${axis(controllerDebug.look)}`
         : 'Controller: not detected');
     }
+    const inputClaimDebug=window.WorldActionInputClaims?.snapshot?.(); // Makes contextual suppression of weapon/tool inputs visible in mobile Pixel Probe reports.
+    if(inputClaimDebug){
+      const claims=inputClaimDebug.claims?.map?.(claim=>`${claim.actionId}→${claim.label}@${claim.ownerId}`).join(', ')||'none';
+      const pressed=inputClaimDebug.pressed?.map?.(claim=>`${claim.actionId}@${claim.ownerId}`).join(', ')||'none';
+      lines.push(`World input claims: ${claims} · pressed=${pressed} · rev=${inputClaimDebug.revision}`);
+    }
     const boulderShellDebug = window.ZoneTerrainFeatures?.boulderShellSnapshot?.(); // Copyable proof that streamed chunks reuse one map-wide boulder index instead of rescanning the map.
     if (boulderShellDebug) {
       lines.push(`Boulder shells: indexBuilds=${boulderShellDebug.indexBuilds} cacheHits=${boulderShellDebug.indexHits} gridTilesScanned=${boulderShellDebug.gridTilesScanned} chunkBuilds=${boulderShellDebug.shellBuilds}`);
