@@ -220,7 +220,8 @@ assert(styleSource.includes('#entrancedCommandBanner.visible'), 'Entranced comma
 assert(styleSource.includes("font-family: 'KhymeryyanRomanLetters+Numbers'"), 'Entranced command must use the game HUD font');
 assert(styleSource.includes('font-size: 24px'), 'Entranced APPROACH/FLEE action text must be twice the prior 12px size');
 assert(styleSource.includes('font-size: 14px'), 'Entranced condition label must be twice the prior 7px size');
-assert.match(styleSource, /#entrancedCommandBanner \{[\s\S]*background: transparent;[\s\S]*border: 0;/, 'Entranced command must have no visible container');
+assert.match(styleSource, /#entrancedCommandBanner \{[\s\S]*background: transparent;/, 'Entranced command must have no visible background container');
+assert.match(styleSource, /#entrancedCommandBanner \{[\s\S]*border: 0;/, 'Entranced command must have no visible border container');
 assert.match(lichSource, /LUNGE_RING_REFERENCE_OUTER_RADIUS = 0\.46/, 'controller marker reference radius must stay aligned with the canonical game.js lunge stamp');
 assert.match(lichSource, /LUNGE_RING_REFERENCE_THICKNESS = 0\.14/, 'controller marker reference thickness must stay aligned with the canonical game.js lunge stamp');
 assert.match(lichSource, /ENTRANCER_RING_OUTER_RADIUS = LUNGE_RING_REFERENCE_OUTER_RADIUS \* 2/, 'controller marker must be twice the lunge-ring diameter scale');
