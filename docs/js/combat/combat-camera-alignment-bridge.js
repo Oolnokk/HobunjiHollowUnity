@@ -264,17 +264,20 @@
         const dirY = nz / horizontal;
         const pitch = Math.asin(Math.max(-1, Math.min(1, ny)));
         const yaw = Math.atan2(dirY, dirX); // Same ground-plane heading the triggered attack volume uses.
-        const ungroundedByAim = pitch >= 0; // Simplified rule: forward/upward melee aim may leave the ground; only below-forward pitch keeps the ordinary grounded/gravity-limited lunge.
+        const ungroundedByAim = pitch >= 0; // Forward/upward attacks use the committed 3D reticle ray itself; only below-forward aim keeps the old grounded/ballistic model.
         const effectivePitchDistanceResistance = ungroundedByAim
           ? 1
-          : (hitTest?.pitchDistanceResistance || 0); // Forward/upward aim fully removes the old gravity/pitch distance loss; downward aim preserves the attack-authored behavior.
+          : (hitTest?.pitchDistanceResistance || 0);
+        const effectiveDirectFlightStrength = ungroundedByAim
+          ? 1
+          : (hitTest?.directFlightStrength || 0); // Direct=1 completely bypasses the old diminished-vertical/hop blend for ordinary forward/upward player attacks.
         const profile = window.Combat?.meleeLungeProfile?.(
           distancePx,
           pitch,
           hopUnits,
           player.lungeHeightUnits,
           effectivePitchDistanceResistance,
-          hitTest?.directFlightStrength || 0,
+          effectiveDirectFlightStrength,
           ungroundedByAim,
         ) || { distancePx, hopUnits, pitch, verticalTravelUnits: 0, directFlightStrength: 0 };
 
@@ -307,6 +310,7 @@
           directFlightStrength: player.lungeDirectFlightStrength,
           gravityBypassedForForwardOrUpwardAim: ungroundedByAim, // Mobile diagnostics expose the new pitch-only grounding rule directly.
           effectivePitchDistanceResistance,
+          effectiveDirectFlightStrength,
           inRangeAirAssist: !!profile.inRangeAirAssist,
           attackRangePx: Number(hitTest?.rangePx) || null,
           cancelRangePx: Number(player.lungeHitTest?.rangePx) || null,
