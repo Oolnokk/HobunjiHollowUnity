@@ -81,11 +81,11 @@ assert(combatBanditSource.includes('Array.isArray(cfg?.weaponShapePool) ? cfg.we
 assert(combatBanditSource.includes('configuredMetalKey || rolledMetalKey'), 'BanditCombat must honor an optional fixed metal without changing ordinary bandit rolls');
 assert(gameIndexSource.includes('js/dev-spawner.js?v=20260926minion1'), 'Game entry point must cache-bust the Harlyao Skeleton Minion arena spawner update');
 assert(gameIndexSource.includes('js/combat/combat-minion.js?v=20260926shambling70'), 'Game entry point must load the current Minion enemy category before the arena spawner');
-assert(gameIndexSource.includes('js/portrait-utils.js?v=20260926hskelhoodhair1'), 'Game entry point must cache-bust hood-aware female skeleton hair visibility');
+assert(gameIndexSource.includes('js/portrait-utils.js?v=20260926pixellayer1'), 'Game entry point must cache-bust hood-aware female skeleton hair visibility');
 assert(gameIndexSource.includes('js/png-plane-avatar.js?v=20260926hskelhairalign1'), 'Game entry point must cache-bust the removal of the obsolete skeleton neck workaround');
 assert(gameIndexSource.includes('js/combat/combat-bandit.js?v=20260926hskelhairalign1'), 'Game entry point must cache-bust the restored ordinary humanoid neck path');
 assert(characterStudioSource.includes('../../js/harlyao-skeleton-species-runtime.js?v=20260926studio1'), 'Character Studio must load the NPC-only Harlyao Skeleton runtime bridge before snapshotting its species table');
-assert(characterStudioSource.includes('../../js/portrait-utils.js?v=20260926hskelhoodhair1'), 'Character Studio must load hood-aware structural-hair visibility');
+assert(characterStudioSource.includes('../../js/portrait-utils.js?v=20260926pixellayer1'), 'Character Studio must load hood-aware structural-hair visibility');
 assert(characterStudioSource.includes("SPECIES_DATA[ap.speciesId]?.playerSelectable === false"), 'NPC-only preview species must be blocked from Set as my player');
 assert(characterStudioSource.includes("speciesMeta.bodyColorCustomization === false"), 'Fixed-color skeletons must not expose editable body-color controls');
 
