@@ -8,6 +8,7 @@ const portrait = fs.readFileSync('docs/js/portrait-utils.js', 'utf8');
 const game = fs.readFileSync('docs/index.html', 'utf8');
 const studio = fs.readFileSync('docs/tools/character-studio/index.html', 'utf8');
 const ruggedMask = fs.readFileSync('docs/assets/cosmetics/clothes/overwear/portrait/ruggedshoulders_tl_m.layer-mask.png');
+const ruggedPoncho = JSON.parse(fs.readFileSync('docs/config/cosmetics/clothes/overwear/rugged_poncho.json', 'utf8'));
 
 function decodeRgbaPngAlpha(buffer) {
   assert.strictEqual(buffer.subarray(0, 8).toString('hex'), '89504e470d0a1a0a', 'mask must be a PNG');
@@ -62,7 +63,7 @@ assert(ruggedMaskAlpha.selected > 0, 'rugged shoulder mask must contain selected
 assert(ruggedMaskAlpha.selected < ruggedMaskAlpha.total, 'rugged shoulder mask must not select the entire sprite rectangle');
 
 assert(hub.includes('data-target="portrait-pixel-layer-mask"'), 'Tool Hub must expose the pixel-layer authoring tab');
-assert(hub.includes('portrait-pixel-layer-mask/index.html?v=20260927pixellayer8'), 'Tool Hub must embed the current pixel-layer author');
+assert(hub.includes('portrait-pixel-layer-mask/index.html?v=20260927pixellayer9'), 'Tool Hub must embed the current pixel-layer author');
 assert(tool.includes('Paint exact source pixels'), 'author must describe pixel-exact mask editing');
 assert(tool.includes('pointerdown') && tool.includes('pointermove'), 'author must support pointer/touch painting');
 assert(tool.includes('Download mask PNG') && tool.includes('Copy JSON'), 'author must export both the mask and renderer metadata');
@@ -91,22 +92,32 @@ assert(tool.includes("/^back(?:_|$)/i.test"), 'preview metadata must classify ba
 assert(!tool.includes('cameraPresets:'), 'pixel-mask preview must inherit the shared AvatarPreviewScene camera convention');
 assert(tool.includes('normalizeMaskImageIntoCanvas'), 'imported opaque black/white masks must be normalized back into alpha masks');
 assert(tool.includes("!String(entry.path || '').includes('/appearance/')"), 'clothing picker must exclude appearance-only folder entries');
-assert(tool.includes("target: $('target').value"), 'author export must preserve the selected portrait stage');
+assert(tool.includes("id=\"maskBehavior\""), 'author must expose reroute vs no-trespass behavior');
+assert(tool.includes("mode: 'noTrespassSquish'"), 'author export/preview must support no-trespass squish metadata');
+assert(tool.includes("target: $('target').value"), 'reroute export must preserve the selected portrait stage');
 assert(tool.includes("view: $('view').value"), 'author export must preserve front/behind scope');
 
 assert(portrait.includes('normalizePixelLayerMasks'), 'portrait config parser must preserve authored pixel masks');
 assert(portrait.includes("mask.target === 'belowHood'"), 'portrait renderer must support below-hood routing');
 assert(portrait.includes("mask.target === 'aboveHood'"), 'portrait renderer must support above-hood routing');
-assert(portrait.includes("pixelMaskMode: 'exclude'"), 'ordinary layer draw must exclude rerouted mask pixels');
+assert(portrait.includes("pixelExcludeMasks: rerouteMasks"), 'ordinary layer draw must keep reroute exclusions separate from no-trespass deformation');
 assert(portrait.includes("pixelMaskMode: 'include'"), 'rerouted stage draw must include only selected mask pixels');
-assert(portrait.includes('resolvePixelMaskedImage'), 'portrait renderer must build masked source canvases after normal sprite preparation');
+assert(portrait.includes("mask.mode === 'noTrespassSquish'"), 'mask normalization must preserve no-trespass mode');
+assert(portrait.includes('buildNoTrespassSquishCanvas'), 'portrait renderer must build a shape-aware no-trespass deformation');
+assert(portrait.includes('nearestLegal') && portrait.includes('deepestIllegal') && portrait.includes('nearestBoundary'), 'no-trespass deformation must use connected opaque-neighbor flow instead of a bounding-box squeeze');
+assert(portrait.includes('resolvePixelMaskedImage'), 'portrait renderer must build masked/deformed source canvases after normal sprite preparation');
 assert(portrait.includes('function portraitImageAspect(img)'), 'portrait renderer must compute aspect ratio for both Image and Canvas sources');
 assert(portrait.includes("img?.naturalWidth || img?.width") && portrait.includes("img?.naturalHeight || img?.height"), 'masked temporary canvases must fall back to canvas width/height instead of NaN natural dimensions');
 assert(!portrait.includes('(img.naturalWidth / img.naturalHeight) * PORTRAIT_L'), 'canonical portrait draw paths must not assume Image-only natural dimensions');
 assert(portrait.includes('pixelBelowHood:() => drawPixelStageLayers'), 'rear portrait order must expose a below-hood pixel stage');
 assert(portrait.includes('pixelAboveHood:() => drawPixelStageLayers'), 'rear portrait order must expose an above-hood pixel stage');
 assert(portrait.includes('drawPixelStageLayers(pixelBelowHoodLayers);') && portrait.includes('drawPixelStageLayers(pixelAboveHoodLayers);'), 'front portrait path must draw both pixel stages');
-assert(game.includes('js/portrait-utils.js?v=20260927pixellayer2'), 'game must cache-bust the canvas-aware pixel-layer renderer');
-assert(studio.includes('../../js/portrait-utils.js?v=20260927pixellayer2'), 'Character Studio must cache-bust the canvas-aware pixel-layer renderer');
+assert(game.includes('js/portrait-utils.js?v=20260927pixellayer3'), 'game must cache-bust the no-trespass pixel-layer renderer');
+assert(studio.includes('../../js/portrait-utils.js?v=20260927pixellayer3'), 'Character Studio must cache-bust the no-trespass pixel-layer renderer');
+
+const ruggedSquish = ruggedPoncho?.speciesVariants?.tletingan_male?.parts?.torso?.layers?.back_wrap?.pixelLayerMasks?.[0];
+assert.strictEqual(ruggedSquish?.mode, 'noTrespassSquish', 'Tletingan male rugged shoulder wrap must use no-trespass squish');
+assert.strictEqual(ruggedSquish?.view, 'behind', 'rugged shoulder no-trespass mask must remain behind-only');
+assert(!('target' in ruggedSquish), 'no-trespass squish must not reroute pixels to an above/below-hood stage');
 
 console.log('Portrait pixel layer mask author/runtime regression passed.');
