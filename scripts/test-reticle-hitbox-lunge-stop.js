@@ -42,9 +42,11 @@ let baseAlignment = {
 };
 let nativeUpdateCalls = 0;
 let nativeUpdateSawX = null;
+let lastProfileResistance = null; // Captures the effective upward-gravity resistance supplied by the camera-authored lunge wrapper.
+let perspectivePointY = 0.55; // Mutable shared aim height lets this regression exercise an elevated target without changing camera yaw.
 
 const perspectiveTarget = () => ({
-  point: { x: 10, y: 0.55, z: 0 },
+  point: { x: 10, y: perspectivePointY, z: 0 },
   cameraRay: {
     origin: { x: 0, y: 0.5, z: 0 },
     direction: { x: 1, y: 0, z: 0 },
@@ -96,8 +98,9 @@ const windowStub = {
     attackAlignmentStep() {
       return { ...baseAlignment };
     },
-    meleeLungeProfile(distancePx, pitch, hopUnits) {
-      return { distancePx, pitch, hopUnits };
+    meleeLungeProfile(distancePx, pitch, hopUnits, lungeHeightUnits, pitchDistanceResistance, directFlightStrength) {
+      lastProfileResistance = pitchDistanceResistance; // Real Combat uses 1 as "remove the upward gravity/pitch distance loss."
+      return { distancePx, pitch, hopUnits, lungeHeightUnits, pitchDistanceResistance, directFlightStrength };
     },
     meleeColliderVolume(attacker, opts) {
       const pitch = Number(opts.pitch) || 0;
@@ -154,6 +157,26 @@ assert(Math.abs(step.deltaRad - 0.15) < 1e-9, 'screen-side correction continues 
 baseAlignment = { ...baseAlignment, screenCorrectionRad: 0, deltaRad: 0 };
 step = windowStub.Combat.attackAlignmentStep(player, target, 0, { facing: 0 });
 assert.equal(step.eligible, false, 'pure vertical miss is not ranked as a fake zero-error autotarget');
+
+// A hovering/elevated hostile already inside the triggered attack's real 3D
+// volume must not make upward pitch shrink the lunge through gravity.
+perspectivePointY = 2.55;
+targetBox = {
+  min: { x: 0.55, y: 0.45, z: -0.15 },
+  max: { x: 0.75, y: 1.2, z: 0.15 },
+};
+player.x = 0;
+player.y = 0;
+player.lunging = false;
+lastProfileResistance = null;
+deps.beginCombatLunge(128, 0.4, 0, { rangePx: 64, halfConeRad: 0.25, pitchDistanceResistance: 0 });
+assert.equal(lastProfileResistance, 1,
+  'enemy already inside the pitched melee volume forces full resistance so lunge gravity cannot shorten the attack');
+assert.equal(windowStub.HobunjiCombatCameraAlignment.debugSnapshot().lastLunge.gravityBypassedForInRangeEnemy, true,
+  'debug state exposes the in-range gravity bypass for elevated-target troubleshooting');
+player.lunging = false;
+player.lungeHitTest = null;
+perspectivePointY = 0.55;
 
 // Simulate updateMovement covering two tiles in one rendered frame. The real
 // attack range is 1 tile, but the lunge-cancel cone is only 0.5 tile long. With
