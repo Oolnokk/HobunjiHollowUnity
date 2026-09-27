@@ -22,6 +22,11 @@
     const api = document.createElement('script');
     api.src = 'debrisifier-v50-api.js';
     api.onerror = () => fail('V50 dev API did not load.');
+    api.onload = () => {
+      if (embeddedRuntime && debug && window.DebrisifierV50?.sourceSha256 === SOURCE_SHA256) {
+        debug.textContent = 'Debris-ifier embedded runtime ready.';
+      }
+    };
     document.head.appendChild(api);
   }
 
