@@ -387,7 +387,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     assert.equal(active.transport?.active, true, JSON.stringify(active.transport));
     assert.equal(active.transport?.sameOrigin, true, JSON.stringify(active.transport));
     assert.equal(active.transport?.expectedFurniturePaths, 11, JSON.stringify(active.transport));
-    assert.equal(active.transport?.patchedBindings, 23, JSON.stringify(active.transport));
+    assert.equal(active.transport?.patchedBindings, 26, JSON.stringify(active.transport));
     assert.equal(active.transport?.runtimePuzzleGenerationOptions, true, JSON.stringify(active.transport));
     assert.deepEqual(active.transport?.runtimeHallwayWidthCells, [5,6], JSON.stringify(active.transport));
     assert.equal(active.transport?.runtimeDoorwayUsesAuthoredWidth, true, JSON.stringify(active.transport));
