@@ -800,7 +800,7 @@
     const badge=document.getElementById('devRandomRuinBadge'); if(badge) badge.style.display='none';
   }
 
-  function positionInfo(px,py){const x=px/deps.TILE,z=py/deps.TILE;return{x,z,blocker:DS.blockerAt(x,z,{radius:PLAYER_RADIUS,actorHeight:1.25}),pit:DS.pointInPit(x,z,PLAYER_RADIUS*.25),support:DS.sampleSupport(x,z,{minY:-4,maxY:5,pad:.02})};}
+  function positionInfo(px,py){const x=px/deps.TILE,z=py/deps.TILE;return{x,z,pit:DS.pointInPit(x,z,PLAYER_RADIUS*.25),support:DS.sampleSupport(x,z,{minY:-4,maxY:5,pad:.02})};} // Horizontal collision is already resolved by the ordinary registered interior grid; this helper owns only ruin-specific vertical support/pit state.
   function reconcilePlayer(now){
     if(window.DevRandomRuinSimplePuzzles?.ownsPlayerMotion?.())return;
     if(deps.player?.climbing){
@@ -828,10 +828,6 @@
       return;
     }
     let info=positionInfo(deps.player.x,deps.player.y);
-    if(info.blocker){
-      deps.player.x=ruin.lastAcceptedPx.x;deps.player.y=ruin.lastAcceptedPx.y;
-      info=positionInfo(deps.player.x,deps.player.y);
-    }
     if(info.pit&&!info.support){
       ruin.falling={startedAt:now,x:deps.player.x,y:deps.player.y,safe:{...ruin.lastSafePx}};
       window.ResourceSystem?.spendFooting?.(deps.player,35,'test ruin fall');
