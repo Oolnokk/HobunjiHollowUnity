@@ -430,7 +430,7 @@
       plateBatch.name = 'dev_ruin_pressure_plate_batch_' + hall.id;
       plateBatch.userData.devRandomRuinPressurePlate = true;
       plateBatch.userData.devRandomRuinPressurePlateBatch = true;
-      plateBatch.frustumCulled = true;
+      plateBatch.frustumCulled = false; // Three r128 culls InstancedMesh from the base geometry bounds, not these translated instances; one batch draw is cheaper than risking the distant grid disappearing.
       plateBatch.count = 0;
       root.add(plateBatch);
       let invalidPatch = false;
