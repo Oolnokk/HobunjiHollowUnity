@@ -235,7 +235,7 @@ const DEFAULT_BEHIND_LAYER_ORDER = [
   'sideLeft', 'rightSideHair',
   'baseLeftArm', 'baseTorso', 'baseRightArm',
   'head', 'frontHair',
-  'torsoClothing', 'overwear', 'hatUnder', 'hood', 'pauldron', 'hatOver',
+  'torsoClothing', 'hatUnder', 'pixelBelowHood', 'hood', 'overwear', 'pixelAboveHood', 'pauldron', 'hatOver',
   'snowgoggles',
   'hairBack',
 ];
@@ -786,10 +786,16 @@ window.getBodyTintedCanvas = getBodyTintedCanvas;
 
 // ── Canvas helpers ─────────────────────────────────────────
 
+function portraitImageAspect(img) {
+  const width = Number(img?.naturalWidth || img?.width) || 0;
+  const height = Number(img?.naturalHeight || img?.height) || 0;
+  return width > 0 && height > 0 ? width / height : 1;
+}
+
 function drawPortraitLayer(ctx, img, xform, tint, sourceKey, imageForTint = _imageForTint) {
   const { ax, ay, sx, sy } = xform;
   const h  = PORTRAIT_L * sy;
-  const w  = (img.naturalWidth / img.naturalHeight) * PORTRAIT_L * Math.abs(sx);
+  const w  = portraitImageAspect(img) * PORTRAIT_L * Math.abs(sx);
   const cx = PORTRAIT_CW / 2 + ay * PORTRAIT_L;
   const cy = PORTRAIT_CH / 2 - ax * PORTRAIT_L;
   ctx.save();
@@ -883,7 +889,7 @@ function _buildNeutralGrid(cols, rows) {
 function drawPortraitLayerWarped(ctx, img, xform, tint, breathingComposer, speciesId, gender, nowMs, phaseOffsetMs, seatId, staticDeform, sourceKey, imageForTint = _imageForTint) {
   const { ax, ay, sx, sy } = xform;
   const h  = PORTRAIT_L * sy;
-  const w  = (img.naturalWidth / img.naturalHeight) * PORTRAIT_L * Math.abs(sx);
+  const w  = portraitImageAspect(img) * PORTRAIT_L * Math.abs(sx);
   const cx = PORTRAIT_CW / 2 + ay * PORTRAIT_L;
   const cy = PORTRAIT_CH / 2 - ax * PORTRAIT_L;
   const layerX = cx - w / 2;
@@ -932,7 +938,7 @@ function drawPortraitLayerWarped(ctx, img, xform, tint, breathingComposer, speci
 function applyPortraitOpacityMask(ctx, img, xform) {
   const { ax, ay, sx, sy } = xform;
   const h  = PORTRAIT_L * sy;
-  const w  = (img.naturalWidth / img.naturalHeight) * PORTRAIT_L * sx;
+  const w  = portraitImageAspect(img) * PORTRAIT_L * sx;
   const cx = PORTRAIT_CW / 2 + ay * PORTRAIT_L;
   const cy = PORTRAIT_CH / 2 - ax * PORTRAIT_L;
   ctx.save();
@@ -1275,6 +1281,30 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const baseRightArmLayers = [];
   const torsoClothingLayers = [];
   const overwearLayers = [];
+  const pixelBelowHoodLayers = []; // Mask-selected cosmetic pixels routed immediately below the hood stage.
+  const pixelAboveHoodLayers = []; // Mask-selected cosmetic pixels routed immediately above the hood stage.
+  const queuePixelAwareLayer = (target, entry, drawMode = 'emote') => {
+    const masks = (Array.isArray(entry?.layer?.pixelLayerMasks) ? entry.layer.pixelLayerMasks : [])
+      .filter(mask => mask?.url && (mask.view === 'both' || mask.view === (renderBehindView ? 'behind' : 'front')));
+    if (!masks.length) {
+      target.push(entry);
+      return;
+    }
+    const squishMasks = masks.filter(mask => mask.mode === 'noTrespassSquish');
+    const rerouteMasks = masks.filter(mask => mask.mode !== 'noTrespassSquish');
+    target.push({
+      ...entry,
+      pixelSquishMasks: squishMasks,
+      pixelExcludeMasks: rerouteMasks,
+    });
+    for (const mask of rerouteMasks) {
+      const stageTarget = mask.target === 'belowHood' ? pixelBelowHoodLayers
+        : mask.target === 'aboveHood' ? pixelAboveHoodLayers
+        : null;
+      if (!stageTarget) continue;
+      stageTarget.push({ ...entry, pixelMaskMode: 'include', pixelMasks: [mask], pixelDrawMode: drawMode });
+    }
+  };
   for (const layer of bodyLayerSource) {
     const normalizedId = String(layer.id || '').toLowerCase();
     const target = normalizedId.includes('arml') ? baseLeftArmLayers
@@ -1298,7 +1328,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       const target = group?.slot === 'torso' ? torsoClothingLayers : overwearLayers;
       const key = layer.paletteColorKey;
       const layerTintSlot = resolveLayerTintSlot(key, group.tintSlot);
-      target.push({ layer, tint: tintFor(layerTintSlot || 'A'), group, metalState: metalStateForGroup(group) });
+      queuePixelAwareLayer(target, { layer, tint: tintFor(layerTintSlot || 'A'), group, metalState: metalStateForGroup(group) }, 'breathing');
     }
   }
 
@@ -1322,12 +1352,12 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const rightSideHairLayers = [];  // right-side hairstyle, drawn between head and facial hair
   const hatUnderLayers   = [];  // hat front when configured to render under hoods
   const elevatedEyeAccessoryLayers = []; // tagged eye accessories that render above under-hood hats
-  const hoodBackLayers = []; // authored hood rear pieces — breathing-warped behind the skull instead of repainting over it.
+  const hoodBackLayers = []; // authored hood rear pieces — breathing-warped behind the skull.
   const hoodLayers    = [];  // hood front/opening pieces — breathing-warped above the skull.
   const pauldronLayers = []; // pauldron — static draw order
   const hatOverLayers    = [];  // hat front when hoodLayering=over (default)
 
-  const pushToTarget = (group, target) => {
+  const pushToTarget = (group, target, drawMode = 'emote') => {
     if (!group || hiddenCosmeticGroups?.has(group)) return;
     const groupLayers = resolveOptionLayers(group, resolvedFighter);
     const metalState = metalStateForGroup(group); // Resolved once so diagnostics can report a zero-layer metal cosmetic instead of silently disappearing.
@@ -1336,7 +1366,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     for (const layer of groupLayers) {
       const key = layer.paletteColorKey;
       const layerTintSlot = resolveLayerTintSlot(key, group.tintSlot);
-      target.push({ layer, tint: tintFor(layerTintSlot), group, metalState });
+      queuePixelAwareLayer(target, { layer, tint: tintFor(layerTintSlot), group, metalState }, drawMode);
     }
   };
 
@@ -1349,7 +1379,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
         if (layer.pos === 'back') {
           const key = layer.paletteColorKey;
           const layerTintSlot = resolveLayerTintSlot(key, group.tintSlot);
-          preBackLayers.push({ layer, tint: tintFor(layerTintSlot), group, metalState: metalStateForGroup(group) });
+          queuePixelAwareLayer(preBackLayers, { layer, tint: tintFor(layerTintSlot), group, metalState: metalStateForGroup(group) }, 'emote');
         }
       }
     }
@@ -1365,18 +1395,22 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
         if (layer.pos !== 'back') {
           const key = layer.paletteColorKey;
           const layerTintSlot = resolveLayerTintSlot(key, hat.tintSlot);
-          (hatIsUnderHood ? hatUnderLayers : hatOverLayers).push({ layer, tint: tintFor(layerTintSlot), group: hat, metalState: metalStateForGroup(hat) });
+          queuePixelAwareLayer(hatIsUnderHood ? hatUnderLayers : hatOverLayers, { layer, tint: tintFor(layerTintSlot), group: hat, metalState: metalStateForGroup(hat) }, 'emote');
         }
       }
     }
     if (hood) {
-      const groupLayers = resolveOptionLayers(hood, resolvedFighter); // Split authored back/front hood art so rear cloth cannot cover the face opening.
-      const metalState = metalStateForGroup(hood); // Shared material state retained for both halves of the same hood.
+      const groupLayers = resolveOptionLayers(hood, resolvedFighter);
+      const metalState = metalStateForGroup(hood);
       window.MetalArmorSystem?.reportResolvedPortraitGroup?.(hood, metalState, groupLayers.length);
       for (const layer of groupLayers) {
         const key = layer.paletteColorKey;
         const layerTintSlot = resolveLayerTintSlot(key, hood.tintSlot);
-        (layer.pos === 'back' ? hoodBackLayers : hoodLayers).push({ layer, tint: tintFor(layerTintSlot), group: hood, metalState });
+        queuePixelAwareLayer(
+          layer.pos === 'back' ? hoodBackLayers : hoodLayers,
+          { layer, tint: tintFor(layerTintSlot), group: hood, metalState },
+          'breathing'
+        );
       }
     }
     pushToTarget(pauldron, pauldronLayers);
@@ -1413,7 +1447,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
 
   if (renderBehindView) {
     headUrl = _getBehindHeadUrl(speciesId, gender) || headUrl;
-    if (hoodBackLayers.length) hoodLayers.length = 0; // A hood with authored rear art (e.g. Ragged Hood) uses that rear piece alone from behind; drawing its front opening too would double-shade the cloth.
+    if (hoodBackLayers.length) hoodLayers.length = 0;
     const useBehindLayers = (layerList) => {
       for (const entry of layerList) {
         entry.layer = _cloneBehindLayer(entry.layer, entry.group, gender);
@@ -1423,7 +1457,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       preBackLayers, torsoClothingLayers, overwearLayers, sideLeftLayers,
       rightSideHairLayers, facialHairLayers, frontHairLayers, eyesLayers,
       elevatedEyeAccessoryLayers, hoodBackLayers, hoodLayers, pauldronLayers, hatUnderLayers,
-      hatOverLayers,
+      hatOverLayers, pixelBelowHoodLayers, pixelAboveHoodLayers,
     ].forEach(useBehindLayers);
     // The base body (arms/torso) needs the same pre-flip as every cosmetic
     // above -- these aren't cosmetics so there's no dedicated back art to look
@@ -1441,7 +1475,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       preBackLayers, torsoClothingLayers, overwearLayers, sideLeftLayers,
       rightSideHairLayers, facialHairLayers, frontHairLayers, eyesLayers,
       elevatedEyeAccessoryLayers, upperFaceLayers, hoodBackLayers, hoodLayers, pauldronLayers,
-      hatUnderLayers, hatOverLayers,
+      hatUnderLayers, hatOverLayers, pixelBelowHoodLayers, pixelAboveHoodLayers,
     ];
     for (const layerList of cosmeticLayerLists) {
       for (const entry of layerList) {
@@ -1460,6 +1494,19 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const behindSnowgogglesLayers = renderBehindView
     ? [...eyesLayers, ...elevatedEyeAccessoryLayers].filter(isSnowgogglesLayer)
     : [];
+
+  const pixelMaskUrls = new Set(); // Mask assets loaded with ordinary portrait sprites so masked rendering never triggers a late fetch.
+  for (const layerList of [
+    preBackLayers, torsoClothingLayers, overwearLayers, sideLeftLayers, rightSideHairLayers,
+    facialHairLayers, frontHairLayers, eyesLayers, elevatedEyeAccessoryLayers, upperFaceLayers,
+    hoodBackLayers, hoodLayers, pauldronLayers, hatUnderLayers, hatOverLayers, pixelBelowHoodLayers, pixelAboveHoodLayers,
+  ]) {
+    for (const entry of layerList) {
+      for (const mask of (entry?.pixelMasks || entry?.layer?.pixelLayerMasks || [])) {
+        if (mask?.url) pixelMaskUrls.add(mask.url);
+      }
+    }
+  }
 
   const neededUrls = new Set([
     ...(headUrl ? [headUrl] : []),
@@ -1483,6 +1530,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     ...pauldronLayers.map(({ layer }) => layer.url),
     ...hatOverLayers.map(({ layer }) => layer.url),
     ...(opacityMaskLayer?.url ? [opacityMaskLayer.url] : []),
+    ...pixelMaskUrls,
     ...(renderBehindView ? [] : blinkOverlayUrlsByBase.values()),
   ].filter(Boolean));
 
@@ -1568,7 +1616,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     if (emoteDeformedPts) {
       const { ax, ay, sx, sy } = xform;
       const h = PORTRAIT_L * sy;
-      const w = (img.naturalWidth / img.naturalHeight) * PORTRAIT_L * Math.abs(sx);
+      const w = portraitImageAspect(img) * PORTRAIT_L * Math.abs(sx);
       const cx = PORTRAIT_CW / 2 + ay * PORTRAIT_L;
       const cy = PORTRAIT_CH / 2 - ax * PORTRAIT_L;
       // See drawPortraitLayer's identical pre-flip via _getFlippedImage.
@@ -1589,24 +1637,254 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     }
   };
 
+  const pixelMaskImageCache = new Map(); // Per-render masked/deformed source canvases reused when the same layer is drawn more than once.
+
+  const buildNoTrespassSquishCanvas = (sourceImage, loadedMasks) => {
+    const width = sourceImage.naturalWidth || sourceImage.width;
+    const height = sourceImage.naturalHeight || sourceImage.height;
+    if (!width || !height || !loadedMasks.length) return sourceImage;
+
+    const sourceCanvas = Object.assign(document.createElement('canvas'), { width, height });
+    const sourceCtx = sourceCanvas.getContext('2d', { willReadFrequently: true });
+    sourceCtx.drawImage(sourceImage, 0, 0, width, height);
+    const source = sourceCtx.getImageData(0, 0, width, height);
+    const count = width * height;
+
+    const maskCanvas = Object.assign(document.createElement('canvas'), { width, height });
+    const maskCtx = maskCanvas.getContext('2d', { willReadFrequently: true });
+    for (const item of loadedMasks) maskCtx.drawImage(item.image, 0, 0, width, height);
+    const maskData = maskCtx.getImageData(0, 0, width, height).data;
+
+    const occupied = new Uint8Array(count);
+    const forbidden = new Uint8Array(count);
+    let illegalCount = 0;
+    for (let i = 0; i < count; i++) {
+      occupied[i] = source.data[i * 4 + 3] > 8 ? 1 : 0;
+      forbidden[i] = maskData[i * 4 + 3] > 127 ? 1 : 0;
+      if (occupied[i] && forbidden[i]) illegalCount++;
+    }
+    if (!illegalCount) return sourceImage;
+
+    // First pass: every legal opaque pixel is a seed. Flood only through the
+    // garment's own opaque silhouette, assigning each illegal pixel to the
+    // nearest connected legal opaque neighbor. This keeps separate islands of
+    // cloth from pulling pixels across transparent gaps.
+    const nearestLegal = new Int32Array(count);
+    const illegalDistance = new Int16Array(count);
+    nearestLegal.fill(-1);
+    illegalDistance.fill(-1);
+    const queue = new Int32Array(count);
+    let qHead = 0, qTail = 0;
+    for (let i = 0; i < count; i++) {
+      if (occupied[i] && !forbidden[i]) {
+        nearestLegal[i] = i;
+        illegalDistance[i] = 0;
+        queue[qTail++] = i;
+      }
+    }
+    const neighborSteps = [
+      [-1, 0], [1, 0], [0, -1], [0, 1],
+      [-1, -1], [1, -1], [-1, 1], [1, 1],
+    ];
+    while (qHead < qTail) {
+      const cur = queue[qHead++];
+      const cx = cur % width, cy = (cur / width) | 0;
+      for (const [dx, dy] of neighborSteps) {
+        const nx = cx + dx, ny = cy + dy;
+        if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+        const ni = ny * width + nx;
+        if (!occupied[ni] || nearestLegal[ni] !== -1) continue;
+        nearestLegal[ni] = nearestLegal[cur];
+        illegalDistance[ni] = illegalDistance[cur] + 1;
+        queue[qTail++] = ni;
+      }
+    }
+
+    // For each legal boundary seed, remember how far its assigned forbidden
+    // material penetrates and where the deepest assigned pixel lives. That
+    // local depth becomes the amount of material compressed into the garment.
+    const localDepth = new Uint16Array(count);
+    const deepestIllegal = new Int32Array(count);
+    deepestIllegal.fill(-1);
+    for (let i = 0; i < count; i++) {
+      if (!occupied[i] || !forbidden[i]) continue;
+      const seed = nearestLegal[i];
+      if (seed < 0) continue; // Entire opaque island is forbidden: it simply has no legal place to retreat to.
+      const depth = illegalDistance[i];
+      if (depth > localDepth[seed]) {
+        localDepth[seed] = depth;
+        deepestIllegal[seed] = i;
+      }
+    }
+
+    // Second pass: propagate those boundary seeds back into legal opaque cloth.
+    // Each nearby legal output pixel samples progressively deeper material from
+    // its seed's forbidden overlap. The forbidden region remains empty, but its
+    // texture is compressed into the connected garment instead of discarded.
+    const nearestBoundary = new Int32Array(count);
+    const boundaryDistance = new Int16Array(count);
+    nearestBoundary.fill(-1);
+    boundaryDistance.fill(-1);
+    qHead = 0; qTail = 0;
+    for (let i = 0; i < count; i++) {
+      if (localDepth[i] > 0) {
+        nearestBoundary[i] = i;
+        boundaryDistance[i] = 0;
+        queue[qTail++] = i;
+      }
+    }
+    while (qHead < qTail) {
+      const cur = queue[qHead++];
+      const cx = cur % width, cy = (cur / width) | 0;
+      for (const [dx, dy] of neighborSteps) {
+        const nx = cx + dx, ny = cy + dy;
+        if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+        const ni = ny * width + nx;
+        if (!occupied[ni] || forbidden[ni] || nearestBoundary[ni] !== -1) continue;
+        nearestBoundary[ni] = nearestBoundary[cur];
+        boundaryDistance[ni] = boundaryDistance[cur] + 1;
+        queue[qTail++] = ni;
+      }
+    }
+
+    const output = new ImageData(new Uint8ClampedArray(source.data), width, height);
+    for (let i = 0; i < count; i++) {
+      const outOffset = i * 4;
+      if (forbidden[i]) {
+        output.data[outOffset] = 0;
+        output.data[outOffset + 1] = 0;
+        output.data[outOffset + 2] = 0;
+        output.data[outOffset + 3] = 0;
+        continue;
+      }
+      if (!occupied[i]) continue;
+      const boundary = nearestBoundary[i];
+      if (boundary < 0) continue;
+      const depth = localDepth[boundary];
+      const deep = deepestIllegal[boundary];
+      if (!depth || deep < 0) continue;
+
+      // A deeper collision gets a wider relaxation band, but cap it so a small
+      // overlap cannot distort the whole article of clothing.
+      const relaxBand = Math.max(2, Math.min(16, Math.ceil(depth * 0.75)));
+      const distance = boundaryDistance[i];
+      if (distance < 0 || distance > relaxBand) continue;
+
+      const x = i % width, y = (i / width) | 0;
+      const tx = deep % width, ty = (deep / width) | 0;
+      const vx = tx - x, vy = ty - y;
+      const len = Math.hypot(vx, vy);
+      if (!(len > 0)) continue;
+      const shift = depth * (1 - distance / (relaxBand + 1));
+      let sampleIndex = i;
+      // Walk toward the forbidden material from the requested shift back toward
+      // this output pixel until an opaque source pixel is found. This avoids
+      // sampling through transparent holes in irregular clothing silhouettes.
+      for (let step = shift; step >= 0; step -= 1) {
+        const sx = Math.max(0, Math.min(width - 1, Math.round(x + (vx / len) * step)));
+        const sy = Math.max(0, Math.min(height - 1, Math.round(y + (vy / len) * step)));
+        const si = sy * width + sx;
+        if (occupied[si]) {
+          sampleIndex = si;
+          break;
+        }
+      }
+      const srcOffset = sampleIndex * 4;
+      output.data[outOffset] = source.data[srcOffset];
+      output.data[outOffset + 1] = source.data[srcOffset + 1];
+      output.data[outOffset + 2] = source.data[srcOffset + 2];
+      output.data[outOffset + 3] = source.data[srcOffset + 3];
+    }
+
+    const result = Object.assign(document.createElement('canvas'), { width, height });
+    result.getContext('2d').putImageData(output, 0, 0);
+    return result;
+  };
+
+  const resolvePixelMaskedImage = (entry, img) => {
+    const includeMasks = Array.isArray(entry?.pixelMasks) ? entry.pixelMasks : [];
+    const squishMasks = Array.isArray(entry?.pixelSquishMasks) ? entry.pixelSquishMasks : [];
+    const excludeMasks = Array.isArray(entry?.pixelExcludeMasks) ? entry.pixelExcludeMasks : [];
+    const loadedInclude = includeMasks.map(mask => ({ mask, image: imgMap.get(mask.url) })).filter(item => item.image);
+    const loadedSquish = squishMasks.map(mask => ({ mask, image: imgMap.get(mask.url) })).filter(item => item.image);
+    const loadedExclude = excludeMasks.map(mask => ({ mask, image: imgMap.get(mask.url) })).filter(item => item.image);
+
+    if (entry?.pixelMaskMode === 'include') {
+      if (!loadedInclude.length) return null;
+      const signature = loadedInclude.map(item => item.mask.url).join('|');
+      const cacheKey = `${entry.layer.url}|include|${signature}`;
+      if (pixelMaskImageCache.has(cacheKey)) return pixelMaskImageCache.get(cacheKey);
+      const width = img.naturalWidth || img.width;
+      const height = img.naturalHeight || img.height;
+      const included = Object.assign(document.createElement('canvas'), { width, height });
+      const includedCtx = included.getContext('2d');
+      includedCtx.drawImage(img, 0, 0, width, height);
+      includedCtx.globalCompositeOperation = 'destination-in';
+      for (const item of loadedInclude) includedCtx.drawImage(item.image, 0, 0, width, height);
+      includedCtx.globalCompositeOperation = 'source-over';
+      const result = { image: included, sourceKey: `${entry.layer.url}#pixel-layer:include:${signature}` };
+      pixelMaskImageCache.set(cacheKey, result);
+      return result;
+    }
+
+    if (!loadedSquish.length && !loadedExclude.length) {
+      return { image: img, sourceKey: entry?.layer?.url || '' }; // Missing masks fail safe.
+    }
+
+    const signature = [
+      ...loadedSquish.map(item => `squish:${item.mask.url}`),
+      ...loadedExclude.map(item => `exclude:${item.mask.url}`),
+    ].join('|');
+    const cacheKey = `${entry.layer.url}|base|${signature}`;
+    if (pixelMaskImageCache.has(cacheKey)) return pixelMaskImageCache.get(cacheKey);
+
+    let workingImage = loadedSquish.length ? buildNoTrespassSquishCanvas(img, loadedSquish) : img;
+    if (loadedExclude.length) {
+      const width = workingImage.naturalWidth || workingImage.width;
+      const height = workingImage.naturalHeight || workingImage.height;
+      const excluded = Object.assign(document.createElement('canvas'), { width, height });
+      const excludedCtx = excluded.getContext('2d');
+      excludedCtx.drawImage(workingImage, 0, 0, width, height);
+      excludedCtx.globalCompositeOperation = 'destination-out';
+      for (const item of loadedExclude) excludedCtx.drawImage(item.image, 0, 0, width, height);
+      excludedCtx.globalCompositeOperation = 'source-over';
+      workingImage = excluded;
+    }
+    const result = { image: workingImage, sourceKey: `${entry.layer.url}#pixel-layer:base:${signature}` };
+    pixelMaskImageCache.set(cacheKey, result);
+    return result;
+  };
+
   // Draws a list of layers with emote deformation applied to each (head, hair, eyes, hat, etc.).
   const drawEmoteLayers = (layerList) => {
-    for (const { layer, tint, filter } of layerList) {
+    for (const entry of layerList) {
+      const { layer, tint, filter } = entry;
       const img = imgMap.get(layer.url);
-      if (img) drawLayerWithEmote(img, resolveXform(layer), tint || filter, 1, layer.url);
+      if (!img) continue;
+      const masked = resolvePixelMaskedImage(entry, img);
+      if (masked) drawLayerWithEmote(masked.image, resolveXform(layer), tint || filter, 1, masked.sourceKey);
     }
   };
 
   // Draws body/cosmetic/hood layers with full breathing + emote deformation.
   const drawBreathingLayers = (layerList) => {
-    for (const { layer, tint, filter } of layerList) {
+    for (const entry of layerList) {
+      const { layer, tint, filter } = entry;
       const img = imgMap.get(layer.url);
       if (!img) continue;
+      const masked = resolvePixelMaskedImage(entry, img);
+      if (!masked) continue;
       if (breathingComposer || staticDeform) {
-        drawPortraitLayerWarped(ctx, img, resolveXform(layer), tint || filter, breathingComposer, speciesId, gender, nowMs, breathingPhaseOffset, seatId, staticDeform, layer.url, imageForTint);
+        drawPortraitLayerWarped(ctx, masked.image, resolveXform(layer), tint || filter, breathingComposer, speciesId, gender, nowMs, breathingPhaseOffset, seatId, staticDeform, masked.sourceKey, imageForTint);
       } else {
-        drawPortraitLayer(ctx, img, resolveXform(layer), tint || filter, layer.url, imageForTint);
+        drawPortraitLayer(ctx, masked.image, resolveXform(layer), tint || filter, masked.sourceKey, imageForTint);
       }
+    }
+  };
+
+  const drawPixelStageLayers = (layerList) => {
+    for (const entry of layerList) {
+      (entry.pixelDrawMode === 'breathing' ? drawBreathingLayers : drawEmoteLayers)([entry]);
     }
   };
 
@@ -1637,7 +1915,9 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       torsoClothing: () => drawBreathingLayers(torsoClothingLayers),
       overwear:      () => drawBreathingLayers(overwearLayers),
       hatUnder:      () => drawEmoteLayers(hatUnderLayers),
+      pixelBelowHood:() => drawPixelStageLayers(pixelBelowHoodLayers),
       hood:          () => { drawBreathingLayers(hoodBackLayers); drawBreathingLayers(hoodLayers); },
+      pixelAboveHood:() => drawPixelStageLayers(pixelAboveHoodLayers),
       pauldron:      () => drawEmoteLayers(pauldronLayers),
       hatOver:       () => drawEmoteLayers(hatOverLayers),
       snowgoggles:   () => drawEmoteLayers(behindSnowgogglesLayers),
@@ -1694,7 +1974,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       if (emoteDeformedPts) {
         const { ax, ay, sx, sy } = urXform;
         const h = PORTRAIT_L * sy;
-        const w = (img.naturalWidth / img.naturalHeight) * PORTRAIT_L * sx;
+        const w = portraitImageAspect(img) * PORTRAIT_L * sx;
         const cx = PORTRAIT_CW / 2 + ay * PORTRAIT_L;
         const cy = PORTRAIT_CH / 2 - ax * PORTRAIT_L;
         _drawPortraitLayerWarped(urCtx, img, cx - w / 2, cy - h / 2, w, h, emoteNeutralPts, emoteDeformedPts, 4, 6);
@@ -1705,7 +1985,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     // Punch mouth shape out of the ur-head layer using destination-out.
     const { ax: _mx, ay: _my, sx: _msx, sy: _msy } = urXform;
     const _mh = PORTRAIT_L * _msy;
-    const _mw = (mouthImg.naturalWidth / mouthImg.naturalHeight) * PORTRAIT_L * _msx;
+    const _mw = portraitImageAspect(mouthImg) * PORTRAIT_L * _msx;
     const _mcx = PORTRAIT_CW / 2 + _my * PORTRAIT_L;
     const _mcy = PORTRAIT_CH / 2 - _mx * PORTRAIT_L;
     urCtx.save();
@@ -1731,7 +2011,9 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   drawEmoteLayers(upperFaceLayers);
   drawEmoteLayers(hatUnderLayers);
   drawEmoteLayers(elevatedEyeAccessoryLayers);
+  drawPixelStageLayers(pixelBelowHoodLayers);
   drawBreathingLayers(hoodLayers);
+  drawPixelStageLayers(pixelAboveHoodLayers);
   drawEmoteLayers(pauldronLayers);
   for (const mid of aboveHoodBelowHatUrLayers) {
     const activeUrl = isBlinkFrame ? (blinkOverlayUrlsByBase.get(mid.url) || mid.url) : mid.url;
@@ -1769,6 +2051,19 @@ function portraitCategoryForEntry(entry) {
  * Extract portrait layer descriptors from a cosmetic JSON `parts` block.
  * paletteLayerMap (optional): maps layerRole names to palette color keys.
  */
+function normalizePixelLayerMasks(rawMasks) {
+  if (!Array.isArray(rawMasks)) return [];
+  return rawMasks.map(mask => {
+    const url = portraitRelPath(mask?.url || mask?.maskUrl || '');
+    const target = mask?.target === 'belowHood' || mask?.target === 'aboveHood' ? mask.target : null;
+    const view = mask?.view === 'front' || mask?.view === 'behind' ? mask.view : 'both';
+    const mode = mask?.mode === 'noTrespassSquish' ? 'noTrespassSquish' : 'reroute';
+    if (!url) return null;
+    if (mode === 'noTrespassSquish') return { url, mode, view };
+    return target ? { url, mode, target, view } : null;
+  }).filter(Boolean);
+}
+
 function _extractLayersFromParts(partsJson, paletteLayerMap, allowNonPortraitAssets = false) {
   if (!partsJson || typeof partsJson !== 'object') return [];
   const layers = [];
@@ -1791,6 +2086,7 @@ function _extractLayersFromParts(partsJson, paletteLayerMap, allowNonPortraitAss
             sy:  xf.scaleY ?? 1,
             pos: layerName === 'back' ? 'back' : 'front',
             paletteColorKey,
+            pixelLayerMasks: normalizePixelLayerMasks(layer.pixelLayerMasks),
             xformPreset: 'B',
           });
         }
@@ -1835,6 +2131,7 @@ function _extractLayersFromParts(partsJson, paletteLayerMap, allowNonPortraitAss
           sy:  xf.scaleY ?? xf.scaleMulY ?? 1,
           pos: layerName === 'back' ? 'back' : 'front',
           paletteColorKey,
+          pixelLayerMasks: normalizePixelLayerMasks(layer.pixelLayerMasks),
           xformPreset: 'B',
         });
       }

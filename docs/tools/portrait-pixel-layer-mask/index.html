@@ -1,0 +1,1037 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Portrait Pixel Layer Mask</title>
+<style>
+:root{--bg:#11151b;--panel:#191f28;--panel2:#202834;--text:#e7edf5;--muted:#95a3b5;--border:#344052;--accent:#d96cff;--accent2:#78d9ff;--danger:#ff6b77;--ok:#7be0a8}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:13px/1.35 system-ui,sans-serif}
+header{padding:12px 14px;border-bottom:1px solid var(--border);background:#0e1217;position:sticky;top:0;z-index:3}
+h1{font-size:16px;margin:0 0 4px}.sub{color:var(--muted);font-size:12px}
+main{display:grid;grid-template-columns:280px 1fr 290px;min-height:calc(100vh - 61px)}
+.panel{padding:12px;border-right:1px solid var(--border);background:var(--panel)}.panel.right{border-right:0;border-left:1px solid var(--border)}
+section{margin-bottom:14px}h2{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 8px}
+label{display:block;margin:7px 0 4px;color:#cdd6e3}.row{display:flex;gap:7px;align-items:center}.row>*{min-width:0}
+input,select,button,textarea{font:inherit;color:var(--text);background:var(--panel2);border:1px solid var(--border);border-radius:5px}
+input,select,button{height:32px;padding:5px 8px}input[type=file]{height:auto;width:100%;padding:6px}input[type=range]{width:100%}
+button{cursor:pointer}button:hover{border-color:#617089}button.primary{background:#493154;border-color:#7b4e91}button.danger{color:#ffd8dd;border-color:#7a3941}
+button.active{outline:2px solid var(--accent);outline-offset:-2px}.grow{flex:1}
+.stageWrap{overflow:auto;position:relative;background:#090b0f;display:flex;align-items:flex-start;justify-content:flex-start;padding:20px;min-width:0;min-height:0}
+canvas{image-rendering:pixelated;touch-action:none;box-shadow:0 0 0 1px #000;margin:auto;flex:0 0 auto;background-image:linear-gradient(45deg,#1b1f25 25%,transparent 25%),linear-gradient(-45deg,#1b1f25 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#1b1f25 75%),linear-gradient(-45deg,transparent 75%,#1b1f25 75%);background-size:16px 16px;background-position:0 0,0 8px,8px -8px,-8px 0}
+.stat{display:grid;grid-template-columns:1fr auto;gap:4px 8px;padding:8px;background:#121821;border:1px solid var(--border);border-radius:5px;font-family:ui-monospace,monospace;font-size:11px}.stat b{font-weight:600}
+textarea{width:100%;min-height:165px;padding:8px;resize:vertical;font:11px/1.4 ui-monospace,monospace}
+.badge{display:inline-block;padding:2px 6px;border-radius:10px;background:#263141;color:var(--muted);font-size:10px}.hint{color:var(--muted);font-size:11px;margin-top:6px}
+.legend{display:flex;gap:10px;flex-wrap:wrap;font-size:11px;color:var(--muted)}.sw{width:10px;height:10px;display:inline-block;margin-right:4px;vertical-align:-1px}
+.preview3d{display:block;width:100%;height:250px;border:1px solid var(--border);border-radius:6px;background:#060c14;touch-action:none}
+.previewToolbar{display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin-top:7px}.previewToolbar button{height:28px;padding:3px 7px}.previewToolbar label{margin:0}
+.nudgeGrid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;max-width:150px;margin-top:7px}.nudgeGrid button{height:28px}.nudgeGrid .blank{visibility:hidden}
+@media(max-width:900px){main{grid-template-columns:1fr}.panel,.panel.right{border:0;border-bottom:1px solid var(--border)}.stageWrap{min-height:55vh;order:-1}.preview3d{height:300px}}
+</style>
+</head>
+<body>
+<header>
+  <h1>🧩 Portrait Pixel Layer Mask</h1>
+  <div class="sub">Paint exact source pixels that should render at a different portrait stage without splitting the source PNG.</div>
+</header>
+<main>
+  <aside class="panel">
+    <section>
+      <h2>1. Source sprite</h2>
+      <label>Existing clothing JSON</label>
+      <div class="row">
+        <input id="clothingSearch" class="grow" type="search" placeholder="Filter clothing…">
+        <button id="fetchClothingBtn">Fetch</button>
+      </div>
+      <select id="clothingSelect" style="width:100%;margin-top:6px" disabled>
+        <option>Fetch clothing JSONs…</option>
+      </select>
+      <label>Portrait layer</label>
+      <select id="layerSelect" style="width:100%" disabled>
+        <option>Select clothing first…</option>
+      </select>
+      <div id="clothingStatus" class="hint">Uses <code>config/cosmetics/index.json</code>; clothing JSON and its selected portrait sprite are fetched directly from this build.</div>
+      <label>Or load source sprite manually</label>
+      <input id="sourceFile" type="file" accept="image/png,image/webp,image/*">
+      <label>Optional existing mask</label>
+      <input id="maskFile" type="file" accept="image/png,image/*">
+      <div class="hint">The mask must match the source dimensions. Painting outside opaque source art is harmless because runtime masking still intersects the sprite alpha.</div>
+    </section>
+    <section>
+      <h2>2. Paint / move</h2>
+      <div class="row">
+        <button id="paintBtn" class="active grow">Paint</button>
+        <button id="eraseBtn" class="grow">Erase</button>
+        <button id="moveBtn" class="grow">Move mask</button>
+      </div>
+      <div class="row" style="margin-top:7px">
+        <button id="undoBtn" class="grow" disabled>↶ Undo</button>
+        <button id="redoBtn" class="grow" disabled>↷ Redo</button>
+      </div>
+      <div class="nudgeGrid" aria-label="Translate whole mask">
+        <span class="blank"></span><button id="nudgeUpBtn" title="Move mask up 1 pixel">↑</button><span class="blank"></span>
+        <button id="nudgeLeftBtn" title="Move mask left 1 pixel">←</button><button id="nudgeDownBtn" title="Move mask down 1 pixel">↓</button><button id="nudgeRightBtn" title="Move mask right 1 pixel">→</button>
+      </div>
+      <div class="hint">Move mask drags the entire mask in whole source pixels. Arrow buttons nudge by 1 px. Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z also work.</div>
+      <label>Brush size: <span id="brushLabel">1 px</span></label>
+      <input id="brushSize" type="range" min="1" max="16" value="1" step="1">
+      <div class="row">
+        <label class="grow">Zoom: <span id="zoomLabel">8×</span></label>
+        <button id="fitBtn" type="button">Fit</button>
+      </div>
+      <input id="zoom" type="range" min="1" max="24" value="8" step="1">
+      <div class="row" style="margin-top:8px">
+        <button id="clearBtn" class="danger grow">Clear mask</button>
+        <button id="invertBtn" class="grow">Invert opaque</button>
+      </div>
+    </section>
+    <section>
+      <h2>3. Mask behavior</h2>
+      <label>Painted region means</label>
+      <select id="maskBehavior" style="width:100%">
+        <option value="reroute">Reroute painted pixels to another layer stage</option>
+        <option value="noTrespassSquish">No-trespass zone — squish opaque pixels back into garment</option>
+      </select>
+      <div id="targetControls">
+        <label>Rerouted pixels render</label>
+        <select id="target" style="width:100%">
+          <option value="aboveHood">Above hood</option>
+          <option value="belowHood">Below hood</option>
+        </select>
+      </div>
+      <label>Apply on view</label>
+      <select id="view" style="width:100%">
+        <option value="behind">Behind only</option>
+        <option value="front">Front only</option>
+        <option value="both">Front + behind</option>
+      </select>
+      <label>Mask repository path</label>
+      <input id="maskPath" class="grow" style="width:100%" value="./assets/cosmetics/example.layer-mask.png">
+    </section>
+  </aside>
+
+  <div class="stageWrap" id="stageWrap">
+    <canvas id="stage" width="1" height="1"></canvas>
+  </div>
+
+  <aside class="panel right">
+    <section>
+      <h2>3D avatar preview</h2>
+      <canvas id="preview3d" class="preview3d" aria-label="Live 3D avatar preview"></canvas>
+      <div class="previewToolbar">
+        <button type="button" data-preview-view="front">Front</button>
+        <button type="button" data-preview-view="angle">Angle</button>
+        <button type="button" data-preview-view="back" class="active">Back</button>
+      </div>
+      <div class="previewToolbar">
+        <label><input id="previewHood" type="checkbox" checked> Test with Fine Hood</label>
+        <button id="refresh3dBtn" type="button">Refresh 3D</button>
+      </div>
+      <div id="preview3dStatus" class="hint">Select a repository clothing layer to build the live avatar.</div>
+    </section>
+    <section>
+      <h2>Live debug</h2>
+      <div class="stat">
+        <span>Source</span><b id="dbgSource">none</b>
+        <span>Clothing JSON</span><b id="dbgClothing">—</b>
+        <span>JSON layer</span><b id="dbgLayer">—</b>
+        <span>Dimensions</span><b id="dbgDims">—</b>
+        <span>Cursor</span><b id="dbgCursor">—</b>
+        <span>Source alpha</span><b id="dbgAlpha">—</b>
+        <span>Marked pixels</span><b id="dbgCount">0</b>
+        <span>Target</span><b id="dbgTarget">aboveHood / behind</b>
+      </div>
+      <div class="legend" style="margin-top:8px">
+        <span><i class="sw" style="background:#d96cff"></i>marked</span>
+        <span><i class="sw" style="background:#78d9ff"></i>cursor</span>
+      </div>
+    </section>
+    <section>
+      <h2>Export</h2>
+      <div class="row">
+        <button id="downloadBtn" class="primary grow">Download mask PNG</button>
+        <button id="copyBtn" class="grow">Copy JSON</button>
+      </div>
+      <label>Layer JSON fragment</label>
+      <textarea id="jsonOut" spellcheck="false"></textarea>
+      <div class="hint">Paste <code>pixelLayerMasks</code> into the same cosmetic layer object that owns the source sprite. Reroute mode moves painted pixels to another layer stage. No-trespass mode keeps the layer at its normal stage but compresses any opaque pixels out of the painted forbidden region toward their connected opaque neighbors.</div>
+    </section>
+  </aside>
+</main>
+<script src="../../config/scratchbones-config.js"></script>
+<script src="../../js/color-fill.js?v=20260923colorfill7"></script>
+<script src="../../js/portrait-utils.js?v=20260927pixellayer7"></script>
+<script src="../../js/portrait-breathing.js"></script>
+<script src="../../js/npc-avatar-preview-utils.js"></script>
+<script src="../../js/png-plane-avatar.js"></script>
+<script src="../../js/avatar-preview-scene.js"></script>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const sourceFile = $('sourceFile');
+  const maskFile = $('maskFile');
+  const clothingSearch = $('clothingSearch');
+  const clothingSelect = $('clothingSelect');
+  const layerSelect = $('layerSelect');
+  const stage = $('stage');
+  const ctx = stage.getContext('2d', { willReadFrequently: true });
+  const sourceCanvas = document.createElement('canvas'); // Holds original source pixels; used by painting validation and preview redraw.
+  const sourceCtx = sourceCanvas.getContext('2d', { willReadFrequently: true });
+  const maskCanvas = document.createElement('canvas'); // Stores binary authoring mask pixels exported as the runtime alpha mask.
+  const maskCtx = maskCanvas.getContext('2d', { willReadFrequently: true });
+  let sourceName = ''; // Used for debug/export naming after a local or repository source image is loaded.
+  let clothingEntries = []; // Cosmetics-index clothing candidates shown by the repository JSON selector.
+  let currentClothingEntry = null; // Selected repository clothing config; used by debug and layer discovery.
+  let currentClothingJson = null; // Parsed selected clothing JSON; used to discover existing portrait layers.
+  let currentLayerRecords = []; // Selectable portrait-layer descriptors extracted from the selected clothing JSON.
+  let currentLayerRecord = null; // Exact selected JSON layer whose sprite is being masked.
+  let userAdjustedZoom = false; // Preserves explicit zoom after loading; Fit resets this to automatic pane sizing.
+  let paintMode = 'paint'; // 'paint' | 'erase' | 'move'; used by pointer editing.
+  let drawing = false; // Tracks an active pointer drag on the zoomed canvas.
+  let lastPixel = null; // Used to interpolate brush strokes without holes during fast pointer movement.
+  let pendingEditSnapshot = null; // One before-state per pointer gesture, so a drag becomes one Undo step.
+  let moveDrag = null; // Holds the immutable mask snapshot + starting source pixel for whole-mask translation.
+  const undoStack = []; // Prior mask states only; current state lives on maskCanvas.
+  const redoStack = []; // States popped by Undo and restored by Redo.
+  const HISTORY_LIMIT = 48;
+  const preview3d = { scene: null, cosmeticsReady: null, timer: 0, generation: 0, view: 'back' };
+
+  const loadImageFile = file => new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Could not load image')); };
+    img.src = url;
+  });
+
+  const loadImageUrl = url => new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('Could not load repository sprite: ' + url));
+    img.src = url;
+  });
+
+  function captureMaskSnapshot() {
+    if (!maskCanvas.width || !maskCanvas.height) return null;
+    const image = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height);
+    return { width: image.width, height: image.height, data: new Uint8ClampedArray(image.data) };
+  }
+
+  function snapshotImageData(snapshot) {
+    return snapshot ? new ImageData(new Uint8ClampedArray(snapshot.data), snapshot.width, snapshot.height) : null;
+  }
+
+  function maskSnapshotsEqual(a, b) {
+    if (!a || !b || a.width !== b.width || a.height !== b.height || a.data.length !== b.data.length) return false;
+    for (let i = 0; i < a.data.length; i++) if (a.data[i] !== b.data[i]) return false;
+    return true;
+  }
+
+  function restoreMaskSnapshot(snapshot, dx = 0, dy = 0) {
+    if (!snapshot || snapshot.width !== maskCanvas.width || snapshot.height !== maskCanvas.height) return false;
+    maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+    maskCtx.putImageData(snapshotImageData(snapshot), Math.trunc(dx), Math.trunc(dy));
+    return true;
+  }
+
+  function updateHistoryUi() {
+    $('undoBtn').disabled = !undoStack.length;
+    $('redoBtn').disabled = !redoStack.length;
+  }
+
+  function resetHistory() {
+    undoStack.length = 0;
+    redoStack.length = 0;
+    pendingEditSnapshot = null;
+    moveDrag = null;
+    updateHistoryUi();
+  }
+
+  function commitMaskEdit(beforeSnapshot) {
+    const after = captureMaskSnapshot();
+    if (!beforeSnapshot || !after || maskSnapshotsEqual(beforeSnapshot, after)) return false;
+    undoStack.push(beforeSnapshot);
+    if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
+    redoStack.length = 0;
+    updateHistoryUi();
+    schedule3dPreview();
+    return true;
+  }
+
+  function mutateMask(mutator) {
+    if (!maskCanvas.width || !maskCanvas.height) return false;
+    const before = captureMaskSnapshot();
+    mutator(before);
+    redraw();
+    return commitMaskEdit(before);
+  }
+
+  function undoMask() {
+    const previous = undoStack.pop();
+    if (!previous) return;
+    const current = captureMaskSnapshot();
+    if (current) redoStack.push(current);
+    restoreMaskSnapshot(previous);
+    redraw();
+    updateHistoryUi();
+    schedule3dPreview();
+  }
+
+  function redoMask() {
+    const next = redoStack.pop();
+    if (!next) return;
+    const current = captureMaskSnapshot();
+    if (current) {
+      undoStack.push(current);
+      if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
+    }
+    restoreMaskSnapshot(next);
+    redraw();
+    updateHistoryUi();
+    schedule3dPreview();
+  }
+
+  function shiftMaskBy(dx, dy) {
+    mutateMask(before => restoreMaskSnapshot(before, dx, dy));
+  }
+
+  async function normalizeMaskImageIntoCanvas(img) {
+    const temp = document.createElement('canvas');
+    temp.width = maskCanvas.width;
+    temp.height = maskCanvas.height;
+    const tctx = temp.getContext('2d', { willReadFrequently: true });
+    tctx.drawImage(img, 0, 0, temp.width, temp.height);
+    const pixels = tctx.getImageData(0, 0, temp.width, temp.height);
+    let hasTransparency = false;
+    for (let i = 3; i < pixels.data.length; i += 4) {
+      if (pixels.data[i] < 250) { hasTransparency = true; break; }
+    }
+    for (let i = 0; i < pixels.data.length; i += 4) {
+      const alpha = hasTransparency
+        ? pixels.data[i + 3]
+        : ((pixels.data[i] + pixels.data[i + 1] + pixels.data[i + 2]) / 3 >= 128 ? 255 : 0);
+      pixels.data[i] = pixels.data[i + 1] = pixels.data[i + 2] = alpha ? 255 : 0;
+      pixels.data[i + 3] = alpha;
+    }
+    maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+    maskCtx.putImageData(pixels, 0, 0);
+  }
+
+  function clothingConfigUrl(entry) {
+    const rel = String(entry?.path || '').replace(/^\.\//, '');
+    return new URL('../../config/cosmetics/' + rel, window.location.href).toString();
+  }
+
+  function identityFromLayerRecord(record = currentLayerRecord) {
+    const parts = Array.isArray(record?.jsonPath) ? record.jsonPath : [];
+    const variantIndex = parts.indexOf('speciesVariants');
+    const variantKey = variantIndex >= 0 ? String(parts[variantIndex + 1] || '') : '';
+    const match = variantKey.match(/^(.*)_(male|female)$/);
+    if (!match) return { speciesId: 'tletingan', gender: 'male' };
+    return { speciesId: match[1].replace(/_/g, '-'), gender: match[2] };
+  }
+
+  function normalizedPortraitUrl(value) {
+    return String(value || '').replace(/^\.\/assets\//, '').replace(/^assets\//, '');
+  }
+
+  function cloneCosmeticOption(option) {
+    if (!option) return option;
+    return {
+      ...option,
+      layers: (option.layers || []).map(layer => ({ ...layer, pixelLayerMasks: (layer.pixelLayerMasks || []).map(mask => ({ ...mask })) })),
+      variantLayers: Object.fromEntries(Object.entries(option.variantLayers || {}).map(([key, layers]) => [
+        key,
+        (layers || []).map(layer => ({ ...layer, pixelLayerMasks: (layer.pixelLayerMasks || []).map(mask => ({ ...mask })) }))
+      ]))
+    };
+  }
+
+  function previewProfileKeyForSlot(slot) {
+    return slot === 'torso' ? 'torsoCosmetic'
+      : slot === 'overwear' ? 'armCosmetic'
+      : slot === 'hood' ? 'hood'
+      : slot === 'hat' ? 'hat'
+      : slot === 'pauldron' ? 'pauldron'
+      : null;
+  }
+
+  function previewDescriptorFromRecord(record) {
+    const raw = record?.layer || {};
+    const xf = raw?.spriteStyle?.base?.xform?.[record.partName]
+      || raw?.spriteStyle?.base?.xform?.head
+      || raw?.spriteStyle?.xform?.[record.partName]
+      || raw?.spriteStyle?.xform?.head
+      || {};
+    const paletteKey = raw.layerRole && currentClothingJson?.palette?.layers
+      ? (currentClothingJson.palette.layers[raw.layerRole] || null)
+      : null;
+    return {
+      url: normalizedPortraitUrl(record.imageUrl),
+      ax: xf.ax ?? 0,
+      ay: xf.ay ?? 0,
+      sx: xf.scaleX ?? xf.scaleMulX ?? 1,
+      sy: xf.scaleY ?? xf.scaleMulY ?? 1,
+      pos: /^back(?:_|$)/i.test(String(record.layerName || '')) ? 'back' : 'front',
+      paletteColorKey: paletteKey,
+      pixelLayerMasks: (raw.pixelLayerMasks || []).map(mask => ({ ...mask, url: normalizedPortraitUrl(mask.url) })),
+      xformPreset: 'B'
+    };
+  }
+
+  function forceSelectedClothingIntoProfile(profile) {
+    const key = previewProfileKeyForSlot(currentClothingJson?.slot);
+    if (!key || !profile || !currentClothingEntry || !currentLayerRecord) return { key: null, count: 0 };
+    const existing = cloneCosmeticOption(profile[key]) || {};
+    const option = {
+      ...existing,
+      id: currentClothingEntry.id.split('::').pop(),
+      label: currentClothingJson?.meta?.name || existing.label || currentClothingEntry.id,
+      slot: currentClothingJson?.slot || existing.slot || null,
+      tintSlot: existing.tintSlot || (currentClothingJson?.slot === 'torso' ? 'TORSO' : currentClothingJson?.slot === 'hood' ? 'HOOD' : 'CLOTH'),
+      layers: existing.layers || [],
+      variantLayers: { ...(existing.variantLayers || {}) }
+    };
+    const selectedVariant = currentLayerRecord.variantKey;
+    if (selectedVariant) {
+      const records = currentLayerRecords.filter(record => record.variantKey === selectedVariant);
+      option.variantLayers[selectedVariant] = records.map(previewDescriptorFromRecord);
+      profile[key] = option;
+      return { key, count: records.length, variantKey: selectedVariant };
+    }
+    const defaultRecords = currentLayerRecords.filter(record => !record.variantKey);
+    option.layers = defaultRecords.map(previewDescriptorFromRecord);
+    profile[key] = option;
+    return { key, count: defaultRecords.length, variantKey: null };
+  }
+
+  function injectLiveMaskIntoProfile(profile, maskUrl) {
+    const sourceUrl = normalizedPortraitUrl(currentLayerRecord?.imageUrl);
+    const candidateKeys = ['armCosmetic', 'torsoCosmetic', 'hood', 'hat', 'pauldron'];
+    for (const key of candidateKeys) {
+      const option = profile?.[key];
+      if (!option || (currentClothingEntry?.id && option.id !== currentClothingEntry.id.split('::').pop())) continue;
+      const copy = cloneCosmeticOption(option);
+      let matched = false;
+      const patchLayers = layers => {
+        for (const layer of layers || []) {
+          if (normalizedPortraitUrl(layer.url) !== sourceUrl && basename(layer.url) !== basename(sourceUrl)) continue;
+          layer.pixelLayerMasks = [maskConfig(maskUrl)];
+          matched = true;
+        }
+      };
+      patchLayers(copy.layers);
+      for (const layers of Object.values(copy.variantLayers || {})) patchLayers(layers);
+      if (matched) {
+        profile[key] = copy;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function maskCanvasBlob() {
+    return new Promise((resolve, reject) => maskCanvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Could not serialize live mask.')), 'image/png'));
+  }
+
+  async function ensure3dPreviewRuntime() {
+    if (!window.NpcAvatarPreview || !window.PNGPlaneAvatar || !window.AvatarPreviewScene) {
+      throw new Error('Shared avatar preview runtime did not load.');
+    }
+    if (!preview3d.cosmeticsReady) {
+      preview3d.cosmeticsReady = window.NpcAvatarPreview.ensurePortraitCosmetics({
+        assetBase: '../../assets/',
+        configBase: '../../config/'
+      });
+    }
+    await preview3d.cosmeticsReady;
+    if (!preview3d.scene) {
+      preview3d.scene = await window.AvatarPreviewScene.create({
+        canvas: $('preview3d'),
+        initialView: preview3d.view,
+        grid: true,
+        gridY: -0.55,
+        holderName: 'pixel_layer_mask_avatar_preview'
+      });
+      preview3d.scene.start();
+    }
+    return preview3d.scene;
+  }
+
+  async function refresh3dPreview() {
+    const status = $('preview3dStatus');
+    if (!currentClothingEntry || !currentClothingJson || !currentLayerRecord || !maskCanvas.width) {
+      status.textContent = 'Select a repository clothing layer to build the live avatar.';
+      return;
+    }
+    const generation = ++preview3d.generation;
+    status.textContent = 'Rendering live mask through the Animation Author avatar renderer…';
+    let maskUrl = null;
+    try {
+      const scene = await ensure3dPreviewRuntime();
+      const identity = identityFromLayerRecord();
+      const equipped = [currentClothingEntry.id];
+      if ($('previewHood').checked && currentClothingJson.slot !== 'hood' && !equipped.includes('fine_hood')) equipped.push('fine_hood');
+      const npc = {
+        name: 'Pixel Layer Mask Preview',
+        appearance: { speciesId: identity.speciesId, gender: identity.gender, cosmetics: {}, randomSeed: 'pixel-layer-mask-preview' },
+        equippedCosmetics: equipped,
+        appliedDyes: {}
+      };
+      const profile = window.NpcAvatarPreview.buildProfileFromNpcExport(npc);
+      if (!profile) throw new Error('Could not build avatar profile for ' + identity.speciesId + '/' + identity.gender + '.');
+      const forced = forceSelectedClothingIntoProfile(profile);
+      if (!forced.key || !forced.count) throw new Error('Could not inject the selected clothing JSON into the preview profile.');
+      maskUrl = URL.createObjectURL(await maskCanvasBlob());
+      if (!injectLiveMaskIntoProfile(profile, maskUrl)) throw new Error('Could not locate the selected portrait layer in the injected clothing profile.');
+      const size = Number(window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.previewPortraitCanvasSize) || 200;
+      const front = Object.assign(document.createElement('canvas'), { width: size, height: size });
+      const back = Object.assign(document.createElement('canvas'), { width: size, height: size });
+      await window.NpcAvatarPreview.renderProfileToCanvas(front, profile, { seatId: 'pixel-layer-mask-preview' });
+      await window.NpcAvatarPreview.renderProfileToCanvas(back, profile, { seatId: 'pixel-layer-mask-preview', portraitView: 'behind' });
+      if (generation !== preview3d.generation) return;
+      const baseWidth = Number(window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.worldModelWidth) || 0.9;
+      scene.setAvatar(front, {
+        backCanvas: back,
+        profile,
+        appearance: npc.appearance,
+        npcRecord: npc,
+        modelWidth: baseWidth,
+        modelHeight: baseWidth,
+        name: 'PixelLayerMaskPreviewAvatar',
+        userData: { source: 'pixel-layer-mask-author' }
+      });
+      scene.setCameraView(preview3d.view);
+      scene.resize();
+      status.textContent = identity.speciesId + ' / ' + identity.gender
+        + ' · ' + forced.count + ' selected JSON layer' + (forced.count === 1 ? '' : 's')
+        + ' · live mask · ' + ($('previewHood').checked ? 'hood test on' : 'hood test off');
+    } catch (error) {
+      status.textContent = '3D preview error: ' + error.message;
+    } finally {
+      if (maskUrl) URL.revokeObjectURL(maskUrl);
+    }
+  }
+
+  function schedule3dPreview(delay = 120) {
+    clearTimeout(preview3d.timer);
+    preview3d.timer = setTimeout(refresh3dPreview, delay);
+  }
+
+  function docsAssetUrl(rawUrl) {
+    const raw = String(rawUrl || '').trim();
+    if (/^(?:data:|blob:|https?:)/i.test(raw)) return raw;
+    const rel = raw.replace(/^\.\//, '').replace(/^\//, '');
+    return new URL('../../' + rel, window.location.href).toString();
+  }
+
+  function basename(path) {
+    return String(path || '').split(/[\\/]/).pop() || 'portrait.png';
+  }
+
+  function collectPortraitLayerRecords(json) {
+    const records = [];
+    const allowNonPortraitAssets = json?.portraitAssets === true;
+    const visitParts = (parts, prefix, labelPrefix) => {
+      if (!parts || typeof parts !== 'object') return;
+      for (const [partName, partDef] of Object.entries(parts)) {
+        const layers = partDef?.layers;
+        if (!layers || typeof layers !== 'object') continue;
+        for (const [layerName, layer] of Object.entries(layers)) {
+          const imageUrl = layer?.image?.url;
+          if (!imageUrl) continue;
+          const isRuntimePortraitLayer = partName === 'head'
+            || allowNonPortraitAssets
+            || String(imageUrl).toLowerCase().includes('/portrait/');
+          if (!isRuntimePortraitLayer) continue;
+          records.push({
+            label: labelPrefix + partName + '.' + layerName + ' — ' + basename(imageUrl),
+            imageUrl,
+            jsonPath: [...prefix, partName, 'layers', layerName],
+            partName,
+            layerName,
+            variantKey: prefix[0] === 'speciesVariants' ? prefix[1] : null,
+            layer
+          });
+        }
+      }
+    };
+    visitParts(json?.parts, ['parts'], 'default / ');
+    for (const [variantKey, variant] of Object.entries(json?.speciesVariants || {})) {
+      visitParts(variant?.parts, ['speciesVariants', variantKey, 'parts'], variantKey + ' / ');
+    }
+    return records;
+  }
+
+  function renderClothingChoices() {
+    const query = String(clothingSearch.value || '').trim().toLowerCase();
+    const visible = clothingEntries.filter(entry => {
+      if (!query) return true;
+      return String(entry.id || '').toLowerCase().includes(query)
+        || String(entry.path || '').toLowerCase().includes(query);
+    });
+    const selected = clothingSelect.value;
+    clothingSelect.replaceChildren();
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = visible.length ? 'Choose clothing JSON…' : 'No matching clothing JSONs';
+    clothingSelect.appendChild(placeholder);
+    for (const entry of visible) {
+      const option = document.createElement('option');
+      option.value = entry.id;
+      option.textContent = entry.id + ' — ' + String(entry.path || '').replace(/^\.\//, '');
+      clothingSelect.appendChild(option);
+    }
+    if (visible.some(entry => entry.id === selected)) clothingSelect.value = selected;
+  }
+
+  async function fetchClothingIndex() {
+    const status = $('clothingStatus');
+    status.textContent = 'Fetching cosmetics index…';
+    $('fetchClothingBtn').disabled = true;
+    try {
+      const response = await fetch('../../config/cosmetics/index.json');
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      const index = await response.json();
+      clothingEntries = (Array.isArray(index?.entries) ? index.entries : [])
+        .filter(entry => !String(entry.path || '').includes('/appearance/'))
+        .sort((a, b) => String(a.id || '').localeCompare(String(b.id || '')));
+      clothingSelect.disabled = false;
+      renderClothingChoices();
+      status.textContent = 'Loaded ' + clothingEntries.length + ' clothing/costume JSON entries. Choose one to inspect its portrait layers.';
+    } catch (error) {
+      status.textContent = 'Could not fetch clothing index: ' + error.message;
+      clothingSelect.disabled = true;
+    } finally {
+      $('fetchClothingBtn').disabled = false;
+    }
+  }
+
+  async function loadSelectedClothingJson() {
+    const entry = clothingEntries.find(item => item.id === clothingSelect.value);
+    if (!entry) return;
+    const status = $('clothingStatus');
+    status.textContent = 'Fetching ' + entry.id + '…';
+    layerSelect.disabled = true;
+    layerSelect.innerHTML = '<option>Loading portrait layers…</option>';
+    try {
+      const response = await fetch(clothingConfigUrl(entry));
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      currentClothingJson = await response.json();
+      currentClothingEntry = entry;
+      currentLayerRecords = collectPortraitLayerRecords(currentClothingJson);
+      currentLayerRecord = null;
+      layerSelect.replaceChildren();
+      const placeholder = document.createElement('option');
+      placeholder.value = '';
+      placeholder.textContent = currentLayerRecords.length ? 'Choose portrait layer…' : 'No portrait layers found';
+      layerSelect.appendChild(placeholder);
+      currentLayerRecords.forEach((record, index) => {
+        const option = document.createElement('option');
+        option.value = String(index);
+        option.textContent = record.label;
+        layerSelect.appendChild(option);
+      });
+      layerSelect.disabled = !currentLayerRecords.length;
+      status.textContent = currentLayerRecords.length
+        ? 'Loaded ' + entry.id + ': ' + currentLayerRecords.length + ' portrait layer' + (currentLayerRecords.length === 1 ? '' : 's') + '.'
+        : 'Loaded ' + entry.id + ', but it has no supported portrait layer objects.';
+      refreshDebug();
+    } catch (error) {
+      currentClothingEntry = null;
+      currentClothingJson = null;
+      currentLayerRecords = [];
+      currentLayerRecord = null;
+      layerSelect.innerHTML = '<option>Could not load JSON</option>';
+      status.textContent = 'Could not fetch clothing JSON: ' + error.message;
+      refreshDebug();
+    }
+  }
+
+  async function loadSelectedRepoLayer() {
+    const index = Number(layerSelect.value);
+    const record = Number.isInteger(index) ? currentLayerRecords[index] : null;
+    if (!record) return;
+    const status = $('clothingStatus');
+    status.textContent = 'Fetching portrait sprite…';
+    try {
+      const img = await loadImageUrl(docsAssetUrl(record.imageUrl));
+      currentLayerRecord = record;
+      sourceName = basename(record.imageUrl);
+      setDimensions(img.naturalWidth || img.width, img.naturalHeight || img.height);
+      sourceCtx.clearRect(0, 0, sourceCanvas.width, sourceCanvas.height);
+      sourceCtx.drawImage(img, 0, 0);
+      maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+      const existingMask = Array.isArray(record.layer?.pixelLayerMasks) ? record.layer.pixelLayerMasks[0] : null;
+      $('maskBehavior').value = existingMask?.mode === 'noTrespassSquish' ? 'noTrespassSquish' : 'reroute';
+      if (existingMask?.target) $('target').value = existingMask.target;
+      if (existingMask?.view) $('view').value = existingMask.view;
+      updateMaskBehaviorUi();
+      const suggestedMaskPath = existingMask?.url || String(record.imageUrl).replace(/\.[^.]+$/, '.layer-mask.png');
+      $('maskPath').value = suggestedMaskPath;
+      if (existingMask?.url) {
+        try {
+          const existingMaskImg = await loadImageUrl(docsAssetUrl(existingMask.url));
+          if ((existingMaskImg.naturalWidth || existingMaskImg.width) === sourceCanvas.width
+              && (existingMaskImg.naturalHeight || existingMaskImg.height) === sourceCanvas.height) {
+            await normalizeMaskImageIntoCanvas(existingMaskImg);
+          }
+        } catch (_) {
+          // Existing metadata remains editable even when its mask asset is temporarily missing.
+        }
+      }
+      status.textContent = 'Loaded ' + currentClothingEntry.id + ' / ' + record.label;
+      resetHistory();
+      redraw();
+      preview3d.view = $('view').value === 'front' ? 'front' : $('view').value === 'behind' ? 'back' : 'angle';
+      schedule3dPreview(0);
+    } catch (error) {
+      status.textContent = 'Could not fetch portrait sprite: ' + error.message;
+    }
+  }
+
+  function fittedZoom() {
+    if (!sourceCanvas.width || !sourceCanvas.height) return 1;
+    const wrap = $('stageWrap');
+    const style = getComputedStyle(wrap);
+    const innerW = Math.max(1, wrap.clientWidth - parseFloat(style.paddingLeft || 0) - parseFloat(style.paddingRight || 0));
+    const innerH = Math.max(1, wrap.clientHeight - parseFloat(style.paddingTop || 0) - parseFloat(style.paddingBottom || 0));
+    const maxZoom = Number($('zoom').max) || 24;
+    return Math.max(1, Math.min(maxZoom, Math.floor(Math.min(innerW / sourceCanvas.width, innerH / sourceCanvas.height))));
+  }
+
+  function fitZoomToPane() {
+    if (!sourceCanvas.width || !sourceCanvas.height) return;
+    $('zoom').value = String(fittedZoom());
+    userAdjustedZoom = false;
+    redraw();
+  }
+
+  function setDimensions(w, h) {
+    sourceCanvas.width = maskCanvas.width = w;
+    sourceCanvas.height = maskCanvas.height = h;
+    resetHistory();
+    requestAnimationFrame(fitZoomToPane);
+  }
+
+  function maskCount() {
+    if (!maskCanvas.width || !maskCanvas.height) return 0;
+    const data = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height).data;
+    let count = 0;
+    for (let i = 3; i < data.length; i += 4) if (data[i] > 127) count++;
+    return count;
+  }
+
+  function zoomValue() { return Number($('zoom').value) || 1; }
+
+  function redraw() {
+    const w = sourceCanvas.width || 1;
+    const h = sourceCanvas.height || 1;
+    const z = zoomValue();
+    stage.width = Math.max(1, w * z);
+    stage.height = Math.max(1, h * z);
+    stage.style.width = stage.width + 'px';
+    stage.style.height = stage.height + 'px';
+    ctx.imageSmoothingEnabled = false;
+    ctx.clearRect(0, 0, stage.width, stage.height);
+    if (sourceCanvas.width) ctx.drawImage(sourceCanvas, 0, 0, stage.width, stage.height);
+    if (maskCanvas.width) {
+      const overlay = document.createElement('canvas');
+      overlay.width = w; overlay.height = h;
+      const o = overlay.getContext('2d');
+      const mask = maskCtx.getImageData(0, 0, w, h);
+      const px = o.createImageData(w, h);
+      for (let i = 0; i < mask.data.length; i += 4) {
+        if (mask.data[i + 3] > 127) {
+          px.data[i] = 217; px.data[i + 1] = 108; px.data[i + 2] = 255; px.data[i + 3] = 150;
+        }
+      }
+      o.putImageData(px, 0, 0);
+      ctx.drawImage(overlay, 0, 0, stage.width, stage.height);
+    }
+    if (z >= 6 && w * h <= 250000) {
+      ctx.strokeStyle = 'rgba(255,255,255,.10)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let x = 0; x <= w; x++) { ctx.moveTo(x * z + .5, 0); ctx.lineTo(x * z + .5, h * z); }
+      for (let y = 0; y <= h; y++) { ctx.moveTo(0, y * z + .5); ctx.lineTo(w * z, y * z + .5); }
+      ctx.stroke();
+    }
+    refreshDebug();
+  }
+
+  function sourceAlphaAt(x, y) {
+    if (x < 0 || y < 0 || x >= sourceCanvas.width || y >= sourceCanvas.height) return 0;
+    try {
+      return sourceCtx.getImageData(x, y, 1, 1).data[3];
+    } catch (_) {
+      return null; // A fetched image can be canvas-tainted by its delivery origin; painting must still work.
+    }
+  }
+
+  function paintPixel(cx, cy) {
+    if (!sourceCanvas.width) return;
+    const size = Number($('brushSize').value) || 1;
+    const half = Math.floor((size - 1) / 2);
+    for (let y = cy - half; y < cy - half + size; y++) {
+      for (let x = cx - half; x < cx - half + size; x++) {
+        if (x < 0 || y < 0 || x >= sourceCanvas.width || y >= sourceCanvas.height) continue;
+        if (paintMode === 'paint') {
+          maskCtx.fillStyle = '#fff';
+          maskCtx.fillRect(x, y, 1, 1); // Transparent source pixels are harmless because runtime masking still intersects the source sprite alpha.
+        } else {
+          maskCtx.clearRect(x, y, 1, 1);
+        }
+      }
+    }
+  }
+
+  function linePixels(a, b) {
+    const out = [];
+    let x0 = a.x, y0 = a.y, x1 = b.x, y1 = b.y;
+    const dx = Math.abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+    const dy = -Math.abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+    let err = dx + dy;
+    while (true) {
+      out.push({ x: x0, y: y0 });
+      if (x0 === x1 && y0 === y1) break;
+      const e2 = 2 * err;
+      if (e2 >= dy) { err += dy; x0 += sx; }
+      if (e2 <= dx) { err += dx; y0 += sy; }
+    }
+    return out;
+  }
+
+  function eventPixel(ev) {
+    const rect = stage.getBoundingClientRect();
+    if (!rect.width || !rect.height || !sourceCanvas.width || !sourceCanvas.height) return { x: -1, y: -1 };
+    return {
+      x: Math.floor((ev.clientX - rect.left) * sourceCanvas.width / rect.width),
+      y: Math.floor((ev.clientY - rect.top) * sourceCanvas.height / rect.height)
+    };
+  }
+
+  function applyPointer(ev) {
+    const p = eventPixel(ev);
+    if (paintMode === 'move') {
+      if (!moveDrag) return;
+      const dx = p.x - moveDrag.start.x;
+      const dy = p.y - moveDrag.start.y;
+      restoreMaskSnapshot(moveDrag.base, dx, dy);
+      redraw();
+      updateCursor(p);
+      return;
+    }
+    if (lastPixel) for (const q of linePixels(lastPixel, p)) paintPixel(q.x, q.y);
+    else paintPixel(p.x, p.y);
+    lastPixel = p;
+    redraw();
+    updateCursor(p);
+  }
+
+  function updateCursor(p) {
+    if (!p || p.x < 0 || p.y < 0 || p.x >= sourceCanvas.width || p.y >= sourceCanvas.height) {
+      $('dbgCursor').textContent = '—'; $('dbgAlpha').textContent = '—'; return;
+    }
+    $('dbgCursor').textContent = p.x + ', ' + p.y;
+    const alpha = sourceAlphaAt(p.x, p.y);
+    $('dbgAlpha').textContent = alpha == null ? 'unreadable (paint still works)' : String(alpha);
+  }
+
+  function maskConfig(urlOverride = null) {
+    const url = urlOverride || $('maskPath').value.trim() || './assets/cosmetics/example.layer-mask.png';
+    if ($('maskBehavior').value === 'noTrespassSquish') {
+      return {
+        url,
+        mode: 'noTrespassSquish',
+        view: $('view').value
+      };
+    }
+    return {
+      url,
+      target: $('target').value,
+      view: $('view').value
+    };
+  }
+
+  function configFragment() {
+    return { pixelLayerMasks: [maskConfig()] };
+  }
+
+  function updateMaskBehaviorUi() {
+    const squish = $('maskBehavior').value === 'noTrespassSquish';
+    $('targetControls').hidden = squish;
+    refreshDebug();
+  }
+
+  function refreshDebug() {
+    $('brushLabel').textContent = $('brushSize').value + ' px';
+    $('zoomLabel').textContent = $('zoom').value + '×';
+    $('dbgSource').textContent = sourceName || 'none';
+    $('dbgClothing').textContent = currentClothingEntry?.id || '—';
+    $('dbgLayer').textContent = currentLayerRecord?.label || '—';
+    $('dbgDims').textContent = sourceCanvas.width ? sourceCanvas.width + '×' + sourceCanvas.height : '—';
+    $('dbgCount').textContent = String(maskCount());
+    $('dbgTarget').textContent = $('maskBehavior').value === 'noTrespassSquish'
+      ? 'no-trespass squish / ' + $('view').value
+      : $('target').value + ' / ' + $('view').value;
+    $('jsonOut').value = JSON.stringify(configFragment(), null, 2);
+  }
+
+  $('fetchClothingBtn').addEventListener('click', fetchClothingIndex);
+  clothingSearch.addEventListener('input', renderClothingChoices);
+  clothingSelect.addEventListener('change', loadSelectedClothingJson);
+  layerSelect.addEventListener('change', loadSelectedRepoLayer);
+
+  sourceFile.addEventListener('change', async () => {
+    const file = sourceFile.files?.[0];
+    if (!file) return;
+    const img = await loadImageFile(file);
+    currentClothingEntry = null;
+    currentClothingJson = null;
+    currentLayerRecords = [];
+    currentLayerRecord = null;
+    sourceName = file.name;
+    setDimensions(img.naturalWidth || img.width, img.naturalHeight || img.height);
+    sourceCtx.clearRect(0, 0, sourceCanvas.width, sourceCanvas.height);
+    sourceCtx.drawImage(img, 0, 0);
+    maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+    const base = file.name.replace(/\.[^.]+$/, '');
+    $('maskPath').value = './assets/cosmetics/' + base + '.layer-mask.png';
+    redraw();
+  });
+
+  maskFile.addEventListener('change', async () => {
+    const file = maskFile.files?.[0];
+    if (!file || !sourceCanvas.width) return;
+    const img = await loadImageFile(file);
+    if ((img.naturalWidth || img.width) !== sourceCanvas.width || (img.naturalHeight || img.height) !== sourceCanvas.height) {
+      alert('Mask dimensions must exactly match the source sprite.');
+      maskFile.value = '';
+      return;
+    }
+    const before = captureMaskSnapshot();
+    await normalizeMaskImageIntoCanvas(img);
+    redraw();
+    commitMaskEdit(before);
+  });
+
+  stage.addEventListener('pointerdown', ev => {
+    if (!sourceCanvas.width) return;
+    drawing = true;
+    lastPixel = null;
+    pendingEditSnapshot = captureMaskSnapshot();
+    const p = eventPixel(ev);
+    moveDrag = paintMode === 'move' ? { start: p, base: pendingEditSnapshot } : null;
+    stage.setPointerCapture(ev.pointerId);
+    applyPointer(ev);
+    ev.preventDefault();
+  });
+  stage.addEventListener('pointermove', ev => {
+    const p = eventPixel(ev); updateCursor(p);
+    if (drawing) { applyPointer(ev); ev.preventDefault(); }
+  });
+  const endPointer = () => {
+    if (!drawing) return;
+    drawing = false;
+    lastPixel = null;
+    moveDrag = null;
+    const before = pendingEditSnapshot;
+    pendingEditSnapshot = null;
+    commitMaskEdit(before);
+  };
+  stage.addEventListener('pointerup', endPointer);
+  stage.addEventListener('pointercancel', endPointer);
+  stage.addEventListener('pointerleave', () => { if (!drawing) updateCursor(null); });
+
+  function setPaintMode(mode) {
+    paintMode = mode;
+    for (const [id, value] of [['paintBtn', 'paint'], ['eraseBtn', 'erase'], ['moveBtn', 'move']]) {
+      $(id).classList.toggle('active', value === mode);
+    }
+  }
+  $('paintBtn').onclick = () => setPaintMode('paint');
+  $('eraseBtn').onclick = () => setPaintMode('erase');
+  $('moveBtn').onclick = () => setPaintMode('move');
+  $('undoBtn').onclick = undoMask;
+  $('redoBtn').onclick = redoMask;
+  $('nudgeUpBtn').onclick = () => shiftMaskBy(0, -1);
+  $('nudgeDownBtn').onclick = () => shiftMaskBy(0, 1);
+  $('nudgeLeftBtn').onclick = () => shiftMaskBy(-1, 0);
+  $('nudgeRightBtn').onclick = () => shiftMaskBy(1, 0);
+  $('clearBtn').onclick = () => mutateMask(() => maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height));
+  $('invertBtn').onclick = () => mutateMask(() => {
+    const mask = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height);
+    for (let i = 0; i < mask.data.length; i += 4) {
+      const selected = mask.data[i + 3] > 127;
+      mask.data[i] = mask.data[i + 1] = mask.data[i + 2] = selected ? 0 : 255;
+      mask.data[i + 3] = selected ? 0 : 255;
+    }
+    maskCtx.putImageData(mask, 0, 0);
+  });
+  $('zoom').oninput = () => { userAdjustedZoom = true; redraw(); };
+  $('fitBtn').onclick = fitZoomToPane;
+  window.addEventListener('resize', () => {
+    if (!userAdjustedZoom && sourceCanvas.width && sourceCanvas.height) fitZoomToPane();
+    preview3d.scene?.resize();
+  });
+  $('brushSize').oninput = refreshDebug;
+  $('maskBehavior').onchange = () => { updateMaskBehaviorUi(); schedule3dPreview(); };
+  $('target').onchange = () => { refreshDebug(); schedule3dPreview(); };
+  $('view').onchange = () => {
+    refreshDebug();
+    preview3d.view = $('view').value === 'front' ? 'front' : $('view').value === 'behind' ? 'back' : 'angle';
+    preview3d.scene?.setCameraView(preview3d.view);
+    schedule3dPreview();
+  };
+  $('maskPath').oninput = refreshDebug;
+  $('previewHood').onchange = () => schedule3dPreview(0);
+  $('refresh3dBtn').onclick = () => schedule3dPreview(0);
+  for (const button of document.querySelectorAll('[data-preview-view]')) {
+    button.addEventListener('click', () => {
+      preview3d.view = button.dataset.previewView;
+      for (const peer of document.querySelectorAll('[data-preview-view]')) peer.classList.toggle('active', peer === button);
+      preview3d.scene?.setCameraView(preview3d.view);
+    });
+  }
+  document.addEventListener('keydown', event => {
+    if (!(event.ctrlKey || event.metaKey)) return;
+    const tag = String(event.target?.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+    if (event.key.toLowerCase() === 'z') {
+      event.preventDefault();
+      if (event.shiftKey) redoMask();
+      else undoMask();
+    } else if (event.key.toLowerCase() === 'y') {
+      event.preventDefault();
+      redoMask();
+    }
+  });
+
+  $('downloadBtn').onclick = () => {
+    if (!sourceCanvas.width) return;
+    maskCanvas.toBlob(blob => {
+      if (!blob) return;
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      const base = (sourceName || 'portrait').replace(/\.[^.]+$/, '');
+      a.download = base + '.layer-mask.png';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 500);
+    }, 'image/png');
+  };
+  $('copyBtn').onclick = async () => {
+    const text = $('jsonOut').value;
+    try { await navigator.clipboard.writeText(text); $('copyBtn').textContent = 'Copied'; }
+    catch (_) { $('jsonOut').focus(); $('jsonOut').select(); document.execCommand('copy'); $('copyBtn').textContent = 'Copied'; }
+    setTimeout(() => $('copyBtn').textContent = 'Copy JSON', 900);
+  };
+
+  updateHistoryUi();
+  updateMaskBehaviorUi();
+  redraw();
+  fetchClothingIndex();
+})();
+</script>
+</body>
+</html>
