@@ -29,6 +29,6 @@
   document.write('<script src="js/dev-random-ruin-collision-precision.js?v=20260927geometry1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-motion-runtime.js?v=20260926animperf2"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-simple-puzzles.js?v=20260927interiorparity1"></scr' + 'ipt>');
-  document.write('<script src="js/dev-random-ruin-interactions.js?v=20260927interiorparity1"></scr' + 'ipt>');
+  document.write('<script src="js/dev-random-ruin-interactions.js?v=20260927interactionpriority1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-runtime-coverage.js?v=20260923review1"></scr' + 'ipt>');
 })();
