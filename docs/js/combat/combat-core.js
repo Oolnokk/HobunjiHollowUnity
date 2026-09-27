@@ -43,7 +43,7 @@
     postAttackTurnEasing: 'smoothstep',
   });
   let targetingConfig = { ...DEFAULT_TARGETING_CONFIG }; // Runtime tuning replaced by applyTargetingConfig after JSON load.
-  const MAX_MELEE_AIM_PITCH_RAD = THREE.MathUtils.degToRad(70);
+  const MAX_MELEE_AIM_PITCH_RAD = Math.PI / 2; // Melee can follow the reticle all the way to straight up/down; upward lunge distance is separately reduced below.
   const MELEE_LEAP_START_PITCH_RAD = THREE.MathUtils.degToRad(12);
   const activeMeleeTrails = []; // Transient pitched ribbons aged by updateMeleeTrails().
   const activeMeleeColliderDebug = new Map(); // Recent real pie-prism volumes drawn by Show Hitboxes.
@@ -447,16 +447,21 @@
     const straightHorizontalScale = Math.cos(absPitch); // A true 3D line uses authored distance as vector length, not ground-plane length.
 
     if (direct >= 0.999 && pitch >= 0) {
+      const upwardPitchFraction = THREE.MathUtils.clamp(pitch / (Math.PI / 2), 0, 1);
+      const upwardDistanceScale = 1 - 0.5 * upwardPitchFraction; // Linear total-distance falloff: 0°=1.0x, 45°=0.75x, 90°=0.5x.
+      const directDistancePx = baseDistance * upwardDistanceScale;
+      const directDistanceWorld = baseDistanceWorld * upwardDistanceScale;
       return {
         pitch,
-        distanceScale: straightHorizontalScale,
+        distanceScale: upwardDistanceScale * straightHorizontalScale,
         pitchDistanceResistance: resistance,
         appliedPitchDistanceResistance: 1,
         inRangeAirAssist: !!inRangeAirAssist,
         directFlightStrength: 1,
         lungeHeightUnits: heightUnits,
-        distancePx: baseDistance * straightHorizontalScale,
-        verticalTravelUnits: baseDistanceWorld * Math.sin(pitch), // Exact Y component of the committed reticle vector.
+        upwardDistanceScale,
+        distancePx: directDistancePx * straightHorizontalScale,
+        verticalTravelUnits: directDistanceWorld * Math.sin(pitch), // XZ/Y are components of the same angle-scaled reticle vector.
         leapT: 0,
         hopUnits: 0,
       }; // Forward/upward direct player flight exits before any legacy diminished-vertical/ballistic calculations can run.
