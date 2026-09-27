@@ -238,6 +238,7 @@ assert(occupancy.includes("'#3498db'"), 'Map renderer must draw mechanism tiles 
 assert(occupancy.includes('doorIsClosed'), 'door collision must use logical open/closed state instead of rendered height');
 assert(occupancy.includes('function doorTiles(door, model)') && occupancy.includes('const runMin = alongX ? box.min.x : box.min.z'), 'closed door collision must rasterize the full visible doorway run instead of falling back to one center tile');
 assert(occupancy.includes('syncGridCollision(model)') && occupancy.includes('tile.type = blocked ? model.solidType : baseType'), 'generated blockers must stamp the ordinary interior grid so player/creature movement, dodge/lunge, and swept knockback share one collision authority');
+assert(interior.includes('function positionInfo(px,py)') && !interior.includes('blocker:DS.blockerAt(x,z,{radius:PLAYER_RADIUS'), 'ruin player reconciliation must not run a second post-movement horizontal blocker pass after the normal interior grid has resolved collision');
 assert(interior.includes('grid:ruin.grid') && interior.includes("ROCK??'rock'"), 'ruin occupancy must mutate the actual registered map_i_* grid using the normal solid tile type');
 assert(occupancy.includes('nearestFloorAnchor'), 'mechanism diagnostics must use compact logical anchor tiles');
 assert(interior.includes('transitDoors:ruin.transitDoors'), 'transit doors must join the shared tile occupancy snapshot');
