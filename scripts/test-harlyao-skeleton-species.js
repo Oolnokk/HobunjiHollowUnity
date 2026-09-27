@@ -98,7 +98,7 @@ assert(gameIndexSource.includes('js/combat/combat-minion.js?v=20260926shambling7
 assert(gameIndexSource.includes('js/portrait-utils.js?v=20260926hoodback2'), 'Game entry point must cache-bust hood-aware female skeleton hair visibility');
 assert(gameIndexSource.includes('js/png-plane-avatar.js?v=20260926hskelhairalign1'), 'Game entry point must cache-bust the removal of the obsolete skeleton neck workaround');
 assert(gameIndexSource.includes('js/combat/combat-bandit.js?v=20260927hostilevisual1'), 'Game entry point must cache-bust the restored ordinary humanoid neck path');
-assert(characterStudioSource.includes('../../js/harlyao-skeleton-species-runtime.js?v=20260926lichhood1'), 'Character Studio must load the NPC-only Harlyao Skeleton runtime bridge before snapshotting its species table');
+assert(characterStudioSource.includes('../../js/harlyao-skeleton-species-runtime.js?v=20260927dyes1'), 'Character Studio must load the NPC-only Harlyao Skeleton runtime bridge before snapshotting its species table');
 assert(characterStudioSource.includes('../../js/portrait-utils.js?v=20260926hoodback2'), 'Character Studio must load hood-aware structural-hair visibility');
 assert(characterStudioSource.includes("SPECIES_DATA[ap.speciesId]?.playerSelectable === false"), 'NPC-only preview species must be blocked from Set as my player');
 assert(characterStudioSource.includes("speciesMeta.bodyColorCustomization === false"), 'Fixed-color skeletons must not expose editable body-color controls');
@@ -222,7 +222,7 @@ assert.equal(enghExportProfile.bodyColors.A.hex, '#123456');
     assert.equal(skeletonScale.head, harlyaoScale.head);
   }
 
-  const runtimeBootstrapIndex = bootstrapSource.indexOf("harlyao-skeleton-species-runtime.js?v=20260926lichhood1");
+  const runtimeBootstrapIndex = bootstrapSource.indexOf("harlyao-skeleton-species-runtime.js?v=20260927dyes1");
   const scaleBootstrapIndex = bootstrapSource.indexOf("character-rig-scale.js?v=20260904i");
   assert(runtimeBootstrapIndex >= 0 && scaleBootstrapIndex > runtimeBootstrapIndex,
     'Harlyao Skeleton rig inheritance must load before whole-rig scale installs profile defaults');
