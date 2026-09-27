@@ -20,6 +20,8 @@
   const ROPE_GRAVITY = 8.2;
   const ROPE_MIN_LENGTH = 1.65;
   const CHECKPOINT_INVULN_MS = 1200;
+  const KURRAYA_NOTE_URL = 'assets/audio/music/instruments/sfx_kurraya_pluck.m4a'; // Shared authored pluck used by modular musical pressure plates until a dedicated ruin-note sample exists.
+  const CHORD_PITCHES = Object.freeze([1, 1.25, 1.5, 1.875]); // Root, major third, fifth, major seventh; four independent plates form one recognisable chord without requiring an order.
 
   const DS = window.DynamicSurfaces;
   const GridTileAccessors = window.GridTileAccessors;
@@ -161,6 +163,33 @@
     mesh.castShadow = false;
     mesh.receiveShadow = false;
     return mesh;
+  }
+
+  function recordModulePlacement(type, slotKind, slotId, extra = {}) {
+    if(!state)return null;
+    const record={type,slotKind,slotId:String(slotId||''),...extra}; // Runtime diagnostics use these records to prove compound puzzles are assembled from reusable pieces rather than one bespoke scene.
+    state.modulePlacements.push(record);
+    return record;
+  }
+
+  function playKurrayaPlateNote(index) {
+    const pitch=CHORD_PITCHES[Math.max(0,Math.min(CHORD_PITCHES.length-1,Number(index)||0))]; // Each plate owns one stable chord tone.
+    window.AudioSystem?.playObjectSfx?.({url:KURRAYA_NOTE_URL,volume:.58,pitchVarianceMul:0},1,pitch);
+  }
+
+  function playGeneratedStoneKchunk() {
+    const AudioCtx=window.AudioContext||window.webkitAudioContext; // Temporary procedural completion cue; intended to be replaced by a recorded stone kchunk asset later.
+    if(!AudioCtx)return false;
+    try{
+      const ctx=playGeneratedStoneKchunk._ctx||(playGeneratedStoneKchunk._ctx=new AudioCtx());
+      ctx.resume?.();
+      const now=ctx.currentTime,osc=ctx.createOscillator(),gain=ctx.createGain(),filter=ctx.createBiquadFilter();
+      osc.type='square';osc.frequency.setValueAtTime(92,now);osc.frequency.exponentialRampToValueAtTime(46,now+.18);
+      filter.type='lowpass';filter.frequency.value=520;
+      gain.gain.setValueAtTime(.0001,now);gain.gain.exponentialRampToValueAtTime(.16,now+.012);gain.gain.exponentialRampToValueAtTime(.0001,now+.24);
+      osc.connect(filter).connect(gain).connect(ctx.destination);osc.start(now);osc.stop(now+.25);
+      return true;
+    }catch(_){return false;}
   }
 
   function disposeObject(root) {
@@ -554,11 +583,11 @@
     });
   }
 
-  function buildHallwayTraps(context, rng, usedHallways = new Set()) {
+  function buildHallwayTraps(context, rng, usedHallways = new Set(), forcedHallways = null) {
     const hallways=(context.meta?.hallways||[])
       .filter(hall => !usedHallways.has(hall.id) && (hall.axis==='x'?Number(hall.w):Number(hall.h))>=5)
       .sort((a,b)=>(b.axis==='x'?Number(b.w):Number(b.h))-(a.axis==='x'?Number(a.w):Number(a.h)));
-    const selected=shuffle(hallways,rng).slice(0,Math.min(2,hallways.length));
+    const selected=Array.isArray(forcedHallways)?forcedHallways.filter(Boolean):shuffle(hallways,rng).slice(0,Math.min(2,hallways.length));
     const cs=worldCellSize(context.meta);
     for(const hall of selected){
       const axis=hall.axis==='z'?'z':'x';
@@ -597,6 +626,68 @@
         longLength,
         stations,
       });
+      usedHallways.add(hall.id);
+      recordModulePlacement('projectileHallwayTrap','hallway',hall.id,{axis}); // Ordinary alternating wall traps now occupy the same generic hallway-module slot as other procedural pieces.
+    }
+  }
+
+  function buildChordPlateSet(context, rng, slot, usedHallways = null) {
+    if(!slot)return null;
+    const isHallway=slot.kind==='hallway';
+    const owner=slot.owner;
+    const id=String(owner?.id||('slot-'+state.chordPlateSets.length));
+    const points=[];
+    if(isHallway){
+      const hall=owner,axis=hall.axis==='z'?'z':'x',cs=worldCellSize(context.meta);
+      const longStart=PAD+(axis==='x'?Number(hall.col):Number(hall.row))*cs;
+      const longLength=(axis==='x'?Number(hall.w):Number(hall.h))*cs;
+      const crossStart=PAD+(axis==='x'?Number(hall.row):Number(hall.col))*cs;
+      const crossWidth=(axis==='x'?Number(hall.h):Number(hall.w))*cs;
+      const centerCross=crossStart+crossWidth*.5;
+      for(let i=0;i<4;i++){
+        const along=longStart+longLength*((i+1)/5);
+        const cross=centerCross+(i%2?1:-1)*Math.min(.65,crossWidth*.18);
+        points.push(axis==='x'?{x:along,z:cross}:{x:cross,z:along});
+      }
+    }else{
+      const patch=roomPatch(context,owner,4.2,4.2);
+      if(!patch)return null;
+      const d=1.15;
+      points.push({x:patch.centerX-d,z:patch.centerZ-d},{x:patch.centerX+d,z:patch.centerZ-d},{x:patch.centerX-d,z:patch.centerZ+d},{x:patch.centerX+d,z:patch.centerZ+d});
+    }
+    const root=new THREE.Group();
+    root.name='dev_ruin_chord_plates_'+id;
+    root.userData.devRandomRuinSimplePuzzle='chordPlates';
+    state.group.add(root);
+    const plates=[];
+    for(let i=0;i<4;i++){
+      const p=points[i],support=sampleSupport(p.x,p.z);
+      if(!support){disposeObject(root);return null;}
+      const material=makeBasic(0x59544b);
+      const mesh=new THREE.Mesh(new THREE.BoxGeometry(.68,.06,.68),material);
+      mesh.name='dev_ruin_chord_plate_'+id+'_'+i;
+      mesh.position.set(p.x,Number(support.y)+.03,p.z);
+      mesh.userData.devRandomRuinChordPlate=true;
+      mesh.userData.chordNoteIndex=i;
+      root.add(mesh);
+      plates.push({index:i,x:p.x,z:p.z,y:Number(support.y),mesh,material,down:false,played:false,pressCount:0});
+    }
+    const set={id,slotKind:isHallway?'hallway':'room',root,plates,solved:false,solveCount:0,onComplete:typeof slot.onComplete==='function'?slot.onComplete:null};
+    state.chordPlateSets.push(set);
+    if(isHallway)usedHallways?.add?.(owner.id);
+    recordModulePlacement('chordPressurePlates',set.slotKind,id,{plateCount:4});
+    return set;
+  }
+
+  function buildSwappableHallwayModules(context,rng,usedHallways) {
+    const candidates=shuffle((context.meta?.hallways||[]).filter(hall=>!usedHallways.has(hall.id)&&(hall.axis==='x'?Number(hall.w):Number(hall.h))>=5),rng);
+    const selected=candidates.slice(0,Math.min(2,candidates.length)); // Two generic hallway slots replace the previous unconditional two-trap pass.
+    for(const hall of selected){
+      if(rng()<.48){
+        const chord=buildChordPlateSet(context,rng,{kind:'hallway',owner:hall},usedHallways);
+        if(chord)continue;
+      }
+      buildHallwayTraps(context,rng,usedHallways,[hall]);
     }
   }
 
@@ -745,6 +836,8 @@
       safeGrids:[],
       ropes:[],
       trapHallways:[],
+      chordPlateSets:[],
+      modulePlacements:[], // Every placed puzzle piece is recorded independently so compound sequences remain inspectable/recomposable.
       projectiles:[],
       surfaceIds:new Set(),
       activeRope:null,
@@ -762,9 +855,15 @@
     const usedRooms=new Set();
     const usedHallways=new Set(); // The mandatory safe-path crossing claims one hallway so repeating wall traps do not overlap it.
     const options=context.puzzleOptions||{};
-    if(options.safePath!==false)buildSafePathGrid(context,rng,usedHallways);
-    if(options.ropeSwing!==false)buildRopeSwing(context,rng,usedRooms);
-    if(options.hallwayTraps!==false)buildHallwayTraps(context,rng,usedHallways);
+    if(options.safePath!==false){
+      const grid=buildSafePathGrid(context,rng,usedHallways);
+      if(grid)recordModulePlacement('safePathGrid','hallway',grid.hallId,{mandatoryTraversal:true});
+    }
+    if(options.ropeSwing!==false){
+      const rope=buildRopeSwing(context,rng,usedRooms);
+      if(rope)recordModulePlacement('ropeTraverse','room',rope.roomId,{ceilingMounted:true});
+    }
+    if(options.hallwayTraps!==false)buildSwappableHallwayModules(context,rng,usedHallways);
     updateBadge(true);
   }
 
@@ -790,6 +889,29 @@
         deps.showToast?.('Wrong pressure plate — Burning Health!',false);
       }
       grid.lastPlayerKey=key;
+    }
+  }
+
+  function updateChordPlateSets() {
+    const player=playerWorld();
+    if(!player)return;
+    for(const set of state.chordPlateSets){
+      for(const plate of set.plates){
+        const down=Math.abs(player.x-plate.x)<=.39&&Math.abs(player.z-plate.z)<=.39;
+        plate.mesh.position.y=plate.y+.03-(down?.035:0);
+        if(down&&!plate.down){
+          plate.pressCount++;
+          if(!plate.played){plate.played=true;plate.material.color.setHex(0x8a825f);}
+          playKurrayaPlateNote(plate.index);
+        }
+        plate.down=down;
+      }
+      if(!set.solved&&set.plates.every(plate=>plate.played)){
+        set.solved=true;set.solveCount++;
+        playGeneratedStoneKchunk();
+        deps?.showToast?.('The four notes settle into a chord. Stone machinery unlocks.',true);
+        try{set.onComplete?.(set);}catch(error){console.warn('[Random Test Ruin] chord completion failed',error);}
+      }
     }
   }
 
@@ -952,6 +1074,7 @@
     if(!state||state.root!==context.root)buildForContext(context);
 
     updateSafeGrids(now);
+    updateChordPlateSets();
     updateRopes(now,dt);
     updateHallwayTraps(dt);
     updateDoorwayCheckpoints();
@@ -1016,6 +1139,8 @@
       flight:state.flight?clonePoint(state.flight):null,
       ropeEquipment:{holstered:state.ropeEquipmentHolsterCount,restored:state.ropeEquipmentRestoreCount,currentlyStowed:!!state.ropeHeldToolSnapshot},
       trapHallways:state.trapHallways.map(trap=>({id:trap.id,axis:trap.axis,stations:trap.stations.length})),
+      chordPlateSets:state.chordPlateSets.map(set=>({id:set.id,slotKind:set.slotKind,played:set.plates.filter(plate=>plate.played).length,solved:set.solved,solveCount:set.solveCount,pressCounts:set.plates.map(plate=>plate.pressCount)})),
+      modules:state.modulePlacements.map(module=>({...module})),
       liveProjectiles:state.projectiles.length,
       checkpoints:{
         activeId:state.checkpoints.active?.id||null,
