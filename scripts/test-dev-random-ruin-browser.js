@@ -578,6 +578,9 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
             ceilingY:beforePump.ropes[0]?.ceilingY??null,
             anchorY:beforePump.ropes[0]?.anchor?.y??null,
             bobY:beforePump.ropes[0]?.bob?.y??null,
+            grabY:beforePump.ropes[0]?.grabPoint?.y??null,
+            startTopY:beforePump.ropes[0]?.startTopY??null,
+            endTopY:beforePump.ropes[0]?.endTopY??null,
             weaponStowed:beforePump.ropeEquipment?.currentlyStowed===true && beforePump.ropeEquipment?.holstered>(beforeAttachEquipment?.holstered||0),
             pumpChangedOmega:Math.abs((afterPump.ropes[0]?.omega||0)-(beforePump.ropes[0]?.omega||0))>.02,
             releaseRow:releaseIndex>=0?interaction.rows[releaseIndex]:null,
@@ -596,6 +599,15 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
       assert.ok(simpleRuntime.burningAfter>=20,'unsafe pressure plate must apply Burning Health: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.revealRow?.label,'Reveal Safe Path','safe-path button must enter the ordinary world input list: '+JSON.stringify(simpleRuntime));
       assert.ok(simpleRuntime.revealMs>0,'safe-path button must temporarily reveal the safe plates: '+JSON.stringify(simpleRuntime));
+      {
+        const grid=simpleRuntime.final.safeGrids?.[0],entry=grid&&simpleRuntime.final.checkpoints?.doorways?.find(door=>door.id===grid.entryDoorId);
+        assert.ok(grid?.entryDoorId&&entry,'safe-path diagnostics must identify the actual room-to-hall entrance doorway: '+JSON.stringify(simpleRuntime.final));
+        const axis=grid.axis,buttonAlong=axis==='x'?grid.buttonPoint.x:grid.buttonPoint.z,entryAlong=axis==='x'?entry.x:entry.z;
+        const plateAlong=grid.safe.concat(grid.unsafe).map(cell=>axis==='x'?cell.x:cell.z);
+        const near=Math.min(...plateAlong),far=Math.max(...plateAlong),approachNear=Math.abs(entryAlong-near)<=Math.abs(entryAlong-far);
+        assert.equal(grid.approachSide,approachNear?'min':'max','safe-path reveal control must be assigned to the hallway end the player actually approaches from: '+JSON.stringify({grid,entry}));
+        assert.ok(approachNear?buttonAlong<near:buttonAlong>far,'safe-path reveal pedestal must sit before the pressure-plate field rather than beyond it: '+JSON.stringify({grid,entry,near,far}));
+      }
       assert.match(simpleRuntime.checkpointAfterCross?.activeId||'',/^doorway-/,'crossing a doorway must advance the checkpoint: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.respawn?.handled,true,'ruin checkpoint recovery must handle death locally: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.respawn?.reason,'resource-tick','Burning Health death must route through the real PlayerVitals checkpoint seam: '+JSON.stringify(simpleRuntime));
@@ -618,6 +630,8 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
       assert.equal(simpleRuntime.ropeAttach?.worldPopupVisible,true,'rope controls must render through WorldPopupText: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.ropeAttach?.ceilingMounted,true,'rope must visibly attach to the authored room ceiling: '+JSON.stringify(simpleRuntime));
       assert.ok(Math.abs((simpleRuntime.ropeAttach?.ceilingY||0)-(simpleRuntime.ropeAttach?.anchorY||0))<.001,'rope line origin must equal the ceiling mount datum: '+JSON.stringify(simpleRuntime));
+      assert.ok((simpleRuntime.ropeAttach?.endTopY||0)-(simpleRuntime.ropeAttach?.startTopY||0)>.42,'rope destination must be visibly above the ordinary ruin step limit: '+JSON.stringify(simpleRuntime));
+      assert.ok(Math.abs((simpleRuntime.ropeAttach?.grabY||0)-((simpleRuntime.ropeAttach?.startTopY||0)+.86))<.08,'idle rope grip must stay at reachable launch-side height instead of inheriting the raised destination: '+JSON.stringify(simpleRuntime));
       assert.ok((simpleRuntime.ropeAttach?.ceilingY||0)>(simpleRuntime.ropeAttach?.bobY||0),'rope must hang downward from the ceiling: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.ropeAttach?.weaponStowed,true,'grabbing the rope must put the drawn weapon/tool away: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.ropeAttach?.released,true,'Dodge must transfer the player into rope ballistic flight: '+JSON.stringify(simpleRuntime));
