@@ -339,9 +339,10 @@
             const prone = !!banditState.entity?.prone;
             if (prone) clearBanditTransientMotion(banditState.entity);
             const effectiveSuppressed = !!suppressed || prone;
+            const hoverMode = !!handle.isHoverMode?.(); // Hover pose remains owned by ProceduralLegAnimation; run gait must not overwrite its dangling two-bone solve.
             const result = previousBanditUpdate(dt, speedWorldUnitsPerSecond, effectiveSuppressed, seatedPose);
             const activelyInCombat = banditState.entity?.state === 'chase'; // BanditCombat uses chase as the exact actively-engaged state; idle/return/patrol remain ordinary walks.
-            runGait?.update(dt, speedWorldUnitsPerSecond, activelyInCombat ? 1 : 0, effectiveSuppressed, seatedPose);
+            runGait?.update(dt, speedWorldUnitsPerSecond, activelyInCombat ? 1 : 0, effectiveSuppressed || hoverMode, seatedPose);
             return result;
           };
         }

@@ -1089,12 +1089,10 @@
       // Zero-Footing transition — called only once applyHitStagger's own
       // spendFooting has already driven entity.footing to 0. Both the player
       // and any creature/bandit go fully prone here (immune to further
-      // Footing loss — see resource-system.js's spendFooting), matching each
-      // other exactly; they differ only in how they LEAVE prone: the player
-      // needs a dodge input once Footing reaches its full unshambled recovery
-      // target, while a creature/bandit's own AI does it automatically at that
-      // same target — see updateHostiles' `if (c.prone)` branch and
-      // proneRecoveryFootingTarget below.
+      // Footing loss — see resource-system.js's spendFooting), then
+      // automatically recover once Footing reaches the same full unshambled
+      // target — the player uses updateProneState's in-place recovery arc,
+      // while creature AI uses beginCreatureSomersaultRecovery below.
       // Creature planes use the same authored clips through
       // ImpactRagdollPlayback's quarter-turned body-only adapter; humanoid leg
       // channels remain player-only. Both kinds use a dedicated prone-throw
@@ -4984,6 +4982,28 @@
           showToast('You awaken at the farm Root Totem, carrying everything you found...', false);
           return;
         }
+        if (currentArea === 'map_dev_arena') {
+          const arenaDef = EXTERIOR_ZONES.map_dev_arena; // Testing Arena deaths stay inside the disposable combat sandbox instead of invoking the ordinary no-totem farmhouse fallback.
+          if (arenaDef) {
+            player.x = (arenaDef.entryCol + 0.5) * TILE;
+            player.y = (arenaDef.entryRow + 0.5) * TILE;
+          }
+          player.vx = 0; player.vy = 0;
+          player.health = player.maxHealth;
+          player.stamina = player.maxStamina;
+          if (Number.isFinite(player.maxFooting)) player.footing = player.maxFooting; // Death reset should not strand an arena test subject prone at the entry point.
+          player.prone = false;
+          if (player.staggered) { player.staggered.active = false; player.staggered.endsAt = 0; }
+          for (const id of Object.keys(window.ResourceSystem?.AFFLICTIONS || {})) {
+            const buildup = window.ResourceSystem?.getAffliction?.(player, id) || 0; // Clears lethal/punishing carry-over so the test respawn cannot immediately die again from the previous bout.
+            if (buildup > 0) window.ResourceSystem?.removeAffliction?.(player, id, buildup);
+          }
+          if (player.exhaustion) { player.exhaustion.active = false; player.exhaustion.blackStamina = 100; }
+          player.invulnUntil = performance.now() + 1000;
+          _snapCameraTarget();
+          showToast('Respawned at the Testing Arena entrance.', false);
+          return;
+        }
         const totem = _isZoneArea(currentArea) ? nearestRootTotemFor(currentArea, player.x, player.y) : null;
         if (totem) {
           player.x = (totem.x + 0.5) * TILE;
@@ -5203,17 +5223,18 @@
       }
 
       function currentPlayerMeleeAimDirection() {
-        if (activeCameraMode === SHOULDER_SURF_MODE) {
-          const perspectiveDirection = currentPlayerPerspectiveDirection();
-          if (perspectiveDirection) return perspectiveDirection;
-        }
-        const focused = window.RangedWeapons?.focusedHostile?.(24);
-        if (focused?.candidate?.data && window.Combat?.meleeAimSolution) {
-          const aimed = window.Combat.meleeAimSolution(player, focused.candidate.data, currentPlayerAimAngle(), currentPlayerAimPitch());
-          return { x: aimed.direction.x, y: aimed.direction.y, z: aimed.direction.z };
-        }
+        const combatCenter = window.RangedWeapons?.actorHitbox?.(player)?.center; // Reuse the same body-volume center that melee collision tests from.
+        const meleeOrigin = [combatCenter?.x, combatCenter?.y, combatCenter?.z].every(Number.isFinite)
+          ? { x: combatCenter.x, y: combatCenter.y, z: combatCenter.z }
+          : {
+              x: (Number(player.x) || 0) / TILE,
+              y: (Number(playerMesh?.position?.y) || _playerGroundY()) + 0.55,
+              z: (Number(player.y) || 0) / TILE,
+            }; // Stable body-center fallback before the portrait hitbox is mounted.
+        const perspectiveDirection = currentPlayerPerspectiveDirection(meleeOrigin); // Every melee attack aims from its actual body/collider origin to the finite point directly beneath the reticle.
+        if (perspectiveDirection) return perspectiveDirection;
         const cameraRay = currentPlayerInteractionRay() || currentPlayerAimRay();
-        if (cameraRay?.direction) return { ...cameraRay.direction };
+        if (cameraRay?.direction) return { ...cameraRay.direction }; // Compatibility fallback still follows the reticle ray; focused-hostile auto-aim must never replace melee aim authority.
         const yaw = currentPlayerAimAngle();
         const pitch = currentPlayerAimPitch();
         const horizontal = Math.cos(pitch);
@@ -5432,6 +5453,63 @@
         return !!g[row]?.[col]?.incline;
       }
 
+      const ENEMY_COLLISION_REPOSITION_MIN_MOVE_FRAC = 0.25; // Used by moveCreatureToward to distinguish useful wall-sliding from a combatant that is genuinely pinned at a collision point.
+      const ENEMY_COLLISION_REPOSITION_FORWARD_MUL = 0.35; // Used by tryEnemyCollisionReposition to keep the first escape choice mostly lateral while retaining some progress toward its target.
+      const ENEMY_COLLISION_REPOSITION_SIDE_MUL = 0.94; // Used with the forward multiplier to produce the short around-the-corner sidestep vector.
+      const ENEMY_COLLISION_REPOSITION_BACK_MUL = -0.35; // Used by the fallback escape choice so a boxed-in enemy can give ground before trying the same side again.
+
+      function enemyCollisionRepositionSide(c) {
+        if (c._collisionRepositionSide === -1 || c._collisionRepositionSide === 1) return c._collisionRepositionSide;
+        const identity = String(c.id || c.name || c.creatureKey || c.def?.id || 'enemy'); // Used only to pick a deterministic initial left/right preference without consuming gameplay RNG.
+        let hash = 0; // Used to spread nearby enemies across opposite initial sidestep directions rather than making every actor choose the same side.
+        for (let i = 0; i < identity.length; i++) hash = ((hash * 31) + identity.charCodeAt(i)) | 0;
+        c._collisionRepositionSide = (hash & 1) ? 1 : -1;
+        return c._collisionRepositionSide;
+      }
+
+      function tryEnemyCollisionReposition(c, nx, ny, step, blockedX, blockedY) {
+        if (!(step > 0) || (c.state !== 'chase' && c.state !== 'patrol-chase')) return null;
+        const preferredSide = enemyCollisionRepositionSide(c); // Used by both escape arcs so direction remains stable across consecutive blocked frames.
+        const sideOrder = [preferredSide, -preferredSide]; // Used to try the remembered side first, then immediately recover if that side is the obstructed one.
+        const escapeProfiles = [
+          { forward: ENEMY_COLLISION_REPOSITION_FORWARD_MUL, mode: 'sidestep' },
+          { forward: ENEMY_COLLISION_REPOSITION_BACK_MUL, mode: 'backoff' },
+        ]; // Used to prefer a lateral around-obstacle move before conceding distance from the combat target.
+        for (const profile of escapeProfiles) {
+          for (const side of sideOrder) {
+            const rawX = nx * profile.forward + (-ny) * ENEMY_COLLISION_REPOSITION_SIDE_MUL * side; // Used to rotate the requested movement toward this candidate escape side.
+            const rawY = ny * profile.forward + nx * ENEMY_COLLISION_REPOSITION_SIDE_MUL * side; // Used with rawX as the matching 2D escape vector.
+            const length = Math.max(0.001, Math.hypot(rawX, rawY)); // Used to keep every escape attempt at the same remaining per-frame movement budget.
+            const escapeNX = rawX / length, escapeNY = rawY / length; // Used for both the collision probe and velocity reported to animation.
+            const escapeX = c.x + escapeNX * step, escapeY = c.y + escapeNY * step; // Used as the local reposition destination rather than a persistent AI target.
+            if (!creatureCanEnterTile(c.def, escapeX, escapeY)) continue;
+            c.x = escapeX;
+            c.y = escapeY;
+            c._collisionRepositionSide = side;
+            c._collisionRepositionDebug = { // Mobile-readable entity state showing the most recent successful collision escape.
+              active: true,
+              mode: profile.mode,
+              blockedX: !!blockedX,
+              blockedY: !!blockedY,
+              side,
+              movedPx: step,
+              atMs: performance.now(),
+            };
+            return { nx: escapeNX, ny: escapeNY, moved: step };
+          }
+        }
+        c._collisionRepositionDebug = { // Records a failed escape too, which makes "still pinned" distinguishable from the helper never running.
+          active: true,
+          mode: 'blocked',
+          blockedX: !!blockedX,
+          blockedY: !!blockedY,
+          side: preferredSide,
+          movedPx: 0,
+          atMs: performance.now(),
+        };
+        return null;
+      }
+
       function moveCreatureToward(c, tx, ty, speed, dt) {
         // A NaN/undefined target (e.g. a momentarily-gone companion master,
         // a stale reference) must never reach the position math below — dist
@@ -5449,13 +5527,30 @@
         const step = Math.min(dist, effectiveSpeed * dt);
         // Axis-separated so a creature turned back by a cliff face or river
         // slides along it instead of freezing outright (mirrors the player's
-        // collision in updateMovement).
+        // collision in updateMovement). A genuinely pinned chasing enemy then
+        // gets one short lateral/backoff escape attempt below.
         const prevX = c.x, prevY = c.y;
         const desiredX = c.x + nx * step, desiredY = c.y + ny * step;
-        if (creatureCanEnterTile(c.def, desiredX, c.y)) c.x = desiredX;
-        if (creatureCanEnterTile(c.def, c.x, desiredY)) c.y = desiredY;
-        const moved = Math.hypot(c.x - prevX, c.y - prevY);
-        c.vx = nx * effectiveSpeed; c.vy = ny * effectiveSpeed;
+        const canMoveX = creatureCanEnterTile(c.def, desiredX, c.y); // Used both to apply the normal X slide and to identify the blocking axis for escape diagnostics.
+        if (canMoveX) c.x = desiredX;
+        const canMoveY = creatureCanEnterTile(c.def, c.x, desiredY); // Used after X resolution so the ordinary axis-separated slide keeps its existing behavior.
+        if (canMoveY) c.y = desiredY;
+        const blockedX = Math.abs(desiredX - prevX) > 0.001 && !canMoveX; // Used below to detect a real collision rather than a zero-length axis request.
+        const blockedY = Math.abs(desiredY - prevY) > 0.001 && !canMoveY; // Used with blockedX to distinguish collision stalls from ordinary target arrival.
+        let moved = Math.hypot(c.x - prevX, c.y - prevY); // Used as the movement already achieved before deciding whether a collision escape is necessary.
+        let motionNX = nx, motionNY = ny; // Used for the reported velocity; replaced by the escape vector only when repositioning actually succeeds.
+        if ((blockedX || blockedY) && moved < step * ENEMY_COLLISION_REPOSITION_MIN_MOVE_FRAC) {
+          const remainingStep = Math.max(0, step - moved); // Used to keep axis-slide plus escape movement within the original per-frame travel budget.
+          const reposition = tryEnemyCollisionReposition(c, nx, ny, remainingStep, blockedX, blockedY); // Used only for active combat chases; companions/passive travel keep their existing movement behavior.
+          if (reposition) {
+            moved = Math.hypot(c.x - prevX, c.y - prevY);
+            motionNX = reposition.nx;
+            motionNY = reposition.ny;
+          }
+        } else if (c._collisionRepositionDebug?.active) {
+          c._collisionRepositionDebug.active = false;
+        }
+        c.vx = motionNX * effectiveSpeed; c.vy = motionNY * effectiveSpeed;
         if (moved > 0) tickCreatureFootsteps(c, moved);
         return moved > 0;
       }
@@ -9310,17 +9405,23 @@
         // the intentional footing-break launch. Input remains locked.
         if (player.proneThrowT > 0) advancePlayerProneThrow(dt);
         else { player.vx = 0; player.vy = 0; }
+        // Once Footing has refilled, use the same in-place recovery arc that
+        // the prone dodge input already used. Waiting for the dedicated throw
+        // (and any ledge fall it can become) prevents the roll from cancelling
+        // displacement that still has to resolve.
+        if (!(player.proneThrowT > 0) && !player._knockbackLedgeFall
+            && player.footing >= proneRecoveryFootingTarget(player)) {
+          beginSomersaultRecovery();
+        }
       }
 
-      // Somersault recovery — the dodge input's meaning while prone (see
-      // performDodge's own guard below): rolls the player back onto their
-      // feet via a procedurally coded arc (docs/js/combat/impact-ragdoll-
-      // playback.js's beginRecoveryArc — no authored blend exists for this
-      // transition). Requires Footing to refill to the actor's full
-      // unshambled recovery target, same eligibility a prone creature's own AI
-      // waits on before it auto-recovers (see
-      // updateHostiles' `if (c.prone)` branch/beginCreatureSomersaultRecovery)
-      // — the player's own recovery is just input-gated instead of automatic.
+      // Somersault recovery — the automatic get-up path while prone, with the
+      // dodge input still allowed to request the exact same transition on the
+      // eligible frame: rolls the player back onto their feet in place via a
+      // procedurally coded arc (docs/js/combat/impact-ragdoll-playback.js's
+      // beginRecoveryArc — no authored blend exists for this transition).
+      // Requires Footing to refill to the actor's full unshambled recovery
+      // target, matching the prone creature AI's own eligibility.
       // Returns false if not actually prone, already mid-roll, or not yet
       // eligible.
       const SOMERSAULT_RECOVERY_DUR_S = 0.5;
@@ -9339,9 +9440,9 @@
       }
 
       function performDodge() {
-        // While prone (0 Footing — see enterProneIfFootingDepleted), the
-        // dodge button somersaults the player back to standing instead of a
-        // normal evasive dodge.
+        // While prone, the automatic get-up owns the normal recovery. Keep
+        // dodge input routed to the same in-place recovery arc so an input on
+        // the exact eligible frame never starts an ordinary moving dodge.
         if (player.prone) return beginSomersaultRecovery();
         if (player.dodging || player.dodgeCooldownT > 0) return false;
         let dirX, dirY;
@@ -9428,19 +9529,23 @@
       // that cone, so the target is guaranteed to still be within the
       // collider at the point the lunge stops, never overshot past it.
       function beginCombatLunge(distancePx, durationS, hopUnits = 0, hitTest = null) {
-        if (durationS <= 0 || distancePx <= 0) return;
+        if (durationS <= 0 || distancePx <= 0) return false;
         // Each combo/quick-attack/charged-breaker module tracks its own
         // "busy" gate independently, so tapping a *different* attack slot
         // while an earlier one's lunge is still in flight isn't blocked by
         // that earlier module's busyAction — without this guard, the new
         // call would blow away the in-progress lunge's start point/progress
-        // and restart from wherever the player happened to be that frame,
-        // producing wildly inconsistent travel distance (sometimes almost
-        // none, sometimes stacking into more than any single lunge should
-        // cover). The attack's own damage/hit resolution doesn't depend on
-        // this cosmetic step, so simply not layering a second lunge on top
-        // of the first is enough — the new attack still fires normally.
-        if (player.lunging) return;
+        // and restart from wherever the player happened to be that frame.
+        if (player.lunging) return false;
+        const nowMs = performance.now();
+        const airborneBetweenLunges = !!player.lungeLandingPending && Number.isFinite(player.lungeFlightWorldY); // Explicit post-lunge airborne state; avoids guessing from terrain/mesh smoothing.
+        if (airborneBetweenLunges) {
+          if (!((Number(player.midairLungeWindowUntilMs) || 0) > nowMs)) return false; // Missed/expired aerial attacks may still swing, but they cannot create another movement lunge.
+          player.midairLungeWindowUntilMs = 0; // One confirmed hit buys one aerial follow-up; starting that follow-up consumes it.
+        }
+        player._lungeSerial = (Number(player._lungeSerial) || 0) + 1; // Identifies the movement lunge whose eventual strike is allowed to open the next aerial window.
+        player._lungeHitConfirmEligibleUntilMs = nowMs + durationS * 1000 + 300; // Small post-duration cushion covers staged strike callbacks that resolve on the lunge's final frame.
+        player._lungeHitConfirmedSerial = 0;
         player.lunging = true;
         player.lungeT = durationS;
         player.lungeDur = durationS;
@@ -9449,13 +9554,15 @@
         const aimDirection = currentPlayerMeleeAimDirection(); // Used to pitch this lunge and its 3D hit cone from the centered reticle.
         const aimYaw = Math.atan2(aimDirection.z, aimDirection.x);
         const aimPitch = Math.asin(window.FormatUtils.clamp(aimDirection.y, -1, 1));
+        const aimUsesDirectReticleFlight = aimPitch >= 0; // Forward/upward melee displacement follows the full 3D reticle vector; only below-forward aim keeps the old grounded/ballistic model.
         const lungeProfile = window.Combat?.meleeLungeProfile?.(
           distancePx,
           aimPitch,
           hopUnits,
           player.lungeHeightUnits,
-          hitTest?.pitchDistanceResistance || 0,
-          hitTest?.directFlightStrength || 0,
+          aimUsesDirectReticleFlight ? 1 : (hitTest?.pitchDistanceResistance || 0),
+          aimUsesDirectReticleFlight ? 1 : (hitTest?.directFlightStrength || 0),
+          aimUsesDirectReticleFlight,
         ) || { distancePx, hopUnits, pitch: aimPitch, verticalTravelUnits: 0, directFlightStrength: 0 };
         player.lungeDirX = Math.cos(aimYaw);
         player.lungeDirY = Math.sin(aimYaw);
@@ -9469,14 +9576,36 @@
         player.lungeFallSpeedUnits = 0;
         player.lungeLandingPending = false;
         player.lungeHitTest = hitTest;
+        return true;
       }
 
-      // Public effect seam: food/potion systems can set or add to the
-      // player's next lunge height without knowing combat's internal state.
+      const MIDAIR_LUNGE_HIT_WINDOW_MS = 1000; // One real enemy hit creates exactly one second of aerial chaining opportunity.
+      const MIDAIR_LUNGE_SLOW_FALL_GRAVITY = 1.6; // Deliberately tiny beside the normal 22 units/s² post-lunge fall.
+      const MIDAIR_LUNGE_SLOW_FALL_SPEED_CAP = 0.45; // A late hit immediately arrests an already-started fall instead of merely reducing future acceleration.
+
+      // Public lunge seam: effects can still tune height, while combat strike
+      // resolvers use confirmEnemyHit() to open the one-second aerial chain.
       window.PlayerLunge = {
         getHeight: () => Math.max(0, Number(player.lungeHeightUnits) || 0),
         setHeight: (value) => { player.lungeHeightUnits = Math.max(0, Number(value) || 0); },
         addHeight: (delta) => { player.lungeHeightUnits = Math.max(0, (Number(player.lungeHeightUnits) || 0) + (Number(delta) || 0)); },
+        confirmEnemyHit: () => {
+          const nowMs = performance.now();
+          const serial = Number(player._lungeSerial) || 0;
+          if (!serial || !((Number(player._lungeHitConfirmEligibleUntilMs) || 0) >= nowMs)) return false; // A non-lunging aerial swing cannot manufacture a chain window.
+          if (Number(player._lungeHitConfirmedSerial) === serial) return false; // Cleaving multiple enemies still grants one window, not several.
+          player._lungeHitConfirmedSerial = serial;
+          player.midairLungeWindowUntilMs = nowMs + MIDAIR_LUNGE_HIT_WINDOW_MS;
+          player.lungeFallSpeedUnits = Math.min(Number(player.lungeFallSpeedUnits) || 0, MIDAIR_LUNGE_SLOW_FALL_SPEED_CAP);
+          return true;
+        },
+        canMidairLunge: () => !player.lungeLandingPending || (Number(player.midairLungeWindowUntilMs) || 0) > performance.now(),
+        debugSnapshot: () => ({
+          airborne: !!player.lungeLandingPending && Number.isFinite(player.lungeFlightWorldY),
+          windowRemainingMs: Math.max(0, (Number(player.midairLungeWindowUntilMs) || 0) - performance.now()),
+          hitConfirmEligibleMs: Math.max(0, (Number(player._lungeHitConfirmEligibleUntilMs) || 0) - performance.now()),
+          lungeSerial: Number(player._lungeSerial) || 0,
+        }),
       };
 
       // True if any live hostile in the current area is already inside the
@@ -17247,42 +17376,12 @@
               return;
             }
           }
-          // Shoulder-surf keeps the existing lunge update but derives its full
-          // 3D direction from the one perspective point every frame. This is
-          // not a new loop: it replaces the old in-flight hostile homing at
-          // the same boundary, and preserves vertical lunge/leap behavior.
-          const perspectiveLungeDirection = activeCameraMode === SHOULDER_SURF_MODE
-            ? currentPlayerPerspectiveDirection({
-                x: player.x / TILE,
-                y: Number.isFinite(player.lungeFlightWorldY) ? player.lungeFlightWorldY : playerMesh.position.y,
-                z: player.y / TILE,
-              })
-            : null; // Used below to keep horizontal travel and vertical pitch converged on the shared point.
-          if (perspectiveLungeDirection) {
-            const horizontal = Math.hypot(perspectiveLungeDirection.x, perspectiveLungeDirection.z); // Normalizes the lunge's ground travel independently of its vertical pitch.
-            if (horizontal > 1e-8) {
-              const desiredLungeAngle = Math.atan2(perspectiveLungeDirection.z, perspectiveLungeDirection.x); // Turns the lunge/body toward the point's current XZ bearing.
-              player.lungeDirX = perspectiveLungeDirection.x / horizontal;
-              player.lungeDirY = perspectiveLungeDirection.z / horizontal;
-              player.lungeAimPitch = Math.asin(window.FormatUtils.clamp(perspectiveLungeDirection.y, -1, 1));
-              facingAngle = desiredLungeAngle;
-              player.angle = desiredLungeAngle;
-            }
-          } else {
-            // Non-shoulder modes retain their opt-in hostile homing behavior.
-            const lungeTarget = (activeTool === 'weapon' && equipmentSlots.weapon) ? findAutoTarget() : null;
-            if (lungeTarget) {
-              const aimed = window.Combat?.meleeAimSolution?.(player, lungeTarget, player.angle, player.lungeAimPitch || 0);
-              const desiredLungeAngle = aimed?.yaw ?? Math.atan2(lungeTarget.y - player.y, lungeTarget.x - player.x);
-              const curLungeAngle = Math.atan2(player.lungeDirY, player.lungeDirX);
-              const homingT = Math.min(1, LUNGE_HOMING_RATE * dt);
-              const lungeDiff = angleDiff(desiredLungeAngle, curLungeAngle);
-              const newLungeAngle = curLungeAngle + lungeDiff * homingT;
-              player.lungeDirX = Math.cos(newLungeAngle);
-              player.lungeDirY = Math.sin(newLungeAngle);
-              if (aimed) player.lungeAimPitch += (aimed.pitch - (player.lungeAimPitch || 0)) * homingT;
-            }
-          }
+          // Lunge direction is intentionally locked to the 3D reticle vector captured by beginCombatLunge.
+          // Targets may stop the attack when its collider reaches them, but neither focused-hostile auto-targeting
+          // nor later camera motion is allowed to bend the displacement away from that committed straight line.
+          const committedLungeAngle = Math.atan2(player.lungeDirY, player.lungeDirX);
+          facingAngle = committedLungeAngle;
+          player.angle = committedLungeAngle;
 
           player.lungeT = Math.max(0, player.lungeT - dt);
           const t = 1 - player.lungeT / player.lungeDur;
@@ -23133,9 +23232,14 @@
         const groundedTargetY = standY + (tile.water > 0.05 ? tile.water * WATER_UNIT * 0.6 : 0) + (player.climbHopBounce || 0) + mountSeatLift + chairSeatSink;
         if (Number.isFinite(player.lungeFlightWorldY) && !player.lunging) {
           // Once the strike's straight flight ends, gravity owns only the
-          // remaining world-Y separation. The attack path itself stays a line;
-          // the fall happens afterward instead of bending that line into an arc.
-          const gravityUnitsS2 = 22;
+          // remaining world-Y separation. A confirmed enemy hit creates a
+          // one-second slow-fall window in which one aerial follow-up lunge
+          // may be started; misses immediately fall at the ordinary rate.
+          const midairChainWindowActive = (Number(player.midairLungeWindowUntilMs) || 0) > performance.now();
+          const gravityUnitsS2 = midairChainWindowActive ? MIDAIR_LUNGE_SLOW_FALL_GRAVITY : 22;
+          if (midairChainWindowActive) {
+            player.lungeFallSpeedUnits = Math.min(Number(player.lungeFallSpeedUnits) || 0, MIDAIR_LUNGE_SLOW_FALL_SPEED_CAP);
+          }
           player.lungeFallSpeedUnits += gravityUnitsS2 * dt;
           player.lungeFlightWorldY = Math.max(
             groundedTargetY,
@@ -23144,15 +23248,20 @@
           if (player.lungeFlightWorldY <= groundedTargetY + 0.005) {
             player.lungeFlightWorldY = null;
             player.lungeFallSpeedUnits = 0;
+            player.midairLungeWindowUntilMs = 0; // Landing always terminates any unused aerial chain permission.
+            player._lungeHitConfirmEligibleUntilMs = 0;
             if (player.lungeLandingPending) {
               player.lungeLandingPending = false;
               window.AudioSystem?.playHeavyLandingSfx(currentArea, window.AudioSystem?.footstepTileAt(currentArea, player.x, player.y, window.GridTileAccessors.getActiveGrid()));
             }
           }
         }
+        const ordinaryLungeHopY = player.lunging && !Number.isFinite(player.lungeFlightWorldY)
+          ? Math.max(0, Number(player.lungeHopCurrent) || 0)
+          : 0; // Ordinary melee lunges finally move the real player mesh/hitbox off the ground; previously this value was simulated but never rendered.
         const targetY = Number.isFinite(player.lungeFlightWorldY)
           ? Math.max(groundedTargetY, player.lungeFlightWorldY)
-          : groundedTargetY;
+          : groundedTargetY + ordinaryLungeHopY;
         // Exponential catch-up scaled by dt so ordinary terrain-follow remains
         // smooth. Direct-flight attacks blend toward exact world-Y authority;
         // at maximum Charged Breaker this is ~98% direct, so the body/hitbox

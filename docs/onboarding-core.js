@@ -528,7 +528,7 @@
       members:           {},   // { [characterId]: memberState } — world-scoped data per character who has joined
       livestock:         [],   // [{ id, kind, col, row, releasedAt, name, genotype }] — belongs to the world itself, not any character
       breedingPairs:     [],   // [{ id, parentA, parentB, startedDay, readyDay }] — parentA/B are { source: 'world'|'stable', id, characterId? } refs; resolved on day-tick
-      storage:           {},   // { [itemKey]: count } — shared farm storage pool, world-scoped like livestock
+      storage:           { growthTonic: 4 },   // { [itemKey]: count } — shared farm storage pool; new worlds start with 4 Growth Tonics.
       keyItems:          [],
       lastDay:           1,
       lastSeason:        'Stormtide',

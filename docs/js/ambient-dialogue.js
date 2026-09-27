@@ -49,6 +49,7 @@
     lastDay: null,
     ledgerKey: null,
     renderQueue: Promise.resolve(),
+    lastFacingDebug: null, // Used by AmbientDialogue.getDebug and Pixel Probe to report the most recent greeting head-turn decision on mobile.
   };
 
   function structuredCloneSafe(value) {
@@ -522,7 +523,49 @@
     part.texture.dispose();
   }
 
+  function playerHeadMaxYawRad() {
+    const sharedMaxDeg = Number(window.PlayerBodyTransformComposer?.getHeadMaxYawDeg?.()); // Shared player physical neck limit keeps ambient NPC greetings on the same yaw cap.
+    const maxDeg = Number.isFinite(sharedMaxDeg) ? sharedMaxDeg : 65; // Fallback preserves the player's current authored limit if the combat module has not loaded yet.
+    return maxDeg * Math.PI / 180;
+  }
+
+  function shortestYawDelta(targetYaw, currentYaw) {
+    const delta = targetYaw - currentYaw; // Raw body-relative target difference is wrapped below so turning across ±PI takes the short path.
+    return Math.atan2(Math.sin(delta), Math.cos(delta));
+  }
+
+  function applyGreetingHeadTurn(walker, targetPosition) {
+    const neckJoint = walker?.neckJoint; // Existing NPC neck bone is the only transform ambient player greetings are allowed to steer.
+    if (!neckJoint?.rotation || !walker?.root?.position || !targetPosition) return false;
+    const dx = Number(targetPosition.x) - Number(walker.root.position.x); // Horizontal target delta drives the same +Z-forward yaw convention as normal NPC facing.
+    const dz = Number(targetPosition.z) - Number(walker.root.position.z); // Depth target delta pairs with dx for world-space greeting direction.
+    if (!Number.isFinite(dx) || !Number.isFinite(dz) || (Math.abs(dx) < 1e-6 && Math.abs(dz) < 1e-6)) return false;
+    const targetYaw = -Math.atan2(dz, dx) + Math.PI / 2; // World yaw toward the greeting target without mutating walker/body facing.
+    const bodyYaw = Number.isFinite(Number(walker.rot)) ? Number(walker.rot) : (Number(walker.root.rotation?.y) || 0); // Current locomotion/seat yaw stays authoritative while the head turns independently.
+    const requestedYaw = shortestYawDelta(targetYaw, bodyYaw); // Unclamped local neck yaw is retained for diagnostics and the shared-limit decision.
+    const maxYaw = playerHeadMaxYawRad(); // Same ±65° physical yaw limit currently used by the player's ordinary head turn.
+    const renderedYaw = Math.max(-maxYaw, Math.min(maxYaw, requestedYaw)); // Prevents greeting glances from twisting farther than the player's head can.
+    neckJoint.rotation.y = renderedYaw;
+    state.lastFacingDebug = {
+      speakerId: String(walker.rec?.id || ''),
+      mode: 'head',
+      bodyYawDeg: bodyYaw * 180 / Math.PI,
+      targetYawDeg: targetYaw * 180 / Math.PI,
+      requestedYawDeg: requestedYaw * 180 / Math.PI,
+      renderedYawDeg: renderedYaw * 180 / Math.PI,
+      maxYawDeg: maxYaw * 180 / Math.PI,
+      seated: !!walker._seatedStationKey || String(walker.currentScheduleTarget?.pose || '').toLowerCase() === 'sit',
+    }; // Mobile-copyable snapshot distinguishes walking versus seated greeting head turns.
+    return true;
+  }
+
+  function releaseGreetingHeadTurn(event) {
+    const neckJoint = event?.faceMode === 'head' ? event.faceWalker?.neckJoint : null; // Only head-owned ambient greetings may clear the neck channel they authored.
+    if (neckJoint?.rotation) neckJoint.rotation.y = 0;
+  }
+
   function dispose(event) {
+    releaseGreetingHeadTurn(event);
     for (const timer of event.cadenceTimers || []) clearTimeout(timer);
     event.group.parent?.remove(event.group);
     disposePart(event.textPart);
@@ -620,6 +663,7 @@
       chatheadProfile: headPart ? buildChatheadProfile(options.profile) : null,
       faceWalker: options.faceWalker || null,
       faceTarget: options.faceTarget || null,
+      faceMode: options.faceMode === 'head' ? 'head' : 'body', // Ambient greetings can opt into neck-only tracking while non-greeting reactions retain body-facing behavior.
       speakerId: options.speakerId || null,
       greeting: options.greeting === true,
       directedAtPlayer: options.directedAtPlayer === true,
@@ -706,9 +750,13 @@
       }
       event.group.quaternion.copy(camera.quaternion);
       if (event.faceWalker && event.faceTarget) {
-        const targetPosition = event.faceTarget.root?.position || event.faceTarget;
-        const angle = -Math.atan2(targetPosition.z - event.faceWalker.root.position.z, targetPosition.x - event.faceWalker.root.position.x) + Math.PI / 2;
-        event.faceWalker.applyFacingDeadzone?.(angle, 0.34);
+        const targetPosition = event.faceTarget.root?.position || event.faceTarget; // Live target position keeps the greeting glance tracking a moving player.
+        if (event.faceMode === 'head') {
+          applyGreetingHeadTurn(event.faceWalker, targetPosition);
+        } else {
+          const angle = -Math.atan2(targetPosition.z - event.faceWalker.root.position.z, targetPosition.x - event.faceWalker.root.position.x) + Math.PI / 2; // Legacy whole-body facing remains for NPC-to-NPC and non-greeting ambient reactions.
+          event.faceWalker.applyFacingDeadzone?.(angle, 0.34);
+        }
       }
       const opacity = progress < 0.78 ? 1 : Math.max(0, (1 - progress) / 0.22);
       event.textPart.material.opacity = opacity;
@@ -777,8 +825,7 @@
     state.greeted.add(key);
     saveGreetingLedger(day);
     state.lastGreetingAt = now;
-    const angle = -Math.atan2(target.z - walker.root.position.z, target.x - walker.root.position.x) + Math.PI / 2;
-    walker.applyFacingDeadzone?.(angle, 0.34);
+    applyGreetingHeadTurn(walker, target); // Every ambient greeting preserves locomotion/seat heading and turns only the speaker's head toward the player or NPC friend.
     // A pending-request override (see getPendingRequestGreeting) replaces the
     // ordinary nickname-templated line with the quest-giver's own purple
     // call-over line, so it can't be mistaken for a random ambient greeting.
@@ -799,6 +846,7 @@
       directedAtPlayer: targetId === 'player',
       faceWalker: walker,
       faceTarget: target.root ? { root: target.root } : { x: target.x, z: target.z },
+      faceMode: 'head', // Walking and seated greetings to either the player or another NPC preserve body/seat heading and use only the neck.
     });
     return true;
   }
@@ -962,6 +1010,12 @@
     loadSettings,
     resolveTargetName,
     renderChatheadImage,
+    getDebug() {
+      return {
+        active: state.active.map(event => ({ speakerId: event.speakerId, greeting: event.greeting, directedAtPlayer: event.directedAtPlayer, faceMode: event.faceMode })),
+        lastFacing: state.lastFacingDebug ? { ...state.lastFacingDebug } : null,
+      };
+    },
   };
   window.AmbientDialogue = api;
 })();

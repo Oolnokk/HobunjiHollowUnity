@@ -70,6 +70,15 @@ assert(portraitSource.includes("bodyColorRanges?.fixedHex"), 'Portrait randomiza
 assert(portraitSource.includes('baseBodyTintEnabled'), 'Portrait renderer must support authored-color base sprites without recoloring them');
 assert(portraitSource.includes('fixedPortraitSlots?.pauldron'), 'Portrait renderer must inject the female structural hair in the pauldron render slot');
 assert(portraitSource.includes("fixedLayer?.hideWhenHood === true && hoodIsWorn"), 'fixed structural portrait layers must support hiding beneath an equipped hood');
+assert(portraitSource.includes('const hoodBackLayers = []'), 'portrait renderer must keep authored hood rear art in its own behind-head bucket');
+assert(portraitSource.includes('if (hoodBackLayers.length) hoodLayers.length = 0'), 'rear portraits must not double-draw a hood front when authored rear art exists');
+const hoodBackDrawIndex = portraitSource.indexOf('drawBreathingLayers(hoodBackLayers); // Rear hood cloth must sit behind the skull/head');
+const frontHeadDrawIndex = portraitSource.indexOf('if (headUrl) { const img = imgMap.get(headUrl); if (img) drawLayerWithEmote', hoodBackDrawIndex);
+const hoodFrontDrawIndex = portraitSource.indexOf('drawBreathingLayers(hoodLayers);', frontHeadDrawIndex);
+assert(
+  hoodBackDrawIndex >= 0 && frontHeadDrawIndex > hoodBackDrawIndex && hoodFrontDrawIndex > frontHeadDrawIndex,
+  'front portraits must draw rear hood cloth before the skull and front hood cloth after the skull'
+);
 assert(pixelProbeSource.includes('window.HobunjiHarlyaoSkeletonSpecies?.formatDebug?.()'), 'Pixel Probe must expose Harlyao Skeleton bridge diagnostics on mobile');
 assert(devSpawnerSource.includes("const DEV_SPAWN_HARLYAO_SKELETON_KEY = 'harlyao-skeleton:enemy'"), 'Testing Arena must expose a dedicated Harlyao Skeleton spawn key');
 assert(devSpawnerSource.includes('window.MinionCombat.makeEntity({'), 'Arena skeleton spawn must use the dedicated Minion category rather than the bandit roster path');
@@ -79,13 +88,18 @@ assert(devSpawnerSource.includes('deps.hostileObjects.add(creature);'), 'Arena s
 assert(devSpawnerSource.includes('spawnDevArenaHarlyaoSkeleton(devSpawnBanditTier);'), 'Skeleton arena button must dispatch to the Minion spawn path');
 assert(combatBanditSource.includes('Array.isArray(cfg?.weaponShapePool) ? cfg.weaponShapePool : null'), 'BanditCombat must honor an optional caller-scoped melee weapon pool');
 assert(combatBanditSource.includes('configuredMetalKey || rolledMetalKey'), 'BanditCombat must honor an optional fixed metal without changing ordinary bandit rolls');
-assert(gameIndexSource.includes('js/dev-spawner.js?v=20260926minion1'), 'Game entry point must cache-bust the Harlyao Skeleton Minion arena spawner update');
+assert(combatBanditSource.includes('const resolvedRosterDyes = applyRosterDyesToProfile(profile, roster)'), 'shared hostile avatar builder must reconcile roster dyes directly onto the rendered profile');
+assert.match(combatBanditSource, /bodyColors\[tintSlot\] = tint[\s\S]*resolved\[tintSlot\] = \{ dyeId, hex: dye\.hex \|\| null \}/, 'hostile world portrait must preserve the exact authored dye id and hex used by loot');
+assert(combatBanditSource.includes("portrait.userData.proceduralHandParent = handsPivot"), 'shared hostile avatars must give the procedural hand driver a floor-relative visible parent');
+assert(combatBanditSource.includes('group.add(portrait)'), 'registered PNGPlaneAvatar hand root must remain parented so the attachment sweep can actually build hands');
+assert(combatBanditSource.includes('handRigAvatarRoot: portrait'), 'shared hostile avatar reference must expose the retained hand-driver root');
+assert(gameIndexSource.includes('js/dev-spawner.js?v=20260927hostilevisual1'), 'Game entry point must cache-bust the current Testing Arena humanoid enemy spawner update');
 assert(gameIndexSource.includes('js/combat/combat-minion.js?v=20260926shambling70'), 'Game entry point must load the current Minion enemy category before the arena spawner');
-assert(gameIndexSource.includes('js/portrait-utils.js?v=20260926pixellayer1'), 'Game entry point must cache-bust hood-aware female skeleton hair visibility');
+assert(gameIndexSource.includes('js/portrait-utils.js?v=20260927pixellayer3'), 'Game entry point must cache-bust hood-aware female skeleton hair visibility');
 assert(gameIndexSource.includes('js/png-plane-avatar.js?v=20260926hskelhairalign1'), 'Game entry point must cache-bust the removal of the obsolete skeleton neck workaround');
-assert(gameIndexSource.includes('js/combat/combat-bandit.js?v=20260926hskelhairalign1'), 'Game entry point must cache-bust the restored ordinary humanoid neck path');
-assert(characterStudioSource.includes('../../js/harlyao-skeleton-species-runtime.js?v=20260926studio1'), 'Character Studio must load the NPC-only Harlyao Skeleton runtime bridge before snapshotting its species table');
-assert(characterStudioSource.includes('../../js/portrait-utils.js?v=20260926pixellayer1'), 'Character Studio must load hood-aware structural-hair visibility');
+assert(gameIndexSource.includes('js/combat/combat-bandit.js?v=20260927hostilevisual1'), 'Game entry point must cache-bust the restored ordinary humanoid neck path');
+assert(characterStudioSource.includes('../../js/harlyao-skeleton-species-runtime.js?v=20260927dyes1'), 'Character Studio must load the NPC-only Harlyao Skeleton runtime bridge before snapshotting its species table');
+assert(characterStudioSource.includes('../../js/portrait-utils.js?v=20260927pixellayer3'), 'Character Studio must load hood-aware structural-hair visibility');
 assert(characterStudioSource.includes("SPECIES_DATA[ap.speciesId]?.playerSelectable === false"), 'NPC-only preview species must be blocked from Set as my player');
 assert(characterStudioSource.includes("speciesMeta.bodyColorCustomization === false"), 'Fixed-color skeletons must not expose editable body-color controls');
 
@@ -180,10 +194,12 @@ assert.equal(windowObject.resolveOptionLayers({}, fighters[0]), 'engh-sho', 'Ske
 assert.equal(windowObject.resolveOptionLayers({}, fighters[2]), 'engh-sho', 'Non-skeleton wardrobe resolution must remain unchanged');
 assert.equal(windowObject.SCRATCHBONES_CONFIG.game.portrait.armOnlyOpacityMask.profiles['harlyao-skeleton:male'].maskYScaleMultiplier, 1.04);
 assert.equal(windowObject.SCRATCHBONES_CONFIG.game.portrait.armOnlyOpacityMask.profiles['harlyao-skeleton:female'].maskYScaleMultiplier, 1.15);
-const skeletonExportProfile = windowObject.NpcAvatarPreview.buildProfileFromNpcExport({ appearance: { speciesId: 'harlyao-skeleton', bodyColors: { A: { hex: '#000000' } } } }); // Explicitly wrong imported color must be ignored for a colorless skeleton species.
+const skeletonExportProfile = windowObject.NpcAvatarPreview.buildProfileFromNpcExport({ appearance: { speciesId: 'harlyao-skeleton', bodyColors: { A: { hex: '#000000' }, CLOTH: { hex: '#c45a21' }, HOOD: { hex: '#2949b8' } } } }); // Wrong body color must be clamped without erasing already-resolved clothing dyes.
 assert.equal(skeletonExportProfile.bodyColors.A.hex, '#D4D6C9');
 assert.equal(skeletonExportProfile.bodyColors.B.hex, '#D4D6C9');
 assert.equal(skeletonExportProfile.bodyColors.C.hex, '#D4D6C9');
+assert.equal(skeletonExportProfile.bodyColors.CLOTH.hex, '#c45a21', 'fixed skeleton body color guard must preserve overwear dye slots');
+assert.equal(skeletonExportProfile.bodyColors.HOOD.hex, '#2949b8', 'fixed skeleton body color guard must preserve hood dye slots');
 const enghExportProfile = windowObject.NpcAvatarPreview.buildProfileFromNpcExport({ appearance: { speciesId: 'engh-sho', bodyColors: { A: { hex: '#123456' } } } }); // Non-skeleton NPC exports must remain untouched by the guard.
 assert.equal(enghExportProfile.bodyColors.A.hex, '#123456');
 
@@ -191,7 +207,7 @@ assert.equal(enghExportProfile.bodyColors.A.hex, '#123456');
   const loaded = await windowObject.loadPortraitCosmetics();
   for (const fighterId of ['harlyao-skeleton_male', 'harlyao-skeleton_female']) {
     assert.equal(loaded.bodyColorRangesByGender[fighterId].fixedHex, '#D4D6C9'); // Field-level equality avoids VM-realm prototype differences while still proving the fixed extremity descriptor.
-    assert.deepEqual(Array.from(loaded.allowedCosmeticsByFighter[fighterId].set).sort(), ['bandolier1', 'fine_hood', 'fine_poncho', 'rugged_poncho', 'tankan_bodywrap', 'tankan_tunic'].sort());
+    assert.deepEqual(Array.from(loaded.allowedCosmeticsByFighter[fighterId].set).sort(), ['bandolier1', 'fine_hood', 'ragged_hood', 'fine_poncho', 'rugged_poncho', 'tankan_bodywrap', 'tankan_tunic'].sort());
     for (const slot of ['eyes', 'upperFace', 'facialHair', 'hairFront', 'hairBack', 'hairSide', 'hairSideL', 'hat']) {
       assert.equal(loaded.forcedCosmeticsByFighter[fighterId][slot], 'none');
     }
@@ -206,7 +222,7 @@ assert.equal(enghExportProfile.bodyColors.A.hex, '#123456');
     assert.equal(skeletonScale.head, harlyaoScale.head);
   }
 
-  const runtimeBootstrapIndex = bootstrapSource.indexOf("harlyao-skeleton-species-runtime.js?v=20260926hskel1");
+  const runtimeBootstrapIndex = bootstrapSource.indexOf("harlyao-skeleton-species-runtime.js?v=20260927dyes1");
   const scaleBootstrapIndex = bootstrapSource.indexOf("character-rig-scale.js?v=20260904i");
   assert(runtimeBootstrapIndex >= 0 && scaleBootstrapIndex > runtimeBootstrapIndex,
     'Harlyao Skeleton rig inheritance must load before whole-rig scale installs profile defaults');

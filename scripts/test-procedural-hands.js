@@ -329,6 +329,9 @@ assert.match(handOutlineSource, /passKind === 'shell'.*hobunjiShellIndex/s, 'onl
 assert.match(handOutlineSource, /restoreIndex.*setIndex/s, 'the full body/wing geometry index must be restored immediately after each shell draw');
 assert.match(driverSource, /placeHandWorld\?\.\('right'/, 'right hand must follow primary tool grip');
 assert.match(driverSource, /const primarySocket = toolSocketWorld\(record, toolHolder, primaryGrip\)/, 'frame driver must retain the raw weapon grip target before Grip Mode and hand-model calibration');
+assert.match(driverSource, /const ownedHolder = record\?\.avatarRoot\?\.userData\?\.proceduralHandToolHolder/, 'hand socket resolution must distinguish actor-owned hostile holders from the player singleton');
+assert.match(driverSource, /const playerOwnedHolder = !ownedHolder[\s\S]*toolHolder === gameDeps\.toolHolder/, 'only the actual player holder may consume WeaponToolStances\' singleton baked matrix');
+assert.match(driverSource, /playerOwnedHolder[\s\S]*lastHolderMatrixWorld\?\.\(\)[\s\S]*: null/, 'hostile hands must resolve from their own holder hierarchy instead of the player baked matrix');
 assert.match(driverSource, /placePaperHandGuideWorld\?\.\(primarySocket\.position, primarySocket\.quaternion\)[\s\S]*handSocketAfterGripMode\(record, primarySocket\)/, 'locked paper hand must be placed on the raw target before Grip Mode moves the socket');
 assert.match(handSource, /right_hand_paper_reference_socket/, 'paper-hand reference must own a socket separate from the calibrated right-hand socket');
 assert.match(handSource, /const calibration = new THREE\.Group\(\);[\s\S]*calibration\.name = `\$\{side\}_hand_calibration`/, 'each hand socket must own a dedicated child calibration node');
@@ -611,7 +614,7 @@ assert.strictEqual(effectiveHatchetGrip.position.z, authoredHatchetGrip.position
 assert.match(gripConfigSource, /function primaryGripForTool\(value, context = currentGripContext\(\)\)/, 'primary grip API must resolve an explicit melee/ranged context.');
 assert.match(gripConfigSource, /function spinPivotOffsetForTool\(value, angleRad, context = 'ranged'\)[\s\S]*return \{ x: x - rotatedX, y: 0, z: z - rotatedZ \}/, 'shared throw-spin pivot must translate the visual by P - R(P) around the authored primary grip.');
 assert.match(gripConfigSource, /primaryGripFieldForContext[\s\S]*rangedPrimaryGrip/, 'ranged primary grip must be stored independently from melee primaryGrip.');
-assert.match(driverSource, /const gripContext = currentGripContext\(\)[\s\S]*primaryGripForTool\(toolKey, gripContext\)[\s\S]*secondaryGripForTool\(toolKey, gripContext\)/, 'runtime hand driver must switch both hands to ranged grip metadata when the ranged slot is active.');
+assert.match(driverSource, /const gripContext = currentGripContext\(record\)[\s\S]*primaryGripForTool\(toolKey, gripContext\)[\s\S]*secondaryGripForTool\(toolKey, gripContext\)/, 'runtime hand driver must switch both hands to the active actor\'s melee\/ranged grip metadata.');
 assert.match(directEditorSource, /id="handGripContextSelect"[\s\S]*Melee grip[\s\S]*Ranged grip/, 'Attack Editor must expose an explicit Melee/Ranged grip-set selector.');
 assert.match(gripConfigSource, /grip authoring moves the RIGHT HAND to that frame and never inverse-moves the weapon/, 'shared grip contract must keep weapon animation authoritative');
 assert.doesNotMatch(gripConfigSource, /function primaryGripForTool\(\) \{ return identityTransform\(\); \}/, 'primary hand target must no longer be discarded at runtime');
@@ -821,6 +824,8 @@ assert.match(animationAuthorSource, /getStandingPoseDebug/, 'Shoulder Rig diagno
 assert.match(proceduralFeetSource, /function footBoundsInRoot\(foot\)/, 'the shared foot runtime must measure rendered geometry in avatar floor space');
 assert.match(proceduralFeetSource, /HOBUNJI_ATTACHMENT_RIG_MATH\?\.characterPosteriorY/, 'procedural legs must resolve their hip/posterior with the shared floor-relative rule');
 assert.match(proceduralFeetSource, /group: root, update, dispose, applyRecordedLegPose, getStandingPoseDebug/, 'game and rigger feet handles must expose the same standing-pose diagnostic');
+assert.match(proceduralFeetSource, /setHoverMode, isHoverMode/, 'procedural leg handles must expose the shared hover-pose ownership seam');
+assert.match(proceduralFeetSource, /applyHoverPose\('left', dt\)[\s\S]*applyHoverPose\('right', dt\)/, 'hover mode must solve both procedural legs every update');
 assert.match(pixelProbeSource, /function _pixelProbeWaterFootContactLines\(activeScene, currentArea, playerMesh\)/, 'Pixel Probe must expose a mobile-readable rendered water/foot contact diagnostic');
 assert.match(pixelProbeSource, /waterInto=\$\{fmt\(waterIntoFoot\)\} \(\$\{Math\.round\(submergedFraction \* 100\)\}% foot height\)/, 'water/foot diagnostics quantify how much rendered foot height lies below the visible water plane');
 assert.match(pixelProbeSource, /hitPointText[\s\S]{0,180}world=\(\$\{hit\.point\.x\.toFixed\(3\)\},\$\{hit\.point\.y\.toFixed\(3\)\},\$\{hit\.point\.z\.toFixed\(3\)\}\)/, 'Pixel Probe ray entries include exact world hit points for foot-versus-water comparisons');

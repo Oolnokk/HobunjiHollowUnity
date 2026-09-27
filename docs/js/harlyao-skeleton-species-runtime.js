@@ -14,7 +14,7 @@
   const BODY_SPECIES_ID = 'engh-sho'; // Canonical donor for wardrobe variants, rig coordinates, and feline extremity meshes.
   const EXTREMITY_COLOR = '#D4D6C9'; // Fixed A/B/C descriptor consumed by procedural hand/foot body-material paths.
   const GENDERS = Object.freeze(['male', 'female']); // Both authored skeleton gender variants are installed together.
-  const ALLOWED_CLOTHING_IDS = Object.freeze(['fine_hood', 'tankan_tunic', 'bandolier1', 'tankan_bodywrap', 'rugged_poncho', 'fine_poncho']); // Broad species-level clothing support survives while Minion randomization itself is restricted to bodywrap/poncho/bandolier.
+  const ALLOWED_CLOTHING_IDS = Object.freeze(['fine_hood', 'ragged_hood', 'tankan_tunic', 'bandolier1', 'tankan_bodywrap', 'rugged_poncho', 'fine_poncho']); // Broad species-level clothing support survives while Minion randomization itself is restricted to bodywrap/poncho/bandolier.
   const FORCED_EMPTY_SLOTS = Object.freeze(['eyes', 'upperFace', 'facialHair', 'hairFront', 'hairBack', 'hairSide', 'hairSideL', 'hat']); // Appearance-only slots are always empty for skeletons.
   const EXPECTED_ASSETS = Object.freeze({ // Exposed through mobile diagnostics so a bad asset path is visible without devtools.
     maleHead: 'fightersprites/engh-sho-m/head_hskel_m.png',
@@ -218,7 +218,7 @@
     const wrapped = function buildProfileWithHarlyaoSkeletonFixedColor(exportData) {
       const profile = baseBuildProfile.apply(this, arguments); // Preserve the canonical profile builder and only clamp its final body descriptor for this species.
       if (profile && normalizeSpecies(exportData?.appearance?.speciesId) === SPECIES_ID) {
-        profile.bodyColors = fixedBodyColors();
+        profile.bodyColors = { ...(profile.bodyColors || {}), ...fixedBodyColors() }; // Clamp only skeletal body A/B/C; preserve CLOTH/HOOD/TORSO and palette sub-slots already applied from the NPC's dye metadata.
         status.profileColorCorrections += 1;
       }
       return profile;
