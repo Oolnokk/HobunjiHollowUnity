@@ -2,6 +2,13 @@
 
 This file records project-specific implementation rules that are easy to miss when working from an isolated bug report. Treat these as repository invariants unless a task explicitly calls for changing them.
 
+## Running tests
+
+- Run only the tests related to what you changed: `node scripts/run-tests.js <name-fragment> [...]` (e.g. `node scripts/run-tests.js livestock`). Run the whole fast suite (`node scripts/run-tests.js`, ~10s) once before finishing, not after every edit.
+- Don't fix tests that were already failing before your change, and don't touch the `KNOWN_BROKEN` list in `scripts/run-tests.js` unless the task is about those tests.
+- Don't add a new `.github/workflows/*.yml` for a new test. `scripts/test-*.js` files are picked up automatically by `.github/workflows/regression-suite.yml`.
+- Prefer tests that execute the code over tests that assert exact source text with `includes(...)`/regex. Source-text assertions break on harmless refactors.
+
 ## Runtime frame ownership
 
 Before adding, removing, or migrating permanent `requestAnimationFrame` work, read [`docs/architecture/runtime-frame-scheduler.md`](docs/architecture/runtime-frame-scheduler.md). It defines which work belongs to `gameLoop`, `RuntimeFrameScheduler`, Three.js render hooks, timers/events, or an isolated animation context. Feature modules register their own scheduler callbacks; do not add feature-specific behavior to the scheduler itself.

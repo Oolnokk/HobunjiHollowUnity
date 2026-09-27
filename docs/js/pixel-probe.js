@@ -764,6 +764,10 @@
       lines.push('Schedule target: (none resolved this tick — see console for [schedule] warnings)');
     }
     lines.push(`Currently equipped station tool: ${walker.stationToolKey || '(none)'}`);
+    const ambientFacing = window.AmbientDialogue?.getDebug?.()?.lastFacing; // Most recent ambient facing decision makes head-only greeting behavior inspectable without desktop devtools.
+    if (ambientFacing?.speakerId === String(walker.rec?.id || '')) {
+      lines.push(`Ambient greeting facing: mode=${ambientFacing.mode || '-'} seated=${ambientFacing.seated ? 'yes' : 'no'} requestedYaw=${Number(ambientFacing.requestedYawDeg || 0).toFixed(1)}° renderedYaw=${Number(ambientFacing.renderedYawDeg || 0).toFixed(1)}° max=${Number(ambientFacing.maxYawDeg || 0).toFixed(1)}° bodyYaw=${Number(ambientFacing.bodyYawDeg || 0).toFixed(1)}°`);
+    }
     const onDuty = target?.label ? !!window.NpcScheduling?.isNpcOnDutyAtStation?.(walker, target.label) : null;
     if (onDuty != null) lines.push(`isNpcOnDutyAtStation(this NPC, "${target.label}"): ${onDuty ? 'YES' : 'no'}`);
     if (target?.toolKey && walker.state === 'station-wander') {

@@ -5,7 +5,7 @@
 
   if (window.MetalArmorSystem) return;
 
-  const VERSION = 2;
+  const VERSION = 3;
   const CRAFT_ID_MARKER = '#smith:';
   const DEFAULT_CRAFT_BAR_COST = 3;
   const DEFAULT_CRAFT_LABOR_GOLD = 15;
@@ -78,7 +78,9 @@
   });
 
   let deps = null;
-  let skillXpHookInstalled = false;
+  let skillXpListenerInstalled = false;
+  let skillXpUnsubscribe = null; // Used to detach the prior SkillSystem subscription if the runtime ever replaces the skill module during a character/world reload.
+  let hookedSkillSystem = null; // Used to avoid duplicate Temper awards when MetalCraftShop reinitializes against the same SkillSystem object.
   let lastError = null;
   let lastTemperReason = null;
   let visualRefreshes = 0;
@@ -467,30 +469,24 @@
     return true;
   }
 
-  function skillExperience(skillKey) {
-    return Number(window.SkillSystem?.snapshot?.(false)?.experience?.[skillKey]) || 0;
-  }
-
-  function installSkillXpHook() {
+  function installSkillXpListener() {
     const skillSystem = window.SkillSystem;
-    if (!skillSystem || typeof skillSystem.award !== 'function') return false;
-    if (skillSystem.award.__metalArmorTemperXpHook) {
-      skillXpHookInstalled = true;
+    if (!skillSystem || typeof skillSystem.onAward !== 'function') {
+      skillXpListenerInstalled = false;
+      return false;
+    }
+    if (hookedSkillSystem === skillSystem && typeof skillXpUnsubscribe === 'function') {
+      skillXpListenerInstalled = true;
       return true;
     }
-    const original = skillSystem.award;
-    const wrapped = function metalArmorTemperSkillAward(skillKey, ...args) {
-      const before = skillExperience(skillKey);
-      const result = original.call(this, skillKey, ...args);
-      const gained = Math.max(0, skillExperience(skillKey) - before);
-      if (gained > 0) awardExperience(gained, `${skillKey} skill XP`);
-      return result;
-    };
-    wrapped.__metalArmorTemperXpHook = true;
-    wrapped.__metalArmorTemperOriginal = original;
-    skillSystem.award = wrapped;
-    skillXpHookInstalled = true;
-    return true;
+    if (typeof skillXpUnsubscribe === 'function') skillXpUnsubscribe();
+    hookedSkillSystem = skillSystem;
+    skillXpUnsubscribe = skillSystem.onAward(event => {
+      const gained = Math.max(0, Number(event?.amount) || 0);
+      if (gained > 0) awardExperience(gained, `${event?.skillKey || 'skill'} skill XP`);
+    });
+    skillXpListenerInstalled = typeof skillXpUnsubscribe === 'function';
+    return skillXpListenerInstalled;
   }
 
   function makeCraftedItem(blueprintId, metalKey) {
@@ -766,7 +762,7 @@
     return {
       version: VERSION,
       initialized: !!deps,
-      skillXpHookInstalled,
+      skillXpListenerInstalled,
       thresholds: [...TEMPER_XP_THRESHOLDS],
       lastTemperReason,
       visualRefreshes,
@@ -803,17 +799,17 @@
 
   function diagnosticsText() {
     const snapshot = debugSnapshot();
-    if (!snapshot.worn.length) return `Metal armor Temper: none equipped · skill hook ${skillXpHookInstalled ? 'ready' : 'missing'}`;
+    if (!snapshot.worn.length) return `Metal armor Temper: none equipped · skill listener ${skillXpListenerInstalled ? 'ready' : 'missing'}`;
     const items = snapshot.worn.map(item => `${item.blueprintId}@${item.slot} ${item.metalKey} ${item.temperXp}/${MAX_TEMPER_XP}xp T${item.temperLevel}/5 ${Math.round(item.verdigrisFraction * 100)}%v ${item.weight.weightUnits.toFixed(2)}wu source=${item.visual?.sourceHex || '-'}→target=${item.visual?.targetHex || '-'}`).join(' | ');
     const renderState = Object.entries(snapshot.portraitResolution || {}).map(([id, rec]) => `${id}@${rec.slot || '?'} layers=${rec.layerCount}`).join(' | ') || 'no resolved metal portrait groups yet';
     const resolverState = snapshot.portraitAssetResolverReady ? 'asset-resolver=ready' : 'asset-resolver=MISSING';
     const errorState = snapshot.lastError ? ` error="${snapshot.lastError}"` : '';
-    return `Metal armor Temper: ${items} · portrait ${renderState} · ${resolverState} · skill hook ${skillXpHookInstalled ? 'ready' : 'missing'}${errorState}`;
+    return `Metal armor Temper: ${items} · portrait ${renderState} · ${resolverState} · skill listener ${skillXpListenerInstalled ? 'ready' : 'missing'}${errorState}`;
   }
 
   function init(injectedDeps) {
     deps = injectedDeps || deps;
-    installSkillXpHook();
+    installSkillXpListener();
     const gear = deps?.getGearInventory?.();
     let changed = false;
     for (const item of (gear?.clothingItems || [])) if (normalizeItem(item)) changed = true;
