@@ -414,6 +414,10 @@
         ruin.mechanisms.set(d.mechanismId,{id:d.mechanismId,root:object,type:motion,progress:0,target:0,externalTarget:null}); // externalTarget is reserved for modular composers that must visibly drive an existing V50 mechanism regardless of its original puzzle signal.
       if (d.linkedMechanismId && d.activatorType) {
         ruin.activators.push(object);
+        if (d.squarePillarHousing || d.hiddenActivatorMount === 'pillarNiche') {
+          object.userData.blockerPurpose = object.userData.blockerPurpose || 'puzzle_target_pillar'; // A projectile target carved into a pillar does not make the pillar intangible.
+          furnitureBlockers.push(object);
+        }
         if (d.activatorType === 'stackedObelisk' || d.activatorType === 'linkedCubePillars') {
           object.userData.interactive3D = true; // Tower activators are ordinary nearby world interactions, not click-only editor props.
           object.userData.devRuinInteractionType = d.activatorType; // Used by prompt diagnostics / semantic owner resolution.
@@ -518,6 +522,7 @@
     ruin.controls.push({kind:'exit',object:null,label:'Leave Test Ruin',point:ruin.spawn,onPress:leaveRuin});
     ruin.occupancy = TileOccupancy.create({
       mapId:MAP_ID, scope:SCOPE, cols:ruin.cols, rows:ruin.rows, floorSet:ruin.floorSet,
+      grid:ruin.grid, solidType:(gridDeps?.TileType||deps?.TileType||{}).ROCK??'rock', // Stamps generated blockers into the same interior grid ordinary movement/AI/knockback already query.
       walls, staticSolids:furnitureBlockers, mechanisms:ruin.mechanisms, transitDoors:ruin.transitDoors,
       activators:ruin.activators, pushBlocks:ruin.pushBlocks,
       getPlayerPosition:() => ({ x:deps.player.x / deps.TILE, z:deps.player.y / deps.TILE }),
@@ -692,7 +697,18 @@
       floor:projected.floor,colliders:[],furniture:[],vendorZones:[],exits:[{id:'exit_dev_random_ruin',label:'Leave Test Ruin',tiles:[exitTile],targetMap:'',spawnCol:0,spawnRow:0}],
       wallStyle:'cavern', // Opts the session ruin into the game's existing combat-interior path so mobile receives Fire/Ammo/Potions and combat/reticle updates exactly like a den.
       devSessionOnly:true,devSeed:seed,devRuinTileScale:RUIN_TILE_SCALE,sourceGenerator:'HobunjiDebrisifierV50'};
-    return {scene,grid:projected.grid,cols:projected.cols,rows:projected.rows,mapData,wallStyle:'cavern',floorSet:projected.walkable,exits:mapData.exits,spawn,localeRoot:roots.localeRoot,particleRoot:roots.particleRoot,ceilingMesh,ceilingCellCount:Number(ceilingMesh?.userData?.devRandomRuinCeilingCells)||0,ceilingY:Number(ceilingMesh?.userData?.devRandomRuinCeilingY)||null,denMaterialMeshCount:materialStats.stoneMeshes,unlitConvertedMaterialCount:materialStats.convertedMaterials,remainingLitMaterialCount:materialStats.remainingLitMaterials,legacyStoneMaterialCount:materialStats.legacyStoneMaterials,totalRuinMeshCount:materialStats.totalMeshes};
+    const occlusionMeshes=[]; // Normal map_i_* camera boom reads this array from _buildingScenes; generated walls must participate exactly like authored den/shop walls.
+    roots.localeRoot.traverse(mesh=>{
+      if(!mesh?.isMesh)return;
+      let structural=false;
+      for(let node=mesh;node;node=node.parent){
+        const d=node.userData||{},role=String(d.interiorRuinRole||'');
+        if(d.ruinInteriorWall||d.archFootprint||d.transitDoor||d.squarePillarHousing||/ceiling support pillar|doorway flank pillar/i.test(role)){structural=true;break;}
+        if(node===roots.localeRoot)break;
+      }
+      if(structural)occlusionMeshes.push(mesh);
+    });
+    return {scene,grid:projected.grid,cols:projected.cols,rows:projected.rows,mapData,wallStyle:'cavern',floorSet:projected.walkable,exits:mapData.exits,spawn,localeRoot:roots.localeRoot,particleRoot:roots.particleRoot,ceilingMesh,occlusionMeshes,ceilingCellCount:Number(ceilingMesh?.userData?.devRandomRuinCeilingCells)||0,ceilingY:Number(ceilingMesh?.userData?.devRandomRuinCeilingY)||null,denMaterialMeshCount:materialStats.stoneMeshes,unlitConvertedMaterialCount:materialStats.convertedMaterials,remainingLitMaterialCount:materialStats.remainingLitMaterials,legacyStoneMaterialCount:materialStats.legacyStoneMaterials,totalRuinMeshCount:materialStats.totalMeshes};
   }
 
   async function generate(seed=randomSeed()) {
