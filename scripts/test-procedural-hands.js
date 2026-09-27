@@ -821,6 +821,8 @@ assert.match(animationAuthorSource, /getStandingPoseDebug/, 'Shoulder Rig diagno
 assert.match(proceduralFeetSource, /function footBoundsInRoot\(foot\)/, 'the shared foot runtime must measure rendered geometry in avatar floor space');
 assert.match(proceduralFeetSource, /HOBUNJI_ATTACHMENT_RIG_MATH\?\.characterPosteriorY/, 'procedural legs must resolve their hip/posterior with the shared floor-relative rule');
 assert.match(proceduralFeetSource, /group: root, update, dispose, applyRecordedLegPose, getStandingPoseDebug/, 'game and rigger feet handles must expose the same standing-pose diagnostic');
+assert.match(proceduralFeetSource, /setHoverMode, isHoverMode/, 'procedural leg handles must expose the shared hover-pose ownership seam');
+assert.match(proceduralFeetSource, /applyHoverPose\('left', dt\)[\s\S]*applyHoverPose\('right', dt\)/, 'hover mode must solve both procedural legs every update');
 assert.match(pixelProbeSource, /function _pixelProbeWaterFootContactLines\(activeScene, currentArea, playerMesh\)/, 'Pixel Probe must expose a mobile-readable rendered water/foot contact diagnostic');
 assert.match(pixelProbeSource, /waterInto=\$\{fmt\(waterIntoFoot\)\} \(\$\{Math\.round\(submergedFraction \* 100\)\}% foot height\)/, 'water/foot diagnostics quantify how much rendered foot height lies below the visible water plane');
 assert.match(pixelProbeSource, /hitPointText[\s\S]{0,180}world=\(\$\{hit\.point\.x\.toFixed\(3\)\},\$\{hit\.point\.y\.toFixed\(3\)\},\$\{hit\.point\.z\.toFixed\(3\)\}\)/, 'Pixel Probe ray entries include exact world hit points for foot-versus-water comparisons');
