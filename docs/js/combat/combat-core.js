@@ -442,9 +442,10 @@
       (pitch - MELEE_LEAP_START_PITCH_RAD) / Math.max(1e-6, MAX_MELEE_AIM_PITCH_RAD - MELEE_LEAP_START_PITCH_RAD),
       0, 1,
     );
-    const assistedLeapT = pitch > 0
+    const assistedPitchRatio = pitch > 0
       ? THREE.MathUtils.clamp(Math.sin(pitch) / Math.max(1e-6, Math.sin(MAX_MELEE_AIM_PITCH_RAD)), 0, 1)
-      : 0; // In-range elevated targets should produce useful lift from even modest upward aim instead of waiting for the normal 12° leap threshold.
+      : 0;
+    const assistedLeapT = Math.sqrt(assistedPitchRatio); // Front-load the in-range lift curve: modest upward aim gets meaningful altitude immediately, while steep aim still reaches the same authored maximum.
     const leapT = inRangeAirAssist ? Math.max(naturalLeapT, assistedLeapT) : naturalLeapT;
     const baseDistanceWorld = Math.max(0, Number(baseDistancePx) || 0) / (deps?.TILE || 64);
     const heightUnits = Math.max(0, Number(lungeHeightUnits) || 0);
