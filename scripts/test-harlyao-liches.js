@@ -206,13 +206,14 @@ for (const key of ['tothal', 'hronal', 'kanthic']) {
   assert(devSpawnerSource.includes(`harlyao-lich:${key}`), `Testing Arena must expose ${key} lich button`);
 }
 assert.match(devSpawnerSource, /startsWith\('harlyao-lich:'\)/);
-assert(indexSource.includes('js/combat/combat-lich.js?v=20260926lich2'));
+assert(indexSource.includes('js/combat/combat-lich.js?v=20260926lich3'));
 assert(indexSource.includes('js/combat/resource-system.js?v=20260926lich1'));
 assert(indexSource.includes('js/pixel-probe.js?v=20260926lich1'));
-assert(indexSource.includes('js/portrait-utils.js?v=20260926hoodback1'));
+assert(indexSource.includes('js/portrait-utils.js?v=20260926hoodback2'));
 assert(pixelProbeSource.includes('window.HarlyaoLichCombat?.formatDebug?.()'), 'Pixel Probe must expose live lich diagnostics on mobile');
 assert(portraitSource.includes('const hoodBackLayers = []'), 'ragged hood rear layer must use the generic behind-head hood bucket');
 assert.match(portraitSource, /\(layer\.pos === 'back' \? hoodBackLayers : hoodLayers\)\.push/, 'hood compositor must route authored back layers separately from front layers');
+assert(portraitSource.includes('if (hoodBackLayers.length) hoodLayers.length = 0'), 'ragged hood rear view must use authored rear cloth without overlaying the front opening');
 assert(indexSource.includes('style.css?v=20260926entranced1'));
 assert(styleSource.includes('#entrancedCommandBanner.visible'), 'Entranced command must use the shared stylesheet instead of module-local system-font debug styling');
 assert(styleSource.includes("font-family: 'KhymeryyanRomanLetters+Numbers'"), 'Entranced command must use the game HUD font');
