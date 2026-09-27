@@ -9471,13 +9471,15 @@
         const aimDirection = currentPlayerMeleeAimDirection(); // Used to pitch this lunge and its 3D hit cone from the centered reticle.
         const aimYaw = Math.atan2(aimDirection.z, aimDirection.x);
         const aimPitch = Math.asin(window.FormatUtils.clamp(aimDirection.y, -1, 1));
+        const aimAllowsAirborneLunge = aimPitch >= 0; // Native attack rule: every forward/upward player melee attack may leave the ground, even with no hostile anywhere nearby.
         const lungeProfile = window.Combat?.meleeLungeProfile?.(
           distancePx,
           aimPitch,
           hopUnits,
           player.lungeHeightUnits,
-          hitTest?.pitchDistanceResistance || 0,
+          aimAllowsAirborneLunge ? 1 : (hitTest?.pitchDistanceResistance || 0),
           hitTest?.directFlightStrength || 0,
+          aimAllowsAirborneLunge,
         ) || { distancePx, hopUnits, pitch: aimPitch, verticalTravelUnits: 0, directFlightStrength: 0 };
         player.lungeDirX = Math.cos(aimYaw);
         player.lungeDirY = Math.sin(aimYaw);
@@ -23172,9 +23174,12 @@
             }
           }
         }
+        const ordinaryLungeHopY = player.lunging && !Number.isFinite(player.lungeFlightWorldY)
+          ? Math.max(0, Number(player.lungeHopCurrent) || 0)
+          : 0; // Ordinary melee lunges finally move the real player mesh/hitbox off the ground; previously this value was simulated but never rendered.
         const targetY = Number.isFinite(player.lungeFlightWorldY)
           ? Math.max(groundedTargetY, player.lungeFlightWorldY)
-          : groundedTargetY;
+          : groundedTargetY + ordinaryLungeHopY;
         // Exponential catch-up scaled by dt so ordinary terrain-follow remains
         // smooth. Direct-flight attacks blend toward exact world-Y authority;
         // at maximum Charged Breaker this is ~98% direct, so the body/hitbox
