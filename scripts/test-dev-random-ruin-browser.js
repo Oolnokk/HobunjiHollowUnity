@@ -544,15 +544,17 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
           weaponSwitch?.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,cancelable:true,pointerId:811,pointerType:'touch',clientX:8,clientY:8}));
           await sleep(2);
           const beforeAttachEquipment=window.DevRandomRuinSimplePuzzles.snapshot().ropeEquipment;
-          place(rope.grabPoint);
+          const grabDx=rope.grabPoint.x-rope.anchor.x,grabDz=rope.grabPoint.z-rope.anchor.z,grabLen=Math.max(.001,Math.hypot(grabDx,grabDz));
+          place({x:rope.grabPoint.x+grabDx/grabLen*.95,z:rope.grabPoint.z+grabDz/grabLen*.95,y:rope.grabPoint.y}); // Inside the 1.25u prompt range but outside the 0.8u auto-grab radius: proves the normal popup/arch appears before contact.
           await sleep(3);
           window.DevRandomRuinInteractions.refresh();
           await sleep(2);
           const grabInteraction=window.DevRandomRuinInteractions.snapshot();
+          const grabPopup=window.WorldPopupText.debugSnapshot();
           const grabIndex=grabInteraction.rows.findIndex(row=>row.kind==='ropegrab');
           const grabRow=grabIndex>=0?grabInteraction.rows[grabIndex]:null;
-          if(grabIndex>=0)window.DevRandomRuinInteractions.invoke(grabIndex); // Rope acquisition must go through the same visible interaction row used by ordinary world objects instead of invisible auto-catch proximity.
-          await sleep(3);
+          place(rope.grabPoint); // Contact must auto-grab even if a held weapon/item would otherwise compete for the same physical button.
+          await sleep(4);
           const beforePump=window.DevRandomRuinSimplePuzzles.snapshot();
           const liveRope=beforePump.ropes[0];
           const dx=Math.abs(liveRope.grabPoint.x-liveRope.anchor.x);
@@ -571,8 +573,11 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
           const afterRelease=window.DevRandomRuinSimplePuzzles.snapshot();
           ropeAttach={
             grabRow,
-            grabPopupVisible:grabInteraction.worldPopupVisible,
+            grabPopupVisible:grabPopup.interactionRows?.some(row=>row.label==='Grab Rope')===true,
             attached:beforePump.ropes[0]?.attached===true,
+            thickMesh:beforePump.ropes[0]?.thickMesh===true,
+            autoGrabbed:(beforePump.ropes[0]?.autoGrabCount||0)>0,
+            lavaVisible:beforePump.ropes[0]?.lavaVisible===true,
             ceilingMounted:beforePump.ropes[0]?.ceilingMounted===true,
             ceilingY:beforePump.ropes[0]?.ceilingY??null,
             anchorY:beforePump.ropes[0]?.anchor?.y??null,
@@ -620,7 +625,10 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
       assert.equal(simpleRuntime.ropeAttach?.grabRow?.label,'Grab Rope','approaching the traversal rope must expose the ordinary floating input prompt before attachment: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.ropeAttach?.grabPopupVisible,true,'idle rope grab must render through WorldPopupText: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.ropeAttach?.grabRow?.inputAction,'action1','nearby rope grab intentionally claims Action 1 so one physical input cannot attack and grab at the same time: '+JSON.stringify(simpleRuntime));
-      assert.equal(simpleRuntime.ropeAttach?.attached,true,'invoking the visible Grab Rope interaction must attach the traversal rope: '+JSON.stringify(simpleRuntime));
+      assert.equal(simpleRuntime.ropeAttach?.attached,true,'touching the visible rope must auto-attach the traversal rope: '+JSON.stringify(simpleRuntime));
+      assert.equal(simpleRuntime.ropeAttach?.autoGrabbed,true,'rope contact must auto-grab even when combat/item inputs are equipped: '+JSON.stringify(simpleRuntime));
+      assert.equal(simpleRuntime.ropeAttach?.thickMesh,true,'rope must render as a real thick mesh rather than a one-pixel line: '+JSON.stringify(simpleRuntime));
+      assert.equal(simpleRuntime.ropeAttach?.lavaVisible,true,'rope fall/burn volume must have a matching visible lava surface: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.ropeAttach?.pumpChangedOmega,true,'published movement input must pump the live rope pendulum: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.ropeAttach?.releaseRow?.label,'Jump Off Rope','attached rope must expose its jump-off input: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.ropeAttach?.releaseRow?.inputAction,'dodge','rope jump-off prompt must advertise the native Dodge input: '+JSON.stringify(simpleRuntime));
@@ -654,19 +662,27 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
         const beforeOcc=window.DevRandomRuin.getOccupancySnapshot?.();
         const sourceId='transit-door:'+door.id;
         const hasSource=snapshot=>Object.values(snapshot?.sources||{}).some(list=>Array.isArray(list)&&list.includes(sourceId));
+        const sourceTiles=Object.entries(beforeOcc?.sources||{}).filter(([,list])=>Array.isArray(list)&&list.includes(sourceId)).map(([key])=>key);
+        const grid=window.GridTileAccessors.getActiveGrid();
+        const solidGridTiles=sourceTiles.filter(key=>{const [col,row]=key.split(',').map(Number);return grid[row]?.[col]?.type==='rock';});
+        const popupBefore=window.WorldPopupText.debugSnapshot();
         const beforeBlocked=hasSource(beforeOcc);
         if(rowIndex>=0)window.DevRandomRuinInteractions.invoke(rowIndex);
         await sleep(28);
         const afterDoor=window.DevRandomRuin.getState()?.transitDoors?.find(entry=>entry.id===door.id)||null;
         const afterBlocked=hasSource(window.DevRandomRuin.getOccupancySnapshot?.());
-        return {door,row,worldPopupVisible:interaction.worldPopupVisible,beforeBlocked,afterDoor,afterBlocked};
+        const restoredGridTiles=sourceTiles.filter(key=>{const [col,row]=key.split(',').map(Number);return grid[row]?.[col]?.type!=='rock';});
+        return {door,row,popupVisible:popupBefore.interactionRows?.some(entry=>entry.label==='Open Hallway Door')===true,beforeBlocked,sourceTiles,solidGridTiles,restoredGridTiles,afterDoor,afterBlocked};
       });
       assert.ok(transitDoorRuntime,'generated hallway must expose at least one plain transit-exit door: '+JSON.stringify(active));
       assert.equal(transitDoorRuntime.row?.label,'Open Hallway Door','closed hallway transit door must expose the standard floating open-door prompt: '+JSON.stringify(transitDoorRuntime));
-      assert.equal(transitDoorRuntime.worldPopupVisible,true,'hallway door prompt must be rendered by WorldPopupText: '+JSON.stringify(transitDoorRuntime));
+      assert.equal(transitDoorRuntime.popupVisible,true,'hallway door prompt must be rendered by the normal WorldPopupText action-bar path: '+JSON.stringify(transitDoorRuntime));
       assert.equal(transitDoorRuntime.beforeBlocked,true,'visibly closed hallway door must contribute authoritative collision: '+JSON.stringify(transitDoorRuntime));
+      assert.ok((transitDoorRuntime.sourceTiles?.length||0)>1,'a visually wide hallway door must block its whole doorway run rather than one center tile: '+JSON.stringify(transitDoorRuntime));
+      assert.equal(transitDoorRuntime.solidGridTiles?.length,transitDoorRuntime.sourceTiles?.length,'closed-door occupancy must be stamped into the ordinary interior ROCK grid used by movement and knockback: '+JSON.stringify(transitDoorRuntime));
       assert.ok((transitDoorRuntime.afterDoor?.open||0)>.78,'using the hallway door prompt must visibly retract the door: '+JSON.stringify(transitDoorRuntime));
       assert.equal(transitDoorRuntime.afterBlocked,false,'opened hallway door must release its occupancy blocker: '+JSON.stringify(transitDoorRuntime));
+      assert.equal(transitDoorRuntime.restoredGridTiles?.length,transitDoorRuntime.sourceTiles?.length,'opening the door must restore the original walkable interior grid cells: '+JSON.stringify(transitDoorRuntime));
 
       const towerInteraction = await page.evaluate(async () => {
         const scene=window.GridTileAccessors.getActiveScene();
