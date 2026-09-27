@@ -340,6 +340,64 @@ textarea{width:100%;min-height:165px;padding:8px;resize:vertical;font:11px/1.4 u
     };
   }
 
+  function previewProfileKeyForSlot(slot) {
+    return slot === 'torso' ? 'torsoCosmetic'
+      : slot === 'overwear' ? 'armCosmetic'
+      : slot === 'hood' ? 'hood'
+      : slot === 'hat' ? 'hat'
+      : slot === 'pauldron' ? 'pauldron'
+      : null;
+  }
+
+  function previewDescriptorFromRecord(record) {
+    const raw = record?.layer || {};
+    const xf = raw?.spriteStyle?.base?.xform?.[record.partName]
+      || raw?.spriteStyle?.base?.xform?.head
+      || raw?.spriteStyle?.xform?.[record.partName]
+      || raw?.spriteStyle?.xform?.head
+      || {};
+    const paletteKey = raw.layerRole && currentClothingJson?.palette?.layers
+      ? (currentClothingJson.palette.layers[raw.layerRole] || null)
+      : null;
+    return {
+      url: normalizedPortraitUrl(record.imageUrl),
+      ax: xf.ax ?? 0,
+      ay: xf.ay ?? 0,
+      sx: xf.scaleX ?? xf.scaleMulX ?? 1,
+      sy: xf.scaleY ?? xf.scaleMulY ?? 1,
+      pos: record.layerName === 'back' ? 'back' : 'front',
+      paletteColorKey: paletteKey,
+      pixelLayerMasks: (raw.pixelLayerMasks || []).map(mask => ({ ...mask, url: normalizedPortraitUrl(mask.url) })),
+      xformPreset: 'B'
+    };
+  }
+
+  function forceSelectedClothingIntoProfile(profile) {
+    const key = previewProfileKeyForSlot(currentClothingJson?.slot);
+    if (!key || !profile || !currentClothingEntry || !currentLayerRecord) return { key: null, count: 0 };
+    const existing = cloneCosmeticOption(profile[key]) || {};
+    const option = {
+      ...existing,
+      id: currentClothingEntry.id.split('::').pop(),
+      label: currentClothingJson?.meta?.name || existing.label || currentClothingEntry.id,
+      slot: currentClothingJson?.slot || existing.slot || null,
+      tintSlot: existing.tintSlot || (currentClothingJson?.slot === 'torso' ? 'TORSO' : currentClothingJson?.slot === 'hood' ? 'HOOD' : 'CLOTH'),
+      layers: existing.layers || [],
+      variantLayers: { ...(existing.variantLayers || {}) }
+    };
+    const selectedVariant = currentLayerRecord.variantKey;
+    if (selectedVariant) {
+      const records = currentLayerRecords.filter(record => record.variantKey === selectedVariant);
+      option.variantLayers[selectedVariant] = records.map(previewDescriptorFromRecord);
+      profile[key] = option;
+      return { key, count: records.length, variantKey: selectedVariant };
+    }
+    const defaultRecords = currentLayerRecords.filter(record => !record.variantKey);
+    option.layers = defaultRecords.map(previewDescriptorFromRecord);
+    profile[key] = option;
+    return { key, count: defaultRecords.length, variantKey: null };
+  }
+
   function injectLiveMaskIntoProfile(profile, maskUrl) {
     const sourceUrl = normalizedPortraitUrl(currentLayerRecord?.imageUrl);
     const candidateKeys = ['armCosmetic', 'torsoCosmetic', 'hood', 'hat', 'pauldron'];
@@ -415,8 +473,10 @@ textarea{width:100%;min-height:165px;padding:8px;resize:vertical;font:11px/1.4 u
       };
       const profile = window.NpcAvatarPreview.buildProfileFromNpcExport(npc);
       if (!profile) throw new Error('Could not build avatar profile for ' + identity.speciesId + '/' + identity.gender + '.');
+      const forced = forceSelectedClothingIntoProfile(profile);
+      if (!forced.key || !forced.count) throw new Error('Could not inject the selected clothing JSON into the preview profile.');
       maskUrl = URL.createObjectURL(await maskCanvasBlob());
-      if (!injectLiveMaskIntoProfile(profile, maskUrl)) throw new Error('Could not locate the selected portrait layer in the built clothing profile.');
+      if (!injectLiveMaskIntoProfile(profile, maskUrl)) throw new Error('Could not locate the selected portrait layer in the injected clothing profile.');
       const size = Number(window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.previewPortraitCanvasSize) || 200;
       const front = Object.assign(document.createElement('canvas'), { width: size, height: size });
       const back = Object.assign(document.createElement('canvas'), { width: size, height: size });
@@ -436,7 +496,9 @@ textarea{width:100%;min-height:165px;padding:8px;resize:vertical;font:11px/1.4 u
       });
       scene.setCameraView(preview3d.view);
       scene.resize();
-      status.textContent = identity.speciesId + ' / ' + identity.gender + ' · live mask · ' + ($('previewHood').checked ? 'hood test on' : 'hood test off');
+      status.textContent = identity.speciesId + ' / ' + identity.gender
+        + ' · ' + forced.count + ' selected JSON layer' + (forced.count === 1 ? '' : 's')
+        + ' · live mask · ' + ($('previewHood').checked ? 'hood test on' : 'hood test off');
     } catch (error) {
       status.textContent = '3D preview error: ' + error.message;
     } finally {
@@ -479,6 +541,9 @@ textarea{width:100%;min-height:165px;padding:8px;resize:vertical;font:11px/1.4 u
             label: labelPrefix + partName + '.' + layerName + ' — ' + basename(imageUrl),
             imageUrl,
             jsonPath: [...prefix, partName, 'layers', layerName],
+            partName,
+            layerName,
+            variantKey: prefix[0] === 'speciesVariants' ? prefix[1] : null,
             layer
           });
         }
