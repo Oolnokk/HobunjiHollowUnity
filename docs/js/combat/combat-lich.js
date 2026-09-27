@@ -886,6 +886,57 @@
     return puddle;
   }
 
+  function entrancedManeuverKind(target) {
+    if (target?.lunging || target?._banditLunging) return 'lunge';
+    if (target?.dodging) return 'dodge';
+    return null;
+  }
+
+  function entrancedManeuverDirection(target, kind) {
+    const rawX = kind === 'lunge' ? Number(target?.lungeDirX ?? target?._banditLungeDirX) : Number(target?.dodgeDirX);
+    const rawY = kind === 'lunge' ? Number(target?.lungeDirY ?? target?._banditLungeDirY) : Number(target?.dodgeDirY);
+    const magnitude = Math.hypot(rawX || 0, rawY || 0);
+    if (magnitude > 1e-6) return { x: rawX / magnitude, y: rawY / magnitude };
+    const angle = Number(target?.angle ?? target?.facing) || 0; // Fallback preserves a stable intended direction if a special dodge/lunge omits explicit axes.
+    return { x: Math.cos(angle), y: Math.sin(angle) };
+  }
+
+  function resetEntrancedMovementBaseline(target, state, source = state?.source) {
+    if (!target || !state) return;
+    state.lastX = Number(target.x) || 0;
+    state.lastY = Number(target.y) || 0;
+    state.lastDistance = source
+      ? Math.hypot(state.lastX - (Number(source.x) || 0), state.lastY - (Number(source.y) || 0))
+      : 0;
+  }
+
+  function beginEntrancedCommandGrace(target, state, command, now = performance.now()) {
+    if (!target || !state) return;
+    state.command = command === 'flee' ? 'flee' : 'approach';
+    state.graceStartedAt = now; // Banner first shows the spoken command, then uses this timestamp to derive the 3→2→1 countdown.
+    state.graceUntil = now + ENTRANCED_COMMAND_GRACE_MS;
+    state.activeManeuver = null;
+    state.suppressManeuverUntilEnd = entrancedManeuverKind(target); // A dodge/lunge already underway when a command changes belongs wholly to the no-damage grace period.
+    resetEntrancedMovementBaseline(target, state);
+  }
+
+  function entrancedGraceDisplay(state, now = performance.now()) {
+    if (!state || !(state.graceUntil > now)) return null;
+    const elapsed = Math.max(0, now - (state.graceStartedAt || now));
+    if (elapsed < ENTRANCED_COMMAND_ANNOUNCE_MS) return { phase: 'announce', countdown: null };
+    const countdownElapsed = elapsed - ENTRANCED_COMMAND_ANNOUNCE_MS;
+    const countdown = Math.max(1, Math.min(3, 3 - Math.floor(countdownElapsed / 1000)));
+    return { phase: 'countdown', countdown }; // Exactly three one-second beats follow the short spoken-command banner.
+  }
+
+  function liveEntrancedApplicators() {
+    return [...(deps?.hostileObjects || [])].filter(actor =>
+      isLiveActor(actor)
+      && (actor.enemyClass === CLASS_ID || actor.isHarlyaoLich)
+      && actor.lichType === 'kanthic'
+    ); // Only live Kanthic liches can create/refresh Entranced Health.
+  }
+
   function applyEntranced(target, source, amount) {
     if (!target || !source || !(amount > 0)) return 0;
     const added = window.ResourceSystem?.addAffliction?.(target, 'entrancedHealth', amount) || 0; // Canonical ring buildup amount.
