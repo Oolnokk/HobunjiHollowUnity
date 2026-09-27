@@ -9451,19 +9451,23 @@
       // that cone, so the target is guaranteed to still be within the
       // collider at the point the lunge stops, never overshot past it.
       function beginCombatLunge(distancePx, durationS, hopUnits = 0, hitTest = null) {
-        if (durationS <= 0 || distancePx <= 0) return;
+        if (durationS <= 0 || distancePx <= 0) return false;
         // Each combo/quick-attack/charged-breaker module tracks its own
         // "busy" gate independently, so tapping a *different* attack slot
         // while an earlier one's lunge is still in flight isn't blocked by
         // that earlier module's busyAction — without this guard, the new
         // call would blow away the in-progress lunge's start point/progress
-        // and restart from wherever the player happened to be that frame,
-        // producing wildly inconsistent travel distance (sometimes almost
-        // none, sometimes stacking into more than any single lunge should
-        // cover). The attack's own damage/hit resolution doesn't depend on
-        // this cosmetic step, so simply not layering a second lunge on top
-        // of the first is enough — the new attack still fires normally.
-        if (player.lunging) return;
+        // and restart from wherever the player happened to be that frame.
+        if (player.lunging) return false;
+        const nowMs = performance.now();
+        const airborneBetweenLunges = !!player.lungeLandingPending && Number.isFinite(player.lungeFlightWorldY); // Explicit post-lunge airborne state; avoids guessing from terrain/mesh smoothing.
+        if (airborneBetweenLunges) {
+          if (!((Number(player.midairLungeWindowUntilMs) || 0) > nowMs)) return false; // Missed/expired aerial attacks may still swing, but they cannot create another movement lunge.
+          player.midairLungeWindowUntilMs = 0; // One confirmed hit buys one aerial follow-up; starting that follow-up consumes it.
+        }
+        player._lungeSerial = (Number(player._lungeSerial) || 0) + 1; // Identifies the movement lunge whose eventual strike is allowed to open the next aerial window.
+        player._lungeHitConfirmEligibleUntilMs = nowMs + durationS * 1000 + 300; // Small post-duration cushion covers staged strike callbacks that resolve on the lunge's final frame.
+        player._lungeHitConfirmedSerial = 0;
         player.lunging = true;
         player.lungeT = durationS;
         player.lungeDur = durationS;
@@ -9494,14 +9498,36 @@
         player.lungeFallSpeedUnits = 0;
         player.lungeLandingPending = false;
         player.lungeHitTest = hitTest;
+        return true;
       }
 
-      // Public effect seam: food/potion systems can set or add to the
-      // player's next lunge height without knowing combat's internal state.
+      const MIDAIR_LUNGE_HIT_WINDOW_MS = 1000; // One real enemy hit creates exactly one second of aerial chaining opportunity.
+      const MIDAIR_LUNGE_SLOW_FALL_GRAVITY = 1.6; // Deliberately tiny beside the normal 22 units/s² post-lunge fall.
+      const MIDAIR_LUNGE_SLOW_FALL_SPEED_CAP = 0.45; // A late hit immediately arrests an already-started fall instead of merely reducing future acceleration.
+
+      // Public lunge seam: effects can still tune height, while combat strike
+      // resolvers use confirmEnemyHit() to open the one-second aerial chain.
       window.PlayerLunge = {
         getHeight: () => Math.max(0, Number(player.lungeHeightUnits) || 0),
         setHeight: (value) => { player.lungeHeightUnits = Math.max(0, Number(value) || 0); },
         addHeight: (delta) => { player.lungeHeightUnits = Math.max(0, (Number(player.lungeHeightUnits) || 0) + (Number(delta) || 0)); },
+        confirmEnemyHit: () => {
+          const nowMs = performance.now();
+          const serial = Number(player._lungeSerial) || 0;
+          if (!serial || !((Number(player._lungeHitConfirmEligibleUntilMs) || 0) >= nowMs)) return false; // A non-lunging aerial swing cannot manufacture a chain window.
+          if (Number(player._lungeHitConfirmedSerial) === serial) return false; // Cleaving multiple enemies still grants one window, not several.
+          player._lungeHitConfirmedSerial = serial;
+          player.midairLungeWindowUntilMs = nowMs + MIDAIR_LUNGE_HIT_WINDOW_MS;
+          player.lungeFallSpeedUnits = Math.min(Number(player.lungeFallSpeedUnits) || 0, MIDAIR_LUNGE_SLOW_FALL_SPEED_CAP);
+          return true;
+        },
+        canMidairLunge: () => !player.lungeLandingPending || (Number(player.midairLungeWindowUntilMs) || 0) > performance.now(),
+        debugSnapshot: () => ({
+          airborne: !!player.lungeLandingPending && Number.isFinite(player.lungeFlightWorldY),
+          windowRemainingMs: Math.max(0, (Number(player.midairLungeWindowUntilMs) || 0) - performance.now()),
+          hitConfirmEligibleMs: Math.max(0, (Number(player._lungeHitConfirmEligibleUntilMs) || 0) - performance.now()),
+          lungeSerial: Number(player._lungeSerial) || 0,
+        }),
       };
 
       // True if any live hostile in the current area is already inside the
@@ -23128,9 +23154,14 @@
         const groundedTargetY = standY + (tile.water > 0.05 ? tile.water * WATER_UNIT * 0.6 : 0) + (player.climbHopBounce || 0) + mountSeatLift + chairSeatSink;
         if (Number.isFinite(player.lungeFlightWorldY) && !player.lunging) {
           // Once the strike's straight flight ends, gravity owns only the
-          // remaining world-Y separation. The attack path itself stays a line;
-          // the fall happens afterward instead of bending that line into an arc.
-          const gravityUnitsS2 = 22;
+          // remaining world-Y separation. A confirmed enemy hit creates a
+          // one-second slow-fall window in which one aerial follow-up lunge
+          // may be started; misses immediately fall at the ordinary rate.
+          const midairChainWindowActive = (Number(player.midairLungeWindowUntilMs) || 0) > performance.now();
+          const gravityUnitsS2 = midairChainWindowActive ? MIDAIR_LUNGE_SLOW_FALL_GRAVITY : 22;
+          if (midairChainWindowActive) {
+            player.lungeFallSpeedUnits = Math.min(Number(player.lungeFallSpeedUnits) || 0, MIDAIR_LUNGE_SLOW_FALL_SPEED_CAP);
+          }
           player.lungeFallSpeedUnits += gravityUnitsS2 * dt;
           player.lungeFlightWorldY = Math.max(
             groundedTargetY,
@@ -23139,6 +23170,8 @@
           if (player.lungeFlightWorldY <= groundedTargetY + 0.005) {
             player.lungeFlightWorldY = null;
             player.lungeFallSpeedUnits = 0;
+            player.midairLungeWindowUntilMs = 0; // Landing always terminates any unused aerial chain permission.
+            player._lungeHitConfirmEligibleUntilMs = 0;
             if (player.lungeLandingPending) {
               player.lungeLandingPending = false;
               window.AudioSystem?.playHeavyLandingSfx(currentArea, window.AudioSystem?.footstepTileAt(currentArea, player.x, player.y, window.GridTileAccessors.getActiveGrid()));
