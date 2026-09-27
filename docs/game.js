@@ -24922,6 +24922,10 @@
             const label = t.label || (t.target === 'exit_building' ? 'Exit' : 'Use');
             return [{ icon, label, action: 'use_spot', style: 'primary', allowed: true }];
           }
+          const devRuinActions = currentArea === 'map_i_dev_random_ruin'
+            ? window.DevRandomRuinInteractions?.getActionButtons?.()
+            : null; // Generated test-ruin interactions are ordinary building-interior context actions; when present they replace attacks/items in the same physical arch slots, exactly like NPC/furniture interactions.
+          if (devRuinActions?.length) return devRuinActions;
           const nest = window.DenNestSystem.currentAimedNest();
           if (nest) {
             const label = nest.liveBirth ? 'Hold to Take Baby' : 'Hold to Take Egg';
@@ -25211,7 +25215,7 @@
           || (interactionButton ? _worldInteractionPromptAnchor : null);
         const promptActionIds = ['action1', 'action2', 'action3', 'interact'];
         const promptInputs = btns.map((button, index) => { // Used by each floating row to render its rebound input and matching arch color independently.
-          const actionId = button.action === 'climb_branch' ? 'dodge' : (promptActionIds[index] || `action${index + 1}`); // Used to show Climb against its real Dodge binding instead of Action 1.
+          const actionId = button.inputAction || (button.action === 'climb_branch' ? 'dodge' : (promptActionIds[index] || `action${index + 1}`)); // Context providers may bind a row to an exact physical arch input; otherwise preserve the ordinary inferred slot mapping.
           const touchLabel = actionId === 'dodge' ? 'Dodge' : `Action ${index + 1}`; // Used when touch controls have no keyboard/controller glyph.
           return {
             actionId,
@@ -25256,7 +25260,7 @@
         // (e.g. no tool equipped), which is exactly the case a player
         // facing a tree is most likely to be in.
         const climbBtn = btns.find(b => b.action === 'climb_branch');
-        const nonClimbBtns = climbBtn ? btns.filter(b => b !== climbBtn) : btns;
+        const nonClimbBtns = btns.filter(b => b !== climbBtn && b.nativeInput !== true); // Native-input prompts (for example Dodge-to-jump-off a rope) stay in the floating list without stealing one of the five action-arch buttons.
         const first = nonClimbBtns.find(b => b.allowed && b.style !== 'secondary') || nonClimbBtns.find(b => b.allowed) || nonClimbBtns[0];
         if (first) activeAction = first.action;
         // The dodge button is climbing's only real trigger, so it's the
@@ -25275,7 +25279,8 @@
         // climb_branch is excluded from every arch slot below for the same
         // reason it's excluded from activeAction above — it still stays in
         // the full btns array so the 3D world-space prompt keeps working.
-        const isItemButton = b => b.action === 'consume_held_item' || b.action === 'consume_food_item' || b.action === 'play_instrument' || b.action.startsWith('alchemy_flask_') || b.action.startsWith('plant_')
+        const isItemButton = b => b.inputAction === 'itemAction1' || b.inputAction === 'itemAction2'
+          || b.action === 'consume_held_item' || b.action === 'consume_food_item' || b.action === 'play_instrument' || b.action.startsWith('alchemy_flask_') || b.action.startsWith('plant_')
           || b.action.startsWith('place_') || b.action.startsWith('spawn_') || b.action === 'harvest';
         const toolBtns = nonClimbBtns.filter(b => !isItemButton(b));
         const itemBtns = nonClimbBtns.filter(isItemButton);
@@ -26013,7 +26018,8 @@
       const potionAction3Press = { down: false, held: false, timer: null, lastScrollAt: 0 }; // Tool Action 3 selector mirrors the normal held tool/item mode shift.
       const toolSelectPress = { down: false, held: false, timer: null, lastScrollAt: 0 }; // Cross-input Tool Select tap/hold distinction.
       function potionSelectorAvailable(actionId) {
-        return actionId === 'action3' && heldMode === 'tool' && (activeTool === 'weapon' || activeTool === 'ranged')
+        return actionId === 'action3' && !window.WorldActionInputClaims?.hasClaim?.('action3')
+          && heldMode === 'tool' && (activeTool === 'weapon' || activeTool === 'ranged')
           && computeActionButtons().some(button => button.action === 'potion_select' && button.allowed);
       }
       function runInputAction(actionId, phase = 'press') {
@@ -26077,7 +26083,7 @@
         // the second physical slot displays. World-context actions (including
         // the Bronzeworks Smithy) replace that slot and must remain usable
         // even while the ranged tool is equipped.
-        if ((actionId === 'action2' && heldMode === 'tool' && activeTool === 'ranged'
+        if ((actionId === 'action2' && !window.WorldActionInputClaims?.hasClaim?.('action2') && heldMode === 'tool' && activeTool === 'ranged'
           && actionButtonForPhysicalSlot(2)?.action === 'ammo_select') || rangedAmmoAction2Press.down) {
           if (phase === 'release') {
             if (!rangedAmmoAction2Press.down) return;
