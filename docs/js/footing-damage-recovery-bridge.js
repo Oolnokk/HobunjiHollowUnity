@@ -13,6 +13,7 @@
   const FOOTING_DAMAGE_MULTIPLIER = 2;
   const FOOTING_RECOVERY_DELAY_S = 1.5;
   const FOOTING_FULL_RECOVERY_S = 3; // Used to derive the baseline recovery rate from each entity's maximum Footing.
+  const PRONE_FOOTING_RECOVERY_MULTIPLIER = 2; // Used by delayedFootingRecoveryTick so prone actors refill Footing at twice their otherwise-current rate.
   const nowMs = () => performance.now();
 
   function recoveryDelayRemaining(entity) {
@@ -43,9 +44,10 @@
   RS.tick = function delayedFootingRecoveryTick(entity, dt, options = {}) {
     const delayActive = recoveryDelayRemaining(entity) > 0; // Used below to preserve the no-regen grace period after the latest standing Footing loss.
     const explicitRate = Number(options.footingRegenPerSec); // Used below so an explicitly supplied encounter-specific rate can still override the baseline three-second rate.
+    const baseFootingRegenPerSec = Number.isFinite(explicitRate) ? Math.max(0, explicitRate) : defaultFootingRegenPerSec(entity); // Used below before the prone-only acceleration so encounter-specific rates retain their relative tuning.
     const footingRegenPerSec = delayActive
       ? 0
-      : (Number.isFinite(explicitRate) ? Math.max(0, explicitRate) : defaultFootingRegenPerSec(entity)); // Passed through ResourceSystem.tick's existing rate override; its pre-existing rested multiplier remains unchanged.
+      : baseFootingRegenPerSec * (entity?.prone ? PRONE_FOOTING_RECOVERY_MULTIPLIER : 1); // Passed through ResourceSystem.tick's existing rate override; its pre-existing rested multiplier remains unchanged.
     return previousTick(entity, dt, {
       ...options,
       footingRegenPerSec,
@@ -56,6 +58,7 @@
     damageMultiplier: FOOTING_DAMAGE_MULTIPLIER,
     recoveryDelaySeconds: FOOTING_RECOVERY_DELAY_S,
     fullRecoverySeconds: FOOTING_FULL_RECOVERY_S,
+    proneRecoveryMultiplier: PRONE_FOOTING_RECOVERY_MULTIPLIER,
     recoveryDelayRemaining,
     defaultFootingRegenPerSec,
     getDebug(entity = window.Combat?.deps?.player) {
@@ -63,6 +66,7 @@
         damageMultiplier: FOOTING_DAMAGE_MULTIPLIER,
         recoveryDelaySeconds: FOOTING_RECOVERY_DELAY_S,
         fullRecoverySeconds: FOOTING_FULL_RECOVERY_S,
+        proneRecoveryMultiplier: PRONE_FOOTING_RECOVERY_MULTIPLIER,
         defaultFootingRegenPerSec: defaultFootingRegenPerSec(entity),
         recoveryDelayRemaining: recoveryDelayRemaining(entity),
         lastFootingDamageAt: Number.isFinite(Number(entity?.lastFootingDamageAt))
