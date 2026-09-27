@@ -20,8 +20,8 @@ assert.match(coreSource, /if \(direct >= 0\.999 && pitch >= 0\)[\s\S]{0,700}vert
   'forward/upward direct flight must return exact vector components before legacy diminished-vertical math');
 assert.doesNotMatch(gameSource, /const lungeTarget = \(activeTool === 'weapon'[\s\S]{0,700}LUNGE_HOMING_RATE/,
   'native player lunge update must not home toward an enemy after attack start');
-assert.match(gameSource, /aimAllowsAirborneLunge = aimPitch >= 0[\s\S]{0,500}aimAllowsAirborneLunge,\n\s*\) \|\|/,
-  'native beginCombatLunge must request airborne assist from pitch alone, independent of target detection');
+assert.match(gameSource, /aimUsesDirectReticleFlight = aimPitch >= 0[\s\S]{0,520}aimUsesDirectReticleFlight \? 1 : \(hitTest\?\.directFlightStrength \|\| 0\)[\s\S]{0,160}aimUsesDirectReticleFlight,/,
+  'native beginCombatLunge must select full direct reticle flight from pitch alone, independent of target detection');
 assert(gameSource.includes('const ordinaryLungeHopY = player.lunging && !Number.isFinite(player.lungeFlightWorldY)'),
   'ordinary lunge hop must be promoted from simulation into the player render path');
 assert(gameSource.includes(': groundedTargetY + ordinaryLungeHopY;'),
