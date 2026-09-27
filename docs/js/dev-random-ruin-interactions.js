@@ -19,7 +19,7 @@
   let deps = null;
   let lastRows = [];
   let lastAnchor = null;
-  let ownsWorldList = false;
+  let lastRowsSignature = ''; // Used to ask the normal action bar for a rebuild only when nearby ruin interactions actually change.
   let preparedRoot = null;
   let ladders = [];
   let lastSemanticScanAt = -Infinity; // Used to discover V50 interactables that are appended after the ruin root first appears.
@@ -369,10 +369,8 @@
         source:'semantic-ladder',
       });
     }
-    const activeTool=deps?.getActiveTool?.()||window.Combat?.deps?.getActiveTool?.()||null; // Used to preserve canonical attack/ammo actions while a weapon stance is active.
-    const combatOwnsActionSlots=activeTool==='weapon'||activeTool==='ranged'; // Weapon/ranged stances reserve Action 1–3; ruin interactions move to Item Action 1–2 instead of replacing combat controls.
-    const slotActions=combatOwnsActionSlots?SLOT_ACTIONS.slice(3):SLOT_ACTIONS;
-    const touchButtonIds=combatOwnsActionSlots?TOUCH_BUTTON_IDS.slice(3):TOUCH_BUTTON_IDS;
+    const slotActions=SLOT_ACTIONS; // Nearby world interactions own the ordinary five physical arch slots just like NPC/furniture context actions; attacks/items return as soon as the interaction leaves range.
+    const touchButtonIds=TOUCH_BUTTON_IDS;
     const fixedCount=rows.reduce((count,row)=>count+(row.inputAction?1:0),0);
     const sorted=rows
       .sort((a, b) => b.priority - a.priority || a.distance - b.distance || b.seenAt - a.seenAt)
@@ -385,7 +383,7 @@
       }
       const inputAction=slotActions[slotIndex];
       const touchButtonId=touchButtonIds[slotIndex]||null;
-      if(!inputAction)return []; // Combat stance exposes only the two item-action interaction slots; lower-priority overflow stays visible again after combat is holstered.
+      if(!inputAction)return []; // At most five contextual rows fit the same five physical arch slots used everywhere else in the game.
       slotIndex++;
       return [{ ...entry, inputAction, action:`dev_ruin_world_${slotIndex-1}`, touchButtonId }];
     });
@@ -465,55 +463,52 @@
     });
   }
 
-  function renderWorldList() {
-    if (!inRuin()) {
-      lastRows = [];
-      clearTouchButtons();
-      window.WorldActionInputClaims?.clearClaims?.(INPUT_CLAIM_OWNER);
-      if (ownsWorldList) window.WorldPopupText?.clearInteractionPrompts?.();
-      ownsWorldList = false;
-      lastAnchor = null;
-      preparedRoot = null;
-      ladders = [];
-      lastSemanticScanAt = -Infinity;
-      return;
-    }
-    prepareSemanticObjects();
-    const rows = currentRows();
-    lastRows = rows;
-    syncInputClaims(rows); // Publishes explicit/dynamic world-input ownership before controller/gameplay dispatch for this frame.
-    const device = currentDevice();
-    syncTouchButtons(rows, device);
-    if (!rows.length || !window.WorldPopupText?.syncInteractionPrompts) {
-      if(!rows.length)window.WorldActionInputClaims?.clearClaims?.(INPUT_CLAIM_OWNER);
-      if (ownsWorldList) window.WorldPopupText?.clearInteractionPrompts?.();
-      ownsWorldList = false;
-      return;
-    }
-    const anchor = rows[0].owner || nearestOwnerForKind(rows[0].kind) || ruinRoot();
-    if (!anchor) return;
-    lastAnchor = anchor;
-    const promptInputs = rows.map(row => ({
-      actionId:row.inputAction,
-      label:bindingLabel(row.inputAction, device, row.touchIcon),
-      color:inputColor(row.inputAction),
-    }));
-    const buttons = rows.map(row => ({
-      worldInteraction:true,
+  function rowSignature(rows) {
+    return rows.map(row => [
+      row.kind,row.label,row.inputAction,row.nativeInput===true?'native':'claim',
+      row.owner?.uuid||row.owner?.id||row.owner?.name||'',
+      Number.isFinite(row.distance)?row.distance.toFixed(2):'',
+    ].join(':')).join('|');
+  }
+
+  function actionButtonsFromRows(rows) {
+    return rows.map((row,index) => ({
+      icon:row.touchIcon||'✋',
       label:row.label,
       action:row.action,
-      inputAction:row.inputAction,
-      promptRoot:row.owner || anchor,
+      style:index===0?'primary':'secondary',
+      allowed:true,
+      worldInteraction:true,
+      promptRoot:row.owner||lastAnchor||ruinRoot(),
+      inputAction:row.inputAction, // Normal refreshActionBar uses this exact semantic slot for popup glyph/color and physical arch placement.
+      nativeInput:row.nativeInput===true, // Native Dodge rows stay in the floating list but are excluded from the five arch buttons.
     }));
-    window.WorldPopupText.syncInteractionPrompts({
-      buttons,
-      root:anchor,
-      scene:activeScene(),
-      enabled:true,
-      showInputHints:true,
-      promptInputs,
-    });
-    ownsWorldList = true;
+  }
+
+  function refreshRows(requestActionBar = false) {
+    if (!inRuin()) {
+      const hadRows=lastRows.length>0;
+      lastRows=[];
+      lastAnchor=null;
+      lastRowsSignature='';
+      window.WorldActionInputClaims?.clearClaims?.(INPUT_CLAIM_OWNER);
+      if(hadRows&&requestActionBar)deps?.refreshActionBar?.();
+      return [];
+    }
+    prepareSemanticObjects();
+    const rows=currentRows();
+    const signature=rowSignature(rows);
+    const changed=signature!==lastRowsSignature;
+    lastRows=rows;
+    lastRowsSignature=signature;
+    lastAnchor=rows[0]?.owner||nearestOwnerForKind(rows[0]?.kind)||ruinRoot()||null;
+    syncInputClaims(rows);
+    if(changed&&requestActionBar)deps?.refreshActionBar?.(); // The ordinary action-bar pass owns both the arch and WorldPopupText list, preventing two prompt systems from erasing each other.
+    return rows;
+  }
+
+  function renderWorldList() {
+    refreshRows(true);
   }
 
   function keyboardMatches(binding, event) {
@@ -622,6 +617,9 @@
     resolveInteractionOwner,
     climbStoneLadder:climbLadder, // Canonical authored-stone-ladder action; uses ClimbSystem's cliff-style hop animation.
     refresh:renderWorldList,
+    getActionButtons() {
+      return actionButtonsFromRows(refreshRows(false)); // Called from game.js's ordinary building-interior action provider path.
+    },
     invoke(index = 0) {
       const row = lastRows[index];
       if (!row) return false;
@@ -632,13 +630,14 @@
       return {
         active:inRuin(),
         nativeProviderMode:true,
+        normalActionBarProvider:true,
         customPromptBridgeInstalled:false,
         providerCount:[window.DevRandomRuin, window.DevRandomRuinPrototypeHooks, window.DevRandomRuinSimplePuzzles].filter(provider => typeof provider?.getInteractionControls === 'function').length,
         ladderCount:ladders.length,
         rows:lastRows.map(row => ({ label:row.label, kind:row.kind, action:row.action, inputAction:row.inputAction, inputActionId:row.inputAction, nativeInput:row.nativeInput===true, input:bindingLabel(row.inputAction, currentDevice(), row.touchIcon), distance:Number.isFinite(row.distance) ? +row.distance.toFixed(3) : null, owner:row.owner?.name||row.owner?.id||null })),
         ownerName:lastAnchor?.name || null,
         ownerKind:semanticKind(lastAnchor),
-        worldPopupVisible:ownsWorldList,
+        worldPopupVisible:lastRows.length>0,
         inputClaims:window.WorldActionInputClaims?.snapshot?.()||null,
       };
     },
