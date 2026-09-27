@@ -263,12 +263,17 @@
         const dirX = nx / horizontal;
         const dirY = nz / horizontal;
         const pitch = Math.asin(Math.max(-1, Math.min(1, ny)));
+        const yaw = Math.atan2(dirY, dirX); // Same ground-plane heading the triggered attack volume uses.
+        const hostileAlreadyInAttackRange = hostileInsideTriggeredAttack(liveDeps, player, hitTest, yaw, pitch); // If the intended 3D melee volume already reaches a hostile, upward aim must not shorten the lunge through gravity.
+        const effectivePitchDistanceResistance = hostileAlreadyInAttackRange
+          ? 1
+          : (hitTest?.pitchDistanceResistance || 0); // Full resistance means "ignore the upward gravity/pitch distance-loss term"; attack-authored resistance remains unchanged otherwise.
         const profile = window.Combat?.meleeLungeProfile?.(
           distancePx,
           pitch,
           hopUnits,
           player.lungeHeightUnits,
-          hitTest?.pitchDistanceResistance || 0,
+          effectivePitchDistanceResistance,
           hitTest?.directFlightStrength || 0,
         ) || { distancePx, hopUnits, pitch, verticalTravelUnits: 0, directFlightStrength: 0 };
 
@@ -299,6 +304,8 @@
           distancePx: player.lungeDistancePx,
           verticalTravelUnits: player.lungeVerticalTravelUnits,
           directFlightStrength: player.lungeDirectFlightStrength,
+          gravityBypassedForInRangeEnemy: hostileAlreadyInAttackRange, // Pixel Probe/debug can distinguish a normal pitch-reduced gap closer from an already-in-range melee lunge.
+          effectivePitchDistanceResistance,
           attackRangePx: Number(hitTest?.rangePx) || null,
           cancelRangePx: Number(player.lungeHitTest?.rangePx) || null,
         };
@@ -386,6 +393,36 @@
         z: Number(base.direction.z) || 0,
       },
     };
+  }
+
+  function hostileInsideTriggeredAttack(liveDeps, player, hitTest, yaw, pitch) {
+    const combat = window.Combat; // Reuses the exact same pitched pie-prism dimensions as the strike itself without firing damage or mutating attack state.
+    if (!hitTest || typeof combat?.meleeColliderVolume !== 'function') return false;
+    const collider = combat.meleeColliderVolume(player, {
+      rangePx: hitTest.rangePx,
+      halfConeRad: hitTest.halfConeRad,
+      yaw,
+      pitch,
+    });
+    if (!collider) return false;
+    const currentArea = liveDeps?.getCurrentArea?.();
+    for (const target of liveDeps?.hostileObjects || []) {
+      if (!target || target.health <= 0 || target.areaId !== currentArea || target._denHidden) continue;
+      const box = window.RangedWeapons?.actorHitbox?.(target)?.box;
+      if (finiteBox(box)) {
+        if (colliderIntersectsBox(collider, box)) return true;
+        continue;
+      }
+      // Match combat-core.meleeHit's compatibility fallback for an actor whose
+      // rendered Box3 has not mounted yet: range + yaw only.
+      const dx = (Number(target.x) || 0) - (Number(player.x) || 0);
+      const dz = (Number(target.y) || 0) - (Number(player.y) || 0);
+      const distancePx = Math.hypot(dx, dz);
+      const pointYaw = Math.atan2(dz, dx);
+      const yawDelta = Math.abs(Math.atan2(Math.sin(pointYaw - collider.yaw), Math.cos(pointYaw - collider.yaw)));
+      if (distancePx <= Math.max(0, Number(hitTest.rangePx) || 0) && yawDelta <= collider.halfConeRad) return true;
+    }
+    return false;
   }
 
   function hostileInsideLungeAt(liveDeps, player, hitTest, sampleX, sampleY) {
