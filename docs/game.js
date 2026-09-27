@@ -5453,62 +5453,9 @@
         return !!g[row]?.[col]?.incline;
       }
 
-      const ENEMY_COLLISION_REPOSITION_MIN_MOVE_FRAC = 0.25; // Used by moveCreatureToward to distinguish useful wall-sliding from a combatant that is genuinely pinned at a collision point.
-      const ENEMY_COLLISION_REPOSITION_FORWARD_MUL = 0.35; // Used by tryEnemyCollisionReposition to keep the first escape choice mostly lateral while retaining some progress toward its target.
-      const ENEMY_COLLISION_REPOSITION_SIDE_MUL = 0.94; // Used with the forward multiplier to produce the short around-the-corner sidestep vector.
-      const ENEMY_COLLISION_REPOSITION_BACK_MUL = -0.35; // Used by the fallback escape choice so a boxed-in enemy can give ground before trying the same side again.
-
-      function enemyCollisionRepositionSide(c) {
-        if (c._collisionRepositionSide === -1 || c._collisionRepositionSide === 1) return c._collisionRepositionSide;
-        const identity = String(c.id || c.name || c.creatureKey || c.def?.id || 'enemy'); // Used only to pick a deterministic initial left/right preference without consuming gameplay RNG.
-        let hash = 0; // Used to spread nearby enemies across opposite initial sidestep directions rather than making every actor choose the same side.
-        for (let i = 0; i < identity.length; i++) hash = ((hash * 31) + identity.charCodeAt(i)) | 0;
-        c._collisionRepositionSide = (hash & 1) ? 1 : -1;
-        return c._collisionRepositionSide;
-      }
-
-      function tryEnemyCollisionReposition(c, nx, ny, step, blockedX, blockedY) {
-        if (!(step > 0) || (c.state !== 'chase' && c.state !== 'patrol-chase')) return null;
-        const preferredSide = enemyCollisionRepositionSide(c); // Used by both escape arcs so direction remains stable across consecutive blocked frames.
-        const sideOrder = [preferredSide, -preferredSide]; // Used to try the remembered side first, then immediately recover if that side is the obstructed one.
-        const escapeProfiles = [
-          { forward: ENEMY_COLLISION_REPOSITION_FORWARD_MUL, mode: 'sidestep' },
-          { forward: ENEMY_COLLISION_REPOSITION_BACK_MUL, mode: 'backoff' },
-        ]; // Used to prefer a lateral around-obstacle move before conceding distance from the combat target.
-        for (const profile of escapeProfiles) {
-          for (const side of sideOrder) {
-            const rawX = nx * profile.forward + (-ny) * ENEMY_COLLISION_REPOSITION_SIDE_MUL * side; // Used to rotate the requested movement toward this candidate escape side.
-            const rawY = ny * profile.forward + nx * ENEMY_COLLISION_REPOSITION_SIDE_MUL * side; // Used with rawX as the matching 2D escape vector.
-            const length = Math.max(0.001, Math.hypot(rawX, rawY)); // Used to keep every escape attempt at the same remaining per-frame movement budget.
-            const escapeNX = rawX / length, escapeNY = rawY / length; // Used for both the collision probe and velocity reported to animation.
-            const escapeX = c.x + escapeNX * step, escapeY = c.y + escapeNY * step; // Used as the local reposition destination rather than a persistent AI target.
-            if (!creatureCanEnterTile(c.def, escapeX, escapeY)) continue;
-            c.x = escapeX;
-            c.y = escapeY;
-            c._collisionRepositionSide = side;
-            c._collisionRepositionDebug = { // Mobile-readable entity state showing the most recent successful collision escape.
-              active: true,
-              mode: profile.mode,
-              blockedX: !!blockedX,
-              blockedY: !!blockedY,
-              side,
-              movedPx: step,
-              atMs: performance.now(),
-            };
-            return { nx: escapeNX, ny: escapeNY, moved: step };
-          }
-        }
-        c._collisionRepositionDebug = { // Records a failed escape too, which makes "still pinned" distinguishable from the helper never running.
-          active: true,
-          mode: 'blocked',
-          blockedX: !!blockedX,
-          blockedY: !!blockedY,
-          side: preferredSide,
-          movedPx: 0,
-          atMs: performance.now(),
-        };
-        return null;
-      }
+      // Pinned-enemy collision escape (tryEnemyCollisionReposition and its
+      // tuning constants) now lives in js/enemy-collision-reposition.js.
+      window.EnemyCollisionReposition.init({ creatureCanEnterTile });
 
       function moveCreatureToward(c, tx, ty, speed, dt) {
         // A NaN/undefined target (e.g. a momentarily-gone companion master,
@@ -5539,9 +5486,9 @@
         const blockedY = Math.abs(desiredY - prevY) > 0.001 && !canMoveY; // Used with blockedX to distinguish collision stalls from ordinary target arrival.
         let moved = Math.hypot(c.x - prevX, c.y - prevY); // Used as the movement already achieved before deciding whether a collision escape is necessary.
         let motionNX = nx, motionNY = ny; // Used for the reported velocity; replaced by the escape vector only when repositioning actually succeeds.
-        if ((blockedX || blockedY) && moved < step * ENEMY_COLLISION_REPOSITION_MIN_MOVE_FRAC) {
+        if ((blockedX || blockedY) && moved < step * window.EnemyCollisionReposition.MIN_MOVE_FRAC) {
           const remainingStep = Math.max(0, step - moved); // Used to keep axis-slide plus escape movement within the original per-frame travel budget.
-          const reposition = tryEnemyCollisionReposition(c, nx, ny, remainingStep, blockedX, blockedY); // Used only for active combat chases; companions/passive travel keep their existing movement behavior.
+          const reposition = window.EnemyCollisionReposition.tryReposition(c, nx, ny, remainingStep, blockedX, blockedY); // Used only for active combat chases; companions/passive travel keep their existing movement behavior.
           if (reposition) {
             moved = Math.hypot(c.x - prevX, c.y - prevY);
             motionNX = reposition.nx;
@@ -17297,7 +17244,8 @@
         if (window.Mounts?.rideState === 'mounted') { window.Mounts.updateMountedMovement(dt); return; }
         if (player._knockbackLedgeFall) { advanceKnockbackLedgeFall(player, dt); return; }
         // Zero-Footing ragdoll/prone — see enterProneIfFootingDepleted above
-        // and performDodge below (the somersault-recovery trigger). Covers
+        // and updateProneState/beginSomersaultRecovery below (the automatic
+        // get-up once Footing refills; a dodge input requests the same arc). Covers
         // both the settled hold (ImpactRagdollPlayback.isHolding()) and the
         // recovery roll (player.somersaultRecovering) — both keep the player
         // fully out of normal movement/physics until recovery finishes and

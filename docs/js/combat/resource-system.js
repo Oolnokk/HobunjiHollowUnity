@@ -345,53 +345,39 @@
   }
 
   // Resource-threshold attacks (Exhaust Cutter / Mercy Spike) should read
-  // actual depletion, not ordinary affliction-colored portions of a bar.
-  // Non-cap afflictions are added back by the union of their rendered ring
-  // segments; explicit capacity reducers stay excluded and the result is
-  // capped at the live effective maximum, so Winded/Congealed/Wounded Health
-  // can still make a target genuinely "low" by shrinking the usable pool.
+  // the bar the player actually sees. Affliction buildup never removes points
+  // from entity.health/stamina — its ring segments sit INSIDE [0, current]
+  // ("currentBack" always, "zero" whenever its amount <= current) — so it must
+  // never be added on top of current, or afflicted-but-low targets read as
+  // healthy. The only extra visible fill is a zero-based band that extends
+  // past current (applied while the pool was already lower), so the result is
+  // max(current, furthest non-cap band end). Explicit capacity reducers
+  // (Winded/Congealed/Wounded Health) stay excluded and the result is capped
+  // at the live effective maximum, so they can still make a target "low".
   function getDepletionEquivalentCurrent(entity, resourceKey) {
     if (!entity || (resourceKey !== "health" && resourceKey !== "stamina")) return 0;
     const authoredMax = Math.max(0, Number(resourceKey === "health" ? entity.maxHealth : entity.maxStamina) || 0); // Used by Quick Attack thresholds, which have always been authored as fractions of the normal bar.
-    const rawCurrent = Math.max(0, Number(entity[resourceKey]) || 0); // Used as the actually unspent/unlost portion before affliction-colored segments are restored for the condition check.
+    const rawCurrent = Math.max(0, Number(entity[resourceKey]) || 0); // Already includes any affliction-colored points that sit inside the fill.
     const api = window.ResourceSystem; // Used at call time so later wrappers (drunken bands, amphibious Wounded Health) participate instead of being bypassed.
     const effectiveMaxResolver = api?.getEffectiveMax || getEffectiveMax; // Used to preserve explicit max-reducing afflictions as real depletion for threshold attacks.
-    const liveEffectiveMax = Math.max(0, Number(effectiveMaxResolver(entity, resourceKey)) || 0); // Caps any affliction add-back below the capacity the entity can currently use.
+    const liveEffectiveMax = Math.max(0, Number(effectiveMaxResolver(entity, resourceKey)) || 0); // Caps any band extension below the capacity the entity can currently use.
     if (!(authoredMax > 0) || !(liveEffectiveMax > 0)) return 0;
 
     const defs = api?.AFFLICTIONS || AFFLICTIONS; // Used below so afflictions installed after ResourceSystem startup are included automatically.
     const getAmount = api?.getAffliction || getAffliction; // Used below so wrapped/custom affliction storage stays authoritative.
-    const getBox = api?.getSegmentBox || getSegmentBox; // Used below to union the same visual resource segments the rings actually expose.
-    const intervals = []; // Used below to avoid double-counting overlapping affliction bands that occupy the same resource points.
+    const getBox = api?.getSegmentBox || getSegmentBox; // Used below to read the same visual resource segments the rings actually draw.
+    let visibleEnd = rawCurrent; // Furthest filled point on the ring, whether normal-colored or affliction-colored.
     for (const [id, def] of Object.entries(defs)) {
       if (def?.resource !== resourceKey || def?.reducesEffectiveMax === true) continue;
       if (!(Number(getAmount(entity, id)) > 0)) continue;
       const box = getBox(entity, resourceKey, id);
       if (!box) continue;
-      const left = clamp(Number(box.leftPoints) || 0, 0, authoredMax); // Used as the inclusive start of this non-cap affliction's occupied resource interval.
-      const right = clamp(left + Math.max(0, Number(box.widthPoints) || 0), 0, authoredMax); // Used as the exclusive end of the same interval for unioning.
-      if (right > left) intervals.push([left, right]);
+      const left = clamp(Number(box.leftPoints) || 0, 0, authoredMax);
+      const right = clamp(left + Math.max(0, Number(box.widthPoints) || 0), 0, authoredMax);
+      if (right > visibleEnd) visibleEnd = right;
     }
-    intervals.sort((a, b) => a[0] - b[0]);
 
-    let afflictedWidth = 0; // Used to accumulate the union width of ordinary affliction-colored resource instead of summing overlapping statuses.
-    let unionStart = null; // Used with unionEnd while merging sorted affliction intervals.
-    let unionEnd = null; // Used with unionStart while merging sorted affliction intervals.
-    for (const [left, right] of intervals) {
-      if (unionStart === null) {
-        unionStart = left;
-        unionEnd = right;
-      } else if (left <= unionEnd) {
-        unionEnd = Math.max(unionEnd, right);
-      } else {
-        afflictedWidth += unionEnd - unionStart;
-        unionStart = left;
-        unionEnd = right;
-      }
-    }
-    if (unionStart !== null) afflictedWidth += unionEnd - unionStart;
-
-    return round1(clamp(rawCurrent + afflictedWidth, 0, Math.min(authoredMax, liveEffectiveMax)));
+    return round1(clamp(visibleEnd, 0, Math.min(authoredMax, liveEffectiveMax)));
   }
 
   function getLiveEffectiveHealthMax(entity) {

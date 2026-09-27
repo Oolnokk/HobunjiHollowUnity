@@ -43,16 +43,29 @@ let conditions = Combat.getQuickAttackConditions(deps, plainLow);
 assert.equal(conditions.exhausted, true, 'genuinely low ordinary Stamina still enables Exhaust Cutter');
 assert.equal(conditions.lowHealth, true, 'genuinely low ordinary Health still enables Mercy Spike');
 
+// A zero-based Stamina band applied while the pool was already low extends
+// the visible bar past current; a currentBack Health band always sits inside
+// current and so adds nothing.
 const ordinarilyAfflicted = makeTarget();
 ResourceSystem.addAffliction(ordinarilyAfflicted, 'woundedStamina', 40);
 ResourceSystem.addAffliction(ordinarilyAfflicted, 'bleedingHealth', 35);
-assert.equal(ResourceSystem.getDepletionEquivalentCurrent(ordinarilyAfflicted, 'stamina'), 50, 'ordinary Stamina-affliction band is added back for depletion checks');
-assert.equal(ResourceSystem.getDepletionEquivalentCurrent(ordinarilyAfflicted, 'health'), 40, 'ordinary Health-affliction band is added back only across the Health-ring points it actually occupies');
+assert.equal(ResourceSystem.getDepletionEquivalentCurrent(ordinarilyAfflicted, 'stamina'), 40, 'a Stamina band extending past current counts as the visible bar end');
+assert.equal(ResourceSystem.getDepletionEquivalentCurrent(ordinarilyAfflicted, 'health'), 20, 'a currentBack Health band inside current is not added on top of current');
 conditions = Combat.getQuickAttackConditions(deps, ordinarilyAfflicted);
-assert.equal(conditions.exhausted, false, 'afflicted Stamina alone does not enable Exhaust Cutter');
-assert.equal(conditions.lowHealth, false, 'afflicted Health alone does not enable Mercy Spike');
-assert.equal(Combat.quickAttackData.lastConditionCheck.staminaForCondition, 50, 'Quick Attack diagnostics expose adjusted Stamina');
-assert.equal(Combat.quickAttackData.lastConditionCheck.healthForCondition, 40, 'Quick Attack diagnostics expose adjusted Health');
+assert.equal(conditions.exhausted, false, 'a visibly 40%-full afflicted Stamina bar does not enable Exhaust Cutter');
+assert.equal(conditions.lowHealth, true, 'a 20% Health bar is low whether or not part of it is afflicted');
+assert.equal(Combat.quickAttackData.lastConditionCheck.staminaForCondition, 40, 'Quick Attack diagnostics expose adjusted Stamina');
+assert.equal(Combat.quickAttackData.lastConditionCheck.healthForCondition, 20, 'Quick Attack diagnostics expose adjusted Health');
+
+// Regression: a band that lives inside current must never be double-counted.
+const bandInsideCurrent = makeTarget();
+bandInsideCurrent.stamina = 60;
+ResourceSystem.addAffliction(bandInsideCurrent, 'woundedStamina', 15);
+ResourceSystem.spendStamina(bandInsideCurrent, 42, 'test');
+assert.equal(bandInsideCurrent.stamina, 18, 'spend above the band leaves 18 Stamina');
+assert.equal(ResourceSystem.getAffliction(bandInsideCurrent, 'woundedStamina'), 15, 'spend above the band leaves it intact');
+assert.equal(ResourceSystem.getDepletionEquivalentCurrent(bandInsideCurrent, 'stamina'), 18, 'band inside current adds nothing');
+assert.equal(Combat.getQuickAttackConditions(deps, bandInsideCurrent).exhausted, true, 'an 18% Stamina target with an inner band still enables Exhaust Cutter');
 
 ResourceSystem.addAffliction(ordinarilyAfflicted, 'windedStamina', 85);
 ResourceSystem.addAffliction(ordinarilyAfflicted, 'congealedHealth', 85);
