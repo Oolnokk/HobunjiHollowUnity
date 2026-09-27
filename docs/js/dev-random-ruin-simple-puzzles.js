@@ -1080,6 +1080,16 @@
           extra:{homeX:px,homeY:py,state:'idle',devRandomRuinSarcophagus:true},
         });
         if(creature&&state===ownerState&&inRuin()&&ownerState.sarcophagusModules.includes(module)){
+          creature.surfaceYOverride=()=>{ // Keeps this reusable humanoid on the live DynamicSurfaces tier while it walks around a sunken/moving ruin instead of snapping to the flat building grid.
+            const tile=Math.max(1e-6,Number(deps?.TILE)||1);
+            const support=DS.sampleSupport?.(creature.x/tile,creature.y/tile,{minY:-8,maxY:12,pad:.02});
+            return Number.isFinite(Number(support?.y))?Number(support.y):NaN;
+          };
+          const initialSurfaceY=Number(creature.surfaceYOverride());
+          if(Number.isFinite(initialSurfaceY)){
+            creature.avatarRef?.group?.position && (creature.avatarRef.group.position.y=initialSurfaceY+(Number(creature.halfHeight)||0));
+            creature.groundShadow?.position && (creature.groundShadow.position.y=initialSurfaceY+(Number(deps?.characterGroundShadowSurfaceOffset?.())||0));
+          }
           deps?.hostileObjects?.add?.(creature);
           ownerState.spawnedMinions.add(creature);
           coffin.spawned=true;module.spawnCount++;
