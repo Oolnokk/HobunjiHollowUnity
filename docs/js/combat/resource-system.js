@@ -198,9 +198,9 @@
       // hold, see impact-ragdoll-playback.js) before Footing starts
       // regenerating again — mirrors the authored impact clips' own
       // recoveryDelay (~1.35s) so the number reads as intentional rather
-      // than arbitrary. Regen resuming is what eventually lets the player's
-      // dodge input trigger the somersault recovery (see game.js's
-      // performDodge/updateProneState) — prone itself only clears there.
+      // than arbitrary. Regen resuming is what eventually lets game.js's
+      // updateProneState trigger the automatic in-place somersault recovery;
+      // prone itself only clears when that recovery arc completes.
       proneRecoveryDelayS: Number(cfg.proneRecoveryDelayS) || 1.5,
     };
   }
