@@ -54,7 +54,7 @@ context.window.ResourceSystem.tick = () => { player.health = 0; return {}; };
 context.window.PlayerVitals.updatePlayerVitals(1 / 60);
 assert.strictEqual(deathCalls, 2, 'a later lethal resource tick is handled normally');
 
-assert(game.includes('handlePlayerDeath: () => respawnPlayer()'), 'player vitals routes lethal afflictions through the canonical respawn');
+assert(game.includes('handlePlayerDeath: reason => respawnPlayer(reason)'), 'player vitals routes lethal afflictions through the canonical respawn while preserving the death source');
 assert(game.indexOf('window.PlayerVitals.updatePlayerVitals(dt)') < game.indexOf('updateHostiles(dt)', game.indexOf('window.PlayerVitals.updatePlayerVitals(dt)')), 'lethal resource damage is resolved before hostile AI runs');
 assert(game.includes('getPlayerAimRay: currentPlayerAimRay'), 'bandit tents receive the current aim ray');
 assert(game.includes('getPlayerInteractionRay: currentPlayerInteractionRay'), 'bandit tents receive the interaction ray');
