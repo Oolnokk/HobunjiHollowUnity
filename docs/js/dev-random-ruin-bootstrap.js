@@ -21,16 +21,16 @@
   document.write('<script src="js/dynamic-surfaces.js?v=20260914v50wallsinputs1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-hit-puzzles.js?v=20260927glyphs1"></scr' + 'ipt>'); // Plain source (formerly nine base64 part files reassembled with eval).
   document.write('<script src="js/dev-random-ruin-prototype-hooks.js?v=20260927interiorparity1"></scr' + 'ipt>');
-  document.write('<script src="js/dev-random-ruin-solid-footprints.js?v=20260927footprints1"></scr' + 'ipt>');
-  document.write('<script src="js/dev-random-ruin-tile-occupancy.js?v=20260927footprints1"></scr' + 'ipt>');
+  document.write('<script src="js/dev-random-ruin-solid-footprints.js?v=20260928puzzles2"></scr' + 'ipt>');
+  document.write('<script src="js/dev-random-ruin-tile-occupancy.js?v=20260928puzzles2"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-solvability.js?v=20260926lighting1"></scr' + 'ipt>');
-  document.write('<script src="js/dev-random-ruin-interior-map.js?v=20260927footprints1"></scr' + 'ipt>');
+  document.write('<script src="js/dev-random-ruin-interior-map.js?v=20260928puzzles2"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-wall-planes.js?v=20260927geometry1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-wall-render-proxy.js?v=20260927geometry1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-collision-precision.js?v=20260927geometry1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-motion-runtime.js?v=20260926animperf2"></scr' + 'ipt>');
-  document.write('<script src="js/dev-random-ruin-simple-puzzles.js?v=20260927footprints1"></scr' + 'ipt>');
+  document.write('<script src="js/dev-random-ruin-simple-puzzles.js?v=20260928puzzles2"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-interactions.js?v=20260927interactionpriority1"></scr' + 'ipt>');
-  document.write('<script src="js/dev-random-ruin-glyph-circuits.js?v=20260927glyphs1"></scr' + 'ipt>');
+  document.write('<script src="js/dev-random-ruin-glyph-circuits.js?v=20260928puzzles2"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-runtime-coverage.js?v=20260923review1"></scr' + 'ipt>');
 })();

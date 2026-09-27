@@ -879,6 +879,10 @@
       else if(Number.isFinite(plateProgress)) m.progress=clamp(plateProgress,0,1);
       else m.progress+=clamp(m.target-m.progress,-dt*1.55,dt*1.55); // Ungated/manual doors use the same authored V50 progress animation.
       if(Math.abs(m.progress-m.target)<.001&&!linkedPlate&&!linkedSignal&&!hasExternalTarget)m.progress=m.target;
+      if(hasExternalTarget){ // V50's applyMechanismProgress animates from the linked signal/plate whenever one exists and ignores the progress passed in, so an external override (hallway glyph gate, ossuary chord) must be written into that signal or the door never visibly opens and stays solid.
+        if(linkedSignal)linkedSignal.userData.solveProgress=m.progress;
+        else if(linkedPlate)linkedPlate.userData.weightProgress=m.progress;
+      }
       ruin.api.applyProgress(m.root,m.progress);
     }
     for(const a of ruin.activators){

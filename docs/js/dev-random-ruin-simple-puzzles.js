@@ -24,6 +24,12 @@
   const HALL_FIRE_BURNING = 18;
   const HALL_POISON = 16;
   const HALL_SHOT_PERIOD = 0.9;
+  const CANOPY_MIN_HEADROOM = 1.6; // Clear height required under a canopy slab anywhere it overhangs.
+  const HALL_CHARGE_SECONDS = 0.45; // Each emitter's mouth heats up over this window before it fires, so the rhythm can be read and dodged.
+  const HALL_TRAP_COLORS = Object.freeze({
+    fire:{ dim:0x4a1e0e, hot:0xffa040, shot:0xff6a22 },
+    poison:{ dim:0x1f3a18, hot:0xa6ff5c, shot:0x9cff5a },
+  });
   const ROPE_FALL_BURNING = 14;
   const ROPE_GRAB_RADIUS = 0.8;
   const ROPE_BODY_RADIUS = 0.045; // Gives the traversal rope real world-space thickness instead of a screen-space one-pixel THREE.Line.
@@ -33,6 +39,9 @@
   const ROPE_MIN_LENGTH = 1.65;
   const CHECKPOINT_INVULN_MS = 1200;
   const KURRAYA_NOTE_URL = 'assets/audio/music/instruments/sfx_kurraya_pluck.m4a'; // Shared authored pluck used by modular musical pressure plates until a dedicated ruin-note sample exists.
+  const CHORD_PLATE_IDLE_COLOR = 0x3f7a78;
+  const CHORD_PLATE_PLAYED_COLOR = 0x8ff3ea;
+  const CHORD_PLATE_SOLVED_COLOR = 0xffd66a;
   const CHORD_PITCHES = Object.freeze([1, 1.259921, 1.498307, 1.887749]); // Equal-tempered root, major third, fifth, major seventh; four independent plates form one real chord without requiring an order.
 
   const DS = window.DynamicSurfaces;
@@ -164,6 +173,21 @@
     return DS.sampleSupport?.(x, z, { minY:-6, maxY, pad:.02 }) || null;
   }
 
+  // True when the lava strip would lie on open ruin floor. A moving dais,
+  // bridge or other raised surface over the strip hides the lava entirely and
+  // makes the rope look pointless (seen on seed 12345: rope over the core dais).
+  function hazardAreaIsOpenFloor(cx, cz, hazardY, length, width, axis) {
+    for (let i = -2; i <= 2; i++) for (let j = -1; j <= 1; j++) {
+      const along = i / 2 * length * .42, cross = j * width * .42;
+      const x = cx + (axis === 'x' ? along : cross), z = cz + (axis === 'x' ? cross : along);
+      const support = sampleSupport(x, z);
+      if (!support || !/^devruin-floor-/.test(String(support.id || ''))) return false;
+      if (Number(support.y) > hazardY + .15) return false;
+      if (window.DevRandomRuinTileOccupancy?.solidAt?.(x, z, 0)) return false; // A pillar standing in the lava reads as a bug, not a hazard.
+    }
+    return true;
+  }
+
   function supportPoint(x, z, fallbackY = 0) {
     const support = sampleSupport(x, z);
     return { x, z, y:Number(support?.y ?? fallbackY) };
@@ -257,7 +281,7 @@
       nearest={t:interval.enter,object,kind,record};
     };
     for(const canopy of state.canopies)consider(canopy.slab,'canopy',canopy);
-    for(const glyph of state.ceilingGlyphs)if(!glyph.active)consider(glyph.mesh,'glyph',glyph);
+    for(const glyph of state.ceilingGlyphs)if(!glyph.active){consider(glyph.mesh,'glyph',glyph);if(glyph.rune)consider(glyph.rune,'glyph',glyph);}
     return nearest;
   }
 
@@ -265,7 +289,7 @@
     if(!glyph||glyph.active)return false;
     glyph.active=true;glyph.hitCount++;
     glyph.material.color.setHex(0x8fe6ff);
-    deps?.showToast?.('Ceiling glyph struck.',true);
+    deps?.showToast?.(glyph.message,true);
     try{glyph.onActivate?.(glyph);}catch(error){console.warn('[Random Test Ruin] ceiling glyph activation failed',error);}
     return true;
   }
@@ -565,6 +589,14 @@
     return { mesh, x, z, width, depth, baseY, topY:baseY+height };
   }
 
+  function removePlatform(platform) {
+    if (!platform?.mesh) return;
+    const surfaceId = platform.mesh.name + '-surface';
+    DS.remove?.(surfaceId);
+    state.surfaceIds.delete(surfaceId);
+    disposeObject(platform.mesh);
+  }
+
   function pointInsidePlatform(point, platform, pad = 0) {
     return Math.abs(point.x-platform.x) <= platform.width*.5+pad &&
       Math.abs(point.z-platform.z) <= platform.depth*.5+pad;
@@ -634,6 +666,7 @@
     const hazardLength=Math.max(1.5,separation-(axis==='x'?Math.min(pa.width,pb.width):Math.min(pa.depth,pb.depth)));
     const hazardWidth=Math.min(2.2,(axis==='x'?roomDepth:roomWidth)-2);
     const hazardY=Math.min(Number(sm.y)||0,Number(pa.baseY)||0,Number(pb.baseY)||0); // Logical fall/burn zone stays at/below the traversal floor; it is intentionally not rendered as a red debug slab in normal gameplay.
+    if(!hazardAreaIsOpenFloor(cx,cz,hazardY,hazardLength,hazardWidth,axis))return null;
 
     const alongPlatformSize=axis==='x'?pa.width:pa.depth;
     const swingHorizontal=Math.max(.8,separation*.5-alongPlatformSize*.46);
@@ -768,20 +801,34 @@
         pb=createPlatform('dev_ruin_rope_platform_b_'+room.id,b.x,b.z,Number(sb.y),axis==='x'?2.1:2.5,axis==='x'?2.5:2.1,destinationHeight); // Tall solid pedestal makes the far landing visibly unreachable by ordinary stepping while keeping the rope grip reachable from A.
       }
       const rope=createRopeTraversalBetween(context,room,pa,pb,options.idSuffix||'');
-      if(!rope)continue;
+      if(!rope){ // Rejected spans must not leave their stone platforms behind as unexplained room clutter.
+        removePlatform(pa);
+        if(!options.endPlatform)removePlatform(pb);
+        continue;
+      }
       usedRooms.add(room.id);
       return rope;
     }
     return null;
   }
 
-  function createEmitterFixture(id,x,y,z) {
+  // side is -1/+1 across the hallway; the glowing mouth faces the hallway
+  // centre and is tinted by what this emitter shoots.
+  const hallTrapHot = new THREE.Color();
+  function createEmitterFixture(id,x,y,z,axis,side,kind) {
     const mesh=naturalizeStone(new THREE.Mesh(sharedBoxGeometry(.24,.24,.24),makeBasic(0x808080)));
     mesh.name=id;
     mesh.position.set(x,y+.42,z);
     mesh.userData.devRandomRuinHallTrapEmitter=true;
+    const colors=HALL_TRAP_COLORS[kind];
+    const mouthMaterial=makeBasic(colors.dim);
+    const mouth=new THREE.Mesh(axis==='x'?sharedBoxGeometry(.17,.17,.02):sharedBoxGeometry(.02,.17,.17),mouthMaterial);
+    mouth.name=id+'_mouth';
+    mouth.userData.devRuinFootprintIgnore=true;
+    if(axis==='x')mouth.position.z=-side*.125;else mouth.position.x=-side*.125;
+    mesh.add(mouth);
     state.group.add(mesh);
-    return mesh;
+    return { mesh, mouthMaterial, kind, colors };
   }
 
   function spawnTrapProjectile(trap, station) {
@@ -799,19 +846,19 @@
     }
     let mesh;
     if (fire) {
-      mesh=new THREE.Mesh(sharedSphereGeometry(.13,8,6),makeBasic(0xff6a22));
+      mesh=new THREE.Mesh(sharedSphereGeometry(.13,8,6),makeBasic(HALL_TRAP_COLORS.fire.shot));
     } else {
-      mesh=new THREE.Mesh(sharedBoxGeometry(.34,.055,.055),makeBasic(0x86a866));
+      mesh=new THREE.Mesh(sharedBoxGeometry(.4,.08,.08),makeBasic(HALL_TRAP_COLORS.poison.shot));
       mesh.rotation.y=trap.axis==='x'?Math.PI*.5:0;
     }
     mesh.name='dev_ruin_hall_projectile_'+trap.id+'_'+station.index+'_'+station.sequence;
-    mesh.position.set(x,station.y+.55,z);
+    mesh.position.set(x,station.y+.42,z); // Leaves from the emitter mouth instead of above it.
     mesh.userData.devRandomRuinHallTrapProjectile=fire?'fire':'poison';
     state.group.add(mesh);
     state.projectiles.push({
       mesh,
       kind:fire?'fire':'poison',
-      x,z,y:station.y+.55,
+      x,z,y:station.y+.42,
       vx,vz,
       age:0,
       maxAge:Math.max(1.1,(trap.crossHalf*2+.8)/4.8+.35),
@@ -843,14 +890,18 @@
         if(!support)continue;
         const y=Number(support.y);
         const fixtureOffset=crossHalf+.02;
-        if(axis==='x'){
-          createEmitterFixture('dev_ruin_hall_emitter_'+hall.id+'_'+index+'_a',x,y,centerCross-fixtureOffset);
-          createEmitterFixture('dev_ruin_hall_emitter_'+hall.id+'_'+index+'_b',x,y,centerCross+fixtureOffset);
-        }else{
-          createEmitterFixture('dev_ruin_hall_emitter_'+hall.id+'_'+index+'_a',centerCross-fixtureOffset,y,z);
-          createEmitterFixture('dev_ruin_hall_emitter_'+hall.id+'_'+index+'_b',centerCross+fixtureOffset,y,z);
+        const side=index%2?1:-1,sequence=index;
+        // spawnTrapProjectile flips side and alternates fire/poison on every
+        // shot, so each emitter always shoots the same kind: the first shot
+        // comes from -side with the kind of this station's starting sequence.
+        const firstKind=sequence%2===0?'fire':'poison',otherKind=firstKind==='fire'?'poison':'fire';
+        const kindFor=emitterSide=>emitterSide===-side?firstKind:otherKind;
+        const emitters={};
+        for(const [suffix,emitterSide] of [['a',-1],['b',1]]){
+          const ex=axis==='x'?x:centerCross+emitterSide*fixtureOffset,ez=axis==='x'?centerCross+emitterSide*fixtureOffset:z;
+          emitters[emitterSide]=createEmitterFixture('dev_ruin_hall_emitter_'+hall.id+'_'+index+'_'+suffix,ex,y,ez,axis,emitterSide,kindFor(emitterSide));
         }
-        stations.push({index,x,z,y,side:index%2?1:-1,sequence:index,nextAt:.38+index*.28});
+        stations.push({index,x,z,y,side,sequence,nextAt:.38+index*.28,emitters});
       }
       if(!stations.length)continue;
       state.trapHallways.push({
@@ -899,7 +950,7 @@
     for(let i=0;i<4;i++){
       const p=points[i],support=sampleSupport(p.x,p.z);
       if(!support){disposeObject(root);return null;}
-      const material=makeBasic(0x59544b);
+      const material=makeBasic(CHORD_PLATE_IDLE_COLOR); // Verdigris bronze: distinct from the grey floor and from the sandstone safe-path trap plates.
       const mesh=new THREE.Mesh(sharedBoxGeometry(.68,.06,.68),material);
       mesh.name='dev_ruin_chord_plate_'+id+'_'+i;
       mesh.position.set(p.x,Number(support.y)+.03,p.z);
@@ -987,6 +1038,20 @@
         depth=Math.min(roomMaxD,Math.max(depth,Math.abs(crossZ-z)*2+.8));
       }
     }
+    // Canopies sit on whatever anchor they were given (often a raised rope
+    // balcony); the slab must not hang into head height over any neighbouring
+    // floor. Shrink toward the anchor until every covered point has headroom,
+    // otherwise skip the canopy.
+    const headroomOk=(w,d)=>{
+      for(let i=0;i<=4;i++)for(let j=0;j<=4;j++){
+        const support=sampleSupport(x+(i/4-.5)*w,z+(j/4-.5)*d);
+        if(support&&Number(support.y)>roofY-.11-CANOPY_MIN_HEADROOM)return false;
+      }
+      return true;
+    };
+    let fit=[1,.85,.7].find(scale=>headroomOk(width*scale,depth*scale));
+    if(fit==null)return null;
+    width*=fit;depth*=fit;
     const root=new THREE.Group();
     root.name='dev_ruin_stone_canopy_'+room.id;
     const slab=naturalizeStone(new THREE.Mesh(sharedBoxGeometry(width,.22,depth),makeBasic(0x808080)));
@@ -1015,7 +1080,10 @@
     mesh.name='dev_ruin_modular_ceiling_glyph_'+room.id+'_'+state.ceilingGlyphs.length;
     mesh.userData.devRandomRuinModularGlyph=true;
     state.group.add(mesh);
-    const glyph={id:'ceiling-glyph-'+room.id+'-'+state.ceilingGlyphs.length,roomId:String(room.id),mesh,material,active:false,hitCount:0,onActivate:typeof options.onActivate==='function'?options.onActivate:null};
+    const glyph={id:'ceiling-glyph-'+room.id+'-'+state.ceilingGlyphs.length,roomId:String(room.id),mesh,material,active:false,hitCount:0,onActivate:typeof options.onActivate==='function'?options.onActivate:null,message:options.message||'Ceiling glyph struck.'};
+    // A dull disc on the ceiling was nearly invisible; the shared glowing rune
+    // hangs just below it (and is the part players aim at).
+    glyph.rune=window.DevRandomRuinGlyphCircuits?.attachRune?.(state.group,new THREE.Vector3(x,ceilingY-.24,z),{hex:0x8fe6ff,name:'dev_ruin_glyph_marker_'+glyph.id,isActive:()=>glyph.active})||null;
     state.ceilingGlyphs.push(glyph);
     recordModulePlacement('ceilingProjectileGlyph','ceiling',glyph.id,{roomId:String(room.id)});
     return glyph;
@@ -1029,7 +1097,7 @@
       const landing={mesh:elevator.mesh,x:elevator.x,z:elevator.z,width:elevator.width,depth:elevator.depth,baseY:elevator.topTopY-elevator.height,topY:elevator.topTopY};
       const rope=buildRopeSwing(context,rng,usedRooms,{room,endPlatform:landing,idSuffix:'elevator'});
       if(!rope){elevator.active=true;continue;} // If geometry cannot support the intended chain, the elevator remains a valid standalone cycling module instead of becoming dead machinery.
-      const glyph=buildCeilingGlyphModule(context,room,{x:elevator.x,z:elevator.z},{onActivate:()=>activateCyclingElevator(elevator)});
+      const glyph=buildCeilingGlyphModule(context,room,{x:elevator.x,z:elevator.z},{onActivate:()=>activateCyclingElevator(elevator),message:'Ceiling glyph struck — the stone lift starts moving.'});
       if(!glyph){elevator.active=true;return rope;}
       const canopy=buildStoneCanopyModule(context,room,rope.startPlatform,{occludePoint:{x:glyph.mesh.position.x,y:glyph.mesh.position.y,z:glyph.mesh.position.z}}); // Balcony roof is dimensioned from the actual target ray, so it physically prevents the shortcut shot before the rope crossing.
 
@@ -1302,7 +1370,7 @@
     const mechanismId=nearestGeneratedStoneDoorMechanism(context,point);
     if(!mechanismId)return null;
     const owner={id:'hallway-'+hall.id};
-    const glyph=buildCeilingGlyphModule(context,owner,point,{onActivate:()=>window.DevRandomRuin?.setMechanismTarget?.(mechanismId,1)});
+    const glyph=buildCeilingGlyphModule(context,owner,point,{onActivate:()=>window.DevRandomRuin?.setMechanismTarget?.(mechanismId,1),message:'Ceiling glyph struck — a nearby stone door grinds open.'});
     if(!glyph)return null;
     usedHallways.add(hall.id);
     recordModulePlacement('hallwayGlyphGate','hallway',hall.id,{glyphId:glyph.id,opensMechanism:mechanismId});
@@ -1660,15 +1728,20 @@
         plate.mesh.position.y=plate.y+.03-(down?.035:0);
         if(down&&!plate.down){
           plate.pressCount++;
-          if(!plate.played){plate.played=true;plate.material.color.setHex(0x8a825f);}
+          if(!plate.played){
+            plate.played=true;plate.material.color.setHex(CHORD_PLATE_PLAYED_COLOR);
+            const played=set.plates.filter(entry=>entry.played).length;
+            if(played<set.plates.length)deps?.showToast?.(`A note rings out (${played}/${set.plates.length}). Step on every bronze plate to complete the chord.`,true);
+          }
           playKurrayaPlateNote(plate.index);
         }
         plate.down=down;
       }
       if(!set.solved&&set.plates.every(plate=>plate.played)){
         set.solved=true;set.solveCount++;
+        for(const plate of set.plates)plate.material.color.setHex(CHORD_PLATE_SOLVED_COLOR);
         playStoneUnlockKchunk();
-        deps?.showToast?.('The four notes settle into a chord. Stone machinery unlocks.',true);
+        deps?.showToast?.(set.onComplete?'The four notes settle into a chord. Stone machinery unlocks.':'The four notes settle into a chord.',true); // Standalone plate sets are ambient; only claim an unlock when a composer actually wired one.
         try{set.onComplete?.(set);}catch(error){console.warn('[Random Test Ruin] chord completion failed',error);}
       }
     }
@@ -1810,6 +1883,11 @@
         if(state.elapsed>=station.nextAt){
           spawnTrapProjectile(trap,station);
           station.nextAt+=HALL_SHOT_PERIOD;
+        }
+        const charge=Math.max(0,Math.min(1,1-(station.nextAt-state.elapsed)/HALL_CHARGE_SECONDS));
+        for(const [emitterSide,emitter] of Object.entries(station.emitters||{})){
+          const next=Number(emitterSide)===-station.side; // The emitter that fires next heats up; the other stays at its dim tint.
+          emitter.mouthMaterial.color.setHex(emitter.colors.dim).lerp(hallTrapHot.setHex(emitter.colors.hot),next?charge*charge:0);
         }
       }
     }

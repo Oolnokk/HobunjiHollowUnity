@@ -36,6 +36,7 @@
   let group = null;
   let circuits = [];
   let textures = null;
+  const attachments = new Set(); // Standalone runes other puzzle modules attach (e.g. modular ceiling glyphs); they live in the module's own scene graph.
 
   const tmpBox = new THREE.Box3();
 
@@ -223,7 +224,40 @@
     }
   }
 
+  function inScene(object) {
+    for (let node = object; node; node = node.parent) if (node.isScene) return true;
+    return false;
+  }
+
+  function updateAttachments(now) {
+    const pulse = .5 + .5 * Math.sin(now * .004);
+    for (const entry of attachments) {
+      if (!inScene(entry.sprite)) { attachments.delete(entry); entry.sprite.material.dispose(); continue; }
+      const active = !!entry.isActive();
+      entry.sprite.material.map = active ? textures.runeLit : textures.rune;
+      entry.sprite.material.opacity = active ? 1 : .45 + .35 * pulse;
+      const size = active ? entry.size * 1.12 : entry.size * (.94 + .08 * pulse);
+      entry.sprite.scale.set(size, size, 1);
+    }
+  }
+
+  // Adds a glowing rune (same look as glyph-circuit markers) under `parent` at
+  // `position`; it pulses until isActive() turns true. Disposed automatically
+  // once its parent leaves the scene.
+  function attachRune(parent, position, options = {}) {
+    if (!parent?.add || !position) return null;
+    const tex = ensureTextures();
+    const size = Number(options.size) || MARKER_SIZE;
+    const rune = sprite(tex.rune, options.hex ?? 0x8fe6ff, size);
+    rune.name = options.name || 'dev_ruin_glyph_marker_attached';
+    rune.position.copy(position);
+    parent.add(rune);
+    attachments.add({ sprite:rune, size, isActive:typeof options.isActive === 'function' ? options.isActive : () => false });
+    return rune;
+  }
+
   function frame() {
+    if (attachments.size) updateAttachments(performance.now());
     if (!inRuin()) { if (group) clear(); return; }
     const root = window.DevRandomRuinHitPuzzles?.getRoot?.() || null;
     if (!root) { if (group) clear(); return; }
@@ -235,6 +269,7 @@
 
   window.DevRandomRuinGlyphCircuits = Object.freeze({
     palette:PALETTE,
+    attachRune,
     rebuild:() => { const root = window.DevRandomRuinHitPuzzles?.getRoot?.(); return root ? build(root) : false; },
     snapshot:() => circuits.map(circuit => ({
       mechanismId:circuit.mechanismId,

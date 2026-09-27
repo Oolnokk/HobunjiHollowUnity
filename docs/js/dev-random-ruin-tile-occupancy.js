@@ -405,7 +405,10 @@
       solidType:config.solidType ?? 'rock', // Same solid tile type ordinary interior movement/AI already treats as impassable.
       baseGridTypes:new Map(), // Restores generated floor types when doors open and when the session-only ruin is destroyed.
       staticSources:new Map(),
-      footprints:SolidFootprints.createSet({ floorY:(x, z) => DS.sampleSupport(x, z, { minY:-4, maxY:6 })?.y ?? 0 }),
+      footprints:SolidFootprints.createSet({
+        floorY:(x, z) => DS.sampleSupport(x, z, { minY:-4, maxY:6 })?.y ?? 0,
+        playerBox:() => { const p = config.getPlayerPosition?.(); return p ? { x:p.x, z:p.z, half:.2 } : null; }, // Player square used by game.js canOccupyAt (PLAYER_RADIUS*0.72 = 0.196u).
+      }),
       sources:new Map(),
       blocked:new Set(),
       causes:new Set(),

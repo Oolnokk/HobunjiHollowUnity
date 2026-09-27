@@ -117,6 +117,20 @@
   // from scanning roots; dynamic ones carry their own enabled() predicate.
   function createSet(options = {}) {
     const floorY = typeof options.floorY === 'function' ? options.floorY : () => 0;
+    const playerBox = typeof options.playerBox === 'function' ? options.playerBox : () => null;
+
+    // Conditional footprints (doors) only turn solid once the player is not
+    // standing in them, so a door closing on the player never wedges them
+    // inside collision (which would hand movement to the unstuck fallback).
+    function active(fp) {
+      if (!fp.enabled) return true;
+      if (!fp.enabled()) { fp.latched = false; return false; }
+      if (fp.latched) return true;
+      const player = playerBox();
+      if (player && boxOverlaps(fp, player.x, player.z, player.half)) return false;
+      fp.latched = true;
+      return true;
+    }
     const footprints = [];
     let cells = new Map();
 
@@ -188,7 +202,7 @@
         const bucket = cells.get(cx + ',' + cz);
         if (!bucket) continue;
         for (const fp of bucket) {
-          if (fp.enabled && !fp.enabled()) continue;
+          if (!active(fp)) continue;
           if (worldY != null && (worldY > fp.maxY + half || worldY < fp.minY - half)) continue; // Projectile passing over/under this prop.
           if (x + half < fp.minX || x - half > fp.maxX || z + half < fp.minZ || z - half > fp.maxZ) continue;
           if (boxOverlaps(fp, x, z, half)) return fp;
@@ -202,7 +216,7 @@
     function centerCoveredTiles(floorSet) {
       const result = new Map();
       for (const fp of footprints) {
-        if (fp.enabled && !fp.enabled()) continue;
+        if (!active(fp)) continue;
         for (let col = Math.floor(fp.minX); col <= Math.floor(fp.maxX); col++) {
           for (let row = Math.floor(fp.minZ); row <= Math.floor(fp.maxZ); row++) {
             const key = col + ',' + row;
@@ -219,7 +233,7 @@
 
     return {
       scan, addBox, removeTag, blocksBox, centerCoveredTiles,
-      list:() => footprints.filter(fp => !fp.enabled || fp.enabled()),
+      list:() => footprints.filter(active),
       count:() => footprints.length,
     };
   }
