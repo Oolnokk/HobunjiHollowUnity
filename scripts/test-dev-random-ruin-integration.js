@@ -196,9 +196,10 @@ assert(!hooks.includes('registerBlocker(`devruin-transit-door-'), 'transit doors
 assert(!hooks.includes('registerBlocker(`devruin-elevator-'), 'elevator objects must not retain object-wide blockers outside the Map snapshot');
 assert(interactions.includes("matchMedia?.('(pointer: coarse)')"), 'mobile ruin actions must recognize coarse-pointer desktop-view devices');
 assert(interactions.includes("source:'semantic-glyph'"), 'mobile glyph targets must expose ranged guidance/action');
-assert(interior.includes("RUIN_ELEVATION_CHANNEL = 'devRandomRuinElevation'"), 'multi-level ruin presentation must have one shared elevation channel');
-assert(interior.includes('includePlayer:false') && interior.includes('includeExternal:true'), 'ruin elevation must move external tool/pet roots without double-moving playerMesh');
-assert(interior.includes('ResourceRings?.updateRingHud') && interior.includes('ring.position.set(x, elevation, z)'), 'player resource rings must follow the same ruin floor elevation as the body');
+assert(interior.includes('function getPlayerSupportY()') && interior.includes('getPlayerSupportY,syncPlayerPresentationHeight'), 'multi-level ruin presentation must expose one authoritative support height to the normal player renderer');
+assert(game.includes('window.DevRandomRuin?.getPlayerSupportY?.()') && game.includes('Number.isFinite(ruinStandY) ? ruinStandY'), 'game.js must consume ruin support before positioning body, shadow, resources, held equipment, and shoulder pets');
+assert(interior.includes('ruin.supportY=climbY') && interior.includes('ruin.lastAcceptedPx={x:deps.player.x,y:deps.player.y}'), 'ladder motion must advance the ruin step baseline so the landing cannot be rejected as an oversized step');
+assert(!interior.includes('RUIN_ELEVATION_CHANNEL'), 'ruin elevation must not post-correct attachments through a second composer channel');
 assert(interactions.includes('ClimbSystem?.startScriptedWorldClimb'), 'authored stone ladders must use the shared cliff-climb animation instead of teleporting by default');
 assert(climbSystem.includes('function startScriptedWorldClimb') && climbSystem.includes('startScriptedWorldClimb,'), 'ClimbSystem must expose the reusable staggered hop/lerp climb path');
 assert(hooks.includes('DevRandomRuinInteractions owns the single climb control'), 'prototype hooks must not install a competing ladder action');
@@ -209,6 +210,7 @@ new vm.Script(occupancy, { filename:'dev-random-ruin-tile-occupancy.js' });
 new vm.Script(renderProxy, { filename:'dev-random-ruin-wall-render-proxy.js' });
 new vm.Script(interactions, { filename:'dev-random-ruin-interactions.js' });
 
+assert(api.includes("root?.userData?.activatorType === 'glyphObelisk'") && api.includes('setDecalMaterialsProgress(root.userData.decalMaterials, normalizedProgress)'), 'direct projectile glyph progress must update its leaf decal state through the V50 API boundary');
 assert(api.includes('createRuntimeStoneLadder'), 'V50 bridge must expose the real stone ladder constructor');
 assert(api.includes('auditInteriorSeeds'), 'V50 bridge must expose multi-seed runtime-tag auditing');
 assert(api.includes('inspectRuntimeTags'), 'V50 bridge must classify runtime-tagged prototype output');
@@ -238,6 +240,7 @@ assert.equal(
   '038a5d54c66b0ae2a9ceeb66967b9e5c32b616040f40b503eec59d5331885f40',
   'readable V50 source must remain byte-for-byte identical to the recovered prototype source',
 );
+assert(interior.includes('GENERATOR_FRAME_TIMEOUT_MS = 30000') && interior.includes('performance.now() - started < GENERATOR_FRAME_TIMEOUT_MS'), 'hidden V50 generation must retain a bounded but slow-browser-safe startup timeout');
 assert(debrisBootstrap.includes("params.get('devRuntime') === '1'"), 'Debris-ifier bootstrap must recognize hidden dev runtime mode');
 assert(debrisBootstrap.includes("const EMBEDDED_TREE = 'debrisifier-v50-embedded-tree.json'"), 'embedded runtime must name the committed local tree');
 assert(debrisBootstrap.includes('const hallReplacement = \'const width=randomIntInclusive(rng,5,6),length=randomIntInclusive(rng,5,8);\''), 'embedded runtime must widen normal V50 hallways to 5–6 cells');
