@@ -45,7 +45,7 @@ const loadOrder = [
 ].map(name => camera.indexOf(name));
 assert(/localStorage\.getItem\('hobunjiDevMode'\) === '1'/.test(camera) && /if \(!devMode/.test(camera), 'ruin runtime must only be injected in Dev Mode');
 assert(camera.includes('dev-random-ruin-interactions.js?v=20260926ropedodge1'), 'ruin interaction adapter must be cache-busted in the dev bootstrap');
-assert(camera.includes('dev-random-ruin-simple-puzzles.js?v=20260927plateclear1'), 'simple puzzle runtime must be cache-busted in the dev bootstrap');
+assert(camera.includes('dev-random-ruin-simple-puzzles.js?v=20260927modules2'), 'simple puzzle runtime must be cache-busted in the dev bootstrap');
 assert(camera.includes('dev-random-ruin-wall-render-proxy.js?v=20260926glyphdecal1'), 'glyph decal proxy fix must be cache-busted in the dev bootstrap');
 assert(gameIndex.includes('js/dev-random-ruin-bootstrap.js?v=20260927plateclear1'), 'game page must load the updated ruin bootstrap');
 assert(gameIndex.includes('game.js?v=20260926ropedodge1'), 'game page must cache-bust the native Dodge rope release seam');
@@ -124,6 +124,15 @@ assert(interior.includes("DevRandomRuinSimplePuzzles?.ownsPlayerMotion?.()"), 'r
 assert(simplePuzzles.includes("anchorY=ceilingBase+wallHeight-.035"), 'rope anchors must use the authored room ceiling datum instead of floating at a derived mid-room height');
 assert(simplePuzzles.includes("dev_ruin_swing_rope_ceiling_mount_"), 'rope traversal must render an explicit ceiling attachment');
 assert(simplePuzzles.includes("inputAction:'dodge'") && simplePuzzles.includes("nativeInput:true"), 'rope jump-off prompt must advertise the canonical Dodge input without stealing an action slot');
+assert(simplePuzzles.includes("recordModulePlacement('projectileHallwayTrap'"), 'hallway traps must be represented as reusable module placements');
+assert(simplePuzzles.includes("recordModulePlacement('chordPressurePlates'"), 'musical pressure plates must be reusable in hallway or room slots');
+assert(simplePuzzles.includes("recordModulePlacement('stoneCanopy'"), 'stone canopies must exist as independent modules instead of rope-only geometry');
+assert(simplePuzzles.includes("recordModulePlacement('sarcophagusSpawner'"), 'sarcophagus skeleton spawners must exist as independent modules');
+assert(simplePuzzles.includes("recordModulePlacement('lockableStoneDoor'"), 'lockable room doors must exist as independently wired modules');
+assert(simplePuzzles.includes("recordModulePlacement('ceilingProjectileGlyph'"), 'ceiling projectile targets must exist as independent trigger modules');
+assert(simplePuzzles.includes("recordModulePlacement('cyclingElevator'"), 'cycling elevators must exist as independent sunken-floor modules');
+assert(simplePuzzles.includes('buildSwappableHallwayModules'), 'generic hallway slots must be able to choose non-trap modules');
+assert(simplePuzzles.includes('installModularProjectileHook'), 'reusable canopies and ceiling glyphs must share one ranged-projectile collision seam');
 assert(simplePuzzles.includes('holsterRopeEquipment') && simplePuzzles.includes('putAwayHeldEquipment({silent:true})'), 'grabbing a rope must silently put away the current weapon/tool');
 assert(simplePuzzles.includes('restoreHeldToolSnapshot') && simplePuzzles.includes('restoreRopeEquipment()'), 'rope release/fall/clear must restore the exact held tool snapshot');
 assert(game.includes("DevRandomRuinSimplePuzzles?.releaseActiveRope?.()"), 'the canonical Dodge/context action must release an attached ruin rope');
