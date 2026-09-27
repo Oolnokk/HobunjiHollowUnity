@@ -365,7 +365,7 @@ textarea{width:100%;min-height:165px;padding:8px;resize:vertical;font:11px/1.4 u
       ay: xf.ay ?? 0,
       sx: xf.scaleX ?? xf.scaleMulX ?? 1,
       sy: xf.scaleY ?? xf.scaleMulY ?? 1,
-      pos: record.layerName === 'back' ? 'back' : 'front',
+      pos: /^back(?:_|$)/i.test(String(record.layerName || '')) ? 'back' : 'front',
       paletteColorKey: paletteKey,
       pixelLayerMasks: (raw.pixelLayerMasks || []).map(mask => ({ ...mask, url: normalizedPortraitUrl(mask.url) })),
       xformPreset: 'B'
