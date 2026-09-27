@@ -156,9 +156,11 @@
   }
 
   function handRigForLich(entity) {
+    const registeredRoot = entity?.avatarRef?.handRigAvatarRoot; // Shared hostile builder retains the original PNGPlaneAvatar root specifically so ProceduralHandFrameDriver can own real hands.
+    if (registeredRoot?.userData?.proceduralHandRig) return registeredRoot.userData.proceduralHandRig;
     const root = entity?.avatarRef?.group;
     if (root?.userData?.proceduralHandRig) return root.userData.proceduralHandRig;
-    let rig = null; // Some avatar builds put the rig on a nested presentation root rather than the public avatar group.
+    let rig = null; // Fallback traversal catches late/legacy avatar layouts once their hand rig attaches.
     root?.traverse?.(node => {
       if (!rig && node?.userData?.proceduralHandRig) rig = node.userData.proceduralHandRig;
     });
@@ -1098,7 +1100,7 @@
     const playerEntranced = deps?.player ? (window.ResourceSystem?.getAffliction?.(deps.player, 'entrancedHealth') || 0) : 0; // Current player buildup for one-line verification.
     return {
       classId: CLASS_ID, arenaOnly: ARENA_ID, wrappersInstalled,
-      activeLiches: liches.map(lich => ({ id: lich.id, type: lich.lichType, dye: lich.lichDyeId, command: lich._lichCommand, casting: lich._lichCastingAbility || null, hovering: !!lich.avatarRef?.legs?.isHoverMode?.(), hoverOffset: Number(lich._lichHoverOffsetWorld) || 0, emptyLightWeapon: !!lich._lichCastWeaponSocket, primaryCd: lich._lichPrimaryCooldownS, summonCd: lich._lichSummonCooldownS, summons: [...(lich._lichSummons || [])].filter(isLiveActor).length })),
+      activeLiches: liches.map(lich => ({ id: lich.id, type: lich.lichType, dye: lich.lichDyeId, resolvedDyes: lich.avatarRef?.resolvedRosterDyes || null, command: lich._lichCommand, casting: lich._lichCastingAbility || null, hovering: !!lich.avatarRef?.legs?.isHoverMode?.(), hoverOffset: Number(lich._lichHoverOffsetWorld) || 0, handRig: !!handRigForLich(lich), emptyLightWeapon: !!lich._lichCastWeaponSocket, primaryCd: lich._lichPrimaryCooldownS, summonCd: lich._lichSummonCooldownS, summons: [...(lich._lichSummons || [])].filter(isLiveActor).length })),
       projectiles: projectiles.size, puddles: puddles.size, totalPuddles, totalSummons,
       playerEntranced, playerCommand: deps?.player?._entrancedCommandState?.source?._lichCommand || null,
       playerEntrancerId: deps?.player?._entrancedCommandState?.source?.id || null,
@@ -1116,7 +1118,9 @@
     formatDebug() {
       const d = debugSnapshot(); // Compact status line intended for Pixel Probe/mobile-copyable diagnostics.
       const hover = d.activeLiches.filter(lich => lich.hovering).map(lich => `${lich.id || lich.type}:${lich.hoverOffset.toFixed?.(2) || lich.hoverOffset}`).join(',') || '-'; // Compact mobile-readable proof that active liches are using airborne presentation.
-      return `Harlyao Liches: live=${d.activeLiches.length} hover=${hover} projectiles=${d.projectiles} puddles=${d.puddles} summons=${d.totalSummons} entranced=${d.playerEntranced.toFixed?.(1) || d.playerEntranced} command=${d.playerCommand || '-'} controller=${d.playerEntrancerId || '-'} marker=${d.entrancerMarker?.ringVisible ? 'ring' : '-'}+${d.entrancerMarker?.auraVisible ? 'aura' : '-'} goo=${d.playerGooSlow?.stacks || 0} last=${d.lastEvent}`;
+      const hands = d.activeLiches.map(lich => `${lich.id || lich.type}:${lich.handRig ? 'hands' : 'NO-HANDS'}`).join(',') || '-'; // Exposes the exact rig-attachment failure class without requiring desktop devtools.
+      const dyes = d.activeLiches.map(lich => `${lich.id || lich.type}:${Object.entries(lich.resolvedDyes || {}).map(([slot, rec]) => `${slot}=${rec?.dyeId || '?'}`).join('+') || 'NO-DYES'}`).join(',') || '-'; // Confirms world-raster dye reconciliation independently from loot metadata.
+      return `Harlyao Liches: live=${d.activeLiches.length} hover=${hover} hands=${hands} dyes=${dyes} projectiles=${d.projectiles} puddles=${d.puddles} summons=${d.totalSummons} entranced=${d.playerEntranced.toFixed?.(1) || d.playerEntranced} command=${d.playerCommand || '-'} controller=${d.playerEntrancerId || '-'} marker=${d.entrancerMarker?.ringVisible ? 'ring' : '-'}+${d.entrancerMarker?.auraVisible ? 'aura' : '-'} goo=${d.playerGooSlow?.stacks || 0} last=${d.lastEvent}`;
     },
   };
   window.__lichDebug = { snapshot: debugSnapshot }; // Console-independent API also consumed by the existing mobile debug surfaces/tests.
