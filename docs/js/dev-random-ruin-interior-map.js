@@ -95,9 +95,11 @@
   }
 
   function setMechanismTarget(mechanismId, target = 1) {
-    const mechanism=ruin?.mechanisms?.get?.(String(mechanismId||'')); // Lets modular puzzle composers emit a normal mechanism signal without reaching into the ruin runtime's private map.
+    const mechanism=ruin?.mechanisms?.get?.(String(mechanismId||'')); // Lets modular puzzle composers emit an authoritative mechanism signal without reaching into the ruin runtime's private map.
     if(!mechanism)return false;
-    mechanism.target=clamp(Number(target)||0,0,1);
+    const normalized=clamp(Number(target)||0,0,1);
+    mechanism.target=normalized;
+    mechanism.externalTarget=normalized; // Explicit composer signals override stale V50 plate/glyph solveProgress so the visible door/platform actually follows the requested state.
     return true;
   }
 
@@ -409,7 +411,7 @@
     ruin.localeRoot.traverse(object => {
       const d = object.userData || {}, motion = d.previewMotion?.type;
       if (d.mechanismId && ['bridge','bridgeSequence','stoneDoor','movingDais','collapsingStairs'].includes(motion))
-        ruin.mechanisms.set(d.mechanismId,{id:d.mechanismId,root:object,type:motion,progress:0,target:0});
+        ruin.mechanisms.set(d.mechanismId,{id:d.mechanismId,root:object,type:motion,progress:0,target:0,externalTarget:null}); // externalTarget is reserved for modular composers that must visibly drive an existing V50 mechanism regardless of its original puzzle signal.
       if (d.linkedMechanismId && d.activatorType) {
         ruin.activators.push(object);
         if (d.activatorType === 'stackedObelisk' || d.activatorType === 'linkedCubePillars') {
@@ -857,14 +859,19 @@
       const linkedSignal=m.root.userData?.linkedCubePuzzleRoot;
       const signalProgress=Number(linkedSignal?.userData?.solveProgress);
       const plateProgress=Number(linkedPlate?.userData?.weightProgress);
-      if(m.manualFallback){
+      const hasExternalTarget=m.externalTarget!==null&&m.externalTarget!==undefined&&Number.isFinite(Number(m.externalTarget)); // Modular composition may deliberately take ownership of an already-authored V50 mechanism.
+      if(hasExternalTarget){
+        const desired=clamp(Number(m.externalTarget),0,1);
+        m.progress+=clamp(desired-m.progress,-dt*1.55,dt*1.55); // Uses the same smooth progress cadence as ordinary wide stone doors instead of snapping collision while leaving the render signal at zero.
+        if(Math.abs(m.progress-desired)<.001)m.progress=desired;
+      }else if(m.manualFallback){
         const linkedTarget=Math.max(Number.isFinite(signalProgress)?signalProgress:0,Number.isFinite(plateProgress)?plateProgress:0);
         const desired=Math.max(m.target,linkedTarget); // Either the nearby lift control or its projectile activator can raise it; neither can strand the player.
         m.progress+=clamp(desired-m.progress,-dt*1.55,dt*1.55);
       }else if(Number.isFinite(signalProgress)) m.progress=clamp(signalProgress,0,1); // Projectile glyph runtime publishes a smooth solveProgress here; applying it closes the missing signal→animation bridge.
       else if(Number.isFinite(plateProgress)) m.progress=clamp(plateProgress,0,1);
       else m.progress+=clamp(m.target-m.progress,-dt*1.55,dt*1.55); // Ungated/manual doors use the same authored V50 progress animation.
-      if(Math.abs(m.progress-m.target)<.001&&!linkedPlate&&!linkedSignal)m.progress=m.target;
+      if(Math.abs(m.progress-m.target)<.001&&!linkedPlate&&!linkedSignal&&!hasExternalTarget)m.progress=m.target;
       ruin.api.applyProgress(m.root,m.progress);
     }
     for(const a of ruin.activators){
@@ -915,5 +922,5 @@
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',installSettingsButton,{once:true});else installSettingsButton();
 
-  window.DevRandomRuin=Object.freeze({generate,reroll:()=>generate(randomSeed()),clear:()=>{if(deps?.getCurrentArea?.()===MAP_ID)leaveRuin();else clearRuntime(true);},leave:leaveRuin,getInteractionControls:()=>ruin?ruin.controls.map(control=>({...control,range:Number.isFinite(Number(control.range))?Number(control.range):CONTROL_RANGE})):[],getRuntimeContext:()=>ruin?{scene:ruin.scene,root:ruin.localeRoot,meta:ruin.meta,spawn:{...ruin.spawn},cols:ruin.cols,rows:ruin.rows,seed:ruin.seed,puzzleOptions:{...ruin.puzzleOptions}}:null,getPuzzleGenerationOptions:()=>readPuzzleGenerationOptions(),setPuzzleGenerationOptions:options=>savePuzzleGenerationOptions(options),getOccupancySnapshot:()=>ruin?.occupancy?.snapshot?.()||null,getLastSolvabilityAudit:()=>lastGenerationAudit?JSON.parse(JSON.stringify(lastGenerationAudit)):null,getDarknessSettings,setPlayerWorldPoint,getPlayerSupportY,setMechanismTarget,syncPlayerPresentationHeight:syncRuinPresentationHeight,getState:()=>ruin?{mapId:MAP_ID,seed:ruin.seed,requestedSeed:ruin.requestedSeed,sourceSeed:ruin.sourceSeed,tileScale:RUIN_TILE_SCALE,wallStyle:ruin.wallStyle||null,darkness:getDarknessSettings(),materialStats:{cliffMeshes:ruin.denMaterialMeshCount||0,converted:ruin.unlitConvertedMaterialCount||0,remainingLit:ruin.remainingLitMaterialCount||0,legacyStone:ruin.legacyStoneMaterialCount||0,totalMeshes:ruin.totalRuinMeshCount||0,ceilingCells:ruin.ceilingCellCount||0,ceilingY:ruin.ceilingY??null,ceilingTextured:!!(Array.isArray(ruin.ceilingMesh?.material)?ruin.ceilingMesh.material:ruin.ceilingMesh?.material)?.map,ceilingNaturalSurface:(Array.isArray(ruin.ceilingMesh?.material)?ruin.ceilingMesh.material[0]:ruin.ceilingMesh?.material)?.userData?.naturalSurface||null},rooms:ruin.meta.rooms?.length||0,controls:ruin.controls.length,mechanisms:[...ruin.mechanisms.values()].map(m=>({id:m.id,type:m.type,progress:m.progress,target:m.target})),transitDoors:(ruin.transitDoorStates||[]).map(state=>({id:state.door?.id||null,open:+state.open.toFixed(3),target:state.target,axis:state.crossingAxis,center:state.center?{x:+state.center.x.toFixed(3),z:+state.center.z.toFixed(3)}:null})),puzzleOptions:ruin.puzzleOptions,puzzleGeneration:ruin.puzzleGeneration,solvability:ruin.solvability,generationAttempt:ruin.generationAttempt,presentation:presentationSnapshot(),occupancy:ruin.occupancy?.snapshot?.(),dynamic:DS.debugSnapshot()}:null});
+  window.DevRandomRuin=Object.freeze({generate,reroll:()=>generate(randomSeed()),clear:()=>{if(deps?.getCurrentArea?.()===MAP_ID)leaveRuin();else clearRuntime(true);},leave:leaveRuin,getInteractionControls:()=>ruin?ruin.controls.map(control=>({...control,range:Number.isFinite(Number(control.range))?Number(control.range):CONTROL_RANGE})):[],getRuntimeContext:()=>ruin?{scene:ruin.scene,root:ruin.localeRoot,meta:ruin.meta,spawn:{...ruin.spawn},cols:ruin.cols,rows:ruin.rows,seed:ruin.seed,puzzleOptions:{...ruin.puzzleOptions}}:null,getPuzzleGenerationOptions:()=>readPuzzleGenerationOptions(),setPuzzleGenerationOptions:options=>savePuzzleGenerationOptions(options),getOccupancySnapshot:()=>ruin?.occupancy?.snapshot?.()||null,getLastSolvabilityAudit:()=>lastGenerationAudit?JSON.parse(JSON.stringify(lastGenerationAudit)):null,getDarknessSettings,setPlayerWorldPoint,getPlayerSupportY,setMechanismTarget,syncPlayerPresentationHeight:syncRuinPresentationHeight,getState:()=>ruin?{mapId:MAP_ID,seed:ruin.seed,requestedSeed:ruin.requestedSeed,sourceSeed:ruin.sourceSeed,tileScale:RUIN_TILE_SCALE,wallStyle:ruin.wallStyle||null,darkness:getDarknessSettings(),materialStats:{cliffMeshes:ruin.denMaterialMeshCount||0,converted:ruin.unlitConvertedMaterialCount||0,remainingLit:ruin.remainingLitMaterialCount||0,legacyStone:ruin.legacyStoneMaterialCount||0,totalMeshes:ruin.totalRuinMeshCount||0,ceilingCells:ruin.ceilingCellCount||0,ceilingY:ruin.ceilingY??null,ceilingTextured:!!(Array.isArray(ruin.ceilingMesh?.material)?ruin.ceilingMesh.material:ruin.ceilingMesh?.material)?.map,ceilingNaturalSurface:(Array.isArray(ruin.ceilingMesh?.material)?ruin.ceilingMesh.material[0]:ruin.ceilingMesh?.material)?.userData?.naturalSurface||null},rooms:ruin.meta.rooms?.length||0,controls:ruin.controls.length,mechanisms:[...ruin.mechanisms.values()].map(m=>({id:m.id,type:m.type,progress:m.progress,target:m.target,externalTarget:m.externalTarget??null})),transitDoors:(ruin.transitDoorStates||[]).map(state=>({id:state.door?.id||null,open:+state.open.toFixed(3),target:state.target,axis:state.crossingAxis,center:state.center?{x:+state.center.x.toFixed(3),z:+state.center.z.toFixed(3)}:null})),puzzleOptions:ruin.puzzleOptions,puzzleGeneration:ruin.puzzleGeneration,solvability:ruin.solvability,generationAttempt:ruin.generationAttempt,presentation:presentationSnapshot(),occupancy:ruin.occupancy?.snapshot?.(),dynamic:DS.debugSnapshot()}:null});
 })();
