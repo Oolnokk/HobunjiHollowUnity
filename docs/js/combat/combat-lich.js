@@ -30,6 +30,10 @@
   const ENTRANCER_AURA_MAX_PARTICLES = 104; // Large body-height Entranced fire aura budget; intentionally stronger than Burning Health's ordinary 40-particle presentation.
   const LICH_CAST_WEAPON_KEY = 'pickshovel_nativeCopper'; // Existing Light Weapon definition used only as the invisible one-handed casting pose/grip authority.
   const LICH_CAST_COMBO_ID = 'pokeCombo'; // Existing light-weapon thrust combo whose authored Neutral/Windup/Strike poses animate every lich ability.
+  const HOVER_HEIGHT_MODEL_FRACTION = 0.58; // Active lich body lift relative to rendered portrait height; keeps feet visibly above their summoned Minions.
+  const HOVER_HEIGHT_MIN_WORLD = 0.44; // Minimum world-space lift keeps even short skeleton variants clearly airborne.
+  const HOVER_BOB_MODEL_FRACTION = 0.045; // Small model-relative vertical oscillation prevents the airborne body from reading as rigidly translated.
+  const HOVER_BOB_PERIOD_S = 2.6; // Slow float cadence kept separate from the faster dangling-leg sway.
   const TYPE_ORDER = Object.freeze(['tothal', 'hronal', 'kanthic']); // Stable order used by the dev-spawner buttons and diagnostics.
   const HUE_VARIANTS = Object.freeze(['pure', 'muted', 'dusty', 'dark_muted']); // Existing authored dye variants combined with each tradition's hue families.
 
@@ -268,6 +272,10 @@
     if (!entity) return null;
     prepareEmptyCastWeapon(entity);
     entity._lichCastAnimIndex = 0; // Cycles existing poke-combo steps so repeated spell casts do not all use one identical hand motion.
+    entity._lichBaseGroundLift = Number(entity.groundLift ?? entity.halfHeight) || Number(entity.avatarRef?.modelHeight) * 0.5 || 0.45; // Original floor-to-center baseline restored while prone/dead.
+    entity._lichHoverClockS = random() * HOVER_BOB_PERIOD_S; // Per-entity phase offset keeps groups of liches from bobbing in lockstep.
+    entity._lichHoverOffsetWorld = 0; // Current presentation-only lift exposed through Pixel Probe/debug snapshots.
+    entity.avatarRef?.legs?.setHoverMode?.(true); // Procedural legs immediately enter the dangling airborne solver instead of taking a first walking step.
     entity._lichPrimaryCooldownS = 0.7 + random() * 0.8; // Staggers first casts when several liches are spawned together.
     entity._lichSummonCooldownS = 5.5 + random() * 3; // First summon comes later than first projectile so the core attack is easy to observe.
     entity._lichCommand = 'approach'; // Referential command read live by every target currently Entranced by this lich.
@@ -984,6 +992,26 @@
     return { aimAngle, moving, handled: true };
   }
 
+  function updateLichHoverPresentation(lich, dt) {
+    if (!lich || (lich.enemyClass !== CLASS_ID && !lich.isHarlyaoLich)) return;
+    const baseGroundLift = Number(lich._lichBaseGroundLift) || Number(lich.halfHeight) || Number(lich.avatarRef?.modelHeight) * 0.5 || 0.45; // Grounded baseline remains the collision/simulation origin.
+    const legs = lich.avatarRef?.legs; // Existing two-bone procedural leg handle attached by BanditCombat's humanoid portrait builder.
+    const hovering = isArena() && isLiveActor(lich) && !lich.prone; // Knockdown explicitly brings a lich back to ground instead of ragdolling in midair.
+    legs?.setHoverMode?.(hovering);
+    if (!hovering) {
+      lich.groundLift = baseGroundLift;
+      lich._lichHoverOffsetWorld = 0;
+      return;
+    }
+    const modelHeight = Math.max(0.1, Number(lich.avatarRef?.modelHeight) || Number(lich.avatarRef?.group?.userData?.portraitModelHeight) || baseGroundLift * 2); // Rendered portrait height drives both lift and bob scale.
+    lich._lichHoverClockS = (Number(lich._lichHoverClockS) || 0) + Math.max(0, Number(dt) || 0);
+    const hoverHeight = Math.max(HOVER_HEIGHT_MIN_WORLD, modelHeight * HOVER_HEIGHT_MODEL_FRACTION); // Main static separation above ordinary ground-following minions.
+    const bobAmplitude = modelHeight * HOVER_BOB_MODEL_FRACTION; // Gentle secondary float, deliberately much smaller than the main lift.
+    const bob = Math.sin((lich._lichHoverClockS / HOVER_BOB_PERIOD_S) * Math.PI * 2) * bobAmplitude;
+    lich._lichHoverOffsetWorld = hoverHeight + bob;
+    lich.groundLift = baseGroundLift + lich._lichHoverOffsetWorld; // Existing creature renderer applies this presentation lift without changing X/Z AI/collision.
+  }
+
   function updateRuntime(dt) {
     if (!(dt > 0)) return;
     if (!isArena()) {
@@ -994,6 +1022,7 @@
         clearEntrancedNow(deps.player);
       }
       for (const actor of deps?.hostileObjects || []) {
+        if (actor?.enemyClass === CLASS_ID || actor?.isHarlyaoLich) updateLichHoverPresentation(actor, dt); // Leaving the arena restores the grounded baseline and disables dangling hover.
         clearGooSlowNow(actor);
         clearEntrancedNow(actor);
       }
@@ -1008,6 +1037,7 @@
       updateEntrancedTarget(deps.player, dt);
     }
     for (const actor of deps?.hostileObjects || []) {
+      if (actor?.enemyClass === CLASS_ID || actor?.isHarlyaoLich) updateLichHoverPresentation(actor, dt); // Hover remains updated even if prone logic bypasses the lich AI for this frame.
       clearExpiredSlow(actor);
       updateEntrancedTarget(actor, dt);
     }
@@ -1068,7 +1098,7 @@
     const playerEntranced = deps?.player ? (window.ResourceSystem?.getAffliction?.(deps.player, 'entrancedHealth') || 0) : 0; // Current player buildup for one-line verification.
     return {
       classId: CLASS_ID, arenaOnly: ARENA_ID, wrappersInstalled,
-      activeLiches: liches.map(lich => ({ id: lich.id, type: lich.lichType, dye: lich.lichDyeId, command: lich._lichCommand, casting: lich._lichCastingAbility || null, emptyLightWeapon: !!lich._lichCastWeaponSocket, primaryCd: lich._lichPrimaryCooldownS, summonCd: lich._lichSummonCooldownS, summons: [...(lich._lichSummons || [])].filter(isLiveActor).length })),
+      activeLiches: liches.map(lich => ({ id: lich.id, type: lich.lichType, dye: lich.lichDyeId, command: lich._lichCommand, casting: lich._lichCastingAbility || null, hovering: !!lich.avatarRef?.legs?.isHoverMode?.(), hoverOffset: Number(lich._lichHoverOffsetWorld) || 0, emptyLightWeapon: !!lich._lichCastWeaponSocket, primaryCd: lich._lichPrimaryCooldownS, summonCd: lich._lichSummonCooldownS, summons: [...(lich._lichSummons || [])].filter(isLiveActor).length })),
       projectiles: projectiles.size, puddles: puddles.size, totalPuddles, totalSummons,
       playerEntranced, playerCommand: deps?.player?._entrancedCommandState?.source?._lichCommand || null,
       playerEntrancerId: deps?.player?._entrancedCommandState?.source?.id || null,
@@ -1085,7 +1115,8 @@
     debugSnapshot,
     formatDebug() {
       const d = debugSnapshot(); // Compact status line intended for Pixel Probe/mobile-copyable diagnostics.
-      return `Harlyao Liches: live=${d.activeLiches.length} projectiles=${d.projectiles} puddles=${d.puddles} summons=${d.totalSummons} entranced=${d.playerEntranced.toFixed?.(1) || d.playerEntranced} command=${d.playerCommand || '-'} controller=${d.playerEntrancerId || '-'} marker=${d.entrancerMarker?.ringVisible ? 'ring' : '-'}+${d.entrancerMarker?.auraVisible ? 'aura' : '-'} goo=${d.playerGooSlow?.stacks || 0} last=${d.lastEvent}`;
+      const hover = d.activeLiches.filter(lich => lich.hovering).map(lich => `${lich.id || lich.type}:${lich.hoverOffset.toFixed?.(2) || lich.hoverOffset}`).join(',') || '-'; // Compact mobile-readable proof that active liches are using airborne presentation.
+      return `Harlyao Liches: live=${d.activeLiches.length} hover=${hover} projectiles=${d.projectiles} puddles=${d.puddles} summons=${d.totalSummons} entranced=${d.playerEntranced.toFixed?.(1) || d.playerEntranced} command=${d.playerCommand || '-'} controller=${d.playerEntrancerId || '-'} marker=${d.entrancerMarker?.ringVisible ? 'ring' : '-'}+${d.entrancerMarker?.auraVisible ? 'aura' : '-'} goo=${d.playerGooSlow?.stacks || 0} last=${d.lastEvent}`;
     },
   };
   window.__lichDebug = { snapshot: debugSnapshot }; // Console-independent API also consumed by the existing mobile debug surfaces/tests.
