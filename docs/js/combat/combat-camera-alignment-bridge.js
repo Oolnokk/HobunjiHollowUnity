@@ -264,10 +264,10 @@
         const dirY = nz / horizontal;
         const pitch = Math.asin(Math.max(-1, Math.min(1, ny)));
         const yaw = Math.atan2(dirY, dirX); // Same ground-plane heading the triggered attack volume uses.
-        const hostileInsideAttackFootprint = hostileInsideTriggeredAttackFootprint(liveDeps, player, hitTest, yaw); // Elevation is deliberately ignored here: a hovering lich horizontally inside this swing should help the player get airborne before it is already vertically hittable.
-        const effectivePitchDistanceResistance = hostileInsideAttackFootprint
+        const ungroundedByAim = pitch >= 0; // Simplified rule: forward/upward melee aim may leave the ground; only below-forward pitch keeps the ordinary grounded/gravity-limited lunge.
+        const effectivePitchDistanceResistance = ungroundedByAim
           ? 1
-          : (hitTest?.pitchDistanceResistance || 0); // Full resistance means "ignore the upward gravity/pitch distance-loss term"; attack-authored resistance remains unchanged otherwise.
+          : (hitTest?.pitchDistanceResistance || 0); // Forward/upward aim fully removes the old gravity/pitch distance loss; downward aim preserves the attack-authored behavior.
         const profile = window.Combat?.meleeLungeProfile?.(
           distancePx,
           pitch,
@@ -275,7 +275,7 @@
           player.lungeHeightUnits,
           effectivePitchDistanceResistance,
           hitTest?.directFlightStrength || 0,
-          hostileInsideAttackFootprint,
+          ungroundedByAim,
         ) || { distancePx, hopUnits, pitch, verticalTravelUnits: 0, directFlightStrength: 0 };
 
         player.lungeDirX = dirX;
@@ -305,7 +305,7 @@
           distancePx: player.lungeDistancePx,
           verticalTravelUnits: player.lungeVerticalTravelUnits,
           directFlightStrength: player.lungeDirectFlightStrength,
-          gravityBypassedForInRangeEnemy: hostileInsideAttackFootprint, // Pixel Probe/debug can distinguish a normal pitch-reduced gap closer from an already-in-range melee lunge.
+          gravityBypassedForForwardOrUpwardAim: ungroundedByAim, // Mobile diagnostics expose the new pitch-only grounding rule directly.
           effectivePitchDistanceResistance,
           inRangeAirAssist: !!profile.inRangeAirAssist,
           attackRangePx: Number(hitTest?.rangePx) || null,
@@ -397,45 +397,6 @@
     };
   }
 
-  function hostileInsideTriggeredAttackFootprint(liveDeps, player, hitTest, yaw) {
-    if (!hitTest) return false;
-    const tile = Number(liveDeps?.TILE) || 64; // Attack reach is authored in logical pixels; rendered Box3 samples below are world units.
-    const rangeWorld = Math.max(0, Number(hitTest.rangePx) || 0) / tile; // Full authored swing reach, intentionally not shortened by camera pitch.
-    const halfConeRad = Math.max(0, Number(hitTest.halfConeRad) || 0); // Same yaw cone as the triggered attack.
-    const originX = (Number(player.x) || 0) / tile; // Player ground-plane origin in world units.
-    const originZ = (Number(player.y) || 0) / tile; // Logical Y maps to world Z in the combat renderer.
-    const currentArea = liveDeps?.getCurrentArea?.();
-    for (const target of liveDeps?.hostileObjects || []) {
-      if (!target || target.health <= 0 || target.areaId !== currentArea || target._denHidden) continue;
-      const box = window.RangedWeapons?.actorHitbox?.(target)?.box;
-      if (finiteBox(box)) {
-        const centerX = (box.min.x + box.max.x) * 0.5; // Box center plus corners gives large enemies their actual horizontal footprint rather than only logical center.
-        const centerZ = (box.min.z + box.max.z) * 0.5;
-        const points = [
-          [Math.max(box.min.x, Math.min(box.max.x, originX)), Math.max(box.min.z, Math.min(box.max.z, originZ))],
-          [centerX, centerZ],
-          [box.min.x, box.min.z], [box.min.x, box.max.z],
-          [box.max.x, box.min.z], [box.max.x, box.max.z],
-        ];
-        for (const [x, z] of points) {
-          const dx = x - originX;
-          const dz = z - originZ;
-          const distanceWorld = Math.hypot(dx, dz);
-          const pointYaw = distanceWorld > EPSILON ? Math.atan2(dz, dx) : yaw;
-          const yawDelta = Math.abs(Math.atan2(Math.sin(pointYaw - yaw), Math.cos(pointYaw - yaw)));
-          if (distanceWorld <= rangeWorld && yawDelta <= halfConeRad) return true;
-        }
-        continue;
-      }
-      const dxPx = (Number(target.x) || 0) - (Number(player.x) || 0); // Missing-render fallback matches the old 2D melee compatibility semantics.
-      const dzPx = (Number(target.y) || 0) - (Number(player.y) || 0);
-      const distancePx = Math.hypot(dxPx, dzPx);
-      const pointYaw = Math.atan2(dzPx, dxPx);
-      const yawDelta = Math.abs(Math.atan2(Math.sin(pointYaw - yaw), Math.cos(pointYaw - yaw)));
-      if (distancePx <= Math.max(0, Number(hitTest.rangePx) || 0) && yawDelta <= halfConeRad) return true;
-    }
-    return false;
-  }
 
   function hostileInsideLungeAt(liveDeps, player, hitTest, sampleX, sampleY) {
     const collider = lungeColliderAt(liveDeps, player, hitTest, sampleX, sampleY);
