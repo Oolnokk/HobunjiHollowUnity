@@ -370,22 +370,24 @@
     }
     const slotActions=SLOT_ACTIONS; // Nearby world interactions own the ordinary five physical arch slots just like NPC/furniture context actions; attacks/items return as soon as the interaction leaves range.
     const touchButtonIds=TOUCH_BUTTON_IDS;
-    const fixedCount=rows.reduce((count,row)=>count+(row.inputAction?1:0),0);
-    const sorted=rows
-      .sort((a, b) => b.priority - a.priority || a.distance - b.distance || b.seenAt - a.seenAt)
-      .slice(0, slotActions.length + fixedCount); // Fixed native inputs (currently Dodge) do not consume one of the available dynamic interaction slots.
+    const sorted=rows.sort((a, b) => b.priority - a.priority || a.distance - b.distance || b.seenAt - a.seenAt);
+    const reserved=new Set(sorted.filter(row=>!row.nativeInput&&SLOT_ACTIONS.includes(row.inputAction)).map(row=>row.inputAction)); // Explicit controls such as Grab Rope reserve their physical slot before generic nearby rows are assigned.
+    const availableSlots=slotActions.filter(action=>!reserved.has(action)); // Prevents two rows from both claiming Action 1 and fighting over the same arch button.
     let slotIndex=0;
-    return sorted.flatMap((entry,index)=>{
+    const mapped=[];
+    for(let index=0;index<sorted.length;index++){
+      const entry=sorted[index];
       if(entry.inputAction){
-        const fixedIndex=SLOT_ACTIONS.indexOf(entry.inputAction); // Explicit semantic inputs (including Action 1) own their matching physical touch button unless they are native/pass-through prompts such as Dodge.
-        return [{ ...entry, action:`dev_ruin_world_fixed_${entry.inputAction}_${index}`, touchButtonId:entry.nativeInput?null:(fixedIndex>=0?TOUCH_BUTTON_IDS[fixedIndex]:null) }];
+        const fixedIndex=SLOT_ACTIONS.indexOf(entry.inputAction); // Explicit semantic inputs own their matching physical touch button unless they are native/pass-through prompts such as Dodge.
+        mapped.push({ ...entry, action:`dev_ruin_world_fixed_${entry.inputAction}_${index}`, touchButtonId:entry.nativeInput?null:(fixedIndex>=0?TOUCH_BUTTON_IDS[fixedIndex]:null) });
+        continue;
       }
-      const inputAction=slotActions[slotIndex];
-      const touchButtonId=touchButtonIds[slotIndex]||null;
-      if(!inputAction)return []; // At most five contextual rows fit the same five physical arch slots used everywhere else in the game.
-      slotIndex++;
-      return [{ ...entry, inputAction, action:`dev_ruin_world_${slotIndex-1}`, touchButtonId }];
-    });
+      const inputAction=availableSlots[slotIndex++];
+      if(!inputAction)continue; // Native rows may exceed five, but only five contextual actions can own the five physical arch slots.
+      const fixedIndex=SLOT_ACTIONS.indexOf(inputAction);
+      mapped.push({ ...entry, inputAction, action:`dev_ruin_world_${fixedIndex}`, touchButtonId:TOUCH_BUTTON_IDS[fixedIndex]||null });
+    }
+    return mapped;
   }
 
   function currentDevice() {
@@ -451,6 +453,28 @@
     }));
   }
 
+  function syncWorldPopup(rows) {
+    const popup=window.WorldPopupText;
+    if(!popup?.syncInteractionPrompts)return;
+    const buttons=actionButtonsFromRows(rows);
+    const root=rows[0]?.owner||lastAnchor||ruinRoot()||null;
+    const device=currentDevice();
+    const promptInputs=buttons.map(button=>({
+      actionId:button.inputAction||'',
+      label:button.inputAction?bindingLabel(button.inputAction,device,button.icon):'',
+      color:button.inputAction?inputColor(button.inputAction):'#B8C5C0',
+    }));
+    popup.syncInteractionPrompts({
+      buttons,
+      root,
+      enabled:inRuin()&&rows.length>0,
+      scene:activeScene(),
+      promptInputs,
+      showInputHints:true,
+      isWorldInteraction:button=>button?.worldInteraction===true,
+    }); // Directly mirrors the normal action-bar popup path so proximity changes cannot leave the arch claimed while the floating list is stale or absent.
+  }
+
   function refreshRows(requestActionBar = false) {
     if (!inRuin()) {
       const hadRows=lastRows.length>0;
@@ -458,6 +482,7 @@
       lastAnchor=null;
       lastRowsSignature='';
       window.WorldActionInputClaims?.clearClaims?.(INPUT_CLAIM_OWNER);
+      window.WorldPopupText?.clearInteractionPrompts?.();
       if(hadRows&&requestActionBar)deps?.refreshActionBar?.();
       return [];
     }
@@ -469,7 +494,8 @@
     lastRowsSignature=signature;
     lastAnchor=rows[0]?.owner||nearestOwnerForKind(rows[0]?.kind)||ruinRoot()||null;
     syncInputClaims(rows);
-    if(changed&&requestActionBar)deps?.refreshActionBar?.(); // The ordinary action-bar pass owns both the arch and WorldPopupText list, preventing two prompt systems from erasing each other.
+    syncWorldPopup(rows); // Keep the floating interaction list live on the same proximity cadence as claims, even between ordinary action-bar rebuilds.
+    if(changed&&requestActionBar)deps?.refreshActionBar?.(); // The normal action bar still owns the physical arch layout; direct popup sync is idempotent with its own WorldPopupText pass.
     return rows;
   }
 
