@@ -95,11 +95,13 @@ assert(debrisBootstrap.includes('selfTestNeedle') && debrisBootstrap.includes('s
 assert(debrisBootstrap.includes('headless embedded renderer') && debrisBootstrap.includes('window.__debrisEmbeddedRuntime?{setPixelRatio(){}'), 'hidden V50 generation must avoid creating a second WebGLRenderer beside the live game renderer');
 assert(debrisBootstrap.includes('disable embedded preview RAF') && debrisBootstrap.includes("if(!window.__debrisEmbeddedRuntime)renderPreview();"), 'hidden V50 generation must not start the standalone preview RAF loop');
 assert(debrisBootstrap.includes('headlessEmbeddedPreview: true'), 'embedded transport diagnostics must report headless preview mode');
+assert(debrisBootstrap.includes("new XMLHttpRequest()") && debrisBootstrap.includes("request.open('GET', 'debrisifier-v50-source.js', false)"), 'hidden V50 source loading must be parser-blocking so game startup asset traffic cannot starve the generator fetch');
+assert(!/if \(embeddedRuntime\) \{\s*fetch\('debrisifier-v50-source\.js'/.test(debrisBootstrap), 'hidden V50 bootstrap must not regress to the starvation-prone async source fetch');
 assert(debrisIndex.includes("event?.message||event?.error?.message"), 'hidden generator diagnostics must capture source/API execution errors, not only failed script URLs');
 assert(debrisBootstrap.includes("glyphNicheNeedle") && debrisBootstrap.includes("hideDecals:false"), 'simple projectile glyphs must runtime-patch pillar-niche targets to keep their authored decals');
 assert(debrisBootstrap.includes("glyphGlowNeedle") && debrisBootstrap.includes('THREE.AdditiveBlending'), 'activated projectile glyph decals must glow through the unlit material path instead of a scene light');
 assert(debrisSource.includes("profile:'pillarHoused',hideDecals:true"), 'protected V50 source must retain its original concealed pillar-niche target behavior; the gameplay change belongs only in the runtime patch');
-assert(debrisIndex.includes('debrisifier-01.js?v=20260927headless1'), 'hidden V50 runtime patch must be cache-busted for the headless generator bootstrap');
+assert(debrisIndex.includes('debrisifier-01.js?v=20260927syncboot1'), 'hidden V50 runtime patch must be cache-busted for the deterministic generator bootstrap');
 assert(renderProxy.includes('polygonOffset: source?.polygonOffset === true'), 'game-realm activator proxies must preserve decal polygon offset so markers do not disappear into stone');
 assert(renderProxy.includes('source.blending != null') && renderProxy.includes('THREE.AdditiveBlending'), 'game-realm proxies must follow live glyph Normal/Additive blend changes');
 assert(renderProxy.includes('glyphDecalProxyCount:') && renderProxy.includes('glowingGlyphDecalProxyCount:'), 'render diagnostics must prove glyph decal proxies exist and enter their glow state');
