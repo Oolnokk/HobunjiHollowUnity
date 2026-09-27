@@ -87,6 +87,56 @@
     return result;
   }
 
+  function doorTiles(door, model) {
+    const box = worldBox(door);
+    if (!box) return objectTiles(door, model);
+    const widthX = box.max.x - box.min.x, widthZ = box.max.z - box.min.z;
+    const alongX = widthX >= widthZ; // Generated doors are axis-aligned doorway slabs; keep their full visible run but only one tile deep.
+    const center = box.getCenter(new THREE.Vector3());
+    const runMin = alongX ? box.min.x : box.min.z;
+    const runMax = alongX ? box.max.x : box.max.z;
+    const cross = Math.floor(alongX ? center.z : center.x);
+    const first = Math.max(0, Math.floor(runMin + 1e-5));
+    const last = Math.min((alongX ? model.cols : model.rows) - 1, Math.floor(runMax - 1e-5));
+    const result = new Set();
+    for (let along = first; along <= last; along++) {
+      const col = alongX ? along : cross, row = alongX ? cross : along;
+      const tileKey = keyFor(col, row);
+      if (model.floorSet.has(tileKey)) result.add(tileKey);
+    }
+    if (result.size) return result;
+    return objectTiles(door, model);
+  }
+
+  function syncGridCollision(model) {
+    const grid = model.grid;
+    if (!Array.isArray(grid)) return;
+    for (let row = 0; row < model.rows; row++) for (let col = 0; col < model.cols; col++) {
+      const tile = grid[row]?.[col];
+      if (!tile) continue;
+      const tileKey = keyFor(col, row);
+      if (!model.baseGridTypes.has(tileKey)) model.baseGridTypes.set(tileKey, tile.type);
+      const baseType = model.baseGridTypes.get(tileKey);
+      const blocked = model.floorSet.has(tileKey) && model.blocked.has(tileKey);
+      tile.type = blocked ? model.solidType : baseType; // Makes ruin solids ordinary interior ROCK cells, so walking, AI, dodge/lunge, and swept knockback all use the game's existing collision authority.
+      if (blocked) tile._devRuinCollisionSources = [...(model.sources.get(tileKey) || [])];
+      else delete tile._devRuinCollisionSources;
+    }
+  }
+
+  function restoreGridCollision(model) {
+    const grid = model.grid;
+    if (!Array.isArray(grid)) return;
+    for (const [tileKey, type] of model.baseGridTypes) {
+      const [col,row] = tileKey.split(',').map(Number);
+      const tile = grid[row]?.[col];
+      if (!tile) continue;
+      tile.type = type;
+      delete tile._devRuinCollisionSources;
+    }
+    model.baseGridTypes.clear();
+  }
+
   function nearestFloorAnchor(object, model) {
     const matrix = numericWorldMatrix(object);
     const box = worldBox(object);
@@ -188,11 +238,11 @@
     for (const mechanism of model.mechanisms.values()) {
       if (mechanism.type !== 'stoneDoor') continue;
       if (!doorIsClosed(mechanism.root)) continue;
-      for (const tileKey of objectTiles(mechanism.root, model)) addSource(sources, tileKey, `door:${mechanism.id}`);
+      for (const tileKey of doorTiles(mechanism.root, model)) addSource(sources, tileKey, `door:${mechanism.id}`);
     }
     for (const door of model.transitDoors) {
       if (!doorIsClosed(door)) continue;
-      for (const tileKey of objectTiles(door, model)) addSource(sources, tileKey, `transit-door:${door.id}`);
+      for (const tileKey of doorTiles(door, model)) addSource(sources, tileKey, `transit-door:${door.id}`);
     }
     for (const block of model.pushBlocks) {
       const sourceId = block.userData.__devRuinOccupancySource || `push:${block.id}`;
@@ -204,6 +254,7 @@
     model.sources = sources;
     model.blocked = new Set(sources.keys());
     model.signature = signature;
+    syncGridCollision(model);
     model.revision++;
     if (document.getElementById('mpMap')?.classList.contains('active')) renderRuinMapPanel();
     return true;
@@ -320,6 +371,9 @@
       activators:config.activators || [],
       pushBlocks:config.pushBlocks || [],
       getPlayerPosition:config.getPlayerPosition,
+      grid:config.grid || null, // Exact generated building grid registered in _buildingScenes; collision stamps mutate this rather than maintaining a parallel physics-only map.
+      solidType:config.solidType ?? 'rock', // Same solid tile type ordinary interior movement/AI already treats as impassable.
+      baseGridTypes:new Map(), // Restores generated floor types when doors open and when the session-only ruin is destroyed.
       staticSources:new Map(),
       sources:new Map(),
       blocked:new Set(),
@@ -331,6 +385,7 @@
       blocksAt:(x, z, radius = 0, options = {}) => blocksAt(model, x, z, radius, options),
       snapshot:() => snapshot(model),
       destroy:() => {
+        restoreGridCollision(model);
         DS.remove(BLOCKER_ID);
         if (activeModel === model) activeModel = null;
       },
