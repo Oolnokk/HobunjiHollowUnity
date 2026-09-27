@@ -246,7 +246,12 @@
   }
 
   function applyProgress(root, progress) {
-    applyMechanismProgress(root, clamp(Number(progress) || 0, 0, 1));
+    const normalizedProgress = clamp(Number(progress) || 0, 0, 1); // Used by both the general V50 mechanism animation and direct leaf-activator visual synchronization.
+    applyMechanismProgress(root, normalizedProgress);
+    if (root?.userData?.activatorType === 'glyphObelisk' && root.userData?.decalMaterials) {
+      setDecalMaterialsProgress(root.userData.decalMaterials, normalizedProgress);
+      if (root.userData.glowLight) root.userData.glowLight.intensity = 3.2 * normalizedProgress;
+    }
   }
 
   function syncPressurePlates(root) {
