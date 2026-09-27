@@ -20,6 +20,9 @@
   const HALL_SHOT_PERIOD = 0.9;
   const ROPE_FALL_BURNING = 14;
   const ROPE_GRAB_RADIUS = 0.8;
+  const ROPE_BODY_RADIUS = 0.045; // Gives the traversal rope real world-space thickness instead of a screen-space one-pixel THREE.Line.
+  const ROPE_COLLISION_RADIUS = 0.24; // Player-sized horizontal clearance used to validate and sweep every rope arc/flight segment against normal interior solids.
+  const ROPE_ROUTE_SAMPLES = 28; // Samples the full authored pendulum arc before accepting a generated route through the room.
   const ROPE_GRAVITY = 8.2;
   const ROPE_MIN_LENGTH = 1.65;
   const CHECKPOINT_INVULN_MS = 1200;
@@ -39,6 +42,9 @@
   const sharedPrimitiveGeometry = new Map(); // Reuses immutable simple-puzzle primitives across plates, posts, coffins, emitters, and doors instead of allocating identical BufferGeometry repeatedly.
   const plateInstanceDummy = new THREE.Object3D(); // Reused to write pressure-plate instance transforms without allocating one Object3D per cell/frame.
   const plateInstanceColor = new THREE.Color(); // Reused to write per-instance pressure-plate state colors.
+  const ropeAxis = new THREE.Vector3(0,1,0); // Canonical cylinder axis used to rotate the thick rope mesh between anchor and bob.
+  const ropeDirection = new THREE.Vector3(); // Scratch vector reused while updating thick rope orientation.
+  const ropeMidpoint = new THREE.Vector3(); // Scratch vector reused while centering the rope cylinder between its endpoints.
 
   function sharedPrimitive(key, factory) {
     let geometry = sharedPrimitiveGeometry.get(key);
@@ -155,6 +161,23 @@
   function supportPoint(x, z, fallbackY = 0) {
     const support = sampleSupport(x, z);
     return { x, z, y:Number(support?.y ?? fallbackY) };
+  }
+
+  function ropeBlockedAt(x,z,radius=ROPE_COLLISION_RADIUS) {
+    return window.DevRandomRuinTileOccupancy?.blocksAt?.(x,z,radius) === true; // Same occupancy is stamped into the ordinary map_i_* grid, so rope traversal cannot bypass walls/pillars/closed doors that walking and knockback respect.
+  }
+
+  function sweptRopePoint(from,to,radius=ROPE_COLLISION_RADIUS) {
+    const dx=Number(to.x)-Number(from.x),dz=Number(to.z)-Number(from.z),distance=Math.hypot(dx,dz);
+    const steps=Math.max(1,Math.ceil(distance/.18));
+    let last={x:Number(from.x),y:Number(from.y),z:Number(from.z)};
+    for(let step=1;step<=steps;step++){
+      const t=step/steps;
+      const point={x:Number(from.x)+dx*t,y:Number(from.y)+(Number(to.y)-Number(from.y))*t,z:Number(from.z)+dz*t};
+      if(ropeBlockedAt(point.x,point.z,radius))return{blocked:true,last,point};
+      last=point;
+    }
+    return{blocked:false,last:to,point:null};
   }
 
   function seededRng(seed) {
@@ -351,6 +374,8 @@
     for (const entity of state.spawnedMinions) disposeSpawnedMinion(entity); // Session/reroll ownership matches ordinary camp teardown; no sarcophagus enemy can leak into the next generated ruin.
     state.spawnedMinions.clear();
     for (const id of state.surfaceIds) DS.remove?.(id);
+    const lavaTexture=state.lavaMaterial?.uniforms?.uWaterTexture?.value; // Material owns its dedicated wibbly-water texture loader result for this session.
+    lavaTexture?.dispose?.();
     disposeObject(state.group);
     state = null;
   }
@@ -537,19 +562,21 @@
       Math.abs(point.z-platform.z) <= platform.depth*.5+pad;
   }
 
+  function ropeBobAt(rope,angle=rope.angle) {
+    const dirX=Math.cos(rope.yaw),dirZ=Math.sin(rope.yaw),horizontal=Math.sin(angle)*rope.length;
+    return{x:rope.anchor.x+dirX*horizontal,z:rope.anchor.z+dirZ*horizontal,y:rope.anchor.y-Math.cos(angle)*rope.length};
+  }
+
   function updateRopeVisual(rope) {
-    const dirX = Math.cos(rope.yaw), dirZ = Math.sin(rope.yaw);
-    const horizontal = Math.sin(rope.angle) * rope.length;
-    const bob = {
-      x:rope.anchor.x + dirX * horizontal,
-      z:rope.anchor.z + dirZ * horizontal,
-      y:rope.anchor.y - Math.cos(rope.angle) * rope.length,
-    };
-    rope.bob = bob;
-    const positions = rope.line.geometry.attributes.position.array;
-    positions[0]=rope.anchor.x; positions[1]=rope.anchor.y; positions[2]=rope.anchor.z;
-    positions[3]=bob.x; positions[4]=bob.y; positions[5]=bob.z;
-    rope.line.geometry.attributes.position.needsUpdate = true;
+    const bob=ropeBobAt(rope);
+    rope.bob=bob;
+    ropeDirection.set(bob.x-rope.anchor.x,bob.y-rope.anchor.y,bob.z-rope.anchor.z);
+    const visibleLength=Math.max(.001,ropeDirection.length());
+    ropeDirection.multiplyScalar(1/visibleLength);
+    ropeMidpoint.set((rope.anchor.x+bob.x)*.5,(rope.anchor.y+bob.y)*.5,(rope.anchor.z+bob.z)*.5);
+    rope.mesh.position.copy(ropeMidpoint);
+    rope.mesh.quaternion.setFromUnitVectors(ropeAxis,ropeDirection);
+    rope.mesh.scale.set(1,visibleLength,1);
     rope.marker.position.set(bob.x,bob.y,bob.z);
     return bob;
   }
@@ -621,25 +648,75 @@
     mount.userData.devRandomRuinRopeCeilingMount=true;
     state.group.add(mount);
 
-    const lineGeometry=new THREE.BufferGeometry();
-    lineGeometry.setAttribute('position',new THREE.BufferAttribute(new Float32Array(6),3));
-    const line=new THREE.Line(lineGeometry,new THREE.LineBasicMaterial({color:0xc9ad77,transparent:true,opacity:.96}));
-    line.name='dev_ruin_swing_rope_'+room.id+(idSuffix?'_'+idSuffix:'');
-    line.frustumCulled=false;state.group.add(line);
-    const marker=new THREE.Mesh(sharedSphereGeometry(.12,8,6),makeBasic(0xd1b682));
+    const ropeMesh=new THREE.Mesh(sharedCylinderGeometry(ROPE_BODY_RADIUS,ROPE_BODY_RADIUS,1,8),makeBasic(0xc9ad77,{transparent:true,opacity:.98}));
+    ropeMesh.name='dev_ruin_swing_rope_'+room.id+(idSuffix?'_'+idSuffix:'');
+    ropeMesh.frustumCulled=true;ropeMesh.userData.devRandomRuinSwingRope=true;state.group.add(ropeMesh);
+    const marker=new THREE.Mesh(sharedSphereGeometry(.15,10,8),makeBasic(0xd1b682));
     marker.name='dev_ruin_swing_rope_grip_'+room.id+(idSuffix?'_'+idSuffix:'');
     marker.userData.interactive3D=true;marker.userData.devRuinInteractionType='ropeSwing';state.group.add(marker);
 
     const grabPoint={x:cx-dirX*swingHorizontal,z:cz-dirZ*swingHorizontal,y:bobRestY};
     const rope={
       id:'rope-'+room.id+(idSuffix?'-'+idSuffix:''),
-      roomId:room.id,line,marker,mount,anchor:{x:cx,y:anchorY,z:cz},ceilingY:anchorY,
+      roomId:room.id,mesh:ropeMesh,line:ropeMesh,marker,mount,anchor:{x:cx,y:anchorY,z:cz},ceilingY:anchorY, // line alias remains for older diagnostics, but it now references the thick cylindrical mesh.
       yaw:Math.atan2(dirZ,dirX),length,maxLength:Math.max(length,Math.min(length+.55,maxSafeLength)),minBobY,angle:-startAngle,launchAngle:-startAngle,omega:0,
       attached:false,braking:false,startPlatform:pa,endPlatform:pb,
-      hazard:{mesh:null,cx,cz,y:hazardY,length:hazardLength,width:hazardWidth,axis,lastBurnAt:-Infinity},
-      grabPoint,bob:null,
+      hazard:null,
+      grabPoint,bob:null,lastSafeBob:null,collisionStops:0,autoGrabCount:0,
     };
-    updateRopeVisual(rope);state.ropes.push(rope);return rope;
+    for(let sample=0;sample<=ROPE_ROUTE_SAMPLES;sample++){
+      const angle=-startAngle+(startAngle*2)*(sample/ROPE_ROUTE_SAMPLES),point=ropeBobAt(rope,angle);
+      if(ropeBlockedAt(point.x,point.z,ROPE_COLLISION_RADIUS)){disposeObject(ropeMesh);disposeObject(marker);disposeObject(mount);return null;}
+    }
+    rope.hazard=createVisibleRopeLavaHazard(cx,cz,hazardY,hazardLength,hazardWidth,axis);
+    rope.lastSafeBob=clonePoint(updateRopeVisual(rope));state.ropes.push(rope);return rope;
+  }
+
+  function createLavaMaterial() {
+    const water=window.MergedWaterRenderer;
+    if(typeof water?.createMaterial==='function'){
+      const material=water.createMaterial(THREE,{
+        textureUrl:'assets/textures/wibbly_surface.png',
+        deepColor:0xb72b0b,
+        shallowColor:0xff9a24,
+        opacity:.88,
+      });
+      material.name='dev_ruin_lava_water_material';
+      return material;
+    }
+    return makeBasic(0xe34b16,{transparent:true,opacity:.82,depthWrite:false});
+  }
+
+  function createVisibleRopeLavaHazard(cx,cz,y,length,width,axis) {
+    if(!state.lavaMaterial)state.lavaMaterial=createLavaMaterial();
+    const geometry=new THREE.PlaneGeometry(axis==='x'?length:width,axis==='x'?width:length,1,1);
+    const count=geometry.attributes.position.count;
+    if(state.lavaMaterial?.isShaderMaterial){
+      geometry.setAttribute('aDepth',new THREE.Float32BufferAttribute(new Array(count).fill(.82),1));
+      geometry.setAttribute('aCoverage',new THREE.Float32BufferAttribute(new Array(count).fill(1),1));
+      const flow=[];
+      for(let index=0;index<count;index++)flow.push(axis==='x'?.18:0,axis==='z'?.18:0);
+      geometry.setAttribute('aFlow',new THREE.Float32BufferAttribute(flow,2));
+    }
+    const mesh=new THREE.Mesh(geometry,state.lavaMaterial);
+    mesh.name='dev_ruin_rope_lava';
+    mesh.rotation.x=-Math.PI*.5;
+    mesh.position.set(cx,y+.018,cz);
+    mesh.renderOrder=1;
+    mesh.userData.devRandomRuinLava=true;
+    state.group.add(mesh);
+    return{mesh,cx,cz,y,length,width,axis,lastBurnAt:-Infinity};
+  }
+
+  function playLavaSizzle() {
+    const cfg=window.HobunjiDrenkirraPellet?.sfx?.acidSizzle;
+    const url=cfg?.url||'assets/audio/sfx/combat/sfx_acid_sizzle.mp3';
+    try{
+      const audio=new Audio(url);
+      const gameVolume=Math.max(0,Math.min(1,Number(window.AudioSystem?.gameAudioConfig?.()?.sfxVolume) || 1));
+      audio.volume=Math.max(0,Math.min(1,(Number(cfg?.volume)||.9)*gameVolume));
+      audio.play().catch(()=>{});
+    }catch(_){}
   }
 
   function startPlatformForTarget(context,room,target,rng) {
@@ -1413,6 +1490,7 @@
       surfaceIds:new Set(),
       activeRope:null,
       ropeHeldToolSnapshot:null, // Restored immediately after release/fall/clear so rope traversal never permanently changes the player's loadout.
+      lavaMaterial:null, // Shared animated water-shader material reused by every visible lava hazard in this generated ruin.
       ropeEquipmentHolsterCount:0,
       ropeEquipmentRestoreCount:0,
       flight:null,
@@ -1612,7 +1690,7 @@
   }
 
   function updateAttachedRope(rope,dt) {
-    const intent=ropeIntent(rope);
+    const intent=ropeIntent(rope),priorAngle=rope.angle,priorYaw=rope.yaw,priorLength=rope.length;
     if(rope.braking){
       rope.omega*=Math.exp(-9*dt);
       rope.yaw+=intent.side*1.6*dt;
@@ -1624,23 +1702,55 @@
       rope.angle+=rope.omega*dt;
       if(Math.abs(rope.angle)>1.28){rope.angle=Math.sign(rope.angle)*1.28;rope.omega*=.72;}
     }
-    const bob=updateRopeVisual(rope);
-    setPlayerWorld(bob,true,false);
+    const candidate=ropeBobAt(rope),from=rope.lastSafeBob||ropeBobAt({...rope,angle:priorAngle,yaw:priorYaw,length:priorLength});
+    const sweep=sweptRopePoint(from,candidate);
+    if(sweep.blocked){
+      rope.angle=priorAngle;rope.yaw=priorYaw;rope.length=priorLength;rope.omega*=-.18;rope.collisionStops++;
+      const safe=updateRopeVisual(rope);
+      rope.lastSafeBob=clonePoint(safe);
+      setPlayerWorld(safe,true,false);
+    }else{
+      const bob=updateRopeVisual(rope);
+      rope.lastSafeBob=clonePoint(bob);
+      setPlayerWorld(bob,true,false);
+    }
     deps.player.vx=0;deps.player.vy=0;
   }
 
   function updateIdleRope(rope,dt) {
+    const priorAngle=rope.angle;
     rope.omega+=(-ROPE_GRAVITY/Math.max(.4,rope.length))*Math.sin(rope.angle)*dt;
     rope.omega*=Math.exp(-.28*dt);
     rope.angle+=rope.omega*dt;
-    updateRopeVisual(rope); // Idle ropes no longer auto-grab on proximity; the standard WorldPopupText interaction row owns discovery/input like NPCs, furniture, and doors.
+    const candidate=ropeBobAt(rope),from=rope.lastSafeBob||ropeBobAt(rope,priorAngle),sweep=sweptRopePoint(from,candidate);
+    if(sweep.blocked){rope.angle=priorAngle;rope.omega*=-.18;rope.collisionStops++;}
+    const bob=updateRopeVisual(rope);
+    rope.lastSafeBob=clonePoint(bob);
+  }
+
+  function tryAutoGrabRope() {
+    if(state.activeRope||state.flight)return false;
+    const player=playerWorld();
+    if(!player)return false;
+    for(const rope of state.ropes){
+      const bob=rope.bob||ropeBobAt(rope);
+      const horizontal=Math.hypot(player.x-bob.x,player.z-bob.z);
+      if(horizontal>ROPE_GRAB_RADIUS||Math.abs(player.y-bob.y)>1.05)continue;
+      if(ropeBlockedAt(bob.x,bob.z,ROPE_COLLISION_RADIUS))continue;
+      if(attachRope(rope)){rope.autoGrabCount++;return true;}
+    }
+    return false;
   }
 
   function updateFlight(dt) {
     const f=state.flight;
     if(!f)return;
     f.vy-=ROPE_GRAVITY*dt;
-    f.x+=f.vx*dt;f.z+=f.vz*dt;f.y+=f.vy*dt;
+    const next={x:f.x+f.vx*dt,z:f.z+f.vz*dt,y:f.y+f.vy*dt};
+    const sweep=sweptRopePoint(f,next);
+    if(sweep.blocked){
+      f.x=sweep.last.x;f.z=sweep.last.z;f.y=next.y;f.vx=0;f.vz=0; // Hit the same normal-interior solid that ordinary knockback/walking sees; stop horizontal flight and fall in place instead of tunnelling through it.
+    }else{f.x=next.x;f.z=next.z;f.y=next.y;}
     const support=sampleSupport(f.x,f.z,f.y+.25);
     if(support&&f.vy<=0&&f.y<=Number(support.y)+.08){
       f.y=Number(support.y);
@@ -1669,17 +1779,20 @@
         now-hazard.lastBurnAt>1100){
         hazard.lastBurnAt=now;
         window.ResourceSystem?.addAffliction?.(deps.player,'burningHealth',ROPE_FALL_BURNING);
+        playLavaSizzle();
       }
     }
   }
 
   function updateRopes(now,dt) {
+    if(state.lavaMaterial?.uniforms?.uTime)state.lavaMaterial.uniforms.uTime.value=now/1000; // Same animated water shader as ordinary water, recolored for lava.
     updateFlight(dt);
     if(state.flight)return;
     for(const rope of state.ropes){
       if(rope.attached)updateAttachedRope(rope,dt);
       else updateIdleRope(rope,dt);
     }
+    tryAutoGrabRope();
     updateRopeHazards(now);
   }
 
@@ -1826,6 +1939,7 @@
         ceilingY:+rope.ceilingY.toFixed(3),ceilingMounted:rope.mount?.parent===state.group,weaponStowed:!!state.ropeHeldToolSnapshot,
         anchor:clonePoint(rope.anchor),bob:clonePoint(rope.bob),grabPoint:clonePoint(rope.grabPoint),
         bottomY:+(rope.anchor.y-rope.length).toFixed(3),minBobY:+(rope.minBobY||0).toFixed(3),
+        thickMesh:rope.mesh?.isMesh===true,collisionStops:rope.collisionStops||0,autoGrabCount:rope.autoGrabCount||0,lavaVisible:rope.hazard?.mesh?.visible!==false,
         startTopY:+(rope.startPlatform?.topY||0).toFixed(3),endTopY:+(rope.endPlatform?.topY||0).toFixed(3),
       })),
       flight:state.flight?clonePoint(state.flight):null,
