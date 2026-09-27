@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 const source = fs.readFileSync('docs/js/combat/combat-camera-alignment-bridge.js', 'utf8');
+const coreSource = fs.readFileSync('docs/js/combat/combat-core.js', 'utf8');
 assert.doesNotMatch(source, /requestAnimationFrame\s*\(|setInterval\s*\(/,
   'reticle/lunge correction must piggyback existing combat ticks instead of adding another loop');
 assert.match(source, /rayBoxInterval\(ray, box\)/,
@@ -14,6 +15,8 @@ assert.match(source, /resolveSweptLungeEntry\(liveDeps\)/,
   'lunge range entry is checked across movement already completed this frame');
 assert.match(source, /LUNGE_CANCEL_RANGE_MULTIPLIER = 0\.5/,
   'lunge cancellation range stays explicitly half of the real attack range');
+assert.match(coreSource, /const assistedLeapT = Math\.sqrt\(assistedPitchRatio\)/,
+  'in-range airborne assist must front-load low-angle lift instead of merely removing the 12-degree threshold');
 
 const player = {
   x: 0, y: 0, health: 100, facing: 0,
