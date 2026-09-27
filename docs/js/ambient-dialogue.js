@@ -663,7 +663,7 @@
       chatheadProfile: headPart ? buildChatheadProfile(options.profile) : null,
       faceWalker: options.faceWalker || null,
       faceTarget: options.faceTarget || null,
-      faceMode: options.faceMode === 'head' ? 'head' : 'body', // Player greetings can opt into neck-only tracking while legacy ambient reactions retain body-facing behavior.
+      faceMode: options.faceMode === 'head' ? 'head' : 'body', // Ambient greetings can opt into neck-only tracking while non-greeting reactions retain body-facing behavior.
       speakerId: options.speakerId || null,
       greeting: options.greeting === true,
       directedAtPlayer: options.directedAtPlayer === true,
@@ -825,12 +825,7 @@
     state.greeted.add(key);
     saveGreetingLedger(day);
     state.lastGreetingAt = now;
-    if (targetId === 'player') {
-      applyGreetingHeadTurn(walker, target);
-    } else {
-      const angle = -Math.atan2(target.z - walker.root.position.z, target.x - walker.root.position.x) + Math.PI / 2; // Friend greetings keep the established body-facing behavior.
-      walker.applyFacingDeadzone?.(angle, 0.34);
-    }
+    applyGreetingHeadTurn(walker, target); // Every ambient greeting preserves locomotion/seat heading and turns only the speaker's head toward the player or NPC friend.
     // A pending-request override (see getPendingRequestGreeting) replaces the
     // ordinary nickname-templated line with the quest-giver's own purple
     // call-over line, so it can't be mistaken for a random ambient greeting.
@@ -851,7 +846,7 @@
       directedAtPlayer: targetId === 'player',
       faceWalker: walker,
       faceTarget: target.root ? { root: target.root } : { x: target.x, z: target.z },
-      faceMode: targetId === 'player' ? 'head' : 'body', // Walking and seated player greetings preserve body/seat heading and use only the neck.
+      faceMode: 'head', // Walking and seated greetings to either the player or another NPC preserve body/seat heading and use only the neck.
     });
     return true;
   }
