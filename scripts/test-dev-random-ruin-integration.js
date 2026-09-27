@@ -46,7 +46,7 @@ const loadOrder = [
   'dev-random-ruin-runtime-coverage.js',
 ].map(name => camera.indexOf(name));
 assert(/localStorage\.getItem\('hobunjiDevMode'\) === '1'/.test(camera) && /if \(!devMode/.test(camera), 'ruin runtime must only be injected in Dev Mode');
-assert(camera.includes('dev-random-ruin-interactions.js?v=20260927interiorparity1'), 'ruin interaction adapter must be cache-busted in the dev bootstrap');
+assert(camera.includes('dev-random-ruin-interactions.js?v=20260927interactionpriority1'), 'ruin interaction adapter must be cache-busted with the arch-priority/popup-list fix');
 assert(camera.includes('dev-random-ruin-simple-puzzles.js?v=20260927interiorparity1'), 'simple puzzle interior-parity runtime must be cache-busted in the dev bootstrap');
 assert(camera.includes('dev-random-ruin-wall-render-proxy.js?v=20260927geometry1'), 'native ruin render verifier must be cache-busted in the dev bootstrap');
 assert(gameIndex.includes('js/dev-random-ruin-bootstrap.js?v=20260927interiorparity1'), 'game page must load the updated ruin bootstrap');
@@ -290,6 +290,7 @@ new vm.Script(inputClaims, { filename:'world-action-input-claims.js' });
   let presses=0,releases=0;
   claimWindow.WorldActionInputClaims.setClaims('test',[{actionId:'action1',label:'Test Interaction',priority:5,onPress:()=>presses++,onRelease:()=>releases++}]);
   assert.equal(claimWindow.WorldActionInputClaims.isClaimed('action1'),true,'registered world interaction must claim Action 1');
+  assert.equal(claimWindow.WorldActionInputClaims.hasClaim('action1'),true,'selector arbitration alias must report the same active world claim');
   assert.equal(claimWindow.WorldActionInputClaims.dispatch('action1','press',{source:'test'}),true,'claimed Action 1 press must be consumed');
   assert.equal(presses,1,'claimed press must invoke exactly once');
   assert.equal(claimWindow.WorldActionInputClaims.dispatch('action1','press',{source:'repeat'}),true,'repeated held press stays consumed');
