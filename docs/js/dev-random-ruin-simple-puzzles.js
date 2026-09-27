@@ -11,6 +11,9 @@
   const GRID_REVEAL_MS = 3600;
   const GRID_BURNING = 24;
   const GRID_RETRIGGER_MS = 900;
+  const ROPE_DESTINATION_RISE = .78; // Keeps ordinary rope landings clearly above the 0.42u ruin step limit so the rope is visibly required.
+  const ROPE_GRAB_ABOVE_LAUNCH = .86; // Places the idle grip at reachable head/hand height over the launch platform instead of inheriting the destination height.
+  const COMPOUND_ELEVATOR_TOP_RISE = .88; // Balcony→rope→elevator compositions begin as a visibly elevated landing before the glyph starts the descent cycle.
   const GRID_WALL_CLEARANCE = 0.52; // Used by safe-path grids so every plate center clears the ruin player's 0.28u collision radius plus the authored wall thickness.
   const HALL_FIRE_BURNING = 18;
   const HALL_POISON = 16;
@@ -411,11 +414,23 @@
         continue;
       }
 
-      const buttonAlong = Math.max(longStart + .18, originAlong - Math.max(.58, alongSpacing * .82));
-      const buttonCross = crossStart + crossWidth * .5;
+      const entryDoorRaw=(context.meta?.doorways||[]).find(door=>String(door?.to)===String(hall.id))
+        ||(context.meta?.doorways||[]).find(door=>String(door?.from)===String(hall.id)||String(door?.to)===String(hall.id));
+      const entryDoor=entryDoorRaw?doorwayWorld(context.meta,entryDoorRaw,(context.meta?.doorways||[]).indexOf(entryDoorRaw)):null;
+      const minAlong=longStart,maxAlong=longStart+longLength;
+      const entryAlong=entryDoor?(axis==='x'?entryDoor.x:entryDoor.z):minAlong;
+      const approachAtMin=Math.abs(entryAlong-minAlong)<=Math.abs(entryAlong-maxAlong); // Hall generation's room→hall doorway is the player-approach side even when the hall extends toward decreasing coordinates.
+      const fallbackInside=approachAtMin
+        ? Math.max(minAlong+.18,originAlong-Math.max(.58,alongSpacing*.82))
+        : Math.min(maxAlong-.18,originAlong+alongSpan+Math.max(.58,alongSpacing*.82));
+      const preferredOutside=entryDoor?entryAlong+(approachAtMin?-.68:.68):fallbackInside; // Put the reveal pedestal just before the trapped hallway, in the room the player enters from.
+      const buttonCross=entryDoor?(axis==='x'?entryDoor.z:entryDoor.x):(crossStart+crossWidth*.5);
+      const preferredX=axis==='x'?preferredOutside:buttonCross,preferredZ=axis==='x'?buttonCross:preferredOutside;
+      const preferredSupport=sampleSupport(preferredX,preferredZ);
+      const buttonAlong=preferredSupport?preferredOutside:fallbackInside; // If unusual room geometry leaves no support outside the threshold, keep the control immediately inside the correct end.
       const buttonX = axis === 'x' ? buttonAlong : buttonCross;
       const buttonZ = axis === 'x' ? buttonCross : buttonAlong;
-      const buttonSupport = sampleSupport(buttonX, buttonZ) || { y:cells[0]?.y || 0 };
+      const buttonSupport = preferredSupport || sampleSupport(buttonX, buttonZ) || { y:(approachAtMin?cells[0]:cells[cells.length-1])?.y || 0 };
       const button = new THREE.Group();
       button.name = 'dev_ruin_safe_path_button_' + hall.id;
       button.userData.devRuinInteractionType = 'safePathReveal';
@@ -431,6 +446,7 @@
 
       const grid = {
         hallId:String(hall.id), axis, cols, rows, root, cells, safe, button, capMat,
+        approachAtMin,entryDoorId:entryDoor?.id||null,buttonPoint:{x:buttonX,z:buttonZ},
         revealUntil:0, lastPlayerKey:null, triggerCount:0,
       };
       state.safeGrids.push(grid);
@@ -448,8 +464,8 @@
     return null;
   }
 
-  function createPlatform(id, x, z, baseY, width, depth) {
-    const height = .28;
+  function createPlatform(id, x, z, baseY, width, depth, height = .28) {
+    height=Math.max(.18,Number(height)||.28); // Taller destination columns remain solid from the local floor to their top instead of becoming floating slabs.
     const mesh = naturalizeStone(new THREE.Mesh(new THREE.BoxGeometry(width,height,depth), makeBasic(0x808080)));
     mesh.name = id;
     mesh.position.set(x,baseY+height*.5,z);
@@ -539,11 +555,11 @@
 
     const alongPlatformSize=axis==='x'?pa.width:pa.depth;
     const swingHorizontal=Math.max(.8,separation*.5-alongPlatformSize*.46);
-    const topY=Math.max(Number(pa.topY)||0,Number(pb.topY)||0);
+    const launchTopY=Number(pa.topY)||0; // The rope's idle end belongs to the reachable launch side; destination elevation must never raise the grab point out of reach.
     const ceilingBase=Number(context.meta?.floorSurfaceY)||0;
     const wallHeight=Number(context.meta?.wallHeight)||3;
     const anchorY=ceilingBase+wallHeight-.035;
-    const bobRestY=topY+.72;
+    const bobRestY=launchTopY+ROPE_GRAB_ABOVE_LAUNCH;
     const verticalDrop=anchorY-bobRestY;
     if(verticalDrop<=.6)return null;
     const length=Math.hypot(swingHorizontal,verticalDrop),startAngle=Math.atan2(swingHorizontal,verticalDrop);
@@ -606,8 +622,10 @@
         const cx=(bounds.minX+bounds.maxX)*.5,cz=(bounds.minZ+bounds.maxZ)*.5,dir=axis==='x'?{x:1,z:0}:{x:0,z:1};
         const a={x:cx-dir.x*separation*.5,z:cz-dir.z*separation*.5},b={x:cx+dir.x*separation*.5,z:cz+dir.z*separation*.5};
         const sa=sampleSupport(a.x,a.z),sb=sampleSupport(b.x,b.z);if(!sa||!sb)continue;
+        if(Math.abs(Number(sa.y)-Number(sb.y))>.32)continue; // Standalone rope readability assumes one local floor tier; authored plateau changes get their own stairs/ladders.
         pa=createPlatform('dev_ruin_rope_platform_a_'+room.id,a.x,a.z,Number(sa.y),axis==='x'?2.1:2.5,axis==='x'?2.5:2.1);
-        pb=createPlatform('dev_ruin_rope_platform_b_'+room.id,b.x,b.z,Number(sb.y),axis==='x'?2.1:2.5,axis==='x'?2.5:2.1);
+        const destinationHeight=.28+ROPE_DESTINATION_RISE;
+        pb=createPlatform('dev_ruin_rope_platform_b_'+room.id,b.x,b.z,Number(sb.y),axis==='x'?2.1:2.5,axis==='x'?2.5:2.1,destinationHeight); // Tall solid pedestal makes the far landing visibly unreachable by ordinary stepping while keeping the rope grip reachable from A.
       }
       const rope=createRopeTraversalBetween(context,room,pa,pb,options.idSuffix||'');
       if(!rope)continue;
@@ -863,7 +881,7 @@
   function buildBalconyRopeElevatorComposer(context,rng,usedRooms) {
     const candidates=shuffle(usableRoomCandidates(context).filter(room=>!usedRooms.has(room.id)&&deepestSunkenRegionForRoom(context,room)),rng);
     for(const room of candidates){
-      const elevator=buildCyclingElevatorModule(context,room,{startActive:false,cycleSeconds:8,reserveAnnex:true});
+      const elevator=buildCyclingElevatorModule(context,room,{startActive:false,cycleSeconds:8,reserveAnnex:true,topRise:COMPOUND_ELEVATOR_TOP_RISE});
       if(!elevator)continue;
       const landing={mesh:elevator.mesh,x:elevator.x,z:elevator.z,width:elevator.width,depth:elevator.depth,baseY:elevator.topTopY-elevator.height,topY:elevator.topTopY};
       const rope=buildRopeSwing(context,rng,usedRooms,{room,endPlatform:landing,idSuffix:'elevator'});
@@ -941,7 +959,7 @@
     const height=.26;
     const mesh=naturalizeStone(new THREE.Mesh(new THREE.BoxGeometry(width,height,depth),makeBasic(0x808080)));
     mesh.name='dev_ruin_cycling_elevator_'+room.id;
-    const topTopY=topFloorY+.05,bottomTopY=lowerFloorY+.08;
+    const topTopY=topFloorY+Math.max(.05,Number(options.topRise)||.05),bottomTopY=lowerFloorY+.08; // Compound rope elevators can begin conspicuously above step height; standalone elevators retain floor-flush tops.
     mesh.position.set(x,topTopY-height*.5,z);state.group.add(mesh);
     const module={
       id:'cycling-elevator-'+room.id,roomId:String(room.id),mesh,x,z,width,depth,height,region,regionBounds,annexBounds,annexDoorway,
@@ -1704,6 +1722,9 @@
         cols:grid.cols,
         rows:grid.rows,
         mandatoryTraversal:true,
+        approachSide:grid.approachAtMin?'min':'max',
+        entryDoorId:grid.entryDoorId,
+        buttonPoint:clonePoint(grid.buttonPoint),
         revealMs:Math.max(0,Math.round(grid.revealUntil-now)),
         triggerCount:grid.triggerCount,
         safe:grid.cells.filter(cell=>cell.safe).map(cell=>({key:cell.key,x:+cell.x.toFixed(3),z:+cell.z.toFixed(3)})),
@@ -1714,6 +1735,7 @@
         length:+rope.length.toFixed(3),angle:+rope.angle.toFixed(3),omega:+rope.omega.toFixed(3),yaw:+rope.yaw.toFixed(3), // Mobile/browser diagnostics prove movement input changes the live pendulum rather than a canned traversal.
         ceilingY:+rope.ceilingY.toFixed(3),ceilingMounted:rope.mount?.parent===state.group,weaponStowed:!!state.ropeHeldToolSnapshot,
         anchor:clonePoint(rope.anchor),bob:clonePoint(rope.bob),grabPoint:clonePoint(rope.grabPoint),
+        startTopY:+(rope.startPlatform?.topY||0).toFixed(3),endTopY:+(rope.endPlatform?.topY||0).toFixed(3),
       })),
       flight:state.flight?clonePoint(state.flight):null,
       ropeEquipment:{holstered:state.ropeEquipmentHolsterCount,restored:state.ropeEquipmentRestoreCount,currentlyStowed:!!state.ropeHeldToolSnapshot},
