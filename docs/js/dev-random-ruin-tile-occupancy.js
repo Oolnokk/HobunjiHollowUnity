@@ -336,7 +336,7 @@
       },
     };
     for (const wall of config.walls || []) for (const tileKey of wallTiles(wall, model)) addSource(model.staticSources, tileKey, `wall:${wall.id}`);
-    for (const solid of config.staticSolids || []) for (const tileKey of objectTiles(solid, model)) addSource(model.staticSources, tileKey, `solid:${solid.id}`);
+    for (const solid of config.staticSolids || []) { const role=String(solid.userData?.interiorRuinRole||solid.userData?.blockerPurpose||solid.name||'object').replace(/[^a-z0-9_-]+/gi,'_').slice(0,48); for (const tileKey of objectTiles(solid, model)) addSource(model.staticSources, tileKey, `solid:${solid.id}:${role}`); }
     for (const activator of model.activators) {
       const tileKey = nearestFloorAnchor(activator, model);
       if (tileKey) model.causes.add(tileKey);

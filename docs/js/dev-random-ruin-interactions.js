@@ -233,13 +233,17 @@
     const currentY = Number.isFinite(Number(currentSupport?.y)) ? Number(currentSupport.y) : Number(deps.playerMesh?.position?.y) || 0;
     const midpoint = (endpoints.top.y + endpoints.bottom.y) * .5;
     const target = currentY >= midpoint ? endpoints.bottom : endpoints.top;
-    deps.player.x = target.x * deps.TILE;
-    deps.player.y = target.z * deps.TILE;
-    deps.player.vx = 0;
-    deps.player.vy = 0;
-    if (deps.playerMesh?.position) deps.playerMesh.position.y = target.y;
-    deps._snapCameraTarget?.();
-    deps.showToast?.(target === endpoints.top ? 'Climbed up the stone ladder.' : 'Climbed down the stone ladder.', true);
+    const deltaY=Math.abs(target.y-currentY);
+    const playerX=deps.player.x/deps.TILE, playerZ=deps.player.y/deps.TILE;
+    const animated=window.ClimbSystem?.startScriptedWorldClimb?.({
+      endX:target.x*deps.TILE,
+      endY:target.z*deps.TILE,
+      startWorldY:currentY,
+      endWorldY:target.y,
+      hopCount:Math.max(3,Math.ceil(deltaY/.38)+1),
+      facingAngle:Math.atan2(target.z-playerZ,target.x-playerX),
+    });
+    if(!animated&&!window.DevRandomRuin?.setPlayerWorldPoint?.({ x:target.x, y:target.y, z:target.z }, { grounded:true })) return false;
     return true;
   }
 
@@ -251,12 +255,29 @@
     return owner ? worldPosition(owner) : null;
   }
 
+  function horizontalDistanceToOwner(owner, player, fallbackPoint = null) {
+    if (owner && player) {
+      try {
+        owner.updateWorldMatrix?.(true, true);
+        owner.updateMatrixWorld?.(true);
+        const box = new THREE.Box3().setFromObject(owner); // Range is measured from the visible tower/cube surface, matching how its collision feels.
+        if (!box.isEmpty()) {
+          const nearestX = Math.max(box.min.x, Math.min(player.x, box.max.x));
+          const nearestZ = Math.max(box.min.z, Math.min(player.z, box.max.z));
+          return Math.hypot(nearestX - player.x, nearestZ - player.z);
+        }
+      } catch (_) {}
+    }
+    return fallbackPoint && player ? Math.hypot(fallbackPoint.x - player.x, fallbackPoint.z - player.z) : Infinity;
+  }
+
   function providerRows(now = performance.now()) {
     const player = playerWorldPosition();
     if (!player) return [];
     const providers = [
       ['interior', window.DevRandomRuin],
       ['prototype', window.DevRandomRuinPrototypeHooks],
+      ['simple', window.DevRandomRuinSimplePuzzles],
     ];
     const rows = [];
     const seen = new Set();
@@ -264,14 +285,16 @@
       const controls = provider?.getInteractionControls?.() || [];
       for (let index = 0; index < controls.length; index++) {
         const control = controls[index];
-        if (!control || typeof control.onPress !== 'function') continue;
+        if (!control || (typeof control.onPress !== 'function' && typeof control.onHoldStart !== 'function')) continue;
         const kind = String(control.kind || 'interactive').toLowerCase();
         // Glyphs and ignition props are intentionally hit-driven. Never leak
         // the generator's DEV toggle into the ordinary interaction list.
         if (kind.includes('glyph') || kind === 'brazier' || kind === 'torch') continue;
-        const owner = control.object || (control.point ? ruinRoot() : nearestOwnerForKind(kind));
+        const owner = control.promptRoot || control.object || (control.point ? ruinRoot() : nearestOwnerForKind(kind)); // Towers can explicitly anchor prompts to the cube/top segment players are looking at.
         const point = controlWorldPoint(control, owner);
-        const distance = point ? Math.hypot(point.x - player.x, point.z - player.z) : Infinity;
+        const distance = control.point
+          ? (point ? Math.hypot(point.x - player.x, point.z - player.z) : Infinity)
+          : horizontalDistanceToOwner(owner, player, point);
         const range = Math.max(.1, Number(control.range) || LADDER_RANGE);
         if (distance > range) continue;
         const labelValue = typeof control.label === 'function' ? control.label() : control.label;
@@ -286,7 +309,12 @@
           touchIcon:control.touchIcon || '✋',
           owner,
           distance,
+          priority:Number(control.priority)||0,
+          inputAction:control.inputAction || null, // Optional fixed semantic input (e.g. Dodge for rope release) used for prompts without stealing a dynamic action slot.
+          nativeInput:control.nativeInput === true,
           onPress:control.onPress,
+          onHoldStart:control.onHoldStart,
+          onHoldEnd:control.onHoldEnd,
           seenAt:now,
           source,
         });
@@ -340,10 +368,19 @@
         source:'semantic-ladder',
       });
     }
-    return rows
-      .sort((a, b) => a.distance - b.distance || b.seenAt - a.seenAt)
-      .slice(0, SLOT_ACTIONS.length)
-      .map((entry, index) => ({ ...entry, inputAction:SLOT_ACTIONS[index], action:`dev_ruin_world_${index}`, touchButtonId:TOUCH_BUTTON_IDS[index] }));
+    const sorted=rows
+      .sort((a, b) => b.priority - a.priority || a.distance - b.distance || b.seenAt - a.seenAt)
+      .slice(0, SLOT_ACTIONS.length + 1); // Allows one fixed contextual input (currently Dodge) without reducing the normal five action slots.
+    let slotIndex=0;
+    return sorted.map((entry,index)=>{
+      if(entry.inputAction){
+        return { ...entry, action:`dev_ruin_world_fixed_${entry.inputAction}_${index}`, touchButtonId:null };
+      }
+      const inputAction=SLOT_ACTIONS[slotIndex]||SLOT_ACTIONS[SLOT_ACTIONS.length-1];
+      const touchButtonId=TOUCH_BUTTON_IDS[slotIndex]||null;
+      slotIndex++;
+      return { ...entry, inputAction, action:`dev_ruin_world_${slotIndex-1}`, touchButtonId };
+    });
   }
 
   function currentDevice() {
@@ -383,6 +420,7 @@
     clearTouchButtons();
     if (device !== 'touch') return;
     rows.forEach((row, index) => {
+      if(row.nativeInput || !row.touchButtonId) return; // Rope release stays on the game's permanent Dodge button instead of masquerading as Action 1/2/3.
       const button = document.getElementById(row.touchButtonId);
       if (!button) return;
       button.dataset.devRuinOwned = '1';
@@ -457,11 +495,25 @@
 
   window.addEventListener('keydown', event => {
     if (!inRuin() || !lastRows.length) return;
-    const row = lastRows.find(entry => keyboardMatches(bindingFor(entry.inputAction, 'desktop'), event));
+    const row = lastRows.find(entry => !entry.nativeInput && keyboardMatches(bindingFor(entry.inputAction, 'desktop'), event));
     if (!row) return;
     event.preventDefault();
     event.stopImmediatePropagation();
-    try { row.onPress?.(); } catch (error) { console.warn('[Random Test Ruin interactions] action failed', error); }
+    try {
+      if (typeof row.onHoldStart === 'function') {
+        if (event.repeat) return;
+        row.onHoldStart();
+      } else row.onPress?.();
+    } catch (error) { console.warn('[Random Test Ruin interactions] action failed', error); }
+  }, true);
+
+  window.addEventListener('keyup', event => {
+    if (!inRuin() || !lastRows.length) return;
+    const row = lastRows.find(entry => typeof entry.onHoldEnd === 'function' && keyboardMatches(bindingFor(entry.inputAction, 'desktop'), event));
+    if (!row) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    try { row.onHoldEnd?.(); } catch (error) { console.warn('[Random Test Ruin interactions] hold release failed', error); }
   }, true);
 
   function controllerBindingDown(binding) {
@@ -472,11 +524,17 @@
   function pollController() {
     if (!inRuin()) { controllerDown.clear(); return; }
     for (const row of lastRows) {
+      if(row.nativeInput)continue; // Fixed contextual inputs (Dodge) remain owned by game.js and are only advertised here.
       const binding = bindingFor(row.inputAction, 'controller');
       const down = controllerBindingDown(binding);
       const wasDown = controllerDown.get(row.inputAction) === true;
       if (down && !wasDown) {
-        try { row.onPress?.(); } catch (error) { console.warn('[Random Test Ruin interactions] controller action failed', error); }
+        try {
+          if (typeof row.onHoldStart === 'function') row.onHoldStart();
+          else row.onPress?.();
+        } catch (error) { console.warn('[Random Test Ruin interactions] controller action failed', error); }
+      } else if (!down && wasDown && typeof row.onHoldEnd === 'function') {
+        try { row.onHoldEnd(); } catch (error) { console.warn('[Random Test Ruin interactions] controller hold release failed', error); }
       }
       controllerDown.set(row.inputAction, down);
     }
@@ -485,27 +543,43 @@
   document.addEventListener('pointerdown', event => {
     const button = event.target?.closest?.('[data-dev-ruin-owned="1"]');
     if (!button || !inRuin()) return;
+    const index = Number(button.dataset.devRuinRow);
+    const row = Number.isInteger(index) ? lastRows[index] : null;
     event.preventDefault();
     event.stopImmediatePropagation();
+    if (typeof row?.onHoldStart === 'function') {
+      try { row.onHoldStart(); } catch (error) { console.warn('[Random Test Ruin interactions] touch hold failed', error); }
+    }
   }, true);
 
-  document.addEventListener('pointerup', event => {
+  function finishTouchRow(event) {
     const button = event.target?.closest?.('[data-dev-ruin-owned="1"]');
     if (!button || !inRuin()) return;
     const index = Number(button.dataset.devRuinRow);
     const row = Number.isInteger(index) ? lastRows[index] : null;
     event.preventDefault();
     event.stopImmediatePropagation();
-    try { row?.onPress?.(); } catch (error) { console.warn('[Random Test Ruin interactions] touch action failed', error); }
-  }, true);
+    try {
+      if (typeof row?.onHoldEnd === 'function') row.onHoldEnd();
+      else row?.onPress?.();
+    } catch (error) { console.warn('[Random Test Ruin interactions] touch action failed', error); }
+  }
+  document.addEventListener('pointerup', finishTouchRow, true);
+  document.addEventListener('pointercancel', finishTouchRow, true);
 
+  let lastInteractionListAt=-Infinity; // Proximity/floating-prompt discovery is UI work, not physics; keep controller edge polling per-frame but rebuild rows at 12.5 Hz.
   DS.addBeforeRenderClient(() => {
-    renderWorldList();
+    const now=performance.now();
+    if(now-lastInteractionListAt>=80){
+      lastInteractionListAt=now;
+      renderWorldList(now);
+    }
     pollController();
   });
 
   window.DevRandomRuinInteractions = Object.freeze({
     resolveInteractionOwner,
+    climbStoneLadder:climbLadder, // Canonical authored-stone-ladder action; uses ClimbSystem's cliff-style hop animation.
     refresh:renderWorldList,
     invoke(index = 0) {
       const row = lastRows[index];
@@ -518,9 +592,9 @@
         active:inRuin(),
         nativeProviderMode:true,
         customPromptBridgeInstalled:false,
-        providerCount:[window.DevRandomRuin, window.DevRandomRuinPrototypeHooks].filter(provider => typeof provider?.getInteractionControls === 'function').length,
+        providerCount:[window.DevRandomRuin, window.DevRandomRuinPrototypeHooks, window.DevRandomRuinSimplePuzzles].filter(provider => typeof provider?.getInteractionControls === 'function').length,
         ladderCount:ladders.length,
-        rows:lastRows.map(row => ({ label:row.label, kind:row.kind, inputAction:row.inputAction, input:bindingLabel(row.inputAction, currentDevice(), row.touchIcon), distance:Number.isFinite(row.distance) ? +row.distance.toFixed(3) : null })),
+        rows:lastRows.map(row => ({ label:row.label, kind:row.kind, action:row.action, inputAction:row.inputAction, inputActionId:row.inputAction, nativeInput:row.nativeInput===true, input:bindingLabel(row.inputAction, currentDevice(), row.touchIcon), distance:Number.isFinite(row.distance) ? +row.distance.toFixed(3) : null, owner:row.owner?.name||row.owner?.id||null })),
         ownerName:lastAnchor?.name || null,
         ownerKind:semanticKind(lastAnchor),
         worldPopupVisible:ownsWorldList,

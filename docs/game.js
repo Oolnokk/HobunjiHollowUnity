@@ -4970,6 +4970,7 @@
       }
 
       function respawnPlayer() {
+        if (window.DevRandomRuinSimplePuzzles?.respawnAtCheckpoint?.('death')) return; // Session ruin checkpoints override every canonical death source before mine/totem/farm recovery.
         if (window.TownMine?.floorFromMapId?.(currentArea)) {
           window.WildernessCampfire?.clearMineCampfireOnDeath?.(); // Mine death ends the one underground camp, while wilderness camps survive.
           _returnToFarmMeshes();
@@ -9339,6 +9340,7 @@
       }
 
       function performDodge() {
+        if (window.DevRandomRuinSimplePuzzles?.releaseActiveRope?.()) return true; // Dodge is the native rope jump-off input; release carries pendulum tangent instead of starting an evasive roll.
         // While prone (0 Footing — see enterProneIfFootingDepleted), the
         // dodge button somersaults the player back to standing instead of a
         // normal evasive dodge.
@@ -9407,6 +9409,7 @@
       }
 
       function performContextAction() {
+        if (window.DevRandomRuinSimplePuzzles?.releaseActiveRope?.()) return; // Rope traversal outranks climb/door context while attached.
         if (player.climbing || player.dodging) return;
         if (_pendingSpotTransition) { startSceneTransition(() => performTravel(_pendingSpotTransition)); return; }
         // Climbing is now the forward-dodge context action. Sideways/backward
@@ -28293,6 +28296,18 @@
         player,
         _snapCameraTarget,
         refreshActionBar,
+        getHeldMode: () => heldMode, // Random Test Ruin rope traversal snapshots only the currently drawn tool/weapon.
+        getActiveTool: () => activeTool,
+        getActiveAction: () => activeAction,
+        putAwayHeldEquipment,
+        restoreHeldToolSnapshot: snapshot => {
+          if (!snapshot?.tool || heldMode !== 'none') return false;
+          setActiveTool(snapshot.tool, { silent:true });
+          if (toolActions[snapshot.tool]?.includes(snapshot.action)) activeAction = snapshot.action;
+          refreshActionBar();
+          refreshWeaponSwitchBtn();
+          return true;
+        },
         showToast,
         closeMenu,
         EXTERIOR_ZONES,

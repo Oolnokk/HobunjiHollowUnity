@@ -68,9 +68,11 @@
     const minY = number(options.minY, -Infinity);
     const maxY = number(options.maxY, Infinity);
     const pad = number(options.pad, 0);
+    const scope = options.scope == null ? null : String(options.scope); // Optional exact scope filter used by pre-entry generated-map audits.
     let best = null;
     for (const record of surfaces.values()) {
       if (!recordEnabled(record)) continue;
+      if (scope != null && String(record.scope ?? '') !== scope) continue;
       const bounds = recordBounds(record);
       if (!contains(bounds, x, z, pad)) continue;
       if (typeof record.supports === 'function' && !record.supports(x, z, record)) continue;

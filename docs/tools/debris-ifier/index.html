@@ -118,22 +118,26 @@
 <div class="debug" id="debug">Debris-ifier ready. Loading Three.js dependencies…</div>
 </div>
 
-<script>window.__debrisDeps=[];</script>
-<script src="https://unpkg.com/three@0.128.0/build/three.min.js" onerror="window.__debrisDeps.push('three.min.js failed')"></script>
-<script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js" onerror="window.__debrisDeps.push('OrbitControls failed')"></script>
-<script src="https://unpkg.com/three@0.128.0/examples/js/loaders/GLTFLoader.js" onerror="window.__debrisDeps.push('GLTFLoader failed')"></script>
-<script src="https://unpkg.com/three@0.128.0/examples/js/exporters/GLTFExporter.js" onerror="window.__debrisDeps.push('GLTFExporter failed')"></script>
+<script>
+window.__debrisDeps=[];
+window.__debrisBootErrors=[]; // Mobile/CI-visible dependency failures consumed by the parent Random Test Ruin loader.
+window.addEventListener('error',event=>{
+  const src=event?.target?.src||event?.target?.href||'';
+  if(src)window.__debrisBootErrors.push(String(src));
+},true);
+window.__debrisEmbeddedRuntime=new URLSearchParams(location.search).get('devRuntime')==='1'||new URLSearchParams(location.search).get('embedded')==='devRandomRuin';
+if(window.__debrisEmbeddedRuntime&&parent!==window&&parent.THREE?.WebGLRenderer){
+  // The hidden in-game generator should run on the exact already-loaded game
+  // Three.js realm instead of waiting on a second set of third-party scripts.
+  window.THREE=parent.THREE;
+}else{
+  document.write('<script src="https://unpkg.com/three@0.128.0/build/three.min.js" onerror="window.__debrisDeps.push(\'three.min.js failed\')"><\/script>');
+  document.write('<script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js" onerror="window.__debrisDeps.push(\'OrbitControls failed\')"><\/script>');
+  document.write('<script src="https://unpkg.com/three@0.128.0/examples/js/loaders/GLTFLoader.js" onerror="window.__debrisDeps.push(\'GLTFLoader failed\')"><\/script>');
+  document.write('<script src="https://unpkg.com/three@0.128.0/examples/js/exporters/GLTFExporter.js" onerror="window.__debrisDeps.push(\'GLTFExporter failed\')"><\/script>');
+}
+</script>
 <script src="../../js/furniture-puzzle-properties.js?v=20260922perpiece1"></script>
-<script src="debrisifier-01.js"></script>
-<script src="debrisifier-02.js"></script>
-<script src="debrisifier-03.js"></script>
-<script src="debrisifier-04.js"></script>
-<script src="debrisifier-05.js"></script>
-<script src="debrisifier-06.js"></script>
-<script src="debrisifier-07.js"></script>
-<script src="debrisifier-08.js"></script>
-<script src="debrisifier-09.js"></script>
-<script src="debrisifier-10.js"></script>
-<script src="debrisifier-11.js"></script>
+<script src="debrisifier-01.js?v=20260926glyphdecal1"></script>
 </body>
 </html>

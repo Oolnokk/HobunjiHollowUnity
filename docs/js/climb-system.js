@@ -241,6 +241,44 @@
   const CLIMB_HOP_ACTIVE_S = 0.32;
   const CLIMB_HOP_PAUSE_S  = 0.26;
   const CLIMB_HOP_BOUNCE_UNITS = 0.4;
+  function startScriptedWorldClimb(config = {}) {
+    const player = deps?.player;
+    if (!player || player.climbing) return false;
+    const mountRideState = deps.getMountRideState?.() || 'none';
+    if (mountRideState !== 'none') {
+      deps.showToast?.('Dismount before climbing.', false);
+      return false;
+    }
+    const endX=Number(config.endX), endY=Number(config.endY);
+    const startWorldY=Number(config.startWorldY), endWorldY=Number(config.endWorldY);
+    if (![endX,endY,startWorldY,endWorldY].every(Number.isFinite)) return false;
+    player.climbing = true;
+    player.climbElapsed = 0;
+    player.climbHopCount = Math.max(3, Math.min(12, Math.floor(Number(config.hopCount) || 3)));
+    player.climbStartX = player.x;
+    player.climbStartY = player.y;
+    player.climbEndX = endX;
+    player.climbEndY = endY;
+    player.climbSurfaceStartY = startWorldY;
+    player.climbSurfaceEndY = endWorldY;
+    player.climbSurfaceY = startWorldY;
+    player.climbHopBounce = 0;
+    player.vx = 0; player.vy = 0;
+    const facing = Number.isFinite(Number(config.facingAngle))
+      ? Number(config.facingAngle)
+      : Math.atan2(endY-player.y,endX-player.x);
+    player.angle = facing;
+    deps.setFacingAngle(facing);
+    deps.setTargetAimAngle(facing);
+    deps.setLastMoveAngle(facing);
+    player._climbTargetBranch = null;
+    player._climbJumpDownAxis = null;
+    player._climbLastHopIndex = -1;
+    climbSafetyDebug.lastBlockReason = null;
+    climbSafetyDebug.lastBlockRideState = 'none';
+    return true;
+  }
+
   function startClimb(climb) {
     const mountRideState = deps.getMountRideState?.() || 'none'; // Used to keep scripted climbing mutually exclusive with every mount transition phase.
     if (mountRideState !== 'none') {
@@ -526,6 +564,7 @@
     getClimbTarget,
     getAimedNest,
     startClimb,
+    startScriptedWorldClimb, // Reuses the cliff-climb hop lerp for authored non-grid climbs such as Random Test Ruin stone ladders.
     updateClimb,
     updateBranchMovement,
     constrainEntityToBranch,

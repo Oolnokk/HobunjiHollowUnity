@@ -128,14 +128,10 @@
 
   function cloneMaterial(source) {
     const color = source?.color?.getHex?.() ?? 0x545039;
-    const material = new THREE.MeshStandardMaterial({
+    const map = cloneTexture(source?.map);
+    const common = {
       color,
-      map: cloneTexture(source?.map),
-      emissive: source?.emissive?.getHex?.() ?? 0x000000,
-      emissiveMap: cloneTexture(source?.emissiveMap),
-      emissiveIntensity: Number.isFinite(Number(source?.emissiveIntensity)) ? Number(source.emissiveIntensity) : 1,
-      roughness: Number.isFinite(Number(source?.roughness)) ? Number(source.roughness) : .92,
-      metalness: Number.isFinite(Number(source?.metalness)) ? Number(source.metalness) : .02,
+      map,
       side: source?.side ?? THREE.DoubleSide,
       transparent: source?.transparent === true,
       opacity: Number.isFinite(Number(source?.opacity)) ? Number(source.opacity) : 1,
@@ -143,7 +139,29 @@
       depthTest: source?.depthTest !== false,
       depthWrite: source?.depthWrite !== false,
       vertexColors: source?.vertexColors === true,
-    });
+      blending: source?.blending ?? THREE.NormalBlending, // Preserve additive glyph-glow decals in the parent render realm.
+      polygonOffset: source?.polygonOffset === true,
+      polygonOffsetFactor: Number(source?.polygonOffsetFactor) || 0,
+      polygonOffsetUnits: Number(source?.polygonOffsetUnits) || 0,
+    };
+    const sourceUnlit = source?.isMeshBasicMaterial || source?.lights === false || source?.userData?.naturalSurfaceUnlit || source?.userData?.devRandomRuinUnlitMaterial; // Never promote cliff-style/unlit source art back into a physically lit material at the iframe→game boundary.
+    let material;
+    if(sourceUnlit){
+      const spritePngSurface=window.HobunjiSpritePngSurface||window.HobunjiPngPlaneUnlit; // Same material factory used by cliffs.
+      material=typeof spritePngSurface?.makeMaterial==='function'
+        ? spritePngSurface.makeMaterial(THREE,map,`${source?.name||'v50_ruin'}_game_realm_unlit`,common)
+        : new THREE.MeshBasicMaterial(common);
+      material.userData=Object.assign({},source?.userData,material.userData,{devRandomRuinUnlitMaterial:true,naturalSurfaceLightModel:'character-png-unlit'});
+    }else{
+      material = new THREE.MeshStandardMaterial({
+        ...common,
+        emissive: source?.emissive?.getHex?.() ?? 0x000000,
+        emissiveMap: cloneTexture(source?.emissiveMap),
+        emissiveIntensity: Number.isFinite(Number(source?.emissiveIntensity)) ? Number(source.emissiveIntensity) : 1,
+        roughness: Number.isFinite(Number(source?.roughness)) ? Number(source.roughness) : .92,
+        metalness: Number.isFinite(Number(source?.metalness)) ? Number(source.metalness) : .02,
+      });
+    }
     material.name = `${source?.name || 'v50_ruin'}_game_realm`;
     material.needsUpdate = true;
     return material;
@@ -170,12 +188,14 @@
   const _copyTransformSourceWorld = new THREE.Matrix4(); // Reused scratch matrices for copySourceWorldTransform, called once per live proxy every frame.
   const _copyTransformParentWorldInverse = new THREE.Matrix4();
   const _copyTransformLocalMatrix = new THREE.Matrix4();
-  function copySourceWorldTransform(sourceObject, proxy, scene) {
+  function copySourceWorldTransform(sourceObject, proxy, scene, matricesReady = false) {
     if (!sourceObject || !proxy || !scene) return false;
-    sourceObject.updateWorldMatrix?.(true, false);
-    if (!sourceObject.updateWorldMatrix) sourceObject.updateMatrixWorld?.(true);
-    scene.updateWorldMatrix?.(true, false);
-    proxyRoot?.updateWorldMatrix?.(true, false);
+    if(!matricesReady){
+      sourceObject.updateWorldMatrix?.(true, false);
+      if (!sourceObject.updateWorldMatrix) sourceObject.updateMatrixWorld?.(true);
+      scene.updateWorldMatrix?.(true, false);
+      proxyRoot?.updateWorldMatrix?.(true, false);
+    }
     if (!matrixElementsAreFinite(sourceObject.matrixWorld) || !matrixElementsAreFinite(proxyRoot?.matrixWorld)) return false;
 
     const sourceWorld = _copyTransformSourceWorld; // Holds the V50 wall's numeric world transform in the game THREE realm.
@@ -237,6 +257,16 @@
       return null;
     }
     const proxy = new THREE.Mesh(geometry, material);
+    if(sourceObject.userData?.devRandomRuinDenMaterial){
+      const natural=window.NaturalSurfaceMaterials; // Re-enters den-tagged V50 stone through the parent realm's exact ordinary-den material factory.
+      if(typeof natural?.naturalizeMesh==='function'){
+        const clonedMaterial=proxy.material; // Disposed after naturalizeMesh replaces the temporary parent-realm clone.
+        const clonedMaterials=Array.isArray(clonedMaterial)?clonedMaterial:[clonedMaterial];
+        natural.naturalizeMesh(proxy,'cliffs');
+        if(proxy.material!==clonedMaterial)for(const old of clonedMaterials){old?.map?.dispose?.();old?.dispose?.();}
+        proxy.userData=Object.assign({},proxy.userData,{devRandomRuinDenMaterial:true});
+      }
+    }
     proxy.name = `${sourceObject.name || `ruin_${kind}_${sourceObject.id}`}_runtime_render`;
     proxy.userData.devRuinRenderProxy = true;
     proxy.userData.devRuinRenderKind = kind;
@@ -257,6 +287,7 @@
     proxy.castShadow = true;
     proxy.receiveShadow = true;
     proxy.renderOrder = Number(sourceObject.renderOrder) || 0;
+    proxy.userData.devRuinRenderDynamic = kind === 'door' || kind === 'activator'; // Walls/arches are immutable after generation; only puzzle geometry needs per-frame transform/material sync.
     // These are visual-only meshes. Prevent broad scene raycasts from choosing a
     // render proxy instead of the V50 ladder/mechanism that owns an interaction.
     proxy.raycast = () => {};
@@ -360,6 +391,10 @@
       if (Number.isFinite(Number(source.emissiveIntensity))) target.emissiveIntensity = Number(source.emissiveIntensity);
       if (Number.isFinite(Number(source.opacity))) target.opacity = Number(source.opacity);
       if (Number.isFinite(Number(source.alphaTest))) target.alphaTest = Number(source.alphaTest);
+      if (source.blending != null && target.blending !== source.blending) { target.blending = source.blending; target.needsUpdate = true; } // Active glyph decals switch Normal→Additive without scene lights.
+      target.polygonOffset = source.polygonOffset === true;
+      target.polygonOffsetFactor = Number(source.polygonOffsetFactor) || 0;
+      target.polygonOffsetUnits = Number(source.polygonOffsetUnits) || 0;
       if (source.map && target.map) {
         target.map.offset?.copy?.(source.map.offset);
         target.map.repeat?.copy?.(source.map.repeat);
@@ -376,7 +411,8 @@
       if (preparedRoot || preparedScene || proxyRoot) clearProxies();
       return null;
     }
-    if (resolvedRoot !== preparedRoot || scene !== preparedScene) {
+    const rebuilt = resolvedRoot !== preparedRoot || scene !== preparedScene;
+    if (rebuilt) {
       clearProxies();
       preparedRoot = resolvedRoot;
       preparedScene = scene;
@@ -390,9 +426,13 @@
       }
     }
 
+    resolvedRoot.updateMatrixWorld?.(true); // One source-hierarchy update per proxy tick; avoids repeating the same parent walk for every activator mesh.
+    scene.updateMatrixWorld?.(true);
+    proxyRoot?.updateMatrixWorld?.(true);
     for (const proxy of [...proxies]) {
+      if(!rebuilt && !proxy?.userData?.devRuinRenderDynamic) continue; // Static walls/arches keep their initial copied transform/material instead of re-copying hundreds of objects every frame.
       const sourceObject = proxy?.userData?.sourceRuinObject || null; // Used to refresh live door/activator placement before each render.
-      if (!proxy.parent || !sourceObject || !copySourceWorldTransform(sourceObject, proxy, scene)) {
+      if (!proxy.parent || !sourceObject || !copySourceWorldTransform(sourceObject, proxy, scene, true)) {
         disposeProxy(proxy);
         continue;
       }
@@ -412,6 +452,7 @@
     // Reassert only private source clones in case a preview controller changed
     // material visibility earlier in the frame; original shared materials stay intact.
     for (const sourceObject of hiddenSourceMeshes) {
+      if(!rebuilt && !['door','activator'].includes(sourceObject.userData?.devRuinProxyKind)) continue;
       for (const material of sourceObject.userData?.devRuinProxyHiddenMaterials || []) material.visible = false;
     }
     return null; // Diagnostics-only snapshot() is intentionally not computed here — nothing in the per-frame render loop reads it; call window.DevRandomRuinWallRenderProxy.snapshot() directly when it's actually needed.
@@ -493,10 +534,19 @@
         const materials = Array.isArray(proxy.material) ? proxy.material : [proxy.material];
         return materials.length > 0 && materials.every(material => material instanceof THREE.Material);
       }).length,
+      litProxyMaterials: allLive.reduce((sum,proxy)=>sum+(Array.isArray(proxy.material)?proxy.material:[proxy.material]).filter(material=>material?.lights===true||material?.isMeshLambertMaterial||material?.isMeshPhongMaterial||material?.isMeshToonMaterial||material?.isMeshStandardMaterial||material?.isMeshPhysicalMaterial).length,0), // Mobile/browser proof that the visible proxy layer stayed unlit after crossing realms.
+      glyphDecalProxyCount: activators.filter(proxy => (Array.isArray(proxy.material)?proxy.material:[proxy.material]).some(material => !!material?.userData?.decalImagePath)).length, // Proves the face-marker layer survived iframe→game proxy conversion.
+      glowingGlyphDecalProxyCount: activators.filter(proxy => (Array.isArray(proxy.material)?proxy.material:[proxy.material]).some(material => material?.userData?.devRuinGlyphGlow === true || material?.blending === THREE.AdditiveBlending)).length,
       blockerCount: DS.debugSnapshot?.().blockers?.filter(record => String(record.id || '').startsWith('devruin-wall-')).length || 0,
     };
   }
 
-  DS.addBeforeRenderClient(() => prepare());
+  let lastProxySyncAt=-Infinity; // 30 Hz is enough for puzzle motion while avoiding a second full proxy update at the renderer's 60+ Hz cadence.
+  DS.addBeforeRenderClient(() => {
+    const now=performance.now();
+    if(now-lastProxySyncAt<33)return;
+    lastProxySyncAt=now;
+    prepare();
+  });
   window.DevRandomRuinWallRenderProxy = Object.freeze({ prepare, snapshot, clear: clearProxies });
 })();
