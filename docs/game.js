@@ -23094,8 +23094,10 @@
         // updateClimb instead of a raw tile lookup, which would pop between
         // the cliff base and plateau top the instant the crossing tile
         // flips (see startClimb/updateClimb).
+        const ruinStandY = window.DevRandomRuin?.getPlayerSupportY?.(); // Used by the Random Test Ruin to feed dynamic multi-level support into the canonical body, shadow, resource-ring, held-equipment, and shoulder-pet render path.
         const ordinaryStandY = player.onBranch ? player.branchSurfaceY
           : player.climbing ? player.climbSurfaceY
+          : Number.isFinite(ruinStandY) ? ruinStandY
           : (_isZoneArea(currentArea) ? surfaceYAtWorld(currentArea, wx, wz) : tileSurfaceYInArea(tile, currentArea));
         const standY = knockbackVisualSurfaceY(player, ordinaryStandY);
         window.BurningAfflictionVfx?.syncEntity?.(player, playerMesh); // Burning Health uses the authored furniture flame emitter on the player's live avatar root.
