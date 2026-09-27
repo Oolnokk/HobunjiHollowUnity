@@ -73,7 +73,7 @@ assert(interior.includes('spritePngSurface.makeMaterial(THREE,source.map||null')
 assert(interior.includes('remainingLitMaterials'), 'material diagnostics must explicitly count any lit material that escapes normalization');
 assert((cloudFog.match(/map_i_dev_random_ruin/g)||[]).length>=2, 'Random Test Ruin must opt into the shared den no-sky and den darkness/lantern classifications');
 assert(gameIndex.includes('js/cloud-forest-fog.js?v=20260926devruindark2'), 'test-ruin darkness override must be cache-busted in the game page');
-assert(camera.includes('dev-random-ruin-interior-map.js?v=20260927transitdoor1'), 'test-ruin mechanism animation changes must be cache-busted in the dev bootstrap');
+assert(camera.includes('dev-random-ruin-interior-map.js?v=20260927generatorlocal1'), 'test-ruin generator/runtime changes must be cache-busted in the dev bootstrap');
 assert(interior.includes('Solvability.audit'), 'candidate ruins must run the pre-entry solvability audit');
 assert(interior.includes('MAX_SOLVABILITY_ATTEMPTS = 6'), 'unsolvable candidates must have a bounded deterministic retry budget');
 assert(interior.includes('getLastSolvabilityAudit'), 'rejected seed diagnostics must remain inspectable without devtools');
@@ -284,6 +284,9 @@ assert.equal(
 );
 assert(interior.includes('GENERATOR_FRAME_TIMEOUT_MS = 30000') && interior.includes('performance.now() - started < GENERATOR_FRAME_TIMEOUT_MS'), 'hidden V50 generation must retain a bounded but slow-browser-safe startup timeout');
 assert(debrisBootstrap.includes("params.get('devRuntime') === '1'"), 'Debris-ifier bootstrap must recognize hidden dev runtime mode');
+assert(debrisIndex.includes('window.__debrisEmbeddedRuntime&&parent!==window&&parent.THREE'), 'hidden Debris-ifier must reuse the already-loaded parent THREE realm without requiring WebGLRenderer or CDN fallback');
+assert(debrisIndex.includes('window.__debrisUsedParentThree=true'), 'hidden generator dependency diagnostics must prove the parent THREE path was selected');
+assert(interior.includes('usedParentThree:child?.__debrisUsedParentThree===true'), 'generator timeout diagnostics must expose whether local parent THREE was used');
 assert(debrisBootstrap.includes("const EMBEDDED_TREE = 'debrisifier-v50-embedded-tree.json'"), 'embedded runtime must name the committed local tree');
 assert(debrisBootstrap.includes('const hallReplacement = \'const width=randomIntInclusive(rng,5,6),length=randomIntInclusive(rng,5,8);\''), 'embedded runtime must widen normal V50 hallways to 5–6 cells');
 assert(debrisBootstrap.includes("escapeHallReplacement = 'hallWidth=randomIntInclusive(rng,5,6),hallLen=10+rooms.length*3;'"), 'embedded runtime must widen fallback V50 hallways to 5–6 cells');
