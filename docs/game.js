@@ -4984,6 +4984,28 @@
           showToast('You awaken at the farm Root Totem, carrying everything you found...', false);
           return;
         }
+        if (currentArea === 'map_dev_arena') {
+          const arenaDef = EXTERIOR_ZONES.map_dev_arena; // Testing Arena deaths stay inside the disposable combat sandbox instead of invoking the ordinary no-totem farmhouse fallback.
+          if (arenaDef) {
+            player.x = (arenaDef.entryCol + 0.5) * TILE;
+            player.y = (arenaDef.entryRow + 0.5) * TILE;
+          }
+          player.vx = 0; player.vy = 0;
+          player.health = player.maxHealth;
+          player.stamina = player.maxStamina;
+          if (Number.isFinite(player.maxFooting)) player.footing = player.maxFooting; // Death reset should not strand an arena test subject prone at the entry point.
+          player.prone = false;
+          if (player.staggered) { player.staggered.active = false; player.staggered.endsAt = 0; }
+          for (const id of Object.keys(window.ResourceSystem?.AFFLICTIONS || {})) {
+            const buildup = window.ResourceSystem?.getAffliction?.(player, id) || 0; // Clears lethal/punishing carry-over so the test respawn cannot immediately die again from the previous bout.
+            if (buildup > 0) window.ResourceSystem?.removeAffliction?.(player, id, buildup);
+          }
+          if (player.exhaustion) { player.exhaustion.active = false; player.exhaustion.blackStamina = 100; }
+          player.invulnUntil = performance.now() + 1000;
+          _snapCameraTarget();
+          showToast('Respawned at the Testing Arena entrance.', false);
+          return;
+        }
         const totem = _isZoneArea(currentArea) ? nearestRootTotemFor(currentArea, player.x, player.y) : null;
         if (totem) {
           player.x = (totem.x + 0.5) * TILE;
