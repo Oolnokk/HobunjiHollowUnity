@@ -21,8 +21,8 @@
   const PUDDLE_TICK_S = 0.35; // Entranced buildup cadence while an actor remains inside gasoline.
   const PUDDLE_ENTRANCED_PER_TICK = 3.4; // Repeated buildup per puddle tick; latest puddle owner becomes the referential lich.
   const SUMMON_CAP = 3; // Per-lich live Minion cap prevents an unattended arena test from growing forever.
-  const LUNGE_RING_REFERENCE_OUTER_RADIUS = 0.22; // Reference size of the familiar lunge-trail ground circle; used only so the Entranced owner marker can be authored explicitly at 2× diameter.
-  const LUNGE_RING_REFERENCE_THICKNESS = 0.035; // Reference lunge-trail line width; Entranced doubles this independently from diameter.
+  const LUNGE_RING_REFERENCE_OUTER_RADIUS = 0.46; // Reference size of the familiar lunge-trail ground circle; used only so the Entranced owner marker can be authored explicitly at 2× diameter.
+  const LUNGE_RING_REFERENCE_THICKNESS = 0.14; // Reference lunge-trail line width; Entranced doubles this independently from diameter.
   const ENTRANCER_RING_OUTER_RADIUS = LUNGE_RING_REFERENCE_OUTER_RADIUS * 2; // Twice the lunge circle diameter/radius scale requested for the controlling lich marker.
   const ENTRANCER_RING_THICKNESS = LUNGE_RING_REFERENCE_THICKNESS * 2; // Twice the lunge-circle line thickness requested for the controlling lich marker.
   const ENTRANCER_RING_PULSE_MS = 1000; // One explosive outward pulse per second while this lich remains the player's referential Entranced source.
@@ -535,14 +535,15 @@
     const inner = Math.max(0.01, outer - ENTRANCER_RING_THICKNESS); // Doubled line width without changing the requested outer size.
     const color = entrancedMarkerColor(); // Shared Entranced palette color used by both steady and burst rings.
     const baseMaterial = new THREE.MeshBasicMaterial({
-      color, transparent: true, opacity: 0.48, depthWrite: false, depthTest: true, side: THREE.DoubleSide,
-    }); // Faint always-on circle identifies the controller between one-second bursts.
+      color, transparent: true, opacity: 0.52, depthWrite: false, depthTest: true, side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending, fog: false,
+    }); // Same additive/fog-free ground-ring material vocabulary as the actual lunge trail, held faint between bursts.
     const pulseMaterial = new THREE.MeshBasicMaterial({
-      color, transparent: true, opacity: 0.95, depthWrite: false, depthTest: true, side: THREE.DoubleSide,
-      blending: THREE.AdditiveBlending,
-    }); // Additive burst gives the once-per-second pulse the same bright combat-VFX language as lunge trails.
-    const base = new THREE.Mesh(new THREE.RingGeometry(inner, outer, 48), baseMaterial); // Stable doubled ring around the controlling lich.
-    const pulse = new THREE.Mesh(new THREE.RingGeometry(inner, outer, 48), pulseMaterial); // Same geometry expands/fades explosively once per second.
+      color, transparent: true, opacity: 0.8, depthWrite: false, depthTest: true, side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending, fog: false,
+    }); // Matches the actual lunge stamp's additive, fog-free 0.8-opacity material before the once-per-second expansion/fade.
+    const base = new THREE.Mesh(new THREE.RingGeometry(inner, outer, 24), baseMaterial); // Stable doubled ring around the controlling lich.
+    const pulse = new THREE.Mesh(new THREE.RingGeometry(inner, outer, 24), pulseMaterial); // Same geometry expands/fades explosively once per second.
     for (const mesh of [base, pulse]) {
       mesh.rotation.x = -Math.PI / 2;
       mesh.renderOrder = 6;
@@ -588,7 +589,7 @@
     if (pulse?.material) {
       const scale = 1 + eased * 1.15;
       pulse.scale.setScalar(scale);
-      pulse.material.opacity = pulseActive ? Math.max(0, 0.95 * (1 - eased)) : 0;
+      pulse.material.opacity = pulseActive ? Math.max(0, 0.8 * (1 - eased)) : 0;
       pulse.visible = pulseActive;
     }
     if (base?.material) {
