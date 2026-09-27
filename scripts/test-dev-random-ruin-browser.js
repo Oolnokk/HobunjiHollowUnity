@@ -555,6 +555,8 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
           const grabPopup=window.WorldPopupText.debugSnapshot();
           const grabIndex=grabInteraction.rows.findIndex(row=>row.kind==='ropegrab');
           const grabRow=grabIndex>=0?grabInteraction.rows[grabIndex]:null;
+          const grabClaim=window.WorldActionInputClaims?.claimFor?.('action1')?.label||null;
+          const grabArchText=document.getElementById('btnAction1')?.textContent||'';
           place(rope.grabPoint); // Contact must auto-grab even if a held weapon/item would otherwise compete for the same physical button.
           await sleep(4);
           const beforePump=window.DevRandomRuinSimplePuzzles.snapshot();
@@ -576,6 +578,8 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
           ropeAttach={
             grabRow,
             grabPopupVisible:grabPopup.interactionRows?.some(row=>row.label==='Grab Rope')===true,
+            grabClaim,
+            grabArchText,
             attached:beforePump.ropes[0]?.attached===true,
             thickMesh:beforePump.ropes[0]?.thickMesh===true,
             autoGrabbed:(beforePump.ropes[0]?.autoGrabCount||0)>0,
@@ -627,6 +631,8 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
       assert.equal(simpleRuntime.ropeAttach?.grabRow?.label,'Grab Rope','approaching the traversal rope must expose the ordinary floating input prompt before attachment: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.ropeAttach?.grabPopupVisible,true,'idle rope grab must render through WorldPopupText: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.ropeAttach?.grabRow?.inputAction,'action1','nearby rope grab intentionally claims Action 1 so one physical input cannot attack and grab at the same time: '+JSON.stringify(simpleRuntime));
+      assert.equal(simpleRuntime.ropeAttach?.grabClaim,'Grab Rope','world-input ownership must prefer nearby Grab Rope over the equipped weapon attack: '+JSON.stringify(simpleRuntime));
+      assert.match(simpleRuntime.ropeAttach?.grabArchText||'',/Grab Rope/,'the ordinary Action 1 arch button must visibly switch from the weapon attack to Grab Rope while nearby: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.ropeAttach?.attached,true,'touching the visible rope must auto-attach the traversal rope: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.ropeAttach?.autoGrabbed,true,'rope contact must auto-grab even when combat/item inputs are equipped: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.ropeAttach?.thickMesh,true,'rope must render as a real thick mesh rather than a one-pixel line: '+JSON.stringify(simpleRuntime));
