@@ -329,7 +329,7 @@ for (const key of ['tothal', 'hronal', 'kanthic']) {
   assert(devSpawnerSource.includes(`harlyao-lich:${key}`), `Testing Arena must expose ${key} lich button`);
 }
 assert.match(devSpawnerSource, /startsWith\('harlyao-lich:'\)/);
-assert(indexSource.includes('js/combat/combat-lich.js?v=20260927elementalrework1'));
+assert(indexSource.includes('js/combat/combat-lich.js?v=20260927petroleum1'));
 assert(indexSource.includes('js/combat/combat-bandit.js?v=20260927hostilevisual1'));
 assert(indexSource.includes('js/dev-spawner.js?v=20260927hostilevisual1'));
 assert(indexSource.includes('game.js?v=20260927arenarespawn1'));
@@ -363,6 +363,12 @@ assert.match(lichSource, /speedPxS: 96[\s\S]*maxAgeS: 8\.5[\s\S]*homingBlendPerS
 assert.match(lichSource, /registerFurnitureSfxSource\(ARENA_ID[\s\S]{0,300}TOTHAL_WIND_VOLUME/, 'Tothal fog must carry strong local wind through the existing BGS transport');
 assert.match(lichSource, /projectilePower\(projectile\)[\s\S]{0,1000}mesh\.scale\.setScalar/, 'Tothal lifetime power must visibly shrink its fog ball');
 assert.match(lichSource, /frostbittenStamina.*\* power/, 'Tothal Frostbitten Stamina payload must weaken with projectile age');
+assert.match(lichSource, /WESTERN_SLOPE_SNOW_DEPTH_REFERENCE = 0\.22[\s\S]*PETROLEUM_SURFACE_DEPTH = WESTERN_SLOPE_SNOW_DEPTH_REFERENCE \/ 4/, 'Kanthic petroleum surface must be exactly one quarter of Western Slope snow height');
+assert.match(lichSource, /PETROLEUM_OPACITY = 0\.70/, 'Kanthic petroleum surface must render at exactly 70% opacity');
+assert.match(lichSource, /PETROLEUM_TEXTURE_PATH = 'assets\/textures\/canvas\.png'/, 'Kanthic petroleum must reuse the Western Slope canvas texture');
+assert.match(lichSource, /rgb: \[18, 18, 18\][\s\S]{0,500}petroleumSurfaceMaterial\.map = finalTexture/, 'petroleum tint must remain visually black while preserving canvas texture grain');
+assert.match(lichSource, /group\.name = 'kanthic_petroleum_surface'[\s\S]{0,500}mesh\.scale\.set\(PUDDLE_RADIUS_TILES, 1, PUDDLE_RADIUS_TILES\)/, 'Kanthic impact must render as a shallow snow-style petroleum surface rather than colored circle lobes');
+assert.doesNotMatch(lichSource, /const amber = new THREE\.MeshBasicMaterial|const violet = new THREE\.MeshBasicMaterial/, 'old amber/violet gasoline sheen must be removed');
 assert.match(lichSource, /HRONAL_ERUPTION_RADIUS_TILES = 1\.35 \/ 3/, 'Hronal warning radius must stay tied exactly to one third of Grehlr minimum AOE');
 assert.match(lichSource, /assets\/textures\/carved_smooth\.png[\s\S]{0,300}#6a6460/, 'Hronal stone clods must reuse the town cliff texture and fill');
 assert.equal(terrainMaterials.byMap?.town?.cliff?.texture || terrainMaterials.byMap?.map_hobunji_town?.cliff?.texture || 'carved_smooth.png', 'carved_smooth.png', 'town cliff material regression must still resolve carved_smooth.png');
