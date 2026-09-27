@@ -23,7 +23,10 @@ canvas{image-rendering:pixelated;touch-action:none;box-shadow:0 0 0 1px #000;mar
 textarea{width:100%;min-height:165px;padding:8px;resize:vertical;font:11px/1.4 ui-monospace,monospace}
 .badge{display:inline-block;padding:2px 6px;border-radius:10px;background:#263141;color:var(--muted);font-size:10px}.hint{color:var(--muted);font-size:11px;margin-top:6px}
 .legend{display:flex;gap:10px;flex-wrap:wrap;font-size:11px;color:var(--muted)}.sw{width:10px;height:10px;display:inline-block;margin-right:4px;vertical-align:-1px}
-@media(max-width:900px){main{grid-template-columns:1fr}.panel,.panel.right{border:0;border-bottom:1px solid var(--border)}.stageWrap{min-height:55vh;order:-1}}
+.preview3d{display:block;width:100%;height:250px;border:1px solid var(--border);border-radius:6px;background:#060c14;touch-action:none}
+.previewToolbar{display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin-top:7px}.previewToolbar button{height:28px;padding:3px 7px}.previewToolbar label{margin:0}
+.nudgeGrid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;max-width:150px;margin-top:7px}.nudgeGrid button{height:28px}.nudgeGrid .blank{visibility:hidden}
+@media(max-width:900px){main{grid-template-columns:1fr}.panel,.panel.right{border:0;border-bottom:1px solid var(--border)}.stageWrap{min-height:55vh;order:-1}.preview3d{height:300px}}
 </style>
 </head>
 <body>
@@ -52,14 +55,24 @@ textarea{width:100%;min-height:165px;padding:8px;resize:vertical;font:11px/1.4 u
       <input id="sourceFile" type="file" accept="image/png,image/webp,image/*">
       <label>Optional existing mask</label>
       <input id="maskFile" type="file" accept="image/png,image/*">
-      <div class="hint">The mask must match the source dimensions. Only source pixels with alpha can be marked.</div>
+      <div class="hint">The mask must match the source dimensions. Painting outside opaque source art is harmless because runtime masking still intersects the sprite alpha.</div>
     </section>
     <section>
-      <h2>2. Paint</h2>
+      <h2>2. Paint / move</h2>
       <div class="row">
         <button id="paintBtn" class="active grow">Paint</button>
         <button id="eraseBtn" class="grow">Erase</button>
+        <button id="moveBtn" class="grow">Move mask</button>
       </div>
+      <div class="row" style="margin-top:7px">
+        <button id="undoBtn" class="grow" disabled>↶ Undo</button>
+        <button id="redoBtn" class="grow" disabled>↷ Redo</button>
+      </div>
+      <div class="nudgeGrid" aria-label="Translate whole mask">
+        <span class="blank"></span><button id="nudgeUpBtn" title="Move mask up 1 pixel">↑</button><span class="blank"></span>
+        <button id="nudgeLeftBtn" title="Move mask left 1 pixel">←</button><button id="nudgeDownBtn" title="Move mask down 1 pixel">↓</button><button id="nudgeRightBtn" title="Move mask right 1 pixel">→</button>
+      </div>
+      <div class="hint">Move mask drags the entire mask in whole source pixels. Arrow buttons nudge by 1 px. Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z also work.</div>
       <label>Brush size: <span id="brushLabel">1 px</span></label>
       <input id="brushSize" type="range" min="1" max="16" value="1" step="1">
       <div class="row">
@@ -96,6 +109,20 @@ textarea{width:100%;min-height:165px;padding:8px;resize:vertical;font:11px/1.4 u
 
   <aside class="panel right">
     <section>
+      <h2>3D avatar preview</h2>
+      <canvas id="preview3d" class="preview3d" aria-label="Live 3D avatar preview"></canvas>
+      <div class="previewToolbar">
+        <button type="button" data-preview-view="front">Front</button>
+        <button type="button" data-preview-view="angle">Angle</button>
+        <button type="button" data-preview-view="back" class="active">Back</button>
+      </div>
+      <div class="previewToolbar">
+        <label><input id="previewHood" type="checkbox" checked> Test with Fine Hood</label>
+        <button id="refresh3dBtn" type="button">Refresh 3D</button>
+      </div>
+      <div id="preview3dStatus" class="hint">Select a repository clothing layer to build the live avatar.</div>
+    </section>
+    <section>
       <h2>Live debug</h2>
       <div class="stat">
         <span>Source</span><b id="dbgSource">none</b>
@@ -124,6 +151,12 @@ textarea{width:100%;min-height:165px;padding:8px;resize:vertical;font:11px/1.4 u
     </section>
   </aside>
 </main>
+<script src="../../config/scratchbones-config.js"></script>
+<script src="../../js/portrait-utils.js?v=20260927pixellayer5"></script>
+<script src="../../js/portrait-breathing.js"></script>
+<script src="../../js/npc-avatar-preview-utils.js"></script>
+<script src="../../js/png-plane-avatar.js"></script>
+<script src="../../js/avatar-preview-scene.js"></script>
 <script>
 (() => {
   const $ = id => document.getElementById(id);
@@ -145,9 +178,15 @@ textarea{width:100%;min-height:165px;padding:8px;resize:vertical;font:11px/1.4 u
   let currentLayerRecords = []; // Selectable portrait-layer descriptors extracted from the selected clothing JSON.
   let currentLayerRecord = null; // Exact selected JSON layer whose sprite is being masked.
   let userAdjustedZoom = false; // Preserves explicit zoom after loading; Fit resets this to automatic pane sizing.
-  let paintMode = 'paint'; // Used by pointer painting to choose mark vs erase behavior.
+  let paintMode = 'paint'; // 'paint' | 'erase' | 'move'; used by pointer editing.
   let drawing = false; // Tracks an active pointer drag on the zoomed canvas.
   let lastPixel = null; // Used to interpolate brush strokes without holes during fast pointer movement.
+  let pendingEditSnapshot = null; // One before-state per pointer gesture, so a drag becomes one Undo step.
+  let moveDrag = null; // Holds the immutable mask snapshot + starting source pixel for whole-mask translation.
+  const undoStack = []; // Prior mask states only; current state lives on maskCanvas.
+  const redoStack = []; // States popped by Undo and restored by Redo.
+  const HISTORY_LIMIT = 48;
+  const preview3d = { scene: null, cosmeticsReady: null, timer: 0, generation: 0, view: 'back' };
 
   const loadImageFile = file => new Promise((resolve, reject) => {
     const img = new Image();
@@ -164,9 +203,249 @@ textarea{width:100%;min-height:165px;padding:8px;resize:vertical;font:11px/1.4 u
     img.src = url;
   });
 
+  function captureMaskSnapshot() {
+    if (!maskCanvas.width || !maskCanvas.height) return null;
+    const image = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height);
+    return { width: image.width, height: image.height, data: new Uint8ClampedArray(image.data) };
+  }
+
+  function snapshotImageData(snapshot) {
+    return snapshot ? new ImageData(new Uint8ClampedArray(snapshot.data), snapshot.width, snapshot.height) : null;
+  }
+
+  function maskSnapshotsEqual(a, b) {
+    if (!a || !b || a.width !== b.width || a.height !== b.height || a.data.length !== b.data.length) return false;
+    for (let i = 0; i < a.data.length; i++) if (a.data[i] !== b.data[i]) return false;
+    return true;
+  }
+
+  function restoreMaskSnapshot(snapshot, dx = 0, dy = 0) {
+    if (!snapshot || snapshot.width !== maskCanvas.width || snapshot.height !== maskCanvas.height) return false;
+    maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+    maskCtx.putImageData(snapshotImageData(snapshot), Math.trunc(dx), Math.trunc(dy));
+    return true;
+  }
+
+  function updateHistoryUi() {
+    $('undoBtn').disabled = !undoStack.length;
+    $('redoBtn').disabled = !redoStack.length;
+  }
+
+  function resetHistory() {
+    undoStack.length = 0;
+    redoStack.length = 0;
+    pendingEditSnapshot = null;
+    moveDrag = null;
+    updateHistoryUi();
+  }
+
+  function commitMaskEdit(beforeSnapshot) {
+    const after = captureMaskSnapshot();
+    if (!beforeSnapshot || !after || maskSnapshotsEqual(beforeSnapshot, after)) return false;
+    undoStack.push(beforeSnapshot);
+    if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
+    redoStack.length = 0;
+    updateHistoryUi();
+    schedule3dPreview();
+    return true;
+  }
+
+  function mutateMask(mutator) {
+    if (!maskCanvas.width || !maskCanvas.height) return false;
+    const before = captureMaskSnapshot();
+    mutator(before);
+    redraw();
+    return commitMaskEdit(before);
+  }
+
+  function undoMask() {
+    const previous = undoStack.pop();
+    if (!previous) return;
+    const current = captureMaskSnapshot();
+    if (current) redoStack.push(current);
+    restoreMaskSnapshot(previous);
+    redraw();
+    updateHistoryUi();
+    schedule3dPreview();
+  }
+
+  function redoMask() {
+    const next = redoStack.pop();
+    if (!next) return;
+    const current = captureMaskSnapshot();
+    if (current) {
+      undoStack.push(current);
+      if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
+    }
+    restoreMaskSnapshot(next);
+    redraw();
+    updateHistoryUi();
+    schedule3dPreview();
+  }
+
+  function shiftMaskBy(dx, dy) {
+    mutateMask(before => restoreMaskSnapshot(before, dx, dy));
+  }
+
+  async function normalizeMaskImageIntoCanvas(img) {
+    const temp = document.createElement('canvas');
+    temp.width = maskCanvas.width;
+    temp.height = maskCanvas.height;
+    const tctx = temp.getContext('2d', { willReadFrequently: true });
+    tctx.drawImage(img, 0, 0, temp.width, temp.height);
+    const pixels = tctx.getImageData(0, 0, temp.width, temp.height);
+    let hasTransparency = false;
+    for (let i = 3; i < pixels.data.length; i += 4) {
+      if (pixels.data[i] < 250) { hasTransparency = true; break; }
+    }
+    for (let i = 0; i < pixels.data.length; i += 4) {
+      const alpha = hasTransparency
+        ? pixels.data[i + 3]
+        : ((pixels.data[i] + pixels.data[i + 1] + pixels.data[i + 2]) / 3 >= 128 ? 255 : 0);
+      pixels.data[i] = pixels.data[i + 1] = pixels.data[i + 2] = alpha ? 255 : 0;
+      pixels.data[i + 3] = alpha;
+    }
+    maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+    maskCtx.putImageData(pixels, 0, 0);
+  }
+
   function clothingConfigUrl(entry) {
     const rel = String(entry?.path || '').replace(/^\.\//, '');
     return new URL('../../config/cosmetics/' + rel, window.location.href).toString();
+  }
+
+  function identityFromLayerRecord(record = currentLayerRecord) {
+    const parts = Array.isArray(record?.jsonPath) ? record.jsonPath : [];
+    const variantIndex = parts.indexOf('speciesVariants');
+    const variantKey = variantIndex >= 0 ? String(parts[variantIndex + 1] || '') : '';
+    const match = variantKey.match(/^(.*)_(male|female)$/);
+    if (!match) return { speciesId: 'tletingan', gender: 'male' };
+    return { speciesId: match[1].replace(/_/g, '-'), gender: match[2] };
+  }
+
+  function normalizedPortraitUrl(value) {
+    return String(value || '').replace(/^\.\/assets\//, '').replace(/^assets\//, '');
+  }
+
+  function cloneCosmeticOption(option) {
+    if (!option) return option;
+    return {
+      ...option,
+      layers: (option.layers || []).map(layer => ({ ...layer, pixelLayerMasks: (layer.pixelLayerMasks || []).map(mask => ({ ...mask })) })),
+      variantLayers: Object.fromEntries(Object.entries(option.variantLayers || {}).map(([key, layers]) => [
+        key,
+        (layers || []).map(layer => ({ ...layer, pixelLayerMasks: (layer.pixelLayerMasks || []).map(mask => ({ ...mask })) }))
+      ]))
+    };
+  }
+
+  function injectLiveMaskIntoProfile(profile, maskUrl) {
+    const sourceUrl = normalizedPortraitUrl(currentLayerRecord?.imageUrl);
+    const candidateKeys = ['armCosmetic', 'torsoCosmetic', 'hood', 'hat', 'pauldron'];
+    for (const key of candidateKeys) {
+      const option = profile?.[key];
+      if (!option || (currentClothingEntry?.id && option.id !== currentClothingEntry.id.split('::').pop())) continue;
+      const copy = cloneCosmeticOption(option);
+      let matched = false;
+      const patchLayers = layers => {
+        for (const layer of layers || []) {
+          if (normalizedPortraitUrl(layer.url) !== sourceUrl && basename(layer.url) !== basename(sourceUrl)) continue;
+          layer.pixelLayerMasks = [{ url: maskUrl, target: $('target').value, view: $('view').value }];
+          matched = true;
+        }
+      };
+      patchLayers(copy.layers);
+      for (const layers of Object.values(copy.variantLayers || {})) patchLayers(layers);
+      if (matched) {
+        profile[key] = copy;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function maskCanvasBlob() {
+    return new Promise((resolve, reject) => maskCanvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Could not serialize live mask.')), 'image/png'));
+  }
+
+  async function ensure3dPreviewRuntime() {
+    if (!window.NpcAvatarPreview || !window.PNGPlaneAvatar || !window.AvatarPreviewScene) {
+      throw new Error('Shared avatar preview runtime did not load.');
+    }
+    if (!preview3d.cosmeticsReady) {
+      preview3d.cosmeticsReady = window.NpcAvatarPreview.ensurePortraitCosmetics({
+        assetBase: '../../assets/',
+        configBase: '../../config/'
+      });
+    }
+    await preview3d.cosmeticsReady;
+    if (!preview3d.scene) {
+      preview3d.scene = await window.AvatarPreviewScene.create({
+        canvas: $('preview3d'),
+        initialView: preview3d.view,
+        grid: true,
+        gridY: -0.55,
+        holderName: 'pixel_layer_mask_avatar_preview'
+      });
+      preview3d.scene.start();
+    }
+    return preview3d.scene;
+  }
+
+  async function refresh3dPreview() {
+    const status = $('preview3dStatus');
+    if (!currentClothingEntry || !currentClothingJson || !currentLayerRecord || !maskCanvas.width) {
+      status.textContent = 'Select a repository clothing layer to build the live avatar.';
+      return;
+    }
+    const generation = ++preview3d.generation;
+    status.textContent = 'Rendering live mask through the Animation Author avatar renderer…';
+    let maskUrl = null;
+    try {
+      const scene = await ensure3dPreviewRuntime();
+      const identity = identityFromLayerRecord();
+      const equipped = [currentClothingEntry.id];
+      if ($('previewHood').checked && currentClothingJson.slot !== 'hood' && !equipped.includes('fine_hood')) equipped.push('fine_hood');
+      const npc = {
+        name: 'Pixel Layer Mask Preview',
+        appearance: { speciesId: identity.speciesId, gender: identity.gender, cosmetics: {}, randomSeed: 'pixel-layer-mask-preview' },
+        equippedCosmetics: equipped,
+        appliedDyes: {}
+      };
+      const profile = window.NpcAvatarPreview.buildProfileFromNpcExport(npc);
+      if (!profile) throw new Error('Could not build avatar profile for ' + identity.speciesId + '/' + identity.gender + '.');
+      maskUrl = URL.createObjectURL(await maskCanvasBlob());
+      if (!injectLiveMaskIntoProfile(profile, maskUrl)) throw new Error('Could not locate the selected portrait layer in the built clothing profile.');
+      const size = Number(window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.previewPortraitCanvasSize) || 200;
+      const front = Object.assign(document.createElement('canvas'), { width: size, height: size });
+      const back = Object.assign(document.createElement('canvas'), { width: size, height: size });
+      await window.NpcAvatarPreview.renderProfileToCanvas(front, profile, { seatId: 'pixel-layer-mask-preview' });
+      await window.NpcAvatarPreview.renderProfileToCanvas(back, profile, { seatId: 'pixel-layer-mask-preview', portraitView: 'behind' });
+      if (generation !== preview3d.generation) return;
+      const baseWidth = Number(window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.worldModelWidth) || 0.9;
+      scene.setAvatar(front, {
+        backCanvas: back,
+        profile,
+        appearance: npc.appearance,
+        npcRecord: npc,
+        modelWidth: baseWidth,
+        modelHeight: baseWidth,
+        name: 'PixelLayerMaskPreviewAvatar',
+        userData: { source: 'pixel-layer-mask-author' }
+      });
+      scene.setCameraView(preview3d.view);
+      scene.resize();
+      status.textContent = identity.speciesId + ' / ' + identity.gender + ' · live mask · ' + ($('previewHood').checked ? 'hood test on' : 'hood test off');
+    } catch (error) {
+      status.textContent = '3D preview error: ' + error.message;
+    } finally {
+      if (maskUrl) URL.revokeObjectURL(maskUrl);
+    }
+  }
+
+  function schedule3dPreview(delay = 120) {
+    clearTimeout(preview3d.timer);
+    preview3d.timer = setTimeout(refresh3dPreview, delay);
   }
 
   function docsAssetUrl(rawUrl) {
@@ -320,14 +599,17 @@ textarea{width:100%;min-height:165px;padding:8px;resize:vertical;font:11px/1.4 u
           const existingMaskImg = await loadImageUrl(docsAssetUrl(existingMask.url));
           if ((existingMaskImg.naturalWidth || existingMaskImg.width) === sourceCanvas.width
               && (existingMaskImg.naturalHeight || existingMaskImg.height) === sourceCanvas.height) {
-            maskCtx.drawImage(existingMaskImg, 0, 0);
+            await normalizeMaskImageIntoCanvas(existingMaskImg);
           }
         } catch (_) {
           // Existing metadata remains editable even when its mask asset is temporarily missing.
         }
       }
       status.textContent = 'Loaded ' + currentClothingEntry.id + ' / ' + record.label;
+      resetHistory();
       redraw();
+      preview3d.view = $('view').value === 'front' ? 'front' : $('view').value === 'behind' ? 'back' : 'angle';
+      schedule3dPreview(0);
     } catch (error) {
       status.textContent = 'Could not fetch portrait sprite: ' + error.message;
     }
@@ -353,6 +635,7 @@ textarea{width:100%;min-height:165px;padding:8px;resize:vertical;font:11px/1.4 u
   function setDimensions(w, h) {
     sourceCanvas.width = maskCanvas.width = w;
     sourceCanvas.height = maskCanvas.height = h;
+    resetHistory();
     requestAnimationFrame(fitZoomToPane);
   }
 
@@ -455,6 +738,15 @@ textarea{width:100%;min-height:165px;padding:8px;resize:vertical;font:11px/1.4 u
 
   function applyPointer(ev) {
     const p = eventPixel(ev);
+    if (paintMode === 'move') {
+      if (!moveDrag) return;
+      const dx = p.x - moveDrag.start.x;
+      const dy = p.y - moveDrag.start.y;
+      restoreMaskSnapshot(moveDrag.base, dx, dy);
+      redraw();
+      updateCursor(p);
+      return;
+    }
     if (lastPixel) for (const q of linePixels(lastPixel, p)) paintPixel(q.x, q.y);
     else paintPixel(p.x, p.y);
     lastPixel = p;
@@ -526,46 +818,102 @@ textarea{width:100%;min-height:165px;padding:8px;resize:vertical;font:11px/1.4 u
       maskFile.value = '';
       return;
     }
-    maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
-    maskCtx.drawImage(img, 0, 0);
+    const before = captureMaskSnapshot();
+    await normalizeMaskImageIntoCanvas(img);
     redraw();
+    commitMaskEdit(before);
   });
 
   stage.addEventListener('pointerdown', ev => {
     if (!sourceCanvas.width) return;
-    drawing = true; lastPixel = null; stage.setPointerCapture(ev.pointerId); applyPointer(ev); ev.preventDefault();
+    drawing = true;
+    lastPixel = null;
+    pendingEditSnapshot = captureMaskSnapshot();
+    const p = eventPixel(ev);
+    moveDrag = paintMode === 'move' ? { start: p, base: pendingEditSnapshot } : null;
+    stage.setPointerCapture(ev.pointerId);
+    applyPointer(ev);
+    ev.preventDefault();
   });
   stage.addEventListener('pointermove', ev => {
     const p = eventPixel(ev); updateCursor(p);
     if (drawing) { applyPointer(ev); ev.preventDefault(); }
   });
-  const endPointer = () => { drawing = false; lastPixel = null; };
+  const endPointer = () => {
+    if (!drawing) return;
+    drawing = false;
+    lastPixel = null;
+    moveDrag = null;
+    const before = pendingEditSnapshot;
+    pendingEditSnapshot = null;
+    commitMaskEdit(before);
+  };
   stage.addEventListener('pointerup', endPointer);
   stage.addEventListener('pointercancel', endPointer);
   stage.addEventListener('pointerleave', () => { if (!drawing) updateCursor(null); });
 
-  $('paintBtn').onclick = () => { paintMode = 'paint'; $('paintBtn').classList.add('active'); $('eraseBtn').classList.remove('active'); };
-  $('eraseBtn').onclick = () => { paintMode = 'erase'; $('eraseBtn').classList.add('active'); $('paintBtn').classList.remove('active'); };
-  $('clearBtn').onclick = () => { maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height); redraw(); };
-  $('invertBtn').onclick = () => {
-    if (!sourceCanvas.width) return;
+  function setPaintMode(mode) {
+    paintMode = mode;
+    for (const [id, value] of [['paintBtn', 'paint'], ['eraseBtn', 'erase'], ['moveBtn', 'move']]) {
+      $(id).classList.toggle('active', value === mode);
+    }
+  }
+  $('paintBtn').onclick = () => setPaintMode('paint');
+  $('eraseBtn').onclick = () => setPaintMode('erase');
+  $('moveBtn').onclick = () => setPaintMode('move');
+  $('undoBtn').onclick = undoMask;
+  $('redoBtn').onclick = redoMask;
+  $('nudgeUpBtn').onclick = () => shiftMaskBy(0, -1);
+  $('nudgeDownBtn').onclick = () => shiftMaskBy(0, 1);
+  $('nudgeLeftBtn').onclick = () => shiftMaskBy(-1, 0);
+  $('nudgeRightBtn').onclick = () => shiftMaskBy(1, 0);
+  $('clearBtn').onclick = () => mutateMask(() => maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height));
+  $('invertBtn').onclick = () => mutateMask(() => {
     const mask = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height);
     for (let i = 0; i < mask.data.length; i += 4) {
       const selected = mask.data[i + 3] > 127;
       mask.data[i] = mask.data[i + 1] = mask.data[i + 2] = selected ? 0 : 255;
       mask.data[i + 3] = selected ? 0 : 255;
     }
-    maskCtx.putImageData(mask, 0, 0); redraw();
-  };
+    maskCtx.putImageData(mask, 0, 0);
+  });
   $('zoom').oninput = () => { userAdjustedZoom = true; redraw(); };
   $('fitBtn').onclick = fitZoomToPane;
   window.addEventListener('resize', () => {
     if (!userAdjustedZoom && sourceCanvas.width && sourceCanvas.height) fitZoomToPane();
+    preview3d.scene?.resize();
   });
   $('brushSize').oninput = refreshDebug;
-  $('target').onchange = refreshDebug;
-  $('view').onchange = refreshDebug;
+  $('target').onchange = () => { refreshDebug(); schedule3dPreview(); };
+  $('view').onchange = () => {
+    refreshDebug();
+    preview3d.view = $('view').value === 'front' ? 'front' : $('view').value === 'behind' ? 'back' : 'angle';
+    preview3d.scene?.setCameraView(preview3d.view);
+    schedule3dPreview();
+  };
   $('maskPath').oninput = refreshDebug;
+  $('previewHood').onchange = () => schedule3dPreview(0);
+  $('refresh3dBtn').onclick = () => schedule3dPreview(0);
+  for (const button of document.querySelectorAll('[data-preview-view]')) {
+    button.addEventListener('click', () => {
+      preview3d.view = button.dataset.previewView;
+      for (const peer of document.querySelectorAll('[data-preview-view]')) peer.classList.toggle('active', peer === button);
+      preview3d.scene?.setCameraView(preview3d.view);
+    });
+  }
+  document.addEventListener('keydown', event => {
+    if (!(event.ctrlKey || event.metaKey)) return;
+    const tag = String(event.target?.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+    if (event.key.toLowerCase() === 'z') {
+      event.preventDefault();
+      if (event.shiftKey) redoMask();
+      else undoMask();
+    } else if (event.key.toLowerCase() === 'y') {
+      event.preventDefault();
+      redoMask();
+    }
+  });
 
   $('downloadBtn').onclick = () => {
     if (!sourceCanvas.width) return;
@@ -586,6 +934,7 @@ textarea{width:100%;min-height:165px;padding:8px;resize:vertical;font:11px/1.4 u
     setTimeout(() => $('copyBtn').textContent = 'Copy JSON', 900);
   };
 
+  updateHistoryUi();
   refreshDebug();
   redraw();
   fetchClothingIndex();
