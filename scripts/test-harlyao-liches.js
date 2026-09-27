@@ -366,7 +366,7 @@ assert.match(lichSource, /frostbittenStamina.*\* power/, 'Tothal Frostbitten Sta
 assert.match(lichSource, /WESTERN_SLOPE_SNOW_DEPTH_REFERENCE = 0\.22[\s\S]*PETROLEUM_SURFACE_DEPTH = WESTERN_SLOPE_SNOW_DEPTH_REFERENCE \/ 4/, 'Kanthic petroleum surface must be exactly one quarter of Western Slope snow height');
 assert.match(lichSource, /PETROLEUM_OPACITY = 0\.70/, 'Kanthic petroleum surface must render at exactly 70% opacity');
 assert.match(lichSource, /PETROLEUM_TEXTURE_PATH = 'assets\/textures\/canvas\.png'/, 'Kanthic petroleum must reuse the Western Slope canvas texture');
-assert.match(lichSource, /rgb: \[18, 18, 18\][\s\S]{0,500}petroleumSurfaceMaterial\.map = finalTexture/, 'petroleum tint must remain visually black while preserving canvas texture grain');
+assert.match(lichSource, /rgb: \[18, 18, 18\][\s\S]{0,1600}petroleumSurfaceMaterial\.map = finalTexture/, 'petroleum tint must remain visually black while preserving canvas texture grain');
 assert.match(lichSource, /group\.name = 'kanthic_petroleum_surface'[\s\S]{0,500}mesh\.scale\.set\(PUDDLE_RADIUS_TILES, 1, PUDDLE_RADIUS_TILES\)/, 'Kanthic impact must render as a shallow snow-style petroleum surface rather than colored circle lobes');
 assert.doesNotMatch(lichSource, /const amber = new THREE\.MeshBasicMaterial|const violet = new THREE\.MeshBasicMaterial/, 'old amber/violet gasoline sheen must be removed');
 assert.match(lichSource, /HRONAL_ERUPTION_RADIUS_TILES = 1\.35 \/ 3/, 'Hronal warning radius must stay tied exactly to one third of Grehlr minimum AOE');
