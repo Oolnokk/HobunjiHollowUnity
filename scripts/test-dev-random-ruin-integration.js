@@ -185,8 +185,8 @@ assert(simplePuzzles.includes('onwardGeneratedStoneDoorMechanism') && simplePuzz
 assert(simplePuzzles.includes('holsterRopeEquipment') && simplePuzzles.includes('putAwayHeldEquipment({silent:true})'), 'grabbing a rope must silently put away the current weapon/tool');
 assert(simplePuzzles.includes('restoreHeldToolSnapshot') && simplePuzzles.includes('restoreRopeEquipment()'), 'rope release/fall/clear must restore the exact held tool snapshot');
 assert(game.includes("DevRandomRuinSimplePuzzles?.releaseActiveRope?.()"), 'the canonical Dodge/context action must release an attached ruin rope');
-assert(interactions.includes('if(row.nativeInput)continue') && interactions.includes('!entry.nativeInput && keyboardMatches'), 'fixed Dodge rope input must remain owned by native game input on controller/desktop');
-assert(interactions.includes('if(row.nativeInput || !row.touchButtonId) return'), 'fixed Dodge rope input must keep the permanent mobile Dodge button instead of hijacking an action slot');
+assert(interactions.includes("nativeInput:row.nativeInput===true"), 'fixed Dodge rope input must remain a prompt-only native action in the normal action-bar provider');
+assert(!interactions.includes("window.addEventListener('keydown'") && !interactions.includes("document.addEventListener('pointerdown'"), 'ruin interactions must not install a second keyboard/touch dispatcher on top of normal game input handling');
 assert(interior.includes('devRandomRuinPuzzleOptions'), 'Random Test Ruin Settings must expose the collapsed puzzle-generation panel');
 assert(interior.includes('data-ruin-puzzle-option'), 'puzzle-generation panel must render per-family checkboxes');
 assert(interior.includes('devRandomRuinMaxPuzzlesPerRoom'), 'puzzle-generation panel must expose a per-room puzzle cap');
@@ -209,10 +209,9 @@ assert(interior.includes('range:Number.isFinite(Number(control.range))'), 'per-c
 assert(interactions.includes('control.promptRoot || control.object'), 'shared ruin interactions must honor explicit tower prompt anchors');
 assert(interactions.includes('horizontalDistanceToOwner'), 'tower interaction range must be measured from the physical object footprint rather than only its origin');
 assert(interactions.includes("['simple', window.DevRandomRuinSimplePuzzles]"), 'simple runtime controls must join the same WorldPopupText interaction provider list');
-assert(interactions.includes("typeof control.onHoldStart") && interactions.includes("onHoldEnd"), 'ruin input bridge must support held rope brake/adjust controls');
-assert(interactions.includes("window.addEventListener('keyup'"), 'keyboard rope braking must receive an actual release event rather than becoming a toggle');
-assert(interactions.includes("controller hold release failed"), 'controller rope braking must release on the falling edge');
-assert(interactions.includes("pointercancel"), 'touch-held rope controls must release cleanly even when a gesture is cancelled');
+assert(interactions.includes("typeof control.onHoldStart") && interactions.includes("onHoldEnd"), 'ruin input claims must support held rope brake/adjust controls');
+assert(game.includes("phase==='release'&&dispatchWorldInputClaim(actionId,'release','game-input')"), 'normal keyboard/controller input release must pair with held ruin interaction claims');
+assert(game.includes("dispatchWorldInputClaim(_claimedInputAction,'release'") || game.includes("dispatchWorldInputClaim(_claimedInputAction"), 'normal touch arch must pair claimed world-interaction press/release without a ruin-only pointer listener');
 assert(simplePuzzles.includes("'burningHealth',GRID_BURNING"), 'unsafe path plates must apply the existing Burning Health affliction');
 assert(simplePuzzles.includes("'burningHealth',HALL_FIRE_BURNING") && simplePuzzles.includes("'poisonedHealth',HALL_POISON"), 'hallway emitters must alternate existing fire and poison afflictions');
 assert(simplePuzzles.includes('safePathCells') && simplePuzzles.includes('GRID_REVEAL_MS'), 'safe-path grids must generate one continuous route and reveal it only temporarily');
