@@ -32,7 +32,7 @@
        window.InputBindings.loadInputBindings() during its own setup. -->
   <script src="js/input-bindings.js?v=20260914transienttarget1"></script>
   <!-- Shared contextual input-ownership registry. World interactions may explicitly claim Action 1/2/etc.; game.js consults it before combat/tool dispatch so one physical input has exactly one owner. -->
-  <script src="js/world-action-input-claims.js?v=20260927inputclaim1"></script>
+  <script src="js/world-action-input-claims.js?v=20260927interactionpriority1"></script>
   <!-- Bottom-of-screen contextual action prompt extracted out of game.js;
        uses window.InputBindings.buttonLabel, so must load after it and
        before game.js, which calls window.ActionPromptUI.init(...). -->
