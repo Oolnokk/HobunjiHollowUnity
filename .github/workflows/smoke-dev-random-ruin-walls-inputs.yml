@@ -155,7 +155,7 @@ jobs:
                 const camera = window.__ruinSmokeRenderedCamera;
                 const proxies = [];
                 scene.traverse(object => {
-                  if (object.userData?.devRuinWallRenderProxy && object.isMesh) proxies.push(object);
+                  if (object.userData?.devRuinWallRenderProxy === true && object.isMesh) proxies.push(object);
                 });
                 if (!renderer || !scene || !camera || !proxies.length) {
                   return { changedPixels:0, totalDelta:0, proxyCount:proxies.length, width:0, height:0 };
