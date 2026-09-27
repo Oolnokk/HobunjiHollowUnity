@@ -1155,19 +1155,39 @@
       if (!isArena() || !isLiveActor(projectile.owner)) { disposeProjectile(projectile); continue; }
       projectile.ageS += dt;
       projectile.prevX = projectile.x; projectile.prevY = projectile.y; projectile.prevWorldY = projectile.worldY;
+      if (projectile.type === 'tothal') updateTothalSeeking(projectile, dt); // Slow fog continually curves toward a live actor instead of committing to its cast-time trajectory.
       projectile.x += projectile.vx * dt;
       projectile.y += projectile.vy * dt;
-      projectile.vyWorld -= projectile.payload.gravityWorldS2 * dt;
+      projectile.vyWorld -= (projectile.payload.gravityWorldS2 || 0) * dt;
       projectile.worldY += projectile.vyWorld * dt;
       projectile.mesh.position.set(projectile.x / deps.TILE, projectile.worldY, projectile.y / deps.TILE);
-      projectile.mesh.rotation.y += dt * (projectile.type === 'kanthic' ? 7 : 10);
-      if (projectile.type === 'kanthic') {
-        const pulse = 1 + Math.sin(projectile.ageS * 18) * 0.08; // Small in-flight squash/pulse sells viscous wobble without deforming collision.
+      if (projectile.type === 'tothal') {
+        const power = projectilePower(projectile); // One lifetime scalar owns size, opacity, wind strength, and eventual impact strength.
+        const wiggle = projectile.payload.wiggleWorld || 0;
+        projectile.mesh.position.x += Math.sin(projectile.ageS * 5.1) * wiggle;
+        projectile.mesh.position.y += Math.sin(projectile.ageS * 6.7 + 0.9) * wiggle * 0.55;
+        projectile.mesh.position.z += Math.cos(projectile.ageS * 4.6) * wiggle;
+        projectile.mesh.scale.setScalar(Math.max(0.035, power)); // Fog ball visibly collapses toward zero across its finite lifespan.
+        projectile.mesh.traverse(child => {
+          if (!child.isMesh || !child.userData?.fogBasePosition) return;
+          const base = child.userData.fogBasePosition;
+          const phase = child.userData.fogPhase || 0;
+          child.position.set(
+            base.x + Math.sin(projectile.ageS * 7.3 + phase) * 0.032,
+            base.y + Math.cos(projectile.ageS * 5.9 + phase * 1.7) * 0.026,
+            base.z + Math.sin(projectile.ageS * 6.4 + phase * 0.7) * 0.032,
+          ); // Internal lobes writhe independently while the physical collision path remains smooth and predictable.
+          if (child.material) child.material.opacity = (child.userData.baseOpacity || 0.2) * Math.max(0.08, power);
+        });
+        updateTothalWind(projectile);
+      } else {
+        projectile.mesh.rotation.y += dt * 7;
+        const pulse = 1 + Math.sin(projectile.ageS * 18) * 0.08; // Kanthic retains its existing viscous in-flight squash/pulse.
         projectile.mesh.scale.set(pulse, 1 / pulse, pulse);
       }
 
       const start = new THREE.Vector3(projectile.prevX / deps.TILE, projectile.prevWorldY, projectile.prevY / deps.TILE); // Previous 3D point for swept collision.
-      const end = new THREE.Vector3(projectile.x / deps.TILE, projectile.worldY, projectile.y / deps.TILE); // Current 3D point for swept collision.
+      const end = new THREE.Vector3(projectile.x / deps.TILE, projectile.worldY, projectile.y / deps.TILE); // Current physical 3D point; Tothal's decorative wiggle never changes collision fairness.
       const actorHit = nearestActorHit(projectile, start, end); // Nearest player/enemy body hit this step.
       const coverHit = window.NearbyVolumeCollision?.segmentHit?.(start, end, projectile.payload.radiusWorld) || null; // Existing world-volume cover collision.
       if (actorHit && (!coverHit || actorHit.t < coverHit.t)) {
