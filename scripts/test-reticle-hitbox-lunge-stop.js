@@ -16,8 +16,10 @@ assert.match(source, /resolveSweptLungeEntry\(liveDeps\)/,
   'lunge range entry is checked across movement already completed this frame');
 assert.match(source, /LUNGE_CANCEL_RANGE_MULTIPLIER = 0\.5/,
   'lunge cancellation range stays explicitly half of the real attack range');
-assert.match(coreSource, /forwardAirAssistFloor = inRangeAirAssist && pitch >= 0 \? 0\.06 : 0[\s\S]{0,220}Math\.sqrt\(Math\.max\(assistedPitchRatio, forwardAirAssistFloor\)\)/,
-  'forward/upward airborne assist must front-load low-angle lift and give exact-forward aim a minimum hop');
+assert.match(coreSource, /if \(direct >= 0\.999 && pitch >= 0\)[\s\S]{0,700}verticalTravelUnits: baseDistanceWorld \* Math\.sin\(pitch\)[\s\S]{0,500}const distanceScaleAtAngle/,
+  'forward/upward direct flight must return exact vector components before legacy diminished-vertical math');
+assert.doesNotMatch(gameSource, /const lungeTarget = \(activeTool === 'weapon'[\s\S]{0,700}LUNGE_HOMING_RATE/,
+  'native player lunge update must not home toward an enemy after attack start');
 assert.match(gameSource, /aimAllowsAirborneLunge = aimPitch >= 0[\s\S]{0,500}aimAllowsAirborneLunge,\n\s*\) \|\|/,
   'native beginCombatLunge must request airborne assist from pitch alone, independent of target detection');
 assert(gameSource.includes('const ordinaryLungeHopY = player.lunging && !Number.isFinite(player.lungeFlightWorldY)'),
@@ -54,6 +56,7 @@ let nativeUpdateCalls = 0;
 let nativeUpdateSawX = null;
 let lastProfileResistance = null; // Captures the effective upward-gravity resistance supplied by the camera-authored lunge wrapper.
 let lastProfileAirAssist = false; // Captures the pitch-only airborne assist bit passed into the shared lunge profile.
+let lastProfileDirect = null; // Confirms forward/upward player attacks use the straight reticle-vector path, not the old ballistic blend.
 let perspectivePointY = 0.55; // Mutable shared aim height lets this regression exercise an elevated target without changing camera yaw.
 
 const perspectiveTarget = () => ({
@@ -110,10 +113,22 @@ const windowStub = {
       return { ...baseAlignment };
     },
     meleeLungeProfile(distancePx, pitch, hopUnits, lungeHeightUnits, pitchDistanceResistance, directFlightStrength, inRangeAirAssist) {
-      lastProfileResistance = pitchDistanceResistance; // Real Combat uses 1 as "remove the upward gravity/pitch distance loss."
+      lastProfileResistance = pitchDistanceResistance;
       lastProfileAirAssist = !!inRangeAirAssist;
-      const assistedHop = inRangeAirAssist && pitch >= 0 ? Math.max(0.06, Math.sin(pitch)) : 0; // Minimal stand-in for combat-core's forward/upward airborne floor.
-      return { distancePx, pitch, hopUnits: Math.max(hopUnits, assistedHop), lungeHeightUnits, pitchDistanceResistance, directFlightStrength, inRangeAirAssist };
+      lastProfileDirect = directFlightStrength;
+      if (directFlightStrength >= 0.999 && pitch >= 0) {
+        return {
+          distancePx: distancePx * Math.cos(Math.abs(pitch)),
+          pitch,
+          hopUnits: 0,
+          lungeHeightUnits,
+          pitchDistanceResistance,
+          directFlightStrength: 1,
+          verticalTravelUnits: (distancePx / 64) * Math.sin(pitch),
+          inRangeAirAssist,
+        };
+      }
+      return { distancePx, pitch, hopUnits, lungeHeightUnits, pitchDistanceResistance, directFlightStrength, verticalTravelUnits: 0, inRangeAirAssist };
     },
     meleeColliderVolume(attacker, opts) {
       const pitch = Number(opts.pitch) || 0;
@@ -189,8 +204,9 @@ assert.equal(lastProfileResistance, 1,
   'any upward aim forces full pitch resistance so gravity cannot pin the lunge to the ground');
 assert.equal(lastProfileAirAssist, true,
   'upward aim enables airborne assist without checking enemy range, ledges, or branches');
-assert(player.lungeHopUnits > 0,
-  'sub-threshold upward aim must actually leave the ground');
+assert.equal(lastProfileDirect, 1, 'upward aim selects full direct reticle flight');
+assert.equal(player.lungeHopUnits, 0, 'upward direct flight must not use the old curved hop');
+assert(player.lungeVerticalTravelUnits > 0, 'upward reticle aim must create positive real world-Y travel');
 assert.equal(windowStub.HobunjiCombatCameraAlignment.debugSnapshot().lastLunge.gravityBypassedForForwardOrUpwardAim, true,
   'debug state exposes the forward/upward pitch grounding bypass');
 assert.equal(windowStub.HobunjiCombatCameraAlignment.debugSnapshot().lastLunge.inRangeAirAssist, true,
@@ -202,17 +218,21 @@ lastProfileAirAssist = false;
 perspectivePointY = 0.55; // Exactly forward.
 deps.beginCombatLunge(128, 0.4, 0, { rangePx: 64, halfConeRad: 0.25, pitchDistanceResistance: 0 });
 assert.equal(lastProfileResistance, 1, 'exactly forward aim is not considered downward/grounded');
-assert.equal(lastProfileAirAssist, true, 'exactly forward aim keeps airborne assist enabled');
-assert(player.lungeHopUnits > 0, 'forward aim receives the small minimum lift instead of staying glued to the ground');
-assert.equal(deps.hostileObjects.length, 0, 'forward/upward airborne behavior is verified with no hostile available');
+assert.equal(lastProfileAirAssist, true, 'exactly forward aim keeps direct-flight authority enabled');
+assert.equal(lastProfileDirect, 1, 'exactly forward aim still bypasses the grounded ballistic path');
+assert.equal(player.lungeHopUnits, 0, 'direct reticle flight never synthesizes a hop');
+assert.equal(player.lungeVerticalTravelUnits, 0, 'exactly horizontal reticle aim has zero Y component by definition');
+assert.equal(deps.hostileObjects.length, 0, 'forward/upward direct-flight behavior is verified with no hostile available');
 
 player.lunging = false;
 lastProfileResistance = null;
 lastProfileAirAssist = true;
+lastProfileDirect = 1;
 perspectivePointY = 0.15; // Below the player's forward origin.
 deps.beginCombatLunge(128, 0.4, 0, { rangePx: 64, halfConeRad: 0.25, pitchDistanceResistance: 0 });
 assert.equal(lastProfileResistance, 0, 'below-forward aim preserves ordinary grounded gravity behavior');
 assert.equal(lastProfileAirAssist, false, 'only below-forward pitch disables airborne assist');
+assert.equal(lastProfileDirect, 0, 'below-forward pitch retains the grounded/legacy lunge model');
 player.lunging = false;
 player.lungeHitTest = null;
 perspectivePointY = 0.55;
