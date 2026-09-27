@@ -691,7 +691,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
       });
       assert.equal(ladderStart.started, true, 'authored ruin ladder must resolve endpoints and start traversal: '+JSON.stringify(ladderStart));
       assert.equal(ladderStart.climbing, true, 'authored ruin ladder must use the shared animated ClimbSystem path: '+JSON.stringify(ladderStart));
-      await page.waitForFunction(() => window.ClimbSystem?.debug?.playerClimbing === false, null, { timeout:12000 }); // A tallest 12-hop scripted ladder is ~7 s of authored hop/pause time; leave CI scheduling headroom without changing gameplay cadence.
+      await page.waitForFunction(() => window.ClimbSystem?.debug?.playerClimbing === false, null, { timeout:30000 }); // A tallest 12-hop ladder is ~7 s at full cadence; heavy generated-ruin rendering can make headless CI advance its clamped gameplay dt much more slowly, so allow scheduling headroom without changing gameplay cadence.
       await page.waitForTimeout(650);
       const ladderAfter = await page.evaluate(() => window.DevRandomRuin.getState()?.presentation || null); // Used after reconciliation has resumed to prove the landing elevation remains authoritative.
       assert.ok(Number.isFinite(ladderAfter?.elevation) && Number.isFinite(ladderStart.before?.elevation), JSON.stringify({ ladderStart, ladderAfter }));
