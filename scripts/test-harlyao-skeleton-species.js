@@ -88,11 +88,16 @@ assert(devSpawnerSource.includes('deps.hostileObjects.add(creature);'), 'Arena s
 assert(devSpawnerSource.includes('spawnDevArenaHarlyaoSkeleton(devSpawnBanditTier);'), 'Skeleton arena button must dispatch to the Minion spawn path');
 assert(combatBanditSource.includes('Array.isArray(cfg?.weaponShapePool) ? cfg.weaponShapePool : null'), 'BanditCombat must honor an optional caller-scoped melee weapon pool');
 assert(combatBanditSource.includes('configuredMetalKey || rolledMetalKey'), 'BanditCombat must honor an optional fixed metal without changing ordinary bandit rolls');
-assert(gameIndexSource.includes('js/dev-spawner.js?v=20260926lich1'), 'Game entry point must cache-bust the current Testing Arena humanoid enemy spawner update');
+assert(combatBanditSource.includes('const resolvedRosterDyes = applyRosterDyesToProfile(profile, roster)'), 'shared hostile avatar builder must reconcile roster dyes directly onto the rendered profile');
+assert.match(combatBanditSource, /bodyColors\[tintSlot\] = tint[\s\S]*resolved\[tintSlot\] = \{ dyeId, hex: dye\.hex \|\| null \}/, 'hostile world portrait must preserve the exact authored dye id and hex used by loot');
+assert(combatBanditSource.includes("portrait.userData.proceduralHandParent = handsPivot"), 'shared hostile avatars must give the procedural hand driver a floor-relative visible parent');
+assert(combatBanditSource.includes('group.add(portrait)'), 'registered PNGPlaneAvatar hand root must remain parented so the attachment sweep can actually build hands');
+assert(combatBanditSource.includes('handRigAvatarRoot: portrait'), 'shared hostile avatar reference must expose the retained hand-driver root');
+assert(gameIndexSource.includes('js/dev-spawner.js?v=20260927hostilevisual1'), 'Game entry point must cache-bust the current Testing Arena humanoid enemy spawner update');
 assert(gameIndexSource.includes('js/combat/combat-minion.js?v=20260926shambling70'), 'Game entry point must load the current Minion enemy category before the arena spawner');
 assert(gameIndexSource.includes('js/portrait-utils.js?v=20260926hoodback2'), 'Game entry point must cache-bust hood-aware female skeleton hair visibility');
 assert(gameIndexSource.includes('js/png-plane-avatar.js?v=20260926hskelhairalign1'), 'Game entry point must cache-bust the removal of the obsolete skeleton neck workaround');
-assert(gameIndexSource.includes('js/combat/combat-bandit.js?v=20260926hskelhairalign1'), 'Game entry point must cache-bust the restored ordinary humanoid neck path');
+assert(gameIndexSource.includes('js/combat/combat-bandit.js?v=20260927hostilevisual1'), 'Game entry point must cache-bust the restored ordinary humanoid neck path');
 assert(characterStudioSource.includes('../../js/harlyao-skeleton-species-runtime.js?v=20260926lichhood1'), 'Character Studio must load the NPC-only Harlyao Skeleton runtime bridge before snapshotting its species table');
 assert(characterStudioSource.includes('../../js/portrait-utils.js?v=20260926hoodback2'), 'Character Studio must load hood-aware structural-hair visibility');
 assert(characterStudioSource.includes("SPECIES_DATA[ap.speciesId]?.playerSelectable === false"), 'NPC-only preview species must be blocked from Set as my player');
