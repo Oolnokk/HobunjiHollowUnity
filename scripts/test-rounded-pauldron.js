@@ -51,14 +51,19 @@ for (const [variant, variantData] of Object.entries(cosmetic.speciesVariants)) {
   );
 }
 
+const skillSystemSource = read('docs/js/skill-system.js');
+const metalArmorSource = read('docs/js/metal-armor-system.js');
 const windowStub = {};
-vm.runInNewContext(read('docs/js/metal-armor-system.js'), {
+const vmContext = {
   window: windowStub,
-  document: {},
+  document: { querySelector: () => null },
   console,
   setTimeout,
   clearTimeout,
-}, { filename: 'metal-armor-system.js' });
+  queueMicrotask,
+};
+vm.runInNewContext(skillSystemSource, vmContext, { filename: 'skill-system.js' });
+vm.runInNewContext(metalArmorSource, vmContext, { filename: 'metal-armor-system.js' });
 const ps = windowStub.MetalArmorSystem;
 assert(ps, 'MetalArmorSystem exports');
 assert.deepEqual(Array.from(ps.TEMPER_XP_THRESHOLDS), [40, 90, 150, 220, 300], 'Temper uses Mastery-like five-rank pacing');
@@ -78,6 +83,28 @@ assert.equal(ps.visualOptions({ blueprintId:'rounded_pauldron', metalKey:'native
 assert(metalArmorSource.includes("window.resolvePortraitAssetUrl?.(sourceUrl)"), 'metal armor resolves portrait-relative source art before ToolMetalRecolor reads its pixels');
 assert.equal(ps.visualOptions({ blueprintId:'rounded_pauldron', metalKey:'nativeCopper', temperXp:300, smithTreatment:{ mode:'resistant', metalKey:'nativeCopper' } }).oxidationAmount, 0, 'resistant smith treatment suppresses verdigris');
 assert.equal(ps.visualOptions({ blueprintId:'rounded_pauldron', metalKey:'nativeCopper', temperXp:300, smithTreatment:{ mode:'cosmetic', metalKey:'gold' } }).targetHex, '#D8AA2E', 'cosmetic plating switches to the treatment metal');
+
+const wornPauldron = {
+  uid: 'gcloth_smith_temper_regression',
+  cosmeticId: 'rounded_pauldron#smith:temper_regression',
+  baseCosmeticId: 'rounded_pauldron',
+  slot: 'pauldron',
+  materialKind: 'metal',
+  metalKey: 'nativeCopper',
+  temperXp: 0,
+};
+const gear = { clothingItems: [wornPauldron], clothing: { pauldron: wornPauldron } };
+let gearSaveCount = 0;
+ps.init({
+  getGearInventory: () => gear,
+  saveGearInventory: () => { gearSaveCount++; },
+  getPlayerData: () => ({ appearance: { speciesId: 'mao-ao', gender: 'male' } }),
+});
+assert.equal(ps.debugSnapshot().skillXpListenerInstalled, true, 'Temper subscribes to the authoritative Skill XP event stream');
+assert.equal(windowStub.SkillSystem.award('mining', 20, 'Temper integration regression', false), true, 'test Skill XP award succeeds');
+assert.equal(wornPauldron.temperXp, 20, 'a real SkillSystem award advances equipped metal armor Temper');
+assert.equal(ps.visualOptions(wornPauldron).oxidationAmount, 0.1, '20 Temper XP is already enough to render the first visible verdigris step');
+assert(gearSaveCount >= 2, 'normalization and the XP award both persist the metal-armor state');
 
 const scratchbones = read('docs/config/scratchbones-config.js');
 assert.match(scratchbones, /"id": "rounded_pauldron"[^\n]*"smithOnly": true[^\n]*"dyeable": false/, 'catalog marks pauldrons smith-only and non-dyeable');
@@ -116,8 +143,9 @@ assert(smith.includes('MetalArmorSystem?.init?.'), 'smithy injects existing inve
 
 const game = read('docs/game.js');
 assert(game.includes("MetalArmorSystem?.awardExperience?.(amount, 'tool/weapon Mastery XP', { save: false })"), 'tool/weapon Mastery XP contributes to every equipped metal armor article');
-const metalArmorSource = read('docs/js/metal-armor-system.js');
-assert(metalArmorSource.includes('skillSystem.award = wrapped'), 'ordinary SkillSystem XP contributes to every equipped metal armor article');
+assert(skillSystemSource.includes('notifyAward(skillKey, gain, reason);'), 'SkillSystem emits from the authoritative award path used by both external and internal XP grants');
+assert(metalArmorSource.includes('skillSystem.onAward'), 'ordinary SkillSystem XP reaches Temper through the authoritative award event');
+assert(!metalArmorSource.includes('skillSystem.award = wrapped'), 'Temper no longer relies on a public-method monkey patch that misses internal SkillSystem awards');
 assert(!metalArmorSource.includes('setToolReinforcement'), 'Temper unlocks cosmetic smith treatments, not stat-changing reinforcement');
 assert(!metalArmorSource.includes("item.slot === 'pauldron'"), 'metal behavior is not inferred from the pauldron slot');
 assert(!fs.existsSync(path.join(root, 'docs/js/pauldron-system.js')), 'the old pauldron-specific module filename is gone');
