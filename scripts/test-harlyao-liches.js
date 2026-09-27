@@ -170,7 +170,12 @@ hostileObjects.add(lichA);
 hostileObjects.add(lichB);
 player.afflictions = { entrancedHealth: 0 };
 player.x = 64; player.y = 0; player.health = 100;
+const healthBeforeApplicationOnly = 1;
+player.health = healthBeforeApplicationOnly;
+const damageBeforeApplicationOnly = damageApplied;
 api.applyEntranced(player, lichA, 20);
+assert.equal(player.health, healthBeforeApplicationOnly, 'applying Entranced Health alone must never reduce real Health');
+assert.equal(damageApplied, damageBeforeApplicationOnly, 'applying Entranced Health alone must never call the lethal Health-affliction damage path');
 assert.equal(player._entrancedCommandState.source, lichA);
 api.applyEntranced(player, lichB, 4);
 assert.equal(player._entrancedCommandState.source, lichB, 'latest Entranced applicant must become referential target');
@@ -178,12 +183,17 @@ assert.equal(player._entrancedCommandState.source, lichB, 'latest Entranced appl
 player.afflictions.entrancedHealth = 20;
 api.applyEntranced(player, lichA, 0.1);
 player.afflictions.entrancedHealth = 20;
-player.x = 80; // Away from lichA while commanded to approach: punished.
+player.health = 100;
+player.x = 80; // Away from lichA while commanded to approach: punished. 16 px at TILE=64 is exactly 0.25 tile.
 const healthBeforeWrongMove = player.health;
+const afflictionBeforeWrongMove = player.afflictions.entrancedHealth;
+const damageBeforeWrongMove = damageApplied;
 windowObject.RangedWeapons.update(0.1);
-assert(player.health < healthBeforeWrongMove, 'moving against Approach must convert Entranced buildup into Health damage');
-assert(player.afflictions.entrancedHealth < 20);
-assert(damageApplied > 0);
+const wrongMoveHealthLost = healthBeforeWrongMove - player.health;
+const wrongMoveBuildupConsumed = afflictionBeforeWrongMove - player.afflictions.entrancedHealth;
+assert(Math.abs(wrongMoveHealthLost - 0.9) < 1e-9, '0.25 tile of wrong-way movement must deal exactly 0.9 Health at the reduced 3.6-per-tile ratio');
+assert(Math.abs(wrongMoveBuildupConsumed - 0.9) < 1e-9, 'wrong-way movement must consume Entranced buildup at the same reduced 3.6-per-tile ratio');
+assert(Math.abs((damageApplied - damageBeforeWrongMove) - 0.9) < 1e-9, 'movement-to-damage conversion must be one fifth of the former 18-per-tile value');
 
 const healthBeforeObey = player.health;
 const entrancedBeforeObey = player.afflictions.entrancedHealth;
@@ -229,6 +239,12 @@ assert.equal(realRS.AFFLICTIONS.frostbittenFooting.recovers, true);
 assert.equal(realRS.AFFLICTIONS.entrancedHealth.resource, 'health');
 assert.equal(realRS.AFFLICTIONS.entrancedHealth.family, 'control');
 assert.equal(realRS.AFFLICTIONS.entrancedHealth.recovers, false, 'Entranced directional recovery is owned by lich runtime');
+const lowHealthApplicationTarget = { health: 1, maxHealth: 100, stamina: 100, maxStamina: 100, maxFooting: 100, footing: 100 };
+realRS.initEntity(lowHealthApplicationTarget);
+realRS.addAffliction(lowHealthApplicationTarget, 'entrancedHealth', 100);
+assert.equal(lowHealthApplicationTarget.health, 1, 'canonical ResourceSystem Entranced application must preserve a living actor at 1 Health');
+assert.equal(realRS.getAffliction(lowHealthApplicationTarget, 'entrancedHealth'), 100, 'Entranced buildup may fill independently without directly spending real Health');
+assert.match(lichSource, /ENTRANCED_WRONG_MOVE_DAMAGE_PER_TILE = 3\.6/, 'wrong-direction movement punishment must remain one fifth of the original 18 Health per tile');
 assert.match(resourceSource, /frostbittenRegenMul = 1 - frostbittenFraction \* 0\.8/);
 
 for (const key of ['tothal', 'hronal', 'kanthic']) {
