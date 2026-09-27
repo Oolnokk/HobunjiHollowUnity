@@ -30,6 +30,7 @@ const cloudFog = read('docs/js/cloud-forest-fog.js');
 const gameIndex = read('docs/index.html');
 const game = read('docs/game.js');
 const climbSystem = read('docs/js/climb-system.js');
+const audioSystem = read('docs/js/audio-system.js');
 
 const loadOrder = [
   'dynamic-surfaces.js',
@@ -45,9 +46,9 @@ const loadOrder = [
 ].map(name => camera.indexOf(name));
 assert(/localStorage\.getItem\('hobunjiDevMode'\) === '1'/.test(camera) && /if \(!devMode/.test(camera), 'ruin runtime must only be injected in Dev Mode');
 assert(camera.includes('dev-random-ruin-interactions.js?v=20260926ropedodge1'), 'ruin interaction adapter must be cache-busted in the dev bootstrap');
-assert(camera.includes('dev-random-ruin-simple-puzzles.js?v=20260927ropereadability1'), 'simple puzzle runtime must be cache-busted in the dev bootstrap');
+assert(camera.includes('dev-random-ruin-simple-puzzles.js?v=20260927chordlock1'), 'simple puzzle runtime must be cache-busted in the dev bootstrap');
 assert(camera.includes('dev-random-ruin-wall-render-proxy.js?v=20260926glyphdecal1'), 'glyph decal proxy fix must be cache-busted in the dev bootstrap');
-assert(gameIndex.includes('js/dev-random-ruin-bootstrap.js?v=20260927ropereadability1'), 'game page must load the updated ruin bootstrap');
+assert(gameIndex.includes('js/dev-random-ruin-bootstrap.js?v=20260927chordlock1'), 'game page must load the updated ruin bootstrap');
 assert(gameIndex.includes('game.js?v=20260927ruinsurface1'), 'game page must cache-bust the native Dodge rope release seam');
 assert(gameIndex.includes('js/climb-system.js?v=20260926ruinladder2'), 'game page must cache-bust the shared climb animation used by authored ruin ladders');
 assert(loadOrder.every(index => index >= 0), 'ruin bootstrap must load every Random Test Ruin runtime module');
@@ -85,7 +86,7 @@ assert(solvability.includes('canSolveGlyphGroup'), 'solvability audit must valid
 assert(solvability.includes("bridge ON/OFF sequence reachable in order"), 'solvability audit must validate ordered bridge controls');
 assert(solvability.includes('unsolvedMechanisms'), 'solvability audit must reject candidates with puzzle mechanisms that cannot be solved');
 assert(interior.includes('linkedSignal?.userData?.solveProgress'), 'projectile glyph solveProgress must drive linked door/platform animation progress');
-assert(interior.includes("id:'devruin-physical-door-'+m.id"), 'stone doors must have a precise physical blocker while visually closed');
+assert(interior.includes('__devRuinPhysicalDoorBlocker=false') && !interior.includes("id:'devruin-physical-door-'+m.id"), 'generated stone doors must stay on the single aggregate tile-occupancy collision path instead of registering duplicate per-door blockers');
 assert(interior.includes("kind:'stoneDoor'") && interior.includes("'Open Stone Door'"), 'ungated stone doors must expose the standard ruin interaction list action');
 assert(interior.includes("kind:'transitDoor'") && interior.includes("'Open Hallway Door'"), 'plain hallway exit doors must use the same WorldPopupText interaction-list path as other world objects');
 assert(interior.includes('__devRuinTransitDoorState') && interior.includes('updateTransitDoors(dt)'), 'transit doors must own explicit closed/open runtime state so collision matches their visible panel');
@@ -130,6 +131,9 @@ assert(simplePuzzles.includes("label:'Grab Rope'") && simplePuzzles.includes("po
 assert(simplePuzzles.includes("String(door?.to)===String(hall.id)") && simplePuzzles.includes('approachAtMin'), 'safe-path reveal pedestal must derive the player-approach side from the actual room-to-hall doorway rather than always using the low-coordinate end');
 assert(simplePuzzles.includes('ROPE_DESTINATION_RISE = .78') && simplePuzzles.includes('ROPE_GRAB_ABOVE_LAUNCH = .86'), 'rope traversal must visibly separate the unreachable destination height from the reachable launch-side grip height');
 assert(simplePuzzles.includes('topRise:COMPOUND_ELEVATOR_TOP_RISE'), 'compound rope/elevator landing must start above ordinary step height so the rope has an obvious traversal purpose');
+assert(simplePuzzles.includes('generatedMechanismId=nearestGeneratedStoneDoorMechanism(context,doorway)') && simplePuzzles.includes('reusesGeneratedDoor:!!generatedMechanismId'), 'ossuary/chord locks must reuse the generated doorway mechanism instead of stacking a second blocking door over it');
+assert(simplePuzzles.includes("window.DevRandomRuin?.setMechanismTarget?.(module.generatedMechanismId,module.targetOpen?1:0)"), 'ossuary completion must open the same generated stone door that visually seals the room');
+assert(simplePuzzles.includes('CHORD_PITCHES = Object.freeze([1, 1.259921, 1.498307, 1.887749])'), 'the four chord pressure plates must retain four distinct authored pitch ratios');
 assert(!simplePuzzles.includes("dev_ruin_rope_hazard_"), 'rope fall/burn zones must remain logical hazards and never render as red debug slabs near the ceiling');
 assert(simplePuzzles.includes("recordModulePlacement('projectileHallwayTrap'"), 'hallway traps must be represented as reusable module placements');
 assert(simplePuzzles.includes("recordModulePlacement('chordPressurePlates'"), 'musical pressure plates must be reusable in hallway or room slots');
@@ -353,4 +357,6 @@ assert(hitSource.includes('installCombat'), 'decoded hit runtime must install it
 new vm.Script(hitSource, { filename: 'dev-random-ruin-hit-puzzles.js' });
 new vm.Script(coverage, { filename: 'dev-random-ruin-runtime-coverage.js' });
 
+assert(audioSystem.includes("if ('preservesPitch' in snd) snd.preservesPitch = false"), 'pitched object SFX must disable browser pitch preservation so playbackRate changes are audible as actual pitch changes');
+assert(gameIndex.includes('js/audio-system.js?v=20260927pitchedsfx1'), 'pitched object-SFX fix must be cache-busted in the game page');
 console.log('Random Test Ruin integration static audit passed.');
