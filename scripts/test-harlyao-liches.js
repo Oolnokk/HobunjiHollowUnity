@@ -254,7 +254,7 @@ for (const key of ['tothal', 'hronal', 'kanthic']) {
   assert(devSpawnerSource.includes(`harlyao-lich:${key}`), `Testing Arena must expose ${key} lich button`);
 }
 assert.match(devSpawnerSource, /startsWith\('harlyao-lich:'\)/);
-assert(indexSource.includes('js/combat/combat-lich.js?v=20260927lichvisual1'));
+assert(indexSource.includes('js/combat/combat-lich.js?v=20260927commandauras1'));
 assert(indexSource.includes('js/combat/combat-bandit.js?v=20260927hostilevisual1'));
 assert(indexSource.includes('js/dev-spawner.js?v=20260927hostilevisual1'));
 assert(indexSource.includes('game.js?v=20260927arenarespawn1'));
@@ -267,7 +267,7 @@ assert(pixelProbeSource.includes('window.HarlyaoLichCombat?.formatDebug?.()'), '
 assert(portraitSource.includes('const hoodBackLayers = []'), 'ragged hood rear layer must use the generic behind-head hood bucket');
 assert.match(portraitSource, /\(layer\.pos === 'back' \? hoodBackLayers : hoodLayers\)\.push/, 'hood compositor must route authored back layers separately from front layers');
 assert(portraitSource.includes('if (hoodBackLayers.length) hoodLayers.length = 0'), 'ragged hood rear view must use authored rear cloth without overlaying the front opening');
-assert(indexSource.includes('style.css?v=20260926entranced2'));
+assert(indexSource.includes('style.css?v=20260927commandauras1'));
 assert(styleSource.includes('#entrancedCommandBanner.visible'), 'Entranced command must use the shared stylesheet instead of module-local system-font debug styling');
 assert(styleSource.includes("font-family: 'KhymeryyanRomanLetters+Numbers'"), 'Entranced command must use the game HUD font');
 assert(styleSource.includes('font-size: 24px'), 'Entranced APPROACH/FLEE action text must be twice the prior 12px size');
@@ -284,7 +284,14 @@ assert.match(lichSource, /blending: THREE\.AdditiveBlending, fog: false/, 'contr
 assert.match(lichSource, /player\?_entrancedCommandState|_entrancedCommandState\?\.source/, 'controller marker must resolve from the latest referential Entranced source');
 assert.match(lichSource, /source\.lichType !== 'kanthic'/, 'only the controlling Kanthic lich receives the Entranced owner marker');
 assert.match(lichSource, /AuthoredFurniture[\s\S]{0,700}createEmitterVisual/, 'controlling Kanthic must use the existing authored particle-emitter renderer for its body-height aura');
-assert.match(lichSource, /id: 'entranced_controller_fire'[\s\S]{0,500}rate: 92[\s\S]{0,300}colorA: colorCssHex\(bright\)[\s\S]{0,100}colorB: colorCssHex\(color\)/, 'Entranced aura must be a large color-coded fire emitter');
+assert.match(lichSource, /function commandHudColor\(command\)[\s\S]*--danger[\s\S]*--accent/, 'controller aura must use the same semantic Flee\/Approach colors as the HUD text');
+assert.match(lichSource, /id: 'entranced_controller_fire'[\s\S]{0,500}rate: 92[\s\S]{0,300}colorA: palette\.bright[\s\S]{0,100}colorB: palette\.color/, 'Entranced controller must remain a large body-height command-colored fire emitter');
+assert.match(lichSource, /entrancerAuraVisual\.update\?[\s\S]*colorA: palette\.bright[\s\S]*colorB: palette\.color/, 'live aura must recolor immediately when the controlling lich switches Approach\/Flee');
+assert.match(lichSource, /function controllerBehindCamera\(source\)[\s\S]*getActiveCamera\?\.\(\)[\s\S]*forward\.dot\(toSource\.normalize\(\)\) < 0/, 'behind-camera detection must use the active camera forward plane rather than player yaw');
+assert.match(lichSource, /updateEntrancerEdgeAura\(source, palette\.command, entrancerBehindCamera\)/, 'behind-camera controller must drive the screen-edge aura from the same live command state');
+assert.match(styleSource, /#entrancedCommandEdgeAura\.approach \{ color: var\(--accent\); \}/, 'Approach edge aura must exactly share the HUD accent color');
+assert.match(styleSource, /#entrancedCommandEdgeAura\.flee \{ color: var\(--danger\); \}/, 'Flee edge aura must exactly share the HUD danger color');
+assert.match(styleSource, /#entrancedCommandEdgeAura\.visible[\s\S]*box-shadow|#entrancedCommandEdgeAura \{[\s\S]*box-shadow:/, 'behind-camera cue must visibly surround the screen edges rather than add another center-screen marker');
 assert.match(lichSource, /LICH_CAST_WEAPON_KEY = 'pickshovel_nativeCopper'/, 'lich casting must reference an existing Light Weapon definition');
 assert.match(lichSource, /LICH_CAST_COMBO_ID = 'pokeCombo'/, 'lich casting must reuse the existing light-weapon thrust combo');
 assert.match(lichSource, /socket\.name = 'lich_empty_light_weapon'/, 'visible reference weapon geometry must be replaced with an empty held weapon object');
