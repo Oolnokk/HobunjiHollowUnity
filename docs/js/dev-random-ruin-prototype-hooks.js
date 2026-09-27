@@ -252,24 +252,14 @@
   }
 
   function installTransitDoor(door) {
-    const state = {
-      root:door,
-      open:0,
-      targetOpen:0,
-      fullScaleY:Number(door.scale?.y) || 1,
-      openedFromSide:0,
-      openedAt:0,
-    };
-    door.userData.__devRuinTransitDoorState = state;
-    transitDoors.push(state);
     recordCount('transitDoor');
-    recordHandled('plain hallway transit doors');
-    recordPending('transit-door passage reset semantics (combat/puzzle reset audit, later batch)');
-    // The shared tile-occupancy snapshot owns this door's blocker. Keeping a
-    // second object-wide AABB here made the Map tab and gameplay disagree.
-    addControl({ kind:'transitDoor', object:door,
-      get label() { return state.targetOpen > .5 ? 'Close Stone Door' : 'Open Stone Door'; },
-      onPress:() => toggleTransitDoor(state) });
+    const baseState=door.userData?.__devRuinTransitDoorState;
+    if(baseState){
+      recordHandled('plain hallway transit doors (base interior adapter owns state, animation, prompt, and collision)');
+      door.userData.interactive3D=true;
+      return; // Never replace the base adapter's state object or add a second animation/control loop; that desynchronized visible door height from collision.
+    }
+    recordPending('transit door discovered before base interior adapter state was installed');
   }
 
   function installStaticDais(dais) {
