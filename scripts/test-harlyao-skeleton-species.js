@@ -194,10 +194,12 @@ assert.equal(windowObject.resolveOptionLayers({}, fighters[0]), 'engh-sho', 'Ske
 assert.equal(windowObject.resolveOptionLayers({}, fighters[2]), 'engh-sho', 'Non-skeleton wardrobe resolution must remain unchanged');
 assert.equal(windowObject.SCRATCHBONES_CONFIG.game.portrait.armOnlyOpacityMask.profiles['harlyao-skeleton:male'].maskYScaleMultiplier, 1.04);
 assert.equal(windowObject.SCRATCHBONES_CONFIG.game.portrait.armOnlyOpacityMask.profiles['harlyao-skeleton:female'].maskYScaleMultiplier, 1.15);
-const skeletonExportProfile = windowObject.NpcAvatarPreview.buildProfileFromNpcExport({ appearance: { speciesId: 'harlyao-skeleton', bodyColors: { A: { hex: '#000000' } } } }); // Explicitly wrong imported color must be ignored for a colorless skeleton species.
+const skeletonExportProfile = windowObject.NpcAvatarPreview.buildProfileFromNpcExport({ appearance: { speciesId: 'harlyao-skeleton', bodyColors: { A: { hex: '#000000' }, CLOTH: { hex: '#c45a21' }, HOOD: { hex: '#2949b8' } } } }); // Wrong body color must be clamped without erasing already-resolved clothing dyes.
 assert.equal(skeletonExportProfile.bodyColors.A.hex, '#D4D6C9');
 assert.equal(skeletonExportProfile.bodyColors.B.hex, '#D4D6C9');
 assert.equal(skeletonExportProfile.bodyColors.C.hex, '#D4D6C9');
+assert.equal(skeletonExportProfile.bodyColors.CLOTH.hex, '#c45a21', 'fixed skeleton body color guard must preserve overwear dye slots');
+assert.equal(skeletonExportProfile.bodyColors.HOOD.hex, '#2949b8', 'fixed skeleton body color guard must preserve hood dye slots');
 const enghExportProfile = windowObject.NpcAvatarPreview.buildProfileFromNpcExport({ appearance: { speciesId: 'engh-sho', bodyColors: { A: { hex: '#123456' } } } }); // Non-skeleton NPC exports must remain untouched by the guard.
 assert.equal(enghExportProfile.bodyColors.A.hex, '#123456');
 
