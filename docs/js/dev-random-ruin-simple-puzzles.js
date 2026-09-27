@@ -847,7 +847,7 @@
   function buildBalconyRopeElevatorComposer(context,rng,usedRooms) {
     const candidates=shuffle(usableRoomCandidates(context).filter(room=>!usedRooms.has(room.id)&&deepestSunkenRegionForRoom(context,room)),rng);
     for(const room of candidates){
-      const elevator=buildCyclingElevatorModule(context,room,{startActive:false,cycleSeconds:8});
+      const elevator=buildCyclingElevatorModule(context,room,{startActive:false,cycleSeconds:8,reserveAnnex:true});
       if(!elevator)continue;
       const landing={mesh:elevator.mesh,x:elevator.x,z:elevator.z,width:elevator.width,depth:elevator.depth,baseY:elevator.topTopY-elevator.height,topY:elevator.topTopY};
       const rope=buildRopeSwing(context,rng,usedRooms,{room,endPlatform:landing,idSuffix:'elevator'});
@@ -855,9 +855,29 @@
       const canopy=buildStoneCanopyModule(context,room,rope.startPlatform);
       const glyph=buildCeilingGlyphModule(context,room,{x:elevator.x,z:elevator.z},{onActivate:()=>activateCyclingElevator(elevator)});
       if(!glyph){elevator.active=true;return rope;}
-      const module={id:'balcony-rope-elevator-'+room.id,roomId:String(room.id),rope,elevator,glyph,canopy};
+
+      let lowerShell=null,ossuary=null,nextDoorMechanismId=null;
+      if(elevator.annexBounds&&elevator.annexDoorway){
+        const annexOwner={...room,id:String(room.id)+'-sunken-annex'};
+        lowerShell=buildSunkenRoomShell(context,annexOwner,elevator.annexBounds,elevator.annexDoorway,elevator.lowerFloorY);
+        nextDoorMechanismId=nearestGeneratedStoneDoorMechanism(context,rope.startPlatform);
+        if(lowerShell){
+          ossuary=buildOssuaryChordComposer(context,rng,annexOwner,{
+            roomId:annexOwner.id,
+            bounds:elevator.annexBounds,
+            doorway:elevator.annexDoorway,
+            onComplete:()=>{if(nextDoorMechanismId)window.DevRandomRuin?.setMechanismTarget?.(nextDoorMechanismId,1);},
+          });
+        }
+      }
+
+      const module={id:'balcony-rope-elevator-'+room.id,roomId:String(room.id),rope,elevator,glyph,canopy,lowerShell,ossuary,nextDoorMechanismId};
       state.ropeElevatorComposers.push(module);
-      recordModulePlacement('balconyRopeElevatorComposer','room',module.id,{roomId:String(room.id),wires:['ropeTraverse','stoneCanopy','ceilingProjectileGlyph','cyclingElevator']});
+      recordModulePlacement('balconyRopeElevatorComposer','room',module.id,{
+        roomId:String(room.id),
+        wires:['ropeTraverse','stoneCanopy','ceilingProjectileGlyph','cyclingElevator'].concat(ossuary?['sunkenRoomShell','lockableStoneDoor','sarcophagusSpawner','chordPressurePlates']:[]),
+        opensUpstairsMechanism:nextDoorMechanismId||null,
+      });
       return rope;
     }
     return null;
@@ -1612,7 +1632,7 @@
       sarcophagi:state.sarcophagusModules.map(module=>({id:module.id,roomId:module.roomId,activated:module.activated,spawnCount:module.spawnCount,count:module.coffins.length})),
       sunkenRoomShells:state.sunkenRoomShells.map(module=>({id:module.id,roomId:module.roomId,floorY:+module.floorY.toFixed(3)})),
       ossuaryComposers:state.ossuaryComposers.map(module=>({id:module.id,roomId:module.roomId,entered:module.entered,completed:module.completed})),
-      ropeElevatorComposers:state.ropeElevatorComposers.map(module=>({id:module.id,roomId:module.roomId,ropeId:module.rope.id,elevatorId:module.elevator.id,glyphId:module.glyph.id,canopyId:module.canopy?.id||null})),
+      ropeElevatorComposers:state.ropeElevatorComposers.map(module=>({id:module.id,roomId:module.roomId,ropeId:module.rope.id,elevatorId:module.elevator.id,glyphId:module.glyph.id,canopyId:module.canopy?.id||null,lowerShellId:module.lowerShell?.id||null,ossuaryId:module.ossuary?.id||null,nextDoorMechanismId:module.nextDoorMechanismId||null})),
       modules:state.modulePlacements.map(module=>({...module})),
       liveProjectiles:state.projectiles.length,
       checkpoints:{
