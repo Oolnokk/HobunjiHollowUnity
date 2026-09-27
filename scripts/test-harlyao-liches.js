@@ -216,9 +216,13 @@ assert.match(portraitSource, /\(layer\.pos === 'back' \? hoodBackLayers : hoodLa
 assert(indexSource.includes('style.css?v=20260926entranced1'));
 assert(styleSource.includes('#entrancedCommandBanner.visible'), 'Entranced command must use the shared stylesheet instead of module-local system-font debug styling');
 assert(styleSource.includes("font-family: 'KhymeryyanRomanLetters+Numbers'"), 'Entranced command must use the game HUD font');
+assert.match(lichSource, /LUNGE_RING_REFERENCE_OUTER_RADIUS = 0\.46/, 'controller marker reference radius must stay aligned with the canonical game.js lunge stamp');
+assert.match(lichSource, /LUNGE_RING_REFERENCE_THICKNESS = 0\.14/, 'controller marker reference thickness must stay aligned with the canonical game.js lunge stamp');
 assert.match(lichSource, /ENTRANCER_RING_OUTER_RADIUS = LUNGE_RING_REFERENCE_OUTER_RADIUS \* 2/, 'controller marker must be twice the lunge-ring diameter scale');
 assert.match(lichSource, /ENTRANCER_RING_THICKNESS = LUNGE_RING_REFERENCE_THICKNESS \* 2/, 'controller marker must be twice the lunge-ring line thickness');
 assert.match(lichSource, /ENTRANCER_RING_PULSE_MS = 1000/, 'controller marker must pulse once per second');
+assert.match(lichSource, /new THREE\.RingGeometry\(inner, outer, 24\)/, 'controller marker must use the same 24-segment ring geometry as lunge stamps');
+assert.match(lichSource, /blending: THREE\.AdditiveBlending, fog: false/, 'controller marker must use the same additive fog-free material language as lunge stamps');
 assert.match(lichSource, /player\?_entrancedCommandState|_entrancedCommandState\?\.source/, 'controller marker must resolve from the latest referential Entranced source');
 assert.match(lichSource, /source\.lichType !== 'kanthic'/, 'only the controlling Kanthic lich receives the Entranced owner marker');
 
