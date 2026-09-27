@@ -406,6 +406,8 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     assert.equal(active.wallPlaneControl.meshVisible, active.wallPlaneControl.count, JSON.stringify(active.wallPlaneControl));
     assert.equal(active.wallPlaneControl.blockerCount, 0, JSON.stringify(active.wallPlaneControl));
     assert.ok(active.occupancy?.blocked?.length > 0, JSON.stringify(active.occupancy));
+    assert.ok(active.occupancy?.gridBlocked?.length > 0, 'generated blockers must be stamped into the ordinary interior grid: '+JSON.stringify(active.occupancy));
+    assert.ok((active.materialStats?.occlusionMeshes||0)>0, 'generated walls/pillars must register with the normal map_i_* camera boom: '+JSON.stringify(active.materialStats));
     assert.equal(active.occupancyBlockers, 1, JSON.stringify(active));
     assert.equal(active.legacyRuinBlockers, 0, JSON.stringify(active));
     assert.ok(active.wallRender.sourceDoorMeshes > 0, JSON.stringify(active.wallRender));
