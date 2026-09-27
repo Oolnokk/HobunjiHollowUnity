@@ -12,6 +12,8 @@ const indexSource = fs.readFileSync(path.join(root, 'docs/index.html'), 'utf8');
 const pixelProbeSource = fs.readFileSync(path.join(root, 'docs/js/pixel-probe.js'), 'utf8');
 const portraitSource = fs.readFileSync(path.join(root, 'docs/js/portrait-utils.js'), 'utf8');
 const styleSource = fs.readFileSync(path.join(root, 'docs/style.css'), 'utf8');
+const proceduralLegSource = fs.readFileSync(path.join(root, 'docs/js/procedural-leg-animation.js'), 'utf8');
+const drunkProneSource = fs.readFileSync(path.join(root, 'docs/js/drunk-prone-composition-bridge.js'), 'utf8');
 const skeletonSpecies = JSON.parse(fs.readFileSync(path.join(root, 'docs/config/species/harlyao-skeleton.json'), 'utf8'));
 const cosmeticsIndex = JSON.parse(fs.readFileSync(path.join(root, 'docs/config/cosmetics/index.json'), 'utf8'));
 const itemIndex = JSON.parse(fs.readFileSync(path.join(root, 'docs/config/items/item-index.json'), 'utf8'));
@@ -77,6 +79,16 @@ const windowObject = {
         x: args[3], y: args[4], areaId: 'map_dev_arena', health: 100,
         def: { moveSpeed: 100, chaseSpeed: 140 },
         rosterRecord: args[5]?.rosterOverride,
+        halfHeight: 0.45,
+        groundLift: 0.45,
+        avatarRef: {
+          modelHeight: 0.9,
+          legs: {
+            hover: false,
+            setHoverMode(enabled) { this.hover = !!enabled; },
+            isHoverMode() { return this.hover; },
+          },
+        },
         scene: { add() {} },
       };
     },
@@ -191,6 +203,19 @@ assert(made && capturedMakeArgs, 'arena lich should delegate to shared humanoid 
 assert.equal(capturedMakeArgs[5].enemyClass, 'harlyao-lich');
 assert.equal(capturedMakeArgs[5].rosterOverride.appliedDyes.HOOD, capturedMakeArgs[5].rosterOverride.appliedDyes.CLOTH);
 assert.equal(capturedMakeArgs[5].defOverride.weaponKey, 'pickshovel_nativeCopper', 'lich constructor must use the existing Light Weapon reference definition for cast poses');
+assert.equal(made.avatarRef.legs.isHoverMode(), true, 'new lich must enter procedural hover mode immediately');
+hostileObjects.add(made);
+const groundedLift = made._lichBaseGroundLift;
+windowObject.RangedWeapons.update(0.1);
+assert(made.groundLift > groundedLift + 0.35, 'active lich renderer baseline must be raised well above the ground-following humanoid baseline');
+assert(made._lichHoverOffsetWorld > 0.35, 'active lich must expose a positive presentation-only hover offset');
+made.prone = true;
+windowObject.RangedWeapons.update(0.1);
+assert.equal(made.avatarRef.legs.isHoverMode(), false, 'prone lich must disable dangling hover pose');
+assert.equal(made.groundLift, groundedLift, 'prone lich must return to its ordinary grounded baseline');
+made.prone = false;
+windowObject.RangedWeapons.update(0.1);
+assert.equal(made.avatarRef.legs.isHoverMode(), true, 'recovered lich must resume procedural hover mode');
 
 const resourceContext = vm.createContext({ window: {}, console, performance: { now: () => 1000 }, Math, Number, String, Boolean, Object, Array, Set, Map, WeakMap, JSON });
 vm.runInContext(resourceSource, resourceContext, { filename: 'resource-system.js' });
@@ -207,10 +232,12 @@ for (const key of ['tothal', 'hronal', 'kanthic']) {
   assert(devSpawnerSource.includes(`harlyao-lich:${key}`), `Testing Arena must expose ${key} lich button`);
 }
 assert.match(devSpawnerSource, /startsWith\('harlyao-lich:'\)/);
-assert(indexSource.includes('js/combat/combat-lich.js?v=20260926lich4'));
+assert(indexSource.includes('js/combat/combat-lich.js?v=20260926lich5'));
 assert(indexSource.includes('js/combat/resource-system.js?v=20260926lich1'));
 assert(indexSource.includes('js/pixel-probe.js?v=20260926lich1'));
 assert(indexSource.includes('js/portrait-utils.js?v=20260926hoodback2'));
+assert(indexSource.includes('js/procedural-leg-animation.js?v=20260926hover1'));
+assert(indexSource.includes('js/combat/combat-config-loader.js?v=20260926hover1'));
 assert(pixelProbeSource.includes('window.HarlyaoLichCombat?.formatDebug?.()'), 'Pixel Probe must expose live lich diagnostics on mobile');
 assert(portraitSource.includes('const hoodBackLayers = []'), 'ragged hood rear layer must use the generic behind-head hood bucket');
 assert.match(portraitSource, /\(layer\.pos === 'back' \? hoodBackLayers : hoodLayers\)\.push/, 'hood compositor must route authored back layers separately from front layers');
@@ -240,6 +267,16 @@ assert.match(lichSource, /window\.Combat\?\.comboData\?\.\[LICH_CAST_COMBO_ID\]/
 assert.match(lichSource, /window\.Combat\?\.beginStagedAction/, 'lich abilities must use the existing staged Neutral→Windup→Strike attack timing');
 assert.match(lichSource, /rig\.placeHandWorld\('right', handPosition, handQuaternion\)/, 'lich procedural right hand must attach to the animated empty weapon object');
 assert.match(lichSource, /if \(ability === 'summon'\) summonMinion\(lich\);[\s\S]*else firePrimary\(lich, target\);/, 'both summon and primary spell abilities must fire from the reused attack strike phase');
+assert.match(proceduralLegSource, /function applyHoverPose\(side, dt\)/, 'procedural leg system must own a real two-bone hover pose rather than post-rotating feet');
+assert.match(proceduralLegSource, /bendDegX = -31[\s\S]*solveTwoBoneLeg/, 'hover pose must keep visibly flexed dangling knees through the shared leg solver');
+assert.match(proceduralLegSource, /function setHoverMode\(enabled\)[\s\S]*function isHoverMode\(\)/, 'procedural leg handles must expose explicit hover ownership');
+const suppressedIndex = proceduralLegSource.indexOf('if (suppressed) {', proceduralLegSource.indexOf('function update(dt, speedWorldUnitsPerSecond'));
+const hoverIndex = proceduralLegSource.indexOf('if (state.hoverEnabled) {', suppressedIndex);
+assert(suppressedIndex >= 0 && hoverIndex > suppressedIndex, 'explicit prone/death suppression must outrank active hover pose');
+assert.match(drunkProneSource, /const hoverMode = !!handle\.isHoverMode\?\.\(\)[\s\S]*effectiveSuppressed \|\| hoverMode/, 'bandit run gait must not overwrite dangling hover legs');
+assert.match(lichSource, /HOVER_HEIGHT_MODEL_FRACTION = 0\.58/, 'lich hover height must scale from rendered model height');
+assert.match(lichSource, /lich\.groundLift = baseGroundLift \+ lich\._lichHoverOffsetWorld/, 'hover must use existing render baseline without changing ground-plane AI coordinates');
+assert.match(lichSource, /!lich\.prone/, 'active hover must drop while a lich is prone');
 
 console.log('Harlyao Lich regression checks passed.');
 
