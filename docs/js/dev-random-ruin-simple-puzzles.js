@@ -535,14 +535,7 @@
     const sm=sampleSupport(cx,cz)||{y:Math.min(Number(pa.baseY)||0,Number(pb.baseY)||0)};
     const hazardLength=Math.max(1.5,separation-(axis==='x'?Math.min(pa.width,pb.width):Math.min(pa.depth,pb.depth)));
     const hazardWidth=Math.min(2.2,(axis==='x'?roomDepth:roomWidth)-2);
-    const hazard=new THREE.Mesh(
-      new THREE.BoxGeometry(axis==='x'?hazardLength:hazardWidth,.025,axis==='x'?hazardWidth:hazardLength),
-      makeBasic(0x5e2118,{transparent:true,opacity:.62})
-    );
-    hazard.name='dev_ruin_rope_hazard_'+room.id+(idSuffix?'_'+idSuffix:'');
-    hazard.position.set(cx,Number(sm.y)+.014,cz);
-    hazard.userData.devRandomRuinRopeHazard=true;
-    state.group.add(hazard);
+    const hazardY=Math.min(Number(sm.y)||0,Number(pa.baseY)||0,Number(pb.baseY)||0); // Logical fall/burn zone stays at/below the traversal floor; it is intentionally not rendered as a red debug slab in normal gameplay.
 
     const alongPlatformSize=axis==='x'?pa.width:pa.depth;
     const swingHorizontal=Math.max(.8,separation*.5-alongPlatformSize*.46);
@@ -552,7 +545,7 @@
     const anchorY=ceilingBase+wallHeight-.035;
     const bobRestY=topY+.72;
     const verticalDrop=anchorY-bobRestY;
-    if(verticalDrop<=.6){disposeObject(hazard);return null;}
+    if(verticalDrop<=.6)return null;
     const length=Math.hypot(swingHorizontal,verticalDrop),startAngle=Math.atan2(swingHorizontal,verticalDrop);
 
     const mount=naturalizeStone(new THREE.Mesh(new THREE.CylinderGeometry(.15,.11,.10,10),makeBasic(0x808080)));
@@ -576,7 +569,7 @@
       roomId:room.id,line,marker,mount,anchor:{x:cx,y:anchorY,z:cz},ceilingY:anchorY,
       yaw:Math.atan2(dirZ,dirX),length,maxLength:length+.55,angle:-startAngle,launchAngle:-startAngle,omega:0,
       attached:false,braking:false,startPlatform:pa,endPlatform:pb,
-      hazard:{mesh:hazard,cx,cz,length:hazardLength,width:hazardWidth,axis,lastBurnAt:-Infinity},
+      hazard:{mesh:null,cx,cz,y:hazardY,length:hazardLength,width:hazardWidth,axis,lastBurnAt:-Infinity},
       grabPoint,bob:null,
     };
     updateRopeVisual(rope);state.ropes.push(rope);return rope;
@@ -1403,14 +1396,22 @@
   }
 
   function updateCyclingElevators(dt) {
+    const player=playerWorld();
     for(const elevator of state.cyclingElevators){
+      const previousTopY=Number.isFinite(elevator.currentTopY)?elevator.currentTopY:elevator.topTopY; // Used to carry a player who was already standing on the platform before this frame's vertical movement.
+      const wasRiding=!!(player&&Math.abs(player.x-elevator.x)<=elevator.width*.5-.08&&Math.abs(player.z-elevator.z)<=elevator.depth*.5-.08&&Math.abs(player.y-previousTopY)<=.24);
       if(elevator.active){
         elevator.elapsed+=dt;
         const phase=(elevator.elapsed/elevator.cycleSeconds)*Math.PI*2;
         elevator.progress=(1-Math.cos(phase))*.5; // Smooth top→bottom→top loop with zero velocity at each stop.
       }
       const topY=elevator.topTopY+(elevator.bottomTopY-elevator.topTopY)*elevator.progress;
+      elevator.currentTopY=topY;
       elevator.mesh.position.y=topY-elevator.height*.5;
+      if(wasRiding&&Math.abs(topY-previousTopY)>.0001){
+        window.DevRandomRuin?.syncPlayerPresentationHeight?.(topY); // Vertical-only rider transfer stays in the canonical ruin elevation authority while X/Z remain ordinary player movement.
+      }
+      elevator.playerRiding=wasRiding;
     }
   }
 
@@ -1525,13 +1526,7 @@
     rope.omega+=(-ROPE_GRAVITY/Math.max(.4,rope.length))*Math.sin(rope.angle)*dt;
     rope.omega*=Math.exp(-.28*dt);
     rope.angle+=rope.omega*dt;
-    updateRopeVisual(rope);
-    if(state.flight)return;
-    const player=playerWorld();
-    if(!player)return;
-    const nearGrab=Math.hypot(player.x-rope.grabPoint.x,player.z-rope.grabPoint.z)<=ROPE_GRAB_RADIUS;
-    const nearBob=Math.hypot(player.x-rope.bob.x,player.z-rope.bob.z)<=ROPE_GRAB_RADIUS*.72;
-    if(nearGrab||nearBob)attachRope(rope);
+    updateRopeVisual(rope); // Idle ropes no longer auto-grab on proximity; the standard WorldPopupText interaction row owns discovery/input like NPCs, furniture, and doors.
   }
 
   function updateFlight(dt) {
@@ -1654,6 +1649,20 @@
   function getInteractionControls() {
     if(!state||!inRuin())return [];
     const controls=state.controls.slice();
+    for(const candidate of state.ropes){
+      if(candidate.attached||state.flight)continue;
+      controls.push({
+        kind:'ropeGrab',
+        object:candidate.marker,
+        promptRoot:candidate.marker,
+        point:candidate.grabPoint, // Interaction range is measured from the authored launch-side grab point while the floating popup remains visually anchored to the live swinging rope bob.
+        range:1.25,
+        priority:32,
+        touchIcon:'🪢',
+        label:'Grab Rope',
+        onPress:()=>attachRope(candidate),
+      });
+    }
     const rope=state.activeRope;
     if(rope){
       controls.push({
@@ -1713,7 +1722,7 @@
       lockDoors:state.lockDoors.map(door=>({id:door.id,roomId:door.roomId,open:door.targetOpen,progress:+door.progress.toFixed(3)})),
       canopies:state.canopies.map(canopy=>({id:canopy.id,roomId:canopy.roomId,roofY:+canopy.roofY.toFixed(3),width:+canopy.width.toFixed(3),depth:+canopy.depth.toFixed(3),occludesTarget:canopy.occludesTarget})),
       ceilingGlyphs:state.ceilingGlyphs.map(glyph=>({id:glyph.id,roomId:glyph.roomId,active:glyph.active,hitCount:glyph.hitCount})),
-      cyclingElevators:state.cyclingElevators.map(elevator=>({id:elevator.id,roomId:elevator.roomId,active:elevator.active,progress:+elevator.progress.toFixed(3),topY:+elevator.topTopY.toFixed(3),bottomY:+elevator.bottomTopY.toFixed(3)})),
+      cyclingElevators:state.cyclingElevators.map(elevator=>({id:elevator.id,roomId:elevator.roomId,active:elevator.active,progress:+elevator.progress.toFixed(3),topY:+elevator.topTopY.toFixed(3),bottomY:+elevator.bottomTopY.toFixed(3),currentY:+(elevator.currentTopY??elevator.topTopY).toFixed(3),playerRiding:!!elevator.playerRiding})),
       sarcophagi:state.sarcophagusModules.map(module=>({id:module.id,roomId:module.roomId,activated:module.activated,spawnCount:module.spawnCount,count:module.coffins.length,released:module.coffins.filter(coffin=>coffin.released).length})),
       sunkenRoomShells:state.sunkenRoomShells.map(module=>({id:module.id,roomId:module.roomId,floorY:+module.floorY.toFixed(3)})),
       ossuaryComposers:state.ossuaryComposers.map(module=>({id:module.id,roomId:module.roomId,entered:module.entered,completed:module.completed})),
