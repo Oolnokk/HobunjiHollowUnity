@@ -165,6 +165,76 @@
     return mesh;
   }
 
+  let modularProjectileHookInstalled=false; // One wrapper handles every reusable canopy/glyph module without each puzzle installing its own ranged-weapon seam.
+  let modularProjectileUpdateDepth=0; // Restricts modular segment tests to real ranged-projectile updates, matching the existing ruin glyph hook's authority.
+
+  function segmentBoxInterval(start,end,rawBox,radius=0) {
+    if(!rawBox)return null;
+    const box=rawBox.clone();box.expandByScalar(Math.max(0,Number(radius)||0));
+    let enter=0,exit=1;
+    for(const axis of ['x','y','z']){
+      const delta=end[axis]-start[axis],min=box.min[axis],max=box.max[axis];
+      if(Math.abs(delta)<1e-9){if(start[axis]<min||start[axis]>max)return null;continue;}
+      let a=(min-start[axis])/delta,b=(max-start[axis])/delta;if(a>b)[a,b]=[b,a];
+      enter=Math.max(enter,a);exit=Math.min(exit,b);if(enter>exit)return null;
+    }
+    return exit>=0&&enter<=1?{enter:Math.max(0,Math.min(1,enter)),exit:Math.max(0,Math.min(1,exit))}:null;
+  }
+
+  function modularProjectileHit(start,end,radius) {
+    if(!state||!inRuin())return null;
+    let nearest=null;
+    const consider=(object,kind,record)=>{
+      if(!object?.visible)return;
+      object.updateWorldMatrix?.(true,true);
+      const box=new THREE.Box3().setFromObject(object);
+      if(box.isEmpty())return;
+      const interval=segmentBoxInterval(start,end,box,Math.max(.02,Number(radius)||0));
+      if(!interval||(nearest&&interval.enter>=nearest.t))return;
+      nearest={t:interval.enter,object,kind,record};
+    };
+    for(const canopy of state.canopies)consider(canopy.slab,'canopy',canopy);
+    for(const glyph of state.ceilingGlyphs)if(!glyph.active)consider(glyph.mesh,'glyph',glyph);
+    return nearest;
+  }
+
+  function activateCeilingGlyph(glyph) {
+    if(!glyph||glyph.active)return false;
+    glyph.active=true;glyph.hitCount++;
+    glyph.material.color.setHex(0x8fe6ff);
+    deps?.showToast?.('Ceiling glyph struck.',true);
+    try{glyph.onActivate?.(glyph);}catch(error){console.warn('[Random Test Ruin] ceiling glyph activation failed',error);}
+    return true;
+  }
+
+  function installModularProjectileHook() {
+    if(modularProjectileHookInstalled)return true;
+    const ranged=window.RangedWeapons,cover=window.NearbyVolumeCollision;
+    if(!ranged?.update||!cover?.segmentHit)return false;
+    const nativeUpdate=ranged.update,nativeSegmentHit=cover.segmentHit;
+    ranged.update=function(...args){
+      modularProjectileUpdateDepth++;
+      try{return nativeUpdate.apply(this,args);}finally{modularProjectileUpdateDepth--;}
+    };
+    cover.segmentHit=function(start,end,radiusWorld=0){
+      const ordinary=nativeSegmentHit.call(this,start,end,radiusWorld);
+      if(modularProjectileUpdateDepth<=0||!state||!inRuin())return ordinary;
+      const modular=modularProjectileHit(start,end,radiusWorld);
+      if(!modular||(ordinary&&Number.isFinite(Number(ordinary.t))&&Number(ordinary.t)<=modular.t))return ordinary;
+      if(modular.kind==='glyph')activateCeilingGlyph(modular.record);
+      return {
+        t:modular.t,
+        distanceWorld:start.distanceTo?.(end)*modular.t||0,
+        object:modular.object,
+        kind:modular.kind==='glyph'?'ruinModularGlyph':'ruinStoneCanopy',
+        key:modular.record?.id||null,
+        point:start.clone?.().lerp?start.clone().lerp(end,modular.t):null,
+      };
+    };
+    modularProjectileHookInstalled=true;
+    return true;
+  }
+
   function recordModulePlacement(type, slotKind, slotId, extra = {}) {
     if(!state)return null;
     const record={type,slotKind,slotId:String(slotId||''),...extra}; // Runtime diagnostics use these records to prove compound puzzles are assembled from reusable pieces rather than one bespoke scene.
@@ -747,10 +817,69 @@
       post.position.set(x+dx,baseY+.85,z+dz);root.add(post);
     }
     state.group.add(root);
-    const module={id:'canopy-'+room.id,roomId:String(room.id),root,x,z,roofY,width,depth};
+    const module={id:'canopy-'+room.id,roomId:String(room.id),root,slab,x,z,roofY,width,depth};
     state.canopies.push(module);
     recordModulePlacement('stoneCanopy','room',module.id,{roomId:String(room.id)});
     return module;
+  }
+
+  function buildCeilingGlyphModule(context,room,anchor,options={}) {
+    const ceilingBase=Number(context.meta?.floorSurfaceY)||0,wallHeight=Number(context.meta?.wallHeight)||3;
+    const ceilingY=ceilingBase+wallHeight-.34;
+    const x=Number(anchor?.x),z=Number(anchor?.z);
+    if(!Number.isFinite(x)||!Number.isFinite(z))return null;
+    const material=makeBasic(0x466b70);
+    const mesh=new THREE.Mesh(new THREE.CylinderGeometry(.29,.29,.10,8),material);
+    mesh.rotation.x=Math.PI*.5; // Thin octagonal stone target faces horizontally into the room just below the ceiling.
+    mesh.position.set(x,ceilingY,z);
+    mesh.name='dev_ruin_modular_ceiling_glyph_'+room.id+'_'+state.ceilingGlyphs.length;
+    mesh.userData.devRandomRuinModularGlyph=true;
+    state.group.add(mesh);
+    const glyph={id:'ceiling-glyph-'+room.id+'-'+state.ceilingGlyphs.length,roomId:String(room.id),mesh,material,active:false,hitCount:0,onActivate:typeof options.onActivate==='function'?options.onActivate:null};
+    state.ceilingGlyphs.push(glyph);
+    recordModulePlacement('ceilingProjectileGlyph','ceiling',glyph.id,{roomId:String(room.id)});
+    return glyph;
+  }
+
+  function deepestSunkenRegionForRoom(context,room) {
+    return (context.meta?.plateauModel?.regions||[])
+      .filter(region=>region?.kind==='sunkenFloor'&&String(region.sourceRoomId)===String(room.id)&&Number(region.level)<0)
+      .sort((a,b)=>Number(a.level)-Number(b.level))[0]||null; // Most-negative tier is preferred so a cycling platform can expose a genuinely deep lower stop.
+  }
+
+  function buildCyclingElevatorModule(context,room,options={}) {
+    const region=options.region||deepestSunkenRegionForRoom(context,room);
+    if(!region)return null;
+    const cs=worldCellSize(context.meta),step=Math.abs(Number(context.meta?.plateauModel?.stepHeight)||.42);
+    const topFloorY=Number(context.meta?.floorSurfaceY)||0,lowerFloorY=topFloorY+Number(region.level)*step;
+    if(topFloorY-lowerFloorY<.65)return null;
+    const x=PAD+(Number(region.col)+Number(region.w)*.5)*cs,z=PAD+(Number(region.row)+Number(region.h)*.5)*cs;
+    const width=Math.max(1.5,Number(region.w)*cs-.16),depth=Math.max(1.5,Number(region.h)*cs-.16),height=.26;
+    const mesh=naturalizeStone(new THREE.Mesh(new THREE.BoxGeometry(width,height,depth),makeBasic(0x808080)));
+    mesh.name='dev_ruin_cycling_elevator_'+room.id;
+    const topTopY=topFloorY+.05,bottomTopY=lowerFloorY+.08;
+    mesh.position.set(x,topTopY-height*.5,z);state.group.add(mesh);
+    const module={
+      id:'cycling-elevator-'+room.id,roomId:String(room.id),mesh,x,z,width,depth,height,
+      topTopY,bottomTopY,progress:0,active:options.startActive===true,elapsed:0,cycleSeconds:Math.max(5,Number(options.cycleSeconds)||8),
+    };
+    const surfaceId=module.id+'-surface';
+    DS.registerSurface({
+      id:surfaceId,scope:SCOPE,
+      bounds:{minX:x-width*.5,maxX:x+width*.5,minZ:z-depth*.5,maxZ:z+depth*.5},
+      topY:()=>module.topTopY+(module.bottomTopY-module.topTopY)*module.progress,
+      enabled:()=>mesh.visible!==false,priority:24,
+    });
+    state.surfaceIds.add(surfaceId);
+    state.cyclingElevators.push(module);
+    recordModulePlacement('cyclingElevator','sunkenFloor',module.id,{roomId:String(room.id),depth:+(topFloorY-lowerFloorY).toFixed(3)});
+    return module;
+  }
+
+  function activateCyclingElevator(module) {
+    if(!module)return false;
+    module.active=true;module.elapsed=0;module.progress=0;
+    return true;
   }
 
   function sarcophagusPlacements(context, room) {
@@ -979,6 +1108,8 @@
       chordPlateSets:[],
       lockDoors:[],
       canopies:[],
+      ceilingGlyphs:[],
+      cyclingElevators:[],
       sarcophagusModules:[],
       ossuaryComposers:[],
       modulePlacements:[], // Every placed puzzle piece is recorded independently so compound sequences remain inspectable/recomposable.
@@ -995,6 +1126,7 @@
       buildSeed:Number(context.seed)||0,
     };
     buildCheckpoints(context);
+    installModularProjectileHook(); // Reusable ceiling glyphs and stone canopies share one projectile seam no matter which procedural composer places them.
     const rng=seededRng((Number(context.seed)||0)^0x7f4a7c15);
     const usedRooms=new Set();
     const usedHallways=new Set(); // The mandatory safe-path crossing claims one hallway so repeating wall traps do not overlap it.
@@ -1008,7 +1140,13 @@
       if(rope){
         recordModulePlacement('ropeTraverse','room',rope.roomId,{ceilingMounted:true});
         const ropeRoom=(context.meta?.rooms||[]).find(room=>String(room.id)===String(rope.roomId));
-        if(ropeRoom&&rng()<.65)buildStoneCanopyModule(context,ropeRoom,rope.startPlatform); // Canopy is its own module; this composer merely chooses to attach one to the rope's launch balcony.
+        const canopy=ropeRoom&&rng()<.65?buildStoneCanopyModule(context,ropeRoom,rope.startPlatform):null; // Canopy is its own module; this composer merely chooses to attach one to the rope's launch balcony.
+        const elevator=ropeRoom&&rng()<.45?buildCyclingElevatorModule(context,ropeRoom,{startActive:false,cycleSeconds:8}):null;
+        if(ropeRoom&&elevator){
+          const targetAnchor={x:elevator.x,z:elevator.z};
+          const glyph=buildCeilingGlyphModule(context,ropeRoom,targetAnchor,{onActivate:()=>activateCyclingElevator(elevator)});
+          if(glyph)recordModulePlacement('glyphElevatorComposer','room','glyph-elevator-'+rope.roomId,{roomId:String(rope.roomId),wires:['ceilingProjectileGlyph','cyclingElevator'],canopyOcclusion:!!canopy});
+        }
       }
     }
     const freeRooms=shuffle(usableRoomCandidates(context).filter(room=>!usedRooms.has(room.id)),rng);
@@ -1050,6 +1188,18 @@
         deps.showToast?.('Wrong pressure plate — Burning Health!',false);
       }
       grid.lastPlayerKey=key;
+    }
+  }
+
+  function updateCyclingElevators(dt) {
+    for(const elevator of state.cyclingElevators){
+      if(elevator.active){
+        elevator.elapsed+=dt;
+        const phase=(elevator.elapsed/elevator.cycleSeconds)*Math.PI*2;
+        elevator.progress=(1-Math.cos(phase))*.5; // Smooth top→bottom→top loop with zero velocity at each stop.
+      }
+      const topY=elevator.topTopY+(elevator.bottomTopY-elevator.topTopY)*elevator.progress;
+      elevator.mesh.position.y=topY-elevator.height*.5;
     }
   }
 
@@ -1276,6 +1426,7 @@
 
     updateSafeGrids(now);
     updateChordPlateSets();
+    updateCyclingElevators(dt);
     updateLockDoors(dt);
     updateSarcophagusModules(dt);
     updateOssuaryComposers();
@@ -1346,6 +1497,8 @@
       chordPlateSets:state.chordPlateSets.map(set=>({id:set.id,slotKind:set.slotKind,played:set.plates.filter(plate=>plate.played).length,solved:set.solved,solveCount:set.solveCount,pressCounts:set.plates.map(plate=>plate.pressCount)})),
       lockDoors:state.lockDoors.map(door=>({id:door.id,roomId:door.roomId,open:door.targetOpen,progress:+door.progress.toFixed(3)})),
       canopies:state.canopies.map(canopy=>({id:canopy.id,roomId:canopy.roomId,roofY:+canopy.roofY.toFixed(3)})),
+      ceilingGlyphs:state.ceilingGlyphs.map(glyph=>({id:glyph.id,roomId:glyph.roomId,active:glyph.active,hitCount:glyph.hitCount})),
+      cyclingElevators:state.cyclingElevators.map(elevator=>({id:elevator.id,roomId:elevator.roomId,active:elevator.active,progress:+elevator.progress.toFixed(3),topY:+elevator.topTopY.toFixed(3),bottomY:+elevator.bottomTopY.toFixed(3)})),
       sarcophagi:state.sarcophagusModules.map(module=>({id:module.id,roomId:module.roomId,activated:module.activated,spawnCount:module.spawnCount,count:module.coffins.length})),
       ossuaryComposers:state.ossuaryComposers.map(module=>({id:module.id,roomId:module.roomId,entered:module.entered,completed:module.completed})),
       modules:state.modulePlacements.map(module=>({...module})),
