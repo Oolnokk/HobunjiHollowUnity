@@ -806,7 +806,7 @@
   }
 
   function updateEruptions(dt) {
-    for (const erupt of [...eruptions]) {
+    for (const erupt of eruptions) { // Deleting the current Set entry is safe during iteration; avoid allocating a fresh eruption array every frame.
       if (!isArena() || !isLiveActor(erupt.owner)) { disposeHronalEruption(erupt); continue; }
       if (!erupt.erupted) {
         erupt.ageS += dt;
@@ -1798,6 +1798,7 @@
       projectiles: projectiles.size,
       tothalFogOrbs: [...projectiles].filter(projectile => projectile.type === 'tothal').length,
       eruptions: eruptions.size,
+      hronalStoneInstances: [...eruptions].reduce((sum, erupt) => sum + (erupt.particles?.length || 0), 0), // On-demand diagnostic proves the bounded instanced stone load across overlapping warnings.
       puddles: puddles.size, totalPuddles, totalSummons,
       playerEntranced, playerCommand: playerCommandState?.source?._lichCommand || null,
       playerEntrancerId: playerCommandState?.source?.id || null,
