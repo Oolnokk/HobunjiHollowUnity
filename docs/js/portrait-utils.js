@@ -1197,13 +1197,6 @@ function _cloneBehindLayer(layer, group, gender) {
   return _behindFlippedLayer({ ...layer, url });
 }
 
-// Overwear intentionally keeps its ordinary X transform in rear view so the
-// later whole-backplane mirror flips it sideways instead of being cancelled.
-function _cloneMirroredBehindOverwearLayer(layer, group, gender) {
-  if (!layer) return layer;
-  return { ...layer, url: _getBehindLayerUrl(layer, group, gender) };
-}
-
 // A layer's paletteColorKey normally selects a sub-slot of its OWN group's
 // dye (e.g. a hood's "trim" role -> `${group.tintSlot}_B`). Two reserved keys
 // opt out of that entirely instead of naming a sub-slot:
@@ -1414,14 +1407,11 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       }
     };
     [
-      preBackLayers, torsoClothingLayers, sideLeftLayers,
+      preBackLayers, torsoClothingLayers, overwearLayers, sideLeftLayers,
       rightSideHairLayers, facialHairLayers, frontHairLayers, eyesLayers,
       elevatedEyeAccessoryLayers, hoodLayers, pauldronLayers, hatUnderLayers,
       hatOverLayers,
     ].forEach(useBehindLayers);
-    for (const entry of overwearLayers) {
-      entry.layer = _cloneMirroredBehindOverwearLayer(entry.layer, entry.group, gender);
-    }
     // The base body (arms/torso) needs the same pre-flip as every cosmetic
     // above -- these aren't cosmetics so there's no dedicated back art to look
     // up, just the orientation compensation via _behindFlippedLayer directly.
