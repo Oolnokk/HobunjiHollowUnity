@@ -1381,6 +1381,29 @@
     #entrancedCommandBanner.flee .entranced-command-action { color: var(--danger); }
     #entrancedCommandBanner.approach .entranced-command-action { color: var(--accent); }
 
+    #entrancedCommandEdgeAura {
+      position: fixed; inset: 0;
+      z-index: 67;
+      pointer-events: none;
+      visibility: hidden; opacity: 0;
+      color: transparent;
+      box-shadow:
+        inset 0 0 18px 5px currentColor,
+        inset 0 0 72px 30px currentColor;
+      transition: opacity .12s ease, visibility .12s step-end;
+    }
+    #entrancedCommandEdgeAura.approach { color: var(--accent); }
+    #entrancedCommandEdgeAura.flee { color: var(--danger); }
+    #entrancedCommandEdgeAura.visible {
+      visibility: visible; opacity: .52;
+      transition: opacity .12s ease, visibility 0s;
+      animation: entranced-command-edge-pulse 1s ease-in-out infinite;
+    }
+    @keyframes entranced-command-edge-pulse {
+      0%, 100% { opacity: .42; }
+      48% { opacity: .68; }
+    }
+
     /* ── Contextual action prompt (bottom-center) ────────────────
        Device-aware "press X to do Y" prompt, shared across the game (not
        fishing-specific) — see showActionPrompt/hideActionPrompt in game.js.
