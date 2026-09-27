@@ -190,6 +190,7 @@ const made = await api.makeEntity({ type: 'hronal', tier: 2, x: 10, y: 20, gende
 assert(made && capturedMakeArgs, 'arena lich should delegate to shared humanoid constructor');
 assert.equal(capturedMakeArgs[5].enemyClass, 'harlyao-lich');
 assert.equal(capturedMakeArgs[5].rosterOverride.appliedDyes.HOOD, capturedMakeArgs[5].rosterOverride.appliedDyes.CLOTH);
+assert.equal(capturedMakeArgs[5].defOverride.weaponKey, 'pickshovel_nativeCopper', 'lich constructor must use the existing Light Weapon reference definition for cast poses');
 
 const resourceContext = vm.createContext({ window: {}, console, performance: { now: () => 1000 }, Math, Number, String, Boolean, Object, Array, Set, Map, WeakMap, JSON });
 vm.runInContext(resourceSource, resourceContext, { filename: 'resource-system.js' });
@@ -206,7 +207,7 @@ for (const key of ['tothal', 'hronal', 'kanthic']) {
   assert(devSpawnerSource.includes(`harlyao-lich:${key}`), `Testing Arena must expose ${key} lich button`);
 }
 assert.match(devSpawnerSource, /startsWith\('harlyao-lich:'\)/);
-assert(indexSource.includes('js/combat/combat-lich.js?v=20260926lich3'));
+assert(indexSource.includes('js/combat/combat-lich.js?v=20260926lich4'));
 assert(indexSource.includes('js/combat/resource-system.js?v=20260926lich1'));
 assert(indexSource.includes('js/pixel-probe.js?v=20260926lich1'));
 assert(indexSource.includes('js/portrait-utils.js?v=20260926hoodback2'));
@@ -214,9 +215,12 @@ assert(pixelProbeSource.includes('window.HarlyaoLichCombat?.formatDebug?.()'), '
 assert(portraitSource.includes('const hoodBackLayers = []'), 'ragged hood rear layer must use the generic behind-head hood bucket');
 assert.match(portraitSource, /\(layer\.pos === 'back' \? hoodBackLayers : hoodLayers\)\.push/, 'hood compositor must route authored back layers separately from front layers');
 assert(portraitSource.includes('if (hoodBackLayers.length) hoodLayers.length = 0'), 'ragged hood rear view must use authored rear cloth without overlaying the front opening');
-assert(indexSource.includes('style.css?v=20260926entranced1'));
+assert(indexSource.includes('style.css?v=20260926entranced2'));
 assert(styleSource.includes('#entrancedCommandBanner.visible'), 'Entranced command must use the shared stylesheet instead of module-local system-font debug styling');
 assert(styleSource.includes("font-family: 'KhymeryyanRomanLetters+Numbers'"), 'Entranced command must use the game HUD font');
+assert(styleSource.includes('font-size: 24px'), 'Entranced APPROACH/FLEE action text must be twice the prior 12px size');
+assert(styleSource.includes('font-size: 14px'), 'Entranced condition label must be twice the prior 7px size');
+assert.match(styleSource, /#entrancedCommandBanner \{[\s\S]*background: transparent;[\s\S]*border: 0;/, 'Entranced command must have no visible container');
 assert.match(lichSource, /LUNGE_RING_REFERENCE_OUTER_RADIUS = 0\.46/, 'controller marker reference radius must stay aligned with the canonical game.js lunge stamp');
 assert.match(lichSource, /LUNGE_RING_REFERENCE_THICKNESS = 0\.14/, 'controller marker reference thickness must stay aligned with the canonical game.js lunge stamp');
 assert.match(lichSource, /ENTRANCER_RING_OUTER_RADIUS = LUNGE_RING_REFERENCE_OUTER_RADIUS \* 2/, 'controller marker must be twice the lunge-ring diameter scale');
@@ -226,6 +230,15 @@ assert.match(lichSource, /new THREE\.RingGeometry\(inner, outer, 24\)/, 'control
 assert.match(lichSource, /blending: THREE\.AdditiveBlending, fog: false/, 'controller marker must use the same additive fog-free material language as lunge stamps');
 assert.match(lichSource, /player\?_entrancedCommandState|_entrancedCommandState\?\.source/, 'controller marker must resolve from the latest referential Entranced source');
 assert.match(lichSource, /source\.lichType !== 'kanthic'/, 'only the controlling Kanthic lich receives the Entranced owner marker');
+assert.match(lichSource, /AuthoredFurniture[\s\S]{0,700}createEmitterVisual/, 'controlling Kanthic must use the existing authored particle-emitter renderer for its body-height aura');
+assert.match(lichSource, /id: 'entranced_controller_fire'[\s\S]{0,500}rate: 92[\s\S]{0,300}colorA: colorCssHex\(bright\)[\s\S]{0,100}colorB: colorCssHex\(color\)/, 'Entranced aura must be a large color-coded fire emitter');
+assert.match(lichSource, /LICH_CAST_WEAPON_KEY = 'pickshovel_nativeCopper'/, 'lich casting must reference an existing Light Weapon definition');
+assert.match(lichSource, /LICH_CAST_COMBO_ID = 'pokeCombo'/, 'lich casting must reuse the existing light-weapon thrust combo');
+assert.match(lichSource, /socket\.name = 'lich_empty_light_weapon'/, 'visible reference weapon geometry must be replaced with an empty held weapon object');
+assert.match(lichSource, /window\.Combat\?\.comboData\?\.\[LICH_CAST_COMBO_ID\]/, 'lich casts must read the existing player attack animation steps rather than a bespoke pose');
+assert.match(lichSource, /window\.Combat\?\.beginStagedAction/, 'lich abilities must use the existing staged Neutral→Windup→Strike attack timing');
+assert.match(lichSource, /rig\.placeHandWorld\('right', handPosition, handQuaternion\)/, 'lich procedural right hand must attach to the animated empty weapon object');
+assert.match(lichSource, /if \(ability === 'summon'\) summonMinion\(lich\);[\s\S]*else firePrimary\(lich, target\);/, 'both summon and primary spell abilities must fire from the reused attack strike phase');
 
 console.log('Harlyao Lich regression checks passed.');
 
