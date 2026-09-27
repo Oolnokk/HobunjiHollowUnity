@@ -92,6 +92,7 @@
     setClaims,
     clearClaims,
     isClaimed,
+    hasClaim:isClaimed, // Backward-compatible semantic used by early selector arbitration in game.js; keeps potion/ammo/item selectors from pre-empting a visible world interaction.
     claimFor,
     dispatch,
     snapshot,
