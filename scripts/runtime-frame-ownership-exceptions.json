@@ -15,7 +15,7 @@
     "function": "loadBuildingScene",
     "reason": "A chained double requestAnimationFrame forces the Den/cavern loading label to actually paint before a long synchronous carve starts; it resolves once and never reschedules.",
     "migrationStage": "not-planned",
-    "line": 13318
+    "line": 13436
   },
   {
     "file": "docs/game.js",
@@ -24,7 +24,7 @@
     "function": "runMove",
     "reason": "Steps a previewed cutscene actor toward its move target every frame and stops rescheduling once advanceActorToward reports arrival or the preview's running flag clears.",
     "migrationStage": "not-planned",
-    "line": 30066
+    "line": 30132
   },
   {
     "file": "docs/game.js",
