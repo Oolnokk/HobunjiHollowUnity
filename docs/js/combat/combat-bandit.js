@@ -1765,6 +1765,13 @@
   }
 
   function updateBanditToolMesh(c) {
+    const handDriverRoot = c?.avatarRef?.handRigAvatarRoot; // Final pre-render hand driver reads this live holder/key selection after ordinary bandit pose logic decides melee vs ranged.
+    if (handDriverRoot?.userData) {
+      const useRanged = !!c._rangedMode && !!c._banditRangedToolHolder;
+      handDriverRoot.userData.proceduralHandToolHolder = useRanged ? c._banditRangedToolHolder : c._banditToolHolder;
+      handDriverRoot.userData.proceduralHandToolKey = useRanged ? c.def?.rangedWeaponKey : c.def?.weaponKey;
+      handDriverRoot.userData.proceduralHandGripContext = useRanged ? 'ranged' : 'melee';
+    }
     const holder = c._banditToolHolder;
     if (!holder) return;
     if (c._rangedMode) {
@@ -2033,6 +2040,12 @@
     if (!banditToolHolder) window.__farmLog?.(`[bandits] tool holder failed to build for "${def.weaponKey}" -- toolTextures entry missing? (fallback: bandit renders unarmed)`, 'wildlife');
     const banditRangedToolHolder = def.rangedWeaponKey ? makeBanditToolHolder(targetScene, def.rangedWeaponKey) : null;
     if (banditRangedToolHolder) banditRangedToolHolder.visible = false;
+    const handDriverRoot = avatarRef.handRigAvatarRoot; // Original PNGPlaneAvatar root retained solely as the shared procedural-hand driver's identity/ownership record.
+    if (handDriverRoot?.userData) {
+      handDriverRoot.userData.proceduralHandToolHolder = banditToolHolder || null;
+      handDriverRoot.userData.proceduralHandToolKey = def.weaponKey || null;
+      handDriverRoot.userData.proceduralHandGripContext = 'melee';
+    }
 
     const groundShadow = deps.makeCharacterGroundShadow('bandit_ground_shadow');
     const shadowRadii = deps.creatureGroundShadowRadii(def);
