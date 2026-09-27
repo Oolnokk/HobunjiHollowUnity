@@ -201,8 +201,9 @@ const windowStub = {
   Combat: {
     init: focusLikeCombatInit,
     deps: null,
-    meleeLungeProfile(distancePx, pitch, hopUnits) {
-      return { distancePx, pitch, hopUnits };
+    meleeLungeProfile(distancePx, pitch, hopUnits, lungeHeightUnits, pitchDistanceResistance, directFlightStrength, inRangeAirAssist) {
+      windowStub._lastProfile = { distancePx, pitch, hopUnits, lungeHeightUnits, pitchDistanceResistance, directFlightStrength, inRangeAirAssist };
+      return { distancePx, pitch, hopUnits, lungeHeightUnits, pitchDistanceResistance, directFlightStrength, inRangeAirAssist };
     },
   },
 };
@@ -287,6 +288,10 @@ assert(Math.abs(player.lungeAimPitch - Math.atan2(1.6, 9)) < 1e-9,
   'lunge pitch uses verticality from its real origin to the shared point');
 assert.equal(player.lungeDistancePx, 128, 'camera authority does not change authored lunge distance');
 assert.equal(player.lungeHopUnits, 0.3, 'camera authority preserves authored lunge hop budget');
+assert.equal(windowStub._lastProfile.pitchDistanceResistance, 1,
+  'forward/upward camera-authored lunge bypasses pitch grounding without consulting target/ledge state');
+assert.equal(windowStub._lastProfile.inRangeAirAssist, true,
+  'forward/upward camera-authored lunge requests airborne assist purely from aim pitch');
 
 const debug = windowStub.HobunjiCombatCameraAlignment.debugSnapshot();
 assert.equal(debug.rangedInitWrapped, true);
