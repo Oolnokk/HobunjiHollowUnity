@@ -1,0 +1,37 @@
+name: Regression suite
+
+# One workflow for every scripts/test-*.js check (replaces the ~75 per-feature
+# workflows that each ran a handful of them). The whole fast suite takes ~10s,
+# so it isn't path-filtered. Browser smoke tests stay in smoke-dev-random-ruin-*.yml.
+on:
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'scripts/**'
+      - '.github/workflows/regression-suite.yml'
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax check shipped scripts
+        run: |
+          set -e
+          for f in docs/game.js docs/js/*.js; do node --check "$f"; done
+      - name: Validate JSON manifests
+        run: |
+          node -e "JSON.parse(require('fs').readFileSync('scripts/runtime-frame-ownership-exceptions.json', 'utf8'))"
+          node -e "JSON.parse(require('fs').readFileSync('docs/config/loot/loot-pools.json', 'utf8'))"
+      - name: Regression tests
+        # Slow tests only run on main / manual dispatch, not on every PR push.
+        run: node scripts/run-tests.js ${{ github.event_name != 'pull_request' && '--all' || '' }}
