@@ -1608,12 +1608,20 @@
   function debugSnapshot() {
     const liches = [...(deps?.hostileObjects || [])].filter(actor => actor?.enemyClass === CLASS_ID && actor.health > 0); // Live arena lich list used for mobile diagnostics.
     const playerEntranced = deps?.player ? (window.ResourceSystem?.getAffliction?.(deps.player, 'entrancedHealth') || 0) : 0; // Current player buildup for one-line verification.
+    const playerCommandState = deps?.player?._entrancedCommandState || null; // Used to expose countdown/action bookkeeping without desktop devtools.
+    const grace = entrancedGraceDisplay(playerCommandState);
     return {
       classId: CLASS_ID, arenaOnly: ARENA_ID, wrappersInstalled,
       activeLiches: liches.map(lich => ({ id: lich.id, type: lich.lichType, dye: lich.lichDyeId, resolvedDyes: lich.avatarRef?.resolvedRosterDyes || null, command: lich._lichCommand, casting: lich._lichCastingAbility || null, hovering: !!lich.avatarRef?.legs?.isHoverMode?.(), hoverOffset: Number(lich._lichHoverOffsetWorld) || 0, handRig: !!handRigForLich(lich), emptyLightWeapon: !!lich._lichCastWeaponSocket, primaryCd: lich._lichPrimaryCooldownS, summonCd: lich._lichSummonCooldownS, summons: [...(lich._lichSummons || [])].filter(isLiveActor).length })),
-      projectiles: projectiles.size, puddles: puddles.size, totalPuddles, totalSummons,
-      playerEntranced, playerCommand: deps?.player?._entrancedCommandState?.source?._lichCommand || null,
-      playerEntrancerId: deps?.player?._entrancedCommandState?.source?.id || null,
+      projectiles: projectiles.size,
+      tothalFogOrbs: [...projectiles].filter(projectile => projectile.type === 'tothal').length,
+      eruptions: eruptions.size,
+      puddles: puddles.size, totalPuddles, totalSummons,
+      playerEntranced, playerCommand: playerCommandState?.source?._lichCommand || null,
+      playerEntrancerId: playerCommandState?.source?.id || null,
+      playerCommandGrace: grace ? { phase: grace.phase, countdown: grace.countdown, remainingMs: Math.max(0, playerCommandState.graceUntil - performance.now()) } : null,
+      playerEntrancedManeuver: playerCommandState?.activeManeuver?.kind || playerCommandState?.suppressManeuverUntilEnd || null,
+      liveEntrancedApplicators: liveEntrancedApplicators().length,
       entrancerMarker: entrancerMarkerSource ? { sourceId: entrancerMarkerSource.id || null, ringVisible: !!entrancerMarker?.visible, auraVisible: !!entrancerAuraVisual, auraCommand: entrancerAuraCommand, behindCamera: entrancerBehindCamera } : null,
       playerGooSlow: deps?.player?._kanthicGooSlow ? { stacks: deps.player._kanthicGooSlow.stacks, remainingMs: Math.max(0, deps.player._kanthicGooSlow.until - performance.now()) } : null,
       lastEvent,
@@ -1623,14 +1631,14 @@
   window.HarlyaoLichCombat = {
     CLASS_ID, ARENA_ID, TYPE_ORDER, TYPE_DEFS,
     installWrappers, makeEntity, rosterFor, rollDye,
-    updateLichAI, applyEntranced, addGooSlow, makeGasolinePuddle,
+    updateLichAI, applyEntranced, addGooSlow, makeGasolinePuddle, makeEruptingEarth,
     debugSnapshot,
     formatDebug() {
       const d = debugSnapshot(); // Compact status line intended for Pixel Probe/mobile-copyable diagnostics.
       const hover = d.activeLiches.filter(lich => lich.hovering).map(lich => `${lich.id || lich.type}:${lich.hoverOffset.toFixed?.(2) || lich.hoverOffset}`).join(',') || '-'; // Compact mobile-readable proof that active liches are using airborne presentation.
       const hands = d.activeLiches.map(lich => `${lich.id || lich.type}:${lich.handRig ? 'hands' : 'NO-HANDS'}`).join(',') || '-'; // Exposes the exact rig-attachment failure class without requiring desktop devtools.
       const dyes = d.activeLiches.map(lich => `${lich.id || lich.type}:${Object.entries(lich.resolvedDyes || {}).map(([slot, rec]) => `${slot}=${rec?.dyeId || '?'}`).join('+') || 'NO-DYES'}`).join(',') || '-'; // Confirms world-raster dye reconciliation independently from loot metadata.
-      return `Harlyao Liches: live=${d.activeLiches.length} hover=${hover} hands=${hands} dyes=${dyes} projectiles=${d.projectiles} puddles=${d.puddles} summons=${d.totalSummons} entranced=${d.playerEntranced.toFixed?.(1) || d.playerEntranced} command=${d.playerCommand || '-'} controller=${d.playerEntrancerId || '-'} marker=${d.entrancerMarker?.ringVisible ? 'ring' : '-'}+${d.entrancerMarker?.auraVisible ? `aura:${d.entrancerMarker.auraCommand || '?'}` : '-'} edge=${d.entrancerMarker?.behindCamera ? 'behind' : '-'} goo=${d.playerGooSlow?.stacks || 0} last=${d.lastEvent}`;
+      return `Harlyao Liches: live=${d.activeLiches.length} hover=${hover} hands=${hands} dyes=${dyes} projectiles=${d.projectiles}/fog=${d.tothalFogOrbs} earth=${d.eruptions} puddles=${d.puddles} summons=${d.totalSummons} entranced=${d.playerEntranced.toFixed?.(1) || d.playerEntranced} command=${d.playerCommand || '-'} grace=${d.playerCommandGrace ? (d.playerCommandGrace.countdown || d.playerCommandGrace.phase) : '-'} move=${d.playerEntrancedManeuver || '-'} appliers=${d.liveEntrancedApplicators} controller=${d.playerEntrancerId || '-'} marker=${d.entrancerMarker?.ringVisible ? 'ring' : '-'}+${d.entrancerMarker?.auraVisible ? `aura:${d.entrancerMarker.auraCommand || '?'}` : '-'} edge=${d.entrancerMarker?.behindCamera ? 'behind' : '-'} goo=${d.playerGooSlow?.stacks || 0} last=${d.lastEvent}`;
     },
   };
   window.__lichDebug = { snapshot: debugSnapshot }; // Console-independent API also consumed by the existing mobile debug surfaces/tests.
