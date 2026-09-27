@@ -44,61 +44,22 @@
   let lastGenerationAudit = null; // Retains rejected-seed diagnostics even when no ruin is ultimately entered.
   let darknessSettings = null; // Cached test-only lighting controls read by CloudForestFog at overlay draw time.
   let frameLastMs = performance.now();
-  const RUIN_ELEVATION_CHANNEL = 'devRandomRuinElevation'; // External-only render translation keeps held tools and shoulder pets on the same ruin floor as the physically elevated player root.
-  let lastPresentationElevation = 0; // Used by the mobile/debug snapshot to expose the exact multi-level presentation height currently being applied.
+  let lastPresentationElevation = null; // Used as the ruin's authoritative stand height consumed by the normal game.js player/body/attachment render path.
 
   function clearRuinPresentationHeight() {
-    window.PlayerBodyTransformComposer?.clearChannel?.(RUIN_ELEVATION_CHANNEL);
-    lastPresentationElevation = 0;
+    lastPresentationElevation = null;
   }
 
   function syncRuinPresentationHeight(worldY) {
-    if (!deps?.player || !deps?.TILE) return false;
-    const elevation = Number.isFinite(Number(worldY)) ? Number(worldY) : 0;
-    const x = (Number(deps.player.x) || 0) / deps.TILE;
-    const z = (Number(deps.player.y) || 0) / deps.TILE;
+    const elevation = Number(worldY); // Used to publish one dynamic-floor height without directly repositioning any player presentation object.
+    if (!Number.isFinite(elevation)) return false;
     lastPresentationElevation = elevation;
-
-    if (deps.playerMesh?.position) {
-      deps.playerMesh.position.x = x;
-      deps.playerMesh.position.y = elevation;
-      deps.playerMesh.position.z = z;
-    }
-
-    const shadow = deps.playerGroundShadow;
-    if (shadow?.position) {
-      const shadowOffset = Number(deps.characterGroundShadowSurfaceOffset?.()) || 0;
-      shadow.position.set(x, elevation + shadowOffset, z);
-    }
-
-    const scene = deps.getActiveScene?.() || GridTileAccessors.getActiveScene?.() || null;
-    const ring = scene
-      ? (window.ResourceRings?.updateRingHud?.(deps.player, scene, .6, { isTarget:false }) || deps.player._ringHud)
-      : deps.player._ringHud;
-    if (ring?.position) {
-      if (scene && ring.parent !== scene) {
-        ring.parent?.remove?.(ring);
-        scene.add(ring);
-      }
-      ring.position.set(x, elevation, z);
-    }
-
-    const composer = window.PlayerBodyTransformComposer;
-    if (composer?.setChannel) {
-      if (Math.abs(elevation) > 1e-8) {
-        composer.setChannel(RUIN_ELEVATION_CHANNEL, {
-          priority:55,
-          mode:'additive',
-          translationMode:'additive',
-          includePlayer:false,
-          includeExternal:true,
-          translation:{ x:0, y:elevation, z:0 },
-        });
-      } else {
-        composer.clearChannel?.(RUIN_ELEVATION_CHANNEL);
-      }
-    }
     return true;
+  }
+
+  function getPlayerSupportY() {
+    if (!ruin || deps?.getCurrentArea?.() !== MAP_ID) return null;
+    return Number.isFinite(lastPresentationElevation) ? lastPresentationElevation : null;
   }
 
   function setPlayerWorldPoint(point, options = {}) {
@@ -133,19 +94,14 @@
   }
 
   function presentationSnapshot() {
-    const ring = deps?.player?._ringHud || null;
-    const channel = window.PlayerBodyTransformComposer?.getDebug?.().channels?.find?.(entry => entry.name === RUIN_ELEVATION_CHANNEL) || null;
+    const ring = deps?.player?._ringHud || null; // Used to expose resource-ring parity in the existing mobile/debug ruin snapshot.
     return {
       elevation:lastPresentationElevation,
       bodyY:Number(deps?.playerMesh?.position?.y) || 0,
       shadowY:Number(deps?.playerGroundShadow?.position?.y) || 0,
       resourceRingY:ring?.position ? Number(ring.position.y) || 0 : null,
       resourceRingVisible:ring?.visible ?? null,
-      externalElevationChannel:channel ? {
-        includePlayer:channel.includePlayer,
-        includeExternal:channel.includeExternal,
-        y:Number(channel.translation?.y) || 0,
-      } : null,
+      renderAuthority:'game-updatePlayerMesh',
     };
   }
 
@@ -756,7 +712,12 @@
   function reconcilePlayer(now){
     if(window.DevRandomRuinSimplePuzzles?.ownsPlayerMotion?.())return;
     if(deps.player?.climbing){
-      syncRuinPresentationHeight(Number(deps.player.climbSurfaceY)||ruin.supportY); // Let ClimbSystem own ladder movement while the ruin authority only follows its vertical presentation.
+      const climbY=Number(deps.player.climbSurfaceY); // Used to advance the ruin's accepted-height baseline during the shared ladder animation so landing is not rejected as an oversized step.
+      if(Number.isFinite(climbY)){
+        ruin.supportY=climbY;
+        ruin.lastAcceptedPx={x:deps.player.x,y:deps.player.y};
+        syncRuinPresentationHeight(climbY);
+      }
       return;
     }
     if(ruin.falling){
@@ -863,5 +824,5 @@
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',installSettingsButton,{once:true});else installSettingsButton();
 
-  window.DevRandomRuin=Object.freeze({generate,reroll:()=>generate(randomSeed()),clear:()=>{if(deps?.getCurrentArea?.()===MAP_ID)leaveRuin();else clearRuntime(true);},leave:leaveRuin,getInteractionControls:()=>ruin?ruin.controls.map(control=>({...control,range:Number.isFinite(Number(control.range))?Number(control.range):CONTROL_RANGE})):[],getRuntimeContext:()=>ruin?{scene:ruin.scene,root:ruin.localeRoot,meta:ruin.meta,spawn:{...ruin.spawn},cols:ruin.cols,rows:ruin.rows,seed:ruin.seed,puzzleOptions:{...ruin.puzzleOptions}}:null,getPuzzleGenerationOptions:()=>readPuzzleGenerationOptions(),setPuzzleGenerationOptions:options=>savePuzzleGenerationOptions(options),getOccupancySnapshot:()=>ruin?.occupancy?.snapshot?.()||null,getLastSolvabilityAudit:()=>lastGenerationAudit?JSON.parse(JSON.stringify(lastGenerationAudit)):null,getDarknessSettings,setPlayerWorldPoint,syncPlayerPresentationHeight:syncRuinPresentationHeight,getState:()=>ruin?{mapId:MAP_ID,seed:ruin.seed,requestedSeed:ruin.requestedSeed,sourceSeed:ruin.sourceSeed,tileScale:RUIN_TILE_SCALE,wallStyle:ruin.wallStyle||null,darkness:getDarknessSettings(),materialStats:{cliffMeshes:ruin.denMaterialMeshCount||0,converted:ruin.unlitConvertedMaterialCount||0,remainingLit:ruin.remainingLitMaterialCount||0,legacyStone:ruin.legacyStoneMaterialCount||0,totalMeshes:ruin.totalRuinMeshCount||0},rooms:ruin.meta.rooms?.length||0,controls:ruin.controls.length,mechanisms:[...ruin.mechanisms.values()].map(m=>({id:m.id,type:m.type,progress:m.progress,target:m.target})),puzzleOptions:ruin.puzzleOptions,puzzleGeneration:ruin.puzzleGeneration,solvability:ruin.solvability,generationAttempt:ruin.generationAttempt,presentation:presentationSnapshot(),occupancy:ruin.occupancy?.snapshot?.(),dynamic:DS.debugSnapshot()}:null});
+  window.DevRandomRuin=Object.freeze({generate,reroll:()=>generate(randomSeed()),clear:()=>{if(deps?.getCurrentArea?.()===MAP_ID)leaveRuin();else clearRuntime(true);},leave:leaveRuin,getInteractionControls:()=>ruin?ruin.controls.map(control=>({...control,range:Number.isFinite(Number(control.range))?Number(control.range):CONTROL_RANGE})):[],getRuntimeContext:()=>ruin?{scene:ruin.scene,root:ruin.localeRoot,meta:ruin.meta,spawn:{...ruin.spawn},cols:ruin.cols,rows:ruin.rows,seed:ruin.seed,puzzleOptions:{...ruin.puzzleOptions}}:null,getPuzzleGenerationOptions:()=>readPuzzleGenerationOptions(),setPuzzleGenerationOptions:options=>savePuzzleGenerationOptions(options),getOccupancySnapshot:()=>ruin?.occupancy?.snapshot?.()||null,getLastSolvabilityAudit:()=>lastGenerationAudit?JSON.parse(JSON.stringify(lastGenerationAudit)):null,getDarknessSettings,setPlayerWorldPoint,getPlayerSupportY,syncPlayerPresentationHeight:syncRuinPresentationHeight,getState:()=>ruin?{mapId:MAP_ID,seed:ruin.seed,requestedSeed:ruin.requestedSeed,sourceSeed:ruin.sourceSeed,tileScale:RUIN_TILE_SCALE,wallStyle:ruin.wallStyle||null,darkness:getDarknessSettings(),materialStats:{cliffMeshes:ruin.denMaterialMeshCount||0,converted:ruin.unlitConvertedMaterialCount||0,remainingLit:ruin.remainingLitMaterialCount||0,legacyStone:ruin.legacyStoneMaterialCount||0,totalMeshes:ruin.totalRuinMeshCount||0},rooms:ruin.meta.rooms?.length||0,controls:ruin.controls.length,mechanisms:[...ruin.mechanisms.values()].map(m=>({id:m.id,type:m.type,progress:m.progress,target:m.target})),puzzleOptions:ruin.puzzleOptions,puzzleGeneration:ruin.puzzleGeneration,solvability:ruin.solvability,generationAttempt:ruin.generationAttempt,presentation:presentationSnapshot(),occupancy:ruin.occupancy?.snapshot?.(),dynamic:DS.debugSnapshot()}:null});
 })();
