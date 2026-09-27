@@ -679,6 +679,142 @@
     return set;
   }
 
+  function roomDoorway(context, room) {
+    const doors=context.meta?.doorways||[]; // Existing generated doorway metadata is the shared anchor for lockable-room modules.
+    const index=doors.findIndex(door=>door?.from===room.id||door?.to===room.id);
+    return index>=0?doorwayWorld(context.meta,doors[index],index):null;
+  }
+
+  function buildLockableDoorModule(context, room, options = {}) {
+    const doorway=roomDoorway(context,room);
+    if(!doorway)return null;
+    const support=sampleSupport(doorway.x,doorway.z);
+    if(!support)return null;
+    const thickness=.18,height=1.9,width=Math.max(.9,doorway.width*.82);
+    const geometry=doorway.axis==='x'
+      ? new THREE.BoxGeometry(thickness,height,width)
+      : new THREE.BoxGeometry(width,height,thickness);
+    const panel=naturalizeStone(new THREE.Mesh(geometry,makeBasic(0x808080)));
+    panel.name='dev_ruin_modular_lock_door_'+room.id;
+    panel.position.set(doorway.x,Number(support.y)+height*.5+(options.startOpen===false?0:height+.18),doorway.z);
+    panel.userData.devRandomRuinModularDoor=true;
+    state.group.add(panel);
+    const blockerId='devruin-modular-door-'+room.id;
+    const module={
+      id:'lock-door-'+room.id,roomId:String(room.id),doorway,panel,baseY:Number(support.y)+height*.5,
+      openY:Number(support.y)+height*.5+height+.18,progress:options.startOpen===false?0:1,targetOpen:options.startOpen!==false,
+      blockerId,width,height,
+    };
+    DS.registerBlocker({
+      id:blockerId,scope:SCOPE,
+      bounds:()=>doorway.axis==='x'
+        ? {minX:doorway.x-thickness*.6,maxX:doorway.x+thickness*.6,minZ:doorway.z-width*.5,maxZ:doorway.z+width*.5}
+        : {minX:doorway.x-width*.5,maxX:doorway.x+width*.5,minZ:doorway.z-thickness*.6,maxZ:doorway.z+thickness*.6},
+      minY:Number(support.y),maxY:Number(support.y)+height,
+      enabled:()=>module.progress<.72,
+      purpose:'modular_lock_door',
+    });
+    state.surfaceIds.add(blockerId);
+    state.lockDoors.push(module);
+    recordModulePlacement('lockableStoneDoor','doorway',module.id,{roomId:String(room.id)});
+    return module;
+  }
+
+  function setLockDoorOpen(module, open) {
+    if(!module)return false;
+    module.targetOpen=open!==false;
+    return true;
+  }
+
+  function buildStoneCanopyModule(context, room, anchor = null) {
+    const bounds=roomBounds(context.meta,room);
+    const support=anchor?sampleSupport(anchor.x,anchor.z):roomPatch(context,room,3.4,2.8);
+    const x=anchor?.x??support?.centerX,z=anchor?.z??support?.centerZ,baseY=Number(anchor?.topY??support?.y);
+    if(!Number.isFinite(x)||!Number.isFinite(z)||!Number.isFinite(baseY))return null;
+    const width=Math.min(3.2,Math.max(2.2,(bounds.maxX-bounds.minX)*.35));
+    const depth=Math.min(2.6,Math.max(1.8,(bounds.maxZ-bounds.minZ)*.28));
+    const roofY=baseY+1.72;
+    const root=new THREE.Group();
+    root.name='dev_ruin_stone_canopy_'+room.id;
+    const slab=naturalizeStone(new THREE.Mesh(new THREE.BoxGeometry(width,.22,depth),makeBasic(0x808080)));
+    slab.position.set(x,roofY,z);slab.userData.devRandomRuinStoneCanopy=true;slab.userData.cameraObstacle=true;root.add(slab);
+    const postOffsets=[[-width*.42,-depth*.38],[width*.42,-depth*.38]];
+    for(const [dx,dz] of postOffsets){
+      const post=naturalizeStone(new THREE.Mesh(new THREE.BoxGeometry(.22,1.7,.22),makeBasic(0x808080)));
+      post.position.set(x+dx,baseY+.85,z+dz);root.add(post);
+    }
+    state.group.add(root);
+    const module={id:'canopy-'+room.id,roomId:String(room.id),root,x,z,roofY,width,depth};
+    state.canopies.push(module);
+    recordModulePlacement('stoneCanopy','room',module.id,{roomId:String(room.id)});
+    return module;
+  }
+
+  function sarcophagusPlacements(context, room) {
+    const b=roomBounds(context.meta,room),cx=(b.minX+b.maxX)*.5,cz=(b.minZ+b.maxZ)*.5;
+    const inset=.7;
+    return [
+      {x:b.minX+inset,z:cz-.9,yaw:Math.PI/2,spawnX:b.minX+1.35,spawnZ:cz-.9},
+      {x:b.minX+inset,z:cz+.9,yaw:Math.PI/2,spawnX:b.minX+1.35,spawnZ:cz+.9},
+      {x:b.maxX-inset,z:cz-.9,yaw:-Math.PI/2,spawnX:b.maxX-1.35,spawnZ:cz-.9},
+      {x:b.maxX-inset,z:cz+.9,yaw:-Math.PI/2,spawnX:b.maxX-1.35,spawnZ:cz+.9},
+    ];
+  }
+
+  function buildSarcophagusSpawnerModule(context,rng,room,options={}) {
+    const root=new THREE.Group();root.name='dev_ruin_sarcophagus_set_'+room.id;state.group.add(root);
+    const coffins=[];
+    for(const [index,p] of sarcophagusPlacements(context,room).entries()){
+      const support=sampleSupport(p.x,p.z);if(!support)continue;
+      const body=naturalizeStone(new THREE.Mesh(new THREE.BoxGeometry(.72,1.75,.52),makeBasic(0x808080)));
+      body.position.set(p.x,Number(support.y)+.875,p.z);body.rotation.y=p.yaw;body.name='dev_ruin_sarcophagus_body_'+room.id+'_'+index;root.add(body);
+      const panel=naturalizeStone(new THREE.Mesh(new THREE.BoxGeometry(.58,1.55,.12),makeBasic(0x808080)));
+      panel.position.set(0,0,.32);body.add(panel);
+      coffins.push({index,body,panel,closedY:0,openY:1.62,progress:0,spawnX:p.spawnX,spawnZ:p.spawnZ,spawned:false});
+    }
+    if(coffins.length<2){disposeObject(root);return null;}
+    const module={id:'sarcophagi-'+room.id,roomId:String(room.id),root,coffins,activated:false,spawnStarted:false,spawnCount:0,tier:Math.max(0,Number(options.tier)||1)};
+    state.sarcophagusModules.push(module);
+    recordModulePlacement('sarcophagusSpawner','room',module.id,{roomId:String(room.id),count:coffins.length});
+    return module;
+  }
+
+  async function activateSarcophagusSpawner(module) {
+    if(!module||module.activated)return false;
+    module.activated=true;
+    if(module.spawnStarted)return true;
+    module.spawnStarted=true;
+    for(const coffin of module.coffins){
+      const px=coffin.spawnX*(Number(deps?.TILE)||1),py=coffin.spawnZ*(Number(deps?.TILE)||1); // Humanoid combat entities use the game's pixel-space X/Y plane, while modular ruin geometry is authored in world units.
+      try{
+        const creature=await window.MinionCombat?.makeEntity?.({
+          speciesId:'harlyao-skeleton',name:'Harlyao Skeleton',tier:module.tier,x:px,y:py,zoneId:MAP_ID,
+          scene:state.context.scene,grid:state.context.grid,cols:state.context.cols,rows:state.context.rows,weaponMetalKey:'nativeCopper',
+          extra:{homeX:px,homeY:py,state:'idle',devRandomRuinSarcophagus:true},
+        });
+        if(creature&&state&&inRuin()){
+          deps?.hostileObjects?.add?.(creature);
+          coffin.spawned=true;module.spawnCount++;
+        }else creature?.avatarRef?.dispose?.();
+      }catch(error){console.warn('[Random Test Ruin] sarcophagus skeleton spawn failed',error);}
+    }
+    return true;
+  }
+
+  function buildOssuaryChordComposer(context,rng,room) {
+    const lockDoor=buildLockableDoorModule(context,room,{startOpen:true});
+    const sarcophagi=buildSarcophagusSpawnerModule(context,rng,room,{tier:1});
+    const chord=buildChordPlateSet(context,rng,{kind:'room',owner:room,onComplete:()=>setLockDoorOpen(lockDoor,true)});
+    if(!lockDoor||!sarcophagi||!chord)return null;
+    const bounds=roomBounds(context.meta,room);
+    const module={
+      id:'ossuary-composer-'+room.id,roomId:String(room.id),bounds,lockDoor,sarcophagi,chord,entered:false,completed:false,
+    };
+    state.ossuaryComposers.push(module);
+    recordModulePlacement('ossuaryComposer','room',module.id,{roomId:String(room.id),wires:['lockableStoneDoor','sarcophagusSpawner','chordPressurePlates']});
+    return module;
+  }
+
   function buildSwappableHallwayModules(context,rng,usedHallways) {
     const candidates=shuffle((context.meta?.hallways||[]).filter(hall=>!usedHallways.has(hall.id)&&(hall.axis==='x'?Number(hall.w):Number(hall.h))>=5),rng);
     const selected=candidates.slice(0,Math.min(2,candidates.length)); // Two generic hallway slots replace the previous unconditional two-trap pass.
@@ -837,6 +973,10 @@
       ropes:[],
       trapHallways:[],
       chordPlateSets:[],
+      lockDoors:[],
+      canopies:[],
+      sarcophagusModules:[],
+      ossuaryComposers:[],
       modulePlacements:[], // Every placed puzzle piece is recorded independently so compound sequences remain inspectable/recomposable.
       projectiles:[],
       surfaceIds:new Set(),
@@ -861,7 +1001,20 @@
     }
     if(options.ropeSwing!==false){
       const rope=buildRopeSwing(context,rng,usedRooms);
-      if(rope)recordModulePlacement('ropeTraverse','room',rope.roomId,{ceilingMounted:true});
+      if(rope){
+        recordModulePlacement('ropeTraverse','room',rope.roomId,{ceilingMounted:true});
+        const ropeRoom=(context.meta?.rooms||[]).find(room=>String(room.id)===String(rope.roomId));
+        if(ropeRoom&&rng()<.65)buildStoneCanopyModule(context,ropeRoom,rope.startPlatform); // Canopy is its own module; this composer merely chooses to attach one to the rope's launch balcony.
+      }
+    }
+    const freeRooms=shuffle(usableRoomCandidates(context).filter(room=>!usedRooms.has(room.id)),rng);
+    if(freeRooms.length&&rng()<.55){
+      const room=freeRooms.shift();usedRooms.add(room.id);buildOssuaryChordComposer(context,rng,room); // Compound encounter is wiring only; door, sarcophagi and chord plates remain separately recorded modules.
+    }else if(freeRooms.length&&rng()<.5){
+      const room=freeRooms.shift();usedRooms.add(room.id);buildChordPlateSet(context,rng,{kind:'room',owner:room}); // Same four-note module can appear by itself with no skeleton encounter at all.
+    }
+    if(freeRooms.length&&rng()<.35){
+      const room=freeRooms.shift();usedRooms.add(room.id);buildStoneCanopyModule(context,room); // Canopies may also appear as standalone architectural cover, independent of ropes.
     }
     if(options.hallwayTraps!==false)buildSwappableHallwayModules(context,rng,usedHallways);
     updateBadge(true);
@@ -889,6 +1042,44 @@
         deps.showToast?.('Wrong pressure plate — Burning Health!',false);
       }
       grid.lastPlayerKey=key;
+    }
+  }
+
+  function updateLockDoors(dt) {
+    for(const door of state.lockDoors){
+      const target=door.targetOpen?1:0;
+      door.progress+=Math.max(-dt*1.7,Math.min(dt*1.7,target-door.progress));
+      const t=door.progress*door.progress*(3-2*door.progress);
+      door.panel.position.y=door.baseY+(door.openY-door.baseY)*t;
+    }
+  }
+
+  function updateSarcophagusModules(dt) {
+    for(const module of state.sarcophagusModules){
+      const target=module.activated?1:0;
+      for(const coffin of module.coffins){
+        coffin.progress+=Math.max(-dt*1.45,Math.min(dt*1.45,target-coffin.progress));
+        const t=coffin.progress*coffin.progress*(3-2*coffin.progress);
+        coffin.panel.position.y=coffin.closedY+(coffin.openY-coffin.closedY)*t;
+      }
+    }
+  }
+
+  function updateOssuaryComposers() {
+    const player=playerWorld();if(!player)return;
+    for(const module of state.ossuaryComposers){
+      const b=module.bounds;
+      const inside=player.x>b.minX+.5&&player.x<b.maxX-.5&&player.z>b.minZ+.5&&player.z<b.maxZ-.5;
+      if(inside&&!module.entered){
+        module.entered=true;
+        setLockDoorOpen(module.lockDoor,false);
+        activateSarcophagusSpawner(module.sarcophagi);
+        deps?.showToast?.('The stone door seals behind you.',false);
+      }
+      if(module.chord.solved&&!module.completed){
+        module.completed=true;
+        setLockDoorOpen(module.lockDoor,true);
+      }
     }
   }
 
@@ -1075,6 +1266,9 @@
 
     updateSafeGrids(now);
     updateChordPlateSets();
+    updateLockDoors(dt);
+    updateSarcophagusModules(dt);
+    updateOssuaryComposers();
     updateRopes(now,dt);
     updateHallwayTraps(dt);
     updateDoorwayCheckpoints();
@@ -1140,6 +1334,10 @@
       ropeEquipment:{holstered:state.ropeEquipmentHolsterCount,restored:state.ropeEquipmentRestoreCount,currentlyStowed:!!state.ropeHeldToolSnapshot},
       trapHallways:state.trapHallways.map(trap=>({id:trap.id,axis:trap.axis,stations:trap.stations.length})),
       chordPlateSets:state.chordPlateSets.map(set=>({id:set.id,slotKind:set.slotKind,played:set.plates.filter(plate=>plate.played).length,solved:set.solved,solveCount:set.solveCount,pressCounts:set.plates.map(plate=>plate.pressCount)})),
+      lockDoors:state.lockDoors.map(door=>({id:door.id,roomId:door.roomId,open:door.targetOpen,progress:+door.progress.toFixed(3)})),
+      canopies:state.canopies.map(canopy=>({id:canopy.id,roomId:canopy.roomId,roofY:+canopy.roofY.toFixed(3)})),
+      sarcophagi:state.sarcophagusModules.map(module=>({id:module.id,roomId:module.roomId,activated:module.activated,spawnCount:module.spawnCount,count:module.coffins.length})),
+      ossuaryComposers:state.ossuaryComposers.map(module=>({id:module.id,roomId:module.roomId,entered:module.entered,completed:module.completed})),
       modules:state.modulePlacements.map(module=>({...module})),
       liveProjectiles:state.projectiles.length,
       checkpoints:{
