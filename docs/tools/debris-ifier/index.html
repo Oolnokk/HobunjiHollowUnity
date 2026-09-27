@@ -130,10 +130,12 @@ window.addEventListener('unhandledrejection',event=>{
   window.__debrisBootErrors.push('promise: '+String(event?.reason?.message||event?.reason||'unknown rejection'));
 });
 window.__debrisEmbeddedRuntime=new URLSearchParams(location.search).get('devRuntime')==='1'||new URLSearchParams(location.search).get('embedded')==='devRandomRuin';
-if(window.__debrisEmbeddedRuntime&&parent!==window&&parent.THREE?.WebGLRenderer){
-  // The hidden in-game generator should run on the exact already-loaded game
-  // Three.js realm instead of waiting on a second set of third-party scripts.
+if(window.__debrisEmbeddedRuntime&&parent!==window&&parent.THREE){
+  // The hidden in-game generator needs the game's already-loaded Three.js realm,
+  // not a second renderer. Requiring WebGLRenderer here made headless/rewrapped
+  // game realms fall through to unpkg and could stall the iframe parser forever.
   window.THREE=parent.THREE;
+  window.__debrisUsedParentThree=true; // Mobile/CI diagnostics prove hidden generation stayed entirely on local already-loaded dependencies.
 }else{
   document.write('<script src="https://unpkg.com/three@0.128.0/build/three.min.js" onerror="window.__debrisDeps.push(\'three.min.js failed\')"><\/script>');
   document.write('<script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js" onerror="window.__debrisDeps.push(\'OrbitControls failed\')"><\/script>');
