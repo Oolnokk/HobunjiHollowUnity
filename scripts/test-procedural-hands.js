@@ -329,6 +329,9 @@ assert.match(handOutlineSource, /passKind === 'shell'.*hobunjiShellIndex/s, 'onl
 assert.match(handOutlineSource, /restoreIndex.*setIndex/s, 'the full body/wing geometry index must be restored immediately after each shell draw');
 assert.match(driverSource, /placeHandWorld\?\.\('right'/, 'right hand must follow primary tool grip');
 assert.match(driverSource, /const primarySocket = toolSocketWorld\(record, toolHolder, primaryGrip\)/, 'frame driver must retain the raw weapon grip target before Grip Mode and hand-model calibration');
+assert.match(driverSource, /const ownedHolder = record\?\.avatarRoot\?\.userData\?\.proceduralHandToolHolder/, 'hand socket resolution must distinguish actor-owned hostile holders from the player singleton');
+assert.match(driverSource, /const playerOwnedHolder = !ownedHolder[\s\S]*toolHolder === gameDeps\.toolHolder/, 'only the actual player holder may consume WeaponToolStances\' singleton baked matrix');
+assert.match(driverSource, /playerOwnedHolder[\s\S]*lastHolderMatrixWorld\?\.\(\)[\s\S]*: null/, 'hostile hands must resolve from their own holder hierarchy instead of the player baked matrix');
 assert.match(driverSource, /placePaperHandGuideWorld\?\.\(primarySocket\.position, primarySocket\.quaternion\)[\s\S]*handSocketAfterGripMode\(record, primarySocket\)/, 'locked paper hand must be placed on the raw target before Grip Mode moves the socket');
 assert.match(handSource, /right_hand_paper_reference_socket/, 'paper-hand reference must own a socket separate from the calibrated right-hand socket');
 assert.match(handSource, /const calibration = new THREE\.Group\(\);[\s\S]*calibration\.name = `\$\{side\}_hand_calibration`/, 'each hand socket must own a dedicated child calibration node');
