@@ -304,6 +304,7 @@ for (let i = 1; i <= 9; i++) {
 const hitSource = Buffer.from(parts.join(''), 'base64').toString('utf8');
 assert(hitSource.startsWith('// Dev Random Test Ruin'), 'decoded hit-puzzle source header must be intact');
 assert(hitSource.includes('window.DevRandomRuinHitPuzzles'), 'decoded hit runtime must export its public API');
+assert(hitSource.includes('debugActivateGlyph(object = null)') && hitSource.includes('return target ? activateGlyph(target) : false'), 'hit runtime diagnostics must exercise the same authoritative glyph state transition as real projectile hits');
 assert(hitSource.includes('TORCH_BURN_MS = 12000'), 'temporary ruin torch must retain its 12-second burn budget');
 assert(hitSource.includes('harpoon_fishingmace.png'), 'temporary ruin torch must reuse the fishing-mace sprite');
 assert(hitSource.includes('glyphObelisk'), 'decoded hit runtime must support projectile glyph targets');
