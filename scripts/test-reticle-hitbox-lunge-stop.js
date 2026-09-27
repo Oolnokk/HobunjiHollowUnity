@@ -20,8 +20,10 @@ assert.match(source, /resolveSweptLungeEntry\(liveDeps\)/,
   'lunge range entry is checked across movement already completed this frame');
 assert.match(source, /LUNGE_CANCEL_RANGE_MULTIPLIER = 0\.5/,
   'lunge cancellation range stays explicitly half of the real attack range');
-assert.match(coreSource, /if \(direct >= 0\.999 && pitch >= 0\)[\s\S]{0,700}verticalTravelUnits: baseDistanceWorld \* Math\.sin\(pitch\)[\s\S]{0,500}const distanceScaleAtAngle/,
-  'forward/upward direct flight must return exact vector components before legacy diminished-vertical math');
+assert.match(coreSource, /upwardPitchFraction = THREE\.MathUtils\.clamp\(pitch \/ \(Math\.PI \/ 2\), 0, 1\)[\s\S]{0,180}upwardDistanceScale = 1 - 0\.5 \* upwardPitchFraction/,
+  'upward lunge total distance must be 100% at 0 degrees, 75% at 45 degrees, and 50% at 90 degrees');
+assert.match(coreSource, /distancePx: directDistancePx \* straightHorizontalScale[\s\S]{0,220}verticalTravelUnits: directDistanceWorld \* Math\.sin\(pitch\)[\s\S]{0,500}const distanceScaleAtAngle/,
+  'forward/upward direct flight must split the angle-scaled total distance into exact reticle-vector XZ/Y components before legacy math');
 assert.doesNotMatch(gameSource, /const lungeTarget = \(activeTool === 'weapon'[\s\S]{0,700}LUNGE_HOMING_RATE/,
   'native player lunge update must not home toward an enemy after attack start');
 assert.match(gameSource, /aimUsesDirectReticleFlight = aimPitch >= 0[\s\S]{0,520}aimUsesDirectReticleFlight \? 1 : \(hitTest\?\.directFlightStrength \|\| 0\)[\s\S]{0,160}aimUsesDirectReticleFlight,/,
@@ -143,14 +145,16 @@ const windowStub = {
       lastProfileAirAssist = !!inRangeAirAssist;
       lastProfileDirect = directFlightStrength;
       if (directFlightStrength >= 0.999 && pitch >= 0) {
+        const upwardDistanceScale = 1 - 0.5 * Math.max(0, Math.min(1, pitch / (Math.PI / 2)));
         return {
-          distancePx: distancePx * Math.cos(Math.abs(pitch)),
+          distancePx: distancePx * upwardDistanceScale * Math.cos(Math.abs(pitch)),
           pitch,
           hopUnits: 0,
           lungeHeightUnits,
           pitchDistanceResistance,
           directFlightStrength: 1,
-          verticalTravelUnits: (distancePx / 64) * Math.sin(pitch),
+          upwardDistanceScale,
+          verticalTravelUnits: (distancePx / 64) * upwardDistanceScale * Math.sin(pitch),
           inRangeAirAssist,
         };
       }
