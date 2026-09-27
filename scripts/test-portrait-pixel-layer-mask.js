@@ -18,7 +18,7 @@ assert(tool.includes('loadSelectedClothingJson'), 'author must fetch selected ex
 assert(tool.includes('collectPortraitLayerRecords'), 'author must enumerate portrait layers inside selected clothing JSONs');
 assert(tool.includes('loadSelectedRepoLayer'), 'author must fetch the selected repository portrait sprite automatically');
 assert(tool.includes('fittedZoom') && tool.includes('fitZoomToPane'), 'author must fit the sprite inside the center pane');
-assert(tool.includes("id="fitBtn""), 'author must expose a Fit control after manual zooming');
+assert(tool.includes('id="fitBtn"'), 'author must expose a Fit control after manual zooming');
 assert(tool.includes("!String(entry.path || '').includes('/appearance/')"), 'clothing picker must exclude appearance-only folder entries');
 assert(tool.includes("target: $('target').value"), 'author export must preserve the selected portrait stage');
 assert(tool.includes("view: $('view').value"), 'author export must preserve front/behind scope');
