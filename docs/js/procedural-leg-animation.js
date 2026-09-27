@@ -1240,6 +1240,18 @@
       lastSeatedPoseDebug = null;
       legChains.left.thigh.position.set(0, 0, 0);
       legChains.right.thigh.position.set(0, 0, 0);
+      if (suppressed) {
+        // Explicit suppression (prone/death/mount/harvest) outranks hover, so airborne actors can still be physically brought down.
+        state.gaitStrength = damp(state.gaitStrength, 0, 12, dt);
+        state.gaitStrideLength = 0;
+        state.gaitCadenceHz = 0;
+        state.wasGaiting = false;
+        state.hoverStrength = damp(state.hoverStrength, 0, 12, dt);
+        const neutralPose = { travel: 0, lift: 0, planted: true };
+        applyPose('left', state.leftContactY, state.idleLeftX, neutralPose, 11, dt);
+        applyPose('right', state.rightContactY, state.idleRightX, neutralPose, 11, dt);
+        return;
+      }
       if (state.hoverEnabled) {
         state.gaitStrength = damp(state.gaitStrength, 0, 12, dt); // Walking stride yields completely while airborne.
         state.gaitStrideLength = 0;
@@ -1252,21 +1264,6 @@
         return;
       }
       state.hoverStrength = damp(state.hoverStrength, 0, 10, dt); // Normal locomotion regains ownership smoothly after hover ends.
-      if (suppressed) {
-        // No meaningful "standing on the ground" gait while e.g. seated on a
-        // mount or mid-harvest — legs stay visible and just hang straight
-        // down from their own hip anchors instead. Each hip's X already IS
-        // its leg's idle stance X (see buildLegChain), so feeding applyPose
-        // the same neutral/idle pose it uses for a stationary leg produces
-        // exactly that straight-down hang, with no separate math needed.
-        state.gaitStrength = damp(state.gaitStrength, 0, 12, dt);
-        state.gaitStrideLength = 0;
-        state.gaitCadenceHz = 0;
-        const neutralPose = { travel: 0, lift: 0, planted: true };
-        applyPose('left', state.leftContactY, state.idleLeftX, neutralPose, 11, dt);
-        applyPose('right', state.rightContactY, state.idleRightX, neutralPose, 11, dt);
-        return;
-      }
       const speed = Math.max(0, Number(speedWorldUnitsPerSecond) || 0);
       const isGaiting = speed > 0.02; // Used here to detect the exact moving-to-stopped edge and clear the final stride pose without a multi-second damping tail.
       if (!isGaiting && state.wasGaiting) {
