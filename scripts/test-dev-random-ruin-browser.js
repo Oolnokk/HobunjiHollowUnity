@@ -446,6 +446,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
           requestAnimationFrame(step);
         });
         const place=(point)=>{
+          if(window.DevRandomRuin?.setPlayerWorldPoint?.(point,{snapCamera:false,grounded:true}))return; // Browser smoke teleports must update the ruin's accepted-position/support authority just like a legitimate grounded arrival.
           deps.player.x=point.x*deps.TILE;
           deps.player.y=point.z*deps.TILE;
           deps.player.vx=0;deps.player.vy=0;
