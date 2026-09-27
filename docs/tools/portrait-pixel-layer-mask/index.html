@@ -404,7 +404,11 @@ textarea{width:100%;min-height:165px;padding:8px;resize:vertical;font:11px/1.4 u
 
   function sourceAlphaAt(x, y) {
     if (x < 0 || y < 0 || x >= sourceCanvas.width || y >= sourceCanvas.height) return 0;
-    return sourceCtx.getImageData(x, y, 1, 1).data[3];
+    try {
+      return sourceCtx.getImageData(x, y, 1, 1).data[3];
+    } catch (_) {
+      return null; // A fetched image can be canvas-tainted by its delivery origin; painting must still work.
+    }
   }
 
   function paintPixel(cx, cy) {
@@ -415,9 +419,8 @@ textarea{width:100%;min-height:165px;padding:8px;resize:vertical;font:11px/1.4 u
       for (let x = cx - half; x < cx - half + size; x++) {
         if (x < 0 || y < 0 || x >= sourceCanvas.width || y >= sourceCanvas.height) continue;
         if (paintMode === 'paint') {
-          if (sourceAlphaAt(x, y) === 0) continue;
           maskCtx.fillStyle = '#fff';
-          maskCtx.fillRect(x, y, 1, 1);
+          maskCtx.fillRect(x, y, 1, 1); // Transparent source pixels are harmless because runtime masking still intersects the source sprite alpha.
         } else {
           maskCtx.clearRect(x, y, 1, 1);
         }
@@ -443,10 +446,10 @@ textarea{width:100%;min-height:165px;padding:8px;resize:vertical;font:11px/1.4 u
 
   function eventPixel(ev) {
     const rect = stage.getBoundingClientRect();
-    const z = zoomValue();
+    if (!rect.width || !rect.height || !sourceCanvas.width || !sourceCanvas.height) return { x: -1, y: -1 };
     return {
-      x: Math.floor((ev.clientX - rect.left) / z),
-      y: Math.floor((ev.clientY - rect.top) / z)
+      x: Math.floor((ev.clientX - rect.left) * sourceCanvas.width / rect.width),
+      y: Math.floor((ev.clientY - rect.top) * sourceCanvas.height / rect.height)
     };
   }
 
@@ -464,7 +467,8 @@ textarea{width:100%;min-height:165px;padding:8px;resize:vertical;font:11px/1.4 u
       $('dbgCursor').textContent = '—'; $('dbgAlpha').textContent = '—'; return;
     }
     $('dbgCursor').textContent = p.x + ', ' + p.y;
-    $('dbgAlpha').textContent = String(sourceAlphaAt(p.x, p.y));
+    const alpha = sourceAlphaAt(p.x, p.y);
+    $('dbgAlpha').textContent = alpha == null ? 'unreadable (paint still works)' : String(alpha);
   }
 
   function configFragment() {
@@ -545,13 +549,11 @@ textarea{width:100%;min-height:165px;padding:8px;resize:vertical;font:11px/1.4 u
   $('clearBtn').onclick = () => { maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height); redraw(); };
   $('invertBtn').onclick = () => {
     if (!sourceCanvas.width) return;
-    const src = sourceCtx.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height);
     const mask = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height);
     for (let i = 0; i < mask.data.length; i += 4) {
       const selected = mask.data[i + 3] > 127;
-      const opaque = src.data[i + 3] > 0;
-      mask.data[i] = mask.data[i + 1] = mask.data[i + 2] = opaque && !selected ? 255 : 0;
-      mask.data[i + 3] = opaque && !selected ? 255 : 0;
+      mask.data[i] = mask.data[i + 1] = mask.data[i + 2] = selected ? 0 : 255;
+      mask.data[i + 3] = selected ? 0 : 255;
     }
     maskCtx.putImageData(mask, 0, 0); redraw();
   };
