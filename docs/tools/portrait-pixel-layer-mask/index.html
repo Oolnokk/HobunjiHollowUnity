@@ -178,6 +178,7 @@ textarea{width:100%;min-height:165px;padding:8px;resize:vertical;font:11px/1.4 u
 
   function collectPortraitLayerRecords(json) {
     const records = [];
+    const allowNonPortraitAssets = json?.portraitAssets === true;
     const visitParts = (parts, prefix, labelPrefix) => {
       if (!parts || typeof parts !== 'object') return;
       for (const [partName, partDef] of Object.entries(parts)) {
@@ -186,6 +187,10 @@ textarea{width:100%;min-height:165px;padding:8px;resize:vertical;font:11px/1.4 u
         for (const [layerName, layer] of Object.entries(layers)) {
           const imageUrl = layer?.image?.url;
           if (!imageUrl) continue;
+          const isRuntimePortraitLayer = partName === 'head'
+            || allowNonPortraitAssets
+            || String(imageUrl).toLowerCase().includes('/portrait/');
+          if (!isRuntimePortraitLayer) continue;
           records.push({
             label: labelPrefix + partName + '.' + layerName + ' — ' + basename(imageUrl),
             imageUrl,
@@ -556,6 +561,7 @@ textarea{width:100%;min-height:165px;padding:8px;resize:vertical;font:11px/1.4 u
 
   refreshDebug();
   redraw();
+  fetchClothingIndex();
 })();
 </script>
 </body>
