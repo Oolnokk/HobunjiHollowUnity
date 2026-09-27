@@ -35,6 +35,20 @@ textarea{width:100%;min-height:165px;padding:8px;resize:vertical;font:11px/1.4 u
   <aside class="panel">
     <section>
       <h2>1. Source sprite</h2>
+      <label>Existing clothing JSON</label>
+      <div class="row">
+        <input id="clothingSearch" class="grow" type="search" placeholder="Filter clothing…">
+        <button id="fetchClothingBtn">Fetch</button>
+      </div>
+      <select id="clothingSelect" style="width:100%;margin-top:6px" disabled>
+        <option>Fetch clothing JSONs…</option>
+      </select>
+      <label>Portrait layer</label>
+      <select id="layerSelect" style="width:100%" disabled>
+        <option>Select clothing first…</option>
+      </select>
+      <div id="clothingStatus" class="hint">Uses <code>config/cosmetics/index.json</code>; clothing JSON and its selected portrait sprite are fetched directly from this build.</div>
+      <label>Or load source sprite manually</label>
       <input id="sourceFile" type="file" accept="image/png,image/webp,image/*">
       <label>Optional existing mask</label>
       <input id="maskFile" type="file" accept="image/png,image/*">
@@ -82,6 +96,8 @@ textarea{width:100%;min-height:165px;padding:8px;resize:vertical;font:11px/1.4 u
       <h2>Live debug</h2>
       <div class="stat">
         <span>Source</span><b id="dbgSource">none</b>
+        <span>Clothing JSON</span><b id="dbgClothing">—</b>
+        <span>JSON layer</span><b id="dbgLayer">—</b>
         <span>Dimensions</span><b id="dbgDims">—</b>
         <span>Cursor</span><b id="dbgCursor">—</b>
         <span>Source alpha</span><b id="dbgAlpha">—</b>
@@ -110,13 +126,21 @@ textarea{width:100%;min-height:165px;padding:8px;resize:vertical;font:11px/1.4 u
   const $ = id => document.getElementById(id);
   const sourceFile = $('sourceFile');
   const maskFile = $('maskFile');
+  const clothingSearch = $('clothingSearch');
+  const clothingSelect = $('clothingSelect');
+  const layerSelect = $('layerSelect');
   const stage = $('stage');
   const ctx = stage.getContext('2d', { willReadFrequently: true });
   const sourceCanvas = document.createElement('canvas'); // Holds original source pixels; used by painting validation and preview redraw.
   const sourceCtx = sourceCanvas.getContext('2d', { willReadFrequently: true });
   const maskCanvas = document.createElement('canvas'); // Stores binary authoring mask pixels exported as the runtime alpha mask.
   const maskCtx = maskCanvas.getContext('2d', { willReadFrequently: true });
-  let sourceName = ''; // Used for debug/export naming after a local source image is loaded.
+  let sourceName = ''; // Used for debug/export naming after a local or repository source image is loaded.
+  let clothingEntries = []; // Cosmetics-index clothing candidates shown by the repository JSON selector.
+  let currentClothingEntry = null; // Selected repository clothing config; used by debug and layer discovery.
+  let currentClothingJson = null; // Parsed selected clothing JSON; used to discover existing portrait layers.
+  let currentLayerRecords = []; // Selectable portrait-layer descriptors extracted from the selected clothing JSON.
+  let currentLayerRecord = null; // Exact selected JSON layer whose sprite is being masked.
   let paintMode = 'paint'; // Used by pointer painting to choose mark vs erase behavior.
   let drawing = false; // Tracks an active pointer drag on the zoomed canvas.
   let lastPixel = null; // Used to interpolate brush strokes without holes during fast pointer movement.
@@ -128,6 +152,177 @@ textarea{width:100%;min-height:165px;padding:8px;resize:vertical;font:11px/1.4 u
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Could not load image')); };
     img.src = url;
   });
+
+  const loadImageUrl = url => new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('Could not load repository sprite: ' + url));
+    img.src = url;
+  });
+
+  function clothingConfigUrl(entry) {
+    const rel = String(entry?.path || '').replace(/^\.\//, '');
+    return new URL('../../config/cosmetics/' + rel, window.location.href).toString();
+  }
+
+  function docsAssetUrl(rawUrl) {
+    const raw = String(rawUrl || '').trim();
+    if (/^(?:data:|blob:|https?:)/i.test(raw)) return raw;
+    const rel = raw.replace(/^\.\//, '').replace(/^\//, '');
+    return new URL('../../' + rel, window.location.href).toString();
+  }
+
+  function basename(path) {
+    return String(path || '').split(/[\\/]/).pop() || 'portrait.png';
+  }
+
+  function collectPortraitLayerRecords(json) {
+    const records = [];
+    const visitParts = (parts, prefix, labelPrefix) => {
+      if (!parts || typeof parts !== 'object') return;
+      for (const [partName, partDef] of Object.entries(parts)) {
+        const layers = partDef?.layers;
+        if (!layers || typeof layers !== 'object') continue;
+        for (const [layerName, layer] of Object.entries(layers)) {
+          const imageUrl = layer?.image?.url;
+          if (!imageUrl) continue;
+          records.push({
+            label: labelPrefix + partName + '.' + layerName + ' — ' + basename(imageUrl),
+            imageUrl,
+            jsonPath: [...prefix, partName, 'layers', layerName],
+            layer
+          });
+        }
+      }
+    };
+    visitParts(json?.parts, ['parts'], 'default / ');
+    for (const [variantKey, variant] of Object.entries(json?.speciesVariants || {})) {
+      visitParts(variant?.parts, ['speciesVariants', variantKey, 'parts'], variantKey + ' / ');
+    }
+    return records;
+  }
+
+  function renderClothingChoices() {
+    const query = String(clothingSearch.value || '').trim().toLowerCase();
+    const visible = clothingEntries.filter(entry => {
+      if (!query) return true;
+      return String(entry.id || '').toLowerCase().includes(query)
+        || String(entry.path || '').toLowerCase().includes(query);
+    });
+    const selected = clothingSelect.value;
+    clothingSelect.replaceChildren();
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = visible.length ? 'Choose clothing JSON…' : 'No matching clothing JSONs';
+    clothingSelect.appendChild(placeholder);
+    for (const entry of visible) {
+      const option = document.createElement('option');
+      option.value = entry.id;
+      option.textContent = entry.id + ' — ' + String(entry.path || '').replace(/^\.\//, '');
+      clothingSelect.appendChild(option);
+    }
+    if (visible.some(entry => entry.id === selected)) clothingSelect.value = selected;
+  }
+
+  async function fetchClothingIndex() {
+    const status = $('clothingStatus');
+    status.textContent = 'Fetching cosmetics index…';
+    $('fetchClothingBtn').disabled = true;
+    try {
+      const response = await fetch('../../config/cosmetics/index.json');
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      const index = await response.json();
+      clothingEntries = (Array.isArray(index?.entries) ? index.entries : [])
+        .filter(entry => !String(entry.path || '').includes('/appearance/'))
+        .sort((a, b) => String(a.id || '').localeCompare(String(b.id || '')));
+      clothingSelect.disabled = false;
+      renderClothingChoices();
+      status.textContent = 'Loaded ' + clothingEntries.length + ' clothing/costume JSON entries. Choose one to inspect its portrait layers.';
+    } catch (error) {
+      status.textContent = 'Could not fetch clothing index: ' + error.message;
+      clothingSelect.disabled = true;
+    } finally {
+      $('fetchClothingBtn').disabled = false;
+    }
+  }
+
+  async function loadSelectedClothingJson() {
+    const entry = clothingEntries.find(item => item.id === clothingSelect.value);
+    if (!entry) return;
+    const status = $('clothingStatus');
+    status.textContent = 'Fetching ' + entry.id + '…';
+    layerSelect.disabled = true;
+    layerSelect.innerHTML = '<option>Loading portrait layers…</option>';
+    try {
+      const response = await fetch(clothingConfigUrl(entry));
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      currentClothingJson = await response.json();
+      currentClothingEntry = entry;
+      currentLayerRecords = collectPortraitLayerRecords(currentClothingJson);
+      currentLayerRecord = null;
+      layerSelect.replaceChildren();
+      const placeholder = document.createElement('option');
+      placeholder.value = '';
+      placeholder.textContent = currentLayerRecords.length ? 'Choose portrait layer…' : 'No portrait layers found';
+      layerSelect.appendChild(placeholder);
+      currentLayerRecords.forEach((record, index) => {
+        const option = document.createElement('option');
+        option.value = String(index);
+        option.textContent = record.label;
+        layerSelect.appendChild(option);
+      });
+      layerSelect.disabled = !currentLayerRecords.length;
+      status.textContent = currentLayerRecords.length
+        ? 'Loaded ' + entry.id + ': ' + currentLayerRecords.length + ' portrait layer' + (currentLayerRecords.length === 1 ? '' : 's') + '.'
+        : 'Loaded ' + entry.id + ', but it has no supported portrait layer objects.';
+      refreshDebug();
+    } catch (error) {
+      currentClothingEntry = null;
+      currentClothingJson = null;
+      currentLayerRecords = [];
+      currentLayerRecord = null;
+      layerSelect.innerHTML = '<option>Could not load JSON</option>';
+      status.textContent = 'Could not fetch clothing JSON: ' + error.message;
+      refreshDebug();
+    }
+  }
+
+  async function loadSelectedRepoLayer() {
+    const index = Number(layerSelect.value);
+    const record = Number.isInteger(index) ? currentLayerRecords[index] : null;
+    if (!record) return;
+    const status = $('clothingStatus');
+    status.textContent = 'Fetching portrait sprite…';
+    try {
+      const img = await loadImageUrl(docsAssetUrl(record.imageUrl));
+      currentLayerRecord = record;
+      sourceName = basename(record.imageUrl);
+      setDimensions(img.naturalWidth || img.width, img.naturalHeight || img.height);
+      sourceCtx.clearRect(0, 0, sourceCanvas.width, sourceCanvas.height);
+      sourceCtx.drawImage(img, 0, 0);
+      maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+      const existingMask = Array.isArray(record.layer?.pixelLayerMasks) ? record.layer.pixelLayerMasks[0] : null;
+      if (existingMask?.target) $('target').value = existingMask.target;
+      if (existingMask?.view) $('view').value = existingMask.view;
+      const suggestedMaskPath = existingMask?.url || String(record.imageUrl).replace(/\.[^.]+$/, '.layer-mask.png');
+      $('maskPath').value = suggestedMaskPath;
+      if (existingMask?.url) {
+        try {
+          const existingMaskImg = await loadImageUrl(docsAssetUrl(existingMask.url));
+          if ((existingMaskImg.naturalWidth || existingMaskImg.width) === sourceCanvas.width
+              && (existingMaskImg.naturalHeight || existingMaskImg.height) === sourceCanvas.height) {
+            maskCtx.drawImage(existingMaskImg, 0, 0);
+          }
+        } catch (_) {
+          // Existing metadata remains editable even when its mask asset is temporarily missing.
+        }
+      }
+      status.textContent = 'Loaded ' + currentClothingEntry.id + ' / ' + record.label;
+      redraw();
+    } catch (error) {
+      status.textContent = 'Could not fetch portrait sprite: ' + error.message;
+    }
+  }
 
   function setDimensions(w, h) {
     sourceCanvas.width = maskCanvas.width = w;
@@ -261,16 +456,27 @@ textarea{width:100%;min-height:165px;padding:8px;resize:vertical;font:11px/1.4 u
     $('brushLabel').textContent = $('brushSize').value + ' px';
     $('zoomLabel').textContent = $('zoom').value + '×';
     $('dbgSource').textContent = sourceName || 'none';
+    $('dbgClothing').textContent = currentClothingEntry?.id || '—';
+    $('dbgLayer').textContent = currentLayerRecord?.label || '—';
     $('dbgDims').textContent = sourceCanvas.width ? sourceCanvas.width + '×' + sourceCanvas.height : '—';
     $('dbgCount').textContent = String(maskCount());
     $('dbgTarget').textContent = $('target').value + ' / ' + $('view').value;
     $('jsonOut').value = JSON.stringify(configFragment(), null, 2);
   }
 
+  $('fetchClothingBtn').addEventListener('click', fetchClothingIndex);
+  clothingSearch.addEventListener('input', renderClothingChoices);
+  clothingSelect.addEventListener('change', loadSelectedClothingJson);
+  layerSelect.addEventListener('change', loadSelectedRepoLayer);
+
   sourceFile.addEventListener('change', async () => {
     const file = sourceFile.files?.[0];
     if (!file) return;
     const img = await loadImageFile(file);
+    currentClothingEntry = null;
+    currentClothingJson = null;
+    currentLayerRecords = [];
+    currentLayerRecord = null;
     sourceName = file.name;
     setDimensions(img.naturalWidth || img.width, img.naturalHeight || img.height);
     sourceCtx.clearRect(0, 0, sourceCanvas.width, sourceCanvas.height);
