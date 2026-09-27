@@ -45,7 +45,7 @@ const loadOrder = [
 ].map(name => camera.indexOf(name));
 assert(/localStorage\.getItem\('hobunjiDevMode'\) === '1'/.test(camera) && /if \(!devMode/.test(camera), 'ruin runtime must only be injected in Dev Mode');
 assert(camera.includes('dev-random-ruin-interactions.js?v=20260926ropedodge1'), 'ruin interaction adapter must be cache-busted in the dev bootstrap');
-assert(camera.includes('dev-random-ruin-simple-puzzles.js?v=20260927modules5'), 'simple puzzle runtime must be cache-busted in the dev bootstrap');
+assert(camera.includes('dev-random-ruin-simple-puzzles.js?v=20260927modules6'), 'simple puzzle runtime must be cache-busted in the dev bootstrap');
 assert(camera.includes('dev-random-ruin-wall-render-proxy.js?v=20260926glyphdecal1'), 'glyph decal proxy fix must be cache-busted in the dev bootstrap');
 assert(gameIndex.includes('js/dev-random-ruin-bootstrap.js?v=20260927plateclear1'), 'game page must load the updated ruin bootstrap');
 assert(gameIndex.includes('game.js?v=20260926ropedodge1'), 'game page must cache-bust the native Dodge rope release seam');
@@ -136,6 +136,7 @@ assert(simplePuzzles.includes("recordModulePlacement('hallwayGlyphGate'"), 'the 
 assert(simplePuzzles.includes("buildCyclingElevatorModule(context,room,{startActive:true"), 'cycling elevators must also be eligible as standalone traversal machinery');
 assert(simplePuzzles.includes('installModularProjectileHook'), 'reusable canopies and ceiling glyphs must share one ranged-projectile collision seam');
 assert(simplePuzzles.includes('buildBalconyRopeElevatorComposer'), 'the long balcony/rope/elevator possibility must be composed from reusable modules');
+assert(simplePuzzles.includes('occludePoint') && simplePuzzles.includes('crossX') && simplePuzzles.includes('crossZ'), 'a composed balcony canopy must size itself from the real balcony-to-target ray rather than being decorative only');
 assert(simplePuzzles.includes('buildSunkenRoomShell'), 'the lower ossuary must use a reusable sunken-room shell rather than bespoke full-sequence geometry');
 assert(simplePuzzles.includes("window.MinionCombat?.makeEntity?.({") && simplePuzzles.includes("speciesId:'harlyao-skeleton'"), 'sarcophagus modules must spawn the existing Harlyao Skeleton Minion class');
 assert(simplePuzzles.includes('spawnedMinions:new Set()') && simplePuzzles.includes('disposeSpawnedMinion(entity)'), 'sarcophagus-spawned minions must be owned and torn down by the generated ruin run');
