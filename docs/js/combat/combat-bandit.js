@@ -262,9 +262,9 @@
 
   function applyRosterDyesToProfile(profile, roster) {
     if (!profile || !roster) return {}; // Shared hostile portrait guard; callers still retain the untinted profile if no roster exists.
-    const catalog = window.ScratchbonesAccount?.getDyeCatalog?.()
-      || window.SCRATCHBONES_CONFIG?.game?.dyes?.catalog
-      || []; // Same authored dye catalog the inventory/loot presentation uses.
+    const accountCatalog = window.ScratchbonesAccount?.getDyeCatalog?.() || []; // Preferred live account catalog when it has finished initializing.
+    const configCatalog = window.SCRATCHBONES_CONFIG?.game?.dyes?.catalog || []; // Full authored fallback remains available even if the account shim momentarily reports an empty list.
+    const catalog = accountCatalog.length ? accountCatalog : configCatalog; // Same authored dye definitions the inventory/loot presentation uses.
     const byId = new Map(catalog.map(dye => [dye?.id, dye])); // One lookup table avoids rescanning the full catalog for every clothing slot.
     const bodyColors = { ...(profile.bodyColors || {}) }; // Clone so randomProfile's palette object is never mutated behind another consumer's back.
     const resolved = {}; // Mobile/debug-readable proof of the exact dye id/hex baked into this hostile's world portrait.
