@@ -127,7 +127,7 @@
     ['js/combat/ranged-weapon-archetypes.js?v=20260920projectileport1-arcembed1-spearspin3-align1', () => Number(window.HobunjiRangedWeaponArchetypes?.version) >= 14],
     ['js/combat/ranged-camera-ray-authority.js?v=20260909perspectivepoint1', () => Number(window.HobunjiRangedCameraRayAuthority?.version) >= 2],
     ['js/combat/ranged-camera-focus.js?v=20260920rangecameraorbit2', () => Number(window.HobunjiRangedCameraFocus?.version) >= 10],
-    ['js/combat/combat-camera-alignment-bridge.js?v=20260927pitchairborne1', () => Number(window.HobunjiCombatCameraAlignment?.version) >= 4],
+    ['js/combat/combat-camera-alignment-bridge.js?v=20260927directreticle1', () => Number(window.HobunjiCombatCameraAlignment?.version) >= 4],
     ['js/combat/ranged-dual-role-anim-style.js?v=20260918throwables1', () => Number(window.HobunjiDualRoleRangedAnimStyle?.version) >= 2],
     ['js/drunk-prone-composition-bridge.js?v=20260926hover1', () => !!window.HobunjiDrunkProneCompositionBridge],
     ['js/prone-motion-exclusivity.js?v=20260812a', () => !!window.HobunjiProneMotionExclusivity],
