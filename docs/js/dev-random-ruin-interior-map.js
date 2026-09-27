@@ -624,6 +624,8 @@
     mesh.userData.devRandomRuinCeilingCells=cells.length;
     mesh.userData.devRandomRuinCeilingY=ceilingY;
     window.NaturalSurfaceMaterials?.naturalizeMesh?.(mesh,'cliffs'); // Reuses carved_smooth.png + the canonical #808080 cliff tint/mapping instead of inventing a ruin-only texture path.
+    if(Array.isArray(mesh.material))mesh.material=mesh.material.map(material=>material?.clone?.()||material);
+    else if(mesh.material?.clone)mesh.material=mesh.material.clone(); // NaturalSurfaceMaterials caches cliff materials; isolate this ceiling before changing culling so ordinary cliffs stay untouched.
     for(const material of (Array.isArray(mesh.material)?mesh.material:[mesh.material])){
       if(!material)continue;
       material.side=THREE.FrontSide; // The geometry normals face downward, so the roof does not occlude the third-person camera when viewed from above.
