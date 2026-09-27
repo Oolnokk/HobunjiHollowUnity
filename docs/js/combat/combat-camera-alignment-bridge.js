@@ -238,12 +238,15 @@
       try {
         const point = perspectivePoint(liveDeps); // Preferred endpoint shared with the head, body, melee, and ranged muzzle.
         const tile = Number(liveDeps?.TILE) || 64; // Converts the player's logical pixel coordinates into the point's world units.
-        const baseY = Number(liveDeps?.getActorWorldY?.(player)); // Uses the same live player elevation supplied to ranged projectile origins.
-        const origin = {
-          x: (Number(player.x) || 0) / tile,
-          y: (Number.isFinite(baseY) ? baseY : 0) + 0.55,
-          z: (Number(player.y) || 0) / tile,
-        }; // Real lunge/body origin from which the shared point is viewed.
+        const baseY = Number(liveDeps?.getActorWorldY?.(player)); // Used only as a fallback before the player's combat portrait Box3 exists.
+        const combatCenter = window.RangedWeapons?.actorHitbox?.(player)?.center; // Matches combat-core's melee collider origin when the live hitbox is available.
+        const origin = [combatCenter?.x, combatCenter?.y, combatCenter?.z].every(Number.isFinite)
+          ? { x: combatCenter.x, y: combatCenter.y, z: combatCenter.z }
+          : {
+              x: (Number(player.x) || 0) / tile,
+              y: (Number.isFinite(baseY) ? baseY : 0) + 0.55,
+              z: (Number(player.y) || 0) / tile,
+            }; // The reticle vector must be computed from the same body origin the melee collider uses, never from the head.
         const ray = point ? null : centeredCameraRay(rawInteractionRay, rawAimRay); // Compatibility fallback for older callers without the point dependency.
         const dx = point ? point.x - origin.x : Number(ray?.direction?.x);
         const dy = point ? point.y - origin.y : Number(ray?.direction?.y);
