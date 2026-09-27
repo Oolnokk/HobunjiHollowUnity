@@ -19,14 +19,26 @@
   };
 
   function loadApi() {
-    const api = document.createElement('script');
+    if (embeddedRuntime) {
+      try {
+        const request = new XMLHttpRequest(); // Used only by the hidden dev generator so the API bytes cannot be starved behind the live game's startup asset queue.
+        request.open('GET', 'debrisifier-v50-api.js', false);
+        request.send(null);
+        const ok = (request.status >= 200 && request.status < 300) || (request.status === 0 && !!request.responseText);
+        if (!ok) throw new Error(`V50 dev API HTTP ${request.status}`);
+        const api = document.createElement('script'); // Used to execute the locally read API synchronously in the same iframe realm as the patched V50 source.
+        api.textContent = `${request.responseText}\n//# sourceURL=debrisifier-v50-api.embedded.js`;
+        document.head.appendChild(api);
+        if (!window.DebrisifierV50) throw new Error('V50 dev API executed without exporting DebrisifierV50.');
+        if (debug && window.DebrisifierV50.sourceSha256 === SOURCE_SHA256) debug.textContent = 'Debris-ifier embedded runtime ready.';
+      } catch (error) {
+        fail(error?.message || String(error));
+      }
+      return;
+    }
+    const api = document.createElement('script'); // Standalone editor usage keeps the ordinary external-script loader.
     api.src = 'debrisifier-v50-api.js';
     api.onerror = () => fail('V50 dev API did not load.');
-    api.onload = () => {
-      if (embeddedRuntime && debug && window.DebrisifierV50?.sourceSha256 === SOURCE_SHA256) {
-        debug.textContent = 'Debris-ifier embedded runtime ready.';
-      }
-    };
     document.head.appendChild(api);
   }
 
