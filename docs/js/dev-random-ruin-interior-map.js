@@ -22,6 +22,7 @@
   const MAX_STEP_HEIGHT = 0.42;
   const FALL_MS = 650;
   const TRANSITION_FALLBACK_MS = 1600; // Dev-only escape hatch when the normal fade lifecycle is unavailable (e.g. title/dev harness state).
+  const GENERATOR_FRAME_TIMEOUT_MS = 30000; // Gives the hidden V50 iframe enough time to finish parser/startup work on slower browsers and CI before reporting a real bootstrap failure.
   const MAX_SOLVABILITY_ATTEMPTS = 6; // Rejects impossible candidates before entry while keeping generation bounded.
   const PUZZLE_OPTIONS_STORAGE_KEY = 'hobunji.devRandomRuinPuzzleOptions.v2'; // v2 intentionally drops the fragile first-pass mechanisms from the shipped simple-puzzle defaults.
   const DARKNESS_SETTINGS_STORAGE_KEY = 'hobunji.devRandomRuinDarkness.v1'; // Used to persist the test-only darkness toggle and severity without changing real den lighting.
@@ -287,7 +288,7 @@
     document.body.appendChild(frame);
     generatorFrame = frame;
     const started = performance.now();
-    while (performance.now() - started < 15000) {
+    while (performance.now() - started < GENERATOR_FRAME_TIMEOUT_MS) {
       const api = frame.contentWindow?.DebrisifierV50;
       if (api?.sourceSha256 === SOURCE_SHA) return (generatorApi = api);
       const debug = frame.contentDocument?.getElementById('debug')?.textContent || '';
