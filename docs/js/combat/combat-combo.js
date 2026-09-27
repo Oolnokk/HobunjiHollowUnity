@@ -253,7 +253,10 @@
           // sfx — the generic confirm/error chime on top of that, on every
           // single hit or miss, was redundant and noisy.
           deps.showToast(msg, hits > 0 || vegetationCleared > 0, true);
-          if (hits > 0) deps.awardWeaponMasteryXp();
+          if (hits > 0) {
+            window.PlayerLunge?.confirmEnemyHit?.(); // A real enemy hit grants the one-second slow-fall aerial follow-up window; misses grant nothing.
+            deps.awardWeaponMasteryXp();
+          }
         },
         onComplete: () => { busyAction = null; },
         onCancel: () => { busyAction = null; },

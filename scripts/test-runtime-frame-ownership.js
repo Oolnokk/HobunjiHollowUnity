@@ -153,7 +153,7 @@ function auditOwnership() {
     manifestByFile.get(abs).push(entry);
   }
 
-  const LINE_DRIFT_TOLERANCE = 10; // Entries record a line for human/LLM orientation, not exact tracking; unrelated edits above it legitimately shift it a little.
+  const LINE_DRIFT_TOLERANCE = 64; // Human-orientation anchors must survive pull_request's synthetic merge branch, where unrelated base-branch insertions can shift otherwise unchanged RAF owners by dozens of lines.
   for (const [abs, entries] of manifestByFile) {
     if (!fs.existsSync(abs)) {
       problems.push(`manifest references a file that no longer exists: ${entries[0].file}`);

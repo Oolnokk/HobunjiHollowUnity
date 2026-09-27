@@ -30,20 +30,22 @@ assert.match(breakerSource, /const poseCharge = poseChargeFromRuntime\(\)/,
   'Charged Breaker release derives gameplay charge from the live pose-progress seam');
 assert.match(breakerSource, /releaseWeaponSwingHold\(\{ poseProgress: poseCharge \}\)/,
   'Charged Breaker sends that same pose percentage back to the weapon renderer on release');
-assert.match(coreSource, /pitchDistanceResistance[\s\S]{0,1400}appliedResistance = pitch > 0 \? resistance : 0[\s\S]{0,600}noGravityLossScale - naturalScale/,
-  'vertical-lunge resistance weakens only the upward pitch-distance loss inside the shared lunge profile');
-assert.match(coreSource, /straightHorizontalScale = Math\.cos\(absPitch\)/,
-  'direct-flight lunges use the 3D aim vector horizontal leg');
+assert.match(coreSource, /upwardDistanceScale = 1 - 0\.5 \* upwardPitchFraction[\s\S]{0,700}distancePx: directDistancePx \* straightHorizontalScale[\s\S]{0,260}verticalTravelUnits: directDistanceWorld \* Math\.sin\(pitch\)[\s\S]{0,220}hopUnits: 0/,
+  'full forward/upward direct flight first scales total distance by pitch, then splits it into exact reticle-vector XZ/Y components with no curved hop');
+assert.match(coreSource, /return \{[\s\S]{0,700}hopUnits: 0,[\s\S]{0,180}\}; \/\/ Forward\/upward direct player flight exits before any legacy diminished-vertical\/ballistic calculations can run\.[\s\S]{0,500}const distanceScaleAtAngle/,
+  'forward/upward player flight exits before the legacy diminished-vertical model');
+assert.match(coreSource, /const distanceScaleAtAngle[\s\S]{0,1500}appliedResistance = pitch > 0 \? resistance : 0[\s\S]{0,500}noGravityLossScale - naturalScale/,
+  'legacy pitch-distance resistance remains available only in the fallback ballistic path');
 assert.match(coreSource, /verticalTravelUnits: baseDistanceWorld \* Math\.sin\(pitch\) \* direct/,
-  'direct-flight lunges use the same authored distance for the signed vertical leg');
+  'partial-direct fallback lunges still retain their authored signed vertical component');
 assert.match(coreSource, /hopUnits: ballisticHopUnits \* \(1 - direct\)/,
-  'direct-flight strength removes the curved hop instead of stacking it on top of straight aerial travel');
+  'partial-direct fallback still blends curved hop out as direct strength rises');
 assert.match(gameSource, /lungeFlightWorldY = player\.lungeFlightStartWorldY[\s\S]{0,220}player\.lungeVerticalTravelUnits \* eased/,
   'player runtime advances world-Y on the same lunge progress parameter as XZ');
 assert.match(gameSource, /directY = player\.lunging \? window\.FormatUtils\.clamp\(player\.lungeDirectFlightStrength/,
   'rendered player/hitbox Y approaches exact flight authority as direct-flight strength rises');
-assert.match(cameraBridgeSource, /hitTest\?\.directFlightStrength \|\| 0/,
-  'camera-authored lunges preserve Charged Breaker direct-flight strength');
+assert.match(cameraBridgeSource, /effectiveDirectFlightStrength = ungroundedByAim[\s\S]{0,120}\? 1[\s\S]{0,120}: \(hitTest\?\.directFlightStrength \|\| 0\)/,
+  'forward/upward player attacks override trajectory shaping to full reticle flight while below-forward attacks retain authored Charged Breaker direct strength');
 assert.match(breakerSource, /beginStagedAction\(\{[\s\S]{0,500}windupS: strikeS,[\s\S]{0,160}strikeS: 0/,
   'released Charged Breaker waits through its visible strike/lunge arc before resolving impact');
 assert.match(counterSource, /window\.Combat\.weaponChargeGlow = \{/,

@@ -962,6 +962,8 @@
     if (metalArmorDiagnostics) lines.push(metalArmorDiagnostics);
     const harlyaoSkeletonDebugLine = window.HobunjiHarlyaoSkeletonSpecies?.formatDebug?.(); // Keeps the NPC-only skeleton bridge's rig/extremity/cosmetic status copyable from the mobile Pixel Probe without DevTools.
     if (harlyaoSkeletonDebugLine) lines.push(harlyaoSkeletonDebugLine);
+    const harlyaoLichDebugLine = window.HarlyaoLichCombat?.formatDebug?.(); // Keeps live lich type/projectile/puddle/summon/Entranced state copyable on mobile without DevTools.
+    if (harlyaoLichDebugLine) lines.push(harlyaoLichDebugLine);
     const painterlyDebug = window.PainterlyPostprocess?.snapshot?.(); // Makes the live painterly stage/tier state copyable from mobile without a console.
     if (painterlyDebug) lines.push(`Paint filter: mode=${painterlyDebug.mode} effectiveSamples≈${painterlyDebug.sampleCount} internal=${painterlyDebug.internalSize || 'waiting'} pipeline=${painterlyDebug.pipelineMode || 'off'}/${painterlyDebug.pipelineFrames || 0}f renderer=${painterlyDebug.rendererAttached ? 'attached' : 'MISSING'} composite=${painterlyDebug.compositePatched ? 'patched' : 'waiting'} outlines=${painterlyDebug.outlinesEnabled == null ? '?' : (painterlyDebug.outlinesEnabled ? 'on' : 'OFF')} error=${painterlyDebug.lastError || 'none'} latest="${painterlyDebug.latestChange || 'n/a'}"`);
     lines.push(`Livestock caller stack tracing: ${window.PerfProfiler?.traceLivestockCallers === true ? 'ON (expensive)' : 'off'}`);

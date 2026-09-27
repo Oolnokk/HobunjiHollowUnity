@@ -291,7 +291,10 @@
               ? `Charged Breaker (${pct}% pose charge): cut ${vegetationCleared} vegetation tile${vegetationCleared === 1 ? '' : 's'} into mulch.`
               : `Charged Breaker (${pct}% pose charge) connects with nothing.`;
           deps.showToast(msg, hits > 0 || vegetationCleared > 0, true);
-          if (hits > 0) deps.awardWeaponMasteryXp();
+          if (hits > 0) {
+            window.PlayerLunge?.confirmEnemyHit?.(); // A real enemy hit grants the one-second slow-fall aerial follow-up window; misses grant nothing.
+            deps.awardWeaponMasteryXp();
+          }
         },
         onComplete: clearGlow,
         onCancel: clearGlow,

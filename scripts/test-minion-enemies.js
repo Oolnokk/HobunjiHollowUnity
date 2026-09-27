@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 const minionSource = fs.readFileSync('docs/js/combat/combat-minion.js', 'utf8');
+const combatBanditSource = fs.readFileSync('docs/js/combat/combat-bandit.js', 'utf8'); // Guards the shared world-avatar dye/hand path Minions delegate to.
 const resourceSource = fs.readFileSync('docs/js/combat/resource-system.js', 'utf8');
 const coreSource = fs.readFileSync('docs/js/combat/combat-core.js', 'utf8');
 const drunkProneSource = fs.readFileSync('docs/js/drunk-prone-composition-bridge.js', 'utf8'); // Guards prone recovery against the unshambled Footing target.
@@ -26,11 +27,14 @@ assert.match(coreSource, /baseFootingMax = Math\.max\(0, Number\(original\.getEf
 assert.match(trustSource, /entity\?\.enemyClass === 'minion'/);
 assert.match(gameConfigSource, /shamblingFooting:\s*'#[0-9a-fA-F]{6}'/);
 assert.match(devSource, /window\.MinionCombat\.makeEntity\(/);
-assert(indexSource.indexOf('combat-bandit.js?v=20260926hskelhairrig1') < indexSource.indexOf('combat-minion.js?v=20260926shambling70'));
-assert(indexSource.indexOf('combat-minion.js?v=20260926shambling70') < indexSource.indexOf('dev-spawner.js?v=20260926minion1'));
-assert(indexSource.includes('resource-system.js?v=20260926shambling70'));
-assert(indexSource.includes('combat-config-loader.js?v=20260926shambling70'));
-assert(indexSource.includes('game.js?v=20260926hskelrebase1'));
+assert.match(combatBanditSource, /function applyRosterDyesToProfile\(profile, roster\)/, 'Minions must use the shared explicit roster-to-world-profile dye reconciliation');
+assert.match(combatBanditSource, /portrait\.userData\.proceduralHandParent = handsPivot/, 'Minion/Bandit humanoid portraits must retain a parentable procedural-hand root');
+assert.match(devSource, /resolvedRosterDyes[\s\S]*hands=\$\{handRig\}/, 'Testing Arena Minion diagnostics must expose rendered dye resolution and hand attachment');
+assert(indexSource.indexOf('combat-bandit.js?v=20260927hostilevisual1') < indexSource.indexOf('combat-minion.js?v=20260926shambling70'));
+assert(indexSource.indexOf('combat-minion.js?v=20260926shambling70') < indexSource.indexOf('dev-spawner.js?v=20260927hostilevisual1'));
+assert(indexSource.includes('resource-system.js?v=20260927froststamina1'));
+assert(indexSource.includes('combat-config-loader.js?v=20260927directreticle1'));
+assert(indexSource.includes('game.js?v=20260927aerialchain1'));
 
 const authoredDyes = [
   'dye:CLOTH:muted_red_orange', 'dye:CLOTH:dusty_red_orange', 'dye:CLOTH:dark_muted_red_orange',
