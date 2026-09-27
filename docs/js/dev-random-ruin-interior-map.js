@@ -445,13 +445,7 @@
       state.crossingAxis=size.x<=size.z?'x':'z'; // Thin world axis is the direction a player crosses through the doorway.
       state.center={x:center.x,z:center.z}; // Exposed in mobile/browser diagnostics so closed-door collision and popup range can be verified without devtools.
       ruin.transitDoorStates.push(state);
-      DS.registerBlocker({
-        id:'devruin-transit-door-'+door.id,
-        scope:SCOPE,
-        bounds:()=>boundsFor(panel),
-        enabled:()=>state.open<.78,
-        purpose:'hallway_transit_door',
-      });
+      // No separate DynamicSurfaces blocker here: DevRandomRuinTileOccupancy reads state.open and folds this panel into the ruin's one aggregate gameplay blocker.
       ruin.controls.push({
         kind:'transitDoor',object:door,promptRoot:door,range:1.9,touchIcon:'✋',priority:24,
         label:()=>state.target>.5?'Close Hallway Door':'Open Hallway Door',
@@ -471,13 +465,7 @@
     for(const m of ruin.mechanisms.values()){
       if(m.type==='stoneDoor'){
         const panel=(m.root.children||[]).find(child=>child?.isMesh&&child.geometry)||m.root; // Physical panel only; avoids blocking the whole doorway arch assembly.
-        m.root.userData.__devRuinPhysicalDoorBlocker=true;
-        DS.registerBlocker({
-          id:'devruin-physical-door-'+m.id,
-          scope:SCOPE,
-          bounds:()=>boundsFor(panel),
-          enabled:()=>m.progress<.78, // Closed/mostly-closed panels are solid; opening animation releases collision near its visual clearance point.
-        });
+        m.root.userData.__devRuinPhysicalDoorBlocker=false; // The shared tile-occupancy blocker is the single collision authority for moving stone doors; progress only changes its door source state.
       }
       const gated=linkedMechanismIds.has(String(m.id))&&!m.root.userData?.runtimePuzzleBypass;
       if(m.type==='movingDais'){
