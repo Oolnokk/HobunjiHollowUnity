@@ -9,6 +9,7 @@
   const SEMANTIC_RESCAN_MS = 250;
   const SLOT_ACTIONS = ['action1', 'action2', 'action3', 'itemAction1', 'itemAction2'];
   const TOUCH_BUTTON_IDS = ['btnAction1', 'btnAction2', 'btnAction3', 'btnItemAction1', 'btnItemAction2'];
+  const INPUT_CLAIM_OWNER = 'dev-random-ruin'; // Shared input-ownership registry key; explicit Action 1 interactions can suppress combat without hardcoding ruin logic into the weapon system.
   const GridTileAccessors = window.GridTileAccessors;
   const DS = window.DynamicSurfaces;
   const DevSpawner = window.DevSpawner;
@@ -379,7 +380,8 @@
     let slotIndex=0;
     return sorted.flatMap((entry,index)=>{
       if(entry.inputAction){
-        return [{ ...entry, action:`dev_ruin_world_fixed_${entry.inputAction}_${index}`, touchButtonId:null }];
+        const fixedIndex=SLOT_ACTIONS.indexOf(entry.inputAction); // Explicit semantic inputs (including Action 1) own their matching physical touch button unless they are native/pass-through prompts such as Dodge.
+        return [{ ...entry, action:`dev_ruin_world_fixed_${entry.inputAction}_${index}`, touchButtonId:entry.nativeInput?null:(fixedIndex>=0?TOUCH_BUTTON_IDS[fixedIndex]:null) }];
       }
       const inputAction=slotActions[slotIndex];
       const touchButtonId=touchButtonIds[slotIndex]||null;
@@ -411,6 +413,22 @@
 
   function inputColor(action) {
     return window.ActionArchSlotColors?.inputColors?.[action] || '#B8C5C0';
+  }
+
+  function syncInputClaims(rows) {
+    const registry=window.WorldActionInputClaims;
+    if(!registry)return;
+    const claims=rows.filter(row=>!row.nativeInput&&row.inputAction).map(row=>({
+      actionId:row.inputAction,
+      label:row.label,
+      priority:1000+(Number(row.priority)||0), // World interactions intentionally outrank ordinary gameplay for an explicitly claimed input while remaining below menus/selectors in game.js.
+      onPress:()=>{
+        if(typeof row.onHoldStart==='function')row.onHoldStart();
+        else row.onPress?.();
+      },
+      onRelease:()=>row.onHoldEnd?.(),
+    }));
+    registry.setClaims(INPUT_CLAIM_OWNER,claims);
   }
 
   function clearTouchButtons(keepIds = null) {
@@ -451,6 +469,7 @@
     if (!inRuin()) {
       lastRows = [];
       clearTouchButtons();
+      window.WorldActionInputClaims?.clearClaims?.(INPUT_CLAIM_OWNER);
       if (ownsWorldList) window.WorldPopupText?.clearInteractionPrompts?.();
       ownsWorldList = false;
       lastAnchor = null;
@@ -462,9 +481,11 @@
     prepareSemanticObjects();
     const rows = currentRows();
     lastRows = rows;
+    syncInputClaims(rows); // Publishes explicit/dynamic world-input ownership before controller/gameplay dispatch for this frame.
     const device = currentDevice();
     syncTouchButtons(rows, device);
     if (!rows.length || !window.WorldPopupText?.syncInteractionPrompts) {
+      if(!rows.length)window.WorldActionInputClaims?.clearClaims?.(INPUT_CLAIM_OWNER);
       if (ownsWorldList) window.WorldPopupText?.clearInteractionPrompts?.();
       ownsWorldList = false;
       return;
@@ -513,20 +534,21 @@
     if (!row) return;
     event.preventDefault();
     event.stopImmediatePropagation();
+    if(event.repeat)return;
+    if(window.WorldActionInputClaims?.dispatch?.(row.inputAction,'press',{source:'keyboard'}))return;
     try {
-      if (typeof row.onHoldStart === 'function') {
-        if (event.repeat) return;
-        row.onHoldStart();
-      } else row.onPress?.();
+      if (typeof row.onHoldStart === 'function') row.onHoldStart();
+      else row.onPress?.();
     } catch (error) { console.warn('[Random Test Ruin interactions] action failed', error); }
   }, true);
 
   window.addEventListener('keyup', event => {
     if (!inRuin() || !lastRows.length) return;
-    const row = lastRows.find(entry => typeof entry.onHoldEnd === 'function' && keyboardMatches(bindingFor(entry.inputAction, 'desktop'), event));
+    const row = lastRows.find(entry => !entry.nativeInput && keyboardMatches(bindingFor(entry.inputAction, 'desktop'), event));
     if (!row) return;
     event.preventDefault();
     event.stopImmediatePropagation();
+    if(window.WorldActionInputClaims?.dispatch?.(row.inputAction,'release',{source:'keyboard'}))return;
     try { row.onHoldEnd?.(); } catch (error) { console.warn('[Random Test Ruin interactions] hold release failed', error); }
   }, true);
 
@@ -537,6 +559,7 @@
 
   function pollController() {
     if (!inRuin()) { controllerDown.clear(); return; }
+    if(window.WorldActionInputClaims)return; // Normal game controller dispatch now routes claimed inputs through the shared registry, preventing a second interaction fire from this legacy fallback poller.
     for (const row of lastRows) {
       if(row.nativeInput)continue; // Fixed contextual inputs (Dodge) remain owned by game.js and are only advertised here.
       const binding = bindingFor(row.inputAction, 'controller');
@@ -561,7 +584,9 @@
     const row = Number.isInteger(index) ? lastRows[index] : null;
     event.preventDefault();
     event.stopImmediatePropagation();
-    if (typeof row?.onHoldStart === 'function') {
+    if(!row)return;
+    if(window.WorldActionInputClaims?.dispatch?.(row.inputAction,'press',{source:'touch'}))return;
+    if (typeof row.onHoldStart === 'function') {
       try { row.onHoldStart(); } catch (error) { console.warn('[Random Test Ruin interactions] touch hold failed', error); }
     }
   }, true);
@@ -573,9 +598,11 @@
     const row = Number.isInteger(index) ? lastRows[index] : null;
     event.preventDefault();
     event.stopImmediatePropagation();
+    if(!row)return;
+    if(window.WorldActionInputClaims?.dispatch?.(row.inputAction,'release',{source:'touch'}))return;
     try {
-      if (typeof row?.onHoldEnd === 'function') row.onHoldEnd();
-      else row?.onPress?.();
+      if (typeof row.onHoldEnd === 'function') row.onHoldEnd();
+      else row.onPress?.();
     } catch (error) { console.warn('[Random Test Ruin interactions] touch action failed', error); }
   }
   document.addEventListener('pointerup', finishTouchRow, true);
@@ -612,6 +639,7 @@
         ownerName:lastAnchor?.name || null,
         ownerKind:semanticKind(lastAnchor),
         worldPopupVisible:ownsWorldList,
+        inputClaims:window.WorldActionInputClaims?.snapshot?.()||null,
       };
     },
   });
