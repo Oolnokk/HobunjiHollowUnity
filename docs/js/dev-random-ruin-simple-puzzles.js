@@ -21,7 +21,7 @@
   const ROPE_MIN_LENGTH = 1.65;
   const CHECKPOINT_INVULN_MS = 1200;
   const KURRAYA_NOTE_URL = 'assets/audio/music/instruments/sfx_kurraya_pluck.m4a'; // Shared authored pluck used by modular musical pressure plates until a dedicated ruin-note sample exists.
-  const CHORD_PITCHES = Object.freeze([1, 1.25, 1.5, 1.875]); // Root, major third, fifth, major seventh; four independent plates form one recognisable chord without requiring an order.
+  const CHORD_PITCHES = Object.freeze([1, 1.259921, 1.498307, 1.887749]); // Equal-tempered root, major third, fifth, major seventh; four independent plates form one real chord without requiring an order.
 
   const DS = window.DynamicSurfaces;
   const GridTileAccessors = window.GridTileAccessors;
@@ -1039,10 +1039,10 @@
     const b=explicitBounds||roomBounds(context.meta,room),cx=(b.minX+b.maxX)*.5,cz=(b.minZ+b.maxZ)*.5;
     const inset=Math.min(.7,Math.max(.42,Math.min(b.maxX-b.minX,b.maxZ-b.minZ)*.18));
     return [
-      {x:b.minX+inset,z:cz-.9,yaw:Math.PI/2,spawnX:b.minX+1.35,spawnZ:cz-.9},
-      {x:b.minX+inset,z:cz+.9,yaw:Math.PI/2,spawnX:b.minX+1.35,spawnZ:cz+.9},
-      {x:b.maxX-inset,z:cz-.9,yaw:-Math.PI/2,spawnX:b.maxX-1.35,spawnZ:cz-.9},
-      {x:b.maxX-inset,z:cz+.9,yaw:-Math.PI/2,spawnX:b.maxX-1.35,spawnZ:cz+.9},
+      {x:b.minX+inset,z:cz-.9,yaw:Math.PI/2,spawnX:b.minX+inset,spawnZ:cz-.9},
+      {x:b.minX+inset,z:cz+.9,yaw:Math.PI/2,spawnX:b.minX+inset,spawnZ:cz+.9},
+      {x:b.maxX-inset,z:cz-.9,yaw:-Math.PI/2,spawnX:b.maxX-inset,spawnZ:cz-.9},
+      {x:b.maxX-inset,z:cz+.9,yaw:-Math.PI/2,spawnX:b.maxX-inset,spawnZ:cz+.9},
     ];
   }
 
@@ -1055,7 +1055,7 @@
       body.position.set(p.x,Number(support.y)+.875,p.z);body.rotation.y=p.yaw;body.name='dev_ruin_sarcophagus_body_'+room.id+'_'+index;root.add(body);
       const panel=naturalizeStone(new THREE.Mesh(new THREE.BoxGeometry(.58,1.55,.12),makeBasic(0x808080)));
       panel.position.set(0,0,.32);body.add(panel);
-      coffins.push({index,body,panel,closedY:0,openY:1.62,progress:0,spawnX:p.spawnX,spawnZ:p.spawnZ,spawned:false});
+      coffins.push({index,body,panel,closedY:0,openY:1.62,progress:0,spawnX:p.spawnX,spawnZ:p.spawnZ,spawned:false,creature:null,released:false});
     }
     if(coffins.length<2){disposeObject(root);return null;}
     const bounds=options.bounds||roomBounds(context.meta,room);
@@ -1066,13 +1066,11 @@
   }
 
   async function activateSarcophagusSpawner(module) {
-    if(!module||module.activated)return false;
-    module.activated=true;
-    if(module.spawnStarted)return true;
+    if(!module||module.activated||module.spawnStarted)return false;
     module.spawnStarted=true;
     const ownerState=state; // Captured across awaited portrait builds so a reroll cannot adopt a late skeleton from the previous generated layout.
     for(const coffin of module.coffins){
-      const px=coffin.spawnX*(Number(deps?.TILE)||1),py=coffin.spawnZ*(Number(deps?.TILE)||1); // Humanoid combat entities use the game's pixel-space X/Y plane, while modular ruin geometry is authored in world units.
+      const px=coffin.spawnX*(Number(deps?.TILE)||1),py=coffin.spawnZ*(Number(deps?.TILE)||1); // Spawn at the stone-box center first; hostile AI is withheld until its sliding panel is mostly open.
       try{
         const creature=await window.MinionCombat?.makeEntity?.({
           speciesId:'harlyao-skeleton',name:'Harlyao Skeleton',tier:module.tier,x:px,y:py,zoneId:MAP_ID,
@@ -1090,13 +1088,13 @@
             creature.avatarRef?.group?.position && (creature.avatarRef.group.position.y=initialSurfaceY+(Number(creature.halfHeight)||0));
             creature.groundShadow?.position && (creature.groundShadow.position.y=initialSurfaceY+(Number(deps?.characterGroundShadowSurfaceOffset?.())||0));
           }
-          deps?.hostileObjects?.add?.(creature);
           ownerState.spawnedMinions.add(creature);
-          coffin.spawned=true;module.spawnCount++;
+          coffin.creature=creature;coffin.spawned=true;module.spawnCount++;
         }else disposeSpawnedMinion(creature);
       }catch(error){console.warn('[Random Test Ruin] sarcophagus skeleton spawn failed',error);}
     }
-    return true;
+    if(state===ownerState&&ownerState.sarcophagusModules.includes(module))module.activated=true; // Panels only begin retracting after the skeletons visibly exist inside their boxes.
+    return module.activated;
   }
 
   function buildOssuaryChordComposer(context,rng,room,options={}) {
@@ -1415,6 +1413,10 @@
         coffin.progress+=Math.max(-dt*1.45,Math.min(dt*1.45,target-coffin.progress));
         const t=coffin.progress*coffin.progress*(3-2*coffin.progress);
         coffin.panel.position.y=coffin.closedY+(coffin.openY-coffin.closedY)*t;
+        if(coffin.creature&&!coffin.released&&coffin.progress>=.68){
+          deps?.hostileObjects?.add?.(coffin.creature); // Enemy AI begins only after the stone door has visibly retracted far enough to release it.
+          coffin.released=true;
+        }
       }
     }
   }
@@ -1693,7 +1695,7 @@
       canopies:state.canopies.map(canopy=>({id:canopy.id,roomId:canopy.roomId,roofY:+canopy.roofY.toFixed(3),width:+canopy.width.toFixed(3),depth:+canopy.depth.toFixed(3),occludesTarget:canopy.occludesTarget})),
       ceilingGlyphs:state.ceilingGlyphs.map(glyph=>({id:glyph.id,roomId:glyph.roomId,active:glyph.active,hitCount:glyph.hitCount})),
       cyclingElevators:state.cyclingElevators.map(elevator=>({id:elevator.id,roomId:elevator.roomId,active:elevator.active,progress:+elevator.progress.toFixed(3),topY:+elevator.topTopY.toFixed(3),bottomY:+elevator.bottomTopY.toFixed(3)})),
-      sarcophagi:state.sarcophagusModules.map(module=>({id:module.id,roomId:module.roomId,activated:module.activated,spawnCount:module.spawnCount,count:module.coffins.length})),
+      sarcophagi:state.sarcophagusModules.map(module=>({id:module.id,roomId:module.roomId,activated:module.activated,spawnCount:module.spawnCount,count:module.coffins.length,released:module.coffins.filter(coffin=>coffin.released).length})),
       sunkenRoomShells:state.sunkenRoomShells.map(module=>({id:module.id,roomId:module.roomId,floorY:+module.floorY.toFixed(3)})),
       ossuaryComposers:state.ossuaryComposers.map(module=>({id:module.id,roomId:module.roomId,entered:module.entered,completed:module.completed})),
       ropeElevatorComposers:state.ropeElevatorComposers.map(module=>({id:module.id,roomId:module.roomId,ropeId:module.rope.id,elevatorId:module.elevator.id,glyphId:module.glyph.id,canopyId:module.canopy?.id||null,lowerShellId:module.lowerShell?.id||null,ossuaryId:module.ossuary?.id||null,nextDoorMechanismId:module.nextDoorMechanismId||null})),
