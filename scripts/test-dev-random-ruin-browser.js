@@ -517,6 +517,8 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
             respawnCount:cp.respawnCount,
           };
           const directBefore=cp.respawnCount;
+          const invulnWaitMs=Math.max(0,(Number(deps.player.invulnUntil)||0)-performance.now()+60); // Used so the second death test does not mistake the checkpoint's intentional 1.2s post-respawn invulnerability for a broken direct-hit death path.
+          if(invulnWaitMs>0)await new Promise(resolve=>setTimeout(resolve,invulnWaitMs));
           place({x:cp.activePoint.x+1.6,z:cp.activePoint.z+1.6,y:cp.activePoint.y});
           deps.player.health=1;
           window.Combat.deps.damagePlayer?.((Number(deps.player.maxHealth)||100)*2);
