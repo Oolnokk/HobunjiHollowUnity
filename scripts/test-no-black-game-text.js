@@ -21,7 +21,7 @@ assert(
 );
 
 assert(
-  index.includes('style.css?v=20260926entranced1'),
+  index.includes('style.css?v=20260926entranced2'),
   'index.html must cache-bust style.css so the text contrast fix reaches existing installs.'
 );
 
