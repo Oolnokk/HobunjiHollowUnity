@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Portrait Pixel Layer Mask</title>
+<style>
+:root{--bg:#11151b;--panel:#191f28;--panel2:#202834;--text:#e7edf5;--muted:#95a3b5;--border:#344052;--accent:#d96cff;--accent2:#78d9ff;--danger:#ff6b77;--ok:#7be0a8}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:13px/1.35 system-ui,sans-serif}
+header{padding:12px 14px;border-bottom:1px solid var(--border);background:#0e1217;position:sticky;top:0;z-index:3}
+h1{font-size:16px;margin:0 0 4px}.sub{color:var(--muted);font-size:12px}
+main{display:grid;grid-template-columns:280px 1fr 290px;min-height:calc(100vh - 61px)}
+.panel{padding:12px;border-right:1px solid var(--border);background:var(--panel)}.panel.right{border-right:0;border-left:1px solid var(--border)}
+section{margin-bottom:14px}h2{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 8px}
+label{display:block;margin:7px 0 4px;color:#cdd6e3}.row{display:flex;gap:7px;align-items:center}.row>*{min-width:0}
+input,select,button,textarea{font:inherit;color:var(--text);background:var(--panel2);border:1px solid var(--border);border-radius:5px}
+input,select,button{height:32px;padding:5px 8px}input[type=file]{height:auto;width:100%;padding:6px}input[type=range]{width:100%}
+button{cursor:pointer}button:hover{border-color:#617089}button.primary{background:#493154;border-color:#7b4e91}button.danger{color:#ffd8dd;border-color:#7a3941}
+button.active{outline:2px solid var(--accent);outline-offset:-2px}.grow{flex:1}
+.stageWrap{overflow:auto;position:relative;background:#090b0f;display:flex;align-items:flex-start;justify-content:flex-start;padding:20px;min-width:0}
+canvas{image-rendering:pixelated;touch-action:none;box-shadow:0 0 0 1px #000;background-image:linear-gradient(45deg,#1b1f25 25%,transparent 25%),linear-gradient(-45deg,#1b1f25 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#1b1f25 75%),linear-gradient(-45deg,transparent 75%,#1b1f25 75%);background-size:16px 16px;background-position:0 0,0 8px,8px -8px,-8px 0}
+.stat{display:grid;grid-template-columns:1fr auto;gap:4px 8px;padding:8px;background:#121821;border:1px solid var(--border);border-radius:5px;font-family:ui-monospace,monospace;font-size:11px}.stat b{font-weight:600}
+textarea{width:100%;min-height:165px;padding:8px;resize:vertical;font:11px/1.4 ui-monospace,monospace}
+.badge{display:inline-block;padding:2px 6px;border-radius:10px;background:#263141;color:var(--muted);font-size:10px}.hint{color:var(--muted);font-size:11px;margin-top:6px}
+.legend{display:flex;gap:10px;flex-wrap:wrap;font-size:11px;color:var(--muted)}.sw{width:10px;height:10px;display:inline-block;margin-right:4px;vertical-align:-1px}
+@media(max-width:900px){main{grid-template-columns:1fr}.panel,.panel.right{border:0;border-bottom:1px solid var(--border)}.stageWrap{min-height:55vh;order:-1}}
+</style>
+</head>
+<body>
+<header>
+  <h1>🧩 Portrait Pixel Layer Mask</h1>
+  <div class="sub">Paint exact source pixels that should render at a different portrait stage without splitting the source PNG.</div>
+</header>
+<main>
+  <aside class="panel">
+    <section>
+      <h2>1. Source sprite</h2>
+      <input id="sourceFile" type="file" accept="image/png,image/webp,image/*">
+      <label>Optional existing mask</label>
+      <input id="maskFile" type="file" accept="image/png,image/*">
+      <div class="hint">The mask must match the source dimensions. Only source pixels with alpha can be marked.</div>
+    </section>
+    <section>
+      <h2>2. Paint</h2>
+      <div class="row">
+        <button id="paintBtn" class="active grow">Paint</button>
+        <button id="eraseBtn" class="grow">Erase</button>
+      </div>
+      <label>Brush size: <span id="brushLabel">1 px</span></label>
+      <input id="brushSize" type="range" min="1" max="16" value="1" step="1">
+      <label>Zoom: <span id="zoomLabel">8×</span></label>
+      <input id="zoom" type="range" min="1" max="24" value="8" step="1">
+      <div class="row" style="margin-top:8px">
+        <button id="clearBtn" class="danger grow">Clear mask</button>
+        <button id="invertBtn" class="grow">Invert opaque</button>
+      </div>
+    </section>
+    <section>
+      <h2>3. Layer target</h2>
+      <label>Marked pixels render</label>
+      <select id="target" style="width:100%">
+        <option value="aboveHood">Above hood</option>
+        <option value="belowHood">Below hood</option>
+      </select>
+      <label>Apply on view</label>
+      <select id="view" style="width:100%">
+        <option value="behind">Behind only</option>
+        <option value="front">Front only</option>
+        <option value="both">Front + behind</option>
+      </select>
+      <label>Mask repository path</label>
+      <input id="maskPath" class="grow" style="width:100%" value="./assets/cosmetics/example.layer-mask.png">
+    </section>
+  </aside>
+
+  <div class="stageWrap" id="stageWrap">
+    <canvas id="stage" width="1" height="1"></canvas>
+  </div>
+
+  <aside class="panel right">
+    <section>
+      <h2>Live debug</h2>
+      <div class="stat">
+        <span>Source</span><b id="dbgSource">none</b>
+        <span>Dimensions</span><b id="dbgDims">—</b>
+        <span>Cursor</span><b id="dbgCursor">—</b>
+        <span>Source alpha</span><b id="dbgAlpha">—</b>
+        <span>Marked pixels</span><b id="dbgCount">0</b>
+        <span>Target</span><b id="dbgTarget">aboveHood / behind</b>
+      </div>
+      <div class="legend" style="margin-top:8px">
+        <span><i class="sw" style="background:#d96cff"></i>marked</span>
+        <span><i class="sw" style="background:#78d9ff"></i>cursor</span>
+      </div>
+    </section>
+    <section>
+      <h2>Export</h2>
+      <div class="row">
+        <button id="downloadBtn" class="primary grow">Download mask PNG</button>
+        <button id="copyBtn" class="grow">Copy JSON</button>
+      </div>
+      <label>Layer JSON fragment</label>
+      <textarea id="jsonOut" spellcheck="false"></textarea>
+      <div class="hint">Paste <code>pixelLayerMasks</code> into the same cosmetic layer object that owns the source sprite. The renderer keeps unmarked pixels at the layer's normal stage and reroutes only marked pixels.</div>
+    </section>
+  </aside>
+</main>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const sourceFile = $('sourceFile');
+  const maskFile = $('maskFile');
+  const stage = $('stage');
+  const ctx = stage.getContext('2d', { willReadFrequently: true });
+  const sourceCanvas = document.createElement('canvas'); // Holds original source pixels; used by painting validation and preview redraw.
+  const sourceCtx = sourceCanvas.getContext('2d', { willReadFrequently: true });
+  const maskCanvas = document.createElement('canvas'); // Stores binary authoring mask pixels exported as the runtime alpha mask.
+  const maskCtx = maskCanvas.getContext('2d', { willReadFrequently: true });
+  let sourceName = ''; // Used for debug/export naming after a local source image is loaded.
+  let paintMode = 'paint'; // Used by pointer painting to choose mark vs erase behavior.
+  let drawing = false; // Tracks an active pointer drag on the zoomed canvas.
+  let lastPixel = null; // Used to interpolate brush strokes without holes during fast pointer movement.
+
+  const loadImageFile = file => new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Could not load image')); };
+    img.src = url;
+  });
+
+  function setDimensions(w, h) {
+    sourceCanvas.width = maskCanvas.width = w;
+    sourceCanvas.height = maskCanvas.height = h;
+    redraw();
+  }
+
+  function maskCount() {
+    if (!maskCanvas.width || !maskCanvas.height) return 0;
+    const data = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height).data;
+    let count = 0;
+    for (let i = 3; i < data.length; i += 4) if (data[i] > 127) count++;
+    return count;
+  }
+
+  function zoomValue() { return Number($('zoom').value) || 1; }
+
+  function redraw() {
+    const w = sourceCanvas.width || 1;
+    const h = sourceCanvas.height || 1;
+    const z = zoomValue();
+    stage.width = Math.max(1, w * z);
+    stage.height = Math.max(1, h * z);
+    stage.style.width = stage.width + 'px';
+    stage.style.height = stage.height + 'px';
+    ctx.imageSmoothingEnabled = false;
+    ctx.clearRect(0, 0, stage.width, stage.height);
+    if (sourceCanvas.width) ctx.drawImage(sourceCanvas, 0, 0, stage.width, stage.height);
+    if (maskCanvas.width) {
+      const overlay = document.createElement('canvas');
+      overlay.width = w; overlay.height = h;
+      const o = overlay.getContext('2d');
+      const mask = maskCtx.getImageData(0, 0, w, h);
+      const px = o.createImageData(w, h);
+      for (let i = 0; i < mask.data.length; i += 4) {
+        if (mask.data[i + 3] > 127) {
+          px.data[i] = 217; px.data[i + 1] = 108; px.data[i + 2] = 255; px.data[i + 3] = 150;
+        }
+      }
+      o.putImageData(px, 0, 0);
+      ctx.drawImage(overlay, 0, 0, stage.width, stage.height);
+    }
+    if (z >= 6 && w * h <= 250000) {
+      ctx.strokeStyle = 'rgba(255,255,255,.10)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let x = 0; x <= w; x++) { ctx.moveTo(x * z + .5, 0); ctx.lineTo(x * z + .5, h * z); }
+      for (let y = 0; y <= h; y++) { ctx.moveTo(0, y * z + .5); ctx.lineTo(w * z, y * z + .5); }
+      ctx.stroke();
+    }
+    refreshDebug();
+  }
+
+  function sourceAlphaAt(x, y) {
+    if (x < 0 || y < 0 || x >= sourceCanvas.width || y >= sourceCanvas.height) return 0;
+    return sourceCtx.getImageData(x, y, 1, 1).data[3];
+  }
+
+  function paintPixel(cx, cy) {
+    if (!sourceCanvas.width) return;
+    const size = Number($('brushSize').value) || 1;
+    const half = Math.floor((size - 1) / 2);
+    for (let y = cy - half; y < cy - half + size; y++) {
+      for (let x = cx - half; x < cx - half + size; x++) {
+        if (x < 0 || y < 0 || x >= sourceCanvas.width || y >= sourceCanvas.height) continue;
+        if (paintMode === 'paint') {
+          if (sourceAlphaAt(x, y) === 0) continue;
+          maskCtx.fillStyle = '#fff';
+          maskCtx.fillRect(x, y, 1, 1);
+        } else {
+          maskCtx.clearRect(x, y, 1, 1);
+        }
+      }
+    }
+  }
+
+  function linePixels(a, b) {
+    const out = [];
+    let x0 = a.x, y0 = a.y, x1 = b.x, y1 = b.y;
+    const dx = Math.abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+    const dy = -Math.abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+    let err = dx + dy;
+    while (true) {
+      out.push({ x: x0, y: y0 });
+      if (x0 === x1 && y0 === y1) break;
+      const e2 = 2 * err;
+      if (e2 >= dy) { err += dy; x0 += sx; }
+      if (e2 <= dx) { err += dx; y0 += sy; }
+    }
+    return out;
+  }
+
+  function eventPixel(ev) {
+    const rect = stage.getBoundingClientRect();
+    const z = zoomValue();
+    return {
+      x: Math.floor((ev.clientX - rect.left) / z),
+      y: Math.floor((ev.clientY - rect.top) / z)
+    };
+  }
+
+  function applyPointer(ev) {
+    const p = eventPixel(ev);
+    if (lastPixel) for (const q of linePixels(lastPixel, p)) paintPixel(q.x, q.y);
+    else paintPixel(p.x, p.y);
+    lastPixel = p;
+    redraw();
+    updateCursor(p);
+  }
+
+  function updateCursor(p) {
+    if (!p || p.x < 0 || p.y < 0 || p.x >= sourceCanvas.width || p.y >= sourceCanvas.height) {
+      $('dbgCursor').textContent = '—'; $('dbgAlpha').textContent = '—'; return;
+    }
+    $('dbgCursor').textContent = p.x + ', ' + p.y;
+    $('dbgAlpha').textContent = String(sourceAlphaAt(p.x, p.y));
+  }
+
+  function configFragment() {
+    const path = $('maskPath').value.trim() || './assets/cosmetics/example.layer-mask.png';
+    return {
+      pixelLayerMasks: [{
+        url: path,
+        target: $('target').value,
+        view: $('view').value
+      }]
+    };
+  }
+
+  function refreshDebug() {
+    $('brushLabel').textContent = $('brushSize').value + ' px';
+    $('zoomLabel').textContent = $('zoom').value + '×';
+    $('dbgSource').textContent = sourceName || 'none';
+    $('dbgDims').textContent = sourceCanvas.width ? sourceCanvas.width + '×' + sourceCanvas.height : '—';
+    $('dbgCount').textContent = String(maskCount());
+    $('dbgTarget').textContent = $('target').value + ' / ' + $('view').value;
+    $('jsonOut').value = JSON.stringify(configFragment(), null, 2);
+  }
+
+  sourceFile.addEventListener('change', async () => {
+    const file = sourceFile.files?.[0];
+    if (!file) return;
+    const img = await loadImageFile(file);
+    sourceName = file.name;
+    setDimensions(img.naturalWidth || img.width, img.naturalHeight || img.height);
+    sourceCtx.clearRect(0, 0, sourceCanvas.width, sourceCanvas.height);
+    sourceCtx.drawImage(img, 0, 0);
+    maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+    const base = file.name.replace(/\.[^.]+$/, '');
+    $('maskPath').value = './assets/cosmetics/' + base + '.layer-mask.png';
+    redraw();
+  });
+
+  maskFile.addEventListener('change', async () => {
+    const file = maskFile.files?.[0];
+    if (!file || !sourceCanvas.width) return;
+    const img = await loadImageFile(file);
+    if ((img.naturalWidth || img.width) !== sourceCanvas.width || (img.naturalHeight || img.height) !== sourceCanvas.height) {
+      alert('Mask dimensions must exactly match the source sprite.');
+      maskFile.value = '';
+      return;
+    }
+    maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+    maskCtx.drawImage(img, 0, 0);
+    redraw();
+  });
+
+  stage.addEventListener('pointerdown', ev => {
+    if (!sourceCanvas.width) return;
+    drawing = true; lastPixel = null; stage.setPointerCapture(ev.pointerId); applyPointer(ev); ev.preventDefault();
+  });
+  stage.addEventListener('pointermove', ev => {
+    const p = eventPixel(ev); updateCursor(p);
+    if (drawing) { applyPointer(ev); ev.preventDefault(); }
+  });
+  const endPointer = () => { drawing = false; lastPixel = null; };
+  stage.addEventListener('pointerup', endPointer);
+  stage.addEventListener('pointercancel', endPointer);
+  stage.addEventListener('pointerleave', () => { if (!drawing) updateCursor(null); });
+
+  $('paintBtn').onclick = () => { paintMode = 'paint'; $('paintBtn').classList.add('active'); $('eraseBtn').classList.remove('active'); };
+  $('eraseBtn').onclick = () => { paintMode = 'erase'; $('eraseBtn').classList.add('active'); $('paintBtn').classList.remove('active'); };
+  $('clearBtn').onclick = () => { maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height); redraw(); };
+  $('invertBtn').onclick = () => {
+    if (!sourceCanvas.width) return;
+    const src = sourceCtx.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height);
+    const mask = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height);
+    for (let i = 0; i < mask.data.length; i += 4) {
+      const selected = mask.data[i + 3] > 127;
+      const opaque = src.data[i + 3] > 0;
+      mask.data[i] = mask.data[i + 1] = mask.data[i + 2] = opaque && !selected ? 255 : 0;
+      mask.data[i + 3] = opaque && !selected ? 255 : 0;
+    }
+    maskCtx.putImageData(mask, 0, 0); redraw();
+  };
+  $('zoom').oninput = redraw;
+  $('brushSize').oninput = refreshDebug;
+  $('target').onchange = refreshDebug;
+  $('view').onchange = refreshDebug;
+  $('maskPath').oninput = refreshDebug;
+
+  $('downloadBtn').onclick = () => {
+    if (!sourceCanvas.width) return;
+    maskCanvas.toBlob(blob => {
+      if (!blob) return;
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      const base = (sourceName || 'portrait').replace(/\.[^.]+$/, '');
+      a.download = base + '.layer-mask.png';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 500);
+    }, 'image/png');
+  };
+  $('copyBtn').onclick = async () => {
+    const text = $('jsonOut').value;
+    try { await navigator.clipboard.writeText(text); $('copyBtn').textContent = 'Copied'; }
+    catch (_) { $('jsonOut').focus(); $('jsonOut').select(); document.execCommand('copy'); $('copyBtn').textContent = 'Copied'; }
+    setTimeout(() => $('copyBtn').textContent = 'Copy JSON', 900);
+  };
+
+  refreshDebug();
+  redraw();
+})();
+</script>
+</body>
+</html>
