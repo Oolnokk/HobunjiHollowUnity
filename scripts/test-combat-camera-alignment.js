@@ -103,7 +103,11 @@ assert.doesNotMatch(game, /const lungeTarget = \(activeTool === 'weapon'[\s\S]{0
   'player lunges cannot home toward an enemy after the reticle vector is committed');
 assert.match(game, /aimUsesDirectReticleFlight = aimPitch >= 0[\s\S]{0,550}aimUsesDirectReticleFlight \? 1 : \(hitTest\?\.directFlightStrength \|\| 0\)/,
   'forward/upward native attacks force full direct flight along the reticle vector');
-assert.match(coreSource, /if \(direct >= 0\.999 && pitch >= 0\)[\s\S]{0,700}return[\s\S]{0,900}const distanceScaleAtAngle/,
+assert.match(coreSource, /MAX_MELEE_AIM_PITCH_RAD = Math\.PI \/ 2/,
+  'melee reticle pitch must reach a true 90-degree vertical aim');
+assert.match(coreSource, /upwardDistanceScale = 1 - 0\.5 \* upwardPitchFraction/,
+  'forward/upward lunge total distance must lerp linearly from 1x at 0 degrees to 0.5x at 90 degrees');
+assert.match(coreSource, /if \(direct >= 0\.999 && pitch >= 0\)[\s\S]{0,1000}return[\s\S]{0,900}const distanceScaleAtAngle/,
   'direct reticle flight exits before the legacy diminished-vertical ballistic math starts');
 
 // All combat adapters must accept the same finite point; authored attack range
@@ -215,15 +219,17 @@ const windowStub = {
     meleeLungeProfile(distancePx, pitch, hopUnits, lungeHeightUnits, pitchDistanceResistance, directFlightStrength, inRangeAirAssist) {
       windowStub._lastProfile = { distancePx, pitch, hopUnits, lungeHeightUnits, pitchDistanceResistance, directFlightStrength, inRangeAirAssist };
       if (directFlightStrength >= 0.999 && pitch >= 0) {
+        const upwardDistanceScale = 1 - 0.5 * Math.max(0, Math.min(1, pitch / (Math.PI / 2)));
         return {
-          distancePx: distancePx * Math.cos(Math.abs(pitch)),
+          distancePx: distancePx * upwardDistanceScale * Math.cos(Math.abs(pitch)),
           pitch,
           hopUnits: 0,
           lungeHeightUnits,
           pitchDistanceResistance,
           directFlightStrength: 1,
           inRangeAirAssist,
-          verticalTravelUnits: (distancePx / 64) * Math.sin(pitch),
+          upwardDistanceScale,
+          verticalTravelUnits: (distancePx / 64) * upwardDistanceScale * Math.sin(pitch),
         };
       }
       return { distancePx, pitch, hopUnits, lungeHeightUnits, pitchDistanceResistance, directFlightStrength, inRangeAirAssist, verticalTravelUnits: 0 };
@@ -310,12 +316,14 @@ assert.equal(player.lungeDirY, 0, 'lunge no longer follows a target-derived side
 assert(Math.abs(player.lungeAimPitch - Math.atan2(1.6, 9)) < 1e-9,
   'lunge pitch uses verticality from its real origin to the shared point');
 const expectedPitch = Math.atan2(1.6, 9);
-assert(Math.abs(player.lungeDistancePx - 128 * Math.cos(expectedPitch)) < 1e-9,
-  'forward/upward lunge horizontal travel is the XZ component of the authored 3D attack distance');
+const expectedUpwardDistanceScale = 1 - 0.5 * (expectedPitch / (Math.PI / 2));
+assert(Math.abs(player.lungeDistancePx - 128 * expectedUpwardDistanceScale * Math.cos(expectedPitch)) < 1e-9,
+  'forward/upward lunge horizontal travel is the XZ component of the angle-scaled 3D attack distance');
 assert.equal(player.lungeHopUnits, 0,
   'direct reticle flight removes the old curved-hop contribution entirely');
-assert(Math.abs(player.lungeVerticalTravelUnits - 2 * Math.sin(expectedPitch)) < 1e-9,
-  'forward/upward lunge vertical travel is the exact Y component of the same 3D vector');
+assert(Math.abs(player.lungeVerticalTravelUnits - 2 * expectedUpwardDistanceScale * Math.sin(expectedPitch)) < 1e-9,
+  'forward/upward lunge vertical travel is the Y component of the same angle-scaled 3D vector');
+assert.equal(windowStub._lastProfile.directFlightStrength, 1);
 assert.equal(player.lungeDirectFlightStrength, 1,
   'forward/upward reticle attacks use full direct-flight authority');
 assert.equal(windowStub._lastProfile.pitchDistanceResistance, 1,
