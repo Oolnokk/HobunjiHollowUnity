@@ -72,9 +72,11 @@ assert(portraitSource.includes('fixedPortraitSlots?.pauldron'), 'Portrait render
 assert(portraitSource.includes("fixedLayer?.hideWhenHood === true && hoodIsWorn"), 'fixed structural portrait layers must support hiding beneath an equipped hood');
 assert(portraitSource.includes('const hoodBackLayers = []'), 'portrait renderer must keep authored hood rear art in its own behind-head bucket');
 assert(portraitSource.includes('if (hoodBackLayers.length) hoodLayers.length = 0'), 'rear portraits must not double-draw a hood front when authored rear art exists');
-assert.match(
-  portraitSource,
-  /drawBreathingLayers\(overwearLayers\);\s*drawBreathingLayers\(hoodBackLayers\);[\s\S]{0,700}if \(headUrl\)[\s\S]{0,2600}drawBreathingLayers\(hoodLayers\);/,
+const hoodBackDrawIndex = portraitSource.indexOf('drawBreathingLayers(hoodBackLayers); // Rear hood cloth must sit behind the skull/head');
+const frontHeadDrawIndex = portraitSource.indexOf('if (headUrl) { const img = imgMap.get(headUrl); if (img) drawLayerWithEmote', hoodBackDrawIndex);
+const hoodFrontDrawIndex = portraitSource.indexOf('drawBreathingLayers(hoodLayers);', frontHeadDrawIndex);
+assert(
+  hoodBackDrawIndex >= 0 && frontHeadDrawIndex > hoodBackDrawIndex && hoodFrontDrawIndex > frontHeadDrawIndex,
   'front portraits must draw rear hood cloth before the skull and front hood cloth after the skull'
 );
 assert(pixelProbeSource.includes('window.HobunjiHarlyaoSkeletonSpecies?.formatDebug?.()'), 'Pixel Probe must expose Harlyao Skeleton bridge diagnostics on mobile');
