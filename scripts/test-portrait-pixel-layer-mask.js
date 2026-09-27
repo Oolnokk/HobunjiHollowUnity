@@ -1,11 +1,65 @@
 const fs = require('fs');
 const assert = require('assert');
+const zlib = require('zlib');
 
 const hub = fs.readFileSync('docs/tools/index.html', 'utf8');
 const tool = fs.readFileSync('docs/tools/portrait-pixel-layer-mask/index.html', 'utf8');
 const portrait = fs.readFileSync('docs/js/portrait-utils.js', 'utf8');
 const game = fs.readFileSync('docs/index.html', 'utf8');
 const studio = fs.readFileSync('docs/tools/character-studio/index.html', 'utf8');
+const ruggedMask = fs.readFileSync('docs/assets/cosmetics/clothes/overwear/portrait/ruggedshoulders_tl_m.layer-mask.png');
+
+function decodeRgbaPngAlpha(buffer) {
+  assert.strictEqual(buffer.subarray(0, 8).toString('hex'), '89504e470d0a1a0a', 'mask must be a PNG');
+  let offset = 8, width = 0, height = 0, bitDepth = 0, colorType = 0;
+  const idat = [];
+  while (offset + 12 <= buffer.length) {
+    const len = buffer.readUInt32BE(offset);
+    const type = buffer.subarray(offset + 4, offset + 8).toString('ascii');
+    const data = buffer.subarray(offset + 8, offset + 8 + len);
+    if (type === 'IHDR') {
+      width = data.readUInt32BE(0); height = data.readUInt32BE(4);
+      bitDepth = data[8]; colorType = data[9];
+    } else if (type === 'IDAT') idat.push(data);
+    else if (type === 'IEND') break;
+    offset += 12 + len;
+  }
+  assert.strictEqual(bitDepth, 8, 'mask PNG must use 8-bit channels');
+  assert.strictEqual(colorType, 6, 'mask PNG must be RGBA');
+  const inflated = zlib.inflateSync(Buffer.concat(idat));
+  const bpp = 4, stride = width * bpp;
+  assert.strictEqual(inflated.length, height * (stride + 1), 'mask PNG scanline payload must be complete');
+  const out = Buffer.alloc(height * stride);
+  const paeth = (a,b,c) => {
+    const p=a+b-c, pa=Math.abs(p-a), pb=Math.abs(p-b), pc=Math.abs(p-c);
+    return pa<=pb && pa<=pc ? a : pb<=pc ? b : c;
+  };
+  let src = 0;
+  for (let y = 0; y < height; y++) {
+    const filter = inflated[src++];
+    const row = y * stride;
+    for (let x = 0; x < stride; x++) {
+      const raw = inflated[src++];
+      const left = x >= bpp ? out[row + x - bpp] : 0;
+      const up = y ? out[row - stride + x] : 0;
+      const upLeft = y && x >= bpp ? out[row - stride + x - bpp] : 0;
+      out[row + x] = filter === 0 ? raw
+        : filter === 1 ? (raw + left) & 255
+        : filter === 2 ? (raw + up) & 255
+        : filter === 3 ? (raw + Math.floor((left + up) / 2)) & 255
+        : filter === 4 ? (raw + paeth(left, up, upLeft)) & 255
+        : (() => { throw new Error('Unsupported PNG filter ' + filter); })();
+    }
+  }
+  let selected = 0;
+  for (let i = 3; i < out.length; i += 4) if (out[i] > 127) selected++;
+  return { width, height, selected, total: width * height };
+}
+
+const ruggedMaskAlpha = decodeRgbaPngAlpha(ruggedMask);
+assert.deepStrictEqual([ruggedMaskAlpha.width, ruggedMaskAlpha.height], [234, 173], 'rugged shoulder mask must match the authored source sprite dimensions');
+assert(ruggedMaskAlpha.selected > 0, 'rugged shoulder mask must contain selected pixels');
+assert(ruggedMaskAlpha.selected < ruggedMaskAlpha.total, 'rugged shoulder mask must not select the entire sprite rectangle');
 
 assert(hub.includes('data-target="portrait-pixel-layer-mask"'), 'Tool Hub must expose the pixel-layer authoring tab');
 assert(hub.includes('portrait-pixel-layer-mask/index.html?v=20260927pixellayer7'), 'Tool Hub must embed the current pixel-layer author');
@@ -34,7 +88,7 @@ assert(tool.includes('forceSelectedClothingIntoProfile'), '3D preview must injec
 assert(tool.includes('previewDescriptorFromRecord'), '3D preview must rebuild the selected variant layers from the exact JSON records selected in the author');
 assert(tool.includes("currentLayerRecords.filter(record => record.variantKey === selectedVariant)"), 'selected species/gender preview must use every layer from that exact JSON variant, including back_wrap');
 assert(tool.includes("/^back(?:_|$)/i.test"), 'preview metadata must classify back_wrap-style selected clothing layers as rear layers');
-assert(tool.includes("front: [0, distance * 0.12, -distance]") && tool.includes("back: [0, distance * 0.12, distance]"), 'pixel-mask 3D preview must map Front/Back controls to the literal portrait-card faces observed in this author');
+assert(!tool.includes('cameraPresets:'), 'pixel-mask preview must inherit the shared AvatarPreviewScene camera convention');
 assert(tool.includes('normalizeMaskImageIntoCanvas'), 'imported opaque black/white masks must be normalized back into alpha masks');
 assert(tool.includes("!String(entry.path || '').includes('/appearance/')"), 'clothing picker must exclude appearance-only folder entries');
 assert(tool.includes("target: $('target').value"), 'author export must preserve the selected portrait stage');

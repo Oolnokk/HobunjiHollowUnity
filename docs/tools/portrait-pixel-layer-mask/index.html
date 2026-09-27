@@ -439,19 +439,9 @@ textarea{width:100%;min-height:165px;padding:8px;resize:vertical;font:11px/1.4 u
     }
     await preview3d.cosmeticsReady;
     if (!preview3d.scene) {
-      const distance = Number(window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.previewCameraDistance) || 3.2;
       preview3d.scene = await window.AvatarPreviewScene.create({
         canvas: $('preview3d'),
         initialView: preview3d.view,
-        cameraPresets: {
-          // This author previews the literal front/back portrait cards. In this shared plane assembly
-          // the canvas-bearing faces are opposite the generic scene's labels, so swap only this tool's
-          // camera presets; exported pixelLayerMasks view metadata remains canonical front/behind.
-          front: [0, distance * 0.12, -distance],
-          angle: [distance * 0.55, distance * 0.28, -distance * 0.88],
-          side: [distance, distance * 0.15, 0],
-          back: [0, distance * 0.12, distance]
-        },
         grid: true,
         gridY: -0.55,
         holderName: 'pixel_layer_mask_avatar_preview'
