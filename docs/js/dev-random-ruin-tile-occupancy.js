@@ -416,6 +416,7 @@
     create,
     getSnapshot:() => snapshot(),
     refresh:() => activeModel?.refresh?.() || false,
+    blocksAt:(x,z,radius=.22,options={}) => activeModel?.blocksAt?.(x,z,radius,options) === true, // Traversal modules use the exact same generated occupancy that is stamped into the ordinary interior grid.
     renderMapPanel:renderRuinMapPanel,
     blockerId:BLOCKER_ID,
   });
