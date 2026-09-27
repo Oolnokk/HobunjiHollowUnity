@@ -77,6 +77,9 @@ const windowObject = {
       return {
         id: 'made-lich', name: args[5]?.nameOverride || 'Lich',
         x: args[3], y: args[4], areaId: 'map_dev_arena', health: 100,
+        enemyClass: args[5]?.enemyClass || null,
+        isHarlyaoLich: !!args[5]?.extra?.isHarlyaoLich,
+        lichType: args[5]?.extra?.lichType || null,
         def: { moveSpeed: 100, chaseSpeed: 140 },
         rosterRecord: args[5]?.rosterOverride,
         halfHeight: 0.45,
