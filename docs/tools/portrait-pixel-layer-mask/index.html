@@ -17,8 +17,8 @@ input,select,button,textarea{font:inherit;color:var(--text);background:var(--pan
 input,select,button{height:32px;padding:5px 8px}input[type=file]{height:auto;width:100%;padding:6px}input[type=range]{width:100%}
 button{cursor:pointer}button:hover{border-color:#617089}button.primary{background:#493154;border-color:#7b4e91}button.danger{color:#ffd8dd;border-color:#7a3941}
 button.active{outline:2px solid var(--accent);outline-offset:-2px}.grow{flex:1}
-.stageWrap{overflow:auto;position:relative;background:#090b0f;display:flex;align-items:flex-start;justify-content:flex-start;padding:20px;min-width:0}
-canvas{image-rendering:pixelated;touch-action:none;box-shadow:0 0 0 1px #000;background-image:linear-gradient(45deg,#1b1f25 25%,transparent 25%),linear-gradient(-45deg,#1b1f25 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#1b1f25 75%),linear-gradient(-45deg,transparent 75%,#1b1f25 75%);background-size:16px 16px;background-position:0 0,0 8px,8px -8px,-8px 0}
+.stageWrap{overflow:auto;position:relative;background:#090b0f;display:flex;align-items:flex-start;justify-content:flex-start;padding:20px;min-width:0;min-height:0}
+canvas{image-rendering:pixelated;touch-action:none;box-shadow:0 0 0 1px #000;margin:auto;flex:0 0 auto;background-image:linear-gradient(45deg,#1b1f25 25%,transparent 25%),linear-gradient(-45deg,#1b1f25 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#1b1f25 75%),linear-gradient(-45deg,transparent 75%,#1b1f25 75%);background-size:16px 16px;background-position:0 0,0 8px,8px -8px,-8px 0}
 .stat{display:grid;grid-template-columns:1fr auto;gap:4px 8px;padding:8px;background:#121821;border:1px solid var(--border);border-radius:5px;font-family:ui-monospace,monospace;font-size:11px}.stat b{font-weight:600}
 textarea{width:100%;min-height:165px;padding:8px;resize:vertical;font:11px/1.4 ui-monospace,monospace}
 .badge{display:inline-block;padding:2px 6px;border-radius:10px;background:#263141;color:var(--muted);font-size:10px}.hint{color:var(--muted);font-size:11px;margin-top:6px}
@@ -62,7 +62,10 @@ textarea{width:100%;min-height:165px;padding:8px;resize:vertical;font:11px/1.4 u
       </div>
       <label>Brush size: <span id="brushLabel">1 px</span></label>
       <input id="brushSize" type="range" min="1" max="16" value="1" step="1">
-      <label>Zoom: <span id="zoomLabel">8×</span></label>
+      <div class="row">
+        <label class="grow">Zoom: <span id="zoomLabel">8×</span></label>
+        <button id="fitBtn" type="button">Fit</button>
+      </div>
       <input id="zoom" type="range" min="1" max="24" value="8" step="1">
       <div class="row" style="margin-top:8px">
         <button id="clearBtn" class="danger grow">Clear mask</button>
@@ -141,6 +144,7 @@ textarea{width:100%;min-height:165px;padding:8px;resize:vertical;font:11px/1.4 u
   let currentClothingJson = null; // Parsed selected clothing JSON; used to discover existing portrait layers.
   let currentLayerRecords = []; // Selectable portrait-layer descriptors extracted from the selected clothing JSON.
   let currentLayerRecord = null; // Exact selected JSON layer whose sprite is being masked.
+  let userAdjustedZoom = false; // Preserves explicit zoom after loading; Fit resets this to automatic pane sizing.
   let paintMode = 'paint'; // Used by pointer painting to choose mark vs erase behavior.
   let drawing = false; // Tracks an active pointer drag on the zoomed canvas.
   let lastPixel = null; // Used to interpolate brush strokes without holes during fast pointer movement.
@@ -329,10 +333,27 @@ textarea{width:100%;min-height:165px;padding:8px;resize:vertical;font:11px/1.4 u
     }
   }
 
+  function fittedZoom() {
+    if (!sourceCanvas.width || !sourceCanvas.height) return 1;
+    const wrap = $('stageWrap');
+    const style = getComputedStyle(wrap);
+    const innerW = Math.max(1, wrap.clientWidth - parseFloat(style.paddingLeft || 0) - parseFloat(style.paddingRight || 0));
+    const innerH = Math.max(1, wrap.clientHeight - parseFloat(style.paddingTop || 0) - parseFloat(style.paddingBottom || 0));
+    const maxZoom = Number($('zoom').max) || 24;
+    return Math.max(1, Math.min(maxZoom, Math.floor(Math.min(innerW / sourceCanvas.width, innerH / sourceCanvas.height))));
+  }
+
+  function fitZoomToPane() {
+    if (!sourceCanvas.width || !sourceCanvas.height) return;
+    $('zoom').value = String(fittedZoom());
+    userAdjustedZoom = false;
+    redraw();
+  }
+
   function setDimensions(w, h) {
     sourceCanvas.width = maskCanvas.width = w;
     sourceCanvas.height = maskCanvas.height = h;
-    redraw();
+    requestAnimationFrame(fitZoomToPane);
   }
 
   function maskCount() {
@@ -534,7 +555,11 @@ textarea{width:100%;min-height:165px;padding:8px;resize:vertical;font:11px/1.4 u
     }
     maskCtx.putImageData(mask, 0, 0); redraw();
   };
-  $('zoom').oninput = redraw;
+  $('zoom').oninput = () => { userAdjustedZoom = true; redraw(); };
+  $('fitBtn').onclick = fitZoomToPane;
+  window.addEventListener('resize', () => {
+    if (!userAdjustedZoom && sourceCanvas.width && sourceCanvas.height) fitZoomToPane();
+  });
   $('brushSize').oninput = refreshDebug;
   $('target').onchange = refreshDebug;
   $('view').onchange = refreshDebug;
