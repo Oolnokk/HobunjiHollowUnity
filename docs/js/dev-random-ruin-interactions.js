@@ -368,18 +368,24 @@
         source:'semantic-ladder',
       });
     }
+    const activeTool=deps?.getActiveTool?.()||window.Combat?.deps?.getActiveTool?.()||null; // Used to preserve canonical attack/ammo actions while a weapon stance is active.
+    const combatOwnsActionSlots=activeTool==='weapon'||activeTool==='ranged'; // Weapon/ranged stances reserve Action 1–3; ruin interactions move to Item Action 1–2 instead of replacing combat controls.
+    const slotActions=combatOwnsActionSlots?SLOT_ACTIONS.slice(3):SLOT_ACTIONS;
+    const touchButtonIds=combatOwnsActionSlots?TOUCH_BUTTON_IDS.slice(3):TOUCH_BUTTON_IDS;
+    const fixedCount=rows.reduce((count,row)=>count+(row.inputAction?1:0),0);
     const sorted=rows
       .sort((a, b) => b.priority - a.priority || a.distance - b.distance || b.seenAt - a.seenAt)
-      .slice(0, SLOT_ACTIONS.length + 1); // Allows one fixed contextual input (currently Dodge) without reducing the normal five action slots.
+      .slice(0, slotActions.length + fixedCount); // Fixed native inputs (currently Dodge) do not consume one of the available dynamic interaction slots.
     let slotIndex=0;
-    return sorted.map((entry,index)=>{
+    return sorted.flatMap((entry,index)=>{
       if(entry.inputAction){
-        return { ...entry, action:`dev_ruin_world_fixed_${entry.inputAction}_${index}`, touchButtonId:null };
+        return [{ ...entry, action:`dev_ruin_world_fixed_${entry.inputAction}_${index}`, touchButtonId:null }];
       }
-      const inputAction=SLOT_ACTIONS[slotIndex]||SLOT_ACTIONS[SLOT_ACTIONS.length-1];
-      const touchButtonId=TOUCH_BUTTON_IDS[slotIndex]||null;
+      const inputAction=slotActions[slotIndex];
+      const touchButtonId=touchButtonIds[slotIndex]||null;
+      if(!inputAction)return []; // Combat stance exposes only the two item-action interaction slots; lower-priority overflow stays visible again after combat is holstered.
       slotIndex++;
-      return { ...entry, inputAction, action:`dev_ruin_world_${slotIndex-1}`, touchButtonId };
+      return [{ ...entry, inputAction, action:`dev_ruin_world_${slotIndex-1}`, touchButtonId }];
     });
   }
 
