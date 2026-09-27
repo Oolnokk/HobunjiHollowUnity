@@ -47,7 +47,11 @@
     const decalNeedle = 'const texture=loader.load(REPO_RAW_ROOT+path,loaded=>';
     const decalReplacement = 'const texture=loader.load(rawTextureUrl(path),loaded=>';
     const selfTestNeedle = 'updateOutputs();syncInteriorMaterialUI();updateSelectedTextureUI();renderTextureLibrary();renderFurnitureLibrary();syncLocaleEnvironmentControls();selfTest();loadRepoTextureLibrary();loadRepoFurnitureLibrary();';
-    const selfTestReplacement = 'updateOutputs();syncInteriorMaterialUI();updateSelectedTextureUI();renderTextureLibrary();renderFurnitureLibrary();syncLocaleEnvironmentControls();loadRepoTextureLibrary();loadRepoFurnitureLibrary();'; // Editor-only selfTest exercises legacy puzzle families and delays hidden gameplay API readiness; direct tool usage remains byte-for-byte behavior.
+    const selfTestReplacement = 'syncLocaleEnvironmentControls();'; // Hidden gameplay generation skips standalone editor rendering/indexing/self-tests; generateInteriorLocale loads only the furniture data it actually needs.
+    const rendererNeedle = 'const renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:false});';
+    const rendererReplacement = "const renderer=window.__debrisEmbeddedRuntime?{setPixelRatio(){},getPixelRatio(){return 1;},setSize(){},render(){},outputEncoding:THREE.sRGBEncoding,shadowMap:{enabled:false,type:null}}:new THREE.WebGLRenderer({canvas,antialias:true,alpha:false});"; // Hidden generation needs scene constructors, not a second GPU context competing with the live game renderer.
+    const previewLoopNeedle = 'renderPreview();';
+    const previewLoopReplacement = 'if(!window.__debrisEmbeddedRuntime)renderPreview();'; // Direct tool preview remains unchanged; the hidden generator never starts an iframe RAF/render loop.
 
     // The original preview's 3–4 half-cell hallways were authored for orbit-view
     // inspection, not the game's collision radius. Runtime-only V50 generation
@@ -109,7 +113,9 @@ function runtimeChooseMechanismActivatorType(rng,forcedType=null,linkedCubeDoor=
       ['raw-asset URL helper', rawNeedle, rawReplacement],
       ['Roughbrick loader', brickNeedle, brickReplacement],
       ['mechanism decal loader', decalNeedle, decalReplacement],
-      ['skip standalone editor self-test in embedded gameplay runtime', selfTestNeedle, selfTestReplacement],
+      ['headless embedded renderer', rendererNeedle, rendererReplacement],
+      ['disable embedded preview RAF', previewLoopNeedle, previewLoopReplacement],
+      ['skip standalone editor startup in embedded gameplay runtime', selfTestNeedle, selfTestReplacement],
       ['hallway width', hallNeedle, hallReplacement],
       ['escape hallway width', escapeHallNeedle, escapeHallReplacement],
       ['focus doorway width', focusDoorNeedle, focusDoorReplacement],
@@ -149,6 +155,7 @@ function runtimeChooseMechanismActivatorType(rng,forcedType=null,linkedCubeDoor=
       runtimeHallwayWidthCells: [5, 6],
       runtimeDoorwayUsesAuthoredWidth: true,
       runtimePuzzleGenerationOptions: true,
+      headlessEmbeddedPreview: true,
     });
     return patched;
   }
