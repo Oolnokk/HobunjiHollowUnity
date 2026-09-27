@@ -208,7 +208,7 @@
               "pixelLayerMasks": [
                 {
                   "url": "./assets/cosmetics/clothes/overwear/portrait/ruggedshoulders_tl_m.layer-mask.png",
-                  "target": "aboveHood",
+                  "mode": "noTrespassSquish",
                   "view": "behind"
                 }
               ]
