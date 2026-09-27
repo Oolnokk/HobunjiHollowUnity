@@ -4,7 +4,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
-const ambient = fs.readFileSync('docs/js/ambient-dialogue.js', 'utf8'); // Verifies player-directed ambient greetings own only NPC neck yaw.
+const ambient = fs.readFileSync('docs/js/ambient-dialogue.js', 'utf8'); // Verifies player- and NPC-directed ambient greetings own only NPC neck yaw.
 const composer = fs.readFileSync('docs/js/player-body-transform-composer.js', 'utf8'); // Verifies NPC greeting yaw reads the player's physical head-turn cap.
 const pixelProbe = fs.readFileSync('docs/js/pixel-probe.js', 'utf8'); // Verifies mobile diagnostics expose the rendered greeting yaw.
 const loader = fs.readFileSync('docs/js/combat/combat-config-loader.js', 'utf8'); // Verifies the changed composer is cache-busted.
@@ -27,13 +27,13 @@ assert.match(
 );
 assert.match(
   ambient,
-  /if \(targetId === 'player'\) \{\s*applyGreetingHeadTurn\(walker, target\);\s*\} else \{[\s\S]{0,300}applyFacingDeadzone/,
-  'player greetings must use head-only facing while friend greetings retain existing whole-body facing',
+  /applyGreetingHeadTurn\(walker, target\); \/\/ Every ambient greeting preserves locomotion\/seat heading/,
+  'player and NPC-friend greetings must both start with head-only facing',
 );
 assert.match(
   ambient,
-  /faceMode: targetId === 'player' \? 'head' : 'body'/,
-  'active player greetings must keep head-only tracking for their full lifetime, including while the player or NPC moves',
+  /faceMode: 'head', \/\/ Walking and seated greetings to either the player or another NPC/,
+  'every active greeting must keep head-only tracking for its full lifetime',
 );
 assert.match(
   ambient,
@@ -42,8 +42,8 @@ assert.match(
 );
 assert.doesNotMatch(
   ambient,
-  /if \(targetId === 'player'\)[\s\S]{0,220}applyFacingDeadzone/,
-  'player greeting start must never route through the body-facing deadzone',
+  /function tryGreeting\(walker, target[\s\S]{0,5000}applyFacingDeadzone/,
+  'ambient greeting startup must never rotate either a walking or seated NPC body',
 );
 assert.match(
   ambient,
@@ -61,7 +61,7 @@ assert.match(
   'Pixel Probe must report head-only greeting yaw on tapped NPCs for mobile debugging',
 );
 assert.match(loader, /player-body-transform-composer\.js\?v=20260927greetinghead1/, 'composer cache bust must ship');
-assert.match(index, /ambient-dialogue\.js\?v=20260927greetinghead1/, 'ambient greeting cache bust must ship');
+assert.match(index, /ambient-dialogue\.js\?v=20260927greetinghead2/, 'ambient greeting cache bust must ship');
 assert.match(index, /pixel-probe\.js\?v=20260927greetinghead1/, 'Pixel Probe cache bust must ship');
 
 console.log('Ambient greeting head-turn checks passed.');
