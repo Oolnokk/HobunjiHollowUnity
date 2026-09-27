@@ -15,8 +15,8 @@ assert.match(source, /resolveSweptLungeEntry\(liveDeps\)/,
   'lunge range entry is checked across movement already completed this frame');
 assert.match(source, /LUNGE_CANCEL_RANGE_MULTIPLIER = 0\.5/,
   'lunge cancellation range stays explicitly half of the real attack range');
-assert.match(coreSource, /const assistedLeapT = Math\.sqrt\(assistedPitchRatio\)/,
-  'in-range airborne assist must front-load low-angle lift instead of merely removing the 12-degree threshold');
+assert.match(coreSource, /forwardAirAssistFloor = inRangeAirAssist && pitch >= 0 \? 0\.06 : 0[\s\S]{0,220}Math\.sqrt\(Math\.max\(assistedPitchRatio, forwardAirAssistFloor\)\)/,
+  'forward/upward airborne assist must front-load low-angle lift and give exact-forward aim a minimum hop');
 
 const player = {
   x: 0, y: 0, health: 100, facing: 0,
