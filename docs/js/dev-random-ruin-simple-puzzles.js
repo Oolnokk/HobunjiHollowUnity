@@ -11,6 +11,12 @@
   const GRID_REVEAL_MS = 3600;
   const GRID_BURNING = 24;
   const GRID_RETRIGGER_MS = 900;
+  const PLATE_IDLE_COLOR = 0x9b8763; // Sandstone plates read as a distinct trap floor instead of blending into the grey flagstones.
+  const PLATE_SAFE_REVEAL_COLOR = 0x7dff6a;
+  const PLATE_UNSAFE_REVEAL_COLOR = 0xc2412c;
+  const PLATE_PROVEN_COLOR = 0x5fae58; // Safe plates the player has already stood on stay marked, so the path is remembered after the reveal fades.
+  const PLATE_SCORCHED_COLOR = 0x5a2a1e; // Wrong plates stay scorched after they fire.
+  const PLATE_FIRING_COLOR = 0xff5b2b;
   const ROPE_DESTINATION_RISE = .78; // Keeps ordinary rope landings clearly above the 0.42u ruin step limit so the rope is visibly required.
   const ROPE_GRAB_ABOVE_LAUNCH = .86; // Places the idle grip at reachable head/hand height over the launch platform instead of inheriting the destination height.
   const COMPOUND_ELEVATOR_TOP_RISE = .88; // Balcony→rope→elevator compositions begin as a visibly elevated landing before the glyph starts the descent cycle.
@@ -374,6 +380,7 @@
     for (const entity of state.spawnedMinions) disposeSpawnedMinion(entity); // Session/reroll ownership matches ordinary camp teardown; no sarcophagus enemy can leak into the next generated ruin.
     state.spawnedMinions.clear();
     for (const id of state.surfaceIds) DS.remove?.(id);
+    window.DevRandomRuinTileOccupancy?.clearSolids?.(SCOPE); // Drops this build's prop footprints (lock door, sarcophagi, ossuary shell, canopy posts...).
     const lavaTexture=state.lavaMaterial?.uniforms?.uWaterTexture?.value; // Material owns its dedicated wibbly-water texture loader result for this session.
     lavaTexture?.dispose?.();
     disposeObject(state.group);
@@ -456,6 +463,7 @@
       plateBatch.userData.devRandomRuinPressurePlate = true;
       plateBatch.userData.devRandomRuinPressurePlateBatch = true;
       plateBatch.frustumCulled = false; // Three r128 culls InstancedMesh from the base geometry bounds, not these translated instances; one batch draw is cheaper than risking the distant grid disappearing.
+      plateBatch.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(cols * rows * 3), 3); // Allocate before count=0: r128's lazy setColorAt sizes this buffer from the *current* count, which left every plate black.
       plateBatch.count = 0;
       root.add(plateBatch);
       let invalidPatch = false;
@@ -474,10 +482,10 @@
           plateInstanceDummy.scale.set(1,1,1);
           plateInstanceDummy.updateMatrix();
           plateBatch.setMatrixAt(index, plateInstanceDummy.matrix);
-          plateInstanceColor.setHex(0x57534a);
+          plateInstanceColor.setHex(PLATE_IDLE_COLOR);
           plateBatch.setColorAt(index, plateInstanceColor);
           plateBatch.count = index + 1;
-          cells.push({ key, col, row, x, z, y:Number(support.y), safe:safe.has(key), index, renderDown:false, renderColor:0x57534a, lastTriggeredAt:-Infinity });
+          cells.push({ key, col, row, x, z, y:Number(support.y), safe:safe.has(key), index, renderDown:false, renderColor:PLATE_IDLE_COLOR, lastTriggeredAt:-Infinity, proven:false });
         }
       }
       plateBatch.instanceMatrix.needsUpdate = true;
@@ -528,7 +536,7 @@
         label:'Reveal Safe Path',
         onPress:() => {
           grid.revealUntil = performance.now() + GRID_REVEAL_MS;
-          deps?.showToast?.('The safe pressure plates flare briefly.', true);
+          deps?.showToast?.('Green plates are safe, red plates burn. Plates you step on safely stay green.', true);
         },
       });
       usedHallways.add(hall.id);
@@ -941,16 +949,11 @@
       blockerId,width,height,generatedMechanismId,
     };
     if(blockerId){
-      DS.registerBlocker({
-        id:blockerId,scope:SCOPE,
-        bounds:()=>doorway.axis==='x'
-          ? {minX:doorway.x-thickness*.6,maxX:doorway.x+thickness*.6,minZ:doorway.z-width*.5,maxZ:doorway.z+width*.5}
-          : {minX:doorway.x-width*.5,maxX:doorway.x+width*.5,minZ:doorway.z-thickness*.6,maxZ:doorway.z+thickness*.6},
-        minY:Number(support.y),maxY:Number(support.y)+height,
-        enabled:()=>module.progress<.72,
-        purpose:'modular_lock_door',
-      });
-      state.surfaceIds.add(blockerId);
+      panel.userData.devRuinFootprintManaged=true; // Moves vertically, so it gets an explicit enabled() footprint instead of the static mesh scan.
+      window.DevRandomRuinTileOccupancy?.addSolidBox?.(blockerId,doorway.axis==='x'
+        ? {cx:doorway.x,cz:doorway.z,halfX:thickness*.6,halfZ:width*.5}
+        : {cx:doorway.x,cz:doorway.z,halfX:width*.5,halfZ:thickness*.6},
+        ()=>module.progress<.72,SCOPE);
     }
     state.lockDoors.push(module);
     setLockDoorOpen(module,options.startOpen!==false);
@@ -1124,11 +1127,6 @@
     return true;
   }
 
-  function addStaticWallBlocker(id,bounds) {
-    DS.registerBlocker({id,scope:SCOPE,bounds,purpose:'modular_ossuary_wall'});
-    state.surfaceIds.add(id);
-  }
-
   function buildSunkenRoomShell(context,room,bounds,doorway,floorY) {
     if(!bounds||!doorway)return null;
     const root=new THREE.Group();
@@ -1139,9 +1137,7 @@
     const addWall=(name,x,z,w,d)=>{
       const wall=naturalizeStone(new THREE.Mesh(sharedBoxGeometry(w,height,d),makeBasic(0x808080)));
       wall.name=name;wall.position.set(x,floorY+height*.5,z);root.add(wall);
-      const blockerId='devruin-'+name;
-      addStaticWallBlocker(blockerId,{minX:x-w*.5,maxX:x+w*.5,minZ:z-d*.5,maxZ:z+d*.5});
-      wallRecords.push({name,wall,blockerId});
+      wallRecords.push({name,wall}); // Collision comes from the shared footprint scan of this visible wall mesh.
     };
     const xSpan=bounds.maxX-bounds.minX,zSpan=bounds.maxZ-bounds.minZ;
     addWall('modular_ossuary_north_'+room.id,centerX,bounds.minZ,xSpan,thickness);
@@ -1155,7 +1151,6 @@
     if(sideRecord){
       sideRecord.wall.parent?.remove?.(sideRecord.wall);
       disposeOwnedGeometry(sideRecord.wall.geometry);sideRecord.wall.material?.dispose?.();
-      DS.remove(sideRecord.blockerId);state.surfaceIds.delete(sideRecord.blockerId);
     }
     if(doorway.axis==='x'){
       const lower=(doorway.z-gap*.5)-bounds.minZ,upper=bounds.maxZ-(doorway.z+gap*.5);
@@ -1538,6 +1533,7 @@
       buildCyclingElevatorModule(context,room,{startActive:true,cycleSeconds:7+rng()*3}); // Same elevator primitive can simply be ambient traversal machinery, with no glyph/rope/ossuary dependencies.
     }
     if(options.hallwayTraps!==false)buildSwappableHallwayModules(context,rng,usedHallways);
+    window.DevRandomRuinTileOccupancy?.scanSolids?.(group,SCOPE); // Every visible solid this build placed (sarcophagi, ossuary shell, canopy posts, pedestals) collides exactly like V50 props.
     updateBadge(true);
   }
 
@@ -1546,11 +1542,14 @@
     if(!player)return;
     for(const grid of state.safeGrids){
       const revealing=now<grid.revealUntil;
-      grid.capMat.color.setHex(revealing?0xc9f7a2:0x718a72);
-      let occupied=null,matrixDirty=false,colorDirty=false;
+      const idlePulse=grid.revealUntil===0?.5+.5*Math.sin(now*.005):0; // Pedestal throbs until it has been used once, pointing the player at the reveal.
+      grid.capMat.color.setHex(revealing?0xc9f7a2:(idlePulse>.5?0x9fe0a0:0x718a72));
+      let occupied=null,matrixDirty=false,colorDirty=false,near=false;
       for(const cell of grid.cells){
         const on=Math.abs(player.x-cell.x)<=.34&&Math.abs(player.z-cell.z)<=.34;
         if(on)occupied=cell;
+        if(on&&cell.safe)cell.proven=true;
+        if(Math.abs(player.x-cell.x)<=1.2&&Math.abs(player.z-cell.z)<=1.2)near=true;
         if(cell.renderDown!==on){
           plateInstanceDummy.position.set(cell.x,cell.y+.028-(on?.032:0),cell.z);
           plateInstanceDummy.rotation.set(0,0,0);
@@ -1559,12 +1558,20 @@
           grid.plateBatch.setMatrixAt(cell.index,plateInstanceDummy.matrix);
           cell.renderDown=on;matrixDirty=true;
         }
-        const color=revealing&&cell.safe?0x8fe67f:(now-cell.lastTriggeredAt<260?0xff5b2b:0x57534a);
+        const color=now-cell.lastTriggeredAt<260?PLATE_FIRING_COLOR
+          :revealing?(cell.safe?PLATE_SAFE_REVEAL_COLOR:PLATE_UNSAFE_REVEAL_COLOR)
+          :cell.proven?PLATE_PROVEN_COLOR
+          :Number.isFinite(cell.lastTriggeredAt)?PLATE_SCORCHED_COLOR
+          :PLATE_IDLE_COLOR;
         if(cell.renderColor!==color){
           plateInstanceColor.setHex(color);
           grid.plateBatch.setColorAt(cell.index,plateInstanceColor);
           cell.renderColor=color;colorDirty=true;
         }
+      }
+      if(near&&!grid.hinted&&grid.revealUntil===0){
+        grid.hinted=true;
+        deps?.showToast?.('Trapped pressure plates ahead — use the glowing pedestal to reveal the safe path.',true);
       }
       if(matrixDirty)grid.plateBatch.instanceMatrix.needsUpdate=true;
       if(colorDirty&&grid.plateBatch.instanceColor)grid.plateBatch.instanceColor.needsUpdate=true;

@@ -35,22 +35,26 @@ const audioSystem = read('docs/js/audio-system.js');
 
 const loadOrder = [
   'dynamic-surfaces.js',
-  'dev-random-ruin-hit-puzzles-loader.js',
+  'dev-random-ruin-hit-puzzles.js',
   'dev-random-ruin-prototype-hooks.js',
+  'dev-random-ruin-solid-footprints.js',
   'dev-random-ruin-tile-occupancy.js',
   'dev-random-ruin-solvability.js',
   'dev-random-ruin-interior-map.js',
   'dev-random-ruin-motion-runtime.js',
   'dev-random-ruin-simple-puzzles.js',
   'dev-random-ruin-interactions.js',
+  'dev-random-ruin-glyph-circuits.js',
   'dev-random-ruin-runtime-coverage.js',
 ].map(name => camera.indexOf(name));
 assert(/localStorage\.getItem\('hobunjiDevMode'\) === '1'/.test(camera) && /if \(!devMode/.test(camera), 'ruin runtime must only be injected in Dev Mode');
 assert(camera.includes('dev-random-ruin-interactions.js?v=20260927interactionpriority1'), 'ruin interaction adapter must be cache-busted with the arch-priority/popup-list fix');
-assert(camera.includes('dev-random-ruin-simple-puzzles.js?v=20260927interiorparity1'), 'simple puzzle interior-parity runtime must be cache-busted in the dev bootstrap');
+assert(camera.includes('dev-random-ruin-simple-puzzles.js?v=20260927footprints1'), 'simple puzzle interior-parity runtime must be cache-busted in the dev bootstrap');
 assert(camera.includes('dev-random-ruin-wall-render-proxy.js?v=20260927geometry1'), 'native ruin render verifier must be cache-busted in the dev bootstrap');
-assert(gameIndex.includes('js/dev-random-ruin-bootstrap.js?v=20260927interiorparity1'), 'game page must load the updated ruin bootstrap');
-assert(gameIndex.includes('game.js?v=20260927interiorparity1'), 'game page must load the normal-interior action/collision integration');
+assert(gameIndex.includes('js/dev-random-ruin-bootstrap.js?v=20260927footprints1'), 'game page must load the updated ruin bootstrap');
+assert(gameIndex.includes('game.js?v=20260927footprints1'), 'game page must load the footprint-aware movement collision');
+assert(gameIndex.indexOf('js/area-footprint-blockers.js') >= 0 && gameIndex.indexOf('js/area-footprint-blockers.js') < gameIndex.indexOf('game.js?v='), 'sub-tile footprint registry must load before game.js');
+assert(game.includes('window.AreaFootprintBlockers?.blocksBox(currentArea, wx / TILE, wy / TILE, radius / TILE, worldY)'), 'canOccupyAt must test the whole mover square against prop footprints');
 assert(gameIndex.includes('js/climb-system.js?v=20260926ruinladder2'), 'game page must cache-bust the shared climb animation used by authored ruin ladders');
 assert(loadOrder.every(index => index >= 0), 'ruin bootstrap must load every Random Test Ruin runtime module');
 for (let i = 1; i < loadOrder.length; i++) {
@@ -74,7 +78,7 @@ assert(interior.includes('spritePngSurface.makeMaterial(THREE,source.map||null')
 assert(interior.includes('remainingLitMaterials'), 'material diagnostics must explicitly count any lit material that escapes normalization');
 assert((cloudFog.match(/map_i_dev_random_ruin/g)||[]).length>=2, 'Random Test Ruin must opt into the shared den no-sky and den darkness/lantern classifications');
 assert(gameIndex.includes('js/cloud-forest-fog.js?v=20260926devruindark2'), 'test-ruin darkness override must be cache-busted in the game page');
-assert(camera.includes('dev-random-ruin-interior-map.js?v=20260927interiorparity1'), 'test-ruin generator/runtime changes must be cache-busted in the dev bootstrap');
+assert(camera.includes('dev-random-ruin-interior-map.js?v=20260927footprints1'), 'test-ruin generator/runtime changes must be cache-busted in the dev bootstrap');
 assert(interior.includes('Solvability.audit'), 'candidate ruins must run the pre-entry solvability audit');
 assert(interior.includes('MAX_SOLVABILITY_ATTEMPTS = 6'), 'unsolvable candidates must have a bounded deterministic retry budget');
 assert(interior.includes('getLastSolvabilityAudit'), 'rejected seed diagnostics must remain inspectable without devtools');
@@ -388,15 +392,7 @@ for (const asset of [
 ]) assert(treePaths.includes(asset), `embedded V50 tree must retain ${asset}`);
 assert.equal(embeddedTree.truncated, false, 'embedded V50 tree must be complete');
 
-const parts = [];
-for (let i = 1; i <= 9; i++) {
-  const id = String(i).padStart(2, '0');
-  const text = read(`docs/js/dev-random-ruin-hit-puzzles-runtime/part${id}.js`);
-  const match = text.match(/__devRuinHitParts\.push\('([^']*)'\);/);
-  assert(match, `hit-puzzle part ${id} must contain one base64 payload`);
-  parts.push(match[1]);
-}
-const hitSource = Buffer.from(parts.join(''), 'base64').toString('utf8');
+const hitSource = read('docs/js/dev-random-ruin-hit-puzzles.js');
 assert(hitSource.startsWith('// Dev Random Test Ruin'), 'decoded hit-puzzle source header must be intact');
 assert(hitSource.includes('window.DevRandomRuinHitPuzzles'), 'decoded hit runtime must export its public API');
 assert(hitSource.includes('debugActivateGlyph(object = null)') && hitSource.includes('return target ? activateGlyph(target) : false'), 'hit runtime diagnostics must exercise the same authoritative glyph state transition as real projectile hits');

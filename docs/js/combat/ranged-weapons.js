@@ -771,7 +771,7 @@
       const x = THREE.MathUtils.lerp(p.prevX, p.x, t);
       const y = THREE.MathUtils.lerp(p.prevY, p.y, t);
       const worldY = THREE.MathUtils.lerp(p.prevWorldY, p.worldY, t);
-      const blocked = !deps.canOccupyAt(x, y, p.def.projectileRadiusPx);
+      const blocked = !deps.canOccupyAt(x, y, p.def.projectileRadiusPx, worldY); // worldY lets height-aware prop footprints (js/area-footprint-blockers.js) pass shots over low props.
       const grounded = worldY <= deps.worldSurfaceY(x, y) + 0.08;
       if (blocked || grounded) hi = t;
       else lo = t;
@@ -1392,7 +1392,7 @@
       p.mesh.position.set(p.x / deps.TILE, p.worldY, p.y / deps.TILE);
       updateProjectileVisual(p, dt);
 
-      const blockedAtTerrain = !deps.canOccupyAt(p.x, p.y, p.def.projectileRadiusPx);
+      const blockedAtTerrain = !deps.canOccupyAt(p.x, p.y, p.def.projectileRadiusPx, p.worldY);
       const groundedAtGround = p.worldY <= deps.worldSurfaceY(p.x, p.y) + 0.08;
       const sweptTerrainImpact = terrainImpactForStep(p, blockedAtTerrain, groundedAtGround);
       const hit = projectileHit(p, sweptTerrainImpact?.t ?? 1); // Ground/solid terrain caps the actor sweep so a curved shot cannot damage something behind the first terrain contact.
@@ -1656,7 +1656,7 @@
       const x = deps.player.x + horizontalDirX * distancePx;
       const y = deps.player.y + horizontalDirY * distancePx;
       const worldY = THREE.MathUtils.lerp(segment.start.y, segment.end.y, fraction);
-      if (!deps.canOccupyAt(x, y, def.projectileRadiusPx) || worldY <= deps.worldSurfaceY(x, y) + 0.08) return false;
+      if (!deps.canOccupyAt(x, y, def.projectileRadiusPx, worldY) || worldY <= deps.worldSurfaceY(x, y) + 0.08) return false;
     }
     return true;
   }

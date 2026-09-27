@@ -407,7 +407,6 @@
   function discoverRuntimeObjects() {
     ruin.mechanisms = new Map(); ruin.controls = []; ruin.activators = []; ruin.pushBlocks = []; ruin.transitDoors = []; ruin.transitDoorStates = [];
     const walls = []; // V50 wall meshes become boundary tiles instead of broad object AABBs.
-    const furnitureBlockers = []; // Solid authored objects are rasterized child-mesh by child-mesh.
     ruin.localeRoot.traverse(object => {
       const d = object.userData || {}, motion = d.previewMotion?.type;
       if (d.mechanismId && ['bridge','bridgeSequence','stoneDoor','movingDais','collapsingStairs'].includes(motion))
@@ -416,20 +415,16 @@
         ruin.activators.push(object);
         if (d.squarePillarHousing || d.hiddenActivatorMount === 'pillarNiche') {
           object.userData.blockerPurpose = object.userData.blockerPurpose || 'puzzle_target_pillar'; // A projectile target carved into a pillar does not make the pillar intangible.
-          furnitureBlockers.push(object);
         }
         if (d.activatorType === 'stackedObelisk' || d.activatorType === 'linkedCubePillars') {
           object.userData.interactive3D = true; // Tower activators are ordinary nearby world interactions, not click-only editor props.
           object.userData.devRuinInteractionType = d.activatorType; // Used by prompt diagnostics / semantic owner resolution.
           object.userData.blockerPurpose = 'puzzle_tower_' + d.activatorType; // Makes their authoritative occupancy source visible in Pixel Probe.
-          furnitureBlockers.push(object); // Rasterizes the actual child cubes/caps into the shared 2D collision snapshot; the Group AABB itself is never used.
         }
       }
       if (d.pushable && (motion === 'pushPuzzleBlock' || motion === 'elevatorPushBlock')) ruin.pushBlocks.push(object);
       if (d.transitDoor) ruin.transitDoors.push(object);
       if (d.ruinInteriorWall) walls.push(object);
-      // Elevator-well sockets are low rims + below-floor shaft walls. Treating them as ordinary 2D furniture blockers made otherwise-walkable moving daises inaccessible from the surrounding floor.
-      if (/ceiling support pillar|doorway flank pillar|sunken centerpiece|wall display artifice/i.test(String(d.interiorRuinRole||''))) furnitureBlockers.push(object);
     });
     for (const m of ruin.mechanisms.values()) {
       if (m.type === 'bridge' || m.type === 'bridgeSequence') registerSurface(`devruin-mech-${m.id}`,m.root,10);
@@ -510,7 +505,7 @@
     });
     for (const a of ruin.activators) {
       const type=a.userData.activatorType, m=ruin.mechanisms.get(a.userData.linkedMechanismId);
-      if (!m || ['linkedCubePillars','pressurePlate'].includes(type)) continue;
+      if (!m || ['linkedCubePillars','pressurePlate','glyphObelisk'].includes(type)) continue; // Glyphs are solved by shooting their glowing rune markers (js/dev-random-ruin-glyph-circuits.js); a 'DEV Trigger Glyph' prompt on every glyph gave the puzzle away and cluttered the interaction list.
       const topSegment = type === 'stackedObelisk' ? (a.userData?.rotatingSegments||[]).at(-1)?.segment : null; // Places the floating prompt above the cube stack instead of at its floor-level Group origin.
       ruin.controls.push({kind:type,object:a,promptRoot:topSegment||a,range:type==='stackedObelisk'?2.05:CONTROL_RANGE,touchIcon:type==='stackedObelisk'?'↻':'✋',label:type==='stackedObelisk'?'Turn Obelisk':type==='brazier'?'DEV Ignite Brazier':type==='glyphObelisk'?'DEV Trigger Glyph':'Activate '+type,
         onPress:()=>{m.target=m.target>.5?0:1;}});
@@ -523,7 +518,7 @@
     ruin.occupancy = TileOccupancy.create({
       mapId:MAP_ID, scope:SCOPE, cols:ruin.cols, rows:ruin.rows, floorSet:ruin.floorSet,
       grid:ruin.grid, solidType:(gridDeps?.TileType||deps?.TileType||{}).ROCK??'rock', // Stamps generated blockers into the same interior grid ordinary movement/AI/knockback already query.
-      walls, staticSolids:furnitureBlockers, mechanisms:ruin.mechanisms, transitDoors:ruin.transitDoors,
+      walls, solidRoots:[ruin.localeRoot], mechanisms:ruin.mechanisms, transitDoors:ruin.transitDoors,
       activators:ruin.activators, pushBlocks:ruin.pushBlocks,
       getPlayerPosition:() => ({ x:deps.player.x / deps.TILE, z:deps.player.y / deps.TILE }),
     });

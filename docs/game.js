@@ -3144,6 +3144,7 @@
       }
 
       function furnitureBlocksMovementAt(area, x, z) {
+        if (window.AreaFootprintBlockers?.blocksPoint(area, x, z)) return true;
         if (_isZoneArea(area) && window.FoliageFurnitureRuntime?.blocksPoint(area, x, z)) return true;
         if (interiorFurnitureObjects.some(obj => obj.area === area && decorativeFurnitureBlocksPoint(obj, x, z))) return true;
         if (area === 'interior' && _derivedHearthMeshes.some(h => {
@@ -17575,9 +17576,14 @@
       // of solid terrain / map edges), shared by the player and by creature
       // attacks that need to know when a forced movement (e.g. a pounce leap)
       // has run into something.
-      function canOccupyAt(wx, wy, radius) {
+      function canOccupyAt(wx, wy, radius, worldY = null) {
         const aC = window.GridTileAccessors.getActiveCols(), aR = window.GridTileAccessors.getActiveRows();
         if (wx - radius < 0 || wy - radius < 0 || wx + radius >= aC * TILE || wy + radius >= aR * TILE) return false;
+        // Sub-tile prop footprints (js/area-footprint-blockers.js) are tested
+        // against the whole square, not just its corners, so props narrower
+        // than the mover cannot slip between two corner samples. worldY is
+        // only passed by projectile sweeps, so shots can clear low props.
+        if (window.AreaFootprintBlockers?.blocksBox(currentArea, wx / TILE, wy / TILE, radius / TILE, worldY)) return false;
         return tileSpeedAt(wx - radius, wy - radius) !== null
             && tileSpeedAt(wx + radius, wy - radius) !== null
             && tileSpeedAt(wx - radius, wy + radius) !== null
@@ -17661,46 +17667,10 @@
         return null;
       }
 
-      // A fast forced move (combat lunge, knockback, dodge) recomputes its
-      // target position from total elapsed progress every frame rather than
-      // stepping a small fixed distance, so a single frame's jump can easily
-      // exceed one tile — e.g. Charged Breaker's ~7-tile lunge covers most of
-      // its distance in its very first frames (ease-out is fastest at t=0).
-      // Testing occupancy only at that frame's endpoint lets it tunnel clean
-      // through a one-tile-thick solid wall (a plateau's incline face)
-      // instead of stopping at it. Subdividing the straight line from the
-      // current position to the desired one into small steps and testing
-      // each one — same per-axis sliding behavior as a single check, just
-      // repeated — closes that gap for any of these forced moves.
-      // blockedX/blockedY report whether that axis was ever rejected during
-      // the sweep, so a caller (e.g. knockback) can zero out that axis's
-      // velocity exactly like the old single-check version did.
-      const COLLISION_SWEEP_STEP_PX = TILE * 0.25;
-      function sweptMove(curX, curY, desiredX, desiredY, canOccupyFn, stopOnBlock = false) {
-        const dx = desiredX - curX, dy = desiredY - curY;
-        const dist = Math.hypot(dx, dy);
-        if (dist < 0.001) return { x: curX, y: curY, blockedX: false, blockedY: false, blockedAt: null };
-        const steps = Math.max(1, Math.ceil(dist / COLLISION_SWEEP_STEP_PX));
-        const stepX = dx / steps, stepY = dy / steps;
-        let x = curX, y = curY, blockedX = false, blockedY = false;
-        let blockedAt = null; // First rejected center position; forced-movement collision uses it to classify the actual obstacle.
-        for (let i = 0; i < steps; i++) {
-          const nx = x + stepX, ny = y + stepY;
-          if (canOccupyFn(nx, y)) x = nx;
-          else {
-            blockedX = true;
-            if (!blockedAt) blockedAt = { x: nx, y };
-            if (stopOnBlock) break;
-          }
-          if (canOccupyFn(x, ny)) y = ny;
-          else {
-            blockedY = true;
-            if (!blockedAt) blockedAt = { x, y: ny };
-            if (stopOnBlock) break;
-          }
-        }
-        return { x, y, blockedX, blockedY, blockedAt };
-      }
+      // sweptMove (sub-stepped per-axis sliding move) now lives in
+      // js/swept-move.js (window.SweptMove).
+      window.SweptMove.init({ stepPx: TILE * 0.25 });
+      const sweptMove = window.SweptMove.sweptMove;
 
       function getKeyboardVector() {
         let x = 0;

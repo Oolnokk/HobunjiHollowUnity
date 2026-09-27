@@ -1,5 +1,9 @@
-// Shared per-tile occupancy for the Random Test Ruin. Gameplay collision and
-// the temporary Map-tab diagnostic renderer consume this exact same snapshot.
+// Shared occupancy for the Random Test Ruin. Walls, doors and push blocks are
+// tile-aligned and are stamped into the ordinary interior grid; every other
+// solid prop is an exact oriented footprint (js/dev-random-ruin-solid-footprints.js)
+// served to game.js movement through window.AreaFootprintBlockers. Gameplay
+// collision, traversal modules, the solvability audit and the Map tab all
+// read this one model.
 (() => {
   'use strict';
 
@@ -8,7 +12,9 @@
   const DS = window.DynamicSurfaces;
   const GridTileAccessors = window.GridTileAccessors;
   const WildernessMap = window.WildernessMap;
-  if (!DS || !GridTileAccessors || !WildernessMap || !window.THREE) return;
+  const SolidFootprints = window.DevRandomRuinSolidFootprints;
+  const FootprintBlockers = window.AreaFootprintBlockers;
+  if (!DS || !GridTileAccessors || !WildernessMap || !window.THREE || !SolidFootprints) return;
 
   let activeModel = null; // The session-only ruin snapshot currently used by collision and Map.
   let originalLegendHtml = null; // Wilderness legend restored after leaving the diagnostic ruin.
@@ -108,6 +114,8 @@
     return objectTiles(door, model);
   }
 
+  const isGridSource = sourceId => !/^(transit-)?door:/.test(sourceId);
+
   function syncGridCollision(model) {
     const grid = model.grid;
     if (!Array.isArray(grid)) return;
@@ -117,7 +125,7 @@
       const tileKey = keyFor(col, row);
       if (!model.baseGridTypes.has(tileKey)) model.baseGridTypes.set(tileKey, tile.type);
       const baseType = model.baseGridTypes.get(tileKey);
-      const blocked = model.floorSet.has(tileKey) && model.blocked.has(tileKey);
+      const blocked = model.floorSet.has(tileKey) && [...(model.sources.get(tileKey) || [])].some(isGridSource); // Doors keep their tile sources for reachability, but their physical collision is the exact panel footprint.
       tile.type = blocked ? model.solidType : baseType; // Makes ruin solids ordinary interior ROCK cells, so walking, AI, dodge/lunge, and swept knockback all use the game's existing collision authority.
       if (blocked) tile._devRuinCollisionSources = [...(model.sources.get(tileKey) || [])];
       else delete tile._devRuinCollisionSources;
@@ -268,6 +276,7 @@
 
   function blocksAt(model, x, z, radius, options = {}) {
     const ignoreSource = options.ignoreRuinSource || '';
+    if (model.footprints.blocksBox(x, z, radius)) return true;
     const minCol = Math.floor(x - radius), maxCol = Math.floor(x + radius);
     const minRow = Math.floor(z - radius), maxRow = Math.floor(z + radius);
     for (let row = minRow; row <= maxRow; row++) for (let col = minCol; col <= maxCol; col++) {
@@ -278,19 +287,31 @@
     return false;
   }
 
+  function mergedSources(model) {
+    const merged = new Map([...model.sources].map(([tileKey, ids]) => [tileKey, new Set(ids)]));
+    for (const [tileKey, ids] of model.footprints.centerCoveredTiles(model.floorSet)) {
+      let set = merged.get(tileKey);
+      if (!set) merged.set(tileKey, set = new Set());
+      for (const id of ids) set.add(id);
+    }
+    return merged;
+  }
+
   function snapshot(model = activeModel) {
     if (!model) return null;
+    const sources = mergedSources(model); // Footprint-covered tile centres are reported (for reachability/Map) but never stamped into the grid.
     return {
       mapId:model.mapId,
       revision:model.revision,
       cols:model.cols,
       rows:model.rows,
       floor:sortedKeys(model.floorSet),
-      blocked:sortedKeys(model.blocked),
+      blocked:sortedKeys(sources.keys()),
+      footprints:model.footprints.count(),
       gridBlocked:sortedKeys([...model.blocked].filter(tileKey=>{const [col,row]=tileKey.split(',').map(Number);return model.grid?.[row]?.[col]?.type===model.solidType;})), // Mobile-readable proof of which logical blockers are also active in the ordinary interior physics grid.
       causes:sortedKeys(model.causes),
       effects:sortedKeys(model.effects),
-      sources:Object.fromEntries(sortedKeys(model.sources.keys()).map(tileKey => [tileKey, [...model.sources.get(tileKey)].sort()])),
+      sources:Object.fromEntries(sortedKeys(sources.keys()).map(tileKey => [tileKey, [...sources.get(tileKey)].sort()])),
     };
   }
 
@@ -317,6 +338,14 @@
       const [col, row] = tileKey.split(',').map(Number);
       fillInset(ctx, col, row, scaleX, scaleY, '#e74c3c', Math.max(1, Math.min(scaleX, scaleY) * .14));
     }
+    ctx.fillStyle = '#e74c3c';
+    for (const fp of model.footprints.list()) { // Exact prop outlines, so the Map shows the same collision the player feels.
+      const corners = [[1,1],[1,-1],[-1,-1],[-1,1]].map(([a,b]) => [
+        (fp.cx + fp.ux * fp.halfU * a + fp.vx * fp.halfV * b) * scaleX,
+        (fp.cz + fp.uz * fp.halfU * a + fp.vz * fp.halfV * b) * scaleY,
+      ]);
+      ctx.beginPath(); ctx.moveTo(...corners[0]); for (const c of corners.slice(1)) ctx.lineTo(...c); ctx.closePath(); ctx.fill();
+    }
     for (const tileKey of model.effects) {
       const [col, row] = tileKey.split(',').map(Number);
       fillInset(ctx, col, row, scaleX, scaleY, '#3498db', Math.max(2, Math.min(scaleX, scaleY) * .27));
@@ -342,7 +371,7 @@
     const render = window.DevRandomRuinWallRenderProxy?.snapshot?.() || null; // Shown beside occupancy so mobile testing can distinguish collision from direct-source visibility.
     if (status) status.textContent = `Full interior · occupancy revision ${model.revision} · no fog of war`;
     if (clear) clear.hidden = true;
-    if (list) list.innerHTML = `<div class="wmap-gathering-empty">${model.blocked.size} blocked · ${model.causes.size} activator · ${model.effects.size} mechanism tiles${render ? `<br>${render.visibleDoorSources}/${render.sourceDoorMeshes} door panels · ${render.visibleDoorArchSources}/${render.sourceDoorArchMeshes} arch pieces · ${render.visibleActivatorSources}/${render.sourceActivatorMeshes} activator meshes visible · 0 proxy meshes` : ''}</div>`;
+    if (list) list.innerHTML = `<div class="wmap-gathering-empty">${model.blocked.size} blocked tiles · ${model.footprints.count()} prop footprints · ${model.causes.size} activator · ${model.effects.size} mechanism tiles${render ? `<br>${render.visibleDoorSources}/${render.sourceDoorMeshes} door panels · ${render.visibleDoorArchSources}/${render.sourceDoorArchMeshes} arch pieces · ${render.visibleActivatorSources}/${render.sourceActivatorMeshes} activator meshes visible · 0 proxy meshes` : ''}</div>`;
     canvas.setAttribute('aria-label', 'Random Test Ruin occupancy map: red blocked, green activator, blue mechanism; entire interior revealed');
     canvas.dataset.ruinOccupancyRevision = String(model.revision);
     canvas.dataset.ruinFog = 'disabled';
@@ -376,6 +405,7 @@
       solidType:config.solidType ?? 'rock', // Same solid tile type ordinary interior movement/AI already treats as impassable.
       baseGridTypes:new Map(), // Restores generated floor types when doors open and when the session-only ruin is destroyed.
       staticSources:new Map(),
+      footprints:SolidFootprints.createSet({ floorY:(x, z) => DS.sampleSupport(x, z, { minY:-4, maxY:6 })?.y ?? 0 }),
       sources:new Map(),
       blocked:new Set(),
       causes:new Set(),
@@ -385,14 +415,28 @@
       refresh:() => rebuild(model),
       blocksAt:(x, z, radius = 0, options = {}) => blocksAt(model, x, z, radius, options),
       snapshot:() => snapshot(model),
+      scanSolids:(root, tag) => model.footprints.scan(root, tag),
+      clearSolids:tag => model.footprints.removeTag(tag),
+      addSolidBox:(id, box, enabled, tag) => model.footprints.addBox(id, box, enabled, tag),
+      solidAt:(x, z, half = 0) => model.footprints.blocksBox(x, z, half),
       destroy:() => {
         restoreGridCollision(model);
         DS.remove(BLOCKER_ID);
+        FootprintBlockers?.remove(BLOCKER_ID);
         if (activeModel === model) activeModel = null;
       },
     };
     for (const wall of config.walls || []) for (const tileKey of wallTiles(wall, model)) addSource(model.staticSources, tileKey, `wall:${wall.id}`);
-    for (const solid of config.staticSolids || []) { const role=String(solid.userData?.interiorRuinRole||solid.userData?.blockerPurpose||solid.name||'object').replace(/[^a-z0-9_-]+/gi,'_').slice(0,48); for (const tileKey of objectTiles(solid, model)) addSource(model.staticSources, tileKey, `solid:${solid.id}:${role}`); }
+    for (const root of config.solidRoots || []) model.footprints.scan(root, 'static');
+    // Door panels collide exactly while closed; the rest of the door assembly
+    // (frame/arch parts) is ordinary static geometry.
+    const scanDoor = (door, closed) => {
+      const panel = (door.children || []).find(child => child?.isMesh && child.geometry) || door;
+      model.footprints.scan(panel, 'door', { force:true, enabled:closed });
+      for (const child of door.children || []) if (child !== panel) model.footprints.scan(child, 'door-frame', { force:true });
+    };
+    for (const mechanism of model.mechanisms.values()) if (mechanism.type === 'stoneDoor') scanDoor(mechanism.root, () => doorIsClosed(mechanism.root));
+    for (const door of model.transitDoors) scanDoor(door, () => doorIsClosed(door));
     for (const activator of model.activators) {
       const tileKey = nearestFloorAnchor(activator, model);
       if (tileKey) model.causes.add(tileKey);
@@ -410,6 +454,11 @@
       enabled:() => activeModel === model && GridTileAccessors.getCurrentArea?.() === model.mapId,
       blocksAt:(x, z, _actorHeight, _record, radius, options) => model.blocksAt(x, z, radius, options),
     });
+    FootprintBlockers?.register(BLOCKER_ID, {
+      area:model.mapId,
+      enabled:() => activeModel === model,
+      blocksBox:(x, z, half, worldY) => !!model.footprints.blocksBox(x, z, half, worldY),
+    });
     return model;
   }
 
@@ -418,6 +467,11 @@
     getSnapshot:() => snapshot(),
     refresh:() => activeModel?.refresh?.() || false,
     blocksAt:(x,z,radius=.22,options={}) => activeModel?.blocksAt?.(x,z,radius,options) === true, // Traversal modules use the exact same generated occupancy that is stamped into the ordinary interior grid.
+    scanSolids:(root, tag = 'dynamic-scan') => activeModel?.scanSolids?.(root, tag) || 0, // Later-built puzzle modules add their visible solids to the same footprint set.
+    clearSolids:tag => activeModel?.clearSolids?.(tag),
+    addSolidBox:(id, box, enabled = null, tag = 'dynamic') => activeModel?.addSolidBox?.(id, box, enabled, tag) || null,
+    solidAt:(x, z, half = 0) => activeModel?.solidAt?.(x, z, half) || null,
+    getFootprints:() => activeModel?.footprints?.list?.().map(fp => ({ source:fp.source, cx:+fp.cx.toFixed(3), cz:+fp.cz.toFixed(3), halfU:+fp.halfU.toFixed(3), halfV:+fp.halfV.toFixed(3), yaw:+Math.atan2(-fp.uz, fp.ux).toFixed(3) })) || [],
     renderMapPanel:renderRuinMapPanel,
     blockerId:BLOCKER_ID,
   });
