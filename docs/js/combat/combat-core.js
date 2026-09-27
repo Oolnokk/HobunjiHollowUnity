@@ -433,7 +433,9 @@
   // Drenkirra leap can retain more than its horizontal attack distance.
   // pitchDistanceResistance is an attack-specific 0..1 stat: 0 preserves the
   // ordinary gravity/aim-angle loss, while 1 removes only that loss without
-  // erasing the attacker's authored vertical leap-height recovery.
+  // erasing the attacker's authored vertical leap-height recovery. The camera
+  // alignment bridge now requests full air assist for every forward/upward
+  // player lunge; only below-forward pitch remains grounded by aim.
   function meleeLungeProfile(baseDistancePx, aimPitch = 0, baseHopUnits = 0, lungeHeightUnits = 1, pitchDistanceResistance = 0, directFlightStrength = 0, inRangeAirAssist = false) {
     const pitch = THREE.MathUtils.clamp(Number(aimPitch) || 0, -MAX_MELEE_AIM_PITCH_RAD, MAX_MELEE_AIM_PITCH_RAD);
     const absPitch = Math.abs(pitch);
@@ -442,10 +444,11 @@
       (pitch - MELEE_LEAP_START_PITCH_RAD) / Math.max(1e-6, MAX_MELEE_AIM_PITCH_RAD - MELEE_LEAP_START_PITCH_RAD),
       0, 1,
     );
-    const assistedPitchRatio = pitch > 0
+    const assistedPitchRatio = pitch >= 0
       ? THREE.MathUtils.clamp(Math.sin(pitch) / Math.max(1e-6, Math.sin(MAX_MELEE_AIM_PITCH_RAD)), 0, 1)
       : 0;
-    const assistedLeapT = Math.sqrt(assistedPitchRatio); // Front-load the in-range lift curve: modest upward aim gets meaningful altitude immediately, while steep aim still reaches the same authored maximum.
+    const forwardAirAssistFloor = inRangeAirAssist && pitch >= 0 ? 0.06 : 0; // Forward aim itself must be airborne-capable; this small floor disappears immediately once aim dips below forward.
+    const assistedLeapT = Math.sqrt(Math.max(assistedPitchRatio, forwardAirAssistFloor)); // Front-load lift so even shallow upward/forward aim visibly leaves the ground instead of skimming it.
     const leapT = inRangeAirAssist ? Math.max(naturalLeapT, assistedLeapT) : naturalLeapT;
     const baseDistanceWorld = Math.max(0, Number(baseDistancePx) || 0) / (deps?.TILE || 64);
     const heightUnits = Math.max(0, Number(lungeHeightUnits) || 0);
