@@ -1420,6 +1420,8 @@
   function beginLichCast(lich, target, ability) {
     if (!lich || lich._banditAction || !isLiveActor(lich)) return false;
     const step = lichCastStep(lich, ability); // Existing Light Weapon attack timing/pose metadata used verbatim for the casting motion.
+    const windupS = Number(step.windupS) || 0.16; // Captured once so Hronal's ground warning can be exactly 4× this cast's combined active timing.
+    const strikeS = Number(step.strikeS) || 0.10; // Shared by staged animation and the Erupting Earth telegraph calculation.
     const targetX = Number(target?.x); // Target X sampled only to face the cast before its authored Windup begins.
     const targetY = Number(target?.y); // Target Z-plane coordinate sampled only to face the cast before its authored Windup begins.
     if (Number.isFinite(targetX) && Number.isFinite(targetY)) lich.facing = Math.atan2(targetY - lich.y, targetX - lich.x);
@@ -1433,7 +1435,7 @@
     const onStrike = () => {
       lich.telegraphState = 'strike';
       if (ability === 'summon') summonMinion(lich);
-      else firePrimary(lich, target);
+      else firePrimary(lich, target, { windupS, strikeS });
     };
     const begin = window.Combat?.beginStagedAction;
     if (typeof begin !== 'function') {
@@ -1442,8 +1444,8 @@
       return true;
     }
     lich._banditAction = begin({
-      windupS: Number(step.windupS) || 0.16,
-      strikeS: Number(step.strikeS) || 0.10,
+      windupS,
+      strikeS,
       recoverS: 0,
       data: { isBandit: true, attacker: lich, lichCast: true, ability, comboId: LICH_CAST_COMBO_ID },
       onStrike,
@@ -1524,6 +1526,7 @@
     if (!(dt > 0)) return;
     if (!isArena()) {
       for (const projectile of [...projectiles]) disposeProjectile(projectile); // Custom spell objects never survive a Testing Arena transition.
+      for (const erupt of [...eruptions]) disposeHronalEruption(erupt); // Overlapping Erupting Earth warnings/lava are arena-local scene state.
       for (const puddle of [...puddles]) { puddles.delete(puddle); disposeObject3D(puddle.group); } // Gasoline hazards are arena-local scene state.
       if (deps?.player) {
         clearGooSlowNow(deps.player);
@@ -1539,6 +1542,7 @@
       return;
     }
     updateProjectiles(dt);
+    updateEruptions(dt);
     updatePuddles(dt);
     if (deps?.player) {
       clearExpiredSlow(deps.player);
