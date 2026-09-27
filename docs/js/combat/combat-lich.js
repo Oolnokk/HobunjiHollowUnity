@@ -27,6 +27,9 @@
   const ENTRANCER_RING_THICKNESS = LUNGE_RING_REFERENCE_THICKNESS * 2; // Twice the lunge-circle line thickness requested for the controlling lich marker.
   const ENTRANCER_RING_PULSE_MS = 1000; // One explosive outward pulse per second while this lich remains the player's referential Entranced source.
   const ENTRANCER_RING_BURST_FRACTION = 0.24; // First quarter-second of each cycle carries the rapid expansion/fade; the rest stays as a faint ownership ring.
+  const ENTRANCER_AURA_MAX_PARTICLES = 104; // Large body-height Entranced fire aura budget; intentionally stronger than Burning Health's ordinary 40-particle presentation.
+  const LICH_CAST_WEAPON_KEY = 'pickshovel_nativeCopper'; // Existing Light Weapon definition used only as the invisible one-handed casting pose/grip authority.
+  const LICH_CAST_COMBO_ID = 'pokeCombo'; // Existing light-weapon thrust combo whose authored Neutral/Windup/Strike poses animate every lich ability.
   const TYPE_ORDER = Object.freeze(['tothal', 'hronal', 'kanthic']); // Stable order used by the dev-spawner buttons and diagnostics.
   const HUE_VARIANTS = Object.freeze(['pure', 'muted', 'dusty', 'dark_muted']); // Existing authored dye variants combined with each tradition's hue families.
 
@@ -72,6 +75,8 @@
   let totalPuddles = 0; // Session counter used only by diagnostics.
   let entrancerMarker = null; // Single reusable world-space ring pair that follows whichever Kanthic lich most recently applied the player's Entranced Health.
   let entrancerMarkerSource = null; // Current referential lich owning the visible marker; changes immediately when a newer applicant takes control.
+  let entrancerAuraAnchor = null; // Avatar-local anchor carrying the large Entranced fire emitter above the ground ring.
+  let entrancerAuraVisual = null; // AuthoredFurniture emitter visual updated while the latest Kanthic applicant controls the player.
   let wrappersInstalled = false; // Prevents duplicate API wrapping if scripts/tools reinstall this feature.
 
   function random() {
@@ -115,19 +120,116 @@
     };
   }
 
-  function removeBanditWeapons(entity) {
-    for (const key of ['_banditToolHolder', '_banditRangedToolHolder']) {
-      const holder = entity?.[key]; // Existing shared humanoid weapon holder removed because liches cast bare-handed for now.
-      if (!holder) continue;
-      holder.parent?.remove?.(holder);
-      holder.traverse?.(child => {
-        child.geometry?.dispose?.();
-        const materials = Array.isArray(child.material) ? child.material : [child.material]; // Used to safely dispose either single or multi-material tool planes.
-        for (const material of materials) material?.dispose?.();
-      });
-      entity[key] = null;
+  function disposeHolderChildren(holder) {
+    if (!holder) return;
+    for (const child of [...(holder.children || [])]) disposeObject3D(child); // Visible reference weapon geometry is removed while the animated holder itself remains authoritative.
+  }
+
+  function prepareEmptyCastWeapon(entity) {
+    if (!entity) return null;
+    const rangedHolder = entity._banditRangedToolHolder; // Liches never use an ordinary ranged weapon holder; only their custom spell projectile exists.
+    if (rangedHolder) {
+      disposeObject3D(rangedHolder);
+      entity._banditRangedToolHolder = null;
     }
-    if (entity) entity.banditWeaponMeshAttached = false;
+    const holder = entity._banditToolHolder; // Existing BanditCombat holder already receives the player's Neutral→Windup→Strike pose math every frame.
+    if (!holder) {
+      entity.banditWeaponMeshAttached = false;
+      return null;
+    }
+    disposeHolderChildren(holder);
+    holder.visible = true;
+    if (typeof THREE !== 'undefined') {
+      const socket = new THREE.Group(); // Empty weapon object: no rendered mesh, but it follows the exact Light Weapon holder transform for the procedural hand.
+      socket.name = 'lich_empty_light_weapon';
+      socket.userData.lichEmptyCastWeapon = true;
+      socket.userData.referenceWeaponKey = LICH_CAST_WEAPON_KEY;
+      holder.add(socket);
+      entity._lichCastWeaponSocket = socket;
+    }
+    entity.banditWeaponMeshAttached = false;
+    return holder;
+  }
+
+  function handRigForLich(entity) {
+    const root = entity?.avatarRef?.group;
+    if (root?.userData?.proceduralHandRig) return root.userData.proceduralHandRig;
+    let rig = null; // Some avatar builds put the rig on a nested presentation root rather than the public avatar group.
+    root?.traverse?.(node => {
+      if (!rig && node?.userData?.proceduralHandRig) rig = node.userData.proceduralHandRig;
+    });
+    return rig;
+  }
+
+  function lichHandFrame(rig) {
+    const profiles = window.HobunjiHandModelProfiles; // Existing species hand-model calibration owner shared with NPC held equipment.
+    if (!rig || !profiles || typeof THREE === 'undefined') return null;
+    const species = rig.speciesId || 'harlyao-skeleton'; // Harlyao Skeleton inherits the Engh-Sho hand model/profile at runtime.
+    const gender = rig.gender || 'male'; // Used only for the existing species/gender hand scale.
+    const raw = window.HobunjiHandGripModes?.effectiveFrameForSpecies?.(species)
+      || profiles.handTransformForSpecies?.(species)
+      || profiles.modelForSpecies?.(species)?.handFromTool
+      || {};
+    const p = raw.position || {}; // Existing hand-from-tool translation in normalized hand-height units.
+    const r = raw.rotationDeg || {}; // Existing hand-from-tool orientation.
+    const q = raw.rotationQuaternion || null; // Quaternion wins when the calibrated hand model supplies one.
+    const avatarHeight = Number(rig.avatarRoot?.userData?.portraitModelHeight) || Number(rig.parent?.userData?.portraitModelHeight) || 0.9; // Same rendered-height basis as the civilian held-equipment path.
+    const effectiveScale = Number(profiles.effectiveScaleFor?.(species, gender)) || 1; // Species+gender hand-model scale already authored in the shared profile.
+    const unit = avatarHeight * (Number(profiles.data?.handHeightFraction) || 0.12) * effectiveScale; // Converts normalized calibration translation to world units.
+    const quaternion = q && [q.x, q.y, q.z, q.w].every(value => Number.isFinite(Number(value)))
+      ? new THREE.Quaternion(Number(q.x), Number(q.y), Number(q.z), Number(q.w)).normalize()
+      : new THREE.Quaternion().setFromEuler(new THREE.Euler(
+          THREE.MathUtils.degToRad(Number(r.pitch) || 0),
+          THREE.MathUtils.degToRad(Number(r.yaw) || 0),
+          THREE.MathUtils.degToRad(Number(r.roll) || 0),
+          'YXZ',
+        ));
+    return {
+      position: new THREE.Vector3((Number(p.x) || 0) * unit, (Number(p.y) || 0) * unit, (Number(p.z) || 0) * unit),
+      quaternion,
+    };
+  }
+
+  function hierarchyWorldQuaternion(node) {
+    if (!node?.quaternion || typeof THREE === 'undefined') return null;
+    const chain = []; // Avoids matrix decomposition under mirrored/non-uniform avatar ancestors, matching the existing hand runtimes.
+    for (let cursor = node; cursor?.isObject3D; cursor = cursor.parent) chain.push(cursor);
+    const world = new THREE.Quaternion();
+    world.identity();
+    for (let i = chain.length - 1; i >= 0; i--) world.multiply(chain[i].quaternion);
+    return world.normalize();
+  }
+
+  function syncLichCastHand(entity) {
+    const holder = entity?._banditToolHolder; // Empty reference weapon holder animated by BanditCombat.updateToolMesh.
+    const rig = handRigForLich(entity); // Procedural right-hand rig attached to this Harlyao Skeleton avatar.
+    const hand = lichHandFrame(rig); // Existing species/model calibration composed after the weapon grip.
+    if (!holder?.visible || !holder.parent || !rig?.placeHandWorld || !hand || typeof THREE === 'undefined') return false;
+    holder.updateWorldMatrix?.(true, true);
+    const socketPosition = holder.getWorldPosition(new THREE.Vector3()); // Current Light Weapon pose position after BanditCombat animation.
+    const socketQuaternion = hierarchyWorldQuaternion(holder); // Current Light Weapon pose orientation without mirrored-matrix decomposition.
+    if (!socketQuaternion) return false;
+    const grips = window.HobunjiHandToolGrips; // Existing authored grip metadata keeps the invisible reference weapon's hand placement identical to a real held copy.
+    const grip = grips?.authoredPrimaryGripForTool?.(LICH_CAST_WEAPON_KEY, 'melee') || {};
+    const gripPosition = grip.position || {}; // Authored point on the reference weapon where the right hand belongs.
+    const gripRotation = grip.rotationDeg || {}; // Authored grip orientation on the reference weapon.
+    const gripScale = Number(grips?.toolScaleForTool?.(LICH_CAST_WEAPON_KEY)) || 1; // Same tool-scale multiplier used by visible held weapons.
+    socketPosition.add(new THREE.Vector3(
+      (Number(gripPosition.x) || 0) * gripScale,
+      (Number(gripPosition.y) || 0) * gripScale,
+      (Number(gripPosition.z) || 0) * gripScale,
+    ).applyQuaternion(socketQuaternion));
+    socketQuaternion.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(
+      THREE.MathUtils.degToRad(Number(gripRotation.pitch) || 0),
+      THREE.MathUtils.degToRad(Number(gripRotation.yaw) || 0),
+      THREE.MathUtils.degToRad(Number(gripRotation.roll) || 0),
+      'YXZ',
+    )));
+    const handPosition = socketPosition.clone().add(hand.position.clone().applyQuaternion(socketQuaternion)); // Final right-palm point after the species/model hand offset.
+    const handQuaternion = socketQuaternion.clone().multiply(hand.quaternion); // Final right-palm orientation after grip + model calibration.
+    rig.setSideVisible?.('right', true);
+    rig.placeHandWorld('right', handPosition, handQuaternion);
+    return true;
   }
 
   async function makeEntity(options = {}) {
@@ -150,6 +252,7 @@
       enemyClass: CLASS_ID,
       nameOverride: def.label,
       defOverride: {
+        weaponKey: LICH_CAST_WEAPON_KEY, // Existing Light Weapon classification/attack pose source; its visible mesh is stripped immediately after construction.
         rangedWeaponKey: null,
         aggroRangePx: (deps.TILE || 64) * 11,
         leashRangePx: (deps.TILE || 64) * 14,
@@ -163,7 +266,8 @@
       },
     });
     if (!entity) return null;
-    removeBanditWeapons(entity);
+    prepareEmptyCastWeapon(entity);
+    entity._lichCastAnimIndex = 0; // Cycles existing poke-combo steps so repeated spell casts do not all use one identical hand motion.
     entity._lichPrimaryCooldownS = 0.7 + random() * 0.8; // Staggers first casts when several liches are spawned together.
     entity._lichSummonCooldownS = 5.5 + random() * 3; // First summon comes later than first projectile so the core attack is easy to observe.
     entity._lichCommand = 'approach'; // Referential command read live by every target currently Entranced by this lich.
@@ -558,15 +662,65 @@
     return group;
   }
 
+  function colorCssHex(colorValue) {
+    if (typeof THREE === 'undefined') return '#b746d9';
+    return `#${new THREE.Color(colorValue).getHexString()}`; // AuthoredFurniture emitters accept CSS colors, while ResourceRings stores numeric colors.
+  }
+
+  function buildEntrancerAura(source) {
+    const avatar = source?.avatarRef?.group; // Avatar-local parenting keeps the fire column on the controlling lich's body at every terrain height.
+    const authored = window.AuthoredFurniture; // Existing furniture particle renderer is also used by Burning Health; no second custom particle engine.
+    if (!avatar || !authored?.createEmitterVisual || typeof THREE === 'undefined') return null;
+    const anchor = new THREE.Group(); // Separate disposable child prevents the emitter from mutating avatar-owned userData/parts.
+    anchor.name = 'entranced_controller_aura';
+    const halfHeight = Math.max(0.25, Number(source.halfHeight) || Number(source.avatarRef?.modelHeight) / 2 || 0.45); // Used to start flames just above the feet.
+    anchor.position.y = -halfHeight + 0.06;
+    avatar.add(anchor);
+    const color = entrancedMarkerColor(); // Exact Entranced affliction hue shared with health ring, lunge-color marker, and this aura.
+    const bright = new THREE.Color(color).lerp(new THREE.Color(0xffffff), 0.34); // Same hue family with a brighter flame tip for legibility against dark clothing.
+    const emitter = {
+      id: 'entranced_controller_fire',
+      name: 'Entranced Controller Aura',
+      type: 'fire', enabled: true,
+      position: { x: 0, y: 0, z: 0 },
+      rotation: { x: 0, y: 0, z: 0 },
+      radius: Math.max(0.34, Number(source.avatarRef?.modelWidth) * 0.42 || 0.42),
+      size: 0.24,
+      rate: 92,
+      lifetime: 1.02,
+      speed: Math.max(0.92, halfHeight * 1.9),
+      spread: 0.46,
+      gravity: -0.06,
+      colorA: colorCssHex(bright),
+      colorB: colorCssHex(color),
+    }; // Deliberately larger/denser than the ordinary campfire-derived Burning Health emitter so the controller reads at character height.
+    const visual = authored.createEmitterVisual(anchor, emitter, ENTRANCER_AURA_MAX_PARTICLES);
+    if (!visual) {
+      avatar.remove(anchor);
+      return null;
+    }
+    entrancerAuraAnchor = anchor;
+    entrancerAuraVisual = visual;
+    return visual;
+  }
+
+  function disposeEntrancerAura() {
+    entrancerAuraVisual?.dispose?.();
+    entrancerAuraVisual = null;
+    entrancerAuraAnchor?.parent?.remove?.(entrancerAuraAnchor);
+    entrancerAuraAnchor = null;
+  }
+
   function disposeEntrancerMarker() {
     if (entrancerMarker) disposeObject3D(entrancerMarker);
     entrancerMarker = null;
+    disposeEntrancerAura();
     entrancerMarkerSource = null;
   }
 
-  function updateEntrancerMarker() {
+  function updateEntrancerMarker(dt = 0) {
     const player = deps?.player; // Only the lich currently controlling the player receives this world-space owner marker.
-    const amount = player ? (window.ResourceSystem?.getAffliction?.(player, 'entrancedHealth') || 0) : 0; // Ring exists only while Entranced buildup is actually present.
+    const amount = player ? (window.ResourceSystem?.getAffliction?.(player, 'entrancedHealth') || 0) : 0; // Marker/aura exist only while Entranced buildup is actually present.
     const source = player?._entrancedCommandState?.source || null; // Latest applicant is the referential owner and therefore the only marked lich.
     if (!(amount > 0) || !isArena() || !isLiveActor(source) || source.lichType !== 'kanthic') {
       disposeEntrancerMarker();
@@ -575,7 +729,15 @@
     if (!entrancerMarker || entrancerMarkerSource !== source || entrancerMarker.parent !== source.scene) {
       disposeEntrancerMarker();
       entrancerMarker = buildEntrancerMarker(source.scene);
-      entrancerMarkerSource = entrancerMarker ? source : null;
+      entrancerMarkerSource = source; // Aura can still identify the source even if the optional ground-ring scene mesh could not be constructed.
+      buildEntrancerAura(source);
+    } else if (!entrancerAuraVisual) {
+      buildEntrancerAura(source); // Late-loaded AuthoredFurniture can attach the body-height cue without waiting for Entranced to be reapplied.
+    }
+    if (entrancerAuraVisual) {
+      const phase = (performance.now() % ENTRANCER_RING_PULSE_MS) / ENTRANCER_RING_PULSE_MS; // Shared one-second phase gives the fire a subtle synchronized surge with the ground pulse.
+      const surge = phase < ENTRANCER_RING_BURST_FRACTION ? 1.32 : 1;
+      entrancerAuraVisual.update?.(Math.max(0, Number(dt) || 0), true, { rate: 92 * surge, size: 0.24 * (0.94 + 0.06 * surge) });
     }
     if (!entrancerMarker) return;
     const groundY = groundYAt(source, source.x, source.y); // Marker follows the controller across arena ramps/slabs rather than assuming flat world zero.
@@ -716,6 +878,65 @@
     }
   }
 
+  function finishLichCast(lich) {
+    if (!lich) return;
+    lich._banditAction = null;
+    lich.telegraphState = null;
+    const natural = window.BanditCombat?.naturalSwing?.(lich.def) || { anim: 'thrust', pose: null }; // Returns to the same existing Light Weapon neutral used between casts.
+    lich._banditSwingAnim = natural.anim;
+    lich._banditSwingPose = natural.pose;
+    lich._banditSwingDirSign = 1;
+    lich._banditSwingPower = 1;
+    lich._banditSwingPoseScale = 1;
+    lich._lichCastingAbility = null;
+  }
+
+  function lichCastStep(lich, ability) {
+    const steps = window.Combat?.comboData?.[LICH_CAST_COMBO_ID] || []; // Existing 1h Light Weapon thrust combo authored for ordinary player attacks.
+    if (!steps.length) return { windupS: 0.16, strikeS: 0.10, anim: 'thrust', pose: null, dirSign: 1, power: 1 };
+    const index = ability === 'summon'
+      ? Math.min(steps.length - 1, 2) // Summon uses the longest existing light-weapon thrust for a visibly larger gesture.
+      : (lich._lichCastAnimIndex || 0) % steps.length; // Projectile casts rotate through the existing combo instead of cloning one pose.
+    if (ability !== 'summon') lich._lichCastAnimIndex = (index + 1) % steps.length;
+    return steps[index];
+  }
+
+  function beginLichCast(lich, target, ability) {
+    if (!lich || lich._banditAction || !isLiveActor(lich)) return false;
+    const step = lichCastStep(lich, ability); // Existing Light Weapon attack timing/pose metadata used verbatim for the casting motion.
+    const targetX = Number(target?.x); // Target X sampled only to face the cast before its authored Windup begins.
+    const targetY = Number(target?.y); // Target Z-plane coordinate sampled only to face the cast before its authored Windup begins.
+    if (Number.isFinite(targetX) && Number.isFinite(targetY)) lich.facing = Math.atan2(targetY - lich.y, targetX - lich.x);
+    lich.telegraphState = 'windup';
+    lich._banditSwingAnim = step.anim || 'thrust';
+    lich._banditSwingPose = step.pose || null;
+    lich._banditSwingDirSign = step.dirSign || 1;
+    lich._banditSwingPower = Number(step.power) || 1;
+    lich._banditSwingPoseScale = 1;
+    lich._lichCastingAbility = ability; // Mobile diagnostics distinguish projectile and summon gestures while the shared staged action is active.
+    const onStrike = () => {
+      lich.telegraphState = 'strike';
+      if (ability === 'summon') summonMinion(lich);
+      else firePrimary(lich, target);
+    };
+    const begin = window.Combat?.beginStagedAction;
+    if (typeof begin !== 'function') {
+      onStrike(); // Defensive fallback for isolated tools/tests; gameplay always owns beginStagedAction.
+      finishLichCast(lich);
+      return true;
+    }
+    lich._banditAction = begin({
+      windupS: Number(step.windupS) || 0.16,
+      strikeS: Number(step.strikeS) || 0.10,
+      recoverS: 0,
+      data: { isBandit: true, attacker: lich, lichCast: true, ability, comboId: LICH_CAST_COMBO_ID },
+      onStrike,
+      onComplete: () => finishLichCast(lich),
+      onCancel: () => finishLichCast(lich),
+    });
+    return !!lich._banditAction;
+  }
+
   function updateLichAI(lich, dt, target, distToTarget) {
     if (!isArena() || !isLiveActor(lich)) return { aimAngle: lich.facing || 0, moving: false, handled: true };
     target = target && Number(target.health) > 0 ? target : deps.player; // Shared hostile loop normally passes player; fallback keeps arena-spawned liches deterministic.
@@ -729,9 +950,16 @@
 
     lich._lichPrimaryCooldownS = Math.max(0, (lich._lichPrimaryCooldownS || 0) - dt);
     lich._lichSummonCooldownS = Math.max(0, (lich._lichSummonCooldownS || 0) - dt);
+    if (lich._banditAction) {
+      lich.facing = aimAngle; // Hold target facing while the existing Light Weapon Windup→Strike animation completes.
+      return { aimAngle, moving: false, handled: true };
+    }
+
     if (lich._lichSummonCooldownS <= 0) {
-      summonMinion(lich);
-      lich._lichSummonCooldownS = 12 + random() * 5;
+      if (beginLichCast(lich, target, 'summon')) {
+        lich._lichSummonCooldownS = 12 + random() * 5;
+        return { aimAngle, moving: false, handled: true };
+      }
     }
 
     const tile = deps.TILE || 64; // Shared range unit used for desired casting ring.
@@ -751,7 +979,7 @@
 
     if (lich._lichPrimaryCooldownS <= 0 && dist <= tile * 9.5) {
       lich.facing = aimAngle;
-      if (firePrimary(lich, target)) lich._lichPrimaryCooldownS = def.castCooldownS;
+      if (beginLichCast(lich, target, 'primary')) lich._lichPrimaryCooldownS = def.castCooldownS;
     }
     return { aimAngle, moving, handled: true };
   }
@@ -770,7 +998,7 @@
         clearEntrancedNow(actor);
       }
       updateCommandBanner();
-      updateEntrancerMarker();
+      updateEntrancerMarker(dt);
       return;
     }
     updateProjectiles(dt);
@@ -784,7 +1012,7 @@
       updateEntrancedTarget(actor, dt);
     }
     updateCommandBanner();
-    updateEntrancerMarker();
+    updateEntrancerMarker(dt);
   }
 
   function installWrappers() {
@@ -804,6 +1032,15 @@
       if (entity?.enemyClass === CLASS_ID || entity?.isHarlyaoLich) return updateLichAI(entity, dt, target, dist);
       return baseAI(entity, dt, target, dist);
     };
+
+    if (typeof BanditCombat.updateToolMesh === 'function') {
+      const baseToolMeshUpdate = BanditCombat.updateToolMesh.bind(BanditCombat); // Preserves EnemyWeaponStances/player-parity Light Weapon pose preparation before hand placement.
+      BanditCombat.updateToolMesh = function harlyaoLichToolMesh(entity, ...args) {
+        const result = baseToolMeshUpdate(entity, ...args);
+        if (entity?.enemyClass === CLASS_ID || entity?.isHarlyaoLich) syncLichCastHand(entity); // Right hand follows the invisible weapon object through the existing attack animation.
+        return result;
+      };
+    }
 
     const baseRangedUpdate = RangedWeapons.update.bind(RangedWeapons); // Custom spell simulation runs once per normal gameplay frame, never from a second animation loop.
     RangedWeapons.update = function harlyaoLichRangedUpdate(dt) {
@@ -831,11 +1068,11 @@
     const playerEntranced = deps?.player ? (window.ResourceSystem?.getAffliction?.(deps.player, 'entrancedHealth') || 0) : 0; // Current player buildup for one-line verification.
     return {
       classId: CLASS_ID, arenaOnly: ARENA_ID, wrappersInstalled,
-      activeLiches: liches.map(lich => ({ id: lich.id, type: lich.lichType, dye: lich.lichDyeId, command: lich._lichCommand, primaryCd: lich._lichPrimaryCooldownS, summonCd: lich._lichSummonCooldownS, summons: [...(lich._lichSummons || [])].filter(isLiveActor).length })),
+      activeLiches: liches.map(lich => ({ id: lich.id, type: lich.lichType, dye: lich.lichDyeId, command: lich._lichCommand, casting: lich._lichCastingAbility || null, emptyLightWeapon: !!lich._lichCastWeaponSocket, primaryCd: lich._lichPrimaryCooldownS, summonCd: lich._lichSummonCooldownS, summons: [...(lich._lichSummons || [])].filter(isLiveActor).length })),
       projectiles: projectiles.size, puddles: puddles.size, totalPuddles, totalSummons,
       playerEntranced, playerCommand: deps?.player?._entrancedCommandState?.source?._lichCommand || null,
       playerEntrancerId: deps?.player?._entrancedCommandState?.source?.id || null,
-      entrancerMarker: entrancerMarkerSource ? { sourceId: entrancerMarkerSource.id || null, visible: !!entrancerMarker?.visible } : null,
+      entrancerMarker: entrancerMarkerSource ? { sourceId: entrancerMarkerSource.id || null, ringVisible: !!entrancerMarker?.visible, auraVisible: !!entrancerAuraVisual } : null,
       playerGooSlow: deps?.player?._kanthicGooSlow ? { stacks: deps.player._kanthicGooSlow.stacks, remainingMs: Math.max(0, deps.player._kanthicGooSlow.until - performance.now()) } : null,
       lastEvent,
     };
@@ -848,7 +1085,7 @@
     debugSnapshot,
     formatDebug() {
       const d = debugSnapshot(); // Compact status line intended for Pixel Probe/mobile-copyable diagnostics.
-      return `Harlyao Liches: live=${d.activeLiches.length} projectiles=${d.projectiles} puddles=${d.puddles} summons=${d.totalSummons} entranced=${d.playerEntranced.toFixed?.(1) || d.playerEntranced} command=${d.playerCommand || '-'} controller=${d.playerEntrancerId || '-'} marker=${d.entrancerMarker?.visible ? 'on' : 'off'} goo=${d.playerGooSlow?.stacks || 0} last=${d.lastEvent}`;
+      return `Harlyao Liches: live=${d.activeLiches.length} projectiles=${d.projectiles} puddles=${d.puddles} summons=${d.totalSummons} entranced=${d.playerEntranced.toFixed?.(1) || d.playerEntranced} command=${d.playerCommand || '-'} controller=${d.playerEntrancerId || '-'} marker=${d.entrancerMarker?.ringVisible ? 'ring' : '-'}+${d.entrancerMarker?.auraVisible ? 'aura' : '-'} goo=${d.playerGooSlow?.stacks || 0} last=${d.lastEvent}`;
     },
   };
   window.__lichDebug = { snapshot: debugSnapshot }; // Console-independent API also consumed by the existing mobile debug surfaces/tests.
