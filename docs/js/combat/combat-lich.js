@@ -786,15 +786,77 @@
     return puddle;
   }
 
+  function entrancedManeuverKind(target) {
+    if (target?.lunging || target?._banditLunging) return 'lunge';
+    if (target?.dodging) return 'dodge';
+    return null;
+  }
+
+  function entrancedManeuverDirection(target, kind) {
+    const rawX = kind === 'lunge' ? Number(target?.lungeDirX ?? target?._banditLungeDirX) : Number(target?.dodgeDirX);
+    const rawY = kind === 'lunge' ? Number(target?.lungeDirY ?? target?._banditLungeDirY) : Number(target?.dodgeDirY);
+    const magnitude = Math.hypot(rawX || 0, rawY || 0);
+    if (magnitude > 1e-6) return { x: rawX / magnitude, y: rawY / magnitude };
+    const angle = Number(target?.angle ?? target?.facing) || 0; // Fallback preserves a stable intended direction if a special dodge/lunge omits explicit axes.
+    return { x: Math.cos(angle), y: Math.sin(angle) };
+  }
+
+  function resetEntrancedMovementBaseline(target, state, source = state?.source) {
+    if (!target || !state) return;
+    state.lastX = Number(target.x) || 0;
+    state.lastY = Number(target.y) || 0;
+    state.lastDistance = source
+      ? Math.hypot(state.lastX - (Number(source.x) || 0), state.lastY - (Number(source.y) || 0))
+      : 0;
+  }
+
+  function beginEntrancedCommandGrace(target, state, command, now = performance.now()) {
+    if (!target || !state) return;
+    state.command = command === 'flee' ? 'flee' : 'approach';
+    state.graceStartedAt = now; // Banner first shows the spoken command, then uses this timestamp to derive the 3→2→1 countdown.
+    state.graceUntil = now + ENTRANCED_COMMAND_GRACE_MS;
+    state.activeManeuver = null;
+    state.suppressManeuverUntilEnd = entrancedManeuverKind(target); // A dodge/lunge already underway when a command changes belongs wholly to the no-damage grace period.
+    resetEntrancedMovementBaseline(target, state);
+  }
+
+  function entrancedGraceDisplay(state, now = performance.now()) {
+    if (!state || !(state.graceUntil > now)) return null;
+    const elapsed = Math.max(0, now - (state.graceStartedAt || now));
+    if (elapsed < ENTRANCED_COMMAND_ANNOUNCE_MS) return { phase: 'announce', countdown: null };
+    const countdownElapsed = elapsed - ENTRANCED_COMMAND_ANNOUNCE_MS;
+    const countdown = Math.max(1, Math.min(3, 3 - Math.floor(countdownElapsed / 1000)));
+    return { phase: 'countdown', countdown }; // Exactly three one-second beats follow the short spoken-command banner.
+  }
+
+  function liveEntrancedApplicators() {
+    return [...(deps?.hostileObjects || [])].filter(actor =>
+      isLiveActor(actor)
+      && (actor.enemyClass === CLASS_ID || actor.isHarlyaoLich)
+      && actor.lichType === 'kanthic'
+    ); // Only live Kanthic liches can create/refresh Entranced Health.
+  }
+
   function applyEntranced(target, source, amount) {
     if (!target || !source || !(amount > 0)) return 0;
     const added = window.ResourceSystem?.addAffliction?.(target, 'entrancedHealth', amount) || 0; // Canonical ring buildup amount.
-    const distance = Math.hypot((target.x || 0) - (source.x || 0), (target.y || 0) - (source.y || 0)); // Baseline used to classify next-frame movement toward/away.
-    target._entrancedCommandState = {
-      source, sourceId: source.id || null,
-      lastX: Number(target.x) || 0, lastY: Number(target.y) || 0, lastDistance: distance,
-      command: source._lichCommand || 'approach',
-    }; // Latest applicant deliberately replaces any older referential lich.
+    const command = source._lichCommand === 'flee' ? 'flee' : 'approach';
+    let state = target._entrancedCommandState;
+    const controllerChanged = !state || state.source !== source;
+    if (controllerChanged) {
+      state = target._entrancedCommandState = {
+        source, sourceId: source.id || null,
+        lastX: 0, lastY: 0, lastDistance: 0,
+        command,
+        graceStartedAt: 0, graceUntil: 0,
+        activeManeuver: null, suppressManeuverUntilEnd: null,
+      }; // Latest applicant deliberately replaces any older referential lich.
+      beginEntrancedCommandGrace(target, state, command);
+    } else {
+      state.sourceId = source.id || null;
+      if (command !== state.command) beginEntrancedCommandGrace(target, state, command); // A real command flip earns a fresh no-damage countdown.
+      else resetEntrancedMovementBaseline(target, state, source); // Repeated puddle buildup never restarts grace, but it must not manufacture movement from an old sample.
+    }
     return added;
   }
 
@@ -855,6 +917,26 @@
     delete target._entrancedCommandState;
   }
 
+  function resolveEntrancedMovement(target, state, command, movedPx, distanceDelta, dt, sourceLabel) {
+    const RS = window.ResourceSystem;
+    const amount = RS?.getAffliction?.(target, 'entrancedHealth') || 0;
+    if (!(amount > 0)) return;
+    const movementEpsilon = Math.max(0.45, (deps.TILE || 64) * 0.002); // Filters animation/physics jitter so standing still is never punished.
+    const moved = movedPx > movementEpsilon;
+    const wrong = moved && ((command === 'approach' && distanceDelta > movementEpsilon) || (command === 'flee' && distanceDelta < -movementEpsilon));
+    const obeying = moved && ((command === 'approach' && distanceDelta < -movementEpsilon) || (command === 'flee' && distanceDelta > movementEpsilon));
+    if (wrong) {
+      const requested = movedPx / (deps.TILE || 64) * ENTRANCED_WRONG_MOVE_DAMAGE_PER_TILE; // Dodge/lunge callers pass exactly TILE here; ordinary movement remains actual-distance-scaled.
+      const consumed = Math.min(amount, requested);
+      RS?.removeAffliction?.(target, 'entrancedHealth', consumed);
+      RS?.applyHealthAfflictionDamage?.(target, consumed);
+      lastEvent = `entranced-punish:${command}:${sourceLabel || target.id || target.name || 'player'}`;
+      return;
+    }
+    const rate = (!moved || obeying) ? ENTRANCED_FAST_RECOVERY_PER_S : ENTRANCED_BASE_RECOVERY_PER_S;
+    RS?.removeAffliction?.(target, 'entrancedHealth', rate * dt);
+  }
+
   function updateEntrancedTarget(target, dt) {
     const RS = window.ResourceSystem; // Central source for current buildup, removal, and damage conversion.
     const amount = RS?.getAffliction?.(target, 'entrancedHealth') || 0;
@@ -863,31 +945,71 @@
       if (state) delete target._entrancedCommandState;
       return;
     }
-    if (!state?.source || !isLiveActor(state.source)) {
-      RS?.removeAffliction?.(target, 'entrancedHealth', ENTRANCED_FAST_RECOVERY_PER_S * dt);
+    if (liveEntrancedApplicators().length === 0) {
+      clearEntrancedNow(target); // No lingering mind effect after the last enemy capable of applying Entranced Health dies.
+      lastEvent = `entranced-cleared:no-applicators:${target.id || target.name || 'player'}`;
       return;
     }
-    const source = state.source; // Live lich all movement is measured relative to this frame.
-    const command = source._lichCommand || state.command || 'approach'; // AI can swap command after application; targets obey the current one immediately.
-    const x = Number(target.x) || 0; // Current target X used for movement and distance deltas.
-    const y = Number(target.y) || 0; // Current target Z-plane coordinate used for movement and distance deltas.
-    const movedPx = Math.hypot(x - state.lastX, y - state.lastY); // Distinguishes standing still from actual commanded/sideways/opposing movement.
-    const distance = Math.hypot(x - source.x, y - source.y); // Current referential distance to the latest lich.
-    const distanceDelta = distance - state.lastDistance; // Positive means moving away, negative means moving closer.
-    const movementEpsilon = Math.max(0.45, (deps.TILE || 64) * 0.002); // Filters animation/physics jitter so standing still is never punished.
-    const moved = movedPx > movementEpsilon; // Used to select fast stillness recovery versus directional behavior.
-    const wrong = moved && ((command === 'approach' && distanceDelta > movementEpsilon) || (command === 'flee' && distanceDelta < -movementEpsilon)); // Only movement directly against the command consumes buildup as damage.
-    const obeying = moved && ((command === 'approach' && distanceDelta < -movementEpsilon) || (command === 'flee' && distanceDelta > movementEpsilon)); // Command-consistent movement receives fast recovery.
-    if (wrong) {
-      const requested = movedPx / (deps.TILE || 64) * ENTRANCED_WRONG_MOVE_DAMAGE_PER_TILE; // Distance-scaled punishment prevents frame-rate dependence.
-      const consumed = Math.min(amount, requested); // Never converts more Entranced Health than currently exists.
-      RS?.removeAffliction?.(target, 'entrancedHealth', consumed);
-      RS?.applyHealthAfflictionDamage?.(target, consumed);
-      lastEvent = `entranced-punish:${command}:${target.id || target.name || 'player'}`;
-    } else {
-      const rate = (!moved || obeying) ? ENTRANCED_FAST_RECOVERY_PER_S : ENTRANCED_BASE_RECOVERY_PER_S; // Standing still and obeying share the accelerated action-avoidance recovery rule.
-      RS?.removeAffliction?.(target, 'entrancedHealth', rate * dt);
+    if (!state?.source || !isLiveActor(state.source)) {
+      RS?.removeAffliction?.(target, 'entrancedHealth', ENTRANCED_FAST_RECOVERY_PER_S * dt); // A dead former controller cannot command, but buildup may naturally clear while another Kanthic still exists.
+      return;
     }
+    const source = state.source;
+    const command = source._lichCommand === 'flee' ? 'flee' : 'approach';
+    if (command !== state.command) beginEntrancedCommandGrace(target, state, command); // Tactical swaps never punish on the same frame the player learns the new command.
+
+    const x = Number(target.x) || 0;
+    const y = Number(target.y) || 0;
+    const distance = Math.hypot(x - (Number(source.x) || 0), y - (Number(source.y) || 0));
+    if (entrancedGraceDisplay(state)) {
+      state.activeManeuver = null;
+      state.suppressManeuverUntilEnd = entrancedManeuverKind(target) || state.suppressManeuverUntilEnd; // Any maneuver overlapping grace is wholly free.
+      resetEntrancedMovementBaseline(target, state, source);
+      return; // Grace freezes Entranced exactly: no damage conversion and no natural recovery.
+    }
+
+    const maneuverKind = entrancedManeuverKind(target);
+    if (state.suppressManeuverUntilEnd) {
+      if (maneuverKind === state.suppressManeuverUntilEnd) {
+        resetEntrancedMovementBaseline(target, state, source);
+        return;
+      }
+      state.suppressManeuverUntilEnd = null;
+      resetEntrancedMovementBaseline(target, state, source);
+      return; // First post-grace frame only closes the ignored maneuver; it cannot retroactively punish it.
+    }
+
+    if (maneuverKind) {
+      if (!state.activeManeuver) {
+        state.activeManeuver = {
+          kind: maneuverKind,
+          direction: entrancedManeuverDirection(target, maneuverKind),
+          startX: x, startY: y,
+          sourceX: Number(source.x) || 0, sourceY: Number(source.y) || 0,
+        }; // Captures intent at maneuver start so collision-shortened and long authored variants are treated identically.
+      }
+      resetEntrancedMovementBaseline(target, state, source);
+      return; // Per-frame displacement is ignored while a discrete dodge/lunge is active.
+    }
+
+    if (state.activeManeuver) {
+      const move = state.activeManeuver;
+      state.activeManeuver = null;
+      const toSourceX = move.sourceX - move.startX;
+      const toSourceY = move.sourceY - move.startY;
+      const toSourceMag = Math.hypot(toSourceX, toSourceY);
+      const dotToward = toSourceMag > 1e-6
+        ? (move.direction.x * toSourceX + move.direction.y * toSourceY) / toSourceMag
+        : 0;
+      const syntheticDelta = dotToward > 0.08 ? -(deps.TILE || 64) : dotToward < -0.08 ? (deps.TILE || 64) : 0; // Positive distanceDelta means away; every directional maneuver is exactly one tile regardless of physical travel.
+      resolveEntrancedMovement(target, state, command, deps.TILE || 64, syntheticDelta, dt, `${move.kind}-1tile`);
+      resetEntrancedMovementBaseline(target, state, source);
+      return;
+    }
+
+    const movedPx = Math.hypot(x - state.lastX, y - state.lastY); // Ordinary walking still uses actual distance and remains frame-rate independent.
+    const distanceDelta = distance - state.lastDistance;
+    resolveEntrancedMovement(target, state, command, movedPx, distanceDelta, dt);
     state.command = command;
     state.lastX = x;
     state.lastY = y;
@@ -918,14 +1040,20 @@
     const amount = window.ResourceSystem?.getAffliction?.(deps.player, 'entrancedHealth') || 0; // Health-ring buildup determines visibility.
     const state = deps.player._entrancedCommandState; // Latest lich reference supplies name/current command.
     if (!(amount > 0) || !state?.source || !isLiveActor(state.source)) {
-      el.classList.remove('visible', 'approach', 'flee');
+      el.classList.remove('visible', 'approach', 'flee', 'grace');
       return;
     }
-    const command = state.source._lichCommand || state.command || 'approach'; // Live command may swap tactically while the same affliction remains.
-    const action = el.querySelector('.entranced-command-action'); // Dedicated child lets condition label and command use the same two-level typography as other game HUD elements.
-    if (action) action.textContent = command === 'flee' ? `FLEE FROM ${state.source.name || 'THE LICH'}` : `APPROACH ${state.source.name || 'THE LICH'}`;
+    const command = state.source._lichCommand === 'flee' ? 'flee' : 'approach';
+    const grace = entrancedGraceDisplay(state);
+    const action = el.querySelector('.entranced-command-action');
+    if (action) {
+      if (grace?.phase === 'announce') action.textContent = `${state.source.name || 'The enemy'} commands you to ${command}`;
+      else if (grace?.phase === 'countdown') action.textContent = String(grace.countdown);
+      else action.textContent = command === 'flee' ? `FLEE FROM ${state.source.name || 'THE LICH'}` : `APPROACH ${state.source.name || 'THE LICH'}`;
+    }
     el.classList.toggle('approach', command === 'approach');
     el.classList.toggle('flee', command === 'flee');
+    el.classList.toggle('grace', !!grace);
     el.classList.add('visible');
   }
 
