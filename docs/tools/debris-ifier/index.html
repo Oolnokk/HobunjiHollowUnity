@@ -123,8 +123,12 @@ window.__debrisDeps=[];
 window.__debrisBootErrors=[]; // Mobile/CI-visible dependency failures consumed by the parent Random Test Ruin loader.
 window.addEventListener('error',event=>{
   const src=event?.target?.src||event?.target?.href||'';
-  if(src)window.__debrisBootErrors.push(String(src));
+  const detail=src?String(src):String(event?.message||event?.error?.message||'unknown iframe runtime error'); // Used by the parent ruin loader to expose both network and source/API execution failures without desktop devtools.
+  window.__debrisBootErrors.push(detail);
 },true);
+window.addEventListener('unhandledrejection',event=>{
+  window.__debrisBootErrors.push('promise: '+String(event?.reason?.message||event?.reason||'unknown rejection'));
+});
 window.__debrisEmbeddedRuntime=new URLSearchParams(location.search).get('devRuntime')==='1'||new URLSearchParams(location.search).get('embedded')==='devRandomRuin';
 if(window.__debrisEmbeddedRuntime&&parent!==window&&parent.THREE?.WebGLRenderer){
   // The hidden in-game generator should run on the exact already-loaded game
@@ -138,6 +142,6 @@ if(window.__debrisEmbeddedRuntime&&parent!==window&&parent.THREE?.WebGLRenderer)
 }
 </script>
 <script src="../../js/furniture-puzzle-properties.js?v=20260922perpiece1"></script>
-<script src="debrisifier-01.js?v=20260926glyphdecal1"></script>
+<script src="debrisifier-01.js?v=20260927headless1"></script>
 </body>
 </html>
