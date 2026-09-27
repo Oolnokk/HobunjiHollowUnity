@@ -33,6 +33,7 @@ assert(tool.includes('pendingEditSnapshot'), 'a paint/move pointer gesture must 
 assert(tool.includes('forceSelectedClothingIntoProfile'), '3D preview must inject the selected clothing JSON instead of trusting a stale/reconstructed cosmetic option');
 assert(tool.includes('previewDescriptorFromRecord'), '3D preview must rebuild the selected variant layers from the exact JSON records selected in the author');
 assert(tool.includes("currentLayerRecords.filter(record => record.variantKey === selectedVariant)"), 'selected species/gender preview must use every layer from that exact JSON variant, including back_wrap');
+assert(tool.includes("/^back(?:_|$)/i.test"), 'preview metadata must classify back_wrap-style selected clothing layers as rear layers');
 assert(tool.includes('normalizeMaskImageIntoCanvas'), 'imported opaque black/white masks must be normalized back into alpha masks');
 assert(tool.includes("!String(entry.path || '').includes('/appearance/')"), 'clothing picker must exclude appearance-only folder entries');
 assert(tool.includes("target: $('target').value"), 'author export must preserve the selected portrait stage');
