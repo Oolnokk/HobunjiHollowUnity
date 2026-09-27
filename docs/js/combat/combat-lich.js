@@ -40,8 +40,10 @@
   const TOTHAL_WIND_RANGE_TILES = 5.5; // Strong local wind BGS radius follows each slow Blizzard orb rather than globally replacing arena ambience.
   const TOTHAL_WIND_VOLUME = 0.78; // Explicitly much stronger than ordinary weather wind while still respecting the shared game-audio transport.
   const HRONAL_ERUPTION_RADIUS_TILES = 1.35 / 3; // Exactly one third of Grehlr Burrow's authored minimum 1.35-tile telegraph/hit radius.
-  const HRONAL_STONE_PARTICLES_PER_S = 58; // Violent continuous stone spray along the contracting warning ring.
+  const HRONAL_STONE_PARTICLES_PER_S = 58; // Keep the dense authored spray; instancing below removes the old one-draw-call-per-stone cost.
+  const HRONAL_STONE_INSTANCE_CAP = 112; // Hard per-eruption visual cap prevents overlapping warnings from growing unbounded while preserving the dense look.
   const HRONAL_LAVA_VISUAL_S = 0.62; // Short lava flare remains after damage resolution so the eruption reads clearly.
+  const HRONAL_LAVA_FOUNTAIN_HEIGHT_MULT = 3.4; // Central eruption jet rises several AOE radii before collapsing with the lava flash.
   const WESTERN_SLOPE_SNOW_DEPTH_REFERENCE = 0.22; // Mirrors EnvironmentSurfaceMicroPlateau.SURFACE_DEPTH so Kanthic petroleum can deliberately read as the same raised-surface family.
   const PETROLEUM_SURFACE_DEPTH = WESTERN_SLOPE_SNOW_DEPTH_REFERENCE / 4; // Requested one-quarter snow height: a very shallow black petroleum skin instead of a tall puddle blob.
   const PETROLEUM_OPACITY = 0.70; // Requested fixed petroleum surface opacity.
@@ -92,6 +94,7 @@
   let hronalStoneGeometry = null; // Shared Grehlr-style tetrahedral stone clod geometry for every active earth warning.
   let hronalStoneMaterial = null; // Shared town-cliff-textured material avoids per-particle material allocation.
   let hronalStoneTextureLoadStarted = false; // Ensures carved_smooth.png is shade-filled/loaded only once for all Hronal attacks.
+  let hronalStoneInstanceDummy = null; // Single reusable Object3D composes all stone instance matrices without allocating per-particle meshes/matrices each frame.
   let lastEvent = 'idle'; // Mobile-copyable diagnostic summary exposed through __lichDebug.
   let totalSummons = 0; // Session counter used only by diagnostics.
   let totalPuddles = 0; // Session counter used only by diagnostics.
@@ -606,31 +609,78 @@
     return !!hronalStoneGeometry && !!hronalStoneMaterial;
   }
 
+  function ensureHronalStoneBatch(erupt) {
+    if (!erupt?.root || !ensureHronalStoneAssets() || typeof THREE?.InstancedMesh !== 'function') return false;
+    if (erupt.stoneBatch) return true;
+    const batch = new THREE.InstancedMesh(hronalStoneGeometry, hronalStoneMaterial, HRONAL_STONE_INSTANCE_CAP); // One draw call replaces up to 112 individual warning/burst meshes per eruption.
+    batch.name = 'hronal_stone_batch';
+    batch.renderOrder = 4;
+    batch.frustumCulled = false; // Individual stones move beyond the source geometry's tiny bounds; avoid false culling of the whole batch.
+    batch.instanceMatrix?.setUsage?.(THREE.DynamicDrawUsage);
+    hronalStoneInstanceDummy ||= new THREE.Object3D();
+    const hidden = hronalStoneInstanceDummy;
+    hidden.position.set(0, -1000, 0);
+    hidden.rotation.set(0, 0, 0);
+    hidden.scale.setScalar(0.0001);
+    hidden.updateMatrix();
+    for (let i = 0; i < HRONAL_STONE_INSTANCE_CAP; i++) batch.setMatrixAt(i, hidden.matrix); // Unused slots start effectively invisible.
+    batch.instanceMatrix.needsUpdate = true;
+    erupt.root.add(batch);
+    erupt.stoneBatch = batch;
+    erupt.freeStoneSlots = Array.from({ length: HRONAL_STONE_INSTANCE_CAP }, (_, i) => HRONAL_STONE_INSTANCE_CAP - 1 - i);
+    return true;
+  }
+
+  function writeHronalStoneInstance(erupt, particle, hidden = false) {
+    const batch = erupt?.stoneBatch;
+    if (!batch || !particle || !(particle.slot >= 0)) return;
+    hronalStoneInstanceDummy ||= new THREE.Object3D();
+    const dummy = hronalStoneInstanceDummy;
+    if (hidden) {
+      dummy.position.set(0, -1000, 0);
+      dummy.rotation.set(0, 0, 0);
+      dummy.scale.setScalar(0.0001);
+    } else {
+      dummy.position.set(particle.x, particle.y, particle.z);
+      dummy.rotation.set(particle.rotX, particle.rotY, particle.rotZ);
+      dummy.scale.setScalar(particle.scale);
+    }
+    dummy.updateMatrix();
+    batch.setMatrixAt(particle.slot, dummy.matrix);
+    batch.instanceMatrix.needsUpdate = true;
+  }
+
   function spawnHronalStone(erupt, angle, radiusWorld, trackRing = true, burst = false) {
-    if (!ensureHronalStoneAssets() || !erupt?.root) return;
+    if (!ensureHronalStoneBatch(erupt)) return;
+    const slot = erupt.freeStoneSlots?.pop();
+    if (!Number.isInteger(slot)) return; // Visual-only cap: gameplay/cadence continue even if this eruption already has its maximum live stone instances.
     const radialScale = 0.82 + random() * 0.34; // Thick irregular perimeter instead of a mechanically perfect particle circle.
-    const mesh = new THREE.Mesh(hronalStoneGeometry, hronalStoneMaterial); // Geometry/material are intentionally shared across every overlapping warning.
     const scale = burst ? 1.55 + random() * 1.65 : 1.0 + random() * 1.25;
-    mesh.scale.setScalar(scale);
-    mesh.position.set(Math.cos(angle) * radiusWorld * radialScale, 0.025, Math.sin(angle) * radiusWorld * radialScale);
-    mesh.rotation.set(random() * Math.PI, random() * Math.PI, random() * Math.PI);
-    mesh.renderOrder = 4;
-    erupt.root.add(mesh);
     const horizontal = burst ? 0.8 + random() * 1.55 : 0.12 + random() * 0.55;
-    erupt.particles.push({
-      mesh, angle, radialScale, trackRing,
+    const particle = {
+      slot, angle, radialScale, trackRing, scale,
+      x: Math.cos(angle) * radiusWorld * radialScale,
+      y: 0.025,
+      z: Math.sin(angle) * radiusWorld * radialScale,
+      rotX: random() * Math.PI,
+      rotY: random() * Math.PI,
+      rotZ: random() * Math.PI,
       vx: Math.cos(angle) * horizontal,
       vz: Math.sin(angle) * horizontal,
       vy: burst ? 1.7 + random() * 2.3 : 0.95 + random() * 1.8,
       life: burst ? 0.72 + random() * 0.7 : 0.5 + random() * 0.7,
-    }); // Mirrors Grehlr clod integration but is owned by this independent Hronal warning.
+    }; // Particle state is plain numbers; the GPU instance batch owns presentation.
+    erupt.particles.push(particle);
+    writeHronalStoneInstance(erupt, particle);
   }
 
   function disposeHronalEruption(erupt) {
     if (!eruptions.delete(erupt)) return;
-    for (const particle of erupt.particles || []) particle.mesh?.parent?.remove?.(particle.mesh); // Shared stone geometry/material survive for other simultaneous eruptions.
     erupt.particles = [];
-    for (const visual of [erupt.ring, erupt.lava, erupt.lavaCore]) {
+    erupt.freeStoneSlots = [];
+    erupt.stoneBatch?.parent?.remove?.(erupt.stoneBatch); // Shared stone geometry/material remain cached; only this lightweight instance container is removed.
+    erupt.stoneBatch = null;
+    for (const visual of [erupt.ring, erupt.lava, erupt.lavaCore, erupt.lavaFountain, erupt.lavaFountainCore]) {
       if (!visual) continue;
       visual.parent?.remove?.(visual);
       visual.geometry?.dispose?.();
@@ -657,10 +707,10 @@
     root.add(ring);
     owner.scene.add(root);
     const erupt = {
-      owner, root, ring, lava: null, lavaCore: null,
+      owner, root, ring, lava: null, lavaCore: null, lavaFountain: null, lavaFountainCore: null,
       x, y, radiusPx: radiusTiles * (deps.TILE || 64), radiusWorld,
       ageS: 0, telegraphS: Math.max(0.12, Number(telegraphS) || 0.12),
-      erupted: false, eruptionAgeS: 0, emitCarry: 0, particles: [],
+      erupted: false, eruptionAgeS: 0, emitCarry: 0, particles: [], stoneBatch: null, freeStoneSlots: [],
       payload: typeDef('hronal').projectile,
     }; // Warning lifetime is independent of the lich's next-cast cooldown.
     eruptions.add(erupt);
@@ -702,6 +752,24 @@
     erupt.lavaCore.position.y = 0.018;
     erupt.lavaCore.renderOrder = 6;
     erupt.root.add(erupt.lavaCore);
+
+    const fountainHeight = erupt.radiusWorld * HRONAL_LAVA_FOUNTAIN_HEIGHT_MULT; // Tall central jet makes the damage moment read vertically without adding dozens of particle objects.
+    erupt.lavaFountain = new THREE.Mesh(
+      new THREE.ConeGeometry(erupt.radiusWorld * 0.42, fountainHeight, 9, 1, true),
+      new THREE.MeshBasicMaterial({ color: 0xff4a12, transparent: true, opacity: 0.92, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending })
+    );
+    erupt.lavaFountain.position.y = fountainHeight * 0.5;
+    erupt.lavaFountain.scale.set(1, 0.02, 1);
+    erupt.lavaFountain.renderOrder = 7;
+    erupt.root.add(erupt.lavaFountain);
+    erupt.lavaFountainCore = new THREE.Mesh(
+      new THREE.ConeGeometry(erupt.radiusWorld * 0.20, fountainHeight * 0.88, 8, 1, true),
+      new THREE.MeshBasicMaterial({ color: 0xffd34a, transparent: true, opacity: 0.88, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending })
+    );
+    erupt.lavaFountainCore.position.y = fountainHeight * 0.44;
+    erupt.lavaFountainCore.scale.set(1, 0.02, 1);
+    erupt.lavaFountainCore.renderOrder = 8;
+    erupt.root.add(erupt.lavaFountainCore);
     for (const actor of actorsForHronalEruption(erupt.owner)) {
       const dist = Math.hypot((Number(actor.x) || 0) - erupt.x, (Number(actor.y) || 0) - erupt.y);
       if (dist > erupt.radiusPx) continue;
@@ -718,19 +786,22 @@
       particle.life -= dt;
       particle.vy -= gravity * dt;
       if (particle.trackRing && !erupt.erupted) {
-        particle.mesh.position.x = Math.cos(particle.angle) * visualRadiusWorld * particle.radialScale;
-        particle.mesh.position.z = Math.sin(particle.angle) * visualRadiusWorld * particle.radialScale;
+        particle.x = Math.cos(particle.angle) * visualRadiusWorld * particle.radialScale;
+        particle.z = Math.sin(particle.angle) * visualRadiusWorld * particle.radialScale;
       } else {
-        particle.mesh.position.x += particle.vx * dt;
-        particle.mesh.position.z += particle.vz * dt;
+        particle.x += particle.vx * dt;
+        particle.z += particle.vz * dt;
       }
-      particle.mesh.position.y += particle.vy * dt;
-      particle.mesh.rotation.x += dt * 5.5;
-      particle.mesh.rotation.z += dt * 4.2;
+      particle.y += particle.vy * dt;
+      particle.rotX += dt * 5.5;
+      particle.rotZ += dt * 4.2;
       if (particle.life <= 0) {
-        particle.mesh.parent?.remove?.(particle.mesh);
+        writeHronalStoneInstance(erupt, particle, true);
+        erupt.freeStoneSlots?.push?.(particle.slot);
         erupt.particles.splice(i, 1);
+        continue;
       }
+      writeHronalStoneInstance(erupt, particle);
     }
   }
 
@@ -760,6 +831,18 @@
       const pulse = 1 + Math.sin(lifeT * Math.PI) * 0.2;
       erupt.lava?.scale?.setScalar?.(pulse);
       erupt.lavaCore?.scale?.setScalar?.(pulse * 0.92);
+      const fountainPulse = Math.max(0.001, Math.sin(lifeT * Math.PI)); // Jet shoots up immediately, peaks halfway through the flash, then collapses back into the vent.
+      const fountainWidth = 0.82 + fountainPulse * 0.28;
+      if (erupt.lavaFountain) {
+        erupt.lavaFountain.scale.set(fountainWidth, fountainPulse * 1.35, fountainWidth);
+        erupt.lavaFountain.position.y = erupt.radiusWorld * HRONAL_LAVA_FOUNTAIN_HEIGHT_MULT * 0.5 * fountainPulse * 1.35;
+        erupt.lavaFountain.material.opacity = 0.92 * (1 - lifeT);
+      }
+      if (erupt.lavaFountainCore) {
+        erupt.lavaFountainCore.scale.set(fountainWidth * 0.72, fountainPulse * 1.5, fountainWidth * 0.72);
+        erupt.lavaFountainCore.position.y = erupt.radiusWorld * HRONAL_LAVA_FOUNTAIN_HEIGHT_MULT * 0.44 * fountainPulse * 1.5;
+        erupt.lavaFountainCore.material.opacity = 0.88 * (1 - lifeT);
+      }
       if (erupt.eruptionAgeS >= HRONAL_LAVA_VISUAL_S && erupt.particles.length === 0) disposeHronalEruption(erupt);
     }
   }
