@@ -413,17 +413,25 @@
     return window.ActionArchSlotColors?.inputColors?.[action] || '#B8C5C0';
   }
 
-  function clearTouchButtons() {
+  function clearTouchButtons(keepIds = null) {
+    let released=false; // Used to restore canonical action-bar state only when the ruin actually gives one or more touch slots back.
     for (const id of TOUCH_BUTTON_IDS) {
+      if(keepIds?.has?.(id))continue;
       const button = document.getElementById(id);
       if (!button?.dataset?.devRuinOwned) continue;
       delete button.dataset.devRuinOwned;
       delete button.dataset.devRuinRow;
+      released=true;
     }
+    if(released)deps?.refreshActionBar?.(); // Rebuilds Shoot/Ammo/weapon/item actions after a contextual ruin prompt stops owning that physical button.
+    return released;
   }
 
   function syncTouchButtons(rows, device) {
-    clearTouchButtons();
+    const desiredIds=new Set(device==='touch'
+      ? rows.filter(row=>!row.nativeInput&&row.touchButtonId).map(row=>row.touchButtonId)
+      : []); // Tracks the exact physical buttons still owned this frame so stance changes release Action 1–3 without churning the whole HUD every 80 ms.
+    clearTouchButtons(desiredIds);
     if (device !== 'touch') return;
     rows.forEach((row, index) => {
       if(row.nativeInput || !row.touchButtonId) return; // Rope release stays on the game's permanent Dodge button instead of masquerading as Action 1/2/3.
