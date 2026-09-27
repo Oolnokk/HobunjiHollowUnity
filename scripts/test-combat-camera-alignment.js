@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 const source = fs.readFileSync('docs/js/combat/combat-camera-alignment-bridge.js', 'utf8');
+const coreSource = fs.readFileSync('docs/js/combat/combat-core.js', 'utf8'); // Confirms direct reticle flight exits before legacy diminished-vertical lunge math.
 const loader = fs.readFileSync('docs/js/combat/combat-config-loader.js', 'utf8');
 const game = fs.readFileSync('docs/game.js', 'utf8');
 const rangedFocus = fs.readFileSync('docs/js/combat/ranged-camera-focus.js', 'utf8');
