@@ -96,6 +96,7 @@ assert.match(index, /portrait-breathing\.js\?v=20260831syllable4/);
 // revision still ships it, so don't pin one value (pinning left this test red on main since #788).
 const dialogueContentKey = index.match(/dialogue-content\.js\?v=(\d{8}[a-z0-9-]*)/i)?.[1] || '';
 assert(dialogueContentKey >= '20260831syllable4', `dialogue-content.js must ship the syllable cadence (found ${dialogueContentKey || 'none'})`);
-assert.match(index, /ambient-dialogue\.js\?v=20260831syllable4/);
+const ambientDialogueKey = index.match(/ambient-dialogue\.js\?v=(\d{8}[a-z0-9-]*)/i)?.[1] || '';
+assert(ambientDialogueKey >= '20260831syllable4', `ambient-dialogue.js must ship the syllable cadence (found ${ambientDialogueKey || 'none'})`);
 
 console.log('Dialogue syllable cadence test passed');
