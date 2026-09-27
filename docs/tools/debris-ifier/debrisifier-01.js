@@ -161,13 +161,17 @@ function runtimeChooseMechanismActivatorType(rng,forcedType=null,linkedCubeDoor=
   }
 
   if (embeddedRuntime) {
-    fetch('debrisifier-v50-source.js', { cache:'no-cache' })
-      .then(response => {
-        if (!response.ok) throw new Error(`readable V50 source HTTP ${response.status}`);
-        return response.text();
-      })
-      .then(sourceText => injectSource(patchEmbeddedRuntime(sourceText)))
-      .catch(error => fail(error?.message || String(error)));
+    try {
+      const request = new XMLHttpRequest(); // Used only by the hidden dev generator so the protected V50 source is parser-blocking/high-priority instead of an async fetch starved behind the live game's startup asset queue.
+      request.open('GET', 'debrisifier-v50-source.js', false);
+      request.send(null);
+      const ok = (request.status >= 200 && request.status < 300) || (request.status === 0 && !!request.responseText);
+      if (!ok) throw new Error(`readable V50 source HTTP ${request.status}`);
+      if (debug) debug.textContent = 'Debris-ifier embedded runtime: source loaded; applying verified patches…';
+      injectSource(patchEmbeddedRuntime(request.responseText));
+    } catch (error) {
+      fail(error?.message || String(error));
+    }
     return;
   }
 
