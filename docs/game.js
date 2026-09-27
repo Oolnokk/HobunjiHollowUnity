@@ -25306,6 +25306,7 @@
             let _selectorHoldTimer = null, _selectorArcOpen = false, _selectorKind = null; // Ammo and potions both require a sustained original input and commit on its release.
             let _selectorDownX = 0, _selectorDownY = 0, _selectorMoved = false; // Used to keep normal touch jitter from selecting an arch entry before a Potion Select tap can resolve as bandaging.
             let _flaskGesture = false, _flaskCanceled = false; // Used by mobile hold-drag-release flask aiming.
+            let _claimedInputAction = null; // Physical arch input temporarily owned by a contextual world interaction; prevents the underlying weapon/tool action from firing on release.
             const DRAG_THRESH = 10;
             // Legacy behavior: holding+dragging an action button like a stick used to
             // keep re-firing the action every 120ms for as long as it stayed pushed off
@@ -25378,6 +25379,11 @@
               // Hold-to-dig/fill must start on press (not release) so the charge
               // can run for its full duration while the button stays held.
               const act = el.dataset.action;
+              const physicalInputAction=({btnAction1:'action1',btnAction2:'action2',btnAction3:'action3',btnItemAction1:'itemAction1',btnItemAction2:'itemAction2'})[el.id]||null;
+              if(physicalInputAction&&dispatchWorldInputClaim(physicalInputAction,'press','touch-arch')){
+                _claimedInputAction=physicalInputAction;
+                return;
+              }
               // Continuous world interactions use the same press-time selected
               // action contract as Drenkirra nests, so their frame timers can
               // begin immediately instead of waiting for pointer release.
@@ -25480,7 +25486,10 @@
               el.style.transition = 'transform 0.14s ease-out';
               el.style.transform  = 'translate(50%, 50%)';
               setTimeout(() => { el.style.transition = ''; el.style.transform = ''; }, 150);
-              if (_selectorKind) {
+              if (_claimedInputAction) {
+                dispatchWorldInputClaim(_claimedInputAction,ev.type==='pointercancel'?'cancel':'release','touch-arch');
+                _claimedInputAction=null;
+              } else if (_selectorKind) {
                 if (_selectorArcOpen) {
                   if (ev.type === 'pointercancel') window._desktopSelectionArc?.close();
                   else window._desktopSelectionArc?.releaseSelection();
@@ -25992,6 +26001,11 @@
         if (!button || button.allowed === false || button.action === toolActions.weapon[slot - 1]) return null;
         return { slot, button };
       }
+      function dispatchWorldInputClaim(actionId, phase = 'press', source = 'gameplay') {
+        const consumed=window.WorldActionInputClaims?.dispatch?.(actionId,phase,{source}); // Shared world interactions can temporarily own a physical action without teaching Combat about every door/rope/NPC system.
+        if(consumed&&actionId==='action1')actionHeldDown=false;
+        return consumed===true;
+      }
       const visibleWeaponContextPresses = new Set(); // Used to pair a context override's press/release without sending an unmatched release into Combat.input.
       const heldItemActionPresses = new Set(); // Pairs a holdToCommit action's press with its release even if the arch's displayed button changes mid-hold.
       const furniturePlacementActionPresses = new Set(); // Owns controller/keyboard placement confirms through release so a last-item placement cannot leak a release into weapon input.
@@ -26004,6 +26018,7 @@
       }
       function runInputAction(actionId, phase = 'press') {
         if (window.__mapEditorGizmoActive) return;
+        if(phase==='release'&&dispatchWorldInputClaim(actionId,'release','game-input'))return; // Pair a world-owned press even if the prompt disappears before button-up; never send an unmatched weapon release.
         if (actionId === 'toolSelect') {
           if (phase === 'release') {
             if (!toolSelectPress.down) return;
@@ -26110,6 +26125,7 @@
           return;
         }
         if (menuOpen || farmEditMode) return;
+        if(dispatchWorldInputClaim(actionId,'press','game-input'))return; // Explicit world claims outrank weapon/tool actions, but menus, selectors, fishing, and placement retain their higher-level ownership.
         if (actionId === 'interact') { runInteractAction(); return; }
         const visibleOverride = visibleActionOverrideForWeaponSlot(actionId); // Used so Loot/Harvest/other displayed context actions outrank the weapon normally bound to this slot.
         if (visibleOverride) {
@@ -26880,6 +26896,7 @@
             useActiveAction();
             return;
           }
+          if(mouseAction&&dispatchWorldInputClaim(mouseAction,'press','desktop-mouse'))return;
           if (heldMode === 'tool' && activeTool === 'weapon' && window.Combat?.input) {
             const weaponSlot = weaponActionSlot(mouseAction);
             const visibleOverride = weaponSlot ? visibleActionOverrideForWeaponSlot(mouseAction) : null;
@@ -26931,6 +26948,7 @@
           actionHeldDown = false;
           return;
         }
+        if(mouseAction&&dispatchWorldInputClaim(mouseAction,'release','desktop-mouse'))return;
         if (heldMode === 'tool' && activeTool === 'weapon' && window.Combat?.input) {
           const weaponSlot = weaponActionSlot(mouseAction);
           if (weaponSlot) {
