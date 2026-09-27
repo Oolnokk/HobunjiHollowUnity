@@ -584,8 +584,7 @@
   function attachRope(rope) {
     if (!rope || state.flight || rope.attached) return false;
     const intent=ropeIntent(rope,true); // Preserve the approach impulse on auto-grab; attached pumping switches to the game's published movement intent.
-    rope.angle=rope.launchAngle;
-    rope.omega=Math.max(.28,intent.forward*.9);
+    rope.omega=Math.sign(rope.omega||1)*Math.max(Math.abs(rope.omega),.28)+intent.forward*.35; // Catch the rope where it actually is instead of snapping it back to the authored launch angle.
     rope.attached = true;
     rope.braking = false;
     state.activeRope = rope;
