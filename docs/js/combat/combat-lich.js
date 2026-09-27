@@ -816,7 +816,7 @@
         if (typeof window.getShadeFillCanvas === 'function' && loaded.image && THREE.CanvasTexture) {
           const canvas = window.getShadeFillCanvas(loaded.image, 'kanthic-petroleum|canvas.png|black', {
             mode: 'shadeFill',
-            rgb: [0, 0, 0],
+            rgb: [18, 18, 18], // Near-black preserves canvas.png luminance/grain; literal 0 would mathematically flatten every tinted pixel.
             options: window.getPortraitTintingConfig?.() || {},
           });
           if (canvas) {
