@@ -8,11 +8,16 @@ const game = fs.readFileSync('docs/index.html', 'utf8');
 const studio = fs.readFileSync('docs/tools/character-studio/index.html', 'utf8');
 
 assert(hub.includes('data-target="portrait-pixel-layer-mask"'), 'Tool Hub must expose the pixel-layer authoring tab');
-assert(hub.includes('portrait-pixel-layer-mask/index.html?v=20260926pixellayer1'), 'Tool Hub must embed the current pixel-layer author');
+assert(hub.includes('portrait-pixel-layer-mask/index.html?v=20260926pixellayer2'), 'Tool Hub must embed the current pixel-layer author');
 assert(tool.includes('Paint exact source pixels'), 'author must describe pixel-exact mask editing');
 assert(tool.includes('pointerdown') && tool.includes('pointermove'), 'author must support pointer/touch painting');
 assert(tool.includes('Download mask PNG') && tool.includes('Copy JSON'), 'author must export both the mask and renderer metadata');
 assert(tool.includes('sourceAlphaAt'), 'author must prevent painting transparent source pixels');
+assert(tool.includes("fetch('../../config/cosmetics/index.json')"), 'author must fetch the repository cosmetics index');
+assert(tool.includes('loadSelectedClothingJson'), 'author must fetch selected existing clothing JSONs');
+assert(tool.includes('collectPortraitLayerRecords'), 'author must enumerate portrait layers inside selected clothing JSONs');
+assert(tool.includes('loadSelectedRepoLayer'), 'author must fetch the selected repository portrait sprite automatically');
+assert(tool.includes("!String(entry.path || '').includes('/appearance/')"), 'clothing picker must exclude appearance-only folder entries');
 assert(tool.includes("target: $('target').value"), 'author export must preserve the selected portrait stage');
 assert(tool.includes("view: $('view').value"), 'author export must preserve front/behind scope');
 
