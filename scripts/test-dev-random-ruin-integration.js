@@ -46,11 +46,11 @@ const loadOrder = [
   'dev-random-ruin-runtime-coverage.js',
 ].map(name => camera.indexOf(name));
 assert(/localStorage\.getItem\('hobunjiDevMode'\) === '1'/.test(camera) && /if \(!devMode/.test(camera), 'ruin runtime must only be injected in Dev Mode');
-assert(camera.includes('dev-random-ruin-interactions.js?v=20260927inputclaim1'), 'ruin interaction adapter must be cache-busted in the dev bootstrap');
-assert(camera.includes('dev-random-ruin-simple-puzzles.js?v=20260927geometry1'), 'simple puzzle geometry cleanup must be cache-busted in the dev bootstrap');
+assert(camera.includes('dev-random-ruin-interactions.js?v=20260927interiorparity1'), 'ruin interaction adapter must be cache-busted in the dev bootstrap');
+assert(camera.includes('dev-random-ruin-simple-puzzles.js?v=20260927interiorparity1'), 'simple puzzle interior-parity runtime must be cache-busted in the dev bootstrap');
 assert(camera.includes('dev-random-ruin-wall-render-proxy.js?v=20260927geometry1'), 'native ruin render verifier must be cache-busted in the dev bootstrap');
-assert(gameIndex.includes('js/dev-random-ruin-bootstrap.js?v=20260927geometry1'), 'game page must load the updated ruin bootstrap');
-assert(gameIndex.includes('game.js?v=20260927inputclaim1'), 'game page must load the shared world-input ownership integration');
+assert(gameIndex.includes('js/dev-random-ruin-bootstrap.js?v=20260927interiorparity1'), 'game page must load the updated ruin bootstrap');
+assert(gameIndex.includes('game.js?v=20260927interiorparity1'), 'game page must load the normal-interior action/collision integration');
 assert(gameIndex.includes('js/climb-system.js?v=20260926ruinladder2'), 'game page must cache-bust the shared climb animation used by authored ruin ladders');
 assert(loadOrder.every(index => index >= 0), 'ruin bootstrap must load every Random Test Ruin runtime module');
 for (let i = 1; i < loadOrder.length; i++) {
@@ -74,7 +74,7 @@ assert(interior.includes('spritePngSurface.makeMaterial(THREE,source.map||null')
 assert(interior.includes('remainingLitMaterials'), 'material diagnostics must explicitly count any lit material that escapes normalization');
 assert((cloudFog.match(/map_i_dev_random_ruin/g)||[]).length>=2, 'Random Test Ruin must opt into the shared den no-sky and den darkness/lantern classifications');
 assert(gameIndex.includes('js/cloud-forest-fog.js?v=20260926devruindark2'), 'test-ruin darkness override must be cache-busted in the game page');
-assert(camera.includes('dev-random-ruin-interior-map.js?v=20260927inputclaim1'), 'test-ruin generator/runtime changes must be cache-busted in the dev bootstrap');
+assert(camera.includes('dev-random-ruin-interior-map.js?v=20260927interiorparity1'), 'test-ruin generator/runtime changes must be cache-busted in the dev bootstrap');
 assert(interior.includes('Solvability.audit'), 'candidate ruins must run the pre-entry solvability audit');
 assert(interior.includes('MAX_SOLVABILITY_ATTEMPTS = 6'), 'unsolvable candidates must have a bounded deterministic retry budget');
 assert(interior.includes('getLastSolvabilityAudit'), 'rejected seed diagnostics must remain inspectable without devtools');
@@ -93,9 +93,14 @@ assert(interior.includes("kind:'transitDoor'") && interior.includes("'Open Hallw
 assert(interior.includes('__devRuinTransitDoorState') && interior.includes('updateTransitDoors(dt)'), 'transit doors must own explicit closed/open runtime state so collision matches their visible panel');
 assert(gameIndex.includes('js/world-action-input-claims.js?v=20260927inputclaim1'), 'shared world-input claim registry must load before gameplay dispatch');
 assert(interactions.includes("control.claimAction1===true?'action1'") && interactions.includes('WorldActionInputClaims?.dispatch'), 'ruin interactions must opt into explicit Action 1 ownership and dispatch through the shared registry');
-assert(interactions.includes('entry.nativeInput?null:(fixedIndex>=0?TOUCH_BUTTON_IDS[fixedIndex]:null)'), 'explicit Action 1 claims must own the matching touch button instead of becoming prompt-only');
+assert(interactions.includes('entry.nativeInput?null:(fixedIndex>=0?TOUCH_BUTTON_IDS[fixedIndex]:null)'), 'explicit contextual claims must retain the matching physical touch slot');
+assert(interactions.includes('const slotActions=SLOT_ACTIONS'), 'nearby ruin interactions must be allowed to occupy Action 1–3 as well as Item Action 1–2 instead of reserving combat slots');
 assert(simplePuzzles.includes("claimAction1:true") && simplePuzzles.includes("label:'Grab Rope'"), 'rope grab must be able to replace weapon Action 1 while nearby');
 assert(interior.includes("kind:'transitDoor'") && interior.includes("claimAction1:true"), 'hallway doors must be able to replace weapon Action 1 while nearby');
+assert(game.includes("window.DevRandomRuinInteractions?.getActionButtons?.()"), 'normal building-interior action resolution must consume ruin context actions before held attacks/items');
+assert(game.includes("const actionId = button.inputAction ||"), 'normal WorldPopupText prompts must honor the exact physical input assigned by the ruin provider');
+assert(interactions.includes('normalActionBarProvider:true') && !interactions.includes('WorldPopupText?.syncInteractionPrompts?.('), 'ruin interactions must let the normal action bar exclusively own the floating interaction list instead of racing it with a second prompt renderer');
+assert(game.includes("!window.WorldActionInputClaims?.hasClaim?.('action3')") && game.includes("!window.WorldActionInputClaims?.hasClaim?.('action2')"), 'potion/ammo selectors must yield their physical buttons while a nearby world interaction claims those slots');
 assert(game.includes("dispatchWorldInputClaim(actionId,'press','game-input')"), 'keyboard/controller gameplay dispatch must consult world-input claims before weapon actions');
 assert(game.includes("dispatchWorldInputClaim(mouseAction,'press','desktop-mouse')"), 'desktop mouse weapon input must consult the same contextual claim registry');
 assert(game.includes("dispatchWorldInputClaim(physicalInputAction,'press','touch-arch')"), 'touch action-arch input must consult the same contextual claim registry');
@@ -141,7 +146,10 @@ assert(interior.includes("DevRandomRuinSimplePuzzles?.ownsPlayerMotion?.()"), 'r
 assert(simplePuzzles.includes("anchorY=ceilingBase+wallHeight-.035"), 'rope anchors must use the authored room ceiling datum instead of floating at a derived mid-room height');
 assert(simplePuzzles.includes("dev_ruin_swing_rope_ceiling_mount_"), 'rope traversal must render an explicit ceiling attachment');
 assert(simplePuzzles.includes("inputAction:'dodge'") && simplePuzzles.includes("nativeInput:true"), 'rope jump-off prompt must advertise the canonical Dodge input without stealing an action slot');
-assert(simplePuzzles.includes("label:'Grab Rope'") && simplePuzzles.includes("point:candidate.grabPoint"), 'idle ropes must expose the normal floating WorldPopupText interaction instead of relying on invisible auto-grab proximity');
+assert(simplePuzzles.includes("label:'Grab Rope'") && simplePuzzles.includes("point:candidate.grabPoint"), 'idle ropes must remain discoverable through the normal floating interaction list');
+assert(simplePuzzles.includes('function tryAutoGrabRope()') && simplePuzzles.includes('if(attachRope(rope)){rope.autoGrabCount++'), 'reaching the live rope grip must also auto-grab so input-slot contention can never make traversal inaccessible');
+assert(simplePuzzles.includes('ROPE_BODY_RADIUS = 0.045') && simplePuzzles.includes('sharedCylinderGeometry(ROPE_BODY_RADIUS,ROPE_BODY_RADIUS,1,8)'), 'rope must render as a thick world-space cylinder rather than a one-pixel THREE.Line');
+assert(simplePuzzles.includes('sweptRopePoint') && simplePuzzles.includes('ropeBlockedAt') && simplePuzzles.includes('ROPE_ROUTE_SAMPLES'), 'rope generation, swinging, and release flight must use the shared interior occupancy instead of tunnelling through solids');
 assert(simplePuzzles.includes("String(door?.to)===String(hall.id)") && simplePuzzles.includes('approachAtMin'), 'safe-path reveal pedestal must derive the player-approach side from the actual room-to-hall doorway rather than always using the low-coordinate end');
 assert(simplePuzzles.includes('ROPE_DESTINATION_RISE = .78') && simplePuzzles.includes('ROPE_GRAB_ABOVE_LAUNCH = .86'), 'rope traversal must visibly separate the unreachable destination height from the reachable launch-side grip height');
 assert(simplePuzzles.includes('topRise:COMPOUND_ELEVATOR_TOP_RISE'), 'compound rope/elevator landing must start above ordinary step height so the rope has an obvious traversal purpose');
@@ -150,7 +158,8 @@ assert(simplePuzzles.includes("window.DevRandomRuin?.setMechanismTarget?.(module
 assert(interior.includes('mechanism.externalTarget=normalized') && interior.includes('if(hasExternalTarget)'), 'explicit modular door unlocks must override stale V50 puzzle signals and drive visible mechanism progress');
 assert(simplePuzzles.includes("playObjectSfxKey?.('breakRock',1.45,.58)") && simplePuzzles.includes('playStoneUnlockKchunk();'), 'four-note completion must play an unmistakable low stone unlock cue');
 assert(simplePuzzles.includes('CHORD_PITCHES = Object.freeze([1, 1.259921, 1.498307, 1.887749])'), 'the four chord pressure plates must retain four distinct authored pitch ratios');
-assert(!simplePuzzles.includes("dev_ruin_rope_hazard_"), 'rope fall/burn zones must remain logical hazards and never render as red debug slabs near the ceiling');
+assert(simplePuzzles.includes("mesh.name='dev_ruin_rope_lava'") && simplePuzzles.includes("textureUrl:'assets/textures/wibbly_surface.png'"), 'rope fall/burn zones must be visibly represented by the existing animated water surface treatment recolored as lava');
+assert(simplePuzzles.includes("HobunjiDrenkirraPellet?.sfx?.acidSizzle"), 'visible lava contact must reuse the Drenkirra pellet acid-sizzle cue');
 assert(simplePuzzles.includes("recordModulePlacement('projectileHallwayTrap'"), 'hallway traps must be represented as reusable module placements');
 assert(simplePuzzles.includes("recordModulePlacement('chordPressurePlates'"), 'musical pressure plates must be reusable in hallway or room slots');
 assert(simplePuzzles.includes("recordModulePlacement('stoneCanopy'"), 'stone canopies must exist as independent modules instead of rope-only geometry');
@@ -172,7 +181,7 @@ assert(simplePuzzles.includes('state===ownerState') && simplePuzzles.includes('o
 assert(simplePuzzles.includes('KURRAYA_NOTE_URL') && simplePuzzles.includes('CHORD_PITCHES'), 'musical pressure plates must use the Kurraya pluck placeholder at authored chord pitches');
 assert(simplePuzzles.includes('playGeneratedStoneKchunk'), 'four-note completion must expose a generated placeholder kchunk until a recorded cue replaces it');
 assert(simplePuzzles.includes('opensUpstairsMechanism') && interior.includes('setMechanismTarget'), 'compound lower-room completion must be able to open an ordinary generated stone door upstairs');
-assert(simplePuzzles.includes('onwardGeneratedStoneDoorMechanism') && simplePuzzles.includes('distance>best.distance'), 'compound completion must choose an onward door relative to the balcony instead of the nearest entrance-side door');
+assert(simplePuzzles.includes('onwardGeneratedStoneDoorMechanism') && simplePuzzles.includes('const authoredDoorways=roomDoorways(context,room)'), 'compound completion must choose an onward door only from the current room graph');
 assert(simplePuzzles.includes('holsterRopeEquipment') && simplePuzzles.includes('putAwayHeldEquipment({silent:true})'), 'grabbing a rope must silently put away the current weapon/tool');
 assert(simplePuzzles.includes('restoreHeldToolSnapshot') && simplePuzzles.includes('restoreRopeEquipment()'), 'rope release/fall/clear must restore the exact held tool snapshot');
 assert(game.includes("DevRandomRuinSimplePuzzles?.releaseActiveRope?.()"), 'the canonical Dodge/context action must release an attached ruin rope');
@@ -192,6 +201,8 @@ assert(!interior.includes('devruin-wall-${object.id}'), 'wall meshes must not re
 assert(!interior.includes('devruin-solid-${o.id}'), 'solid furniture must not register object-wide blockers');
 assert(interior.includes("d.activatorType === 'stackedObelisk' || d.activatorType === 'linkedCubePillars'"), 'rotating cube towers must join the authoritative solid-object occupancy set');
 assert(interior.includes("object.userData.blockerPurpose = 'puzzle_tower_' + d.activatorType"), 'tower collision sources must remain identifiable in Pixel Probe occupancy diagnostics');
+assert(interior.includes("d.squarePillarHousing || d.hiddenActivatorMount === 'pillarNiche'") && interior.includes("'puzzle_target_pillar'"), 'a glyph target recessed into a pillar must retain the ordinary pillar collision envelope');
+assert(interior.includes('const occlusionMeshes=[]') && interior.includes('occlusionMeshes,'), 'generated walls, door frames, and pillars must join the normal map_i_* camera boom obstruction list');
 assert(interior.includes("promptRoot:e.segment") && interior.includes("touchIcon:'↻'"), 'linked cube controls must expose explicit cube-level world prompt anchors and touch input');
 assert(interior.includes("promptRoot:topSegment||a"), 'stacked rotating obelisks must anchor their world prompt above the cube tower');
 assert(interior.includes('range:Number.isFinite(Number(control.range))'), 'per-control interaction range must survive the base provider export');
@@ -226,8 +237,12 @@ assert(occupancy.includes("'#e74c3c'"), 'Map renderer must draw blocked tiles re
 assert(occupancy.includes("'#35c96f'"), 'Map renderer must draw activator tiles green');
 assert(occupancy.includes("'#3498db'"), 'Map renderer must draw mechanism tiles blue');
 assert(occupancy.includes('doorIsClosed'), 'door collision must use logical open/closed state instead of rendered height');
+assert(occupancy.includes('function doorTiles(door, model)') && occupancy.includes('const runMin = alongX ? box.min.x : box.min.z'), 'closed door collision must rasterize the full visible doorway run instead of falling back to one center tile');
+assert(occupancy.includes('syncGridCollision(model)') && occupancy.includes('tile.type = blocked ? model.solidType : baseType'), 'generated blockers must stamp the ordinary interior grid so player/creature movement, dodge/lunge, and swept knockback share one collision authority');
+assert(interior.includes('grid:ruin.grid') && interior.includes("ROCK??'rock'"), 'ruin occupancy must mutate the actual registered map_i_* grid using the normal solid tile type');
 assert(occupancy.includes('nearestFloorAnchor'), 'mechanism diagnostics must use compact logical anchor tiles');
 assert(interior.includes('transitDoors:ruin.transitDoors'), 'transit doors must join the shared tile occupancy snapshot');
+assert(hooks.includes('base interior adapter owns state, animation, prompt, and collision') && !hooks.includes('door.userData.__devRuinTransitDoorState = state'), 'prototype hooks must not overwrite the base interior transit-door state with a second animation/collision owner');
 assert(interior.includes('motion === \'elevatorPushBlock\''), 'elevator push blocks must join dynamic tile occupancy');
 assert(!interior.includes('if (d.elevatorWellSocket) furnitureBlockers.push(object);'), 'low elevator-well rims must not become full-height 2D blockers that prevent stepping onto moving platforms');
 assert(renderProxy.includes("data.previewMotion?.type === 'stoneDoor'"), 'native render verifier must discover stone-door meshes');
