@@ -1080,13 +1080,36 @@
     return module;
   }
 
+  function buildHallwayGlyphGate(context,hall,usedHallways) {
+    const axis=hall.axis==='z'?'z':'x',cs=worldCellSize(context.meta);
+    const longStart=PAD+(axis==='x'?Number(hall.col):Number(hall.row))*cs;
+    const longLength=(axis==='x'?Number(hall.w):Number(hall.h))*cs;
+    const crossStart=PAD+(axis==='x'?Number(hall.row):Number(hall.col))*cs;
+    const crossWidth=(axis==='x'?Number(hall.h):Number(hall.w))*cs;
+    const point=axis==='x'
+      ? {x:longStart+longLength*.58,z:crossStart+crossWidth*.5}
+      : {x:crossStart+crossWidth*.5,z:longStart+longLength*.58};
+    const mechanismId=nearestGeneratedStoneDoorMechanism(context,point);
+    if(!mechanismId)return null;
+    const owner={id:'hallway-'+hall.id};
+    const glyph=buildCeilingGlyphModule(context,owner,point,{onActivate:()=>window.DevRandomRuin?.setMechanismTarget?.(mechanismId,1)});
+    if(!glyph)return null;
+    usedHallways.add(hall.id);
+    recordModulePlacement('hallwayGlyphGate','hallway',hall.id,{glyphId:glyph.id,opensMechanism:mechanismId});
+    return glyph;
+  }
+
   function buildSwappableHallwayModules(context,rng,usedHallways) {
     const candidates=shuffle((context.meta?.hallways||[]).filter(hall=>!usedHallways.has(hall.id)&&(hall.axis==='x'?Number(hall.w):Number(hall.h))>=5),rng);
     const selected=candidates.slice(0,Math.min(2,candidates.length)); // Two generic hallway slots replace the previous unconditional two-trap pass.
     for(const hall of selected){
-      if(rng()<.48){
+      const roll=rng();
+      if(roll<.34){
         const chord=buildChordPlateSet(context,rng,{kind:'hallway',owner:hall},usedHallways);
         if(chord)continue;
+      }else if(roll<.62){
+        const glyph=buildHallwayGlyphGate(context,hall,usedHallways);
+        if(glyph)continue;
       }
       buildHallwayTraps(context,rng,usedHallways,[hall]);
     }
@@ -1291,6 +1314,11 @@
     }
     if(freeRooms.length&&rng()<.3){
       const room=freeRooms.shift();usedRooms.add(room.id);buildSarcophagusSpawnerModule(context,rng,room,{tier:1,autoActivateRadius:2.5}); // Sarcophagus enemies can occur independently; entering their room wakes them without requiring musical plates or a lock door.
+    }
+    const elevatorRoomIndex=freeRooms.findIndex(room=>deepestSunkenRegionForRoom(context,room));
+    if(elevatorRoomIndex>=0&&rng()<.38){
+      const [room]=freeRooms.splice(elevatorRoomIndex,1);usedRooms.add(room.id);
+      buildCyclingElevatorModule(context,room,{startActive:true,cycleSeconds:7+rng()*3}); // Same elevator primitive can simply be ambient traversal machinery, with no glyph/rope/ossuary dependencies.
     }
     if(options.hallwayTraps!==false)buildSwappableHallwayModules(context,rng,usedHallways);
     updateBadge(true);
