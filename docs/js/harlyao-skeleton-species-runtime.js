@@ -218,7 +218,7 @@
     const wrapped = function buildProfileWithHarlyaoSkeletonFixedColor(exportData) {
       const profile = baseBuildProfile.apply(this, arguments); // Preserve the canonical profile builder and only clamp its final body descriptor for this species.
       if (profile && normalizeSpecies(exportData?.appearance?.speciesId) === SPECIES_ID) {
-        profile.bodyColors = fixedBodyColors();
+        profile.bodyColors = { ...(profile.bodyColors || {}), ...fixedBodyColors() }; // Clamp only skeletal body A/B/C; preserve CLOTH/HOOD/TORSO and palette sub-slots already applied from the NPC's dye metadata.
         status.profileColorCorrections += 1;
       }
       return profile;
