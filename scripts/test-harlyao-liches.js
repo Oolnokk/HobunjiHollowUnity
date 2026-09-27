@@ -270,6 +270,7 @@ windowObject.RangedWeapons.update(0.1);
 assert.equal(player.afflictions.entrancedHealth, 0, 'Entranced Health must clear immediately when every Kanthic applicator is dead');
 assert.equal(player._entrancedCommandState, undefined, 'dead-applicator cleanup must also clear the referential command state');
 
+api.addGooSlow(player); // Refresh this independent fixture after the long fake-clock Entranced countdown tests above.
 currentArea = 'farm';
 player.afflictions.entrancedHealth = 8;
 assert(windowObject.Combat.getMovementSpeedMul() < 1, 'goo slow should still be active immediately before leaving the arena runtime tick');
