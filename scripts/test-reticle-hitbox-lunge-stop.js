@@ -219,6 +219,7 @@ targetBox = {
 player.x = 0;
 player.y = 0;
 player.lunging = false;
+perspectivePointY = 0.15; // This cancellation case deliberately aims below forward so it remains a fully grounded lunge.
 deps.beginCombatLunge(192, 0.4, 0, { rangePx: 64, halfConeRad: 0.2 });
 assert.equal(player.lungeDirX, 1, 'lunge direction is reticle-authored before movement');
 assert(Math.abs(player.lungeDirY) < 1e-9, 'reticle-authored lunge has no sideways component');
@@ -232,6 +233,7 @@ assert(Math.abs(nativeUpdateSawX - player.x) < 1e-9,
   'staged Combat.update observes the clamped stop point before strike callbacks run');
 
 // Charged/elevated lunges freeze only horizontal travel and retain their arc.
+perspectivePointY = 0.55; // Forward aim is airborne under the new pitch-only rule.
 player.x = 0;
 player.y = 0;
 player.lunging = false;
