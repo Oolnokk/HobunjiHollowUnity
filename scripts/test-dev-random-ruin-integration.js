@@ -48,7 +48,7 @@ assert(/localStorage\.getItem\('hobunjiDevMode'\) === '1'/.test(camera) && /if \
 assert(camera.includes('dev-random-ruin-interactions.js?v=20260926ropedodge1'), 'ruin interaction adapter must be cache-busted in the dev bootstrap');
 assert(camera.includes('dev-random-ruin-simple-puzzles.js?v=20260927chordlock1'), 'simple puzzle runtime must be cache-busted in the dev bootstrap');
 assert(camera.includes('dev-random-ruin-wall-render-proxy.js?v=20260926glyphdecal1'), 'glyph decal proxy fix must be cache-busted in the dev bootstrap');
-assert(gameIndex.includes('js/dev-random-ruin-bootstrap.js?v=20260927chordlock1'), 'game page must load the updated ruin bootstrap');
+assert(gameIndex.includes('js/dev-random-ruin-bootstrap.js?v=20260927generatorlocal1'), 'game page must load the updated ruin bootstrap');
 assert(gameIndex.includes('game.js?v=20260927ruinsurface1'), 'game page must cache-bust the native Dodge rope release seam');
 assert(gameIndex.includes('js/climb-system.js?v=20260926ruinladder2'), 'game page must cache-bust the shared climb animation used by authored ruin ladders');
 assert(loadOrder.every(index => index >= 0), 'ruin bootstrap must load every Random Test Ruin runtime module');
