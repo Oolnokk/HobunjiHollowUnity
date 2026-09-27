@@ -22,6 +22,7 @@ assert(tool.includes('loadSelectedRepoLayer'), 'author must fetch the selected r
 assert(tool.includes('fittedZoom') && tool.includes('fitZoomToPane'), 'author must fit the sprite inside the center pane');
 assert(tool.includes('id="fitBtn"'), 'author must expose a Fit control after manual zooming');
 assert(tool.includes('../../js/avatar-preview-scene.js'), 'author must load the shared single-avatar Three preview scene');
+assert(tool.indexOf('../../js/color-fill.js') >= 0 && tool.indexOf('../../js/color-fill.js') < tool.indexOf('../../js/portrait-utils.js'), 'author must load ColorFill before portrait-utils');
 assert(tool.includes('AvatarPreviewScene.create'), 'author must mount the shared preview scene used by the PNGPlaneAvatar editor stack');
 assert(tool.includes('NpcAvatarPreview.renderProfileToCanvas'), '3D preview must render front/back portrait canvases through the canonical NPC portrait renderer');
 assert(tool.includes('scene.setAvatar(front'), '3D preview must hand the canonical portrait canvases to the shared PNGPlaneAvatar scene');
