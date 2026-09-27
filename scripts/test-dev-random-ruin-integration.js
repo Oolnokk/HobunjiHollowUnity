@@ -25,6 +25,7 @@ const dynamicSurfaces = read('docs/js/dynamic-surfaces.js');
 const hooks = read('docs/js/dev-random-ruin-prototype-hooks.js');
 const renderProxy = read('docs/js/dev-random-ruin-wall-render-proxy.js');
 const interactions = read('docs/js/dev-random-ruin-interactions.js');
+const inputClaims = read('docs/js/world-action-input-claims.js');
 const simplePuzzles = read('docs/js/dev-random-ruin-simple-puzzles.js');
 const cloudFog = read('docs/js/cloud-forest-fog.js');
 const gameIndex = read('docs/index.html');
@@ -45,11 +46,11 @@ const loadOrder = [
   'dev-random-ruin-runtime-coverage.js',
 ].map(name => camera.indexOf(name));
 assert(/localStorage\.getItem\('hobunjiDevMode'\) === '1'/.test(camera) && /if \(!devMode/.test(camera), 'ruin runtime must only be injected in Dev Mode');
-assert(camera.includes('dev-random-ruin-interactions.js?v=20260926ropedodge1'), 'ruin interaction adapter must be cache-busted in the dev bootstrap');
-assert(camera.includes('dev-random-ruin-simple-puzzles.js?v=20260927chordcue1'), 'simple puzzle runtime must be cache-busted in the dev bootstrap');
+assert(camera.includes('dev-random-ruin-interactions.js?v=20260927inputclaim1'), 'ruin interaction adapter must be cache-busted in the dev bootstrap');
+assert(camera.includes('dev-random-ruin-simple-puzzles.js?v=20260927inputclaim1'), 'simple puzzle runtime must be cache-busted in the dev bootstrap');
 assert(camera.includes('dev-random-ruin-wall-render-proxy.js?v=20260926glyphdecal1'), 'glyph decal proxy fix must be cache-busted in the dev bootstrap');
-assert(gameIndex.includes('js/dev-random-ruin-bootstrap.js?v=20260927doorunlock1'), 'game page must load the updated ruin bootstrap');
-assert(gameIndex.includes('game.js?v=20260927aerialchain1'), 'game page must retain current main cache busting while including the native Dodge rope release seam');
+assert(gameIndex.includes('js/dev-random-ruin-bootstrap.js?v=20260927inputclaim1'), 'game page must load the updated ruin bootstrap');
+assert(gameIndex.includes('game.js?v=20260927inputclaim1'), 'game page must load the shared world-input ownership integration');
 assert(gameIndex.includes('js/climb-system.js?v=20260926ruinladder2'), 'game page must cache-bust the shared climb animation used by authored ruin ladders');
 assert(loadOrder.every(index => index >= 0), 'ruin bootstrap must load every Random Test Ruin runtime module');
 for (let i = 1; i < loadOrder.length; i++) {
@@ -73,7 +74,7 @@ assert(interior.includes('spritePngSurface.makeMaterial(THREE,source.map||null')
 assert(interior.includes('remainingLitMaterials'), 'material diagnostics must explicitly count any lit material that escapes normalization');
 assert((cloudFog.match(/map_i_dev_random_ruin/g)||[]).length>=2, 'Random Test Ruin must opt into the shared den no-sky and den darkness/lantern classifications');
 assert(gameIndex.includes('js/cloud-forest-fog.js?v=20260926devruindark2'), 'test-ruin darkness override must be cache-busted in the game page');
-assert(camera.includes('dev-random-ruin-interior-map.js?v=20260927doorunlock1'), 'test-ruin generator/runtime changes must be cache-busted in the dev bootstrap');
+assert(camera.includes('dev-random-ruin-interior-map.js?v=20260927inputclaim1'), 'test-ruin generator/runtime changes must be cache-busted in the dev bootstrap');
 assert(interior.includes('Solvability.audit'), 'candidate ruins must run the pre-entry solvability audit');
 assert(interior.includes('MAX_SOLVABILITY_ATTEMPTS = 6'), 'unsolvable candidates must have a bounded deterministic retry budget');
 assert(interior.includes('getLastSolvabilityAudit'), 'rejected seed diagnostics must remain inspectable without devtools');
@@ -90,6 +91,15 @@ assert(interior.includes('__devRuinPhysicalDoorBlocker=false') && !interior.incl
 assert(interior.includes("kind:'stoneDoor'") && interior.includes("'Open Stone Door'"), 'ungated stone doors must expose the standard ruin interaction list action');
 assert(interior.includes("kind:'transitDoor'") && interior.includes("'Open Hallway Door'"), 'plain hallway exit doors must use the same WorldPopupText interaction-list path as other world objects');
 assert(interior.includes('__devRuinTransitDoorState') && interior.includes('updateTransitDoors(dt)'), 'transit doors must own explicit closed/open runtime state so collision matches their visible panel');
+assert(gameIndex.includes('js/world-action-input-claims.js?v=20260927inputclaim1'), 'shared world-input claim registry must load before gameplay dispatch');
+assert(interactions.includes("control.claimAction1===true?'action1'") && interactions.includes('WorldActionInputClaims?.dispatch'), 'ruin interactions must opt into explicit Action 1 ownership and dispatch through the shared registry');
+assert(interactions.includes('entry.nativeInput?null:(fixedIndex>=0?TOUCH_BUTTON_IDS[fixedIndex]:null)'), 'explicit Action 1 claims must own the matching touch button instead of becoming prompt-only');
+assert(simplePuzzles.includes("claimAction1:true") && simplePuzzles.includes("label:'Grab Rope'"), 'rope grab must be able to replace weapon Action 1 while nearby');
+assert(interior.includes("kind:'transitDoor'") && interior.includes("claimAction1:true"), 'hallway doors must be able to replace weapon Action 1 while nearby');
+assert(game.includes("dispatchWorldInputClaim(actionId,'press','game-input')"), 'keyboard/controller gameplay dispatch must consult world-input claims before weapon actions');
+assert(game.includes("dispatchWorldInputClaim(mouseAction,'press','desktop-mouse')"), 'desktop mouse weapon input must consult the same contextual claim registry');
+assert(game.includes("dispatchWorldInputClaim(physicalInputAction,'press','touch-arch')"), 'touch action-arch input must consult the same contextual claim registry');
+
 assert(interior.includes('m.manualFallback=true') && interior.includes("'Raise Stone Platform'"), 'moving daises must retain a manual traversal fallback even when a glyph also exists');
 assert(solvability.includes('manual lift fallback reachable'), 'pre-entry audit must understand the simple-mode lift fallback');
 assert(!debrisBootstrap.includes('runtimePuzzleBypass?1:'), 'disabled V50 puzzle families must leave mechanisms manual/closed rather than silently auto-solving them');
@@ -253,6 +263,23 @@ new vm.Script(dynamicSurfaces, { filename:'dynamic-surfaces.js' });
 new vm.Script(occupancy, { filename:'dev-random-ruin-tile-occupancy.js' });
 new vm.Script(renderProxy, { filename:'dev-random-ruin-wall-render-proxy.js' });
 new vm.Script(interactions, { filename:'dev-random-ruin-interactions.js' });
+new vm.Script(inputClaims, { filename:'world-action-input-claims.js' });
+{
+  const claimWindow={};
+  vm.runInNewContext(inputClaims,{window:claimWindow,console});
+  let presses=0,releases=0;
+  claimWindow.WorldActionInputClaims.setClaims('test',[{actionId:'action1',label:'Test Interaction',priority:5,onPress:()=>presses++,onRelease:()=>releases++}]);
+  assert.equal(claimWindow.WorldActionInputClaims.isClaimed('action1'),true,'registered world interaction must claim Action 1');
+  assert.equal(claimWindow.WorldActionInputClaims.dispatch('action1','press',{source:'test'}),true,'claimed Action 1 press must be consumed');
+  assert.equal(presses,1,'claimed press must invoke exactly once');
+  assert.equal(claimWindow.WorldActionInputClaims.dispatch('action1','press',{source:'repeat'}),true,'repeated held press stays consumed');
+  assert.equal(presses,1,'repeated held press must not double-fire the interaction');
+  claimWindow.WorldActionInputClaims.clearClaims('test');
+  assert.equal(claimWindow.WorldActionInputClaims.dispatch('action1','release',{source:'test'}),true,'release must remain paired to the original claim after proximity ownership clears');
+  assert.equal(releases,1,'paired world interaction release must fire exactly once');
+  assert.equal(claimWindow.WorldActionInputClaims.dispatch('action1','release',{source:'unmatched'}),false,'unmatched release must not suppress a weapon release');
+}
+
 
 assert(api.includes("root?.userData?.activatorType === 'glyphObelisk'") && api.includes('setDecalMaterialsProgress(root.userData.decalMaterials, normalizedProgress)'), 'direct projectile glyph progress must update its leaf decal state through the V50 API boundary');
 assert(api.includes('createRuntimeStoneLadder'), 'V50 bridge must expose the real stone ladder constructor');
