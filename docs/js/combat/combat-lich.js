@@ -15,7 +15,7 @@
   const GOO_SLOW_PER_STACK = 0.13; // Used by player/enemy locomotion multipliers; four stacks bottom out near half speed.
   const ENTRANCED_FAST_RECOVERY_PER_S = 12; // Standing still or obeying the command clears Entranced Health quickly.
   const ENTRANCED_BASE_RECOVERY_PER_S = 3; // Sideways/neutral movement still recovers, but much more slowly.
-  const ENTRANCED_WRONG_MOVE_DAMAGE_PER_TILE = 18; // Converts existing Entranced buildup into real Health loss per tile moved against the command.
+  const ENTRANCED_WRONG_MOVE_DAMAGE_PER_TILE = 3.6; // One-fifth of the original movement conversion: wrong-way travel consumes/damages 3.6 Entranced Health per tile instead of 18.
   const PUDDLE_RADIUS_TILES = 0.82; // Kanthic misses make a gameplay hazard this far from the visual puddle center.
   const PUDDLE_LIFETIME_S = 9; // Short arena-readable lifetime before gasoline fades/disposes.
   const PUDDLE_TICK_S = 0.35; // Entranced buildup cadence while an actor remains inside gasoline.
