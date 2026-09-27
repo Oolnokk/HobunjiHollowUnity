@@ -723,10 +723,10 @@
         points.push(axis==='x'?{x:along,z:cross}:{x:cross,z:along});
       }
     }else{
-      const patch=roomPatch(context,owner,4.2,4.2);
-      if(!patch)return null;
-      const d=1.15;
-      points.push({x:patch.centerX-d,z:patch.centerZ-d},{x:patch.centerX+d,z:patch.centerZ-d},{x:patch.centerX-d,z:patch.centerZ+d},{x:patch.centerX+d,z:patch.centerZ+d});
+      const bounds=slot.bounds||roomBounds(context.meta,owner); // Explicit bounds let the same plate-set module live inside generated micro-rooms as well as ordinary V50 rooms.
+      const centerX=(bounds.minX+bounds.maxX)*.5,centerZ=(bounds.minZ+bounds.maxZ)*.5;
+      const d=Math.min(1.15,Math.max(.62,Math.min(bounds.maxX-bounds.minX,bounds.maxZ-bounds.minZ)*.28));
+      points.push({x:centerX-d,z:centerZ-d},{x:centerX+d,z:centerZ-d},{x:centerX-d,z:centerZ+d},{x:centerX+d,z:centerZ+d});
     }
     const root=new THREE.Group();
     root.name='dev_ruin_chord_plates_'+id;
@@ -762,7 +762,7 @@
   }
 
   function buildLockableDoorModule(context, room, options = {}) {
-    const doorway=roomDoorway(context,room);
+    const doorway=options.doorway||roomDoorway(context,room);
     if(!doorway)return null;
     const support=sampleSupport(doorway.x,doorway.z);
     if(!support)return null;
@@ -904,9 +904,9 @@
     return true;
   }
 
-  function sarcophagusPlacements(context, room) {
-    const b=roomBounds(context.meta,room),cx=(b.minX+b.maxX)*.5,cz=(b.minZ+b.maxZ)*.5;
-    const inset=.7;
+  function sarcophagusPlacements(context, room, explicitBounds = null) {
+    const b=explicitBounds||roomBounds(context.meta,room),cx=(b.minX+b.maxX)*.5,cz=(b.minZ+b.maxZ)*.5;
+    const inset=Math.min(.7,Math.max(.42,Math.min(b.maxX-b.minX,b.maxZ-b.minZ)*.18));
     return [
       {x:b.minX+inset,z:cz-.9,yaw:Math.PI/2,spawnX:b.minX+1.35,spawnZ:cz-.9},
       {x:b.minX+inset,z:cz+.9,yaw:Math.PI/2,spawnX:b.minX+1.35,spawnZ:cz+.9},
@@ -918,7 +918,7 @@
   function buildSarcophagusSpawnerModule(context,rng,room,options={}) {
     const root=new THREE.Group();root.name='dev_ruin_sarcophagus_set_'+room.id;state.group.add(root);
     const coffins=[];
-    for(const [index,p] of sarcophagusPlacements(context,room).entries()){
+    for(const [index,p] of sarcophagusPlacements(context,room,options.bounds||null).entries()){
       const support=sampleSupport(p.x,p.z);if(!support)continue;
       const body=naturalizeStone(new THREE.Mesh(new THREE.BoxGeometry(.72,1.75,.52),makeBasic(0x808080)));
       body.position.set(p.x,Number(support.y)+.875,p.z);body.rotation.y=p.yaw;body.name='dev_ruin_sarcophagus_body_'+room.id+'_'+index;root.add(body);
@@ -927,8 +927,8 @@
       coffins.push({index,body,panel,closedY:0,openY:1.62,progress:0,spawnX:p.spawnX,spawnZ:p.spawnZ,spawned:false});
     }
     if(coffins.length<2){disposeObject(root);return null;}
-    const bounds=roomBounds(context.meta,room);
-    const module={id:'sarcophagi-'+room.id,roomId:String(room.id),root,coffins,activated:false,spawnStarted:false,spawnCount:0,tier:Math.max(0,Number(options.tier)||1),autoActivateRadius:Math.max(0,Number(options.autoActivateRadius)||0),center:{x:(bounds.minX+bounds.maxX)*.5,z:(bounds.minZ+bounds.maxZ)*.5}};
+    const bounds=options.bounds||roomBounds(context.meta,room);
+    const module={id:'sarcophagi-'+room.id,roomId:String(options.roomId||room.id),root,coffins,activated:false,spawnStarted:false,spawnCount:0,tier:Math.max(0,Number(options.tier)||1),autoActivateRadius:Math.max(0,Number(options.autoActivateRadius)||0),center:{x:(bounds.minX+bounds.maxX)*.5,z:(bounds.minZ+bounds.maxZ)*.5}};
     state.sarcophagusModules.push(module);
     recordModulePlacement('sarcophagusSpawner','room',module.id,{roomId:String(room.id),count:coffins.length});
     return module;
