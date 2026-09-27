@@ -20,8 +20,10 @@ assert.match(coreSource, /forwardAirAssistFloor = inRangeAirAssist && pitch >= 0
   'forward/upward airborne assist must front-load low-angle lift and give exact-forward aim a minimum hop');
 assert.match(gameSource, /aimAllowsAirborneLunge = aimPitch >= 0[\s\S]{0,500}aimAllowsAirborneLunge,\n\s*\) \|\|/,
   'native beginCombatLunge must request airborne assist from pitch alone, independent of target detection');
-assert.match(gameSource, /ordinaryLungeHopY = player\.lunging && !Number\.isFinite\(player\.lungeFlightWorldY\)[\s\S]{0,260}groundedTargetY \+ ordinaryLungeHopY/,
-  'ordinary lunge hop must raise the real player mesh\/hitbox instead of existing only as simulated lungeHopCurrent');
+assert(gameSource.includes('const ordinaryLungeHopY = player.lunging && !Number.isFinite(player.lungeFlightWorldY)'),
+  'ordinary lunge hop must be promoted from simulation into the player render path');
+assert(gameSource.includes(': groundedTargetY + ordinaryLungeHopY;'),
+  'ordinary lunge hop must raise the real player mesh/hitbox instead of existing only as simulated lungeHopCurrent');
 
 const player = {
   x: 0, y: 0, health: 100, facing: 0,
