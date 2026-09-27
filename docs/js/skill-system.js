@@ -23,6 +23,7 @@
 
   let deps = null; // Used to access saving, random rolls, popups, and food stacks.
   const experience = Object.fromEntries(Object.keys(SKILLS).map(key => [key, 0])); // Used as character-scoped cumulative skill XP, including fractional XP created by skill-specific gain multipliers.
+  const awardListeners = new Set(); // Used by progression consumers such as metal-armor Temper so every real Skill XP grant, including internal combat awards, has one authoritative event source.
   const combatTaggedTargets = new WeakSet(); // Used to remember which live enemy objects the player has personally tagged for eventual kill XP.
   let pendingLegacyCombatDamage = false; // Used to connect game.js's legacy landed-hit notification to the immediately following ResourceSystem damage call without awarding hit XP.
   let combatDispatchHookInstalled = false; // Used to identify player-authored modular melee before damage/death resolves, while rejecting companion/animal attacks that share damageCreature().
@@ -154,6 +155,20 @@
     return Number.isFinite(configured) ? Math.max(0, configured) : 1;
   }
 
+  function onAward(listener) {
+    if (typeof listener !== 'function') return () => {};
+    awardListeners.add(listener);
+    return () => awardListeners.delete(listener);
+  }
+
+  function notifyAward(skillKey, amount, reason) {
+    const event = Object.freeze({ skillKey, amount, reason }); // Used to keep listener consumers from mutating the authoritative award payload seen by later listeners.
+    for (const listener of [...awardListeners]) {
+      try { listener(event); }
+      catch (error) { deps?.debugLog?.(`[skills] XP listener failed: ${String(error?.message || error)}`); }
+    }
+  }
+
   function award(skillKey, amount, reason = '', applyRateScale = true) {
     if (!SKILLS[skillKey]) return false;
     if (skillKey === 'combat' && reason === 'landed hit') {
@@ -180,6 +195,7 @@
       if (!announcedOverhead) deps?.showToast?.(`${SKILLS[skillKey].icon} ${SKILLS[skillKey].label} reached level ${afterLevel}!`, true);
     }
     deps?.debugLog?.(`[skills] ${SKILLS[skillKey].label} +${gain}${reason ? ` (${reason})` : ''}; level ${afterLevel}`);
+    notifyAward(skillKey, gain, reason);
     persist(true);
     render();
     return true;
@@ -366,6 +382,7 @@
     init,
     restore,
     award,
+    onAward,
     xpGainMultiplier,
     level,
     effectiveLevel,
