@@ -45,7 +45,7 @@ const loadOrder = [
 ].map(name => camera.indexOf(name));
 assert(/localStorage\.getItem\('hobunjiDevMode'\) === '1'/.test(camera) && /if \(!devMode/.test(camera), 'ruin runtime must only be injected in Dev Mode');
 assert(camera.includes('dev-random-ruin-interactions.js?v=20260926ropedodge1'), 'ruin interaction adapter must be cache-busted in the dev bootstrap');
-assert(camera.includes('dev-random-ruin-simple-puzzles.js?v=20260927modules4'), 'simple puzzle runtime must be cache-busted in the dev bootstrap');
+assert(camera.includes('dev-random-ruin-simple-puzzles.js?v=20260927modules5'), 'simple puzzle runtime must be cache-busted in the dev bootstrap');
 assert(camera.includes('dev-random-ruin-wall-render-proxy.js?v=20260926glyphdecal1'), 'glyph decal proxy fix must be cache-busted in the dev bootstrap');
 assert(gameIndex.includes('js/dev-random-ruin-bootstrap.js?v=20260927plateclear1'), 'game page must load the updated ruin bootstrap');
 assert(gameIndex.includes('game.js?v=20260926ropedodge1'), 'game page must cache-bust the native Dodge rope release seam');
@@ -138,6 +138,8 @@ assert(simplePuzzles.includes('installModularProjectileHook'), 'reusable canopie
 assert(simplePuzzles.includes('buildBalconyRopeElevatorComposer'), 'the long balcony/rope/elevator possibility must be composed from reusable modules');
 assert(simplePuzzles.includes('buildSunkenRoomShell'), 'the lower ossuary must use a reusable sunken-room shell rather than bespoke full-sequence geometry');
 assert(simplePuzzles.includes("window.MinionCombat?.makeEntity?.({") && simplePuzzles.includes("speciesId:'harlyao-skeleton'"), 'sarcophagus modules must spawn the existing Harlyao Skeleton Minion class');
+assert(simplePuzzles.includes('spawnedMinions:new Set()') && simplePuzzles.includes('disposeSpawnedMinion(entity)'), 'sarcophagus-spawned minions must be owned and torn down by the generated ruin run');
+assert(simplePuzzles.includes('state===ownerState') && simplePuzzles.includes('ownerState.sarcophagusModules.includes(module)'), 'late async skeleton spawns must not leak across ruin rerolls');
 assert(simplePuzzles.includes('KURRAYA_NOTE_URL') && simplePuzzles.includes('CHORD_PITCHES'), 'musical pressure plates must use the Kurraya pluck placeholder at authored chord pitches');
 assert(simplePuzzles.includes('playGeneratedStoneKchunk'), 'four-note completion must expose a generated placeholder kchunk until a recorded cue replaces it');
 assert(simplePuzzles.includes('opensUpstairsMechanism') && interior.includes('setMechanismTarget'), 'compound lower-room completion must be able to open an ordinary generated stone door upstairs');
