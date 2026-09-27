@@ -613,7 +613,8 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
       assert.equal(simpleRuntime.ropeAttach?.weaponStowed,true,'grabbing the rope must put the drawn weapon/tool away: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.ropeAttach?.released,true,'Dodge must transfer the player into rope ballistic flight: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.ropeAttach?.weaponRestored,true,'jumping off the rope must restore the exact previously drawn tool/weapon snapshot: '+JSON.stringify(simpleRuntime));
-      assert.ok(simpleRuntime.final.liveProjectiles>0,'alternating hallway traps must be actively emitting projectiles: '+JSON.stringify(simpleRuntime.final));
+      if(simpleRuntime.final.trapHallways.length>0) assert.ok(simpleRuntime.final.liveProjectiles>0,'a selected projectile-hallway module must actively emit projectiles: '+JSON.stringify(simpleRuntime.final));
+      else assert.ok(simpleRuntime.final.chordPlateSets.some(set=>set.slotKind==='hallway'),'a non-trap hallway slot must contain its selected reusable module: '+JSON.stringify(simpleRuntime.final));
 
       const towerInteraction = await page.evaluate(async () => {
         const scene=window.GridTileAccessors.getActiveScene();
@@ -691,7 +692,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
       });
       assert.equal(ladderStart.started, true, 'authored ruin ladder must resolve endpoints and start traversal: '+JSON.stringify(ladderStart));
       assert.equal(ladderStart.climbing, true, 'authored ruin ladder must use the shared animated ClimbSystem path: '+JSON.stringify(ladderStart));
-      await page.waitForFunction(() => window.ClimbSystem?.debug?.playerClimbing === false, null, { timeout:8000 });
+      await page.waitForFunction(() => window.ClimbSystem?.debug?.playerClimbing === false, null, { timeout:12000 }); // A tallest 12-hop scripted ladder is ~7 s of authored hop/pause time; leave CI scheduling headroom without changing gameplay cadence.
       await page.waitForTimeout(650);
       const ladderAfter = await page.evaluate(() => window.DevRandomRuin.getState()?.presentation || null); // Used after reconciliation has resumed to prove the landing elevation remains authoritative.
       assert.ok(Number.isFinite(ladderAfter?.elevation) && Number.isFinite(ladderStart.before?.elevation), JSON.stringify({ ladderStart, ladderAfter }));
