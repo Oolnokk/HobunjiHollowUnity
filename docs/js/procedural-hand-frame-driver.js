@@ -315,16 +315,21 @@
   function toolSocketWorld(record, toolHolder, gripFrame = null) {
     const Vector3 = toolHolder.position.constructor;
     const Quaternion = toolHolder.quaternion.constructor;
-    const bakedWorldMatrix = !inAttackEditor() ? global.WeaponToolStances?.lastHolderMatrixWorld?.() : null;
+    const ownedHolder = record?.avatarRoot?.userData?.proceduralHandToolHolder; // Hostile/NPC records publish their own scene-root holder; only the player's holder is owned by WeaponToolStances' singleton baked-matrix cache.
+    const playerOwnedHolder = !ownedHolder
+      && !!gameDeps?.playerMesh
+      && record.rig?.parent === gameDeps.playerMesh
+      && toolHolder === gameDeps.toolHolder; // Prevents a hostile hand record from ever reading the player's last baked holder matrix.
+    const bakedWorldMatrix = !inAttackEditor() && playerOwnedHolder
+      ? global.WeaponToolStances?.lastHolderMatrixWorld?.()
+      : null;
 
     const visualBasis = visualGripBasisDelta(record, toolHolder);
     let position;
-    // Used as the scale-free world orientation of the tool socket. Do not use
-    // getWorldQuaternion() on toolHolder's own local quaternion/position chain
-    // in general (the game player hierarchy can contain negative scale) — but
-    // toolHolder itself lives directly under the scene root and never carries
-    // non-uniform or negative scale (see toolHolder.scale.setScalar calls in
-    // game.js), so decomposing its already-baked matrixWorld is safe.
+    // Used as the scale-free world orientation of the tool socket. The special
+    // baked WeaponToolStances matrix is PLAYER-ONLY: hostile/NPC holders are
+    // independently positioned in the scene and must resolve from their own
+    // hierarchy, or their hands literally inherit the player's world position.
     let quaternion;
     if (bakedWorldMatrix) {
       quaternion = new Quaternion();
@@ -528,6 +533,7 @@
         scaleFreeWorldQuaternion: true,
         toolKey: toolKey || null,
         gripContext,
+        holderAuthority: record?.avatarRoot?.userData?.proceduralHandToolHolder ? 'actor-owned-world-transform' : 'player-weapon-stance-baked-matrix',
         gripMode: global.HobunjiHandGripModes?.currentModeKey?.() || null,
         primaryGrip: JSON.parse(JSON.stringify(primaryGrip)),
         secondaryActive: record.secondaryActive,
