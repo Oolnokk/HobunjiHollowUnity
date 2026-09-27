@@ -76,6 +76,14 @@ assert.strictEqual(player.footing, 73);
 assert.strictEqual(lastTickOptions.footingRegenPerSec, 3);
 assert.strictEqual(lastTickOptions.staminaRegenPerSec, 9);
 
+// Prone recovery uses the same authored/override rate at exactly 2x speed.
+player.prone = true;
+player.footing = 40;
+ResourceSystem.tick(player, 0.5, { footingRegenPerSec: 10 });
+assert.strictEqual(player.footing, 50);
+assert.strictEqual(lastTickOptions.footingRegenPerSec, 20);
+assert.strictEqual(context.window.HobunjiFootingDamageRecovery.proneRecoveryMultiplier, 2);
+
 // A hit while prone cannot refresh an already-expired recovery timer.
 player.prone = true;
 now = 5000;
@@ -95,6 +103,7 @@ const debug = context.window.HobunjiFootingDamageRecovery.getDebug(player);
 assert.strictEqual(debug.damageMultiplier, 2);
 assert.strictEqual(debug.recoveryDelaySeconds, 1.5);
 assert.strictEqual(debug.fullRecoverySeconds, 3);
+assert.strictEqual(debug.proneRecoveryMultiplier, 2);
 assert.strictEqual(debug.defaultFootingRegenPerSec, 100 / 3);
 assert.strictEqual(debug.lastFootingDamageAt, null);
 
