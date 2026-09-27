@@ -4969,8 +4969,8 @@
         return best;
       }
 
-      function respawnPlayer() {
-        if (window.DevRandomRuinSimplePuzzles?.respawnAtCheckpoint?.('death')) return; // Session ruin checkpoints override every canonical death source before mine/totem/farm recovery.
+      function respawnPlayer(reason = 'death') {
+        if (window.DevRandomRuinSimplePuzzles?.respawnAtCheckpoint?.(reason)) return; // Session ruin checkpoints override every canonical death source before mine/totem/farm recovery while preserving the source for mobile diagnostics.
         if (window.TownMine?.floorFromMapId?.(currentArea)) {
           window.WildernessCampfire?.clearMineCampfireOnDeath?.(); // Mine death ends the one underground camp, while wilderness camps survive.
           _returnToFarmMeshes();
@@ -28624,7 +28624,7 @@
       window.PlayerVitals?.init({
         player, PLAYER_STAMINA_REGEN, PLAYER_HEALTH_REGEN, showToast,
         isPlayerInWater: () => isWaterSurfaceAt(player.x, player.y, window.GridTileAccessors.getActiveGrid()), // Burning extinguish follows permanent + visibly-wet dynamic water.
-        handlePlayerDeath: () => respawnPlayer(),
+        handlePlayerDeath: reason => respawnPlayer(reason),
       });
 
       window.ItemProcessing?.init({
