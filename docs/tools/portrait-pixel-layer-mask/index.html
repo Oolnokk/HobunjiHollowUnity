@@ -86,12 +86,19 @@ textarea{width:100%;min-height:165px;padding:8px;resize:vertical;font:11px/1.4 u
       </div>
     </section>
     <section>
-      <h2>3. Layer target</h2>
-      <label>Marked pixels render</label>
-      <select id="target" style="width:100%">
-        <option value="aboveHood">Above hood</option>
-        <option value="belowHood">Below hood</option>
+      <h2>3. Mask behavior</h2>
+      <label>Painted region means</label>
+      <select id="maskBehavior" style="width:100%">
+        <option value="reroute">Reroute painted pixels to another layer stage</option>
+        <option value="noTrespassSquish">No-trespass zone — squish opaque pixels back into garment</option>
       </select>
+      <div id="targetControls">
+        <label>Rerouted pixels render</label>
+        <select id="target" style="width:100%">
+          <option value="aboveHood">Above hood</option>
+          <option value="belowHood">Below hood</option>
+        </select>
+      </div>
       <label>Apply on view</label>
       <select id="view" style="width:100%">
         <option value="behind">Behind only</option>
@@ -147,13 +154,13 @@ textarea{width:100%;min-height:165px;padding:8px;resize:vertical;font:11px/1.4 u
       </div>
       <label>Layer JSON fragment</label>
       <textarea id="jsonOut" spellcheck="false"></textarea>
-      <div class="hint">Paste <code>pixelLayerMasks</code> into the same cosmetic layer object that owns the source sprite. The renderer keeps unmarked pixels at the layer's normal stage and reroutes only marked pixels.</div>
+      <div class="hint">Paste <code>pixelLayerMasks</code> into the same cosmetic layer object that owns the source sprite. Reroute mode moves painted pixels to another layer stage. No-trespass mode keeps the layer at its normal stage but compresses any opaque pixels out of the painted forbidden region toward their connected opaque neighbors.</div>
     </section>
   </aside>
 </main>
 <script src="../../config/scratchbones-config.js"></script>
 <script src="../../js/color-fill.js?v=20260923colorfill7"></script>
-<script src="../../js/portrait-utils.js?v=20260927pixellayer6"></script>
+<script src="../../js/portrait-utils.js?v=20260927pixellayer7"></script>
 <script src="../../js/portrait-breathing.js"></script>
 <script src="../../js/npc-avatar-preview-utils.js"></script>
 <script src="../../js/png-plane-avatar.js"></script>
@@ -409,7 +416,7 @@ textarea{width:100%;min-height:165px;padding:8px;resize:vertical;font:11px/1.4 u
       const patchLayers = layers => {
         for (const layer of layers || []) {
           if (normalizedPortraitUrl(layer.url) !== sourceUrl && basename(layer.url) !== basename(sourceUrl)) continue;
-          layer.pixelLayerMasks = [{ url: maskUrl, target: $('target').value, view: $('view').value }];
+          layer.pixelLayerMasks = [maskConfig(maskUrl)];
           matched = true;
         }
       };
@@ -656,8 +663,10 @@ textarea{width:100%;min-height:165px;padding:8px;resize:vertical;font:11px/1.4 u
       sourceCtx.drawImage(img, 0, 0);
       maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
       const existingMask = Array.isArray(record.layer?.pixelLayerMasks) ? record.layer.pixelLayerMasks[0] : null;
+      $('maskBehavior').value = existingMask?.mode === 'noTrespassSquish' ? 'noTrespassSquish' : 'reroute';
       if (existingMask?.target) $('target').value = existingMask.target;
       if (existingMask?.view) $('view').value = existingMask.view;
+      updateMaskBehaviorUi();
       const suggestedMaskPath = existingMask?.url || String(record.imageUrl).replace(/\.[^.]+$/, '.layer-mask.png');
       $('maskPath').value = suggestedMaskPath;
       if (existingMask?.url) {
@@ -829,15 +838,30 @@ textarea{width:100%;min-height:165px;padding:8px;resize:vertical;font:11px/1.4 u
     $('dbgAlpha').textContent = alpha == null ? 'unreadable (paint still works)' : String(alpha);
   }
 
-  function configFragment() {
-    const path = $('maskPath').value.trim() || './assets/cosmetics/example.layer-mask.png';
-    return {
-      pixelLayerMasks: [{
-        url: path,
-        target: $('target').value,
+  function maskConfig(urlOverride = null) {
+    const url = urlOverride || $('maskPath').value.trim() || './assets/cosmetics/example.layer-mask.png';
+    if ($('maskBehavior').value === 'noTrespassSquish') {
+      return {
+        url,
+        mode: 'noTrespassSquish',
         view: $('view').value
-      }]
+      };
+    }
+    return {
+      url,
+      target: $('target').value,
+      view: $('view').value
     };
+  }
+
+  function configFragment() {
+    return { pixelLayerMasks: [maskConfig()] };
+  }
+
+  function updateMaskBehaviorUi() {
+    const squish = $('maskBehavior').value === 'noTrespassSquish';
+    $('targetControls').hidden = squish;
+    refreshDebug();
   }
 
   function refreshDebug() {
@@ -848,7 +872,9 @@ textarea{width:100%;min-height:165px;padding:8px;resize:vertical;font:11px/1.4 u
     $('dbgLayer').textContent = currentLayerRecord?.label || '—';
     $('dbgDims').textContent = sourceCanvas.width ? sourceCanvas.width + '×' + sourceCanvas.height : '—';
     $('dbgCount').textContent = String(maskCount());
-    $('dbgTarget').textContent = $('target').value + ' / ' + $('view').value;
+    $('dbgTarget').textContent = $('maskBehavior').value === 'noTrespassSquish'
+      ? 'no-trespass squish / ' + $('view').value
+      : $('target').value + ' / ' + $('view').value;
     $('jsonOut').value = JSON.stringify(configFragment(), null, 2);
   }
 
@@ -950,6 +976,7 @@ textarea{width:100%;min-height:165px;padding:8px;resize:vertical;font:11px/1.4 u
     preview3d.scene?.resize();
   });
   $('brushSize').oninput = refreshDebug;
+  $('maskBehavior').onchange = () => { updateMaskBehaviorUi(); schedule3dPreview(); };
   $('target').onchange = () => { refreshDebug(); schedule3dPreview(); };
   $('view').onchange = () => {
     refreshDebug();
@@ -1001,7 +1028,7 @@ textarea{width:100%;min-height:165px;padding:8px;resize:vertical;font:11px/1.4 u
   };
 
   updateHistoryUi();
-  refreshDebug();
+  updateMaskBehaviorUi();
   redraw();
   fetchClothingIndex();
 })();
