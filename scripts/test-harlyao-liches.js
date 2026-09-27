@@ -296,6 +296,8 @@ assert.match(combatBanditSource, /handRigAvatarRoot: portrait/, 'lich avatarRef 
 assert.match(lichSource, /const registeredRoot = entity\?\.avatarRef\?\.handRigAvatarRoot/, 'lich cast-hand lookup must prefer the retained registered hand root');
 assert.match(combatBanditSource, /proceduralHandToolHolder = useRanged \? c\._banditRangedToolHolder : c\._banditToolHolder/, 'hostile hand owner must publish its live melee/ranged holder every animation update');
 assert.match(handFrameSource, /proceduralHandToolHolder[\s\S]*ownedHolder\?\.parent/, 'final-render procedural hand driver must accept a hostile-owned held object');
+assert.match(handFrameSource, /const playerOwnedHolder = !ownedHolder[\s\S]*toolHolder === gameDeps\.toolHolder/, 'lich hand record must never read the player\'s baked weapon-holder matrix');
+assert.match(handFrameSource, /holderAuthority: record\?\.avatarRoot\?\.userData\?\.proceduralHandToolHolder \? 'actor-owned-world-transform'/, 'hand diagnostics must identify actor-owned hostile transform authority');
 assert.match(handFrameSource, /proceduralHandToolKey[\s\S]*currentToolKey\(record\)/, 'hostile hand sync must use that hostile\'s weapon key rather than the player singleton stance');
 assert.match(combatBanditSource, /const resolvedRosterDyes = applyRosterDyesToProfile\(profile, roster\)/, 'lich visible portrait must explicitly reconcile its hood/bodywrap dye before rasterization');
 assert.match(lichSource, /if \(ability === 'summon'\) summonMinion\(lich\);[\s\S]*else firePrimary\(lich, target\);/, 'both summon and primary spell abilities must fire from the reused attack strike phase');
