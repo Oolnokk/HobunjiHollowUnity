@@ -311,7 +311,7 @@
           owner,
           distance,
           priority:Number(control.priority)||0,
-          inputAction:control.inputAction || null, // Optional fixed semantic input (e.g. Dodge for rope release) used for prompts without stealing a dynamic action slot.
+          inputAction:control.claimAction1===true?'action1':(control.inputAction || null), // claimAction1 is an opt-in contextual override: the shared registry suppresses weapon Action 1 while this visible interaction owns it.
           nativeInput:control.nativeInput === true,
           onPress:control.onPress,
           onHoldStart:control.onHoldStart,
