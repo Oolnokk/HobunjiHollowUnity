@@ -335,7 +335,7 @@ assert(indexSource.includes('js/dev-spawner.js?v=20260927hostilevisual1'));
 assert(indexSource.includes('game.js?v=20260927aerialchain1'));
 assert(indexSource.includes('js/combat/resource-system.js?v=20260927froststamina1'));
 assert(indexSource.includes('js/pixel-probe.js?v=20260927lichgreeting1'));
-assert(indexSource.includes('js/portrait-utils.js?v=20260926hoodback2'));
+assert(indexSource.includes('js/portrait-utils.js?v=20260927pixellayer3'));
 assert(indexSource.includes('js/procedural-leg-animation.js?v=20260926hover1'));
 assert(indexSource.includes('js/combat/combat-config-loader.js?v=20260927directreticle1'));
 assert(pixelProbeSource.includes('window.HarlyaoLichCombat?.formatDebug?.()'), 'Pixel Probe must expose live lich diagnostics on mobile');
