@@ -92,7 +92,7 @@ assert(interior.includes("kind:'stoneDoor'") && interior.includes("'Open Stone D
 assert(interior.includes("kind:'transitDoor'") && interior.includes("'Open Hallway Door'"), 'plain hallway exit doors must use the same WorldPopupText interaction-list path as other world objects');
 assert(interior.includes('__devRuinTransitDoorState') && interior.includes('updateTransitDoors(dt)'), 'transit doors must own explicit closed/open runtime state so collision matches their visible panel');
 assert(gameIndex.includes('js/world-action-input-claims.js?v=20260927inputclaim1'), 'shared world-input claim registry must load before gameplay dispatch');
-assert(interactions.includes("control.claimAction1===true?'action1'") && interactions.includes('WorldActionInputClaims?.dispatch'), 'ruin interactions must opt into explicit Action 1 ownership and dispatch through the shared registry');
+assert(interactions.includes("control.claimAction1===true?'action1'") && interactions.includes('registry.setClaims(INPUT_CLAIM_OWNER,claims)'), 'ruin interactions must publish explicit Action 1 ownership into the shared registry while normal game input remains the sole dispatcher');
 assert(interactions.includes('entry.nativeInput?null:(fixedIndex>=0?TOUCH_BUTTON_IDS[fixedIndex]:null)'), 'explicit contextual claims must retain the matching physical touch slot');
 assert(interactions.includes('const slotActions=SLOT_ACTIONS'), 'nearby ruin interactions must be allowed to occupy Action 1–3 as well as Item Action 1–2 instead of reserving combat slots');
 assert(simplePuzzles.includes("claimAction1:true") && simplePuzzles.includes("label:'Grab Rope'"), 'rope grab must be able to replace weapon Action 1 while nearby');
