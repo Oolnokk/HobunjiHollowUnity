@@ -789,39 +789,47 @@
     if(!doorway)return null;
     const support=sampleSupport(doorway.x,doorway.z);
     if(!support)return null;
+    const generatedMechanismId=nearestGeneratedStoneDoorMechanism(context,doorway); // Reuses the V50 doorway door when one already occupies this threshold instead of stacking a second invisible/visible collision gate on top of it.
     const thickness=.18,height=1.9,width=Math.max(.9,doorway.width*.82);
-    const geometry=doorway.axis==='x'
-      ? new THREE.BoxGeometry(thickness,height,width)
-      : new THREE.BoxGeometry(width,height,thickness);
-    const panel=naturalizeStone(new THREE.Mesh(geometry,makeBasic(0x808080)));
-    panel.name='dev_ruin_modular_lock_door_'+room.id;
-    panel.position.set(doorway.x,Number(support.y)+height*.5+(options.startOpen===false?0:height+.18),doorway.z);
-    panel.userData.devRandomRuinModularDoor=true;
-    state.group.add(panel);
-    const blockerId='devruin-modular-door-'+room.id;
+    let panel=null,blockerId=null;
+    if(!generatedMechanismId){
+      const geometry=doorway.axis==='x'
+        ? new THREE.BoxGeometry(thickness,height,width)
+        : new THREE.BoxGeometry(width,height,thickness);
+      panel=naturalizeStone(new THREE.Mesh(geometry,makeBasic(0x808080)));
+      panel.name='dev_ruin_modular_lock_door_'+room.id;
+      panel.position.set(doorway.x,Number(support.y)+height*.5+(options.startOpen===false?0:height+.18),doorway.z);
+      panel.userData.devRandomRuinModularDoor=true;
+      state.group.add(panel);
+      blockerId='devruin-modular-door-'+room.id;
+    }
     const module={
       id:'lock-door-'+room.id,roomId:String(room.id),doorway,panel,baseY:Number(support.y)+height*.5,
       openY:Number(support.y)+height*.5+height+.18,progress:options.startOpen===false?0:1,targetOpen:options.startOpen!==false,
-      blockerId,width,height,
+      blockerId,width,height,generatedMechanismId,
     };
-    DS.registerBlocker({
-      id:blockerId,scope:SCOPE,
-      bounds:()=>doorway.axis==='x'
-        ? {minX:doorway.x-thickness*.6,maxX:doorway.x+thickness*.6,minZ:doorway.z-width*.5,maxZ:doorway.z+width*.5}
-        : {minX:doorway.x-width*.5,maxX:doorway.x+width*.5,minZ:doorway.z-thickness*.6,maxZ:doorway.z+thickness*.6},
-      minY:Number(support.y),maxY:Number(support.y)+height,
-      enabled:()=>module.progress<.72,
-      purpose:'modular_lock_door',
-    });
-    state.surfaceIds.add(blockerId);
+    if(blockerId){
+      DS.registerBlocker({
+        id:blockerId,scope:SCOPE,
+        bounds:()=>doorway.axis==='x'
+          ? {minX:doorway.x-thickness*.6,maxX:doorway.x+thickness*.6,minZ:doorway.z-width*.5,maxZ:doorway.z+width*.5}
+          : {minX:doorway.x-width*.5,maxX:doorway.x+width*.5,minZ:doorway.z-thickness*.6,maxZ:doorway.z+thickness*.6},
+        minY:Number(support.y),maxY:Number(support.y)+height,
+        enabled:()=>module.progress<.72,
+        purpose:'modular_lock_door',
+      });
+      state.surfaceIds.add(blockerId);
+    }
     state.lockDoors.push(module);
-    recordModulePlacement('lockableStoneDoor','doorway',module.id,{roomId:String(room.id)});
+    setLockDoorOpen(module,options.startOpen!==false);
+    recordModulePlacement('lockableStoneDoor','doorway',module.id,{roomId:String(room.id),reusesGeneratedDoor:!!generatedMechanismId,generatedMechanismId});
     return module;
   }
 
   function setLockDoorOpen(module, open) {
     if(!module)return false;
     module.targetOpen=open!==false;
+    if(module.generatedMechanismId)window.DevRandomRuin?.setMechanismTarget?.(module.generatedMechanismId,module.targetOpen?1:0); // The encounter lock and the visible/generated doorway now share one authoritative door state.
     return true;
   }
 
@@ -1437,6 +1445,7 @@
     for(const door of state.lockDoors){
       const target=door.targetOpen?1:0;
       door.progress+=Math.max(-dt*1.7,Math.min(dt*1.7,target-door.progress));
+      if(!door.panel)continue; // Generated V50 doors animate through the canonical mechanism runtime; only the fallback local panel needs manual transform updates.
       const t=door.progress*door.progress*(3-2*door.progress);
       door.panel.position.y=door.baseY+(door.openY-door.baseY)*t;
     }
@@ -1741,7 +1750,7 @@
       ropeEquipment:{holstered:state.ropeEquipmentHolsterCount,restored:state.ropeEquipmentRestoreCount,currentlyStowed:!!state.ropeHeldToolSnapshot},
       trapHallways:state.trapHallways.map(trap=>({id:trap.id,axis:trap.axis,stations:trap.stations.length})),
       chordPlateSets:state.chordPlateSets.map(set=>({id:set.id,slotKind:set.slotKind,played:set.plates.filter(plate=>plate.played).length,solved:set.solved,solveCount:set.solveCount,pressCounts:set.plates.map(plate=>plate.pressCount)})),
-      lockDoors:state.lockDoors.map(door=>({id:door.id,roomId:door.roomId,open:door.targetOpen,progress:+door.progress.toFixed(3)})),
+      lockDoors:state.lockDoors.map(door=>({id:door.id,roomId:door.roomId,open:door.targetOpen,progress:+door.progress.toFixed(3),generatedMechanismId:door.generatedMechanismId||null,reusesGeneratedDoor:!!door.generatedMechanismId})),
       canopies:state.canopies.map(canopy=>({id:canopy.id,roomId:canopy.roomId,roofY:+canopy.roofY.toFixed(3),width:+canopy.width.toFixed(3),depth:+canopy.depth.toFixed(3),occludesTarget:canopy.occludesTarget})),
       ceilingGlyphs:state.ceilingGlyphs.map(glyph=>({id:glyph.id,roomId:glyph.roomId,active:glyph.active,hitCount:glyph.hitCount})),
       cyclingElevators:state.cyclingElevators.map(elevator=>({id:elevator.id,roomId:elevator.roomId,active:elevator.active,progress:+elevator.progress.toFixed(3),topY:+elevator.topTopY.toFixed(3),bottomY:+elevator.bottomTopY.toFixed(3),currentY:+(elevator.currentTopY??elevator.topTopY).toFixed(3),playerRiding:!!elevator.playerRiding})),
