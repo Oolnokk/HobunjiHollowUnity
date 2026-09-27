@@ -296,9 +296,21 @@
     return true;
   }
 
+  function disposeSpawnedMinion(entity) {
+    if(!entity)return;
+    deps?.hostileObjects?.delete?.(entity);
+    entity.avatarRef?.group?.parent?.remove?.(entity.avatarRef.group);
+    entity.groundShadow?.parent?.remove?.(entity.groundShadow);
+    entity._banditToolHolder?.parent?.remove?.(entity._banditToolHolder);
+    entity._banditRangedToolHolder?.parent?.remove?.(entity._banditRangedToolHolder);
+    entity.avatarRef?.dispose?.();
+  }
+
   function clearState() {
     if (!state) return;
     restoreRopeEquipment();
+    for (const entity of state.spawnedMinions) disposeSpawnedMinion(entity); // Session/reroll ownership matches ordinary camp teardown; no sarcophagus enemy can leak into the next generated ruin.
+    state.spawnedMinions.clear();
     for (const id of state.surfaceIds) DS.remove?.(id);
     disposeObject(state.group);
     state = null;
@@ -1047,18 +1059,20 @@
     module.activated=true;
     if(module.spawnStarted)return true;
     module.spawnStarted=true;
+    const ownerState=state; // Captured across awaited portrait builds so a reroll cannot adopt a late skeleton from the previous generated layout.
     for(const coffin of module.coffins){
       const px=coffin.spawnX*(Number(deps?.TILE)||1),py=coffin.spawnZ*(Number(deps?.TILE)||1); // Humanoid combat entities use the game's pixel-space X/Y plane, while modular ruin geometry is authored in world units.
       try{
         const creature=await window.MinionCombat?.makeEntity?.({
           speciesId:'harlyao-skeleton',name:'Harlyao Skeleton',tier:module.tier,x:px,y:py,zoneId:MAP_ID,
-          scene:state.context.scene,grid:state.context.grid,cols:state.context.cols,rows:state.context.rows,weaponMetalKey:'nativeCopper',
+          scene:ownerState?.context?.scene,grid:ownerState?.context?.grid,cols:ownerState?.context?.cols,rows:ownerState?.context?.rows,weaponMetalKey:'nativeCopper',
           extra:{homeX:px,homeY:py,state:'idle',devRandomRuinSarcophagus:true},
         });
-        if(creature&&state&&inRuin()){
+        if(creature&&state===ownerState&&inRuin()&&ownerState.sarcophagusModules.includes(module)){
           deps?.hostileObjects?.add?.(creature);
+          ownerState.spawnedMinions.add(creature);
           coffin.spawned=true;module.spawnCount++;
-        }else creature?.avatarRef?.dispose?.();
+        }else disposeSpawnedMinion(creature);
       }catch(error){console.warn('[Random Test Ruin] sarcophagus skeleton spawn failed',error);}
     }
     return true;
@@ -1270,6 +1284,7 @@
       ossuaryComposers:[],
       ropeElevatorComposers:[],
       modulePlacements:[], // Every placed puzzle piece is recorded independently so compound sequences remain inspectable/recomposable.
+      spawnedMinions:new Set(), // Owns Harlyao skeletons created by sarcophagus modules so reroll/leave cleanup is deterministic.
       projectiles:[],
       surfaceIds:new Set(),
       activeRope:null,
@@ -1662,6 +1677,7 @@
       ossuaryComposers:state.ossuaryComposers.map(module=>({id:module.id,roomId:module.roomId,entered:module.entered,completed:module.completed})),
       ropeElevatorComposers:state.ropeElevatorComposers.map(module=>({id:module.id,roomId:module.roomId,ropeId:module.rope.id,elevatorId:module.elevator.id,glyphId:module.glyph.id,canopyId:module.canopy?.id||null,lowerShellId:module.lowerShell?.id||null,ossuaryId:module.ossuary?.id||null,nextDoorMechanismId:module.nextDoorMechanismId||null})),
       modules:state.modulePlacements.map(module=>({...module})),
+      spawnedMinions:state.spawnedMinions.size,
       liveProjectiles:state.projectiles.length,
       checkpoints:{
         activeId:state.checkpoints.active?.id||null,
