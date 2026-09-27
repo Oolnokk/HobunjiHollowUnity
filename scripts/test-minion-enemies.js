@@ -30,7 +30,7 @@ assert(indexSource.indexOf('combat-bandit.js?v=20260926hskelhairrig1') < indexSo
 assert(indexSource.indexOf('combat-minion.js?v=20260926shambling70') < indexSource.indexOf('dev-spawner.js?v=20260926minion1'));
 assert(indexSource.includes('resource-system.js?v=20260926shambling70'));
 assert(indexSource.includes('combat-config-loader.js?v=20260926shambling70'));
-assert(indexSource.includes('game.js?v=20260926hskelrebase1'));
+assert.match(indexSource, /game\.js\?v=[A-Za-z0-9_-]+/, 'game bootstrap must remain cache-busted without coupling Minion coverage to an unrelated feature token');
 
 const authoredDyes = [
   'dye:CLOTH:muted_red_orange', 'dye:CLOTH:dusty_red_orange', 'dye:CLOTH:dark_muted_red_orange',
