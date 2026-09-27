@@ -15,7 +15,6 @@
   const DevSpawner = window.DevSpawner;
   if (!GridTileAccessors || !DS || !DevSpawner) return;
 
-  const controllerDown = new Map();
   let deps = null;
   let lastRows = [];
   let lastAnchor = null;
@@ -429,39 +428,6 @@
     registry.setClaims(INPUT_CLAIM_OWNER,claims);
   }
 
-  function clearTouchButtons(keepIds = null) {
-    let released=false; // Used to restore canonical action-bar state only when the ruin actually gives one or more touch slots back.
-    for (const id of TOUCH_BUTTON_IDS) {
-      if(keepIds?.has?.(id))continue;
-      const button = document.getElementById(id);
-      if (!button?.dataset?.devRuinOwned) continue;
-      delete button.dataset.devRuinOwned;
-      delete button.dataset.devRuinRow;
-      released=true;
-    }
-    if(released)deps?.refreshActionBar?.(); // Rebuilds Shoot/Ammo/weapon/item actions after a contextual ruin prompt stops owning that physical button.
-    return released;
-  }
-
-  function syncTouchButtons(rows, device) {
-    const desiredIds=new Set(device==='touch'
-      ? rows.filter(row=>!row.nativeInput&&row.touchButtonId).map(row=>row.touchButtonId)
-      : []); // Tracks the exact physical buttons still owned this frame so stance changes release Action 1–3 without churning the whole HUD every 80 ms.
-    clearTouchButtons(desiredIds);
-    if (device !== 'touch') return;
-    rows.forEach((row, index) => {
-      if(row.nativeInput || !row.touchButtonId) return; // Rope release stays on the game's permanent Dodge button instead of masquerading as Action 1/2/3.
-      const button = document.getElementById(row.touchButtonId);
-      if (!button) return;
-      button.dataset.devRuinOwned = '1';
-      button.dataset.devRuinRow = String(index);
-      button.dataset.action = row.action;
-      button.setAttribute('aria-label', row.label);
-      button.style.display = '';
-      button.disabled = false;
-      button.textContent = row.touchIcon || '✋';
-    });
-  }
 
   function rowSignature(rows) {
     return rows.map(row => [
@@ -511,97 +477,6 @@
     refreshRows(true);
   }
 
-  function keyboardMatches(binding, event) {
-    if (!binding) return false;
-    const parts = String(binding).split('+').map(part => part.trim()).filter(Boolean);
-    const code = parts.pop();
-    const required = new Set(parts);
-    return event.code === code &&
-      !!event.shiftKey === required.has('Shift') &&
-      !!event.ctrlKey === required.has('Control') &&
-      !!event.altKey === required.has('Alt') &&
-      !!event.metaKey === required.has('Meta');
-  }
-
-  window.addEventListener('keydown', event => {
-    if (!inRuin() || !lastRows.length) return;
-    const row = lastRows.find(entry => !entry.nativeInput && keyboardMatches(bindingFor(entry.inputAction, 'desktop'), event));
-    if (!row) return;
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    if(event.repeat)return;
-    if(window.WorldActionInputClaims?.dispatch?.(row.inputAction,'press',{source:'keyboard'}))return;
-    try {
-      if (typeof row.onHoldStart === 'function') row.onHoldStart();
-      else row.onPress?.();
-    } catch (error) { console.warn('[Random Test Ruin interactions] action failed', error); }
-  }, true);
-
-  window.addEventListener('keyup', event => {
-    if (!inRuin() || !lastRows.length) return;
-    const row = lastRows.find(entry => !entry.nativeInput && keyboardMatches(bindingFor(entry.inputAction, 'desktop'), event));
-    if (!row) return;
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    if(window.WorldActionInputClaims?.dispatch?.(row.inputAction,'release',{source:'keyboard'}))return;
-    try { row.onHoldEnd?.(); } catch (error) { console.warn('[Random Test Ruin interactions] hold release failed', error); }
-  }, true);
-
-  function controllerBindingDown(binding) {
-    if (!binding) return false;
-    return !!window.ControllerInput?.frame?.()?.isDown?.(binding); // Shared per-frame snapshot; ControllerInput is the only gamepad polling authority.
-  }
-
-  function pollController() {
-    if (!inRuin()) { controllerDown.clear(); return; }
-    if(window.WorldActionInputClaims)return; // Normal game controller dispatch now routes claimed inputs through the shared registry, preventing a second interaction fire from this legacy fallback poller.
-    for (const row of lastRows) {
-      if(row.nativeInput)continue; // Fixed contextual inputs (Dodge) remain owned by game.js and are only advertised here.
-      const binding = bindingFor(row.inputAction, 'controller');
-      const down = controllerBindingDown(binding);
-      const wasDown = controllerDown.get(row.inputAction) === true;
-      if (down && !wasDown) {
-        try {
-          if (typeof row.onHoldStart === 'function') row.onHoldStart();
-          else row.onPress?.();
-        } catch (error) { console.warn('[Random Test Ruin interactions] controller action failed', error); }
-      } else if (!down && wasDown && typeof row.onHoldEnd === 'function') {
-        try { row.onHoldEnd(); } catch (error) { console.warn('[Random Test Ruin interactions] controller hold release failed', error); }
-      }
-      controllerDown.set(row.inputAction, down);
-    }
-  }
-
-  document.addEventListener('pointerdown', event => {
-    const button = event.target?.closest?.('[data-dev-ruin-owned="1"]');
-    if (!button || !inRuin()) return;
-    const index = Number(button.dataset.devRuinRow);
-    const row = Number.isInteger(index) ? lastRows[index] : null;
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    if(!row)return;
-    if(window.WorldActionInputClaims?.dispatch?.(row.inputAction,'press',{source:'touch'}))return;
-    if (typeof row.onHoldStart === 'function') {
-      try { row.onHoldStart(); } catch (error) { console.warn('[Random Test Ruin interactions] touch hold failed', error); }
-    }
-  }, true);
-
-  function finishTouchRow(event) {
-    const button = event.target?.closest?.('[data-dev-ruin-owned="1"]');
-    if (!button || !inRuin()) return;
-    const index = Number(button.dataset.devRuinRow);
-    const row = Number.isInteger(index) ? lastRows[index] : null;
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    if(!row)return;
-    if(window.WorldActionInputClaims?.dispatch?.(row.inputAction,'release',{source:'touch'}))return;
-    try {
-      if (typeof row.onHoldEnd === 'function') row.onHoldEnd();
-      else row.onPress?.();
-    } catch (error) { console.warn('[Random Test Ruin interactions] touch action failed', error); }
-  }
-  document.addEventListener('pointerup', finishTouchRow, true);
-  document.addEventListener('pointercancel', finishTouchRow, true);
 
   let lastInteractionListAt=-Infinity; // Proximity/floating-prompt discovery is UI work, not physics; keep controller edge polling per-frame but rebuild rows at 12.5 Hz.
   DS.addBeforeRenderClient(() => {
@@ -610,7 +485,6 @@
       lastInteractionListAt=now;
       renderWorldList(now);
     }
-    pollController();
   });
 
   window.DevRandomRuinInteractions = Object.freeze({
