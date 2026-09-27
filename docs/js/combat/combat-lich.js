@@ -16,6 +16,9 @@
   const ENTRANCED_FAST_RECOVERY_PER_S = 12; // Standing still or obeying the command clears Entranced Health quickly.
   const ENTRANCED_BASE_RECOVERY_PER_S = 3; // Sideways/neutral movement still recovers, but much more slowly.
   const ENTRANCED_WRONG_MOVE_DAMAGE_PER_TILE = 3.6; // One-fifth of the original movement conversion: wrong-way travel consumes/damages 3.6 Entranced Health per tile instead of 18.
+  const ENTRANCED_COMMAND_ANNOUNCE_MS = 750; // New commands first show "<enemy> commands you to ..." before the numeric grace countdown.
+  const ENTRANCED_COMMAND_COUNTDOWN_MS = 3000; // Three one-second 3→2→1 beats during which Entranced neither damages nor naturally recovers.
+  const ENTRANCED_COMMAND_GRACE_MS = ENTRANCED_COMMAND_ANNOUNCE_MS + ENTRANCED_COMMAND_COUNTDOWN_MS; // Full immunity/freeze interval around every initial or changed command.
   const PUDDLE_RADIUS_TILES = 0.82; // Kanthic misses make a gameplay hazard this far from the visual puddle center.
   const PUDDLE_LIFETIME_S = 9; // Short arena-readable lifetime before gasoline fades/disposes.
   const PUDDLE_TICK_S = 0.35; // Entranced buildup cadence while an actor remains inside gasoline.
@@ -34,6 +37,11 @@
   const HOVER_HEIGHT_MIN_WORLD = 0.44; // Minimum world-space lift keeps even short skeleton variants clearly airborne.
   const HOVER_BOB_MODEL_FRACTION = 0.045; // Small model-relative vertical oscillation prevents the airborne body from reading as rigidly translated.
   const HOVER_BOB_PERIOD_S = 2.6; // Slow float cadence kept separate from the faster dangling-leg sway.
+  const TOTHAL_WIND_RANGE_TILES = 5.5; // Strong local wind BGS radius follows each slow Blizzard orb rather than globally replacing arena ambience.
+  const TOTHAL_WIND_VOLUME = 0.78; // Explicitly much stronger than ordinary weather wind while still respecting the shared game-audio transport.
+  const HRONAL_ERUPTION_RADIUS_TILES = 1.35 / 3; // Exactly one third of Grehlr Burrow's authored minimum 1.35-tile telegraph/hit radius.
+  const HRONAL_STONE_PARTICLES_PER_S = 58; // Violent continuous stone spray along the contracting warning ring.
+  const HRONAL_LAVA_VISUAL_S = 0.62; // Short lava flare remains after damage resolution so the eruption reads clearly.
   const TYPE_ORDER = Object.freeze(['tothal', 'hronal', 'kanthic']); // Stable order used by the dev-spawner buttons and diagnostics.
   const HUE_VARIANTS = Object.freeze(['pure', 'muted', 'dusty', 'dark_muted']); // Existing authored dye variants combined with each tradition's hue families.
 
@@ -43,9 +51,9 @@
       hues: Object.freeze(['green_blue', 'blue', 'blue_indigo']),
       castCooldownS: 2.45, preferredMinTiles: 4.25, preferredMaxTiles: 7,
       projectile: Object.freeze({
-        speedPxS: 670, gravityWorldS2: 0, maxAgeS: 2.2, radiusWorld: 0.16,
+        speedPxS: 96, gravityWorldS2: 0, maxAgeS: 8.5, radiusWorld: 0.22,
         damage: 5, knockbackPxS: 930, footingDamageMultiplier: 5.2,
-        frostbittenFooting: 42,
+        frostbittenStamina: 42, homingBlendPerS: 3.2, wiggleWorld: 0.12,
       }),
     }),
     hronal: Object.freeze({
@@ -53,9 +61,8 @@
       hues: Object.freeze(['red', 'red_orange', 'orange', 'yellow_orange', 'yellow']),
       castCooldownS: 2.65, preferredMinTiles: 3.6, preferredMaxTiles: 6.5,
       projectile: Object.freeze({
-        speedPxS: 610, gravityWorldS2: 5.5, maxAgeS: 2.7, radiusWorld: 0.15,
-        damage: 9, knockbackPxS: 250, footingDamageMultiplier: 0.7,
-        burningHealth: 17, shatteredStamina: 14,
+        eruptionRadiusTiles: HRONAL_ERUPTION_RADIUS_TILES,
+        burningHealth: 17,
       }),
     }),
     kanthic: Object.freeze({
@@ -72,8 +79,12 @@
   });
 
   let deps = null; // BanditCombat's injected gameplay dependencies captured by the init wrapper and used by all lich simulation.
-  const projectiles = new Set(); // Live custom spell projectiles updated from the normal RangedWeapons gameplay tick.
+  const projectiles = new Set(); // Live Tothal/Kanthic spell projectiles updated from the normal RangedWeapons gameplay tick.
   const puddles = new Set(); // Live Kanthic gasoline hazards updated/disposed alongside custom projectiles.
+  const eruptions = new Set(); // Independent Hronal Erupting Earth warnings may overlap while the lich continues casting at normal cadence.
+  let hronalStoneGeometry = null; // Shared Grehlr-style tetrahedral stone clod geometry for every active earth warning.
+  let hronalStoneMaterial = null; // Shared town-cliff-textured material avoids per-particle material allocation.
+  let hronalStoneTextureLoadStarted = false; // Ensures carved_smooth.png is shade-filled/loaded only once for all Hronal attacks.
   let lastEvent = 'idle'; // Mobile-copyable diagnostic summary exposed through __lichDebug.
   let totalSummons = 0; // Session counter used only by diagnostics.
   let totalPuddles = 0; // Session counter used only by diagnostics.
