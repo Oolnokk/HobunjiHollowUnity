@@ -5225,7 +5225,15 @@
       }
 
       function currentPlayerMeleeAimDirection() {
-        const perspectiveDirection = currentPlayerPerspectiveDirection(); // Every melee attack aims from the player toward the one finite point directly beneath the reticle, in every camera mode.
+        const combatCenter = window.RangedWeapons?.actorHitbox?.(player)?.center; // Reuse the same body-volume center that melee collision tests from.
+        const meleeOrigin = [combatCenter?.x, combatCenter?.y, combatCenter?.z].every(Number.isFinite)
+          ? { x: combatCenter.x, y: combatCenter.y, z: combatCenter.z }
+          : {
+              x: (Number(player.x) || 0) / TILE,
+              y: (Number(playerMesh?.position?.y) || _playerGroundY()) + 0.55,
+              z: (Number(player.y) || 0) / TILE,
+            }; // Stable body-center fallback before the portrait hitbox is mounted.
+        const perspectiveDirection = currentPlayerPerspectiveDirection(meleeOrigin); // Every melee attack aims from its actual body/collider origin to the finite point directly beneath the reticle.
         if (perspectiveDirection) return perspectiveDirection;
         const cameraRay = currentPlayerInteractionRay() || currentPlayerAimRay();
         if (cameraRay?.direction) return { ...cameraRay.direction }; // Compatibility fallback still follows the reticle ray; focused-hostile auto-aim must never replace melee aim authority.
