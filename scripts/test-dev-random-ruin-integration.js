@@ -45,7 +45,7 @@ const loadOrder = [
 ].map(name => camera.indexOf(name));
 assert(/localStorage\.getItem\('hobunjiDevMode'\) === '1'/.test(camera) && /if \(!devMode/.test(camera), 'ruin runtime must only be injected in Dev Mode');
 assert(camera.includes('dev-random-ruin-interactions.js?v=20260926ropedodge1'), 'ruin interaction adapter must be cache-busted in the dev bootstrap');
-assert(camera.includes('dev-random-ruin-simple-puzzles.js?v=20260927modules8'), 'simple puzzle runtime must be cache-busted in the dev bootstrap');
+assert(camera.includes('dev-random-ruin-simple-puzzles.js?v=20260927ropeprompt1'), 'simple puzzle runtime must be cache-busted in the dev bootstrap');
 assert(camera.includes('dev-random-ruin-wall-render-proxy.js?v=20260926glyphdecal1'), 'glyph decal proxy fix must be cache-busted in the dev bootstrap');
 assert(gameIndex.includes('js/dev-random-ruin-bootstrap.js?v=20260927plateclear1'), 'game page must load the updated ruin bootstrap');
 assert(gameIndex.includes('game.js?v=20260927ruinsurface1'), 'game page must cache-bust the native Dodge rope release seam');
@@ -72,7 +72,7 @@ assert(interior.includes('spritePngSurface.makeMaterial(THREE,source.map||null')
 assert(interior.includes('remainingLitMaterials'), 'material diagnostics must explicitly count any lit material that escapes normalization');
 assert((cloudFog.match(/map_i_dev_random_ruin/g)||[]).length>=2, 'Random Test Ruin must opt into the shared den no-sky and den darkness/lantern classifications');
 assert(gameIndex.includes('js/cloud-forest-fog.js?v=20260926devruindark2'), 'test-ruin darkness override must be cache-busted in the game page');
-assert(camera.includes('dev-random-ruin-interior-map.js?v=20260927modulesignal1'), 'test-ruin mechanism animation changes must be cache-busted in the dev bootstrap');
+assert(camera.includes('dev-random-ruin-interior-map.js?v=20260927transitdoor1'), 'test-ruin mechanism animation changes must be cache-busted in the dev bootstrap');
 assert(interior.includes('Solvability.audit'), 'candidate ruins must run the pre-entry solvability audit');
 assert(interior.includes('MAX_SOLVABILITY_ATTEMPTS = 6'), 'unsolvable candidates must have a bounded deterministic retry budget');
 assert(interior.includes('getLastSolvabilityAudit'), 'rejected seed diagnostics must remain inspectable without devtools');
@@ -87,6 +87,8 @@ assert(solvability.includes('unsolvedMechanisms'), 'solvability audit must rejec
 assert(interior.includes('linkedSignal?.userData?.solveProgress'), 'projectile glyph solveProgress must drive linked door/platform animation progress');
 assert(interior.includes("id:'devruin-physical-door-'+m.id"), 'stone doors must have a precise physical blocker while visually closed');
 assert(interior.includes("kind:'stoneDoor'") && interior.includes("'Open Stone Door'"), 'ungated stone doors must expose the standard ruin interaction list action');
+assert(interior.includes("kind:'transitDoor'") && interior.includes("'Open Hallway Door'"), 'plain hallway exit doors must use the same WorldPopupText interaction-list path as other world objects');
+assert(interior.includes('__devRuinTransitDoorState') && interior.includes('updateTransitDoors(dt)'), 'transit doors must own explicit closed/open runtime state so collision matches their visible panel');
 assert(interior.includes('m.manualFallback=true') && interior.includes("'Raise Stone Platform'"), 'moving daises must retain a manual traversal fallback even when a glyph also exists');
 assert(solvability.includes('manual lift fallback reachable'), 'pre-entry audit must understand the simple-mode lift fallback');
 assert(!debrisBootstrap.includes('runtimePuzzleBypass?1:'), 'disabled V50 puzzle families must leave mechanisms manual/closed rather than silently auto-solving them');
@@ -124,6 +126,8 @@ assert(interior.includes("DevRandomRuinSimplePuzzles?.ownsPlayerMotion?.()"), 'r
 assert(simplePuzzles.includes("anchorY=ceilingBase+wallHeight-.035"), 'rope anchors must use the authored room ceiling datum instead of floating at a derived mid-room height');
 assert(simplePuzzles.includes("dev_ruin_swing_rope_ceiling_mount_"), 'rope traversal must render an explicit ceiling attachment');
 assert(simplePuzzles.includes("inputAction:'dodge'") && simplePuzzles.includes("nativeInput:true"), 'rope jump-off prompt must advertise the canonical Dodge input without stealing an action slot');
+assert(simplePuzzles.includes("label:'Grab Rope'") && simplePuzzles.includes("point:candidate.grabPoint"), 'idle ropes must expose the normal floating WorldPopupText interaction instead of relying on invisible auto-grab proximity');
+assert(!simplePuzzles.includes("dev_ruin_rope_hazard_"), 'rope fall/burn zones must remain logical hazards and never render as red debug slabs near the ceiling');
 assert(simplePuzzles.includes("recordModulePlacement('projectileHallwayTrap'"), 'hallway traps must be represented as reusable module placements');
 assert(simplePuzzles.includes("recordModulePlacement('chordPressurePlates'"), 'musical pressure plates must be reusable in hallway or room slots');
 assert(simplePuzzles.includes("recordModulePlacement('stoneCanopy'"), 'stone canopies must exist as independent modules instead of rope-only geometry');
@@ -202,7 +206,7 @@ assert(occupancy.includes('doorIsClosed'), 'door collision must use logical open
 assert(occupancy.includes('nearestFloorAnchor'), 'mechanism diagnostics must use compact logical anchor tiles');
 assert(interior.includes('transitDoors:ruin.transitDoors'), 'transit doors must join the shared tile occupancy snapshot');
 assert(interior.includes('motion === \'elevatorPushBlock\''), 'elevator push blocks must join dynamic tile occupancy');
-assert(interior.includes('if (d.elevatorWellSocket) furnitureBlockers.push(object);'), 'elevator sockets must be rasterized into static tile occupancy');
+assert(!interior.includes('if (d.elevatorWellSocket) furnitureBlockers.push(object);'), 'low elevator-well rims must not become full-height 2D blockers that prevent stepping onto moving platforms');
 assert(renderProxy.includes("data.previewMotion?.type === 'stoneDoor'"), 'parent-realm render bridge must discover stone-door meshes');
 assert(renderProxy.includes("add(mesh, 'doorArch', object)"), 'parent-realm render bridge must include complete stone arch frames');
 assert(renderProxy.includes('normalizeDoorAssemblies'), 'door panels must be aligned to their matching arch and floor');
