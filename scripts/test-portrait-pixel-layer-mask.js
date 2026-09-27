@@ -62,7 +62,7 @@ assert(ruggedMaskAlpha.selected > 0, 'rugged shoulder mask must contain selected
 assert(ruggedMaskAlpha.selected < ruggedMaskAlpha.total, 'rugged shoulder mask must not select the entire sprite rectangle');
 
 assert(hub.includes('data-target="portrait-pixel-layer-mask"'), 'Tool Hub must expose the pixel-layer authoring tab');
-assert(hub.includes('portrait-pixel-layer-mask/index.html?v=20260927pixellayer7'), 'Tool Hub must embed the current pixel-layer author');
+assert(hub.includes('portrait-pixel-layer-mask/index.html?v=20260927pixellayer8'), 'Tool Hub must embed the current pixel-layer author');
 assert(tool.includes('Paint exact source pixels'), 'author must describe pixel-exact mask editing');
 assert(tool.includes('pointerdown') && tool.includes('pointermove'), 'author must support pointer/touch painting');
 assert(tool.includes('Download mask PNG') && tool.includes('Copy JSON'), 'author must export both the mask and renderer metadata');
@@ -100,10 +100,13 @@ assert(portrait.includes("mask.target === 'aboveHood'"), 'portrait renderer must
 assert(portrait.includes("pixelMaskMode: 'exclude'"), 'ordinary layer draw must exclude rerouted mask pixels');
 assert(portrait.includes("pixelMaskMode: 'include'"), 'rerouted stage draw must include only selected mask pixels');
 assert(portrait.includes('resolvePixelMaskedImage'), 'portrait renderer must build masked source canvases after normal sprite preparation');
+assert(portrait.includes('function portraitImageAspect(img)'), 'portrait renderer must compute aspect ratio for both Image and Canvas sources');
+assert(portrait.includes("img?.naturalWidth || img?.width") && portrait.includes("img?.naturalHeight || img?.height"), 'masked temporary canvases must fall back to canvas width/height instead of NaN natural dimensions');
+assert(!portrait.includes('(img.naturalWidth / img.naturalHeight) * PORTRAIT_L'), 'canonical portrait draw paths must not assume Image-only natural dimensions');
 assert(portrait.includes('pixelBelowHood:() => drawPixelStageLayers'), 'rear portrait order must expose a below-hood pixel stage');
 assert(portrait.includes('pixelAboveHood:() => drawPixelStageLayers'), 'rear portrait order must expose an above-hood pixel stage');
 assert(portrait.includes('drawPixelStageLayers(pixelBelowHoodLayers);') && portrait.includes('drawPixelStageLayers(pixelAboveHoodLayers);'), 'front portrait path must draw both pixel stages');
-assert(game.includes('js/portrait-utils.js?v=20260926pixellayer1'), 'game must cache-bust the pixel-layer-aware renderer');
-assert(studio.includes('../../js/portrait-utils.js?v=20260926pixellayer1'), 'Character Studio must cache-bust the pixel-layer-aware renderer');
+assert(game.includes('js/portrait-utils.js?v=20260927pixellayer2'), 'game must cache-bust the canvas-aware pixel-layer renderer');
+assert(studio.includes('../../js/portrait-utils.js?v=20260927pixellayer2'), 'Character Studio must cache-bust the canvas-aware pixel-layer renderer');
 
 console.log('Portrait pixel layer mask author/runtime regression passed.');
