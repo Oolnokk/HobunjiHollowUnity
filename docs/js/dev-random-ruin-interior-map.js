@@ -296,6 +296,8 @@
       await wait(25);
     }
     const child = frame.contentWindow;
+    const lateApi = child?.DebrisifierV50; // Used to close the deadline race where V50 becomes ready during the final polling await but before timeout diagnostics are captured.
+    if (lateApi?.sourceSha256 === SOURCE_SHA) return (generatorApi = lateApi);
     const scripts = [...(frame.contentDocument?.scripts || [])].map(script => script.src || '[inline]').slice(-12);
     const diagnostics = {
       readyState:frame.contentDocument?.readyState || null,
