@@ -46,7 +46,7 @@ let baseAlignment = {
 let nativeUpdateCalls = 0;
 let nativeUpdateSawX = null;
 let lastProfileResistance = null; // Captures the effective upward-gravity resistance supplied by the camera-authored lunge wrapper.
-let lastProfileAirAssist = false; // Captures the footprint-based low-angle airborne assist bit passed into the shared lunge profile.
+let lastProfileAirAssist = false; // Captures the pitch-only airborne assist bit passed into the shared lunge profile.
 let perspectivePointY = 0.55; // Mutable shared aim height lets this regression exercise an elevated target without changing camera yaw.
 
 const perspectiveTarget = () => ({
@@ -105,7 +105,7 @@ const windowStub = {
     meleeLungeProfile(distancePx, pitch, hopUnits, lungeHeightUnits, pitchDistanceResistance, directFlightStrength, inRangeAirAssist) {
       lastProfileResistance = pitchDistanceResistance; // Real Combat uses 1 as "remove the upward gravity/pitch distance loss."
       lastProfileAirAssist = !!inRangeAirAssist;
-      const assistedHop = inRangeAirAssist && pitch > 0 ? Math.sin(pitch) : 0; // Minimal stand-in for combat-core's real model-scaled assisted leap.
+      const assistedHop = inRangeAirAssist && pitch >= 0 ? Math.max(0.06, Math.sin(pitch)) : 0; // Minimal stand-in for combat-core's forward/upward airborne floor.
       return { distancePx, pitch, hopUnits: Math.max(hopUnits, assistedHop), lungeHeightUnits, pitchDistanceResistance, directFlightStrength, inRangeAirAssist };
     },
     meleeColliderVolume(attacker, opts) {
@@ -164,13 +164,12 @@ baseAlignment = { ...baseAlignment, screenCorrectionRad: 0, deltaRad: 0 };
 step = windowStub.Combat.attackAlignmentStep(player, target, 0, { facing: 0 });
 assert.equal(step.eligible, false, 'pure vertical miss is not ranked as a fake zero-error autotarget');
 
-// A hovering hostile is horizontally inside this 1-tile swing, but its Box3
-// starts far above the ordinary low-angle melee prism. The assist must use
-// horizontal attack footprint, not require the target to be vertically hittable first.
-perspectivePointY = 2.35; // ~10.2° upward from the player's 0.55 origin: below the normal 12° leap threshold.
+// Grounding is now determined only by pitch: forward/upward aim can leave the
+// ground regardless of whether an enemy is already horizontally inside the attack.
+perspectivePointY = 2.35; // ~10.2° upward from the player's 0.55 origin: below the old 12° leap threshold.
 targetBox = {
-  min: { x: 0.55, y: 1.55, z: -0.15 },
-  max: { x: 0.75, y: 2.25, z: 0.15 },
+  min: { x: 5.55, y: 1.55, z: -0.15 },
+  max: { x: 5.75, y: 2.25, z: 0.15 },
 };
 player.x = 0;
 player.y = 0;
@@ -179,15 +178,32 @@ lastProfileResistance = null;
 lastProfileAirAssist = false;
 deps.beginCombatLunge(128, 0.4, 0, { rangePx: 64, halfConeRad: 0.25, pitchDistanceResistance: 0 });
 assert.equal(lastProfileResistance, 1,
-  'hovering enemy inside the attack horizontal footprint forces full resistance so gravity cannot shorten the lunge');
+  'any upward aim forces full pitch resistance so gravity cannot pin the lunge to the ground');
 assert.equal(lastProfileAirAssist, true,
-  'hovering enemy need not already intersect the pitched 3D volume to enable low-angle airborne assist');
+  'upward aim enables airborne assist without checking enemy range, ledges, or branches');
 assert(player.lungeHopUnits > 0,
-  'sub-threshold upward aim must actually leave the ground when an elevated enemy is horizontally within attack range');
-assert.equal(windowStub.HobunjiCombatCameraAlignment.debugSnapshot().lastLunge.gravityBypassedForInRangeEnemy, true,
-  'debug state exposes the in-range gravity bypass for elevated-target troubleshooting');
+  'sub-threshold upward aim must actually leave the ground');
+assert.equal(windowStub.HobunjiCombatCameraAlignment.debugSnapshot().lastLunge.gravityBypassedForForwardOrUpwardAim, true,
+  'debug state exposes the forward/upward pitch grounding bypass');
 assert.equal(windowStub.HobunjiCombatCameraAlignment.debugSnapshot().lastLunge.inRangeAirAssist, true,
-  'debug state exposes the low-angle airborne assist separately from ordinary authored leap behavior');
+  'debug state exposes the shared airborne-assist flag');
+
+player.lunging = false;
+lastProfileResistance = null;
+lastProfileAirAssist = false;
+perspectivePointY = 0.55; // Exactly forward.
+deps.beginCombatLunge(128, 0.4, 0, { rangePx: 64, halfConeRad: 0.25, pitchDistanceResistance: 0 });
+assert.equal(lastProfileResistance, 1, 'exactly forward aim is not considered downward/grounded');
+assert.equal(lastProfileAirAssist, true, 'exactly forward aim keeps airborne assist enabled');
+assert(player.lungeHopUnits > 0, 'forward aim receives the small minimum lift instead of staying glued to the ground');
+
+player.lunging = false;
+lastProfileResistance = null;
+lastProfileAirAssist = true;
+perspectivePointY = 0.15; // Below the player's forward origin.
+deps.beginCombatLunge(128, 0.4, 0, { rangePx: 64, halfConeRad: 0.25, pitchDistanceResistance: 0 });
+assert.equal(lastProfileResistance, 0, 'below-forward aim preserves ordinary grounded gravity behavior');
+assert.equal(lastProfileAirAssist, false, 'only below-forward pitch disables airborne assist');
 player.lunging = false;
 player.lungeHitTest = null;
 perspectivePointY = 0.55;
