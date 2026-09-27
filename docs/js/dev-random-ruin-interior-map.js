@@ -402,7 +402,7 @@
   }
 
   function discoverRuntimeObjects() {
-    ruin.mechanisms = new Map(); ruin.controls = []; ruin.activators = []; ruin.pushBlocks = []; ruin.transitDoors = [];
+    ruin.mechanisms = new Map(); ruin.controls = []; ruin.activators = []; ruin.pushBlocks = []; ruin.transitDoors = []; ruin.transitDoorStates = [];
     const walls = []; // V50 wall meshes become boundary tiles instead of broad object AABBs.
     const furnitureBlockers = []; // Solid authored objects are rasterized child-mesh by child-mesh.
     ruin.localeRoot.traverse(object => {
@@ -421,13 +421,49 @@
       if (d.pushable && (motion === 'pushPuzzleBlock' || motion === 'elevatorPushBlock')) ruin.pushBlocks.push(object);
       if (d.transitDoor) ruin.transitDoors.push(object);
       if (d.ruinInteriorWall) walls.push(object);
-      if (d.elevatorWellSocket) furnitureBlockers.push(object);
+      // Elevator-well sockets are low rims + below-floor shaft walls. Treating them as ordinary 2D furniture blockers made otherwise-walkable moving daises inaccessible from the surrounding floor.
       if (/ceiling support pillar|doorway flank pillar|sunken centerpiece|wall display artifice/i.test(String(d.interiorRuinRole||''))) furnitureBlockers.push(object);
     });
     for (const m of ruin.mechanisms.values()) {
       if (m.type === 'bridge' || m.type === 'bridgeSequence') registerSurface(`devruin-mech-${m.id}`,m.root,10);
       else if (m.type === 'movingDais') registerSurface(`devruin-mech-${m.id}`,m.root.userData.movingDaisPlatform||m.root,12);
       else if (m.type === 'collapsingStairs') for (const tread of (m.root.userData.stairTreads||[])) registerSurface(`devruin-stair-${m.id}-${tread.id}`,tread,12);
+    }
+
+    for(const door of ruin.transitDoors){
+      const panel=(door.children||[]).find(child=>child?.isMesh&&child.geometry)||door; // Hallway transit doors are authored as a fixed root plus one retracting stone panel.
+      panel.geometry?.computeBoundingBox?.();
+      const panelHeight=Math.max(.6,Math.abs((panel.geometry?.boundingBox?.max?.y||.95)-(panel.geometry?.boundingBox?.min?.y||-.95))*(Math.abs(Number(panel.scale?.y))||1));
+      const state={
+        door,panel,open:0,target:0,closedY:Number(panel.position?.y)||0,openY:(Number(panel.position?.y)||0)+panelHeight+.12,
+        crossingAxis:null,openingSide:0,openedAt:0,
+      }; // Runtime state makes the authored interact-to-open door authoritative for both animation and occupancy.
+      door.userData.__devRuinTransitDoorState=state;
+      door.userData.interactive3D=true;
+      door.userData.devRuinInteractionType='transitDoor';
+      const box=boxFor(panel),size=box?.getSize?.(new THREE.Vector3())||new THREE.Vector3(1,1,1);
+      state.crossingAxis=size.x<=size.z?'x':'z'; // Thin world axis is the direction a player crosses through the doorway.
+      ruin.transitDoorStates.push(state);
+      DS.registerBlocker({
+        id:'devruin-transit-door-'+door.id,
+        scope:SCOPE,
+        bounds:()=>boundsFor(panel),
+        enabled:()=>state.open<.78,
+        purpose:'hallway_transit_door',
+      });
+      ruin.controls.push({
+        kind:'transitDoor',object:door,promptRoot:door,range:1.9,touchIcon:'✋',priority:24,
+        label:()=>state.target>.5?'Close Hallway Door':'Open Hallway Door',
+        onPress:()=>{
+          const opening=state.target<=.5;
+          state.target=opening?1:0;
+          if(opening){
+            const p={x:deps.player.x/deps.TILE,z:deps.player.y/deps.TILE},center=centerFor(door),axis=state.crossingAxis;
+            state.openingSide=Math.sign((axis==='x'?p.x-center.x:p.z-center.z))||1;
+            state.openedAt=performance.now();
+          }
+        },
+      });
     }
 
     const linkedMechanismIds=new Set(ruin.activators.map(object=>String(object.userData?.linkedMechanismId||'')).filter(Boolean)); // Distinguishes puzzle-gated mechanisms from simplified manual doors/lifts.
@@ -806,6 +842,23 @@
     if(info.support)syncRuinPresentationHeight(ny);
   }
 
+  function updateTransitDoors(dt){
+    const player=deps?.player&&deps?.TILE?{x:deps.player.x/deps.TILE,z:deps.player.y/deps.TILE}:null;
+    for(const state of ruin.transitDoorStates||[]){
+      state.open+=clamp(state.target-state.open,-dt*2.4,dt*2.4);
+      if(Math.abs(state.open-state.target)<.001)state.open=state.target;
+      const eased=state.open*state.open*(3-2*state.open);
+      state.panel.position.y=state.closedY+(state.openY-state.closedY)*eased;
+      if(state.target>.5&&state.open>.9&&player&&state.openingSide){
+        const center=centerFor(state.door),signed=(state.crossingAxis==='x'?player.x-center.x:player.z-center.z);
+        if(Math.sign(signed)===-state.openingSide&&Math.abs(signed)>.48){
+          state.target=0; // Authored transit behavior: once the player has crossed the threshold, the plain hallway door retracts back closed behind them.
+          state.openingSide=0;
+        }
+      }
+    }
+  }
+
   function updateMechanisms(dt){
     ruin.api.syncPressurePlates(ruin.localeRoot);
     ruin.api.tickRuntime(dt);
@@ -830,7 +883,7 @@
     }
     if(ruin.occupancy?.refresh())updateBadge();
   }
-  DS.addBeforeRenderClient(()=>{if(!ruin)return;if(deps.getCurrentArea?.()!==MAP_ID)return;const now=performance.now(),dt=clamp((now-frameLastMs)/1000,0,.05);frameLastMs=now;updateMechanisms(dt);reconcilePlayer(now);});
+  DS.addBeforeRenderClient(()=>{if(!ruin)return;if(deps.getCurrentArea?.()!==MAP_ID)return;const now=performance.now(),dt=clamp((now-frameLastMs)/1000,0,.05);frameLastMs=now;updateTransitDoors(dt);updateMechanisms(dt);reconcilePlayer(now);});
 
   function updateBadge(){
     if(!ruin)return;
@@ -872,5 +925,5 @@
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',installSettingsButton,{once:true});else installSettingsButton();
 
-  window.DevRandomRuin=Object.freeze({generate,reroll:()=>generate(randomSeed()),clear:()=>{if(deps?.getCurrentArea?.()===MAP_ID)leaveRuin();else clearRuntime(true);},leave:leaveRuin,getInteractionControls:()=>ruin?ruin.controls.map(control=>({...control,range:Number.isFinite(Number(control.range))?Number(control.range):CONTROL_RANGE})):[],getRuntimeContext:()=>ruin?{scene:ruin.scene,root:ruin.localeRoot,meta:ruin.meta,spawn:{...ruin.spawn},cols:ruin.cols,rows:ruin.rows,seed:ruin.seed,puzzleOptions:{...ruin.puzzleOptions}}:null,getPuzzleGenerationOptions:()=>readPuzzleGenerationOptions(),setPuzzleGenerationOptions:options=>savePuzzleGenerationOptions(options),getOccupancySnapshot:()=>ruin?.occupancy?.snapshot?.()||null,getLastSolvabilityAudit:()=>lastGenerationAudit?JSON.parse(JSON.stringify(lastGenerationAudit)):null,getDarknessSettings,setPlayerWorldPoint,getPlayerSupportY,setMechanismTarget,syncPlayerPresentationHeight:syncRuinPresentationHeight,getState:()=>ruin?{mapId:MAP_ID,seed:ruin.seed,requestedSeed:ruin.requestedSeed,sourceSeed:ruin.sourceSeed,tileScale:RUIN_TILE_SCALE,wallStyle:ruin.wallStyle||null,darkness:getDarknessSettings(),materialStats:{cliffMeshes:ruin.denMaterialMeshCount||0,converted:ruin.unlitConvertedMaterialCount||0,remainingLit:ruin.remainingLitMaterialCount||0,legacyStone:ruin.legacyStoneMaterialCount||0,totalMeshes:ruin.totalRuinMeshCount||0,ceilingCells:ruin.ceilingCellCount||0,ceilingY:ruin.ceilingY??null,ceilingTextured:!!(Array.isArray(ruin.ceilingMesh?.material)?ruin.ceilingMesh.material:ruin.ceilingMesh?.material)?.map,ceilingNaturalSurface:(Array.isArray(ruin.ceilingMesh?.material)?ruin.ceilingMesh.material[0]:ruin.ceilingMesh?.material)?.userData?.naturalSurface||null},rooms:ruin.meta.rooms?.length||0,controls:ruin.controls.length,mechanisms:[...ruin.mechanisms.values()].map(m=>({id:m.id,type:m.type,progress:m.progress,target:m.target})),puzzleOptions:ruin.puzzleOptions,puzzleGeneration:ruin.puzzleGeneration,solvability:ruin.solvability,generationAttempt:ruin.generationAttempt,presentation:presentationSnapshot(),occupancy:ruin.occupancy?.snapshot?.(),dynamic:DS.debugSnapshot()}:null});
+  window.DevRandomRuin=Object.freeze({generate,reroll:()=>generate(randomSeed()),clear:()=>{if(deps?.getCurrentArea?.()===MAP_ID)leaveRuin();else clearRuntime(true);},leave:leaveRuin,getInteractionControls:()=>ruin?ruin.controls.map(control=>({...control,range:Number.isFinite(Number(control.range))?Number(control.range):CONTROL_RANGE})):[],getRuntimeContext:()=>ruin?{scene:ruin.scene,root:ruin.localeRoot,meta:ruin.meta,spawn:{...ruin.spawn},cols:ruin.cols,rows:ruin.rows,seed:ruin.seed,puzzleOptions:{...ruin.puzzleOptions}}:null,getPuzzleGenerationOptions:()=>readPuzzleGenerationOptions(),setPuzzleGenerationOptions:options=>savePuzzleGenerationOptions(options),getOccupancySnapshot:()=>ruin?.occupancy?.snapshot?.()||null,getLastSolvabilityAudit:()=>lastGenerationAudit?JSON.parse(JSON.stringify(lastGenerationAudit)):null,getDarknessSettings,setPlayerWorldPoint,getPlayerSupportY,setMechanismTarget,syncPlayerPresentationHeight:syncRuinPresentationHeight,getState:()=>ruin?{mapId:MAP_ID,seed:ruin.seed,requestedSeed:ruin.requestedSeed,sourceSeed:ruin.sourceSeed,tileScale:RUIN_TILE_SCALE,wallStyle:ruin.wallStyle||null,darkness:getDarknessSettings(),materialStats:{cliffMeshes:ruin.denMaterialMeshCount||0,converted:ruin.unlitConvertedMaterialCount||0,remainingLit:ruin.remainingLitMaterialCount||0,legacyStone:ruin.legacyStoneMaterialCount||0,totalMeshes:ruin.totalRuinMeshCount||0,ceilingCells:ruin.ceilingCellCount||0,ceilingY:ruin.ceilingY??null,ceilingTextured:!!(Array.isArray(ruin.ceilingMesh?.material)?ruin.ceilingMesh.material:ruin.ceilingMesh?.material)?.map,ceilingNaturalSurface:(Array.isArray(ruin.ceilingMesh?.material)?ruin.ceilingMesh.material[0]:ruin.ceilingMesh?.material)?.userData?.naturalSurface||null},rooms:ruin.meta.rooms?.length||0,controls:ruin.controls.length,mechanisms:[...ruin.mechanisms.values()].map(m=>({id:m.id,type:m.type,progress:m.progress,target:m.target})),transitDoors:(ruin.transitDoorStates||[]).map(state=>({id:state.door?.id||null,open:+state.open.toFixed(3),target:state.target,axis:state.crossingAxis})),puzzleOptions:ruin.puzzleOptions,puzzleGeneration:ruin.puzzleGeneration,solvability:ruin.solvability,generationAttempt:ruin.generationAttempt,presentation:presentationSnapshot(),occupancy:ruin.occupancy?.snapshot?.(),dynamic:DS.debugSnapshot()}:null});
 })();
