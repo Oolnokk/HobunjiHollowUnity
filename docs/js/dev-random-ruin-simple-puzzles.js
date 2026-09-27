@@ -883,7 +883,7 @@
       if(elevator.annexBounds&&elevator.annexDoorway){
         const annexOwner={...room,id:String(room.id)+'-sunken-annex'};
         lowerShell=buildSunkenRoomShell(context,annexOwner,elevator.annexBounds,elevator.annexDoorway,elevator.lowerFloorY);
-        nextDoorMechanismId=nearestGeneratedStoneDoorMechanism(context,{x:elevator.x,z:elevator.z}); // Completion opens the onward/upstairs-side generated door, not preferentially the door beside the entry balcony.
+        nextDoorMechanismId=onwardGeneratedStoneDoorMechanism(context,{x:rope.startPlatform.x,z:rope.startPlatform.z}); // Completion opens the far/upstairs-side generated door rather than accidentally selecting the balcony entrance behind the player.
         if(lowerShell){
           ossuary=buildOssuaryChordComposer(context,rng,annexOwner,{
             roomId:annexOwner.id,
@@ -1023,15 +1023,34 @@
     return module;
   }
 
-  function nearestGeneratedStoneDoorMechanism(context,point) {
-    let best=null;
+  function generatedStoneDoorMechanisms(context) {
+    const doors=[]; // Shared door inventory lets independent glyph gates use nearest-door semantics while compound traversal can deliberately choose an onward door.
     context.root?.traverse?.(object=>{
       if(object?.userData?.previewMotion?.type!=='stoneDoor'||!object.userData?.mechanismId)return;
       object.updateWorldMatrix?.(true,true);
       const box=new THREE.Box3().setFromObject(object);if(box.isEmpty())return;
-      const center=box.getCenter(new THREE.Vector3()),distance=Math.hypot(center.x-point.x,center.z-point.z);
-      if(!best||distance<best.distance)best={id:String(object.userData.mechanismId),distance};
+      const center=box.getCenter(new THREE.Vector3());
+      doors.push({id:String(object.userData.mechanismId),doorwayId:object.userData.doorwayId||null,x:center.x,z:center.z});
     });
+    return doors;
+  }
+
+  function nearestGeneratedStoneDoorMechanism(context,point) {
+    let best=null;
+    for(const door of generatedStoneDoorMechanisms(context)){
+      const distance=Math.hypot(door.x-point.x,door.z-point.z);
+      if(!best||distance<best.distance)best={...door,distance};
+    }
+    return best?.id||null;
+  }
+
+  function onwardGeneratedStoneDoorMechanism(context,startPoint) {
+    let best=null;
+    for(const door of generatedStoneDoorMechanisms(context)){
+      const distance=Math.hypot(door.x-startPoint.x,door.z-startPoint.z);
+      if(distance<1.8)continue; // Never nominate the balcony/entry-side threshold as the reward door when a farther generated door exists.
+      if(!best||distance>best.distance)best={...door,distance};
+    }
     return best?.id||null;
   }
 
