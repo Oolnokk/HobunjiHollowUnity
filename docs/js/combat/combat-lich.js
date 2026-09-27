@@ -42,6 +42,10 @@
   const HRONAL_ERUPTION_RADIUS_TILES = 1.35 / 3; // Exactly one third of Grehlr Burrow's authored minimum 1.35-tile telegraph/hit radius.
   const HRONAL_STONE_PARTICLES_PER_S = 58; // Violent continuous stone spray along the contracting warning ring.
   const HRONAL_LAVA_VISUAL_S = 0.62; // Short lava flare remains after damage resolution so the eruption reads clearly.
+  const WESTERN_SLOPE_SNOW_DEPTH_REFERENCE = 0.22; // Mirrors EnvironmentSurfaceMicroPlateau.SURFACE_DEPTH so Kanthic petroleum can deliberately read as the same raised-surface family.
+  const PETROLEUM_SURFACE_DEPTH = WESTERN_SLOPE_SNOW_DEPTH_REFERENCE / 4; // Requested one-quarter snow height: a very shallow black petroleum skin instead of a tall puddle blob.
+  const PETROLEUM_OPACITY = 0.70; // Requested fixed petroleum surface opacity.
+  const PETROLEUM_TEXTURE_PATH = 'assets/textures/canvas.png'; // Exact canvas texture used by the Western Slope snow surface.
   const TYPE_ORDER = Object.freeze(['tothal', 'hronal', 'kanthic']); // Stable order used by the dev-spawner buttons and diagnostics.
   const HUE_VARIANTS = Object.freeze(['pure', 'muted', 'dusty', 'dark_muted']); // Existing authored dye variants combined with each tradition's hue families.
 
@@ -80,8 +84,11 @@
 
   let deps = null; // BanditCombat's injected gameplay dependencies captured by the init wrapper and used by all lich simulation.
   const projectiles = new Set(); // Live Tothal/Kanthic spell projectiles updated from the normal RangedWeapons gameplay tick.
-  const puddles = new Set(); // Live Kanthic gasoline hazards updated/disposed alongside custom projectiles.
-  const eruptions = new Set(); // Independent Hronal Erupting Earth warnings may overlap while the lich continues casting at normal cadence.
+  const puddles = new Set(); // Live Kanthic petroleum hazards updated/disposed alongside custom projectiles.
+  const eruptions = new Set();
+  let petroleumSurfaceGeometry = null; // Shared low micro-plateau mesh reused by every Kanthic petroleum impact.
+  let petroleumSurfaceMaterial = null; // Shared black 70%-opacity canvas-textured material reused by every petroleum impact.
+  let petroleumTextureLoadStarted = false; // Prevents duplicate canvas.png loads when several puddles exist at once. // Independent Hronal Erupting Earth warnings may overlap while the lich continues casting at normal cadence.
   let hronalStoneGeometry = null; // Shared Grehlr-style tetrahedral stone clod geometry for every active earth warning.
   let hronalStoneMaterial = null; // Shared town-cliff-textured material avoids per-particle material allocation.
   let hronalStoneTextureLoadStarted = false; // Ensures carved_smooth.png is shade-filled/loaded only once for all Hronal attacks.
@@ -757,84 +764,126 @@
     }
   }
 
-  function makeGasolinePuddle(owner, xPx, yPx) {
-    if (!isArena() || !owner?.scene) return null;
-    const group = new THREE.Group(); // Root sits at the exact miss point while overlapping ellipses create an irregular petroleum footprint.
-    group.name = 'kanthic_gasoline_puddle';
-    const dark = new THREE.MeshBasicMaterial({ color: 0x20170d, transparent: true, opacity: 0.58, depthWrite: false, side: THREE.DoubleSide }); // Gasoline body read as wet translucent dark amber on varied arena ground.
-    const amber = new THREE.MeshBasicMaterial({ color: 0x76531d, transparent: true, opacity: 0.22, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }); // Warm reflected oil layer.
-    const violet = new THREE.MeshBasicMaterial({ color: 0x745cff, transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }); // Iridescent thin-film highlight.
-    const lobes = [
-      [0, 0, 0.72, 0.48, dark], [0.28, -0.11, 0.45, 0.31, dark], [-0.31, 0.16, 0.36, 0.28, dark],
-      [0.08, 0.02, 0.63, 0.35, amber], [-0.16, -0.04, 0.46, 0.22, violet],
-    ]; // Local offsets/scales produce a pooled-not-perfect-circle silhouette.
-    for (const [ox, oz, sx, sz, material] of lobes) {
-      const mesh = new THREE.Mesh(new THREE.CircleGeometry(1, 28), material); // Flat lobe shares the puddle lifetime/fade.
-      mesh.rotation.x = -Math.PI / 2;
-      mesh.position.set(ox, 0, oz);
-      mesh.scale.set(sx, sz, 1);
-      mesh.renderOrder = 2;
-      group.add(mesh);
+  function buildPetroleumSurfaceGeometry() {
+    if (petroleumSurfaceGeometry || typeof THREE === 'undefined') return petroleumSurfaceGeometry;
+    const segments = 28; // Similar low-poly surface density to the snow micro-plateau while remaining cheap enough for many overlapping hazards.
+    const topRadius = 0.76; // Flat central cap before the shallow snow-like edge incline returns to ground.
+    const positions = [0, PETROLEUM_SURFACE_DEPTH, 0]; // Center vertex is the highest point, exactly one-quarter Western Slope snow depth.
+    const uvs = [0.5, 0.5];
+    const indices = [];
+    for (let i = 0; i < segments; i++) {
+      const angle = i / segments * Math.PI * 2;
+      const irregular = 1 + Math.sin(i * 2.17) * 0.055 + Math.cos(i * 1.31) * 0.035; // Deterministic uneven edge keeps the petroleum from reading as a perfect spell circle.
+      const tx = Math.cos(angle) * topRadius * irregular;
+      const tz = Math.sin(angle) * topRadius * irregular;
+      positions.push(tx, PETROLEUM_SURFACE_DEPTH, tz);
+      uvs.push((tx + 1) * 0.5, (tz + 1) * 0.5);
     }
-    const groundY = groundYAt(owner, xPx, yPx); // Arena terrain height ensures puddles sit on ramps/slabs rather than world zero.
-    group.position.set(xPx / deps.TILE, groundY + 0.018, yPx / deps.TILE);
+    for (let i = 0; i < segments; i++) {
+      const angle = i / segments * Math.PI * 2;
+      const irregular = 1 + Math.sin(i * 2.17) * 0.055 + Math.cos(i * 1.31) * 0.035;
+      const ox = Math.cos(angle) * irregular;
+      const oz = Math.sin(angle) * irregular;
+      positions.push(ox, 0, oz); // Outer rim meets the real ground just like Western Slope snow's exposed micro-plateau edges.
+      uvs.push((ox + 1) * 0.5, (oz + 1) * 0.5);
+    }
+    for (let i = 0; i < segments; i++) {
+      const next = (i + 1) % segments;
+      const topA = 1 + i;
+      const topB = 1 + next;
+      const outerA = 1 + segments + i;
+      const outerB = 1 + segments + next;
+      indices.push(0, topA, topB); // Flat textured top cap.
+      indices.push(topA, outerA, outerB, topA, outerB, topB); // Shallow sloped side, snow-micro-plateau style.
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals?.();
+    geometry.computeBoundingSphere?.();
+    petroleumSurfaceGeometry = geometry;
+    return petroleumSurfaceGeometry;
+  }
+
+  function loadPetroleumTexture() {
+    if (petroleumTextureLoadStarted || !petroleumSurfaceMaterial || !THREE?.TextureLoader) return;
+    petroleumTextureLoadStarted = true;
+    new THREE.TextureLoader().load(PETROLEUM_TEXTURE_PATH, loaded => {
+      let finalTexture = loaded; // Same canvas.png source as Western Slope snow, recolored black through the shared shade-fill pipeline.
+      let shadeFilled = false;
+      try {
+        if (typeof window.getShadeFillCanvas === 'function' && loaded.image && THREE.CanvasTexture) {
+          const canvas = window.getShadeFillCanvas(loaded.image, 'kanthic-petroleum|canvas.png|black', {
+            mode: 'shadeFill',
+            rgb: [0, 0, 0],
+            options: window.getPortraitTintingConfig?.() || {},
+          });
+          if (canvas) {
+            finalTexture = new THREE.CanvasTexture(canvas);
+            shadeFilled = true;
+          }
+        }
+      } catch (_) {}
+      finalTexture.wrapS = finalTexture.wrapT = THREE.RepeatWrapping;
+      finalTexture.minFilter = THREE.LinearFilter;
+      finalTexture.magFilter = THREE.LinearFilter;
+      finalTexture.generateMipmaps = false;
+      finalTexture.needsUpdate = true;
+      petroleumSurfaceMaterial.map = finalTexture;
+      petroleumSurfaceMaterial.color.set(shadeFilled ? 0xffffff : 0x000000); // Raw fallback is multiplied black; shade-filled texture already carries the requested black tint.
+      petroleumSurfaceMaterial.needsUpdate = true;
+    }, undefined, () => {});
+  }
+
+  function petroleumMaterial() {
+    if (petroleumSurfaceMaterial || typeof THREE === 'undefined') return petroleumSurfaceMaterial;
+    petroleumSurfaceMaterial = new THREE.MeshBasicMaterial({
+      color: 0x000000,
+      transparent: true,
+      opacity: PETROLEUM_OPACITY,
+      depthWrite: false,
+      depthTest: true,
+      side: THREE.DoubleSide,
+      fog: true,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
+    }); // Black semi-transparent textured skin; no amber/violet magical sheen remains.
+    loadPetroleumTexture();
+    return petroleumSurfaceMaterial;
+  }
+
+  function disposePetroleumPuddle(puddle) {
+    if (!puddle) return;
+    puddles.delete(puddle);
+    puddle.group?.parent?.remove?.(puddle.group); // Shared geometry/material stay cached for the next impact instead of being disposed per puddle.
+  }
+
+  function makeGasolinePuddle(owner, xPx, yPx) {
+    if (!isArena() || !owner?.scene || typeof THREE === 'undefined') return null;
+    const geometry = buildPetroleumSurfaceGeometry();
+    const material = petroleumMaterial();
+    if (!geometry || !material) return null;
+    const group = new THREE.Group(); // Runtime/API name remains compatible, but the visual is now explicitly petroleum.
+    group.name = 'kanthic_petroleum_surface';
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.name = 'kanthic_petroleum_micro_plateau';
+    mesh.rotation.y = random() * Math.PI * 2; // Shared irregular geometry is rotated per impact so repeated puddles do not visibly stamp the same edge.
+    mesh.scale.set(PUDDLE_RADIUS_TILES, 1, PUDDLE_RADIUS_TILES);
+    mesh.renderOrder = 3;
+    group.add(mesh);
+    const groundY = groundYAt(owner, xPx, yPx); // The shallow cap is rooted on the actual arena surface just like Western Slope snow roots on authored terrain height.
+    group.position.set(xPx / deps.TILE, groundY + 0.003, yPx / deps.TILE);
     owner.scene.add(group);
-    const puddle = { owner, x: xPx, y: yPx, group, ageS: 0, tickS: 0, radiusPx: PUDDLE_RADIUS_TILES * deps.TILE }; // Gameplay hazard record checked independently of the decorative lobes.
+    const puddle = {
+      owner, x: xPx, y: yPx, group, mesh,
+      ageS: 0, tickS: 0, radiusPx: PUDDLE_RADIUS_TILES * deps.TILE,
+    }; // Gameplay radius stays unchanged; only presentation becomes the low black textured petroleum surface.
     puddles.add(puddle);
     totalPuddles += 1;
-    lastEvent = `puddle:${owner.id || owner.name}`;
+    lastEvent = `petroleum:${owner.id || owner.name}`;
     return puddle;
-  }
-
-  function entrancedManeuverKind(target) {
-    if (target?.lunging || target?._banditLunging) return 'lunge';
-    if (target?.dodging) return 'dodge';
-    return null;
-  }
-
-  function entrancedManeuverDirection(target, kind) {
-    const rawX = kind === 'lunge' ? Number(target?.lungeDirX ?? target?._banditLungeDirX) : Number(target?.dodgeDirX);
-    const rawY = kind === 'lunge' ? Number(target?.lungeDirY ?? target?._banditLungeDirY) : Number(target?.dodgeDirY);
-    const magnitude = Math.hypot(rawX || 0, rawY || 0);
-    if (magnitude > 1e-6) return { x: rawX / magnitude, y: rawY / magnitude };
-    const angle = Number(target?.angle ?? target?.facing) || 0; // Fallback preserves a stable intended direction if a special dodge/lunge omits explicit axes.
-    return { x: Math.cos(angle), y: Math.sin(angle) };
-  }
-
-  function resetEntrancedMovementBaseline(target, state, source = state?.source) {
-    if (!target || !state) return;
-    state.lastX = Number(target.x) || 0;
-    state.lastY = Number(target.y) || 0;
-    state.lastDistance = source
-      ? Math.hypot(state.lastX - (Number(source.x) || 0), state.lastY - (Number(source.y) || 0))
-      : 0;
-  }
-
-  function beginEntrancedCommandGrace(target, state, command, now = performance.now()) {
-    if (!target || !state) return;
-    state.command = command === 'flee' ? 'flee' : 'approach';
-    state.graceStartedAt = now; // Banner first shows the spoken command, then uses this timestamp to derive the 3→2→1 countdown.
-    state.graceUntil = now + ENTRANCED_COMMAND_GRACE_MS;
-    state.activeManeuver = null;
-    state.suppressManeuverUntilEnd = entrancedManeuverKind(target); // A dodge/lunge already underway when a command changes belongs wholly to the no-damage grace period.
-    resetEntrancedMovementBaseline(target, state);
-  }
-
-  function entrancedGraceDisplay(state, now = performance.now()) {
-    if (!state || !(state.graceUntil > now)) return null;
-    const elapsed = Math.max(0, now - (state.graceStartedAt || now));
-    if (elapsed < ENTRANCED_COMMAND_ANNOUNCE_MS) return { phase: 'announce', countdown: null };
-    const countdownElapsed = elapsed - ENTRANCED_COMMAND_ANNOUNCE_MS;
-    const countdown = Math.max(1, Math.min(3, 3 - Math.floor(countdownElapsed / 1000)));
-    return { phase: 'countdown', countdown }; // Exactly three one-second beats follow the short spoken-command banner.
-  }
-
-  function liveEntrancedApplicators() {
-    return [...(deps?.hostileObjects || [])].filter(actor =>
-      isLiveActor(actor)
-      && (actor.enemyClass === CLASS_ID || actor.isHarlyaoLich)
-      && actor.lichType === 'kanthic'
-    ); // Only live Kanthic liches can create/refresh Entranced Health.
   }
 
   function applyEntranced(target, source, amount) {
@@ -1261,12 +1310,11 @@
     for (const puddle of [...puddles]) {
       puddle.ageS += dt;
       if (!isArena() || !isLiveActor(puddle.owner) || puddle.ageS >= PUDDLE_LIFETIME_S) {
-        puddles.delete(puddle);
-        disposeObject3D(puddle.group);
+        disposePetroleumPuddle(puddle);
         continue;
       }
       const fade = puddle.ageS > PUDDLE_LIFETIME_S - 2 ? Math.max(0, (PUDDLE_LIFETIME_S - puddle.ageS) / 2) : 1; // Last two seconds visibly evaporate instead of popping.
-      puddle.group.traverse(child => { if (child.isMesh && child.material) child.material.opacity = (child.userData.baseOpacity ||= child.material.opacity) * fade; });
+      if (puddle.mesh) puddle.mesh.visible = fade > 0.01; // Shared 70%-opacity material cannot be faded per instance without affecting every puddle; gameplay lifetime remains unchanged.
       puddle.tickS += dt;
       if (puddle.tickS < PUDDLE_TICK_S) continue;
       puddle.tickS %= PUDDLE_TICK_S;
@@ -1527,7 +1575,7 @@
     if (!isArena()) {
       for (const projectile of [...projectiles]) disposeProjectile(projectile); // Custom spell objects never survive a Testing Arena transition.
       for (const erupt of [...eruptions]) disposeHronalEruption(erupt); // Overlapping Erupting Earth warnings/lava are arena-local scene state.
-      for (const puddle of [...puddles]) { puddles.delete(puddle); disposeObject3D(puddle.group); } // Gasoline hazards are arena-local scene state.
+      for (const puddle of [...puddles]) disposePetroleumPuddle(puddle); // Petroleum hazards are arena-local scene state.
       if (deps?.player) {
         clearGooSlowNow(deps.player);
         clearEntrancedNow(deps.player);
