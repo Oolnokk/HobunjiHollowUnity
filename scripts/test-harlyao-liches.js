@@ -329,7 +329,7 @@ for (const key of ['tothal', 'hronal', 'kanthic']) {
   assert(devSpawnerSource.includes(`harlyao-lich:${key}`), `Testing Arena must expose ${key} lich button`);
 }
 assert.match(devSpawnerSource, /startsWith\('harlyao-lich:'\)/);
-assert(indexSource.includes('js/combat/combat-lich.js?v=20260927petroleum1'));
+assert(indexSource.includes('js/combat/combat-lich.js?v=20260927hronalperf1'));
 assert(indexSource.includes('js/combat/combat-bandit.js?v=20260927hostilevisual1'));
 assert(indexSource.includes('js/dev-spawner.js?v=20260927hostilevisual1'));
 assert(indexSource.includes('game.js?v=20260927aerialchain1'));
@@ -369,6 +369,14 @@ assert.match(lichSource, /PETROLEUM_TEXTURE_PATH = 'assets\/textures\/canvas\.pn
 assert.match(lichSource, /rgb: \[18, 18, 18\][\s\S]{0,1600}petroleumSurfaceMaterial\.map = finalTexture/, 'petroleum tint must remain visually black while preserving canvas texture grain');
 assert.match(lichSource, /group\.name = 'kanthic_petroleum_surface'[\s\S]{0,500}mesh\.scale\.set\(PUDDLE_RADIUS_TILES, 1, PUDDLE_RADIUS_TILES\)/, 'Kanthic impact must render as a shallow snow-style petroleum surface rather than colored circle lobes');
 assert.doesNotMatch(lichSource, /const amber = new THREE\.MeshBasicMaterial|const violet = new THREE\.MeshBasicMaterial/, 'old amber/violet gasoline sheen must be removed');
+assert.match(lichSource, /HRONAL_STONE_INSTANCE_CAP = 112/, 'Hronal stone visuals must have a bounded per-eruption instance budget');
+assert.match(lichSource, /new THREE\.InstancedMesh\(hronalStoneGeometry, hronalStoneMaterial, HRONAL_STONE_INSTANCE_CAP\)/, 'Hronal warning stones must batch into one instanced draw call per eruption');
+assert.doesNotMatch(lichSource, /new THREE\.Mesh\(hronalStoneGeometry, hronalStoneMaterial\)/, 'Hronal must not regress to one mesh\/draw call per stone particle');
+assert.match(lichSource, /if \(!Number\.isInteger\(slot\)\) return; \/\/ Visual-only cap/, 'Hronal particle spawning must stop growing once the instance budget is full');
+assert.match(lichSource, /lavaFountain = new THREE\.Mesh\([\s\S]{0,300}ConeGeometry/, 'Hronal eruption must add a vertical lava fountain at the damage moment');
+assert.match(lichSource, /lavaFountainCore = new THREE\.Mesh\([\s\S]{0,300}ConeGeometry/, 'Hronal lava fountain must include a bright inner core');
+assert.match(lichSource, /fountainPulse = Math\.max\(0\.001, Math\.sin\(lifeT \* Math\.PI\)\)/, 'lava fountain must rise and collapse during the eruption flash');
+assert.match(lichSource, /for \(const erupt of eruptions\) \{ \/\/ Deleting the current Set entry is safe/, 'Hronal update must avoid cloning the eruption Set every frame');
 assert.match(lichSource, /HRONAL_ERUPTION_RADIUS_TILES = 1\.35 \/ 3/, 'Hronal warning radius must stay tied exactly to one third of Grehlr minimum AOE');
 assert.match(lichSource, /assets\/textures\/carved_smooth\.png[\s\S]{0,300}#6a6460/, 'Hronal stone clods must reuse the town cliff texture and fill');
 assert.equal(terrainMaterials.byMap?.town?.cliff?.texture || terrainMaterials.byMap?.map_hobunji_town?.cliff?.texture || 'carved_smooth.png', 'carved_smooth.png', 'town cliff material regression must still resolve carved_smooth.png');
