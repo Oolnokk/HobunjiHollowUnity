@@ -512,97 +512,100 @@
     return true;
   }
 
-  function buildRopeSwing(context, rng, usedRooms) {
-    const candidates = usableRoomCandidates(context).filter(room => !usedRooms.has(room.id));
-    for (const room of candidates) {
-      const bounds = roomBounds(context.meta,room);
-      const roomWidth = bounds.maxX-bounds.minX;
-      const roomDepth = bounds.maxZ-bounds.minZ;
-      const axis = roomWidth >= roomDepth ? 'x' : 'z';
-      const longSpan = axis === 'x' ? roomWidth : roomDepth;
-      const separation = Math.max(4.6, Math.min(6.4, longSpan - 3.5));
-      if (separation < 4.4) continue;
-      const cx=(bounds.minX+bounds.maxX)*.5, cz=(bounds.minZ+bounds.maxZ)*.5;
-      const dir = axis === 'x' ? {x:1,z:0} : {x:0,z:1};
-      const a = { x:cx-dir.x*separation*.5, z:cz-dir.z*separation*.5 };
-      const b = { x:cx+dir.x*separation*.5, z:cz+dir.z*separation*.5 };
-      const sa=sampleSupport(a.x,a.z), sb=sampleSupport(b.x,b.z), sm=sampleSupport(cx,cz);
-      if (!sa || !sb || !sm) continue; // Different authored plateau tiers are fine; each launch/landing platform uses its own support height.
+  function createRopeTraversalBetween(context,room,pa,pb,idSuffix='') {
+    const dx=pb.x-pa.x,dz=pb.z-pa.z;
+    const axis=Math.abs(dx)>=Math.abs(dz)?'x':'z';
+    const separation=axis==='x'?Math.abs(dx):Math.abs(dz);
+    if(separation<4.4)return null;
+    const dirX=dx/Math.max(.001,Math.hypot(dx,dz)),dirZ=dz/Math.max(.001,Math.hypot(dx,dz));
+    const bounds=roomBounds(context.meta,room),roomWidth=bounds.maxX-bounds.minX,roomDepth=bounds.maxZ-bounds.minZ;
+    const cx=(pa.x+pb.x)*.5,cz=(pa.z+pb.z)*.5;
+    const sm=sampleSupport(cx,cz)||{y:Math.min(Number(pa.baseY)||0,Number(pb.baseY)||0)};
+    const hazardLength=Math.max(1.5,separation-(axis==='x'?Math.min(pa.width,pb.width):Math.min(pa.depth,pb.depth)));
+    const hazardWidth=Math.min(2.2,(axis==='x'?roomDepth:roomWidth)-2);
+    const hazard=new THREE.Mesh(
+      new THREE.BoxGeometry(axis==='x'?hazardLength:hazardWidth,.025,axis==='x'?hazardWidth:hazardLength),
+      makeBasic(0x5e2118,{transparent:true,opacity:.62})
+    );
+    hazard.name='dev_ruin_rope_hazard_'+room.id+(idSuffix?'_'+idSuffix:'');
+    hazard.position.set(cx,Number(sm.y)+.014,cz);
+    hazard.userData.devRandomRuinRopeHazard=true;
+    state.group.add(hazard);
 
-      const platformW = axis === 'x' ? 2.1 : 2.5;
-      const platformD = axis === 'x' ? 2.5 : 2.1;
-      const pa=createPlatform('dev_ruin_rope_platform_a_'+room.id,a.x,a.z,Number(sa.y),platformW,platformD);
-      const pb=createPlatform('dev_ruin_rope_platform_b_'+room.id,b.x,b.z,Number(sb.y),platformW,platformD);
+    const alongPlatformSize=axis==='x'?pa.width:pa.depth;
+    const swingHorizontal=Math.max(.8,separation*.5-alongPlatformSize*.46);
+    const topY=Math.max(Number(pa.topY)||0,Number(pb.topY)||0);
+    const ceilingBase=Number(context.meta?.floorSurfaceY)||0;
+    const wallHeight=Number(context.meta?.wallHeight)||3;
+    const anchorY=ceilingBase+wallHeight-.035;
+    const bobRestY=topY+.72;
+    const verticalDrop=anchorY-bobRestY;
+    if(verticalDrop<=.6){disposeObject(hazard);return null;}
+    const length=Math.hypot(swingHorizontal,verticalDrop),startAngle=Math.atan2(swingHorizontal,verticalDrop);
 
-      const hazardLength=Math.max(1.5,separation-(axis==='x'?platformW:platformD));
-      const hazardWidth=Math.min(2.2,(axis==='x'?roomDepth:roomWidth)-2);
-      const hazard = new THREE.Mesh(
-        new THREE.BoxGeometry(axis==='x'?hazardLength:hazardWidth,.025,axis==='x'?hazardWidth:hazardLength),
-        makeBasic(0x5e2118,{transparent:true,opacity:.62})
-      );
-      hazard.name='dev_ruin_rope_hazard_'+room.id;
-      hazard.position.set(cx,Number(sm.y)+.014,cz);
-      hazard.userData.devRandomRuinRopeHazard=true;
-      state.group.add(hazard);
+    const mount=naturalizeStone(new THREE.Mesh(new THREE.CylinderGeometry(.15,.11,.10,10),makeBasic(0x808080)));
+    mount.name='dev_ruin_swing_rope_ceiling_mount_'+room.id+(idSuffix?'_'+idSuffix:'');
+    mount.position.set(cx,anchorY-.025,cz);
+    mount.userData.devRandomRuinRopeCeilingMount=true;
+    state.group.add(mount);
 
-      const alongPlatformSize=axis==='x'?pa.width:pa.depth;
-      const half=separation*.5;
-      const swingHorizontal=Math.max(.8,half-alongPlatformSize*.46); // The resting bob sits over the inner platform edge, not mysteriously over its center.
-      const topY=Math.max(pa.topY,pb.topY);
-      const ceilingBase=Number(context.meta?.floorSurfaceY)||0;
-      const wallHeight=Number(context.meta?.wallHeight)||3;
-      const anchorY=ceilingBase+wallHeight-.035; // V50's wall top is the authored interior ceiling datum; the rope is always visibly attached there.
-      const bobRestY=topY+.72;
-      const verticalDrop=anchorY-bobRestY;
-      if(verticalDrop<=.6)continue;
-      const length=Math.hypot(swingHorizontal,verticalDrop);
-      const startAngle=Math.atan2(swingHorizontal,verticalDrop);
+    const lineGeometry=new THREE.BufferGeometry();
+    lineGeometry.setAttribute('position',new THREE.BufferAttribute(new Float32Array(6),3));
+    const line=new THREE.Line(lineGeometry,new THREE.LineBasicMaterial({color:0xc9ad77,transparent:true,opacity:.96}));
+    line.name='dev_ruin_swing_rope_'+room.id+(idSuffix?'_'+idSuffix:'');
+    line.frustumCulled=false;state.group.add(line);
+    const marker=new THREE.Mesh(new THREE.SphereGeometry(.12,8,6),makeBasic(0xd1b682));
+    marker.name='dev_ruin_swing_rope_grip_'+room.id+(idSuffix?'_'+idSuffix:'');
+    marker.userData.interactive3D=true;marker.userData.devRuinInteractionType='ropeSwing';state.group.add(marker);
 
-      const mount=naturalizeStone(new THREE.Mesh(new THREE.CylinderGeometry(.15,.11,.10,10),makeBasic(0x808080)));
-      mount.name='dev_ruin_swing_rope_ceiling_mount_'+room.id;
-      mount.position.set(cx,anchorY-.025,cz);
-      mount.userData.devRandomRuinRopeCeilingMount=true;
-      state.group.add(mount);
+    const grabPoint={x:cx-dirX*swingHorizontal,z:cz-dirZ*swingHorizontal,y:bobRestY};
+    const rope={
+      id:'rope-'+room.id+(idSuffix?'-'+idSuffix:''),
+      roomId:room.id,line,marker,mount,anchor:{x:cx,y:anchorY,z:cz},ceilingY:anchorY,
+      yaw:Math.atan2(dirZ,dirX),length,maxLength:length+.55,angle:-startAngle,launchAngle:-startAngle,omega:0,
+      attached:false,braking:false,startPlatform:pa,endPlatform:pb,
+      hazard:{mesh:hazard,cx,cz,length:hazardLength,width:hazardWidth,axis,lastBurnAt:-Infinity},
+      grabPoint,bob:null,
+    };
+    updateRopeVisual(rope);state.ropes.push(rope);return rope;
+  }
 
-      const lineGeometry=new THREE.BufferGeometry();
-      lineGeometry.setAttribute('position',new THREE.BufferAttribute(new Float32Array(6),3));
-      const line=new THREE.Line(lineGeometry,new THREE.LineBasicMaterial({color:0xc9ad77,transparent:true,opacity:.96}));
-      line.name='dev_ruin_swing_rope_'+room.id;
-      line.frustumCulled=false;
-      state.group.add(line);
-      const marker=new THREE.Mesh(new THREE.SphereGeometry(.12,8,6),makeBasic(0xd1b682));
-      marker.name='dev_ruin_swing_rope_grip_'+room.id;
-      marker.userData.interactive3D=true;
-      marker.userData.devRuinInteractionType='ropeSwing';
-      state.group.add(marker);
+  function startPlatformForTarget(context,room,target,rng) {
+    const bounds=roomBounds(context.meta,room),margin=1.45;
+    const candidates=[
+      {x:bounds.minX+margin,z:target.z},{x:bounds.maxX-margin,z:target.z},
+      {x:target.x,z:bounds.minZ+margin},{x:target.x,z:bounds.maxZ-margin},
+    ].filter(point=>point.x>bounds.minX+1&&point.x<bounds.maxX-1&&point.z>bounds.minZ+1&&point.z<bounds.maxZ-1)
+      .map(point=>({...point,distance:Math.hypot(point.x-target.x,point.z-target.z),support:sampleSupport(point.x,point.z)}))
+      .filter(point=>point.support&&point.distance>=4.4)
+      .sort((a,b)=>b.distance-a.distance);
+    if(!candidates.length)return null;
+    const pick=candidates[Math.min(candidates.length-1,Math.floor(rng()*Math.min(2,candidates.length)))];
+    const axis=Math.abs(pick.x-target.x)>=Math.abs(pick.z-target.z)?'x':'z';
+    return createPlatform('dev_ruin_rope_balcony_'+room.id,pick.x,pick.z,Number(pick.support.y),axis==='x'?2.1:2.5,axis==='x'?2.5:2.1);
+  }
 
-      const grabPoint={
-        x:cx-dir.x*swingHorizontal,
-        z:cz-dir.z*swingHorizontal,
-        y:bobRestY,
-      };
-      const rope={
-        id:'rope-'+room.id,
-        roomId:room.id,
-        line,marker,mount,
-        anchor:{x:cx,y:anchorY,z:cz},
-        ceilingY:anchorY,
-        yaw:axis==='x'?0:Math.PI*.5,
-        length,
-        maxLength:length+.55,
-        angle:-startAngle,
-        launchAngle:-startAngle,
-        omega:0,
-        attached:false,
-        braking:false,
-        startPlatform:pa,
-        endPlatform:pb,
-        hazard:{mesh:hazard,cx,cz,length:hazardLength,width:hazardWidth,axis,lastBurnAt:-Infinity},
-        grabPoint,
-        bob:null,
-      };
-      updateRopeVisual(rope);
-      state.ropes.push(rope);
+  function buildRopeSwing(context,rng,usedRooms,options={}) {
+    const candidates=options.room?[options.room]:usableRoomCandidates(context).filter(room=>!usedRooms.has(room.id));
+    for(const room of candidates){
+      const bounds=roomBounds(context.meta,room);
+      let pa=null,pb=null;
+      if(options.endPlatform){
+        pb=options.endPlatform;
+        pa=startPlatformForTarget(context,room,pb,rng);
+        if(!pa)continue;
+      }else{
+        const roomWidth=bounds.maxX-bounds.minX,roomDepth=bounds.maxZ-bounds.minZ;
+        const axis=roomWidth>=roomDepth?'x':'z',longSpan=axis==='x'?roomWidth:roomDepth;
+        const separation=Math.max(4.6,Math.min(6.4,longSpan-3.5));if(separation<4.4)continue;
+        const cx=(bounds.minX+bounds.maxX)*.5,cz=(bounds.minZ+bounds.maxZ)*.5,dir=axis==='x'?{x:1,z:0}:{x:0,z:1};
+        const a={x:cx-dir.x*separation*.5,z:cz-dir.z*separation*.5},b={x:cx+dir.x*separation*.5,z:cz+dir.z*separation*.5};
+        const sa=sampleSupport(a.x,a.z),sb=sampleSupport(b.x,b.z);if(!sa||!sb)continue;
+        pa=createPlatform('dev_ruin_rope_platform_a_'+room.id,a.x,a.z,Number(sa.y),axis==='x'?2.1:2.5,axis==='x'?2.5:2.1);
+        pb=createPlatform('dev_ruin_rope_platform_b_'+room.id,b.x,b.z,Number(sb.y),axis==='x'?2.1:2.5,axis==='x'?2.5:2.1);
+      }
+      const rope=createRopeTraversalBetween(context,room,pa,pb,options.idSuffix||'');
+      if(!rope)continue;
       usedRooms.add(room.id);
       return rope;
     }
@@ -839,6 +842,25 @@
     state.ceilingGlyphs.push(glyph);
     recordModulePlacement('ceilingProjectileGlyph','ceiling',glyph.id,{roomId:String(room.id)});
     return glyph;
+  }
+
+  function buildBalconyRopeElevatorComposer(context,rng,usedRooms) {
+    const candidates=shuffle(usableRoomCandidates(context).filter(room=>!usedRooms.has(room.id)&&deepestSunkenRegionForRoom(context,room)),rng);
+    for(const room of candidates){
+      const elevator=buildCyclingElevatorModule(context,room,{startActive:false,cycleSeconds:8});
+      if(!elevator)continue;
+      const landing={mesh:elevator.mesh,x:elevator.x,z:elevator.z,width:elevator.width,depth:elevator.depth,baseY:elevator.topTopY-elevator.height,topY:elevator.topTopY};
+      const rope=buildRopeSwing(context,rng,usedRooms,{room,endPlatform:landing,idSuffix:'elevator'});
+      if(!rope){elevator.active=true;continue;} // If geometry cannot support the intended chain, the elevator remains a valid standalone cycling module instead of becoming dead machinery.
+      const canopy=buildStoneCanopyModule(context,room,rope.startPlatform);
+      const glyph=buildCeilingGlyphModule(context,room,{x:elevator.x,z:elevator.z},{onActivate:()=>activateCyclingElevator(elevator)});
+      if(!glyph){elevator.active=true;return rope;}
+      const module={id:'balcony-rope-elevator-'+room.id,roomId:String(room.id),rope,elevator,glyph,canopy};
+      state.ropeElevatorComposers.push(module);
+      recordModulePlacement('balconyRopeElevatorComposer','room',module.id,{roomId:String(room.id),wires:['ropeTraverse','stoneCanopy','ceilingProjectileGlyph','cyclingElevator']});
+      return rope;
+    }
+    return null;
   }
 
   function deepestSunkenRegionForRoom(context,room) {
@@ -1112,6 +1134,7 @@
       cyclingElevators:[],
       sarcophagusModules:[],
       ossuaryComposers:[],
+      ropeElevatorComposers:[],
       modulePlacements:[], // Every placed puzzle piece is recorded independently so compound sequences remain inspectable/recomposable.
       projectiles:[],
       surfaceIds:new Set(),
@@ -1136,17 +1159,13 @@
       if(grid)recordModulePlacement('safePathGrid','hallway',grid.hallId,{mandatoryTraversal:true});
     }
     if(options.ropeSwing!==false){
-      const rope=buildRopeSwing(context,rng,usedRooms);
+      let rope=rng()<.58?buildBalconyRopeElevatorComposer(context,rng,usedRooms):null; // Full balcony→rope→glyph→elevator chain is one possible composition, not a dedicated puzzle type.
+      if(!rope)rope=buildRopeSwing(context,rng,usedRooms);
       if(rope){
         recordModulePlacement('ropeTraverse','room',rope.roomId,{ceilingMounted:true});
+        const alreadyComposed=state.ropeElevatorComposers.some(module=>module.rope===rope);
         const ropeRoom=(context.meta?.rooms||[]).find(room=>String(room.id)===String(rope.roomId));
-        const canopy=ropeRoom&&rng()<.65?buildStoneCanopyModule(context,ropeRoom,rope.startPlatform):null; // Canopy is its own module; this composer merely chooses to attach one to the rope's launch balcony.
-        const elevator=ropeRoom&&rng()<.45?buildCyclingElevatorModule(context,ropeRoom,{startActive:false,cycleSeconds:8}):null;
-        if(ropeRoom&&elevator){
-          const targetAnchor={x:elevator.x,z:elevator.z};
-          const glyph=buildCeilingGlyphModule(context,ropeRoom,targetAnchor,{onActivate:()=>activateCyclingElevator(elevator)});
-          if(glyph)recordModulePlacement('glyphElevatorComposer','room','glyph-elevator-'+rope.roomId,{roomId:String(rope.roomId),wires:['ceilingProjectileGlyph','cyclingElevator'],canopyOcclusion:!!canopy});
-        }
+        if(!alreadyComposed&&ropeRoom&&rng()<.65)buildStoneCanopyModule(context,ropeRoom,rope.startPlatform); // Standalone rope rooms may independently roll architectural canopy cover.
       }
     }
     const freeRooms=shuffle(usableRoomCandidates(context).filter(room=>!usedRooms.has(room.id)),rng);
@@ -1501,6 +1520,7 @@
       cyclingElevators:state.cyclingElevators.map(elevator=>({id:elevator.id,roomId:elevator.roomId,active:elevator.active,progress:+elevator.progress.toFixed(3),topY:+elevator.topTopY.toFixed(3),bottomY:+elevator.bottomTopY.toFixed(3)})),
       sarcophagi:state.sarcophagusModules.map(module=>({id:module.id,roomId:module.roomId,activated:module.activated,spawnCount:module.spawnCount,count:module.coffins.length})),
       ossuaryComposers:state.ossuaryComposers.map(module=>({id:module.id,roomId:module.roomId,entered:module.entered,completed:module.completed})),
+      ropeElevatorComposers:state.ropeElevatorComposers.map(module=>({id:module.id,roomId:module.roomId,ropeId:module.rope.id,elevatorId:module.elevator.id,glyphId:module.glyph.id,canopyId:module.canopy?.id||null})),
       modules:state.modulePlacements.map(module=>({...module})),
       liveProjectiles:state.projectiles.length,
       checkpoints:{
