@@ -11,6 +11,7 @@
   const GRID_REVEAL_MS = 3600;
   const GRID_BURNING = 24;
   const GRID_RETRIGGER_MS = 900;
+  const GRID_WALL_CLEARANCE = 0.52; // Used by safe-path grids so every plate center clears the ruin player's 0.28u collision radius plus the authored wall thickness.
   const HALL_FIRE_BURNING = 18;
   const HALL_POISON = 16;
   const HALL_SHOT_PERIOD = 0.9;
@@ -257,7 +258,7 @@
       const rows = Math.max(5, Math.min(8, Math.floor((longLength - 1.4) / .72) + 1));
       if (rows < 5) continue;
 
-      const crossMargin = .16;
+      const crossMargin = GRID_WALL_CLEARANCE;
       const alongMargin = .7;
       const crossSpacing = (crossWidth - crossMargin * 2) / Math.max(1, cols - 1);
       const alongSpan = Math.min(longLength - alongMargin * 2, .78 * (rows - 1));
