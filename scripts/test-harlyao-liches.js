@@ -17,6 +17,8 @@ const gameSource = fs.readFileSync(path.join(root, 'docs/game.js'), 'utf8');
 const handFrameSource = fs.readFileSync(path.join(root, 'docs/js/procedural-hand-frame-driver.js'), 'utf8');
 const proceduralLegSource = fs.readFileSync(path.join(root, 'docs/js/procedural-leg-animation.js'), 'utf8');
 const drunkProneSource = fs.readFileSync(path.join(root, 'docs/js/drunk-prone-composition-bridge.js'), 'utf8');
+const configSource = fs.readFileSync(path.join(root, 'docs/config/config.js'), 'utf8');
+const terrainMaterials = JSON.parse(fs.readFileSync(path.join(root, 'docs/config/maps/terrain-materials.json'), 'utf8'));
 const skeletonSpecies = JSON.parse(fs.readFileSync(path.join(root, 'docs/config/species/harlyao-skeleton.json'), 'utf8'));
 const cosmeticsIndex = JSON.parse(fs.readFileSync(path.join(root, 'docs/config/cosmetics/index.json'), 'utf8'));
 const itemIndex = JSON.parse(fs.readFileSync(path.join(root, 'docs/config/items/item-index.json'), 'utf8'));
@@ -151,11 +153,15 @@ for (const type of api.TYPE_ORDER) {
 
 assert(api.TYPE_DEFS.tothal.projectile.knockbackPxS >= 900);
 assert(api.TYPE_DEFS.tothal.projectile.footingDamageMultiplier >= 5);
-assert(api.TYPE_DEFS.tothal.projectile.frostbittenFooting > 0);
+assert(api.TYPE_DEFS.tothal.projectile.frostbittenStamina > 0);
+assert(api.TYPE_DEFS.tothal.projectile.speedPxS < 142, 'Tothal fog must travel slower than an approaching base lich');
+assert(api.TYPE_DEFS.tothal.projectile.maxAgeS >= 8, 'slow Tothal fog needs a long finite seeking lifetime');
+assert(api.TYPE_DEFS.tothal.projectile.homingBlendPerS > 0, 'Tothal fog must actively seek targets');
+assert.equal(api.TYPE_DEFS.hronal.projectile.eruptionRadiusTiles, 1.35 / 3, 'Hronal eruption AOE must be exactly one third of Grehlr minimum AOE');
 assert(api.TYPE_DEFS.hronal.projectile.burningHealth > 0);
-assert(api.TYPE_DEFS.hronal.projectile.shatteredStamina > 0);
-assert(api.TYPE_DEFS.kanthic.projectile.gravityWorldS2 > api.TYPE_DEFS.hronal.projectile.gravityWorldS2 * 4, 'Kanthic blob needs unusually heavy dropoff');
-assert(api.TYPE_DEFS.kanthic.projectile.speedPxS > api.TYPE_DEFS.hronal.projectile.speedPxS, 'Kanthic blob needs the quick initial flight');
+assert.equal(api.TYPE_DEFS.hronal.projectile.shatteredStamina, undefined, 'Erupting Earth should apply Burning Health rather than the old projectile Shattered Stamina payload');
+assert(api.TYPE_DEFS.kanthic.projectile.gravityWorldS2 > 20, 'Kanthic blob keeps its unusually heavy dropoff');
+assert(api.TYPE_DEFS.kanthic.projectile.speedPxS > api.TYPE_DEFS.tothal.projectile.speedPxS, 'Kanthic blob remains much faster than the seeking Tothal fog');
 assert(api.TYPE_DEFS.kanthic.projectile.entrancedHealth > 0);
 
 randomValue = 0.2;
@@ -167,8 +173,8 @@ assert(slowAfter < 1 && slowAfter > 0.8, 'one Kanthic stack should slow but not 
 api.addGooSlow(player);
 assert(windowObject.Combat.getMovementSpeedMul() < slowAfter, 'goo slow stacks must compound');
 
-const lichA = { id: 'lich-a', name: 'Kanthic Lich A', areaId: 'map_dev_arena', x: 0, y: 0, health: 100, _lichCommand: 'approach' };
-const lichB = { id: 'lich-b', name: 'Kanthic Lich B', areaId: 'map_dev_arena', x: 128, y: 0, health: 100, _lichCommand: 'flee' };
+const lichA = { id: 'lich-a', name: 'Kanthic Lich A', areaId: 'map_dev_arena', x: 0, y: 0, health: 100, enemyClass: 'harlyao-lich', isHarlyaoLich: true, lichType: 'kanthic', _lichCommand: 'approach' };
+const lichB = { id: 'lich-b', name: 'Kanthic Lich B', areaId: 'map_dev_arena', x: 128, y: 0, health: 100, enemyClass: 'harlyao-lich', isHarlyaoLich: true, lichType: 'kanthic', _lichCommand: 'flee' };
 hostileObjects.add(lichA);
 hostileObjects.add(lichB);
 player.afflictions = { entrancedHealth: 0 };
@@ -180,30 +186,89 @@ api.applyEntranced(player, lichA, 20);
 assert.equal(player.health, healthBeforeApplicationOnly, 'applying Entranced Health alone must never reduce real Health');
 assert.equal(damageApplied, damageBeforeApplicationOnly, 'applying Entranced Health alone must never call the lethal Health-affliction damage path');
 assert.equal(player._entrancedCommandState.source, lichA);
+assert(player._entrancedCommandState.graceUntil > nowMs + 3000, 'initial Entranced application must open a command/no-damage grace window');
+const firstGraceUntil = player._entrancedCommandState.graceUntil;
+nowMs += 200;
+api.applyEntranced(player, lichA, 2);
+assert.equal(player._entrancedCommandState.graceUntil, firstGraceUntil, 'same-controller puddle buildup must not restart the 3-2-1 grace period');
 api.applyEntranced(player, lichB, 4);
 assert.equal(player._entrancedCommandState.source, lichB, 'latest Entranced applicant must become referential target');
+assert(player._entrancedCommandState.graceUntil > firstGraceUntil, 'a new Entranced controller must start a fresh command grace period');
 
 player.afflictions.entrancedHealth = 20;
 api.applyEntranced(player, lichA, 0.1);
 player.afflictions.entrancedHealth = 20;
 player.health = 100;
-player.x = 80; // Away from lichA while commanded to approach: punished. 16 px at TILE=64 is exactly 0.25 tile.
+const graceFrozenBuildup = player.afflictions.entrancedHealth;
+const graceFrozenHealth = player.health;
+player.x = 80; // Wrong-way movement during the command announcement/countdown must be ignored.
+windowObject.RangedWeapons.update(0.1);
+assert.equal(player.health, graceFrozenHealth, 'Entranced command grace must suppress movement damage');
+assert.equal(player.afflictions.entrancedHealth, graceFrozenBuildup, 'Entranced command grace must also suppress natural recovery');
+nowMs = player._entrancedCommandState.graceStartedAt + 800;
+assert.equal(api.debugSnapshot().playerCommandGrace.countdown, 3, 'command HUD grace must enter its 3-second countdown after the announcement');
+nowMs = player._entrancedCommandState.graceUntil + 1;
+player.x = 96; // Away from lichA while commanded to approach: 16 px = 0.25 tile of ordinary movement.
 const healthBeforeWrongMove = player.health;
 const afflictionBeforeWrongMove = player.afflictions.entrancedHealth;
 const damageBeforeWrongMove = damageApplied;
 windowObject.RangedWeapons.update(0.1);
 const wrongMoveHealthLost = healthBeforeWrongMove - player.health;
 const wrongMoveBuildupConsumed = afflictionBeforeWrongMove - player.afflictions.entrancedHealth;
-assert(Math.abs(wrongMoveHealthLost - 0.9) < 1e-9, '0.25 tile of wrong-way movement must deal exactly 0.9 Health at the reduced 3.6-per-tile ratio');
-assert(Math.abs(wrongMoveBuildupConsumed - 0.9) < 1e-9, 'wrong-way movement must consume Entranced buildup at the same reduced 3.6-per-tile ratio');
-assert(Math.abs((damageApplied - damageBeforeWrongMove) - 0.9) < 1e-9, 'movement-to-damage conversion must be one fifth of the former 18-per-tile value');
+assert(Math.abs(wrongMoveHealthLost - 0.9) < 1e-9, '0.25 tile of ordinary wrong-way movement must still deal exactly 0.9 Health');
+assert(Math.abs(wrongMoveBuildupConsumed - 0.9) < 1e-9, 'ordinary wrong-way movement must consume Entranced buildup by actual distance');
+assert(Math.abs((damageApplied - damageBeforeWrongMove) - 0.9) < 1e-9, 'ordinary movement conversion remains 3.6 Entranced Health per tile');
 
 const healthBeforeObey = player.health;
 const entrancedBeforeObey = player.afflictions.entrancedHealth;
-player.x = 70; // Toward lichA while commanded to approach: fast recovery, no punishment.
+player.x = 86; // Toward lichA while commanded to approach: fast recovery, no punishment.
 windowObject.RangedWeapons.update(0.1);
 assert.equal(player.health, healthBeforeObey, 'obeying Entranced command must not deal Health damage');
 assert(player.afflictions.entrancedHealth < entrancedBeforeObey, 'obeying Entranced command must recover buildup');
+
+lichA._lichCommand = 'flee';
+const beforeCommandFlipBuildup = player.afflictions.entrancedHealth;
+const beforeCommandFlipHealth = player.health;
+windowObject.RangedWeapons.update(0.1);
+assert(player._entrancedCommandState.graceUntil > nowMs, 'Approach/Flee changes must start a new no-damage countdown');
+player.x -= 20;
+windowObject.RangedWeapons.update(0.1);
+assert.equal(player.health, beforeCommandFlipHealth, 'new-command grace must not punish movement');
+assert.equal(player.afflictions.entrancedHealth, beforeCommandFlipBuildup, 'new-command grace must freeze natural recovery too');
+
+nowMs = player._entrancedCommandState.graceUntil + 1;
+player.afflictions.entrancedHealth = 20;
+player.health = 100;
+player.x = 86;
+player.lunging = true;
+player.lungeDirX = -1; player.lungeDirY = 0; // Toward source while command is flee: wrong.
+windowObject.RangedWeapons.update(0.1);
+player.x = 85; // Physically only one pixel of travel.
+player.lunging = false;
+const lungeDamageBefore = damageApplied;
+windowObject.RangedWeapons.update(0.1);
+assert(Math.abs((damageApplied - lungeDamageBefore) - 3.6) < 1e-9, 'a wrong-way lunge must count as exactly one tile regardless of physical distance');
+assert(Math.abs(player.afflictions.entrancedHealth - 16.4) < 1e-9, 'one wrong-way lunge consumes exactly one tile worth of Entranced buildup');
+
+player.afflictions.entrancedHealth = 20;
+player.health = 100;
+player.x = 86;
+player.dodging = true;
+player.dodgeDirX = -1; player.dodgeDirY = 0; // Same wrong direction for Flee.
+windowObject.RangedWeapons.update(0.1);
+player.x = -400; // Deliberately enormous physical displacement must still collapse to one synthetic tile.
+player.dodging = false;
+const dodgeDamageBefore = damageApplied;
+windowObject.RangedWeapons.update(0.1);
+assert(Math.abs((damageApplied - dodgeDamageBefore) - 3.6) < 1e-9, 'a wrong-way dodge must count as exactly one tile even when its physical displacement is huge');
+assert(Math.abs(player.afflictions.entrancedHealth - 16.4) < 1e-9, 'one wrong-way dodge consumes exactly one tile worth of Entranced buildup');
+
+player.afflictions.entrancedHealth = 12;
+lichA.health = 0;
+lichB.health = 0;
+windowObject.RangedWeapons.update(0.1);
+assert.equal(player.afflictions.entrancedHealth, 0, 'Entranced Health must clear immediately when every Kanthic applicator is dead');
+assert.equal(player._entrancedCommandState, undefined, 'dead-applicator cleanup must also clear the referential command state');
 
 currentArea = 'farm';
 player.afflictions.entrancedHealth = 8;
@@ -236,9 +301,10 @@ assert.equal(made.avatarRef.legs.isHoverMode(), true, 'recovered lich must resum
 const resourceContext = vm.createContext({ window: {}, console, performance: { now: () => 1000 }, Math, Number, String, Boolean, Object, Array, Set, Map, WeakMap, JSON });
 vm.runInContext(resourceSource, resourceContext, { filename: 'resource-system.js' });
 const realRS = resourceContext.window.ResourceSystem;
-assert.equal(realRS.AFFLICTIONS.frostbittenFooting.resource, 'footing');
-assert.equal(realRS.AFFLICTIONS.frostbittenFooting.family, 'control');
-assert.equal(realRS.AFFLICTIONS.frostbittenFooting.recovers, true);
+assert.equal(realRS.AFFLICTIONS.frostbittenStamina.resource, 'stamina');
+assert.equal(realRS.AFFLICTIONS.frostbittenStamina.family, 'control');
+assert.equal(realRS.AFFLICTIONS.frostbittenStamina.recovers, true);
+assert.equal(realRS.AFFLICTIONS.frostbittenStamina.punishedAction, 'staminaSpend');
 assert.equal(realRS.AFFLICTIONS.entrancedHealth.resource, 'health');
 assert.equal(realRS.AFFLICTIONS.entrancedHealth.family, 'control');
 assert.equal(realRS.AFFLICTIONS.entrancedHealth.recovers, false, 'Entranced directional recovery is owned by lich runtime');
@@ -247,18 +313,26 @@ realRS.initEntity(lowHealthApplicationTarget);
 realRS.addAffliction(lowHealthApplicationTarget, 'entrancedHealth', 100);
 assert.equal(lowHealthApplicationTarget.health, 1, 'canonical ResourceSystem Entranced application must preserve a living actor at 1 Health');
 assert.equal(realRS.getAffliction(lowHealthApplicationTarget, 'entrancedHealth'), 100, 'Entranced buildup may fill independently without directly spending real Health');
+const frostSpendTarget = { health: 100, maxHealth: 100, stamina: 30, maxStamina: 100, maxFooting: 100, footing: 100 };
+realRS.initEntity(frostSpendTarget);
+realRS.addAffliction(frostSpendTarget, 'frostbittenStamina', 40);
+realRS.spendStamina(frostSpendTarget, 20, 'frost spend regression');
+assert.equal(frostSpendTarget.footing, 80, 'spending 20 points through Frostbitten Stamina must deal exactly 20 Footing damage');
+assert.equal(realRS.getAffliction(frostSpendTarget, 'frostbittenStamina'), 20, 'spent Frostbitten Stamina is consumed at the same amount it converts to Footing damage');
 assert.match(lichSource, /ENTRANCED_WRONG_MOVE_DAMAGE_PER_TILE = 3\.6/, 'wrong-direction movement punishment must remain one fifth of the original 18 Health per tile');
-assert.match(resourceSource, /frostbittenRegenMul = 1 - frostbittenFraction \* 0\.8/);
+assert.match(resourceSource, /consumeZeroBasedSpend\(entity, "frostbittenStamina"[\s\S]{0,220}spendFooting\(entity, frostbittenOverlap/, 'Frostbitten Stamina must convert only spent overlap into equal Footing damage');
+assert.doesNotMatch(resourceSource, /frostbittenRegenMul/, 'Frostbitten no longer suppresses passive Footing regeneration');
+assert.match(configSource, /frostbittenStamina:\s*'#[0-9a-fA-F]{6}'/, 'resource-ring palette must follow the renamed Frostbitten Stamina id');
 
 for (const key of ['tothal', 'hronal', 'kanthic']) {
   assert(devSpawnerSource.includes(`harlyao-lich:${key}`), `Testing Arena must expose ${key} lich button`);
 }
 assert.match(devSpawnerSource, /startsWith\('harlyao-lich:'\)/);
-assert(indexSource.includes('js/combat/combat-lich.js?v=20260927commandauras1'));
+assert(indexSource.includes('js/combat/combat-lich.js?v=20260927elementalrework1'));
 assert(indexSource.includes('js/combat/combat-bandit.js?v=20260927hostilevisual1'));
 assert(indexSource.includes('js/dev-spawner.js?v=20260927hostilevisual1'));
 assert(indexSource.includes('game.js?v=20260927arenarespawn1'));
-assert(indexSource.includes('js/combat/resource-system.js?v=20260926lich1'));
+assert(indexSource.includes('js/combat/resource-system.js?v=20260927froststamina1'));
 assert(indexSource.includes('js/pixel-probe.js?v=20260926lich1'));
 assert(indexSource.includes('js/portrait-utils.js?v=20260926hoodback2'));
 assert(indexSource.includes('js/procedural-leg-animation.js?v=20260926hover1'));
@@ -279,6 +353,22 @@ assert.match(lichSource, /LUNGE_RING_REFERENCE_THICKNESS = 0\.14/, 'controller m
 assert.match(lichSource, /ENTRANCER_RING_OUTER_RADIUS = LUNGE_RING_REFERENCE_OUTER_RADIUS \* 2/, 'controller marker must be twice the lunge-ring diameter scale');
 assert.match(lichSource, /ENTRANCER_RING_THICKNESS = LUNGE_RING_REFERENCE_THICKNESS \* 2/, 'controller marker must be twice the lunge-ring line thickness');
 assert.match(lichSource, /ENTRANCER_RING_PULSE_MS = 1000/, 'controller marker must pulse once per second');
+assert.match(lichSource, /ENTRANCED_COMMAND_ANNOUNCE_MS = 750[\s\S]*ENTRANCED_COMMAND_COUNTDOWN_MS = 3000/, 'Entranced commands must have an announcement followed by a 3-2-1 grace countdown');
+assert.match(lichSource, /commands you to \$\{command\}/, 'command banner must explicitly say that the controlling enemy commands the player to approach or flee');
+assert.match(lichSource, /if \(entrancedGraceDisplay\(state\)\)[\s\S]{0,500}return; \/\/ Grace freezes Entranced exactly/, 'Entranced grace must bypass both movement damage and recovery');
+assert.match(lichSource, /syntheticDelta[\s\S]{0,300}resolveEntrancedMovement\(target, state, command, deps\.TILE \|\| 64/, 'completed dodge/lunge must resolve as exactly one synthetic tile');
+assert.match(lichSource, /liveEntrancedApplicators\(\)\.length === 0[\s\S]{0,120}clearEntrancedNow\(target\)/, 'last Kanthic death must immediately clear Entranced Health');
+assert.match(lichSource, /speedPxS: 96[\s\S]*maxAgeS: 8\.5[\s\S]*homingBlendPerS: 3\.2/, 'Tothal fog must remain slow, long-lived, and seeking');
+assert.match(lichSource, /registerFurnitureSfxSource\(ARENA_ID[\s\S]{0,300}TOTHAL_WIND_VOLUME/, 'Tothal fog must carry strong local wind through the existing BGS transport');
+assert.match(lichSource, /projectilePower\(projectile\)[\s\S]{0,1000}mesh\.scale\.setScalar/, 'Tothal lifetime power must visibly shrink its fog ball');
+assert.match(lichSource, /frostbittenStamina.*\* power/, 'Tothal Frostbitten Stamina payload must weaken with projectile age');
+assert.match(lichSource, /HRONAL_ERUPTION_RADIUS_TILES = 1\.35 \/ 3/, 'Hronal warning radius must stay tied exactly to one third of Grehlr minimum AOE');
+assert.match(lichSource, /assets\/textures\/carved_smooth\.png[\s\S]{0,300}#6a6460/, 'Hronal stone clods must reuse the town cliff texture and fill');
+assert.equal(terrainMaterials.byMap?.town?.cliff?.texture || terrainMaterials.byMap?.map_hobunji_town?.cliff?.texture || 'carved_smooth.png', 'carved_smooth.png', 'town cliff material regression must still resolve carved_smooth.png');
+assert.match(lichSource, /makeEruptingEarth\(lich, target, 4 \* \(windupS \+ strikeS\)\)/, 'Hronal ground warning must last exactly four times the cast windup+strike');
+assert.match(lichSource, /const eruptions = new Set\(\)/, 'Hronal warnings must be independent records so several can coexist');
+assert.match(lichSource, /addAffliction\?\.\(actor, 'burningHealth', erupt\.payload\.burningHealth\)/, 'only the final lava eruption applies Hronal Burning Health');
+
 assert.match(lichSource, /new THREE\.RingGeometry\(inner, outer, 24\)/, 'controller marker must use the same 24-segment ring geometry as lunge stamps');
 assert.match(lichSource, /blending: THREE\.AdditiveBlending, fog: false/, 'controller marker must use the same additive fog-free material language as lunge stamps');
 assert.match(lichSource, /player\?_entrancedCommandState|_entrancedCommandState\?\.source/, 'controller marker must resolve from the latest referential Entranced source');
@@ -307,7 +397,7 @@ assert.match(handFrameSource, /const playerOwnedHolder = !ownedHolder[\s\S]*tool
 assert.match(handFrameSource, /holderAuthority: record\?\.avatarRoot\?\.userData\?\.proceduralHandToolHolder \? 'actor-owned-world-transform'/, 'hand diagnostics must identify actor-owned hostile transform authority');
 assert.match(handFrameSource, /proceduralHandToolKey[\s\S]*currentToolKey\(record\)/, 'hostile hand sync must use that hostile\'s weapon key rather than the player singleton stance');
 assert.match(combatBanditSource, /const resolvedRosterDyes = applyRosterDyesToProfile\(profile, roster\)/, 'lich visible portrait must explicitly reconcile its hood/bodywrap dye before rasterization');
-assert.match(lichSource, /if \(ability === 'summon'\) summonMinion\(lich\);[\s\S]*else firePrimary\(lich, target\);/, 'both summon and primary spell abilities must fire from the reused attack strike phase');
+assert.match(lichSource, /if \(ability === 'summon'\) summonMinion\(lich\);[\s\S]*else firePrimary\(lich, target, \{ windupS, strikeS \}\);/, 'both summon and primary spell abilities must fire from the reused attack strike phase with exact cast timing available to Hronal');
 assert.match(proceduralLegSource, /function applyHoverPose\(side, dt\)/, 'procedural leg system must own a real two-bone hover pose rather than post-rotating feet');
 assert.match(proceduralLegSource, /bendDegX = -31[\s\S]*solveTwoBoneLeg/, 'hover pose must keep visibly flexed dangling knees through the shared leg solver');
 assert.match(proceduralLegSource, /function setHoverMode\(enabled\)[\s\S]*function isHoverMode\(\)/, 'procedural leg handles must expose explicit hover ownership');
