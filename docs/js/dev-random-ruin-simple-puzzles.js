@@ -814,14 +814,25 @@
     return true;
   }
 
-  function buildStoneCanopyModule(context, room, anchor = null) {
+  function buildStoneCanopyModule(context, room, anchor = null, options = {}) {
     const bounds=roomBounds(context.meta,room);
     const support=anchor?sampleSupport(anchor.x,anchor.z):roomPatch(context,room,3.4,2.8);
     const x=anchor?.x??support?.centerX,z=anchor?.z??support?.centerZ,baseY=Number(anchor?.topY??support?.y);
     if(!Number.isFinite(x)||!Number.isFinite(z)||!Number.isFinite(baseY))return null;
-    const width=Math.min(3.2,Math.max(2.2,(bounds.maxX-bounds.minX)*.35));
-    const depth=Math.min(2.6,Math.max(1.8,(bounds.maxZ-bounds.minZ)*.28));
     const roofY=baseY+1.72;
+    let width=Math.min(3.2,Math.max(2.2,(bounds.maxX-bounds.minX)*.35));
+    let depth=Math.min(2.6,Math.max(1.8,(bounds.maxZ-bounds.minZ)*.28));
+    const occlude=options.occludePoint; // Optional target makes this otherwise-generic canopy large enough to be a real line-of-fire blocker for a composed puzzle.
+    if(occlude&&Number.isFinite(Number(occlude.x))&&Number.isFinite(Number(occlude.z))&&Number.isFinite(Number(occlude.y))){
+      const eyeY=baseY+1.18,targetY=Number(occlude.y),denom=targetY-eyeY;
+      if(Math.abs(denom)>.05){
+        const t=Math.max(0,Math.min(1,(roofY-eyeY)/denom));
+        const crossX=x+(Number(occlude.x)-x)*t,crossZ=z+(Number(occlude.z)-z)*t;
+        const roomMaxW=Math.max(1.8,(bounds.maxX-bounds.minX)-.5),roomMaxD=Math.max(1.8,(bounds.maxZ-bounds.minZ)-.5);
+        width=Math.min(roomMaxW,Math.max(width,Math.abs(crossX-x)*2+.8));
+        depth=Math.min(roomMaxD,Math.max(depth,Math.abs(crossZ-z)*2+.8));
+      }
+    }
     const root=new THREE.Group();
     root.name='dev_ruin_stone_canopy_'+room.id;
     const slab=naturalizeStone(new THREE.Mesh(new THREE.BoxGeometry(width,.22,depth),makeBasic(0x808080)));
@@ -832,7 +843,7 @@
       post.position.set(x+dx,baseY+.85,z+dz);root.add(post);
     }
     state.group.add(root);
-    const module={id:'canopy-'+room.id,roomId:String(room.id),root,slab,x,z,roofY,width,depth};
+    const module={id:'canopy-'+room.id,roomId:String(room.id),root,slab,x,z,roofY,width,depth,occludesTarget:!!occlude};
     state.canopies.push(module);
     recordModulePlacement('stoneCanopy','room',module.id,{roomId:String(room.id)});
     return module;
@@ -864,15 +875,15 @@
       const landing={mesh:elevator.mesh,x:elevator.x,z:elevator.z,width:elevator.width,depth:elevator.depth,baseY:elevator.topTopY-elevator.height,topY:elevator.topTopY};
       const rope=buildRopeSwing(context,rng,usedRooms,{room,endPlatform:landing,idSuffix:'elevator'});
       if(!rope){elevator.active=true;continue;} // If geometry cannot support the intended chain, the elevator remains a valid standalone cycling module instead of becoming dead machinery.
-      const canopy=buildStoneCanopyModule(context,room,rope.startPlatform);
       const glyph=buildCeilingGlyphModule(context,room,{x:elevator.x,z:elevator.z},{onActivate:()=>activateCyclingElevator(elevator)});
       if(!glyph){elevator.active=true;return rope;}
+      const canopy=buildStoneCanopyModule(context,room,rope.startPlatform,{occludePoint:{x:glyph.mesh.position.x,y:glyph.mesh.position.y,z:glyph.mesh.position.z}}); // Balcony roof is dimensioned from the actual target ray, so it physically prevents the shortcut shot before the rope crossing.
 
       let lowerShell=null,ossuary=null,nextDoorMechanismId=null;
       if(elevator.annexBounds&&elevator.annexDoorway){
         const annexOwner={...room,id:String(room.id)+'-sunken-annex'};
         lowerShell=buildSunkenRoomShell(context,annexOwner,elevator.annexBounds,elevator.annexDoorway,elevator.lowerFloorY);
-        nextDoorMechanismId=nearestGeneratedStoneDoorMechanism(context,rope.startPlatform);
+        nextDoorMechanismId=nearestGeneratedStoneDoorMechanism(context,{x:elevator.x,z:elevator.z}); // Completion opens the onward/upstairs-side generated door, not preferentially the door beside the entry balcony.
         if(lowerShell){
           ossuary=buildOssuaryChordComposer(context,rng,annexOwner,{
             roomId:annexOwner.id,
@@ -1669,7 +1680,7 @@
       trapHallways:state.trapHallways.map(trap=>({id:trap.id,axis:trap.axis,stations:trap.stations.length})),
       chordPlateSets:state.chordPlateSets.map(set=>({id:set.id,slotKind:set.slotKind,played:set.plates.filter(plate=>plate.played).length,solved:set.solved,solveCount:set.solveCount,pressCounts:set.plates.map(plate=>plate.pressCount)})),
       lockDoors:state.lockDoors.map(door=>({id:door.id,roomId:door.roomId,open:door.targetOpen,progress:+door.progress.toFixed(3)})),
-      canopies:state.canopies.map(canopy=>({id:canopy.id,roomId:canopy.roomId,roofY:+canopy.roofY.toFixed(3)})),
+      canopies:state.canopies.map(canopy=>({id:canopy.id,roomId:canopy.roomId,roofY:+canopy.roofY.toFixed(3),width:+canopy.width.toFixed(3),depth:+canopy.depth.toFixed(3),occludesTarget:canopy.occludesTarget})),
       ceilingGlyphs:state.ceilingGlyphs.map(glyph=>({id:glyph.id,roomId:glyph.roomId,active:glyph.active,hitCount:glyph.hitCount})),
       cyclingElevators:state.cyclingElevators.map(elevator=>({id:elevator.id,roomId:elevator.roomId,active:elevator.active,progress:+elevator.progress.toFixed(3),topY:+elevator.topTopY.toFixed(3),bottomY:+elevator.bottomTopY.toFixed(3)})),
       sarcophagi:state.sarcophagusModules.map(module=>({id:module.id,roomId:module.roomId,activated:module.activated,spawnCount:module.spawnCount,count:module.coffins.length})),
