@@ -322,32 +322,27 @@
     const group = new THREE.Group(); // Root translated by projectile simulation; child shapes handle per-type styling/wobble.
     group.name = `lich_${type}_projectile`;
     if (type === 'tothal') {
-      const core = new THREE.Mesh(
-        new THREE.IcosahedronGeometry(0.13, 1),
-        new THREE.MeshBasicMaterial({ color: 0xaeeeff, transparent: true, opacity: 0.82, depthWrite: false })
-      ); // Bright icy core used as the Blizzard Blast's readable center.
-      group.add(core);
-      for (let i = 0; i < 6; i++) {
-        const shard = new THREE.Mesh(
-          new THREE.ConeGeometry(0.025, 0.18, 4),
-          new THREE.MeshBasicMaterial({ color: i % 2 ? 0xffffff : 0x72cfff, transparent: true, opacity: 0.72, depthWrite: false })
-        ); // Radial ice shard gives the otherwise spherical spell a blizzard/sleet silhouette.
-        const a = i / 6 * Math.PI * 2; // Even radial placement angle used only for this shard.
-        shard.position.set(Math.cos(a) * 0.11, Math.sin(a * 2) * 0.05, Math.sin(a) * 0.11);
-        shard.rotation.z = a;
-        group.add(shard);
+      const palette = [0xd7f4ff, 0xb9eaff, 0xf5fdff, 0x91dcf4]; // Pale translucent layers read as a compact fog bank rather than a solid ice missile.
+      for (let i = 0; i < 9; i++) {
+        const phase = i / 9 * Math.PI * 2; // Stable per-lobe phase lets the cloud writhe without allocating new geometry every frame.
+        const radius = 0.095 + (i % 4) * 0.018; // Unequal overlapping lobes break the projectile's silhouette into a wiggly fog ball.
+        const material = new THREE.MeshBasicMaterial({
+          color: palette[i % palette.length],
+          transparent: true,
+          opacity: 0.18 + (i % 3) * 0.055,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending,
+          fog: true,
+        });
+        const lobe = new THREE.Mesh(new THREE.SphereGeometry(radius, 10, 7), material);
+        const radial = 0.045 + (i % 3) * 0.035;
+        lobe.position.set(Math.cos(phase) * radial, Math.sin(phase * 1.7) * 0.055, Math.sin(phase) * radial);
+        lobe.scale.set(1.1 + (i % 2) * 0.35, 0.8 + ((i + 1) % 3) * 0.14, 1.0 + ((i + 2) % 2) * 0.28);
+        lobe.userData.fogBasePosition = { x: lobe.position.x, y: lobe.position.y, z: lobe.position.z }; // Reused by updateProjectiles for local cloud writhing.
+        lobe.userData.fogPhase = phase; // Used to offset each lobe's sine motion.
+        lobe.userData.baseOpacity = material.opacity; // Lifetime fade multiplies this authored opacity instead of accumulating changes.
+        group.add(lobe);
       }
-    } else if (type === 'hronal') {
-      const rock = new THREE.Mesh(
-        new THREE.DodecahedronGeometry(0.145, 0),
-        new THREE.MeshStandardMaterial({ color: 0x3d2419, roughness: 0.92, emissive: 0x4b1205, emissiveIntensity: 1.2 })
-      ); // Dark crust of the burning rock.
-      const ember = new THREE.Mesh(
-        new THREE.IcosahedronGeometry(0.105, 1),
-        new THREE.MeshBasicMaterial({ color: 0xff6a1a, transparent: true, opacity: 0.72, depthWrite: false })
-      ); // Inner orange glow visible through/around the irregular rock.
-      rock.scale.set(1.15, 0.9, 1);
-      group.add(ember, rock);
     } else {
       const gooMaterial = new THREE.MeshPhysicalMaterial({
         color: 0x30230f, roughness: 0.12, metalness: 0.05, clearcoat: 1, clearcoatRoughness: 0.08,
@@ -382,21 +377,86 @@
     return { start, vx, vz, vyWorld };
   }
 
-  function firePrimary(lich, target) {
+  function projectilePower(projectile) {
+    if (projectile?.type !== 'tothal') return 1;
+    return Math.max(0, Math.min(1, 1 - projectile.ageS / Math.max(0.001, projectile.payload.maxAgeS))); // Blizzard power falls continuously with the same lifetime that visibly shrinks the fog ball.
+  }
+
+  function attachTothalWind(projectile) {
+    if (projectile?.type !== 'tothal') return null;
+    const bgs = window.AudioSystem?.gameAudioConfig?.()?.bgs || {}; // Existing authored BGS recordings are reused instead of introducing a spell-only audio asset.
+    const url = bgs.wind2 || bgs.wind1;
+    if (!url || !window.Music?.registerFurnitureSfxSource) return null;
+    projectile.windSource = window.Music.registerFurnitureSfxSource(ARENA_ID, projectile.x / (deps.TILE || 64), projectile.y / (deps.TILE || 64), {
+      url,
+      rangeTiles: TOTHAL_WIND_RANGE_TILES,
+      volume: TOTHAL_WIND_VOLUME,
+    }); // The shared proximity-loop transport makes the wind strongest near the moving fog ball and respects global audio/autoplay controls.
+    return projectile.windSource;
+  }
+
+  function updateTothalWind(projectile) {
+    if (!projectile?.windSource) return;
+    projectile.windSource.x = projectile.x / (deps.TILE || 64);
+    projectile.windSource.z = projectile.y / (deps.TILE || 64);
+    projectile.windSource.maxVolume = TOTHAL_WIND_VOLUME * Math.max(0.2, projectilePower(projectile)); // Wind weakens with the same lifetime power as the projectile.
+  }
+
+  function nearestSeekingTarget(projectile) {
+    let nearest = null; // Current homing target can change when the original target dies or a nearer live actor enters the path.
+    let bestDistSq = Infinity;
+    for (const actor of candidateActors(projectile)) {
+      const dx = (Number(actor.x) || 0) - projectile.x;
+      const dz = (Number(actor.y) || 0) - projectile.y;
+      const distSq = dx * dx + dz * dz;
+      if (distSq < bestDistSq) { bestDistSq = distSq; nearest = actor; }
+    }
+    return nearest;
+  }
+
+  function updateTothalSeeking(projectile, dt) {
+    if (projectile?.type !== 'tothal' || typeof THREE === 'undefined') return;
+    if (!isLiveActor(projectile.target) || projectile.target === projectile.owner) projectile.target = nearestSeekingTarget(projectile);
+    if (!projectile.target) return;
+    const tile = deps.TILE || 64; // Converts vertical Three.js world units into the same pixel scale as horizontal homing velocity.
+    const aim = targetCenter(projectile.target);
+    const desired = new THREE.Vector3(
+      aim.x * tile - projectile.x,
+      (aim.y - projectile.worldY) * tile,
+      aim.z * tile - projectile.y,
+    );
+    if (desired.lengthSq() < 1e-8) return;
+    desired.normalize().multiplyScalar(projectile.payload.speedPxS);
+    const current = new THREE.Vector3(projectile.vx, projectile.vyWorld * tile, projectile.vy);
+    if (current.lengthSq() < 1e-8) current.copy(desired);
+    const blend = 1 - Math.exp(-Math.max(0, projectile.payload.homingBlendPerS || 0) * Math.max(0, dt)); // Smooth steering produces a visibly seeking curve rather than instant target snapping.
+    current.lerp(desired, blend).normalize().multiplyScalar(projectile.payload.speedPxS);
+    projectile.vx = current.x;
+    projectile.vyWorld = current.y / tile;
+    projectile.vy = current.z;
+  }
+
+  function firePrimary(lich, target, castTiming = null) {
     if (!isArena() || !isLiveActor(lich) || !isLiveActor(target)) return false;
     const def = typeDef(lich.lichType); // Lich tradition selects projectile physics/payload/visual.
-    const velocity = ballisticVelocity(lich, target, def.projectile); // One ballistic solution captured at cast time; no homing afterward.
+    if (def.id === 'hronal') {
+      const windupS = Math.max(0, Number(castTiming?.windupS) || 0.16); // Exact staged attack timing captured by beginLichCast.
+      const strikeS = Math.max(0, Number(castTiming?.strikeS) || 0.10); // Paired with windup so the warning lasts exactly four attack phases.
+      return !!makeEruptingEarth(lich, target, 4 * (windupS + strikeS));
+    }
+    const velocity = ballisticVelocity(lich, target, def.projectile); // Kanthic remains ballistic; Tothal uses this only as its initial heading before homing takes over.
     const mesh = makeSpellVisual(def.id); // Per-type procedural spell visual avoids adding un-authored sprite assets.
     mesh.position.copy(velocity.start);
     lich.scene?.add?.(mesh);
     const projectile = {
-      type: def.id, owner: lich, mesh, areaId: ARENA_ID,
+      type: def.id, owner: lich, target, mesh, areaId: ARENA_ID,
       x: velocity.start.x * deps.TILE, y: velocity.start.z * deps.TILE, worldY: velocity.start.y,
       prevX: velocity.start.x * deps.TILE, prevY: velocity.start.z * deps.TILE, prevWorldY: velocity.start.y,
       vx: velocity.vx, vy: velocity.vz, vyWorld: velocity.vyWorld,
       ageS: 0, payload: def.projectile,
     }; // Custom projectile record updated from RangedWeapons.update's normal gameplay cadence.
     projectiles.add(projectile);
+    if (def.id === 'tothal') attachTothalWind(projectile);
     lastEvent = `cast:${def.id}:${lich.id || lich.name}`;
     return true;
   }
@@ -446,22 +506,22 @@
 
   function damageActor(actor, projectile, t) {
     const p = projectile.payload; // Type-specific impact numbers authored in TYPE_DEFS.
+    const power = projectilePower(projectile); // Tothal damage/knockback/Footing pressure/frost all decay with its shrinking lifetime; Kanthic remains full-strength.
     const hitX = projectile.prevX + (projectile.x - projectile.prevX) * t; // Pixel X impact origin passed to canonical knockback/damage.
     const hitY = projectile.prevY + (projectile.y - projectile.prevY) * t; // Pixel Z-plane impact origin passed to canonical knockback/damage.
-    const options = { tag: projectile.type === 'hronal' ? 'fire' : 'blunt', ranged: true, footingDamageMultiplier: p.footingDamageMultiplier || 0, afflictionBonuses: {} }; // Canonical damage path still owns knockback/stagger/prone transitions.
-    if (actor === deps.player) deps.damagePlayer?.(p.damage, hitX, hitY, p.knockbackPxS || 0, options);
-    else deps.damageCreature?.(actor, p.damage, hitX, hitY, p.knockbackPxS || 0, { ...options, friendlyFire: true });
+    const options = { tag: 'blunt', ranged: true, footingDamageMultiplier: (p.footingDamageMultiplier || 0) * power, afflictionBonuses: {} }; // Canonical damage path still owns knockback/stagger/prone transitions.
+    const damage = (p.damage || 0) * power;
+    const knockback = (p.knockbackPxS || 0) * power;
+    if (actor === deps.player) deps.damagePlayer?.(damage, hitX, hitY, knockback, options);
+    else deps.damageCreature?.(actor, damage, hitX, hitY, knockback, { ...options, friendlyFire: true });
     const RS = window.ResourceSystem; // Central affliction authority for fixed lich payload buildup.
     if (projectile.type === 'tothal') {
-      RS?.addAffliction?.(actor, 'frostbittenFooting', p.frostbittenFooting);
-    } else if (projectile.type === 'hronal') {
-      RS?.addAffliction?.(actor, 'burningHealth', p.burningHealth);
-      RS?.addAffliction?.(actor, 'shatteredStamina', p.shatteredStamina);
+      RS?.addAffliction?.(actor, 'frostbittenStamina', (p.frostbittenStamina || 0) * power);
     } else {
       addGooSlow(actor);
       applyEntranced(actor, projectile.owner, p.entrancedHealth);
     }
-    lastEvent = `hit:${projectile.type}:${actor.id || actor.name || 'player'}`;
+    lastEvent = `hit:${projectile.type}:${actor.id || actor.name || 'player'}:power=${power.toFixed(2)}`;
   }
 
   function disposeObject3D(root) {
@@ -476,6 +536,10 @@
 
   function disposeProjectile(projectile) {
     if (!projectiles.delete(projectile)) return;
+    if (projectile.windSource) {
+      window.Music?.unregisterFurnitureSfxSource?.(projectile.windSource); // Moving Tothal wind must stop immediately when the projectile hits/expires/leaves the arena.
+      projectile.windSource = null;
+    }
     disposeObject3D(projectile.mesh);
   }
 
