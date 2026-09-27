@@ -466,6 +466,21 @@
     );
     const direct = THREE.MathUtils.clamp(Number(directFlightStrength) || 0, 0, 1);
     const straightHorizontalScale = Math.cos(absPitch); // A true 3D line uses the authored distance as vector length, not ground-plane length.
+    if (direct >= 0.999 && pitch >= 0) {
+      return {
+        pitch,
+        distanceScale: straightHorizontalScale,
+        pitchDistanceResistance: resistance,
+        appliedPitchDistanceResistance: 1,
+        inRangeAirAssist: !!inRangeAirAssist,
+        directFlightStrength: 1,
+        lungeHeightUnits: heightUnits,
+        distancePx: Math.max(0, Number(baseDistancePx) || 0) * straightHorizontalScale,
+        verticalTravelUnits: baseDistanceWorld * Math.sin(pitch), // Exact Y component of the committed reticle vector; old ballistic/diminished-vertical math is not consulted.
+        leapT: 0,
+        hopUnits: 0,
+      };
+    }
     const distanceScale = THREE.MathUtils.lerp(ballisticScale, straightHorizontalScale, direct);
     const ballisticHopUnits = Math.max(0, Number(baseHopUnits) || 0) + leapT * heightUnits;
     return {
@@ -477,9 +492,9 @@
       directFlightStrength: direct,
       lungeHeightUnits: heightUnits,
       distancePx: Math.max(0, Number(baseDistancePx) || 0) * distanceScale,
-      verticalTravelUnits: baseDistanceWorld * Math.sin(pitch) * direct, // Signed world-Y leg of the same straight 3D vector.
+      verticalTravelUnits: baseDistanceWorld * Math.sin(pitch) * direct, // Downward/special partial-direct attacks retain the legacy blend below forward.
       leapT,
-      hopUnits: ballisticHopUnits * (1 - direct), // Direct flight progressively removes the curved hop; 1 is a pure line.
+      hopUnits: ballisticHopUnits * (1 - direct),
     };
   }
 
