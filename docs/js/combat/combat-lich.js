@@ -79,8 +79,10 @@
   let totalPuddles = 0; // Session counter used only by diagnostics.
   let entrancerMarker = null; // Single reusable world-space ring pair that follows whichever Kanthic lich most recently applied the player's Entranced Health.
   let entrancerMarkerSource = null; // Current referential lich owning the visible marker; changes immediately when a newer applicant takes control.
-  let entrancerAuraAnchor = null; // Avatar-local anchor carrying the large Entranced fire emitter above the ground ring.
+  let entrancerAuraAnchor = null; // Avatar-local anchor carrying the large command-colored fire emitter above the ground ring.
   let entrancerAuraVisual = null; // AuthoredFurniture emitter visual updated while the latest Kanthic applicant controls the player.
+  let entrancerBehindCamera = false; // Latest camera-facing test; drives the full-screen edge warning only while the controller is behind the view.
+  let entrancerAuraCommand = null; // Current Approach/Flee command whose HUD color is driving the world aura and edge warning.
   let wrappersInstalled = false; // Prevents duplicate API wrapping if scripts/tools reinstall this feature.
 
   function random() {
@@ -638,6 +640,64 @@
     el.classList.add('visible');
   }
 
+  function commandHudColor(command) {
+    const cssVar = command === 'flee' ? '--danger' : '--accent'; // Exact semantic colors already used by the on-screen FLEE/APPROACH text.
+    const fallback = command === 'flee' ? '#ff8060' : '#f9e28a'; // Mirrors style.css so non-DOM tests/tools still get the same palette.
+    if (typeof document === 'undefined' || typeof getComputedStyle !== 'function') return fallback;
+    return getComputedStyle(document.documentElement).getPropertyValue(cssVar).trim() || fallback;
+  }
+
+  function commandAuraPalette(source) {
+    const command = source?._lichCommand === 'flee' ? 'flee' : 'approach'; // The controller's live tactical command is the single color authority.
+    const color = commandHudColor(command);
+    if (typeof THREE === 'undefined') return { command, color, bright: color };
+    const bright = `#${new THREE.Color(color).lerp(new THREE.Color(0xffffff), 0.34).getHexString()}`; // Brighter same-hue flame tips improve readability without inventing another semantic color.
+    return { command, color, bright };
+  }
+
+  function ensureEntrancerEdgeAura() {
+    if (typeof document === 'undefined') return null;
+    let el = document.getElementById('entrancedCommandEdgeAura'); // Singleton full-screen edge cue shared by every Kanthic controller handoff.
+    if (el) return el;
+    el = document.createElement('div');
+    el.id = 'entrancedCommandEdgeAura';
+    el.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(el);
+    return el;
+  }
+
+  function controllerBehindCamera(source) {
+    const camera = deps?.getActiveCamera?.(); // Shared gameplay camera authority supplied through the same combat dependency bag as ranged targeting.
+    const avatar = source?.avatarRef?.group;
+    if (!camera || !avatar || typeof THREE === 'undefined') return false;
+    const cameraPosition = camera.getWorldPosition?.(new THREE.Vector3()) || camera.position?.clone?.();
+    const sourcePosition = avatar.getWorldPosition?.(new THREE.Vector3()) || avatar.position?.clone?.();
+    if (!cameraPosition || !sourcePosition) return false;
+    const forward = camera.getWorldDirection?.(new THREE.Vector3());
+    if (!forward) return false;
+    const toSource = sourcePosition.sub(cameraPosition);
+    if (toSource.lengthSq() < 1e-8) return false;
+    return forward.dot(toSource.normalize()) < 0; // Negative camera-forward dot means the controlling lich is literally behind the current view plane.
+  }
+
+  function updateEntrancerEdgeAura(source, command, behind) {
+    const el = ensureEntrancerEdgeAura();
+    if (!el) return;
+    el.classList.toggle('approach', command === 'approach');
+    el.classList.toggle('flee', command === 'flee');
+    el.classList.toggle('visible', !!behind);
+    el.dataset.controllerId = source?.id || '';
+  }
+
+  function hideEntrancerEdgeAura() {
+    const el = typeof document !== 'undefined' ? document.getElementById('entrancedCommandEdgeAura') : null;
+    if (!el) return;
+    el.classList.remove('visible', 'approach', 'flee');
+    el.dataset.controllerId = '';
+    entrancerBehindCamera = false;
+    entrancerAuraCommand = null;
+  }
+
   function entrancedMarkerColor() {
     const raw = window.ResourceRings?.AFFLICTION_COLORS?.entrancedHealth ?? 0xb746d9; // Exact resource-ring palette entry keeps the owner marker visually tied to Entranced Health.
     return window.ResourceRings?.neonizeColor?.(raw) ?? raw; // Same vivid color treatment used by affliction-colored lunge/projectile trails.
@@ -686,8 +746,7 @@
     const halfHeight = Math.max(0.25, Number(source.halfHeight) || Number(source.avatarRef?.modelHeight) / 2 || 0.45); // Used to start flames just above the feet.
     anchor.position.y = -halfHeight + 0.06;
     avatar.add(anchor);
-    const color = entrancedMarkerColor(); // Exact Entranced affliction hue shared with health ring, lunge-color marker, and this aura.
-    const bright = new THREE.Color(color).lerp(new THREE.Color(0xffffff), 0.34); // Same hue family with a brighter flame tip for legibility against dark clothing.
+    const palette = commandAuraPalette(source); // World fire uses the exact same semantic Approach/Flee color as the HUD text.
     const emitter = {
       id: 'entranced_controller_fire',
       name: 'Entranced Controller Aura',
@@ -701,8 +760,8 @@
       speed: Math.max(0.92, halfHeight * 1.9),
       spread: 0.46,
       gravity: -0.06,
-      colorA: colorCssHex(bright),
-      colorB: colorCssHex(color),
+      colorA: palette.bright,
+      colorB: palette.color,
     }; // Deliberately larger/denser than the ordinary campfire-derived Burning Health emitter so the controller reads at character height.
     const visual = authored.createEmitterVisual(anchor, emitter, ENTRANCER_AURA_MAX_PARTICLES);
     if (!visual) {
@@ -725,6 +784,7 @@
     if (entrancerMarker) disposeObject3D(entrancerMarker);
     entrancerMarker = null;
     disposeEntrancerAura();
+    hideEntrancerEdgeAura();
     entrancerMarkerSource = null;
   }
 
@@ -744,10 +804,19 @@
     } else if (!entrancerAuraVisual) {
       buildEntrancerAura(source); // Late-loaded AuthoredFurniture can attach the body-height cue without waiting for Entranced to be reapplied.
     }
+    const palette = commandAuraPalette(source); // Command can flip while the same Entranced application remains, so recolor every live update rather than only at emitter construction.
+    entrancerAuraCommand = palette.command;
+    entrancerBehindCamera = controllerBehindCamera(source);
+    updateEntrancerEdgeAura(source, palette.command, entrancerBehindCamera);
     if (entrancerAuraVisual) {
       const phase = (performance.now() % ENTRANCER_RING_PULSE_MS) / ENTRANCER_RING_PULSE_MS; // Shared one-second phase gives the fire a subtle synchronized surge with the ground pulse.
       const surge = phase < ENTRANCER_RING_BURST_FRACTION ? 1.32 : 1;
-      entrancerAuraVisual.update?.(Math.max(0, Number(dt) || 0), true, { rate: 92 * surge, size: 0.24 * (0.94 + 0.06 * surge) });
+      entrancerAuraVisual.update?.(Math.max(0, Number(dt) || 0), true, {
+        rate: 92 * surge,
+        size: 0.24 * (0.94 + 0.06 * surge),
+        colorA: palette.bright,
+        colorB: palette.color,
+      }); // Approach uses --accent; Flee uses --danger, exactly matching the HUD action text.
     }
     if (!entrancerMarker) return;
     const groundY = groundYAt(source, source.x, source.y); // Marker follows the controller across arena ramps/slabs rather than assuming flat world zero.
@@ -1104,7 +1173,7 @@
       projectiles: projectiles.size, puddles: puddles.size, totalPuddles, totalSummons,
       playerEntranced, playerCommand: deps?.player?._entrancedCommandState?.source?._lichCommand || null,
       playerEntrancerId: deps?.player?._entrancedCommandState?.source?.id || null,
-      entrancerMarker: entrancerMarkerSource ? { sourceId: entrancerMarkerSource.id || null, ringVisible: !!entrancerMarker?.visible, auraVisible: !!entrancerAuraVisual } : null,
+      entrancerMarker: entrancerMarkerSource ? { sourceId: entrancerMarkerSource.id || null, ringVisible: !!entrancerMarker?.visible, auraVisible: !!entrancerAuraVisual, auraCommand: entrancerAuraCommand, behindCamera: entrancerBehindCamera } : null,
       playerGooSlow: deps?.player?._kanthicGooSlow ? { stacks: deps.player._kanthicGooSlow.stacks, remainingMs: Math.max(0, deps.player._kanthicGooSlow.until - performance.now()) } : null,
       lastEvent,
     };
@@ -1120,7 +1189,7 @@
       const hover = d.activeLiches.filter(lich => lich.hovering).map(lich => `${lich.id || lich.type}:${lich.hoverOffset.toFixed?.(2) || lich.hoverOffset}`).join(',') || '-'; // Compact mobile-readable proof that active liches are using airborne presentation.
       const hands = d.activeLiches.map(lich => `${lich.id || lich.type}:${lich.handRig ? 'hands' : 'NO-HANDS'}`).join(',') || '-'; // Exposes the exact rig-attachment failure class without requiring desktop devtools.
       const dyes = d.activeLiches.map(lich => `${lich.id || lich.type}:${Object.entries(lich.resolvedDyes || {}).map(([slot, rec]) => `${slot}=${rec?.dyeId || '?'}`).join('+') || 'NO-DYES'}`).join(',') || '-'; // Confirms world-raster dye reconciliation independently from loot metadata.
-      return `Harlyao Liches: live=${d.activeLiches.length} hover=${hover} hands=${hands} dyes=${dyes} projectiles=${d.projectiles} puddles=${d.puddles} summons=${d.totalSummons} entranced=${d.playerEntranced.toFixed?.(1) || d.playerEntranced} command=${d.playerCommand || '-'} controller=${d.playerEntrancerId || '-'} marker=${d.entrancerMarker?.ringVisible ? 'ring' : '-'}+${d.entrancerMarker?.auraVisible ? 'aura' : '-'} goo=${d.playerGooSlow?.stacks || 0} last=${d.lastEvent}`;
+      return `Harlyao Liches: live=${d.activeLiches.length} hover=${hover} hands=${hands} dyes=${dyes} projectiles=${d.projectiles} puddles=${d.puddles} summons=${d.totalSummons} entranced=${d.playerEntranced.toFixed?.(1) || d.playerEntranced} command=${d.playerCommand || '-'} controller=${d.playerEntrancerId || '-'} marker=${d.entrancerMarker?.ringVisible ? 'ring' : '-'}+${d.entrancerMarker?.auraVisible ? `aura:${d.entrancerMarker.auraCommand || '?'}` : '-'} edge=${d.entrancerMarker?.behindCamera ? 'behind' : '-'} goo=${d.playerGooSlow?.stacks || 0} last=${d.lastEvent}`;
     },
   };
   window.__lichDebug = { snapshot: debugSnapshot }; // Console-independent API also consumed by the existing mobile debug surfaces/tests.
