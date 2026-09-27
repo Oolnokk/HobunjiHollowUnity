@@ -133,6 +133,12 @@ assert(simplePuzzles.includes("recordModulePlacement('ceilingProjectileGlyph'"),
 assert(simplePuzzles.includes("recordModulePlacement('cyclingElevator'"), 'cycling elevators must exist as independent sunken-floor modules');
 assert(simplePuzzles.includes('buildSwappableHallwayModules'), 'generic hallway slots must be able to choose non-trap modules');
 assert(simplePuzzles.includes('installModularProjectileHook'), 'reusable canopies and ceiling glyphs must share one ranged-projectile collision seam');
+assert(simplePuzzles.includes('buildBalconyRopeElevatorComposer'), 'the long balcony/rope/elevator possibility must be composed from reusable modules');
+assert(simplePuzzles.includes('buildSunkenRoomShell'), 'the lower ossuary must use a reusable sunken-room shell rather than bespoke full-sequence geometry');
+assert(simplePuzzles.includes("window.MinionCombat?.makeEntity?.({") && simplePuzzles.includes("speciesId:'harlyao-skeleton'"), 'sarcophagus modules must spawn the existing Harlyao Skeleton Minion class');
+assert(simplePuzzles.includes('KURRAYA_NOTE_URL') && simplePuzzles.includes('CHORD_PITCHES'), 'musical pressure plates must use the Kurraya pluck placeholder at authored chord pitches');
+assert(simplePuzzles.includes('playGeneratedStoneKchunk'), 'four-note completion must expose a generated placeholder kchunk until a recorded cue replaces it');
+assert(simplePuzzles.includes('opensUpstairsMechanism') && interior.includes('setMechanismTarget'), 'compound lower-room completion must be able to open an ordinary generated stone door upstairs');
 assert(simplePuzzles.includes('holsterRopeEquipment') && simplePuzzles.includes('putAwayHeldEquipment({silent:true})'), 'grabbing a rope must silently put away the current weapon/tool');
 assert(simplePuzzles.includes('restoreHeldToolSnapshot') && simplePuzzles.includes('restoreRopeEquipment()'), 'rope release/fall/clear must restore the exact held tool snapshot');
 assert(game.includes("DevRandomRuinSimplePuzzles?.releaseActiveRope?.()"), 'the canonical Dodge/context action must release an attached ruin rope');
