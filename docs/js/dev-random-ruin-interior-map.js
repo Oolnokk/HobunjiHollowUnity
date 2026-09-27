@@ -450,7 +450,7 @@
       ruin.transitDoorStates.push(state);
       // No separate DynamicSurfaces blocker here: DevRandomRuinTileOccupancy reads state.open and folds this panel into the ruin's one aggregate gameplay blocker.
       ruin.controls.push({
-        kind:'transitDoor',object:door,promptRoot:door,range:1.9,touchIcon:'✋',priority:24,
+        kind:'transitDoor',object:door,promptRoot:door,range:1.9,touchIcon:'✋',priority:24,claimAction1:true,
         label:()=>state.target>.5?'Close Hallway Door':'Open Hallway Door',
         onPress:()=>{
           const opening=state.target<=.5;
@@ -477,7 +477,7 @@
         platform.userData.interactive3D=true;
         platform.userData.devRuinInteractionType='movingDais';
         ruin.controls.push({
-          kind:'movingDais',object:platform,promptRoot:platform,range:2.1,touchIcon:'↕',priority:16,
+          kind:'movingDais',object:platform,promptRoot:platform,range:2.1,touchIcon:'↕',priority:16,claimAction1:true,
           label:()=>m.target>.5?'Lower Stone Platform':'Raise Stone Platform',
           onPress:()=>{m.target=m.target>.5?0:1;},
         });
@@ -488,7 +488,7 @@
         m.root.userData.interactive3D=true;
         m.root.userData.devRuinInteractionType='stoneDoor';
         ruin.controls.push({
-          kind:'stoneDoor',object:m.root,promptRoot:m.root,range:1.9,touchIcon:'✋',priority:18,
+          kind:'stoneDoor',object:m.root,promptRoot:m.root,range:1.9,touchIcon:'✋',priority:18,claimAction1:true,
           label:()=>m.target>.5?'Close Stone Door':'Open Stone Door',
           onPress:()=>{m.target=m.target>.5?0:1;},
         });
