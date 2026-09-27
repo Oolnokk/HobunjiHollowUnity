@@ -713,11 +713,13 @@
     const targetFacing = Number.isFinite(Number(targetPlayer.angle)) ? Number(targetPlayer.angle) : (Number(targetPlayer.facing) || 0); // Creatures use facing; the player uses angle.
     const forwardX = Math.cos(targetFacing), forwardY = Math.sin(targetFacing);
     const behindDot = forwardX * (dxBP / distBP) + forwardY * (dyBP / distBP);
+    const staminaForCondition = window.ResourceSystem?.getDepletionEquivalentCurrent?.(targetPlayer, 'stamina') ?? targetPlayer.stamina; // Mirrors the player's Exhaust Cutter semantics for enemy ability AI.
+    const healthForCondition = window.ResourceSystem?.getDepletionEquivalentCurrent?.(targetPlayer, 'health') ?? targetPlayer.health; // Mirrors the player's Mercy Spike semantics for enemy ability AI.
     return {
       enemyStriking: false,
-      exhausted: !!targetPlayer.exhaustion?.active || targetPlayer.stamina <= targetPlayer.maxStamina * 0.20,
+      exhausted: !!targetPlayer.exhaustion?.active || staminaForCondition <= targetPlayer.maxStamina * 0.20,
       behind: behindDot < -0.35,
-      lowHealth: targetPlayer.health > 0 && targetPlayer.health <= targetPlayer.maxHealth * 0.30,
+      lowHealth: targetPlayer.health > 0 && healthForCondition <= targetPlayer.maxHealth * 0.30,
     };
   }
 

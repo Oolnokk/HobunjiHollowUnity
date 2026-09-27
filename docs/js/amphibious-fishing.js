@@ -271,7 +271,7 @@
   function installResourceRules(RS = window.ResourceSystem) {
     if (resourceRulesInstalled || !RS?.AFFLICTIONS || !RS?.applyDamage || !RS?.tick) return false;
     RS.AFFLICTIONS.woundedHealth ||= {
-      name: 'Wounded Health', resource: 'health', extend: 'zero', priority: 58, recovers: true,
+      name: 'Wounded Health', resource: 'health', extend: 'zero', priority: 58, recovers: true, reducesEffectiveMax: true,
       family: 'damage', tags: ['physical', 'amphibious'],
       desc: 'Temporarily locks away part of maximum Health without reducing it below 1; it returns as the wound recovers.'
     };
