@@ -47,7 +47,7 @@
         shatteredStamina: '#8c4ad9',
         poisonedHealth: '#37651c',
         burningHealth: '#ff5a1f',
-        frostbittenFooting: '#7edcff',
+        frostbittenStamina: '#7edcff',
         entrancedHealth: '#b746d9',
         shamblingFooting: '#736f5f',
         drunkenFooting: '#000000',
