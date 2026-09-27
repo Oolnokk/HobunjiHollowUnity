@@ -47,12 +47,12 @@ const ordinarilyAfflicted = makeTarget();
 ResourceSystem.addAffliction(ordinarilyAfflicted, 'woundedStamina', 40);
 ResourceSystem.addAffliction(ordinarilyAfflicted, 'bleedingHealth', 35);
 assert.equal(ResourceSystem.getDepletionEquivalentCurrent(ordinarilyAfflicted, 'stamina'), 50, 'ordinary Stamina-affliction band is added back for depletion checks');
-assert.equal(ResourceSystem.getDepletionEquivalentCurrent(ordinarilyAfflicted, 'health'), 55, 'ordinary Health-affliction band is added back for depletion checks');
+assert.equal(ResourceSystem.getDepletionEquivalentCurrent(ordinarilyAfflicted, 'health'), 40, 'ordinary Health-affliction band is added back only across the Health-ring points it actually occupies');
 conditions = Combat.getQuickAttackConditions(deps, ordinarilyAfflicted);
 assert.equal(conditions.exhausted, false, 'afflicted Stamina alone does not enable Exhaust Cutter');
 assert.equal(conditions.lowHealth, false, 'afflicted Health alone does not enable Mercy Spike');
 assert.equal(Combat.quickAttackData.lastConditionCheck.staminaForCondition, 50, 'Quick Attack diagnostics expose adjusted Stamina');
-assert.equal(Combat.quickAttackData.lastConditionCheck.healthForCondition, 55, 'Quick Attack diagnostics expose adjusted Health');
+assert.equal(Combat.quickAttackData.lastConditionCheck.healthForCondition, 40, 'Quick Attack diagnostics expose adjusted Health');
 
 ResourceSystem.addAffliction(ordinarilyAfflicted, 'windedStamina', 85);
 ResourceSystem.addAffliction(ordinarilyAfflicted, 'congealedHealth', 85);
