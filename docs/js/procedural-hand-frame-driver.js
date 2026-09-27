@@ -130,7 +130,9 @@
     return inAttackEditor() && global.HobunjiAttackEditorHandCalibrationMode?.active === true; // Dedicated editor tab bypasses every animation/tool/shoulder-derived hand transform.
   }
 
-  function currentToolKey() {
+  function currentToolKey(record = null) {
+    const ownedKey = record?.avatarRoot?.userData?.proceduralHandToolKey; // Hostile/NPC avatar roots can name their own held item without leaking through the player-singleton stance state.
+    if (ownedKey) return toolGrips.toolKeyFor(ownedKey);
     if (inAttackEditor()) {
       return toolGrips.toolKeyFor(document.getElementById('toolSpriteSelect')?.value || '');
     }
@@ -138,7 +140,9 @@
     return toolGrips.toolKeyFor(snapshot?.itemKey || snapshot?.shape || '');
   }
 
-  function currentGripContext() {
+  function currentGripContext(record = null) {
+    const ownedContext = record?.avatarRoot?.userData?.proceduralHandGripContext; // Hostile tool owners explicitly select melee/ranged instead of inheriting the player's active slot.
+    if (ownedContext === 'ranged' || ownedContext === 'melee') return ownedContext;
     if (typeof toolGrips.currentGripContext === 'function') return toolGrips.currentGripContext();
     if (inAttackEditor()) return document.getElementById('handGripContextSelect')?.value === 'ranged' ? 'ranged' : 'melee';
     const snapshot = global.WeaponToolStances?.getRuntimeState?.() || global.WeaponToolStances?.debugSnapshot?.() || null;
@@ -147,6 +151,8 @@
 
   function currentToolHolder(record) {
     if (inAttackEditor()) return findEditorToolHolder(record);
+    const ownedHolder = record?.avatarRoot?.userData?.proceduralHandToolHolder; // Shared humanoid hostiles publish the exact animated holder their final-render hands must follow.
+    if (ownedHolder?.parent) return ownedHolder;
     if (gameDeps?.playerMesh && record.rig?.parent === gameDeps.playerMesh) return gameDeps.toolHolder || null;
     return null;
   }
@@ -488,8 +494,8 @@
 
     syncing = true;
     try {
-      const toolKey = currentToolKey();
-      const gripContext = currentGripContext();
+      const toolKey = currentToolKey(record);
+      const gripContext = currentGripContext(record);
       const primaryGrip = toolGrips.primaryGripForTool(toolKey, gripContext);
       const primarySocket = toolSocketWorld(record, toolHolder, primaryGrip); // Raw target ON the weapon, before Grip Mode or per-GLB hand-model calibration.
       record.rig.placePaperHandGuideWorld?.(primarySocket.position, primarySocket.quaternion); // Locked reference stays on the raw target while Grip Mode + child calibration move the real hand.
