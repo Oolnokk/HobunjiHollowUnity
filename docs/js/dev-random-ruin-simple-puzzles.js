@@ -36,6 +36,37 @@
   let lastFrameMs = performance.now();
   let lastBadgeAt = -Infinity; // Throttles the mobile diagnostic DOM write; the simple runtime otherwise touched layout every rendered frame.
   let lastBadgeText = '';
+  const sharedPrimitiveGeometry = new Map(); // Reuses immutable simple-puzzle primitives across plates, posts, coffins, emitters, and doors instead of allocating identical BufferGeometry repeatedly.
+  const plateInstanceDummy = new THREE.Object3D(); // Reused to write pressure-plate instance transforms without allocating one Object3D per cell/frame.
+  const plateInstanceColor = new THREE.Color(); // Reused to write per-instance pressure-plate state colors.
+
+  function sharedPrimitive(key, factory) {
+    let geometry = sharedPrimitiveGeometry.get(key);
+    if (geometry) return geometry;
+    geometry = factory();
+    geometry.userData = Object.assign({}, geometry.userData, { devRuinSharedPrimitive:true });
+    sharedPrimitiveGeometry.set(key, geometry);
+    return geometry;
+  }
+
+  function sharedBoxGeometry(width, height, depth) {
+    const key = ['box', width, height, depth].join(':');
+    return sharedPrimitive(key, () => new THREE.BoxGeometry(width, height, depth));
+  }
+
+  function sharedCylinderGeometry(radiusTop, radiusBottom, height, segments) {
+    const key = ['cylinder', radiusTop, radiusBottom, height, segments].join(':');
+    return sharedPrimitive(key, () => new THREE.CylinderGeometry(radiusTop, radiusBottom, height, segments));
+  }
+
+  function sharedSphereGeometry(radius, widthSegments, heightSegments) {
+    const key = ['sphere', radius, widthSegments, heightSegments].join(':');
+    return sharedPrimitive(key, () => new THREE.SphereGeometry(radius, widthSegments, heightSegments));
+  }
+
+  function disposeOwnedGeometry(geometry) {
+    if (!geometry?.userData?.devRuinSharedPrimitive) geometry?.dispose?.();
+  }
 
   const nativeDevInit = DevSpawner.init;
   DevSpawner.init = function (injectedDeps) {
@@ -282,7 +313,7 @@
     // NaturalSurfaceMaterials can reuse cached carved_smooth textures across the
     // ruin. Dispose our material wrappers/geometry only; never dispose shared maps.
     for (const material of materials) material.dispose?.();
-    for (const geometry of geometries) geometry.dispose?.();
+    for (const geometry of geometries) disposeOwnedGeometry(geometry);
   }
 
   function restoreRopeEquipment() {
@@ -394,6 +425,14 @@
       state.group.add(root);
 
       const cells = [];
+      const plateMaterial = makeBasic(0xffffff); // Instanced colors multiply this white base so every plate can still reveal/flash independently in one draw call.
+      const plateBatch = new THREE.InstancedMesh(sharedBoxGeometry(plateSize,.055,plateSize), plateMaterial, cols * rows);
+      plateBatch.name = 'dev_ruin_pressure_plate_batch_' + hall.id;
+      plateBatch.userData.devRandomRuinPressurePlate = true;
+      plateBatch.userData.devRandomRuinPressurePlateBatch = true;
+      plateBatch.frustumCulled = true;
+      plateBatch.count = 0;
+      root.add(plateBatch);
       let invalidPatch = false;
       for (let row = 0; row < rows && !invalidPatch; row++) {
         for (let col = 0; col < cols; col++) {
@@ -404,16 +443,20 @@
           const z = axis === 'x' ? cross : along;
           const support = sampleSupport(x, z);
           if (!support) { invalidPatch = true; break; }
-          const material = makeBasic(0x57534a);
-          const mesh = new THREE.Mesh(new THREE.BoxGeometry(plateSize,.055,plateSize), material);
-          mesh.position.set(x, Number(support.y)+.028, z);
-          mesh.name = 'dev_ruin_pressure_plate_' + hall.id + '_' + key.replace(',','_');
-          mesh.userData.devRandomRuinPressurePlate = true;
-          mesh.userData.safePathCell = safe.has(key);
-          root.add(mesh);
-          cells.push({ key, col, row, x, z, y:Number(support.y), safe:safe.has(key), mesh, material, lastTriggeredAt:-Infinity });
+          const index = cells.length;
+          plateInstanceDummy.position.set(x, Number(support.y)+.028, z);
+          plateInstanceDummy.rotation.set(0,0,0);
+          plateInstanceDummy.scale.set(1,1,1);
+          plateInstanceDummy.updateMatrix();
+          plateBatch.setMatrixAt(index, plateInstanceDummy.matrix);
+          plateInstanceColor.setHex(0x57534a);
+          plateBatch.setColorAt(index, plateInstanceColor);
+          plateBatch.count = index + 1;
+          cells.push({ key, col, row, x, z, y:Number(support.y), safe:safe.has(key), index, renderDown:false, renderColor:0x57534a, lastTriggeredAt:-Infinity });
         }
       }
+      plateBatch.instanceMatrix.needsUpdate = true;
+      if (plateBatch.instanceColor) plateBatch.instanceColor.needsUpdate = true;
       if (invalidPatch || cells.length !== cols * rows) {
         disposeObject(root);
         continue;
@@ -440,17 +483,17 @@
       button.name = 'dev_ruin_safe_path_button_' + hall.id;
       button.userData.devRuinInteractionType = 'safePathReveal';
       button.userData.interactive3D = true;
-      const pedestal = naturalizeStone(new THREE.Mesh(new THREE.BoxGeometry(.62,.35,.62), makeBasic(0x777777)));
+      const pedestal = naturalizeStone(new THREE.Mesh(sharedBoxGeometry(.62,.35,.62), makeBasic(0x777777)));
       pedestal.position.y = .175;
       const capMat = makeBasic(0x718a72);
-      const cap = new THREE.Mesh(new THREE.BoxGeometry(.42,.09,.42), capMat);
+      const cap = new THREE.Mesh(sharedBoxGeometry(.42,.09,.42), capMat);
       cap.position.y = .395;
       button.add(pedestal,cap);
       button.position.set(buttonX, Number(buttonSupport.y), buttonZ);
       root.add(button);
 
       const grid = {
-        hallId:String(hall.id), axis, cols, rows, root, cells, safe, button, capMat,
+        hallId:String(hall.id), axis, cols, rows, root, cells, safe, button, capMat, plateBatch,
         approachAtMin,entryDoorId:entryDoor?.id||null,buttonPoint:{x:buttonX,z:buttonZ},
         revealUntil:0, lastPlayerKey:null, triggerCount:0,
       };
@@ -471,7 +514,7 @@
 
   function createPlatform(id, x, z, baseY, width, depth, height = .28) {
     height=Math.max(.18,Number(height)||.28); // Taller destination columns remain solid from the local floor to their top instead of becoming floating slabs.
-    const mesh = naturalizeStone(new THREE.Mesh(new THREE.BoxGeometry(width,height,depth), makeBasic(0x808080)));
+    const mesh = naturalizeStone(new THREE.Mesh(sharedBoxGeometry(width,height,depth), makeBasic(0x808080)));
     mesh.name = id;
     mesh.position.set(x,baseY+height*.5,z);
     mesh.userData.devRandomRuinRopePlatform = true;
@@ -567,9 +610,12 @@
     const bobRestY=launchTopY+ROPE_GRAB_ABOVE_LAUNCH;
     const verticalDrop=anchorY-bobRestY;
     if(verticalDrop<=.6)return null;
+    const minBobY=hazardY+.12; // The grip/player datum may sweep low over the hazard, but it must never pass through the authored floor plane.
+    const maxSafeLength=anchorY-minBobY;
     const length=Math.hypot(swingHorizontal,verticalDrop),startAngle=Math.atan2(swingHorizontal,verticalDrop);
+    if(length>maxSafeLength-.02)return null; // Reject impossible low-ceiling spans instead of creating a pendulum whose bottom lives below the floor.
 
-    const mount=naturalizeStone(new THREE.Mesh(new THREE.CylinderGeometry(.15,.11,.10,10),makeBasic(0x808080)));
+    const mount=naturalizeStone(new THREE.Mesh(sharedCylinderGeometry(.15,.11,.10,10),makeBasic(0x808080)));
     mount.name='dev_ruin_swing_rope_ceiling_mount_'+room.id+(idSuffix?'_'+idSuffix:'');
     mount.position.set(cx,anchorY-.025,cz);
     mount.userData.devRandomRuinRopeCeilingMount=true;
@@ -580,7 +626,7 @@
     const line=new THREE.Line(lineGeometry,new THREE.LineBasicMaterial({color:0xc9ad77,transparent:true,opacity:.96}));
     line.name='dev_ruin_swing_rope_'+room.id+(idSuffix?'_'+idSuffix:'');
     line.frustumCulled=false;state.group.add(line);
-    const marker=new THREE.Mesh(new THREE.SphereGeometry(.12,8,6),makeBasic(0xd1b682));
+    const marker=new THREE.Mesh(sharedSphereGeometry(.12,8,6),makeBasic(0xd1b682));
     marker.name='dev_ruin_swing_rope_grip_'+room.id+(idSuffix?'_'+idSuffix:'');
     marker.userData.interactive3D=true;marker.userData.devRuinInteractionType='ropeSwing';state.group.add(marker);
 
@@ -588,7 +634,7 @@
     const rope={
       id:'rope-'+room.id+(idSuffix?'-'+idSuffix:''),
       roomId:room.id,line,marker,mount,anchor:{x:cx,y:anchorY,z:cz},ceilingY:anchorY,
-      yaw:Math.atan2(dirZ,dirX),length,maxLength:length+.55,angle:-startAngle,launchAngle:-startAngle,omega:0,
+      yaw:Math.atan2(dirZ,dirX),length,maxLength:Math.max(length,Math.min(length+.55,maxSafeLength)),minBobY,angle:-startAngle,launchAngle:-startAngle,omega:0,
       attached:false,braking:false,startPlatform:pa,endPlatform:pb,
       hazard:{mesh:null,cx,cz,y:hazardY,length:hazardLength,width:hazardWidth,axis,lastBurnAt:-Infinity},
       grabPoint,bob:null,
@@ -598,14 +644,18 @@
 
   function startPlatformForTarget(context,room,target,rng) {
     const bounds=roomBounds(context.meta,room),margin=1.45;
-    const candidates=[
-      {x:bounds.minX+margin,z:target.z},{x:bounds.maxX-margin,z:target.z},
-      {x:target.x,z:bounds.minZ+margin},{x:target.x,z:bounds.maxZ-margin},
-    ].filter(point=>point.x>bounds.minX+1&&point.x<bounds.maxX-1&&point.z>bounds.minZ+1&&point.z<bounds.maxZ-1)
-      .map(point=>({...point,distance:Math.hypot(point.x-target.x,point.z-target.z),support:sampleSupport(point.x,point.z)}))
-      .filter(point=>point.support&&point.distance>=4.4)
-      .sort((a,b)=>b.distance-a.distance);
+    const candidateDistances=[6.0,5.4,4.7]; // Low ruin ceilings cannot support the former room-edge-length ropes; these spans stay physically above the floor at the pendulum bottom.
+    const candidates=[];
+    for(const distance of candidateDistances){
+      for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){
+        const point={x:target.x+dx*distance,z:target.z+dz*distance};
+        if(point.x<=bounds.minX+margin||point.x>=bounds.maxX-margin||point.z<=bounds.minZ+margin||point.z>=bounds.maxZ-margin)continue;
+        const support=sampleSupport(point.x,point.z);
+        if(support)candidates.push({...point,distance,support});
+      }
+    }
     if(!candidates.length)return null;
+    candidates.sort((a,b)=>b.distance-a.distance);
     const pick=candidates[Math.min(candidates.length-1,Math.floor(rng()*Math.min(2,candidates.length)))];
     const axis=Math.abs(pick.x-target.x)>=Math.abs(pick.z-target.z)?'x':'z';
     return createPlatform('dev_ruin_rope_balcony_'+room.id,pick.x,pick.z,Number(pick.support.y),axis==='x'?2.1:2.5,axis==='x'?2.5:2.1);
@@ -641,7 +691,7 @@
   }
 
   function createEmitterFixture(id,x,y,z) {
-    const mesh=naturalizeStone(new THREE.Mesh(new THREE.BoxGeometry(.24,.24,.24),makeBasic(0x808080)));
+    const mesh=naturalizeStone(new THREE.Mesh(sharedBoxGeometry(.24,.24,.24),makeBasic(0x808080)));
     mesh.name=id;
     mesh.position.set(x,y+.42,z);
     mesh.userData.devRandomRuinHallTrapEmitter=true;
@@ -664,9 +714,9 @@
     }
     let mesh;
     if (fire) {
-      mesh=new THREE.Mesh(new THREE.SphereGeometry(.13,8,6),makeBasic(0xff6a22));
+      mesh=new THREE.Mesh(sharedSphereGeometry(.13,8,6),makeBasic(0xff6a22));
     } else {
-      mesh=new THREE.Mesh(new THREE.BoxGeometry(.34,.055,.055),makeBasic(0x86a866));
+      mesh=new THREE.Mesh(sharedBoxGeometry(.34,.055,.055),makeBasic(0x86a866));
       mesh.rotation.y=trap.axis==='x'?Math.PI*.5:0;
     }
     mesh.name='dev_ruin_hall_projectile_'+trap.id+'_'+station.index+'_'+station.sequence;
@@ -765,7 +815,7 @@
       const p=points[i],support=sampleSupport(p.x,p.z);
       if(!support){disposeObject(root);return null;}
       const material=makeBasic(0x59544b);
-      const mesh=new THREE.Mesh(new THREE.BoxGeometry(.68,.06,.68),material);
+      const mesh=new THREE.Mesh(sharedBoxGeometry(.68,.06,.68),material);
       mesh.name='dev_ruin_chord_plate_'+id+'_'+i;
       mesh.position.set(p.x,Number(support.y)+.03,p.z);
       mesh.userData.devRandomRuinChordPlate=true;
@@ -799,8 +849,8 @@
     let panel=null,blockerId=null;
     if(!generatedMechanismId){
       const geometry=doorway.axis==='x'
-        ? new THREE.BoxGeometry(thickness,height,width)
-        : new THREE.BoxGeometry(width,height,thickness);
+        ? sharedBoxGeometry(thickness,height,width)
+        : sharedBoxGeometry(width,height,thickness);
       panel=naturalizeStone(new THREE.Mesh(geometry,makeBasic(0x808080)));
       panel.name='dev_ruin_modular_lock_door_'+room.id;
       panel.position.set(doorway.x,Number(support.y)+height*.5+(options.startOpen===false?0:height+.18),doorway.z);
@@ -859,11 +909,11 @@
     }
     const root=new THREE.Group();
     root.name='dev_ruin_stone_canopy_'+room.id;
-    const slab=naturalizeStone(new THREE.Mesh(new THREE.BoxGeometry(width,.22,depth),makeBasic(0x808080)));
+    const slab=naturalizeStone(new THREE.Mesh(sharedBoxGeometry(width,.22,depth),makeBasic(0x808080)));
     slab.position.set(x,roofY,z);slab.userData.devRandomRuinStoneCanopy=true;slab.userData.cameraObstacle=true;root.add(slab);
     const postOffsets=[[-width*.42,-depth*.38],[width*.42,-depth*.38]];
     for(const [dx,dz] of postOffsets){
-      const post=naturalizeStone(new THREE.Mesh(new THREE.BoxGeometry(.22,1.7,.22),makeBasic(0x808080)));
+      const post=naturalizeStone(new THREE.Mesh(sharedBoxGeometry(.22,1.7,.22),makeBasic(0x808080)));
       post.position.set(x+dx,baseY+.85,z+dz);root.add(post);
     }
     state.group.add(root);
@@ -879,7 +929,7 @@
     const x=Number(anchor?.x),z=Number(anchor?.z);
     if(!Number.isFinite(x)||!Number.isFinite(z))return null;
     const material=makeBasic(0x466b70);
-    const mesh=new THREE.Mesh(new THREE.CylinderGeometry(.29,.29,.10,8),material);
+    const mesh=new THREE.Mesh(sharedCylinderGeometry(.29,.29,.10,8),material);
     mesh.rotation.x=Math.PI*.5; // Thin octagonal stone target faces horizontally into the room just below the ceiling.
     mesh.position.set(x,ceilingY,z);
     mesh.name='dev_ruin_modular_ceiling_glyph_'+room.id+'_'+state.ceilingGlyphs.length;
@@ -907,7 +957,7 @@
       if(elevator.annexBounds&&elevator.annexDoorway){
         const annexOwner={...room,id:String(room.id)+'-sunken-annex'};
         lowerShell=buildSunkenRoomShell(context,annexOwner,elevator.annexBounds,elevator.annexDoorway,elevator.lowerFloorY);
-        nextDoorMechanismId=onwardGeneratedStoneDoorMechanism(context,{x:rope.startPlatform.x,z:rope.startPlatform.z}); // Completion opens the far/upstairs-side generated door rather than accidentally selecting the balcony entrance behind the player.
+        nextDoorMechanismId=onwardGeneratedStoneDoorMechanism(context,room,{x:rope.startPlatform.x,z:rope.startPlatform.z}); // Completion may only open a generated doorway belonging to this room; branched ruins can no longer unlock an unrelated distant door.
         if(lowerShell){
           ossuary=buildOssuaryChordComposer(context,rng,annexOwner,{
             roomId:annexOwner.id,
@@ -970,7 +1020,7 @@
       if(!annexBounds||annexBounds.maxX-annexBounds.minX<3.0||annexBounds.maxZ-annexBounds.minZ<3.0)return null;
     }
     const height=.26;
-    const mesh=naturalizeStone(new THREE.Mesh(new THREE.BoxGeometry(width,height,depth),makeBasic(0x808080)));
+    const mesh=naturalizeStone(new THREE.Mesh(sharedBoxGeometry(width,height,depth),makeBasic(0x808080)));
     mesh.name='dev_ruin_cycling_elevator_'+room.id;
     const topTopY=topFloorY+Math.max(.05,Number(options.topRise)||.05),bottomTopY=lowerFloorY+.08; // Compound rope elevators can begin conspicuously above step height; standalone elevators retain floor-flush tops.
     mesh.position.set(x,topTopY-height*.5,z);state.group.add(mesh);
@@ -1010,7 +1060,7 @@
     const thickness=.18,height=2.15,gap=Math.max(.9,doorway.width),centerX=(bounds.minX+bounds.maxX)*.5,centerZ=(bounds.minZ+bounds.maxZ)*.5;
     const wallRecords=[];
     const addWall=(name,x,z,w,d)=>{
-      const wall=naturalizeStone(new THREE.Mesh(new THREE.BoxGeometry(w,height,d),makeBasic(0x808080)));
+      const wall=naturalizeStone(new THREE.Mesh(sharedBoxGeometry(w,height,d),makeBasic(0x808080)));
       wall.name=name;wall.position.set(x,floorY+height*.5,z);root.add(wall);
       const blockerId='devruin-'+name;
       addStaticWallBlocker(blockerId,{minX:x-w*.5,maxX:x+w*.5,minZ:z-d*.5,maxZ:z+d*.5});
@@ -1027,7 +1077,7 @@
     const sideRecord=wallRecords.find(record=>record.name==='modular_ossuary_'+sideName+'_'+room.id);
     if(sideRecord){
       sideRecord.wall.parent?.remove?.(sideRecord.wall);
-      sideRecord.wall.geometry?.dispose?.();sideRecord.wall.material?.dispose?.();
+      disposeOwnedGeometry(sideRecord.wall.geometry);sideRecord.wall.material?.dispose?.();
       DS.remove(sideRecord.blockerId);state.surfaceIds.delete(sideRecord.blockerId);
     }
     if(doorway.axis==='x'){
@@ -1039,7 +1089,7 @@
       if(lower>.2)addWall('modular_ossuary_'+sideName+'_a_'+room.id,bounds.minX+lower*.5,doorway.z,lower,thickness);
       if(upper>.2)addWall('modular_ossuary_'+sideName+'_b_'+room.id,doorway.x+gap*.5+upper*.5,doorway.z,upper,thickness);
     }
-    const ceiling=naturalizeStone(new THREE.Mesh(new THREE.BoxGeometry(xSpan,.18,zSpan),makeBasic(0x808080)));
+    const ceiling=naturalizeStone(new THREE.Mesh(sharedBoxGeometry(xSpan,.18,zSpan),makeBasic(0x808080)));
     ceiling.name='dev_ruin_sunken_ossuary_ceiling_'+room.id;ceiling.position.set(centerX,floorY+height+.09,centerZ);root.add(ceiling);
     const module={id:'sunken-room-shell-'+room.id,roomId:String(room.id),root,bounds:{...bounds},doorway:{...doorway},floorY};
     state.sunkenRoomShells.push(module);
@@ -1068,14 +1118,26 @@
     return best?.id||null;
   }
 
-  function onwardGeneratedStoneDoorMechanism(context,startPoint) {
-    let best=null;
-    for(const door of generatedStoneDoorMechanisms(context)){
-      const distance=Math.hypot(door.x-startPoint.x,door.z-startPoint.z);
-      if(distance<1.8)continue; // Never nominate the balcony/entry-side threshold as the reward door when a farther generated door exists.
-      if(!best||distance>best.distance)best={...door,distance};
+  function onwardGeneratedStoneDoorMechanism(context,room,startPoint) {
+    const generated=generatedStoneDoorMechanisms(context);
+    const authoredDoorways=roomDoorways(context,room).map(entry=>doorwayWorld(context.meta,entry.door,entry.index));
+    const localDoors=[];
+    for(const doorway of authoredDoorways){
+      let best=null;
+      for(const door of generated){
+        const matchDistance=Math.hypot(door.x-doorway.x,door.z-doorway.z);
+        if(matchDistance>Math.max(1.25,Math.min(2.1,doorway.width*.4)))continue;
+        if(!best||matchDistance<best.matchDistance)best={...door,matchDistance};
+      }
+      if(best&&!localDoors.some(door=>door.id===best.id))localDoors.push(best);
     }
-    return best?.id||null;
+    let onward=null;
+    for(const door of localDoors){
+      const distance=Math.hypot(door.x-startPoint.x,door.z-startPoint.z);
+      if(distance<1.8)continue; // Exclude the entrance-side threshold, but never escape this room's actual doorway graph.
+      if(!onward||distance>onward.distance)onward={...door,distance};
+    }
+    return onward?.id||null;
   }
 
   function sarcophagusPlacements(context, room, explicitBounds = null) {
@@ -1094,9 +1156,9 @@
     const coffins=[];
     for(const [index,p] of sarcophagusPlacements(context,room,options.bounds||null).entries()){
       const support=sampleSupport(p.x,p.z);if(!support)continue;
-      const body=naturalizeStone(new THREE.Mesh(new THREE.BoxGeometry(.72,1.75,.52),makeBasic(0x808080)));
+      const body=naturalizeStone(new THREE.Mesh(sharedBoxGeometry(.72,1.75,.52),makeBasic(0x808080)));
       body.position.set(p.x,Number(support.y)+.875,p.z);body.rotation.y=p.yaw;body.name='dev_ruin_sarcophagus_body_'+room.id+'_'+index;root.add(body);
-      const panel=naturalizeStone(new THREE.Mesh(new THREE.BoxGeometry(.58,1.55,.12),makeBasic(0x808080)));
+      const panel=naturalizeStone(new THREE.Mesh(sharedBoxGeometry(.58,1.55,.12),makeBasic(0x808080)));
       panel.position.set(0,0,.32);body.add(panel);
       coffins.push({index,body,panel,closedY:0,openY:1.62,progress:0,spawnX:p.spawnX,spawnZ:p.spawnZ,spawned:false,creature:null,released:false});
     }
@@ -1407,14 +1469,27 @@
     for(const grid of state.safeGrids){
       const revealing=now<grid.revealUntil;
       grid.capMat.color.setHex(revealing?0xc9f7a2:0x718a72);
-      let occupied=null;
+      let occupied=null,matrixDirty=false,colorDirty=false;
       for(const cell of grid.cells){
         const on=Math.abs(player.x-cell.x)<=.34&&Math.abs(player.z-cell.z)<=.34;
         if(on)occupied=cell;
-        cell.mesh.position.y=cell.y+.028-(on?.032:0);
+        if(cell.renderDown!==on){
+          plateInstanceDummy.position.set(cell.x,cell.y+.028-(on?.032:0),cell.z);
+          plateInstanceDummy.rotation.set(0,0,0);
+          plateInstanceDummy.scale.set(1,1,1);
+          plateInstanceDummy.updateMatrix();
+          grid.plateBatch.setMatrixAt(cell.index,plateInstanceDummy.matrix);
+          cell.renderDown=on;matrixDirty=true;
+        }
         const color=revealing&&cell.safe?0x8fe67f:(now-cell.lastTriggeredAt<260?0xff5b2b:0x57534a);
-        cell.material.color.setHex(color);
+        if(cell.renderColor!==color){
+          plateInstanceColor.setHex(color);
+          grid.plateBatch.setColorAt(cell.index,plateInstanceColor);
+          cell.renderColor=color;colorDirty=true;
+        }
       }
+      if(matrixDirty)grid.plateBatch.instanceMatrix.needsUpdate=true;
+      if(colorDirty&&grid.plateBatch.instanceColor)grid.plateBatch.instanceColor.needsUpdate=true;
       const key=occupied?.key||null;
       if(occupied&&!occupied.safe&&grid.lastPlayerKey!==key&&now-occupied.lastTriggeredAt>=GRID_RETRIGGER_MS){
         occupied.lastTriggeredAt=now;
@@ -1633,7 +1708,7 @@
       }
       if(hit||projectile.age>=projectile.maxAge){
         projectile.mesh.parent?.remove?.(projectile.mesh);
-        projectile.mesh.geometry?.dispose?.();
+        disposeOwnedGeometry(projectile.mesh.geometry);
         projectile.mesh.material?.dispose?.();
         state.projectiles.splice(index,1);
       }
@@ -1750,6 +1825,7 @@
         length:+rope.length.toFixed(3),angle:+rope.angle.toFixed(3),omega:+rope.omega.toFixed(3),yaw:+rope.yaw.toFixed(3), // Mobile/browser diagnostics prove movement input changes the live pendulum rather than a canned traversal.
         ceilingY:+rope.ceilingY.toFixed(3),ceilingMounted:rope.mount?.parent===state.group,weaponStowed:!!state.ropeHeldToolSnapshot,
         anchor:clonePoint(rope.anchor),bob:clonePoint(rope.bob),grabPoint:clonePoint(rope.grabPoint),
+        bottomY:+(rope.anchor.y-rope.length).toFixed(3),minBobY:+(rope.minBobY||0).toFixed(3),
         startTopY:+(rope.startPlatform?.topY||0).toFixed(3),endTopY:+(rope.endPlatform?.topY||0).toFixed(3),
       })),
       flight:state.flight?clonePoint(state.flight):null,
