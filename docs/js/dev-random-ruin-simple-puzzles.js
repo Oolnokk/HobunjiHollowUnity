@@ -875,15 +875,41 @@
     const cs=worldCellSize(context.meta),step=Math.abs(Number(context.meta?.plateauModel?.stepHeight)||.42);
     const topFloorY=Number(context.meta?.floorSurfaceY)||0,lowerFloorY=topFloorY+Number(region.level)*step;
     if(topFloorY-lowerFloorY<.65)return null;
-    const x=PAD+(Number(region.col)+Number(region.w)*.5)*cs,z=PAD+(Number(region.row)+Number(region.h)*.5)*cs;
-    const width=Math.max(1.5,Number(region.w)*cs-.16),depth=Math.max(1.5,Number(region.h)*cs-.16),height=.26;
+    const regionBounds={
+      minX:PAD+Number(region.col)*cs,maxX:PAD+(Number(region.col)+Number(region.w))*cs,
+      minZ:PAD+Number(region.row)*cs,maxZ:PAD+(Number(region.row)+Number(region.h))*cs,
+    };
+    const regionWidth=regionBounds.maxX-regionBounds.minX,regionDepth=regionBounds.maxZ-regionBounds.minZ;
+    let x=(regionBounds.minX+regionBounds.maxX)*.5,z=(regionBounds.minZ+regionBounds.maxZ)*.5;
+    let width=Math.max(1.5,regionWidth-.16),depth=Math.max(1.5,regionDepth-.16),annexBounds=null,annexDoorway=null;
+    if(options.reserveAnnex===true){
+      const longAxis=regionWidth>=regionDepth?'x':'z';
+      if((longAxis==='x'?regionWidth:regionDepth)<6.1||(longAxis==='x'?regionDepth:regionWidth)<3.8)return null;
+      if(longAxis==='x'){
+        width=Math.min(2.8,regionWidth*.40);depth=Math.min(regionDepth-.22,3.5);
+        x=regionBounds.minX+.12+width*.5;
+        const minX=x+width*.5+.28,maxX=regionBounds.maxX-.16;
+        const roomDepth=Math.min(regionDepth-.26,4.3),centerZ=(regionBounds.minZ+regionBounds.maxZ)*.5;
+        annexBounds={minX,maxX,minZ:centerZ-roomDepth*.5,maxZ:centerZ+roomDepth*.5};
+        annexDoorway={id:'sunken-annex-door-'+room.id,axis:'x',x:minX,z:centerZ,width:1.05,from:'elevator',to:'ossuary'};
+      }else{
+        depth=Math.min(2.8,regionDepth*.40);width=Math.min(regionWidth-.22,3.5);
+        z=regionBounds.minZ+.12+depth*.5;
+        const minZ=z+depth*.5+.28,maxZ=regionBounds.maxZ-.16;
+        const roomWidth=Math.min(regionWidth-.26,4.3),centerX=(regionBounds.minX+regionBounds.maxX)*.5;
+        annexBounds={minX:centerX-roomWidth*.5,maxX:centerX+roomWidth*.5,minZ,maxZ};
+        annexDoorway={id:'sunken-annex-door-'+room.id,axis:'z',x:centerX,z:minZ,width:1.05,from:'elevator',to:'ossuary'};
+      }
+      if(!annexBounds||annexBounds.maxX-annexBounds.minX<3.0||annexBounds.maxZ-annexBounds.minZ<3.0)return null;
+    }
+    const height=.26;
     const mesh=naturalizeStone(new THREE.Mesh(new THREE.BoxGeometry(width,height,depth),makeBasic(0x808080)));
     mesh.name='dev_ruin_cycling_elevator_'+room.id;
     const topTopY=topFloorY+.05,bottomTopY=lowerFloorY+.08;
     mesh.position.set(x,topTopY-height*.5,z);state.group.add(mesh);
     const module={
-      id:'cycling-elevator-'+room.id,roomId:String(room.id),mesh,x,z,width,depth,height,
-      topTopY,bottomTopY,progress:0,active:options.startActive===true,elapsed:0,cycleSeconds:Math.max(5,Number(options.cycleSeconds)||8),
+      id:'cycling-elevator-'+room.id,roomId:String(room.id),mesh,x,z,width,depth,height,region,regionBounds,annexBounds,annexDoorway,
+      topTopY,bottomTopY,lowerFloorY,progress:0,active:options.startActive===true,elapsed:0,cycleSeconds:Math.max(5,Number(options.cycleSeconds)||8),
     };
     const surfaceId=module.id+'-surface';
     DS.registerSurface({
@@ -894,7 +920,7 @@
     });
     state.surfaceIds.add(surfaceId);
     state.cyclingElevators.push(module);
-    recordModulePlacement('cyclingElevator','sunkenFloor',module.id,{roomId:String(room.id),depth:+(topFloorY-lowerFloorY).toFixed(3)});
+    recordModulePlacement('cyclingElevator','sunkenFloor',module.id,{roomId:String(room.id),depth:+(topFloorY-lowerFloorY).toFixed(3),reservesAnnex:!!annexBounds});
     return module;
   }
 
@@ -902,6 +928,68 @@
     if(!module)return false;
     module.active=true;module.elapsed=0;module.progress=0;
     return true;
+  }
+
+  function addStaticWallBlocker(id,bounds) {
+    DS.registerBlocker({id,scope:SCOPE,bounds,purpose:'modular_ossuary_wall'});
+    state.surfaceIds.add(id);
+  }
+
+  function buildSunkenRoomShell(context,room,bounds,doorway,floorY) {
+    if(!bounds||!doorway)return null;
+    const root=new THREE.Group();
+    root.name='dev_ruin_sunken_ossuary_shell_'+room.id;
+    state.group.add(root);
+    const thickness=.18,height=2.15,gap=Math.max(.9,doorway.width),centerX=(bounds.minX+bounds.maxX)*.5,centerZ=(bounds.minZ+bounds.maxZ)*.5;
+    const wallRecords=[];
+    const addWall=(name,x,z,w,d)=>{
+      const wall=naturalizeStone(new THREE.Mesh(new THREE.BoxGeometry(w,height,d),makeBasic(0x808080)));
+      wall.name=name;wall.position.set(x,floorY+height*.5,z);root.add(wall);
+      const blockerId='devruin-'+name;
+      addStaticWallBlocker(blockerId,{minX:x-w*.5,maxX:x+w*.5,minZ:z-d*.5,maxZ:z+d*.5});
+      wallRecords.push({name,wall,blockerId});
+    };
+    const xSpan=bounds.maxX-bounds.minX,zSpan=bounds.maxZ-bounds.minZ;
+    addWall('modular_ossuary_north_'+room.id,centerX,bounds.minZ,xSpan,thickness);
+    addWall('modular_ossuary_south_'+room.id,centerX,bounds.maxZ,xSpan,thickness);
+    addWall('modular_ossuary_west_'+room.id,bounds.minX,centerZ,thickness,zSpan);
+    addWall('modular_ossuary_east_'+room.id,bounds.maxX,centerZ,thickness,zSpan);
+    const sideName=doorway.axis==='x'
+      ? (Math.abs(doorway.x-bounds.minX)<Math.abs(doorway.x-bounds.maxX)?'west':'east')
+      : (Math.abs(doorway.z-bounds.minZ)<Math.abs(doorway.z-bounds.maxZ)?'north':'south');
+    const sideRecord=wallRecords.find(record=>record.name==='modular_ossuary_'+sideName+'_'+room.id);
+    if(sideRecord){
+      sideRecord.wall.parent?.remove?.(sideRecord.wall);
+      sideRecord.wall.geometry?.dispose?.();sideRecord.wall.material?.dispose?.();
+      DS.remove(sideRecord.blockerId);state.surfaceIds.delete(sideRecord.blockerId);
+    }
+    if(doorway.axis==='x'){
+      const lower=(doorway.z-gap*.5)-bounds.minZ,upper=bounds.maxZ-(doorway.z+gap*.5);
+      if(lower>.2)addWall('modular_ossuary_'+sideName+'_a_'+room.id,doorway.x,bounds.minZ+lower*.5,thickness,lower);
+      if(upper>.2)addWall('modular_ossuary_'+sideName+'_b_'+room.id,doorway.x,doorway.z+gap*.5+upper*.5,thickness,upper);
+    }else{
+      const lower=(doorway.x-gap*.5)-bounds.minX,upper=bounds.maxX-(doorway.x+gap*.5);
+      if(lower>.2)addWall('modular_ossuary_'+sideName+'_a_'+room.id,bounds.minX+lower*.5,doorway.z,lower,thickness);
+      if(upper>.2)addWall('modular_ossuary_'+sideName+'_b_'+room.id,doorway.x+gap*.5+upper*.5,doorway.z,upper,thickness);
+    }
+    const ceiling=naturalizeStone(new THREE.Mesh(new THREE.BoxGeometry(xSpan,.18,zSpan),makeBasic(0x808080)));
+    ceiling.name='dev_ruin_sunken_ossuary_ceiling_'+room.id;ceiling.position.set(centerX,floorY+height+.09,centerZ);root.add(ceiling);
+    const module={id:'sunken-room-shell-'+room.id,roomId:String(room.id),root,bounds:{...bounds},doorway:{...doorway},floorY};
+    state.sunkenRoomShells.push(module);
+    recordModulePlacement('sunkenRoomShell','sunkenFloor',module.id,{roomId:String(room.id)});
+    return module;
+  }
+
+  function nearestGeneratedStoneDoorMechanism(context,point) {
+    let best=null;
+    context.root?.traverse?.(object=>{
+      if(object?.userData?.previewMotion?.type!=='stoneDoor'||!object.userData?.mechanismId)return;
+      object.updateWorldMatrix?.(true,true);
+      const box=new THREE.Box3().setFromObject(object);if(box.isEmpty())return;
+      const center=box.getCenter(new THREE.Vector3()),distance=Math.hypot(center.x-point.x,center.z-point.z);
+      if(!best||distance<best.distance)best={id:String(object.userData.mechanismId),distance};
+    });
+    return best?.id||null;
   }
 
   function sarcophagusPlacements(context, room, explicitBounds = null) {
@@ -956,17 +1044,19 @@
     return true;
   }
 
-  function buildOssuaryChordComposer(context,rng,room) {
-    const lockDoor=buildLockableDoorModule(context,room,{startOpen:true});
-    const sarcophagi=buildSarcophagusSpawnerModule(context,rng,room,{tier:1});
-    const chord=buildChordPlateSet(context,rng,{kind:'room',owner:room,onComplete:()=>setLockDoorOpen(lockDoor,true)});
+  function buildOssuaryChordComposer(context,rng,room,options={}) {
+    const roomId=String(options.roomId||room.id),owner={...room,id:roomId};
+    const bounds=options.bounds||roomBounds(context.meta,room);
+    const lockDoor=buildLockableDoorModule(context,owner,{startOpen:true,doorway:options.doorway||null});
+    const sarcophagi=buildSarcophagusSpawnerModule(context,rng,owner,{tier:1,bounds,roomId});
+    const chord=buildChordPlateSet(context,rng,{kind:'room',owner,bounds,onComplete:()=>{
+      setLockDoorOpen(lockDoor,true);
+      try{options.onComplete?.();}catch(error){console.warn('[Random Test Ruin] ossuary completion signal failed',error);}
+    }});
     if(!lockDoor||!sarcophagi||!chord)return null;
-    const bounds=roomBounds(context.meta,room);
-    const module={
-      id:'ossuary-composer-'+room.id,roomId:String(room.id),bounds,lockDoor,sarcophagi,chord,entered:false,completed:false,
-    };
+    const module={id:'ossuary-composer-'+roomId,roomId,bounds,lockDoor,sarcophagi,chord,entered:false,completed:false};
     state.ossuaryComposers.push(module);
-    recordModulePlacement('ossuaryComposer','room',module.id,{roomId:String(room.id),wires:['lockableStoneDoor','sarcophagusSpawner','chordPressurePlates']});
+    recordModulePlacement('ossuaryComposer','room',module.id,{roomId,wires:['lockableStoneDoor','sarcophagusSpawner','chordPressurePlates']});
     return module;
   }
 
@@ -1133,6 +1223,7 @@
       ceilingGlyphs:[],
       cyclingElevators:[],
       sarcophagusModules:[],
+      sunkenRoomShells:[],
       ossuaryComposers:[],
       ropeElevatorComposers:[],
       modulePlacements:[], // Every placed puzzle piece is recorded independently so compound sequences remain inspectable/recomposable.
@@ -1519,6 +1610,7 @@
       ceilingGlyphs:state.ceilingGlyphs.map(glyph=>({id:glyph.id,roomId:glyph.roomId,active:glyph.active,hitCount:glyph.hitCount})),
       cyclingElevators:state.cyclingElevators.map(elevator=>({id:elevator.id,roomId:elevator.roomId,active:elevator.active,progress:+elevator.progress.toFixed(3),topY:+elevator.topTopY.toFixed(3),bottomY:+elevator.bottomTopY.toFixed(3)})),
       sarcophagi:state.sarcophagusModules.map(module=>({id:module.id,roomId:module.roomId,activated:module.activated,spawnCount:module.spawnCount,count:module.coffins.length})),
+      sunkenRoomShells:state.sunkenRoomShells.map(module=>({id:module.id,roomId:module.roomId,floorY:+module.floorY.toFixed(3)})),
       ossuaryComposers:state.ossuaryComposers.map(module=>({id:module.id,roomId:module.roomId,entered:module.entered,completed:module.completed})),
       ropeElevatorComposers:state.ropeElevatorComposers.map(module=>({id:module.id,roomId:module.roomId,ropeId:module.rope.id,elevatorId:module.elevator.id,glyphId:module.glyph.id,canopyId:module.canopy?.id||null})),
       modules:state.modulePlacements.map(module=>({...module})),
