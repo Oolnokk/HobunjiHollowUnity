@@ -312,6 +312,7 @@
       apiSha:child?.DebrisifierV50?.sourceSha256 || null,
       three:!!child?.THREE,
       gltf:!!child?.THREE?.GLTFLoader,
+      usedParentThree:child?.__debrisUsedParentThree===true, // Distinguishes the intended local hidden-runtime path from an accidental CDN fallback in mobile/CI reports.
       deps:[...(child?.__debrisDeps || [])],
       bootErrors:[...(child?.__debrisBootErrors || [])],
       debug:(frame.contentDocument?.getElementById('debug')?.textContent || '').slice(-900),
