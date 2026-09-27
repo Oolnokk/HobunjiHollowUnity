@@ -23,12 +23,12 @@
   document.write('<script src="js/dev-random-ruin-prototype-hooks.js?v=20260926animperf2"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-tile-occupancy.js?v=20260917v50doorsinputs1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-solvability.js?v=20260926lighting1"></scr' + 'ipt>');
-  document.write('<script src="js/dev-random-ruin-interior-map.js?v=20260927generatorlocal1"></scr' + 'ipt>');
+  document.write('<script src="js/dev-random-ruin-interior-map.js?v=20260927doorunlock1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-wall-planes.js?v=20260923review1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-wall-render-proxy.js?v=20260926glyphdecal1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-collision-precision.js?v=20260917v50doorsinputs1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-motion-runtime.js?v=20260926animperf2"></scr' + 'ipt>');
-  document.write('<script src="js/dev-random-ruin-simple-puzzles.js?v=20260927chordlock1"></scr' + 'ipt>');
+  document.write('<script src="js/dev-random-ruin-simple-puzzles.js?v=20260927chordcue1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-interactions.js?v=20260926ropedodge1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-runtime-coverage.js?v=20260923review1"></scr' + 'ipt>');
 })();
