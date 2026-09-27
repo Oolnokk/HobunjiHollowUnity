@@ -53,7 +53,7 @@ for (const [name, sourceText] of [['combo', comboSource], ['quick', quickSource]
 assert(indexSource.includes('js/combat/combat-combo.js?v=20260927aerialchain1'));
 assert(indexSource.includes('js/combat/combat-quickattacks.js?v=20260927aerialchain1'));
 assert(indexSource.includes('js/combat/combat-charged-breaker.js?v=20260927aerialchain1'));
-assert(indexSource.includes('game.js?v=20260927aerialchain1'));
+assert(indexSource.includes('game.js?v=20260927inputclaim1'));
 
 const player = {
   x: 0, y: 0, health: 100, facing: 0,
