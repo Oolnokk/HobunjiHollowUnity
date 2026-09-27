@@ -8,7 +8,7 @@ const game = fs.readFileSync('docs/index.html', 'utf8');
 const studio = fs.readFileSync('docs/tools/character-studio/index.html', 'utf8');
 
 assert(hub.includes('data-target="portrait-pixel-layer-mask"'), 'Tool Hub must expose the pixel-layer authoring tab');
-assert(hub.includes('portrait-pixel-layer-mask/index.html?v=20260927pixellayer5'), 'Tool Hub must embed the current pixel-layer author');
+assert(hub.includes('portrait-pixel-layer-mask/index.html?v=20260927pixellayer6'), 'Tool Hub must embed the current pixel-layer author');
 assert(tool.includes('Paint exact source pixels'), 'author must describe pixel-exact mask editing');
 assert(tool.includes('pointerdown') && tool.includes('pointermove'), 'author must support pointer/touch painting');
 assert(tool.includes('Download mask PNG') && tool.includes('Copy JSON'), 'author must export both the mask and renderer metadata');
@@ -30,6 +30,9 @@ assert(!tool.includes('new THREE.WebGLRenderer'), 'pixel-layer author must not f
 assert(tool.includes("paintMode === 'move'") && tool.includes('shiftMaskBy'), 'author must support dragging and nudging the entire mask');
 assert(tool.includes('undoStack') && tool.includes('redoStack') && tool.includes('undoMask') && tool.includes('redoMask'), 'author must support undo/redo history');
 assert(tool.includes('pendingEditSnapshot'), 'a paint/move pointer gesture must collapse into one undo step');
+assert(tool.includes('forceSelectedClothingIntoProfile'), '3D preview must inject the selected clothing JSON instead of trusting a stale/reconstructed cosmetic option');
+assert(tool.includes('previewDescriptorFromRecord'), '3D preview must rebuild the selected variant layers from the exact JSON records selected in the author');
+assert(tool.includes("currentLayerRecords.filter(record => record.variantKey === selectedVariant)"), 'selected species/gender preview must use every layer from that exact JSON variant, including back_wrap');
 assert(tool.includes('normalizeMaskImageIntoCanvas'), 'imported opaque black/white masks must be normalized back into alpha masks');
 assert(tool.includes("!String(entry.path || '').includes('/appearance/')"), 'clothing picker must exclude appearance-only folder entries');
 assert(tool.includes("target: $('target').value"), 'author export must preserve the selected portrait stage');
