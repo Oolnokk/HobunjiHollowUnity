@@ -671,6 +671,25 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
 
     if (active.negativeLevels > 0) {
       assert.ok(active.ladders > 0, `negative floor tiers require ladder access: ${JSON.stringify(active)}`);
+      const ladderStart = await page.evaluate(() => { // Used to prove one authored ladder starts the shared ClimbSystem path from the live generated ruin.
+        const scene = window.GridTileAccessors.getActiveScene(); // Used to locate a live V50 stone-ladder root without relying on devtools.
+        let ladder = null; // Used to retain the first authored ladder discovered in the active ruin hierarchy.
+        scene?.traverse?.(object => { if (!ladder && object.userData?.generatedAccessType === 'stoneLadder') ladder = object; });
+        const before = window.DevRandomRuin.getState()?.presentation || null; // Used to detect any post-climb snapback to the original floor.
+        const started = !!ladder && window.DevRandomRuinInteractions.climbStoneLadder(ladder); // Used to require the same action path exposed to normal player input.
+        return { started, climbing:window.ClimbSystem?.debug?.playerClimbing === true, before };
+      });
+      assert.equal(ladderStart.started, true, 'authored ruin ladder must resolve endpoints and start traversal: '+JSON.stringify(ladderStart));
+      assert.equal(ladderStart.climbing, true, 'authored ruin ladder must use the shared animated ClimbSystem path: '+JSON.stringify(ladderStart));
+      await page.waitForFunction(() => window.ClimbSystem?.debug?.playerClimbing === false, null, { timeout:8000 });
+      await page.waitForTimeout(650);
+      const ladderAfter = await page.evaluate(() => window.DevRandomRuin.getState()?.presentation || null); // Used after reconciliation has resumed to prove the landing elevation remains authoritative.
+      assert.ok(Number.isFinite(ladderAfter?.elevation) && Number.isFinite(ladderStart.before?.elevation), JSON.stringify({ ladderStart, ladderAfter }));
+      assert.ok(Math.abs(ladderAfter.elevation - ladderStart.before.elevation) > .12, 'completed ladder traversal must remain on the opposite elevation instead of snapping back: '+JSON.stringify({ ladderStart, ladderAfter }));
+      assert.ok(Math.abs(ladderAfter.bodyY - ladderAfter.elevation) < .20, 'canonical player body must settle onto the ruin support elevation: '+JSON.stringify(ladderAfter));
+      if (Number.isFinite(ladderAfter.resourceRingY) && Number.isFinite(ladderAfter.shadowY)) {
+        assert.ok(Math.abs(ladderAfter.resourceRingY - ladderAfter.shadowY) < .04, 'resource ring and ground-relative presentation must share one ruin elevation authority: '+JSON.stringify(ladderAfter));
+      }
     }
     activeRuns.push({
       seed,
