@@ -14,6 +14,7 @@ const portraitSource = fs.readFileSync(path.join(root, 'docs/js/portrait-utils.j
 const styleSource = fs.readFileSync(path.join(root, 'docs/style.css'), 'utf8');
 const combatBanditSource = fs.readFileSync(path.join(root, 'docs/js/combat/combat-bandit.js'), 'utf8');
 const gameSource = fs.readFileSync(path.join(root, 'docs/game.js'), 'utf8');
+const handFrameSource = fs.readFileSync(path.join(root, 'docs/js/procedural-hand-frame-driver.js'), 'utf8');
 const proceduralLegSource = fs.readFileSync(path.join(root, 'docs/js/procedural-leg-animation.js'), 'utf8');
 const drunkProneSource = fs.readFileSync(path.join(root, 'docs/js/drunk-prone-composition-bridge.js'), 'utf8');
 const skeletonSpecies = JSON.parse(fs.readFileSync(path.join(root, 'docs/config/species/harlyao-skeleton.json'), 'utf8'));
@@ -293,6 +294,9 @@ assert.match(lichSource, /rig\.placeHandWorld\('right', handPosition, handQuater
 assert.match(combatBanditSource, /portrait\.userData\.proceduralHandParent = handsPivot[\s\S]*group\.add\(portrait\)/, 'shared hostile builder must keep the PNGPlaneAvatar hand-driver root parented in the visible entity hierarchy');
 assert.match(combatBanditSource, /handRigAvatarRoot: portrait/, 'lich avatarRef must expose the registered procedural hand root');
 assert.match(lichSource, /const registeredRoot = entity\?\.avatarRef\?\.handRigAvatarRoot/, 'lich cast-hand lookup must prefer the retained registered hand root');
+assert.match(combatBanditSource, /proceduralHandToolHolder = useRanged \? c\._banditRangedToolHolder : c\._banditToolHolder/, 'hostile hand owner must publish its live melee/ranged holder every animation update');
+assert.match(handFrameSource, /proceduralHandToolHolder[\s\S]*ownedHolder\?\.parent/, 'final-render procedural hand driver must accept a hostile-owned held object');
+assert.match(handFrameSource, /proceduralHandToolKey[\s\S]*currentToolKey\(record\)/, 'hostile hand sync must use that hostile\'s weapon key rather than the player singleton stance');
 assert.match(combatBanditSource, /const resolvedRosterDyes = applyRosterDyesToProfile\(profile, roster\)/, 'lich visible portrait must explicitly reconcile its hood/bodywrap dye before rasterization');
 assert.match(lichSource, /if \(ability === 'summon'\) summonMinion\(lich\);[\s\S]*else firePrimary\(lich, target\);/, 'both summon and primary spell abilities must fire from the reused attack strike phase');
 assert.match(proceduralLegSource, /function applyHoverPose\(side, dt\)/, 'procedural leg system must own a real two-bone hover pose rather than post-rotating feet');
