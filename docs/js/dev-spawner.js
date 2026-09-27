@@ -427,7 +427,9 @@
     deps.hostileObjects.add(creature);
     _arenaSpawnedCreatures.add(creature);
     const clothes = creature.rosterRecord?.equippedCosmetics?.join('+') || 'none'; // Copyable proof that the bandit headwear guarantee did not run.
-    const msg = `[dev-arena] spawned Harlyao Skeleton Minion #${creature.id} (class=${creature.enemyClass}, gender=${creature.rosterRecord?.appearance?.gender || '?'}, clothes=${clothes}, weapon=${creature.def?.weaponKey || 'none'}, ranged=${creature.def?.rangedWeaponKey || 'none'}, shambling=${creature.afflictions?.shamblingFooting || 0}/${creature.maxFooting || 0}, footing=${creature.footing || 0})`; // Mobile/debug-readable Minion spawn audit.
+    const dyes = Object.entries(creature.avatarRef?.resolvedRosterDyes || {}).map(([slot, rec]) => `${slot}=${rec?.dyeId || '?'}@${rec?.hex || '?'}`).join('+') || 'none'; // Confirms the world portrait actually resolved the same dye metadata later preserved by loot.
+    const handRig = creature.avatarRef?.handRigAvatarRoot?.userData?.proceduralHandRig ? 'attached' : 'pending'; // Shared hostile hand-root state makes invisible-hand failures visible on mobile.
+    const msg = `[dev-arena] spawned Harlyao Skeleton Minion #${creature.id} (class=${creature.enemyClass}, gender=${creature.rosterRecord?.appearance?.gender || '?'}, clothes=${clothes}, dyes=${dyes}, hands=${handRig}, weapon=${creature.def?.weaponKey || 'none'}, ranged=${creature.def?.rangedWeaponKey || 'none'}, shambling=${creature.afflictions?.shamblingFooting || 0}/${creature.maxFooting || 0}, footing=${creature.footing || 0})`; // Mobile/debug-readable Minion spawn audit.
     window.__farmLog?.(msg, 'wildlife');
     console.log(msg);
     renderDevSpawnPanel();
