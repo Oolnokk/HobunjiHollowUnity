@@ -332,7 +332,7 @@ assert.match(devSpawnerSource, /startsWith\('harlyao-lich:'\)/);
 assert(indexSource.includes('js/combat/combat-lich.js?v=20260927petroleum1'));
 assert(indexSource.includes('js/combat/combat-bandit.js?v=20260927hostilevisual1'));
 assert(indexSource.includes('js/dev-spawner.js?v=20260927hostilevisual1'));
-assert(indexSource.includes('game.js?v=20260927arenarespawn1'));
+assert(indexSource.includes('game.js?v=20260927meleeairborne1'));
 assert(indexSource.includes('js/combat/resource-system.js?v=20260927froststamina1'));
 assert(indexSource.includes('js/pixel-probe.js?v=20260926lich1'));
 assert(indexSource.includes('js/portrait-utils.js?v=20260926hoodback2'));
