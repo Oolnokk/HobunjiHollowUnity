@@ -786,10 +786,16 @@ window.getBodyTintedCanvas = getBodyTintedCanvas;
 
 // ── Canvas helpers ─────────────────────────────────────────
 
+function portraitImageAspect(img) {
+  const width = Number(img?.naturalWidth || img?.width) || 0;
+  const height = Number(img?.naturalHeight || img?.height) || 0;
+  return width > 0 && height > 0 ? width / height : 1;
+}
+
 function drawPortraitLayer(ctx, img, xform, tint, sourceKey, imageForTint = _imageForTint) {
   const { ax, ay, sx, sy } = xform;
   const h  = PORTRAIT_L * sy;
-  const w  = (img.naturalWidth / img.naturalHeight) * PORTRAIT_L * Math.abs(sx);
+  const w  = portraitImageAspect(img) * PORTRAIT_L * Math.abs(sx);
   const cx = PORTRAIT_CW / 2 + ay * PORTRAIT_L;
   const cy = PORTRAIT_CH / 2 - ax * PORTRAIT_L;
   ctx.save();
@@ -883,7 +889,7 @@ function _buildNeutralGrid(cols, rows) {
 function drawPortraitLayerWarped(ctx, img, xform, tint, breathingComposer, speciesId, gender, nowMs, phaseOffsetMs, seatId, staticDeform, sourceKey, imageForTint = _imageForTint) {
   const { ax, ay, sx, sy } = xform;
   const h  = PORTRAIT_L * sy;
-  const w  = (img.naturalWidth / img.naturalHeight) * PORTRAIT_L * Math.abs(sx);
+  const w  = portraitImageAspect(img) * PORTRAIT_L * Math.abs(sx);
   const cx = PORTRAIT_CW / 2 + ay * PORTRAIT_L;
   const cy = PORTRAIT_CH / 2 - ax * PORTRAIT_L;
   const layerX = cx - w / 2;
@@ -932,7 +938,7 @@ function drawPortraitLayerWarped(ctx, img, xform, tint, breathingComposer, speci
 function applyPortraitOpacityMask(ctx, img, xform) {
   const { ax, ay, sx, sy } = xform;
   const h  = PORTRAIT_L * sy;
-  const w  = (img.naturalWidth / img.naturalHeight) * PORTRAIT_L * sx;
+  const w  = portraitImageAspect(img) * PORTRAIT_L * sx;
   const cx = PORTRAIT_CW / 2 + ay * PORTRAIT_L;
   const cy = PORTRAIT_CH / 2 - ax * PORTRAIT_L;
   ctx.save();
@@ -1586,7 +1592,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     if (emoteDeformedPts) {
       const { ax, ay, sx, sy } = xform;
       const h = PORTRAIT_L * sy;
-      const w = (img.naturalWidth / img.naturalHeight) * PORTRAIT_L * Math.abs(sx);
+      const w = portraitImageAspect(img) * PORTRAIT_L * Math.abs(sx);
       const cx = PORTRAIT_CW / 2 + ay * PORTRAIT_L;
       const cy = PORTRAIT_CH / 2 - ax * PORTRAIT_L;
       // See drawPortraitLayer's identical pre-flip via _getFlippedImage.
@@ -1753,7 +1759,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       if (emoteDeformedPts) {
         const { ax, ay, sx, sy } = urXform;
         const h = PORTRAIT_L * sy;
-        const w = (img.naturalWidth / img.naturalHeight) * PORTRAIT_L * sx;
+        const w = portraitImageAspect(img) * PORTRAIT_L * sx;
         const cx = PORTRAIT_CW / 2 + ay * PORTRAIT_L;
         const cy = PORTRAIT_CH / 2 - ax * PORTRAIT_L;
         _drawPortraitLayerWarped(urCtx, img, cx - w / 2, cy - h / 2, w, h, emoteNeutralPts, emoteDeformedPts, 4, 6);
@@ -1764,7 +1770,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     // Punch mouth shape out of the ur-head layer using destination-out.
     const { ax: _mx, ay: _my, sx: _msx, sy: _msy } = urXform;
     const _mh = PORTRAIT_L * _msy;
-    const _mw = (mouthImg.naturalWidth / mouthImg.naturalHeight) * PORTRAIT_L * _msx;
+    const _mw = portraitImageAspect(mouthImg) * PORTRAIT_L * _msx;
     const _mcx = PORTRAIT_CW / 2 + _my * PORTRAIT_L;
     const _mcy = PORTRAIT_CH / 2 - _mx * PORTRAIT_L;
     urCtx.save();
