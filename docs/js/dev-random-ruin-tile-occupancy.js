@@ -287,6 +287,7 @@
       rows:model.rows,
       floor:sortedKeys(model.floorSet),
       blocked:sortedKeys(model.blocked),
+      gridBlocked:sortedKeys([...model.blocked].filter(tileKey=>{const [col,row]=tileKey.split(',').map(Number);return model.grid?.[row]?.[col]?.type===model.solidType;})), // Mobile-readable proof of which logical blockers are also active in the ordinary interior physics grid.
       causes:sortedKeys(model.causes),
       effects:sortedKeys(model.effects),
       sources:Object.fromEntries(sortedKeys(model.sources.keys()).map(tileKey => [tileKey, [...model.sources.get(tileKey)].sort()])),
