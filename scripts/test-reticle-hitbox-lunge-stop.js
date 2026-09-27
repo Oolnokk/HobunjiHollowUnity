@@ -7,6 +7,7 @@ const vm = require('node:vm');
 
 const source = fs.readFileSync('docs/js/combat/combat-camera-alignment-bridge.js', 'utf8');
 const coreSource = fs.readFileSync('docs/js/combat/combat-core.js', 'utf8');
+const gameSource = fs.readFileSync('docs/game.js', 'utf8'); // Native player lunge/render path must actually apply ordinary hop height, not merely compute it.
 assert.doesNotMatch(source, /requestAnimationFrame\s*\(|setInterval\s*\(/,
   'reticle/lunge correction must piggyback existing combat ticks instead of adding another loop');
 assert.match(source, /rayBoxInterval\(ray, box\)/,
@@ -17,6 +18,10 @@ assert.match(source, /LUNGE_CANCEL_RANGE_MULTIPLIER = 0\.5/,
   'lunge cancellation range stays explicitly half of the real attack range');
 assert.match(coreSource, /forwardAirAssistFloor = inRangeAirAssist && pitch >= 0 \? 0\.06 : 0[\s\S]{0,220}Math\.sqrt\(Math\.max\(assistedPitchRatio, forwardAirAssistFloor\)\)/,
   'forward/upward airborne assist must front-load low-angle lift and give exact-forward aim a minimum hop');
+assert.match(gameSource, /aimAllowsAirborneLunge = aimPitch >= 0[\s\S]{0,500}aimAllowsAirborneLunge,\n\s*\) \|\|/,
+  'native beginCombatLunge must request airborne assist from pitch alone, independent of target detection');
+assert.match(gameSource, /ordinaryLungeHopY = player\.lunging && !Number\.isFinite\(player\.lungeFlightWorldY\)[\s\S]{0,260}groundedTargetY \+ ordinaryLungeHopY/,
+  'ordinary lunge hop must raise the real player mesh\/hitbox instead of existing only as simulated lungeHopCurrent');
 
 const player = {
   x: 0, y: 0, health: 100, facing: 0,
@@ -167,6 +172,7 @@ assert.equal(step.eligible, false, 'pure vertical miss is not ranked as a fake z
 // Grounding is now determined only by pitch: forward/upward aim can leave the
 // ground regardless of whether an enemy is already horizontally inside the attack.
 perspectivePointY = 2.35; // ~10.2° upward from the player's 0.55 origin: below the old 12° leap threshold.
+deps.hostileObjects = []; // Explicitly prove airborne attack setup does not depend on any enemy existing or being in range.
 targetBox = {
   min: { x: 5.55, y: 1.55, z: -0.15 },
   max: { x: 5.75, y: 2.25, z: 0.15 },
@@ -196,6 +202,7 @@ deps.beginCombatLunge(128, 0.4, 0, { rangePx: 64, halfConeRad: 0.25, pitchDistan
 assert.equal(lastProfileResistance, 1, 'exactly forward aim is not considered downward/grounded');
 assert.equal(lastProfileAirAssist, true, 'exactly forward aim keeps airborne assist enabled');
 assert(player.lungeHopUnits > 0, 'forward aim receives the small minimum lift instead of staying glued to the ground');
+assert.equal(deps.hostileObjects.length, 0, 'forward/upward airborne behavior is verified with no hostile available');
 
 player.lunging = false;
 lastProfileResistance = null;
@@ -207,6 +214,7 @@ assert.equal(lastProfileAirAssist, false, 'only below-forward pitch disables air
 player.lunging = false;
 player.lungeHitTest = null;
 perspectivePointY = 0.55;
+deps.hostileObjects = [target]; // Restore the target only for the separate swept collision-stop regression below.
 
 // Simulate updateMovement covering two tiles in one rendered frame. The real
 // attack range is 1 tile, but the lunge-cancel cone is only 0.5 tile long. With
