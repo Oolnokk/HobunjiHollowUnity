@@ -679,10 +679,13 @@
     return set;
   }
 
+  function roomDoorways(context, room) {
+    return (context.meta?.doorways||[]).map((door,index)=>({door,index})).filter(entry=>entry.door?.from===room.id||entry.door?.to===room.id); // Shared room-connectivity query keeps lock-room selection independent from any one compound recipe.
+  }
+
   function roomDoorway(context, room) {
-    const doors=context.meta?.doorways||[]; // Existing generated doorway metadata is the shared anchor for lockable-room modules.
-    const index=doors.findIndex(door=>door?.from===room.id||door?.to===room.id);
-    return index>=0?doorwayWorld(context.meta,doors[index],index):null;
+    const entry=roomDoorways(context,room)[0];
+    return entry?doorwayWorld(context.meta,entry.door,entry.index):null;
   }
 
   function buildLockableDoorModule(context, room, options = {}) {
@@ -773,7 +776,8 @@
       coffins.push({index,body,panel,closedY:0,openY:1.62,progress:0,spawnX:p.spawnX,spawnZ:p.spawnZ,spawned:false});
     }
     if(coffins.length<2){disposeObject(root);return null;}
-    const module={id:'sarcophagi-'+room.id,roomId:String(room.id),root,coffins,activated:false,spawnStarted:false,spawnCount:0,tier:Math.max(0,Number(options.tier)||1)};
+    const bounds=roomBounds(context.meta,room);
+    const module={id:'sarcophagi-'+room.id,roomId:String(room.id),root,coffins,activated:false,spawnStarted:false,spawnCount:0,tier:Math.max(0,Number(options.tier)||1),autoActivateRadius:Math.max(0,Number(options.autoActivateRadius)||0),center:{x:(bounds.minX+bounds.maxX)*.5,z:(bounds.minZ+bounds.maxZ)*.5}};
     state.sarcophagusModules.push(module);
     recordModulePlacement('sarcophagusSpawner','room',module.id,{roomId:String(room.id),count:coffins.length});
     return module;
@@ -1008,13 +1012,17 @@
       }
     }
     const freeRooms=shuffle(usableRoomCandidates(context).filter(room=>!usedRooms.has(room.id)),rng);
-    if(freeRooms.length&&rng()<.55){
-      const room=freeRooms.shift();usedRooms.add(room.id);buildOssuaryChordComposer(context,rng,room); // Compound encounter is wiring only; door, sarcophagi and chord plates remain separately recorded modules.
+    const ossuaryIndex=freeRooms.findIndex(room=>roomDoorways(context,room).length===1); // A lock-in composer only claims a cul-de-sac room; standalone modules remain valid in rooms with arbitrary connectivity.
+    if(ossuaryIndex>=0&&rng()<.55){
+      const [room]=freeRooms.splice(ossuaryIndex,1);usedRooms.add(room.id);buildOssuaryChordComposer(context,rng,room); // Compound encounter is wiring only; door, sarcophagi and chord plates remain separately recorded modules.
     }else if(freeRooms.length&&rng()<.5){
       const room=freeRooms.shift();usedRooms.add(room.id);buildChordPlateSet(context,rng,{kind:'room',owner:room}); // Same four-note module can appear by itself with no skeleton encounter at all.
     }
     if(freeRooms.length&&rng()<.35){
       const room=freeRooms.shift();usedRooms.add(room.id);buildStoneCanopyModule(context,room); // Canopies may also appear as standalone architectural cover, independent of ropes.
+    }
+    if(freeRooms.length&&rng()<.3){
+      const room=freeRooms.shift();usedRooms.add(room.id);buildSarcophagusSpawnerModule(context,rng,room,{tier:1,autoActivateRadius:2.5}); // Sarcophagus enemies can occur independently; entering their room wakes them without requiring musical plates or a lock door.
     }
     if(options.hallwayTraps!==false)buildSwappableHallwayModules(context,rng,usedHallways);
     updateBadge(true);
@@ -1055,7 +1063,9 @@
   }
 
   function updateSarcophagusModules(dt) {
+    const player=playerWorld();
     for(const module of state.sarcophagusModules){
+      if(!module.activated&&module.autoActivateRadius>0&&player&&Math.hypot(player.x-module.center.x,player.z-module.center.z)<=module.autoActivateRadius)activateSarcophagusSpawner(module); // Standalone sarcophagus modules wake by proximity; compound composers can still activate them explicitly.
       const target=module.activated?1:0;
       for(const coffin of module.coffins){
         coffin.progress+=Math.max(-dt*1.45,Math.min(dt*1.45,target-coffin.progress));
