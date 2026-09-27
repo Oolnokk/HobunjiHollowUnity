@@ -265,6 +265,11 @@
     }catch(_){return false;}
   }
 
+  function playStoneUnlockKchunk() {
+    window.AudioSystem?.playObjectSfxKey?.('breakRock',1.45,.58); // Loud, low-pitched existing rock-break cue makes successful plate completion unmistakable until a dedicated stone-lock kchunk recording is added.
+    playGeneratedStoneKchunk(); // Brief synthesized low thunk reinforces the mechanical unlock and preserves a fallback if the configured rock cue is unavailable.
+  }
+
   function disposeObject(root) {
     if (!root) return;
     const geometries = new Set(), materials = new Set();
@@ -1502,7 +1507,7 @@
       }
       if(!set.solved&&set.plates.every(plate=>plate.played)){
         set.solved=true;set.solveCount++;
-        playGeneratedStoneKchunk();
+        playStoneUnlockKchunk();
         deps?.showToast?.('The four notes settle into a chord. Stone machinery unlocks.',true);
         try{set.onComplete?.(set);}catch(error){console.warn('[Random Test Ruin] chord completion failed',error);}
       }
@@ -1749,7 +1754,7 @@
       flight:state.flight?clonePoint(state.flight):null,
       ropeEquipment:{holstered:state.ropeEquipmentHolsterCount,restored:state.ropeEquipmentRestoreCount,currentlyStowed:!!state.ropeHeldToolSnapshot},
       trapHallways:state.trapHallways.map(trap=>({id:trap.id,axis:trap.axis,stations:trap.stations.length})),
-      chordPlateSets:state.chordPlateSets.map(set=>({id:set.id,slotKind:set.slotKind,played:set.plates.filter(plate=>plate.played).length,solved:set.solved,solveCount:set.solveCount,pressCounts:set.plates.map(plate=>plate.pressCount)})),
+      chordPlateSets:state.chordPlateSets.map(set=>({id:set.id,slotKind:set.slotKind,played:set.plates.filter(plate=>plate.played).length,solved:set.solved,solveCount:set.solveCount,pressCounts:set.plates.map(plate=>plate.pressCount),pitches:set.plates.map(plate=>CHORD_PITCHES[plate.index]||1)})),
       lockDoors:state.lockDoors.map(door=>({id:door.id,roomId:door.roomId,open:door.targetOpen,progress:+door.progress.toFixed(3),generatedMechanismId:door.generatedMechanismId||null,reusesGeneratedDoor:!!door.generatedMechanismId})),
       canopies:state.canopies.map(canopy=>({id:canopy.id,roomId:canopy.roomId,roofY:+canopy.roofY.toFixed(3),width:+canopy.width.toFixed(3),depth:+canopy.depth.toFixed(3),occludesTarget:canopy.occludesTarget})),
       ceilingGlyphs:state.ceilingGlyphs.map(glyph=>({id:glyph.id,roomId:glyph.roomId,active:glyph.active,hitCount:glyph.hitCount})),
