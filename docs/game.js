@@ -5225,17 +5225,10 @@
       }
 
       function currentPlayerMeleeAimDirection() {
-        if (activeCameraMode === SHOULDER_SURF_MODE) {
-          const perspectiveDirection = currentPlayerPerspectiveDirection();
-          if (perspectiveDirection) return perspectiveDirection;
-        }
-        const focused = window.RangedWeapons?.focusedHostile?.(24);
-        if (focused?.candidate?.data && window.Combat?.meleeAimSolution) {
-          const aimed = window.Combat.meleeAimSolution(player, focused.candidate.data, currentPlayerAimAngle(), currentPlayerAimPitch());
-          return { x: aimed.direction.x, y: aimed.direction.y, z: aimed.direction.z };
-        }
+        const perspectiveDirection = currentPlayerPerspectiveDirection(); // Every melee attack aims from the player toward the one finite point directly beneath the reticle, in every camera mode.
+        if (perspectiveDirection) return perspectiveDirection;
         const cameraRay = currentPlayerInteractionRay() || currentPlayerAimRay();
-        if (cameraRay?.direction) return { ...cameraRay.direction };
+        if (cameraRay?.direction) return { ...cameraRay.direction }; // Compatibility fallback still follows the reticle ray; focused-hostile auto-aim must never replace melee aim authority.
         const yaw = currentPlayerAimAngle();
         const pitch = currentPlayerAimPitch();
         const horizontal = Math.cos(pitch);
@@ -9471,15 +9464,15 @@
         const aimDirection = currentPlayerMeleeAimDirection(); // Used to pitch this lunge and its 3D hit cone from the centered reticle.
         const aimYaw = Math.atan2(aimDirection.z, aimDirection.x);
         const aimPitch = Math.asin(window.FormatUtils.clamp(aimDirection.y, -1, 1));
-        const aimAllowsAirborneLunge = aimPitch >= 0; // Native attack rule: every forward/upward player melee attack may leave the ground, even with no hostile anywhere nearby.
+        const aimUsesDirectReticleFlight = aimPitch >= 0; // Forward/upward melee displacement follows the full 3D reticle vector; only below-forward aim keeps the old grounded/ballistic model.
         const lungeProfile = window.Combat?.meleeLungeProfile?.(
           distancePx,
           aimPitch,
           hopUnits,
           player.lungeHeightUnits,
-          aimAllowsAirborneLunge ? 1 : (hitTest?.pitchDistanceResistance || 0),
-          hitTest?.directFlightStrength || 0,
-          aimAllowsAirborneLunge,
+          aimUsesDirectReticleFlight ? 1 : (hitTest?.pitchDistanceResistance || 0),
+          aimUsesDirectReticleFlight ? 1 : (hitTest?.directFlightStrength || 0),
+          aimUsesDirectReticleFlight,
         ) || { distancePx, hopUnits, pitch: aimPitch, verticalTravelUnits: 0, directFlightStrength: 0 };
         player.lungeDirX = Math.cos(aimYaw);
         player.lungeDirY = Math.sin(aimYaw);
@@ -17271,42 +17264,12 @@
               return;
             }
           }
-          // Shoulder-surf keeps the existing lunge update but derives its full
-          // 3D direction from the one perspective point every frame. This is
-          // not a new loop: it replaces the old in-flight hostile homing at
-          // the same boundary, and preserves vertical lunge/leap behavior.
-          const perspectiveLungeDirection = activeCameraMode === SHOULDER_SURF_MODE
-            ? currentPlayerPerspectiveDirection({
-                x: player.x / TILE,
-                y: Number.isFinite(player.lungeFlightWorldY) ? player.lungeFlightWorldY : playerMesh.position.y,
-                z: player.y / TILE,
-              })
-            : null; // Used below to keep horizontal travel and vertical pitch converged on the shared point.
-          if (perspectiveLungeDirection) {
-            const horizontal = Math.hypot(perspectiveLungeDirection.x, perspectiveLungeDirection.z); // Normalizes the lunge's ground travel independently of its vertical pitch.
-            if (horizontal > 1e-8) {
-              const desiredLungeAngle = Math.atan2(perspectiveLungeDirection.z, perspectiveLungeDirection.x); // Turns the lunge/body toward the point's current XZ bearing.
-              player.lungeDirX = perspectiveLungeDirection.x / horizontal;
-              player.lungeDirY = perspectiveLungeDirection.z / horizontal;
-              player.lungeAimPitch = Math.asin(window.FormatUtils.clamp(perspectiveLungeDirection.y, -1, 1));
-              facingAngle = desiredLungeAngle;
-              player.angle = desiredLungeAngle;
-            }
-          } else {
-            // Non-shoulder modes retain their opt-in hostile homing behavior.
-            const lungeTarget = (activeTool === 'weapon' && equipmentSlots.weapon) ? findAutoTarget() : null;
-            if (lungeTarget) {
-              const aimed = window.Combat?.meleeAimSolution?.(player, lungeTarget, player.angle, player.lungeAimPitch || 0);
-              const desiredLungeAngle = aimed?.yaw ?? Math.atan2(lungeTarget.y - player.y, lungeTarget.x - player.x);
-              const curLungeAngle = Math.atan2(player.lungeDirY, player.lungeDirX);
-              const homingT = Math.min(1, LUNGE_HOMING_RATE * dt);
-              const lungeDiff = angleDiff(desiredLungeAngle, curLungeAngle);
-              const newLungeAngle = curLungeAngle + lungeDiff * homingT;
-              player.lungeDirX = Math.cos(newLungeAngle);
-              player.lungeDirY = Math.sin(newLungeAngle);
-              if (aimed) player.lungeAimPitch += (aimed.pitch - (player.lungeAimPitch || 0)) * homingT;
-            }
-          }
+          // Lunge direction is intentionally locked to the 3D reticle vector captured by beginCombatLunge.
+          // Targets may stop the attack when its collider reaches them, but neither focused-hostile auto-targeting
+          // nor later camera motion is allowed to bend the displacement away from that committed straight line.
+          const committedLungeAngle = Math.atan2(player.lungeDirY, player.lungeDirX);
+          facingAngle = committedLungeAngle;
+          player.angle = committedLungeAngle;
 
           player.lungeT = Math.max(0, player.lungeT - dt);
           const t = 1 - player.lungeT / player.lungeDur;
