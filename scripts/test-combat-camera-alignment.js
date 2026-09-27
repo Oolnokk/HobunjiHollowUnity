@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 const source = fs.readFileSync('docs/js/combat/combat-camera-alignment-bridge.js', 'utf8');
+const coreSource = fs.readFileSync('docs/js/combat/combat-core.js', 'utf8'); // Confirms direct reticle flight exits before legacy diminished-vertical lunge math.
 const loader = fs.readFileSync('docs/js/combat/combat-config-loader.js', 'utf8');
 const game = fs.readFileSync('docs/game.js', 'utf8');
 const rangedFocus = fs.readFileSync('docs/js/combat/ranged-camera-focus.js', 'utf8');
@@ -93,7 +94,21 @@ assert.match(pixelProbe, /Point convergence errors: head=.*bodyYaw=.*melee=.*las
 assert.doesNotMatch(debugHitboxes, /requestAnimationFrame\s*\(|setInterval\s*\(/,
   'expanded ray debug adds no independent frame loop or polling timer');
 assert.match(game, /const aimDirection = currentPlayerMeleeAimDirection\(\);/,
-  'player lunge setup still has one shared aim-direction boundary for the bridge to correct');
+  'player lunge setup has one shared reticle-authored aim-direction boundary');
+assert.match(game, /function currentPlayerMeleeAimDirection\(\)[\s\S]{0,900}currentPlayerPerspectiveDirection\(meleeOrigin\)/,
+  'native melee aim is computed from the combat-body origin to the shared reticle point');
+assert.doesNotMatch(game, /function currentPlayerMeleeAimDirection\(\)[\s\S]{0,1200}focusedHostile\?\./,
+  'focused hostile lookup cannot replace melee reticle aim');
+assert.doesNotMatch(game, /const lungeTarget = \(activeTool === 'weapon'[\s\S]{0,700}LUNGE_HOMING_RATE/,
+  'player lunges cannot home toward an enemy after the reticle vector is committed');
+assert.match(game, /aimUsesDirectReticleFlight = aimPitch >= 0[\s\S]{0,550}aimUsesDirectReticleFlight \? 1 : \(hitTest\?\.directFlightStrength \|\| 0\)/,
+  'forward/upward native attacks force full direct flight along the reticle vector');
+assert.match(coreSource, /MAX_MELEE_AIM_PITCH_RAD = Math\.PI \/ 2/,
+  'melee reticle pitch must reach a true 90-degree vertical aim');
+assert.match(coreSource, /upwardDistanceScale = 1 - 0\.5 \* upwardPitchFraction/,
+  'forward/upward lunge total distance must lerp linearly from 1x at 0 degrees to 0.5x at 90 degrees');
+assert.match(coreSource, /if \(direct >= 0\.999 && pitch >= 0\)[\s\S]{0,1000}return[\s\S]{0,900}const distanceScaleAtAngle/,
+  'direct reticle flight exits before the legacy diminished-vertical ballistic math starts');
 
 // All combat adapters must accept the same finite point; authored attack range
 // limits reach/travel but must not create a second target endpoint.
@@ -201,8 +216,23 @@ const windowStub = {
   Combat: {
     init: focusLikeCombatInit,
     deps: null,
-    meleeLungeProfile(distancePx, pitch, hopUnits) {
-      return { distancePx, pitch, hopUnits };
+    meleeLungeProfile(distancePx, pitch, hopUnits, lungeHeightUnits, pitchDistanceResistance, directFlightStrength, inRangeAirAssist) {
+      windowStub._lastProfile = { distancePx, pitch, hopUnits, lungeHeightUnits, pitchDistanceResistance, directFlightStrength, inRangeAirAssist };
+      if (directFlightStrength >= 0.999 && pitch >= 0) {
+        const upwardDistanceScale = 1 - 0.5 * Math.max(0, Math.min(1, pitch / (Math.PI / 2)));
+        return {
+          distancePx: distancePx * upwardDistanceScale * Math.cos(Math.abs(pitch)),
+          pitch,
+          hopUnits: 0,
+          lungeHeightUnits,
+          pitchDistanceResistance,
+          directFlightStrength: 1,
+          inRangeAirAssist,
+          upwardDistanceScale,
+          verticalTravelUnits: (distancePx / 64) * upwardDistanceScale * Math.sin(pitch),
+        };
+      }
+      return { distancePx, pitch, hopUnits, lungeHeightUnits, pitchDistanceResistance, directFlightStrength, inRangeAirAssist, verticalTravelUnits: 0 };
     },
   },
 };
@@ -285,8 +315,23 @@ assert.equal(player.lungeDirX, 1, 'lunge horizontal X follows the centered camer
 assert.equal(player.lungeDirY, 0, 'lunge no longer follows a target-derived sideways direction');
 assert(Math.abs(player.lungeAimPitch - Math.atan2(1.6, 9)) < 1e-9,
   'lunge pitch uses verticality from its real origin to the shared point');
-assert.equal(player.lungeDistancePx, 128, 'camera authority does not change authored lunge distance');
-assert.equal(player.lungeHopUnits, 0.3, 'camera authority preserves authored lunge hop budget');
+const expectedPitch = Math.atan2(1.6, 9);
+const expectedUpwardDistanceScale = 1 - 0.5 * (expectedPitch / (Math.PI / 2));
+assert(Math.abs(player.lungeDistancePx - 128 * expectedUpwardDistanceScale * Math.cos(expectedPitch)) < 1e-9,
+  'forward/upward lunge horizontal travel is the XZ component of the angle-scaled 3D attack distance');
+assert.equal(player.lungeHopUnits, 0,
+  'direct reticle flight removes the old curved-hop contribution entirely');
+assert(Math.abs(player.lungeVerticalTravelUnits - 2 * expectedUpwardDistanceScale * Math.sin(expectedPitch)) < 1e-9,
+  'forward/upward lunge vertical travel is the Y component of the same angle-scaled 3D vector');
+assert.equal(windowStub._lastProfile.directFlightStrength, 1);
+assert.equal(player.lungeDirectFlightStrength, 1,
+  'forward/upward reticle attacks use full direct-flight authority');
+assert.equal(windowStub._lastProfile.pitchDistanceResistance, 1,
+  'forward/upward camera-authored lunge bypasses pitch grounding without consulting target/ledge state');
+assert.equal(windowStub._lastProfile.directFlightStrength, 1,
+  'bridge forces full direct flight rather than the legacy diminished-vertical model');
+assert.equal(windowStub._lastProfile.inRangeAirAssist, true,
+  'forward/upward camera-authored lunge marks the direct airborne path purely from aim pitch');
 
 const debug = windowStub.HobunjiCombatCameraAlignment.debugSnapshot();
 assert.equal(debug.rangedInitWrapped, true);

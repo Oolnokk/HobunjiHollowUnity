@@ -130,7 +130,9 @@
     return inAttackEditor() && global.HobunjiAttackEditorHandCalibrationMode?.active === true; // Dedicated editor tab bypasses every animation/tool/shoulder-derived hand transform.
   }
 
-  function currentToolKey() {
+  function currentToolKey(record = null) {
+    const ownedKey = record?.avatarRoot?.userData?.proceduralHandToolKey; // Hostile/NPC avatar roots can name their own held item without leaking through the player-singleton stance state.
+    if (ownedKey) return toolGrips.toolKeyFor(ownedKey);
     if (inAttackEditor()) {
       return toolGrips.toolKeyFor(document.getElementById('toolSpriteSelect')?.value || '');
     }
@@ -138,7 +140,9 @@
     return toolGrips.toolKeyFor(snapshot?.itemKey || snapshot?.shape || '');
   }
 
-  function currentGripContext() {
+  function currentGripContext(record = null) {
+    const ownedContext = record?.avatarRoot?.userData?.proceduralHandGripContext; // Hostile tool owners explicitly select melee/ranged instead of inheriting the player's active slot.
+    if (ownedContext === 'ranged' || ownedContext === 'melee') return ownedContext;
     if (typeof toolGrips.currentGripContext === 'function') return toolGrips.currentGripContext();
     if (inAttackEditor()) return document.getElementById('handGripContextSelect')?.value === 'ranged' ? 'ranged' : 'melee';
     const snapshot = global.WeaponToolStances?.getRuntimeState?.() || global.WeaponToolStances?.debugSnapshot?.() || null;
@@ -147,6 +151,8 @@
 
   function currentToolHolder(record) {
     if (inAttackEditor()) return findEditorToolHolder(record);
+    const ownedHolder = record?.avatarRoot?.userData?.proceduralHandToolHolder; // Shared humanoid hostiles publish the exact animated holder their final-render hands must follow.
+    if (ownedHolder?.parent) return ownedHolder;
     if (gameDeps?.playerMesh && record.rig?.parent === gameDeps.playerMesh) return gameDeps.toolHolder || null;
     return null;
   }
@@ -309,16 +315,21 @@
   function toolSocketWorld(record, toolHolder, gripFrame = null) {
     const Vector3 = toolHolder.position.constructor;
     const Quaternion = toolHolder.quaternion.constructor;
-    const bakedWorldMatrix = !inAttackEditor() ? global.WeaponToolStances?.lastHolderMatrixWorld?.() : null;
+    const ownedHolder = record?.avatarRoot?.userData?.proceduralHandToolHolder; // Hostile/NPC records publish their own scene-root holder; only the player's holder is owned by WeaponToolStances' singleton baked-matrix cache.
+    const playerOwnedHolder = !ownedHolder
+      && !!gameDeps?.playerMesh
+      && record.rig?.parent === gameDeps.playerMesh
+      && toolHolder === gameDeps.toolHolder; // Prevents a hostile hand record from ever reading the player's last baked holder matrix.
+    const bakedWorldMatrix = !inAttackEditor() && playerOwnedHolder
+      ? global.WeaponToolStances?.lastHolderMatrixWorld?.()
+      : null;
 
     const visualBasis = visualGripBasisDelta(record, toolHolder);
     let position;
-    // Used as the scale-free world orientation of the tool socket. Do not use
-    // getWorldQuaternion() on toolHolder's own local quaternion/position chain
-    // in general (the game player hierarchy can contain negative scale) — but
-    // toolHolder itself lives directly under the scene root and never carries
-    // non-uniform or negative scale (see toolHolder.scale.setScalar calls in
-    // game.js), so decomposing its already-baked matrixWorld is safe.
+    // Used as the scale-free world orientation of the tool socket. The special
+    // baked WeaponToolStances matrix is PLAYER-ONLY: hostile/NPC holders are
+    // independently positioned in the scene and must resolve from their own
+    // hierarchy, or their hands literally inherit the player's world position.
     let quaternion;
     if (bakedWorldMatrix) {
       quaternion = new Quaternion();
@@ -488,8 +499,8 @@
 
     syncing = true;
     try {
-      const toolKey = currentToolKey();
-      const gripContext = currentGripContext();
+      const toolKey = currentToolKey(record);
+      const gripContext = currentGripContext(record);
       const primaryGrip = toolGrips.primaryGripForTool(toolKey, gripContext);
       const primarySocket = toolSocketWorld(record, toolHolder, primaryGrip); // Raw target ON the weapon, before Grip Mode or per-GLB hand-model calibration.
       record.rig.placePaperHandGuideWorld?.(primarySocket.position, primarySocket.quaternion); // Locked reference stays on the raw target while Grip Mode + child calibration move the real hand.
@@ -522,6 +533,7 @@
         scaleFreeWorldQuaternion: true,
         toolKey: toolKey || null,
         gripContext,
+        holderAuthority: record?.avatarRoot?.userData?.proceduralHandToolHolder ? 'actor-owned-world-transform' : 'player-weapon-stance-baked-matrix',
         gripMode: global.HobunjiHandGripModes?.currentModeKey?.() || null,
         primaryGrip: JSON.parse(JSON.stringify(primaryGrip)),
         secondaryActive: record.secondaryActive,

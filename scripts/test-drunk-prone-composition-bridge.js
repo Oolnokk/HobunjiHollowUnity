@@ -160,6 +160,8 @@ vm.runInContext(source, context, { filename: modulePath });
   assert.match(source, /const RUN_STANCE_FRACTION = 0\.44/, 'run gait keeps a distinct airborne-overlap stance fraction');
   assert.match(source, /function playerRunBlend\(speedWorldUnitsPerSecond\)/, 'player locomotion has an explicit walk-to-run blend');
   assert.match(source, /banditState\.entity\?\.state === 'chase'/, 'non-animal hostiles enter run gait only during active chase/combat');
+assert.match(source, /const hoverMode = !!handle\.isHoverMode\?\.\(\)/, 'bandit gait wrapper must detect procedural hover ownership');
+assert.match(source, /effectiveSuppressed \|\| hoverMode/, 'run gait must yield while procedural hover is active');
   assert.match(source, /legLength \* \(1\.30 \+ 0\.60 \* Math\.sqrt\(speedRatio\)\)/, 'run stride scales directly from measured leg length');
   assert.match(source, /bendDegX = -\(5 \+ 23 \* pose\.swingWave\)/, 'run gait adds swing-phase knee flex instead of only stretching walk reach');
   assert.match(source, /debugLegBonesCheckbox/, 'Debug tab exposes the requested Leg Bone Debug checkbox');

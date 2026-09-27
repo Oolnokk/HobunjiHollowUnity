@@ -883,6 +883,9 @@
       gaitStrideLength: 0,
       gaitCadenceHz: 0,
       wasGaiting: false,
+      hoverEnabled: false, // Dedicated airborne locomotion mode used by hovering humanoids such as Harlyao Liches.
+      hoverPhase: 0, // Slow continuous phase drives loose left/right dangling asymmetry without depending on walking speed.
+      hoverStrength: 0, // Damped 0→1 blend prevents feet snapping between planted gait and the airborne pose.
       disposed: false,
     };
 
@@ -1176,6 +1179,45 @@
     // avatar root so its posterior lies on that seat in world space, so the
     // leg solver's plane point is the posterior's own avatar-local position.
     // Pitch/roll and footprint depth still come from the authored seat.
+    function applyHoverPose(side, dt) {
+      const mesh = state[side]; // Current procedural foot mesh for this side.
+      const chain = legChains[side]; // Hip/thigh/calf chain solved by the shared two-bone leg system.
+      if (!mesh || !chain || !window.LegBones) return;
+      const legLength = standingLegLength(); // Anatomical standing length keeps hover proportions species-scaled.
+      const sidePhase = state.hoverPhase + (side === 'left' ? 0 : Math.PI * 0.74); // Offset prevents both legs swinging like a synchronized pendulum.
+      const hang = 0.69 + Math.sin(sidePhase * 0.73) * 0.035; // Shorter-than-standing reach keeps both knees visibly loose instead of locked straight.
+      const behind = legLength * (0.11 + Math.sin(sidePhase) * 0.045); // Feet drift gently behind/ahead under the torso.
+      const lateral = legLength * Math.sin(sidePhase * 0.61) * 0.025; // Tiny independent lateral sway avoids a rigid paper-doll silhouette.
+      const idleX = side === 'left' ? state.idleLeftX : state.idleRightX; // Existing authored stance width remains the horizontal origin.
+      const contactY = side === 'left' ? state.leftContactY : state.rightContactY; // Existing foot geometry contact height keeps mesh bottoms consistent.
+      const targetY = posteriorY - legLength * hang; // Airborne target remains well above the ordinary floor-contact point.
+      const target = state[`${side}Target`]; // Shared target vector used by standing/debug readouts and the solver.
+      target.x = damp(target.x, idleX + lateral, 8, dt);
+      target.y = damp(target.y, Math.max(contactY, targetY), 8, dt);
+      target.z = damp(target.z, behind, 7, dt);
+      const bendDegX = -31 - Math.sin(sidePhase * 0.82) * 7; // Forward knee flex makes the lower legs visibly dangle instead of telescoping upward.
+      const bendDegZ = (side === 'left' ? -1 : 1) * (6 + Math.sin(sidePhase * 0.67) * 3); // Mild mirrored outward splay reads naturally while airborne.
+      const solved = window.LegBones.solveTwoBoneLeg(THREE, {
+        hip: chain.hip.position, foot: target, bendDegX, bendDegZ,
+      });
+      const blend = Math.max(0, Math.min(1, state.hoverStrength)); // Smoothly mixes into the solved hover pose after mode changes.
+      chain.thigh.quaternion.slerp(solved.thighQuaternion, blend);
+      chain.calf.position.y = damp(chain.calf.position.y, -solved.thighLength, 12, dt);
+      chain.calf.quaternion.slerp(solved.calfLocalQuaternion, blend);
+      mesh.position.y = damp(mesh.position.y, -solved.calfLength, 12, dt);
+      state[`${side}Roll`] = damp(state[`${side}Roll`], (side === 'left' ? -1 : 1) * Math.sin(sidePhase) * 0.12, 6, dt);
+      mesh.rotation.x = state[`${side}Roll`];
+      applyBoneGuideTransforms(chain, solved.thighLength, solved.calfLength);
+    }
+
+    function setHoverMode(enabled) {
+      state.hoverEnabled = !!enabled; // Callers toggle only the airborne pose; ordinary update cadence still owns all actual animation work.
+    }
+
+    function isHoverMode() {
+      return !!state.hoverEnabled;
+    }
+
     function update(dt, speedWorldUnitsPerSecond, suppressed, seatedPose) {
       if (state.disposed) return;
       if (seatedPose) {
@@ -1199,20 +1241,29 @@
       legChains.left.thigh.position.set(0, 0, 0);
       legChains.right.thigh.position.set(0, 0, 0);
       if (suppressed) {
-        // No meaningful "standing on the ground" gait while e.g. seated on a
-        // mount or mid-harvest — legs stay visible and just hang straight
-        // down from their own hip anchors instead. Each hip's X already IS
-        // its leg's idle stance X (see buildLegChain), so feeding applyPose
-        // the same neutral/idle pose it uses for a stationary leg produces
-        // exactly that straight-down hang, with no separate math needed.
+        // Explicit suppression (prone/death/mount/harvest) outranks hover, so airborne actors can still be physically brought down.
         state.gaitStrength = damp(state.gaitStrength, 0, 12, dt);
         state.gaitStrideLength = 0;
         state.gaitCadenceHz = 0;
+        state.wasGaiting = false;
+        state.hoverStrength = damp(state.hoverStrength, 0, 12, dt);
         const neutralPose = { travel: 0, lift: 0, planted: true };
         applyPose('left', state.leftContactY, state.idleLeftX, neutralPose, 11, dt);
         applyPose('right', state.rightContactY, state.idleRightX, neutralPose, 11, dt);
         return;
       }
+      if (state.hoverEnabled) {
+        state.gaitStrength = damp(state.gaitStrength, 0, 12, dt); // Walking stride yields completely while airborne.
+        state.gaitStrideLength = 0;
+        state.gaitCadenceHz = 0;
+        state.wasGaiting = false;
+        state.hoverStrength = damp(state.hoverStrength, 1, 7, dt);
+        state.hoverPhase = (state.hoverPhase + Math.max(0, dt) * Math.PI * 0.72) % (Math.PI * 2); // ~2.8 second full dangling cycle.
+        applyHoverPose('left', dt);
+        applyHoverPose('right', dt);
+        return;
+      }
+      state.hoverStrength = damp(state.hoverStrength, 0, 10, dt); // Normal locomotion regains ownership smoothly after hover ends.
       const speed = Math.max(0, Number(speedWorldUnitsPerSecond) || 0);
       const isGaiting = speed > 0.02; // Used here to detect the exact moving-to-stopped edge and clear the final stride pose without a multi-second damping tail.
       if (!isGaiting && state.wasGaiting) {
@@ -1278,6 +1329,11 @@
         coordinateSpace: 'avatar-floor-relative',
         floorY: 0,
         posteriorY,
+        hover: {
+          enabled: state.hoverEnabled,
+          strength: state.hoverStrength,
+          phase: state.hoverPhase,
+        },
         gait: {
           legLength: currentLegLength,
           legLengthFractionOfModel: currentLegLength / Math.max(0.001, modelHeight),
@@ -1319,6 +1375,7 @@
 
     return {
       group: root, update, dispose, applyRecordedLegPose, getStandingPoseDebug,
+      setHoverMode, isHoverMode,
       standingPosteriorY: posteriorY, // Used by NPC chair stations to lower the whole avatar onto the authored seat.
       getSeatedPoseDebug: () => lastSeatedPoseDebug,
     };

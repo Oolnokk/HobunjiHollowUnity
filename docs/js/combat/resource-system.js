@@ -119,6 +119,16 @@
       family: "control", tags: ["breath"],
       desc: "Lowers effective maximum Stamina and makes Exhausted easier to enter."
     },
+    frostbittenStamina: {
+      name: "Frostbitten Stamina", resource: "stamina", extend: "zero", priority: 92, recovers: true, punishedAction: "staminaSpend",
+      family: "control", tags: ["cold", "frost"],
+      desc: "Cold-stiffened Stamina. Application only converts Stamina into Frostbitten buildup; spending through that frosted Stamina later deals the same amount as Footing damage."
+    },
+    entrancedHealth: {
+      name: "Entranced Health", resource: "health", extend: "currentBack", priority: 88, recovers: false,
+      family: "control", tags: ["mind", "entrancement"],
+      desc: "A referential command affliction. Moving against the latest entrancer's Approach/Flee command converts buildup into Health damage; obeying or standing still clears it quickly."
+    },
     bruisedHealth: {
       name: "Bruised Health", resource: "health", extend: "currentBack", priority: 60, recovers: true,
       family: "offensiveDebuff", tags: ["physical"],
@@ -523,6 +533,9 @@
 
     const shatteredOverlap = consumeZeroBasedSpend(entity, "shatteredStamina", spendEnd, spendStart);
     if (shatteredOverlap > 0) addAffliction(entity, "bleedingHealth", shatteredOverlap * 1.6);
+
+    const frostbittenOverlap = consumeZeroBasedSpend(entity, "frostbittenStamina", spendEnd, spendStart); // Frostbitten Stamina converts only the spent overlap into equal Footing damage.
+    if (frostbittenOverlap > 0) spendFooting(entity, frostbittenOverlap, "spent Frostbitten Stamina");
   }
 
   function consumeZeroBasedSpend(entity, id, spendEnd, spendStart) {

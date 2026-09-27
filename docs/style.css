@@ -1339,6 +1339,71 @@
     }
     #zoneBanner.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
+    /* ── Entranced command (Kanthic lich control) ───────────────
+       Uses the same translucent green-black card, Khymeryyan HUD face, borders,
+       and outlined text vocabulary as the rest of gameplay UI. */
+    #entrancedCommandBanner {
+      position: fixed;
+      top: calc(var(--oy) + 3.7 * var(--row)); left: var(--play-center);
+      transform: translateX(-50%) translateY(-6px);
+      z-index: 68;
+      display: flex; flex-direction: column; align-items: center; gap: 2px;
+      max-width: calc(100vw - 32px);
+      padding: 0;
+      border: 0; border-radius: 0;
+      background: transparent;
+      backdrop-filter: none; -webkit-backdrop-filter: none;
+      box-shadow: none;
+      color: var(--text);
+      font-family: 'KhymeryyanRomanLetters+Numbers', 'Pixelify Sans', monospace;
+      text-align: center; pointer-events: none;
+      opacity: 0; visibility: hidden;
+      transition: opacity .14s ease, transform .14s ease;
+    }
+    #entrancedCommandBanner.visible {
+      opacity: 1; visibility: visible;
+      transform: translateX(-50%) translateY(0);
+    }
+    #entrancedCommandBanner .entranced-command-label {
+      color: var(--muted); font-size: 14px; line-height: 1;
+      letter-spacing: .13em; text-transform: uppercase;
+      text-shadow: 0 2px 7px rgba(0,0,0,.98), 0 0 10px rgba(0,0,0,.86);
+    }
+    #entrancedCommandBanner .entranced-command-action {
+      color: #eac8f4; font-size: 24px; line-height: 1.12; font-weight: 700;
+      letter-spacing: .055em;
+      text-shadow:
+        -1px -1px 0 rgba(0,0,0,.82), 1px -1px 0 rgba(0,0,0,.82),
+        -1px 1px 0 rgba(0,0,0,.82), 1px 1px 0 rgba(0,0,0,.82),
+        0 2px 8px rgba(0,0,0,.98), 0 0 12px rgba(183,70,217,.28);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+    }
+    #entrancedCommandBanner.flee .entranced-command-action { color: var(--danger); }
+    #entrancedCommandBanner.approach .entranced-command-action { color: var(--accent); }
+
+    #entrancedCommandEdgeAura {
+      position: fixed; inset: 0;
+      z-index: 67;
+      pointer-events: none;
+      visibility: hidden; opacity: 0;
+      color: transparent;
+      box-shadow:
+        inset 0 0 18px 5px currentColor,
+        inset 0 0 72px 30px currentColor;
+      transition: opacity .12s ease, visibility .12s step-end;
+    }
+    #entrancedCommandEdgeAura.approach { color: var(--accent); }
+    #entrancedCommandEdgeAura.flee { color: var(--danger); }
+    #entrancedCommandEdgeAura.visible {
+      visibility: visible; opacity: .52;
+      transition: opacity .12s ease, visibility 0s;
+      animation: entranced-command-edge-pulse 1s ease-in-out infinite;
+    }
+    @keyframes entranced-command-edge-pulse {
+      0%, 100% { opacity: .42; }
+      48% { opacity: .68; }
+    }
+
     /* ── Contextual action prompt (bottom-center) ────────────────
        Device-aware "press X to do Y" prompt, shared across the game (not
        fishing-specific) — see showActionPrompt/hideActionPrompt in game.js.
