@@ -19,6 +19,8 @@
   const PLATE_FIRING_COLOR = 0xff5b2b;
   const ROPE_DESTINATION_RISE = .78; // Keeps ordinary rope landings clearly above the 0.42u ruin step limit so the rope is visibly required.
   const ROPE_GRAB_ABOVE_LAUNCH = .86; // Places the idle grip at reachable head/hand height over the launch platform instead of inheriting the destination height.
+  const LAVA_TEXTURE_TILE = 4; // World units per lava texture repeat; matches MergedWaterRenderer's default water tiling.
+  const LAVA_SURFACE_DEPTH = .82; // Shader depth mix: bright molten orange with visible flow pattern.
   const AMBIENT_LIFT_SIZE = 2.2; // Standalone pit lift footprint; the rest of the pit floor stays open for its chest.
   const COMPOUND_ELEVATOR_TOP_RISE = .88; // Balcony→rope→elevator compositions begin as a visibly elevated landing before the glyph starts the descent cycle.
   const GRID_WALL_CLEARANCE = 0.52; // Used by safe-path grids so every plate center clears the ruin player's 0.28u collision radius plus the authored wall thickness.
@@ -747,7 +749,7 @@
         textureUrl:'assets/textures/wibbly_surface.png',
         deepColor:0xb72b0b,
         shallowColor:0xff9a24,
-        opacity:.88,
+        opacity:1, // Molten rock is opaque: floor tiles must not show through a lava strip.
       });
       material.name='dev_ruin_lava_water_material';
       return material;
@@ -755,17 +757,26 @@
     return makeBasic(0xe34b16,{transparent:true,opacity:.82,depthWrite:false});
   }
 
+  // Flat lava surface (laid with rotation.x=-PI/2 at cx,cz). UVs are in world
+  // units like ordinary water (one texture repeat per LAVA_TEXTURE_TILE), so
+  // a large basin shows the same moving liquid as a narrow strip instead of
+  // one stretched copy of the texture that reads as flat orange.
+  function lavaSurfaceGeometry(sizeX,sizeZ,cx,cz,flowX,flowZ) {
+    const geometry=new THREE.PlaneGeometry(sizeX,sizeZ,1,1);
+    const position=geometry.attributes.position,uv=geometry.attributes.uv,count=position.count;
+    for(let index=0;index<count;index++)uv.setXY(index,(cx+position.getX(index))/LAVA_TEXTURE_TILE,(cz-position.getY(index))/LAVA_TEXTURE_TILE);
+    uv.needsUpdate=true;
+    geometry.setAttribute('aDepth',new THREE.Float32BufferAttribute(new Array(count).fill(LAVA_SURFACE_DEPTH),1));
+    geometry.setAttribute('aCoverage',new THREE.Float32BufferAttribute(new Array(count).fill(1),1));
+    const flow=[];
+    for(let index=0;index<count;index++)flow.push(flowX,flowZ);
+    geometry.setAttribute('aFlow',new THREE.Float32BufferAttribute(flow,2));
+    return geometry;
+  }
+
   function createVisibleRopeLavaHazard(cx,cz,y,length,width,axis) {
     if(!state.lavaMaterial)state.lavaMaterial=createLavaMaterial();
-    const geometry=new THREE.PlaneGeometry(axis==='x'?length:width,axis==='x'?width:length,1,1);
-    const count=geometry.attributes.position.count;
-    if(state.lavaMaterial?.isShaderMaterial){
-      geometry.setAttribute('aDepth',new THREE.Float32BufferAttribute(new Array(count).fill(.82),1));
-      geometry.setAttribute('aCoverage',new THREE.Float32BufferAttribute(new Array(count).fill(1),1));
-      const flow=[];
-      for(let index=0;index<count;index++)flow.push(axis==='x'?.18:0,axis==='z'?.18:0);
-      geometry.setAttribute('aFlow',new THREE.Float32BufferAttribute(flow,2));
-    }
+    const geometry=lavaSurfaceGeometry(axis==='x'?length:width,axis==='x'?width:length,cx,cz,axis==='x'?.18:0,axis==='z'?.18:0);
     const mesh=new THREE.Mesh(geometry,state.lavaMaterial);
     mesh.name='dev_ruin_rope_lava';
     mesh.rotation.x=-Math.PI*.5;
@@ -1630,6 +1641,7 @@
       playerWorld, setPlayerWorld,
       playKurrayaPlateNote, playStoneUnlockKchunk, playLavaSizzle,
       lavaMaterial:()=>state.lavaMaterial||(state.lavaMaterial=createLavaMaterial()),
+      lavaSurfaceGeometry,
       registerSurface:definition=>{DS.registerSurface({scope:SCOPE,...definition});state.surfaceIds.add(definition.id);},
       generatedStoneDoorMechanisms, onwardGeneratedStoneDoorMechanism,
       ownsPlayerMotion:()=>!!(state?.activeRope||state?.flight),
@@ -1943,20 +1955,6 @@
     rope.lastSafeBob=clonePoint(bob);
   }
 
-  function tryAutoGrabRope() {
-    if(state.activeRope||state.flight)return false;
-    const player=playerWorld();
-    if(!player)return false;
-    for(const rope of state.ropes){
-      const bob=rope.bob||ropeBobAt(rope);
-      const horizontal=Math.hypot(player.x-bob.x,player.z-bob.z);
-      if(horizontal>ROPE_GRAB_RADIUS||Math.abs(player.y-bob.y)>1.05)continue;
-      if(ropeBlockedAt(bob.x,bob.z,ROPE_COLLISION_RADIUS,bob.y))continue;
-      if(attachRope(rope)){rope.autoGrabCount++;return true;}
-    }
-    return false;
-  }
-
   function updateFlight(dt) {
     const f=state.flight;
     if(!f)return;
@@ -2008,8 +2006,7 @@
       if(rope.attached)updateAttachedRope(rope,dt);
       else updateIdleRope(rope,dt);
     }
-    tryAutoGrabRope();
-    updateRopeHazards(now);
+    updateRopeHazards(now); // No proximity auto-grab: walking near a hanging rope caught players unintentionally; ropes are taken only through the 'Grab Rope' prompt.
   }
 
   function updateHallwayTraps(dt) {

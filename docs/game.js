@@ -20266,7 +20266,11 @@
             }
           }
           let safeDist = desiredSafeDist;
-          if (activeCameraMode === 'seated') {
+          // Interior standing booms share the seated smoothing: a grazing ray
+          // that flickers between hitting and missing a wall edge otherwise
+          // pops the camera in and out under the reticle.
+          const interiorBoom = activeCameraMode !== 'seated' && _isBuildingArea(currentArea);
+          if (activeCameraMode === 'seated' || interiorBoom) {
             // Smooth toward the freshly raycast distance every frame. The old
             // direct assignment made the camera stick to whichever wall face
             // happened to win one raycast, then snap when that face changed.
@@ -20283,7 +20287,7 @@
               _seatedOcclusionDistance += (desiredSafeDist - _seatedOcclusionDistance) * alpha;
             }
             safeDist = window.FormatUtils.clamp(_seatedOcclusionDistance, SEATED_CAMERA_MIN_DISTANCE, dist);
-            _seatedCameraDebug = {
+            _seatedCameraDebug = interiorBoom ? null : {
               idealDistance: dist,
               directHitDistance,
               desiredDistance: desiredSafeDist,
@@ -20302,8 +20306,11 @@
             const shrink = window.FormatUtils.clamp(1 - safeDist / dist, 0, 1);
             // Side-sliding supplies seated clearance; lifting a billboard
             // avatar makes it edge-on to the camera and was responsible for
-            // the wall-only frozen view in the Pixel Probe report.
-            const lift = activeCameraMode === 'seated' ? 0 : shrink * dist * 0.5;
+            // the wall-only frozen view in the Pixel Probe report. Interior
+            // booms slide straight in along their own sightline too: a lift
+            // tips the view steeply down, so the smallest aim change swept the
+            // reticle's hit point across the floor or ceiling.
+            const lift = (activeCameraMode === 'seated' || interiorBoom) ? 0 : shrink * dist * 0.5;
             resultX = lookAtX + dir.x * safeDist;
             resultY = lookAtY + dir.y * safeDist + lift;
             resultZ = lookAtZ + dir.z * safeDist;

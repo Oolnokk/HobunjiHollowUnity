@@ -79,8 +79,17 @@
   }
 
   // A stone pillar rising from `baseY` to `topY`, registered as a surface.
+  // The base follows the lowest floor under the footprint: a basin region can
+  // contain a deeper nested pit, and a pillar starting at the region's own
+  // level floated over it, leaving a lava-filled gap underneath.
   function makePillar(kit, id, x, z, baseY, topY, size = PILLAR_SIZE) {
-    return kit.createPlatform(id, x, z, baseY, size, size, Math.max(.18, topY - baseY));
+    let floorY = baseY;
+    const h = size * .5 - .05;
+    for (const dx of [-h, 0, h]) for (const dz of [-h, 0, h]) {
+      const support = window.DynamicSurfaces?.sampleSupport?.(x + dx, z + dz, { minY:baseY - 6, maxY:baseY + .05, pad:.02 });
+      if (support && Number.isFinite(Number(support.y))) floorY = Math.min(floorY, Number(support.y));
+    }
+    return kit.createPlatform(id, x, z, floorY, size, size, Math.max(.18, topY - floorY));
   }
 
   // Wall balcony: a platform against a room wall. wallNormal points from the
@@ -345,15 +354,8 @@
   function lavaPlane(kit, bounds, y) {
     const width = bounds.maxX - bounds.minX, depth = bounds.maxZ - bounds.minZ;
     const material = kit.lavaMaterial();
-    const geometry = new THREE.PlaneGeometry(width, depth, 1, 1);
-    if (material?.isShaderMaterial) {
-      const count = geometry.attributes.position.count;
-      geometry.setAttribute('aDepth', new THREE.Float32BufferAttribute(new Array(count).fill(.95), 1));
-      geometry.setAttribute('aCoverage', new THREE.Float32BufferAttribute(new Array(count).fill(1), 1));
-      const flow = [];
-      for (let i = 0; i < count; i++) flow.push(.12, .06);
-      geometry.setAttribute('aFlow', new THREE.Float32BufferAttribute(flow, 2));
-    }
+    // Same world-tiled molten liquid as the rope-room lava strips.
+    const geometry = kit.lavaSurfaceGeometry(width, depth, (bounds.minX + bounds.maxX) * .5, (bounds.minZ + bounds.maxZ) * .5, .12, .06);
     const mesh = new THREE.Mesh(geometry, material);
     mesh.name = 'dev_ruin_basin_lava';
     mesh.rotation.x = -Math.PI * .5;
@@ -554,7 +556,10 @@
     updateVaultDoor(basin.balcony?.door, dt);
     for (const plate of basin.plates) updatePlate(kit, plate, player);
     if (!player || kit.ownsPlayerMotion()) { basin.inLavaFor = 0; return; }
-    const onPlatform = basin.nodes.some(node => kit.pointInsidePlatform(player, node, .05)) || (basin.balcony && kit.pointInsidePlatform(player, basin.balcony.platform, .05));
+    // Height matters: under an overhang is still in the lava, and must never
+    // be remembered as the safe return point.
+    const onTop = node => kit.pointInsidePlatform(player, node, .05) && player.y >= Number(node.topY) - .2;
+    const onPlatform = basin.nodes.some(onTop) || (basin.balcony && onTop(basin.balcony.platform));
     const inBasin = inside(basin.bounds, player, .05);
     if (!basin.hinted && Math.hypot(player.x - basin.pad.x, player.z - basin.pad.z) < 3.2) {
       basin.hinted = true;
