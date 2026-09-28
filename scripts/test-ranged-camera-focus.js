@@ -76,8 +76,7 @@ const activeCamera = { fov: 55, updateProjectionMatrix() { projectionUpdates++; 
 let injectedRangedDeps = null;
 let lastRangedVisual = null;
 let lastMeleeHitOptions = null;
-let committedMeleeTarget = null; // Mutable bridge snapshot used to prove strike collision reuses the newest attack's frozen endpoint.
-let activeLungeMeleeTarget = null; // Separate older movement-lunge snapshot used by native half-range stop probes.
+let effectiveMeleeTarget = null; // Mutable context-aware bridge snapshot used to prove focus consumes staged/lunge ownership without guessing from hit-test numbers.
 let interactionOrigin = { x: 0, y: 1, z: 3 };
 let interactionDirection = { x: 1, y: 0, z: 0 };
 const player = { x: 128, y: 192, angle: 0 };
@@ -140,8 +139,7 @@ const windowStub = {
   GridTileAccessors: { getActiveScene: () => scene },
   Combat,
   HobunjiCombatCameraAlignment: {
-    committedMeleeTarget: () => committedMeleeTarget,
-    activeLungeTarget: () => activeLungeMeleeTarget,
+    meleeHitTarget: () => effectiveMeleeTarget,
   },
   CombatProgression: { getEffects: () => ({ stats: {} }) },
   RangedWeapons: {
@@ -347,7 +345,7 @@ assert(lastMeleeHitOptions.direction.x > 0.7, 'actual melee collision still rece
 
 // Once a lunge commits an exact reticle point, strike collision must keep using
 // that frozen endpoint from the player's new origin rather than recomputing the horizon.
-committedMeleeTarget = {
+effectiveMeleeTarget = {
   point: { x: 4, y: 1, z: 2 },
   source: 'screen-reticle-box3',
   targetId: 'dummy',
@@ -365,34 +363,6 @@ assert(Math.abs(lastMeleeHitOptions.direction.x - committedDx / committedLength)
 assert(Math.abs(lastMeleeHitOptions.direction.y - committedDy / committedLength) < 1e-9, 'strike pitch re-roots toward the frozen point');
 assert(Math.abs(lastMeleeHitOptions.direction.z - committedDz / committedLength) < 1e-9, 'strike Z direction re-roots toward the frozen point');
 
-// If another attack refreshes strike aim while an older lunge is still moving,
-// game.js's native half-range stop probe must remain on the older lunge point.
-activeLungeMeleeTarget = {
-  point: { x: 3, y: 0.5, z: 3 },
-  source: 'screen-reticle-box3',
-  targetId: 'old-lunge-target',
-  rayDistance: 3,
-};
-player.lunging = true;
-player.lungeHitTest = { rangePx: 32, halfConeRad: 0.2 };
-windowStub.Combat.meleeHit(player, targetActor, {
-  rangePx: 32,
-  halfConeRad: 0.2,
-  yaw: 0,
-  pitch: 0,
-});
-const oldLungeDx = 3 - player.x / 64;
-const oldLungeDy = 0.5 - 0.5;
-const oldLungeDz = 3 - player.y / 64;
-const oldLungeLength = Math.hypot(oldLungeDx, oldLungeDy, oldLungeDz);
-assert(Math.abs(lastMeleeHitOptions.direction.x - oldLungeDx / oldLungeLength) < 1e-9,
-  'native lunge-stop X remains tied to the movement lunge rather than the newer strike commit');
-assert(Math.abs(lastMeleeHitOptions.direction.z - oldLungeDz / oldLungeLength) < 1e-9,
-  'native lunge-stop Z remains tied to the movement lunge rather than the newer strike commit');
-player.lunging = false;
-player.lungeHitTest = null;
-activeLungeMeleeTarget = null;
-
 // Read-only HUD/reach probes supply their own live direction and debug:false.
 // They must not be redirected toward the frozen attack endpoint.
 const probeDirection = { x: 0, y: 0, z: 1 };
@@ -405,7 +375,7 @@ windowStub.Combat.meleeHit(player, targetActor, {
 assert.equal(lastMeleeHitOptions.direction.x, 0, 'explicit melee probe X remains live instead of inheriting attack commit');
 assert.equal(lastMeleeHitOptions.direction.y, 0, 'explicit melee probe Y remains live instead of inheriting attack commit');
 assert.equal(lastMeleeHitOptions.direction.z, 1, 'explicit melee probe Z remains live instead of inheriting attack commit');
-committedMeleeTarget = null;
+effectiveMeleeTarget = null;
 
 // Other ranged archetypes retain readiness behavior.
 activeTool = 'ranged';
