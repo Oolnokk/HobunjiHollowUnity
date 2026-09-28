@@ -353,10 +353,13 @@ const committedTarget = windowStub.HobunjiRangedCameraFocus.interactionAimTarget
 assert.equal(committedTarget.source, 'screen-reticle-box3', 'melee aim reports the frozen reticle endpoint while the attack is active');
 assert.equal(committedTarget.point.x, 4);
 windowStub.Combat.meleeHit(player, targetActor, { rangePx: 64 * 4.5, halfConeRad: 0.4, yaw: Math.PI / 2, pitch: 0 });
-const committedLength = Math.hypot(2, 0.5, -1);
-assert(Math.abs(lastMeleeHitOptions.direction.x - 2 / committedLength) < 1e-9, 'strike X direction re-roots toward the frozen point');
-assert(Math.abs(lastMeleeHitOptions.direction.y - 0.5 / committedLength) < 1e-9, 'strike pitch re-roots toward the frozen point');
-assert(Math.abs(lastMeleeHitOptions.direction.z + 1 / committedLength) < 1e-9, 'strike Z direction re-roots toward the frozen point');
+const committedDx = 4 - player.x / 64;
+const committedDy = 1 - 0.5;
+const committedDz = 2 - player.y / 64;
+const committedLength = Math.hypot(committedDx, committedDy, committedDz);
+assert(Math.abs(lastMeleeHitOptions.direction.x - committedDx / committedLength) < 1e-9, 'strike X direction re-roots toward the frozen point');
+assert(Math.abs(lastMeleeHitOptions.direction.y - committedDy / committedLength) < 1e-9, 'strike pitch re-roots toward the frozen point');
+assert(Math.abs(lastMeleeHitOptions.direction.z - committedDz / committedLength) < 1e-9, 'strike Z direction re-roots toward the frozen point');
 committedMeleeTarget = null;
 
 // Other ranged archetypes retain readiness behavior.
