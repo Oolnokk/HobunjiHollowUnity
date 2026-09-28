@@ -360,6 +360,19 @@ const committedLength = Math.hypot(committedDx, committedDy, committedDz);
 assert(Math.abs(lastMeleeHitOptions.direction.x - committedDx / committedLength) < 1e-9, 'strike X direction re-roots toward the frozen point');
 assert(Math.abs(lastMeleeHitOptions.direction.y - committedDy / committedLength) < 1e-9, 'strike pitch re-roots toward the frozen point');
 assert(Math.abs(lastMeleeHitOptions.direction.z - committedDz / committedLength) < 1e-9, 'strike Z direction re-roots toward the frozen point');
+
+// Read-only HUD/reach probes supply their own live direction and debug:false.
+// They must not be redirected toward the frozen attack endpoint.
+const probeDirection = { x: 0, y: 0, z: 1 };
+windowStub.Combat.meleeHit(player, targetActor, {
+  rangePx: 64 * 4.5,
+  halfConeRad: 0.4,
+  direction: probeDirection,
+  debug: false,
+});
+assert.equal(lastMeleeHitOptions.direction.x, 0, 'explicit melee probe X remains live instead of inheriting attack commit');
+assert.equal(lastMeleeHitOptions.direction.y, 0, 'explicit melee probe Y remains live instead of inheriting attack commit');
+assert.equal(lastMeleeHitOptions.direction.z, 1, 'explicit melee probe Z remains live instead of inheriting attack commit');
 committedMeleeTarget = null;
 
 // Other ranged archetypes retain readiness behavior.
