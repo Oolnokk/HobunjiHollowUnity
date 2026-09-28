@@ -516,7 +516,7 @@
 
   function committedMeleeAimTarget(attackOrigin, metadata = {}) {
     try {
-      const committed = window.HobunjiCombatCameraAlignment?.meleeHitTarget?.(); // Bridge chooses staged-strike ownership first, active movement-lunge ownership second, and newest legacy commit last.
+      const committed = window.HobunjiCombatCameraAlignment?.meleeHitTarget?.(); // Bridge chooses the staged strike's snapshot first, the active movement-lunge snapshot second, and otherwise yields to live reticle aim.
       const point = vectorFrom(committed?.point);
       if (!point || !attackOrigin) return null;
       let direction = point.clone().sub(attackOrigin); // Re-roots the frozen endpoint at the player's current collision origin without ever following the target actor.
