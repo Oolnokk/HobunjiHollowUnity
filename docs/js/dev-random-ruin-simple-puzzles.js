@@ -559,7 +559,18 @@
       button.position.set(buttonX, Number(buttonSupport.y), buttonZ);
       root.add(button);
 
+      // A stone door in the hallway's entry doorway would otherwise only open
+      // from glyphs that may not be near (or even on this side of) it; the
+      // reveal pedestal is the obvious control at this threshold, so it
+      // opens that door too.
+      let entryMechanismId=null;
+      if(entryDoor){
+        for(const door of generatedStoneDoorMechanisms(context)){
+          if(Math.hypot(door.x-entryDoor.x,door.z-entryDoor.z)<=Math.max(1.4,entryDoor.width*.6)){entryMechanismId=door.id;break;}
+        }
+      }
       const grid = {
+        entryMechanismId,
         hallId:String(hall.id), axis, cols, rows, root, cells, safe, button, capMat, plateBatch,
         approachAtMin,entryDoorId:entryDoor?.id||null,buttonPoint:{x:buttonX,z:buttonZ},
         revealUntil:0, lastPlayerKey:null, triggerCount:0,
@@ -570,7 +581,11 @@
         label:'Reveal Safe Path',
         onPress:() => {
           grid.revealUntil = performance.now() + GRID_REVEAL_MS;
-          deps?.showToast?.('Green plates are safe, red plates burn. Plates you step on safely stay green.', true);
+          if (grid.entryMechanismId) {
+            if (window.DevRandomRuin?.mechanismInfo?.(grid.entryMechanismId)?.locked) window.DevRandomRuin.unlockMechanism?.(grid.entryMechanismId, true);
+            else window.DevRandomRuin?.setMechanismTarget?.(grid.entryMechanismId, 1);
+          }
+          deps?.showToast?.(grid.entryMechanismId ? 'The hallway door grinds open. Green plates are safe, red plates burn; plates you step on safely stay green.' : 'Green plates are safe, red plates burn. Plates you step on safely stay green.', true);
         },
       });
       usedHallways.add(hall.id);
@@ -2066,6 +2081,7 @@
         mandatoryTraversal:true,
         approachSide:grid.approachAtMin?'min':'max',
         entryDoorId:grid.entryDoorId,
+        entryMechanismId:grid.entryMechanismId||null,
         buttonPoint:clonePoint(grid.buttonPoint),
         revealMs:Math.max(0,Math.round(grid.revealUntil-now)),
         triggerCount:grid.triggerCount,

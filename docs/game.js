@@ -20180,6 +20180,7 @@
       const CAMERA_FLOOR_CLEARANCE = 0.2; // minimum height above ground the camera is ever allowed to settle at (see the floor guard below)
       const SEATED_CAMERA_WALL_CLEARANCE = 0.25; // gap kept between a seated camera and the detected wall face (used by occlusionSafeCameraPosition)
       const SEATED_CAMERA_MIN_DISTANCE = 0.04; // emergency near-target limit used when a chair is almost flush against a wall
+      const INTERIOR_CAMERA_WALL_CLEARANCE = 0.35; // gap kept between an interior (building-area) boom and the wall that pulled it in
       const SEATED_CAMERA_MIN_FRAMING_DISTANCE = 0.8; // closest useful third-person framing distance before the camera searches sideways for room
       let _seatedOcclusionDistance = null; // smoothed seated-camera distance used while an obstruction clears
       let _seatedOcclusionUpdatedAt = 0; // previous seated occlusion update time used to calculate smoothing delta
@@ -20210,13 +20211,22 @@
             const hits = _cameraOcclusionRaycaster.intersectObjects(obstacles, true);
             if (hits.length) {
               directHitDistance = hits[0].distance;
-              if (activeCameraMode === 'seated') {
+              const interiorStanding = activeCameraMode !== 'seated' && _isBuildingArea(currentArea);
+              if (activeCameraMode === 'seated' || interiorStanding) {
+                // Interiors (dens, shops, the Random Test Ruin) are tight and
+                // their boom is shorter than the outdoor 3-tile minimum below,
+                // so that minimum meant the boom never pulled in at all there.
+                // Standing interior cameras share the seated wall pull-in, but
+                // not its sideways search: that camera has no smoothing, so a
+                // swing would snap; it rises over the player instead (lift below).
+                //
                 // Never impose a minimum that lies beyond the wall. The old
                 // 0.85-tile minimum did exactly that for wall-backed chairs,
                 // leaving the camera embedded despite a correct ray hit.
+                const wallClearance = interiorStanding ? INTERIOR_CAMERA_WALL_CLEARANCE : SEATED_CAMERA_WALL_CLEARANCE;
                 desiredSafeDist = Math.min(dist, Math.max(
                   SEATED_CAMERA_MIN_DISTANCE,
-                  hits[0].distance - SEATED_CAMERA_WALL_CLEARANCE,
+                  hits[0].distance - wallClearance,
                 ));
 
                 // If the wall leaves too little room to frame the seated
@@ -20224,7 +20234,7 @@
                 // near plane. Search progressively around the chair instead;
                 // this produces an over-the-shoulder slide along the wall
                 // while preserving the user's pitch and target.
-                if (desiredSafeDist < SEATED_CAMERA_MIN_FRAMING_DISTANCE) {
+                if (!interiorStanding && desiredSafeDist < SEATED_CAMERA_MIN_FRAMING_DISTANCE) {
                   let best = { dir, safeDist: desiredSafeDist, offsetDeg: 0 };
                   for (const offsetDeg of [25, -25, 45, -45, 70, -70, 90, -90]) {
                     const a = THREE.MathUtils.degToRad(offsetDeg);
@@ -20241,7 +20251,7 @@
                     _cameraOcclusionRaycaster.far = dist;
                     const candidateHits = _cameraOcclusionRaycaster.intersectObjects(obstacles, true);
                     const candidateSafeDist = candidateHits.length
-                      ? Math.max(SEATED_CAMERA_MIN_DISTANCE, candidateHits[0].distance - SEATED_CAMERA_WALL_CLEARANCE)
+                      ? Math.max(SEATED_CAMERA_MIN_DISTANCE, candidateHits[0].distance - wallClearance)
                       : dist;
                     if (candidateSafeDist > best.safeDist) best = { dir: candidateDir, safeDist: candidateSafeDist, offsetDeg };
                     if (best.safeDist >= dist - 1e-4) break;
@@ -20287,7 +20297,8 @@
             _seatedOcclusionUpdatedAt = 0;
             _seatedCameraDebug = null;
           }
-          if (safeDist < dist - 1e-4) {
+          // A side-searched direction must be applied even at full length.
+          if (safeDist < dist - 1e-4 || chosenSideOffsetDeg !== 0) {
             const shrink = window.FormatUtils.clamp(1 - safeDist / dist, 0, 1);
             // Side-sliding supplies seated clearance; lifting a billboard
             // avatar makes it edge-on to the camera and was responsible for
