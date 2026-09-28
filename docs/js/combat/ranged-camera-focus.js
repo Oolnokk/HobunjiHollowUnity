@@ -2,7 +2,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 11;
+  const VERSION = 12;
   const SHOULDER_MODE = 'shoulderSurf';
   const TIGHT_FOV_DEG = 34; // Optical zoom around the camera-center reticle ray; unlike changing shoulder distance this introduces no aim-point parallax.
   const FOCUS_EASE_PER_SEC = 9; // Used to ease ready optical zoom continuously without quantized Settings-control writes.
@@ -514,6 +514,35 @@
     }
   }
 
+  function committedMeleeAimTarget(attackOrigin, metadata = {}) {
+    try {
+      const committed = window.HobunjiCombatCameraAlignment?.meleeHitTarget?.(); // Bridge chooses the staged strike's snapshot first, the active movement-lunge snapshot second, and otherwise yields to live reticle aim.
+      const point = vectorFrom(committed?.point);
+      if (!point || !attackOrigin) return null;
+      let direction = point.clone().sub(attackOrigin); // Re-roots the frozen endpoint at the player's current collision origin without ever following the target actor.
+      if (direction.lengthSq() < 1e-8) return null;
+      direction.normalize();
+      const target = {
+        ...metadata,
+        source: committed.source || 'screen-reticle-box3',
+        maxRangeWorld: Number(metadata.rangeTiles) || 0,
+        rayOrigin: null,
+        rayDirection: null,
+        attackOrigin,
+        point,
+        direction,
+        rayDistance: Number(committed.rayDistance) || 0,
+        attackDistance: distanceBetween(attackOrigin, point),
+        surfaceName: committed.targetId || null,
+      };
+      lastResolvedAimTarget = plainAimTarget(target);
+      return target;
+    } catch (error) {
+      noteAimError('committed-melee-target', error);
+      return null;
+    }
+  }
+
   function meleeInteractionAimTarget() {
     try {
       const deps = combatDeps();
@@ -523,19 +552,17 @@
       const rangePx = currentMeleeRangePx();
       const tile = Number(deps.TILE) || 64;
       const rangeTiles = Math.max(0.05, rangePx / tile);
-      const sharedTarget = sharedPerspectiveAimTarget(origin, {
+      const metadata = {
         mode: 'melee',
         itemKey: deps.currentWeaponKey?.() || null,
         rangeTiles,
         rangePx,
-      }); // Uses attack reach only for collision; the visual target point itself remains common and range-independent.
+      };
+      const committedTarget = committedMeleeAimTarget(origin, metadata);
+      if (committedTarget) return committedTarget; // Lunge and strike share the exact attack-start Box3 point; no moving-target homing occurs.
+      const sharedTarget = sharedPerspectiveAimTarget(origin, metadata);
       if (sharedTarget) return sharedTarget;
-      return resolveInteractionAimTarget(rangeTiles, origin, {
-        mode: 'melee',
-        itemKey: deps.currentWeaponKey?.() || null,
-        rangeTiles,
-        rangePx,
-      });
+      return resolveInteractionAimTarget(rangeTiles, origin, metadata);
     } catch (error) {
       noteAimError('melee-target', error);
       return null;
@@ -632,14 +659,14 @@
     if (!rawMeleeHit && typeof window.Combat?.meleeHit === 'function') {
       rawMeleeHit = window.Combat.meleeHit.bind(window.Combat);
       window.Combat.meleeHit = function interactionTargetMeleeHit(attacker, targetActor, options = {}) {
-        if (attacker === deps.player) {
+        if (attacker === deps.player && !options?.direction) {
           try {
             const target = meleeInteractionAimTarget();
             if (target?.direction) options = { ...options, direction: plainVector(target.direction) };
           } catch (error) {
             noteAimError('melee-hit-direction', error);
           }
-        }
+        } // Explicit caller directions (notably the HUD readiness probe) stay live and are never replaced by an attack commit.
         return rawMeleeHit(attacker, targetActor, options);
       };
     }
@@ -844,7 +871,7 @@
       meleeAimInstalled,
       meleeRangeCaptureInstalled,
       cameraMutation: 'native-shoulder-fov-optical-zoom+native-combat-offsets',
-      aimAlignment: 'ranged-reticle-first-surface+melee-shared-perspective',
+      aimAlignment: 'ranged-reticle-first-surface+melee-frozen-reticle-then-perspective',
       aimUpdateMode: 'change-driven-persistent-cache',
       interactionAimTarget: lastResolvedAimTarget ? { ...lastResolvedAimTarget } : null,
       activeMeleeRange: activeMeleeRange ? { ...activeMeleeRange } : null,
