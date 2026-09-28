@@ -330,7 +330,72 @@
   promptAnchor.name = 'dev_ruin_interaction_prompt_anchor';
   let focusDebug = null;
 
+  // Ledge climbing: parity with the game's cliff climb (same scripted hop
+  // animation), for ruin ledges too tall to step onto (0.42u step limit) but
+  // within reach — e.g. a lowered V50 dais still stands ~1.5u proud.
+  const LEDGE_MIN_RISE = .44;
+  const LEDGE_MAX_RISE = 1.75;
+  const LEDGE_REACH = 1.35; // How far ahead of the player the ledge edge may be.
+  const ledgeOwner = new THREE.Object3D(); // Stand-in owner; its focus box is supplied per frame.
+  ledgeOwner.name = 'dev_ruin_ledge_climb_target';
+  let ledgeBox = null;
+
+  function openAt(x, z, half = .2) {
+    const grid = GridTileAccessors.getActiveGrid?.();
+    const tile = grid?.[Math.floor(z)]?.[Math.floor(x)];
+    if (!tile || tile.type === 'rock') return false;
+    return !window.AreaFootprintBlockers?.blocksBox?.(GridTileAccessors.getCurrentArea?.(), x, z, half);
+  }
+
+  function nearestLedge() {
+    const player = playerWorldPosition();
+    if (!player || deps?.player?.climbing) return null;
+    const baseY = Number(window.DevRandomRuin?.getPlayerSupportY?.());
+    const floorY = Number.isFinite(baseY) ? baseY : player.y;
+    let best = null;
+    for (let i = 0; i < 16; i++) {
+      const angle = i * Math.PI / 8, dx = Math.cos(angle), dz = Math.sin(angle);
+      for (let t = .25; t <= LEDGE_REACH; t += .1) {
+        const x = player.x + dx * t, z = player.z + dz * t;
+        const support = DS.sampleSupport?.(x, z, { minY:floorY - 8, maxY:floorY + LEDGE_MAX_RISE + .05, pad:.02 });
+        const rise = Number(support?.y) - floorY;
+        if (!(rise > .2)) { if (!openAt(x, z, .05) && t > .3) break; continue; } // Solid wall before any ledge: nothing to climb here.
+        if (rise < LEDGE_MIN_RISE || rise > LEDGE_MAX_RISE) break; // A step (walkable) or a wall too tall to climb.
+        const land = { x:x + dx * .45, z:z + dz * .45 };
+        const landSupport = DS.sampleSupport?.(land.x, land.z, { minY:floorY - 8, maxY:floorY + LEDGE_MAX_RISE + .05, pad:.02 });
+        if (!landSupport || Math.abs(Number(landSupport.y) - Number(support.y)) > .2 || !openAt(land.x, land.z)) break;
+        if (!best || t < best.t) best = { t, x, z, land, topY:Number(support.y), floorY, dx, dz, angle };
+        break;
+      }
+    }
+    return best;
+  }
+
+  function climbLedge(ledge) {
+    if (!ledge || !deps?.player || !deps.TILE) return false;
+    const animated = window.ClimbSystem?.startScriptedWorldClimb?.({
+      endX:ledge.land.x * deps.TILE, endY:ledge.land.z * deps.TILE,
+      startWorldY:ledge.floorY, endWorldY:ledge.topY,
+      hopCount:Math.max(2, Math.ceil((ledge.topY - ledge.floorY) / .45) + 1),
+      facingAngle:ledge.angle,
+    });
+    if (!animated) return !!window.DevRandomRuin?.setPlayerWorldPoint?.({ x:ledge.land.x, y:ledge.topY, z:ledge.land.z }, { grounded:true });
+    return true;
+  }
+
+  function ledgeRow(now) {
+    const ledge = nearestLedge();
+    if (!ledge) { ledgeBox = null; return null; }
+    const cx = ledge.x + ledge.dx * .15, cz = ledge.z + ledge.dz * .15;
+    ledgeBox = new THREE.Box3(new THREE.Vector3(cx - .6, ledge.floorY, cz - .6), new THREE.Vector3(cx + .6, ledge.topY + .2, cz + .6)); // Aim at the ledge face/lip to climb it.
+    return {
+      key:'ledge-climb', kind:'ledgeclimb', label:'Climb Up', touchIcon:'🧗', owner:ledgeOwner,
+      distance:ledge.t, priority:6, onPress:() => climbLedge(nearestLedge() || ledge), seenAt:now, source:'semantic-ledge',
+    };
+  }
+
   function ownerBox(owner) {
+    if (owner === ledgeOwner) return ledgeBox ? ledgeBox.clone() : null;
     if (!owner) return null;
     try {
       owner.updateWorldMatrix?.(true, true);
@@ -380,6 +445,8 @@
 
   function currentRows(now = performance.now()) {
     const rows = providerRows(now); // Contextual actions only: glyphs are shot with the ordinary ranged input, so no "Fire <weapon>" row is added near them.
+    const ledge = ledgeRow(now);
+    if (ledge) rows.push(ledge);
     const ladderHit = nearestLadder();
     if (ladderHit && !rows.some(row => row.owner === ladderHit.ladder || row.kind === 'ladder')) {
       rows.push({
@@ -544,6 +611,8 @@
   window.DevRandomRuinInteractions = Object.freeze({
     resolveInteractionOwner,
     climbStoneLadder:climbLadder, // Canonical authored-stone-ladder action; uses ClimbSystem's cliff-style hop animation.
+    nearestLedge, // Diagnostics: the climbable ledge the "Climb Up" prompt would use.
+    climbLedge,
     refresh:renderWorldList,
     getActionButtons() {
       return actionButtonsFromRows(refreshRows(false)); // Called from game.js's ordinary building-interior action provider path.
