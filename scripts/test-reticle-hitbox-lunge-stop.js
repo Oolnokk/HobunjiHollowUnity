@@ -302,6 +302,8 @@ assert(firstStrikeTarget && Math.abs(firstStrikeTarget.point.x - frozenPoint.x) 
 // than inheriting the previous attack target.
 player.lunging = false;
 windowStub.Combat.update(0); // Mirrors the real frame boundary that releases the completed movement-lunge snapshot before another attack.
+assert.equal(windowStub.HobunjiCombatCameraAlignment.meleeHitTarget(), null,
+  'after movement and staged-strike ownership end, live melee aim no longer inherits the latest historical commit');
 blockNativeLunge = true;
 targetBox = {
   min: { x: 4, y: 0, z: 0.8 },
