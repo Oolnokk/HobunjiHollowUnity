@@ -23,7 +23,8 @@
   let lungeAuthorityCount = 0; // Mobile-readable count of lunges corrected toward the shared perspective point.
   let reticleBoxHitCount = 0; // Mobile-readable count of exact target Box3 intersections accepted by transient melee alignment.
   let lungeEarlyStopCount = 0; // Mobile-readable count of lunges clamped to the first attack-volume entry point.
-  let committedMeleeReticleTarget = null; // Frozen center-ray/hostile-Box3 intersection reused by lunge travel, strike collision, and swept lunge-stop geometry.
+  let committedMeleeReticleTarget = null; // Frozen center-ray/hostile-Box3 intersection owned by the newest attack and reused by its strike collision.
+  let activeLungeReticleTarget = null; // Frozen endpoint owned by the movement lunge that actually started, so a later denied lunge cannot retarget an older lunge in flight.
   let lastCameraRay = null; // Mobile-readable snapshot of the true centered camera ray handed to ranged-camera-focus.
   let lastLunge = null; // Mobile-readable snapshot of the latest camera-authored lunge direction/profile.
   let lastLungeSweep = null; // Mobile-readable snapshot of the latest swept lunge range-entry correction.
@@ -156,6 +157,19 @@
     return target ? { ...target, point: { ...target.point } } : null;
   }
 
+  function activeLungeTarget() {
+    const target = activeLungeReticleTarget;
+    if (!target) return null;
+    if (Date.now() <= target.expiresAt) return target;
+    activeLungeReticleTarget = null;
+    return null;
+  }
+
+  function activeLungeTargetSnapshot() {
+    const target = activeLungeTarget(); // Keeps movement diagnostics separate from the newest attack's strike endpoint.
+    return target ? { ...target, point: { ...target.point } } : null;
+  }
+
   function installExactReticleAlignment(liveDeps, rawInteractionRay, rawAimRay) {
     const combat = window.Combat;
     const previousStep = combat?.attackAlignmentStep;
@@ -279,19 +293,23 @@
     function cameraAuthoredLunge(distancePx, durationS, hopUnits = 0, hitTest = null) {
       const player = liveDeps?.player;
       const wasLunging = !!player?.lunging;
-      const pendingReticleTarget = !wasLunging
+      const pendingReticleTarget = player
         ? nearestReticleHostileTarget(liveDeps, rawInteractionRay, rawAimRay)
-        : null; // Samples once at attack commitment; this point is never updated to follow the enemy afterward.
+        : null; // Every attack call samples once, even when native movement-lunge is denied.
+      const committedAt = Date.now(); // Shared timestamp keeps the strike target lifetime deterministic for this attack attempt.
+      committedMeleeReticleTarget = pendingReticleTarget ? {
+        ...pendingReticleTarget,
+        committedAt,
+        expiresAt: committedAt + Math.max(650, Math.max(0, Number(durationS) || 0) * 1000 + MELEE_RETICLE_COMMIT_PAD_MS),
+      } : null; // Always overwrite/clear the prior attack endpoint so denied lunges can never reuse stale aim.
       const result = rawLunge.apply(this, arguments);
       if (!player || wasLunging || !player.lunging) return result;
 
       try {
-        committedMeleeReticleTarget = pendingReticleTarget ? {
-          ...pendingReticleTarget,
-          committedAt: Date.now(),
-          expiresAt: Date.now() + Math.max(650, Math.max(0, Number(durationS) || 0) * 1000 + MELEE_RETICLE_COMMIT_PAD_MS),
-        } : null; // Strike collision reads the same endpoint after the lunge has moved the player.
-        const committedTarget = activeCommittedMeleeTarget();
+        activeLungeReticleTarget = committedMeleeReticleTarget
+          ? { ...committedMeleeReticleTarget, point: { ...committedMeleeReticleTarget.point } }
+          : null; // Movement owns its own frozen copy; later attacks may refresh strike aim without bending this lunge.
+        const committedTarget = activeLungeTarget();
         const point = committedTarget?.point || perspectivePoint(liveDeps); // Exact reticle/Box3 point wins; the stable horizon remains the no-target fallback.
         const tile = Number(liveDeps?.TILE) || 64; // Converts the player's logical pixel coordinates into the point's world units.
         const baseY = Number(liveDeps?.getActorWorldY?.(player)); // Used only as a fallback before the player's combat portrait Box3 exists.
@@ -447,7 +465,7 @@
       y: Number(base.origin.y) || 0,
       z: (Number(sampleY) || 0) / tile,
     }; // Logical lunge position replaces the render-frame-cached player X/Z.
-    const committedTarget = activeCommittedMeleeTarget();
+    const committedTarget = activeLungeTarget();
     let direction = {
       x: Number(base.direction.x) || 0,
       y: Number(base.direction.y) || 0,
@@ -527,6 +545,7 @@
     }
     player.lunging = false;
     player.lungeHopCurrent = 0;
+    activeLungeReticleTarget = null; // Fully stopped ground lunges no longer own movement aim.
     const area = liveDeps?.getCurrentArea?.();
     window.AudioSystem?.playHeavyLandingSfx?.(
       area,
@@ -538,6 +557,7 @@
     const player = liveDeps?.player;
     if (!player?.lunging) {
       lungeSweepAnchor = null;
+      activeLungeReticleTarget = null; // Natural lunge completion releases movement's frozen endpoint without touching the newest attack's strike target.
       return false;
     }
     const current = { x: Number(player.x) || 0, y: Number(player.y) || 0 };
@@ -714,6 +734,7 @@
       } : null,
       lastError: lastError ? { ...lastError } : null,
       committedMeleeReticleTarget: committedMeleeTargetSnapshot(),
+      activeLungeReticleTarget: activeLungeTargetSnapshot(),
       movementAuthority: 'native-player-to-perspective-point-walk+frozen-reticle-lunge',
       rangedAuthority: 'held-launch-origin-to-reticle-target',
       updateMode: 'initialization-only-no-frame-hook',
