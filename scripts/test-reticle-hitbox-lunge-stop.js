@@ -92,6 +92,7 @@ let lastProfileDirect = null; // Confirms forward/upward player attacks use the 
 let perspectivePointY = 0.55; // Mutable shared aim height lets this regression exercise an elevated target without changing camera yaw.
 let perspectivePointZ = 0; // Mutable horizon depth exposes shoulder-camera parallax without changing the center-ray direction.
 let cameraRayOriginZ = 0; // Mutable camera shoulder offset used by the frozen-reticle lunge regression.
+let blockNativeLunge = false; // Simulates game.js refusing movement while the melee strike itself is still allowed to resolve.
 
 const perspectiveTarget = () => ({
   point: { x: 10, y: perspectivePointY, z: perspectivePointZ },
@@ -113,7 +114,7 @@ const deps = {
   getPlayerMeleeAimDirection: () => ({ x: 1, y: 0, z: 0 }),
   getPlayerMeleeAimPitch: () => 0,
   beginCombatLunge(distancePx, durationS, hopUnits = 0, hitTest = null) {
-    if (player.lunging) return;
+    if (blockNativeLunge || player.lunging) return false;
     player.lunging = true;
     player.lungeT = durationS;
     player.lungeDur = durationS;
@@ -256,7 +257,39 @@ for (const axis of ['x', 'y', 'z']) {
   assert(Math.abs(committedAfterMove.point[axis] - frozenPoint[axis]) < 1e-9,
     `moving the enemy after attack start must not move frozen ${axis} or create homing`);
 }
+
+// A second attack can be requested while the previous movement lunge is still
+// flagged active (different attack modules have independent busy gates). Its
+// STRIKE target must refresh, while the old movement lunge keeps its own point.
+targetBox = {
+  min: { x: 3, y: 0, z: 0.8 },
+  max: { x: 3.4, y: 1, z: 1.2 },
+};
+deps.beginCombatLunge(128, 0.4, 0, { rangePx: 64, halfConeRad: 0.25 });
+const secondAttackCommit = windowStub.HobunjiCombatCameraAlignment.committedMeleeTarget();
+const activeOldLunge = windowStub.HobunjiCombatCameraAlignment.debugSnapshot().activeLungeReticleTarget;
+assert(secondAttackCommit && Math.abs(secondAttackCommit.point.x - 3) < 1e-9,
+  'a denied second movement lunge still refreshes the new strike endpoint');
+assert(activeOldLunge && Math.abs(activeOldLunge.point.x - frozenPoint.x) < 1e-9,
+  'refreshing strike aim cannot bend the older lunge that remains in flight');
+
+// game.js also refuses a midair movement lunge after a miss/expired chain
+// window. The attack still swings, so it must receive fresh reticle aim rather
+// than inheriting the previous attack target.
 player.lunging = false;
+blockNativeLunge = true;
+targetBox = {
+  min: { x: 4, y: 0, z: 0.8 },
+  max: { x: 4.4, y: 1, z: 1.2 },
+};
+deps.beginCombatLunge(128, 0.4, 0, { rangePx: 64, halfConeRad: 0.25 });
+const deniedMovementCommit = windowStub.HobunjiCombatCameraAlignment.committedMeleeTarget();
+assert.equal(player.lunging, false, 'fixture confirms native movement lunge was denied');
+assert(deniedMovementCommit && Math.abs(deniedMovementCommit.point.x - 4) < 1e-9,
+  'movement denial still commits the current attack reticle point for strike collision');
+assert.equal(windowStub.HobunjiCombatCameraAlignment.debugSnapshot().activeLungeReticleTarget, null,
+  'denied movement does not steal or fabricate an active-lunge endpoint');
+blockNativeLunge = false;
 cameraRayOriginZ = 0;
 perspectivePointZ = 0;
 
