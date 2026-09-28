@@ -151,6 +151,11 @@
     return null;
   }
 
+  function committedMeleeTargetSnapshot() {
+    const target = activeCommittedMeleeTarget(); // Reads expiry once so a debug snapshot cannot cross the expiry boundary between object fields.
+    return target ? { ...target, point: { ...target.point } } : null;
+  }
+
   function installExactReticleAlignment(liveDeps, rawInteractionRay, rawAimRay) {
     const combat = window.Combat;
     const previousStep = combat?.attackAlignmentStep;
@@ -677,10 +682,7 @@
   window.HobunjiCombatCameraAlignment = {
     version: VERSION,
     install,
-    committedMeleeTarget: () => {
-      const target = activeCommittedMeleeTarget();
-      return target ? { ...target, point: { ...target.point } } : null;
-    },
+    committedMeleeTarget: committedMeleeTargetSnapshot,
     debugSnapshot: () => ({
       version: VERSION,
       rangedInitWrapped,
@@ -711,10 +713,7 @@
         stopped: { ...lastLungeSweep.stopped },
       } : null,
       lastError: lastError ? { ...lastError } : null,
-      committedMeleeReticleTarget: activeCommittedMeleeTarget() ? {
-        ...activeCommittedMeleeTarget(),
-        point: { ...activeCommittedMeleeTarget().point },
-      } : null,
+      committedMeleeReticleTarget: committedMeleeTargetSnapshot(),
       movementAuthority: 'native-player-to-perspective-point-walk+frozen-reticle-lunge',
       rangedAuthority: 'held-launch-origin-to-reticle-target',
       updateMode: 'initialization-only-no-frame-hook',
