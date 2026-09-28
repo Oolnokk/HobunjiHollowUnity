@@ -250,8 +250,12 @@ targetBox = {
   min: { x: 2, y: 0, z: -3.2 },
   max: { x: 2.4, y: 1, z: -2.8 },
 };
-assert.deepEqual(windowStub.HobunjiCombatCameraAlignment.committedMeleeTarget().point, frozenPoint,
-  'moving the enemy after attack start does not move the committed endpoint or create homing');
+const committedAfterMove = windowStub.HobunjiCombatCameraAlignment.committedMeleeTarget();
+assert(committedAfterMove, 'frozen endpoint remains available through the staged strike window');
+for (const axis of ['x', 'y', 'z']) {
+  assert(Math.abs(committedAfterMove.point[axis] - frozenPoint[axis]) < 1e-9,
+    `moving the enemy after attack start must not move frozen ${axis} or create homing`);
+}
 player.lunging = false;
 cameraRayOriginZ = 0;
 perspectivePointZ = 0;
