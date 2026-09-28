@@ -703,6 +703,7 @@
     version: VERSION,
     install,
     committedMeleeTarget: committedMeleeTargetSnapshot,
+    activeLungeTarget: activeLungeTargetSnapshot,
     debugSnapshot: () => ({
       version: VERSION,
       rangedInitWrapped,
