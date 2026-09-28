@@ -11,6 +11,7 @@
   let holderMotionBusyUntil = 0;
   let combatHoldActive = false;
   let combatVisualState = null;
+  let combatVisualSerial = 0; // Used by transient VFX consumers to reject transform samples carried over from a previous attack.
   let lastDebugSignature = '';
   let stanceApplied = false;
   let stanceConfigLoadStarted = false;
@@ -357,11 +358,20 @@
     const activeMirrorSign = opts?.dirSign === -1 ? -1 : 1;
     const neutralMirrorSign = Number(opts?.pose?.neutralMirrorSign) === -1 ? -1 : 1;
     const returnNeutralMirrorSign = Number(opts?.pose?.returnNeutralMirrorSign) === -1 ? -1 : 1;
+    const meleeAfterimage = activeState().activeSlot === 'weapon'
+      && opts?.meleeSpacing !== false
+      && opts?.anim !== 'ranged'; // Used by the shared weapon afterimage renderer; defensive holds and ranged playback stay excluded.
+    const meleeAfterimageAfflictionIds = Array.isArray(opts?.afflictionIds)
+      ? opts.afflictionIds.filter(id => typeof id === 'string' && id)
+      : []; // Used by the shared renderer to color stacked afterimage layers from the attack's real affliction payload.
     combatVisualState = {
+      serial: ++combatVisualSerial,
       anim: opts?.anim || activeState().def?.animStyle || 'thrust',
       dirSign: activeMirrorSign,
       neutralMirrorSign,
       returnNeutralMirrorSign,
+      meleeAfterimage,
+      meleeAfterimageAfflictionIds,
       totalS,
       wf,
       sf,
@@ -399,6 +409,12 @@
       }, 0);
     }
     return state;
+  }
+
+  function meleeAfterimagePhaseActive(state) {
+    if (!state?.meleeAfterimage) return false;
+    const progress = Number(state.progress) || 0;
+    return progress > state.wf && progress <= state.sf; // Afterimages exist only while the authored pose moves from Windup to Strike.
   }
 
   function neutralWeightForVisual(state) {
@@ -594,6 +610,7 @@
     runtimeState.sourceAnimStyle = def?.animStyle || null;
     runtimeState.combatNeutralInjected = !!visual;
     runtimeState.combatAnim = visual?.anim || null;
+    runtimeState.combatSerial = visual?.serial ?? null; // Lets afterimage sampling reset cleanly at each attack boundary.
     runtimeState.combatProgress = visual?.progress ?? null;
     runtimeState.combatWindupFrac = visual?.wf ?? null;
     runtimeState.combatStrikeFrac = visual?.sf ?? null;
@@ -602,6 +619,9 @@
     runtimeState.combatDirSign = visual?.dirSign ?? 1;
     runtimeState.combatNeutralMirrorSign = visual?.neutralMirrorSign ?? 1;
     runtimeState.combatReturnNeutralMirrorSign = visual?.returnNeutralMirrorSign ?? 1;
+    runtimeState.combatMeleeAfterimage = meleeAfterimagePhaseActive(visual); // Read by the shared renderer; true only during Windup→Strike, never windup or recovery.
+    runtimeState.combatMeleeAfterimageEligible = !!visual?.meleeAfterimage; // Diagnostic distinction between an offensive melee animation and its narrower afterimage phase.
+    runtimeState.combatMeleeAfterimageAfflictionIds = visual?.meleeAfterimageAfflictionIds || []; // Stable per-attack array; renderer consumes immediately without per-frame cloning.
     runtimeState.combatNeutralWeight = visual ? neutralWeightForVisual(visual) : null; // Used by shoulder fallback profiles without allocating a debug snapshot.
     runtimeState.sweepPlaneNeutralCompensationDeg = visual?.anim === 'sweep'
       ? Math.round(90 * neutralWeightForVisual(visual))
@@ -626,6 +646,7 @@
       combatHoldActive,
       combatNeutralInjected: !!visual,
       combatAnim: visual?.anim || null,
+      combatSerial: visual?.serial ?? null,
       combatProgress: visual?.progress ?? null,
       combatWindupFrac: visual?.wf ?? null,
       combatStrikeFrac: visual?.sf ?? null,
@@ -634,6 +655,9 @@
       combatDirSign: visual?.dirSign ?? 1,
       combatNeutralMirrorSign: visual?.neutralMirrorSign ?? 1,
       combatReturnNeutralMirrorSign: visual?.returnNeutralMirrorSign ?? 1,
+      combatMeleeAfterimage: meleeAfterimagePhaseActive(visual),
+      combatMeleeAfterimageEligible: !!visual?.meleeAfterimage,
+      combatMeleeAfterimageAfflictionIds: [...(visual?.meleeAfterimageAfflictionIds || [])],
       combatNeutralWeight: visual ? neutralWeightForVisual(visual) : null,
       sweepPlaneNeutralCompensationDeg: visual?.anim === 'sweep'
         ? Math.round(90 * neutralWeightForVisual(visual))
