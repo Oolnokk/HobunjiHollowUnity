@@ -514,55 +514,33 @@
     }
   }
 
-  function frozenMeleeAimTarget(rawTarget, attackOrigin, metadata = {}) {
+  function committedMeleeAimTarget(attackOrigin, metadata = {}) {
     try {
-      const point = vectorFrom(rawTarget?.point);
+      const committed = window.HobunjiCombatCameraAlignment?.meleeHitTarget?.(); // Bridge chooses staged-strike ownership first, active movement-lunge ownership second, and newest legacy commit last.
+      const point = vectorFrom(committed?.point);
       if (!point || !attackOrigin) return null;
-      let direction = point.clone().sub(attackOrigin); // Re-roots one frozen attack/lunge endpoint at the player's current collision origin.
+      let direction = point.clone().sub(attackOrigin); // Re-roots the frozen endpoint at the player's current collision origin without ever following the target actor.
       if (direction.lengthSq() < 1e-8) return null;
       direction.normalize();
       const target = {
         ...metadata,
-        source: rawTarget.source || 'screen-reticle-box3',
+        source: committed.source || 'screen-reticle-box3',
         maxRangeWorld: Number(metadata.rangeTiles) || 0,
         rayOrigin: null,
         rayDirection: null,
         attackOrigin,
         point,
         direction,
-        rayDistance: Number(rawTarget.rayDistance) || 0,
+        rayDistance: Number(committed.rayDistance) || 0,
         attackDistance: distanceBetween(attackOrigin, point),
-        surfaceName: rawTarget.targetId || null,
+        surfaceName: committed.targetId || null,
       };
       lastResolvedAimTarget = plainAimTarget(target);
       return target;
     } catch (error) {
-      noteAimError('frozen-melee-target', error);
+      noteAimError('committed-melee-target', error);
       return null;
     }
-  }
-
-  function committedMeleeAimTarget(attackOrigin, metadata = {}) {
-    const committed = window.HobunjiCombatCameraAlignment?.committedMeleeTarget?.(); // Newest attack's strike endpoint, refreshed even when movement lunge was denied.
-    return frozenMeleeAimTarget(committed, attackOrigin, metadata);
-  }
-
-  function activeLungeMeleeAimTarget(attackOrigin, metadata = {}) {
-    const committed = window.HobunjiCombatCameraAlignment?.activeLungeTarget?.(); // Older movement lunge's endpoint remains stable if another attack starts before it finishes.
-    return frozenMeleeAimTarget(committed, attackOrigin, metadata);
-  }
-
-  function isNativeLungeStopProbe(options = {}) {
-    const player = combatDeps()?.player;
-    const hitTest = player?.lungeHitTest; // Bridge halves this range specifically for movement stopping; real strike reach remains full length.
-    if (!player?.lunging || !hitTest) return false;
-    const optionRange = Number(options?.rangePx); // Compared below so only game.js's live lunge-stop probe gets movement-lunge authority.
-    const lungeRange = Number(hitTest?.rangePx); // Active half-range cancellation reach written by combat-camera-alignment-bridge.
-    const optionCone = Number(options?.halfConeRad); // Distinguishes an unrelated hit test that happens to share the same range.
-    const lungeCone = Number(hitTest?.halfConeRad); // Active lunge cone captured from the attack that actually started movement.
-    return [optionRange, lungeRange, optionCone, lungeCone].every(Number.isFinite)
-      && Math.abs(optionRange - lungeRange) <= 1e-4
-      && Math.abs(optionCone - lungeCone) <= 1e-6;
   }
 
   function meleeInteractionAimTarget() {
@@ -683,20 +661,12 @@
       window.Combat.meleeHit = function interactionTargetMeleeHit(attacker, targetActor, options = {}) {
         if (attacker === deps.player && !options?.direction) {
           try {
-            const attackOrigin = playerMeleeOrigin(); // Both strike and movement-stop directions are re-rooted from the player's current collision origin.
-            const target = isNativeLungeStopProbe(options)
-              ? activeLungeMeleeAimTarget(attackOrigin, {
-                  mode: 'melee-lunge-stop',
-                  itemKey: deps.currentWeaponKey?.() || null,
-                  rangePx: Number(options?.rangePx) || 0,
-                  rangeTiles: (Number(options?.rangePx) || 0) / (Number(deps.TILE) || 64),
-                })
-              : meleeInteractionAimTarget();
+            const target = meleeInteractionAimTarget();
             if (target?.direction) options = { ...options, direction: plainVector(target.direction) };
           } catch (error) {
             noteAimError('melee-hit-direction', error);
           }
-        } // Explicit caller directions (notably the HUD readiness probe) stay live and are never replaced by a prior attack commit.
+        } // Explicit caller directions (notably the HUD readiness probe) stay live and are never replaced by an attack commit.
         return rawMeleeHit(attacker, targetActor, options);
       };
     }
