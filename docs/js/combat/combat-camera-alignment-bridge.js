@@ -1,7 +1,7 @@
 // Initialization-only bridge that makes the actual camera/reticle ray the
 // authority for the one finite perspective point beneath the reticle. Walking
-// stays in game.js's native point-relative path; this module freezes the exact
-// enemy point beneath the reticle for attack lunges when one exists, preserves the unmodified camera ray, and
+// stays in game.js's native point-relative path; this module freezes each attack's
+// exact reticle endpoint (hostile Box3 when hit, perspective fallback otherwise), preserves the unmodified camera ray, and
 // piggybacks Combat.update for lunge-entry correction without adding a second
 // animation loop.
 (() => {
@@ -20,10 +20,10 @@
   let lungeAuthorityInstalled = false; // Records whether beginCombatLunge was wrapped so player displacement converges on the perspective point.
   let exactReticleAlignmentInstalled = false; // Records whether player attack alignment now releases only on a real center-ray Box3 intersection.
   let combatUpdateSweepInstalled = false; // Records whether the existing Combat.update tick carries the lunge-entry sweep.
-  let lungeAuthorityCount = 0; // Mobile-readable count of lunges corrected toward the shared perspective point.
+  let lungeAuthorityCount = 0; // Mobile-readable count of lunges corrected toward their frozen reticle endpoint.
   let reticleBoxHitCount = 0; // Mobile-readable count of exact target Box3 intersections accepted by transient melee alignment.
   let lungeEarlyStopCount = 0; // Mobile-readable count of lunges clamped to the first attack-volume entry point.
-  let committedMeleeReticleTarget = null; // Frozen center-ray/hostile-Box3 intersection owned by the newest attack and reused by its strike collision.
+  let committedMeleeReticleTarget = null; // Frozen exact Box3 or perspective-fallback endpoint most recently committed by a lunge-backed attack.
   let activeLungeReticleTarget = null; // Frozen endpoint owned by the movement lunge that actually started, so a later denied lunge cannot retarget an older lunge in flight.
   let pendingStagedMeleeCommit = null; // One same-stack handoff from beginCombatLunge to the staged player attack created immediately afterward.
   let stagedStrikeContextActive = false; // True only while a staged player attack's onStrike callback is executing.
