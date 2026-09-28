@@ -76,7 +76,8 @@ const activeCamera = { fov: 55, updateProjectionMatrix() { projectionUpdates++; 
 let injectedRangedDeps = null;
 let lastRangedVisual = null;
 let lastMeleeHitOptions = null;
-let committedMeleeTarget = null; // Mutable bridge snapshot used to prove strike collision reuses the lunge's frozen endpoint.
+let committedMeleeTarget = null; // Mutable bridge snapshot used to prove strike collision reuses the newest attack's frozen endpoint.
+let activeLungeMeleeTarget = null; // Separate older movement-lunge snapshot used by native half-range stop probes.
 let interactionOrigin = { x: 0, y: 1, z: 3 };
 let interactionDirection = { x: 1, y: 0, z: 0 };
 const player = { x: 128, y: 192, angle: 0 };
@@ -138,7 +139,10 @@ const windowStub = {
   SCRATCHBONES_CONFIG: { game: { camera: { modes: { shoulderSurf: { distanceTiles: 2.6, fovDeg: 55 } } } } },
   GridTileAccessors: { getActiveScene: () => scene },
   Combat,
-  HobunjiCombatCameraAlignment: { committedMeleeTarget: () => committedMeleeTarget },
+  HobunjiCombatCameraAlignment: {
+    committedMeleeTarget: () => committedMeleeTarget,
+    activeLungeTarget: () => activeLungeMeleeTarget,
+  },
   CombatProgression: { getEffects: () => ({ stats: {} }) },
   RangedWeapons: {
     config: {
@@ -360,6 +364,34 @@ const committedLength = Math.hypot(committedDx, committedDy, committedDz);
 assert(Math.abs(lastMeleeHitOptions.direction.x - committedDx / committedLength) < 1e-9, 'strike X direction re-roots toward the frozen point');
 assert(Math.abs(lastMeleeHitOptions.direction.y - committedDy / committedLength) < 1e-9, 'strike pitch re-roots toward the frozen point');
 assert(Math.abs(lastMeleeHitOptions.direction.z - committedDz / committedLength) < 1e-9, 'strike Z direction re-roots toward the frozen point');
+
+// If another attack refreshes strike aim while an older lunge is still moving,
+// game.js's native half-range stop probe must remain on the older lunge point.
+activeLungeMeleeTarget = {
+  point: { x: 3, y: 0.5, z: 3 },
+  source: 'screen-reticle-box3',
+  targetId: 'old-lunge-target',
+  rayDistance: 3,
+};
+player.lunging = true;
+player.lungeHitTest = { rangePx: 32, halfConeRad: 0.2 };
+windowStub.Combat.meleeHit(player, targetActor, {
+  rangePx: 32,
+  halfConeRad: 0.2,
+  yaw: 0,
+  pitch: 0,
+});
+const oldLungeDx = 3 - player.x / 64;
+const oldLungeDy = 0.5 - 0.5;
+const oldLungeDz = 3 - player.y / 64;
+const oldLungeLength = Math.hypot(oldLungeDx, oldLungeDy, oldLungeDz);
+assert(Math.abs(lastMeleeHitOptions.direction.x - oldLungeDx / oldLungeLength) < 1e-9,
+  'native lunge-stop X remains tied to the movement lunge rather than the newer strike commit');
+assert(Math.abs(lastMeleeHitOptions.direction.z - oldLungeDz / oldLungeLength) < 1e-9,
+  'native lunge-stop Z remains tied to the movement lunge rather than the newer strike commit');
+player.lunging = false;
+player.lungeHitTest = null;
+activeLungeMeleeTarget = null;
 
 // Read-only HUD/reach probes supply their own live direction and debug:false.
 // They must not be redirected toward the frozen attack endpoint.
