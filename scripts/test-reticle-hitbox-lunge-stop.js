@@ -184,6 +184,12 @@ const windowStub = {
         halfHeightWorld: 0.5,
       };
     },
+    beginStagedAction(options = {}) {
+      return {
+        options,
+        fire() { return options.onStrike?.(this); },
+      }; // Minimal core stand-in lets the bridge prove each staged strike owns the reticle snapshot from its immediately preceding lunge request.
+    },
     update() {
       nativeUpdateCalls++;
       nativeUpdateSawX = player.x;
@@ -246,6 +252,10 @@ assert(Math.abs(committed.point.x - 2) < 1e-9, 'frozen endpoint is the near Box3
 assert(Math.abs(committed.point.z - 1) < 1e-9, 'frozen endpoint stays on the shoulder camera center ray');
 assert(player.lungeDirY > 0.35, 'lunge ground direction converges strongly toward the near reticle point from the player origin');
 assert.equal(windowStub.HobunjiCombatCameraAlignment.debugSnapshot().lastLunge.targetSource, 'screen-reticle-box3');
+let firstStrikeTarget = null; // Captured inside the first staged strike to prove later attacks cannot replace its ownership.
+const firstStagedAction = windowStub.Combat.beginStagedAction({
+  onStrike: () => { firstStrikeTarget = windowStub.HobunjiCombatCameraAlignment.meleeHitTarget(); },
+});
 const frozenPoint = { ...committed.point };
 targetBox = {
   min: { x: 2, y: 0, z: -3.2 },
@@ -267,11 +277,25 @@ targetBox = {
 };
 deps.beginCombatLunge(128, 0.4, 0, { rangePx: 64, halfConeRad: 0.25 });
 const secondAttackCommit = windowStub.HobunjiCombatCameraAlignment.committedMeleeTarget();
+let secondStrikeTarget = null; // Captured only while the second staged strike executes.
+const secondStagedAction = windowStub.Combat.beginStagedAction({
+  onStrike: () => { secondStrikeTarget = windowStub.HobunjiCombatCameraAlignment.meleeHitTarget(); },
+});
 const activeOldLunge = windowStub.HobunjiCombatCameraAlignment.debugSnapshot().activeLungeReticleTarget;
 assert(secondAttackCommit && Math.abs(secondAttackCommit.point.x - 3) < 1e-9,
   'a denied second movement lunge still refreshes the new strike endpoint');
 assert(activeOldLunge && Math.abs(activeOldLunge.point.x - frozenPoint.x) < 1e-9,
   'refreshing strike aim cannot bend the older lunge that remains in flight');
+assert(Math.abs(windowStub.HobunjiCombatCameraAlignment.meleeHitTarget().point.x - frozenPoint.x) < 1e-9,
+  'outside a strike, native movement probes still resolve against the older active lunge endpoint');
+secondStagedAction.fire();
+assert(secondStrikeTarget && Math.abs(secondStrikeTarget.point.x - 3) < 1e-9,
+  'second staged strike resolves against its own frozen endpoint despite the older movement lunge');
+assert(Math.abs(windowStub.HobunjiCombatCameraAlignment.meleeHitTarget().point.x - frozenPoint.x) < 1e-9,
+  'after the second strike callback, movement-probe ownership returns to the older lunge');
+firstStagedAction.fire();
+assert(firstStrikeTarget && Math.abs(firstStrikeTarget.point.x - frozenPoint.x) < 1e-9,
+  'first staged strike retains its original endpoint even after a newer attack committed');
 
 // game.js also refuses a midair movement lunge after a miss/expired chain
 // window. The attack still swings, so it must receive fresh reticle aim rather
@@ -284,11 +308,18 @@ targetBox = {
 };
 deps.beginCombatLunge(128, 0.4, 0, { rangePx: 64, halfConeRad: 0.25 });
 const deniedMovementCommit = windowStub.HobunjiCombatCameraAlignment.committedMeleeTarget();
+let deniedStrikeTarget = null; // Proves denied movement still hands the fresh attack snapshot to its staged strike.
+const deniedStagedAction = windowStub.Combat.beginStagedAction({
+  onStrike: () => { deniedStrikeTarget = windowStub.HobunjiCombatCameraAlignment.meleeHitTarget(); },
+});
 assert.equal(player.lunging, false, 'fixture confirms native movement lunge was denied');
 assert(deniedMovementCommit && Math.abs(deniedMovementCommit.point.x - 4) < 1e-9,
   'movement denial still commits the current attack reticle point for strike collision');
 assert.equal(windowStub.HobunjiCombatCameraAlignment.debugSnapshot().activeLungeReticleTarget, null,
   'denied movement does not steal or fabricate an active-lunge endpoint');
+deniedStagedAction.fire();
+assert(deniedStrikeTarget && Math.abs(deniedStrikeTarget.point.x - 4) < 1e-9,
+  'denied movement attack still resolves its staged strike against the fresh reticle endpoint');
 blockNativeLunge = false;
 cameraRayOriginZ = 0;
 perspectivePointZ = 0;
@@ -384,6 +415,7 @@ assert.equal(player.lungeHitTest, null, 'hop lunge stops re-testing once its hor
 assert(nativeUpdateCalls >= 2, 'native Combat.update continues to run through the bridge');
 
 const debug = windowStub.HobunjiCombatCameraAlignment.debugSnapshot();
+assert.equal(debug.stagedActionCommitInstalled, true, 'staged strike ownership wrapper is installed');
 assert.equal(debug.exactReticleAlignmentInstalled, true);
 assert.equal(debug.combatUpdateSweepInstalled, true);
 assert(debug.reticleBoxHitCount >= 1);
