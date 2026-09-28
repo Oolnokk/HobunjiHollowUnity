@@ -36,6 +36,7 @@
   const ROPE_COLLISION_RADIUS = 0.24; // Player-sized horizontal clearance used to validate and sweep every rope arc/flight segment against normal interior solids.
   const ROPE_ROUTE_SAMPLES = 28; // Samples the full authored pendulum arc before accepting a generated route through the room.
   const ROPE_GRAVITY = 8.2;
+  const ROPE_BODY_SAMPLE_OFFSETS = Object.freeze([.15, .75, 1.3]); // Feet, waist and head heights of a rope rider above its datum.
   const ROPE_MIN_LENGTH = 1.65;
   const CHECKPOINT_INVULN_MS = 1200;
   const KURRAYA_NOTE_URL = 'assets/audio/music/instruments/sfx_kurraya_pluck.m4a'; // Shared authored pluck used by modular musical pressure plates until a dedicated ruin-note sample exists.
@@ -52,6 +53,7 @@
   let deps = null;
   let state = null;
   let lastFrameMs = performance.now();
+  const composers = []; // External puzzle composers (e.g. js/dev-random-ruin-rope-rewards.js) built from this runtime's kit of primitives.
   let lastBadgeAt = -Infinity; // Throttles the mobile diagnostic DOM write; the simple runtime otherwise touched layout every rendered frame.
   let lastBadgeText = '';
   const sharedPrimitiveGeometry = new Map(); // Reuses immutable simple-puzzle primitives across plates, posts, coffins, emitters, and doors instead of allocating identical BufferGeometry repeatedly.
@@ -193,8 +195,15 @@
     return { x, z, y:Number(support?.y ?? fallbackY) };
   }
 
-  function ropeBlockedAt(x,z,radius=ROPE_COLLISION_RADIUS) {
-    return window.DevRandomRuinTileOccupancy?.blocksAt?.(x,z,radius) === true; // Same occupancy is stamped into the ordinary map_i_* grid, so rope traversal cannot bypass walls/pillars/closed doors that walking and knockback respect.
+  // y (the hanging/flying player's feet) makes the test height-aware: props
+  // entirely below or above the player's body span no longer veto a rope arc,
+  // so a rope can swing over a low obelisk in a pit. Walls/doors (tile
+  // sources) block at every height.
+  function ropeBlockedAt(x,z,radius=ROPE_COLLISION_RADIUS,y=null) {
+    const occupancy=window.DevRandomRuinTileOccupancy;
+    if(!Number.isFinite(Number(y)))return occupancy?.blocksAt?.(x,z,radius)===true; // Same occupancy is stamped into the ordinary map_i_* grid, so rope traversal cannot bypass walls/pillars/closed doors that walking and knockback respect.
+    for(const offset of ROPE_BODY_SAMPLE_OFFSETS)if(occupancy?.blocksAt?.(x,z,radius,{worldY:Number(y)+offset})===true)return true;
+    return false;
   }
 
   function sweptRopePoint(from,to,radius=ROPE_COLLISION_RADIUS) {
@@ -204,7 +213,7 @@
     for(let step=1;step<=steps;step++){
       const t=step/steps;
       const point={x:Number(from.x)+dx*t,y:Number(from.y)+(Number(to.y)-Number(from.y))*t,z:Number(from.z)+dz*t};
-      if(ropeBlockedAt(point.x,point.z,radius))return{blocked:true,last,point};
+      if(ropeBlockedAt(point.x,point.z,radius,point.y))return{blocked:true,last,point};
       last=point;
     }
     return{blocked:false,last:to,point:null};
@@ -400,6 +409,7 @@
 
   function clearState() {
     if (!state) return;
+    for (const composer of composers) { try { composer.clear?.(); } catch (error) { console.warn('[Random Test Ruin] composer clear failed', error); } }
     restoreRopeEquipment();
     for (const entity of state.spawnedMinions) disposeSpawnedMinion(entity); // Session/reroll ownership matches ordinary camp teardown; no sarcophagus enemy can leak into the next generated ruin.
     state.spawnedMinions.clear();
@@ -654,7 +664,9 @@
     return true;
   }
 
-  function createRopeTraversalBetween(context,room,pa,pb,idSuffix='') {
+  // options.externalHazard: the caller owns the lava/fall hazard (e.g. a whole
+  // lava basin), so no per-rope strip is created or validated.
+  function createRopeTraversalBetween(context,room,pa,pb,idSuffix='',options={}) {
     const dx=pb.x-pa.x,dz=pb.z-pa.z;
     const axis=Math.abs(dx)>=Math.abs(dz)?'x':'z';
     const separation=axis==='x'?Math.abs(dx):Math.abs(dz);
@@ -666,7 +678,7 @@
     const hazardLength=Math.max(1.5,separation-(axis==='x'?Math.min(pa.width,pb.width):Math.min(pa.depth,pb.depth)));
     const hazardWidth=Math.min(2.2,(axis==='x'?roomDepth:roomWidth)-2);
     const hazardY=Math.min(Number(sm.y)||0,Number(pa.baseY)||0,Number(pb.baseY)||0); // Logical fall/burn zone stays at/below the traversal floor; it is intentionally not rendered as a red debug slab in normal gameplay.
-    if(!hazardAreaIsOpenFloor(cx,cz,hazardY,hazardLength,hazardWidth,axis))return null;
+    if(!options.externalHazard&&!hazardAreaIsOpenFloor(cx,cz,hazardY,hazardLength,hazardWidth,axis))return null;
 
     const alongPlatformSize=axis==='x'?pa.width:pa.depth;
     const swingHorizontal=Math.max(.8,separation*.5-alongPlatformSize*.46);
@@ -677,7 +689,7 @@
     const bobRestY=launchTopY+ROPE_GRAB_ABOVE_LAUNCH;
     const verticalDrop=anchorY-bobRestY;
     if(verticalDrop<=.6)return null;
-    const minBobY=hazardY+.12; // The grip/player datum may sweep low over the hazard, but it must never pass through the authored floor plane.
+    const minBobY=(Number.isFinite(Number(options.minBobY))?Number(options.minBobY):hazardY)+.12; // The grip/player datum may sweep low over the hazard, but it must never pass through the authored floor plane.
     const maxSafeLength=anchorY-minBobY;
     const length=Math.hypot(swingHorizontal,verticalDrop),startAngle=Math.atan2(swingHorizontal,verticalDrop);
     if(length>maxSafeLength-.02)return null; // Reject impossible low-ceiling spans instead of creating a pendulum whose bottom lives below the floor.
@@ -706,9 +718,9 @@
     };
     for(let sample=0;sample<=ROPE_ROUTE_SAMPLES;sample++){
       const angle=-startAngle+(startAngle*2)*(sample/ROPE_ROUTE_SAMPLES),point=ropeBobAt(rope,angle);
-      if(ropeBlockedAt(point.x,point.z,ROPE_COLLISION_RADIUS)){disposeObject(ropeMesh);disposeObject(marker);disposeObject(mount);return null;}
+      if(ropeBlockedAt(point.x,point.z,ROPE_COLLISION_RADIUS,point.y)){disposeObject(ropeMesh);disposeObject(marker);disposeObject(mount);return null;}
     }
-    rope.hazard=createVisibleRopeLavaHazard(cx,cz,hazardY,hazardLength,hazardWidth,axis);
+    rope.hazard=options.externalHazard?null:createVisibleRopeLavaHazard(cx,cz,hazardY,hazardLength,hazardWidth,axis);
     rope.lastSafeBob=clonePoint(updateRopeVisual(rope));state.ropes.push(rope);return rope;
   }
 
@@ -1524,6 +1536,35 @@
     state.lastPlayerWorld=playerWorld()||entry;
   }
 
+  // Primitives handed to external composers; everything stays owned by this
+  // runtime's state so clearState() disposes composer output too.
+  function composerKit() {
+    return {
+      SCOPE, PAD, THREE,
+      get state(){ return state; },
+      get deps(){ return deps; },
+      group:()=>state.group,
+      sampleSupport, supportPoint, roomBounds, worldCellSize, doorwayWorld, roomDoorways, usableRoomCandidates,
+      createPlatform, removePlatform, pointInsidePlatform,
+      createRopeTraversalBetween,
+      naturalizeStone, makeBasic, sharedBoxGeometry, sharedCylinderGeometry, disposeObject,
+      recordModulePlacement,
+      playerWorld, setPlayerWorld,
+      playKurrayaPlateNote, playStoneUnlockKchunk, playLavaSizzle,
+      lavaMaterial:()=>state.lavaMaterial||(state.lavaMaterial=createLavaMaterial()),
+      registerSurface:definition=>{DS.registerSurface({scope:SCOPE,...definition});state.surfaceIds.add(definition.id);},
+      generatedStoneDoorMechanisms, onwardGeneratedStoneDoorMechanism,
+      ownsPlayerMotion:()=>!!(state?.activeRope||state?.flight),
+      sunkenRegionsForRoom:(context,room)=>(context.meta?.plateauModel?.regions||[]).filter(region=>region?.kind==='sunkenFloor'&&String(region.sourceRoomId)===String(room.id)&&Number(region.level)<0),
+    };
+  }
+
+  function registerComposer(composer) {
+    if(!composer||composers.includes(composer))return false;
+    composers.push(composer);
+    return true;
+  }
+
   function buildForContext(context) {
     clearState();
     const group=new THREE.Group();
@@ -1568,6 +1609,11 @@
     const usedRooms=new Set();
     const usedHallways=new Set(); // The mandatory safe-path crossing claims one hallway so repeating wall traps do not overlap it.
     const options=context.puzzleOptions||{};
+    const kit=composerKit();
+    state.kit=kit;
+    for(const composer of composers){ // Room-claiming composers run first so standalone modules never take their rooms.
+      try{composer.buildRooms?.(kit,context,rng,usedRooms,options);}catch(error){console.warn('[Random Test Ruin] composer buildRooms failed',error);}
+    }
     if(options.safePath!==false){
       const grid=buildSafePathGrid(context,rng,usedHallways);
       if(grid)recordModulePlacement('safePathGrid','hallway',grid.hallId,{mandatoryTraversal:true});
@@ -1580,6 +1626,11 @@
         const alreadyComposed=state.ropeElevatorComposers.some(module=>module.rope===rope);
         const ropeRoom=(context.meta?.rooms||[]).find(room=>String(room.id)===String(rope.roomId));
         if(!alreadyComposed&&ropeRoom&&rng()<.65)buildStoneCanopyModule(context,ropeRoom,rope.startPlatform); // Standalone rope rooms may independently roll architectural canopy cover.
+        if(!alreadyComposed&&ropeRoom){
+          for(const composer of composers){ // A standalone rope's far platform gets a payoff (plate→door, chest, lift→balcony).
+            try{composer.onStandaloneRope?.(kit,context,rope,ropeRoom,rng);}catch(error){console.warn('[Random Test Ruin] rope payoff failed',error);}
+          }
+        }
       }
     }
     const freeRooms=shuffle(usableRoomCandidates(context).filter(room=>!usedRooms.has(room.id)),rng);
@@ -1816,7 +1867,7 @@
       const bob=rope.bob||ropeBobAt(rope);
       const horizontal=Math.hypot(player.x-bob.x,player.z-bob.z);
       if(horizontal>ROPE_GRAB_RADIUS||Math.abs(player.y-bob.y)>1.05)continue;
-      if(ropeBlockedAt(bob.x,bob.z,ROPE_COLLISION_RADIUS))continue;
+      if(ropeBlockedAt(bob.x,bob.z,ROPE_COLLISION_RADIUS,bob.y))continue;
       if(attachRope(rope)){rope.autoGrabCount++;return true;}
     }
     return false;
@@ -1852,6 +1903,7 @@
     if(!player)return;
     for(const rope of state.ropes){
       const hazard=rope.hazard;
+      if(!hazard)continue;
       const along=hazard.axis==='x'?Math.abs(player.x-hazard.cx):Math.abs(player.z-hazard.cz);
       const cross=hazard.axis==='x'?Math.abs(player.z-hazard.cz):Math.abs(player.x-hazard.cx);
       if(along<=hazard.length*.5&&cross<=hazard.width*.5&&
@@ -1946,6 +1998,7 @@
     updateSarcophagusModules(dt);
     updateOssuaryComposers();
     updateRopes(now,dt);
+    for(const composer of composers){try{composer.update?.(state.kit,now,dt);}catch(error){console.warn('[Random Test Ruin] composer update failed',error);}}
     updateHallwayTraps(dt);
     updateDoorwayCheckpoints();
     updateBadge();
@@ -1954,6 +2007,7 @@
   function getInteractionControls() {
     if(!state||!inRuin())return [];
     const controls=state.controls.slice();
+    for(const composer of composers)for(const control of (composer.controls?.(state.kit)||[]))controls.push(control);
     for(const candidate of state.ropes){
       if(candidate.attached||state.flight)continue;
       controls.push({
@@ -2040,6 +2094,7 @@
       ossuaryComposers:state.ossuaryComposers.map(module=>({id:module.id,roomId:module.roomId,entered:module.entered,completed:module.completed})),
       ropeElevatorComposers:state.ropeElevatorComposers.map(module=>({id:module.id,roomId:module.roomId,ropeId:module.rope.id,elevatorId:module.elevator.id,glyphId:module.glyph.id,canopyId:module.canopy?.id||null,lowerShellId:module.lowerShell?.id||null,ossuaryId:module.ossuary?.id||null,nextDoorMechanismId:module.nextDoorMechanismId||null})),
       modules:state.modulePlacements.map(module=>({...module})),
+      composers:Object.fromEntries(composers.map(composer=>[composer.id||'composer',composer.snapshot?.(state.kit)||null])),
       spawnedMinions:state.spawnedMinions.size,
       liveProjectiles:state.projectiles.length,
       checkpoints:{
@@ -2064,5 +2119,6 @@
     respawnAtCheckpoint,
     snapshot,
     clear:clearState,
+    registerComposer,
   });
 })();

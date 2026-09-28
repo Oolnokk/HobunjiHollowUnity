@@ -28363,6 +28363,19 @@
         setRainPlaneSettings: window.RainPlanes.setSettings,
         isDevMode: () => s_devMode,
         regenerateWildernessLab,
+        // Adds a rolled loot bundle ({ itemKey: qty }) to the inventory and
+        // returns display parts; used by Random Test Ruin Dungeon Chests.
+        grantLoot: gained => {
+          const parts = [];
+          Object.entries(gained || {}).forEach(([key, qty]) => {
+            if (!(qty > 0)) return;
+            if (key === 'gold') inventory.gold = (inventory.gold || 0) + qty;
+            else inventory[key] = Math.min(99, (inventory[key] || 0) + qty);
+            parts.push(itemIconForKey(key) + '×' + qty);
+          });
+          if (parts.length) { window.HudUpdate.refreshItemScroll(); buildInventoryGrid(); refreshActionBar(); }
+          return parts;
+        },
       });
 
       window.MapLivePreviewRuntime?.init({

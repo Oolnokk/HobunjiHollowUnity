@@ -276,7 +276,7 @@
 
   function blocksAt(model, x, z, radius, options = {}) {
     const ignoreSource = options.ignoreRuinSource || '';
-    if (model.footprints.blocksBox(x, z, radius)) return true;
+    if (model.footprints.blocksBox(x, z, radius, Number.isFinite(Number(options.worldY)) ? Number(options.worldY) : null)) return true; // worldY: height-aware callers (rope riders) clear props below/above them.
     const minCol = Math.floor(x - radius), maxCol = Math.floor(x + radius);
     const minRow = Math.floor(z - radius), maxRow = Math.floor(z + radius);
     for (let row = minRow; row <= maxRow; row++) for (let col = minCol; col <= maxCol; col++) {
@@ -421,7 +421,7 @@
       scanSolids:(root, tag) => model.footprints.scan(root, tag),
       clearSolids:tag => model.footprints.removeTag(tag),
       addSolidBox:(id, box, enabled, tag) => model.footprints.addBox(id, box, enabled, tag),
-      solidAt:(x, z, half = 0) => model.footprints.blocksBox(x, z, half),
+      solidAt:(x, z, half = 0, worldY = null) => model.footprints.blocksBox(x, z, half, worldY),
       destroy:() => {
         restoreGridCollision(model);
         DS.remove(BLOCKER_ID);
@@ -473,7 +473,7 @@
     scanSolids:(root, tag = 'dynamic-scan') => activeModel?.scanSolids?.(root, tag) || 0, // Later-built puzzle modules add their visible solids to the same footprint set.
     clearSolids:tag => activeModel?.clearSolids?.(tag),
     addSolidBox:(id, box, enabled = null, tag = 'dynamic') => activeModel?.addSolidBox?.(id, box, enabled, tag) || null,
-    solidAt:(x, z, half = 0) => activeModel?.solidAt?.(x, z, half) || null,
+    solidAt:(x, z, half = 0, worldY = null) => activeModel?.solidAt?.(x, z, half, worldY) || null, // worldY: only solids spanning that height.
     getFootprints:() => activeModel?.footprints?.list?.().map(fp => ({ source:fp.source, cx:+fp.cx.toFixed(3), cz:+fp.cz.toFixed(3), halfU:+fp.halfU.toFixed(3), halfV:+fp.halfV.toFixed(3), yaw:+Math.atan2(-fp.uz, fp.ux).toFixed(3) })) || [],
     renderMapPanel:renderRuinMapPanel,
     blockerId:BLOCKER_ID,
