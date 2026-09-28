@@ -416,6 +416,30 @@
     DS.registerSurface({ id, scope:SCOPE, bounds:() => boundsFor(object), topY:() => boxFor(object)?.max.y ?? 0,
       enabled:() => object.visible !== false, priority });
   }
+  // A moving dais deck without whatever V50 grounded on it (the goal
+  // pedestal/coffin and its brazier): measuring the whole subtree put the
+  // walkable top at the pedestal's height, so a lowered dais could not be
+  // stepped onto.
+  const deckBox = new THREE.Box3(), deckPart = new THREE.Box3();
+  function deckBoxFor(platform) {
+    platform.updateWorldMatrix(true, true);
+    deckBox.makeEmpty();
+    const visit = node => {
+      if (node !== platform && node.userData?.groundedToMovingPlatform) return;
+      if (node.isMesh && node.geometry) {
+        if (!node.geometry.boundingBox) node.geometry.computeBoundingBox();
+        deckPart.copy(node.geometry.boundingBox).applyMatrix4(node.matrixWorld);
+        deckBox.union(deckPart);
+      }
+      for (const child of node.children || []) visit(child);
+    };
+    visit(platform);
+    return deckBox.isEmpty() ? boxFor(platform) : deckBox;
+  }
+  function registerDaisSurface(id, platform, priority) {
+    DS.registerSurface({ id, scope:SCOPE, bounds:() => { const b = deckBoxFor(platform); return b ? { minX:b.min.x,maxX:b.max.x,minZ:b.min.z,maxZ:b.max.z } : {minX:0,maxX:0,minZ:0,maxZ:0}; },
+      topY:() => deckBoxFor(platform)?.max.y ?? 0, enabled:() => platform.visible !== false, priority });
+  }
   function registerFloor(meta) {
     let floorMesh = null;
     ruin.localeRoot.traverse(o => { if (!floorMesh && o.userData?.wallBuilderRecipe === 'wallrecipe2.json') floorMesh = o; });
@@ -461,7 +485,7 @@
     });
     for (const m of ruin.mechanisms.values()) {
       if (m.type === 'bridge' || m.type === 'bridgeSequence') registerSurface(`devruin-mech-${m.id}`,m.root,10);
-      else if (m.type === 'movingDais') registerSurface(`devruin-mech-${m.id}`,m.root.userData.movingDaisPlatform||m.root,12);
+      else if (m.type === 'movingDais') registerDaisSurface(`devruin-mech-${m.id}`,m.root.userData.movingDaisPlatform||m.root,12);
       else if (m.type === 'collapsingStairs') for (const tread of (m.root.userData.stairTreads||[])) registerSurface(`devruin-stair-${m.id}-${tread.id}`,tread,12);
     }
 
@@ -555,6 +579,15 @@
       activators:ruin.activators, pushBlocks:ruin.pushBlocks,
       getPlayerPosition:() => ({ x:deps.player.x / deps.TILE, z:deps.player.y / deps.TILE }),
     });
+    // The pedestal/coffin riding a dais is excluded from the static scan
+    // (its ancestors are named as dais parts), so give it its own footprint:
+    // it stands on the deck and must not be walked through once up there.
+    for (const m of ruin.mechanisms.values()) {
+      if (m.type !== 'movingDais') continue;
+      for (const child of (m.root.userData?.movingDaisPlatform || m.root).children || []) {
+        if (child.userData?.groundedToMovingPlatform) ruin.occupancy.scanSolids(child, 'dais-feature');
+      }
+    }
   }
 
   function pushBlock(block) {
