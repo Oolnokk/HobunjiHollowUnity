@@ -162,11 +162,7 @@
   }
 
   function activeLungeTarget() {
-    const target = activeLungeReticleTarget;
-    if (!target) return null;
-    if (Date.now() <= target.expiresAt) return target;
-    activeLungeReticleTarget = null;
-    return null;
+    return activeLungeReticleTarget; // Movement lifetime, not wall-clock time, owns this snapshot; pausing mid-lunge must never make its aim silently expire.
   }
 
   function activeLungeTargetSnapshot() {
