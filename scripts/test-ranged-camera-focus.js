@@ -8,7 +8,7 @@ const vm = require('node:vm');
 const source = fs.readFileSync('docs/js/combat/ranged-camera-focus.js', 'utf8');
 const loader = fs.readFileSync('docs/js/combat/combat-config-loader.js', 'utf8');
 
-assert.match(loader, /ranged-camera-focus\.js\?v=20260920rangecameraorbit2[\s\S]*HobunjiRangedCameraFocus\?\.version\) >= 10/, 'loader requires camera-focus v10 with animation pitch ownership returned to game.js');
+assert.match(loader, /ranged-camera-focus\.js\?v=20260927reticletarget1[\s\S]*HobunjiRangedCameraFocus\?\.version\) >= 11/, 'loader requires camera-focus v11 with reticle-surface ranged targeting');
 assert.doesNotMatch(loader, /attack-camera-player-root/, 'obsolete player-root camera hook stays removed');
 assert.match(source, /change-driven-persistent-cache/, 'combat aim advertises persistent change-driven caching');
 assert.match(source, /intersectObject\(root, true, localHits\)/, 'scene roots remain isolated so one bad root cannot abort the frame');
@@ -187,6 +187,7 @@ const deps = {
   getPlayerAimRay: () => ({ origin: interactionOrigin, direction: interactionDirection }),
   getPlayerAimPitch: () => 0,
   getActiveCamera: () => activeCamera,
+  getHeldRangedWorldTransform: () => ({ position: { x: player.x / 64 + 0.35, y: 0.9, z: player.y / 64 - 0.2 } }),
   getPlayerMeleeAimDirection: () => ({ x: 0, y: 0, z: 1 }),
   getPlayerMeleeAimPitch: () => 0,
   currentWeaponKey: () => 'hatchet',
@@ -270,10 +271,12 @@ windowStub.HobunjiRangedCameraFocus.interactionAimTarget();
 assert.equal(windowStub.HobunjiRangedCameraFocus.aimPerformance().surfaceRaycasts, scansBeforeWorldEvent + 1, 'world-object event forces one fresh surface scan');
 assert.equal(windowStub.HobunjiRangedCameraFocus.aimPerformance().lastInvalidation, 'hobunji-world-object-change');
 
-// The ranged ray still converges from the actual projectile origin onto the shared point.
+// The ranged ray converges from the exact held projectile origin onto the first surface under the reticle.
 const sharedRay = injectedRangedDeps.getPlayerAimRay();
-assert(Math.abs(sharedRay.origin.x - player.x / 64) < 1e-9, 'ranged ray starts at the moved projectile/player origin');
-assert(sharedRay.direction.x > 0.7, 'ranged shot still points toward the shared 3D surface point');
+assert(Math.abs(sharedRay.origin.x - (player.x / 64 + 0.35)) < 1e-9, 'ranged ray starts at the live held projectile origin');
+assert(Math.abs(sharedRay.origin.y - 0.9) < 1e-9, 'ranged ray preserves held-projectile launch height');
+assert(Math.abs(sharedRay.origin.z - (player.y / 64 - 0.2)) < 1e-9, 'ranged ray preserves held-projectile shoulder offset');
+assert(sharedRay.direction.x > 0.7, 'ranged shot still points toward the reticle surface point');
 
 function settle(frames = 120) {
   for (let i = 0; i < frames; i++) {
@@ -365,13 +368,15 @@ thrownCharge = null;
 windowStub.RangedWeapons.update(1 / 60);
 assert.equal(windowStub.HobunjiRangedCameraFocus.snapshot().active, false, 'releasing thrown weapon ends tight focus');
 
-// The shoulder game now supplies one finite point. When present, ranged pose
-// and melee aim must reuse it directly and skip the legacy surface resolver.
+// The shoulder game also supplies a far perspective point for stable body/head/melee
+// facing. Ranged fire must deliberately ignore that horizon point when a real
+// camera-ray surface exists, while melee continues to use the shared point.
 activeTool = 'ranged';
 equipped = 'crossbow';
 loaded = true;
-const perspectivePoint = { x: 18, y: 4.25, z: -2 }; // Exact endpoint expected from every re-rooted combat ray below.
-const scansBeforePerspectivePoint = windowStub.HobunjiRangedCameraFocus.aimPerformance().surfaceRaycasts; // Proves the new point path adds no raycast work.
+interactionDirection = { x: 1, y: 0, z: 0 };
+const perspectivePoint = { x: 18, y: 4.25, z: -2 }; // Horizon endpoint retained for non-ranged consumers.
+const scansBeforePerspectivePoint = windowStub.HobunjiRangedCameraFocus.aimPerformance().surfaceRaycasts;
 windowStub.RangedWeapons.init({
   ...deps,
   getPlayerAvatarGroup: () => avatarRoot,
@@ -383,16 +388,20 @@ windowStub.RangedWeapons.init({
   }),
   triggerRangedWeaponVisual: (durationS, options) => { lastRangedVisual = { durationS, options }; },
 });
-const perspectiveTarget = windowStub.HobunjiRangedCameraFocus.interactionAimTarget(); // Current ranged target should be the injected point regardless of weapon range.
-assert.equal(perspectiveTarget.source, 'shared-perspective-point');
-assert.equal(perspectiveTarget.point.x, perspectivePoint.x);
-assert.equal(perspectiveTarget.point.y, perspectivePoint.y);
-assert.equal(perspectiveTarget.point.z, perspectivePoint.z);
-assert.equal(windowStub.HobunjiRangedCameraFocus.aimPerformance().surfaceRaycasts, scansBeforePerspectivePoint,
-  'shared perspective point requires no scene raycast or per-frame resolver');
-assert.equal(windowStub.HobunjiRangedCameraFocus.snapshot().aimAlignment, 'shared-perspective-point-native-camera');
+const perspectiveTarget = windowStub.HobunjiRangedCameraFocus.interactionAimTarget();
+assert.equal(perspectiveTarget.source, 'interaction-first-surface', 'ranged aim prefers the real reticle surface over the horizon point');
+assert.equal(perspectiveTarget.surfaceName, 'farm-wall');
+assert.equal(perspectiveTarget.point.x, 6);
+assert.equal(windowStub.HobunjiRangedCameraFocus.aimPerformance().surfaceRaycasts, scansBeforePerspectivePoint + 1,
+  'ranged re-init invalidates and resolves the reticle surface exactly once');
+assert.equal(windowStub.HobunjiRangedCameraFocus.snapshot().aimAlignment, 'ranged-reticle-first-surface+melee-shared-perspective');
 
 activeTool = 'weapon';
+const meleePerspectiveTarget = windowStub.HobunjiRangedCameraFocus.interactionAimTarget();
+assert.equal(meleePerspectiveTarget.source, 'shared-perspective-point', 'melee keeps the stable shared horizon endpoint');
+assert.equal(meleePerspectiveTarget.point.x, perspectivePoint.x);
+assert.equal(meleePerspectiveTarget.point.y, perspectivePoint.y);
+assert.equal(meleePerspectiveTarget.point.z, perspectivePoint.z);
 equipped = 'crossbow';
 loaded = true;
 windowStub.RangedWeapons.update(1 / 60);
