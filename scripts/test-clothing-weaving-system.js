@@ -162,6 +162,19 @@ assert.equal(sixUnitOutline[48 * outlineProbeSize + 8], 0, 'the doubled outline 
 assert.equal(api.__test.weavingSwapsPatternColorsForRole({ layers: { base: { pattern: {}, swapPatternColors: true }, trim: { pattern: {} } } }, 'base'), true, 'base layer can independently swap cloth and pattern colors');
 assert.equal(api.__test.weavingSwapsPatternColorsForRole({ layers: { base: { pattern: {}, swapPatternColors: true }, trim: { pattern: {} } } }, 'trim'), false, 'trim layer keeps its own independent swap state');
 assert.equal(api.__test.weavingSwapsPatternColorsForRole({ pattern: {} }, null), false, 'legacy single-pattern saves default to unswapped colors');
+const raggedHoodConfig = JSON.parse(fs.readFileSync('docs/config/cosmetics/ragged_hood.json', 'utf8')); // Real garment fixture verifies its authored front/back rasters remain one logical base cloth role.
+const raggedHoodLayers = api.__test.resolveIconLayerUrls(raggedHoodConfig, 'mao-ao', 'male'); // Resolves the same species-specific layer descriptors consumed by loom and inventory previews.
+assert.deepEqual(Array.from(api.__test.patternRolesForLayers(raggedHoodLayers), entry => [entry.role, entry.key]), [['base', 'base']], 'Ragged Hood front/back sprites expose one shared Base pattern control');
+assert.equal(api.__test.layersUseSecondaryDye(raggedHoodLayers), false, 'Ragged Hood has no palette-B trim dye despite occupying the hood slot');
+assert.deepEqual(Array.from(api.__test.iconLayersForView(raggedHoodLayers, 'front'), layer => layer.layerName), ['front'], 'Ragged Hood inventory/front preview excludes its authored rear sprite');
+assert.deepEqual(Array.from(api.__test.iconLayersForView(raggedHoodLayers, 'behind'), layer => layer.layerName), ['back'], 'Ragged Hood behind preview uses its authored rear sprite by itself');
+const fineHoodConfig = JSON.parse(fs.readFileSync('docs/config/cosmetics/fine_hood.json', 'utf8')); // Control fixture keeps the genuine base-plus-trim hood behavior.
+const fineHoodLayers = api.__test.resolveIconLayerUrls(fineHoodConfig, 'mao-ao', 'male'); // Used to ensure the Ragged Hood fix does not collapse actual trim roles.
+assert.deepEqual(Array.from(api.__test.patternRolesForLayers(fineHoodLayers), entry => entry.role), ['base', 'trim'], 'Fine Hood still exposes independent Base and Trim pattern roles');
+assert.equal(api.__test.layersUseSecondaryDye(fineHoodLayers), true, 'Fine Hood still exposes its authored palette-B Trim dye');
+const anuriPonchoConfig = JSON.parse(fs.readFileSync('docs/config/cosmetics/anuri_poncho.json', 'utf8')); // Non-hood control protects positional back/front sandwich layers from hood-facing semantics.
+const anuriPonchoLayers = api.__test.resolveIconLayerUrls(anuriPonchoConfig, 'mao-ao', 'male'); // Falls back to the cosmetic's shared parts tree just like runtime resolution.
+assert.equal(api.__test.iconLayersForView(anuriPonchoLayers, 'front').length, anuriPonchoLayers.length, 'non-hood back/front layers remain composited together instead of becoming alternate facing views');
 assert.equal(api.isCraftableCloth({ slot: 'hat', cosmeticId: 'appearance::hat::basic_headband' }), true, 'basic non-leather headband is cloth-craftable');
 assert.equal(api.isCraftableCloth({ slot: 'hat', cosmeticId: 'appearance::hat::leather_headband' }), false, 'other hats are excluded');
 assert.equal(api.isCraftableCloth({ slot: 'torso', cosmeticId: 'bandolier1' }), false, 'bandolier is excluded');
@@ -708,6 +721,9 @@ assert.match(source, /function reweaveFromLoom\(/, 'loom mutates a selected Gear
 assert.match(source, /Math\.ceil\(fullCost \/ 2\)/, 'reweaving charges half the authored craft cost while keeping integer wool stacks');
 assert.match(source, /Reweave —/, 'loom operation selector exposes permanent Gear garments as reweave targets');
 assert.match(equipmentPanelSource, /compositeIncludesFinalDyes = !!window\.ClothingWeavingSystem\?\.hasWovenPattern\?\.\(item\)/, 'EquipmentPanel recognizes woven composites as already fully dyed');
+assert.match(equipmentPanelSource, /hasSecondaryDyeForItem/, 'inventory redye asks the shared cosmetic-palette resolver whether a real Trim channel exists');
+assert.match(source, /const hasSecondary = \(\) => layersUseSecondaryDye\(state\.layers\)/, 'loom Trim controls follow authored palette-B usage instead of the broad hood/overwear slot');
+assert.match(source, /for \(const \{ role, key \} of patternRoles\(\)\)/, 'loom pattern controls deduplicate multiple raster sprites that share one logical cloth role');
 assert.match(equipmentPanelSource, /if \(!compositeIncludesFinalDyes\) tintClothingIcon/, 'woven icon pixels are not washed out by the legacy single-color tint pass');
 assert.match(inventoryUiSource, /attributeFilter:\['src'\]/, 'Pack inventory observes the async icon src completion once instead of polling or compositing every frame');
 assert.match(source, /Swap \$\{role \? layerLabel\(role\)\.toLowerCase\(\) : 'cloth'\} ↔ pattern colors/, 'loom exposes the per-layer color swap outside PatternAuthoring');

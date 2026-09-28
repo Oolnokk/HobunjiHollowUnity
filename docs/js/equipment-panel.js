@@ -751,7 +751,7 @@
     panel.setAttribute('aria-hidden', 'true');
   }
 
-  function openRedyePanel(slot, item) {
+  async function openRedyePanel(slot, item) {
     if (item?.dyeable === false || window.MetalArmorSystem?.isMetalArmor?.(item)) {
       deps.showToast?.('Smith-forged metal clothing takes the color of its metal and cannot be dyed.', false);
       return;
@@ -766,8 +766,12 @@
     if (!panel || !titleEl || !subslotsEl || !groupsEl || !previewEl) return;
 
     const gearInventory = deps.getGearInventory();
-    const tintKeys = clothingTintKeysForSlot(slot);
-    const hasSecondary = tintKeys.length > 1;
+    const tintKeys = clothingTintKeysForSlot(slot); // Fallback preserves legacy slot behavior if cosmetic palette metadata is temporarily unavailable.
+    const secondaryResolver = window.ClothingWeavingSystem?.hasSecondaryDyeForItem; // Shared palette-aware resolver prevents one-color hoods from exposing a fake Trim channel.
+    let hasSecondary = tintKeys.length > 1; // Used by the dye controls and label builder after the optional cosmetic-specific lookup below.
+    if (typeof secondaryResolver === 'function') {
+      try { hasSecondary = await secondaryResolver(item); } catch (_) { /* Keep the slot fallback if cosmetic metadata cannot be loaded. */ }
+    }
     const originalColorA = item.colorA ? { ...item.colorA } : null;
     const originalColorB = item.colorB ? { ...item.colorB } : null;
     const originalLabel = item.label;

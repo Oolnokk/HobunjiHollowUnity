@@ -95,6 +95,32 @@
     return key.charAt(0).toUpperCase() + key.slice(1);
   }
 
+  function patternRolesForLayers(layers) {
+    const seenRoles = new Set(); // Deduplicates multiple render sprites that share one authored weave role, such as a hood's front/back art.
+    const roles = []; // Supplies one loom pattern control per logical cloth role rather than one control per raster sprite.
+    for (const layer of (layers || [])) {
+      const role = layer?.role || null; // Preserves the authored role while allowing legacy single-layer cosmetics to use the default storage key.
+      const key = role || DEFAULT_LAYER_ROLE; // Matches weaving.layers storage so every sprite with the same role shares one pattern choice.
+      if (seenRoles.has(key)) continue;
+      seenRoles.add(key);
+      roles.push({ role, key });
+    }
+    return roles;
+  }
+
+  function layersUseSecondaryDye(layers) {
+    return (layers || []).some(layer => layer?.paletteKey === 'B'); // A real B-mapped cloth layer, not the broad clothing slot, determines whether Trim exists.
+  }
+
+  function iconLayersForView(layers, view = 'front') {
+    const list = Array.isArray(layers) ? layers : []; // Keeps the ordinary multi-layer icon path unchanged for garments without explicit hood rear art.
+    const hasExplicitHoodBack = list.some(layer => layer?.slot === 'hood' && layer?.layerName === 'back'); // Ragged Hood authors its rear silhouette as a real hood back layer instead of a replacement rule.
+    const hasExplicitHoodFront = list.some(layer => layer?.slot === 'hood' && layer?.layerName !== 'back'); // Prevents a back-only hood definition from being hidden in the normal inventory/front preview.
+    if (!hasExplicitHoodBack || !hasExplicitHoodFront) return list;
+    if (view === 'behind') return list.filter(layer => layer?.slot !== 'hood' || layer?.layerName === 'back');
+    return list.filter(layer => !(layer?.slot === 'hood' && layer?.layerName === 'back'));
+  }
+
   function weavingEntryForRole(weaving, role) {
     return weaving?.layers?.[role || DEFAULT_LAYER_ROLE] || null; // Used by per-layer pattern lookup and the independent base/trim color-swap flag.
   }
@@ -597,7 +623,7 @@
     }, true);
   }
 
-  function openExtendedRedyePanel(item) {
+  async function openExtendedRedyePanel(item) {
     window.DyeSystem?.ensureCollection?.();
     const panel = document.getElementById('dyePanel');
     const titleEl = document.getElementById('dyePanelTitle');
@@ -607,7 +633,7 @@
     if (!panel || !titleEl || !subslotsEl || !groupsEl || !previewEl) return;
 
     const gear = gearInventory();
-    const hasSecondary = item.slot === 'hood' || item.slot === 'overwear';
+    const hasSecondary = await hasSecondaryDyeForItem(item); // One-color garments such as Ragged Hood no longer inherit a fake Trim channel from their broad slot type.
     const original = { colorA: clone(item.colorA), colorB: clone(item.colorB), colorC: clone(item.colorC), label: item.label };
     let active = 'A';
     let pendingA = item.colorA?.dyeId || null;
@@ -837,8 +863,7 @@
     // the whole merged silhouette.
     function weavingFromState() {
       const layers = {};
-      for (const { role } of state.layers) {
-        const key = role || DEFAULT_LAYER_ROLE;
+      for (const { role, key } of patternRoles()) {
         const entry = state.layerPatterns[key];
         if (!entry) continue;
         // Keep the library id as provenance, but snapshot the full pattern
@@ -864,8 +889,7 @@
       state.layerPatterns = {};
       const savedWeaving = reweaveItem.weaving;
       if (savedWeaving) {
-        for (const { role } of state.layers) {
-          const key = role || DEFAULT_LAYER_ROLE;
+        for (const { role, key } of patternRoles()) {
           const stored = savedWeaving.layers
             ? weavingEntryForRole(savedWeaving, role)
             : (savedWeaving.pattern ? { pattern: savedWeaving.pattern, patternLabel: 'Custom' } : null);
@@ -934,7 +958,8 @@
       ? initialBlueprint
       : (blueprints.find(bp => bp.baseCosmeticId === state.blueprintId) || blueprints[0]);
     const selectedMaterial = () => isReweave ? reweaveMaterial : (MATERIALS[state.materialId] || MATERIALS.light);
-    const hasSecondary = () => ['hood', 'overwear'].includes(selectedBlueprint()?.slot);
+    const patternRoles = () => patternRolesForLayers(state.layers); // Gives front/back sprites sharing one cloth role a single loom pattern control.
+    const hasSecondary = () => layersUseSecondaryDye(state.layers); // Shows Trim only when this garment actually has a palette-B cloth layer.
     const dyeById = id => window.DyeSystem?.getById?.(id) || dyes.find(dye => dye.id === id) || dyes[0];
     const selectedPrimaryHex = () => isReweave ? clothingColorHex(reweaveItem.colorA) : dyeById(state.dyeA)?.hex;
     const selectedSecondaryHex = () => isReweave ? clothingColorHex(reweaveItem.colorB, selectedPrimaryHex()) : (hasSecondary() ? dyeById(state.dyeB)?.hex : null);
@@ -951,9 +976,10 @@
         const weaving = { layers: { ...base.layers, [roleKey]: { pattern: patternData, ...(swapPatternColors ? { swapPatternColors: true } : {}) } } };
         return renderClothingLayers(bp.baseCosmeticId, { primaryHex: selectedPrimaryHex(), secondaryHex: selectedSecondaryHex(), patternHex: selectedPatternHex(), weaving, view }).then(r => r.canvas);
       };
+      const patternRoleCount = patternRoles().length; // UI wording follows logical weave roles rather than raw front/back raster count.
       window.PatternAuthoring?.openEditor?.({
-        title: `Weave pattern — ${bp.label || bp.baseCosmeticId}${state.layers.length > 1 ? ' — ' + layerLabel(role) : ''}`,
-        motifHint: state.layers.length > 1
+        title: `Weave pattern — ${bp.label || bp.baseCosmeticId}${patternRoleCount > 1 ? ' — ' + layerLabel(role) : ''}`,
+        motifHint: patternRoleCount > 1
           ? `Draw the motif to weave onto this layer (${layerLabel(role)}). It will use the garment's third dye slot.`
           : 'Draw the motif to weave onto this garment. It will use the garment\'s third dye slot.',
         initialPattern,
@@ -991,12 +1017,11 @@
       state.layers = layers.length ? layers : [{ url: bp.sprite || null, role: null }]; // Falls back to a single unlabeled slot so pattern authoring still works even if layer resolution comes up empty.
       seedReweavePatternsFromItem();
       patternLayersEl.innerHTML = '';
-      for (const { role } of state.layers) {
-        const key = role || DEFAULT_LAYER_ROLE;
+      for (const { role, key } of patternRoles()) {
         const row = document.createElement('div');
         row.className = 'loomcraft-pattern-layer';
         const label = document.createElement('label');
-        label.textContent = state.layers.length > 1 ? layerLabel(role) : 'Pattern library';
+        label.textContent = patternRoles().length > 1 ? layerLabel(role) : 'Pattern library';
         row.appendChild(label);
         const select = document.createElement('select');
         populatePatternSelect(select, state.layerPatterns[key]?.patternId);
@@ -1383,16 +1408,16 @@
 
   function collectLayerImageUrls(partsNode, paletteLayerMap, into) {
     if (!partsNode || typeof partsNode !== 'object') return into;
-    for (const part of Object.values(partsNode)) {
+    for (const [partName, part] of Object.entries(partsNode)) {
       const layers = part?.layers;
       if (!layers || typeof layers !== 'object') continue;
-      for (const layer of Object.values(layers)) {
+      for (const [layerName, layer] of Object.entries(layers)) {
         const role = layer?.layerRole || null; // Used with the cosmetic's palette map to identify BODY/NONE overlays, and (below) to key this layer's own pattern separately from its siblings.
         const mappedRole = role && paletteLayerMap ? paletteLayerMap[role] : null;
         const paletteKey = mappedRole || layer?.paletteColorKey || null; // 'A'/'B' — which dye slot this layer recolors with (see renderClothingLayers).
         const skip = mappedRole === 'BODY' || mappedRole === 'NONE' || layer?.paletteColorKey === 'BODY' || layer?.paletteColorKey === 'NONE'; // Same bypass routes collectPatternImageUrls already skips.
         const url = layer?.image?.url;
-        if (!skip && typeof url === 'string' && /\.(png|webp|jpe?g)(?:$|[?#])/i.test(url)) into.push({ url: normalizeAssetPath(url), role, paletteKey });
+        if (!skip && typeof url === 'string' && /\.(png|webp|jpe?g)(?:$|[?#])/i.test(url)) into.push({ url: normalizeAssetPath(url), role, paletteKey, partName, layerName });
       }
     }
     return into;
@@ -1407,11 +1432,12 @@
   // silhouette.
   function resolveIconLayerUrls(cfg, speciesId, gender) {
     const paletteLayerMap = cfg?.palette?.layers && typeof cfg.palette.layers === 'object' ? cfg.palette.layers : null;
+    const slot = cfg?.slot || null; // Carries garment semantics into flat inventory/loom rendering without hard-coding a specific cosmetic id.
     for (const key of speciesVariantKeyCandidates(speciesId, gender)) {
       const layers = collectLayerImageUrls(cfg?.speciesVariants?.[key]?.parts, paletteLayerMap, []);
-      if (layers.length) return layers;
+      if (layers.length) return layers.map(layer => ({ ...layer, slot }));
     }
-    return collectLayerImageUrls(cfg?.parts, paletteLayerMap, []);
+    return collectLayerImageUrls(cfg?.parts, paletteLayerMap, []).map(layer => ({ ...layer, slot }));
   }
 
   function playerSpeciesGender() {
@@ -1444,6 +1470,15 @@
     return iconLayerPromises.get(cacheKey);
   }
 
+  async function hasSecondaryDyeForCosmetic(baseCosmeticIdValue) {
+    const layers = await resolveIconLayers(baseCosmeticIdValue); // Uses the same species-aware palette mapping as the actual inventory and loom renderer.
+    return layersUseSecondaryDye(layers);
+  }
+
+  async function hasSecondaryDyeForItem(item) {
+    return hasSecondaryDyeForCosmetic(baseCosmeticId(item)); // Lets EquipmentPanel ask about a literal garment without duplicating cosmetic-config loading.
+  }
+
   const plainIconCanvasPromises = new Map(); // Reuses composited (unpatterned) icon canvases across the inventory grid and equipment slots.
 
   // Builds a flat icon by stacking every layer resolveIconLayers finds for
@@ -1460,7 +1495,7 @@
     const cacheKey = `${id}|${speciesId}|${gender}`;
     if (!plainIconCanvasPromises.has(cacheKey)) {
       plainIconCanvasPromises.set(cacheKey, (async () => {
-        const layers = await resolveIconLayers(id);
+        const layers = iconLayersForView(await resolveIconLayers(id), 'front'); // Inventory icons show the garment's normal-facing art, not a hood's dedicated rear sprite stacked on top.
         if (!layers.length) return null;
         const images = (await Promise.all(layers.map(l => loadImageUrl(l.url).catch(() => null)))).filter(Boolean);
         if (!images.length) return null;
@@ -1544,7 +1579,8 @@
   // carry two different colors/motifs instead of one dye and one pattern
   // stamped uniformly across the whole merged silhouette.
   async function renderClothingLayers(baseCosmeticIdValue, { primaryHex = null, secondaryHex = null, patternHex = '#ffffff', weaving = null, view = 'front' } = {}) {
-    const layers = await resolveIconLayers(baseCosmeticIdValue);
+    const resolvedLayers = await resolveIconLayers(baseCosmeticIdValue); // Keeps all authored sprites available so view selection can distinguish an explicit hood rear layer from an ordinary layered garment.
+    const layers = iconLayersForView(resolvedLayers, view); // Ragged Hood becomes front-only in the normal preview and rear-only after flipping, while non-hood back/front layering remains unchanged.
     if (!layers.length) return { canvas: null, layers };
     const primaryColorHex = primaryHex || '#ffffff'; // Used as the ordinary base-layer color or, when swapped, as that layer's pattern color.
     const secondaryColorHex = secondaryHex || primaryColorHex; // Used as the ordinary trim-layer color or, when swapped, as that layer's pattern color.
@@ -1614,9 +1650,13 @@
   // specific art and would just re-render the same front image, which
   // isn't worth a whole extra button for).
   async function hasBehindView(baseCosmeticIdValue) {
-    const layers = await resolveIconLayers(baseCosmeticIdValue);
+    const layers = await resolveIconLayers(baseCosmeticIdValue); // Full authored layer set is needed to detect a real hood back sprite before normal view filtering.
+    const frontSignature = iconLayersForView(layers, 'front').map(layer => layer.url).join('|'); // Detects explicit Ragged-Hood-style front/rear art even when no replacement rule exists.
+    const behindLayers = iconLayersForView(layers, 'behind'); // Supplies the rear-side candidates used both for the explicit-back check and replacement-rule fallback.
+    const behindSignature = behindLayers.map(layer => layer.url).join('|'); // Compared to frontSignature so a dedicated rear sprite enables the loom flip control.
+    if (frontSignature !== behindSignature) return true;
     const { gender } = playerSpeciesGender();
-    return layers.some(({ url }) => behindViewResultFor(url, baseCosmeticIdValue, gender).changed);
+    return behindLayers.some(({ url }) => behindViewResultFor(url, baseCosmeticIdValue, gender).changed);
   }
 
   function hexRgb(hex) {
@@ -2527,6 +2567,7 @@
     version: VERSION,
     openLoom,
     closeLoom,
+    hasSecondaryDyeForItem,
     isCraftableCloth,
     standardWeightFor,
     itemWeightUnits,
@@ -2547,7 +2588,7 @@
     hasWovenPattern: item => weavingHasAnyPattern(item?.weaving),
     reweaveMaterialCost,
     debugSnapshot,
-    __test: Object.freeze({ baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask, applyPatternToTintedImage, applyPatternStackToTintedImage, labelPatternCells, behindViewUrlsFor, behindViewResultFor, buildPortraitPatternMap, collectPatternImageUrls, cosmeticConfig, summarizeWeavingLabel, weavingPatternForRole, weavingPatternsForRole, normalizePatternStack, forcedOverpassPatternForWeaving, withForcedOverpass, weavingSwapsPatternColorsForRole, weavingHasAnyPattern, weavingCarriesSavedPattern, gearHasEquippedWovenClothing, requestSessionReadyPlayerAvatarRefresh, decorateAvatarDataWithWovenItems, materializeWeavingLibrarySnapshots, docsRelativeUrl, standaloneAssetUrl, frameShapeFor, wovenIconVisualKey, reweaveMaterialCost, resolvedPatternMeshScale, buildMotifClusterSeparatorMask, adjustMaskThickness, buildPatternOutlineMask, scaledOutlineWidth, overpassClearanceMultiplier }),
+    __test: Object.freeze({ baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask, applyPatternToTintedImage, applyPatternStackToTintedImage, labelPatternCells, behindViewUrlsFor, behindViewResultFor, buildPortraitPatternMap, collectPatternImageUrls, resolveIconLayerUrls, patternRolesForLayers, layersUseSecondaryDye, iconLayersForView, cosmeticConfig, summarizeWeavingLabel, weavingPatternForRole, weavingPatternsForRole, normalizePatternStack, forcedOverpassPatternForWeaving, withForcedOverpass, weavingSwapsPatternColorsForRole, weavingHasAnyPattern, weavingCarriesSavedPattern, gearHasEquippedWovenClothing, requestSessionReadyPlayerAvatarRefresh, decorateAvatarDataWithWovenItems, materializeWeavingLibrarySnapshots, docsRelativeUrl, standaloneAssetUrl, frameShapeFor, wovenIconVisualKey, reweaveMaterialCost, resolvedPatternMeshScale, buildMotifClusterSeparatorMask, adjustMaskThickness, buildPatternOutlineMask, scaledOutlineWidth, overpassClearanceMultiplier }),
   });
   window.__clothingWeavingDebug = debugSnapshot;
 
