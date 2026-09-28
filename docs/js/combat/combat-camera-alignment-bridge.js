@@ -357,9 +357,16 @@
     function cameraAuthoredLunge(distancePx, durationS, hopUnits = 0, hitTest = null) {
       const player = liveDeps?.player;
       const wasLunging = !!player?.lunging;
-      const pendingReticleTarget = player
+      const exactReticleTarget = player
         ? nearestReticleHostileTarget(liveDeps, rawInteractionRay, rawAimRay)
-        : null; // Every attack call samples once, even when native movement-lunge is denied.
+        : null; // Exact hostile Box3 point wins whenever the center reticle ray actually intersects one.
+      const fallbackPoint = exactReticleTarget ? null : perspectivePoint(liveDeps); // No-target attacks still freeze the same stable horizon point the old melee path used.
+      const pendingReticleTarget = exactReticleTarget || (fallbackPoint ? {
+        point: { ...fallbackPoint },
+        rayDistance: 0,
+        source: 'shared-perspective-point',
+        targetId: null,
+      } : null); // Every lunge-backed attack owns one frozen endpoint, so overlapping attacks can never lend their aim to each other.
       const committedAt = Date.now(); // Shared timestamp keeps the strike target lifetime deterministic for this attack attempt.
       committedMeleeReticleTarget = pendingReticleTarget ? {
         ...pendingReticleTarget,
