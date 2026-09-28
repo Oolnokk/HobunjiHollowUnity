@@ -16,6 +16,10 @@ assert.doesNotMatch(source, /requestAnimationFrame\s*\(|setInterval\s*\(/,
   'reticle/lunge correction must piggyback existing combat ticks instead of adding another loop');
 assert.match(source, /rayBoxInterval\(ray, box\)/,
   'transient melee alignment uses an exact center-ray/Box3 test');
+assert.match(source, /nearestReticleHostileTarget[\s\S]{0,1800}source: 'screen-reticle-box3'/,
+  'lunge start freezes the nearest exact hostile Box3 point under the centered reticle');
+assert.match(source, /committedMeleeTarget:/,
+  'bridge exposes the frozen endpoint for strike collision to reuse');
 assert.match(source, /resolveSweptLungeEntry\(liveDeps\)/,
   'lunge range entry is checked across movement already completed this frame');
 assert.match(source, /LUNGE_CANCEL_RANGE_MULTIPLIER = 0\.5/,
@@ -86,11 +90,13 @@ let lastProfileResistance = null; // Captures the effective upward-gravity resis
 let lastProfileAirAssist = false; // Captures the pitch-only airborne assist bit passed into the shared lunge profile.
 let lastProfileDirect = null; // Confirms forward/upward player attacks use the straight reticle-vector path, not the old ballistic blend.
 let perspectivePointY = 0.55; // Mutable shared aim height lets this regression exercise an elevated target without changing camera yaw.
+let perspectivePointZ = 0; // Mutable horizon depth exposes shoulder-camera parallax without changing the center-ray direction.
+let cameraRayOriginZ = 0; // Mutable camera shoulder offset used by the frozen-reticle lunge regression.
 
 const perspectiveTarget = () => ({
-  point: { x: 10, y: perspectivePointY, z: 0 },
+  point: { x: 10, y: perspectivePointY, z: perspectivePointZ },
   cameraRay: {
-    origin: { x: 0, y: 0.5, z: 0 },
+    origin: { x: 0, y: 0.5, z: cameraRayOriginZ },
     direction: { x: 1, y: 0, z: 0 },
   },
 });
@@ -216,6 +222,40 @@ baseAlignment = { ...baseAlignment, screenCorrectionRad: 0, deltaRad: 0 };
 step = windowStub.Combat.attackAlignmentStep(player, target, 0, { facing: 0 });
 assert.equal(step.eligible, false, 'pure vertical miss is not ranked as a fake zero-error autotarget');
 
+// Shoulder-camera parallax: the horizon point and a near enemy can lie on the
+// same camera ray but produce different player-origin directions. Freeze the
+// exact Box3 entry point at lunge start so movement commits to what the reticle
+// actually covered instead of the far 160-tile-style endpoint.
+cameraRayOriginZ = 1;
+perspectivePointZ = 1;
+perspectivePointY = 0.55;
+targetBox = {
+  min: { x: 2, y: 0, z: 0.8 },
+  max: { x: 2.4, y: 1, z: 1.2 },
+};
+deps.hostileObjects = [target];
+player.x = 0;
+player.y = 0;
+player.lunging = false;
+deps.beginCombatLunge(128, 0.4, 0, { rangePx: 64, halfConeRad: 0.25 });
+const committed = windowStub.HobunjiCombatCameraAlignment.committedMeleeTarget();
+assert(committed, 'lunge captures an exact reticle endpoint when the camera ray intersects a hostile Box3');
+assert.equal(committed.source, 'screen-reticle-box3');
+assert(Math.abs(committed.point.x - 2) < 1e-9, 'frozen endpoint is the near Box3 entry rather than the far horizon point');
+assert(Math.abs(committed.point.z - 1) < 1e-9, 'frozen endpoint stays on the shoulder camera center ray');
+assert(player.lungeDirY > 0.35, 'lunge ground direction converges strongly toward the near reticle point from the player origin');
+assert.equal(windowStub.HobunjiCombatCameraAlignment.debugSnapshot().lastLunge.targetSource, 'screen-reticle-box3');
+const frozenPoint = { ...committed.point };
+targetBox = {
+  min: { x: 2, y: 0, z: -3.2 },
+  max: { x: 2.4, y: 1, z: -2.8 },
+};
+assert.deepEqual(windowStub.HobunjiCombatCameraAlignment.committedMeleeTarget().point, frozenPoint,
+  'moving the enemy after attack start does not move the committed endpoint or create homing');
+player.lunging = false;
+cameraRayOriginZ = 0;
+perspectivePointZ = 0;
+
 // Grounding is now determined only by pitch: forward/upward aim can leave the
 // ground regardless of whether an enemy is already horizontally inside the attack.
 perspectivePointY = 2.35; // ~10.2° upward from the player's 0.55 origin: below the old 12° leap threshold.
@@ -273,8 +313,8 @@ deps.hostileObjects = [target]; // Restore the target only for the separate swep
 // the target beginning at world X 1.4, first cancel entry is player world X 0.9
 // = 57.6 logical pixels, long before the attempted endpoint at 128 px.
 targetBox = {
-  min: { x: 1.4, y: 0, z: -0.2 },
-  max: { x: 1.6, y: 1, z: 0.2 },
+  min: { x: 1.4, y: 0, z: 0.1 },
+  max: { x: 1.6, y: 1, z: 0.3 },
 };
 player.x = 0;
 player.y = 0;
