@@ -177,8 +177,8 @@
   function meleeHitTargetSnapshot() {
     if (stagedStrikeContextActive) return cloneReticleTarget(activeStrikeReticleTarget); // A staged strike owns its attack-start snapshot, even if another movement lunge exists.
     const lungeTarget = activeLungeTargetSnapshot();
-    if (lungeTarget) return lungeTarget; // Outside a strike, native per-frame lunge-stop probes must stay tied to the movement lunge that actually started.
-    return committedMeleeTargetSnapshot(); // Legacy/non-staged player melee falls back to the newest attack commit.
+    if (lungeTarget) return lungeTarget; // Outside a strike, native per-frame lunge-stop probes stay tied to the movement lunge that actually started.
+    return null; // The latest commit is diagnostic only once its movement/strike owners are gone; live idle aim immediately returns to the current reticle.
   }
 
   function queuePendingCommitExpiry(pending) {
