@@ -659,14 +659,14 @@
     if (!rawMeleeHit && typeof window.Combat?.meleeHit === 'function') {
       rawMeleeHit = window.Combat.meleeHit.bind(window.Combat);
       window.Combat.meleeHit = function interactionTargetMeleeHit(attacker, targetActor, options = {}) {
-        if (attacker === deps.player) {
+        if (attacker === deps.player && !options?.direction) {
           try {
             const target = meleeInteractionAimTarget();
             if (target?.direction) options = { ...options, direction: plainVector(target.direction) };
           } catch (error) {
             noteAimError('melee-hit-direction', error);
           }
-        }
+        } // Explicit caller directions (notably the HUD readiness probe) stay live and are never replaced by a prior attack commit.
         return rawMeleeHit(attacker, targetActor, options);
       };
     }
