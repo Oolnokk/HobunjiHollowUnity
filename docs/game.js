@@ -28363,6 +28363,7 @@
         setRainPlaneSettings: window.RainPlanes.setSettings,
         isDevMode: () => s_devMode,
         regenerateWildernessLab,
+        getActiveCamera: () => camera, // Random Test Ruin anchors its interaction list at camera height.
         // Adds a rolled loot bundle ({ itemKey: qty }) to the inventory and
         // returns display parts; used by Random Test Ruin Dungeon Chests.
         grantLoot: gained => {

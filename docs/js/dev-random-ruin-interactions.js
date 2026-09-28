@@ -323,37 +323,63 @@
     return rows;
   }
 
-  function nearestGlyphGuidance() {
-    const owner = nearestOwnerForKind('glyph');
-    const player = playerWorldPosition(), point = owner && worldPosition(owner);
-    if (!owner || !player || !point) return null;
-    const distance = Math.hypot(point.x - player.x, point.z - player.z);
-    const itemKey = window.RangedWeapons?.equippedRangedKey?.() || null;
-    const range = itemKey && Number.isFinite(Number(deps?.TILE))
-      ? (window.RangedWeapons?.playerLockRangePx?.(itemKey) || deps.TILE * 7) / deps.TILE
-      : 7;
-    if (distance > range) return null;
-    return {
-      key:`glyph-guidance|${owner.id}`,
-      kind:'glyphTarget',
-      label:itemKey ? (window.RangedWeapons?.playerActionLabel?.(itemKey) || 'Shoot Glyph Target') : 'Equip Ranged Weapon',
-      touchIcon:'🎯',
-      owner,
-      distance,
-      onPress:() => {
-        if (!itemKey) return deps?.showToast?.('Equip a ranged weapon to strike this glyph.', false);
-        if (window.Combat?.deps?.getActiveTool?.() !== 'ranged') return deps?.showToast?.('Switch to your ranged weapon, aim at the glyph, then fire.', false);
-        window.RangedWeapons?.startPlayerAction?.(itemKey);
-      },
-      seenAt:performance.now(),
-      source:'semantic-glyph',
-    };
+  // Rows that are not aim targets: a swinging rope is caught by proximity,
+  // riding controls follow the player, and the exit is a spot, not an object.
+  const AMBIENT_KINDS = new Set(['ropegrab', 'roperelease', 'ropebrake', 'exit']);
+  const promptAnchor = new THREE.Object3D(); // One plain anchor (no scale/rotation) so the list sits at camera height beside what is aimed at, never at an object's pivot (door pivots sit at the top of the frame).
+  promptAnchor.name = 'dev_ruin_interaction_prompt_anchor';
+  let focusDebug = null;
+
+  function ownerBox(owner) {
+    if (!owner) return null;
+    try {
+      owner.updateWorldMatrix?.(true, true);
+      const box = new THREE.Box3().setFromObject(owner);
+      return box.isEmpty() ? null : box.expandByScalar(.12);
+    } catch (_) { return null; }
+  }
+
+  // Same reticle focus normal gameplay uses (climb branches, nests): the
+  // interaction ray picks one aimed object; only its actions are listed.
+  function focusRows(rows) {
+    const ambient = rows.filter(row => AMBIENT_KINDS.has(row.kind));
+    const aimed = rows.filter(row => !AMBIENT_KINDS.has(row.kind));
+    const owners = [...new Set(aimed.map(row => row.owner).filter(Boolean))];
+    const candidates = owners.map(owner => ({ type:'devRuinInteraction', id:owner.uuid || owner.id, data:owner, box:ownerBox(owner) })).filter(candidate => candidate.box);
+    let focus = candidates.length ? window.RangedWeapons?.focusCandidates?.(candidates, 6) || null : null;
+    let focusedOwner = focus?.candidate?.data || null;
+    const hasRay = !!window.RangedWeapons?.focusCandidates && candidates.length && focus !== null;
+    if (!focusedOwner && !window.RangedWeapons?.focusCandidates) { // No reticle system available: nearest object only.
+      focusedOwner = aimed.slice().sort((a, b) => a.distance - b.distance)[0]?.owner || null;
+    }
+    focusDebug = { candidates:candidates.length, focused:focusedOwner?.name || null, point:focus?.point ? { x:+focus.point.x.toFixed(2), y:+focus.point.y.toFixed(2), z:+focus.point.z.toFixed(2) } : null, hasRay:!!hasRay };
+    if (focusedOwner) window.DebugHitboxes?.noteInteractionFocus?.(focus);
+    const chosen = focusedOwner ? aimed.filter(row => row.owner === focusedOwner) : [];
+    placePromptAnchor(focusedOwner, focus?.point || null, chosen.length ? chosen : ambient);
+    return [...chosen, ...ambient];
+  }
+
+  function placePromptAnchor(owner, aimPoint, rows) {
+    const scene = activeScene();
+    if (!scene) return;
+    if (promptAnchor.parent !== scene) scene.add(promptAnchor);
+    const player = playerWorldPosition();
+    let x = aimPoint?.x, z = aimPoint?.z;
+    if (!Number.isFinite(x)) {
+      const box = ownerBox(owner || rows[0]?.owner);
+      if (box && player) { x = Math.max(box.min.x, Math.min(player.x, box.max.x)); z = Math.max(box.min.z, Math.min(player.z, box.max.z)); }
+      else if (player) { x = player.x; z = player.z; }
+    }
+    const floorY = Number(window.DevRandomRuin?.getPlayerSupportY?.()) || 0;
+    const camera = deps?.getActiveCamera?.();
+    const cameraY = camera?.getWorldPosition ? camera.getWorldPosition(new THREE.Vector3()).y : floorY + 1.5;
+    const y = Math.max(floorY + .9, Math.min(floorY + 2.4, cameraY)); // Camera level, kept within reach of the player's own body.
+    if (Number.isFinite(x) && Number.isFinite(z)) promptAnchor.position.set(x, y, z);
+    promptAnchor.updateMatrixWorld(true);
   }
 
   function currentRows(now = performance.now()) {
-    const rows = providerRows(now);
-    const glyph = nearestGlyphGuidance();
-    if (glyph) rows.push(glyph);
+    const rows = providerRows(now); // Contextual actions only: glyphs are shot with the ordinary ranged input, so no "Fire <weapon>" row is added near them.
     const ladderHit = nearestLadder();
     if (ladderHit && !rows.some(row => row.owner === ladderHit.ladder || row.kind === 'ladder')) {
       rows.push({
@@ -368,6 +394,8 @@
         source:'semantic-ladder',
       });
     }
+    const focusedRows=focusRows(rows);
+    rows.length=0;rows.push(...focusedRows);
     const slotActions=SLOT_ACTIONS; // Nearby world interactions own the ordinary five physical arch slots just like NPC/furniture context actions; attacks/items return as soon as the interaction leaves range.
     const touchButtonIds=TOUCH_BUTTON_IDS;
     const sorted=rows.sort((a, b) => b.priority - a.priority || a.distance - b.distance || b.seenAt - a.seenAt);
@@ -447,7 +475,7 @@
       style:index===0?'primary':'secondary',
       allowed:true,
       worldInteraction:true,
-      promptRoot:row.owner||lastAnchor||ruinRoot(),
+      promptRoot:promptAnchor, // Game.js's own popup pass anchors to the same camera-level point.
       inputAction:row.inputAction, // Normal refreshActionBar uses this exact semantic slot for popup glyph/color and physical arch placement.
       nativeInput:row.nativeInput===true, // Native Dodge rows stay in the floating list but are excluded from the five arch buttons.
     }));
@@ -457,7 +485,7 @@
     const popup=window.WorldPopupText;
     if(!popup?.syncInteractionPrompts)return;
     const buttons=actionButtonsFromRows(rows);
-    const root=rows[0]?.owner||lastAnchor||ruinRoot()||null;
+    const root=promptAnchor.parent?promptAnchor:(rows[0]?.owner||lastAnchor||ruinRoot()||null);
     const device=currentDevice();
     const promptInputs=buttons.map(button=>({
       actionId:button.inputAction||'',
@@ -538,6 +566,8 @@
         ownerName:lastAnchor?.name || null,
         ownerKind:semanticKind(lastAnchor),
         worldPopupVisible:lastRows.length>0,
+        focus:focusDebug,
+        promptAnchor:{ x:+promptAnchor.position.x.toFixed(2), y:+promptAnchor.position.y.toFixed(2), z:+promptAnchor.position.z.toFixed(2) },
         inputClaims:window.WorldActionInputClaims?.snapshot?.()||null,
       };
     },

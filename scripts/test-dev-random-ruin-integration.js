@@ -50,11 +50,11 @@ const loadOrder = [
   'dev-random-ruin-runtime-coverage.js',
 ].map(name => camera.indexOf(name));
 assert(/localStorage\.getItem\('hobunjiDevMode'\) === '1'/.test(camera) && /if \(!devMode/.test(camera), 'ruin runtime must only be injected in Dev Mode');
-assert(camera.includes('dev-random-ruin-interactions.js?v=20260927interactionpriority1'), 'ruin interaction adapter must be cache-busted with the arch-priority/popup-list fix');
-assert(camera.includes('dev-random-ruin-simple-puzzles.js?v=20260928basins1'), 'simple puzzle interior-parity runtime must be cache-busted in the dev bootstrap');
+assert(camera.includes('dev-random-ruin-interactions.js?v=20260928reticle1'), 'ruin interaction adapter must be cache-busted with the arch-priority/popup-list fix');
+assert(camera.includes('dev-random-ruin-simple-puzzles.js?v=20260928reticle1'), 'simple puzzle interior-parity runtime must be cache-busted in the dev bootstrap');
 assert(camera.includes('dev-random-ruin-wall-render-proxy.js?v=20260927geometry1'), 'native ruin render verifier must be cache-busted in the dev bootstrap');
-assert(gameIndex.includes('js/dev-random-ruin-bootstrap.js?v=20260928escape1'), 'game page must load the updated ruin bootstrap');
-assert(gameIndex.includes('game.js?v=20260928basins1'), 'game page must load the footprint-aware movement collision');
+assert(gameIndex.includes('js/dev-random-ruin-bootstrap.js?v=20260928reticle1'), 'game page must load the updated ruin bootstrap');
+assert(gameIndex.includes('game.js?v=20260928reticle1'), 'game page must load the footprint-aware movement collision');
 assert(gameIndex.indexOf('js/area-footprint-blockers.js') >= 0 && gameIndex.indexOf('js/area-footprint-blockers.js') < gameIndex.indexOf('game.js?v='), 'sub-tile footprint registry must load before game.js');
 assert(game.includes('window.AreaFootprintBlockers?.blocksBox(currentArea, wx / TILE, wy / TILE, radius / TILE, worldY)'), 'canOccupyAt must test the whole mover square against prop footprints');
 assert(gameIndex.includes('js/climb-system.js?v=20260926ruinladder2'), 'game page must cache-bust the shared climb animation used by authored ruin ladders');
@@ -275,7 +275,8 @@ assert(hooks.includes('moving-platform grounded child'), 'grounded moving-platfo
 assert(!hooks.includes('registerBlocker(`devruin-transit-door-'), 'transit doors must not retain a second object-wide blocker');
 assert(!hooks.includes('registerBlocker(`devruin-elevator-'), 'elevator objects must not retain object-wide blockers outside the Map snapshot');
 assert(interactions.includes("matchMedia?.('(pointer: coarse)')"), 'mobile ruin actions must recognize coarse-pointer desktop-view devices');
-assert(interactions.includes("source:'semantic-glyph'"), 'mobile glyph targets must expose ranged guidance/action');
+assert(!interactions.includes("source:'semantic-glyph'"), 'glyph targets are shot with the ordinary ranged input; the list must not add a generic "Fire <weapon>" row');
+assert(interactions.includes('window.RangedWeapons?.focusCandidates?.(candidates, 6)'), 'ruin interactions must use the shared reticle focus, listing only the aimed object\'s actions');
 assert(interior.includes('function getPlayerSupportY()') && interior.includes('getPlayerSupportY') && interior.includes('syncPlayerPresentationHeight:syncRuinPresentationHeight'), 'multi-level ruin presentation must expose one authoritative support height to the normal player renderer');
 assert(game.includes('window.DevRandomRuin?.getPlayerSupportY?.()') && game.includes('Number.isFinite(ruinStandY) ? ruinStandY'), 'game.js must consume ruin support before positioning body, shadow, resources, held equipment, and shoulder pets');
 assert(interior.includes('ruin.supportY=climbY') && interior.includes('ruin.lastAcceptedPx={x:deps.player.x,y:deps.player.y}'), 'ladder motion must advance the ruin step baseline so the landing cannot be rejected as an oversized step');

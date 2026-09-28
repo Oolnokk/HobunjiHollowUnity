@@ -297,7 +297,7 @@
   function activateCeilingGlyph(glyph) {
     if(!glyph||glyph.active)return false;
     glyph.active=true;glyph.hitCount++;
-    glyph.material.color.setHex(0x8fe6ff);
+    glyph.material.color.setHex(0x4dff6e);
     deps?.showToast?.(glyph.message,true);
     try{glyph.onActivate?.(glyph);}catch(error){console.warn('[Random Test Ruin] ceiling glyph activation failed',error);}
     return true;
@@ -1085,7 +1085,7 @@
     const ceilingY=ceilingBase+wallHeight-.34;
     const x=Number(anchor?.x),z=Number(anchor?.z);
     if(!Number.isFinite(x)||!Number.isFinite(z))return null;
-    const material=makeBasic(0x466b70);
+    const material=makeBasic(0xff8a2a); // Orange until struck, green after — same language as the V50 glyph block decals.
     const mesh=new THREE.Mesh(sharedCylinderGeometry(.29,.29,.10,8),material);
     mesh.rotation.x=Math.PI*.5; // Thin octagonal stone target faces horizontally into the room just below the ceiling.
     mesh.position.set(x,ceilingY,z);

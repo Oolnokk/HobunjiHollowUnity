@@ -31,8 +31,15 @@
   const MARKER_SIZE = 0.62;
   const MARKER_HIT_RADIUS = 0.3;
   const PIP_SIZE = 0.2;
+  const DECAL_IDLE = 0xff8a2a; // Unstruck glyph decals glow orange...
+  const DECAL_ACTIVE = 0x4dff6e; // ...and green once struck.
+  const HIT_FLASH_MS = 450;
+  const DEBUG_MARKERS_STORAGE_KEY = 'hobunji.devRandomRuinDebugMarkers.v1'; // Floating runes/pips are a debugging aid; the in-world decal/plate/door cues work without them.
+  let debugMarkers = true;
+  try { debugMarkers = localStorage.getItem(DEBUG_MARKERS_STORAGE_KEY) !== '0'; } catch (_) {} // White-hot flash fading to green on the frame a glyph is struck.
 
   let builtRoot = null;
+  let fxGroup = null;
   let group = null;
   let circuits = [];
   let textures = null;
@@ -135,10 +142,12 @@
   }
 
   function clear() {
-    if (group) {
-      group.parent?.remove(group);
-      group.traverse(object => object.material?.dispose?.());
+    for (const g of [group, fxGroup]) {
+      if (!g) continue;
+      g.parent?.remove(g);
+      g.traverse(object => object.material?.dispose?.());
     }
+    fxGroup = null;
     for (const circuit of circuits) for (const target of circuit.targets) {
       delete target.hitBox;
       delete target.circuitName;
@@ -159,6 +168,9 @@
     group = new THREE.Group();
     group.name = GROUP_NAME;
     root.parent.add(group);
+    fxGroup = new THREE.Group(); // Hit bursts stay visible even with debug markers off: they are feedback, not a standing marker.
+    fxGroup.name = GROUP_NAME + '_fx';
+    root.parent.add(fxGroup);
 
     source.forEach((entry, index) => {
       const colour = PALETTE[index % PALETTE.length];
@@ -171,7 +183,12 @@
         marker.name = 'dev_ruin_glyph_marker_' + target.id;
         marker.position.copy(point);
         group.add(marker);
-        circuit.markers.push({ target, marker, glyphCenter:box.getCenter(new THREE.Vector3()) });
+        const burst = sprite(tex.runeLit, DECAL_ACTIVE, MARKER_SIZE);
+        burst.name = 'dev_ruin_glyph_marker_burst_' + target.id;
+        burst.position.copy(point);
+        burst.visible = false;
+        fxGroup.add(burst);
+        circuit.markers.push({ target, marker, burst, decals:glyphDecals(target.object), wasActive:!!target.active, hitAt:-Infinity, glyphCenter:box.getCenter(new THREE.Vector3()) });
         target.circuitName = colour.name;
         target.hitBox = box.clone().union(tmpBox.setFromCenterAndSize(point, new THREE.Vector3(MARKER_HIT_RADIUS * 2, MARKER_HIT_RADIUS * 2, MARKER_HIT_RADIUS * 2)));
       }
@@ -207,13 +224,56 @@
     return true;
   }
 
+  // Decal materials on the glyph block (and its housing). V50 recolours them
+  // every frame from userData.baseColor/activeColor, so those are what we set;
+  // the emissive tint keeps them glowing in dark rooms.
+  function glyphDecals(object) {
+    const materials = new Set();
+    let mount = object;
+    for (let node = object; node; node = node.parent) { if (node.userData?.linkedMechanismId) { mount = node; break; } }
+    mount.traverse(node => { for (const material of node.userData?.decalMaterials || []) materials.add(material); });
+    const lights = [];
+    mount.traverse(node => { if (node.userData?.glowLight) lights.push(node.userData.glowLight); });
+    return { materials:[...materials], lights };
+  }
+
+  const decalColor = new THREE.Color(), white = new THREE.Color(0xffffff);
+  function paintDecals(entry, now, pulse) {
+    const active = !!entry.target.active;
+    const flash = Math.max(0, 1 - (now - entry.hitAt) / HIT_FLASH_MS);
+    decalColor.setHex(active ? DECAL_ACTIVE : DECAL_IDLE);
+    if (!active) decalColor.multiplyScalar(.72 + .28 * pulse); // Idle decals throb so they read as targets.
+    if (flash > 0) decalColor.lerp(white, flash);
+    entry.stateColor = (entry.stateColor || new THREE.Color()).copy(decalColor);
+    const hex = '#' + decalColor.getHexString();
+    for (const material of entry.decals.materials) {
+      material.userData.baseColor = hex;
+      material.userData.activeColor = hex;
+      material.color?.set(hex);
+      if (material.emissive) { material.emissive.copy(decalColor).multiplyScalar(.85); material.emissiveIntensity = 1; }
+    }
+    for (const light of entry.decals.lights) light.color?.setHex(active ? DECAL_ACTIVE : DECAL_IDLE);
+    // Burst ring expands off the rune marker when struck.
+    entry.burst.visible = flash > 0;
+    if (flash > 0) {
+      const size = MARKER_SIZE * (1.1 + (1 - flash) * 1.9);
+      entry.burst.scale.set(size, size, 1);
+      entry.burst.material.opacity = flash;
+    }
+  }
+
   function update(now) {
     const pulse = .5 + .5 * Math.sin(now * .004);
     for (const circuit of circuits) {
       let active = 0;
-      for (const { target, marker } of circuit.markers) {
+      for (const entry of circuit.markers) {
+        const { target, marker } = entry;
+        if (target.active && !entry.wasActive) entry.hitAt = now;
+        entry.wasActive = !!target.active;
+        paintDecals(entry, now, pulse);
         if (target.active) active++;
         marker.material.map = target.active ? textures.runeLit : textures.rune;
+        marker.material.color.copy(entry.stateColor); // Rune follows the decal: orange until struck, white flash, then green.
         marker.material.opacity = target.active ? 1 : .45 + .35 * pulse;
         const size = target.active ? MARKER_SIZE * 1.12 : MARKER_SIZE * (.94 + .08 * pulse);
         marker.scale.set(size, size, 1);
@@ -256,7 +316,37 @@
     return rune;
   }
 
+  function applyDebugMarkerVisibility() {
+    if (group) group.visible = debugMarkers;
+    for (const entry of attachments) entry.sprite.visible = debugMarkers;
+  }
+
+  function setDebugMarkers(enabled) {
+    debugMarkers = enabled !== false;
+    try { localStorage.setItem(DEBUG_MARKERS_STORAGE_KEY, debugMarkers ? '1' : '0'); } catch (_) {}
+    applyDebugMarkerVisibility();
+    return debugMarkers;
+  }
+
+  // Settings row beside the ruin's darkness control (installed by
+  // js/dev-random-ruin-interior-map.js); retried briefly until it exists.
+  function installSettingsRow(attempt = 0) {
+    if (document.getElementById('devRandomRuinDebugMarkers')) return;
+    const anchor = document.getElementById('devRandomRuinDarknessEnabled')?.closest?.('.settings-row');
+    if (!anchor) { if (attempt < 40) setTimeout(() => installSettingsRow(attempt + 1), 250); return; }
+    const row = document.createElement('div');
+    row.className = 'settings-row';
+    row.innerHTML = '<div class="settings-label"><div class="settings-name">Debug Puzzle Markers</div><div class="settings-desc">Floating runes over glyph targets, door circuit pips and plates. Off shows only the in-world cues (glowing decals, plates, doors).</div></div><label style="display:flex;align-items:center;gap:6px"><input id="devRandomRuinDebugMarkers" type="checkbox"><span>Markers</span></label>';
+    anchor.insertAdjacentElement('afterend', row);
+    const box = row.querySelector('#devRandomRuinDebugMarkers');
+    box.checked = debugMarkers;
+    box.addEventListener('change', () => setDebugMarkers(box.checked));
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => installSettingsRow(), { once:true });
+  else installSettingsRow();
+
   function frame() {
+    applyDebugMarkerVisibility();
     if (attachments.size) updateAttachments(performance.now());
     if (!inRuin()) { if (group) clear(); return; }
     const root = window.DevRandomRuinHitPuzzles?.getRoot?.() || null;
@@ -270,6 +360,8 @@
   window.DevRandomRuinGlyphCircuits = Object.freeze({
     palette:PALETTE,
     attachRune,
+    setDebugMarkers,
+    getDebugMarkers:() => debugMarkers,
     rebuild:() => { const root = window.DevRandomRuinHitPuzzles?.getRoot?.(); return root ? build(root) : false; },
     snapshot:() => circuits.map(circuit => ({
       mechanismId:circuit.mechanismId,
