@@ -5,7 +5,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 2;
+  const VERSION = 3;
   const EPSILON = 1e-8;
   let installed = false; // Exposed in snapshot() so device diagnostics can verify the pre-focus init boundary was wrapped.
   let initialized = false; // Exposed in snapshot() after the real RangedWeapons.init receives the camera-authoritative aim callback.
@@ -40,10 +40,17 @@
     return origin && direction ? { origin, direction } : null;
   }
 
-  function playerMuzzleOrigin(deps) {
+  function playerMuzzleOrigin(deps, itemKey) {
     const player = deps?.player;
     const tile = Number(deps?.TILE) || 64;
     if (!player) return null;
+    try {
+      const heldPosition = deps?.getHeldRangedWorldTransform?.(itemKey)?.position; // Matches the release-frame position spawnProjectile uses for the visible projectile.
+      const heldOrigin = finiteVector(heldPosition); // Preferred aim origin prevents a parallel offset between the reticle solution and actual projectile spawn.
+      if (heldOrigin) return heldOrigin;
+    } catch (error) {
+      recordError('held-muzzle-origin', error);
+    }
     let baseY = Number.NaN;
     try { baseY = Number(deps?.getActorWorldY?.(player)); } catch (_) {}
     if (!Number.isFinite(baseY)) {
@@ -103,8 +110,8 @@
     try { raw = rawInteractionRay?.() || rawAimRay?.() || null; }
     catch (error) { recordError('camera-ray', error); }
     const cameraRay = normalizedRay(raw);
-    const muzzle = playerMuzzleOrigin(deps);
     const itemKey = deps?.getEquippedRangedKey?.() || window.RangedWeapons?.equippedRangedKey?.() || null;
+    const muzzle = playerMuzzleOrigin(deps, itemKey); // Uses the same live held transform that projectile spawning uses when one exists.
     const rangeTiles = Number(window.RangedWeapons?.config?.[itemKey]?.rangeTiles);
     if (!cameraRay || !muzzle || !itemKey || !(rangeTiles > 0)) return raw || null;
 
@@ -179,7 +186,7 @@
     cameraRayAuthorityInit.__hobunjiPreviousInit = previousInit;
     ranged.init = cameraRayAuthorityInit;
     installed = true;
-    window.__farmLog?.('[ranged-camera-ray-authority] actual ranged fire now converges on the shared perspective point beneath the reticle.', 'combat');
+    window.__farmLog?.('[ranged-camera-ray-authority] actual ranged fire now converges from the live held projectile origin to the shared perspective point beneath the reticle.', 'combat');
     return true;
   }
 
@@ -202,7 +209,7 @@
         attackDirection: { ...lastSolution.attackDirection },
       } : null,
       lastError: lastError ? { ...lastError } : null,
-      authority: 'muzzle-to-shared-perspective-point',
+      authority: 'held-launch-origin-to-shared-perspective-point',
       updateMode: 'initialization-only-no-frame-hook',
     }),
   };
