@@ -8,7 +8,7 @@ const vm = require('node:vm');
 const source = fs.readFileSync('docs/js/combat/ranged-camera-focus.js', 'utf8');
 const loader = fs.readFileSync('docs/js/combat/combat-config-loader.js', 'utf8');
 
-assert.match(loader, /ranged-camera-focus\.js\?v=20260927reticletarget1[\s\S]*HobunjiRangedCameraFocus\?\.version\) >= 11/, 'loader requires camera-focus v11 with reticle-surface ranged targeting');
+assert.match(loader, /ranged-camera-focus\.js\?v=20260928meleereticle1[\s\S]*HobunjiRangedCameraFocus\?\.version\) >= 12/, 'loader requires camera-focus v12 with frozen melee endpoint reuse');
 assert.doesNotMatch(loader, /attack-camera-player-root/, 'obsolete player-root camera hook stays removed');
 assert.match(source, /change-driven-persistent-cache/, 'combat aim advertises persistent change-driven caching');
 assert.match(source, /intersectObject\(root, true, localHits\)/, 'scene roots remain isolated so one bad root cannot abort the frame');
@@ -76,6 +76,7 @@ const activeCamera = { fov: 55, updateProjectionMatrix() { projectionUpdates++; 
 let injectedRangedDeps = null;
 let lastRangedVisual = null;
 let lastMeleeHitOptions = null;
+let committedMeleeTarget = null; // Mutable bridge snapshot used to prove strike collision reuses the lunge's frozen endpoint.
 let interactionOrigin = { x: 0, y: 1, z: 3 };
 let interactionDirection = { x: 1, y: 0, z: 0 };
 const player = { x: 128, y: 192, angle: 0 };
@@ -137,6 +138,7 @@ const windowStub = {
   SCRATCHBONES_CONFIG: { game: { camera: { modes: { shoulderSurf: { distanceTiles: 2.6, fovDeg: 55 } } } } },
   GridTileAccessors: { getActiveScene: () => scene },
   Combat,
+  HobunjiCombatCameraAlignment: { committedMeleeTarget: () => committedMeleeTarget },
   CombatProgression: { getEffects: () => ({ stats: {} }) },
   RangedWeapons: {
     config: {
@@ -339,6 +341,24 @@ assert.equal(perf.targetResolves, resolvesBeforeWindup + 1, 'attack-range change
 windowStub.Combat.meleeHit(player, targetActor, { rangePx: 64 * 4.5, halfConeRad: 0.4, yaw: Math.PI / 2, pitch: 0 });
 assert(lastMeleeHitOptions.direction.x > 0.7, 'actual melee collision still receives shared 3D target direction');
 
+// Once a lunge commits an exact reticle point, strike collision must keep using
+// that frozen endpoint from the player's new origin rather than recomputing the horizon.
+committedMeleeTarget = {
+  point: { x: 4, y: 1, z: 2 },
+  source: 'screen-reticle-box3',
+  targetId: 'dummy',
+  rayDistance: 4,
+};
+const committedTarget = windowStub.HobunjiRangedCameraFocus.interactionAimTarget();
+assert.equal(committedTarget.source, 'screen-reticle-box3', 'melee aim reports the frozen reticle endpoint while the attack is active');
+assert.equal(committedTarget.point.x, 4);
+windowStub.Combat.meleeHit(player, targetActor, { rangePx: 64 * 4.5, halfConeRad: 0.4, yaw: Math.PI / 2, pitch: 0 });
+const committedLength = Math.hypot(2, 0.5, -1);
+assert(Math.abs(lastMeleeHitOptions.direction.x - 2 / committedLength) < 1e-9, 'strike X direction re-roots toward the frozen point');
+assert(Math.abs(lastMeleeHitOptions.direction.y - 0.5 / committedLength) < 1e-9, 'strike pitch re-roots toward the frozen point');
+assert(Math.abs(lastMeleeHitOptions.direction.z + 1 / committedLength) < 1e-9, 'strike Z direction re-roots toward the frozen point');
+committedMeleeTarget = null;
+
 // Other ranged archetypes retain readiness behavior.
 activeTool = 'ranged';
 for (const itemKey of ['scatterbow', 'blowgun']) {
@@ -394,7 +414,7 @@ assert.equal(perspectiveTarget.surfaceName, 'farm-wall');
 assert.equal(perspectiveTarget.point.x, 6);
 assert.equal(windowStub.HobunjiRangedCameraFocus.aimPerformance().surfaceRaycasts, scansBeforePerspectivePoint + 1,
   'ranged re-init invalidates and resolves the reticle surface exactly once');
-assert.equal(windowStub.HobunjiRangedCameraFocus.snapshot().aimAlignment, 'ranged-reticle-first-surface+melee-shared-perspective');
+assert.equal(windowStub.HobunjiRangedCameraFocus.snapshot().aimAlignment, 'ranged-reticle-first-surface+melee-frozen-reticle-then-perspective');
 
 activeTool = 'weapon';
 const meleePerspectiveTarget = windowStub.HobunjiRangedCameraFocus.interactionAimTarget();
