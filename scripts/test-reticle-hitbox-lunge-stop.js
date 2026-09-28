@@ -317,8 +317,8 @@ deps.hostileObjects = [target]; // Restore the target only for the separate swep
 // the target beginning at world X 1.4, first cancel entry is player world X 0.9
 // = 57.6 logical pixels, long before the attempted endpoint at 128 px.
 targetBox = {
-  min: { x: 1.4, y: 0, z: 0.1 },
-  max: { x: 1.6, y: 1, z: 0.3 },
+  min: { x: 1.4, y: 0, z: 0.02 },
+  max: { x: 1.6, y: 1, z: 0.12 },
 };
 player.x = 0;
 player.y = 0;
