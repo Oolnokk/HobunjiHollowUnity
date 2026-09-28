@@ -134,7 +134,8 @@ assert.match(weaving, /separator && paddedSeparatorData\[mi \+ 3\] > 16/, 'garme
 assert.match(weaving, /!clusterSeparatorMask\?\.\[p\] && offset\.d2 <= outward2/, 'outward outline growth skips intra-motif island separator pixels while expanding from motif boundaries');
 assert.match(weaving, /!allowedMask\[p\] \|\| clusterSeparatorMask\?\.\[p\]/, 'motif thickening cannot bridge two separate ink islands inside one motif instance');
 assert.match(weaving, /const adjustedSrcMask = adjustMaskThickness\(srcMask, sourceAllowedMask, srcSize, srcSize, sourceSignedThickness, sourceClusterSeparatorMask\)/, 'weaving measures signed contour thickness in rotated source-motif pixels');
-assert.match(weaving, /const sourceSignedThickness = \(patternDef\?\.invert \? -1 : 1\)/, 'inverted weaving reverses source morphology so positive values remain visibly thinner');
+assert.match(weaving, /const sourceSignedThickness = signedMotifThicknessPx\(patternDef, swapPatternColors\)/, 'woven thickness resolves through the shared visual-inversion helper before source morphology');
+assert.match(weaving, /return !!patternDef\?\.invert !== !!swapPatternColors/, 'Pattern Editor inversion and loom cloth↔pattern color inversion compose as XOR for visible thickness semantics');
 assert.doesNotMatch(weaving, /adjustMaskThickness\(patternMask, garmentMask/, 'weaving no longer performs coarse final-garment-pixel contour adjustment');
 assert.match(metalRecolor, /const adjustedSrcMask = adjustMaskThickness\(srcMask, sourceAllowedMask, srcSize, srcSize, patternDef\.motifThinPx/, 'metal authored patterns use the same pre-scale motif-pixel measurement');
 assert.doesNotMatch(metalRecolor, /adjustMaskThickness\(buildAuthoredClearedMask/, 'metal authored patterns no longer receive a second output-pixel contour pass');
