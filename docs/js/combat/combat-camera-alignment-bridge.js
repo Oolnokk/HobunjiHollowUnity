@@ -25,6 +25,10 @@
   let lungeEarlyStopCount = 0; // Mobile-readable count of lunges clamped to the first attack-volume entry point.
   let committedMeleeReticleTarget = null; // Frozen center-ray/hostile-Box3 intersection owned by the newest attack and reused by its strike collision.
   let activeLungeReticleTarget = null; // Frozen endpoint owned by the movement lunge that actually started, so a later denied lunge cannot retarget an older lunge in flight.
+  let pendingStagedMeleeCommit = null; // One same-stack handoff from beginCombatLunge to the staged player attack created immediately afterward.
+  let stagedStrikeContextActive = false; // True only while a staged player attack's onStrike callback is executing.
+  let activeStrikeReticleTarget = null; // Frozen endpoint owned by the staged strike currently resolving; null is a valid no-exact-target commit.
+  let stagedActionCommitInstalled = false; // Diagnostics prove staged strike ownership was installed exactly once.
   let lastCameraRay = null; // Mobile-readable snapshot of the true centered camera ray handed to ranged-camera-focus.
   let lastLunge = null; // Mobile-readable snapshot of the latest camera-authored lunge direction/profile.
   let lastLungeSweep = null; // Mobile-readable snapshot of the latest swept lunge range-entry correction.
@@ -170,6 +174,66 @@
     return target ? { ...target, point: { ...target.point } } : null;
   }
 
+  function cloneReticleTarget(target) {
+    return target ? { ...target, point: { ...target.point } } : null;
+  }
+
+  function meleeHitTargetSnapshot() {
+    if (stagedStrikeContextActive) return cloneReticleTarget(activeStrikeReticleTarget); // A staged strike owns its attack-start snapshot, even if another movement lunge exists.
+    const lungeTarget = activeLungeTargetSnapshot();
+    if (lungeTarget) return lungeTarget; // Outside a strike, native per-frame lunge-stop probes must stay tied to the movement lunge that actually started.
+    return committedMeleeTargetSnapshot(); // Legacy/non-staged player melee falls back to the newest attack commit.
+  }
+
+  function queuePendingCommitExpiry(pending) {
+    const clear = () => {
+      if (pendingStagedMeleeCommit === pending) pendingStagedMeleeCommit = null;
+    }; // The three lunge-backed player attacks create their staged action synchronously; anything left after this JS turn is stale.
+    if (typeof queueMicrotask === 'function') queueMicrotask(clear);
+    else Promise.resolve().then(clear);
+  }
+
+  function installStagedActionCommit() {
+    const combat = window.Combat;
+    const previousBegin = combat?.beginStagedAction;
+    if (!combat || typeof previousBegin !== 'function') return false;
+    if (previousBegin.__hobunjiMeleeReticleStagedCommit) {
+      stagedActionCommitInstalled = true;
+      return true;
+    }
+
+    function reticleCommittedStagedAction(options = {}) {
+      const pending = pendingStagedMeleeCommit;
+      pendingStagedMeleeCommit = null; // Exactly one staged action can claim the immediately preceding player lunge request.
+      if (!pending) return previousBegin.apply(this, arguments);
+
+      const rawStrike = options?.onStrike;
+      const strikeTarget = cloneReticleTarget(pending.target); // Captured now, never re-read from a moving enemy or a later attack.
+      const wrappedOptions = {
+        ...options,
+        onStrike: typeof rawStrike === 'function' ? function reticleCommittedStrike(...args) {
+          const previousContext = stagedStrikeContextActive;
+          const previousTarget = activeStrikeReticleTarget;
+          stagedStrikeContextActive = true;
+          activeStrikeReticleTarget = cloneReticleTarget(strikeTarget);
+          try {
+            return rawStrike.apply(this, args);
+          } finally {
+            activeStrikeReticleTarget = previousTarget;
+            stagedStrikeContextActive = previousContext;
+          }
+        } : rawStrike,
+      };
+      return previousBegin.call(this, wrappedOptions);
+    }
+
+    reticleCommittedStagedAction.__hobunjiMeleeReticleStagedCommit = true;
+    reticleCommittedStagedAction.__hobunjiPreviousBegin = previousBegin;
+    combat.beginStagedAction = reticleCommittedStagedAction;
+    stagedActionCommitInstalled = true;
+    return true;
+  }
+
   function installExactReticleAlignment(liveDeps, rawInteractionRay, rawAimRay) {
     const combat = window.Combat;
     const previousStep = combat?.attackAlignmentStep;
@@ -302,6 +366,12 @@
         committedAt,
         expiresAt: committedAt + Math.max(650, Math.max(0, Number(durationS) || 0) * 1000 + MELEE_RETICLE_COMMIT_PAD_MS),
       } : null; // Always overwrite/clear the prior attack endpoint so denied lunges can never reuse stale aim.
+      const stagedCommit = {
+        target: cloneReticleTarget(committedMeleeReticleTarget),
+        committedAt,
+      }; // Handed to the staged strike created immediately after this lunge request, whether native movement starts or is denied.
+      pendingStagedMeleeCommit = stagedCommit;
+      queuePendingCommitExpiry(stagedCommit);
       const result = rawLunge.apply(this, arguments);
       if (!player || wasLunging || !player.lunging) return result;
 
@@ -678,6 +748,7 @@
         nativeMeleePitchRestored = true;
       }
       installCameraAuthoredLunge(liveDeps, rawInteractionRay, rawAimRay);
+      installStagedActionCommit();
       installExactReticleAlignment(liveDeps, rawInteractionRay, rawAimRay);
       installCombatUpdateSweep(liveDeps);
       return result;
@@ -704,6 +775,7 @@
     install,
     committedMeleeTarget: committedMeleeTargetSnapshot,
     activeLungeTarget: activeLungeTargetSnapshot,
+    meleeHitTarget: meleeHitTargetSnapshot,
     debugSnapshot: () => ({
       version: VERSION,
       rangedInitWrapped,
@@ -713,6 +785,7 @@
       nativeMeleeDirectionRestored,
       nativeMeleePitchRestored,
       lungeAuthorityInstalled,
+      stagedActionCommitInstalled,
       exactReticleAlignmentInstalled,
       combatUpdateSweepInstalled,
       lungeAuthorityCount,
@@ -736,6 +809,8 @@
       lastError: lastError ? { ...lastError } : null,
       committedMeleeReticleTarget: committedMeleeTargetSnapshot(),
       activeLungeReticleTarget: activeLungeTargetSnapshot(),
+      stagedStrikeContextActive,
+      activeStrikeReticleTarget: stagedStrikeContextActive ? cloneReticleTarget(activeStrikeReticleTarget) : null,
       movementAuthority: 'native-player-to-perspective-point-walk+frozen-reticle-lunge',
       rangedAuthority: 'held-launch-origin-to-reticle-target',
       updateMode: 'initialization-only-no-frame-hook',
