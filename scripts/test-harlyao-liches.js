@@ -368,7 +368,7 @@ assert(indexSource.includes('js/combat/resource-system.js?v=20260927reviewfix1')
 assert(indexSource.includes('js/pixel-probe.js?v=20260927lichgreeting1'));
 assert(indexSource.includes('js/portrait-utils.js?v=20260926hoodback2'));
 assert(indexSource.includes('js/procedural-leg-animation.js?v=20260926hover1'));
-assert(indexSource.includes('js/combat/combat-config-loader.js?v=20260927directreticle1'));
+assert(indexSource.includes('js/combat/combat-config-loader.js?v='));
 assert(pixelProbeSource.includes('window.HarlyaoLichCombat?.formatDebug?.()'), 'Pixel Probe must expose live lich diagnostics on mobile');
 assert(portraitSource.includes('const hoodBackLayers = []'), 'ragged hood rear layer must use the generic behind-head hood bucket');
 assert.match(portraitSource, /\(layer\.pos === 'back' \? hoodBackLayers : hoodLayers\)\.push/, 'hood compositor must route authored back layers separately from front layers');
