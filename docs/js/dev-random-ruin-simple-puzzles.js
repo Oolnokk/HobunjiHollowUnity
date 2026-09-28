@@ -19,6 +19,7 @@
   const PLATE_FIRING_COLOR = 0xff5b2b;
   const ROPE_DESTINATION_RISE = .78; // Keeps ordinary rope landings clearly above the 0.42u ruin step limit so the rope is visibly required.
   const ROPE_GRAB_ABOVE_LAUNCH = .86; // Places the idle grip at reachable head/hand height over the launch platform instead of inheriting the destination height.
+  const AMBIENT_LIFT_SIZE = 2.2; // Standalone pit lift footprint; the rest of the pit floor stays open for its chest.
   const COMPOUND_ELEVATOR_TOP_RISE = .88; // Balcony→rope→elevator compositions begin as a visibly elevated landing before the glyph starts the descent cycle.
   const GRID_WALL_CLEARANCE = 0.52; // Used by safe-path grids so every plate center clears the ruin player's 0.28u collision radius plus the authored wall thickness.
   const HALL_FIRE_BURNING = 18;
@@ -1123,7 +1124,7 @@
       if(!elevator)continue;
       const landing={mesh:elevator.mesh,x:elevator.x,z:elevator.z,width:elevator.width,depth:elevator.depth,baseY:elevator.topTopY-elevator.height,topY:elevator.topTopY};
       const rope=buildRopeSwing(context,rng,usedRooms,{room,endPlatform:landing,idSuffix:'elevator'});
-      if(!rope){elevator.active=true;continue;} // If geometry cannot support the intended chain, the elevator remains a valid standalone cycling module instead of becoming dead machinery.
+      if(!rope){removeCyclingElevator(elevator);continue;} // Without its rope chain the lift has no purpose here; withdrawing it keeps the pit free (a leftover lift here once shared a pit with a later ambient one).
       const glyph=buildCeilingGlyphModule(context,room,{x:elevator.x,z:elevator.z},{onActivate:()=>activateCyclingElevator(elevator),message:'Ceiling glyph struck — the stone lift starts moving.'});
       if(!glyph){elevator.active=true;return rope;}
       const canopy=buildStoneCanopyModule(context,room,rope.startPlatform,{occludePoint:{x:glyph.mesh.position.x,y:glyph.mesh.position.y,z:glyph.mesh.position.z}}); // Balcony roof is dimensioned from the actual target ray, so it physically prevents the shortcut shot before the rope crossing.
@@ -1161,6 +1162,27 @@
       .sort((a,b)=>Number(a.level)-Number(b.level))[0]||null; // Most-negative tier is preferred so a cycling platform can expose a genuinely deep lower stop.
   }
 
+  function sunkenRegionHasMechanism(context,bounds) {
+    let found=false;
+    context.root?.traverse?.(object=>{
+      if(found)return;
+      const type=object.userData?.previewMotion?.type;
+      if(!type||type==='stoneDoor')return;
+      const box=new THREE.Box3().setFromObject(object);
+      if(box.isEmpty())return;
+      found=box.max.x>bounds.minX-.3&&box.min.x<bounds.maxX+.3&&box.max.z>bounds.minZ-.3&&box.min.z<bounds.maxZ+.3;
+    });
+    return found;
+  }
+
+  // The widest sunken region not nested inside another one: its rim is the
+  // room's own floor, which is where a lift's top stop has to meet.
+  function outermostSunkenRegionForRoom(context,room) {
+    const regions=(context.meta?.plateauModel?.regions||[]).filter(region=>region?.kind==='sunkenFloor'&&String(region.sourceRoomId)===String(room.id)&&Number(region.level)<0);
+    const inside=(a,b)=>a!==b&&Number(a.col)>=Number(b.col)&&Number(a.row)>=Number(b.row)&&Number(a.col)+Number(a.w)<=Number(b.col)+Number(b.w)&&Number(a.row)+Number(a.h)<=Number(b.row)+Number(b.h);
+    return regions.filter(region=>!regions.some(other=>inside(region,other))).sort((a,b)=>Number(b.w)*Number(b.h)-Number(a.w)*Number(a.h))[0]||null;
+  }
+
   function buildCyclingElevatorModule(context,room,options={}) {
     const region=options.region||deepestSunkenRegionForRoom(context,room);
     if(!region)return null;
@@ -1172,8 +1194,29 @@
       minZ:PAD+Number(region.row)*cs,maxZ:PAD+(Number(region.row)+Number(region.h))*cs,
     };
     const regionWidth=regionBounds.maxX-regionBounds.minX,regionDepth=regionBounds.maxZ-regionBounds.minZ;
+    // A pit V50 already furnished (treasure moat bridge, nested-puzzle
+    // bridge, moving dais) gets no lift: a basin-wide platform there buried
+    // or duplicated that machinery and served no purpose.
+    const liftReject=reason=>{if(options.ambientLift===true)state.liftRejects.push(String(room.id)+': '+reason);return null;};
+    if(String(region.purpose||'').startsWith('core_treasure'))return liftReject('treasure moat');
+    if(sunkenRegionHasMechanism(context,regionBounds))return liftReject('V50 machinery in pit');
     let x=(regionBounds.minX+regionBounds.maxX)*.5,z=(regionBounds.minZ+regionBounds.maxZ)*.5;
-    let width=Math.max(1.5,regionWidth-.16),depth=Math.max(1.5,regionDepth-.16),annexBounds=null,annexDoorway=null;
+    let width=Math.max(1.5,regionWidth-.16),depth=Math.max(1.5,regionDepth-.16),annexBounds=null,annexDoorway=null,liftEnd=null;
+    if(options.ambientLift===true){
+      // Standalone lift: a 2.2u platform at the end of the pit that meets
+      // open rim floor, so it is the way back up from whatever waits below.
+      const size=Math.min(AMBIENT_LIFT_SIZE,regionWidth-.2,regionDepth-.2);
+      if(size<1.5||Math.max(regionWidth,regionDepth)<size+2.2)return liftReject('pit too small');
+      const ends=[
+        {axis:'x',sign:-1,x:regionBounds.minX+.1+size*.5,z,rimX:regionBounds.minX-.45,rimZ:z},
+        {axis:'x',sign:1,x:regionBounds.maxX-.1-size*.5,z,rimX:regionBounds.maxX+.45,rimZ:z},
+        {axis:'z',sign:-1,x,z:regionBounds.minZ+.1+size*.5,rimX:x,rimZ:regionBounds.minZ-.45},
+        {axis:'z',sign:1,x,z:regionBounds.maxZ-.1-size*.5,rimX:x,rimZ:regionBounds.maxZ+.45},
+      ].filter(end=>(end.axis==='x'?regionWidth:regionDepth)>=size+2.2);
+      liftEnd=ends.find(end=>{const s=DS.sampleSupport(end.rimX,end.rimZ,{minY:topFloorY-.2,maxY:topFloorY+.2});return !!s&&Math.abs(Number(s.y)-topFloorY)<.15;})||null;
+      if(!liftEnd)return liftReject('no open rim');
+      x=liftEnd.x;z=liftEnd.z;width=depth=size;
+    }
     if(options.reserveAnnex===true){
       const longAxis=regionWidth>=regionDepth?'x':'z';
       if((longAxis==='x'?regionWidth:regionDepth)<6.1||(longAxis==='x'?regionDepth:regionWidth)<3.8)return null;
@@ -1202,7 +1245,16 @@
     const module={
       id:'cycling-elevator-'+room.id,roomId:String(room.id),mesh,x,z,width,depth,height,region,regionBounds,annexBounds,annexDoorway,
       topTopY,bottomTopY,lowerFloorY,progress:0,active:options.startActive===true,elapsed:0,cycleSeconds:Math.max(5,Number(options.cycleSeconds)||8),
+      liftEnd,chest:null,
     };
+    if(liftEnd){
+      // The payoff below: a chest at the far end of the pit floor, facing the lift.
+      const far=liftEnd.axis==='x'
+        ?{x:liftEnd.sign<0?regionBounds.maxX-.7:regionBounds.minX+.7,z,yaw:liftEnd.sign<0?-Math.PI/2:Math.PI/2}
+        :{x,z:liftEnd.sign<0?regionBounds.maxZ-.7:regionBounds.minZ+.7,yaw:liftEnd.sign<0?Math.PI:0};
+      module.chest=window.DevRandomRuinDungeonChests?.create?.({id:module.id+'-chest',parent:state.group,x:far.x,y:lowerFloorY,z:far.z,tier:1,yaw:far.yaw})||null;
+      if(module.chest)state.elevatorChests.push(module.chest);
+    }
     const surfaceId=module.id+'-surface';
     DS.registerSurface({
       id:surfaceId,scope:SCOPE,
@@ -1214,6 +1266,17 @@
     state.cyclingElevators.push(module);
     recordModulePlacement('cyclingElevator','sunkenFloor',module.id,{roomId:String(room.id),depth:+(topFloorY-lowerFloorY).toFixed(3),reservesAnnex:!!annexBounds});
     return module;
+  }
+
+  function removeCyclingElevator(module) {
+    if(!module)return;
+    const index=state.cyclingElevators.indexOf(module);
+    if(index>=0)state.cyclingElevators.splice(index,1);
+    const surfaceId=module.id+'-surface';
+    DS.remove?.(surfaceId);state.surfaceIds.delete(surfaceId);
+    module.mesh?.parent?.remove?.(module.mesh);
+    if(module.chest){module.chest.group?.parent?.remove?.(module.chest.group);const i=state.elevatorChests.indexOf(module.chest);if(i>=0)state.elevatorChests.splice(i,1);}
+    state.modulePlacements=state.modulePlacements.filter(record=>record.slotId!==module.id);
   }
 
   function activateCyclingElevator(module) {
@@ -1599,6 +1662,8 @@
       canopies:[],
       ceilingGlyphs:[],
       cyclingElevators:[],
+      elevatorChests:[],
+      liftRejects:[],
       sarcophagusModules:[],
       sunkenRoomShells:[],
       ossuaryComposers:[],
@@ -1661,10 +1726,14 @@
     if(freeRooms.length&&rng()<.3){
       const room=freeRooms.shift();usedRooms.add(room.id);buildSarcophagusSpawnerModule(context,rng,room,{tier:1,autoActivateRadius:2.5}); // Sarcophagus enemies can occur independently; entering their room wakes them without requiring musical plates or a lock door.
     }
-    const elevatorRoomIndex=freeRooms.findIndex(room=>deepestSunkenRegionForRoom(context,room));
-    if(elevatorRoomIndex>=0&&rng()<.38){
-      const [room]=freeRooms.splice(elevatorRoomIndex,1);usedRooms.add(room.id);
-      buildCyclingElevatorModule(context,room,{startActive:true,cycleSeconds:7+rng()*3}); // Same elevator primitive can simply be ambient traversal machinery, with no glyph/rope/ossuary dependencies.
+    const liftRooms=freeRooms.filter(room=>outermostSunkenRegionForRoom(context,room)&&!state.cyclingElevators.some(elevator=>elevator.roomId===String(room.id))); // One lift per pit room.
+    if(liftRooms.length&&(rng()<.38||window.__devRuinForceAmbientLift===true)){ // The flag is a headless-test hook; rng() is still drawn first so seeds reproduce.
+      const cycleSeconds=7+rng()*3;
+      for(const room of liftRooms){
+        // Same elevator primitive as ambient traversal: a rim-to-floor lift with a chest below.
+        if(!buildCyclingElevatorModule(context,room,{region:outermostSunkenRegionForRoom(context,room),ambientLift:true,startActive:true,cycleSeconds}))continue;
+        freeRooms.splice(freeRooms.indexOf(room),1);usedRooms.add(room.id);break;
+      }
     }
     if(options.hallwayTraps!==false)buildSwappableHallwayModules(context,rng,usedHallways);
     window.DevRandomRuinTileOccupancy?.scanSolids?.(group,SCOPE); // Every visible solid this build placed (sarcophagi, ossuary shell, canopy posts, pedestals) collides exactly like V50 props.
@@ -2022,6 +2091,7 @@
   function getInteractionControls() {
     if(!state||!inRuin())return [];
     const controls=state.controls.slice();
+    for(const control of (window.DevRandomRuinDungeonChests?.controlsFor?.(state.elevatorChests)||[]))controls.push(control);
     for(const composer of composers)for(const control of (composer.controls?.(state.kit)||[]))controls.push(control);
     for(const candidate of state.ropes){
       if(candidate.attached||state.flight)continue;
@@ -2104,7 +2174,8 @@
       lockDoors:state.lockDoors.map(door=>({id:door.id,roomId:door.roomId,open:door.targetOpen,progress:+door.progress.toFixed(3),generatedMechanismId:door.generatedMechanismId||null,reusesGeneratedDoor:!!door.generatedMechanismId})),
       canopies:state.canopies.map(canopy=>({id:canopy.id,roomId:canopy.roomId,roofY:+canopy.roofY.toFixed(3),width:+canopy.width.toFixed(3),depth:+canopy.depth.toFixed(3),occludesTarget:canopy.occludesTarget})),
       ceilingGlyphs:state.ceilingGlyphs.map(glyph=>({id:glyph.id,roomId:glyph.roomId,active:glyph.active,hitCount:glyph.hitCount})),
-      cyclingElevators:state.cyclingElevators.map(elevator=>({id:elevator.id,roomId:elevator.roomId,active:elevator.active,progress:+elevator.progress.toFixed(3),topY:+elevator.topTopY.toFixed(3),bottomY:+elevator.bottomTopY.toFixed(3),currentY:+(elevator.currentTopY??elevator.topTopY).toFixed(3),playerRiding:!!elevator.playerRiding})),
+      liftRejects:state.liftRejects.slice(),
+      cyclingElevators:state.cyclingElevators.map(elevator=>({id:elevator.id,ambientLift:!!elevator.liftEnd,width:+elevator.width.toFixed(3),depth:+elevator.depth.toFixed(3),chestId:elevator.chest?.id||null,roomId:elevator.roomId,active:elevator.active,progress:+elevator.progress.toFixed(3),topY:+elevator.topTopY.toFixed(3),bottomY:+elevator.bottomTopY.toFixed(3),currentY:+(elevator.currentTopY??elevator.topTopY).toFixed(3),playerRiding:!!elevator.playerRiding})),
       sarcophagi:state.sarcophagusModules.map(module=>({id:module.id,roomId:module.roomId,activated:module.activated,spawnCount:module.spawnCount,count:module.coffins.length,released:module.coffins.filter(coffin=>coffin.released).length})),
       sunkenRoomShells:state.sunkenRoomShells.map(module=>({id:module.id,roomId:module.roomId,floorY:+module.floorY.toFixed(3)})),
       ossuaryComposers:state.ossuaryComposers.map(module=>({id:module.id,roomId:module.roomId,entered:module.entered,completed:module.completed})),

@@ -329,7 +329,7 @@ for (const key of ['tothal', 'hronal', 'kanthic']) {
   assert(devSpawnerSource.includes(`harlyao-lich:${key}`), `Testing Arena must expose ${key} lich button`);
 }
 assert.match(devSpawnerSource, /startsWith\('harlyao-lich:'\)/);
-assert(indexSource.includes('js/combat/combat-lich.js?v=20260927hronalperf1'));
+assert(indexSource.includes('js/combat/combat-lich.js?v=20260928sanctum1'));
 assert(indexSource.includes('js/combat/combat-bandit.js?v=20260927hostilevisual1'));
 assert(indexSource.includes('js/dev-spawner.js?v=20260927hostilevisual1'));
 assert(indexSource.includes('game.js?v=20260927inputclaim1'));
@@ -360,7 +360,7 @@ assert.match(lichSource, /if \(entrancedGraceDisplay\(state\)\)[\s\S]{0,500}retu
 assert.match(lichSource, /syntheticDelta[\s\S]{0,300}resolveEntrancedMovement\(target, state, command, deps\.TILE \|\| 64/, 'completed dodge/lunge must resolve as exactly one synthetic tile');
 assert.match(lichSource, /liveEntrancedApplicators\(\)\.length === 0[\s\S]{0,120}clearEntrancedNow\(target\)/, 'last Kanthic death must immediately clear Entranced Health');
 assert.match(lichSource, /speedPxS: 96[\s\S]*maxAgeS: 8\.5[\s\S]*homingBlendPerS: 3\.2/, 'Tothal fog must remain slow, long-lived, and seeking');
-assert.match(lichSource, /registerFurnitureSfxSource\(ARENA_ID[\s\S]{0,300}TOTHAL_WIND_VOLUME/, 'Tothal fog must carry strong local wind through the existing BGS transport');
+assert.match(lichSource, /registerFurnitureSfxSource\((?:projectile\.areaId \|\| )?ARENA_ID[\s\S]{0,300}TOTHAL_WIND_VOLUME/, 'Tothal fog must carry strong local wind through the existing BGS transport');
 assert.match(lichSource, /projectilePower\(projectile\)[\s\S]{0,1000}mesh\.scale\.setScalar/, 'Tothal lifetime power must visibly shrink its fog ball');
 assert.match(lichSource, /frostbittenStamina.*\* power/, 'Tothal Frostbitten Stamina payload must weaken with projectile age');
 assert.match(lichSource, /WESTERN_SLOPE_SNOW_DEPTH_REFERENCE = 0\.22[\s\S]*PETROLEUM_SURFACE_DEPTH = WESTERN_SLOPE_SNOW_DEPTH_REFERENCE \/ 4/, 'Kanthic petroleum surface must be exactly one quarter of Western Slope snow height');

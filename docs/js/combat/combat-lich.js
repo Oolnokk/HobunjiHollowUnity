@@ -2,7 +2,8 @@
 //
 // Three elemental lich traditions reuse the Harlyao Skeleton portrait/wardrobe
 // and shared humanoid hostile shell, but own their spell AI/projectiles here.
-// Nothing in this file spawns outside map_dev_arena.
+// Nothing in this file spawns outside map_dev_arena or an area that opted in
+// through allowArea() (the Random Test Ruin's boss sanctum).
 (() => {
   'use strict';
 
@@ -114,12 +115,19 @@
     return TYPE_DEFS[String(type || '').toLowerCase()] || TYPE_DEFS.tothal;
   }
 
+  const allowedAreas = new Set([ARENA_ID]); // Areas liches may exist in; the arena always, plus any area registered through allowArea().
+
+  function currentLichArea() {
+    const area = deps?.getCurrentArea?.();
+    return allowedAreas.has(area) ? area : null;
+  }
+
   function isArena() {
-    return deps?.getCurrentArea?.() === ARENA_ID;
+    return !!currentLichArea();
   }
 
   function isLiveActor(actor) {
-    return !!actor && Number(actor.health) > 0 && (!actor.areaId || actor.areaId === ARENA_ID);
+    return !!actor && Number(actor.health) > 0 && (!actor.areaId || actor.areaId === currentLichArea());
   }
 
   function rollDye(type) {
@@ -271,12 +279,13 @@
     if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
     const roster = rosterFor(def.id, options.gender); // Forced skeleton+raggedhood+bodywrap roster passed through the normal portrait builder.
     const tier = Math.max(0, Math.min(3, Math.round(Number(options.tier) || 0))); // Existing dev tier selector remains meaningful for lich base stats.
+    const areaId = currentLichArea(); // Spawn area; every spell/summon below follows its owner's area.
     const entity = await window.BanditCombat.makeEntity({
       ...cfg,
       speciesWeights: { 'harlyao-skeleton': 1 },
       rangedWeaponChanceByRank: { grunt: 0, lieutenant: 0, captain: 0 },
     }, 'lieutenant', tier, x, y, {
-      zoneId: ARENA_ID,
+      zoneId: areaId,
       rosterOverride: roster,
       enemyClass: CLASS_ID,
       nameOverride: def.label,
@@ -318,7 +327,7 @@
     const cols = actor.areaCols || grid[0]?.length || 1; // Bounds for safe ballistic ground lookup.
     const col = Math.max(0, Math.min(cols - 1, Math.floor(xPx / tile))); // Projectile grid column used for surface lookup.
     const row = Math.max(0, Math.min(rows - 1, Math.floor(yPx / tile))); // Projectile grid row used for surface lookup.
-    return deps.tileSurfaceYInArea?.(grid[row]?.[col], actor.areaId || ARENA_ID) || 0;
+    return deps.tileSurfaceYInArea?.(grid[row]?.[col], actor.areaId || currentLichArea() || ARENA_ID) || 0;
   }
 
   function targetCenter(actor) {
@@ -397,7 +406,7 @@
     const bgs = window.AudioSystem?.gameAudioConfig?.()?.bgs || {}; // Existing authored BGS recordings are reused instead of introducing a spell-only audio asset.
     const url = bgs.wind2 || bgs.wind1;
     if (!url || !window.Music?.registerFurnitureSfxSource) return null;
-    projectile.windSource = window.Music.registerFurnitureSfxSource(ARENA_ID, projectile.x / (deps.TILE || 64), projectile.y / (deps.TILE || 64), {
+    projectile.windSource = window.Music.registerFurnitureSfxSource(projectile.areaId || ARENA_ID, projectile.x / (deps.TILE || 64), projectile.y / (deps.TILE || 64), {
       url,
       rangeTiles: TOTHAL_WIND_RANGE_TILES,
       volume: TOTHAL_WIND_VOLUME,
@@ -459,7 +468,7 @@
     mesh.position.copy(velocity.start);
     lich.scene?.add?.(mesh);
     const projectile = {
-      type: def.id, owner: lich, target, mesh, areaId: ARENA_ID,
+      type: def.id, owner: lich, target, mesh, areaId: lich.areaId || currentLichArea() || ARENA_ID,
       x: velocity.start.x * deps.TILE, y: velocity.start.z * deps.TILE, worldY: velocity.start.y,
       prevX: velocity.start.x * deps.TILE, prevY: velocity.start.z * deps.TILE, prevWorldY: velocity.start.y,
       vx: velocity.vx, vy: velocity.vz, vyWorld: velocity.vyWorld,
@@ -1538,7 +1547,7 @@
       const y = lich.y + Math.sin(angle) * dist; // Summoned Minion world Z-plane coordinate.
       const minion = await window.MinionCombat.makeEntity({
         speciesId: 'harlyao-skeleton', name: 'Harlyao Skeleton', tier: lich.banditTier || 0,
-        x, y, zoneId: ARENA_ID, weaponMetalKey: 'nativeCopper',
+        x, y, zoneId: lich.areaId || currentLichArea() || ARENA_ID, weaponMetalKey: 'nativeCopper',
         extra: { homeX: x, homeY: y, state: 'chase', summonedByLichId: lich.id },
       });
       if (!minion) return;
@@ -1813,6 +1822,8 @@
 
   window.HarlyaoLichCombat = {
     CLASS_ID, ARENA_ID, TYPE_ORDER, TYPE_DEFS,
+    allowArea: areaId => { if (areaId) allowedAreas.add(String(areaId)); }, // Opt another area in (e.g. the Random Test Ruin's boss sanctum).
+    disallowArea: areaId => { if (areaId && areaId !== ARENA_ID) allowedAreas.delete(String(areaId)); },
     installWrappers, makeEntity, rosterFor, rollDye,
     updateLichAI, applyEntranced, addGooSlow, makeGasolinePuddle, makeEruptingEarth,
     debugSnapshot,
