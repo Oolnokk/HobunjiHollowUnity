@@ -486,12 +486,12 @@
       action.fired = true;
       setLoaded(action.itemKey, false);
       playRangedActionSfx(action.itemKey, 'fire');
-      const aim = playerAimSolution(action.itemKey);
+      const heldTransform = deps.getHeldRangedWorldTransform?.(action.itemKey) || null; // Single release-frame sample reused by both trajectory solving and projectile spawning.
+      const aim = playerAimSolution(action.itemKey, heldTransform?.position);
       const angle = aim?.angle ?? deps.getPlayerAimAngle();
       const pitch = aim?.pitch ?? deps.getPlayerAimPitch?.() ?? 0;
       const ammoPayload = playerAmmoPayload(action.itemKey);
       const heldTexture = action.def.rangedType === 'thrown' ? deps.getHeldRangedTexture?.(action.itemKey) || null : null;
-      const heldTransform = deps.getHeldRangedWorldTransform?.(action.itemKey) || null;
       const volley = spawnVolley(action.itemKey, deps.player.x, deps.player.y, angle, 'player', deps.player, ammoPayload, pitch, {
         damageScale: action.damageScale,
         textureSource: heldTexture,
@@ -1032,7 +1032,21 @@
     return Number.isFinite(rendered) ? rendered : deps.worldSurfaceY(x, y);
   }
 
-  function playerProjectileOrigin() {
+  function projectileOriginFromPosition(rawPosition) {
+    const x = Number(rawPosition?.x); // Used below as the launch origin X when a live held-weapon transform is available.
+    const y = Number(rawPosition?.y); // Used below as the launch origin Y when a live held-weapon transform is available.
+    const z = Number(rawPosition?.z); // Used below as the launch origin Z when a live held-weapon transform is available.
+    return [x, y, z].every(Number.isFinite) ? new THREE.Vector3(x, y, z) : null;
+  }
+
+  function playerProjectileOrigin(itemKey = deps?.getEquippedRangedKey?.(), sourcePosition = null) {
+    const sampledOrigin = projectileOriginFromPosition(sourcePosition); // Reuses the exact release-frame position later handed to spawnProjectile.
+    if (sampledOrigin) return sampledOrigin;
+    try {
+      const heldPosition = deps?.getHeldRangedWorldTransform?.(itemKey)?.position; // Keeps non-release aim queries on the live held projectile origin when available.
+      const heldOrigin = projectileOriginFromPosition(heldPosition); // Converts the held plane's world position into the Vector3 language used by trajectory math.
+      if (heldOrigin) return heldOrigin;
+    } catch (_) { /* Fall through to the legacy center-height origin when the held visual is unavailable. */ }
     return new THREE.Vector3(
       deps.player.x / deps.TILE,
       ownerElevationY(deps.player, deps.player.x, deps.player.y) + 0.55,
@@ -1104,10 +1118,10 @@
     return meleeReachCheck(attacker, target, verticalAllowanceWorld).reachable;
   }
 
-  function playerAimSolution(itemKey = deps?.getEquippedRangedKey?.()) {
+  function playerAimSolution(itemKey = deps?.getEquippedRangedKey?.(), launchPosition = null) {
     const def = defFor(itemKey);
     if (!def || !deps?.player) return null;
-    const origin = playerProjectileOrigin();
+    const origin = playerProjectileOrigin(itemKey, launchPosition); // Uses the exact release-frame spawn point so the computed trajectory and visible projectile share one origin.
     let direction = null;
     let targetPoint = null;
     let reticleTarget = null;

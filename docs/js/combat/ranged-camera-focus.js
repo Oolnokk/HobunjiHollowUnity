@@ -2,7 +2,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 10;
+  const VERSION = 11;
   const SHOULDER_MODE = 'shoulderSurf';
   const TIGHT_FOV_DEG = 34; // Optical zoom around the camera-center reticle ray; unlike changing shoulder distance this introduces no aim-point parallax.
   const FOCUS_EASE_PER_SEC = 9; // Used to ease ready optical zoom continuously without quantized Settings-control writes.
@@ -140,11 +140,18 @@
     return Number.isFinite(surface) ? surface : 0;
   }
 
-  function playerProjectileOrigin(deps = rangedAimDeps || combatDeps()) {
+  function playerProjectileOrigin(deps = rangedAimDeps || combatDeps(), itemKey = window.RangedWeapons?.equippedRangedKey?.()) {
     const THREE = three();
     const player = deps?.player;
     const tile = Number(deps?.TILE) || 64;
     if (!THREE?.Vector3 || !player) return null;
+    try {
+      const heldPosition = deps?.getHeldRangedWorldTransform?.(itemKey)?.position; // Uses the same live held-plane origin that the real projectile spawn samples at release.
+      const x = Number(heldPosition?.x), y = Number(heldPosition?.y), z = Number(heldPosition?.z);
+      if ([x, y, z].every(Number.isFinite)) return new THREE.Vector3(x, y, z);
+    } catch (error) {
+      noteAimError('player-projectile-origin', error);
+    }
     return new THREE.Vector3(
       (Number(player.x) || 0) / tile,
       playerWorldBaseY(deps) + 0.55,
@@ -457,11 +464,17 @@
       if (!heldState().rangedOut) return null;
       const def = itemKey ? window.RangedWeapons?.config?.[itemKey] : null;
       const rangeTiles = Number(def?.rangeTiles);
-      const origin = playerProjectileOrigin(rangedAimDeps || combatDeps());
+      const origin = playerProjectileOrigin(rangedAimDeps || combatDeps(), itemKey);
       if (!itemKey || !origin || !Number.isFinite(rangeTiles) || rangeTiles <= 0) return null;
-      const sharedTarget = sharedPerspectiveAimTarget(origin, { mode: 'ranged', itemKey, rangeTiles }); // Keeps ranged pose/launch convergence on the same endpoint as the head and lunge.
-      if (sharedTarget) return sharedTarget;
-      return resolveInteractionAimTarget(rangeTiles, origin, { mode: 'ranged', itemKey, rangeTiles });
+      // Ranged shots must hit the first real surface under the center reticle,
+      // not merely converge toward the far perspective point used for stable
+      // head/body/lunge facing. Re-root that camera-ray surface point at the
+      // exact held projectile origin; if scene targeting is unavailable, fall
+      // back to the shared horizon point so non-world/bootstrap callers still
+      // receive a deterministic aim ray.
+      const reticleTarget = resolveInteractionAimTarget(rangeTiles, origin, { mode: 'ranged', itemKey, rangeTiles });
+      if (reticleTarget) return reticleTarget;
+      return sharedPerspectiveAimTarget(origin, { mode: 'ranged', itemKey, rangeTiles });
     } catch (error) {
       noteAimError('ranged-target', error);
       return null;
@@ -831,9 +844,7 @@
       meleeAimInstalled,
       meleeRangeCaptureInstalled,
       cameraMutation: 'native-shoulder-fov-optical-zoom+native-combat-offsets',
-      aimAlignment: rawGetPlayerPerspectiveTarget
-        ? 'shared-perspective-point-native-camera'
-        : 'shared-3d-interaction-target-native-camera',
+      aimAlignment: 'ranged-reticle-first-surface+melee-shared-perspective',
       aimUpdateMode: 'change-driven-persistent-cache',
       interactionAimTarget: lastResolvedAimTarget ? { ...lastResolvedAimTarget } : null,
       activeMeleeRange: activeMeleeRange ? { ...activeMeleeRange } : null,

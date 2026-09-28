@@ -7,7 +7,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 4;
+  const VERSION = 5;
   const EPSILON = 1e-8;
   const LUNGE_CANCEL_RANGE_MULTIPLIER = 0.5; // Used only by lunge stop tests; authored strike/hit reach remains full length.
   let rangedInitWrapped = false; // Exposed in debugSnapshot() to verify the ranged initialization boundary was patched once.
@@ -601,7 +601,7 @@
     const rangedOk = installRangedInitBridge();
     const combatOk = installCombatInitBridge();
     if (rangedOk && combatOk) {
-      window.__farmLog?.('[combat-camera-alignment] shared perspective-point authority installed for ranged aim, exact melee reticle alignment, and attack lunges.', 'combat');
+      window.__farmLog?.('[combat-camera-alignment] shared camera authority installed for ranged reticle targeting, exact melee reticle alignment, and perspective-point attack lunges.', 'combat');
     }
     return rangedOk && combatOk;
   }
@@ -640,7 +640,7 @@
       } : null,
       lastError: lastError ? { ...lastError } : null,
       movementAuthority: 'native-player-to-perspective-point-walk-and-lunge',
-      rangedAuthority: 'muzzle-to-shared-perspective-point',
+      rangedAuthority: 'held-launch-origin-to-reticle-target',
       updateMode: 'initialization-only-no-frame-hook',
       lungeSweepMode: 'piggyback-existing-combat-update-no-independent-loop',
     }),

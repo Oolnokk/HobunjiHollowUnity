@@ -21,8 +21,8 @@ const alignmentIndex = loader.indexOf('js/combat/combat-camera-alignment-bridge.
 const dualRoleIndex = loader.indexOf('js/combat/ranged-dual-role-anim-style.js?v=');
 assert(focusIndex >= 0 && alignmentIndex > focusIndex && dualRoleIndex > alignmentIndex,
   'camera authority bridge loads after ranged focus and before later ranged adapters');
-assert.match(loader, /HobunjiCombatCameraAlignment\?\.version\) >= 4/,
-  'loader requires the shared perspective-point bridge v4 API');
+assert.match(loader, /HobunjiCombatCameraAlignment\?\.version\) >= 5/,
+  'loader requires camera-alignment bridge v5 diagnostics');
 assert.doesNotMatch(source, /setInterval\s*\(/, 'alignment bridge adds no polling interval');
 assert.doesNotMatch(source, /requestAnimationFrame\s*\(/, 'alignment bridge adds no animation-frame loop');
 assert.doesNotMatch(source, /\.update\s*=\s*function/, 'alignment bridge does not wrap a per-frame update');
@@ -112,8 +112,10 @@ assert.match(coreSource, /if \(direct >= 0\.999 && pitch >= 0\)[\s\S]{0,1000}ret
 
 // All combat adapters must accept the same finite point; authored attack range
 // limits reach/travel but must not create a second target endpoint.
-assert.match(rangedFocus, /function sharedPerspectiveAimTarget\(attackOrigin, metadata = \{\}\)/,
-  'ranged focus re-roots the shared point at pose/melee origins without reraycasting');
+assert.match(rangedFocus, /function rangedInteractionAimTarget[\s\S]{0,1100}resolveInteractionAimTarget\(rangeTiles, origin/,
+  'ranged focus resolves the actual reticle surface before its horizon fallback');
+assert.match(rangedFocus, /function meleeInteractionAimTarget[\s\S]{0,900}sharedPerspectiveAimTarget\(origin/,
+  'melee keeps the stable shared perspective point independently of ranged surface targeting');
 assert.match(rangedWeapons, /alongMuzzle \+ def\.rangeTiles/,
   'ranged weapon fallback remains available outside shared shoulder aim');
 assert.equal((game.match(/getPlayerPerspectiveTarget: currentPlayerPerspectiveTarget/g) || []).length, 2,
@@ -240,7 +242,7 @@ const windowStub = {
 const context = { window: windowStub, Date, Math, console };
 vm.runInNewContext(source, context, { filename: 'combat-camera-alignment-bridge.js' });
 
-assert.equal(windowStub.HobunjiCombatCameraAlignment.version, 4);
+assert.equal(windowStub.HobunjiCombatCameraAlignment.version, 5);
 assert.equal(windowStub.HobunjiCombatCameraAlignment.debugSnapshot().updateMode,
   'initialization-only-no-frame-hook');
 
@@ -343,12 +345,12 @@ assert.equal(debug.nativeMeleePitchRestored, true);
 assert.equal(debug.lungeAuthorityInstalled, true);
 assert.equal(debug.lungeAuthorityCount, 1);
 assert.equal(debug.movementAuthority, 'native-player-to-perspective-point-walk-and-lunge');
-assert.equal(debug.rangedAuthority, 'muzzle-to-shared-perspective-point');
+assert.equal(debug.rangedAuthority, 'held-launch-origin-to-reticle-target');
 assertVector(debug.lastCameraRay.origin, { x: -4, y: 2.4, z: 3 }, 'debug reports true camera origin');
 assertVector(debug.lastLunge.targetPoint, { x: 11, y: 2.4, z: 3 }, 'debug reports the exact shared lunge endpoint');
 assert.equal(debug.lastLunge.targetSource, 'shared-perspective-point');
 assert.equal(debug.lastError, null);
-assert(logs.some(line => line.includes('shared perspective-point authority installed')),
+assert(logs.some(line => line.includes('shared camera authority installed')),
   'bridge installation is visible in the mobile in-game debug log');
 
 console.log('Shared perspective-point movement/combat alignment checks passed.');
