@@ -80,6 +80,15 @@
     return normalizedScale * PATTERN_SCALE_REFERENCE * usageScaleMultiplier;
   }
 
+  function visiblePatternInversion(patternDef, swapPatternColors = false) {
+    return !!patternDef?.invert !== !!swapPatternColors; // Used by thickness resolution so editor mask inversion and loom cloth↔pattern color inversion compose as XOR without mutating the saved pattern.
+  }
+
+  function signedMotifThicknessPx(patternDef, swapPatternColors = false) {
+    const amount = Number(patternDef?.motifThinPx) || 0; // Used by buildPatternMask before motif/frame/mesh scaling.
+    return (visiblePatternInversion(patternDef, swapPatternColors) ? -1 : 1) * amount;
+  }
+
   function baseCosmeticId(item) {
     if (!item) return null;
     if (item.baseCosmeticId) return String(item.baseCosmeticId);
@@ -1629,7 +1638,7 @@
       // hook's tintKey does (see installPortraitHooks) — this layer's `img`
       // pixels, which the pattern's shade-fill reads its light/dark variation
       // from, depend on which dye tinted it, not just its own url.
-      if (patterns.length) img = await applyPatternStackToTintedImage(img, patterns, layerPatternHex, `layer:${url}:${tintValue}:swap${swapPatternColors ? 1 : 0}`, shadingSource, 'woven-motif');
+      if (patterns.length) img = await applyPatternStackToTintedImage(img, patterns, layerPatternHex, `layer:${url}:${tintValue}:swap${swapPatternColors ? 1 : 0}`, shadingSource, 'woven-motif', { swapPatternColors });
       rendered.push(img);
     }
     if (!rendered.length) return { canvas: null, layers };
@@ -1848,7 +1857,7 @@
     return canvas;
   }
 
-  function buildPatternMask(width, height, rawPatternDef, motifImg) {
+  function buildPatternMask(width, height, rawPatternDef, motifImg, swapPatternColors = false) {
     const patternDef = legacyFrameFields(rawPatternDef);
     const canvas = Object.assign(document.createElement('canvas'), { width, height }), ctx = canvas.getContext('2d');
     const clusterSeparatorCanvas = Object.assign(document.createElement('canvas'), { width, height }); // Per-instance intra-motif watershed sampled alongside the ordinary alpha mask.
@@ -1878,7 +1887,7 @@
     const bbox = findOpaqueBounds(srcMask, srcSize, srcSize); // Frame geometry intentionally stays based on the original authored ink, not the thickness-adjusted ink.
     const sourceClusterSeparatorMask = patternDef?.invert ? null : buildMotifClusterSeparatorMask(srcMask, srcSize, srcSize); // Inverted patterns treat transparency as ink, so source-ink island separation does not apply.
     const sourceAllowedMask = new Uint8Array(srcMask.length); sourceAllowedMask.fill(1); // Source-space thickening may expand anywhere inside the rotated motif work canvas; the frame clip still decides what finally prints.
-    const sourceSignedThickness = (patternDef?.invert ? -1 : 1) * (Number(patternDef?.motifThinPx) || 0); // Inversion flips foreground/background, so reverse the source operation to preserve positive=visibly thinner semantics.
+    const sourceSignedThickness = signedMotifThicknessPx(patternDef, swapPatternColors); // Both real mask inversion and loom cloth↔pattern color inversion reverse which visible region "thin" refers to; applying both cancels via XOR.
     const adjustedSrcMask = adjustMaskThickness(srcMask, sourceAllowedMask, srcSize, srcSize, sourceSignedThickness, sourceClusterSeparatorMask); // Motif thinning/thickening is measured here, before motif/frame/mesh scaling.
     const adjustedSrc = maskCanvas(adjustedSrcMask, srcSize, srcSize);
     const clusterSeparatorSrc = maskCanvas(sourceClusterSeparatorMask, srcSize, srcSize);
@@ -2000,14 +2009,15 @@
     });
   }
 
-  function patternStackCanvasKey(imageOrCanvas, patterns, colorHex, cachePrefix = '') {
+  function patternStackCanvasKey(imageOrCanvas, patterns, colorHex, cachePrefix = '', renderOptions = null) {
     const width = imageOrCanvas?.naturalWidth || imageOrCanvas?.width || 1; // Used to keep species/gender sprite-size variants from sharing a composite.
     const height = imageOrCanvas?.naturalHeight || imageOrCanvas?.height || 1; // Used with width in the deterministic pattern cache key.
-    return `${cachePrefix}|${width}x${height}|${colorHex}|${JSON.stringify(normalizePatternStack(patterns))}`;
+    const swapPatternColors = !!renderOptions?.swapPatternColors; // Used in the key because loom color inversion now changes motif thickness polarity as well as dye assignment.
+    return `${cachePrefix}|${width}x${height}|${colorHex}|swap${swapPatternColors ? 1 : 0}|${JSON.stringify(normalizePatternStack(patterns))}`;
   }
 
-  function patternCanvasKey(imageOrCanvas, pattern, colorHex, cachePrefix = '') {
-    return patternStackCanvasKey(imageOrCanvas, [pattern], colorHex, cachePrefix); // Legacy single-pattern callers share the exact same cache-key path as the stack compositor.
+  function patternCanvasKey(imageOrCanvas, pattern, colorHex, cachePrefix = '', renderOptions = null) {
+    return patternStackCanvasKey(imageOrCanvas, [pattern], colorHex, cachePrefix, renderOptions); // Legacy single-pattern callers share the exact same cache-key path as the stack compositor.
   }
 
   const PATTERN_OUTLINE_WIDTH = 1; // Half of ToolMetalRecolor's DEFAULT_OUTLINE_WIDTH (2) — a woven motif's outline reads thinner than verdigris removal's by design.
@@ -2207,13 +2217,14 @@
     return motifDataUrl ? { ...pattern, motifDataUrl } : pattern;
   }
 
-  async function applyPatternStackToTintedImage(imageOrCanvas, rawPatterns, colorHex, cachePrefix = '', shadingSource = null, debugLabel = 'woven-motif') {
+  async function applyPatternStackToTintedImage(imageOrCanvas, rawPatterns, colorHex, cachePrefix = '', shadingSource = null, debugLabel = 'woven-motif', renderOptions = null) {
     const patterns = normalizePatternStack(rawPatterns);
+    const swapPatternColors = !!renderOptions?.swapPatternColors; // Used only to resolve visible thinning/thickening polarity; geometric inversion remains owned by each reusable pattern.
     if (!imageOrCanvas || !patterns.length) return imageOrCanvas;
     const renderable = patterns.filter(pattern => !!(pattern?.motifDataUrl || pattern?.motifUrl || pattern?.customMotifId));
     if (!renderable.length) return imageOrCanvas;
     const width = imageOrCanvas.naturalWidth || imageOrCanvas.width || 1, height = imageOrCanvas.naturalHeight || imageOrCanvas.height || 1;
-    const key = patternStackCanvasKey(imageOrCanvas, renderable, colorHex, cachePrefix);
+    const key = patternStackCanvasKey(imageOrCanvas, renderable, colorHex, cachePrefix, renderOptions);
     if (patternedCanvasCache.has(key)) return patternedCanvasCache.get(key);
 
     const motifUrls = await Promise.all(renderable.map(async pattern =>
@@ -2225,7 +2236,7 @@
 
     const pad = CELL_OFFSET_PAD;
     const maskWidth = width + pad * 2, maskHeight = height + pad * 2;
-    const patternCanvases = active.map(({ pattern, motif }) => buildPatternMask(maskWidth, maskHeight, pattern, motif)); // Each slot keeps its own frame/tiling/scale transform.
+    const patternCanvases = active.map(({ pattern, motif }) => buildPatternMask(maskWidth, maskHeight, pattern, motif, swapPatternColors)); // Each slot keeps its own frame/tiling/scale transform while sharing this garment layer's visual inversion state.
     const out = Object.assign(document.createElement('canvas'), { width, height });
     const ctx = out.getContext('2d');
     ctx.drawImage(imageOrCanvas, 0, 0, width, height);
@@ -2324,8 +2335,8 @@
     return out;
   }
 
-  async function applyPatternToTintedImage(imageOrCanvas, pattern, colorHex, cachePrefix = '', shadingSource = null, debugLabel = 'woven-motif') {
-    return applyPatternStackToTintedImage(imageOrCanvas, [pattern], colorHex, cachePrefix, shadingSource, debugLabel); // Existing single-pattern API remains binary/save compatible.
+  async function applyPatternToTintedImage(imageOrCanvas, pattern, colorHex, cachePrefix = '', shadingSource = null, debugLabel = 'woven-motif', renderOptions = null) {
+    return applyPatternStackToTintedImage(imageOrCanvas, [pattern], colorHex, cachePrefix, shadingSource, debugLabel, renderOptions); // Existing single-pattern API remains binary/save compatible.
   }
 
   async function patternedCanvasForItem(item) {
@@ -2360,7 +2371,7 @@
     const tintKey = appliedTint?.mode === 'shadeFill' ? `shade:${(appliedTint.rgb || []).join(',')}` : appliedTint?.mode === 'hueSatFill' ? `huesat:${appliedTint.hue}:${appliedTint.sat}` : 'none';
     const prefix = `runtime:${normalizeAssetPath(sourceKey)}:${tintKey}:swap${swapPatternColors ? 1 : 0}`; // Separates normal/swapped composites even when their dye values happen to match.
     const colorHex = swapPatternColors ? clothColorHex : patternColorHex; // Motif color is the opposite member of the cloth↔pattern swap.
-    const fullKey = patternStackCanvasKey(tinted, patterns, colorHex, prefix);
+    const fullKey = patternStackCanvasKey(tinted, patterns, colorHex, prefix, { swapPatternColors });
     const cached = patternedCanvasCache.get(fullKey);
     if (cached) {
       portraitPatternStats.cacheHits++;
@@ -2369,7 +2380,7 @@
     portraitPatternStats.cacheMisses++;
     let pending = pendingPatternCanvasPromises.get(fullKey);
     if (!pending) {
-      pending = applyPatternStackToTintedImage(tinted, patterns, colorHex, prefix, img, 'woven-motif')
+      pending = applyPatternStackToTintedImage(tinted, patterns, colorHex, prefix, img, 'woven-motif', { swapPatternColors })
         .catch(error => { lastError = String(error?.message || error); throw error; })
         .finally(() => pendingPatternCanvasPromises.delete(fullKey));
       pendingPatternCanvasPromises.set(fullKey, pending);
@@ -2588,7 +2599,7 @@
     hasWovenPattern: item => weavingHasAnyPattern(item?.weaving),
     reweaveMaterialCost,
     debugSnapshot,
-    __test: Object.freeze({ baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask, applyPatternToTintedImage, applyPatternStackToTintedImage, labelPatternCells, behindViewUrlsFor, behindViewResultFor, buildPortraitPatternMap, collectPatternImageUrls, resolveIconLayerUrls, patternRolesForLayers, layersUseSecondaryDye, iconLayersForView, cosmeticConfig, summarizeWeavingLabel, weavingPatternForRole, weavingPatternsForRole, normalizePatternStack, forcedOverpassPatternForWeaving, withForcedOverpass, weavingSwapsPatternColorsForRole, weavingHasAnyPattern, weavingCarriesSavedPattern, gearHasEquippedWovenClothing, requestSessionReadyPlayerAvatarRefresh, decorateAvatarDataWithWovenItems, materializeWeavingLibrarySnapshots, docsRelativeUrl, standaloneAssetUrl, frameShapeFor, wovenIconVisualKey, reweaveMaterialCost, resolvedPatternMeshScale, buildMotifClusterSeparatorMask, adjustMaskThickness, buildPatternOutlineMask, scaledOutlineWidth, overpassClearanceMultiplier }),
+    __test: Object.freeze({ baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask, applyPatternToTintedImage, applyPatternStackToTintedImage, labelPatternCells, behindViewUrlsFor, behindViewResultFor, buildPortraitPatternMap, collectPatternImageUrls, resolveIconLayerUrls, patternRolesForLayers, layersUseSecondaryDye, iconLayersForView, cosmeticConfig, summarizeWeavingLabel, weavingPatternForRole, weavingPatternsForRole, normalizePatternStack, forcedOverpassPatternForWeaving, withForcedOverpass, weavingSwapsPatternColorsForRole, weavingHasAnyPattern, weavingCarriesSavedPattern, gearHasEquippedWovenClothing, requestSessionReadyPlayerAvatarRefresh, decorateAvatarDataWithWovenItems, materializeWeavingLibrarySnapshots, docsRelativeUrl, standaloneAssetUrl, frameShapeFor, wovenIconVisualKey, reweaveMaterialCost, resolvedPatternMeshScale, visiblePatternInversion, signedMotifThicknessPx, buildMotifClusterSeparatorMask, adjustMaskThickness, buildPatternOutlineMask, scaledOutlineWidth, overpassClearanceMultiplier }),
   });
   window.__clothingWeavingDebug = debugSnapshot;
 
