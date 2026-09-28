@@ -29,6 +29,7 @@
   const ROPE_SPACING = [5.4, 5.0, 4.7]; // Candidate centre-to-centre spans; ropes need >= 4.4 along their axis.
   const LAVA_ESCAPE_S = .45; // Time standing in lava before being thrown back to safe footing.
   const LAVA_BURN = 16;
+  const SAFE_EDGE_MARGIN = .6; // A lava escape returns the player at least this far back from the pit edge.
   const LIFT_RISE_MAX = .95;
   const LIFT_SECONDS = 2.2;
   const BALCONY_HEADROOM = 1.7;
@@ -562,7 +563,13 @@
     const inLava = inBasin && !onPlatform && player.y < basin.lavaY + .3;
     if (!inLava) {
       basin.inLavaFor = 0;
-      if (onPlatform || !inBasin) basin.lastSafe = { x:player.x, y:player.y, z:player.z };
+      // Only remember footing that is clearly up on the ledge (back from the
+      // pit edge, at rim height) or on a pillar/pad/balcony. Recording the
+      // last frame outside the basin put the return point right on the rim
+      // edge at the already-dropping height, so the escape landed the player
+      // at the foot of the pit wall.
+      const onLedge = !inside(basin.bounds, player, -SAFE_EDGE_MARGIN) && player.y >= basin.rimY - .12;
+      if (onPlatform || onLedge) basin.lastSafe = { x:player.x, z:player.z };
       return;
     }
     basin.inLavaFor += dt;
@@ -574,8 +581,9 @@
     if (basin.inLavaFor >= LAVA_ESCAPE_S) {
       basin.inLavaFor = 0;
       basin.escapes++;
-      const safe = basin.lastSafe || { x:basin.pad.x, y:basin.pad.topY, z:basin.pad.z };
-      kit.setPlayerWorld(safe, true, true);
+      const spot = basin.lastSafe || { x:basin.pad.x, z:basin.pad.z };
+      const support = kit.sampleSupport(spot.x, spot.z); // Highest surface there (ledge / pillar top), never the pit floor.
+      kit.setPlayerWorld({ x:spot.x, z:spot.z, y:Number(support?.y ?? basin.pad.topY) }, true, true);
       kit.deps?.showToast?.('You scramble out of the lava!', false);
     }
   }

@@ -31,7 +31,7 @@
   document.write('<script src="js/dev-random-ruin-motion-runtime.js?v=20260926animperf2"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-dungeon-chests.js?v=20260928basins1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-simple-puzzles.js?v=20260928basins1"></scr' + 'ipt>');
-  document.write('<script src="js/dev-random-ruin-rope-rewards.js?v=20260928basins1"></scr' + 'ipt>'); // Registers rope payoffs + lava basins as a simple-puzzle composer.
+  document.write('<script src="js/dev-random-ruin-rope-rewards.js?v=20260928escape1"></scr' + 'ipt>'); // Registers rope payoffs + lava basins as a simple-puzzle composer.
   document.write('<script src="js/dev-random-ruin-interactions.js?v=20260927interactionpriority1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-glyph-circuits.js?v=20260928puzzles2"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-runtime-coverage.js?v=20260923review1"></scr' + 'ipt>');
