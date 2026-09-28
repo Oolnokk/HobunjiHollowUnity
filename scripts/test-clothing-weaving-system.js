@@ -3,6 +3,12 @@ const assert = require('assert');
 const fs = require('fs');
 const vm = require('vm');
 
+function pngDimensions(filePath) {
+  const bytes = fs.readFileSync(filePath); // Used by ragged-hood front/back parity checks to compare the real authored projection rasters.
+  assert.equal(bytes.toString('ascii', 1, 4), 'PNG', `${filePath} must be a PNG fixture`);
+  return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
+}
+
 let now = 1000;
 let damageSeen = null;
 let footingSeen = null;
@@ -144,6 +150,14 @@ assert.equal(api.__test.resolvedPatternMeshScale({ meshScale: 0.4 }), 0.1, 'norm
 assert.equal(api.__test.resolvedPatternMeshScale({ meshScale: 3.2 }), 0.8, 'normalized upper bound 3.20 renders at the former 0.80 maximum');
 assert.equal(api.__test.resolvedPatternMeshScale({ meshScale: 0.1 }), 0.1, 'saved values below the normalized range clamp to the physical 0.10 minimum without migration');
 assert.equal(api.__test.resolvedPatternMeshScale({ meshScale: 6 }), 0.8, 'saved values above the normalized range clamp to the physical 0.80 maximum without migration');
+assert.equal(api.__test.visiblePatternInversion({ invert: false }, false), false, 'ordinary pattern + ordinary loom colors are not visually inverted');
+assert.equal(api.__test.visiblePatternInversion({ invert: true }, false), true, 'Pattern Editor inversion visually inverts the motif');
+assert.equal(api.__test.visiblePatternInversion({ invert: false }, true), true, 'loom cloth↔pattern color swap is also a visual inversion for thickness semantics');
+assert.equal(api.__test.visiblePatternInversion({ invert: true }, true), false, 'Pattern Editor inversion plus loom color swap cancel visually via XOR');
+assert.equal(api.__test.signedMotifThicknessPx({ invert: false, motifThinPx: 4 }, false), 4, 'positive thickness remains source-space thinning with no inversion');
+assert.equal(api.__test.signedMotifThicknessPx({ invert: true, motifThinPx: 4 }, false), -4, 'Pattern Editor inversion reverses source-space thickness polarity');
+assert.equal(api.__test.signedMotifThicknessPx({ invert: false, motifThinPx: 4 }, true), -4, 'loom color inversion reverses source-space thickness polarity too');
+assert.equal(api.__test.signedMotifThicknessPx({ invert: true, motifThinPx: 4 }, true), 4, 'double inversion restores the original source-space thickness polarity');
 assert.equal(api.__test.scaledOutlineWidth(1, { motifScale: 0.1, frameScale: 0.1, meshScale: 0.4, usageScaleMultiplier: 0.1 }, 'woven-motif', 831, 523), 1, 'scaled-down clothing motifs keep the same 1px woven outline regardless of source image dimensions');
 assert.equal(api.__test.scaledOutlineWidth(1, { motifScale: 3, frameScale: 6, meshScale: 3.2, usageScaleMultiplier: 14 }, 'woven-motif', 3000, 2250), 1, 'large usage scaling alone does not thicken clothing outlines');
 assert.equal(api.__test.scaledOutlineWidth(1, { motifScale: 0.1, frameScale: 0.1, meshScale: 0.4, usageScaleMultiplier: 7 }, 'animal-surface-pattern', 3000, 2250), 6, 'Grehlr-sized animal art preserves the current 6-unit Color Pools outline');
@@ -168,6 +182,17 @@ assert.deepEqual(Array.from(api.__test.patternRolesForLayers(raggedHoodLayers), 
 assert.equal(api.__test.layersUseSecondaryDye(raggedHoodLayers), false, 'Ragged Hood has no palette-B trim dye despite occupying the hood slot');
 assert.deepEqual(Array.from(api.__test.iconLayersForView(raggedHoodLayers, 'front'), layer => layer.layerName), ['front'], 'Ragged Hood inventory/front preview excludes its authored rear sprite');
 assert.deepEqual(Array.from(api.__test.iconLayersForView(raggedHoodLayers, 'behind'), layer => layer.layerName), ['back'], 'Ragged Hood behind preview uses its authored rear sprite by itself');
+for (const [variantKey, variant] of Object.entries(raggedHoodConfig.speciesVariants || {})) {
+  const hoodLayers = variant?.parts?.head?.layers || {}; // Used to keep every authored Ragged Hood front/back pair in the same pattern projection space.
+  const frontLayer = hoodLayers.front; // Compared with backLayer for role, transform, and source-raster parity.
+  const backLayer = hoodLayers.back; // Compared with frontLayer so rear art cannot silently get a different weave scale basis.
+  if (!frontLayer || !backLayer) continue;
+  assert.equal(backLayer.layerRole, frontLayer.layerRole, `${variantKey} Ragged Hood front/back sprites keep the same logical weave role`);
+  assert.deepEqual(backLayer.spriteStyle?.base?.xform?.head, frontLayer.spriteStyle?.base?.xform?.head, `${variantKey} Ragged Hood front/back sprites keep the same authored head transform`);
+  const frontPath = 'docs/' + String(frontLayer.image?.url || '').replace(/^\.\//, ''); // Used below to read the actual front PNG dimensions.
+  const backPath = 'docs/' + String(backLayer.image?.url || '').replace(/^\.\//, ''); // Used below to read the actual rear PNG dimensions.
+  assert.deepEqual(pngDimensions(backPath), pngDimensions(frontPath), `${variantKey} Ragged Hood front/back sprites keep identical raster dimensions for motif scale and outline width`);
+}
 const fineHoodConfig = JSON.parse(fs.readFileSync('docs/config/cosmetics/fine_hood.json', 'utf8')); // Control fixture keeps the genuine base-plus-trim hood behavior.
 const fineHoodLayers = api.__test.resolveIconLayerUrls(fineHoodConfig, 'mao-ao', 'male'); // Used to ensure the Ragged Hood fix does not collapse actual trim roles.
 assert.deepEqual(Array.from(api.__test.patternRolesForLayers(fineHoodLayers), entry => entry.role), ['base', 'trim'], 'Fine Hood still exposes independent Base and Trim pattern roles');
@@ -658,8 +683,14 @@ assert.match(metalPatternSource, /colorFillApi\(\)\.hsvValueFillPixels/,
   'tool metal and verdigris value-preserving fills use the same ColorFill module');
 assert.match(source, /sourceData: shadeSourceData,[\s\S]*?debugLabel,[\s\S]*?samplePredicate:[\s\S]*?garmentMask[\s\S]*?applyPredicate:/,
   'woven motif color samples the whole authored cloth/body region separately from the motif paint mask');
-assert.match(source, /applyPatternStackToTintedImage\(tinted, patterns, colorHex, prefix, img, 'woven-motif'\)/,
-  'runtime woven portrait composition passes both optional pattern slots plus the original authored raster and clothing-only diagnostic label');
+assert.match(source, /applyPatternStackToTintedImage\(tinted, patterns, colorHex, prefix, img, 'woven-motif', \{ swapPatternColors \}\)/,
+  'runtime woven portrait composition passes the garment color-inversion state into shared thickness resolution');
+assert.match(source, /applyPatternStackToTintedImage\(img, patterns, layerPatternHex,[\s\S]*?'woven-motif', \{ swapPatternColors \}\)/,
+  'loom/front-behind preview composition passes the exact same color-inversion state into shared thickness resolution');
+assert.match(source, /buildPatternMask\(maskWidth, maskHeight, pattern, motif, swapPatternColors\)/,
+  'every pattern slot resolves motif thickness from the same visual inversion state before front/back garment clipping');
+assert.match(source, /patternStackCanvasKey\(tinted, patterns, colorHex, prefix, \{ swapPatternColors \}\)/,
+  'runtime cache keys include the inversion option so swapped and unswapped thickness rasters cannot alias');
 assert.match(source, /overpassOutlineWidth \* clearanceMultiplier/,
   'shared compositor punches the primary with the authored overpass clearance multiplier');
 assert.equal(api.__test.overpassClearanceMultiplier({}), 3, 'missing overpass gap preserves the previous 3× behavior');
