@@ -301,6 +301,7 @@ assert(firstStrikeTarget && Math.abs(firstStrikeTarget.point.x - frozenPoint.x) 
 // window. The attack still swings, so it must receive fresh reticle aim rather
 // than inheriting the previous attack target.
 player.lunging = false;
+windowStub.Combat.update(0); // Mirrors the real frame boundary that releases the completed movement-lunge snapshot before another attack.
 blockNativeLunge = true;
 targetBox = {
   min: { x: 4, y: 0, z: 0.8 },
@@ -361,6 +362,9 @@ assert.equal(lastProfileDirect, 1, 'exactly forward aim still bypasses the groun
 assert.equal(player.lungeHopUnits, 0, 'direct reticle flight never synthesizes a hop');
 assert.equal(player.lungeVerticalTravelUnits, 0, 'exactly horizontal reticle aim has zero Y component by definition');
 assert.equal(deps.hostileObjects.length, 0, 'forward/upward direct-flight behavior is verified with no hostile available');
+const noHostileLungeTarget = windowStub.HobunjiCombatCameraAlignment.debugSnapshot().activeLungeReticleTarget;
+assert(noHostileLungeTarget && noHostileLungeTarget.source === 'shared-perspective-point',
+  'a no-hostile lunge still owns its frozen perspective fallback instead of borrowing a future attack target');
 
 player.lunging = false;
 lastProfileResistance = null;
