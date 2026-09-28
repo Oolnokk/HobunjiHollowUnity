@@ -218,6 +218,7 @@ const windowStub = {
   Combat: {
     init: focusLikeCombatInit,
     deps: null,
+    beginStagedAction(options = {}) { return { options }; },
     meleeLungeProfile(distancePx, pitch, hopUnits, lungeHeightUnits, pitchDistanceResistance, directFlightStrength, inRangeAirAssist) {
       windowStub._lastProfile = { distancePx, pitch, hopUnits, lungeHeightUnits, pitchDistanceResistance, directFlightStrength, inRangeAirAssist };
       if (directFlightStrength >= 0.999 && pitch >= 0) {
@@ -343,6 +344,7 @@ assert.equal(debug.perspectiveTargetDepsProvided, true, 'bridge preserved the sh
 assert.equal(debug.nativeMeleeDirectionRestored, true);
 assert.equal(debug.nativeMeleePitchRestored, true);
 assert.equal(debug.lungeAuthorityInstalled, true);
+assert.equal(debug.stagedActionCommitInstalled, true, 'staged melee strike ownership is installed once');
 assert.equal(debug.lungeAuthorityCount, 1);
 assert.equal(debug.movementAuthority, 'native-player-to-perspective-point-walk+frozen-reticle-lunge');
 assert.equal(debug.rangedAuthority, 'held-launch-origin-to-reticle-target');
