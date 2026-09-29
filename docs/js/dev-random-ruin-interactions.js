@@ -557,11 +557,14 @@
   }
 
 
+  // Distance is deliberately left out: rows are already sorted by it, so an
+  // order change still changes the signature, while plain movement (which
+  // changed distance.toFixed(2) on nearly every 80 ms pass) no longer forces a
+  // full refreshActionBar rebuild at 12.5 Hz whenever the player walks.
   function rowSignature(rows) {
     return rows.map(row => [
       row.kind,row.label,row.inputAction,row.nativeInput===true?'native':'claim',
       row.owner?.uuid||row.owner?.id||row.owner?.name||'',
-      Number.isFinite(row.distance)?row.distance.toFixed(2):'',
     ].join(':')).join('|');
   }
 

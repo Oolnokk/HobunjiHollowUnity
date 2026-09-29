@@ -124,7 +124,7 @@
   <script src="debug.js?v=20260925weavesessiondebug4"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20260926minion1"></script>
-  <script src="config/scratchbones-config.js?v=20260926metalarmor4"></script>
+  <script src="config/scratchbones-config.js?v=20260930livestockwalk1"></script>
   <!-- Canonical source-art color fill math shared by portraits, creatures, weaving, tools, terrain, and item sprites. -->
   <script src="js/color-fill.js?v=20260923colorfill7"></script>
   <script src="js/tool-metal-recolor.js?v=20260926metalarmor1"></script>
@@ -352,7 +352,8 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmAnimals.init(...) during its own setup. -->
-  <script src="js/farm-animals.js?v=20260921harvestlook2"></script>
+  <script src="js/world-meta-store.js?v=20260930livestockwalk1"></script>
+  <script src="js/farm-animals.js?v=20260930livestockwalk1"></script>
   <!-- Farm buildings: barn placement/construction/demolition
        (window.FarmBuildings) — self-contained aside from deps injected
        via init(), and reads window.FarmAnimals at call time (already
@@ -2487,7 +2488,7 @@
   <!-- Directional camera pitch policy is isolated from controller bindings/gameplay dispatch. -->
   <script src="js/camera-look-clamp.js?v=20260923review2"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
-  <script src="js/dev-random-ruin-bootstrap.js?v=20260930ladderfix1"></script>
+  <script src="js/dev-random-ruin-bootstrap.js?v=20260930rowsignature1"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their
@@ -2502,7 +2503,7 @@
   <script src="js/banubu-cave-clouds.js?v=20260923cloudring3"></script>
   <!-- Shoulder Cam / Character View Pointer Lock (window.ShoulderCamPointerLock); game.js calls init(...) during setup. -->
   <script src="js/shoulder-cam-pointer-lock.js?v=20260925shouldercamonly1"></script>
-  <script src="game.js?v=20260929ruinsites1"></script>
+  <script src="game.js?v=20260930livestockwalk1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
   <script src="js/banubu-snore.js?v=20260925snorepitchrevert1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>

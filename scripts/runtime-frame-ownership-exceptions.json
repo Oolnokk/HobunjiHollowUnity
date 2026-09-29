@@ -15,7 +15,7 @@
     "function": "loadBuildingScene",
     "reason": "A chained double requestAnimationFrame forces the Den/cavern loading label to actually paint before a long synchronous carve starts; it resolves once and never reschedules.",
     "migrationStage": "not-planned",
-    "line": 13408
+    "line": 13305
   },
   {
     "file": "docs/game.js",
@@ -51,7 +51,7 @@
     "function": "cutsceneRotationTick",
     "reason": "Eases previewed actors' facing every frame for the scene's lifetime, gated on the same running flag every other preview RAF loop checks, so stopping the preview stops it too.",
     "migrationStage": "not-planned",
-    "line": 30437
+    "line": 30334
   },
   {
     "file": "docs/js/action-arc-ui.js",
