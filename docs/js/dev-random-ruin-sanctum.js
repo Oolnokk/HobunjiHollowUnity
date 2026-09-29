@@ -755,7 +755,10 @@
     s.ladderControl = {
       kind:'sanctumLadder', object:ladder, promptRoot:ladder, range:1.6, priority:22, claimAction1:true, touchIcon:'🪜',
       label:'Climb Out of the Ruin',
-      onPress:() => { deps?.showToast?.('You climb the ladder up into daylight.', true); window.DevRandomRuin?.leave?.(); },
+      onPress:() => {
+        if (window.RuinSites?.completeActiveRuin?.()) return; // Wilderness site: surface somewhere random and spend the entrance.
+        deps?.showToast?.('You climb the ladder up into daylight.', true); window.DevRandomRuin?.leave?.();
+      },
     };
     s.returnDoor = returnDoor;
     s.sanctumRoot = root;

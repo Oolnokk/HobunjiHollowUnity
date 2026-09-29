@@ -93,6 +93,13 @@
       "name": "Animal Den Entrance",
       "category": "den_entrance",
       "singleton": false
+    },
+    {
+      "id": "locale_ruin_entrance",
+      "file": "config/locales/locale_ruin_entrance.json",
+      "name": "Sealed Ruin",
+      "category": "ruin_entrance",
+      "singleton": false
     }
   ]
 }

@@ -83,7 +83,7 @@
     return Math.max(0, Math.floor(Number(combatDeps?.calendar?.day ?? 0) || 0));
   }
   function generationYear() {
-    const year = Number(window.CalendarSystem?.yearNumber?.());
+    const year = Number(window.CalendarSystem?.tothalCycle?.());
     return Number.isFinite(year) ? Math.max(1, Math.floor(year)) : 1;
   }
   function currentSeasonName() {

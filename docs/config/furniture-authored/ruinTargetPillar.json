@@ -1,0 +1,241 @@
+{
+  "schema": "hobunji_furniture_authored_runtime.v1",
+  "key": "ruinTargetPillar",
+  "id": "ruinTargetPillar",
+  "name": "Ruin Target Pillar",
+  "sourceSchema": "hobunji_furniture_surface_author.v58",
+  "notes": "Projectile activator. The glyph on the front face glows OFF (orange) until struck, then ON (green). Every target pillar at a ruin site must be struck to open its entrance door.",
+  "footprint": {
+    "w": 1,
+    "d": 1
+  },
+  "tileBase": {
+    "visible": true,
+    "tileSize": 1,
+    "footprintW": 1,
+    "footprintD": 1,
+    "y": 0,
+    "gridOpacity": 0.55
+  },
+  "parts": [
+    {
+      "id": "base",
+      "kind": "box",
+      "name": "Base",
+      "transform": {
+        "x": 0,
+        "y": 0.14,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.86,
+        "sy": 0.28,
+        "sz": 0.86
+      },
+      "color": "#5d5850",
+      "segments": 1,
+      "taperAxis": "y",
+      "topScaleX": 1,
+      "topScaleZ": 1,
+      "bottomScaleX": 1,
+      "bottomScaleZ": 1,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.68,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0,
+      "materialRole": "stone",
+      "materialTexture": "carved_smooth.png",
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": false,
+      "materialFillColor": null,
+      "surfaceOpacity": 1,
+      "substanceColor": "#5d5850",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1,
+      "materialLighting": "unlit"
+    },
+    {
+      "id": "shaft",
+      "kind": "box",
+      "name": "Shaft",
+      "transform": {
+        "x": 0,
+        "y": 1.3,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.62,
+        "sy": 2.1,
+        "sz": 0.62
+      },
+      "color": "#7a746b",
+      "segments": 1,
+      "taperAxis": "y",
+      "topScaleX": 1,
+      "topScaleZ": 1,
+      "bottomScaleX": 1,
+      "bottomScaleZ": 1,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.68,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0,
+      "materialRole": "stone",
+      "materialTexture": "carved_smooth.png",
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": false,
+      "materialFillColor": null,
+      "surfaceOpacity": 1,
+      "substanceColor": "#7a746b",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1,
+      "materialLighting": "unlit"
+    },
+    {
+      "id": "cap",
+      "kind": "box",
+      "name": "Cap",
+      "transform": {
+        "x": 0,
+        "y": 2.46,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.84,
+        "sy": 0.22,
+        "sz": 0.84
+      },
+      "color": "#8a847a",
+      "segments": 1,
+      "taperAxis": "y",
+      "topScaleX": 1,
+      "topScaleZ": 1,
+      "bottomScaleX": 1,
+      "bottomScaleZ": 1,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.68,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0,
+      "materialRole": "stone",
+      "materialTexture": "carved_smooth.png",
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": false,
+      "materialFillColor": null,
+      "surfaceOpacity": 1,
+      "substanceColor": "#8a847a",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1,
+      "materialLighting": "unlit"
+    }
+  ],
+  "recognizedSurfaces": [
+    {
+      "id": "shaft:surface:front",
+      "partId": "shaft",
+      "recognizedType": "vertical side",
+      "faceIndices": [
+        8,
+        9
+      ],
+      "area": 1.302,
+      "localCentroid": [
+        0,
+        0,
+        0.31
+      ],
+      "localNormal": [
+        0,
+        0,
+        1
+      ],
+      "basisU": [
+        1,
+        0,
+        0
+      ],
+      "basisV": [
+        0,
+        1,
+        0
+      ],
+      "bounds": {
+        "minU": -0.31,
+        "maxU": 0.31,
+        "minV": -1.05,
+        "maxV": 1.05
+      },
+      "label": "Front",
+      "role": "none"
+    }
+  ],
+  "decals": [
+    {
+      "id": "glyph",
+      "name": "Target Glyph",
+      "surfaceId": "shaft:surface:front",
+      "surfacePartId": "shaft",
+      "surfaceType": "vertical side",
+      "surfaceFaces": [
+        8,
+        9
+      ],
+      "imageSource": "../../../docs/assets/textures/decals/ruin_glyph_rune.png",
+      "imageName": "docs/assets/textures/decals/ruin_glyph_rune.png",
+      "offsetU": 0,
+      "offsetV": 0.3,
+      "width": 0.82,
+      "height": 0.24,
+      "rotationDeg": 0,
+      "normalOffset": 0.004,
+      "opacity": 1,
+      "visible": true,
+      "glow": {
+        "off": [
+          "#ff8a2a"
+        ],
+        "on": [
+          "#4dff6e"
+        ],
+        "cycleSeconds": 2,
+        "pulse": 0.3
+      }
+    }
+  ],
+  "decalAuthoring": {
+    "version": 4
+  },
+  "puzzle": {
+    "role": "activator",
+    "behavior": "projectile",
+    "prompt": "Glyph target"
+  }
+}

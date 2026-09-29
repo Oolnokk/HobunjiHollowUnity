@@ -8160,50 +8160,14 @@
       // FIXED_LOCALE_LANDMARKS (Leaf & Pahu's House's fixed map anchor) now
       // lives in js/wilderness-map.js alongside the rest of the map system.
 
-      // Fetched once per page load and cached -- the locale JSON files rarely
-      // change mid-session, and every Tothal Shift needs the same list.
-      let _localeDefsPromise = null;
+      // loadStampableLocaleDefs now lives in js/stampable-locale-defs.js
+      // (window.StampableLocaleDefs), which also stamps ruin-entrance templates.
       function loadStampableLocaleDefs() {
-        if (_localeDefsPromise) return _localeDefsPromise;
-        _localeDefsPromise = (async () => {
-          // Local override (see docs/js/local-db-overrides.js): unlike the
-          // single-file databases above, locale-editor's workspace holds the
-          // FULL content of every locale it has loaded (not just an index),
-          // so an active 'locales' override supplies already-fetched docs
-          // directly and skips the index+per-file fetch below entirely.
-          if (window.LocalDBOverrides?.getSourceMode() === 'local') {
-            const override = window.LocalDBOverrides.getOverride('locales');
-            if (override?.locales) {
-              return override.locales.filter(e => e.category === 'great_fey_shrine' || e.category === 'story_poi');
-            }
-          }
-          try {
-            const idxRes = await fetch('config/locales/index.json');
-            if (!idxRes.ok) throw new Error(`HTTP ${idxRes.status}`);
-            const idx = await idxRes.json();
-            // Great Fey shrines + the Researcher's Tent are randomly stamped
-            // -- see the comment on FIXED_LOCALE_LANDMARKS above for why
-            // dwellings are excluded here.
-            const entries = (idx.locales || []).filter(e => e.category === 'great_fey_shrine' || e.category === 'story_poi');
-            const defs = [];
-            for (const entry of entries) {
-              try {
-                const r = await fetch(entry.file);
-                if (!r.ok) throw new Error(`HTTP ${r.status}`);
-                defs.push(await r.json());
-              } catch (e) { debugLog(`Tothal Shift: locale load failed for ${entry.file}: ${e.message}`, 'warn'); }
-            }
-            return defs;
-          } catch (e) {
-            debugLog('Tothal Shift: locale index load failed: ' + e.message, 'warn');
-            return [];
-          }
-        })();
-        return _localeDefsPromise;
+        return window.StampableLocaleDefs.load();
       }
 
       function currentTothalYear() {
-        return window.CalendarSystem.yearNumber(calendar.day);
+        return window.CalendarSystem.tothalCycle(calendar.day); // Monthly since the ruin-locale update; the name stays for save compatibility (lastTothalYear).
       }
 
       function _tothalWorldId() {
@@ -8781,7 +8745,7 @@
           window.BanditCombat?.loadGangConfig();
           window.BanditCombat?.loadCampLocaleDefs();
           await _evictStaleTothalZoneCaches(worldId, year);
-          let remainingLocales = localeDefs.slice();
+          let remainingLocales = window.RuinSites?.expandLocaleDefs?.(localeDefs, year, WildernessMapGenerator.zoneMapIds()) || localeDefs.slice(); // Ruin-entrance templates become rotated per-zone copies for this cycle (js/ruin-site-locales.js).
           for (const zoneId of WildernessMapGenerator.zoneMapIds()) {
             const seed = `${worldId}_tothal_y${year}_${zoneId}`;
             const preserved = TOTHAL_PRESERVED_TRANSITIONS[zoneId] || [];
@@ -8816,6 +8780,7 @@
 
             const localeInstances = workspace.localeInstances || [];
             window.LocaleCaveRuntime?.registerWorkspace?.(zoneId, workspace, localeDefs, merged.tiles); // Cached and new zones need the low-side tier and exterior GLB registry rebuilt.
+            window.RuinSites?.registerWorkspace?.(zoneId, workspace); // Cliff ruin entrances placed this cycle (js/ruin-sites.js).
             if (localeInstances.length) {
               const placedIds = new Set(localeInstances.map(inst => inst.localeId));
               remainingLocales = remainingLocales.filter(l => !placedIds.has(l.id));
@@ -10628,6 +10593,7 @@
         _zoneMesaMeshGroups.set(mapId, window.ZonePlateauMesa.buildZoneMesaMeshes(zScene, mapId, plateauMesas, zGrid));
 
         window.ZoneDenTotemFeatures.buildAnimalDenMeshes(zScene, zGrid, zoneData?.dens || [], mapId);
+        window.RuinSites?.buildZoneMeshes?.(zScene, zGrid, mapId); // Ruin entrances + burrow holes (authored furniture pieces).
         window.ZoneDenTotemFeatures.buildRootTotemMeshes(zScene, zGrid, zoneData?.rootTotems || [], mapId);
         _zoneWaterMeshes.set(mapId, []);
         _zoneGrassMeshes.set(mapId, null); // Streamed grass groups live under their owning runtime chunks.
@@ -15545,6 +15511,7 @@
               || _zoneReagentObjects.get(currentArea)?.get(col + ',' + row)
               || _zoneBerryObjects.get(currentArea)?.get(col + ',' + row)
               || _zoneTreasureObjects.get(currentArea)?.get(col + ',' + row)
+              || window.RuinSites?.objectAt?.(currentArea, col, row)
               || window.HobunjiCloudForestWildlife?.fruitObjectAt?.(currentArea, col, row)
               || null;
         }
@@ -29021,6 +28988,27 @@
         getReagentPlantMaterial,
         refreshItemScroll: window.HudUpdate.refreshItemScroll,
         tileSurfaceYInArea,
+      });
+
+      window.StampableLocaleDefs?.init({ debugLog });
+      window.RuinSites?.init({
+        tothalWorldId: _tothalWorldId,
+        currentTothalYear,
+        calendar,
+        getCurrentArea: () => currentArea,
+        TILE,
+        NORMAL_TOP,
+        PLATEAU_UNIT,
+        TRENCH_TOP,
+        TileType,
+        _zoneScenes,
+        _zoneLayouts,
+        buildZoneScene,
+        enterZone,
+        findZoneFlatEmptyTiles,
+        recordWildernessChunkTileDelta,
+        showToast,
+        refreshActionBar,
       });
 
       window.WildTreasure?.init({
