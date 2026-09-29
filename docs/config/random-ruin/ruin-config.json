@@ -30,7 +30,11 @@
   "lavaBasin": {
     "pillarSize": 2.2,
     "pillarRise": 0.62,
-    "ropeSpacing": [5.4, 5.0, 4.7],
+    "ropeSpacing": [
+      5.4,
+      5.0,
+      4.7
+    ],
     "lavaEscapeSeconds": 0.45,
     "lavaBurn": 16,
     "safeEdgeMargin": 0.6,
@@ -50,10 +54,40 @@
     "brazierRange": 2.6,
     "brazierMaxRise": 1.35,
     "safePathBraziers": true,
-    "door": { "width": 3.2, "maxHeight": 3.4 },
-    "boss": { "types": ["tothal", "hronal", "kanthic"], "tier": 2, "healthMult": 3, "wakeMs": 1400 },
-    "skeletons": { "count": 4, "tier": 1 },
-    "vault": { "chestCount": 3, "chestTier": 4, "chestScale": 1.5 },
-    "layout": { "arenaWidth": 14, "arenaDepth": 14, "vaultWidth": 7, "vaultDepth": 6 }
+    "door": {
+      "width": 3.2,
+      "maxHeight": 3.4
+    },
+    "boss": {
+      "types": [
+        "tothal",
+        "hronal",
+        "kanthic"
+      ],
+      "tier": 2,
+      "healthMult": 3,
+      "wakeMs": 1400
+    },
+    "skeletons": {
+      "count": 4,
+      "tier": 1
+    },
+    "vault": {
+      "chestCount": 3,
+      "chestTier": 4,
+      "chestScale": 1.5
+    },
+    "layout": {
+      "arenaWidth": 14,
+      "arenaDepth": 14,
+      "vaultWidth": 7,
+      "vaultDepth": 6
+    }
+  },
+  "sites": {
+    "_notes": "Wilderness ruin sites (js/ruin-sites.js). How many copies per zone and which zones are tried lives on docs/config/locales/locale_ruin_entrance.json (ruinSite).",
+    "targetPillars": 3,
+    "debrisChance": 0.75,
+    "treasureHoleChance": 0.06
   }
 }
