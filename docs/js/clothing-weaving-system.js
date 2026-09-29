@@ -89,6 +89,13 @@
     return (visiblePatternInversion(patternDef, swapPatternColors) ? -1 : 1) * amount;
   }
 
+  function visiblePatternMask(patternMask, garmentMask, swapPatternColors = false) {
+    if (!swapPatternColors) return patternMask; // Ordinary weaving paints the motif mask itself with the pattern dye.
+    const visible = new Uint8Array(patternMask.length); // Used by black-outline generation so a loom color swap outlines the visually patterned negative space, just like a true mask inversion.
+    for (let p = 0; p < patternMask.length; p++) visible[p] = garmentMask[p] && !patternMask[p] ? 1 : 0;
+    return visible;
+  }
+
   function baseCosmeticId(item) {
     if (!item) return null;
     if (item.baseCosmeticId) return String(item.baseCosmeticId);
@@ -1885,7 +1892,7 @@
     const srcData = srcCtx.getImageData(0, 0, srcSize, srcSize).data, srcMask = new Uint8Array(srcSize * srcSize);
     for (let p = 0, i = 0; i < srcData.length; i += 4, p++) if (srcData[i + 3] > 16) srcMask[p] = 1;
     const bbox = findOpaqueBounds(srcMask, srcSize, srcSize); // Frame geometry intentionally stays based on the original authored ink, not the thickness-adjusted ink.
-    const sourceClusterSeparatorMask = patternDef?.invert ? null : buildMotifClusterSeparatorMask(srcMask, srcSize, srcSize); // Inverted patterns treat transparency as ink, so source-ink island separation does not apply.
+    const sourceClusterSeparatorMask = visiblePatternInversion(patternDef, swapPatternColors) ? null : buildMotifClusterSeparatorMask(srcMask, srcSize, srcSize); // Any visual inversion makes transparency the apparent pattern region; only a visually non-inverted source should preserve moats between separate ink islands.
     const sourceAllowedMask = new Uint8Array(srcMask.length); sourceAllowedMask.fill(1); // Source-space thickening may expand anywhere inside the rotated motif work canvas; the frame clip still decides what finally prints.
     const sourceSignedThickness = signedMotifThicknessPx(patternDef, swapPatternColors); // Both real mask inversion and loom cloth↔pattern color inversion reverse which visible region "thin" refers to; applying both cancels via XOR.
     const adjustedSrcMask = adjustMaskThickness(srcMask, sourceAllowedMask, srcSize, srcSize, sourceSignedThickness, sourceClusterSeparatorMask); // Motif thinning/thickening is measured here, before motif/frame/mesh scaling.
@@ -2324,7 +2331,8 @@
     });
 
     const outlineWidth = scaledOutlineWidth(PATTERN_OUTLINE_WIDTH, active[0]?.pattern, debugLabel, width, height);
-    const outlineMask = buildPatternOutlineMask(combinedMask, garmentMask, width, height, outlineWidth, combinedSeparator);
+    const outlineReferenceMask = visiblePatternMask(combinedMask, garmentMask, swapPatternColors); // Used so the centered black border follows whichever side actually carries the visible pattern dye after loom color inversion.
+    const outlineMask = buildPatternOutlineMask(outlineReferenceMask, garmentMask, width, height, outlineWidth, combinedSeparator);
     for (let p = 0, i = 0; i < base.data.length; i += 4, p++) {
       if (!outlineMask[p]) continue;
       base.data[i] = 0; base.data[i + 1] = 0; base.data[i + 2] = 0;
@@ -2599,7 +2607,7 @@
     hasWovenPattern: item => weavingHasAnyPattern(item?.weaving),
     reweaveMaterialCost,
     debugSnapshot,
-    __test: Object.freeze({ baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask, applyPatternToTintedImage, applyPatternStackToTintedImage, labelPatternCells, behindViewUrlsFor, behindViewResultFor, buildPortraitPatternMap, collectPatternImageUrls, resolveIconLayerUrls, patternRolesForLayers, layersUseSecondaryDye, iconLayersForView, cosmeticConfig, summarizeWeavingLabel, weavingPatternForRole, weavingPatternsForRole, normalizePatternStack, forcedOverpassPatternForWeaving, withForcedOverpass, weavingSwapsPatternColorsForRole, weavingHasAnyPattern, weavingCarriesSavedPattern, gearHasEquippedWovenClothing, requestSessionReadyPlayerAvatarRefresh, decorateAvatarDataWithWovenItems, materializeWeavingLibrarySnapshots, docsRelativeUrl, standaloneAssetUrl, frameShapeFor, wovenIconVisualKey, reweaveMaterialCost, resolvedPatternMeshScale, visiblePatternInversion, signedMotifThicknessPx, buildMotifClusterSeparatorMask, adjustMaskThickness, buildPatternOutlineMask, scaledOutlineWidth, overpassClearanceMultiplier }),
+    __test: Object.freeze({ baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask, applyPatternToTintedImage, applyPatternStackToTintedImage, labelPatternCells, behindViewUrlsFor, behindViewResultFor, buildPortraitPatternMap, collectPatternImageUrls, resolveIconLayerUrls, patternRolesForLayers, layersUseSecondaryDye, iconLayersForView, cosmeticConfig, summarizeWeavingLabel, weavingPatternForRole, weavingPatternsForRole, normalizePatternStack, forcedOverpassPatternForWeaving, withForcedOverpass, weavingSwapsPatternColorsForRole, weavingHasAnyPattern, weavingCarriesSavedPattern, gearHasEquippedWovenClothing, requestSessionReadyPlayerAvatarRefresh, decorateAvatarDataWithWovenItems, materializeWeavingLibrarySnapshots, docsRelativeUrl, standaloneAssetUrl, frameShapeFor, wovenIconVisualKey, reweaveMaterialCost, resolvedPatternMeshScale, visiblePatternInversion, signedMotifThicknessPx, visiblePatternMask, buildMotifClusterSeparatorMask, adjustMaskThickness, buildPatternOutlineMask, scaledOutlineWidth, overpassClearanceMultiplier }),
   });
   window.__clothingWeavingDebug = debugSnapshot;
 
