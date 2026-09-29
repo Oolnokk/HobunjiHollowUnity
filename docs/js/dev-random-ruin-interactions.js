@@ -361,6 +361,7 @@
         const rise = Number(support?.y) - floorY;
         if (!(rise > .2)) { if (!openAt(x, z, .05) && t > .3) break; continue; } // Solid wall before any ledge: nothing to climb here.
         if (rise < LEDGE_MIN_RISE || rise > LEDGE_MAX_RISE) break; // A step (walkable) or a wall too tall to climb.
+        if (window.DevRandomRuinSimplePuzzles?.isNoClimbSurface?.(support.id)) break; // Rope platforms/balconies/vaults: reached only by rope.
         const land = { x:x + dx * .45, z:z + dz * .45 };
         const landSupport = DS.sampleSupport?.(land.x, land.z, { minY:floorY - 8, maxY:floorY + LEDGE_MAX_RISE + .05, pad:.02 });
         if (!landSupport || Math.abs(Number(landSupport.y) - Number(support.y)) > .2 || !openAt(land.x, land.z)) break;

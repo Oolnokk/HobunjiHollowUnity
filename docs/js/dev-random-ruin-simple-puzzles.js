@@ -614,6 +614,7 @@
       priority:18,
     });
     state.surfaceIds.add(surfaceId);
+    state.noClimbSurfaceIds.add(surfaceId); // Rope-traversal platforms are reached by rope, never by the generic ledge climb (it skipped the vault's plate puzzle).
     return { mesh, x, z, width, depth, baseY, topY:baseY+height };
   }
 
@@ -1704,6 +1705,7 @@
       ceilingGlyphs:[],
       cyclingElevators:[],
       elevatorChests:[],
+      noClimbSurfaceIds:new Set(),
       liftRejects:[],
       sarcophagusModules:[],
       sunkenRoomShells:[],
@@ -2227,6 +2229,7 @@
 
   window.DevRandomRuinSimplePuzzles=Object.freeze({
     getInteractionControls,
+    isNoClimbSurface:id=>!!state?.noClimbSurfaceIds?.has(String(id)),
     ownsPlayerMotion:()=>!!(state?.activeRope||state?.flight),
     releaseActiveRope:()=>state?.activeRope?releaseRope(state.activeRope):false, // Called by the canonical Dodge context action so every input device shares one release path.
     respawnAtCheckpoint,

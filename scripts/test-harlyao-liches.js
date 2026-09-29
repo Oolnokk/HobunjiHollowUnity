@@ -329,7 +329,7 @@ for (const key of ['tothal', 'hronal', 'kanthic']) {
   assert(devSpawnerSource.includes(`harlyao-lich:${key}`), `Testing Arena must expose ${key} lich button`);
 }
 assert.match(devSpawnerSource, /startsWith\('harlyao-lich:'\)/);
-assert(indexSource.includes('js/combat/combat-lich.js?v=20260928sanctum1'));
+assert(indexSource.includes('js/combat/combat-lich.js?v=20260929lichroom1'));
 assert(indexSource.includes('js/combat/combat-bandit.js?v=20260927hostilevisual1'));
 assert(indexSource.includes('js/dev-spawner.js?v=20260927hostilevisual1'));
 assert(indexSource.includes('game.js?v=20260927inputclaim1'));

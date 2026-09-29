@@ -4732,7 +4732,7 @@
       // farm/interior, but corpses can settle in any area a creature dies in.
       function getCorpseObjectAt(col, row) {
         for (const c of corpseObjects) {
-          if (c.state !== 'corpse' || c.areaId !== currentArea) continue;
+          if (c.state !== 'corpse' || c.areaId !== currentArea || c.corpseLooted) continue; // corpseLooted: looted but kept (keepCorpseAfterLoot), e.g. revivable skeletons.
           if (c.corpseCol === col && c.corpseRow === row) return makeCorpseWorldObject(c);
         }
         return null;
@@ -4747,7 +4747,7 @@
         if (exact || action !== 'obj_loot_corpse') return exact;
         let best = null, bestDist = Infinity;
         for (const c of corpseObjects) {
-          if (c.state !== 'corpse' || c.areaId !== currentArea) continue;
+          if (c.state !== 'corpse' || c.areaId !== currentArea || c.corpseLooted) continue;
           const dist = Math.hypot(c.x - player.x, c.y - player.y);
           const tileGap = Math.hypot((c.corpseCol ?? col) - col, (c.corpseRow ?? row) - row);
           if (dist > TILE * 2.25 || tileGap > 1.5 || dist >= bestDist) continue;
@@ -18707,7 +18707,7 @@
         // registered in _buildingInteractables (e.g. the Alchemy Table,
         // and now sittable furniture — see the mapData.furniture loader).
         return currentArea === 'interior' ? getInteriorInteractableAt(_r.col, _r.row)
-          : (_isBuildingArea(currentArea) || currentArea === 'town') ? (_buildingInteractables.get(currentArea + ',' + _r.col + ',' + _r.row) || getWorldObjectAt(_r.col, _r.row))
+          : (_isBuildingArea(currentArea) || currentArea === 'town') ? (_buildingInteractables.get(currentArea + ',' + _r.col + ',' + _r.row) || getCorpseObjectForAction(action, _r.col, _r.row) || getWorldObjectAt(_r.col, _r.row))
           : getCorpseObjectForAction(action, _r.col, _r.row) || getWorldObjectAt(_r.col, _r.row);
       }
 
@@ -24910,6 +24910,13 @@
             const label = t.label || (t.target === 'exit_building' ? 'Exit' : 'Use');
             return [{ icon, label, action: 'use_spot', style: 'primary', allowed: true }];
           }
+          // Corpses settle in dens, mine floors and the test ruin too, but
+          // this early-return branch never asked for them, so indoor kills
+          // (skeletons, liches, bandits, den creatures) were never lootable.
+          // Only the exact aimed tile shows the button, so a nearby corpse
+          // cannot take over the attack slot mid-fight.
+          const aimedCorpse = getCorpseObjectAt(getReticleTile().col, getReticleTile().row);
+          if (aimedCorpse) return aimedCorpse.getButtons(getReticleTile());
           const devRuinActions = currentArea === 'map_i_dev_random_ruin'
             ? window.DevRandomRuinInteractions?.getActionButtons?.()
             : null; // Generated test-ruin interactions are ordinary building-interior context actions; when present they replace attacks/items in the same physical arch slots, exactly like NPC/furniture interactions.
@@ -28335,6 +28342,7 @@
       });
 
       window.DevSpawner?.init({
+        corpseObjects, despawnCreature, // Random Test Ruin sanctum lich raises its fallen skeletons by replacing their corpses.
         getCurrentArea: () => currentArea,
         setCurrentArea: (v) => { currentArea = v; },
         getActiveScene: window.GridTileAccessors.getActiveScene,

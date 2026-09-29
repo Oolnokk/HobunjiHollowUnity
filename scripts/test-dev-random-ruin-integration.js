@@ -51,11 +51,11 @@ const loadOrder = [
   'dev-random-ruin-runtime-coverage.js',
 ].map(name => camera.indexOf(name));
 assert(/localStorage\.getItem\('hobunjiDevMode'\) === '1'/.test(camera) && /if \(!devMode/.test(camera), 'ruin runtime must only be injected in Dev Mode');
-assert(camera.includes('dev-random-ruin-interactions.js?v=20260929gateddais1'), 'ruin interaction adapter must be cache-busted with the arch-priority/popup-list fix');
-assert(camera.includes('dev-random-ruin-simple-puzzles.js?v=20260929plates1'), 'simple puzzle interior-parity runtime must be cache-busted in the dev bootstrap');
+assert(camera.includes('dev-random-ruin-interactions.js?v=20260929lichroom1'), 'ruin interaction adapter must be cache-busted with the arch-priority/popup-list fix');
+assert(camera.includes('dev-random-ruin-simple-puzzles.js?v=20260929lichroom1'), 'simple puzzle interior-parity runtime must be cache-busted in the dev bootstrap');
 assert(camera.includes('dev-random-ruin-wall-render-proxy.js?v=20260927geometry1'), 'native ruin render verifier must be cache-busted in the dev bootstrap');
-assert(gameIndex.includes('js/dev-random-ruin-bootstrap.js?v=20260929gateddais1'), 'game page must load the updated ruin bootstrap');
-assert(gameIndex.includes('game.js?v=20260929shotfloor1'), 'game page must load the footprint-aware movement collision');
+assert(gameIndex.includes('js/dev-random-ruin-bootstrap.js?v=20260929lichroom1'), 'game page must load the updated ruin bootstrap');
+assert(gameIndex.includes('game.js?v=20260929lichroom1'), 'game page must load the footprint-aware movement collision');
 assert(gameIndex.indexOf('js/area-footprint-blockers.js') >= 0 && gameIndex.indexOf('js/area-footprint-blockers.js') < gameIndex.indexOf('game.js?v='), 'sub-tile footprint registry must load before game.js');
 assert(game.includes('window.AreaFootprintBlockers?.blocksBox(currentArea, wx / TILE, wy / TILE, radius / TILE, worldY)'), 'canOccupyAt must test the whole mover square against prop footprints');
 assert(gameIndex.includes('js/climb-system.js?v=20260926ruinladder2'), 'game page must cache-bust the shared climb animation used by authored ruin ladders');
@@ -425,6 +425,6 @@ assert(sanctum.includes("SP.registerComposer({\n    id:'sanctum'"), 'braziers / 
 assert(read('docs/js/dev-random-ruin-interior-map.js').includes('window.DevRandomRuinSanctum?.reserve?.(cols, rows)'), 'floor projection must reserve the sanctum wing in the ruin grid');
 assert(sanctum.includes('bgm_just_beyond_the_torchlight.ogg'), 'awakened Great Door must emit Just Beyond the Torchlight as its BGS');
 assert(lich.includes('allowArea:') && lich.includes('const allowedAreas = new Set([ARENA_ID])'), 'liches stay arena-confined unless an area opts in');
-assert(gameIndex.includes('js/combat/combat-lich.js?v=20260928sanctum1'), 'lich area opt-in must be cache-busted in the game page');
+assert(gameIndex.includes('js/combat/combat-lich.js?v=20260929lichroom1'), 'lich area opt-in must be cache-busted in the game page');
 new vm.Script(sanctum, { filename: 'dev-random-ruin-sanctum.js' });
 console.log('Random Test Ruin integration static audit passed.');

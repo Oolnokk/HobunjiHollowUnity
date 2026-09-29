@@ -664,6 +664,11 @@
       [arena.minX + 1.4, arena.maxZ - 1.4], [arena.maxX - 1.4, arena.maxZ - 1.4],
     ].map(([x, z]) => standingBrazier(kit, root, x, z, y0));
 
+    // Four stone coffins, two on each long wall, facing the arena centre.
+    // Their Harlyao skeletons rise with the lich, and it raises them again.
+    s.coffins = [[arena.minX + 4.5, arena.minZ + 1.1, 1], [arena.minX + 9.5, arena.minZ + 1.1, 1], [arena.minX + 4.5, arena.maxZ - 1.1, -1], [arena.minX + 9.5, arena.maxZ - 1.1, -1]]
+      .map(([x, z, facing], index) => buildCoffin(kit, root, x, z, y0, facing, index));
+
     // Vault: three big chests along the far wall, ladder out on the east wall.
     const chestsApi = window.DevRandomRuinDungeonChests;
     s.vaultChests = [];
@@ -687,6 +692,74 @@
     const occlusion = window.DevRandomRuin?.getOcclusionMeshes?.();
     if (occlusion) for (const mesh of s.occluders) occlusion.push(mesh); // Camera boom pulls in against sanctum walls exactly like V50 walls.
     s.bossType = pickBossType(rng);
+  }
+
+  function buildCoffin(kit, root, x, z, y0, facing, index) {
+    const group = new THREE.Group();
+    group.name = 'dev_ruin_sanctum_coffin_' + index;
+    const body = stone(kit, kit.sharedBoxGeometry(1.5, .62, .8), 0x6d675f);
+    body.position.y = .31;
+    const plinth = stone(kit, kit.sharedBoxGeometry(1.66, .12, .96), 0x5d5850);
+    plinth.position.y = .06;
+    const lid = stone(kit, kit.sharedBoxGeometry(1.58, .14, .88), 0x7a746b);
+    lid.position.y = .69;
+    lid.userData.devRuinFootprintIgnore = true; // Slides off when the skeleton rises; the body/plinth carry the collision.
+    group.add(plinth, body, lid);
+    group.position.set(x, y0, z);
+    root.add(group);
+    return { index, group, lid, x, z, facing, open:false, lidT:0, rise:{ x, z:z + facing * .95 } };
+  }
+
+  function updateCoffins(dt) {
+    for (const coffin of s?.coffins || []) {
+      if (!coffin.open || coffin.lidT >= 1) continue;
+      coffin.lidT = Math.min(1, coffin.lidT + dt * 1.6);
+      coffin.lid.position.set(0, .69 - coffin.lidT * .45, -coffin.facing * coffin.lidT * .75);
+      coffin.lid.rotation.x = -coffin.facing * coffin.lidT * .5;
+    }
+  }
+
+  async function spawnSkeleton(coffin, roster = null, at = null) {
+    const tile = deps?.TILE || 64, p = at || coffin.rise;
+    const minion = await window.MinionCombat?.makeEntity?.({
+      speciesId:'harlyao-skeleton', name:'Harlyao Skeleton', tier:1, x:p.x * tile, y:p.z * tile, zoneId:MAP_ID, weaponMetalKey:'nativeCopper',
+      roster:roster || undefined,
+      extra:{ homeX:p.x * tile, homeY:p.z * tile, state:'chase', keepCorpseAfterLoot:true, sanctumCoffin:coffin.index }, // Looting leaves the body for the lich to raise.
+    });
+    if (!minion || !s || deps?.getCurrentArea?.() !== MAP_ID) { disposeActor(minion); return null; }
+    deps.hostileObjects?.add?.(minion);
+    coffin.skeleton = minion;
+    return minion;
+  }
+
+  function wakeCoffins() {
+    for (const coffin of s.coffins || []) {
+      coffin.open = true;
+      spawnSkeleton(coffin);
+    }
+  }
+
+  function deadSkeletons() {
+    return (s?.coffins || []).filter(coffin => coffin.skeleton && !(Number(coffin.skeleton.health) > 0) && coffin.skeleton.state === 'corpse' && !coffin.raising); // Settled corpses only; mid-ragdoll bodies are still owned by CreatureDeath.
+  }
+
+  // Replaces summoning: the lich raises one of its fallen skeletons where it
+  // lies, in the same bones and gear (minus anything the player looted).
+  function raiseDead(lich) {
+    const dead = deadSkeletons();
+    if (!dead.length) return false;
+    const coffin = dead.reduce((best, c) => Math.hypot(c.skeleton.x - lich.x, c.skeleton.y - lich.y) < Math.hypot(best.skeleton.x - lich.x, best.skeleton.y - lich.y) ? c : best);
+    const corpse = coffin.skeleton, tile = deps?.TILE || 64;
+    const at = { x:corpse.x / tile, z:corpse.y / tile };
+    const base = corpse.rosterRecord || null;
+    const roster = base ? (corpse.corpseLooted ? { ...base, equippedCosmetics:[], cosmeticSlots:{}, appliedDyes:{} } : base) : null;
+    coffin.raising = true;
+    deps?.corpseObjects?.delete?.(corpse);
+    if (deps?.despawnCreature) deps.despawnCreature(corpse); else disposeActor(corpse);
+    spawnSkeleton(coffin, roster, at).finally(() => { coffin.raising = false; });
+    coffin.raised = (coffin.raised || 0) + 1;
+    deps?.showToast?.('The lich raises a fallen skeleton!', false);
+    return true;
   }
 
   function pickBossType(rng) {
@@ -747,8 +820,10 @@
     creature.maxHealth = max;
     creature.health = max;
     creature.isRuinSanctumBoss = true;
+    creature.lichRaiseDead = { canRaise:() => deadSkeletons().length > 0, raise:lich => raiseDead(lich) }; // Instead of summoning new minions.
     deps.hostileObjects?.add?.(creature);
     s.boss = creature;
+    wakeCoffins();
     const label = combat.TYPE_DEFS?.[s.bossType]?.label || 'Lich';
     deps?.showToast?.(`${label} rises from the sanctum floor!`, false);
     window.__farmLog?.(`[random-ruin] sanctum boss ${s.bossType} spawned hp=${max}`, 'world');
@@ -772,6 +847,7 @@
     s.bossDefeated = true;
     s.bossDefeatedAt = now;
     for (const minion of boss._lichSummons || []) if (Number(minion?.health) > 0) deps?.damageCreature?.(minion, minion.health, undefined, undefined, 0, {});
+    for (const coffin of s.coffins || []) if (Number(coffin.skeleton?.health) > 0) deps?.damageCreature?.(coffin.skeleton, coffin.skeleton.health, undefined, undefined, 0, {}); // Its skeletons fall with it.
     deps?.showToast?.('The lich collapses into ash. Behind it, a stone door grinds open.', true);
     if (s.rearDoor) s.rearDoor.open = true;
   }
@@ -828,6 +904,7 @@
       updateDoorVisual(s.returnDoor, now, dt, true);
       updateBoss(now);
       updateRearDoor(dt);
+      updateCoffins(dt);
     },
     controls(kit) {
       if (!s?.built) return [];
@@ -851,12 +928,14 @@
         bossDefeated:s.bossDefeated, rearDoor:s.rearDoor ? { open:s.rearDoor.open, progress:+s.rearDoor.progress.toFixed(3) } : null,
         vaultChests:(s.vaultChests || []).map(c => ({ id:c.id, tier:c.tier, opened:c.opened })),
         inSanctum:s.inSanctum,
+        coffins:(s.coffins || []).map(c => ({ index:c.index, open:c.open, raised:c.raised || 0, skeleton:c.skeleton ? { health:c.skeleton.health, state:c.skeleton.state || null, looted:!!c.skeleton.corpseLooted, keep:!!c.skeleton.keepCorpseAfterLoot } : null })),
       };
     },
     clear() {
       if (!s) return;
       if (s.bgs) window.Music?.unregisterFurnitureSfxSource?.(s.bgs);
       if (s.boss) { for (const minion of s.boss._lichSummons || []) disposeActor(minion); disposeActor(s.boss); }
+      for (const coffin of s.coffins || []) if (coffin.skeleton) { deps?.corpseObjects?.delete?.(coffin.skeleton); disposeActor(coffin.skeleton); }
       const occlusion = window.DevRandomRuin?.getOcclusionMeshes?.();
       if (occlusion) for (const mesh of s.occluders) { const i = occlusion.indexOf(mesh); if (i >= 0) occlusion.splice(i, 1); }
       for (const object of s.hiddenDecor || []) object.visible = true;
@@ -879,6 +958,7 @@
     planLayout,
     igniteAll:() => { for (const brazier of s?.braziers || []) igniteBrazier(brazier); return !!s; }, // Diagnostics.
     enter:() => enterSanctum(),
+    debugKillSkeleton:index => { const sk = s?.coffins?.[index]?.skeleton; if (!sk || !(sk.health > 0)) return false; deps?.damageCreature?.(sk, sk.health + 999, undefined, undefined, 0, {}); return true; }, // Headless tests.
     leave:() => leaveSanctum(),
     getState:() => s,
   });

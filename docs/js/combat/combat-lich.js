@@ -1625,7 +1625,12 @@
     lich._lichCastingAbility = ability; // Mobile diagnostics distinguish projectile and summon gestures while the shared staged action is active.
     const onStrike = () => {
       lich.telegraphState = 'strike';
-      if (ability === 'summon') summonMinion(lich);
+      if (ability === 'summon') {
+        // An owner can swap summoning for raising its own fallen dead (the
+        // Random Test Ruin sanctum lich raises its four coffin skeletons).
+        if (lich.lichRaiseDead?.raise) { lich.lichRaiseDead.raise(lich); lastEvent = `raise:${lich.id || lich.name}`; }
+        else summonMinion(lich);
+      }
       else firePrimary(lich, target, { windupS, strikeS });
     };
     const begin = window.Combat?.beginStagedAction;
@@ -1664,7 +1669,7 @@
       return { aimAngle, moving: false, handled: true };
     }
 
-    if (lich._lichSummonCooldownS <= 0) {
+    if (lich._lichSummonCooldownS <= 0 && (!lich.lichRaiseDead || lich.lichRaiseDead.canRaise?.(lich))) { // Raise-dead liches only cast when someone lies dead.
       if (beginLichCast(lich, target, 'summon')) {
         lich._lichSummonCooldownS = 12 + random() * 5;
         return { aimAngle, moving: false, handled: true };
